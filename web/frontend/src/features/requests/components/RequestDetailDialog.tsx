@@ -1,6 +1,7 @@
 import { type ReactNode } from "react";
 
 // change-log:
+// - 2026-08-19: 왼쪽 원본 STL 프리뷰. 준비 단계 취소를 footer로 연결.
 // - 2026-08-18: 의뢰 상세 모달을 rounded-2xl 헤더·섹션 카드 톤으로 정리.
 // - 2026-08-09: 배송비(출고 시)를 크레딧 사용액 아래로 이동, 별도 차감 안내 문구 분리.
 // - 2026-08-09: 디자인+생산 — 커스텀어벗 치아만 표시·과금 수량. 신속비=단가×어벗수.
@@ -11,6 +12,8 @@ import { type ReactNode } from "react";
 // - 2026-08-06: 남은기간 표시를 "N일 남음" → "출고 N일전"으로 통일.
 // - 2026-08-06: 발송 예정일 → 출고 예정일 (제조사 출발일).
 // related files:
+// - web/frontend/src/features/requests/hooks/useRequestOriginalStlPreview.ts
+// - web/frontend/src/features/requests/components/StlPreviewViewer.tsx
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
 // - web/frontend/src/pages/requestor/dashboard/components/RequestorRecentRequestsCard.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/request.ts
@@ -32,6 +35,8 @@ import {
   useSystemSettings,
   CREDIT_SETTINGS_DEFAULTS,
 } from "@/hooks/useSystemSettings";
+import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
+import { useRequestOriginalStlPreview } from "@/features/requests/hooks/useRequestOriginalStlPreview";
 
 export type RequestDetailDialogToothWork = {
   toothNumber?: string | null;
@@ -59,9 +64,16 @@ export type RequestDetailDialogCaseInfos = {
   finalHexRotation?: "STL모델대로" | "헥스30도회전";
   productMode?: string | null;
   toothWorks?: RequestDetailDialogToothWork[] | null;
+  file?: {
+    filePath?: string | null;
+    originalName?: string | null;
+    fileName?: string | null;
+  } | null;
 };
 
 export type RequestDetailDialogRequest = {
+  _id?: string;
+  id?: string;
   title?: string;
   manufacturerStage?: string;
   requestId?: string;
@@ -242,6 +254,15 @@ export const RequestDetailDialog = ({
   footer,
 }: RequestDetailDialogProps) => {
   const { data: systemSettings } = useSystemSettings();
+  const requestMongoId = String(request?._id || request?.id || "").trim();
+  const canLoadPreview = /^[a-fA-F0-9]{24}$/.test(requestMongoId);
+  const { previewFile, previewLoading, previewError } =
+    useRequestOriginalStlPreview({
+      open,
+      requestMongoId,
+      requestIdLabel: request?.requestId,
+      fileMeta: request?.caseInfos?.file,
+    });
   const expressFeeSetting =
     systemSettings?.creditSettings?.expressFee ??
     CREDIT_SETTINGS_DEFAULTS.expressFee;
@@ -381,7 +402,7 @@ export const RequestDetailDialog = ({
             )}
 
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-4">
-              {/* 좌열: 일정·비용 */}
+              {/* 좌열: 프리뷰·일정·비용 */}
               <div className="space-y-3 min-w-0">
                 {estimatedShipYmd && (
                   <div className="grid grid-cols-[88px_1fr] gap-2 items-center text-primary-strong font-medium">
@@ -389,6 +410,26 @@ export const RequestDetailDialog = ({
                     <span>{formatDateWithDay(estimatedShipYmd)}</span>
                   </div>
                 )}
+                {canLoadPreview ? (
+                  <div className="min-h-[240px] overflow-hidden rounded-xl border border-slate-200 bg-white">
+                    {previewLoading ? (
+                      <div className="flex min-h-[240px] items-center justify-center text-sm text-slate-500">
+                        원본 STL 불러오는 중...
+                      </div>
+                    ) : previewFile ? (
+                      <StlPreviewViewer
+                        file={previewFile}
+                        showOverlay={false}
+                        showGrid={false}
+                        className="h-full min-h-[240px]"
+                      />
+                    ) : (
+                      <div className="flex min-h-[240px] items-center justify-center px-4 text-center text-sm text-slate-500">
+                        {previewError || "원본 3D 모델 파일이 없습니다."}
+                      </div>
+                    )}
+                  </div>
+                ) : null}
                 {typeof request?.daysOverdue === "number" && (
                   <div className="grid grid-cols-[88px_1fr] gap-2 items-center text-destructive">
                     <span>경과</span>

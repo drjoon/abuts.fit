@@ -50,6 +50,7 @@ import {
 } from "@/shared/ui/semanticStatus";
 
 // change-log:
+// - 2026-08-19: 의뢰 상세 모달에 준비 단계 취소 버튼.
 // - 2026-08-11: 지연(출고예정일 경과·미출고) 케이스를 빨간 뱃지로 표시.
 // - 2026-08-11: 좌측 2행 높이에 맞춰 리스트가 카드 전체 높이를 채우도록 변경(고정 2.5행 maxHeight 제거).
 // - 2026-08-11: 카드 헤더 오른쪽 위에 [지난 의뢰] 버튼·모달 추가(대시보드 상단 헤더에서 이전).
@@ -415,7 +416,6 @@ export const RequestorRecentRequestsCard = ({
   const [editCaseInfos, setEditCaseInfos] = useState<EditableCaseInfos | null>(
     null,
   );
-  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
   const [cancelTarget, setCancelTarget] =
     useState<RecentRequestCardItem | null>(null);
   const [unmachinableInfoOpen, setUnmachinableInfoOpen] = useState(false);
@@ -655,35 +655,6 @@ export const RequestorRecentRequestsCard = ({
     } finally {
       setSavingEdit(false);
     }
-  };
-
-  const handleCancelFromDetail = async () => {
-    const fallbackId =
-      selectedRequestId ||
-      detail?._id ||
-      detail?.id ||
-      selectedSummary?._id ||
-      selectedSummary?.id;
-
-    if (!fallbackId) {
-      toast({
-        title: "의뢰 ID를 찾을 수 없습니다",
-        variant: "destructive",
-        duration: 2500,
-      });
-      return;
-    }
-
-    await handleCancelRequest(fallbackId as string);
-    setOpen(false);
-    setSelectedRequestId("");
-    setDetail(null);
-    setEditCaseInfos(null);
-  };
-
-  const openCancelConfirmFromDetail = () => {
-    if (!selectedRequestId) return;
-    setCancelConfirmOpen(true);
   };
 
   useEffect(() => {
@@ -1032,6 +1003,9 @@ export const RequestorRecentRequestsCard = ({
           }
           await handleCancelRequest(String(targetId));
           setCancelTarget(null);
+          setOpen(false);
+          setSelectedRequestId("");
+          setDetail(null);
         }}
         onCancel={() => setCancelTarget(null)}
       />
@@ -1099,10 +1073,26 @@ export const RequestorRecentRequestsCard = ({
           if (!next) {
             setSelectedRequestId("");
             setDetail(null);
-            setCancelConfirmOpen(false);
           }
         }}
         request={detail || selectedSummary}
+        footer={
+          isCancelableRequest(detail || selectedSummary) ? (
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setCancelTarget(detail || selectedSummary);
+                }}
+              >
+                의뢰 취소
+              </Button>
+            </div>
+          ) : null
+        }
       />
 
       <PastRequestsModal

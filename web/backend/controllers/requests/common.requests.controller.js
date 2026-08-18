@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-19: GET /my 목록에 price·estimatedShipYmd 포함(의뢰 상세 비용·출고일).
 // - 2026-08-18: 준비 단계 진입 시 로트번호 발급. 워크시트 조회 시 누락분 보정. 샘플 복사는 준비 시작도 즉시 발급.
 // - 2026-08-10: worksheet select에 caseInfos.memo/toothWorks/prosthesisType/files 추가(디자인 큐).
 // - 2026-08-17: 취소/삭제 시 PTX 연동 어벗 디자인비(ADJUST) revoke.
@@ -2051,7 +2052,7 @@ export async function getMyRequests(req, res) {
       }
     }
 
-    const cacheKey = `my-requests:${String(req.user?._id || "")}:${String(
+    const cacheKey = `my-requests:v2:${String(req.user?._id || "")}:${String(
       req.user?.businessAnchorId || "",
     )}:${JSON.stringify({
       page,
@@ -2102,6 +2103,8 @@ export async function getMyRequests(req, res) {
             businessAnchorId: 1,
             shippingMode: 1,
             timeline: 1,
+            price: 1,
+            estimatedShipYmd: 1,
           })
           .sort(sort)
           .skip(skip)

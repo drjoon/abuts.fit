@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-19: 진행중인 의뢰 상세에서 준비 단계 취소. 원본 STL 프리뷰는 RequestDetailDialog.
 // - 2026-08-19: [정책 안내] 오른쪽 [진행중인 의뢰] — 준비~포장.발송.
 // - 2026-08-18: 지난의뢰 건수·목록에서 취소 제외(추적관리만).
 // - 2026-08-18: 치과 어벗디자인 상단 — 기간필터·정책안내·출고대기·지난의뢰·불완전가공.
@@ -9,17 +10,21 @@
 // - web/frontend/src/pages/requestor/dashboard/components/RequestorBulkShippingBannerCard.tsx
 // - web/frontend/src/pages/requestor/dashboard/components/RequestorUnmachinableHost.tsx
 // - web/frontend/src/shared/components/PastRequestsModal.tsx
+// - web/frontend/src/features/requests/components/RequestDetailDialog.tsx
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
+import { useToast } from "@/shared/hooks/use-toast";
 import { RequestorWorkspaceHeader } from "@/shared/components/RequestorWorkspaceHeader";
 import { RequestorPolicyRemakeHeader } from "@/pages/requestor/dashboard/components/RequestorPolicyRemakeHeader";
 import { RequestorBulkShippingBannerCard } from "@/pages/requestor/dashboard/components/RequestorBulkShippingBannerCard";
 import { RequestorUnmachinableHost } from "@/pages/requestor/dashboard/components/RequestorUnmachinableHost";
 import { PastRequestsModal } from "@/shared/components/PastRequestsModal";
 import { RequestDetailDialog } from "@/features/requests/components/RequestDetailDialog";
+import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
+import { getNormalizedStageLabelSafe } from "@/utils/stage";
 import type { PeriodFilterValue } from "@/shared/ui/PeriodFilter";
 
 /** 지난의뢰(추적관리)를 제외한 생산 파이프라인 */
@@ -32,14 +37,21 @@ const IN_PROGRESS_MANUFACTURER_STAGES = [
   "포장.발송",
 ];
 
+const isPrepCancelableRequest = (request: unknown) =>
+  getNormalizedStageLabelSafe(request) === "준비";
+
 export const RequestorAbutmentPageHeader = () => {
   const { user, token } = useAuthStore();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [period, setPeriod] = useState<PeriodFilterValue>("30d");
   const [inProgressOpen, setInProgressOpen] = useState(false);
   const [pastOpen, setPastOpen] = useState(false);
   const [selectedPastRequest, setSelectedPastRequest] = useState<any | null>(
     null,
   );
+  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
+  const [canceling, setCanceling] = useState(false);
 
   const cardsSummaryQueryKey = useMemo(
     () => [
@@ -125,6 +137,60 @@ export const RequestorAbutmentPageHeader = () => {
   })();
 
   const bulkData = bulkResponse?.success ? bulkResponse.data : null;
+  const canCancelSelected = isPrepCancelableRequest(selectedPastRequest);
+
+  const refreshInProgressCounts = () => {
+    void queryClient.invalidateQueries({ queryKey: cardsSummaryQueryKey });
+  };
+
+  const cancelRequestByMongoId = async (mongoId: string) => {
+    if (!token || !mongoId) return false;
+    const res = await apiFetch<any>({
+      path: `/api/requests/${encodeURIComponent(mongoId)}/status`,
+      method: "PATCH",
+      token,
+      headers: { "Content-Type": "application/json" },
+      jsonBody: { manufacturerStage: "취소" },
+    });
+    if (!res.ok) {
+      const serverMsg = res.data?.message;
+      toast({
+        title: "의뢰 취소 실패",
+        description:
+          serverMsg ||
+          "준비 단계에서만 취소할 수 있습니다. 가공 단계부터는 취소가 불가능합니다.",
+        variant: "destructive",
+        duration: 3000,
+      });
+      return false;
+    }
+    toast({
+      title: "의뢰가 취소되었습니다",
+      duration: 2000,
+    });
+    refreshInProgressCounts();
+    return true;
+  };
+
+  const handleConfirmCancel = async () => {
+    const mongoId = String(
+      selectedPastRequest?._id || selectedPastRequest?.id || "",
+    ).trim();
+    if (!mongoId) {
+      setCancelConfirmOpen(false);
+      return;
+    }
+    setCanceling(true);
+    try {
+      const ok = await cancelRequestByMongoId(mongoId);
+      if (ok) {
+        setCancelConfirmOpen(false);
+        setSelectedPastRequest(null);
+      }
+    } finally {
+      setCanceling(false);
+    }
+  };
 
   return (
     <>
@@ -164,9 +230,12 @@ export const RequestorAbutmentPageHeader = () => {
         open={inProgressOpen}
         onOpenChange={setInProgressOpen}
         title="진행중인 의뢰"
-        description="준비·가공·세척.패킹·포장.발송 단계의 의뢰를 확인하고 상세를 엽니다."
+        description="준비·가공·세척.패킹·포장.발송 단계의 의뢰를 확인하고 상세를 엽니다. 준비 단계에서는 취소할 수 있습니다."
         manufacturerStageIn={IN_PROGRESS_MANUFACTURER_STAGES}
         initialPeriod={period}
+        allowCancel
+        onCanceled={refreshInProgressCounts}
+        onCancelRequest={cancelRequestByMongoId}
         onSelectRequest={(request) => {
           setInProgressOpen(false);
           setSelectedPastRequest(request);
@@ -188,9 +257,39 @@ export const RequestorAbutmentPageHeader = () => {
       <RequestDetailDialog
         open={Boolean(selectedPastRequest)}
         onOpenChange={(next) => {
-          if (!next) setSelectedPastRequest(null);
+          if (!next) {
+            setSelectedPastRequest(null);
+            setCancelConfirmOpen(false);
+          }
         }}
         request={selectedPastRequest}
+        footer={
+          canCancelSelected ? (
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                disabled={canceling}
+                onClick={() => setCancelConfirmOpen(true)}
+              >
+                의뢰 취소
+              </Button>
+            </div>
+          ) : null
+        }
+      />
+
+      <ConfirmDialog
+        open={cancelConfirmOpen}
+        title="이 의뢰를 취소하시겠습니까?"
+        description="준비 단계 의뢰만 취소할 수 있습니다. 취소 후 크레딧은 정책에 따라 복구됩니다."
+        confirmLabel="의뢰 취소"
+        cancelLabel="닫기"
+        onConfirm={() => {
+          void handleConfirmCancel();
+        }}
+        onCancel={() => setCancelConfirmOpen(false)}
       />
     </>
   );

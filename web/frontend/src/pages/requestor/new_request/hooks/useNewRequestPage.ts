@@ -5,6 +5,7 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/backend/controllers/requests/creation.from-draft.controller.js
+// - 2026-08-19: 입력 중 중복 체크 — 추적관리면 tracking 모드(진행중으로 오인하지 않음).
 // - 2026-08-18: 치과 제출 후 `/dashboard` 대신 어벗디자인 페이지에 잔류(대시보드 메뉴 없음).
 // - 2026-08-13: 제출 시 이미 사업자가 있으면 profile/credits GET을 생략
 // - 2026-08-13: 복원·포워딩 시 이미 S3/메타가 있는 STL은 재업로드하지 않음.
@@ -616,10 +617,15 @@ export const useNewRequestPage = (
               );
               if (alreadyResolved) return;
 
+              const existingStage = String(
+                existingRequest?.manufacturerStage || "",
+              ).trim();
+              const mode = existingStage === "추적관리" ? "tracking" : "active";
+
               // 중복 발견 시 모달 표시 (입력 중 체크: 제출 플로우 아님)
               setDuplicatePromptFromSubmit(false);
               setDuplicatePrompt({
-                mode: "active",
+                mode,
                 duplicates: [
                   {
                     caseId,

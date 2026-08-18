@@ -4,6 +4,7 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // change-log:
+// - 2026-08-19: 진행중인 의뢰 목록에서 준비 단계 취소.
 // - 2026-08-19: description prop — 진행중인 의뢰 목록 안내 문구.
 // - 2026-08-18: 모달을 정책 안내와 같은 rounded-2xl·필터 카드 톤으로 정리.
 // - 2026-08-18: 지난 의뢰 기본에서 취소 제외(추적관리만).
@@ -33,6 +34,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
 import { formatImplantDisplay } from "@/utils/implant";
+import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 
 type ApiMyRequestsResponse = {
   success: boolean;
@@ -53,6 +55,12 @@ export type PastRequestsModalProps = {
   manufacturerStageIn?: string[];
   /** 열릴 때 기간 필터를 이 값으로 맞춘다(페이지 헤더 기간과 동기). */
   initialPeriod?: PeriodFilterValue;
+  /** 준비 단계 행에 취소 버튼을 표시 */
+  allowCancel?: boolean;
+  /** 취소 API. mongoId를 받아 성공 여부 반환 */
+  onCancelRequest?: (requestMongoId: string) => Promise<boolean>;
+  /** 취소 성공 후 건수 갱신 등 */
+  onCanceled?: () => void;
 };
 
 const DEFAULT_MANUFACTURER_STAGE_IN = ["추적관리"];
@@ -107,6 +115,9 @@ export const PastRequestsModal = ({
   onSelectRequest,
   manufacturerStageIn,
   initialPeriod,
+  allowCancel = false,
+  onCancelRequest,
+  onCanceled,
 }: PastRequestsModalProps) => {
   const { token } = useAuthStore();
   const { toast } = useToast();
@@ -133,6 +144,8 @@ export const PastRequestsModal = ({
   const [items, setItems] = useState<any[]>([]);
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(1);
+  const [cancelTarget, setCancelTarget] = useState<any | null>(null);
+  const [canceling, setCanceling] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
@@ -268,7 +281,33 @@ export const PastRequestsModal = ({
     });
   }, [items, q]);
 
+  const colSpan = allowCancel ? 6 : 5;
+
+  const handleConfirmCancel = async () => {
+    const mongoId = String(cancelTarget?._id || cancelTarget?.id || "").trim();
+    if (!mongoId || !onCancelRequest) {
+      setCancelTarget(null);
+      return;
+    }
+    setCanceling(true);
+    try {
+      const ok = await onCancelRequest(mongoId);
+      if (ok) {
+        setItems((prev) =>
+          prev.filter(
+            (row) => String(row?._id || row?.id || "") !== mongoId,
+          ),
+        );
+        setCancelTarget(null);
+        onCanceled?.();
+      }
+    } finally {
+      setCanceling(false);
+    }
+  };
+
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex h-[min(85vh,800px)] w-[92vw] max-w-4xl flex-col gap-0 overflow-hidden p-0 sm:rounded-2xl">
         <DialogHeader className="space-y-1.5 border-b border-slate-100 px-6 pb-4 pt-6 pr-12 text-left">
@@ -334,6 +373,9 @@ export const PastRequestsModal = ({
                   <TableHead className="min-w-[220px]">케이스</TableHead>
                   <TableHead className="min-w-[220px]">임플란트</TableHead>
                   <TableHead className="w-[160px]">의뢰번호</TableHead>
+                  {allowCancel ? (
+                    <TableHead className="w-[88px] text-right">취소</TableHead>
+                  ) : null}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -347,6 +389,7 @@ export const PastRequestsModal = ({
                       .join(" ") || "-";
                   const implantText = formatImplantDisplay(ci);
                   const requestId = String(r?.requestId || "-");
+                  const canCancelRow = allowCancel && stage === "준비";
                   return (
                     <TableRow
                       key={id || requestId}
@@ -364,6 +407,24 @@ export const PastRequestsModal = ({
                       <TableCell className="font-mono text-xs text-slate-800">
                         {requestId}
                       </TableCell>
+                      {allowCancel ? (
+                        <TableCell className="text-right">
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            size="sm"
+                            className="h-7 px-2 text-[11px]"
+                            disabled={!canCancelRow || canceling}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (!canCancelRow) return;
+                              setCancelTarget(r);
+                            }}
+                          >
+                            취소
+                          </Button>
+                        </TableCell>
+                      ) : null}
                     </TableRow>
                   );
                 })}
@@ -371,7 +432,7 @@ export const PastRequestsModal = ({
                 {loading && (
                   <TableRow>
                     <TableCell
-                      colSpan={5}
+                      colSpan={colSpan}
                       className="py-8 text-center text-sm text-slate-500"
                     >
                       불러오는 중...
@@ -382,7 +443,7 @@ export const PastRequestsModal = ({
                 {!loading && filteredRows.length === 0 && (
                   <TableRow>
                     <TableCell
-                      colSpan={5}
+                      colSpan={colSpan}
                       className="py-12 text-center text-sm text-slate-500"
                     >
                       조회 결과가 없습니다.
@@ -399,5 +460,17 @@ export const PastRequestsModal = ({
         </div>
       </DialogContent>
     </Dialog>
+    <ConfirmDialog
+      open={Boolean(cancelTarget)}
+      title="이 의뢰를 취소하시겠습니까?"
+      description="준비 단계 의뢰만 취소할 수 있습니다. 취소 후 크레딧은 정책에 따라 복구됩니다."
+      confirmLabel="의뢰 취소"
+      cancelLabel="닫기"
+      onConfirm={() => {
+        void handleConfirmCancel();
+      }}
+      onCancel={() => setCancelTarget(null)}
+    />
+    </>
   );
 };
