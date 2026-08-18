@@ -184,6 +184,7 @@ import {
 // - 2026-08-17: 치아카드 하단 복사 뱃지 드래그로 다른 치아에 형태·어벗·규격 복사(브리지 연결은 유지).
 // - 2026-08-17: 복사 뱃지 — 괄호 제거, 11px·primary soft pill.
 // - 2026-08-18: full 치식 카드 min-w·브리지 + 를 이음새에 겹쳐 어벗 라벨이 잘리지 않게.
+// - 2026-08-18: full 치식에서는 R/M/L 스크롤 버튼을 숨긴다.
 
 const PRACTICE_MEMO_SNIPPETS_LOCAL_KEY = "practice_transfer_memo_snippets_v1";
 const MAX_MEMO_SNIPPETS = 40;
@@ -2321,6 +2322,7 @@ export const PracticeTransferRequestIntakePanel = ({
             </Tooltip>
           </div>
 
+          {!showFullToothChart ? (
           <div className="absolute left-1/2 flex -translate-x-1/2 items-center gap-1">
               <Button
                 type="button"
@@ -2431,6 +2433,7 @@ export const PracticeTransferRequestIntakePanel = ({
                 L
               </Button>
             </div>
+          ) : null}
 
             <div className="absolute right-0 flex items-center gap-1.5">
               <Button
