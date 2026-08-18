@@ -11,6 +11,7 @@
 // - web/backend/models/ledgerLine.model.js
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
+// - 2026-08-18: rollbackPracticeTransferBilling — 멱등키 조회·저널 삭제를 병렬화.
 // - 2026-08-18: 기공소 공급 어벗은 전역 단가. 의뢰자별 특별가는 적용하지 않음.
 // - 2026-08-17: adjustPracticeTransferHold — 배송비 보류는 조정 대상에서 제외(fees.total과만 비교).
 // - 2026-08-17: 생성 시 배송비도 SPEND_HOLD. 출고 시 에스크로→매출 전환(재차감 없음).
@@ -3087,14 +3088,19 @@ export async function rollbackPracticeTransferBilling({
 
   const journalEventById = new Map();
 
-  for (const { key, events } of keys) {
-    const existing = await getJournalByIdempotencyKey({
-      idempotencyKey: key,
-      session: outerSession,
-    });
-    const jid = String(existing?.journalId || "").trim();
-    if (!jid) continue;
-    journalEventById.set(jid, events);
+  const foundKeys = await Promise.all(
+    keys.map(async ({ key, events }) => {
+      const existing = await getJournalByIdempotencyKey({
+        idempotencyKey: key,
+        session: outerSession,
+      });
+      const jid = String(existing?.journalId || "").trim();
+      return jid ? { jid, events } : null;
+    }),
+  );
+  for (const row of foundKeys) {
+    if (!row) continue;
+    journalEventById.set(row.jid, row.events);
   }
 
   // 키 누락·과거 포맷·디자인비 ADJUST 보강: refType+refId 스윕
@@ -3147,12 +3153,16 @@ export async function rollbackPracticeTransferBilling({
   let lastReason = "no_spend";
   const deletedJournalIds = [];
 
-  for (const [journalId, events] of journalEventById.entries()) {
-    const deleteResult = await deleteGeneralLedgerCommitJournal({
-      journalId,
-      expectedEventTypes: events,
-      session: outerSession,
-    });
+  const deleteResults = await Promise.all(
+    [...journalEventById.entries()].map(([journalId, events]) =>
+      deleteGeneralLedgerCommitJournal({
+        journalId,
+        expectedEventTypes: events,
+        session: outerSession,
+      }).then((deleteResult) => ({ journalId, deleteResult })),
+    ),
+  );
+  for (const { journalId, deleteResult } of deleteResults) {
     if (deleteResult?.deleted) {
       didRollback = true;
       lastReason = null;
@@ -3164,16 +3174,18 @@ export async function rollbackPracticeTransferBilling({
 
   if (didRollback) {
     const affectedAnchorIds = Object.keys(balanceRestoreByAnchor);
-    for (const anchorId of affectedAnchorIds) {
-      try {
-        await upsertBusinessCreditBalanceFromLedger({
-          businessAnchorId: anchorId,
-          session: outerSession,
-        });
-      } catch {
-        // best-effort cache; ledger lines are SSOT
-      }
-    }
+    await Promise.all(
+      affectedAnchorIds.map(async (anchorId) => {
+        try {
+          await upsertBusinessCreditBalanceFromLedger({
+            businessAnchorId: anchorId,
+            session: outerSession,
+          });
+        } catch {
+          // best-effort cache; ledger lines are SSOT
+        }
+      }),
+    );
 
     if (emitRealtime) {
       try {

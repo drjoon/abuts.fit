@@ -146,6 +146,7 @@ import { resolvePracticeTransferSkipJig } from "../../utils/practiceTransferLabS
 // - 2026-08-16: mark-release clearAutoMatchClaim — autoMatchBudget(선택 별점) 유지. 누락 시 평균가(3점) 폴백·다운그레이드 소실.
 // - 2026-08-16: mark-release 이미 해제면 200 멱등. 수신 목록 manufacturerStage는 stage SSOT.
 // - 2026-08-18: 수락 전 의뢰 내용 수정 POST /:transferId/update-content.
+// - 2026-08-18: update-content — 견적 입력이 같으면 크레딧 rollback+hold를 건너뛴다.
 const PRACTICE_TAGS = ["practice_dropzone", "practice_file_transfer"];
 const PRACTICE_ALLOWED_MODEL_EXTENSIONS = new Set([".stl", ".ply", ".obj"]);
 const PRACTICE_ALLOWED_IMAGE_EXTENSIONS = new Set([
@@ -160,6 +161,37 @@ const PRACTICE_ALLOWED_EXTENSIONS = new Set([
   ...PRACTICE_ALLOWED_MODEL_EXTENSIONS,
   ...PRACTICE_ALLOWED_IMAGE_EXTENSIONS,
 ]);
+
+const fingerprintToothWorks = (rows) => {
+  try {
+    const list = Array.isArray(rows) ? rows : [];
+    const parts = list.map((row) => {
+      const src =
+        row && typeof row === "object" && typeof row.toObject === "function"
+          ? row.toObject()
+          : row && typeof row === "object"
+            ? row
+            : {};
+      return [
+        String(src.toothNumber || src.tooth || "").trim(),
+        String(src.prosthesisType || src.type || "").trim(),
+        src.hasCustomAbutment || src.customAbutment ? "1" : "0",
+        String(src.abutmentProductMode || src.productMode || "").trim(),
+        String(src.implantManufacturer || src.manufacturer || "").trim(),
+        String(src.implantBrand || src.brand || "").trim(),
+        String(src.implantFamily || src.family || "").trim(),
+        String(src.implantType || "").trim(),
+        src.roundBar ? "1" : "0",
+        String(src.roundBarRequestId || "").trim(),
+        src.roundBarAdopted === true || src.adopted === true ? "1" : "0",
+      ].join("\t");
+    });
+    parts.sort();
+    return parts.join("\n");
+  } catch {
+    return "";
+  }
+};
 
 const unreadCountCacheKey = (scopeOrLabId) => {
   if (typeof scopeOrLabId === "string") {
@@ -2568,11 +2600,85 @@ export async function updatePracticeTransferContent(req, res) {
       });
     }
 
-    let autoMatchBudget = null;
-    let autoMatchEligibleLabAnchorIds = undefined;
-    let autoMatchPriorityLabAnchorIds = [];
+    const previousLabAnchorIdRaw = String(doc.targetLabAnchorId || "").trim();
+    const previousLabAnchorId = previousLabAnchorIdRaw || null;
+    const previousMatchingMode =
+      String(doc.matchingMode || "").trim() === "auto" ? "auto" : "direct";
+    const previousAutoMatch =
+      doc.autoMatch && typeof doc.autoMatch === "object" ? { ...doc.autoMatch } : {};
+    const previousBilling =
+      doc.billing && typeof doc.billing === "object" ? { ...doc.billing } : {};
+    const previousFiles = Array.isArray(doc.files) ? doc.files : [];
+    const previousToothWorks = Array.isArray(doc.toothWorks) ? doc.toothWorks : [];
+    const previousMemo = String(doc.transferMemo || "");
+    const previousTargetLabName = String(doc.targetLabName || "").trim();
+    const previousProduction =
+      doc.production && typeof doc.production === "object" ? { ...doc.production } : {};
+    const nextLabAnchorIdText =
+      matchingMode === "auto" ? "" : String(targetLabAnchorId || "").trim();
+    const labChanged =
+      previousMatchingMode !== matchingMode ||
+      previousLabAnchorIdRaw !== nextLabAnchorIdText;
+    const toothWorksChanged =
+      fingerprintToothWorks(toothWorksRaw) !==
+      fingerprintToothWorks(previousToothWorks);
+    const previousSkipJig = resolvePracticeTransferSkipJig(
+      previousToothWorks,
+      previousProduction.skipJig,
+    );
+    const skipJigChanged = Boolean(skipJig) !== Boolean(previousSkipJig);
+    const rushMultiplierChanged =
+      Number(rushFeeMultiplier || 1) !==
+      Number(previousBilling.rushFeeMultiplier || 1);
+    const billingInputsChanged =
+      labChanged || toothWorksChanged || skipJigChanged || rushMultiplierChanged;
+    const previousEligible = Array.isArray(previousAutoMatch.eligibleLabAnchorIds)
+      ? previousAutoMatch.eligibleLabAnchorIds
+          .map((id) => String(id || "").trim())
+          .filter(Boolean)
+      : [];
+    const previousBudget =
+      previousBilling.autoMatchBudget &&
+      typeof previousBilling.autoMatchBudget === "object"
+        ? previousBilling.autoMatchBudget
+        : null;
+    const storedStarMin = Number(
+      previousBudget?.stars ?? previousBudget?.minStars ?? Number.NaN,
+    );
+    const storedStarMax = Number(
+      previousBudget?.maxStars ?? storedStarMin,
+    );
+    const incomingStarMin =
+      req.body?.autoMatchMinLabRating != null
+        ? Number(req.body.autoMatchMinLabRating)
+        : Number.NaN;
+    const incomingStarMax =
+      req.body?.autoMatchMaxLabRating != null
+        ? Number(req.body.autoMatchMaxLabRating)
+        : Number.NaN;
+    const starBandChanged =
+      (Number.isFinite(incomingStarMin) &&
+        Number.isFinite(storedStarMin) &&
+        incomingStarMin !== storedStarMin) ||
+      (Number.isFinite(incomingStarMax) &&
+        Number.isFinite(storedStarMax) &&
+        incomingStarMax !== storedStarMax);
+    const reuseAutoEligibility =
+      matchingMode === "auto" &&
+      previousMatchingMode === "auto" &&
+      !toothWorksChanged &&
+      !starBandChanged &&
+      previousEligible.length > 0;
+
+    let autoMatchBudget = reuseAutoEligibility ? previousBudget : null;
+    let autoMatchEligibleLabAnchorIds = reuseAutoEligibility
+      ? previousAutoMatch.eligibleLabAnchorIds
+      : undefined;
+    let autoMatchPriorityLabAnchorIds = reuseAutoEligibility
+      ? previousAutoMatch.priorityLabAnchorIds || []
+      : [];
     let autoMatchCatalog = null;
-    if (matchingMode === "auto") {
+    if (matchingMode === "auto" && !reuseAutoEligibility) {
       const [practiceForBudget, catalog] = await Promise.all([
         BusinessAnchor.findById(practiceAnchorId)
           .select({
@@ -2618,77 +2724,69 @@ export async function updatePracticeTransferContent(req, res) {
           reason: "auto_match_no_eligible_labs",
         });
       }
+    } else if (matchingMode === "auto" && billingInputsChanged) {
+      autoMatchCatalog = await loadAutoMatchBudgetCatalog();
     }
 
-    const previousLabAnchorId = String(doc.targetLabAnchorId || "").trim() || null;
-    const previousMatchingMode =
-      String(doc.matchingMode || "").trim() === "auto" ? "auto" : "direct";
-    const previousAutoMatch =
-      doc.autoMatch && typeof doc.autoMatch === "object" ? { ...doc.autoMatch } : {};
-    const previousBilling =
-      doc.billing && typeof doc.billing === "object" ? { ...doc.billing } : {};
-    const previousFiles = Array.isArray(doc.files) ? doc.files : [];
-    const previousToothWorks = Array.isArray(doc.toothWorks) ? doc.toothWorks : [];
-    const previousMemo = String(doc.transferMemo || "");
-    const previousTargetLabName = String(doc.targetLabName || "").trim();
-    const previousProduction =
-      doc.production && typeof doc.production === "object" ? { ...doc.production } : {};
+    let feeQuote = null;
+    let billingPreview = previousBilling;
+    if (billingInputsChanged) {
+      try {
+        await rollbackPracticeTransferBilling({ transferId: doc._id });
+      } catch (rollbackErr) {
+        console.warn(
+          "[practiceTransfer] update-content billing rollback failed",
+          String(doc?._id || ""),
+          rollbackErr?.message || rollbackErr,
+        );
+      }
 
-    try {
-      await rollbackPracticeTransferBilling({ transferId: doc._id });
-    } catch (rollbackErr) {
-      console.warn(
-        "[practiceTransfer] update-content billing rollback failed",
-        String(doc?._id || ""),
-        rollbackErr?.message || rollbackErr,
-      );
-    }
+      try {
+        await assertPracticeTransferPaidCreditSufficient({
+          practiceAnchorId,
+          labAnchorId: targetLabAnchorId,
+          toothWorks: toothWorksRaw,
+          autoMatchBudget,
+          catalog: autoMatchCatalog,
+          rushFeeMultiplier,
+          skipJig,
+        });
+      } catch (creditErr) {
+        try {
+          await holdPracticeTransferCredits({
+            transfer: doc,
+            toothWorks: previousToothWorks,
+            holdAmount: Number(previousBilling?.total || 0),
+            holdLabAmount: Number(previousBilling?.labFeeTotal || 0),
+            holdAbutmentAmount: Number(previousBilling?.abutmentRetailTotal || 0),
+            actorUserId: req.user?._id,
+          });
+        } catch {
+          // ignore restore failure
+        }
+        const status = Number(creditErr?.statusCode || 500);
+        return res.status(status >= 400 && status < 600 ? status : 500).json({
+          success: false,
+          message:
+            creditErr?.message || "기공의뢰 수정 전 유료크레딧 확인에 실패했습니다.",
+          ...(creditErr?.payload || {}),
+        });
+      }
 
-    try {
-      await assertPracticeTransferPaidCreditSufficient({
+      feeQuote = await buildPracticeTransferQuote({
         practiceAnchorId,
         labAnchorId: targetLabAnchorId,
         toothWorks: toothWorksRaw,
+        matchingMode,
         autoMatchBudget,
         catalog: autoMatchCatalog,
         rushFeeMultiplier,
-        skipJig,
       });
-    } catch (creditErr) {
-      try {
-        await holdPracticeTransferCredits({
-          transfer: doc,
-          toothWorks: previousToothWorks,
-          holdAmount: Number(previousBilling?.total || 0),
-          holdLabAmount: Number(previousBilling?.labFeeTotal || 0),
-          holdAbutmentAmount: Number(previousBilling?.abutmentRetailTotal || 0),
-          actorUserId: req.user?._id,
-        });
-      } catch {
-        // ignore restore failure
-      }
-      const status = Number(creditErr?.statusCode || 500);
-      return res.status(status >= 400 && status < 600 ? status : 500).json({
-        success: false,
-        message:
-          creditErr?.message || "기공의뢰 수정 전 유료크레딧 확인에 실패했습니다.",
-        ...(creditErr?.payload || {}),
-      });
+      billingPreview = {
+        ...toBillingPreviewFields(feeQuote),
+        rushFeeMultiplier,
+      };
     }
-
-    const feeQuote = await buildPracticeTransferQuote({
-      practiceAnchorId,
-      labAnchorId: targetLabAnchorId,
-      toothWorks: toothWorksRaw,
-      matchingMode,
-      autoMatchBudget,
-      catalog: autoMatchCatalog,
-      rushFeeMultiplier,
-    });
-    const billingPreview = {
-      ...toBillingPreviewFields(feeQuote),
-      rushFeeMultiplier,
-    };
 
     const prevAuto =
       doc.autoMatch && typeof doc.autoMatch === "object" ? doc.autoMatch : {};
@@ -2755,39 +2853,42 @@ export async function updatePracticeTransferContent(req, res) {
       status: { $ne: "canceled" },
       requestorDownloadedAt: null,
     };
+    const nextSet = {
+      targetLabAnchorId,
+      targetLabName,
+      matchingMode,
+      autoMatch: nextAutoMatch,
+      transferMemo: transferMemoResolved,
+      tag: tag || doc.tag,
+      files,
+      toothWorks: toothWorksRaw,
+      production: nextProduction,
+      requestorReadAt: null,
+      requestorReadBy: null,
+    };
+    if (billingInputsChanged) {
+      nextSet.billing = billingPreview;
+    }
     const updated = await PracticeTransfer.findOneAndUpdate(
       pendingFilter,
-      {
-        $set: {
-          targetLabAnchorId,
-          targetLabName,
-          matchingMode,
-          autoMatch: nextAutoMatch,
-          transferMemo: transferMemoResolved,
-          tag: tag || doc.tag,
-          files,
-          toothWorks: toothWorksRaw,
-          billing: billingPreview,
-          production: nextProduction,
-          requestorReadAt: null,
-          requestorReadBy: null,
-        },
-      },
+      { $set: nextSet },
       { new: true },
     );
 
     if (!updated) {
-      try {
-        await holdPracticeTransferCredits({
-          transfer: doc,
-          toothWorks: previousToothWorks,
-          holdAmount: Number(previousBilling?.total || 0),
-          holdLabAmount: Number(previousBilling?.labFeeTotal || 0),
-          holdAbutmentAmount: Number(previousBilling?.abutmentRetailTotal || 0),
-          actorUserId: req.user?._id,
-        });
-      } catch {
-        // ignore
+      if (billingInputsChanged) {
+        try {
+          await holdPracticeTransferCredits({
+            transfer: doc,
+            toothWorks: previousToothWorks,
+            holdAmount: Number(previousBilling?.total || 0),
+            holdLabAmount: Number(previousBilling?.labFeeTotal || 0),
+            holdAbutmentAmount: Number(previousBilling?.abutmentRetailTotal || 0),
+            actorUserId: req.user?._id,
+          });
+        } catch {
+          // ignore
+        }
       }
       return res.status(409).json({
         success: false,
@@ -2797,7 +2898,8 @@ export async function updatePracticeTransferContent(req, res) {
       });
     }
 
-    updated.billing = billingPreview;
+    if (billingInputsChanged) {
+      updated.billing = billingPreview;
     try {
       const holdResult = await holdPracticeTransferCredits({
         transfer: updated,
@@ -2897,14 +2999,11 @@ export async function updatePracticeTransferContent(req, res) {
         ...(holdErr?.payload || {}),
       });
     }
+    }
 
-    const nextLabAnchorIdText = String(targetLabAnchorId || "").trim();
     if (previousLabAnchorId) invalidateUnreadCountCache(previousLabAnchorId);
     if (nextLabAnchorIdText) invalidateUnreadCountCache(nextLabAnchorIdText);
 
-    const labChanged =
-      previousMatchingMode !== matchingMode ||
-      previousLabAnchorId !== nextLabAnchorIdText;
     const manufacturerStage = resolvePracticeTransferManufacturerStage(updated);
     const transferId = String(updated.transferId || doc.transferId || "").trim();
     const realtimePayload = {

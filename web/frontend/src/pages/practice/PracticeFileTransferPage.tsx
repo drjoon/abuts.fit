@@ -85,6 +85,7 @@
  * - 2026-08-17: 리메이크=카드 Repeat 아이콘(툴팁)·단건 확인. 검색창 옆 선택 일괄 버튼 제거.
  * - 2026-08-16: 최근의뢰 카드=시각+상태 / 주문일 / 치과도착일 / 기공소 / 환자명(전송ID·파일·기간·메모 덤프 제거).
  * - 2026-08-18: 수락 전(의뢰) 전송건을 폼에 불러와 수정. 삭제 후 재작성 대체.
+ * - 2026-08-18: 의뢰 수정 저장 후 임시저장 목록 재조회를 기다리지 않음.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -5177,7 +5178,11 @@ export const PracticeFileTransferPage = ({
       // 전송 시 해당 draft만 서버에서 완전 삭제. 다른 임시저장·휴지통은 그대로.
       draftListSeqRef.current += 1;
       await resetIntakeFormAfterTransfer();
-      await loadPracticeTransferDraftList();
+      if (editing) {
+        void loadPracticeTransferDraftList();
+      } else {
+        await loadPracticeTransferDraftList();
+      }
 
       toast({
         title: editing ? "의뢰가 수정되었습니다" : "기공소 전송 완료",
