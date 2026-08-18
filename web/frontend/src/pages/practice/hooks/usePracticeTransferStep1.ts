@@ -13,6 +13,7 @@ import {
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/practice/practiceTransferAccept.ts
 // - web/frontend/rules.md (practice 최근 전송 기공소 SSOT)
+// - 2026-08-18: 치과 픽커 「자동 매칭」제거. 고정=어벗츠기공소, 최근=지정 기공소.
 export {
   PRACTICE_ACCEPTED_HINT,
 } from "@/shared/practice/practiceTransferAccept";
@@ -27,19 +28,25 @@ export type SearchBusinessResult = {
   requestorKind?: "practice" | "lab" | null;
 };
 
-/** 기공소 선택 — 서버가 검증 기공소 중 한 곳을 연결할 때 쓰는 센티널 */
+/** 레거시 자동매칭 센티널. 픽커에서는 제거되었고, draft 복원 시 어벗츠기공소로 승격한다. */
 export const AUTO_MATCH_LAB_ID = "__auto_match__";
 export const AUTO_MATCH_LAB_NAME = "자동 매칭";
-export const AUTO_MATCH_LAB_TOOLTIP =
-  "어벗츠 인증 기공소가 선착순으로 수락합니다. 치과·기공소 식별 정보는 비공개입니다.";
-export const AUTO_MATCH_LAB: SearchBusinessResult = {
-  _id: AUTO_MATCH_LAB_ID,
-  name: AUTO_MATCH_LAB_NAME,
+
+/** 드롭다운 「고정」상단 — 어벗츠 자체 기공소. 이력 없어도 항상 노출. */
+export const ABUTS_PINNED_LAB_NAME = "어벗츠기공소";
+export const ABUTS_PINNED_LAB_SEED: SearchBusinessResult = {
+  _id: `recent:${ABUTS_PINNED_LAB_NAME}`,
+  name: ABUTS_PINNED_LAB_NAME,
   businessType: "requestor",
+  requestorKind: "lab",
 };
 
+export const isPinnedAbutsRecentLab = (
+  lab?: { name?: string | null } | null,
+) => String(lab?.name || "").trim() === ABUTS_PINNED_LAB_NAME;
+
 /**
- * 자동매칭 센티널 여부.
+ * 레거시 자동매칭 센티널 여부.
  * 서버/임시저장 복원 시 anchor가 비어 `draft-lab:자동 매칭`으로 남을 수 있어
  * 예약 표시명도 함께 본다.
  */
@@ -52,7 +59,7 @@ export const isAutoMatchLab = (
   return String(lab?.name || "").trim() === AUTO_MATCH_LAB_NAME;
 };
 
-/** 복원 시 자동매칭이면 센티널로 정규화, 아니면 null(호출측에서 일반 기공소 구성) */
+/** 복원 시 레거시 자동매칭이면 어벗츠기공소로 승격, 아니면 null */
 export const coerceAutoMatchLab = (params: {
   labId?: string | null;
   labName?: string | null;
@@ -67,9 +74,19 @@ export const coerceAutoMatchLab = (params: {
     id === `draft-lab:${AUTO_MATCH_LAB_NAME}` ||
     name === AUTO_MATCH_LAB_NAME
   ) {
-    return AUTO_MATCH_LAB;
+    return ABUTS_PINNED_LAB_SEED;
   }
   return null;
+};
+
+/** 어벗츠 seed를 캐시된 실 앵커로 치환. */
+export const preferCachedAbutsLab = (
+  lab: SearchBusinessResult | null | undefined,
+  findCachedLab: (labId: string, labName: string) => SearchBusinessResult | undefined,
+): SearchBusinessResult | null => {
+  if (!lab) return null;
+  if (!isPinnedAbutsRecentLab(lab) && !isAutoMatchLab(lab)) return lab;
+  return findCachedLab("", ABUTS_PINNED_LAB_NAME) || ABUTS_PINNED_LAB_SEED;
 };
 
 type ClassifiedUploadBatch = {
@@ -96,14 +113,6 @@ const PRACTICE_RECENT_LABS_MAX = 8;
 /** 사용자가 고정한 기공소(어벗츠 제외). 「고정」 섹션. */
 const PRACTICE_PINNED_LABS_STORAGE_KEY = "practice_pinned_labs_v1";
 const PRACTICE_PINNED_LABS_MAX = 5;
-/** 최근 기공소 드롭다운 상단 고정(어벗츠 자체 기공소). 이력 없어도 항상 노출. */
-const ABUTS_PINNED_RECENT_LAB_NAME = "어벗츠기공소";
-const ABUTS_PINNED_RECENT_LAB_SEED: SearchBusinessResult = {
-  _id: `recent:${ABUTS_PINNED_RECENT_LAB_NAME}`,
-  name: ABUTS_PINNED_RECENT_LAB_NAME,
-  businessType: "requestor",
-  requestorKind: "lab",
-};
 
 const isRealRecentLabId = (id: string) => {
   const raw = String(id || "").trim();
@@ -231,14 +240,10 @@ const recentLabDedupeKey = (lab: SearchBusinessResult) => {
   return `name:${lab.name}|bn:${String(lab.businessNumber || "").trim()}`;
 };
 
-export const isPinnedAbutsRecentLab = (
-  lab?: { name?: string | null } | null,
-) => String(lab?.name || "").trim() === ABUTS_PINNED_RECENT_LAB_NAME;
-
 /**
- * 「최근」맨 위에 어벗츠기공소를 항상 둔다.
+ * 어벗츠기공소를 목록에 항상 둔다(드롭다운 「고정」용).
  * - 이력/검색에 있으면 실 _id 우선
- * - 없으면 seed로라도 노출(드롭다운 열 때마다 고정)
+ * - 없으면 seed로라도 노출
  */
 const ensureAbutsLabPinned = (
   labs: SearchBusinessResult[],
@@ -252,7 +257,7 @@ const ensureAbutsLabPinned = (
   const preferred =
     abuts.find((lab) => isRealRecentLabId(String(lab._id || ""))) ||
     abuts[0] ||
-    ABUTS_PINNED_RECENT_LAB_SEED;
+    ABUTS_PINNED_LAB_SEED;
   return [preferred, ...rest].slice(0, PRACTICE_RECENT_LABS_MAX);
 };
 
@@ -340,7 +345,7 @@ const buildDisplayPinnedLabs = (
   const abutsPreferred =
     abutsCandidates.find((lab) => isRealRecentLabId(String(lab._id || ""))) ||
     abutsCandidates[0] ||
-    ABUTS_PINNED_RECENT_LAB_SEED;
+    ABUTS_PINNED_LAB_SEED;
 
   const byKey = new Map<string, SearchBusinessResult>();
   for (const raw of userPinned) {
@@ -486,7 +491,7 @@ const resolveAbutsPinnedRecentLab = async (): Promise<SearchBusinessResult | nul
   const asPinned = (lab: SearchBusinessResult): SearchBusinessResult | null => {
     const normalized = normalizeRecentLab({
       ...lab,
-      name: ABUTS_PINNED_RECENT_LAB_NAME,
+      name: ABUTS_PINNED_LAB_NAME,
       businessType: "requestor",
       requestorKind: "lab",
     });
@@ -496,12 +501,12 @@ const resolveAbutsPinnedRecentLab = async (): Promise<SearchBusinessResult | nul
 
   try {
     const namedRes = await apiFetch<unknown>({
-      path: `/api/businesses/search-public?q=${encodeURIComponent(ABUTS_PINNED_RECENT_LAB_NAME)}&businessType=${encodeURIComponent("requestor")}&requestorKind=${encodeURIComponent("lab")}`,
+      path: `/api/businesses/search-public?q=${encodeURIComponent(ABUTS_PINNED_LAB_NAME)}&businessType=${encodeURIComponent("requestor")}&requestorKind=${encodeURIComponent("lab")}`,
       method: "GET",
     });
     if (namedRes.ok) {
       const exact = parseSearchBusinessResults(namedRes.data).find(
-        (row) => String(row.name || "").trim() === ABUTS_PINNED_RECENT_LAB_NAME,
+        (row) => String(row.name || "").trim() === ABUTS_PINNED_LAB_NAME,
       );
       const fromNamed = exact ? asPinned(exact) : null;
       if (fromNamed) return fromNamed;

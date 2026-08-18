@@ -149,11 +149,13 @@ import { type TempUploadedFile } from "@/shared/hooks/useS3TempUpload";
 import { useAuthStore } from "@/store/useAuthStore";
 import {
   PRACTICE_ACCEPTED_HINT,
-  AUTO_MATCH_LAB,
   coerceAutoMatchLab,
   getBusinessLabel,
   usePracticeTransferStep1,
   isAutoMatchLab,
+  isPinnedAbutsRecentLab,
+  preferCachedAbutsLab,
+  ABUTS_PINNED_LAB_SEED,
   type SearchBusinessResult,
 } from "@/pages/practice/hooks/usePracticeTransferStep1";
 import { useChatRooms, type ChatRoom } from "@/shared/hooks/useChatRooms";
@@ -1160,13 +1162,14 @@ export const PracticeFileTransferPage = ({
     syncRecentLabsFromTransfers,
   } = usePracticeTransferStep1();
 
-  // 임시저장/서버 echo가 `draft-lab:자동 매칭`으로 남기면 센티널로 되돌린다.
+  // 레거시 「자동 매칭」draft는 어벗츠기공소(고정)로 승격한다.
   useEffect(() => {
     if (!selectedLab) return;
     if (!isAutoMatchLab(selectedLab)) return;
-    if (String(selectedLab._id || "").trim() === AUTO_MATCH_LAB._id) return;
-    setSelectedLab(AUTO_MATCH_LAB);
-  }, [selectedLab, setSelectedLab]);
+    const abuts =
+      pinnedLabs.find((lab) => isPinnedAbutsRecentLab(lab)) || ABUTS_PINNED_LAB_SEED;
+    setSelectedLab(abuts);
+  }, [selectedLab, setSelectedLab, pinnedLabs]);
   pendingLocalFilesRef.current = files;
   draftFilesRef.current = draftFiles;
   activeDraftIdRef.current = activeDraftId;
@@ -1902,13 +1905,16 @@ export const PracticeFileTransferPage = ({
         // 서버 스냅샷이 비어 있으면 로컬/최근 기공소 캐시를 남기지 않는다.
         if (labName) {
           setSelectedLab((prev) => {
-            const coerced = coerceAutoMatchLab({
-              labId,
-              labName,
-              matchingMode:
-                (payload as { matchingMode?: string | null })?.matchingMode ??
-                null,
-            });
+            const coerced = preferCachedAbutsLab(
+              coerceAutoMatchLab({
+                labId,
+                labName,
+                matchingMode:
+                  (payload as { matchingMode?: string | null })?.matchingMode ??
+                  null,
+              }),
+              findCachedLab,
+            );
             if (coerced) return coerced;
             const fromRecent = findCachedLab(labId, labName);
             const samePrev =
@@ -2495,7 +2501,10 @@ export const PracticeFileTransferPage = ({
         const id = String(lab._id || "").trim();
         const name = String(lab.name || "").trim();
         if (id && name) {
-          const coerced = coerceAutoMatchLab({ labId: id, labName: name });
+          const coerced = preferCachedAbutsLab(
+            coerceAutoMatchLab({ labId: id, labName: name }),
+            findCachedLab,
+          );
           setSelectedLab(
             coerced || {
               _id: id,
@@ -2541,7 +2550,7 @@ export const PracticeFileTransferPage = ({
     } finally {
       setLocalFormHydrated(true);
     }
-  }, [setRequestMemo, setSelectedLab, todayDate]);
+  }, [findCachedLab, setRequestMemo, setSelectedLab, todayDate]);
 
   useEffect(() => {
     if (!localFormHydrated) return;
@@ -2557,23 +2566,18 @@ export const PracticeFileTransferPage = ({
       requestMemo,
       patientName,
       selectedLab: selectedLab
-        ? isAutoMatchLab(selectedLab)
-          ? {
-              _id: AUTO_MATCH_LAB._id,
-              name: AUTO_MATCH_LAB.name,
-              businessNumber: "",
-              representativeName: "",
-              address: "",
-              businessType: "requestor",
-            }
-          : {
-              _id: String(selectedLab._id || "").trim(),
-              name: String(selectedLab.name || "").trim(),
-              businessNumber: String(selectedLab.businessNumber || "").trim(),
-              representativeName: String(selectedLab.representativeName || "").trim(),
-              address: String(selectedLab.address || "").trim(),
-              businessType: String(selectedLab.businessType || "requestor").trim(),
-            }
+        ? {
+            _id: isAutoMatchLab(selectedLab)
+              ? String(ABUTS_PINNED_LAB_SEED._id)
+              : String(selectedLab._id || "").trim(),
+            name: isAutoMatchLab(selectedLab)
+              ? String(ABUTS_PINNED_LAB_SEED.name)
+              : String(selectedLab.name || "").trim(),
+            businessNumber: String(selectedLab.businessNumber || "").trim(),
+            representativeName: String(selectedLab.representativeName || "").trim(),
+            address: String(selectedLab.address || "").trim(),
+            businessType: String(selectedLab.businessType || "requestor").trim(),
+          }
         : null,
       toothWorks,
       expressStepId,
@@ -3363,11 +3367,14 @@ export const PracticeFileTransferPage = ({
 
       // 케이스에 기공소가 없으면 로컬/최근 기공소 캐시를 반드시 비운다.
       if (labName) {
-        const coerced = coerceAutoMatchLab({
-          labId,
-          labName,
-          matchingMode: (draft as { matchingMode?: string | null })?.matchingMode,
-        });
+        const coerced = preferCachedAbutsLab(
+          coerceAutoMatchLab({
+            labId,
+            labName,
+            matchingMode: (draft as { matchingMode?: string | null })?.matchingMode,
+          }),
+          findCachedLab,
+        );
         if (coerced) {
           setSelectedLab(coerced);
         } else {
@@ -3498,7 +3505,10 @@ export const PracticeFileTransferPage = ({
             requestMemo: String(parsed.memo || ""),
             patientName: nextPatientName,
             selectedLab: labName
-              ? coerceAutoMatchLab({ labId, labName }) || {
+              ? preferCachedAbutsLab(
+                  coerceAutoMatchLab({ labId, labName }),
+                  findCachedLab,
+                ) || {
                   _id:
                     (isMongoObjectIdString(labId) ? labId : "") ||
                     `draft-lab:${labName}`,

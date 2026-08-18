@@ -70,8 +70,7 @@ import {
 import { cn } from "@/shared/ui/cn";
 import { PracticeOrderArrivalDateRangeField } from "@/shared/components/practice/PracticeOrderArrivalDateRangeField";
 import {
-  AUTO_MATCH_LAB,
-  AUTO_MATCH_LAB_TOOLTIP,
+  ABUTS_PINNED_LAB_NAME,
   getBusinessLabel,
   isLabPinned,
   isPinnedAbutsRecentLab,
@@ -149,6 +148,7 @@ import {
 // - web/frontend/src/shared/components/practice/PracticeToothAbutmentFields.tsx
 // - web/frontend/src/shared/components/practice/PracticeCustomSpecsPresetEditDialog.tsx
 // - web/frontend/src/shared/pricing/abutsAbutmentService.ts
+// - 2026-08-18: 기공소 픽커에서 「자동 매칭」제거. 고정=어벗츠기공소, 최근=지정 기공소.
 // - 2026-08-16: 자동매칭 최소 별점 UI는「자동 매칭」선택 시에만(지정 기공소는 기공소 수가).
 // - 2026-08-13: 기공의뢰 모달=디자인+생산 고정(생산만→어벗생산의뢰). 어벗생산의뢰=생산만 고정(디자인+생산→기공의뢰).
 // - 2026-08-13: 생산·디자인+생산 단가를 creditSettings 멤버십/일반값으로 표시.
@@ -1944,7 +1944,7 @@ export const PracticeTransferRequestIntakePanel = ({
                 <span className="truncate">
                   {selectedLab
                     ? isAutoMatchLab(selectedLab)
-                      ? AUTO_MATCH_LAB.name
+                      ? ABUTS_PINNED_LAB_NAME
                       : getBusinessLabel(selectedLab)
                     : "기공소 선택"}
                 </span>
@@ -1961,46 +1961,6 @@ export const PracticeTransferRequestIntakePanel = ({
                   }}
                 />
                 <CommandList>
-                  <CommandGroup>
-                    <CommandItem
-                      value={`${AUTO_MATCH_LAB.name} 자동매칭 auto match`}
-                      onSelect={() => {
-                        setSelectedLab(AUTO_MATCH_LAB);
-                        setLabOpen(false);
-                      }}
-                      className="group items-start py-2.5"
-                    >
-                      <Check
-                        className={cn(
-                          "mr-2 mt-0.5 h-4 w-4 shrink-0",
-                          isAutoMatchLab(selectedLab)
-                            ? "opacity-100"
-                            : "opacity-0",
-                        )}
-                      />
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <div className="min-w-0 flex-1 text-left">
-                            <div className="truncate text-base font-medium">
-                              {AUTO_MATCH_LAB.name}
-                            </div>
-                            <div className="truncate text-sm text-muted-foreground group-data-[selected=true]:text-accent-foreground/85">
-                              {AUTO_MATCH_LAB_TOOLTIP}
-                            </div>
-                          </div>
-                        </TooltipTrigger>
-                        <TooltipContent
-                          side="right"
-                          className="max-w-xs text-xs"
-                        >
-                          <p>{AUTO_MATCH_LAB_TOOLTIP}</p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </CommandItem>
-                  </CommandGroup>
-
-                  <CommandSeparator />
-
                   {!recentLabsInitialized ? (
                     <div className="px-3 py-2 text-sm text-muted-foreground">불러오는 중...</div>
                   ) : null}

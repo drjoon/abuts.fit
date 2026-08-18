@@ -595,7 +595,7 @@ Notes:
   - 의뢰자 치과 페이지 상태 배지 기준: `src/pages/requestor/practice/RequestorPracticePage.tsx` (`isRead/requestorReadAt`, `isAccepted`/`requestorDownloadedAt`=의뢰수락)
     - 자동매칭 공개 풀 상세 열람만으로는 `mark-read`/사이드바 안읽음 배지를 내리지 않는다(수락 시 갱신).
   - 기공소 의뢰수락: 상세 다이얼로그 왼쪽 「전체 다운로드」, 오른쪽 「치과와의 소통」 중앙에 안내 문구+「수락」→ `POST .../mark-accepted`(과금). 파일 다운로드는 뱃지/과금과 무관. 작업완료/취소는 모달이 아니라 메인 카드에서. 수락 시 `practice:transfer-updated`(action=`accepted`, `feeQuote` 확정)로 치과 UI가「확정 기공비」를 즉시 표시.
-  - **자동매칭**: 치과에서 「자동 매칭」선택 → `matchingMode=auto` + 별점 하한·상한(기본 3~4)·플랫폼 고정수가. **인증 기공소** 중 수가 설정·유효 별점이 하한~상한인 곳만 `eligibleLabAnchorIds` 스냅샷으로 공개 풀 수신. 의뢰 시 기공비는 하한~상한 배수 구간 표시(수락 기공소 별점에 비례해 확정). 선착순 수락·「작업완료」(`mark-complete`)·「작업취소」(`mark-release`). 수락 후 강제 시간 만료 없음(치과 도착일·소통으로 처리). 성공 시 기공비의 `platformFeeRate`% 플랫폼 수수료. 표시명(치과·기공소)은 상대 비공개. 청구는 고정수가(할증 없음). UI: `PracticeTransferAutoMatchTab` (관리자 플랫폼 설정「인증 기공소」)
+  - **자동매칭(레거시)**: 치과 기공소 픽커의 「자동 매칭」항목은 제거. 신규 의뢰는 지정 기공소 또는 어벗츠기공소(고정). 기존 `matchingMode=auto` 건·공개 풀·우선창 엔진은 유지하되, 작성 UI에서는 쓰지 않는다. 레거시 draft는 어벗츠기공소로 복원. 표시명 마스킹·수신 뱃지 합산 규칙은 기존 건에 적용. UI: `PracticeTransferAutoMatchTab` (관리자 플랫폼 설정「인증 기공소」)
   - 기공소 수신 카드(상태=의뢰수락): 카드 점선 외곽 + 카드 스코프 `PracticeTransferFileDropTarget`(로컬드롭) · `[UploadCloud 작업완료]`(크라운 결과파일)·`[작업취소]`. **커스텀어벗 배송선택 모달 없음.** CA면 수락 시 Request(`design_custom_abutment`) 조기 생성. **수락 기공소가 디자인**해 상단 디자인 큐에서 STL 업로드 → 제조 자동 주문·어벗디자인비 지급. **생산 후 치과 직납**(출고 목표=치과도착일−2영업일). 레거시 미컨펌 건만 「어벗 디자인 확인」 CTA.
 
 
@@ -647,7 +647,7 @@ Notes:
 - practice 최근 전송 기공소(기공소 선택 드롭다운) SSOT:
   - 서버: `GET /api/practice/transfers/my` 응답의 `caseInfos.practiceRouting.targetLabAnchorId/targetLabName`(최신순)이 권위 소스.
   - 로컬 캐시: `localStorage.practice_recent_labs_v3` (최대 8개). 전송 성공 시 `rememberLab`, 목록 로드 시 `syncRecentLabsFromTransfers`로 merge.
-  - 사용자 고정: `localStorage.practice_pinned_labs_v1` (최대 5개, 어벗츠 제외). 드롭다운 「고정」= 어벗츠기공소(항상) + 사용자 pin. 「최근」에서는 pin·어벗츠를 제외. `togglePinLab`로 토글(어벗츠 해제 불가).
+  - 사용자 고정: `localStorage.practice_pinned_labs_v1` (최대 5개, 어벗츠 제외). 드롭다운 「고정」= 어벗츠기공소(항상) + 사용자 pin. 「최근」= 지정/최근 기공소(pin·어벗츠 제외). `togglePinLab`로 토글(어벗츠 해제 불가). 치과 픽커에서 「자동 매칭」항목은 제거. 레거시 자동매칭 draft는 어벗츠기공소로 복원.
   - 「새로 작성」은 의뢰 폼/임시저장 캐시만 비우고, 최근 기공소 목록은 드롭다운 후보로만 유지한다. 기공소 선택은 비워 다시 고르게 한다. 보철물 차트는 M(전치부) 위치로 되돌린다.
   - 기공의뢰 상단에는 수동 「임시 저장」버튼이 없다. 목록 반영은 기공소·환자명 입력 후 자동 동기화만 수행한다.
   - 기공의뢰 상단 툴바(Express/Expert 공통): 「새로 작성」·「최근 의뢰」·「임시저장」·「휴지통」. 최근 의뢰=전체보기 모달, 임시저장/휴지통=다이얼로그. Expert는 우측 목록 없이 작성 폼 전폭(치식 full 차트, 카드 min-w로 어벗 라벨 표시).

@@ -16,7 +16,7 @@ import {
   type PracticeTransferRequestIntakePanelProps,
 } from "@/shared/components/practice/PracticeTransferRequestIntakePanel";
 import {
-  AUTO_MATCH_LAB,
+  ABUTS_PINNED_LAB_NAME,
   getBusinessLabel,
   isAutoMatchLab,
 } from "@/pages/practice/hooks/usePracticeTransferStep1";
@@ -53,7 +53,7 @@ export const PRACTICE_TRANSFER_EXPRESS_STEPS: Array<{
   {
     id: "lab",
     title: "어디로 보낼까요?",
-    hint: "자주 쓰는 기공소를 고르거나, 자동 매칭을 선택하세요.",
+    hint: "자주 쓰는 기공소나 어벗츠기공소를 선택하세요.",
   },
   {
     id: "patient",
@@ -212,7 +212,7 @@ export function PracticeTransferExpressWizard({
   const isLast = stepIndex >= PRACTICE_TRANSFER_EXPRESS_STEPS.length - 1;
 
   const filesHint = oralScanRequired
-    ? "자동 매칭은 구강스캔 첨부가 필수입니다."
+    ? "구강스캔 첨부가 필수입니다."
     : stepMeta.hint;
 
   const stepIntakeProps = useMemo((): PracticeTransferRequestIntakePanelProps => {
@@ -558,6 +558,6 @@ export function resolveExpressLabLabel(
   selectedLab: PracticeTransferRequestIntakePanelProps["selectedLab"],
 ): string {
   if (!selectedLab) return "";
-  if (isAutoMatchLab(selectedLab)) return AUTO_MATCH_LAB.name;
+  if (isAutoMatchLab(selectedLab)) return ABUTS_PINNED_LAB_NAME;
   return getBusinessLabel(selectedLab);
 }
