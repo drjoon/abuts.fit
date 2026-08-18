@@ -65,8 +65,8 @@ grep -R "window.location.reload\|location.reload\|navigate(0)" web/frontend/src 
 -   제조사 준비 탭 라이노 완료: `request:stage-changed`(source=`bg-file-processed`) /
   `request:stl-metadata-updated`(source=`bg-file-processed:2-filled`) /
   notification `bg-file-processed`(step=`2-filled`) → `caseInfos.camFile.s3Key` 패치 후 카드 블러 해제.
-  재생성 완료면 IndexedDB 캐시 삭제 + 큐 요약 아래 `RegenerationCompleteAlerts`.
-  (`useWorksheetRealtimeStatus` + `WorksheetCardGrid` + `RegenerationCompleteAlerts`)
+  재생성 완료면 IndexedDB 캐시 삭제.
+  (`useWorksheetRealtimeStatus` + `WorksheetCardGrid`)
 - `src/pages/admin/credits/hooks/useAdminCreditPage.ts`
 - `src/pages/admin/AdminPaymentsPage.tsx`
 - `src/pages/admin/support/AdminBusinessRegistrationInquiryPage.tsx`

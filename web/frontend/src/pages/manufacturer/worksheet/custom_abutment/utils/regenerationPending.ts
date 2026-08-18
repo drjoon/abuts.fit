@@ -32,12 +32,3 @@ export function consumeNcRegenerationPending(requestId: unknown) {
   return true;
 }
 
-export function peekFilledStlRegenerationPending(requestId: unknown) {
-  const id = normalizeRequestId(requestId);
-  return Boolean(id && pendingFilled.has(id));
-}
-
-export function peekNcRegenerationPending(requestId: unknown) {
-  const id = normalizeRequestId(requestId);
-  return Boolean(id && pendingNc.has(id));
-}

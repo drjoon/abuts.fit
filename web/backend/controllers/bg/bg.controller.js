@@ -14,7 +14,6 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useWorksheetRealtimeStatus.ts
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/request.ts
-// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RegenerationCompleteAlerts.tsx
 // - web/frontend/src/shared/files/fileBlobCache.ts
 import { Types } from "mongoose";
 import s3Utils from "../../utils/s3.utils.js";

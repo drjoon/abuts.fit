@@ -10,15 +10,14 @@
 // - web/frontend/src/shared/realtime/useAppEventListener.ts
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/bg/bg.controller.js
-// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RegenerationCompleteAlerts.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/regenerationPending.ts
 // change-log:
-// - 2026-08-18: Filled STL/NC 재생성 완료 시 IndexedDB 캐시 삭제 + 큐 요약 아래 alert.
+// - 2026-08-18: Filled STL/NC 재생성 완료 상단 alert 제거. 캐시 삭제·pending consume은 유지.
+// - 2026-08-18: Filled STL/NC 재생성 완료 시 IndexedDB 캐시 삭제.
 import {
   useCallback,
   useEffect,
   useRef,
-  useState,
   type Dispatch,
   type MutableRefObject,
   type SetStateAction,
@@ -35,10 +34,7 @@ import { invalidateRequestPreviewCaches } from "@/shared/files/fileBlobCache";
 import {
   consumeFilledStlRegenerationPending,
   consumeNcRegenerationPending,
-  peekFilledStlRegenerationPending,
-  peekNcRegenerationPending,
 } from "../utils/regenerationPending";
-import type { RegenerationCompleteAlert } from "../components/RegenerationCompleteAlerts";
 import {
   deriveStageForFilter,
   type ManufacturerRequest,
@@ -89,10 +85,6 @@ export function useWorksheetRealtimeStatus({
 }: UseWorksheetRealtimeStatusParams) {
   const realtimeBaseRef = useRef<Record<string, number>>({});
   const startedToastShownRef = useRef<Record<string, number>>({});
-  const lastRegenAlertAtRef = useRef<Record<string, number>>({});
-  const [regenerationAlerts, setRegenerationAlerts] = useState<
-    RegenerationCompleteAlert[]
-  >([]);
   const latestRef = useRef({
     previewOpen,
     previewFiles,
@@ -126,70 +118,12 @@ export function useWorksheetRealtimeStatus({
     [toast],
   );
 
-  const dismissRegenerationAlert = useCallback((id: string) => {
-    setRegenerationAlerts((prev) => prev.filter((item) => item.id !== id));
-  }, []);
-
-  const pushRegenerationAlert = useCallback(
-    (
-      kind: "filled" | "nc",
-      requestId: string,
-      extras?: {
-        requestMongoId?: string;
-        clinicName?: string;
-        patientName?: string;
-        tooth?: string;
-        request?: ManufacturerRequest | null;
-        regenerated?: boolean;
-      },
-    ) => {
+  const consumeRegenerationPending = useCallback(
+    (kind: "filled" | "nc", requestId: string) => {
       const rid = String(requestId || "").trim();
       if (!rid) return;
-      const pending =
-        kind === "filled"
-          ? peekFilledStlRegenerationPending(rid)
-          : peekNcRegenerationPending(rid);
-      if (!pending && extras?.regenerated !== true) return;
-
-      const key = `${kind}:${rid}`;
-      const now = Date.now();
-      if (now - Number(lastRegenAlertAtRef.current[key] || 0) < 8000) return;
-      lastRegenAlertAtRef.current[key] = now;
       if (kind === "filled") consumeFilledStlRegenerationPending(rid);
       else consumeNcRegenerationPending(rid);
-
-      const eventReq = extras?.request || null;
-      const clinicName =
-        String(extras?.clinicName || eventReq?.caseInfos?.clinicName || "").trim() ||
-        undefined;
-      const patientName =
-        String(extras?.patientName || eventReq?.caseInfos?.patientName || "").trim() ||
-        undefined;
-      const tooth =
-        String(extras?.tooth || eventReq?.caseInfos?.tooth || "").trim() ||
-        undefined;
-      const requestMongoId =
-        String(extras?.requestMongoId || eventReq?._id || "").trim() || undefined;
-
-      setRegenerationAlerts((prev) => {
-        const next = prev.filter(
-          (item) => !(item.kind === kind && item.requestId === rid),
-        );
-        return [
-          {
-            id: `${key}:${now}`,
-            kind,
-            requestId: rid,
-            requestMongoId,
-            clinicName,
-            patientName,
-            tooth,
-            createdAt: now,
-            request: eventReq,
-          },
-          ...next,
-        ].slice(0, 8);
-      });
     },
     [],
   );
@@ -525,11 +459,7 @@ export function useWorksheetRealtimeStatus({
               localCamS3Key: camS3Key,
               localNcS3Key: ncS3Key,
             });
-            pushRegenerationAlert(kind, requestId, {
-              requestMongoId: String((eventRequest as any)?._id || "").trim(),
-              request: eventRequest || null,
-              regenerated: payload?.regenerated === true,
-            });
+            consumeRegenerationPending(kind, requestId);
           }
         }
         return;
@@ -567,11 +497,7 @@ export function useWorksheetRealtimeStatus({
             incomingS3Key: camS3Key,
             localCamS3Key: camS3Key,
           });
-          pushRegenerationAlert("filled", requestId, {
-            requestMongoId: String((eventRequest as any)?._id || "").trim(),
-            request: eventRequest || null,
-            regenerated: payload?.regenerated === true,
-          });
+          consumeRegenerationPending("filled", requestId);
         }
         return;
       }
@@ -722,7 +648,7 @@ export function useWorksheetRealtimeStatus({
     matchesCurrentPage,
     refreshOpenPreviewIfMatch,
     invalidateCachesForProcessedFile,
-    pushRegenerationAlert,
+    consumeRegenerationPending,
   ]);
 
   // 웹소켓 실시간 업데이트(app-event): 활성 페이지에서만 이벤트를 반영한다.
@@ -822,7 +748,6 @@ export function useWorksheetRealtimeStatus({
       const previousNcS3Key = String(
         notification?.data?.previousNcS3Key || "",
       ).trim();
-      const regenerated = notification?.data?.regenerated === true;
       const requestMongoId = String(
         notification?.data?.requestMongoId || "",
       ).trim();
@@ -968,17 +893,9 @@ export function useWorksheetRealtimeStatus({
           localCamS3Key,
           localNcS3Key,
         });
-        pushRegenerationAlert(
+        consumeRegenerationPending(
           sourceStep === "2-filled" ? "filled" : "nc",
           requestId,
-          {
-            requestMongoId,
-            clinicName: String(notification?.data?.clinicName || "").trim(),
-            patientName: String(notification?.data?.patientName || "").trim(),
-            tooth: String(notification?.data?.tooth || "").trim(),
-            request: foundRequest,
-            regenerated,
-          },
         );
       }
       if (shouldRefreshList && fetchRequests) {
@@ -1074,12 +991,10 @@ export function useWorksheetRealtimeStatus({
     toast,
     refreshOpenPreviewIfMatch,
     invalidateCachesForProcessedFile,
-    pushRegenerationAlert,
+    consumeRegenerationPending,
   ]);
 
   return {
     realtimeBaseRef,
-    regenerationAlerts,
-    dismissRegenerationAlert,
   };
 }
