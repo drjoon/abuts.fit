@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-18: 커스텀어벗 5열 금액이 잘리지 않도록 작업영역 max-w-7xl.
 // - 2026-08-17: 수익분배·사업영역은 별도「사업영역」메뉴(`/dashboard/partners`).
 // - 2026-08-18: 「매출 및 분배」→「커스텀어벗」탭 제목 복원.
 // - 2026-08-18: 「커스텀어벗」탭 →「매출 및 분배」.
@@ -169,6 +170,7 @@ export const AdminPlatformSettingsPage = () => {
     <SettingsScaffold
       tabs={tabs}
       activeTab={activeTab}
+      contentMaxClassName="max-w-7xl"
       onTabChange={(next) => {
         const nextParams = new URLSearchParams(searchParams);
         nextParams.set("tab", next);

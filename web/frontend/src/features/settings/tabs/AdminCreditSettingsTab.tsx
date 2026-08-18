@@ -986,7 +986,7 @@ function SalesAmountCard({
           type="number"
           min="0"
           step={AMOUNT_STEP}
-          className="h-11 rounded-xl border-slate-200 bg-slate-50/60 pr-10 text-right text-base font-semibold tabular-nums tracking-tight"
+          className="h-11 rounded-xl border-slate-200 bg-slate-50/60 pr-9 text-right text-base font-semibold tabular-nums tracking-tight [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
           value={value}
           disabled={disabled}
           onChange={(event) =>
@@ -1043,7 +1043,7 @@ function AmountField({
           type="number"
           min="0"
           step={step}
-          className="h-11 rounded-xl border-slate-200 bg-slate-50/60 pr-10 text-right text-base font-semibold tabular-nums tracking-tight"
+          className="h-11 rounded-xl border-slate-200 bg-slate-50/60 pr-9 text-right text-base font-semibold tabular-nums tracking-tight [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
           value={value}
           onChange={(e) => onChange(Math.max(0, Number(e.target.value)))}
           disabled={disabled}
