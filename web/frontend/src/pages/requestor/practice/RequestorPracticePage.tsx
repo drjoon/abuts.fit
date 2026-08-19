@@ -18,6 +18,7 @@
 // - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // - web/frontend/src/shared/components/practice/LabReceiveWorkUploadDialog.tsx
+// - 2026-08-19: 기공의뢰수신 — 안쪽 최외곽 Card 테두리 제거·패딩 축소.
 // - 2026-08-19: 기공의뢰수신 목록을 치과 최근의뢰와 같은 3주 캘린더로 표시.
 // - 2026-08-19: 수신 기간필터를 치과와 같이 30일/90일/이번달/지난달.
 // - 2026-08-19: 기공비 미설정 수락 — 빠진 수가명과 함께 설정 탭 포워드. API는 lab_fee_unconfigured.
@@ -4378,7 +4379,7 @@ export function RequestorPracticeReceivePage({
   );
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden p-4">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <DesignSoftwareSettingsDialog
         open={requestSettingsModalOpen}
         onOpenChange={handleRequestSettingsModalOpenChange}
@@ -4482,16 +4483,16 @@ export function RequestorPracticeReceivePage({
         ) : null}
 
         {showTransfers ? (
-          <Card className="flex min-h-0 flex-1 flex-col overflow-hidden">
-            <CardHeader className="shrink-0 space-y-3">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <div className="shrink-0 space-y-3 pb-3">
               {roleSwitcher ? (
                 <div className="flex flex-wrap items-center gap-3">{roleSwitcher}</div>
               ) : null}
               {transferSearchAndBadges}
-            </CardHeader>
-            <CardContent
+            </div>
+            <div
               className={cn(
-                "flex min-h-0 flex-1 flex-col overflow-hidden pt-0",
+                "flex min-h-0 flex-1 flex-col overflow-hidden",
                 showDesignQueue && "gap-4",
               )}
             >
@@ -4501,8 +4502,8 @@ export function RequestorPracticeReceivePage({
                 </div>
               ) : null}
               {transferListBody}
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         ) : null}
       </div>
 

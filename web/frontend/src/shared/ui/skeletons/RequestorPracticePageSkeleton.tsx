@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-19: 수신 스켈레톤 — 안쪽 외곽 카드 테두리 제거(본문과 동일).
 // - 2026-08-16: 수신 카드 스켈레톤 — 상태/치과 타이틀/칩 메타 계층에 맞춤.
 // - 2026-08-13: 수신 스켈레톤 상태 뱃지 5→6(취소 추가).
 // - 2026-08-13: 수신 스켈레톤 — 치과초대 제거·작업영역 카드 전체 높이.
@@ -99,10 +100,10 @@ const SendSkeleton = () => (
 );
 
 const ReceiveSkeleton = () => (
-  <div className="flex h-full min-h-0 flex-col overflow-hidden p-4">
+  <div className="flex h-full min-h-0 flex-col overflow-hidden">
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border bg-muted/30 p-4">
-        <div className="shrink-0 space-y-3 pb-4">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div className="shrink-0 space-y-3 pb-3">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <Skeleton className="h-8 w-44" />
             <Skeleton className="h-9 w-full md:max-w-md rounded-xl" />

@@ -9,7 +9,9 @@ import { apiFetch } from "@/shared/api/apiClient";
 import { toKstYmd } from "@/shared/date/kst";
 import { useToast } from "@/shared/hooks/use-toast";
 import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPath";
+import { cn } from "@/shared/ui/cn";
 
+// - 2026-08-19: 기공의뢰수신 작업영역 — 흰 카드 외곽·바깥 여백 제거해 캘린더를 넓게.
 // - 2026-08-19: 기공소 사이드 — 가입 이유 배너를 설정과 계정 팝업 사이.
 // - 2026-08-19: 기공소·어벗츠기공소 사이드 — 대시보드/대기보드 제거. 기공의뢰 그룹(수신·어벗생산의뢰).
 // - 2026-08-19: 펼친 사이드 메인 메뉴는 아이콘 왼쪽·라벨 가운데. 배지는 우측 고정. 라벨은 줄이지 않음.
@@ -1216,6 +1218,10 @@ export const DashboardLayout = () => {
     location.pathname.startsWith("/dashboard/printer");
   const isWorksheetRoute =
     isManufacturer && location.pathname.startsWith("/dashboard/worksheet");
+  const isLabReceiveWorkArea =
+    location.pathname.startsWith("/dashboard/lab-work") ||
+    (location.pathname.startsWith("/dashboard/practice-transfers") &&
+      requestorKind === "lab");
   const worksheetParams = new URLSearchParams(location.search);
   const worksheetType = worksheetParams.get("type") || "cnc";
   const worksheetStageRaw = worksheetParams.get("stage") || "request";
@@ -1794,8 +1800,20 @@ export const DashboardLayout = () => {
                 </div>
               ) : null}
               <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                <div className="flex h-full min-h-0 flex-col items-stretch p-2 sm:p-4 lg:p-6">
-                  <main className="flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-2xl bg-white/80 p-4 shadow-lg backdrop-blur-xl sm:p-6">
+                <div
+                  className={cn(
+                    "flex h-full min-h-0 flex-col items-stretch",
+                    isLabReceiveWorkArea ? "p-0" : "p-2 sm:p-4 lg:p-6",
+                  )}
+                >
+                  <main
+                    className={cn(
+                      "flex h-full min-h-0 flex-1 flex-col overflow-hidden",
+                      isLabReceiveWorkArea
+                        ? "rounded-none bg-white p-3 shadow-none sm:p-4"
+                        : "rounded-2xl bg-white/80 p-4 shadow-lg backdrop-blur-xl sm:p-6",
+                    )}
+                  >
                     <div
                       className="custom-scrollbar flex h-full min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden"
                       data-dashboard-scroll="1"
