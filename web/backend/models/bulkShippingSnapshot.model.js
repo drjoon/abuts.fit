@@ -2,6 +2,9 @@
 // - web/backend/rules.md
 // - web/backend/app.js
 // - web/backend/server.js
+// - web/backend/controllers/requests/shipping.Requestor.helpers.js
+// change-log:
+// - 2026-08-19: 출고예정 모달용 디자인SW·아노·생산모드·임플란트 스냅샷 필드.
 import mongoose from "mongoose";
 
 const bulkShippingSnapshotItemSchema = new mongoose.Schema(
@@ -32,6 +35,34 @@ const bulkShippingSnapshotItemSchema = new mongoose.Schema(
       default: "",
     },
     diameter: {
+      type: String,
+      default: "",
+    },
+    designSoftware: {
+      type: String,
+      default: "",
+    },
+    anodizingEnabled: {
+      type: Boolean,
+      default: null,
+    },
+    productMode: {
+      type: String,
+      default: "",
+    },
+    implantManufacturer: {
+      type: String,
+      default: "",
+    },
+    implantBrand: {
+      type: String,
+      default: "",
+    },
+    implantFamily: {
+      type: String,
+      default: "",
+    },
+    implantType: {
       type: String,
       default: "",
     },

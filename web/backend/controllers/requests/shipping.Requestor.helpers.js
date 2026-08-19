@@ -5,6 +5,9 @@
 // - web/backend/modules/requests/request.routes.js
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/requests/common.requests.controller.js
+// - web/backend/models/bulkShippingSnapshot.model.js
+// change-log:
+// - 2026-08-19: 출고예정 스냅샷에 디자인SW·아노·생산모드·임플란트·최종출고방식.
 import Request from "../../models/request.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import ShippingPackage from "../../models/shippingPackage.model.js";
@@ -689,7 +692,7 @@ async function buildBulkShippingCandidatesByFilter({ requestFilter }) {
     },
   })
     .select(
-      "requestId title manufacturerStage caseInfos shippingMode requestedShipDate createdAt productionSchedule",
+      "requestId title manufacturerStage caseInfos shippingMode finalShipping requestedShipDate createdAt productionSchedule",
     )
     .lean();
 
@@ -713,6 +716,11 @@ async function buildBulkShippingCandidatesByFilter({ requestFilter }) {
     const stageKey = normalizeRequestStage(r);
     const stageLabel = normalizeRequestStageLabel(r);
 
+    const shippingMode =
+      r.finalShipping?.mode === "express" || r.shippingMode === "express"
+        ? "express"
+        : "normal";
+
     return {
       id: r.requestId,
       mongoId: r._id,
@@ -721,10 +729,20 @@ async function buildBulkShippingCandidatesByFilter({ requestFilter }) {
       patient: ci.patientName || "",
       tooth: ci.tooth || "",
       diameter: maxDiameter,
+      designSoftware:
+        typeof ci.designSoftware === "string" ? ci.designSoftware.trim() : "",
+      anodizingEnabled:
+        typeof ci.anodizingEnabled === "boolean" ? ci.anodizingEnabled : null,
+      productMode:
+        typeof ci.productMode === "string" ? ci.productMode.trim() : "",
+      implantManufacturer: ci.implantManufacturer || "",
+      implantBrand: ci.implantBrand || "",
+      implantFamily: ci.implantFamily || "",
+      implantType: ci.implantType || "",
       stage: r.manufacturerStage,
       stageKey,
       stageLabel,
-      shippingMode: r.shippingMode || "normal",
+      shippingMode,
       requestedShipDate: r.requestedShipDate,
       estimatedShipYmd,
       originalEstimatedShipYmd,

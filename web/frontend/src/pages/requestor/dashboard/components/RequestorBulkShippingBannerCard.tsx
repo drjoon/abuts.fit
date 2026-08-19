@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-19: 출고예정 모달 — 진행중과 같은 가로폭, 신속 포함, 상태·출고·케이스 뱃지. 리드타임 안내 문구 제거.
 // - 2026-08-19: 헤더 버튼 라벨 [출고예정 x건]. 취소 후 스냅샷 갱신과 맞춤.
 // - 2026-08-18: 출고대기·리드타임·오늘출고 모달을 정책 안내와 같은 rounded-2xl 톤으로 정리.
 // - 2026-08-18: variant=headerButton — 치과 어벗디자인 헤더 [출고예정 x건].
@@ -13,6 +14,9 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/requestor/new_request/components/RequestorAbutmentPageHeader.tsx
+// - web/frontend/src/shared/shipping/ShippingModeBadge.tsx
+// - web/frontend/src/features/requestSettings/RequestCaseMetaBadges.tsx
+// - web/frontend/src/shared/components/PastRequestsModal.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Box, Clock, Info, Package, Zap } from "lucide-react";
@@ -32,6 +36,22 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
+import { RequestCaseMetaBadges } from "@/features/requestSettings/RequestCaseMetaBadges";
+import { formatImplantDisplay } from "@/utils/implant";
+import {
+  STAGE_BADGE_STYLES,
+  getProductModeBadgeClassName,
+} from "@/shared/ui/semanticStatus";
+import { PRODUCT_MODE } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
 import {
   Tooltip,
   TooltipContent,
@@ -171,6 +191,14 @@ type ShippingItemApi = {
   patient?: string;
   tooth?: string;
   diameter?: string;
+  designSoftware?: string | null;
+  anodizingEnabled?: boolean | null;
+  productMode?: string | null;
+  implantManufacturer?: string | null;
+  implantBrand?: string | null;
+  implantFamily?: string | null;
+  implantType?: string | null;
+  stage?: string;
   stageKey?: "request" | "cam" | "production" | "shipping" | "cancel";
   stageLabel?: string;
   shippingMode?: "normal" | "express";
@@ -180,6 +208,14 @@ type ShippingItemApi = {
   originalEstimatedShipYmd?: string | null;
   nextEstimatedShipYmd?: string | null;
   createdAt?: string | Date | null;
+};
+
+const STAGE_BADGE_BASE =
+  "text-[10px] h-5 px-1.5 whitespace-nowrap leading-none flex items-center justify-center";
+
+const PRODUCT_MODE_BADGE_LABEL: Record<string, string> = {
+  [PRODUCT_MODE.DESIGN_CUSTOM_ABUTMENT]: "디자인+생산",
+  [PRODUCT_MODE.CUSTOM_ABUTMENT]: "생산",
 };
 
 export const RequestorBulkShippingBannerCard = ({
@@ -453,9 +489,9 @@ export const RequestorBulkShippingBannerCard = ({
     return formatDateOnly(raw);
   };
 
-  const bulkGroups = (() => {
+  const waitingGroups = (() => {
     const map = new Map<string, ShippingItemApi[]>();
-    for (const it of bulkItems) {
+    for (const it of items) {
       const key = getEtaKey(it);
       const list = map.get(key) || [];
       list.push(it);
@@ -466,7 +502,15 @@ export const RequestorBulkShippingBannerCard = ({
       if (b === "-") return -1;
       return a.localeCompare(b);
     });
-    return keys.map((k) => ({ etaKey: k, items: map.get(k) || [] }));
+    return keys.map((k) => ({
+      etaKey: k,
+      items: (map.get(k) || []).slice().sort((a, b) => {
+        const modeA = (a.shippingMode || "normal") === "express" ? 0 : 1;
+        const modeB = (b.shippingMode || "normal") === "express" ? 0 : 1;
+        if (modeA !== modeB) return modeA - modeB;
+        return String(a.id || "").localeCompare(String(b.id || ""));
+      }),
+    }));
   })();
 
   const toggleSingleItem = async (item: ShippingItemApi) => {
@@ -817,7 +861,7 @@ export const RequestorBulkShippingBannerCard = ({
       </Dialog>
 
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent className="max-h-[85vh] max-w-3xl gap-0 overflow-hidden p-0 sm:rounded-2xl">
+        <DialogContent className="flex h-[min(85vh,800px)] w-[min(92vw,calc(100vw-4rem))] max-w-[min(92vw,1440px)] flex-col gap-0 overflow-hidden p-0 sm:rounded-2xl">
           <DialogHeader className="space-y-1.5 border-b border-slate-100 px-6 pb-4 pt-6 pr-12 text-left">
             <DialogTitle className="flex items-center gap-2 text-xl font-semibold tracking-tight text-slate-900">
               <Package className="h-5 w-5 text-primary" />
@@ -827,35 +871,15 @@ export const RequestorBulkShippingBannerCard = ({
               제조사 출고일이 잡힌 대기 의뢰를 예정일별로 확인합니다.
             </DialogDescription>
           </DialogHeader>
-          <div className="max-h-[calc(85vh-5.5rem)] space-y-4 overflow-y-auto px-6 py-5">
-            <p className="rounded-xl bg-slate-50 px-3.5 py-2.5 text-xs leading-relaxed text-slate-600">
-              {SHIP_OUT_INFO_MESSAGE}
-            </p>
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-5">
             {!isEtaReady ? (
-              <div className="space-y-4 py-2">
-                <div className="flex items-center justify-between gap-6">
-                  <div className="flex-1">
-                    <Skeleton className="h-5 w-24" />
-                    <div className="mt-4 space-y-2">
-                      <Skeleton className="h-16 w-full rounded-xl" />
-                      <Skeleton className="h-16 w-full rounded-xl" />
-                      <Skeleton className="h-16 w-full rounded-xl" />
-                    </div>
-                  </div>
-                  <div className="flex w-16 items-center justify-center">
-                    <Skeleton className="h-12 w-12 rounded-full" />
-                  </div>
-                  <div className="flex-1">
-                    <Skeleton className="h-5 w-24" />
-                    <div className="mt-4 space-y-2">
-                      <Skeleton className="h-16 w-full rounded-xl" />
-                      <Skeleton className="h-16 w-full rounded-xl" />
-                      <Skeleton className="h-16 w-full rounded-xl" />
-                    </div>
-                  </div>
-                </div>
+              <div className="space-y-3 py-2">
+                <Skeleton className="h-6 w-48" />
+                <Skeleton className="h-14 w-full rounded-xl" />
+                <Skeleton className="h-14 w-full rounded-xl" />
+                <Skeleton className="h-14 w-full rounded-xl" />
               </div>
-            ) : bulkItems.length === 0 ? (
+            ) : items.length === 0 ? (
               <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-6 py-12 text-center">
                 <Package className="mx-auto mb-3 h-10 w-10 text-slate-300" />
                 <p className="text-sm font-medium text-slate-700">
@@ -866,12 +890,12 @@ export const RequestorBulkShippingBannerCard = ({
                 </p>
               </div>
             ) : (
-              bulkGroups.map((group) => (
+              waitingGroups.map((group) => (
                 <section
                   key={group.etaKey}
-                  className="rounded-xl border border-slate-200/80 bg-white p-3.5"
+                  className="overflow-hidden rounded-xl border border-slate-200/80 bg-white"
                 >
-                  <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
+                  <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-3.5 py-2.5">
                     <div className="text-sm text-slate-700">
                       <span className="font-semibold text-slate-900">
                         출고 예정일
@@ -885,24 +909,97 @@ export const RequestorBulkShippingBannerCard = ({
                     </Badge>
                   </div>
 
-                  <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    {group.items.map((item) => (
-                      <div
-                        key={item.id}
-                        className="rounded-xl bg-slate-50 px-3 py-2.5"
-                      >
-                        <p className="truncate text-sm font-medium text-slate-900">
-                          {item.title || item.id}
-                        </p>
-                        <p className="truncate text-xs text-slate-600">
-                          {item.clinic || ""}
-                        </p>
-                        <p className="text-xs text-slate-500">
-                          {item.patient || "-"} / {item.tooth || "-"} /{" "}
-                          {item.diameter || "-"}
-                        </p>
-                      </div>
-                    ))}
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="hover:bg-transparent">
+                          <TableHead className="w-[90px]">상태</TableHead>
+                          <TableHead className="w-[88px]">출고</TableHead>
+                          <TableHead className="w-[92px]">유형</TableHead>
+                          <TableHead className="min-w-[240px]">케이스</TableHead>
+                          <TableHead className="min-w-[220px]">임플란트</TableHead>
+                          <TableHead className="w-[170px]">의뢰번호</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {group.items.map((item) => {
+                          const stageLabel =
+                            String(item.stageLabel || item.stage || "").trim() ||
+                            "-";
+                          const stageStyle =
+                            STAGE_BADGE_STYLES[stageLabel] || {
+                              variant: "outline" as const,
+                            };
+                          const productMode =
+                            item.productMode ===
+                            PRODUCT_MODE.DESIGN_CUSTOM_ABUTMENT
+                              ? PRODUCT_MODE.DESIGN_CUSTOM_ABUTMENT
+                              : item.productMode === PRODUCT_MODE.CUSTOM_ABUTMENT
+                                ? PRODUCT_MODE.CUSTOM_ABUTMENT
+                                : "";
+                          const caseText =
+                            [item.clinic, item.patient, item.tooth]
+                              .map((v) => String(v || "").trim())
+                              .filter(Boolean)
+                              .join(" ") || "-";
+                          const implantText = formatImplantDisplay(item);
+                          return (
+                            <TableRow key={item.id}>
+                              <TableCell>
+                                <Badge
+                                  variant={stageStyle.variant}
+                                  className={`${STAGE_BADGE_BASE} ${stageStyle.extra || ""}`.trim()}
+                                >
+                                  {stageLabel}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                <ShippingModeBadge
+                                  mode={item.shippingMode || "normal"}
+                                  size="sm"
+                                />
+                              </TableCell>
+                              <TableCell>
+                                {productMode ? (
+                                  <Badge
+                                    variant="outline"
+                                    className={`${STAGE_BADGE_BASE} ${getProductModeBadgeClassName(productMode)}`.trim()}
+                                  >
+                                    {PRODUCT_MODE_BADGE_LABEL[productMode]}
+                                  </Badge>
+                                ) : (
+                                  <span className="text-xs text-slate-400">-</span>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-xs text-slate-700">
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  <span>{caseText}</span>
+                                  {item.diameter ? (
+                                    <span className="inline-flex items-center rounded-md border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium leading-none text-slate-700">
+                                      {item.diameter}
+                                    </span>
+                                  ) : null}
+                                  <RequestCaseMetaBadges
+                                    designSoftware={item.designSoftware}
+                                    anodizingEnabled={
+                                      typeof item.anodizingEnabled === "boolean"
+                                        ? item.anodizingEnabled
+                                        : null
+                                    }
+                                  />
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-xs text-slate-700">
+                                {implantText}
+                              </TableCell>
+                              <TableCell className="font-mono text-xs text-slate-800">
+                                {item.title || item.id}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
                   </div>
                 </section>
               ))
