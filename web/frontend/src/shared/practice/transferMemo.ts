@@ -18,6 +18,7 @@
 // - 2026-08-13: 어벗 체크 시 임플란트·스캔바디 프리셋 필수. 미선택이면 전송 불가.
 // - 2026-08-13: 유지장치에 남은 커스텀 플래그는 프리셋 필수로 보지 않는다.
 // - 2026-08-19: 임시치아도 크라운·브리지처럼 커스텀어벗 체크·프리셋 필수.
+// - 2026-08-19: 임시치아 연결은 브리지처럼 Pontic·작업X를 섞을 수 있다. 동기화는 형태와 무관하게 커스텀 규격을 유지한다.
 export const ABUTMENT_PRODUCT_MODE = {
   PRODUCTION: "custom_abutment",
   DESIGN_AND_PRODUCTION: "design_custom_abutment",
@@ -572,6 +573,15 @@ export const isLinkableProsthesisType = (prosthesisType: string) =>
   isBridgeLikeProsthesisType(prosthesisType) ||
   isTemporaryToothProsthesisType(prosthesisType);
 
+/** 브리지 스팬 표시 축소에 넣는 형태(브리지·Pontic·작업X·유지장치·임시치아) */
+const isCollapsibleBridgeSpanType = (prosthesisType: string) =>
+  isBridgeLikeProsthesisType(prosthesisType) ||
+  isTemporaryToothProsthesisType(prosthesisType);
+
+/** 스팬에서 지대치로 보는 형태(브리지·임시치아). 안쪽 Pontic 생략 기준 */
+const isBridgeSpanAbutmentType = (prosthesisType: string) =>
+  prosthesisType === "브리지" || isTemporaryToothProsthesisType(prosthesisType);
+
 export const isAbutmentDesignProsthesisType = (prosthesisType: string) =>
   isCustomAbutmentProsthesisType(prosthesisType);
 
@@ -714,11 +724,10 @@ export const normalizeToothWorksForSync = (items: ToothWorkSelection[]) =>
       const prosthesisType = toCanonicalProsthesisType(
         String(row?.prosthesisType || "").trim() || (toothNumber ? "크라운" : ""),
       );
+      // 인레이·Pontic·작업X를 거쳐도 커스텀 규격을 잃지 않는다(전송 normalize와 분리).
       const customAbutment = isCustomAbutmentProsthesisType(prosthesisType)
         ? true
-        : isCustomAbutmentSupportedProsthesisType(prosthesisType)
-          ? Boolean(row?.customAbutment)
-          : false;
+        : Boolean(row?.customAbutment);
       const adjacent = getAdjacentTeeth(toothNumber);
       const bridgeLinkedTeeth =
         isLinkableProsthesisType(prosthesisType) && Array.isArray(row?.bridgeLinkedTeeth)
@@ -842,7 +851,7 @@ export const serializeToothWorksForSync = (rows: ToothWorkSelection[]) =>
           ? `(${[row.toothNumber, ...orderedLinks].join("-")})`
           : "";
       const custom =
-        isCustomAbutmentSupportedProsthesisType(prosthesisType) && row.customAbutment
+        (isCustomAbutmentProsthesisType(prosthesisType) || row.customAbutment)
           ? `${serializeCustomAbutmentToken(row)}${serializeCustomSpecsSuffix(row)}`
           : "";
       return `${toothToken}=${prosthesisType}${custom}${linked}`;
@@ -858,6 +867,8 @@ export const serializeToothWorksForSync = (rows: ToothWorkSelection[]) =>
  *
  * 예) 44(P)-43(브리지)-…-33(브리지)
  *  → 44 유지, 43 연결에 44와 33 포함
+ *
+ * 예) 43(임시치아)-42(P)-41(임시치아) 도 동일.
  */
 export const collapseInnerBridgePonticsForDisplay = (
   rows: ToothWorkSelection[],
@@ -871,7 +882,7 @@ export const collapseInnerBridgePonticsForDisplay = (
   }
 
   const bridgeLikeTeeth = normalized.filter((row) =>
-    isBridgeLikeProsthesisType(row.prosthesisType),
+    isCollapsibleBridgeSpanType(row.prosthesisType),
   );
   if (bridgeLikeTeeth.length === 0) return normalized;
 
@@ -885,7 +896,7 @@ export const collapseInnerBridgePonticsForDisplay = (
     ensure(row.toothNumber);
     for (const linked of row.bridgeLinkedTeeth) {
       if (!byTooth.has(linked)) continue;
-      if (!isBridgeLikeProsthesisType(byTooth.get(linked)!.prosthesisType)) continue;
+      if (!isCollapsibleBridgeSpanType(byTooth.get(linked)!.prosthesisType)) continue;
       ensure(row.toothNumber).add(linked);
       ensure(linked).add(row.toothNumber);
     }
@@ -940,7 +951,7 @@ export const collapseInnerBridgePonticsForDisplay = (
 
     const abutmentIndexes = ordered
       .map((tooth, idx) => ({ tooth, idx, type: byTooth.get(tooth)?.prosthesisType || "" }))
-      .filter((row) => row.type === "브리지")
+      .filter((row) => isBridgeSpanAbutmentType(row.type))
       .map((row) => row.idx);
 
     if (abutmentIndexes.length >= 2) {

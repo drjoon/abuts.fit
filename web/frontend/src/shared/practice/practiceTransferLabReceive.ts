@@ -13,6 +13,7 @@
 // - 2026-08-16: 생산 취소 시 confirmedAt·autoMatch.completed·manufacturerStage 클리어 →「의뢰수락」.
 // - 2026-08-15: 기공의뢰수신(어벗츠기공소·일반 lab) 카드 SSOT — 상태·CA 판정·타입.
 // - 2026-08-16: 자동매칭 재공개(openPool)는 workCanceledAt보다 우선 →「자동매칭」(수락 취소 후 수락 잔상 방지).
+// - 2026-08-19: 임시치아+Pontic 스팬 업로드 라벨은 임시치아.
 import {
   isBridgeLikeProsthesisType,
   isMissingToothProsthesisType,
@@ -405,7 +406,9 @@ export function listPracticeTransferProstheticUploadSlots(
       (t) => String(byTooth.get(t)?.prosthesisType || "").trim() === "브리지",
     )
       ? "브리지"
-      : primaryType || "브리지";
+      : teeth.some((t) => isTemporaryToothProsthesisType(String(byTooth.get(t)?.prosthesisType || "")))
+        ? "임시치아"
+        : primaryType || "브리지";
     const spanLabel =
       teeth.length > 1 ? `${teeth[0]}-${teeth[teeth.length - 1]}` : primary;
 

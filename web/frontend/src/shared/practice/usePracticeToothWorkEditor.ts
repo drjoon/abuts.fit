@@ -9,12 +9,14 @@ import { useMemo } from "react";
 // - 2026-08-13: 형태 클릭 순환은 커스텀 플래그·규격을 유지. 어벗 체크 해제만 지운다.
 // - 2026-08-13: 연결 형태 토글에 유지장치·임시치아 추가(단독 토글도 유지).
 // - 2026-08-13: 유지장치=브리지 계열(2치+). 임시치아=단독 1치부터 연결 n치.
-// - 2026-08-13: 연결 스팬의 유지장치·임시치아는 한쪽 변경 시 전체 동일 형태.
-// - 2026-08-13: 유지장치·임시치아 스팬 전환 시 커스텀어벗 플래그·규격은 유지. 브리지로 되돌리면 복구.
-// - 2026-08-14: 유지장치·임시치아 등 연결 전체 강제 변경 후 복귀 시, 클릭하지 않은 치아는 진입 직전 행 전체(형태·어벗·임플란트) 복원.
+// - 2026-08-13: 연결 스팬의 유지장치는 한쪽 변경 시 전체 동일 형태.
+// - 2026-08-19: 임시치아는 브리지처럼 치아별 Pontic·작업X. 연결 전체를 임시치아로 강제하지 않는다.
+// - 2026-08-13: 유지장치 스팬 전환 시 커스텀어벗 플래그·규격은 유지. 브리지로 되돌리면 복구.
+// - 2026-08-14: 유지장치 등 연결 전체 강제 변경 후 복귀 시, 클릭하지 않은 치아는 진입 직전 행 전체(형태·어벗·임플란트) 복원.
 // - 2026-08-13: 단독 순환(인레이↔크라운↔커스텀어벗↔임시치아)도 커스텀 플래그·규격을 유지.
 // - 2026-08-13: 클릭한 치아가 Pontic·작업X를 거쳐도 커스텀을 지우지 않는다.
 // - 2026-08-19: 임시치아도 크라운·브리지처럼 기존 커스텀 플래그·규격을 유지.
+// - 2026-08-19: 임시치아에서 브리지·Pontic 등으로 바꿔도 커스텀어벗을 초기화하지 않는다.
 
 export type { ToothWorkSelection } from "@/shared/practice/transferMemo";
 import {
@@ -237,12 +239,12 @@ export const applyProsthesisTypeToRow = (
   defaultAbutmentProductMode?: AbutmentProductMode,
 ): ToothWorkSelection => {
   const nextType = String(prosthesisType || "").trim();
+  const keepCustom =
+    Boolean(row.customAbutment) || isCustomAbutmentProsthesisType(row.prosthesisType);
   if (isCustomAbutmentProsthesisType(nextType)) {
-    const wasCustom =
-      row.customAbutment || isCustomAbutmentProsthesisType(row.prosthesisType);
     const abutmentProductMode = isAbutmentProductMode(row.abutmentProductMode)
       ? row.abutmentProductMode
-      : wasCustom
+      : keepCustom
         ? ABUTMENT_PRODUCT_MODE.PRODUCTION
         : normalizeAccountAbutmentProductMode(defaultAbutmentProductMode);
     return {
@@ -257,8 +259,8 @@ export const applyProsthesisTypeToRow = (
     nextType === "브리지" ||
     isTemporaryToothProsthesisType(nextType)
   ) {
-    if (row.customAbutment) {
-      return { ...row, prosthesisType: nextType };
+    if (keepCustom) {
+      return { ...row, prosthesisType: nextType, customAbutment: true };
     }
     return {
       ...row,
@@ -271,10 +273,9 @@ export const applyProsthesisTypeToRow = (
   return { ...row, prosthesisType: nextType };
 };
 
-/** 연결 스팬 전체가 같은 형태여야 하는 보철(유지장치·임시치아) */
+/** 연결 스팬 전체가 같은 형태여야 하는 보철(유지장치). 임시치아는 브리지처럼 치아별. */
 export const isSpanUniformProsthesisType = (prosthesisType: string) =>
-  isRetainerProsthesisType(prosthesisType) ||
-  isTemporaryToothProsthesisType(prosthesisType);
+  isRetainerProsthesisType(prosthesisType);
 
 /** 인접 연결로 이어진 치아 집합(자기 포함) */
 export const collectLinkedComponentTeeth = (
@@ -321,7 +322,7 @@ const cloneToothWorkRow = (row: ToothWorkSelection): ToothWorkSelection => ({
   bridgeLinkedTeeth: Array.isArray(row.bridgeLinkedTeeth) ? [...row.bridgeLinkedTeeth] : [],
 });
 
-/** 유지장치·임시치아 진입 직전 치아별 행. 키=치아번호 */
+/** 유지장치 진입 직전 치아별 행. 키=치아번호 */
 export type LinkedSpanProsthesisSnapshot = Record<string, ToothWorkSelection>;
 
 export const captureLinkedSpanProsthesisTypes = (
@@ -373,8 +374,8 @@ export const restoreLinkedSpanToothWorkRow = (
 
 /**
  * 연결 스팬 형태 순환.
- * 유지장치·임시치아처럼 연결 전체가 강제 변경되면 치아별 행을 스냅샷하고,
- * 브리지/Pontic/작업X로 나오면 클릭한 치아만 nextType, 나머지는 진입 직전 내용 복원.
+ * 유지장치처럼 연결 전체가 강제 변경되면 치아별 행을 스냅샷하고,
+ * 브리지/Pontic/작업X/임시치아로 나오면 클릭한 치아만 nextType, 나머지는 진입 직전 내용 복원.
  */
 export const applyCycledLinkedSpanProsthesisType = (
   rows: ToothWorkSelection[],
@@ -458,7 +459,7 @@ export const applyCycledLinkedSpanProsthesisType = (
   };
 };
 
-/** 인접 치아 체크 토글: 양방향 연결 + 연결 여부에 맞게 형태(브리지/Pontic/작업X/유지장치 vs 인레이/크라운/커스텀어벗, 임시치아는 양쪽) 동기화 */
+/** 인접 치아 체크 토글: 양방향 연결 + 연결 여부에 맞게 형태(브리지/Pontic/작업X/유지장치/임시치아 vs 인레이/크라운/커스텀어벗) 동기화 */
 export const toggleAdjacentBridgeLink = (
   rows: ToothWorkSelection[],
   originalIndex: number,
@@ -516,7 +517,9 @@ export const toggleAdjacentBridgeLink = (
     } else {
       next.push({
         toothNumber: adjTooth,
-        prosthesisType: resolveProsthesisTypeForLinkState("", true, catalog, false),
+        prosthesisType: isTemporaryToothProsthesisType(currentType)
+          ? currentType
+          : resolveProsthesisTypeForLinkState("", true, catalog, false),
         customAbutment: false,
         bridgeLinkedTeeth: currentTooth ? [currentTooth] : [],
         ...emptyToothWorkCustomSpecs(),

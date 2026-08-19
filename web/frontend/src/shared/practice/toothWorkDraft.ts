@@ -3,6 +3,7 @@
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/shared/practice/transferMemo.ts
 // - 2026-08-13: 유지장치·임시치아 연결도 드래프트에서 복원(isLinkableProsthesisType).
+// - 2026-08-19: 임시치아에서 다른 형태로 바꿔도 커스텀어벗 플래그·규격을 유지한다.
 
 import {
   isLinkableProsthesisType,
@@ -41,9 +42,7 @@ export const restoreToothWorksFromDraft = (
       String(prosthesisType || "").replace(/\s+/g, ""),
     )
       ? true
-      : options.isCustomAbutmentSupportedProsthesisType(prosthesisType)
-        ? Boolean(row.customAbutment)
-        : false;
+      : Boolean(row.customAbutment);
 
     const adjacent = options.getAdjacentTeeth(toothNumber);
     const bridgeLinkedTeeth =
