@@ -11,7 +11,7 @@
 // - web/backend/models/ledgerLine.model.js
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
-// - 2026-08-19: 견적 표시 — 하청 후 원청(기공사업부)은 전액 수주(수수료 0), 하청은 subcontractFeeRate.
+// - 2026-08-19: 목록 feeQuote에 labFeeConfigured 전달(지정 수가 Off=미설정).
 // - 2026-08-18: rollbackPracticeTransferBilling — 멱등키 조회·저널 삭제를 병렬화.
 // - 2026-08-18: 기공소 공급 어벗은 전역 단가. 의뢰자별 특별가는 적용하지 않음.
 // - 2026-08-17: adjustPracticeTransferHold — 배송비 보류는 조정 대상에서 제외(fees.total과만 비교).
@@ -3269,6 +3269,9 @@ export function toFeeQuoteApi(quote) {
     labTradingPartnerId: quote?.labTradingPartnerId || null,
     billed,
     usedDefaultSchedule: Boolean(quote?.usedDefaultSchedule),
+    labFeeConfigured: Boolean(quote?.usedDefaultSchedule)
+      ? true
+      : quote?.labFeeConfigured !== false,
     isRemake: Boolean(quote?.isRemake || quote?.remake),
     autoMatchBudget: billed
       ? null
@@ -3888,6 +3891,10 @@ export async function buildFeeQuotesForTransferDocs({
       labTradingPartnerId: partner?._id ? String(partner._id) : null,
       billed: false,
       usedDefaultSchedule: useAutoFixedFee || !quoteLabId,
+      labFeeConfigured:
+        useAutoFixedFee || !quoteLabId
+          ? true
+          : isLabFeeScheduleConfigured(schedule),
       isRemake: true,
       autoMatchBudget: autoMatchBudgetOut,
     });
@@ -3971,6 +3978,10 @@ export async function buildFeeQuotesForTransferDocs({
           labTradingPartnerId: partner?._id ? String(partner._id) : null,
           billed: false,
           usedDefaultSchedule: useAutoFixedFee || !quoteLabId,
+          labFeeConfigured:
+            useAutoFixedFee || !quoteLabId
+              ? true
+              : isLabFeeScheduleConfigured(schedule),
           isRemake: remake,
           autoMatchBudget: autoMatchBudgetOut,
         }),

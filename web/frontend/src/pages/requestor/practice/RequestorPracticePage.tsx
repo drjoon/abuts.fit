@@ -17,7 +17,7 @@
 // - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // - web/frontend/src/shared/components/practice/LabReceiveWorkUploadDialog.tsx
-// - 2026-08-16: 보철 — 위치 확정되면 지정 다이얼로그 생략·바로 저장/완료. 초과 시 슬롯 라벨 안내.
+// - 2026-08-19: 기공비 미설정 수락 — 설정 탭 포워드(`from=accept`). API는 lab_fee_unconfigured.
 // - 2026-08-16: 어벗·보철 — 프리뷰 치아 지정·백그라운드 preUpload·분할 업로드.
 // - 2026-08-16: 어벗은 3D 확인 모달에서 치아 지정(중간 지정 다이얼로그 생략).
 // - 2026-08-16: 다파일 어벗 드롭 — 파일명 AI로 치아번호 확인 후 의뢰 매칭.
@@ -184,6 +184,11 @@ import {
 } from "@/shared/practice/practiceTransferLabReceive";
 import { getPracticeTransferFileExtension } from "@/shared/practice/practiceTransferAccept";
 import { resolvePracticeTransferListPatientName } from "@/shared/components/practice/PracticeRecentTransferListCardDetail";
+import {
+  LAB_FEE_SETTINGS_FROM_ACCEPT_PATH,
+  LAB_FEE_UNCONFIGURED_REASON,
+  readLabFeeScheduleConfigured,
+} from "@/features/settings/LabFeeSetupPrompt";
 import type { ReactNode } from "react";
 
 type AbutmentPendingMeta = {
@@ -372,6 +377,7 @@ export function RequestorPracticeReceivePage({
 }) {
   const token = useAuthStore((s) => s.token);
   const user = useAuthStore((s) => s.user);
+  const navigate = useNavigate();
   const { period, setPeriod } = usePeriodStore();
   const { toast } = useToast();
   const {
@@ -1657,6 +1663,23 @@ export function RequestorPracticeReceivePage({
         return false;
       }
 
+      const feeScheduleRes = await apiFetch<{
+        data?: { configured?: boolean; active?: boolean };
+        configured?: boolean;
+        active?: boolean;
+      }>({
+        path: "/api/lab-trading-partners/fee-schedule",
+        method: "GET",
+        token,
+      });
+      if (
+        feeScheduleRes.ok &&
+        readLabFeeScheduleConfigured(feeScheduleRes.data) === false
+      ) {
+        navigate(LAB_FEE_SETTINGS_FROM_ACCEPT_PATH);
+        return false;
+      }
+
       const isOpenPool =
         transfer.matchingMode === "auto" && Boolean(transfer.autoMatch?.openPool);
       const fileCount = transfer.files?.length || transfer.fileCount || 0;
@@ -1766,7 +1789,9 @@ export function RequestorPracticeReceivePage({
                 ),
                 variant: "destructive",
               });
-              if (String(body.message || "").includes("다른 기공소")) {
+              if (String(body.reason || "") === LAB_FEE_UNCONFIGURED_REASON) {
+                navigate(LAB_FEE_SETTINGS_FROM_ACCEPT_PATH);
+              } else if (String(body.message || "").includes("다른 기공소")) {
                 void loadFirstPage({ silent: true });
               }
               return;
@@ -1920,6 +1945,7 @@ export function RequestorPracticeReceivePage({
       emitUnreadBadgeRefresh,
       loadFirstPage,
       mergeProductionRelatedRequestIds,
+      navigate,
       openDesignSoftwareModal,
       pickRelatedRequestIdsFromPayload,
       settingsComplete,

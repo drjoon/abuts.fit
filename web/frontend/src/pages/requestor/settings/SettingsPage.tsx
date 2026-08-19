@@ -31,7 +31,7 @@ import { InternalLabOrgBanner } from "@/features/settings/InternalLabOrgBanner";
 // 2026-08-19: 90일 런칭가 폐지. 가입일시·경과일만 표시.
 // 2026-08-11: 설정 결제 탭 제거 → 사이드바 크레딧(`/dashboard/credits`)로 이전.
 // 2026-08-11: 설정 의뢰 탭 제거 → 어벗의뢰 좌측 상단(디자인소프트웨어·아노다이징).
-// 2026-08-13: 기공비 마스터 Off면 로그인 후 `?tab=lab-fees&setup=1`로 유도(LabFeeSetupPrompt).
+// 2026-08-19: 수락 클릭 시 기공비 미설정이면 `from=accept` 안내 모달.
 // 2026-08-19: 「어벗츠 인증」탭 제거. 구 `?tab=auto-match`·`trading-partners` → 계정.
 // 2026-08-14: 「치과 등록」탭 제거 → 「자동 매칭 참여」.
 // 2026-08-11: 기공소 전용 「치과 등록」「기공비」탭(알림 왼쪽).

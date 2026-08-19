@@ -6,7 +6,7 @@
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - web/frontend/src/features/settings/tabs/AdminCreditSettingsTab.tsx
 // - 2026-08-14: 하단 저장 버튼 제거. 항목 변경은 디바운스 자동 저장. 마스터 스위치는 즉시 저장.
-// - 2026-08-13: 마스터 On/Off(기본 off). 켜면 설정 완료. 모달 진입 시 스위치 하이라이트.
+// - 2026-08-19: 수락 클릭 시 `from=accept` 포워드 모달(LabFeeSetupPrompt).
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {

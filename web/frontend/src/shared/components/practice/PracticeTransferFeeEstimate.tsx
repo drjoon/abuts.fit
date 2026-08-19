@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/practice/practiceTransferFeeQuote.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/components/practice/PracticeToothWorkChartReadOnly.tsx
+// - 2026-08-19: 지정 기공소 수가 Off — 바에「기공비 미설정」(0원 금지). 어벗 단가는 유지.
 // - 2026-08-19: 견적 열 보철기공비|어벗 디자인+생산비. 둘 다 기공비. 기공소몫/어벗츠몫 헤더·구분선 제거.
 // - 2026-08-17: 크레딧 상세 — 지급완료/지급보류를 기공소몫·어벗츠몫 헤더 옆에 표시.
 // - 2026-08-17: mode=detail — 호버 없이 견적 상세 표(크레딧 장부 모달용).
@@ -572,7 +573,7 @@ export function PracticeTransferFeeEstimate({
     : quote.isRemake
       ? `리메이크 기공비 ${formatManWon(quote.total || quote.labFeeTotal)}`
       : null;
-  const labFeeUnset = !isLab && quote.labFeeConfigured === false;
+  const labFeeUnset = quote.labFeeConfigured === false;
   /** 기공소만: 생성 스냅샷 배수. 치과 견적에는 표기하지 않음 */
   const surchargeLabel =
     isLab && normalizeLabFeeMultiplier(quote.labFeeMultiplier) > 1
@@ -651,14 +652,21 @@ export function PracticeTransferFeeEstimate({
         : "배송비(주문 시 보류 · 박스당)"
     : "배송비(주문 시 보류 · 박스당)";
 
+  const abutmentOnlyAmount =
+    abutmentFromBreakdown > 0
+      ? abutmentFromBreakdown
+      : Math.max(0, Math.round(Number(quote.abutmentRetailTotal || 0)));
+
   const breakdownPanel = (
     <>
       {labFeeUnset ? (
         <p className="text-muted-foreground">
-          기공소에서 아직 기공료를 설정하지 않았습니다. 기공소에
-          문의해주세요.
+          {isLab
+            ? "기공비를 설정해야 의뢰를 수락할 수 있습니다."
+            : "기공소에서 아직 기공비를 설정하지 않았습니다. 기공소에 문의해주세요."}
         </p>
-      ) : breakdownLines.length > 0 ? (
+      ) : null}
+      {breakdownLines.length > 0 ? (
         <div className="space-y-1.5">
           <FeeBreakdownTable
             lines={breakdownLines}
@@ -719,7 +727,7 @@ export function PracticeTransferFeeEstimate({
             기공소 별점에 비례해 확정·청구됩니다.
           </p>
         </div>
-      ) : (
+      ) : labFeeUnset ? null : (
         <p className="text-muted-foreground">선택된 보철물이 없습니다.</p>
       )}
       {surchargeLabel ? (
@@ -758,7 +766,7 @@ export function PracticeTransferFeeEstimate({
           ) : null}
         </div>
       ) : null}
-      {!isLab && !(labFeeUnset && quote.total <= 0) ? (
+      {!isLab && (quote.total > 0 || shippingTotal > 0) ? (
         <p className="mt-1.5 border-t border-foreground/15 pt-1.5 font-medium tabular-nums">
           {hasBudgetRange
             ? `크레딧 소비 ${formatWonRange(
@@ -802,7 +810,9 @@ export function PracticeTransferFeeEstimate({
           className,
         )}
         role="note"
-        title={!isLab ? "마우스를 올리면 금액이 보입니다" : undefined}
+        title={
+          !isLab && !labFeeUnset ? "마우스를 올리면 금액이 보입니다" : undefined
+        }
         onClick={isCard ? (event) => event.stopPropagation() : undefined}
         onKeyDown={isCard ? (event) => event.stopPropagation() : undefined}
       >
@@ -816,6 +826,7 @@ export function PracticeTransferFeeEstimate({
                     ? "flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-sm"
                     : "",
                   !isLab &&
+                    !labFeeUnset &&
                     "select-none blur-[8px] transition-[filter] duration-150 group-hover:select-text group-hover:blur-none group-focus-within:select-text group-focus-within:blur-none",
                 )}
               >
@@ -825,10 +836,24 @@ export function PracticeTransferFeeEstimate({
                     isCard ? "text-sm" : "text-sm sm:text-base",
                   )}
                 >
-                  <span className="font-medium text-slate-600">{title} </span>
-                  {hasBudgetRange && !isLab
-                    ? formatWonRange(creditMin, amount)
-                    : formatManWon(amount)}
+                  {labFeeUnset ? (
+                    <>
+                      <span className="font-medium text-slate-600">기공비 </span>
+                      <span className="text-accent-strong">미설정</span>
+                      {abutmentOnlyAmount > 0 ? (
+                        <span className="ml-1.5 font-semibold tabular-nums text-slate-800">
+                          · 어벗 디자인+생산비 {formatManWon(abutmentOnlyAmount)}
+                        </span>
+                      ) : null}
+                    </>
+                  ) : (
+                    <>
+                      <span className="font-medium text-slate-600">{title} </span>
+                      {hasBudgetRange && !isLab
+                        ? formatWonRange(creditMin, amount)
+                        : formatManWon(amount)}
+                    </>
+                  )}
                   {surchargeLabel ? (
                     <span className="ml-1.5 text-[11px] font-medium text-amber-700">
                       {surchargeLabel}

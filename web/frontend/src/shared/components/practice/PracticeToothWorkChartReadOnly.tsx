@@ -2,7 +2,7 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // - web/frontend/src/shared/practice/transferMemo.ts
-// - 2026-08-18: full 치식 카드 min-w·브리지 슬롯 축소로 라벨이 잘리지 않게.
+// - 2026-08-19: 수가 Off면 live quote-context로 기공비 미설정·어벗 단가 표시.
 import { useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -140,7 +140,10 @@ export const PracticeToothWorkChartReadOnly = ({
 
   const selectedTeeth = useMemo(() => new Set(byTooth.keys()), [byTooth]);
   const { quote: feeQuote } = usePracticeTransferFeeQuote({
-    enabled: !storedFeeQuote || storedFeeQuote.total <= 0,
+    enabled:
+      !storedFeeQuote ||
+      storedFeeQuote.labFeeConfigured === false ||
+      storedFeeQuote.total <= 0,
     labAnchorId,
     toothWorks,
     storedQuote: storedFeeQuote,

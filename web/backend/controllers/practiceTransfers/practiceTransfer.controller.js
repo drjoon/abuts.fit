@@ -64,7 +64,7 @@ import {
   resolveAutoMatchBudgetOrDefaults,
   resolveAutoMatchEligibleLabAnchorIds,
 } from "../../utils/practiceTransferAutoMatchBudget.js";
-import { resolveLabPracticeFeeMultiplier } from "../../utils/labFeeSchedule.js";
+import { resolveLabPracticeFeeMultiplier, isLabFeeScheduleConfigured } from "../../utils/labFeeSchedule.js";
 import {
   normalizeRushFeeMultiplier,
   resolvePracticeTransferArrivalPolicy,
@@ -155,7 +155,7 @@ import { resolvePracticeTransferSkipJig } from "../../utils/practiceTransferLabS
 // - 2026-08-16: mark-release clearAutoMatchClaim — autoMatchBudget(선택 별점) 유지. 누락 시 평균가(3점) 폴백·다운그레이드 소실.
 // - 2026-08-16: mark-release 이미 해제면 200 멱등. 수신 목록 manufacturerStage는 stage SSOT.
 // - 2026-08-18: 수락 전 의뢰 내용 수정 POST /:transferId/update-content.
-// - 2026-08-18: update-content — 견적 입력이 같으면 크레딧 rollback+hold를 건너뛴다.
+// - 2026-08-19: mark-accepted — 기공비 마스터 Off면 409 lab_fee_unconfigured(설정 유도).
 const PRACTICE_TAGS = ["practice_dropzone", "practice_file_transfer"];
 const PRACTICE_ALLOWED_MODEL_EXTENSIONS = new Set([".stl", ".ply", ".obj"]);
 const PRACTICE_ALLOWED_IMAGE_EXTENSIONS = new Set([
@@ -170,6 +170,31 @@ const PRACTICE_ALLOWED_EXTENSIONS = new Set([
   ...PRACTICE_ALLOWED_MODEL_EXTENSIONS,
   ...PRACTICE_ALLOWED_IMAGE_EXTENSIONS,
 ]);
+
+const LAB_FEE_UNCONFIGURED_REASON = "lab_fee_unconfigured";
+const LAB_FEE_UNCONFIGURED_ACCEPT_MESSAGE =
+  "기공비를 먼저 설정한 뒤 수락해주세요.";
+
+function rejectLabFeeUnconfigured(res, err) {
+  const status = Number(err?.statusCode || 409);
+  return res.status(status >= 400 && status < 600 ? status : 409).json({
+    success: false,
+    message:
+      String(err?.message || "").trim() || LAB_FEE_UNCONFIGURED_ACCEPT_MESSAGE,
+    reason: err?.code || LAB_FEE_UNCONFIGURED_REASON,
+  });
+}
+
+async function assertReceiverLabFeeConfigured(labAnchorId) {
+  const lab = await BusinessAnchor.findById(labAnchorId)
+    .select({ labFeeSchedule: 1 })
+    .lean();
+  if (isLabFeeScheduleConfigured(lab?.labFeeSchedule)) return;
+  const err = new Error(LAB_FEE_UNCONFIGURED_ACCEPT_MESSAGE);
+  err.statusCode = 409;
+  err.code = LAB_FEE_UNCONFIGURED_REASON;
+  throw err;
+}
 
 const fingerprintToothWorks = (rows) => {
   try {
@@ -4195,6 +4220,16 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
       });
     }
 
+    const isAuto = isAutoMatchMode(doc);
+    const alreadyAcceptedDirect = Boolean(doc.requestorDownloadedAt);
+    if (!isAuto && !alreadyAcceptedDirect) {
+      try {
+        await assertReceiverLabFeeConfigured(labAnchorId);
+      } catch (feeErr) {
+        return rejectLabFeeUnconfigured(res, feeErr);
+      }
+    }
+
     // 커스텀어벗: 구강스캔 확보(자동=치과만, 지정=기공소 body.files 허용)
     try {
       const resolvedScan = resolveOralScanFilesForAccept({
@@ -4218,8 +4253,6 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
         reason: scanErr?.code || "oral_scan_required",
       });
     }
-
-    const isAuto = isAutoMatchMode(doc);
 
     if (isAuto) {
       if (!autoMatchEligible && role !== "admin") {
@@ -4283,8 +4316,15 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
       }
 
       const claimingLab = await BusinessAnchor.findById(labOid)
-        .select({ name: 1 })
+        .select({ name: 1, labFeeSchedule: 1 })
         .lean();
+      if (!isLabFeeScheduleConfigured(claimingLab?.labFeeSchedule)) {
+        return rejectLabFeeUnconfigured(res, {
+          statusCode: 409,
+          message: LAB_FEE_UNCONFIGURED_ACCEPT_MESSAGE,
+          code: LAB_FEE_UNCONFIGURED_REASON,
+        });
+      }
       const assigneeLabName =
         String(claimingLab?.name || "").trim() || ABUTS_LAB_DISPLAY_NAME;
       const wasUnread = !doc.requestorReadAt;
