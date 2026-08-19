@@ -13,6 +13,7 @@
  * 2026-08-19: 기간 필터(커스텀 시작~끝) 와이어링. 본문=2주/한 달 캘린더(주문일·치과도착일).
  * 2026-08-19: 기간필터·2주/한달 제거. 3주 스크롤, 토·일 기본 숨김, 기공소색, 검색=닫기 왼쪽.
  * 2026-08-19: 캘린더 칩 휴지통(의뢰 취소) — onDeleteTransfer 연결.
+ * 2026-08-20: 상단 상태 뱃지=기공의뢰수신과 동일 색·외곽선(PRACTICE_STATUS_FILTER_BADGE_CLASS).
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Search } from "lucide-react";
@@ -43,7 +44,6 @@ import {
   type PracticeRecentStatusFilter,
   PRACTICE_MY_TRANSFERS_PAGE_SIZE,
   PRACTICE_RECENT_STATUS_BADGES,
-  PRACTICE_REMAKE_BADGE_CLASS,
   computeGroupedStatusCounts,
   canDeletePracticeTransferByStatus,
   filterGroupedTransfersByStatus,
@@ -53,9 +53,12 @@ import {
 } from "@/shared/practice/practiceRecentTransferList";
 import {
   DEFAULT_HIDDEN_WEEKDAYS,
+  PRACTICE_STATUS_FILTER_BADGE_CLASS,
   PracticeRecentTransfersCalendar,
+  resolvePracticeCalendarStatusTone,
   type PracticeCalendarChipItem,
   type PracticeCalendarDateKey,
+  type PracticeCalendarStatusTone,
 } from "@/pages/practice/components/PracticeRecentTransfersCalendar";
 import {
   resolvePracticeTransferListPatientName,
@@ -284,42 +287,45 @@ export function PracticeRecentTransfersAllModal({
     return map;
   }, [filteredTransfers]);
 
+  const statusFilterTone = (
+    filterKey: Exclude<PracticeRecentStatusFilter, "all">,
+  ): PracticeCalendarStatusTone =>
+    filterKey === "리메이크" ? "remake" : resolvePracticeCalendarStatusTone(filterKey);
+
   const renderStatusBadgeToggle = (
     filterKey: Exclude<PracticeRecentStatusFilter, "all">,
     label: string,
     count: number,
     tooltip: string,
-  ) => (
-    <Tooltip key={filterKey}>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          className="rounded-full"
-          onClick={() => setStatusFilter((prev) => (prev === filterKey ? "all" : filterKey))}
-          aria-pressed={statusFilter === filterKey}
-        >
-          <Badge
-            variant="outline"
-            className={cn(
-              "cursor-pointer",
-              filterKey === "리메이크"
-                ? statusFilter === filterKey
-                  ? PRACTICE_REMAKE_BADGE_CLASS
-                  : "border-amber-200 bg-amber-50/70 text-amber-800 hover:bg-amber-50"
-                : statusFilter === filterKey
-                  ? "border-primary/70 bg-primary-soft text-primary-strong"
-                  : "hover:bg-muted/40",
-            )}
+  ) => {
+    const active = statusFilter === filterKey;
+    const tone = statusFilterTone(filterKey);
+    return (
+      <Tooltip key={filterKey}>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            className="rounded-full"
+            onClick={() => setStatusFilter((prev) => (prev === filterKey ? "all" : filterKey))}
+            aria-pressed={active}
           >
-            {label} {count}건
-          </Badge>
-        </button>
-      </TooltipTrigger>
-      <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
-        {tooltip}
-      </TooltipContent>
-    </Tooltip>
-  );
+            <Badge
+              variant="outline"
+              className={cn(
+                "cursor-pointer",
+                PRACTICE_STATUS_FILTER_BADGE_CLASS[tone][active ? "active" : "idle"],
+              )}
+            >
+              {label} {count}건
+            </Badge>
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
+          {tooltip}
+        </TooltipContent>
+      </Tooltip>
+    );
+  };
 
   const statusBadges = PRACTICE_RECENT_STATUS_BADGES.map((item) =>
     renderStatusBadgeToggle(
