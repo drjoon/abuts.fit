@@ -172,7 +172,8 @@ import {
 // - 2026-08-13: 모달 하단 좌측 프리셋 편집(primary), 우측 취소/확인.
 // - 2026-08-13: 임플란트·스캔바디 프리셋이 모두 없으면 설정 모달과 함께 프리셋 편집을 연다.
 // - 2026-08-13: 임플란트·스캔바디 프리셋을 각각 한 번 고르면 확인과 같이 저장·닫힘.
-// - 2026-08-13: 크라운·브리지 아래 어벗 체크박스. 체크 시 설정 모달.
+// - 2026-08-13: 크라운·브리지·임시치아 아래 어벗 체크박스. 체크 시 설정 모달.
+// - 2026-08-19: 임시치아(단독·연결)도 커스텀어벗 주문 가능.
 // - 2026-08-13: 커스텀어벗 프리셋 목록은 4개까지 표시, 초과 시 스크롤.
 // - 2026-08-13: 형태 글자 클릭(인레이→크라운→커스텀어벗)은 설정 모달을 열지 않음.
 // - 2026-08-13: 연결 형태 클릭 순환에 유지장치·임시치아 추가.
@@ -1644,9 +1645,7 @@ export const PracticeTransferRequestIntakePanel = ({
       if (!row) return prev;
       const canEnable =
         row.customAbutment ||
-        isCustomAbutmentProsthesisType(row.prosthesisType) ||
-        row.prosthesisType === "크라운" ||
-        row.prosthesisType === "브리지";
+        isCustomAbutmentSupportedProsthesisType(row.prosthesisType);
       if (!canEnable) return prev;
       const nextMode = lockedMode
         ? lockedMode
@@ -2644,7 +2643,7 @@ export const PracticeTransferRequestIntakePanel = ({
                       const showAbutmentCheckbox =
                         !isMissingTooth &&
                         !isCustomType &&
-                        (row.prosthesisType === "크라운" || row.prosthesisType === "브리지");
+                        isCustomAbutmentSupportedProsthesisType(row.prosthesisType);
                       const showCustomDetails =
                         isCustomType ||
                         (isCustomAbutmentSupportedProsthesisType(row.prosthesisType) &&
@@ -2910,7 +2909,7 @@ export const PracticeTransferRequestIntakePanel = ({
                               );
                             })()}
 
-                            {/* 3) 크라운·브리지 → 어벗 체크. 커스텀어벗 형태는 상세만 */}
+                            {/* 3) 크라운·브리지·임시치아 → 어벗 체크. 커스텀어벗 형태는 상세만 */}
                             {showAbutmentCheckbox ? (
                               <label
                                 data-no-tooth-marquee=""

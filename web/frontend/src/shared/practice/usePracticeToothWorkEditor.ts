@@ -14,6 +14,7 @@ import { useMemo } from "react";
 // - 2026-08-14: 유지장치·임시치아 등 연결 전체 강제 변경 후 복귀 시, 클릭하지 않은 치아는 진입 직전 행 전체(형태·어벗·임플란트) 복원.
 // - 2026-08-13: 단독 순환(인레이↔크라운↔커스텀어벗↔임시치아)도 커스텀 플래그·규격을 유지.
 // - 2026-08-13: 클릭한 치아가 Pontic·작업X를 거쳐도 커스텀을 지우지 않는다.
+// - 2026-08-19: 임시치아도 크라운·브리지처럼 기존 커스텀 플래그·규격을 유지.
 
 export type { ToothWorkSelection } from "@/shared/practice/transferMemo";
 import {
@@ -251,7 +252,11 @@ export const applyProsthesisTypeToRow = (
       abutmentProductMode,
     };
   }
-  if (nextType === "크라운" || nextType === "브리지") {
+  if (
+    nextType === "크라운" ||
+    nextType === "브리지" ||
+    isTemporaryToothProsthesisType(nextType)
+  ) {
     if (row.customAbutment) {
       return { ...row, prosthesisType: nextType };
     }

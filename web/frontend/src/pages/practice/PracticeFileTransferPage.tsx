@@ -544,6 +544,8 @@ const isCustomAbutmentSupportedProsthesisType = (prosthesisType: string) => {
     compact === "커스텀어벗" ||
     prosthesisType === "크라운" ||
     prosthesisType === "브리지" ||
+    compact === "임시치아" ||
+    compact === "가철성임시치아" ||
     /^(?:커스텀)?어벗디자인$/i.test(compact)
   );
 };

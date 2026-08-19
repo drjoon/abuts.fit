@@ -33,6 +33,7 @@ import {
   getAdjacentTeeth,
   isCustomAbutmentSupportedProsthesisType,
   isMissingToothProsthesisType,
+  isTemporaryToothProsthesisType,
   NO_WORK_PROSTHESIS_TYPE,
   NO_WORK_PROSTHESIS_TOOLTIP,
 } from "@/shared/practice/usePracticeToothWorkEditor";
@@ -372,7 +373,9 @@ export const PracticeToothWorkChartReadOnly = ({
                     {canShowCustom ? (
                       <div className="mt-2 flex w-full flex-col items-center gap-0.5 leading-none">
                         <span className="inline-flex h-5 items-center text-[11px] leading-none text-primary-strong">
-                          {row.prosthesisType === "크라운" || row.prosthesisType === "브리지"
+                          {row.prosthesisType === "크라운" ||
+                          row.prosthesisType === "브리지" ||
+                          isTemporaryToothProsthesisType(row.prosthesisType)
                             ? "어벗"
                             : "커스텀"}
                         </span>
