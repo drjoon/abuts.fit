@@ -60,6 +60,8 @@ export function buildPracticeSenderTransferDetailModel(
   const workPeriodSummary = buildPracticeWorkPeriodSummaryItem(
     transfer.orderDate,
     transfer.arrivalDate,
+    "practice",
+    transfer.createdAtTs,
   );
 
   const designCount = Number(

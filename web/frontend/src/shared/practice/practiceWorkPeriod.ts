@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/practice/PracticeOrderArrivalDateRangeField.tsx
 // - web/frontend/src/shared/components/practice/PracticeWorkPeriodText.tsx
 // - web/frontend/src/shared/components/practice/PracticeRushConfirmDialog.tsx
+// - 2026-08-20: 낮 12시 전은 주문일(오늘) 포함, 이후는 제외. 안내 문구 SSOT.
 // - 2026-08-19: 출고=도착−2영업일. 지정 도착일 1영업일 전 배송 목표.
 // - 2026-08-17: N+2 의미 툴팁 — 치과 배송·출고=치과도착일, 줄바꿈.
 // - 2026-08-17: 제조 모드 항상 묶음. 2·3영업일은 지연고지(빨간 툴팁)만. 출고=도착−1. 할증 없음.
@@ -22,6 +23,13 @@
 // - 2026-08-15: N+2영업일 의미 툴팁(N일=기공작업, 2일=배송) 상시 표시.
 
 import { kstYmdDiffBusinessDays } from "@/shared/date/kst";
+
+/** 주문일 포함 컷오프(KST). 이전=오늘 포함, 이후=오늘 제외. */
+export const PRACTICE_ORDER_DAY_CUTOFF_HOUR_KST = 12;
+
+/** 주문일 포함/제외 안내 SSOT */
+export const PRACTICE_ORDER_DAY_CUTOFF_NOTE =
+  "낮 12시 이전은 오늘 포함, 이후는 오늘 제외.";
 
 /** 배송기간(영업일). 작업기간 = (주문→치과도착 영업일) − 이 값. 표기 N+2. */
 export const PRACTICE_SHIPPING_BUSINESS_DAYS = 2;
@@ -60,7 +68,7 @@ export const PRACTICE_RUSH_COURIER_DISCLAIMER =
   "택배 사정으로 도착을 보장하지 않습니다.";
 
 export const PRACTICE_NORMAL_MIN_PERIOD_MESSAGE =
-  "일반 의뢰는 작업+배송 2+2영업일 이상이어야 합니다. 3영업일 이하는 신속처리로 진행할 수 있습니다. 3+2영업일 이상 설정을 권합니다.";
+  "일반 의뢰는 작업+배송 2+2영업일 이상이어야 합니다. 낮 12시 이전은 오늘 포함, 이후는 오늘 제외. 3영업일 이하는 신속처리로 진행할 수 있습니다. 3+2영업일 이상 설정을 권합니다.";
 
 /** 안내 툴팁 권고 문구 SSOT */
 export const PRACTICE_WORK_PERIOD_RECOMMEND_NOTE =
@@ -113,7 +121,12 @@ export function formatPracticeWorkPlusShipMeaningTooltip(
     workDays == null
       ? `${PRACTICE_SHIPPING_BUSINESS_DAYS}일은 배송시간입니다.`
       : `${workDays}일은 기공작업시간, ${PRACTICE_SHIPPING_BUSINESS_DAYS}일은 배송시간입니다.`;
-  return [lead, shipNote, PRACTICE_WORK_PERIOD_RECOMMEND_NOTE].join("\n");
+  return [
+    PRACTICE_ORDER_DAY_CUTOFF_NOTE,
+    lead,
+    shipNote,
+    PRACTICE_WORK_PERIOD_RECOMMEND_NOTE,
+  ].join("\n");
 }
 
 /**
@@ -170,12 +183,17 @@ export function getPracticeWorkPeriodTooltip(
   return meaning;
 }
 
-/** 주문일→치과도착일 영업일 합계(작업+배송). 같은 날=0. */
+/** 주문일→치과도착일 영업일 합계(작업+배송). 같은 날=0(12시 이후) / 1(12시 전·평일). */
 export function getPracticeWorkPeriodDays(
   orderYmd?: string | null,
   arrivalYmd?: string | null,
+  at?: Date | string | number | null,
 ): number | null {
-  return kstYmdDiffBusinessDays(orderYmd, arrivalYmd);
+  return kstYmdDiffBusinessDays(orderYmd, arrivalYmd, {
+    includeFromIfBeforeNoon: true,
+    at: at ?? new Date(),
+    cutoffHour: PRACTICE_ORDER_DAY_CUTOFF_HOUR_KST,
+  });
 }
 
 /** 작업 영업일 = 합계 − 배송(2). 합계가 배송보다 짧으면 0. */
@@ -214,10 +232,11 @@ export function shouldEnablePracticeRushProcessing(args: {
   rushProcessing?: boolean | null;
   orderYmd?: string | null;
   arrivalYmd?: string | null;
+  at?: Date | string | number | null;
 }): boolean {
   if (args.rushProcessing === true) return true;
   return isPracticeRushPeriod(
-    getPracticeWorkPeriodDays(args.orderYmd, args.arrivalYmd),
+    getPracticeWorkPeriodDays(args.orderYmd, args.arrivalYmd, args.at),
   );
 }
 
@@ -263,13 +282,14 @@ export function buildPracticeWorkPeriodSummaryItem(
   orderYmd?: string | null,
   arrivalYmd?: string | null,
   viewer: PracticeWorkPeriodViewer = "practice",
+  at?: Date | string | number | null,
 ): {
   label: string;
   value: string;
   valueClassName?: string;
   tooltip?: string;
 } | null {
-  const days = getPracticeWorkPeriodDays(orderYmd, arrivalYmd);
+  const days = getPracticeWorkPeriodDays(orderYmd, arrivalYmd, at);
   const value = formatPracticeWorkPeriodDaysLabel(days);
   if (!value) return null;
   const short = isPracticeWorkPeriodShort(days);

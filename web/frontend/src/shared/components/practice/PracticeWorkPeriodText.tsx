@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/practice/practiceWorkPeriod.ts
 // - web/frontend/src/shared/components/practice/PracticeOrderArrivalDateRangeField.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
+// - 2026-08-20: 낮 12시 전은 오늘 포함, 이후는 오늘 제외.
 // - 2026-08-17: N+2 의미 툴팁 가로폭 확대(문장 한 줄 유지).
 // - 2026-08-17: N+2 의미 툴팁 줄바꿈(whitespace-pre-line).
 // - 2026-08-17: 신속 구간 lead도 경고색·배송일정 툴팁(확인 모달 SSOT).
@@ -41,6 +42,8 @@ type PracticeWorkPeriodTextProps = {
   variant?: "lead" | "days" | "labeled" | "orderArrival";
   /** practice=치과 발신, lab=기공소 수신 */
   viewer?: PracticeWorkPeriodViewer;
+  /** 주문 시각. 없으면 지금(작성 폼은 실시간 12시 컷오프). */
+  at?: Date | string | number | null;
   className?: string;
 };
 
@@ -49,9 +52,10 @@ export function PracticeWorkPeriodText({
   arrivalDate,
   variant = "days",
   viewer = "practice",
+  at,
   className,
 }: PracticeWorkPeriodTextProps) {
-  const days = getPracticeWorkPeriodDays(orderDate, arrivalDate);
+  const days = getPracticeWorkPeriodDays(orderDate, arrivalDate, at);
   const short = isPracticeWorkPeriodShort(days);
   const rush = isPracticeRushPeriod(days);
   const daysLabel =

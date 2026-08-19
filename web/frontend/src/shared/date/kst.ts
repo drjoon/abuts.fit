@@ -3,6 +3,7 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/practice/components/PracticeRecentTransfersCalendar.tsx
+// - 2026-08-20: kstYmdDiffBusinessDays — 12시 전 주문일 포함 옵션.
 const KST_TZ = "Asia/Seoul";
 
 export function toKstYmd(input?: string | number | Date | null): string | null {
@@ -118,28 +119,76 @@ function addOneCivilDayYmd(ymd: string): string | null {
   return toKstYmd(d);
 }
 
+function toValidDate(input?: Date | string | number | null): Date | null {
+  if (input == null || input === "") return null;
+  const d = input instanceof Date ? input : new Date(input);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/** KST 시각의 시(0–23). 잘못된 입력이면 0. */
+export function getKstHour(input: Date | string | number = new Date()): number {
+  const d = toValidDate(input);
+  if (!d) return 0;
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: KST_TZ,
+    hour: "numeric",
+    hour12: false,
+  }).formatToParts(d);
+  const hour = Number(parts.find((p) => p.type === "hour")?.value);
+  if (!Number.isFinite(hour)) return 0;
+  return hour === 24 ? 0 : hour;
+}
+
+export type KstBusinessDayDiffOptions = {
+  /** 주문일=at의 KST 날짜이고 cutoffHour 이전이면 주문일 포함 */
+  includeFromIfBeforeNoon?: boolean;
+  at?: Date | string | number | null;
+  cutoffHour?: number;
+};
+
+function shouldIncludeFromYmd(
+  fromYmd: string,
+  options?: KstBusinessDayDiffOptions,
+): boolean {
+  if (!options?.includeFromIfBeforeNoon) return false;
+  const at = toValidDate(options.at ?? new Date());
+  if (!at) return false;
+  const atYmd = toKstYmd(at);
+  if (!atYmd || atYmd !== fromYmd) return false;
+  const cutoff = Number.isFinite(Number(options.cutoffHour))
+    ? Number(options.cutoffHour)
+    : 12;
+  return getKstHour(at) < cutoff;
+}
+
 /**
  * KST 영업일(월~금) 차이 (to - from).
- * from 다음날부터 to까지 영업일 개수. 같은 날이면 0.
+ * 기본: from 다음날부터 to까지. 같은 날이면 0.
+ * includeFromIfBeforeNoon: 주문일이 at의 KST 날짜이고 낮 12시 전이면 from 포함.
  * 공휴일은 제외하지 않음(프론트 ETA와 동일).
  */
 export function kstYmdDiffBusinessDays(
   fromYmd?: string | null,
   toYmd?: string | null,
+  options?: KstBusinessDayDiffOptions,
 ): number | null {
   const from = String(fromYmd || "").trim();
   const to = String(toYmd || "").trim();
   if (!from || !to) return null;
   if (!ymdToKstDate(from) || !ymdToKstDate(to)) return null;
-  if (from === to) return 0;
 
   if (to < from) {
     const forward = kstYmdDiffBusinessDays(to, from);
     return forward == null ? null : -forward;
   }
 
+  const includeFrom = shouldIncludeFromYmd(from, options);
+  if (from === to) {
+    return includeFrom && isKstWeekdayYmd(from) ? 1 : 0;
+  }
+
   let count = 0;
-  let cursor = addOneCivilDayYmd(from);
+  let cursor = includeFrom ? from : addOneCivilDayYmd(from);
   let guard = 0;
   while (cursor && cursor <= to && guard < 3700) {
     if (isKstWeekdayYmd(cursor)) count += 1;

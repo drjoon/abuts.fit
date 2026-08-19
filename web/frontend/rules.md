@@ -58,6 +58,8 @@ Notes:
      당일 출고·`(N-1)` 금지. 이후 주간 발송 요일 정렬)
     (신속: KST 12시 이전=당일, 이후=+1영업일 — 백엔드 `EXPRESS_CUTOFF_HOUR_KST=12`와 동일.
      선택 가능 조건: 신속 ETA YMD < 묶음 ETA YMD — `isExpressShippingSelectable`)
+    (기공의뢰 주문-치과도착: 낮 12시 이전은 오늘 포함, 이후는 오늘 제외 —
+     `practiceWorkPeriod.ts` / 백엔드 `countWeekdayBusinessDays`. 안내=`PRACTICE_ORDER_DAY_CUTOFF_NOTE`)
     (디자인+생산 `design_custom_abutment`: 묶음/신속 공통 출고 +1영업일 —
      `estimateShipDate.ts` / 백엔드 `needsDesignLeadDay`)
     (안내 카피: `PricingPolicyDialog` 출고 리드타임·출고 방식,

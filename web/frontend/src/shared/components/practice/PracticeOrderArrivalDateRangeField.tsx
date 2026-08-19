@@ -22,6 +22,7 @@ import { PracticeWorkPeriodText } from "@/shared/components/practice/PracticeWor
 import {
   PRACTICE_CA_DIRECT_SHIP_NOTE,
   PRACTICE_ORDER_ARRIVAL_PERIOD_LABEL,
+  PRACTICE_ORDER_DAY_CUTOFF_NOTE,
   PRACTICE_WORK_PERIOD_RECOMMEND_NOTE,
   getPracticeWorkPeriodDays,
 } from "@/shared/practice/practiceWorkPeriod";
@@ -31,6 +32,7 @@ import {
 // - web/frontend/src/shared/practice/practiceWorkPeriod.ts
 // - web/frontend/src/shared/ui/PeriodFilter.tsx
 // - web/frontend/src/shared/date/kst.ts
+// - 2026-08-20: 낮 12시 전은 오늘 포함, 이후는 오늘 제외.
 // - 2026-08-19: 도움말 — 출고=도착−2영업일, 지정 도착일 1영업일 전 배송 목표.
 // - 2026-08-17: 도움말 툴팁 가로폭 확대(문장 한 줄 유지).
 // - 2026-08-17: 도움말 — 3영업일 이하 지연 가능·4영업일 이상 안내로 단순화.
@@ -169,8 +171,8 @@ export function PracticeOrderArrivalDateRangeField({
               side="top"
               className="max-w-[min(100vw-2rem,36rem)] space-y-1.5 text-left text-xs leading-relaxed"
             >
-              <p>주문일은 오늘 고정.</p>
-              <p>치과도착일만 선택하면 됩니다.</p>
+              <p>{PRACTICE_ORDER_DAY_CUTOFF_NOTE}</p>
+              <p>주문일은 오늘 고정. 치과도착일만 선택하면 됩니다.</p>
               <p>{PRACTICE_CA_DIRECT_SHIP_NOTE}</p>
               <p>
                 3영업일 이하는 늦게 도착할 수 있으니, 4영업일 이상 설정해주세요.
@@ -261,6 +263,9 @@ export function PracticeOrderArrivalDateRangeField({
         </PopoverContent>
         ) : null}
       </Popover>
+      <p className="text-[11px] leading-relaxed text-muted-foreground">
+        {PRACTICE_ORDER_DAY_CUTOFF_NOTE}
+      </p>
       {locked && lockedHint ? (
         <p className="text-[11px] leading-relaxed text-muted-foreground">{lockedHint}</p>
       ) : null}

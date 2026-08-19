@@ -71,14 +71,37 @@ describe("practiceTransferRush", () => {
   });
 
   test("countWeekdayBusinessDays matches 2+2 minimum window", () => {
-    // Mon 2026-08-17 → Fri 2026-08-21 = 4 weekdays
-    expect(countWeekdayBusinessDays("2026-08-17", "2026-08-21")).toBe(4);
+    const afterNoon = new Date("2026-08-17T15:00:00+09:00");
+    // Mon 2026-08-17 15:00 → Fri 2026-08-21 = 4 weekdays (오늘 제외)
+    expect(countWeekdayBusinessDays("2026-08-17", "2026-08-21", afterNoon)).toBe(
+      4,
+    );
     expect(PRACTICE_NORMAL_MIN_WORK_PLUS_SHIP_DAYS).toBe(4);
-    expect(countWeekdayBusinessDays("2026-08-17", "2026-08-20")).toBe(3);
+    expect(countWeekdayBusinessDays("2026-08-17", "2026-08-20", afterNoon)).toBe(
+      3,
+    );
     expect(
-      countWeekdayBusinessDays("2026-08-17", "2026-08-20") <
+      countWeekdayBusinessDays("2026-08-17", "2026-08-20", afterNoon) <
         PRACTICE_NORMAL_MIN_WORK_PLUS_SHIP_DAYS,
     ).toBe(true);
+  });
+
+  test("countWeekdayBusinessDays includes order day before noon", () => {
+    const beforeNoon = new Date("2026-08-20T11:59:00+09:00");
+    const noon = new Date("2026-08-20T12:00:00+09:00");
+    // Thu 20 → Wed 26: 12시 전=목금월화수(5), 12시=금월화수(4)
+    expect(countWeekdayBusinessDays("2026-08-20", "2026-08-26", beforeNoon)).toBe(
+      5,
+    );
+    expect(countWeekdayBusinessDays("2026-08-20", "2026-08-26", noon)).toBe(4);
+    expect(
+      countWeekdayBusinessDays(
+        "2026-08-20",
+        "2026-08-20",
+        beforeNoon,
+      ),
+    ).toBe(1);
+    expect(countWeekdayBusinessDays("2026-08-20", "2026-08-20", noon)).toBe(0);
   });
 
   test("upsertMemoArrivalYmd replaces arrival tag", () => {

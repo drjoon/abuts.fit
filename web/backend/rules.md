@@ -403,6 +403,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     앵커 없는 계정은 `practiceUserId` 본인 범위로 폴백한다.
     draft 작성 폼 GET(`GET /draft`)·기본 DELETE는 본인 `practiceUserId`만 대상으로 한다.
   - practice 파일전송 생성(`POST /api/practice/transfers`) 성공 시 관련 임시저장(`draftId` 또는 작성자 활성 draft)을 **완전 삭제**(휴지통 아님)하고 `draft-cleared`를 fan-out한다. 전송 건은 최근 전송 내역에만 남는다.
+  - 기공의뢰 납기 영업일: 낮 12시 이전은 주문일(오늘) 포함, 이후는 제외. `resolvePracticeTransferArrivalPolicy` → `countWeekdayBusinessDays(..., now)`. 프론트 `getPracticeWorkPeriodDays`와 동일.
   - 수락 전(의뢰=`발송완료|수신완료|자동매칭`) 내용 수정: `POST /api/practice/transfers/:transferId/update-content`. transferId·채팅방 유지, 파일·치식·메모·기공소·보류액 갱신, `requestorReadAt` 초기화, `practice:transfer-updated` action=`content-updated`. 수락·취소·거부 이후 409. 기공소·치식·지그·할증이 같으면 크레딧 rollback+hold를 건너뛴다.
   - `draft-upserted` 이벤트는 `transferMemo`·`files` 스냅샷을 포함해 수신측이 추가 GET 없이 폼을 반영할 수 있다.
     임시저장은 `practice:transfer-updated` + `action: draft-upserted|draft-cleared`.

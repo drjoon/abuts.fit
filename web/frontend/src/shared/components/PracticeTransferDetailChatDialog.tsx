@@ -11,6 +11,7 @@
 // - web/frontend/src/shared/files/modelPreviewFile.ts
 // - web/frontend/src/shared/files/downloadWithProgress.ts
 // - web/frontend/src/shared/files/s3BlobCache.ts
+// - 2026-08-20: 수락 바 작업기간 — 전송 시각 기준 12시 컷오프.
 // - 2026-08-16: 채팅 패널을 ChatComposer·위젯(compact) 패턴에 맞춤.
 // - 2026-08-16: 이미지 미리보기(다운로드 오버레이) + IndexedDB 캐시.
 // - 2026-08-16: 프리뷰 파일 여러 개일 때 이전/다음 이동.
@@ -210,6 +211,8 @@ type PracticeTransferDetailChatDialogProps = {
   /** 수락 바 짧은 작업기간 표시용 */
   orderDate?: string | null;
   arrivalDate?: string | null;
+  /** 주문 시각. 있으면 12시 컷오프를 전송 시각에 고정 */
+  orderedAt?: string | number | Date | null;
   /** 수락 후 같은 자리의 작업취소 */
   releaseBusy?: boolean;
   onRelease?: () => void | Promise<void>;
@@ -299,6 +302,7 @@ export function PracticeTransferDetailChatDialog({
   onOpenSubcontract,
   orderDate = null,
   arrivalDate = null,
+  orderedAt = null,
   releaseBusy = false,
   onRelease,
   remainingLabel = null,
@@ -537,7 +541,7 @@ export function PracticeTransferDetailChatDialog({
       : "다시 수락";
   const releaseButtonLabel = releaseBusy ? "취소 중..." : "작업취소";
   const rejectButtonLabel = rejectBusy ? "거부 중..." : "거부";
-  const workPeriodDays = getPracticeWorkPeriodDays(orderDate, arrivalDate);
+  const workPeriodDays = getPracticeWorkPeriodDays(orderDate, arrivalDate, orderedAt);
   const showShortWorkPeriod = isPracticeWorkPeriodShort(workPeriodDays);
   const acceptDisabled = acceptBusy || rejectBusy || oralScanBlocksAccept;
   const designFileList = Array.isArray(designFiles) ? designFiles : [];
@@ -837,6 +841,7 @@ export function PracticeTransferDetailChatDialog({
                       <PracticeWorkPeriodText
                         orderDate={orderDate}
                         arrivalDate={arrivalDate}
+                        at={orderedAt}
                         variant="labeled"
                         viewer="lab"
                         className="text-xs"

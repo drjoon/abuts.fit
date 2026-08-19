@@ -4,6 +4,7 @@
 // - web/backend/services/practiceTransferBilling.service.js
 // - web/frontend/src/shared/practice/practiceWorkPeriod.ts
 // change-log:
+// - 2026-08-20: 낮 12시 전은 주문일 포함, 이후는 제외(프론트 kstYmdDiffBusinessDays와 동일).
 // - 2026-08-17: 신속처리 할증 없음(신규 배수 1). ≤2영업일만 제조 express.
 // - 2026-08-17: 신속처리 할증 기본 1.2·(1,2] 정규화. SystemSettings 설정값 반영.
 // - 2026-08-17: 신속처리=합계≤3영업일 허용(선택 도착일 유지). 일반은 2+2 이상.
@@ -30,7 +31,7 @@ export const PRACTICE_RUSH_COURIER_DISCLAIMER =
   "택배 사정으로 도착을 보장하지 않습니다.";
 
 export const PRACTICE_NORMAL_MIN_PERIOD_MESSAGE =
-  "납품 기일은 작업+배송 2+2영업일 이상이어야 합니다. 3영업일 이하는 신속처리로 진행하세요. 3+2영업일 이상 설정을 권합니다.";
+  "납품 기일은 작업+배송 2+2영업일 이상이어야 합니다. 낮 12시 이전은 오늘 포함, 이후는 오늘 제외. 3영업일 이하는 신속처리로 진행하세요. 3+2영업일 이상 설정을 권합니다.";
 
 /** 청구/스냅샷용. 1 이하면 1, (1,2]는 소수 둘째 자리. */
 export function normalizeRushFeeMultiplier(value) {
@@ -131,21 +132,56 @@ function isWeekdayYmd(ymd) {
   return dow !== 0 && dow !== 6;
 }
 
+function toValidDate(input) {
+  if (input == null || input === "") return null;
+  const d = input instanceof Date ? input : new Date(input);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function getKstHour(input = new Date()) {
+  const d = toValidDate(input);
+  if (!d) return 0;
+  const hour = Number(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Seoul",
+      hour: "numeric",
+      hour12: false,
+    }).format(d),
+  );
+  if (!Number.isFinite(hour)) return 0;
+  return hour === 24 ? 0 : hour;
+}
+
+/** 주문일 포함 컷오프(KST). 이전=오늘 포함, 이후=오늘 제외. */
+export const PRACTICE_ORDER_DAY_CUTOFF_HOUR_KST = 12;
+
+function shouldIncludeFromYmd(fromYmd, at) {
+  const when = toValidDate(at);
+  if (!when) return false;
+  const atYmd = toKstYmd(when);
+  if (!atYmd || atYmd !== fromYmd) return false;
+  return getKstHour(when) < PRACTICE_ORDER_DAY_CUTOFF_HOUR_KST;
+}
+
 /**
- * 프론트 kstYmdDiffBusinessDays와 동일(월~금, 공휴일 미제외).
- * from 다음날~to 영업일 수. 같은 날=0.
+ * 프론트 kstYmdDiffBusinessDays(includeFromIfBeforeNoon)와 동일(월~금, 공휴일 미제외).
+ * 주문일이 at의 KST 날짜이고 낮 12시 전이면 from 포함. 같은 날=0(12시 이후) / 1(12시 전·평일).
+ * @param {Date|string|number|null} [at]
  */
-export function countWeekdayBusinessDays(fromYmd, toYmd) {
+export function countWeekdayBusinessDays(fromYmd, toYmd, at = new Date()) {
   const from = String(fromYmd || "").trim();
   const to = String(toYmd || "").trim();
   if (!parseYmdParts(from) || !parseYmdParts(to)) return null;
-  if (from === to) return 0;
   if (to < from) {
-    const forward = countWeekdayBusinessDays(to, from);
+    const forward = countWeekdayBusinessDays(to, from, null);
     return forward == null ? null : -forward;
   }
+  const includeFrom = shouldIncludeFromYmd(from, at);
+  if (from === to) {
+    return includeFrom && isWeekdayYmd(from) ? 1 : 0;
+  }
   let count = 0;
-  let cursor = addOneCivilDayYmd(from);
+  let cursor = includeFrom ? from : addOneCivilDayYmd(from);
   let guard = 0;
   while (cursor && cursor <= to && guard < 3700) {
     if (isWeekdayYmd(cursor)) count += 1;
@@ -230,7 +266,7 @@ export async function resolvePracticeTransferArrivalPolicy({
   });
 
   if (rush) {
-    const days = countWeekdayBusinessDays(orderYmd, arrivalYmd);
+    const days = countWeekdayBusinessDays(orderYmd, arrivalYmd, now);
     const withinRush =
       days != null &&
       days >= 0 &&
@@ -257,7 +293,7 @@ export async function resolvePracticeTransferArrivalPolicy({
     };
   }
 
-  const days = countWeekdayBusinessDays(orderYmd, arrivalYmd);
+  const days = countWeekdayBusinessDays(orderYmd, arrivalYmd, now);
   if (days == null || days < PRACTICE_NORMAL_MIN_WORK_PLUS_SHIP_DAYS) {
     return {
       ok: false,

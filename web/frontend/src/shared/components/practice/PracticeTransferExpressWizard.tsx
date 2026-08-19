@@ -22,7 +22,10 @@ import {
 } from "@/pages/practice/hooks/usePracticeTransferStep1";
 import { cn } from "@/shared/ui/cn";
 import { PracticeWorkPeriodText } from "@/shared/components/practice/PracticeWorkPeriodText";
-import { PRACTICE_CA_DIRECT_SHIP_NOTE } from "@/shared/practice/practiceWorkPeriod";
+import {
+  PRACTICE_CA_DIRECT_SHIP_NOTE,
+  PRACTICE_ORDER_DAY_CUTOFF_NOTE,
+} from "@/shared/practice/practiceWorkPeriod";
 
 // related files:
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
@@ -37,6 +40,7 @@ import { PRACTICE_CA_DIRECT_SHIP_NOTE } from "@/shared/practice/practiceWorkPeri
 // - 2026-08-15: 스텝·진행률은 카드 헤더(제목 오른쪽)로 이동.
 // - 2026-08-15: 체크 표시는 일정 기본값·빈 파일을 제외(게이트와 분리).
 // - 2026-08-18: Express 보철물도 Expert와 같이 full 치식(16칸).
+// - 2026-08-20: 일정 스텝 — 12시 전 오늘 포함, 이후 오늘 제외.
 // - 2026-08-19: 일정 스텝 — 출고=도착−2영업일, 지정 도착일 1영업일 전 배송 목표.
 
 export type PracticeTransferExpressStepId =
@@ -65,7 +69,7 @@ export const PRACTICE_TRANSFER_EXPRESS_STEPS: Array<{
   {
     id: "schedule",
     title: "언제 치과에 도착하면 될까요?",
-    hint: `주문일은 오늘로 고정됩니다. 도착일만 고르면 됩니다. ${PRACTICE_CA_DIRECT_SHIP_NOTE}`,
+    hint: `${PRACTICE_ORDER_DAY_CUTOFF_NOTE} 도착일만 고르면 됩니다. ${PRACTICE_CA_DIRECT_SHIP_NOTE}`,
   },
   {
     id: "prosthesis",

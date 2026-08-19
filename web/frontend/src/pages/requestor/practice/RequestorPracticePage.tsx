@@ -1535,8 +1535,9 @@ export function RequestorPracticeReceivePage({
         selectedTransfer?.orderDate,
         selectedTransfer?.arrivalDate,
         "lab",
+        selectedTransfer?.createdAt,
       ),
-    [selectedTransfer?.arrivalDate, selectedTransfer?.orderDate],
+    [selectedTransfer?.arrivalDate, selectedTransfer?.createdAt, selectedTransfer?.orderDate],
   );
 
   const selectedTransferToothWorks = useMemo(
@@ -4685,6 +4686,7 @@ export function RequestorPracticeReceivePage({
         }
         orderDate={selectedTransfer?.orderDate || null}
         arrivalDate={selectedTransfer?.arrivalDate || null}
+        orderedAt={selectedTransfer?.createdAt || null}
         releaseBusy={releaseBusy}
         onRelease={() => void handleReleaseTransfer()}
         chatLoading={chatLoading}
