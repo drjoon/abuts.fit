@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-19: NC 코드 에디터 저장 후 PreviewModal NC 텍스트를 즉시 반영(페이지 새로고침 없이).
 // - 2026-08-18: 재생성 완료 alert 클릭으로 CAM 프리뷰를 열던 연결 제거.
 // - 2026-08-13: 가공중(Now Playing) 프리뷰에서 NC 에디터·재생성 잠금 신호를 PreviewModal에 전달.
 // - 2026-08-06: 큐→프리뷰에 designSoftware·헥스 회전(rnd/caseInfos) 전달. 가공 단계 누락 수정.
@@ -925,6 +926,54 @@ export const MachiningQueueBoard = ({
       openProgramDetailForMachining,
       toast,
     ],
+  );
+
+  const applySavedNcToCamPreview = useCallback((prog: any, code: string) => {
+    const savedCode = String(code ?? "");
+    setCamPreviewNcText(savedCode);
+    setCamPreviewFiles((prev) => {
+      const req = prev.request;
+      if (!req) return prev;
+      const savedRequestId = String(prog?.requestId || "").trim();
+      const previewRequestId = String(req.requestId || "").trim();
+      if (
+        savedRequestId &&
+        previewRequestId &&
+        savedRequestId !== previewRequestId
+      ) {
+        return prev;
+      }
+      return {
+        ...prev,
+        request: {
+          ...req,
+          caseInfos: {
+            ...(req.caseInfos || {}),
+            ncFile: {
+              ...(req.caseInfos?.ncFile || {}),
+              fileSize: new TextEncoder().encode(savedCode).length,
+              uploadedAt: new Date().toISOString(),
+            },
+          },
+        },
+      };
+    });
+  }, []);
+
+  const handleSaveProgramFromCamPreview = useCallback(
+    async (
+      prog: any,
+      code: string,
+      options?: {
+        isNew?: boolean;
+        nameOverride?: string;
+        programNoOverride?: number;
+      },
+    ) => {
+      await saveProgramCode(prog, code, options);
+      applySavedNcToCamPreview(prog, code);
+    },
+    [applySavedNcToCamPreview, saveProgramCode],
   );
 
   const handleCloseProgramEditor = useCallback(() => {
@@ -2014,7 +2063,7 @@ export const MachiningQueueBoard = ({
           workUid={workUid}
           selectedProgram={programEditorTarget}
           onLoadProgram={loadProgramCodeForMachining}
-          onSaveProgram={saveProgramCode}
+          onSaveProgram={handleSaveProgramFromCamPreview}
           readOnly={isReadOnly}
         />
       ) : null}
