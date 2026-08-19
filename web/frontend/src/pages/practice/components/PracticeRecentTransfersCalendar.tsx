@@ -6,9 +6,10 @@
  * - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
  * - web/frontend/src/shared/date/kst.ts
  * - 2026-08-19: 리메이크는 공정 상태색 유지 + 이중 외곽선(흰 채움 아님).
- * - 2026-08-19: 기공의뢰수신 칩은 상단 뱃지 상태색(치과 캘린더는 그룹색 유지).
+ * - 2026-08-19: 기공의뢰수신 칩은 상단 뱃지 상태색.
  * - 2026-08-19: 치과 캘린더 칩에서 휴지통(의뢰 취소) 바로 이동.
  * - 2026-08-20: 년-월 캡션 클릭 시 오늘 주로 스크롤.
+ * - 2026-08-20: 치과 전체보기 칩도 상단 뱃지 상태색(그룹색 대신).
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Trash2 } from "lucide-react";

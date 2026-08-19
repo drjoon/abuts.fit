@@ -14,6 +14,7 @@
  * 2026-08-19: 기간필터·2주/한달 제거. 3주 스크롤, 토·일 기본 숨김, 기공소색, 검색=닫기 왼쪽.
  * 2026-08-19: 캘린더 칩 휴지통(의뢰 취소) — onDeleteTransfer 연결.
  * 2026-08-20: 상단 상태 뱃지=기공의뢰수신과 동일 색·외곽선(PRACTICE_STATUS_FILTER_BADGE_CLASS).
+ * 2026-08-20: 캘린더 칩도 상단 뱃지 상태색(리메이크=이중선).
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Search } from "lucide-react";
@@ -272,6 +273,8 @@ export function PracticeRecentTransfersAllModal({
         orderDate: transfer.orderDate,
         arrivalDate: transfer.arrivalDate,
         colorKey: String(transfer.targetLabAnchorId || "").trim() || lab,
+        statusTone: resolvePracticeCalendarStatusTone(transfer.status),
+        isRemake: Boolean(transfer.isRemake),
         sortLabel: lab,
         line: [lab, patient || "—", teeth || "—"].join(" / "),
         canDelete: canDeletePracticeTransferByStatus(transfer.status),
