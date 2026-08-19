@@ -123,7 +123,7 @@ Notes:
   - `src/shared/practice/practiceTransferAccept.ts`
   - `src/shared/files/extractDroppedFiles.ts`
   - `src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx`
-    - 보철물 치식: 치아만 마키 → 각각 크라운. 드래그 경로가 `+`를 지나거나 `+` 클릭 → 브리지. 형태 글자 클릭 → 인레이→크라운→커스텀어벗→임시치아 / 브리지↔Pontic↔작업X↔유지장치↔임시치아. 유지장치는 브리지 계열(2치 이상 연결 필수). 임시치아는 1치부터 n치(단독·연결). 연결 스팬에서 유지장치·임시치아는 한쪽 변경 시 연결된 치아 전체가 같은 형태. 유지장치·임시치아처럼 연결 전체가 강제 변경된 뒤 브리지 등으로 돌아오면, 클릭하지 않은 치아는 진입 직전 내용(형태·어벗·임플란트)을 복원. 작업X는 칸에 X 표시, 기공비·크레딧 미소비. 크라운·브리지 아래 `어벗` 체크박스(체크 시 설정 모달, 해제 시 규격 삭제). full 16치 한 줄은 카드 `min-w-[3.5rem]`·브리지 + 슬롯(미연결 `w-2`, 연결 `w-1.5`)으로 어벗 라벨이 잘리지 않게. 커스텀어벗 칸·어벗 체크 후는 「설정」없이 `생산만`/`디자인+생산` 클릭으로 설정 모달. **기공의뢰(practice/dropzone)** 모달은 디자인+생산 고정, 생산만 클릭=`/dashboard/new-request`(어벗생산의뢰). **어벗생산의뢰** 모달은 생산만 고정, 디자인+생산 클릭=`/dashboard/practice-transfers?mode=send`(기공의뢰). 모달 하단 좌측 `프리셋 편집`(primary), 우측 취소/확인. 프리셋 목록은 4개까지 표시·초과 시 스크롤. 임플란트·스캔바디 프리셋이 모두 없으면 설정 모달과 함께 프리셋 편집을 연다. 임플란트·스캔바디 프리셋을 각각 한 번 고르면 확인과 같이 저장·닫힘. 취소·오버레이=열기 전 값 복원. 호버 툴팁: `CNC커스텀어벗 - 어벗츠 자체 제공` + 멤버십/일반 단가 + `배송비 별도, 박스당 과금, 부가세 없음`(월 구독료 미표시). 모달 기본·계정 초기값=`design_custom_abutment`(디자인+생산). 한 번 바꾸면 `practiceTransferSettings.defaultAbutmentProductMode`에 저장하고 다음 모달 초기값으로 사용. 커스텀어벗은 기공소 수가가 아니라 어벗츠 단가. 전체해제·크게보기. 신규의뢰·기공의뢰서(practice/dropzone) 공통.
+    - 보철물 치식: 치아만 마키 → 각각 크라운. 드래그 경로가 `+`를 지나거나 `+` 클릭 → 브리지. 형태 글자 클릭 → 인레이→크라운→커스텀어벗→임시치아 / 브리지↔Pontic↔작업X↔유지장치↔임시치아. 유지장치는 브리지 계열(2치 이상 연결 필수). 임시치아는 1치부터 n치(단독·연결). 연결 스팬에서 유지장치·임시치아는 한쪽 변경 시 연결된 치아 전체가 같은 형태. 유지장치·임시치아처럼 연결 전체가 강제 변경된 뒤 브리지 등으로 돌아오면, 클릭하지 않은 치아는 진입 직전 내용(형태·어벗·임플란트)을 복원. 작업X는 칸에 X 표시, 기공비·크레딧 미소비. 크라운·브리지 아래 `어벗` 체크박스(체크 시 설정 모달, 해제 시 규격 삭제). full 16치 한 줄은 카드 `min-w-[3.5rem]`·브리지 + 슬롯(미연결 `w-2`, 연결 `w-1.5`)으로 어벗 라벨이 잘리지 않게. 커스텀어벗 칸·어벗 체크 후는 「설정」없이 `생산만`/`디자인+생산` 클릭으로 설정 모달. **기공의뢰(practice/dropzone)** 모달은 디자인+생산 고정, 생산만 클릭=`/dashboard/new-request`(어벗생산의뢰). **어벗생산의뢰** 모달은 생산만 고정, 디자인+생산 클릭=`/dashboard/practice-transfers?mode=send`(기공의뢰). 모달 하단 좌측 `프리셋 편집`(primary), 우측 취소/확인. 프리셋 목록은 4개까지 표시·초과 시 스크롤. 임플란트·스캔바디 프리셋이 모두 없으면 설정 모달과 함께 프리셋 편집을 연다. 임플란트·스캔바디 프리셋을 각각 한 번 고르면 확인과 같이 저장·닫힘. 취소·오버레이=열기 전 값 복원. 호버 툴팁: `CNC커스텀어벗 - 어벗츠 자체 제공` + 플랫폼 고시 단가 + `배송비 별도, 박스당 과금, 부가세 없음`. 모달 기본·계정 초기값=`design_custom_abutment`(디자인+생산). 한 번 바꾸면 `practiceTransferSettings.defaultAbutmentProductMode`에 저장하고 다음 모달 초기값으로 사용. 커스텀어벗은 기공소 수가가 아니라 어벗츠 단가. 전체해제·크게보기. 신규의뢰·기공의뢰서(practice/dropzone) 공통.
     - 기공의뢰서 상·하악 사이(크게보기·전송 상세 포함)에 견적(크레딧 소비액) 표시. 치과는 평소 블러, 호버 시 금액 공개. **자동매칭**은 최소 별(1~5)에 따른 플랫폼 고정수가(평균×배수) 견적·청구. 간단 합계 + 빠른툴팁 치식별 세부(컬럼: **보철기공비** / **어벗 디자인+생산비**. 둘 다 기공비. 기공소몫·어벗츠몫 헤더·구분선 없음). **배송비(주문 시 보류)** 를 크레딧 소비 총액에 합산 표시: 기공소 출발→치과→기공소, 어벗츠 출발→치과→어벗츠(`creditSettings.shippingFee`, 기본 3500·박스당). 둘 다 있으면 둘 다. 「지그 제작 불필요」는 견적 오른쪽 — **커스텀어벗(디자인+생산)만**일 때. 보철이 섞이면 숨기고 지그 포함 배송. 계정 `practiceTransferSettings.skipJig`(기본 **true**) → 전송 시 `production.skipJig` 스냅샷(보철 혼재 시 false). 체크 시 기공소 배송 면제. 환봉 요청중은 보철기공비에 `요청중`(또는 기공소 커스텀어벗 수가). `PracticeTransferFeeEstimate` / `GET /api/practice/transfers/quote-context`.
     - 기공소 의뢰카드·전송 상세: 주 표기(합산 라벨)=`기공비`·금액=보철기공비+어벗 디자인+생산비. 하청이면 보조로 수령=`기공비×(1−subcontractFeeRate)`. 원청(어벗츠 기공사업부)이 하청을 준 뒤 자기 화면은 전액 수주(수수료 0). 지정 기공소는 전액(지정 수수료 기본 off). 툴팁 트리거는「기공비」텍스트만(우측 ? 제외). 목록 `feeQuote` SSOT.
     - 프리셋 편집 패밀리 선택: Regular / Mini / Narrow / Small Narrow 고정 + 마지막「패밀리 추가」(직접 입력). 추가한 패밀리는 항목 옆 X로 삭제.
@@ -144,11 +144,11 @@ Notes:
   - `src/pages/admin/credits/components/RequestorCreditTab.tsx`
   - `src/pages/admin/credits/components/RequestorOrganizationsTab.tsx`
   - `src/shared/components/CreditLedgerModal.tsx` (내역: 잔액 카드 + rounded-2xl 테이블)
-  - `src/features/settings/tabs/AdminCreditSettingsTab.tsx` (요금/expressFee·생산만·디자인+생산 멤버십/일반 전역 설정 UI)
+  - `src/features/settings/tabs/AdminCreditSettingsTab.tsx` (요금/expressFee·생산만·디자인+생산 전역 설정 UI)
   - `src/pages/admin/system/AdminPlatformSettingsPage.tsx` (크레딧 · 커스텀어벗 · 인증 기공소 · 어벗츠 수가 · 기공소 수가. 수수료율=`GET|PATCH /api/admin/settings/platform-fees`. 기공소 신규 기공비는 어벗츠 수가 탭 배지·하이라이트)
-  - `src/pages/admin/partners/AdminPartnersPage.tsx` (사이드「사업영역」. 탭당 한 카드: 기공사업 · 어벗사업 · 플랫폼사업. 주체는 role Select(`RoleSelect`). 팀원 검색은 해당 주체 role만. 기공=기공팀·영업팀·개발운영사. 어벗=제조사·개발운영사·딜러사·어벗츠. 플랫폼=어벗츠·개발운영사. 구성원 분배액은 카드 안에서 수정. 분배는 매출에서 배송비를 먼저 차감한 잔여만(배송은 여기 미기재). 기공=내부기공소(기공사업부) 배당 건만 배송비 공통 지출 차감 후 내부 기공팀·영업팀 인센티브(면세)+개발운영사(+VAT). 어벗=건당 제조사 9,000(면세)·개발운영사 1,000·딜러사 3,000+VAT, 잔여 어벗츠. 의뢰서 소개코드(딜러사) 있으면 딜러사·없으면 어벗츠. 특별주문가는 주체별 배분액. 플랫폼=멤버십·자동매칭·지정(현재 무료)을 어벗츠 90%/개발운영사 10%)
+  - `src/pages/admin/partners/AdminPartnersPage.tsx` (사이드「사업영역」. 탭당 한 카드: 기공사업 · 어벗사업 · 플랫폼사업. 주체는 role Select(`RoleSelect`). 팀원 검색은 해당 주체 role만. 기공=기공팀·영업팀·개발운영사. 어벗=제조사·개발운영사·딜러사·어벗츠. 플랫폼=어벗츠·개발운영사. 구성원 분배액은 카드 안에서 수정. 분배는 매출에서 배송비를 먼저 차감한 잔여만(배송은 여기 미기재). 기공=내부기공소(기공사업부) 배당 건만 배송비 공통 지출 차감 후 내부 기공팀·영업팀 인센티브(면세)+개발운영사(+VAT). 어벗=건당 제조사 9,000(면세)·개발운영사 1,000·딜러사 3,000+VAT, 잔여 어벗츠. 의뢰서 소개코드(딜러사) 있으면 딜러사·없으면 어벗츠. 특별주문가는 주체별 배분액. 플랫폼=자동매칭·지정(현재 무료)을 어벗츠 90%/개발운영사 10%)
   - `src/features/settings/tabs/AdminAbutsLabFeeScheduleTab.tsx` (어벗츠 수가. 기공소 신규 항목은 Off·검토 대기; On=적용. 이벤트 `abuts-lab-fee:pending-items`)
-  - `src/features/settings/tabs/AdminCreditSettingsTab.tsx` (`variant=credits`: 환영 무료 크레딧·멤버십·배송 / `variant=customAbut`: 커스텀어벗(CNC/환봉·어벗디자인비)·어벗 추가 요청·특별 공급가)
+  - `src/features/settings/tabs/AdminCreditSettingsTab.tsx` (`variant=credits`: 환영 무료 크레딧·배송 / `variant=customAbut`: 커스텀어벗(CNC/환봉·어벗디자인비)·어벗 추가 요청·특별 공급가)
   - `src/pages/admin/system/AdminRoundBarAbutmentTab.tsx` (어벗 추가 요청. 도입 전 CNC어벗/환봉어벗 선택. 종류가 치과 단가에 반영. `GET|PATCH /api/admin/round-bar-requests`)
   - `src/pages/devops/components/DevopsPlatformFeeTab.tsx` (매칭 % · 지정 적용 on/off + % · 월 참여. `PracticeTransferAutoMatchTab` 카드 안. SSOT `payoutRates.platformFeeRate` / `directPlatformFeeEnabled` / `directPlatformFeeRate`)
 - 개발·운영사 설정
@@ -185,7 +185,7 @@ Notes:
   - 제조사: `src/pages/manufacturer/payments/PaymentsPage.tsx` — 거래 원장(일시·지급상태·금액·잔액·거래내역). 유형 열은 생략(모두 커스텀어벗 생산+배송비). **생산·배송은 KST 하루 1행**(의뢰 1건=어벗 1개라 기공의뢰처럼 못 묶음). 클릭 상세는 의뢰/배송을 별 섹션으로 나누고, 그 안에서 수취자(우편함)별. 장부는 공급가(어벗 1개당 9,000, 면세). 무료 크레딧은 지급 0.
   - 딜러: `src/pages/salesman/SalesmanPaymentsPage.tsx` — 공급가 장부, 지급 시 부가세·세금계산서(실입금=공급가+VAT)
   - 개발운영사: `src/pages/devops/DevopsPaymentsPage.tsx` — 잔여 분배 공급가, 지급 시 부가세·세금계산서(실입금=공급가+VAT)
-  - 관리자: `src/pages/admin/AdminPaymentsPage.tsx` — 어벗츠 4사업 축 + 관계사 잔여 분배(어벗츠 면세)
+  - 관리자: `src/pages/admin/AdminPaymentsPage.tsx` — 어벗츠 3사업 축 + 관계사 잔여 분배(어벗츠 면세)
 
 ## 1. 구조
 
@@ -217,7 +217,7 @@ Notes:
   - 신속 추가 의뢰크레딧 금액은 `creditSettings.expressFee`(기본 2,000원)를 사용합니다.
   - 디자인+생산(`design_custom_abutment`): `(생산 단가 + 디자인비) × 어벗 수`.
     - 디자인비는 디자인+생산 − 생산만. 어벗 수는 `toothWorks` 커스텀어벗·임플란트 치아(Pontic·작업X 제외).
-    - 안내·청구 정가 SSOT (`creditSettings` + `src/shared/pricing/abutsAbutmentService.ts`): 생산만 멤버십 1.5만원·일반 2.0만원, 디자인+생산 멤버십 2.5만원·일반 4.0만원. 치과 멤버십만 membership. 배송비 별도·박스당 과금. 치과 멤버십 월 구독료는 `creditSettings.practiceMembershipMonthlyFee`(기본 **50,000원**, 면세·유료 크레딧 차감 `PRACTICE_MEMBERSHIP_SPEND`, 관리자 플랫폼 설정). 해지 시 다음 결제일까지 유지, 이후 결제 없음. 기공소 매칭 월정 0·성공%만 — 루트 `rules.md` §2.3.
+    - 안내·청구 정가 SSOT (`creditSettings` + `src/shared/pricing/abutsAbutmentService.ts`): 생산만 **1.5만원**, 디자인+생산 **2.5만원**(`membership*` 필드). 신속 `expressFee`(기본 +2,000). 배송비 별도·박스당 과금. 치과 멤버십 월정·가입 90일 1만원 없음. 기공소 매칭 월정 0·성공%만 — 루트 `rules.md` §2.3.
     - 생산(`custom_abutment`)은 Request/STL당 생산 1개. 신속비는 건당.
     - 디자인+생산 신속비는 **어벗 수 배수** (`expressFee × abutmentQty`).
     - 표시 라벨: `커스텀어벗 생산` / `커스텀어벗 디자인+생산` (생략 시 `생산` / `디자인+생산`).
@@ -282,8 +282,9 @@ Notes:
   - 큐 API(`/api/cnc-machines/queues`)·worksheet 목록에 `shippingMode`/`finalShipping`/`originalShipping` 포함 → 프리뷰는 **추가 fetch 없이** 큐/목록 페이로드만 사용
   - 재생목록 항목 클릭 → PreviewModal (코드 에디터는 프리뷰 내 버튼)
 
-- 신규 기공소 런칭 이벤트 가격 표시 SSOT:
-  - 가입 승인일 기준 `90일` 동안 커스텀 어벗 `개당 10,000원` 고정가를 적용합니다.
+- 커스텀 어벗 의뢰 단가 표시 SSOT:
+  - 치과 정책 안내·크레딧 차감은 관리자「플랫폼 설정 · 커스텀어벗」멤버십 생산가(기본 15,000). 신속은 +신속 의뢰비.
+  - 기공소만 가입 승인일 기준 `90일` 동안 커스텀 어벗 `개당 10,000원` 고정가.
   - 기공소 어벗츠 인증: 설정「어벗츠 인증」에서 신청·상태 확인. **월 참여 수수료 0원**(정책). 매칭 성공 `platformFeeRate%` · 지정 거래 수수료는 **별도 공지 시까지 무료**(`directPlatformFeeEnabled` 기본 off). 구 거래 치과 소개 UI는 제거(초대 API는 레거시 유지).
   - 기공소 화면(기공의뢰수신·어벗생산의뢰) 상단: 등록 잔여일 alert + 가입 이유 alert(기간 중만, 2열). 기간 종료 후 대시보드 `[가입 이유]`(기공소·치과 각 variant).
   - 크레딧 잔액·장부 UI(`CreditLedgerModal` / 의뢰자 크레딧 페이지):
@@ -525,12 +526,11 @@ Notes:
   - 상단 합계 카드는 `DashboardShell.statsGridClassName`을 명시해 카드가 과도하게 좁아지지 않도록 유지합니다.
 
 - 관리자 정산(`AdminPaymentsPage`) 표시 정책:
-  - 상단 4사업 축(선택형 카드): (1) 커스텀 어벗 생산·공급 — 기공소 디자인 → 애크로덴트 생산 → 치과 납품(하청 정산) (2) 자동매칭 수수료 (3) 기공소 직접 운영 (4) 치과 월 구독료.
+  - 상단 3사업 축(선택형 카드): (1) 커스텀 어벗 생산·공급 — 기공소 디자인 → 애크로덴트 생산 → 치과 납품(하청 정산) (2) 자동매칭 수수료 (3) 기공소 직접 운영.
   - 집계 API: `GET /api/admin/credits/settlement-business-overview` (기간=`period`/`startDate`/`endDate`).
     - (1) 의뢰자 유료 소비(`REQUEST_SPEND_COMMIT`/`SHIPPING_SPEND_COMMIT`) + 제조사 하청 보조지표
     - (2) `PRACTICE_TRANSFER_ESCROW_RELEASE.meta.abutsRevenueAmount`
     - (3) `internalLab` `LAB_SETTLEMENT_CREDIT` 적립
-    - (4) `PRACTICE_MEMBERSHIP_SPEND` + 활성 멤버 수
   - 카드 선택 시 해당 사업 상세 패널. 하단「관계사 잔여 분배」는 딜러사·개발운영사(과세·세금계산서)·제조사·어벗츠(면세·계산서).
   - 기간 필터는 `PeriodFilter`(KST). `PricingPolicyDialog`는 가격·출고 안내만(사업 축 UI 아님).
   - UI: `creditPageUi` 패널/스탯 타일 + 선택형 사업 카드.
@@ -635,7 +635,7 @@ Notes:
   - 첨부 직후 백그라운드 사전 업로드(`useFilePreUpload`). 페이지 이동·복원 시 S3/File 메타가 있으면 재업로드하지 않는다(공유 캐시 + sessionStorage). 로그인 세션이 있을 때:
     - 기공의뢰: Dropzone·FileTransfer. 파일카드에 `uploadProgress` 프로그레스바.
       제출([기공소로 전송])은 캐시된 결과를 재사용하고, 미완료면 백그라운드 업로드만 기다린다. 재업로드 토스트를 띄우지 않는다.
-    - 생산의뢰: `useNewRequestPage` 첨부 직후 `preUploadFiles`. 파일카드 프로그레스바·%(업로드 중)·「업로드됨」(완료, 파란 바). 제출은 `ensureFilesUploaded` 재사용 (`useNewRequestSubmitV2`). `POST /api/requests/from-draft`는 S3를 다시 올리지 않고, 제출 지연은 서버 생성(가격·스케줄·크레딧 보류) 경로다.
+    - 생산의뢰: `useNewRequestPage` 첨부 직후 `preUploadFiles`. 파일카드 프로그레스바·%(업로드 중)·「업로드됨」(완료, 파란 바). 제출은 `ensureFilesUploaded` 재사용 (`useNewRequestSubmitV2`). `POST /api/requests/from-draft`는 S3를 다시 올리지 않고, 「의뢰 접수중」토스트 지연은 서버 생성(가격·스케줄·크레딧 보류) 경로다. 제출 시작 시 초안 PATCH debounce는 멈춘다(`suspendDraftPatches`).
       치과는 제출 후 같은 `/dashboard/new-request`에 잔류하므로, 성공 시 로컬 초안을 `setFiles([])`보다 먼저 지우고 입력 중 `check-duplicate`는 generation으로 무효화한다(성공 토스트와 중복 모달이 동시에 뜨지 않게).
       헤더 [출고예정]/[진행중]은 `RequestorAbutmentPageHeader`가 `request:stage-changed`·`credit:balance-updated`를 구독해 `requestor-bulk-shipping` / `requestor-dashboard-cards-summary`를 재조회한다.
     - 채팅 첨부: `useBackgroundTempUpload` + `BackgroundUploadList`

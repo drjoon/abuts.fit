@@ -99,14 +99,14 @@ const systemSettingsSchema = new mongoose.Schema(
       expressFee: { type: Number, default: 2000 },
       // 기공의뢰 신속처리 할증(기공비·어벗츠). 1 초과~2 이하.
       practiceRushFeeMultiplier: { type: Number, default: 1.2, min: 1, max: 2 },
-      // 디자인비 (1어벗당). 멤버십 디자인+생산 − 멤버십 생산만과 동기화.
-      // 생산만 멤버십 15,000 / 일반 20,000, 디자인+생산 멤버십 25,000 / 일반 40,000
+      // 디자인비 (1어벗당). 플랫폼 고시 디자인+생산 − 생산만과 동기화.
+      // 청구 SSOT: membershipProductionPrice 15,000 / membershipDesignAndProductionPrice 25,000
       designFee: { type: Number, default: 10000 },
       // 기공의뢰(CA) 수락 기공소 어벗디자인비 지급(1어벗당). designFee(의뢰자 과금)와 분리.
       abutmentDesignLabFee: { type: Number, default: 10000 },
       // 치과 납품 커스텀어벗 소매가(1어벗당). 기공의뢰 분배·devops 요금 설정 SSOT
       abutmentRetailPrice: { type: Number, default: 40000 },
-      // 치과(practice) 전용 멤버십 월 구독료. 기공소에는 적용하지 않음.
+      // 레거시. 치과 멤버십 월 구독 폐지. 신규 과금에 쓰지 않음.
       practiceMembershipMonthlyFee: { type: Number, default: 50000 },
       // 기공소 가입 환영 무료크레딧(단일). 레거시 defaultShippingFreeCredit는 0 고정.
       defaultRequestFreeCredit: { type: Number, default: 30000 },

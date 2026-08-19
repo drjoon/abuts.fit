@@ -23,7 +23,6 @@ import {
 import { findBusinessByAnchors } from "./business.find.util.js";
 import {
   updateMyBusiness,
-  setMyPracticeMembership,
   getMyAutoMatchParticipation,
   setMyAutoMatchParticipation,
 } from "./business.update.controller.js";
@@ -39,8 +38,7 @@ import {
   ensureRequestorOrgAnchor,
   isSyntheticPracticeBusinessNumber,
 } from "./requestorOrgAnchor.util.js";
-import { practiceMembershipResponseFields } from "../../services/practiceMembership.service.js";
-export { updateMyBusiness, setMyPracticeMembership, getMyAutoMatchParticipation, setMyAutoMatchParticipation };
+export { updateMyBusiness, getMyAutoMatchParticipation, setMyAutoMatchParticipation };
 
 export async function checkBusinessNumberDuplicate(req, res) {
   try {
@@ -360,7 +358,6 @@ export async function getMyBusiness(req, res) {
           payoutAccount: {},
           pricingBaseDate: pricingBaseDate || null,
           ...requestorProfileResponseFields(profile),
-          ...practiceMembershipResponseFields(null, { kind: profile.kind }),
           designAccessEnabled: false,
         },
       });
@@ -469,7 +466,6 @@ export async function getMyBusiness(req, res) {
     // related files:
     // - web/backend/controllers/requests/utils.js
     // - web/frontend/src/pages/requestor/settings/SettingsPage.tsx
-    // 신규 기공소 90일 고정가와 동일 기준일(가입 승인일 우선)을 노출한다.
     const pricingBaseDate = await resolveRequestorPricingBaseDate({
       requestorId: req.user._id,
       requestorOrgId: anchor._id,
@@ -534,9 +530,6 @@ export async function getMyBusiness(req, res) {
         shippingPolicy: anchor?.shippingPolicy || null,
         pricingBaseDate: pricingBaseDate || null,
         ...requestorProfileResponseFields(requestorProfile),
-        ...practiceMembershipResponseFields(anchor, {
-          kind: requestorProfile.kind,
-        }),
         designAccessEnabled:
           businessType === "requestor"
             ? Boolean(anchor?.designAccessEnabled)

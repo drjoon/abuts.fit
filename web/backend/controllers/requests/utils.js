@@ -8,6 +8,8 @@
 // - web/backend/controllers/requests/creation.from-draft.controller.js
 // - web/backend/controllers/requests/designHandoff.controller.js
 // change-log:
+// - 2026-08-19: 90일 1만원·주문량할인 폐지. 단가=플랫폼 설정(+신속 expressFee).
+// - 2026-08-19: computePriceForRequest skipExistingLookup — from-draft 중복조회 재사용.
 // - 2026-08-19: computePriceForRequest는 pricingBaseDate 재사용. 제출 시 로트는 ensureLotNumbersOnReadyEnter로 $inc 1회.
 import { Types } from "mongoose";
 import Request from "../../models/request.model.js";
@@ -28,9 +30,11 @@ import {
   ymdToMmDd,
 } from "../../utils/krBusinessDays.js";
 import { normalizeImplantFields } from "../../utils/implantCanonical.js";
-import { PRICING_VOLUME_ORDER_STAGES } from "../../services/pricingReferralOrderBucket.service.js";
 import { resolveQuotedPriceWithExtras } from "./designPrice.utils.js";
-import { loadCreditSettingsDefaults } from "../../utils/creditSettingsDefaults.js";
+import {
+  loadCreditSettingsDefaults,
+  resolveCustomAbutmentRequestUnitPrice,
+} from "../../utils/creditSettingsDefaults.js";
 
 export {
   addKoreanBusinessDays,
@@ -1069,7 +1073,7 @@ export async function ensureFinishedLotNumberForPacking(requestDoc) {
 // - web/backend/controllers/requests/creation.from-draft.controller.js
 // - web/backend/controllers/requests/dashboard.controller.js
 // - web/frontend/src/pages/requestor/settings/SettingsPage.tsx
-// 신규 기공소 90일 고정가 기준일 SSOT: 가입 승인일(verifiedAt) 우선
+// 가입 승인일(verifiedAt) 우선. 거래처 창·가입일 표시용. 런칭가와 무관.
 export async function resolveRequestorPricingBaseDate({
   requestorId,
   requestorOrgId,
@@ -1160,6 +1164,7 @@ export async function computePriceForRequest({
   currentRequestId = null,
   creditSettings: creditSettingsOverride = null,
   pricingBaseDate: pricingBaseDateOverride = undefined,
+  skipExistingLookup = false,
 }) {
   const now = new Date();
 
@@ -1168,9 +1173,6 @@ export async function computePriceForRequest({
       ? { businessAnchorId: new Types.ObjectId(String(requestorOrgId)) }
       : { requestor: requestorId };
 
-  const NEW_USER_FIXED_PRICE = 10000;
-  const DISCOUNT_PER_ORDER = 100;
-  const MAX_DISCOUNT = 5000;
   const MONTHLY_REMAKE_FREE_LIMIT = 3;
 
   const selfExclusionFilter =
@@ -1184,11 +1186,13 @@ export async function computePriceForRequest({
   nowKst.setDate(nowKst.getDate() - 90);
   const remakeCutoff = nowKst;
 
-  const [creditSettings, existing, pricingBaseDate] = await Promise.all([
+  const [creditSettings, existing] = await Promise.all([
     creditSettingsOverride
       ? Promise.resolve(creditSettingsOverride)
       : loadCreditSettingsDefaults({ requestorOrgId }),
-    Request.findOne({
+    skipExistingLookup || forceNewOrderPricing
+      ? Promise.resolve(null)
+      : Request.findOne({
       ...scopeFilter,
       ...selfExclusionFilter,
       "caseInfos.patientName": patientName,
@@ -1200,20 +1204,12 @@ export async function computePriceForRequest({
     })
       .select({ _id: 1 })
       .lean(),
-    pricingBaseDateOverride !== undefined
-      ? Promise.resolve(pricingBaseDateOverride)
-      : resolveRequestorPricingBaseDate({
-          requestorId,
-          requestorOrgId,
-        }),
   ]);
+  void pricingBaseDateOverride;
 
-  const baseUnitPrice = Math.max(
-    0,
-    Number(creditSettings?.minCreditForRequest ?? 15000) || 0,
-  );
   // special.amount / productionPrice = CNC 생산만. 디자인+생산은 designFee로 가산.
-  const BASE_UNIT_PRICE = baseUnitPrice;
+  // SSOT: 관리자 플랫폼 설정 단가(+신속 expressFee). 90일 1만원·주문량할인 없음.
+  const BASE_UNIT_PRICE = resolveCustomAbutmentRequestUnitPrice(creditSettings);
 
   let isRemake = false;
   let monthlyRemakeUsed = 0;
@@ -1270,108 +1266,13 @@ export async function computePriceForRequest({
     }
   }
 
-  // 1) 신규 90일 고정가: 가입일(대표 계정 기준) 90일 내 -> 10,000원 고정
-  const baseDate = pricingBaseDate;
-
-  if (baseDate) {
-    const baseYmd = toKstYmd(baseDate);
-    const baseKst = new Date(`${baseYmd}T00:00:00+09:00`);
-    baseKst.setDate(baseKst.getDate() + 90);
-    const newUserCutoff = baseKst;
-    if (now < newUserCutoff) {
-      return {
-        baseAmount: NEW_USER_FIXED_PRICE,
-        discountAmount: 0,
-        amount: NEW_USER_FIXED_PRICE,
-        currency: "KRW",
-        rule: isRemake
-          ? "remake_general_pricing"
-          : "new_user_90days_fixed_10000",
-        discountMeta: {
-          last30DaysOrders: 0,
-          referralLast30DaysOrders: 0,
-          discountPerOrder: DISCOUNT_PER_ORDER,
-          maxDiscount: MAX_DISCOUNT,
-          ...(isRemake
-            ? {
-                monthlyRemakeFreeLimit: MONTHLY_REMAKE_FREE_LIMIT,
-                monthlyRemakeUsed,
-                monthlyRemakeFreeRemaining,
-              }
-            : {}),
-        },
-        quotedAt: now,
-      };
-    }
-  }
-
-  // 2) 최근 30일 주문량 할인 — 대시보드/리퍼럴 SSOT와 동일하게
-  //    포장.발송·추적관리(완료)만 집계. 준비/가공 등 진행 중 의뢰는 제외.
-  const todayYmd = toKstYmd(now);
-  const todayKst = new Date(`${todayYmd}T00:00:00+09:00`);
-  todayKst.setDate(todayKst.getDate() - 30);
-  const last30Cutoff = todayKst;
-
-  const myBusinessAnchorId =
-    requestorOrgId && Types.ObjectId.isValid(String(requestorOrgId))
-      ? new Types.ObjectId(String(requestorOrgId))
-      : null;
-
-  const volumeStageFilter = {
-    manufacturerStage: { $in: PRICING_VOLUME_ORDER_STAGES },
-  };
-
-  const [last30DaysOrders, referredAnchors] = await Promise.all([
-    Request.countDocuments({
-      ...scopeFilter,
-      ...selfExclusionFilter,
-      ...volumeStageFilter,
-      createdAt: { $gte: last30Cutoff },
-    }),
-    myBusinessAnchorId
-      ? BusinessAnchor.find({
-          referredByAnchorId: myBusinessAnchorId,
-          businessType: "requestor",
-        })
-          .select({ _id: 1 })
-          .lean()
-      : Promise.resolve([]),
-  ]);
-
-  const referredBusinessAnchorIds = (referredAnchors || [])
-    .map((anchor) => anchor?._id)
-    .filter(Boolean);
-
-  const referralLast30DaysOrders = referredBusinessAnchorIds.length
-    ? await Request.countDocuments({
-        businessAnchorId: { $in: referredBusinessAnchorIds },
-        ...volumeStageFilter,
-        createdAt: { $gte: last30Cutoff },
-      })
-    : 0;
-
-  const totalOrders = last30DaysOrders + referralLast30DaysOrders;
-  const discountAmount = Math.min(
-    totalOrders * DISCOUNT_PER_ORDER,
-    MAX_DISCOUNT,
-  );
-  const amount = Math.max(0, BASE_UNIT_PRICE - discountAmount);
-
   return {
     baseAmount: BASE_UNIT_PRICE,
-    discountAmount,
-    amount,
+    discountAmount: 0,
+    amount: BASE_UNIT_PRICE,
     currency: "KRW",
-    rule: isRemake
-      ? "remake_general_pricing"
-      : discountAmount > 0
-        ? "volume_discount_last30days"
-        : "base_price",
+    rule: isRemake ? "remake_general_pricing" : "base_price",
     discountMeta: {
-      last30DaysOrders,
-      referralLast30DaysOrders,
-      discountPerOrder: DISCOUNT_PER_ORDER,
-      maxDiscount: MAX_DISCOUNT,
       ...(isRemake
         ? {
             monthlyRemakeFreeLimit: MONTHLY_REMAKE_FREE_LIMIT,

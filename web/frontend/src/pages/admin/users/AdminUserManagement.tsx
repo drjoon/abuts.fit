@@ -4,7 +4,7 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // change-log:
-// - 2026-08-13: 치과 사용자 상세에서 커스텀어벗 멤버십 on/off.
+// - 2026-08-19: 치과 멤버십 폐지. 사용자 상세 멤버십 on/off 제거.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Card,
@@ -192,7 +192,6 @@ type ApiUser = {
   businessInfo?: {
     name?: string;
     requestorKind?: "practice" | "lab" | null;
-    practiceMembershipActive?: boolean;
     businessLicense?: {
       fileId?: string | null;
       s3Key?: string | null;
@@ -257,7 +256,6 @@ type UiUserRow = {
   } | null;
   businessInfo?: ApiUser["businessInfo"] | null;
   unresolvedBusiness?: boolean;
-  practiceMembershipActive?: boolean;
 };
 
 const formatDate = (input?: string) => {
@@ -351,7 +349,6 @@ const toUiUser = (u: ApiUser): UiUserRow => {
     requestorCapabilities: normalizedCaps,
     businessInfo: u.businessInfo || null,
     unresolvedBusiness: Boolean(u.unresolvedBusiness),
-    practiceMembershipActive: Boolean(u.businessInfo?.practiceMembershipActive),
   };
 };
 
@@ -539,28 +536,6 @@ export const AdminUserManagement = () => {
       if (!res.ok || !res.data?.success) {
         toast({
           title: "사용자 상태 변경 실패",
-          description: res.data?.message || "잠시 후 다시 시도해주세요.",
-          variant: "destructive",
-        });
-        return false;
-      }
-      return true;
-    },
-    [toast, token],
-  );
-
-  const setPracticeMembership = useCallback(
-    async (userId: string, next: boolean) => {
-      if (!token) return false;
-      const res = await request<any>({
-        path: `/api/admin/users/${encodeURIComponent(userId)}`,
-        method: "PUT",
-        token,
-        jsonBody: { practiceMembershipActive: next },
-      });
-      if (!res.ok || !res.data?.success) {
-        toast({
-          title: "멤버십 변경 실패",
           description: res.data?.message || "잠시 후 다시 시도해주세요.",
           variant: "destructive",
         });
@@ -1418,18 +1393,6 @@ export const AdminUserManagement = () => {
                                   {selectedUser.lastLogin || "-"}
                                 </div>
                               </div>
-                              {selectedUser.requestorKind === "practice" ? (
-                                <div className="rounded-lg bg-muted/40 p-3">
-                                  <div className="text-xs text-muted-foreground">
-                                    커스텀어벗 단가
-                                  </div>
-                                  <div className="mt-1 font-medium">
-                                    {selectedUser.practiceMembershipActive
-                                      ? "멤버십"
-                                      : "일반"}
-                                  </div>
-                                </div>
-                              ) : null}
                             </div>
                           </div>
                         </div>
@@ -1561,36 +1524,6 @@ export const AdminUserManagement = () => {
                     </div>
 
                     <div className="flex flex-wrap gap-2 justify-end pb-1">
-                      {selectedUser.requestorKind === "practice" ? (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          disabled={loadingDetail}
-                          onClick={async () => {
-                            if (!selectedUser) return;
-                            const next = !selectedUser.practiceMembershipActive;
-                            const ok = await setPracticeMembership(
-                              selectedUser.id,
-                              next,
-                            );
-                            if (!ok) return;
-                            toast({
-                              title: next
-                                ? "멤버십 적용"
-                                : "멤버십 해제",
-                              description: next
-                                ? "커스텀어벗 멤버십 단가로 안내합니다."
-                                : "커스텀어벗 일반 단가로 안내합니다.",
-                            });
-                            await fetchUsers();
-                            await fetchUserDetail(selectedUser.id);
-                          }}
-                        >
-                          {selectedUser.practiceMembershipActive
-                            ? "멤버십 해제"
-                            : "멤버십 적용"}
-                        </Button>
-                      ) : null}
                       <Button
                         type="button"
                         variant="outline"

@@ -7,7 +7,7 @@
 // - 2026-08-17: splitAbutmentRetailForRouteHolds — 신속처리 배수 시 디자인/생산 분해 정합.
 // - 2026-08-14: 환봉 단가 필드 + resolveAbutsAbutmentUnitPrice(kind=round_bar).
 // - 2026-08-13: creditSettings 멤버십/일반 생산·디자인+생산 단가를 우선 사용.
-// - 2026-08-13: 치과 기공의뢰 커스텀어벗은 기공소 수가가 아니라 어벗츠 멤버십/일반 단가.
+// - 2026-08-19: 치과 멤버십 폐지. 플랫폼 고시 단가(membership* 필드)만 사용.
 
 export const ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE = 15_000;
 export const ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE = 20_000;
@@ -78,10 +78,9 @@ export function pickAbutsAbutmentCreditPrices(
   };
 }
 
-export function resolveAbutsAbutmentPricingTier({
-  practiceMembershipActive = false,
-} = {}) {
-  return Boolean(practiceMembershipActive) ? "membership" : "regular";
+export function resolveAbutsAbutmentPricingTier(_args = {}) {
+  // 치과 멤버십 폐지. 플랫폼 고시 단가(membership* 필드)만 사용.
+  return "membership";
 }
 
 export function resolveAbutsAbutmentUnitPrice({

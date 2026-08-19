@@ -11,7 +11,7 @@ import BusinessAnchor from "../models/businessAnchor.model.js";
 import {
   addCalendarMonthsKst,
   resolveNextBillingAt,
-} from "./practiceMembership.service.js";
+} from "./practiceMembership.helpers.js";
 import {
   ABUTS_LAB_CERT_STATUS,
   ABUTS_LAB_TEST_STATUS,

@@ -13,17 +13,17 @@ alwaysApply: false
 - 어벗 수 SSOT: `designPrice.utils.js` `countDesignAbutmentQty`
   - `toothWorks` 유효 행 수 우선 → 없으면 `tooth` 파싱 → 최소 1.
 - 단가:
-  - 가공비: `computePriceForRequest`가 산출한 **1개 단가** (`price.amount` 기준, 할인·리메이크 반영).
-  - 생산만/디자인+생산: `creditSettings` 멤버십·일반 4단가. 치과 멤버십만 membership, 기공소·미가입은 regular.
-    - 멤버십 생산 15,000 / 일반 20,000, 멤버십 디자인+생산 25,000 / 일반 40,000.
-  - 디자인비: `디자인+생산 − 생산만` (멤버십 기본 **10,000원 / 1어벗**). 레거시 `creditSettings.designFee`와 동기화.
+  - 가공비: `computePriceForRequest`가 산출한 **1개 단가** (`price.amount` 기준, 리메이크 반영).
+  - 치과 청구 SSOT: `creditSettings.membershipProductionPrice`(기본 **15,000**) / `membershipDesignAndProductionPrice`(기본 **25,000**). 가입 90일 1만원·치과 멤버십 분기 없음.
+  - 디자인비: `디자인+생산 − 생산만` (기본 **10,000원 / 1어벗**). 레거시 `creditSettings.designFee`와 동기화.
   - 기공의뢰(CA) **수락 기공소 지급** 어벗디자인비: `creditSettings.abutmentDesignLabFee`(기본 10,000원 / 1어벗). `designFee`(의뢰자 과금)와 분리.
+  - 신속: `creditSettings.expressFee`(기본 **+2,000**). 생산=건당, 디자인+생산=어벗 수 배수.
 - **공식**: `(가공 단가 + 디자인비) × 어벗 수`
-  - 예: 멤버십 어벗 5개, 가공 15,000·디자인 10,000 → `(15,000 + 10,000) × 5 = 125,000`
-  - 안내 정가: 생산만 멤버십 1.5만원·일반 2.0만원(구강지그 제외), 디자인+생산 멤버십 2.5만원·일반 4.0만원(구강스캔 경로·구강지그 포함). 배송비 별도·박스당 과금.
-  - 치과 멤버십 월 구독료: `creditSettings.practiceMembershipMonthlyFee`(기본 55,000원). 치과만 적용. 해지 시 다음 결제일까지 유지, 이후 결제 없음.
+  - 예: 어벗 5개, 가공 15,000·디자인 10,000 → `(15,000 + 10,000) × 5 = 125,000`
+  - 안내 정가: 생산만 1.5만원(구강지그 제외), 디자인+생산 2.5만원(구강스캔 경로·구강지그 포함). 배송비 별도·박스당 과금.
+- CNC 관리자「멤버/일반」단가·비율은 **딜러 유무 분배**용. 치과 구독과 무관.
 - `custom_abutment`(가공만): 기존처럼 **Request/STL 1건 = 가공 1개**. 디자인비·배수 없음.
-- 설정 UI SSOT: 관리자 **플랫폼 설정 → 커스텀어벗** (`AdminCreditSettingsTab` `variant=customAbut`). CNC/환봉 생산만·디자인+생산(멤버십·일반) 입력.
+- 설정 UI SSOT: 관리자 **플랫폼 설정 → 커스텀어벗** (`AdminCreditSettingsTab` `variant=customAbut`).
 - API: `GET /api/credits/settings`, `PATCH /api/admin/settings/credits`.
 
 ## Quote / charge
@@ -32,13 +32,13 @@ alwaysApply: false
   - `price.amount` = `(가공단가 + designFee) × qty`
   - `price.designFee` = `designFee × qty` (총액)
   - `price.abutmentQty` = 적용 어벗 수 (재견적 시 단가 복원용)
-- 적용 순서: **디자인+가공 배수 → 신속비** (`resolveQuotedPriceWithExpressFee`). 신속비는 **건(Request)당**, 어벗 수로 곱하지 않는다.
+- 적용 순서: **디자인+가공 배수 → 신속비** (`resolveQuotedPriceWithExpressFee`).
 - 이중 합산 방지: 기존 `designFee`·`abutmentQty`·`expressFee`를 걷어 가공 단가를 복원한 뒤 다시 적용.
 - 차감: CAM 가공 진입 시 `machining_spend` = `(가공단가 + 디자인비) × qty`. 신속비는 `express_surcharge` 분리.
 - 무상/0원 견적(리메이크 무료 등)에는 디자인비·배수를 붙이지 않는다.
 
 ## UI
 
-- 가격 정책 모달: 생산만·디자인+생산을 멤버십/일반 단가로 안내.
+- 가격 정책 모달: 생산만·디자인+생산을 플랫폼 고시 단가로 안내.
 - 의뢰 상세(`RequestDetailDialog`): 비용 세부(가공/디자인/배송·신속)를 표시.
 - 신규의뢰 우측·의뢰카드에는 디자인비 금액을 넣지 않는다. 의뢰카드는 `+디자인` 뱃지만.

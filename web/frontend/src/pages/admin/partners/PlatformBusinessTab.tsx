@@ -9,22 +9,16 @@ import { Input } from "@/components/ui/input";
 import { Layers } from "lucide-react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
-import { useSystemSettings } from "@/hooks/useSystemSettings";
 import { useBusinessAreaShare } from "./PartnerShareContext";
 import {
   departmentPoolAmount,
   formatPercent,
-  formatWon,
 } from "./partnerShare";
 import { ShareRoster } from "./DepartmentRoster";
 import { SectionHeader } from "./shareUi";
 
 export function PlatformBusinessTab() {
   const { token } = useAuthStore();
-  const { data: systemSettings } = useSystemSettings();
-  const membershipFee = Number(
-    systemSettings?.creditSettings?.practiceMembershipMonthlyFee ?? 50000,
-  );
   const { state, setPreviewPool } = useBusinessAreaShare();
   const { previewPool } = state.platform;
 
@@ -67,7 +61,7 @@ export function PlatformBusinessTab() {
         <SectionHeader
           icon={Layers}
           title="플랫폼사업"
-          description={`치과 멤버십 ${formatWon(membershipFee)} · 자동매칭 ${formatPercent(matchRatePct)} · 지정 ${directEnabled ? formatPercent(directRatePct) : "무료"}. 어벗츠 면세, 개발운영사 +VAT.`}
+          description={`자동매칭 ${formatPercent(matchRatePct)} · 지정 ${directEnabled ? formatPercent(directRatePct) : "무료"}. 어벗츠 면세, 개발운영사 +VAT.`}
           trailing={
             <div className="relative w-36">
               <Input

@@ -323,7 +323,6 @@ export async function createRequestsFromDraft(req, res) {
                 "requestSettings.defaultManufacturerHexRotation": 1,
                 "requestSettings.designSoftware": 1,
                 requestorKind: 1,
-                practiceMembershipActive: 1,
                 "verification.verifiedAt": 1,
                 createdAt: 1,
               })

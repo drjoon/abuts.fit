@@ -12,9 +12,7 @@
 // - 2026-08-14: 환봉 단가 필드 포함. 도입 종류별 단가 계산은 labFeeSchedule.
 // - 2026-08-13: creditSettings 멤버십/일반 생산·디자인+생산 단가 정규화.
 // - 2026-08-13: 생산 일반 2.0만·멤버십 1.5만 / 디자인+생산 일반 4.0만·멤버십 2.5만.
-// - 2026-08-15: 치과 멤버십 월 구독 기본 50,000(면세). 멤버십/일반 단가 SSOT.
-// - 2026-08-13: 멤버십/일반 단가 + 치과 월 구독료 SSOT.
-// - 2026-08-13: 치과 멤버십 여부(practiceMembershipActive)로 안내 단가 한쪽만 고름.
+// - 2026-08-19: 치과 멤버십 폐지. 커스텀어벗 안내는 플랫폼 고시 단가(membership* 필드).
 
 export const ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE = 15_000;
 export const ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE = 20_000;
@@ -113,19 +111,11 @@ export const formatAbutsManwon = (value: number) => {
 
 export type AbutsAbutmentPricingTier = "membership" | "regular";
 
-/** 치과+멤버십만 membership. 기공소·미가입 치과는 regular. */
-export const resolveAbutsAbutmentPricingTier = (args?: {
+/** 치과 멤버십 폐지. 플랫폼 고시 단가(membership* 필드)만 사용. */
+export const resolveAbutsAbutmentPricingTier = (_args?: {
   requestorKind?: string | null;
   practiceMembershipActive?: boolean | null;
-}): AbutsAbutmentPricingTier => {
-  if (
-    String(args?.requestorKind || "").trim() === "practice" &&
-    Boolean(args?.practiceMembershipActive)
-  ) {
-    return "membership";
-  }
-  return "regular";
-};
+}): AbutsAbutmentPricingTier => "membership";
 
 export const pickAbutsAbutmentTierPrice = (args: {
   tier: AbutsAbutmentPricingTier;
@@ -141,7 +131,5 @@ export const formatAbutsAbutmentTierPriceLine = (args: {
 }) => {
   const price = pickAbutsAbutmentTierPrice(args);
   if (price <= 0) return "가격 별도 고지";
-  return args.tier === "membership"
-    ? `멤버십 ${formatAbutsManwon(price)}`
-    : `일반 ${formatAbutsManwon(price)}`;
+  return formatAbutsManwon(price);
 };

@@ -49,12 +49,6 @@ router.patch(
   businessController.updateMyBusiness,
 );
 
-router.post(
-  "/me/practice-membership",
-  authorize(["requestor", "practice", "admin"]),
-  businessController.setMyPracticeMembership,
-);
-
 router.get(
   "/me/auto-match-participation",
   authorize(["requestor", "internalLab", "admin"]),

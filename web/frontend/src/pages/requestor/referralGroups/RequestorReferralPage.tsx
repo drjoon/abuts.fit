@@ -3,6 +3,8 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
+// change-log:
+// - 2026-08-19: 치과 단가 안내를 플랫폼 설정 기준으로. 90일 1만원 문구 제거.
 import { useState } from "react";
 import {
   Card,
@@ -248,11 +250,10 @@ export const RequestorReferralPage = () => {
                     />
                     <div className="rounded-xl bg-blue-50 px-4 py-3.5 text-xs leading-relaxed text-blue-900">
                       <p>
-                        신규 가입 이벤트 기간에는 90일간 10,000원으로
-                        고정됩니다.
+                        치과 커스텀 어벗 단가는 관리자 플랫폼 설정을 따릅니다.
                       </p>
                       <p className="mt-1.5">
-                        소개한 사업자와 주문량을 합산해 할인받을 수 있습니다.
+                        신속 출고는 플랫폼 설정 신속비(+2,000원 기본)가 추가됩니다.
                       </p>
                     </div>
                   </div>

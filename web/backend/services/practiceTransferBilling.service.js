@@ -254,32 +254,10 @@ export function toRemakeApiFields(doc) {
 }
 
 async function resolvePracticeAbutmentPricingTier(
-  practiceAnchorId,
-  session = null,
+  _practiceAnchorId,
+  _session = null,
 ) {
-  const id = String(practiceAnchorId || "").trim();
-  if (!id || !Types.ObjectId.isValid(id)) return "regular";
-
-  const load = async () => {
-    const practice = await BusinessAnchor.findById(id)
-      .select({ practiceMembershipActive: 1 })
-      .session(session || null)
-      .lean();
-    return resolveAbutsAbutmentPricingTier({
-      practiceMembershipActive: Boolean(practice?.practiceMembershipActive),
-    });
-  };
-
-  if (session) return load();
-
-  const cacheKey = `practice-transfer:abutment-tier:${id}`;
-  const cached = getRequestPerfCacheValue(cacheKey);
-  if (cached === "regular" || cached === "membership") return cached;
-  return withRequestPerfInFlight(cacheKey, async () => {
-    const tier = await load();
-    setRequestPerfCacheValue(cacheKey, tier, QUOTE_LOOKUP_CACHE_TTL_MS);
-    return tier;
-  });
+  return "membership";
 }
 
 async function resolveRevenueOwners({ practiceAnchorId, session }) {
@@ -3686,7 +3664,6 @@ export async function buildFeeQuotesForTransferDocs({
       practiceIdList.length
         ? BusinessAnchor.find({ _id: { $in: practiceIdList } })
             .select({
-              practiceMembershipActive: 1,
               "practiceTransferSettings.implantFavorites": 1,
             })
             .lean()
@@ -3733,12 +3710,6 @@ export async function buildFeeQuotesForTransferDocs({
   );
 
   const pairKey = (labId, practiceId) => `${labId}:${practiceId}`;
-  const membershipByPractice = new Map(
-    practices.map((practice) => [
-      String(practice._id),
-      Boolean(practice.practiceMembershipActive),
-    ]),
-  );
   const favoritesByPractice = new Map(
     practices.map((practice) => [
       String(practice._id),
@@ -3773,9 +3744,7 @@ export async function buildFeeQuotesForTransferDocs({
     const schedule = quoteLabId ? scheduleByLab.get(quoteLabId) : null;
     const noLab = !quoteLabId;
     const remake = isPracticeTransferRemake(doc);
-    const abutmentPricingTier = resolveAbutsAbutmentPricingTier({
-      practiceMembershipActive: Boolean(membershipByPractice.get(practiceId)),
-    });
+    const abutmentPricingTier = resolveAbutsAbutmentPricingTier();
     const implantFavorites = favoritesByPractice.get(practiceId) || [];
     // 지정·수락됨: billing 스냅샷(있으면). 공개풀·스냅 없는 자동매칭: as-of(history).
     const snapLabFeeMultiplier = normalizeLabFeeMultiplier(

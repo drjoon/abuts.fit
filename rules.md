@@ -149,7 +149,7 @@
 ### 2.3 크레딧/정산
 
 - **부가세(VAT) / 면세 정책(강제) — 이중 체계:**
-  - **면세(치과–기공소–제조사–어벗츠)**: 크레딧 충전·소비·기공정산·치과↔기공소 기공의뢰·치과 멤버십·어벗츠 잔여·제조사 하청. `vatAmount = 0`. 증빙은 **계산서**(세금계산서 아님). 고객/약관 가격 안내에 "VAT 별도·부가세 포함·VAT 10%" 금지(배송비 별도 안내는 유지).
+  - **면세(치과–기공소–제조사–어벗츠)**: 크레딧 충전·소비·기공정산·치과↔기공소 기공의뢰·어벗츠 잔여·제조사 하청. `vatAmount = 0`. 증빙은 **계산서**(세금계산서 아님). 고객/약관 가격 안내에 "VAT 별도·부가세 포함·VAT 10%" 금지(배송비 별도 안내는 유지).
   - **과세(어벗츠↔딜러사, 어벗츠↔개발운영사)**: 지급 시 부가세 **10%**. 어벗츠가 딜러사·개발운영사에게 지급할 때 부가세를 붙이고 **세금계산서**를 수취한다.
   - 크레딧은 선불전자지급수단(선불페이)이 아니라 **기공물 구매용 기공료 선입금(선납 대금)**이다. 충전 화면·FAQ·약관·입금 확인 메시지에 `크레딧(기공료 선입금)`을 명시한다.
   - 크레딧 충전: `vatAmount = 0`, `amountTotal = supplyAmount`(공급가 = 입금/결제 금액).
@@ -160,35 +160,33 @@
   1. **커스텀 어벗 생산·공급** — 기공소 디자인 → 애크로덴트 생산 → 치과 납품(하청 정산).
   2. **자동매칭 수수료** — 기공비의 `platformFeeRate`(기본 10%). 관리자 플랫폼 설정.
   3. **기공소 직접 운영** — 치과 의뢰를 어벗츠가 직접 처리·기공료 수취. Role SSOT: `internalLab`(어벗츠기공소).
-  4. **치과 월 구독료** — `practiceMembershipMonthlyFee`(기본 50,000원, 면세·유료 크레딧 차감). 상세는 아래 매칭·멤버십 과금 SSOT.
   - 가격 안내 UI(`PricingPolicyDialog`)는 커스텀 어벗 단가·출고 정책 안내용이며, 사업 축 정의와 혼용하지 않는다.
-  - 관리자 정산 UI: `AdminPaymentsPage` 상단 4사업 축(선택형) · 집계 `GET /api/admin/credits/settlement-business-overview`. 분배 설정 UI: 관리자「사업영역」(`/dashboard/partners`, 기공·어벗·플랫폼).
-- **매칭·멤버십 과금 SSOT(강제):**
-  - 한 줄: **기공소 월 참여 수수료 0원 + 치과 멤버십만 월 과금(면세·부가세 없음, 유료 크레딧 차감).**
+  - 관리자 정산 UI: `AdminPaymentsPage` 상단 3사업 축(선택형) · 집계 `GET /api/admin/credits/settlement-business-overview`. 분배 설정 UI: 관리자「사업영역」(`/dashboard/partners`, 기공·어벗·플랫폼).
+- **매칭 과금 SSOT(강제):**
+  - 한 줄: **기공소 월 참여 수수료 0원. 치과 멤버십 월 과금 없음.**
   - 기공소(`lab`): 자동 매칭 **월 참여 수수료(`autoMatchMonthlyFee`)는 0원 고정(정책)**. 참여 ON/OFF만 운영. 과금은 자동 매칭 **성공 수수료(`platformFeeRate`%)만** — 작업완료 정산(에스크로 해제) 시 기공비에서 공제. 지정 의뢰는 `directPlatformFeeEnabled` **기본 off=무료**(별도 공지 시까지); on 시 `directPlatformFeeRate%`.
-  - 치과(`practice`): **멤버십 월 구독료** `practiceMembershipMonthlyFee` **기본 50,000원(공급가, VAT 0)**. 혜택=커스텀어벗 멤버십 단가. 해지=기간말 예약(`practiceMembershipCancelAtPeriodEnd`), 다음 결제일까지 유지.
-  - 치과 멤버십 청구: 결제일 도래 시 `PRACTICE_MEMBERSHIP_SPEND`로 **유료 크레딧(`REQ_PAID_CREDIT`)에서 공급가 차감**(무료·기공크레딧 미사용). 워커 `practiceMembershipBillingWorker` / `processDuePracticeMembership`. 잔액 부족 시 갱신 실패 → 멤버십 OFF·일반 단가. `vatAmount = 0`. 가입 시점 선과금 없음(첫 결제는 `nextBillingAt`).
-  - 유료 크레딧 사용처(확장): 기공물·어벗 주문 대금 **및 치과 멤버십 월 구독료**. 기공소 매칭 월정·기타 플랫폼 SaaS 과금에는 쓰지 않는다.
-  - 설정: 멤버십=`AdminCreditSettingsTab` / `PATCH /api/admin/settings/credits`. 매칭 성공율·지정 수수료 on/off·월정(0)=`DevopsPlatformFeeTab` / `PATCH /api/admin/settings/platform-fees`.
+  - 치과(`practice`): 커스텀어벗은 플랫폼 고시 단가만. 월 구독·가입 90일 1만원 없음.
+  - 유료 크레딧 사용처: 기공물·어벗 주문 대금. 기공소 매칭 월정·플랫폼 SaaS 과금에는 쓰지 않는다.
+  - 설정: 단가·신속비=`AdminCreditSettingsTab` / `PATCH /api/admin/settings/credits`. 매칭 성공율·지정 수수료 on/off·월정(0)=`DevopsPlatformFeeTab` / `PATCH /api/admin/settings/platform-fees`.
 - 단일 SSOT 장부: `LedgerJournal` + `LedgerLine`(논리적으로 하나의 General Ledger)
 - 기존 분리 원장(`CreditLedger`, `ManufacturerCreditLedger`, `SalesmanLedger`, `AdminCreditLedger`)은
   **레거시로 간주하며 단계적 이관 후 삭제**한다. 이관 중 이중기록(dual-write) 금지.
 - 필수 이벤트 타입 SSOT(저장형):
   - `REQUEST_SPEND_HOLD`, `REQUEST_SPEND_COMMIT`, `SHIPPING_SPEND_HOLD`, `SHIPPING_SPEND_COMMIT`
-  - `PRACTICE_MEMBERSHIP_SPEND`(치과 멤버십 월 구독·유료 크레딧만)
+  - `PRACTICE_MEMBERSHIP_SPEND`(레거시 치과 멤버십 월 구독. 신규 과금 없음)
   - `CHARGE_PAID`, `CHARGE_FREE_REQUEST`, `CHARGE_FREE_SHIPPING`, `ADJUST`, `SETTLEMENT_PAYOUT`
 - 수익 계정 SSOT:
   - `REV_MANUFACTURER`, `REV_DEVOPS`, `REV_SALESMAN`, `REV_ADMIN`
   - **제조사(하청)**: % 분배 금지. **어벗 1개당** 고정 공급가(면세) — `creditSettings.manufacturerRequestUnitPrice`(기본 9,000)·`manufacturerShippingUnitPrice`(기본 3,500, 박스당). 유료·무료 모두 **적립(확인용)** 하되, **정산 지급은 유료만**(무료 크레딧 지급 0).
   - **어벗 생산 분배**: 판매가(배송비 제외)에서 건당 제조사 9,000(면세) · 개발운영사 1,000 · 딜러사 3,000을 공급가로 떼고, 개발운영사·딜러사 지급 시 부가세 10%. 잔여 → 어벗츠(면세). 딜러사 없으면 딜러사 몫은 어벗츠. 특별주문가는 주체별 배분액. 설정 UI: 관리자「사업영역」어벗사업. 제조사 박스당 배송 지급은 장부 출고 룰이며 사업영역 분배 UI에는 기재하지 않음.
   - **배송 분배**: 사업영역 분배 재원에서 제외. 매출에서 배송비를 먼저 차감한 나머지만 분배. 제조사 배송 공급가(면세)·고객 배송비 잔여는 출고 장부 흐름.
-  - **플랫폼 분배**: 치과 멤버십·기공소 자동매칭 수수료·지정 수수료(현재 무료)를 어벗츠 90% / 개발운영사 10%(비율 수정 가능). 개발운영사 지급 시 부가세.
+  - **플랫폼 분배**: 기공소 자동매칭 수수료·지정 수수료(현재 무료)를 어벗츠 90% / 개발운영사 10%(비율 수정 가능). 개발운영사 지급 시 부가세.
   - **기공(어벗츠기공소) 분배**: 내부기공소(기공사업부)에 배당된 건만, 배송비를 공통 지출로 먼저 차감한 뒤 나머지를 주체(role) 비율 → 주체 내 팀원 비율로 배분. 초기 주체 기공팀·영업팀·개발운영사. 설정 UI: 관리자「사업영역」기공사업.
   - 동일 의뢰 `machining_spend`+`express_surcharge`: 제조사 고정단가는 **어벗 개수×1회**만. express는 잔여 분배에만 포함.
   - paid/free/settlement 혼합 소비는 의뢰자 잔액에서 **무료 → 기공(settlement 상계) → 유료** 순으로 차감
   - 수익 라인(`REV_*`)의 paid/free 표시는 role 순서가 아니라 소비된 paid/free 총량을 role base에 비례 배분(무편향)해 기록
   - 무료 수익은 지급 0원으로 정산완료 상태만 표시 가능
-- 신규 기공소 런칭 이벤트 가격 SSOT: 가입 승인일 기준 `90일` 동안 커스텀 어벗 `개당 10,000원` 고정가를 우선 적용
+- 커스텀 어벗 의뢰 단가 SSOT: 관리자「플랫폼 설정 · 커스텀어벗」`creditSettings.membershipProductionPrice`(기본 **15,000원**). 디자인+생산=`membershipDesignAndProductionPrice`(기본 **25,000원**). 신속=`expressFee`(기본 **+2,000원**). 기공소 어벗생산의뢰는 `labProductionPrice` 오버레이. 가입 90일 1만원·치과 멤버십 분기 없음.
 - 롤백 원칙:
   - 롤백은 REFUND 추가가 아니라 원본 커밋 이벤트 및 대응 라인의 **물리 삭제**
 - 조회/표시 타입 원칙:
@@ -303,8 +301,8 @@
 - 우편함 배정 시점: 가공→세척.패킹 진입. 같은 수신자면 집하 전까지 한 칸에 모음(1회 택배비). 포장.발송은 기존 배정 유지. 포장.발송↔세척.패킹·세척.패킹→가공 롤백도 우편함 유지(패킹 라벨 SSOT). 가공→준비 롤백에서만 해제.
 - 합류 키: 수신자 BusinessAnchor. PTX 직납은 치과 BA + 수취인 지문(이름/전화/주소)이 같을 때만 합류. 다른 기공소에서 온 동일 치과도 한 박스. 신속/묶음은 같은 수신자면 같이 묶음.
 - 배송비 과금 시점: 집하(우편함 비우기) 1회. 운송장 라벨에는 건수를 출력하지 않음(웹앱에서 확인).
-- 신속 배송 추가 의뢰크레딧: `creditSettings.expressFee`(기본 1,000원), **가공 진입(CAM 승인) 시 별도 `express_surcharge` 저널로 차감**
-  - 설정 UI: 관리자 플랫폼 설정「크레딧」(멤버십·배송) / 「커스텀어벗」(단가) — `AdminCreditSettingsTab` / `PATCH /api/admin/settings/credits` (`admin`|`devops`)
+- 신속 배송 추가 의뢰크레딧: `creditSettings.expressFee`(기본 **2,000원**), **가공 진입(CAM 승인) 시 별도 `express_surcharge` 저널로 차감**
+  - 설정 UI: 관리자 플랫폼 설정「크레딧」(배송) / 「커스텀어벗」(단가) — `AdminCreditSettingsTab` / `PATCH /api/admin/settings/credits` (`admin`|`devops`)
   - 약속 출고일 자정까지 당일 집하 실패(또는 신속→묶음 전환) 시 신속 추가비만 물리 삭제 취소
     (`shippingOnTimeEvalWorker` / `cancelExpressSurchargeIfShipDelayed`). 16시 이후 당일 수동 집하는 정시.
   - 의뢰자 대시보드: `PATCH /api/requests/my/shipping-mode` (준비 단계만)
@@ -313,7 +311,7 @@
     - 실제 크레딧 차감 시점(CAM)과 표시 금액 반영 시점을 혼동하지 말 것
 - 디자인+가공 과금: `productMode === "design_custom_abutment"`일 때만 적용
   - **1 STL에 여러 어벗** 가능. 공식: `(가공 단가 + 디자인비) × 어벗 수`
-  - 단가: `creditSettings` 멤버십/일반 4값(생산만 15,000/20,000, 디자인+생산 25,000/40,000). 치과 멤버십만 membership. `designFee`는 디자인+생산 − 생산만과 동기화(멤버십 기본 **10,000원 / 1어벗**). 기공의뢰 CA 수락 기공소 지급은 `abutmentDesignLabFee`(기본 **10,000원 / 1어벗**, `designFee`와 분리). 배송비 별도·박스당 과금. 치과 멤버십 월 구독료 `practiceMembershipMonthlyFee`(기본 **50,000원**, 면세·유료 크레딧 차감 — §2.3 매칭·멤버십 과금 SSOT).
+  - 단가: 치과 청구 SSOT=`creditSettings.membershipProductionPrice`(기본 **15,000**) / `membershipDesignAndProductionPrice`(기본 **25,000**). `designFee`는 디자인+생산 − 생산만과 동기화(기본 **10,000원 / 1어벗**). 기공의뢰 CA 수락 기공소 지급은 `abutmentDesignLabFee`(기본 **10,000원 / 1어벗**, `designFee`와 분리). 배송비 별도·박스당 과금. 신속=`expressFee`(기본 **+2,000**). CNC 관리자「멤버/일반」은 딜러 유무 분배용이며 치과 구독과 무관.
   - 어벗 수: `caseInfos.toothWorks` 유효 행(없으면 `tooth` 파싱, 최소 1) — `countDesignAbutmentQty`
   - 설정 UI: 동일 `AdminCreditSettingsTab`(`variant=customAbut`) / `PATCH /api/admin/settings/credits`
   - 견적/표시: `designPrice.utils.js` `resolveQuotedPriceWithDesignFee`

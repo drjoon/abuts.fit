@@ -163,37 +163,8 @@ function buildPtxAbutsProductionQuoteLocal({
   });
 }
 
-async function resolvePtxPracticePricingTier(request, session = null) {
-  const pb =
-    request?.partnerBilling && typeof request.partnerBilling === "object"
-      ? request.partnerBilling
-      : {};
-  let practiceId = String(pb.practiceBusinessAnchorId || "").trim();
-  if (!practiceId || !Types.ObjectId.isValid(practiceId)) {
-    const relatedPtxId = String(pb.relatedPracticeTransferId || "").trim();
-    if (relatedPtxId && Types.ObjectId.isValid(relatedPtxId)) {
-      try {
-        const PracticeTransfer = (
-          await import("../../models/practiceTransfer.model.js")
-        ).default;
-        const ptx = await PracticeTransfer.findById(relatedPtxId)
-          .select({ practiceBusinessAnchorId: 1 })
-          .session(session || null)
-          .lean();
-        practiceId = String(ptx?.practiceBusinessAnchorId || "").trim();
-      } catch {
-        practiceId = "";
-      }
-    }
-  }
-  if (!practiceId || !Types.ObjectId.isValid(practiceId)) return "regular";
-  const practice = await BusinessAnchor.findById(practiceId)
-    .select({ practiceMembershipActive: 1 })
-    .session(session || null)
-    .lean();
-  return resolveAbutsAbutmentPricingTier({
-    practiceMembershipActive: Boolean(practice?.practiceMembershipActive),
-  });
+async function resolvePtxPracticePricingTier(_request, _session = null) {
+  return "membership";
 }
 
 async function emitOrQueueCreditBalanceUpdate({
@@ -878,7 +849,7 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
   const abutmentQty = countDesignAbutmentQty(caseInfos);
   const productMode = String(caseInfos?.productMode || "").trim();
 
-  // PTX 기공소 디자인: 생산만(디자인비 0). 치과 멤버십/일반 단가.
+  // PTX 기공소 디자인: 생산만(디자인비 0). 플랫폼 고시 단가.
   let computedPrice;
   let machiningAmount;
   let withDesign;

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
 import {
@@ -21,19 +21,16 @@ import {
   FlaskConical,
   Banknote,
 } from "lucide-react";
-import { request } from "@/shared/api/apiClient";
 import { RequestorSecurity } from "./Security";
-import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
 import { formatKstDateTimeToKo, toKstYmd } from "@/shared/date/kst";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import { InternalLabOrgBanner } from "@/features/settings/InternalLabOrgBanner";
 
 // related files:
 // - web/backend/controllers/businesses/business.controller.js
-// - web/backend/controllers/requests/utils.js
 // - web/frontend/src/pages/requestor/credits/RequestorCreditsPage.tsx
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
-// 가입일시/경과일/D-day는 신규 기공소 90일 고정가와 동일 기준일(pricingBaseDate)을 사용한다.
+// 2026-08-19: 90일 런칭가 폐지. 가입일시·경과일만 표시.
 // 2026-08-11: 설정 결제 탭 제거 → 사이드바 크레딧(`/dashboard/credits`)로 이전.
 // 2026-08-11: 설정 의뢰 탭 제거 → 어벗의뢰 좌측 상단(디자인소프트웨어·아노다이징).
 // 2026-08-13: 기공비 마스터 Off면 로그인 후 `?tab=lab-fees&setup=1`로 유도(LabFeeSetupPrompt).
@@ -57,65 +54,16 @@ const LEGACY_TAB_REDIRECT: Partial<Record<string, TabKey>> = {
 };
 
 export const RequestorSettingsPage = () => {
-  const { user, token } = useAuthStore();
+  const { user } = useAuthStore();
   const [searchParams, setSearchParams] = useSearchParams();
   const { loading: accessLoading, kind } = useRequestorBusinessAccess();
   const isLab = kind === "lab" || user?.role === "internalLab";
 
-  const [loadingMembership, setLoadingMembership] = useState(Boolean(token));
-  const [pricingBaseDate, setPricingBaseDate] = useState<string | null>(null);
-  const membershipLoadedRef = useRef(false);
-
-  const businessType = useMemo(() => {
-    return resolveBusinessType(user?.role, "requestor");
-  }, [user?.role]);
-
-  useEffect(() => {
-    const load = async () => {
-      if (!token) {
-        setPricingBaseDate(null);
-        setLoadingMembership(false);
-        membershipLoadedRef.current = true;
-        return;
-      }
-
-      if (!membershipLoadedRef.current) {
-        setLoadingMembership(true);
-      }
-      try {
-        const res = await request<{
-          data?: { pricingBaseDate?: string };
-          pricingBaseDate?: string;
-        }>({
-          path: `/api/businesses/me?businessType=${encodeURIComponent(
-            businessType,
-          )}`,
-          method: "GET",
-          token,
-        });
-        if (!res.ok) {
-          setPricingBaseDate(null);
-          return;
-        }
-        const body = res.data || {};
-        const data = body.data || body;
-        setPricingBaseDate(
-          data?.pricingBaseDate ? String(data.pricingBaseDate) : null,
-        );
-      } catch {
-        setPricingBaseDate(null);
-      } finally {
-        membershipLoadedRef.current = true;
-        setLoadingMembership(false);
-      }
-    };
-
-    void load();
-  }, [businessType, token]);
+  const joinDate = user?.createdAt ? String(user.createdAt) : null;
 
   const pricingElapsedDays = useMemo(() => {
-    if (!pricingBaseDate) return null;
-    const startYmd = toKstYmd(pricingBaseDate);
+    if (!joinDate) return null;
+    const startYmd = toKstYmd(joinDate);
     const todayYmd = toKstYmd(new Date());
     if (!startYmd || !todayYmd) return null;
 
@@ -124,12 +72,7 @@ export const RequestorSettingsPage = () => {
     const diffMs = today.getTime() - start.getTime();
     if (!Number.isFinite(diffMs)) return null;
     return Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
-  }, [pricingBaseDate]);
-
-  const launchEventRemainingDays = useMemo(() => {
-    if (pricingElapsedDays == null) return null;
-    return Math.max(0, 90 - pricingElapsedDays);
-  }, [pricingElapsedDays]);
+  }, [joinDate]);
 
   const tabs: SettingsTabDef[] = useMemo(() => {
     const base: SettingsTabDef[] = [
@@ -154,7 +97,7 @@ export const RequestorSettingsPage = () => {
                 <div>
                   <p className="text-sm font-semibold text-slate-900">가입 정보</p>
                   <p className="text-xs text-muted-foreground">
-                    런칭 이벤트·요금 기준일
+                    계정 가입일
                   </p>
                 </div>
               </div>
@@ -162,9 +105,7 @@ export const RequestorSettingsPage = () => {
                 <div className="rounded-xl border border-slate-200/80 bg-white/70 px-4 py-3">
                   <p className="text-xs text-muted-foreground">가입일시</p>
                   <p className="mt-1 text-sm font-semibold text-slate-900">
-                    {pricingBaseDate
-                      ? formatKstDateTimeToKo(pricingBaseDate)
-                      : "-"}
+                    {joinDate ? formatKstDateTimeToKo(joinDate) : "-"}
                   </p>
                 </div>
                 <div className="rounded-xl border border-slate-200/80 bg-white/70 px-4 py-3">
@@ -175,19 +116,6 @@ export const RequestorSettingsPage = () => {
                         ? "-"
                         : `${pricingElapsedDays}일`}
                     </p>
-                    {launchEventRemainingDays != null && (
-                      <span
-                        className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold leading-none ${
-                          launchEventRemainingDays > 0
-                            ? "bg-primary-soft text-primary-strong ring-1 ring-primary-muted"
-                            : "bg-slate-100 text-slate-600 ring-1 ring-slate-200"
-                        }`}
-                      >
-                        {launchEventRemainingDays > 0
-                          ? `런칭 이벤트 D-${launchEventRemainingDays}일`
-                          : "런칭 이벤트 종료"}
-                      </span>
-                    )}
                   </div>
                 </div>
               </div>
@@ -237,13 +165,7 @@ export const RequestorSettingsPage = () => {
     );
 
     return base;
-  }, [
-    isLab,
-    launchEventRemainingDays,
-    pricingBaseDate,
-    pricingElapsedDays,
-    user,
-  ]);
+  }, [isLab, joinDate, pricingElapsedDays, user]);
 
   const rawTab = searchParams.get("tab");
   const mapped =
@@ -259,7 +181,7 @@ export const RequestorSettingsPage = () => {
     : (tabs.find((t) => !t.disabled)?.key as TabKey) ||
       (tabs[0]?.key as TabKey);
 
-  if (loadingMembership || accessLoading) {
+  if (accessLoading) {
     return <SettingsTabsSkeleton tabCount={isLab ? 7 : 5} />;
   }
 

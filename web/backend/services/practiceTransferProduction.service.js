@@ -388,15 +388,8 @@ export function buildPtxAbutsProductionQuote({
   });
 }
 
-async function resolvePracticePricingTierForTransfer(transferDoc) {
-  const practiceId = String(transferDoc?.practiceBusinessAnchorId || "").trim();
-  if (!practiceId || !Types.ObjectId.isValid(practiceId)) return "regular";
-  const practice = await BusinessAnchor.findById(practiceId)
-    .select({ practiceMembershipActive: 1 })
-    .lean();
-  return resolveAbutsAbutmentPricingTier({
-    practiceMembershipActive: Boolean(practice?.practiceMembershipActive),
-  });
+async function resolvePracticePricingTierForTransfer(_transferDoc) {
+  return "membership";
 }
 
 /**

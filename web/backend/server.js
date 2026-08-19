@@ -8,7 +8,6 @@
 // - web/backend/jobs/shippingOnTimeEvalWorker.js
 // - web/backend/jobs/hourlyRequestBackupWorker.js
 // - web/backend/jobs/dummyCncWorker.js
-// - web/backend/jobs/practiceMembershipBillingWorker.js
 import { createServer } from "http";
 import mongoose from "mongoose";
 import "./bootstrap/env.js";
@@ -24,7 +23,6 @@ import { startShippingOnTimeEvalWorker } from "./jobs/shippingOnTimeEvalWorker.j
 import { startHourlyRequestBackupWorker } from "./jobs/hourlyRequestBackupWorker.js";
 import { startMonthlyPracticeLabInvoiceWorker } from "./jobs/monthlyPracticeLabInvoiceWorker.js";
 import { startMonthlySettlementBatchWorker } from "./jobs/monthlySettlementBatchWorker.js";
-import { startPracticeMembershipBillingWorker } from "./jobs/practiceMembershipBillingWorker.js";
 import { startLabAutoMatchParticipationBillingWorker } from "./jobs/labAutoMatchParticipationBillingWorker.js";
 import { startAbutsLabFeeAverageWorker } from "./jobs/abutsLabFeeAverageWorker.js";
 import { startReviewApprovalWorker } from "./services/reviewApprovalQueue.service.js";
@@ -142,7 +140,6 @@ dbReady
     startHourlyRequestBackupWorker({ runImmediate: false });
     startMonthlyPracticeLabInvoiceWorker();
     startMonthlySettlementBatchWorker();
-    startPracticeMembershipBillingWorker();
     startLabAutoMatchParticipationBillingWorker();
     startAbutsLabFeeAverageWorker();
 

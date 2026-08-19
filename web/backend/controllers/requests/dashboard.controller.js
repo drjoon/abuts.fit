@@ -4,6 +4,9 @@
 // - web/backend/services/requestorDashboardSummarySnapshot.service.js
 // - web/backend/services/practiceTransferDashboardStats.service.js
 // - web/backend/utils/practiceTransferStage.js
+// - web/backend/utils/creditSettingsDefaults.js
+// change-log:
+// - 2026-08-19: 적용 단가=플랫폼 설정. 90일 1만원·주문량할인 폐지.
 import Request from "../../models/request.model.js";
 import User from "../../models/user.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
@@ -19,7 +22,6 @@ import {
   toKstYmd,
   getLast30DaysRangeUtc,
   normalizeKoreanBusinessDay,
-  resolveRequestorPricingBaseDate,
 } from "./utils.js";
 import {
   getRequestPerfCacheValue,
@@ -32,7 +34,10 @@ import {
 } from "../../services/requestorDashboardSummarySnapshot.service.js";
 import { resolveEffectiveShippingMode } from "./shippingPriority.utils.js";
 import { resolveQuotedPriceWithExtras } from "./designPrice.utils.js";
-import { loadCreditSettingsDefaults } from "../../utils/creditSettingsDefaults.js";
+import {
+  loadCreditSettingsDefaults,
+  resolveCustomAbutmentRequestUnitPrice,
+} from "../../utils/creditSettingsDefaults.js";
 import { resolveLeadDaysWithSameDayCutoff } from "./production.utils.js";
 import {
   getDashboardRiskSummaryData,
@@ -1526,7 +1531,7 @@ export async function getMyPricingReferralStats(req, res) {
     const requestorId = req.user._id;
     const debug =
       process.env.NODE_ENV !== "production" && String(req.query.debug) === "1";
-    const statsCacheKey = `pricing-referral-stats:v10:${String(
+    const statsCacheKey = `pricing-referral-stats:v11:${String(
       req.user?._id || "",
     )}:${String(req.user?.businessAnchorId || "")}`;
 
@@ -1693,7 +1698,12 @@ export async function getMyPricingReferralStats(req, res) {
 
         const totalOrders = totalLastMonthOrders;
 
-        const baseUnitPrice = 15000;
+        const creditSettings = await loadCreditSettingsDefaults({
+          requestorOrgId: String(me?.businessAnchorId || "").trim(),
+        });
+        const baseUnitPrice = resolveCustomAbutmentRequestUnitPrice(
+          creditSettings,
+        );
         const monthlyRemakeFreeLimit = 3;
         const [todayYear, todayMonth] = String(todayYmd)
           .split("-")
@@ -1732,40 +1742,12 @@ export async function getMyPricingReferralStats(req, res) {
           monthlyRemakeFreeLimit - monthlyRemakeUsed,
         );
 
-        const discountPerOrder = 100;
-        const maxDiscountPerUnit = 5000;
-        const volumeDiscountAmount = Math.min(
-          totalOrders * discountPerOrder,
-          maxDiscountPerUnit,
-        );
-
-        let rule = "volume_discount_last_month";
-        let effectiveUnitPrice = Math.max(
-          0,
-          baseUnitPrice - volumeDiscountAmount,
-        );
-
-        const baseDate = await resolveRequestorPricingBaseDate({
-          requestorId,
-          requestorOrgId: String(me?.businessAnchorId || "").trim(),
-        });
-
-        let fixedUntil = null;
-
-        if (baseDate) {
-          // KST 기준 90일 후 계산
-          const baseYmd = toKstYmd(baseDate);
-          const baseKst = new Date(`${baseYmd}T00:00:00+09:00`);
-          baseKst.setDate(baseKst.getDate() + 90);
-          fixedUntil = baseKst;
-          if (now < fixedUntil) {
-            rule = "new_user_90days_fixed_10000";
-            effectiveUnitPrice = 10000;
-          }
-        }
-
-        const referralDiscountAmount = Math.max(0, volumeDiscountAmount);
-        const discountAmount = Math.max(0, baseUnitPrice - effectiveUnitPrice);
+        const rule = "base_price";
+        const effectiveUnitPrice = baseUnitPrice;
+        const discountPerOrder = 0;
+        const maxDiscountPerUnit = 0;
+        const referralDiscountAmount = 0;
+        const discountAmount = 0;
 
         const responseData = {
           lastMonthStart,
@@ -1798,8 +1780,6 @@ export async function getMyPricingReferralStats(req, res) {
                   lastMonthEnd,
                   requestorId,
                   now,
-                  baseDate,
-                  fixedUntil,
                   userDates: user
                     ? {
                         createdAt: user.createdAt,

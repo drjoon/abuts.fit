@@ -27,7 +27,7 @@
 // - 2026-08-14: 의뢰·배송에 CNC/환봉 라벨 분리, 환봉방식 커스텀어벗 요청 목록 포함.
 // - 2026-08-13: 디자인비 항목을 디자인+생산으로 교체. 생산만·디자인+생산을 멤버십/일반 단가로 분리.
 // - 2026-08-15: 치과 멤버십 월 구독료 기본 50,000(면세).
-// - 2026-08-13: 치과 멤버십 월 구독료(practiceMembershipMonthlyFee) 추가.
+// - 2026-08-19: 치과 멤버십 월 구독료 UI 제거(과금 폐지). 배송·신속비만 유지.
 // - 2026-08-13: 디자인비(1어벗당) 입력 복구. 기본 생산 15,000 + 디자인 5,000.
 // - 2026-08-13: 파트너 요금·크레딧 UI를 카드/아이콘/자동저장 스타일로 정리.
 // - 2026-08-13: 저장/취소 버튼 제거 → 변경 시 디바운스 자동 저장.
@@ -69,7 +69,6 @@ import {
 import {
   CircleHelp,
   CloudUpload,
-  Crown,
   Gift,
   Loader2,
   Package,
@@ -1155,7 +1154,7 @@ function SubSectionHeader({
 export type AdminCreditSettingsVariant = "credits" | "customAbut";
 
 type AdminCreditSettingsTabProps = {
-  /** credits: 환영 무료 크레딧·멤버십·배송. customAbut: 치과·기공소 공급 단가·추가요청. */
+  /** credits: 환영 무료 크레딧·배송. customAbut: 치과·기공소 공급 단가·추가요청. */
   variant?: AdminCreditSettingsVariant;
 };
 
@@ -1459,8 +1458,6 @@ export const AdminCreditSettingsTab = ({
   );
 
   const expressHelp = `생산 의뢰는 건당, 디자인+생산은 커스텀어벗 수만큼 곱합니다. 기본 ${CREDIT_SETTINGS_DEFAULTS.expressFee.toLocaleString("ko-KR")}원.`;
-  const membershipHelp =
-    "치과(의뢰 발신자)만 적용합니다. 기공소에는 적용하지 않으며, 매달 유료 청구됩니다.";
 
   return (
     <TooltipProvider>
@@ -1497,25 +1494,11 @@ export const AdminCreditSettingsTab = ({
             <Card className="app-glass-card app-glass-card--lg overflow-hidden">
               <CardContent className="space-y-5 p-5 sm:p-6">
                 <SectionHeader
-                  icon={Crown}
-                  title="멤버십 · 배송"
-                  description="치과 멤버십 구독료와 배송 요금입니다."
+                  icon={Truck}
+                  title="배송"
+                  description="박스당 배송비와 신속 출고 추가 요금입니다."
                 />
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  <AmountField
-                    id="practiceMembershipMonthlyFee"
-                    label="치과 멤버십 구독료"
-                    icon={Crown}
-                    value={settings.practiceMembershipMonthlyFee}
-                    onChange={(next) =>
-                      setSettings({
-                        ...settings,
-                        practiceMembershipMonthlyFee: next,
-                      })
-                    }
-                    disabled={loading}
-                    help={membershipHelp}
-                  />
+                <div className="grid gap-3 sm:grid-cols-2">
                   <AmountField
                     id="shippingFee"
                     label="배송비"
@@ -1575,7 +1558,7 @@ export const AdminCreditSettingsTab = ({
                 <SectionHeader
                   icon={Package}
                   title="치과 공급 어벗"
-                  description="치과 의뢰와 기공의뢰 커스텀어벗에 적용됩니다. 멤버십이 있으면 멤버 단가입니다."
+                  description="치과 의뢰와 기공의뢰 커스텀어벗 청구는 멤버 생산가(기본 15,000원)입니다. 신속은 별도 expressFee(+2,000). 일반 단가·비율은 딜러 없는 분배용입니다."
                 />
 
                 <div className="space-y-3">

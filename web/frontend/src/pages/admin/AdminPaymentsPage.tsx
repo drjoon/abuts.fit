@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-19: 치과 월 구독료 사업 축 제거(멤버십 폐지).
 // - 2026-08-18: 제조사는 기공소(면세) — 과세 대상에서 제외.
 // - 2026-08-17: 기간 필터 + 영업자·개발운영사 과세(세금계산서) / 제조사·어벗츠·고객 경로 면세(계산서).
 // - 2026-08-16: 어벗츠 4사업 축 API 와이어링 + 선택형 상세·모던 UI 리팩터.
@@ -15,7 +16,6 @@ import {
   HandCoins,
   Percent,
   Search,
-  Sparkles,
 } from "lucide-react";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -41,11 +41,7 @@ import {
 
 const HISTORY_MONTHS = 6;
 
-type BusinessAxisId =
-  | "customAbut"
-  | "autoMatchFee"
-  | "internalLab"
-  | "practiceMembership";
+type BusinessAxisId = "customAbut" | "autoMatchFee" | "internalLab";
 
 type SalesmanRow = {
   userId: string;
@@ -766,7 +762,6 @@ export default function AdminPaymentsPage() {
   const customAbut = businessOverview?.customAbut;
   const autoMatch = businessOverview?.autoMatchFee;
   const internalLab = businessOverview?.internalLab;
-  const membership = businessOverview?.practiceMembership;
 
   const feeRatePct = Math.round(Number(autoMatch?.platformFeeRate ?? 0.1) * 100);
   const salesmanUnpaidSupply = roleFinanceRows.salesman.reduce(
@@ -785,11 +780,11 @@ export default function AdminPaymentsPage() {
   return (
     <DashboardShell
       title="정산"
-      subtitle="어벗츠 4사업 · 기간 집계"
+      subtitle="어벗츠 3사업 · 기간 집계"
       headerRight={
         <PeriodFilter value={period} onChange={setPeriod} />
       }
-      statsGridClassName="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4"
+      statsGridClassName="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3"
       stats={
         <>
           <BusinessAxisCard
@@ -844,27 +839,6 @@ export default function AdminPaymentsPage() {
                 <div className="tabular-nums">
                   앵커 {(internalLab?.anchorCount || 0).toLocaleString()} · 적립{" "}
                   {(internalLab?.periodLineCount || 0).toLocaleString()}건
-                </div>
-              </>
-            }
-          />
-          <BusinessAxisCard
-            index={4}
-            title="치과 월 구독료"
-            icon={Sparkles}
-            selected={selectedAxis === "practiceMembership"}
-            onSelect={() => setSelectedAxis("practiceMembership")}
-            loading={isLoading}
-            value={formatWon(membership?.periodFeeAmount)}
-            hints={
-              <>
-                <div>
-                  월 {formatWon(membership?.monthlyFee)} · 면세 · 유료 크레딧
-                </div>
-                <div className="tabular-nums">
-                  활성 {(membership?.activeMemberCount || 0).toLocaleString()}명
-                  · 청구 {(membership?.periodChargeCount || 0).toLocaleString()}
-                  건
                 </div>
               </>
             }
@@ -1036,42 +1010,6 @@ export default function AdminPaymentsPage() {
                     value={`${Number(
                       internalLab?.anchorCount || 0,
                     ).toLocaleString()}곳`}
-                  />
-                </div>
-              </div>
-            </CreditPanel>
-          ) : null}
-
-          {selectedAxis === "practiceMembership" ? (
-            <CreditPanel>
-              <div className="space-y-4 p-4">
-                <CreditSectionHeader
-                  icon={Sparkles}
-                  title="치과 월 구독료"
-                  description="치과 멤버십 월 구독. 면세·유료 크레딧(REQ_PAID_CREDIT)만 차감 · 계산서."
-                />
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                  <CreditStatTile
-                    label="기간 구독료"
-                    value={formatWon(membership?.periodFeeAmount)}
-                    tone="accent"
-                  />
-                  <CreditStatTile
-                    label="청구 건수"
-                    value={`${Number(
-                      membership?.periodChargeCount || 0,
-                    ).toLocaleString()}건`}
-                  />
-                  <CreditStatTile
-                    label="활성 멤버"
-                    value={`${Number(
-                      membership?.activeMemberCount || 0,
-                    ).toLocaleString()}명`}
-                  />
-                  <CreditStatTile
-                    label="월 단가"
-                    value={formatWon(membership?.monthlyFee)}
-                    hint="면세 · 유료 크레딧"
                   />
                 </div>
               </div>

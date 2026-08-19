@@ -48,7 +48,10 @@ import {
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { getNormalizedStage, getNormalizedStageLabelSafe } from "@/utils/stage";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
-import { useSystemSettings } from "@/hooks/useSystemSettings";
+import {
+  CREDIT_SETTINGS_DEFAULTS,
+  useSystemSettings,
+} from "@/hooks/useSystemSettings";
 import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
 import { resolveImplantConnectionSpec } from "@/utils/implantConnectionSpec";
 import { getFileBlob, setFileBlob } from "@/shared/files/stlIndexedDb";
@@ -79,6 +82,7 @@ const dashDebug = (label: string, payload?: unknown) => {
 };
 
 // change-log:
+// - 2026-08-19: 의뢰비 부족 경고 단가 fallback을 플랫폼 멤버십 생산가(15,000)로.
 // - 2026-08-18: 치과는 대시보드를 쓰지 않음. 기공소·어벗츠기공소 대기보드만 유지.
 // - 2026-08-18: 치과 요약 행 라벨 기공/어벗 → 구강스캔/어벗디자인.
 // - 2026-08-15: 기공 요약「수락」카드 →「수락/거부」병기(accepted/rejected).
@@ -627,7 +631,8 @@ export const RequestorDashboardPage = () => {
     ) {
       const stats = dashboardStatsSource.data.stats ?? {};
       const pricePerRequest =
-        systemSettings.creditSettings.minCreditForRequest || 10000;
+        systemSettings.creditSettings.minCreditForRequest ||
+        CREDIT_SETTINGS_DEFAULTS.minCreditForRequest;
 
       // 준비, 가공 단계에 의뢰건이 있으면 경고
       const inRequest = stats.totalRequests || 0;

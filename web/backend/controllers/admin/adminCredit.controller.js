@@ -2641,11 +2641,11 @@ function resolveAdminCreditPeriodRange(req) {
 }
 
 /**
- * 어벗츠 4사업 축 기간 집계 (관리자 정산 상단 SSOT).
+ * 어벗츠 3사업 축 기간 집계 (관리자 정산 상단 SSOT).
  * 1) 커스텀 어벗: 의뢰자 유료 소비 + 제조사 하청
  * 2) 자동매칭 수수료: PRACTICE_TRANSFER_ESCROW_RELEASE.meta.abutsRevenueAmount
  * 3) 기공소 직접 운영: internalLab LAB_SETTLEMENT_CREDIT 적립
- * 4) 치과 월 구독료: PRACTICE_MEMBERSHIP_SPEND
+ * (레거시) 치과 월 구독료 PRACTICE_MEMBERSHIP_SPEND — 신규 과금 없음. 과거 장부만.
  */
 export async function adminGetSettlementBusinessOverview(req, res) {
   try {

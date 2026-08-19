@@ -14,6 +14,7 @@
 // - 2026-08-18: salesmanRequestUnitPrice(영업자 건당) 추가.
 // - 2026-08-15: 제조사 하청 단가·affiliateVatRate 설정 필드 추가.
 // - 2026-08-15: 특별 공급가 CNC/환봉 × 생산만·디자인+생산 정규화. 의뢰자 로드 시 단가 오버라이드.
+// - 2026-08-19: 치과 멤버십·90일 1만원 폐지. 의뢰단가=플랫폼 membership* 설정.
 // - 2026-08-19: global SystemSettings 60초 캐시. requestorAnchor가 있으면 사업자 재조회 생략.
 import { Types } from "mongoose";
 import SystemSettings from "../models/systemSettings.model.js";
@@ -21,7 +22,6 @@ import BusinessAnchor from "../models/businessAnchor.model.js";
 import {
   pickAbutsAbutmentCreditPrices,
   normalizeAbutsAbutmentCreditPrices,
-  resolveAbutsAbutmentPricingTier,
 } from "./abutsAbutmentService.js";
 
 const clampPracticeRushFeeMultiplier = (value, fallback = 1.2) => {
@@ -515,18 +515,8 @@ export function normalizeLoadedCreditSettings(creditSettings = {}) {
   };
 }
 
-export async function resolveRequestorAbutmentPricingTier(requestorOrgId) {
-  const id = String(requestorOrgId || "").trim();
-  if (!id || !Types.ObjectId.isValid(id)) return "regular";
-  const anchor = await BusinessAnchor.findById(id)
-    .select({ requestorKind: 1, practiceMembershipActive: 1 })
-    .lean();
-  if (String(anchor?.requestorKind || "").trim() !== "practice") {
-    return "regular";
-  }
-  return resolveAbutsAbutmentPricingTier({
-    practiceMembershipActive: Boolean(anchor?.practiceMembershipActive),
-  });
+export async function resolveRequestorAbutmentPricingTier(_requestorOrgId) {
+  return "membership";
 }
 
 const GLOBAL_SETTINGS_CACHE_TTL_MS = 60 * 1000;
@@ -556,27 +546,14 @@ export async function loadCreditSettingsDefaults(options = {}) {
 
   const id = String(requestorOrgId || "").trim();
   let requestorKind = null;
-  let pricingTier = "regular";
   const providedAnchor = options?.requestorAnchor;
   if (providedAnchor && typeof providedAnchor === "object") {
     requestorKind = String(providedAnchor?.requestorKind || "").trim();
-    if (requestorKind === "practice") {
-      pricingTier = resolveAbutsAbutmentPricingTier({
-        practiceMembershipActive: Boolean(
-          providedAnchor?.practiceMembershipActive,
-        ),
-      });
-    }
   } else if (id && Types.ObjectId.isValid(id)) {
     const anchor = await BusinessAnchor.findById(id)
-      .select({ requestorKind: 1, practiceMembershipActive: 1 })
+      .select({ requestorKind: 1 })
       .lean();
     requestorKind = String(anchor?.requestorKind || "").trim();
-    if (requestorKind === "practice") {
-      pricingTier = resolveAbutsAbutmentPricingTier({
-        practiceMembershipActive: Boolean(anchor?.practiceMembershipActive),
-      });
-    }
   }
 
   const applyLabSupply =
@@ -584,7 +561,7 @@ export async function loadCreditSettingsDefaults(options = {}) {
   const priced = applyLabSupply
     ? applyLabSupplyPricesToCreditSettings(base)
     : base;
-  const pickTier = applyLabSupply ? "membership" : pricingTier;
+  const pickTier = "membership";
   const picked = pickAbutsAbutmentCreditPrices(priced, pickTier);
   const membership = pickTier === "membership";
   return {
@@ -592,6 +569,7 @@ export async function loadCreditSettingsDefaults(options = {}) {
     minCreditForRequest: picked.productionPrice,
     designFee: picked.designFeePerTooth,
     abutmentPricingTier: picked.pricingTier,
+    requestorKind: requestorKind || null,
     manufacturerRequestUnitPrice: Number(
       membership
         ? priced.membershipProductionManufacturerUnitPrice
@@ -608,6 +586,18 @@ export async function loadCreditSettingsDefaults(options = {}) {
         : priced.regularProductionDevopsUnitPrice,
     ),
   };
+}
+
+/** 어벗생산의뢰 1개당 기본 단가. loadCreditSettingsDefaults 이후 값을 쓴다. */
+export function resolveCustomAbutmentRequestUnitPrice(creditSettings = {}) {
+  const n = Math.round(
+    Number(
+      creditSettings?.minCreditForRequest ??
+        creditSettings?.membershipProductionPrice ??
+        SCHEMA_DEFAULTS.minCreditForRequest,
+    ) || 0,
+  );
+  return n >= 0 ? n : SCHEMA_DEFAULTS.minCreditForRequest;
 }
 
 export { SCHEMA_DEFAULTS as CREDIT_SETTINGS_SCHEMA_DEFAULTS };
