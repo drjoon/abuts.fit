@@ -154,7 +154,6 @@ import {
   getBusinessLabel,
   usePracticeTransferStep1,
   isAutoMatchLab,
-  isAbutsPrimePoolLab,
   isPinnedAbutsRecentLab,
   preferCachedAbutsLab,
   ABUTS_PINNED_LAB_SEED,
@@ -5034,23 +5033,13 @@ export const PracticeFileTransferPage = ({
         skipDesignConfirm,
         skipJig: effectiveSkipJig,
       });
-      const autoMatch = isAbutsPrimePoolLab(selectedLab);
-      const budgetForAuto = resolveAutoMatchBudgetOrDefaults(
-        autoMatchBudget,
-        abutsLabFeeCatalog,
-        {
-          minStars: autoMatchMinLabRating,
-          maxStars: autoMatchMaxLabRating,
-        },
-      );
       const practiceRouting = {
         targetLabAnchorId: toApiLabAnchorId(selectedLab?._id),
         targetLabName: String(selectedLab?.name || "").trim(),
-        matchingMode: autoMatch ? "auto" : "direct",
+        matchingMode: "direct",
         skipDesignConfirm,
         skipJig: effectiveSkipJig,
         rushProcessing,
-        autoMatchBudget: autoMatch ? budgetForAuto : undefined,
       };
       const newSystemRequestBase = {
         requested: true,
@@ -5110,7 +5099,7 @@ export const PracticeFileTransferPage = ({
         jsonBody: {
           transferId,
           draftId: editing ? undefined : draftIdToSubmit || undefined,
-          matchingMode: autoMatch ? "auto" : "direct",
+          matchingMode: "direct",
           targetLabAnchorId: toApiLabAnchorId(selectedLab?._id),
           targetLabName: String(selectedLab?.name || "").trim(),
           orderDate: submitOrderDate,
@@ -5121,9 +5110,6 @@ export const PracticeFileTransferPage = ({
           skipDesignConfirm,
           skipJig: effectiveSkipJig,
           rushProcessing,
-          autoMatchBudget: autoMatch ? budgetForAuto : undefined,
-          autoMatchMinLabRating: autoMatch ? autoMatchMinLabRating : undefined,
-          autoMatchMaxLabRating: autoMatch ? autoMatchMaxLabRating : undefined,
           caseInfos: caseInfosPayload,
         },
       });
@@ -6825,9 +6811,8 @@ export const PracticeFileTransferPage = ({
             const transferId = String(target?.transferId || "").trim();
             if (!target || !transferId || !selectedLab) return;
 
-            const autoMatch = isAbutsPrimePoolLab(selectedLab);
             const targetLabAnchorId = toApiLabAnchorId(selectedLab._id);
-            if (!autoMatch && !targetLabAnchorId) {
+            if (!targetLabAnchorId) {
               toast({
                 title: "기공소를 선택해 주세요",
                 variant: "destructive",
@@ -6837,14 +6822,6 @@ export const PracticeFileTransferPage = ({
 
             setLabRejectedRetargetBusy(true);
             try {
-              const budgetForAuto = resolveAutoMatchBudgetOrDefaults(
-                autoMatchBudget,
-                abutsLabFeeCatalog,
-                {
-                  minStars: autoMatchMinLabRating,
-                  maxStars: autoMatchMaxLabRating,
-                },
-              );
               const res = await apiFetch<{
                 success?: boolean;
                 message?: string;
@@ -6857,18 +6834,9 @@ export const PracticeFileTransferPage = ({
                 method: "POST",
                 token: authToken,
                 jsonBody: {
-                  matchingMode: autoMatch ? "auto" : "direct",
-                  targetLabAnchorId: autoMatch
-                    ? targetLabAnchorId || "__auto_match__"
-                    : targetLabAnchorId,
+                  matchingMode: "direct",
+                  targetLabAnchorId,
                   targetLabName: String(selectedLab.name || "").trim(),
-                  autoMatchMinLabRating: autoMatch
-                    ? autoMatchMinLabRating
-                    : undefined,
-                  autoMatchMaxLabRating: autoMatch
-                    ? autoMatchMaxLabRating
-                    : undefined,
-                  autoMatchBudget: autoMatch ? budgetForAuto : undefined,
                 },
               });
               if (!res.ok) {
@@ -6888,9 +6856,7 @@ export const PracticeFileTransferPage = ({
               await loadRecentRequests({ silent: true });
               toast({
                 title: "기공소 변경 전송 완료",
-                description: autoMatch
-                  ? "자동 매칭으로 다시 전송했습니다."
-                  : `「${labName}」으로 다시 전송했습니다.`,
+                description: `「${labName}」으로 다시 전송했습니다.`,
               });
             } catch (error) {
               toast({
