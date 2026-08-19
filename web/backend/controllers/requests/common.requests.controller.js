@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-19: PATCH /status/batch — 준비 단계 일괄 취소. 응답 후 웹소켓·스냅샷.
 // - 2026-08-19: 준비 단계 취소는 트랜잭션 없이 uniqueKeys 조회+status updateOne. 웹소켓은 백그라운드.
 // - 2026-08-19: 준비 단계 취소 시 HOLD 해제를 COMMIT 롤백보다 먼저 수행.
 // - 2026-08-19: 의뢰 생성/취소 후 GET /my 메모리 캐시를 비운다(진행중 목록 지연).
@@ -19,6 +20,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/shipping/components/MailboxGrid.tsx
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
 // - web/frontend/src/pages/requestor/dashboard/components/RequestorRecentRequestsCard.tsx
+// - web/frontend/src/shared/components/PastRequestsModal.tsx
 // - web/backend/rules.md
 import mongoose, { Types } from "mongoose";
 import path from "path";
@@ -531,6 +533,7 @@ async function ensureRequestCancelRollbackDelete({
   actorUserId,
   session,
   deferredCreditEvents,
+  excludeSiblingIds,
 }) {
   if (!request?._id) return;
 
@@ -569,6 +572,7 @@ async function ensureRequestCancelRollbackDelete({
       actorUserId,
       session: session || null,
       deferredCreditEvents,
+      excludeSiblingIds: excludeSiblingIds || null,
     });
   } catch (holdErr) {
     console.warn(
@@ -3592,7 +3596,187 @@ export async function updateRequestStatus(req, res) {
   }
 }
 
+const BATCH_CANCEL_MAX = 50;
 
+function isCancelableManufacturerStage(request) {
+  const isPrepStage = normalizeRequestStage(request) === "request";
+  const isUnmachinable = Boolean(request?.rnd?.unmachinableAt);
+  return isPrepStage || isUnmachinable;
+}
+
+export async function updateRequestStatusBatch(req, res) {
+  try {
+    const manufacturerStage = String(req.body?.manufacturerStage || "").trim();
+    const rawIds = Array.isArray(req.body?.ids)
+      ? req.body.ids
+      : Array.isArray(req.body?.requestIds)
+        ? req.body.requestIds
+        : [];
+
+    if (manufacturerStage !== "취소") {
+      return res.status(400).json({
+        success: false,
+        message: "일괄 변경은 취소만 지원합니다.",
+      });
+    }
+
+    const ids = [
+      ...new Set(
+        rawIds
+          .map((id) => String(id || "").trim())
+          .filter((id) => Types.ObjectId.isValid(id)),
+      ),
+    ];
+    if (!ids.length) {
+      return res.status(400).json({
+        success: false,
+        message: "취소할 의뢰를 선택해주세요.",
+      });
+    }
+    if (ids.length > BATCH_CANCEL_MAX) {
+      return res.status(400).json({
+        success: false,
+        message: `한 번에 최대 ${BATCH_CANCEL_MAX}건까지 취소할 수 있습니다.`,
+      });
+    }
+
+    const requests = await Request.find({
+      _id: { $in: ids.map((id) => new Types.ObjectId(id)) },
+    }).populate("requestor", "businessAnchorId");
+    const byId = new Map(
+      (requests || []).map((row) => [String(row._id), row]),
+    );
+
+    const failed = [];
+    const eligible = [];
+    for (const id of ids) {
+      const request = byId.get(id);
+      if (!request) {
+        failed.push({ id, message: "의뢰를 찾을 수 없습니다." });
+        continue;
+      }
+      if (String(request.manufacturerStage || "").trim() === "취소") {
+        failed.push({ id, message: "이미 취소된 의뢰입니다." });
+        continue;
+      }
+      const isRequestor = await canAccessRequestAsRequestor(req, request);
+      const isAdmin = req.user?.role === "admin";
+      if (!isRequestor && !isAdmin) {
+        failed.push({
+          id,
+          message: "이 의뢰의 상태를 변경할 권한이 없습니다.",
+        });
+        continue;
+      }
+      if (!isCancelableManufacturerStage(request)) {
+        failed.push({
+          id,
+          message:
+            "준비 단계에서만 취소할 수 있습니다. 단, 불완전가공 판정 의뢰는 취소 가능합니다.",
+        });
+        continue;
+      }
+      eligible.push(request);
+    }
+
+    const cancelingIds = new Set(eligible.map((row) => String(row._id)));
+    const canceled = [];
+    const sideEffects = [];
+
+    for (const request of eligible) {
+      const prevManufacturerStage = String(
+        request.manufacturerStage || "",
+      ).trim();
+      const deferredCreditEvents = [];
+      try {
+        await ensureRequestCancelRollbackDelete({
+          request,
+          actorUserId: req.user?._id || null,
+          session: null,
+          deferredCreditEvents,
+          excludeSiblingIds: cancelingIds,
+        });
+        applyStatusMapping(request, "취소");
+        canceled.push({
+          _id: request._id,
+          requestId: request.requestId,
+          manufacturerStage: "취소",
+        });
+        sideEffects.push({
+          request,
+          prevManufacturerStage,
+          deferredCreditEvents,
+        });
+      } catch (err) {
+        failed.push({
+          id: String(request._id),
+          message: err?.message || "의뢰 취소 중 오류가 발생했습니다.",
+        });
+      }
+    }
+
+    const canceledIds = canceled.map((row) => row._id);
+    if (canceledIds.length) {
+      await Request.updateMany(
+        { _id: { $in: canceledIds } },
+        { $set: { manufacturerStage: "취소" } },
+      );
+      clearMyRequestsCache();
+    }
+
+    res.status(200).json({
+      success: canceled.length > 0,
+      message:
+        canceled.length > 0
+          ? failed.length
+            ? `${canceled.length}건이 취소되었습니다. ${failed.length}건은 취소하지 못했습니다.`
+            : `${canceled.length}건이 취소되었습니다.`
+          : "취소된 의뢰가 없습니다.",
+      data: { canceled, failed },
+    });
+
+    if (!canceledIds.length) return;
+
+    const anchors = new Set(
+      sideEffects
+        .map((item) => String(item.request.businessAnchorId || "").trim())
+        .filter(Boolean),
+    );
+    for (const anchorId of anchors) {
+      triggerDashboardSummaryRefreshForAnchorId(
+        anchorId,
+        `request-canceled-batch:${canceledIds.length}`,
+      ).catch((err) =>
+        console.error(
+          "[updateRequestStatusBatch] Dashboard refresh failed:",
+          err,
+        ),
+      );
+      triggerPricingSnapshotForBusinessAnchorId(
+        anchorId,
+        `request-canceled-batch:${canceledIds.length}`,
+      );
+    }
+
+    setImmediate(() => {
+      void (async () => {
+        for (const item of sideEffects) {
+          await emitCanceledRequestSideEffects({
+            request: item.request,
+            prevManufacturerStage: item.prevManufacturerStage,
+            deferredCreditEvents: item.deferredCreditEvents,
+          });
+        }
+      })();
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "의뢰 일괄 취소 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
 
 export async function deleteRequest(req, res) {
   try {

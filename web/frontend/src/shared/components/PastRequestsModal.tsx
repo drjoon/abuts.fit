@@ -7,6 +7,7 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // change-log:
+// - 2026-08-19: 진행중 목록 — 체크박스 선택 후 PATCH /status/batch 일괄 취소.
 // - 2026-08-19: 모달 가로폭을 뷰포트 여백 기준(min 92vw, 최대 1440)으로 맞춤.
 // - 2026-08-19: 모달 가로 확장·기간 캘린더 입력 제거·검색을 기간필터 오른쪽·신속/묶음·디자인SW·아노 뱃지.
 // - 2026-08-19: 기본 제목 완료 내역(구 지난 의뢰).
@@ -27,6 +28,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import {
   Table,
@@ -68,8 +70,15 @@ export type PastRequestsModalProps = {
   initialPeriod?: PeriodFilterValue;
   /** 준비 단계 행에 취소 버튼을 표시 */
   allowCancel?: boolean;
-  /** 취소 API. mongoId를 받아 성공 여부 반환 */
-  onCancelRequest?: (requestMongoId: string) => Promise<boolean>;
+  /** 취소 API. mongoId를 받아 성공 여부 반환. silent면 호출측 토스트를 생략 */
+  onCancelRequest?: (
+    requestMongoId: string,
+    options?: { silent?: boolean },
+  ) => Promise<boolean>;
+  /** 일괄 취소 API. 한 번에 처리하고 성공/실패 id를 반환 */
+  onCancelRequests?: (
+    requestMongoIds: string[],
+  ) => Promise<{ okIds: string[]; failedIds: string[] }>;
   /** 취소 성공 후 건수 갱신 등 */
   onCanceled?: () => void;
   /** 상세 모달이 위에 열린 동안 목록을 유지(숨김)하고 바깥 클릭·ESC로 닫지 않음 */
@@ -81,6 +90,11 @@ export type PastRequestsModalProps = {
 const DEFAULT_MANUFACTURER_STAGE_IN = ["추적관리"];
 
 const PAGE_SIZE = 50;
+
+const requestMongoId = (row: any) => String(row?._id || row?.id || "").trim();
+
+const isPrepCancelable = (row: any) =>
+  getNormalizedStageLabelSafe(row) === "준비";
 
 const formatDate = (iso?: string) => {
   const raw = String(iso || "");
@@ -120,6 +134,7 @@ export const PastRequestsModal = ({
   initialPeriod,
   allowCancel = false,
   onCancelRequest,
+  onCancelRequests,
   onCanceled,
   suspend = false,
   removeMongoId = null,
@@ -149,8 +164,9 @@ export const PastRequestsModal = ({
   const [items, setItems] = useState<any[]>([]);
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(1);
-  const [cancelTarget, setCancelTarget] = useState<any | null>(null);
+  const [cancelTargets, setCancelTargets] = useState<any[]>([]);
   const [canceling, setCanceling] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
@@ -225,6 +241,7 @@ export const PastRequestsModal = ({
     if (!open) return;
     setPage(1);
     setHasMore(true);
+    setSelectedIds(new Set());
     load(1, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, period, from, to]);
@@ -272,35 +289,160 @@ export const PastRequestsModal = ({
     });
   }, [items, q]);
 
-  const colSpan = allowCancel ? 7 : 6;
-  const dismissLocked = Boolean(suspend || cancelTarget);
+  const colSpan = allowCancel ? 8 : 6;
+  const dismissLocked = Boolean(suspend || cancelTargets.length);
+
+  const cancelableRows = useMemo(
+    () => (allowCancel ? filteredRows.filter(isPrepCancelable) : []),
+    [allowCancel, filteredRows],
+  );
+  const selectedCount = selectedIds.size;
+  const selectedVisibleCount = cancelableRows.filter((row) =>
+    selectedIds.has(requestMongoId(row)),
+  ).length;
+  const allCancelableSelected =
+    cancelableRows.length > 0 &&
+    selectedVisibleCount === cancelableRows.length;
+  const someCancelableSelected =
+    selectedVisibleCount > 0 && !allCancelableSelected;
+
+  const toggleSelection = (id: string, checked: boolean) => {
+    if (!id) return;
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  };
+
+  const handleSelectAllCancelable = (checked: boolean) => {
+    const visibleIds = cancelableRows
+      .map((row) => requestMongoId(row))
+      .filter(Boolean);
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) {
+        visibleIds.forEach((id) => next.add(id));
+      } else {
+        visibleIds.forEach((id) => next.delete(id));
+      }
+      return next;
+    });
+  };
 
   useEffect(() => {
     const mongoId = String(removeMongoId || "").trim();
     if (!mongoId) return;
     setItems((prev) =>
-      prev.filter((row) => String(row?._id || row?.id || "") !== mongoId),
+      prev.filter((row) => requestMongoId(row) !== mongoId),
     );
+    setSelectedIds((prev) => {
+      if (!prev.has(mongoId)) return prev;
+      const next = new Set(prev);
+      next.delete(mongoId);
+      return next;
+    });
   }, [removeMongoId]);
 
   const handleConfirmCancel = async () => {
-    const mongoId = String(cancelTarget?._id || cancelTarget?.id || "").trim();
-    const snapshot = cancelTarget;
-    if (!mongoId || !onCancelRequest) {
-      setCancelTarget(null);
+    const snapshots = cancelTargets.filter((row) => requestMongoId(row));
+    if (!snapshots.length || (!onCancelRequest && !onCancelRequests)) {
+      setCancelTargets([]);
       return;
     }
-    setItems((prev) =>
-      prev.filter((row) => String(row?._id || row?.id || "") !== mongoId),
-    );
-    setCancelTarget(null);
+    const ids = new Set(snapshots.map((row) => requestMongoId(row)));
+    const batch = snapshots.length > 1;
+    setItems((prev) => prev.filter((row) => !ids.has(requestMongoId(row))));
+    setSelectedIds(new Set());
+    setCancelTargets([]);
     setCanceling(true);
     try {
-      const ok = await onCancelRequest(mongoId);
-      if (ok) {
-        onCanceled?.();
-      } else if (snapshot) {
-        setItems((prev) => [snapshot, ...prev]);
+      if (batch && onCancelRequests) {
+        try {
+          const { okIds, failedIds } = await onCancelRequests(
+            snapshots.map((row) => requestMongoId(row)),
+          );
+          const failedSet = new Set(
+            (failedIds || []).map((id) => String(id || "").trim()).filter(Boolean),
+          );
+          const failedRows = snapshots.filter((row) =>
+            failedSet.has(requestMongoId(row)),
+          );
+          if (failedRows.length) {
+            setItems((prev) => [...failedRows, ...prev]);
+          }
+          const okCount = Array.isArray(okIds) ? okIds.length : 0;
+          if (okCount > 0) onCanceled?.();
+          if (okCount > 0 && failedRows.length === 0) {
+            toast({
+              title: `${okCount}건이 취소되었습니다`,
+              duration: 2000,
+            });
+          } else if (okCount > 0) {
+            toast({
+              title: `${okCount}건이 취소되었습니다`,
+              description: `${failedRows.length}건은 취소하지 못했습니다.`,
+              variant: "destructive",
+              duration: 3000,
+            });
+          } else {
+            toast({
+              title: "의뢰 취소 실패",
+              description:
+                "준비 단계에서만 취소할 수 있습니다. 가공 단계부터는 취소가 불가능합니다.",
+              variant: "destructive",
+              duration: 3000,
+            });
+          }
+        } catch {
+          setItems((prev) => [...snapshots, ...prev]);
+          toast({
+            title: "의뢰 일괄 취소 실패",
+            description: "잠시 후 다시 시도해주세요.",
+            variant: "destructive",
+            duration: 3000,
+          });
+        }
+        return;
+      }
+
+      const failed: any[] = [];
+      let okCount = 0;
+      for (const row of snapshots) {
+        const mongoId = requestMongoId(row);
+        const ok = await onCancelRequest?.(
+          mongoId,
+          batch ? { silent: true } : undefined,
+        );
+        if (ok) okCount += 1;
+        else failed.push(row);
+      }
+      if (failed.length) {
+        setItems((prev) => [...failed, ...prev]);
+      }
+      if (okCount > 0) onCanceled?.();
+      if (!batch) return;
+      if (okCount > 0 && failed.length === 0) {
+        toast({
+          title: `${okCount}건이 취소되었습니다`,
+          duration: 2000,
+        });
+      } else if (okCount > 0) {
+        toast({
+          title: `${okCount}건이 취소되었습니다`,
+          description: `${failed.length}건은 취소하지 못했습니다.`,
+          variant: "destructive",
+          duration: 3000,
+        });
+      } else {
+        toast({
+          title: "의뢰 취소 실패",
+          description:
+            "준비 단계에서만 취소할 수 있습니다. 가공 단계부터는 취소가 불가능합니다.",
+          variant: "destructive",
+          duration: 3000,
+        });
       }
     } finally {
       setCanceling(false);
@@ -373,6 +515,28 @@ export const PastRequestsModal = ({
                 >
                   초기화
                 </Button>
+
+                {allowCancel ? (
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    className="h-9 rounded-lg"
+                    disabled={selectedCount === 0 || canceling}
+                    onClick={() => {
+                      const rows = items.filter(
+                        (row) =>
+                          selectedIds.has(requestMongoId(row)) &&
+                          isPrepCancelable(row),
+                      );
+                      if (!rows.length) return;
+                      setCancelTargets(rows);
+                    }}
+                  >
+                    {selectedCount > 0
+                      ? `선택 취소 ${selectedCount}건`
+                      : "선택 취소"}
+                  </Button>
+                ) : null}
               </div>
               <Input
                 value={q}
@@ -390,6 +554,24 @@ export const PastRequestsModal = ({
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
+                  {allowCancel ? (
+                    <TableHead className="w-10">
+                      <Checkbox
+                        checked={
+                          allCancelableSelected
+                            ? true
+                            : someCancelableSelected
+                              ? "indeterminate"
+                              : false
+                        }
+                        disabled={cancelableRows.length === 0 || canceling}
+                        onCheckedChange={(value) =>
+                          handleSelectAllCancelable(value === true)
+                        }
+                        aria-label="준비 단계 의뢰 모두 선택"
+                      />
+                    </TableHead>
+                  ) : null}
                   <TableHead className="w-[170px]">일시</TableHead>
                   <TableHead className="w-[90px]">상태</TableHead>
                   <TableHead className="w-[88px]">출고</TableHead>
@@ -404,7 +586,7 @@ export const PastRequestsModal = ({
               <TableBody>
                 {filteredRows.map((r: any) => {
                   const ci = r?.caseInfos || {};
-                  const id = String(r?._id || r?.id || "");
+                  const id = requestMongoId(r);
                   const stage = getNormalizedStageLabelSafe(r) || String(r?.manufacturerStage || "-");
                   const caseText =
                     [ci?.clinicName, ci?.patientName, ci?.tooth]
@@ -412,13 +594,28 @@ export const PastRequestsModal = ({
                       .join(" ") || "-";
                   const implantText = formatImplantDisplay(ci);
                   const requestId = String(r?.requestId || "-");
-                  const canCancelRow = allowCancel && stage === "준비";
+                  const canCancelRow = allowCancel && isPrepCancelable(r);
                   return (
                     <TableRow
                       key={id || requestId}
                       className="cursor-pointer hover:bg-slate-50"
                       onClick={() => onSelectRequest(r)}
                     >
+                      {allowCancel ? (
+                        <TableCell
+                          className="w-10"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <Checkbox
+                            checked={Boolean(id) && selectedIds.has(id)}
+                            disabled={!canCancelRow || canceling}
+                            onCheckedChange={(value) =>
+                              toggleSelection(id, value === true)
+                            }
+                            aria-label={`${requestId} 선택`}
+                          />
+                        </TableCell>
+                      ) : null}
                       <TableCell className="text-xs text-slate-600">
                         {formatDate(r?.createdAt)}
                       </TableCell>
@@ -456,7 +653,7 @@ export const PastRequestsModal = ({
                             onClick={(e) => {
                               e.stopPropagation();
                               if (!canCancelRow) return;
-                              setCancelTarget(r);
+                              setCancelTargets([r]);
                             }}
                           >
                             취소
@@ -499,10 +696,16 @@ export const PastRequestsModal = ({
       </DialogContent>
     </Dialog>
     <ConfirmDialog
-      open={Boolean(cancelTarget)}
-      title="이 의뢰를 취소하시겠습니까?"
+      open={cancelTargets.length > 0}
+      title={
+        cancelTargets.length > 1
+          ? `선택한 ${cancelTargets.length}건을 취소하시겠습니까?`
+          : "이 의뢰를 취소하시겠습니까?"
+      }
       description="준비 단계 의뢰만 취소할 수 있습니다. 취소 후 크레딧은 정책에 따라 복구됩니다."
-      confirmLabel="의뢰 취소"
+      confirmLabel={
+        cancelTargets.length > 1 ? "선택 건 취소" : "의뢰 취소"
+      }
       cancelLabel="닫기"
       busy={canceling}
       onConfirm={() => {
@@ -510,7 +713,7 @@ export const PastRequestsModal = ({
       }}
       onCancel={() => {
         if (canceling) return;
-        setCancelTarget(null);
+        setCancelTargets([]);
       }}
     />
     </>

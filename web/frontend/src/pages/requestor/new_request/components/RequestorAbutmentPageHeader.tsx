@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-19: 진행중 목록 일괄 취소는 PATCH /status/batch 한 요청으로 처리.
 // - 2026-08-19: 제출·공정 변경 소켓으로 진행중/출고예정 건수 재조회(리프레시 없이).
 // - 2026-08-19: 취소 확인은 즉시 닫고, 헤더 건수 재조회는 스냅샷 완료 뒤로 미룸.
 // - 2026-08-19: 헤더 라벨 출고예정. 취소 후 출고 스냅샷 쿼리도 무효화.
@@ -193,7 +194,9 @@ export const RequestorAbutmentPageHeader = () => {
     }, 2000);
   };
 
-  const decrementInProgressCountOptimistic = () => {
+  const decrementInProgressCountOptimistic = (count = 1) => {
+    const n = Math.max(0, Number(count) || 0);
+    if (!n) return;
     queryClient.setQueryData(cardsSummaryQueryKey, (old: any) => {
       const stats = old?.data?.stats;
       if (!old || !stats || typeof stats !== "object") return old;
@@ -203,21 +206,27 @@ export const RequestorAbutmentPageHeader = () => {
           ...old.data,
           stats: {
             ...stats,
-            totalRequests: Math.max(0, Number(stats.totalRequests ?? 0) - 1),
+            totalRequests: Math.max(0, Number(stats.totalRequests ?? 0) - n),
           },
         },
       };
     });
   };
 
-  const removeFromBulkShippingOptimistic = (mongoId: string) => {
+  const removeFromBulkShippingOptimistic = (mongoIds: string | string[]) => {
+    const idSet = new Set(
+      (Array.isArray(mongoIds) ? mongoIds : [mongoIds])
+        .map((id) => String(id || "").trim())
+        .filter(Boolean),
+    );
+    if (!idSet.size) return;
     queryClient.setQueryData(["requestor-bulk-shipping"], (old: any) => {
       const data = old?.data;
       if (!old || !data || typeof data !== "object") return old;
       const matches = (item: any) => {
         const itemMongoId = String(item?.mongoId || item?._id || "").trim();
         const itemRequestId = String(item?.id || "").trim();
-        return itemMongoId === mongoId || itemRequestId === mongoId;
+        return idSet.has(itemMongoId) || idSet.has(itemRequestId);
       };
       const withoutCanceled = (list: unknown) =>
         Array.isArray(list) ? list.filter((item) => !matches(item)) : list;
@@ -233,7 +242,10 @@ export const RequestorAbutmentPageHeader = () => {
     });
   };
 
-  const cancelRequestByMongoId = async (mongoId: string) => {
+  const cancelRequestByMongoId = async (
+    mongoId: string,
+    options?: { silent?: boolean },
+  ) => {
     if (!token || !mongoId) return false;
     const res = await apiFetch<any>({
       path: `/api/requests/${encodeURIComponent(mongoId)}/status`,
@@ -243,25 +255,83 @@ export const RequestorAbutmentPageHeader = () => {
       jsonBody: { manufacturerStage: "취소" },
     });
     if (!res.ok) {
-      const serverMsg = res.data?.message;
+      if (!options?.silent) {
+        const serverMsg = res.data?.message;
+        toast({
+          title: "의뢰 취소 실패",
+          description:
+            serverMsg ||
+            "준비 단계에서만 취소할 수 있습니다. 가공 단계부터는 취소가 불가능합니다.",
+          variant: "destructive",
+          duration: 3000,
+        });
+      }
+      return false;
+    }
+    if (!options?.silent) {
       toast({
-        title: "의뢰 취소 실패",
+        title: "의뢰가 취소되었습니다",
+        duration: 2000,
+      });
+    }
+    decrementInProgressCountOptimistic();
+    removeFromBulkShippingOptimistic(mongoId);
+    if (!options?.silent) {
+      refreshHeaderCounts();
+    }
+    return true;
+  };
+
+  const cancelRequestsByMongoIds = async (mongoIds: string[]) => {
+    const ids = [
+      ...new Set(
+        (mongoIds || []).map((id) => String(id || "").trim()).filter(Boolean),
+      ),
+    ];
+    if (!token || !ids.length) return { okIds: [] as string[], failedIds: ids };
+    const res = await apiFetch<any>({
+      path: "/api/requests/status/batch",
+      method: "PATCH",
+      token,
+      headers: { "Content-Type": "application/json" },
+      jsonBody: { ids, manufacturerStage: "취소" },
+    });
+    const canceled = Array.isArray(res.data?.data?.canceled)
+      ? res.data.data.canceled
+      : [];
+    const failed = Array.isArray(res.data?.data?.failed)
+      ? res.data.data.failed
+      : [];
+    const okIds = canceled
+      .map((row: any) => String(row?._id || row?.id || "").trim())
+      .filter(Boolean);
+    const failedFromApi = failed
+      .map((row: any) => String(row?.id || row?._id || "").trim())
+      .filter(Boolean);
+    const okSet = new Set(okIds);
+    const failedIds = [
+      ...new Set([
+        ...failedFromApi,
+        ...ids.filter((id) => !okSet.has(id)),
+      ]),
+    ];
+    if (!res.ok && !okIds.length) {
+      toast({
+        title: "의뢰 일괄 취소 실패",
         description:
-          serverMsg ||
-          "준비 단계에서만 취소할 수 있습니다. 가공 단계부터는 취소가 불가능합니다.",
+          res.data?.message ||
+          "준비 단계에서만 취소할 수 있습니다. 잠시 후 다시 시도해주세요.",
         variant: "destructive",
         duration: 3000,
       });
-      return false;
+      return { okIds: [], failedIds: ids };
     }
-    toast({
-      title: "의뢰가 취소되었습니다",
-      duration: 2000,
-    });
-    decrementInProgressCountOptimistic();
-    removeFromBulkShippingOptimistic(mongoId);
-    refreshHeaderCounts();
-    return true;
+    if (okIds.length) {
+      decrementInProgressCountOptimistic(okIds.length);
+      removeFromBulkShippingOptimistic(okIds);
+      refreshHeaderCounts();
+    }
+    return { okIds, failedIds: failedIds.filter((id) => !okSet.has(id)) };
   };
 
   const closeDetailAndRestoreList = () => {
@@ -332,7 +402,7 @@ export const RequestorAbutmentPageHeader = () => {
         open={inProgressOpen}
         onOpenChange={setInProgressOpen}
         title="진행중"
-        description="준비·가공·세척.패킹·포장.발송 단계의 의뢰를 확인하고 상세를 엽니다. 준비 단계에서는 취소할 수 있습니다."
+        description="준비·가공·세척.패킹·포장.발송 단계의 의뢰를 확인하고 상세를 엽니다. 준비 단계는 건별 또는 선택 후 한꺼번에 취소할 수 있습니다."
         manufacturerStageIn={IN_PROGRESS_MANUFACTURER_STAGES}
         initialPeriod={period}
         allowCancel
@@ -340,6 +410,7 @@ export const RequestorAbutmentPageHeader = () => {
         removeMongoId={canceledMongoId}
         onCanceled={refreshHeaderCounts}
         onCancelRequest={cancelRequestByMongoId}
+        onCancelRequests={cancelRequestsByMongoIds}
         onSelectRequest={(request) => {
           setListSource("inProgress");
           setSelectedPastRequest(request);

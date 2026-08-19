@@ -7,6 +7,7 @@
 // - web/backend/controllers/requests/common.review.helpers.js
 // - web/backend/controllers/requests/mailbox.utils.js
 // change-log:
+// - 2026-08-19: 일괄 취소 시 같은 박스에서 함께 취소되는 형제의 배송비 재보류를 생략.
 // - 2026-08-19: 어벗디자인·어벗생산 배송비는 의뢰 사업자+예정출고일 1회(치과명 무관).
 // - 2026-08-19: 같은 제출에서 원장 잔액 집계·가드 락을 앵커당 1회로 재사용.
 // - 2026-08-19: 신규 제출 보류는 선행 저널 조회 생략 + insertMany 1회로 기록.
@@ -941,6 +942,7 @@ export async function releaseRequestCreditHoldsOnCancel({
   actorUserId = null,
   session = null,
   deferredCreditEvents = null,
+  excludeSiblingIds = null,
 }) {
   if (!request?._id) return { released: false, reason: "invalid_request" };
   if (isManufacturerSampleRequest(request)) {
@@ -976,12 +978,19 @@ export async function releaseRequestCreditHoldsOnCancel({
   }
 
   if (releasedShipping && anchorId && !shouldSkipShippingHold(request)) {
-    const siblings = await listRequesterShipBoxSiblings({
-      request,
-      requestorAnchorId: anchorId,
-      session,
-      includeSelf: false,
-    });
+    const excludeIds = new Set(
+      [...(excludeSiblingIds || [])]
+        .map((id) => String(id || "").trim())
+        .filter(Boolean),
+    );
+    const siblings = (
+      await listRequesterShipBoxSiblings({
+        request,
+        requestorAnchorId: anchorId,
+        session,
+        includeSelf: false,
+      })
+    ).filter((sib) => !excludeIds.has(String(sib?._id || "")));
     if (siblings.length > 0) {
       const existing = await findExistingRequesterShipBoxShippingHold({
         request: siblings[0],

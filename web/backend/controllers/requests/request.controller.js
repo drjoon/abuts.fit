@@ -36,6 +36,7 @@ export const {
   confirmAllRndUnmachinableByRequestor,
   updateRndMemo,
   updateRequestStatus,
+  updateRequestStatusBatch,
   deleteRequest,
   updateReviewStatusByStage,
   getOriginalFileUrl,

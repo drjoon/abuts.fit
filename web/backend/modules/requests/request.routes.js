@@ -6,6 +6,9 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
+// - web/frontend/src/shared/components/PastRequestsModal.tsx
+// change-log:
+// - 2026-08-19: PATCH /status/batch — 준비 단계 일괄 취소.
 import express from "express";
 const router = express.Router();
 import requestController from "../../controllers/requests/request.controller.js";
@@ -56,6 +59,14 @@ router.post(
   authorize(["requestor", "admin"], { subRoles: ["owner", "staff"] }),
   authorizePaidRequestor(),
   requestController.createRequestsBulk,
+);
+
+// 의뢰자/관리자: 준비 단계 일괄 취소
+router.patch(
+  "/status/batch",
+  authenticate,
+  authorize(["requestor", "admin"], { subRoles: ["owner", "staff"] }),
+  requestController.updateRequestStatusBatch,
 );
 
 // 모든 의뢰 목록 조회 (요청자 의뢰 도메인 전용)

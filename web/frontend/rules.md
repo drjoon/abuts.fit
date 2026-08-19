@@ -40,8 +40,8 @@ Notes:
 - Requestor dashboard: 상단 카드 '의뢰/취소' -> '준비'로 변경. 취소 항목은 카드에서 제거(내부 DB는 유지). 상세 정책/모달의 '의뢰' 문구는 '준비'로 변경함.
 - 의뢰 취소 정책 SSOT: **준비 단계에서만** 취소 가능(불완전가공 판정 예외 유지). 레거시 '의뢰/CAM 단계 취소' 문구·판정 금지.
   - UI: `RequestorRecentRequestsCard` 취소 버튼/툴팁, `RequestorDashboardPage` 실패 토스트, `PricingPolicyDialog` 6절,
-    `RequestorAbutmentPageHeader`+`PastRequestsModal`(취소 후 목록 모달 유지)
-  - API: `PATCH /api/requests/:id/status` 취소 검증, 중복 replace(`from-draft`/`creation.request`)의 `isCancelableStage`. 취소 응답은 저장 직후 슬림 페이로드(웹소켓·정규화는 백그라운드).
+    `RequestorAbutmentPageHeader`+`PastRequestsModal`(건별·체크박스 일괄 취소, 취소 후 목록 모달 유지)
+  - API: `PATCH /api/requests/:id/status` 취소 검증, `PATCH /api/requests/status/batch` 일괄 취소, 중복 replace(`from-draft`/`creation.request`)의 `isCancelableStage`. 취소 응답은 저장 직후 슬림 페이로드(웹소켓·정규화는 백그라운드).
 
 ## 0. Frontend 중요 진입 파일 지도 (로컬)
 
@@ -635,7 +635,7 @@ Notes:
   - 첨부 직후 백그라운드 사전 업로드(`useFilePreUpload`). 페이지 이동·복원 시 S3/File 메타가 있으면 재업로드하지 않는다(공유 캐시 + sessionStorage). 로그인 세션이 있을 때:
     - 기공의뢰: Dropzone·FileTransfer. 파일카드에 `uploadProgress` 프로그레스바.
       제출([기공소로 전송])은 캐시된 결과를 재사용하고, 미완료면 백그라운드 업로드만 기다린다. 재업로드 토스트를 띄우지 않는다.
-    - 생산의뢰: `useNewRequestPage` 첨부 직후 `preUploadFiles`. 파일카드 프로그레스바·%(업로드 중)·「업로드됨」(완료, 초록 바). 제출은 `ensureFilesUploaded` 재사용 (`useNewRequestSubmitV2`). `POST /api/requests/from-draft`는 S3를 다시 올리지 않고, 제출 지연은 서버 생성(가격·스케줄·크레딧 보류) 경로다.
+    - 생산의뢰: `useNewRequestPage` 첨부 직후 `preUploadFiles`. 파일카드 프로그레스바·%(업로드 중)·「업로드됨」(완료, 파란 바). 제출은 `ensureFilesUploaded` 재사용 (`useNewRequestSubmitV2`). `POST /api/requests/from-draft`는 S3를 다시 올리지 않고, 제출 지연은 서버 생성(가격·스케줄·크레딧 보류) 경로다.
       치과는 제출 후 같은 `/dashboard/new-request`에 잔류하므로, 성공 시 로컬 초안을 `setFiles([])`보다 먼저 지우고 입력 중 `check-duplicate`는 generation으로 무효화한다(성공 토스트와 중복 모달이 동시에 뜨지 않게).
       헤더 [출고예정]/[진행중]은 `RequestorAbutmentPageHeader`가 `request:stage-changed`·`credit:balance-updated`를 구독해 `requestor-bulk-shipping` / `requestor-dashboard-cards-summary`를 재조회한다.
     - 채팅 첨부: `useBackgroundTempUpload` + `BackgroundUploadList`
