@@ -4,6 +4,7 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/shared/components/practice/PracticeTransferLabReceiveCard.tsx
 // change-log:
+// - 2026-08-19: 기공소와 같이 기공의뢰 그룹(수신·어벗생산의뢰). 대기보드는 어벗생산의뢰 헤더로.
 // - 2026-08-16: acceptingLab 디자인큐 안내 문구 제거 — 수신 카드만.
 // - 2026-08-16: 미설정 시 진입 강제 모달·사업체 디자인SW/아노 저장(internalLab).
 // - 2026-08-15: 수락 기공소와 동일 — acceptingLab 큐·문구 + 공통 수신 카드.

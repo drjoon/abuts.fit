@@ -3,6 +3,7 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/features/dashboard/DashboardHome.tsx
 // - web/frontend/src/store/useAuthStore.ts
+// - 2026-08-19: 기공소·어벗츠기공소 `/dashboard` last path는 기공의뢰수신으로 보정(대기보드 제거).
 // - 2026-08-18: 치과 requestor `/dashboard` last path는 구강스캔으로 보정(대시보드 메뉴 제거).
 // - 2026-08-17: internalLab `/dashboard` = 대기보드 허용(기본 랜딩은 lab-work).
 
@@ -68,14 +69,14 @@ export function resolveEntryDashboardPath(user: {
   const last = normalizeLastDashboardPath(user?.lastDashboardPath);
   if (!last) return roleDefault;
 
-  // manufacturer/practice/devops/기공팀/영업팀은 `/dashboard`에 콘텐츠가 없음.
-  // internalLab은 `/dashboard` = 대기보드(RequestorDashboardPage).
+  // manufacturer/practice/devops/기공팀/영업팀/어벗츠기공소는 `/dashboard`에 콘텐츠가 없음.
   if (
     (role === "manufacturer" ||
       role === "practice" ||
       role === "devops" ||
       role === "labTeam" ||
-      role === "salesTeam") &&
+      role === "salesTeam" ||
+      role === "internalLab") &&
     (last === "/dashboard" || last === "/dashboard/")
   ) {
     return roleDefault;
@@ -83,7 +84,7 @@ export function resolveEntryDashboardPath(user: {
 
   const lastPathname = last.split("?")[0];
 
-  // 어벗츠기공소: 구 어벗디자인·대시보드 경로 → 기공의뢰수신
+  // 어벗츠기공소: 구 어벗디자인·대기보드 경로 → 기공의뢰수신
   if (
     role === "internalLab" &&
     (lastPathname === "/dashboard/abut-design" ||

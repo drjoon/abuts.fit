@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-19: 기공소·어벗츠기공소도 상단 생산 현황 헤더(기간·출고·완료·불완전가공). 가입 배너는 수신 페이지.
 // - 2026-08-19: 의뢰하기 클릭 즉시 입력 중 중복 체크 무효화(성공 토스트+중복 모달 동시 표시 방지).
 // - 2026-08-19: 제출 중 중복 클릭 방지. 첨부 즉시 업로드는 useNewRequestPage.
 // - 2026-08-18: 치과 어벗디자인 상단 — 기간필터·정책안내·출고예정·지난의뢰·불완전가공.
@@ -60,7 +61,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { BusinessPaidAccessGate } from "@/shared/business/BusinessPaidAccessGate";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
-import { LabDashboardTopBanners } from "@/features/lab/LabDashboardTopBanners";
 import { RequestorAbutmentPageHeader } from "./components/RequestorAbutmentPageHeader";
 
 import type { CaseInfos } from "./hooks/newRequestTypes";
@@ -1510,8 +1510,9 @@ const NewRequestPageContent = () => {
       className="new-request-page bg-gradient-subtle p-4 flex flex-col h-full min-h-0 overflow-hidden"
     >
       <div className="max-w-6xl mx-auto w-full space-y-3 flex flex-col flex-1 min-h-0 h-full">
-        {isLabRequestor ? <LabDashboardTopBanners /> : null}
-        {isPracticeRequestor ? <RequestorAbutmentPageHeader /> : null}
+        {isPracticeRequestor || isLabRequestor ? (
+          <RequestorAbutmentPageHeader />
+        ) : null}
         <Dialog
           open={practiceIntroOpen}
           onOpenChange={(next) => {

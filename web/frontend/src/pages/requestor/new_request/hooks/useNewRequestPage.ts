@@ -9,6 +9,7 @@
 // - 2026-08-19: 치과 제출 성공 시 로컬 초안 복원 억제·입력 중 중복 체크 generation. 성공 토스트와 중복 모달이 동시에 뜨지 않게.
 // - 2026-08-19: 첨부 직후 preUploadFiles를 바로 호출(기공의뢰와 동일). 제출 잠금·헤더 건수 무효화.
 // - 2026-08-19: 입력 중 중복 체크 — 추적관리면 tracking 모드(진행중으로 오인하지 않음).
+// - 2026-08-19: 기공소·어벗츠기공소 제출 후 `/dashboard` 대신 어벗생산의뢰에 잔류.
 // - 2026-08-18: 치과 제출 후 `/dashboard` 대신 어벗디자인 페이지에 잔류(대시보드 메뉴 없음).
 // - 2026-08-13: 제출 시 이미 사업자가 있으면 profile/credits GET을 생략
 // - 2026-08-13: 복원·포워딩 시 이미 S3/메타가 있는 STL은 재업로드하지 않음.
@@ -76,7 +77,7 @@ export const useNewRequestPage = (
   const navigateWithDashboardRefresh = useCallback(
     (path: string) => {
       if (path === "/dashboard") {
-        if (requestorKind === "practice") {
+        if (requestorKind === "practice" || requestorKind === "lab") {
           void queryClient.invalidateQueries({
             queryKey: ["requestor-dashboard-cards-summary"],
           });

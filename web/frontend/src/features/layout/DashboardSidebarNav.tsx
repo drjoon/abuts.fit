@@ -1,5 +1,6 @@
 // change-log:
 // - 2026-08-19: 펼친 사이드 메인 메뉴는 아이콘 왼쪽·라벨 가운데. 배지는 우측 고정. 라벨은 줄이지 않음.
+// - 2026-08-19: 접힌 그룹 메뉴는 하위 배지 합산(기공의뢰수신 미확인).
 // - 2026-08-18: 그룹 메뉴(기공의뢰) 호버·클릭 글자를 foreground로 — ghost accent 흰 글자 방지.
 // - 2026-08-18: 치과 기공의뢰 — 메인 행 + 들여쓴 서브(구강스캔으로 / 어벗디자인으로).
 // related files:
@@ -155,7 +156,12 @@ const SidebarNavButton = ({
       {(() => {
         const badgeCount =
           Array.isArray(item.children) && item.children.length > 0
-            ? 0
+            ? isCollapsed
+              ? item.children.reduce(
+                  (sum, child) => sum + getBadgeCount(child.href),
+                  0,
+                )
+              : 0
             : getBadgeCount(item.href);
         if (!isCollapsed) {
           if (isCreditsLowHighlight) {

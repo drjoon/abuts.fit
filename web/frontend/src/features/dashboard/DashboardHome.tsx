@@ -8,6 +8,7 @@ import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusine
 import { resolveEntryDashboardPath } from "@/shared/navigation/lastDashboardPath";
 
 // change-log:
+// - 2026-08-19: 기공소·어벗츠기공소 `/dashboard`는 기공의뢰수신으로. 제출 후 어벗생산의뢰. 대기보드 제거.
 // - 2026-08-18: 치과 `/dashboard`는 구강스캔(또는 제출 후 어벗디자인)으로 보냄. 대시보드 페이지 미사용.
 // - 2026-08-17: internalLab `/dashboard` = 대기보드(RequestorDashboardPage). 기본 랜딩은 lab-work 유지.
 // - 2026-08-09: 신규의뢰 제출 등 refreshDashboardAt 의도 이동은 last path 허브 리다이렉트를 건너뛴다.
@@ -48,6 +49,27 @@ export const DashboardHome = () => {
           : entry;
       return <Navigate to={dest} replace />;
     }
+    if (requestorKind === "lab") {
+      if (stayOnDashboardHome) {
+        return <Navigate to="/dashboard/new-request" replace />;
+      }
+      const dest =
+        !entry || entry === "/dashboard" || entry === "/dashboard/"
+          ? "/dashboard/practice-transfers?mode=receive"
+          : entry;
+      return <Navigate to={dest} replace />;
+    }
+  }
+
+  if (user.role === "internalLab") {
+    if (stayOnDashboardHome) {
+      return <Navigate to="/dashboard/new-request" replace />;
+    }
+    const dest =
+      !entry || entry === "/dashboard" || entry === "/dashboard/"
+        ? "/dashboard/lab-work"
+        : entry;
+    return <Navigate to={dest} replace />;
   }
 
   // `/dashboard`는 진입 허브. 최근 메뉴(또는 역할 기본)가 다른면 그쪽으로 보낸다.
@@ -56,7 +78,7 @@ export const DashboardHome = () => {
     return <Navigate to={entry} replace />;
   }
 
-  if (user.role === "requestor" || user.role === "internalLab") {
+  if (user.role === "requestor") {
     return (
       <BusinessPaidAccessGate>
         <RequestorDashboardPage />

@@ -17,6 +17,7 @@
 // - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // - web/frontend/src/shared/components/practice/LabReceiveWorkUploadDialog.tsx
+// - 2026-08-19: 수신 기간필터를 치과와 같이 30일/90일/이번달/지난달.
 // - 2026-08-19: 기공비 미설정 수락 — 설정 탭 포워드(`from=accept`). API는 lab_fee_unconfigured.
 // - 2026-08-16: 어벗·보철 — 프리뷰 치아 지정·백그라운드 preUpload·분할 업로드.
 // - 2026-08-16: 어벗은 3D 확인 모달에서 치아 지정(중간 지정 다이얼로그 생략).
@@ -4156,7 +4157,6 @@ export function RequestorPracticeReceivePage({
           <PeriodFilter
             value={period}
             onChange={setPeriod}
-            presets={["thisMonth", "lastMonth"]}
             className="shrink-0"
           />
           <RequestSettingsToolbar
@@ -4480,7 +4480,6 @@ export function RequestorPracticeReceivePage({
               <PeriodFilter
                 value={period}
                 onChange={setPeriod}
-                presets={["thisMonth", "lastMonth"]}
                 className="shrink-0"
               />
               <RequestSettingsToolbar

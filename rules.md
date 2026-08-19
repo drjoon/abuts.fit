@@ -115,7 +115,7 @@
     - User(`User.role`): `salesman`=**딜러**, `admin`=**관리자**
     - 제품명 **어벗츠.핏**은 랜딩·SMS·고객지원. 「관리자에게 문의」「관리자 UI」는 운영 카피로 유지.
     - SSOT: `web/frontend/src/shared/types/role.ts` (`USER_ROLE_LABEL` / `BUSINESS_TYPE_LABEL`), `web/backend/utils/roleLabels.js`
-  - `internalLab`(어벗츠기공소): 어벗츠 기공소 직접 운영. 메뉴=기공의뢰수신·설정. 관리자 생성만(공개 가입 없음).
+  - `internalLab`(어벗츠기공소): 어벗츠 기공소 직접 운영. 메뉴=기공의뢰(수신·어벗생산의뢰)·크레딧·정산·설정. 관리자 생성만(공개 가입 없음).
     - 동일 법인 BN을 `businessType`별로 공유 가능(`businessNumberNormalized`+`businessType` 복합 unique). 하위조직은 `parentBusinessAnchorId` → 예: admin「어벗츠 주식회사」←「기공사업부」.
   - `labTeam`(기공팀)·`salesTeam`(영업팀): 내부 직원. `/signup/staff`에서 가입. 사업영역 수익 분배 주체. `salesTeam`은 딜러와 별개.
   - `practice` role은 제거. 기존 계정은 `requestor`+`requestorCapabilities.practice` 마이그레이션 대상(신규 생성 금지). 백필: `scripts/db/backfill-requestor-capabilities.js --apply`.

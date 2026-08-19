@@ -10,6 +10,7 @@ import { toKstYmd } from "@/shared/date/kst";
 import { useToast } from "@/shared/hooks/use-toast";
 import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPath";
 
+// - 2026-08-19: 기공소·어벗츠기공소 사이드 — 대시보드/대기보드 제거. 기공의뢰 그룹(수신·어벗생산의뢰).
 // - 2026-08-19: 펼친 사이드 메인 메뉴는 아이콘 왼쪽·라벨 가운데. 배지는 우측 고정. 라벨은 줄이지 않음.
 // - 2026-08-19: 구강스캔으로 툴팁 — 디자인+생산에 구강지그 포함. 지그는 별도 항목이 아님.
 // - 2026-08-18: 치과 사이드 — 대시보드 제거. 어벗디자인 헤더가 기간·출고·지난의뢰·불완전가공.
@@ -161,32 +162,48 @@ const ABUTMENT_REQUEST_TOOLTIP =
   "커스텀어벗 디자인을 올려서 CNC 생산 의뢰";
 const PRACTICE_ORAL_SCAN_HREF = "/dashboard/practice-transfers?mode=send";
 const PRACTICE_ABUTMENT_DESIGN_HREF = "/dashboard/new-request";
+const LAB_RECEIVE_HREF = "/dashboard/practice-transfers?mode=receive";
+const INTERNAL_LAB_RECEIVE_HREF = "/dashboard/lab-work";
+const LAB_ABUTMENT_PRODUCTION_HREF = "/dashboard/new-request";
 const PRACTICE_ORAL_SCAN_REQUEST_TOOLTIP =
   "구강스캔으로 커스텀어벗 디자인+생산(구강지그 포함), 임시치아·지르 보철 의뢰";
 const PRACTICE_ABUTMENT_DESIGN_REQUEST_TOOLTIP =
   "완성된 어벗 디자인(STL)으로 CNC 생산 의뢰";
+const LAB_RECEIVE_TOOLTIP =
+  "구강스캔 파일을 받아서 인레이, 크라운, 브리지, 커스텀어벗 디자인 등 보철 기공 처리";
+
+const buildLabGigongRequestSidebarGroup = (
+  receiveHref: string,
+  receiveTooltip = LAB_RECEIVE_TOOLTIP,
+): SidebarItem => ({
+  icon: Building2,
+  label: "기공의뢰",
+  href: receiveHref,
+  tooltip: "치과 기공의뢰 수신과 어벗 CNC 생산 의뢰",
+  children: [
+    {
+      icon: Building2,
+      label: "기공의뢰수신",
+      href: receiveHref,
+      tooltip: receiveTooltip,
+      accent: "기공",
+    },
+    {
+      icon: FileText,
+      label: "어벗생산의뢰",
+      href: LAB_ABUTMENT_PRODUCTION_HREF,
+      tooltip: ABUTMENT_REQUEST_TOOLTIP,
+      accent: "어벗",
+    },
+  ],
+});
 
 const buildRequestorSidebarItems = (
   kind: "practice" | "lab" | null,
 ): SidebarItem[] => {
   if (kind === "lab") {
     return [
-      { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
-      {
-        icon: Building2,
-        label: "기공의뢰수신",
-        href: "/dashboard/practice-transfers?mode=receive",
-        tooltip:
-          "구강스캔 파일을 받아서 인레이, 크라운, 브리지, 커스텀어벗 디자인 등 보철 기공 처리",
-        accent: "기공",
-      },
-      {
-        icon: FileText,
-        label: "어벗생산의뢰",
-        href: "/dashboard/new-request",
-        tooltip: ABUTMENT_REQUEST_TOOLTIP,
-        accent: "어벗",
-      },
+      buildLabGigongRequestSidebarGroup(LAB_RECEIVE_HREF),
       { icon: Wallet, label: "크레딧", href: CREDITS_HREF },
       { icon: Wallet, label: "정산", href: "/dashboard/payments" },
       ...requestorSidebarCommonTail,
@@ -250,26 +267,10 @@ const sidebarItems = {
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
   internalLab: [
-    {
-      icon: LayoutDashboard,
-      label: "대기보드",
-      href: "/dashboard",
-      tooltip: "어벗 생산·출고 대기 현황",
-    },
-    {
-      icon: Building2,
-      label: "기공의뢰수신",
-      href: "/dashboard/lab-work",
-      tooltip: "어벗츠기공소 기공의뢰 수신·작업",
-      accent: "기공",
-    },
-    {
-      icon: FileText,
-      label: "어벗생산의뢰",
-      href: "/dashboard/new-request",
-      tooltip: ABUTMENT_REQUEST_TOOLTIP,
-      accent: "어벗",
-    },
+    buildLabGigongRequestSidebarGroup(
+      INTERNAL_LAB_RECEIVE_HREF,
+      "어벗츠기공소 기공의뢰 수신·작업",
+    ),
     { icon: Wallet, label: "크레딧", href: CREDITS_HREF },
     { icon: Wallet, label: "정산", href: "/dashboard/payments" },
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
