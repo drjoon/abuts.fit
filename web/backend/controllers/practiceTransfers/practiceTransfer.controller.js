@@ -64,7 +64,7 @@ import {
   resolveAutoMatchBudgetOrDefaults,
   resolveAutoMatchEligibleLabAnchorIds,
 } from "../../utils/practiceTransferAutoMatchBudget.js";
-import { resolveLabPracticeFeeMultiplier, isLabFeeScheduleConfigured } from "../../utils/labFeeSchedule.js";
+import { resolveLabPracticeFeeMultiplier, isLabFeeScheduleConfigured, isLabFeeScheduleReadyToCharge, missingLabFeeItemNames, labFeeItemNamesNeededForToothWorks, toothWorksNeedLabFee } from "../../utils/labFeeSchedule.js";
 import {
   normalizeRushFeeMultiplier,
   resolvePracticeTransferArrivalPolicy,
@@ -155,7 +155,7 @@ import { resolvePracticeTransferSkipJig } from "../../utils/practiceTransferLabS
 // - 2026-08-16: mark-release clearAutoMatchClaim — autoMatchBudget(선택 별점) 유지. 누락 시 평균가(3점) 폴백·다운그레이드 소실.
 // - 2026-08-16: mark-release 이미 해제면 200 멱등. 수신 목록 manufacturerStage는 stage SSOT.
 // - 2026-08-18: 수락 전 의뢰 내용 수정 POST /:transferId/update-content.
-// - 2026-08-19: mark-accepted — 기공비 마스터 Off면 409 lab_fee_unconfigured(설정 유도).
+// - 2026-08-19: mark-accepted — 기공비 미설정(마스터 Off·항목 Off·해당 보철 0원)이면 409 lab_fee_unconfigured.
 const PRACTICE_TAGS = ["practice_dropzone", "practice_file_transfer"];
 const PRACTICE_ALLOWED_MODEL_EXTENSIONS = new Set([".stl", ".ply", ".obj"]);
 const PRACTICE_ALLOWED_IMAGE_EXTENSIONS = new Set([
@@ -177,22 +177,33 @@ const LAB_FEE_UNCONFIGURED_ACCEPT_MESSAGE =
 
 function rejectLabFeeUnconfigured(res, err) {
   const status = Number(err?.statusCode || 409);
+  const missingFeeNames = Array.isArray(err?.missingFeeNames)
+    ? err.missingFeeNames.map((name) => String(name || "").trim()).filter(Boolean)
+    : [];
   return res.status(status >= 400 && status < 600 ? status : 409).json({
     success: false,
     message:
       String(err?.message || "").trim() || LAB_FEE_UNCONFIGURED_ACCEPT_MESSAGE,
     reason: err?.code || LAB_FEE_UNCONFIGURED_REASON,
+    ...(missingFeeNames.length ? { missingFeeNames } : {}),
   });
 }
 
-async function assertReceiverLabFeeConfigured(labAnchorId) {
+async function assertReceiverLabFeeConfigured(labAnchorId, toothWorks) {
   const lab = await BusinessAnchor.findById(labAnchorId)
     .select({ labFeeSchedule: 1 })
     .lean();
-  if (isLabFeeScheduleConfigured(lab?.labFeeSchedule)) return;
+  const missing = missingLabFeeItemNames(lab?.labFeeSchedule, toothWorks);
+  if (isLabFeeScheduleConfigured(lab?.labFeeSchedule) && missing.length === 0) {
+    return;
+  }
   const err = new Error(LAB_FEE_UNCONFIGURED_ACCEPT_MESSAGE);
   err.statusCode = 409;
   err.code = LAB_FEE_UNCONFIGURED_REASON;
+  err.missingFeeNames =
+    missing.length > 0
+      ? missing
+      : labFeeItemNamesNeededForToothWorks(toothWorks);
   throw err;
 }
 
@@ -4225,7 +4236,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
     const alreadyAcceptedDirect = Boolean(doc.requestorDownloadedAt);
     if (!isAuto && !alreadyAcceptedDirect) {
       try {
-        await assertReceiverLabFeeConfigured(labAnchorId);
+        await assertReceiverLabFeeConfigured(labAnchorId, doc.toothWorks);
       } catch (feeErr) {
         return rejectLabFeeUnconfigured(res, feeErr);
       }
@@ -4319,11 +4330,19 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
       const claimingLab = await BusinessAnchor.findById(labOid)
         .select({ name: 1, labFeeSchedule: 1 })
         .lean();
-      if (!isLabFeeScheduleConfigured(claimingLab?.labFeeSchedule)) {
+      if (!isLabFeeScheduleReadyToCharge(claimingLab?.labFeeSchedule)) {
+        const missing = missingLabFeeItemNames(
+          claimingLab?.labFeeSchedule,
+          doc.toothWorks,
+        );
         return rejectLabFeeUnconfigured(res, {
           statusCode: 409,
           message: LAB_FEE_UNCONFIGURED_ACCEPT_MESSAGE,
           code: LAB_FEE_UNCONFIGURED_REASON,
+          missingFeeNames:
+            missing.length > 0
+              ? missing
+              : labFeeItemNamesNeededForToothWorks(doc.toothWorks),
         });
       }
       const assigneeLabName =
@@ -4537,6 +4556,26 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
           success: false,
           message: billingErr?.message || "기공의뢰 수락 과금에 실패했습니다.",
           ...(billingErr?.payload || {}),
+        });
+      }
+    }
+
+    if (!alreadyAccepted) {
+      const remake = toRemakeApiFields(doc).isRemake;
+      const labFeeTotal = Math.max(
+        0,
+        Math.round(Number(billingResult?.fees?.labFeeTotal || 0)),
+      );
+      if (
+        !remake &&
+        toothWorksNeedLabFee(doc.toothWorks) &&
+        labFeeTotal <= 0
+      ) {
+        return rejectLabFeeUnconfigured(res, {
+          statusCode: 409,
+          message: LAB_FEE_UNCONFIGURED_ACCEPT_MESSAGE,
+          code: LAB_FEE_UNCONFIGURED_REASON,
+          missingFeeNames: labFeeItemNamesNeededForToothWorks(doc.toothWorks),
         });
       }
     }

@@ -7,11 +7,13 @@
 // - web/frontend/src/features/settings/tabs/LabFeeScheduleTab.tsx
 // - web/backend/tests/unit/labFeeSchedule.test.js
 // - 2026-08-13: 마스터 active(기본 off)가 켜져야 설정 완료. 수가 디폴트는 기본값·항목 on.
+// - 2026-08-19: 수락 포워드용 missingLabFeeItemNames(해당 보철 미제공·0원).
 // - 2026-08-13: 커스텀어벗 단가는 creditSettings 멤버십/일반값을 우선 사용.
 // - 2026-08-13: 유지장치 등 perSet는 연결 스팬당 1세트(끊기면 별도). 연결 없는 레거시는 악궁당.
 // - 2026-08-13: 견적 라인은 치아번호 10→20→30→40번대 순.
 // - 2026-08-17: 번대 안은 정중선 가운데(18→11, 21→28, 38→31, 41→48).
-// - 2026-08-13: 유지장치·임시치아에 남은 커스텀 플래그는 어벗 과금하지 않는다.
+// - 2026-08-13: 유지장치에 남은 커스텀 플래그는 어벗 과금하지 않는다.
+// - 2026-08-19: 임시치아+어벗은 임시치아 수가와 어벗츠 단가를 함께 합산.
 // - 2026-08-14: 환봉 프리셋 타입 변경 후에도 제조사·브랜드·패밀리로 매칭.
 // - 2026-08-14: 환봉 단가 0원은 별도 고지(abutmentRetailNote=quote). 견적에서 열이 사라지지 않게.
 // - 2026-08-14: 도입 종류(cnc/round_bar)에 따라 어벗츠 CNC·환봉 단가 분기.
@@ -264,7 +266,16 @@ export const isCustomAbutmentWork = (row?: {
   const prosthesisType = String(row?.prosthesisType || row?.type || "").trim();
   if (!prosthesisType || isMissingToothProsthesisType(prosthesisType)) return false;
   if (isCustomAbutmentProsthesisType(prosthesisType)) return true;
-  if (prosthesisType !== "크라운" && prosthesisType !== "브리지") return false;
+  const compact = prosthesisType.replace(/\s+/g, "");
+  if (
+    prosthesisType !== "크라운" &&
+    prosthesisType !== "브리지" &&
+    compact !== "임시치아" &&
+    compact !== "가철성임시치아" &&
+    !/가철성\s*임시/i.test(prosthesisType)
+  ) {
+    return false;
+  }
   return Boolean(row?.hasCustomAbutment) || Boolean(row?.customAbutment);
 };
 
@@ -758,6 +769,88 @@ export const findLabFeeItemForProsthesisType = (
     return { ...perN[0], tiers };
   }
   return matches[0];
+};
+
+export const labFeeItemNameForProsthesisType = (prosthesisType: string) => {
+  const raw = String(prosthesisType || "").trim();
+  if (
+    !raw ||
+    isMissingToothProsthesisType(raw) ||
+    isCustomAbutmentProsthesisType(raw)
+  ) {
+    return "";
+  }
+  if (isRemovableTempProsthesisType(raw)) return "임시치아";
+  return canonicalizeFeeItemName(raw);
+};
+
+export const labFeeItemNamesNeededForToothWorks = (
+  toothWorks?: ReadonlyArray<{
+    toothNumber?: string;
+    tooth?: string;
+    prosthesisType?: string;
+    type?: string;
+  } | null> | null,
+) => {
+  const names: string[] = [];
+  const seen = new Set<string>();
+  for (const row of Array.isArray(toothWorks) ? toothWorks : []) {
+    if (!row) continue;
+    const toothNumber = String(row.toothNumber || row.tooth || "").trim();
+    if (toothNumber && !/^[1-4][1-8]$/.test(toothNumber)) continue;
+    const name = labFeeItemNameForProsthesisType(
+      row.prosthesisType || row.type || "",
+    );
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    names.push(name);
+  }
+  return names;
+};
+
+export const labFeeItemMatchesNeedName = (
+  item: { name?: string } | null | undefined,
+  needName: string,
+) => {
+  const need = canonicalizeFeeItemName(needName);
+  if (!need) return false;
+  if (need === "임시치아" || isRemovableTempFeeName(needName)) {
+    return isRemovableTempFeeName(item?.name || "");
+  }
+  return canonicalizeFeeItemName(item?.name || "") === need;
+};
+
+const labFeeItemHasChargePrice = (item: LabFeeItem) => {
+  if (!item || item.enabled === false) return false;
+  const tierPrices = item.tiers.map((tier) =>
+    Math.round(Number(tier.price || 0)),
+  );
+  const price = Math.max(
+    0,
+    Math.round(Number(item.price || 0)),
+    ...tierPrices,
+  );
+  return price > 0;
+};
+
+export const missingLabFeeItemNames = (
+  schedule:
+    | Partial<LabFeeSchedule>
+    | { items?: Array<Partial<LabFeeItem>> | null }
+    | LabFeeItem[]
+    | null
+    | undefined,
+  toothWorks?: Parameters<typeof labFeeItemNamesNeededForToothWorks>[0],
+) => {
+  const needed = labFeeItemNamesNeededForToothWorks(toothWorks);
+  const items = normalizeLabFeeItems(schedule);
+  return needed.filter(
+    (name) =>
+      !items.some(
+        (item) =>
+          labFeeItemMatchesNeedName(item, name) && labFeeItemHasChargePrice(item),
+      ),
+  );
 };
 
 /** 보철 형태 → labFeeSchedule 키. 작업X·커스텀어벗(어벗츠/기공소 어벗 단가)·묶음수가 항목은 null */

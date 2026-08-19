@@ -11,7 +11,7 @@
 // - web/backend/models/ledgerLine.model.js
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
-// - 2026-08-19: 목록 feeQuote에 labFeeConfigured 전달(지정 수가 Off=미설정).
+// - 2026-08-19: 목록 feeQuote에 labFeeConfigured 전달(지정 수가 Off·항목 Off=미설정).
 // - 2026-08-18: rollbackPracticeTransferBilling — 멱등키 조회·저널 삭제를 병렬화.
 // - 2026-08-18: 기공소 공급 어벗은 전역 단가. 의뢰자별 특별가는 적용하지 않음.
 // - 2026-08-17: adjustPracticeTransferHold — 배송비 보류는 조정 대상에서 제외(fees.total과만 비교).
@@ -84,7 +84,7 @@ import {
   computePracticeTransferRetailFees,
   LAB_FEE_SCHEDULE_ZEROS,
   attachLabFeeMinToLines,
-  isLabFeeScheduleConfigured,
+  resolveQuoteLabFeeConfigured,
   normalizeLabFeeItems,
   normalizeLabFeeMultiplier,
   normalizeLabFeeRemakeSchedule,
@@ -3446,10 +3446,7 @@ export async function buildPracticeTransferQuote({
   if (schedule == null) {
     schedule = lab?.labFeeSchedule || null;
   }
-
-  const labFeeConfigured = usedDefaultSchedule
-    ? true
-    : isLabFeeScheduleConfigured(schedule);
+  const sourceSchedule = schedule;
 
   const isAutoMatchQuote =
     String(matchingMode || "").trim() === "auto" || usedDefaultSchedule;
@@ -3502,6 +3499,14 @@ export async function buildPracticeTransferQuote({
       maxLabFee: fees.labFeeTotal,
     };
   }
+
+  const labFeeConfigured = resolveQuoteLabFeeConfigured({
+    usedDefaultSchedule,
+    schedule: sourceSchedule,
+    toothWorks,
+    remake: useRemake,
+    labFeeTotal: fees.labFeeTotal,
+  });
 
   let kind = relationshipKind;
   let partnerId =
@@ -3891,10 +3896,13 @@ export async function buildFeeQuotesForTransferDocs({
       labTradingPartnerId: partner?._id ? String(partner._id) : null,
       billed: false,
       usedDefaultSchedule: useAutoFixedFee || !quoteLabId,
-      labFeeConfigured:
-        useAutoFixedFee || !quoteLabId
-          ? true
-          : isLabFeeScheduleConfigured(schedule),
+      labFeeConfigured: resolveQuoteLabFeeConfigured({
+        usedDefaultSchedule: useAutoFixedFee || !quoteLabId,
+        schedule,
+        toothWorks,
+        remake: true,
+        labFeeTotal: remakeFees.labFeeTotal,
+      }),
       isRemake: true,
       autoMatchBudget: autoMatchBudgetOut,
     });
@@ -3978,10 +3986,13 @@ export async function buildFeeQuotesForTransferDocs({
           labTradingPartnerId: partner?._id ? String(partner._id) : null,
           billed: false,
           usedDefaultSchedule: useAutoFixedFee || !quoteLabId,
-          labFeeConfigured:
-            useAutoFixedFee || !quoteLabId
-              ? true
-              : isLabFeeScheduleConfigured(schedule),
+          labFeeConfigured: resolveQuoteLabFeeConfigured({
+            usedDefaultSchedule: useAutoFixedFee || !quoteLabId,
+            schedule,
+            toothWorks,
+            remake,
+            labFeeTotal: fees.labFeeTotal,
+          }),
           isRemake: remake,
           autoMatchBudget: autoMatchBudgetOut,
         }),

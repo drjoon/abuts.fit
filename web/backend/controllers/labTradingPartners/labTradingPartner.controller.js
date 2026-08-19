@@ -5,7 +5,7 @@
 // - web/backend/utils/labFeeSchedule.js
 // - web/frontend/src/features/settings/tabs/LabTradingPartnersTab.tsx
 // - web/frontend/src/features/settings/LabFeeSetupPrompt.tsx
-// - 2026-08-13: 기공비 GET은 미저장이면 0원·전부 off + configured=false.
+// - 2026-08-19: configured=제공 항목 수가 있음. active=마스터 스위치.
 // - 2026-08-14: 기공비 저장 시 quote-context 캐시 무효화.
 // - 2026-08-14: 치과별 기공수가 할증 저장 시 해당 치과 사용자에 app-event 이밋.
 // - 2026-08-15: 할증 upsert 시 history 보존(1x 해제·배수 변경도 기존 의뢰 소급 금지).
@@ -27,6 +27,7 @@ import {
   normalizeLabFeeItems,
   legacyLabFeeScheduleFromItems,
   isLabFeeScheduleConfigured,
+  isLabFeeScheduleReadyToCharge,
   resolveLabFeeScheduleForSettings,
   normalizeLabFeeMultiplier,
   resolveLabPracticeFeeMultiplier,
@@ -563,7 +564,8 @@ export async function getLabFeeSchedule(req, res) {
     const lab = await BusinessAnchor.findById(labAnchorId)
       .select({ labFeeSchedule: 1 })
       .lean();
-    const configured = isLabFeeScheduleConfigured(lab?.labFeeSchedule);
+    const active = isLabFeeScheduleConfigured(lab?.labFeeSchedule);
+    const configured = isLabFeeScheduleReadyToCharge(lab?.labFeeSchedule);
     const source = await resolveLabFeeScheduleForSettingsFromCatalog(
       lab?.labFeeSchedule,
     );
@@ -578,7 +580,7 @@ export async function getLabFeeSchedule(req, res) {
         schedule,
         remake,
         enabled,
-        active: configured,
+        active,
         configured,
         updatedAt: lab?.labFeeSchedule?.updatedAt || null,
       },
@@ -655,7 +657,8 @@ export async function updateLabFeeSchedule(req, res) {
       },
       { new: true, select: { labFeeSchedule: 1 } },
     ).lean();
-    const configured = isLabFeeScheduleConfigured(updated?.labFeeSchedule);
+    const configured = isLabFeeScheduleReadyToCharge(updated?.labFeeSchedule);
+    const activeFlag = isLabFeeScheduleConfigured(updated?.labFeeSchedule);
     invalidatePracticeTransferQuoteCaches(labAnchorId);
 
     const labName =
@@ -695,7 +698,7 @@ export async function updateLabFeeSchedule(req, res) {
         schedule: normalizeLabFeeSchedule(updated?.labFeeSchedule),
         remake: normalizeLabFeeRemakeSchedule(updated?.labFeeSchedule),
         enabled: normalizeLabFeeScheduleEnabled(updated?.labFeeSchedule),
-        active: configured,
+        active: activeFlag,
         configured,
         updatedAt: updated?.labFeeSchedule?.updatedAt || null,
       },

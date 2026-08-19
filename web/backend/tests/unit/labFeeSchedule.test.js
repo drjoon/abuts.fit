@@ -4,10 +4,16 @@
 // - 2026-08-17: 번대 안은 정중선 가운데(18→11, 21→28, 38→31, 41→48).
 // - 2026-08-14: 환봉 요청중은 기공소 어벗, 도입·CNC는 어벗츠 어벗.
 // - 2026-08-15: 치아 미선택 자리표시 행은 견적 0원.
+// - 2026-08-19: 마스터 On + 제공 항목 수가여야 청구 준비.
+// - 2026-08-19: 임시치아+어벗은 임시치아 수가와 어벗츠 단가를 함께 합산.
 import {
   buildUnsetLabFeeSchedule,
   computePracticeTransferRetailFees,
   isLabFeeScheduleConfigured,
+  isLabFeeScheduleReadyToCharge,
+  hasEnabledLabFeePrices,
+  toothWorksNeedLabFee,
+  missingLabFeeItemNames,
   isPendingRoundBarAbutment,
   LAB_FEE_SCHEDULE_SAMPLE,
   LAB_FEE_SCHEDULE_ZEROS,
@@ -328,7 +334,7 @@ describe("labFeeSchedule", () => {
     expect(fees.total).toBe(130000);
   });
 
-  test("유지장치·임시치아에 남은 커스텀 플래그는 어벗 과금하지 않는다", () => {
+  test("유지장치에 남은 커스텀 플래그는 어벗 과금하지 않는다", () => {
     const fees = computePracticeTransferRetailFees({
       toothWorks: [
         {
@@ -340,7 +346,7 @@ describe("labFeeSchedule", () => {
         },
         {
           toothNumber: "15",
-          prosthesisType: "임시치아",
+          prosthesisType: "유지장치",
           customAbutment: true,
           bridgeLinkedTeeth: ["16"],
         },
@@ -350,6 +356,33 @@ describe("labFeeSchedule", () => {
     });
     expect(fees.abutmentRetailTotal).toBe(0);
     expect(fees.abutmentQty).toBe(0);
+  });
+
+  test("임시치아+어벗은 임시치아 수가와 어벗츠 단가를 함께 합산한다", () => {
+    const fees = computePracticeTransferRetailFees({
+      toothWorks: [
+        {
+          toothNumber: "33",
+          prosthesisType: "임시치아",
+          customAbutment: true,
+          abutmentProductMode: "design_custom_abutment",
+          bridgeLinkedTeeth: ["34"],
+        },
+        {
+          toothNumber: "34",
+          prosthesisType: "임시치아",
+          customAbutment: true,
+          abutmentProductMode: "design_custom_abutment",
+          bridgeLinkedTeeth: ["33"],
+        },
+      ],
+      labFeeSchedule: LAB_FEE_SCHEDULE_SAMPLE,
+      abutmentPricingTier: "regular",
+    });
+    expect(fees.labFeeTotal).toBe(30000);
+    expect(fees.abutmentRetailTotal).toBe(80000);
+    expect(fees.abutmentQty).toBe(2);
+    expect(fees.total).toBe(110000);
   });
 
   test("유지장치는 같은 악궁이어도 연결이 끊기면 스팬당 1세트다", () => {
@@ -407,6 +440,42 @@ describe("labFeeSchedule", () => {
       false,
     );
     expect(isLabFeeScheduleConfigured({ active: true })).toBe(true);
+  });
+
+  test("마스터 On이어도 제공 항목이 없으면 청구 준비가 아니다", () => {
+    const allOff = {
+      active: true,
+      items: [
+        { id: "crown", name: "크라운", price: 60000, enabled: false },
+        { id: "bridge", name: "브리지", price: 60000, enabled: false },
+      ],
+    };
+    expect(isLabFeeScheduleConfigured(allOff)).toBe(true);
+    expect(isLabFeeScheduleReadyToCharge(allOff)).toBe(false);
+    expect(hasEnabledLabFeePrices(allOff)).toBe(false);
+    expect(
+      toothWorksNeedLabFee([{ toothNumber: "36", prosthesisType: "크라운" }]),
+    ).toBe(true);
+    expect(
+      toothWorksNeedLabFee([
+        {
+          toothNumber: "36",
+          prosthesisType: "커스텀어벗",
+          customAbutment: true,
+        },
+      ]),
+    ).toBe(false);
+    expect(
+      missingLabFeeItemNames(allOff, [
+        { toothNumber: "36", prosthesisType: "크라운" },
+      ]),
+    ).toEqual(["크라운"]);
+    expect(
+      isLabFeeScheduleReadyToCharge({
+        active: true,
+        items: [{ id: "crown", name: "크라운", price: 60000, enabled: true }],
+      }),
+    ).toBe(true);
   });
 
   test("견적 라인은 치아번호 10·20·30·40번대 순이다", () => {

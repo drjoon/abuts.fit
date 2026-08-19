@@ -7,7 +7,8 @@
 // - web/frontend/src/features/settings/tabs/AdminCreditSettingsTab.tsx
 // - 2026-08-14: 하단 저장 버튼 제거. 항목 변경은 디바운스 자동 저장. 마스터 스위치는 즉시 저장.
 // - 2026-08-19: 수락 클릭 시 `from=accept` 포워드 모달(LabFeeSetupPrompt).
-import { useCallback, useEffect, useRef, useState } from "react";
+// - 2026-08-19: `need` 쿼리 수가 카드를 깜빡이며 입력 안내.
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   Card,
@@ -19,17 +20,26 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Banknote, Plus, Trash2 } from "lucide-react";
 import { useToast } from "@/shared/hooks/use-toast";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { SettingsCardSkeleton } from "@/features/components/SettingsSkeletons";
+import { parseLabFeeNeedNames } from "@/features/settings/LabFeeSetupPrompt";
 import { cn } from "@/shared/ui/cn";
 import {
   LAB_FEE_ITEM_UNIT_LABELS,
   MAX_LAB_FEE_ITEMS,
   normalizeLabFeeItem,
   normalizeLabFeeItems,
+  labFeeItemMatchesNeedName,
+  type LabFeeItem,
   type LabFeeItem,
   type LabFeeItemUnit,
   type LabFeeSchedule,
@@ -58,6 +68,15 @@ const createFeeItem = (partial?: Partial<LabFeeItem>): LabFeeItem =>
   });
 
 const toWon = (value: number) => Math.max(0, Math.round(Number(value) || 0));
+
+const labFeeItemHasChargePrice = (item: LabFeeItem) => {
+  if (item.enabled === false) return false;
+  const tierMax = Math.max(
+    0,
+    ...item.tiers.map((tier) => Math.round(Number(tier.price || 0))),
+  );
+  return Math.max(0, Math.round(Number(item.price || 0)), tierMax) > 0;
+};
 
 function WonInput({
   id,
@@ -112,6 +131,12 @@ export const LabFeeScheduleTab = () => {
   const { token } = useAuthStore();
   const [searchParams, setSearchParams] = useSearchParams();
   const highlightSetup = searchParams.get("setup") === "1";
+  const fromAccept = searchParams.get("from") === "accept";
+  const needNames = useMemo(
+    () => parseLabFeeNeedNames(searchParams.toString()),
+    [searchParams],
+  );
+  const needKey = needNames.join(",");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [active, setActive] = useState(false);
@@ -200,6 +225,27 @@ export const LabFeeScheduleTab = () => {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    if (loading || !hydratedRef.current || !needNames.length) return;
+    setItems((prev) => {
+      const missing = needNames.filter(
+        (name) => !prev.some((item) => labFeeItemMatchesNeedName(item, name)),
+      );
+      if (!missing.length) return prev;
+      return [
+        ...prev,
+        ...missing.map((name) =>
+          createFeeItem({
+            name,
+            enabled: true,
+            price: 0,
+            unit: name === "임시치아" ? "perNTeeth" : "perTooth",
+          }),
+        ),
+      ];
+    });
+  }, [loading, needKey, needNames]);
+
   const persist = useCallback(
     async (next: { items: LabFeeItem[]; active: boolean }) => {
       if (!token) return false;
@@ -280,6 +326,35 @@ export const LabFeeScheduleTab = () => {
     toast({ title: "기공비를 껐습니다." });
   };
 
+  const orderedItems = useMemo(() => {
+    if (!needNames.length) return items;
+    const hit: LabFeeItem[] = [];
+    const rest: LabFeeItem[] = [];
+    for (const item of items) {
+      if (needNames.some((name) => labFeeItemMatchesNeedName(item, name))) {
+        hit.push(item);
+      } else {
+        rest.push(item);
+      }
+    }
+    return [...hit, ...rest];
+  }, [items, needNames]);
+
+  const firstNeedId = orderedItems.find(
+    (item) =>
+      needNames.some((name) => labFeeItemMatchesNeedName(item, name)) &&
+      !labFeeItemHasChargePrice(item),
+  )?.id;
+
+  const firstNeedRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (loading || !needNames.length) return;
+    const timer = window.setTimeout(() => {
+      firstNeedRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 80);
+    return () => window.clearTimeout(timer);
+  }, [loading, needKey, needNames.length]);
+
   if (loading) {
     return <SettingsCardSkeleton />;
   }
@@ -318,24 +393,43 @@ export const LabFeeScheduleTab = () => {
             />
           </div>
         </div>
+        {fromAccept && needNames.length ? (
+          <p className="mt-2 text-[13px] font-medium text-red-600">
+            수락하려는 의뢰의 「{needNames.join("·")}」 수가가 없습니다. 깜빡이는
+            카드를 켜고 원가를 입력하세요.
+          </p>
+        ) : active &&
+          !items.some(
+            (item) =>
+              item.enabled !== false && Math.round(Number(item.price || 0)) > 0,
+          ) ? (
+          <p className="mt-2 text-[12px] font-medium text-red-600">
+            제공할 항목을 켜야 의뢰를 수락할 수 있습니다.
+          </p>
+        ) : null}
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {items.map((item) => {
+          {orderedItems.map((item) => {
             const isProvided = item.enabled !== false;
+            const isNeedCard = needNames.some((name) =>
+              labFeeItemMatchesNeedName(item, name),
+            );
+            const needsInput = isNeedCard && !labFeeItemHasChargePrice(item);
             const tier = item.tiers[0] || {
               n: 3,
               price: item.price,
               remake: item.remake,
             };
-            return (
+            const card = (
               <div
-                key={item.id}
                 className={cn(
                   "flex flex-col gap-3 rounded-2xl border border-slate-200/80 bg-white/80 p-4 shadow-sm transition-all",
                   isProvided
                     ? "hover:border-primary-muted/80 hover:shadow-md"
                     : "opacity-60",
+                  needsInput &&
+                    "opacity-100 ring-2 ring-red-500 ring-offset-2 ring-offset-white animate-pulse",
                 )}
               >
                 <div className="flex items-start gap-2.5">
@@ -368,6 +462,12 @@ export const LabFeeScheduleTab = () => {
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
+
+                {needsInput ? (
+                  <p className="rounded-xl bg-red-50 px-3 py-2 text-[12px] font-medium text-red-600">
+                    이 항목을 켜고 원가를 입력해야 의뢰를 수락할 수 있습니다.
+                  </p>
+                ) : null}
 
                 <div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-100/80 p-1">
                   {UNIT_OPTIONS.map((unit) => {
@@ -460,6 +560,31 @@ export const LabFeeScheduleTab = () => {
                     }
                   />
                 </div>
+              </div>
+            );
+            if (!needsInput) {
+              return (
+                <div
+                  key={item.id}
+                  ref={item.id === firstNeedId ? firstNeedRef : undefined}
+                >
+                  {card}
+                </div>
+              );
+            }
+            return (
+              <div
+                key={item.id}
+                ref={item.id === firstNeedId ? firstNeedRef : undefined}
+              >
+                <TooltipProvider delayDuration={0}>
+                  <Tooltip defaultOpen>
+                    <TooltipTrigger asChild>{card}</TooltipTrigger>
+                    <TooltipContent side="top">
+                      「{item.name || "이 항목"}」 수가를 켜고 원가를 입력하세요.
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               </div>
             );
           })}

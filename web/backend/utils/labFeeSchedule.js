@@ -13,7 +13,8 @@
 // - 2026-08-13: 유지장치 등 perSet는 연결 스팬당 1세트(끊기면 별도). 연결 없는 레거시는 악궁당.
 // - 2026-08-13: 견적 라인은 치아번호 10→20→30→40번대 순.
 // - 2026-08-17: 번대 안은 정중선 가운데(18→11, 21→28, 38→31, 41→48).
-// - 2026-08-13: 유지장치·임시치아에 남은 커스텀 플래그는 어벗 과금하지 않는다.
+// - 2026-08-13: 유지장치에 남은 커스텀 플래그는 어벗 과금하지 않는다.
+// - 2026-08-19: 임시치아+어벗은 임시치아 수가와 어벗츠 단가를 함께 합산.
 // - 2026-08-14: 환봉 프리셋 타입 변경 후에도 제조사·브랜드·패밀리로 매칭.
 // - 2026-08-14: 환봉 단가 0원은 별도 고지(abutmentRetailNote=quote).
 // - 2026-08-14: 도입 종류(cnc/round_bar)에 따라 어벗츠 CNC·환봉 단가 분기. 요청중은 기공소 어벗.
@@ -24,6 +25,7 @@
 // - 2026-08-15: Abuts CA 치과 청구=디자인+생산가(멤버 2.5만/일반 4만). 기공소 디자인은 abutmentDesignLabFee 외주.
 // - 2026-08-15: 치아번호 없는 자리표시 행(빈 toothNumber+기본 크라운)은 견적에서 제외.
 // - 2026-08-15: 할증 history — 배수 변경·해제(1x)도 기존 의뢰는 당시 배수 유지(다음 건부터).
+// - 2026-08-19: 수락·견적 readyToCharge — 마스터 On만으로는 부족, 제공 항목 수가 필요.
 import {
   resolveAbutsAbutmentPricingTier,
   resolveAbutsAbutmentUnitPrice,
@@ -305,6 +307,121 @@ export function isLabFeeScheduleConfigured(schedule) {
   return hasLabFeeUpdatedAt(schedule);
 }
 
+/** 제공(on)이고 단가>0인 항목이 하나라도 있으면 true. */
+export function hasEnabledLabFeePrices(schedule) {
+  return normalizeLabFeeItems(schedule).some(
+    (item) =>
+      item.enabled !== false && Math.round(Number(item.price || 0)) > 0,
+  );
+}
+
+/** 수락·견적 SSOT. 마스터 On + 제공 항목 수가. 항목 전부 Off면 0원 청구 금지. */
+export function isLabFeeScheduleReadyToCharge(schedule) {
+  return (
+    isLabFeeScheduleConfigured(schedule) && hasEnabledLabFeePrices(schedule)
+  );
+}
+
+/** 보철기공비가 붙는 치식(단독 커스텀어벗·작업X·자리표시 제외). */
+export function toothWorksNeedLabFee(toothWorks) {
+  const rows = Array.isArray(toothWorks) ? toothWorks : [];
+  return rows.some((row) => {
+    const toothNumber = String(row?.toothNumber || row?.tooth || "").trim();
+    if (!/^[1-4][1-8]$/.test(toothNumber)) return false;
+    const prosthesisType = String(
+      row?.prosthesisType || row?.type || "",
+    ).trim();
+    if (!prosthesisType || isMissingToothProsthesisType(prosthesisType)) {
+      return false;
+    }
+    if (isCustomAbutmentProsthesisType(prosthesisType)) return false;
+    return true;
+  });
+}
+
+export function labFeeItemNameForProsthesisType(prosthesisType) {
+  const raw = String(prosthesisType || "").trim();
+  if (
+    !raw ||
+    isMissingToothProsthesisType(raw) ||
+    isCustomAbutmentProsthesisType(raw)
+  ) {
+    return "";
+  }
+  if (isRemovableTempProsthesisType(raw)) return "임시치아";
+  return canonicalizeFeeItemName(raw);
+}
+
+export function labFeeItemNamesNeededForToothWorks(toothWorks) {
+  const names = [];
+  const seen = new Set();
+  for (const row of Array.isArray(toothWorks) ? toothWorks : []) {
+    const toothNumber = String(row?.toothNumber || row?.tooth || "").trim();
+    if (toothNumber && !/^[1-4][1-8]$/.test(toothNumber)) continue;
+    const name = labFeeItemNameForProsthesisType(
+      row?.prosthesisType || row?.type,
+    );
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    names.push(name);
+  }
+  return names;
+}
+
+export function labFeeItemMatchesNeedName(item, needName) {
+  const need = canonicalizeFeeItemName(needName);
+  if (!need) return false;
+  if (need === "임시치아" || isRemovableTempFeeName(needName)) {
+    return isRemovableTempFeeName(item?.name);
+  }
+  return canonicalizeFeeItemName(item?.name) === need;
+}
+
+function labFeeItemHasChargePrice(item) {
+  if (!item || item.enabled === false) return false;
+  const tierPrices = Array.isArray(item.tiers)
+    ? item.tiers.map((tier) => Math.round(Number(tier?.price || 0)))
+    : [];
+  const price = Math.max(
+    0,
+    Math.round(Number(item.price || 0)),
+    ...tierPrices,
+  );
+  return price > 0;
+}
+
+/** 이 의뢰 보철 중 제공·단가가 없는 수가 항목명. */
+export function missingLabFeeItemNames(schedule, toothWorks) {
+  const needed = labFeeItemNamesNeededForToothWorks(toothWorks);
+  const items = normalizeLabFeeItems(schedule);
+  return needed.filter(
+    (name) =>
+      !items.some(
+        (item) =>
+          labFeeItemMatchesNeedName(item, name) && labFeeItemHasChargePrice(item),
+      ),
+  );
+}
+
+export function resolveQuoteLabFeeConfigured({
+  usedDefaultSchedule = false,
+  schedule = null,
+  toothWorks = [],
+  remake = false,
+  labFeeTotal = 0,
+} = {}) {
+  if (usedDefaultSchedule) return true;
+  if (!isLabFeeScheduleReadyToCharge(schedule)) return false;
+  if (remake) return true;
+  if (
+    toothWorksNeedLabFee(toothWorks) &&
+    Math.max(0, Math.round(Number(labFeeTotal || 0))) <= 0
+  ) {
+    return false;
+  }
+  return true;
+}
+
 export function buildUnsetLabFeeSchedule() {
   return {
     ...LAB_FEE_SCHEDULE_ZEROS,
@@ -384,7 +501,13 @@ export function isCustomAbutmentWork(row) {
     return false;
   }
   if (isCustomAbutmentProsthesisType(prosthesisType)) return true;
-  if (prosthesisType !== "크라운" && prosthesisType !== "브리지") return false;
+  if (
+    prosthesisType !== "크라운" &&
+    prosthesisType !== "브리지" &&
+    !isRemovableTempProsthesisType(prosthesisType)
+  ) {
+    return false;
+  }
   return Boolean(row?.hasCustomAbutment) || Boolean(row?.customAbutment);
 }
 
@@ -1042,7 +1165,7 @@ export function normalizeLabFeeScheduleEnabled(input) {
  * toothWorks 행 기준 기공비·어벗츠 커스텀어벗 단가 합산.
  * 단독 커스텀어벗은 기공소 수가가 아니라 어벗츠 멤버십/일반 단가.
  * 환봉 요청중(헥스 사이즈 미정, 미도입)은 기공소 어벗. 도입·CNC는 어벗츠 어벗.
- * 크라운·브리지 등에 어벗을 붙이면 기공수가 + 어벗 단가.
+ * 크라운·브리지·임시치아 등에 어벗을 붙이면 기공수가 + 어벗 단가.
  * @returns {{ labFeeTotal, labAbutmentTotal, labAbutmentPending, abutmentRetailTotal, abutmentQuotePending, abutmentQty, total, lines }}
  */
 export function computePracticeTransferRetailFees({

@@ -3,7 +3,7 @@
 // - web/frontend/src/features/settings/tabs/LabFeeScheduleTab.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/backend/controllers/labTradingPartners/labTradingPartner.controller.js
-// - 2026-08-19: 수락 시 `from=accept`로 설정 탭 포워드·안내 모달.
+// - 2026-08-19: 수락 시 빠진 수가명을 `need` 쿼리로 넘기고 해당 카드를 하이라이트.
 // - 2026-08-13: 기공소 로그인 시 기공비 미설정이면 설정 탭으로 유도.
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -22,6 +22,39 @@ import { useAuthStore } from "@/store/useAuthStore";
 export const LAB_FEE_SETTINGS_PATH = "/dashboard/settings?tab=lab-fees&setup=1";
 export const LAB_FEE_SETTINGS_FROM_ACCEPT_PATH = `${LAB_FEE_SETTINGS_PATH}&from=accept`;
 export const LAB_FEE_UNCONFIGURED_REASON = "lab_fee_unconfigured";
+
+export const parseLabFeeNeedNames = (search: string) => {
+  const params = new URLSearchParams(search.startsWith("?") ? search : `?${search}`);
+  const names: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of params.getAll("need")) {
+    for (const part of String(raw || "").split(",")) {
+      const name = String(part || "").trim();
+      if (!name || seen.has(name)) continue;
+      seen.add(name);
+      names.push(name);
+    }
+  }
+  return names;
+};
+
+export const labFeeSettingsFromAcceptPath = (needNames?: string[]) => {
+  const params = new URLSearchParams({
+    tab: "lab-fees",
+    setup: "1",
+    from: "accept",
+  });
+  const unique: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of Array.isArray(needNames) ? needNames : []) {
+    const name = String(raw || "").trim();
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    unique.push(name);
+  }
+  if (unique.length) params.set("need", unique.join(","));
+  return `/dashboard/settings?${params.toString()}`;
+};
 
 export const readLabFeeScheduleConfigured = (raw: unknown): boolean | null => {
   if (!raw || typeof raw !== "object") return null;
@@ -66,9 +99,14 @@ export const LabFeeSetupPrompt = ({
   const fromAccept =
     alreadyOnSettings &&
     new URLSearchParams(location.search).get("from") === "accept";
+  const needNames = parseLabFeeNeedNames(location.search);
 
   useEffect(() => {
     if (!ready || !isLab || !token || !user?.id) {
+      setOpen(false);
+      return;
+    }
+    if (alreadyOnSettings && fromAccept && needNames.length > 0) {
       setOpen(false);
       return;
     }
@@ -102,7 +140,7 @@ export const LabFeeSetupPrompt = ({
     return () => {
       cancelled = true;
     };
-  }, [alreadyOnSettings, fromAccept, isLab, ready, token, user?.id]);
+  }, [alreadyOnSettings, fromAccept, isLab, needNames.length, ready, token, user?.id]);
 
   const goToSettings = () => {
     if (user?.id) {
@@ -113,7 +151,11 @@ export const LabFeeSetupPrompt = ({
       }
     }
     setOpen(false);
-    navigate(fromAccept ? LAB_FEE_SETTINGS_FROM_ACCEPT_PATH : LAB_FEE_SETTINGS_PATH);
+    navigate(
+      fromAccept
+        ? labFeeSettingsFromAcceptPath(needNames)
+        : LAB_FEE_SETTINGS_PATH,
+    );
   };
 
   const dismissAcceptPrompt = () => setOpen(false);
@@ -140,7 +182,9 @@ export const LabFeeSetupPrompt = ({
           </AlertDialogTitle>
           <AlertDialogDescription>
             {fromAccept
-              ? "의뢰를 수락하려면 기공비를 먼저 설정해야 합니다. 오른쪽 마스터 스위치를 켜면 설정이 완료됩니다. 완료 후 기공의뢰수신에서 다시 수락해 주세요."
+              ? needNames.length
+                ? `「${needNames.join("·")}」 수가가 없습니다. 깜빡이는 카드를 켜고 원가를 입력한 뒤, 기공의뢰수신에서 다시 수락해 주세요.`
+                : "의뢰를 수락하려면 기공비를 먼저 설정해야 합니다. 오른쪽 마스터 스위치를 켜고, 제공할 항목을 켠 뒤 저장하세요. 완료 후 기공의뢰수신에서 다시 수락해 주세요."
               : "기공비를 아직 설정하지 않았습니다. 확인을 누르면 기공비 설정 페이지로 이동합니다."}
           </AlertDialogDescription>
         </AlertDialogHeader>
