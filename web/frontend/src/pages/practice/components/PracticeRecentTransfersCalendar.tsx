@@ -8,6 +8,7 @@
  * - 2026-08-19: 리메이크는 공정 상태색 유지 + 이중 외곽선(흰 채움 아님).
  * - 2026-08-19: 기공의뢰수신 칩은 상단 뱃지 상태색(치과 캘린더는 그룹색 유지).
  * - 2026-08-19: 치과 캘린더 칩에서 휴지통(의뢰 취소) 바로 이동.
+ * - 2026-08-20: 년-월 캡션 클릭 시 오늘 주로 스크롤.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
@@ -302,6 +303,15 @@ export function PracticeRecentTransfersCalendar({
     scrollToYmd(next, "smooth");
   };
 
+  const jumpToToday = () => {
+    const target = todayYmd || cursorYmd;
+    if (!target) return;
+    const monthStart = kstStartOfMonth(target) || target;
+    const currentMonth = kstStartOfMonth(cursorYmd) || cursorYmd;
+    if (monthStart !== currentMonth) onCursorChange(monthStart);
+    scrollToYmd(target, "smooth");
+  };
+
   const toggleHiddenDow = (dow: number) => {
     const next = hidden.has(dow)
       ? hiddenWeekdays.filter((d) => d !== dow)
@@ -328,9 +338,15 @@ export function PracticeRecentTransfersCalendar({
           >
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <p className="min-w-[7.5rem] text-center text-sm font-semibold tabular-nums">
+          <button
+            type="button"
+            className="min-w-[7.5rem] rounded-md px-1 py-0.5 text-center text-sm font-semibold tabular-nums hover:bg-muted/40"
+            title="오늘로 이동"
+            aria-label={`${monthCaption(captionMonth)}, 오늘로 이동`}
+            onClick={jumpToToday}
+          >
             {monthCaption(captionMonth)}
-          </p>
+          </button>
           <Button
             type="button"
             variant="ghost"
