@@ -6,6 +6,7 @@
  * - 2026-08-16: 의뢰 상세 대신 전용 모달 + 기공소 선택 필드.
  * - 2026-08-16: labOpen은 모달 로컬 상태. Popover 클릭으로 Dialog가 닫히지 않게.
  * - 2026-08-16: 「기공소 변경 전송」클릭 시 즉시 retarget API 호출.
+ * - 2026-08-19: 모달에서 바로 휴지통(의뢰 취소) 이동.
  */
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -51,6 +52,9 @@ export type PracticeLabRejectedReselectDialogProps = {
     | "onAutoMatchBudgetChange"
   >;
   onConfirm: () => void | Promise<void>;
+  /** 더 이상 진행하지 않을 때 휴지통(취소) */
+  onMoveToTrash?: () => void;
+  trashing?: boolean;
 };
 
 const isPortaledOverlayTarget = (target: EventTarget | null) => {
@@ -70,6 +74,8 @@ export function PracticeLabRejectedReselectDialog({
   confirming = false,
   labIntakeProps,
   onConfirm,
+  onMoveToTrash,
+  trashing = false,
 }: PracticeLabRejectedReselectDialogProps) {
   const [labOpen, setLabOpen] = useState(false);
   const labLabel = String(rejectedLabName || "")
@@ -77,6 +83,7 @@ export function PracticeLabRejectedReselectDialog({
     .replace(/\s*→.*$/g, "");
   const transferLabel = String(transferId || "").trim();
   const canConfirm = Boolean(String(labIntakeProps.selectedLab?._id || "").trim());
+  const busy = confirming || trashing;
 
   useEffect(() => {
     if (!open) setLabOpen(false);
@@ -86,7 +93,7 @@ export function PracticeLabRejectedReselectDialog({
     <Dialog
       open={open}
       onOpenChange={(next) => {
-        if (confirming) return;
+        if (busy) return;
         onOpenChange(next);
       }}
     >
@@ -101,13 +108,13 @@ export function PracticeLabRejectedReselectDialog({
           if (title instanceof HTMLElement) title.focus();
         }}
         onPointerDownOutside={(e) => {
-          if (confirming || isPortaledOverlayTarget(e.target)) e.preventDefault();
+          if (busy || isPortaledOverlayTarget(e.target)) e.preventDefault();
         }}
         onFocusOutside={(e) => {
-          if (confirming || isPortaledOverlayTarget(e.target)) e.preventDefault();
+          if (busy || isPortaledOverlayTarget(e.target)) e.preventDefault();
         }}
         onInteractOutside={(e) => {
-          if (confirming || isPortaledOverlayTarget(e.target)) e.preventDefault();
+          if (busy || isPortaledOverlayTarget(e.target)) e.preventDefault();
         }}
       >
         <DialogHeader className="space-y-2 border-b border-accent-muted bg-accent-soft px-5 py-4 text-left">
@@ -127,7 +134,7 @@ export function PracticeLabRejectedReselectDialog({
               </span>
             ) : null}
             다른 기공소를 선택한 뒤「기공소 변경 전송」을 누르면 바로 다시 전송됩니다. 더
-            이상 진행하지 않으려면 최근 전송에서 휴지통으로 이동할 수 있습니다.
+            이상 진행하지 않으려면「의뢰 취소」로 휴지통에 넣을 수 있습니다.
           </DialogDescription>
         </DialogHeader>
 
@@ -189,14 +196,25 @@ export function PracticeLabRejectedReselectDialog({
           <Button
             type="button"
             variant="outline"
-            disabled={confirming}
+            disabled={busy}
             onClick={() => onOpenChange(false)}
           >
             닫기
           </Button>
+          {onMoveToTrash ? (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={busy}
+              className="border-destructive-muted text-destructive hover:bg-destructive-soft hover:text-destructive"
+              onClick={() => onMoveToTrash()}
+            >
+              {trashing ? "처리 중..." : "의뢰 취소"}
+            </Button>
+          ) : null}
           <Button
             type="button"
-            disabled={!canConfirm || confirming}
+            disabled={!canConfirm || busy}
             className="bg-accent text-accent-foreground hover:bg-accent-strong"
             onClick={() => void onConfirm()}
           >

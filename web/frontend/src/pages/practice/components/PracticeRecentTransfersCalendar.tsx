@@ -5,9 +5,11 @@
  * - web/frontend/src/pages/practice/components/PracticeRecentTransfersAllModal.tsx
  * - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
  * - web/frontend/src/shared/date/kst.ts
+ * - 2026-08-19: 기공의뢰수신 칩은 상단 뱃지 상태색(치과 캘린더는 그룹색 유지).
+ * - 2026-08-19: 치과 캘린더 칩에서 휴지통(의뢰 취소) 바로 이동.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -24,13 +26,26 @@ import {
 
 export type PracticeCalendarDateKey = "orderDate" | "arrivalDate";
 
+export type PracticeCalendarStatusTone =
+  | "sent"
+  | "accepted"
+  | "completed"
+  | "canceled"
+  | "rejected"
+  | "shipping"
+  | "remake";
+
 export type PracticeCalendarChipItem = {
   id: string;
   orderDate?: string | null;
   arrivalDate?: string | null;
   colorKey: string;
+  /** 있으면 그룹색 대신 뱃지 상태색 */
+  statusTone?: PracticeCalendarStatusTone;
   sortLabel: string;
   line: string;
+  /** 치과 발신: 수락 전·작업취소 건 휴지통 이동 */
+  canDelete?: boolean;
 };
 
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"] as const;
@@ -64,6 +79,73 @@ export const calendarGroupChipStyle = (
     color: `hsl(${hue} 38% 28%)`,
   };
 };
+
+/** 상단 뱃지(의뢰·수락·완료·취소·거부·발송·리메이크)와 같은 칩 색. */
+export const PRACTICE_CALENDAR_STATUS_CHIP_STYLE: Record<
+  PracticeCalendarStatusTone,
+  { backgroundColor: string; color: string }
+> = {
+  sent: { backgroundColor: "hsl(210 10% 90%)", color: "hsl(210 12% 32%)" },
+  accepted: { backgroundColor: "hsl(208 55% 88%)", color: "hsl(208 52% 28%)" },
+  completed: { backgroundColor: "hsl(168 40% 86%)", color: "hsl(168 48% 24%)" },
+  shipping: { backgroundColor: "hsl(250 38% 90%)", color: "hsl(250 40% 32%)" },
+  canceled: { backgroundColor: "hsl(0 55% 90%)", color: "hsl(0 48% 34%)" },
+  rejected: { backgroundColor: "hsl(24 72% 88%)", color: "hsl(24 55% 30%)" },
+  remake: { backgroundColor: "hsl(38 86% 88%)", color: "hsl(32 58% 28%)" },
+};
+
+export const PRACTICE_STATUS_FILTER_BADGE_CLASS: Record<
+  PracticeCalendarStatusTone,
+  { idle: string; active: string }
+> = {
+  sent: {
+    idle: "border-slate-200 bg-slate-100/80 text-slate-700 hover:bg-slate-100",
+    active: "border-slate-400 bg-slate-200 text-slate-800",
+  },
+  accepted: {
+    idle: "border-sky-200 bg-sky-50 text-sky-800 hover:bg-sky-50",
+    active: "border-sky-400/80 bg-sky-100 text-sky-900",
+  },
+  completed: {
+    idle: "border-teal-200 bg-teal-50 text-teal-800 hover:bg-teal-50",
+    active: "border-teal-400/80 bg-teal-100 text-teal-900",
+  },
+  shipping: {
+    idle: "border-violet-200 bg-violet-50 text-violet-800 hover:bg-violet-50",
+    active: "border-violet-400/80 bg-violet-100 text-violet-900",
+  },
+  canceled: {
+    idle: "border-rose-200 bg-rose-50 text-rose-800 hover:bg-rose-50",
+    active: "border-rose-400/80 bg-rose-100 text-rose-900",
+  },
+  rejected: {
+    idle: "border-orange-200 bg-orange-50 text-orange-800 hover:bg-orange-50",
+    active: "border-orange-400/80 bg-orange-100 text-orange-900",
+  },
+  remake: {
+    idle: "border-amber-200 bg-amber-50/70 text-amber-800 hover:bg-amber-50",
+    active: "border-amber-400/80 bg-amber-50 text-amber-800",
+  },
+};
+
+export const resolvePracticeCalendarStatusTone = (
+  status: unknown,
+  isRemake?: boolean,
+): PracticeCalendarStatusTone => {
+  if (isRemake) return "remake";
+  const s = String(status || "").trim();
+  if (s === "거부") return "rejected";
+  if (s === "작업완료") return "completed";
+  if (s === "생산진행" || s === "포장.발송") return "shipping";
+  if (s === "의뢰수락" || s === "다운로드완료") return "accepted";
+  if (s === "취소" || s === "작업취소") return "canceled";
+  return "sent";
+};
+
+export const calendarChipStyleForItem = (item: PracticeCalendarChipItem) =>
+  item.statusTone
+    ? PRACTICE_CALENDAR_STATUS_CHIP_STYLE[item.statusTone]
+    : calendarGroupChipStyle(item.colorKey);
 
 const monthCaption = (ymd: string) => {
   const [y, m] = ymd.split("-").map(Number);
@@ -104,6 +186,7 @@ type PracticeRecentTransfersCalendarProps = {
   onCursorChange: (ymd: string) => void;
   onDateKeyChange: (key: PracticeCalendarDateKey) => void;
   onSelectItem: (item: PracticeCalendarChipItem) => void;
+  onDeleteItem?: (item: PracticeCalendarChipItem) => void;
   hiddenWeekdays: number[];
   onHiddenWeekdaysChange: (next: number[]) => void;
   alignEpoch?: number;
@@ -116,6 +199,7 @@ export function PracticeRecentTransfersCalendar({
   onCursorChange,
   onDateKeyChange,
   onSelectItem,
+  onDeleteItem,
   hiddenWeekdays,
   onHiddenWeekdaysChange,
   alignEpoch = 0,
@@ -381,18 +465,40 @@ export function PracticeRecentTransfersCalendar({
                       {monthNum}/{dayNum}
                     </p>
                     <div className="flex flex-col gap-0.5">
-                      {dayItems.map((item) => (
-                          <button
+                      {dayItems.map((item) => {
+                        const showDelete = Boolean(item.canDelete && onDeleteItem);
+                        const chipStyle = calendarChipStyleForItem(item);
+                        return (
+                          <div
                             key={`${item.id}:${day.ymd}`}
-                            type="button"
-                            className="w-full rounded px-1 py-0.5 text-left text-[10px] leading-snug hover:brightness-95"
-                            style={calendarGroupChipStyle(item.colorKey)}
-                            title={item.line}
-                            onClick={() => onSelectItem(item)}
+                            className="flex items-start gap-0.5 rounded pr-0.5 hover:brightness-95"
+                            style={chipStyle}
                           >
-                            <span className="line-clamp-2 break-all">{item.line}</span>
-                          </button>
-                        ))}
+                            <button
+                              type="button"
+                              className="min-w-0 flex-1 px-1 py-0.5 text-left text-[10px] leading-snug"
+                              title={item.line}
+                              onClick={() => onSelectItem(item)}
+                            >
+                              <span className="line-clamp-2 break-all">{item.line}</span>
+                            </button>
+                            {showDelete ? (
+                              <button
+                                type="button"
+                                className="mt-0.5 shrink-0 rounded p-0.5 text-current/70 hover:bg-black/10 hover:text-destructive"
+                                aria-label="의뢰 취소"
+                                title="의뢰 취소(휴지통)"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onDeleteItem?.(item);
+                                }}
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </button>
+                            ) : null}
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 );

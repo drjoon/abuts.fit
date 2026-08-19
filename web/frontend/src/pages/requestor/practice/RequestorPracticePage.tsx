@@ -18,6 +18,7 @@
 // - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // - web/frontend/src/shared/components/practice/LabReceiveWorkUploadDialog.tsx
+// - 2026-08-19: 기공의뢰수신 캘린더 칩·상단 뱃지를 상태색으로 구분.
 // - 2026-08-19: 기공의뢰수신 — 안쪽 최외곽 Card 테두리 제거·패딩 축소.
 // - 2026-08-19: 기공의뢰수신 목록을 치과 최근의뢰와 같은 3주 캘린더로 표시.
 // - 2026-08-19: 수신 기간필터를 치과와 같이 30일/90일/이번달/지난달.
@@ -190,9 +191,12 @@ import {
 import { toKstYmd } from "@/shared/date/kst";
 import {
   DEFAULT_HIDDEN_WEEKDAYS,
+  PRACTICE_STATUS_FILTER_BADGE_CLASS,
   PracticeRecentTransfersCalendar,
+  resolvePracticeCalendarStatusTone,
   type PracticeCalendarChipItem,
   type PracticeCalendarDateKey,
+  type PracticeCalendarStatusTone,
 } from "@/pages/practice/components/PracticeRecentTransfersCalendar";
 import {
   labFeeSettingsFromAcceptPath,
@@ -277,6 +281,15 @@ const parsePracticeTransferMemoMeta = (rawMemo: string) => {
 
 const getTransferDisplayStatus = getPracticeTransferLabReceiveDisplayStatus;
 const transferHasCustomAbutment = practiceTransferHasCustomAbutment;
+
+const labReceiveStatusBadgeClass = (
+  tone: PracticeCalendarStatusTone,
+  active: boolean,
+) =>
+  cn(
+    "cursor-pointer",
+    PRACTICE_STATUS_FILTER_BADGE_CLASS[tone][active ? "active" : "idle"],
+  );
 
 export default function RequestorPracticePage() {
   const navigate = useNavigate();
@@ -1475,6 +1488,10 @@ export function RequestorPracticeReceivePage({
         arrivalDate: transfer.arrivalDate,
         colorKey:
           String(transfer.practiceBusinessAnchorId || "").trim() || clinic,
+        statusTone: resolvePracticeCalendarStatusTone(
+          getTransferDisplayStatus(transfer),
+          Boolean(transfer.isRemake),
+        ),
         sortLabel: clinic,
         line: [clinic, patient || "—", teeth || "—"].join(" / "),
       };
@@ -4204,12 +4221,7 @@ export function RequestorPracticeReceivePage({
         >
           <Badge
             variant="outline"
-            className={cn(
-              "cursor-pointer",
-              statusFilter === "발송완료"
-                ? "border-primary/70 bg-primary-soft text-primary-strong"
-                : "hover:bg-muted/40",
-            )}
+            className={labReceiveStatusBadgeClass("sent", statusFilter === "발송완료")}
           >
             의뢰 {statusCounts.sent}건
           </Badge>
@@ -4225,12 +4237,7 @@ export function RequestorPracticeReceivePage({
         >
           <Badge
             variant="outline"
-            className={cn(
-              "cursor-pointer",
-              statusFilter === "의뢰수락"
-                ? "border-primary/70 bg-primary-soft text-primary-strong"
-                : "hover:bg-muted/40",
-            )}
+            className={labReceiveStatusBadgeClass("accepted", statusFilter === "의뢰수락")}
           >
             수락 {statusCounts.accepted}건
           </Badge>
@@ -4246,12 +4253,7 @@ export function RequestorPracticeReceivePage({
         >
           <Badge
             variant="outline"
-            className={cn(
-              "cursor-pointer",
-              statusFilter === "작업완료"
-                ? "border-primary/70 bg-primary-soft text-primary-strong"
-                : "hover:bg-muted/40",
-            )}
+            className={labReceiveStatusBadgeClass("completed", statusFilter === "작업완료")}
           >
             완료 {statusCounts.completed}건
           </Badge>
@@ -4265,12 +4267,7 @@ export function RequestorPracticeReceivePage({
         >
           <Badge
             variant="outline"
-            className={cn(
-              "cursor-pointer",
-              statusFilter === "취소"
-                ? "border-primary/70 bg-primary-soft text-primary-strong"
-                : "hover:bg-muted/40",
-            )}
+            className={labReceiveStatusBadgeClass("canceled", statusFilter === "취소")}
           >
             취소 {statusCounts.canceled}건
           </Badge>
@@ -4284,12 +4281,7 @@ export function RequestorPracticeReceivePage({
         >
           <Badge
             variant="outline"
-            className={cn(
-              "cursor-pointer",
-              statusFilter === "거부"
-                ? "border-primary/70 bg-primary-soft text-primary-strong"
-                : "hover:bg-muted/40",
-            )}
+            className={labReceiveStatusBadgeClass("rejected", statusFilter === "거부")}
           >
             거부 {statusCounts.rejected}건
           </Badge>
@@ -4303,12 +4295,7 @@ export function RequestorPracticeReceivePage({
         >
           <Badge
             variant="outline"
-            className={cn(
-              "cursor-pointer",
-              statusFilter === "포장.발송"
-                ? "border-primary/70 bg-primary-soft text-primary-strong"
-                : "hover:bg-muted/40",
-            )}
+            className={labReceiveStatusBadgeClass("shipping", statusFilter === "포장.발송")}
           >
             발송 {statusCounts.shipping}건
           </Badge>
@@ -4322,12 +4309,7 @@ export function RequestorPracticeReceivePage({
         >
           <Badge
             variant="outline"
-            className={cn(
-              "cursor-pointer",
-              statusFilter === "리메이크"
-                ? PRACTICE_REMAKE_BADGE_CLASS
-                : "border-amber-200 bg-amber-50/70 text-amber-800 hover:bg-amber-50",
-            )}
+            className={labReceiveStatusBadgeClass("remake", statusFilter === "리메이크")}
           >
             리메이크 {statusCounts.remake}건
           </Badge>

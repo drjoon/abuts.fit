@@ -92,6 +92,7 @@
  * - 2026-08-18: 기공의뢰 카드 외곽선 제거. 상단 5버튼을 동기화 상태 행으로 이동(Express/Expert).
  * - 2026-08-18: Express 보철물도 Expert와 같이 full 치식(16칸).
  * - 2026-08-19: 어벗츠기공소도 지정과 같이 첨부 없이 전송 가능.
+ * - 2026-08-19: 전송 내역 캘린더·기공소 거부 모달에서 의뢰 취소(휴지통).
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -197,6 +198,7 @@ import {
 } from "@/shared/workspace/workspaceMode";
 import {
   PRACTICE_MY_TRANSFERS_PAGE_SIZE,
+  canDeletePracticeTransferByStatus,
   canRemakePracticeTransferByStatus,
   canEditPracticeTransferByStatus,
   computeGroupedStatusCounts,
@@ -931,19 +933,6 @@ const toStatusBadgeLabel = (status: unknown) => {
   if (s === "거부") return "거부";
   if (s === "생산진행" || s === "포장.발송") return "발송";
   return s;
-};
-
-/** 기공소 의뢰수락 이전만 치과에서 휴지통 이동 가능 */
-const canDeletePracticeTransferByStatus = (status: unknown) => {
-  const s = String(status || "").trim();
-  if (s === "임시저장") return true;
-  return (
-    s === "발송완료" ||
-    s === "수신완료" ||
-    s === "자동매칭" ||
-    s === "하청대기" ||
-    s === "작업취소"
-  );
 };
 
 const formatChatTs = (value: unknown) => {
@@ -4109,7 +4098,10 @@ export const PracticeFileTransferPage = ({
     suppressRecentAllModalCloseRef.current = false;
   };
 
-  const handleAskDeleteTransfer = (transfer: RecentTransferItem) => {
+  const handleAskDeleteTransfer = (
+    transfer: RecentTransferItem,
+    options?: { returnToAllModal?: boolean },
+  ) => {
     if (
       transfer.status !== "임시저장" &&
       transfer.transferId !== PRACTICE_DRAFT_TRANSFER_ID &&
@@ -4129,7 +4121,11 @@ export const PracticeFileTransferPage = ({
       void handleDeleteDraftTransfer(transfer);
       return;
     }
-    if (recentTransfersAllOpen) {
+    if (
+      recentTransfersAllOpen ||
+      options?.returnToAllModal ||
+      returnToAllModalRef.current
+    ) {
       deleteReturnToAllModalRef.current = true;
       suppressRecentAllModalCloseRef.current = true;
     }
@@ -4240,6 +4236,28 @@ export const PracticeFileTransferPage = ({
       });
       finishDeleteConfirmAndReturnToAllModal();
       return;
+    }
+
+    const targetTransferId = String(target.transferId || "").trim();
+    const targetId = String(target.id || "").trim();
+    if (
+      selectedTransfer &&
+      (String(selectedTransfer.transferId || "").trim() === targetTransferId ||
+        String(selectedTransfer.id || "").trim() === targetId)
+    ) {
+      setTransferDialogOpen(false);
+      transferDialogOpenRef.current = false;
+      selectedTransferIdRef.current = "";
+      setSelectedTransfer(null);
+      setActiveChatRoom(null);
+      setChatMessages([]);
+      setChatError("");
+    }
+    if (
+      labRejectedReselectTarget &&
+      String(labRejectedReselectTarget.transferId || "").trim() === targetTransferId
+    ) {
+      setLabRejectedReselectTarget(null);
     }
 
     setDeletingTransfer(true);
@@ -6549,6 +6567,13 @@ export const PracticeFileTransferPage = ({
               ? () => handleBeginEditSentTransfer(selectedTransfer)
               : undefined
           }
+          onCancelRequest={
+            selectedTransfer &&
+            canDeletePracticeTransferByStatus(selectedTransfer.status)
+              ? () => handleAskDeleteTransfer(selectedTransfer)
+              : undefined
+          }
+          cancelRequestDisabled={deletingTransfer}
           chatHeaderAction={
             selectedTransfer &&
             selectedTransfer.canRateLab &&
@@ -6755,6 +6780,7 @@ export const PracticeFileTransferPage = ({
           rejectedLabName={labRejectedReselectTarget?.targetLab}
           transferId={labRejectedReselectTarget?.transferId}
           confirming={labRejectedRetargetBusy}
+          trashing={deletingTransfer}
           labIntakeProps={{
             selectedLab,
             setSelectedLab,
@@ -6807,6 +6833,14 @@ export const PracticeFileTransferPage = ({
             },
             autoMatchBudget,
             abutsLabFeeCatalog,
+          }}
+          onMoveToTrash={() => {
+            const target = labRejectedReselectTarget;
+            if (!target || labRejectedRetargetBusy || deletingTransfer) return;
+            setLabRejectedReselectTarget(null);
+            handleAskDeleteTransfer(target, {
+              returnToAllModal: returnToAllModalRef.current,
+            });
           }}
           onConfirm={async () => {
             const target = labRejectedReselectTarget;

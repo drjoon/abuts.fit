@@ -16,6 +16,7 @@
 // - 2026-08-16: 프리뷰 파일 여러 개일 때 이전/다음 이동.
 // - 2026-08-16: STL/PLY/OBJ 클릭 시 3D 미리보기(다운로드는 모달).
 // - 2026-08-18: 치과 수락 전 의뢰 수정 CTA(좌측 의뢰정보 패널 상단).
+// - 2026-08-19: 치과 발신 상세에서 수락 전 의뢰 취소(휴지통).
 // - 2026-08-16: 어벗 가공 시작 시 상세 모달 작업취소(수락 취소) 비활성 안내.
 // - 2026-08-16: 파일 섹션 — 의뢰 파일(구강 스캔) / 작업 파일(어벗 디자인·보철물).
 // - 2026-08-15: 수락 기공소 CA 디자인 — 왼쪽 구강스캔 업로드 UI 제거(스캔 없이 수락).
@@ -37,7 +38,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { CircleHelp, MessageSquare, Pencil } from "lucide-react";
+import { CircleHelp, MessageSquare, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -245,6 +246,9 @@ type PracticeTransferDetailChatDialogProps = {
   /** 치과: 수락 전 의뢰 내용을 작성 폼으로 불러와 수정 */
   onEditRequest?: () => void;
   editRequestDisabled?: boolean;
+  /** 치과: 수락 전·작업취소 건을 휴지통으로 */
+  onCancelRequest?: () => void;
+  cancelRequestDisabled?: boolean;
 };
 
 export function PracticeTransferDetailChatDialog({
@@ -323,6 +327,8 @@ export function PracticeTransferDetailChatDialog({
   sendDisabled = false,
   onEditRequest,
   editRequestDisabled = false,
+  onCancelRequest,
+  cancelRequestDisabled = false,
 }: PracticeTransferDetailChatDialogProps) {
   const { toast } = useToast();
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -603,19 +609,34 @@ export function PracticeTransferDetailChatDialog({
         <div className="px-5 py-4 flex-1 min-h-0 overflow-hidden">
           <div className="grid h-full min-h-0 grid-cols-1 gap-4 lg:grid-cols-2">
             <div className="min-h-0 space-y-4 overflow-y-auto rounded-lg border bg-card p-3 text-[15px]">
-              {onEditRequest ? (
-                <div className="flex justify-end">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="shrink-0 gap-1.5"
-                    disabled={editRequestDisabled}
-                    onClick={() => onEditRequest()}
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                    의뢰 수정
-                  </Button>
+              {onEditRequest || onCancelRequest ? (
+                <div className="flex justify-end gap-2">
+                  {onCancelRequest ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0 gap-1.5 border-destructive-muted text-destructive hover:bg-destructive-soft hover:text-destructive"
+                      disabled={cancelRequestDisabled}
+                      onClick={() => onCancelRequest()}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      의뢰 취소
+                    </Button>
+                  ) : null}
+                  {onEditRequest ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0 gap-1.5"
+                      disabled={editRequestDisabled}
+                      onClick={() => onEditRequest()}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                      의뢰 수정
+                    </Button>
+                  ) : null}
                 </div>
               ) : null}
               <div className="grid grid-cols-2 gap-3">

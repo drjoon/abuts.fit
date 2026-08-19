@@ -12,6 +12,7 @@
  * 2026-08-18: 카드 메타 1행 1항목. 수정·리메이크·삭제는 헤더 액션.
  * 2026-08-19: 기간 필터(커스텀 시작~끝) 와이어링. 본문=2주/한 달 캘린더(주문일·치과도착일).
  * 2026-08-19: 기간필터·2주/한달 제거. 3주 스크롤, 토·일 기본 숨김, 기공소색, 검색=닫기 왼쪽.
+ * 2026-08-19: 캘린더 칩 휴지통(의뢰 취소) — onDeleteTransfer 연결.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Search } from "lucide-react";
@@ -44,6 +45,7 @@ import {
   PRACTICE_RECENT_STATUS_BADGES,
   PRACTICE_REMAKE_BADGE_CLASS,
   computeGroupedStatusCounts,
+  canDeletePracticeTransferByStatus,
   filterGroupedTransfersByStatus,
   filterRequestsByPeriodAndSearch,
   groupPracticeRecentRequests,
@@ -93,6 +95,7 @@ export function PracticeRecentTransfersAllModal({
   initialLoading = false,
   initialError = "",
   onSelectTransfer,
+  onDeleteTransfer,
 }: PracticeRecentTransfersAllModalProps) {
   const [search, setSearch] = useState(initialSearch);
   const [statusFilter, setStatusFilter] = useState<PracticeRecentStatusFilter>(initialStatusFilter);
@@ -268,6 +271,7 @@ export function PracticeRecentTransfersAllModal({
         colorKey: String(transfer.targetLabAnchorId || "").trim() || lab,
         sortLabel: lab,
         line: [lab, patient || "—", teeth || "—"].join(" / "),
+        canDelete: canDeletePracticeTransferByStatus(transfer.status),
       };
     });
   }, [filteredTransfers]);
@@ -370,6 +374,10 @@ export function PracticeRecentTransfersAllModal({
               onSelectItem={(item) => {
                 const transfer = calendarItemById.get(item.id);
                 if (transfer) onSelectTransfer(transfer);
+              }}
+              onDeleteItem={(item) => {
+                const transfer = calendarItemById.get(item.id);
+                if (transfer) onDeleteTransfer(transfer);
               }}
               hiddenWeekdays={hiddenWeekdays}
               onHiddenWeekdaysChange={setHiddenWeekdays}
