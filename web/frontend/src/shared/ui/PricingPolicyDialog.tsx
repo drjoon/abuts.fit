@@ -1,7 +1,6 @@
 // change-log:
-// - 2026-08-19: 디자인+생산 구강지그 — 지르코니아 제작 시 포함, 그 외 불포함(치과·기공소 공통).
+// - 2026-08-19: 치과·기공소 디자인+생산 모두 구강지그 제외.
 // - 2026-08-19: 치과 고시 단가=creditSettings 멤버십 생산/디자인+생산. 크레딧 차감과 동일 SSOT.
-// - 2026-08-19: 구강스캔 디자인+생산은 구강지그 포함. 어벗디자인 생산만은 제외 유지.
 // - 2026-08-18: 치과 리메이크를 의뢰 취소와 같은 카드로 분리. 가격 카드 하단 구강스캔/보철 안내 삭제.
 // - 2026-08-18: 치과 정책 — 멤버십/구독 제거. 서비스 3종 단일가(어벗디자인·구강스캔·풀세트).
 // - 2026-08-17: 디자인비+지그제작비(수락 기공소 지급) 행 추가. 견적 요약의 기공비(보철+디자인) 분류와 맞춤.
@@ -72,9 +71,6 @@ const DEFAULT_LEAD_TIMES: Record<DiameterKey, LeadTimeRange> = {
   d10: { minBusinessDays: 4, maxBusinessDays: 7 },
   d12: { minBusinessDays: 4, maxBusinessDays: 7 }
 };
-
-const DESIGN_AND_PRODUCTION_JIG_NOTE =
-  '1개당 · 지르코니아 제작 시 구강지그 포함 · 그 외 불포함';
 
 function PolicySection({
   title,
@@ -379,7 +375,7 @@ export const PricingPolicyDialog = ({
                         : '구강스캔으로 · 어벗 디자인+생산'
                     }
                     value={formatAbutsManwon(designAndProductionPrice)}
-                    unitLabel={DESIGN_AND_PRODUCTION_JIG_NOTE}
+                    unitLabel='1개당 · 구강지그 제외'
                   />
                   <div className='h-px bg-slate-100' />
                   <PriceRow
