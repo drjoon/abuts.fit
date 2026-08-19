@@ -93,6 +93,7 @@
  * - 2026-08-18: Express 보철물도 Expert와 같이 full 치식(16칸).
  * - 2026-08-19: 어벗츠기공소도 지정과 같이 첨부 없이 전송 가능.
  * - 2026-08-19: 전송 내역 캘린더·기공소 거부 모달에서 의뢰 취소(휴지통).
+ * - 2026-08-20: 임시저장 미충족 시 상단 「동기화됨」자리에 완성형 한글 안내.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -868,6 +869,18 @@ const normalizePatientNameKey = (value: string) => {
 
 /** 완성형 한글 음절이 있어야 임시저장. IME Latin(r/rh) mid-type은 제외. */
 const hasAutosaveReadyPatientName = (value: string) => /[가-힣]/.test(String(value || "").trim());
+
+/** 임시저장 게이트 미충족 시 상단 동기화 문구. 빈 폼은 표시하지 않는다. */
+const getFormAutosaveBlockedHint = (hasLab: boolean, patientName: string) => {
+  const trimmed = String(patientName || "").trim();
+  const hasCompletePatient = hasAutosaveReadyPatientName(trimmed);
+  if (hasLab && hasCompletePatient) return "";
+  if (hasLab && trimmed) return "완성형 한글 환자명이어야 임시저장";
+  if (hasLab) return "환자명을 입력하면 임시저장";
+  if (hasCompletePatient) return "기공소를 선택하면 임시저장";
+  if (trimmed) return "기공소·완성형 한글 환자명이면 임시저장";
+  return "";
+};
 
 const toDateLabel = (value: unknown) => {
   const d = new Date(String(value || ""));
@@ -5186,19 +5199,30 @@ export const PracticeFileTransferPage = ({
     }
   };
 
+  const formAutosaveBlockedHint = useMemo(
+    () =>
+      getFormAutosaveBlockedHint(
+        Boolean(String(selectedLab?._id || selectedLab?.name || "").trim()),
+        normalizedPatientName,
+      ),
+    [normalizedPatientName, selectedLab?._id, selectedLab?.name],
+  );
+
   const formSyncStatusLabel = editingSentTransfer
     ? "수락 전 수정 중"
     : formSyncStatus === "pending"
       ? "동기화 대기…"
       : formSyncStatus === "saving"
         ? "동기화 중…"
-        : formSyncStatus === "saved" && (draftFiles.length > 0 || Boolean(activeDraftId))
-          ? activeDraftId
-            ? "동기화됨"
-            : "임시저장됨"
-          : formSyncStatus === "error"
-            ? "동기화 실패 · 다시 시도"
-            : "";
+        : formSyncStatus === "error"
+          ? "동기화 실패 · 다시 시도"
+          : formAutosaveBlockedHint
+            ? formAutosaveBlockedHint
+            : formSyncStatus === "saved" && (draftFiles.length > 0 || Boolean(activeDraftId))
+              ? activeDraftId
+                ? "동기화됨"
+                : "임시저장됨"
+              : "";
 
   const missingAbutmentPresetTeeth = useMemo(
     () => listMissingAbutmentPresetTeeth(normalizedToothWorks),
@@ -6001,6 +6025,7 @@ export const PracticeFileTransferPage = ({
                   </Button>
                   {formSyncStatusLabel ? (
                     <span
+                      title={formSyncStatusLabel}
                       className={cn(
                         "truncate text-xs font-normal",
                         formSyncStatus === "error"
@@ -6288,7 +6313,7 @@ export const PracticeFileTransferPage = ({
                   <BookmarkPlus className="h-9 w-9 text-slate-300" />
                   <p className="text-sm font-medium text-slate-600">임시저장 없음</p>
                   <p className="max-w-sm text-xs leading-relaxed text-muted-foreground">
-                    기공소와 환자명을 입력하면 자동으로 저장됩니다.
+                    기공소와 완성형 한글 환자명을 입력하면 자동으로 저장됩니다.
                   </p>
                 </div>
               ) : (
