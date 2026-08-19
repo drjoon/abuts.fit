@@ -7,6 +7,8 @@
 // - web/backend/controllers/requests/common.requests.controller.js
 // - web/backend/controllers/requests/creation.from-draft.controller.js
 // - web/backend/controllers/requests/designHandoff.controller.js
+// change-log:
+// - 2026-08-19: computePriceForRequest는 pricingBaseDate 재사용. 제출 시 로트는 ensureLotNumbersOnReadyEnter로 $inc 1회.
 import { Types } from "mongoose";
 import Request from "../../models/request.model.js";
 import User from "../../models/user.model.js";
@@ -927,15 +929,24 @@ export function seqToLotLetters(seqRaw) {
   return `${alphabet[a]}${alphabet[b]}${alphabet[c]}`;
 }
 
-async function nextLotLetters() {
-  const counter = await LotCounter.findOneAndUpdate(
-    { key: "global" },
-    { $inc: { seq: 1 }, $setOnInsert: { key: "global" } },
-    { upsert: true, new: true, setDefaultsOnInsert: true },
-  ).lean();
+async function nextLotLetters(session = null) {
+  const [letters] = await nextLotLettersBatch(1, session);
+  return letters || seqToLotLetters(0);
+}
 
-  const seqRaw = typeof counter?.seq === "number" ? counter.seq : 0;
-  return seqToLotLetters(seqRaw);
+async function nextLotLettersBatch(count, session = null) {
+  const n = Math.max(0, Math.floor(Number(count) || 0));
+  if (n <= 0) return [];
+  const query = LotCounter.findOneAndUpdate(
+    { key: "global" },
+    { $inc: { seq: n }, $setOnInsert: { key: "global" } },
+    { upsert: true, new: true, setDefaultsOnInsert: true },
+  );
+  if (session) query.session(session);
+  const counter = await query.lean();
+  const endSeq = typeof counter?.seq === "number" ? counter.seq : 0;
+  const startSeq = endSeq - n + 1;
+  return Array.from({ length: n }, (_, i) => seqToLotLetters(startSeq + i));
 }
 
 export function shouldAssignLotNumberOnReady(requestDoc) {
@@ -974,12 +985,41 @@ export async function ensureLotNumberForMachining(requestDoc) {
   requestDoc.lotNumber.value = `${prefix}${yyMMdd}-${letters}`;
 }
 
+function applyLotLettersToRequestDoc(requestDoc, letters) {
+  requestDoc.lotNumber = requestDoc.lotNumber || {};
+  const todayYmd = getTodayYmdInKst();
+  const yyMMdd = todayYmd.replace(/-/g, "").slice(2);
+  const prefix = getWorkTypePrefix(requestDoc, { defaultPrefix: "CA" });
+  requestDoc.lotNumber.value = `${prefix}${yyMMdd}-${letters}`;
+}
+
 export async function ensureLotNumberOnReadyEnter(requestDoc) {
   if (!shouldAssignLotNumberOnReady(requestDoc)) return false;
   const before = canonicalizeLotNumberValue(requestDoc?.lotNumber?.value);
   await ensureLotNumberForMachining(requestDoc);
   const after = canonicalizeLotNumberValue(requestDoc?.lotNumber?.value);
   return Boolean(after) && after !== before;
+}
+
+export async function ensureLotNumbersOnReadyEnter(requestDocs, session = null) {
+  const docs = (Array.isArray(requestDocs) ? requestDocs : []).filter(Boolean);
+  const needing = [];
+  for (const doc of docs) {
+    if (!shouldAssignLotNumberOnReady(doc)) continue;
+    doc.lotNumber = doc.lotNumber || {};
+    const existing = canonicalizeLotNumberValue(doc.lotNumber.value);
+    if (existing) {
+      doc.lotNumber.value = existing;
+      continue;
+    }
+    needing.push(doc);
+  }
+  if (!needing.length) return 0;
+  const lettersList = await nextLotLettersBatch(needing.length, session);
+  needing.forEach((doc, idx) => {
+    applyLotLettersToRequestDoc(doc, lettersList[idx]);
+  });
+  return needing.length;
 }
 
 export async function persistReadyLotNumbersIfMissing(requestDocs) {
@@ -1119,6 +1159,7 @@ export async function computePriceForRequest({
   forceNewOrderPricing = false,
   currentRequestId = null,
   creditSettings: creditSettingsOverride = null,
+  pricingBaseDate: pricingBaseDateOverride = undefined,
 }) {
   const now = new Date();
 
@@ -1159,10 +1200,12 @@ export async function computePriceForRequest({
     })
       .select({ _id: 1 })
       .lean(),
-    resolveRequestorPricingBaseDate({
-      requestorId,
-      requestorOrgId,
-    }),
+    pricingBaseDateOverride !== undefined
+      ? Promise.resolve(pricingBaseDateOverride)
+      : resolveRequestorPricingBaseDate({
+          requestorId,
+          requestorOrgId,
+        }),
   ]);
 
   const baseUnitPrice = Math.max(

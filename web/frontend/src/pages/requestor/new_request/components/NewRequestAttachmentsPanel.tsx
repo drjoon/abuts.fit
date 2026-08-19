@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-19: 업로드 완료 시 파일카드에 「업로드됨」+ 초록 바(첨부 직후 사전 업로드가 보임).
 // - 2026-08-19: 파일카드에 백그라운드 업로드 % 표시(기공의뢰 파일페인과 동일).
 // - 2026-08-16: 메타 뱃지를 RequestCaseMetaBadges 공용 컴포넌트로.
 // - 2026-08-13: 첨부를 PracticeTransferFileDropTarget + useFilePreUpload 진행률바로.
@@ -118,21 +119,33 @@ function renderUploadProgressMeta(progress?: PreUploadFileProgress | null) {
     return ` · ${pct}%`;
   }
   if (progress.status === "error") return " · 실패";
+  if (progress.status === "done") return " · 업로드됨";
   return "";
 }
 
 function renderUploadProgressBar(progress?: PreUploadFileProgress | null) {
   if (!progress) return null;
-  if (progress.status !== "uploading" && progress.status !== "error") {
+  if (
+    progress.status !== "uploading" &&
+    progress.status !== "error" &&
+    progress.status !== "done"
+  ) {
     return null;
   }
-  const barPercent = Math.max(0, Math.min(100, Math.round(progress.percent ?? 0)));
+  const barPercent =
+    progress.status === "done"
+      ? 100
+      : Math.max(0, Math.min(100, Math.round(progress.percent ?? 0)));
   return (
-    <div className="absolute inset-x-0 bottom-0 h-1 bg-slate-100" aria-hidden>
+    <div className="absolute inset-x-0 bottom-0 h-1.5 bg-slate-100" aria-hidden>
       <div
         className={cn(
           "h-full transition-[width] duration-150 ease-out",
-          progress.status === "error" ? "bg-destructive" : "bg-primary",
+          progress.status === "error"
+            ? "bg-destructive"
+            : progress.status === "done"
+              ? "bg-emerald-500"
+              : "bg-primary",
         )}
         style={{
           width: `${

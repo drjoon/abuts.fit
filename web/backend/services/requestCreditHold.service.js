@@ -7,7 +7,9 @@
 // - web/backend/controllers/requests/common.review.helpers.js
 // - web/backend/controllers/requests/mailbox.utils.js
 // change-log:
+// - 2026-08-19: 어벗디자인·어벗생산 배송비는 의뢰 사업자+예정출고일 1회(치과명 무관).
 // - 2026-08-19: 같은 제출에서 원장 잔액 집계·가드 락을 앵커당 1회로 재사용.
+// - 2026-08-19: 신규 제출 보류는 선행 저널 조회 생략 + insertMany 1회로 기록.
 import mongoose, { Types } from "mongoose";
 import BusinessAnchor from "../models/businessAnchor.model.js";
 import CreditBalanceGuard from "../models/creditBalanceGuard.model.js";
@@ -21,6 +23,7 @@ import {
   deleteGeneralLedgerCommitJournal,
   getJournalByIdempotencyKey,
   postGeneralLedgerJournal,
+  postGeneralLedgerJournals,
 } from "./generalLedger.service.js";
 import {
   isManufacturerSampleRequest,
@@ -63,6 +66,20 @@ export function requestExpressHoldKey(requestMongoId) {
 
 export function requestShippingHoldKey(requestMongoId) {
   return requestHoldKey(requestMongoId, "shipping_fee");
+}
+
+function requestEstimatedShipYmd(request) {
+  return String(request?.timeline?.estimatedShipYmd || "").trim();
+}
+
+/** 치과 어벗디자인·기공소 어벗생산: 의뢰 사업자 + 예정 출고일 = 1박스. */
+export function buildRequesterShipBoxKey(request) {
+  const ba =
+    resolveRequestCreditHoldAnchorId(request) ||
+    normalizeBusinessAnchorId(request?.businessAnchorId) ||
+    "_";
+  const ymd = requestEstimatedShipYmd(request) || "_";
+  return `${ba}:${ymd}`;
 }
 
 export function buildShippingReceiverGroupKey(request) {
@@ -287,7 +304,7 @@ function applyHoldSplitToBalance(balance, split) {
   });
 }
 
-async function postOneRequestHold({
+function prepareOneRequestHold({
   request,
   requestorAnchorId,
   devopsAnchorId,
@@ -297,9 +314,7 @@ async function postOneRequestHold({
   idempotencyKey,
   freeOrder = ["freeRequest", "freeShipping"],
   actorUserId = null,
-  session = null,
   cachedBalance = null,
-  skipLock = false,
 }) {
   const amt = Math.max(0, Math.round(Number(amount || 0)));
   const requestId = request?._id;
@@ -307,33 +322,7 @@ async function postOneRequestHold({
     return { held: false, reason: "invalid_input" };
   }
 
-  const existing = await getJournalByIdempotencyKey({
-    idempotencyKey,
-    session,
-  });
-  if (existing?.journalId) {
-    return {
-      held: false,
-      reason: "already_held",
-      journalId: existing.journalId,
-      amount: amt,
-    };
-  }
-
-  if (!skipLock) {
-    await lockCreditBalanceGuardByAnchor({
-      businessAnchorId: requestorAnchorId,
-      session,
-    });
-  }
-
-  const balance = cachedBalance
-    ? normalizeHoldBalanceBuckets(cachedBalance)
-    : await computeBusinessCreditBalanceFromLedger({
-        businessAnchorId: requestorAnchorId,
-        session,
-      });
-
+  const balance = normalizeHoldBalanceBuckets(cachedBalance);
   const split = allocateSpendFromCreditBuckets({
     amount: amt,
     paidCredit: Number(balance?.paidCredit || 0),
@@ -371,43 +360,130 @@ async function postOneRequestHold({
     devopsAnchorId,
   };
 
-  const journal = await postGeneralLedgerJournal({
-    idempotencyKey,
-    eventType,
-    businessAnchorId: requestorAnchorId,
-    refType: "REQUEST",
-    refId: requestId,
-    createdBy: actorUserId,
-    meta: {
-      heldTotal: amt,
-      holdKind,
-      requestId: request?.requestId || null,
-      requestMongoId: String(requestId),
-      ...spendMeta,
-    },
-    lines: [
-      ...buildRequestorHoldDebitLines({
-        split,
-        requestorAnchorId,
-        requestId,
-        meta: spendMeta,
-      }),
-      {
-        accountCode: "PLATFORM_ESCROW",
-        ownerRole: "devops",
-        ownerId: devopsAnchorId,
-        amount: amt,
-        amountExcludingVat: amt,
-        vatAmount: 0,
-        creditKind: null,
-        refType: "REQUEST",
-        refId: requestId,
-        meta: {
-          ...spendMeta,
-          source: "request_escrow_hold",
-        },
+  return {
+    held: true,
+    reason: "prepared",
+    amount: amt,
+    fromPaid: split.fromPaid,
+    fromFreeRequest: split.fromFreeRequest,
+    fromFreeShipping: split.fromFreeShipping,
+    fromSettlement: split.fromSettlement,
+    balanceAfter: applyHoldSplitToBalance(balance, split),
+    journal: {
+      idempotencyKey,
+      eventType,
+      businessAnchorId: requestorAnchorId,
+      refType: "REQUEST",
+      refId: requestId,
+      createdBy: actorUserId,
+      meta: {
+        heldTotal: amt,
+        holdKind,
+        requestId: request?.requestId || null,
+        requestMongoId: String(requestId),
+        ...(isShippingHold
+          ? {
+              estimatedShipYmd: requestEstimatedShipYmd(request) || null,
+              shipBoxKey: buildRequesterShipBoxKey(request),
+            }
+          : {}),
+        ...spendMeta,
       },
-    ],
+      lines: [
+        ...buildRequestorHoldDebitLines({
+          split,
+          requestorAnchorId,
+          requestId,
+          meta: spendMeta,
+        }),
+        {
+          accountCode: "PLATFORM_ESCROW",
+          ownerRole: "devops",
+          ownerId: devopsAnchorId,
+          amount: amt,
+          amountExcludingVat: amt,
+          vatAmount: 0,
+          creditKind: null,
+          refType: "REQUEST",
+          refId: requestId,
+          meta: {
+            ...spendMeta,
+            source: "request_escrow_hold",
+          },
+        },
+      ],
+    },
+  };
+}
+
+async function postOneRequestHold({
+  request,
+  requestorAnchorId,
+  devopsAnchorId,
+  amount,
+  holdKind,
+  eventType,
+  idempotencyKey,
+  freeOrder = ["freeRequest", "freeShipping"],
+  actorUserId = null,
+  session = null,
+  cachedBalance = null,
+  skipLock = false,
+  skipExistingLookup = false,
+}) {
+  const amt = Math.max(0, Math.round(Number(amount || 0)));
+  const requestId = request?._id;
+  if (!requestId || !requestorAnchorId || !devopsAnchorId || amt <= 0) {
+    return { held: false, reason: "invalid_input" };
+  }
+
+  if (!skipExistingLookup) {
+    const existing = await getJournalByIdempotencyKey({
+      idempotencyKey,
+      session,
+    });
+    if (existing?.journalId) {
+      return {
+        held: false,
+        reason: "already_held",
+        journalId: existing.journalId,
+        amount: amt,
+      };
+    }
+  }
+
+  if (!skipLock) {
+    await lockCreditBalanceGuardByAnchor({
+      businessAnchorId: requestorAnchorId,
+      session,
+    });
+  }
+
+  const balance = cachedBalance
+    ? normalizeHoldBalanceBuckets(cachedBalance)
+    : await computeBusinessCreditBalanceFromLedger({
+        businessAnchorId: requestorAnchorId,
+        session,
+      });
+
+  const prepared = prepareOneRequestHold({
+    request,
+    requestorAnchorId,
+    devopsAnchorId,
+    amount: amt,
+    holdKind,
+    eventType,
+    idempotencyKey,
+    freeOrder,
+    actorUserId,
+    cachedBalance: balance,
+  });
+  if (!prepared?.held || !prepared.journal) {
+    return prepared;
+  }
+
+  const journal = await postGeneralLedgerJournal({
+    ...prepared.journal,
     session,
     skipIdempotencyLookup: true,
   });
@@ -416,13 +492,13 @@ async function postOneRequestHold({
   return {
     held: posted,
     reason: posted ? "posted" : journal?.idempotent ? "already_held" : "not_posted",
-    journalId: journal?.journalId || existing?.journalId || null,
+    journalId: journal?.journalId || null,
     amount: amt,
-    fromPaid: split.fromPaid,
-    fromFreeRequest: split.fromFreeRequest,
-    fromFreeShipping: split.fromFreeShipping,
-    fromSettlement: split.fromSettlement,
-    balanceAfter: posted ? applyHoldSplitToBalance(balance, split) : null,
+    fromPaid: prepared.fromPaid,
+    fromFreeRequest: prepared.fromFreeRequest,
+    fromFreeShipping: prepared.fromFreeShipping,
+    fromSettlement: prepared.fromSettlement,
+    balanceAfter: posted ? prepared.balanceAfter : null,
   };
 }
 
@@ -459,8 +535,128 @@ function resolveExpressHoldAmount(request) {
   return expressQty * 2000;
 }
 
+async function listRequesterShipBoxSiblings({
+  request,
+  requestorAnchorId,
+  session = null,
+  includeSelf = false,
+}) {
+  const shipYmd = requestEstimatedShipYmd(request);
+  const ba = String(requestorAnchorId || "").trim();
+  if (!shipYmd || !ba || !Types.ObjectId.isValid(ba)) return [];
+
+  const baObjectId = new Types.ObjectId(ba);
+  const filter = {
+    manufacturerStage: { $ne: "취소" },
+    "timeline.estimatedShipYmd": shipYmd,
+    $or: [
+      { businessAnchorId: baObjectId },
+      { "partnerBilling.billingOwnerAnchorId": baObjectId },
+    ],
+  };
+  if (!includeSelf && request?._id) {
+    filter._id = { $ne: request._id };
+  }
+
+  const rows = await Request.find(filter)
+    .select({
+      _id: 1,
+      requestId: 1,
+      businessAnchorId: 1,
+      partnerBilling: 1,
+      requestor: 1,
+      requestCategory: 1,
+      timeline: 1,
+    })
+    .session(session || null)
+    .lean();
+
+  return (rows || []).filter((row) => {
+    if (shouldSkipShippingHold(row)) return false;
+    return resolveRequestCreditHoldAnchorId(row) === ba;
+  });
+}
+
+async function findExistingRequesterShipBoxShippingHold({
+  request,
+  requestorAnchorId,
+  session = null,
+  excludeRequestId = null,
+}) {
+  const siblings = await listRequesterShipBoxSiblings({
+    request,
+    requestorAnchorId,
+    session,
+    includeSelf: true,
+  });
+  for (const sib of siblings) {
+    if (excludeRequestId && String(sib._id) === String(excludeRequestId)) {
+      continue;
+    }
+    const hold = await getRequestHoldJournal({
+      idempotencyKey: requestShippingHoldKey(sib._id),
+      session,
+    });
+    if (hold?.journalId) {
+      return {
+        journalId: hold.journalId,
+        journal: hold,
+        requestMongoId: String(sib._id),
+        idempotencyKey: requestShippingHoldKey(sib._id),
+      };
+    }
+  }
+  return null;
+}
+
+export async function reconcileRequesterShipBoxShippingHolds({
+  request,
+  requestorAnchorId,
+  session = null,
+}) {
+  const siblings = await listRequesterShipBoxSiblings({
+    request,
+    requestorAnchorId,
+    session,
+    includeSelf: true,
+  });
+  const holds = [];
+  for (const sib of siblings) {
+    const idempotencyKey = requestShippingHoldKey(sib._id);
+    const hold = await getRequestHoldJournal({ idempotencyKey, session });
+    if (!hold?.journalId) continue;
+    holds.push({
+      requestMongoId: String(sib._id),
+      idempotencyKey,
+      occurredAt: hold.occurredAt || hold.createdAt || 0,
+    });
+  }
+  if (holds.length <= 1) {
+    return { reconciled: false, released: 0 };
+  }
+  holds.sort(
+    (a, b) =>
+      new Date(a.occurredAt).getTime() - new Date(b.occurredAt).getTime(),
+  );
+  let released = 0;
+  for (const extra of holds.slice(1)) {
+    const result = await releaseRequestHoldByKey({
+      idempotencyKey: extra.idempotencyKey,
+      businessAnchorId: requestorAnchorId,
+      session,
+      emitBalanceUpdate: true,
+    });
+    if (result.released) released += 1;
+  }
+  return {
+    reconciled: released > 0,
+    released,
+    keptRequestMongoId: holds[0].requestMongoId,
+  };
+}
+
 /**
- * 의뢰 제출 시 기공비·신속·배송비(수신자별 1회)를 에스크로로 보류한다.
+ * 의뢰 제출 시 기공비·신속·배송비(의뢰 사업자+출고일 1회)를 에스크로로 보류한다.
  */
 export async function holdRequestCreditsOnSubmit({
   requests = [],
@@ -487,6 +683,7 @@ export async function holdRequestCreditsOnSubmit({
       ? shippingFeeFromArg
       : await resolveShippingFeePerBox();
   const shippingGroupHeld = new Set();
+  const shipBoxRequests = [];
   const lockedAnchors = new Set();
   const balanceByAnchor = new Map();
   let totalHeld = 0;
@@ -516,6 +713,47 @@ export async function holdRequestCreditsOnSubmit({
     }
   };
 
+  const pendingJournals = [];
+  const queueHold = async ({
+    request,
+    requestorAnchorId,
+    amount,
+    holdKind,
+    eventType,
+    idempotencyKey,
+    freeOrder,
+  }) => {
+    const prepared = prepareOneRequestHold({
+      request,
+      requestorAnchorId,
+      devopsAnchorId,
+      amount,
+      holdKind,
+      eventType,
+      idempotencyKey,
+      freeOrder,
+      actorUserId,
+      cachedBalance: await takeCachedBalance(requestorAnchorId),
+    });
+    if (!prepared?.held || !prepared.journal) {
+      results.push({ kind: holdKind, ...prepared });
+      return;
+    }
+    pendingJournals.push(prepared.journal);
+    rememberBalance(requestorAnchorId, prepared);
+    results.push({
+      kind: holdKind,
+      held: true,
+      reason: "prepared",
+      amount: prepared.amount,
+      fromPaid: prepared.fromPaid,
+      fromFreeRequest: prepared.fromFreeRequest,
+      fromFreeShipping: prepared.fromFreeShipping,
+      fromSettlement: prepared.fromSettlement,
+    });
+    totalHeld += prepared.amount;
+  };
+
   for (const request of list) {
     const requestorAnchorId = resolveRequestCreditHoldAnchorId(request);
     if (!requestorAnchorId) continue;
@@ -523,68 +761,91 @@ export async function holdRequestCreditsOnSubmit({
     if (!shouldSkipMachiningHold(request)) {
       const machiningAmount = resolveMachiningHoldAmount(request);
       if (machiningAmount > 0) {
-        const holdResult = await postOneRequestHold({
+        await queueHold({
           request,
           requestorAnchorId,
-          devopsAnchorId,
           amount: machiningAmount,
           holdKind: "machining_spend",
           eventType: "REQUEST_SPEND_HOLD",
           idempotencyKey: requestMachiningHoldKey(request._id),
-          actorUserId,
-          session,
-          cachedBalance: await takeCachedBalance(requestorAnchorId),
-          skipLock: true,
         });
-        if (holdResult.held) totalHeld += machiningAmount;
-        rememberBalance(requestorAnchorId, holdResult);
-        results.push({ kind: "machining_spend", ...holdResult });
       }
 
       const expressAmount = resolveExpressHoldAmount(request);
       if (expressAmount > 0) {
-        const holdResult = await postOneRequestHold({
+        await queueHold({
           request,
           requestorAnchorId,
-          devopsAnchorId,
           amount: expressAmount,
           holdKind: "express_surcharge",
           eventType: "REQUEST_SPEND_HOLD",
           idempotencyKey: requestExpressHoldKey(request._id),
-          actorUserId,
-          session,
-          cachedBalance: await takeCachedBalance(requestorAnchorId),
-          skipLock: true,
         });
-        if (holdResult.held) totalHeld += expressAmount;
-        rememberBalance(requestorAnchorId, holdResult);
-        results.push({ kind: "express_surcharge", ...holdResult });
       }
     }
 
     if (!shouldSkipShippingHold(request)) {
-      const groupKey = buildShippingReceiverGroupKey(request);
+      const groupKey = buildRequesterShipBoxKey(request);
+      shipBoxRequests.push({ request, requestorAnchorId, groupKey });
       if (!shippingGroupHeld.has(groupKey)) {
-        shippingGroupHeld.add(groupKey);
-        const holdResult = await postOneRequestHold({
+        const existing = await findExistingRequesterShipBoxShippingHold({
           request,
           requestorAnchorId,
-          devopsAnchorId,
-          amount: shippingFee,
-          holdKind: "shipping_fee",
-          eventType: "SHIPPING_SPEND_HOLD",
-          idempotencyKey: requestShippingHoldKey(request._id),
-          freeOrder: ["freeShipping", "freeRequest"],
-          actorUserId,
           session,
-          cachedBalance: await takeCachedBalance(requestorAnchorId),
-          skipLock: true,
+          excludeRequestId: request._id,
         });
-        if (holdResult.held) totalHeld += shippingFee;
-        rememberBalance(requestorAnchorId, holdResult);
-        results.push({ kind: "shipping_fee", groupKey, ...holdResult });
+        if (existing?.journalId) {
+          shippingGroupHeld.add(groupKey);
+        } else {
+          shippingGroupHeld.add(groupKey);
+          await queueHold({
+            request,
+            requestorAnchorId,
+            amount: shippingFee,
+            holdKind: "shipping_fee",
+            eventType: "SHIPPING_SPEND_HOLD",
+            idempotencyKey: requestShippingHoldKey(request._id),
+            freeOrder: ["freeShipping", "freeRequest"],
+          });
+          const last = results[results.length - 1];
+          if (last) last.groupKey = groupKey;
+        }
       }
     }
+  }
+
+  if (pendingJournals.length > 0) {
+    const posted = await postGeneralLedgerJournals({
+      entries: pendingJournals,
+      session,
+    });
+    let postedIdx = 0;
+    for (const row of results) {
+      if (row?.reason !== "prepared") continue;
+      const journal = posted[postedIdx];
+      postedIdx += 1;
+      row.held = Boolean(journal?.posted);
+      row.reason = journal?.posted
+        ? "posted"
+        : journal?.idempotent
+          ? "already_held"
+          : "not_posted";
+      row.journalId = journal?.journalId || null;
+      if (!row.held) {
+        totalHeld = Math.max(0, totalHeld - Number(row.amount || 0));
+      }
+    }
+  }
+
+  const reconciledKeys = new Set();
+  for (const row of shipBoxRequests) {
+    if (reconciledKeys.has(row.groupKey)) continue;
+    reconciledKeys.add(row.groupKey);
+    await reconcileRequesterShipBoxShippingHolds({
+      request: row.request,
+      requestorAnchorId: row.requestorAnchorId,
+      session,
+    });
   }
 
   return {
@@ -685,6 +946,7 @@ export async function releaseRequestCreditHoldsOnCancel({
 
   let totalRestore = 0;
   const released = [];
+  let releasedShipping = false;
 
   for (const key of keys) {
     const result = await releaseRequestHoldByKey({
@@ -696,6 +958,49 @@ export async function releaseRequestCreditHoldsOnCancel({
     if (result.released) {
       totalRestore += Number(result.restoreDelta || 0);
       released.push(result.journalId);
+      if (key === requestShippingHoldKey(requestMongoId)) {
+        releasedShipping = true;
+      }
+    }
+  }
+
+  if (releasedShipping && anchorId && !shouldSkipShippingHold(request)) {
+    const siblings = await listRequesterShipBoxSiblings({
+      request,
+      requestorAnchorId: anchorId,
+      session,
+      includeSelf: false,
+    });
+    if (siblings.length > 0) {
+      const existing = await findExistingRequesterShipBoxShippingHold({
+        request: siblings[0],
+        requestorAnchorId: anchorId,
+        session,
+      });
+      if (!existing?.journalId) {
+        const devopsAnchorId = await resolveDevopsEscrowOwnerId(session);
+        if (devopsAnchorId) {
+          const shippingFee = await resolveShippingFeePerBox();
+          const holdResult = await postOneRequestHold({
+            request: siblings[0],
+            requestorAnchorId: anchorId,
+            devopsAnchorId,
+            amount: shippingFee,
+            holdKind: "shipping_fee",
+            eventType: "SHIPPING_SPEND_HOLD",
+            idempotencyKey: requestShippingHoldKey(siblings[0]._id),
+            freeOrder: ["freeShipping", "freeRequest"],
+            actorUserId,
+            session,
+          });
+          if (holdResult.held) {
+            totalRestore = Math.max(
+              0,
+              totalRestore - Number(holdResult.amount || shippingFee),
+            );
+          }
+        }
+      }
     }
   }
 

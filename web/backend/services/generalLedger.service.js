@@ -2,6 +2,9 @@
 // - web/backend/rules.md
 // - web/backend/models/ledgerJournal.model.js
 // - web/backend/models/ledgerLine.model.js
+// - web/backend/services/requestCreditHold.service.js
+// change-log:
+// - 2026-08-19: 신규 의뢰 제출 보류는 postGeneralLedgerJournals로 저널·라인을 insertMany 1회.
 import crypto from "crypto";
 import mongoose from "mongoose";
 import LedgerJournal, {
@@ -228,6 +231,61 @@ export async function postGeneralLedgerJournal({
       }
     }
 
+    throw error;
+  } finally {
+    if (ownSession) {
+      await txSession.endSession().catch(() => null);
+    }
+  }
+}
+
+/**
+ * 같은 트랜잭션에서 여러 저널을 insertMany 1회로 기록한다.
+ * 신규 의뢰 제출 보류처럼 방금 만든 ref에 대해 선행 idempotency 조회를 생략한다.
+ */
+export async function postGeneralLedgerJournals({
+  entries = [],
+  session = null,
+}) {
+  const list = (Array.isArray(entries) ? entries : []).filter(Boolean);
+  if (!list.length) return [];
+
+  const journalDocs = [];
+  const lineDocs = [];
+  for (const entry of list) {
+    assertEventType(entry.eventType);
+    assertLines(entry.lines);
+    const journalDoc = buildJournalDoc(entry);
+    journalDocs.push(journalDoc);
+    lineDocs.push(...buildLineDocs({ lines: entry.lines, journalDoc }));
+  }
+
+  const ownSession = !session;
+  const txSession = session || (await mongoose.startSession());
+
+  try {
+    if (ownSession) txSession.startTransaction();
+
+    await LedgerJournal.insertMany(journalDocs, {
+      session: txSession,
+      ordered: true,
+    });
+    await LedgerLine.insertMany(lineDocs, {
+      session: txSession,
+      ordered: true,
+    });
+
+    if (ownSession) await txSession.commitTransaction();
+
+    return journalDocs.map((journalDoc) => ({
+      posted: true,
+      idempotent: false,
+      journalId: journalDoc.journalId,
+    }));
+  } catch (error) {
+    if (ownSession) {
+      await txSession.abortTransaction().catch(() => null);
+    }
     throw error;
   } finally {
     if (ownSession) {

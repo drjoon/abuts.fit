@@ -9,6 +9,8 @@
 // - web/backend/rules.md
 // change-log:
 // - 2026-08-19: 제출 트랜잭션에서 크레딧 보류는 잔액 집계 1회·가드 1회로 재사용.
+// - 2026-08-19: 제출 지연 단축. 가격기준일·devops prefetch, 스케줄은 트랜잭션 밖,
+//   로트 일괄 발급, 보류 저널 insertMany.
 // - 2026-08-19: 의뢰 생성 후 GET /my 메모리 캐시 무효화(진행중 목록이 비어 보이는 문제).
 // - 2026-08-18: 생산 의뢰는 준비 단계 진입(생성) 시 로트번호(3글자)를 발급한다.
 // - 2026-08-13: 제출 지연 단축. 설정/리드타임/크레딧을 트랜잭션 밖 병렬 prefetch,
@@ -25,10 +27,11 @@ import {
   normalizeCaseInfosImplantFields,
   ensureReviewByStageDefaults,
   assertOrderableImplantPresetOrThrow,
-  ensureLotNumberOnReadyEnter,
+  ensureLotNumbersOnReadyEnter,
 } from "./utils.js";
 import {
   computePriceForRequest,
+  resolveRequestorPricingBaseDate,
   canAccessRequestAsRequestor,
   buildRequestorOrgScopeFilter,
   addKoreanBusinessDays,
@@ -52,6 +55,7 @@ import {
 import { resolveSelectableShippingMode } from "./expressSelectable.utils.js";
 import { checkCreditLock } from "../../utils/creditLock.util.js";
 import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
+import { holdRequestCreditsOnSubmit } from "../../services/requestCreditHold.service.js";
 import { emitAppEventToRoles, emitAppEventToUser } from "../../socket.js";
 import { emitDesignClaimChanged } from "../../utils/designClaimRealtime.js";
 import {
@@ -306,7 +310,7 @@ export async function createRequestsFromDraft(req, res) {
     const shippingOrgIdEarly = String(
       req.user?.businessAnchorId || earlyOrgId || "",
     );
-    const [draft, lockStatus, creditSettings, manufacturerSettings, shippingOrg, creditBalance] =
+    const [draft, lockStatus, creditSettings, manufacturerSettings, shippingOrg, creditBalance, pricingBaseDate, devopsAnchorPrefetch] =
       await Promise.all([
         DraftRequest.findById(draftId).lean(),
         earlyOrgId && Types.ObjectId.isValid(earlyOrgId)
@@ -330,6 +334,14 @@ export async function createRequestsFromDraft(req, res) {
               businessAnchorId: shippingOrgIdEarly,
             }).catch(() => null)
           : Promise.resolve(null),
+        resolveRequestorPricingBaseDate({
+          requestorId: req.user?._id,
+          requestorOrgId: earlyOrgId,
+        }).catch(() => null),
+        BusinessAnchor.findOne({ businessType: "devops" })
+          .select({ _id: 1 })
+          .sort({ createdAt: 1 })
+          .lean(),
       ]);
     const manufacturerLeadTimes = manufacturerSettings?.leadTimes || null;
     console.log("[createRequestsFromDraft] draft loaded", {
@@ -520,6 +532,7 @@ export async function createRequestsFromDraft(req, res) {
           patientName,
           tooth,
           creditSettings,
+          pricingBaseDate,
         });
         let computedPrice = computedPriceBase;
         console.log("[createRequestsFromDraft] compute price", {
@@ -1038,6 +1051,7 @@ export async function createRequestsFromDraft(req, res) {
               tooth: item.tooth,
               forceNewOrderPricing: true,
               creditSettings,
+              pricingBaseDate,
             });
           }),
         );
@@ -1048,15 +1062,6 @@ export async function createRequestsFromDraft(req, res) {
     const requestedAtForPrefetch = new Date();
     const createdYmd = toKstYmd(requestedAtForPrefetch) || getTodayYmdInKst();
     const shippingOrgId = String(businessAnchorId || shippingOrgIdEarly || "");
-    const resolvedLeadDaysPrefetch = resolveLeadDaysWithSameDayCutoff({
-      leadDays: 1,
-      requestedAt: requestedAtForPrefetch,
-      shippingMode: "normal",
-    });
-    const estimatedShipYmd = await addKoreanBusinessDays({
-      startYmd: createdYmd,
-      days: Math.max(1, resolvedLeadDaysPrefetch),
-    });
     const shippingFeePerBox = 3500;
     const expressFeePerRequest = Math.max(
       0,
@@ -1089,6 +1094,7 @@ export async function createRequestsFromDraft(req, res) {
             item?.caseInfosWithFile?.productMode ??
             item?.caseInfos?.productMode ??
             null,
+          manufacturerLeadTimes,
         });
       }),
     );
@@ -1132,20 +1138,16 @@ export async function createRequestsFromDraft(req, res) {
       normalizeManufacturerHexRotationModeOrNull(
         shippingOrg?.requestSettings?.defaultManufacturerHexRotation,
       );
-    const shipDate = estimatedShipYmd || createdYmd;
+    const shipDate = createdYmd;
     const boxCount = 1;
     const totalShippingFee = isPracticeRoutingSubmission
       ? 0
       : boxCount * shippingFeePerBox;
-    const devopsAnchorPrefetch = isPracticeRoutingSubmission
-      ? null
-      : await BusinessAnchor.findOne({ businessType: "devops" })
-          .select({ _id: 1 })
-          .sort({ createdAt: 1 })
-          .lean();
-    const devopsAnchorIdPrefetch = devopsAnchorPrefetch?._id
-      ? String(devopsAnchorPrefetch._id)
-      : "";
+    const devopsAnchorIdPrefetch = isPracticeRoutingSubmission
+      ? ""
+      : devopsAnchorPrefetch?._id
+        ? String(devopsAnchorPrefetch._id)
+        : "";
     console.log("[createRequestsFromDraft] pre-fetch done", {
       t: Date.now() - startTime,
       shippingFeePerBox,
@@ -1170,9 +1172,23 @@ export async function createRequestsFromDraft(req, res) {
       });
     }
 
-    const requestIds = await generateRequestIdBatch(
-      preparedCasesForCreate.length,
-    );
+    const [requestIds] = await Promise.all([
+      generateRequestIdBatch(preparedCasesForCreate.length),
+      Promise.all(
+        preparedCasesForCreate.map(async (item) => {
+          const shippingMode = item.shippingMode || "normal";
+          item.productionSchedule = await calculateInitialProductionSchedule({
+            shippingMode,
+            maxDiameter: item.caseInfosWithFile?.maxDiameter,
+            requestedAt: requestedAtForPrefetch,
+            weeklyBatchDays:
+              shippingMode === "normal" ? weeklyBatchDays : [],
+            productMode: item.caseInfosWithFile?.productMode ?? null,
+            manufacturerLeadTimes,
+          });
+        }),
+      ),
+    ]);
 
     const session = await mongoose.startSession();
     try {
@@ -1393,7 +1409,7 @@ export async function createRequestsFromDraft(req, res) {
 
         for (const [index, item] of preparedCasesForCreate.entries()) {
           const shippingMode = item.shippingMode || "normal";
-          const requestedAt = new Date();
+          const requestedAt = requestedAtForPrefetch;
           const requestedShipDate = item.requestedShipDate || undefined;
           const requestId = requestIds[index];
 
@@ -1519,15 +1535,17 @@ export async function createRequestsFromDraft(req, res) {
             throw batchDayErr2;
           }
 
-          const productionSchedule = await calculateInitialProductionSchedule({
-            shippingMode,
-            maxDiameter: item.caseInfosWithFile?.maxDiameter,
-            requestedAt,
-            weeklyBatchDays:
-              shippingMode === "normal" ? requestorWeeklyBatchDays : [],
-            productMode: item.caseInfosWithFile?.productMode ?? null,
-            manufacturerLeadTimes,
-          });
+          const productionSchedule =
+            item.productionSchedule ||
+            (await calculateInitialProductionSchedule({
+              shippingMode,
+              maxDiameter: item.caseInfosWithFile?.maxDiameter,
+              requestedAt,
+              weeklyBatchDays:
+                shippingMode === "normal" ? requestorWeeklyBatchDays : [],
+              productMode: item.caseInfosWithFile?.productMode ?? null,
+              manufacturerLeadTimes,
+            }));
           newRequest.productionSchedule = productionSchedule;
 
           const createdYmd = toKstYmd(requestedAt) || getTodayYmdInKst();
@@ -1632,9 +1650,7 @@ export async function createRequestsFromDraft(req, res) {
           requestDocs.push(newRequest);
         }
 
-        for (const doc of requestDocs) {
-          await ensureLotNumberOnReadyEnter(doc);
-        }
+        await ensureLotNumbersOnReadyEnter(requestDocs, session);
 
         const insertedRequests = await Request.insertMany(requestDocs, {
           session,
@@ -1643,9 +1659,6 @@ export async function createRequestsFromDraft(req, res) {
 
         if (!isPracticeRoutingSubmission && insertedRequests.length > 0) {
           const holdT0 = Date.now();
-          const { holdRequestCreditsOnSubmit } = await import(
-            "../../services/requestCreditHold.service.js"
-          );
           await holdRequestCreditsOnSubmit({
             requests: insertedRequests,
             actorUserId: req.user?._id || null,
