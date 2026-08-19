@@ -8,9 +8,17 @@
  * 2026-08-14: 전체보기 모달은 사이드바와 같은 GET /my 1페이지를 재사용(중복 요청 제거).
  * 2026-08-14: 자동매칭 → 의뢰 집계/필터·뱃지 라벨. matchingMode=auto 기공소명 UI 마스킹.
  * 2026-08-16: 작업 파일(designFiles·resultFiles)·생산 메타를 사이드바·전체보기 공통 매핑.
+ * 2026-08-19: 기간 필터는 periodToRange(커스텀 시작~끝) + 주문일/치과도착일 앵커.
+ *
+ * related files:
+ * - web/frontend/src/pages/practice/components/PracticeRecentTransfersAllModal.tsx
+ * - web/frontend/src/pages/practice/components/PracticeRecentTransfersCalendar.tsx
+ * - web/frontend/src/store/usePeriodStore.ts
  */
 import { type ChatRoom } from "@/shared/hooks/useChatRooms";
 import type { PeriodFilterValue } from "@/shared/ui/PeriodFilter";
+import { periodToRange } from "@/store/usePeriodStore";
+import { toKstYmd, toKstYmdLoose } from "@/shared/date/kst";
 import {
   extractTransferMemoFromMessage as extractTransferMemoFromMessageShared,
   parsePracticeTransferMemoMeta as parsePracticeTransferMemoMetaShared,
@@ -530,39 +538,56 @@ export const mergeOpenPracticeTransferFromRequestRows = (
   };
 };
 
+export type PracticeRecentDateAnchor = "createdAt" | "orderDate" | "arrivalDate";
+
+export const resolvePracticeRequestAnchorYmd = (
+  request: {
+    createdAtTs?: number;
+    requestDate?: string;
+    orderDate?: string;
+    arrivalDate?: string;
+  },
+  dateKey: PracticeRecentDateAnchor = "createdAt",
+): string | null => {
+  if (dateKey === "orderDate") return toKstYmdLoose(request.orderDate);
+  if (dateKey === "arrivalDate") return toKstYmdLoose(request.arrivalDate);
+  const fromTs = Number(request.createdAtTs || 0);
+  if (Number.isFinite(fromTs) && fromTs > 0) return toKstYmd(fromTs);
+  return toKstYmdLoose(request.requestDate);
+};
+
 export const filterRequestsByPeriodAndSearch = (
   requests: PracticeRecentRequestItem[],
   period: PeriodFilterValue,
   searchTerm: string,
+  options?: {
+    customStartDate?: string;
+    customEndDate?: string;
+    dateKey?: PracticeRecentDateAnchor;
+    /** true면 기간 없이 검색만 적용 */
+    skipPeriod?: boolean;
+  },
 ) => {
   const query = searchTerm.trim().toLowerCase();
+  const dateKey = options?.dateKey || "createdAt";
 
-  const periodFiltered = requests.filter((request) => {
-    if (!request.requestDate || request.requestDate === "-") return false;
-
-    const createdTs = Number(request.createdAtTs || 0);
-    if (!Number.isFinite(createdTs) || createdTs <= 0) return true;
-    const created = new Date(createdTs);
-
-    const now = new Date();
-    const dayMs = 24 * 60 * 60 * 1000;
-    const diffDays = (now.getTime() - createdTs) / dayMs;
-
-    if (period === "30d") return diffDays <= 30;
-    if (period === "90d") return diffDays <= 90;
-
-    const y = now.getFullYear();
-    const m = now.getMonth();
-    const startThisMonth = new Date(y, m, 1, 0, 0, 0, 0);
-    const startNextMonth = new Date(y, m + 1, 1, 0, 0, 0, 0);
-    const startLastMonth = new Date(y, m - 1, 1, 0, 0, 0, 0);
-
-    if (period === "thisMonth") {
-      return created >= startThisMonth && created < startNextMonth;
-    }
-
-    return created >= startLastMonth && created < startThisMonth;
-  });
+  const periodFiltered = options?.skipPeriod
+    ? requests
+    : (() => {
+        const range = periodToRange(period, {
+          customStartDate: options?.customStartDate ?? "",
+          customEndDate: options?.customEndDate ?? "",
+        });
+        const startYmd = toKstYmd(range.startDate) || "";
+        const endYmd = toKstYmd(range.endDate) || "";
+        return requests.filter((request) => {
+          const ymd = resolvePracticeRequestAnchorYmd(request, dateKey);
+          if (!ymd) return false;
+          if (startYmd && ymd < startYmd) return false;
+          if (endYmd && ymd > endYmd) return false;
+          return true;
+        });
+      })();
 
   if (!query) return periodFiltered;
 

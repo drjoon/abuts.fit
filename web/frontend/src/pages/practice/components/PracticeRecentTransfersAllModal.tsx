@@ -1,6 +1,6 @@
 /**
  * 치과 기공의뢰 — 최근 전송 「전체 보기」 모달.
- * 3열 그리드 + 무한 스크롤, 기간·검색·상태 뱃지 필터.
+ * 3주 세로 스크롤 캘린더. 기간 필터 없음(년/월·검색·상태·요일 숨김).
  * 취소 뱃지=기공소 작업취소(치과 휴지통 제외). 6뱃지 빠른툴팁.
  * 2026-08-14: 사이드바 1페이지를 시드로 재사용. 열 때 /my 재요청하지 않음.
  * 2026-08-15: 주문 후 1영업일 미수락 「수락대기」뱃지.
@@ -10,9 +10,11 @@
  * 2026-08-17: 리메이크=카드 아이콘(툴팁)·단건 확인. 검색창 옆 선택 일괄 버튼 제거.
  * 2026-08-16: 카드 본문=시각+상태 / 주문일 / 치과도착일 / 기공소 / 환자명(전송ID·파일·메모 덤프 제거).
  * 2026-08-18: 카드 메타 1행 1항목. 수정·리메이크·삭제는 헤더 액션.
+ * 2026-08-19: 기간 필터(커스텀 시작~끝) 와이어링. 본문=2주/한 달 캘린더(주문일·치과도착일).
+ * 2026-08-19: 기간필터·2주/한달 제거. 3주 스크롤, 토·일 기본 숨김, 기공소색, 검색=닫기 왼쪽.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Pencil, Repeat, Search, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Search } from "lucide-react";
 
 import {
   Dialog,
@@ -21,21 +23,19 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { PeriodFilter } from "@/shared/ui/PeriodFilter";
 import type { PeriodFilterValue } from "@/shared/ui/PeriodFilter";
 import { cn } from "@/shared/ui/cn";
 import { apiFetch } from "@/shared/api/apiClient";
 import { type ChatRoom } from "@/shared/hooks/useChatRooms";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
+import { toKstYmd } from "@/shared/date/kst";
 import {
   type PracticeRecentTransferItem,
   type PracticeRecentRequestItem,
@@ -43,24 +43,17 @@ import {
   PRACTICE_MY_TRANSFERS_PAGE_SIZE,
   PRACTICE_RECENT_STATUS_BADGES,
   PRACTICE_REMAKE_BADGE_CLASS,
-  canDeletePracticeTransferByStatus,
-  canEditPracticeTransferByStatus,
-  canRemakePracticeTransferByStatus,
   computeGroupedStatusCounts,
   filterGroupedTransfersByStatus,
   filterRequestsByPeriodAndSearch,
   groupPracticeRecentRequests,
-  isPracticeTransferActionNeededStatus,
   mapMyPracticeTransferApiRows,
-  toStatusBadgeLabel,
 } from "@/shared/practice/practiceRecentTransferList";
-import { isPracticeTransferAcceptOverdue } from "@/shared/practice/practiceAcceptOverdue";
-import { PracticeAcceptOverdueBadge } from "@/shared/components/practice/PracticeAcceptOverdueBadge";
 import {
-  PracticeTransferRequestCardMeta,
-  resolvePracticeTransferListPatientName,
-  resolvePracticeTransferListToothNumbers,
-} from "@/shared/components/practice/PracticeRecentTransferListCardDetail";
+  DEFAULT_HIDDEN_WEEKDAYS,
+  PracticeRecentTransfersCalendar,
+  type PracticeCalendarDateKey,
+} from "@/pages/practice/components/PracticeRecentTransfersCalendar";
 
 const PAGE_SIZE = PRACTICE_MY_TRANSFERS_PAGE_SIZE;
 
@@ -88,7 +81,6 @@ export function PracticeRecentTransfersAllModal({
   onOpenChange,
   token,
   chatRooms,
-  initialPeriod,
   initialSearch = "",
   initialStatusFilter = "all",
   initialRequests = [],
@@ -96,25 +88,27 @@ export function PracticeRecentTransfersAllModal({
   initialLoading = false,
   initialError = "",
   onSelectTransfer,
-  onDeleteTransfer,
-  onAskRemake,
-  onEditTransfer,
 }: PracticeRecentTransfersAllModalProps) {
-  const [period, setPeriod] = useState(initialPeriod);
   const [search, setSearch] = useState(initialSearch);
   const [statusFilter, setStatusFilter] = useState<PracticeRecentStatusFilter>(initialStatusFilter);
+  const [dateKey, setDateKey] = useState<PracticeCalendarDateKey>("orderDate");
+  const [cursorYmd, setCursorYmd] = useState(() => toKstYmd(new Date()) || "");
+  const [hiddenWeekdays, setHiddenWeekdays] = useState<number[]>([...DEFAULT_HIDDEN_WEEKDAYS]);
+  const [alignEpoch, setAlignEpoch] = useState(0);
   const [extraRequests, setExtraRequests] = useState<PracticeRecentRequestItem[]>([]);
   const [loadingMore, setLoadingMore] = useState(false);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
-  const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!open) return;
-    setPeriod(initialPeriod);
     setSearch(initialSearch);
     setStatusFilter(initialStatusFilter);
-  }, [open, initialPeriod, initialSearch, initialStatusFilter]);
+    setCursorYmd(toKstYmd(new Date()) || "");
+    setDateKey("orderDate");
+    setHiddenWeekdays([...DEFAULT_HIDDEN_WEEKDAYS]);
+    setAlignEpoch((n) => n + 1);
+  }, [open, initialSearch, initialStatusFilter]);
 
   useEffect(() => {
     if (!open) {
@@ -156,7 +150,10 @@ export function PracticeRecentTransfersAllModal({
         token,
       });
 
-      if (!res.ok) return;
+      if (!res.ok) {
+        setHasMore(false);
+        return;
+      }
 
       const body = res.data;
       const data =
@@ -197,7 +194,7 @@ export function PracticeRecentTransfersAllModal({
         setHasMore(mapped.length >= PAGE_SIZE);
       }
     } catch {
-      // 추가 페이지 실패는 기존 목록을 유지
+      setHasMore(false);
     } finally {
       setLoadingMore(false);
     }
@@ -216,33 +213,24 @@ export function PracticeRecentTransfersAllModal({
 
   useEffect(() => {
     if (!open || !hasMore || loading || loadingMore) return;
-    const target = loadMoreRef.current;
-    if (!target) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const [entry] = entries;
-        if (!entry?.isIntersecting) return;
-        void fetchMore();
-      },
-      { rootMargin: "240px" },
-    );
-
-    observer.observe(target);
-    return () => observer.disconnect();
+    void fetchMore();
   }, [fetchMore, hasMore, loading, loadingMore, open]);
 
-  const periodFilteredRequests = useMemo(
-    () => filterRequestsByPeriodAndSearch(recentRequests, period, search),
-    [period, recentRequests, search],
+  const searchedRequests = useMemo(
+    () =>
+      filterRequestsByPeriodAndSearch(recentRequests, "30d", search, {
+        skipPeriod: true,
+        dateKey,
+      }),
+    [dateKey, recentRequests, search],
   );
 
   const activeRequests = useMemo(
     () =>
-      periodFilteredRequests.filter(
+      searchedRequests.filter(
         (request) => String(request.status || "").trim() !== "취소",
       ),
-    [periodFilteredRequests],
+    [searchedRequests],
   );
 
   const groupedTransfers = useMemo(
@@ -259,25 +247,6 @@ export function PracticeRecentTransfersAllModal({
     () => filterGroupedTransfersByStatus(groupedTransfers, statusFilter),
     [groupedTransfers, statusFilter],
   );
-
-  const emptyLabel =
-    statusFilter === "all"
-      ? "전송 내역 없음"
-      : `${
-          statusFilter === "발송완료"
-            ? "의뢰"
-            : statusFilter === "포장.발송"
-              ? "발송"
-              : statusFilter === "의뢰수락"
-                ? "수락"
-                : statusFilter === "작업완료"
-                  ? "완료"
-                  : statusFilter === "취소"
-                    ? "취소"
-                  : statusFilter === "리메이크"
-                    ? "리메이크"
-                  : statusFilter
-        } 없음`;
 
   const renderStatusBadgeToggle = (
     filterKey: Exclude<PracticeRecentStatusFilter, "all">,
@@ -316,247 +285,66 @@ export function PracticeRecentTransfersAllModal({
     </Tooltip>
   );
 
+  const statusBadges = PRACTICE_RECENT_STATUS_BADGES.map((item) =>
+    renderStatusBadgeToggle(
+      item.filter,
+      item.label,
+      statusCounts[item.countKey],
+      item.tooltip,
+    ),
+  );
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex h-[min(88vh,920px)] w-[min(96vw,1280px)] max-w-none flex-col gap-0 overflow-hidden p-0">
-        <DialogHeader className="shrink-0 space-y-3 border-b px-5 py-4 sm:px-6">
-          <DialogTitle className="text-lg font-semibold">
-            전송 내역 전체 보기
-          </DialogTitle>
-          <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-x-4 gap-y-2">
-            <div className="flex min-w-0 justify-start">
-              <PeriodFilter
-                value={period}
-                onChange={setPeriod}
-                presets={[]}
+        <DialogHeader className="shrink-0 border-b px-5 py-3 pr-14 sm:px-6 sm:pr-16">
+          <div className="flex items-center gap-3">
+            <DialogTitle className="shrink-0 text-lg font-semibold">
+              전송 내역 전체 보기
+            </DialogTitle>
+            <div className="flex min-w-0 flex-1 flex-wrap items-center justify-center gap-2">
+              {statusBadges}
+            </div>
+            <div className="relative w-full max-w-xs shrink-0">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="h-9 w-full pl-9"
+                placeholder="기공소, 환자명, 전송ID 검색"
               />
-            </div>
-            <div className="flex flex-wrap justify-center gap-2">
-              {PRACTICE_RECENT_STATUS_BADGES.map((item) =>
-                renderStatusBadgeToggle(
-                  item.filter,
-                  item.label,
-                  statusCounts[item.countKey],
-                  item.tooltip,
-                ),
-              )}
-            </div>
-            <div className="flex min-w-0 items-center justify-end gap-2">
-              <div className="relative min-w-0 w-full max-w-xs">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="w-full pl-9"
-                  placeholder="전송ID, 환자명 검색"
-                />
-              </div>
             </div>
           </div>
         </DialogHeader>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4 sm:px-6">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-5 py-3 sm:px-6">
           {loading ? (
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {Array.from({ length: 9 }).map((_, idx) => (
-                <div
-                  key={`all-modal-skel-${idx}`}
-                  className="rounded-lg border px-3 py-3 space-y-2"
-                >
-                  <Skeleton className="h-4 w-28" />
-                  <Skeleton className="h-3 w-24" />
-                  <Skeleton className="h-5 w-14 rounded-full" />
-                  <Skeleton className="h-3 w-40" />
-                </div>
+            <div className="grid grid-cols-5 gap-1">
+              {Array.from({ length: 15 }).map((_, idx) => (
+                <Skeleton key={`all-modal-cal-skel-${idx}`} className="h-24 w-full" />
               ))}
             </div>
           ) : displayError ? (
             <div className="rounded-lg border border-dashed px-3 py-16 text-center text-sm text-destructive">
               {displayError}
             </div>
-          ) : filteredTransfers.length === 0 ? (
-            <div className="rounded-lg border border-dashed px-3 py-16 text-center text-sm text-muted-foreground">
-              {emptyLabel}
-            </div>
           ) : (
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {filteredTransfers.map((transfer) => {
-                const targetLabText =
-                  String(transfer.targetLab || "-")
-                    .replace(/\s*→.*$/g, "")
-                    .trim() || "-";
-                const deleteLocked = !canDeletePracticeTransferByStatus(transfer.status);
-                const canRemake = canRemakePracticeTransferByStatus(transfer.status);
-                const canEdit = canEditPracticeTransferByStatus(transfer.status);
-                const acceptOverdue = isPracticeTransferAcceptOverdue({
-                  status: transfer.status,
-                  orderDate: transfer.orderDate,
-                  createdAtTs: transfer.createdAtTs,
-                });
-                const needsAction = isPracticeTransferActionNeededStatus(
-                  transfer.status,
-                );
-
-                return (
-                  <div
-                    key={`${transfer.id}:${transfer.createdAt}:${transfer.transferId}`}
-                    role="button"
-                    tabIndex={0}
-                    className={cn(
-                      "flex min-h-[7.5rem] cursor-pointer flex-col rounded-xl border border-slate-200/90 bg-white px-3.5 py-3 text-left text-sm shadow-sm transition hover:border-slate-300 hover:bg-slate-50/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                      needsAction && "practice-transfer-attention",
-                    )}
-                    aria-label={
-                      needsAction
-                        ? `${transfer.transferId !== "-" ? transfer.transferId : transfer.id} 조치 대기`
-                        : undefined
-                    }
-                    onClick={() => onSelectTransfer(transfer)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        onSelectTransfer(transfer);
-                      }
-                    }}
-                  >
-                    <PracticeTransferRequestCardMeta
-                      createdAt={transfer.createdAt}
-                      statusLabel={toStatusBadgeLabel(transfer.status)}
-                      extraBadges={
-                        <>
-                          {acceptOverdue ? (
-                            <PracticeAcceptOverdueBadge viewer="practice" />
-                          ) : null}
-                          {transfer.isRemake ? (
-                            <Badge
-                              variant="outline"
-                              className={cn(
-                                "whitespace-nowrap",
-                                PRACTICE_REMAKE_BADGE_CLASS,
-                              )}
-                            >
-                              리메이크
-                            </Badge>
-                          ) : null}
-                          {transfer.unreadCount > 0 ? (
-                            <Badge
-                              variant="destructive"
-                              className="h-4 min-w-4 justify-center px-1 text-[10px] leading-none"
-                              aria-label={`읽지 않은 채팅 ${transfer.unreadCount}건`}
-                            >
-                              {transfer.unreadCount > 99
-                                ? "99+"
-                                : transfer.unreadCount}
-                            </Badge>
-                          ) : null}
-                        </>
-                      }
-                      headerActions={
-                        <>
-                          {canEdit && onEditTransfer ? (
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <span className="inline-flex">
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-8 w-8 text-primary-strong hover:text-primary"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        onEditTransfer(transfer);
-                                      }}
-                                      aria-label="의뢰 수정"
-                                    >
-                                      <Pencil className="h-4 w-4" />
-                                    </Button>
-                                  </span>
-                                </TooltipTrigger>
-                                <TooltipContent side="left" className="max-w-xs text-xs">
-                                  수락 전 의뢰 수정
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                          ) : null}
-                          {canRemake && onAskRemake ? (
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <span className="inline-flex">
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-8 w-8 text-amber-600 hover:text-amber-700"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        onAskRemake(transfer);
-                                      }}
-                                      aria-label="리메이크"
-                                    >
-                                      <Repeat className="h-4 w-4" />
-                                    </Button>
-                                  </span>
-                                </TooltipTrigger>
-                                <TooltipContent side="left" className="max-w-xs text-xs">
-                                  리메이크
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                          ) : null}
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span className="inline-flex">
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-8 w-8 text-muted-foreground hover:text-destructive disabled:pointer-events-none"
-                                    disabled={deleteLocked}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      onDeleteTransfer(transfer);
-                                    }}
-                                    aria-label={
-                                      deleteLocked
-                                        ? "의뢰수락 이후 삭제 불가"
-                                        : "의뢰서 전송 내역 삭제"
-                                    }
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                  </Button>
-                                </span>
-                              </TooltipTrigger>
-                              <TooltipContent side="left" className="max-w-xs text-xs">
-                                {deleteLocked
-                                  ? "기공소가 의뢰를 수락한 이후에는 삭제할 수 없습니다."
-                                  : "휴지통으로 이동"}
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        </>
-                      }
-                      counterpartLabel="기공소"
-                      counterpartValue={targetLabText}
-                      orderDate={transfer.orderDate}
-                      arrivalDate={transfer.arrivalDate}
-                      patientName={resolvePracticeTransferListPatientName(transfer)}
-                      toothNumbers={resolvePracticeTransferListToothNumbers(transfer)}
-                    />
-                  </div>
-                );
-              })}
-            </div>
+            <PracticeRecentTransfersCalendar
+              transfers={filteredTransfers}
+              dateKey={dateKey}
+              cursorYmd={cursorYmd}
+              onCursorChange={setCursorYmd}
+              onDateKeyChange={setDateKey}
+              onSelectTransfer={onSelectTransfer}
+              hiddenWeekdays={hiddenWeekdays}
+              onHiddenWeekdaysChange={setHiddenWeekdays}
+              alignEpoch={alignEpoch}
+            />
           )}
 
-          {!displayError && hasMore ? (
-            <div
-              ref={loadMoreRef}
-              className="py-6 text-center text-xs text-muted-foreground"
-            >
-              {loadingMore ? "더 불러오는 중..." : "아래로 스크롤하면 더 불러옵니다."}
+          {loadingMore ? (
+            <div className="py-2 text-center text-xs text-muted-foreground">
+              더 불러오는 중...
             </div>
           ) : null}
         </div>
