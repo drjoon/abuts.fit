@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-19: 펼친 사이드 메인 메뉴는 아이콘+라벨 중앙 정렬. 배지는 우측 고정.
 // - 2026-08-18: 그룹 메뉴(기공의뢰) 호버·클릭 글자를 foreground로 — ghost accent 흰 글자 방지.
 // - 2026-08-18: 치과 기공의뢰 — 메인 행 + 들여쓴 서브(구강스캔으로 / 어벗디자인으로).
 // related files:
@@ -103,8 +104,8 @@ const SidebarNavButton = ({
           ? `h-8 text-[13px] font-medium ${
               isCollapsed ? "justify-center px-2" : "justify-start px-2.5"
             }`
-          : `h-10 lg:h-11 text-sm lg:text-base ${
-              isCollapsed ? "justify-center px-2" : "justify-start px-3 lg:px-4"
+          : `h-10 lg:h-11 text-sm lg:text-base justify-center ${
+              isCollapsed ? "px-2" : "px-3 lg:px-4"
             }`
       } ${
         paidLocked
@@ -143,19 +144,26 @@ const SidebarNavButton = ({
         />
       )}
       {!isCollapsed && (
-        <span className="min-w-0 flex-1 truncate text-left">{item.label}</span>
+        <span
+          className={`min-w-0 truncate ${nested ? "flex-1 text-left" : ""}`}
+        >
+          {item.label}
+        </span>
       )}
       {(() => {
         const badgeCount =
           Array.isArray(item.children) && item.children.length > 0
             ? 0
             : getBadgeCount(item.href);
+        const expandedBadgeClass = nested
+          ? "ml-auto"
+          : "absolute right-1.5 top-1/2 -translate-y-1/2";
         if (!isCollapsed) {
           if (isCreditsLowHighlight) {
             return (
               <Badge
                 variant="outline"
-                className="ml-auto h-5 animate-pulse border-accent-muted bg-accent px-1.5 text-[10px] font-semibold leading-none text-accent-foreground flex-shrink-0"
+                className={`${expandedBadgeClass} h-5 animate-pulse border-accent-muted bg-accent px-1.5 text-[10px] font-semibold leading-none text-accent-foreground flex-shrink-0`}
               >
                 충전
               </Badge>
@@ -164,7 +172,7 @@ const SidebarNavButton = ({
           return badgeCount > 0 ? (
             <Badge
               variant="destructive"
-              className="ml-auto h-5 min-w-[1.25rem] flex items-center justify-center px-1 text-[10px] font-semibold leading-none flex-shrink-0"
+              className={`${expandedBadgeClass} h-5 min-w-[1.25rem] flex items-center justify-center px-1 text-[10px] font-semibold leading-none flex-shrink-0`}
             >
               {badgeCount > 99 ? "99+" : badgeCount}
             </Badge>

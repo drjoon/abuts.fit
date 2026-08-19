@@ -1,6 +1,5 @@
 // related files:
 // - web/backend/utils/abutsLabCertification.js
-// - web/frontend/src/features/settings/tabs/LabAutoMatchParticipationTab.tsx
 // - web/frontend/src/pages/devops/components/PracticeTransferAutoMatchTab.tsx
 // change-log:
 // - 2026-08-16: 상태 라벨 — 미신청/신청중/테스트중/인증/인증보류.

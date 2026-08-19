@@ -156,13 +156,12 @@ Notes:
   - `src/pages/devops/DevopsPartnerPage.tsx` 탭: **입금**(분배율) · 요금·크레딧 · **기공의뢰 자동매칭**
     - 요금·크레딧에 치과 납품 어벗 소매가(`abutmentRetailPrice`) 포함
     - 기공의뢰 자동매칭: 상단 `DevopsDesignDeadlineTab`(수락 후 마감 요약) + `PracticeTransferAutoMatchTab`(인증 기공소). 구 `?tab=design|deadline` → `autoMatch`
-  - 의뢰자(기공소) 설정: `requestorKind=lab`일 때 알림 **왼쪽**에 「기공비」·「어벗츠 인증」 탭
+  - 의뢰자(기공소) 설정: `requestorKind=lab`일 때 알림 **왼쪽**에 「기공비」 탭
     - `src/pages/requestor/settings/SettingsPage.tsx`
-    - `src/features/settings/tabs/LabAutoMatchParticipationTab.tsx` — 월 참여 수수료·성공 수수료 안내 + 참여/해지. 구 `?tab=trading-partners` → `auto-match`
+    - 구 `?tab=auto-match`·`trading-partners` → 계정. 인증 신청 UI 제거(관리자 `PracticeTransferAutoMatchTab`)
     - `src/features/settings/tabs/LabFeeScheduleTab.tsx` — 항목 카드(이름·단위·원가/리메이크). 하단 저장 버튼 없음, 항목 변경은 디바운스 자동 저장. 제목 오른쪽 마스터 On/Off(기본 off, 켜면 설정 완료·즉시 저장). 로그인 시 미설정이면 `LabFeeSetupPrompt` → `?tab=lab-fees&setup=1`로 스위치 하이라이트. 유지장치는 연결 스팬당 1세트(같은 악궁이어도 끊기면 별도). 임시치아는 카드 두 장(이름 모두 「임시치아」, 3치·6치 이하). 청구는 의뢰서 「임시치아」에 치아 수 구간으로 합산. **카탈로그에 없는 신규 항목 저장 시 어벗츠 수가에 Off로 동기화·관리자 알림.**
     - 상단 배너: `LabDashboardTopBanners` — 기공의뢰수신·어벗생산의뢰 상단.
-      - 왼쪽: 인증 기공소 가입 안내 (`LabAutoMatchParticipationBanner`) → `?tab=auto-match` (`abutsLabCertification.status=certified`일 때만 숨김)
-      - 오른쪽: 가입 이유 (`LabPlatformBenefitsBanner`) → 클릭 시 모달
+      - 가입 이유 (`LabPlatformBenefitsBanner`) → 클릭 시 모달
       - 대시보드 `[정책 안내]` 옆 `[가입 이유]`로도 동일 모달 열기(기공소)
       - `src/features/platform/PlatformBenefitsDialog.tsx` (`variant`: lab | practice)
       - `src/shared/platform/platformBenefitsContent.ts`
@@ -171,7 +170,7 @@ Notes:
     - `src/pages/requestor/dashboard/components/RequestorPolicyRemakeHeader.tsx`
     - `src/shared/ui/PricingPolicyDialog.tsx` — 치과=어벗디자인 생산 1.5만 · 구강스캔 디자인+생산 2.5만(구강지그 포함) · 신속 +2,000 · 배송 3,500. 풀세트·환봉 행 없음. 멤버십/구독 UI 없음.
   - 수락 후 마감: `DevopsDesignDeadlineTab` — 디자인 클레임 후 작업 마감(`designDeadlineSettings.claimHours`, 기본 3시간). 파트너 **기공의뢰 자동매칭** 탭 상단
-  - 기공의뢰 자동매칭: `PracticeTransferAutoMatchTab`(카드·탭 **인증 기공소**) — 수수료 스트립(매칭%/지정 on·off·%/월) + 기공소별 인증 ON·기공 테스트·메모. 기공소는 설정「어벗츠 인증」에서 신청(`POST /api/businesses/me/auto-match-participation`, 미인증 시 신청만·월정 0). 관리자 테스트 통과/`enabled` 시 풀 참여. 매칭 성공 `platformFeeRate%` · 지정은 기본 무료(`directPlatformFeeEnabled` off) · on 시 `directPlatformFeeRate%`. 관리자 플랫폼 설정「인증 기공소」탭
+  - 기공의뢰 자동매칭: `PracticeTransferAutoMatchTab`(카드·탭 **인증 기공소**) — 수수료 스트립(매칭%/지정 on·off·%/월) + 기공소별 인증 ON·기공 테스트·메모. 기공소 설정 탭은 없음. 관리자 테스트 통과/`enabled` 시 풀 참여. 매칭 성공 `platformFeeRate%` · 지정은 기본 무료(`directPlatformFeeEnabled` off) · on 시 `directPlatformFeeRate%`. 관리자 플랫폼 설정「인증 기공소」탭
   - 기공소 어벗츠 인증: 가입 시 미신청 → 신청 → 기공 테스트 → 통과 시 인증. 상태·테스트·메모 SSOT `BusinessAnchor.abutsLabCertification` / `src/shared/practice/abutsLabCertification.ts`
   - 검증된 디자이너 지정: `DesignerAssignmentTab` / `BusinessAnchor.designAccessEnabled`(디자인 큐). API·게이트 유지, 파트너 탭 UI에서는 제거
   - 딜러사 없을 때 분배: 설정된 딜러사 분배비의 절반→제조사, 나머지 절반→어벗츠 (백엔드 `resolveRatesWithoutSalesman`와 동일 미리보기)
@@ -285,7 +284,7 @@ Notes:
 - 커스텀 어벗 의뢰 단가 표시 SSOT:
   - 치과 정책 안내·크레딧 차감은 관리자「플랫폼 설정 · 커스텀어벗」멤버십 생산가(기본 15,000). 신속은 +신속 의뢰비.
   - 기공소만 가입 승인일 기준 `90일` 동안 커스텀 어벗 `개당 10,000원` 고정가.
-  - 기공소 어벗츠 인증: 설정「어벗츠 인증」에서 신청·상태 확인. **월 참여 수수료 0원**(정책). 매칭 성공 `platformFeeRate%` · 지정 거래 수수료는 **별도 공지 시까지 무료**(`directPlatformFeeEnabled` 기본 off). 구 거래 치과 소개 UI는 제거(초대 API는 레거시 유지).
+  - 기공소 어벗츠 인증: 관리자 `PracticeTransferAutoMatchTab`에서 신청·테스트·상태 관리. **월 참여 수수료 0원**(정책). 매칭 성공 `platformFeeRate%` · 지정 거래 수수료는 **별도 공지 시까지 무료**(`directPlatformFeeEnabled` 기본 off). 구 거래 치과 소개 UI는 제거(초대 API는 레거시 유지). 구 기공소 설정「어벗츠 인증」탭 제거.
   - 기공소 화면(기공의뢰수신·어벗생산의뢰) 상단: 등록 잔여일 alert + 가입 이유 alert(기간 중만, 2열). 기간 종료 후 대시보드 `[가입 이유]`(기공소·치과 각 variant).
   - 크레딧 잔액·장부 UI(`CreditLedgerModal` / 의뢰자 크레딧 페이지):
     - 잔액 요약은 기공크레딧 탭과 동일하게 rounded-2xl 카드 그리드(현재/유료/무료/[기공]).
@@ -538,7 +537,7 @@ Notes:
 - 어벗츠기공소(`internalLab`) UI SSOT:
   - Role: top-level `User.role=internalLab`(제조사와 대칭). 공개 가입 없음·관리자 생성. UI 라벨 「어벗츠기공소」.
   - 사이드: 기공의뢰수신(`/dashboard/lab-work`, 디자인 큐 포함) · 설정(`/dashboard/settings`).
-  - 상단 `LabDashboardTopBanners`(자동매칭 참여·가입 이유)는 미표시.
+  - 상단 `LabDashboardTopBanners`(가입 이유)는 미표시.
   - 페이지: `src/pages/internalLab/labWork` — 기공의뢰수신 셸. 구 `/dashboard/abut-design` → `/dashboard/lab-work`.
   - 랜딩: `/dashboard/lab-work`.
   - 조직: 법인「어벗츠 주식회사」하위 「기공사업부」(`parentBusinessAnchorId` + 설정 `InternalLabOrgBanner`). 사업자등록증·BN은 법인과 공유(type별 앵커).

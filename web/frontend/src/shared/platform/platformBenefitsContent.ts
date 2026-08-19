@@ -1,6 +1,7 @@
 // related files:
 // - web/frontend/src/features/platform/PlatformBenefitsDialog.tsx
 // - web/frontend/src/features/lab/LabPlatformBenefitsBanner.tsx
+// - 2026-08-19: 기공소 가입이유에서 설정-자동매칭 링크 제거.
 // - 2026-08-19: 치과 가입이유 — 출고=도착−2영업일, 지정 도착일 1영업일 전 배송 목표.
 // - 2026-08-16: 기공소 가입이유 커스텀어벗 문구는 직납 안내 없이 유지.
 // - 2026-08-16: 커스텀어벗 생산 후 치과 직납 안내(치과 가입이유).
@@ -76,13 +77,7 @@ const LAB_BENEFITS: PlatformBenefitsConfig = {
       icon: Users,
       title: "자동 매칭으로 의뢰를 받으세요",
       points: [
-        {
-          text: "인증 기공소는 자동 매칭 의뢰에 참여할 수 있습니다.",
-          link: {
-            label: "설정-자동매칭참여",
-            to: "/dashboard/settings?tab=auto-match",
-          },
-        },
+        "인증 기공소는 자동 매칭 의뢰에 참여할 수 있습니다.",
         "치과, 기공소 식별 정보는 비공개입니다.",
       ],
     },

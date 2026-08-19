@@ -5,6 +5,7 @@
 // - web/frontend/src/features/lab/LabPlatformBenefitsBanner.tsx
 // - 2026-08-12: 기공소·치과 가입 이유 모달.
 // - 2026-08-14: 기공소 자동매칭 설정 링크.
+// - 2026-08-19: 설정-자동매칭 링크 제거.
 import { MessageCircle } from "lucide-react";
 import { Link } from "react-router-dom";
 import {

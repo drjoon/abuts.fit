@@ -10,7 +10,6 @@ import { AccountTab } from "@/features/settings/tabs/AccountTab";
 import { BusinessTab } from "@/shared/components/business/settings/BusinessTab";
 import { StaffTab } from "@/features/settings/tabs/StaffTab";
 import { NotificationsTab } from "@/features/settings/tabs/NotificationsTab";
-import { LabAutoMatchParticipationTab } from "@/features/settings/tabs/LabAutoMatchParticipationTab";
 import { LabFeeScheduleTab } from "@/features/settings/tabs/LabFeeScheduleTab";
 import {
   User,
@@ -18,7 +17,6 @@ import {
   Bell,
   Users,
   Shield,
-  FlaskConical,
   Banknote,
 } from "lucide-react";
 import { RequestorSecurity } from "./Security";
@@ -34,6 +32,7 @@ import { InternalLabOrgBanner } from "@/features/settings/InternalLabOrgBanner";
 // 2026-08-11: 설정 결제 탭 제거 → 사이드바 크레딧(`/dashboard/credits`)로 이전.
 // 2026-08-11: 설정 의뢰 탭 제거 → 어벗의뢰 좌측 상단(디자인소프트웨어·아노다이징).
 // 2026-08-13: 기공비 마스터 Off면 로그인 후 `?tab=lab-fees&setup=1`로 유도(LabFeeSetupPrompt).
+// 2026-08-19: 「어벗츠 인증」탭 제거. 구 `?tab=auto-match`·`trading-partners` → 계정.
 // 2026-08-14: 「치과 등록」탭 제거 → 「자동 매칭 참여」.
 // 2026-08-11: 기공소 전용 「치과 등록」「기공비」탭(알림 왼쪽).
 // 2026-08-18: 치과 「구독」탭 제거(월정 폐기). 구 `?tab=subscription` → 계정.
@@ -43,13 +42,12 @@ type TabKey =
   | "business"
   | "staff"
   | "lab-fees"
-  | "auto-match"
-  | "trading-partners"
   | "notifications"
   | "security";
 
 const LEGACY_TAB_REDIRECT: Partial<Record<string, TabKey>> = {
-  "trading-partners": "auto-match",
+  "auto-match": "account",
+  "trading-partners": "account",
   subscription: "account",
 };
 
@@ -133,20 +131,12 @@ export const RequestorSettingsPage = () => {
     ];
 
     if (isLab) {
-      base.push(
-        {
-          key: "lab-fees",
-          label: "기공비",
-          icon: Banknote,
-          content: <LabFeeScheduleTab />,
-        },
-        {
-          key: "auto-match",
-          label: "어벗츠 인증",
-          icon: FlaskConical,
-          content: <LabAutoMatchParticipationTab />,
-        },
-      );
+      base.push({
+        key: "lab-fees",
+        label: "기공비",
+        icon: Banknote,
+        content: <LabFeeScheduleTab />,
+      });
     }
 
     base.push(
@@ -182,7 +172,7 @@ export const RequestorSettingsPage = () => {
       (tabs[0]?.key as TabKey);
 
   if (accessLoading) {
-    return <SettingsTabsSkeleton tabCount={isLab ? 7 : 5} />;
+    return <SettingsTabsSkeleton tabCount={isLab ? 6 : 5} />;
   }
 
   return (

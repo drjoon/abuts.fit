@@ -10,6 +10,7 @@ import { toKstYmd } from "@/shared/date/kst";
 import { useToast } from "@/shared/hooks/use-toast";
 import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPath";
 
+// - 2026-08-19: 펼친 사이드 메인 메뉴는 아이콘+라벨 중앙 정렬. 배지는 우측 고정.
 // - 2026-08-19: 구강스캔으로 툴팁 — 디자인+생산에 구강지그 포함. 지그는 별도 항목이 아님.
 // - 2026-08-18: 치과 사이드 — 대시보드 제거. 어벗디자인 헤더가 기간·출고·지난의뢰·불완전가공.
 // - 2026-08-18: 치과 사이드 — 기공의뢰 메인 + 구강스캔으로/어벗디자인으로 서브.
@@ -1390,10 +1391,8 @@ export const DashboardLayout = () => {
                           <li key={item.href}>
                             <Button
                               variant="ghost"
-                              className={`w-full h-10 lg:h-11 gap-1.5 text-sm lg:text-base transition-all ${
-                                isCollapsed
-                                  ? "justify-center px-2"
-                                  : "justify-start px-3 lg:px-4"
+                              className={`relative w-full h-10 lg:h-11 gap-1.5 text-sm lg:text-base justify-center transition-all ${
+                                isCollapsed ? "px-2" : "px-3 lg:px-4"
                               } ${
                                 isActive
                                   ? "bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground"
@@ -1406,9 +1405,7 @@ export const DashboardLayout = () => {
                             >
                               <item.icon className="h-4 w-4 flex-shrink-0" />
                               {!isCollapsed && (
-                                <span className="truncate flex-1">
-                                  {item.label}
-                                </span>
+                                <span className="truncate">{item.label}</span>
                               )}
                               {!isCollapsed &&
                                 (() => {
@@ -1416,7 +1413,7 @@ export const DashboardLayout = () => {
                                   return badgeCount > 0 ? (
                                     <Badge
                                       variant="destructive"
-                                      className="ml-auto h-5 min-w-[1.25rem] flex items-center justify-center px-1 text-[10px] font-semibold leading-none flex-shrink-0"
+                                      className="absolute right-1.5 top-1/2 -translate-y-1/2 h-5 min-w-[1.25rem] flex items-center justify-center px-1 text-[10px] font-semibold leading-none flex-shrink-0"
                                     >
                                       {badgeCount > 99 ? "99+" : badgeCount}
                                     </Badge>

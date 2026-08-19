@@ -3,7 +3,7 @@
 // - web/backend/controllers/businesses/business.update.controller.js
 // - web/backend/jobs/labAutoMatchParticipationBillingWorker.js
 // - web/backend/utils/abutsLabCertification.js
-// - web/frontend/src/features/settings/tabs/LabAutoMatchParticipationTab.tsx
+// - web/frontend/src/pages/devops/components/PracticeTransferAutoMatchTab.tsx
 // change-log:
 // - 2026-08-14: 기공소 자동 매칭 월 참여(구독). 활성 시 practiceTransferAutoMatchEnabled=true.
 // - 2026-08-16: 인증 신청·테스트 통과 후 풀 참여. 기공소 즉시 ON 금지.
