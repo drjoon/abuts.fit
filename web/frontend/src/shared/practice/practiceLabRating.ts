@@ -1,7 +1,6 @@
 // related files:
 // - web/backend/utils/practiceLabRating.js
 // - web/frontend/src/shared/components/practice/PracticeLabRatingControl.tsx
-// - web/frontend/src/shared/components/practice/AutoMatchMinLabRatingStars.tsx
 // - 2026-08-14: 치과→기공소 rating·자동매칭 최소 별.
 // - 2026-08-16: 자동매칭 별점은 전체 치과 평가 합산·평균. 우리 치과 1점 제외.
 // - 2026-08-16: 5점제. 자동매칭 최소 2~5. 평가 3회 미만은 유효 3점. 기공비 배수 2/3/4/5→0.9/1/1.1/1.2.

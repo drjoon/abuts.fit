@@ -29,8 +29,7 @@ export const resolvePracticeTransferManufacturerStage = (
     transferDoc?.production && typeof transferDoc.production === "object"
       ? transferDoc.production
       : {};
-  const openPool =
-    matchingMode === "auto" && Boolean(autoFields.autoMatch?.openPool);
+  const openPool = Boolean(autoFields.autoMatch?.openPool);
   const viewerId = String(viewerLabAnchorId || "").trim();
   const declinedByViewer = Boolean(autoFields.autoMatch?.declinedByMe);
   const rejectedByViewer =
@@ -55,7 +54,10 @@ export const resolvePracticeTransferManufacturerStage = (
   if (production?.confirmedAt) return "생산진행";
   if (autoFields.autoMatch?.completed) return "작업완료";
   // 자동매칭 공개 풀(작업취소 재공개 포함) — 치과·타 기공소에는 「자동매칭」
-  if (openPool) return "자동매칭";
+  // 레거시 자동매칭 공개 풀 — 치과·타 기공소 「자동매칭」
+  if (matchingMode === "auto" && openPool) return "자동매칭";
+  // 어벗츠 하청 풀 — 인증 기공소 수신함만 「하청대기」(치과·원청은 지정 의뢰 단계 유지)
+  if (openPool && viewerId && !autoFields.autoMatch?.mine) return "하청대기";
   // 지정 기공소 작업취소·수락전 거부(활성 유지) — 치과 「취소」 뱃지
   if (transferDoc?.workCanceledAt && !transferDoc?.requestorDownloadedAt) {
     return "작업취소";
@@ -75,7 +77,8 @@ export const canEditPracticeTransferContent = (
   return (
     stage === "발송완료" ||
     stage === "수신완료" ||
-    stage === "자동매칭"
+    stage === "자동매칭" ||
+    stage === "하청대기"
   );
 };
 
@@ -91,7 +94,8 @@ export const toPracticeTransferDashboardBucket = (manufacturerStage) => {
   if (
     stage === "발송완료" ||
     stage === "수신완료" ||
-    stage === "자동매칭"
+    stage === "자동매칭" ||
+    stage === "하청대기"
   ) {
     return "sent";
   }

@@ -656,6 +656,7 @@ const canCancelPracticeTransferByManufacturerStage = (stage) => {
     s === "발송완료" ||
     s === "수신완료" ||
     s === "자동매칭" ||
+    s === "하청대기" ||
     s === "작업취소"
   );
 };
@@ -4119,13 +4120,13 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
       if (!autoMatchEligible && role !== "admin") {
         return res.status(403).json({
           success: false,
-          message: "자동매칭 대상 기공소가 아닙니다.",
+          message: "인증 기공소가 아닙니다.",
         });
       }
       if (isAutoMatchCompleted(doc)) {
         return res.status(409).json({
           success: false,
-          message: "이미 작업 완료된 자동매칭 의뢰입니다.",
+          message: "이미 작업 완료된 의뢰입니다.",
         });
       }
 

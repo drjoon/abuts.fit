@@ -7,6 +7,7 @@
 // - 2026-08-19: 마스터 On + 제공 항목 수가여야 청구 준비.
 // - 2026-08-19: 임시치아+어벗은 임시치아 수가와 어벗츠 단가를 함께 합산.
 // - 2026-08-19: 임시치아 어벗은 치아별 커스텀어벗 단가 줄로 분리.
+// - 2026-08-19: 같은 악궁 임시치아도 연결이 끊기면 스팬별 구간 수가.
 import {
   buildUnsetLabFeeSchedule,
   computePracticeTransferRetailFees,
@@ -402,6 +403,40 @@ describe("labFeeSchedule", () => {
         abutmentRetail: 40000,
       }),
     ]);
+  });
+
+  test("같은 하악 임시치아도 연결이 끊기면 3치·2치 2세트다", () => {
+    const fees = computePracticeTransferRetailFees({
+      toothWorks: [
+        { toothNumber: "46", prosthesisType: "임시치아", bridgeLinkedTeeth: ["45"] },
+        { toothNumber: "45", prosthesisType: "임시치아", bridgeLinkedTeeth: ["46", "44"] },
+        { toothNumber: "44", prosthesisType: "임시치아", bridgeLinkedTeeth: ["45"] },
+        { toothNumber: "34", prosthesisType: "임시치아", bridgeLinkedTeeth: ["33"] },
+        { toothNumber: "33", prosthesisType: "임시치아", bridgeLinkedTeeth: ["34"] },
+      ],
+      labFeeSchedule: LAB_FEE_SCHEDULE_SAMPLE,
+      abutmentPricingTier: "regular",
+    });
+    expect(fees.labFeeTotal).toBe(60000);
+    const tempLines = fees.lines.filter((line) =>
+      String(line.prosthesisType).includes("임시치아"),
+    );
+    expect(tempLines).toHaveLength(2);
+    expect(tempLines).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          toothNumber: "34,33",
+          prosthesisType: "임시치아(하악) 2치",
+          labFee: 30000,
+        }),
+        expect.objectContaining({
+          toothNumber: "44,45,46",
+          prosthesisType: "임시치아(하악) 3치",
+          labFee: 30000,
+        }),
+      ]),
+    );
+  });
 
   test("유지장치는 같은 악궁이어도 연결이 끊기면 스팬당 1세트다", () => {
     const fees = computePracticeTransferRetailFees({

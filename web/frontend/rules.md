@@ -598,7 +598,7 @@ Notes:
   - 치과 전송 내역(`GET /api/practice/transfers/my`)은 동일 치과 businessAnchor 구성원 전송을 공유한다.
   - 수락 전(의뢰 단계) 내용 수정: 최근의뢰 연필(카드 헤더)·상세 좌측 의뢰정보 「의뢰 수정」→ 작성 폼 복원 → `POST .../update-content`. 수락 이후는 삭제와 같이 잠금. 수정 저장은 임시저장 목록 재조회를 기다리지 않음. 최근의뢰·임시저장·휴지통 카드 메타는 1행 1항목(세로 스택, 잘림 없음).
   - practice 페이지 상태 정규화 기준: `src/pages/practice/PracticeFileTransferPage.tsx`의 `toStatusLabel`
-  - 의뢰자 치과 페이지 상태 배지 기준: `src/pages/requestor/practice/RequestorPracticePage.tsx` (`isRead/requestorReadAt`, `isAccepted`/`requestorDownloadedAt`=의뢰수락)
+  - 의뢰자 치과 페이지 상태 배지 기준: `src/pages/requestor/practice/RequestorPracticePage.tsx` (`isRead/requestorReadAt`, `isAccepted`/`requestorDownloadedAt`=의뢰수락). 기공의뢰수신 목록은 치과 최근의뢰와 같은 3주 캘린더(`PracticeRecentTransfersCalendar`, 칩=`치과/환자/치아`, 색=치과).
     - 자동매칭 공개 풀 상세 열람만으로는 `mark-read`/사이드바 안읽음 배지를 내리지 않는다(수락 시 갱신).
   - 기공소 의뢰수락: 상세 다이얼로그 왼쪽 「전체 다운로드」, 오른쪽 「치과와의 소통」 중앙에 안내 문구+「수락」→ `POST .../mark-accepted`(과금). 파일 다운로드는 뱃지/과금과 무관. 작업완료/취소는 모달이 아니라 메인 카드에서. 수락 시 `practice:transfer-updated`(action=`accepted`, `feeQuote` 확정)로 치과 UI가「확정 기공비」를 즉시 표시.
   - **자동매칭(레거시)**: 치과 기공소 픽커의 「자동 매칭」항목은 제거. 신규 의뢰는 지정 기공소 또는 어벗츠기공소(고정). 기존 `matchingMode=auto` 건·공개 풀·우선창 엔진은 유지하되, 작성 UI에서는 쓰지 않는다. 레거시 draft는 어벗츠기공소로 복원. 표시명 마스킹·수신 뱃지 합산 규칙은 기존 건에 적용. UI: `PracticeTransferAutoMatchTab` (관리자 플랫폼 설정「인증 기공소」)

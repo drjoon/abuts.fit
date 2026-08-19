@@ -4,6 +4,7 @@
 // - web/frontend/src/shared/realtime/useAppEventListener.ts
 // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
+// - web/frontend/src/pages/practice/components/PracticeRecentTransfersCalendar.tsx
 // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 // - web/backend/controllers/practiceTransfers/practiceTransferSettings.controller.js
@@ -17,6 +18,7 @@
 // - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // - web/frontend/src/shared/components/practice/LabReceiveWorkUploadDialog.tsx
+// - 2026-08-19: 기공의뢰수신 목록을 치과 최근의뢰와 같은 3주 캘린더로 표시.
 // - 2026-08-19: 수신 기간필터를 치과와 같이 30일/90일/이번달/지난달.
 // - 2026-08-19: 기공비 미설정 수락 — 빠진 수가명과 함께 설정 탭 포워드. API는 lab_fee_unconfigured.
 // - 2026-08-16: 어벗·보철 — 프리뷰 치아 지정·백그라운드 preUpload·분할 업로드.
@@ -118,6 +120,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { PeriodFilter } from "@/shared/ui/PeriodFilter";
 import { usePeriodStore } from "@/store/usePeriodStore";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -142,7 +145,6 @@ import {
 } from "@/shared/components/PracticeTransferDetailChatDialog";
 import { openPracticeTransferFilePicker } from "@/shared/components/practice/PracticeTransferFileDropTarget";
 import { LabPracticeFeeSurchargeControl } from "@/shared/components/practice/LabPracticeFeeSurchargeControl";
-import { PracticeTransferLabReceiveCard } from "@/shared/components/practice/PracticeTransferLabReceiveCard";
 import { parsePracticeTransferFeeQuote } from "@/shared/practice/practiceTransferFeeQuote";
 import { normalizeLabFeeMultiplier, missingLabFeeItemNames, labFeeItemNamesNeededForToothWorks } from "@/shared/practice/labFeeSchedule";
 import { parseStarDowngrade, parseLabRatingSummary } from "@/shared/practice/practiceLabRating";
@@ -155,10 +157,7 @@ import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusine
 import { REQUESTOR_KIND_LABEL } from "@/shared/business/requestorCapabilities";
 import { PracticeFileTransferPage } from "@/pages/practice/PracticeFileTransferPage";
 import { DesignQueueSection } from "@/pages/requestor/design/DesignQueueSection";
-import {
-  RequestorPracticePageSkeleton,
-  RequestorPracticeTransferCardsSkeleton,
-} from "@/shared/ui/skeletons/RequestorPracticePageSkeleton";
+import { RequestorPracticePageSkeleton } from "@/shared/ui/skeletons/RequestorPracticePageSkeleton";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   parsePracticeTransferMemoMeta as parsePracticeTransferMemoMetaShared,
@@ -183,7 +182,17 @@ import {
   type PracticeTransferLabReceiveItem as ReceivedPracticeTransfer,
 } from "@/shared/practice/practiceTransferLabReceive";
 import { getPracticeTransferFileExtension } from "@/shared/practice/practiceTransferAccept";
-import { resolvePracticeTransferListPatientName } from "@/shared/components/practice/PracticeRecentTransferListCardDetail";
+import {
+  resolvePracticeTransferListPatientName,
+  resolvePracticeTransferListToothNumbers,
+} from "@/shared/components/practice/PracticeRecentTransferListCardDetail";
+import { toKstYmd } from "@/shared/date/kst";
+import {
+  DEFAULT_HIDDEN_WEEKDAYS,
+  PracticeRecentTransfersCalendar,
+  type PracticeCalendarChipItem,
+  type PracticeCalendarDateKey,
+} from "@/pages/practice/components/PracticeRecentTransfersCalendar";
 import {
   labFeeSettingsFromAcceptPath,
   LAB_FEE_UNCONFIGURED_REASON,
@@ -438,6 +447,11 @@ export function RequestorPracticeReceivePage({
     | "포장.발송"
     | "리메이크"
   >("all");
+  const [dateKey, setDateKey] = useState<PracticeCalendarDateKey>("orderDate");
+  const [cursorYmd, setCursorYmd] = useState(() => toKstYmd(new Date()) || "");
+  const [hiddenWeekdays, setHiddenWeekdays] = useState<number[]>([
+    ...DEFAULT_HIDDEN_WEEKDAYS,
+  ]);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedTransfer, setSelectedTransfer] = useState<ReceivedPracticeTransfer | null>(null);
@@ -497,7 +511,6 @@ export function RequestorPracticeReceivePage({
   } | null>(null);
   const [chatSending, setChatSending] = useState(false);
   const chatBottomRef = useRef<HTMLDivElement | null>(null);
-  const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const realtimeReloadTimerRef = useRef<number | null>(null);
   const chatRoomResolveSeqRef = useRef(0);
 
@@ -529,16 +542,6 @@ export function RequestorPracticeReceivePage({
       };
     });
   }, [messages, selectedTransfer?.matchingMode, user?.id]);
-
-  const unreadByTransferId = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const room of rooms) {
-      const transferId = String(room.relatedPracticeTransferId?.transferId || "").trim();
-      if (!transferId) continue;
-      map.set(transferId, Number(room.unreadCount || 0));
-    }
-    return map;
-  }, [rooms]);
 
   const emitUnreadBadgeRefresh = useCallback((nextUnreadCount?: number) => {
     window.dispatchEvent(
@@ -1332,27 +1335,13 @@ export function RequestorPracticeReceivePage({
 
   useEffect(() => {
     if (!hasMore || loading || loadingMore) return;
-    const target = loadMoreRef.current;
-    if (!target) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const [entry] = entries;
-        if (!entry?.isIntersecting) return;
-        void fetchTransferPage(page + 1, true);
-      },
-      { rootMargin: "200px" },
-    );
-
-    observer.observe(target);
-    return () => observer.disconnect();
+    void fetchTransferPage(page + 1, true);
   }, [fetchTransferPage, hasMore, loading, loadingMore, page]);
 
   const baseFilteredTransfers = useMemo(() => {
     const query = search.trim().toLowerCase();
-    const now = new Date();
 
-    const periodFiltered = transfers.filter((t) => {
+    const visible = transfers.filter((t) => {
       const rawStatus = String(t.status || "").trim().toLowerCase();
       const isCanceled = ["canceled", "cancelled", "deleted", "removed", "취소"].includes(
         rawStatus,
@@ -1361,31 +1350,12 @@ export function RequestorPracticeReceivePage({
       if (isCanceled && !t.labRejected && t.manufacturerStage !== "거부") {
         return false;
       }
-
-      const ts = new Date(t.createdAt).getTime();
-      if (!Number.isFinite(ts) || ts <= 0) return true;
-      const created = new Date(ts);
-      const diffDays = (now.getTime() - ts) / (24 * 60 * 60 * 1000);
-
-      if (period === "30d") return diffDays <= 30;
-      if (period === "90d") return diffDays <= 90;
-
-      const y = now.getFullYear();
-      const m = now.getMonth();
-      const startThisMonth = new Date(y, m, 1, 0, 0, 0, 0);
-      const startNextMonth = new Date(y, m + 1, 1, 0, 0, 0, 0);
-      const startLastMonth = new Date(y, m - 1, 1, 0, 0, 0, 0);
-
-      if (period === "thisMonth") {
-        return created >= startThisMonth && created < startNextMonth;
-      }
-
-      return created >= startLastMonth && created < startThisMonth;
+      return true;
     });
 
-    if (!query) return periodFiltered;
+    if (!query) return visible;
 
-    return periodFiltered.filter((t) => {
+    return visible.filter((t) => {
       const fileText = t.files
         .map((f) => `${f.originalName} ${f.patientName} ${f.tooth}`)
         .join(" ")
@@ -1407,7 +1377,7 @@ export function RequestorPracticeReceivePage({
         .toLowerCase();
       return blob.includes(query);
     });
-  }, [period, search, transfers]);
+  }, [search, transfers]);
 
   const statusCounts = useMemo(() => {
     const counts = baseFilteredTransfers.reduce(
@@ -1421,7 +1391,8 @@ export function RequestorPracticeReceivePage({
         else if (
           status === "발송완료" ||
           status === "수신완료" ||
-          status === "자동매칭"
+          status === "자동매칭" ||
+          status === "하청대기"
         ) {
           acc.sent += 1;
         }
@@ -1453,7 +1424,8 @@ export function RequestorPracticeReceivePage({
         return (
           status === "발송완료" ||
           status === "수신완료" ||
-          status === "자동매칭"
+          status === "자동매칭" ||
+          status === "하청대기"
         );
       }
       if (statusFilter === "포장.발송") {
@@ -1487,6 +1459,35 @@ export function RequestorPracticeReceivePage({
       return bSortTs - aSortTs;
     });
   }, [filteredTransfers, rooms]);
+
+  const calendarItems = useMemo((): PracticeCalendarChipItem[] => {
+    return sortedFilteredTransfers.map((transfer) => {
+      const clinic =
+        transfer.matchingMode === "auto"
+          ? "자동 매칭"
+          : String(transfer.practice?.businessName || "").trim() || "-";
+      const patient = resolvePracticeTransferListPatientName(transfer);
+      const teeth = resolvePracticeTransferListToothNumbers(transfer);
+      return {
+        id: String(transfer.transferId || transfer._id || "").trim(),
+        orderDate: transfer.orderDate,
+        arrivalDate: transfer.arrivalDate,
+        colorKey:
+          String(transfer.practiceBusinessAnchorId || "").trim() || clinic,
+        sortLabel: clinic,
+        line: [clinic, patient || "—", teeth || "—"].join(" / "),
+      };
+    });
+  }, [sortedFilteredTransfers]);
+
+  const calendarTransferById = useMemo(() => {
+    const map = new Map<string, ReceivedPracticeTransfer>();
+    for (const transfer of sortedFilteredTransfers) {
+      const id = String(transfer.transferId || transfer._id || "").trim();
+      if (id) map.set(id, transfer);
+    }
+    return map;
+  }, [sortedFilteredTransfers]);
 
   const selectedTransferDisplayMemo = useMemo(
     () =>
@@ -4183,34 +4184,17 @@ export function RequestorPracticeReceivePage({
   ]);
 
   const transferSearchAndBadges = (
-    <div className="space-y-3">
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div className="flex flex-wrap items-center gap-2 shrink-0">
-          <PeriodFilter
-            value={period}
-            onChange={setPeriod}
-            className="shrink-0"
-          />
-          <RequestSettingsToolbar
-            designSoftwareLabel={String(designSoftwareValue || "").trim()}
-            onOpenDesignSoftwareModal={openDesignSoftwareModal}
-            anodizingEnabled={anodizingEnabled}
-            anodizingSaving={anodizingSaving}
-            onToggleAnodizing={handleToggleAnodizing}
-          />
-        </div>
-        <div className="relative w-full md:max-w-md md:ml-auto">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
-            placeholder="전송ID, 치과명, 파일명, 환자명 검색"
-          />
-        </div>
+    <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center gap-2 shrink-0">
+        <RequestSettingsToolbar
+          designSoftwareLabel={String(designSoftwareValue || "").trim()}
+          onOpenDesignSoftwareModal={openDesignSoftwareModal}
+          anodizingEnabled={anodizingEnabled}
+          anodizingSaving={anodizingSaving}
+          onToggleAnodizing={handleToggleAnodizing}
+        />
       </div>
-
-      <div className="flex flex-wrap gap-2">
+      <div className="flex min-w-0 flex-1 flex-wrap items-center justify-center gap-2">
         <button
           type="button"
           className="rounded-full"
@@ -4348,74 +4332,48 @@ export function RequestorPracticeReceivePage({
           </Badge>
         </button>
       </div>
+      <div className="relative w-full max-w-xs shrink-0">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="h-9 pl-9"
+          placeholder="전송ID, 치과명, 환자명 검색"
+        />
+      </div>
     </div>
   );
 
   const transferListBody = (
-    <div className="flex min-h-0 flex-1 flex-col gap-3">
+    <div className="flex min-h-0 flex-1 flex-col gap-2">
       {error ? <div className="shrink-0 text-sm text-destructive">{error}</div> : null}
-      {!error &&
-      loading &&
-      sortedFilteredTransfers.length === 0 ? (
-        <RequestorPracticeTransferCardsSkeleton />
-      ) : null}
-      {!error && !loading && sortedFilteredTransfers.length === 0 ? (
-        <div className="shrink-0 text-sm text-muted-foreground">표시할 의뢰가 없습니다.</div>
-      ) : null}
-
-      <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          {sortedFilteredTransfers.map((transfer) => {
-            const chatUnreadCount = unreadByTransferId.get(transfer.transferId) || 0;
-            const displayStatus = getTransferDisplayStatus(transfer);
-            const isRejectedCard = displayStatus === "거부";
-            const dimRejectedCard = isRejectedCard && statusFilter !== "거부";
-            const cardId = String(transfer.transferId || transfer._id || "").trim();
-            const cardBusy = Boolean(cardActionBusyId) && cardActionBusyId === cardId;
-
-            return (
-              <PracticeTransferLabReceiveCard
-                key={transfer._id || transfer.transferId}
-                transfer={transfer}
-                chatUnreadCount={chatUnreadCount}
-                cardBusy={cardBusy}
-                designConfirmBusy={
-                  Boolean(designConfirmBusyId) && designConfirmBusyId === cardId
-                }
-                dimRejected={dimRejectedCard}
-                designSoftwareLabel={String(designSoftwareValue || "").trim()}
-                anodizingEnabled={anodizingEnabled}
-                onOpen={() => {
-                  void openTransferDialog(transfer);
-                }}
-                onDesignUpload={(event) =>
-                  void handleCardDesignUpload(transfer, event)
-                }
-                onAbutmentProductionCancel={(event) =>
-                  void handleCardAbutmentProductionCancel(transfer, event)
-                }
-                onComplete={(event) => handleCardComplete(transfer, event)}
-                onRelease={(event) => void handleCardRelease(transfer, event)}
-                onOpenSubcontract={
-                  transfer.autoMatch?.canOpenSubcontract
-                    ? (event) => void handleCardOpenSubcontract(transfer, event)
-                    : undefined
-                }
-                onDesignConfirm={() => {
-                  void confirmAbutmentDesign(transfer);
-                }}
-                onDropFiles={(files) => handleCardDropFiles(transfer, files)}
-              />
-            );
-          })}
+      {!error && loading && calendarItems.length === 0 ? (
+        <div className="grid grid-cols-5 gap-1">
+          {Array.from({ length: 15 }).map((_, idx) => (
+            <Skeleton key={`lab-cal-skel-${idx}`} className="h-24 w-full" />
+          ))}
         </div>
-
-        {!error && hasMore ? (
-          <div ref={loadMoreRef} className="py-4 text-center text-xs text-muted-foreground">
-            {loadingMore ? "더 불러오는 중..." : "아래로 스크롤하면 더 불러옵니다."}
-          </div>
-        ) : null}
-      </div>
+      ) : null}
+      {!error && !loading ? (
+        <PracticeRecentTransfersCalendar
+          items={calendarItems}
+          dateKey={dateKey}
+          cursorYmd={cursorYmd}
+          onCursorChange={setCursorYmd}
+          onDateKeyChange={setDateKey}
+          onSelectItem={(item) => {
+            const transfer = calendarTransferById.get(item.id);
+            if (transfer) void openTransferDialog(transfer);
+          }}
+          hiddenWeekdays={hiddenWeekdays}
+          onHiddenWeekdaysChange={setHiddenWeekdays}
+        />
+      ) : null}
+      {loadingMore ? (
+        <div className="py-1 text-center text-xs text-muted-foreground">
+          더 불러오는 중...
+        </div>
+      ) : null}
     </div>
   );
 

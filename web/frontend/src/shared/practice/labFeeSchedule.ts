@@ -10,6 +10,8 @@
 // - 2026-08-19: 수락 포워드용 missingLabFeeItemNames(해당 보철 미제공·0원).
 // - 2026-08-13: 커스텀어벗 단가는 creditSettings 멤버십/일반값을 우선 사용.
 // - 2026-08-13: 유지장치 등 perSet는 연결 스팬당 1세트(끊기면 별도). 연결 없는 레거시는 악궁당.
+// - 2026-08-19: 임시치아(perNTeeth)도 연결 스팬당 구간 수가(같은 하악 3치·2치는 2세트).
+// - 2026-08-19: 임시치아+Pontic 연결은 임시치아 브리지 1세트(Pontic 별도 수가 없음).
 // - 2026-08-13: 견적 라인은 치아번호 10→20→30→40번대 순.
 // - 2026-08-17: 번대 안은 정중선 가운데(18→11, 21→28, 38→31, 41→48).
 // - 2026-08-13: 유지장치에 남은 커스텀 플래그는 어벗 과금하지 않는다.
@@ -1201,9 +1203,7 @@ export const computePracticeTransferRetailFees = (params: {
   }
 
   for (const { item, rows: groupedRows } of grouped.values()) {
-    for (const group of item.unit === "perSet"
-      ? groupRowsForSetFee(groupedRows)
-      : groupRowsByArch(groupedRows)) {
+    for (const group of groupRowsForSetFee(groupedRows)) {
       const labFee =
         item.unit === "perSet"
           ? Math.max(0, Math.round(Number(useRemake ? item.remake : item.price) || 0))
@@ -1364,7 +1364,7 @@ function collectLinkedTeethForFee(
   return [...links];
 }
 
-/** 연결(+)이 있으면 스팬당 1세트. 연결 정보 없는 레거시는 악궁당 1세트 */
+/** 연결(+)이 있으면 스팬당 1묶음(perSet·임시치아 구간). 연결 없는 레거시는 악궁당 */
 function groupRowsForSetFee(rows: ReadonlyArray<FeeToothRow>) {
   const hasLinks = rows.some((row) =>
     (Array.isArray(row?.bridgeLinkedTeeth) ? row.bridgeLinkedTeeth : []).some(

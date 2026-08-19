@@ -426,8 +426,8 @@ export const PracticeTransferAutoMatchTab = () => {
                 인증 기공소
               </h3>
               <p className="text-[13px] leading-relaxed text-muted-foreground">
-                기공소 신청 → 기공 테스트 → 통과 시 인증. 인증 기공소만 자동
-                매칭 풀에 참여합니다. 치과·기공소 식별 정보는 비공개입니다.
+                기공소 신청 → 기공 테스트 → 통과 시 인증. 인증 기공소만 어벗츠기공소
+                하청 의뢰를 받을 수 있습니다. 치과·기공소 식별 정보는 비공개입니다.
               </p>
             </div>
           </div>

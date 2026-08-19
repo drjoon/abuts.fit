@@ -52,8 +52,13 @@ import {
 import {
   DEFAULT_HIDDEN_WEEKDAYS,
   PracticeRecentTransfersCalendar,
+  type PracticeCalendarChipItem,
   type PracticeCalendarDateKey,
 } from "@/pages/practice/components/PracticeRecentTransfersCalendar";
+import {
+  resolvePracticeTransferListPatientName,
+  resolvePracticeTransferListToothNumbers,
+} from "@/shared/components/practice/PracticeRecentTransferListCardDetail";
 
 const PAGE_SIZE = PRACTICE_MY_TRANSFERS_PAGE_SIZE;
 
@@ -248,6 +253,33 @@ export function PracticeRecentTransfersAllModal({
     [groupedTransfers, statusFilter],
   );
 
+  const calendarItems = useMemo((): PracticeCalendarChipItem[] => {
+    return filteredTransfers.map((transfer) => {
+      const lab =
+        String(transfer.targetLab || "-")
+          .replace(/\s*→.*$/g, "")
+          .trim() || "-";
+      const patient = resolvePracticeTransferListPatientName(transfer);
+      const teeth = resolvePracticeTransferListToothNumbers(transfer);
+      return {
+        id: `${transfer.id}:${transfer.transferId}`,
+        orderDate: transfer.orderDate,
+        arrivalDate: transfer.arrivalDate,
+        colorKey: String(transfer.targetLabAnchorId || "").trim() || lab,
+        sortLabel: lab,
+        line: [lab, patient || "—", teeth || "—"].join(" / "),
+      };
+    });
+  }, [filteredTransfers]);
+
+  const calendarItemById = useMemo(() => {
+    const map = new Map<string, (typeof filteredTransfers)[number]>();
+    for (const transfer of filteredTransfers) {
+      map.set(`${transfer.id}:${transfer.transferId}`, transfer);
+    }
+    return map;
+  }, [filteredTransfers]);
+
   const renderStatusBadgeToggle = (
     filterKey: Exclude<PracticeRecentStatusFilter, "all">,
     label: string,
@@ -330,12 +362,15 @@ export function PracticeRecentTransfersAllModal({
             </div>
           ) : (
             <PracticeRecentTransfersCalendar
-              transfers={filteredTransfers}
+              items={calendarItems}
               dateKey={dateKey}
               cursorYmd={cursorYmd}
               onCursorChange={setCursorYmd}
               onDateKeyChange={setDateKey}
-              onSelectTransfer={onSelectTransfer}
+              onSelectItem={(item) => {
+                const transfer = calendarItemById.get(item.id);
+                if (transfer) onSelectTransfer(transfer);
+              }}
               hiddenWeekdays={hiddenWeekdays}
               onHiddenWeekdaysChange={setHiddenWeekdays}
               alignEpoch={alignEpoch}

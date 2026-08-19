@@ -353,7 +353,7 @@ export function PracticeRecentTransfersCalendar({
               }}
             >
               {visibleCells.map((day) => {
-                const items = byDay.get(day.ymd) || [];
+                const dayItems = byDay.get(day.ymd) || [];
                 const isToday = day.ymd === todayYmd;
                 const inCaptionMonth =
                   day.ymd >= captionMonth && day.ymd <= captionMonthEnd;
@@ -381,7 +381,7 @@ export function PracticeRecentTransfersCalendar({
                       {monthNum}/{dayNum}
                     </p>
                     <div className="flex flex-col gap-0.5">
-                      {items.map((item) => (
+                      {dayItems.map((item) => (
                           <button
                             key={`${item.id}:${day.ymd}`}
                             type="button"

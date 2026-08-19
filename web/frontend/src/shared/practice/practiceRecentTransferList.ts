@@ -256,6 +256,7 @@ export const toStatusLabel = (manufacturerStage: unknown) => {
   if (raw === "수신완료") return "수신완료";
   if (raw === "의뢰수락" || raw === "다운로드완료") return "의뢰수락";
   if (raw === "자동매칭") return "자동매칭";
+  if (raw === "하청대기") return "하청대기";
   if (raw === "작업완료") return "작업완료";
   if (raw === "생산진행") return "생산진행";
   if (raw === "포장.발송") return "포장.발송";
@@ -274,7 +275,7 @@ export const toStatusLabel = (manufacturerStage: unknown) => {
 export const toStatusBadgeLabel = (status: unknown) => {
   const s = String(status || "").trim();
   if (!s) return "-";
-  if (s === "발송완료" || s === "수신완료" || s === "자동매칭") return "의뢰";
+  if (s === "발송완료" || s === "수신완료" || s === "자동매칭" || s === "하청대기") return "의뢰";
   if (s === "의뢰수락" || s === "다운로드완료") return "수락";
   if (s === "작업완료") return "완료";
   if (s === "작업취소" || s === "취소") return "취소";
@@ -290,6 +291,7 @@ export const canDeletePracticeTransferByStatus = (status: unknown) => {
     s === "발송완료" ||
     s === "수신완료" ||
     s === "자동매칭" ||
+    s === "하청대기" ||
     s === "작업취소"
   );
 };

@@ -11,6 +11,8 @@
 // - 2026-08-13: 마스터 active(기본 off)가 켜져야 설정 완료. 수가 디폴트는 기본값·항목 on.
 // - 2026-08-13: 커스텀어벗 단가는 creditSettings 멤버십/일반값을 우선 사용.
 // - 2026-08-13: 유지장치 등 perSet는 연결 스팬당 1세트(끊기면 별도). 연결 없는 레거시는 악궁당.
+// - 2026-08-19: 임시치아(perNTeeth)도 연결 스팬당 구간 수가(같은 하악 3치·2치는 2세트).
+// - 2026-08-19: 임시치아+Pontic 연결은 임시치아 브리지 1세트(Pontic 별도 수가 없음).
 // - 2026-08-13: 견적 라인은 치아번호 10→20→30→40번대 순.
 // - 2026-08-17: 번대 안은 정중선 가운데(18→11, 21→28, 38→31, 41→48).
 // - 2026-08-13: 유지장치에 남은 커스텀 플래그는 어벗 과금하지 않는다.
@@ -354,11 +356,14 @@ export function labFeeItemNameForProsthesisType(prosthesisType) {
 }
 
 export function labFeeItemNamesNeededForToothWorks(toothWorks) {
+  const rows = Array.isArray(toothWorks) ? toothWorks : [];
+  const absorbed = absorbedNonTempTeethInTempSpans(rows);
   const names = [];
   const seen = new Set();
-  for (const row of Array.isArray(toothWorks) ? toothWorks : []) {
+  for (const row of rows) {
     const toothNumber = String(row?.toothNumber || row?.tooth || "").trim();
     if (toothNumber && !/^[1-4][1-8]$/.test(toothNumber)) continue;
+    if (absorbed.has(toothNumber)) continue;
     const name = labFeeItemNameForProsthesisType(
       row?.prosthesisType || row?.type,
     );
@@ -1190,6 +1195,7 @@ export function computePracticeTransferRetailFees({
   const pricingTier =
     abutmentPricingTier === "membership" ? "membership" : "regular";
   const rows = Array.isArray(toothWorks) ? toothWorks : [];
+  const absorbedNonTemp = absorbedNonTempTeethInTempSpans(rows);
   const lines = [];
   const grouped = new Map();
   let labFeeTotal = 0;
@@ -1257,6 +1263,7 @@ export function computePracticeTransferRetailFees({
     ).trim();
     if (!prosthesisType) continue;
     if (isMissingToothProsthesisType(prosthesisType)) continue;
+    if (absorbedNonTemp.has(toothNumber)) continue;
 
     if (isCustomAbutmentProsthesisType(prosthesisType)) {
       if (useRemake) {
@@ -1322,9 +1329,10 @@ export function computePracticeTransferRetailFees({
   }
 
   for (const { item, rows: groupedRows } of grouped.values()) {
-    for (const group of item.unit === "perSet"
-      ? groupRowsForSetFee(groupedRows)
-      : groupRowsByArch(groupedRows)) {
+    const spanGroups = isRemovableTempFeeName(item.name)
+      ? listTempBridgeFeeGroups(rows)
+      : groupRowsForSetFee(groupedRows);
+    for (const group of spanGroups) {
       const labFee =
         item.unit === "perSet"
           ? Math.max(
@@ -1344,7 +1352,7 @@ export function computePracticeTransferRetailFees({
           labAbutmentPending: false,
           abutmentRetail: 0,
         });
-        for (const row of groupedRows) {
+        for (const row of rows) {
           const tooth = String(row?.toothNumber || row?.tooth || "").trim();
           if (!group.teeth.includes(tooth)) continue;
           const split = abutmentSplitForRow(row);
@@ -1415,6 +1423,115 @@ export function computePracticeTransferRetailFees({
   return applyRushFeeMultiplierToFees(withLabMult, rushFeeMultiplier);
 }
 
+function feeRowTooth(row) {
+  return String(row?.toothNumber || row?.tooth || "").trim();
+}
+
+function feeRowType(row) {
+  return String(row?.prosthesisType || row?.type || "").trim();
+}
+
+function isPonticProsthesisType(prosthesisType) {
+  return /^pontic$/i.test(String(prosthesisType || "").trim());
+}
+
+/** 임시치아 브리지 스팬을 잇는 형태(Pontic·작업X·브리지). 유지장치는 제외 */
+function isTempBridgeSpanMemberType(type) {
+  return (
+    isRemovableTempProsthesisType(type) ||
+    isPonticProsthesisType(type) ||
+    isMissingToothProsthesisType(type) ||
+    type === "브리지"
+  );
+}
+
+function isTempBridgeSpanBillableType(type) {
+  return (
+    isRemovableTempProsthesisType(type) ||
+    isPonticProsthesisType(type) ||
+    type === "브리지"
+  );
+}
+
+/** 임시치아 연결 스팬. Pontic은 칸으로 세고 별도 Pontic 수가를 붙이지 않는다 */
+function listTempBridgeFeeGroups(allRows) {
+  const memberRows = (Array.isArray(allRows) ? allRows : []).filter((row) => {
+    const tooth = feeRowTooth(row);
+    return (
+      /^[1-4][1-8]$/.test(tooth) && isTempBridgeSpanMemberType(feeRowType(row))
+    );
+  });
+  const tempRows = memberRows.filter((row) =>
+    isRemovableTempProsthesisType(feeRowType(row)),
+  );
+  if (tempRows.length === 0) return [];
+
+  const hasLinks = memberRows.some((row) =>
+    (Array.isArray(row?.bridgeLinkedTeeth) ? row.bridgeLinkedTeeth : []).some(
+      (value) => String(value || "").trim(),
+    ),
+  );
+  if (!hasLinks) return groupRowsByArch(tempRows);
+
+  const remaining = new Set();
+  const byTooth = new Map();
+  for (const row of memberRows) {
+    const tooth = feeRowTooth(row);
+    if (!tooth) continue;
+    remaining.add(tooth);
+    if (!byTooth.has(tooth)) byTooth.set(tooth, row);
+  }
+  const groups = [];
+  while (remaining.size > 0) {
+    const start = remaining.values().next().value;
+    remaining.delete(start);
+    const stack = [start];
+    const teeth = [];
+    while (stack.length > 0) {
+      const cur = stack.pop();
+      teeth.push(cur);
+      for (const linked of collectLinkedTeethForFee(memberRows, cur)) {
+        if (!remaining.has(linked)) continue;
+        remaining.delete(linked);
+        stack.push(linked);
+      }
+    }
+    const hasTemp = teeth.some((tooth) =>
+      isRemovableTempProsthesisType(feeRowType(byTooth.get(tooth))),
+    );
+    if (!hasTemp) continue;
+    const billed = teeth.filter((tooth) =>
+      isTempBridgeSpanBillableType(feeRowType(byTooth.get(tooth))),
+    );
+    if (billed.length === 0) continue;
+    const arch = toothArchFromNumber(billed[0]);
+    groups.push({
+      suffix: arch === "upper" ? "(상악)" : arch === "lower" ? "(하악)" : "",
+      teeth: billed,
+    });
+  }
+  return groups;
+}
+
+function absorbedNonTempTeethInTempSpans(allRows) {
+  const byTooth = new Map();
+  for (const row of Array.isArray(allRows) ? allRows : []) {
+    const tooth = feeRowTooth(row);
+    if (/^[1-4][1-8]$/.test(tooth) && !byTooth.has(tooth)) {
+      byTooth.set(tooth, row);
+    }
+  }
+  const absorbed = new Set();
+  for (const group of listTempBridgeFeeGroups(allRows)) {
+    for (const tooth of group.teeth) {
+      if (!isRemovableTempProsthesisType(feeRowType(byTooth.get(tooth)))) {
+        absorbed.add(tooth);
+      }
+    }
+  }
+  return absorbed;
+}
+
 function groupRowsByArch(rows) {
   const groups = new Map();
   for (const row of rows) {
@@ -1475,7 +1592,7 @@ function collectLinkedTeethForFee(rows, toothNumber) {
   return [...links];
 }
 
-/** 연결(+)이 있으면 스팬당 1세트. 연결 정보 없는 레거시는 악궁당 1세트 */
+/** 연결(+)이 있으면 스팬당 1묶음(perSet·임시치아 구간). 연결 없는 레거시는 악궁당 */
 function groupRowsForSetFee(rows) {
   const hasLinks = rows.some((row) =>
     (Array.isArray(row?.bridgeLinkedTeeth) ? row.bridgeLinkedTeeth : []).some(

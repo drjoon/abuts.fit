@@ -108,7 +108,7 @@ describe("practiceTransferAutoMatch priority (core)", () => {
     const fields = toAutoMatchApiFieldsCore(openTransfer, OID_A);
     expect(fields.autoMatch.priorityActive).toBe(true);
     expect(fields.autoMatch.priorityLabForMe).toBe(true);
-    expect(fields.autoMatch.canOpenSubcontract).toBe(true);
+    expect(fields.autoMatch.canOpenSubcontract).toBe(false);
     expect(isAutoMatchPriorityLabAnchorId(openTransfer, OID_A)).toBe(true);
   });
 
@@ -131,15 +131,28 @@ describe("practiceTransferAutoMatch priority (core)", () => {
     expect(canOpenPracticeTransferSubcontract(pathB, OID_B, now)).toBe(false);
   });
 
-  test("하청 전환(priorityUntil=now) 후 타 기공소 즉시 접근", () => {
-    const opened = {
-      ...openTransfer,
+  test("지정 어벗츠 의뢰는 원청이 하청 전환 가능", () => {
+    const direct = {
+      matchingMode: "direct",
+      status: "active",
       targetLabAnchorId: OID_A,
-      autoMatch: { ...openTransfer.autoMatch, priorityUntil: now },
     };
-    expect(isAutoMatchPriorityActive(opened, now)).toBe(false);
-    expect(canAccessAutoMatchOpenPool(opened, OID_B, now)).toBe(true);
+    expect(canOpenPracticeTransferSubcontract(direct, OID_A, now)).toBe(true);
+    expect(canOpenPracticeTransferSubcontract(direct, OID_B, now)).toBe(false);
+  });
+
+  test("하청 풀을 연 뒤에는 원청이 다시 하청 전환할 수 없음", () => {
+    const opened = {
+      matchingMode: "direct",
+      status: "active",
+      targetLabAnchorId: OID_A,
+      autoMatch: {
+        subcontractPoolOpen: true,
+        eligibleLabAnchorIds: [OID_B],
+      },
+    };
     expect(canOpenPracticeTransferSubcontract(opened, OID_A, now)).toBe(false);
+    expect(canOpenPracticeTransferSubcontract(opened, OID_B, now)).toBe(false);
   });
 
   test("assignee가 있으면 claim active — 원청 target만으로는 아님", () => {
