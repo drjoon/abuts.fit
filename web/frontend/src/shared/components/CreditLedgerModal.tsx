@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-19: 구강스캔 호버 — 보철기공비|어벗 디자인+생산비는 견적(6만·2.5만). 경로 보류(7만+1.5만) 아님.
 // - 2026-08-19: 어벗디자인·어벗생산은 의뢰 사업자+예정출고일로 1행·배송비 1건(치과명 무관).
 // - 2026-08-19: 내역 무한스크롤을 10건 단위로 가져와 첫 화면을 빨리 연다.
 // - 2026-08-19: 어벗디자인으로 행도 보류/일부 지급/지급 완료 상태를 표시.
@@ -530,17 +531,88 @@ const classifyPracticeTransferPart = (
   return { route, kind: "other" };
 };
 
+const addFeeLeafAmount = (
+  byKind: Map<PracticeTransferFeeKind, number>,
+  kind: PracticeTransferFeeKind,
+  amount: number,
+) => {
+  const n = Math.round(Number(amount || 0));
+  if (!n) return;
+  byKind.set(kind, (byKind.get(kind) || 0) + n);
+};
+
+/** 치과 고시: 보철기공비=기공수가, 어벗 디자인+생산비=디자인+생산가. 정산 경로 보류(디자인비를 기공소몫에 합산)는 쓰지 않는다. */
+const splitWorkAmountByFeeQuote = (
+  workAmount: number,
+  quote: PracticeTransferFeeQuote,
+  labShareOnly: boolean,
+): { prosthetic: number; abutment: number } => {
+  const prostheticQuote = Math.max(
+    0,
+    Math.round(Number(quote.labFeeTotal || 0)) +
+      Math.round(Number(quote.labAbutmentTotal || 0)),
+  );
+  const abutmentQuote = Math.max(
+    0,
+    Math.round(Number(quote.abutmentRetailTotal || 0)),
+  );
+  if (workAmount === 0) return { prosthetic: 0, abutment: 0 };
+  if (labShareOnly) {
+    const mag = Math.abs(workAmount);
+    const sign = workAmount < 0 ? -1 : 1;
+    const prostheticMag = Math.min(mag, prostheticQuote);
+    return {
+      prosthetic: sign * prostheticMag,
+      abutment: sign * (mag - prostheticMag),
+    };
+  }
+  const quoteWork = prostheticQuote + abutmentQuote;
+  if (quoteWork <= 0) return { prosthetic: workAmount, abutment: 0 };
+  const prosthetic = Math.round((workAmount * prostheticQuote) / quoteWork);
+  return { prosthetic, abutment: workAmount - prosthetic };
+};
+
 /** 경로 행 없이 보철기공비·어벗 디자인+생산비·배송만 합산. 둘 다 기공비. */
 const buildPracticeTransferFeeLeaves = (
   parts: LedgerDisplayPart[],
+  quote?: PracticeTransferFeeQuote | null,
+  labShareOnly = false,
 ): PracticeTransferTreeLeaf[] => {
   const byKind = new Map<PracticeTransferFeeKind, number>();
+  let shippingAmount = 0;
+  let workAmount = 0;
   for (const part of parts) {
     const { kind } = classifyPracticeTransferPart(part);
-    const mapped: PracticeTransferFeeKind =
-      kind === "design" || kind === "abutProduction" ? "abutCombined" : kind;
-    byKind.set(mapped, (byKind.get(mapped) || 0) + Number(part.amount || 0));
+    const amount = Number(part.amount || 0);
+    if (kind === "shipping") {
+      shippingAmount += amount;
+      continue;
+    }
+    workAmount += amount;
   }
+
+  const hasQuoteSplit =
+    Boolean(quote) &&
+    workAmount !== 0 &&
+    (Math.round(Number(quote?.labFeeTotal || 0)) > 0 ||
+      Math.round(Number(quote?.labAbutmentTotal || 0)) > 0 ||
+      Math.round(Number(quote?.abutmentRetailTotal || 0)) > 0);
+
+  if (hasQuoteSplit && quote) {
+    const split = splitWorkAmountByFeeQuote(workAmount, quote, labShareOnly);
+    addFeeLeafAmount(byKind, "labFee", split.prosthetic);
+    addFeeLeafAmount(byKind, "abutCombined", split.abutment);
+  } else {
+    for (const part of parts) {
+      const { kind } = classifyPracticeTransferPart(part);
+      if (kind === "shipping") continue;
+      const mapped: PracticeTransferFeeKind =
+        kind === "design" || kind === "abutProduction" ? "abutCombined" : kind;
+      addFeeLeafAmount(byKind, mapped, Number(part.amount || 0));
+    }
+  }
+  addFeeLeafAmount(byKind, "shipping", shippingAmount);
+
   return FEE_KIND_ORDER.filter((kind) => byKind.has(kind)).map((kind) => ({
     kind,
     label: FEE_KIND_LABEL[kind],
@@ -559,13 +631,17 @@ const formatSignedWon = (amount: number) => {
 function PracticeTransferAmountHover({
   totalAmount,
   parts,
+  feeQuote = null,
+  labShareOnly = false,
 }: {
   totalAmount: number;
   parts: LedgerDisplayPart[];
+  feeQuote?: PracticeTransferFeeQuote | null;
+  labShareOnly?: boolean;
 }) {
   const leaves = useMemo(
-    () => buildPracticeTransferFeeLeaves(parts),
-    [parts],
+    () => buildPracticeTransferFeeLeaves(parts, feeQuote, labShareOnly),
+    [parts, feeQuote, labShareOnly],
   );
   const detailLines =
     leaves.length > 0
@@ -1955,6 +2031,10 @@ export const CreditLedgerModal = ({
                             <PracticeTransferAmountHover
                               totalAmount={amount}
                               parts={r.parts!}
+                              feeQuote={parsePracticeTransferFeeQuote(
+                                r.item.feeQuote,
+                              )}
+                              labShareOnly={showSettlementCredit}
                             />
                           )
                         ) : showSplit ? (

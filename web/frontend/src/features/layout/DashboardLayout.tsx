@@ -10,6 +10,7 @@ import { toKstYmd } from "@/shared/date/kst";
 import { useToast } from "@/shared/hooks/use-toast";
 import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPath";
 
+// - 2026-08-19: 구강스캔으로 툴팁 — 디자인+생산에 구강지그 포함. 지그는 별도 항목이 아님.
 // - 2026-08-18: 치과 사이드 — 대시보드 제거. 어벗디자인 헤더가 기간·출고·지난의뢰·불완전가공.
 // - 2026-08-18: 치과 사이드 — 기공의뢰 메인 + 구강스캔으로/어벗디자인으로 서브.
 // - 2026-08-18: 치과 사이드 — 기공의뢰 그룹 아래 구강스캔/어벗디자인 서브(관리자 섹션과 동일).
@@ -160,7 +161,7 @@ const ABUTMENT_REQUEST_TOOLTIP =
 const PRACTICE_ORAL_SCAN_HREF = "/dashboard/practice-transfers?mode=send";
 const PRACTICE_ABUTMENT_DESIGN_HREF = "/dashboard/new-request";
 const PRACTICE_ORAL_SCAN_REQUEST_TOOLTIP =
-  "구강스캔으로 커스텀어벗 디자인+생산, 지그·임시치아·지르 보철 의뢰";
+  "구강스캔으로 커스텀어벗 디자인+생산(구강지그 포함), 임시치아·지르 보철 의뢰";
 const PRACTICE_ABUTMENT_DESIGN_REQUEST_TOOLTIP =
   "완성된 어벗 디자인(STL)으로 CNC 생산 의뢰";
 

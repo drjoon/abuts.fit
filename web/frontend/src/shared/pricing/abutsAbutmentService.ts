@@ -6,6 +6,7 @@
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - .cursor/rules/design-fee.mdc
 // change-log:
+// - 2026-08-19: 구강스캔 디자인+생산(2.5만)은 구강지그 포함. 지르 보철은 보철기공비 6만.
 // - 2026-08-18: 치과 고시 — 서비스 3종 단일가(생산·디자인+생산·풀세트 지그/지르).
 // - 2026-08-14: 환봉 0원은「가격 별도 고지」로 표시.
 // - 2026-08-14: 환봉 단가 필드 포함. 도입 종류별 단가 계산은 labFeeSchedule.
