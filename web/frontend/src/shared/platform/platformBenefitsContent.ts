@@ -1,6 +1,7 @@
 // related files:
 // - web/frontend/src/features/platform/PlatformBenefitsDialog.tsx
 // - web/frontend/src/features/lab/LabPlatformBenefitsBanner.tsx
+// - 2026-08-19: 기공소 가입이유에서 자동 매칭 항목 제거.
 // - 2026-08-19: 기공소 가입이유에서 설정-자동매칭 링크 제거.
 // - 2026-08-19: 치과 가입이유 — 출고=도착−2영업일, 지정 도착일 1영업일 전 배송 목표.
 // - 2026-08-16: 기공소 가입이유 커스텀어벗 문구는 직납 안내 없이 유지.
@@ -13,7 +14,6 @@ import {
   PenTool,
   RefreshCw,
   Search,
-  Users,
   Wallet,
   type LucideIcon,
 } from "lucide-react";
@@ -53,7 +53,7 @@ export const normalizePlatformBenefitPoint = (
 const LAB_BENEFITS: PlatformBenefitsConfig = {
   title: "기공소가 어벗츠를 쓰는 이유",
   description:
-    "이메일·정산·신규 거래·커스텀어벗 생산까지, 기공소 업무를 한곳에서 이어줍니다.",
+    "이메일·정산·커스텀어벗 생산까지, 기공소 업무를 한곳에서 이어줍니다.",
   footerNote:
     "궁금한 점이 있으면 채팅·문의로 편하게 말씀해 주세요. 함께 맞춰가겠습니다.",
   items: [
@@ -71,14 +71,6 @@ const LAB_BENEFITS: PlatformBenefitsConfig = {
       points: [
         "입출금, 크레딧 관리, 소비 내역 관리를 플랫폼이 합니다.",
         "매달 정산과 계산서 발행까지 함께 처리합니다.",
-      ],
-    },
-    {
-      icon: Users,
-      title: "자동 매칭으로 의뢰를 받으세요",
-      points: [
-        "인증 기공소는 자동 매칭 의뢰에 참여할 수 있습니다.",
-        "치과, 기공소 식별 정보는 비공개입니다.",
       ],
     },
     {

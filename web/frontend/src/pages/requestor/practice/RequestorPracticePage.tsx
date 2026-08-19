@@ -17,7 +17,6 @@
 // - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // - web/frontend/src/shared/components/practice/LabReceiveWorkUploadDialog.tsx
-// - 2026-08-19: 가입 이유 배너는 기간필터·설정 툴바 아래(짧은 카피).
 // - 2026-08-19: 수신 기간필터를 치과와 같이 30일/90일/이번달/지난달.
 // - 2026-08-19: 기공비 미설정 수락 — 설정 탭 포워드(`from=accept`). API는 lab_fee_unconfigured.
 // - 2026-08-16: 어벗·보철 — 프리뷰 치아 지정·백그라운드 preUpload·분할 업로드.
@@ -90,7 +89,6 @@ import {
   useState,
   type MouseEvent,
 } from "react";
-import { LabDashboardTopBanners } from "@/features/lab/LabDashboardTopBanners";
 import { DesignSoftwareSettingsDialog } from "@/features/requestSettings/DesignSoftwareSettingsDialog";
 import { RequestSettingsToolbar } from "@/features/requestSettings/RequestSettingsToolbar";
 import { useRequestorRequestSettings } from "@/features/requestSettings/useRequestorRequestSettings";
@@ -4153,23 +4151,20 @@ export function RequestorPracticeReceivePage({
 
   const transferSearchAndBadges = (
     <div className="space-y-3">
-      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-        <div className="flex min-w-0 flex-col gap-2">
-          <div className="flex flex-wrap items-center gap-2 shrink-0">
-            <PeriodFilter
-              value={period}
-              onChange={setPeriod}
-              className="shrink-0"
-            />
-            <RequestSettingsToolbar
-              designSoftwareLabel={String(designSoftwareValue || "").trim()}
-              onOpenDesignSoftwareModal={openDesignSoftwareModal}
-              anodizingEnabled={anodizingEnabled}
-              anodizingSaving={anodizingSaving}
-              onToggleAnodizing={handleToggleAnodizing}
-            />
-          </div>
-          <LabDashboardTopBanners />
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <PeriodFilter
+            value={period}
+            onChange={setPeriod}
+            className="shrink-0"
+          />
+          <RequestSettingsToolbar
+            designSoftwareLabel={String(designSoftwareValue || "").trim()}
+            onOpenDesignSoftwareModal={openDesignSoftwareModal}
+            anodizingEnabled={anodizingEnabled}
+            anodizingSaving={anodizingSaving}
+            onToggleAnodizing={handleToggleAnodizing}
+          />
         </div>
         <div className="relative w-full md:max-w-md md:ml-auto">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -4477,22 +4472,19 @@ export function RequestorPracticeReceivePage({
       <div className="flex min-h-0 flex-1 flex-col gap-3">
         {showDesignQueue && !showTransfers ? (
           <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
-            <div className="flex flex-col items-end gap-2">
-              <div className="flex flex-wrap items-center justify-end gap-3">
-                <PeriodFilter
-                  value={period}
-                  onChange={setPeriod}
-                  className="shrink-0"
-                />
-                <RequestSettingsToolbar
-                  designSoftwareLabel={String(designSoftwareValue || "").trim()}
-                  onOpenDesignSoftwareModal={openDesignSoftwareModal}
-                  anodizingEnabled={anodizingEnabled}
-                  anodizingSaving={anodizingSaving}
-                  onToggleAnodizing={handleToggleAnodizing}
-                />
-              </div>
-              <LabDashboardTopBanners />
+            <div className="flex flex-wrap items-center justify-end gap-3">
+              <PeriodFilter
+                value={period}
+                onChange={setPeriod}
+                className="shrink-0"
+              />
+              <RequestSettingsToolbar
+                designSoftwareLabel={String(designSoftwareValue || "").trim()}
+                onOpenDesignSoftwareModal={openDesignSoftwareModal}
+                anodizingEnabled={anodizingEnabled}
+                anodizingSaving={anodizingSaving}
+                onToggleAnodizing={handleToggleAnodizing}
+              />
             </div>
             <DesignQueueSection listMode={designQueueListMode} />
           </div>

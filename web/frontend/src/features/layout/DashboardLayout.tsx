@@ -10,6 +10,7 @@ import { toKstYmd } from "@/shared/date/kst";
 import { useToast } from "@/shared/hooks/use-toast";
 import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPath";
 
+// - 2026-08-19: 기공소 사이드 — 가입 이유 배너를 설정과 계정 팝업 사이.
 // - 2026-08-19: 기공소·어벗츠기공소 사이드 — 대시보드/대기보드 제거. 기공의뢰 그룹(수신·어벗생산의뢰).
 // - 2026-08-19: 펼친 사이드 메인 메뉴는 아이콘 왼쪽·라벨 가운데. 배지는 우측 고정. 라벨은 줄이지 않음.
 // - 2026-08-19: 구강스캔으로 툴팁 — 디자인+생산 구강지그 제외.
@@ -82,6 +83,7 @@ import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPat
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import { LabFeeSetupPrompt } from "@/features/settings/LabFeeSetupPrompt";
+import { LabDashboardTopBanners } from "@/features/lab/LabDashboardTopBanners";
 import { getRequestorRoleBadgeLabel } from "@/shared/business/requestorCapabilities";
 import { getAppUserRoleLabel } from "@/shared/types/role";
 import { ToastAction } from "@/components/ui/toast";
@@ -1454,6 +1456,7 @@ export const DashboardLayout = () => {
           </nav>
 
           <div className="p-3 lg:p-4 space-y-2">
+            <LabDashboardTopBanners collapsed={isCollapsed} />
             <DropdownMenu open={accountMenuOpen} onOpenChange={setAccountMenuOpen}>
               <DropdownMenuTrigger asChild>
                 <Button
