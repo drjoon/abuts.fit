@@ -5,6 +5,7 @@
  * - web/frontend/src/pages/practice/components/PracticeRecentTransfersAllModal.tsx
  * - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
  * - web/frontend/src/shared/date/kst.ts
+ * - 2026-08-19: 리메이크는 공정 상태색 유지 + 이중 외곽선(흰 채움 아님).
  * - 2026-08-19: 기공의뢰수신 칩은 상단 뱃지 상태색(치과 캘린더는 그룹색 유지).
  * - 2026-08-19: 치과 캘린더 칩에서 휴지통(의뢰 취소) 바로 이동.
  */
@@ -40,8 +41,10 @@ export type PracticeCalendarChipItem = {
   orderDate?: string | null;
   arrivalDate?: string | null;
   colorKey: string;
-  /** 있으면 그룹색 대신 뱃지 상태색 */
+  /** 있으면 그룹색 대신 뱃지 상태색(의뢰~발송). 리메이크는 isRemake */
   statusTone?: PracticeCalendarStatusTone;
+  /** 리메이크: 공정 색 유지 + 이중 외곽선 */
+  isRemake?: boolean;
   sortLabel: string;
   line: string;
   /** 치과 발신: 수락 전·작업취소 건 휴지통 이동 */
@@ -91,7 +94,7 @@ export const PRACTICE_CALENDAR_STATUS_CHIP_STYLE: Record<
   shipping: { backgroundColor: "hsl(250 38% 90%)", color: "hsl(250 40% 32%)" },
   canceled: { backgroundColor: "hsl(0 55% 90%)", color: "hsl(0 48% 34%)" },
   rejected: { backgroundColor: "hsl(24 72% 88%)", color: "hsl(24 55% 30%)" },
-  remake: { backgroundColor: "hsl(38 86% 88%)", color: "hsl(32 58% 28%)" },
+  remake: { backgroundColor: "#ffffff", color: "hsl(210 12% 28%)" },
 };
 
 export const PRACTICE_STATUS_FILTER_BADGE_CLASS: Record<
@@ -123,16 +126,14 @@ export const PRACTICE_STATUS_FILTER_BADGE_CLASS: Record<
     active: "border-orange-400/80 bg-orange-100 text-orange-900",
   },
   remake: {
-    idle: "border-amber-200 bg-amber-50/70 text-amber-800 hover:bg-amber-50",
-    active: "border-amber-400/80 bg-amber-50 text-amber-800",
+    idle: "border-[3px] border-double border-slate-400 bg-white text-slate-800 hover:bg-white",
+    active: "border-[3px] border-double border-slate-700 bg-white text-slate-900",
   },
 };
 
 export const resolvePracticeCalendarStatusTone = (
   status: unknown,
-  isRemake?: boolean,
-): PracticeCalendarStatusTone => {
-  if (isRemake) return "remake";
+): Exclude<PracticeCalendarStatusTone, "remake"> => {
   const s = String(status || "").trim();
   if (s === "거부") return "rejected";
   if (s === "작업완료") return "completed";
@@ -142,10 +143,13 @@ export const resolvePracticeCalendarStatusTone = (
   return "sent";
 };
 
-export const calendarChipStyleForItem = (item: PracticeCalendarChipItem) =>
-  item.statusTone
-    ? PRACTICE_CALENDAR_STATUS_CHIP_STYLE[item.statusTone]
+export const calendarChipStyleForItem = (item: PracticeCalendarChipItem) => {
+  const tone =
+    item.statusTone && item.statusTone !== "remake" ? item.statusTone : null;
+  return tone
+    ? PRACTICE_CALENDAR_STATUS_CHIP_STYLE[tone]
     : calendarGroupChipStyle(item.colorKey);
+};
 
 const monthCaption = (ymd: string) => {
   const [y, m] = ymd.split("-").map(Number);
@@ -471,7 +475,11 @@ export function PracticeRecentTransfersCalendar({
                         return (
                           <div
                             key={`${item.id}:${day.ymd}`}
-                            className="flex items-start gap-0.5 rounded pr-0.5 hover:brightness-95"
+                            className={cn(
+                              "flex items-start gap-0.5 rounded pr-0.5 hover:brightness-95",
+                              item.isRemake &&
+                                "border-[3px] border-double border-slate-700",
+                            )}
                             style={chipStyle}
                           >
                             <button

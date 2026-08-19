@@ -18,6 +18,7 @@
 // - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // - web/frontend/src/shared/components/practice/LabReceiveWorkUploadDialog.tsx
+// - 2026-08-19: 리메이크는 공정 상태색 + 이중 외곽선.
 // - 2026-08-19: 기공의뢰수신 캘린더 칩·상단 뱃지를 상태색으로 구분.
 // - 2026-08-19: 기공의뢰수신 — 안쪽 최외곽 Card 테두리 제거·패딩 축소.
 // - 2026-08-19: 기공의뢰수신 목록을 치과 최근의뢰와 같은 3주 캘린더로 표시.
@@ -1490,8 +1491,8 @@ export function RequestorPracticeReceivePage({
           String(transfer.practiceBusinessAnchorId || "").trim() || clinic,
         statusTone: resolvePracticeCalendarStatusTone(
           getTransferDisplayStatus(transfer),
-          Boolean(transfer.isRemake),
         ),
+        isRemake: Boolean(transfer.isRemake),
         sortLabel: clinic,
         line: [clinic, patient || "—", teeth || "—"].join(" / "),
       };
