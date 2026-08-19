@@ -796,14 +796,19 @@ export const labFeeItemNamesNeededForToothWorks = (
     tooth?: string;
     prosthesisType?: string;
     type?: string;
+    bridgeLinkedTeeth?: string[];
   } | null> | null,
 ) => {
+  const rows = (Array.isArray(toothWorks) ? toothWorks : []).filter(
+    (row): row is NonNullable<typeof row> => Boolean(row),
+  );
+  const absorbed = absorbedNonTempTeethInTempSpans(rows);
   const names: string[] = [];
   const seen = new Set<string>();
-  for (const row of Array.isArray(toothWorks) ? toothWorks : []) {
-    if (!row) continue;
+  for (const row of rows) {
     const toothNumber = String(row.toothNumber || row.tooth || "").trim();
     if (toothNumber && !/^[1-4][1-8]$/.test(toothNumber)) continue;
+    if (absorbed.has(toothNumber)) continue;
     const name = labFeeItemNameForProsthesisType(
       row.prosthesisType || row.type || "",
     );
@@ -1079,6 +1084,7 @@ export const computePracticeTransferRetailFees = (params: {
   const pricingTier: AbutsAbutmentPricingTier =
     params.abutmentPricingTier === "membership" ? "membership" : "regular";
   const rows = Array.isArray(params.toothWorks) ? params.toothWorks : [];
+  const absorbedNonTemp = absorbedNonTempTeethInTempSpans(rows);
   const lines: PracticeTransferFeeLine[] = [];
   const grouped = new Map<string, { item: LabFeeItem; rows: typeof rows }>();
   let labFeeTotal = 0;
@@ -1141,6 +1147,7 @@ export const computePracticeTransferRetailFees = (params: {
     const prosthesisType = String(row?.prosthesisType || row?.type || "").trim();
     if (!prosthesisType) continue;
     if (isMissingToothProsthesisType(prosthesisType)) continue;
+    if (absorbedNonTemp.has(toothNumber)) continue;
 
     if (isCustomAbutmentProsthesisType(prosthesisType)) {
       if (useRemake) {
@@ -1203,7 +1210,10 @@ export const computePracticeTransferRetailFees = (params: {
   }
 
   for (const { item, rows: groupedRows } of grouped.values()) {
-    for (const group of groupRowsForSetFee(groupedRows)) {
+    const spanGroups = isRemovableTempFeeName(item.name)
+      ? listTempBridgeFeeGroups(rows)
+      : groupRowsForSetFee(groupedRows);
+    for (const group of spanGroups) {
       const labFee =
         item.unit === "perSet"
           ? Math.max(0, Math.round(Number(useRemake ? item.remake : item.price) || 0))
@@ -1220,7 +1230,7 @@ export const computePracticeTransferRetailFees = (params: {
           labAbutmentPending: false,
           abutmentRetail: 0,
         });
-        for (const row of groupedRows) {
+        for (const row of rows) {
           const tooth = String(row?.toothNumber || row?.tooth || "").trim();
           if (!group.teeth.includes(tooth)) continue;
           const split = abutmentSplitForRow(row);
@@ -1295,8 +1305,117 @@ export const computePracticeTransferRetailFees = (params: {
 type FeeToothRow = {
   toothNumber?: string;
   tooth?: string;
+  prosthesisType?: string;
+  type?: string;
   bridgeLinkedTeeth?: string[];
 };
+
+function feeRowTooth(row?: FeeToothRow | null) {
+  return String(row?.toothNumber || row?.tooth || "").trim();
+}
+
+function feeRowType(row?: FeeToothRow | null) {
+  return String(row?.prosthesisType || row?.type || "").trim();
+}
+
+function isPonticProsthesisType(prosthesisType: string) {
+  return /^pontic$/i.test(String(prosthesisType || "").trim());
+}
+
+function isTempBridgeSpanMemberType(type: string) {
+  return (
+    isRemovableTempProsthesisType(type) ||
+    isPonticProsthesisType(type) ||
+    isMissingToothProsthesisType(type) ||
+    type === "브리지"
+  );
+}
+
+function isTempBridgeSpanBillableType(type: string) {
+  return (
+    isRemovableTempProsthesisType(type) ||
+    isPonticProsthesisType(type) ||
+    type === "브리지"
+  );
+}
+
+function listTempBridgeFeeGroups(allRows: ReadonlyArray<FeeToothRow | null | undefined>) {
+  const memberRows = (Array.isArray(allRows) ? allRows : []).filter((row): row is FeeToothRow => {
+    if (!row) return false;
+    const tooth = feeRowTooth(row);
+    return /^[1-4][1-8]$/.test(tooth) && isTempBridgeSpanMemberType(feeRowType(row));
+  });
+  const tempRows = memberRows.filter((row) =>
+    isRemovableTempProsthesisType(feeRowType(row)),
+  );
+  if (tempRows.length === 0) return [] as Array<{ suffix: string; teeth: string[] }>;
+
+  const hasLinks = memberRows.some((row) =>
+    (Array.isArray(row?.bridgeLinkedTeeth) ? row.bridgeLinkedTeeth : []).some(
+      (value) => String(value || "").trim(),
+    ),
+  );
+  if (!hasLinks) return groupRowsByArch(tempRows);
+
+  const remaining = new Set<string>();
+  const byTooth = new Map<string, FeeToothRow>();
+  for (const row of memberRows) {
+    const tooth = feeRowTooth(row);
+    if (!tooth) continue;
+    remaining.add(tooth);
+    if (!byTooth.has(tooth)) byTooth.set(tooth, row);
+  }
+  const groups: Array<{ suffix: string; teeth: string[] }> = [];
+  while (remaining.size > 0) {
+    const start = remaining.values().next().value as string;
+    remaining.delete(start);
+    const stack = [start];
+    const teeth: string[] = [];
+    while (stack.length > 0) {
+      const cur = stack.pop() as string;
+      teeth.push(cur);
+      for (const linked of collectLinkedTeethForFee(memberRows, cur)) {
+        if (!remaining.has(linked)) continue;
+        remaining.delete(linked);
+        stack.push(linked);
+      }
+    }
+    const hasTemp = teeth.some((tooth) =>
+      isRemovableTempProsthesisType(feeRowType(byTooth.get(tooth))),
+    );
+    if (!hasTemp) continue;
+    const billed = teeth.filter((tooth) =>
+      isTempBridgeSpanBillableType(feeRowType(byTooth.get(tooth))),
+    );
+    if (billed.length === 0) continue;
+    const arch = toothArchFromNumber(billed[0] || "");
+    groups.push({
+      suffix: arch === "upper" ? "(상악)" : arch === "lower" ? "(하악)" : "",
+      teeth: billed,
+    });
+  }
+  return groups;
+}
+
+function absorbedNonTempTeethInTempSpans(
+  allRows: ReadonlyArray<FeeToothRow | null | undefined>,
+) {
+  const byTooth = new Map<string, FeeToothRow>();
+  for (const row of Array.isArray(allRows) ? allRows : []) {
+    if (!row) continue;
+    const tooth = feeRowTooth(row);
+    if (/^[1-4][1-8]$/.test(tooth) && !byTooth.has(tooth)) byTooth.set(tooth, row);
+  }
+  const absorbed = new Set<string>();
+  for (const group of listTempBridgeFeeGroups(allRows)) {
+    for (const tooth of group.teeth) {
+      if (!isRemovableTempProsthesisType(feeRowType(byTooth.get(tooth)))) {
+        absorbed.add(tooth);
+      }
+    }
+  }
+  return absorbed;
+}
 
 function groupRowsByArch(rows: ReadonlyArray<FeeToothRow>) {
   const groups = new Map<

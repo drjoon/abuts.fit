@@ -8,6 +8,7 @@
 // - 2026-08-19: 임시치아+어벗은 임시치아 수가와 어벗츠 단가를 함께 합산.
 // - 2026-08-19: 임시치아 어벗은 치아별 커스텀어벗 단가 줄로 분리.
 // - 2026-08-19: 같은 악궁 임시치아도 연결이 끊기면 스팬별 구간 수가.
+// - 2026-08-19: 임시치아+Pontic 연결은 임시치아 브리지 1세트.
 import {
   buildUnsetLabFeeSchedule,
   computePracticeTransferRetailFees,
@@ -436,6 +437,49 @@ describe("labFeeSchedule", () => {
         }),
       ]),
     );
+  });
+
+  test("임시치아+Pontic 연결은 임시치아 브리지 1세트다", () => {
+    const fees = computePracticeTransferRetailFees({
+      toothWorks: [
+        {
+          toothNumber: "45",
+          prosthesisType: "임시치아",
+          customAbutment: true,
+          abutmentProductMode: "design_custom_abutment",
+          bridgeLinkedTeeth: ["44"],
+        },
+        {
+          toothNumber: "44",
+          prosthesisType: "Pontic",
+          bridgeLinkedTeeth: ["45", "43"],
+        },
+        {
+          toothNumber: "43",
+          prosthesisType: "임시치아",
+          customAbutment: true,
+          abutmentProductMode: "design_custom_abutment",
+          bridgeLinkedTeeth: ["44"],
+        },
+      ],
+      labFeeSchedule: LAB_FEE_SCHEDULE_SAMPLE,
+      abutmentPricingTier: "membership",
+    });
+    expect(fees.labFeeTotal).toBe(30000);
+    expect(fees.abutmentRetailTotal).toBe(50000);
+    expect(fees.abutmentQty).toBe(2);
+    expect(
+      fees.lines.filter((line) => String(line.prosthesisType).includes("임시치아")),
+    ).toEqual([
+      expect.objectContaining({
+        toothNumber: "43,44,45",
+        prosthesisType: "임시치아(하악) 3치",
+        labFee: 30000,
+      }),
+    ]);
+    expect(
+      fees.lines.some((line) => /pontic/i.test(String(line.prosthesisType))),
+    ).toBe(false);
   });
 
   test("유지장치는 같은 악궁이어도 연결이 끊기면 스팬당 1세트다", () => {
