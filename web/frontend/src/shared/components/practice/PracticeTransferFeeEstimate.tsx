@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/practice/practiceTransferFeeQuote.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/components/practice/PracticeToothWorkChartReadOnly.tsx
+// - 2026-08-20: 견적 툴팁은 기공비 총액까지. 배송비·크레딧 소비 총액은 주문건당 표시하지 않음(묶음 발송·정산 장부 SSOT).
 // - 2026-08-19: 지정 기공소 수가 Off — 바에「기공비 미설정」(0원 금지). 어벗 단가는 유지.
 // - 2026-08-19: 치식 차트 견적 바 leadingAction(스크롤).
 // - 2026-08-19: 견적 열 보철기공비|어벗 디자인+생산비. 둘 다 기공비. 기공소몫/어벗츠몫 헤더·구분선 제거.
@@ -68,7 +69,6 @@ import {
   normalizeLabFeeMultiplier,
   normalizeRushFeeMultiplier,
 } from "@/shared/practice/labFeeSchedule";
-import { useSystemSettings } from "@/hooks/useSystemSettings";
 
 type PracticeTransferFeeEstimateProps = {
   quote: PracticeTransferFeeQuote;
@@ -82,7 +82,7 @@ type PracticeTransferFeeEstimateProps = {
   leadingAction?: ReactNode;
   /** 카드 총액 오른쪽·치식 차트 견적 바 오른쪽(선택) */
   trailingAction?: ReactNode;
-  /** 지그 제작 불필요 — 기공소→치과 배송비 면제 */
+  /** 지그 제작 불필요(청구 SSOT). 견적 UI에는 배송비를 넣지 않음 */
   skipJig?: boolean;
   /** 신속처리 할증 표기 */
   rushProcessing?: boolean;
@@ -90,7 +90,6 @@ type PracticeTransferFeeEstimateProps = {
   labEffectiveStars?: number | null;
   /**
    * 크레딧 장부 상세 전용. 보철기공비·어벗 디자인+생산비 각각 true=지급보류, false=지급완료.
-   * 미전달 시(의뢰 작성 등) 배송비는 주문 시 보류 안내 유지.
    */
   creditLabHoldPending?: boolean | null;
   creditAbutmentHoldPending?: boolean | null;
@@ -370,7 +369,7 @@ export function PracticeTransferFeeEstimate({
   labPending = false,
   leadingAction = null,
   trailingAction = null,
-  skipJig = true,
+  skipJig: _skipJig = true,
   rushProcessing = false,
   labEffectiveStars: _labEffectiveStars = null,
   creditLabHoldPending = null,
@@ -386,25 +385,10 @@ export function PracticeTransferFeeEstimate({
   const showCreditShareSettlement =
     isDetail &&
     (creditLabHoldPending !== null || creditAbutmentHoldPending !== null);
-  const labCreditSettled =
-    creditLabHoldPending !== null &&
-    creditLabHoldPending !== undefined &&
-    !creditLabHoldPending;
-  const abutmentCreditSettled =
-    creditAbutmentHoldPending !== null &&
-    creditAbutmentHoldPending !== undefined &&
-    !creditAbutmentHoldPending;
-  const { data: systemSettings } = useSystemSettings();
   const rushFeeMultiplier = (() => {
     // 신규 신속처리 할증 없음. 레거시 quote 배수만 표시.
     return normalizeRushFeeMultiplier(quote.rushFeeMultiplier);
   })();
-  const shippingFeePerBox = Math.max(
-    0,
-    Math.round(
-      Number(systemSettings?.creditSettings?.shippingFee ?? 3500) || 3500,
-    ),
-  );
 
   if (showLabPendingHint) {
     return (
@@ -573,69 +557,6 @@ export function PracticeTransferFeeEstimate({
   const labTotalMaxOverride =
     hasBudgetSpread && labTotalMinOverride != null ? budgetLabFeeMax : null;
 
-  // 출고 출발지별 배송비 안내(치과 뷰). 박스당 shippingFee.
-  // 기공소 출발: 보철기공·기공소어벗·(지그 포함 CA 디자인). 지그 불필요면 CA만으로는 기공소 배송 없음.
-  // 어벗츠 출발: 어벗츠 커스텀어벗.
-  const hasLabProsthesisShip = breakdownLines.some(
-    (line) =>
-      line.labFee > 0 ||
-      (line.labFeeMin != null && line.labFeeMin > 0) ||
-      line.labAbutmentFee > 0 ||
-      Boolean(line.labAbutmentPending),
-  );
-  const hasCaDesignShip =
-    !skipJig &&
-    !isLab &&
-    breakdownLines.some(
-      (line) =>
-        line.abutmentRetail > 0 || line.abutmentRetailNote === "quote",
-    );
-  const hasLabOriginShip = hasLabProsthesisShip || hasCaDesignShip;
-  const hasAbutsOriginShip = breakdownLines.some(
-    (line) =>
-      line.abutmentRetail > 0 || line.abutmentRetailNote === "quote",
-  );
-  const shippingHintLines =
-    !isLab && shippingFeePerBox > 0
-      ? [
-          ...(hasLabOriginShip
-            ? [
-                {
-                  key: "lab",
-                  label: "치과→기공소",
-                  amount: shippingFeePerBox,
-                  holdPending: showCreditShareSettlement
-                    ? creditLabHoldPending
-                    : null,
-                },
-              ]
-            : []),
-          ...(hasAbutsOriginShip
-            ? [
-                {
-                  key: "abuts",
-                  label: "치과→어벗츠",
-                  amount: shippingFeePerBox,
-                  holdPending: showCreditShareSettlement
-                    ? creditAbutmentHoldPending
-                    : null,
-                },
-              ]
-            : []),
-        ]
-      : [];
-  const shippingTotal = shippingHintLines.reduce(
-    (sum, row) => sum + row.amount,
-    0,
-  );
-  const shippingHeaderLabel = showCreditShareSettlement
-    ? labCreditSettled && abutmentCreditSettled
-      ? "배송비(차감 완료 · 박스당)"
-      : labCreditSettled || abutmentCreditSettled
-        ? "배송비(박스당)"
-        : "배송비(주문 시 보류 · 박스당)"
-    : "배송비(주문 시 보류 · 박스당)";
-
   const abutmentOnlyAmount =
     abutmentFromBreakdown > 0
       ? abutmentFromBreakdown
@@ -722,42 +643,6 @@ export function PracticeTransferFeeEstimate({
       {rushLabel ? (
         <p className="mt-1.5 text-[11px] leading-relaxed text-amber-800/90">
           {rushLabel} 적용
-        </p>
-      ) : null}
-      {shippingHintLines.length > 0 ? (
-        <div className="mt-1.5 space-y-0.5 border-t border-foreground/15 pt-1.5 text-[11px] leading-snug text-muted-foreground">
-          <p className="font-medium text-foreground/80">{shippingHeaderLabel}</p>
-          {shippingHintLines.map((row) => (
-            <p key={row.key} className="tabular-nums">
-              {row.label}{" "}
-              <span className="font-medium text-foreground">
-                {formatManWon(row.amount)}
-              </span>
-              {row.holdPending !== null && row.holdPending !== undefined ? (
-                <span
-                  className={cn(
-                    "ml-1.5 inline-flex rounded border px-1 py-px text-[10px] font-medium leading-tight",
-                    creditShareSettlementClass(row.holdPending),
-                  )}
-                >
-                  {creditShareSettlementLabel(row.holdPending)}
-                </span>
-              ) : null}
-            </p>
-          ))}
-          {skipJig && hasAbutsOriginShip && !hasLabProsthesisShip ? (
-            <p>지그 필요없음으로 기공소→치과 배송비는 차감하지 않습니다.</p>
-          ) : null}
-        </div>
-      ) : null}
-      {!isLab && (quote.total > 0 || shippingTotal > 0) ? (
-        <p className="mt-1.5 border-t border-foreground/15 pt-1.5 font-medium tabular-nums">
-          {hasBudgetRange
-            ? `크레딧 소비 ${formatWonRange(
-                creditMin + shippingTotal,
-                amount + shippingTotal,
-              )}`
-            : `크레딧 소비 총액 ${formatManWon(quote.total + shippingTotal)}`}
         </p>
       ) : null}
     </>

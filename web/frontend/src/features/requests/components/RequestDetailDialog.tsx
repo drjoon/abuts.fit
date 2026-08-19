@@ -1,6 +1,7 @@
 import { type ReactNode } from "react";
 
 // change-log:
+// - 2026-08-20: 주문 상세에서 배송비 행 제거. 배송비는 묶음 발송·크레딧 장부만.
 // - 2026-08-19: dismissLocked — 확인 중 바깥 클릭·ESC로 상세를 닫지 않음.
 // - 2026-08-19: 왼쪽 원본 STL 프리뷰. 준비 단계 취소를 footer로 연결.
 // - 2026-08-18: 의뢰 상세 모달을 rounded-2xl 헤더·섹션 카드 톤으로 정리.
@@ -271,9 +272,6 @@ export const RequestDetailDialog = ({
   const expressFeeSetting =
     systemSettings?.creditSettings?.expressFee ??
     CREDIT_SETTINGS_DEFAULTS.expressFee;
-  const shippingFeeSetting =
-    systemSettings?.creditSettings?.shippingFee ??
-    CREDIT_SETTINGS_DEFAULTS.shippingFee;
   const caseInfos = request?.caseInfos || {};
   const implantDisplay = formatImplantDisplay(caseInfos);
   const modelNumberLabel = generateModelNumber(caseInfos);
@@ -339,7 +337,6 @@ export const RequestDetailDialog = ({
     designFeeTotal > 0 && feeQty > 0
       ? Math.round(designFeeTotal / feeQty)
       : 0;
-  const shippingQty = 1;
   const toothDisplay = isDesignMode
     ? resolveDesignAbutmentToothLabel(caseInfos)
     : String(caseInfos.tooth || "").trim() || "-";
@@ -548,27 +545,6 @@ export const RequestDetailDialog = ({
                         {`크레딧 사용액은 생산비와 디자인비${
                           expressFeeTotal > 0 ? "·신속비" : ""
                         }입니다.`}
-                      </p>
-                    </div>
-
-                    <div className="border-t border-slate-200 pt-2 space-y-1">
-                      <div className="flex items-baseline justify-between gap-3">
-                        <span className="text-slate-600 shrink-0">
-                          배송비
-                          <span className="ml-1 text-xs text-slate-400">
-                            (출고 시)
-                          </span>
-                        </span>
-                        <span className="font-medium tabular-nums text-right text-slate-700">
-                          {formatUnitTimesQty(
-                            Number(shippingFeeSetting),
-                            shippingQty,
-                            Number(shippingFeeSetting),
-                          )}
-                        </span>
-                      </div>
-                      <p className="text-[11px] leading-relaxed text-slate-500">
-                        배송비는 출고 시 박스 단위로 별도 차감됩니다.
                       </p>
                     </div>
                   </div>
