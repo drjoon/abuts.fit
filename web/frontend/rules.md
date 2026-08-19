@@ -148,7 +148,7 @@ Notes:
   - `src/pages/admin/system/AdminPlatformSettingsPage.tsx` (크레딧 · 커스텀어벗 · 인증 기공소 · 어벗츠 수가 · 기공소 수가. 수수료율=`GET|PATCH /api/admin/settings/platform-fees`. 기공소 신규 기공비는 어벗츠 수가 탭 배지·하이라이트)
   - `src/pages/admin/partners/AdminPartnersPage.tsx` (사이드「사업영역」. 탭당 한 카드: 기공사업 · 어벗사업 · 플랫폼사업. 주체는 role Select(`RoleSelect`). 팀원 검색은 해당 주체 role만. 기공=기공팀·영업팀·개발운영사. 어벗=제조사·개발운영사·딜러사·어벗츠. 플랫폼=어벗츠·개발운영사. 구성원 분배액은 카드 안에서 수정. 분배는 매출에서 배송비를 먼저 차감한 잔여만(배송은 여기 미기재). 기공=내부기공소(기공사업부) 배당 건만 배송비 공통 지출 차감 후 내부 기공팀·영업팀 인센티브(면세)+개발운영사(+VAT). 어벗=건당 제조사 9,000(면세)·개발운영사 1,000·딜러사 3,000+VAT, 잔여 어벗츠. 의뢰서 소개코드(딜러사) 있으면 딜러사·없으면 어벗츠. 특별주문가는 주체별 배분액. 플랫폼=자동매칭·지정(현재 무료)을 어벗츠 90%/개발운영사 10%)
   - `src/features/settings/tabs/AdminAbutsLabFeeScheduleTab.tsx` (어벗츠 수가. 기공소 신규 항목은 Off·검토 대기; On=적용. 이벤트 `abuts-lab-fee:pending-items`)
-  - `src/features/settings/tabs/AdminCreditSettingsTab.tsx` (`variant=credits`: 환영 무료 크레딧·배송 / `variant=customAbut`: 커스텀어벗(CNC/환봉·어벗디자인비)·어벗 추가 요청·특별 공급가)
+  - `src/features/settings/tabs/AdminCreditSettingsTab.tsx` (`variant=credits`: 환영 무료 크레딧·배송 / `variant=customAbut`: 고시 생산·디자인+생산·딜러없음 분배·레거시 기공소 오버레이·환봉 추가요청)
   - `src/pages/admin/system/AdminRoundBarAbutmentTab.tsx` (어벗 추가 요청. 도입 전 CNC어벗/환봉어벗 선택. 종류가 치과 단가에 반영. `GET|PATCH /api/admin/round-bar-requests`)
   - `src/pages/devops/components/DevopsPlatformFeeTab.tsx` (매칭 % · 지정 적용 on/off + % · 월 참여. `PracticeTransferAutoMatchTab` 카드 안. SSOT `payoutRates.platformFeeRate` / `directPlatformFeeEnabled` / `directPlatformFeeRate`)
 - 개발·운영사 설정
@@ -168,7 +168,7 @@ Notes:
       - `src/features/platform/PlatformBenefitsShareButtons.tsx` (안내+링크 클립보드 복사)
   - 의뢰자(치과) 설정: 구독 탭 없음. 구 `?tab=subscription` → 계정. 대시보드 헤더는 `[정책 안내]`만.
     - `src/pages/requestor/dashboard/components/RequestorPolicyRemakeHeader.tsx`
-    - `src/shared/ui/PricingPolicyDialog.tsx` — 치과=어벗디자인 생산 1.5만 · 구강스캔 디자인+생산 2.5만(구강지그 포함). 기공소=어벗생산의뢰/기공의뢰수신 동일 고시. 신속 +2,000 · 배송 3,500. 풀세트·환봉·디자인비+지그 행 없음. 멤버십/구독 UI 없음.
+    - `src/shared/ui/PricingPolicyDialog.tsx` — 치과=어벗디자인 생산 1.5만 · 구강스캔 디자인+생산 2.5만(지르코니아 제작 시 구강지그 포함, 그 외 불포함). 기공소=어벗생산의뢰/기공의뢰수신 동일 고시. 신속 +2,000 · 배송 3,500. 풀세트·환봉·디자인비+지그 행 없음. 멤버십/구독 UI 없음.
   - 수락 후 마감: `DevopsDesignDeadlineTab` — 디자인 클레임 후 작업 마감(`designDeadlineSettings.claimHours`, 기본 3시간). 파트너 **기공의뢰 자동매칭** 탭 상단
   - 기공의뢰 자동매칭: `PracticeTransferAutoMatchTab`(카드·탭 **인증 기공소**) — 수수료 스트립(매칭%/지정 on·off·%/월) + 기공소별 인증 ON·기공 테스트·메모. 기공소 설정 탭은 없음. 관리자 테스트 통과/`enabled` 시 풀 참여. 매칭 성공 `platformFeeRate%` · 지정은 기본 무료(`directPlatformFeeEnabled` off) · on 시 `directPlatformFeeRate%`. 관리자 플랫폼 설정「인증 기공소」탭
   - 기공소 어벗츠 인증: 가입 시 미신청 → 신청 → 기공 테스트 → 통과 시 인증. 상태·테스트·메모 SSOT `BusinessAnchor.abutsLabCertification` / `src/shared/practice/abutsLabCertification.ts`
@@ -293,7 +293,7 @@ Notes:
     - **기공소 기공의뢰수신**: 의뢰카드·전송 상세에 수령액(청구 − 플랫폼 수수료) 표시.
     - **기공소**: 유료(선입금)·무료·기공크레딧을 **경로별로 분리 표시**. 주문 차감은 무료→기공→유료 통합. 기공 사용=월 정산 상계. 크레딧 페이지 탭은 내역·충전만. 내역 필터: 버킷(유료/무료/기공)·동작(충전/소비/조정). `SPEND_SETTLEMENT`=기공크레딧 주문 사용.
     - **기공소 기공의뢰 장부**: 보철기공비와 어벗 디자인+생산비는 모두 기공비. 금액 호버는 두 열+배송. **지급 상태는 기공비만**(지급되었으면 지급완료). 행 클릭 상세는 기공소 견적 뷰(열: 보철기공비|어벗 디자인+생산비). CA 디자인비 원장(`abutment_design_lab_fee`)을 생산의뢰 행으로 따로 표시하지 않는다.
-    - **치과 장부**: 구강스캔 기공의뢰=`기공의뢰-구강스캔으로`. 금액 호버는 견적 열 기준 **보철기공비**(지르 등 기공수가)·**어벗 디자인+생산비**(구강스캔 2.5만, 구강지그 포함)·배송. 정산 경로 보류(디자인비를 기공소몫에 합쳐 7만+1.5만으로 보이는 것)는 쓰지 않는다. 어벗디자인(치과)·어벗생산(기공소) 의뢰비·배송비는 **의뢰 사업자+예정 출고일** 1박스(`기공의뢰-어벗디자인으로`). 치과명으로 쪼개지 않음. 거래내역은 의뢰 사업자+건수, 클릭 시 의뢰/배송 상세(신속/묶음 뱃지). 지급 상태는 구강스캔과 같이 보류/일부 지급/지급 완료.
+    - **치과 장부**: 구강스캔 기공의뢰=`기공의뢰-구강스캔으로`. 금액 호버는 견적 열 기준 **보철기공비**(지르 등 기공수가)·**어벗 디자인+생산비**(구강스캔 2.5만, 지르코니아 제작 시 구강지그 포함)·배송. 정산 경로 보류(디자인비를 기공소몫에 합쳐 7만+1.5만으로 보이는 것)는 쓰지 않는다. 어벗디자인(치과)·어벗생산(기공소) 의뢰비·배송비는 **의뢰 사업자+예정 출고일** 1박스(`기공의뢰-어벗디자인으로`). 치과명으로 쪼개지 않음. 거래내역은 의뢰 사업자+건수, 클릭 시 의뢰/배송 상세(신속/묶음 뱃지). 지급 상태는 구강스캔과 같이 보류/일부 지급/지급 완료.
   - 안내 모달([정책 안내])·어벗 라인 요약카드(무료 재제작 잔여) 문구는 동일한 `90일` 기준을 사용해야 합니다.
   - 관련 파일:
     - `src/shared/ui/PricingPolicyDialog.tsx`
@@ -434,7 +434,7 @@ Notes:
     잔액 < 50만원이면 사이드바 `크레딧`에 깜빡이는 충전 뱃지·클릭 시 `?tab=charge` (`DashboardLayout`).
     백엔드: `utils/creditChargeUnit.js`, `creditBPlan.controller.js`, `credit.controller.js` insights.
   - 공개 안내/약관: `ServicePage`, `TermsPage`, `HelpPage` — 치과·기공소 경로는 면세·부가세 없음, 크레딧=기공료 선입금(선납 대금).
-  - 가격 정책/대시보드: `PricingPolicyDialog` — 치과 고시 어벗디자인으로 생산 1.5만 · 구강스캔으로 디자인+생산 2.5만(구강지그 포함). 기공소는 어벗생산의뢰/기공의뢰수신 동일 고시. 신속 출고 +2,000(1개당) · 배송비 3,500(1박스당). 풀세트·환봉·디자인비+지그 행 없음. 멤버십/구독 행 없음.
+  - 가격 정책/대시보드: `PricingPolicyDialog` — 치과 고시 어벗디자인으로 생산 1.5만 · 구강스캔으로 디자인+생산 2.5만(지르코니아 제작 시 구강지그 포함, 그 외 불포함). 기공소는 어벗생산의뢰/기공의뢰수신 동일 고시. 신속 출고 +2,000(1개당) · 배송비 3,500(1박스당). 풀세트·환봉·디자인비+지그 행 없음. 멤버십/구독 행 없음.
   - 관리자 플랫폼 설정「커스텀어벗」: 고시(생산·디자인+생산) + 딜러없음 분배 단가. 멤버/일반·디자인비+지그 카드 없음. 기공소 공급은 레거시 오버레이 안내.
   - 제조사 정산규칙: 원청–하청 고정단가(의뢰·배송 공급가, 면세). % 분배 안내 금지.
   - 관리자 고객향 세금계산서 직접발행: 공급가 입력 시 세액 자동 10% 금지(기본 세액 0). 딜러사·개발운영사 `AFFILIATE_TO_ABUTS`만 과세.

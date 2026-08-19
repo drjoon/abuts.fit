@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-19: 디자인+생산 구강지그 — 지르코니아 제작 시 포함, 그 외 불포함(치과·기공소 공통).
 // - 2026-08-19: 치과 고시 단가=creditSettings 멤버십 생산/디자인+생산. 크레딧 차감과 동일 SSOT.
 // - 2026-08-19: 구강스캔 디자인+생산은 구강지그 포함. 어벗디자인 생산만은 제외 유지.
 // - 2026-08-18: 치과 리메이크를 의뢰 취소와 같은 카드로 분리. 가격 카드 하단 구강스캔/보철 안내 삭제.
@@ -72,11 +73,8 @@ const DEFAULT_LEAD_TIMES: Record<DiameterKey, LeadTimeRange> = {
   d12: { minBusinessDays: 4, maxBusinessDays: 7 }
 };
 
-/** 기공소 안내 단가(멤버십 없음). 치과 creditSettings 단가와 별도. */
-const LAB_POLICY_CNC_PRODUCTION_PRICE = 10_000;
-const LAB_POLICY_CNC_DESIGN_AND_PRODUCTION_PRICE = 20_000;
-const LAB_POLICY_ROUND_BAR_PRODUCTION_PRICE = 20_000;
-const LAB_POLICY_ROUND_BAR_DESIGN_AND_PRODUCTION_PRICE = 30_000;
+const DESIGN_AND_PRODUCTION_JIG_NOTE =
+  '1개당 · 지르코니아 제작 시 구강지그 포함 · 그 외 불포함';
 
 function PolicySection({
   title,
@@ -200,13 +198,6 @@ export const PricingPolicyDialog = ({
         ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE
     ) || ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE
   );
-  const abutmentDesignLabFee = Math.max(
-    0,
-    Number(
-      systemSettings?.creditSettings?.abutmentDesignLabFee ??
-        CREDIT_SETTINGS_DEFAULTS.abutmentDesignLabFee
-    ) || CREDIT_SETTINGS_DEFAULTS.abutmentDesignLabFee
-  );
   const shippingFee = Math.max(
     0,
     Number(
@@ -276,9 +267,7 @@ export const PricingPolicyDialog = ({
       ? '개발운영사 분배 기준'
       : variant === 'salesman'
         ? '딜러사 수수료 정책'
-        : isLab
-          ? '커스텀 어벗 생산 가격 · 출고 정책 안내'
-          : '가격 · 출고 정책 안내';
+        : '가격 · 출고 정책 안내';
 
   const subtitle =
     variant === 'devops'
@@ -286,7 +275,7 @@ export const PricingPolicyDialog = ({
       : variant === 'salesman'
         ? '소개 수수료 지급 기준과 정산 주기를 확인하세요.'
         : isLab
-          ? '단가 · 출고 기준을 한눈에 확인하세요.'
+          ? '기공의뢰수신 · 어벗생산의뢰 단가와 출고 기준을 확인하세요.'
           : '구강스캔 · 어벗디자인 단가와 출고 기준을 확인하세요.';
 
   return (
@@ -373,67 +362,25 @@ export const PricingPolicyDialog = ({
             <div className='space-y-3'>
               <section className='rounded-xl border border-slate-200 bg-white px-4 py-4'>
                 <div className='space-y-3'>
-                  {isLab ? (
-                    <>
-                      <PriceRow
-                        label='CNC어벗 생산만'
-                        value={formatAbutsManwon(
-                          LAB_POLICY_CNC_PRODUCTION_PRICE
-                        )}
-                        unitLabel='1개당'
-                      />
-                      <div className='h-px bg-slate-100' />
-                      <PriceRow
-                        label='CNC어벗 디자인+생산 의뢰'
-                        value={formatAbutsManwon(
-                          LAB_POLICY_CNC_DESIGN_AND_PRODUCTION_PRICE
-                        )}
-                        unitLabel='1개당 (지그 제외)'
-                      />
-                      <div className='h-px bg-slate-100' />
-                      <PriceRow
-                        label='환봉어벗 생산만'
-                        value={formatAbutsManwon(
-                          LAB_POLICY_ROUND_BAR_PRODUCTION_PRICE
-                        )}
-                        unitLabel='1개당'
-                      />
-                      <div className='h-px bg-slate-100' />
-                      <PriceRow
-                        label='환봉어벗 디자인+생산'
-                        value={formatAbutsManwon(
-                          LAB_POLICY_ROUND_BAR_DESIGN_AND_PRODUCTION_PRICE
-                        )}
-                        unitLabel='1개당 (지그 제외)'
-                      />
-                    </>
-                  ) : (
-                    <>
-                      <PriceRow
-                        label='어벗디자인으로 · 어벗 생산'
-                        value={formatAbutsManwon(productionPrice)}
-                        unitLabel='1개당 · 구강지그 제외'
-                      />
-                      <div className='h-px bg-slate-100' />
-                      <PriceRow
-                        label='구강스캔으로 · 어벗 디자인+생산'
-                        value={formatAbutsManwon(designAndProductionPrice)}
-                        unitLabel='1개당 · 구강지그 포함'
-                      />
-                    </>
-                  )}
-                  {isLab ? (
-                    <>
-                      <div className='h-px bg-slate-100' />
-                      <PriceRow
-                        label='디자인비+지그제작비'
-                        value={formatAbutsAbutmentServiceWon(
-                          abutmentDesignLabFee
-                        )}
-                        unitLabel='1개당 · 기공의뢰 CA 시 수락 기공소 지급(기공비)'
-                      />
-                    </>
-                  ) : null}
+                  <PriceRow
+                    label={
+                      isLab
+                        ? '어벗생산의뢰 · 어벗 생산'
+                        : '어벗디자인으로 · 어벗 생산'
+                    }
+                    value={formatAbutsManwon(productionPrice)}
+                    unitLabel='1개당 · 구강지그 제외'
+                  />
+                  <div className='h-px bg-slate-100' />
+                  <PriceRow
+                    label={
+                      isLab
+                        ? '기공의뢰수신 · 어벗 디자인+생산'
+                        : '구강스캔으로 · 어벗 디자인+생산'
+                    }
+                    value={formatAbutsManwon(designAndProductionPrice)}
+                    unitLabel={DESIGN_AND_PRODUCTION_JIG_NOTE}
+                  />
                   <div className='h-px bg-slate-100' />
                   <PriceRow
                     label='커스텀 어벗 신속 출고'
@@ -447,59 +394,30 @@ export const PricingPolicyDialog = ({
                     unitLabel='1박스당'
                   />
                 </div>
-                {isLab ? (
-                  <div className='mt-3 rounded-lg bg-slate-50 px-3 py-2.5 text-xs leading-relaxed text-slate-600'>
-                    <span className='font-medium text-slate-800'>
-                      기공의뢰 견적
-                    </span>
-                    : 기공비 = 보철기공비 + 디자인비(+지그) · 어벗 = 어벗생산비.
-                  </div>
-                ) : null}
               </section>
 
-              {showWelcomeCredit ? (
-                <div className='grid gap-3 sm:grid-cols-2'>
-                  <PolicySection title='가입 환영 무료 크레딧'>
-                    <p className='text-2xl font-semibold tracking-tight text-slate-900'>
-                      {welcomeRequestCredit.toLocaleString('ko-KR')}원
-                    </p>
-                    <p className='text-xs text-slate-500'>
-                      신규 가입 기공소에 무료크레딧으로 1회 지급
-                    </p>
-                  </PolicySection>
-                  <PolicySection title='의뢰 취소'>
-                    <p>
-                      <span className='font-semibold text-slate-900'>
-                        준비 단계
-                      </span>
-                      에서만 취소 가능하며, 가공 단계부터는 취소할 수 없습니다.
-                    </p>
-                  </PolicySection>
-                </div>
-              ) : (
-                <div className='grid gap-3 sm:grid-cols-2'>
-                  <PolicySection title='의뢰 취소'>
-                    <p>
-                      <span className='font-semibold text-slate-900'>
-                        준비 단계
-                      </span>
-                      에서만 취소 가능하며, 가공 단계부터는 취소할 수 없습니다.
-                    </p>
-                  </PolicySection>
-                  <PolicySection title='리메이크 무료'>
-                    <p>
-                      사업자(기공소) 기준 월 3건까지 0원.
-                    </p>
-                    <p>
-                      동일 치과·환자·치식, 최근 90일 조건 충족 건에 한함.
-                    </p>
-                  </PolicySection>
-                </div>
-              )}
-              {showWelcomeCredit ? (
+              <div className='grid gap-3 sm:grid-cols-2'>
+                <PolicySection title='의뢰 취소'>
+                  <p>
+                    <span className='font-semibold text-slate-900'>
+                      준비 단계
+                    </span>
+                    에서만 취소 가능하며, 가공 단계부터는 취소할 수 없습니다.
+                  </p>
+                </PolicySection>
                 <PolicySection title='리메이크 무료'>
                   <p>사업자(기공소) 기준 월 3건까지 0원.</p>
                   <p>동일 치과·환자·치식, 최근 90일 조건 충족 건에 한함.</p>
+                </PolicySection>
+              </div>
+              {showWelcomeCredit ? (
+                <PolicySection title='가입 환영 무료 크레딧'>
+                  <p className='text-2xl font-semibold tracking-tight text-slate-900'>
+                    {welcomeRequestCredit.toLocaleString('ko-KR')}원
+                  </p>
+                  <p className='text-xs text-slate-500'>
+                    신규 가입 기공소에 무료크레딧으로 1회 지급
+                  </p>
                 </PolicySection>
               ) : null}
 

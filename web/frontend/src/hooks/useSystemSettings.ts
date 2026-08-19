@@ -4,7 +4,7 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/features/settings/tabs/AdminCreditSettingsTab.tsx
 // - web/frontend/src/shared/pricing/abutsAbutmentService.ts
-// - 2026-08-14: 환봉 단가 반영을 위해 staleTime 60s.
+// - 2026-08-19: 기공소 공급 기본값을 고시(1.5만/2.5만)로.
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "@/shared/api/apiClient";
 import {
@@ -82,9 +82,9 @@ export const CREDIT_SETTINGS_DEFAULTS: CreditSettings = {
   regularRoundBarProductionPrice: 0,
   membershipRoundBarDesignAndProductionPrice: 0,
   regularRoundBarDesignAndProductionPrice: 0,
-  labProductionPrice: ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE,
+  labProductionPrice: ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
   labDesignAndProductionPrice:
-    ABUTS_ABUTMENT_REGULAR_DESIGN_AND_PRODUCTION_PRICE,
+    ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE,
   labRoundBarProductionPrice: 0,
   labRoundBarDesignAndProductionPrice: 0,
 };

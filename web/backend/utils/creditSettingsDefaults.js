@@ -6,7 +6,7 @@
 // - web/backend/controllers/admin/admin.settings.controller.js
 // - web/frontend/src/features/settings/tabs/AdminCreditSettingsTab.tsx
 // change-log:
-// - 2026-08-18: 기공소 공급 단가는 어벗생산의뢰만. 기공의뢰(PTX) CA는 치과 공급 단가.
+// - 2026-08-19: 기공소 오버레이 미설정 폴백을 고시(membership*)로.
 // - 2026-08-17: practiceRushFeeMultiplier(기공의뢰 신속처리 할증) 추가.
 // - 2026-08-18: CNC 분배 비율 멤버(60+20+5+15)·일반(60+10+30) 분리.
 // - 2026-08-18: CNC 매출 분배 공통 비율(%) — 티어별 금액은 매출×비율로 산출.
@@ -308,11 +308,11 @@ function readLabSupplyPrices(creditSettings = {}) {
   return {
     labProductionPrice: readWon(
       creditSettings.labProductionPrice,
-      creditSettings.regularProductionPrice ?? SCHEMA_DEFAULTS.labProductionPrice,
+      creditSettings.membershipProductionPrice ?? SCHEMA_DEFAULTS.labProductionPrice,
     ),
     labDesignAndProductionPrice: readWon(
       creditSettings.labDesignAndProductionPrice,
-      creditSettings.regularDesignAndProductionPrice ??
+      creditSettings.membershipDesignAndProductionPrice ??
         SCHEMA_DEFAULTS.labDesignAndProductionPrice,
     ),
     labRoundBarProductionPrice: readWon(

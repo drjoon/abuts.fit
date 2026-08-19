@@ -12,7 +12,7 @@ import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPat
 
 // - 2026-08-19: 기공소·어벗츠기공소 사이드 — 대시보드/대기보드 제거. 기공의뢰 그룹(수신·어벗생산의뢰).
 // - 2026-08-19: 펼친 사이드 메인 메뉴는 아이콘 왼쪽·라벨 가운데. 배지는 우측 고정. 라벨은 줄이지 않음.
-// - 2026-08-19: 구강스캔으로 툴팁 — 디자인+생산에 구강지그 포함. 지그는 별도 항목이 아님.
+// - 2026-08-19: 구강스캔으로 툴팁 — 지르코니아 제작 시 구강지그 포함.
 // - 2026-08-18: 치과 사이드 — 대시보드 제거. 어벗디자인 헤더가 기간·출고·지난의뢰·불완전가공.
 // - 2026-08-18: 치과 사이드 — 기공의뢰 메인 + 구강스캔으로/어벗디자인으로 서브.
 // - 2026-08-18: 치과 사이드 — 기공의뢰 그룹 아래 구강스캔/어벗디자인 서브(관리자 섹션과 동일).
@@ -166,7 +166,7 @@ const LAB_RECEIVE_HREF = "/dashboard/practice-transfers?mode=receive";
 const INTERNAL_LAB_RECEIVE_HREF = "/dashboard/lab-work";
 const LAB_ABUTMENT_PRODUCTION_HREF = "/dashboard/new-request";
 const PRACTICE_ORAL_SCAN_REQUEST_TOOLTIP =
-  "구강스캔으로 커스텀어벗 디자인+생산(구강지그 포함), 임시치아·지르 보철 의뢰";
+  "구강스캔으로 커스텀어벗 디자인+생산(지르코니아 제작 시 구강지그 포함), 임시치아·지르 보철 의뢰";
 const PRACTICE_ABUTMENT_DESIGN_REQUEST_TOOLTIP =
   "완성된 어벗 디자인(STL)으로 CNC 생산 의뢰";
 const LAB_RECEIVE_TOOLTIP =

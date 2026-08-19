@@ -1,5 +1,5 @@
 // change-log:
-// - 2026-08-18: 기공소 공급 안내 — 어벗생산의뢰만. 기공의뢰 수신 CA는 치과 공급.
+// - 2026-08-19: 고시=생산·디자인+생산. 멤버/일반→딜러 분배 배지. 디자인비+지그 UI 제거.
 // - 2026-08-18: 기공소 공급 CNC·환봉 소제목을 가로 2열로.
 // - 2026-08-18: 기공소 공급 어벗을 의뢰자별이 아니라 치과 공급과 같은 전역 멤버 카드 4장으로.
 // - 2026-08-18: 카드 제목 커스텀어벗→치과 공급 어벗, 특별 공급가→기공소 공급 어벗.
@@ -301,25 +301,25 @@ const CNC_DEFAULT_TIERS: Array<{
   shareKind: ShareKind;
 }> = [
   {
-    label: "CNC 생산(멤버)",
+    label: "생산(고시)",
     revenueKey: "membershipProductionPrice",
     partyPrefix: "membershipProduction",
     shareKind: "membership",
   },
   {
-    label: "CNC 생산(일반)",
+    label: "생산(딜러없음)",
     revenueKey: "regularProductionPrice",
     partyPrefix: "regularProduction",
     shareKind: "regular",
   },
   {
-    label: "CNC D+P(멤버)",
+    label: "디자인+생산(고시)",
     revenueKey: "membershipDesignAndProductionPrice",
     partyPrefix: "membershipDesignAndProduction",
     shareKind: "membership",
   },
   {
-    label: "CNC D+P(일반)",
+    label: "디자인+생산(딜러없음)",
     revenueKey: "regularDesignAndProductionPrice",
     partyPrefix: "regularDesignAndProduction",
     shareKind: "regular",
@@ -336,8 +336,8 @@ const LAB_SUPPLY_CNC_CARDS: Array<{
   id: LabSupplyPriceKey;
   title: string;
 }> = [
-  { id: "labProductionPrice", title: "CNC 생산" },
-  { id: "labDesignAndProductionPrice", title: "CNC D+P" },
+  { id: "labProductionPrice", title: "생산" },
+  { id: "labDesignAndProductionPrice", title: "디자인+생산" },
 ];
 
 const LAB_SUPPLY_ROUND_BAR_CARDS: Array<{
@@ -345,7 +345,7 @@ const LAB_SUPPLY_ROUND_BAR_CARDS: Array<{
   title: string;
 }> = [
   { id: "labRoundBarProductionPrice", title: "환봉 생산" },
-  { id: "labRoundBarDesignAndProductionPrice", title: "환봉 D+P" },
+  { id: "labRoundBarDesignAndProductionPrice", title: "환봉 디자인+생산" },
 ];
 
 function tierPartyFieldKey(prefix: TierPartyPrefix, kind: PartyKind): keyof CreditSettings {
@@ -1172,13 +1172,13 @@ export const AdminCreditSettingsTab = ({
       ...CREDIT_SETTINGS_DEFAULTS,
       specialRequestorPrices: [],
       labProductionPrice:
-        CREDIT_SETTINGS_DEFAULTS.regularProductionPrice,
+        CREDIT_SETTINGS_DEFAULTS.labProductionPrice,
       labDesignAndProductionPrice:
-        CREDIT_SETTINGS_DEFAULTS.regularDesignAndProductionPrice,
+        CREDIT_SETTINGS_DEFAULTS.labDesignAndProductionPrice,
       labRoundBarProductionPrice:
-        CREDIT_SETTINGS_DEFAULTS.regularRoundBarProductionPrice,
+        CREDIT_SETTINGS_DEFAULTS.labRoundBarProductionPrice,
       labRoundBarDesignAndProductionPrice:
-        CREDIT_SETTINGS_DEFAULTS.regularRoundBarDesignAndProductionPrice,
+        CREDIT_SETTINGS_DEFAULTS.labRoundBarDesignAndProductionPrice,
       manufacturerSharePercent: MEMBERSHIP_SHARE_PERCENTS.manufacturer,
       salesmanSharePercent: MEMBERSHIP_SHARE_PERCENTS.salesman,
       devopsSharePercent: MEMBERSHIP_SHARE_PERCENTS.devops,
@@ -1536,7 +1536,7 @@ export const AdminCreditSettingsTab = ({
                 <SectionHeader
                   icon={Percent}
                   title="분배 비율 (공통)"
-                  description="환봉어벗을 제외한 항목 매출에 적용합니다. 어벗츠는 잔여분입니다."
+                  description="환봉어벗을 제외한 고시·딜러없음 매출에 적용합니다. 어벗츠는 잔여분입니다. 멤버십 구독 비율이 아닙니다."
                   trailing={
                     <AutoSaveIndicator
                       state={itemSaveStates.sharePercents ?? "idle"}
@@ -1558,12 +1558,12 @@ export const AdminCreditSettingsTab = ({
                 <SectionHeader
                   icon={Package}
                   title="치과 공급 어벗"
-                  description="치과 의뢰와 기공의뢰 커스텀어벗 청구는 멤버 생산가(기본 15,000원)입니다. 신속은 별도 expressFee(+2,000). 일반 단가·비율은 딜러 없는 분배용입니다."
+                  description="공개 정책·청구 고시는 생산·디자인+생산입니다. 고시 배지는 딜러 소개가 있을 때, 딜러없음은 분배식만 다릅니다. 치과 구독/멤버십 단가가 아닙니다."
                 />
 
                 <div className="space-y-3">
-                  <SubSectionHeader title="CNC어벗 · 디자인비" />
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                  <SubSectionHeader title="CNC어벗" />
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                     {CNC_DEFAULT_TIERS.map((tier) => {
                       const { title, badge } = parseTierLabel(tier.label);
                       const scopeKey = `tier:${tier.partyPrefix}`;
@@ -1608,36 +1608,18 @@ export const AdminCreditSettingsTab = ({
                             scheduleTierSave(tier);
                           }}
                         />
-                      );
-                    })}
-                    <SalesAmountCard
-                      id="abutmentDesignLabFee"
-                      title="디자인비+지그"
-                      value={settings.abutmentDesignLabFee}
-                      disabled={loading}
-                      saveState={itemSaveStates["misc:designLabFee"] ?? "idle"}
-                      help="기공의뢰에 커스텀어벗이 포함되면 수락 기공소가 디자인한 뒤 지급합니다. 1어벗당. 기본 10,000원."
-                      onChange={(next) => {
-                        applySettingsUpdate((prev) => ({
-                          ...prev,
-                          abutmentDesignLabFee: next,
-                        }));
-                        scheduleItemSave("misc:designLabFee", () => ({
-                          abutmentDesignLabFee:
-                            settingsRef.current.abutmentDesignLabFee,
-                        }));
-                      }}
-                    />
+                        );
+                      })}
                   </div>
                 </div>
 
                 <div className="space-y-3">
                   <SubSectionHeader title="환봉어벗" />
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                     <SalesAmountCard
                       id="membershipRoundBarProductionPrice"
                       title="환봉 생산"
-                      badge="멤버"
+                      badge="고시"
                       value={settings.membershipRoundBarProductionPrice}
                       disabled={loading}
                       saveState={
@@ -1660,7 +1642,7 @@ export const AdminCreditSettingsTab = ({
                     <SalesAmountCard
                       id="regularRoundBarProductionPrice"
                       title="환봉 생산"
-                      badge="일반"
+                      badge="딜러없음"
                       value={settings.regularRoundBarProductionPrice}
                       disabled={loading}
                       saveState={
@@ -1682,8 +1664,8 @@ export const AdminCreditSettingsTab = ({
                     />
                     <SalesAmountCard
                       id="membershipRoundBarDesignAndProductionPrice"
-                      title="환봉 D+P"
-                      badge="멤버"
+                      title="환봉 디자인+생산"
+                      badge="고시"
                       value={
                         settings.membershipRoundBarDesignAndProductionPrice
                       }
@@ -1706,8 +1688,8 @@ export const AdminCreditSettingsTab = ({
                     />
                     <SalesAmountCard
                       id="regularRoundBarDesignAndProductionPrice"
-                      title="환봉 D+P"
-                      badge="일반"
+                      title="환봉 디자인+생산"
+                      badge="딜러없음"
                       value={settings.regularRoundBarDesignAndProductionPrice}
                       disabled={loading}
                       saveState={itemSaveStates["roundBar:design"] ?? "idle"}
@@ -1735,8 +1717,8 @@ export const AdminCreditSettingsTab = ({
               <CardContent className="space-y-5 p-5 sm:p-6">
                 <SectionHeader
                   icon={Package}
-                  title="기공소 공급 어벗"
-                  description="기공소 어벗생산의뢰에 적용됩니다. 기공의뢰 수신 커스텀어벗에는 쓰지 않습니다."
+                  title="기공소 공급 어벗 (레거시 오버레이)"
+                  description="공개 정책은 위 고시와 같습니다. 이 값은 기공소 어벗생산의뢰 장부 오버레이(labProductionPrice)입니다. 고시와 같게 운영하려면 같은 금액으로 맞추세요."
                 />
 
                 <div className="grid gap-5 lg:grid-cols-2">
@@ -1748,7 +1730,7 @@ export const AdminCreditSettingsTab = ({
                           key={card.id}
                           id={card.id}
                           title={card.title}
-                          badge="멤버"
+                          badge="오버레이"
                           value={settings[card.id]}
                           disabled={loading}
                           saveState={itemSaveStates[`lab:${card.id}`] ?? "idle"}
@@ -1766,7 +1748,7 @@ export const AdminCreditSettingsTab = ({
                           key={card.id}
                           id={card.id}
                           title={card.title}
-                          badge="멤버"
+                          badge="오버레이"
                           value={settings[card.id]}
                           disabled={loading}
                           saveState={itemSaveStates[`lab:${card.id}`] ?? "idle"}

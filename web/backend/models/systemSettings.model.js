@@ -24,7 +24,7 @@ const systemSettingsSchema = new mongoose.Schema(
     },
     creditSettings: {
       minCreditForRequest: { type: Number, default: 15000 },
-      // 멤버십=치과 가입, 일반=기공소·미가입. 저장 시 minCreditForRequest/designFee와 동기화.
+      // 고시=딜러 소개 있을 때 청구·분배. 일반=딜러 없음 분배식. 치과 구독 단가 아님.
       membershipProductionPrice: { type: Number, default: 15000 },
       regularProductionPrice: { type: Number, default: 20000 },
       membershipDesignAndProductionPrice: { type: Number, default: 25000 },
@@ -53,7 +53,7 @@ const systemSettingsSchema = new mongoose.Schema(
       regularRoundBarProductionPrice: { type: Number, default: 0 },
       membershipRoundBarDesignAndProductionPrice: { type: Number, default: 0 },
       regularRoundBarDesignAndProductionPrice: { type: Number, default: 0 },
-      // 기공소 공급 어벗(전역). 멤버십 없음 — CNC/환봉 × 생산만·디자인+생산.
+      // 레거시 기공소 어벗생산의뢰 오버레이. 공개 정책은 membership* 고시.
       labProductionPrice: { type: Number, default: 15000 },
       labDesignAndProductionPrice: { type: Number, default: 25000 },
       labRoundBarProductionPrice: { type: Number, default: 0 },
