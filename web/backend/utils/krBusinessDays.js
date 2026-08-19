@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-19: 같은 연도 공휴일 조회는 inflight 1회로 합치고 prefetchKoreanHolidaysForYears로 제출 경로에서 미리 워밍.
 // - 2026-08-06: getTodayYmdInKst(date?)가 인자 날짜를 반영. 재계산 시 "오늘"로 밀리던 버그 수정.
 // related files:
 // - web/backend/rules.md
@@ -9,6 +10,7 @@ import HolidayCache from "../models/holidayCache.model.js";
 const KST_TZ = "Asia/Seoul";
 
 const holidaysCache = new Map();
+const holidaysInflight = new Map();
 
 function formatYmdInTimeZone(date, timeZone) {
   const fmt = new Intl.DateTimeFormat("en-CA", {
@@ -117,70 +119,94 @@ async function fetchKrHolidaySet(year) {
     return cached.set;
   }
 
-  const isDbReady = HolidayCache?.db?.readyState === 1;
+  const inflight = holidaysInflight.get(year);
+  if (inflight) return inflight;
 
-  if (isDbReady) {
-    try {
-      const doc = await HolidayCache.findOne({
-        countryCode: "KR",
-        year,
-      }).lean();
-      if (doc?.dates?.length && doc?.expiresAt) {
-        const expiresAtMs = new Date(doc.expiresAt).getTime();
-        if (!Number.isNaN(expiresAtMs) && expiresAtMs > now) {
-          const setFromDb = new Set(doc.dates);
-          holidaysCache.set(year, {
-            set: setFromDb,
-            fetchedAt: new Date(doc.fetchedAt || now).getTime(),
-          });
-          return setFromDb;
+  const promise = (async () => {
+    const isDbReady = HolidayCache?.db?.readyState === 1;
+
+    if (isDbReady) {
+      try {
+        const doc = await HolidayCache.findOne({
+          countryCode: "KR",
+          year,
+        }).lean();
+        if (doc?.dates?.length && doc?.expiresAt) {
+          const expiresAtMs = new Date(doc.expiresAt).getTime();
+          if (!Number.isNaN(expiresAtMs) && expiresAtMs > now) {
+            const setFromDb = new Set(doc.dates);
+            holidaysCache.set(year, {
+              set: setFromDb,
+              fetchedAt: new Date(doc.fetchedAt || now).getTime(),
+            });
+            return setFromDb;
+          }
         }
+      } catch {
+        // ignore
       }
-    } catch {
-      // ignore
     }
-  }
 
-  const url = `https://date.nager.at/api/v3/PublicHolidays/${year}/KR`;
-  const resp = await fetch(url, {
-    headers: {
-      Accept: "application/json",
-    },
-  });
-  if (!resp.ok) {
-    throw new Error(`Holiday API failed: ${resp.status}`);
-  }
-  const data = await resp.json();
-  const set = new Set(
-    Array.isArray(data)
-      ? data
-          .map((row) => (typeof row?.date === "string" ? row.date : null))
-          .filter(Boolean)
-      : [],
-  );
+    const url = `https://date.nager.at/api/v3/PublicHolidays/${year}/KR`;
+    const resp = await fetch(url, {
+      headers: {
+        Accept: "application/json",
+      },
+    });
+    if (!resp.ok) {
+      throw new Error(`Holiday API failed: ${resp.status}`);
+    }
+    const data = await resp.json();
+    const set = new Set(
+      Array.isArray(data)
+        ? data
+            .map((row) => (typeof row?.date === "string" ? row.date : null))
+            .filter(Boolean)
+        : [],
+    );
 
-  holidaysCache.set(year, { set, fetchedAt: now });
+    holidaysCache.set(year, { set, fetchedAt: Date.now() });
 
-  if (isDbReady) {
-    try {
-      const expiresAt = new Date(now + 90 * 24 * 60 * 60 * 1000);
-      await HolidayCache.findOneAndUpdate(
-        { countryCode: "KR", year },
-        {
-          $set: {
-            dates: Array.from(set),
-            fetchedAt: new Date(now),
-            expiresAt,
+    if (isDbReady) {
+      try {
+        const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
+        await HolidayCache.findOneAndUpdate(
+          { countryCode: "KR", year },
+          {
+            $set: {
+              dates: Array.from(set),
+              fetchedAt: new Date(),
+              expiresAt,
+            },
           },
-        },
-        { upsert: true, new: true },
-      ).lean();
-    } catch {
-      // ignore
+          { upsert: true, new: true },
+        ).lean();
+      } catch {
+        // ignore
+      }
     }
-  }
 
-  return set;
+    return set;
+  })().finally(() => {
+    holidaysInflight.delete(year);
+  });
+
+  holidaysInflight.set(year, promise);
+  return promise;
+}
+
+export async function prefetchKoreanHolidaysForYears(years = []) {
+  const uniqueYears = [
+    ...new Set(
+      (Array.isArray(years) ? years : [])
+        .map((year) => Number(year))
+        .filter((year) => Number.isFinite(year) && year > 0),
+    ),
+  ];
+  if (!uniqueYears.length) return;
+  await Promise.all(
+    uniqueYears.map((year) => fetchKrHolidaySet(year).catch(() => null)),
+  );
 }
 
 async function isKoreanHolidayYmd(ymd) {

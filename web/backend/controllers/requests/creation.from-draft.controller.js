@@ -9,6 +9,8 @@
 // - web/backend/rules.md
 // change-log:
 // - 2026-08-19: 제출 트랜잭션에서 크레딧 보류는 잔액 집계 1회·가드 1회로 재사용.
+// - 2026-08-19: 제출 지연 단축. 공휴일/devops prefetch, 리메이크 가격 조회 생략,
+//   생산스케줄 memo, requestId 로컬 생성, 세션 시작 병렬.
 // - 2026-08-19: 제출 지연 단축. 설정/리드타임 캐시, 사업자 1회 조회, 잔액 집계는 트랜잭션 안 1회,
 //   성공 후 크레딧 소켓은 응답을 막지 않음.
 // - 2026-08-19: 의뢰 생성 후 GET /my 메모리 캐시 무효화(진행중 목록이 비어 보이는 문제).
@@ -43,10 +45,12 @@ import {
 } from "./utils.js";
 import {
   calculateInitialProductionSchedule,
+  createProductionScheduleMemo,
   resolveLeadDaysWithSameDayCutoff,
 } from "./production.utils.js";
 import { getManufacturerLeadTimesUtil } from "../businesses/leadTime.controller.js";
 import { loadCreditSettingsDefaults } from "../../utils/creditSettingsDefaults.js";
+import { prefetchKoreanHolidaysForYears } from "../../utils/krBusinessDays.js";
 import {
   countDesignAbutmentQty,
   resolveMachiningSpendAmount,
@@ -55,7 +59,7 @@ import {
 import { resolveSelectableShippingMode } from "./expressSelectable.utils.js";
 import { checkCreditLock } from "../../utils/creditLock.util.js";
 import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
-import { holdRequestCreditsOnSubmit } from "../../services/requestCreditHold.service.js";
+import { holdRequestCreditsOnSubmit, resolveDevopsEscrowOwnerId } from "../../services/requestCreditHold.service.js";
 import { emitAppEventToRoles, emitAppEventToUser } from "../../socket.js";
 import { emitDesignClaimChanged } from "../../utils/designClaimRealtime.js";
 import {
@@ -190,38 +194,24 @@ const makeRequestSuffix = () => {
   return out;
 };
 
-const generateRequestIdBatch = async (count, session) => {
+const generateRequestIdBatch = (count) => {
   const prefix = buildRequestIdPrefix();
-  const requestIds = new Array(count).fill(null);
-  let pending = Array.from({ length: count }, (_, idx) => idx);
-
-  for (let attempt = 0; attempt < REQUEST_ID_MAX_TRIES; attempt += 1) {
-    if (!pending.length) break;
-    const candidates = pending.map(() => `${prefix}-${makeRequestSuffix()}`);
-    const existingQuery = Request.find({ requestId: { $in: candidates } })
-      .select({ requestId: 1 })
-      .lean();
-    if (session) existingQuery.session(session);
-    const existing = await existingQuery;
-    const existingSet = new Set(existing.map((doc) => doc.requestId));
-    const nextPending = [];
-
-    pending.forEach((idx, candidateIndex) => {
-      const candidate = candidates[candidateIndex];
-      if (existingSet.has(candidate) || requestIds.includes(candidate)) {
-        nextPending.push(idx);
-        return;
-      }
-      requestIds[idx] = candidate;
-    });
-
-    pending = nextPending;
+  const requestIds = [];
+  const seen = new Set();
+  const n = Math.max(0, Math.floor(Number(count) || 0));
+  for (let i = 0; i < n; i += 1) {
+    let candidate = `${prefix}-${makeRequestSuffix()}`;
+    let tries = 0;
+    while (seen.has(candidate) && tries < REQUEST_ID_MAX_TRIES) {
+      candidate = `${prefix}-${makeRequestSuffix()}`;
+      tries += 1;
+    }
+    if (seen.has(candidate)) {
+      throw new Error("requestId 생성에 실패했습니다.");
+    }
+    seen.add(candidate);
+    requestIds.push(candidate);
   }
-
-  if (pending.length) {
-    throw new Error("requestId 생성에 실패했습니다.");
-  }
-
   return requestIds;
 };
 
@@ -310,7 +300,13 @@ export async function createRequestsFromDraft(req, res) {
     const shippingOrgIdEarly = String(
       req.user?.businessAnchorId || earlyOrgId || "",
     );
-    const [draft, lockStatus, creditSettingsBase, manufacturerSettings, shippingOrg] =
+    const kstYear = Number(
+      new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Seoul",
+        year: "numeric",
+      }).format(new Date()),
+    );
+    const [draft, lockStatus, creditSettingsBase, manufacturerSettings, shippingOrg, devopsAnchorIdPrefetch] =
       await Promise.all([
         DraftRequest.findById(draftId).lean(),
         earlyOrgId && Types.ObjectId.isValid(earlyOrgId)
@@ -333,6 +329,10 @@ export async function createRequestsFromDraft(req, res) {
               })
               .lean()
           : Promise.resolve(null),
+        resolveDevopsEscrowOwnerId().catch(() => null),
+        prefetchKoreanHolidaysForYears(
+          Number.isFinite(kstYear) ? [kstYear, kstYear + 1] : [],
+        ),
       ]);
     const creditSettings = earlyOrgId
       ? await loadCreditSettingsDefaults({
@@ -537,6 +537,7 @@ export async function createRequestsFromDraft(req, res) {
           tooth,
           creditSettings,
           pricingBaseDate,
+          skipExistingLookup: true,
         });
         let computedPrice = computedPriceBase;
         console.log("[createRequestsFromDraft] compute price", {
@@ -717,6 +718,7 @@ export async function createRequestsFromDraft(req, res) {
     const duplicates = [];
     const skipCaseIds = new Set();
     const autoSkippedDuplicateCaseIds = new Set();
+    const existingByCombo = new Map();
     let remakeQuota = null;
 
     const isPracticeRoutingPayload =
@@ -808,6 +810,7 @@ export async function createRequestsFromDraft(req, res) {
             "caseInfos.clinicName": 1,
             "caseInfos.patientName": 1,
             "caseInfos.tooth": 1,
+            "caseInfos.implantBrand": 1,
           })
           .sort({ createdAt: -1 })
           .lean();
@@ -820,6 +823,7 @@ export async function createRequestsFromDraft(req, res) {
           ).trim()}|${String(ci.tooth || "").trim()}`;
           if (!latestByKey.has(key)) {
             latestByKey.set(key, doc);
+            existingByCombo.set(key, doc);
           }
         }
 
@@ -1062,6 +1066,45 @@ export async function createRequestsFromDraft(req, res) {
       }
     }
 
+    if (existingByCombo.size > 0) {
+      const remakeNowYmd = toKstYmd(new Date()) || getTodayYmdInKst();
+      const remakeCutoff = new Date(`${remakeNowYmd}T00:00:00+09:00`);
+      remakeCutoff.setDate(remakeCutoff.getDate() - 90);
+      const replaceCaseIdsForPrice = new Set(
+        Array.from(resolutionsByCaseId.entries())
+          .filter(([, r]) => String(r?.strategy || "") === "replace")
+          .map(([caseId]) => String(caseId)),
+      );
+      await Promise.all(
+        preparedCasesForCreate.map(async (item) => {
+          if (replaceCaseIdsForPrice.has(String(item.caseId))) return;
+          const key = `${item.clinicName}|${item.patientName}|${item.tooth}`;
+          const existing = existingByCombo.get(key);
+          if (!existing) return;
+          const createdAt = existing.createdAt
+            ? new Date(existing.createdAt)
+            : null;
+          if (
+            !createdAt ||
+            Number.isNaN(createdAt.getTime()) ||
+            createdAt < remakeCutoff
+          ) {
+            return;
+          }
+          if (!String(existing?.caseInfos?.implantBrand || "").trim()) return;
+          item.computedPrice = await computePriceForRequest({
+            requestorId: req.user._id,
+            requestorOrgId: req.user?.businessAnchorId,
+            clinicName: item.clinicName,
+            patientName: item.patientName,
+            tooth: item.tooth,
+            creditSettings,
+            pricingBaseDate,
+          });
+        }),
+      );
+    }
+
     // shippingOrg / creditSettings / manufacturerLeadTimes는 draft 로드와 병렬 prefetch
     const requestedAtForPrefetch = new Date();
     const createdYmd = toKstYmd(requestedAtForPrefetch) || getTodayYmdInKst();
@@ -1080,6 +1123,7 @@ export async function createRequestsFromDraft(req, res) {
     )
       ? shippingOrg.shippingPolicy.weeklyBatchDays
       : [];
+    const calculateSchedule = createProductionScheduleMemo();
 
     // 신속 ETA가 묶음과 같거나 늦으면 express → normal 강등 (스테일 클라 대비)
     await Promise.all(
@@ -1099,6 +1143,7 @@ export async function createRequestsFromDraft(req, res) {
             item?.caseInfos?.productMode ??
             null,
           manufacturerLeadTimes,
+          calculateSchedule,
         });
       }),
     );
@@ -1171,26 +1216,27 @@ export async function createRequestsFromDraft(req, res) {
       });
     }
 
-    const [requestIds] = await Promise.all([
-      generateRequestIdBatch(preparedCasesForCreate.length),
-      Promise.all(
-        preparedCasesForCreate.map(async (item) => {
-          const shippingMode = item.shippingMode || "normal";
-          item.productionSchedule = await calculateInitialProductionSchedule({
-            shippingMode,
-            maxDiameter: item.caseInfosWithFile?.maxDiameter,
-            requestedAt: requestedAtForPrefetch,
-            weeklyBatchDays:
-              shippingMode === "normal" ? weeklyBatchDays : [],
-            productMode: item.caseInfosWithFile?.productMode ?? null,
-            manufacturerLeadTimes,
-          });
-        }),
-      ),
-    ]);
-
-    const session = await mongoose.startSession();
+    const requestIds = generateRequestIdBatch(preparedCasesForCreate.length);
+    let session = null;
     try {
+      const [, startedSession] = await Promise.all([
+        Promise.all(
+          preparedCasesForCreate.map(async (item) => {
+            const shippingMode = item.shippingMode || "normal";
+            item.productionSchedule = await calculateSchedule({
+              shippingMode,
+              maxDiameter: item.caseInfosWithFile?.maxDiameter,
+              requestedAt: requestedAtForPrefetch,
+              weeklyBatchDays:
+                shippingMode === "normal" ? weeklyBatchDays : [],
+              productMode: item.caseInfosWithFile?.productMode ?? null,
+              manufacturerLeadTimes,
+            });
+          }),
+        ),
+        mongoose.startSession(),
+      ]);
+      session = startedSession;
       console.log("[createRequestsFromDraft] transaction start", {
         t: Date.now() - startTime,
         createCount: preparedCasesForCreate.length,
@@ -1664,6 +1710,7 @@ export async function createRequestsFromDraft(req, res) {
             session,
             shippingFee: shippingFeePerBox,
             seedBalance: creditBalanceForHold,
+            devopsAnchorId: devopsAnchorIdPrefetch,
           });
           console.log("[createRequestsFromDraft] credit hold done", {
             t: Date.now() - startTime,
@@ -1770,7 +1817,9 @@ export async function createRequestsFromDraft(req, res) {
       }
       throw e;
     } finally {
-      session.endSession();
+      if (session) {
+        session.endSession();
+      }
     }
 
     if (!isPracticeRoutingSubmission && createdRequests.length > 0) {

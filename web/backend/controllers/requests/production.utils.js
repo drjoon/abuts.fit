@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-19: 제출 시 동일 직경/모드 생산스케줄을 memo로 재사용.
 // - 2026-08-13: manufacturerLeadTimes를 인자로 받아 제출 트랜잭션 안 재조회를 생략.
 // - 2026-08-11: 묶음 당일출고 회귀 가드. lead 계산·스케줄 모두 접수 YMD 초과를 강제.
 // - 2026-08-09: 디자인+생산(구강스캔)은 메시 최대직경을 무시하고 생산 리드타임 1일·기본 직경 그룹.
@@ -522,6 +523,41 @@ export async function calculateInitialProductionSchedule({
     diameter,
     diameterGroup,
     shippingMode: "normal",
+  };
+}
+
+export function createProductionScheduleMemo() {
+  const memo = new Map();
+  return async function memoizedCalculateInitialProductionSchedule(params = {}) {
+    const shippingMode =
+      params.shippingMode === "express" ? "express" : "normal";
+    const designMode = needsDesignLeadDay(params.productMode);
+    const scheduleMaxDiameter = designMode ? 8 : params.maxDiameter;
+    const d =
+      typeof scheduleMaxDiameter === "number" && !Number.isNaN(scheduleMaxDiameter)
+        ? scheduleMaxDiameter
+        : 8;
+    let diameterKey = "d8";
+    if (d <= 6) diameterKey = "d6";
+    else if (d <= 8) diameterKey = "d8";
+    else if (d <= 10) diameterKey = "d10";
+    else diameterKey = "d12";
+    const weekly =
+      shippingMode === "normal"
+        ? (Array.isArray(params.weeklyBatchDays)
+            ? params.weeklyBatchDays
+            : []
+          ).join(",")
+        : "";
+    const requestedAtMs =
+      params.requestedAt instanceof Date
+        ? params.requestedAt.getTime()
+        : Number(new Date(params.requestedAt || 0).getTime()) || 0;
+    const key = `${shippingMode}|${diameterKey}|${designMode ? 1 : 0}|${weekly}|${requestedAtMs}`;
+    if (!memo.has(key)) {
+      memo.set(key, calculateInitialProductionSchedule(params));
+    }
+    return memo.get(key);
   };
 }
 

@@ -7,6 +7,7 @@
 // - web/backend/controllers/requests/common.review.helpers.js
 // - web/backend/controllers/requests/mailbox.utils.js
 // change-log:
+// - 2026-08-19: 같은 출고일 배송비 보류는 형제 목록+저널을 그룹당 1회 배치 조회.
 // - 2026-08-19: 일괄 취소 시 같은 박스에서 함께 취소되는 형제의 배송비 재보류를 생략.
 // - 2026-08-19: 어벗디자인·어벗생산 배송비는 의뢰 사업자+예정출고일 1회(치과명 무관).
 // - 2026-08-19: 같은 제출에서 원장 잔액 집계·가드 락을 앵커당 1회로 재사용.
@@ -23,6 +24,7 @@ import {
 import {
   deleteGeneralLedgerCommitJournal,
   getJournalByIdempotencyKey,
+  getJournalsByIdempotencyKeys,
   postGeneralLedgerJournal,
   postGeneralLedgerJournals,
 } from "./generalLedger.service.js";
@@ -154,15 +156,15 @@ async function lockCreditBalanceGuardByAnchor({ businessAnchorId, session }) {
 
 let cachedDevopsAnchorId = "";
 
-async function resolveDevopsEscrowOwnerId(session = null) {
-  if (cachedDevopsAnchorId && !session) return cachedDevopsAnchorId;
+export async function resolveDevopsEscrowOwnerId(session = null) {
+  if (cachedDevopsAnchorId) return cachedDevopsAnchorId;
   const devops = await BusinessAnchor.findOne({ businessType: "devops" })
     .select({ _id: 1 })
     .sort({ createdAt: 1 })
     .session(session || null)
     .lean();
   const id = devops?._id ? String(devops._id) : "";
-  if (id && !session) cachedDevopsAnchorId = id;
+  if (id) cachedDevopsAnchorId = id;
   return id || null;
 }
 
@@ -583,53 +585,82 @@ async function listRequesterShipBoxSiblings({
   });
 }
 
-async function findExistingRequesterShipBoxShippingHold({
+async function loadRequesterShipBoxHoldState({
   request,
   requestorAnchorId,
   session = null,
-  excludeRequestId = null,
+  includeSelf = true,
 }) {
   const siblings = await listRequesterShipBoxSiblings({
     request,
     requestorAnchorId,
     session,
-    includeSelf: true,
+    includeSelf,
   });
+  const journalsByKey = await getJournalsByIdempotencyKeys({
+    idempotencyKeys: siblings.map((sib) => requestShippingHoldKey(sib._id)),
+    session,
+  });
+  return { siblings, journalsByKey };
+}
+
+function findHoldInShipBoxState(state, { excludeRequestId = null } = {}) {
+  const siblings = state?.siblings || [];
+  const journalsByKey = state?.journalsByKey || new Map();
   for (const sib of siblings) {
     if (excludeRequestId && String(sib._id) === String(excludeRequestId)) {
       continue;
     }
-    const hold = await getRequestHoldJournal({
-      idempotencyKey: requestShippingHoldKey(sib._id),
-      session,
-    });
+    const idempotencyKey = requestShippingHoldKey(sib._id);
+    const hold = journalsByKey.get(idempotencyKey);
     if (hold?.journalId) {
       return {
         journalId: hold.journalId,
         journal: hold,
         requestMongoId: String(sib._id),
-        idempotencyKey: requestShippingHoldKey(sib._id),
+        idempotencyKey,
       };
     }
   }
   return null;
 }
 
+async function findExistingRequesterShipBoxShippingHold({
+  request,
+  requestorAnchorId,
+  session = null,
+  excludeRequestId = null,
+  preloadedState = null,
+}) {
+  const state =
+    preloadedState ||
+    (await loadRequesterShipBoxHoldState({
+      request,
+      requestorAnchorId,
+      session,
+      includeSelf: true,
+    }));
+  return findHoldInShipBoxState(state, { excludeRequestId });
+}
+
 export async function reconcileRequesterShipBoxShippingHolds({
   request,
   requestorAnchorId,
   session = null,
+  preloadedState = null,
 }) {
-  const siblings = await listRequesterShipBoxSiblings({
-    request,
-    requestorAnchorId,
-    session,
-    includeSelf: true,
-  });
+  const state =
+    preloadedState ||
+    (await loadRequesterShipBoxHoldState({
+      request,
+      requestorAnchorId,
+      session,
+      includeSelf: true,
+    }));
   const holds = [];
-  for (const sib of siblings) {
+  for (const sib of state.siblings || []) {
     const idempotencyKey = requestShippingHoldKey(sib._id);
-    const hold = await getRequestHoldJournal({ idempotencyKey, session });
+    const hold = state.journalsByKey?.get(idempotencyKey);
     if (!hold?.journalId) continue;
     holds.push({
       requestMongoId: String(sib._id),
@@ -691,6 +722,7 @@ export async function holdRequestCreditsOnSubmit({
       : await resolveShippingFeePerBox();
   const shippingGroupHeld = new Set();
   const shipBoxRequests = [];
+  const shipBoxStateByKey = new Map();
   const lockedAnchors = new Set();
   const balanceByAnchor = new Map();
   let totalHeld = 0;
@@ -800,10 +832,17 @@ export async function holdRequestCreditsOnSubmit({
       const groupKey = buildRequesterShipBoxKey(request);
       shipBoxRequests.push({ request, requestorAnchorId, groupKey });
       if (!shippingGroupHeld.has(groupKey)) {
-        const existing = await findExistingRequesterShipBoxShippingHold({
-          request,
-          requestorAnchorId,
-          session,
+        let boxState = shipBoxStateByKey.get(groupKey);
+        if (!boxState) {
+          boxState = await loadRequesterShipBoxHoldState({
+            request,
+            requestorAnchorId,
+            session,
+            includeSelf: true,
+          });
+          shipBoxStateByKey.set(groupKey, boxState);
+        }
+        const existing = findHoldInShipBoxState(boxState, {
           excludeRequestId: request._id,
         });
         if (existing?.journalId) {
@@ -850,6 +889,11 @@ export async function holdRequestCreditsOnSubmit({
   }
 
   const reconciledKeys = new Set();
+  const postedShippingGroups = new Set(
+    results
+      .filter((row) => row?.kind === "shipping_fee" && row?.reason === "posted" && row?.groupKey)
+      .map((row) => row.groupKey),
+  );
   for (const row of shipBoxRequests) {
     if (reconciledKeys.has(row.groupKey)) continue;
     reconciledKeys.add(row.groupKey);
@@ -857,6 +901,9 @@ export async function holdRequestCreditsOnSubmit({
       request: row.request,
       requestorAnchorId: row.requestorAnchorId,
       session,
+      preloadedState: postedShippingGroups.has(row.groupKey)
+        ? null
+        : shipBoxStateByKey.get(row.groupKey),
     });
   }
 

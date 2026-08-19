@@ -5,6 +5,7 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/backend/controllers/requests/creation.from-draft.controller.js
+// - 2026-08-19: 제출 시작 시 초안 PATCH debounce를 멈춰 from-draft와 겹치지 않게.
 // - 2026-08-19: 치과 제출 성공 시 로컬 초안 복원 억제·입력 중 중복 체크 generation. 성공 토스트와 중복 모달이 동시에 뜨지 않게.
 // - 2026-08-19: 첨부 직후 preUploadFiles를 바로 호출(기공의뢰와 동일). 제출 잠금·헤더 건수 무효화.
 // - 2026-08-19: 입력 중 중복 체크 — 추적관리면 tracking 모드(진행중으로 오인하지 않음).
@@ -283,6 +284,7 @@ export const useNewRequestPage = (
     updateCaseInfos,
     removeCaseInfos,
     patchDraftImmediately,
+    suspendDraftPatches,
     status: draftStatus,
     resetDraft,
     initialDraftFiles,
@@ -1209,6 +1211,7 @@ export const useNewRequestPage = (
     peekCachedUploadedFiles,
     onDuplicateDetected: handleServerDuplicateDetected,
     onSubmitStart: () => {
+      suspendDraftPatches();
       duplicateCheckGenRef.current += 1;
     },
     onSuccessfulSubmitBegin: () => {

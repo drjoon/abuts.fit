@@ -4,6 +4,7 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/backend/controllers/requests/creation.from-draft.controller.js
+// - 2026-08-19: 제출 시작 시 초안 PATCH debounce를 멈춰 from-draft와 겹치지 않게.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
 import type { DraftCaseInfo, CaseInfos, DraftRequest } from "./newRequestTypes";
@@ -46,6 +47,7 @@ export function useDraftMeta() {
   const draftIdRef = useRef<string | null>(null);
   const patchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastPatchMapRef = useRef<Record<string, CaseInfos> | null>(null);
+  const patchesSuspendedRef = useRef(false);
 
   useEffect(() => {
     draftIdRef.current = draftId;
@@ -271,7 +273,7 @@ export function useDraftMeta() {
 
   const patchDraftImmediately = useCallback(
     async (map: Record<string, CaseInfos>) => {
-      if (!draftId || !token) return;
+      if (!draftId || !token || patchesSuspendedRef.current) return;
 
       try {
         const fileBasedCaseInfos = Object.entries(map)
@@ -310,6 +312,7 @@ export function useDraftMeta() {
   // Debounced patch: 500ms 동안 변경이 없으면 한 번만 API 호출
   const patchDraftDebounced = useCallback(
     (map: Record<string, CaseInfos>) => {
+      if (patchesSuspendedRef.current) return;
       // 이전 patch 타이머 취소
       if (patchTimeoutRef.current) {
         clearTimeout(patchTimeoutRef.current);
@@ -401,6 +404,14 @@ export function useDraftMeta() {
     await createFreshDraftState();
   }, [createFreshDraftState]);
 
+  const suspendDraftPatches = useCallback(() => {
+    patchesSuspendedRef.current = true;
+    if (patchTimeoutRef.current) {
+      clearTimeout(patchTimeoutRef.current);
+      patchTimeoutRef.current = null;
+    }
+  }, []);
+
   // Cleanup: 컴포넌트 언마운트 시 pending patch 취소
   useEffect(() => {
     return () => {
@@ -417,6 +428,7 @@ export function useDraftMeta() {
     updateCaseInfos,
     removeCaseInfos,
     patchDraftImmediately,
+    suspendDraftPatches,
     status,
     error,
     deleteDraft,

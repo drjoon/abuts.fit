@@ -4,6 +4,7 @@
 // - web/backend/models/ledgerLine.model.js
 // - web/backend/services/requestCreditHold.service.js
 // change-log:
+// - 2026-08-19: 배송비 보류 형제 조회는 getJournalsByIdempotencyKeys로 1회.
 // - 2026-08-19: 신규 의뢰 제출 보류는 postGeneralLedgerJournals로 저널·라인을 insertMany 1회.
 import crypto from "crypto";
 import mongoose from "mongoose";
@@ -131,6 +132,31 @@ export async function getJournalByIdempotencyKey({ idempotencyKey, session }) {
   return LedgerJournal.findOne({ idempotencyKey: key })
     .session(session || null)
     .lean();
+}
+
+export async function getJournalsByIdempotencyKeys({
+  idempotencyKeys = [],
+  session = null,
+}) {
+  const keys = [
+    ...new Set(
+      (Array.isArray(idempotencyKeys) ? idempotencyKeys : [])
+        .map((key) => String(key || "").trim())
+        .filter(Boolean),
+    ),
+  ];
+  if (!keys.length) return new Map();
+
+  const rows = await LedgerJournal.find({ idempotencyKey: { $in: keys } })
+    .session(session || null)
+    .lean();
+  const byKey = new Map();
+  for (const row of rows || []) {
+    const key = String(row?.idempotencyKey || "").trim();
+    if (!key || byKey.has(key)) continue;
+    byKey.set(key, row);
+  }
+  return byKey;
 }
 
 export async function postGeneralLedgerJournal({

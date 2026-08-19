@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-19: 생산스케줄 계산 함수를 호출측 memo로 받을 수 있게 한다.
 // - 2026-08-09: 디자인+생산 productMode를 스케줄 비교에 전달 (출고 +1영업일).
 // - 2026-08-19: 제조사 리드타임을 호출측 prefetch 값으로 재사용해 제출 시 중복 조회를 피한다.
 // - 2026-08-08: 신속 선택 가능 = 신속 ETA < 묶음 ETA (조기 출고 이점 있을 때만).
@@ -24,11 +25,16 @@ export async function isExpressShippingSelectable({
   maxDiameter = null,
   productMode = null,
   manufacturerLeadTimes = null,
+  calculateSchedule = calculateInitialProductionSchedule,
 } = {}) {
   const now = requestedAt instanceof Date ? requestedAt : new Date(requestedAt);
   const batchDays = Array.isArray(weeklyBatchDays) ? weeklyBatchDays : [];
+  const scheduleFn =
+    typeof calculateSchedule === "function"
+      ? calculateSchedule
+      : calculateInitialProductionSchedule;
 
-  const expressSchedule = await calculateInitialProductionSchedule({
+  const expressSchedule = await scheduleFn({
     shippingMode: "express",
     requestedAt: now,
     weeklyBatchDays: batchDays,
@@ -43,7 +49,7 @@ export async function isExpressShippingSelectable({
 
   if (batchDays.length === 0) return true;
 
-  const normalSchedule = await calculateInitialProductionSchedule({
+  const normalSchedule = await scheduleFn({
     shippingMode: "normal",
     requestedAt: now,
     weeklyBatchDays: batchDays,
@@ -70,6 +76,7 @@ export async function resolveSelectableShippingMode({
   maxDiameter = null,
   productMode = null,
   manufacturerLeadTimes = null,
+  calculateSchedule = calculateInitialProductionSchedule,
 } = {}) {
   const mode = shippingMode === "express" ? "express" : "normal";
   if (mode !== "express") return "normal";
@@ -80,6 +87,7 @@ export async function resolveSelectableShippingMode({
     maxDiameter,
     productMode,
     manufacturerLeadTimes,
+    calculateSchedule,
   });
   return ok ? "express" : "normal";
 }
