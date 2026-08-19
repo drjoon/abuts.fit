@@ -6,6 +6,7 @@
 // - 2026-08-15: 치아 미선택 자리표시 행은 견적 0원.
 // - 2026-08-19: 마스터 On + 제공 항목 수가여야 청구 준비.
 // - 2026-08-19: 임시치아+어벗은 임시치아 수가와 어벗츠 단가를 함께 합산.
+// - 2026-08-19: 임시치아 어벗은 치아별 커스텀어벗 단가 줄로 분리.
 import {
   buildUnsetLabFeeSchedule,
   computePracticeTransferRetailFees,
@@ -383,7 +384,24 @@ describe("labFeeSchedule", () => {
     expect(fees.abutmentRetailTotal).toBe(80000);
     expect(fees.abutmentQty).toBe(2);
     expect(fees.total).toBe(110000);
-  });
+    const tempLine = fees.lines.find((line) =>
+      String(line.prosthesisType).includes("임시치아"),
+    );
+    expect(tempLine).toMatchObject({ labFee: 30000, abutmentRetail: 0 });
+    expect(
+      fees.lines.filter((line) => line.prosthesisType === "커스텀어벗"),
+    ).toEqual([
+      expect.objectContaining({
+        toothNumber: "34",
+        labFee: 0,
+        abutmentRetail: 40000,
+      }),
+      expect.objectContaining({
+        toothNumber: "33",
+        labFee: 0,
+        abutmentRetail: 40000,
+      }),
+    ]);
 
   test("유지장치는 같은 악궁이어도 연결이 끊기면 스팬당 1세트다", () => {
     const fees = computePracticeTransferRetailFees({

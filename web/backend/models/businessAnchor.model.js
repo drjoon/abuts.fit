@@ -521,7 +521,7 @@ const businessAnchorSchema = new mongoose.Schema(
         enum: ["custom_abutment", "design_custom_abutment"],
         default: "design_custom_abutment",
       },
-      // 자동매칭 기공비 — v4 고정수가(평균×별점배수). 레거시 v2/v3 스냅샷 호환.
+      // 자동매칭 기공비 — v4 고정수가(카탈로그 평균, 별점 배수 없음). 레거시 v2/v3 스냅샷 호환.
       autoMatchBudget: {
         type: mongoose.Schema.Types.Mixed,
         default: null,

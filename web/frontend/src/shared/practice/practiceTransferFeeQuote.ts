@@ -6,7 +6,6 @@
 // - 2026-08-14: 환봉 요청중은 기공소 어벗 라인(labAbutmentFee)으로 파싱.
 // - 2026-08-14: 자동매칭 견적 라인에 labFeeMin(하한) 부착.
 import {
-  attachLabFeeMinToLines,
   computePracticeTransferRetailFees,
   DEFAULT_ABUTMENT_RETAIL_PRICE,
   LAB_FEE_SCHEDULE_ZEROS,
@@ -32,7 +31,6 @@ import {
 import {
   normalizeAbutsLabFeeCatalog,
   normalizePracticeTransferAutoMatchBudget,
-  resolveAutoMatchBudgetOrDefaults,
   type AbutsLabFeeCatalogItem,
   type PracticeTransferAutoMatchBudget,
 } from "@/shared/practice/autoMatchBudget";
@@ -287,69 +285,16 @@ export const buildFeeQuoteFromContext = (params: {
 }): PracticeTransferFeeQuote => {
   const context = params.context || DEFAULT_QUOTE_CONTEXT;
   const zeroed = Boolean(context.usedDefaultSchedule);
-  const catalog = normalizeAbutsLabFeeCatalog(context.abutsLabFeeCatalog);
-  // 자동매칭(v4 고정수가): 할증 없음
   const labFeeMultiplier = zeroed
     ? 1
     : normalizeLabFeeMultiplier(context.labFeeMultiplier);
   const rushFeeMultiplier = normalizeRushFeeMultiplier(params.rushFeeMultiplier);
-  const budgetRaw =
-    params.autoMatchBudget !== undefined
-      ? params.autoMatchBudget
-      : context.autoMatchBudget || null;
-  const budget = zeroed
-    ? resolveAutoMatchBudgetOrDefaults(
-        budgetRaw,
-        catalog,
-        budgetRaw && typeof budgetRaw === "object"
-          ? {
-              minStars:
-                (budgetRaw as PracticeTransferAutoMatchBudget).stars ??
-                undefined,
-              maxStars:
-                (budgetRaw as PracticeTransferAutoMatchBudget).maxStars ??
-                (budgetRaw as PracticeTransferAutoMatchBudget).stars ??
-                undefined,
-            }
-          : undefined,
-      )
-    : normalizePracticeTransferAutoMatchBudget(budgetRaw, catalog);
-
-  const scheduleFromBudget = (side: "min" | "max") => {
-    if (!budget) return LAB_FEE_SCHEDULE_ZEROS;
-    const items = catalog.map((row) => {
-      const band = budget.items[row.id] || {
-        min: 0,
-        max: row.price,
-      };
-      const price = side === "min" ? band.min : band.max;
-      return {
-        id: row.id,
-        name: row.name,
-        unit: (row.unit || "perTooth") as LabFeeItem["unit"],
-        enabled: true,
-        price,
-        remake: 0,
-        tiers:
-          row.unit === "perNTeeth"
-            ? [
-                {
-                  n: Number(row.tiers?.[0]?.n) || 3,
-                  price,
-                  remake: 0,
-                },
-              ]
-            : [],
-      };
-    });
-    return { items, active: true } as LabFeeSchedule;
-  };
 
   const fees = computePracticeTransferRetailFees({
     toothWorks: params.toothWorks,
     implantFavorites: params.implantFavorites,
     labFeeSchedule: zeroed
-      ? scheduleFromBudget("max")
+      ? LAB_FEE_SCHEDULE_ZEROS
       : { ...context.schedule, remake: context.remakeSchedule, items: context.items },
     abutmentPricingTier: context.abutmentPricingTier,
     abutmentPrices: context.abutmentPrices,
@@ -357,26 +302,6 @@ export const buildFeeQuoteFromContext = (params: {
     rushFeeMultiplier,
   });
   const feeRateApplied = Number(context.feeRateApplied || 0);
-  let autoMatchBudgetOut: PracticeTransferAutoMatchBudget | null = null;
-  let lines = fees.lines;
-  if (zeroed && budget) {
-    const minFees = computePracticeTransferRetailFees({
-      toothWorks: params.toothWorks,
-      implantFavorites: params.implantFavorites,
-      labFeeSchedule: scheduleFromBudget("min"),
-      abutmentPricingTier: context.abutmentPricingTier,
-      abutmentPrices: context.abutmentPrices,
-      skipAbutmentFees: true,
-      labFeeMultiplier: 1,
-      rushFeeMultiplier,
-    });
-    lines = attachLabFeeMinToLines(fees.lines, minFees.lines);
-    autoMatchBudgetOut = {
-      ...budget,
-      minLabFee: minFees.labFeeTotal,
-      maxLabFee: fees.labFeeTotal,
-    };
-  }
   const settlement = splitPracticeTransferSettlement({
     labFeeTotal: fees.labFeeTotal,
     abutmentRetailTotal: fees.abutmentRetailTotal,
@@ -384,7 +309,7 @@ export const buildFeeQuoteFromContext = (params: {
   });
   return {
     ...fees,
-    lines,
+    lines: fees.lines,
     relationshipKind: context.relationshipKind,
     feeRateApplied,
     labFeeMultiplier: zeroed ? 1 : labFeeMultiplier,
@@ -394,7 +319,7 @@ export const buildFeeQuoteFromContext = (params: {
     billed: false,
     usedDefaultSchedule: zeroed,
     labFeeConfigured: context.labFeeConfigured !== false,
-    autoMatchBudget: autoMatchBudgetOut,
+    autoMatchBudget: null,
   };
 };
 

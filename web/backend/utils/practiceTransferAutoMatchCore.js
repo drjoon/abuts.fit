@@ -118,14 +118,28 @@ export const isAutoMatchPriorityActive = (transfer, now = Date.now()) => {
   return untilMs > nowMs;
 };
 
-/** 어벗츠 팀원이 우선창을 끊고 하청 풀을 열 수 있는지. */
+/** 어벗츠 원청이 연 인증 기공소 하청 풀(지정 의뢰). */
+export const isSubcontractPoolOpen = (transfer) => {
+  if (String(transfer?.status || "").trim() === "canceled") return false;
+  if (isAutoMatchCompleted(transfer)) return false;
+  if (getAssigneeLabAnchorId(transfer)) return false;
+  return Boolean(transfer?.autoMatch?.subcontractPoolOpen);
+};
+
+/** 어벗츠 원청 팀원이 아직 하청을 안 연 지정 의뢰를 하청 풀로 열 수 있는지. */
 export const canOpenPracticeTransferSubcontract = (
   transfer,
   viewerLabAnchorId,
-  now = Date.now(),
+  _now = Date.now(),
 ) => {
-  if (!isAutoMatchPriorityActive(transfer, now)) return false;
-  return isAutoMatchPriorityLabAnchorId(transfer, viewerLabAnchorId);
+  const viewerId = String(viewerLabAnchorId || "").trim();
+  const primeId = getPrimeLabAnchorId(transfer);
+  if (!viewerId || !primeId || viewerId !== primeId) return false;
+  if (String(transfer?.status || "").trim() === "canceled") return false;
+  if (getAssigneeLabAnchorId(transfer)) return false;
+  if (isPracticeTransferSubcontracted(transfer)) return false;
+  if (isSubcontractPoolOpen(transfer)) return false;
+  return true;
 };
 
 /** 우선창 중이면 priority lab만 공개 풀 노출·클레임 가능. */
@@ -200,7 +214,8 @@ export const toAutoMatchApiFieldsCore = (transfer, viewerLabAnchorId = null) => 
   const now = Date.now();
   const completed = isAutoMatchCompleted(transfer);
   const claimActive = isAutoMatchClaimActive(transfer, now);
-  const openPool = isAutoMatchOpenPool(transfer, now);
+  const openPool =
+    isAutoMatchOpenPool(transfer, now) || isSubcontractPoolOpen(transfer);
   const priorityActive = isAutoMatchPriorityActive(transfer, now);
   const priorityUntil = auto?.priorityUntil
     ? new Date(auto.priorityUntil).toISOString()

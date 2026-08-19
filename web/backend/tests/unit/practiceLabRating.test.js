@@ -103,15 +103,15 @@ describe("practiceLabRating auto-match gate", () => {
     ).toBe(true);
   });
 
-  test("fee multipliers", () => {
-    expect(feeMultiplierForStars(1)).toBe(0.8);
-    expect(feeMultiplierForStars(2)).toBe(0.9);
+  test("fee multipliers are unused (always 1)", () => {
+    expect(feeMultiplierForStars(1)).toBe(1);
+    expect(feeMultiplierForStars(2)).toBe(1);
     expect(feeMultiplierForStars(3)).toBe(1);
-    expect(feeMultiplierForStars(4)).toBe(1.1);
-    expect(feeMultiplierForStars(5)).toBe(1.2);
+    expect(feeMultiplierForStars(4)).toBe(1);
+    expect(feeMultiplierForStars(5)).toBe(1);
   });
 
-  test("scaleAutoMatchFeeToLabStars: 3★ in 3~4 band → 6만 not 6.6만", () => {
+  test("scaleAutoMatchFeeToLabStars no longer scales by stars", () => {
     expect(
       scaleAutoMatchFeeToLabStars({
         feeAtMax: 66000,
@@ -120,7 +120,7 @@ describe("practiceLabRating auto-match gate", () => {
         budgetMaxStars: 4,
         labStars: 3,
       }),
-    ).toBe(60000);
+    ).toBe(66000);
     expect(
       scaleAutoMatchFeeToLabStars({
         feeAtMax: 66000,
@@ -130,7 +130,6 @@ describe("practiceLabRating auto-match gate", () => {
         labStars: 4,
       }),
     ).toBe(66000);
-    // 미지정은 상한이 아니라 기본 3점
     expect(
       scaleAutoMatchFeeToLabStars({
         feeAtMax: 66000,
@@ -139,7 +138,7 @@ describe("practiceLabRating auto-match gate", () => {
         budgetMaxStars: 4,
         labStars: null,
       }),
-    ).toBe(60000);
+    ).toBe(66000);
   });
 
   test("effectiveLabStars grace includes 3 ratings", () => {
@@ -152,7 +151,7 @@ describe("practiceLabRating auto-match gate", () => {
     expect(effectiveLabStars({ stars: 4.5, ratingCount: 4 })).toBe(4.5);
   });
 
-  test("resolveStarDowngrade when lab fee tier above request", () => {
+  test("resolveStarDowngrade is unused after star fee multipliers removed", () => {
     expect(
       resolveStarDowngrade({
         matchingMode: "auto",
@@ -160,15 +159,7 @@ describe("practiceLabRating auto-match gate", () => {
         autoMatchStars: 3,
         offeredLabFee: 100000,
       }),
-    ).toEqual({
-      labEffectiveStars: 5,
-      autoMatchStars: 3,
-      labFeeMultiplier: 1.2,
-      autoMatchFeeMultiplier: 1,
-      offeredLabFee: 100000,
-      expectedLabFeeAtOwnStars: 120000,
-      labFeeDeltaWon: 20000,
-    });
+    ).toBeNull();
     expect(
       resolveStarDowngrade({
         matchingMode: "direct",

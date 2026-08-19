@@ -7,6 +7,7 @@
 // - 2026-08-16: % 예산 normalize 시 견적 합산 minLabFee/maxLabFee 보존(툴팁 구간).
 // - 2026-08-16: v4 고정가(평균×별점배수). 기공비 범위 UI 제거.
 // - 2026-08-16: v4 하한~상한 별점 대역 → 항목 min/max 기공비(수락 전 견적 구간).
+// - 2026-08-19: 별점 기공비 배수 폐지. 항목 min=max=카탈로그 평균. 할증은 labFeeMultiplier.
 
 import {
   DEFAULT_AUTO_MATCH_MAX_LAB_RATING,

@@ -37,16 +37,19 @@ import {
   buildReceivedScopeWithAutoMatch,
   canOpenPracticeTransferSubcontract,
   getAssigneeLabAnchorId,
+  getPrimeLabAnchorId,
   isAutoMatchClaimActive,
   isAutoMatchCompleted,
   isAutoMatchMode,
   isAutoMatchOpenPool,
+  isSubcontractPoolOpen,
   isAutoMatchPriorityActive,
   isAutoMatchPriorityLabAnchorId,
   isInternalLabBusinessType,
   isPracticeTransferLabReceiverRole,
   isLabAnchorAutoMatchEligible,
   loadAutoMatchEligibleLabAnchors,
+  loadCertifiedSubcontractLabAnchorIds,
   redactAutoMatchLabIdentity,
   redactAutoMatchPracticeIdentity,
   resolveAbutsPrimeLabFields,
@@ -61,8 +64,6 @@ import {
 } from "../../utils/practiceTransferAutoMatchRealtime.js";
 import {
   loadAutoMatchBudgetCatalog,
-  resolveAutoMatchBudgetOrDefaults,
-  resolveAutoMatchEligibleLabAnchorIds,
 } from "../../utils/practiceTransferAutoMatchBudget.js";
 import { resolveLabPracticeFeeMultiplier, isLabFeeScheduleConfigured, isLabFeeScheduleReadyToCharge, missingLabFeeItemNames, labFeeItemNamesNeededForToothWorks, toothWorksNeedLabFee } from "../../utils/labFeeSchedule.js";
 import {
@@ -72,13 +73,10 @@ import {
 import {
   findPracticeLabRating,
   loadGlobalLabRatingAggregates,
-  normalizeAutoMatchMinLabRating,
   normalizePracticeLabStars,
   normalizePracticeLabRatingMemo,
   PRACTICE_LAB_RATING_MAX,
   PRACTICE_LAB_RATING_MIN,
-  resolveAutoMatchEligibleStarBand,
-  resolveStarDowngrade,
   toLabRatingSummaryApi,
   toPracticeLabRatingPublicApi,
   upsertPracticeLabRatingList,
@@ -140,7 +138,8 @@ import { resolvePracticeTransferSkipJig } from "../../utils/practiceTransferLabS
 // - 2026-08-16: 자동매칭 적격 — 주문 치과 1점 기공소 제외.
 // - 2026-08-16: 1점도 참여 가능. 기공비 ×0.8. 우리치과 1점 하드 차단 제거.
 // - 2026-08-14: 자동매칭도 practiceBusinessAnchorId 전달(표시명 비공개·기공수가 할증 키).
-// - 2026-08-16: 자동매칭 청구는 플랫폼 고정수가(할증 없음). 적격은 인증·수가·별점 게이트.
+// - 2026-08-16: 자동매칭 청구는 플랫폼 고정수가(별점 배수 없음). 적격은 인증·수가·별점 게이트.
+// - 2026-08-19: 기공비 할증은 기공소 치과별 labFeeMultiplier만(별점 할인/할증 폐지).
 // - 2026-08-15: 적격 스냅샷에서 practice 할증 제외. 카탈로그·practice 병렬 로드.
 // - 2026-08-14: 자동매칭 3시간 강제 클레임 만료 폐기(작업완료/취소까지 유지·도착일은 소통 기한).
 // - 2026-08-14: mark-accepted — autoMatch pool emit N+1 제거·사이드이펙트 병렬. FE 수락 busy에서 chat resolve 분리.
@@ -394,40 +393,39 @@ const normalizeEligibleLabAnchorIds = (raw) =>
     .map((id) => String(id || "").trim())
     .filter((id) => Types.ObjectId.isValid(id));
 
-/** 치과 픽커: 어벗츠/레거시 자동매칭 → 경로 B(원청 어벗츠). 지정 기공소는 direct. */
+/** 치과 픽커: 어벗츠/레거시 자동매칭 → 어벗츠기공소 지정(direct). 공개 풀 없음. */
 const resolveCreateMatchingTarget = async ({
   matchingModeRaw,
   autoMatchFlag,
   rawAnchorId,
   targetLabName,
 }) => {
-  let matchingMode = wantsAbutsPrimePool({
+  const wantsAbuts = wantsAbutsPrimePool({
     matchingModeRaw,
     autoMatchFlag,
     rawAnchorId,
     targetLabName,
-  })
-    ? "auto"
-    : "direct";
+  });
 
-  if (matchingMode === "direct" && Types.ObjectId.isValid(rawAnchorId)) {
+  if (!wantsAbuts && Types.ObjectId.isValid(rawAnchorId)) {
     const picked = await BusinessAnchor.findById(rawAnchorId)
       .select({ businessType: 1, name: 1 })
       .lean();
     if (isInternalLabBusinessType(picked)) {
-      matchingMode = "auto";
-    } else {
-      return {
-        matchingMode: "direct",
-        targetLabAnchorId: new Types.ObjectId(rawAnchorId),
-        targetLabName:
-          String(targetLabName || "").trim() ||
-          String(picked?.name || "").trim(),
-      };
+      const prime = await resolveAbutsPrimeLabFields();
+      if (prime.error) return prime;
+      return prime;
     }
+    return {
+      matchingMode: "direct",
+      targetLabAnchorId: new Types.ObjectId(rawAnchorId),
+      targetLabName:
+        String(targetLabName || "").trim() ||
+        String(picked?.name || "").trim(),
+    };
   }
 
-  if (matchingMode === "auto") {
+  if (wantsAbuts) {
     const prime = await resolveAbutsPrimeLabFields();
     if (prime.error) return prime;
     return prime;
@@ -3590,7 +3588,7 @@ const AUTO_MATCH_LAB_SENTINEL = "__auto_match__";
  * 치과→기공소 rating 저장.
  * body: { stars: 1~5, memo?: string }
  * 별점은 기공소에 공개, 치과·메모는 비공개.
- * 신규 의뢰 배정·지정 수가에는 쓰지 않음(레거시 자동매칭 청구만 별점 배수).
+ * 신규 의뢰 배정·지정 수가에는 쓰지 않음. 별점은 평가·매칭 게이트만.
  * 치과·기공소 쌍당 1건. 재평가 시 이전 별점·메모를 덮어씀.
  */
 export async function upsertPracticeTransferLabRating(req, res) {

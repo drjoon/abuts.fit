@@ -9,14 +9,14 @@ import { useMemo } from "react";
 // - 2026-08-13: 형태 클릭 순환은 커스텀 플래그·규격을 유지. 어벗 체크 해제만 지운다.
 // - 2026-08-13: 연결 형태 토글에 유지장치·임시치아 추가(단독 토글도 유지).
 // - 2026-08-13: 유지장치=브리지 계열(2치+). 임시치아=단독 1치부터 연결 n치.
-// - 2026-08-13: 연결 스팬의 유지장치는 한쪽 변경 시 전체 동일 형태.
-// - 2026-08-19: 임시치아는 브리지처럼 치아별 Pontic·작업X. 연결 전체를 임시치아로 강제하지 않는다.
+// - 2026-08-13: 연결 스팬의 유지장치·임시치아는 한쪽 변경 시 전체 동일 형태.
+// - 2026-08-19: 브리지로 이을 때 스팬에 임시치아가 하나라도 있으면 연결된 치아 전체를 임시치아로 맞춘다.
 // - 2026-08-13: 유지장치 스팬 전환 시 커스텀어벗 플래그·규격은 유지. 브리지로 되돌리면 복구.
 // - 2026-08-14: 유지장치 등 연결 전체 강제 변경 후 복귀 시, 클릭하지 않은 치아는 진입 직전 행 전체(형태·어벗·임플란트) 복원.
 // - 2026-08-13: 단독 순환(인레이↔크라운↔커스텀어벗↔임시치아)도 커스텀 플래그·규격을 유지.
 // - 2026-08-13: 클릭한 치아가 Pontic·작업X를 거쳐도 커스텀을 지우지 않는다.
 // - 2026-08-19: 임시치아도 크라운·브리지처럼 기존 커스텀 플래그·규격을 유지.
-// - 2026-08-19: 임시치아에서 브리지·Pontic 등으로 바꿔도 커스텀어벗을 초기화하지 않는다.
+// - 2026-08-19: 임시치아에서 브리지 등으로 나오면 클릭한 치아만 바꾸고, 옆 칸은 임시치아를 유지한다(작업X 스냅샷 복원 없음).
 
 export type { ToothWorkSelection } from "@/shared/practice/transferMemo";
 import {
@@ -273,9 +273,10 @@ export const applyProsthesisTypeToRow = (
   return { ...row, prosthesisType: nextType };
 };
 
-/** 연결 스팬 전체가 같은 형태여야 하는 보철(유지장치). 임시치아는 브리지처럼 치아별. */
+/** 연결 스팬 전체가 같은 형태여야 하는 보철(유지장치·임시치아) */
 export const isSpanUniformProsthesisType = (prosthesisType: string) =>
-  isRetainerProsthesisType(prosthesisType);
+  isRetainerProsthesisType(prosthesisType) ||
+  isTemporaryToothProsthesisType(prosthesisType);
 
 /** 인접 연결로 이어진 치아 집합(자기 포함) */
 export const collectLinkedComponentTeeth = (
@@ -375,7 +376,8 @@ export const restoreLinkedSpanToothWorkRow = (
 /**
  * 연결 스팬 형태 순환.
  * 유지장치처럼 연결 전체가 강제 변경되면 치아별 행을 스냅샷하고,
- * 브리지/Pontic/작업X/임시치아로 나오면 클릭한 치아만 nextType, 나머지는 진입 직전 내용 복원.
+ * 브리지/Pontic/작업X로 나오면 클릭한 치아만 nextType, 나머지는 진입 직전 내용 복원.
+ * 임시치아는 들어갈 때 스팬 전체를 맞추지만, 나올 때는 클릭한 치아만 바꾸고 옆은 그대로 둔다.
  */
 export const applyCycledLinkedSpanProsthesisType = (
   rows: ToothWorkSelection[],
@@ -393,7 +395,8 @@ export const applyCycledLinkedSpanProsthesisType = (
   const pruned = pruneLinkedSpanProsthesisSnapshot(snapshot, rows);
 
   if (!currentIsUniform && nextIsUniform) {
-    const captured = captureLinkedSpanProsthesisTypes(rows, tooth);
+    const fillOnly = isTemporaryToothProsthesisType(nextType);
+    const captured = fillOnly ? {} : captureLinkedSpanProsthesisTypes(rows, tooth);
     return {
       rows: applyProsthesisTypeToLinkedSpan(
         rows,
@@ -401,7 +404,7 @@ export const applyCycledLinkedSpanProsthesisType = (
         nextType,
         defaultAbutmentProductMode,
       ),
-      snapshot: { ...pruned, ...captured },
+      snapshot: fillOnly ? pruned : { ...pruned, ...captured },
     };
   }
 
@@ -420,9 +423,19 @@ export const applyCycledLinkedSpanProsthesisType = (
   if (currentIsUniform && !nextIsUniform) {
     const component = collectLinkedComponentTeeth(rows, tooth);
     const componentSet = new Set(component);
-    const hasRestore = component.some((item) => Boolean(pruned[item]));
     const nextSnapshot = { ...pruned };
     for (const item of component) delete nextSnapshot[item];
+    if (isTemporaryToothProsthesisType(currentType)) {
+      return {
+        rows: rows.map((row) =>
+          String(row.toothNumber || "").trim() === tooth
+            ? applyProsthesisTypeToRow(row, nextType, defaultAbutmentProductMode)
+            : row,
+        ),
+        snapshot: nextSnapshot,
+      };
+    }
+    const hasRestore = component.some((item) => Boolean(pruned[item]));
     if (!hasRestore) {
       return {
         rows: applyProsthesisTypeToLinkedSpan(
@@ -543,6 +556,15 @@ export const toggleAdjacentBridgeLink = (
   }
 
   if (checked && currentTooth) {
+    const component = new Set(collectLinkedComponentTeeth(next, currentTooth));
+    const hasTemp = next.some(
+      (row) =>
+        component.has(String(row.toothNumber || "").trim()) &&
+        isTemporaryToothProsthesisType(row.prosthesisType),
+    );
+    if (hasTemp) {
+      return applyProsthesisTypeToLinkedSpan(next, currentTooth, "임시치아");
+    }
     const initiator = next[originalIndex];
     const initiatorType = String(initiator?.prosthesisType || "").trim();
     if (initiator && isSpanUniformProsthesisType(initiatorType)) {

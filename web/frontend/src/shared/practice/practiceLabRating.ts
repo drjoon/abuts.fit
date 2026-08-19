@@ -12,6 +12,7 @@
 // - 2026-08-16: 치과·기공소 쌍당 평가 1건. 재평가 시 덮어쓰기. 집계 ratingCount=평가 치과 수.
 // - 2026-08-16: scaleAutoMatchFeeToLabStars — 기공소 수신 견적용 별점 확정 단일가.
 // - 2026-08-19: 신규 지정 의뢰는 평가만. 별점 배수는 레거시 자동매칭.
+// - 2026-08-19: 별점 기공비 배수 폐지(항상 ×1). 할증은 기공소 치과별 labFeeMultiplier만.
 
 export const PRACTICE_LAB_RATING_MIN = 1;
 export const PRACTICE_LAB_RATING_MAX = 5;
@@ -24,14 +25,6 @@ export const AUTO_MATCH_MIN_SELECTABLE = 1;
 /** 이 치과 수 이하 평가면 유효 별점=3(미평가 포함). 3곳 이하→3, 4곳부터 실평균. */
 export const AUTO_MATCH_RATING_COUNT_GRACE = 3;
 export const DEFAULT_EFFECTIVE_LAB_STARS = 3;
-
-const FEE_MULTIPLIER_BY_STARS: Record<number, number> = {
-  1: 0.8,
-  2: 0.9,
-  3: 1,
-  4: 1.1,
-  5: 1.2,
-};
 
 export type PracticeLabRatingPublic = {
   stars: number;
@@ -95,9 +88,9 @@ export function resolveAutoMatchEligibleStarBand({
   return { minStars: min, maxStars: Math.max(min, maxRaw) };
 }
 
-export function feeMultiplierForStars(stars: unknown): number {
-  const n = normalizeAutoMatchMinLabRating(stars);
-  return FEE_MULTIPLIER_BY_STARS[n] ?? 1;
+/** 별점 기공비 배수 폐지. 시그니처 호환용으로 항상 1. */
+export function feeMultiplierForStars(_stars: unknown): number {
+  return 1;
 }
 
 /**

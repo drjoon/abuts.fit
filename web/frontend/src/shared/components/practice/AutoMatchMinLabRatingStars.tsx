@@ -135,8 +135,7 @@ export function AutoMatchMinLabRatingStars({
     "- 어벗츠 인증 통과 기공소만 참여",
     "- 평가 치과 3곳 이하 기공소는 3점 적용",
     "- 하한·상한 직접 설정",
-    "- 기공비는 수락한 기공소 별점에 비례해 결정",
-    "1점=0.8배 · 2점=0.9배 · 3점=기공소들 평균수가 · 4점=1.1배 · 5점=1.2배",
+    "- 기공비는 플랫폼 평균수가. 기공소가 이 치과에 설정한 할증만 추가로 적용",
   ] as const;
 
   return (
@@ -174,7 +173,7 @@ export function AutoMatchMinLabRatingStars({
               <p
                 key={line}
                 className={
-                  line.startsWith("1점=") ? "whitespace-nowrap" : undefined
+                  line.startsWith("- 기공비는") ? "whitespace-nowrap" : undefined
                 }
               >
                 {line}

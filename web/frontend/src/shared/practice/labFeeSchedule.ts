@@ -14,6 +14,7 @@
 // - 2026-08-17: 번대 안은 정중선 가운데(18→11, 21→28, 38→31, 41→48).
 // - 2026-08-13: 유지장치에 남은 커스텀 플래그는 어벗 과금하지 않는다.
 // - 2026-08-19: 임시치아+어벗은 임시치아 수가와 어벗츠 단가를 함께 합산.
+// - 2026-08-19: 임시치아 어벗은 묶음 줄과 분리해 치아별 커스텀어벗 단가 줄로 표시.
 // - 2026-08-14: 환봉 프리셋 타입 변경 후에도 제조사·브랜드·패밀리로 매칭.
 // - 2026-08-14: 환봉 단가 0원은 별도 고지(abutmentRetailNote=quote). 견적에서 열이 사라지지 않게.
 // - 2026-08-14: 도입 종류(cnc/round_bar)에 따라 어벗츠 CNC·환봉 단가 분기.
@@ -471,6 +472,9 @@ export const sortPracticeTransferFeeLines = <T extends { toothNumber?: string }>
       toToothDecadeSortNumber(String(a.toothNumber || "")) -
       toToothDecadeSortNumber(String(b.toothNumber || ""));
     if (diff !== 0) return diff;
+    const aMulti = String(a.toothNumber || "").includes(",");
+    const bMulti = String(b.toothNumber || "").includes(",");
+    if (aMulti !== bMulti) return aMulti ? -1 : 1;
     return String(a.toothNumber || "").localeCompare(String(b.toothNumber || ""), "ko");
   });
 
@@ -1205,6 +1209,42 @@ export const computePracticeTransferRetailFees = (params: {
           ? Math.max(0, Math.round(Number(useRemake ? item.remake : item.price) || 0))
           : nTeethFeeForCount(group.teeth.length, item.tiers, useRemake);
       labFeeTotal += labFee;
+      const sortedTeeth = sortToothNumbersForFee(group.teeth);
+      const splitTempAbutment = isRemovableTempFeeName(item.name);
+      if (splitTempAbutment) {
+        lines.push({
+          toothNumber: sortedTeeth.join(","),
+          prosthesisType: `${item.name}${group.suffix} ${group.teeth.length}치`,
+          labFee,
+          labAbutmentFee: 0,
+          labAbutmentPending: false,
+          abutmentRetail: 0,
+        });
+        for (const row of groupedRows) {
+          const tooth = String(row?.toothNumber || row?.tooth || "").trim();
+          if (!group.teeth.includes(tooth)) continue;
+          const split = abutmentSplitForRow(row);
+          addAbutment(split);
+          if (
+            split.abuts <= 0 &&
+            split.lab <= 0 &&
+            !split.pending &&
+            !split.quote
+          ) {
+            continue;
+          }
+          lines.push({
+            toothNumber: tooth,
+            prosthesisType: "커스텀어벗",
+            labFee: 0,
+            labAbutmentFee: split.lab,
+            labAbutmentPending: split.pending,
+            abutmentRetail: split.abuts,
+            abutmentRetailNote: retailNote(split),
+          });
+        }
+        continue;
+      }
       let groupAbutment = 0;
       let groupLabAbutment = 0;
       let groupPending = false;
@@ -1219,7 +1259,6 @@ export const computePracticeTransferRetailFees = (params: {
         if (split.pending) groupPending = true;
         if (split.quote) groupQuote = true;
       }
-      const sortedTeeth = sortToothNumbersForFee(group.teeth);
       lines.push({
         toothNumber: sortedTeeth.join(","),
         prosthesisType:

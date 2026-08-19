@@ -7,6 +7,7 @@
 // - web/backend/utils/practiceTransferAutoMatchCore.js
 import { Types } from "mongoose";
 import BusinessAnchor from "../models/businessAnchor.model.js";
+import { isLabFeeScheduleConfigured } from "./labFeeSchedule.js";
 import {
   canReceivePracticeTransfer,
   requestorKindCapableAnchorFilter,
@@ -27,6 +28,7 @@ import {
   getAutoMatchPriorityLabAnchorIds,
   getPrimeLabAnchorId,
   isPracticeTransferSubcontracted,
+  isSubcontractPoolOpen,
   resolvePerformingLabAnchorId,
   isAutoMatchClaimActive,
   isAutoMatchCompleted,
@@ -63,6 +65,7 @@ export {
   isInternalLabBusinessType,
   isPracticeTransferLabReceiverRole,
   isPracticeTransferSubcontracted,
+  isSubcontractPoolOpen,
   normalizeLabAnchorIdList,
   resolvePerformingLabAnchorId,
 };
@@ -210,23 +213,27 @@ export const buildReceivedScopeWithAutoMatch = ({
     ],
   };
 
+  const unassignedIncomplete = [
+    openPoolEligibleToMe,
+    {
+      $or: [
+        { "autoMatch.completedAt": null },
+        { "autoMatch.completedAt": { $exists: false } },
+      ],
+    },
+    {
+      $or: [
+        { assigneeLabAnchorId: null },
+        { assigneeLabAnchorId: { $exists: false } },
+      ],
+    },
+  ];
+
   const openPoolBase = {
     matchingMode: "auto",
     status: "active",
     $and: [
-      openPoolEligibleToMe,
-      {
-        $or: [
-          { "autoMatch.completedAt": null },
-          { "autoMatch.completedAt": { $exists: false } },
-        ],
-      },
-      {
-        $or: [
-          { assigneeLabAnchorId: null },
-          { assigneeLabAnchorId: { $exists: false } },
-        ],
-      },
+      ...unassignedIncomplete,
       {
         $or: [
           { "autoMatch.claimedAt": null },
@@ -235,6 +242,13 @@ export const buildReceivedScopeWithAutoMatch = ({
       },
       buildAutoMatchPriorityAccessClause(labOid, now),
     ],
+  };
+
+  const subcontractPoolBase = {
+    matchingMode: "direct",
+    status: "active",
+    "autoMatch.subcontractPoolOpen": true,
+    $and: unassignedIncomplete,
   };
 
   return {
@@ -248,10 +262,23 @@ export const buildReceivedScopeWithAutoMatch = ({
           { "autoMatch.declinedLabAnchorIds": { $nin: [labOid] } },
         ],
       },
+      {
+        ...subcontractPoolBase,
+        $and: [
+          ...subcontractPoolBase.$and,
+          { "autoMatch.declinedLabAnchorIds": { $nin: [labOid] } },
+        ],
+      },
       // 내가 거부한 공개 풀(희미한 카드·거부 뱃지용)
       {
         matchingMode: "auto",
         status: "active",
+        "autoMatch.declinedLabAnchorIds": labOid,
+      },
+      {
+        matchingMode: "direct",
+        status: "active",
+        "autoMatch.subcontractPoolOpen": true,
         "autoMatch.declinedLabAnchorIds": labOid,
       },
       // 지정 의뢰를 거부·취소한 건
@@ -281,7 +308,6 @@ export const buildAutoMatchClaimableFilter = (
     : null;
 
   return {
-    matchingMode: "auto",
     status: "active",
     $and: [
       ...(eligibleClause ? [eligibleClause] : []),
@@ -302,13 +328,46 @@ export const buildAutoMatchClaimableFilter = (
       },
       {
         $or: [
-          { "autoMatch.claimedAt": null },
-          { "autoMatch.claimedAt": { $exists: false } },
+          {
+            matchingMode: "auto",
+            $and: [
+              {
+                $or: [
+                  { "autoMatch.claimedAt": null },
+                  { "autoMatch.claimedAt": { $exists: false } },
+                ],
+              },
+              ...(labOid
+                ? [buildAutoMatchPriorityAccessClause(labOid, now)]
+                : []),
+            ],
+          },
+          {
+            matchingMode: "direct",
+            "autoMatch.subcontractPoolOpen": true,
+          },
         ],
       },
-      ...(labOid ? [buildAutoMatchPriorityAccessClause(labOid, now)] : []),
     ],
   };
+};
+
+/** 어벗츠 하청 풀: 인증·수가설정 기공소(원청 internalLab 제외). 별점 없음. */
+export async function loadCertifiedSubcontractLabAnchorIds({
+  excludeLabAnchorId = null,
+} = {}) {
+  const exclude = String(excludeLabAnchorId || "").trim();
+  const labs = await loadAutoMatchEligibleLabAnchors({
+    select: { _id: 1, businessType: 1, labFeeSchedule: 1 },
+  });
+  const ids = [];
+  for (const lab of labs) {
+    if (isInternalLabBusinessType(lab)) continue;
+    if (exclude && String(lab._id) === exclude) continue;
+    if (!isLabFeeScheduleConfigured(lab.labFeeSchedule)) continue;
+    ids.push(lab._id);
+  }
+  return ids;
 };
 
 export async function loadAutoMatchEligibleLabAnchors({
@@ -387,7 +446,7 @@ export async function resolveAbutsPrimeLabFields() {
     };
   }
   return {
-    matchingMode: "auto",
+    matchingMode: "direct",
     targetLabAnchorId: internal._id,
     targetLabName: ABUTS_LAB_DISPLAY_NAME,
   };

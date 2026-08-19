@@ -4,7 +4,7 @@
 // - web/backend/utils/practiceLabRating.js
 // - web/frontend/src/shared/practice/autoMatchBudget.ts
 //
-// 자동매칭 기공비 — v4 플랫폼 고정가(평균×별점배수). 하한~상한 별점이면 min≠max.
+// 자동매칭 기공비 — v4 플랫폼 고정가(카탈로그 평균, 별점 배수 없음). 별점은 적격 게이트만.
 // 레거시 v2/v3(항목 밴드·min%/max%)는 읽기 호환만.
 // - 2026-08-16: 모달은 min%/max%만 설정. 기본 80%~120%.
 // - 2026-08-16: % 예산 normalize 시 견적 합산 minLabFee/maxLabFee 보존.
@@ -469,8 +469,7 @@ export function buildScheduleFromAutoMatchBudget(budget, side = "max", catalog) 
 }
 
 /**
- * 기공소 유효 별점 배수로 확정된 가상 스케줄(수신 견적·수락 청구 SSOT).
- * 의뢰 대역(min~max) 안으로 clamp한 뒤 카탈로그×배수(1천원 올림).
+ * 자동매칭 가상 스케줄(수신 견적·수락 청구). 별점 배수 없이 카탈로그 평균(1천원 올림).
  */
 export function buildScheduleFromAutoMatchBudgetAtStars(
   budget,

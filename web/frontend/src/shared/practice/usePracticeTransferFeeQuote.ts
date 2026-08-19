@@ -29,7 +29,6 @@ import type { ToothWorkSelection } from "@/shared/practice/transferMemo";
 import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
 import { useAuthStore } from "@/store/useAuthStore";
 
-const AUTO_MATCH_LAB_ID = "__auto_match__";
 const CONTEXT_CACHE_TTL_MS = 60_000;
 export const LAB_FEE_MULTIPLIER_UPDATED_EVENT =
   "practice:lab-fee-multiplier-updated";
@@ -125,7 +124,7 @@ export const usePracticeTransferFeeQuote = (params: {
   const storedQuote = params.storedQuote;
   const rawLabId = String(params.labAnchorId || "").trim();
   const labAnchorId =
-    !rawLabId || rawLabId === AUTO_MATCH_LAB_ID ? null : rawLabId;
+    /^[a-fA-F0-9]{24}$/.test(rawLabId) ? rawLabId : null;
   const cacheKey = cacheKeyForLab(labAnchorId);
   const [context, setContext] = useState<PracticeTransferQuoteContext>(
     () => readCachedContext(cacheKey) || DEFAULT_QUOTE_CONTEXT,

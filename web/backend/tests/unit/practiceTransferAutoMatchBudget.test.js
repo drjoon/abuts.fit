@@ -21,7 +21,7 @@ describe("practiceTransferAutoMatchBudgetCore", () => {
     expect(bandFromAdminBase(50001)).toEqual({ min: 40000, max: 60000 });
   });
 
-  test("v4 fixed fee from stars: 1=0.8x, 2=0.9x, 3=1x, 4=1.1x, 5=1.2x ceil 1000", () => {
+  test("v4 fixed fee ignores stars (catalog average, ceil 1000)", () => {
     const catalog = [
       { id: "crown", name: "크라운", price: 60000, enabled: true },
     ];
@@ -29,14 +29,14 @@ describe("practiceTransferAutoMatchBudgetCore", () => {
       version: 4,
       stars: 1,
       maxStars: 1,
-      feeMultiplier: 0.8,
-      items: { crown: { min: 48000, max: 48000 } },
+      feeMultiplier: 1,
+      items: { crown: { min: 60000, max: 60000 } },
     });
     expect(resolveAutoMatchBudgetFromStars(2, catalog)).toMatchObject({
       version: 4,
       stars: 2,
-      feeMultiplier: 0.9,
-      items: { crown: { min: 54000, max: 54000 } },
+      feeMultiplier: 1,
+      items: { crown: { min: 60000, max: 60000 } },
     });
     expect(resolveAutoMatchBudgetFromStars(3, catalog)).toMatchObject({
       version: 4,
@@ -45,22 +45,21 @@ describe("practiceTransferAutoMatchBudgetCore", () => {
       items: { crown: { min: 60000, max: 60000 } },
     });
     expect(resolveAutoMatchBudgetFromStars(4, catalog).items.crown).toEqual({
-      min: 66000,
-      max: 66000,
+      min: 60000,
+      max: 60000,
     });
     expect(resolveAutoMatchBudgetFromStars(5, catalog).items.crown).toEqual({
-      min: 72000,
-      max: 72000,
+      min: 60000,
+      max: 60000,
     });
-    // 55555 * 1.1 = 61110.5 → ceil 62000
     const odd = [{ id: "crown", name: "크라운", price: 55555, enabled: true }];
     expect(resolveAutoMatchBudgetFromStars(4, odd).items.crown).toEqual({
-      min: 62000,
-      max: 62000,
+      min: 56000,
+      max: 56000,
     });
   });
 
-  test("v4 star band builds min/max fees from lower/upper multipliers", () => {
+  test("v4 star band no longer spreads min/max by rating", () => {
     const catalog = [
       { id: "crown", name: "크라운", price: 60000, enabled: true },
     ];
@@ -73,11 +72,11 @@ describe("practiceTransferAutoMatchBudgetCore", () => {
       stars: 3,
       maxStars: 4,
       feeMultiplier: 1,
-      items: { crown: { min: 60000, max: 66000 } },
+      items: { crown: { min: 60000, max: 60000 } },
     });
   });
 
-  test("buildScheduleFromAutoMatchBudgetAtStars uses lab stars within band", () => {
+  test("buildScheduleFromAutoMatchBudgetAtStars ignores lab stars", () => {
     const catalog = [
       { id: "crown", name: "크라운", price: 60000, enabled: true },
       { id: "bridge", name: "브리지", price: 60000, enabled: true },
@@ -89,8 +88,7 @@ describe("practiceTransferAutoMatchBudgetCore", () => {
     const at3 = buildScheduleFromAutoMatchBudgetAtStars(budget, 3, catalog);
     expect(at3.items.find((row) => row.id === "bridge")?.price).toBe(60000);
     const at4 = buildScheduleFromAutoMatchBudgetAtStars(budget, 4, catalog);
-    expect(at4.items.find((row) => row.id === "bridge")?.price).toBe(66000);
-    // 미지정·대역 밖 → 기본 3(대역 하한 쪽)
+    expect(at4.items.find((row) => row.id === "bridge")?.price).toBe(60000);
     const fallback = buildScheduleFromAutoMatchBudgetAtStars(
       budget,
       null,
@@ -101,7 +99,7 @@ describe("practiceTransferAutoMatchBudgetCore", () => {
     );
   });
 
-  test("resolveAutoMatchBudgetOrDefaults prefers minStars for v4", () => {
+  test("resolveAutoMatchBudgetOrDefaults prefers minStars for v4 band only", () => {
     const budget = resolveAutoMatchBudgetOrDefaults(
       { version: 3, minPct: 80, maxPct: 120 },
       null,
@@ -109,7 +107,7 @@ describe("practiceTransferAutoMatchBudgetCore", () => {
     );
     expect(budget.version).toBe(4);
     expect(budget.stars).toBe(4);
-    expect(budget.feeMultiplier).toBe(1.1);
+    expect(budget.feeMultiplier).toBe(1);
   });
 
   test("defaults cover prosthetic keys at 80%~120% (legacy builder)", () => {

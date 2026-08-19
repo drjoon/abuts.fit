@@ -2699,7 +2699,7 @@ export const PracticeTransferRequestIntakePanel = ({
                                     isMissingTooth
                                       ? undefined
                                       : isLinked
-                                        ? "클릭: 브리지 ↔ Pontic ↔ 작업X ↔ 유지장치 ↔ 임시치아 (유지장치·임시치아는 연결 전체 동일, 복귀 시 미클릭 치아는 원래 내용)"
+                                        ? "클릭: 브리지 ↔ Pontic ↔ 작업X ↔ 유지장치 ↔ 임시치아 (유지장치는 연결 전체 동일·복귀 시 미클릭 치아 복원, 임시치아에서 나오면 클릭한 치아만 변경)"
                                         : "클릭: 인레이 → 크라운 → 커스텀어벗 → 임시치아"
                                   }
                                   onClick={(e) => {

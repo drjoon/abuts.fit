@@ -14,6 +14,7 @@
 // - 2026-08-16: 공개 대역 — 치과가 하한·상한 직접 설정(기본 3~4).
 // - 2026-08-16: 치과·기공소 쌍당 평가 1건. 재평가 시 덮어쓰기. 집계 ratingCount=평가 치과 수.
 // - 2026-08-19: 신규 지정 의뢰는 평가만. 별점 배수는 레거시 자동매칭 청구용.
+// - 2026-08-19: 별점 기공비 배수 폐지(항상 ×1). 청구 할증은 기공소 치과별 labFeeMultiplier만.
 // - 2026-08-16: scaleAutoMatchFeeToLabStars — 기공소 수신·수락 견적 별점 확정 단일가.
 
 import { Types } from "mongoose";
@@ -33,14 +34,6 @@ export const AUTO_MATCH_MIN_SELECTABLE = 1;
 export const AUTO_MATCH_RATING_COUNT_GRACE = 3;
 /** 3회 이하일 때 적용하는 초기 유효 별점. */
 export const DEFAULT_EFFECTIVE_LAB_STARS = 3;
-
-const FEE_MULTIPLIER_BY_STARS = Object.freeze({
-  1: 0.8,
-  2: 0.9,
-  3: 1,
-  4: 1.1,
-  5: 1.2,
-});
 
 /** 별점 1~5. 범위 밖·비숫자면 null. */
 export function normalizePracticeLabStars(value) {
@@ -81,10 +74,9 @@ export function resolveAutoMatchEligibleStarBand({
   return { minStars: min, maxStars: max };
 }
 
-/** 선택 별점(1~5) → 기공비 배수. 자동매칭 청구는 하한 별점 기준. */
-export function feeMultiplierForStars(stars) {
-  const n = normalizeAutoMatchMinLabRating(stars);
-  return FEE_MULTIPLIER_BY_STARS[n] ?? 1;
+/** 별점 기공비 배수 폐지. 시그니처 호환용으로 항상 1. */
+export function feeMultiplierForStars(_stars) {
+  return 1;
 }
 
 /** 기공소 유효 별점을 의뢰 공개 대역 안으로 clamp. 미지정이면 기본 3(대역 내). */
