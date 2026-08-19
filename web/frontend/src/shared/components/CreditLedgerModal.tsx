@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-20: 행 클릭 정산 상세에 장부 배송비를 전달(견적 툴팁과 분리).
 // - 2026-08-19: 구강스캔 호버 — 보철기공비|어벗 디자인+생산비는 견적(6만·2.5만). 경로 보류(7만+1.5만) 아님.
 // - 2026-08-19: 어벗디자인·어벗생산은 의뢰 사업자+예정출고일로 1행·배송비 1건(치과명 무관).
 // - 2026-08-19: 내역 무한스크롤을 10건 단위로 가져와 첫 화면을 빨리 연다.
@@ -105,7 +106,10 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { PracticeTransferFeeEstimate } from "@/shared/components/practice/PracticeTransferFeeEstimate";
+import {
+  PracticeTransferFeeEstimate,
+  type PracticeTransferSettlementShippingLine,
+} from "@/shared/components/practice/PracticeTransferFeeEstimate";
 import {
   AbutmentDesignLedgerDetailDialog,
   type AbutmentDesignLedgerDetail,
@@ -529,6 +533,47 @@ const classifyPracticeTransferPart = (
     return { route: route === "other" ? "lab" : route, kind: "labFee" };
   }
   return { route, kind: "other" };
+};
+
+const settlementShippingRouteLabel = (route: PracticeTransferRoute) => {
+  if (route === "lab") return "치과→기공소";
+  if (route === "abuts") return "치과→어벗츠";
+  return "배송비";
+};
+
+/** 장부 parts에서 배송비만 추려 정산 상세에 넘긴다. */
+const toSettlementShippingLines = (
+  parts: LedgerDisplayPart[] | null | undefined,
+  creditLabHoldPending: boolean | null,
+  creditAbutmentHoldPending: boolean | null,
+): PracticeTransferSettlementShippingLine[] => {
+  if (!Array.isArray(parts) || parts.length === 0) return [];
+  const byKey = new Map<string, PracticeTransferSettlementShippingLine>();
+  parts.forEach((part, index) => {
+    const { route, kind } = classifyPracticeTransferPart(part);
+    if (kind !== "shipping") return;
+    const amount = Math.abs(Math.round(Number(part.amount || 0)));
+    if (amount <= 0) return;
+    const key = route === "other" ? `other:${index}` : route;
+    const holdPending =
+      route === "lab"
+        ? creditLabHoldPending
+        : route === "abuts"
+          ? creditAbutmentHoldPending
+          : null;
+    const prev = byKey.get(key);
+    if (prev) {
+      prev.amount += amount;
+      return;
+    }
+    byKey.set(key, {
+      key,
+      label: settlementShippingRouteLabel(route),
+      amount,
+      holdPending,
+    });
+  });
+  return Array.from(byKey.values());
 };
 
 const addFeeLeafAmount = (
@@ -1322,6 +1367,7 @@ export const CreditLedgerModal = ({
     orderDate: string;
     arrivalDate: string;
     memo: string;
+    settlementShippingLines: PracticeTransferSettlementShippingLine[];
   } | null>(null);
   const [abutmentDetail, setAbutmentDetail] =
     useState<AbutmentDesignLedgerDetail | null>(null);
@@ -1967,18 +2013,18 @@ export const CreditLedgerModal = ({
                         const memoMeta = parsePracticeTransferMemoMeta(
                           String(r.item.transferMemo || ""),
                         );
+                        const creditLabHoldPending =
+                          resolvePracticeTransferPending(r.item, "lab");
+                        const creditAbutmentHoldPending =
+                          resolvePracticeTransferPending(r.item, "abuts");
                         setFeeQuoteDetail({
                           quote,
                           skipJig: r.item.skipJig !== false,
                           rushProcessing: Boolean(r.item.rushProcessing),
                           title:
                             r.displayLabel || PRACTICE_TRANSFER_TYPE_LABEL,
-                          creditLabHoldPending: resolvePracticeTransferPending(
-                            r.item,
-                            "lab",
-                          ),
-                          creditAbutmentHoldPending:
-                            resolvePracticeTransferPending(r.item, "abuts"),
+                          creditLabHoldPending,
+                          creditAbutmentHoldPending,
                           patientName:
                             String(r.item.patientName || "").trim() ||
                             String(memoMeta.patientName || "").trim(),
@@ -1986,6 +2032,13 @@ export const CreditLedgerModal = ({
                           orderDate: String(memoMeta.orderDate || "").trim(),
                           arrivalDate: String(memoMeta.arrivalDate || "").trim(),
                           memo: String(memoMeta.memo || "").trim(),
+                          settlementShippingLines: toSettlementShippingLines(
+                            r.parts && r.parts.length > 0
+                              ? r.parts
+                              : r.members.map(toDisplayPart),
+                            creditLabHoldPending,
+                            creditAbutmentHoldPending,
+                          ),
                         });
                       }}
                     >
@@ -2235,6 +2288,11 @@ export const CreditLedgerModal = ({
                   showSettlementCredit
                     ? null
                     : feeQuoteDetail.creditAbutmentHoldPending
+                }
+                settlementShippingLines={
+                  showSettlementCredit
+                    ? []
+                    : feeQuoteDetail.settlementShippingLines
                 }
               />
             </div>

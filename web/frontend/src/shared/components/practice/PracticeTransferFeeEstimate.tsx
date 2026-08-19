@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/practice/practiceTransferFeeQuote.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/components/practice/PracticeToothWorkChartReadOnly.tsx
+// - 2026-08-20: 정산(density=detail)만 장부 배송비·크레딧 소비 총액. 견적 툴팁은 기공비 총액까지.
 // - 2026-08-20: 견적 툴팁은 기공비 총액까지. 배송비·크레딧 소비 총액은 주문건당 표시하지 않음(묶음 발송·정산 장부 SSOT).
 // - 2026-08-19: 지정 기공소 수가 Off — 바에「기공비 미설정」(0원 금지). 어벗 단가는 유지.
 // - 2026-08-19: 치식 차트 견적 바 leadingAction(스크롤).
@@ -70,6 +71,13 @@ import {
   normalizeRushFeeMultiplier,
 } from "@/shared/practice/labFeeSchedule";
 
+export type PracticeTransferSettlementShippingLine = {
+  key: string;
+  label: string;
+  amount: number;
+  holdPending?: boolean | null;
+};
+
 type PracticeTransferFeeEstimateProps = {
   quote: PracticeTransferFeeQuote;
   viewer: PracticeTransferFeeQuoteViewer;
@@ -82,7 +90,7 @@ type PracticeTransferFeeEstimateProps = {
   leadingAction?: ReactNode;
   /** 카드 총액 오른쪽·치식 차트 견적 바 오른쪽(선택) */
   trailingAction?: ReactNode;
-  /** 지그 제작 불필요(청구 SSOT). 견적 UI에는 배송비를 넣지 않음 */
+  /** 지그 제작 불필요 — 정산 상세에서 기공소 배송 면제 안내 */
   skipJig?: boolean;
   /** 신속처리 할증 표기 */
   rushProcessing?: boolean;
@@ -93,6 +101,8 @@ type PracticeTransferFeeEstimateProps = {
    */
   creditLabHoldPending?: boolean | null;
   creditAbutmentHoldPending?: boolean | null;
+  /** 크레딧 정산 상세 전용. 장부에 잡힌 배송비(견적 툴팁에는 전달하지 않음) */
+  settlementShippingLines?: PracticeTransferSettlementShippingLine[] | null;
 };
 
 const formatCell = (value: number) => (value > 0 ? formatManWon(value) : "—");
@@ -369,11 +379,12 @@ export function PracticeTransferFeeEstimate({
   labPending = false,
   leadingAction = null,
   trailingAction = null,
-  skipJig: _skipJig = true,
+  skipJig = true,
   rushProcessing = false,
   labEffectiveStars: _labEffectiveStars = null,
   creditLabHoldPending = null,
   creditAbutmentHoldPending = null,
+  settlementShippingLines = null,
 }: PracticeTransferFeeEstimateProps) {
   const isLab = viewer === "lab";
   const isDetail = density === "detail";
@@ -385,6 +396,14 @@ export function PracticeTransferFeeEstimate({
   const showCreditShareSettlement =
     isDetail &&
     (creditLabHoldPending !== null || creditAbutmentHoldPending !== null);
+  const labCreditSettled =
+    creditLabHoldPending !== null &&
+    creditLabHoldPending !== undefined &&
+    !creditLabHoldPending;
+  const abutmentCreditSettled =
+    creditAbutmentHoldPending !== null &&
+    creditAbutmentHoldPending !== undefined &&
+    !creditAbutmentHoldPending;
   const rushFeeMultiplier = (() => {
     // 신규 신속처리 할증 없음. 레거시 quote 배수만 표시.
     return normalizeRushFeeMultiplier(quote.rushFeeMultiplier);
@@ -557,6 +576,35 @@ export function PracticeTransferFeeEstimate({
   const labTotalMaxOverride =
     hasBudgetSpread && labTotalMinOverride != null ? budgetLabFeeMax : null;
 
+  const shippingHintLines =
+    isDetail && !isLab
+      ? (settlementShippingLines || [])
+          .map((row) => ({
+            key: String(row.key || ""),
+            label: String(row.label || "배송비").trim() || "배송비",
+            amount: Math.max(0, Math.round(Number(row.amount || 0))),
+            holdPending:
+              row.holdPending === undefined ? null : row.holdPending,
+          }))
+          .filter((row) => row.key && row.amount > 0)
+      : [];
+  const shippingTotal = shippingHintLines.reduce(
+    (sum, row) => sum + row.amount,
+    0,
+  );
+  const shippingHeaderLabel =
+    labCreditSettled && abutmentCreditSettled
+      ? "배송비(차감 완료)"
+      : labCreditSettled || abutmentCreditSettled
+        ? "배송비"
+        : "배송비(보류)";
+  const hasLabOriginShip = shippingHintLines.some((row) =>
+    row.label.includes("기공소"),
+  );
+  const hasAbutsOriginShip = shippingHintLines.some((row) =>
+    row.label.includes("어벗츠"),
+  );
+
   const abutmentOnlyAmount =
     abutmentFromBreakdown > 0
       ? abutmentFromBreakdown
@@ -645,6 +693,42 @@ export function PracticeTransferFeeEstimate({
           {rushLabel} 적용
         </p>
       ) : null}
+      {shippingHintLines.length > 0 ? (
+        <div className="mt-1.5 space-y-0.5 border-t border-foreground/15 pt-1.5 text-[11px] leading-snug text-muted-foreground">
+          <p className="font-medium text-foreground/80">{shippingHeaderLabel}</p>
+          {shippingHintLines.map((row) => (
+            <p key={row.key} className="tabular-nums">
+              {row.label}{" "}
+              <span className="font-medium text-foreground">
+                {formatManWon(row.amount)}
+              </span>
+              {row.holdPending !== null && row.holdPending !== undefined ? (
+                <span
+                  className={cn(
+                    "ml-1.5 inline-flex rounded border px-1 py-px text-[10px] font-medium leading-tight",
+                    creditShareSettlementClass(row.holdPending),
+                  )}
+                >
+                  {creditShareSettlementLabel(row.holdPending)}
+                </span>
+              ) : null}
+            </p>
+          ))}
+          {skipJig && hasAbutsOriginShip && !hasLabOriginShip ? (
+            <p>지그 필요없음으로 기공소→치과 배송비는 차감하지 않습니다.</p>
+          ) : null}
+        </div>
+      ) : null}
+      {isDetail && !isLab && (quote.total > 0 || shippingTotal > 0) ? (
+        <p className="mt-1.5 border-t border-foreground/15 pt-1.5 font-medium tabular-nums">
+          {hasBudgetRange
+            ? `크레딧 소비 ${formatWonRange(
+                creditMin + shippingTotal,
+                amount + shippingTotal,
+              )}`
+            : `크레딧 소비 총액 ${formatManWon(quote.total + shippingTotal)}`}
+        </p>
+      ) : null}
     </>
   );
 
@@ -657,7 +741,7 @@ export function PracticeTransferFeeEstimate({
           className,
         )}
         role="region"
-        aria-label="기공의뢰 견적 상세"
+        aria-label="기공의뢰 정산 상세"
       >
         {breakdownPanel}
       </div>
