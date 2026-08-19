@@ -3576,10 +3576,11 @@ export async function getMyPracticeTransfers(req, res) {
 const AUTO_MATCH_LAB_SENTINEL = "__auto_match__";
 
 /**
- * 치과→기공소 rating 저장. 자동/지정 공통.
- * body: { stars: 1|2|3, memo?: string }
- * 기공소에는 노출하지 않음(기록 치과·관리자만).
- * 치과·기공소 쌍당 1건(지정·매칭 공통). 재평가 시 이전 별점·메모를 덮어씀.
+ * 치과→기공소 rating 저장.
+ * body: { stars: 1~5, memo?: string }
+ * 별점은 기공소에 공개, 치과·메모는 비공개.
+ * 신규 의뢰 배정·지정 수가에는 쓰지 않음(레거시 자동매칭 청구만 별점 배수).
+ * 치과·기공소 쌍당 1건. 재평가 시 이전 별점·메모를 덮어씀.
  */
 export async function upsertPracticeTransferLabRating(req, res) {
   try {

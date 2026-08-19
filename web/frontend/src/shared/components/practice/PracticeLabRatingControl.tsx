@@ -7,6 +7,7 @@
 // - 2026-08-16: 평가 모달 기본 별점 3.
 // - 2026-08-16: 1점 매칭 제외 안내 제거(1점도 참여·×0.8).
 // - 2026-08-16: 치과·기공소 쌍당 1건·재평가 덮어쓰기 안내.
+// - 2026-08-19: 자동매칭 제거. 안내는 별점·쌍당 1회·재평가만.
 import { useEffect, useState, type MouseEvent } from "react";
 import { Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -35,7 +36,7 @@ import {
 import { cn } from "@/shared/ui/cn";
 
 const DIALOG_DESCRIPTION_LINES = [
-  "1~5점. 매칭·지정 공통, 같은 기공소는 치과당 1회만 반영됩니다.",
+  "1~5점. 같은 기공소는 치과당 1회만 반영됩니다.",
   "다시 평가하면 이전 별점은 새 평가로 바뀝니다. 별점은 기공소에 공개, 치과·메모는 비공개입니다.",
 ] as const;
 

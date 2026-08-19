@@ -11,6 +11,7 @@
 // - 2026-08-16: 공개 대역 — 치과가 하한·상한 직접 설정(기본 3~4).
 // - 2026-08-16: 치과·기공소 쌍당 평가 1건. 재평가 시 덮어쓰기. 집계 ratingCount=평가 치과 수.
 // - 2026-08-16: scaleAutoMatchFeeToLabStars — 기공소 수신 견적용 별점 확정 단일가.
+// - 2026-08-19: 신규 지정 의뢰는 평가만. 별점 배수는 레거시 자동매칭.
 
 export const PRACTICE_LAB_RATING_MIN = 1;
 export const PRACTICE_LAB_RATING_MAX = 5;

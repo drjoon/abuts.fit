@@ -4547,6 +4547,8 @@ export function RequestorPracticeReceivePage({
               multiplier={selectedTransfer.labFeeMultiplier}
               size="sm"
               buttonLabel="치과 평가"
+              dialogTitle="치과 평가"
+              variant="evaluate"
               onChanged={(next) => {
                 // live 설정만 갱신. 해당 의뢰 feeQuote(스냅샷)는 바꾸지 않는다.
                 const practiceAnchorId =

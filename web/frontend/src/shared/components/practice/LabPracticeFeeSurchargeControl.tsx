@@ -5,6 +5,7 @@
 // - 2026-08-14: 치과별 기공수가 할증(1x·1.1x·1.2x·1.5x·직접). Dialog + 취소/저장.
 // - 2026-08-15: 버튼 툴팁·모달 강조. 저장은 다음 의뢰부터(현재 건 소급 금지).
 // - 2026-08-16: 의뢰상세 채팅 헤더는 트리거 라벨「치과 평가」(모달 동일).
+// - 2026-08-19: 채팅「치과 평가」= 별점 없음·수가 할증만. 설정 탭은 할증 안내 유지.
 import { useEffect, useState, type MouseEvent } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -40,8 +41,13 @@ const PRESETS = [
 const SURCHARGE_NEXT_ORDER_HINT =
   "저장하면 해당 치과의 다음 의뢰부터 반영됩니다.";
 
-const DIALOG_DESCRIPTION_LINES = [
+const SETTINGS_DESCRIPTION_LINES = [
   "세심한 작업으로 시간이 더 드는 치과는 기공수가를 할증할 수 있습니다.",
+  SURCHARGE_NEXT_ORDER_HINT,
+] as const;
+
+const EVALUATE_DESCRIPTION_LINES = [
+  "별점 평가가 아니라, 해당 치과 기공수가를 할증할 수 있습니다.",
   SURCHARGE_NEXT_ORDER_HINT,
 ] as const;
 
@@ -62,6 +68,10 @@ type LabPracticeFeeSurchargeControlProps = {
   stopPropagation?: boolean;
   /** 트리거 버튼 라벨(비활성). 기본: 기공수가 할증 */
   buttonLabel?: string;
+  /** 모달 제목. 기본: 기공수가 할증 */
+  dialogTitle?: string;
+  /** chat-evaluate: 의뢰상세「치과 평가」. 별점 없이 할증만. */
+  variant?: "surcharge" | "evaluate";
 };
 
 export function LabPracticeFeeSurchargeControl({
@@ -72,7 +82,13 @@ export function LabPracticeFeeSurchargeControl({
   size = "sm",
   stopPropagation = true,
   buttonLabel = "기공수가 할증",
+  dialogTitle = "기공수가 할증",
+  variant = "surcharge",
 }: LabPracticeFeeSurchargeControlProps) {
+  const descriptionLines =
+    variant === "evaluate"
+      ? EVALUATE_DESCRIPTION_LINES
+      : SETTINGS_DESCRIPTION_LINES;
   const { token } = useAuthStore();
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
@@ -217,13 +233,13 @@ export function LabPracticeFeeSurchargeControl({
           <div className="border-b border-slate-200/80 px-6 pb-4 pt-6">
             <DialogHeader className="space-y-1.5 text-left">
               <DialogTitle className="text-lg font-semibold tracking-tight text-slate-900">
-                기공수가 할증
+                {dialogTitle}
               </DialogTitle>
               <DialogDescription asChild>
                 <div className="space-y-2 text-sm">
-                  <p className="text-slate-500">{DIALOG_DESCRIPTION_LINES[0]}</p>
+                  <p className="text-slate-500">{descriptionLines[0]}</p>
                   <p className="rounded-lg border border-amber-200/80 bg-amber-50 px-3 py-2 text-sm font-medium leading-snug text-amber-950">
-                    {DIALOG_DESCRIPTION_LINES[1]}
+                    {descriptionLines[1]}
                   </p>
                 </div>
               </DialogDescription>
