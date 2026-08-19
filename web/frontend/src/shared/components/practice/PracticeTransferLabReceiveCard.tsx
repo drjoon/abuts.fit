@@ -26,7 +26,7 @@
 // - 2026-08-15: 업로드 완료 안내 박스(어벗생산 취소 문구) 제거.
 // - 2026-08-15: 기공의뢰수신 카드 SSOT — 어벗츠기공소·일반 lab 동일 색·스타일·문구.
 import type { KeyboardEvent, MouseEvent } from "react";
-import { Star, UploadCloud, X } from "lucide-react";
+import { UploadCloud, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -51,8 +51,6 @@ import {
   resolvePracticeTransferListPatientName,
   resolvePracticeTransferListToothNumbers,
 } from "@/shared/components/practice/PracticeRecentTransferListCardDetail";
-import { formatLabStarsLabel } from "@/shared/practice/practiceLabRating";
-import { SEMANTIC_BADGE, SEMANTIC_CALLOUT } from "@/shared/ui/semanticStatus";
 import {
   countPracticeTransferDesignFiles,
   countPracticeTransferPendingProstheticFiles,
@@ -78,9 +76,6 @@ const formatDateTime = (value: unknown) => {
     timeZone: "Asia/Seoul",
   });
 };
-
-const formatWonCompact = (value: number) =>
-  `₩${Math.max(0, Math.round(value)).toLocaleString("ko-KR")}`;
 
 const CARD_SHELL =
   "w-full cursor-pointer rounded-xl border bg-white p-3.5 text-left shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
@@ -183,8 +178,6 @@ export function PracticeTransferLabReceiveCard({
     orderDate: transfer.orderDate,
     createdAt: transfer.createdAt,
   });
-  const starDowngrade = transfer.starDowngrade || null;
-  const hasStarDowngrade = Boolean(starDowngrade);
 
   const onCardKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Enter" || event.key === " ") {
@@ -511,66 +504,17 @@ export function PracticeTransferLabReceiveCard({
         patientName={patientName}
         toothNumbers={resolvePracticeTransferListToothNumbers(transfer)}
         afterMeta={
-          transfer.feeQuote || starDowngrade ? (
-            <div className="space-y-2">
-              {transfer.feeQuote ? (
-                <PracticeTransferFeeEstimate
-                  quote={transfer.feeQuote}
-                  viewer="lab"
-                  density="card"
-                  skipJig={Boolean(transfer.production?.skipJig)}
-                  rushProcessing={Boolean(transfer.production?.rushProcessing)}
-                  labEffectiveStars={
-                    transfer.labRatingSummary?.effectiveStars ??
-                    starDowngrade?.labEffectiveStars ??
-                    null
-                  }
-                />
-              ) : null}
-              {starDowngrade ? (
-                <div
-                  role="note"
-                  className={cn(
-                    "rounded-lg px-2.5 py-2 text-[11px]",
-                    SEMANTIC_CALLOUT.attentionBorder,
-                  )}
-                >
-                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-semibold text-accent-strong">
-                    <span className="inline-flex items-center gap-1">
-                      <Star className="h-3 w-3 fill-current" aria-hidden />
-                      별점 다운그레이드
-                    </span>
-                  </div>
-                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                    <span
-                      className={cn(
-                        "inline-flex items-center rounded-md px-1.5 py-0.5 font-semibold tabular-nums",
-                        SEMANTIC_BADGE.attentionSoft,
-                      )}
-                    >
-                      {formatLabStarsLabel(starDowngrade.labEffectiveStars)}
-                      <span
-                        className="mx-1 font-normal text-accent-strong/70"
-                        aria-hidden
-                      >
-                        →
-                      </span>
-                      {formatLabStarsLabel(starDowngrade.autoMatchStars)}
-                    </span>
-                    {starDowngrade.labFeeDeltaWon > 0 ? (
-                      <span
-                        className={cn(
-                          "inline-flex items-center rounded-md px-1.5 py-0.5 font-semibold tabular-nums",
-                          SEMANTIC_BADGE.dangerSoft,
-                        )}
-                      >
-                        수가 {formatWonCompact(starDowngrade.labFeeDeltaWon)}↓
-                      </span>
-                    ) : null}
-                  </div>
-                </div>
-              ) : null}
-            </div>
+          transfer.feeQuote ? (
+            <PracticeTransferFeeEstimate
+              quote={transfer.feeQuote}
+              viewer="lab"
+              density="card"
+              skipJig={Boolean(transfer.production?.skipJig)}
+              rushProcessing={Boolean(transfer.production?.rushProcessing)}
+              labEffectiveStars={
+                transfer.labRatingSummary?.effectiveStars ?? null
+              }
+            />
           ) : null
         }
       />
@@ -589,16 +533,10 @@ export function PracticeTransferLabReceiveCard({
         className={cn(
           CARD_SHELL,
           "border-2 border-dashed shadow-none",
-          hasStarDowngrade
-            ? "border-accent/70 bg-accent-soft/35 hover:border-accent hover:bg-accent-soft/60"
-            : "border-slate-300/90 hover:border-primary/50 hover:bg-primary-soft/20",
+          "border-slate-300/90 hover:border-primary/50 hover:bg-primary-soft/20",
           dimRejected && "opacity-40 hover:opacity-55",
         )}
-        activeClassName={
-          hasStarDowngrade
-            ? "border-accent bg-accent-soft/80"
-            : "border-primary bg-primary-soft/45"
-        }
+        activeClassName="border-primary bg-primary-soft/45"
         onFiles={onDropFiles}
       >
         <div
@@ -623,9 +561,7 @@ export function PracticeTransferLabReceiveCard({
       onKeyDown={onCardKeyDown}
       className={cn(
         CARD_SHELL,
-        hasStarDowngrade
-          ? "border-accent/70 bg-accent-soft/35 hover:border-accent hover:bg-accent-soft/60 hover:shadow-md"
-          : "border-slate-200/90 hover:border-primary/35 hover:bg-slate-50/60 hover:shadow-md",
+        "border-slate-200/90 hover:border-primary/35 hover:bg-slate-50/60 hover:shadow-md",
         dimRejected && "opacity-40 hover:opacity-55",
       )}
       data-transfer-card="true"

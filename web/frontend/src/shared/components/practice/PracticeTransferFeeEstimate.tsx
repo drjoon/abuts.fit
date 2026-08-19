@@ -68,7 +68,6 @@ import {
   normalizeLabFeeMultiplier,
   normalizeRushFeeMultiplier,
 } from "@/shared/practice/labFeeSchedule";
-import { scaleAutoMatchFeeToLabStars } from "@/shared/practice/practiceLabRating";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
 
 type PracticeTransferFeeEstimateProps = {
@@ -373,7 +372,7 @@ export function PracticeTransferFeeEstimate({
   trailingAction = null,
   skipJig = true,
   rushProcessing = false,
-  labEffectiveStars = null,
+  labEffectiveStars: _labEffectiveStars = null,
   creditLabHoldPending = null,
   creditAbutmentHoldPending = null,
 }: PracticeTransferFeeEstimateProps) {
@@ -433,26 +432,8 @@ export function PracticeTransferFeeEstimate({
     1,
     Math.max(0, Number(quote.feeRateApplied || 0)),
   );
-  // 기공소: 보철기공비+어벗 디자인+생산비=기공비. 치과 예산 min~max는 수락 전 필터용.
-  // 수락·청구 후(billed)에는 치과도 확정 기공비(total)를 표시.
-  // 자동매칭·기공소: 상한 수가를 유효 별점 배수로 환산한 단일가.
-  const scaleLabAutoMatchFee = (feeAtMax: number, feeAtMin?: number) => {
-    if (!isLab || confirmed || !budget) return Math.max(0, Math.round(feeAtMax || 0));
-    const maxFee = Math.max(0, Math.round(feeAtMax || 0));
-    const minFee =
-      feeAtMin != null && Number.isFinite(Number(feeAtMin))
-        ? Math.max(0, Math.round(Number(feeAtMin)))
-        : null;
-    // BE가 이미 별점 확정가(하한=표시가)로 내려준 경우 재환산 금지.
-    if (minFee != null && minFee === maxFee) return maxFee;
-    return scaleAutoMatchFeeToLabStars({
-      feeAtMax: maxFee,
-      feeAtMin: minFee ?? undefined,
-      budgetStars: budget.stars,
-      budgetMaxStars: budget.maxStars,
-      labStars: labEffectiveStars,
-    });
-  };
+  const labFeeAmount = (feeAtMax: number) =>
+    Math.max(0, Math.round(Number(feeAtMax || 0)));
   const breakdownLines =
     quote.lines.length > 0
       ? sortPracticeTransferFeeLines(quote.lines).map((line) => {
@@ -464,8 +445,7 @@ export function PracticeTransferFeeEstimate({
           return {
             toothNumber: line.toothNumber,
             prosthesisType: line.prosthesisType,
-            // 기공소 뷰: 별점 확정 단일가(수수료 비례 삭감 금지 — 수령은 별도 표기).
-            labFee: scaleLabAutoMatchFee(labFeeMax, labFeeMinRaw),
+            labFee: labFeeAmount(labFeeMax),
             // 치과·수락 전만 자동매칭 하한. 확정·기공소는 단일 수가.
             labFeeMin:
               !isLab && !confirmed && labFeeMinRaw != null
@@ -528,10 +508,7 @@ export function PracticeTransferFeeEstimate({
   const hasBudgetSpread =
     !isLab && hasBudgetRange && budgetLabFeeMin !== budgetLabFeeMax;
   const labFeeTotalRaw = Math.max(0, Math.round(Number(quote.labFeeTotal || 0)));
-  const labFeeTotalForLab = scaleLabAutoMatchFee(
-    labFeeTotalRaw,
-    budget?.minLabFee,
-  );
+  const labFeeTotalForLab = labFeeAmount(labFeeTotalRaw);
   // 기공소: 툴팁 보철·기공소어벗·어벗 디자인+생산 합과 동일. billed 스냅샷이
   // 대역 상한이면 labFeeTotal만 높아져 카드↔툴팁 불일치가 난다.
   const prosthesisFromBreakdown = breakdownLines.reduce(

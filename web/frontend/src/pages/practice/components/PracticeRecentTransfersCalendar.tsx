@@ -1,10 +1,10 @@
 /**
- * 치과 최근의뢰 모달 — 3주 세로 스크롤 캘린더.
+ * 치과 최근의뢰·기공소 기공의뢰수신 공통 — 3주 세로 스크롤 캘린더.
  * 기본 토·일 숨김(요일 토글로 복구). 주 행은 항목 수에 따라 최소 1/3 화면에서 늘어남.
  * related files:
  * - web/frontend/src/pages/practice/components/PracticeRecentTransfersAllModal.tsx
+ * - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
  * - web/frontend/src/shared/date/kst.ts
- * - web/frontend/src/shared/practice/practiceRecentTransferList.ts
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
@@ -21,13 +21,17 @@ import {
   toKstYmd,
   toKstYmdLoose,
 } from "@/shared/date/kst";
-import type { PracticeRecentTransferItem } from "@/shared/practice/practiceRecentTransferList";
-import {
-  resolvePracticeTransferListPatientName,
-  resolvePracticeTransferListToothNumbers,
-} from "@/shared/components/practice/PracticeRecentTransferListCardDetail";
 
 export type PracticeCalendarDateKey = "orderDate" | "arrivalDate";
+
+export type PracticeCalendarChipItem = {
+  id: string;
+  orderDate?: string | null;
+  arrivalDate?: string | null;
+  colorKey: string;
+  sortLabel: string;
+  line: string;
+};
 
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"] as const;
 const WEEK_STARTS_ON = 1;
@@ -40,11 +44,6 @@ type DayCell = {
   dow: number;
 };
 
-const labLabel = (transfer: PracticeRecentTransferItem) =>
-  String(transfer.targetLab || "-")
-    .replace(/\s*→.*$/g, "")
-    .trim() || "-";
-
 const hashString = (value: string) => {
   let h = 2166136261;
   for (let i = 0; i < value.length; i += 1) {
@@ -54,10 +53,12 @@ const hashString = (value: string) => {
   return h >>> 0;
 };
 
-/** 기공소별 고정 색. 의미 축(primary/attention)이 아니라 식별용 낮은 채도. */
-export const labChipStyle = (labKey: string): { backgroundColor: string; color: string } => {
+/** 그룹(기공소·치과)별 고정 색. 의미 축이 아니라 식별용 낮은 채도. */
+export const calendarGroupChipStyle = (
+  groupKey: string,
+): { backgroundColor: string; color: string } => {
   const hues = [208, 165, 145, 250, 280, 320, 12, 85, 195, 230];
-  const hue = hues[hashString(labKey || "-") % hues.length];
+  const hue = hues[hashString(groupKey || "-") % hues.length];
   return {
     backgroundColor: `hsl(${hue} 32% 90%)`,
     color: `hsl(${hue} 38% 28%)`,
@@ -97,24 +98,24 @@ const shiftMonth = (cursorYmd: string, direction: -1 | 1): string => {
 };
 
 type PracticeRecentTransfersCalendarProps = {
-  transfers: PracticeRecentTransferItem[];
+  items: PracticeCalendarChipItem[];
   dateKey: PracticeCalendarDateKey;
   cursorYmd: string;
   onCursorChange: (ymd: string) => void;
   onDateKeyChange: (key: PracticeCalendarDateKey) => void;
-  onSelectTransfer: (transfer: PracticeRecentTransferItem) => void;
+  onSelectItem: (item: PracticeCalendarChipItem) => void;
   hiddenWeekdays: number[];
   onHiddenWeekdaysChange: (next: number[]) => void;
   alignEpoch?: number;
 };
 
 export function PracticeRecentTransfersCalendar({
-  transfers,
+  items,
   dateKey,
   cursorYmd,
   onCursorChange,
   onDateKeyChange,
-  onSelectTransfer,
+  onSelectItem,
   hiddenWeekdays,
   onHiddenWeekdaysChange,
   alignEpoch = 0,
@@ -126,30 +127,29 @@ export function PracticeRecentTransfersCalendar({
   const visibleDows = WEEKDAYS.map((_, dow) => dow).filter((dow) => !hidden.has(dow));
 
   const byDay = useMemo(() => {
-    const map = new Map<string, PracticeRecentTransferItem[]>();
-    for (const transfer of transfers) {
+    const map = new Map<string, PracticeCalendarChipItem[]>();
+    for (const item of items) {
       const ymd = toKstYmdLoose(
-        dateKey === "arrivalDate" ? transfer.arrivalDate : transfer.orderDate,
+        dateKey === "arrivalDate" ? item.arrivalDate : item.orderDate,
       );
       if (!ymd) continue;
       const list = map.get(ymd) || [];
-      list.push(transfer);
+      list.push(item);
       map.set(ymd, list);
     }
     for (const [ymd, list] of map) {
       list.sort((a, b) => {
-        const labA = labLabel(a);
-        const labB = labLabel(b);
-        const labCmp = labA.localeCompare(labB, "ko");
-        if (labCmp !== 0) return labCmp;
-        const patientA = resolvePracticeTransferListPatientName(a);
-        const patientB = resolvePracticeTransferListPatientName(b);
-        return patientA.localeCompare(patientB, "ko");
+        const groupCmp = String(a.sortLabel || "").localeCompare(
+          String(b.sortLabel || ""),
+          "ko",
+        );
+        if (groupCmp !== 0) return groupCmp;
+        return String(a.line || "").localeCompare(String(b.line || ""), "ko");
       });
       map.set(ymd, list);
     }
     return map;
-  }, [dateKey, transfers]);
+  }, [dateKey, items]);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const weekElsRef = useRef(new Map<string, HTMLDivElement>());
@@ -381,28 +381,18 @@ export function PracticeRecentTransfersCalendar({
                       {monthNum}/{dayNum}
                     </p>
                     <div className="flex flex-col gap-0.5">
-                      {items.map((transfer) => {
-                        const patient =
-                          resolvePracticeTransferListPatientName(transfer);
-                        const teeth =
-                          resolvePracticeTransferListToothNumbers(transfer);
-                        const lab = labLabel(transfer);
-                        const line = [lab, patient || "—", teeth || "—"].join(" / ");
-                        const labKey =
-                          String(transfer.targetLabAnchorId || "").trim() || lab;
-                        return (
+                      {items.map((item) => (
                           <button
-                            key={`${transfer.id}:${transfer.transferId}:${day.ymd}`}
+                            key={`${item.id}:${day.ymd}`}
                             type="button"
                             className="w-full rounded px-1 py-0.5 text-left text-[10px] leading-snug hover:brightness-95"
-                            style={labChipStyle(labKey)}
-                            title={line}
-                            onClick={() => onSelectTransfer(transfer)}
+                            style={calendarGroupChipStyle(item.colorKey)}
+                            title={item.line}
+                            onClick={() => onSelectItem(item)}
                           >
-                            <span className="line-clamp-2 break-all">{line}</span>
+                            <span className="line-clamp-2 break-all">{item.line}</span>
                           </button>
-                        );
-                      })}
+                        ))}
                     </div>
                   </div>
                 );

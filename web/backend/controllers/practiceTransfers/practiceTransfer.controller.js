@@ -2168,72 +2168,10 @@ export async function createPracticeTransfer(req, res) {
     }
 
     // 잔액 검사 후 생성. 크레딧은 생성 시 에스크로 보류(기공 적립은 작업완료).
-    let autoMatchBudget = null;
-    let autoMatchEligibleLabAnchorIds = undefined;
-    let autoMatchPriorityLabAnchorIds = [];
-    let autoMatchCatalog = null;
-    if (matchingMode === "auto") {
-      const [practiceForBudget, catalog] = await Promise.all([
-        BusinessAnchor.findById(practiceAnchorId)
-          .select({
-            "practiceTransferSettings.autoMatchBudget": 1,
-            "practiceTransferSettings.autoMatchMinLabRating": 1,
-            "practiceTransferSettings.autoMatchMaxLabRating": 1,
-            "practiceTransferSettings.implantFavorites": 1,
-            practiceLabRatings: 1,
-          })
-          .lean(),
-        loadAutoMatchBudgetCatalog(),
-      ]);
-      autoMatchCatalog = catalog;
-      const starBand = resolveAutoMatchEligibleStarBand({
-        minStars:
-          req.body?.autoMatchMinLabRating ??
-          practiceForBudget?.practiceTransferSettings?.autoMatchMinLabRating,
-        maxStars:
-          req.body?.autoMatchMaxLabRating ??
-          practiceForBudget?.practiceTransferSettings?.autoMatchMaxLabRating,
-      });
-      const minStars = starBand.minStars;
-      autoMatchBudget = resolveAutoMatchBudgetOrDefaults(null, catalog, {
-        minStars,
-        maxStars: starBand.maxStars,
-      });
-
-      const eligibility = await resolveAutoMatchEligibleLabAnchorIds({
-        toothWorks: toothWorksRaw,
-        budget: autoMatchBudget,
-        catalog,
-        autoMatchMinLabRating: minStars,
-        autoMatchMaxLabRating: starBand.maxStars,
-        practiceLabRatings: practiceForBudget?.practiceLabRatings,
-      });
-      autoMatchEligibleLabAnchorIds = eligibility.eligibleLabAnchorIds;
-      autoMatchPriorityLabAnchorIds = eligibility.priorityLabAnchorIds || [];
-      if (autoMatchEligibleLabAnchorIds.length === 0) {
-        const skipped = eligibility.skipped || {};
-        let message =
-          "설정한 별점 범위에 맞는 인증 기공소가 없습니다. 범위를 넓히거나 지정 기공소를 선택해주세요.";
-        if (
-          skipped.feeUnconfigured > 0 &&
-          skipped.rating === 0
-        ) {
-          message =
-            "인증 기공소의 기공수가가 아직 설정되지 않았습니다. 기공소에서 수가를 켜거나 지정 기공소를 선택해주세요.";
-        } else if (skipped.rating > 0) {
-          message =
-            "설정한 별점 범위에 맞는 인증 기공소가 없습니다. 범위를 넓히거나 지정 기공소를 선택해주세요.";
-        }
-        return res.status(409).json({
-          success: false,
-          message,
-          reason: "auto_match_no_eligible_labs",
-          autoMatchBudget,
-          labsScanned: eligibility.labsScanned,
-          skipped,
-        });
-      }
-    }
+    const autoMatchBudget = null;
+    const autoMatchEligibleLabAnchorIds = undefined;
+    const autoMatchPriorityLabAnchorIds = [];
+    const autoMatchCatalog = null;
 
     try {
       await assertPracticeTransferPaidCreditSufficient({
@@ -2732,99 +2670,23 @@ export async function updatePracticeTransferContent(req, res) {
       Number(previousBilling.rushFeeMultiplier || 1);
     const billingInputsChanged =
       labChanged || toothWorksChanged || skipJigChanged || rushMultiplierChanged;
-    const previousEligible = Array.isArray(previousAutoMatch.eligibleLabAnchorIds)
-      ? previousAutoMatch.eligibleLabAnchorIds
-          .map((id) => String(id || "").trim())
-          .filter(Boolean)
-      : [];
     const previousBudget =
       previousBilling.autoMatchBudget &&
       typeof previousBilling.autoMatchBudget === "object"
         ? previousBilling.autoMatchBudget
         : null;
-    const storedStarMin = Number(
-      previousBudget?.stars ?? previousBudget?.minStars ?? Number.NaN,
-    );
-    const storedStarMax = Number(
-      previousBudget?.maxStars ?? storedStarMin,
-    );
-    const incomingStarMin =
-      req.body?.autoMatchMinLabRating != null
-        ? Number(req.body.autoMatchMinLabRating)
-        : Number.NaN;
-    const incomingStarMax =
-      req.body?.autoMatchMaxLabRating != null
-        ? Number(req.body.autoMatchMaxLabRating)
-        : Number.NaN;
-    const starBandChanged =
-      (Number.isFinite(incomingStarMin) &&
-        Number.isFinite(storedStarMin) &&
-        incomingStarMin !== storedStarMin) ||
-      (Number.isFinite(incomingStarMax) &&
-        Number.isFinite(storedStarMax) &&
-        incomingStarMax !== storedStarMax);
-    const reuseAutoEligibility =
-      matchingMode === "auto" &&
-      previousMatchingMode === "auto" &&
-      !toothWorksChanged &&
-      !starBandChanged &&
-      previousEligible.length > 0;
 
-    let autoMatchBudget = reuseAutoEligibility ? previousBudget : null;
-    let autoMatchEligibleLabAnchorIds = reuseAutoEligibility
-      ? previousAutoMatch.eligibleLabAnchorIds
-      : undefined;
-    let autoMatchPriorityLabAnchorIds = reuseAutoEligibility
-      ? previousAutoMatch.priorityLabAnchorIds || []
-      : [];
+    let autoMatchBudget = matchingMode === "auto" ? previousBudget : null;
+    let autoMatchEligibleLabAnchorIds =
+      matchingMode === "auto"
+        ? previousAutoMatch.eligibleLabAnchorIds
+        : undefined;
+    let autoMatchPriorityLabAnchorIds =
+      matchingMode === "auto"
+        ? previousAutoMatch.priorityLabAnchorIds || []
+        : [];
     let autoMatchCatalog = null;
-    if (matchingMode === "auto" && !reuseAutoEligibility) {
-      const [practiceForBudget, catalog] = await Promise.all([
-        BusinessAnchor.findById(practiceAnchorId)
-          .select({
-            "practiceTransferSettings.autoMatchBudget": 1,
-            "practiceTransferSettings.autoMatchMinLabRating": 1,
-            "practiceTransferSettings.autoMatchMaxLabRating": 1,
-            "practiceTransferSettings.implantFavorites": 1,
-            practiceLabRatings: 1,
-          })
-          .lean(),
-        loadAutoMatchBudgetCatalog(),
-      ]);
-      autoMatchCatalog = catalog;
-      const starBand = resolveAutoMatchEligibleStarBand({
-        minStars:
-          req.body?.autoMatchMinLabRating ??
-          practiceForBudget?.practiceTransferSettings?.autoMatchMinLabRating,
-        maxStars:
-          req.body?.autoMatchMaxLabRating ??
-          practiceForBudget?.practiceTransferSettings?.autoMatchMaxLabRating,
-      });
-      const minStars = starBand.minStars;
-      autoMatchBudget = resolveAutoMatchBudgetOrDefaults(null, catalog, {
-        minStars,
-        maxStars: starBand.maxStars,
-      });
-
-      const eligibility = await resolveAutoMatchEligibleLabAnchorIds({
-        toothWorks: toothWorksRaw,
-        budget: autoMatchBudget,
-        catalog,
-        autoMatchMinLabRating: minStars,
-        autoMatchMaxLabRating: starBand.maxStars,
-        practiceLabRatings: practiceForBudget?.practiceLabRatings,
-      });
-      autoMatchEligibleLabAnchorIds = eligibility.eligibleLabAnchorIds;
-      autoMatchPriorityLabAnchorIds = eligibility.priorityLabAnchorIds || [];
-      if (autoMatchEligibleLabAnchorIds.length === 0) {
-        return res.status(409).json({
-          success: false,
-          message:
-            "설정한 별점 범위에 맞는 인증 기공소가 없습니다. 범위를 넓히거나 지정 기공소를 선택해주세요.",
-          reason: "auto_match_no_eligible_labs",
-        });
-      }
-    } else if (matchingMode === "auto" && billingInputsChanged) {
+    if (matchingMode === "auto" && billingInputsChanged) {
       autoMatchCatalog = await loadAutoMatchBudgetCatalog();
     }
 
@@ -3894,22 +3756,6 @@ export async function getReceivedPracticeTransfers(req, res) {
       });
       const oralScanDownloadLocked = shouldLockLabOralScanDownload(doc);
       const feeQuote = quotesById.get(String(doc?._id || "")) || null;
-      // 공개풀 수신 시에도 billing.autoMatchBudget.stars 를 본다(견적에 budget 누락 대비).
-      const budgetStars =
-        feeQuote?.autoMatchBudget?.stars ??
-        doc?.billing?.autoMatchBudget?.stars;
-      const offeredLabFee =
-        feeQuote?.autoMatchBudget?.maxLabFee ??
-        feeQuote?.autoMatchBudget?.minLabFee ??
-        doc?.billing?.autoMatchBudget?.maxLabFee ??
-        doc?.billing?.autoMatchBudget?.minLabFee ??
-        feeQuote?.labFeeTotal;
-      const starDowngrade = resolveStarDowngrade({
-        matchingMode,
-        labEffectiveStars: labRatingSummary.effectiveStars,
-        autoMatchStars: budgetStars,
-        offeredLabFee,
-      });
 
       return {
         _id: String(doc?._id || ""),
@@ -3969,7 +3815,6 @@ export async function getReceivedPracticeTransfers(req, res) {
           s3Key: String(item?.file?.s3Key || "").trim(),
         })),
         feeQuote,
-        starDowngrade,
         labRatingSummary,
         ...toRemakeApiFields(doc),
       };
@@ -4096,7 +3941,10 @@ export async function markReceivedPracticeTransferRead(req, res) {
     // 자동매칭 공개 풀(미클레임)은 특정 기공소 read로 잠그지 않는다.
     // requestorReadAt을 세우면 전 기공소 공통 읽음이 되므로 no-op.
     // unreadCount는 반환해 클라이언트가 배지를 0으로 잘못 덮지 않게 한다.
-    if (isAutoMatchMode(doc) && isAutoMatchOpenPool(doc)) {
+    if (
+      (isAutoMatchMode(doc) && isAutoMatchOpenPool(doc)) ||
+      isSubcontractPoolOpen(doc)
+    ) {
       const unreadCount = await PracticeTransfer.countDocuments({
         ...scope,
         status: { $ne: "canceled" },
@@ -4231,8 +4079,11 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
     }
 
     const isAuto = isAutoMatchMode(doc);
+    const subcontractClaim =
+      isSubcontractPoolOpen(doc) &&
+      String(labAnchorId) !== getPrimeLabAnchorId(doc);
     const alreadyAcceptedDirect = Boolean(doc.requestorDownloadedAt);
-    if (!isAuto && !alreadyAcceptedDirect) {
+    if (!isAuto && !subcontractClaim && !alreadyAcceptedDirect) {
       try {
         await assertReceiverLabFeeConfigured(labAnchorId, doc.toothWorks);
       } catch (feeErr) {
@@ -4264,7 +4115,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
       });
     }
 
-    if (isAuto) {
+    if (isAuto || subcontractClaim) {
       if (!autoMatchEligible && role !== "admin") {
         return res.status(403).json({
           success: false,
@@ -4363,6 +4214,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
             workCanceledAt: null,
             workCanceledBy: null,
             "autoMatch.claimedAt": now,
+            "autoMatch.subcontractPoolOpen": false,
             // 3시간 강제 클레임 만료 폐기 — 작업완료/취소까지 유지
             "autoMatch.deadlineAt": null,
             "autoMatch.claimHours": null,
@@ -4594,6 +4446,15 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
       acceptSet.requestorDownloadedBy = req.user?._id || null;
       acceptSet.workCanceledAt = null;
       acceptSet.workCanceledBy = null;
+      if (isSubcontractPoolOpen(doc)) {
+        acceptSet["autoMatch.subcontractPoolOpen"] = false;
+        acceptSet["autoMatch.claimedAt"] = now;
+        if (!doc.autoMatch || typeof doc.autoMatch !== "object") {
+          doc.autoMatch = {};
+        }
+        doc.autoMatch.subcontractPoolOpen = false;
+        doc.autoMatch.claimedAt = now;
+      }
     } else if (doc.workCanceledAt) {
       doc.workCanceledAt = null;
       doc.workCanceledBy = null;
@@ -5862,8 +5723,8 @@ export async function markReceivedPracticeTransferRelease(req, res) {
 }
 
 /**
- * 어벗츠 기공사업부: 30분 우선창을 즉시 종료하고 인증 기공소 하청 풀을 연다.
- * 거부(decline)하지 않는다. 어벗츠 자체 수행도 계속 가능.
+ * 어벗츠 기공사업부: 지정 의뢰를 인증 기공소 하청 풀로 연다.
+ * 거부하지 않는다. 어벗츠 자체 수행도 계속 가능.
  */
 export async function openSubcontractPracticeTransfer(req, res) {
   try {
@@ -5914,39 +5775,54 @@ export async function openSubcontractPracticeTransfer(req, res) {
       });
     }
 
-    if (!isAutoMatchMode(doc) || !isAutoMatchOpenPool(doc, now)) {
-      return res.status(409).json({
-        success: false,
-        message: "이미 수락되었거나 하청 풀이 아닙니다.",
-      });
-    }
-
     if (!canOpenPracticeTransferSubcontract(doc, labAnchorId, now)) {
       return res.status(409).json({
         success: false,
-        message: "우선 수락 시간이 아니거나 하청 전환 권한이 없습니다.",
+        message: "하청 전환 권한이 없거나 이미 하청이 진행 중입니다.",
       });
     }
 
+    const eligibleIds = await loadCertifiedSubcontractLabAnchorIds({
+      excludeLabAnchorId: labAnchorId,
+    });
+    if (!eligibleIds.length) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "수가가 설정된 인증 기공소가 없어 하청 풀을 열 수 없습니다.",
+      });
+    }
+
+    const eligibleOids = eligibleIds.map((id) => new Types.ObjectId(String(id)));
     await PracticeTransfer.updateOne(
       { _id: doc._id },
-      { $set: { "autoMatch.priorityUntil": now } },
+      {
+        $set: {
+          "autoMatch.subcontractPoolOpen": true,
+          "autoMatch.eligibleLabAnchorIds": eligibleOids,
+          "autoMatch.priorityUntil": now,
+          "autoMatch.claimedAt": null,
+        },
+      },
     );
     if (!doc.autoMatch || typeof doc.autoMatch !== "object") {
       doc.autoMatch = {};
     }
+    doc.autoMatch.subcontractPoolOpen = true;
+    doc.autoMatch.eligibleLabAnchorIds = eligibleOids;
     doc.autoMatch.priorityUntil = now;
+    doc.autoMatch.claimedAt = null;
     clearAutoMatchPriorityTimers(doc._id);
 
     const realtimePayload = {
-      action: "auto-match-priority-opened",
+      action: "subcontract-pool-opened",
       transferId: String(doc.transferId || "").trim(),
       transferMongoId: String(doc._id || "").trim(),
       targetLabAnchorId: String(doc.targetLabAnchorId || "").trim() || null,
-      matchingMode: "auto",
+      matchingMode: "direct",
       practiceUserId: String(doc.practiceUserId || "").trim() || null,
       status: String(doc.status || "active").trim(),
-      manufacturerStage: "자동매칭",
+      manufacturerStage: "하청대기",
       updatedAt: now,
       source: "openSubcontract",
       ...toAutoMatchApiFields(doc, labAnchorId),
@@ -5958,10 +5834,10 @@ export async function openSubcontractPracticeTransfer(req, res) {
       transfer: doc,
       realtimePayload: {
         ...realtimePayload,
-        manufacturerStage: "자동매칭",
+        manufacturerStage: "하청대기",
         ...toAutoMatchApiFields(doc, null),
       },
-      excludeLabAnchorIds: [],
+      excludeLabAnchorIds: [labAnchorId],
       emitPoolCreated: emitAutoMatchPoolCreated,
     }).catch((err) => {
       console.warn(
@@ -5973,11 +5849,11 @@ export async function openSubcontractPracticeTransfer(req, res) {
 
     return res.status(200).json({
       success: true,
-      message: "하청 기공소에 즉시 공개했습니다.",
+      message: "하청 기공소에 공개했습니다.",
       data: {
         transferId: String(doc.transferId || "").trim(),
-        matchingMode: "auto",
-        manufacturerStage: "자동매칭",
+        matchingMode: "direct",
+        manufacturerStage: "하청대기",
         ...toAutoMatchApiFields(doc, labAnchorId),
       },
     });
@@ -6048,9 +5924,12 @@ export async function markReceivedPracticeTransferReject(req, res) {
 
     const isAuto = isAutoMatchMode(doc);
     const openPool = isAutoMatchOpenPool(doc);
+    const subcontractPoolForOthers =
+      isSubcontractPoolOpen(doc) &&
+      String(labAnchorId) !== getPrimeLabAnchorId(doc);
     const now = new Date();
 
-    if (isAuto && openPool) {
+    if ((isAuto && openPool) || subcontractPoolForOthers) {
       const declined = Array.isArray(doc.autoMatch?.declinedLabAnchorIds)
         ? doc.autoMatch.declinedLabAnchorIds.map((id) => String(id || "").trim())
         : [];
@@ -6425,50 +6304,6 @@ export async function retargetPracticeTransferLab(req, res) {
     let autoMatchEligibleLabAnchorIds = undefined;
     let autoMatchPriorityLabAnchorIds = [];
     let autoMatchCatalog = null;
-    if (matchingMode === "auto") {
-      const [practiceForBudget, catalog] = await Promise.all([
-        BusinessAnchor.findById(practiceAnchorId)
-          .select({
-            "practiceTransferSettings.autoMatchMinLabRating": 1,
-            "practiceTransferSettings.autoMatchMaxLabRating": 1,
-            practiceLabRatings: 1,
-          })
-          .lean(),
-        loadAutoMatchBudgetCatalog(),
-      ]);
-      autoMatchCatalog = catalog;
-      const starBand = resolveAutoMatchEligibleStarBand({
-        minStars:
-          req.body?.autoMatchMinLabRating ??
-          practiceForBudget?.practiceTransferSettings?.autoMatchMinLabRating,
-        maxStars:
-          req.body?.autoMatchMaxLabRating ??
-          practiceForBudget?.practiceTransferSettings?.autoMatchMaxLabRating,
-      });
-      const minStars = starBand.minStars;
-      autoMatchBudget = resolveAutoMatchBudgetOrDefaults(null, catalog, {
-        minStars,
-        maxStars: starBand.maxStars,
-      });
-      const eligibility = await resolveAutoMatchEligibleLabAnchorIds({
-        toothWorks,
-        budget: autoMatchBudget,
-        catalog,
-        autoMatchMinLabRating: minStars,
-        autoMatchMaxLabRating: starBand.maxStars,
-        practiceLabRatings: practiceForBudget?.practiceLabRatings,
-      });
-      autoMatchEligibleLabAnchorIds = eligibility.eligibleLabAnchorIds;
-      autoMatchPriorityLabAnchorIds = eligibility.priorityLabAnchorIds || [];
-      if (autoMatchEligibleLabAnchorIds.length === 0) {
-        return res.status(409).json({
-          success: false,
-          message:
-            "설정한 별점 범위에 맞는 인증 기공소가 없습니다. 범위를 넓히거나 지정 기공소를 선택해주세요.",
-          reason: "auto_match_no_eligible_labs",
-        });
-      }
-    }
 
     try {
       await assertPracticeTransferPaidCreditSufficient({

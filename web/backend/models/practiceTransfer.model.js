@@ -102,6 +102,7 @@ const practiceTransferSchema = new mongoose.Schema(
         default: undefined,
         index: true,
       },
+      subcontractPoolOpen: { type: Boolean, default: false },
       // 어벗츠기공소(internalLab) 우선창: 생성 시 적격이면 +30분. 하청 전환·거부·작업취소 시 조기 종료.
       priorityUntil: { type: Date, default: null, index: true },
       priorityLabAnchorIds: {

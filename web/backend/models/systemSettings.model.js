@@ -112,7 +112,7 @@ const systemSettingsSchema = new mongoose.Schema(
       defaultRequestFreeCredit: { type: Number, default: 30000 },
       defaultShippingFreeCredit: { type: Number, default: 0 },
     },
-    // 어벗츠 기공수가 카탈로그(자동매칭 평균수가·플랫폼 SSOT). price는 매일 KST 자정 재계산.
+    // 어벗츠 기공수가 카탈로그(항목 On/Off·이름). price는 관리자 입력.
     abutsLabFeeSchedule: {
       items: { type: [mongoose.Schema.Types.Mixed], default: [] },
       updatedAt: { type: Date, default: null },
