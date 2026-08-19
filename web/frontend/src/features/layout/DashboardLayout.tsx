@@ -10,7 +10,7 @@ import { toKstYmd } from "@/shared/date/kst";
 import { useToast } from "@/shared/hooks/use-toast";
 import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPath";
 
-// - 2026-08-19: 펼친 사이드 메인 메뉴는 아이콘+라벨 중앙 정렬. 배지는 우측 고정.
+// - 2026-08-19: 펼친 사이드 메인 메뉴는 아이콘 왼쪽·라벨 가운데. 배지는 우측 고정. 라벨은 줄이지 않음.
 // - 2026-08-19: 구강스캔으로 툴팁 — 디자인+생산에 구강지그 포함. 지그는 별도 항목이 아님.
 // - 2026-08-18: 치과 사이드 — 대시보드 제거. 어벗디자인 헤더가 기간·출고·지난의뢰·불완전가공.
 // - 2026-08-18: 치과 사이드 — 기공의뢰 메인 + 구강스캔으로/어벗디자인으로 서브.
@@ -1338,7 +1338,7 @@ export const DashboardLayout = () => {
         <aside
           className={`
           fixed lg:relative inset-y-0 left-0 z-50 ${
-            isCollapsed ? "w-24" : "w-52"
+            isCollapsed ? "w-24" : "w-60"
           } bg-card border-r border-border flex flex-col
           transform transition-transform duration-300 ease-in-out
           lg:translate-x-0 ${isOpen ? "translate-x-0" : "-translate-x-full"}
@@ -1391,7 +1391,7 @@ export const DashboardLayout = () => {
                           <li key={item.href}>
                             <Button
                               variant="ghost"
-                              className={`relative w-full h-10 lg:h-11 gap-1.5 text-sm lg:text-base justify-center transition-all ${
+                              className={`relative w-full h-10 lg:h-11 justify-center text-sm lg:text-base transition-all ${
                                 isCollapsed ? "px-2" : "px-3 lg:px-4"
                               } ${
                                 isActive
@@ -1403,17 +1403,27 @@ export const DashboardLayout = () => {
                               }}
                               aria-current={isActive ? "page" : undefined}
                             >
-                              <item.icon className="h-4 w-4 flex-shrink-0" />
+                              <item.icon
+                                className={`h-4 w-4 flex-shrink-0 ${
+                                  isCollapsed
+                                    ? ""
+                                    : "absolute left-3 top-1/2 -translate-y-1/2"
+                                }`}
+                              />
                               {!isCollapsed && (
-                                <span className="truncate">{item.label}</span>
+                                <span className="whitespace-nowrap text-center">
+                                  {item.label}
+                                </span>
                               )}
                               {!isCollapsed &&
                                 (() => {
-                                  const badgeCount = getSidebarBadgeCount(item.href);
+                                  const badgeCount = getSidebarBadgeCount(
+                                    item.href,
+                                  );
                                   return badgeCount > 0 ? (
                                     <Badge
                                       variant="destructive"
-                                      className="absolute right-1.5 top-1/2 -translate-y-1/2 h-5 min-w-[1.25rem] flex items-center justify-center px-1 text-[10px] font-semibold leading-none flex-shrink-0"
+                                      className="absolute right-1.5 top-1/2 flex h-5 min-w-[1.25rem] -translate-y-1/2 items-center justify-center px-1 text-[10px] font-semibold leading-none"
                                     >
                                       {badgeCount > 99 ? "99+" : badgeCount}
                                     </Badge>

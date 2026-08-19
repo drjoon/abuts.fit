@@ -1,5 +1,5 @@
 // change-log:
-// - 2026-08-19: 펼친 사이드 메인 메뉴는 아이콘+라벨 중앙 정렬. 배지는 우측 고정.
+// - 2026-08-19: 펼친 사이드 메인 메뉴는 아이콘 왼쪽·라벨 가운데. 배지는 우측 고정. 라벨은 줄이지 않음.
 // - 2026-08-18: 그룹 메뉴(기공의뢰) 호버·클릭 글자를 foreground로 — ghost accent 흰 글자 방지.
 // - 2026-08-18: 치과 기공의뢰 — 메인 행 + 들여쓴 서브(구강스캔으로 / 어벗디자인으로).
 // related files:
@@ -99,12 +99,10 @@ const SidebarNavButton = ({
     <Button
       variant="ghost"
       disabled={paidLocked}
-      className={`relative z-[1] w-full gap-1.5 transition-all ${
+      className={`relative z-[1] w-full justify-center transition-all ${
         nested
-          ? `h-8 text-[13px] font-medium ${
-              isCollapsed ? "justify-center px-2" : "justify-start px-2.5"
-            }`
-          : `h-10 lg:h-11 text-sm lg:text-base justify-center ${
+          ? `h-8 text-[13px] font-medium ${isCollapsed ? "px-2" : "px-2.5"}`
+          : `h-10 lg:h-11 text-sm lg:text-base ${
               isCollapsed ? "px-2" : "px-3 lg:px-4"
             }`
       } ${
@@ -130,7 +128,7 @@ const SidebarNavButton = ({
       {nested && item.accent && !isCollapsed ? (
         <span
           aria-hidden
-          className={`h-1.5 w-1.5 flex-shrink-0 rounded-full ${
+          className={`absolute left-2.5 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full ${
             isActive
               ? "bg-primary-foreground"
               : item.accent === "기공"
@@ -140,13 +138,17 @@ const SidebarNavButton = ({
         />
       ) : (
         <item.icon
-          className={`${nested ? "h-3.5 w-3.5" : "h-4 w-4"} flex-shrink-0`}
+          className={`${nested ? "h-3.5 w-3.5" : "h-4 w-4"} flex-shrink-0 ${
+            isCollapsed
+              ? ""
+              : `absolute top-1/2 -translate-y-1/2 ${
+                  nested ? "left-2.5" : "left-3"
+                }`
+          }`}
         />
       )}
       {!isCollapsed && (
-        <span
-          className={`min-w-0 truncate ${nested ? "flex-1 text-left" : ""}`}
-        >
+        <span className="whitespace-nowrap text-center">
           {item.label}
         </span>
       )}
@@ -155,15 +157,12 @@ const SidebarNavButton = ({
           Array.isArray(item.children) && item.children.length > 0
             ? 0
             : getBadgeCount(item.href);
-        const expandedBadgeClass = nested
-          ? "ml-auto"
-          : "absolute right-1.5 top-1/2 -translate-y-1/2";
         if (!isCollapsed) {
           if (isCreditsLowHighlight) {
             return (
               <Badge
                 variant="outline"
-                className={`${expandedBadgeClass} h-5 animate-pulse border-accent-muted bg-accent px-1.5 text-[10px] font-semibold leading-none text-accent-foreground flex-shrink-0`}
+                className="absolute right-1.5 top-1/2 h-5 -translate-y-1/2 animate-pulse border-accent-muted bg-accent px-1.5 text-[10px] font-semibold leading-none text-accent-foreground"
               >
                 충전
               </Badge>
@@ -172,7 +171,7 @@ const SidebarNavButton = ({
           return badgeCount > 0 ? (
             <Badge
               variant="destructive"
-              className={`${expandedBadgeClass} h-5 min-w-[1.25rem] flex items-center justify-center px-1 text-[10px] font-semibold leading-none flex-shrink-0`}
+              className="absolute right-1.5 top-1/2 flex h-5 min-w-[1.25rem] -translate-y-1/2 items-center justify-center px-1 text-[10px] font-semibold leading-none"
             >
               {badgeCount > 99 ? "99+" : badgeCount}
             </Badge>
