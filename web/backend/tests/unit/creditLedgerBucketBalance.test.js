@@ -3,6 +3,7 @@
 import mongoose from "mongoose";
 import {
   buildCreditLedgerRequestSummary,
+  buildAbutmentBoxGroupKey,
   buildLedgerItemsWithBucketBalanceAfter,
   collectPracticeTransferLookupIds,
   isAbutmentDesignLabFeeLedgerRow,
@@ -233,5 +234,29 @@ describe("buildCreditLedgerRequestSummary", () => {
       caseInfos: { clinicName: "향기로운치과" },
     });
     expect(summary.shippingReceiverGroupKey.startsWith(`${oid}:`)).toBe(true);
+  });
+
+  test("치과명은 수신자가 아니고 의뢰 사업자+출고일로 박스를 묶는다", () => {
+    const summary = buildCreditLedgerRequestSummary({
+      _id: "aaaaaaaaaaaaaaaaaaaaaaaa",
+      requestId: "20260819-000002",
+      businessAnchorId: "cccccccccccccccccccccccc",
+      timeline: { estimatedShipYmd: "2026-08-20" },
+      caseInfos: { clinicName: "서울", patientName: "환자", tooth: "31" },
+    });
+    expect(summary.recipientName).toBe("");
+    expect(summary.estimatedShipYmd).toBe("2026-08-20");
+    expect(summary.requestorBusinessAnchorId).toBe(
+      "cccccccccccccccccccccccc",
+    );
+    expect(summary.abutmentBoxGroupKey).toBe(
+      "cccccccccccccccccccccccc:2026-08-20",
+    );
+    expect(summary.abutmentBoxGroupKey).toBe(
+      buildAbutmentBoxGroupKey({
+        requestorBusinessAnchorId: "cccccccccccccccccccccccc",
+        estimatedShipYmd: "2026-08-20",
+      }),
+    );
   });
 });

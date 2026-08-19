@@ -1,7 +1,9 @@
 // related files:
 // - web/frontend/src/shared/components/CreditLedgerModal.tsx
+// - web/frontend/src/shared/shipping/ShippingModeBadge.tsx
 // - web/frontend/src/pages/manufacturer/payments/ManufacturerDailyLedgerDetailDialog.tsx
 // change-log:
+// - 2026-08-19: 상세 모달에 신속/묶음 배송 뱃지.
 // - 2026-08-19: 크레딧 기공의뢰-어벗디자인으로 행 클릭 상세(의뢰/배송, 제조사 정산 모달 UX).
 import { ChevronDown } from "lucide-react";
 import {
@@ -16,7 +18,11 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { formatWonWithUnit } from "@/shared/settlement/affiliateVat";
-import { cn } from "@/shared/ui/cn";
+import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
+import {
+  resolveShippingMode,
+  type ShippingMode,
+} from "@/shared/shipping/shippingMode";
 
 export type AbutmentDesignLedgerDetailItem = {
   kind: "request" | "shipping";
@@ -25,6 +31,7 @@ export type AbutmentDesignLedgerDetailItem = {
   clinicName?: string;
   patientName?: string;
   tooth?: string;
+  shippingMode?: ShippingMode | string | null;
 };
 
 export type AbutmentDesignLedgerDetail = {
@@ -36,6 +43,7 @@ export type AbutmentDesignLedgerDetail = {
   requestCount: number;
   shippingAmount: number;
   shippingCount: number;
+  shippingModes: ShippingMode[];
   items: AbutmentDesignLedgerDetailItem[];
 };
 
@@ -70,8 +78,18 @@ function SectionList({
                 {item.kind === "shipping" ? (
                   <span>배송비</span>
                 ) : item.requestId ? (
-                  <span className="font-mono text-[11px] text-slate-800">
-                    {item.requestId}
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="font-mono text-[11px] text-slate-800">
+                      {item.requestId}
+                    </span>
+                    {item.shippingMode ? (
+                      <ShippingModeBadge
+                        mode={resolveShippingMode({
+                          shippingMode: item.shippingMode,
+                        })}
+                        size="sm"
+                      />
+                    ) : null}
                   </span>
                 ) : (
                   <span>의뢰</span>
@@ -112,8 +130,11 @@ export function AbutmentDesignLedgerDetailDialog({
     <Dialog open={Boolean(detail)} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[85vh] w-[min(92vw,40rem)] overflow-y-auto rounded-2xl sm:rounded-2xl">
         <DialogHeader>
-          <DialogTitle className="text-base font-semibold tracking-tight text-slate-900">
-            {detail?.title || "기공의뢰-어벗디자인으로"}
+          <DialogTitle className="flex flex-wrap items-center gap-2 text-base font-semibold tracking-tight text-slate-900">
+            <span>{detail?.title || "기공의뢰-어벗디자인으로"}</span>
+            {(detail?.shippingModes || []).map((mode) => (
+              <ShippingModeBadge key={mode} mode={mode} size="sm" />
+            ))}
           </DialogTitle>
         </DialogHeader>
         {detail ? (
@@ -153,8 +174,17 @@ export function AbutmentDesignLedgerDetailDialog({
                         >
                           <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform" />
                           <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-semibold text-slate-900">
-                              {detail.recipientName || "수신자 미확인"}
+                            <p className="flex min-w-0 flex-wrap items-center gap-1.5 text-sm font-semibold text-slate-900">
+                              <span className="truncate">
+                                {detail.recipientName || "수신자 미확인"}
+                              </span>
+                              {(detail.shippingModes || []).map((mode) => (
+                                <ShippingModeBadge
+                                  key={mode}
+                                  mode={mode}
+                                  size="sm"
+                                />
+                              ))}
                             </p>
                             <p className="text-[11px] text-muted-foreground">
                               {detail.mailboxAddress
@@ -199,8 +229,17 @@ export function AbutmentDesignLedgerDetailDialog({
                         >
                           <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform" />
                           <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-semibold text-slate-900">
-                              {detail.recipientName || "수신자 미확인"}
+                            <p className="flex min-w-0 flex-wrap items-center gap-1.5 text-sm font-semibold text-slate-900">
+                              <span className="truncate">
+                                {detail.recipientName || "수신자 미확인"}
+                              </span>
+                              {(detail.shippingModes || []).map((mode) => (
+                                <ShippingModeBadge
+                                  key={mode}
+                                  mode={mode}
+                                  size="sm"
+                                />
+                              ))}
                             </p>
                             <p className="text-[11px] text-muted-foreground">
                               {detail.mailboxAddress

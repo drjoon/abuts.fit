@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-19: 어벗디자인·어벗생산은 의뢰 사업자+예정출고일로 1행·배송비 1건(치과명 무관).
 // - 2026-08-19: 내역 무한스크롤을 10건 단위로 가져와 첫 화면을 빨리 연다.
 // - 2026-08-19: 어벗디자인으로 행도 보류/일부 지급/지급 완료 상태를 표시.
 // - 2026-08-19: 의뢰비·배송비 보류를 기공의뢰-어벗디자인으로 묶음. 기존 기공의뢰는 구강스캔으로.
@@ -184,6 +185,10 @@ type CreditLedgerItem = {
   shippingPackageId?: string;
   shippingReceiverGroupKey?: string;
   recipientName?: string;
+  requestorBusinessName?: string;
+  requestorBusinessAnchorId?: string;
+  estimatedShipYmd?: string;
+  abutmentBoxGroupKey?: string;
   shippingPackageRequestCount?: number;
   shippingPackageRequestIds?: string[];
   lotNumber?: {
@@ -205,6 +210,10 @@ type CreditLedgerItem = {
     shippingPackageId?: string;
     shippingReceiverGroupKey?: string;
     recipientName?: string;
+    requestorBusinessName?: string;
+    requestorBusinessAnchorId?: string;
+    estimatedShipYmd?: string;
+    abutmentBoxGroupKey?: string;
     relatedPracticeTransferId?: string;
     shippingReceiver?: {
       name?: string;
@@ -732,17 +741,34 @@ const abutmentDesignGroupKey = (item: CreditLedgerItem) => {
   ).trim();
   if (relatedPtx) return "";
 
+  const pkg = String(
+    item.shippingPackageId || item.refRequestSummary?.shippingPackageId || "",
+  ).trim();
+  if (pkg && (refType === "REQUEST" || isAbutmentShippingPackageItem(item))) {
+    return `pkg:${pkg}`;
+  }
+
+  const box = String(
+    item.abutmentBoxGroupKey ||
+      item.refRequestSummary?.abutmentBoxGroupKey ||
+      "",
+  ).trim();
+  if (box) return `box:${box}`;
+
+  const ba = String(
+    item.requestorBusinessAnchorId ||
+      item.refRequestSummary?.requestorBusinessAnchorId ||
+      "",
+  ).trim();
+  const ymd = String(
+    item.estimatedShipYmd || item.refRequestSummary?.estimatedShipYmd || "",
+  ).trim();
+  if (ba && ymd) return `box:${ba}:${ymd}`;
+  if (ba && (refType === "REQUEST" || isAbutmentShippingPackageItem(item))) {
+    return `box:${ba}`;
+  }
+
   if (refType === "REQUEST") {
-    const pkg = String(
-      item.shippingPackageId || item.refRequestSummary?.shippingPackageId || "",
-    ).trim();
-    if (pkg) return `pkg:${pkg}`;
-    const rec = String(
-      item.shippingReceiverGroupKey ||
-        item.refRequestSummary?.shippingReceiverGroupKey ||
-        "",
-    ).trim();
-    if (rec && rec !== "_:_" && !rec.endsWith(":_")) return `rec:${rec}`;
     const mailbox = String(
       item.mailboxAddress || item.refRequestSummary?.mailboxAddress || "",
     )
@@ -754,10 +780,6 @@ const abutmentDesignGroupKey = (item: CreditLedgerItem) => {
   }
 
   if (isAbutmentShippingPackageItem(item)) {
-    const pkg = String(item.shippingPackageId || item.refId || "").trim();
-    if (pkg) return `pkg:${pkg}`;
-    const rec = String(item.shippingReceiverGroupKey || "").trim();
-    if (rec && rec !== "_:_" && !rec.endsWith(":_")) return `rec:${rec}`;
     const mailbox = String(item.mailboxAddress || "")
       .trim()
       .toUpperCase();
@@ -789,9 +811,9 @@ const recipientNameOf = (item: CreditLedgerItem) =>
   String(
     item.recipientName ||
       item.refRequestSummary?.recipientName ||
+      item.requestorBusinessName ||
+      item.refRequestSummary?.requestorBusinessName ||
       item.refRequestSummary?.shippingReceiver?.name ||
-      item.clinicName ||
-      item.refRequestSummary?.clinicName ||
       "",
   ).trim();
 
@@ -1548,6 +1570,11 @@ export const CreditLedgerModal = ({
           member.refRequestSummary?.tooth ||
           prev?.tooth ||
           "",
+        shippingMode:
+          member.shippingMode ||
+          member.refRequestSummary?.shippingMode ||
+          prev?.shippingMode ||
+          "normal",
       });
     }
     const requestItems = [...requestById.values()];
@@ -1555,6 +1582,13 @@ export const CreditLedgerModal = ({
       (sum, item) => sum + Number(item.amount || 0),
       0,
     );
+    const shippingModes = Array.from(
+      new Set(
+        requestItems.map((item) =>
+          item.shippingMode === "express" ? "express" : "normal",
+        ),
+      ),
+    ) as ShippingMode[];
     const items = [
       ...requestItems,
       ...(shippingCount > 0
@@ -1575,6 +1609,10 @@ export const CreditLedgerModal = ({
       requestCount: Math.max(row.requestCount, requestItems.length),
       shippingAmount,
       shippingCount: shippingCount > 0 ? 1 : 0,
+      shippingModes:
+        shippingModes.length > 0
+          ? shippingModes
+          : (["normal"] as ShippingMode[]),
       items,
     };
   };

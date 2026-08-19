@@ -4,9 +4,13 @@
 // - web/frontend/src/shared/components/CreditLedgerModal.tsx
 // - web/backend/controllers/requests/common.review.helpers.js
 // - web/backend/services/practiceTransferBilling.service.js
+// - web/backend/models/businessAnchor.model.js
 // - web/backend/services/requestCreditHold.service.js
+// - 2026-08-19: 어벗디자인·어벗생산 박스는 의뢰 사업자+예정출고일. 치과명으로 쪼개지 않음.
 // - 2026-08-19: 기본 내역은 최근 라인만 잘라 10건 lookup. 기간 전체 $count 생략.
 // - 2026-08-19: 어벗디자인 원장 — 수신자(박스) 묶음용 mailbox/shippingReceiver 요약. ObjectId 재귀 가드.
+import mongoose from "mongoose";
+import BusinessAnchor from "../../models/businessAnchor.model.js";
 // - 2026-08-17: PTX 디자인비(+지그) 원장을 기공의뢰(PRACTICE_TRANSFER)로 승격·묶음.
 // - 2026-08-15: 행 시점 잔액 = 유료+무료+기공 합산 러닝(버킷 분리 시 잔액이 리셋되어 보임).
 
@@ -294,11 +298,17 @@ function shippingReceiverName(doc) {
     doc?.shippingReceiver && typeof doc.shippingReceiver === "object"
       ? doc.shippingReceiver
       : {};
-  const caseInfos = doc?.caseInfos || {};
-  return (
-    String(receiver.name || "").trim() ||
-    String(caseInfos.clinicName || "").trim()
-  );
+  return String(receiver.name || "").trim();
+}
+
+export function buildAbutmentBoxGroupKey({
+  requestorBusinessAnchorId = "",
+  estimatedShipYmd = "",
+} = {}) {
+  const ba = String(requestorBusinessAnchorId || "").trim();
+  const ymd = String(estimatedShipYmd || "").trim();
+  if (!ba) return "";
+  return ymd ? `${ba}:${ymd}` : ba;
 }
 
 function objectIdString(raw) {
@@ -371,6 +381,14 @@ export function buildCreditLedgerRequestSummary(doc) {
   const shippingPackageId = String(
     doc?.shippingPackageId?._id || doc?.shippingPackageId || "",
   ).trim();
+  const requestorBusinessAnchorId = objectIdString(doc?.businessAnchorId);
+  const estimatedShipYmd = String(doc?.timeline?.estimatedShipYmd || "").trim();
+  const abutmentBoxGroupKey = relatedPracticeTransferId
+    ? ""
+    : buildAbutmentBoxGroupKey({
+        requestorBusinessAnchorId,
+        estimatedShipYmd,
+      });
 
   return {
     requestId: String(doc.requestId || ""),
@@ -399,6 +417,10 @@ export function buildCreditLedgerRequestSummary(doc) {
     shippingPackageId,
     shippingReceiverGroupKey: shippingReceiverGroupKeyFromDoc(doc),
     recipientName: shippingReceiverName(doc),
+    requestorBusinessAnchorId,
+    requestorBusinessName: "",
+    estimatedShipYmd,
+    abutmentBoxGroupKey,
     relatedPracticeTransferId,
     shippingReceiver: {
       name: String(receiver.name || "").trim(),
@@ -445,8 +467,58 @@ export function attachCreditLedgerRequestFields(
     shippingPackageId: requestSummary?.shippingPackageId || "",
     shippingReceiverGroupKey: requestSummary?.shippingReceiverGroupKey || "",
     recipientName: requestSummary?.recipientName || "",
+    requestorBusinessAnchorId: requestSummary?.requestorBusinessAnchorId || "",
+    requestorBusinessName: requestSummary?.requestorBusinessName || "",
+    estimatedShipYmd: requestSummary?.estimatedShipYmd || "",
+    abutmentBoxGroupKey: requestSummary?.abutmentBoxGroupKey || "",
     relatedPracticeTransferId: requestSummary?.relatedPracticeTransferId || null,
   };
+}
+
+export function applyRequestorBusinessNameToSummary(summary, businessName) {
+  if (!summary) return summary;
+  const name = String(businessName || "").trim();
+  return {
+    ...summary,
+    requestorBusinessName: name,
+    recipientName: String(summary.recipientName || "").trim() || name,
+  };
+}
+
+/** 어벗디자인·어벗생산 원장 수신자 표시는 의뢰 사업자명(치과명 폴백 금지). */
+export async function hydrateCreditLedgerRequestorNames(summariesById) {
+  if (!summariesById || typeof summariesById.values !== "function") {
+    return summariesById;
+  }
+  const idSet = new Set();
+  for (const summary of summariesById.values()) {
+    const id = String(summary?.requestorBusinessAnchorId || "").trim();
+    if (id && mongoose.Types.ObjectId.isValid(id)) idSet.add(id);
+  }
+  if (idSet.size === 0) return summariesById;
+
+  const anchors = await BusinessAnchor.find({
+    _id: { $in: [...idSet].map((id) => new mongoose.Types.ObjectId(id)) },
+  })
+    .select({ name: 1, "metadata.companyName": 1 })
+    .lean();
+
+  const nameById = new Map();
+  for (const anchor of anchors || []) {
+    const name =
+      String(anchor?.name || "").trim() ||
+      String(anchor?.metadata?.companyName || "").trim();
+    if (anchor?._id && name) nameById.set(String(anchor._id), name);
+  }
+
+  for (const [key, summary] of summariesById.entries()) {
+    const ba = String(summary?.requestorBusinessAnchorId || "").trim();
+    summariesById.set(
+      key,
+      applyRequestorBusinessNameToSummary(summary, nameById.get(ba) || ""),
+    );
+  }
+  return summariesById;
 }
 
 export function buildCreditLedgerShippingPackageMeta({
@@ -480,6 +552,13 @@ export function buildCreditLedgerShippingPackageMeta({
         normalizeMailboxAddress(pkg.mailboxAddress) ||
         String(firstSummary?.mailboxAddress || "").trim(),
       recipientName: String(firstSummary?.recipientName || "").trim(),
+      requestorBusinessName: String(
+        firstSummary?.requestorBusinessName || "",
+      ).trim(),
+      estimatedShipYmd: String(firstSummary?.estimatedShipYmd || "").trim(),
+      abutmentBoxGroupKey: String(
+        firstSummary?.abutmentBoxGroupKey || "",
+      ).trim(),
       shippingReceiverGroupKey: String(
         firstSummary?.shippingReceiverGroupKey || "",
       ).trim(),
@@ -562,6 +641,7 @@ export const CREDIT_LEDGER_REQUEST_SELECT = {
   shippingPackageId: 1,
   businessAnchorId: 1,
   shippingReceiver: 1,
+  "timeline.estimatedShipYmd": 1,
   "partnerBilling.relatedPracticeTransferId": 1,
   "finalShipping.mode": 1,
   "originalShipping.mode": 1,

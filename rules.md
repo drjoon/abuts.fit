@@ -127,7 +127,9 @@
 - 공정 SSOT: `Request.manufacturerStage`
   - `준비 → CAM → 가공 → 세척.패킹 → 포장.발송 → 추적관리`
 - 크레딧 이벤트 발생 시점 SSOT:
-  - `REQUEST_SPEND_HOLD` / `SHIPPING_SPEND_HOLD`: **의뢰 제출** 시 에스크로 보류(기공비·신속·배송비). 동일 제출·동일 수신자 배송비는 1회.
+  - `REQUEST_SPEND_HOLD` / `SHIPPING_SPEND_HOLD`: **의뢰 제출** 시 에스크로 보류(기공비·신속·배송비).
+    치과 어벗디자인·기공소 어벗생산 배송비는 **의뢰 사업자 + 예정 출고일** 1회(치과명으로 쪼개지 않음).
+    PTX(구강스캔)는 치과 직납이라 수취인별. 동일 제출 배치에서도 1회.
   - `REQUEST_SPEND_COMMIT`: **CAM 승인(가공 진입)** 시 보류→매출 전환(레거시 무보류만 실차감)
   - `SHIPPING_SPEND_COMMIT`: **집하(우편함 비우기)** 시 배송 보류→매출 전환(레거시·PTX abuts는 기존 SSOT)
   - `REQUEST` 차감 삭제: **가공 롤백(CAM 복귀)** 시 대응 COMMIT 이벤트/라인 **물리 삭제**(HOLD는 유지)

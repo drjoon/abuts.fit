@@ -1,6 +1,7 @@
 // related files:
 // - web/backend/rules.md
 // - web/backend/modules/admin/admin.routes.js
+// - 2026-08-19: 어벗디자인 박스 키=의뢰 사업자+예정출고일. 수신자는 의뢰 사업자명.
 // - 2026-08-19: 어벗디자인 원장 — 수신자/박스 묶음용 mailbox·shippingPackage 메타.
 // - 2026-08-17: PTX 디자인비(+지그)를 기공의뢰 행으로 승격(보철기공비와 동일 의뢰건).
 // - 2026-08-17: 사업 장부 PRACTICE_TRANSFER — displayLabel·holdShare·lab/abutment pending.
@@ -34,6 +35,7 @@ import {
   attachCreditLedgerRequestFields,
   buildCreditLedgerRequestSummary,
   buildCreditLedgerShippingPackageMeta,
+  hydrateCreditLedgerRequestorNames,
   buildFreeCreditGrantReason,
   buildLedgerItemsWithBucketBalanceAfter,
   collectPracticeTransferLookupIds,
@@ -1030,6 +1032,7 @@ export async function adminGetBusinessLedger(req, res) {
         }
       }
 
+      await hydrateCreditLedgerRequestorNames(refRequestSummaryById);
       const packageMeta = buildCreditLedgerShippingPackageMeta({
         packageDocs,
         deliveryInfoByRequestId,
@@ -1039,6 +1042,7 @@ export async function adminGetBusinessLedger(req, res) {
         shippingPackageMetaById.set(id, meta);
       }
     }
+    await hydrateCreditLedgerRequestorNames(refRequestSummaryById);
 
     const practiceTransferIdById = new Map();
     const practiceTransferMetaById = new Map();
@@ -1161,7 +1165,11 @@ export async function adminGetBusinessLedger(req, res) {
           mailboxAddress: pkgMeta?.mailboxAddress || "",
           shippingPackageId: refId,
           shippingReceiverGroupKey: pkgMeta?.shippingReceiverGroupKey || "",
-          recipientName: pkgMeta?.recipientName || "",
+          recipientName:
+            pkgMeta?.recipientName || pkgMeta?.requestorBusinessName || "",
+          requestorBusinessName: pkgMeta?.requestorBusinessName || "",
+          estimatedShipYmd: pkgMeta?.estimatedShipYmd || "",
+          abutmentBoxGroupKey: pkgMeta?.abutmentBoxGroupKey || "",
           shippingPackageRequestCount: Number(pkgMeta?.requestCount || 0),
           shippingPackageRequestIds: pkgMeta?.requestIds || [],
         };

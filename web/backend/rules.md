@@ -630,8 +630,10 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - `meta` (requestId, shippingPackageId, settlementBatchId, practiceTransferId, labFee, abutmentRetail 등)
 
 - 승인/롤백 이벤트 정책(강제):
-  - `REQUEST_SPEND_HOLD` / `SHIPPING_SPEND_HOLD`: **의뢰 제출** 시 `PLATFORM_ESCROW` 보류. 동일 제출·동일 수신자 배송비 1회. PTX CA는 PTX 생성 보류 SSOT.
+  - `REQUEST_SPEND_HOLD` / `SHIPPING_SPEND_HOLD`: **의뢰 제출** 시 `PLATFORM_ESCROW` 보류. 치과 어벗디자인·기공소 어벗생산 배송비는 의뢰 사업자+예정 출고일 1회(치과명 무관). PTX CA는 PTX 생성 보류 SSOT.
     같은 제출에서 원장 잔액 집계·CreditBalanceGuard 락은 앵커당 1회 재사용(`holdRequestCreditsOnSubmit`).
+    신규 제출 보류 저널은 선행 idempotency 조회 없이 `postGeneralLedgerJournals` insertMany 1회.
+    `from-draft`는 가격기준일·devops·생산스케줄을 트랜잭션 밖에서 prefetch하고 로트번호는 `$inc` 1회로 발급한다.
   - `REQUEST_SPEND_COMMIT`: **가공 진입 승인(준비→가공)** 시 보류→매출(레거시 무보류만 실차감)
   - `SHIPPING_SPEND_COMMIT`: **집하(우편함 비우기)** 시 배송 보류→매출. 포장.발송 진입에서는 우편함만 확인한다.
   - 우편함 합류: 합류 의뢰의 중복 `SHIPPING_SPEND_HOLD` 해제. 칸당 보류 1개 불변.
@@ -849,7 +851,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - 포장.발송 진입에서는 이미 배정된 `mailboxAddress`를 유지한다 (없으면 위 로직으로 1회 보정)
     - 포장.발송 → 세척.패킹, 세척.패킹 → 가공 롤백에서도 우편함을 유지한다
     - 가공 → 준비 롤백에서만 `mailboxAddress = null`로 해제한다
-    - 배송비 보류 SSOT: 의뢰 제출 시 수신자별 1회 `SHIPPING_SPEND_HOLD`. 우편함 합류 시 중복 보류 해제. 집하 시 보류→매출(`SHIPPING_SPEND_COMMIT`, 재차감 없음).
+    - 배송비 보류 SSOT: 의뢰 제출 시 치과 어벗디자인·기공소 어벗생산은 의뢰 사업자+예정 출고일 1회 `SHIPPING_SPEND_HOLD`(치과명으로 쪼개지 않음). 우편함 합류 시 중복 보류 해제. 집하 시 보류→매출(`SHIPPING_SPEND_COMMIT`, 재차감 없음).
     - 배송비 차감 SSOT: 집하(수동 집하 / 한진 status 11) 때 우편함 1회. `ShippingPackage`는 집하 장부 행이며 점유 정체성이 아니다
     - `(businessAnchorId, shipDateYmd, mailboxAddress)` unique 인덱스는 쓰지 않는다. 같은 칸을 하루에 두 번 비울 수 있다
     - 운송장 라벨 비고는 `우편함 / 사업자명`만. 건수는 웹앱에서 확인

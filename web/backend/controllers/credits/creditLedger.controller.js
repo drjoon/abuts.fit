@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-19: 어벗디자인 박스 키=의뢰 사업자+예정출고일. 수신자는 의뢰 사업자명.
 // - 2026-08-19: 기본 내역은 10건+hasMore. 기간 전체 $count를 하지 않는다.
 // - 2026-08-19: 원장 GET에서 신속비 보정을 기다리지 않음. 잔액·집계 병렬, enrich 병렬.
 // - 2026-08-19: 어벗디자인 원장 — 수신자/박스 묶음용 mailbox·shippingPackage 메타.
@@ -35,6 +36,7 @@ import {
   attachCreditLedgerRequestFields,
   buildCreditLedgerRequestSummary,
   buildCreditLedgerShippingPackageMeta,
+  hydrateCreditLedgerRequestorNames,
   buildFreeCreditGrantReason,
   buildLedgerItemsWithBucketBalanceAfter,
   collectPracticeTransferLookupIds,
@@ -382,6 +384,7 @@ export async function listMyCreditLedger(req, res) {
     refRequestIdById.set(String(doc._id), String(doc.requestId || ""));
     refRequestSummaryById.set(String(doc._id), buildRequestSummary(doc));
   }
+  await hydrateCreditLedgerRequestorNames(refRequestSummaryById);
 
   const deliveryInfoByRequestId = new Map();
   for (const delivery of deliveryInfos || []) {
@@ -499,7 +502,11 @@ export async function listMyCreditLedger(req, res) {
         mailboxAddress: pkgMeta?.mailboxAddress || "",
         shippingPackageId: refId,
         shippingReceiverGroupKey: pkgMeta?.shippingReceiverGroupKey || "",
-        recipientName: pkgMeta?.recipientName || "",
+        recipientName:
+          pkgMeta?.recipientName || pkgMeta?.requestorBusinessName || "",
+        requestorBusinessName: pkgMeta?.requestorBusinessName || "",
+        estimatedShipYmd: pkgMeta?.estimatedShipYmd || "",
+        abutmentBoxGroupKey: pkgMeta?.abutmentBoxGroupKey || "",
         shippingPackageRequestCount: Number(pkgMeta?.requestCount || 0),
         shippingPackageRequestIds: pkgMeta?.requestIds || [],
       };

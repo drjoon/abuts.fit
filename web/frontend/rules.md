@@ -293,7 +293,7 @@ Notes:
     - **기공소 기공의뢰수신**: 의뢰카드·전송 상세에 수령액(청구 − 플랫폼 수수료) 표시.
     - **기공소**: 유료(선입금)·무료·기공크레딧을 **경로별로 분리 표시**. 주문 차감은 무료→기공→유료 통합. 기공 사용=월 정산 상계. 크레딧 페이지 탭은 내역·충전만. 내역 필터: 버킷(유료/무료/기공)·동작(충전/소비/조정). `SPEND_SETTLEMENT`=기공크레딧 주문 사용.
     - **기공소 기공의뢰 장부**: 보철기공비와 어벗 디자인+생산비는 모두 기공비. 금액 호버는 두 열+배송. **지급 상태는 기공비만**(지급되었으면 지급완료). 행 클릭 상세는 기공소 견적 뷰(열: 보철기공비|어벗 디자인+생산비). CA 디자인비 원장(`abutment_design_lab_fee`)을 생산의뢰 행으로 따로 표시하지 않는다.
-    - **치과 장부**: 구강스캔 기공의뢰=`기공의뢰-구강스캔으로`. 어벗디자인 의뢰비·배송비 보류/소비는 수신자(1박스) 단위로 묶어 `기공의뢰-어벗디자인으로`. 거래내역은 수신자+건수, 클릭 시 의뢰/배송 상세(제조사 정산 모달 UX). 지급 상태는 구강스캔과 같이 보류/일부 지급/지급 완료.
+    - **치과 장부**: 구강스캔 기공의뢰=`기공의뢰-구강스캔으로`. 어벗디자인(치과)·어벗생산(기공소) 의뢰비·배송비는 **의뢰 사업자+예정 출고일** 1박스(`기공의뢰-어벗디자인으로`). 치과명으로 쪼개지 않음. 거래내역은 의뢰 사업자+건수, 클릭 시 의뢰/배송 상세(신속/묶음 뱃지). 지급 상태는 구강스캔과 같이 보류/일부 지급/지급 완료.
   - 안내 모달([정책 안내])·어벗 라인 요약카드(무료 재제작 잔여) 문구는 동일한 `90일` 기준을 사용해야 합니다.
   - 관련 파일:
     - `src/shared/ui/PricingPolicyDialog.tsx`
@@ -403,7 +403,7 @@ Notes:
 - 관리자 크레딧 원장 모달(`src/shared/components/CreditLedgerModal.tsx`) 표시 정책:
   - 모달 상단 잔액 요약은 단일 SSOT 장부 API의 `currentBalanceSnapshot` 값을 사용합니다.
   - 테이블 `balanceAfter` 칼럼 라벨은 「잔액」이며, 각 행 시점의 총잔액(유료+무료+기공)입니다.
-  - 의뢰(REQUEST) 차감은 수신자(1박스) 단위로 `기공의뢰-어벗디자인으로` 1행. 거래내역은 수신자+건수, 클릭 시 의뢰/배송 상세. 지급 상태는 보류 저널이면 「지급 보류」, 보류+확정 혼재면 「일부 지급」, 확정만이면 「지급 완료」.
+  - 의뢰(REQUEST) 차감은 의뢰 사업자+예정 출고일 1박스로 `기공의뢰-어벗디자인으로` 1행(치과명 무관). 거래내역은 의뢰 사업자+건수, 클릭 시 의뢰/배송 상세·신속/묶음 뱃지. 지급 상태는 보류 저널이면 「지급 보류」, 보류+확정 혼재면 「일부 지급」, 확정만이면 「지급 완료」.
   - 기존 기공의뢰(PRACTICE_TRANSFER)는 `기공의뢰-구강스캔으로`.
   - 신속 추가비(`express_surcharge`)는 API에서 생산비(`machining_spend`)와 합산해 1행으로 내려줍니다(표시 금액=생산비+추가비).
   - 레거시 `BONUS` 타입 문구/분기 사용 금지. 이벤트 타입/계정코드(`LedgerJournal.eventType`, `LedgerLine.accountCode`)를 기준으로 표시합니다.
@@ -635,7 +635,7 @@ Notes:
   - 첨부 직후 백그라운드 사전 업로드(`useFilePreUpload`). 페이지 이동·복원 시 S3/File 메타가 있으면 재업로드하지 않는다(공유 캐시 + sessionStorage). 로그인 세션이 있을 때:
     - 기공의뢰: Dropzone·FileTransfer. 파일카드에 `uploadProgress` 프로그레스바.
       제출([기공소로 전송])은 캐시된 결과를 재사용하고, 미완료면 백그라운드 업로드만 기다린다. 재업로드 토스트를 띄우지 않는다.
-    - 생산의뢰: `useNewRequestPage` 첨부 직후 `preUploadFiles`. 파일카드 프로그레스바·%. 제출은 `ensureFilesUploaded` 재사용 (`useNewRequestSubmitV2`).
+    - 생산의뢰: `useNewRequestPage` 첨부 직후 `preUploadFiles`. 파일카드 프로그레스바·%(업로드 중)·「업로드됨」(완료, 초록 바). 제출은 `ensureFilesUploaded` 재사용 (`useNewRequestSubmitV2`). `POST /api/requests/from-draft`는 S3를 다시 올리지 않고, 제출 지연은 서버 생성(가격·스케줄·크레딧 보류) 경로다.
       치과는 제출 후 같은 `/dashboard/new-request`에 잔류하므로, 성공 시 로컬 초안을 `setFiles([])`보다 먼저 지우고 입력 중 `check-duplicate`는 generation으로 무효화한다(성공 토스트와 중복 모달이 동시에 뜨지 않게).
       헤더 [출고예정]/[진행중]은 `RequestorAbutmentPageHeader`가 `request:stage-changed`·`credit:balance-updated`를 구독해 `requestor-bulk-shipping` / `requestor-dashboard-cards-summary`를 재조회한다.
     - 채팅 첨부: `useBackgroundTempUpload` + `BackgroundUploadList`
