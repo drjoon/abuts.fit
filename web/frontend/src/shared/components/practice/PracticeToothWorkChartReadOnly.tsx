@@ -3,8 +3,9 @@
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // - web/frontend/src/shared/practice/transferMemo.ts
 // - 2026-08-19: 수가 Off면 live quote-context로 기공비 미설정·어벗 단가 표시.
+// - 2026-08-19: 치아 옆 스크롤·R/M/L 제거. 견적 바에 << < > >>(1칸·5칸).
 import { useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -45,6 +46,8 @@ import type {
 } from "@/shared/practice/practiceTransferFeeQuote";
 
 const TOOTH_CHART_VISIBLE = 6;
+const TOOTH_CHART_SCROLL_STEP = 1;
+const TOOTH_CHART_SCROLL_JUMP = 5;
 const TOOTH_CARD_HEIGHT_CLASS = "h-[12rem]";
 const TOOTH_SLOT_CLASS = "min-w-[3.5rem] flex-1";
 
@@ -171,25 +174,6 @@ export const PracticeToothWorkChartReadOnly = ({
 
     return (
       <div key={`ro-decade-${decade.key}`} className="flex items-stretch gap-0.5">
-        {maxOffset > 0 ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="h-12 w-12 shrink-0 self-center rounded-xl text-slate-500 hover:bg-primary-soft hover:text-primary-strong disabled:opacity-30"
-            disabled={offset <= 0}
-            onClick={() =>
-              setToothChartOffsets((prev) => ({
-                ...prev,
-                [decade.key]: Math.max(0, (prev[decade.key] ?? 0) - 1),
-              }))
-            }
-            aria-label={`${decade.label} 이전`}
-          >
-            <ChevronLeft className="h-8 w-8" strokeWidth={2.25} />
-          </Button>
-        ) : null}
-
         <div className="flex min-w-0 flex-1 items-stretch">
           {visible.map((toothNumber, visibleIndex) => {
             const row = byTooth.get(toothNumber);
@@ -419,28 +403,41 @@ export const PracticeToothWorkChartReadOnly = ({
             );
           })}
         </div>
-
-        {maxOffset > 0 ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="h-12 w-12 shrink-0 self-center rounded-xl text-slate-500 hover:bg-primary-soft hover:text-primary-strong disabled:opacity-30"
-            disabled={offset >= maxOffset}
-            onClick={() =>
-              setToothChartOffsets((prev) => ({
-                ...prev,
-                [decade.key]: Math.min(maxOffset, (prev[decade.key] ?? 0) + 1),
-              }))
-            }
-            aria-label={`${decade.label} 다음`}
-          >
-            <ChevronRight className="h-8 w-8" strokeWidth={2.25} />
-          </Button>
-        ) : null}
       </div>
     );
   });
+
+  const shiftAllDecades = (delta: number) => {
+    setToothChartOffsets((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      for (const decade of TOOTH_CHART_ROWS) {
+        const maxOffset = Math.max(0, decade.teeth.length - toothChartVisibleCount);
+        const cur = next[decade.key] ?? 0;
+        const value = Math.min(maxOffset, Math.max(0, cur + delta));
+        if (value !== cur) changed = true;
+        next[decade.key] = value;
+      }
+      return changed ? next : prev;
+    });
+  };
+
+  const canScrollLeft = TOOTH_CHART_ROWS.some((decade) => {
+    const maxOffset = Math.max(0, decade.teeth.length - toothChartVisibleCount);
+    const offset = Math.min(maxOffset, toothChartOffsets[decade.key] ?? 0);
+    return offset > 0;
+  });
+  const canScrollRight = TOOTH_CHART_ROWS.some((decade) => {
+    const maxOffset = Math.max(0, decade.teeth.length - toothChartVisibleCount);
+    const offset = Math.min(maxOffset, toothChartOffsets[decade.key] ?? 0);
+    return offset < maxOffset;
+  });
+  const showChartScroll = TOOTH_CHART_ROWS.some(
+    (decade) => decade.teeth.length > toothChartVisibleCount,
+  );
+
+  const scrollBtnClass =
+    "h-7 w-7 shrink-0 rounded-md text-slate-500 hover:bg-white/80 hover:text-primary-strong disabled:opacity-30";
 
   const chartBody = (
     <div className="space-y-2">
@@ -450,118 +447,68 @@ export const PracticeToothWorkChartReadOnly = ({
         viewer={feeViewer}
         skipJig={skipJig}
         labEffectiveStars={labEffectiveStars}
+        leadingAction={
+          showChartScroll ? (
+            <>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                title="5칸 왼쪽"
+                className={scrollBtnClass}
+                disabled={!canScrollLeft}
+                onClick={() => shiftAllDecades(-TOOTH_CHART_SCROLL_JUMP)}
+                aria-label="치식 5칸 이전"
+              >
+                <ChevronsLeft className="h-5 w-5" strokeWidth={2.25} />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                title="1칸 왼쪽"
+                className={scrollBtnClass}
+                disabled={!canScrollLeft}
+                onClick={() => shiftAllDecades(-TOOTH_CHART_SCROLL_STEP)}
+                aria-label="치식 1칸 이전"
+              >
+                <ChevronLeft className="h-5 w-5" strokeWidth={2.25} />
+              </Button>
+            </>
+          ) : null
+        }
+        trailingAction={
+          showChartScroll ? (
+            <>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                title="1칸 오른쪽"
+                className={scrollBtnClass}
+                disabled={!canScrollRight}
+                onClick={() => shiftAllDecades(TOOTH_CHART_SCROLL_STEP)}
+                aria-label="치식 1칸 다음"
+              >
+                <ChevronRight className="h-5 w-5" strokeWidth={2.25} />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                title="5칸 오른쪽"
+                className={scrollBtnClass}
+                disabled={!canScrollRight}
+                onClick={() => shiftAllDecades(TOOTH_CHART_SCROLL_JUMP)}
+                aria-label="치식 5칸 다음"
+              >
+                <ChevronsRight className="h-5 w-5" strokeWidth={2.25} />
+              </Button>
+            </>
+          ) : null
+        }
       />
       {chartRows[1]}
-    </div>
-  );
-
-  const regionNav = (
-    <div className="absolute left-1/2 flex -translate-x-1/2 items-center gap-1">
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        title="오른쪽 · 10/40번대"
-        className="h-8 w-10 px-0 text-sm font-semibold tabular-nums"
-        onClick={() => {
-          setToothChartOffsets(() => {
-            const next: Record<string, number> = {};
-            for (const decade of TOOTH_CHART_ROWS) {
-              next[decade.key] = toothChartOffsetForRegion(
-                "R",
-                decade.teeth.length,
-                toothChartVisibleCount,
-              );
-            }
-            return next;
-          });
-        }}
-      >
-        R
-      </Button>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        title="한 칸 왼쪽"
-        className="h-8 w-8 text-slate-500"
-        onClick={() => {
-          setToothChartOffsets((prev) => {
-            const next = { ...prev };
-            for (const decade of TOOTH_CHART_ROWS) {
-              const cur = next[decade.key] ?? 0;
-              next[decade.key] = Math.max(0, cur - 1);
-            }
-            return next;
-          });
-        }}
-      >
-        <ChevronLeft className="h-5 w-5" strokeWidth={2.25} />
-      </Button>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        title="전치부"
-        className="h-8 w-10 px-0 text-sm font-semibold tabular-nums"
-        onClick={() => {
-          setToothChartOffsets(() => {
-            const next: Record<string, number> = {};
-            for (const decade of TOOTH_CHART_ROWS) {
-              next[decade.key] = toothChartOffsetForRegion(
-                "M",
-                decade.teeth.length,
-                toothChartVisibleCount,
-              );
-            }
-            return next;
-          });
-        }}
-      >
-        M
-      </Button>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        title="한 칸 오른쪽"
-        className="h-8 w-8 text-slate-500"
-        onClick={() => {
-          setToothChartOffsets((prev) => {
-            const next = { ...prev };
-            for (const decade of TOOTH_CHART_ROWS) {
-              const maxOffset = Math.max(0, decade.teeth.length - toothChartVisibleCount);
-              const cur = next[decade.key] ?? 0;
-              next[decade.key] = Math.min(maxOffset, cur + 1);
-            }
-            return next;
-          });
-        }}
-      >
-        <ChevronRight className="h-5 w-5" strokeWidth={2.25} />
-      </Button>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        title="왼쪽 · 20/30번대"
-        className="h-8 w-10 px-0 text-sm font-semibold tabular-nums"
-        onClick={() => {
-          setToothChartOffsets(() => {
-            const next: Record<string, number> = {};
-            for (const decade of TOOTH_CHART_ROWS) {
-              next[decade.key] = toothChartOffsetForRegion(
-                "L",
-                decade.teeth.length,
-                toothChartVisibleCount,
-              );
-            }
-            return next;
-          });
-        }}
-      >
-        L
-      </Button>
     </div>
   );
 
@@ -574,7 +521,6 @@ export const PracticeToothWorkChartReadOnly = ({
               보철물{" "}
               <span className="font-normal text-muted-foreground">({selectedTeeth.size}개)</span>
             </p>
-            {regionNav}
             <div className="absolute right-0">
               <Button
                 type="button"

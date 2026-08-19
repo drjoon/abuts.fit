@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/components/practice/PracticeToothWorkChartReadOnly.tsx
 // - 2026-08-19: 지정 기공소 수가 Off — 바에「기공비 미설정」(0원 금지). 어벗 단가는 유지.
+// - 2026-08-19: 치식 차트 견적 바 leadingAction(스크롤).
 // - 2026-08-19: 견적 열 보철기공비|어벗 디자인+생산비. 둘 다 기공비. 기공소몫/어벗츠몫 헤더·구분선 제거.
 // - 2026-08-17: 크레딧 상세 — 지급완료/지급보류를 기공소몫·어벗츠몫 헤더 옆에 표시.
 // - 2026-08-17: mode=detail — 호버 없이 견적 상세 표(크레딧 장부 모달용).
@@ -10,7 +11,8 @@
 // - 2026-08-17: 견적 한줄 요약 — CA 디자인비(+지그)는 기공비, 어벗은 생산비만(툴팁 기공비 총액·어벗생산비와 일치).
 // - 2026-08-17: 신속처리 시 디자인비(+지그)·어벗생산비 분해에도 rush 배수 적용.
 // - 2026-08-16: 기공의뢰수신 카드 — 기공비·수령·수수료를 한 줄로 표시.
-// - 2026-08-16: 기공소 카드 기공비=툴팁 라인 합(별점 확정가)+디자인. 스냅샷 상한과 불일치 방지.
+// - 2026-08-16: 기공소 카드 기공비=툴팁 라인 합+디자인. 스냅샷 상한과 불일치 방지.
+// - 2026-08-19: 별점 기공비 구간 안내 제거. 치과별 할증만 확정·청구에 반영.
 // - 2026-08-16: 자동매칭 구간은 치과만. 기공소는 유효 별점 배수 단일 확정가.
 // - 2026-08-16: 치과 견적 툴팁도 기공소와 동일 — 기공소몫|어벗츠몫 헤더·가운데 정렬·소계.
 // - 2026-08-16: 크레딧 소비 총액에 배송비 합산. 배송 안내 → 총액 순.
@@ -77,7 +79,9 @@ type PracticeTransferFeeEstimateProps = {
   density?: "chart" | "card" | "detail";
   /** 기공소 미선택 — 기공비 미산출 안내 */
   labPending?: boolean;
-  /** 카드 총액 오른쪽(선택) */
+  /** 치식 차트 견적 바 왼쪽(스크롤 등) */
+  leadingAction?: ReactNode;
+  /** 카드 총액 오른쪽·치식 차트 견적 바 오른쪽(선택) */
   trailingAction?: ReactNode;
   /** 지그 제작 불필요 — 기공소→치과 배송비 면제 */
   skipJig?: boolean;
@@ -365,6 +369,7 @@ export function PracticeTransferFeeEstimate({
   className,
   density = "chart",
   labPending = false,
+  leadingAction = null,
   trailingAction = null,
   skipJig = true,
   rushProcessing = false,
@@ -376,7 +381,9 @@ export function PracticeTransferFeeEstimate({
   const isDetail = density === "detail";
   const isCard = density === "card";
   const showLabPendingHint = Boolean(labPending) && !isLab;
+  const hasLeading = Boolean(leadingAction);
   const hasTrailing = Boolean(trailingAction);
+  const hasChartSideActions = !isCard && !isDetail && (hasLeading || hasTrailing);
   const showCreditShareSettlement =
     isDetail &&
     (creditLabHoldPending !== null || creditAbutmentHoldPending !== null);
@@ -692,7 +699,7 @@ export function PracticeTransferFeeEstimate({
           />
           {hasBudgetRange && !isLab ? (
             <p className="text-[11px] text-muted-foreground">
-              기공소 별점에 비례해 확정·청구됩니다.
+              기공소 수가에 이 치과 할증이 있으면 함께 반영됩니다.
             </p>
           ) : null}
         </div>
@@ -724,7 +731,7 @@ export function PracticeTransferFeeEstimate({
               : formatWonRange(budgetLabFeeMin, budgetLabFeeMax)}
           </p>
           <p className="text-[11px] text-muted-foreground">
-            기공소 별점에 비례해 확정·청구됩니다.
+            기공소 수가에 이 치과 할증이 있으면 함께 반영됩니다.
           </p>
         </div>
       ) : labFeeUnset ? null : (
@@ -806,7 +813,10 @@ export function PracticeTransferFeeEstimate({
                 "mt-1.5 text-left",
                 hasTrailing ? "w-full justify-between" : "justify-start gap-1.5",
               )
-            : "justify-center rounded-lg border border-primary-muted/50 bg-primary-soft/40 px-3 py-1.5",
+            : cn(
+                "rounded-lg border border-primary-muted/50 bg-primary-soft/40 px-2 py-1.5 sm:px-3",
+                hasChartSideActions ? "w-full justify-between" : "justify-center",
+              ),
           className,
         )}
         role="note"
@@ -816,7 +826,22 @@ export function PracticeTransferFeeEstimate({
         onClick={isCard ? (event) => event.stopPropagation() : undefined}
         onKeyDown={isCard ? (event) => event.stopPropagation() : undefined}
       >
-        <div className="flex min-w-0 items-center gap-1.5">
+        {hasLeading && !isCard ? (
+          <div
+            className="flex shrink-0 items-center"
+            onClick={(event) => event.stopPropagation()}
+            onPointerDown={(event) => event.stopPropagation()}
+            onKeyDown={(event) => event.stopPropagation()}
+          >
+            {leadingAction}
+          </div>
+        ) : null}
+        <div
+          className={cn(
+            "flex min-w-0 items-center gap-1.5",
+            hasChartSideActions && "flex-1 justify-center",
+          )}
+        >
           <Tooltip>
             <TooltipTrigger asChild>
               <div

@@ -14,6 +14,8 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
   ChevronsUpDown,
   Minus,
   Pin,
@@ -27,19 +29,10 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ImeSafeInput } from "@/shared/components/practice/ImeSafeInput";
 import { Label } from "@/components/ui/label";
-import { AutoMatchMinLabRatingStars } from "@/shared/components/practice/AutoMatchMinLabRatingStars";
-import {
-  resolveAutoMatchBudgetOrDefaults,
-  type AbutsLabFeeCatalogItem,
-  type PracticeTransferAutoMatchBudget,
+import type {
+  AbutsLabFeeCatalogItem,
+  PracticeTransferAutoMatchBudget,
 } from "@/shared/practice/autoMatchBudget";
-import {
-  DEFAULT_AUTO_MATCH_MAX_LAB_RATING,
-  DEFAULT_AUTO_MATCH_MIN_LAB_RATING,
-  normalizeAutoMatchMaxLabRating,
-  normalizeAutoMatchMinLabRating,
-  resolveAutoMatchEligibleStarBand,
-} from "@/shared/practice/practiceLabRating";
 import {
   Popover,
   PopoverContent,
@@ -174,7 +167,7 @@ import {
 // - 2026-08-13: 임플란트·스캔바디 프리셋을 각각 한 번 고르면 확인과 같이 저장·닫힘.
 // - 2026-08-13: 크라운·브리지·임시치아 아래 어벗 체크박스. 체크 시 설정 모달.
 // - 2026-08-19: 임시치아(단독·연결)도 커스텀어벗 주문 가능.
-// - 2026-08-19: 임시치아 연결은 브리지처럼 Pontic·작업X를 치아별로 쓴다. 형태를 바꿔도 커스텀어벗은 유지.
+// - 2026-08-19: 브리지 연결 시 한쪽이 임시치아이면 연결된 치아 전체를 임시치아로 맞춘다.
 // - 2026-08-13: 커스텀어벗 프리셋 목록은 4개까지 표시, 초과 시 스크롤.
 // - 2026-08-13: 형태 글자 클릭(인레이→크라운→커스텀어벗)은 설정 모달을 열지 않음.
 // - 2026-08-13: 연결 형태 클릭 순환에 유지장치·임시치아 추가.
@@ -187,12 +180,15 @@ import {
 // - 2026-08-17: 복사 뱃지 — 괄호 제거, 11px·primary soft pill.
 // - 2026-08-18: full 치식 카드 min-w·브리지 + 를 이음새에 겹쳐 어벗 라벨이 잘리지 않게.
 // - 2026-08-18: full 치식에서는 R/M/L 스크롤 버튼을 숨긴다.
+// - 2026-08-19: 치아 옆 스크롤·R/M/L 제거. 견적 바에 << < > >>(1칸·5칸).
 
 const PRACTICE_MEMO_SNIPPETS_LOCAL_KEY = "practice_transfer_memo_snippets_v1";
 const MAX_MEMO_SNIPPETS = 40;
 const MAX_MEMO_SUGGESTIONS = 8;
 const MEMO_SUGGEST_MIN_CHARS = 1;
 const TOOTH_CHART_VISIBLE = 6;
+const TOOTH_CHART_SCROLL_STEP = 1;
+const TOOTH_CHART_SCROLL_JUMP = 5;
 /** 카드 높이: 커스텀 임플란트/스캔바디 2줄까지 표시한 기준 */
 const TOOTH_CARD_HEIGHT_CLASS = "h-[12rem]";
 /** full 16치 한 줄에서도 체크+「어벗」이 한 줄에 들어가게 */
@@ -266,7 +262,7 @@ const HoverOnlyTooltip = ({
     </Tooltip>
   );
 };
-/** 치식: 위(18→11→21→28) / 아래(48→41→31→38). 행마다 6칸 + <> 스크롤 */
+/** 치식: 위(18→11→21→28) / 아래(48→41→31→38). 한 줄 6칸, 스크롤은 견적 바 */
 const TOOTH_CHART_ROWS: ReadonlyArray<{ key: string; label: string; teeth: readonly string[] }> = [
   {
     key: "upper",
@@ -667,7 +663,7 @@ export type PracticeTransferRequestIntakePanelProps = {
   showLabField?: boolean;
   showPatientField?: boolean;
   showDateFields?: boolean;
-  /** false면 기공소 옆 자동매칭 최소 별 UI 숨김. true여도「자동 매칭」선택 시에만 표시 (기본 true) */
+  /** @deprecated 자동매칭 폐기. 무시됨. */
   showAutoMatchMinLabRating?: boolean;
   /** false면 보철물 치식 섹션 숨김 (기본 true) */
   showProsthesisSection?: boolean;
@@ -770,7 +766,6 @@ export const PracticeTransferRequestIntakePanel = ({
   showLabField: showLabFieldProp,
   showPatientField: showPatientFieldProp,
   showDateFields: showDateFieldsProp,
-  showAutoMatchMinLabRating = true,
   showProsthesisSection = true,
   showMemoSection = true,
   variant = "card",
@@ -830,28 +825,7 @@ export const PracticeTransferRequestIntakePanel = ({
   skipJig = true,
   onSkipJigChange,
   rushProcessing = false,
-  autoMatchBudget = null,
-  abutsLabFeeCatalog = null,
-  onAutoMatchBudgetChange,
-  autoMatchMinLabRating = DEFAULT_AUTO_MATCH_MIN_LAB_RATING,
-  onAutoMatchMinLabRatingChange,
-  autoMatchMaxLabRating = DEFAULT_AUTO_MATCH_MAX_LAB_RATING,
-  onAutoMatchMaxLabRatingChange,
 }: PracticeTransferRequestIntakePanelProps) => {
-  const starBand = resolveAutoMatchEligibleStarBand({
-    minStars: autoMatchMinLabRating,
-    maxStars: autoMatchMaxLabRating,
-  });
-  const resolvedMinLabRating = starBand.minStars;
-  const resolvedMaxLabRating = starBand.maxStars;
-  const resolvedAutoMatchBudget = resolveAutoMatchBudgetOrDefaults(
-    autoMatchBudget,
-    abutsLabFeeCatalog,
-    {
-      minStars: resolvedMinLabRating,
-      maxStars: resolvedMaxLabRating,
-    },
-  );
   const defaultAbutmentProductMode = normalizeAccountAbutmentProductMode(
     defaultAbutmentProductModeProp ?? DEFAULT_ACCOUNT_ABUTMENT_PRODUCT_MODE,
   );
@@ -892,7 +866,7 @@ export const PracticeTransferRequestIntakePanel = ({
     toothWorks,
     implantFavorites,
     abutmentPricingTier,
-    autoMatchBudget: isAutoMatchLab(selectedLab) ? resolvedAutoMatchBudget : null,
+    autoMatchBudget: null,
     // 신속처리 할증 없음
     rushFeeMultiplier: 1,
   });
@@ -1915,22 +1889,6 @@ export const PracticeTransferRequestIntakePanel = ({
             <Label className="text-sm">
               기공소 <span className="text-destructive">*</span>
             </Label>
-            {showAutoMatchMinLabRating && isAutoMatchLab(selectedLab) ? (
-              <AutoMatchMinLabRatingStars
-                minValue={resolvedMinLabRating}
-                maxValue={resolvedMaxLabRating}
-                disabled={
-                  !onAutoMatchMinLabRatingChange ||
-                  !onAutoMatchMaxLabRatingChange
-                }
-                onMinChange={(next) => {
-                  void onAutoMatchMinLabRatingChange?.(next);
-                }}
-                onMaxChange={(next) => {
-                  void onAutoMatchMaxLabRatingChange?.(next);
-                }}
-              />
-            ) : null}
           </div>
           <Popover open={labOpen} onOpenChange={setLabOpen}>
             <PopoverTrigger asChild>
@@ -2282,119 +2240,6 @@ export const PracticeTransferRequestIntakePanel = ({
             </Tooltip>
           </div>
 
-          {!showFullToothChart ? (
-          <div className="absolute left-1/2 flex -translate-x-1/2 items-center gap-1">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                title="오른쪽 · 10/40번대"
-                className="h-8 w-10 px-0 text-sm font-semibold tabular-nums"
-                onClick={() => {
-                  setToothChartOffsets(() => {
-                    const next: Record<string, number> = {};
-                    for (const decade of TOOTH_CHART_ROWS) {
-                      next[decade.key] = toothChartOffsetForRegion(
-                        "R",
-                        decade.teeth.length,
-                        toothChartVisibleCount,
-                      );
-                    }
-                    return next;
-                  });
-                }}
-              >
-                R
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                title="한 칸 왼쪽"
-                className="h-8 w-8 text-slate-500"
-                onClick={() => {
-                  setToothChartOffsets((prev) => {
-                    const next = { ...prev };
-                    for (const decade of TOOTH_CHART_ROWS) {
-                      const cur = next[decade.key] ?? 0;
-                      next[decade.key] = Math.max(0, cur - 1);
-                    }
-                    return next;
-                  });
-                }}
-              >
-                <ChevronLeft className="h-5 w-5" strokeWidth={2.25} />
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                title="전치부"
-                className="h-8 w-10 px-0 text-sm font-semibold tabular-nums"
-                onClick={() => {
-                  setToothChartOffsets(() => {
-                    const next: Record<string, number> = {};
-                    for (const decade of TOOTH_CHART_ROWS) {
-                      next[decade.key] = toothChartOffsetForRegion(
-                        "M",
-                        decade.teeth.length,
-                        toothChartVisibleCount,
-                      );
-                    }
-                    return next;
-                  });
-                }}
-              >
-                M
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                title="한 칸 오른쪽"
-                className="h-8 w-8 text-slate-500"
-                onClick={() => {
-                  setToothChartOffsets((prev) => {
-                    const next = { ...prev };
-                    for (const decade of TOOTH_CHART_ROWS) {
-                      const maxOffset = Math.max(
-                        0,
-                        decade.teeth.length - toothChartVisibleCount,
-                      );
-                      const cur = next[decade.key] ?? 0;
-                      next[decade.key] = Math.min(maxOffset, cur + 1);
-                    }
-                    return next;
-                  });
-                }}
-              >
-                <ChevronRight className="h-5 w-5" strokeWidth={2.25} />
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                title="왼쪽 · 20/30번대"
-                className="h-8 w-10 px-0 text-sm font-semibold tabular-nums"
-                onClick={() => {
-                  setToothChartOffsets(() => {
-                    const next: Record<string, number> = {};
-                    for (const decade of TOOTH_CHART_ROWS) {
-                      next[decade.key] = toothChartOffsetForRegion(
-                        "L",
-                        decade.teeth.length,
-                        toothChartVisibleCount,
-                      );
-                    }
-                    return next;
-                  });
-                }}
-              >
-                L
-              </Button>
-            </div>
-          ) : null}
-
             <div className="absolute right-0 flex items-center gap-1.5">
               <Button
                 type="button"
@@ -2469,14 +2314,37 @@ export const PracticeTransferRequestIntakePanel = ({
                   toothCopyDrag.sourceTooth !== toothNumber,
               );
 
-            const shiftDecade = (decadeKey: string, delta: number, maxOffset: number) => {
+            const shiftAllDecades = (delta: number) => {
               setToothChartOffsets((prev) => {
-                const cur = prev[decadeKey] ?? 0;
-                const next = Math.min(maxOffset, Math.max(0, cur + delta));
-                if (next === cur) return prev;
-                return { ...prev, [decadeKey]: next };
+                const next = { ...prev };
+                let changed = false;
+                for (const decade of TOOTH_CHART_ROWS) {
+                  const maxOffset = Math.max(0, decade.teeth.length - toothChartVisibleCount);
+                  const cur = next[decade.key] ?? 0;
+                  const value = Math.min(maxOffset, Math.max(0, cur + delta));
+                  if (value !== cur) changed = true;
+                  next[decade.key] = value;
+                }
+                return changed ? next : prev;
               });
             };
+            const canScrollLeft = TOOTH_CHART_ROWS.some((decade) => {
+              const maxOffset = Math.max(0, decade.teeth.length - toothChartVisibleCount);
+              const offset = Math.min(maxOffset, toothChartOffsets[decade.key] ?? 0);
+              return offset > 0;
+            });
+            const canScrollRight = TOOTH_CHART_ROWS.some((decade) => {
+              const maxOffset = Math.max(0, decade.teeth.length - toothChartVisibleCount);
+              const offset = Math.min(maxOffset, toothChartOffsets[decade.key] ?? 0);
+              return offset < maxOffset;
+            });
+            const showChartScroll =
+              !showFullToothChart &&
+              TOOTH_CHART_ROWS.some(
+                (decade) => decade.teeth.length > toothChartVisibleCount,
+              );
+            const scrollBtnClass =
+              "h-7 w-7 shrink-0 rounded-md text-slate-500 hover:bg-white/80 hover:text-primary-strong disabled:opacity-30";
 
             const chartRows = TOOTH_CHART_ROWS.map((decade) => {
               const maxOffset = Math.max(0, decade.teeth.length - toothChartVisibleCount);
@@ -2485,21 +2353,6 @@ export const PracticeTransferRequestIntakePanel = ({
 
               return (
                 <div key={`decade-${decade.key}`} className="flex items-stretch gap-0.5">
-                  {maxOffset > 0 ? (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      data-no-tooth-marquee=""
-                      className="h-12 w-12 shrink-0 self-center rounded-xl text-slate-500 hover:bg-primary-soft hover:text-primary-strong disabled:opacity-30"
-                      disabled={offset <= 0}
-                      onClick={() => shiftDecade(decade.key, -1, maxOffset)}
-                      aria-label={`${decade.label} 이전`}
-                    >
-                      <ChevronLeft className="h-8 w-8" strokeWidth={2.25} />
-                    </Button>
-                  ) : null}
-
                   <div className="flex min-w-0 flex-1 items-stretch">
                     {visible.map((toothNumber, visibleIndex) => {
                       const configured = byTooth.get(toothNumber);
@@ -2846,7 +2699,7 @@ export const PracticeTransferRequestIntakePanel = ({
                                     isMissingTooth
                                       ? undefined
                                       : isLinked
-                                        ? "클릭: 브리지 ↔ Pontic ↔ 작업X ↔ 유지장치 ↔ 임시치아 (유지장치는 연결 전체 동일, 복귀 시 미클릭 치아는 원래 내용)"
+                                        ? "클릭: 브리지 ↔ Pontic ↔ 작업X ↔ 유지장치 ↔ 임시치아 (유지장치·임시치아는 연결 전체 동일, 복귀 시 미클릭 치아는 원래 내용)"
                                         : "클릭: 인레이 → 크라운 → 커스텀어벗 → 임시치아"
                                   }
                                   onClick={(e) => {
@@ -3054,21 +2907,6 @@ export const PracticeTransferRequestIntakePanel = ({
                       );
                     })}
                   </div>
-
-                  {maxOffset > 0 ? (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      data-no-tooth-marquee=""
-                      className="h-12 w-12 shrink-0 self-center rounded-xl text-slate-500 hover:bg-primary-soft hover:text-primary-strong disabled:opacity-30"
-                      disabled={offset >= maxOffset}
-                      onClick={() => shiftDecade(decade.key, 1, maxOffset)}
-                      aria-label={`${decade.label} 다음`}
-                    >
-                      <ChevronRight className="h-8 w-8" strokeWidth={2.25} />
-                    </Button>
-                  ) : null}
                 </div>
               );
             });
@@ -3088,11 +2926,79 @@ export const PracticeTransferRequestIntakePanel = ({
                 {showFeeEstimate ? (
                   <div className="flex items-center justify-center gap-3 px-1">
                     <PracticeTransferFeeEstimate
+                      className="min-w-0 flex-1"
                       quote={feeQuote}
                       viewer="practice"
-                      labPending={!selectedLab}
+                      labPending={
+                        !selectedLab ||
+                        !/^[a-fA-F0-9]{24}$/.test(String(selectedLab._id || ""))
+                      }
                       skipJig={effectiveSkipJig}
                       rushProcessing={rushProcessing}
+                      leadingAction={
+                        showChartScroll ? (
+                          <>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              data-no-tooth-marquee=""
+                              title="5칸 왼쪽"
+                              className={scrollBtnClass}
+                              disabled={!canScrollLeft}
+                              onClick={() => shiftAllDecades(-TOOTH_CHART_SCROLL_JUMP)}
+                              aria-label="치식 5칸 이전"
+                            >
+                              <ChevronsLeft className="h-5 w-5" strokeWidth={2.25} />
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              data-no-tooth-marquee=""
+                              title="1칸 왼쪽"
+                              className={scrollBtnClass}
+                              disabled={!canScrollLeft}
+                              onClick={() => shiftAllDecades(-TOOTH_CHART_SCROLL_STEP)}
+                              aria-label="치식 1칸 이전"
+                            >
+                              <ChevronLeft className="h-5 w-5" strokeWidth={2.25} />
+                            </Button>
+                          </>
+                        ) : null
+                      }
+                      trailingAction={
+                        showChartScroll ? (
+                          <>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              data-no-tooth-marquee=""
+                              title="1칸 오른쪽"
+                              className={scrollBtnClass}
+                              disabled={!canScrollRight}
+                              onClick={() => shiftAllDecades(TOOTH_CHART_SCROLL_STEP)}
+                              aria-label="치식 1칸 다음"
+                            >
+                              <ChevronRight className="h-5 w-5" strokeWidth={2.25} />
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              data-no-tooth-marquee=""
+                              title="5칸 오른쪽"
+                              className={scrollBtnClass}
+                              disabled={!canScrollRight}
+                              onClick={() => shiftAllDecades(TOOTH_CHART_SCROLL_JUMP)}
+                              aria-label="치식 5칸 다음"
+                            >
+                              <ChevronsRight className="h-5 w-5" strokeWidth={2.25} />
+                            </Button>
+                          </>
+                        ) : null
+                      }
                     />
                     {onSkipJigChange && showSkipJigCheckbox ? (
                       <TooltipProvider>
@@ -3129,6 +3035,61 @@ export const PracticeTransferRequestIntakePanel = ({
                         </Tooltip>
                       </TooltipProvider>
                     ) : null}
+                  </div>
+                ) : showChartScroll ? (
+                  <div className="flex items-center justify-center gap-1 rounded-lg border border-primary-muted/50 bg-primary-soft/40 px-2 py-1">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      data-no-tooth-marquee=""
+                      title="5칸 왼쪽"
+                      className={scrollBtnClass}
+                      disabled={!canScrollLeft}
+                      onClick={() => shiftAllDecades(-TOOTH_CHART_SCROLL_JUMP)}
+                      aria-label="치식 5칸 이전"
+                    >
+                      <ChevronsLeft className="h-5 w-5" strokeWidth={2.25} />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      data-no-tooth-marquee=""
+                      title="1칸 왼쪽"
+                      className={scrollBtnClass}
+                      disabled={!canScrollLeft}
+                      onClick={() => shiftAllDecades(-TOOTH_CHART_SCROLL_STEP)}
+                      aria-label="치식 1칸 이전"
+                    >
+                      <ChevronLeft className="h-5 w-5" strokeWidth={2.25} />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      data-no-tooth-marquee=""
+                      title="1칸 오른쪽"
+                      className={scrollBtnClass}
+                      disabled={!canScrollRight}
+                      onClick={() => shiftAllDecades(TOOTH_CHART_SCROLL_STEP)}
+                      aria-label="치식 1칸 다음"
+                    >
+                      <ChevronRight className="h-5 w-5" strokeWidth={2.25} />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      data-no-tooth-marquee=""
+                      title="5칸 오른쪽"
+                      className={scrollBtnClass}
+                      disabled={!canScrollRight}
+                      onClick={() => shiftAllDecades(TOOTH_CHART_SCROLL_JUMP)}
+                      aria-label="치식 5칸 다음"
+                    >
+                      <ChevronsRight className="h-5 w-5" strokeWidth={2.25} />
+                    </Button>
                   </div>
                 ) : null}
                 {chartRows[1]}
