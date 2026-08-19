@@ -16,13 +16,24 @@ using Abuts.EspritAddIns.ESPRIT2025AddinProject.Logging;
 namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
 {
     /// <summary>
-    /// NC 파일 생성 및 후처리 관련 로직
+    /// NC 파일 생성 및 후처리.
+    /// CNC 컨트롤러는 축 워드 정수(C30, X10, Z0)를 인식하지 못한다. 반드시 C30.0 처럼 소수점을 명시한다.
+    /// 숫자 ToString 최적화("0.###", 정수 단축, TrimEnd 0) 금지. FormatRotationNumber / FormatNcNumber / EnsureNcCoordinateDecimalsOnFile 참고.
     /// </summary>
     public class NcFileGenerator
     {
         private readonly Application _espApp;
         private readonly string _outputFolder;
         private readonly string _postProcessorFile;
+
+        // CNC 축 워드 정수 금지 (C30 → C30.0). \b 사용 금지: G0X30 처럼 워드가 붙으면 \b 가 X 앞에 서지 않는다.
+        // G/M/T/O/P/N/S/F/L 는 정수 코드이므로 이 패턴에 넣지 말 것.
+        private static readonly Regex NcAxisIntegerWordRegex = new Regex(
+            @"([XYZABCUVWHIJKR])([+-]?)(\d+)(?![0-9.])",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        private static readonly Regex NcAxisTrailingDotWordRegex = new Regex(
+            @"([XYZABCUVWHIJKR])([+-]?)(\d+)\.(?![0-9])",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         public NcFileGenerator(Application espApp, string outputFolder, string postProcessorFile)
         {
             _espApp = espApp ?? throw new ArgumentNullException(nameof(espApp));
@@ -89,6 +100,10 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             UpdateSerialBlocks(executedNcPath, serialForNc, connectionPrcPath);
             ApplyManufacturerHexRotationToNc(executedNcPath, manufacturerHexRotation);
             StripBlankNcLines(executedNcPath);
+            // CNC 컨트롤러는 축 워드 정수(C30, X10, Z0)를 인식하지 못한다.
+            // ESPRIT 포스트·헥스 치환·시리얼 블록 이후 최종 한 번 더 소수점을 강제한다.
+            // 이 호출을 제거/스킵하는 "최적화"는 금지. 상세: EnsureNcCoordinateDecimalsOnFile
+            EnsureNcCoordinateDecimalsOnFile(executedNcPath);
             return executedNcPath;
         }
         private string BuildNcFilePath(string stlPath)
@@ -241,6 +256,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 {
                     headerBlock.Add(hexComment);
                 }
+                // CNC는 #521= 8 같은 정수 매크로를 거부할 수 있다. FormatNcNumber("0.000")로 소수점을 강제한다.
+                // "0" / "0.###" 포맷으로 바꾸지 말 것.
                 headerBlock.Add($"#523= {FormatNcNumber(AppConfig.DefaultStlShift, "0.000")}");
                 headerBlock.Add($"#522= {FormatNcNumber(backturnClearance, "0.000")}");
                 headerBlock.Add($"#521= {FormatNcNumber(stockDiameter, "0.000")}");
@@ -363,6 +380,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             {
                 return "(null)";
             }
+            // 헤더 주석용 사람이 읽는 각도. NC 축 워드가 아니다.
+            // 여기 포맷을 FormatRotationNumber 에 복사하지 말 것 (소수점 탈락).
             return $"({hexRotationAppliedDeg.Value.ToString("0.###############", CultureInfo.InvariantCulture)})";
         }
 
@@ -431,13 +450,51 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             int insertIndex = Math.Min(2, lines.Count);
             lines.Insert(insertIndex, newLine);
         }
-        private static string FormatNcNumber(double? value, string format = "0.###############")
+        // NC 매크로/좌표 숫자 포맷 SSOT.
+        //
+        // [절대 금지] "0.###", "0.###############", "G29", G-format, 정수 ToString()
+        //   → 30.0 이 "30" 으로 떨어진다. CNC는 C30 / X30 정수를 인식하지 못한다.
+        // [필수] 소수점 이하를 최소 한 자리 명시. 예: 30 → "30.0", 0 → "0.0", 8.5 → "8.5"
+        // 커스텀 format("0.000")이 이미 소수점을 포함해도 EnsureNcDecimalLiteral 이 안전망이다.
+        // 이 기본값을 "더 짧게" 되돌리지 말 것.
+        private static string FormatNcNumber(double? value, string format = "0.0##############")
         {
             if (!value.HasValue)
             {
                 return "";
             }
-            return value.Value.ToString(format, CultureInfo.InvariantCulture);
+            string text = value.Value.ToString(format, CultureInfo.InvariantCulture);
+            return EnsureNcDecimalLiteral(text);
+        }
+
+        // 숫자 리터럴에 소수점이 없으면 ".0"을 붙인다.
+        // "30." 처럼 점만 있고 자리수가 없으면 "30.0"으로 만든다.
+        // 이미 "30.0" / "3.45" 이면 그대로 둔다.
+        // TrimEnd('0') / 정수 최적화 / invariant 없는 ToString 사용 금지.
+        private static string EnsureNcDecimalLiteral(string numericText)
+        {
+            if (string.IsNullOrWhiteSpace(numericText))
+            {
+                return numericText;
+            }
+            string text = numericText.Trim();
+            if (string.Equals(text, "-0", StringComparison.Ordinal) ||
+                string.Equals(text, "-0.", StringComparison.Ordinal))
+            {
+                return "0.0";
+            }
+            int dot = text.IndexOf('.');
+            if (dot < 0)
+            {
+                // "30" → "30.0"  (정수 표기 금지)
+                return text + ".0";
+            }
+            if (dot == text.Length - 1)
+            {
+                // "30." → "30.0"  (소수점만 있고 자리수 없음)
+                return text + "0";
+            }
+            return text;
         }
         private void UpdateSerialBlocks(string ncFilePath, string serialCode, string connectionPrcPath = null)
         {
@@ -505,10 +562,11 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 }
 
                 var lines = new List<string>(File.ReadAllLines(ncFilePath));
-                // C축 0도 표기 허용 범위:
+                // C축 0도 표기 허용 범위(치환 대상):
                 // - C0, C0.0, C00.000
                 // - C+0, C-0, C +0.0, C 0.0
-                // (C10, C30 등은 매칭 제외)
+                // (C10, C30 등은 매칭 제외 — 이미 각도가 들어간 워드는 건드리지 않음)
+                // 치환 결과는 반드시 C30.0 처럼 소수점이 있어야 한다. FormatRotationNumber 가 SSOT.
                 var targetRegex = new Regex(@"C\s*[+-]?0+(?:\.0+)?(?![0-9.])", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
                 int matchedWithinTarget = 0;
@@ -547,6 +605,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
 
                         matchedWithinTarget++;
                         replacedWithinTarget++;
+                        // C30 금지. FormatRotationNumber 는 반드시 "30.0" 을 반환한다.
+                        // "C" + 30 또는 ToString() 직접 연결 금지.
                         return "C" + FormatRotationNumber(targetDeg);
                     });
                 }
@@ -668,6 +728,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                     minorDeg = parsedX - 30.0;
                 }
 
+                // 모드 라벨(로그/주석). NC 워드가 아니므로 정수 "30" 이어도 된다.
+                // 이 포맷을 C축 출력에 재사용 금지.
                 modeLabel = $"헥스{totalDeg.ToString("0.###############", CultureInfo.InvariantCulture)}도회전";
                 return true;
             }
@@ -675,15 +737,101 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             return false;
         }
 
+        // C축(및 동일 경로로 쓰는 회전각) NC 리터럴 포맷.
+        //
+        // CNC 장비는 정수 워드를 인식하지 못한다.
+        //   금지: C30, C0, C10
+        //   필수: C30.0, C0.0, C10.0, C10.5
+        //
+        // 과거 버그: ToString("0.###############") / 0도일 때 "0" 반환
+        //   → 30.0 이 "30" 이 되어 NC에 C30 이 기록됨.
+        // "불필요한 .0 제거", "정수면 짧게", G29/0.### 포맷은 재발하므로 사용 금지.
+        // 0도도 "0"이 아니라 "0.0" 이어야 한다. 절대 특수케이스로 정수를 반환하지 말 것.
         private static string FormatRotationNumber(double value)
         {
+            if (double.IsNaN(value) || double.IsInfinity(value))
+            {
+                return "0.0";
+            }
             if (Math.Abs(value) < 0.0000000001)
             {
-                return "0";
+                return "0.0";
+            }
+            // "0.0##############" = 소수점 이하 최소 1자리 강제. "0.###" 로 바꾸지 말 것.
+            string text = value.ToString("0.0##############", CultureInfo.InvariantCulture);
+            return EnsureNcDecimalLiteral(text);
+        }
+
+        // ESPRIT 포스트/시리얼 템플릿/헥스 치환이 남긴 축 워드 정수를 파일 전체에서 C30.0 형태로 고친다.
+        // GenerateNcFile 마지막 단계에서만 호출. 중간 단계에서 건너뛰면 포스트 원본 C30 이 남는다.
+        private static void EnsureNcCoordinateDecimalsOnFile(string ncFilePath)
+        {
+            try
+            {
+                if (!File.Exists(ncFilePath))
+                {
+                    AppLogger.Log($"NcFileGenerator: NC 축 워드 소수점 강제 실패 - 파일 없음 ({ncFilePath})");
+                    return;
+                }
+
+                var lines = File.ReadAllLines(ncFilePath);
+                int rewrittenLines = 0;
+                int rewrittenWords = 0;
+                for (int i = 0; i < lines.Length; i++)
+                {
+                    string original = lines[i];
+                    string rewritten = EnsureNcCoordinateDecimalsInLine(original, out int wordCount);
+                    if (wordCount > 0)
+                    {
+                        lines[i] = rewritten;
+                        rewrittenLines++;
+                        rewrittenWords += wordCount;
+                    }
+                }
+
+                if (rewrittenLines > 0)
+                {
+                    File.WriteAllLines(ncFilePath, lines);
+                }
+                AppLogger.Log($"NcFileGenerator: NC 축 워드 소수점 강제 완료 - rewrittenLines={rewrittenLines}, rewrittenWords={rewrittenWords}");
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"NcFileGenerator: NC 축 워드 소수점 강제 실패 - {ex.GetType().Name}:{ex.Message}");
+            }
+        }
+
+        // 축 워드(X/Y/Z/A/B/C/U/V/W/H/I/J/K/R)의 정수 리터럴만 대상.
+        // G/M/T/O/P/N/S/F/L 은 원래 정수 코드이므로 건드리지 않는다 (G0, M50, T0909, F1000).
+        // 괄호 주석 안은 변경하지 않는다. 매크로식 X[#521+1.8] 은 숫자가 바로 안 붙으므로 제외.
+        private static string EnsureNcCoordinateDecimalsInLine(string line, out int rewrittenWordCount)
+        {
+            rewrittenWordCount = 0;
+            if (string.IsNullOrEmpty(line))
+            {
+                return line;
             }
 
-            string text = value.ToString("0.###############", CultureInfo.InvariantCulture);
-            return text == "-0" ? "0" : text;
+            int commentIdx = line.IndexOf('(');
+            string code = commentIdx >= 0 ? line.Substring(0, commentIdx) : line;
+            string comment = commentIdx >= 0 ? line.Substring(commentIdx) : string.Empty;
+
+            int localCount = 0;
+            // 1) C30 / X10 / Z0 / G0X30  → C30.0 / X10.0 / Z0.0
+            string rewritten = NcAxisIntegerWordRegex.Replace(code, m =>
+            {
+                localCount++;
+                return m.Groups[1].Value + m.Groups[2].Value + m.Groups[3].Value + ".0";
+            });
+            // 2) C30. / X10. 처럼 점만 있는 표기 → C30.0 / X10.0
+            rewritten = NcAxisTrailingDotWordRegex.Replace(rewritten, m =>
+            {
+                localCount++;
+                return m.Groups[1].Value + m.Groups[2].Value + m.Groups[3].Value + ".0";
+            });
+
+            rewrittenWordCount = localCount;
+            return rewritten + comment;
         }
 
         private static bool ReplaceSerialBlock(List<string> lines, string marker, List<string> newBlock, int occurrenceIndex = 0)
@@ -939,9 +1087,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
         //         "(Serial)",
         //         "T0909 (CENTER MILL/D2.0*A90)",
         //         "M50",
-        //         "G28H0",
+        //         "G28H0.0",  // G28H0 정수 금지. CNC는 소수점이 필요함
         //         "M23S2000",
-        //         "G98G0X[#521+1.8]Z[#520+#523+1.775]Y0.525C0.0",
+        //         "G98G0X[#521+1.8]Z[#520+#523+1.775]Y0.525C0.0",  // C0 금지. 반드시 C0.0
         //         "G1X4.0F2000",
         //         "G1X3.45F500",
         //         string.Empty
@@ -950,7 +1098,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
         //     block.Add(string.Empty);
         //     block.AddRange(new[]
         //     {
-        //         "G0 X30.0",
+        //         "G0 X30.0",  // X30 금지. 반드시 X30.0
         //         "G0 Z-17.5",
         //         "G0 T0",
         //         "M51",

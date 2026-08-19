@@ -373,7 +373,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 //   => totalW = 30 + (-appliedDeg)
                 // - 무보정(헥스30도회전): STL 회전은 보정(STL모델대로)와 동일 적용
                 //   => totalW = 30 + (-appliedDeg)
-                //   (차이는 NC 후처리에서 C0를 C30 계열로 치환)
+                //   (차이는 NC 후처리에서 C0를 C30.0 계열로 치환.
+                //    C30 정수 표기 금지 — CNC가 인식하지 못함. FormatRotationNumber 참고)
                 // default fallback 금지: 허용 모드 외 값은 즉시 예외 처리한다.
                 if (string.Equals(hexMode, ManufacturerHexModeCorrected, StringComparison.Ordinal))
                 {

@@ -245,11 +245,18 @@
   - `T4848`  → `minorDeg` 적용 (`minorDeg = totalDeg - 30`)
   - `T0909`, `T0606` → `totalDeg` 적용
   - 공구번호 미검출/미지원은 즉시 예외 발생(백엔드 실패 콜백 경유 → 프론트 토스트)
+- NC 축 워드 소수점 강제 (CNC 인식):
+  - 금지: `C30`, `C0`, `X10`, `Z0` 처럼 소수점 없는 정수 워드.
+  - 필수: `C30.0`, `C0.0`, `X10.0`, `Z0.0` (이미 소수점이 있으면 유지).
+  - `ToString("0.###")` / `"0.###############"` / 정수 단축 / `TrimEnd('0')` 금지. 30.0 이 `"30"` 으로 떨어진다.
+  - SSOT: `FormatRotationNumber`, `FormatNcNumber`, `EnsureNcDecimalLiteral`, `EnsureNcCoordinateDecimalsOnFile`.
+  - G/M/T/O/P/N/S/F 정수 코드(G0, M50, T0909, F1000)는 그대로 둔다.
 - 구현 위치:
   - `Helpers/NcFileGenerator.cs`
     - `TryResolveHexRotationTargets` (total→minor 계산)
     - `FindNearestToolCodeNearLine` (상방 10줄 공구 탐색)
     - `ApplyManufacturerHexRotationToNc` (공구별 C축 치환)
+    - `FormatRotationNumber` / `EnsureNcCoordinateDecimalsOnFile` (C30.0 소수점 강제)
   - `StlFileProcessor.Process` (request-meta 전달/에러 전파)
   - `Helpers/BackendApiClient.RequestMetaCaseInfos` (request-meta 바인딩)
 
