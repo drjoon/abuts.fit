@@ -60,6 +60,7 @@ Notes:
      선택 가능 조건: 신속 ETA YMD < 묶음 ETA YMD — `isExpressShippingSelectable`)
     (기공의뢰 주문-치과도착: 낮 12시 이전은 오늘 포함, 이후는 오늘 제외 —
      `practiceWorkPeriod.ts` / 백엔드 `countWeekdayBusinessDays`. 안내=`PRACTICE_ORDER_DAY_CUTOFF_NOTE`)
+     2+2 허용. 1+2는 지연 경고 후 주문, 0+2는 차단.
     (디자인+생산 `design_custom_abutment`: 묶음/신속 공통 출고 +1영업일 —
      `estimateShipDate.ts` / 백엔드 `needsDesignLeadDay`)
     (안내 카피: `PricingPolicyDialog` 출고 리드타임·출고 방식,

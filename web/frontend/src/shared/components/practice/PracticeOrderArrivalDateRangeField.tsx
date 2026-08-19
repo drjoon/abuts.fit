@@ -175,7 +175,7 @@ export function PracticeOrderArrivalDateRangeField({
               <p>주문일은 오늘 고정. 치과도착일만 선택하면 됩니다.</p>
               <p>{PRACTICE_CA_DIRECT_SHIP_NOTE}</p>
               <p>
-                3영업일 이하는 늦게 도착할 수 있으니, 4영업일 이상 설정해주세요.
+                1+2영업일은 도착이 늦을 수 있습니다. 0+2영업일은 주문할 수 없습니다.
               </p>
               <p>{PRACTICE_WORK_PERIOD_RECOMMEND_NOTE}</p>
             </TooltipContent>
@@ -263,9 +263,6 @@ export function PracticeOrderArrivalDateRangeField({
         </PopoverContent>
         ) : null}
       </Popover>
-      <p className="text-[11px] leading-relaxed text-muted-foreground">
-        {PRACTICE_ORDER_DAY_CUTOFF_NOTE}
-      </p>
       {locked && lockedHint ? (
         <p className="text-[11px] leading-relaxed text-muted-foreground">{lockedHint}</p>
       ) : null}

@@ -285,12 +285,12 @@ import {
 import { kstAddBusinessDays, kstYmdDiffDays } from "@/shared/date/kst";
 import { PracticeRushConfirmDialog } from "@/shared/components/practice/PracticeRushConfirmDialog";
 import {
-  PRACTICE_NORMAL_MIN_PERIOD_MESSAGE,
+  PRACTICE_WORK_PERIOD_BLOCK_MESSAGE,
+  PRACTICE_WORK_PERIOD_LATE_WARNING_MESSAGE,
   PRACTICE_RUSH_ARRIVAL_BUSINESS_DAYS,
-  PRACTICE_WORK_PERIOD_MIN_DAYS,
   getPracticeWorkPeriodDays,
-  isPracticeRushPeriod,
-  isPracticeWorkPeriodShort,
+  isPracticeWorkPeriodBlocked,
+  isPracticeWorkPeriodLateWarning,
   shouldEnablePracticeRushProcessing,
 } from "@/shared/practice/practiceWorkPeriod";
 import {
@@ -4969,29 +4969,16 @@ export const PracticeFileTransferPage = ({
       return;
     }
 
-    if (rushProcessing || isPracticeRushPeriod(getPracticeWorkPeriodDays(orderDate, arrivalDate))) {
-      if (!rushProcessing) {
-        setRushConfirmOpen(true);
-        setPendingRushArrivalYmd(arrivalDate);
-        toast({
-          title: "신속처리 확인이 필요합니다",
-          description: "3영업일 이하 납기는 신속처리입니다. 안내를 확인한 뒤 진행해주세요.",
-        });
-        return;
-      }
-    } else {
-      const periodDays = getPracticeWorkPeriodDays(orderDate, arrivalDate);
-      if (
-        isPracticeWorkPeriodShort(periodDays) ||
-        (typeof periodDays === "number" && periodDays < PRACTICE_WORK_PERIOD_MIN_DAYS)
-      ) {
-        toast({
-          title: PRACTICE_NORMAL_MIN_PERIOD_MESSAGE,
-          description: `현재 ${periodDays ?? "—"}영업일입니다. 최소 ${PRACTICE_WORK_PERIOD_MIN_DAYS}영업일(2+2)이 필요합니다. 3+2영업일 이상 설정을 권합니다.`,
-          variant: "destructive",
-        });
-        return;
-      }
+    const periodDays = getPracticeWorkPeriodDays(orderDate, arrivalDate);
+    if (isPracticeWorkPeriodBlocked(periodDays)) {
+      toast({
+        title: PRACTICE_WORK_PERIOD_BLOCK_MESSAGE,
+        variant: "destructive",
+      });
+      return;
+    }
+    if (isPracticeWorkPeriodLateWarning(periodDays)) {
+      toast({ title: PRACTICE_WORK_PERIOD_LATE_WARNING_MESSAGE });
     }
 
 
@@ -5757,23 +5744,15 @@ export const PracticeFileTransferPage = ({
                         ? String(nextArrival || "").trim()
                         : addDaysToDateInput(todayDate, arrivalDefaultDays);
                     const days = getPracticeWorkPeriodDays(todayDate, arrival);
-                    if (isPracticeRushPeriod(days)) {
-                      if (rushProcessing) {
-                        setArrivalDate(arrival);
-                        persistArrivalDefaultDaysFromRange(todayDate, arrival);
-                        return;
-                      }
-                      setPendingRushArrivalYmd(arrival);
-                      setRushConfirmOpen(true);
-                      return;
-                    }
-                    if (isPracticeWorkPeriodShort(days)) {
+                    if (isPracticeWorkPeriodBlocked(days)) {
                       toast({
-                        title: PRACTICE_NORMAL_MIN_PERIOD_MESSAGE,
-                        description: `현재 ${days ?? "—"}영업일입니다. 일반은 ${PRACTICE_WORK_PERIOD_MIN_DAYS}영업일(2+2) 이상, 신속처리는 3영업일 이하입니다. 3+2영업일 이상 설정을 권합니다.`,
+                        title: PRACTICE_WORK_PERIOD_BLOCK_MESSAGE,
                         variant: "destructive",
                       });
                       return;
+                    }
+                    if (isPracticeWorkPeriodLateWarning(days)) {
+                      toast({ title: PRACTICE_WORK_PERIOD_LATE_WARNING_MESSAGE });
                     }
                     setRushProcessing(false);
                     setArrivalDate(arrival);

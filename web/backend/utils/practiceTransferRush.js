@@ -4,6 +4,7 @@
 // - web/backend/services/practiceTransferBilling.service.js
 // - web/frontend/src/shared/practice/practiceWorkPeriod.ts
 // change-log:
+// - 2026-08-20: 2+2 허용. 1+2는 지연 경고 후 주문, 0+2는 차단.
 // - 2026-08-20: 낮 12시 전은 주문일 포함, 이후는 제외(프론트 kstYmdDiffBusinessDays와 동일).
 // - 2026-08-17: 신속처리 할증 없음(신규 배수 1). ≤2영업일만 제조 express.
 // - 2026-08-17: 신속처리 할증 기본 1.2·(1,2] 정규화. SystemSettings 설정값 반영.
@@ -24,14 +25,14 @@ export const PRACTICE_RUSH_MAX_WORK_PLUS_SHIP_DAYS = 3;
 /** @deprecated 제조 shippingMode는 항상 묶음. 지연고지 구간은 RUSH_MAX와 동일. */
 export const PRACTICE_EXPRESS_MAX_WORK_PLUS_SHIP_DAYS = 3;
 
-/** 일반 기공의뢰 최소 작업+배송(영업일) = 2+2 */
-export const PRACTICE_NORMAL_MIN_WORK_PLUS_SHIP_DAYS = 4;
+/** 일반 기공의뢰 최소 작업+배송(영업일) = 1+2. 0+2는 거부 */
+export const PRACTICE_NORMAL_MIN_WORK_PLUS_SHIP_DAYS = 3;
 
 export const PRACTICE_RUSH_COURIER_DISCLAIMER =
   "택배 사정으로 도착을 보장하지 않습니다.";
 
 export const PRACTICE_NORMAL_MIN_PERIOD_MESSAGE =
-  "납품 기일은 작업+배송 2+2영업일 이상이어야 합니다. 낮 12시 이전은 오늘 포함, 이후는 오늘 제외. 3영업일 이하는 신속처리로 진행하세요. 3+2영업일 이상 설정을 권합니다.";
+  "0+2영업일은 주문할 수 없습니다.";
 
 /** 청구/스냅샷용. 1 이하면 1, (1,2]는 소수 둘째 자리. */
 export function normalizeRushFeeMultiplier(value) {
@@ -265,34 +266,6 @@ export async function resolvePracticeTransferArrivalPolicy({
     configuredMultiplier: configured,
   });
 
-  if (rush) {
-    const days = countWeekdayBusinessDays(orderYmd, arrivalYmd, now);
-    const withinRush =
-      days != null &&
-      days >= 0 &&
-      days <= PRACTICE_RUSH_MAX_WORK_PLUS_SHIP_DAYS;
-    if (!withinRush) {
-      const locked = await resolveRushArrivalYmd(orderYmd, now);
-      if (!locked) {
-        return {
-          ok: false,
-          statusCode: 400,
-          message: "신속처리 도착일을 계산할 수 없습니다.",
-          reason: "rush_arrival_unresolved",
-        };
-      }
-      arrivalYmd = locked;
-      memo = upsertMemoArrivalYmd(memo, locked);
-    }
-    return {
-      ok: true,
-      transferMemo: memo,
-      rushFeeMultiplier,
-      arrivalYmd,
-      orderYmd,
-    };
-  }
-
   const days = countWeekdayBusinessDays(orderYmd, arrivalYmd, now);
   if (days == null || days < PRACTICE_NORMAL_MIN_WORK_PLUS_SHIP_DAYS) {
     return {
@@ -303,6 +276,16 @@ export async function resolvePracticeTransferArrivalPolicy({
       orderYmd,
       arrivalYmd,
       workPlusShipDays: days,
+    };
+  }
+
+  if (rush) {
+    return {
+      ok: true,
+      transferMemo: memo,
+      rushFeeMultiplier,
+      arrivalYmd,
+      orderYmd,
     };
   }
   return {

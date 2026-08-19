@@ -76,12 +76,12 @@ describe("practiceTransferRush", () => {
     expect(countWeekdayBusinessDays("2026-08-17", "2026-08-21", afterNoon)).toBe(
       4,
     );
-    expect(PRACTICE_NORMAL_MIN_WORK_PLUS_SHIP_DAYS).toBe(4);
+    expect(PRACTICE_NORMAL_MIN_WORK_PLUS_SHIP_DAYS).toBe(3);
     expect(countWeekdayBusinessDays("2026-08-17", "2026-08-20", afterNoon)).toBe(
       3,
     );
     expect(
-      countWeekdayBusinessDays("2026-08-17", "2026-08-20", afterNoon) <
+      countWeekdayBusinessDays("2026-08-17", "2026-08-19", afterNoon) <
         PRACTICE_NORMAL_MIN_WORK_PLUS_SHIP_DAYS,
     ).toBe(true);
   });
