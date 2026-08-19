@@ -14,6 +14,7 @@
 // - 2026-08-18: salesmanRequestUnitPrice(영업자 건당) 추가.
 // - 2026-08-15: 제조사 하청 단가·affiliateVatRate 설정 필드 추가.
 // - 2026-08-15: 특별 공급가 CNC/환봉 × 생산만·디자인+생산 정규화. 의뢰자 로드 시 단가 오버라이드.
+// - 2026-08-19: global SystemSettings 60초 캐시. requestorAnchor가 있으면 사업자 재조회 생략.
 import { Types } from "mongoose";
 import SystemSettings from "../models/systemSettings.model.js";
 import BusinessAnchor from "../models/businessAnchor.model.js";
@@ -528,8 +529,27 @@ export async function resolveRequestorAbutmentPricingTier(requestorOrgId) {
   });
 }
 
-export async function loadCreditSettingsDefaults(options = {}) {
+const GLOBAL_SETTINGS_CACHE_TTL_MS = 60 * 1000;
+let globalSettingsCache = { at: 0, value: null };
+
+async function loadCachedGlobalCreditSettingsDoc() {
+  const now = Date.now();
+  if (
+    globalSettingsCache.value &&
+    now - globalSettingsCache.at < GLOBAL_SETTINGS_CACHE_TTL_MS
+  ) {
+    return globalSettingsCache.value;
+  }
   const doc = await SystemSettings.findOne({ key: "global" }).lean();
+  globalSettingsCache = { at: now, value: doc };
+  return doc;
+}
+
+export async function loadCreditSettingsDefaults(options = {}) {
+  const doc =
+    options?.preloadedDoc !== undefined
+      ? options.preloadedDoc
+      : await loadCachedGlobalCreditSettingsDoc();
   const base = normalizeLoadedCreditSettings(doc?.creditSettings || {});
   const requestorOrgId = options?.requestorOrgId;
   if (!requestorOrgId) return base;
@@ -537,7 +557,17 @@ export async function loadCreditSettingsDefaults(options = {}) {
   const id = String(requestorOrgId || "").trim();
   let requestorKind = null;
   let pricingTier = "regular";
-  if (id && Types.ObjectId.isValid(id)) {
+  const providedAnchor = options?.requestorAnchor;
+  if (providedAnchor && typeof providedAnchor === "object") {
+    requestorKind = String(providedAnchor?.requestorKind || "").trim();
+    if (requestorKind === "practice") {
+      pricingTier = resolveAbutsAbutmentPricingTier({
+        practiceMembershipActive: Boolean(
+          providedAnchor?.practiceMembershipActive,
+        ),
+      });
+    }
+  } else if (id && Types.ObjectId.isValid(id)) {
     const anchor = await BusinessAnchor.findById(id)
       .select({ requestorKind: 1, practiceMembershipActive: 1 })
       .lean();

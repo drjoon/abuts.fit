@@ -151,13 +151,18 @@ async function lockCreditBalanceGuardByAnchor({ businessAnchorId, session }) {
   return { locked: true };
 }
 
+let cachedDevopsAnchorId = "";
+
 async function resolveDevopsEscrowOwnerId(session = null) {
+  if (cachedDevopsAnchorId && !session) return cachedDevopsAnchorId;
   const devops = await BusinessAnchor.findOne({ businessType: "devops" })
     .select({ _id: 1 })
     .sort({ createdAt: 1 })
     .session(session || null)
     .lean();
-  return devops?._id ? String(devops._id) : null;
+  const id = devops?._id ? String(devops._id) : "";
+  if (id && !session) cachedDevopsAnchorId = id;
+  return id || null;
 }
 
 async function resolveShippingFeePerBox() {
@@ -664,6 +669,7 @@ export async function holdRequestCreditsOnSubmit({
   session = null,
   devopsAnchorId: devopsAnchorIdArg = null,
   shippingFee: shippingFeeArg = null,
+  seedBalance = null,
 }) {
   const list = (Array.isArray(requests) ? requests : []).filter(Boolean);
   if (!list.length) return { held: false, reason: "empty" };
@@ -699,6 +705,11 @@ export async function holdRequestCreditsOnSubmit({
     }
     const cached = balanceByAnchor.get(requestorAnchorId);
     if (cached) return cached;
+    if (seedBalance && typeof seedBalance === "object") {
+      const seeded = normalizeHoldBalanceBuckets(seedBalance);
+      balanceByAnchor.set(requestorAnchorId, seeded);
+      return seeded;
+    }
     const computed = await computeBusinessCreditBalanceFromLedger({
       businessAnchorId: requestorAnchorId,
       session,

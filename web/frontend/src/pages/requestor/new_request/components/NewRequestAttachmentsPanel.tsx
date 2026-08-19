@@ -1,5 +1,5 @@
 // change-log:
-// - 2026-08-19: 업로드 완료 시 파일카드에 「업로드됨」+ 초록 바(첨부 직후 사전 업로드가 보임).
+// - 2026-08-19: 업로드 완료 시 파일카드에 「업로드됨」+ 파란 바(첨부 직후 사전 업로드가 보임).
 // - 2026-08-19: 파일카드에 백그라운드 업로드 % 표시(기공의뢰 파일페인과 동일).
 // - 2026-08-16: 메타 뱃지를 RequestCaseMetaBadges 공용 컴포넌트로.
 // - 2026-08-13: 첨부를 PracticeTransferFileDropTarget + useFilePreUpload 진행률바로.
@@ -143,9 +143,7 @@ function renderUploadProgressBar(progress?: PreUploadFileProgress | null) {
           "h-full transition-[width] duration-150 ease-out",
           progress.status === "error"
             ? "bg-destructive"
-            : progress.status === "done"
-              ? "bg-emerald-500"
-              : "bg-primary",
+            : "bg-primary",
         )}
         style={{
           width: `${

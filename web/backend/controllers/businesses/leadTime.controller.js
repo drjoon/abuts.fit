@@ -2,6 +2,7 @@
 // - web/backend/rules.md
 // - web/backend/app.js
 // - web/backend/server.js
+// - 2026-08-19: getManufacturerLeadTimesUtil 60초 메모리 캐시(제출 반복 조회 생략).
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 
 const DEFAULT_LEAD_TIMES = {
@@ -11,6 +12,29 @@ const DEFAULT_LEAD_TIMES = {
   d12: { minBusinessDays: 4, maxBusinessDays: 7 },
 };
 
+const LEAD_TIMES_CACHE_TTL_MS = 60 * 1000;
+let leadTimesCache = { at: 0, value: null };
+
+const mergeLeadTimes = (raw) => {
+  const base = { ...DEFAULT_LEAD_TIMES };
+  if (!raw || typeof raw !== "object") return base;
+  ["d6", "d8", "d10", "d12"].forEach((key) => {
+    const entry = raw?.[key];
+    if (!entry) return;
+    const min = Number.isFinite(entry.minBusinessDays)
+      ? Math.max(1, Math.floor(entry.minBusinessDays))
+      : base[key].minBusinessDays;
+    const max = Number.isFinite(entry.maxBusinessDays)
+      ? Math.max(1, Math.floor(entry.maxBusinessDays))
+      : base[key].maxBusinessDays;
+    base[key] = {
+      minBusinessDays: Math.min(min, max),
+      maxBusinessDays: Math.max(min, max),
+    };
+  });
+  return base;
+};
+
 /**
  * GET /api/businesses/manufacturer-lead-times
  * 제조사가 설정한 배송 리드타임을 조회 (모든 역할 접근 가능)
@@ -18,50 +42,10 @@ const DEFAULT_LEAD_TIMES = {
 export async function getManufacturerLeadTimes(req, res) {
   try {
     res.set("x-abuts-handler", "leadTime.getManufacturerLeadTimes");
-
-    const latestManufacturer = await BusinessAnchor.findOne({
-      businessType: "manufacturer",
-      "shippingPolicy.leadTimes": { $exists: true },
-    })
-      .sort({ "shippingPolicy.updatedAt": -1, updatedAt: -1 })
-      .select({
-        "shippingPolicy.leadTimes": 1,
-        "shippingPolicy.weeklyBatchDays": 1,
-      })
-      .lean();
-
-    const storedLeadTimes = latestManufacturer?.shippingPolicy?.leadTimes;
-    const weeklyBatchDays =
-      latestManufacturer?.shippingPolicy?.weeklyBatchDays || [];
-
-    const mergeLeadTimes = (raw) => {
-      const base = { ...DEFAULT_LEAD_TIMES };
-      if (!raw || typeof raw !== "object") return base;
-      ["d6", "d8", "d10", "d12"].forEach((key) => {
-        const entry = raw?.[key];
-        if (!entry) return;
-        const min = Number.isFinite(entry.minBusinessDays)
-          ? Math.max(1, Math.floor(entry.minBusinessDays))
-          : base[key].minBusinessDays;
-        const max = Number.isFinite(entry.maxBusinessDays)
-          ? Math.max(1, Math.floor(entry.maxBusinessDays))
-          : base[key].maxBusinessDays;
-        base[key] = {
-          minBusinessDays: Math.min(min, max),
-          maxBusinessDays: Math.max(min, max),
-        };
-      });
-      return base;
-    };
-
-    const effectiveLeadTimes = mergeLeadTimes(storedLeadTimes);
-
+    const data = await getManufacturerLeadTimesUtil();
     return res.json({
       success: true,
-      data: {
-        leadTimes: effectiveLeadTimes,
-        weeklyBatchDays,
-      },
+      data,
     });
   } catch (error) {
     console.error("[getManufacturerLeadTimes] error:", error);
@@ -79,6 +63,14 @@ export async function getManufacturerLeadTimes(req, res) {
  */
 export async function getManufacturerLeadTimesUtil() {
   try {
+    const now = Date.now();
+    if (
+      leadTimesCache.value &&
+      now - leadTimesCache.at < LEAD_TIMES_CACHE_TTL_MS
+    ) {
+      return leadTimesCache.value;
+    }
+
     const latestManufacturer = await BusinessAnchor.findOne({
       businessType: "manufacturer",
       "shippingPolicy.leadTimes": { $exists: true },
@@ -90,34 +82,15 @@ export async function getManufacturerLeadTimesUtil() {
       })
       .lean();
 
-    const storedLeadTimes = latestManufacturer?.shippingPolicy?.leadTimes;
-    const weeklyBatchDays =
-      latestManufacturer?.shippingPolicy?.weeklyBatchDays || [];
-
-    const mergeLeadTimes = (raw) => {
-      const base = { ...DEFAULT_LEAD_TIMES };
-      if (!raw || typeof raw !== "object") return base;
-      ["d6", "d8", "d10", "d12"].forEach((key) => {
-        const entry = raw?.[key];
-        if (!entry) return;
-        const min = Number.isFinite(entry.minBusinessDays)
-          ? Math.max(1, Math.floor(entry.minBusinessDays))
-          : base[key].minBusinessDays;
-        const max = Number.isFinite(entry.maxBusinessDays)
-          ? Math.max(1, Math.floor(entry.maxBusinessDays))
-          : base[key].maxBusinessDays;
-        base[key] = {
-          minBusinessDays: Math.min(min, max),
-          maxBusinessDays: Math.max(min, max),
-        };
-      });
-      return base;
+    const result = {
+      leadTimes: mergeLeadTimes(
+        latestManufacturer?.shippingPolicy?.leadTimes,
+      ),
+      weeklyBatchDays:
+        latestManufacturer?.shippingPolicy?.weeklyBatchDays || [],
     };
-
-    return {
-      leadTimes: mergeLeadTimes(storedLeadTimes),
-      weeklyBatchDays,
-    };
+    leadTimesCache = { at: now, value: result };
+    return result;
   } catch (error) {
     console.error("[getManufacturerLeadTimesUtil] error:", error);
     return {

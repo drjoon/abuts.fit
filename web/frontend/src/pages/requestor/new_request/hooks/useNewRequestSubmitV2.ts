@@ -7,6 +7,7 @@
 // - web/frontend/src/shared/hooks/useFilePreUpload.ts
 // - web/backend/controllers/requests/creation.from-draft.controller.js
 // - 2026-08-19: 성공 시 로컬 초안을 파일 비우기 전에 지움. 제출 시작/성공 콜백으로 입력 중 중복 체크를 무효화.
+// - 2026-08-19: IndexedDB 파일 삭제는 이동과 겹쳐 제출 체감을 막지 않는다.
 // - 2026-08-19: 제출 잠금(ref). 방금 생성된 건을 중복으로 오인하면 성공 처리.
 // - 2026-08-13: 제출 시 사전업로드 캐시·from-draft caseInfos로 PATCH/credits GET 생략
 /**
@@ -321,8 +322,9 @@ export const useNewRequestSubmitV2 = ({
       try {
         const { clearLocalDraft } = await import("../utils/localDraftStorage");
         clearLocalDraft();
-        const { clearAllFiles } = await import("../utils/fileIndexedDB");
-        await clearAllFiles();
+        void import("../utils/fileIndexedDB")
+          .then(({ clearAllFiles }) => clearAllFiles())
+          .catch(() => {});
       } catch (err) {
         console.warn("[submitFromDraft] Failed to clear local draft:", err);
       }

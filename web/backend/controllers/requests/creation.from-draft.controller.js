@@ -9,8 +9,8 @@
 // - web/backend/rules.md
 // change-log:
 // - 2026-08-19: 제출 트랜잭션에서 크레딧 보류는 잔액 집계 1회·가드 1회로 재사용.
-// - 2026-08-19: 제출 지연 단축. 가격기준일·devops prefetch, 스케줄은 트랜잭션 밖,
-//   로트 일괄 발급, 보류 저널 insertMany.
+// - 2026-08-19: 제출 지연 단축. 설정/리드타임 캐시, 사업자 1회 조회, 잔액 집계는 트랜잭션 안 1회,
+//   성공 후 크레딧 소켓은 응답을 막지 않음.
 // - 2026-08-19: 의뢰 생성 후 GET /my 메모리 캐시 무효화(진행중 목록이 비어 보이는 문제).
 // - 2026-08-18: 생산 의뢰는 준비 단계 진입(생성) 시 로트번호(3글자)를 발급한다.
 // - 2026-08-13: 제출 지연 단축. 설정/리드타임/크레딧을 트랜잭션 밖 병렬 prefetch,
@@ -310,13 +310,13 @@ export async function createRequestsFromDraft(req, res) {
     const shippingOrgIdEarly = String(
       req.user?.businessAnchorId || earlyOrgId || "",
     );
-    const [draft, lockStatus, creditSettings, manufacturerSettings, shippingOrg, creditBalance, pricingBaseDate, devopsAnchorPrefetch] =
+    const [draft, lockStatus, creditSettingsBase, manufacturerSettings, shippingOrg] =
       await Promise.all([
         DraftRequest.findById(draftId).lean(),
         earlyOrgId && Types.ObjectId.isValid(earlyOrgId)
           ? checkCreditLock(earlyOrgId)
           : Promise.resolve({ isLocked: false }),
-        loadCreditSettingsDefaults({ requestorOrgId: earlyOrgId }),
+        loadCreditSettingsDefaults(),
         getManufacturerLeadTimesUtil().catch(() => null),
         shippingOrgIdEarly && Types.ObjectId.isValid(shippingOrgIdEarly)
           ? BusinessAnchor.findById(shippingOrgIdEarly)
@@ -326,23 +326,27 @@ export async function createRequestsFromDraft(req, res) {
                 "requestSettings.defaultRequestorHexRotation": 1,
                 "requestSettings.defaultManufacturerHexRotation": 1,
                 "requestSettings.designSoftware": 1,
+                requestorKind: 1,
+                practiceMembershipActive: 1,
+                "verification.verifiedAt": 1,
+                createdAt: 1,
               })
               .lean()
           : Promise.resolve(null),
-        shippingOrgIdEarly && Types.ObjectId.isValid(shippingOrgIdEarly)
-          ? getBusinessCreditBalanceBreakdown({
-              businessAnchorId: shippingOrgIdEarly,
-            }).catch(() => null)
-          : Promise.resolve(null),
-        resolveRequestorPricingBaseDate({
-          requestorId: req.user?._id,
-          requestorOrgId: earlyOrgId,
-        }).catch(() => null),
-        BusinessAnchor.findOne({ businessType: "devops" })
-          .select({ _id: 1 })
-          .sort({ createdAt: 1 })
-          .lean(),
       ]);
+    const creditSettings = earlyOrgId
+      ? await loadCreditSettingsDefaults({
+          requestorOrgId: earlyOrgId,
+          requestorAnchor: shippingOrg,
+        })
+      : creditSettingsBase;
+    const pricingBaseDate =
+      shippingOrg?.verification?.verifiedAt ||
+      shippingOrg?.createdAt ||
+      (await resolveRequestorPricingBaseDate({
+        requestorId: req.user?._id,
+        requestorOrgId: earlyOrgId,
+      }).catch(() => null));
     const manufacturerLeadTimes = manufacturerSettings?.leadTimes || null;
     console.log("[createRequestsFromDraft] draft loaded", {
       t: Date.now() - startTime,
@@ -1143,11 +1147,6 @@ export async function createRequestsFromDraft(req, res) {
     const totalShippingFee = isPracticeRoutingSubmission
       ? 0
       : boxCount * shippingFeePerBox;
-    const devopsAnchorIdPrefetch = isPracticeRoutingSubmission
-      ? ""
-      : devopsAnchorPrefetch?._id
-        ? String(devopsAnchorPrefetch._id)
-        : "";
     console.log("[createRequestsFromDraft] pre-fetch done", {
       t: Date.now() - startTime,
       shippingFeePerBox,
@@ -1273,7 +1272,12 @@ export async function createRequestsFromDraft(req, res) {
           }
         }
 
+        let creditBalanceForHold = null;
         if (!isPracticeRoutingSubmission) {
+          creditBalanceForHold = await getBusinessCreditBalanceBreakdown({
+            businessAnchorId,
+            session,
+          });
           const {
             balance,
             spendableBalance,
@@ -1281,12 +1285,7 @@ export async function createRequestsFromDraft(req, res) {
             freeRequestCredit,
             freeShippingCredit,
             settlementCredit,
-          } = creditBalance && typeof creditBalance === "object"
-            ? creditBalance
-            : await getBusinessCreditBalanceBreakdown({
-                businessAnchorId,
-                session,
-              });
+          } = creditBalanceForHold;
           console.log("[createRequestsFromDraft] Credit balance check", {
             t: Date.now() - startTime,
             balance,
@@ -1664,7 +1663,7 @@ export async function createRequestsFromDraft(req, res) {
             actorUserId: req.user?._id || null,
             session,
             shippingFee: shippingFeePerBox,
-            devopsAnchorId: devopsAnchorIdPrefetch,
+            seedBalance: creditBalanceForHold,
           });
           console.log("[createRequestsFromDraft] credit hold done", {
             t: Date.now() - startTime,
@@ -1723,7 +1722,7 @@ export async function createRequestsFromDraft(req, res) {
             const { emitCreditBalanceUpdatedToBusiness } = await import(
               "../../utils/creditRealtime.js"
             );
-            await emitCreditBalanceUpdatedToBusiness({
+            void emitCreditBalanceUpdatedToBusiness({
               businessAnchorId: createdAnchorId,
               balanceDelta: 0,
               reason: "request_submit_hold",
