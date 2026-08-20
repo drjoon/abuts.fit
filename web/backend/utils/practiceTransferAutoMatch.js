@@ -7,6 +7,7 @@
 // - web/backend/utils/practiceTransferAutoMatchCore.js
 import { Types } from "mongoose";
 import BusinessAnchor from "../models/businessAnchor.model.js";
+import PracticeTransfer from "../models/practiceTransfer.model.js";
 import { isLabFeeScheduleConfigured } from "./labFeeSchedule.js";
 import {
   canReceivePracticeTransfer,
@@ -17,6 +18,7 @@ import {
   ABUTS_LAB_DISPLAY_NAME,
   AUTO_MATCH_LAB_DISPLAY_NAME,
   AUTO_MATCH_PRACTICE_DISPLAY_NAME,
+  CERTIFIED_PARTNER_LAB_DISPLAY_NAME,
   PRACTICE_TRANSFER_AUTO_MATCH_CLAIM_HOURS,
   PRACTICE_TRANSFER_AUTO_MATCH_PRIORITY_MS,
   buildAutoMatchPriorityAccessClause,
@@ -24,12 +26,20 @@ import {
   buildAutoMatchPriorityUntil,
   canAccessAutoMatchOpenPool,
   canOpenPracticeTransferSubcontract,
+  collectSubcontractDirectBlockedLabIds,
   getAssigneeLabAnchorId,
   getAutoMatchPriorityLabAnchorIds,
   getPrimeLabAnchorId,
+  isLabIdBlockedAsDirectPracticeTarget,
   isPracticeTransferSubcontracted,
+  isSubcontractFeeScheduleContext,
+  isSubcontractIdentityHiddenFromViewer,
   isSubcontractPoolOpen,
+  resolveFeeScheduleLabAnchorId,
   resolvePerformingLabAnchorId,
+  SUBCONTRACT_DIRECT_BLOCKED_MESSAGE,
+  SUBCONTRACT_DIRECT_BLOCKED_REASON,
+  SUBCONTRACT_PRACTICE_DISPLAY_NAME,
   isAutoMatchClaimActive,
   isAutoMatchCompleted,
   isAutoMatchMode,
@@ -42,11 +52,14 @@ import {
   normalizeLabAnchorIdList,
   toAutoMatchApiFieldsCore,
 } from "./practiceTransferAutoMatchCore.js";
+import { filterLabAnchorIdsByStarBand } from "./practiceLabRating.js";
 
 export {
   AUTO_MATCH_LAB_DISPLAY_NAME,
   AUTO_MATCH_PRACTICE_DISPLAY_NAME,
   ABUTS_LAB_DISPLAY_NAME,
+  CERTIFIED_PARTNER_LAB_DISPLAY_NAME,
+  CERTIFIED_PARTNER_LAB_DISPLAY_NAME,
   PRACTICE_TRANSFER_AUTO_MATCH_CLAIM_HOURS,
   PRACTICE_TRANSFER_AUTO_MATCH_PRIORITY_MS,
   buildAutoMatchPriorityAccessClause,
@@ -65,18 +78,63 @@ export {
   isInternalLabBusinessType,
   isPracticeTransferLabReceiverRole,
   isPracticeTransferSubcontracted,
+  isSubcontractFeeScheduleContext,
+  isSubcontractIdentityHiddenFromViewer,
   isSubcontractPoolOpen,
+  isLabIdBlockedAsDirectPracticeTarget,
   normalizeLabAnchorIdList,
+  resolveFeeScheduleLabAnchorId,
   resolvePerformingLabAnchorId,
+  SUBCONTRACT_DIRECT_BLOCKED_MESSAGE,
+  SUBCONTRACT_DIRECT_BLOCKED_REASON,
+  SUBCONTRACT_PRACTICE_DISPLAY_NAME,
+  collectSubcontractDirectBlockedLabIds,
 };
+
+export async function loadSubcontractDirectBlockedLabAnchorIds(
+  practiceAnchorId,
+) {
+  const practiceId = String(practiceAnchorId || "").trim();
+  if (!practiceId || !Types.ObjectId.isValid(practiceId)) return [];
+  const docs = await PracticeTransfer.find({
+    practiceBusinessAnchorId: new Types.ObjectId(practiceId),
+    assigneeLabAnchorId: { $exists: true, $ne: null },
+  })
+    .select({ assigneeLabAnchorId: 1, targetLabAnchorId: 1 })
+    .lean();
+  return collectSubcontractDirectBlockedLabIds(docs);
+}
+
+export async function assertLabAllowedAsDirectPracticeTarget({
+  practiceAnchorId,
+  labAnchorId,
+} = {}) {
+  const labId = String(labAnchorId || "").trim();
+  if (!labId || !Types.ObjectId.isValid(labId)) return;
+  const blocked = await loadSubcontractDirectBlockedLabAnchorIds(
+    practiceAnchorId,
+  );
+  if (!isLabIdBlockedAsDirectPracticeTarget(labId, blocked)) return;
+  const err = new Error(SUBCONTRACT_DIRECT_BLOCKED_MESSAGE);
+  err.statusCode = 409;
+  err.code = SUBCONTRACT_DIRECT_BLOCKED_REASON;
+  throw err;
+}
 
 /** 치과에는 원청(어벗츠기공소)만 보이고, 하청 기공소는 숨긴다. */
 export const redactAutoMatchLabIdentity = (
   matchingMode,
   { targetLabName = "", targetLabAnchorId = null } = {},
-  { reveal = false } = {},
+  { reveal = false, transfer = null } = {},
 ) => {
-  if (reveal || !isAutoMatchMode({ matchingMode })) {
+  const hideSubcontractAssignee =
+    Boolean(transfer) &&
+    isPracticeTransferSubcontracted(transfer) &&
+    !reveal;
+  if (
+    reveal ||
+    (!isAutoMatchMode({ matchingMode }) && !hideSubcontractAssignee)
+  ) {
     return {
       targetLabName: String(targetLabName || "").trim(),
       targetLabAnchorId: targetLabAnchorId || null,
@@ -86,25 +144,35 @@ export const redactAutoMatchLabIdentity = (
   const isLegacyAutoLabel =
     name === AUTO_MATCH_LAB_DISPLAY_NAME || name === "자동매칭";
   return {
-    targetLabName: isLegacyAutoLabel || !name ? ABUTS_LAB_DISPLAY_NAME : name,
-    targetLabAnchorId: targetLabAnchorId || null,
+    targetLabName:
+      hideSubcontractAssignee || isLegacyAutoLabel || !name
+        ? ABUTS_LAB_DISPLAY_NAME
+        : name,
+    targetLabAnchorId: hideSubcontractAssignee
+      ? transfer?.targetLabAnchorId || targetLabAnchorId || null
+      : targetLabAnchorId || null,
   };
 };
 
-/** 자동매칭 의뢰의 치과명·담당자명은 기공소에 비공개. */
+/** 자동매칭·하청 풀 의뢰의 치과명·담당자명은 협력 기공소에 비공개. */
 export const redactAutoMatchPracticeIdentity = (
   matchingMode,
   practice = {},
-  { reveal = false } = {},
+  { reveal = false, transfer = null, viewerLabAnchorId = null } = {},
 ) => {
-  if (reveal || !isAutoMatchMode({ matchingMode })) {
+  const hideForSubcontract =
+    transfer &&
+    isSubcontractIdentityHiddenFromViewer(transfer, viewerLabAnchorId);
+  if (reveal || (!isAutoMatchMode({ matchingMode }) && !hideForSubcontract)) {
     return {
       businessName: String(practice?.businessName || "").trim(),
       userName: String(practice?.userName || "").trim(),
     };
   }
   return {
-    businessName: AUTO_MATCH_PRACTICE_DISPLAY_NAME,
+    businessName: hideForSubcontract
+      ? SUBCONTRACT_PRACTICE_DISPLAY_NAME
+      : AUTO_MATCH_PRACTICE_DISPLAY_NAME,
     userName: "",
   };
 };
@@ -352,9 +420,11 @@ export const buildAutoMatchClaimableFilter = (
   };
 };
 
-/** 어벗츠 하청 풀: 인증·수가설정 기공소(원청 internalLab 제외). 별점 없음. */
+/** 어벗츠 하청 풀: 인증·수가설정 기공소(원청 internalLab 제외). 치과 별점 구간 안만. */
 export async function loadCertifiedSubcontractLabAnchorIds({
   excludeLabAnchorId = null,
+  minStars,
+  maxStars,
 } = {}) {
   const exclude = String(excludeLabAnchorId || "").trim();
   const labs = await loadAutoMatchEligibleLabAnchors({
@@ -367,7 +437,26 @@ export async function loadCertifiedSubcontractLabAnchorIds({
     if (!isLabFeeScheduleConfigured(lab.labFeeSchedule)) continue;
     ids.push(lab._id);
   }
-  return ids;
+  return filterLabAnchorIdsByStarBand({
+    labAnchorIds: ids,
+    minStars,
+    maxStars,
+  });
+}
+
+/** 지정·픽커 게이트: 검증 기공소(어벗츠 포함) 중 별점 구간 안. 인증 ON 불필요. */
+export async function loadStarBandEligibleLabAnchorIds({
+  minStars,
+  maxStars,
+} = {}) {
+  const labs = await BusinessAnchor.find(verifiedLabCapableAnchorFilter())
+    .select({ _id: 1 })
+    .lean();
+  return filterLabAnchorIdsByStarBand({
+    labAnchorIds: labs.map((lab) => lab._id),
+    minStars,
+    maxStars,
+  });
 };
 
 export async function loadAutoMatchEligibleLabAnchors({

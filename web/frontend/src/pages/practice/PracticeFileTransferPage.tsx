@@ -419,7 +419,7 @@ const makeTransferId = () => {
 };
 
 const DEFAULT_ARRIVAL_OFFSET_DAYS = 7;
-const PRESET_PROSTHESIS_TYPES = ["인레이", "크라운", "커스텀어벗", "브리지", "Pontic", "유지장치", "임시치아", "작업X"] as const;
+const PRESET_PROSTHESIS_TYPES = ["인레이", "크라운", "커스텀어벗", "브리지", "유지장치", "임시치아", "작업X"] as const;
 const PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY = "practice_transfer_settings_v1";
 
 type ToothWorkSelection = SharedToothWorkSelection;
@@ -536,7 +536,6 @@ const isMissingToothProsthesisType = (prosthesisType: string) => {
 
 const isBridgeLikeProsthesisType = (prosthesisType: string) =>
   prosthesisType === "브리지" ||
-  prosthesisType === "Pontic" ||
   prosthesisType === "유지장치" ||
   isMissingToothProsthesisType(prosthesisType);
 
@@ -570,7 +569,7 @@ const normalizeProsthesisTypes = (items: string[]) => {
     .map((item) => sanitizeProsthesisTypeLabel(String(item || "")))
     .filter(Boolean)
     .map((item) => {
-      if (/^pontic$/i.test(item)) return "Pontic";
+      if (/^pontic$/i.test(item)) return "브리지";
       if (
         item === "작업X" ||
         item === "상실치" ||
@@ -586,13 +585,11 @@ const normalizeProsthesisTypes = (items: string[]) => {
     new Map(canonical.map((item) => [item.toLowerCase(), item])).values(),
   );
 
-  const withPontic = [...deduped];
-  if (!withPontic.some((item) => /^pontic$/i.test(item))) withPontic.push("Pontic");
-  if (!withPontic.some((item) => item === "작업X" || item === "상실치")) withPontic.push("작업X");
-  return withPontic.length ? withPontic : [...PRESET_PROSTHESIS_TYPES];
+  if (!deduped.some((item) => item === "작업X" || item === "상실치")) deduped.push("작업X");
+  return deduped.length ? deduped : [...PRESET_PROSTHESIS_TYPES];
 };
 
-/** 케이스 동기화가 목록을 Pontic만으로 줄이지 않도록 프리셋을 항상 병합한다. */
+/** 케이스 동기화가 목록을 작업X만으로 줄이지 않도록 프리셋을 항상 병합한다. */
 const ensurePresetProsthesisTypes = (items: string[] | null | undefined) =>
   normalizeProsthesisTypes([
     ...PRESET_PROSTHESIS_TYPES,
@@ -1466,6 +1463,7 @@ export const PracticeFileTransferPage = ({
       const senderId = String(message.sender?._id || "");
       const name = anonymizeAutoMatchChatSenderName({
         matchingMode: selectedTransfer?.matchingMode,
+        subcontracted: selectedTransfer?.autoMatch?.subcontracted,
         isOwn: senderId === currentUserId,
         counterpartLabel: "기공소",
         name: String(message.sender?.name || ""),
@@ -1475,7 +1473,12 @@ export const PracticeFileTransferPage = ({
         sender: { ...message.sender, name },
       };
     });
-  }, [authUser, chatMessages, selectedTransfer?.matchingMode]);
+  }, [
+    authUser,
+    chatMessages,
+    selectedTransfer?.matchingMode,
+    selectedTransfer?.autoMatch?.subcontracted,
+  ]);
 
   const combinedFilesSizeMb = useMemo(() => {
     const localBytes = files.reduce((sum, file) => sum + Number(file.size || 0), 0);
@@ -5001,8 +5004,8 @@ export const PracticeFileTransferPage = ({
     );
     if (hasBridgeLikeWithoutLinkedTooth) {
       toast({
-        title: "브리지/Pontic/작업X/유지장치 연결 치아를 선택해주세요",
-        description: "브리지, Pontic, 작업X, 유지장치 형태는 인접 치아를 최소 1개 연결해야 합니다.",
+        title: "브리지/작업X/유지장치 연결 치아를 선택해주세요",
+        description: "브리지, 작업X, 유지장치 형태는 인접 치아를 최소 1개 연결해야 합니다.",
         variant: "destructive",
       });
       return;

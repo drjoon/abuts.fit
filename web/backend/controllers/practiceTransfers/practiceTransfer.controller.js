@@ -54,6 +54,10 @@ import {
   redactAutoMatchPracticeIdentity,
   resolveAbutsPrimeLabFields,
   resolvePerformingLabAnchorId,
+  assertLabAllowedAsDirectPracticeTarget,
+  loadSubcontractDirectBlockedLabAnchorIds,
+  SUBCONTRACT_DIRECT_BLOCKED_MESSAGE,
+  SUBCONTRACT_DIRECT_BLOCKED_REASON,
   toAutoMatchApiFields,
   wantsAbutsPrimePool,
 } from "../../utils/practiceTransferAutoMatch.js";
@@ -438,6 +442,29 @@ const resolveCreateMatchingTarget = async ({
       : null,
     targetLabName: String(targetLabName || "").trim(),
   };
+};
+
+const rejectIfSubcontractDirectBlocked = async (
+  res,
+  { practiceAnchorId, matchingMode, labAnchorId },
+) => {
+  if (String(matchingMode || "").trim() !== "direct") return false;
+  try {
+    await assertLabAllowedAsDirectPracticeTarget({
+      practiceAnchorId,
+      labAnchorId,
+    });
+    return false;
+  } catch (err) {
+    const status = Number(err?.statusCode || 409);
+    res.status(status >= 400 && status < 600 ? status : 409).json({
+      success: false,
+      message:
+        err?.message || SUBCONTRACT_DIRECT_BLOCKED_MESSAGE,
+      reason: err?.code || SUBCONTRACT_DIRECT_BLOCKED_REASON,
+    });
+    return true;
+  }
 };
 
 /**
@@ -1490,6 +1517,16 @@ export async function upsertPracticeTransferDraft(req, res) {
     // 임시저장/동기화: 기공소·환자명 둘 다 필수(치아·메모·파일만으로는 목록 누적 방지).
     const hasLabAndPatient = hasPatientNameInMemo && hasLab;
 
+    if (
+      await rejectIfSubcontractDirectBlocked(res, {
+        practiceAnchorId: req.user?.businessAnchorId,
+        matchingMode: "direct",
+        labAnchorId: targetLabAnchorId,
+      })
+    ) {
+      return;
+    }
+
     let normalizedDraftFiles = [];
 
     if (!hasLabAndPatient) {
@@ -2113,6 +2150,15 @@ export async function createPracticeTransfer(req, res) {
         message: "대상 기공소를 선택해주세요.",
       });
     }
+    if (
+      await rejectIfSubcontractDirectBlocked(res, {
+        practiceAnchorId,
+        matchingMode,
+        labAnchorId: targetLabAnchorId,
+      })
+    ) {
+      return;
+    }
 
     const skipDesignConfirm = parseSkipDesignConfirmInput(req.body, practiceRouting);
     const skipJig = resolvePracticeTransferSkipJig(
@@ -2584,6 +2630,15 @@ export async function updatePracticeTransferContent(req, res) {
         success: false,
         message: "대상 기공소를 선택해주세요.",
       });
+    }
+    if (
+      await rejectIfSubcontractDirectBlocked(res, {
+        practiceAnchorId,
+        matchingMode,
+        labAnchorId: targetLabAnchorId,
+      })
+    ) {
+      return;
     }
 
     const skipDesignConfirm = parseSkipDesignConfirmInput(req.body, practiceRouting);
@@ -3445,6 +3500,29 @@ export async function getMyPracticeTransfers(req, res) {
   }
 }
 
+export async function listSubcontractDirectBlockedLabs(req, res) {
+  try {
+    const role = String(req.user?.role || "").trim();
+    if (!isPracticeTransferSenderRole(role)) {
+      return res.status(403).json({ success: false, message: "권한이 없습니다." });
+    }
+    const practiceAnchorId = String(req.user?.businessAnchorId || "").trim();
+    const labAnchorIds = await loadSubcontractDirectBlockedLabAnchorIds(
+      practiceAnchorId,
+    );
+    return res.status(200).json({
+      success: true,
+      data: { labAnchorIds },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "하청 지정 제한 기공소 조회 중 오류가 발생했습니다.",
+      error: error?.message,
+    });
+  }
+}
+
 const AUTO_MATCH_LAB_SENTINEL = "__auto_match__";
 
 /**
@@ -3725,7 +3803,8 @@ export async function getReceivedPracticeTransfers(req, res) {
       const autoFields = toAutoMatchApiFields(doc, labAnchorId);
       const openPool = Boolean(autoFields.autoMatch?.openPool);
       const matchingMode = autoFields.matchingMode;
-      const revealIdentities = role === "admin";
+      const revealIdentities =
+        role === "admin" || role === "internalLab";
       const practiceIdentity = redactAutoMatchPracticeIdentity(
         matchingMode,
         {
@@ -3736,7 +3815,11 @@ export async function getReceivedPracticeTransfers(req, res) {
             practiceProfile?.staffName || practiceUser?.name || "",
           ).trim(),
         },
-        { reveal: revealIdentities },
+        {
+          reveal: revealIdentities,
+          transfer: doc,
+          viewerLabAnchorId: labAnchorId,
+        },
       );
       // 자동매칭도 치과 표시명은 비공개지만, 기공수가 할증 키용 practiceAnchorId는 내부 전달.
       const practiceAnchorIdForSurcharge = practiceBusiness
@@ -6300,6 +6383,16 @@ export async function retargetPracticeTransferLab(req, res) {
     const previousBilling =
       doc.billing && typeof doc.billing === "object" ? { ...doc.billing } : {};
     const now = new Date();
+
+    if (
+      await rejectIfSubcontractDirectBlocked(res, {
+        practiceAnchorId,
+        matchingMode,
+        labAnchorId: targetLabAnchorId,
+      })
+    ) {
+      return;
+    }
 
     let autoMatchBudget = null;
     let autoMatchEligibleLabAnchorIds = undefined;

@@ -35,6 +35,7 @@
 // - 2026-08-19: 별점 기공비 배수 폐지. 자동매칭도 치과별 labFeeMultiplier 할증(as-of createdAt).
 // - 2026-08-16: billed 확정 견적 — labFeeMin/예산 구간 제거·수락 기공소 별점 단일가.
 // - 2026-08-20: billed 목록 견적 — 폐지된 별점 확정가 분기(미정의 변수) 제거. 스냅샷 유지.
+// - 2026-08-20: 치과 별점은 평가만. 기공비 할인/할증은 기공소 labFeeMultiplier만.
 // - 2026-08-16: 기공소 수신 billed — 스냅샷이 구 상한가여도 라인·labFeeTotal을 별점 확정가로 맞춤.
 // - 2026-08-17: PTX 디자인비 기공소 라인 refType=PRACTICE_TRANSFER(보철기공비와 동일 의뢰건).
 // - 2026-08-17: rollbackPracticeTransferBilling — 배송·디자인비 ADJUST·refId 스윕 포함. 잔액 emit.
@@ -112,10 +113,10 @@ import {
 import LabTradingPartner from "../models/labTradingPartner.model.js";
 import { findLabPracticeRelationship } from "../utils/labTradingPartner.util.js";
 import {
-  getAssigneeLabAnchorId,
   getPrimeLabAnchorId,
   isAutoMatchOpenPool,
   isPracticeTransferSubcontracted,
+  resolveFeeScheduleLabAnchorId,
   resolvePerformingLabAnchorId,
 } from "../utils/practiceTransferAutoMatch.js";
 import {
@@ -168,6 +169,30 @@ function buildAutoMatchFeeScheduleForLab({
     labEffectiveStars ?? DEFAULT_EFFECTIVE_LAB_STARS,
     catalog,
   );
+}
+
+async function loadLabAnchorsForFeeComputation({
+  feeScheduleLabId,
+  performingLabId,
+  session = null,
+}) {
+  const ids = [
+    ...new Set(
+      [feeScheduleLabId, performingLabId]
+        .map((id) => String(id || "").trim())
+        .filter(Boolean),
+    ),
+  ];
+  if (!ids.length) return { feeScheduleLab: null, performingLab: null };
+  const docs = await BusinessAnchor.find({ _id: { $in: ids } })
+    .select({ labFeeSchedule: 1, labPracticeFeeMultipliers: 1 })
+    .session(session || null)
+    .lean();
+  const byId = new Map(docs.map((doc) => [String(doc._id), doc]));
+  return {
+    feeScheduleLab: byId.get(String(feeScheduleLabId || "")) || null,
+    performingLab: byId.get(String(performingLabId || "")) || null,
+  };
 }
 
 /** 지정: 생성 스냅샷. 자동매칭: 수락 기공소의 치과별 할증(의뢰 생성 이후 변경분 제외). */
@@ -718,8 +743,11 @@ export async function commitPracticeTransferBilling({
 }) {
   const transferId = transfer?._id;
   const practiceAnchorId = transfer?.practiceBusinessAnchorId;
-  const labAnchorId = resolvePerformingLabAnchorId(transfer) || transfer?.targetLabAnchorId;
-  if (!transferId || !practiceAnchorId || !labAnchorId) {
+  const performingLabId =
+    resolvePerformingLabAnchorId(transfer) || transfer?.targetLabAnchorId;
+  const feeScheduleLabId =
+    resolveFeeScheduleLabAnchorId(transfer) || performingLabId;
+  if (!transferId || !practiceAnchorId || !performingLabId) {
     return { billed: false, reason: "missing_anchors" };
   }
 
@@ -729,7 +757,7 @@ export async function commitPracticeTransferBilling({
 
   const [
     existing,
-    lab,
+    labAnchors,
     practice,
     abutmentPricingTier,
     abutmentPrices,
@@ -741,10 +769,11 @@ export async function commitPracticeTransferBilling({
       idempotencyKey,
       session: outerSession,
     }),
-    BusinessAnchor.findById(labAnchorId)
-      .select({ labFeeSchedule: 1, labPracticeFeeMultipliers: 1 })
-      .session(outerSession || null)
-      .lean(),
+    loadLabAnchorsForFeeComputation({
+      feeScheduleLabId,
+      performingLabId,
+      session: outerSession,
+    }),
     BusinessAnchor.findById(practiceAnchorId)
       .select({ "practiceTransferSettings.implantFavorites": 1 })
       .session(outerSession || null)
@@ -752,7 +781,7 @@ export async function commitPracticeTransferBilling({
     resolvePracticeAbutmentPricingTier(practiceAnchorId, outerSession),
     loadCachedAbutmentCreditPrices(practiceAnchorId),
     findLabPracticeRelationship({
-      labAnchorId,
+      labAnchorId: feeScheduleLabId,
       practiceAnchorId,
     }),
     BusinessAnchor.findOne({
@@ -771,11 +800,12 @@ export async function commitPracticeTransferBilling({
   }
 
   const remake = isPracticeTransferRemake(transfer);
+  const feeScheduleLab = labAnchors.feeScheduleLab;
   // 지정: 생성 시 스냅샷 유지(할증 소급 금지).
-  // 수락 기공소 수가 + 치과별 할증(별점·평균수가 없음).
+  // 하청: 원청(어벗츠) 수가표 + 생성 스냅샷 할증. 수행 기공소는 관리자 subcontractFeeRate 정산.
   const labFeeMultiplier = resolveBillingLabFeeMultiplier({
     isAutoMatch,
-    lab,
+    lab: feeScheduleLab,
     practiceId: practiceAnchorId,
     createdAt: transfer?.createdAt,
     snapshot: transfer?.billing?.labFeeMultiplier,
@@ -784,7 +814,7 @@ export async function commitPracticeTransferBilling({
   const fees = computePracticeTransferRetailFees({
     toothWorks,
     implantFavorites: implantFavoritesFromPractice(practice),
-    labFeeSchedule: resolveLabFeeScheduleSource(lab?.labFeeSchedule),
+    labFeeSchedule: resolveLabFeeScheduleSource(feeScheduleLab?.labFeeSchedule),
     abutmentPricingTier,
     abutmentPrices,
     remake,
@@ -1784,32 +1814,40 @@ async function computeAcceptedPracticeTransferFees({
   session = null,
 }) {
   const practiceAnchorId = transfer?.practiceBusinessAnchorId;
-  const labAnchorId = resolvePerformingLabAnchorId(transfer) || transfer?.targetLabAnchorId;
+  const performingLabId =
+    resolvePerformingLabAnchorId(transfer) || transfer?.targetLabAnchorId;
+  const feeScheduleLabId =
+    resolveFeeScheduleLabAnchorId(transfer) || performingLabId;
   const isAutoMatch = String(transfer?.matchingMode || "").trim() === "auto";
 
-  const [lab, practice, abutmentPricingTier, abutmentPrices, partner, devopsAnchorForFeeRate] =
+  const [labAnchors, practice, abutmentPricingTier, abutmentPrices, partner, devopsAnchorForFeeRate] =
     await Promise.all([
-      BusinessAnchor.findById(labAnchorId)
-        .select({ labFeeSchedule: 1, labPracticeFeeMultipliers: 1 })
-        .session(session || null)
-        .lean(),
+      loadLabAnchorsForFeeComputation({
+        feeScheduleLabId,
+        performingLabId,
+        session,
+      }),
       BusinessAnchor.findById(practiceAnchorId)
         .select({ "practiceTransferSettings.implantFavorites": 1 })
         .session(session || null)
         .lean(),
       resolvePracticeAbutmentPricingTier(practiceAnchorId, session),
       loadCachedAbutmentCreditPrices(practiceAnchorId),
-      findLabPracticeRelationship({ labAnchorId, practiceAnchorId }),
+      findLabPracticeRelationship({
+        labAnchorId: feeScheduleLabId,
+        practiceAnchorId,
+      }),
       BusinessAnchor.findOne({ businessType: "devops" })
         .select({ payoutRates: 1 })
         .sort({ createdAt: 1 })
         .lean(),
     ]);
 
+  const feeScheduleLab = labAnchors.feeScheduleLab;
   const remake = isPracticeTransferRemake(transfer);
   const labFeeMultiplier = resolveBillingLabFeeMultiplier({
     isAutoMatch,
-    lab,
+    lab: feeScheduleLab,
     practiceId: practiceAnchorId,
     createdAt: transfer?.createdAt,
     snapshot: transfer?.billing?.labFeeMultiplier,
@@ -1819,7 +1857,7 @@ async function computeAcceptedPracticeTransferFees({
   const fees = computePracticeTransferRetailFees({
     toothWorks,
     implantFavorites: implantFavoritesFromPractice(practice),
-    labFeeSchedule: resolveLabFeeScheduleSource(lab?.labFeeSchedule),
+    labFeeSchedule: resolveLabFeeScheduleSource(feeScheduleLab?.labFeeSchedule),
     abutmentPricingTier,
     abutmentPrices,
     remake,

@@ -543,10 +543,15 @@ export function RequestorPracticeReceivePage({
 
   const displayChatMessages = useMemo(() => {
     const currentUserId = String(user?.id || "");
+    const viewerIsInternalLab = String(user?.role || "").trim() === "internalLab";
     return messages.map((message) => {
       const senderId = String(message.sender?._id || "");
       const name = anonymizeAutoMatchChatSenderName({
         matchingMode: selectedTransfer?.matchingMode,
+        openPool: selectedTransfer?.autoMatch?.openPool,
+        subcontracted: selectedTransfer?.autoMatch?.subcontracted,
+        practiceBusinessName: selectedTransfer?.practice?.businessName,
+        viewerIsInternalLab,
         isOwn: senderId === currentUserId,
         counterpartLabel: "치과",
         name: String(message.sender?.name || ""),
@@ -556,7 +561,15 @@ export function RequestorPracticeReceivePage({
         sender: { ...message.sender, name },
       };
     });
-  }, [messages, selectedTransfer?.matchingMode, user?.id]);
+  }, [
+    messages,
+    selectedTransfer?.matchingMode,
+    selectedTransfer?.autoMatch?.openPool,
+    selectedTransfer?.autoMatch?.subcontracted,
+    selectedTransfer?.practice?.businessName,
+    user?.id,
+    user?.role,
+  ]);
 
   const emitUnreadBadgeRefresh = useCallback((nextUnreadCount?: number) => {
     window.dispatchEvent(
@@ -4545,12 +4558,17 @@ export function RequestorPracticeReceivePage({
         summaryItems={[
           { label: "전송ID", value: selectedTransfer?.transferId || "-" },
           { label: "전송시각", value: selectedTransfer ? formatDateTime(selectedTransfer.createdAt) : "-" },
-          { label: "치과", value: selectedTransfer?.matchingMode === "auto"
-            ? "자동 매칭"
-            : selectedTransfer?.practice.businessName || "-" },
-          { label: "담당자", value: selectedTransfer?.matchingMode === "auto"
-            ? "비공개"
-            : selectedTransfer?.practice.userName || "-" },
+          { label: "치과", value:
+            selectedTransfer?.matchingMode === "auto"
+              ? "자동 매칭"
+              : selectedTransfer?.autoMatch?.openPool
+                ? selectedTransfer?.practice.businessName || "비공개"
+                : selectedTransfer?.practice.businessName || "-" },
+          { label: "담당자", value:
+            selectedTransfer?.matchingMode === "auto" ||
+            selectedTransfer?.autoMatch?.openPool
+              ? "비공개"
+              : selectedTransfer?.practice.userName || "-" },
           { label: "환자명", value: selectedTransferPatientName || "-" },
           { label: "주문일", value: selectedTransfer?.orderDate || "-" },
           { label: "치과도착일", value: selectedTransfer?.arrivalDate || "-" },

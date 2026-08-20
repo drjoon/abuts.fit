@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";
+import { SUBCONTRACT_DIRECT_BLOCKED_MESSAGE } from "@/shared/practice/autoMatchIdentity";
 import {
   saveFile as saveFileToIndexedDb,
   deleteFile as deleteFileFromIndexedDb,
@@ -122,6 +123,14 @@ const PRACTICE_PINNED_LABS_MAX = 5;
 const isRealRecentLabId = (id: string) => {
   const raw = String(id || "").trim();
   return Boolean(raw) && !raw.startsWith("recent:") && !raw.startsWith("draft-lab:");
+};
+
+const OBJECT_ID_RE = /^[a-fA-F0-9]{24}$/;
+
+const pickerLabAnchorId = (lab?: { _id?: string | null } | null) => {
+  const id = String(lab?._id || "").trim();
+  if (!isRealRecentLabId(id) || !OBJECT_ID_RE.test(id)) return "";
+  return id;
 };
 
 /** 레거시 dismiss 플래그 정리(어벗츠는 항상 고정). */
@@ -552,10 +561,11 @@ export const usePracticeTransferStep1 = (options?: Options) => {
     options?.fileCacheMaxTotalBytes ?? DEFAULT_FILE_CACHE_MAX_TOTAL_BYTES;
 
   const [files, setFiles] = useState<File[]>([]);
-  const [selectedLab, setSelectedLab] = useState<SearchBusinessResult | null>(null);
+  const [selectedLab, setSelectedLabState] = useState<SearchBusinessResult | null>(null);
   const [requestMemo, setRequestMemo] = useState("");
   const [labSearch, setLabSearch] = useState("");
   const [labSearchResults, setLabSearchResults] = useState<SearchBusinessResult[]>([]);
+  const [blockedDirectLabIds, setBlockedDirectLabIds] = useState<string[]>([]);
   const [labOpen, setLabOpen] = useState(false);
   const [labSearching, setLabSearching] = useState(false);
   const [recentLabs, setRecentLabs] = useState<SearchBusinessResult[]>(() =>
@@ -566,18 +576,84 @@ export const usePracticeTransferStep1 = (options?: Options) => {
   );
   const [recentLabsInitialized, setRecentLabsInitialized] = useState(true);
   const didRestoreCachedFiles = useRef(false);
+  const blockedDirectLabIdSet = useMemo(
+    () => new Set(blockedDirectLabIds.map((id) => String(id || "").trim()).filter(Boolean)),
+    [blockedDirectLabIds],
+  );
+  const isBlockedDirectPickerLab = useCallback(
+    (lab?: SearchBusinessResult | null) => {
+      if (!lab || isPinnedAbutsRecentLab(lab) || isAutoMatchLab(lab)) return false;
+      const id = pickerLabAnchorId(lab);
+      return Boolean(id) && blockedDirectLabIdSet.has(id);
+    },
+    [blockedDirectLabIdSet],
+  );
+  const setSelectedLab = useCallback(
+    (
+      value:
+        | SearchBusinessResult
+        | null
+        | ((prev: SearchBusinessResult | null) => SearchBusinessResult | null),
+    ) => {
+      setSelectedLabState((prev) => {
+        const next = typeof value === "function" ? value(prev) : value;
+        if (!isBlockedDirectPickerLab(next)) return next;
+        toast({
+          title: SUBCONTRACT_DIRECT_BLOCKED_MESSAGE,
+          variant: "destructive",
+        });
+        return prev && !isBlockedDirectPickerLab(prev) ? prev : null;
+      });
+    },
+    [isBlockedDirectPickerLab, toast],
+  );
 
   const pinnedLabs = useMemo(
-    () => buildDisplayPinnedLabs(userPinnedLabs, recentLabs),
-    [userPinnedLabs, recentLabs],
+    () =>
+      buildDisplayPinnedLabs(userPinnedLabs, recentLabs).filter(
+        (lab) => !isBlockedDirectPickerLab(lab),
+      ),
+    [userPinnedLabs, recentLabs, isBlockedDirectPickerLab],
   );
 
   const displayRecentLabs = useMemo(() => {
     return recentLabs.filter((lab) => {
       if (isPinnedAbutsRecentLab(lab)) return false;
+      if (isBlockedDirectPickerLab(lab)) return false;
       return !isLabPinned(lab, userPinnedLabs);
     });
-  }, [recentLabs, userPinnedLabs]);
+  }, [recentLabs, userPinnedLabs, isBlockedDirectPickerLab]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const res = await apiFetch<unknown>({
+        path: "/api/practice/transfers/subcontract-direct-blocked-labs",
+        method: "GET",
+      });
+      if (cancelled || !res.ok) return;
+      const body = res.data;
+      const data =
+        body && typeof body === "object" && "data" in (body as Record<string, unknown>)
+          ? (body as { data?: { labAnchorIds?: unknown } }).data
+          : body;
+      const ids = Array.isArray((data as { labAnchorIds?: unknown })?.labAnchorIds)
+        ? ((data as { labAnchorIds: unknown[] }).labAnchorIds)
+            .map((id) => String(id || "").trim())
+            .filter((id) => OBJECT_ID_RE.test(id))
+        : [];
+      setBlockedDirectLabIds(ids);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    setSelectedLabState((prev) =>
+      prev && isBlockedDirectPickerLab(prev) ? null : prev,
+    );
+  }, [isBlockedDirectPickerLab]);
 
   useEffect(() => {
     if (didRestoreCachedFiles.current) return;
@@ -1057,6 +1133,7 @@ export const usePracticeTransferStep1 = (options?: Options) => {
 
                 const kind = String(item.requestorKind || "").trim();
                 if (kind && kind !== "lab") return false;
+                if (isBlockedDirectPickerLab(item)) return false;
 
                 return true;
               })
@@ -1070,7 +1147,7 @@ export const usePracticeTransferStep1 = (options?: Options) => {
     }, 250);
 
     return () => clearTimeout(timer);
-  }, [labSearch]);
+  }, [labSearch, isBlockedDirectPickerLab]);
 
   return {
     files,

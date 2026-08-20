@@ -273,7 +273,7 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
               하청 수수료
             </Label>
             <p className="text-[12px] leading-snug text-muted-foreground">
-              수행 기공소 공제(기본 15%)
+              수행 기공소 공제율. 정산에 즉시 반영됩니다.
             </p>
           </div>
         </div>

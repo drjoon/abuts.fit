@@ -393,7 +393,7 @@ const makeTransferId = () => {
 };
 
 const DEFAULT_ARRIVAL_OFFSET_DAYS = 7;
-const PRESET_PROSTHESIS_TYPES = ["인레이", "크라운", "커스텀어벗", "브리지", "Pontic", "유지장치", "임시치아", "작업X"] as const;
+const PRESET_PROSTHESIS_TYPES = ["인레이", "크라운", "커스텀어벗", "브리지", "유지장치", "임시치아", "작업X"] as const;
 
 type ToothWorkSelection = SharedToothWorkSelection;
 
@@ -438,7 +438,7 @@ const normalizeProsthesisTypes = (items: string[]) => {
         .map((item) => sanitizeProsthesisTypeLabel(String(item || "")))
         .filter(Boolean)
         .map((item) => {
-          if (/^pontic$/i.test(item)) return ["pontic", "Pontic"] as const;
+          if (/^pontic$/i.test(item)) return ["브리지", "브리지"] as const;
           if (
             item === "작업X" ||
             item === "상실치" ||
@@ -452,7 +452,6 @@ const normalizeProsthesisTypes = (items: string[]) => {
     ).values(),
   );
 
-  if (!deduped.some((item) => /^pontic$/i.test(item))) deduped.push("Pontic");
   if (!deduped.some((item) => item === "작업X" || item === "상실치")) deduped.push("작업X");
   return deduped;
 };
@@ -501,7 +500,6 @@ const isMissingToothProsthesisType = (prosthesisType: string) => {
 
 const isBridgeLikeProsthesisType = (prosthesisType: string) =>
   prosthesisType === "브리지" ||
-  prosthesisType === "Pontic" ||
   prosthesisType === "유지장치" ||
   isMissingToothProsthesisType(prosthesisType);
 

@@ -12,7 +12,7 @@
 // - 2026-08-13: 커스텀어벗 단가는 creditSettings 멤버십/일반값을 우선 사용.
 // - 2026-08-13: 유지장치 등 perSet는 연결 스팬당 1세트(끊기면 별도). 연결 없는 레거시는 악궁당.
 // - 2026-08-19: 임시치아(perNTeeth)도 연결 스팬당 구간 수가(같은 하악 3치·2치는 2세트).
-// - 2026-08-19: 임시치아+Pontic 연결은 임시치아 브리지 1세트(Pontic 별도 수가 없음).
+// - 2026-08-20: Pontic 수가 항목 제거. 레거시 Pontic 치아는 브리지 수가. 임시치아 스팬의 구 Pontic은 세트에 포함.
 // - 2026-08-13: 견적 라인은 치아번호 10→20→30→40번대 순.
 // - 2026-08-17: 번대 안은 정중선 가운데(18→11, 21→28, 38→31, 41→48).
 // - 2026-08-13: 유지장치에 남은 커스텀 플래그는 어벗 과금하지 않는다.
@@ -252,7 +252,6 @@ export const LAB_FEE_SCHEDULE_KEYS = [
   "crown",
   "bridge",
   "inlay",
-  "pontic",
   "retainer",
   "removableTemp3",
   "removableTemp6",
@@ -265,7 +264,6 @@ export const LAB_FEE_SCHEDULE_DEFAULTS = {
   crown: 60000,
   bridge: 60000,
   inlay: 50000,
-  pontic: 40000,
   retainer: 40000,
   removableTemp3: 30000,
   removableTemp6: 50000,
@@ -733,7 +731,7 @@ export function canonicalizeFeeItemName(name) {
   const raw = String(name || "").trim();
   if (!raw) return "";
   const compact = raw.replace(/\s+/g, "");
-  if (/^pontic$/i.test(raw)) return "Pontic";
+  if (/^pontic$/i.test(raw)) return "브리지";
   if (compact === "브릿지" || compact === "브리지" || /^bridge$/i.test(raw)) {
     return "브리지";
   }
@@ -833,15 +831,6 @@ function migrateLegacyLabFeeItems(input) {
       tiers: [],
     },
     {
-      id: "pontic",
-      name: "Pontic",
-      unit: "perTooth",
-      enabled: enabled.pontic !== false,
-      price: schedule.pontic,
-      remake: remake.pontic,
-      tiers: [],
-    },
-    {
       id: "retainer",
       name: "유지장치",
       unit: "perSet",
@@ -937,6 +926,7 @@ export function normalizeLabFeeItems(input) {
     const out = [];
     for (const row of rawItems) {
       if (out.length >= MAX_LAB_FEE_ITEMS) break;
+      if (isRemovedPonticFeeRow(row)) continue;
       const item = normalizeLabFeeItem(row, out.length);
       if (!item.name) continue;
       let id = item.id;
@@ -954,7 +944,6 @@ function legacyKeyFromItemName(name) {
   if (canon === "크라운") return "crown";
   if (canon === "브리지") return "bridge";
   if (canon === "인레이") return "inlay";
-  if (canon === "Pontic") return "pontic";
   if (canon === "유지장치") return "retainer";
   if (canon === "임시치아" || isRemovableTempFeeName(name)) return "removableTemp";
   return null;
@@ -1045,7 +1034,7 @@ export function resolveLabFeeKeyFromProsthesisType(prosthesisType) {
   if (isCustomAbutmentProsthesisType(raw)) return null;
   if (isRetainerProsthesisType(raw)) return "retainer";
   if (isRemovableTempProsthesisType(raw)) return null;
-  if (/^pontic$/i.test(raw)) return "pontic";
+  if (/^pontic$/i.test(raw)) return "bridge";
   if (raw.includes("인레이") || /^inlay$/i.test(raw)) return "inlay";
   if (raw.includes("브리지") || /^bridge$/i.test(raw)) return "bridge";
   if (raw.includes("크라운") || /^crown$/i.test(raw)) return "crown";
@@ -1104,7 +1093,6 @@ export function normalizeLabFeeSchedule(input) {
     crown: pick("crown"),
     bridge: pick("bridge"),
     inlay: pick("inlay"),
-    pontic: pick("pontic"),
     retainer: pick("retainer"),
     removableTemp3: pick("removableTemp3"),
     removableTemp6: pick("removableTemp6"),
@@ -1136,7 +1124,6 @@ export function normalizeLabFeeRemakeSchedule(input) {
     crown: pick("crown"),
     bridge: pick("bridge"),
     inlay: pick("inlay"),
-    pontic: pick("pontic"),
     retainer: pick("retainer"),
     removableTemp3: pick("removableTemp3"),
     removableTemp6: pick("removableTemp6"),
@@ -1435,7 +1422,13 @@ function isPonticProsthesisType(prosthesisType) {
   return /^pontic$/i.test(String(prosthesisType || "").trim());
 }
 
-/** 임시치아 브리지 스팬을 잇는 형태(Pontic·작업X·브리지). 유지장치는 제외 */
+export function isRemovedPonticFeeRow(row) {
+  const id = String(row?.id || row?.key || "").trim().toLowerCase();
+  const name = String(row?.name || row?.label || "").trim();
+  return id === "pontic" || /^pontic$/i.test(name);
+}
+
+/** 임시치아 브리지 스팬을 잇는 형태(브리지·작업X·레거시 Pontic). 유지장치는 제외 */
 function isTempBridgeSpanMemberType(type) {
   return (
     isRemovableTempProsthesisType(type) ||
@@ -1453,7 +1446,7 @@ function isTempBridgeSpanBillableType(type) {
   );
 }
 
-/** 임시치아 연결 스팬. Pontic은 칸으로 세고 별도 Pontic 수가를 붙이지 않는다 */
+/** 임시치아 연결 스팬. 중간 브리지·레거시 Pontic은 칸으로 세고 별도 수가를 붙이지 않는다 */
 function listTempBridgeFeeGroups(allRows) {
   const memberRows = (Array.isArray(allRows) ? allRows : []).filter((row) => {
     const tooth = feeRowTooth(row);

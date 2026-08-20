@@ -20,7 +20,6 @@ export const ADMIN_LAB_FEE_BASE = {
   crown: 60000,
   bridge: 60000,
   inlay: 50000,
-  pontic: 40000,
   retainer: 40000,
   removableTemp3: 30000,
   removableTemp6: 50000,
@@ -30,7 +29,6 @@ export const AUTO_MATCH_BUDGET_KEYS = [
   "crown",
   "bridge",
   "inlay",
-  "pontic",
   "retainer",
   "removableTemp3",
   "removableTemp6",
@@ -42,7 +40,6 @@ export const AUTO_MATCH_BUDGET_KEY_LABELS: Record<AutoMatchBudgetKey, string> = 
   crown: "크라운",
   bridge: "브리지",
   inlay: "인레이",
-  pontic: "Pontic",
   retainer: "유지장치",
   removableTemp3: "임시치아 (3치 이하)",
   removableTemp6: "임시치아 (6치 이하)",
@@ -138,7 +135,6 @@ export const fallbackAbutsLabFeeCatalog = (): AbutsLabFeeCatalogItem[] => [
   { id: "crown", name: "크라운", unit: "perTooth", price: 60000, enabled: true },
   { id: "bridge", name: "브리지", unit: "perTooth", price: 60000, enabled: true },
   { id: "inlay", name: "인레이", unit: "perTooth", price: 50000, enabled: true },
-  { id: "pontic", name: "Pontic", unit: "perTooth", price: 40000, enabled: true },
   { id: "retainer", name: "유지장치", unit: "perSet", price: 40000, enabled: true },
   {
     id: "removableTemp3",
@@ -166,6 +162,11 @@ export const normalizeAbutsLabFeeCatalog = (
     : fallbackAbutsLabFeeCatalog();
   return list
     .filter((item) => item && item.enabled !== false && String(item.name || "").trim())
+    .filter((item) => {
+      const id = String(item.id || "").trim().toLowerCase();
+      const name = String(item.name || "").trim();
+      return id !== "pontic" && !/^pontic$/i.test(name);
+    })
     .map((item, index) => ({
       id: String(item.id || `item-${index + 1}`).trim() || `item-${index + 1}`,
       name: String(item.name || "").trim(),

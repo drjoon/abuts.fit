@@ -11,7 +11,15 @@ import {
   isAutoMatchPriorityActive,
   isAutoMatchPriorityLabAnchorId,
   isInternalLabBusinessType,
-  isPracticeTransferLabReceiverRole,
+  collectSubcontractDirectBlockedLabIds,
+  isLabIdBlockedAsDirectPracticeTarget,
+  isPracticeTransferSubcontracted,
+  isSubcontractFeeScheduleContext,
+  isSubcontractIdentityHiddenFromViewer,
+  isSubcontractPoolOpen,
+  resolveFeeScheduleLabAnchorId,
+  resolvePerformingLabAnchorId,
+  SUBCONTRACT_PRACTICE_DISPLAY_NAME,
   toAutoMatchApiFieldsCore,
 } from "../../utils/practiceTransferAutoMatchCore.js";
 
@@ -165,5 +173,74 @@ describe("practiceTransferAutoMatch priority (core)", () => {
     expect(isAutoMatchClaimActive(claimed, now)).toBe(true);
     expect(isAutoMatchOpenPool(claimed, now)).toBe(false);
     expect(isAutoMatchPriorityActive(claimed, now)).toBe(false);
+  });
+
+  test("하청 풀·수행 중에는 원청 수가표를 쓴다", () => {
+    const poolOpen = {
+      matchingMode: "direct",
+      status: "active",
+      targetLabAnchorId: OID_A,
+      autoMatch: { subcontractPoolOpen: true },
+    };
+    const subcontracted = {
+      matchingMode: "direct",
+      status: "active",
+      targetLabAnchorId: OID_A,
+      assigneeLabAnchorId: OID_B,
+    };
+    expect(isSubcontractFeeScheduleContext(poolOpen)).toBe(true);
+    expect(isSubcontractFeeScheduleContext(subcontracted)).toBe(true);
+    expect(resolveFeeScheduleLabAnchorId(subcontracted)).toBe(OID_A);
+    expect(resolveFeeScheduleLabAnchorId(subcontracted)).not.toBe(OID_B);
+  });
+
+  test("하청 식별 정보 — 원청만 assignee·치과 실명", () => {
+    const poolOpen = {
+      matchingMode: "direct",
+      status: "active",
+      targetLabAnchorId: OID_A,
+      assigneeLabAnchorId: OID_B,
+      assigneeLabName: "협력 기공소",
+      autoMatch: { subcontractPoolOpen: false },
+    };
+    expect(isSubcontractIdentityHiddenFromViewer(poolOpen, OID_B)).toBe(true);
+    expect(isSubcontractIdentityHiddenFromViewer(poolOpen, OID_A)).toBe(false);
+
+    const fieldsForPartner = toAutoMatchApiFieldsCore(poolOpen, OID_B);
+    expect(fieldsForPartner.assigneeLabAnchorId).toBeUndefined();
+    expect(fieldsForPartner.autoMatch?.subcontracted).toBe(true);
+
+    const fieldsForPrime = toAutoMatchApiFieldsCore(poolOpen, OID_A);
+    expect(fieldsForPrime.assigneeLabAnchorId).toBe(OID_B);
+    expect(fieldsForPrime.assigneeLabName).toBe("협력 기공소");
+  });
+
+  test("하청 풀 openPool에 subcontractPoolOpen 포함", () => {
+    const opened = {
+      matchingMode: "direct",
+      status: "active",
+      targetLabAnchorId: OID_A,
+      autoMatch: { subcontractPoolOpen: true },
+    };
+    const fields = toAutoMatchApiFieldsCore(opened, OID_B);
+    expect(fields.autoMatch?.openPool).toBe(true);
+    expect(isSubcontractIdentityHiddenFromViewer(opened, OID_B)).toBe(true);
+    expect(SUBCONTRACT_PRACTICE_DISPLAY_NAME).toBe("비공개");
+  });
+
+  test("하청 수행 이력이 있는 기공소는 지정 대상에서 제외", () => {
+    const blocked = collectSubcontractDirectBlockedLabIds([
+      {
+        targetLabAnchorId: OID_A,
+        assigneeLabAnchorId: OID_B,
+      },
+      {
+        targetLabAnchorId: OID_A,
+        assigneeLabAnchorId: OID_A,
+      },
+    ]);
+    expect(blocked).toEqual([OID_B]);
+    expect(isLabIdBlockedAsDirectPracticeTarget(OID_B, blocked)).toBe(true);
+    expect(isLabIdBlockedAsDirectPracticeTarget(OID_A, blocked)).toBe(false);
   });
 });

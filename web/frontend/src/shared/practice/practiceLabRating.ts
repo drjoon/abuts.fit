@@ -12,6 +12,7 @@
 // - 2026-08-16: scaleAutoMatchFeeToLabStars — 기공소 수신 견적용 별점 확정 단일가.
 // - 2026-08-19: 신규 지정 의뢰는 평가만. 별점 배수는 레거시 자동매칭.
 // - 2026-08-19: 별점 기공비 배수 폐지(항상 ×1). 할증은 기공소 치과별 labFeeMultiplier만.
+// - 2026-08-20: 치과 평가는 별점만. 자동매칭·별점 기공비 할인/할증 없음.
 
 export const PRACTICE_LAB_RATING_MIN = 1;
 export const PRACTICE_LAB_RATING_MAX = 5;
@@ -87,7 +88,7 @@ export function resolveAutoMatchEligibleStarBand({
   return { minStars: min, maxStars: Math.max(min, maxRaw) };
 }
 
-/** 별점 기공비 배수 폐지. 시그니처 호환용으로 항상 1. */
+/** 치과 별점은 평가 전용. 기공비 할인/할증에 쓰지 않음(항상 ×1). */
 export function feeMultiplierForStars(_stars: unknown): number {
   return 1;
 }

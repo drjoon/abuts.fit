@@ -353,7 +353,9 @@ export function PracticeTransferLabReceiveCard({
   const clinicLabel =
     transfer.matchingMode === "auto"
       ? "자동 매칭"
-      : String(transfer.practice.businessName || "").trim() || "-";
+      : transfer.autoMatch?.openPool
+        ? String(transfer.practice.businessName || "").trim() || "비공개"
+        : String(transfer.practice.businessName || "").trim() || "-";
   const patientName = resolvePracticeTransferListPatientName(transfer);
   const prostheticButtonLabel = hasPartialProsthetic
     ? `보철 추가 업로드 (${pendingProstheticCount})`

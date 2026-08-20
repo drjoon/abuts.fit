@@ -20,6 +20,7 @@ import {
   listPracticeTransferDrafts,
   restorePracticeTransferDraft,
   getMyPracticeTransfers,
+  listSubcontractDirectBlockedLabs,
   getPracticeTransferQuoteContext,
   getReceivedPracticeTransfers,
   getReceivedPracticeTransferUnreadCount,
@@ -58,6 +59,12 @@ const receiveAuth = authorizePracticeTransferReceive();
 router.post("/", authenticate, sendAuth, createPracticeTransfer);
 
 router.get("/my", authenticate, sendAuth, getMyPracticeTransfers);
+router.get(
+  "/subcontract-direct-blocked-labs",
+  authenticate,
+  sendAuth,
+  listSubcontractDirectBlockedLabs,
+);
 
 router.get(
   "/quote-context",

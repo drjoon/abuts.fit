@@ -17,6 +17,10 @@ export const PRACTICE_TRANSFER_AUTO_MATCH_CLAIM_HOURS = 3;
 export const AUTO_MATCH_LAB_DISPLAY_NAME = "자동 매칭";
 export const AUTO_MATCH_PRACTICE_DISPLAY_NAME = "자동 매칭";
 export const ABUTS_LAB_DISPLAY_NAME = "어벗츠기공소";
+/** 하청 수행 시 치과에 보이는 처리처 라벨(협력 기공소 실명 비공개) */
+export const CERTIFIED_PARTNER_LAB_DISPLAY_NAME = "인증 협력 기공소";
+/** 하청 풀·하청 수행 시 협력 기공소에 노출하는 치과 표시명 */
+export const SUBCONTRACT_PRACTICE_DISPLAY_NAME = "비공개";
 
 const OBJECT_ID_RE = /^[a-fA-F0-9]{24}$/;
 
@@ -124,6 +128,60 @@ export const isSubcontractPoolOpen = (transfer) => {
   if (isAutoMatchCompleted(transfer)) return false;
   if (getAssigneeLabAnchorId(transfer)) return false;
   return Boolean(transfer?.autoMatch?.subcontractPoolOpen);
+};
+
+/** 하청 풀·하청 수행 청구는 원청(어벗츠) 수가표를 쓴다. */
+export const isSubcontractFeeScheduleContext = (transfer) =>
+  isPracticeTransferSubcontracted(transfer) ||
+  isSubcontractPoolOpen(transfer);
+
+export const resolveFeeScheduleLabAnchorId = (transfer) => {
+  if (isSubcontractFeeScheduleContext(transfer)) {
+    return (
+      getPrimeLabAnchorId(transfer) || resolvePerformingLabAnchorId(transfer)
+    );
+  }
+  return resolvePerformingLabAnchorId(transfer);
+};
+
+/** 어벗츠 원청 팀만 하청 상대(치과·수행 기공소) 식별 정보를 본다. */
+export const isSubcontractIdentityHiddenFromViewer = (
+  transfer,
+  viewerLabAnchorId = null,
+) => {
+  if (!isSubcontractPoolOpen(transfer) && !isPracticeTransferSubcontracted(transfer)) {
+    return false;
+  }
+  const viewerId = String(viewerLabAnchorId || "").trim();
+  const primeId = getPrimeLabAnchorId(transfer);
+  return !(viewerId && primeId && viewerId === primeId);
+};
+
+export const SUBCONTRACT_DIRECT_BLOCKED_REASON = "subcontract_direct_blocked";
+export const SUBCONTRACT_DIRECT_BLOCKED_MESSAGE =
+  "어벗츠기공소를 선택해 주세요.";
+
+/** 하청 수행(assignee ≠ 원청) 이력이 있는 기공소 ID. 해당 치과는 지정 의뢰 불가. */
+export const collectSubcontractDirectBlockedLabIds = (docs = []) => {
+  const blocked = new Set();
+  const list = Array.isArray(docs) ? docs : [];
+  for (const doc of list) {
+    const assignee = String(doc?.assigneeLabAnchorId || "").trim();
+    const prime = String(doc?.targetLabAnchorId || "").trim();
+    if (assignee && prime && assignee !== prime) blocked.add(assignee);
+  }
+  return [...blocked];
+};
+
+export const isLabIdBlockedAsDirectPracticeTarget = (
+  labAnchorId,
+  blockedIds = [],
+) => {
+  const labId = String(labAnchorId || "").trim();
+  if (!labId) return false;
+  return (Array.isArray(blockedIds) ? blockedIds : []).some(
+    (id) => String(id || "").trim() === labId,
+  );
 };
 
 /** 어벗츠 원청 팀원이 아직 하청을 안 연 지정 의뢰를 하청 풀로 열 수 있는지. */
@@ -242,7 +300,9 @@ export const toAutoMatchApiFieldsCore = (transfer, viewerLabAnchorId = null) => 
     viewerId,
     now,
   );
-  const revealAssignee = Boolean(viewerId);
+  const revealAssignee =
+    Boolean(viewerId) &&
+    !isSubcontractIdentityHiddenFromViewer(transfer, viewerId);
 
   return {
     matchingMode,
@@ -269,9 +329,7 @@ export const toAutoMatchApiFieldsCore = (transfer, viewerLabAnchorId = null) => 
       priorityActive,
       priorityLabForMe,
       canOpenSubcontract,
-      subcontracted: revealAssignee
-        ? isPracticeTransferSubcontracted(transfer)
-        : false,
+      subcontracted: isPracticeTransferSubcontracted(transfer),
     },
   };
 };

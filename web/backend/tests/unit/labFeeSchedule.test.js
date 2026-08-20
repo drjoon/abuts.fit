@@ -8,7 +8,7 @@
 // - 2026-08-19: 임시치아+어벗은 임시치아 수가와 어벗츠 단가를 함께 합산.
 // - 2026-08-19: 임시치아 어벗은 치아별 커스텀어벗 단가 줄로 분리.
 // - 2026-08-19: 같은 악궁 임시치아도 연결이 끊기면 스팬별 구간 수가.
-// - 2026-08-19: 임시치아+Pontic 연결은 임시치아 브리지 1세트.
+// - 2026-08-20: Pontic 수가 제거. 레거시 Pontic 치아는 브리지. 임시치아 스팬의 구 Pontic은 세트에 포함.
 import {
   buildUnsetLabFeeSchedule,
   computePracticeTransferRetailFees,
@@ -178,7 +178,6 @@ describe("labFeeSchedule", () => {
           crown: 20000,
           bridge: 0,
           inlay: 0,
-          pontic: 0,
           customAbutmentDesign: 0,
           customAbutmentDesignAndProduction: 5000,
         },
@@ -226,7 +225,6 @@ describe("labFeeSchedule", () => {
           crown: 20000,
           bridge: 15000,
           inlay: 0,
-          pontic: 0,
           customAbutmentDesign: 0,
           customAbutmentDesignAndProduction: 0,
         },
@@ -439,7 +437,7 @@ describe("labFeeSchedule", () => {
     );
   });
 
-  test("임시치아+Pontic 연결은 임시치아 브리지 1세트다", () => {
+  test("임시치아+레거시 Pontic 연결은 임시치아 브리지 1세트다", () => {
     const fees = computePracticeTransferRetailFees({
       toothWorks: [
         {
@@ -480,6 +478,33 @@ describe("labFeeSchedule", () => {
     expect(
       fees.lines.some((line) => /pontic/i.test(String(line.prosthesisType))),
     ).toBe(false);
+  });
+
+  test("Pontic 수가 항목은 없고 레거시 Pontic 치아는 브리지로 청구한다", () => {
+    const items = normalizeLabFeeItems(LAB_FEE_SCHEDULE_SAMPLE);
+    expect(
+      items.some(
+        (item) =>
+          String(item.id).toLowerCase() === "pontic" ||
+          /^pontic$/i.test(String(item.name)),
+      ),
+    ).toBe(false);
+    expect(resolveLabFeeKeyFromProsthesisType("Pontic")).toBe("bridge");
+    const fromStoredItems = normalizeLabFeeItems({
+      items: [
+        { id: "crown", name: "크라운", price: 60000, enabled: true },
+        { id: "pontic", name: "Pontic", price: 40000, enabled: true },
+        { id: "bridge", name: "브리지", price: 60000, enabled: true },
+      ],
+    });
+    expect(
+      fromStoredItems.some((item) => String(item.id).toLowerCase() === "pontic"),
+    ).toBe(false);
+    const fees = computePracticeTransferRetailFees({
+      toothWorks: [{ toothNumber: "21", prosthesisType: "Pontic" }],
+      labFeeSchedule: LAB_FEE_SCHEDULE_SAMPLE,
+    });
+    expect(fees.labFeeTotal).toBe(60000);
   });
 
   test("유지장치는 같은 악궁이어도 연결이 끊기면 스팬당 1세트다", () => {

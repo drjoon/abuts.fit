@@ -14,7 +14,8 @@ import { useMemo } from "react";
 // - 2026-08-13: 유지장치 스팬 전환 시 커스텀어벗 플래그·규격은 유지. 브리지로 되돌리면 복구.
 // - 2026-08-14: 유지장치 등 연결 전체 강제 변경 후 복귀 시, 클릭하지 않은 치아는 진입 직전 행 전체(형태·어벗·임플란트) 복원.
 // - 2026-08-13: 단독 순환(인레이↔크라운↔커스텀어벗↔임시치아)도 커스텀 플래그·규격을 유지.
-// - 2026-08-13: 클릭한 치아가 Pontic·작업X를 거쳐도 커스텀을 지우지 않는다.
+// - 2026-08-13: 클릭한 치아가 작업X를 거쳐도 커스텀을 지우지 않는다.
+// - 2026-08-20: Pontic은 UI에서 제거. 연결 스팬은 브리지·임시치아 등으로 표시하고 기공소가 추론.
 // - 2026-08-19: 임시치아도 크라운·브리지처럼 기존 커스텀 플래그·규격을 유지.
 // - 2026-08-19: 임시치아에서 브리지 등으로 나오면 클릭한 치아만 바꾸고, 옆 칸은 임시치아를 유지한다(작업X 스냅샷 복원 없음).
 
@@ -66,7 +67,6 @@ export const STANDALONE_PROSTHESIS_TYPES = [
 ] as const;
 export const LINKED_PROSTHESIS_TYPES = [
   "브리지",
-  "Pontic",
   NO_WORK_PROSTHESIS_TYPE,
   "유지장치",
   "임시치아",
@@ -164,7 +164,6 @@ export const getProsthesisTypesForLinkState = (isLinked: boolean, catalog: strin
       if (allowed.has(type)) return true;
       if (!isLinked && isCustomAbutmentProsthesisType(type)) return true;
       if (!isLinked && isTemporaryToothProsthesisType(type)) return true;
-      if (isLinked && /^pontic$/i.test(type)) return true;
       if (isLinked && isMissingToothProsthesisType(type)) return true;
       if (isLinked && isRetainerProsthesisType(type)) return true;
       if (isLinked && isTemporaryToothProsthesisType(type)) return true;
@@ -177,7 +176,6 @@ export const getProsthesisTypesForLinkState = (isLinked: boolean, catalog: strin
     next.push("임시치아");
   }
   if (isLinked && !next.some((type) => type === "브리지")) next.unshift("브리지");
-  if (isLinked && !next.some((type) => /^pontic$/i.test(type))) next.push("Pontic");
   if (isLinked && !next.some((type) => isMissingToothProsthesisType(type))) {
     next.push(NO_WORK_PROSTHESIS_TYPE);
   }
@@ -210,9 +208,6 @@ export const resolveProsthesisTypeForLinkState = (
       options.find((type) => isMissingToothProsthesisType(type)) || NO_WORK_PROSTHESIS_TYPE
     );
   }
-  if (isLinked && /^pontic$/i.test(current)) {
-    return options.find((type) => /^pontic$/i.test(type)) || "Pontic";
-  }
   if (isLinked && isRetainerProsthesisType(current)) {
     return options.find((type) => isRetainerProsthesisType(type)) || "유지장치";
   }
@@ -231,7 +226,7 @@ export const resolveProsthesisTypeForLinkState = (
   return options.find((type) => type === "크라운") || options[0] || "크라운";
 };
 
-/** 형태 변경. 클릭 순환(Pontic·작업X·인레이·유지장치·임시치아 포함)은 커스텀을 유지.
+/** 형태 변경. 클릭 순환(작업X·인레이·유지장치·임시치아 포함)은 커스텀을 유지.
  * 어벗 체크 해제만 규격을 지운다. */
 export const applyProsthesisTypeToRow = (
   row: ToothWorkSelection,
@@ -376,7 +371,7 @@ export const restoreLinkedSpanToothWorkRow = (
 /**
  * 연결 스팬 형태 순환.
  * 유지장치처럼 연결 전체가 강제 변경되면 치아별 행을 스냅샷하고,
- * 브리지/Pontic/작업X로 나오면 클릭한 치아만 nextType, 나머지는 진입 직전 내용 복원.
+ * 브리지/작업X로 나오면 클릭한 치아만 nextType, 나머지는 진입 직전 내용 복원.
  * 임시치아는 들어갈 때 스팬 전체를 맞추지만, 나올 때는 클릭한 치아만 바꾸고 옆은 그대로 둔다.
  */
 export const applyCycledLinkedSpanProsthesisType = (
@@ -472,7 +467,7 @@ export const applyCycledLinkedSpanProsthesisType = (
   };
 };
 
-/** 인접 치아 체크 토글: 양방향 연결 + 연결 여부에 맞게 형태(브리지/Pontic/작업X/유지장치/임시치아 vs 인레이/크라운/커스텀어벗) 동기화 */
+/** 인접 치아 체크 토글: 양방향 연결 + 연결 여부에 맞게 형태(브리지/작업X/유지장치/임시치아 vs 인레이/크라운/커스텀어벗) 동기화 */
 export const toggleAdjacentBridgeLink = (
   rows: ToothWorkSelection[],
   originalIndex: number,

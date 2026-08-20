@@ -83,9 +83,9 @@ import {
 import { fetchS3BlobCached } from "@/shared/files/s3BlobCache";
 import { useToast } from "@/shared/hooks/use-toast";
 import {
-  getPracticeTransferFileExtension,
-  PRACTICE_TRANSFER_IMAGE_EXTENSIONS,
-} from "@/shared/practice/practiceTransferAccept";
+  formatLabFeeMultiplierLabel,
+  normalizeLabFeeMultiplier,
+} from "@/shared/practice/labFeeSchedule";
 
 function isImagePreviewExt(ext: string): boolean {
   return PRACTICE_TRANSFER_IMAGE_EXTENSIONS.has(String(ext || "").toLowerCase());
@@ -544,6 +544,11 @@ export function PracticeTransferDetailChatDialog({
   const workPeriodDays = getPracticeWorkPeriodDays(orderDate, arrivalDate, orderedAt);
   const showShortWorkPeriod = isPracticeWorkPeriodShort(workPeriodDays);
   const acceptDisabled = acceptBusy || rejectBusy || oralScanBlocksAccept;
+  const acceptBarSurchargeLabel = (() => {
+    const multiplier = normalizeLabFeeMultiplier(feeQuote?.labFeeMultiplier);
+    if (multiplier <= 1) return null;
+    return formatLabFeeMultiplierLabel(multiplier);
+  })();
   const designFileList = Array.isArray(designFiles) ? designFiles : [];
   const resultFileList = Array.isArray(resultFiles) ? resultFiles : [];
   const showWorkFilesSection =
@@ -871,6 +876,21 @@ export function PracticeTransferDetailChatDialog({
                       >
                         {rejectButtonLabel}
                       </Button>
+                    ) : null}
+                    {acceptBarSurchargeLabel ? (
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="inline-flex shrink-0 items-center rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-900">
+                              {acceptBarSurchargeLabel}
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-xs leading-relaxed">
+                            이 치과는 어벗츠기공소 기준 할증 대상입니다. 견적·정산은
+                            어벗츠 수가(생성 시 스냅샷)를 따릅니다.
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                     ) : null}
                     <Button
                       type="button"

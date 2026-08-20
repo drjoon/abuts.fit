@@ -13,6 +13,7 @@ import SystemSettings from "../models/systemSettings.model.js";
 import {
   buildDefaultLabFeeSchedule,
   canonicalizeFeeItemName,
+  isRemovedPonticFeeRow,
   normalizeLabFeeItem,
   normalizeLabFeeItems,
 } from "./labFeeSchedule.js";
@@ -70,6 +71,7 @@ export function normalizeAbutsLabFeeItems(rawItems) {
     if (out.length >= MAX_ITEMS) break;
     const item = normalizeLabFeeItem(row, out.length);
     if (!item.name) continue;
+    if (isRemovedPonticFeeRow(row) || isRemovedPonticFeeRow(item)) continue;
     if (EXCLUDED_CATALOG_IDS.has(item.id)) continue;
     let id = item.id;
     if (!id || seen.has(id)) id = `item-${out.length + 1}`;

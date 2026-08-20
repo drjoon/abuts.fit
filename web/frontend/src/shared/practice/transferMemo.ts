@@ -19,6 +19,7 @@
 // - 2026-08-13: 유지장치에 남은 커스텀 플래그는 프리셋 필수로 보지 않는다.
 // - 2026-08-19: 임시치아도 크라운·브리지처럼 커스텀어벗 체크·프리셋 필수.
 // - 2026-08-19: 브리지 연결 시 한쪽이 임시치아이면 스팬 전체가 임시치아. 커스텀 규격은 형태와 무관하게 유지.
+// - 2026-08-20: Pontic UI 제거. 레거시 Pontic은 브리지로 정규화(기공소가 지대치 없음을 추론).
 export const ABUTMENT_PRODUCT_MODE = {
   PRODUCTION: "custom_abutment",
   DESIGN_AND_PRODUCTION: "design_custom_abutment",
@@ -513,6 +514,7 @@ export const isCustomAbutmentProsthesisType = (prosthesisType: string) => {
 };
 
 export const toCanonicalProsthesisType = (prosthesisType: string) => {
+  if (/^pontic$/i.test(String(prosthesisType || "").trim())) return "브리지";
   if (isMissingToothProsthesisType(prosthesisType)) return NO_WORK_PROSTHESIS_TYPE;
   if (isCustomAbutmentProsthesisType(prosthesisType)) {
     return CUSTOM_ABUTMENT_PROSTHESIS_TYPE;
@@ -531,7 +533,7 @@ export const normalizeProsthesisTypes = (items: string[]) => {
     .filter(Boolean)
     .map((item) => {
       const lowered = item.toLowerCase();
-      if (lowered === "pontic") return "Pontic";
+      if (lowered === "pontic") return null;
       if (lowered === "브릿지") return "브리지";
       if (
         lowered === "작업x" ||
@@ -552,10 +554,10 @@ export const normalizeProsthesisTypes = (items: string[]) => {
       if (compact === "가철성임시치아" || compact === "임시치아") return "임시치아";
       if (compact === "유지장치" || /^retainer$/i.test(item)) return "유지장치";
       return item;
-    });
+    })
+    .filter((item): item is string => Boolean(item));
 
   const deduped = Array.from(new Set(canonical));
-  if (!deduped.some((item) => /^pontic$/i.test(item))) deduped.push("Pontic");
   if (!deduped.some((item) => isMissingToothProsthesisType(item))) {
     deduped.push(NO_WORK_PROSTHESIS_TYPE);
   }
@@ -564,7 +566,6 @@ export const normalizeProsthesisTypes = (items: string[]) => {
 
 export const isBridgeLikeProsthesisType = (prosthesisType: string) =>
   prosthesisType === "브리지" ||
-  prosthesisType === "Pontic" ||
   isRetainerProsthesisType(prosthesisType) ||
   isMissingToothProsthesisType(prosthesisType);
 
@@ -572,15 +573,6 @@ export const isBridgeLikeProsthesisType = (prosthesisType: string) =>
 export const isLinkableProsthesisType = (prosthesisType: string) =>
   isBridgeLikeProsthesisType(prosthesisType) ||
   isTemporaryToothProsthesisType(prosthesisType);
-
-/** 브리지 스팬 표시 축소에 넣는 형태(브리지·Pontic·작업X·유지장치·임시치아) */
-const isCollapsibleBridgeSpanType = (prosthesisType: string) =>
-  isBridgeLikeProsthesisType(prosthesisType) ||
-  isTemporaryToothProsthesisType(prosthesisType);
-
-/** 스팬에서 지대치로 보는 형태(브리지·임시치아). 안쪽 Pontic 생략 기준 */
-const isBridgeSpanAbutmentType = (prosthesisType: string) =>
-  prosthesisType === "브리지" || isTemporaryToothProsthesisType(prosthesisType);
 
 export const isAbutmentDesignProsthesisType = (prosthesisType: string) =>
   isCustomAbutmentProsthesisType(prosthesisType);
@@ -724,7 +716,7 @@ export const normalizeToothWorksForSync = (items: ToothWorkSelection[]) =>
       const prosthesisType = toCanonicalProsthesisType(
         String(row?.prosthesisType || "").trim() || (toothNumber ? "크라운" : ""),
       );
-      // 인레이·Pontic·작업X를 거쳐도 커스텀 규격을 잃지 않는다(전송 normalize와 분리).
+      // 인레이·작업X를 거쳐도 커스텀 규격을 잃지 않는다(전송 normalize와 분리).
       const customAbutment = isCustomAbutmentProsthesisType(prosthesisType)
         ? true
         : Boolean(row?.customAbutment);
@@ -858,169 +850,6 @@ export const serializeToothWorksForSync = (rows: ToothWorkSelection[]) =>
     })
     .join(" | ");
 
-/**
- * 브리지 연결 성분에서 양끝 지대치(브리지) 사이 안쪽 Pontic은 표시에서 생략하고,
- * 바깥쪽 Pontic은 유지한 채 연결을 연장한다.
- *
- * 예) 43(브리지)-42(P)-41(P)-31(P)-32(P)-33(브리지)
- *  → 43 연결 43-33 / 33 연결 33-43 (안쪽 Pontic 생략)
- *
- * 예) 44(P)-43(브리지)-…-33(브리지)
- *  → 44 유지, 43 연결에 44와 33 포함
- *
- * 예) 43(임시치아)-42(P)-41(임시치아) 도 동일.
- */
-export const collapseInnerBridgePonticsForDisplay = (
-  rows: ToothWorkSelection[],
-): ToothWorkSelection[] => {
-  const normalized = normalizeToothWorks(rows);
-  if (normalized.length === 0) return [];
-
-  const byTooth = new Map<string, ToothWorkSelection>();
-  for (const row of normalized) {
-    if (!byTooth.has(row.toothNumber)) byTooth.set(row.toothNumber, row);
-  }
-
-  const bridgeLikeTeeth = normalized.filter((row) =>
-    isCollapsibleBridgeSpanType(row.prosthesisType),
-  );
-  if (bridgeLikeTeeth.length === 0) return normalized;
-
-  const adjacency = new Map<string, Set<string>>();
-  const ensure = (tooth: string) => {
-    if (!adjacency.has(tooth)) adjacency.set(tooth, new Set());
-    return adjacency.get(tooth)!;
-  };
-
-  for (const row of bridgeLikeTeeth) {
-    ensure(row.toothNumber);
-    for (const linked of row.bridgeLinkedTeeth) {
-      if (!byTooth.has(linked)) continue;
-      if (!isCollapsibleBridgeSpanType(byTooth.get(linked)!.prosthesisType)) continue;
-      ensure(row.toothNumber).add(linked);
-      ensure(linked).add(row.toothNumber);
-    }
-  }
-
-  const visited = new Set<string>();
-  const omitPontics = new Set<string>();
-  const collapsedLinks = new Map<string, string[]>();
-
-  const walkComponent = (seed: string) => {
-    const stack = [seed];
-    const component: string[] = [];
-    visited.add(seed);
-
-    while (stack.length > 0) {
-      const cur = stack.pop() as string;
-      component.push(cur);
-      for (const next of adjacency.get(cur) || []) {
-        if (visited.has(next)) continue;
-        visited.add(next);
-        stack.push(next);
-      }
-    }
-
-    // 경로 정렬: degree≤1 끝점에서 BFS 경로 우선, 실패 시 악궁 정렬
-    const degree = (tooth: string) => (adjacency.get(tooth)?.size || 0);
-    const endpoints = component.filter((t) => degree(t) <= 1);
-    const start =
-      endpoints.sort(
-        (a, b) => toToothMemoSortNumber(a) - toToothMemoSortNumber(b),
-      )[0] ||
-      component.slice().sort((a, b) => toToothMemoSortNumber(a) - toToothMemoSortNumber(b))[0];
-
-    const ordered: string[] = [];
-    const pathVisited = new Set<string>();
-    let cursor: string | null = start;
-    let prev: string | null = null;
-    while (cursor && !pathVisited.has(cursor)) {
-      ordered.push(cursor);
-      pathVisited.add(cursor);
-      const neighbors = [...(adjacency.get(cursor) || [])].filter((n) => n !== prev);
-      const nextInComponent = neighbors.find((n) => component.includes(n) && !pathVisited.has(n));
-      prev = cursor;
-      cursor = nextInComponent || null;
-    }
-    // 분기/누락분: 악궁 순으로 남은 치아 추가
-    for (const tooth of component
-      .slice()
-      .sort((a, b) => toToothMemoSortNumber(a) - toToothMemoSortNumber(b))) {
-      if (!pathVisited.has(tooth)) ordered.push(tooth);
-    }
-
-    const abutmentIndexes = ordered
-      .map((tooth, idx) => ({ tooth, idx, type: byTooth.get(tooth)?.prosthesisType || "" }))
-      .filter((row) => isBridgeSpanAbutmentType(row.type))
-      .map((row) => row.idx);
-
-    if (abutmentIndexes.length >= 2) {
-      const left = Math.min(...abutmentIndexes);
-      const right = Math.max(...abutmentIndexes);
-      for (let i = left + 1; i < right; i += 1) {
-        const tooth = ordered[i];
-        if (byTooth.get(tooth)?.prosthesisType === "Pontic") {
-          omitPontics.add(tooth);
-        }
-      }
-    }
-
-    const kept = ordered.filter((tooth) => !omitPontics.has(tooth));
-    const keptSet = new Set(kept);
-
-    // 생략 Pontic을 통과해 다음 유지 치아로 연결 연장
-    const resolveNextKept = (from: string, via: string): string | null => {
-      let prevTooth = from;
-      let cur: string | null = via;
-      const seen = new Set<string>([from]);
-      while (cur && !seen.has(cur)) {
-        seen.add(cur);
-        if (keptSet.has(cur)) return cur;
-        const nexts = [...(adjacency.get(cur) || [])].filter((n) => n !== prevTooth);
-        prevTooth = cur;
-        cur = nexts[0] || null;
-      }
-      return null;
-    };
-
-    for (const tooth of kept) {
-      const rawNeighbors = [...(adjacency.get(tooth) || [])];
-      const nextNeighbors = new Set<string>();
-      for (const neighbor of rawNeighbors) {
-        if (keptSet.has(neighbor)) {
-          nextNeighbors.add(neighbor);
-          continue;
-        }
-        if (omitPontics.has(neighbor)) {
-          const resolved = resolveNextKept(tooth, neighbor);
-          if (resolved) nextNeighbors.add(resolved);
-        }
-      }
-      collapsedLinks.set(
-        tooth,
-        [...nextNeighbors].sort(
-          (a, b) => toToothMemoSortNumber(a) - toToothMemoSortNumber(b),
-        ),
-      );
-    }
-  };
-
-  for (const row of bridgeLikeTeeth) {
-    if (visited.has(row.toothNumber)) continue;
-    walkComponent(row.toothNumber);
-  }
-
-  return normalized
-    .filter((row) => !omitPontics.has(row.toothNumber))
-    .map((row) => {
-      if (!collapsedLinks.has(row.toothNumber)) return row;
-      return {
-        ...row,
-        bridgeLinkedTeeth: collapsedLinks.get(row.toothNumber) || [],
-      };
-    });
-};
-
 export const formatToothWorksForDisplay = (
   rows: ToothWorkSelection[],
   options?: {
@@ -1029,7 +858,7 @@ export const formatToothWorksForDisplay = (
     labFacing?: boolean;
   },
 ) => {
-  const normalizedRows = collapseInnerBridgePonticsForDisplay(rows)
+  const normalizedRows = normalizeToothWorks(rows)
     .slice()
     .sort((a, b) => toToothMemoSortNumber(a.toothNumber) - toToothMemoSortNumber(b.toothNumber));
   if (!normalizedRows.length) return "";

@@ -488,14 +488,13 @@ const copyToothWorkContentToTooth = (
 };
 
 const matchesLinkedToggleType = (current: string, type: string) => {
-  if (type === "Pontic") return /^pontic$/i.test(current);
   if (type === NO_WORK_PROSTHESIS_TYPE) return isMissingToothProsthesisType(current);
   if (type === "유지장치") return isRetainerProsthesisType(current);
   if (type === "임시치아") return isTemporaryToothProsthesisType(current);
   return current === type;
 };
 
-/** 선택 치아 클릭: 인레이→크라운→커스텀어벗→임시치아 / 브리지↔Pontic↔작업X↔유지장치↔임시치아 */
+/** 선택 치아 클릭: 인레이→크라운→커스텀어벗→임시치아 / 브리지↔작업X↔유지장치↔임시치아 */
 const resolveNextProsthesisType = (
   prev: ToothWorkSelection[],
   toothNumber: string,
@@ -1525,7 +1524,7 @@ export const PracticeTransferRequestIntakePanel = ({
     return teeth.size;
   }, [toothWorks]);
 
-  // 연결 여부 ↔ 형태(인레이/크라운/커스텀어벗/임시치아 vs 브리지/Pontic/작업X/유지장치/임시치아) 불일치 보정 (드래프트·구버전 데이터)
+  // 연결 여부 ↔ 형태(인레이/크라운/커스텀어벗/임시치아 vs 브리지/작업X/유지장치/임시치아) 불일치 보정 (드래프트·구버전 데이터)
   const toothWorkLinkTypeMismatch = useMemo(() => {
     return toothWorks.some((row) => {
       const links = collectAdjacentBridgeLinks(toothWorks, row.toothNumber);
@@ -2675,7 +2674,7 @@ export const PracticeTransferRequestIntakePanel = ({
                               {row.toothNumber}
                             </span>
 
-                            {/* 2) 치아형태 — 글자 클릭 시에만 인레이→크라운→커스텀어벗→임시치아 / 브리지↔Pontic↔작업X↔유지장치↔임시치아 */}
+                            {/* 2) 치아형태 — 글자 클릭 시에만 인레이→크라운→커스텀어벗→임시치아 / 브리지↔작업X↔유지장치↔임시치아 */}
                             {(() => {
                               const typeLabel = isMissingTooth
                                 ? NO_WORK_PROSTHESIS_TYPE
@@ -2699,7 +2698,7 @@ export const PracticeTransferRequestIntakePanel = ({
                                     isMissingTooth
                                       ? undefined
                                       : isLinked
-                                        ? "클릭: 브리지 ↔ Pontic ↔ 작업X ↔ 유지장치 ↔ 임시치아 (유지장치는 연결 전체 동일·복귀 시 미클릭 치아 복원, 임시치아에서 나오면 클릭한 치아만 변경)"
+                                        ? "클릭: 브리지 ↔ 작업X ↔ 유지장치 ↔ 임시치아 (유지장치는 연결 전체 동일·복귀 시 미클릭 치아 복원, 임시치아에서 나오면 클릭한 치아만 변경)"
                                         : "클릭: 인레이 → 크라운 → 커스텀어벗 → 임시치아"
                                   }
                                   onClick={(e) => {

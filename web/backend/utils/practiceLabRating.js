@@ -15,6 +15,8 @@
 // - 2026-08-16: 치과·기공소 쌍당 평가 1건. 재평가 시 덮어쓰기. 집계 ratingCount=평가 치과 수.
 // - 2026-08-19: 신규 지정 의뢰는 평가만. 별점 배수는 레거시 자동매칭 청구용.
 // - 2026-08-19: 별점 기공비 배수 폐지(항상 ×1). 청구 할증은 기공소 치과별 labFeeMultiplier만.
+// - 2026-08-20: 치과 평가는 별점만. 자동매칭·별점 기공비 할인/할증 없음.
+- 2026-08-20: 별점은 수행 기공소(하청 포함). 하한·상한은 지정·하청 수신 게이트.
 // - 2026-08-16: scaleAutoMatchFeeToLabStars — 기공소 수신·수락 견적 별점 확정 단일가.
 
 import { Types } from "mongoose";
@@ -74,7 +76,55 @@ export function resolveAutoMatchEligibleStarBand({
   return { minStars: min, maxStars: max };
 }
 
-/** 별점 기공비 배수 폐지. 시그니처 호환용으로 항상 1. */
+export const LAB_OUTSIDE_STAR_BAND_REASON = "lab_outside_star_band";
+export const LAB_OUTSIDE_STAR_BAND_MESSAGE =
+  "선택한 기공소의 별점이 설정 구간 밖이라 이 의뢰를 보낼 수 없습니다.";
+
+/**
+ * 검증 기공소 ID 중 유효 별점이 [하한, 상한] 안인 것만.
+ * 평가 3곳 이하·미평가는 유효 3점.
+ */
+export async function filterLabAnchorIdsByStarBand({
+  labAnchorIds,
+  minStars,
+  maxStars,
+} = {}) {
+  const ids = (Array.isArray(labAnchorIds) ? labAnchorIds : [])
+    .map((id) => String(id || "").trim())
+    .filter(Boolean);
+  if (!ids.length) return [];
+  const aggregated = await loadGlobalLabRatingAggregates({ labAnchorIds: ids });
+  return ids.filter(
+    (id) =>
+      !isLabBlockedByPracticeRating({
+        aggregated,
+        labAnchorId: id,
+        minStars,
+        maxStars,
+      }),
+  );
+}
+
+export async function assertLabWithinPracticeStarBand({
+  labAnchorId,
+  minStars,
+  maxStars,
+} = {}) {
+  const labId = String(labAnchorId || "").trim();
+  if (!labId) return;
+  const kept = await filterLabAnchorIdsByStarBand({
+    labAnchorIds: [labId],
+    minStars,
+    maxStars,
+  });
+  if (kept.length) return;
+  const err = new Error(LAB_OUTSIDE_STAR_BAND_MESSAGE);
+  err.statusCode = 409;
+  err.code = LAB_OUTSIDE_STAR_BAND_REASON;
+  throw err;
+}
+
+/** 치과 별점은 평가 전용. 기공비 할인/할증에 쓰지 않음(항상 ×1). */
 export function feeMultiplierForStars(_stars) {
   return 1;
 }

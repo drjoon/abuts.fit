@@ -6,6 +6,7 @@
 // - web/frontend/src/shared/date/kst.ts
 // - web/frontend/src/features/settings/tabs/LabSettlementPayoutTab.tsx
 // change-log:
+// - 2026-08-20: 같은 날 조정을 1행으로 묶고 클릭 시 의뢰 상세.
 // - 2026-08-20: 유료/무료 구분 제거. 약정 단가 전액이 미정산으로 쌓이고 말일 일괄 지급. 요약 2칸·높이 축소.
 // - 2026-08-20: PeriodFilter 달력 좌·우 chevron 커스텀 기간을 조회에 반영.
 // - 2026-08-17: 테이블이 남은 높이를 채워 바깥 스크롤을 없애고 표 스크롤만 남김.
@@ -71,7 +72,7 @@ type LedgerItem = {
   createdAt?: string;
   occurredAt?: string;
   balanceAfter?: number;
-  groupKind?: "daily" | "single";
+  groupKind?: "daily" | "adjust-daily" | "single";
   ymd?: string;
   requestAmount?: number;
   requestCount?: number;
@@ -196,6 +197,10 @@ const dailyDetailLabel = (row: LedgerItem) => {
 
 const ledgerDetailLabel = (row: LedgerItem) => {
   if (row.groupKind === "daily") return dailyDetailLabel(row);
+  if (row.groupKind === "adjust-daily") {
+    const n = Number(row.requestCount || 0);
+    return n > 0 ? `조정 ${n}건` : "조정";
+  }
   if (row.type === "PAYOUT") return "지급";
   if (row.type === "ADJUST") return "조정";
   return (
@@ -962,18 +967,20 @@ export const ManufacturerPaymentPage = () => {
                       const badge = manufacturerPayoutBadge(r);
                       const signed = r.type === "PAYOUT" ? -Math.abs(amount) : amount;
                       const isDaily = r.groupKind === "daily";
-                      const canOpenDaily =
-                        isDaily && Array.isArray(r.mailboxGroups);
+                      const isAdjustDaily = r.groupKind === "adjust-daily";
+                      const canOpenDetail =
+                        (isDaily || isAdjustDaily) &&
+                        Array.isArray(r.mailboxGroups);
                       return (
                         <TableRow
                           key={r._id}
                           className={
-                            canOpenDaily
+                            canOpenDetail
                               ? "cursor-pointer hover:bg-slate-50/80"
                               : undefined
                           }
                           onClick={() => {
-                            if (!canOpenDaily) return;
+                            if (!canOpenDetail) return;
                             setDailyDetail({
                               ymd: String(r.ymd || ""),
                               amount,
@@ -982,11 +989,12 @@ export const ManufacturerPaymentPage = () => {
                               shippingAmount: Number(r.shippingAmount || 0),
                               shippingCount: Number(r.shippingCount || 0),
                               mailboxGroups: r.mailboxGroups || [],
+                              kind: isAdjustDaily ? "adjust" : "earn",
                             });
                           }}
                         >
                           <TableCell className="whitespace-nowrap text-center text-xs">
-                            {isDaily
+                            {isDaily || isAdjustDaily
                               ? formatDay(String(r.createdAt || r.occurredAt || ""))
                               : formatDate(String(r.createdAt || r.occurredAt || ""))}
                           </TableCell>

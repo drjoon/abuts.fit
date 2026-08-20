@@ -103,7 +103,7 @@ describe("practiceLabRating auto-match gate", () => {
     ).toBe(true);
   });
 
-  test("fee multipliers are unused (always 1)", () => {
+  test("fee multipliers unused: clinic stars do not change lab fees", () => {
     expect(feeMultiplierForStars(1)).toBe(1);
     expect(feeMultiplierForStars(2)).toBe(1);
     expect(feeMultiplierForStars(3)).toBe(1);
