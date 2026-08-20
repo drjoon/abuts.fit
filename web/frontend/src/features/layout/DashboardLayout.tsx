@@ -11,6 +11,8 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPath";
 import { cn } from "@/shared/ui/cn";
 
+// - 2026-08-20: 사이드 숨김 시 열기 버튼만 표시(숨기기 버튼이 왼쪽 가장자리에 겹치지 않게).
+// - 2026-08-20: 워크시트 툴바「완료포함」은 한 줄 유지.
 // - 2026-08-20: 데스크톱 사이드 메뉴는 숨김이 기본. 열기 버튼으로만 표시.
 // - 2026-08-19: 기공의뢰수신 작업영역 — 흰 카드 외곽·바깥 여백 제거해 캘린더를 넓게.
 // - 2026-08-19: 기공소 사이드 — 가입 이유 배너를 설정과 계정 팝업 사이.
@@ -1340,8 +1342,10 @@ export const DashboardLayout = () => {
       />
       <div className="flex h-screen">
         <div
-          className="lg:hidden fixed inset-0 z-50 bg-black/20 backdrop-blur-sm"
-          style={{ display: isOpen ? "block" : "none" }}
+          className={cn(
+            "fixed inset-0 z-50 bg-black/20 backdrop-blur-sm lg:hidden",
+            isOpen ? "block" : "hidden",
+          )}
           onClick={() => setIsOpen(false)}
         ></div>
 
@@ -1362,7 +1366,7 @@ export const DashboardLayout = () => {
             isCollapsed ? "w-24" : "w-60"
           } bg-card border-r border-border flex flex-col
           transform transition-transform duration-300 ease-in-out
-          ${isOpen ? "lg:relative translate-x-0" : "-translate-x-full"}
+          ${isOpen ? "lg:relative translate-x-0" : "-translate-x-full overflow-hidden pointer-events-none"}
         `}
         >
           <div className="p-4 lg:p-6 border-b border-border">
@@ -1375,14 +1379,16 @@ export const DashboardLayout = () => {
             />
           </div>
 
-          <button
-            type="button"
-            aria-label="사이드 메뉴 숨기기"
-            onClick={() => setIsOpen(false)}
-            className="hidden lg:flex items-center justify-center absolute top-20 -right-4 w-8 h-8 rounded-full bg-card border border-border shadow-sm hover:bg-muted/60 hover:border-muted-foreground/40 transition-colors"
-          >
-            <PanelLeft className="w-4 h-4" />
-          </button>
+          {isOpen ? (
+            <button
+              type="button"
+              aria-label="사이드 메뉴 숨기기"
+              onClick={() => setIsOpen(false)}
+              className="hidden lg:flex items-center justify-center absolute top-20 -right-4 w-8 h-8 rounded-full bg-card border border-border shadow-sm hover:bg-muted/60 hover:border-muted-foreground/40 transition-colors"
+            >
+              <PanelLeft className="w-4 h-4" />
+            </button>
+          ) : null}
 
           <nav className="hover-scrollbar flex-1 overflow-y-auto p-3 lg:p-4">
             {adminMenuSections ? (
@@ -1639,7 +1645,7 @@ export const DashboardLayout = () => {
                           worksheetType === "custom_abutment") && (
                           <>
                             <div className="hidden sm:block h-8 w-px bg-muted-foreground/60 flex-shrink-0" />
-                            <div className="flex flex-wrap gap-1 text-xs flex-shrink-0">
+                            <div className="flex flex-nowrap gap-1 text-xs min-w-0 overflow-x-auto">
                               <Button
                                 variant={
                                   worksheetStage === "request"
@@ -1779,8 +1785,8 @@ export const DashboardLayout = () => {
                           </>
                         )}
 
-                        <div className="w-full sm:w-auto sm:ml-auto flex items-center justify-end gap-2 min-w-0 sm:flex-nowrap">
-                          <label className="flex items-center gap-2 text-xs text-muted-foreground select-none ">
+                        <div className="w-full sm:w-auto sm:ml-auto flex items-center justify-end gap-2 shrink-0 sm:flex-nowrap">
+                          <label className="flex items-center gap-1.5 text-xs text-muted-foreground select-none whitespace-nowrap shrink-0">
                             <input
                               type="checkbox"
                               className="h-3.5 w-3.5 rounded border-muted-foreground/40 text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
@@ -1791,7 +1797,7 @@ export const DashboardLayout = () => {
                             />
                             <span>완료포함</span>
                           </label>
-                          <div className="relative w-full max-w-[140px] lg:max-w-[220px]">
+                          <div className="relative w-[120px] lg:w-[180px] shrink-0">
                             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                             <Input
                               placeholder="검색..."
