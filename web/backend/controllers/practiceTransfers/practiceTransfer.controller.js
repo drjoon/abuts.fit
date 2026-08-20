@@ -137,6 +137,7 @@ import { resolvePracticeTransferSkipJig } from "../../utils/practiceTransferLabS
 // - 2026-08-16: pastReady — 라이브 stage 우선(sticky startedAt OR 제거 시 목록 인자 우선).
 // - 2026-08-17: trash/empty — 하드삭제 의뢰 채팅방 archive(치과 사이드바 유령 unread 방지).
 // - 2026-08-20: 기공소 변경 시 이전 기공소를 채팅 참가자·사이드바 unread에서 제거.
+// - 2026-08-20: draft upsert — files 생략 시 기존 첨부 유지. 같은 기공소·환자 건에 파일 append.
 // - 2026-08-17: trash/empty — 하드삭제 전 rollbackPracticeTransferBilling(배송·디자인비 포함).
 // - 2026-08-16: 어벗 가공(준비 아님)이면 mark-release 거부·목록 abutmentPastReady.
 // - 2026-08-19: 생성 시 구강스캔은 선택(어벗츠기공소/자동매칭 포함).
@@ -1114,6 +1115,24 @@ const toDraftResponse = (doc, ownerMeta = null) => {
   };
 };
 
+const patientNameFromTransferMemo = (memo) =>
+  String(String(memo || "").match(/\[\s*환자명\s*:\s*([^\]]*)\]/)?.[1] || "")
+    .trim()
+    .normalize("NFC");
+
+const mergeDraftFileRows = (existing, incoming) => {
+  const byId = new Map();
+  for (const row of Array.isArray(existing) ? existing : []) {
+    const id = String(row?.fileId || "").trim();
+    if (id) byId.set(id, row);
+  }
+  for (const row of Array.isArray(incoming) ? incoming : []) {
+    const id = String(row?.fileId || "").trim();
+    if (id) byId.set(id, row);
+  }
+  return Array.from(byId.values());
+};
+
 /** draft-upserted 실시간 이벤트에 폼 스냅샷을 실어 수신측 GET RTT를 제거한다. */
 const toDraftUpsertedRealtimePayload = ({
   source,
@@ -1573,7 +1592,12 @@ export async function upsertPracticeTransferDraft(req, res) {
       ? new Types.ObjectId(rawAnchorId)
       : null;
 
-    const incomingFiles = Array.isArray(req.body?.files) ? req.body.files : [];
+    const filesProvided = Array.isArray(req.body?.files);
+    const incomingFiles = filesProvided ? req.body.files : [];
+    const draftFilesMode =
+      String(req.body?.draftFilesMode || "").trim().toLowerCase() === "append"
+        ? "append"
+        : "replace";
     // transferMemo는 날짜 메타만으로도 비어있지 않을 수 있어, 실질 내용 여부를 본다.
     const memoText = String(transferMemo || "");
     const patientNameMatch = memoText.match(/\[\s*환자명\s*:\s*([^\]]*)\]/);
@@ -1676,46 +1700,82 @@ export async function upsertPracticeTransferDraft(req, res) {
     let doc = null;
 
     await ensurePracticeTransferDraftIndexes();
+    const { scope } = await buildPracticeOwnedScope(req);
+    const patientName = patientNameFromTransferMemo(transferMemo);
 
-    if (rawDraftId && Types.ObjectId.isValid(rawDraftId)) {
-      // 불러온 임시저장(같은 케이스)에 join: 소유자는 유지하고 내용만 갱신
-      const { scope } = await buildPracticeOwnedScope(req);
-      const existing = await PracticeTransferDraft.findOne({
+    const isSameOpenCase = (row) => {
+      if (!row?._id) return false;
+      if (patientNameFromTransferMemo(row.transferMemo) !== patientName) return false;
+      const rowLabId = String(row.targetLabAnchorId || "").trim();
+      const rowLabName = String(row.targetLabName || "").trim();
+      const nextLabId = targetLabAnchorId ? String(targetLabAnchorId) : "";
+      if (nextLabId && rowLabId && rowLabId === nextLabId) return true;
+      return Boolean(targetLabName) && rowLabName === targetLabName;
+    };
+
+    const siblings = await PracticeTransferDraft.find({
+      deletedAt: null,
+      ...scope,
+    })
+      .sort({ updatedAt: -1 })
+      .limit(40)
+      .lean();
+    const sameCases = siblings.filter((row) => isSameOpenCase(row));
+    if (sameCases.length) {
+      const requestedId =
+        rawDraftId && Types.ObjectId.isValid(rawDraftId) ? rawDraftId : "";
+      const byFilesThenRecent = [...sameCases].sort((a, b) => {
+        const fileDelta =
+          (Array.isArray(b.files) ? b.files.length : 0) -
+          (Array.isArray(a.files) ? a.files.length : 0);
+        if (fileDelta) return fileDelta;
+        return (
+          new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime()
+        );
+      });
+      const requested = requestedId
+        ? sameCases.find((row) => String(row._id) === requestedId)
+        : null;
+      const best = byFilesThenRecent[0];
+      const requestedCount = Array.isArray(requested?.files) ? requested.files.length : 0;
+      const bestCount = Array.isArray(best?.files) ? best.files.length : 0;
+      doc = requested && requestedCount >= bestCount ? requested : best;
+    } else if (rawDraftId && Types.ObjectId.isValid(rawDraftId)) {
+      doc = await PracticeTransferDraft.findOne({
         _id: new Types.ObjectId(rawDraftId),
         deletedAt: null,
         ...scope,
-      })
-        .select({ _id: 1, practiceUserId: 1 })
-        .lean();
+      }).lean();
+    }
 
-      if (existing?._id) {
-        doc = await PracticeTransferDraft.findOneAndUpdate(
-          { _id: existing._id, deletedAt: null },
-          {
-            $set: {
-              practiceBusinessAnchorId: req.user?.businessAnchorId || null,
-              targetLabAnchorId,
-              targetLabName,
-              transferMemo,
-              files: normalizedDraftFiles,
-            },
-          },
-          { new: true },
-        ).lean();
+    if (doc?._id) {
+      const $set = {
+        practiceBusinessAnchorId: req.user?.businessAnchorId || null,
+        targetLabAnchorId,
+        targetLabName,
+        transferMemo,
+      };
+      if (filesProvided) {
+        $set.files =
+          draftFilesMode === "append"
+            ? mergeDraftFileRows(doc.files, normalizedDraftFiles)
+            : normalizedDraftFiles;
       }
-      // 휴지통/삭제된 draftId(또는 권한 밖)면 아래에서 새 draft 생성
+      doc = await PracticeTransferDraft.findOneAndUpdate(
+        { _id: doc._id, deletedAt: null },
+        { $set },
+        { new: true },
+      ).lean();
     }
 
     if (!doc) {
-      // 새 케이스 · stale draftId 폴백: 항상 새 draft 생성
-      // 기공소·환자명 게이트는 위에서 이미 통과했다.
       const created = await PracticeTransferDraft.create({
         practiceUserId: req.user?._id,
         practiceBusinessAnchorId: req.user?.businessAnchorId || null,
         targetLabAnchorId,
         targetLabName,
         transferMemo,
-        files: normalizedDraftFiles,
+        files: filesProvided ? normalizedDraftFiles : [],
         deletedAt: null,
       });
       doc = await PracticeTransferDraft.findById(created._id).lean();

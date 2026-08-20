@@ -27,7 +27,7 @@ import type { PreUploadFileStatus } from "@/shared/hooks/useFilePreUpload";
 // - 2026-08-20: requirementNote를 모바일 쉐이드 포토 안내 등 soft tip으로 표시.
 // - 2026-08-20: 쉐이드 안내 — 드롭존과 같은 폭·가운데 정렬, 카메라 아이콘.
 // - 2026-08-20: 이미지 첨부는 카드에 썸네일 미리보기.
-// - 2026-08-20: 썸네일 클릭 시 크게 보기.
+// - 2026-08-20: 썸네일 클릭 시 크게 보기. 파일명도 같은 미리보기.
 
 export type PracticeTransferFileDisplayItem = {
   key: string;
@@ -211,6 +211,7 @@ export const PracticeTransferFilePane = ({
                             src={file.previewUrl}
                             alt=""
                             className="h-full w-full object-cover"
+                            draggable={false}
                             onError={(event) => {
                               event.currentTarget.style.display = "none";
                               const fallback = event.currentTarget.nextElementSibling;
@@ -233,9 +234,19 @@ export const PracticeTransferFilePane = ({
                     <div className="min-w-0 flex-1">
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <p className="truncate text-sm font-medium text-slate-900">
-                            {file.name}
-                          </p>
+                          {file.previewUrl && onPreviewFile ? (
+                            <button
+                              type="button"
+                              className="block w-full truncate text-left text-sm font-medium text-slate-900"
+                              onClick={() => onPreviewFile(file)}
+                            >
+                              {file.name}
+                            </button>
+                          ) : (
+                            <p className="truncate text-sm font-medium text-slate-900">
+                              {file.name}
+                            </p>
+                          )}
                         </TooltipTrigger>
                         <TooltipContent
                           side="top"

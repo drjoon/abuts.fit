@@ -101,6 +101,8 @@
  * - 2026-08-20: 모바일 상단 새로작성·임시저장만. 임시저장 모달 닫기·전체삭제 간격.
  * - 2026-08-20: PC 첨부 목록에도 이미지 썸네일(모바일 동기화 포함).
  * - 2026-08-20: 구강포토 토스트 3초·닫기, CSP blob 썸네일, 클릭 미리보기, 동기화 반영.
+ * - 2026-08-20: PC 썸네일 — S3 octet-stream MIME 보정·미리보기 fetch 중단 방지. 파일 전체삭제는 draft를 지우지 않고 빈 파일 스냅샷을 동기화.
+ * - 2026-08-20: 폼 자동저장은 파일 목록을 보내지 않는다. PC/모바일 첨부는 같은 기공소·환자 draft에 append.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -386,6 +388,18 @@ const isPracticeOralPhotoPreviewable = (fileName: string, mimetype?: string) => 
   const idx = lower.lastIndexOf(".");
   const ext = idx >= 0 ? lower.slice(idx) : "";
   return PRACTICE_TRANSFER_IMAGE_EXTENSIONS.has(ext);
+};
+
+/** img 태그는 octet-stream blob을 그리지 못하므로 확장자로 image MIME을 보정한다. */
+const blobForOralPhotoPreview = (source: Blob, fileName?: string) => {
+  if (!(source instanceof Blob)) return source;
+  const mime = String(source.type || "").trim().toLowerCase();
+  if (mime.startsWith("image/") && !mime.includes("heic") && !mime.includes("heif")) {
+    return source;
+  }
+  const inferred = inferPracticeTransferFileMimetype(String(fileName || ""));
+  if (!inferred.startsWith("image/")) return source;
+  return new Blob([source], { type: inferred });
 };
 
 const toDraftListSummary = (
@@ -1162,6 +1176,7 @@ export const PracticeFileTransferPage = ({
   /** 파일 업로드 동기화 중 원격 draft 적용으로 폼이 깜빡이지 않게 한다. */
   const fileSyncInFlightRef = useRef(false);
   const mobileFilePromoteSeqRef = useRef(0);
+  const autoJoinedDraftIdRef = useRef("");
   /** 모바일 구강포토: private S3 location 대신 blob object URL (s3Key → url) */
   const oralPhotoObjectUrlByS3KeyRef = useRef<Map<string, string>>(new Map());
   const [oralPhotoObjectUrlByS3Key, setOralPhotoObjectUrlByS3Key] = useState<
@@ -1551,22 +1566,27 @@ export const PracticeFileTransferPage = ({
     [files, draftFiles],
   );
 
-  const localPhotoPreviewUrls = useMemo(
-    () => files.map((file) => URL.createObjectURL(file)),
-    [files],
-  );
+  const [localPhotoPreviewUrls, setLocalPhotoPreviewUrls] = useState<string[]>([]);
 
   useEffect(() => {
+    const urls = files.map((file) =>
+      URL.createObjectURL(blobForOralPhotoPreview(file, file.name)),
+    );
+    setLocalPhotoPreviewUrls(urls);
     return () => {
-      localPhotoPreviewUrls.forEach((url) => URL.revokeObjectURL(url));
+      urls.forEach((url) => URL.revokeObjectURL(url));
     };
-  }, [localPhotoPreviewUrls]);
+  }, [files]);
 
-  const rememberOralPhotoObjectUrl = useCallback((s3Key: string, source: Blob) => {
+  const rememberOralPhotoObjectUrl = useCallback((
+    s3Key: string,
+    source: Blob,
+    fileName?: string,
+  ) => {
     const key = String(s3Key || "").trim();
     if (!key || !(source instanceof Blob)) return;
     if (oralPhotoObjectUrlByS3KeyRef.current.has(key)) return;
-    const url = URL.createObjectURL(source);
+    const url = URL.createObjectURL(blobForOralPhotoPreview(source, fileName));
     oralPhotoObjectUrlByS3KeyRef.current.set(key, url);
     setOralPhotoObjectUrlByS3Key((prev) =>
       prev[key] === url ? prev : { ...prev, [key]: url },
@@ -1616,28 +1636,49 @@ export const PracticeFileTransferPage = ({
     if (stale.length) forgetOralPhotoObjectUrls(stale);
   }, [draftFiles, forgetOralPhotoObjectUrls]);
 
+  const draftImagePreviewKey = useMemo(
+    () =>
+      draftFiles
+        .filter((row) =>
+          isPracticeOralPhotoPreviewable(row.originalName, row.mimetype),
+        )
+        .map((row) => String(row.s3Key || "").trim())
+        .filter(Boolean)
+        .join("\n"),
+    [draftFiles],
+  );
+
   useEffect(() => {
     if (!authToken) return;
+    const wantedKeys = draftImagePreviewKey
+      .split("\n")
+      .map((key) => key.trim())
+      .filter(Boolean);
+    if (!wantedKeys.length) return;
+
     let cancelled = false;
     const controller = new AbortController();
+    const nameByKey = new Map(
+      draftFilesRef.current.map((row) => [
+        String(row.s3Key || "").trim(),
+        String(row.originalName || "photo.jpg").trim() || "photo.jpg",
+      ]),
+    );
 
     const loadMissingPreviews = async () => {
-      for (const row of draftFiles) {
+      for (const s3Key of wantedKeys) {
         if (cancelled) return;
-        const s3Key = String(row.s3Key || "").trim();
-        if (!s3Key) continue;
         if (oralPhotoObjectUrlByS3KeyRef.current.has(s3Key)) continue;
-        if (!isPracticeOralPhotoPreviewable(row.originalName, row.mimetype)) continue;
         try {
           const blob = await fetchS3BlobCached({
             s3Key,
-            fileName: String(row.originalName || "photo.jpg").trim() || "photo.jpg",
+            fileName: nameByKey.get(s3Key) || "photo.jpg",
             token: authToken,
             buildUrl: buildS3ProxyDownloadUrl,
             signal: controller.signal,
           });
           if (cancelled) return;
-          rememberOralPhotoObjectUrl(s3Key, blob);
+          rememberOralPhotoObjectUrl(s3Key, blob, nameByKey.get(s3Key));
         } catch {
           // 미리보기 실패는 썸네일 placeholder로 둔다.
         }
@@ -1649,7 +1690,7 @@ export const PracticeFileTransferPage = ({
       cancelled = true;
       controller.abort();
     };
-  }, [authToken, draftFiles, rememberOralPhotoObjectUrl]);
+  }, [authToken, draftImagePreviewKey, rememberOralPhotoObjectUrl]);
 
   const mobileOralPhotos = useMemo(
     () =>
@@ -2918,9 +2959,6 @@ export const PracticeFileTransferPage = ({
             arrivalDate,
             arrivalDefaultDays,
             transferMemo,
-            files: latestFilesForSave.map((row) => ({
-              fileId: row.fileId,
-            })),
           },
         });
 
@@ -2964,7 +3002,7 @@ export const PracticeFileTransferPage = ({
           return;
         }
 
-        const nextDraftFiles = Array.isArray(payload?.files)
+        const mappedPayloadFiles = Array.isArray(payload?.files)
           ? payload.files
               .map((row) => ({
                 fileId: String(row?.fileId || "").trim(),
@@ -2975,7 +3013,11 @@ export const PracticeFileTransferPage = ({
                 location: String(row?.location || "").trim(),
               }))
               .filter((row) => row.fileId && row.originalName && row.s3Key)
-          : filesForSave;
+          : [];
+        const nextDraftFiles =
+          mappedPayloadFiles.length >= latestFilesForSave.length
+            ? mappedPayloadFiles
+            : latestFilesForSave;
 
         setDraftFiles(nextDraftFiles);
         {
@@ -3122,7 +3164,7 @@ export const PracticeFileTransferPage = ({
     // 로컬에 이어쓸 draftId가 있을 때만 해당 건을 폼에 복원. 목록만 항상 갱신.
     const resumeDraftId = String(activeDraftIdRef.current || "").trim();
     if (resumeDraftId) {
-      void loadPracticeTransferDraft({ draftId: resumeDraftId });
+      void loadPracticeTransferDraft({ draftId: resumeDraftId, forceResync: true });
     }
     void loadPracticeTransferDraftList();
     // hydrate 직후 1회. 콜백 identity 변경으로 다른 임시저장을 폼에 넣지 않는다.
@@ -3158,6 +3200,7 @@ export const PracticeFileTransferPage = ({
     setActiveDraftId(null);
     activeDraftSeenInListRef.current = null;
     draftSummaryIdRef.current = null;
+    autoJoinedDraftIdRef.current = "";
     setEditingSentTransfer(null);
     editingSentTransferRef.current = null;
     lastSavedFormFingerprintRef.current = null;
@@ -3250,11 +3293,49 @@ export const PracticeFileTransferPage = ({
       void resetIntakeFormAfterTransferRef.current();
       return;
     }
-    // 목록에 없던 stale draftId(삭제·휴지통·유실) — 폼 내용은 유지하고 id만 비운다.
-    setActiveDraftId(null);
-    setDraftSummary(null);
-    activeDraftSeenInListRef.current = null;
+    // 목록 fetch 전·다른 기기에서 방금 생긴 draft는 아직 목록에 없을 수 있다.
+    // unseen id를 바로 비우면 모바일 구강포토 동기화가 풀어진다.
   }, [activeDraftId, localFormHydrated, practiceDraftList]);
+
+  useEffect(() => {
+    if (!localFormHydrated || !draftListLoadedRef.current) return;
+    if (!hasSubstantialContentForNewDraft) return;
+    if (draftFiles.length > 0) return;
+    if (editingSentTransfer) return;
+
+    const patient = normalizedPatientName;
+    const labName = String(selectedLab?.name || "").trim();
+    const labId = toApiLabAnchorId(selectedLab?._id);
+    const matches = practiceDraftList.filter((row) => {
+      if (String(row.patientName || "").normalize("NFC") !== patient) return false;
+      const rowLabId = String(row.targetLabAnchorId || "").trim();
+      const rowLabName = String(row.targetLabName || "").trim();
+      if (labId && rowLabId && rowLabId === labId) return true;
+      return Boolean(labName) && rowLabName === labName;
+    });
+    const best = [...matches].sort((a, b) => {
+      const fileDelta = Number(b.fileCount || 0) - Number(a.fileCount || 0);
+      if (fileDelta) return fileDelta;
+      return (
+        new Date(String(b.updatedAt || 0)).getTime() -
+        new Date(String(a.updatedAt || 0)).getTime()
+      );
+    })[0];
+    if (!best || Number(best.fileCount || 0) <= 0) return;
+    if (autoJoinedDraftIdRef.current === best.id) return;
+    autoJoinedDraftIdRef.current = best.id;
+    void loadPracticeTransferDraft({ draftId: best.id, forceResync: true });
+  }, [
+    draftFiles.length,
+    editingSentTransfer,
+    hasSubstantialContentForNewDraft,
+    loadPracticeTransferDraft,
+    localFormHydrated,
+    normalizedPatientName,
+    practiceDraftList,
+    selectedLab?._id,
+    selectedLab?.name,
+  ]);
 
   const periodAndSearchFilteredRequests = useMemo(
     () => filterRequestsByPeriodAndSearch(recentRequests, period, ""),
@@ -4194,11 +4275,23 @@ export const PracticeFileTransferPage = ({
     chatUploads.addFiles(nextFiles);
   };
 
-  const syncDraftFilesToServer = async (nextDraftFiles: DraftTransferFileItem[]) => {
+  const syncDraftFilesToServer = async (
+    nextDraftFiles: DraftTransferFileItem[],
+    options?: { mode?: "append" | "replace" },
+  ) => {
     if (!authToken) return;
     if (editingSentTransferRef.current) return;
 
-    if (nextDraftFiles.length === 0) {
+    const hasLab =
+      Boolean(String(selectedLab?.name || "").trim()) ||
+      Boolean(toApiLabAnchorId(selectedLab?._id));
+    const keepDraftWithoutFiles =
+      nextDraftFiles.length === 0 &&
+      hasAutosaveReadyPatientName(normalizedPatientName) &&
+      hasLab;
+    const filesMode = options?.mode === "append" ? "append" : "replace";
+
+    if (nextDraftFiles.length === 0 && !keepDraftWithoutFiles) {
       const draftId = String(activeDraftIdRef.current || "").trim();
       await apiFetch<unknown>({
         path: draftId
@@ -4217,9 +4310,6 @@ export const PracticeFileTransferPage = ({
       return;
     }
 
-    const hasLab =
-      Boolean(String(selectedLab?.name || "").trim()) ||
-      Boolean(toApiLabAnchorId(selectedLab?._id));
     // 파일 반영도 기공소·완성형 한글 환자명이 있을 때만 서버 draft를 만든다/갱신한다.
     if (!hasAutosaveReadyPatientName(normalizedPatientName) || !hasLab) return;
 
@@ -4235,7 +4325,7 @@ export const PracticeFileTransferPage = ({
       skipJig: effectiveSkipJig,
     });
 
-    await apiFetch<unknown>({
+    const res = await apiFetch<unknown>({
       path: "/api/practice/transfers/draft",
       method: "POST",
       token: authToken,
@@ -4248,12 +4338,42 @@ export const PracticeFileTransferPage = ({
         arrivalDefaultDays,
         transferMemo,
         files: nextDraftFiles.map((row) => ({ fileId: row.fileId })),
+        draftFilesMode: filesMode,
+        forceResync: true,
       },
     });
+    if (!res.ok) {
+      throw new Error("임시저장 파일 반영에 실패했습니다.");
+    }
+    const body =
+      res.data && typeof res.data === "object"
+        ? (res.data as { data?: PracticeTransferDraftPayload })
+        : {};
+    const payload = body.data && typeof body.data === "object" ? body.data : null;
+    const returnedDraftId = String(payload?._id || "").trim();
+    if (returnedDraftId) {
+      setActiveDraftId(returnedDraftId);
+      activeDraftIdRef.current = returnedDraftId;
+      activeDraftSeenInListRef.current = returnedDraftId;
+    }
+    const returnedFiles = Array.isArray(payload?.files)
+      ? payload.files
+          .map((row) => ({
+            fileId: String(row?.fileId || "").trim(),
+            originalName: String(row?.originalName || "").trim(),
+            mimetype: String(row?.mimetype || "application/octet-stream").trim(),
+            size: Number(row?.size || 0),
+            s3Key: String(row?.s3Key || "").trim(),
+            location: String(row?.location || "").trim(),
+          }))
+          .filter((row) => row.fileId && row.originalName && row.s3Key)
+      : nextDraftFiles;
+    if (returnedFiles.length >= nextDraftFiles.length) {
+      setDraftFiles(returnedFiles);
+    }
   };
 
   useEffect(() => {
-    if (!isMobile) return;
     if (!authToken) return;
     if (editingSentTransferRef.current) return;
     if (!hasSubstantialContentForNewDraft) return;
@@ -4308,14 +4428,14 @@ export const PracticeFileTransferPage = ({
           ) {
             return;
           }
-          rememberOralPhotoObjectUrl(s3Key, file);
+          rememberOralPhotoObjectUrl(s3Key, file, file.name);
         });
         const nextDraftFiles = additions.length
           ? [...draftFilesRef.current, ...additions]
           : draftFilesRef.current;
         if (additions.length) {
           setDraftFiles(nextDraftFiles);
-          await syncDraftFilesToServer(nextDraftFiles);
+          await syncDraftFilesToServer(nextDraftFiles, { mode: "append" });
         }
         if (seq !== mobileFilePromoteSeqRef.current) return;
         snapshotKeys.forEach((key) => {
@@ -4342,7 +4462,6 @@ export const PracticeFileTransferPage = ({
     files,
     forgetFile,
     hasSubstantialContentForNewDraft,
-    isMobile,
     peekCachedUploadedFiles,
     rememberOralPhotoObjectUrl,
     removeFilesByKeys,
@@ -4372,7 +4491,7 @@ export const PracticeFileTransferPage = ({
       if (removedS3Key) forgetOralPhotoObjectUrls([removedS3Key]);
 
       try {
-        await syncDraftFilesToServer(nextDraftFiles);
+        await syncDraftFilesToServer(nextDraftFiles, { mode: "replace" });
       } catch {
         setDraftFiles(prevDraftFiles);
         toast({
@@ -4391,7 +4510,7 @@ export const PracticeFileTransferPage = ({
       const prevDraftFiles = [...draftFiles];
       setDraftFiles([]);
       try {
-        await syncDraftFilesToServer([]);
+        await syncDraftFilesToServer([], { mode: "replace" });
       } catch {
         setDraftFiles(prevDraftFiles);
         toast({
@@ -5053,10 +5172,11 @@ export const PracticeFileTransferPage = ({
       const eventDraftId = String(payload.draftId || "").trim();
       const activeId = String(activeDraftIdRef.current || "").trim();
       const summaryId = String(draftSummaryIdRef.current || "").trim();
-      const linkedDraftId = activeId || summaryId;
-      const isLinkedCaseEvent =
-        Boolean(eventDraftId) && Boolean(linkedDraftId) && eventDraftId === linkedDraftId;
-      const isActiveCaseEvent = Boolean(activeId) && eventDraftId === activeId;
+      const isSameOpenCase =
+        Boolean(eventDraftId) &&
+        (eventDraftId === activeId || eventDraftId === summaryId);
+      const isLinkedCaseEvent = isSameOpenCase;
+      const isActiveCaseEvent = isSameOpenCase;
 
       if (action === "trash-emptied") {
         setTrashedDraftList([]);
@@ -5077,7 +5197,10 @@ export const PracticeFileTransferPage = ({
         );
         invalidateApiGetCache("/api/practice/transfers/drafts");
         void loadPracticeTransferDraftList();
-        if (linkedDraftId && ids.includes(linkedDraftId)) {
+        if (
+          (activeId && ids.includes(activeId)) ||
+          (summaryId && ids.includes(summaryId))
+        ) {
           void resetIntakeFormAfterTransferRef.current();
         }
         return;
@@ -5096,8 +5219,31 @@ export const PracticeFileTransferPage = ({
           }
           return;
         }
-        // 같은 케이스(불러온 draftId)만 작성 폼에 반영
-        if (isActiveCaseEvent && action === "draft-upserted") {
+        // 같은 케이스(불러온 draftId) 또는 같은 기공소·환자 작성 폼이면 파일을 반영한다.
+        if (action === "draft-upserted") {
+          const parsedEventMemo = parsePracticeTransferMemoMeta(
+            String(payload.transferMemo || ""),
+          );
+          const eventFingerprint = buildPracticeTransferFormFingerprint({
+            targetLabAnchorId:
+              payload.targetLabAnchorId != null
+                ? String(payload.targetLabAnchorId).trim() || null
+                : null,
+            targetLabName: String(payload.targetLabName || "").trim(),
+            patientName: parsedEventMemo.patientName,
+            orderDate: parsedEventMemo.orderDate,
+            arrivalDate: parsedEventMemo.arrivalDate,
+            arrivalDefaultDays: parsedEventMemo.arrivalDefaultDays,
+            requestMemo: parsedEventMemo.memo,
+            prosthesisTypes: parsedEventMemo.prosthesisTypes,
+            toothWorks: parsedEventMemo.toothWorks,
+          });
+          const sameOpenForm =
+            hasAutosaveReadyPatientName(parsedEventMemo.patientName) &&
+            Boolean(currentFormFingerprintRef.current) &&
+            eventFingerprint === currentFormFingerprintRef.current;
+          if (!isActiveCaseEvent && !sameOpenForm) return;
+
           // 같은 계정 다른 탭/창도 반영해야 하므로 editorUserId echo skip 하지 않는다.
           // 동일 내용은 applyPracticeDraftPayload 내부 fingerprint 비교로 no-op 처리.
           const hasEventSnapshot =
@@ -5118,12 +5264,15 @@ export const PracticeFileTransferPage = ({
                 : [],
               updatedAt: payload.updatedAt ? String(payload.updatedAt) : null,
               createdAt: payload.createdAt ? String(payload.createdAt) : null,
-              forceResync: Boolean(payload.forceResync),
+              forceResync: Boolean(payload.forceResync) || sameOpenForm,
             });
             return;
           }
 
-          void loadPracticeTransferDraft({ draftId: activeId });
+          void loadPracticeTransferDraft({
+            draftId: eventDraftId || activeId,
+            forceResync: true,
+          });
         }
         return;
       }
@@ -5750,6 +5899,7 @@ export const PracticeFileTransferPage = ({
     setDraftSummary(null);
     setActiveDraftId(null);
     activeDraftSeenInListRef.current = null;
+    autoJoinedDraftIdRef.current = "";
     setEditingSentTransfer(null);
     editingSentTransferRef.current = null;
     setToothChartResetNonce((n) => n + 1);
