@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/practice/PracticeOrderArrivalDateRangeField.tsx
 // - web/frontend/src/shared/components/practice/PracticeWorkPeriodText.tsx
 // - web/frontend/src/shared/components/practice/PracticeRushConfirmDialog.tsx
+// - 2026-08-20: CA 안내 — 지정 도착일 2영업일 전 발송.
 // - 2026-08-20: 2+2 허용. 1+2는 지연 경고 후 주문, 0+2는 차단. 토스트 단문.
 // - 2026-08-20: 낮 12시 전은 주문일(오늘) 포함, 이후는 제외. 안내 문구 SSOT.
 // - 2026-08-19: 출고=도착−2영업일. 지정 도착일 1영업일 전 배송 목표.
@@ -37,7 +38,7 @@ export const PRACTICE_SHIPPING_BUSINESS_DAYS = 2;
 
 /**
  * 커스텀어벗 제조 출고 목표 = 치과도착일 − 이 값(영업일).
- * 배송 lead(2)와 별도: 출고는 도착 2영업일 전 → 지정 도착일 1영업일 전 배송 목표.
+ * 배송 lead(2)와 별도: 지정 도착일 2영업일 전 발송.
  */
 export const PRACTICE_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS = 2;
 
@@ -89,9 +90,9 @@ export const PRACTICE_NORMAL_MIN_PERIOD_MESSAGE =
 export const PRACTICE_WORK_PERIOD_RECOMMEND_NOTE =
   "3+2영업일 이상 설정을 권합니다.";
 
-/** 커스텀어벗 치과 직납·출고/배송 목표 안내 SSOT (Express 힌트·날짜 필드 툴팁 공용) */
+/** 커스텀어벗 발송 안내 SSOT (Express 힌트·날짜 필드 툴팁 공용) */
 export const PRACTICE_CA_DIRECT_SHIP_NOTE =
-  "커스텀어벗은 치과로 직납(출고=도착 2영업일 전)이며, 지정 도착일 1영업일 전 배송이 목표입니다.";
+  "커스텀어벗은 지정 도착일 2영업일 전 발송합니다.";
 
 /** 신속처리 확인 모달 문구 */
 export const PRACTICE_RUSH_CONFIRM_TITLE = "신속처리로 진행할까요?";

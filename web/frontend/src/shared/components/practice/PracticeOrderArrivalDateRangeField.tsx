@@ -32,6 +32,7 @@ import {
 // - web/frontend/src/shared/practice/practiceWorkPeriod.ts
 // - web/frontend/src/shared/ui/PeriodFilter.tsx
 // - web/frontend/src/shared/date/kst.ts
+// - 2026-08-20: CA 안내 — 지정 도착일 2영업일 전 발송.
 // - 2026-08-20: 낮 12시 전은 오늘 포함, 이후는 오늘 제외.
 // - 2026-08-19: 도움말 — 출고=도착−2영업일, 지정 도착일 1영업일 전 배송 목표.
 // - 2026-08-17: 도움말 툴팁 가로폭 확대(문장 한 줄 유지).
