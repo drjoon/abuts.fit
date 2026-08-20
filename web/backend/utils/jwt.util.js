@@ -4,13 +4,16 @@
 // - web/backend/server.js
 import jwt from "jsonwebtoken";
 
+/** 로그인 세션(액세스·리프레시 JWT) 만료. jsonwebtoken `ms` 형식 */
+export const AUTH_TOKEN_EXPIRES_IN = "3y";
+
 /**
  * JWT 토큰 생성
  * @param {Object} payload - 토큰에 포함될 데이터
- * @param {String} expiresIn - 토큰 만료 시간 (기본값: '30d')
+ * @param {String} expiresIn - 토큰 만료 시간 (기본값: 3년)
  * @returns {String} 생성된 JWT 토큰
  */
-export function generateToken(payload, expiresIn = "30d") {
+export function generateToken(payload, expiresIn = AUTH_TOKEN_EXPIRES_IN) {
   // Mongoose 모델 인스턴스인 경우 필요한 데이터만 추출
   let tokenPayload;
 
@@ -53,7 +56,7 @@ export function generateRefreshToken(userId) {
     { userId },
     process.env.JWT_REFRESH_SECRET || "your_jwt_refresh_secret_key",
     {
-      expiresIn: "30d",
+      expiresIn: AUTH_TOKEN_EXPIRES_IN,
     },
   );
 }

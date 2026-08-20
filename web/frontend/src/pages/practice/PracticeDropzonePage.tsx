@@ -172,7 +172,7 @@ const PRACTICE_SESSION_META_KEY = "practice_dropzone_session_meta_v1";
 const PRACTICE_SIGNUP_VERIFICATION_KEY = "practice_dropzone_signup_verification_v1";
 /** FileTransferPage와 동일 SSOT — 비로그인 프리셋도 여기 저장 후 가입/로그인 시 서버 반영 */
 const PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY = "practice_transfer_settings_v1";
-const PRACTICE_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 1개월
+const PRACTICE_SESSION_TTL_MS = 3 * 365.25 * 24 * 60 * 60 * 1000; // 3년 (JWT 세션과 맞춤)
 const PRACTICE_FILE_CACHE_MAX_TOTAL_BYTES = 300 * 1024 * 1024; // 300MB
 
 const WIZARD_STEPS = ["의뢰서 작성", "의뢰인 계정"] as const;

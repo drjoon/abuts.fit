@@ -247,7 +247,7 @@
   - `requestorCapabilities`는 **practice만** 체크(`{ practice: true, lab: false }`) — 수신(lab) 선택 UI/저장 없음
   - 최소 가입: 이메일(+인증) + 비밀번호 + 담당자 휴대폰(+인증). `practiceProfile`/Org 앵커는 만들지 않음
   - 가입 직후 **첫 PracticeTransfer**까지 드롭존에서 전송 가능(성공 후 대시보드로 보내지 않음)
-  - 게이트: **성공한 첫 전송 이후** 추가 의뢰 작성·대시보드 진입 시 온보딩 유도(`onboardingWizardCompleted` 미완료). 로그인 세션(~30일)과 무관
+  - 게이트: **성공한 첫 전송 이후** 추가 의뢰 작성·대시보드 진입 시 온보딩 유도(`onboardingWizardCompleted` 미완료). 로그인 세션(~3년)과 무관
   - 온보딩에서 `practiceProfile` 완료 시 **BusinessAnchor를 생성**한다(첫 가입자=`owner`). 사업자등록번호가 없으면 synthetic `practice-*` BN. 이후 설정에서 lab을 추가·검증하면 **동일 앵커**에 실BN·license를 올린다.
 - 유형 SSOT(체크박스 OR, 최소 1개): `requestorCapabilities = { practice: boolean, lab: boolean }`
   - Org SSOT: `BusinessAnchor` (`businessType: "requestor"`). practice/lab은 같은 조직의 캡일 뿐이며 “무앵커 발신 전용 조직” 경로는 없다.
