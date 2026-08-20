@@ -54,6 +54,7 @@ import {
   redactAutoMatchPracticeIdentity,
   resolveAbutsPrimeLabFields,
   resolvePerformingLabAnchorId,
+  isPracticeTransferSubcontracted,
   assertLabAllowedAsDirectPracticeTarget,
   loadSubcontractDirectBlockedLabAnchorIds,
   SUBCONTRACT_DIRECT_BLOCKED_MESSAGE,
@@ -471,6 +472,53 @@ const rejectIfSubcontractDirectBlocked = async (
   }
 };
 
+const loadStarBandForPracticeRequest = async ({
+  practiceAnchorId,
+  body = {},
+  fallbackAutoMatch = null,
+} = {}) => {
+  const practice = practiceAnchorId
+    ? await BusinessAnchor.findById(practiceAnchorId)
+        .select({ practiceTransferSettings: 1 })
+        .lean()
+    : null;
+  const settings = practice?.practiceTransferSettings || {};
+  const auto =
+    fallbackAutoMatch && typeof fallbackAutoMatch === "object"
+      ? fallbackAutoMatch
+      : {};
+  return resolveAutoMatchEligibleStarBand({
+    minStars:
+      body?.autoMatchMinLabRating ??
+      auto.minLabRating ??
+      settings.autoMatchMinLabRating,
+    maxStars:
+      body?.autoMatchMaxLabRating ??
+      auto.maxLabRating ??
+      settings.autoMatchMaxLabRating,
+  });
+};
+
+const rejectIfLabOutsideStarBand = async (res, { labAnchorId, starBand }) => {
+  if (!labAnchorId) return false;
+  try {
+    await assertLabWithinPracticeStarBand({
+      labAnchorId,
+      minStars: starBand?.minStars,
+      maxStars: starBand?.maxStars,
+    });
+    return false;
+  } catch (err) {
+    const status = Number(err?.statusCode || 409);
+    res.status(status >= 400 && status < 600 ? status : 409).json({
+      success: false,
+      message: err?.message || LAB_OUTSIDE_STAR_BAND_MESSAGE,
+      reason: err?.code || LAB_OUTSIDE_STAR_BAND_REASON,
+    });
+    return true;
+  }
+};
+
 /**
  * 자동매칭 풀 변경을 적격 기공소 requestor에게 fan-out.
  * 기공소별 User.find 직렬(N+1) 대신 1회 $in 조회로 수락/생성 지연을 줄인다.
@@ -695,10 +743,16 @@ const canCancelPracticeTransferByManufacturerStage = (stage) => {
 const toVirtualRequestRows = (transferDoc) => {
   const transferId = String(transferDoc?.transferId || "").trim();
   const matchingMode = isAutoMatchMode(transferDoc) ? "auto" : "direct";
-  const labIdentity = redactAutoMatchLabIdentity(matchingMode, {
-    targetLabName: String(transferDoc?.targetLabName || "").trim(),
-    targetLabAnchorId: transferDoc?.targetLabAnchorId || null,
-  });
+  const handledByCertifiedPartner =
+    isPracticeTransferSubcontracted(transferDoc);
+  const labIdentity = redactAutoMatchLabIdentity(
+    matchingMode,
+    {
+      targetLabName: String(transferDoc?.targetLabName || "").trim(),
+      targetLabAnchorId: transferDoc?.targetLabAnchorId || null,
+    },
+    { transfer: transferDoc },
+  );
   const targetLabName = labIdentity.targetLabName;
   const transferMemo = String(transferDoc?.transferMemo || "").trim();
   const message = `[기공소: ${targetLabName}] ${transferMemo}\n[전송ID: ${transferId}]`;
@@ -718,6 +772,7 @@ const toVirtualRequestRows = (transferDoc) => {
 
   const manufacturerStage = resolvePracticeTransferManufacturerStage(transferDoc);
   const remakeFields = toRemakeApiFields(transferDoc);
+  const performingLabAnchorId = resolvePerformingLabAnchorId(transferDoc);
 
   // 첨부 파일 없는 전송도 최근 의뢰 목록에 보이도록 placeholder row 1건 생성
   const memoPatientMatch = transferMemo.match(/\[\s*환자명\s*:\s*([^\]]+)\]/);
@@ -746,7 +801,9 @@ const toVirtualRequestRows = (transferDoc) => {
       s3Key: String(rf?.file?.s3Key || "").trim(),
     })),
     production: toProductionApiFields(production),
-    canRateLab: Boolean(String(transferDoc?.targetLabAnchorId || "").trim()),
+    canRateLab: Boolean(String(performingLabAnchorId || "").trim()),
+    performingLabAnchorId: performingLabAnchorId || null,
+    handledByCertifiedPartner,
     labRating: null,
     caseInfos: {
       clinicName: "",
@@ -767,6 +824,7 @@ const toVirtualRequestRows = (transferDoc) => {
         targetLabAnchorId: labIdentity.targetLabAnchorId,
         targetLabName,
         matchingMode,
+        handledByCertifiedPartner,
       },
     },
   }));
@@ -2164,6 +2222,19 @@ export async function createPracticeTransfer(req, res) {
       return;
     }
 
+    const starBand = await loadStarBandForPracticeRequest({
+      practiceAnchorId,
+      body: req.body,
+    });
+    if (
+      await rejectIfLabOutsideStarBand(res, {
+        labAnchorId: targetLabAnchorId,
+        starBand,
+      })
+    ) {
+      return;
+    }
+
     const skipDesignConfirm = parseSkipDesignConfirmInput(req.body, practiceRouting);
     const skipJig = resolvePracticeTransferSkipJig(
       toothWorksRaw,
@@ -2277,8 +2348,10 @@ export async function createPracticeTransfer(req, res) {
       assigneeLabAnchorId: matchingMode === "auto" ? null : undefined,
       assigneeLabName: matchingMode === "auto" ? "" : undefined,
       matchingMode,
-      autoMatch:
-        matchingMode === "auto"
+      autoMatch: {
+        minLabRating: starBand.minStars,
+        maxLabRating: starBand.maxStars,
+        ...(matchingMode === "auto"
           ? {
               claimedAt: null,
               deadlineAt: null,
@@ -2295,7 +2368,8 @@ export async function createPracticeTransfer(req, res) {
                   }
                 : {}),
             }
-          : undefined,
+          : {}),
+      },
       transferMemo: transferMemoResolved,
       tag,
       status: "active",
@@ -2645,6 +2719,20 @@ export async function updatePracticeTransferContent(req, res) {
       return;
     }
 
+    const starBand = await loadStarBandForPracticeRequest({
+      practiceAnchorId,
+      body: req.body,
+      fallbackAutoMatch: doc.autoMatch,
+    });
+    if (
+      await rejectIfLabOutsideStarBand(res, {
+        labAnchorId: targetLabAnchorId,
+        starBand,
+      })
+    ) {
+      return;
+    }
+
     const skipDesignConfirm = parseSkipDesignConfirmInput(req.body, practiceRouting);
     const skipJig = resolvePracticeTransferSkipJig(
       toothWorksRaw,
@@ -2842,6 +2930,8 @@ export async function updatePracticeTransferContent(req, res) {
             priorityUntil: keepPriorityUntil
               ? prevAuto.priorityUntil
               : autoMatchPriorityFields?.priorityUntil ?? null,
+            minLabRating: starBand.minStars,
+            maxLabRating: starBand.maxStars,
             ...(autoMatchPriorityFields?.priorityLabAnchorIds
               ? {
                   priorityLabAnchorIds:
@@ -2860,6 +2950,8 @@ export async function updatePracticeTransferContent(req, res) {
             declinedLabAnchorIds: [],
             priorityUntil: null,
             priorityLabAnchorIds: [],
+            minLabRating: starBand.minStars,
+            maxLabRating: starBand.maxStars,
           };
 
     const nextProduction = {
@@ -3443,7 +3535,7 @@ export async function getMyPracticeTransfers(req, res) {
           const feeQuote = quotesById.get(String(doc?._id || "")) || null;
           const ratings =
             byPractice.get(String(doc?.practiceBusinessAnchorId || "")) || [];
-          const labId = String(doc?.targetLabAnchorId || "").trim();
+          const labId = String(resolvePerformingLabAnchorId(doc) || "").trim();
           const labRating = toPracticeLabRatingPublicApi(
             findPracticeLabRating(ratings, labId),
           );
@@ -3471,7 +3563,7 @@ export async function getMyPracticeTransfers(req, res) {
 
     const requests = docs.flatMap((doc) => {
       const feeQuote = quotesById.get(String(doc?._id || "")) || null;
-      const labId = String(doc?.targetLabAnchorId || "").trim();
+      const labId = String(resolvePerformingLabAnchorId(doc) || "").trim();
       const labRating = toPracticeLabRatingPublicApi(
         findPracticeLabRating(practiceRatings, labId),
       );
@@ -3565,6 +3657,7 @@ export async function upsertPracticeTransferLabRating(req, res) {
         practiceBusinessAnchorId: 1,
         practiceUserId: 1,
         targetLabAnchorId: 1,
+        assigneeLabAnchorId: 1,
         matchingMode: 1,
       })
       .lean();
@@ -3575,7 +3668,7 @@ export async function upsertPracticeTransferLabRating(req, res) {
       });
     }
 
-    const labAnchorId = String(doc.targetLabAnchorId || "").trim();
+    const labAnchorId = String(resolvePerformingLabAnchorId(doc) || "").trim();
     if (!labAnchorId || !Types.ObjectId.isValid(labAnchorId)) {
       return res.status(409).json({
         success: false,
@@ -5870,14 +5963,20 @@ export async function openSubcontractPracticeTransfer(req, res) {
       });
     }
 
+    const starBand = resolveAutoMatchEligibleStarBand({
+      minStars: doc.autoMatch?.minLabRating,
+      maxStars: doc.autoMatch?.maxLabRating,
+    });
     const eligibleIds = await loadCertifiedSubcontractLabAnchorIds({
       excludeLabAnchorId: labAnchorId,
+      minStars: starBand.minStars,
+      maxStars: starBand.maxStars,
     });
     if (!eligibleIds.length) {
       return res.status(409).json({
         success: false,
         message:
-          "수가가 설정된 인증 기공소가 없어 하청 풀을 열 수 없습니다.",
+          "설정 별점 구간에 해당하는 인증 협력 기공소가 없어 하청 풀을 열 수 없습니다.",
       });
     }
 
@@ -5888,6 +5987,8 @@ export async function openSubcontractPracticeTransfer(req, res) {
         $set: {
           "autoMatch.subcontractPoolOpen": true,
           "autoMatch.eligibleLabAnchorIds": eligibleOids,
+          "autoMatch.minLabRating": starBand.minStars,
+          "autoMatch.maxLabRating": starBand.maxStars,
           "autoMatch.priorityUntil": now,
           "autoMatch.claimedAt": null,
         },
@@ -5898,6 +5999,8 @@ export async function openSubcontractPracticeTransfer(req, res) {
     }
     doc.autoMatch.subcontractPoolOpen = true;
     doc.autoMatch.eligibleLabAnchorIds = eligibleOids;
+    doc.autoMatch.minLabRating = starBand.minStars;
+    doc.autoMatch.maxLabRating = starBand.maxStars;
     doc.autoMatch.priorityUntil = now;
     doc.autoMatch.claimedAt = null;
     clearAutoMatchPriorityTimers(doc._id);
@@ -6398,6 +6501,20 @@ export async function retargetPracticeTransferLab(req, res) {
       return;
     }
 
+    const starBand = await loadStarBandForPracticeRequest({
+      practiceAnchorId,
+      body: req.body,
+      fallbackAutoMatch: previousAutoMatch,
+    });
+    if (
+      await rejectIfLabOutsideStarBand(res, {
+        labAnchorId: targetLabAnchorId,
+        starBand,
+      })
+    ) {
+      return;
+    }
+
     let autoMatchBudget = null;
     let autoMatchEligibleLabAnchorIds = undefined;
     let autoMatchPriorityLabAnchorIds = [];
@@ -6465,6 +6582,8 @@ export async function retargetPracticeTransferLab(req, res) {
               ? prevAuto.declinedLabAnchorIds
               : [],
             priorityUntil: autoMatchPriorityFields?.priorityUntil ?? null,
+            minLabRating: starBand.minStars,
+            maxLabRating: starBand.maxStars,
             ...(autoMatchPriorityFields?.priorityLabAnchorIds
               ? {
                   priorityLabAnchorIds:
@@ -6483,6 +6602,8 @@ export async function retargetPracticeTransferLab(req, res) {
             declinedLabAnchorIds: [],
             priorityUntil: null,
             priorityLabAnchorIds: [],
+            minLabRating: starBand.minStars,
+            maxLabRating: starBand.maxStars,
           };
 
     doc.targetLabAnchorId = targetLabAnchorId;

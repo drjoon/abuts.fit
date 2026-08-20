@@ -30,6 +30,7 @@ import {
 } from "@/shared/practice/practiceTransferFeeQuote";
 import {
   parsePracticeLabRatingPublic,
+  formatPracticeTargetLabLabel,
   type PracticeLabRatingPublic,
 } from "@/shared/practice/practiceLabRating";
 
@@ -79,6 +80,7 @@ export type PracticeRecentRequestItem = {
   remakeSourceTransferId?: string;
   canRateLab?: boolean;
   labRating?: PracticeLabRatingPublic | null;
+  handledByCertifiedPartner?: boolean;
 };
 
 export type PracticeRecentTransferItem = {
@@ -120,6 +122,7 @@ export type PracticeRecentTransferItem = {
   remakeSourceTransferId?: string;
   canRateLab?: boolean;
   labRating?: PracticeLabRatingPublic | null;
+  handledByCertifiedPartner?: boolean;
   /** 임시저장 카드용(사이드바·휴지통) */
   practiceUserId?: string;
   practiceUserLabel?: string;
@@ -383,10 +386,19 @@ export const mapMyPracticeTransferApiRows = (
       const targetLabFromRouting = String(
         practiceRouting.targetLabName || r.targetLabName || "",
       ).trim();
-      const targetLab =
+      const handledByCertifiedPartner = Boolean(
+        r.handledByCertifiedPartner ||
+          (practiceRouting as { handledByCertifiedPartner?: unknown })
+            .handledByCertifiedPartner,
+      );
+      const targetLabRaw =
         matchingMode === "auto"
           ? "어벗츠기공소"
           : targetLabFromRouting || extractLabNameFromMessage(message) || "-";
+      const targetLab = formatPracticeTargetLabLabel({
+        targetLab: targetLabRaw,
+        handledByCertifiedPartner,
+      });
       const toothRaw = String(ci.tooth || "").trim();
       const createdAtRaw = String(r.createdAt || "");
       const strippedTransferMemo = stripPracticeTransferMessageEnvelope(message);
@@ -471,11 +483,12 @@ export const mapMyPracticeTransferApiRows = (
         ),
         remakeSourceTransferId: String(
           (r.remake && typeof r.remake === "object"
-            ? (r.remake as { sourceTransferId?: unknown }).sourceTransferId
+            ? (r.remake as { sourceTransferId?: string }).sourceTransferId
             : r.remakeSourceTransferId) || "",
         ).trim(),
         canRateLab: Boolean(r.canRateLab),
         labRating: parsePracticeLabRatingPublic(r.labRating),
+        handledByCertifiedPartner,
       };
     })
     .filter((item) => Boolean(item.id))
@@ -534,6 +547,9 @@ export const mergeOpenPracticeTransferFromRequestRows = (
     canRateLab: prev.canRateLab || openRows.some((r) => Boolean(r.canRateLab)),
     labRating:
       openRows.find((r) => r.labRating)?.labRating || prev.labRating || null,
+    handledByCertifiedPartner:
+      Boolean(prev.handledByCertifiedPartner) ||
+      openRows.some((r) => Boolean(r.handledByCertifiedPartner)),
     matchingMode: openRow.matchingMode || prev.matchingMode,
     ...(keepBilled ? {} : nextFee ? { feeQuote: nextFee } : {}),
     ...(openRow.remakeFeeQuote ? { remakeFeeQuote: openRow.remakeFeeQuote } : {}),
@@ -709,6 +725,7 @@ export const groupPracticeRecentRequests = (
         remakeSourceTransferId: req.remakeSourceTransferId || "",
         canRateLab: Boolean(req.canRateLab),
         labRating: req.labRating || null,
+        handledByCertifiedPartner: Boolean(req.handledByCertifiedPartner),
         unreadCount,
         searchBlob: [
           req.id,
@@ -816,6 +833,15 @@ export const groupPracticeRecentRequests = (
     }
     if (req.canRateLab) existing.canRateLab = true;
     if (req.labRating) existing.labRating = req.labRating;
+    if (req.handledByCertifiedPartner) {
+      existing.handledByCertifiedPartner = true;
+      existing.targetLab = formatPracticeTargetLabLabel({
+        targetLab: String(existing.targetLab || "")
+          .replace(/\s·\s인증 협력 기공소에서 처리$/, "")
+          .trim(),
+        handledByCertifiedPartner: true,
+      });
+    }
     if (req.productionConfirmedAt) {
       existing.productionConfirmedAt = req.productionConfirmedAt;
     }

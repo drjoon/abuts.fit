@@ -110,6 +110,8 @@ type PracticeFileCacheMeta = {
 type Options = {
   fileCacheMetaKey?: string;
   fileCacheMaxTotalBytes?: number;
+  /** 별점 구간 안의 기공소 ID. null이면 필터 없음(로딩). */
+  starBandEligibleLabIds?: string[] | null;
 };
 
 const DEFAULT_FILE_CACHE_META_KEY = "practice_dropzone_file_cache_meta_v1";
@@ -588,6 +590,39 @@ export const usePracticeTransferStep1 = (options?: Options) => {
     },
     [blockedDirectLabIdSet],
   );
+
+  const starBandEligibleSet = useMemo(() => {
+    const ids = options?.starBandEligibleLabIds;
+    if (!ids) return null;
+    return new Set(ids.map((id) => String(id || "").trim()).filter(Boolean));
+  }, [options?.starBandEligibleLabIds]);
+
+  const resolvePickerLabAnchorIdForStarBand = useCallback(
+    (lab?: SearchBusinessResult | null) => {
+      if (!lab) return "";
+      const direct = pickerLabAnchorId(lab);
+      if (direct) return direct;
+      if (!isPinnedAbutsRecentLab(lab) && !isAutoMatchLab(lab)) return "";
+      const fromRecent = [...recentLabs, ...userPinnedLabs].find(
+        (row) =>
+          pickerLabAnchorId(row) &&
+          String(row.name || "").trim() === ABUTS_PINNED_LAB_NAME,
+      );
+      return pickerLabAnchorId(fromRecent);
+    },
+    [recentLabs, userPinnedLabs],
+  );
+
+  const isOutsideStarBandPickerLab = useCallback(
+    (lab?: SearchBusinessResult | null) => {
+      if (!lab || !starBandEligibleSet) return false;
+      const id = resolvePickerLabAnchorIdForStarBand(lab);
+      if (!id) return false;
+      return !starBandEligibleSet.has(id);
+    },
+    [starBandEligibleSet, resolvePickerLabAnchorIdForStarBand],
+  );
+
   const setSelectedLab = useCallback(
     (
       value:
@@ -597,32 +632,68 @@ export const usePracticeTransferStep1 = (options?: Options) => {
     ) => {
       setSelectedLabState((prev) => {
         const next = typeof value === "function" ? value(prev) : value;
-        if (!isBlockedDirectPickerLab(next)) return next;
-        toast({
-          title: SUBCONTRACT_DIRECT_BLOCKED_MESSAGE,
-          variant: "destructive",
-        });
-        return prev && !isBlockedDirectPickerLab(prev) ? prev : null;
+        if (isBlockedDirectPickerLab(next)) {
+          toast({
+            title: SUBCONTRACT_DIRECT_BLOCKED_MESSAGE,
+            variant: "destructive",
+          });
+          return prev && !isBlockedDirectPickerLab(prev) ? prev : null;
+        }
+        if (isOutsideStarBandPickerLab(next)) {
+          toast({
+            title:
+              "선택한 기공소의 별점이 설정 구간 밖이라 의뢰를 보낼 수 없습니다.",
+            variant: "destructive",
+          });
+          return prev && !isOutsideStarBandPickerLab(prev) ? prev : null;
+        }
+        return next;
       });
     },
-    [isBlockedDirectPickerLab, toast],
+    [isBlockedDirectPickerLab, isOutsideStarBandPickerLab, toast],
   );
 
   const pinnedLabs = useMemo(
     () =>
       buildDisplayPinnedLabs(userPinnedLabs, recentLabs).filter(
-        (lab) => !isBlockedDirectPickerLab(lab),
+        (lab) =>
+          !isBlockedDirectPickerLab(lab) && !isOutsideStarBandPickerLab(lab),
       ),
-    [userPinnedLabs, recentLabs, isBlockedDirectPickerLab],
+    [
+      userPinnedLabs,
+      recentLabs,
+      isBlockedDirectPickerLab,
+      isOutsideStarBandPickerLab,
+    ],
   );
 
   const displayRecentLabs = useMemo(() => {
     return recentLabs.filter((lab) => {
       if (isPinnedAbutsRecentLab(lab)) return false;
       if (isBlockedDirectPickerLab(lab)) return false;
+      if (isOutsideStarBandPickerLab(lab)) return false;
       return !isLabPinned(lab, userPinnedLabs);
     });
-  }, [recentLabs, userPinnedLabs, isBlockedDirectPickerLab]);
+  }, [
+    recentLabs,
+    userPinnedLabs,
+    isBlockedDirectPickerLab,
+    isOutsideStarBandPickerLab,
+  ]);
+
+  useEffect(() => {
+    if (!selectedLab) return;
+    if (
+      isOutsideStarBandPickerLab(selectedLab) ||
+      isBlockedDirectPickerLab(selectedLab)
+    ) {
+      setSelectedLabState(null);
+    }
+  }, [
+    selectedLab,
+    isOutsideStarBandPickerLab,
+    isBlockedDirectPickerLab,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1134,6 +1205,7 @@ export const usePracticeTransferStep1 = (options?: Options) => {
                 const kind = String(item.requestorKind || "").trim();
                 if (kind && kind !== "lab") return false;
                 if (isBlockedDirectPickerLab(item)) return false;
+                if (isOutsideStarBandPickerLab(item)) return false;
 
                 return true;
               })
@@ -1147,7 +1219,7 @@ export const usePracticeTransferStep1 = (options?: Options) => {
     }, 250);
 
     return () => clearTimeout(timer);
-  }, [labSearch, isBlockedDirectPickerLab]);
+  }, [labSearch, isBlockedDirectPickerLab, isOutsideStarBandPickerLab]);
 
   return {
     files,

@@ -145,7 +145,7 @@ export function PracticeLabRejectedReselectDialog({
             showLabField
             showPatientField={false}
             showDateFields={false}
-            showAutoMatchMinLabRating={false}
+            showAutoMatchMinLabRating
             showProsthesisSection={false}
             showMemoSection={false}
             showFeeEstimate={false}

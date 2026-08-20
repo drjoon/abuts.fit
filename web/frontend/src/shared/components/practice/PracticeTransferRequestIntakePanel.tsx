@@ -73,6 +73,11 @@ import {
 import { PracticeToothImplantFields } from "@/shared/components/practice/PracticeToothImplantFields";
 import { PracticeToothAbutmentFields } from "@/shared/components/practice/PracticeToothAbutmentFields";
 import { PracticeCustomSpecsPresetEditDialog } from "@/shared/components/practice/PracticeCustomSpecsPresetEditDialog";
+import { AutoMatchMinLabRatingStars } from "@/shared/components/practice/AutoMatchMinLabRatingStars";
+import {
+  DEFAULT_AUTO_MATCH_MAX_LAB_RATING,
+  DEFAULT_AUTO_MATCH_MIN_LAB_RATING,
+} from "@/shared/practice/practiceLabRating";
 import type { ImplantConnection } from "@/shared/practice/useImplantConnectionCatalog";
 import {
   ABUTMENT_PRODUCT_MODE,
@@ -662,7 +667,7 @@ export type PracticeTransferRequestIntakePanelProps = {
   showLabField?: boolean;
   showPatientField?: boolean;
   showDateFields?: boolean;
-  /** @deprecated 자동매칭 폐기. 무시됨. */
+  /** 어벗츠기공소 선택 시에만 별점 하한·상한 표시(하청 수신 게이트) */
   showAutoMatchMinLabRating?: boolean;
   /** false면 보철물 치식 섹션 숨김 (기본 true) */
   showProsthesisSection?: boolean;
@@ -765,6 +770,7 @@ export const PracticeTransferRequestIntakePanel = ({
   showLabField: showLabFieldProp,
   showPatientField: showPatientFieldProp,
   showDateFields: showDateFieldsProp,
+  showAutoMatchMinLabRating = true,
   showProsthesisSection = true,
   showMemoSection = true,
   variant = "card",
@@ -824,6 +830,10 @@ export const PracticeTransferRequestIntakePanel = ({
   skipJig = true,
   onSkipJigChange,
   rushProcessing = false,
+  autoMatchMinLabRating = DEFAULT_AUTO_MATCH_MIN_LAB_RATING,
+  onAutoMatchMinLabRatingChange,
+  autoMatchMaxLabRating = DEFAULT_AUTO_MATCH_MAX_LAB_RATING,
+  onAutoMatchMaxLabRatingChange,
 }: PracticeTransferRequestIntakePanelProps) => {
   const defaultAbutmentProductMode = normalizeAccountAbutmentProductMode(
     defaultAbutmentProductModeProp ?? DEFAULT_ACCOUNT_ABUTMENT_PRODUCT_MODE,
@@ -1884,10 +1894,20 @@ export const PracticeTransferRequestIntakePanel = ({
       <div className={headerGridClassName}>
         {showLabField ? (
         <div className="space-y-2">
-          <div className="flex items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <Label className="text-sm">
               기공소 <span className="text-destructive">*</span>
             </Label>
+            {showAutoMatchMinLabRating &&
+            (isPinnedAbutsRecentLab(selectedLab) ||
+              isAutoMatchLab(selectedLab)) ? (
+              <AutoMatchMinLabRatingStars
+                minValue={autoMatchMinLabRating}
+                maxValue={autoMatchMaxLabRating}
+                onMinChange={onAutoMatchMinLabRatingChange}
+                onMaxChange={onAutoMatchMaxLabRatingChange}
+              />
+            ) : null}
           </div>
           <Popover open={labOpen} onOpenChange={setLabOpen}>
             <PopoverTrigger asChild>

@@ -495,6 +495,7 @@ type PracticeTransferSettingsPayload = {
   autoMatchBudget?: PracticeTransferAutoMatchBudget | null;
   autoMatchMinLabRating?: number;
   autoMatchMaxLabRating?: number;
+  starBandEligibleLabAnchorIds?: string[];
   abutsLabFeeCatalog?: AbutsLabFeeCatalogItem[] | null;
   updatedAt?: string | null;
 };
@@ -1043,6 +1044,9 @@ export const PracticeFileTransferPage = ({
   const [autoMatchMaxLabRating, setAutoMatchMaxLabRating] = useState(
     DEFAULT_AUTO_MATCH_MAX_LAB_RATING,
   );
+  const [starBandEligibleLabIds, setStarBandEligibleLabIds] = useState<
+    string[] | null
+  >(null);
   const [abutsLabFeeCatalog, setAbutsLabFeeCatalog] = useState<
     AbutsLabFeeCatalogItem[] | null
   >(null);
@@ -1161,7 +1165,9 @@ export const PracticeFileTransferPage = ({
     removeRecentLab,
     togglePinLab,
     syncRecentLabsFromTransfers,
-  } = usePracticeTransferStep1();
+  } = usePracticeTransferStep1({
+    starBandEligibleLabIds,
+  });
 
   // 레거시 「자동 매칭」draft는 어벗츠기공소(고정)로 승격한다.
   useEffect(() => {
@@ -1579,6 +1585,13 @@ export const PracticeFileTransferPage = ({
     if (nextStarBand) {
       setAutoMatchMinLabRating(nextStarBand.minStars);
       setAutoMatchMaxLabRating(nextStarBand.maxStars);
+    }
+    if (Array.isArray(payload.starBandEligibleLabAnchorIds)) {
+      setStarBandEligibleLabIds(
+        payload.starBandEligibleLabAnchorIds
+          .map((id) => String(id || "").trim())
+          .filter(Boolean),
+      );
     }
     setToothWorks((prev) =>
       prev.map((row) => {
@@ -2197,6 +2210,13 @@ export const PracticeFileTransferPage = ({
         setAutoMatchMaxLabRating(
           normalizeAutoMatchMaxLabRating(payload.autoMatchMaxLabRating),
         );
+        if (Array.isArray(payload.starBandEligibleLabAnchorIds)) {
+          setStarBandEligibleLabIds(
+            payload.starBandEligibleLabAnchorIds
+              .map((id) => String(id || "").trim())
+              .filter(Boolean),
+          );
+        }
         setAutoMatchBudget(
           resolveAutoMatchBudgetOrDefaults(
             payload.autoMatchBudget,
@@ -5133,6 +5153,8 @@ export const PracticeFileTransferPage = ({
           skipDesignConfirm,
           skipJig: effectiveSkipJig,
           rushProcessing,
+          autoMatchMinLabRating,
+          autoMatchMaxLabRating,
           caseInfos: caseInfosPayload,
         },
       });
@@ -6880,6 +6902,8 @@ export const PracticeFileTransferPage = ({
                   matchingMode: "direct",
                   targetLabAnchorId,
                   targetLabName: String(selectedLab.name || "").trim(),
+                  autoMatchMinLabRating,
+                  autoMatchMaxLabRating,
                 },
               });
               if (!res.ok) {

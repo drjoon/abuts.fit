@@ -20,6 +20,7 @@ import {
   resolveFeeScheduleLabAnchorId,
   resolvePerformingLabAnchorId,
   SUBCONTRACT_PRACTICE_DISPLAY_NAME,
+  CERTIFIED_PARTNER_LAB_DISPLAY_NAME,
   toAutoMatchApiFieldsCore,
 } from "../../utils/practiceTransferAutoMatchCore.js";
 
@@ -213,6 +214,25 @@ describe("practiceTransferAutoMatch priority (core)", () => {
     const fieldsForPrime = toAutoMatchApiFieldsCore(poolOpen, OID_A);
     expect(fieldsForPrime.assigneeLabAnchorId).toBe(OID_B);
     expect(fieldsForPrime.assigneeLabName).toBe("협력 기공소");
+  });
+
+  test("하청 수행 시 수행 기공소·치과 표시 상수", () => {
+    expect(
+      resolvePerformingLabAnchorId({
+        targetLabAnchorId: OID_A,
+        assigneeLabAnchorId: OID_B,
+      }),
+    ).toBe(OID_B);
+    expect(
+      resolvePerformingLabAnchorId({
+        targetLabAnchorId: OID_A,
+      }),
+    ).toBe(OID_A);
+    expect(isPracticeTransferSubcontracted({
+      targetLabAnchorId: OID_A,
+      assigneeLabAnchorId: OID_B,
+    })).toBe(true);
+    expect(CERTIFIED_PARTNER_LAB_DISPLAY_NAME).toBe("인증 협력 기공소");
   });
 
   test("하청 풀 openPool에 subcontractPoolOpen 포함", () => {

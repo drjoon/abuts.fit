@@ -27,6 +27,21 @@ export const AUTO_MATCH_MIN_SELECTABLE = 1;
 export const AUTO_MATCH_RATING_COUNT_GRACE = 3;
 export const DEFAULT_EFFECTIVE_LAB_STARS = 3;
 
+/** 하청 수행 시 치과 표시(실명 비공개). */
+export const CERTIFIED_PARTNER_LAB_DISPLAY_NAME = "인증 협력 기공소";
+
+export function formatPracticeTargetLabLabel({
+  targetLab,
+  handledByCertifiedPartner,
+}: {
+  targetLab?: unknown;
+  handledByCertifiedPartner?: unknown;
+} = {}): string {
+  const name = String(targetLab || "").trim() || "-";
+  if (!handledByCertifiedPartner) return name;
+  return `${name} · ${CERTIFIED_PARTNER_LAB_DISPLAY_NAME}에서 처리`;
+}
+
 export type PracticeLabRatingPublic = {
   stars: number;
   memo: string;
