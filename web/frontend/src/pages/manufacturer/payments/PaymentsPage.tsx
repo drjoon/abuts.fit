@@ -7,6 +7,7 @@
 // - web/frontend/src/features/settings/tabs/LabSettlementPayoutTab.tsx
 // change-log:
 // - 2026-08-20: 유료/무료 구분 제거. 약정 단가 전액이 미정산으로 쌓이고 말일 일괄 지급. 요약 2칸·높이 축소.
+// - 2026-08-20: PeriodFilter 달력 좌·우 chevron 커스텀 기간을 조회에 반영.
 // - 2026-08-17: 테이블이 남은 높이를 채워 바깥 스크롤을 없애고 표 스크롤만 남김.
 // - 2026-08-17: 유형 열 생략(모두 커스텀어벗 생산+배송비). 상세 모달은 의뢰/배송 분리.
 // - 2026-08-17: 생산·배송 원장을 KST 하루로 묶고, 클릭 시 수취자(우편함)별 상세.
@@ -217,9 +218,8 @@ const statusColor = (s: string) => {
 };
 
 const periodToYmdRange = (period: PeriodFilterValue): { from: string; to: string } | null => {
-  // 제조사 정산 페이지는 PeriodFilter period → KST YMD 범위로 조회한다.
-  // 관리자 전역 커스텀 날짜 필터의 간접 영향을 받지 않도록 옵션을 명시적으로 비운다.
-  const range = periodToRange(period, { customStartDate: "", customEndDate: "" });
+  // PeriodFilter 표시 범위와 동일. 달력·chevron 월 이동 커스텀 기간을 포함한다.
+  const range = periodToRange(period);
   if (!range) return null;
   const from = toKstYmd(new Date(range.startDate));
   const to = toKstYmd(new Date(range.endDate));
@@ -392,7 +392,7 @@ export const ManufacturerPaymentPage = () => {
 
   const [tab, setTab] = useState<"ledger" | "payments">("ledger");
 
-  const { period, setPeriod } = usePeriodStore();
+  const { period, setPeriod, customStartDate, customEndDate } = usePeriodStore();
   const [q, setQ] = useState("");
   const [paymentSort, setPaymentSort] = useState<{
     key: PaymentSortKey;
@@ -442,7 +442,7 @@ export const ManufacturerPaymentPage = () => {
       if (q.trim()) params.set("q", q.trim());
       return params.toString();
     },
-    [period, q],
+    [period, q, customStartDate, customEndDate],
   );
 
   const buildLedgerParams = useCallback(
@@ -459,7 +459,7 @@ export const ManufacturerPaymentPage = () => {
       if (q.trim()) params.set("q", q.trim());
       return params.toString();
     },
-    [period, q],
+    [period, q, customStartDate, customEndDate],
   );
 
   const loadLedger = useCallback(
@@ -546,7 +546,7 @@ export const ManufacturerPaymentPage = () => {
       params.set("toYmd", range.to);
     }
     return params.toString();
-  }, [period]);
+  }, [period, customStartDate, customEndDate]);
 
   const loadSnapshots = useCallback(async () => {
     if (!token) return;

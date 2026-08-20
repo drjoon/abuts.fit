@@ -3,6 +3,7 @@
 // - web/backend/services/creditRevenuePolicy.service.js
 // - web/frontend/src/pages/manufacturer/payments/PaymentsPage.tsx
 // change-log:
+// - 2026-08-20: ADJUST는 KST 하루 1행으로 묶고, 클릭 상세는 의뢰별(중복 환불은 의뢰 합산).
 // - 2026-08-17: 기공소→치과 배송(practice_transfer_lab_shipping)은 제조사 원장에서 제외.
 // - 2026-08-17: 제조사 장부 표시 — 의뢰 1건=어벗 1개라 기공의뢰처럼 못 묶고, KST 하루+우편함(수취자)으로 묶음.
 import {
@@ -44,6 +45,20 @@ export function isManufacturerLabOriginShippingRow(row) {
   if (usageKindOf(row) === "practice_transfer_lab_shipping") return true;
   const key = stripGlPrefix(row?.uniqueKey);
   return /:lab_shipping$/i.test(key);
+}
+
+export function isManufacturerAdjustRow(row) {
+  return String(row?.type || "").toUpperCase() === "ADJUST";
+}
+
+export function manufacturerAdjustReason(row) {
+  const key = stripGlPrefix(row?.uniqueKey);
+  if (/duplicate_refund/i.test(key)) return "중복 적립 정정";
+  if (/cancel_refund/i.test(key)) return "의뢰 취소";
+  if (/overcharge/i.test(key)) return "과금 정정";
+  const label = String(row?.displayLabel || "").trim();
+  if (label && label !== "커스텀어벗 생산") return label;
+  return "조정";
 }
 
 export function isManufacturerDailyEarnRow(row) {
@@ -274,6 +289,69 @@ function requestItemFields(summary) {
   };
 }
 
+function collapseAdjustMembers(members, ctx) {
+  const byKey = new Map();
+  for (const row of members) {
+    const req = resolveRowRequest(row, ctx);
+    const requestMongoId =
+      String(req?.id || "").trim() || String(row?.refId || "").trim();
+    const uniqueKey = stripGlPrefix(row?.uniqueKey);
+    const collapseKey =
+      requestMongoId || uniqueKey.replace(/:duplicate_refund$/i, "") || String(row?._id);
+    const prev = byKey.get(collapseKey);
+    const amount = Number(row?.amount || 0);
+    if (!prev) {
+      byKey.set(collapseKey, {
+        amount,
+        creditKind: row?.creditKind || null,
+        reason: manufacturerAdjustReason(row),
+        mailboxAddress: String(req?.mailboxAddress || "").trim(),
+        recipientName: String(req?.recipientName || "").trim(),
+        ...requestItemFields(req),
+        requestMongoId: requestMongoId || String(req?.id || ""),
+      });
+      continue;
+    }
+    prev.amount += amount;
+    if (String(row?.creditKind || "") === "PAID") prev.creditKind = "PAID";
+  }
+  return [...byKey.values()];
+}
+
+export function buildManufacturerAdjustGroups(members, ctx) {
+  const groups = new Map();
+  const collapsed = collapseAdjustMembers(members, ctx);
+
+  for (const item of collapsed) {
+    const group = ensureMailboxGroup(groups, {
+      mailboxAddress: item.mailboxAddress,
+      recipientName: item.recipientName,
+    });
+    group.productionAmount += Number(item.amount || 0);
+    group.productionCount += 1;
+    group.items.push({
+      kind: "adjust",
+      amount: Number(item.amount || 0),
+      creditKind: item.creditKind,
+      reason: item.reason,
+      ...requestItemFields({
+        id: item.requestMongoId,
+        requestId: item.requestId,
+        patientName: item.patientName,
+        tooth: item.tooth,
+        clinicName: item.clinicName,
+        recipientName: item.recipientName,
+      }),
+    });
+  }
+
+  return [...groups.values()].sort((a, b) => {
+    const mb = String(a.mailboxAddress).localeCompare(String(b.mailboxAddress));
+    if (mb !== 0) return mb;
+    return String(a.recipientName).localeCompare(String(b.recipientName));
+  });
+}
+
 export function buildManufacturerMailboxGroups(members, ctx) {
   const groups = new Map();
   const collapsed = collapseEarnMembers(members);
@@ -405,6 +483,43 @@ function latestOccurredAt(members) {
   return latest;
 }
 
+function buildDailyAdjustRow(ymd, members, ctx) {
+  const mailboxGroups = buildManufacturerAdjustGroups(members, ctx);
+  const requestAmount = mailboxGroups.reduce(
+    (sum, g) => sum + Number(g.productionAmount || 0),
+    0,
+  );
+  const requestCount = mailboxGroups.reduce(
+    (sum, g) => sum + Number(g.productionCount || 0),
+    0,
+  );
+  const occurredAt = latestOccurredAt(members);
+  return {
+    _id: `adjust:${ymd}`,
+    type: "ADJUST",
+    groupKind: "adjust-daily",
+    ymd,
+    amount: requestAmount,
+    requestAmount,
+    requestCount,
+    shippingAmount: 0,
+    shippingCount: 0,
+    paidAmount: members
+      .filter((row) => String(row.creditKind || "") === "PAID")
+      .reduce((sum, row) => sum + Number(row.amount || 0), 0),
+    freeAmount: members
+      .filter((row) => String(row.creditKind || "").startsWith("FREE"))
+      .reduce((sum, row) => sum + Number(row.amount || 0), 0),
+    creditKind: members[0]?.creditKind || null,
+    displayLabel: "조정",
+    eventType: "ADJUST",
+    uniqueKey: `adjust:${ymd}`,
+    occurredAt,
+    createdAt: occurredAt,
+    mailboxGroups,
+  };
+}
+
 function buildDailyEarnRow(ymd, members, ctx) {
   const earnMembers = filterOverlappingPtxProduction(members, ctx);
   const mailboxGroups = buildManufacturerMailboxGroups(earnMembers, ctx);
@@ -473,16 +588,23 @@ export function groupManufacturerLedgerForDisplay(
   const list = Array.isArray(rows) ? rows : [];
   const ctx = { requestsById, packagesById, requestsByPtxId };
   const earnByYmd = new Map();
+  const adjustByYmd = new Map();
   const singles = [];
 
   for (const row of list) {
     if (isManufacturerLabOriginShippingRow(row)) continue;
+    const ymd =
+      manufacturerLedgerKstYmd(row?.occurredAt || row?.createdAt) || "unknown";
+    if (isManufacturerAdjustRow(row)) {
+      const bucket = adjustByYmd.get(ymd);
+      if (bucket) bucket.push(row);
+      else adjustByYmd.set(ymd, [row]);
+      continue;
+    }
     if (!isManufacturerDailyEarnRow(row)) {
       singles.push({ ...row, groupKind: "single", mailboxGroups: null });
       continue;
     }
-    const ymd =
-      manufacturerLedgerKstYmd(row?.occurredAt || row?.createdAt) || "unknown";
     const bucket = earnByYmd.get(ymd);
     if (bucket) bucket.push(row);
     else earnByYmd.set(ymd, [row]);
@@ -491,6 +613,9 @@ export function groupManufacturerLedgerForDisplay(
   const grouped = [
     ...[...earnByYmd.entries()].map(([ymd, members]) =>
       buildDailyEarnRow(ymd, members, ctx),
+    ),
+    ...[...adjustByYmd.entries()].map(([ymd, members]) =>
+      buildDailyAdjustRow(ymd, members, ctx),
     ),
     ...singles,
   ];

@@ -524,7 +524,7 @@ Notes:
 
 - 제조사 정산(일별) 표시 정책:
   - 하청 고정단가: **어벗 1개당** 9,000 / 배송 박스당 3,500(면세). 상단 카드·상세는 의뢰/배송을 **분리** 표시(공급가·건수). 유료/무료 필터·카드 구분 없음.
-  - 원장 목록은 생산·배송 EARN을 **KST 하루 1행**으로 묶고, 유형 열은 생략한다. 클릭 상세는 의뢰/배송을 별 섹션으로 나누고, 그 안에서 수취자(우편함)별 생산·발송·배송비를 보여준다. 지급/조정은 별행.
+  - 원장 목록은 생산·배송 EARN을 **KST 하루 1행**으로 묶고, 유형 열은 생략한다. 클릭 상세는 의뢰/배송을 별 섹션으로 나누고, 그 안에서 수취자(우편함)별 생산·발송·배송비를 보여준다. 지급은 별행. 조정은 **KST 하루 1행**으로 묶고, 클릭 시 어떤 의뢰를 조정했는지 보여준다.
   - 일별 카드 컬럼(daily-summary): `의뢰/배송/환불·지급·조정/지급 순액`.
   - 의뢰/배송 **건수**는 백엔드 유니크 건수 SSOT. (`machining_spend`+`express_surcharge`를 프론트에서 각각 세지 않음.)
   - 일별 목록은 KST **오늘 이후(미도래 일자)를 표시하지 않는다**. `이번달` 프리셋 종료일도 오늘이다.
@@ -810,7 +810,7 @@ Notes:
     - `src/pages/practice/PracticeFileTransferPage.tsx`
     - `src/pages/requestor/practice/RequestorPracticePage.tsx`
 - 제조사 정산(`src/pages/manufacturer/payments/PaymentsPage.tsx`) 표시 정책:
-  - 원장 `GET /api/manufacturer/credits/ledger`는 생산·배송 EARN을 **KST 하루 1행**으로 묶어 반환한다. 목록에서 유형은 생략. 상세(`mailboxGroups`)는 의뢰/배송 섹션으로 나누고, 그 안에서 수취자(우편함)별 생산·발송·배송비. 지급/조정은 별행.
+  - 원장 `GET /api/manufacturer/credits/ledger`는 생산·배송 EARN을 **KST 하루 1행**으로 묶어 반환한다. 목록에서 유형은 생략. 상세(`mailboxGroups`)는 의뢰/배송 섹션으로 나누고, 그 안에서 수취자(우편함)별 생산·발송·배송비. 지급은 별행. **조정(ADJUST)은 KST 하루 1행**으로 묶고, 클릭 상세는 의뢰별(같은 의뢰의 중복 환불은 합산, 사유 표시).
   - 백엔드 `GET /api/manufacturer/credits/daily-summary`는 `LedgerLine` 집계 결과를 반환하며, 프론트는 해당 응답을 SSOT로 사용합니다.
   - 건수 필드(`earnRequest*Count`, `earnShipping*Count`)는 의뢰/패키지 `refId` 유니크이며, 라인·저널 수가 아니다.
   - 의뢰/배송 금액은 공급가 필드를 우선 표시. 유료/무료 분해 필드는 데이터 검증용이며 화면에서 구분하지 않는다.

@@ -2,6 +2,7 @@
 // - web/frontend/src/pages/manufacturer/payments/PaymentsPage.tsx
 // - web/backend/utils/manufacturerLedgerDisplay.js
 // change-log:
+// - 2026-08-20: 조정(ADJUST) 일별 묶음 클릭 시 의뢰별 사유·금액을 보여준다.
 // - 2026-08-20: 유료/무료 지급 라벨 제거(약정 단가 전액이 미정산).
 // - 2026-08-17: 수취자 건별 세부는 Collapsible, 초기 닫힘.
 // - 2026-08-17: 상세는 의뢰/배송을 별 섹션으로 나눈다. 유형 라벨은 생략.
@@ -23,7 +24,7 @@ import { formatKstYmdToKo } from "@/shared/date/kst";
 import { cn } from "@/shared/ui/cn";
 
 export type ManufacturerLedgerMailboxItem = {
-  kind: "production" | "shipping" | "shipment_item";
+  kind: "production" | "shipping" | "shipment_item" | "adjust";
   amount: number;
   creditKind?: string | null;
   requestMongoId?: string;
@@ -31,6 +32,7 @@ export type ManufacturerLedgerMailboxItem = {
   patientName?: string;
   tooth?: string;
   clinicName?: string;
+  reason?: string;
 };
 
 export type ManufacturerLedgerMailboxGroup = {
@@ -52,14 +54,16 @@ export type ManufacturerDailyLedgerDetail = {
   shippingAmount: number;
   shippingCount: number;
   mailboxGroups: ManufacturerLedgerMailboxGroup[];
+  kind?: "earn" | "adjust";
 };
 
-type LedgerSectionKind = "request" | "shipping";
+type LedgerSectionKind = "request" | "shipping" | "adjust";
 
 const itemKindPrefix = (
   item: ManufacturerLedgerMailboxItem,
   section: LedgerSectionKind,
 ) => {
+  if (section === "adjust") return item.reason || "조정";
   if (section === "shipping") {
     if (item.kind === "shipping") return "배송비";
     return "발송";
@@ -74,12 +78,14 @@ const groupsForSection = (
   groups
     .map((group) => {
       const items =
-        section === "request"
-          ? group.items.filter((item) => item.kind === "production")
-          : group.items.filter(
-              (item) =>
-                item.kind === "shipping" || item.kind === "shipment_item",
-            );
+        section === "adjust"
+          ? group.items.filter((item) => item.kind === "adjust")
+          : section === "request"
+            ? group.items.filter((item) => item.kind === "production")
+            : group.items.filter(
+                (item) =>
+                  item.kind === "shipping" || item.kind === "shipment_item",
+              );
       return { ...group, items };
     })
     .filter((group) => group.items.length > 0);
@@ -97,13 +103,20 @@ function MailboxGroupList({
     <div className="space-y-2">
       {groups.map((group) => {
         const subtotal =
-          section === "request"
-            ? Number(group.productionAmount || 0)
-            : Number(group.shippingAmount || 0);
+          section === "shipping"
+            ? Number(group.shippingAmount || 0)
+            : Number(group.productionAmount || 0);
+        const countLabel =
+          section === "shipping" && group.shippingCount > 0
+            ? ` · 발송 ${group.shippingCount}건`
+            : (section === "request" || section === "adjust") &&
+                group.productionCount > 0
+              ? ` · 의뢰 ${group.productionCount}건`
+              : "";
         return (
           <Collapsible
             key={`${ymd}:${section}:${group.key}`}
-            defaultOpen={false}
+            defaultOpen={section === "adjust"}
             className="overflow-hidden rounded-xl border border-slate-200/80"
           >
             <CollapsibleTrigger asChild>
@@ -120,14 +133,15 @@ function MailboxGroupList({
                     {group.mailboxAddress
                       ? `우편함 ${group.mailboxAddress}`
                       : "우편함 미배정"}
-                    {section === "shipping" && group.shippingCount > 0
-                      ? ` · 발송 ${group.shippingCount}건`
-                      : section === "request" && group.productionCount > 0
-                        ? ` · 의뢰 ${group.productionCount}건`
-                        : ""}
+                    {countLabel}
                   </p>
                 </div>
-                <p className="shrink-0 text-xs font-semibold tabular-nums text-slate-800">
+                <p
+                  className={cn(
+                    "shrink-0 text-xs font-semibold tabular-nums",
+                    subtotal < 0 ? "text-destructive" : "text-slate-800",
+                  )}
+                >
                   {formatWonWithUnit(subtotal)}
                 </p>
               </button>
@@ -168,13 +182,15 @@ function MailboxGroupList({
                         ) : null}
                       </div>
                       <div className="shrink-0 text-right">
-                        {item.amount > 0 ? (
+                        {item.amount !== 0 ? (
                           <p
                             className={cn(
                               "tabular-nums font-medium",
-                              item.kind === "shipping"
-                                ? "text-slate-800"
-                                : "text-primary-strong",
+                              item.amount < 0
+                                ? "text-destructive"
+                                : item.kind === "shipping"
+                                  ? "text-slate-800"
+                                  : "text-primary-strong",
                             )}
                           >
                             {formatWonWithUnit(item.amount)}
@@ -200,12 +216,14 @@ export function ManufacturerDailyLedgerDetailDialog({
   detail: ManufacturerDailyLedgerDetail | null;
   onOpenChange: (open: boolean) => void;
 }) {
+  const isAdjust = detail?.kind === "adjust";
   const requestGroups = detail
-    ? groupsForSection(detail.mailboxGroups, "request")
+    ? groupsForSection(detail.mailboxGroups, isAdjust ? "adjust" : "request")
     : [];
-  const shippingGroups = detail
-    ? groupsForSection(detail.mailboxGroups, "shipping")
-    : [];
+  const shippingGroups =
+    detail && !isAdjust
+      ? groupsForSection(detail.mailboxGroups, "shipping")
+      : [];
   const hasAnyGroup = requestGroups.length > 0 || shippingGroups.length > 0;
 
   return (
@@ -214,6 +232,7 @@ export function ManufacturerDailyLedgerDetailDialog({
         <DialogHeader>
           <DialogTitle className="text-base font-semibold tracking-tight text-slate-900">
             {formatKstYmdToKo(detail?.ymd)}
+            {isAdjust ? " 조정" : ""}
           </DialogTitle>
         </DialogHeader>
         {detail ? (
@@ -235,7 +254,7 @@ export function ManufacturerDailyLedgerDetailDialog({
                   <div className="space-y-2">
                     <div className="flex items-baseline justify-between gap-2 px-0.5">
                       <p className="text-sm font-semibold text-slate-900">
-                        의뢰
+                        {isAdjust ? "조정 의뢰" : "의뢰"}
                       </p>
                       <p className="text-xs tabular-nums text-muted-foreground">
                         {formatWonWithUnit(detail.requestAmount)} (
@@ -245,7 +264,7 @@ export function ManufacturerDailyLedgerDetailDialog({
                     <MailboxGroupList
                       ymd={detail.ymd}
                       groups={requestGroups}
-                      section="request"
+                      section={isAdjust ? "adjust" : "request"}
                     />
                   </div>
                 ) : null}

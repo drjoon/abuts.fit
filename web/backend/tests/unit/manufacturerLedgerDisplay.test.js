@@ -228,6 +228,135 @@ describe("manufacturerLedgerDisplay", () => {
     expect(grouped[0].type).toBe("PAYOUT");
   });
 
+  test("same-day ADJUST rows collapse to one clickable row per request", () => {
+    const rows = [
+      {
+        _id: "a1",
+        type: "ADJUST",
+        eventType: "ADJUST",
+        amount: -9000,
+        creditKind: "FREE_REQUEST",
+        refType: "REQUEST",
+        refId: "aaaaaaaaaaaaaaaaaaaaaaaa",
+        uniqueKey:
+          "gl:request:aaaaaaaaaaaaaaaaaaaaaaaa:machining_spend:1:duplicate_refund",
+        occurredAt: "2026-07-30T11:48:07.000Z",
+      },
+      {
+        _id: "a2",
+        type: "ADJUST",
+        eventType: "ADJUST",
+        amount: -9000,
+        creditKind: "FREE_REQUEST",
+        refType: "REQUEST",
+        refId: "aaaaaaaaaaaaaaaaaaaaaaaa",
+        uniqueKey:
+          "gl:request:aaaaaaaaaaaaaaaaaaaaaaaa:machining_spend:2:duplicate_refund",
+        occurredAt: "2026-07-30T11:48:07.000Z",
+      },
+      {
+        _id: "b1",
+        type: "ADJUST",
+        eventType: "ADJUST",
+        amount: -9000,
+        creditKind: "FREE_REQUEST",
+        refType: "REQUEST",
+        refId: "bbbbbbbbbbbbbbbbbbbbbbbb",
+        uniqueKey:
+          "gl:request:bbbbbbbbbbbbbbbbbbbbbbbb:machining_spend:1:duplicate_refund",
+        occurredAt: "2026-07-30T11:48:07.000Z",
+      },
+      {
+        _id: "b2",
+        type: "ADJUST",
+        eventType: "ADJUST",
+        amount: -9000,
+        creditKind: "FREE_REQUEST",
+        refType: "REQUEST",
+        refId: "bbbbbbbbbbbbbbbbbbbbbbbb",
+        uniqueKey:
+          "gl:request:bbbbbbbbbbbbbbbbbbbbbbbb:machining_spend:2:duplicate_refund",
+        occurredAt: "2026-07-30T11:48:07.000Z",
+      },
+    ];
+    const grouped = groupManufacturerLedgerForDisplay(rows, {
+      requestsById: new Map([
+        [
+          "aaaaaaaaaaaaaaaaaaaaaaaa",
+          req({
+            _id: "aaaaaaaaaaaaaaaaaaaaaaaa",
+            requestId: "20260723-KCZNWBVX",
+            mailboxAddress: "A1A1",
+            caseInfos: {
+              clinicName: "알토란기공소",
+              patientName: "김동우",
+              tooth: "36",
+            },
+            shippingReceiver: { name: "알토란기공소" },
+          }),
+        ],
+        [
+          "bbbbbbbbbbbbbbbbbbbbbbbb",
+          req({
+            _id: "bbbbbbbbbbbbbbbbbbbbbbbb",
+            requestId: "20260723-EYFQXKPE",
+            mailboxAddress: "A1A1",
+            caseInfos: {
+              clinicName: "알토란기공소",
+              patientName: "장영훈",
+              tooth: "36",
+            },
+            shippingReceiver: { name: "알토란기공소" },
+          }),
+        ],
+      ]),
+    });
+
+    expect(grouped).toHaveLength(1);
+    expect(grouped[0].groupKind).toBe("adjust-daily");
+    expect(grouped[0].type).toBe("ADJUST");
+    expect(grouped[0].ymd).toBe("2026-07-30");
+    expect(grouped[0].amount).toBe(-36000);
+    expect(grouped[0].requestCount).toBe(2);
+    expect(grouped[0].mailboxGroups).toHaveLength(1);
+    const items = grouped[0].mailboxGroups[0].items;
+    expect(items.map((item) => item.requestId).sort()).toEqual([
+      "20260723-EYFQXKPE",
+      "20260723-KCZNWBVX",
+    ]);
+    expect(items.every((item) => item.kind === "adjust")).toBe(true);
+    expect(items.every((item) => item.amount === -18000)).toBe(true);
+    expect(items.every((item) => item.reason === "중복 적립 정정")).toBe(true);
+  });
+
+  test("ADJUST on different KST days stay separate", () => {
+    const grouped = groupManufacturerLedgerForDisplay([
+      {
+        _id: "jul15",
+        type: "ADJUST",
+        eventType: "ADJUST",
+        amount: -9000,
+        refType: "REQUEST",
+        refId: "aaaaaaaaaaaaaaaaaaaaaaaa",
+        uniqueKey: "request:aaaaaaaaaaaaaaaaaaaaaaaa:cancel_refund",
+        occurredAt: "2026-07-15T09:12:54.000Z",
+      },
+      {
+        _id: "jul30",
+        type: "ADJUST",
+        eventType: "ADJUST",
+        amount: -9000,
+        refType: "REQUEST",
+        refId: "bbbbbbbbbbbbbbbbbbbbbbbb",
+        uniqueKey:
+          "request:bbbbbbbbbbbbbbbbbbbbbbbb:machining_spend:1:duplicate_refund",
+        occurredAt: "2026-07-30T11:48:07.000Z",
+      },
+    ]);
+    expect(grouped.map((r) => r.ymd)).toEqual(["2026-07-30", "2026-07-15"]);
+    expect(grouped.every((r) => r.groupKind === "adjust-daily")).toBe(true);
+  });
+
   test("mailbox groups fall back to recipient when mailbox is empty", () => {
     const groups = buildManufacturerMailboxGroups(
       [

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-20: 제조사 ADJUST uniqueKey는 라인/레거시 키를 우선(중복 환불 사유 표시).
 // - 2026-08-20: 제조사 정산은 유료/무료를 가리지 않고 약정 단가 전액. 말일 지급 전까지 미정산.
 // - 2026-08-17: 제조사 장부는 의뢰 1건=어벗 1개라 KST 하루로 묶고, 상세는 우편함(수취자)별.
 // - 2026-08-17: 기공의뢰 생산(PTX)도 의뢰 집계에 포함. 제조사 고정단가 1개당.
@@ -452,7 +453,22 @@ export async function getManufacturerCreditLedger(req, res) {
           uniqueKey: {
             $concat: [
               "gl:",
-              { $ifNull: ["$journalDoc.meta.spendUniqueKey", "$journalId"] },
+              {
+                $ifNull: [
+                  "$journalDoc.meta.spendUniqueKey",
+                  {
+                    $ifNull: [
+                      "$meta.spendUniqueKey",
+                      {
+                        $ifNull: [
+                          "$journalDoc.meta.legacy.uniqueKey",
+                          "$journalId",
+                        ],
+                      },
+                    ],
+                  },
+                ],
+              },
             ],
           },
           type: {
