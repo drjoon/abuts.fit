@@ -106,6 +106,7 @@
  * - 2026-08-20: 모바일↔PC 파일 추가는 draftId/fingerprint가 달라도 같은 기공소·환자면 파일 스냅샷을 반영한다.
  * - 2026-08-20: 원격 draft 파일은 union merge. autosave echo(파일 없음)가 업로드 직후 목록을 비우지 않게 한다.
  * - 2026-08-20: filesTouched/replace만 첨부 축소 허용. autosave HTTP가 소켓 반영을 덮지 않게 ref 동기화.
+ * - 2026-08-20: 로컬 첨부는 peek 재실행 대신 ensureFilesUploaded로 이어서 draft append. iOS 카메라 복귀 후 focus에서도 재시도.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -1246,6 +1247,8 @@ export const PracticeFileTransferPage = ({
   /** 파일 업로드 동기화 중 원격 draft 적용으로 폼이 깜빡이지 않게 한다. */
   const fileSyncInFlightRef = useRef(false);
   const mobileFilePromoteSeqRef = useRef(0);
+  /** iOS 카메라 복귀·임시저장 탭 등 focus 후 로컬→draft promote 재시도. */
+  const [filePromoteRetryNonce, setFilePromoteRetryNonce] = useState(0);
   const autoJoinedDraftIdRef = useRef("");
   /** 모바일 구강포토: private S3 location 대신 blob object URL (s3Key → url) */
   const oralPhotoObjectUrlByS3KeyRef = useRef<Map<string, string>>(new Map());
@@ -4549,31 +4552,18 @@ export const PracticeFileTransferPage = ({
     if (editingSentTransferRef.current) return;
     if (!hasSubstantialContentForNewDraft) return;
     if (files.length === 0) return;
-    const uploaded = peekCachedUploadedFiles(files);
-    if (!uploaded) return;
 
-    const snapshotKeys = files.map((file) => toTempUploadFileKey(file));
-    const localTempFiles = uploaded
-      .map((row) => ({
-        fileId: String(row._id || "").trim(),
-        originalName: String(row.originalName || "").trim(),
-        mimetype: String(
-          row.mimetype || row.fileType || "application/octet-stream",
-        ).trim(),
-        size: Number(row.size || 0),
-        s3Key: String(row.key || "").trim(),
-        location: String(row.location || "").trim(),
-      }))
-      .filter((row) => row.fileId && row.originalName && row.s3Key);
-
+    const snapshotFiles = [...files];
+    const snapshotKeys = snapshotFiles.map((file) => toTempUploadFileKey(file));
     const seq = ++mobileFilePromoteSeqRef.current;
     fileSyncInFlightRef.current = true;
     setFormSyncStatus("saving");
     logPracticeFileSync("promote:start", {
-      localFiles: files.length,
+      localFiles: snapshotFiles.length,
       draftFiles: draftFilesRef.current.length,
       activeDraftId: String(activeDraftIdRef.current || "").trim() || null,
       seq,
+      retryNonce: filePromoteRetryNonce,
     });
 
     const flushPendingDraftApply = () => {
@@ -4591,13 +4581,36 @@ export const PracticeFileTransferPage = ({
 
     void (async () => {
       try {
+        // peek만 하다 uploadProgress 재실행을 놓치면(iOS 카메라 복귀 스로틀) PC에 안 간다.
+        // ensure로 업로드를 끝까지 기다린 뒤 같은 turn에서 draft append 한다.
+        const uploaded = await ensureFilesUploaded(snapshotFiles);
+        if (seq !== mobileFilePromoteSeqRef.current) return;
+
+        const localTempFiles = uploaded
+          .map((row) => ({
+            fileId: String(row._id || "").trim(),
+            originalName: String(row.originalName || "").trim(),
+            mimetype: String(
+              row.mimetype || row.fileType || "application/octet-stream",
+            ).trim(),
+            size: Number(row.size || 0),
+            s3Key: String(row.key || "").trim(),
+            location: String(row.location || "").trim(),
+          }))
+          .filter((row) => row.fileId && row.originalName && row.s3Key);
+
+        logPracticeFileSync("promote:uploaded", {
+          seq,
+          uploadedCount: localTempFiles.length,
+        });
+
         const seen = new Set(
           draftFilesRef.current.map((row) => String(row.s3Key || "").trim()),
         );
         const additions = localTempFiles.filter(
           (row) => row.s3Key && !seen.has(row.s3Key),
         );
-        files.forEach((file, index) => {
+        snapshotFiles.forEach((file, index) => {
           const uploadedRow = uploaded[index];
           const s3Key = String(uploadedRow?.key || "").trim();
           if (
@@ -4615,8 +4628,15 @@ export const PracticeFileTransferPage = ({
           ? [...draftFilesRef.current, ...additions]
           : draftFilesRef.current;
         if (additions.length) {
+          draftFilesRef.current = nextDraftFiles;
           setDraftFiles(nextDraftFiles);
           await syncDraftFilesToServer(nextDraftFiles, { mode: "append" });
+        } else {
+          logPracticeFileSync("promote:no-additions", {
+            seq,
+            draftFiles: draftFilesRef.current.length,
+            uploadedCount: localTempFiles.length,
+          });
         }
         if (seq !== mobileFilePromoteSeqRef.current) return;
         snapshotKeys.forEach((key) => {
@@ -4628,7 +4648,11 @@ export const PracticeFileTransferPage = ({
         removeFilesByKeys(snapshotKeys);
         if (seq !== mobileFilePromoteSeqRef.current) return;
         setFormSyncStatus("saved");
-      } catch {
+      } catch (error) {
+        logPracticeFileSync("promote:error", {
+          seq,
+          message: error instanceof Error ? error.message : String(error || ""),
+        });
         if (seq === mobileFilePromoteSeqRef.current) setFormSyncStatus("error");
       } finally {
         if (seq === mobileFilePromoteSeqRef.current) {
@@ -4640,14 +4664,42 @@ export const PracticeFileTransferPage = ({
   }, [
     applyPracticeDraftPayload,
     authToken,
+    ensureFilesUploaded,
+    filePromoteRetryNonce,
     files,
     forgetFile,
     hasSubstantialContentForNewDraft,
-    peekCachedUploadedFiles,
     rememberOralPhotoObjectUrl,
     removeFilesByKeys,
-    uploadProgress,
   ]);
+
+  // iOS Safari: 카메라/앨범 복귀 후 JS가 멈춘 뒤, 탭·임시저장 탭으로 풀릴 때 promote 재시도.
+  useEffect(() => {
+    if (!authToken) return;
+    const bump = (reason: string) => {
+      if (pendingLocalFilesRef.current.length === 0) return;
+      logPracticeFileSync("promote:retry-bump", {
+        reason,
+        localFiles: pendingLocalFilesRef.current.length,
+      });
+      setFilePromoteRetryNonce((n) => n + 1);
+    };
+    const onVisible = () => {
+      if (typeof document !== "undefined" && document.visibilityState === "visible") {
+        bump("visibilitychange");
+      }
+    };
+    const onFocus = () => bump("focus");
+    const onPageShow = () => bump("pageshow");
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("pageshow", onPageShow);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("pageshow", onPageShow);
+    };
+  }, [authToken]);
 
   const handleRemoveCombinedFile = async (target: {
     kind: "local" | "draft";
@@ -6837,7 +6889,16 @@ export const PracticeFileTransferPage = ({
                     });
                   }}
                   onStartNew={() => void handleStartNewTransfer()}
-                  onOpenDrafts={() => setDraftsOpen(true)}
+                  onOpenDrafts={() => {
+                    setDraftsOpen(true);
+                    if (pendingLocalFilesRef.current.length > 0) {
+                      logPracticeFileSync("promote:retry-bump", {
+                        reason: "open-drafts",
+                        localFiles: pendingLocalFilesRef.current.length,
+                      });
+                      setFilePromoteRetryNonce((n) => n + 1);
+                    }
+                  }}
                   draftCount={draftGroupedTransfers.length}
                 />
               ) : showExpressWizard ? (
