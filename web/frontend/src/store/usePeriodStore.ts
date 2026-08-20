@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-20: 저장된 90일·지난달 선택은 30일·이번달로 승격.
 // - 2026-08-07: thisMonth 종료일을 월말이 아니라 오늘(KST)로 클램프
 // related files:
 // - web/frontend/rules.md
@@ -38,10 +39,17 @@ export const usePeriodStore = create<PeriodState>()(
       }),
       merge: (persisted, current) => {
         const raw = (persisted || {}) as Partial<PeriodState>;
+        const nextPeriod = isPeriodFilterValue(raw.period)
+          ? raw.period === "90d"
+            ? "30d"
+            : raw.period === "lastMonth"
+              ? "thisMonth"
+              : raw.period
+          : current.period;
         return {
           ...current,
           ...raw,
-          period: isPeriodFilterValue(raw.period) ? raw.period : current.period,
+          period: nextPeriod,
           customStartDate:
             typeof raw.customStartDate === "string"
               ? raw.customStartDate

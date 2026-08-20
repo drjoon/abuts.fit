@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-20: 기본 프리셋은 30일·이번달만. 90일·지난달은 표시하지 않음.
 // - 2026-08-20: useStoreCustomRange=false여도 로컬 커스텀 기간으로 달력·chevron을 켠다.
 // - 2026-08-20: 기간 달력 좌·우 chevron — 현재 선택 기간을 한 달 앞/뒤로 옮긴다.
 // related files:
@@ -39,18 +40,13 @@ type Props = {
   onClearCustomRange?: () => void;
   /** false면 전역 스토어 커스텀 날짜를 쓰지 않음 (로컬 period 전용) */
   useStoreCustomRange?: boolean;
-  /** 표시할 프리셋. 미지정 시 30일/90일/이번달/지난달 전부 */
+  /** 표시할 프리셋. 미지정 시 30일·이번달 */
   presets?: PeriodFilterValue[];
   label?: string;
   className?: string;
 };
 
-const DEFAULT_PRESET_PERIODS: PeriodFilterValue[] = [
-  "30d",
-  "90d",
-  "thisMonth",
-  "lastMonth",
-];
+const DEFAULT_PRESET_PERIODS: PeriodFilterValue[] = ["30d", "thisMonth"];
 
 const labelMap: Record<PeriodFilterValue, string> = {
   "30d": "30일",

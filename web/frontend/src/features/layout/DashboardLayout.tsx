@@ -11,6 +11,7 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPath";
 import { cn } from "@/shared/ui/cn";
 
+// - 2026-08-20: 데스크톱 사이드 메뉴는 숨김이 기본. 열기 버튼으로만 표시.
 // - 2026-08-19: 기공의뢰수신 작업영역 — 흰 카드 외곽·바깥 여백 제거해 캘린더를 넓게.
 // - 2026-08-19: 기공소 사이드 — 가입 이유 배너를 설정과 계정 팝업 사이.
 // - 2026-08-19: 기공소·어벗츠기공소 사이드 — 대시보드/대기보드 제거. 기공의뢰 그룹(수신·어벗생산의뢰).
@@ -1344,13 +1345,24 @@ export const DashboardLayout = () => {
           onClick={() => setIsOpen(false)}
         ></div>
 
+        {!isOpen ? (
+          <button
+            type="button"
+            aria-label="사이드 메뉴 열기"
+            onClick={() => setIsOpen(true)}
+            className="hidden lg:flex items-center justify-center fixed left-0 top-20 z-50 w-8 h-8 rounded-r-full bg-card border border-l-0 border-border shadow-sm hover:bg-muted/60 hover:border-muted-foreground/40 transition-colors"
+          >
+            <PanelLeftOpen className="w-4 h-4" />
+          </button>
+        ) : null}
+
         <aside
           className={`
-          fixed lg:relative inset-y-0 left-0 z-50 ${
+          fixed inset-y-0 left-0 z-50 ${
             isCollapsed ? "w-24" : "w-60"
           } bg-card border-r border-border flex flex-col
           transform transition-transform duration-300 ease-in-out
-          lg:translate-x-0 ${isOpen ? "translate-x-0" : "-translate-x-full"}
+          ${isOpen ? "lg:relative translate-x-0" : "-translate-x-full"}
         `}
         >
           <div className="p-4 lg:p-6 border-b border-border">
@@ -1365,14 +1377,11 @@ export const DashboardLayout = () => {
 
           <button
             type="button"
-            onClick={() => setIsCollapsed((prev) => !prev)}
+            aria-label="사이드 메뉴 숨기기"
+            onClick={() => setIsOpen(false)}
             className="hidden lg:flex items-center justify-center absolute top-20 -right-4 w-8 h-8 rounded-full bg-card border border-border shadow-sm hover:bg-muted/60 hover:border-muted-foreground/40 transition-colors"
           >
-            {isCollapsed ? (
-              <PanelLeftOpen className="w-4 h-4" />
-            ) : (
-              <PanelLeft className="w-4 h-4" />
-            )}
+            <PanelLeft className="w-4 h-4" />
           </button>
 
           <nav className="hover-scrollbar flex-1 overflow-y-auto p-3 lg:p-4">
