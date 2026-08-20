@@ -4,6 +4,8 @@
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/pages/admin/support/AdminBusinessRegistrationInquiryPage.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
+// - 2026-08-20: onMatch/shouldHandle를 ref로 호출 — debounce timer가 stale closure로
+//   환자명·기공소를 예전에 잡아 draft 파일 동기화를 건너뛰지 않게 한다.
 import { useEffect, useRef } from "react";
 import { AppEventMessage } from "@/shared/realtime/socket";
 import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
@@ -32,13 +34,20 @@ export function useAppEventDebouncedReload({
 }: UseAppEventDebouncedReloadOptions) {
   const timerRef = useRef<number | null>(null);
   const enabledRef = useRef(Boolean(enabled));
+  const onMatchRef = useRef(onMatch);
+  const shouldHandleRef = useRef(shouldHandle);
 
   enabledRef.current = Boolean(enabled);
+  onMatchRef.current = onMatch;
+  shouldHandleRef.current = shouldHandle;
 
   useAppEventListener({
     enabled,
     eventTypes,
-    shouldHandle,
+    shouldHandle: (evt) => {
+      if (!shouldHandleRef.current) return true;
+      return shouldHandleRef.current(evt);
+    },
     requireVisible,
     deferWhenEditing,
     onMatch: (evt) => {
@@ -47,7 +56,7 @@ export function useAppEventDebouncedReload({
       }
       timerRef.current = window.setTimeout(() => {
         if (!enabledRef.current) return;
-        void onMatch(evt);
+        void onMatchRef.current(evt);
       }, Math.max(0, Number(delayMs || 0)));
     },
   });

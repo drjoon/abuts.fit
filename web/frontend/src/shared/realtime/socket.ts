@@ -12,6 +12,29 @@ const socketEventSubscribers = new Map<string, Set<(payload: unknown) => void>>(
 const socketEventForwarders = new Map<string, (payload: unknown) => void>();
 
 const handleAppEvent = (evt: AppEventMessage) => {
+  const type = String(evt?.type || "").trim();
+  if (
+    type === "practice:transfer-updated" ||
+    type === "practice:transfer-created"
+  ) {
+    const data =
+      evt?.data && typeof evt.data === "object"
+        ? (evt.data as Record<string, unknown>)
+        : {};
+    try {
+      console.info("[practice-file-sync] socket:app-event", {
+        type,
+        action: String(data.action || "").trim() || null,
+        draftId: String(data.draftId || "").trim() || null,
+        fileCount: Number(data.fileCount ?? NaN),
+        filesTouched: Boolean(data.filesTouched),
+        draftFilesMode: String(data.draftFilesMode || "").trim() || null,
+        editorUserId: String(data.editorUserId || "").trim() || null,
+      });
+    } catch {
+      // ignore
+    }
+  }
   appEventSubscribers.forEach((callback) => {
     callback(evt);
   });

@@ -138,6 +138,7 @@ import { resolvePracticeTransferSkipJig } from "../../utils/practiceTransferLabS
 // - 2026-08-17: trash/empty — 하드삭제 의뢰 채팅방 archive(치과 사이드바 유령 unread 방지).
 // - 2026-08-20: 기공소 변경 시 이전 기공소를 채팅 참가자·사이드바 unread에서 제거.
 // - 2026-08-20: draft upsert — files 생략 시 기존 첨부 유지. 같은 기공소·환자 건에 파일 append.
+// - 2026-08-20: draft-upserted 이벤트에 filesTouched/draftFilesMode를 실어 FE가 autosave echo로 첨부를 지우지 않게 한다.
 // - 2026-08-17: trash/empty — 하드삭제 전 rollbackPracticeTransferBilling(배송·디자인비 포함).
 // - 2026-08-16: 어벗 가공(준비 아님)이면 mark-release 거부·목록 abutmentPastReady.
 // - 2026-08-19: 생성 시 구강스캔은 선택(어벗츠기공소/자동매칭 포함).
@@ -1141,6 +1142,8 @@ const toDraftUpsertedRealtimePayload = ({
   editorUserId,
   practiceBusinessAnchorId,
   forceResync = false,
+  filesTouched = false,
+  draftFilesMode = "keep",
 }) => ({
   source: String(source || "").trim(),
   action: "draft-upserted",
@@ -1155,6 +1158,9 @@ const toDraftUpsertedRealtimePayload = ({
   transferMemo: String(draftPayload?.transferMemo || ""),
   files: Array.isArray(draftPayload?.files) ? draftPayload.files : [],
   fileCount: Array.isArray(draftPayload?.files) ? draftPayload.files.length : 0,
+  // files 미포함 upsert(폼 autosave)는 keep. FE가 빈 배열로 첨부를 덮지 않게 한다.
+  filesTouched: Boolean(filesTouched),
+  draftFilesMode: String(draftFilesMode || "keep").trim().toLowerCase() || "keep",
   updatedAt: draftPayload?.updatedAt || null,
   createdAt: draftPayload?.createdAt || null,
   forceResync: Boolean(forceResync),
@@ -1786,6 +1792,17 @@ export async function upsertPracticeTransferDraft(req, res) {
       ownerMap.get(String(doc?.practiceUserId || "").trim()) || req.user;
     const draftPayload = toDraftResponse(doc, ownerMeta);
     const forceResync = Boolean(req.body?.forceResync);
+    const realtimeFilesMode = filesProvided ? draftFilesMode : "keep";
+    if (process.env.NODE_ENV !== "test") {
+      console.info("[practice-file-sync] upsertPracticeTransferDraft", {
+        draftId: draftPayload?._id || null,
+        filesProvided,
+        draftFilesMode: realtimeFilesMode,
+        fileCount: Array.isArray(draftPayload?.files) ? draftPayload.files.length : 0,
+        forceResync,
+        editorUserId: String(req.user?._id || "").trim() || null,
+      });
+    }
     await emitPracticeTransferEventToPracticeUsers({
       practiceBusinessAnchorId: req.user?.businessAnchorId,
       type: "practice:transfer-updated",
@@ -1796,6 +1813,8 @@ export async function upsertPracticeTransferDraft(req, res) {
         editorUserId: req.user?._id,
         practiceBusinessAnchorId: req.user?.businessAnchorId,
         forceResync,
+        filesTouched: filesProvided,
+        draftFilesMode: realtimeFilesMode,
       }),
       extraUserIds: [req.user?._id],
     });
@@ -1806,6 +1825,8 @@ export async function upsertPracticeTransferDraft(req, res) {
       data: {
         ...draftPayload,
         forceResync,
+        filesTouched: filesProvided,
+        draftFilesMode: realtimeFilesMode,
       },
     });
   } catch (error) {

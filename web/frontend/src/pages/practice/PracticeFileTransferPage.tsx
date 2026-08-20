@@ -105,6 +105,7 @@
  * - 2026-08-20: 폼 자동저장은 파일 목록을 보내지 않는다. PC/모바일 첨부는 같은 기공소·환자 draft에 append.
  * - 2026-08-20: 모바일↔PC 파일 추가는 draftId/fingerprint가 달라도 같은 기공소·환자면 파일 스냅샷을 반영한다.
  * - 2026-08-20: 원격 draft 파일은 union merge. autosave echo(파일 없음)가 업로드 직후 목록을 비우지 않게 한다.
+ * - 2026-08-20: filesTouched/replace만 첨부 축소 허용. autosave HTTP가 소켓 반영을 덮지 않게 ref 동기화.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -343,6 +344,9 @@ type PracticeTransferDraftPayload = {
   files: DraftTransferFileItem[];
   updatedAt?: string | null;
   createdAt?: string | null;
+  filesTouched?: boolean;
+  draftFilesMode?: string;
+  forceResync?: boolean;
 };
 
 type DraftListSummary = {
@@ -431,6 +435,52 @@ const mergeDraftTransferFileItems = (
     if (fileId) byId.set(fileId, row);
   }
   return Array.from(byId.values());
+};
+
+const logPracticeFileSync = (
+  step: string,
+  detail?: Record<string, unknown>,
+) => {
+  try {
+    console.info(`[practice-file-sync] ${step}`, detail || {});
+  } catch {
+    // ignore
+  }
+};
+
+/** replace+filesTouched일 때만 축소/전체삭제. 그 외는 union(로컬 업로드 중 파일 보존). */
+const resolveDraftFilesFromRemote = ({
+  prevFiles,
+  restoredFiles,
+  filesTouched,
+  draftFilesMode,
+  forceResync,
+  sameDraftId,
+}: {
+  prevFiles: DraftTransferFileItem[];
+  restoredFiles: DraftTransferFileItem[];
+  filesTouched: boolean;
+  draftFilesMode: string;
+  forceResync: boolean;
+  sameDraftId: boolean;
+}): DraftTransferFileItem[] => {
+  const mode = String(draftFilesMode || "keep").trim().toLowerCase();
+  const intentionalReplace =
+    filesTouched && (mode === "replace" || (forceResync && mode !== "append"));
+  if (intentionalReplace) {
+    return restoredFiles;
+  }
+  // 레거시 이벤트(filesTouched 없음): 같은 draft의 빈 스냅샷은 전체삭제로만 본다.
+  if (
+    !filesTouched &&
+    restoredFiles.length === 0 &&
+    sameDraftId &&
+    forceResync &&
+    mode === "replace"
+  ) {
+    return [];
+  }
+  return mergeDraftTransferFileItems(prevFiles, restoredFiles);
 };
 
 const toDraftListSummary = (
@@ -2058,10 +2108,18 @@ export const PracticeFileTransferPage = ({
 
   const applyPracticeDraftPayload = useCallback(
     (
-      payload: PracticeTransferDraftPayload & { forceResync?: boolean },
+      payload: PracticeTransferDraftPayload & {
+        forceResync?: boolean;
+        filesTouched?: boolean;
+        draftFilesMode?: string;
+      },
       options?: { keepActiveDraftIdOnEmpty?: boolean; forceResync?: boolean },
     ) => {
       if (imeComposingRef.current) {
+        logPracticeFileSync("apply:defer-ime", {
+          draftId: String(payload?._id || "").trim() || null,
+          incomingFiles: Array.isArray(payload?.files) ? payload.files.length : 0,
+        });
         pendingDraftApplyRef.current = payload;
         return;
       }
@@ -2070,6 +2128,11 @@ export const PracticeFileTransferPage = ({
 
       // 파일 업로드 중에는 HTTP 응답이 SSOT. 원격 스냅샷은 업로드 종료 후 적용.
       if (fileSyncInFlightRef.current) {
+        logPracticeFileSync("apply:defer-upload-inflight", {
+          draftId: String(payload?._id || "").trim() || null,
+          incomingFiles: Array.isArray(payload?.files) ? payload.files.length : 0,
+          forceResync,
+        });
         const prev = pendingDraftApplyRef.current;
         pendingDraftApplyRef.current = {
           ...payload,
@@ -2089,17 +2152,42 @@ export const PracticeFileTransferPage = ({
       const sameDraftId =
         Boolean(payloadDraftId) &&
         payloadDraftId === String(activeDraftIdRef.current || "").trim();
-      const mergedFiles = forceResync
-        ? restoredFiles
-        : restoredFiles.length === 0 && sameDraftId
-          ? []
-          : mergeDraftTransferFileItems(prevFiles, restoredFiles);
+      const filesTouched = Boolean(
+        (payload as { filesTouched?: boolean }).filesTouched,
+      );
+      const draftFilesMode = String(
+        (payload as { draftFilesMode?: string }).draftFilesMode ||
+          (filesTouched ? (forceResync ? "replace" : "append") : "keep"),
+      )
+        .trim()
+        .toLowerCase();
+      const mergedFiles = resolveDraftFilesFromRemote({
+        prevFiles,
+        restoredFiles,
+        filesTouched,
+        draftFilesMode,
+        forceResync,
+        sameDraftId,
+      });
       const filesChanged =
         mergedFiles.length !== prevFiles.length ||
         mergedFiles.some(
           (row) => !prevFiles.some((prev) => prev.fileId === row.fileId),
         );
+      // setState 전에 ref를 맞춰 autosave HTTP 응답이 소켓 반영을 덮지 않게 한다.
+      draftFilesRef.current = mergedFiles;
       setDraftFiles(mergedFiles);
+      logPracticeFileSync("apply:files", {
+        draftId: payloadDraftId || null,
+        sameDraftId,
+        forceResync,
+        filesTouched,
+        draftFilesMode,
+        prevCount: prevFiles.length,
+        restoredCount: restoredFiles.length,
+        mergedCount: mergedFiles.length,
+        filesChanged,
+      });
 
       const summary = toDraftListSummary(
         { ...ownedPayload, files: mergedFiles },
@@ -2118,6 +2206,7 @@ export const PracticeFileTransferPage = ({
 
       setDraftSummary(summary);
       setActiveDraftId(summary.id);
+      activeDraftIdRef.current = summary.id;
 
       const serverUpdatedAt = payload.updatedAt
         ? new Date(String(payload.updatedAt)).getTime()
@@ -2354,12 +2443,23 @@ export const PracticeFileTransferPage = ({
     const forceResync = Boolean(options?.forceResync);
 
     try {
+      logPracticeFileSync("get-draft:start", {
+        draftId: requestedDraftId,
+        forceResync,
+        localFileCount: draftFilesRef.current.length,
+      });
       const res = await apiFetch<unknown>({
         path: `/api/practice/transfers/draft?draftId=${encodeURIComponent(requestedDraftId)}`,
         method: "GET",
         token: authToken,
       });
-      if (!res.ok) return;
+      if (!res.ok) {
+        logPracticeFileSync("get-draft:http-fail", {
+          draftId: requestedDraftId,
+          ok: res.ok,
+        });
+        return;
+      }
 
       const body =
         res.data && typeof res.data === "object"
@@ -2371,7 +2471,9 @@ export const PracticeFileTransferPage = ({
           : null;
 
       if (!payload) {
+        logPracticeFileSync("get-draft:empty", { draftId: requestedDraftId });
         setDraftFiles([]);
+        draftFilesRef.current = [];
         setDraftSummary(null);
         // 요청한 draftId가 없거나(삭제/휴지통)면 stale id를 비운다.
         setActiveDraftId(null);
@@ -2384,11 +2486,20 @@ export const PracticeFileTransferPage = ({
         return;
       }
 
+      logPracticeFileSync("get-draft:ok", {
+        draftId: String(payload._id || requestedDraftId).trim(),
+        serverFileCount: Array.isArray(payload.files) ? payload.files.length : 0,
+        forceResync,
+      });
       applyPracticeDraftPayload(payload, {
         keepActiveDraftIdOnEmpty: true,
         forceResync,
       });
-    } catch {
+    } catch (error) {
+      logPracticeFileSync("get-draft:error", {
+        draftId: requestedDraftId,
+        message: error instanceof Error ? error.message : String(error || ""),
+      });
       // ignore (초안 불러오기 실패는 사용자 흐름 중단 금지)
     }
   }, [applyPracticeDraftPayload, authToken]);
@@ -3042,23 +3153,27 @@ export const PracticeFileTransferPage = ({
           return;
         }
 
-        const mappedPayloadFiles = Array.isArray(payload?.files)
-          ? payload.files
-              .map((row) => ({
-                fileId: String(row?.fileId || "").trim(),
-                originalName: String(row?.originalName || "").trim(),
-                mimetype: String(row?.mimetype || "application/octet-stream").trim(),
-                size: Number(row?.size || 0),
-                s3Key: String(row?.s3Key || "").trim(),
-                location: String(row?.location || "").trim(),
-              }))
-              .filter((row) => row.fileId && row.originalName && row.s3Key)
-          : [];
+        const mappedPayloadFiles = normalizeDraftTransferFileItems(payload?.files);
+        // 폼 autosave 응답은 첨부를 줄이지 않는다. 소켓으로 먼저 들어온 원격 파일을 지울 수 있다.
+        const mergedFromAutosave = mergeDraftTransferFileItems(
+          draftFilesRef.current,
+          mappedPayloadFiles,
+        );
         const nextDraftFiles =
+          mappedPayloadFiles.length >= draftFilesRef.current.length &&
           mappedPayloadFiles.length >= latestFilesForSave.length
-            ? mappedPayloadFiles
-            : latestFilesForSave;
+            ? mergeDraftTransferFileItems(latestFilesForSave, mappedPayloadFiles)
+            : mergedFromAutosave;
 
+        logPracticeFileSync("autosave:response", {
+          draftId: returnedDraftId || null,
+          mappedCount: mappedPayloadFiles.length,
+          latestAtStart: latestFilesForSave.length,
+          refBefore: draftFilesRef.current.length,
+          nextCount: nextDraftFiles.length,
+        });
+
+        draftFilesRef.current = nextDraftFiles;
         setDraftFiles(nextDraftFiles);
         {
           const nextSummary = buildOwnDraftSummary(payload, nextDraftFiles, transferMemo);
@@ -3367,6 +3482,12 @@ export const PracticeFileTransferPage = ({
     const joinKey = `${best.id}:${bestFileCount}`;
     if (autoJoinedDraftIdRef.current === joinKey) return;
     autoJoinedDraftIdRef.current = joinKey;
+    logPracticeFileSync("auto-join", {
+      bestDraftId: best.id,
+      bestFileCount,
+      activeId: activeId || null,
+      localFileCount: draftFiles.length,
+    });
     void loadPracticeTransferDraft({ draftId: best.id, forceResync: true });
   }, [
     activeDraftId,
@@ -4369,6 +4490,12 @@ export const PracticeFileTransferPage = ({
       skipJig: effectiveSkipJig,
     });
 
+    logPracticeFileSync("syncDraftFiles:start", {
+      mode: filesMode,
+      draftId: String(activeDraftIdRef.current || "").trim() || null,
+      fileCount: nextDraftFiles.length,
+      fileIds: nextDraftFiles.map((row) => row.fileId).slice(0, 8),
+    });
     const res = await apiFetch<unknown>({
       path: "/api/practice/transfers/draft",
       method: "POST",
@@ -4400,21 +4527,21 @@ export const PracticeFileTransferPage = ({
       activeDraftIdRef.current = returnedDraftId;
       activeDraftSeenInListRef.current = returnedDraftId;
     }
-    const returnedFiles = Array.isArray(payload?.files)
-      ? payload.files
-          .map((row) => ({
-            fileId: String(row?.fileId || "").trim(),
-            originalName: String(row?.originalName || "").trim(),
-            mimetype: String(row?.mimetype || "application/octet-stream").trim(),
-            size: Number(row?.size || 0),
-            s3Key: String(row?.s3Key || "").trim(),
-            location: String(row?.location || "").trim(),
-          }))
-          .filter((row) => row.fileId && row.originalName && row.s3Key)
-      : nextDraftFiles;
-    if (returnedFiles.length >= nextDraftFiles.length) {
-      setDraftFiles(returnedFiles);
-    }
+    const returnedFiles = normalizeDraftTransferFileItems(payload?.files);
+    const nextCount = nextDraftFiles.length;
+    const mergedReturned =
+      returnedFiles.length >= nextCount
+        ? returnedFiles
+        : mergeDraftTransferFileItems(nextDraftFiles, returnedFiles);
+    logPracticeFileSync("syncDraftFiles:response", {
+      draftId: returnedDraftId || null,
+      mode: filesMode,
+      sentCount: nextCount,
+      returnedCount: returnedFiles.length,
+      appliedCount: mergedReturned.length,
+    });
+    draftFilesRef.current = mergedReturned;
+    setDraftFiles(mergedReturned);
   };
 
   useEffect(() => {
@@ -4442,11 +4569,21 @@ export const PracticeFileTransferPage = ({
     const seq = ++mobileFilePromoteSeqRef.current;
     fileSyncInFlightRef.current = true;
     setFormSyncStatus("saving");
+    logPracticeFileSync("promote:start", {
+      localFiles: files.length,
+      draftFiles: draftFilesRef.current.length,
+      activeDraftId: String(activeDraftIdRef.current || "").trim() || null,
+      seq,
+    });
 
     const flushPendingDraftApply = () => {
       const pending = pendingDraftApplyRef.current;
       if (!pending) return;
       pendingDraftApplyRef.current = null;
+      logPracticeFileSync("promote:flush-pending", {
+        draftId: String(pending._id || "").trim() || null,
+        incomingFiles: Array.isArray(pending.files) ? pending.files.length : 0,
+      });
       applyPracticeDraftPayload(pending, {
         forceResync: Boolean(pending.forceResync),
       });
@@ -5205,6 +5342,8 @@ export const PracticeFileTransferPage = ({
     // draft 공동 작성은 입력 포커스 중에도 즉시 반영. pendingLocalFormEditRef가 덮어쓰기 보호.
     delayMs: 0,
     deferWhenEditing: false,
+    // 모바일 Safari 등 background hidden 동안에도 첨부 이벤트를 놓치지 않는다.
+    requireVisible: false,
     onMatch: (evt) => {
       const payload =
         evt?.data && typeof evt.data === "object"
@@ -5301,17 +5440,56 @@ export const PracticeFileTransferPage = ({
             eventFingerprint === currentFormFingerprintRef.current;
           // 모바일/PC는 draftId·치식 fingerprint가 갈라져도 같은 기공소·환자면 파일을 맞춘다.
           const sameOpenCaseByForm = sameOpenPatient && sameOpenLab;
-          if (!isActiveCaseEvent && !sameOpenForm && !sameOpenCaseByForm) return;
-
+          const eventFileCount = Number(payload.fileCount ?? NaN);
           const incomingFiles = normalizeDraftTransferFileItems(payload.files);
           const localFileCount = draftFilesRef.current.length;
-          const incomingFileCount = incomingFiles.length;
+          const incomingFileCount = Number.isFinite(eventFileCount)
+            ? Math.max(eventFileCount, incomingFiles.length)
+            : incomingFiles.length;
+          const filesTouched = Boolean(payload.filesTouched);
+          const draftFilesMode = String(payload.draftFilesMode || "keep")
+            .trim()
+            .toLowerCase();
+
+          logPracticeFileSync("event:draft-upserted", {
+            eventDraftId: eventDraftId || null,
+            activeId: activeId || null,
+            isActiveCaseEvent,
+            sameOpenForm,
+            sameOpenCaseByForm,
+            sameOpenPatient,
+            sameOpenLab,
+            eventPatientName,
+            localPatientName: normalizedPatientName,
+            eventLabId: eventLabId || null,
+            currentLabId: currentLabId || null,
+            eventLabName,
+            currentLabName,
+            filesTouched,
+            draftFilesMode,
+            localFileCount,
+            incomingFileCount,
+            editorUserId: String(payload.editorUserId || "").trim() || null,
+            visible:
+              typeof document === "undefined"
+                ? true
+                : document.visibilityState === "visible",
+          });
+
+          if (!isActiveCaseEvent && !sameOpenForm && !sameOpenCaseByForm) {
+            logPracticeFileSync("event:skip-unrelated", {
+              eventDraftId: eventDraftId || null,
+            });
+            return;
+          }
+
           if (incomingFileCount > localFileCount) {
             autoJoinedDraftIdRef.current = "";
           }
 
           // 같은 계정 다른 탭/창도 반영해야 하므로 editorUserId echo skip 하지 않는다.
           // 파일 추가는 폼을 덮지 않는다(forceResync는 치식/날짜 스냅샷 덮어쓰기용).
+          // forceResync로 첨부를 교체하지 않는다 — filesTouched+replace만 축소 허용.
           const hasEventSnapshot =
             typeof payload.transferMemo === "string" || incomingFiles.length > 0;
           if (hasEventSnapshot) {
@@ -5329,10 +5507,18 @@ export const PracticeFileTransferPage = ({
               updatedAt: payload.updatedAt ? String(payload.updatedAt) : null,
               createdAt: payload.createdAt ? String(payload.createdAt) : null,
               forceResync: sameOpenForm,
+              filesTouched,
+              draftFilesMode,
             });
-            if (incomingFileCount > localFileCount) {
+            if (incomingFileCount > localFileCount || filesTouched) {
               const reloadDraftId = String(eventDraftId || activeId || "").trim();
               if (reloadDraftId) {
+                logPracticeFileSync("event:get-fallback", {
+                  reloadDraftId,
+                  incomingFileCount,
+                  localFileCount,
+                  filesTouched,
+                });
                 void loadPracticeTransferDraft({
                   draftId: reloadDraftId,
                   forceResync: false,
