@@ -99,6 +99,8 @@ export const CommissionLedgerInline = ({
   const [internalPeriod, setInternalPeriod] =
     useState<PeriodFilterValue>("30d");
   const period = externalPeriod ?? internalPeriod;
+  const [customStartDate, setCustomStartDate] = useState("");
+  const [customEndDate, setCustomEndDate] = useState("");
   const [type, setType] = useState<"all" | SalesmanLedgerType>("all");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -123,20 +125,19 @@ export const CommissionLedgerInline = ({
     });
     const hasManualRange = Boolean(from || to);
     if (!hasManualRange) {
-      if (period === "thisMonth" || period === "lastMonth") {
-        const range = periodToRange(period);
-        if (range?.startDate) qs.set("from", range.startDate);
-        if (range?.endDate) qs.set("to", range.endDate);
-      } else if (period) {
-        qs.set("period", period);
-      }
+      const range = periodToRange(period, {
+        customStartDate,
+        customEndDate,
+      });
+      if (range?.startDate) qs.set("from", range.startDate);
+      if (range?.endDate) qs.set("to", range.endDate);
     }
     if (type !== "all") qs.set("type", type);
     if (from) qs.set("from", from);
     if (to) qs.set("to", to);
     if (q.trim()) qs.set("q", q.trim());
     return qs.toString();
-  }, [period, type, from, to, q]);
+  }, [period, customStartDate, customEndDate, type, from, to, q]);
 
   const loadPage = useCallback(async (p: number, reset = false) => {
     if (!token) return;
@@ -187,7 +188,7 @@ export const CommissionLedgerInline = ({
     setItems([]);
     setHasMore(true);
     loadPage(1, true);
-  }, [salesmanId, mode, period, type, from, to, q, loadPage]);
+  }, [salesmanId, mode, period, customStartDate, customEndDate, type, from, to, q, loadPage]);
 
   useEffect(() => {
     const sentinel = sentinelRef.current;
@@ -259,7 +260,21 @@ export const CommissionLedgerInline = ({
       <div className="flex flex-col gap-2">
         {!externalPeriod && (
           <div className="flex flex-wrap items-center gap-2">
-            <PeriodFilter value={internalPeriod} onChange={setInternalPeriod} useStoreCustomRange={false} />
+            <PeriodFilter
+              value={internalPeriod}
+              onChange={setInternalPeriod}
+              useStoreCustomRange={false}
+              customStartDate={customStartDate}
+              customEndDate={customEndDate}
+              onCustomRangeChange={({ startDate, endDate }) => {
+                setCustomStartDate(startDate);
+                setCustomEndDate(endDate);
+              }}
+              onClearCustomRange={() => {
+                setCustomStartDate("");
+                setCustomEndDate("");
+              }}
+            />
           </div>
         )}
         <div className="flex flex-wrap items-center gap-2">

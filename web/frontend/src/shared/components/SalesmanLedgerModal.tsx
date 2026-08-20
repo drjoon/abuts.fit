@@ -109,6 +109,8 @@ export const SalesmanLedgerModal = ({
   const { toast } = useToast();
 
   const [period, setPeriod] = useState<PeriodFilterValue>("30d");
+  const [customStartDate, setCustomStartDate] = useState("");
+  const [customEndDate, setCustomEndDate] = useState("");
   const [type, setType] = useState<"all" | SalesmanLedgerType>("all");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -128,6 +130,8 @@ export const SalesmanLedgerModal = ({
 
   const resetFilters = () => {
     setPeriod("30d");
+    setCustomStartDate("");
+    setCustomEndDate("");
     setType("all");
     setFrom("");
     setTo("");
@@ -141,20 +145,19 @@ export const SalesmanLedgerModal = ({
     });
     const hasManualRange = Boolean(from || to);
     if (!hasManualRange) {
-      if (period === "thisMonth" || period === "lastMonth") {
-        const range = periodToRange(period);
-        if (range?.startDate) qs.set("from", range.startDate);
-        if (range?.endDate) qs.set("to", range.endDate);
-      } else if (period) {
-        qs.set("period", period);
-      }
+      const range = periodToRange(period, {
+        customStartDate,
+        customEndDate,
+      });
+      if (range?.startDate) qs.set("from", range.startDate);
+      if (range?.endDate) qs.set("to", range.endDate);
     }
     if (type !== "all") qs.set("type", type);
     if (from) qs.set("from", from);
     if (to) qs.set("to", to);
     if (q.trim()) qs.set("q", q.trim());
     return qs.toString();
-  }, [period, type, from, to, q]);
+  }, [period, customStartDate, customEndDate, type, from, to, q]);
 
   const loadPage = useCallback(async (p: number, reset = false) => {
     if (!token) return;
@@ -207,7 +210,7 @@ export const SalesmanLedgerModal = ({
     setItems([]);
     setHasMore(true);
     void loadPage(1, true);
-  }, [open, salesmanId, mode, period, type, from, to, q, loadPage]);
+  }, [open, salesmanId, mode, period, customStartDate, customEndDate, type, from, to, q, loadPage]);
 
   useEffect(() => {
     const sentinel = sentinelRef.current;
@@ -293,7 +296,21 @@ export const SalesmanLedgerModal = ({
         <div className="flex flex-col gap-3 min-h-0 flex-1">
           <div className="flex flex-col gap-2">
             <div className="flex flex-wrap items-center gap-2">
-              <PeriodFilter value={period} onChange={setPeriod} useStoreCustomRange={false} />
+              <PeriodFilter
+                value={period}
+                onChange={setPeriod}
+                useStoreCustomRange={false}
+                customStartDate={customStartDate}
+                customEndDate={customEndDate}
+                onCustomRangeChange={({ startDate, endDate }) => {
+                  setCustomStartDate(startDate);
+                  setCustomEndDate(endDate);
+                }}
+                onClearCustomRange={() => {
+                  setCustomStartDate("");
+                  setCustomEndDate("");
+                }}
+              />
               <div className="w-[130px]">
                 <select
                   className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"

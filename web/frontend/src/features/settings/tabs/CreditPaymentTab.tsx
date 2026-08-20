@@ -28,6 +28,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
+import { periodToRange } from "@/store/usePeriodStore";
 import { ChevronDown, ChevronUp, Copy } from "lucide-react";
 import {
   CREDIT_CHARGE_NOTICE_BODY,
@@ -217,6 +218,8 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
   const [orders, setOrders] = useState<CreditOrderItem[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(false);
   const [ordersPeriod, setOrdersPeriod] = useState<PeriodFilterValue>("30d");
+  const [ordersCustomStartDate, setOrdersCustomStartDate] = useState("");
+  const [ordersCustomEndDate, setOrdersCustomEndDate] = useState("");
   const ordersRequestSequence = useRef(0);
 
   const [spendInsights, setSpendInsights] = useState<
@@ -331,61 +334,27 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
   }, [chargeUnit]);
 
   const filteredOrders = useMemo(() => {
-    const now = Date.now();
-    const daysMap: Record<
-      Extract<PeriodFilterValue, "30d" | "90d">,
-      number
-    > = {
-      "30d": 30,
-      "90d": 90,
-    };
-
     const items = Array.isArray(orders) ? orders : [];
+    const range = periodToRange(ordersPeriod, {
+      customStartDate: ordersCustomStartDate,
+      customEndDate: ordersCustomEndDate,
+    });
+    const startMs = range?.startDate
+      ? new Date(range.startDate).getTime()
+      : Number.NaN;
+    const endMs = range?.endDate
+      ? new Date(range.endDate).getTime()
+      : Number.NaN;
 
-    if (ordersPeriod === "lastMonth" || ordersPeriod === "thisMonth") {
-      const today = new Date();
-      const year = today.getFullYear();
-      const month = today.getMonth();
-
-      const start =
-        ordersPeriod === "thisMonth"
-          ? new Date(year, month, 1)
-          : new Date(year, month - 1, 1);
-      const end =
-        ordersPeriod === "thisMonth"
-          ? new Date(year, month + 1, 1)
-          : new Date(year, month, 1);
-
-      return items
-        .filter((o) => {
-          const t = new Date(
-            String(o.createdAt || o.matchedAt || o.expiresAt || ""),
-          ).getTime();
-          if (!Number.isFinite(t)) return true;
-          return t >= start.getTime() && t < end.getTime();
-        })
-        .sort((a, b) => {
-          const ta = new Date(
-            String(a.createdAt || a.matchedAt || a.expiresAt || 0),
-          ).getTime();
-          const tb = new Date(
-            String(b.createdAt || b.matchedAt || b.expiresAt || 0),
-          ).getTime();
-          return (
-            (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0)
-          );
-        });
-    }
-
-    const days = daysMap[ordersPeriod as keyof typeof daysMap];
-    const cutoff = now - days * 24 * 60 * 60 * 1000;
     return items
       .filter((o) => {
         const t = new Date(
           String(o.createdAt || o.matchedAt || o.expiresAt || ""),
         ).getTime();
         if (!Number.isFinite(t)) return true;
-        return t >= cutoff;
+        if (Number.isFinite(startMs) && t < startMs) return false;
+        if (Number.isFinite(endMs) && t > endMs) return false;
+        return true;
       })
       .sort((a, b) => {
         const ta = new Date(
@@ -394,9 +363,11 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
         const tb = new Date(
           String(b.createdAt || b.matchedAt || b.expiresAt || 0),
         ).getTime();
-        return (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0);
+        return (
+          (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0)
+        );
       });
-  }, [orders, ordersPeriod]);
+  }, [orders, ordersPeriod, ordersCustomStartDate, ordersCustomEndDate]);
 
   const [creatingOrder, setCreatingOrder] = useState(false);
 
@@ -1011,7 +982,21 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
           <Separator />
           <div className="flex items-center justify-between gap-3">
             <div className="text-base font-semibold">충전 내역</div>
-            <PeriodFilter value={ordersPeriod} onChange={setOrdersPeriod} useStoreCustomRange={false} />
+            <PeriodFilter
+              value={ordersPeriod}
+              onChange={setOrdersPeriod}
+              useStoreCustomRange={false}
+              customStartDate={ordersCustomStartDate}
+              customEndDate={ordersCustomEndDate}
+              onCustomRangeChange={({ startDate, endDate }) => {
+                setOrdersCustomStartDate(startDate);
+                setOrdersCustomEndDate(endDate);
+              }}
+              onClearCustomRange={() => {
+                setOrdersCustomStartDate("");
+                setOrdersCustomEndDate("");
+              }}
+            />
           </div>
           {loadingOrders ? (
             <div className="text-sm text-muted-foreground">

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-20: useStoreCustomRange=false여도 로컬 커스텀 기간으로 달력·chevron을 켠다.
 // - 2026-08-20: 기간 달력 좌·우 chevron — 현재 선택 기간을 한 달 앞/뒤로 옮긴다.
 // related files:
 // - web/frontend/rules.md
@@ -91,26 +92,38 @@ export const PeriodFilter = ({
 
   const [open, setOpen] = useState(false);
   const [draftRange, setDraftRange] = useState<DateRange | undefined>();
+  const [localStart, setLocalStart] = useState("");
+  const [localEnd, setLocalEnd] = useState("");
 
   const effectiveStart =
     customStartDate !== undefined
       ? customStartDate
       : useStoreCustomRange
         ? storeStart
-        : "";
+        : localStart;
   const effectiveEnd =
     customEndDate !== undefined
       ? customEndDate
       : useStoreCustomRange
         ? storeEnd
-        : "";
+        : localEnd;
+
+  const setLocalCustom = (range: { startDate: string; endDate: string }) => {
+    setLocalStart(range.startDate);
+    setLocalEnd(range.endDate);
+  };
 
   const setCustom =
     onCustomRangeChange ??
-    (useStoreCustomRange ? setCustomDateRange : undefined);
+    (useStoreCustomRange ? setCustomDateRange : setLocalCustom);
   const clearCustom =
     onClearCustomRange ??
-    (useStoreCustomRange ? clearCustomDateRange : undefined);
+    (useStoreCustomRange
+      ? clearCustomDateRange
+      : () => {
+          setLocalStart("");
+          setLocalEnd("");
+        });
 
   const hasCustomRange = Boolean(
     String(effectiveStart || "").trim() && String(effectiveEnd || "").trim(),

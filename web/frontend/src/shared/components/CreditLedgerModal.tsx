@@ -1,5 +1,5 @@
 // change-log:
-// - 2026-08-20: 행 클릭 정산 상세에 장부 배송비를 전달(견적 툴팁과 분리).
+// - 2026-08-20: PeriodFilter 달력·chevron 커스텀 기간을 원장 조회 from/to에 반영.
 // - 2026-08-19: 구강스캔 호버 — 보철기공비|어벗 디자인+생산비는 견적(6만·2.5만). 경로 보류(7만+1.5만) 아님.
 // - 2026-08-19: 어벗디자인·어벗생산은 의뢰 사업자+예정출고일로 1행·배송비 1건(치과명 무관).
 // - 2026-08-19: 내역 무한스크롤을 10건 단위로 가져와 첫 화면을 빨리 연다.
@@ -1341,6 +1341,8 @@ export const CreditLedgerModal = ({
   };
 
   const [period, setPeriod] = useState<PeriodFilterValue>("30d");
+  const [customStartDate, setCustomStartDate] = useState("");
+  const [customEndDate, setCustomEndDate] = useState("");
   const [creditKind, setCreditKind] = useState<LedgerCreditKindFilter>("all");
   const [action, setAction] = useState<LedgerActionFilter>("all");
   const [q, setQ] = useState("");
@@ -1407,13 +1409,12 @@ export const CreditLedgerModal = ({
 
   const buildPath = (pageNum: number) => {
     const params = new URLSearchParams();
-    if (period === "thisMonth" || period === "lastMonth") {
-      const range = periodToRange(period);
-      if (range?.startDate) params.set("from", range.startDate);
-      if (range?.endDate) params.set("to", range.endDate);
-    } else if (period) {
-      params.set("period", period);
-    }
+    const range = periodToRange(period, {
+      customStartDate,
+      customEndDate,
+    });
+    if (range?.startDate) params.set("from", range.startDate);
+    if (range?.endDate) params.set("to", range.endDate);
     if (creditKind && creditKind !== "all") params.set("creditKind", creditKind);
     if (action && action !== "all") params.set("action", action);
     if (q.trim()) params.set("q", q.trim());
@@ -1507,7 +1508,7 @@ export const CreditLedgerModal = ({
     hasMoreRef.current = true;
     load(1, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, period, creditKind, action, q, businessAnchorId]);
+  }, [isOpen, period, customStartDate, customEndDate, creditKind, action, q, businessAnchorId]);
 
   // 무한 스크롤
   useEffect(() => {
@@ -1827,6 +1828,16 @@ export const CreditLedgerModal = ({
               value={period}
               onChange={setPeriod}
               useStoreCustomRange={false}
+              customStartDate={customStartDate}
+              customEndDate={customEndDate}
+              onCustomRangeChange={({ startDate, endDate }) => {
+                setCustomStartDate(startDate);
+                setCustomEndDate(endDate);
+              }}
+              onClearCustomRange={() => {
+                setCustomStartDate("");
+                setCustomEndDate("");
+              }}
             />
 
             <div className="w-[130px]">
