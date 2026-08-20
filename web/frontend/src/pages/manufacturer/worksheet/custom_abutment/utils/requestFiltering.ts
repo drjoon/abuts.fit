@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-21: 준비 탭 정렬 — remainingMs(Date.now) 비교 제거. 동일 출고일에서 실시간 리렌더마다 카드 순서가 뒤바뀌던 race 수정.
 // - 2026-08-18: 준비 탭 의뢰카드 정렬 — 출고일(마감) 긴박한 순(위) → 여유 있는 순(아래).
 // - 2026-08-03: 준비 탭 필터 SSOT를 `준비`로 통일해 상단 카운트와 카드 목록 불일치(카운트>0, 카드 0건) 문제를 수정.
 // - 2026-08-03: 실시간 CAM 생성중 복원 조건의 request 단계 판정을 `준비` 단일값으로 정리.
@@ -12,40 +13,66 @@
 import {
   type ManufacturerRequest,
   deriveStageForFilter,
-  getDeadlineInfo,
   stageOrder,
   isRndSampleRequest,
 } from "./request";
+
+function resolveShipYmdForSort(req: ManufacturerRequest): string {
+  const fromPriority = String(req.shippingPriority?.shipYmd || "").trim();
+  if (fromPriority) return fromPriority;
+  return String(req.timeline?.estimatedShipYmd || "").trim();
+}
+
+function resolveStableRequestKey(req: ManufacturerRequest): string {
+  return (
+    String(req.requestId || "").trim() ||
+    String((req as { _id?: string })._id || "").trim() ||
+    ""
+  );
+}
 
 function compareRequestsByShipUrgency(
   a: ManufacturerRequest,
   b: ManufacturerRequest,
 ): number {
-  const aScore = Number(a.shippingPriority?.score);
-  const bScore = Number(b.shippingPriority?.score);
-  const aHasScore = Number.isFinite(aScore);
-  const bHasScore = Number.isFinite(bScore);
+  const aShipYmd = resolveShipYmdForSort(a);
+  const bShipYmd = resolveShipYmdForSort(b);
+  const sameShipYmd = Boolean(aShipYmd && bShipYmd && aShipYmd === bShipYmd);
 
-  if (aHasScore && bHasScore && aScore !== bScore) {
-    return bScore - aScore;
-  }
-  if (aHasScore !== bHasScore) {
-    return aHasScore ? -1 : 1;
-  }
+  // 동일 출고일: minutesLeft 기반 score/remainingMs는 분·ms 단위로 달라져 순서가 흔들린다.
+  // 출고일이 다를 때만 score로 긴박도를 비교하고, 동일이면 express → createdAt → id 로 고정.
+  if (!sameShipYmd) {
+    const aScore = Number(a.shippingPriority?.score);
+    const bScore = Number(b.shippingPriority?.score);
+    const aHasScore = Number.isFinite(aScore);
+    const bHasScore = Number.isFinite(bScore);
 
-  const aRemaining =
-    getDeadlineInfo(a.createdAt, a.timeline?.estimatedShipYmd)?.remainingMs ??
-    Number.POSITIVE_INFINITY;
-  const bRemaining =
-    getDeadlineInfo(b.createdAt, b.timeline?.estimatedShipYmd)?.remainingMs ??
-    Number.POSITIVE_INFINITY;
-  if (aRemaining !== bRemaining) {
-    return aRemaining - bRemaining;
+    if (aHasScore && bHasScore && aScore !== bScore) {
+      return bScore - aScore;
+    }
+    if (aHasScore !== bHasScore) {
+      return aHasScore ? -1 : 1;
+    }
+
+    if (aShipYmd !== bShipYmd) {
+      if (!aShipYmd) return 1;
+      if (!bShipYmd) return -1;
+      return aShipYmd < bShipYmd ? -1 : 1;
+    }
+  } else {
+    const aExpress = a.shippingPriority?.mode === "express" ? 1 : 0;
+    const bExpress = b.shippingPriority?.mode === "express" ? 1 : 0;
+    if (aExpress !== bExpress) return bExpress - aExpress;
   }
 
   const aTime = new Date(a.createdAt || 0).getTime();
   const bTime = new Date(b.createdAt || 0).getTime();
-  return aTime - bTime;
+  if (aTime !== bTime) return aTime - bTime;
+
+  const aKey = resolveStableRequestKey(a);
+  const bKey = resolveStableRequestKey(b);
+  if (aKey !== bKey) return aKey < bKey ? -1 : 1;
+  return 0;
 }
 
 function getKstTodayYmd(): string {
