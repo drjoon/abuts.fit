@@ -1,4 +1,4 @@
-import { Camera, Trash2 } from "lucide-react";
+import { Camera, ImagePlus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -26,6 +26,7 @@ import type { PreUploadFileStatus } from "@/shared/hooks/useFilePreUpload";
 // - 2026-08-17: 확장자 안내는 DropTarget 라벨 하단 상시 표기(클릭 경로 Tooltip 제거).
 // - 2026-08-20: requirementNote를 모바일 쉐이드 포토 안내 등 soft tip으로 표시.
 // - 2026-08-20: 쉐이드 안내 — 드롭존과 같은 폭·가운데 정렬, 카메라 아이콘.
+// - 2026-08-20: 이미지 첨부는 카드에 썸네일 미리보기.
 
 export type PracticeTransferFileDisplayItem = {
   key: string;
@@ -34,6 +35,8 @@ export type PracticeTransferFileDisplayItem = {
   metaSuffix?: string;
   uploadPercent?: number;
   uploadStatus?: PreUploadFileStatus;
+  /** 이미지면 blob/proxy object URL. STL 등은 생략. */
+  previewUrl?: string | null;
 };
 
 /** 3열 카드 · 행높이 3.5rem × 3행 + gap 1.5 × 2 ≈ 11.25rem */
@@ -181,8 +184,34 @@ export const PracticeTransferFilePane = ({
                 return (
                   <div
                     key={file.key}
-                    className="app-glass-card relative flex h-[3.5rem] min-w-0 items-center justify-between gap-1 overflow-hidden rounded-xl border border-slate-200/80 bg-white px-2.5 py-1.5"
+                    className="app-glass-card relative flex h-[3.5rem] min-w-0 items-center justify-between gap-1.5 overflow-hidden rounded-xl border border-slate-200/80 bg-white px-2.5 py-1.5"
                   >
+                    {"previewUrl" in file ? (
+                      <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-md bg-slate-100">
+                        {file.previewUrl ? (
+                          <img
+                            src={file.previewUrl}
+                            alt=""
+                            className="h-full w-full object-cover"
+                            onError={(event) => {
+                              event.currentTarget.style.display = "none";
+                              const fallback = event.currentTarget.nextElementSibling;
+                              if (fallback instanceof HTMLElement) {
+                                fallback.style.display = "flex";
+                              }
+                            }}
+                          />
+                        ) : null}
+                        <div
+                          className={cn(
+                            "absolute inset-0 items-center justify-center text-slate-400",
+                            file.previewUrl ? "hidden" : "flex",
+                          )}
+                        >
+                          <ImagePlus className="h-4 w-4" />
+                        </div>
+                      </div>
+                    ) : null}
                     <div className="min-w-0 flex-1">
                       <Tooltip>
                         <TooltipTrigger asChild>

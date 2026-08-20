@@ -2,7 +2,6 @@ import { useRef } from "react";
 import {
   BookmarkPlus,
   Camera,
-  ClipboardList,
   ImagePlus,
   Plus,
   X,
@@ -25,6 +24,8 @@ import type { PreUploadFileStatus } from "@/shared/hooks/useFilePreUpload";
 // - 2026-08-20: 모바일 구강스캔 — 기공소·환자명 후 구강포토 촬영·업로드·임시저장.
 // - 2026-08-20: 상단 새로/최근/임시 1줄, 제목·안내 제거, 여백 보정.
 // - 2026-08-20: 세그먼트 툴바·큰 촬영 CTA·터치 친화 카드.
+// - 2026-08-20: 상단 메뉴 새로작성·임시저장 2칸만.
+// - 2026-08-20: iPhone HEIC→JPEG 변환 시도, 빈 파일 거부, MIME 보정.
 
 export type PracticeTransferMobilePhotoItem = {
   key: string;
@@ -67,28 +68,108 @@ const extensionForOralPhoto = (file: File) => {
   return ".jpg";
 };
 
-export const normalizeOralPhotoFiles = (raw: File[]) => {
-  const stamp = Date.now();
-  return raw
-    .filter((file) => file && !isHeicLike(file))
-    .map((file, index) => {
-      const ext = extensionForOralPhoto(file);
-      const nextName = `구강포토-${stamp}-${index + 1}${ext}`;
-      const mime =
-        file.type && file.type.startsWith("image/")
-          ? file.type
-          : ext === ".png"
-            ? "image/png"
-            : ext === ".webp"
-              ? "image/webp"
-              : ext === ".gif"
-                ? "image/gif"
-                : "image/jpeg";
-      return new File([file], nextName, {
-        type: mime,
-        lastModified: stamp + index,
-      });
+const normalizeImageMime = (type: string, ext: string) => {
+  const mime = String(type || "").trim().toLowerCase();
+  if (mime === "image/jpg") return "image/jpeg";
+  if (mime.startsWith("image/") && !mime.includes("heic") && !mime.includes("heif")) {
+    return mime;
+  }
+  if (ext === ".png") return "image/png";
+  if (ext === ".webp") return "image/webp";
+  if (ext === ".gif") return "image/gif";
+  if (ext === ".bmp") return "image/bmp";
+  return "image/jpeg";
+};
+
+/** iOS 앨범 HEIC — Safari가 디코드 가능하면 JPEG로 변환. */
+const tryConvertHeicToJpeg = async (file: File): Promise<File | null> => {
+  if (typeof window === "undefined") return null;
+  try {
+    let bitmap: ImageBitmap | null = null;
+    if (typeof createImageBitmap === "function") {
+      bitmap = await createImageBitmap(file);
+    }
+    const canvas = document.createElement("canvas");
+    if (bitmap) {
+      canvas.width = Math.max(1, bitmap.width);
+      canvas.height = Math.max(1, bitmap.height);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        bitmap.close();
+        return null;
+      }
+      ctx.drawImage(bitmap, 0, 0);
+      bitmap.close();
+    } else {
+      const objectUrl = URL.createObjectURL(file);
+      try {
+        const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+          const img = new Image();
+          img.onload = () => resolve(img);
+          img.onerror = () => reject(new Error("heic decode failed"));
+          img.src = objectUrl;
+        });
+        canvas.width = Math.max(1, image.naturalWidth || image.width || 0);
+        canvas.height = Math.max(1, image.naturalHeight || image.height || 0);
+        if (!canvas.width || !canvas.height) return null;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return null;
+        ctx.drawImage(image, 0, 0);
+      } finally {
+        URL.revokeObjectURL(objectUrl);
+      }
+    }
+
+    const blob = await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob((next) => resolve(next), "image/jpeg", 0.92);
     });
+    if (!blob || blob.size <= 0) return null;
+    const stamp = Date.now();
+    return new File([blob], `oral-photo-${stamp}.jpg`, {
+      type: "image/jpeg",
+      lastModified: stamp,
+    });
+  } catch {
+    return null;
+  }
+};
+
+export const normalizeOralPhotoFiles = async (raw: File[]) => {
+  const stamp = Date.now();
+  const out: File[] = [];
+  let skippedHeic = 0;
+  let skippedEmpty = 0;
+
+  for (let index = 0; index < raw.length; index += 1) {
+    const file = raw[index];
+    if (!file) continue;
+    if (!Number.isFinite(file.size) || file.size <= 0) {
+      skippedEmpty += 1;
+      continue;
+    }
+
+    let source = file;
+    if (isHeicLike(file)) {
+      const converted = await tryConvertHeicToJpeg(file);
+      if (!converted) {
+        skippedHeic += 1;
+        continue;
+      }
+      source = converted;
+    }
+
+    const ext = extensionForOralPhoto(source);
+    const nextName = `구강포토-${stamp}-${out.length + 1}${ext}`;
+    const mime = normalizeImageMime(source.type, ext);
+    out.push(
+      new File([source], nextName, {
+        type: mime,
+        lastModified: stamp + out.length,
+      }),
+    );
+  }
+
+  return { files: out, skippedHeic, skippedEmpty };
 };
 
 type PracticeTransferMobileOralPhotoIntakeProps = {
@@ -100,9 +181,7 @@ type PracticeTransferMobileOralPhotoIntakeProps = {
   onClearPhotos: () => void;
   onStartNew: () => void;
   onOpenDrafts: () => void;
-  onOpenRecent: () => void;
   draftCount: number;
-  recentActionNeededCount: number;
 };
 
 export function PracticeTransferMobileOralPhotoIntake({
@@ -114,9 +193,7 @@ export function PracticeTransferMobileOralPhotoIntake({
   onClearPhotos,
   onStartNew,
   onOpenDrafts,
-  onOpenRecent,
   draftCount,
-  recentActionNeededCount,
 }: PracticeTransferMobileOralPhotoIntakeProps) {
   const { toast } = useToast();
   const albumInputRef = useRef<HTMLInputElement | null>(null);
@@ -125,21 +202,30 @@ export function PracticeTransferMobileOralPhotoIntake({
     const next = Array.from(input?.files || []);
     if (input) input.value = "";
     if (!next.length) return;
-    const skippedHeic = next.filter(isHeicLike).length;
-    const normalized = normalizeOralPhotoFiles(next);
-    if (skippedHeic > 0) {
-      toast({
-        title: "HEIC는 올릴 수 없어요",
-        description: "카메라로 촬영하거나 JPG·PNG로 저장한 뒤 올려 주세요.",
-        variant: "destructive",
-      });
-    }
-    if (normalized.length) onPickPhotos(normalized);
+    void (async () => {
+      const { files: normalized, skippedHeic, skippedEmpty } =
+        await normalizeOralPhotoFiles(next);
+      if (skippedEmpty > 0) {
+        toast({
+          title: "빈 사진은 올릴 수 없어요",
+          description: "다시 촬영하거나 앨범에서 다른 사진을 골라 주세요.",
+          variant: "destructive",
+        });
+      }
+      if (skippedHeic > 0) {
+        toast({
+          title: "HEIC는 올릴 수 없어요",
+          description: "카메라로 촬영하거나 JPG·PNG로 저장한 뒤 올려 주세요.",
+          variant: "destructive",
+        });
+      }
+      if (normalized.length) onPickPhotos(normalized);
+    })();
   };
 
   return (
     <div className="box-border flex w-full min-w-0 flex-col gap-3.5">
-      <div className="grid w-full min-w-0 grid-cols-3 gap-1 rounded-2xl border border-slate-200/80 bg-slate-50/90 p-1">
+      <div className="grid w-full min-w-0 grid-cols-2 gap-1 rounded-2xl border border-slate-200/80 bg-slate-50/90 p-1">
         <Button
           type="button"
           variant="ghost"
@@ -148,22 +234,7 @@ export function PracticeTransferMobileOralPhotoIntake({
           onClick={onStartNew}
         >
           <Plus className="mr-1 h-3.5 w-3.5 shrink-0" />
-          새로
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="h-10 min-w-0 gap-1 rounded-xl px-2 text-sm font-medium hover:bg-white hover:shadow-sm"
-          onClick={onOpenRecent}
-        >
-          <ClipboardList className="h-3.5 w-3.5 shrink-0" />
-          최근
-          {recentActionNeededCount > 0 ? (
-            <Badge className="ml-0.5 h-5 min-w-5 rounded-full border-0 bg-primary-strong px-1.5 text-[10px] tabular-nums text-white hover:bg-primary-strong">
-              {recentActionNeededCount}
-            </Badge>
-          ) : null}
+          새로작성
         </Button>
         <Button
           type="button"
@@ -173,7 +244,7 @@ export function PracticeTransferMobileOralPhotoIntake({
           onClick={onOpenDrafts}
         >
           <BookmarkPlus className="h-3.5 w-3.5 shrink-0" />
-          임시
+          임시저장
           {draftCount > 0 ? (
             <Badge
               variant="secondary"
@@ -290,12 +361,23 @@ export function PracticeTransferMobileOralPhotoIntake({
                       src={photo.previewUrl}
                       alt={photo.name}
                       className="aspect-square w-full object-cover"
+                      onError={(event) => {
+                        event.currentTarget.style.display = "none";
+                        const fallback = event.currentTarget.nextElementSibling;
+                        if (fallback instanceof HTMLElement) {
+                          fallback.style.display = "flex";
+                        }
+                      }}
                     />
-                  ) : (
-                    <div className="flex aspect-square w-full items-center justify-center text-slate-400">
-                      <ImagePlus className="h-6 w-6" />
-                    </div>
-                  )}
+                  ) : null}
+                  <div
+                    className={cn(
+                      "aspect-square w-full items-center justify-center text-slate-400",
+                      photo.previewUrl ? "hidden" : "flex",
+                    )}
+                  >
+                    <ImagePlus className="h-6 w-6" />
+                  </div>
                   <p
                     className={cn(
                       "truncate px-1.5 py-1 text-center text-[10px] font-medium",
@@ -316,11 +398,11 @@ export function PracticeTransferMobileOralPhotoIntake({
                   ) : null}
                   <button
                     type="button"
-                    className="absolute right-1.5 top-1.5 inline-flex h-8 w-8 items-center justify-center rounded-full bg-black/55 text-white active:bg-black/70"
+                    className="absolute right-1 top-1 inline-flex h-10 w-10 items-center justify-center rounded-full bg-black/55 text-white active:bg-black/70"
                     aria-label={`${photo.name} 삭제`}
                     onClick={() => onRemovePhoto(photo.key)}
                   >
-                    <X className="h-3.5 w-3.5" />
+                    <X className="h-4 w-4" />
                   </button>
                 </div>
               );

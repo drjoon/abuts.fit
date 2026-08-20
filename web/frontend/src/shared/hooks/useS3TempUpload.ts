@@ -45,7 +45,12 @@ const MULTIPART_THRESHOLD_BYTES = 8 * 1024 * 1024;
 const MULTIPART_PART_SIZE_BYTES = 8 * 1024 * 1024;
 const MAX_PUT_ATTEMPTS = 3;
 
-const isImageFile = (file: File) => file.type.startsWith("image/");
+const isImageFile = (file: File) => {
+  const type = String(file.type || "").trim().toLowerCase();
+  if (type.startsWith("image/")) return true;
+  const name = String(file.name || "").trim().toLowerCase();
+  return /\.(jpe?g|png|webp|gif|bmp)$/i.test(name);
+};
 
 const sleep = (ms: number) =>
   new Promise<void>((resolve) => {

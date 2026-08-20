@@ -97,6 +97,9 @@
  * - web/frontend/src/shared/components/practice/PracticeTransferMobileOralPhotoIntake.tsx
  * - 2026-08-20: 모바일 구강스캔 — 기공소·환자명 후 구강포토 촬영·업로드·임시저장.
  * - 2026-08-20: 모바일 임시저장=최근과 같은 카드 시트. PC 드롭존에 모바일 쉐이드 안내.
+ * - 2026-08-20: 구강포토 썸네일 — private S3 location 대신 blob/proxy 미리보기.
+ * - 2026-08-20: 모바일 상단 새로작성·임시저장만. 임시저장 모달 닫기·전체삭제 간격.
+ * - 2026-08-20: PC 첨부 목록에도 이미지 썸네일(모바일 동기화 포함).
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -114,6 +117,7 @@ import {
   Settings,
   Repeat,
   Pencil,
+  X,
 } from "lucide-react";
 import {
   Card,
@@ -150,8 +154,10 @@ import {
   toChatMessageAttachments,
   useBackgroundTempUpload,
 } from "@/shared/hooks/useBackgroundTempUpload";
-import { useS3FileDownload } from "@/shared/files/useS3FileDownload";
+import { useS3FileDownload, buildS3ProxyDownloadUrl } from "@/shared/files/useS3FileDownload";
+import { fetchS3BlobCached } from "@/shared/files/s3BlobCache";
 import { type TempUploadedFile } from "@/shared/hooks/useS3TempUpload";
+import { PRACTICE_TRANSFER_IMAGE_EXTENSIONS } from "@/shared/practice/practiceTransferAccept";
 import { useAuthStore } from "@/store/useAuthStore";
 import {
   PRACTICE_ACCEPTED_HINT,
@@ -368,6 +374,17 @@ const inferPracticeTransferFileMimetype = (fileName: string) => {
   if (ext === ".bmp") return "image/bmp";
   if (ext === ".stl") return "model/stl";
   return "application/octet-stream";
+};
+
+const isPracticeOralPhotoPreviewable = (fileName: string, mimetype?: string) => {
+  const mime = String(mimetype || "").trim().toLowerCase();
+  if (mime.startsWith("image/") && !mime.includes("heic") && !mime.includes("heif")) {
+    return true;
+  }
+  const lower = String(fileName || "").trim().toLowerCase();
+  const idx = lower.lastIndexOf(".");
+  const ext = idx >= 0 ? lower.slice(idx) : "";
+  return PRACTICE_TRANSFER_IMAGE_EXTENSIONS.has(ext);
 };
 
 const toDraftListSummary = (
@@ -1144,6 +1161,11 @@ export const PracticeFileTransferPage = ({
   /** 파일 업로드 동기화 중 원격 draft 적용으로 폼이 깜빡이지 않게 한다. */
   const fileSyncInFlightRef = useRef(false);
   const mobileFilePromoteSeqRef = useRef(0);
+  /** 모바일 구강포토: private S3 location 대신 blob object URL (s3Key → url) */
+  const oralPhotoObjectUrlByS3KeyRef = useRef<Map<string, string>>(new Map());
+  const [oralPhotoObjectUrlByS3Key, setOralPhotoObjectUrlByS3Key] = useState<
+    Record<string, string>
+  >({});
   const resetIntakeFormAfterTransferRef = useRef<() => Promise<void>>(async () => {});
   // 한글 음절 사이 composition 공백을 넘기도록 여유. 200ms면 r/rh 같은 중간값이 저장됨.
   const FORM_AUTOSAVE_DEBOUNCE_MS = 900;
@@ -1535,6 +1557,95 @@ export const PracticeFileTransferPage = ({
     };
   }, [localPhotoPreviewUrls]);
 
+  const rememberOralPhotoObjectUrl = useCallback((s3Key: string, source: Blob) => {
+    const key = String(s3Key || "").trim();
+    if (!key || !(source instanceof Blob)) return;
+    if (oralPhotoObjectUrlByS3KeyRef.current.has(key)) return;
+    const url = URL.createObjectURL(source);
+    oralPhotoObjectUrlByS3KeyRef.current.set(key, url);
+    setOralPhotoObjectUrlByS3Key((prev) =>
+      prev[key] === url ? prev : { ...prev, [key]: url },
+    );
+  }, []);
+
+  const forgetOralPhotoObjectUrls = useCallback((s3Keys?: string[]) => {
+    const map = oralPhotoObjectUrlByS3KeyRef.current;
+    const keys = s3Keys?.length
+      ? s3Keys.map((key) => String(key || "").trim()).filter(Boolean)
+      : Array.from(map.keys());
+    if (!keys.length) return;
+    keys.forEach((key) => {
+      const url = map.get(key);
+      if (url) URL.revokeObjectURL(url);
+      map.delete(key);
+    });
+    setOralPhotoObjectUrlByS3Key((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      keys.forEach((key) => {
+        if (key in next) {
+          delete next[key];
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      oralPhotoObjectUrlByS3KeyRef.current.forEach((url) => URL.revokeObjectURL(url));
+      oralPhotoObjectUrlByS3KeyRef.current.clear();
+    };
+  }, []);
+
+  useEffect(() => {
+    const keep = new Set(
+      draftFiles
+        .map((row) => String(row.s3Key || "").trim())
+        .filter(Boolean),
+    );
+    const stale = Array.from(oralPhotoObjectUrlByS3KeyRef.current.keys()).filter(
+      (key) => !keep.has(key),
+    );
+    if (stale.length) forgetOralPhotoObjectUrls(stale);
+  }, [draftFiles, forgetOralPhotoObjectUrls]);
+
+  useEffect(() => {
+    if (!authToken) return;
+    let cancelled = false;
+    const controller = new AbortController();
+
+    const loadMissingPreviews = async () => {
+      for (const row of draftFiles) {
+        if (cancelled) return;
+        const s3Key = String(row.s3Key || "").trim();
+        if (!s3Key) continue;
+        if (oralPhotoObjectUrlByS3KeyRef.current.has(s3Key)) continue;
+        if (!isPracticeOralPhotoPreviewable(row.originalName, row.mimetype)) continue;
+        try {
+          const blob = await fetchS3BlobCached({
+            s3Key,
+            fileName: String(row.originalName || "photo.jpg").trim() || "photo.jpg",
+            token: authToken,
+            buildUrl: buildS3ProxyDownloadUrl,
+            signal: controller.signal,
+          });
+          if (cancelled) return;
+          rememberOralPhotoObjectUrl(s3Key, blob);
+        } catch {
+          // 미리보기 실패는 썸네일 placeholder로 둔다.
+        }
+      }
+    };
+
+    void loadMissingPreviews();
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [authToken, draftFiles, rememberOralPhotoObjectUrl]);
+
   const mobileOralPhotos = useMemo(
     () =>
       combinedDisplayFiles.map((file) => {
@@ -1545,16 +1656,14 @@ export const PracticeFileTransferPage = ({
           : undefined;
         const draftRow =
           file.kind === "draft" ? draftFiles[file.draftIndex] : null;
-        const draftPreview = String(draftRow?.location || "").trim();
+        const draftS3Key = String(draftRow?.s3Key || "").trim();
         return {
           key: file.key,
           name: file.name,
           previewUrl:
             file.kind === "local"
               ? localPhotoPreviewUrls[file.localIndex] || null
-              : draftPreview.startsWith("http")
-                ? draftPreview
-                : null,
+              : (draftS3Key && oralPhotoObjectUrlByS3Key[draftS3Key]) || null,
           uploadPercent: progress?.percent,
           uploadStatus:
             file.kind === "draft"
@@ -1568,6 +1677,7 @@ export const PracticeFileTransferPage = ({
       draftFiles,
       files,
       localPhotoPreviewUrls,
+      oralPhotoObjectUrlByS3Key,
       uploadProgress,
     ],
   );
@@ -4164,6 +4274,20 @@ export const PracticeFileTransferPage = ({
         const additions = localTempFiles.filter(
           (row) => row.s3Key && !seen.has(row.s3Key),
         );
+        files.forEach((file, index) => {
+          const uploadedRow = uploaded[index];
+          const s3Key = String(uploadedRow?.key || "").trim();
+          if (
+            !s3Key ||
+            !isPracticeOralPhotoPreviewable(
+              file.name,
+              file.type || uploadedRow?.mimetype || uploadedRow?.fileType,
+            )
+          ) {
+            return;
+          }
+          rememberOralPhotoObjectUrl(s3Key, file);
+        });
         const nextDraftFiles = additions.length
           ? [...draftFilesRef.current, ...additions]
           : draftFilesRef.current;
@@ -4196,6 +4320,7 @@ export const PracticeFileTransferPage = ({
     hasSubstantialContentForNewDraft,
     isMobile,
     peekCachedUploadedFiles,
+    rememberOralPhotoObjectUrl,
     removeFilesByKeys,
     uploadProgress,
   ]);
@@ -4216,8 +4341,11 @@ export const PracticeFileTransferPage = ({
     if (target.kind === "draft" && Number.isFinite(Number(target.draftIndex))) {
       const removeIndex = Number(target.draftIndex);
       const prevDraftFiles = [...draftFiles];
+      const removed = prevDraftFiles[removeIndex];
       const nextDraftFiles = prevDraftFiles.filter((_, idx) => idx !== removeIndex);
       setDraftFiles(nextDraftFiles);
+      const removedS3Key = String(removed?.s3Key || "").trim();
+      if (removedS3Key) forgetOralPhotoObjectUrls([removedS3Key]);
 
       try {
         await syncDraftFilesToServer(nextDraftFiles);
@@ -4234,6 +4362,7 @@ export const PracticeFileTransferPage = ({
 
   const handleClearAllTransferFiles = async () => {
     await clearLocalFilesWithCache();
+    forgetOralPhotoObjectUrls();
     if (draftFiles.length > 0) {
       const prevDraftFiles = [...draftFiles];
       setDraftFiles([]);
@@ -5592,6 +5721,7 @@ export const PracticeFileTransferPage = ({
 
     // 화면만 비움. 서버 임시저장은 목록에 유지(삭제는 임시저장 카드에서).
     await clearLocalFilesWithCache();
+    forgetOralPhotoObjectUrls();
     setDraftFiles([]);
     setDraftSummary(null);
     setActiveDraftId(null);
@@ -5871,6 +6001,19 @@ export const PracticeFileTransferPage = ({
                       const progress = localFile
                         ? uploadProgress[toTempUploadFileKey(localFile)]
                         : undefined;
+                      const draftRow =
+                        file.kind === "draft" ? draftFiles[file.draftIndex] : null;
+                      const draftS3Key = String(draftRow?.s3Key || "").trim();
+                      const isImage = isPracticeOralPhotoPreviewable(
+                        file.name,
+                        localFile?.type || draftRow?.mimetype,
+                      );
+                      const previewUrl = isImage
+                        ? file.kind === "local"
+                          ? localPhotoPreviewUrls[file.localIndex] || null
+                          : (draftS3Key && oralPhotoObjectUrlByS3Key[draftS3Key]) ||
+                            null
+                        : undefined;
                       return {
                         key: file.key,
                         name: file.name,
@@ -5879,6 +6022,7 @@ export const PracticeFileTransferPage = ({
                         uploadPercent: progress?.percent,
                         uploadStatus:
                           file.kind === "draft" ? "done" : progress?.status,
+                        ...(isImage ? { previewUrl } : {}),
                       };
                     }),
                     totalSizeMb: combinedFilesSizeMb,
@@ -6245,9 +6389,7 @@ export const PracticeFileTransferPage = ({
                   }}
                   onStartNew={() => void handleStartNewTransfer()}
                   onOpenDrafts={() => setDraftsOpen(true)}
-                  onOpenRecent={() => setRecentTransfersAllOpen(true)}
                   draftCount={draftGroupedTransfers.length}
-                  recentActionNeededCount={recentActionNeededCount}
                 />
               ) : showExpressWizard ? (
                 <PracticeTransferExpressWizard
@@ -6461,6 +6603,7 @@ export const PracticeFileTransferPage = ({
 
         <Dialog open={draftsOpen} onOpenChange={setDraftsOpen}>
           <DialogContent
+            hideClose
             className={cn(
               "flex max-w-none flex-col gap-0 overflow-hidden p-0",
               isMobile
@@ -6471,13 +6614,13 @@ export const PracticeFileTransferPage = ({
             <div
               className={cn(
                 "flex shrink-0 items-center justify-between gap-3 border-b border-slate-200/80 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80",
-                isMobile ? "px-4 pb-3 pt-4 pr-12" : "px-6 pb-4 pt-5 pr-14",
+                isMobile ? "px-4 pb-3 pt-4" : "px-6 pb-4 pt-5",
               )}
             >
-              <DialogHeader className="min-w-0 space-y-0 text-left">
+              <DialogHeader className="min-w-0 flex-1 space-y-0 text-left">
                 <DialogTitle
                   className={cn(
-                    "flex items-center gap-2 font-semibold tracking-tight",
+                    "flex min-w-0 flex-wrap items-center gap-2 font-semibold tracking-tight",
                     isMobile ? "text-base" : "text-lg",
                   )}
                 >
@@ -6491,24 +6634,35 @@ export const PracticeFileTransferPage = ({
                       {draftGroupedTransfers.length}
                     </Badge>
                   ) : null}
+                  {draftGroupedTransfers.length > 0 ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className={cn(
+                        "shrink-0 gap-1.5 border-destructive-muted text-xs text-destructive hover:bg-destructive-soft hover:text-destructive",
+                        isMobile ? "h-8 px-2" : "h-8 px-2.5",
+                      )}
+                      disabled={clearingAllDrafts}
+                      onClick={handleAskClearAllDrafts}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      {clearingAllDrafts ? "삭제 중..." : "전체삭제"}
+                    </Button>
+                  ) : null}
                 </DialogTitle>
               </DialogHeader>
-              {draftGroupedTransfers.length > 0 ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className={cn(
-                    "shrink-0 gap-1.5 border-destructive-muted text-xs text-destructive hover:bg-destructive-soft hover:text-destructive",
-                    isMobile ? "h-9 px-2.5" : "h-9 px-3",
-                  )}
-                  disabled={clearingAllDrafts}
-                  onClick={handleAskClearAllDrafts}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  {clearingAllDrafts ? "삭제 중..." : "전체삭제"}
-                </Button>
-              ) : null}
+              <button
+                type="button"
+                className={cn(
+                  "inline-flex shrink-0 items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  isMobile ? "h-11 w-11" : "h-9 w-9",
+                )}
+                aria-label="닫기"
+                onClick={() => setDraftsOpen(false)}
+              >
+                <X className={isMobile ? "h-5 w-5" : "h-4 w-4"} />
+              </button>
             </div>
             <div
               className={cn(
@@ -6710,8 +6864,8 @@ export const PracticeFileTransferPage = ({
         <Dialog open={trashOpen} onOpenChange={setTrashOpen}>
           <DialogContent className="flex max-h-[min(90vh,820px)] w-[min(96vw,720px)] max-w-none flex-col gap-0 overflow-hidden p-0">
             <div className="flex shrink-0 items-center justify-between gap-4 border-b border-slate-200/80 px-6 pb-4 pt-5 pr-14">
-              <DialogHeader className="min-w-0 space-y-0 text-left">
-                <DialogTitle className="flex items-center gap-2 text-lg font-semibold tracking-tight">
+              <DialogHeader className="min-w-0 flex-1 space-y-0 text-left">
+                <DialogTitle className="flex min-w-0 flex-wrap items-center gap-2 text-lg font-semibold tracking-tight">
                   <Trash2 className="h-5 w-5 shrink-0 text-slate-500" />
                   휴지통
                   {trashGroupedTransfers.length > 0 ? (
@@ -6722,21 +6876,21 @@ export const PracticeFileTransferPage = ({
                       {trashGroupedTransfers.length}
                     </Badge>
                   ) : null}
+                  {trashGroupedTransfers.length > 0 ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 shrink-0 gap-1.5 border-destructive-muted px-2.5 text-xs text-destructive hover:bg-destructive-soft hover:text-destructive"
+                      disabled={emptyingTrash}
+                      onClick={handleAskEmptyTrash}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      {emptyingTrash ? "비우는 중..." : "비우기"}
+                    </Button>
+                  ) : null}
                 </DialogTitle>
               </DialogHeader>
-              {trashGroupedTransfers.length > 0 ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-9 shrink-0 gap-1.5 border-destructive-muted px-3 text-xs text-destructive hover:bg-destructive-soft hover:text-destructive"
-                  disabled={emptyingTrash}
-                  onClick={handleAskEmptyTrash}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  {emptyingTrash ? "비우는 중..." : "비우기"}
-                </Button>
-              ) : null}
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4 sm:px-6">
               {trashGroupedTransfers.length === 0 ? (
