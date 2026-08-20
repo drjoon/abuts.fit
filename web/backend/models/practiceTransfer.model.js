@@ -80,6 +80,9 @@ const practiceTransferSchema = new mongoose.Schema(
         default: null,
       },
       releaseCount: { type: Number, default: 0 },
+      // 치과 별점 하한·상한 스냅샷(지정 의뢰 포함). 하청 풀·지정 게이트에 사용.
+      minLabRating: { type: Number, default: undefined, min: 1, max: 5 },
+      maxLabRating: { type: Number, default: undefined, min: 1, max: 5 },
       // 생성 시점 예산에 맞는 인증 기공소 스냅샷. 수신 목록은 이 배열만 본다(수가 재계산 없음).
       eligibleLabAnchorIds: {
         type: [

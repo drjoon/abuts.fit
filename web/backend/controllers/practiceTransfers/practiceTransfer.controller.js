@@ -84,6 +84,10 @@ import {
   toLabRatingSummaryApi,
   toPracticeLabRatingPublicApi,
   upsertPracticeLabRatingList,
+  resolveAutoMatchEligibleStarBand,
+  assertLabWithinPracticeStarBand,
+  LAB_OUTSIDE_STAR_BAND_MESSAGE,
+  LAB_OUTSIDE_STAR_BAND_REASON,
 } from "../../utils/practiceLabRating.js";
 import ChatRoom from "../../models/chatRoom.model.js";
 import { postPracticeTransferSystemChatMessage } from "../../services/chatSystemMessage.service.js";

@@ -6,6 +6,8 @@ import {
   loadAutoMatchBudgetCatalog,
   resolveAutoMatchBudgetOrDefaults,
 } from "../../utils/practiceTransferAutoMatchBudget.js";
+import { resolveAutoMatchEligibleStarBand } from "../../utils/practiceLabRating.js";
+import { loadStarBandEligibleLabAnchorIds } from "../../utils/practiceTransferAutoMatch.js";
 
 // related files:
 // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
@@ -181,6 +183,13 @@ const toSettingsResponse = async (anchor, { persistHydrated = false } = {}) => {
   }
 
   const catalog = await loadAutoMatchBudgetCatalog();
+  const starBand = resolveAutoMatchEligibleStarBand({
+    minStars: settings?.autoMatchMinLabRating,
+    maxStars: settings?.autoMatchMaxLabRating,
+  });
+  const starBandEligibleLabAnchorIds = (
+    await loadStarBandEligibleLabAnchorIds(starBand)
+  ).map((id) => String(id));
 
   return {
     arrivalDefaultDays: normalizeArrivalDefaultDays(settings?.arrivalDefaultDays),
@@ -194,6 +203,9 @@ const toSettingsResponse = async (anchor, { persistHydrated = false } = {}) => {
     defaultAbutmentProductMode: normalizeDefaultAbutmentProductMode(
       settings?.defaultAbutmentProductMode,
     ),
+    autoMatchMinLabRating: starBand.minStars,
+    autoMatchMaxLabRating: starBand.maxStars,
+    starBandEligibleLabAnchorIds,
     autoMatchBudget: resolveAutoMatchBudgetOrDefaults(null, catalog),
     abutsLabFeeCatalog: catalog,
     updatedAt: settings?.updatedAt || null,
@@ -267,6 +279,14 @@ export async function upsertPracticeTransferSettings(req, res) {
       body,
       "defaultAbutmentProductMode",
     );
+    const hasAutoMatchMinLabRating = Object.prototype.hasOwnProperty.call(
+      body,
+      "autoMatchMinLabRating",
+    );
+    const hasAutoMatchMaxLabRating = Object.prototype.hasOwnProperty.call(
+      body,
+      "autoMatchMaxLabRating",
+    );
 
     const setPatch = {
       "practiceTransferSettings.updatedAt": new Date(),
@@ -320,6 +340,18 @@ export async function upsertPracticeTransferSettings(req, res) {
     if (hasDefaultAbutmentProductMode) {
       setPatch["practiceTransferSettings.defaultAbutmentProductMode"] =
         normalizeDefaultAbutmentProductMode(body.defaultAbutmentProductMode);
+    }
+    if (hasAutoMatchMinLabRating || hasAutoMatchMaxLabRating) {
+      const band = resolveAutoMatchEligibleStarBand({
+        minStars: hasAutoMatchMinLabRating
+          ? body.autoMatchMinLabRating
+          : undefined,
+        maxStars: hasAutoMatchMaxLabRating
+          ? body.autoMatchMaxLabRating
+          : undefined,
+      });
+      setPatch["practiceTransferSettings.autoMatchMinLabRating"] = band.minStars;
+      setPatch["practiceTransferSettings.autoMatchMaxLabRating"] = band.maxStars;
     }
 
     const anchor = await BusinessAnchor.findByIdAndUpdate(
