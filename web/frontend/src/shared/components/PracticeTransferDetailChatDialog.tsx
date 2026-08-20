@@ -86,6 +86,10 @@ import {
   formatLabFeeMultiplierLabel,
   normalizeLabFeeMultiplier,
 } from "@/shared/practice/labFeeSchedule";
+import {
+  getPracticeTransferFileExtension,
+  PRACTICE_TRANSFER_IMAGE_EXTENSIONS,
+} from "@/shared/practice/practiceTransferAccept";
 
 function isImagePreviewExt(ext: string): boolean {
   return PRACTICE_TRANSFER_IMAGE_EXTENSIONS.has(String(ext || "").toLowerCase());
