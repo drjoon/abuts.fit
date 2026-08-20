@@ -21,7 +21,7 @@ import type { PreUploadFileStatus } from "@/shared/hooks/useFilePreUpload";
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/practice/practiceTransferAccept.ts
-// - 2026-08-20: 모바일 구강스캔 — 기공소·환자명 후 구강포토 촬영·업로드·임시저장.
+// - 2026-08-20: 모바일 구강스캔 — 환자명 후 구강포토 촬영·업로드·임시저장(기공소는 전송 시).
 // - 2026-08-20: 상단 새로/최근/임시 1줄, 제목·안내 제거, 여백 보정.
 // - 2026-08-20: 세그먼트 툴바·큰 촬영 CTA·터치 친화 카드.
 // - 2026-08-20: 상단 메뉴 새로작성·임시저장 2칸만.

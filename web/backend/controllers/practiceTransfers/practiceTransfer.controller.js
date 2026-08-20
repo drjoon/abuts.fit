@@ -139,6 +139,7 @@ import { resolvePracticeTransferSkipJig } from "../../utils/practiceTransferLabS
 // - 2026-08-20: 기공소 변경 시 이전 기공소를 채팅 참가자·사이드바 unread에서 제거.
 // - 2026-08-20: draft upsert — files 생략 시 기존 첨부 유지. 같은 기공소·환자 건에 파일 append.
 // - 2026-08-20: draft-upserted 이벤트에 filesTouched/draftFilesMode를 실어 FE가 autosave echo로 첨부를 지우지 않게 한다.
+// - 2026-08-20: draft upsert — 환자명만 필수(기공소는 전송 시). 기공소 미선택 동일 환자 draft는 갱신.
 // - 2026-08-17: trash/empty — 하드삭제 전 rollbackPracticeTransferBilling(배송·디자인비 포함).
 // - 2026-08-16: 어벗 가공(준비 아님)이면 mark-release 거부·목록 abutmentPastReady.
 // - 2026-08-19: 생성 시 구강스캔은 선택(어벗츠기공소/자동매칭 포함).
@@ -1610,9 +1611,7 @@ export async function upsertPracticeTransferDraft(req, res) {
     const hasPatientNameInMemo = Boolean(
       String(patientNameMatch?.[1] || "").trim(),
     );
-    const hasLab = Boolean(targetLabName) || Boolean(targetLabAnchorId);
-    // 임시저장/동기화: 기공소·환자명 둘 다 필수(치아·메모·파일만으로는 목록 누적 방지).
-    const hasLabAndPatient = hasPatientNameInMemo && hasLab;
+    // 임시저장/동기화: 환자명만 필수(기공소는 전송 시 필수). 치아·메모·파일만으로는 목록 누적 방지.
 
     if (
       await rejectIfSubcontractDirectBlocked(res, {
@@ -1626,10 +1625,10 @@ export async function upsertPracticeTransferDraft(req, res) {
 
     let normalizedDraftFiles = [];
 
-    if (!hasLabAndPatient) {
+    if (!hasPatientNameInMemo) {
       return res.status(400).json({
         success: false,
-        message: "기공소와 환자명을 모두 입력한 뒤 임시저장할 수 있습니다.",
+        message: "환자명을 입력한 뒤 임시저장할 수 있습니다.",
       });
     }
 
@@ -1715,8 +1714,11 @@ export async function upsertPracticeTransferDraft(req, res) {
       const rowLabId = String(row.targetLabAnchorId || "").trim();
       const rowLabName = String(row.targetLabName || "").trim();
       const nextLabId = targetLabAnchorId ? String(targetLabAnchorId) : "";
+      const nextLabName = String(targetLabName || "").trim();
       if (nextLabId && rowLabId && rowLabId === nextLabId) return true;
-      return Boolean(targetLabName) && rowLabName === targetLabName;
+      if (nextLabName && rowLabName === nextLabName) return true;
+      // 기공소 미선택 draft끼리도 같은 환자명이면 동일 케이스로 갱신(중복 생성 방지).
+      return !nextLabId && !nextLabName && !rowLabId && !rowLabName;
     };
 
     const siblings = await PracticeTransferDraft.find({

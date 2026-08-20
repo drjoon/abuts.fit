@@ -53,6 +53,7 @@
  * - 2026-08-13: 기공의뢰 모달에서 디자인+생산 고정. 생산만 클릭은 어벗생산의뢰로 이동.
  * - 2026-08-12: 임시저장 목록 「전체삭제」— 활성 draft 전부 휴지통(확인 없음).
  * - 2026-08-13: 임시저장/동기화는 기공소·완성형 한글 환자명 둘 다 입력된 뒤에만 수행.
+ * - 2026-08-20: 임시저장/동기화는 완성형 한글 환자명만 필수(기공소는 전송 시).
  * - 2026-08-13: 최근전송 취소 뱃지=기공소 작업취소만(치과 휴지통 제외). 6뱃지 빠른툴팁.
  * - 2026-08-13: 파일카드에 사전 업로드 프로그레스바.
  * - 2026-08-13: 채팅 첨부도 즉시 백그라운드 업로드 + 칩 프로그레스바.
@@ -95,7 +96,7 @@
  * - 2026-08-19: 전송 내역 캘린더·기공소 거부 모달에서 의뢰 취소(휴지통).
  * - 2026-08-20: 임시저장 미충족 시 상단 「동기화됨」자리에 완성형 한글 안내.
  * - web/frontend/src/shared/components/practice/PracticeTransferMobileOralPhotoIntake.tsx
- * - 2026-08-20: 모바일 구강스캔 — 기공소·환자명 후 구강포토 촬영·업로드·임시저장.
+ * - 2026-08-20: 모바일 구강스캔 — 환자명 후 구강포토 촬영·업로드·임시저장(기공소는 전송 시).
  * - 2026-08-20: 모바일 임시저장=최근과 같은 카드 시트. PC 드롭존에 모바일 쉐이드 안내.
  * - 2026-08-20: 구강포토 썸네일 — private S3 location 대신 blob/proxy 미리보기.
  * - 2026-08-20: 모바일 상단 새로작성·임시저장만. 임시저장 모달 닫기·전체삭제 간격.
@@ -981,14 +982,10 @@ const normalizePatientNameKey = (value: string) => {
 const hasAutosaveReadyPatientName = (value: string) => /[가-힣]/.test(String(value || "").trim());
 
 /** 임시저장 게이트 미충족 시 상단 동기화 문구. 빈 폼은 표시하지 않는다. */
-const getFormAutosaveBlockedHint = (hasLab: boolean, patientName: string) => {
+const getFormAutosaveBlockedHint = (patientName: string) => {
   const trimmed = String(patientName || "").trim();
-  const hasCompletePatient = hasAutosaveReadyPatientName(trimmed);
-  if (hasLab && hasCompletePatient) return "";
-  if (hasLab && trimmed) return "완성형 한글 환자명이어야 임시저장";
-  if (hasLab) return "환자명을 입력하면 임시저장";
-  if (hasCompletePatient) return "기공소를 선택하면 임시저장";
-  if (trimmed) return "기공소·완성형 한글 환자명이면 임시저장";
+  if (hasAutosaveReadyPatientName(trimmed)) return "";
+  if (trimmed) return "완성형 한글 환자명이어야 임시저장";
   return "";
 };
 
@@ -3056,12 +3053,9 @@ export const PracticeFileTransferPage = ({
         skipDesignConfirm,
         skipJig: effectiveSkipJig,
       });
-      const hasLab =
-        Boolean(String(selectedLab?.name || "").trim()) ||
-        Boolean(toApiLabAnchorId(selectedLab?._id));
-      // 기공소·완성형 한글 환자명 둘 다 있어야 임시저장/동기화한다(신규·갱신 공통).
+      // 완성형 한글 환자명만 있으면 임시저장/동기화한다(기공소는 전송 시 필수).
       // IME 중간 Latin(r/rh)이나 자모만으로는 저장하지 않는다.
-      if (!hasAutosaveReadyPatientName(normalizedPatientName) || !hasLab) return;
+      if (!hasAutosaveReadyPatientName(normalizedPatientName)) return;
 
       const fingerprintAtSend = currentFormFingerprintRef.current;
       const savedFingerprint = lastSavedFormFingerprintRef.current;
@@ -3243,13 +3237,11 @@ export const PracticeFileTransferPage = ({
     ],
   );
 
-  /** 기공소·완성형 한글 환자명 둘 다 있어야 신규 임시저장·자동 동기화. */
-  const hasSubstantialContentForNewDraft = useMemo(() => {
-    const hasLab = Boolean(
-      String(selectedLab?._id || selectedLab?.name || "").trim(),
-    );
-    return hasAutosaveReadyPatientName(normalizedPatientName) && hasLab;
-  }, [normalizedPatientName, selectedLab?._id, selectedLab?.name]);
+  /** 완성형 한글 환자명이 있으면 신규 임시저장·자동 동기화(기공소는 전송 시 필수). */
+  const hasSubstantialContentForNewDraft = useMemo(
+    () => hasAutosaveReadyPatientName(normalizedPatientName),
+    [normalizedPatientName],
+  );
 
   useEffect(() => {
     if (!localFormHydrated) return;
@@ -3270,7 +3262,7 @@ export const PracticeFileTransferPage = ({
       return;
     }
 
-    // 기공소·완성형 한글 환자명이 모두 있을 때만 서버 동기화(치아/메모/파일만으로는 목록에 올리지 않음).
+    // 완성형 한글 환자명이 있을 때만 서버 동기화(치아/메모/파일만으로는 목록에 올리지 않음).
     if (!hasSubstantialContentForNewDraft) {
       pendingLocalFormEditRef.current = false;
       setFormSyncStatus((prev) =>
@@ -3468,7 +3460,9 @@ export const PracticeFileTransferPage = ({
       const rowLabId = String(row.targetLabAnchorId || "").trim();
       const rowLabName = String(row.targetLabName || "").trim();
       if (labId && rowLabId && rowLabId === labId) return true;
-      return Boolean(labName) && rowLabName === labName;
+      if (labName && rowLabName === labName) return true;
+      // 기공소 미선택 draft끼리도 같은 환자명이면 재연결.
+      return !labId && !labName && !rowLabId && !rowLabName;
     });
     const best = [...matches].sort((a, b) => {
       const fileDelta = Number(b.fileCount || 0) - Number(a.fileCount || 0);
@@ -4450,13 +4444,9 @@ export const PracticeFileTransferPage = ({
     if (!authToken) return;
     if (editingSentTransferRef.current) return;
 
-    const hasLab =
-      Boolean(String(selectedLab?.name || "").trim()) ||
-      Boolean(toApiLabAnchorId(selectedLab?._id));
     const keepDraftWithoutFiles =
       nextDraftFiles.length === 0 &&
-      hasAutosaveReadyPatientName(normalizedPatientName) &&
-      hasLab;
+      hasAutosaveReadyPatientName(normalizedPatientName);
     const filesMode = options?.mode === "append" ? "append" : "replace";
 
     if (nextDraftFiles.length === 0 && !keepDraftWithoutFiles) {
@@ -4478,8 +4468,8 @@ export const PracticeFileTransferPage = ({
       return;
     }
 
-    // 파일 반영도 기공소·완성형 한글 환자명이 있을 때만 서버 draft를 만든다/갱신한다.
-    if (!hasAutosaveReadyPatientName(normalizedPatientName) || !hasLab) return;
+    // 파일 반영도 완성형 한글 환자명이 있을 때만 서버 draft를 만든다/갱신한다.
+    if (!hasAutosaveReadyPatientName(normalizedPatientName)) return;
 
     const transferMemo = buildPracticeTransferMemo({
       memo: requestMemo,
@@ -5971,12 +5961,8 @@ export const PracticeFileTransferPage = ({
   };
 
   const formAutosaveBlockedHint = useMemo(
-    () =>
-      getFormAutosaveBlockedHint(
-        Boolean(String(selectedLab?._id || selectedLab?.name || "").trim()),
-        normalizedPatientName,
-      ),
-    [normalizedPatientName, selectedLab?._id, selectedLab?.name],
+    () => getFormAutosaveBlockedHint(normalizedPatientName),
+    [normalizedPatientName],
   );
 
   const formSyncStatusLabel = editingSentTransfer
