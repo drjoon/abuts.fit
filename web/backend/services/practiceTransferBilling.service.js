@@ -113,6 +113,7 @@ import {
 import LabTradingPartner from "../models/labTradingPartner.model.js";
 import { findLabPracticeRelationship } from "../utils/labTradingPartner.util.js";
 import {
+  getAssigneeLabAnchorId,
   getPrimeLabAnchorId,
   isAutoMatchOpenPool,
   isPracticeTransferSubcontracted,
