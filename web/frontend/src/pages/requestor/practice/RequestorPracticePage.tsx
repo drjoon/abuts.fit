@@ -20,6 +20,7 @@
 // - web/frontend/src/shared/components/practice/LabReceiveWorkUploadDialog.tsx
 // - 2026-08-19: 리메이크는 공정 상태색 + 이중 외곽선.
 // - 2026-08-19: 기공의뢰수신 캘린더 칩·상단 뱃지를 상태색으로 구분.
+// - 2026-08-20: 할증 의뢰건 캘린더 칩에 할증률(예: 1.2x 할증) 표시.
 // - 2026-08-19: 기공의뢰수신 — 안쪽 최외곽 Card 테두리 제거·패딩 축소.
 // - 2026-08-19: 기공의뢰수신 목록을 치과 최근의뢰와 같은 3주 캘린더로 표시.
 // - 2026-08-19: 수신 기간필터를 치과와 같이 30일/90일/이번달/지난달.
@@ -149,7 +150,7 @@ import {
 import { openPracticeTransferFilePicker } from "@/shared/components/practice/PracticeTransferFileDropTarget";
 import { LabPracticeFeeSurchargeControl } from "@/shared/components/practice/LabPracticeFeeSurchargeControl";
 import { parsePracticeTransferFeeQuote } from "@/shared/practice/practiceTransferFeeQuote";
-import { normalizeLabFeeMultiplier, missingLabFeeItemNames, labFeeItemNamesNeededForToothWorks } from "@/shared/practice/labFeeSchedule";
+import { normalizeLabFeeMultiplier, formatLabFeeMultiplierLabel, missingLabFeeItemNames, labFeeItemNamesNeededForToothWorks } from "@/shared/practice/labFeeSchedule";
 import { parseStarDowngrade, parseLabRatingSummary } from "@/shared/practice/practiceLabRating";
 import { buildPracticeWorkPeriodSummaryItem } from "@/shared/practice/practiceWorkPeriod";
 import {
@@ -1496,6 +1497,13 @@ export function RequestorPracticeReceivePage({
           : String(transfer.practice?.businessName || "").trim() || "-";
       const patient = resolvePracticeTransferListPatientName(transfer);
       const teeth = resolvePracticeTransferListToothNumbers(transfer);
+      const surchargeMultiplier = normalizeLabFeeMultiplier(
+        transfer.feeQuote?.labFeeMultiplier ?? transfer.labFeeMultiplier,
+      );
+      const surchargeLabel =
+        surchargeMultiplier > 1
+          ? formatLabFeeMultiplierLabel(surchargeMultiplier)
+          : "";
       return {
         id: String(transfer.transferId || transfer._id || "").trim(),
         orderDate: transfer.orderDate,
@@ -1507,7 +1515,9 @@ export function RequestorPracticeReceivePage({
         ),
         isRemake: Boolean(transfer.isRemake),
         sortLabel: clinic,
-        line: [clinic, patient || "—", teeth || "—"].join(" / "),
+        line: [clinic, patient || "—", teeth || "—", surchargeLabel]
+          .filter(Boolean)
+          .join(" / "),
       };
     });
   }, [sortedFilteredTransfers]);
