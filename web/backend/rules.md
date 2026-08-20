@@ -590,13 +590,12 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - `scripts/db/migrate-request-category.js`
     - `package.json`
 - 제조사 샘플(`source=manufacturer_sample`, `requestCategory=rnd_sample|copied_sample`)은
-  작업용 상태(`rnd.doneAt=null`)에서 준비~세척.패킹 공정은 일반 의뢰와 동일하게 진행합니다.
-  - **자동 포장.발송 금지**: 각인/패킹 승인·lot-capture 후에도 단계는 `세척.패킹`을 유지합니다.
-    발송이 필요하면 수동 발송하거나, 다른 의뢰와 같은 박스·우편함에 넣어 함께 보냅니다.
+  작업용 상태(`rnd.doneAt=null`)에서 일반 의뢰와 동일하게 `포장.발송`/`추적관리` 공정을 진행합니다.
+  - 우편함 배정·포장.발송 진입도 일반 의뢰와 동일 SSOT(`assignMailboxForCleaningPackingEnter`, `retainMailboxOnShippingEnter`)를 따릅니다.
+  - 포장.발송 우편함 상세에서 **샘플만 완전 삭제** 가능(`DELETE /api/requests/:id`).
   - R&D 보관 샘플(`rnd.doneAt!=null`)은 R&D 탭 운영 정책으로 분리합니다.
   - 샘플은 크레딧/정산 장부에 무기록(무자료/무상) 처리합니다.
-  - SSOT 헬퍼: `shouldSkipAutoShippingStageEnter()` (`controllers/requests/mailbox.utils.js`)
-  - 관련 구현: `controllers/ai/lotCapture.controller.js`, `controllers/requests/common.review.controller.js`, `jobs/stageProgressionWorker.js`, `services/requestDashboardStats.service.js`
+  - 관련 구현: `controllers/ai/lotCapture.controller.js`, `controllers/requests/common.review.controller.js`, `controllers/requests/common.requests.controller.js`, `shipping/components/MailboxContentsModal.tsx`
 - 단일 SSOT 장부(General Ledger) 정책:
   - 장부는 논리적으로 1개만 사용하며, 물리 구조는 `LedgerJournal`(헤더) + `LedgerLine`(라인) 2컬렉션으로 구성합니다.
   - 제조사 정산 조회(`/api/manufacturer/credits/ledger`, `/api/manufacturer/credits/daily-summary`, `/api/manufacturer/credits/daily-snapshots/recalc`)는 `LedgerLine` 집계를 SSOT로 사용합니다.

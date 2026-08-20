@@ -1264,6 +1264,21 @@ export const RequestPage = ({
           return true;
         }),
       );
+      if (tabStage === "shipping") {
+        mailboxState.setMailboxModalRequests((prev) => {
+          const next = prev.filter((item) => {
+            const itemMongoId = String(item?._id || "").trim();
+            const itemRequestId = String(item?.requestId || "").trim();
+            if (mongoId && itemMongoId === mongoId) return false;
+            if (requestId && itemRequestId === requestId) return false;
+            return true;
+          });
+          if (next.length === 0) {
+            mailboxState.handleShipmentModalClose();
+          }
+          return next;
+        });
+      }
 
       try {
         const res = await fetch(`/api/requests/${req._id}`, {
@@ -1278,6 +1293,9 @@ export const RequestPage = ({
           title: "삭제 완료",
           description: `의뢰 ${req.requestId}가 삭제되었습니다.`,
         });
+        if (tabStage === "shipping") {
+          await fetchRequests(true, { forceMailboxRefresh: true });
+        }
         void queryClient.invalidateQueries({
           queryKey: ["worksheet-assigned-summary"],
         });
@@ -1298,6 +1316,9 @@ export const RequestPage = ({
           if (exists) return prev;
           return [req, ...prev];
         });
+        if (tabStage === "shipping") {
+          await fetchRequests(true, { forceMailboxRefresh: true });
+        }
 
         toast({
           title: "삭제 실패",
@@ -1306,7 +1327,15 @@ export const RequestPage = ({
         });
       }
     },
-    [pageState, queryClient, token, toast],
+    [
+      fetchRequests,
+      mailboxState,
+      pageState,
+      queryClient,
+      tabStage,
+      token,
+      toast,
+    ],
   );
 
   const handleCardDone = useCallback(
@@ -2823,6 +2852,7 @@ export const RequestPage = ({
         token={token}
         onRollback={handleCardRollback}
         onApprove={handleCardApprove}
+        onDelete={handleCardDelete}
         onRollbackAll={
           mailboxState.mailboxModalRequests.length
             ? mailboxState.handleRollbackAllInMailbox

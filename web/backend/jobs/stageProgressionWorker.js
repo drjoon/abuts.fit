@@ -4,7 +4,6 @@
 // - web/backend/server.js
 // - web/backend/controllers/requests/mailbox.utils.js
 // change-log:
-// - 2026-08-20: 샘플은 세척.패킹→포장.발송 자동 진행 제외(정책 SSOT).
 // - 2026-08-17: 우편함 배정은 가공→세척.패킹, 포장.발송은 기존 배정 유지.
 import "../bootstrap/env.js";
 import mongoose from "mongoose";
@@ -109,11 +108,9 @@ async function progressStages() {
     }
 
     // 4. 세척.패킹 → 포장.발송: 출고 예정일이 도래한 세척·패킹 완료 건
-    // 샘플(rnd_sample|copied_sample)은 자동 포장.발송 대상이 아니다.
     const packagingToShipping = await Request.find({
       manufacturerStage: "세척.패킹",
       "timeline.estimatedShipYmd": { $exists: true, $lte: oneDayFromNow },
-      requestCategory: { $nin: ["rnd_sample", "copied_sample"] },
       source: { $ne: "manufacturer_sample" },
       "price.rule": { $ne: "manufacturer_sample" },
     }).populate("requestor", "businessAnchorId");

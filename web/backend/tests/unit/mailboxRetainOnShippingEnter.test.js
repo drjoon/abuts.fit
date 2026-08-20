@@ -4,25 +4,7 @@ import { describe, expect, it } from "@jest/globals";
 import {
   retainMailboxOnShippingEnter,
   normalizeMailboxReceiverFingerprint,
-  shouldSkipAutoShippingStageEnter,
 } from "../../controllers/requests/mailbox.utils.js";
-
-describe("shouldSkipAutoShippingStageEnter", () => {
-  it("returns true for copied_sample and rnd_sample", () => {
-    expect(
-      shouldSkipAutoShippingStageEnter({ requestCategory: "copied_sample" }),
-    ).toBe(true);
-    expect(
-      shouldSkipAutoShippingStageEnter({ requestCategory: "rnd_sample" }),
-    ).toBe(true);
-  });
-
-  it("returns false for normal orders", () => {
-    expect(shouldSkipAutoShippingStageEnter({ requestCategory: "order" })).toBe(
-      false,
-    );
-  });
-});
 
 describe("retainMailboxOnShippingEnter", () => {
   it("keeps the mailbox assigned at 세척.패킹", async () => {
@@ -38,17 +20,17 @@ describe("retainMailboxOnShippingEnter", () => {
     expect(request.mailboxAddress).toBe("C2B3");
   });
 
-  it("clears mailbox for manufacturer samples", async () => {
+  it("keeps the mailbox for copied_sample at 포장.발송 진입", async () => {
     const request = {
       mailboxAddress: "A1A1",
-      requestCategory: "rnd_sample",
+      requestCategory: "copied_sample",
     };
     const result = await retainMailboxOnShippingEnter({
       request,
       requestorOrgId: "aaaaaaaaaaaaaaaaaaaaaaaa",
     });
-    expect(result).toBeNull();
-    expect(request.mailboxAddress).toBeNull();
+    expect(result).toBe("A1A1");
+    expect(request.mailboxAddress).toBe("A1A1");
   });
 });
 

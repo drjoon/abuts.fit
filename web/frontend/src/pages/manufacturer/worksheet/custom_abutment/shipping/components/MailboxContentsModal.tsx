@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-20: 포장.발송 우편함 상세에서 샘플만 삭제 버튼 노출.
 // - 2026-08-03: MailboxContentsModal 상태 배지 공정 라벨을 정규화(의뢰 -> 준비)하여 표시 일관성 확보 (display-only)
 // related files:
 // - web/frontend/rules.md
@@ -22,7 +23,7 @@ import { Label } from "@/components/ui/label";
 import { request } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";
 import { generateModelNumber } from "@/utils/modelNumber";
-import { deriveStageForFilter, getDeadlineInfo } from "../../utils/request";
+import { deriveStageForFilter, getDeadlineInfo, isAnySampleRequest } from "../../utils/request";
 import { getNormalizedStageLabelSafe } from "@/utils/stage";
 import {
   ArrowLeft,
@@ -30,6 +31,7 @@ import {
   Loader2,
   MapPinned,
   Search,
+  X,
 } from "lucide-react";
 import type { ManufacturerRequest } from "../../utils/request";
 
@@ -80,6 +82,7 @@ type MailboxContentsModalProps = {
   token?: string | null;
   onRollback?: (req: ManufacturerRequest) => void;
   onApprove?: (req: ManufacturerRequest) => void;
+  onDelete?: (req: ManufacturerRequest) => void;
   onRollbackAll?: (requests: ManufacturerRequest[]) => void;
   isRollingBackAll?: boolean;
   onAddressSaved?: (payload: {
@@ -102,6 +105,7 @@ export const MailboxContentsModal = ({
   token,
   onRollback,
   onApprove,
+  onDelete,
   onRollbackAll,
   isRollingBackAll = false,
   onAddressSaved,
@@ -596,6 +600,7 @@ export const MailboxContentsModal = ({
               req.createdAt,
               req.timeline?.estimatedShipYmd,
             );
+            const isSampleRequest = isAnySampleRequest(req);
             return (
               <div
                 key={req._id}
@@ -639,6 +644,22 @@ export const MailboxContentsModal = ({
                         }
                       >
                         <ArrowRight className="h-3 w-3" />
+                      </Button>
+                    )}
+                    {onDelete && isSampleRequest && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                        disabled={isRollingBackAll}
+                        onClick={() => {
+                          void onDelete(req);
+                        }}
+                        title="샘플 삭제"
+                        aria-label="샘플 삭제"
+                      >
+                        <X className="h-3.5 w-3.5" />
                       </Button>
                     )}
                   </div>
