@@ -10,6 +10,7 @@
  * - 2026-08-19: 치과 캘린더 칩에서 휴지통(의뢰 취소) 바로 이동.
  * - 2026-08-20: 년-월 캡션 클릭 시 오늘 주로 스크롤.
  * - 2026-08-20: 치과 전체보기 칩도 상단 뱃지 상태색(그룹색 대신).
+ * - 2026-08-20: 안읽음(수신 미확인·채팅) 빨간 배지를 칩에 표시.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
@@ -49,6 +50,8 @@ export type PracticeCalendarChipItem = {
   isRemake?: boolean;
   sortLabel: string;
   line: string;
+  /** 사이드바와 동일 합산(수신 미확인 + 채팅). 있으면 칩에 빨간 숫자 */
+  unreadCount?: number;
   /** 치과 발신: 수락 전·작업취소 건 휴지통 이동 */
   canDelete?: boolean;
 };
@@ -489,6 +492,9 @@ export function PracticeRecentTransfersCalendar({
                       {dayItems.map((item) => {
                         const showDelete = Boolean(item.canDelete && onDeleteItem);
                         const chipStyle = calendarChipStyleForItem(item);
+                        const unreadCount = Math.max(0, Number(item.unreadCount || 0));
+                        const unreadLabel =
+                          unreadCount > 99 ? "99+" : String(unreadCount);
                         return (
                           <div
                             key={`${item.id}:${day.ymd}`}
@@ -501,11 +507,25 @@ export function PracticeRecentTransfersCalendar({
                           >
                             <button
                               type="button"
-                              className="min-w-0 flex-1 px-1 py-0.5 text-left text-[10px] leading-snug"
-                              title={item.line}
+                              className="flex min-w-0 flex-1 items-start gap-0.5 px-1 py-0.5 text-left text-[10px] leading-snug"
+                              title={
+                                unreadCount > 0
+                                  ? `${item.line} · 안읽음 ${unreadLabel}`
+                                  : item.line
+                              }
                               onClick={() => onSelectItem(item)}
                             >
-                              <span className="line-clamp-2 break-all">{item.line}</span>
+                              <span className="min-w-0 flex-1 line-clamp-2 break-all">
+                                {item.line}
+                              </span>
+                              {unreadCount > 0 ? (
+                                <span
+                                  className="mt-px inline-flex h-3.5 min-w-3.5 shrink-0 items-center justify-center rounded-full bg-destructive px-0.5 text-[9px] font-semibold leading-none text-white"
+                                  aria-label={`안읽음 ${unreadLabel}`}
+                                >
+                                  {unreadLabel}
+                                </span>
+                              ) : null}
                             </button>
                             {showDelete ? (
                               <button

@@ -57,6 +57,7 @@ import {
   formatPracticeTransferProstheticSlotLabels,
   getPracticeTransferLabReceiveDisplayStatus,
   practiceTransferAbutmentMachiningStarted,
+  practiceTransferLabReceiveUnreadBadgeCount,
   practiceTransferHasCustomAbutment,
   practiceTransferHasPartialProstheticUploads,
   practiceTransferNeedsMoreAbutmentDesigns,
@@ -120,9 +121,10 @@ export function PracticeTransferLabReceiveCard({
   const displayStatus = getPracticeTransferLabReceiveDisplayStatus(transfer);
   const statusLabel = toStatusBadgeLabel(displayStatus);
   const cardId = String(transfer.transferId || transfer._id || "").trim();
-  // 사이드바「기공의뢰수신」배지와 동일: 미확인 의뢰(1) + 채팅 unread.
-  const unreadBadgeCount =
-    (transfer.isRead ? 0 : 1) + Math.max(0, Number(chatUnreadCount) || 0);
+  const unreadBadgeCount = practiceTransferLabReceiveUnreadBadgeCount(
+    transfer,
+    chatUnreadCount,
+  );
   const resultCount = Number(
     transfer.resultFileCount || transfer.resultFiles?.length || 0,
   );

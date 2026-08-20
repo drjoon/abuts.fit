@@ -21,6 +21,7 @@
 // - 2026-08-19: 리메이크는 공정 상태색 + 이중 외곽선.
 // - 2026-08-19: 기공의뢰수신 캘린더 칩·상단 뱃지를 상태색으로 구분.
 // - 2026-08-20: 할증 의뢰건 캘린더 칩에 할증률(예: 1.2x 할증) 표시.
+// - 2026-08-20: 캘린더 칩에 사이드바와 같은 안읽음 배지.
 // - 2026-08-19: 기공의뢰수신 — 안쪽 최외곽 Card 테두리 제거·패딩 축소.
 // - 2026-08-19: 기공의뢰수신 목록을 치과 최근의뢰와 같은 3주 캘린더로 표시.
 // - 2026-08-19: 수신 기간필터를 치과와 같이 30일/90일/이번달/지난달.
@@ -181,6 +182,7 @@ import {
   listPracticeTransferPendingProstheticSlots,
   practiceTransferAbutmentMachiningStarted,
   practiceTransferHasCustomAbutment,
+  practiceTransferLabReceiveUnreadBadgeCount,
   practiceTransferNeedsMoreAbutmentDesigns,
   type PracticeTransferLabReceiveFile as ReceivedPracticeFile,
   type PracticeTransferLabReceiveItem as ReceivedPracticeTransfer,
@@ -1489,6 +1491,18 @@ export function RequestorPracticeReceivePage({
     });
   }, [filteredTransfers, rooms]);
 
+  const chatUnreadByTransferId = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const room of rooms) {
+      const transferId = String(
+        room.relatedPracticeTransferId?.transferId || "",
+      ).trim();
+      if (!transferId) continue;
+      map.set(transferId, Math.max(0, Number(room.unreadCount || 0)));
+    }
+    return map;
+  }, [rooms]);
+
   const calendarItems = useMemo((): PracticeCalendarChipItem[] => {
     return sortedFilteredTransfers.map((transfer) => {
       const clinic =
@@ -1504,8 +1518,9 @@ export function RequestorPracticeReceivePage({
         surchargeMultiplier > 1
           ? formatLabFeeMultiplierLabel(surchargeMultiplier)
           : "";
+      const transferId = String(transfer.transferId || transfer._id || "").trim();
       return {
-        id: String(transfer.transferId || transfer._id || "").trim(),
+        id: transferId,
         orderDate: transfer.orderDate,
         arrivalDate: transfer.arrivalDate,
         colorKey:
@@ -1518,9 +1533,13 @@ export function RequestorPracticeReceivePage({
         line: [clinic, patient || "—", teeth || "—", surchargeLabel]
           .filter(Boolean)
           .join(" / "),
+        unreadCount: practiceTransferLabReceiveUnreadBadgeCount(
+          transfer,
+          chatUnreadByTransferId.get(transferId) || 0,
+        ),
       };
     });
-  }, [sortedFilteredTransfers]);
+  }, [chatUnreadByTransferId, sortedFilteredTransfers]);
 
   const calendarTransferById = useMemo(() => {
     const map = new Map<string, ReceivedPracticeTransfer>();

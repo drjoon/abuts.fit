@@ -14,6 +14,7 @@
 // - 2026-08-15: 기공의뢰수신(어벗츠기공소·일반 lab) 카드 SSOT — 상태·CA 판정·타입.
 // - 2026-08-16: 자동매칭 재공개(openPool)는 workCanceledAt보다 우선 →「자동매칭」(수락 취소 후 수락 잔상 방지).
 // - 2026-08-19: 임시치아+Pontic 스팬 업로드 라벨은 임시치아.
+// - 2026-08-20: 수신 미확인+채팅 unread 합산(사이드바·캘린더 칩 공통).
 import {
   isBridgeLikeProsthesisType,
   isMissingToothProsthesisType,
@@ -126,6 +127,14 @@ export type PracticeTransferLabReceiveDisplayStatus =
   | "의뢰수락"
   | "수신완료"
   | "발송완료";
+
+/** 사이드바「기공의뢰수신」과 동일: 미확인 의뢰(1) + 채팅 unread. */
+export function practiceTransferLabReceiveUnreadBadgeCount(
+  transfer: { isRead?: boolean | null },
+  chatUnreadCount = 0,
+) {
+  return (transfer.isRead ? 0 : 1) + Math.max(0, Number(chatUnreadCount) || 0);
+}
 
 export function getPracticeTransferLabReceiveDisplayStatus(
   transfer: {
