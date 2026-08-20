@@ -11,9 +11,7 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPath";
 import { cn } from "@/shared/ui/cn";
 
-// - 2026-08-20: 사이드 숨김 시 열기 버튼만 표시(숨기기 버튼이 왼쪽 가장자리에 겹치지 않게).
-// - 2026-08-20: 워크시트 툴바「완료포함」은 한 줄 유지.
-// - 2026-08-20: 데스크톱 사이드 메뉴는 숨김이 기본. 열기 버튼으로만 표시.
+// - 2026-08-20: 데스크톱 사이드 닫힘 — 아이콘 레일(w-24) 유지. 모바일만 화면 밖으로 숨김.
 // - 2026-08-19: 기공의뢰수신 작업영역 — 흰 카드 외곽·바깥 여백 제거해 캘린더를 넓게.
 // - 2026-08-19: 기공소 사이드 — 가입 이유 배너를 설정과 계정 팝업 사이.
 // - 2026-08-19: 기공소·어벗츠기공소 사이드 — 대시보드/대기보드 제거. 기공의뢰 그룹(수신·어벗생산의뢰).
@@ -489,7 +487,7 @@ export const DashboardLayout = () => {
   const [settlementCredit, setSettlementCredit] = useState<number | null>(null);
   const [loadingCreditBalance, setLoadingCreditBalance] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const sidebarCollapsed = !isOpen;
   const [worksheetSearch, setWorksheetSearch] = useState("");
   const [showCompleted, setShowCompleted] = useState(false);
   const [bootstrappingAuth, setBootstrappingAuth] = useState(false);
@@ -1349,29 +1347,19 @@ export const DashboardLayout = () => {
           onClick={() => setIsOpen(false)}
         ></div>
 
-        {!isOpen ? (
-          <button
-            type="button"
-            aria-label="사이드 메뉴 열기"
-            onClick={() => setIsOpen(true)}
-            className="hidden lg:flex items-center justify-center fixed left-0 top-20 z-50 w-8 h-8 rounded-r-full bg-card border border-l-0 border-border shadow-sm hover:bg-muted/60 hover:border-muted-foreground/40 transition-colors"
-          >
-            <PanelLeftOpen className="w-4 h-4" />
-          </button>
-        ) : null}
-
         <aside
-          className={`
-          fixed inset-y-0 left-0 z-50 ${
-            isCollapsed ? "w-24" : "w-60"
-          } bg-card border-r border-border flex flex-col
-          transform transition-transform duration-300 ease-in-out
-          ${isOpen ? "lg:relative translate-x-0" : "-translate-x-full overflow-hidden pointer-events-none"}
-        `}
+          className={cn(
+            "fixed inset-y-0 left-0 z-50 bg-card border-r border-border flex flex-col",
+            "transform transition-all duration-300 ease-in-out",
+            isOpen ? "w-60" : "w-24",
+            isOpen
+              ? "lg:relative translate-x-0"
+              : "-translate-x-full lg:relative lg:translate-x-0",
+          )}
         >
           <div className="p-4 lg:p-6 border-b border-border">
             <AbutsLogo
-              showWordmark={!isCollapsed}
+              showWordmark={!sidebarCollapsed}
               className="flex-1 min-w-0"
               iconClassName="h-9 w-9 lg:h-12 lg:w-12 flex-shrink-0"
               wordmarkClassName="text-lg lg:text-xl whitespace-nowrap"
@@ -1379,16 +1367,18 @@ export const DashboardLayout = () => {
             />
           </div>
 
-          {isOpen ? (
-            <button
-              type="button"
-              aria-label="사이드 메뉴 숨기기"
-              onClick={() => setIsOpen(false)}
-              className="hidden lg:flex items-center justify-center absolute top-20 -right-4 w-8 h-8 rounded-full bg-card border border-border shadow-sm hover:bg-muted/60 hover:border-muted-foreground/40 transition-colors"
-            >
+          <button
+            type="button"
+            aria-label={isOpen ? "사이드 메뉴 접기" : "사이드 메뉴 펼치기"}
+            onClick={() => setIsOpen((prev) => !prev)}
+            className="hidden lg:flex items-center justify-center absolute top-20 -right-4 w-8 h-8 rounded-full bg-card border border-border shadow-sm hover:bg-muted/60 hover:border-muted-foreground/40 transition-colors"
+          >
+            {isOpen ? (
               <PanelLeft className="w-4 h-4" />
-            </button>
-          ) : null}
+            ) : (
+              <PanelLeftOpen className="w-4 h-4" />
+            )}
+          </button>
 
           <nav className="hover-scrollbar flex-1 overflow-y-auto p-3 lg:p-4">
             {adminMenuSections ? (
@@ -1398,7 +1388,7 @@ export const DashboardLayout = () => {
                     key={section.title ?? section.items[0]?.href}
                     className="space-y-2"
                   >
-                    {!isCollapsed && section.title && (
+                    {!sidebarCollapsed && section.title && (
                       <div className="px-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/80">
                         {section.title}
                       </div>
@@ -1416,7 +1406,7 @@ export const DashboardLayout = () => {
                             <Button
                               variant="ghost"
                               className={`relative w-full h-10 lg:h-11 justify-center text-sm lg:text-base transition-all ${
-                                isCollapsed ? "px-2" : "px-3 lg:px-4"
+                                sidebarCollapsed ? "px-2" : "px-3 lg:px-4"
                               } ${
                                 isActive
                                   ? "bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground"
@@ -1429,17 +1419,17 @@ export const DashboardLayout = () => {
                             >
                               <item.icon
                                 className={`h-4 w-4 flex-shrink-0 ${
-                                  isCollapsed
+                                  sidebarCollapsed
                                     ? ""
                                     : "absolute left-3 top-1/2 -translate-y-1/2"
                                 }`}
                               />
-                              {!isCollapsed && (
+                              {!sidebarCollapsed && (
                                 <span className="whitespace-nowrap text-center">
                                   {item.label}
                                 </span>
                               )}
-                              {!isCollapsed &&
+                              {!sidebarCollapsed &&
                                 (() => {
                                   const badgeCount = getSidebarBadgeCount(
                                     item.href,
@@ -1464,7 +1454,7 @@ export const DashboardLayout = () => {
             ) : (
               <DashboardSidebarNav
                 items={resolvedMenuItems}
-                isCollapsed={isCollapsed}
+                isCollapsed={sidebarCollapsed}
                 pathname={location.pathname}
                 isCreditLow={isCreditLow}
                 userRole={user.role}
@@ -1477,13 +1467,13 @@ export const DashboardLayout = () => {
           </nav>
 
           <div className="p-3 lg:p-4 space-y-2">
-            <LabDashboardTopBanners collapsed={isCollapsed} />
+            <LabDashboardTopBanners collapsed={sidebarCollapsed} />
             <DropdownMenu open={accountMenuOpen} onOpenChange={setAccountMenuOpen}>
               <DropdownMenuTrigger asChild>
                 <Button
                   variant="ghost"
                   className={`w-full p-2 h-auto gap-1.5 transition-all ${
-                    isCollapsed ? "justify-center" : "justify-start"
+                    sidebarCollapsed ? "justify-center" : "justify-start"
                   }`}
                 >
                   <Avatar className="h-6 w-6 lg:h-8 lg:w-8 flex-shrink-0">
@@ -1497,7 +1487,7 @@ export const DashboardLayout = () => {
                     />
                     <AvatarFallback>{getInitials(user.name)}</AvatarFallback>
                   </Avatar>
-                  {!isCollapsed && (
+                  {!sidebarCollapsed && (
                     <div className="flex-1 text-left min-w-0">
                       <div className="text-xs lg:text-sm font-medium truncate">
                         {user.name}
