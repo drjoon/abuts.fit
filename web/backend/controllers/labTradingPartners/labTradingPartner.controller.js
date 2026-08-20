@@ -11,6 +11,7 @@
 // - 2026-08-15: 할증 upsert 시 history 보존(1x 해제·배수 변경도 기존 의뢰 소급 금지).
 // - 2026-08-14: 기공소 신규 기공비 → 어벗츠 수가(off·검토) 동기화 + 관리자 알림.
 // - 2026-08-15: internalLab 기공비 API 허용. 미저장 시 관리자 어벗츠 수가 카탈로그 복사.
+// - 2026-08-20: 치과별 기공수가 할증도 internalLab 허용(라우트 authorize).
 import { Types } from "mongoose";
 import LabTradingPartner from "../../models/labTradingPartner.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";

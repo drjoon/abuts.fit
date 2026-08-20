@@ -1,6 +1,7 @@
 // related files:
 // - web/backend/controllers/labTradingPartners/labTradingPartner.controller.js
 // - web/backend/app.js
+// - 2026-08-20: 치과별 기공수가 할증 PUT은 기공소(requestor lab)와 어벗츠기공소(internalLab) 모두.
 import express from "express";
 import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
 import {
@@ -43,7 +44,7 @@ router.put(
 router.put(
   "/practice-fee-multiplier",
   authenticate,
-  authorize(["requestor", "admin"]),
+  authorize(["requestor", "internalLab", "admin"]),
   updateLabPracticeFeeMultiplier,
 );
 
