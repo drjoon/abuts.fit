@@ -91,7 +91,11 @@ import {
   LAB_OUTSIDE_STAR_BAND_REASON,
 } from "../../utils/practiceLabRating.js";
 import ChatRoom from "../../models/chatRoom.model.js";
-import { postPracticeTransferSystemChatMessage } from "../../services/chatSystemMessage.service.js";
+import {
+  postPracticeTransferSystemChatMessage,
+  pullUsersFromPracticeTransferChatRoom,
+} from "../../services/chatSystemMessage.service.js";
+import { invalidateChatPerfForUsers } from "../chats/chat.controller.js";
 import {
   assertOralScanFilesForCreate,
   canStartAbutmentProduction,
@@ -132,6 +136,7 @@ import { resolvePracticeTransferSkipJig } from "../../utils/practiceTransferLabS
 // - 2026-08-17: mark-complete는 기공소→치과 배송비만. 어벗츠→제조사 배송은 CA 집하.
 // - 2026-08-16: pastReady — 라이브 stage 우선(sticky startedAt OR 제거 시 목록 인자 우선).
 // - 2026-08-17: trash/empty — 하드삭제 의뢰 채팅방 archive(치과 사이드바 유령 unread 방지).
+// - 2026-08-20: 기공소 변경 시 이전 기공소를 채팅 참가자·사이드바 unread에서 제거.
 // - 2026-08-17: trash/empty — 하드삭제 전 rollbackPracticeTransferBilling(배송·디자인비 포함).
 // - 2026-08-16: 어벗 가공(준비 아님)이면 mark-release 거부·목록 abutmentPastReady.
 // - 2026-08-19: 생성 시 구강스캔은 선택(어벗츠기공소/자동매칭 포함).
@@ -6762,6 +6767,19 @@ export async function retargetPracticeTransferLab(req, res) {
 
     void (async () => {
       try {
+        const previousLabChanged =
+          Boolean(previousLabAnchorId) &&
+          String(previousLabAnchorId) !== String(targetLabAnchorId || "");
+        if (previousLabChanged) {
+          const previousLabUserIds =
+            await resolveRequestorUserIdsByAnchor(previousLabAnchorId);
+          await pullUsersFromPracticeTransferChatRoom({
+            transferMongoId: doc._id,
+            userIds: previousLabUserIds,
+          });
+          invalidateChatPerfForUsers(previousLabUserIds);
+        }
+
         const jobs = [
           postPracticeTransferSystemChatMessage({
             transferMongoId: doc._id,

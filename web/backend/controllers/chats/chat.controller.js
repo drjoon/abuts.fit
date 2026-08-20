@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-20: 기공소 변경 후 이전 기공소는 GET /rooms·사이드바 unread에서 제외.
 // - 2026-08-17: 삭제된 practice transfer 연결 방은 archive·목록 제외(사이드바 유령 unread 방지).
 // - 2026-08-14: GET /rooms — unread만 집계 + lastMessage $lookup 제거 + 10s 캐시.
 // - 2026-08-13: 전송 채팅 권한 — 레거시 practice뿐 아니라 requestor(치과) 작성자·동료도 기존 방 합류.
@@ -30,6 +31,7 @@ import {
   canAccessPracticeTransferChat,
   canJoinPracticeTransferAsLabPeer,
   canJoinPracticeTransferAsPracticePeer as canJoinPracticeTransferAsPracticePeerCore,
+  shouldListPracticeTransferChatRoomForUser,
 } from "../../utils/practiceTransferChatAccess.js";
 import { emitAppEventToUser, emitToUser } from "../../socket.js";
 
@@ -91,6 +93,9 @@ const invalidateChatPerfForUsers = (userIds) => {
     invalidateChatPerfCacheByPrefix(`practice-transfer-room:${id}:`);
   });
 };
+
+/** 기공소 변경 등 — 다른 컨트롤러에서 채팅방 목록 캐시 무효화 */
+export { invalidateChatPerfForUsers };
 
 const emitChatMessageCreated = ({ participantIds, senderId, roomId, message, relatedPracticeTransferId }) => {
   const ids = (Array.isArray(participantIds) ? participantIds : [])
@@ -489,6 +494,7 @@ export async function getMyChatRooms(req, res) {
       }
 
       // relatedPracticeTransferId는 populate 대신 수동 조인 — 삭제된 의뢰 방은 archive.
+      // 기공소 변경 후 이전 기공소는 목록·unread에서 제외(치과·현재 수신 기공소만).
       const relatedIds = roomsRaw
         .map((r) => r.relatedPracticeTransferId)
         .filter((id) => id && Types.ObjectId.isValid(String(id)))
@@ -496,13 +502,20 @@ export async function getMyChatRooms(req, res) {
       const transferDocs =
         relatedIds.length > 0
           ? await PracticeTransfer.find({ _id: { $in: relatedIds } })
-              .select({ transferId: 1 })
+              .select({
+                transferId: 1,
+                practiceUserId: 1,
+                practiceBusinessAnchorId: 1,
+                targetLabAnchorId: 1,
+                assigneeLabAnchorId: 1,
+              })
               .lean()
           : [];
       const transferById = new Map(
         transferDocs.map((doc) => [String(doc._id), doc]),
       );
       const orphanRoomIds = [];
+      const detachedRoomIds = [];
       for (const room of roomsRaw) {
         const rawId = room.relatedPracticeTransferId;
         if (!rawId) {
@@ -512,6 +525,18 @@ export async function getMyChatRooms(req, res) {
         const transfer = transferById.get(String(rawId));
         if (!transfer) {
           orphanRoomIds.push(room._id);
+          room.relatedPracticeTransferId = null;
+          continue;
+        }
+        if (
+          !shouldListPracticeTransferChatRoomForUser({
+            currentUserId: userId,
+            currentUserRole: req.user?.role,
+            currentUserBusinessAnchorId: req.user?.businessAnchorId,
+            transferDoc: transfer,
+          })
+        ) {
+          detachedRoomIds.push(room._id);
           room.relatedPracticeTransferId = null;
           continue;
         }
@@ -529,7 +554,8 @@ export async function getMyChatRooms(req, res) {
 
       const rooms = roomsRaw.filter(
         (room) =>
-          !orphanRoomIds.some((id) => String(id) === String(room._id)),
+          !orphanRoomIds.some((id) => String(id) === String(room._id)) &&
+          !detachedRoomIds.some((id) => String(id) === String(room._id)),
       );
 
       if (rooms.length === 0) {

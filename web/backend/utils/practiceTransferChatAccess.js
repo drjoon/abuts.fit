@@ -2,6 +2,8 @@
 // - web/backend/controllers/chats/chat.controller.js
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 // - web/backend/utils/requestorCapabilities.js
+// change-log:
+// - 2026-08-20: 기공소 변경 후 이전 기공소는 채팅방 목록·사이드바 unread에서 제외.
 import { Types } from "mongoose";
 
 /** 레거시 practice + 신규 requestor(치과 발신) 모두 전송 채팅 치과측으로 본다. */
@@ -115,5 +117,37 @@ export const canAccessPracticeTransferChat = ({
       currentUserBusinessAnchorId,
       transferDoc,
     })
+  );
+};
+
+/**
+ * 채팅방 목록/사이드바 unread용.
+ * 기공소 변경 후 이전 기공소는 치과·현재 수신 기공소만 보이도록 제외한다
+ * (participants에 남아도 목록·배지에서 뺀다).
+ */
+export const shouldListPracticeTransferChatRoomForUser = ({
+  currentUserId,
+  currentUserRole,
+  currentUserBusinessAnchorId,
+  transferDoc,
+  peerIds = [],
+}) => {
+  if (!transferDoc) return false;
+
+  return (
+    canJoinPracticeTransferAsPracticePeer({
+      currentUserId,
+      currentUserRole,
+      currentUserBusinessAnchorId,
+      transferDoc,
+      peerIds,
+    }) ||
+    canJoinPracticeTransferAsLabPeer({
+      currentUserId,
+      currentUserRole,
+      currentUserBusinessAnchorId,
+      transferDoc,
+    }) ||
+    isSameObjectIdText(transferDoc.practiceUserId, currentUserId)
   );
 };

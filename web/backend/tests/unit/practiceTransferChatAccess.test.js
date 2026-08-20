@@ -4,6 +4,7 @@ import {
   canAccessPracticeTransferChat,
   canJoinPracticeTransferAsLabPeer,
   canJoinPracticeTransferAsPracticePeer,
+  shouldListPracticeTransferChatRoomForUser,
 } from "../../utils/practiceTransferChatAccess.js";
 
 const practiceAnchorId = "64a000000000000000000001";
@@ -108,6 +109,36 @@ describe("practiceTransferChatAccess", () => {
         currentUserId: labStaffId,
         currentUserRole: "internalLab",
         currentUserBusinessAnchorId: labAnchorId,
+        transferDoc,
+      }),
+    ).toBe(true);
+  });
+
+  test("기공소 변경 후 이전 기공소는 채팅방 목록에서 제외", () => {
+    expect(
+      shouldListPracticeTransferChatRoomForUser({
+        currentUserId: otherLabStaffId,
+        currentUserRole: "requestor",
+        currentUserBusinessAnchorId: "64a000000000000000000099",
+        transferDoc,
+      }),
+    ).toBe(false);
+  });
+
+  test("현재 수신 기공소·치과는 채팅방 목록에 포함", () => {
+    expect(
+      shouldListPracticeTransferChatRoomForUser({
+        currentUserId: labStaffId,
+        currentUserRole: "requestor",
+        currentUserBusinessAnchorId: labAnchorId,
+        transferDoc,
+      }),
+    ).toBe(true);
+    expect(
+      shouldListPracticeTransferChatRoomForUser({
+        currentUserId: senderId,
+        currentUserRole: "requestor",
+        currentUserBusinessAnchorId: practiceAnchorId,
         transferDoc,
       }),
     ).toBe(true);

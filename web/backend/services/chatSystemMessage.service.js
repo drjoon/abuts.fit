@@ -3,6 +3,8 @@
 // - web/backend/models/chatRoom.model.js
 // - web/backend/controllers/chats/chat.controller.js
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
+// change-log:
+// - 2026-08-20: 기공소 변경 시 이전 기공소 유저를 채팅 참가자에서 제거.
 import { Types } from "mongoose";
 import Chat from "../models/chat.model.js";
 import ChatRoom from "../models/chatRoom.model.js";
@@ -64,6 +66,40 @@ const emitChatMessageCreated = ({
     }
   });
 };
+
+/**
+ * 기공소 변경 등 — 이전 기공소 유저를 전송 채팅 참가자에서 뺀다.
+ * 시스템 메시지 emit·사이드바 unread 전에 호출한다.
+ * @returns {Promise<string[]>} 제거된 userId
+ */
+export async function pullUsersFromPracticeTransferChatRoom({
+  transferMongoId,
+  userIds,
+}) {
+  const transferId = String(transferMongoId || "").trim();
+  const ids = (Array.isArray(userIds) ? userIds : [])
+    .map((id) => String(id || "").trim())
+    .filter((id) => id && Types.ObjectId.isValid(id));
+  if (!transferId || !Types.ObjectId.isValid(transferId) || ids.length === 0) {
+    return [];
+  }
+
+  const room = await ChatRoom.findOne({
+    relatedPracticeTransferId: new Types.ObjectId(transferId),
+    isArchived: false,
+  })
+    .select({ _id: 1, participants: 1 })
+    .lean();
+  if (!room?._id) return [];
+
+  const oidList = ids.map((id) => new Types.ObjectId(id));
+  await ChatRoom.updateOne(
+    { _id: room._id },
+    { $pull: { participants: { $in: oidList } } },
+  );
+
+  return ids;
+}
 
 /**
  * PracticeTransfer 채팅방에 시스템 이벤트 메시지를 남긴다.

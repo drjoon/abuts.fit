@@ -67,6 +67,8 @@ export interface ChatMessage {
 // - web/frontend/src/shared/hooks/useChatMessages.ts
 // - web/backend/models/chatRoom.model.js
 // - web/backend/controllers/chats/chat.controller.js
+// change-log:
+// - 2026-08-20: 기공소 변경(lab-retargeted*) 시 방 목록 재조회로 이전 기공소 유령 unread 제거.
 export interface ChatRoom {
   _id: string;
   participants: ChatRoomParticipant[];
@@ -201,7 +203,11 @@ export const useChatRooms = () => {
 
   useAppEventListener({
     enabled: Boolean(token),
-    eventTypes: ["chat:message-created", "chat:room-read"],
+    eventTypes: [
+      "chat:message-created",
+      "chat:room-read",
+      "practice:transfer-updated",
+    ],
     // 채팅은 입력 중에도 즉시 unread/lastMessage를 반영해도 폼 상태를 깨지 않으므로 defer를 비활성화한다.
     deferWhenEditing: false,
     onMatch: (evt) => {
@@ -210,6 +216,18 @@ export const useChatRooms = () => {
         evt?.data && typeof evt.data === "object"
           ? (evt.data as Record<string, unknown>)
           : {};
+
+      if (type === "practice:transfer-updated") {
+        const action = String(payload.action || "").trim();
+        if (
+          action === "lab-retargeted-away" ||
+          action === "lab-retargeted" ||
+          action === "lab_retarget"
+        ) {
+          scheduleFallbackReload();
+        }
+        return;
+      }
 
       if (type === "chat:message-created") {
         const roomId = String(payload.roomId || "").trim();
