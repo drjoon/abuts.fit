@@ -8,6 +8,7 @@
  * - 2026-08-16: 「기공소 변경 전송」클릭 시 즉시 retarget API 호출.
  * - 2026-08-19: 모달에서 바로 휴지통(의뢰 취소) 이동.
  */
+import { ArrowRightLeft } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -98,7 +99,7 @@ export function PracticeLabRejectedReselectDialog({
       }}
     >
       <DialogContent
-        className="max-w-lg gap-0 overflow-visible p-0 sm:rounded-xl"
+        className="w-[calc(100vw-2rem)] max-w-[calc(100vw-2rem)] gap-0 overflow-visible p-0 sm:w-max sm:max-w-[min(100vw-2rem,28rem)] sm:rounded-2xl"
         onOpenAutoFocus={(e) => {
           // 첫 포커스가 별/도움말로 가면 툴팁이 모달과 함께 뜬다 → 제목으로 둔다
           e.preventDefault();
@@ -117,28 +118,32 @@ export function PracticeLabRejectedReselectDialog({
           if (busy || isPortaledOverlayTarget(e.target)) e.preventDefault();
         }}
       >
-        <DialogHeader className="space-y-2 border-b border-accent-muted bg-accent-soft px-5 py-4 text-left">
-          <DialogTitle
-            data-reselect-dialog-title
-            tabIndex={-1}
-            className="text-base font-semibold text-accent-strong outline-none"
-          >
-            {labLabel
-              ? `기공소「${labLabel}」이(가) 의뢰를 거부했습니다`
-              : "기공소가 의뢰를 거부했습니다"}
-          </DialogTitle>
-          <DialogDescription className="text-sm text-muted-foreground">
-            {transferLabel ? (
-              <span className="mb-1 block font-medium text-slate-700">
-                전송ID {transferLabel}
-              </span>
-            ) : null}
-            다른 기공소를 선택한 뒤「기공소 변경 전송」을 누르면 바로 다시 전송됩니다. 더
-            이상 진행하지 않으려면「의뢰 취소」로 휴지통에 넣을 수 있습니다.
-          </DialogDescription>
+        <DialogHeader className="space-y-3 px-5 pb-1 pt-5 text-left sm:px-6 sm:pt-6">
+          <div className="flex items-start gap-3">
+            <span className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-slate-600 ring-1 ring-slate-200/80">
+              <ArrowRightLeft className="h-5 w-5" aria-hidden />
+            </span>
+            <div className="min-w-0 space-y-1.5">
+              <DialogTitle
+                data-reselect-dialog-title
+                tabIndex={-1}
+                className="text-base font-semibold tracking-tight text-slate-900 outline-none"
+              >
+                {labLabel
+                  ? `「${labLabel}」에서 의뢰를 수락하지 않았어요`
+                  : "기공소에서 의뢰를 수락하지 않았어요"}
+              </DialogTitle>
+              {transferLabel ? (
+                <p className="font-mono text-xs text-slate-500">{transferLabel}</p>
+              ) : null}
+              <DialogDescription className="text-sm leading-relaxed text-muted-foreground">
+                다른 기공소를 선택해 다시 전송하거나, 진행을 중단하려면 의뢰를 취소하세요.
+              </DialogDescription>
+            </div>
+          </div>
         </DialogHeader>
 
-        <div className="space-y-3 px-5 py-4">
+        <div className="space-y-3 px-5 py-4 sm:px-6">
           <PracticeTransferRequestIntakePanel
             variant="plain"
             showHeaderFields
@@ -192,10 +197,11 @@ export function PracticeLabRejectedReselectDialog({
           />
         </div>
 
-        <DialogFooter className="gap-2 border-t px-5 py-3 sm:justify-end">
+        <DialogFooter className="gap-2 border-t border-slate-100 bg-slate-50/80 px-5 py-3 sm:justify-end sm:space-x-0 sm:px-6">
           <Button
             type="button"
             variant="outline"
+            className="h-9"
             disabled={busy}
             onClick={() => onOpenChange(false)}
           >
@@ -206,7 +212,7 @@ export function PracticeLabRejectedReselectDialog({
               type="button"
               variant="outline"
               disabled={busy}
-              className="border-destructive-muted text-destructive hover:bg-destructive-soft hover:text-destructive"
+              className="h-9 border-destructive-muted text-destructive hover:bg-destructive-soft hover:text-destructive"
               onClick={() => onMoveToTrash()}
             >
               {trashing ? "처리 중..." : "의뢰 취소"}
@@ -215,10 +221,10 @@ export function PracticeLabRejectedReselectDialog({
           <Button
             type="button"
             disabled={!canConfirm || busy}
-            className="bg-accent text-accent-foreground hover:bg-accent-strong"
+            className="h-9 bg-primary-strong text-white hover:bg-primary-strong/90"
             onClick={() => void onConfirm()}
           >
-            {confirming ? "전송 중..." : "기공소 변경 전송"}
+            {confirming ? "전송 중..." : "다시 전송"}
           </Button>
         </DialogFooter>
       </DialogContent>
