@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-08-21: 환봉·제조사 추가요청(요청중) CA는 어벗츠 Request 생성 제외 — 지정 기공소가 커스텀어벗 수행.
 // - 2026-08-19: 출고 목표=치과도착−2영업일. 지정 도착일 1영업일 전 배송이 목표.
 // - 2026-08-18: 기공의뢰 CA 생산 견적은 치과 공급 단가(기공소 공급 단가 제외).
 // - 2026-08-17: PTX CA Request에 shippingReceiver(치과 수취인) 스냅샷·practiceBusinessAnchorId 저장.
@@ -67,15 +68,20 @@ import { triggerDashboardSummaryRefreshForAnchorId } from "./requestSnapshotTrig
 import { recomputeBulkShippingSnapshotForBusinessAnchorId } from "./bulkShippingSnapshot.service.js";
 import { updateReviewStatusByStage } from "../controllers/requests/common.review.controller.js";
 import { prevKoreanBusinessDayYmd } from "../utils/krBusinessDays.js";
+import { isPendingRoundBarAbutment } from "../utils/labFeeSchedule.js";
 
 const hasCustomAbutmentToothWorks = (toothWorks) =>
   (Array.isArray(toothWorks) ? toothWorks : []).some(
     (row) => Boolean(row?.customAbutment) && String(row?.toothNumber || "").trim(),
   );
 
-const listCustomAbutmentToothWorks = (toothWorks) =>
+/** 어벗츠 CA Request 대상. 환봉·제조사 추가요청(요청중)은 지정 기공소가 커스텀어벗 수행. */
+const listCustomAbutmentToothWorks = (toothWorks, implantFavorites = null) =>
   (Array.isArray(toothWorks) ? toothWorks : []).filter(
-    (row) => Boolean(row?.customAbutment) && String(row?.toothNumber || "").trim(),
+    (row) =>
+      Boolean(row?.customAbutment) &&
+      String(row?.toothNumber || "").trim() &&
+      !isPendingRoundBarAbutment(row, implantFavorites),
   );
 
 const normalizeResultFiles = (raw) => {
@@ -457,7 +463,12 @@ export async function createAbutmentRequestsFromPracticeTransfer({
   shippingMode: _shippingModeRaw = null,
   actorUserId = null,
 }) {
-  const customRows = listCustomAbutmentToothWorks(transferDoc?.toothWorks);
+  const customRows = listCustomAbutmentToothWorks(
+    transferDoc?.toothWorks,
+    transferDoc?.implantFavorites ||
+      transferDoc?.billing?.implantFavorites ||
+      null,
+  );
   if (customRows.length === 0) {
     return { created: [], skippedReason: "no_custom_abutment", requestIds: [] };
   }

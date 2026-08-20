@@ -4,6 +4,9 @@
 // - web/frontend/src/shared/practice/transferMemo.ts
 // - web/frontend/src/shared/practice/roundBarAbutment.ts
 // change-log:
+// - 2026-08-21: 프리셋 라벨 2줄(제조사·브랜드 / 패밀리·타입). 추가요청 메모는 제조사만+요청중.
+// - 2026-08-21: presets 추가=인라인 CNC 드롭다운. 없으면 제조사 추가 요청(메모 1줄).
+// - 2026-08-21: presets 모드에서 목록을 더 길게, 추가 버튼·수정·삭제 관리 UI 노출.
 // - 2026-08-14: 추가한 패밀리는 select 항목 옆 X로 삭제.
 // - 2026-08-14: 패밀리 선택 Regular/Mini/Narrow/Small Narrow 고정 + 패밀리 추가.
 // - 2026-08-14: 제조사 선택 CNC 위·환봉 아래 + 구분선. 환봉은 별도 값이라 카탈로그와 겹쳐도 보임.
@@ -35,13 +38,17 @@ import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusine
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import {
+  MANUFACTURER_ADD_REQUEST_BRAND,
+  MANUFACTURER_ADD_REQUEST_FAMILY,
   MANUFACTURER_ADD_REQUEST_VALUE,
   ROUND_BAR_GUIDE_LINES,
   ROUND_BAR_GUIDE_TITLE,
   ROUND_BAR_HEX_TYPE,
+  implantFavoriteLabelParts,
   isRoundBarFavorite,
   submitRoundBarManufacturerRequest,
 } from "@/shared/practice/roundBarAbutment";
+import { mergeCncImplantSpecs } from "@/shared/practice/cncImplantCatalog";
 import { cn } from "@/shared/ui/cn";
 
 export type ToothImplantValues = {
@@ -63,6 +70,8 @@ type Props = {
   mode?: "full" | "fields" | "presets";
   /** 프리셋 추가·수정·삭제 허용 (기본 true) */
   allowPresetEdit?: boolean;
+  /** @deprecated presets 추가는 인라인 드롭다운으로 처리. 무시됨. */
+  onAddPreset?: () => void;
   /** 섹션 제목 (기본: 임플란트) */
   heading?: string;
   className?: string;
@@ -276,20 +285,12 @@ const favoriteKey = (row: {
 }) =>
   `${row.manufacturer}|${row.brand}|${row.family}|${row.type}`.toLowerCase();
 
-const favoriteLabel = (row: {
-  manufacturer: string;
-  brand: string;
-  family: string;
-  type: string;
-}) =>
-  [row.manufacturer, row.brand, row.family, row.type]
-    .map((v) => String(v || "").trim())
-    .filter(Boolean)
-    .join(" / ") || "임플란트";
-
 /** 프리셋 행(h-8 + py-1.5×2 + border 2px) × 4 + space-y-1.5 × 3. 초과 시 스크롤. */
 const PRESET_LIST_CLASS =
   "max-h-[calc(4*(2.75rem+2px)+3*0.375rem)] space-y-1.5 overflow-y-auto overflow-x-hidden pr-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-slate-100";
+/** presets 전용 — 설정 모달에서 상단 모드 버튼 제거 후 여유 공간 활용(최소 8행). */
+const PRESET_LIST_CLASS_TALL =
+  "min-h-[calc(8*(2.75rem+2px)+7*0.375rem)] flex-1 space-y-1.5 overflow-y-auto overflow-x-hidden pr-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-slate-100";
 
 export const PracticeToothImplantFields = ({
   value,
@@ -300,11 +301,16 @@ export const PracticeToothImplantFields = ({
   presetsFirst = false,
   mode = "full",
   allowPresetEdit = true,
+  onAddPreset: _onAddPreset,
   heading = "임플란트",
   className,
 }: Props) => {
   const [editingFavoriteId, setEditingFavoriteId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<ToothImplantValues>(emptyToothWorkImplant());
+  const [isAddingPreset, setIsAddingPreset] = useState(false);
+  const [addDraft, setAddDraft] = useState<ToothImplantValues>(emptyToothWorkImplant());
+  const [addRequestMode, setAddRequestMode] = useState(false);
+  const [addRequestMemo, setAddRequestMemo] = useState("");
   const [favoritesBusy, setFavoritesBusy] = useState(false);
   const [requestFormOpen, setRequestFormOpen] = useState(false);
   const [requestBusy, setRequestBusy] = useState(false);
@@ -322,6 +328,7 @@ export const PracticeToothImplantFields = ({
   const showPresets = mode === "full" || mode === "presets";
   const canManagePresets = allowPresetEdit && Boolean(onFavoritesChange);
   const allowManufacturerRequest = canManagePresets && kind !== "lab";
+  const listClass = mode === "presets" ? PRESET_LIST_CLASS_TALL : PRESET_LIST_CLASS;
 
   const connectionOptions = useMemo(() => {
     const fromCatalog = connections
@@ -369,6 +376,8 @@ export const PracticeToothImplantFields = ({
     return [...fromFavorites, ...fromCatalog];
   }, [connections, favorites]);
 
+  const cncSpecs = useMemo(() => mergeCncImplantSpecs(connections), [connections]);
+
   const specRows = useMemo(
     () =>
       connectionOptions.map((c) => ({
@@ -378,6 +387,17 @@ export const PracticeToothImplantFields = ({
         type: String(c.type || "").trim(),
       })),
     [connectionOptions],
+  );
+
+  const cncSpecRows = useMemo(
+    () =>
+      cncSpecs.map((c) => ({
+        manufacturer: c.manufacturer,
+        brand: c.brand,
+        family: c.family,
+        type: c.type,
+      })),
+    [cncSpecs],
   );
 
   const roundBarManufacturerOptions = useMemo(
@@ -622,6 +642,105 @@ export const PracticeToothImplantFields = ({
         .map((row) => row.type),
     );
 
+  const getCncBrands = (manufacturer: string) =>
+    uniqueStrings(
+      cncSpecRows
+        .filter((row) => row.manufacturer === manufacturer)
+        .map((row) => row.brand),
+    );
+
+  const getCncFamilies = (manufacturer: string, brand: string) =>
+    uniqueStrings(
+      cncSpecRows
+        .filter((row) => row.manufacturer === manufacturer && row.brand === brand)
+        .map((row) => row.family)
+        .filter(Boolean),
+    );
+
+  const getCncTypes = (manufacturer: string, brand: string, family: string) =>
+    uniqueStrings(
+      cncSpecRows
+        .filter(
+          (row) =>
+            row.manufacturer === manufacturer &&
+            row.brand === brand &&
+            row.family === family,
+        )
+        .map((row) => row.type),
+    );
+
+  const addCncManufacturers = useMemo(
+    () => uniqueStrings(cncSpecs.map((c) => c.manufacturer)),
+    [cncSpecs],
+  );
+
+  const addBrandOptions = useMemo(
+    () =>
+      uniqueStrings(
+        cncSpecRows
+          .filter((row) => row.manufacturer === addDraft.implantManufacturer)
+          .map((row) => row.brand),
+      ),
+    [addDraft.implantManufacturer, cncSpecRows],
+  );
+
+  const addFamilyOptions = useMemo(
+    () =>
+      uniqueStrings(
+        cncSpecRows
+          .filter(
+            (row) =>
+              row.manufacturer === addDraft.implantManufacturer &&
+              row.brand === addDraft.implantBrand,
+          )
+          .map((row) => row.family)
+          .filter(Boolean),
+      ),
+    [addDraft.implantManufacturer, addDraft.implantBrand, cncSpecRows],
+  );
+
+  const addTypeOptions = useMemo(
+    () =>
+      uniqueStrings(
+        cncSpecRows
+          .filter(
+            (row) =>
+              row.manufacturer === addDraft.implantManufacturer &&
+              row.brand === addDraft.implantBrand &&
+              row.family === addDraft.implantFamily,
+          )
+          .map((row) => row.type),
+      ),
+    [
+      addDraft.implantManufacturer,
+      addDraft.implantBrand,
+      addDraft.implantFamily,
+      cncSpecRows,
+    ],
+  );
+
+  const cncManufacturerLabel = (manufacturer: string) => {
+    const sample = cncSpecs.find((c) => c.manufacturer === manufacturer);
+    return sample?.displayManufacturer || manufacturer;
+  };
+
+  const cncBrandLabel = (manufacturer: string, brand: string) => {
+    const sample = cncSpecs.find(
+      (c) => c.manufacturer === manufacturer && c.brand === brand,
+    );
+    return sample?.displayBrand || brand;
+  };
+
+  const cncFamilyLabel = (manufacturer: string, brand: string, family: string) => {
+    const sample = cncSpecs.find(
+      (c) =>
+        c.manufacturer === manufacturer &&
+        c.brand === brand &&
+        c.family === family,
+    );
+    return sample?.displayFamily || family || "(기본)";
+  };
+
   const addCustomFamily = (family: string) => {
     setCustomFamilies((prev) => pushUniqueFamily(prev, family));
   };
@@ -696,6 +815,123 @@ export const PracticeToothImplantFields = ({
         type: value.implantType,
       },
     ]);
+
+  const startAddPreset = () => {
+    setEditingFavoriteId(null);
+    setAddDraft(emptyToothWorkImplant());
+    setAddRequestMode(false);
+    setAddRequestMemo("");
+    setIsAddingPreset(true);
+  };
+
+  const cancelAddPreset = () => {
+    setIsAddingPreset(false);
+    setAddDraft(emptyToothWorkImplant());
+    setAddRequestMode(false);
+    setAddRequestMemo("");
+  };
+
+  const confirmAddPreset = async () => {
+    if (addRequestMode) {
+      const memo = addRequestMemo.trim();
+      if (!memo) {
+        toast({
+          title: "입력 필요",
+          description: "임플란트 제조사·제품 브랜드 등을 입력해주세요.",
+          variant: "destructive",
+        });
+        return;
+      }
+      const favoriteId = `imp-rb-${Date.now().toString(36)}`;
+      let nextFavorite: PracticeImplantFavorite = {
+        id: favoriteId,
+        manufacturer: memo,
+        brand: MANUFACTURER_ADD_REQUEST_BRAND,
+        family: MANUFACTURER_ADD_REQUEST_FAMILY,
+        type: ROUND_BAR_HEX_TYPE,
+        roundBar: true,
+        adopted: false,
+      };
+      setFavoritesBusy(true);
+      try {
+        if (token) {
+          const result = await submitRoundBarManufacturerRequest({
+            token,
+            payload: {
+              manufacturer: memo,
+              brand: MANUFACTURER_ADD_REQUEST_BRAND,
+              family: MANUFACTURER_ADD_REQUEST_FAMILY,
+              favoriteId,
+            },
+          });
+          if (result.favorite?.id) {
+            nextFavorite = {
+              ...nextFavorite,
+              ...result.favorite,
+              type: ROUND_BAR_HEX_TYPE,
+              roundBar: true,
+            };
+          }
+        }
+        const withoutDup = favorites.filter(
+          (row) =>
+            favoriteKey(row) !== favoriteKey(nextFavorite) && row.id !== nextFavorite.id,
+        );
+        await persistFavorites([...withoutDup, nextFavorite]);
+        applyFavorite(nextFavorite);
+        cancelAddPreset();
+        setGuideOpen(true);
+      } catch (error) {
+        toast({
+          title: "요청 전달 실패",
+          description:
+            error instanceof Error ? error.message : "관리자 문의 전달에 실패했습니다.",
+          variant: "destructive",
+        });
+        const withoutDup = favorites.filter(
+          (row) =>
+            favoriteKey(row) !== favoriteKey(nextFavorite) && row.id !== nextFavorite.id,
+        );
+        await persistFavorites([...withoutDup, nextFavorite]);
+        applyFavorite(nextFavorite);
+        cancelAddPreset();
+        setGuideOpen(true);
+      } finally {
+        setFavoritesBusy(false);
+      }
+      return;
+    }
+
+    const manufacturer = addDraft.implantManufacturer.trim();
+    const brand = addDraft.implantBrand.trim();
+    const family = addDraft.implantFamily.trim();
+    const type = addDraft.implantType.trim() || "Hex";
+    if (!manufacturer || !brand) {
+      toast({
+        title: "선택 필요",
+        description: "제조사와 브랜드를 선택해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const nextFavorite: PracticeImplantFavorite = {
+      id: `imp-${Date.now().toString(36)}`,
+      manufacturer,
+      brand,
+      family,
+      type,
+    };
+    const withoutDup = favorites.filter(
+      (row) => favoriteKey(row) !== favoriteKey(nextFavorite),
+    );
+    await persistFavorites([...withoutDup, nextFavorite]);
+    applyFavorite(nextFavorite);
+    cancelAddPreset();
+  };
+
+  const canConfirmAddPreset = addRequestMode
+    ? Boolean(addRequestMemo.trim())
+    : Boolean(addDraft.implantManufacturer && addDraft.implantBrand);
 
   const closeRequestForm = () => {
     setRequestFormOpen(false);
@@ -776,6 +1012,203 @@ export const PracticeToothImplantFields = ({
     }
   };
 
+  const renderAddPresetForm = () => {
+    if (!isAddingPreset || !canManagePresets) return null;
+    const selectClass = "h-9 w-full text-sm";
+    return (
+      <div
+        key="add-preset-row"
+        className="space-y-1.5 rounded-xl border border-primary/70 bg-primary-soft/50 px-2.5 py-2 shadow-sm"
+      >
+        <Select
+          value={addRequestMode ? MANUFACTURER_ADD_REQUEST_VALUE : addDraft.implantManufacturer || undefined}
+          onValueChange={(nextManufacturer) => {
+            if (nextManufacturer === MANUFACTURER_ADD_REQUEST_VALUE) {
+              setAddRequestMode(true);
+              setAddDraft(emptyToothWorkImplant());
+              return;
+            }
+            setAddRequestMode(false);
+            setAddRequestMemo("");
+            const nextBrand = pickFirst(getCncBrands(nextManufacturer));
+            const nextFamily = pickPreferredFamily(
+              getCncFamilies(nextManufacturer, nextBrand),
+            );
+            const nextType =
+              pickFirst(getCncTypes(nextManufacturer, nextBrand, nextFamily)) || "Hex";
+            setAddDraft({
+              implantManufacturer: nextManufacturer,
+              implantBrand: nextBrand,
+              implantFamily: nextFamily,
+              implantType: nextType,
+            });
+          }}
+        >
+          <SelectTrigger className={selectClass}>
+            <SelectValue placeholder="제조사 선택" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              {addCncManufacturers.map((m) => (
+                <SelectItem key={`add-mfr-${m}`} value={m} className="text-sm">
+                  {cncManufacturerLabel(m)}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+            {allowManufacturerRequest ? (
+              <>
+                <SelectSeparator className="my-1.5 h-0.5 bg-slate-300" />
+                <SelectItem
+                  value={MANUFACTURER_ADD_REQUEST_VALUE}
+                  className="text-sm font-semibold text-primary-strong"
+                >
+                  제조사 추가 요청
+                </SelectItem>
+              </>
+            ) : null}
+          </SelectContent>
+        </Select>
+
+        {addRequestMode ? (
+          <Input
+            value={addRequestMemo}
+            placeholder="임플란트 제조사, 제품 브랜드 등 입력"
+            className="h-9 text-sm"
+            onChange={(e) => setAddRequestMemo(e.target.value)}
+          />
+        ) : (
+          <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-3">
+            <Select
+              value={addDraft.implantBrand || undefined}
+              disabled={!addDraft.implantManufacturer}
+              onValueChange={(nextBrand) => {
+                const nextFamily = pickPreferredFamily(
+                  getCncFamilies(addDraft.implantManufacturer, nextBrand),
+                );
+                const nextType =
+                  pickFirst(
+                    getCncTypes(addDraft.implantManufacturer, nextBrand, nextFamily),
+                  ) || "Hex";
+                setAddDraft((prev) => ({
+                  ...prev,
+                  implantBrand: nextBrand,
+                  implantFamily: nextFamily,
+                  implantType: nextType,
+                }));
+              }}
+            >
+              <SelectTrigger className={selectClass} disabled={!addDraft.implantManufacturer}>
+                <SelectValue placeholder="브랜드" />
+              </SelectTrigger>
+              <SelectContent>
+                {addBrandOptions.map((b) => (
+                  <SelectItem key={`add-brand-${b}`} value={b} className="text-sm">
+                    {cncBrandLabel(addDraft.implantManufacturer, b)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={addDraft.implantFamily || undefined}
+              disabled={!addDraft.implantBrand || addFamilyOptions.length === 0}
+              onValueChange={(nextFamily) => {
+                const nextType =
+                  pickFirst(
+                    getCncTypes(
+                      addDraft.implantManufacturer,
+                      addDraft.implantBrand,
+                      nextFamily,
+                    ),
+                  ) || "Hex";
+                setAddDraft((prev) => ({
+                  ...prev,
+                  implantFamily: nextFamily,
+                  implantType: nextType,
+                }));
+              }}
+            >
+              <SelectTrigger
+                className={selectClass}
+                disabled={!addDraft.implantBrand || addFamilyOptions.length === 0}
+              >
+                <SelectValue placeholder="패밀리" />
+              </SelectTrigger>
+              <SelectContent>
+                {addFamilyOptions.map((f) => (
+                  <SelectItem key={`add-family-${f}`} value={f} className="text-sm">
+                    {cncFamilyLabel(
+                      addDraft.implantManufacturer,
+                      addDraft.implantBrand,
+                      f,
+                    )}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={addDraft.implantType || undefined}
+              disabled={!addDraft.implantBrand}
+              onValueChange={(nextType) =>
+                setAddDraft((prev) => ({ ...prev, implantType: nextType }))
+              }
+            >
+              <SelectTrigger className={selectClass} disabled={!addDraft.implantBrand}>
+                <SelectValue placeholder="타입" />
+              </SelectTrigger>
+              <SelectContent>
+                {addTypeOptions.map((t) => (
+                  <SelectItem key={`add-type-${t}`} value={t} className="text-sm">
+                    {t}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
+        <div className="flex justify-end gap-1">
+          <Button
+            type="button"
+            size="sm"
+            className="h-8 px-3 text-sm"
+            disabled={favoritesBusy || !canConfirmAddPreset}
+            onClick={() => void confirmAddPreset()}
+          >
+            <Check className="mr-1 h-3.5 w-3.5" />
+            {addRequestMode ? (favoritesBusy ? "요청 중..." : "요청") : "저장"}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-8 px-3 text-sm"
+            disabled={favoritesBusy}
+            onClick={cancelAddPreset}
+          >
+            취소
+          </Button>
+        </div>
+      </div>
+    );
+  };
+
+  const renderAddPresetButton = () => {
+    if (!canManagePresets || isAddingPreset) return null;
+    return (
+      <button
+        type="button"
+        className="flex w-full items-center gap-1.5 rounded-xl border border-dashed border-slate-300 bg-white px-2.5 py-2 text-left text-sm font-medium text-slate-500 shadow-sm hover:border-primary/50 hover:bg-primary-soft/40 hover:text-primary-strong"
+        disabled={favoritesBusy}
+        onClick={startAddPreset}
+      >
+        <span className="flex min-w-0 flex-1 items-center px-1 py-0.5">
+          <Plus className="mr-1.5 h-4 w-4 shrink-0" />
+          추가
+        </span>
+      </button>
+    );
+  };
+
   const renderSaveFavoriteButton = () => {
     if (!canManagePresets || !showFields) return null;
     return (
@@ -810,9 +1243,11 @@ export const PracticeToothImplantFields = ({
       <div
         className={
           placement === "top"
-            ? "space-y-2 pb-1"
+            ? mode === "presets"
+              ? "flex min-h-0 flex-1 flex-col space-y-2 pb-1"
+              : "space-y-2 pb-1"
             : mode === "presets"
-              ? "space-y-2"
+              ? "flex min-h-0 flex-1 flex-col space-y-2"
               : stretchList
                 ? "flex min-h-0 flex-1 flex-col space-y-2 border-t border-primary-soft pt-3"
                 : "space-y-2 border-t border-primary-soft pt-3"
@@ -826,165 +1261,173 @@ export const PracticeToothImplantFields = ({
             </span>
           </div>
         ) : null}
-        {favorites.length === 0 ? (
-          canManagePresets ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-10 w-full border-dashed text-sm"
-              disabled={!canSaveFavorite || favoritesBusy}
-              onClick={saveCurrentAsFavorite}
-            >
-              <Plus className="mr-1 h-4 w-4" />
-              현재 선택을 프리셋에 추가
-            </Button>
-          ) : (
-            <p className="rounded-lg border border-dashed border-slate-200 bg-white/70 px-3 py-4 text-center text-sm text-slate-400">
-              저장된 프리셋이 없습니다
-            </p>
-          )
+        {favorites.length === 0 && !canManagePresets ? (
+          <p className="rounded-lg border border-dashed border-slate-200 bg-white/70 px-3 py-4 text-center text-sm text-slate-400">
+            저장된 프리셋이 없습니다
+          </p>
         ) : (
-          <div className={`min-h-0 ${PRESET_LIST_CLASS}`}>
-            {favorites.map((fav) => {
-              const isEditing = canManagePresets && editingFavoriteId === fav.id;
-              const isActive = favoriteKey(fav) === currentFavoriteKey;
-              if (isEditing) {
+          <>
+            <div className={`min-h-0 ${listClass}`}>
+              {favorites.map((fav) => {
+                const isEditing = canManagePresets && editingFavoriteId === fav.id;
+                const isActive = favoriteKey(fav) === currentFavoriteKey;
+                if (isEditing) {
+                  return (
+                    <div
+                      key={`edit-${fav.id}`}
+                      className="grid grid-cols-2 gap-1.5 rounded-lg border border-primary-muted bg-white p-2 sm:grid-cols-4"
+                    >
+                      {(
+                        [
+                          ["implantManufacturer", "제조사"],
+                          ["implantBrand", "브랜드"],
+                          ["implantFamily", "패밀리"],
+                          ["implantType", "타입"],
+                        ] as const
+                      ).map(([key, placeholder]) => (
+                        <Input
+                          key={key}
+                          value={editDraft[key]}
+                          placeholder={placeholder}
+                          className="h-9 text-sm"
+                          onChange={(e) =>
+                            setEditDraft((prev) => ({ ...prev, [key]: e.target.value }))
+                          }
+                        />
+                      ))}
+                      <div className="col-span-2 flex justify-end gap-1 sm:col-span-4">
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-8 px-3 text-sm"
+                          disabled={favoritesBusy}
+                          onClick={() => {
+                            void persistFavorites(
+                              favorites.map((row) =>
+                                row.id === fav.id
+                                  ? {
+                                      ...row,
+                                      manufacturer: editDraft.implantManufacturer.trim(),
+                                      brand: editDraft.implantBrand.trim(),
+                                      family: editDraft.implantFamily.trim(),
+                                      type: editDraft.implantType.trim(),
+                                    }
+                                  : row,
+                              ),
+                            ).then(() => setEditingFavoriteId(null));
+                          }}
+                        >
+                          <Check className="mr-1 h-3.5 w-3.5" />
+                          저장
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 px-3 text-sm"
+                          onClick={() => setEditingFavoriteId(null)}
+                        >
+                          취소
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                }
+
                 return (
                   <div
-                    key={`edit-${fav.id}`}
-                    className="grid grid-cols-2 gap-1.5 rounded-lg border border-primary-muted bg-white p-2 sm:grid-cols-4"
+                    key={fav.id}
+                    className={
+                      isActive
+                        ? "flex items-center gap-1.5 rounded-xl border border-primary/70 bg-primary-soft px-2.5 py-2 shadow-sm"
+                        : "flex items-center gap-1.5 rounded-xl border border-slate-200/90 bg-white px-2.5 py-2 shadow-sm"
+                    }
                   >
-                    {(
-                      [
-                        ["implantManufacturer", "제조사"],
-                        ["implantBrand", "브랜드"],
-                        ["implantFamily", "패밀리"],
-                        ["implantType", "타입"],
-                      ] as const
-                    ).map(([key, placeholder]) => (
-                      <Input
-                        key={key}
-                        value={editDraft[key]}
-                        placeholder={placeholder}
-                        className="h-9 text-sm"
-                        onChange={(e) =>
-                          setEditDraft((prev) => ({ ...prev, [key]: e.target.value }))
-                        }
-                      />
-                    ))}
-                    <div className="col-span-2 flex justify-end gap-1 sm:col-span-4">
-                      <Button
-                        type="button"
-                        size="sm"
-                        className="h-8 px-3 text-sm"
-                        disabled={favoritesBusy}
-                        onClick={() => {
-                          void persistFavorites(
-                            favorites.map((row) =>
-                              row.id === fav.id
-                                ? {
-                                    ...row,
-                                    manufacturer: editDraft.implantManufacturer.trim(),
-                                    brand: editDraft.implantBrand.trim(),
-                                    family: editDraft.implantFamily.trim(),
-                                    type: editDraft.implantType.trim(),
-                                  }
-                                : row,
-                            ),
-                          ).then(() => setEditingFavoriteId(null));
-                        }}
-                      >
-                        <Check className="mr-1 h-3.5 w-3.5" />
-                        저장
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 px-3 text-sm"
-                        onClick={() => setEditingFavoriteId(null)}
-                      >
-                        취소
-                      </Button>
-                    </div>
+                    {(() => {
+                      const label = implantFavoriteLabelParts(fav);
+                      const title = label.line2
+                        ? `${label.line1} · ${label.line2}`
+                        : label.line1;
+                      return (
+                        <button
+                          type="button"
+                          className="flex min-w-0 flex-1 items-start gap-2 rounded px-1 py-0.5 text-left hover:text-primary-strong"
+                          title={title}
+                          onClick={() => applyFavorite(fav)}
+                        >
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-semibold text-slate-800">
+                              {label.line1}
+                            </span>
+                            {label.line2 ? (
+                              <span className="mt-0.5 block truncate text-xs font-medium text-slate-500">
+                                {label.line2}
+                              </span>
+                            ) : null}
+                          </span>
+                          {isRoundBarFavorite(fav) ? (
+                            <span
+                              className={
+                                fav.adopted
+                                  ? "mt-0.5 inline-flex shrink-0 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700"
+                                  : "mt-0.5 inline-flex shrink-0 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700"
+                              }
+                            >
+                              {fav.adopted
+                                ? fav.adoptedKind === "round_bar"
+                                  ? "환봉"
+                                  : fav.adoptedKind === "cnc"
+                                    ? "CNC 도입"
+                                    : "도입"
+                                : "요청중"}
+                            </span>
+                          ) : null}
+                        </button>
+                      );
+                    })()}
+                    {canManagePresets ? (
+                      <>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 shrink-0 text-slate-400"
+                          onClick={() => {
+                            setIsAddingPreset(false);
+                            setEditingFavoriteId(fav.id);
+                            setEditDraft({
+                              implantManufacturer: fav.manufacturer,
+                              implantBrand: fav.brand,
+                              implantFamily: fav.family,
+                              implantType: fav.type,
+                            });
+                          }}
+                          aria-label="프리셋 수정"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 shrink-0 text-slate-400 hover:text-destructive"
+                          disabled={favoritesBusy}
+                          onClick={() =>
+                            void persistFavorites(favorites.filter((row) => row.id !== fav.id))
+                          }
+                          aria-label="프리셋 삭제"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </>
+                    ) : null}
                   </div>
                 );
-              }
-
-              return (
-                <div
-                  key={fav.id}
-                  className={
-                    isActive
-                      ? "flex items-center gap-1 rounded-lg border border-primary/70 bg-primary-soft px-2 py-1.5"
-                      : "flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1.5"
-                  }
-                >
-                  <button
-                    type="button"
-                    className="flex min-w-0 flex-1 items-center truncate rounded px-1.5 py-1 text-left text-sm font-medium text-slate-800 hover:text-primary-strong"
-                    title={favoriteLabel(fav)}
-                    onClick={() => applyFavorite(fav)}
-                  >
-                    <span className="truncate">{favoriteLabel(fav)}</span>
-                    {isRoundBarFavorite(fav) ? (
-                      <span
-                        className={
-                          fav.adopted
-                            ? "ml-1.5 inline-flex rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700"
-                            : "ml-1.5 inline-flex rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700"
-                        }
-                      >
-                        {fav.adopted
-                          ? fav.adoptedKind === "round_bar"
-                            ? "환봉"
-                            : fav.adoptedKind === "cnc"
-                              ? "CNC 도입"
-                              : "도입"
-                          : "요청중"}
-                      </span>
-                    ) : null}
-                  </button>
-                  {canManagePresets ? (
-                    <>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 shrink-0 text-slate-400"
-                        onClick={() => {
-                          setEditingFavoriteId(fav.id);
-                          setEditDraft({
-                            implantManufacturer: fav.manufacturer,
-                            implantBrand: fav.brand,
-                            implantFamily: fav.family,
-                            implantType: fav.type,
-                          });
-                        }}
-                        aria-label="프리셋 수정"
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 shrink-0 text-slate-400 hover:text-destructive"
-                        disabled={favoritesBusy}
-                        onClick={() =>
-                          void persistFavorites(favorites.filter((row) => row.id !== fav.id))
-                        }
-                        aria-label="프리셋 삭제"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </>
-                  ) : null}
-                </div>
-              );
-            })}
-          </div>
+              })}
+              {renderAddPresetForm()}
+              {renderAddPresetButton()}
+            </div>
+          </>
         )}
       </div>
     );
@@ -994,6 +1437,7 @@ export const PracticeToothImplantFields = ({
     <div
       className={cn(
         "flex flex-col gap-3 rounded-xl border border-primary-muted/80 bg-primary-soft/50 p-3 sm:p-4",
+        mode === "presets" && "min-h-0 flex-1",
         className,
       )}
     >

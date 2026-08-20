@@ -14,6 +14,9 @@ import type { PracticeImplantFavorite } from "@/shared/practice/transferMemo";
 
 export const ROUND_BAR_HEX_TYPE = "헥스(사이즈 미정)";
 export const MANUFACTURER_ADD_REQUEST_VALUE = "__add_manufacturer_request__";
+/** 제조사 추가 요청(메모 1줄) 저장 시 brand/family 자리표시 */
+export const MANUFACTURER_ADD_REQUEST_BRAND = "추가요청";
+export const MANUFACTURER_ADD_REQUEST_FAMILY = "미정";
 export const ROUND_BAR_REQUEST_UPDATED_EVENT = "practice:round-bar-request-updated";
 export const ABUTMENT_ADOPTED_KIND = {
   CNC: "cnc",
@@ -63,6 +66,43 @@ export type RoundBarRequestPayload = {
 
 export const isRoundBarFavorite = (row: Partial<PracticeImplantFavorite> | null | undefined) =>
   Boolean(row?.roundBar) || Boolean(String(row?.roundBarRequestId || "").trim());
+
+/** 메모만 넣은 제조사 추가 요청(표시는 manufacturer만) */
+export const isManufacturerAddRequestFavorite = (
+  row: Partial<PracticeImplantFavorite> | null | undefined,
+) =>
+  isRoundBarFavorite(row) &&
+  String(row?.brand || "").trim() === MANUFACTURER_ADD_REQUEST_BRAND;
+
+export type ImplantFavoriteLabelParts = {
+  line1: string;
+  line2: string;
+  memoOnly: boolean;
+};
+
+/** 프리셋 라벨: 1줄=제조사·브랜드, 2줄=패밀리·타입. 추가요청 메모는 제조사만. */
+export const implantFavoriteLabelParts = (row: {
+  manufacturer?: string;
+  brand?: string;
+  family?: string;
+  type?: string;
+  roundBar?: boolean;
+  roundBarRequestId?: string;
+  adopted?: boolean;
+}): ImplantFavoriteLabelParts => {
+  const manufacturer = String(row?.manufacturer || "").trim();
+  if (isManufacturerAddRequestFavorite(row)) {
+    return { line1: manufacturer || "제조사 추가 요청", line2: "", memoOnly: true };
+  }
+  const brand = String(row?.brand || "").trim();
+  const family = String(row?.family || "").trim();
+  const type = String(row?.type || "").trim();
+  return {
+    line1: [manufacturer, brand].filter(Boolean).join(" / ") || "임플란트",
+    line2: [family, type].filter(Boolean).join(" / "),
+    memoOnly: false,
+  };
+};
 
 export type RoundBarRequestUpdatedPayload = {
   practiceAnchorId?: string;

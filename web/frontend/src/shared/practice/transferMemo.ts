@@ -5,6 +5,7 @@
 // - web/backend/services/practiceTransferProduction.service.js
 // - web/backend/controllers/practiceTransfers/practiceTransferSettings.controller.js
 // change-log:
+// - 2026-08-21: 기공소 수신 — 환봉·제조사 추가요청(요청중) CA는 「커스텀어벗」(기공소 수행). 그 외는 「어벗츠 지급」.
 // - 2026-08-16: formatToothNumbersForCard — 의뢰 목록 카드용 치아번호만(11,21).
 // - 2026-08-14: 기공소 수신(labFacing) 치식 표시 — 커스텀어벗 → 어벗츠 지급.
 // - 2026-08-14: 같은 스펙이면 환봉 도입 프리셋을 일반 프리셋보다 우선한다.
@@ -20,6 +21,8 @@
 // - 2026-08-19: 임시치아도 크라운·브리지처럼 커스텀어벗 체크·프리셋 필수.
 // - 2026-08-19: 브리지 연결 시 한쪽이 임시치아이면 스팬 전체가 임시치아. 커스텀 규격은 형태와 무관하게 유지.
 // - 2026-08-20: Pontic UI 제거. 레거시 Pontic은 브리지로 정규화(기공소가 지대치 없음을 추론).
+import { isPendingRoundBarAbutment } from "@/shared/practice/labFeeSchedule";
+
 export const ABUTMENT_PRODUCT_MODE = {
   PRODUCTION: "custom_abutment",
   DESIGN_AND_PRODUCTION: "design_custom_abutment",
@@ -240,16 +243,16 @@ export const formatCustomSpecsSummary = (
 
 export const formatImplantSummary = (
   row: Partial<ToothWorkSelection> | null | undefined,
-) =>
-  [
-    row?.implantManufacturer,
-    row?.implantBrand,
-    row?.implantFamily,
-    row?.implantType,
-  ]
+) => {
+  const manufacturer = String(row?.implantManufacturer || "").trim();
+  const brand = String(row?.implantBrand || "").trim();
+  // 제조사 추가 요청(메모만) — brand=추가요청 자리표시는 숨김
+  if (brand === "추가요청") return manufacturer;
+  return [manufacturer, brand, row?.implantFamily, row?.implantType]
     .map((v) => String(v || "").trim())
     .filter(Boolean)
     .join(" / ");
+};
 
 /** 카드용 짧은 표시: 제조사 앞 3글자 / 패밀리 첫 글자 */
 export const formatImplantCompact = (
@@ -857,7 +860,7 @@ export const formatToothWorksForDisplay = (
   rows: ToothWorkSelection[],
   options?: {
     multiline?: boolean;
-    /** 기공소 수신: 커스텀어벗 → 어벗츠 지급 */
+    /** 기공소 수신: 도입·CNC 커스텀어벗 → 어벗츠 지급. 요청중은 기공소 커스텀어벗 */
     labFacing?: boolean;
   },
 ) => {
@@ -866,8 +869,10 @@ export const formatToothWorksForDisplay = (
     .sort((a, b) => toToothMemoSortNumber(a.toothNumber) - toToothMemoSortNumber(b.toothNumber));
   if (!normalizedRows.length) return "";
 
-  const customAbutmentLabel = options?.labFacing ? "어벗츠 지급" : "커스텀어벗";
   const formattedRows = normalizedRows.map((row) => {
+    const pendingLabAbutment = isPendingRoundBarAbutment(row);
+    const customAbutmentLabel =
+      options?.labFacing && !pendingLabAbutment ? "어벗츠 지급" : "커스텀어벗";
     const prosthesisLabel = options?.labFacing
       ? String(row.prosthesisType || "").replace(/커스텀어벗/g, customAbutmentLabel)
       : row.prosthesisType;
@@ -877,7 +882,9 @@ export const formatToothWorksForDisplay = (
         ABUTMENT_PRODUCT_MODE_SHORT_LABEL[resolveToothAbutmentProductMode(row)];
       if (!isCustomAbutmentProsthesisType(row.prosthesisType)) {
         details.push(
-          options?.labFacing ? customAbutmentLabel : `${customAbutmentLabel} ${modeLabel}`,
+          options?.labFacing
+            ? customAbutmentLabel
+            : `${customAbutmentLabel} ${modeLabel}`,
         );
       } else if (!options?.labFacing) {
         details.push(modeLabel);
