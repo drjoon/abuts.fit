@@ -116,7 +116,6 @@ import {
   isLinkableProsthesisType,
   isMissingToothProsthesisType,
   isRetainerProsthesisType,
-  isSpanUniformProsthesisType,
   isTemporaryToothProsthesisType,
   LINKED_PROSTHESIS_TYPES,
   NO_WORK_PROSTHESIS_TYPE,
@@ -499,7 +498,7 @@ const matchesLinkedToggleType = (current: string, type: string) => {
   return current === type;
 };
 
-/** 선택 치아 클릭: 인레이→크라운→커스텀어벗→임시치아 / 브리지↔작업X↔유지장치↔임시치아 */
+/** 선택 치아 클릭: 인레이→크라운→커스텀어벗→임시치아 / 브리지↔결손치↔유지장치↔임시치아 */
 const resolveNextProsthesisType = (
   prev: ToothWorkSelection[],
   toothNumber: string,
@@ -2694,7 +2693,7 @@ export const PracticeTransferRequestIntakePanel = ({
                               {row.toothNumber}
                             </span>
 
-                            {/* 2) 치아형태 — 글자 클릭 시에만 인레이→크라운→커스텀어벗→임시치아 / 브리지↔작업X↔유지장치↔임시치아 */}
+                            {/* 2) 치아형태 — 글자 클릭 시에만 인레이→크라운→커스텀어벗→임시치아 / 브리지↔결손치↔유지장치↔임시치아 */}
                             {(() => {
                               const typeLabel = isMissingTooth
                                 ? NO_WORK_PROSTHESIS_TYPE
@@ -2718,7 +2717,7 @@ export const PracticeTransferRequestIntakePanel = ({
                                     isMissingTooth
                                       ? undefined
                                       : isLinked
-                                        ? "클릭: 브리지 ↔ 작업X ↔ 유지장치 ↔ 임시치아 (유지장치는 연결 전체 동일·복귀 시 미클릭 치아 복원, 임시치아에서 나오면 클릭한 치아만 변경)"
+                                        ? "클릭: 브리지 ↔ 결손치 ↔ 유지장치 ↔ 임시치아 (결손치로 바꿀 때만 해당 치아, 나머지는 연결 전체 동일)"
                                         : "클릭: 인레이 → 크라운 → 커스텀어벗 → 임시치아"
                                   }
                                   onClick={(e) => {
@@ -2738,11 +2737,7 @@ export const PracticeTransferRequestIntakePanel = ({
                                       const isLinkedSpan =
                                         collectAdjacentBridgeLinks(prev, current.toothNumber)
                                           .length > 0;
-                                      if (
-                                        isLinkedSpan &&
-                                        (isSpanUniformProsthesisType(resolved.nextType) ||
-                                          isSpanUniformProsthesisType(currentType))
-                                      ) {
+                                      if (isLinkedSpan) {
                                         const cycled = applyCycledLinkedSpanProsthesisType(
                                           prev,
                                           current.toothNumber,

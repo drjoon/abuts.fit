@@ -474,17 +474,19 @@ export type ParsedPracticeTransferMemoMeta = {
 export const DEFAULT_PRACTICE_ARRIVAL_OFFSET_DAYS = 7;
 
 /** 브리지 스팬에서 작업하지 않는 칸. 표시·저장 SSOT */
-export const NO_WORK_PROSTHESIS_TYPE = "작업X";
+export const NO_WORK_PROSTHESIS_TYPE = "결손치";
 export const NO_WORK_PROSTHESIS_TOOLTIP =
-  "작업하지 않으며, 크레딧도 소비되지 않습니다.";
+  "결손치로 표시하며, 작업·크레딧 소비가 없습니다.";
 
 export const isMissingToothProsthesisType = (prosthesisType: string) => {
   const raw = String(prosthesisType || "").trim();
   const compact = raw.replace(/\s+/g, "");
   return (
     raw === NO_WORK_PROSTHESIS_TYPE ||
+    raw === "작업X" ||
     raw === "상실치" ||
     compact.toLowerCase() === "작업x" ||
+    compact === "결손치" ||
     /^missing(?:tooth)?$/i.test(compact)
   );
 };
@@ -537,6 +539,7 @@ export const normalizeProsthesisTypes = (items: string[]) => {
       if (lowered === "브릿지") return "브리지";
       if (
         lowered === "작업x" ||
+        lowered === "결손치" ||
         lowered === "상실치" ||
         lowered === "missing" ||
         lowered === "missing tooth"

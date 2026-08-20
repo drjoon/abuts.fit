@@ -17,7 +17,7 @@ import { useMemo } from "react";
 // - 2026-08-13: 클릭한 치아가 작업X를 거쳐도 커스텀을 지우지 않는다.
 // - 2026-08-20: Pontic은 UI에서 제거. 연결 스팬은 브리지·임시치아 등으로 표시하고 기공소가 추론.
 // - 2026-08-19: 임시치아도 크라운·브리지처럼 기존 커스텀 플래그·규격을 유지.
-// - 2026-08-19: 임시치아에서 브리지 등으로 나오면 클릭한 치아만 바꾸고, 옆 칸은 임시치아를 유지한다(작업X 스냅샷 복원 없음).
+// - 2026-08-20: 결손치로 바꿀 때만 해당 치아. 결손치→유지장치 등 나갈 때는 연결 전체 동기화.
 
 export type { ToothWorkSelection } from "@/shared/practice/transferMemo";
 import {
@@ -368,12 +368,11 @@ export const restoreLinkedSpanToothWorkRow = (
     : [],
 });
 
-/**
- * 연결 스팬 형태 순환.
- * 유지장치처럼 연결 전체가 강제 변경되면 치아별 행을 스냅샷하고,
- * 브리지/작업X로 나오면 클릭한 치아만 nextType, 나머지는 진입 직전 내용 복원.
- * 임시치아는 들어갈 때 스팬 전체를 맞추지만, 나올 때는 클릭한 치아만 바꾸고 옆은 그대로 둔다.
- */
+/** 연결 스팬 전체 동기화 대상. 결손치는 해당 치아만 변경 */
+export const isLinkedSpanSyncProsthesisType = (prosthesisType: string) =>
+  !isMissingToothProsthesisType(prosthesisType);
+
+/** 연결 스팬 형태 순환 — 결손치로 바꿀 때만 클릭 치아, 그 외(결손치→유지장치 등)는 연결 전체 */
 export const applyCycledLinkedSpanProsthesisType = (
   rows: ToothWorkSelection[],
   toothNumber: string,
@@ -383,85 +382,26 @@ export const applyCycledLinkedSpanProsthesisType = (
 ): { rows: ToothWorkSelection[]; snapshot: LinkedSpanProsthesisSnapshot } => {
   const tooth = String(toothNumber || "").trim();
   const current = rows.find((row) => String(row.toothNumber || "").trim() === tooth);
-  if (!current) return { rows, snapshot: pruneLinkedSpanProsthesisSnapshot(snapshot, rows) };
-  const currentType = String(current.prosthesisType || "").trim();
-  const nextIsUniform = isSpanUniformProsthesisType(nextType);
-  const currentIsUniform = isSpanUniformProsthesisType(currentType);
   const pruned = pruneLinkedSpanProsthesisSnapshot(snapshot, rows);
 
-  if (!currentIsUniform && nextIsUniform) {
-    const fillOnly = isTemporaryToothProsthesisType(nextType);
-    const captured = fillOnly ? {} : captureLinkedSpanProsthesisTypes(rows, tooth);
+  if (isMissingToothProsthesisType(nextType)) {
+    if (!current) return { rows, snapshot: pruned };
     return {
-      rows: applyProsthesisTypeToLinkedSpan(
-        rows,
-        tooth,
-        nextType,
-        defaultAbutmentProductMode,
-      ),
-      snapshot: fillOnly ? pruned : { ...pruned, ...captured },
-    };
-  }
-
-  if (currentIsUniform && nextIsUniform) {
-    return {
-      rows: applyProsthesisTypeToLinkedSpan(
-        rows,
-        tooth,
-        nextType,
-        defaultAbutmentProductMode,
+      rows: rows.map((row) =>
+        String(row.toothNumber || "").trim() === tooth
+          ? applyProsthesisTypeToRow(row, nextType, defaultAbutmentProductMode)
+          : row,
       ),
       snapshot: pruned,
     };
   }
 
-  if (currentIsUniform && !nextIsUniform) {
-    const component = collectLinkedComponentTeeth(rows, tooth);
-    const componentSet = new Set(component);
-    const nextSnapshot = { ...pruned };
-    for (const item of component) delete nextSnapshot[item];
-    if (isTemporaryToothProsthesisType(currentType)) {
-      return {
-        rows: rows.map((row) =>
-          String(row.toothNumber || "").trim() === tooth
-            ? applyProsthesisTypeToRow(row, nextType, defaultAbutmentProductMode)
-            : row,
-        ),
-        snapshot: nextSnapshot,
-      };
-    }
-    const hasRestore = component.some((item) => Boolean(pruned[item]));
-    if (!hasRestore) {
-      return {
-        rows: applyProsthesisTypeToLinkedSpan(
-          rows,
-          tooth,
-          nextType,
-          defaultAbutmentProductMode,
-        ),
-        snapshot: nextSnapshot,
-      };
-    }
-    const nextRows = rows.map((row) => {
-      const rowTooth = String(row.toothNumber || "").trim();
-      if (!componentSet.has(rowTooth)) return row;
-      if (rowTooth === tooth) {
-        return applyProsthesisTypeToRow(row, nextType, defaultAbutmentProductMode);
-      }
-      const original = pruned[rowTooth];
-      if (!original) {
-        return applyProsthesisTypeToRow(row, nextType, defaultAbutmentProductMode);
-      }
-      return restoreLinkedSpanToothWorkRow(row, original);
-    });
-    return { rows: nextRows, snapshot: nextSnapshot };
-  }
-
   return {
-    rows: rows.map((row) =>
-      String(row.toothNumber || "").trim() === tooth
-        ? applyProsthesisTypeToRow(row, nextType, defaultAbutmentProductMode)
-        : row,
+    rows: applyProsthesisTypeToLinkedSpan(
+      rows,
+      toothNumber,
+      nextType,
+      defaultAbutmentProductMode,
     ),
     snapshot: pruned,
   };
@@ -562,7 +502,7 @@ export const toggleAdjacentBridgeLink = (
     }
     const initiator = next[originalIndex];
     const initiatorType = String(initiator?.prosthesisType || "").trim();
-    if (initiator && isSpanUniformProsthesisType(initiatorType)) {
+    if (initiator && isLinkedSpanSyncProsthesisType(initiatorType)) {
       return applyProsthesisTypeToLinkedSpan(next, currentTooth, initiatorType);
     }
   }

@@ -482,6 +482,7 @@ export function isMissingToothProsthesisType(prosthesisType) {
   const raw = String(prosthesisType || "").trim();
   const compact = raw.replace(/\s+/g, "");
   return (
+    raw === "결손치" ||
     raw === "작업X" ||
     raw === "상실치" ||
     compact.toLowerCase() === "작업x" ||

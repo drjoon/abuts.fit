@@ -393,7 +393,7 @@ const makeTransferId = () => {
 };
 
 const DEFAULT_ARRIVAL_OFFSET_DAYS = 7;
-const PRESET_PROSTHESIS_TYPES = ["인레이", "크라운", "커스텀어벗", "브리지", "유지장치", "임시치아", "작업X"] as const;
+const PRESET_PROSTHESIS_TYPES = ["인레이", "크라운", "커스텀어벗", "브리지", "유지장치", "임시치아", "결손치"] as const;
 
 type ToothWorkSelection = SharedToothWorkSelection;
 
@@ -440,19 +440,22 @@ const normalizeProsthesisTypes = (items: string[]) => {
         .map((item) => {
           if (/^pontic$/i.test(item)) return ["브리지", "브리지"] as const;
           if (
+            item === "결손치" ||
             item === "작업X" ||
             item === "상실치" ||
             /^작업x$/i.test(item) ||
             /^missing(?:\s*tooth)?$/i.test(item)
           ) {
-            return ["작업x", "작업X"] as const;
+            return ["결손치", "결손치"] as const;
           }
           return [item.toLowerCase(), item] as const;
         }),
     ).values(),
   );
 
-  if (!deduped.some((item) => item === "작업X" || item === "상실치")) deduped.push("작업X");
+  if (!deduped.some((item) => item === "결손치" || item === "작업X" || item === "상실치")) {
+    deduped.push("결손치");
+  }
   return deduped;
 };
 
@@ -491,6 +494,7 @@ const isMissingToothProsthesisType = (prosthesisType: string) => {
   const raw = String(prosthesisType || "").trim();
   const compact = raw.replace(/\s+/g, "");
   return (
+    raw === "결손치" ||
     raw === "작업X" ||
     raw === "상실치" ||
     compact.toLowerCase() === "작업x" ||
@@ -521,7 +525,7 @@ const normalizeToothWorks = (items: ToothWorkSelection[]) =>
       const toothNumber = String(row?.toothNumber || "").trim();
       const prosthesisTypeRaw = String(row?.prosthesisType || "").trim();
       const prosthesisType = isMissingToothProsthesisType(prosthesisTypeRaw)
-        ? "작업X"
+        ? "결손치"
         : prosthesisTypeRaw;
       const customAbutment = /커스텀어벗|(?:커스텀)?어벗디자인/i.test(
         String(prosthesisType || "").replace(/\s+/g, ""),
