@@ -100,6 +100,7 @@
  * - 2026-08-20: 구강포토 썸네일 — private S3 location 대신 blob/proxy 미리보기.
  * - 2026-08-20: 모바일 상단 새로작성·임시저장만. 임시저장 모달 닫기·전체삭제 간격.
  * - 2026-08-20: PC 첨부 목록에도 이미지 썸네일(모바일 동기화 포함).
+ * - 2026-08-20: 구강포토 토스트 3초·닫기, CSP blob 썸네일, 클릭 미리보기, 동기화 반영.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -1249,6 +1250,10 @@ export const PracticeFileTransferPage = ({
   const [recentTransfersAllOpen, setRecentTransfersAllOpen] = useState(false);
   const [draftsOpen, setDraftsOpen] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false);
+  const [oralPhotoPreview, setOralPhotoPreview] = useState<{
+    name: string;
+    url: string;
+  } | null>(null);
   const { connections: implantConnections } = useImplantConnectionCatalog(authToken);
 
   const [toothWorks, setToothWorks] = useState<ToothWorkSelection[]>([]);
@@ -2002,11 +2007,13 @@ export const PracticeFileTransferPage = ({
 
       const forceResync = Boolean(options?.forceResync || payload.forceResync);
 
-      // 파일 업로드 중에는 HTTP 응답이 SSOT. forceResync echo는 업로드 종료 후 적용.
+      // 파일 업로드 중에는 HTTP 응답이 SSOT. 원격 스냅샷은 업로드 종료 후 적용.
       if (fileSyncInFlightRef.current) {
-        if (forceResync) {
-          pendingDraftApplyRef.current = { ...payload, forceResync: true };
-        }
+        const prev = pendingDraftApplyRef.current;
+        pendingDraftApplyRef.current = {
+          ...payload,
+          forceResync: Boolean(forceResync || prev?.forceResync || payload.forceResync),
+        };
         return;
       }
 
@@ -2244,7 +2251,10 @@ export const PracticeFileTransferPage = ({
     [myUserId, setRequestMemo, setSelectedLab],
   );
 
-  const loadPracticeTransferDraft = useCallback(async (options?: { draftId?: string | null }) => {
+  const loadPracticeTransferDraft = useCallback(async (options?: {
+    draftId?: string | null;
+    forceResync?: boolean;
+  }) => {
     if (!authToken) {
       setDraftFiles([]);
       setDraftSummary(null);
@@ -2260,6 +2270,7 @@ export const PracticeFileTransferPage = ({
         : activeDraftIdRef.current || "",
     ).trim();
     if (!requestedDraftId) return;
+    const forceResync = Boolean(options?.forceResync);
 
     try {
       const res = await apiFetch<unknown>({
@@ -2294,6 +2305,7 @@ export const PracticeFileTransferPage = ({
 
       applyPracticeDraftPayload(payload, {
         keepActiveDraftIdOnEmpty: true,
+        forceResync,
       });
     } catch {
       // ignore (초안 불러오기 실패는 사용자 흐름 중단 금지)
@@ -3754,14 +3766,15 @@ export const PracticeFileTransferPage = ({
       setEditingSentTransfer(null);
       editingSentTransferRef.current = null;
       applyDraftSummaryToForm(draft);
-      // 목록 카드보다 서버 최신 스냅샷을 우선해, 빈 기공소/환자명도 정확히 맞춘다.
-      void loadPracticeTransferDraft({ draftId: draft.id });
+      // 목록 카드보다 서버 최신 스냅샷을 우선해, 빈 기공소/환자명·파일도 정확히 맞춘다.
+      void loadPracticeTransferDraft({ draftId: draft.id, forceResync: true });
       setDraftsOpen(false);
       toast({
-        title: draft.isMine ? "임시저장 불러옴" : "같은 케이스로 이어쓰기",
+        title: draft.isMine ? "임시저장 불러옴" : "함께 이어쓰기",
         description: draft.isMine
-          ? "작성 폼에 반영했습니다. 같은 계정·동료가 이 건을 불러오면 함께 동기화됩니다."
-          : `${draft.practiceUserLabel || "동료"}의 임시저장에 참여했습니다. 입력 내용이 같은 케이스에 실시간 동기화됩니다.`,
+          ? "작성 폼에 반영했습니다."
+          : `${draft.practiceUserLabel || "동료"} 건에 참여했습니다.`,
+        duration: 3000,
       });
     },
     [
@@ -4266,6 +4279,15 @@ export const PracticeFileTransferPage = ({
     fileSyncInFlightRef.current = true;
     setFormSyncStatus("saving");
 
+    const flushPendingDraftApply = () => {
+      const pending = pendingDraftApplyRef.current;
+      if (!pending) return;
+      pendingDraftApplyRef.current = null;
+      applyPracticeDraftPayload(pending, {
+        forceResync: Boolean(pending.forceResync),
+      });
+    };
+
     void (async () => {
       try {
         const seen = new Set(
@@ -4310,10 +4332,12 @@ export const PracticeFileTransferPage = ({
       } finally {
         if (seq === mobileFilePromoteSeqRef.current) {
           fileSyncInFlightRef.current = false;
+          flushPendingDraftApply();
         }
       }
     })();
   }, [
+    applyPracticeDraftPayload,
     authToken,
     files,
     forgetFile,
@@ -6039,6 +6063,14 @@ export const PracticeFileTransferPage = ({
                     onClearAllFiles: () => {
                       void handleClearAllTransferFiles();
                     },
+                    onPreviewFile: (file) => {
+                      const url = String(file.previewUrl || "").trim();
+                      if (!url) return;
+                      setOralPhotoPreview({
+                        name: String(file.name || "사진").trim() || "사진",
+                        url,
+                      });
+                    },
   };
 
   const practiceTransferRequestIntakeProps: PracticeTransferRequestIntakePanelProps = {
@@ -6387,6 +6419,14 @@ export const PracticeFileTransferPage = ({
                   onClearPhotos={() => {
                     void handleClearAllTransferFiles();
                   }}
+                  onPreviewPhoto={(photo) => {
+                    const url = String(photo.previewUrl || "").trim();
+                    if (!url) return;
+                    setOralPhotoPreview({
+                      name: String(photo.name || "사진").trim() || "사진",
+                      url,
+                    });
+                  }}
                   onStartNew={() => void handleStartNewTransfer()}
                   onOpenDrafts={() => setDraftsOpen(true)}
                   draftCount={draftGroupedTransfers.length}
@@ -6538,6 +6578,33 @@ export const PracticeFileTransferPage = ({
             </Tooltip>
           </div>
           ) : null}
+
+          <Dialog
+            open={Boolean(oralPhotoPreview)}
+            onOpenChange={(open) => {
+              if (!open) setOralPhotoPreview(null);
+            }}
+          >
+            <DialogContent className="max-h-[min(92vh,900px)] w-[min(96vw,720px)] max-w-none gap-0 overflow-hidden p-0">
+              <DialogHeader className="space-y-1 border-b border-slate-200/80 px-4 py-3 pr-12 text-left">
+                <DialogTitle className="truncate text-base font-semibold">
+                  {oralPhotoPreview?.name || "사진"}
+                </DialogTitle>
+                <DialogDescription className="sr-only">
+                  첨부한 구강포토를 크게 봅니다.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="flex max-h-[min(80vh,820px)] items-center justify-center bg-slate-950/95 p-3">
+                {oralPhotoPreview?.url ? (
+                  <img
+                    src={oralPhotoPreview.url}
+                    alt={oralPhotoPreview.name}
+                    className="max-h-[min(76vh,780px)] max-w-full object-contain"
+                  />
+                ) : null}
+              </div>
+            </DialogContent>
+          </Dialog>
 
           <Dialog
             open={skipDesignConfirmUncheckOpen}

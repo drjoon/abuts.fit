@@ -26,6 +26,7 @@ import type { PreUploadFileStatus } from "@/shared/hooks/useFilePreUpload";
 // - 2026-08-20: 세그먼트 툴바·큰 촬영 CTA·터치 친화 카드.
 // - 2026-08-20: 상단 메뉴 새로작성·임시저장 2칸만.
 // - 2026-08-20: iPhone HEIC→JPEG 변환 시도, 빈 파일 거부, MIME 보정.
+// - 2026-08-20: 썸네일 클릭 시 원본 미리보기.
 
 export type PracticeTransferMobilePhotoItem = {
   key: string;
@@ -179,6 +180,7 @@ type PracticeTransferMobileOralPhotoIntakeProps = {
   onPickPhotos: (files: File[]) => void;
   onRemovePhoto: (key: string) => void;
   onClearPhotos: () => void;
+  onPreviewPhoto?: (photo: PracticeTransferMobilePhotoItem) => void;
   onStartNew: () => void;
   onOpenDrafts: () => void;
   draftCount: number;
@@ -191,6 +193,7 @@ export function PracticeTransferMobileOralPhotoIntake({
   onPickPhotos,
   onRemovePhoto,
   onClearPhotos,
+  onPreviewPhoto,
   onStartNew,
   onOpenDrafts,
   draftCount,
@@ -356,40 +359,54 @@ export function PracticeTransferMobileOralPhotoIntake({
                   key={photo.key}
                   className="relative min-w-0 overflow-hidden rounded-xl border border-slate-200/90 bg-slate-50"
                 >
-                  {photo.previewUrl ? (
-                    <img
-                      src={photo.previewUrl}
-                      alt={photo.name}
-                      className="aspect-square w-full object-cover"
-                      onError={(event) => {
-                        event.currentTarget.style.display = "none";
-                        const fallback = event.currentTarget.nextElementSibling;
-                        if (fallback instanceof HTMLElement) {
-                          fallback.style.display = "flex";
-                        }
-                      }}
-                    />
-                  ) : null}
-                  <div
+                  <button
+                    type="button"
                     className={cn(
-                      "aspect-square w-full items-center justify-center text-slate-400",
-                      photo.previewUrl ? "hidden" : "flex",
+                      "block w-full text-left",
+                      photo.previewUrl ? "cursor-zoom-in" : "cursor-default",
                     )}
+                    disabled={!photo.previewUrl || !onPreviewPhoto}
+                    aria-label={`${photo.name} 크게 보기`}
+                    onClick={() => {
+                      if (!photo.previewUrl || !onPreviewPhoto) return;
+                      onPreviewPhoto(photo);
+                    }}
                   >
-                    <ImagePlus className="h-6 w-6" />
-                  </div>
-                  <p
-                    className={cn(
-                      "truncate px-1.5 py-1 text-center text-[10px] font-medium",
-                      photo.uploadStatus === "error"
-                        ? "text-destructive"
-                        : "text-muted-foreground",
-                    )}
-                  >
-                    {statusLabel}
-                  </p>
+                    {photo.previewUrl ? (
+                      <img
+                        src={photo.previewUrl}
+                        alt={photo.name}
+                        className="aspect-square w-full object-cover"
+                        onError={(event) => {
+                          event.currentTarget.style.display = "none";
+                          const fallback = event.currentTarget.nextElementSibling;
+                          if (fallback instanceof HTMLElement) {
+                            fallback.style.display = "flex";
+                          }
+                        }}
+                      />
+                    ) : null}
+                    <div
+                      className={cn(
+                        "aspect-square w-full items-center justify-center text-slate-400",
+                        photo.previewUrl ? "hidden" : "flex",
+                      )}
+                    >
+                      <ImagePlus className="h-6 w-6" />
+                    </div>
+                    <p
+                      className={cn(
+                        "truncate px-1.5 py-1 text-center text-[10px] font-medium",
+                        photo.uploadStatus === "error"
+                          ? "text-destructive"
+                          : "text-muted-foreground",
+                      )}
+                    >
+                      {statusLabel}
+                    </p>
+                  </button>
                   {photo.uploadStatus === "uploading" ? (
-                    <div className="absolute inset-x-0 bottom-6 h-1 bg-slate-200/90">
+                    <div className="pointer-events-none absolute inset-x-0 bottom-6 h-1 bg-slate-200/90">
                       <div
                         className="h-full bg-primary-strong transition-[width]"
                         style={{ width: `${pct}%` }}
@@ -400,7 +417,10 @@ export function PracticeTransferMobileOralPhotoIntake({
                     type="button"
                     className="absolute right-1 top-1 inline-flex h-10 w-10 items-center justify-center rounded-full bg-black/55 text-white active:bg-black/70"
                     aria-label={`${photo.name} 삭제`}
-                    onClick={() => onRemovePhoto(photo.key)}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onRemovePhoto(photo.key);
+                    }}
                   >
                     <X className="h-4 w-4" />
                   </button>

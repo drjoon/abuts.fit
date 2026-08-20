@@ -177,6 +177,7 @@ app.use(
         "img-src": [
           "'self'",
           "data:",
+          "blob:",
           "https://robohash.org",
           "https://abuts-fit.s3.ap-south-1.amazonaws.com",
           "https://*.amazonaws.com",

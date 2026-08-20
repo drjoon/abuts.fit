@@ -27,6 +27,7 @@ import type { PreUploadFileStatus } from "@/shared/hooks/useFilePreUpload";
 // - 2026-08-20: requirementNote를 모바일 쉐이드 포토 안내 등 soft tip으로 표시.
 // - 2026-08-20: 쉐이드 안내 — 드롭존과 같은 폭·가운데 정렬, 카메라 아이콘.
 // - 2026-08-20: 이미지 첨부는 카드에 썸네일 미리보기.
+// - 2026-08-20: 썸네일 클릭 시 크게 보기.
 
 export type PracticeTransferFileDisplayItem = {
   key: string;
@@ -62,6 +63,8 @@ export type PracticeTransferFilePaneProps = {
   syncUploadBusy?: boolean;
   syncUploadHint?: string;
   onSyncUpload?: () => void;
+  /** 이미지 썸네일 클릭 시 크게 보기 */
+  onPreviewFile?: (file: PracticeTransferFileDisplayItem) => void;
 };
 
 const formatAttachmentSize = (bytes: number): string => {
@@ -106,6 +109,7 @@ export const PracticeTransferFilePane = ({
   syncUploadBusy = false,
   syncUploadHint,
   onSyncUpload,
+  onPreviewFile,
 }: PracticeTransferFilePaneProps) => {
   const hasFiles = files.length > 0;
 
@@ -187,7 +191,21 @@ export const PracticeTransferFilePane = ({
                     className="app-glass-card relative flex h-[3.5rem] min-w-0 items-center justify-between gap-1.5 overflow-hidden rounded-xl border border-slate-200/80 bg-white px-2.5 py-1.5"
                   >
                     {"previewUrl" in file ? (
-                      <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-md bg-slate-100">
+                      <button
+                        type="button"
+                        className={cn(
+                          "relative h-10 w-10 shrink-0 overflow-hidden rounded-md bg-slate-100",
+                          file.previewUrl && onPreviewFile
+                            ? "cursor-zoom-in"
+                            : "cursor-default",
+                        )}
+                        disabled={!file.previewUrl || !onPreviewFile}
+                        aria-label={`${file.name} 크게 보기`}
+                        onClick={() => {
+                          if (!file.previewUrl || !onPreviewFile) return;
+                          onPreviewFile(file);
+                        }}
+                      >
                         {file.previewUrl ? (
                           <img
                             src={file.previewUrl}
@@ -210,7 +228,7 @@ export const PracticeTransferFilePane = ({
                         >
                           <ImagePlus className="h-4 w-4" />
                         </div>
-                      </div>
+                      </button>
                     ) : null}
                     <div className="min-w-0 flex-1">
                       <Tooltip>

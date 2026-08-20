@@ -79,10 +79,12 @@ const ToastClose = React.forwardRef<
   <ToastPrimitives.Close
     ref={ref}
     className={cn(
-      "absolute right-2 top-2 rounded-md p-1 text-foreground/50 opacity-0 transition-opacity hover:text-foreground focus:opacity-100 focus:outline-none focus:ring-2 group-hover:opacity-100 group-[.destructive]:text-destructive/80 group-[.destructive]:hover:text-destructive-soft group-[.destructive]:focus:ring-destructive/80 group-[.destructive]:focus:ring-offset-red-600",
+      // 모바일은 hover가 없어 항상 보이게 한다.
+      "absolute right-2 top-2 rounded-md p-1.5 text-foreground/70 opacity-100 transition-opacity hover:bg-black/5 hover:text-foreground focus:outline-none focus:ring-2 group-[.destructive]:text-destructive/90 group-[.destructive]:hover:bg-white/10 group-[.destructive]:hover:text-destructive-soft group-[.destructive]:focus:ring-destructive/80 group-[.destructive]:focus:ring-offset-red-600",
       className,
     )}
     toast-close=""
+    aria-label="닫기"
     {...props}
   >
     <X className="h-4 w-4" />
