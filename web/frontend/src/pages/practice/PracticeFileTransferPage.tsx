@@ -103,6 +103,7 @@
  * - 2026-08-20: 구강포토 토스트 3초·닫기, CSP blob 썸네일, 클릭 미리보기, 동기화 반영.
  * - 2026-08-20: PC 썸네일 — S3 octet-stream MIME 보정·미리보기 fetch 중단 방지. 파일 전체삭제는 draft를 지우지 않고 빈 파일 스냅샷을 동기화.
  * - 2026-08-20: 폼 자동저장은 파일 목록을 보내지 않는다. PC/모바일 첨부는 같은 기공소·환자 draft에 append.
+ * - 2026-08-20: 모바일↔PC 파일 추가는 draftId/fingerprint가 달라도 같은 기공소·환자면 파일 스냅샷을 반영한다.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -3300,7 +3301,6 @@ export const PracticeFileTransferPage = ({
   useEffect(() => {
     if (!localFormHydrated || !draftListLoadedRef.current) return;
     if (!hasSubstantialContentForNewDraft) return;
-    if (draftFiles.length > 0) return;
     if (editingSentTransfer) return;
 
     const patient = normalizedPatientName;
@@ -3321,11 +3321,16 @@ export const PracticeFileTransferPage = ({
         new Date(String(a.updatedAt || 0)).getTime()
       );
     })[0];
-    if (!best || Number(best.fileCount || 0) <= 0) return;
-    if (autoJoinedDraftIdRef.current === best.id) return;
-    autoJoinedDraftIdRef.current = best.id;
+    const bestFileCount = Number(best?.fileCount || 0);
+    if (!best || bestFileCount <= 0) return;
+    const activeId = String(activeDraftId || "").trim();
+    if (best.id === activeId && draftFiles.length >= bestFileCount) return;
+    const joinKey = `${best.id}:${bestFileCount}`;
+    if (autoJoinedDraftIdRef.current === joinKey) return;
+    autoJoinedDraftIdRef.current = joinKey;
     void loadPracticeTransferDraft({ draftId: best.id, forceResync: true });
   }, [
+    activeDraftId,
     draftFiles.length,
     editingSentTransfer,
     hasSubstantialContentForNewDraft,
@@ -5224,12 +5229,25 @@ export const PracticeFileTransferPage = ({
           const parsedEventMemo = parsePracticeTransferMemoMeta(
             String(payload.transferMemo || ""),
           );
+          const eventPatientName = String(parsedEventMemo.patientName || "")
+            .trim()
+            .normalize("NFC");
+          const eventLabId = String(payload.targetLabAnchorId || "").trim();
+          const eventLabName = String(payload.targetLabName || "").trim();
+          const currentLabId = toApiLabAnchorId(selectedLab?._id) || "";
+          const currentLabName = String(selectedLab?.name || "").trim();
+          const sameOpenLab =
+            Boolean(eventLabId && currentLabId && eventLabId === currentLabId) ||
+            Boolean(eventLabName && currentLabName && eventLabName === currentLabName);
+          const sameOpenPatient =
+            hasAutosaveReadyPatientName(eventPatientName) &&
+            eventPatientName === normalizedPatientName;
           const eventFingerprint = buildPracticeTransferFormFingerprint({
             targetLabAnchorId:
               payload.targetLabAnchorId != null
                 ? String(payload.targetLabAnchorId).trim() || null
                 : null,
-            targetLabName: String(payload.targetLabName || "").trim(),
+            targetLabName: eventLabName,
             patientName: parsedEventMemo.patientName,
             orderDate: parsedEventMemo.orderDate,
             arrivalDate: parsedEventMemo.arrivalDate,
@@ -5239,13 +5257,15 @@ export const PracticeFileTransferPage = ({
             toothWorks: parsedEventMemo.toothWorks,
           });
           const sameOpenForm =
-            hasAutosaveReadyPatientName(parsedEventMemo.patientName) &&
+            sameOpenPatient &&
             Boolean(currentFormFingerprintRef.current) &&
             eventFingerprint === currentFormFingerprintRef.current;
-          if (!isActiveCaseEvent && !sameOpenForm) return;
+          // 모바일/PC는 draftId·치식 fingerprint가 갈라져도 같은 기공소·환자면 파일을 맞춘다.
+          const sameOpenCaseByForm = sameOpenPatient && sameOpenLab;
+          if (!isActiveCaseEvent && !sameOpenForm && !sameOpenCaseByForm) return;
 
           // 같은 계정 다른 탭/창도 반영해야 하므로 editorUserId echo skip 하지 않는다.
-          // 동일 내용은 applyPracticeDraftPayload 내부 fingerprint 비교로 no-op 처리.
+          // 파일 추가는 폼을 덮지 않는다(forceResync는 치식/날짜 스냅샷 덮어쓰기용).
           const hasEventSnapshot =
             typeof payload.transferMemo === "string" || Array.isArray(payload.files);
           if (hasEventSnapshot) {
@@ -5257,14 +5277,14 @@ export const PracticeFileTransferPage = ({
                 payload.targetLabAnchorId != null
                   ? String(payload.targetLabAnchorId).trim() || null
                   : null,
-              targetLabName: String(payload.targetLabName || "").trim(),
+              targetLabName: eventLabName,
               transferMemo: String(payload.transferMemo || ""),
               files: Array.isArray(payload.files)
                 ? (payload.files as DraftTransferFileItem[])
                 : [],
               updatedAt: payload.updatedAt ? String(payload.updatedAt) : null,
               createdAt: payload.createdAt ? String(payload.createdAt) : null,
-              forceResync: Boolean(payload.forceResync) || sameOpenForm,
+              forceResync: sameOpenForm,
             });
             return;
           }
