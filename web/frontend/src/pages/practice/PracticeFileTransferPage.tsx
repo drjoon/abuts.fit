@@ -104,6 +104,7 @@
  * - 2026-08-20: PC 썸네일 — S3 octet-stream MIME 보정·미리보기 fetch 중단 방지. 파일 전체삭제는 draft를 지우지 않고 빈 파일 스냅샷을 동기화.
  * - 2026-08-20: 폼 자동저장은 파일 목록을 보내지 않는다. PC/모바일 첨부는 같은 기공소·환자 draft에 append.
  * - 2026-08-20: 모바일↔PC 파일 추가는 draftId/fingerprint가 달라도 같은 기공소·환자면 파일 스냅샷을 반영한다.
+ * - 2026-08-20: 원격 draft 파일은 union merge. autosave echo(파일 없음)가 업로드 직후 목록을 비우지 않게 한다.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -403,12 +404,11 @@ const blobForOralPhotoPreview = (source: Blob, fileName?: string) => {
   return new Blob([source], { type: inferred });
 };
 
-const toDraftListSummary = (
-  payload: PracticeTransferDraftPayload,
-  myUserId: string,
-): DraftListSummary | null => {
-  const files = Array.isArray(payload.files)
-    ? payload.files
+const normalizeDraftTransferFileItems = (
+  rows: unknown,
+): DraftTransferFileItem[] =>
+  Array.isArray(rows)
+    ? rows
         .map((row) => ({
           fileId: String(row?.fileId || "").trim(),
           originalName: String(row?.originalName || "").trim(),
@@ -419,6 +419,25 @@ const toDraftListSummary = (
         }))
         .filter((row) => row.fileId && row.originalName && row.s3Key)
     : [];
+
+/** 원격 draft 파일은 union. 폼 autosave echo(파일 없음)가 업로드 직후 목록을 비우지 않게 한다. */
+const mergeDraftTransferFileItems = (
+  existing: DraftTransferFileItem[],
+  incoming: DraftTransferFileItem[],
+): DraftTransferFileItem[] => {
+  const byId = new Map<string, DraftTransferFileItem>();
+  for (const row of [...existing, ...incoming]) {
+    const fileId = String(row.fileId || "").trim();
+    if (fileId) byId.set(fileId, row);
+  }
+  return Array.from(byId.values());
+};
+
+const toDraftListSummary = (
+  payload: PracticeTransferDraftPayload,
+  myUserId: string,
+): DraftListSummary | null => {
+  const files = normalizeDraftTransferFileItems(payload.files);
 
   const practiceUserId = String(payload.practiceUserId || "").trim();
   const parsed = parsePracticeTransferMemoMetaShared(String(payload.transferMemo || ""));
@@ -2064,10 +2083,28 @@ export const PracticeFileTransferPage = ({
         ...payload,
         practiceUserId: String(payload.practiceUserId || myUserId).trim() || myUserId,
       };
-      const summary = toDraftListSummary(ownedPayload, myUserId);
-      const restoredFiles = summary?.files || [];
+      const restoredFiles = normalizeDraftTransferFileItems(ownedPayload.files);
+      const prevFiles = draftFilesRef.current;
+      const payloadDraftId = String(ownedPayload._id || "").trim();
+      const sameDraftId =
+        Boolean(payloadDraftId) &&
+        payloadDraftId === String(activeDraftIdRef.current || "").trim();
+      const mergedFiles = forceResync
+        ? restoredFiles
+        : restoredFiles.length === 0 && sameDraftId
+          ? []
+          : mergeDraftTransferFileItems(prevFiles, restoredFiles);
+      const filesChanged =
+        mergedFiles.length !== prevFiles.length ||
+        mergedFiles.some(
+          (row) => !prevFiles.some((prev) => prev.fileId === row.fileId),
+        );
+      setDraftFiles(mergedFiles);
 
-      setDraftFiles(restoredFiles);
+      const summary = toDraftListSummary(
+        { ...ownedPayload, files: mergedFiles },
+        myUserId,
+      );
       if (!summary) {
         setDraftSummary(null);
         if (!keepActiveDraftIdOnEmpty) setActiveDraftId(null);
@@ -2105,7 +2142,8 @@ export const PracticeFileTransferPage = ({
       // 파일 재동기화(forceResync)는 동료/다른 PC에 전체 스냅샷을 다시 밀어 넣는다.
       if (
         !forceResync &&
-        restoredFiles.length > 0 &&
+        !filesChanged &&
+        mergedFiles.length > 0 &&
         serverFingerprint === currentFingerprint
       ) {
         lastSavedFormFingerprintRef.current = serverFingerprint;
@@ -2126,7 +2164,7 @@ export const PracticeFileTransferPage = ({
       // forceResync는 파일 재동기화로 전체 폼을 맞춤.
       // 드롭존→대시보드 handoff 등 로컬 폼이 더 최신이면 서버 스냅샷으로 덮지 않는다.
       const shouldRestoreForm =
-        restoredFiles.length > 0 &&
+        mergedFiles.length > 0 &&
         (forceResync ||
           (Number.isFinite(serverUpdatedAt) &&
             serverUpdatedAt > 0 &&
@@ -2268,7 +2306,7 @@ export const PracticeFileTransferPage = ({
           suppressLocalFormPersistRef.current = false;
           skipFormAutosaveRef.current = false;
         }, 0);
-      } else if (restoredFiles.length > 0) {
+      } else if (mergedFiles.length > 0) {
         // 서버 스냅샷은 알되, 이미 적용한 버전 이하면 로컬 유지 + 필요 시 재업로드.
         lastSavedFormFingerprintRef.current = serverFingerprint;
         setLastSavedFormFingerprint(serverFingerprint);
@@ -2283,7 +2321,8 @@ export const PracticeFileTransferPage = ({
 
       if (import.meta.env.DEV) {
         console.info("[practice-transfer] applyDraftPayload", {
-          restoredFilesCount: restoredFiles.length,
+          restoredFilesCount: mergedFiles.length,
+          filesChanged,
           shouldRestoreForm,
           localFormUpdatedAt: localFormUpdatedAtRef.current,
           serverUpdatedAt,
@@ -5264,10 +5303,17 @@ export const PracticeFileTransferPage = ({
           const sameOpenCaseByForm = sameOpenPatient && sameOpenLab;
           if (!isActiveCaseEvent && !sameOpenForm && !sameOpenCaseByForm) return;
 
+          const incomingFiles = normalizeDraftTransferFileItems(payload.files);
+          const localFileCount = draftFilesRef.current.length;
+          const incomingFileCount = incomingFiles.length;
+          if (incomingFileCount > localFileCount) {
+            autoJoinedDraftIdRef.current = "";
+          }
+
           // 같은 계정 다른 탭/창도 반영해야 하므로 editorUserId echo skip 하지 않는다.
           // 파일 추가는 폼을 덮지 않는다(forceResync는 치식/날짜 스냅샷 덮어쓰기용).
           const hasEventSnapshot =
-            typeof payload.transferMemo === "string" || Array.isArray(payload.files);
+            typeof payload.transferMemo === "string" || incomingFiles.length > 0;
           if (hasEventSnapshot) {
             applyPracticeDraftPayload({
               _id: eventDraftId || activeId,
@@ -5279,13 +5325,20 @@ export const PracticeFileTransferPage = ({
                   : null,
               targetLabName: eventLabName,
               transferMemo: String(payload.transferMemo || ""),
-              files: Array.isArray(payload.files)
-                ? (payload.files as DraftTransferFileItem[])
-                : [],
+              files: incomingFiles,
               updatedAt: payload.updatedAt ? String(payload.updatedAt) : null,
               createdAt: payload.createdAt ? String(payload.createdAt) : null,
               forceResync: sameOpenForm,
             });
+            if (incomingFileCount > localFileCount) {
+              const reloadDraftId = String(eventDraftId || activeId || "").trim();
+              if (reloadDraftId) {
+                void loadPracticeTransferDraft({
+                  draftId: reloadDraftId,
+                  forceResync: false,
+                });
+              }
+            }
             return;
           }
 
