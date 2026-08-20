@@ -1,6 +1,7 @@
 // related files:
 // - web/backend/rules.md
 // - web/backend/modules/admin/admin.routes.js
+// - 2026-08-20: 제조사 정산 잔액은 유료/무료 구분 없이 REV 전액(말일 일괄 지급).
 // - 2026-08-19: 어벗디자인 박스 키=의뢰 사업자+예정출고일. 수신자는 의뢰 사업자명.
 // - 2026-08-19: 어벗디자인 원장 — 수신자/박스 묶음용 mailbox·shippingPackage 메타.
 // - 2026-08-17: PTX 디자인비(+지그)를 기공의뢰 행으로 승격(보철기공비와 동일 의뢰건).
@@ -2261,17 +2262,7 @@ export async function adminGetManufacturerSummary(req, res) {
           settlementEligible: {
             $or: [
               { $eq: ["$type", "PAYOUT"] },
-              {
-                $and: [
-                  { $in: ["$type", ["EARN", "ADJUST"]] },
-                  {
-                    $or: [
-                      { $eq: ["$creditKind", "PAID"] },
-                      { $eq: ["$creditKind", null] },
-                    ],
-                  },
-                ],
-              },
+              { $in: ["$type", ["EARN", "ADJUST"]] },
             ],
           },
         },
@@ -2505,7 +2496,7 @@ export async function adminGetManufacturerSummary(req, res) {
     }
 
     const periodBalanceAmount = normalizeNumber(
-      periodEarnedAmount - periodPaidOutAmount + periodAdjustedAmount,
+      periodEarnedAmount - Math.abs(periodPaidOutAmount) + periodAdjustedAmount,
     );
 
     const balanceByOrg = new Map();
@@ -2525,7 +2516,7 @@ export async function adminGetManufacturerSummary(req, res) {
     for (const v of balanceByOrg.values()) {
       totalBalanceAmount += Math.max(
         0,
-        normalizeNumber(v.earn - v.payout + v.adjust),
+        normalizeNumber(v.earn - Math.abs(v.payout) + v.adjust),
       );
     }
 
@@ -2713,7 +2704,6 @@ export async function adminGetSettlementBusinessOverview(req, res) {
           $match: {
             ownerRole: "manufacturer",
             accountCode: "REV_MANUFACTURER",
-            creditKind: { $in: ["PAID", null] },
             ...occurredMatch,
           },
         },
@@ -2915,6 +2905,7 @@ export async function adminGetSettlementBusinessOverview(req, res) {
           periodPaidSpendShipping: paidSpendShipping,
           periodPaidSpendRequestCount: paidSpendRequestCount,
           periodPaidSpendShippingCount: paidSpendShippingCount,
+          manufacturerEarn: normalizeNumber(mfgPaidRequest + mfgPaidShipping),
           manufacturerPaidEarn: normalizeNumber(mfgPaidRequest + mfgPaidShipping),
           manufacturerPaidRequest: mfgPaidRequest,
           manufacturerPaidShipping: mfgPaidShipping,

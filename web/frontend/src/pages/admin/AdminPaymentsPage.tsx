@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-20: 제조사 지급은 유료/무료 구분 없이 약정 단가 전액(말일 일괄, 미정산 적립).
 // - 2026-08-19: 치과 월 구독료 사업 축 제거(멤버십 폐지).
 // - 2026-08-18: 제조사는 기공소(면세) — 과세 대상에서 제외.
 // - 2026-08-17: 기간 필터 + 영업자·개발운영사 과세(세금계산서) / 제조사·어벗츠·고객 경로 면세(계산서).
@@ -115,6 +116,7 @@ type SettlementBusinessOverview = {
     periodPaidSpendShipping?: number;
     periodPaidSpendRequestCount?: number;
     periodPaidSpendShippingCount?: number;
+    manufacturerEarn?: number;
     manufacturerPaidEarn?: number;
     manufacturerPaidRequest?: number;
     manufacturerPaidShipping?: number;
@@ -799,7 +801,7 @@ export default function AdminPaymentsPage() {
               <>
                 <div>기공소 디자인 → 애크로덴트 → 치과 납품</div>
                 <div className="tabular-nums">
-                  하청 유료 {formatWon(customAbut?.manufacturerPaidEarn)} · 미지급{" "}
+                  하청 {formatWon(customAbut?.manufacturerEarn ?? customAbut?.manufacturerPaidEarn)} · 미정산{" "}
                   {formatWon(manufacturerSummary?.periodBalanceAmount)}
                 </div>
               </>
@@ -853,7 +855,7 @@ export default function AdminPaymentsPage() {
                 <CreditSectionHeader
                   icon={Factory}
                   title="커스텀 어벗 · 제조사 하청"
-                  description="원청(어벗츠)–하청(애크로덴트) 고정단가. 유료·무료 모두 적립하되 지급은 유료만(면세 · 계산서)."
+                  description="원청(어벗츠)–하청(애크로덴트) 고정단가. 고객 유료·무료 크레딧과 무관하게 모든 의뢰에 약정 단가를 지급하며, 말일 일괄 지급 전까지 미정산으로 적립(면세 · 계산서)."
                 />
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                   <CreditStatTile
@@ -893,37 +895,46 @@ export default function AdminPaymentsPage() {
                     hint="면세 · 어벗 1개 / 박스당"
                   />
                   <CreditStatTile
-                    label="하청 유료 미지급"
+                    label="하청 미정산"
                     value={formatWon(manufacturerSummary?.periodBalanceAmount)}
                     hint={`사업자 ${Number(
                       manufacturerSummary?.anchorCount || 0,
-                    ).toLocaleString()}곳`}
+                    ).toLocaleString()}곳 · 말일 일괄`}
                   />
                   <CreditStatTile
-                    label="무료 하청(참고)"
-                    value={formatWon(manufacturerSummary?.periodFreeAmount)}
+                    label="하청 적립"
+                    value={formatWon(
+                      Number(manufacturerSummary?.periodRequestSupply || 0) +
+                        Number(manufacturerSummary?.periodShippingSupply || 0),
+                    )}
                     hint={
                       <>
                         <div>
                           의뢰{" "}
                           {formatWon(
-                            manufacturerSummary?.periodFreeRequestAmount,
+                            manufacturerSummary?.periodRequestSupply,
                           )}{" "}
                           (
                           {Number(
-                            manufacturerSummary?.periodFreeRequestCount || 0,
-                          ).toLocaleString()}
+                            manufacturerSummary?.periodPaidRequestCount || 0,
+                          ) +
+                            Number(
+                              manufacturerSummary?.periodFreeRequestCount || 0,
+                            )}
                           )
                         </div>
                         <div>
                           배송{" "}
                           {formatWon(
-                            manufacturerSummary?.periodFreeShippingAmount,
+                            manufacturerSummary?.periodShippingSupply,
                           )}{" "}
                           (
                           {Number(
-                            manufacturerSummary?.periodFreeShippingCount || 0,
-                          ).toLocaleString()}
+                            manufacturerSummary?.periodPaidShippingCount || 0,
+                          ) +
+                            Number(
+                              manufacturerSummary?.periodFreeShippingCount || 0,
+                            )}
                           )
                         </div>
                       </>
@@ -934,15 +945,17 @@ export default function AdminPaymentsPage() {
                   <CreditStatTile
                     label="의뢰 하청(면세)"
                     value={formatWon(manufacturerSummary?.periodRequestSupply)}
-                    hint={`${Number(
-                      manufacturerSummary?.periodPaidRequestCount || 0,
+                    hint={`${(
+                      Number(manufacturerSummary?.periodPaidRequestCount || 0) +
+                      Number(manufacturerSummary?.periodFreeRequestCount || 0)
                     ).toLocaleString()}건 · ${SETTLEMENT_EXEMPT_INVOICE_LABEL}`}
                   />
                   <CreditStatTile
                     label="배송 하청(면세)"
                     value={formatWon(manufacturerSummary?.periodShippingSupply)}
-                    hint={`${Number(
-                      manufacturerSummary?.periodPaidShippingCount || 0,
+                    hint={`${(
+                      Number(manufacturerSummary?.periodPaidShippingCount || 0) +
+                      Number(manufacturerSummary?.periodFreeShippingCount || 0)
                     ).toLocaleString()}건 · ${SETTLEMENT_EXEMPT_INVOICE_LABEL}`}
                   />
                 </div>

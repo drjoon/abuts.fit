@@ -187,7 +187,7 @@ Notes:
 - 역할별 정산
   - 공통 UI: `src/shared/settlement/settlementUi.tsx` · VAT 카피 `src/shared/settlement/affiliateVat.ts` (의뢰자 크레딧/기공크레딧 최신 스타일)
   - 기공소/어벗츠기공소: `src/features/settings/tabs/LabSettlementPayoutTab.tsx` — 면세 계산서
-  - 제조사: `src/pages/manufacturer/payments/PaymentsPage.tsx` — 거래 원장(일시·지급상태·금액·잔액·거래내역). 유형 열은 생략(모두 커스텀어벗 생산+배송비). **생산·배송은 KST 하루 1행**(의뢰 1건=어벗 1개라 기공의뢰처럼 못 묶음). 클릭 상세는 의뢰/배송을 별 섹션으로 나누고, 그 안에서 수취자(우편함)별. 장부는 공급가(어벗 1개당 9,000, 면세). 무료 크레딧은 지급 0.
+  - 제조사: `src/pages/manufacturer/payments/PaymentsPage.tsx` — 거래 원장(일시·지급상태·금액·잔액·거래내역). 유형 열은 생략(모두 커스텀어벗 생산+배송비). **생산·배송은 KST 하루 1행**(의뢰 1건=어벗 1개라 기공의뢰처럼 못 묶음). 클릭 상세는 의뢰/배송을 별 섹션으로 나누고, 그 안에서 수취자(우편함)별. 장부는 공급가(어벗 1개당 9,000, 면세). 고객 유료·무료 크레딧을 구분하지 않고 약정 단가 전액이 미정산으로 쌓이며, 말일 일괄 지급.
   - 딜러: `src/pages/salesman/SalesmanPaymentsPage.tsx` — 공급가 장부, 지급 시 부가세·세금계산서(실입금=공급가+VAT)
   - 개발운영사: `src/pages/devops/DevopsPaymentsPage.tsx` — 잔여 분배 공급가, 지급 시 부가세·세금계산서(실입금=공급가+VAT)
   - 관리자: `src/pages/admin/AdminPaymentsPage.tsx` — 어벗츠 3사업 축 + 관계사 잔여 분배(어벗츠 면세)
@@ -442,7 +442,7 @@ Notes:
   - 공개 안내/약관: `ServicePage`, `TermsPage`, `HelpPage` — 치과·기공소 경로는 면세·부가세 없음, 크레딧=기공료 선입금(선납 대금).
   - 가격 정책/대시보드: `PricingPolicyDialog` — 치과 고시 어벗디자인으로 생산 1.5만 · 구강스캔으로 디자인+생산 2.5만(구강지그 제외). 기공소는 어벗생산의뢰/기공의뢰수신 동일 고시. 신속 출고 +2,000(1개당) · 배송비 3,500(1박스당). 풀세트·환봉·디자인비+지그 행 없음. 멤버십/구독 행 없음.
   - 관리자 플랫폼 설정「커스텀어벗」: 고시(생산·디자인+생산) + 딜러없음 분배 단가. 멤버/일반·디자인비+지그 카드 없음. 기공소 공급은 레거시 오버레이 안내.
-  - 제조사 정산규칙: 원청–하청 고정단가(의뢰·배송 공급가, 면세). % 분배 안내 금지.
+  - 제조사 정산규칙: 원청–하청 고정단가(의뢰·배송 공급가, 면세). 고객 유료·무료 구분 없이 약정 단가 전액 · 말일 일괄 지급. % 분배 안내 금지.
   - 관리자 고객향 세금계산서 직접발행: 공급가 입력 시 세액 자동 10% 금지(기본 세액 0). 딜러사·개발운영사 `AFFILIATE_TO_ABUTS`만 과세.
 
 - 단일 SSOT 장부 UI 필드 계약(초안):
@@ -523,18 +523,18 @@ Notes:
     - `src/pages/manufacturer/equipment/cnc/components/CompletedMachiningRecordsModal.tsx`
 
 - 제조사 정산(일별) 표시 정책:
-  - 하청 고정단가: **어벗 1개당** 9,000 / 배송 박스당 3,500(면세). 상단 카드·상세는 의뢰/배송을 **분리** 표시(공급가·건수). 유료/무료는 보조 필터(`유료`/`무료`).
+  - 하청 고정단가: **어벗 1개당** 9,000 / 배송 박스당 3,500(면세). 상단 카드·상세는 의뢰/배송을 **분리** 표시(공급가·건수). 유료/무료 필터·카드 구분 없음.
   - 원장 목록은 생산·배송 EARN을 **KST 하루 1행**으로 묶고, 유형 열은 생략한다. 클릭 상세는 의뢰/배송을 별 섹션으로 나누고, 그 안에서 수취자(우편함)별 생산·발송·배송비를 보여준다. 지급/조정은 별행.
-  - 일별 카드 컬럼(daily-summary): `의뢰/배송/환불·지급·조정/지급 순액·참고(유료·무료 분해)`.
+  - 일별 카드 컬럼(daily-summary): `의뢰/배송/환불·지급·조정/지급 순액`.
   - 의뢰/배송 **건수**는 백엔드 유니크 건수 SSOT. (`machining_spend`+`express_surcharge`를 프론트에서 각각 세지 않음.)
   - 일별 목록은 KST **오늘 이후(미도래 일자)를 표시하지 않는다**. `이번달` 프리셋 종료일도 오늘이다.
-  - 제조사 지급 대상은 **유료 하청비만**(면세 · 계산서). 무료는 적립·표시만 하고 지급 0. 상단 카드는 의뢰·배송 분해.
-  - 상단 합계 카드는 `DashboardShell.statsGridClassName`을 명시해 카드가 과도하게 좁아지지 않도록 유지합니다.
+  - 제조사 지급 대상은 **약정 하청비 전액**(면세 · 계산서). 고객 유료·무료 크레딧을 가리지 않는다. 매달 말일 일괄 지급 전까지 상단「미정산」에 쌓인다. 지급 완료분은「지급 합계」.
+  - 상단 합계는 2칸(`미정산` · `지급 합계`). `DashboardShell.statsGridClassName`을 `sm:grid-cols-2`로 두고 카드 높이는 compact.
 
 - 관리자 정산(`AdminPaymentsPage`) 표시 정책:
   - 상단 3사업 축(선택형 카드): (1) 커스텀 어벗 생산·공급 — 기공소 디자인 → 애크로덴트 생산 → 치과 납품(하청 정산) (2) 자동매칭 수수료 (3) 기공소 직접 운영.
   - 집계 API: `GET /api/admin/credits/settlement-business-overview` (기간=`period`/`startDate`/`endDate`).
-    - (1) 의뢰자 유료 소비(`REQUEST_SPEND_COMMIT`/`SHIPPING_SPEND_COMMIT`) + 제조사 하청 보조지표
+    - (1) 의뢰자 유료 소비(`REQUEST_SPEND_COMMIT`/`SHIPPING_SPEND_COMMIT`) + 제조사 하청(유료·무료 약정 단가 전액)
     - (2) `PRACTICE_TRANSFER_ESCROW_RELEASE.meta.abutsRevenueAmount`
     - (3) `internalLab` `LAB_SETTLEMENT_CREDIT` 적립
   - 카드 선택 시 해당 사업 상세 패널. 하단「관계사 잔여 분배」는 딜러사·개발운영사(과세·세금계산서)·제조사·어벗츠(면세·계산서).
@@ -813,7 +813,7 @@ Notes:
   - 원장 `GET /api/manufacturer/credits/ledger`는 생산·배송 EARN을 **KST 하루 1행**으로 묶어 반환한다. 목록에서 유형은 생략. 상세(`mailboxGroups`)는 의뢰/배송 섹션으로 나누고, 그 안에서 수취자(우편함)별 생산·발송·배송비. 지급/조정은 별행.
   - 백엔드 `GET /api/manufacturer/credits/daily-summary`는 `LedgerLine` 집계 결과를 반환하며, 프론트는 해당 응답을 SSOT로 사용합니다.
   - 건수 필드(`earnRequest*Count`, `earnShipping*Count`)는 의뢰/패키지 `refId` 유니크이며, 라인·저널 수가 아니다.
-  - 의뢰/배송 금액은 공급가 필드를 우선 표시. paid/free 분해는 `earnRequestPaid*` 등 SSOT.
+  - 의뢰/배송 금액은 공급가 필드를 우선 표시. 유료/무료 분해 필드는 데이터 검증용이며 화면에서 구분하지 않는다.
   - 분해 필드 누락/합계 불일치 시 행을 화면에서 제외하고 오류 토스트/배너로 예외를 노출합니다.
   - 운영자 확인은 관리자 대시보드의 `systemAlerts` 경고를 통해 추적합니다.
 

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-20: SettlementStatCard compact(제조사 정산 요약 높이 축소).
 // - 2026-08-17: 의뢰자 크레딧/기공크레딧 정산 최신 스타일을 역할 정산 페이지 공통 UI로 추출.
 // related files:
 // - web/frontend/src/shared/components/CreditLedgerModal.tsx
@@ -36,6 +37,7 @@ export function SettlementStatCard({
   tone = "default",
   selected,
   onClick,
+  compact = false,
 }: {
   label: string;
   value: number | string;
@@ -45,6 +47,7 @@ export function SettlementStatCard({
   tone?: SettlementStatTone;
   selected?: boolean;
   onClick?: () => void;
+  compact?: boolean;
 }) {
   const selectedTone = Boolean(onClick) && selected;
   const hintNode =
@@ -56,7 +59,10 @@ export function SettlementStatCard({
               role="note"
               onClick={(event) => event.stopPropagation()}
               onKeyDown={(event) => event.stopPropagation()}
-              className="mx-auto inline-block cursor-help border-b border-dotted border-slate-400 text-[11px] text-slate-500 sm:text-xs"
+              className={cn(
+                "mx-auto inline-block cursor-help border-b border-dotted border-slate-400 text-slate-500",
+                compact ? "text-[10px]" : "text-[11px] sm:text-xs",
+              )}
             >
               {hint}
             </span>
@@ -70,13 +76,19 @@ export function SettlementStatCard({
         </Tooltip>
       </TooltipProvider>
     ) : hint ? (
-      <div className="text-center text-[11px] leading-relaxed text-slate-500 sm:text-xs">
+      <div
+        className={cn(
+          "text-center leading-relaxed text-slate-500",
+          compact ? "text-[10px]" : "text-[11px] sm:text-xs",
+        )}
+      >
         {hint}
       </div>
     ) : null;
 
   const className = cn(
-    "flex min-h-[7.25rem] w-full flex-col justify-center rounded-2xl border px-4 py-3.5 shadow-sm transition-colors",
+    "flex w-full flex-col justify-center rounded-2xl border shadow-sm transition-colors",
+    compact ? "min-h-0 px-3 py-2" : "min-h-[7.25rem] px-4 py-3.5",
     selectedTone
       ? "border-primary-muted bg-primary-soft/40 ring-1 ring-primary-muted/70"
       : tone === "primary"
@@ -90,12 +102,18 @@ export function SettlementStatCard({
 
   const inner = (
     <>
-      <div className="text-center text-[13px] font-medium text-slate-500">
+      <div
+        className={cn(
+          "text-center font-medium text-slate-500",
+          compact ? "text-xs" : "text-[13px]",
+        )}
+      >
         {label}
       </div>
       <div
         className={cn(
-          "mt-1 text-center text-2xl font-semibold tabular-nums tracking-tight sm:text-[1.65rem]",
+          "text-center font-semibold tabular-nums tracking-tight",
+          compact ? "mt-0.5 text-xl" : "mt-1 text-2xl sm:text-[1.65rem]",
           selectedTone || tone === "primary"
             ? "text-primary-strong"
             : "text-slate-900",
@@ -104,7 +122,12 @@ export function SettlementStatCard({
         {typeof value === "number" ? formatWon(value) : value}
       </div>
       {hintNode || footer ? (
-        <div className="mt-2.5 border-t border-slate-100/80 pt-2.5 text-center">
+        <div
+          className={cn(
+            "border-t border-slate-100/80 text-center",
+            compact ? "mt-1.5 pt-1.5" : "mt-2.5 pt-2.5",
+          )}
+        >
           {hintNode}
           {footer}
         </div>

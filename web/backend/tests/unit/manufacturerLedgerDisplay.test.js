@@ -124,6 +124,8 @@ describe("manufacturerLedgerDisplay", () => {
     expect(grouped[0].ymd).toBe("2026-08-13");
     expect(grouped[0].amount).toBe(27000);
     expect(grouped[0].requestCount).toBe(3);
+    expect(grouped[0].paidAmount).toBe(18000);
+    expect(grouped[0].freeAmount).toBe(9000);
     expect(grouped[0].shippingCount).toBe(0);
     expect(grouped[0].displayLabel).toBe("커스텀어벗 생산");
     expect(grouped[0].mailboxGroups).toHaveLength(2);

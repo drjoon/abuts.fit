@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-20: 제조사 정산은 유료/무료를 가리지 않고 약정 단가 전액. 말일 지급 전까지 미정산.
 // - 2026-08-17: 제조사 장부는 의뢰 1건=어벗 1개라 KST 하루로 묶고, 상세는 우편함(수취자)별.
 // - 2026-08-17: 기공의뢰 생산(PTX)도 의뢰 집계에 포함. 제조사 고정단가 1개당.
 // - 2026-08-07: 일별 정산 건수를 저널/라인 수가 아닌 의뢰·패키지 refId 유니크로 집계
@@ -340,17 +341,7 @@ function buildManufacturerEarnCollapseAndGroupStages({ groupByYmd }) {
         adjustAmount: {
           $sum: {
             $cond: [
-              {
-                $and: [
-                  { $eq: ["$_id.eventType", "ADJUST"] },
-                  {
-                    $or: [
-                      { $eq: ["$_id.creditKind", "PAID"] },
-                      { $eq: ["$_id.creditKind", null] },
-                    ],
-                  },
-                ],
-              },
+              { $eq: ["$_id.eventType", "ADJUST"] },
               "$total",
               0,
             ],
@@ -1171,7 +1162,7 @@ export async function getManufacturerCreditDailySummary(req, res) {
         Number(targetRow.earnShippingFreeTotal || 0) ||
         shippingSupply + shippingVat;
 
-      // 표시용 총액(유료+무료). 지급 순액은 유료만.
+      // 의뢰/배송 총액(유료+무료). 지급 순액도 동일하게 전액.
       targetRow.earnRequestAmount = requestSupply;
       targetRow.earnRequestVat = requestVat;
       targetRow.earnRequestTotal = requestTotal;
@@ -1185,18 +1176,9 @@ export async function getManufacturerCreditDailySummary(req, res) {
         Number(targetRow.earnShippingPaidCount || 0) +
         Number(targetRow.earnShippingFreeCount || 0);
 
-      const paidRequestTotal =
-        Number(targetRow.earnRequestPaidTotal || 0) ||
-        Number(targetRow.earnRequestPaidAmount || 0) +
-          Number(targetRow.earnRequestPaidVat || 0);
-      const paidShippingTotal =
-        Number(targetRow.earnShippingPaidTotal || 0) ||
-        Number(targetRow.earnShippingPaidAmount || 0) +
-          Number(targetRow.earnShippingPaidVat || 0);
-
       const payoutEligibleTotal =
-        paidRequestTotal +
-        paidShippingTotal +
+        requestTotal +
+        shippingTotal +
         Number(targetRow.refundAmount || 0) +
         Number(targetRow.payoutAmount || 0) +
         Number(targetRow.adjustAmount || 0);
@@ -1204,7 +1186,7 @@ export async function getManufacturerCreditDailySummary(req, res) {
       const freeRequestNet = Number(targetRow.earnRequestFreeAmount || 0);
       const freeShippingNet = Number(targetRow.earnShippingFreeAmount || 0);
 
-      // 지급 순액: 유료만(면세 공급가). 무료는 표시·확인용.
+      // 지급 순액: 유료·무료 모두(면세 공급가). 말일 일괄 지급 전까지 미정산으로 남음.
       targetRow.netPayoutAmount = payoutEligibleTotal;
       targetRow.netPaidAmount = payoutEligibleTotal;
       targetRow.netFreeRequestAmount = freeRequestNet;

@@ -6,10 +6,11 @@
 // - web/frontend/src/shared/date/kst.ts
 // - web/frontend/src/features/settings/tabs/LabSettlementPayoutTab.tsx
 // change-log:
+// - 2026-08-20: 유료/무료 구분 제거. 약정 단가 전액이 미정산으로 쌓이고 말일 일괄 지급. 요약 2칸·높이 축소.
 // - 2026-08-17: 테이블이 남은 높이를 채워 바깥 스크롤을 없애고 표 스크롤만 남김.
 // - 2026-08-17: 유형 열 생략(모두 커스텀어벗 생산+배송비). 상세 모달은 의뢰/배송 분리.
 // - 2026-08-17: 생산·배송 원장을 KST 하루로 묶고, 클릭 시 수취자(우편함)별 상세.
-// - 2026-08-18: 어벗 1개당 9,000(면세). 무료 크레딧은 지급 0. 기공의뢰 생산도 같은 라벨.
+// - 2026-08-18: 어벗 1개당 9,000(면세). 기공의뢰 생산도 같은 라벨.
 // - 2026-08-17: 정산 내역을 의뢰자 크레딧과 같은 거래 원장으로 표시. VAT는 지급 안내 한 줄.
 // - 2026-08-11: 기공소 기공크레딧 정산과 동일 UX — 요약 카드 축소·(N건), 일자 제거, 액션 세로열, 초기화 제거.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -44,7 +45,6 @@ import {
   formatWon,
 } from "@/shared/settlement/affiliateVat";
 import {
-  SettlementFilterChip,
   SettlementPolicyDialog,
   SettlementPolicySection,
   SettlementSortIcon,
@@ -151,38 +151,9 @@ const manufacturerPayoutBadge = (row: LedgerItem) => {
       className: "border-emerald-200 bg-emerald-50 text-emerald-800",
     };
   }
-  if (row.groupKind === "daily") {
-    const paid = Number(row.paidAmount || 0);
-    const free = Number(row.freeAmount || 0);
-    if (paid > 0 && free > 0) {
-      return {
-        label: "일부 지급 0",
-        className: "border-sky-200 bg-sky-50 text-sky-800",
-      };
-    }
-    if (free > 0 && paid <= 0) {
-      return {
-        label: "지급 0",
-        className: "border-slate-200 bg-slate-50 text-slate-600",
-      };
-    }
-    if (paid > 0 || row.type === "EARN") {
-      return {
-        label: "미지급",
-        className: "border-sky-200 bg-sky-50 text-sky-800",
-      };
-    }
-  }
-  const kind = String(row.creditKind || "");
-  if (kind === "FREE_REQUEST" || kind === "FREE_SHIPPING") {
+  if (row.groupKind === "daily" || row.type === "EARN") {
     return {
-      label: "지급 0",
-      className: "border-slate-200 bg-slate-50 text-slate-600",
-    };
-  }
-  if (row.type === "EARN") {
-    return {
-      label: "미지급",
+      label: "미정산",
       className: "border-sky-200 bg-sky-50 text-sky-800",
     };
   }
@@ -358,11 +329,23 @@ const validateSnapshotRow = (
   }
 
   const requestTotalWithVat =
-    Number(r.earnRequestPaidTotal ?? 0) ||
-    paidAmount + Number(r.earnRequestPaidVat || 0);
+    r.earnRequestTotal !== undefined
+      ? Number(r.earnRequestTotal || 0)
+      : Number(r.earnRequestPaidTotal || 0) +
+        Number(r.earnRequestFreeTotal || 0) ||
+        paidAmount +
+          freeAmount +
+          Number(r.earnRequestPaidVat || 0) +
+          Number(r.earnRequestFreeVat || 0);
   const shippingTotalWithVat =
-    Number(r.earnShippingPaidTotal ?? 0) ||
-    shippingPaidAmount + Number(r.earnShippingPaidVat || 0);
+    r.earnShippingTotal !== undefined
+      ? Number(r.earnShippingTotal || 0)
+      : Number(r.earnShippingPaidTotal || 0) +
+        Number(r.earnShippingFreeTotal || 0) ||
+        shippingPaidAmount +
+          shippingFreeAmount +
+          Number(r.earnShippingPaidVat || 0) +
+          Number(r.earnShippingFreeVat || 0);
   const expectedPayoutNet =
     requestTotalWithVat +
     shippingTotalWithVat +
@@ -370,7 +353,7 @@ const validateSnapshotRow = (
     payoutAmount +
     adjustAmount;
   if (expectedPayoutNet !== netAmount) {
-    return { valid: false, reason: "지급 순액(유료) 계산값 불일치" };
+    return { valid: false, reason: "지급 순액 계산값 불일치" };
   }
 
   if (
@@ -411,9 +394,6 @@ export const ManufacturerPaymentPage = () => {
 
   const { period, setPeriod } = usePeriodStore();
   const [q, setQ] = useState("");
-  const [requestSettlementFilter, setRequestSettlementFilter] = useState<
-    "all" | "paid" | "free"
-  >("all");
   const [paymentSort, setPaymentSort] = useState<{
     key: PaymentSortKey;
     direction: SortDirection;
@@ -441,7 +421,6 @@ export const ManufacturerPaymentPage = () => {
     [],
   );
   const [snapshotAnomalyMessage, setSnapshotAnomalyMessage] = useState("");
-  const anyLoading = loading || snapLoading || ledgerLoading;
 
   const ledgerScrollRef = useRef<HTMLDivElement | null>(null);
   const paymentScrollRef = useRef<HTMLDivElement | null>(null);
@@ -471,7 +450,6 @@ export const ManufacturerPaymentPage = () => {
       const params = new URLSearchParams({
         page: String(p),
         limit: String(PAGE_SIZE),
-        requestSettlement: requestSettlementFilter,
       });
       const range = periodToYmdRange(period);
       if (range) {
@@ -481,7 +459,7 @@ export const ManufacturerPaymentPage = () => {
       if (q.trim()) params.set("q", q.trim());
       return params.toString();
     },
-    [period, q, requestSettlementFilter],
+    [period, q],
   );
 
   const loadLedger = useCallback(
@@ -643,7 +621,6 @@ export const ManufacturerPaymentPage = () => {
     tab,
     period,
     q,
-    requestSettlementFilter,
     loadPayments,
     loadLedger,
   ]);
@@ -691,93 +668,31 @@ export const ManufacturerPaymentPage = () => {
   };
 
   const snapshotTotals = useMemo(() => {
-    let payoutEligibleTotal = 0;
+    let unsettledTotal = 0;
     let requestSupplyTotal = 0;
-    let requestVatTotal = 0;
-    let requestTotalWithVat = 0;
     let requestCountTotal = 0;
     let shippingSupplyTotal = 0;
-    let shippingVatTotal = 0;
-    let shippingTotalWithVat = 0;
     let shippingCountTotal = 0;
-
-    let paidRequestTotal = 0;
-    let paidRequestCountTotal = 0;
-    let paidShippingTotal = 0;
-    let paidShippingCountTotal = 0;
-
-    let freeRequestTotal = 0;
-    let freeRequestCountTotal = 0;
-    let freeShippingTotal = 0;
-    let freeShippingCountTotal = 0;
-
     let payoutTotal = 0;
     let payoutCount = 0;
 
     for (const row of snapItems) {
-      payoutEligibleTotal += Number(
-        row.netPayoutAmount ?? row.netAmount ?? 0,
-      );
-
-      // 지급 카드: 유료 의뢰/배송만
-      requestSupplyTotal += Number(row.earnRequestPaidAmount || 0);
-      requestVatTotal += Number(row.earnRequestPaidVat || 0);
-      requestTotalWithVat += Number(
-        row.earnRequestPaidTotal ??
-          Number(row.earnRequestPaidAmount || 0) +
-            Number(row.earnRequestPaidVat || 0),
-      );
-      requestCountTotal += Number(row.earnRequestPaidCount || 0);
-
-      shippingSupplyTotal += Number(row.earnShippingPaidAmount || 0);
-      shippingVatTotal += Number(row.earnShippingPaidVat || 0);
-      shippingTotalWithVat += Number(
-        row.earnShippingPaidTotal ??
-          Number(row.earnShippingPaidAmount || 0) +
-            Number(row.earnShippingPaidVat || 0),
-      );
-      shippingCountTotal += Number(row.earnShippingPaidCount || 0);
-
-      paidRequestTotal += Number(row.earnRequestPaidAmount ?? 0);
-      paidRequestCountTotal += Number(row.earnRequestPaidCount ?? 0);
-      paidShippingTotal += Number(row.earnShippingPaidAmount ?? 0);
-      paidShippingCountTotal += Number(row.earnShippingPaidCount ?? 0);
-
-      freeRequestTotal += Number(
-        row.netFreeRequestAmount ?? row.earnRequestFreeAmount ?? 0,
-      );
-      freeRequestCountTotal += Number(row.earnRequestFreeCount ?? 0);
-
-      freeShippingTotal += Number(
-        row.netFreeShippingAmount ?? row.earnShippingFreeAmount ?? 0,
-      );
-      freeShippingCountTotal += Number(row.earnShippingFreeCount ?? 0);
-
+      unsettledTotal += Number(row.netPayoutAmount ?? row.netAmount ?? 0);
+      requestSupplyTotal += Number(row.earnRequestAmount || 0);
+      requestCountTotal += Number(row.earnRequestCount || 0);
+      shippingSupplyTotal += Number(row.earnShippingAmount || 0);
+      shippingCountTotal += Number(row.earnShippingCount || 0);
       const payoutAmount = Number(row.payoutAmount || 0);
-      payoutTotal += payoutAmount;
+      payoutTotal += Math.abs(payoutAmount);
       if (payoutAmount !== 0) payoutCount += 1;
     }
 
     return {
-      payoutEligibleTotal,
+      unsettledTotal: Math.max(0, unsettledTotal),
       requestSupplyTotal,
-      requestVatTotal,
-      requestTotalWithVat,
       requestCountTotal,
       shippingSupplyTotal,
-      shippingVatTotal,
-      shippingTotalWithVat,
       shippingCountTotal,
-      paidUnsettledTotal: paidRequestTotal + paidShippingTotal,
-      paidRequestTotal,
-      paidRequestCountTotal,
-      paidShippingTotal,
-      paidShippingCountTotal,
-      freeRequestTotal,
-      freeRequestCountTotal,
-      freeShippingTotal,
-      freeShippingCountTotal,
-      freeUnsettledTotal: freeRequestTotal + freeShippingTotal,
       payoutTotal,
       payoutCount,
     };
@@ -864,62 +779,35 @@ export const ManufacturerPaymentPage = () => {
       title="정산 내역"
       subtitle=""
       fillHeight
-      statsGridClassName="grid grid-cols-1 gap-3 sm:grid-cols-3"
+      statsGridClassName="grid grid-cols-1 gap-3 sm:grid-cols-2"
       stats={
         <>
           <SettlementStatCard
-            label="유료 미지급"
-            value={snapshotTotals.paidUnsettledTotal}
+            compact
+            label="미정산"
+            value={snapshotTotals.unsettledTotal}
             tone="primary"
-            selected={tab === "ledger" && requestSettlementFilter !== "free"}
-            onClick={() => {
-              setRequestSettlementFilter("paid");
-              setTab("ledger");
-            }}
-            hint="면세 · 공급가"
+            selected={tab === "ledger"}
+            onClick={() => setTab("ledger")}
+            hint="말일 일괄 지급 · 면세"
             hintTooltip={SETTLEMENT_EXEMPT_PAYOUT_NOTICE}
             footer={
-              <div className="space-y-0.5 text-[11px] tabular-nums text-slate-600 sm:text-xs">
-                <div>
-                  의뢰 {formatWon(snapshotTotals.paidRequestTotal)} (
-                  {snapshotTotals.paidRequestCountTotal}건)
-                </div>
-                <div>
-                  배송 {formatWon(snapshotTotals.paidShippingTotal)} (
-                  {snapshotTotals.paidShippingCountTotal}건)
-                </div>
+              <div className="text-[11px] tabular-nums text-slate-600">
+                의뢰 {formatWon(snapshotTotals.requestSupplyTotal)} (
+                {snapshotTotals.requestCountTotal}건) · 배송{" "}
+                {formatWon(snapshotTotals.shippingSupplyTotal)} (
+                {snapshotTotals.shippingCountTotal}건)
               </div>
             }
           />
           <SettlementStatCard
-            label="무료 미정산"
-            value={snapshotTotals.freeUnsettledTotal}
-            selected={tab === "ledger" && requestSettlementFilter === "free"}
-            onClick={() => {
-              setRequestSettlementFilter("free");
-              setTab("ledger");
-            }}
-            hint="참고 · 지급 0"
-            footer={
-              <div className="space-y-0.5 text-[11px] tabular-nums text-slate-600 sm:text-xs">
-                <div>
-                  의뢰 {formatWon(snapshotTotals.freeRequestTotal)} (
-                  {snapshotTotals.freeRequestCountTotal}건)
-                </div>
-                <div>
-                  배송 {formatWon(snapshotTotals.freeShippingTotal)} (
-                  {snapshotTotals.freeShippingCountTotal}건)
-                </div>
-              </div>
-            }
-          />
-          <SettlementStatCard
+            compact
             label="지급 합계"
             value={snapshotTotals.payoutTotal}
             selected={tab === "payments"}
             onClick={() => setTab("payments")}
             footer={
-              <div className="text-xs text-muted-foreground">
+              <div className="text-[11px] text-muted-foreground">
                 {snapshotTotals.payoutCount}건 · 면세 {SETTLEMENT_EXEMPT_INVOICE_LABEL}
               </div>
             }
@@ -935,29 +823,6 @@ export const ManufacturerPaymentPage = () => {
           >
             <div className="flex shrink-0 flex-wrap items-center gap-2">
               <PeriodFilter value={period} onChange={setPeriod} />
-              <div className="flex items-center gap-1">
-                <SettlementFilterChip
-                  active={requestSettlementFilter === "all"}
-                  onClick={() => setRequestSettlementFilter("all")}
-                  disabled={anyLoading}
-                >
-                  전체
-                </SettlementFilterChip>
-                <SettlementFilterChip
-                  active={requestSettlementFilter === "paid"}
-                  onClick={() => setRequestSettlementFilter("paid")}
-                  disabled={anyLoading}
-                >
-                  유료
-                </SettlementFilterChip>
-                <SettlementFilterChip
-                  active={requestSettlementFilter === "free"}
-                  onClick={() => setRequestSettlementFilter("free")}
-                  disabled={anyLoading}
-                >
-                  무료
-                </SettlementFilterChip>
-              </div>
               <Input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
@@ -972,8 +837,9 @@ export const ManufacturerPaymentPage = () => {
                   <div className="flex gap-2.5">
                     <HandCoins className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
                     <p>
-                      어벗 1개당 9,000원(면세). 유료·무료 모두 적립하되, 지급은
-                      유료만(무료 크레딧 지급 0).
+                      어벗 1개당 9,000원(면세). 고객이 유료·무료 크레딧 중 무엇으로
+                      결제했는지는 구분하지 않으며, 모든 의뢰건에 약정 단가를
+                      지급합니다.
                     </p>
                   </div>
                 </SettlementPolicySection>
@@ -981,9 +847,18 @@ export const ManufacturerPaymentPage = () => {
                   <div className="flex gap-2.5">
                     <ReceiptText className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
                     <p>
-                      발송 패키지 1박스당 3,500원(면세). 고객(치과·기공소)→어벗츠
-                      배송비는 면세 수취 후, 제조사에는 배송비(어벗츠→제조사)로
-                      지급합니다.
+                      발송 패키지 1박스당 3,500원(면세). 유료·무료 구분 없이 약정
+                      단가를 지급합니다. 고객(치과·기공소)→어벗츠 배송비는 면세
+                      수취 후, 제조사에는 배송비(어벗츠→제조사)로 지급합니다.
+                    </p>
+                  </div>
+                </SettlementPolicySection>
+                <SettlementPolicySection title="월 지급">
+                  <div className="flex gap-2.5">
+                    <CalendarClock className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+                    <p>
+                      KST 매달 말일 기준으로 지난달 원장을 일괄 지급합니다. 지급
+                      전까지 적립액은 미정산 잔액으로 쌓입니다.
                     </p>
                   </div>
                 </SettlementPolicySection>

@@ -5,6 +5,7 @@
 // - web/backend/services/creditRevenuePolicy.service.js
 // - web/backend/utils/creditSettingsDefaults.js
 // change-log:
+// - 2026-08-20: 제조사 지급 잔액은 고객 유료/무료 크레딧을 가리지 않고 REV 전액(말일 일괄 지급).
 // - 2026-08-18: 제조사는 기공소(면세) — TAXABLE_SETTLEMENT_ROLES에서 제외. 배치 확정 Draft SSOT 추가.
 // - 2026-08-17: 영업자·개발운영사 지급 시 VAT 합산(입금·세금계산서·GL).
 import LedgerJournal from "../models/ledgerJournal.model.js";
@@ -114,13 +115,24 @@ export function resolveSettlementPayoutAmounts({
   };
 }
 
+/** 제조사는 고객 유료/무료와 무관하게 EARN/ADJUST 전액이 지급 대상. 그 외는 유료만. */
+function affiliatePayoutEarnMatch(ownerRole) {
+  if (ownerRole === "manufacturer") {
+    return { kind: { $in: ["EARN", "ADJUST"] } };
+  }
+  return {
+    kind: { $in: ["EARN", "ADJUST"] },
+    creditKind: { $in: ["PAID", null] },
+  };
+}
+
 export async function computeAffiliateSettlementBalance({
   ownerRole,
   ownerAnchorId,
   accountCode = AFFILIATE_SETTLEMENT_ACCOUNTS[ownerRole],
 }) {
   if (!accountCode) throw new Error("Unsupported affiliate ownerRole.");
-  // 제조사·딜러사·개발운영사 하청/수수료: 지급은 유료만, 잔액은 공급가(amountExcludingVat).
+  // 잔액은 공급가(amountExcludingVat). 제조사=전액(말일 일괄), 딜러사·개발운영사=유료만.
   const rows = await LedgerLine.aggregate([
     { $match: { ownerRole, ownerId: ownerAnchorId, accountCode } },
     {
@@ -154,13 +166,7 @@ export async function computeAffiliateSettlementBalance({
     },
     {
       $match: {
-        $or: [
-          { kind: "PAYOUT" },
-          {
-            kind: { $in: ["EARN", "ADJUST"] },
-            creditKind: { $in: ["PAID", null] },
-          },
-        ],
+        $or: [{ kind: "PAYOUT" }, affiliatePayoutEarnMatch(ownerRole)],
       },
     },
     { $group: { _id: "$kind", total: { $sum: "$base" } } },
@@ -174,7 +180,8 @@ export async function computeAffiliateSettlementBalance({
     else if (row._id === "ADJUST") adjust += Number(row.total || 0);
     else earn += Number(row.total || 0);
   }
-  return Math.max(0, Math.round(earn - payout + adjust));
+  // 제조사 PAYOUT 라인은 음수(면세 차감), 딜러사·개발운영사는 양수. 부호와 무관하게 지급액을 뺀다.
+  return Math.max(0, Math.round(earn - Math.abs(payout) + adjust));
 }
 
 export async function computeSettlementBalance({ role, businessAnchorId }) {

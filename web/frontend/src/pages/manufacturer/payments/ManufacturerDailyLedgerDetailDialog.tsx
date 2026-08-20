@@ -2,6 +2,7 @@
 // - web/frontend/src/pages/manufacturer/payments/PaymentsPage.tsx
 // - web/backend/utils/manufacturerLedgerDisplay.js
 // change-log:
+// - 2026-08-20: 유료/무료 지급 라벨 제거(약정 단가 전액이 미정산).
 // - 2026-08-17: 수취자 건별 세부는 Collapsible, 초기 닫힘.
 // - 2026-08-17: 상세는 의뢰/배송을 별 섹션으로 나눈다. 유형 라벨은 생략.
 // - 2026-08-17: 제조사 일별 정산 행 클릭 시 수취자(우편함)별 생산·발송 상세.
@@ -54,13 +55,6 @@ export type ManufacturerDailyLedgerDetail = {
 };
 
 type LedgerSectionKind = "request" | "shipping";
-
-const creditKindLabel = (kind?: string | null) => {
-  const raw = String(kind || "");
-  if (raw === "PAID") return "미지급";
-  if (raw.startsWith("FREE")) return "지급 0";
-  return "";
-};
 
 const itemKindPrefix = (
   item: ManufacturerLedgerMailboxItem,
@@ -184,11 +178,6 @@ function MailboxGroupList({
                             )}
                           >
                             {formatWonWithUnit(item.amount)}
-                          </p>
-                        ) : null}
-                        {creditKindLabel(item.creditKind) ? (
-                          <p className="text-[10px] text-muted-foreground">
-                            {creditKindLabel(item.creditKind)}
                           </p>
                         ) : null}
                       </div>
