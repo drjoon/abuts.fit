@@ -18,6 +18,10 @@
 // - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // - web/frontend/src/shared/components/practice/LabReceiveWorkUploadDialog.tsx
+// - web/frontend/src/shared/practice/labReceiveCalendarDateKey.ts
+// - web/backend/utils/labReceiveCalendarDateKey.util.js
+// - web/backend/controllers/users/user.controller.js
+// - 2026-08-20: 기공의뢰수신 캘린더 날짜 뱃지 기본=치과도착일. 계정 preferences에 저장.
 // - 2026-08-19: 리메이크는 공정 상태색 + 이중 외곽선.
 // - 2026-08-19: 기공의뢰수신 캘린더 칩·상단 뱃지를 상태색으로 구분.
 // - 2026-08-20: 할증 의뢰건 캘린더 칩에 할증률(예: 1.2x 할증) 표시.
@@ -193,6 +197,7 @@ import {
   resolvePracticeTransferListToothNumbers,
 } from "@/shared/components/practice/PracticeRecentTransferListCardDetail";
 import { toKstYmd } from "@/shared/date/kst";
+import { normalizeLabReceiveCalendarDateKey } from "@/shared/practice/labReceiveCalendarDateKey";
 import {
   DEFAULT_HIDDEN_WEEKDAYS,
   PRACTICE_STATUS_FILTER_BADGE_CLASS,
@@ -404,6 +409,12 @@ export function RequestorPracticeReceivePage({
 }) {
   const token = useAuthStore((s) => s.token);
   const user = useAuthStore((s) => s.user);
+  const storedCalendarDateKey = useAuthStore(
+    (s) => s.user?.labReceiveCalendarDateKey,
+  );
+  const setStoredCalendarDateKey = useAuthStore(
+    (s) => s.setLabReceiveCalendarDateKey,
+  );
   const navigate = useNavigate();
   const { period, setPeriod } = usePeriodStore();
   const { toast } = useToast();
@@ -465,11 +476,41 @@ export function RequestorPracticeReceivePage({
     | "포장.발송"
     | "리메이크"
   >("all");
-  const [dateKey, setDateKey] = useState<PracticeCalendarDateKey>("orderDate");
+  const [dateKey, setDateKey] = useState<PracticeCalendarDateKey>(() =>
+    normalizeLabReceiveCalendarDateKey(storedCalendarDateKey),
+  );
   const [cursorYmd, setCursorYmd] = useState(() => toKstYmd(new Date()) || "");
   const [hiddenWeekdays, setHiddenWeekdays] = useState<number[]>([
     ...DEFAULT_HIDDEN_WEEKDAYS,
   ]);
+
+  useEffect(() => {
+    if (
+      storedCalendarDateKey !== "orderDate" &&
+      storedCalendarDateKey !== "arrivalDate"
+    ) {
+      return;
+    }
+    setDateKey(storedCalendarDateKey);
+  }, [storedCalendarDateKey]);
+
+  const handleCalendarDateKeyChange = useCallback(
+    (key: PracticeCalendarDateKey) => {
+      const next = normalizeLabReceiveCalendarDateKey(key);
+      setDateKey(next);
+      setStoredCalendarDateKey(next);
+      if (!token) return;
+      void apiFetch({
+        path: "/api/users/lab-receive-calendar-date-key",
+        method: "PUT",
+        token,
+        jsonBody: { dateKey: next },
+      }).catch(() => {
+        // 저장 실패는 UX를 막지 않음 — 다음 로그인 시 서버 값으로 복원
+      });
+    },
+    [setStoredCalendarDateKey, token],
+  );
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedTransfer, setSelectedTransfer] = useState<ReceivedPracticeTransfer | null>(null);
@@ -4387,7 +4428,7 @@ export function RequestorPracticeReceivePage({
           dateKey={dateKey}
           cursorYmd={cursorYmd}
           onCursorChange={setCursorYmd}
-          onDateKeyChange={setDateKey}
+          onDateKeyChange={handleCalendarDateKeyChange}
           onSelectItem={(item) => {
             const transfer = calendarTransferById.get(item.id);
             if (transfer) void openTransferDialog(transfer);

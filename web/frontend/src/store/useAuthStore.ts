@@ -5,10 +5,12 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/features/layout/AccountSwitcher.tsx
 // - web/frontend/src/features/layout/WorkspaceModeSwitch.tsx
-// - web/frontend/src/shared/workspace/workspaceMode.ts
-// - web/backend/controllers/auth/auth.controller.js
+// - web/frontend/src/shared/practice/labReceiveCalendarDateKey.ts
+// - web/backend/utils/labReceiveCalendarDateKey.util.js
+// - web/backend/models/user.model.js
 // - web/backend/modules/auth/auth.routes.js
 // - web/backend/controllers/users/user.controller.js
+// - 2026-08-20: 계정 preferences.labReceiveCalendarDateKey (기공의뢰 캘린더, 기본 도착일)
 // - 2026-08-15: 계정(개인) preferences.workspaceMode 로그인·전환에 반영 (기본 express)
 // - 2026-08-15: 탭 간 localStorage 인증 SSOT — stale 탭이 다른 계정 세션을 덮어쓰지 않게 가드
 import { create } from "zustand";
@@ -26,6 +28,10 @@ import {
   normalizeWorkspaceMode,
   type WorkspaceMode,
 } from "@/shared/workspace/workspaceMode";
+import {
+  normalizeLabReceiveCalendarDateKey,
+  type LabReceiveCalendarDateKey,
+} from "@/shared/practice/labReceiveCalendarDateKey";
 
 const AUTH_TOKEN_KEY = "abuts_auth_token";
 const AUTH_REFRESH_TOKEN_KEY = "abuts_auth_refresh_token";
@@ -75,6 +81,8 @@ export interface User {
   lastDashboardPath?: string | null;
   /** 계정(개인) 단위 UI 모드. 기본 엑스퍼트 */
   workspaceMode?: WorkspaceMode;
+  /** 기공의뢰·기공의뢰수신 캘린더 날짜 뱃지. 기본 치과도착일 */
+  labReceiveCalendarDateKey?: LabReceiveCalendarDateKey;
 }
 
 const normalizeApiUser = (u: unknown): User | null => {
@@ -179,6 +187,15 @@ const normalizeApiUser = (u: unknown): User | null => {
         prefs?.workspaceMode ?? row.workspaceMode,
       );
     })(),
+    labReceiveCalendarDateKey: (() => {
+      const prefs =
+        row.preferences && typeof row.preferences === "object"
+          ? (row.preferences as Record<string, unknown>)
+          : null;
+      return normalizeLabReceiveCalendarDateKey(
+        prefs?.labReceiveCalendarDateKey ?? row.labReceiveCalendarDateKey,
+      );
+    })(),
   };
 };
 
@@ -212,6 +229,7 @@ interface AuthState {
   setUser: (user: User | null) => void;
   setLastDashboardPath: (path: string | null) => void;
   setWorkspaceMode: (mode: WorkspaceMode) => void;
+  setLabReceiveCalendarDateKey: (dateKey: LabReceiveCalendarDateKey) => void;
   logout: () => void;
 }
 
@@ -579,6 +597,21 @@ export const useAuthStore = create<AuthState>((set, get) => {
       const next = {
         ...current,
         workspaceMode: normalizeWorkspaceMode(mode),
+      };
+      try {
+        localStorage.setItem(AUTH_USER_KEY, JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      set({ user: next });
+    },
+    setLabReceiveCalendarDateKey: (dateKey: LabReceiveCalendarDateKey) => {
+      if (isMemoryAuthStale(get().token)) return;
+      const current = get().user;
+      if (!current) return;
+      const next = {
+        ...current,
+        labReceiveCalendarDateKey: normalizeLabReceiveCalendarDateKey(dateKey),
       };
       try {
         localStorage.setItem(AUTH_USER_KEY, JSON.stringify(next));

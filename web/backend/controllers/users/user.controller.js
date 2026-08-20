@@ -2,6 +2,8 @@
 // - web/backend/rules.md
 // - web/backend/app.js
 // - web/backend/server.js
+// - web/backend/utils/labReceiveCalendarDateKey.util.js
+// - web/frontend/src/shared/practice/labReceiveCalendarDateKey.ts
 import crypto from "crypto";
 import User from "../../models/user.model.js";
 import ActivityLog from "../../models/activityLog.model.js";
@@ -13,6 +15,7 @@ import { ensureRequestorOrgAnchor } from "../businesses/requestorOrgAnchor.util.
 import { resolvePlatformFeeRate } from "../../services/creditRevenuePolicy.service.js";
 import { normalizeLastDashboardPath } from "../../utils/lastDashboardPath.util.js";
 import { normalizeWorkspaceMode } from "../../utils/workspaceMode.util.js";
+import { normalizeLabReceiveCalendarDateKey } from "../../utils/labReceiveCalendarDateKey.util.js";
 
 /**
  * 사용자 프로필 조회
@@ -965,6 +968,83 @@ async function updateWorkspaceMode(req, res) {
   }
 }
 
+/**
+ * 기공의뢰수신 캘린더 날짜 뱃지 조회
+ * @route GET /api/users/lab-receive-calendar-date-key
+ */
+async function getLabReceiveCalendarDateKey(req, res) {
+  try {
+    const user = await User.findById(req.user._id)
+      .select("preferences.labReceiveCalendarDateKey")
+      .lean();
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "사용자를 찾을 수 없습니다.",
+      });
+    }
+    return res.status(200).json({
+      success: true,
+      data: {
+        dateKey: normalizeLabReceiveCalendarDateKey(
+          user?.preferences?.labReceiveCalendarDateKey,
+        ),
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "캘린더 날짜 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * 기공의뢰수신 캘린더 날짜 뱃지 저장
+ * @route PUT /api/users/lab-receive-calendar-date-key
+ */
+async function updateLabReceiveCalendarDateKey(req, res) {
+  try {
+    const dateKey = normalizeLabReceiveCalendarDateKey(req.body?.dateKey);
+    const raw = String(req.body?.dateKey || "").trim();
+    if (raw !== "orderDate" && raw !== "arrivalDate") {
+      return res.status(400).json({
+        success: false,
+        message: "유효하지 않은 날짜 뱃지입니다.",
+      });
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+      req.user._id,
+      { $set: { "preferences.labReceiveCalendarDateKey": dateKey } },
+      { new: true, runValidators: true },
+    ).select("preferences.labReceiveCalendarDateKey");
+
+    if (!updatedUser) {
+      return res.status(404).json({
+        success: false,
+        message: "사용자를 찾을 수 없습니다.",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        dateKey: normalizeLabReceiveCalendarDateKey(
+          updatedUser.preferences?.labReceiveCalendarDateKey,
+        ),
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "캘린더 날짜 저장 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
 export {
   getProfile,
   updateProfile,
@@ -976,6 +1056,8 @@ export {
   updateLastDashboardPath,
   getWorkspaceMode,
   updateWorkspaceMode,
+  getLabReceiveCalendarDateKey,
+  updateLabReceiveCalendarDateKey,
   getMySecurityLogs,
 };
 

@@ -16,6 +16,7 @@
  * 2026-08-20: 상단 상태 뱃지=기공의뢰수신과 동일 색·외곽선(PRACTICE_STATUS_FILTER_BADGE_CLASS).
  * 2026-08-20: 캘린더 칩도 상단 뱃지 상태색(리메이크=이중선).
  * 2026-08-20: 캘린더 칩에 채팅 안읽음 배지.
+ * 2026-08-20: 날짜 뱃지 기본=치과도착일. 계정 preferences에 저장.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Search } from "lucide-react";
@@ -40,6 +41,8 @@ import { apiFetch } from "@/shared/api/apiClient";
 import { type ChatRoom } from "@/shared/hooks/useChatRooms";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 import { toKstYmd } from "@/shared/date/kst";
+import { normalizeLabReceiveCalendarDateKey } from "@/shared/practice/labReceiveCalendarDateKey";
+import { useAuthStore } from "@/store/useAuthStore";
 import {
   type PracticeRecentTransferItem,
   type PracticeRecentRequestItem,
@@ -102,9 +105,17 @@ export function PracticeRecentTransfersAllModal({
   onSelectTransfer,
   onDeleteTransfer,
 }: PracticeRecentTransfersAllModalProps) {
+  const storedCalendarDateKey = useAuthStore(
+    (s) => s.user?.labReceiveCalendarDateKey,
+  );
+  const setStoredCalendarDateKey = useAuthStore(
+    (s) => s.setLabReceiveCalendarDateKey,
+  );
   const [search, setSearch] = useState(initialSearch);
   const [statusFilter, setStatusFilter] = useState<PracticeRecentStatusFilter>(initialStatusFilter);
-  const [dateKey, setDateKey] = useState<PracticeCalendarDateKey>("orderDate");
+  const [dateKey, setDateKey] = useState<PracticeCalendarDateKey>(() =>
+    normalizeLabReceiveCalendarDateKey(storedCalendarDateKey),
+  );
   const [cursorYmd, setCursorYmd] = useState(() => toKstYmd(new Date()) || "");
   const [hiddenWeekdays, setHiddenWeekdays] = useState<number[]>([...DEFAULT_HIDDEN_WEEKDAYS]);
   const [alignEpoch, setAlignEpoch] = useState(0);
@@ -118,10 +129,28 @@ export function PracticeRecentTransfersAllModal({
     setSearch(initialSearch);
     setStatusFilter(initialStatusFilter);
     setCursorYmd(toKstYmd(new Date()) || "");
-    setDateKey("orderDate");
+    setDateKey(normalizeLabReceiveCalendarDateKey(storedCalendarDateKey));
     setHiddenWeekdays([...DEFAULT_HIDDEN_WEEKDAYS]);
     setAlignEpoch((n) => n + 1);
-  }, [open, initialSearch, initialStatusFilter]);
+  }, [open, initialSearch, initialStatusFilter, storedCalendarDateKey]);
+
+  const handleCalendarDateKeyChange = useCallback(
+    (key: PracticeCalendarDateKey) => {
+      const next = normalizeLabReceiveCalendarDateKey(key);
+      setDateKey(next);
+      setStoredCalendarDateKey(next);
+      if (!token) return;
+      void apiFetch({
+        path: "/api/users/lab-receive-calendar-date-key",
+        method: "PUT",
+        token,
+        jsonBody: { dateKey: next },
+      }).catch(() => {
+        // 저장 실패는 UX를 막지 않음 — 다음 로그인 시 서버 값으로 복원
+      });
+    },
+    [setStoredCalendarDateKey, token],
+  );
 
   useEffect(() => {
     if (!open) {
@@ -381,7 +410,7 @@ export function PracticeRecentTransfersAllModal({
               dateKey={dateKey}
               cursorYmd={cursorYmd}
               onCursorChange={setCursorYmd}
-              onDateKeyChange={setDateKey}
+              onDateKeyChange={handleCalendarDateKeyChange}
               onSelectItem={(item) => {
                 const transfer = calendarItemById.get(item.id);
                 if (transfer) onSelectTransfer(transfer);

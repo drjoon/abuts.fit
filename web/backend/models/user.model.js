@@ -259,6 +259,12 @@ const userSchema = new mongoose.Schema(
         enum: ["express", "expert"],
         default: "express",
       },
+      /** 기공의뢰·기공의뢰수신 캘린더 날짜 뱃지. 기본 치과도착일 */
+      labReceiveCalendarDateKey: {
+        type: String,
+        enum: ["orderDate", "arrivalDate"],
+        default: "arrivalDate",
+      },
     },
   },
   {

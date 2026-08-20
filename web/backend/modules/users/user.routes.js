@@ -39,6 +39,16 @@ router.put("/last-dashboard-path", userController.updateLastDashboardPath);
 router.get("/workspace-mode", userController.getWorkspaceMode);
 router.put("/workspace-mode", userController.updateWorkspaceMode);
 
+// 기공의뢰수신 캘린더 날짜 뱃지(주문일/치과도착일)
+router.get(
+  "/lab-receive-calendar-date-key",
+  userController.getLabReceiveCalendarDateKey,
+);
+router.put(
+  "/lab-receive-calendar-date-key",
+  userController.updateLabReceiveCalendarDateKey,
+);
+
 // 내 보안 로그 (로그인 기록 등)
 router.get("/security-logs", userController.getMySecurityLogs);
 
