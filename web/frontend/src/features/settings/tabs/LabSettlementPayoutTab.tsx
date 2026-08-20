@@ -128,7 +128,7 @@ const statusColor = (s: string) => {
 const periodToYmdRange = (
   period: PeriodFilterValue,
 ): { from: string; to: string } | null => {
-  const range = periodToRange(period, { customStartDate: "", customEndDate: "" });
+  const range = periodToRange(period);
   if (!range) return null;
   const from = toKstYmd(new Date(range.startDate));
   const to = toKstYmd(new Date(range.endDate));
@@ -143,7 +143,7 @@ export const LabSettlementPayoutTab = () => {
   const { toast } = useToast();
 
   const [tab, setTab] = useState<"snapshot" | "payments">("snapshot");
-  const { period, setPeriod } = usePeriodStore();
+  const { period, setPeriod, customStartDate, customEndDate } = usePeriodStore();
   const [q, setQ] = useState("");
   const [snapshotSort, setSnapshotSort] = useState<{
     key: SnapshotSortKey;
@@ -235,7 +235,7 @@ export const LabSettlementPayoutTab = () => {
       if (q.trim()) params.set("q", q.trim());
       return params.toString();
     },
-    [period, q],
+    [period, q, customStartDate, customEndDate],
   );
 
   const loadPayouts = useCallback(
@@ -279,7 +279,7 @@ export const LabSettlementPayoutTab = () => {
       params.set("toYmd", range.to);
     }
     return params.toString();
-  }, [period]);
+  }, [period, customStartDate, customEndDate]);
 
   const loadSnapshots = useCallback(async () => {
     if (!token) return;

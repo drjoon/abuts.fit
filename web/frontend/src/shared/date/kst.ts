@@ -3,7 +3,7 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/practice/components/PracticeRecentTransfersCalendar.tsx
-// - 2026-08-20: kstYmdDiffBusinessDays — 12시 전 주문일 포함 옵션.
+// - 2026-08-20: kstAddCivilMonths — PeriodFilter 달력 좌·우 chevron 월 이동.
 const KST_TZ = "Asia/Seoul";
 
 export function toKstYmd(input?: string | number | Date | null): string | null {
@@ -79,6 +79,28 @@ export function kstEndOfMonth(ymd?: string | null): string | null {
   const nextStart = kstStartOfMonth(nextMonth);
   if (!nextStart) return null;
   return kstAddCivilDays(nextStart, -1);
+}
+
+/** civil YMD ±N months. 말일은 대상 월 말일로 클램프 (1/31 + 1개월 → 2/28). */
+export function kstAddCivilMonths(ymd?: string | null, months = 0): string | null {
+  const raw = String(ymd || "").trim();
+  const parts = raw.split("-").map(Number);
+  if (parts.length !== 3 || parts.some((n) => !Number.isFinite(n) || n <= 0)) {
+    return null;
+  }
+  const [y, m, d] = parts;
+  const delta = Math.trunc(Number(months) || 0);
+  const target = new Date(Date.UTC(y, m - 1 + delta, 1, 12));
+  const lastDay = new Date(
+    Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0, 12),
+  ).getUTCDate();
+  const next = new Date(
+    Date.UTC(target.getUTCFullYear(), target.getUTCMonth(), Math.min(d, lastDay), 12),
+  );
+  const yy = next.getUTCFullYear();
+  const mm = String(next.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(next.getUTCDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
 }
 
 export function ymdToKstDate(ymd?: string | null): Date | null {

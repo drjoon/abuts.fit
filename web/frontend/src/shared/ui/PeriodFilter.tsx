@@ -1,11 +1,18 @@
+// change-log:
+// - 2026-08-20: 기간 달력 좌·우 chevron — 현재 선택 기간을 한 달 앞/뒤로 옮긴다.
 // related files:
 // - web/frontend/rules.md
-// - web/frontend/src/App.tsx
-// - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/store/usePeriodStore.ts
+// - web/frontend/src/shared/date/kst.ts
 import { useEffect, useMemo, useState } from "react";
 import { format } from "date-fns";
 import { ko } from "date-fns/locale";
-import { Calendar as CalendarIcon, ChevronDown } from "lucide-react";
+import {
+  Calendar as CalendarIcon,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
 import type { DateRange } from "react-day-picker";
 
 import { Button } from "@/components/ui/button";
@@ -18,7 +25,7 @@ import {
 import { cn } from "@/shared/ui/cn";
 import type { PeriodFilterValue } from "@/shared/ui/periodFilterValues";
 import { periodToRange, usePeriodStore } from "@/store/usePeriodStore";
-import { toKstYmd, ymdToKstDate } from "@/shared/date/kst";
+import { toKstYmd, ymdToKstDate, kstAddCivilMonths } from "@/shared/date/kst";
 
 export type { PeriodFilterValue } from "@/shared/ui/periodFilterValues";
 
@@ -147,6 +154,17 @@ export const PeriodFilter = ({
     onChange(next);
   };
 
+  const handleShiftMonths = (delta: number) => {
+    if (!setCustom) return;
+    const start = kstAddCivilMonths(appliedRange.startYmd, delta);
+    const end = kstAddCivilMonths(appliedRange.endYmd, delta);
+    if (!start || !end) return;
+    setCustom({
+      startDate: start <= end ? start : end,
+      endDate: start <= end ? end : start,
+    });
+  };
+
   const handleApply = () => {
     if (!canApply || !setCustom) return;
     setCustom({
@@ -176,6 +194,11 @@ export const PeriodFilter = ({
       : "bg-background text-muted-foreground hover:bg-muted",
   );
 
+  const chevronButtonClassName = cn(
+    "inline-flex shrink-0 items-center justify-center rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted",
+    hasCustomRange ? "bg-background/80 hover:bg-background" : "bg-background",
+  );
+
   return (
     <div
       className={cn(
@@ -185,59 +208,83 @@ export const PeriodFilter = ({
     >
       {hasLabel && <span className="px-2 text-muted-foreground">{label}</span>}
 
-      {customEnabled ? (
-        <Popover open={open} onOpenChange={setOpen}>
-          <PopoverTrigger asChild>
-            <button type="button" className={rangeTriggerClassName}>
-              <CalendarIcon className="h-3.5 w-3.5 opacity-80" />
-              <span>{rangeLabel}</span>
-              <ChevronDown className="h-3 w-3 opacity-70" />
-            </button>
-          </PopoverTrigger>
-          <PopoverContent
-            align="start"
-            className="w-auto p-0"
-            onOpenAutoFocus={(e) => e.preventDefault()}
+      <div className="inline-flex items-center gap-0.5">
+        {customEnabled ? (
+          <button
+            type="button"
+            aria-label="전달"
+            onClick={() => handleShiftMonths(-1)}
+            className={chevronButtonClassName}
           >
-            <div className="border-b px-3 py-2 text-[11px] text-muted-foreground">
-              시작일 0시 ~ 종료일 24시(KST) 기준으로 적용됩니다.
-            </div>
-            <Calendar
-              mode="range"
-              numberOfMonths={1}
-              selected={draftRange}
-              onSelect={setDraftRange}
-              defaultMonth={draftRange?.from || draftRange?.to}
-              initialFocus
-            />
-            <div className="flex items-center justify-end gap-2 border-t px-3 py-2">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-8 px-3 text-xs"
-                onClick={handleCancel}
-              >
-                취소
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                className="h-8 px-3 text-xs"
-                disabled={!canApply}
-                onClick={handleApply}
-              >
-                적용
-              </Button>
-            </div>
-          </PopoverContent>
-        </Popover>
-      ) : (
-        <div className={rangeTriggerClassName}>
-          <CalendarIcon className="h-3.5 w-3.5 opacity-80" />
-          <span>{rangeLabel}</span>
-        </div>
-      )}
+            <ChevronLeft className="h-3.5 w-3.5" />
+          </button>
+        ) : null}
+
+        {customEnabled ? (
+          <Popover open={open} onOpenChange={setOpen}>
+            <PopoverTrigger asChild>
+              <button type="button" className={rangeTriggerClassName}>
+                <CalendarIcon className="h-3.5 w-3.5 opacity-80" />
+                <span>{rangeLabel}</span>
+                <ChevronDown className="h-3 w-3 opacity-70" />
+              </button>
+            </PopoverTrigger>
+            <PopoverContent
+              align="start"
+              className="w-auto p-0"
+              onOpenAutoFocus={(e) => e.preventDefault()}
+            >
+              <div className="border-b px-3 py-2 text-[11px] text-muted-foreground">
+                시작일 0시 ~ 종료일 24시(KST) 기준으로 적용됩니다.
+              </div>
+              <Calendar
+                mode="range"
+                numberOfMonths={1}
+                selected={draftRange}
+                onSelect={setDraftRange}
+                defaultMonth={draftRange?.from || draftRange?.to}
+                initialFocus
+              />
+              <div className="flex items-center justify-end gap-2 border-t px-3 py-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 px-3 text-xs"
+                  onClick={handleCancel}
+                >
+                  취소
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-8 px-3 text-xs"
+                  disabled={!canApply}
+                  onClick={handleApply}
+                >
+                  적용
+                </Button>
+              </div>
+            </PopoverContent>
+          </Popover>
+        ) : (
+          <div className={rangeTriggerClassName}>
+            <CalendarIcon className="h-3.5 w-3.5 opacity-80" />
+            <span>{rangeLabel}</span>
+          </div>
+        )}
+
+        {customEnabled ? (
+          <button
+            type="button"
+            aria-label="다음달"
+            onClick={() => handleShiftMonths(1)}
+            className={chevronButtonClassName}
+          >
+            <ChevronRight className="h-3.5 w-3.5" />
+          </button>
+        ) : null}
+      </div>
 
       {presets.map((k) => (
         <button

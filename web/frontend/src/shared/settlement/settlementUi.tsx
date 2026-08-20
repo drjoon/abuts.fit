@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-20: 클릭 카드는 selected만 파란 강조. tone=primary는 비클릭 카드용.
 // - 2026-08-20: SettlementStatCard compact(제조사 정산 요약 높이 축소).
 // - 2026-08-17: 의뢰자 크레딧/기공크레딧 정산 최신 스타일을 역할 정산 페이지 공통 UI로 추출.
 // related files:
@@ -50,6 +51,8 @@ export function SettlementStatCard({
   compact?: boolean;
 }) {
   const selectedTone = Boolean(onClick) && selected;
+  // 클릭 가능한 카드는 선택된 칸만 강조한다. tone=primary는 정적(비클릭) 카드용.
+  const highlight = onClick ? selectedTone : tone === "primary";
   const hintNode =
     hint && hintTooltip ? (
       <TooltipProvider>
@@ -89,12 +92,10 @@ export function SettlementStatCard({
   const className = cn(
     "flex w-full flex-col justify-center rounded-2xl border shadow-sm transition-colors",
     compact ? "min-h-0 px-3 py-2" : "min-h-[7.25rem] px-4 py-3.5",
-    selectedTone
+    highlight
       ? "border-primary-muted bg-primary-soft/40 ring-1 ring-primary-muted/70"
-      : tone === "primary"
-        ? "border-primary-muted bg-primary-soft/40 ring-1 ring-primary-muted/70"
-        : "border-slate-200/80 bg-white/80",
-    onClick && !selectedTone
+      : "border-slate-200/80 bg-white/80",
+    onClick && !highlight
       ? "hover:border-slate-300 hover:bg-white"
       : null,
     onClick ? "cursor-pointer text-left" : null,
@@ -114,9 +115,7 @@ export function SettlementStatCard({
         className={cn(
           "text-center font-semibold tabular-nums tracking-tight",
           compact ? "mt-0.5 text-xl" : "mt-1 text-2xl sm:text-[1.65rem]",
-          selectedTone || tone === "primary"
-            ? "text-primary-strong"
-            : "text-slate-900",
+          highlight ? "text-primary-strong" : "text-slate-900",
         )}
       >
         {typeof value === "number" ? formatWon(value) : value}
