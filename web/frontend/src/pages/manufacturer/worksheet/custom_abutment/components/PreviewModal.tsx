@@ -81,6 +81,14 @@ import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { RequestInfoSummary } from "./RequestInfoSummary";
 import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
 import { resolveShippingMode } from "@/shared/shipping/shippingMode";
+import {
+  normalizeManufacturerHexRotationMode,
+  persistPrepApprovalSettings,
+  resolveRequestorHexRotationByDesignSoftware,
+  toManufacturerHexRotationLabel,
+  type ManufacturerHexRotationDraftMode,
+  type ManufacturerHexRotationMode,
+} from "@/pages/manufacturer/worksheet/custom_abutment/utils/hexRotation";
 
 // related files (screw lot tracking):
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx
@@ -98,68 +106,6 @@ type PreviewFiles = {
   request?: ManufacturerRequest | null;
   finishLinePoints?: number[][] | null;
   finishLineSource?: "caseInfos" | "file" | null;
-};
-
-// related files (hex rotation policy):
-// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
-// - web/backend/controllers/requests/common.requests.controller.js
-// - web/backend/controllers/bg/bg.controller.js
-// - bg/pc1/esprit-addin/Helpers/NcFileGenerator.cs
-// Rhino의 align 기능이 구성정보를 대체하므로, 개별 구성정보 파일 모드는 사용하지 않는다.
-// 확장 규칙(표시/저장 통일):
-// - 프론트 표시(UI)와 백엔드/Esprit 전달값 모두 total 라벨("헥스40도회전" = 30 + 10)을 사용한다.
-// - legacy minor 라벨(예: 헥스10도회전)은 하위호환으로만 허용하고 total(헥스40도회전)로 정규화한다.
-type ManufacturerHexRotationCanonicalMode = "STL모델대로" | "헥스30도회전";
-type HexXRotationLabel = `헥스${number}도회전`;
-type ManufacturerHexRotationMode = "STL모델대로" | "헥스30도회전" | HexXRotationLabel;
-type ManufacturerHexRotationDraftMode = ManufacturerHexRotationMode | "";
-
-const normalizeManufacturerHexRotationMode = (
-  value: unknown,
-): ManufacturerHexRotationMode | null => {
-  const raw = String(value || "").trim();
-  if (!raw) return null;
-  if (raw === "STL모델대로") return "STL모델대로";
-  if (raw === "헥스30도회전") return "헥스30도회전";
-
-  // legacy numeric(백엔드/DB) 값 호환
-  if (raw === "0") return "STL모델대로";
-  if (raw === "30") return "헥스30도회전";
-
-  const matched = raw.match(/^헥스\s*([+-]?\d+(?:\.\d+)?)\s*도회전$/);
-  if (!matched) return null;
-  const parsedX = Number(matched[1]);
-  if (!Number.isFinite(parsedX)) return null;
-  if (parsedX === 30) return "헥스30도회전";
-
-  // 전달/표시 SSOT: total 라벨 사용
-  const totalDeg = parsedX < 30 ? parsedX + 30 : parsedX;
-  return `헥스${String(totalDeg)}도회전` as ManufacturerHexRotationMode;
-};
-
-const toManufacturerHexRotationLabel = (
-  mode: ManufacturerHexRotationCanonicalMode,
-): "STL모델대로" | "헥스30도회전" => {
-  switch (mode) {
-    case "STL모델대로":
-      return "STL모델대로";
-    case "헥스30도회전":
-      return "헥스30도회전";
-    default:
-      throw new Error(`지원하지 않는 헥스 회전 모드: ${String(mode)}`);
-  }
-};
-
-const resolveRequestorHexRotationByDesignSoftware = (
-  designSoftwareRaw: unknown,
-): ManufacturerHexRotationCanonicalMode | null => {
-  const designSoftware = String(designSoftwareRaw || "").trim();
-  if (!designSoftware) return null;
-  // 정책 SSOT:
-  // - ExoCAD => 헥스30도회전
-  // - 3Shape 및 기타(custom 포함) => STL모델대로
-  if (designSoftware === "ExoCAD") return "헥스30도회전";
-  return "STL모델대로";
 };
 
 const UNMACHINABLE_REASON_PRESETS = [
@@ -2535,57 +2481,21 @@ export const PreviewModal = ({
                     setApproving(true);
                     suppressRealtimePreviewRefreshUntilRef.current = Date.now() + 7000;
                     try {
-                      // 준비 단계 승인(준비→가공) 전, caseInfos.hexRotation.mode 누락 시
-                      // 현재 선택된 "헥스 회전" 값으로 선저장한다.
+                      // 준비 단계 승인(준비→가공) 전: 헥스/아노다이징을 카드 승인과 동일한 SSOT로 선저장.
                       if (currentReviewStageKey === "request") {
-                        const hasHexRotationMode =
-                          !!normalizeManufacturerHexRotationMode(
-                            activeReq?.caseInfos?.hexRotation?.mode,
-                          );
-
-                        if (!hasHexRotationMode) {
-                          if (!onSaveManufacturerHexRotation) {
-                            toast({
-                              title: "승인 불가",
-                              description:
-                                "헥스 회전 저장 핸들러가 없어 승인할 수 없습니다.",
-                              variant: "destructive",
-                            });
-                            return;
-                          }
-
-                          let nextHexMode: ManufacturerHexRotationMode | null = null;
-                          const normalizedDraft = normalizeManufacturerHexRotationMode(
-                            manufacturerHexRotationDraft,
-                          );
-                          if (normalizedDraft) {
-                            nextHexMode = normalizedDraft;
-                          } else {
-                            const byDesignSoftware =
-                              resolveRequestorHexRotationByDesignSoftware(
-                                (
-                                  activeReq?.caseInfos as
-                                    | { designSoftware?: unknown }
-                                    | undefined
-                                )?.designSoftware,
-                              );
-                            if (byDesignSoftware) {
-                              nextHexMode =
-                                toManufacturerHexRotationLabel(byDesignSoftware);
-                            }
-                          }
-
-                          if (!nextHexMode) {
-                            toast({
-                              title: "승인 불가",
-                              description:
-                                "헥스 회전값이 비어 있습니다. 'STL모델대로', '헥스30도회전', '헥스X도회전' 중 하나를 선택해 주세요.",
-                              variant: "destructive",
-                            });
-                            return;
-                          }
-
-                          await onSaveManufacturerHexRotation(activeReq, nextHexMode);
+                        const persisted = await persistPrepApprovalSettings({
+                          req: activeReq,
+                          hexDraft: manufacturerHexRotationDraft,
+                          saveHex: onSaveManufacturerHexRotation,
+                          saveAnodizing: onSaveAnodizingEnabledOverride,
+                        });
+                        if (!persisted.ok) {
+                          toast({
+                            title: persisted.title,
+                            description: persisted.description,
+                            variant: "destructive",
+                          });
+                          return;
                         }
                       }
 

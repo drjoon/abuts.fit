@@ -930,6 +930,7 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
     session,
   });
 
+  let spendResult;
   if (machiningHoldMeta?.journalId) {
     const spentAmount = Number(
       machiningHoldMeta.heldTotal || machiningAmount || 0,
@@ -963,7 +964,7 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
       amount: spentAmount,
     });
   } else {
-  const spendResult = await spendRequestCreditAtomic({
+  spendResult = await spendRequestCreditAtomic({
     request,
     businessAnchorId: spendAnchorId,
     actorUserId,

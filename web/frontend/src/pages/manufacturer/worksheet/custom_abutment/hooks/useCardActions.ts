@@ -10,12 +10,25 @@
 // - web/backend/controllers/requests/common.review.controller.js
 import { useCallback } from "react";
 import { type ManufacturerRequest, deriveStageForFilter, getReviewStageKeyByTab } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
+import {
+  persistPrepApprovalSettings,
+  type ManufacturerHexRotationMode,
+} from "@/pages/manufacturer/worksheet/custom_abutment/utils/hexRotation";
 import { useToast } from "@/shared/hooks/use-toast";
 
 interface CardActionHandlers {
   handleDeleteStageFile: (opts: Record<string, unknown>) => Promise<void>;
   handleDeleteNc: (req: ManufacturerRequest, opts: Record<string, unknown>) => Promise<void>;
   handleUpdateReviewStatus: (opts: Record<string, unknown>) => Promise<void>;
+  handleSaveManufacturerHexRotation?: (
+    req: ManufacturerRequest,
+    value: ManufacturerHexRotationMode,
+  ) => Promise<void>;
+  handleSaveAnodizingEnabledOverride?: (
+    req: ManufacturerRequest,
+    nextValue: boolean,
+  ) => Promise<void>;
+  token?: string | null;
 }
 
 export const useCardActions = (
@@ -39,6 +52,9 @@ export const useCardActions = (
     handleDeleteStageFile,
     handleDeleteNc,
     handleUpdateReviewStatus,
+    handleSaveManufacturerHexRotation,
+    handleSaveAnodizingEnabledOverride,
+    token,
   } = handlers;
   const { toast, dismiss } = useToast();
 
@@ -193,7 +209,7 @@ export const useCardActions = (
   );
 
   const handleCardApprove = useCallback(
-    (req: ManufacturerRequest) => {
+    async (req: ManufacturerRequest) => {
       if (!req?._id) return;
       const stageKey = getReviewStageKeyByTab({
         stage: tabStage,
@@ -209,35 +225,99 @@ export const useCardActions = (
       const isRequestNextUpTransition =
         stageKey === "request" && transitionStageKey === "machining";
 
-      if (stageKey === "request") {
-        const requestId = String(req.requestId || "").trim();
-        if (requestId) {
-          realtimeBaseRef.current[requestId] = Date.now();
-          showPendingStageTransitionToast(
-            requestId,
-            "가공 이동 요청 전송됨",
-            "의뢰를 가공으로 넘기는 중입니다. 잠시만 기다려주세요.",
-            ["가공"],
-          );
+      try {
+        if (isRequestNextUpTransition) {
+          const persisted = await persistPrepApprovalSettings({
+            req,
+            saveHex: handleSaveManufacturerHexRotation
+              ? (target, mode) =>
+                  handleSaveManufacturerHexRotation(
+                    target as ManufacturerRequest,
+                    mode,
+                  )
+              : undefined,
+            saveAnodizing: handleSaveAnodizingEnabledOverride
+              ? (target, next) =>
+                  handleSaveAnodizingEnabledOverride(
+                    target as ManufacturerRequest,
+                    next,
+                  )
+              : undefined,
+          });
+          if (!persisted.ok) {
+            toast({
+              title: persisted.title,
+              description: persisted.description,
+              variant: "destructive",
+            });
+            return;
+          }
         }
+
+        if (stageKey === "request") {
+          const requestId = String(req.requestId || "").trim();
+          if (requestId) {
+            realtimeBaseRef.current[requestId] = Date.now();
+            showPendingStageTransitionToast(
+              requestId,
+              "가공 이동 요청 전송됨",
+              "의뢰를 가공으로 넘기는 중입니다. 잠시만 기다려주세요.",
+              ["가공"],
+            );
+          }
+        }
+
+        await handleUpdateReviewStatus({
+          req,
+          status: "APPROVED",
+          stageOverride: transitionStageKey,
+          keepPreviewOpen: false,
+          forceReprocess: false,
+          approvalTriggerSource: "preview-modal",
+          nextUpCamRunGuard: isRequestNextUpTransition,
+        });
+
+        if (isRequestNextUpTransition) {
+          const requestId = String(req.requestId || "").trim();
+          if (token && requestId) {
+            void fetch(
+              `/api/requests/by-request/${encodeURIComponent(requestId)}/nc-file/ensure-bridge`,
+              {
+                method: "POST",
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({}),
+              },
+            ).catch((err) => {
+              console.error("NC bridge ensure failed:", err);
+            });
+          }
+        }
+      } catch (err: unknown) {
+        const message =
+          err instanceof Error
+            ? err.message
+            : "승인 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.";
+        toast({
+          title: "승인 실패",
+          description: message,
+          variant: "destructive",
+        });
       }
-      void handleUpdateReviewStatus({
-        req,
-        status: "APPROVED",
-        stageOverride: transitionStageKey,
-        // 작업 탭 승인(request)은 기존 NC 재사용 우선(재생성 강제 안 함)
-        forceReprocess: false,
-        approvalTriggerSource: "worksheet-tab",
-        nextUpCamRunGuard: isRequestNextUpTransition,
-      });
     },
     [
       tabStage,
       isCamStage,
       isMachiningStage,
       handleUpdateReviewStatus,
+      handleSaveManufacturerHexRotation,
+      handleSaveAnodizingEnabledOverride,
+      token,
       realtimeBaseRef,
       showPendingStageTransitionToast,
+      toast,
     ],
   );
 

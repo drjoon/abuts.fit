@@ -1119,19 +1119,6 @@ export const RequestPage = ({
     [handleUploadByStage],
   );
 
-  const { handleCardRollback, handleCardApprove } = useCardActions(
-    tabStage,
-    isCamStage,
-    isMachiningStage,
-    {
-      handleDeleteStageFile,
-      handleDeleteNc,
-      handleUpdateReviewStatus,
-    },
-    realtimeBaseRef,
-    pendingStageTransitionToastRef,
-  );
-
   const handleSaveToRnd = useCallback(
     async (req: ManufacturerRequest) => {
       if (!req?._id) return;
@@ -1585,18 +1572,6 @@ export const RequestPage = ({
   const [remakeSourceRequest, setRemakeSourceRequest] =
     useState<ManufacturerRequest | null>(null);
 
-  const handleCardRollbackForTab = useCallback(
-    async (req: ManufacturerRequest) => {
-      if (tabStage !== "rnd") {
-        return handleCardRollback(req);
-      }
-      if (!req?._id) return;
-      setRemakeSourceRequest(req);
-      setRemakeDialogOpen(true);
-    },
-    [handleCardRollback, tabStage],
-  );
-
   const handleSubmitRemake = useCallback(
     async (startStage: RemakeQuickStartStage) => {
       if (!remakeSourceRequest?._id || remakeSubmitting) return;
@@ -1956,6 +1931,34 @@ export const RequestPage = ({
       }
     },
     [anodizingSavingMap, pageState, toast, token],
+  );
+
+  const { handleCardRollback, handleCardApprove } = useCardActions(
+    tabStage,
+    isCamStage,
+    isMachiningStage,
+    {
+      handleDeleteStageFile,
+      handleDeleteNc,
+      handleUpdateReviewStatus,
+      handleSaveManufacturerHexRotation,
+      handleSaveAnodizingEnabledOverride,
+      token,
+    },
+    realtimeBaseRef,
+    pendingStageTransitionToastRef,
+  );
+
+  const handleCardRollbackForTab = useCallback(
+    async (req: ManufacturerRequest) => {
+      if (tabStage !== "rnd") {
+        return handleCardRollback(req);
+      }
+      if (!req?._id) return;
+      setRemakeSourceRequest(req);
+      setRemakeDialogOpen(true);
+    },
+    [handleCardRollback, tabStage],
   );
 
   const handleSaveRndMemo = useCallback(
