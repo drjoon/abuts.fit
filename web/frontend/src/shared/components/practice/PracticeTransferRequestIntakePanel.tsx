@@ -185,6 +185,8 @@ import {
 // - 2026-08-18: full 치식 카드 min-w·브리지 + 를 이음새에 겹쳐 어벗 라벨이 잘리지 않게.
 // - 2026-08-18: full 치식에서는 R/M/L 스크롤 버튼을 숨긴다.
 // - 2026-08-19: 치아 옆 스크롤·R/M/L 제거. 견적 바에 << < > >>(1칸·5칸).
+// - 2026-08-20: Expert — 헤더 다음 메모|드롭존 2열, 보철물은 그 아래.
+// - 2026-08-20: 메모 라벨·?툴팁 제거. 메모|드롭존 높이 stretch 맞춤.
 
 const PRACTICE_MEMO_SNIPPETS_LOCAL_KEY = "practice_transfer_memo_snippets_v1";
 const MAX_MEMO_SNIPPETS = 40;
@@ -684,6 +686,8 @@ export type PracticeTransferRequestIntakePanelProps = {
   nestedDialogOverlayClassName?: string;
   /** 메모 라벨 위에 렌더 (의뢰비 등) */
   aboveMemoContent?: ReactNode;
+  /** 메모 오른쪽 열(드롭존 등). 있으면 메모|옆열 2열 → 보철물 순서 */
+  besideMemoContent?: ReactNode;
   /** 메모 입력 박스 className 덮어쓰기 (높이·스크롤 등) */
   memoBoxClassName?: string;
   selectedLab: SearchBusinessResult | null;
@@ -780,6 +784,7 @@ export const PracticeTransferRequestIntakePanel = ({
   nestedDialogClassName,
   nestedDialogOverlayClassName,
   aboveMemoContent,
+  besideMemoContent,
   memoBoxClassName,
   selectedLab,
   setSelectedLab,
@@ -1872,7 +1877,9 @@ export const PracticeTransferRequestIntakePanel = ({
     <div
       className={cn(
         "flex min-h-0 flex-col",
-        showProsthesisSection || showMemoSection ? "gap-10" : "gap-4",
+        showProsthesisSection || showMemoSection || besideMemoContent
+          ? "gap-10"
+          : "gap-4",
         memoOnly && "h-full flex-1",
         variant === "card" &&
           "rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-primary-soft/60 p-4 shadow-[0_4px_12px_rgba(15,23,42,0.03)] transition-all hover:shadow-[0_8px_20px_rgba(15,23,42,0.06)]",
@@ -2239,6 +2246,212 @@ export const PracticeTransferRequestIntakePanel = ({
       </div>
       ) : null}
 
+      {showMemoSection || besideMemoContent ? (
+      <div
+        className={cn(
+          showMemoSection && besideMemoContent
+            ? "grid grid-cols-1 gap-6 lg:grid-cols-2 lg:items-stretch"
+            : "contents",
+        )}
+      >
+      {showMemoSection ? (
+      <div
+        className={cn(
+          "flex min-h-0 flex-col",
+          besideMemoContent && "h-full",
+          memoOnly && "flex-1",
+        )}
+      >
+        {aboveMemoContent}
+        <div
+          id={memoInputId}
+          aria-label="메모"
+          className={cn(
+            "flex flex-col gap-1.5 rounded-lg border border-slate-200 bg-white p-2.5",
+            besideMemoContent
+              ? "min-h-[9rem] flex-1 overflow-y-auto"
+              : (memoBoxClassName ?? "min-h-[9rem]"),
+          )}
+        >
+          {memoLines.map((line, index) => {
+            const lineSuggestions =
+              suggestLineIndex === index
+                ? suggestionsForActiveLine
+                : filterMemoSuggestions(line, memoSnippets);
+            const showSuggestions =
+              suggestLineIndex === index && lineSuggestions.length > 0;
+
+            return (
+              <div key={`memo-line-${index}`} className="relative flex items-center gap-1.5">
+                <div className="relative min-w-0 flex-1">
+                  <ImeSafeInput
+                    ref={(el) => {
+                      memoInputRefs.current[index] = el;
+                    }}
+                    value={line}
+                    onChange={(nextValue) => {
+                      const nextLines = [...memoLines];
+                      nextLines[index] = nextValue;
+                      syncMemoLines(nextLines);
+                      openMemoSuggestions(index, nextValue);
+                    }}
+                    onFocus={() => {
+                      openMemoSuggestions(index, line);
+                    }}
+                    onBlur={() => {
+                      // 클릭으로 제안을 고를 수 있게 살짝 늦춘다
+                      window.setTimeout(() => {
+                        rememberMemoSentence(memoInputRefs.current[index]?.value ?? line);
+                        if (suggestLineIndex === index) closeMemoSuggestions();
+                      }, 120);
+                    }}
+                    onComposingChange={(composing) => {
+                      memoComposingRef.current = composing;
+                      reportImeComposing();
+                      if (composing) closeMemoSuggestions();
+                    }}
+                    onCompositionEnd={(e) => {
+                      const shouldInsertNewline = pendingMemoNewlineIndexRef.current === index;
+                      pendingMemoNewlineIndexRef.current = null;
+                      const committed = e.currentTarget.value;
+                      if (shouldInsertNewline) {
+                        suppressMemoEnterRef.current = true;
+                        rememberMemoSentence(committed);
+                        insertMemoNewlineAfter(index, committed);
+                        closeMemoSuggestions();
+                      } else {
+                        openMemoSuggestions(index, committed);
+                      }
+                      window.setTimeout(() => {
+                        memoComposingRef.current = false;
+                        suppressMemoEnterRef.current = false;
+                        reportImeComposing();
+                      }, 0);
+                    }}
+                    onKeyDown={(e) => {
+                      if (isNativeImeComposing(e) || memoComposingRef.current) {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          if (suppressMemoEnterRef.current) return;
+                          pendingMemoNewlineIndexRef.current = index;
+                        }
+                        return;
+                      }
+
+                      const open =
+                        suggestLineIndex === index &&
+                        suggestionsForActiveLine.length > 0;
+                      const matches = open ? suggestionsForActiveLine : [];
+
+                      if (open && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+                        e.preventDefault();
+                        setSuggestActiveIndex((prev) => {
+                          if (e.key === "ArrowDown") {
+                            return prev + 1 >= matches.length ? 0 : prev + 1;
+                          }
+                          return prev - 1 < 0 ? matches.length - 1 : prev - 1;
+                        });
+                        return;
+                      }
+
+                      if (open && e.key === "Escape") {
+                        e.preventDefault();
+                        closeMemoSuggestions();
+                        return;
+                      }
+
+                      // 제안이 열려 있으면 Enter로 수락. Tab도 동일하게 동작.
+                      if (open && (e.key === "Enter" || e.key === "Tab")) {
+                        const pick =
+                          matches[
+                            suggestActiveIndex >= 0 && suggestActiveIndex < matches.length
+                              ? suggestActiveIndex
+                              : 0
+                          ];
+                        if (pick) {
+                          e.preventDefault();
+                          applyMemoSuggestion(index, pick);
+                          return;
+                        }
+                      }
+
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        if (suppressMemoEnterRef.current) return;
+                        rememberMemoSentence(e.currentTarget.value);
+                        insertMemoNewlineAfter(index, e.currentTarget.value);
+                        closeMemoSuggestions();
+                        return;
+                      }
+
+                      if (
+                        e.key === "Backspace" &&
+                        !line &&
+                        memoLines.length > 1
+                      ) {
+                        e.preventDefault();
+                        closeMemoSuggestions();
+                        handleDeleteMemoLine(index);
+                      }
+                    }}
+                    placeholder={index === 0 ? "메모" : ""}
+                    className="h-10 w-full text-sm"
+                    autoComplete="off"
+                  />
+                  {showSuggestions ? (
+                    <div className="absolute left-0 right-0 top-full z-30 mt-1 overflow-hidden rounded-md border border-slate-200 bg-white text-slate-900 shadow-lg">
+                      <ul className="max-h-48 overflow-y-auto py-1 text-sm">
+                        {lineSuggestions.map((snippet, optionIndex) => (
+                          <li key={`memo-suggest-${index}-${optionIndex}:${snippet}`}>
+                            <button
+                              type="button"
+                              className={cn(
+                                "flex w-full cursor-pointer items-center px-2.5 py-1.5 text-left hover:bg-primary-soft hover:text-primary-strong",
+                                optionIndex === suggestActiveIndex &&
+                                  "bg-primary-soft text-primary-strong",
+                              )}
+                              tabIndex={-1}
+                              onMouseDown={(ev) => {
+                                ev.preventDefault();
+                                applyMemoSuggestion(index, snippet);
+                              }}
+                              onMouseEnter={() => setSuggestActiveIndex(optionIndex)}
+                            >
+                              <span className="truncate">{snippet}</span>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-10 w-10 shrink-0 text-slate-400 hover:text-destructive"
+                  onClick={() => {
+                    closeMemoSuggestions();
+                    handleDeleteMemoLine(index);
+                  }}
+                  aria-label="문장 삭제"
+                  title="문장 삭제"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      ) : null}
+      {besideMemoContent ? (
+        <div className="flex min-h-0 min-w-0 h-full flex-col">
+          {besideMemoContent}
+        </div>
+      ) : null}
+      </div>
+      ) : null}
       {showProsthesisSection ? (
       <div className="space-y-2">
         {showInlineToothChartHeader ? (
@@ -3171,210 +3384,6 @@ export const PracticeTransferRequestIntakePanel = ({
         </div>
       ) : null}
 
-      {showMemoSection ? (
-      <div
-        className={cn(
-          "flex min-h-0 flex-col space-y-2",
-          memoOnly && "flex-1",
-        )}
-      >
-        {aboveMemoContent}
-        <div className="flex h-7 shrink-0 items-center gap-1">
-          <Label className="text-sm leading-none">메모</Label>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                className="inline-flex text-muted-foreground/80 transition-colors hover:text-foreground"
-                aria-label="메모 도움말"
-              >
-                <CircleHelp className="h-3.5 w-3.5" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
-              Enter로 줄바꿈. 입력한 문장은 다음에 자동 제안됩니다.
-            </TooltipContent>
-          </Tooltip>
-        </div>
-        <div
-          id={memoInputId}
-          className={cn(
-            "flex flex-col gap-1.5 rounded-lg border border-slate-200 bg-white p-2.5",
-            memoBoxClassName ?? "min-h-[9rem]",
-          )}
-        >
-          {memoLines.map((line, index) => {
-            const lineSuggestions =
-              suggestLineIndex === index
-                ? suggestionsForActiveLine
-                : filterMemoSuggestions(line, memoSnippets);
-            const showSuggestions =
-              suggestLineIndex === index && lineSuggestions.length > 0;
-
-            return (
-              <div key={`memo-line-${index}`} className="relative flex items-center gap-1.5">
-                <div className="relative min-w-0 flex-1">
-                  <ImeSafeInput
-                    ref={(el) => {
-                      memoInputRefs.current[index] = el;
-                    }}
-                    value={line}
-                    onChange={(nextValue) => {
-                      const nextLines = [...memoLines];
-                      nextLines[index] = nextValue;
-                      syncMemoLines(nextLines);
-                      openMemoSuggestions(index, nextValue);
-                    }}
-                    onFocus={() => {
-                      openMemoSuggestions(index, line);
-                    }}
-                    onBlur={() => {
-                      // 클릭으로 제안을 고를 수 있게 살짝 늦춘다
-                      window.setTimeout(() => {
-                        rememberMemoSentence(memoInputRefs.current[index]?.value ?? line);
-                        if (suggestLineIndex === index) closeMemoSuggestions();
-                      }, 120);
-                    }}
-                    onComposingChange={(composing) => {
-                      memoComposingRef.current = composing;
-                      reportImeComposing();
-                      if (composing) closeMemoSuggestions();
-                    }}
-                    onCompositionEnd={(e) => {
-                      const shouldInsertNewline = pendingMemoNewlineIndexRef.current === index;
-                      pendingMemoNewlineIndexRef.current = null;
-                      const committed = e.currentTarget.value;
-                      if (shouldInsertNewline) {
-                        suppressMemoEnterRef.current = true;
-                        rememberMemoSentence(committed);
-                        insertMemoNewlineAfter(index, committed);
-                        closeMemoSuggestions();
-                      } else {
-                        openMemoSuggestions(index, committed);
-                      }
-                      window.setTimeout(() => {
-                        memoComposingRef.current = false;
-                        suppressMemoEnterRef.current = false;
-                        reportImeComposing();
-                      }, 0);
-                    }}
-                    onKeyDown={(e) => {
-                      if (isNativeImeComposing(e) || memoComposingRef.current) {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          if (suppressMemoEnterRef.current) return;
-                          pendingMemoNewlineIndexRef.current = index;
-                        }
-                        return;
-                      }
-
-                      const open =
-                        suggestLineIndex === index &&
-                        suggestionsForActiveLine.length > 0;
-                      const matches = open ? suggestionsForActiveLine : [];
-
-                      if (open && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
-                        e.preventDefault();
-                        setSuggestActiveIndex((prev) => {
-                          if (e.key === "ArrowDown") {
-                            return prev + 1 >= matches.length ? 0 : prev + 1;
-                          }
-                          return prev - 1 < 0 ? matches.length - 1 : prev - 1;
-                        });
-                        return;
-                      }
-
-                      if (open && e.key === "Escape") {
-                        e.preventDefault();
-                        closeMemoSuggestions();
-                        return;
-                      }
-
-                      // 제안이 열려 있으면 Enter로 수락. Tab도 동일하게 동작.
-                      if (open && (e.key === "Enter" || e.key === "Tab")) {
-                        const pick =
-                          matches[
-                            suggestActiveIndex >= 0 && suggestActiveIndex < matches.length
-                              ? suggestActiveIndex
-                              : 0
-                          ];
-                        if (pick) {
-                          e.preventDefault();
-                          applyMemoSuggestion(index, pick);
-                          return;
-                        }
-                      }
-
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        if (suppressMemoEnterRef.current) return;
-                        rememberMemoSentence(e.currentTarget.value);
-                        insertMemoNewlineAfter(index, e.currentTarget.value);
-                        closeMemoSuggestions();
-                        return;
-                      }
-
-                      if (
-                        e.key === "Backspace" &&
-                        !line &&
-                        memoLines.length > 1
-                      ) {
-                        e.preventDefault();
-                        closeMemoSuggestions();
-                        handleDeleteMemoLine(index);
-                      }
-                    }}
-                    placeholder={index === 0 ? "메모" : ""}
-                    className="h-10 w-full text-sm"
-                    autoComplete="off"
-                  />
-                  {showSuggestions ? (
-                    <div className="absolute left-0 right-0 top-full z-30 mt-1 overflow-hidden rounded-md border border-slate-200 bg-white text-slate-900 shadow-lg">
-                      <ul className="max-h-48 overflow-y-auto py-1 text-sm">
-                        {lineSuggestions.map((snippet, optionIndex) => (
-                          <li key={`memo-suggest-${index}-${optionIndex}:${snippet}`}>
-                            <button
-                              type="button"
-                              className={cn(
-                                "flex w-full cursor-pointer items-center px-2.5 py-1.5 text-left hover:bg-primary-soft hover:text-primary-strong",
-                                optionIndex === suggestActiveIndex &&
-                                  "bg-primary-soft text-primary-strong",
-                              )}
-                              tabIndex={-1}
-                              onMouseDown={(ev) => {
-                                ev.preventDefault();
-                                applyMemoSuggestion(index, snippet);
-                              }}
-                              onMouseEnter={() => setSuggestActiveIndex(optionIndex)}
-                            >
-                              <span className="truncate">{snippet}</span>
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
-                </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-10 w-10 shrink-0 text-slate-400 hover:text-destructive"
-                  onClick={() => {
-                    closeMemoSuggestions();
-                    handleDeleteMemoLine(index);
-                  }}
-                  aria-label="문장 삭제"
-                  title="문장 삭제"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-      ) : null}
 
       <Dialog
         open={customSpecsModalTarget !== null}

@@ -28,6 +28,7 @@ import type { PreUploadFileStatus } from "@/shared/hooks/useFilePreUpload";
 // - 2026-08-20: 쉐이드 안내 — 드롭존과 같은 폭·가운데 정렬, 카메라 아이콘.
 // - 2026-08-20: 이미지 첨부는 카드에 썸네일 미리보기.
 // - 2026-08-20: 썸네일 클릭 시 크게 보기. 파일명도 같은 미리보기.
+// - 2026-08-20: fillHeight — 메모 옆 열에서 빈 드롭존 높이 맞춤.
 
 export type PracticeTransferFileDisplayItem = {
   key: string;
@@ -65,6 +66,9 @@ export type PracticeTransferFilePaneProps = {
   onSyncUpload?: () => void;
   /** 이미지 썸네일 클릭 시 크게 보기 */
   onPreviewFile?: (file: PracticeTransferFileDisplayItem) => void;
+  className?: string;
+  /** 메모 옆 2열 — 부모 높이에 맞춰 빈 드롭존을 늘림 */
+  fillHeight?: boolean;
 };
 
 const formatAttachmentSize = (bytes: number): string => {
@@ -110,17 +114,26 @@ export const PracticeTransferFilePane = ({
   syncUploadHint,
   onSyncUpload,
   onPreviewFile,
+  className,
+  fillHeight = false,
 }: PracticeTransferFilePaneProps) => {
   const hasFiles = files.length > 0;
 
   return (
-    <div className="flex min-h-0 shrink-0 flex-col gap-2.5">
+    <div
+      className={cn(
+        "flex min-h-0 flex-col gap-2.5",
+        fillHeight ? "h-full" : "shrink-0",
+        className,
+      )}
+    >
       <PracticeTransferFileDropTarget
         fileInputId={fileInputId}
         onFiles={onPickFiles}
         disabled={disabled}
         acceptedHint={acceptedHint}
         compact={hasFiles}
+        fillHeight={fillHeight && !hasFiles}
         label="클릭하거나 파일을 드래그해 추가"
       />
 

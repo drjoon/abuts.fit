@@ -45,6 +45,8 @@ export type PracticeTransferFileDropTargetProps = {
   /** 기본 dashed 클릭/드롭 UI. false면 children만(카드 래핑용) */
   showDefaultUi?: boolean;
   compact?: boolean;
+  /** 부모 높이에 맞춰 드롭 영역이 늘어남(메모 옆 2열용) */
+  fillHeight?: boolean;
   label?: string;
   children?: PracticeTransferFileDropTargetChildren;
 };
@@ -67,6 +69,7 @@ export function PracticeTransferFileDropTarget({
   activeClassName = "border-primary bg-primary-soft/40 ring-2 ring-primary/30",
   showDefaultUi = true,
   compact = false,
+  fillHeight = false,
   label = "클릭하거나 파일을 드래그해 추가",
   children,
 }: PracticeTransferFileDropTargetProps) {
@@ -134,6 +137,7 @@ export function PracticeTransferFileDropTarget({
     <div
       className={cn(
         "relative",
+        fillHeight && "flex min-h-0 flex-1 flex-col",
         className,
         isDragActive ? activeClassName : undefined,
       )}
@@ -167,8 +171,12 @@ export function PracticeTransferFileDropTarget({
           htmlFor={disabled ? undefined : fileInputId}
           aria-disabled={disabled || undefined}
           className={cn(
-            "block w-full rounded-2xl border-2 border-dashed text-center transition-colors",
-            compact ? "min-h-[4.75rem] px-3 py-3" : "min-h-[7rem] px-4 py-5",
+            "w-full rounded-2xl border-2 border-dashed text-center transition-colors",
+            fillHeight
+              ? "flex h-full min-h-[7rem] flex-1 flex-col items-center justify-center px-4 py-5"
+              : compact
+                ? "block min-h-[4.75rem] px-3 py-3"
+                : "block min-h-[7rem] px-4 py-5",
             "border-slate-300 bg-white hover:border-primary/50",
             isDragActive ? "border-primary bg-primary-soft/30" : "",
             disabled
@@ -179,10 +187,12 @@ export function PracticeTransferFileDropTarget({
           <div
             className={cn(
               "mx-auto flex w-fit items-center justify-center rounded-full bg-primary-soft text-primary-strong",
-              compact ? "mb-1 p-1.5" : "mb-1.5 p-2",
+              compact && !fillHeight ? "mb-1 p-1.5" : "mb-1.5 p-2",
             )}
           >
-            <UploadCloud className={compact ? "h-4 w-4" : "h-5 w-5"} />
+            <UploadCloud
+              className={compact && !fillHeight ? "h-4 w-4" : "h-5 w-5"}
+            />
           </div>
           <p className="whitespace-nowrap text-sm text-muted-foreground">
             {label}
@@ -191,7 +201,7 @@ export function PracticeTransferFileDropTarget({
             <p
               className={cn(
                 "text-muted-foreground/80",
-                compact ? "mt-0.5 text-[11px]" : "mt-1 text-xs",
+                compact && !fillHeight ? "mt-0.5 text-[11px]" : "mt-1 text-xs",
               )}
             >
               {acceptedHint}
