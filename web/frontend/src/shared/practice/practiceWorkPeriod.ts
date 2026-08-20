@@ -4,7 +4,9 @@
 // - web/frontend/src/shared/components/practice/PracticeWorkPeriodText.tsx
 // - web/frontend/src/shared/components/practice/PracticeRushConfirmDialog.tsx
 // - 2026-08-20: CA 안내 — 지정 도착일 2영업일 전 발송.
-// - 2026-08-20: 2+2 허용. 1+2는 지연 경고 후 주문, 0+2는 차단. 토스트 단문.
+// - 2026-08-20: 신속 툴팁 — N영업일 납기 + 지연·권고만. 제조/택배 문장 제거.
+// - 2026-08-20: UI 표기 = 주문→도착 남은 영업일 합계(N영업일). N+2 분해 표기 폐기.
+// - 2026-08-20: 2+2 허용. 1+2·0+2는 경고(빨간 표시·토스트) 후 주문 가능.
 // - 2026-08-20: 낮 12시 전은 주문일(오늘) 포함, 이후는 제외. 안내 문구 SSOT.
 // - 2026-08-19: 출고=도착−2영업일. 지정 도착일 1영업일 전 배송 목표.
 // - 2026-08-17: N+2 의미 툴팁 — 치과 배송·출고=치과도착일, 줄바꿈.
@@ -45,7 +47,7 @@ export const PRACTICE_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS = 2;
 /** 일반 의뢰 최소 작업+배송 합계(영업일) = 2+2. 경고 없이 허용. */
 export const PRACTICE_WORK_PERIOD_MIN_DAYS = 4;
 
-/** 이 값 미만(0+2=2영업일)은 주문 불가. */
+/** 이 값 미만(0+2=2영업일)이면 0+2 경고 토스트·빨간 표시. */
 export const PRACTICE_WORK_PERIOD_BLOCK_BELOW_DAYS = 3;
 
 /** 1+2 = 3영업일. 주문은 가능, 도착 지연 경고. */
@@ -75,20 +77,20 @@ export const PRACTICE_RUSH_FEE_MULTIPLIER = 1;
 export const PRACTICE_RUSH_COURIER_DISCLAIMER =
   "택배 사정으로 도착을 보장하지 않습니다.";
 
-/** 0+2 차단 토스트 */
+/** 3영업일 미만 경고 토스트(주문은 진행) */
 export const PRACTICE_WORK_PERIOD_BLOCK_MESSAGE =
-  "0+2영업일은 주문할 수 없습니다.";
+  "3영업일 미만입니다. 도착이 매우 촉박합니다.";
 
-/** 1+2 경고 토스트(주문은 진행) */
+/** 3영업일 경고 토스트(주문은 진행) */
 export const PRACTICE_WORK_PERIOD_LATE_WARNING_MESSAGE =
-  "1+2영업일입니다. 도착이 늦을 수 있습니다.";
+  "3영업일입니다. 도착이 늦을 수 있습니다.";
 
 export const PRACTICE_NORMAL_MIN_PERIOD_MESSAGE =
   PRACTICE_WORK_PERIOD_BLOCK_MESSAGE;
 
 /** 안내 툴팁 권고 문구 SSOT */
 export const PRACTICE_WORK_PERIOD_RECOMMEND_NOTE =
-  "3+2영업일 이상 설정을 권합니다.";
+  "5영업일 이상 설정을 권합니다.";
 
 /** 커스텀어벗 발송 안내 SSOT (Express 힌트·날짜 필드 툴팁 공용) */
 export const PRACTICE_CA_DIRECT_SHIP_NOTE =
@@ -146,14 +148,20 @@ export function formatPracticeWorkPlusShipMeaningTooltip(
 }
 
 /**
- * 2·3영업일 납기 툴팁: 제조 묶음배송 + 지연 가능.
+ * 신속 구간 툴팁: 실제 합계 영업일 + 지연 가능.
  */
-export function formatPracticeTightRushPeriodTooltip(): string {
+export function formatPracticeTightRushPeriodTooltip(
+  totalBusinessDays?: number | null,
+): string {
+  const period = formatPracticeWorkPeriodTotalLabel(
+    typeof totalBusinessDays === "number" && Number.isFinite(totalBusinessDays)
+      ? totalBusinessDays
+      : null,
+  );
   return [
-    "2·3영업일 납기입니다. 제조는 묶음배송으로 넘기며, 출고는 치과도착 2영업일 전 규칙으로 진행합니다.",
+    period ? `${period} 납기입니다.` : "납기가 촉박합니다.",
     "목표 일정에 늦을 수 있습니다.",
     PRACTICE_WORK_PERIOD_RECOMMEND_NOTE,
-    PRACTICE_RUSH_COURIER_DISCLAIMER,
   ].join("\n");
 }
 
@@ -189,7 +197,7 @@ export function getPracticeWorkPeriodTooltip(
   days?: number | null,
 ): string {
   if (isPracticeRushPeriod(days)) {
-    return formatPracticeTightRushPeriodTooltip();
+    return formatPracticeTightRushPeriodTooltip(days);
   }
   const meaning = formatPracticeWorkPlusShipMeaningTooltip(days);
   // 치과: meaning에 권고 포함. 기공소: 짧은 기간이면 수락 거부 안내만 추가.
@@ -263,13 +271,14 @@ export function isPracticeWorkPeriodShort(days: number | null | undefined): bool
   return isPracticeWorkPeriodLateWarning(days);
 }
 
-/** 0+2 이하: 주문 불가 */
+/** 0+2 이하: 경고 표시용(주문 차단 아님). 유효하지 않은 days는 false. */
 export function isPracticeWorkPeriodBlocked(
   days: number | null | undefined,
 ): boolean {
   return (
-    typeof days !== "number" ||
-    !Number.isFinite(days) ||
+    typeof days === "number" &&
+    Number.isFinite(days) &&
+    days >= 0 &&
     days < PRACTICE_WORK_PERIOD_BLOCK_BELOW_DAYS
   );
 }
@@ -285,21 +294,29 @@ export function isPracticeWorkPeriodLateWarning(
   );
 }
 
-/** `3+2영업일` (작업+배송). lead/days 공통 — 앞에 +를 붙이지 않음. */
+/** 주문→도착 남은 영업일 합계. 예: `4영업일`. */
+export function formatPracticeWorkPeriodTotalLabel(
+  totalBusinessDays: number | null,
+): string {
+  if (totalBusinessDays == null || !Number.isFinite(totalBusinessDays) || totalBusinessDays < 0) {
+    return "";
+  }
+  return `${totalBusinessDays}영업일`;
+}
+
+/** @deprecated formatPracticeWorkPeriodTotalLabel */
 export function formatPracticeWorkPlusShipLabel(totalBusinessDays: number | null): string {
-  const workDays = getPracticeWorkOnlyBusinessDays(totalBusinessDays);
-  if (workDays == null || totalBusinessDays == null || totalBusinessDays < 0) return "";
-  return `${workDays}+${PRACTICE_SHIPPING_BUSINESS_DAYS}영업일`;
+  return formatPracticeWorkPeriodTotalLabel(totalBusinessDays);
 }
 
-/** 날짜 필드 옆·카드: 1+2영업일 */
+/** 날짜 필드 옆·카드: N영업일 */
 export function formatPracticeWorkPeriodLeadLabel(totalBusinessDays: number | null): string {
-  return formatPracticeWorkPlusShipLabel(totalBusinessDays);
+  return formatPracticeWorkPeriodTotalLabel(totalBusinessDays);
 }
 
-/** 목록·상세: 1+2영업일 */
+/** 목록·상세: N영업일 */
 export function formatPracticeWorkPeriodDaysLabel(totalBusinessDays: number | null): string {
-  return formatPracticeWorkPlusShipLabel(totalBusinessDays);
+  return formatPracticeWorkPeriodTotalLabel(totalBusinessDays);
 }
 
 /** 카드/필드 공통 라벨: 주문-치과도착 */

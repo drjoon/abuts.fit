@@ -4,7 +4,7 @@
 // - web/backend/services/practiceTransferBilling.service.js
 // - web/frontend/src/shared/practice/practiceWorkPeriod.ts
 // change-log:
-// - 2026-08-20: 2+2 허용. 1+2는 지연 경고 후 주문, 0+2는 차단.
+// - 2026-08-20: 2+2 허용. 1+2·0+2는 경고만(주문 차단 없음).
 // - 2026-08-20: 낮 12시 전은 주문일 포함, 이후는 제외(프론트 kstYmdDiffBusinessDays와 동일).
 // - 2026-08-17: 신속처리 할증 없음(신규 배수 1). ≤2영업일만 제조 express.
 // - 2026-08-17: 신속처리 할증 기본 1.2·(1,2] 정규화. SystemSettings 설정값 반영.
@@ -25,7 +25,7 @@ export const PRACTICE_RUSH_MAX_WORK_PLUS_SHIP_DAYS = 3;
 /** @deprecated 제조 shippingMode는 항상 묶음. 지연고지 구간은 RUSH_MAX와 동일. */
 export const PRACTICE_EXPRESS_MAX_WORK_PLUS_SHIP_DAYS = 3;
 
-/** 일반 기공의뢰 최소 작업+배송(영업일) = 1+2. 0+2는 거부 */
+/** 0+2(2영업일) 경고 구간 상한. 주문 거부에는 사용하지 않음. */
 export const PRACTICE_NORMAL_MIN_WORK_PLUS_SHIP_DAYS = 3;
 
 export const PRACTICE_RUSH_COURIER_DISCLAIMER =
@@ -267,12 +267,12 @@ export async function resolvePracticeTransferArrivalPolicy({
   });
 
   const days = countWeekdayBusinessDays(orderYmd, arrivalYmd, now);
-  if (days == null || days < PRACTICE_NORMAL_MIN_WORK_PLUS_SHIP_DAYS) {
+  if (days == null || days < 0) {
     return {
       ok: false,
       statusCode: 400,
-      message: PRACTICE_NORMAL_MIN_PERIOD_MESSAGE,
-      reason: "practice_work_period_too_short",
+      message: "치과도착일을 확인해주세요.",
+      reason: "practice_work_period_invalid",
       orderYmd,
       arrivalYmd,
       workPlusShipDays: days,

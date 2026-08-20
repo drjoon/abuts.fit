@@ -9,8 +9,8 @@
 // - 2026-08-15: 기공기간 5일 미만 시 빨간 표시·거부 가능 툴팁.
 // - 2026-08-15: 치과·기공소 툴팁 문구 분리.
 // - 2026-08-15: 작업기간 영업일 표기(+N영업일 / N영업일).
-// - 2026-08-15: 작업+배송기간 표기(3+2영업일).
-// - 2026-08-15: 주문-치과도착 + 1+2영업일(카드/필드). lead 앞 + 제거.
+// - 2026-08-20: 표기 = 주문→도착 남은 영업일 합계(N영업일).
+// - 2026-08-15: 주문-치과도착 + N영업일(카드/필드).
 // - 2026-08-15: N+2영업일 의미 툴팁 상시(짧은 기간 경고 병기).
 
 import {
@@ -21,8 +21,7 @@ import {
 import { cn } from "@/shared/ui/cn";
 import {
   PRACTICE_ORDER_ARRIVAL_PERIOD_LABEL,
-  formatPracticeWorkPeriodDaysLabel,
-  formatPracticeWorkPeriodLeadLabel,
+  formatPracticeWorkPeriodTotalLabel,
   getPracticeWorkPeriodDays,
   getPracticeWorkPeriodTooltip,
   isPracticeRushPeriod,
@@ -34,10 +33,10 @@ type PracticeWorkPeriodTextProps = {
   orderDate?: string | null;
   arrivalDate?: string | null;
   /**
-   * lead: 1+2영업일(폼 라벨 옆).
-   * days: 1+2영업일.
-   * labeled: 작업+배송기간 1+2영업일.
-   * orderArrival: 주문-치과도착 · 1+2영업일(목록 카드).
+   * lead: N영업일(폼 라벨 옆).
+   * days: N영업일.
+   * labeled: 작업+배송기간 N영업일.
+   * orderArrival: 주문-치과도착 · N영업일(목록 카드).
    */
   variant?: "lead" | "days" | "labeled" | "orderArrival";
   /** practice=치과 발신, lab=기공소 수신 */
@@ -58,10 +57,7 @@ export function PracticeWorkPeriodText({
   const days = getPracticeWorkPeriodDays(orderDate, arrivalDate, at);
   const short = isPracticeWorkPeriodShort(days);
   const rush = isPracticeRushPeriod(days);
-  const daysLabel =
-    variant === "lead"
-      ? formatPracticeWorkPeriodLeadLabel(days)
-      : formatPracticeWorkPeriodDaysLabel(days);
+  const daysLabel = formatPracticeWorkPeriodTotalLabel(days);
   if (!daysLabel) return null;
 
   const label =

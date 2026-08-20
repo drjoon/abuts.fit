@@ -5015,9 +5015,7 @@ export const PracticeFileTransferPage = ({
         title: PRACTICE_WORK_PERIOD_BLOCK_MESSAGE,
         variant: "destructive",
       });
-      return;
-    }
-    if (isPracticeWorkPeriodLateWarning(periodDays)) {
+    } else if (isPracticeWorkPeriodLateWarning(periodDays)) {
       toast({ title: PRACTICE_WORK_PERIOD_LATE_WARNING_MESSAGE });
     }
 
@@ -5802,9 +5800,7 @@ export const PracticeFileTransferPage = ({
                         title: PRACTICE_WORK_PERIOD_BLOCK_MESSAGE,
                         variant: "destructive",
                       });
-                      return;
-                    }
-                    if (isPracticeWorkPeriodLateWarning(days)) {
+                    } else if (isPracticeWorkPeriodLateWarning(days)) {
                       toast({ title: PRACTICE_WORK_PERIOD_LATE_WARNING_MESSAGE });
                     }
                     setRushProcessing(false);

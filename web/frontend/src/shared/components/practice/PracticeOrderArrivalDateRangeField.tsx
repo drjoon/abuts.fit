@@ -175,9 +175,7 @@ export function PracticeOrderArrivalDateRangeField({
               <p>{PRACTICE_ORDER_DAY_CUTOFF_NOTE}</p>
               <p>주문일은 오늘 고정. 치과도착일만 선택하면 됩니다.</p>
               <p>{PRACTICE_CA_DIRECT_SHIP_NOTE}</p>
-              <p>
-                1+2영업일은 도착이 늦을 수 있습니다. 0+2영업일은 주문할 수 없습니다.
-              </p>
+              <p>3영업일 이하는 도착이 늦을 수 있습니다.</p>
               <p>{PRACTICE_WORK_PERIOD_RECOMMEND_NOTE}</p>
             </TooltipContent>
           </Tooltip>
@@ -186,6 +184,7 @@ export function PracticeOrderArrivalDateRangeField({
           <PracticeWorkPeriodText
             orderDate={leadFromYmd}
             arrivalDate={leadToYmd}
+            at={new Date()}
             variant="lead"
             className="shrink-0 text-xs"
           />
