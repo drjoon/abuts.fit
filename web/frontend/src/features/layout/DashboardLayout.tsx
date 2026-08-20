@@ -12,6 +12,7 @@ import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPat
 import { cn } from "@/shared/ui/cn";
 
 // - 2026-08-20: 관리자 포함 전 롤 사이드를 DashboardSidebarNav로 통일. 접히면 아이콘·툴팁·배지.
+// - 2026-08-20: 모바일 작업영역 흰 카드 min-w-0·p-3로 좌우 잘림 완화.
 // - 2026-08-20: 구강스캔으로·어벗디자인으로 사이드 아이콘. 접힌 레일에서도 클릭.
 // - 2026-08-20: 데스크톱 사이드 닫힘 — 아이콘 레일(w-24) 유지. 모바일만 화면 밖으로 숨김.
 // - 2026-08-19: 기공의뢰수신 작업영역 — 흰 카드 외곽·바깥 여백 제거해 캘린더를 넓게.
@@ -1742,14 +1743,14 @@ export const DashboardLayout = () => {
                 >
                   <main
                     className={cn(
-                      "flex h-full min-h-0 flex-1 flex-col overflow-hidden",
+                      "flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden",
                       isLabReceiveWorkArea
                         ? "rounded-none bg-white p-3 shadow-none sm:p-4"
-                        : "rounded-2xl bg-white/80 p-4 shadow-lg backdrop-blur-xl sm:p-6",
+                        : "box-border rounded-2xl bg-white/80 p-3 shadow-lg backdrop-blur-xl sm:p-6",
                     )}
                   >
                     <div
-                      className="custom-scrollbar flex h-full min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden"
+                      className="custom-scrollbar flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overflow-x-clip"
                       data-dashboard-scroll="1"
                     >
                       <Outlet

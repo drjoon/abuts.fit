@@ -17,9 +17,11 @@
  * 2026-08-20: 캘린더 칩도 상단 뱃지 상태색(리메이크=이중선).
  * 2026-08-20: 캘린더 칩에 채팅 안읽음 배지.
  * 2026-08-20: 날짜 뱃지 기본=치과도착일. 계정 preferences에 저장.
+ * 2026-08-20: 모바일은 달력 대신 기공소·환자명·상태 카드 목록.
+ * 2026-08-20: 모바일 — 가로 스크롤 상태칩·터치 카드·풀높이 시트.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Search } from "lucide-react";
+import { ChevronRight, Search, Trash2 } from "lucide-react";
 
 import {
   Dialog,
@@ -28,6 +30,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -40,6 +43,7 @@ import { cn } from "@/shared/ui/cn";
 import { apiFetch } from "@/shared/api/apiClient";
 import { type ChatRoom } from "@/shared/hooks/useChatRooms";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
+import { useIsMobile } from "@/shared/hooks/use-mobile";
 import { toKstYmd } from "@/shared/date/kst";
 import { normalizeLabReceiveCalendarDateKey } from "@/shared/practice/labReceiveCalendarDateKey";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -55,6 +59,7 @@ import {
   filterRequestsByPeriodAndSearch,
   groupPracticeRecentRequests,
   mapMyPracticeTransferApiRows,
+  toStatusBadgeLabel,
 } from "@/shared/practice/practiceRecentTransferList";
 import {
   DEFAULT_HIDDEN_WEEKDAYS,
@@ -66,6 +71,7 @@ import {
   type PracticeCalendarStatusTone,
 } from "@/pages/practice/components/PracticeRecentTransfersCalendar";
 import {
+  practiceTransferStatusBadgeClass,
   resolvePracticeTransferListPatientName,
   resolvePracticeTransferListToothNumbers,
 } from "@/shared/components/practice/PracticeRecentTransferListCardDetail";
@@ -105,6 +111,7 @@ export function PracticeRecentTransfersAllModal({
   onSelectTransfer,
   onDeleteTransfer,
 }: PracticeRecentTransfersAllModalProps) {
+  const isMobile = useIsMobile();
   const storedCalendarDateKey = useAuthStore(
     (s) => s.user?.labReceiveCalendarDateKey,
   );
@@ -339,18 +346,19 @@ export function PracticeRecentTransfersAllModal({
         <TooltipTrigger asChild>
           <button
             type="button"
-            className="rounded-full"
+            className="shrink-0 rounded-full"
             onClick={() => setStatusFilter((prev) => (prev === filterKey ? "all" : filterKey))}
             aria-pressed={active}
           >
             <Badge
               variant="outline"
               className={cn(
-                "cursor-pointer",
+                "cursor-pointer whitespace-nowrap",
+                isMobile && "h-8 px-2.5 text-xs",
                 PRACTICE_STATUS_FILTER_BADGE_CLASS[tone][active ? "active" : "idle"],
               )}
             >
-              {label} {count}건
+              {label} {count}
             </Badge>
           </button>
         </TooltipTrigger>
@@ -372,38 +380,188 @@ export function PracticeRecentTransfersAllModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex h-[min(88vh,920px)] w-[min(96vw,1280px)] max-w-none flex-col gap-0 overflow-hidden p-0">
-        <DialogHeader className="shrink-0 border-b px-5 py-3 pr-14 sm:px-6 sm:pr-16">
-          <div className="flex items-center gap-3">
-            <DialogTitle className="shrink-0 text-lg font-semibold">
-              전송 내역 전체 보기
-            </DialogTitle>
-            <div className="flex min-w-0 flex-1 flex-wrap items-center justify-center gap-2">
-              {statusBadges}
+      <DialogContent
+        className={cn(
+          "flex max-w-none flex-col gap-0 overflow-hidden p-0",
+          isMobile
+            ? "inset-0 left-0 top-0 h-[100dvh] w-screen max-h-[100dvh] max-w-none translate-x-0 translate-y-0 rounded-none border-0"
+            : "h-[min(88vh,920px)] w-[min(96vw,1280px)]",
+        )}
+      >
+        <DialogHeader
+          className={cn(
+            "shrink-0 border-b bg-white/95 text-left backdrop-blur supports-[backdrop-filter]:bg-white/80",
+            isMobile ? "space-y-0 px-4 pb-3 pt-4 pr-12" : "px-6 py-3 pr-16",
+          )}
+        >
+          {isMobile ? (
+            <div className="flex flex-col gap-3">
+              <DialogTitle className="text-base font-semibold tracking-tight">
+                최근 의뢰
+              </DialogTitle>
+              <div className="relative w-full">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="h-11 w-full rounded-xl border-slate-200 bg-slate-50 pl-9 text-base"
+                  placeholder="기공소, 환자명 검색"
+                />
+              </div>
+              <div className="-mx-4 flex gap-1.5 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                {statusBadges}
+              </div>
             </div>
-            <div className="relative w-full max-w-xs shrink-0">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="h-9 w-full pl-9"
-                placeholder="기공소, 환자명, 전송ID 검색"
-              />
+          ) : (
+            <div className="flex items-center gap-3">
+              <DialogTitle className="shrink-0 text-lg font-semibold">
+                전송 내역 전체 보기
+              </DialogTitle>
+              <div className="flex min-w-0 flex-1 flex-wrap items-center justify-center gap-2">
+                {statusBadges}
+              </div>
+              <div className="relative w-full max-w-xs shrink-0">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="h-9 w-full pl-9"
+                  placeholder="기공소, 환자명, 전송ID 검색"
+                />
+              </div>
             </div>
-          </div>
+          )}
         </DialogHeader>
 
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-5 py-3 sm:px-6">
+        <div
+          className={cn(
+            "flex min-h-0 flex-1 flex-col overflow-hidden",
+            isMobile ? "bg-slate-50/80 px-3 py-3" : "px-6 py-3",
+          )}
+        >
           {loading ? (
-            <div className="grid grid-cols-5 gap-1">
-              {Array.from({ length: 15 }).map((_, idx) => (
-                <Skeleton key={`all-modal-cal-skel-${idx}`} className="h-24 w-full" />
-              ))}
-            </div>
+            isMobile ? (
+              <div className="space-y-2.5">
+                {Array.from({ length: 6 }).map((_, idx) => (
+                  <Skeleton
+                    key={`all-modal-card-skel-${idx}`}
+                    className="h-[4.75rem] w-full rounded-2xl"
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="grid grid-cols-5 gap-1">
+                {Array.from({ length: 15 }).map((_, idx) => (
+                  <Skeleton key={`all-modal-cal-skel-${idx}`} className="h-24 w-full" />
+                ))}
+              </div>
+            )
           ) : displayError ? (
-            <div className="rounded-lg border border-dashed px-3 py-16 text-center text-sm text-destructive">
+            <div className="rounded-2xl border border-dashed bg-white px-3 py-16 text-center text-sm text-destructive">
               {displayError}
             </div>
+          ) : isMobile ? (
+            filteredTransfers.length === 0 ? (
+              <div className="flex flex-1 flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-16 text-center">
+                <p className="text-sm font-medium text-slate-600">전송 내역 없음</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  검색어나 상태 필터를 바꿔 보세요.
+                </p>
+              </div>
+            ) : (
+              <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto overscroll-contain pb-2">
+                {filteredTransfers.map((transfer) => {
+                  const lab =
+                    String(transfer.targetLab || "-")
+                      .replace(/\s*→.*$/g, "")
+                      .trim() || "-";
+                  const patient =
+                    resolvePracticeTransferListPatientName(transfer) || "—";
+                  const statusLabel = toStatusBadgeLabel(transfer.status);
+                  const canDelete = canDeletePracticeTransferByStatus(transfer.status);
+                  const unread = Math.max(0, Number(transfer.unreadCount || 0));
+                  const arrival = String(transfer.arrivalDate || "").trim();
+
+                  return (
+                    <div
+                      key={`${transfer.id}:${transfer.transferId}`}
+                      role="button"
+                      tabIndex={0}
+                      className="group w-full cursor-pointer rounded-2xl border border-slate-200/80 bg-white p-3.5 text-left shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-[transform,box-shadow,border-color] active:scale-[0.985] active:bg-slate-50/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      onClick={() => onSelectTransfer(transfer)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          onSelectTransfer(transfer);
+                        }
+                      }}
+                    >
+                      <div className="flex min-w-0 items-center gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                            <Badge
+                              variant="outline"
+                              className={cn(
+                                "h-6 shrink-0 px-2 text-[11px] font-semibold leading-none",
+                                practiceTransferStatusBadgeClass(statusLabel),
+                              )}
+                            >
+                              {statusLabel}
+                            </Badge>
+                            {transfer.isRemake ? (
+                              <Badge
+                                variant="outline"
+                                className="h-6 border-[2px] border-double border-slate-400 bg-white px-1.5 text-[10px]"
+                              >
+                                리메이크
+                              </Badge>
+                            ) : null}
+                            {unread > 0 ? (
+                              <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[10px] font-semibold text-white">
+                                {unread > 99 ? "99+" : unread}
+                              </span>
+                            ) : null}
+                            <span className="ml-auto shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                              {transfer.createdAt}
+                            </span>
+                          </div>
+                          <p className="mt-2 truncate text-[15px] font-semibold leading-snug text-slate-900">
+                            {lab}
+                          </p>
+                          <div className="mt-1 flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
+                            <span className="truncate">{patient}</span>
+                            {arrival ? (
+                              <>
+                                <span className="shrink-0 text-slate-300">·</span>
+                                <span className="shrink-0 tabular-nums">도착 {arrival}</span>
+                              </>
+                            ) : null}
+                          </div>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-0.5">
+                          {canDelete ? (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-10 w-10 text-muted-foreground hover:bg-destructive-soft hover:text-destructive"
+                              aria-label="의뢰 취소"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onDeleteTransfer(transfer);
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          ) : null}
+                          <ChevronRight className="h-4 w-4 text-slate-300 group-active:text-slate-400" />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )
           ) : (
             <PracticeRecentTransfersCalendar
               items={calendarItems}

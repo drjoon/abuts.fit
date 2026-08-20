@@ -15,6 +15,7 @@ import {
 // - web/frontend/src/shared/practice/practiceTransferAccept.ts
 // - web/frontend/rules.md (practice 최근 전송 기공소 SSOT)
 // - 2026-08-18: 치과 픽커 「자동 매칭」제거. 고정=어벗츠기공소, 최근=지정 기공소.
+// - 2026-08-20: 모바일 구강포토 동기화 후 로컬 파일만 키로 제거(removeFilesByKeys).
 export {
   PRACTICE_ACCEPTED_HINT,
 } from "@/shared/practice/practiceTransferAccept";
@@ -977,6 +978,23 @@ export const usePracticeTransferStep1 = (options?: Options) => {
     });
   };
 
+  const removeFilesByKeys = (keys: string[]) => {
+    const keySet = new Set(keys.map((key) => String(key || "").trim()).filter(Boolean));
+    if (keySet.size === 0) return;
+    setFiles((prev) => {
+      const removed = prev.filter((file) => keySet.has(toPracticeFileKey(file)));
+      for (const target of removed) {
+        const key = toPracticeFileKey(target);
+        void deleteFileFromIndexedDb(key);
+      }
+      const meta = readPracticeFileCacheMeta(fileCacheMetaKey).filter(
+        (row) => !keySet.has(row.key),
+      );
+      writePracticeFileCacheMeta(fileCacheMetaKey, meta);
+      return prev.filter((file) => !keySet.has(toPracticeFileKey(file)));
+    });
+  };
+
   const clearAllFiles = async () => {
     const stateKeys = files.map((file) => toPracticeFileKey(file));
     const metaKeys = readPracticeFileCacheMeta(fileCacheMetaKey).map((row) =>
@@ -1244,6 +1262,7 @@ export const usePracticeTransferStep1 = (options?: Options) => {
     syncRecentLabsFromTransfers,
     handleIncomingFiles,
     removeFile,
+    removeFilesByKeys,
     clearAllFiles,
   };
 };

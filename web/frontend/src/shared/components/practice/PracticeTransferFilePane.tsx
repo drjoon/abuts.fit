@@ -1,4 +1,4 @@
-import { Trash2 } from "lucide-react";
+import { Camera, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -24,6 +24,8 @@ import type { PreUploadFileStatus } from "@/shared/hooks/useFilePreUpload";
 // - 2026-08-12: 클릭/요소드롭은 PracticeTransferFileDropTarget 공통 재사용.
 // - 2026-08-13: 파일카드 하단 프로그레스바(사전 업로드 전송률).
 // - 2026-08-17: 확장자 안내는 DropTarget 라벨 하단 상시 표기(클릭 경로 Tooltip 제거).
+// - 2026-08-20: requirementNote를 모바일 쉐이드 포토 안내 등 soft tip으로 표시.
+// - 2026-08-20: 쉐이드 안내 — 드롭존과 같은 폭·가운데 정렬, 카메라 아이콘.
 
 export type PracticeTransferFileDisplayItem = {
   key: string;
@@ -116,9 +118,12 @@ export const PracticeTransferFilePane = ({
       />
 
       {requirementNote ? (
-        <p className="text-xs leading-relaxed text-muted-foreground">
-          {requirementNote}
-        </p>
+        <div className="flex items-center justify-center gap-1.5 px-1 text-center">
+          <Camera className="h-3.5 w-3.5 shrink-0 text-primary-strong/80" aria-hidden />
+          <p className="text-xs leading-snug text-muted-foreground">
+            {requirementNote}
+          </p>
+        </div>
       ) : null}
 
       {hasFiles ? (

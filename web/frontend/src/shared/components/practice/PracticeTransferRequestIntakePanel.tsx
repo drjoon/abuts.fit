@@ -674,6 +674,7 @@ export type PracticeTransferRequestIntakePanelProps = {
   showMemoSection?: boolean;
   /** card: practice transfers 카드 스타일 / plain: 모달 등 상위 카드 안에 임베드 */
   variant?: "card" | "plain";
+  className?: string;
   /** 크게 보기 버튼 숨김 */
   hideEnlargeButton?: boolean;
   /** compact: 6칸 스크롤 / full: 16칸 전체 표시 (크게 보기와 동일) */
@@ -773,6 +774,7 @@ export const PracticeTransferRequestIntakePanel = ({
   showProsthesisSection = true,
   showMemoSection = true,
   variant = "card",
+  className,
   hideEnlargeButton = false,
   toothChartDisplayMode = "compact",
   nestedDialogClassName,
@@ -1863,16 +1865,18 @@ export const PracticeTransferRequestIntakePanel = ({
     headerFieldCount <= 1
       ? "grid grid-cols-1 items-end gap-3 max-w-lg"
       : headerFieldCount === 2
-        ? "grid grid-cols-1 items-end gap-3 sm:grid-cols-2"
+        ? "grid grid-cols-1 items-end gap-3"
         : "grid grid-cols-1 items-end gap-3 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,0.7fr)_minmax(0,0.95fr)]";
 
   return (
     <div
       className={cn(
-        "flex min-h-0 flex-col gap-10",
+        "flex min-h-0 flex-col",
+        showProsthesisSection || showMemoSection ? "gap-10" : "gap-4",
         memoOnly && "h-full flex-1",
         variant === "card" &&
           "rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-primary-soft/60 p-4 shadow-[0_4px_12px_rgba(15,23,42,0.03)] transition-all hover:shadow-[0_8px_20px_rgba(15,23,42,0.06)]",
+        className,
       )}
     >
       {showAnyHeaderFields && onClearAll ? (
@@ -1927,7 +1931,10 @@ export const PracticeTransferRequestIntakePanel = ({
                 <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
               </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-[420px] p-0" align="start">
+            <PopoverContent
+              className="w-[min(26.25rem,calc(100vw-2rem))] p-0"
+              align="start"
+            >
               <Command>
                 <CommandInput
                   placeholder="기공소 검색"
