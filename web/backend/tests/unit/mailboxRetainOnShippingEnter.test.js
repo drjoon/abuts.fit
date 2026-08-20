@@ -4,7 +4,25 @@ import { describe, expect, it } from "@jest/globals";
 import {
   retainMailboxOnShippingEnter,
   normalizeMailboxReceiverFingerprint,
+  shouldSkipAutoShippingStageEnter,
 } from "../../controllers/requests/mailbox.utils.js";
+
+describe("shouldSkipAutoShippingStageEnter", () => {
+  it("returns true for copied_sample and rnd_sample", () => {
+    expect(
+      shouldSkipAutoShippingStageEnter({ requestCategory: "copied_sample" }),
+    ).toBe(true);
+    expect(
+      shouldSkipAutoShippingStageEnter({ requestCategory: "rnd_sample" }),
+    ).toBe(true);
+  });
+
+  it("returns false for normal orders", () => {
+    expect(shouldSkipAutoShippingStageEnter({ requestCategory: "order" })).toBe(
+      false,
+    );
+  });
+});
 
 describe("retainMailboxOnShippingEnter", () => {
   it("keeps the mailbox assigned at 세척.패킹", async () => {

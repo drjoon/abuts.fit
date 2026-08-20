@@ -356,7 +356,9 @@ export const usePackingCapture = ({
       toast({
         title: `각인 인식: ${suffix || "인식됨"}`,
         description: requestId
-          ? `${requestId} → 포장.발송으로 이동`
+          ? movedToStage === "포장.발송"
+            ? `${requestId} → 포장.발송으로 이동`
+            : `${requestId} 세척.패킹 처리 완료`
           : "세척.패킹 처리 결과가 반영되었습니다.",
       });
     },

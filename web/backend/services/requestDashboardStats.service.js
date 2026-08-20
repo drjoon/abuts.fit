@@ -3,6 +3,7 @@
 // - web/backend/app.js
 // - web/backend/server.js
 // change-log:
+// - 2026-08-20: 포장.발송 카운트에서 샘플·우편함/박스 미배정 건 제외(우편함 그리드 SSOT 일치).
 // - 2026-08-04: 진행 중 묶음배송/신속배송 건수 집계 추가.
 // - 2026-08-04: admin dashboard byStatus first-stage key SSOT를 '준비'로 통일 (구 '의뢰' 제거).
 import Request from "../models/request.model.js";
@@ -115,6 +116,38 @@ export function buildDashboardNormalizedStageExpr() {
   };
 }
 
+function buildDashboardShippingBoxKeyExpr() {
+  return {
+    $let: {
+      vars: {
+        mailboxAddress: {
+          $trim: { input: { $ifNull: ["$mailboxAddress", ""] } },
+        },
+        shippingPackageId: {
+          $trim: {
+            input: {
+              $toString: { $ifNull: ["$shippingPackageId", ""] },
+            },
+          },
+        },
+      },
+      in: {
+        $cond: [
+          { $ne: ["$$mailboxAddress", ""] },
+          { $concat: ["mailbox:", "$$mailboxAddress"] },
+          {
+            $cond: [
+              { $ne: ["$$shippingPackageId", ""] },
+              { $concat: ["pkg:", "$$shippingPackageId"] },
+              null,
+            ],
+          },
+        ],
+      },
+    },
+  };
+}
+
 export async function getAssignedLikeDashboardSummary({
   baseFilter = {},
   dateFilter = {},
@@ -133,6 +166,7 @@ export async function getAssignedLikeDashboardSummary({
           $addFields: {
             normalizedStage: buildDashboardNormalizedStageExpr(),
             effectiveShippingMode: buildDashboardEffectiveShippingModeExpr(),
+            shippingBoxKey: buildDashboardShippingBoxKeyExpr(),
           },
         },
         {
@@ -263,7 +297,26 @@ export async function getAssignedLikeDashboardSummary({
             },
             shippingCount: {
               $sum: {
-                $cond: [{ $eq: ["$normalizedStage", "shipping"] }, 1, 0],
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ["$normalizedStage", "shipping"] },
+                      { $ne: ["$shippingBoxKey", null] },
+                      {
+                        $not: [
+                          {
+                            $in: [
+                              "$requestCategory",
+                              ["rnd_sample", "copied_sample"],
+                            ],
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                  1,
+                  0,
+                ],
               },
             },
             // 진행(준비~포장.발송) 중 배송모드 건수

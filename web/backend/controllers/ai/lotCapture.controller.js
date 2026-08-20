@@ -5,6 +5,7 @@
 // - bg/pc2/lot-server/src/index.js
 // - web/backend/controllers/requests/mailbox.utils.js
 // change-log:
+// - 2026-08-20: 샘플(rnd_sample|copied_sample)은 각인 후에도 세척.패킹 유지(자동 포장.발송 금지).
 // - 2026-08-17: 포장.발송 진입 시 세척.패킹 우편함을 유지(없으면 1회 보정).
 import Request from "../../models/request.model.js";
 import s3Utils, { getObjectBufferFromS3 } from "../../utils/s3.utils.js";
@@ -23,6 +24,7 @@ import {
 import {
   retainMailboxOnShippingEnter,
   normalizeBusinessAnchorId,
+  shouldSkipAutoShippingStageEnter,
 } from "../requests/mailbox.utils.js";
 import { applyPracticeShippingReceiverSnapshotToRequest } from "../../utils/shippingReceiver.utils.js";
 import sharp from "sharp";
@@ -429,32 +431,36 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
     request.businessAnchorId = request.requestor.businessAnchorId;
   }
 
-  // 샘플(복사/R&D)도 일반 의뢰와 동일하게 세척.패킹 인식 후
-  // 포장.발송 단계 전환을 수행한다. 우편함은 세척.패킹 배정을 유지한다.
-  try {
-    const nextMailboxAddress = await retainMailboxOnShippingEnter({
-      request,
-      requestorOrgId: effectiveAnchorIdStr,
-    });
-    if (nextMailboxAddress) {
-      request.mailboxAddress = nextMailboxAddress;
+  const skipAutoShippingEnter = shouldSkipAutoShippingStageEnter(request);
+  if (skipAutoShippingEnter) {
+    // 샘플: 각인·패킹 승인만 반영하고 세척.패킹에 둔다. 발송은 수동/동일 박스 합류.
+    request.mailboxAddress = null;
+  } else {
+    try {
+      const nextMailboxAddress = await retainMailboxOnShippingEnter({
+        request,
+        requestorOrgId: effectiveAnchorIdStr,
+      });
+      if (nextMailboxAddress) {
+        request.mailboxAddress = nextMailboxAddress;
+      }
+    } catch (err) {
+      console.error("[lot-capture] mailbox retain/fallback failed", {
+        requestId: request.requestId,
+        requestMongoId: String(request._id || ""),
+        message: err?.message || String(err),
+      });
     }
-  } catch (err) {
-    console.error("[lot-capture] mailbox retain/fallback failed", {
-      requestId: request.requestId,
-      requestMongoId: String(request._id || ""),
-      message: err?.message || String(err),
-    });
+    try {
+      await applyPracticeShippingReceiverSnapshotToRequest(request);
+    } catch (err) {
+      console.error("[lot-capture] shippingReceiver snapshot failed", {
+        requestId: request.requestId,
+        message: err?.message || String(err),
+      });
+    }
+    applyStatusMapping(request, "발송");
   }
-  try {
-    await applyPracticeShippingReceiverSnapshotToRequest(request);
-  } catch (err) {
-    console.error("[lot-capture] shippingReceiver snapshot failed", {
-      requestId: request.requestId,
-      message: err?.message || String(err),
-    });
-  }
-  applyStatusMapping(request, "발송");
 
   const legacyHexRotationNormalized =
     normalizeLegacyManufacturerHexRotationOnRequest(request);

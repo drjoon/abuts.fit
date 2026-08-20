@@ -21,6 +21,7 @@ const MAILBOX_SLOT_HANDOFF_MAX_AGE_MS = 60_000;
 // - web/backend/controllers/cnc/machiningBridge.js
 // - web/backend/controllers/ai/lotCapture.controller.js
 // change-log:
+// - 2026-08-20: 샘플 자동 포장.발송 금지 SSOT(`shouldSkipAutoShippingStageEnter`).
 // - 2026-08-17: PTX 합류는 practice BA + 수취인(이름/전화/주소) 지문이 같을 때만.
 // - 2026-08-17: 세척.패킹→가공 롤백도 우편함 유지. 가공 중 점유/합류. 기존 칸 우선.
 // - 2026-08-17: 집하 전 추적관리 점유는 빈칸 할당을 막고, 합류(재사용) 대상에서는 제외.
@@ -87,6 +88,16 @@ export const isManufacturerSampleRequest = (requestLike) => {
     category === REQUEST_CATEGORY.COPIED_SAMPLE
   );
 };
+
+/**
+ * 제조사 샘플(rnd_sample|copied_sample)은 자동으로 포장.발송에 올리지 않는다.
+ * - 세척.패킹 각인/승인 완료 후에도 단계는 세척.패킹을 유지한다.
+ * - 우편함·박스 배정도 하지 않는다(샘플은 우편함 SSOT 대상 아님).
+ * - 발송이 필요하면 수동 발송하거나, 다른 의뢰와 같은 박스·우편함에 넣어 함께 보낸다.
+ */
+export function shouldSkipAutoShippingStageEnter(requestLike) {
+  return isManufacturerSampleRequest(requestLike);
+}
 
 /**
  * 우편함 점유 의뢰에서 사업자 anchor를 추출한다.

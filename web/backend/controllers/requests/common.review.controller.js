@@ -10,6 +10,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers.ts
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
+// - 2026-08-20: 샘플(rnd_sample|copied_sample)은 패킹 승인 후에도 세척.패킹 유지(자동 포장.발송 금지).
 // - 2026-08-17: 배송비는 집하 시 차감. 포장.발송 진입은 우편함만 확인.
 // - 2026-08-17: 우편함 배정 SSOT를 가공→세척.패킹으로 옮기고, 포장.발송은 기존 배정 유지.
 // - 2026-08-17: 포장.발송 진입 시 PTX shippingReceiver를 live practice BA로 스냅샷.
@@ -37,6 +38,7 @@ import {
   assignMailboxForCleaningPackingEnter,
   retainMailboxOnShippingEnter,
   isManufacturerSampleRequest,
+  shouldSkipAutoShippingStageEnter,
   normalizeBusinessAnchorId,
 } from "./mailbox.utils.js";
 import { applyPracticeShippingReceiverSnapshotToRequest } from "../../utils/shippingReceiver.utils.js";
@@ -1702,9 +1704,10 @@ export async function updateReviewStatusByStage(req, res) {
               scopeFilter: mailboxAllocationScopeFilter,
             });
           } else if (effectiveStage === "packing") {
-            // 샘플 의뢰도 일반 의뢰와 동일하게 포장.발송 단계로 진행한다.
-            // (차이는 크레딧 미차감 정책뿐)
-            applyStatusMapping(request, "포장.발송");
+            // 샘플은 세척.패킹에 유지. 발송은 수동 또는 다른 의뢰와 동일 박스 합류.
+            if (!shouldSkipAutoShippingStageEnter(request)) {
+              applyStatusMapping(request, "포장.발송");
+            }
           } else if (effectiveStage === "shipping") {
             // 샘플 의뢰도 일반 의뢰와 동일하게 추적관리 단계로 진행한다.
             applyStatusMapping(request, "추적관리");
@@ -1758,35 +1761,39 @@ export async function updateReviewStatusByStage(req, res) {
           // 출고일은 의뢰 시점 약속 고정. 포장.발송 진입으로 날짜를 바꾸거나
           // 신속 추가비를 여기서 취소하지 않는다(자정 이후 shippingOnTimeEvalWorker).
           await updateCurrentEstimatedShipYmdOnPackingEnter(request);
-          // PTX 직납: 운송장 수취인만 최신 practice 주소로 맞춘다.
-          // 우편함 합류 지문은 세척.패킹 배정 시점 스냅샷을 쓴다.
-          try {
-            await applyPracticeShippingReceiverSnapshotToRequest(request, {
-              session,
-            });
-          } catch (err) {
-            console.error("[SHIPPING_RECEIVER_SNAPSHOT_ERROR]", {
-              requestId: request?.requestId || null,
-              message: err?.message || String(err),
-            });
-          }
-          // 포장.발송 진입: 세척.패킹에서 배정한 우편함을 유지한다.
-          try {
-            const requestorBusinessAnchorId = resolvedBusinessAnchorId;
-            console.log(
-              `[PACKING_APPROVAL] 의뢰 ${request.requestId} 우편함 유지/보정 시작 - 사업자 anchor ID: ${requestorBusinessAnchorId}`,
-            );
-            const nextMailboxAddress = await retainMailboxOnShippingEnter({
-              request,
-              requestorOrgId: requestorBusinessAnchorId,
-              session,
-              scopeFilter: mailboxAllocationScopeFilter,
-            });
-            console.log(
-              `[PACKING_APPROVAL] 의뢰 ${request.requestId} 우편함 유지/보정 완료: ${nextMailboxAddress || request.mailboxAddress || "-"}`,
-            );
-          } catch (err) {
-            console.error("[MAILBOX_ALLOCATION_ERROR]", err);
+          if (!shouldSkipAutoShippingStageEnter(request)) {
+            // PTX 직납: 운송장 수취인만 최신 practice 주소로 맞춘다.
+            // 우편함 합류 지문은 세척.패킹 배정 시점 스냅샷을 쓴다.
+            try {
+              await applyPracticeShippingReceiverSnapshotToRequest(request, {
+                session,
+              });
+            } catch (err) {
+              console.error("[SHIPPING_RECEIVER_SNAPSHOT_ERROR]", {
+                requestId: request?.requestId || null,
+                message: err?.message || String(err),
+              });
+            }
+            // 포장.발송 진입: 세척.패킹에서 배정한 우편함을 유지한다.
+            try {
+              const requestorBusinessAnchorId = resolvedBusinessAnchorId;
+              console.log(
+                `[PACKING_APPROVAL] 의뢰 ${request.requestId} 우편함 유지/보정 시작 - 사업자 anchor ID: ${requestorBusinessAnchorId}`,
+              );
+              const nextMailboxAddress = await retainMailboxOnShippingEnter({
+                request,
+                requestorOrgId: requestorBusinessAnchorId,
+                session,
+                scopeFilter: mailboxAllocationScopeFilter,
+              });
+              console.log(
+                `[PACKING_APPROVAL] 의뢰 ${request.requestId} 우편함 유지/보정 완료: ${nextMailboxAddress || request.mailboxAddress || "-"}`,
+              );
+            } catch (err) {
+              console.error("[MAILBOX_ALLOCATION_ERROR]", err);
+            }
+          } else {
+            request.mailboxAddress = null;
           }
 
           // 샘플/치과 드롭존 의뢰는 전체 공정 진행은 동일하게 허용하되, 배송비 크레딧은 차감하지 않는다.
