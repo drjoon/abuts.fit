@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-08-20: 관리자 섹션 포함 전 롤이 같은 사이드 렌더러. 접히면 라벨 툴팁.
+// - 2026-08-20: 하위 메뉴는 점 대신 아이콘. 접힌 레일에도 하위 아이콘을 두고 클릭 가능.
 // - 2026-08-19: 펼친 사이드 메인 메뉴는 아이콘 왼쪽·라벨 가운데. 배지는 우측 고정. 라벨은 줄이지 않음.
 // - 2026-08-19: 접힌 그룹 메뉴는 하위 배지 합산(기공의뢰수신 미확인).
 // - 2026-08-18: 그룹 메뉴(기공의뢰) 호버·클릭 글자를 foreground로 — ghost accent 흰 글자 방지.
@@ -33,6 +35,11 @@ export type DashboardSidebarItem = {
   tooltip?: string;
   accent?: GigongAbutAccentKey;
   children?: DashboardSidebarItem[];
+};
+
+export type DashboardSidebarSection = {
+  title?: string;
+  items: DashboardSidebarItem[];
 };
 
 export const sidebarItemPath = (href: string) =>
@@ -94,15 +101,17 @@ const SidebarNavButton = ({
     ? PAID_ACCESS_DISABLED_HINT
     : isCreditsLowHighlight
       ? "크레딧이 부족합니다. 충전해주세요."
-      : item.tooltip;
+      : item.tooltip || (isCollapsed ? item.label : undefined);
+
+  const compactNested = nested && !isCollapsed;
 
   const button = (
     <Button
       variant="ghost"
       disabled={paidLocked}
       className={`relative z-[1] w-full justify-center transition-all ${
-        nested
-          ? `h-8 text-[13px] font-medium ${isCollapsed ? "px-2" : "px-2.5"}`
+        compactNested
+          ? "h-8 px-2.5 text-[13px] font-medium"
           : `h-10 lg:h-11 text-sm lg:text-base ${
               isCollapsed ? "px-2" : "px-3 lg:px-4"
             }`
@@ -123,31 +132,28 @@ const SidebarNavButton = ({
       }}
       aria-current={isActive ? "page" : undefined}
       aria-label={
-        isCreditsLowHighlight ? "크레딧 부족 — 충전 탭으로 이동" : undefined
+        isCreditsLowHighlight
+          ? "크레딧 부족 — 충전 탭으로 이동"
+          : isCollapsed
+            ? item.label
+            : undefined
       }
     >
-      {nested && item.accent && !isCollapsed ? (
-        <span
-          aria-hidden
-          className={`absolute left-2.5 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full ${
-            isActive
-              ? "bg-primary-foreground"
-              : item.accent === "기공"
-                ? "bg-service-gigong"
-                : "bg-service-abut"
-          }`}
-        />
-      ) : (
-        <item.icon
-          className={`${nested ? "h-3.5 w-3.5" : "h-4 w-4"} flex-shrink-0 ${
-            isCollapsed
-              ? ""
-              : `absolute top-1/2 -translate-y-1/2 ${
-                  nested ? "left-2.5" : "left-3"
-                }`
-          }`}
-        />
-      )}
+      <item.icon
+        className={`${compactNested ? "h-3.5 w-3.5" : "h-4 w-4"} flex-shrink-0 ${
+          isCollapsed
+            ? ""
+            : `absolute top-1/2 -translate-y-1/2 ${
+                compactNested ? "left-2.5" : "left-3"
+              }`
+        } ${
+          compactNested && item.accent && !isActive
+            ? item.accent === "기공"
+              ? "text-service-gigong"
+              : "text-service-abut"
+            : ""
+        }`}
+      />
       {!isCollapsed && (
         <span className="whitespace-nowrap text-center">
           {item.label}
@@ -156,12 +162,7 @@ const SidebarNavButton = ({
       {(() => {
         const badgeCount =
           Array.isArray(item.children) && item.children.length > 0
-            ? isCollapsed
-              ? item.children.reduce(
-                  (sum, child) => sum + getBadgeCount(child.href),
-                  0,
-                )
-              : 0
+            ? 0
             : getBadgeCount(item.href);
         if (!isCollapsed) {
           if (isCreditsLowHighlight) {
@@ -238,7 +239,8 @@ const SidebarNavButton = ({
 };
 
 type ListProps = {
-  items: DashboardSidebarItem[];
+  items?: DashboardSidebarItem[];
+  sections?: DashboardSidebarSection[];
   isCollapsed: boolean;
   pathname: string;
   isCreditLow: boolean;
@@ -251,6 +253,7 @@ type ListProps = {
 
 export function DashboardSidebarNav({
   items,
+  sections,
   isCollapsed,
   pathname,
   isCreditLow,
@@ -271,9 +274,13 @@ export function DashboardSidebarNav({
     getBadgeCount,
   };
 
-  return (
+  const resolvedSections: DashboardSidebarSection[] =
+    sections && sections.length > 0 ? sections : [{ items: items ?? [] }];
+  const sectioned = resolvedSections.some((section) => Boolean(section.title));
+
+  const renderItems = (sectionItems: DashboardSidebarItem[]) => (
     <ul className="space-y-1 lg:space-y-2">
-      {items.map((item) => {
+      {sectionItems.map((item) => {
         const children = Array.isArray(item.children) ? item.children : [];
         const childActive = children.some((child) =>
           isItemPathActive(child.href, pathname),
@@ -289,32 +296,57 @@ export function DashboardSidebarNav({
 
         return (
           <li key={`${item.label}:${item.href}`}>
-            <SidebarNavButton
-              item={item}
-              {...buttonProps}
-              disablePathActive
-              groupActive={childActive}
-              forceActive={isCollapsed && childActive}
-            />
             {!isCollapsed ? (
-              <ul
-                className="relative mb-1 mt-1 ml-[1.15rem] space-y-0.5 border-l border-border/80 pl-2.5"
-                aria-label={`${item.label} 하위 메뉴`}
-              >
-                {children.map((child) => (
-                  <li key={`${child.label}:${child.href}`}>
-                    <SidebarNavButton
-                      item={child}
-                      {...buttonProps}
-                      nested
-                    />
-                  </li>
-                ))}
-              </ul>
+              <SidebarNavButton
+                item={item}
+                {...buttonProps}
+                disablePathActive
+                groupActive={childActive}
+              />
             ) : null}
+            <ul
+              className={
+                isCollapsed
+                  ? "space-y-1 lg:space-y-2"
+                  : "relative mb-1 mt-1 ml-[1.15rem] space-y-0.5 border-l border-border/80 pl-2.5"
+              }
+              aria-label={`${item.label} 하위 메뉴`}
+            >
+              {children.map((child) => (
+                <li key={`${child.label}:${child.href}`}>
+                  <SidebarNavButton
+                    item={child}
+                    {...buttonProps}
+                    nested
+                  />
+                </li>
+              ))}
+            </ul>
           </li>
         );
       })}
     </ul>
+  );
+
+  if (!sectioned) {
+    return renderItems(resolvedSections[0]?.items ?? []);
+  }
+
+  return (
+    <div className="space-y-4 lg:space-y-5">
+      {resolvedSections.map((section) => (
+        <div
+          key={section.title ?? section.items[0]?.href}
+          className="space-y-2"
+        >
+          {!isCollapsed && section.title ? (
+            <div className="px-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/80">
+              {section.title}
+            </div>
+          ) : null}
+          {renderItems(section.items)}
+        </div>
+      ))}
+    </div>
   );
 }

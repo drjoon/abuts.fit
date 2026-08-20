@@ -11,6 +11,8 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPath";
 import { cn } from "@/shared/ui/cn";
 
+// - 2026-08-20: 관리자 포함 전 롤 사이드를 DashboardSidebarNav로 통일. 접히면 아이콘·툴팁·배지.
+// - 2026-08-20: 구강스캔으로·어벗디자인으로 사이드 아이콘. 접힌 레일에서도 클릭.
 // - 2026-08-20: 데스크톱 사이드 닫힘 — 아이콘 레일(w-24) 유지. 모바일만 화면 밖으로 숨김.
 // - 2026-08-19: 기공의뢰수신 작업영역 — 흰 카드 외곽·바깥 여백 제거해 캘린더를 넓게.
 // - 2026-08-19: 기공소 사이드 — 가입 이유 배너를 설정과 계정 팝업 사이.
@@ -128,6 +130,8 @@ import {
   CheckCircle,
   SlidersHorizontal,
   Layers,
+  ScanLine,
+  PenTool,
 } from "lucide-react";
 import { AbutsLogo } from "@/components/branding/AbutsLogo";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
@@ -146,6 +150,7 @@ import {
   DashboardSidebarNav,
   sidebarItemPath,
   type DashboardSidebarItem,
+  type DashboardSidebarSection,
 } from "@/features/layout/DashboardSidebarNav";
 
 /** DashboardLayout StrictMode remount에도 토큰당 unread 시드 API 1회만 */
@@ -223,14 +228,14 @@ const buildRequestorSidebarItems = (
       tooltip: "구강스캔 또는 완성 디자인으로 기공 의뢰",
       children: [
         {
-          icon: Building2,
+          icon: ScanLine,
           label: "구강스캔으로",
           href: PRACTICE_ORAL_SCAN_HREF,
           tooltip: PRACTICE_ORAL_SCAN_REQUEST_TOOLTIP,
           accent: "기공",
         },
         {
-          icon: FileText,
+          icon: PenTool,
           label: "어벗디자인으로",
           href: PRACTICE_ABUTMENT_DESIGN_HREF,
           tooltip: PRACTICE_ABUTMENT_DESIGN_REQUEST_TOOLTIP,
@@ -376,12 +381,7 @@ type WorksheetSummaryResponse = {
   };
 };
 
-type SidebarSection = {
-  title?: string;
-  items: SidebarItem[];
-};
-
-const adminSidebarSections: SidebarSection[] = [
+const adminSidebarSections: DashboardSidebarSection[] = [
   {
     title: "운영",
     items: [
@@ -1381,89 +1381,18 @@ export const DashboardLayout = () => {
           </button>
 
           <nav className="hover-scrollbar flex-1 overflow-y-auto p-3 lg:p-4">
-            {adminMenuSections ? (
-              <div className="space-y-4 lg:space-y-5">
-                {adminMenuSections.map((section) => (
-                  <div
-                    key={section.title ?? section.items[0]?.href}
-                    className="space-y-2"
-                  >
-                    {!sidebarCollapsed && section.title && (
-                      <div className="px-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/80">
-                        {section.title}
-                      </div>
-                    )}
-                    <ul className="space-y-1 lg:space-y-2">
-                      {section.items.map((item) => {
-                        const isRootDashboard = item.href === "/dashboard";
-                        const isActive = isRootDashboard
-                          ? location.pathname === item.href
-                          : location.pathname === item.href ||
-                            location.pathname.startsWith(`${item.href}/`);
-
-                        return (
-                          <li key={item.href}>
-                            <Button
-                              variant="ghost"
-                              className={`relative w-full h-10 lg:h-11 justify-center text-sm lg:text-base transition-all ${
-                                sidebarCollapsed ? "px-2" : "px-3 lg:px-4"
-                              } ${
-                                isActive
-                                  ? "bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground"
-                                  : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
-                              }`}
-                              onClick={() => {
-                                goSidebarHref(item.href);
-                              }}
-                              aria-current={isActive ? "page" : undefined}
-                            >
-                              <item.icon
-                                className={`h-4 w-4 flex-shrink-0 ${
-                                  sidebarCollapsed
-                                    ? ""
-                                    : "absolute left-3 top-1/2 -translate-y-1/2"
-                                }`}
-                              />
-                              {!sidebarCollapsed && (
-                                <span className="whitespace-nowrap text-center">
-                                  {item.label}
-                                </span>
-                              )}
-                              {!sidebarCollapsed &&
-                                (() => {
-                                  const badgeCount = getSidebarBadgeCount(
-                                    item.href,
-                                  );
-                                  return badgeCount > 0 ? (
-                                    <Badge
-                                      variant="destructive"
-                                      className="absolute right-1.5 top-1/2 flex h-5 min-w-[1.25rem] -translate-y-1/2 items-center justify-center px-1 text-[10px] font-semibold leading-none"
-                                    >
-                                      {badgeCount > 99 ? "99+" : badgeCount}
-                                    </Badge>
-                                  ) : null;
-                                })()}
-                            </Button>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <DashboardSidebarNav
-                items={resolvedMenuItems}
-                isCollapsed={sidebarCollapsed}
-                pathname={location.pathname}
-                isCreditLow={isCreditLow}
-                userRole={user.role}
-                requestorKind={requestorKind}
-                requestorCanUsePaid={requestorCanUsePaid}
-                onNavigate={goSidebarHref}
-                getBadgeCount={getSidebarBadgeCount}
-              />
-            )}
+            <DashboardSidebarNav
+              items={resolvedMenuItems}
+              sections={adminMenuSections ?? undefined}
+              isCollapsed={sidebarCollapsed}
+              pathname={location.pathname}
+              isCreditLow={isCreditLow}
+              userRole={user.role}
+              requestorKind={requestorKind}
+              requestorCanUsePaid={requestorCanUsePaid}
+              onNavigate={goSidebarHref}
+              getBadgeCount={getSidebarBadgeCount}
+            />
           </nav>
 
           <div className="p-3 lg:p-4 space-y-2">
