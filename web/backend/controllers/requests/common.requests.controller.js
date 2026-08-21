@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-21: 헥스 확인 pending은 관리자 hexVerificationResultHex SSOT(취소 시 플래그 재활성 불필요)
 // - 2026-08-21: 의뢰 취소/삭제 시 ExoCAD 헥스 확인용 샘플과 원본을 함께 취소.
 // - 2026-08-21: worksheet delivery populate에 events 위치·상태 포함. GET /my에 deliveryInfo 포함.
 // - 2026-08-19: PATCH /status/batch — 준비 단계 일괄 취소. 응답 후 웹소켓·스냅샷.

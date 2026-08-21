@@ -330,7 +330,7 @@ export async function createRequestsFromDraft(req, res) {
                 "requestSettings.defaultManufacturerHexRotation": 1,
                 "requestSettings.designSoftware": 1,
                 "requestSettings.exoCadVersion": 1,
-                "requestSettings.hexVerificationSamplePending": 1,
+                "requestSettings.hexVerificationResultHex": 1,
                 requestorKind: 1,
                 "verification.verifiedAt": 1,
                 createdAt: 1,
@@ -348,7 +348,7 @@ export async function createRequestsFromDraft(req, res) {
                 "requestSettings.defaultManufacturerHexRotation": 1,
                 "requestSettings.designSoftware": 1,
                 "requestSettings.exoCadVersion": 1,
-                "requestSettings.hexVerificationSamplePending": 1,
+                "requestSettings.hexVerificationResultHex": 1,
               })
               .lean()
           : Promise.resolve(null),

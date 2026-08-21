@@ -5,6 +5,7 @@
 // - web/backend/modules/admin/admin.routes.js
 // - web/frontend/src/pages/admin/dashboard/AdminDashboardPage.tsx
 // change-log:
+// - 2026-08-21: pending SSOT = 관리자 hexVerificationResultHex 미확정
 // - 2026-08-21: ExoCAD 헥스 확인 진행중 목록·관리자 완료 API
 
 import { Types } from "mongoose";
@@ -17,6 +18,8 @@ import { ApiResponse } from "../../utils/ApiResponse.js";
 import {
   normalizeExoCadVersion,
   normalizeHexVerificationResultHex,
+  isHexVerificationPending,
+  resolveAdminVerifiedHexFromSettings,
   HEX_VERIFICATION_RESULT_VALUES,
 } from "../../utils/designSoftwareHex.js";
 
@@ -36,7 +39,8 @@ const pickBusinessName = (anchor) => {
 };
 
 /**
- * ExoCAD 설정 + 관리자 헥스 확인 미완료 BusinessAnchor 목록.
+ * ExoCAD 설정 + 관리자 헥스 미확정 BusinessAnchor 목록.
+ * pending SSOT: hexVerificationResultHex 없음.
  * GET /api/admin/hex-verification/in-progress
  */
 export const listHexVerificationInProgress = asyncHandler(async (_req, res) => {
@@ -44,8 +48,9 @@ export const listHexVerificationInProgress = asyncHandler(async (_req, res) => {
     businessType: { $in: REQUESTOR_ORG_TYPES },
     "requestSettings.designSoftware": "ExoCAD",
     $or: [
-      { "requestSettings.hexVerificationCompletedAt": null },
-      { "requestSettings.hexVerificationCompletedAt": { $exists: false } },
+      { "requestSettings.hexVerificationResultHex": null },
+      { "requestSettings.hexVerificationResultHex": { $exists: false } },
+      { "requestSettings.hexVerificationResultHex": "" },
     ],
   })
     .select({
@@ -75,9 +80,9 @@ export const listHexVerificationInProgress = asyncHandler(async (_req, res) => {
             name: 1,
             email: 1,
             businessAnchorId: 1,
-            "requestSettings.hexVerificationSamplePending": 1,
             "requestSettings.hexVerificationResultHex": 1,
             "requestSettings.defaultManufacturerHexRotation": 1,
+            "requestSettings.designSoftware": 1,
             "requestSettings.exoCadVersion": 1,
           })
           .lean()
@@ -113,42 +118,52 @@ export const listHexVerificationInProgress = asyncHandler(async (_req, res) => {
     sampleByAnchor.set(key, sample);
   }
 
-  const items = (anchors || []).map((anchor) => {
-    const anchorId = String(anchor._id);
-    const owner = ownerByAnchor.get(anchorId) || null;
-    const sample = sampleByAnchor.get(anchorId) || null;
-    const rs = anchor.requestSettings || {};
-    const ownerRs = owner?.requestSettings || {};
-    const pending =
-      ownerRs.hexVerificationSamplePending === true ||
-      rs.hexVerificationSamplePending === true;
+  const items = (anchors || [])
+    .map((anchor) => {
+      const anchorId = String(anchor._id);
+      const owner = ownerByAnchor.get(anchorId) || null;
+      const sample = sampleByAnchor.get(anchorId) || null;
+      const rs = anchor.requestSettings || {};
+      const ownerRs = owner?.requestSettings || {};
+      const adminVerifiedHex = resolveAdminVerifiedHexFromSettings(
+        ownerRs,
+        rs,
+      );
+      const designSoftware =
+        String(ownerRs.designSoftware || "").trim() ||
+        String(rs.designSoftware || "").trim() ||
+        "ExoCAD";
+      const pending = isHexVerificationPending({
+        designSoftware,
+        adminVerifiedHex,
+      });
+      if (!pending) return null;
 
-    return {
-      businessAnchorId: anchorId,
-      businessName: pickBusinessName(anchor),
-      businessType: anchor.businessType || null,
-      ownerUserId: owner?._id ? String(owner._id) : null,
-      ownerName: String(owner?.name || "").trim() || null,
-      ownerEmail: String(owner?.email || "").trim() || null,
-      designSoftware: "ExoCAD",
-      exoCadVersion:
-        normalizeExoCadVersion(ownerRs.exoCadVersion) ||
-        normalizeExoCadVersion(rs.exoCadVersion),
-      hexVerificationSamplePending: pending,
-      manufacturerDefaultHex:
-        String(
-          ownerRs.defaultManufacturerHexRotation ||
-            rs.defaultManufacturerHexRotation ||
-            "",
-        ).trim() || null,
-      adminVerifiedHex:
-        normalizeHexVerificationResultHex(ownerRs.hexVerificationResultHex) ||
-        normalizeHexVerificationResultHex(rs.hexVerificationResultHex),
-      sampleRequestId: sample?.requestId || null,
-      sampleStage: sample?.manufacturerStage || null,
-      sampleCreatedAt: sample?.createdAt || null,
-    };
-  });
+      return {
+        businessAnchorId: anchorId,
+        businessName: pickBusinessName(anchor),
+        businessType: anchor.businessType || null,
+        ownerUserId: owner?._id ? String(owner._id) : null,
+        ownerName: String(owner?.name || "").trim() || null,
+        ownerEmail: String(owner?.email || "").trim() || null,
+        designSoftware: "ExoCAD",
+        exoCadVersion:
+          normalizeExoCadVersion(ownerRs.exoCadVersion) ||
+          normalizeExoCadVersion(rs.exoCadVersion),
+        hexVerificationSamplePending: pending,
+        manufacturerDefaultHex:
+          String(
+            ownerRs.defaultManufacturerHexRotation ||
+              rs.defaultManufacturerHexRotation ||
+              "",
+          ).trim() || null,
+        adminVerifiedHex,
+        sampleRequestId: sample?.requestId || null,
+        sampleStage: sample?.manufacturerStage || null,
+        sampleCreatedAt: sample?.createdAt || null,
+      };
+    })
+    .filter(Boolean);
 
   return res
     .status(200)

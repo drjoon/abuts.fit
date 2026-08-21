@@ -43,6 +43,8 @@ import User from "../models/user.model.js";
 import {
   normalizeExoCadVersion,
   normalizeHexVerificationResultHex,
+  isHexVerificationPending,
+  resolveAdminVerifiedHexFromSettings,
   resolveExoCadManufacturerHexRotation,
   resolveHexRotationByDesignSoftware,
 } from "../utils/designSoftwareHex.js";
@@ -296,10 +298,12 @@ export function pickLabExoCadVersion(labUser, labOrg) {
 }
 
 export function pickLabHexVerificationPending(labUser, labOrg) {
-  return Boolean(
-    labUser?.requestSettings?.hexVerificationSamplePending ||
-      labOrg?.requestSettings?.hexVerificationSamplePending,
+  const designSoftware = pickLabDesignSoftware(labUser, labOrg);
+  const adminVerifiedHex = resolveAdminVerifiedHexFromSettings(
+    labUser?.requestSettings,
+    labOrg?.requestSettings,
   );
+  return isHexVerificationPending({ designSoftware, adminVerifiedHex });
 }
 
 export function pickLabAnodizingEnabled(labUser, labOrg) {
@@ -336,7 +340,6 @@ export async function loadLabRequestMetaForProduction({
           .select({
             "requestSettings.designSoftware": 1,
             "requestSettings.exoCadVersion": 1,
-            "requestSettings.hexVerificationSamplePending": 1,
             "requestSettings.hexVerificationResultHex": 1,
             "requestSettings.anodizingEnabled": 1,
             "requestSettings.retentionGroove": 1,
@@ -349,7 +352,6 @@ export async function loadLabRequestMetaForProduction({
           .select({
             "requestSettings.designSoftware": 1,
             "requestSettings.exoCadVersion": 1,
-            "requestSettings.hexVerificationSamplePending": 1,
             "requestSettings.hexVerificationResultHex": 1,
             "requestSettings.anodizingEnabled": 1,
             "requestSettings.retentionGroove": 1,

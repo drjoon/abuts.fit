@@ -1865,10 +1865,9 @@ export const AdminDashboardPage = () => {
                           className="truncate text-[11px] text-muted-foreground"
                         >
                           {row.businessName || row.ownerName || row.businessAnchorId}
-                          {row.hexVerificationSamplePending ? " · 샘플대기" : ""}
                           {row.sampleRequestId
                             ? ` · ${row.sampleRequestId}`
-                            : ""}
+                            : " · 샘플대기"}
                         </div>
                       ))}
                       {hexVerificationItems.length === 0 ? (
@@ -3262,9 +3261,9 @@ export const AdminDashboardPage = () => {
                               : ""}
                           </div>
                           <div className="mt-0.5 text-[11px] text-muted-foreground truncate">
-                            {item.hexVerificationSamplePending
-                              ? "샘플 대기(pending)"
-                              : "샘플 생성됨"}
+                            {item.sampleRequestId
+                              ? "샘플 생성됨"
+                              : "샘플 대기"}
                             {item.sampleRequestId
                               ? ` · ${item.sampleRequestId}`
                               : ""}

@@ -5,6 +5,9 @@
 // - web/backend/services/practiceTransferProduction.service.js
 // - web/backend/controllers/requests/common.review.controller.js
 // change-log:
+// - 2026-08-21: pending SSOT = 관리자 hexVerificationResultHex 없음(+활성 샘플 없으면 생성)
+// - 2026-08-21: 헥스 확인용 샘플 취소 시(관리자 미완료) pending 재활성화
+// - 2026-08-21: 샘플 생성 성공 후에만 pending 소진(생성 실패 시 pending 유지)
 // - 2026-08-21: 의뢰 취소 시 헥스 확인용 샘플↔원본 쌍을 함께 찾도록 findHexVerificationCancelSiblings 추가
 // - 2026-08-21: pending 미기록 레거시 ExoCAD도 첫 주문에서 확인용 샘플 생성
 // - 2026-08-21: ExoCAD 첫 설정 후 첫 제조의뢰에 반대 헥스 확인용 복사샘플 자동 생성
@@ -15,7 +18,9 @@ import User from "../models/user.model.js";
 import BusinessAnchor from "../models/businessAnchor.model.js";
 import {
   HEX_VERIFICATION_SAMPLE_LABEL,
+  isHexVerificationPending,
   normalizeExoCadVersion,
+  resolveAdminVerifiedHexFromSettings,
   resolveOppositeHexRotation,
 } from "../utils/designSoftwareHex.js";
 import {
@@ -94,119 +99,103 @@ const ensureReviewByStageDefaults = (request) => {
   }
 };
 
-/**
- * pending이 false(이미 소진)가 아니면 ExoCAD 확인용 샘플을 만들 자격이 있다.
- * - true: 명시적 pending
- * - undefined/null: 레거시(ExoCAD만 있고 pending 미기록) → 첫 주문에서 생성
- */
-const isHexVerificationEligiblePending = (pendingRaw) => pendingRaw !== false;
+const resolveOwnerIds = ({ userId, businessAnchorId }) => ({
+  uid: String(userId || "").trim(),
+  bid: String(businessAnchorId || "").trim(),
+});
+
+const buildActiveHexSampleFilter = ({ uid, bid }) => {
+  const filter = {
+    "caseInfos.hexVerificationSample": true,
+    manufacturerStage: { $nin: ["취소"] },
+    $or: [],
+  };
+  if (uid && Types.ObjectId.isValid(uid)) {
+    filter.$or.push({ requestor: uid });
+  }
+  if (bid && Types.ObjectId.isValid(bid)) {
+    filter.$or.push({ businessAnchorId: bid });
+  }
+  return filter.$or.length ? filter : null;
+};
 
 /**
- * User → BusinessAnchor 순으로 확인용 샘플 생성 여부를 판정하고 소진한다.
- * pending===true 이거나(또는 미기록) ExoCAD인데 아직 확인용 샘플이 없으면 true.
+ * 확인용 샘플 생성 자격.
+ * SSOT: ExoCAD + 관리자 hexVerificationResultHex 미확정 + 활성(미취소) 샘플 없음.
+ * @returns {Promise<boolean>}
  */
-export async function consumeHexVerificationSamplePending({
+export async function isHexVerificationSamplePendingEligible({
   userId,
   businessAnchorId,
   session = null,
   designSoftware = null,
 }) {
-  const uid = String(userId || "").trim();
-  const bid = String(businessAnchorId || "").trim();
-  const sw = String(designSoftware || "").trim();
+  const { uid, bid } = resolveOwnerIds({ userId, businessAnchorId });
+  const swHint = String(designSoftware || "").trim();
 
-  let userPending = null;
-  let userDesign = "";
+  let userRs = null;
   if (uid && Types.ObjectId.isValid(uid)) {
     const user = await User.findById(uid)
       .select({
-        "requestSettings.hexVerificationSamplePending": 1,
         "requestSettings.designSoftware": 1,
+        "requestSettings.hexVerificationResultHex": 1,
       })
       .session(session)
       .lean();
-    userPending = user?.requestSettings?.hexVerificationSamplePending;
-    userDesign = String(user?.requestSettings?.designSoftware || "").trim();
+    userRs = user?.requestSettings || null;
   }
 
-  let anchorPending = null;
-  let anchorDesign = "";
+  let anchorRs = null;
   if (bid && Types.ObjectId.isValid(bid)) {
     const anchor = await BusinessAnchor.findById(bid)
       .select({
-        "requestSettings.hexVerificationSamplePending": 1,
         "requestSettings.designSoftware": 1,
+        "requestSettings.hexVerificationResultHex": 1,
       })
       .session(session)
       .lean();
-    anchorPending = anchor?.requestSettings?.hexVerificationSamplePending;
-    anchorDesign = String(anchor?.requestSettings?.designSoftware || "").trim();
+    anchorRs = anchor?.requestSettings || null;
   }
 
-  const effectiveDesign = sw || userDesign || anchorDesign;
-  if (effectiveDesign !== "ExoCAD") return false;
+  const effectiveDesign =
+    swHint ||
+    String(userRs?.designSoftware || "").trim() ||
+    String(anchorRs?.designSoftware || "").trim();
+  const adminVerifiedHex = resolveAdminVerifiedHexFromSettings(
+    userRs,
+    anchorRs,
+  );
 
-  const explicitPending =
-    userPending === true || anchorPending === true;
-  const legacyEligible =
-    isHexVerificationEligiblePending(userPending) &&
-    isHexVerificationEligiblePending(anchorPending);
-
-  if (!explicitPending && !legacyEligible) return false;
-
-  if (!explicitPending) {
-    // 레거시: 이미 확인용 샘플을 만든 적 있으면 스킵
-    const priorFilter = {
-      "caseInfos.hexVerificationSample": true,
-      $or: [],
-    };
-    if (uid && Types.ObjectId.isValid(uid)) {
-      priorFilter.$or.push({ requestor: uid });
-    }
-    if (bid && Types.ObjectId.isValid(bid)) {
-      priorFilter.$or.push({ businessAnchorId: bid });
-    }
-    if (priorFilter.$or.length === 0) return false;
-    const prior = await Request.exists(priorFilter).session(
-      session || undefined,
-    );
-    if (prior) {
-      // 소진 상태로 정리
-      await markHexVerificationSampleConsumed({ uid, bid, session });
-      return false;
-    }
+  if (
+    !isHexVerificationPending({
+      designSoftware: effectiveDesign,
+      adminVerifiedHex,
+    })
+  ) {
+    return false;
   }
 
-  await markHexVerificationSampleConsumed({ uid, bid, session });
-  return true;
+  const activeFilter = buildActiveHexSampleFilter({ uid, bid });
+  if (!activeFilter) return false;
+  const activeSample = await Request.exists(activeFilter).session(
+    session || undefined,
+  );
+  return !activeSample;
 }
 
-async function markHexVerificationSampleConsumed({ uid, bid, session }) {
-  const now = new Date();
-  if (uid && Types.ObjectId.isValid(uid)) {
-    await User.updateOne(
-      { _id: uid },
-      {
-        $set: {
-          "requestSettings.hexVerificationSamplePending": false,
-          "requestSettings.updatedAt": now,
-        },
-      },
-      session ? { session } : undefined,
-    );
-  }
-  if (bid && Types.ObjectId.isValid(bid)) {
-    await BusinessAnchor.updateOne(
-      { _id: bid },
-      {
-        $set: {
-          "requestSettings.hexVerificationSamplePending": false,
-          "requestSettings.updatedAt": now,
-        },
-      },
-      session ? { session } : undefined,
-    );
-  }
+/**
+ * @deprecated 호환용 — 관리자 헥스 SSOT 기반 자격 판정.
+ */
+export async function consumeHexVerificationSamplePending(args) {
+  return isHexVerificationSamplePendingEligible(args);
+}
+
+/**
+ * @deprecated pending은 관리자 hexVerificationResultHex SSOT.
+ * 취소 후 별도 플래그 재활성화는 필요 없다(활성 샘플 유무로 생성 여부를 판정).
+ */
+export async function rearmHexVerificationSamplePendingAfterCancel() {
+  return { rearmed: false, owners: [] };
 }
 
 /**
@@ -387,8 +376,9 @@ export async function createHexVerificationSampleClone({
 }
 
 /**
- * ExoCAD 첫 확인용 샘플이 필요하면 첫 원본에 대해 복사샘플 1건 생성 후 pending 소진.
+ * ExoCAD 첫 확인용 샘플이 필요하면 첫 원본에 대해 복사샘플 1건 생성.
  * 다중 케이스 첫 주문이면 첫 번째 원본만 복제한다.
+ * 자격 SSOT: 관리자 hexVerificationResultHex 미확정 + 활성 샘플 없음.
  */
 export async function maybeCreateHexVerificationSampleForFirstOrder({
   sourceRequests,
@@ -408,7 +398,7 @@ export async function maybeCreateHexVerificationSampleForFirstOrder({
     list[0]?.caseInfos?.designSoftware || "",
   ).trim();
 
-  const pending = await consumeHexVerificationSamplePending({
+  const pending = await isHexVerificationSamplePendingEligible({
     userId,
     businessAnchorId,
     session,

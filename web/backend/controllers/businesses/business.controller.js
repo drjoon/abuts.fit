@@ -28,6 +28,10 @@ import {
 } from "./business.update.controller.js";
 import { resolveRequestorPricingBaseDate } from "../requests/utils.js";
 import {
+  isHexVerificationPending,
+  resolveAdminVerifiedHexFromSettings,
+} from "../../utils/designSoftwareHex.js";
+import {
   matchesRequestedRequestorKind,
   normalizeRequestorKind,
   requestorKindCapableAnchorFilter,
@@ -1054,7 +1058,7 @@ export async function getMyRequestSettings(req, res) {
         subRole: 1,
         "requestSettings.designSoftware": 1,
         "requestSettings.exoCadVersion": 1,
-        "requestSettings.hexVerificationSamplePending": 1,
+        "requestSettings.hexVerificationResultHex": 1,
         "requestSettings.anodizingEnabled": 1,
         "requestSettings.retentionGroove": 1,
       })
@@ -1096,9 +1100,13 @@ export async function getMyRequestSettings(req, res) {
           requestorDesignSoftware,
           exoCadVersion: null,
           requestorExoCadVersion,
-          hexVerificationSamplePending: Boolean(
-            freshUser?.requestSettings?.hexVerificationSamplePending,
-          ),
+          hexVerificationSamplePending: isHexVerificationPending({
+            designSoftware: requestorDesignSoftware,
+            adminVerifiedHex: resolveAdminVerifiedHexFromSettings(
+              freshUser?.requestSettings,
+              null,
+            ),
+          }),
           retentionGroove: "none",
           requestorRetentionGroove: requestorRetentionGroove || "none",
           defaultRequestorHexRotation: "STL모델대로",
@@ -1163,10 +1171,13 @@ export async function getMyRequestSettings(req, res) {
         requestorDesignSoftware,
         exoCadVersion: businessExoCadVersion,
         requestorExoCadVersion,
-        hexVerificationSamplePending: Boolean(
-          freshUser?.requestSettings?.hexVerificationSamplePending ||
-            anchor?.requestSettings?.hexVerificationSamplePending,
-        ),
+        hexVerificationSamplePending: isHexVerificationPending({
+          designSoftware: requestorDesignSoftware || businessDesignSoftware,
+          adminVerifiedHex: resolveAdminVerifiedHexFromSettings(
+            freshUser?.requestSettings,
+            anchor?.requestSettings,
+          ),
+        }),
         retentionGroove: businessRetentionGroove || "none",
         requestorRetentionGroove:
           requestorRetentionGroove || businessRetentionGroove || "none",
@@ -1417,7 +1428,7 @@ export async function updateMyRequestSettings(req, res) {
         subRole: 1,
         "requestSettings.designSoftware": 1,
         "requestSettings.exoCadVersion": 1,
-        "requestSettings.hexVerificationSamplePending": 1,
+        "requestSettings.hexVerificationResultHex": 1,
         "requestSettings.anodizingEnabled": 1,
         "requestSettings.retentionGroove": 1,
       })
@@ -1516,26 +1527,11 @@ export async function updateMyRequestSettings(req, res) {
             });
           }
           setPayload["requestSettings.exoCadVersion"] = resolvedExoVersion;
-          // 미소진(false 아님)이면 pending — 레거시 ExoCAD(버전만 추가)도 포함
-          if (
-            anchor?.requestSettings?.hexVerificationSamplePending !== false
-          ) {
-            setPayload["requestSettings.hexVerificationSamplePending"] = true;
-          }
         } else {
           setPayload["requestSettings.exoCadVersion"] = null;
-          setPayload["requestSettings.hexVerificationSamplePending"] = false;
         }
       } else if (hasExoCadVersion) {
         setPayload["requestSettings.exoCadVersion"] = exoCadVersion;
-        if (
-          normalizeDesignSoftware(anchor?.requestSettings?.designSoftware) ===
-            "ExoCAD" &&
-          exoCadVersion &&
-          anchor?.requestSettings?.hexVerificationSamplePending !== false
-        ) {
-          setPayload["requestSettings.hexVerificationSamplePending"] = true;
-        }
       }
       if (hasRetentionGroove) {
         setPayload["requestSettings.retentionGroove"] = retentionGroove;
@@ -1566,11 +1562,9 @@ export async function updateMyRequestSettings(req, res) {
             );
           if (v) {
             propagateSet["requestSettings.exoCadVersion"] = v;
-            propagateSet["requestSettings.hexVerificationSamplePending"] = true;
           }
         } else {
           propagateSet["requestSettings.exoCadVersion"] = null;
-          propagateSet["requestSettings.hexVerificationSamplePending"] = false;
         }
         const propagateResult = await User.updateMany(
           {
@@ -1600,15 +1594,13 @@ export async function updateMyRequestSettings(req, res) {
     let updatedRequestorExoCadVersion = normalizeExoCadVersionOrNull(
       freshUser?.requestSettings?.exoCadVersion,
     );
-    let updatedHexVerificationPending = Boolean(
-      freshUser?.requestSettings?.hexVerificationSamplePending,
-    );
     let updatedRequestorAnodizingEnabled = normalizeRequestorAnodizingEnabled(
       freshUser?.requestSettings?.anodizingEnabled,
     );
     let updatedRequestorRetentionGroove = normalizeRetentionGroove(
       freshUser?.requestSettings?.retentionGroove,
     );
+    let updatedUserRequestSettings = freshUser?.requestSettings || null;
 
     if (
       hasRequestorDesignSoftware ||
@@ -1640,28 +1632,12 @@ export async function updateMyRequestSettings(req, res) {
             });
           }
           userSetPayload["requestSettings.exoCadVersion"] = resolvedExoVersion;
-          if (
-            freshUser?.requestSettings?.hexVerificationSamplePending !== false
-          ) {
-            userSetPayload["requestSettings.hexVerificationSamplePending"] =
-              true;
-          }
         } else {
           userSetPayload["requestSettings.exoCadVersion"] = null;
-          userSetPayload["requestSettings.hexVerificationSamplePending"] =
-            false;
         }
       } else if (hasRequestorExoCadVersion) {
         userSetPayload["requestSettings.exoCadVersion"] =
           requestorExoCadVersion;
-        if (
-          normalizeDesignSoftware(freshUser?.requestSettings?.designSoftware) ===
-            "ExoCAD" &&
-          requestorExoCadVersion &&
-          freshUser?.requestSettings?.hexVerificationSamplePending !== false
-        ) {
-          userSetPayload["requestSettings.hexVerificationSamplePending"] = true;
-        }
       }
       if (hasRequestorAnodizingEnabled) {
         userSetPayload["requestSettings.anodizingEnabled"] =
@@ -1696,9 +1672,7 @@ export async function updateMyRequestSettings(req, res) {
       updatedRequestorExoCadVersion = normalizeExoCadVersionOrNull(
         updatedUser?.requestSettings?.exoCadVersion,
       );
-      updatedHexVerificationPending = Boolean(
-        updatedUser?.requestSettings?.hexVerificationSamplePending,
-      );
+      updatedUserRequestSettings = updatedUser?.requestSettings || null;
       updatedRequestorAnodizingEnabled = normalizeRequestorAnodizingEnabled(
         updatedUser?.requestSettings?.anodizingEnabled,
       );
@@ -1748,10 +1722,14 @@ export async function updateMyRequestSettings(req, res) {
         requestorDesignSoftware: updatedRequestorDesignSoftware,
         exoCadVersion: businessExoCadVersion,
         requestorExoCadVersion: updatedRequestorExoCadVersion,
-        hexVerificationSamplePending: Boolean(
-          updatedHexVerificationPending ||
-            requestSettingsSource?.hexVerificationSamplePending,
-        ),
+        hexVerificationSamplePending: isHexVerificationPending({
+          designSoftware:
+            updatedRequestorDesignSoftware || businessDesignSoftware,
+          adminVerifiedHex: resolveAdminVerifiedHexFromSettings(
+            updatedUserRequestSettings,
+            requestSettingsSource,
+          ),
+        }),
         retentionGroove: businessRetentionGroove || "none",
         requestorRetentionGroove:
           updatedRequestorRetentionGroove ||

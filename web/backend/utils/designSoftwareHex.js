@@ -5,6 +5,7 @@
 // - web/frontend/src/features/requestSettings/DesignSoftwareSettingsDialog.tsx
 // - web/backend/controllers/admin/admin.hexVerification.controller.js
 // change-log:
+// - 2026-08-21: 헥스 확인 pending SSOT = ExoCAD && 관리자 hexVerificationResultHex 없음
 // - 2026-08-21: resolveExoCadManufacturerHexRotation — 제조사 > 관리자 확정 > 디자인SW
 // - 2026-08-21: ExoCAD 버전(3.0 이하 / 3.2 이상)별 헥스 기본값 + 첫의뢰 확인용 샘플 라벨 SSOT
 
@@ -59,13 +60,45 @@ export const resolveHexRotationByDesignSoftware = (
 };
 
 /**
+ * User → BusinessAnchor 순으로 관리자 확정 헥스를 읽는다.
+ * @param {object|null|undefined} userRequestSettings
+ * @param {object|null|undefined} anchorRequestSettings
+ * @returns {"STL모델대로"|"헥스30도회전"|null}
+ */
+export const resolveAdminVerifiedHexFromSettings = (
+  userRequestSettings = null,
+  anchorRequestSettings = null,
+) =>
+  normalizeHexVerificationResultHex(
+    userRequestSettings?.hexVerificationResultHex,
+  ) ||
+  normalizeHexVerificationResultHex(
+    anchorRequestSettings?.hexVerificationResultHex,
+  );
+
+/**
+ * 헥스 확인 pending SSOT.
+ * ExoCAD 이고 관리자 hexVerificationResultHex 가 아직 없으면 true.
+ * (별도 hexVerificationSamplePending 플래그를 쓰지 않는다)
+ */
+export const isHexVerificationPending = ({
+  designSoftware = null,
+  adminVerifiedHex = null,
+} = {}) => {
+  if (String(designSoftware || "").trim() !== "ExoCAD") return false;
+  return !normalizeHexVerificationResultHex(adminVerifiedHex);
+};
+
+/**
  * ExoCAD 제조사 헥스 해석 SSOT.
  * 우선순위:
- * 1) 첫의뢰 확인 pending → designSoftware(+version) 강제
+ * 1) 관리자 미확정(pending) → designSoftware(+version) 강제
  * 2) 제조사 defaultManufacturerHexRotation
  * 3) 관리자 hexVerificationResultHex
  * 4) designSoftware(+version)
  * 비-ExoCAD: manufacturerDefault || designSoftware 폴백(관리자 필드 무시).
+ *
+ * hexVerificationPending 인자는 하위 호환용. 생략 시 adminVerifiedHex로 판정.
  *
  * @returns {string} canonical hex mode
  */
@@ -74,18 +107,22 @@ export const resolveExoCadManufacturerHexRotation = ({
   exoCadVersion = null,
   manufacturerDefault = null,
   adminVerifiedHex = null,
-  hexVerificationPending = false,
+  hexVerificationPending = null,
 } = {}) => {
   const sw = String(designSoftware || "").trim();
   const designFallback = resolveHexRotationByDesignSoftware(sw, exoCadVersion);
   const mfg = String(manufacturerDefault || "").trim() || null;
   const admin = normalizeHexVerificationResultHex(adminVerifiedHex);
+  const pending =
+    hexVerificationPending == null
+      ? isHexVerificationPending({ designSoftware: sw, adminVerifiedHex: admin })
+      : Boolean(hexVerificationPending);
 
   if (sw !== "ExoCAD") {
     return mfg || designFallback;
   }
 
-  if (hexVerificationPending) {
+  if (pending) {
     return designFallback;
   }
   if (mfg) return mfg;

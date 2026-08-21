@@ -215,7 +215,8 @@ const userSchema = new mongoose.Schema(
           message: "exoCadVersion은 le_3_0 | ge_3_2 이어야 합니다.",
         },
       },
-      // ExoCAD 첫 설정 후 첫 제조 의뢰에 30도 확인용 복사샘플을 만들면 false로 소진.
+      // deprecated: 헥스 확인 pending SSOT는 hexVerificationResultHex 미확정.
+      // 읽기/쓰기에 쓰지 말 것. related: designSoftwareHex.js isHexVerificationPending
       hexVerificationSamplePending: {
         type: Boolean,
         default: false,
@@ -230,7 +231,7 @@ const userSchema = new mongoose.Schema(
         ref: "User",
         default: null,
       },
-      // 관리자 확정 헥스(ExoCAD). 제조사 defaultManufacturerHexRotation보다 낮은 우선순위.
+      // 관리자 확정 헥스(ExoCAD). 헥스 확인 pending SSOT(값 없으면 pending).
       // - "STL모델대로" | "헥스30도회전"
       hexVerificationResultHex: {
         type: String,
