@@ -6959,9 +6959,9 @@ export const PracticeFileTransferPage = ({
               </TooltipTrigger>
               <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
                 <p>
-                  커스텀어벗은 어벗츠가 디자인한 뒤 기공소가 확인하면 생산합니다.
-                  체크를 해제하면 치과도 디자인을 컨펌해야 생산이 시작되어 일정이
-                  늦어질 수 있습니다. 기본은 생략(체크)입니다.
+                  기본은 생략(체크)입니다.
+                  <br />
+                  해제하면 치과 컨펌이 필요해 일정이 늦어질 수 있습니다.
                 </p>
               </TooltipContent>
             </Tooltip>
@@ -7068,11 +7068,11 @@ export const PracticeFileTransferPage = ({
           >
             <DialogContent className="sm:max-w-md">
               <DialogHeader>
-                <DialogTitle>디자인 컨펌을 직접 하시겠어요?</DialogTitle>
+                <DialogTitle>디자인 컨펌 생략을 해제할까요?</DialogTitle>
                 <DialogDescription className="leading-relaxed">
-                  생략을 해제하면 어벗츠 디자인 후 치과 컨펌을 기다려야 생산이
-                  시작됩니다. 기일이 촉박한 경우 지연될 수 있습니다. 꼭 확인이
-                  필요한 의뢰만 해제해 주세요.
+                  기본은 생략(체크)입니다.
+                  <br />
+                  해제하면 치과 컨펌이 필요해 일정이 늦어질 수 있습니다.
                 </DialogDescription>
               </DialogHeader>
               <DialogFooter>
@@ -7081,7 +7081,7 @@ export const PracticeFileTransferPage = ({
                   variant="outline"
                   onClick={() => setSkipDesignConfirmUncheckOpen(false)}
                 >
-                  취소
+                  컨펌 생략 유지
                 </Button>
                 <Button
                   type="button"
@@ -7090,7 +7090,7 @@ export const PracticeFileTransferPage = ({
                     setSkipDesignConfirmUncheckOpen(false);
                   }}
                 >
-                  컨펌 받기로 설정
+                  컨펌하기
                 </Button>
               </DialogFooter>
             </DialogContent>

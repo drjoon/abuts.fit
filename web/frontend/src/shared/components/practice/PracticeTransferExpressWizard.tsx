@@ -439,9 +439,9 @@ export function PracticeTransferExpressWizard({
               </TooltipTrigger>
               <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
                 <p>
-                  커스텀어벗은 어벗츠가 디자인한 뒤 기공소가 확인하면 생산합니다.
-                  체크를 해제하면 치과도 디자인을 컨펌해야 생산이 시작되어 일정이
-                  늦어질 수 있습니다.
+                  기본은 생략(체크)입니다.
+                  <br />
+                  해제하면 치과 컨펌이 필요해 일정이 늦어질 수 있습니다.
                 </p>
               </TooltipContent>
             </Tooltip>
