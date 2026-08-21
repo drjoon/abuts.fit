@@ -5,8 +5,7 @@
  * 자동매칭(공개 풀)은 공정상 의뢰 — 뱃지 집계·「의뢰」필터에 포함. 카드 뱃지 문구도「의뢰」(수락 후「수락」).
  * 표시명만 UI 마스킹.
  * 2026-08-21: 전체보기 취소 뱃지에 휴지통(취소·거부) 포함 + 상태 뱃지별 unread 합.
- * 2026-08-21: 상단 상태 뱃지 배타적 선택 — 클릭한 상태만 표시(재클릭 시 기본 ON 복귀).
- * 2026-08-21: 상단 상태 뱃지 다중 on/off — 켠 항목만 표시(기본 취소 off).
+ * 2026-08-21: 상단 상태 뱃지 다중 표시 on/off — 켠 항목만 캘린더 표시(기본 취소 off).
  * 2026-08-17: transferId API 필드 우선 매핑(메시지 파싱 폴백) — 채팅 unread 카드 배지 정합.
  * 2026-08-14: 전체보기 모달은 사이드바와 같은 GET /my 1페이지를 재사용(중복 요청 제거).
  * 2026-08-14: 자동매칭 → 의뢰 집계/필터·뱃지 라벨. matchingMode=auto 기공소명 UI 마스킹.
@@ -16,6 +15,7 @@
  * related files:
  * - web/frontend/src/pages/practice/components/PracticeRecentTransfersAllModal.tsx
  * - web/frontend/src/pages/practice/components/PracticeRecentTransfersCalendar.tsx
+ * - web/frontend/src/pages/practice/components/PracticeStatusFilterBadges.tsx
  * - web/frontend/src/store/usePeriodStore.ts
  */
 import { type ChatRoom } from "@/shared/hooks/useChatRooms";
@@ -197,7 +197,7 @@ export type PracticeRecentStatusCounts = {
   canceled: number;
 };
 
-/** 전체보기 기본 ON — 취소(휴지통·작업취소)만 off. 배타 선택 해제 시에도 이 집합으로 복귀. */
+/** 전체보기 기본 ON — 취소(휴지통·작업취소)만 off. 「기본」 리셋도 이 집합. */
 export const PRACTICE_RECENT_DEFAULT_ON_STATUS_FILTERS: readonly PracticeRecentStatusFilterKey[] =
   ["발송완료", "의뢰수락", "작업완료", "포장.발송", "리메이크"];
 
@@ -205,15 +205,22 @@ export const createPracticeRecentStatusFilterSet = (
   keys: readonly PracticeRecentStatusFilterKey[] = PRACTICE_RECENT_DEFAULT_ON_STATUS_FILTERS,
 ) => new Set<PracticeRecentStatusFilterKey>(keys);
 
-/** 배타적 선택: 클릭한 키만 ON. 이미 그 키만 켜져 있으면 기본 ON으로 복귀. */
+/** 독립 다중 on/off: 키를 Set에 추가/제거. 전부 off(빈 Set) 허용. */
 export const togglePracticeRecentStatusFilter = (
   prev: ReadonlySet<PracticeRecentStatusFilterKey>,
   key: PracticeRecentStatusFilterKey,
 ) => {
-  if (prev.size === 1 && prev.has(key)) {
-    return createPracticeRecentStatusFilterSet();
-  }
-  return new Set<PracticeRecentStatusFilterKey>([key]);
+  const next = new Set<PracticeRecentStatusFilterKey>(prev);
+  if (next.has(key)) next.delete(key);
+  else next.add(key);
+  return next;
+};
+
+export const isPracticeRecentStatusFilterDefault = (
+  selected: ReadonlySet<PracticeRecentStatusFilterKey>,
+) => {
+  if (selected.size !== PRACTICE_RECENT_DEFAULT_ON_STATUS_FILTERS.length) return false;
+  return PRACTICE_RECENT_DEFAULT_ON_STATUS_FILTERS.every((k) => selected.has(k));
 };
 
 export const practiceTransferMatchesStatusFilters = (

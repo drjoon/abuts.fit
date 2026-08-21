@@ -4,6 +4,7 @@
  * related files:
  * - web/frontend/src/pages/practice/components/PracticeRecentTransfersAllModal.tsx
  * - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
+ * - web/frontend/src/pages/practice/components/PracticeStatusFilterBadges.tsx
  * - web/frontend/src/shared/date/kst.ts
  * - 2026-08-19: 리메이크는 공정 상태색 유지 + 이중 외곽선(흰 채움 아님).
  * - 2026-08-19: 기공의뢰수신 칩은 상단 뱃지 상태색.
@@ -12,6 +13,7 @@
  * - 2026-08-20: 년-월 캡션 클릭 시 오늘 주로 스크롤.
  * - 2026-08-20: 치과 전체보기 칩도 상단 뱃지 상태색(그룹색 대신).
  * - 2026-08-20: 안읽음(수신 미확인·채팅) 빨간 배지를 칩에 표시.
+ * - 2026-08-21: 상단 필터 뱃지 ON=진한 상태색 / OFF=흐린 무채색(표시 on/off 대비).
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
@@ -103,37 +105,39 @@ export const PRACTICE_CALENDAR_STATUS_CHIP_STYLE: Record<
   remake: { backgroundColor: "#ffffff", color: "hsl(210 12% 28%)" },
 };
 
+/** ON=캘린더 칩과 같은 진한 상태색 / OFF=흐린 무채색 — 표시 on/off가 즉시 읽히게. */
 export const PRACTICE_STATUS_FILTER_BADGE_CLASS: Record<
   PracticeCalendarStatusTone,
   { idle: string; active: string }
 > = {
   sent: {
-    idle: "border-slate-200 bg-slate-100/80 text-slate-700 hover:bg-slate-100",
-    active: "border-slate-400 bg-slate-200 text-slate-800",
+    idle: "border-slate-200 bg-slate-50/60 text-slate-400 opacity-40 hover:opacity-60 hover:bg-slate-50",
+    active: "border-slate-400 bg-slate-200 text-slate-800 shadow-sm",
   },
   accepted: {
-    idle: "border-sky-200 bg-sky-50 text-sky-800 hover:bg-sky-50",
-    active: "border-sky-400/80 bg-sky-100 text-sky-900",
+    idle: "border-slate-200 bg-slate-50/60 text-slate-400 opacity-40 hover:opacity-60 hover:bg-slate-50",
+    active: "border-sky-500/90 bg-sky-200 text-sky-950 shadow-sm",
   },
   completed: {
-    idle: "border-teal-200 bg-teal-50 text-teal-800 hover:bg-teal-50",
-    active: "border-teal-400/80 bg-teal-100 text-teal-900",
+    idle: "border-slate-200 bg-slate-50/60 text-slate-400 opacity-40 hover:opacity-60 hover:bg-slate-50",
+    active: "border-teal-500/90 bg-teal-200 text-teal-950 shadow-sm",
   },
   shipping: {
-    idle: "border-violet-200 bg-violet-50 text-violet-800 hover:bg-violet-50",
-    active: "border-violet-400/80 bg-violet-100 text-violet-900",
+    idle: "border-slate-200 bg-slate-50/60 text-slate-400 opacity-40 hover:opacity-60 hover:bg-slate-50",
+    active: "border-violet-500/90 bg-violet-200 text-violet-950 shadow-sm",
   },
   canceled: {
-    idle: "border-rose-200 bg-rose-50 text-rose-800 hover:bg-rose-50",
-    active: "border-rose-400/80 bg-rose-100 text-rose-900",
+    idle: "border-slate-200 bg-slate-50/60 text-slate-400 opacity-40 hover:opacity-60 hover:bg-slate-50",
+    active: "border-rose-500/90 bg-rose-200 text-rose-950 shadow-sm",
   },
   rejected: {
-    idle: "border-orange-200 bg-orange-50 text-orange-800 hover:bg-orange-50",
-    active: "border-orange-400/80 bg-orange-100 text-orange-900",
+    idle: "border-slate-200 bg-slate-50/60 text-slate-400 opacity-40 hover:opacity-60 hover:bg-slate-50",
+    active: "border-orange-500/90 bg-orange-200 text-orange-950 shadow-sm",
   },
   remake: {
-    idle: "border-[3px] border-double border-slate-400 bg-white text-slate-800 hover:bg-white",
-    active: "border-[3px] border-double border-slate-700 bg-white text-slate-900",
+    idle: "border-[3px] border-double border-slate-200 bg-white text-slate-400 opacity-40 hover:opacity-60",
+    active:
+      "border-[3px] border-double border-slate-700 bg-white text-slate-900 shadow-sm",
   },
 };
 

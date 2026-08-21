@@ -5,6 +5,7 @@
 // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/pages/practice/components/PracticeRecentTransfersCalendar.tsx
+// - web/frontend/src/pages/practice/components/PracticeStatusFilterBadges.tsx
 // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 // - web/backend/controllers/practiceTransfers/practiceTransferSettings.controller.js
@@ -23,8 +24,7 @@
 // - web/backend/utils/labReceiveCalendarDateKey.util.js
 // - web/backend/controllers/users/user.controller.js
 // - 2026-08-21: 수신 상단 상태 뱃지에 채팅·미확인 unread. 휴지통(canceled)도 취소 뱃지·캘린더에 표시.
-// - 2026-08-21: 상단 상태 뱃지 배타적 선택 — 클릭한 상태만 표시(재클릭 시 기본 ON 복귀).
-// - 2026-08-21: 상단 상태 뱃지 다중 on/off — 켠 항목만 표시(기본 취소 off).
+// - 2026-08-21: 상단 상태 뱃지 다중 표시 on/off(표시 라벨·기본 리셋·ON/OFF 대비).
 // - 2026-08-21: 어벗 디자인 업로드 후 skipDesignConfirm 강제 true 제거(구강스캔으로 치과 설정 존중).
 // - 2026-08-21: 하청 전환 버튼 — 어벗츠기공소(internalLab)만 노출.
 // - 2026-08-21: 어벗 STL 업로드 — relatedRequestIds 없으면 보정 재시도. 구강스캔 필수로 오인하는 토스트 제거.
@@ -136,7 +136,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -219,13 +218,16 @@ import {
 } from "@/shared/shipping/hanjinTrackingLabel";
 import {
   DEFAULT_HIDDEN_WEEKDAYS,
-  PRACTICE_STATUS_FILTER_BADGE_CLASS,
   PracticeRecentTransfersCalendar,
   resolvePracticeCalendarStatusTone,
   type PracticeCalendarChipItem,
   type PracticeCalendarDateKey,
-  type PracticeCalendarStatusTone,
 } from "@/pages/practice/components/PracticeRecentTransfersCalendar";
+import {
+  PracticeStatusFilterBadges,
+  PracticeStatusFilterEmptyHint,
+  type PracticeStatusFilterBadgeItem,
+} from "@/pages/practice/components/PracticeStatusFilterBadges";
 import {
   labFeeSettingsFromAcceptPath,
   LAB_FEE_UNCONFIGURED_REASON,
@@ -319,7 +321,7 @@ type LabReceiveStatusFilterKey =
   | "포장.발송"
   | "리메이크";
 
-/** 기본 ON — 취소만 off. 배타 선택 해제 시에도 이 집합으로 복귀. */
+/** 기본 ON — 취소만 off. 「기본」 리셋도 이 집합. */
 const LAB_RECEIVE_DEFAULT_ON_STATUS_FILTERS: readonly LabReceiveStatusFilterKey[] = [
   "발송완료",
   "의뢰수락",
@@ -333,15 +335,22 @@ const createLabReceiveStatusFilterSet = (
   keys: readonly LabReceiveStatusFilterKey[] = LAB_RECEIVE_DEFAULT_ON_STATUS_FILTERS,
 ) => new Set<LabReceiveStatusFilterKey>(keys);
 
-/** 배타적 선택: 클릭한 키만 ON. 이미 그 키만 켜져 있으면 기본 ON으로 복귀. */
+/** 독립 다중 on/off: 키를 Set에 추가/제거. 전부 off(빈 Set) 허용. */
 const toggleLabReceiveStatusFilter = (
   prev: ReadonlySet<LabReceiveStatusFilterKey>,
   key: LabReceiveStatusFilterKey,
 ) => {
-  if (prev.size === 1 && prev.has(key)) {
-    return createLabReceiveStatusFilterSet();
-  }
-  return new Set<LabReceiveStatusFilterKey>([key]);
+  const next = new Set<LabReceiveStatusFilterKey>(prev);
+  if (next.has(key)) next.delete(key);
+  else next.add(key);
+  return next;
+};
+
+const isLabReceiveStatusFilterDefault = (
+  selected: ReadonlySet<LabReceiveStatusFilterKey>,
+) => {
+  if (selected.size !== LAB_RECEIVE_DEFAULT_ON_STATUS_FILTERS.length) return false;
+  return LAB_RECEIVE_DEFAULT_ON_STATUS_FILTERS.every((k) => selected.has(k));
 };
 
 const labTransferMatchesStatusFilters = (
@@ -367,15 +376,6 @@ const labTransferMatchesStatusFilters = (
   }
   return false;
 };
-
-const labReceiveStatusBadgeClass = (
-  tone: PracticeCalendarStatusTone,
-  active: boolean,
-) =>
-  cn(
-    "cursor-pointer",
-    PRACTICE_STATUS_FILTER_BADGE_CLASS[tone][active ? "active" : "idle"],
-  );
 
 export default function RequestorPracticePage() {
   const navigate = useNavigate();
@@ -4379,47 +4379,70 @@ export function RequestorPracticeReceivePage({
     toast,
   ]);
 
-  const renderLabReceiveStatusBadge = (
-    filterKey: LabReceiveStatusFilterKey,
-    label: string,
-    tone: PracticeCalendarStatusTone,
-    count: number,
-    unreadCount: number,
-  ) => {
-    const active = statusFilters.has(filterKey);
-    const unread = Math.max(0, Number(unreadCount || 0));
-    return (
-      <button
-        key={filterKey}
-        type="button"
-        className="rounded-full"
-        onClick={() =>
-          setStatusFilters((prev) => toggleLabReceiveStatusFilter(prev, filterKey))
-        }
-        aria-pressed={active}
-        aria-label={
-          unread > 0 ? `${label} ${count}건, 안읽음 ${unread}건` : undefined
-        }
-      >
-        <Badge
-          variant="outline"
-          className={labReceiveStatusBadgeClass(tone, active)}
-        >
-          <span className="inline-flex items-center gap-1">
-            {label} {count}건
-            {unread > 0 ? (
-              <span
-                className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-destructive-foreground"
-                aria-hidden
-              >
-                {unread > 99 ? "99+" : unread}
-              </span>
-            ) : null}
-          </span>
-        </Badge>
-      </button>
-    );
-  };
+  const labStatusFilterBadgeItems = useMemo((): PracticeStatusFilterBadgeItem[] => {
+    return [
+      {
+        key: "발송완료",
+        label: "의뢰",
+        tone: "sent",
+        count: statusCounts.sent,
+        unreadCount: statusUnreadCounts.sent,
+        tooltip: "치과에서 기공의뢰서를 보낸 후",
+      },
+      {
+        key: "의뢰수락",
+        label: "수락",
+        tone: "accepted",
+        count: statusCounts.accepted,
+        unreadCount: statusUnreadCounts.accepted,
+        tooltip: "기공소에서 작업을 수락한 후",
+      },
+      {
+        key: "작업완료",
+        label: "완료",
+        tone: "completed",
+        count: statusCounts.completed,
+        unreadCount: statusUnreadCounts.completed,
+        tooltip: "기공작업 완료·파일 업로드 후",
+      },
+      {
+        key: "취소",
+        label: "취소",
+        tone: "canceled",
+        count: statusCounts.canceled,
+        unreadCount: statusUnreadCounts.canceled,
+        tooltip: "작업취소·휴지통 취소 건",
+      },
+      {
+        key: "거부",
+        label: "거부",
+        tone: "rejected",
+        count: statusCounts.rejected,
+        unreadCount: statusUnreadCounts.rejected,
+        tooltip: "지정 거부 건",
+      },
+      {
+        key: "포장.발송",
+        label: "발송",
+        tone: "shipping",
+        count: statusCounts.shipping,
+        unreadCount: statusUnreadCounts.shipping,
+        tooltip: "기공물 발송·생산 진행 후",
+      },
+      {
+        key: "리메이크",
+        label: "리메이크",
+        tone: "remake",
+        count: statusCounts.remake,
+        unreadCount: statusUnreadCounts.remake,
+        tooltip: "리메이크 의뢰 건",
+      },
+    ];
+  }, [statusCounts, statusUnreadCounts]);
+
+  const resetLabStatusFiltersToDefault = useCallback(() => {
+    setStatusFilters(createLabReceiveStatusFilterSet());
+  }, []);
 
   const transferSearchAndBadges = (
     <div className="flex flex-wrap items-center gap-3">
@@ -4432,57 +4455,19 @@ export function RequestorPracticeReceivePage({
           onToggleAnodizing={handleToggleAnodizing}
         />
       </div>
-      <div className="flex min-w-0 flex-1 flex-wrap items-center justify-center gap-2">
-        {renderLabReceiveStatusBadge(
-          "발송완료",
-          "의뢰",
-          "sent",
-          statusCounts.sent,
-          statusUnreadCounts.sent,
-        )}
-        {renderLabReceiveStatusBadge(
-          "의뢰수락",
-          "수락",
-          "accepted",
-          statusCounts.accepted,
-          statusUnreadCounts.accepted,
-        )}
-        {renderLabReceiveStatusBadge(
-          "작업완료",
-          "완료",
-          "completed",
-          statusCounts.completed,
-          statusUnreadCounts.completed,
-        )}
-        {renderLabReceiveStatusBadge(
-          "취소",
-          "취소",
-          "canceled",
-          statusCounts.canceled,
-          statusUnreadCounts.canceled,
-        )}
-        {renderLabReceiveStatusBadge(
-          "거부",
-          "거부",
-          "rejected",
-          statusCounts.rejected,
-          statusUnreadCounts.rejected,
-        )}
-        {renderLabReceiveStatusBadge(
-          "포장.발송",
-          "발송",
-          "shipping",
-          statusCounts.shipping,
-          statusUnreadCounts.shipping,
-        )}
-        {renderLabReceiveStatusBadge(
-          "리메이크",
-          "리메이크",
-          "remake",
-          statusCounts.remake,
-          statusUnreadCounts.remake,
-        )}
-      </div>
+      <PracticeStatusFilterBadges
+        className="min-w-0 flex-1 justify-center"
+        items={labStatusFilterBadgeItems}
+        activeKeys={statusFilters}
+        onToggle={(key) =>
+          setStatusFilters((prev) =>
+            toggleLabReceiveStatusFilter(prev, key as LabReceiveStatusFilterKey),
+          )
+        }
+        onResetToDefault={resetLabStatusFiltersToDefault}
+        isDefault={isLabReceiveStatusFilterDefault(statusFilters)}
+        countSuffix="건"
+      />
       <div className="relative w-full max-w-xs shrink-0">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
@@ -4506,19 +4491,27 @@ export function RequestorPracticeReceivePage({
         </div>
       ) : null}
       {!error && !loading ? (
-        <PracticeRecentTransfersCalendar
-          items={calendarItems}
-          dateKey={dateKey}
-          cursorYmd={cursorYmd}
-          onCursorChange={setCursorYmd}
-          onDateKeyChange={handleCalendarDateKeyChange}
-          onSelectItem={(item) => {
-            const transfer = calendarTransferById.get(item.id);
-            if (transfer) void openTransferDialog(transfer);
-          }}
-          hiddenWeekdays={hiddenWeekdays}
-          onHiddenWeekdaysChange={setHiddenWeekdays}
-        />
+        <>
+          {statusFilters.size === 0 ? (
+            <PracticeStatusFilterEmptyHint
+              onResetToDefault={resetLabStatusFiltersToDefault}
+              className="shrink-0"
+            />
+          ) : null}
+          <PracticeRecentTransfersCalendar
+            items={calendarItems}
+            dateKey={dateKey}
+            cursorYmd={cursorYmd}
+            onCursorChange={setCursorYmd}
+            onDateKeyChange={handleCalendarDateKeyChange}
+            onSelectItem={(item) => {
+              const transfer = calendarTransferById.get(item.id);
+              if (transfer) void openTransferDialog(transfer);
+            }}
+            hiddenWeekdays={hiddenWeekdays}
+            onHiddenWeekdaysChange={setHiddenWeekdays}
+          />
+        </>
       ) : null}
       {loadingMore ? (
         <div className="py-1 text-center text-xs text-muted-foreground">

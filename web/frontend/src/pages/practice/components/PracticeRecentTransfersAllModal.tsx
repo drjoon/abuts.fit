@@ -20,8 +20,7 @@
  * 2026-08-20: 모바일은 달력 대신 기공소·환자명·상태 카드 목록.
  * 2026-08-21: 커스텀어벗 한진 배송현황을 캘린더 칩·모바일 카드에 표시.
  * 2026-08-21: 휴지통 취소·거부를 목록·취소 뱃지에 포함. 상단 뱃지별 unread.
- * 2026-08-21: 상단 상태 뱃지 배타적 선택 — 클릭한 상태만 표시(재클릭 시 기본 ON 복귀).
- * 2026-08-21: 상단 상태 뱃지 다중 on/off — 켠 항목만 표시(기본 취소 off).
+ * 2026-08-21: 상단 상태 뱃지 다중 표시 on/off(표시 라벨·기본 리셋·ON/OFF 대비).
  * 2026-08-20: 모바일 — 가로 스크롤 상태칩·터치 카드·풀높이 시트.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -37,11 +36,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { getPracticeAbutmentDeliveryLabel } from "@/shared/shipping/hanjinTrackingLabel";
 import type { PeriodFilterValue } from "@/shared/ui/PeriodFilter";
 import { cn } from "@/shared/ui/cn";
@@ -66,19 +60,23 @@ import {
   filterGroupedTransfersByStatus,
   filterRequestsByPeriodAndSearch,
   groupPracticeRecentRequests,
+  isPracticeRecentStatusFilterDefault,
   mapMyPracticeTransferApiRows,
   togglePracticeRecentStatusFilter,
   toStatusBadgeLabel,
 } from "@/shared/practice/practiceRecentTransferList";
 import {
   DEFAULT_HIDDEN_WEEKDAYS,
-  PRACTICE_STATUS_FILTER_BADGE_CLASS,
   PracticeRecentTransfersCalendar,
   resolvePracticeCalendarStatusTone,
   type PracticeCalendarChipItem,
   type PracticeCalendarDateKey,
-  type PracticeCalendarStatusTone,
 } from "@/pages/practice/components/PracticeRecentTransfersCalendar";
+import {
+  PracticeStatusFilterBadges,
+  PracticeStatusFilterEmptyHint,
+  type PracticeStatusFilterBadgeItem,
+} from "@/pages/practice/components/PracticeStatusFilterBadges";
 import {
   practiceTransferStatusBadgeClass,
   resolvePracticeTransferListPatientName,
@@ -349,73 +347,49 @@ export function PracticeRecentTransfersAllModal({
     return map;
   }, [filteredTransfers]);
 
-  const statusFilterTone = (
-    filterKey: Exclude<PracticeRecentStatusFilter, "all">,
-  ): PracticeCalendarStatusTone =>
-    filterKey === "리메이크" ? "remake" : resolvePracticeCalendarStatusTone(filterKey);
+  const statusFilterBadgeItems = useMemo((): PracticeStatusFilterBadgeItem[] => {
+    return PRACTICE_RECENT_STATUS_BADGES.map((item) => ({
+      key: item.filter,
+      label: item.label,
+      tone:
+        item.filter === "리메이크"
+          ? "remake"
+          : resolvePracticeCalendarStatusTone(item.filter),
+      count: statusCounts[item.countKey],
+      unreadCount: statusUnreadCounts[item.countKey],
+      tooltip: item.tooltip,
+    }));
+  }, [statusCounts, statusUnreadCounts]);
 
-  const renderStatusBadgeToggle = (
-    filterKey: PracticeRecentStatusFilterKey,
-    label: string,
-    count: number,
-    unreadCount: number,
-    tooltip: string,
-  ) => {
-    const active = statusFilters.has(filterKey);
-    const tone = statusFilterTone(filterKey);
-    const unread = Math.max(0, Number(unreadCount || 0));
-    return (
-      <Tooltip key={filterKey}>
-        <TooltipTrigger asChild>
-          <button
-            type="button"
-            className="relative shrink-0 rounded-full"
-            onClick={() =>
-              setStatusFilters((prev) => togglePracticeRecentStatusFilter(prev, filterKey))
-            }
-            aria-pressed={active}
-            aria-label={
-              unread > 0 ? `${label} ${count}건, 안읽음 ${unread}건` : undefined
-            }
-          >
-            <Badge
-              variant="outline"
-              className={cn(
-                "cursor-pointer whitespace-nowrap",
-                isMobile && "h-8 px-2.5 text-xs",
-                PRACTICE_STATUS_FILTER_BADGE_CLASS[tone][active ? "active" : "idle"],
-              )}
-            >
-              <span className="inline-flex items-center gap-1">
-                {label} {count}
-                {unread > 0 ? (
-                  <span
-                    className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-destructive-foreground"
-                    aria-hidden
-                  >
-                    {unread > 99 ? "99+" : unread}
-                  </span>
-                ) : null}
-              </span>
-            </Badge>
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
-          {tooltip}
-        </TooltipContent>
-      </Tooltip>
-    );
-  };
+  const resetStatusFiltersToDefault = useCallback(() => {
+    setStatusFilters(createPracticeRecentStatusFilterSet());
+  }, []);
 
-  const statusBadges = PRACTICE_RECENT_STATUS_BADGES.map((item) =>
-    renderStatusBadgeToggle(
-      item.filter,
-      item.label,
-      statusCounts[item.countKey],
-      statusUnreadCounts[item.countKey],
-      item.tooltip,
-    ),
+  const statusBadges = (
+    <PracticeStatusFilterBadges
+      items={statusFilterBadgeItems}
+      activeKeys={statusFilters}
+      onToggle={(key) =>
+        setStatusFilters((prev) =>
+          togglePracticeRecentStatusFilter(
+            prev,
+            key as PracticeRecentStatusFilterKey,
+          ),
+        )
+      }
+      onResetToDefault={resetStatusFiltersToDefault}
+      isDefault={isPracticeRecentStatusFilterDefault(statusFilters)}
+      compact={isMobile}
+    />
   );
+
+  const statusFilterEmptyHint =
+    statusFilters.size === 0 ? (
+      <PracticeStatusFilterEmptyHint
+        onResetToDefault={resetStatusFiltersToDefault}
+        className="mb-2 shrink-0"
+      />
+    ) : null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -500,15 +474,19 @@ export function PracticeRecentTransfersAllModal({
               {displayError}
             </div>
           ) : isMobile ? (
-            filteredTransfers.length === 0 ? (
-              <div className="flex flex-1 flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-16 text-center">
-                <p className="text-sm font-medium text-slate-600">전송 내역 없음</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  검색어나 상태 필터를 바꿔 보세요.
-                </p>
-              </div>
-            ) : (
-              <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto overscroll-contain pb-2">
+            <>
+              {statusFilterEmptyHint}
+              {filteredTransfers.length === 0 ? (
+                <div className="flex flex-1 flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-16 text-center">
+                  <p className="text-sm font-medium text-slate-600">전송 내역 없음</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {statusFilters.size === 0
+                      ? "표시할 상태를 선택하세요."
+                      : "검색어나 상태 필터를 바꿔 보세요."}
+                  </p>
+                </div>
+              ) : (
+                <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto overscroll-contain pb-2">
                   {filteredTransfers.map((transfer) => {
                   const lab =
                     String(transfer.targetLab || "-")
@@ -621,26 +599,30 @@ export function PracticeRecentTransfersAllModal({
                   );
                 })}
               </div>
-            )
+            )}
+            </>
           ) : (
-            <PracticeRecentTransfersCalendar
-              items={calendarItems}
-              dateKey={dateKey}
-              cursorYmd={cursorYmd}
-              onCursorChange={setCursorYmd}
-              onDateKeyChange={handleCalendarDateKeyChange}
-              onSelectItem={(item) => {
-                const transfer = calendarItemById.get(item.id);
-                if (transfer) onSelectTransfer(transfer);
-              }}
-              onDeleteItem={(item) => {
-                const transfer = calendarItemById.get(item.id);
-                if (transfer) onDeleteTransfer(transfer);
-              }}
-              hiddenWeekdays={hiddenWeekdays}
-              onHiddenWeekdaysChange={setHiddenWeekdays}
-              alignEpoch={alignEpoch}
-            />
+            <>
+              {statusFilterEmptyHint}
+              <PracticeRecentTransfersCalendar
+                items={calendarItems}
+                dateKey={dateKey}
+                cursorYmd={cursorYmd}
+                onCursorChange={setCursorYmd}
+                onDateKeyChange={handleCalendarDateKeyChange}
+                onSelectItem={(item) => {
+                  const transfer = calendarItemById.get(item.id);
+                  if (transfer) onSelectTransfer(transfer);
+                }}
+                onDeleteItem={(item) => {
+                  const transfer = calendarItemById.get(item.id);
+                  if (transfer) onDeleteTransfer(transfer);
+                }}
+                hiddenWeekdays={hiddenWeekdays}
+                onHiddenWeekdaysChange={setHiddenWeekdays}
+                alignEpoch={alignEpoch}
+              />
+            </>
           )}
 
           {loadingMore ? (
