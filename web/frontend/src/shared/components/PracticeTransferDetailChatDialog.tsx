@@ -11,6 +11,7 @@
 // - web/frontend/src/shared/files/modelPreviewFile.ts
 // - web/frontend/src/shared/files/downloadWithProgress.ts
 // - web/frontend/src/shared/files/s3BlobCache.ts
+// - 2026-08-21: 작업 파일도 의뢰 파일과 동일 4열 타일 미리보기.
 // - 2026-08-21: 의뢰 파일 — 4열 썸네일(이미지)·유형 아이콘(기타) + 파일명.
 // - 2026-08-21: 수락 바 — 안내 1줄 + CTA 1줄(항상 2단), 작업취소 툴팁.
 // - 2026-08-21: 수락 후 채팅 상단 바에 어벗·보철 업로드 CTA(acceptedWorkActions).
@@ -362,55 +363,65 @@ export function PracticeTransferDetailChatDialog({
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewProgress, setPreviewProgress] = useState(0);
   const previewAbortRef = useRef<AbortController | null>(null);
-  /** 의뢰 파일 이미지 썸네일 object URL (s3Key → url) */
-  const [requestThumbUrls, setRequestThumbUrls] = useState<
-    Record<string, string>
-  >({});
-  const requestThumbUrlsRef = useRef<Record<string, string>>({});
+  /** 의뢰·작업 파일 이미지 썸네일 object URL (s3Key → url) */
+  const [fileThumbUrls, setFileThumbUrls] = useState<Record<string, string>>(
+    {},
+  );
+  const fileThumbUrlsRef = useRef<Record<string, string>>({});
 
-  const requestImageThumbKey = useMemo(() => {
-    if (!open || requestFilesDownloadLocked) return "";
-    return (Array.isArray(files) ? files : [])
-      .filter((file) => {
-        if (!String(file.s3Key || "").trim()) return false;
-        return isImagePreviewExt(
-          getPracticeTransferFileExtension(file.fileName),
-        );
-      })
+  const collectImageThumbFiles = useCallback(() => {
+    const out: PracticeTransferDialogFileItem[] = [];
+    const seen = new Set<string>();
+    const append = (
+      list: PracticeTransferDialogFileItem[] | undefined,
+      locked: boolean,
+    ) => {
+      if (locked) return;
+      for (const file of Array.isArray(list) ? list : []) {
+        const s3Key = String(file.s3Key || "").trim();
+        if (!s3Key || seen.has(s3Key)) continue;
+        if (
+          !isImagePreviewExt(getPracticeTransferFileExtension(file.fileName))
+        ) {
+          continue;
+        }
+        seen.add(s3Key);
+        out.push(file);
+      }
+    };
+    append(files, requestFilesDownloadLocked);
+    append(designFiles, false);
+    append(resultFiles, false);
+    return out;
+  }, [designFiles, files, requestFilesDownloadLocked, resultFiles]);
+
+  const fileImageThumbKey = useMemo(() => {
+    if (!open) return "";
+    return collectImageThumbFiles()
       .map((file) => String(file.s3Key || "").trim())
       .join("|");
-  }, [files, open, requestFilesDownloadLocked]);
+  }, [collectImageThumbFiles, open]);
 
-  const filesRef = useRef(files);
-  filesRef.current = files;
-
-  const revokeRequestThumbs = useCallback(() => {
-    for (const url of Object.values(requestThumbUrlsRef.current)) {
+  const revokeFileThumbs = useCallback(() => {
+    for (const url of Object.values(fileThumbUrlsRef.current)) {
       try {
         URL.revokeObjectURL(url);
       } catch {
         // ignore
       }
     }
-    requestThumbUrlsRef.current = {};
-    setRequestThumbUrls({});
+    fileThumbUrlsRef.current = {};
+    setFileThumbUrls({});
   }, []);
 
   useEffect(() => {
-    if (!requestImageThumbKey || !authToken) {
-      revokeRequestThumbs();
+    if (!fileImageThumbKey || !authToken) {
+      revokeFileThumbs();
       return;
     }
-    const imageFiles = (Array.isArray(filesRef.current) ? filesRef.current : []).filter(
-      (file) => {
-        if (!String(file.s3Key || "").trim()) return false;
-        return isImagePreviewExt(
-          getPracticeTransferFileExtension(file.fileName),
-        );
-      },
-    );
+    const imageFiles = collectImageThumbFiles();
     if (!imageFiles.length) {
-      revokeRequestThumbs();
+      revokeFileThumbs();
       return;
     }
 
@@ -451,23 +462,28 @@ export function PracticeTransferDetailChatDialog({
         }
         return;
       }
-      for (const url of Object.values(requestThumbUrlsRef.current)) {
+      for (const url of Object.values(fileThumbUrlsRef.current)) {
         try {
           URL.revokeObjectURL(url);
         } catch {
           // ignore
         }
       }
-      requestThumbUrlsRef.current = next;
-      setRequestThumbUrls(next);
+      fileThumbUrlsRef.current = next;
+      setFileThumbUrls(next);
     })();
 
     return () => {
       cancelled = true;
       ac.abort();
-      revokeRequestThumbs();
+      revokeFileThumbs();
     };
-  }, [authToken, requestImageThumbKey, revokeRequestThumbs]);
+  }, [
+    authToken,
+    collectImageThumbFiles,
+    fileImageThumbKey,
+    revokeFileThumbs,
+  ]);
 
   const previewableFiles = useMemo(() => {
     const out: Array<{
@@ -679,7 +695,7 @@ export function PracticeTransferDetailChatDialog({
   const showWorkFilesSection =
     designFileList.length > 0 || resultFileList.length > 0;
 
-  const renderFileRow = (
+  const renderFileTile = (
     file: PracticeTransferDialogFileItem,
     idx: number,
     keyPrefix: string,
@@ -694,56 +710,7 @@ export function PracticeTransferDetailChatDialog({
     const isImage = isImagePreviewExt(
       getPracticeTransferFileExtension(file.fileName),
     );
-    const canPreview = isMesh || isImage;
-    return (
-      <div
-        key={`${keyPrefix}:${file.id}:${idx}`}
-        className="rounded border px-2 py-1 space-y-1"
-      >
-        <button
-          type="button"
-          onClick={() => handleFileRowClick(file, locked)}
-          disabled={isBusy || locked}
-          title={
-            locked
-              ? requestFilesDownloadLockedReason
-              : isMesh
-                ? "클릭하여 3D 미리보기"
-                : isImage
-                  ? "클릭하여 이미지 미리보기"
-                  : "클릭하여 다운로드"
-          }
-          className="block w-full text-left text-sm hover:underline disabled:opacity-60 disabled:pointer-events-none disabled:no-underline"
-        >
-          {isBusy
-            ? `다운로드 중 ${Math.round(progress)}% · `
-            : locked
-              ? "다운로드 대기 · "
-              : canPreview
-                ? "미리보기 · "
-                : ""}
-          {file.fileName} · {formatFileSize(Number(file.size || 0))}
-        </button>
-        {isBusy ? <Progress value={progress} className="h-1.5" /> : null}
-      </div>
-    );
-  };
-
-  const renderRequestFileTile = (
-    file: PracticeTransferDialogFileItem,
-    idx: number,
-  ) => {
-    const locked = requestFilesDownloadLocked;
-    const busyKey = String(file.s3Key || file.id || "").trim();
-    const isBusy =
-      downloadAllBusy ||
-      (busyKey ? downloadingFileKeys.includes(busyKey) : false);
-    const progress = busyKey ? Number(downloadProgressByKey[busyKey] ?? 0) : 0;
-    const isMesh = isModelPreviewExt(getModelExtLower(file.fileName));
-    const isImage = isImagePreviewExt(
-      getPracticeTransferFileExtension(file.fileName),
-    );
-    const thumbUrl = busyKey ? requestThumbUrls[busyKey] : undefined;
+    const thumbUrl = busyKey ? fileThumbUrls[busyKey] : undefined;
     const typeLabel = fileTypeLabel(file.fileName);
     const title = locked
       ? requestFilesDownloadLockedReason
@@ -755,7 +722,7 @@ export function PracticeTransferDetailChatDialog({
 
     return (
       <div
-        key={`request:${file.id}:${idx}`}
+        key={`${keyPrefix}:${file.id}:${idx}`}
         className="relative min-w-0 overflow-hidden rounded-md border bg-slate-50"
       >
         <button
@@ -938,7 +905,14 @@ export function PracticeTransferDetailChatDialog({
                 {files.length ? (
                   <div className="mt-2 max-h-64 overflow-y-auto pr-1">
                     <div className="grid grid-cols-4 gap-2">
-                      {files.map((file, idx) => renderRequestFileTile(file, idx))}
+                      {files.map((file, idx) =>
+                        renderFileTile(
+                          file,
+                          idx,
+                          "request",
+                          requestFilesDownloadLocked,
+                        ),
+                      )}
                     </div>
                   </div>
                 ) : oralScanAttachMode === "practice_required" ? (
@@ -958,10 +932,12 @@ export function PracticeTransferDetailChatDialog({
                       <p className="text-xs font-medium text-slate-600">
                         {designFilesLabel} ({designFileList.length}개)
                       </p>
-                      <div className="mt-1.5 max-h-40 overflow-y-auto pr-1 space-y-1">
-                        {designFileList.map((file, idx) =>
-                          renderFileRow(file, idx, "design"),
-                        )}
+                      <div className="mt-1.5 max-h-64 overflow-y-auto pr-1">
+                        <div className="grid grid-cols-4 gap-2">
+                          {designFileList.map((file, idx) =>
+                            renderFileTile(file, idx, "design"),
+                          )}
+                        </div>
                       </div>
                     </div>
                   ) : null}
@@ -970,10 +946,12 @@ export function PracticeTransferDetailChatDialog({
                       <p className="text-xs font-medium text-slate-600">
                         {resultFilesLabel} ({resultFileList.length}개)
                       </p>
-                      <div className="mt-1.5 max-h-40 overflow-y-auto pr-1 space-y-1">
-                        {resultFileList.map((file, idx) =>
-                          renderFileRow(file, idx, "result"),
-                        )}
+                      <div className="mt-1.5 max-h-64 overflow-y-auto pr-1">
+                        <div className="grid grid-cols-4 gap-2">
+                          {resultFileList.map((file, idx) =>
+                            renderFileTile(file, idx, "result"),
+                          )}
+                        </div>
                       </div>
                     </div>
                   ) : null}
