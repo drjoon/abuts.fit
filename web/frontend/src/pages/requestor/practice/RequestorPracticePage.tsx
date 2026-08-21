@@ -4861,15 +4861,15 @@ export function RequestorPracticeReceivePage({
         orderedAt={selectedTransfer?.createdAt || null}
         releaseBusy={releaseBusy}
         onRelease={() => void handleReleaseTransfer()}
-        acceptedWorkActions={(() => {
-          if (!selectedTransfer) return null;
+        acceptedWorkActions={({ releaseAction }) => {
+          if (!selectedTransfer) return releaseAction;
           const workState =
             resolvePracticeLabReceiveWorkActionState(selectedTransfer);
           if (
             !workState.showWorkActions &&
             !workState.showCompletedStageHeaderCancel
           ) {
-            return null;
+            return releaseAction;
           }
           const transferKey = String(
             selectedTransfer.transferId || selectedTransfer._id || "",
@@ -4882,6 +4882,7 @@ export function RequestorPracticeReceivePage({
                 busy={rowBusy}
                 designConfirmBusy={designConfirmBusyId === transferKey}
                 showProductionCancelInBar
+                trailingActions={releaseAction}
                 onDesignUpload={(event) =>
                   void handleCardDesignUpload(selectedTransfer, event)
                 }
@@ -4919,7 +4920,7 @@ export function RequestorPracticeReceivePage({
               ) : null}
             </>
           );
-        })()}
+        }}
         chatLoading={chatLoading}
         chatError={String(chatError || "")}
         chatMessages={displayChatMessages}

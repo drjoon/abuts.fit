@@ -5,12 +5,13 @@
 // - web/frontend/src/shared/practice/practiceTransferLabReceive.ts
 // - web/frontend/src/shared/practice/roundBarAbutment.ts
 // change-log:
+// - 2026-08-21: 작업취소(수락 해제)를 업로드 CTA와 같은 버튼 행에 둔다.
 // - 2026-08-21: 미제공 CA 안내 — 치아·임플란트 상세 + 자체 처리 문구(LabPendingAbutmentGuide).
 // - 2026-08-21: 요청중 CA — 어벗 업로드 CTA 숨김 + 기공소 CNC 직접 의뢰 안내.
 // - 2026-08-21: 어벗 생산 취소 — 가공 중이어도 클릭 가능. API 판정·토스트(준비 복귀 대비).
 // - 2026-08-21: 어벗 CTA「어벗 업로드 & 생산의뢰」·툴팁 단문화.
 // - 2026-08-21: 카드→캘린더 전환 후 상세 모달에서도 어벗·보철 업로드 CTA 공유.
-import type { MouseEvent } from "react";
+import type { MouseEvent, ReactNode } from "react";
 import { UploadCloud, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -35,6 +36,8 @@ export type PracticeLabReceiveWorkActionsBarProps = {
   onAbutmentProductionCancel?: (event: MouseEvent) => void;
   onComplete: (event: MouseEvent) => void;
   onDesignConfirm?: () => void;
+  /** 버튼 행 끝(보철 업로드 옆). 상세 모달 작업취소 등 */
+  trailingActions?: ReactNode;
   className?: string;
 };
 
@@ -50,10 +53,16 @@ export function PracticeLabReceiveWorkActionsBar({
   onAbutmentProductionCancel,
   onComplete,
   onDesignConfirm,
+  trailingActions = null,
   className,
 }: PracticeLabReceiveWorkActionsBarProps) {
   const state = resolvePracticeLabReceiveWorkActionState(transfer);
-  if (!state.showWorkActions && !state.showCompletedStageHeaderCancel) {
+  const hasTrailing = Boolean(trailingActions);
+  if (
+    !state.showWorkActions &&
+    !state.showCompletedStageHeaderCancel &&
+    !hasTrailing
+  ) {
     return null;
   }
 
@@ -96,30 +105,6 @@ export function PracticeLabReceiveWorkActionsBar({
         </TooltipContent>
       </Tooltip>
     ) : null;
-
-  const completedStageDisabledUploads = state.showCompletedStageHeaderCancel ? (
-    <div className="flex flex-wrap items-center gap-1.5">
-      <Button
-        type="button"
-        size="sm"
-        disabled
-        className="h-8 focus-visible:ring-0 focus-visible:ring-offset-0"
-      >
-        <UploadCloud className="h-3.5 w-3.5" />
-        어벗 업로드 & 생산의뢰
-      </Button>
-      <Button
-        type="button"
-        size="sm"
-        variant="secondary"
-        disabled
-        className="h-8 focus-visible:ring-0 focus-visible:ring-offset-0"
-      >
-        <UploadCloud className="h-3.5 w-3.5" />
-        보철 업로드 & 작업완료
-      </Button>
-    </div>
-  ) : null;
 
   if (state.showWorkActions) {
     return (
@@ -200,12 +185,44 @@ export function PracticeLabReceiveWorkActionsBar({
                   : "보철 파일을 올리고 작업을 완료합니다."}
             </TooltipContent>
           </Tooltip>
+          {trailingActions}
         </div>
       </div>
     );
   }
 
-  return completedStageDisabledUploads ? (
-    <div className={className}>{completedStageDisabledUploads}</div>
-  ) : null;
+  if (state.showCompletedStageHeaderCancel) {
+    return (
+      <div className={className ? `space-y-1.5 ${className}` : "space-y-1.5"}>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Button
+            type="button"
+            size="sm"
+            disabled
+            className="h-8 focus-visible:ring-0 focus-visible:ring-offset-0"
+          >
+            <UploadCloud className="h-3.5 w-3.5" />
+            어벗 업로드 & 생산의뢰
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            disabled
+            className="h-8 focus-visible:ring-0 focus-visible:ring-offset-0"
+          >
+            <UploadCloud className="h-3.5 w-3.5" />
+            보철 업로드 & 작업완료
+          </Button>
+          {trailingActions}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={className ? `space-y-1.5 ${className}` : "space-y-1.5"}>
+      <div className="flex flex-wrap items-center gap-1.5">{trailingActions}</div>
+    </div>
+  );
 }

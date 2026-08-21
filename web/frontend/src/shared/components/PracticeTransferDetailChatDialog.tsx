@@ -11,6 +11,7 @@
 // - web/frontend/src/shared/files/modelPreviewFile.ts
 // - web/frontend/src/shared/files/downloadWithProgress.ts
 // - web/frontend/src/shared/files/s3BlobCache.ts
+// - 2026-08-21: 수락 바 — 작업취소를 업로드 CTA와 같은 버튼 행에 배치.
 // - 2026-08-21: 미제공 CA 수락 바 — 치아·임플란트 상세 + 자체 처리 안내.
 // - 2026-08-21: 미제공(요청중) CA — 수락 바 안내·어벗츠 자동주문 문구 분리.
 // - 2026-08-21: 모바일 채팅 — 상세/채팅·메시지/입력을 grid fr로 나눠 내역 높이 확보.
@@ -239,8 +240,11 @@ type PracticeTransferDetailChatDialogProps = {
   /**
    * 기공의뢰수신: 수락 후 어벗·보철 업로드 CTA.
    * 캘린더 전환으로 카드 actionBar가 없어져 상세 모달 상단에 둔다.
+   * 함수면 `releaseAction`(작업취소)을 버튼 행 trailing에 넣을 수 있다.
    */
-  acceptedWorkActions?: ReactNode;
+  acceptedWorkActions?:
+    | ReactNode
+    | ((slots: { releaseAction: ReactNode | null }) => ReactNode);
   chatLoading: boolean;
   chatError: string;
   chatMessages: ChatMessage[];
@@ -791,6 +795,32 @@ export function PracticeTransferDetailChatDialog({
       ? `다시 수락 [${remainingLabel}]`
       : "다시 수락";
   const releaseButtonLabel = releaseBusy ? "취소 중..." : "작업취소";
+  const releaseAction =
+    showReleaseBar && onRelease ? (
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8 border-destructive-muted text-destructive hover:bg-destructive-soft hover:text-destructive"
+              onClick={() => void onRelease()}
+              disabled={releaseBusy}
+            >
+              {releaseButtonLabel}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="max-w-xs text-xs">
+            수락을 해제합니다. 어벗 가공이 시작된 뒤에는 취소할 수 없습니다.
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    ) : null;
+  const resolvedAcceptedWorkActions =
+    typeof acceptedWorkActions === "function"
+      ? acceptedWorkActions({ releaseAction })
+      : acceptedWorkActions;
   const rejectButtonLabel = rejectBusy ? "거부 중..." : "거부";
   const workPeriodDays = getPracticeWorkPeriodDays(orderDate, arrivalDate, orderedAt);
   const showShortWorkPeriod = isPracticeWorkPeriodShort(workPeriodDays);
@@ -1253,38 +1283,31 @@ export function PracticeTransferDetailChatDialog({
                   <p className="text-xs text-muted-foreground">
                     수락된 의뢰입니다. 작업취소하면 수락이 해제됩니다.
                   </p>
-                  <div className="flex shrink-0 flex-wrap items-center gap-2">
-                    {acceptedWorkActions}
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            className="border-destructive-muted text-destructive hover:bg-destructive-soft hover:text-destructive"
-                            onClick={() => void onRelease?.()}
-                            disabled={releaseBusy}
-                          >
-                            {releaseButtonLabel}
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent side="top" className="max-w-xs text-xs">
-                          수락을 해제합니다. 어벗 가공이 시작된 뒤에는 취소할 수
-                          없습니다.
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  </div>
+                  {typeof acceptedWorkActions === "function" ? (
+                    resolvedAcceptedWorkActions
+                  ) : resolvedAcceptedWorkActions ? (
+                    <div className="flex min-w-0 w-full flex-col gap-1.5">
+                      {resolvedAcceptedWorkActions}
+                      {releaseAction ? (
+                        <div className="flex flex-wrap items-center gap-2">
+                          {releaseAction}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap items-center gap-2">
+                      {releaseAction}
+                    </div>
+                  )}
                 </div>
               ) : null}
 
               {!showReleaseBar &&
               accepted &&
               !workCanceled &&
-              acceptedWorkActions ? (
+              resolvedAcceptedWorkActions ? (
                 <div className="shrink-0 border-b bg-muted/40 px-3 py-2 flex flex-wrap items-center justify-end gap-2">
-                  {acceptedWorkActions}
+                  {resolvedAcceptedWorkActions}
                 </div>
               ) : null}
 
