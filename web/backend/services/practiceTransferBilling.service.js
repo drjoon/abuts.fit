@@ -11,6 +11,7 @@
 // - web/backend/models/ledgerLine.model.js
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
+// - 2026-08-21: feeQuote.labShippingFee — 기공수가 배송비. 표시 총액은 배송 제외(크레딧 정산만 합산).
 // - 2026-08-21: feeQuote.missingFeeNames — 치과 견적에 미설정 수가 항목 안내.
 // - 2026-08-21: assertCredit — fees/shipping 재사용 시 견적 DB 재조회 생략(전송 create 핫패스).
 // - 2026-08-21: hold — 슬라이스 저널 insertMany 1회 + txn 잔액은 BusinessCreditBalance 우선.
@@ -95,6 +96,7 @@ import BusinessAnchor from "../models/businessAnchor.model.js";
 import {
   computePracticeTransferRetailFees,
   LAB_FEE_SCHEDULE_ZEROS,
+  LAB_FEE_SHIPPING_ITEM_NAME,
   attachLabFeeMinToLines,
   missingLabFeeItemNames,
   resolveQuoteLabFeeConfigured,
@@ -3635,6 +3637,47 @@ function rushFeeMultiplierFromTransfer(transfer, override) {
   });
 }
 
+function isFeeQuoteShippingLine(line) {
+  const type = String(line?.prosthesisType || line?.type || "").trim();
+  const compact = type.replace(/\s+/g, "");
+  return (
+    compact === LAB_FEE_SHIPPING_ITEM_NAME ||
+    compact === "배송비" ||
+    /^shipping$/i.test(type)
+  );
+}
+
+/** 견적 라인 기공비 합(배송 제외). */
+function sumFeeQuoteWorkFromLines(lines) {
+  let total = 0;
+  for (const line of Array.isArray(lines) ? lines : []) {
+    if (isFeeQuoteShippingLine(line)) continue;
+    total += Math.max(0, Math.round(Number(line?.labFee || 0)));
+    total += Math.max(0, Math.round(Number(line?.labAbutmentFee || 0)));
+    total += Math.max(0, Math.round(Number(line?.abutmentRetail || 0)));
+  }
+  return total;
+}
+
+function resolveLabShippingFeeForQuote({ fees, billing = null }) {
+  const fromFees = Math.max(0, Math.round(Number(fees?.labShippingFee || 0)));
+  if (fromFees > 0) return fromFees;
+  const fromBilling = Math.max(
+    0,
+    Math.round(Number(billing?.labShippingFee || 0)),
+  );
+  if (fromBilling > 0) return fromBilling;
+  const workFromLines = sumFeeQuoteWorkFromLines(fees?.lines);
+  const totalRaw = Math.max(
+    0,
+    Math.round(Number(billing?.total ?? fees?.total ?? 0)),
+  );
+  if (workFromLines > 0 && totalRaw > workFromLines) {
+    return totalRaw - workFromLines;
+  }
+  return 0;
+}
+
 export function toFeeQuoteApi(quote) {
   const fees = quote?.fees || {};
   const billed = Boolean(quote?.billed);
@@ -3643,6 +3686,10 @@ export function toFeeQuoteApi(quote) {
     Math.round(Number(fees.labAbutmentTotal || 0)),
   );
   const rawLines = Array.isArray(fees.lines) ? fees.lines : [];
+  const labShippingFee = resolveLabShippingFeeForQuote({
+    fees,
+    billing: quote?.billing || null,
+  });
   return {
     labFeeTotal: Math.max(0, Math.round(Number(fees.labFeeTotal || 0))),
     labAbutmentTotal,
@@ -3655,6 +3702,8 @@ export function toFeeQuoteApi(quote) {
     abutmentQuotePending: Boolean(fees.abutmentQuotePending),
     abutmentQty: Math.max(0, Math.round(Number(fees.abutmentQty || 0))),
     total: Math.max(0, Math.round(Number(fees.total || 0))),
+    /** 기공수가 배송비. 견적 툴팁 미사용·크레딧 정산 분리용. total에 포함돼 있을 수 있음. */
+    labShippingFee,
     lines: billed ? stripLabFeeMinFromFeeLines(rawLines) : rawLines,
     relationshipKind:
       quote?.relationshipKind === "active" || quote?.relationshipKind === "referred"
@@ -3702,6 +3751,7 @@ export function toBillingPreviewFields(quote) {
     abutmentRetailTotal: api.abutmentRetailTotal,
     abutmentQty: api.abutmentQty,
     total: api.total,
+    labShippingFee: api.labShippingFee,
     isTradingPartner: api.relationshipKind === "active",
     relationshipKind: api.relationshipKind,
     feeRateApplied: api.feeRateApplied,
@@ -3751,7 +3801,9 @@ export function feeQuoteFromBillingDoc(billing, { lines = [], billed = false } =
       lines: billed ? stripLabFeeMinFromFeeLines(lines) : lines,
       labFeeMultiplier: billing?.labFeeMultiplier,
       rushFeeMultiplier: billing?.rushFeeMultiplier,
+      labShippingFee: billing?.labShippingFee || 0,
     },
+    billing,
     relationshipKind: billing?.relationshipKind || "none",
     feeRateApplied,
     labFeeMultiplier: billing?.labFeeMultiplier,
@@ -4196,6 +4248,28 @@ export async function buildFeeQuotesForTransferDocs({
       labFeeMultiplier: feeLabFeeMultiplier,
       rushFeeMultiplier: rushFeeMultiplierFromTransfer(doc),
     });
+    const feesWithLabShipping = computePracticeTransferRetailFeesWithLabShipping(
+      {
+        toothWorks,
+        implantFavorites,
+        labFeeSchedule: feeSchedule,
+        abutmentPricingTier,
+        abutmentPrices,
+        remake,
+        skipAbutmentFees: remake,
+        labFeeMultiplier: feeLabFeeMultiplier,
+        rushFeeMultiplier: rushFeeMultiplierFromTransfer(doc),
+      },
+      doc,
+    );
+    const labShippingFee = Math.max(
+      0,
+      Math.round(
+        Number(
+          billing?.labShippingFee ?? feesWithLabShipping?.labShippingFee ?? 0,
+        ),
+      ),
+    );
 
     let autoMatchBudgetOut = null;
 
@@ -4253,6 +4327,9 @@ export async function buildFeeQuotesForTransferDocs({
       });
       out.set(docId, {
         ...storedQuote,
+        labShippingFee:
+          Math.max(0, Math.round(Number(storedQuote.labShippingFee || 0))) ||
+          labShippingFee,
         feeRateApplied,
         labSettlementAmount: split.labSettlementAmount,
         abutsRevenueAmount: split.abutsRevenueAmount,
@@ -4271,7 +4348,8 @@ export async function buildFeeQuotesForTransferDocs({
       docId,
       {
         ...toFeeQuoteApi({
-          fees,
+          fees: { ...fees, labShippingFee },
+          billing,
           relationshipKind: kind,
           feeRateApplied,
           labFeeMultiplier: feeLabFeeMultiplier,

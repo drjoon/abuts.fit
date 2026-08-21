@@ -206,6 +206,8 @@ const practiceTransferSchema = new mongoose.Schema(
       abutmentRetailTotal: { type: Number, default: 0 },
       abutmentQty: { type: Number, default: 0 },
       total: { type: Number, default: 0 },
+      /** 기공수가「배송비」(기공비 hold에 합산). 견적 표시와 분리용. */
+      labShippingFee: { type: Number, default: 0 },
       isTradingPartner: { type: Boolean, default: false },
       // 거래처 여부(커스텀어벗 기공소 크레딧 차감). 플랫폼 수수료는 matchingMode=auto 때만.
       relationshipKind: {

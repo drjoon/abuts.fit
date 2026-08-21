@@ -1,6 +1,7 @@
 // related files:
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
+// - 2026-08-21: labShippingFee 파싱(크레딧 정산 배송 분리용. 견적 툴팁 미사용).
 // - 2026-08-21: missingFeeNames — 커스텀어벗 등 기공소 미설정 수가를 치과 견적에 안내.
 // - 2026-08-13: 저장된 견적 라인도 치아번호 10→20→30→40번대 순.
 // - 2026-08-14: 환봉 단가 0원(별도 고지) 라인도 파싱.
@@ -53,6 +54,8 @@ export type PracticeTransferFeeQuote = PracticeTransferRetailFees & {
   abutsRevenueAmount: number;
   labFeeMultiplier?: number;
   rushFeeMultiplier?: number;
+  /** 기공수가「배송비」(기공비 hold 합산). 견적 툴팁에는 미표시, 크레딧 정산만. */
+  labShippingFee?: number;
   billed?: boolean;
   usedDefaultSchedule?: boolean;
   /** 지정 기공소 마스터 스위치. 자동매칭(기공소 없음)은 true */
@@ -191,6 +194,7 @@ export const parsePracticeTransferFeeQuote = (
     feeRateApplied: Number.isFinite(feeRateApplied) ? Math.min(1, Math.max(0, feeRateApplied)) : 0,
     labFeeMultiplier: normalizeLabFeeMultiplier(r.labFeeMultiplier),
     rushFeeMultiplier: normalizeRushFeeMultiplier(r.rushFeeMultiplier),
+    labShippingFee: Math.max(0, Math.round(Number(r.labShippingFee || 0))),
     labSettlementAmount,
     abutsRevenueAmount,
     billed: Boolean(r.billed),

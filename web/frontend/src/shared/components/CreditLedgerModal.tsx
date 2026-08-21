@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-21: 기공수가 배송비(기공비 hold 합산)를 크레딧 호버·정산 상세에 분리. 견적 툴팁은 그대로 배송비 없음.
 // - 2026-08-21: 기공소 크레딧 내역 — 지급상태·금액호버·상세를 치과와 동일(기공크레딧 잔액/필터만 lab).
 // - 2026-08-20: PeriodFilter 달력·chevron 커스텀 기간을 원장 조회 from/to에 반영.
 // - 2026-08-19: 구강스캔 호버 — 보철기공비|어벗 디자인+생산비는 견적(6만·2.5만). 경로 보류(7만+1.5만) 아님.
@@ -119,6 +120,10 @@ import {
   parsePracticeTransferFeeQuote,
   type PracticeTransferFeeQuote,
 } from "@/shared/practice/practiceTransferFeeQuote";
+import {
+  canonicalizeFeeItemName,
+  LAB_FEE_SHIPPING_ITEM_NAME,
+} from "@/shared/practice/labFeeSchedule";
 import { parsePracticeTransferMemoMeta } from "@/shared/practice/transferMemo";
 import { formatKstYmdToKo } from "@/shared/date/kst";
 import {
@@ -542,19 +547,128 @@ const settlementShippingRouteLabel = (route: PracticeTransferRoute) => {
   return "배송비";
 };
 
-/** 장부 parts에서 배송비만 추려 정산 상세에 넘긴다. */
+const isFeeQuoteShippingLine = (prosthesisType: string) =>
+  canonicalizeFeeItemName(String(prosthesisType || "")) ===
+  LAB_FEE_SHIPPING_ITEM_NAME;
+
+/** 견적 기공비(배송 제외). 기공수가「배송비」는 장부에서만 분리 표시. */
+const quoteWorkTotalExcludingShipping = (
+  quote: PracticeTransferFeeQuote | null | undefined,
+): number => {
+  if (!quote) return 0;
+  const lines = Array.isArray(quote.lines) ? quote.lines : [];
+  let fromLines = 0;
+  let hasWorkLine = false;
+  for (const line of lines) {
+    if (isFeeQuoteShippingLine(String(line.prosthesisType || ""))) continue;
+    const labFee = Math.max(0, Math.round(Number(line.labFee || 0)));
+    const labAbutment = Math.max(
+      0,
+      Math.round(Number(line.labAbutmentFee || 0)),
+    );
+    const abutmentRetail = Math.max(
+      0,
+      Math.round(Number(line.abutmentRetail || 0)),
+    );
+    if (labFee + labAbutment + abutmentRetail <= 0) continue;
+    hasWorkLine = true;
+    fromLines += labFee + labAbutment + abutmentRetail;
+  }
+  if (hasWorkLine) return fromLines;
+  const explicitShip = Math.max(
+    0,
+    Math.round(Number(quote.labShippingFee || 0)),
+  );
+  const labFeeTotal = Math.max(0, Math.round(Number(quote.labFeeTotal || 0)));
+  const abutmentRetailTotal = Math.max(
+    0,
+    Math.round(Number(quote.abutmentRetailTotal || 0)),
+  );
+  return Math.max(0, labFeeTotal + abutmentRetailTotal - explicitShip);
+};
+
+/**
+ * 장부 배송비 = (1) 배송 라벨 행 + (2) 기공수가「배송비」가 기공비 hold에 합쳐진 분.
+ * 견적 툴팁에는 넘기지 않는다.
+ */
+const resolvePracticeTransferShippingAmounts = (
+  parts: LedgerDisplayPart[] | null | undefined,
+  feeQuote?: PracticeTransferFeeQuote | null,
+): {
+  explicitShippingAmount: number;
+  bakedLabShippingAmount: number;
+  workAmount: number;
+} => {
+  let explicitShippingAmount = 0;
+  let workAmount = 0;
+  for (const part of Array.isArray(parts) ? parts : []) {
+    const { kind } = classifyPracticeTransferPart(part);
+    const amount = Math.round(Number(part.amount || 0));
+    if (kind === "shipping") {
+      explicitShippingAmount += amount;
+      continue;
+    }
+    workAmount += amount;
+  }
+
+  const quoteWork = quoteWorkTotalExcludingShipping(feeQuote);
+  const workAbs = Math.abs(workAmount);
+  const fromQuoteField = Math.max(
+    0,
+    Math.round(Number(feeQuote?.labShippingFee || 0)),
+  );
+  // 장부 실액(실제 차감)을 우선. labShippingFee 필드는 보조.
+  const fromLedgerGap =
+    quoteWork > 0 ? Math.max(0, workAbs - quoteWork) : 0;
+  const bakedAbs =
+    fromLedgerGap > 0
+      ? fromLedgerGap
+      : fromQuoteField > 0
+        ? Math.min(fromQuoteField, workAbs)
+        : 0;
+  const bakedLabShippingAmount =
+    bakedAbs <= 0
+      ? 0
+      : workAmount < 0
+        ? -bakedAbs
+        : workAmount > 0
+          ? bakedAbs
+          : 0;
+
+  return {
+    explicitShippingAmount,
+    bakedLabShippingAmount,
+    workAmount: workAmount - bakedLabShippingAmount,
+  };
+};
+
+/** 장부 parts(+기공수가 합산 배송)에서 배송비만 추려 정산 상세에 넘긴다. */
 const toSettlementShippingLines = (
   parts: LedgerDisplayPart[] | null | undefined,
   creditLabHoldPending: boolean | null,
   creditAbutmentHoldPending: boolean | null,
+  feeQuote?: PracticeTransferFeeQuote | null,
 ): PracticeTransferSettlementShippingLine[] => {
-  if (!Array.isArray(parts) || parts.length === 0) return [];
   const byKey = new Map<string, PracticeTransferSettlementShippingLine>();
-  parts.forEach((part, index) => {
+  const upsert = (
+    key: string,
+    label: string,
+    amount: number,
+    holdPending: boolean | null,
+  ) => {
+    const abs = Math.abs(Math.round(Number(amount || 0)));
+    if (abs <= 0) return;
+    const prev = byKey.get(key);
+    if (prev) {
+      prev.amount += abs;
+      return;
+    }
+    byKey.set(key, { key, label, amount: abs, holdPending });
+  };
+
+  (Array.isArray(parts) ? parts : []).forEach((part, index) => {
     const { route, kind } = classifyPracticeTransferPart(part);
     if (kind !== "shipping") return;
-    const amount = Math.abs(Math.round(Number(part.amount || 0)));
-    if (amount <= 0) return;
     const key = route === "other" ? `other:${index}` : route;
     const holdPending =
       route === "lab"
@@ -562,19 +676,66 @@ const toSettlementShippingLines = (
         : route === "abuts"
           ? creditAbutmentHoldPending
           : null;
-    const prev = byKey.get(key);
-    if (prev) {
-      prev.amount += amount;
-      return;
-    }
-    byKey.set(key, {
+    upsert(
       key,
-      label: settlementShippingRouteLabel(route),
-      amount,
+      settlementShippingRouteLabel(route),
+      Number(part.amount || 0),
       holdPending,
-    });
+    );
   });
+
+  const { bakedLabShippingAmount } = resolvePracticeTransferShippingAmounts(
+    parts,
+    feeQuote,
+  );
+  if (Math.abs(bakedLabShippingAmount) > 0 && !byKey.has("lab")) {
+    upsert(
+      "lab",
+      settlementShippingRouteLabel("lab"),
+      bakedLabShippingAmount,
+      creditLabHoldPending,
+    );
+  }
+
   return Array.from(byKey.values());
+};
+
+/** 정산 상세용: 기공비 총액에서 배송을 빼고 settlementShippingLines와 합산한다. */
+const quoteForCreditSettlementDetail = (
+  quote: PracticeTransferFeeQuote,
+  settlementShippingLines: PracticeTransferSettlementShippingLine[],
+): PracticeTransferFeeQuote => {
+  const work = quoteWorkTotalExcludingShipping(quote);
+  const shipFromLines = settlementShippingLines.reduce(
+    (sum, row) => sum + Math.max(0, Math.round(Number(row.amount || 0))),
+    0,
+  );
+  const ship = Math.max(
+    shipFromLines,
+    Math.max(0, Math.round(Number(quote.labShippingFee || 0))),
+  );
+  const totalRaw = Math.max(0, Math.round(Number(quote.total || 0)));
+  const labFeeRaw = Math.max(0, Math.round(Number(quote.labFeeTotal || 0)));
+  if (work <= 0 || ship <= 0) {
+    return { ...quote, labShippingFee: ship || quote.labShippingFee };
+  }
+  // total/labFeeTotal에 기공수가 배송이 이미 들어 있으면 표시 총액에서 제외.
+  const totalIncludesShip = totalRaw >= work + ship;
+  const labIncludesShip = labFeeRaw >= work - Math.max(
+    0,
+    Math.round(Number(quote.abutmentRetailTotal || 0)),
+  ) + ship;
+  return {
+    ...quote,
+    labFeeTotal: totalIncludesShip || labIncludesShip
+      ? Math.max(0, labFeeRaw - ship)
+      : labFeeRaw,
+    total: totalIncludesShip ? Math.max(work, totalRaw - ship) : totalRaw,
+    labShippingFee: ship,
+    lines: (Array.isArray(quote.lines) ? quote.lines : []).filter(
+      (line) => !isFeeQuoteShippingLine(String(line.prosthesisType || "")),
+    ),
+  };
 };
 
 const addFeeLeafAmount = (
@@ -593,15 +754,12 @@ const splitWorkAmountByFeeQuote = (
   quote: PracticeTransferFeeQuote,
   labShareOnly: boolean,
 ): { prosthetic: number; abutment: number } => {
-  const prostheticQuote = Math.max(
-    0,
-    Math.round(Number(quote.labFeeTotal || 0)) +
-      Math.round(Number(quote.labAbutmentTotal || 0)),
-  );
+  const quoteWork = quoteWorkTotalExcludingShipping(quote);
   const abutmentQuote = Math.max(
     0,
     Math.round(Number(quote.abutmentRetailTotal || 0)),
   );
+  const prostheticQuote = Math.max(0, quoteWork - abutmentQuote);
   if (workAmount === 0) return { prosthetic: 0, abutment: 0 };
   if (labShareOnly) {
     const mag = Math.abs(workAmount);
@@ -612,7 +770,6 @@ const splitWorkAmountByFeeQuote = (
       abutment: sign * (mag - prostheticMag),
     };
   }
-  const quoteWork = prostheticQuote + abutmentQuote;
   if (quoteWork <= 0) return { prosthetic: workAmount, abutment: 0 };
   const prosthetic = Math.round((workAmount * prostheticQuote) / quoteWork);
   return { prosthetic, abutment: workAmount - prosthetic };
@@ -625,24 +782,20 @@ const buildPracticeTransferFeeLeaves = (
   labShareOnly = false,
 ): PracticeTransferTreeLeaf[] => {
   const byKind = new Map<PracticeTransferFeeKind, number>();
-  let shippingAmount = 0;
-  let workAmount = 0;
-  for (const part of parts) {
-    const { kind } = classifyPracticeTransferPart(part);
-    const amount = Number(part.amount || 0);
-    if (kind === "shipping") {
-      shippingAmount += amount;
-      continue;
-    }
-    workAmount += amount;
-  }
+  const {
+    explicitShippingAmount,
+    bakedLabShippingAmount,
+    workAmount,
+  } = resolvePracticeTransferShippingAmounts(parts, quote);
+  const shippingAmount = explicitShippingAmount + bakedLabShippingAmount;
 
   const hasQuoteSplit =
     Boolean(quote) &&
     workAmount !== 0 &&
     (Math.round(Number(quote?.labFeeTotal || 0)) > 0 ||
       Math.round(Number(quote?.labAbutmentTotal || 0)) > 0 ||
-      Math.round(Number(quote?.abutmentRetailTotal || 0)) > 0);
+      Math.round(Number(quote?.abutmentRetailTotal || 0)) > 0 ||
+      quoteWorkTotalExcludingShipping(quote) > 0);
 
   if (hasQuoteSplit && quote) {
     const split = splitWorkAmountByFeeQuote(workAmount, quote, labShareOnly);
@@ -655,6 +808,29 @@ const buildPracticeTransferFeeLeaves = (
       const mapped: PracticeTransferFeeKind =
         kind === "design" || kind === "abutProduction" ? "abutCombined" : kind;
       addFeeLeafAmount(byKind, mapped, Number(part.amount || 0));
+    }
+    // 기공수가 배송비는 기공비 라벨 행에 합쳐져 있으므로 labFee에서 분리.
+    if (bakedLabShippingAmount !== 0) {
+      const peelOrder: PracticeTransferFeeKind[] = [
+        "labFee",
+        "abutCombined",
+        "other",
+      ];
+      let remaining = bakedLabShippingAmount;
+      for (const kind of peelOrder) {
+        if (!remaining) break;
+        const cur = byKind.get(kind) || 0;
+        if (!cur) continue;
+        if (Math.sign(cur) !== 0 && Math.sign(cur) !== Math.sign(remaining)) {
+          continue;
+        }
+        const peel =
+          Math.abs(remaining) <= Math.abs(cur) ? remaining : cur;
+        const next = cur - peel;
+        remaining -= peel;
+        if (next === 0) byKind.delete(kind);
+        else byKind.set(kind, next);
+      }
     }
   }
   addFeeLeafAmount(byKind, "shipping", shippingAmount);
@@ -2025,8 +2201,22 @@ export const CreditLedgerModal = ({
                           resolvePracticeTransferPending(r.item, "lab");
                         const creditAbutmentHoldPending =
                           resolvePracticeTransferPending(r.item, "abuts");
+                        const parts =
+                          r.parts && r.parts.length > 0
+                            ? r.parts
+                            : r.members.map(toDisplayPart);
+                        const settlementShippingLines =
+                          toSettlementShippingLines(
+                            parts,
+                            creditLabHoldPending,
+                            creditAbutmentHoldPending,
+                            quote,
+                          );
                         setFeeQuoteDetail({
-                          quote,
+                          quote: quoteForCreditSettlementDetail(
+                            quote,
+                            settlementShippingLines,
+                          ),
                           skipJig: r.item.skipJig !== false,
                           rushProcessing: Boolean(r.item.rushProcessing),
                           title:
@@ -2040,13 +2230,7 @@ export const CreditLedgerModal = ({
                           orderDate: String(memoMeta.orderDate || "").trim(),
                           arrivalDate: String(memoMeta.arrivalDate || "").trim(),
                           memo: String(memoMeta.memo || "").trim(),
-                          settlementShippingLines: toSettlementShippingLines(
-                            r.parts && r.parts.length > 0
-                              ? r.parts
-                              : r.members.map(toDisplayPart),
-                            creditLabHoldPending,
-                            creditAbutmentHoldPending,
-                          ),
+                          settlementShippingLines,
                         });
                       }}
                     >
