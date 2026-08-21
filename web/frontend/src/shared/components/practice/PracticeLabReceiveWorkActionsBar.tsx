@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/practice/practiceTransferLabReceive.ts
 // change-log:
+// - 2026-08-21: 어벗 CTA「어벗 업로드 & 생산의뢰」·툴팁 단문화.
 // - 2026-08-21: 카드→캘린더 전환 후 상세 모달에서도 어벗·보철 업로드 CTA 공유.
 import type { MouseEvent } from "react";
 import { UploadCloud, X } from "lucide-react";
@@ -13,7 +14,6 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { PRACTICE_ACCEPTED_HINT } from "@/shared/practice/practiceTransferAccept";
 import {
   resolvePracticeLabReceiveWorkActionState,
   type PracticeTransferLabReceiveItem,
@@ -51,6 +51,10 @@ export function PracticeLabReceiveWorkActionsBar({
     return null;
   }
 
+  const abutmentButtonLabel =
+    state.designFileCount > 0
+      ? `어벗 추가 업로드 (${state.designFileCount})`
+      : "어벗 업로드 & 생산의뢰";
   const prostheticButtonLabel = state.hasPartialProsthetic
     ? `보철 추가 업로드 (${state.pendingProstheticCount})`
     : "보철 업로드 & 작업완료";
@@ -112,7 +116,7 @@ export function PracticeLabReceiveWorkActionsBar({
         className="h-8 focus-visible:ring-0 focus-visible:ring-offset-0"
       >
         <UploadCloud className="h-3.5 w-3.5" />
-        어벗 업로드
+        어벗 업로드 & 생산의뢰
       </Button>
       <Button
         type="button"
@@ -157,17 +161,13 @@ export function PracticeLabReceiveWorkActionsBar({
                   onClick={(event) => void onDesignUpload(event)}
                 >
                   <UploadCloud className="h-3.5 w-3.5" />
-                  {busy
-                    ? "처리 중..."
-                    : state.designFileCount > 0
-                      ? `어벗 추가 업로드 (${state.designFileCount})`
-                      : "어벗 업로드"}
+                  {busy ? "처리 중..." : abutmentButtonLabel}
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="top" className="max-w-xs text-xs">
-                완성 어벗 STL을 올립니다. 파일명에 치아가 없어도 프리뷰에서
-                직접 지정할 수 있습니다. 치아 수만큼 올리거나, 일부만 분할
-                업로드할 수 있습니다.
+                {state.designFileCount > 0
+                  ? "남은 어벗 STL을 이어서 올립니다."
+                  : "어벗 STL을 올리고 어벗츠에 생산을 의뢰합니다."}
               </TooltipContent>
             </Tooltip>
           ) : null}
@@ -203,24 +203,10 @@ export function PracticeLabReceiveWorkActionsBar({
             </TooltipTrigger>
             <TooltipContent side="top" className="max-w-xs text-xs">
               {state.needsMoreAbutmentDesigns
-                ? "어벗디자인을 먼저 업로드한 뒤 보철 파일을 올릴 수 있습니다."
+                ? "어벗을 먼저 올린 뒤 보철 STL을 올릴 수 있습니다."
                 : state.hasPartialProsthetic
-                  ? `남은 보철 ${state.pendingProstheticCount}개${
-                      state.prostheticSlotLabels
-                        ? ` (${state.prostheticSlotLabels})`
-                        : ""
-                    }를 이어서 올립니다.`
-                  : state.prostheticSlotLabels
-                    ? `이 의뢰 보철 ${state.pendingProstheticCount}개: ${state.prostheticSlotLabels}. 브리지는 스팬당 1개, 크라운·인레이는 치아당 1개입니다.${
-                        PRACTICE_ACCEPTED_HINT
-                          ? ` ${PRACTICE_ACCEPTED_HINT}`
-                          : ""
-                      }`
-                    : `브리지는 스팬당 1개, 크라운·인레이는 치아당 1개로 올려 작업완료합니다.${
-                        PRACTICE_ACCEPTED_HINT
-                          ? ` ${PRACTICE_ACCEPTED_HINT}`
-                          : ""
-                      }`}
+                  ? "남은 보철을 이어서 올립니다."
+                  : "보철 파일을 올리고 작업을 완료합니다."}
             </TooltipContent>
           </Tooltip>
         </div>
