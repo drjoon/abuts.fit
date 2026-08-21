@@ -39,8 +39,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { getHanjinDeliveryStatusLabel } from "@/shared/shipping/hanjinTrackingLabel";
-import type { DeliveryInfoSummary } from "@/types/request";
+import { getPracticeAbutmentDeliveryLabel } from "@/shared/shipping/hanjinTrackingLabel";
 import type { PeriodFilterValue } from "@/shared/ui/PeriodFilter";
 import { cn } from "@/shared/ui/cn";
 import { apiFetch } from "@/shared/api/apiClient";
@@ -308,13 +307,10 @@ export function PracticeRecentTransfersAllModal({
           .trim() || "-";
       const patient = resolvePracticeTransferListPatientName(transfer);
       const teeth = resolvePracticeTransferListToothNumbers(transfer);
-      const deliveryLabel =
-        transfer.hasCustomAbutment
-          ? getHanjinDeliveryStatusLabel(
-              (transfer.abutmentDeliveryInfo ||
-                null) as DeliveryInfoSummary | null,
-            )
-          : null;
+      const deliveryLabel = getPracticeAbutmentDeliveryLabel({
+        hasCustomAbutment: Boolean(transfer.hasCustomAbutment),
+        abutmentDeliveryInfo: transfer.abutmentDeliveryInfo || null,
+      });
       return {
         id: `${transfer.id}:${transfer.transferId}`,
         orderDate: transfer.orderDate,
@@ -493,13 +489,10 @@ export function PracticeRecentTransfersAllModal({
                   const canDelete = canDeletePracticeTransferByStatus(transfer.status);
                   const unread = Math.max(0, Number(transfer.unreadCount || 0));
                   const arrival = String(transfer.arrivalDate || "").trim();
-                  const deliveryLabel =
-                    transfer.hasCustomAbutment
-                      ? getHanjinDeliveryStatusLabel(
-                          (transfer.abutmentDeliveryInfo ||
-                            null) as DeliveryInfoSummary | null,
-                        )
-                      : null;
+                  const deliveryLabel = getPracticeAbutmentDeliveryLabel({
+                    hasCustomAbutment: Boolean(transfer.hasCustomAbutment),
+                    abutmentDeliveryInfo: transfer.abutmentDeliveryInfo || null,
+                  });
 
                   return (
                     <div
@@ -532,7 +525,12 @@ export function PracticeRecentTransfersAllModal({
                                 className={
                                   deliveryLabel === "배송완료"
                                     ? "inline-block max-w-[9.5rem] truncate rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800"
-                                    : "inline-block max-w-[9.5rem] truncate rounded bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800"
+                                    : deliveryLabel === "생산 전" ||
+                                        deliveryLabel === "생산 준비" ||
+                                        deliveryLabel === "생산 중" ||
+                                        deliveryLabel === "출고 대기"
+                                      ? "inline-block max-w-[9.5rem] truncate rounded bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700"
+                                      : "inline-block max-w-[9.5rem] truncate rounded bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800"
                                 }
                                 title={`커스텀어벗 배송: ${deliveryLabel}`}
                               >

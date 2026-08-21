@@ -1610,6 +1610,7 @@ export async function repriceAndReschedulePtxAbutmentRequest({
 
   return requestDoc;
 }
+
 const DELIVERY_POPULATE_SELECT =
   "shippedAt pickedUpAt deliveredAt carrier tracking events.statusCode events.statusText events.occurredAt events.location";
 
@@ -1648,16 +1649,20 @@ const slimDeliveryInfo = (di) => {
 };
 
 /**
- * 기공의뢰(PTX) 연동 커스텀어벗 Request들의 한진 배송 요약.
+ * 기공의뢰(PTX) 연동 커스텀어벗 Request들의 한진 배송·공정 요약.
+ * relatedRequestIds + partnerBilling.relatedPracticeTransferId 모두 사용.
  * @param {object[]} transferDocs
- * @returns {Promise<Map<string, object|null>>} transferMongoId → deliveryInfoSummary
+ * @returns {Promise<Map<string, object|null>>} transferMongoId → summary
  */
 export async function mapAbutmentDeliveryByTransferDocs(transferDocs = []) {
+  const docs = Array.isArray(transferDocs) ? transferDocs : [];
+  const transferIds = [];
   const transferToRequestIds = new Map();
-  const allIds = [];
-  for (const doc of Array.isArray(transferDocs) ? transferDocs : []) {
+
+  for (const doc of docs) {
     const transferId = String(doc?._id || "").trim();
-    if (!transferId) continue;
+    if (!transferId || !Types.ObjectId.isValid(transferId)) continue;
+    transferIds.push(transferId);
     const ids = (
       Array.isArray(doc?.production?.relatedRequestIds)
         ? doc.production.relatedRequestIds
@@ -1665,60 +1670,104 @@ export async function mapAbutmentDeliveryByTransferDocs(transferDocs = []) {
     )
       .map((id) => String(id || "").trim())
       .filter((id) => id && Types.ObjectId.isValid(id));
-    if (!ids.length) continue;
-    transferToRequestIds.set(transferId, ids);
-    allIds.push(...ids);
+    transferToRequestIds.set(transferId, new Set(ids));
   }
 
   const out = new Map();
-  if (!allIds.length) return out;
+  if (!transferIds.length) return out;
 
-  const uniqueIds = [...new Set(allIds)];
-  const requests = await Request.find({
-    _id: { $in: uniqueIds.map((id) => new Types.ObjectId(id)) },
-  })
-    .select({ deliveryInfoRef: 1 })
+  const transferOids = transferIds.map((id) => new Types.ObjectId(id));
+  const relatedIdList = [
+    ...new Set(
+      [...transferToRequestIds.values()].flatMap((set) => [...set]),
+    ),
+  ];
+
+  const orClauses = [
+    { "partnerBilling.relatedPracticeTransferId": { $in: transferOids } },
+  ];
+  if (relatedIdList.length) {
+    orClauses.unshift({
+      _id: { $in: relatedIdList.map((id) => new Types.ObjectId(id)) },
+    });
+  }
+
+  const linkedRequests = await Request.find({ $or: orClauses })
+    .select({
+      deliveryInfoRef: 1,
+      manufacturerStage: 1,
+      "partnerBilling.relatedPracticeTransferId": 1,
+    })
     .populate("deliveryInfoRef", DELIVERY_POPULATE_SELECT)
     .lean();
 
-  const diByRequestId = new Map();
-  for (const req of requests) {
-    const di = slimDeliveryInfo(req?.deliveryInfoRef);
-    if (di) diByRequestId.set(String(req._id), di);
+  for (const req of linkedRequests) {
+    const ptxId = String(
+      req?.partnerBilling?.relatedPracticeTransferId || "",
+    ).trim();
+    if (!ptxId || !transferToRequestIds.has(ptxId)) continue;
+    transferToRequestIds.get(ptxId).add(String(req._id));
   }
 
-  for (const [transferId, requestIds] of transferToRequestIds.entries()) {
-    const infos = requestIds
-      .map((id) => diByRequestId.get(id))
+  const reqById = new Map(
+    linkedRequests.map((req) => [String(req._id), req]),
+  );
+
+  for (const transferId of transferIds) {
+    const requestIds = [...(transferToRequestIds.get(transferId) || [])];
+    const reqs = requestIds
+      .map((id) => reqById.get(id))
+      .filter(Boolean)
+      .filter((req) => String(req.manufacturerStage || "").trim() !== "취소");
+
+    if (!reqs.length) {
+      out.set(transferId, null);
+      continue;
+    }
+
+    const infos = reqs
+      .map((req) => slimDeliveryInfo(req.deliveryInfoRef))
       .filter(Boolean);
-    if (!infos.length) {
-      out.set(transferId, null);
-      continue;
+    const manufacturerStages = [
+      ...new Set(
+        reqs
+          .map((req) => String(req.manufacturerStage || "").trim())
+          .filter(Boolean),
+      ),
+    ];
+
+    let base = null;
+    if (infos.length) {
+      const delivered = infos.filter((di) => di.deliveredAt);
+      if (delivered.length && delivered.length === infos.length) {
+        delivered.sort((a, b) => toMs(b.deliveredAt) - toMs(a.deliveredAt));
+        base = delivered[0];
+      } else {
+        const inTransit = infos.filter(
+          (di) => !di.deliveredAt && di.pickedUpAt,
+        );
+        const pool = inTransit.length
+          ? inTransit
+          : infos.filter((di) => !di.deliveredAt);
+        if (pool.length) {
+          pool.sort(
+            (a, b) =>
+              toMs(b.tracking?.lastEventAt || b.pickedUpAt || b.shippedAt) -
+              toMs(a.tracking?.lastEventAt || a.pickedUpAt || a.shippedAt),
+          );
+          base = pool[0];
+        } else if (delivered.length) {
+          delivered.sort((a, b) => toMs(b.deliveredAt) - toMs(a.deliveredAt));
+          base = delivered[0];
+        }
+      }
     }
 
-    const delivered = infos.filter((di) => di.deliveredAt);
-    if (delivered.length === infos.length) {
-      delivered.sort(
-        (a, b) => toMs(b.deliveredAt) - toMs(a.deliveredAt),
-      );
-      out.set(transferId, delivered[0]);
-      continue;
-    }
-
-    const inTransit = infos.filter((di) => !di.deliveredAt && di.pickedUpAt);
-    const pool = inTransit.length
-      ? inTransit
-      : infos.filter((di) => !di.deliveredAt);
-    if (!pool.length) {
-      out.set(transferId, null);
-      continue;
-    }
-    pool.sort(
-      (a, b) =>
-        toMs(b.tracking?.lastEventAt || b.pickedUpAt) -
-        toMs(a.tracking?.lastEventAt || a.pickedUpAt),
-    );
-    out.set(transferId, pool[0]);
+    out.set(transferId, {
+      ...(base || {}),
+      relatedCount: reqs.length,
+      manufacturerStages,
+    });
   }
 
   return out;

@@ -17,8 +17,7 @@ import type {
   PracticeTransferDialogSummaryItem,
 } from "@/shared/components/PracticeTransferDetailChatDialog";
 import { buildPracticeWorkPeriodSummaryItem } from "@/shared/practice/practiceWorkPeriod";
-import { getHanjinDeliveryStatusLabel } from "@/shared/shipping/hanjinTrackingLabel";
-import type { DeliveryInfoSummary } from "@/types/request";
+import { getPracticeAbutmentDeliveryLabel } from "@/shared/shipping/hanjinTrackingLabel";
 
 const toDialogFiles = (
   files: PracticeRecentTransferFileItem[] | undefined,
@@ -96,11 +95,10 @@ export function buildPracticeSenderTransferDetailModel(
     !transfer.practiceDesignConfirmedAt &&
     String(transfer.status || "").trim() !== "작업완료";
 
-  const abutmentDeliveryLabel = transfer.hasCustomAbutment
-    ? getHanjinDeliveryStatusLabel(
-        (transfer.abutmentDeliveryInfo || null) as DeliveryInfoSummary | null,
-      )
-    : null;
+  const abutmentDeliveryLabel = getPracticeAbutmentDeliveryLabel({
+    hasCustomAbutment: Boolean(transfer.hasCustomAbutment),
+    abutmentDeliveryInfo: transfer.abutmentDeliveryInfo || null,
+  });
 
   return {
     summaryItems: [
@@ -130,7 +128,12 @@ export function buildPracticeSenderTransferDetailModel(
               valueClassName:
                 abutmentDeliveryLabel === "배송완료"
                   ? "text-emerald-700"
-                  : "text-amber-800",
+                  : abutmentDeliveryLabel === "생산 전" ||
+                      abutmentDeliveryLabel === "생산 준비" ||
+                      abutmentDeliveryLabel === "생산 중" ||
+                      abutmentDeliveryLabel === "출고 대기"
+                    ? "text-slate-600"
+                    : "text-amber-800",
             },
           ]
         : []),

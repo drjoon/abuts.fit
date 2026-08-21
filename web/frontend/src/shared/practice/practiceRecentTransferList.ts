@@ -74,6 +74,8 @@ export type PracticeRecentRequestItem = {
     shippedAt?: string;
     pickedUpAt?: string;
     deliveredAt?: string;
+    relatedCount?: number;
+    manufacturerStages?: string[];
     tracking?: {
       lastStatusCode?: string;
       lastStatusText?: string;
@@ -130,6 +132,8 @@ export type PracticeRecentTransferItem = {
     shippedAt?: string;
     pickedUpAt?: string;
     deliveredAt?: string;
+    relatedCount?: number;
+    manufacturerStages?: string[];
     tracking?: {
       lastStatusCode?: string;
       lastStatusText?: string;
