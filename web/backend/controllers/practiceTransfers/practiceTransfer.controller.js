@@ -134,6 +134,7 @@ import { resolvePracticeTransferSkipJig } from "../../utils/practiceTransferLabS
 // - web/backend/utils/practiceTransferAbutmentPresets.js
 // - web/backend/utils/practiceLabRating.js
 // - web/backend/utils/practiceTransferStage.js
+// - 2026-08-21: GET /received — 연동 CA 한진 배송 요약(abutmentDeliveryInfo) 포함(치과 /my와 동일).
 // - 2026-08-21: GET /my — 연동 CA 한진 배송 요약(abutmentDeliveryInfo) 포함.
 // - 2026-08-17: mark-complete는 기공소→치과 배송비만. 어벗츠→제조사 배송은 CA 집하.
 // - 2026-08-16: pastReady — 라이브 stage 우선(sticky startedAt OR 제거 시 목록 인자 우선).
@@ -3958,8 +3959,12 @@ export async function getReceivedPracticeTransfers(req, res) {
       viewingLabAnchorId: labAnchorId,
     });
 
-    const [labMultiplierDoc, labRatingAggMap, abutmentPastReadyById] =
-      await Promise.all([
+    const [
+      labMultiplierDoc,
+      labRatingAggMap,
+      abutmentPastReadyById,
+      abutmentDeliveryById,
+    ] = await Promise.all([
       labAnchorId && Types.ObjectId.isValid(labAnchorId)
         ? BusinessAnchor.findById(labAnchorId)
             .select({ labPracticeFeeMultipliers: 1 })
@@ -3969,6 +3974,7 @@ export async function getReceivedPracticeTransfers(req, res) {
         ? loadGlobalLabRatingAggregates({ labAnchorIds: [labAnchorId] })
         : Promise.resolve(new Map()),
       mapAbutmentPastReadyByTransferDocs(docs),
+      mapAbutmentDeliveryByTransferDocs(docs),
     ]);
     const labRatingSummary = toLabRatingSummaryApi(
       labAnchorId ? labRatingAggMap.get(String(labAnchorId)) : null,
@@ -4034,6 +4040,8 @@ export async function getReceivedPracticeTransfers(req, res) {
       });
       const oralScanDownloadLocked = shouldLockLabOralScanDownload(doc);
       const feeQuote = quotesById.get(String(doc?._id || "")) || null;
+      const abutmentDeliveryInfo =
+        abutmentDeliveryById.get(String(doc?._id || "")) || null;
 
       return {
         _id: String(doc?._id || ""),
@@ -4063,6 +4071,7 @@ export async function getReceivedPracticeTransfers(req, res) {
             abutmentPastReadyById.get(String(doc?._id || "")),
           ),
         }),
+        abutmentDeliveryInfo,
         practice: practiceIdentity,
         practiceBusinessAnchorId: practiceAnchorIdForSurcharge,
         labFeeMultiplier: practiceAnchorIdForSurcharge

@@ -21,6 +21,7 @@
 // - web/frontend/src/shared/practice/labReceiveCalendarDateKey.ts
 // - web/backend/utils/labReceiveCalendarDateKey.util.js
 // - web/backend/controllers/users/user.controller.js
+// - 2026-08-21: 커스텀어벗 배송현황을 상세·캘린더에 표시(치과 발신과 동일).
 // - 2026-08-20: 기공의뢰수신 캘린더 날짜 뱃지 기본=치과도착일. 계정 preferences에 저장.
 // - 2026-08-19: 리메이크는 공정 상태색 + 이중 외곽선.
 // - 2026-08-19: 기공의뢰수신 캘린더 칩·상단 뱃지를 상태색으로 구분.
@@ -198,6 +199,10 @@ import {
 } from "@/shared/components/practice/PracticeRecentTransferListCardDetail";
 import { toKstYmd } from "@/shared/date/kst";
 import { normalizeLabReceiveCalendarDateKey } from "@/shared/practice/labReceiveCalendarDateKey";
+import {
+  getPracticeAbutmentDeliveryLabel,
+  type PracticeAbutmentDeliveryInfo,
+} from "@/shared/shipping/hanjinTrackingLabel";
 import {
   DEFAULT_HIDDEN_WEEKDAYS,
   PRACTICE_STATUS_FILTER_BADGE_CLASS,
@@ -852,6 +857,10 @@ export function RequestorPracticeReceivePage({
           autoMatch,
           hasCustomAbutment,
           production,
+          abutmentDeliveryInfo:
+            r.abutmentDeliveryInfo && typeof r.abutmentDeliveryInfo === "object"
+              ? (r.abutmentDeliveryInfo as PracticeAbutmentDeliveryInfo)
+              : null,
           practice: {
             businessName: String(practiceRaw.businessName || "").trim(),
             userName: String(practiceRaw.userName || "").trim(),
@@ -1559,6 +1568,10 @@ export function RequestorPracticeReceivePage({
         surchargeMultiplier > 1
           ? formatLabFeeMultiplierLabel(surchargeMultiplier)
           : "";
+      const deliveryLabel = getPracticeAbutmentDeliveryLabel({
+        hasCustomAbutment: Boolean(transfer.hasCustomAbutment),
+        abutmentDeliveryInfo: transfer.abutmentDeliveryInfo || null,
+      });
       const transferId = String(transfer.transferId || transfer._id || "").trim();
       return {
         id: transferId,
@@ -1571,7 +1584,7 @@ export function RequestorPracticeReceivePage({
         ),
         isRemake: Boolean(transfer.isRemake),
         sortLabel: clinic,
-        line: [clinic, patient || "—", teeth || "—", surchargeLabel]
+        line: [clinic, patient || "—", teeth || "—", surchargeLabel, deliveryLabel]
           .filter(Boolean)
           .join(" / "),
         unreadCount: practiceTransferLabReceiveUnreadBadgeCount(
@@ -1621,6 +1634,18 @@ export function RequestorPracticeReceivePage({
         selectedTransfer?.createdAt,
       ),
     [selectedTransfer?.arrivalDate, selectedTransfer?.createdAt, selectedTransfer?.orderDate],
+  );
+
+  const selectedTransferAbutmentDeliveryLabel = useMemo(
+    () =>
+      getPracticeAbutmentDeliveryLabel({
+        hasCustomAbutment: Boolean(selectedTransfer?.hasCustomAbutment),
+        abutmentDeliveryInfo: selectedTransfer?.abutmentDeliveryInfo || null,
+      }),
+    [
+      selectedTransfer?.abutmentDeliveryInfo,
+      selectedTransfer?.hasCustomAbutment,
+    ],
   );
 
   const selectedTransferToothWorks = useMemo(
@@ -4653,6 +4678,23 @@ export function RequestorPracticeReceivePage({
             label: "보철물",
             value: `${Number(selectedTransfer?.resultFileCount || selectedTransfer?.resultFiles?.length || 0)}개`,
           },
+          ...(selectedTransferAbutmentDeliveryLabel
+            ? [
+                {
+                  label: "커스텀어벗 배송",
+                  value: selectedTransferAbutmentDeliveryLabel,
+                  valueClassName:
+                    selectedTransferAbutmentDeliveryLabel === "배송완료"
+                      ? "text-emerald-700"
+                      : selectedTransferAbutmentDeliveryLabel === "생산 전" ||
+                          selectedTransferAbutmentDeliveryLabel === "생산 준비" ||
+                          selectedTransferAbutmentDeliveryLabel === "생산 중" ||
+                          selectedTransferAbutmentDeliveryLabel === "출고 대기"
+                        ? "text-slate-600"
+                        : "text-amber-800",
+                },
+              ]
+            : []),
         ] satisfies PracticeTransferDialogSummaryItem[]}
         memo={selectedTransferDisplayMemo}
         toothWorks={selectedTransferToothWorks}
