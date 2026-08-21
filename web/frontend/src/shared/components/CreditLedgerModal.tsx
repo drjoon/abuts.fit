@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-21: 어벗디자인 상세 — 의뢰비·배송비에 지급완료/지급보류 뱃지.
 // - 2026-08-21: 기공소 장부 — PTX CA 생산+기공소→어벗츠 배송을 박스키로 한 행. 치과는 레거시 배송 합산 표시 제거.
 // - 2026-08-21: 기공의뢰(PTX) 정산에서 기공소→어벗츠 배송 제외(기공소 부담·의뢰 박스 행).
 // - 2026-08-21: 치과→기공소 배송 무료 — baked labShipping·정산 줄 제거. 소비총액=기공비+→어벗츠만.
@@ -117,6 +118,7 @@ import {
 } from "@/shared/components/practice/PracticeTransferFeeEstimate";
 import {
   AbutmentDesignLedgerDetailDialog,
+  type AbutmentDesignItemPayoutStatus,
   type AbutmentDesignLedgerDetail,
 } from "@/shared/components/AbutmentDesignLedgerDetailDialog";
 import {
@@ -1167,18 +1169,29 @@ const emptyDisplayRowExtras = {
   members: [] as CreditLedgerItem[],
 };
 
+const isAbutmentDesignHoldLedgerItem = (item: CreditLedgerItem) =>
+  String(item.type || "") === "SPEND_HOLD";
+
 /** 어벗디자인 원장: 보류만=지급 보류, 보류+확정 혼재=일부 지급, 확정만=지급 완료. */
 const resolveAbutmentDesignPayoutStatus = (
   members: CreditLedgerItem[],
 ): PracticeTransferPayoutStatus => {
   const list = Array.isArray(members) && members.length > 0 ? members : [];
   if (list.length === 0) return "hold";
-  const holdCount = list.filter(
-    (row) => String(row.type || "") === "SPEND_HOLD",
-  ).length;
+  const holdCount = list.filter(isAbutmentDesignHoldLedgerItem).length;
   if (holdCount === list.length) return "hold";
   if (holdCount > 0) return "partial";
   return "settled";
+};
+
+/** 상세 모달 항목용 — hold/settled 카운트로 지급완료·지급보류·일부 지급. */
+const resolveAbutmentItemPayoutStatus = (
+  holdCount: number,
+  settledCount: number,
+): AbutmentDesignItemPayoutStatus => {
+  if (holdCount <= 0) return "settled";
+  if (settledCount <= 0) return "hold";
+  return "partial";
 };
 
 const toDisplayPart = (item: CreditLedgerItem): LedgerDisplayPart => ({
@@ -1896,14 +1909,22 @@ export const CreditLedgerModal = ({
   ): AbutmentDesignLedgerDetail => {
     const requestById = new Map<
       string,
-      AbutmentDesignLedgerDetail["items"][number]
+      AbutmentDesignLedgerDetail["items"][number] & {
+        holdCount: number;
+        settledCount: number;
+      }
     >();
     let shippingAmount = 0;
     let shippingCount = 0;
+    let shippingHoldCount = 0;
+    let shippingSettledCount = 0;
     for (const member of row.members) {
+      const isHold = isAbutmentDesignHoldLedgerItem(member);
       if (isAbutmentShippingLedgerItem(member)) {
         shippingAmount += Number(member.amount || 0);
         shippingCount += 1;
+        if (isHold) shippingHoldCount += 1;
+        else shippingSettledCount += 1;
         continue;
       }
       const refId = String(member.refId || "").trim();
@@ -1937,9 +1958,17 @@ export const CreditLedgerModal = ({
           member.refRequestSummary?.shippingMode ||
           prev?.shippingMode ||
           "normal",
+        holdCount: Number(prev?.holdCount || 0) + (isHold ? 1 : 0),
+        settledCount: Number(prev?.settledCount || 0) + (isHold ? 0 : 1),
+        payoutStatus: null,
       });
     }
-    const requestItems = [...requestById.values()];
+    const requestItems = [...requestById.values()].map(
+      ({ holdCount, settledCount, ...item }) => ({
+        ...item,
+        payoutStatus: resolveAbutmentItemPayoutStatus(holdCount, settledCount),
+      }),
+    );
     const requestAmount = requestItems.reduce(
       (sum, item) => sum + Number(item.amount || 0),
       0,
@@ -1958,6 +1987,10 @@ export const CreditLedgerModal = ({
             {
               kind: "shipping" as const,
               amount: shippingAmount,
+              payoutStatus: resolveAbutmentItemPayoutStatus(
+                shippingHoldCount,
+                shippingSettledCount,
+              ),
             },
           ]
         : []),

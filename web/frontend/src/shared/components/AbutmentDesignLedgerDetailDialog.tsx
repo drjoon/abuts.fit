@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/shipping/ShippingModeBadge.tsx
 // - web/frontend/src/pages/manufacturer/payments/ManufacturerDailyLedgerDetailDialog.tsx
 // change-log:
+// - 2026-08-21: 의뢰비·배송비 행에 지급완료/지급보류 뱃지(일부 지급 구분).
 // - 2026-08-19: 상세 모달에 신속/묶음 배송 뱃지.
 // - 2026-08-19: 크레딧 기공의뢰-어벗디자인으로 행 클릭 상세(의뢰/배송, 제조사 정산 모달 UX).
 import { ChevronDown } from "lucide-react";
@@ -23,6 +24,10 @@ import {
   resolveShippingMode,
   type ShippingMode,
 } from "@/shared/shipping/shippingMode";
+import { cn } from "@/shared/ui/cn";
+
+/** 항목 단위 지급 상태 — 보류(SPEND_HOLD) / 확정 / 혼재 */
+export type AbutmentDesignItemPayoutStatus = "hold" | "settled" | "partial";
 
 export type AbutmentDesignLedgerDetailItem = {
   kind: "request" | "shipping";
@@ -32,6 +37,8 @@ export type AbutmentDesignLedgerDetailItem = {
   patientName?: string;
   tooth?: string;
   shippingMode?: ShippingMode | string | null;
+  /** 해당 의뢰비·배송비의 크레딧 지급 상태 */
+  payoutStatus?: AbutmentDesignItemPayoutStatus | null;
 };
 
 export type AbutmentDesignLedgerDetail = {
@@ -55,6 +62,40 @@ const formatSignedWon = (amount: number) => {
   return `0원`;
 };
 
+const itemPayoutStatusLabel = (status: AbutmentDesignItemPayoutStatus) => {
+  if (status === "settled") return "지급완료";
+  if (status === "partial") return "일부 지급";
+  return "지급보류";
+};
+
+const itemPayoutStatusClass = (status: AbutmentDesignItemPayoutStatus) => {
+  if (status === "settled") {
+    return "border-emerald-200 bg-emerald-50 text-emerald-800";
+  }
+  if (status === "partial") {
+    return "border-sky-200 bg-sky-50 text-sky-800";
+  }
+  return "border-amber-200 bg-amber-50 text-amber-900";
+};
+
+function ItemPayoutBadge({
+  status,
+}: {
+  status?: AbutmentDesignItemPayoutStatus | null;
+}) {
+  if (!status) return null;
+  return (
+    <span
+      className={cn(
+        "inline-flex shrink-0 whitespace-nowrap rounded-md border px-1.5 py-0.5 text-[10px] font-medium leading-none",
+        itemPayoutStatusClass(status),
+      )}
+    >
+      {itemPayoutStatusLabel(status)}
+    </span>
+  );
+}
+
 function SectionList({
   items,
 }: {
@@ -76,9 +117,12 @@ function SectionList({
             <div className="min-w-0">
               <p className="font-medium text-slate-800">
                 {item.kind === "shipping" ? (
-                  <span>배송비</span>
-                ) : item.requestId ? (
                   <span className="inline-flex items-center gap-1.5">
+                    <span>배송비</span>
+                    <ItemPayoutBadge status={item.payoutStatus} />
+                  </span>
+                ) : item.requestId ? (
+                  <span className="inline-flex flex-wrap items-center gap-1.5">
                     <span className="font-mono text-[11px] text-slate-800">
                       {item.requestId}
                     </span>
@@ -90,9 +134,13 @@ function SectionList({
                         size="sm"
                       />
                     ) : null}
+                    <ItemPayoutBadge status={item.payoutStatus} />
                   </span>
                 ) : (
-                  <span>의뢰</span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span>의뢰</span>
+                    <ItemPayoutBadge status={item.payoutStatus} />
+                  </span>
                 )}
               </p>
               {meta ? (
