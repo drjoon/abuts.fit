@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-08-22: PTX 작업취소 시 연동 CA Request 크레딧 hold도 즉시 해제(내역·잔액 지연 방지).
 // - 2026-08-22: already_created여도 연동 CA 크레딧 hold를 다시 시도(누락 hold 보정, 기존은 idempotent skip).
 // - 2026-08-21: PTX CA 배송비는 Request 박스 hold(수락 시 holdRequestCreditsOnSubmit).
 // - 2026-08-21: PTX 작업취소 시 연동 CA 취소 후 어벗츠로의뢰 건수·목록 캐시·소켓 갱신.
@@ -83,7 +84,10 @@ import {
 } from "../utils/practiceTransferRush.js";
 import { triggerDashboardSummaryRefreshForAnchorId } from "./requestSnapshotTriggers.service.js";
 import { recomputeBulkShippingSnapshotForBusinessAnchorId } from "./bulkShippingSnapshot.service.js";
-import { holdRequestCreditsOnSubmit } from "./requestCreditHold.service.js";
+import {
+  holdRequestCreditsOnSubmit,
+  releaseRequestCreditHoldsOnCancel,
+} from "./requestCreditHold.service.js";
 import { updateReviewStatusByStage } from "../controllers/requests/common.review.controller.js";
 import { prevKoreanBusinessDayYmd } from "../utils/krBusinessDays.js";
 import { isPendingRoundBarAbutment } from "../utils/labFeeSchedule.js";
@@ -1320,6 +1324,27 @@ export async function clearRelatedAbutmentProductionOnRelease(
           manufacturerStage: 1,
         })
         .lean();
+
+      // 준비 단계 취소 SSOT와 동일: 미전환 Request hold를 즉시 해제한다.
+      // (예전: manufacturerStage만 취소 → hold 저널이 남아 크레딧 내역/잔액이 늦게 맞거나 어긋남)
+      const excludeSiblingIds = objectIds.map((id) => String(id));
+      const holdReleaseRows = await Request.find({ _id: { $in: objectIds } });
+      for (const requestDoc of holdReleaseRows) {
+        if (String(requestDoc?.manufacturerStage || "").trim() !== "취소") continue;
+        try {
+          await releaseRequestCreditHoldsOnCancel({
+            request: requestDoc,
+            excludeSiblingIds,
+          });
+        } catch (holdErr) {
+          console.warn(
+            "[clearRelatedAbutmentProductionOnRelease] credit hold release failed",
+            String(requestDoc?._id || ""),
+            holdErr?.message || holdErr,
+          );
+        }
+      }
+
       const refreshAnchorId =
         labAnchorId ||
         String(canceledRows[0]?.businessAnchorId || "").trim() ||
