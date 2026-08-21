@@ -345,7 +345,10 @@ export async function createRequestsFromDraft(req, res) {
         ),
         req.user?._id
           ? User.findById(req.user._id)
-              .select({ "requestSettings.anodizingEnabled": 1 })
+              .select({
+                "requestSettings.anodizingEnabled": 1,
+                "requestSettings.defaultManufacturerHexRotation": 1,
+              })
               .lean()
           : Promise.resolve(null),
       ]);
@@ -1201,7 +1204,11 @@ export async function createRequestsFromDraft(req, res) {
       shippingOrg?.requestSettings?.defaultRequestorHexRotation,
       "STL모델대로",
     );
+    // 제조사 헥스 기본값 SSOT: 개인(User) → BusinessAnchor → (없으면 designSoftware)
     const requestorDefaultManufacturerHexRotation =
+      normalizeManufacturerHexRotationModeOrNull(
+        requestorSettingsDoc?.requestSettings?.defaultManufacturerHexRotation,
+      ) ||
       normalizeManufacturerHexRotationModeOrNull(
         shippingOrg?.requestSettings?.defaultManufacturerHexRotation,
       );

@@ -238,6 +238,10 @@
   - 예) 프론트 minor 10도 선택(`헥스10도회전`) → 백엔드/Esprit 전달값 `헥스40도회전`.
   - 레거시 `"0"`/`"30"`, `헥스10도회전`(minor)은 하위호환으로 정규화 허용.
   - **default fallback 주입 금지**: 빈값/미지원값은 즉시 예외 처리.
+- 제조사 헥스 기본값(다음 의뢰 시드):
+  - 저장: PreviewModal에서 제조사가 mode를 바꾸면 `User.requestSettings.defaultManufacturerHexRotation` 우선, 개인 계정 없으면 `BusinessAnchor.requestSettings.defaultManufacturerHexRotation`.
+  - 조회: User → BusinessAnchor → designSoftware(`ExoCAD`=`헥스30도회전`, 그 외=`STL모델대로`).
+  - NC는 저장된 `caseInfos.hexRotation.mode`만 따르며 designSoftware를 직접 보지 않는다.
 - STL 회전 SSOT:
   - `STL모델대로` / `헥스30도회전` 모두 동일하게
     `Rotate90Degrees` 후 `+30 + (-hexRotation.appliedDeg)` 적용.

@@ -54,9 +54,11 @@ export const resolveRequestorHexRotationByDesignSoftware = (
 ): ManufacturerHexRotationCanonicalMode | null => {
   const designSoftware = String(designSoftwareRaw || "").trim();
   if (!designSoftware) return null;
-  // 정책 SSOT:
+  // 정책 SSOT (제조사 기본값이 아직 없을 때만 사용):
   // - ExoCAD => 헥스30도회전
   // - 3Shape 및 기타(custom 포함) => STL모델대로
+  // 제조사가 PreviewModal에서 한 번 바꾸면 User(개인)→BusinessAnchor 기본값이
+  // 우선하고, 이후 신규 의뢰는 그 값을 hexRotation.mode로 시드한다.
   if (designSoftware === "ExoCAD") return "헥스30도회전";
   return "STL모델대로";
 };

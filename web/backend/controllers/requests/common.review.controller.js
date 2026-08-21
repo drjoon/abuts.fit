@@ -24,6 +24,7 @@ import CncMachine from "../../models/cncMachine.model.js";
 import Connection from "../../models/connection.model.js";
 import SystemSettings from "../../models/systemSettings.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
+import User from "../../models/user.model.js";
 import ReviewApprovalQueue from "../../models/reviewApprovalQueue.model.js";
 import {
   applyStatusMapping,
@@ -1524,7 +1525,25 @@ export async function updateReviewStatusByStage(req, res) {
           ).trim();
           let requestorDefaultManufacturerHexRotation = null;
 
-          if (requestorBusinessAnchorId && Types.ObjectId.isValid(requestorBusinessAnchorId)) {
+          const requestorUserIdForHex = String(
+            request?.requestor?._id || request?.requestor || "",
+          ).trim();
+          if (requestorUserIdForHex && Types.ObjectId.isValid(requestorUserIdForHex)) {
+            const requestorUser = await User.findById(requestorUserIdForHex)
+              .select({ "requestSettings.defaultManufacturerHexRotation": 1 })
+              .session(session)
+              .lean();
+            requestorDefaultManufacturerHexRotation =
+              normalizeRequestorDefaultManufacturerHexRotationOrNull(
+                requestorUser?.requestSettings?.defaultManufacturerHexRotation,
+              );
+          }
+
+          if (
+            !requestorDefaultManufacturerHexRotation &&
+            requestorBusinessAnchorId &&
+            Types.ObjectId.isValid(requestorBusinessAnchorId)
+          ) {
             const requestorBusinessAnchor = await BusinessAnchor.findById(
               requestorBusinessAnchorId,
             )
@@ -1548,6 +1567,7 @@ export async function updateReviewStatusByStage(req, res) {
               );
           }
 
+          // 개인/사업체 제조사 헥스 기본값이 아직 없을 때만 이중 가공 복사본 허용
           const shouldCreateDualHexVariant =
             processBothHexVariantsFlag &&
             requestorDefaultManufacturerHexRotation === null;

@@ -311,10 +311,11 @@ const businessAnchorSchema = new mongoose.Schema(
         type: String,
         default: "STL모델대로",
       },
-      // 제조사 워크시트(PreviewModal)에서 설정하는 의뢰자(사업체) 단위 기본 좌표계 전처리 모드
+      // 제조사 워크시트(PreviewModal)에서 설정하는 의뢰자 단위 기본 좌표계 전처리 모드
       // - canonical: "STL모델대로" | "헥스30도회전" | "헥스X도회전(total)"
-      // - 저장 주체: 제조사
-      // - 적용 대상: 해당 businessAnchorId의 이후 신규 의뢰
+      // - 저장 주체: 제조사 (개인 User 우선, 없으면 이 BusinessAnchor)
+      // - 적용 대상: 해당 의뢰자/사업체의 이후 신규 의뢰
+      // - 조회 SSOT: User → BusinessAnchor → designSoftware(ExoCAD=헥스30)
       defaultManufacturerHexRotation: {
         type: String,
         validate: {

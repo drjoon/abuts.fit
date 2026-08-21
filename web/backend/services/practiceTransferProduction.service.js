@@ -214,6 +214,36 @@ export const resolveHexRotationByDesignSoftware = (designSoftwareRaw) => {
   return "STL모델대로";
 };
 
+const normalizeManufacturerHexRotationOrNull = (value) => {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  if (raw === "STL모델대로" || raw === "0") return "STL모델대로";
+  if (raw === "헥스30도회전" || raw === "30") return "헥스30도회전";
+  const matched = raw.match(/^헥스\s*([+-]?\d+(?:\.\d+)?)\s*도회전$/);
+  if (!matched) return null;
+  const parsedX = Number(matched[1]);
+  if (!Number.isFinite(parsedX)) return null;
+  if (parsedX === 30) return "헥스30도회전";
+  const totalDeg = parsedX < 30 ? parsedX + 30 : parsedX;
+  return `헥스${String(totalDeg)}도회전`;
+};
+
+/**
+ * 제조사 헥스 기본값 SSOT: 개인(User) → BusinessAnchor → designSoftware.
+ * related: common.requests.controller.js updateRndHexRotation
+ */
+export function pickLabManufacturerHexRotation(labUser, labOrg, designSoftware) {
+  return (
+    normalizeManufacturerHexRotationOrNull(
+      labUser?.requestSettings?.defaultManufacturerHexRotation,
+    ) ||
+    normalizeManufacturerHexRotationOrNull(
+      labOrg?.requestSettings?.defaultManufacturerHexRotation,
+    ) ||
+    resolveHexRotationByDesignSoftware(designSoftware)
+  );
+}
+
 const normalizeRetentionGrooveValue = (value, fallback = "none") => {
   const rg = String(value || "")
     .trim()
@@ -270,6 +300,7 @@ export async function loadLabRequestMetaForProduction({
             "requestSettings.designSoftware": 1,
             "requestSettings.anodizingEnabled": 1,
             "requestSettings.retentionGroove": 1,
+            "requestSettings.defaultManufacturerHexRotation": 1,
           })
           .lean()
       : null,
@@ -279,6 +310,7 @@ export async function loadLabRequestMetaForProduction({
             "requestSettings.designSoftware": 1,
             "requestSettings.anodizingEnabled": 1,
             "requestSettings.retentionGroove": 1,
+            "requestSettings.defaultManufacturerHexRotation": 1,
           })
           .lean()
       : null,
@@ -287,8 +319,11 @@ export async function loadLabRequestMetaForProduction({
   const designSoftware = pickLabDesignSoftware(labUser, labOrg);
   const anodizingEnabled = pickLabAnodizingEnabled(labUser, labOrg);
   const retentionGroove = pickLabRetentionGroove(labUser, labOrg);
-  const manufacturerHexRotation =
-    resolveHexRotationByDesignSoftware(designSoftware);
+  const manufacturerHexRotation = pickLabManufacturerHexRotation(
+    labUser,
+    labOrg,
+    designSoftware,
+  );
 
   return {
     designSoftware,

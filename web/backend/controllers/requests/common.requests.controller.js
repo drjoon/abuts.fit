@@ -3206,18 +3206,48 @@ export const updateRndHexRotation = asyncHandler(async (req, res) => {
     });
   }
 
-  // 의뢰자 사업자 디폴트 헥스 회전값은 canonical 모드(STL모델대로/헥스30도회전/헥스X도회전(total))를 저장한다.
-  if (Types.ObjectId.isValid(requestorBusinessAnchorId)) {
+  // 의뢰자 헥스 기본값 저장 SSOT:
+  // - 개인 계정(User.requestSettings.defaultManufacturerHexRotation) 우선
+  // - 개인 계정이 없으면 BusinessAnchor.requestSettings.defaultManufacturerHexRotation
+  // 다음 신규 의뢰는 User → Anchor → designSoftware(ExoCAD=헥스30, 그 외=STL) 순으로 읽는다.
+  const requestorUserId = String(
+    request?.requestor?._id || request?.requestor || "",
+  ).trim();
+  const nowForDefault = new Date();
+  let savedDefaultHexScope = null;
+  if (Types.ObjectId.isValid(requestorUserId)) {
+    await User.updateOne(
+      { _id: new Types.ObjectId(requestorUserId) },
+      {
+        $set: {
+          "requestSettings.defaultManufacturerHexRotation":
+            manufacturerHexRotation,
+          "requestSettings.updatedAt": nowForDefault,
+        },
+      },
+    );
+    savedDefaultHexScope = "user";
+  } else if (Types.ObjectId.isValid(requestorBusinessAnchorId)) {
     await BusinessAnchor.updateOne(
       { _id: new Types.ObjectId(requestorBusinessAnchorId) },
       {
         $set: {
           "requestSettings.defaultManufacturerHexRotation":
             manufacturerHexRotation,
-          "requestSettings.updatedAt": new Date(),
+          "requestSettings.updatedAt": nowForDefault,
         },
       },
     );
+    savedDefaultHexScope = "businessAnchor";
+  }
+  if (savedDefaultHexScope) {
+    console.info("[rnd-hex-rotation] saved requestor hex default", {
+      requestId: request.requestId,
+      scope: savedDefaultHexScope,
+      manufacturerHexRotation,
+      requestorUserId: requestorUserId || null,
+      requestorBusinessAnchorId: requestorBusinessAnchorId || null,
+    });
   }
 
   await request.save();
