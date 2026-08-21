@@ -74,6 +74,7 @@
  * - 2026-08-15: 기공소 전송은 작성 중 draft만. 전송/빈 폼 후 최신 임시저장을 폼에 자동 주입하지 않음.
  * - 2026-08-15: Express/Expert 공통 툴바 최근의뢰/임시저장/휴지통(다이얼로그).
  * - 2026-08-18: Expert 상단에도 새로 작성·최근 의뢰·임시저장·휴지통 버튼.
+ * - 2026-08-21: 「최근 의뢰」배지=사이드바와 동일 채팅 unread(작업취소 카운트 아님).
  * - 2026-08-18: Expert는 우측 목록을 빼고 작성 폼 전폭. 치식은 full 차트.
  * - 2026-08-15: 「새로 작성」을 기공의뢰 카드 위 툴바로 이동.
  * - 2026-08-15: 「새로 작성」을 모드 전환 바로 오른쪽으로. 익스프레스 진행률·스텝 한 줄.
@@ -223,7 +224,6 @@ import {
   canDeletePracticeTransferByStatus,
   canRemakePracticeTransferByStatus,
   canEditPracticeTransferByStatus,
-  computeGroupedStatusCounts,
   filterRequestsByPeriodAndSearch,
   groupPracticeRecentRequests,
   isPracticeTransferActionNeededStatus,
@@ -3527,12 +3527,18 @@ export const PracticeFileTransferPage = ({
     [filteredRecentRequests, chatRooms],
   );
 
-  const statusCounts = useMemo(
-    () => computeGroupedStatusCounts(groupedTransfers),
-    [groupedTransfers],
+  // 사이드바「기공의뢰」와 동일: practice transfer 채팅 unread 합산
+  const recentChatUnreadCount = useMemo(
+    () =>
+      chatRooms.reduce((sum, room) => {
+        const transferId = String(
+          room.relatedPracticeTransferId?.transferId || "",
+        ).trim();
+        if (!transferId) return sum;
+        return sum + Math.max(0, Number(room.unreadCount || 0));
+      }, 0),
+    [chatRooms],
   );
-
-  const recentActionNeededCount = statusCounts.canceled;
 
   const draftGroupedTransfers = useMemo(() => {
     return practiceDraftList
@@ -6779,9 +6785,15 @@ export const PracticeFileTransferPage = ({
                   >
                     <ClipboardList className="h-4 w-4 shrink-0" />
                     최근 의뢰
-                    {recentActionNeededCount > 0 ? (
-                      <Badge variant="secondary" className="ml-0.5">
-                        {recentActionNeededCount}
+                    {recentChatUnreadCount > 0 ? (
+                      <Badge
+                        variant="destructive"
+                        className="ml-0.5 h-4 min-w-4 justify-center px-1 text-[10px] leading-none"
+                        aria-label={`안읽음 ${recentChatUnreadCount}건`}
+                      >
+                        {recentChatUnreadCount > 99
+                          ? "99+"
+                          : recentChatUnreadCount}
                       </Badge>
                     ) : null}
                   </Button>
