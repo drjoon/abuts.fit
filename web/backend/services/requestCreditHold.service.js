@@ -7,6 +7,8 @@
 // - web/backend/controllers/requests/common.review.helpers.js
 // - web/backend/controllers/requests/mailbox.utils.js
 // change-log:
+// - 2026-08-21: PTX CA도 기공소 부담 의뢰비는 Request hold. 롤백 시 hold 복원·전환 플래그.
+// - 2026-08-21: 우편함 해제 배송 hold는 형제 박스 hold 있으면 재보류 금지. 레거시 PTX 배송 hold 해제.
 // - 2026-08-21: PTX CA 배송비는 Request 박스(BA+출고일) hold — PTX 건당 skip 폐지.
 // - 2026-08-21: 신규 배송비 hold만 올린 그룹은 reconcile 재조회 skip. hold 구간 dt 로그.
 // - 2026-08-19: 같은 출고일 배송비 보류는 형제 목록+저널을 그룹당 1회 배치 조회.
@@ -129,9 +131,10 @@ export function resolveRequestCreditHoldAnchorId(request) {
 
 export function shouldSkipMachiningHold(request) {
   if (isManufacturerSampleRequest(request)) return true;
+  // 비거래처 선불: 치과 PTX 어벗 보류만. 기공소 Request 의뢰비 hold/차감 없음.
   if (isPracticePrepaidNonPartner(request)) return true;
-  // PTX CA: 기공의뢰 쪽에서 이미 기공·어벗 보류.
-  if (isPtxCaLinkedRequest(request)) return true;
+  // PTX CA라도 기공소가 생산비를 내는 경우(거래처·lab-designed)는 Request hold 필요.
+  // 제출/수락 시 보류 → 가공 진입 시 에스크로 전환 → 준비 롤백 시 보류 유지.
   return false;
 }
 
@@ -958,6 +961,12 @@ export async function holdRequestCreditsOnSubmit({
     timing.reconcileMs += Date.now() - reconT0;
   }
 
+  // Request 박스 hold가 SSOT — 레거시 PTX 건당 기공소→어벗츠 배송 hold는 해제.
+  await releaseLegacyPtxAbutsShippingHoldsForRequests({
+    requests: list,
+    session,
+  });
+
   if (process.env.NODE_ENV !== "production") {
     console.log("[holdRequestCreditsOnSubmit] timing", {
       dt: Date.now() - holdT0,
@@ -978,6 +987,224 @@ export async function getRequestHoldJournal({ idempotencyKey, session = null }) 
     idempotencyKey: String(idempotencyKey || "").trim(),
     session,
   });
+}
+
+function practiceTransferAbutsShippingHoldKey(transferId) {
+  return `practice_transfer:${String(transferId || "").trim()}:hold:abuts_shipping`;
+}
+
+/**
+ * 에스크로→매출 전환 후 보류 저널에 convertedAt을 남겨 장부에서 지급완료로 표시한다.
+ */
+export async function markRequestHoldConverted({
+  idempotencyKey,
+  commitJournalId = null,
+  session = null,
+}) {
+  const key = String(idempotencyKey || "").trim();
+  if (!key) return { updated: false, reason: "invalid_key" };
+  const $set = { "meta.convertedAt": new Date() };
+  if (commitJournalId) {
+    $set["meta.convertedJournalId"] = String(commitJournalId);
+  }
+  const result = await LedgerJournal.updateOne(
+    { idempotencyKey: key },
+    { $set },
+    { session: session || undefined },
+  );
+  return {
+    updated: Number(result?.modifiedCount || 0) > 0,
+    matched: Number(result?.matchedCount || 0) > 0,
+  };
+}
+
+/** 가공→준비 롤백 시 전환 플래그를 지워 다시 지급보류로 보이게 한다. */
+export async function clearRequestHoldConverted({
+  idempotencyKey,
+  session = null,
+}) {
+  const key = String(idempotencyKey || "").trim();
+  if (!key) return { updated: false, reason: "invalid_key" };
+  const result = await LedgerJournal.updateOne(
+    { idempotencyKey: key },
+    { $unset: { "meta.convertedAt": "", "meta.convertedJournalId": "" } },
+    { session: session || undefined },
+  );
+  return {
+    updated: Number(result?.modifiedCount || 0) > 0,
+    matched: Number(result?.matchedCount || 0) > 0,
+  };
+}
+
+/**
+ * 레거시 PTX 건당 기공소→어벗츠 배송 hold 해제(Request 박스 hold SSOT).
+ */
+export async function releaseLegacyPtxAbutsShippingHoldsForRequests({
+  requests = [],
+  session = null,
+  emitBalanceUpdate = true,
+}) {
+  const ptxIds = new Set();
+  for (const request of Array.isArray(requests) ? requests : []) {
+    if (!isPtxCaLinkedRequest(request)) continue;
+    const id = String(
+      request?.partnerBilling?.relatedPracticeTransferId || "",
+    ).trim();
+    if (id) ptxIds.add(id);
+  }
+  if (!ptxIds.size) return { released: 0, restoreDelta: 0 };
+
+  let released = 0;
+  let restoreDelta = 0;
+  for (const ptxId of ptxIds) {
+    const key = practiceTransferAbutsShippingHoldKey(ptxId);
+    const existing = await getJournalByIdempotencyKey({
+      idempotencyKey: key,
+      session,
+    });
+    if (!existing?.journalId) continue;
+
+    const delta = await computeHoldRestoreDeltaByJournalId({
+      journalId: existing.journalId,
+      session,
+    });
+    const deleted = await deleteGeneralLedgerCommitJournal({
+      journalId: existing.journalId,
+      expectedEventTypes: ["PRACTICE_TRANSFER_SPEND_HOLD"],
+      session,
+    });
+    if (!deleted?.deleted) continue;
+
+    released += 1;
+    restoreDelta += Number(delta || 0);
+    const anchorId = normalizeBusinessAnchorId(existing.businessAnchorId);
+    if (emitBalanceUpdate && anchorId && delta > 0) {
+      try {
+        await emitCreditBalanceUpdatedToBusiness({
+          businessAnchorId: anchorId,
+          balanceDelta: delta,
+          reason: "legacy_ptx_abuts_shipping_hold_release",
+          refId: ptxId,
+          forceEmit: true,
+        });
+      } catch {
+        // best-effort
+      }
+    }
+    try {
+      await mongoose.connection.collection("practicetransfers").updateOne(
+        { _id: new Types.ObjectId(ptxId) },
+        { $set: { "billing.heldShippingAbutsTotal": 0 } },
+        { session: session || undefined },
+      );
+    } catch {
+      // best-effort
+    }
+  }
+
+  return { released, restoreDelta };
+}
+
+/**
+ * 가공→준비 롤백 후 의뢰비(·신속) 보류가 없으면 다시 잡는다.
+ * 에스크로 전환분만 지워진 경우 convertedAt만 해제한다.
+ */
+export async function ensureRequestMachiningHoldAfterSpendRollback({
+  request,
+  actorUserId = null,
+  session = null,
+}) {
+  if (!request?._id) return { held: false, reason: "invalid_request" };
+  if (shouldSkipMachiningHold(request)) {
+    return { held: false, reason: "skip" };
+  }
+
+  const requestorAnchorId = resolveRequestCreditHoldAnchorId(request);
+  if (!requestorAnchorId) return { held: false, reason: "no_anchor" };
+
+  const machiningKey = requestMachiningHoldKey(request._id);
+  const expressKey = requestExpressHoldKey(request._id);
+  const existingMachining = await getRequestHoldJournal({
+    idempotencyKey: machiningKey,
+    session,
+  });
+  if (existingMachining?.journalId) {
+    await clearRequestHoldConverted({
+      idempotencyKey: machiningKey,
+      session,
+    });
+    const existingExpress = await getRequestHoldJournal({
+      idempotencyKey: expressKey,
+      session,
+    });
+    if (existingExpress?.journalId) {
+      await clearRequestHoldConverted({
+        idempotencyKey: expressKey,
+        session,
+      });
+    }
+    return { held: false, reason: "already_held", clearedConverted: true };
+  }
+
+  const devopsAnchorId = await resolveDevopsEscrowOwnerId(session);
+  if (!devopsAnchorId) return { held: false, reason: "no_devops" };
+
+  let totalHeld = 0;
+  const results = [];
+
+  const machiningAmount = resolveMachiningHoldAmount(request);
+  if (machiningAmount > 0) {
+    const holdResult = await postOneRequestHold({
+      request,
+      requestorAnchorId,
+      devopsAnchorId,
+      amount: machiningAmount,
+      holdKind: "machining_spend",
+      eventType: "REQUEST_SPEND_HOLD",
+      idempotencyKey: machiningKey,
+      actorUserId,
+      session,
+    });
+    results.push({ kind: "machining_spend", ...holdResult });
+    if (holdResult.held) totalHeld += Number(holdResult.amount || 0);
+  }
+
+  const expressAmount = resolveExpressHoldAmount(request);
+  if (expressAmount > 0) {
+    const holdResult = await postOneRequestHold({
+      request,
+      requestorAnchorId,
+      devopsAnchorId,
+      amount: expressAmount,
+      holdKind: "express_surcharge",
+      eventType: "REQUEST_SPEND_HOLD",
+      idempotencyKey: expressKey,
+      actorUserId,
+      session,
+    });
+    results.push({ kind: "express_surcharge", ...holdResult });
+    if (holdResult.held) totalHeld += Number(holdResult.amount || 0);
+  }
+
+  if (totalHeld > 0) {
+    try {
+      await emitCreditBalanceUpdatedToBusiness({
+        businessAnchorId: requestorAnchorId,
+        balanceDelta: -totalHeld,
+        reason: "machining_hold_restore",
+        refId: request._id,
+      });
+    } catch {
+      // best-effort
+    }
+  }
+
+  return {
+    held: totalHeld > 0,
+    totalHeld,
+    results,
+    reason: totalHeld > 0 ? "restored" : "noop",
+  };
 }
 
 export async function releaseRequestHoldByKey({
@@ -1225,6 +1452,7 @@ export async function reconcileShippingHoldOnMailboxAssign({
 
 /**
  * 가공→준비 롤백으로 우편함이 해제될 때, 합류로 풀린 배송비 보류를 복원한다.
+ * 같은 BA+출고일 박스에 형제 hold가 있으면 재보류하지 않는다(이중 3,500 방지).
  */
 export async function ensureRequestShippingHoldAfterMailboxRelease({
   request,
@@ -1242,13 +1470,37 @@ export async function ensureRequestShippingHoldAfterMailboxRelease({
     session,
   });
   if (existing?.journalId) {
+    await clearRequestHoldConverted({
+      idempotencyKey: requestShippingHoldKey(request._id),
+      session,
+    });
+    await releaseLegacyPtxAbutsShippingHoldsForRequests({
+      requests: [request],
+      session,
+    });
     return { held: false, reason: "already_held" };
+  }
+
+  const requestorAnchorId = resolveRequestCreditHoldAnchorId(request);
+  if (!requestorAnchorId) return { held: false, reason: "no_anchor" };
+
+  const siblingHold = await findExistingRequesterShipBoxShippingHold({
+    request,
+    requestorAnchorId,
+    session,
+    excludeRequestId: request._id,
+  });
+  if (siblingHold?.journalId) {
+    await releaseLegacyPtxAbutsShippingHoldsForRequests({
+      requests: [request],
+      session,
+    });
+    return { held: false, reason: "sibling_box_already_held" };
   }
 
   const devopsAnchorId = await resolveDevopsEscrowOwnerId(session);
   if (!devopsAnchorId) return { held: false, reason: "no_devops" };
 
-  const requestorAnchorId = resolveRequestCreditHoldAnchorId(request);
   const shippingFee = await resolveShippingFeePerBox();
 
   const holdResult = await postOneRequestHold({
@@ -1276,6 +1528,16 @@ export async function ensureRequestShippingHoldAfterMailboxRelease({
       // best-effort
     }
   }
+
+  await reconcileRequesterShipBoxShippingHolds({
+    request,
+    requestorAnchorId,
+    session,
+  });
+  await releaseLegacyPtxAbutsShippingHoldsForRequests({
+    requests: [request],
+    session,
+  });
 
   return holdResult;
 }

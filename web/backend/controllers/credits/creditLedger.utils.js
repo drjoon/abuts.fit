@@ -6,6 +6,7 @@
 // - web/backend/services/practiceTransferBilling.service.js
 // - web/backend/models/businessAnchor.model.js
 // - web/backend/services/requestCreditHold.service.js
+// - 2026-08-21: hold meta.convertedAt 있으면 SPEND_PAID(지급완료)로 표시.
 // - 2026-08-21: PTX CA Request도 abutmentBoxGroupKey(BA+출고일) 유지 — 기공소 배송·생산 박스 묶음.
 // - 2026-08-19: 어벗디자인·어벗생산 박스는 의뢰 사업자+예정출고일. 치과명으로 쪼개지 않음.
 // - 2026-08-19: 기본 내역은 최근 라인만 잘라 10건 lookup. 기간 전체 $count 생략.
@@ -707,6 +708,30 @@ function creditLedgerRowTypeExpr() {
         {
           case: { $eq: ["$eventType", "CHARGE_FREE_SHIPPING"] },
           then: "CHARGE_FREE_SHIPPING",
+        },
+        {
+          case: {
+            $and: [
+              {
+                $in: [
+                  "$eventType",
+                  [
+                    "PRACTICE_TRANSFER_SPEND_HOLD",
+                    "PRACTICE_TRANSFER_HOLD_ADJUST",
+                    "REQUEST_SPEND_HOLD",
+                    "SHIPPING_SPEND_HOLD",
+                  ],
+                ],
+              },
+              {
+                $ne: [
+                  { $ifNull: ["$journalDoc.meta.convertedAt", null] },
+                  null,
+                ],
+              },
+            ],
+          },
+          then: "SPEND_PAID",
         },
         {
           case: {

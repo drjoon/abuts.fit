@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-21: 어벗디자인 상세 — PTX 레거시 배송 hold는 합산에서 제외(Request 박스 SSOT).
 // - 2026-08-21: 어벗디자인 상세 — 의뢰비·배송비에 지급완료/지급보류 뱃지.
 // - 2026-08-21: 기공소 장부 — PTX CA 생산+기공소→어벗츠 배송을 박스키로 한 행. 치과는 레거시 배송 합산 표시 제거.
 // - 2026-08-21: 기공의뢰(PTX) 정산에서 기공소→어벗츠 배송 제외(기공소 부담·의뢰 박스 행).
@@ -1060,6 +1061,14 @@ const abutmentDesignGroupKey = (
   opts: { isLabViewer?: boolean } = {},
 ) => {
   if (practiceTransferGroupKey(item, opts)) return "";
+  // Request 박스 배송이 SSOT — PTX 건당 배송 hold는 어벗디자인 행에 합치지 않음.
+  if (
+    String(item.refType || "") === "PRACTICE_TRANSFER" &&
+    (String(item.holdShare || "").trim() === "abuts_shipping" ||
+      String(item.holdShare || "").trim() === "lab_shipping")
+  ) {
+    return "";
+  }
   const refType = String(item.refType || "");
   const relatedPtx = String(
     item.relatedPracticeTransferId ||
@@ -1920,6 +1929,13 @@ export const CreditLedgerModal = ({
     let shippingSettledCount = 0;
     for (const member of row.members) {
       const isHold = isAbutmentDesignHoldLedgerItem(member);
+      // Request 박스 배송이 SSOT — PTX 건당 abuts_shipping hold는 합산하지 않음.
+      if (
+        isAbutmentShippingLedgerItem(member) &&
+        String(member.refType || "") === "PRACTICE_TRANSFER"
+      ) {
+        continue;
+      }
       if (isAbutmentShippingLedgerItem(member)) {
         shippingAmount += Number(member.amount || 0);
         shippingCount += 1;

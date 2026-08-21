@@ -10,6 +10,7 @@
 // - web/backend/controllers/requests/shipping.controller.js
 // - web/backend/controllers/requests/shipping.Tracking.helpers.js
 // change-log:
+// - 2026-08-21: 가공→준비 롤백 후 의뢰비 hold 복원. hold 전환 시 convertedAt 표시.
 // - 2026-08-21: isPtxLabDesignedAbutmentRequest export — 어벗츠로의뢰 취소 가드 공용.
 // - 2026-08-19: 원장 GET에서 신속비 보정을 백그라운드·쿨다운으로 분리.
 // - 2026-08-19: 준비 단계 취소는 uniqueKeysOnly 소비 조회로 레거시 풀스캔을 생략.
@@ -72,7 +73,9 @@ import {
   resolveShippingMailboxOrgId,
 } from "./mailbox.utils.js";
 import {
+  ensureRequestMachiningHoldAfterSpendRollback,
   findMailboxSlotShippingHold,
+  markRequestHoldConverted,
   readRequestHoldMeta,
   requestExpressHoldKey,
   requestMachiningHoldKey,
@@ -962,6 +965,11 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
     if (!glPostResult?.posted && !glPostResult?.idempotent) {
       throw new Error("REQUEST_SPEND_COMMIT machining hold convert failed");
     }
+    await markRequestHoldConverted({
+      idempotencyKey: requestMachiningHoldKey(request._id),
+      commitJournalId: glPostResult?.journalId || null,
+      session,
+    });
     console.log("[CREDIT_SPEND] machining hold converted", {
       requestId: request?.requestId,
       amount: spentAmount,
@@ -1170,6 +1178,11 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
         "REQUEST_SPEND_COMMIT express surcharge hold convert failed",
       );
     }
+    await markRequestHoldConverted({
+      idempotencyKey: requestExpressHoldKey(request._id),
+      commitJournalId: expressGl?.journalId || null,
+      session,
+    });
     if (request.price) {
       request.price.expressFeeStatus = "charged";
     } else {
@@ -1587,6 +1600,12 @@ export async function ensureRequestCreditRollbackDeleteOnRollbackToCam({
           requestId: request?.requestId || null,
           businessAnchorId: String(businessAnchorId),
         });
+        // 이미 COMMIT이 없어도 의뢰비 hold가 비어 있으면 복원(이전 롤백 누락 보정).
+        await ensureRequestMachiningHoldAfterSpendRollback({
+          request,
+          actorUserId,
+          session,
+        });
         return;
       }
 
@@ -1621,6 +1640,23 @@ export async function ensureRequestCreditRollbackDeleteOnRollbackToCam({
     reason: "machining_spend_rollback_delete",
     refId: request?._id,
   });
+
+  // COMMIT 삭제 후 의뢰비 보류가 없으면 복원(직접 spend 경로·누락 hold).
+  // 에스크로 전환분이면 convertedAt만 해제해 다시 지급보류로 표시.
+  try {
+    await ensureRequestMachiningHoldAfterSpendRollback({
+      request,
+      actorUserId,
+      session,
+    });
+  } catch (holdErr) {
+    console.error("[CREDIT_ROLLBACK][REQUEST] machining hold restore failed", {
+      requestMongoId: String(request._id),
+      requestId: request?.requestId || null,
+      message: holdErr?.message || String(holdErr),
+    });
+    throw holdErr;
+  }
 
   console.log("[CREDIT_ROLLBACK][REQUEST] balance event emitted", {
     requestMongoId: String(request._id),
@@ -1893,6 +1929,12 @@ export async function ensureShippingFeeSpendOnMailboxPickup({
       if (!glPostResult?.posted && !glPostResult?.idempotent) {
         throw new Error("SHIPPING_SPEND_COMMIT hold convert failed");
       }
+
+      await markRequestHoldConverted({
+        idempotencyKey: slotHold.idempotencyKey,
+        commitJournalId: glPostResult?.journalId || null,
+        session,
+      });
 
       console.log("[SHIPPING_FEE] shipping hold converted at pickup", {
         mailboxAddress: mailbox,
