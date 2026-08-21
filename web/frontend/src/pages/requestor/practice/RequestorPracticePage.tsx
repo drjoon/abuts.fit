@@ -4702,7 +4702,7 @@ export function RequestorPracticeReceivePage({
           selectedTransfer?.starDowngrade?.labEffectiveStars ??
           null
         }
-        filesLabel="의뢰 파일 (구강 스캔)"
+        filesLabel="의뢰 파일 (구강 스캔, 쉐이드 포토 등)"
         files={
           (selectedTransfer?.files || []).map((file) => ({
             id: file.id,

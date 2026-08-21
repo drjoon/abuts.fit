@@ -11,6 +11,7 @@
 // - web/frontend/src/shared/files/modelPreviewFile.ts
 // - web/frontend/src/shared/files/downloadWithProgress.ts
 // - web/frontend/src/shared/files/s3BlobCache.ts
+// - 2026-08-21: 의뢰 파일 — 4열 썸네일(이미지)·유형 아이콘(기타) + 파일명.
 // - 2026-08-21: 수락 바 — 안내 1줄 + CTA 1줄(항상 2단), 작업취소 툴팁.
 // - 2026-08-21: 수락 후 채팅 상단 바에 어벗·보철 업로드 CTA(acceptedWorkActions).
 // - 2026-08-20: 수락 바 작업기간 — 전송 시각 기준 12시 컷오프.
@@ -21,7 +22,8 @@
 // - 2026-08-18: 치과 수락 전 의뢰 수정 CTA(좌측 의뢰정보 패널 상단).
 // - 2026-08-19: 치과 발신 상세에서 수락 전 의뢰 취소(휴지통).
 // - 2026-08-16: 어벗 가공 시작 시 상세 모달 작업취소(수락 취소) 비활성 안내.
-// - 2026-08-16: 파일 섹션 — 의뢰 파일(구강 스캔) / 작업 파일(어벗 디자인·보철물).
+// - 2026-08-16: 파일 섹션 — 의뢰 파일(구강 스캔·쉐이드 포토 등) / 작업 파일(어벗 디자인·보철물).
+// - 2026-08-21: 구강스캔은 선택 — practice_required 수락 차단은 레거시(호출부 null).
 // - 2026-08-15: 수락 기공소 CA 디자인 — 왼쪽 구강스캔 업로드 UI 제거(스캔 없이 수락).
 // - 2026-08-15: 수락 바 — 구강스캔 나중에 올리기 안내 문구 제거.
 // - 2026-08-15: 수락 기공소 CA 디자인 — 스캔 없이도 수락. 어벗디자인비 안내.
@@ -41,7 +43,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { CircleHelp, MessageSquare, Pencil, Trash2 } from "lucide-react";
+import { Box, CircleHelp, FileIcon, MessageSquare, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -115,6 +117,11 @@ function resolvePreviewKind(fileName: string): ModelPreviewKind | null {
   return null;
 }
 
+function fileTypeLabel(fileName: string): string {
+  const ext = getPracticeTransferFileExtension(fileName).replace(/^\./, "");
+  return ext ? ext.toUpperCase() : "FILE";
+}
+
 function fileFromPreviewBlob(blob: Blob, fileName: string, kind: ModelPreviewKind): File {
   if (kind === "model") return fileFromModelBlob(blob, fileName);
   const name = String(fileName || "image").trim() || "image";
@@ -160,7 +167,7 @@ type PracticeTransferDetailChatDialogProps = {
   labAnchorId?: string | null;
   /** 기공소 뷰 — 자동매칭 기공비 별점 확정가 */
   labEffectiveStars?: number | null;
-  /** 예: 의뢰 파일 (구강 스캔) */
+  /** 예: 의뢰 파일 (구강 스캔, 쉐이드 포토 등) */
   filesLabel: string;
   files: PracticeTransferDialogFileItem[];
   /** 수락 전 구강스캔 미첨부(CA). 자동매칭만 치과 필수 안내 */
@@ -355,6 +362,112 @@ export function PracticeTransferDetailChatDialog({
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewProgress, setPreviewProgress] = useState(0);
   const previewAbortRef = useRef<AbortController | null>(null);
+  /** 의뢰 파일 이미지 썸네일 object URL (s3Key → url) */
+  const [requestThumbUrls, setRequestThumbUrls] = useState<
+    Record<string, string>
+  >({});
+  const requestThumbUrlsRef = useRef<Record<string, string>>({});
+
+  const requestImageThumbKey = useMemo(() => {
+    if (!open || requestFilesDownloadLocked) return "";
+    return (Array.isArray(files) ? files : [])
+      .filter((file) => {
+        if (!String(file.s3Key || "").trim()) return false;
+        return isImagePreviewExt(
+          getPracticeTransferFileExtension(file.fileName),
+        );
+      })
+      .map((file) => String(file.s3Key || "").trim())
+      .join("|");
+  }, [files, open, requestFilesDownloadLocked]);
+
+  const filesRef = useRef(files);
+  filesRef.current = files;
+
+  const revokeRequestThumbs = useCallback(() => {
+    for (const url of Object.values(requestThumbUrlsRef.current)) {
+      try {
+        URL.revokeObjectURL(url);
+      } catch {
+        // ignore
+      }
+    }
+    requestThumbUrlsRef.current = {};
+    setRequestThumbUrls({});
+  }, []);
+
+  useEffect(() => {
+    if (!requestImageThumbKey || !authToken) {
+      revokeRequestThumbs();
+      return;
+    }
+    const imageFiles = (Array.isArray(filesRef.current) ? filesRef.current : []).filter(
+      (file) => {
+        if (!String(file.s3Key || "").trim()) return false;
+        return isImagePreviewExt(
+          getPracticeTransferFileExtension(file.fileName),
+        );
+      },
+    );
+    if (!imageFiles.length) {
+      revokeRequestThumbs();
+      return;
+    }
+
+    const ac = new AbortController();
+    let cancelled = false;
+
+    void (async () => {
+      const next: Record<string, string> = {};
+      for (const file of imageFiles) {
+        if (cancelled || ac.signal.aborted) return;
+        const s3Key = String(file.s3Key || "").trim();
+        const fileName = String(file.fileName || "image").trim() || "image";
+        try {
+          const blob = await fetchS3BlobCached({
+            s3Key,
+            fileName,
+            token: authToken,
+            buildUrl: buildS3ProxyDownloadUrl,
+            signal: ac.signal,
+          });
+          if (cancelled || ac.signal.aborted) return;
+          const typed =
+            blob.type && blob.type !== "application/octet-stream"
+              ? blob
+              : new Blob([blob], { type: mimeTypeForImageFileName(fileName) });
+          next[s3Key] = URL.createObjectURL(typed);
+        } catch {
+          // 썸네일 실패 시 아이콘 placeholder
+        }
+      }
+      if (cancelled || ac.signal.aborted) {
+        for (const url of Object.values(next)) {
+          try {
+            URL.revokeObjectURL(url);
+          } catch {
+            // ignore
+          }
+        }
+        return;
+      }
+      for (const url of Object.values(requestThumbUrlsRef.current)) {
+        try {
+          URL.revokeObjectURL(url);
+        } catch {
+          // ignore
+        }
+      }
+      requestThumbUrlsRef.current = next;
+      setRequestThumbUrls(next);
+    })();
+
+    return () => {
+      cancelled = true;
+      ac.abort();
+      revokeRequestThumbs();
+    };
+  }, [authToken, requestImageThumbKey, revokeRequestThumbs]);
 
   const previewableFiles = useMemo(() => {
     const out: Array<{
@@ -616,6 +729,89 @@ export function PracticeTransferDetailChatDialog({
     );
   };
 
+  const renderRequestFileTile = (
+    file: PracticeTransferDialogFileItem,
+    idx: number,
+  ) => {
+    const locked = requestFilesDownloadLocked;
+    const busyKey = String(file.s3Key || file.id || "").trim();
+    const isBusy =
+      downloadAllBusy ||
+      (busyKey ? downloadingFileKeys.includes(busyKey) : false);
+    const progress = busyKey ? Number(downloadProgressByKey[busyKey] ?? 0) : 0;
+    const isMesh = isModelPreviewExt(getModelExtLower(file.fileName));
+    const isImage = isImagePreviewExt(
+      getPracticeTransferFileExtension(file.fileName),
+    );
+    const thumbUrl = busyKey ? requestThumbUrls[busyKey] : undefined;
+    const typeLabel = fileTypeLabel(file.fileName);
+    const title = locked
+      ? requestFilesDownloadLockedReason
+      : isMesh
+        ? "클릭하여 3D 미리보기"
+        : isImage
+          ? "클릭하여 이미지 미리보기"
+          : "클릭하여 다운로드";
+
+    return (
+      <div
+        key={`request:${file.id}:${idx}`}
+        className="relative min-w-0 overflow-hidden rounded-md border bg-slate-50"
+      >
+        <button
+          type="button"
+          onClick={() => handleFileRowClick(file, locked)}
+          disabled={isBusy || locked}
+          title={title}
+          className="flex w-full flex-col items-stretch text-left disabled:opacity-60 disabled:pointer-events-none"
+        >
+          <div className="relative aspect-square w-full overflow-hidden bg-slate-100">
+            {isImage && thumbUrl ? (
+              <img
+                src={thumbUrl}
+                alt=""
+                className="h-full w-full object-cover"
+                draggable={false}
+              />
+            ) : (
+              <div className="flex h-full w-full flex-col items-center justify-center gap-1 px-1 text-slate-500">
+                {isMesh ? (
+                  <Box className="h-7 w-7 shrink-0" aria-hidden />
+                ) : (
+                  <FileIcon className="h-7 w-7 shrink-0" aria-hidden />
+                )}
+                <span className="max-w-full truncate text-[10px] font-semibold tracking-wide text-slate-600">
+                  {typeLabel}
+                </span>
+              </div>
+            )}
+            {locked ? (
+              <div className="absolute inset-0 flex items-center justify-center bg-slate-900/45 px-1">
+                <span className="text-center text-[10px] font-medium text-white">
+                  다운로드 대기
+                </span>
+              </div>
+            ) : null}
+            {isBusy ? (
+              <div className="absolute inset-x-0 bottom-0 bg-slate-900/55 px-1 py-0.5">
+                <p className="text-center text-[10px] text-white">
+                  {Math.round(progress)}%
+                </p>
+                <Progress value={progress} className="mt-0.5 h-1" />
+              </div>
+            ) : null}
+          </div>
+          <p
+            className="truncate px-1.5 py-1.5 text-center text-[11px] font-medium text-slate-800"
+            title={file.fileName}
+          >
+            {file.fileName}
+          </p>
+        </button>
+      </div>
+    );
+  };
+
   return (
     <>
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -740,15 +936,10 @@ export function PracticeTransferDetailChatDialog({
                   </p>
                 ) : null}
                 {files.length ? (
-                  <div className="mt-2 max-h-40 overflow-y-auto pr-1 space-y-1">
-                    {files.map((file, idx) =>
-                      renderFileRow(
-                        file,
-                        idx,
-                        "request",
-                        requestFilesDownloadLocked,
-                      ),
-                    )}
+                  <div className="mt-2 max-h-64 overflow-y-auto pr-1">
+                    <div className="grid grid-cols-4 gap-2">
+                      {files.map((file, idx) => renderRequestFileTile(file, idx))}
+                    </div>
                   </div>
                 ) : oralScanAttachMode === "practice_required" ? (
                   <p className="mt-2 text-sm text-destructive leading-relaxed">
