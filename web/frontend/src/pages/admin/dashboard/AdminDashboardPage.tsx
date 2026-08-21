@@ -2080,113 +2080,103 @@ export const AdminDashboardPage = () => {
               </Card>
             </div>
 
-            {/* 카드7: 거래금액 / 평균 단가 / 배송비 */}
-            <Card className="app-glass-card app-glass-card--lg">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">
-                  거래금액 / 평균 단가 / 배송비
-                </CardTitle>
-                <DollarSign className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="space-y-1">
-                    <div className="text-xs text-muted-foreground">
-                      유료 주문액
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-4 items-stretch">
+              {/* 카드7: 거래금액 / 평균 단가 / 배송비 */}
+              <Card className="app-glass-card app-glass-card--lg h-full lg:col-span-2">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">
+                    거래금액 / 평균 단가 / 배송비
+                  </CardTitle>
+                  <DollarSign className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="space-y-1">
+                      <div className="text-xs text-muted-foreground">유료 주문액</div>
+                      <div className="text-xl font-bold">
+                        ₩{(pricingSummary?.totalRevenue ?? 0).toLocaleString()}
+                      </div>
                     </div>
-                    <div className="text-xl font-bold">
-                      ₩{(pricingSummary?.totalRevenue ?? 0).toLocaleString()}
+                    <div className="space-y-1">
+                      <div className="text-xs text-muted-foreground">평균 단가</div>
+                      <div className="text-xl font-bold">
+                        ₩{(pricingSummary?.avgUnitPrice ?? 0).toLocaleString()}
+                      </div>
                     </div>
-                  </div>
-                  <div className="space-y-1">
-                    <div className="text-xs text-muted-foreground">
-                      평균 단가
-                    </div>
-                    <div className="text-xl font-bold">
-                      ₩{(pricingSummary?.avgUnitPrice ?? 0).toLocaleString()}
-                    </div>
-                  </div>
-                  <div className="space-y-1">
-                    <div className="text-xs text-muted-foreground">
-                      전체 배송비
-                    </div>
-                    <div className="text-xl font-bold">
-                      ₩
-                      {(
-                        pricingSummary?.totalShippingFeeSupply ?? 0
-                      ).toLocaleString()}
+                    <div className="space-y-1">
+                      <div className="text-xs text-muted-foreground">전체 배송비</div>
+                      <div className="text-xl font-bold">
+                        ₩
+                        {(
+                          pricingSummary?.totalShippingFeeSupply ?? 0
+                        ).toLocaleString()}
+                      </div>
                     </div>
                   </div>
-                </div>
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="space-y-1">
-                    <div className="text-xs text-muted-foreground">
-                      무료 주문액
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="space-y-1">
+                      <div className="text-xs text-muted-foreground">무료 주문액</div>
+                      <div className="text-sm font-semibold text-muted-foreground">
+                        ₩
+                        {(
+                          pricingSummary?.totalBonusRevenue ?? 0
+                        ).toLocaleString()}
+                      </div>
                     </div>
-                    <div className="text-sm font-semibold text-muted-foreground">
-                      ₩
-                      {(
-                        pricingSummary?.totalBonusRevenue ?? 0
-                      ).toLocaleString()}
+                    <div className="space-y-1">
+                      <div className="text-xs text-muted-foreground">평균 무료 단가</div>
+                      <div className="text-sm font-semibold text-muted-foreground">
+                        ₩
+                        {(
+                          pricingSummary?.avgBonusUnitPrice ?? 0
+                        ).toLocaleString()}
+                      </div>
                     </div>
-                  </div>
-                  <div className="space-y-1">
-                    <div className="text-xs text-muted-foreground">
-                      평균 무료 단가
-                    </div>
-                    <div className="text-sm font-semibold text-muted-foreground">
-                      ₩
-                      {(
-                        pricingSummary?.avgBonusUnitPrice ?? 0
-                      ).toLocaleString()}
-                    </div>
-                  </div>
-                  <div className="space-y-1">
-                    <div className="text-xs text-muted-foreground">
-                      평균 배송비
-                    </div>
-                    <div className="text-sm font-semibold">
-                      ₩
-                      {(
-                        pricingSummary?.avgShippingFeeSupply ?? 0
-                      ).toLocaleString()}
+                    <div className="space-y-1">
+                      <div className="text-xs text-muted-foreground">평균 배송비</div>
+                      <div className="text-sm font-semibold">
+                        ₩
+                        {(
+                          pricingSummary?.avgShippingFeeSupply ?? 0
+                        ).toLocaleString()}
+                      </div>
                     </div>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
 
-            {/* 카드9: 시스템 알림 */}
-            <Card className="app-glass-card app-glass-card--lg">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">시스템 알림</CardTitle>
-                <AlertCircle className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent className="space-y-2">
-                {data.systemAlerts.length === 0 ? (
-                  <div className="text-xs text-muted-foreground">현재 이상 알림이 없습니다.</div>
-                ) : (
-                  data.systemAlerts.map((alert) => (
-                    <div
-                      key={alert.id}
-                      className="rounded border bg-accent-soft/60 px-2 py-1.5"
-                    >
-                      <div className="flex items-start gap-2">
-                        <div className="mt-0.5">{getAlertIcon(alert.type)}</div>
-                        <div className="min-w-0">
-                          <div className="text-xs font-medium break-words">
-                            {alert.message}
-                          </div>
-                          <div className="text-[11px] text-muted-foreground mt-0.5">
-                            {toDateTimeLabel(alert.date)}
+              {/* 카드9: 시스템 알림 */}
+              <Card className="app-glass-card app-glass-card--lg h-full">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">시스템 알림</CardTitle>
+                  <AlertCircle className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  {data.systemAlerts.length === 0 ? (
+                    <div className="text-xs text-muted-foreground">현재 이상 알림이 없습니다.</div>
+                  ) : (
+                    data.systemAlerts.map((alert) => (
+                      <div
+                        key={alert.id}
+                        className="rounded border bg-accent-soft/60 px-2 py-1.5"
+                      >
+                        <div className="flex items-start gap-2">
+                          <div className="mt-0.5">{getAlertIcon(alert.type)}</div>
+                          <div className="min-w-0">
+                            <div className="text-xs font-medium break-words">
+                              {alert.message}
+                            </div>
+                            <div className="text-[11px] text-muted-foreground mt-0.5">
+                              {toDateTimeLabel(alert.date)}
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  ))
-                )}
-              </CardContent>
-            </Card>
+                    ))
+                  )}
+                </CardContent>
+              </Card>
+            </div>
           </>
         }
         mainLeft={undefined}
