@@ -3,6 +3,7 @@
 // - web/backend/controllers/bg/bg.controller.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/request.ts
 // change-log:
+// - 2026-08-21: resolveFilledStlFile — s3Key 있는 camFile을 uploadedAt 스텁 stlFile보다 우선.
 // - 2026-08-21: pickFilledStlFileForClone — 없을 때 null 키를 넣지 않음(빈 uploadedAt 스텁 방지).
 // - 2026-08-21: Rhino filled STL SSOT를 caseInfos.stlFile로 개명. camFile은 레거시 미러/폴백.
 //
@@ -26,9 +27,16 @@ const hasFileMeta = (file) => {
  */
 export function resolveFilledStlFile(caseInfos) {
   const stl = caseInfos?.stlFile;
-  if (hasFileMeta(stl)) return stl;
   const legacy = caseInfos?.camFile;
-  if (hasFileMeta(legacy)) return legacy;
+  const stlOk = hasFileMeta(stl);
+  const legacyOk = hasFileMeta(legacy);
+  // s3Key가 있는 쪽을 우선(스텁 {uploadedAt}만 있는 stlFile이 camFile filled를 가리지 않게)
+  const stlHasKey = Boolean(String(stl?.s3Key || "").trim());
+  const legacyHasKey = Boolean(String(legacy?.s3Key || "").trim());
+  if (stlHasKey) return stl;
+  if (legacyHasKey) return legacy;
+  if (stlOk) return stl;
+  if (legacyOk) return legacy;
   return stl || legacy || null;
 }
 

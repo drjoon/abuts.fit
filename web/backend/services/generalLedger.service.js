@@ -4,6 +4,7 @@
 // - web/backend/models/ledgerLine.model.js
 // - web/backend/services/requestCreditHold.service.js
 // change-log:
+// - 2026-08-21: postGeneralLedgerJournals — journal/line insertMany 병렬.
 // - 2026-08-19: 배송비 보류 형제 조회는 getJournalsByIdempotencyKeys로 1회.
 // - 2026-08-19: 신규 의뢰 제출 보류는 postGeneralLedgerJournals로 저널·라인을 insertMany 1회.
 import crypto from "crypto";
@@ -292,14 +293,16 @@ export async function postGeneralLedgerJournals({
   try {
     if (ownSession) txSession.startTransaction();
 
-    await LedgerJournal.insertMany(journalDocs, {
-      session: txSession,
-      ordered: true,
-    });
-    await LedgerLine.insertMany(lineDocs, {
-      session: txSession,
-      ordered: true,
-    });
+    await Promise.all([
+      LedgerJournal.insertMany(journalDocs, {
+        session: txSession,
+        ordered: true,
+      }),
+      LedgerLine.insertMany(lineDocs, {
+        session: txSession,
+        ordered: true,
+      }),
+    ]);
 
     if (ownSession) await txSession.commitTransaction();
 

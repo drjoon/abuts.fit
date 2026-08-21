@@ -237,7 +237,7 @@ const hasFilledStlMeta = (file?: FilledStlFileMeta | null) =>
       String(file?.fileName || "").trim(),
   );
 
-/** stlFile 우선, 없으면 legacy camFile */
+/** stlFile 우선, 없으면 legacy camFile. s3Key 있는 쪽을 스텁보다 우선. */
 export const resolveFilledStlFile = (
   caseInfos?: {
     stlFile?: FilledStlFileMeta | null;
@@ -245,8 +245,12 @@ export const resolveFilledStlFile = (
   } | null,
 ): FilledStlFileMeta | null => {
   const stl = caseInfos?.stlFile;
-  if (hasFilledStlMeta(stl)) return stl || null;
   const legacy = caseInfos?.camFile;
+  const stlHasKey = Boolean(String(stl?.s3Key || "").trim());
+  const legacyHasKey = Boolean(String(legacy?.s3Key || "").trim());
+  if (stlHasKey) return stl || null;
+  if (legacyHasKey) return legacy || null;
+  if (hasFilledStlMeta(stl)) return stl || null;
   if (hasFilledStlMeta(legacy)) return legacy || null;
   return stl || legacy || null;
 };

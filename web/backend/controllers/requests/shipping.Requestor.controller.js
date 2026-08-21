@@ -8,7 +8,7 @@
 // - web/backend/controllers/requests/expressSelectable.utils.js
 // - web/backend/services/bulkShippingSnapshot.service.js
 // change-log:
-// change-log:
+// - 2026-08-21: GET bulk-shipping — in-flight 재계산 대기를 제거(stale-while-revalidate).
 // - 2026-08-21: GET bulk-shipping — 구 스냅샷에 hexVerificationSample 없으면 재계산.
 // - 2026-08-19: GET bulk-shipping — 케이스 메타(생산모드) 없는 구 스냅샷은 재계산.
 // - 2026-08-19: GET bulk-shipping — 재계산 in-flight를 기다린 뒤 스냅샷을 반환(취소 후 stale 건수).
@@ -40,7 +40,6 @@ import { triggerPricingSnapshotForBusinessAnchorId } from "../../services/reques
 import {
   getBulkShippingSnapshotForBusinessAnchorId,
   recomputeBulkShippingSnapshotForBusinessAnchorId,
-  waitForBulkShippingSnapshotRefreshForAnchorId,
 } from "../../services/bulkShippingSnapshot.service.js";
 import {
   getBulkShippingCacheValue,
@@ -364,10 +363,6 @@ export async function getMyBulkShipping(req, res) {
       );
     };
 
-    if (businessAnchorId) {
-      await waitForBulkShippingSnapshotRefreshForAnchorId(businessAnchorId);
-    }
-
     const cached = getBulkShippingCacheValue(cacheKey);
     if (
       cached &&
@@ -383,9 +378,6 @@ export async function getMyBulkShipping(req, res) {
     }
 
     const data = await withBulkShippingInFlight(cacheKey, async () => {
-      if (businessAnchorId) {
-        await waitForBulkShippingSnapshotRefreshForAnchorId(businessAnchorId);
-      }
       const snapshot = businessAnchorId
         ? await getBulkShippingSnapshotForBusinessAnchorId(businessAnchorId)
         : null;

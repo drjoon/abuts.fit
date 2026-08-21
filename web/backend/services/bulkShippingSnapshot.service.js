@@ -5,6 +5,7 @@
 // - web/backend/services/requestSnapshotTriggers.service.js
 // - web/backend/controllers/requests/shipping.Requestor.controller.js
 // change-log:
+// - 2026-08-21: 스냅샷 재계산은 upsert만(삭제 선반영 제거). GET은 in-flight를 기다리지 않음.
 // - 2026-08-19: 취소 직후 stale 출고예정 건수 — in-flight 재계산 대기 + 당일 스냅샷 삭제 후 재기록.
 import { Types } from "mongoose";
 import BulkShippingSnapshot from "../models/bulkShippingSnapshot.model.js";
@@ -28,16 +29,9 @@ const recomputeBulkShippingSnapshotOnce = async (anchorId) => {
   const ymd = getTodayYmdInKst();
   if (!ymd) return null;
 
-  // bulk shipping은 DB snapshot과 in-memory cache를 같이 쓰므로,
-  // 재계산 전 당일 스냅샷을 지우고 캐시도 비워야 GET이 예전 건수를 재삽입하지 않는다.
-  invalidateDashboardAndBulkCachesForBusinessAnchorId(anchorId);
-
+  // stale-while-revalidate: 기존 스냅샷을 먼저 지우지 않고 upsert로 교체한다.
+  // (삭제→재기록 사이에 GET이 in-flight를 기다리면 제출 직후 2s+ 블로킹이 난다)
   const snapshotBusinessAnchorId = new Types.ObjectId(anchorId);
-  await BulkShippingSnapshot.deleteMany({
-    businessAnchorId: snapshotBusinessAnchorId,
-    ymd,
-  });
-
   const data = await buildBulkShippingCandidatesForBusinessAnchorId(anchorId);
   const payload = toSnapshotPayload(data, snapshotBusinessAnchorId, ymd);
 

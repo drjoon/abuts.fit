@@ -4,6 +4,7 @@
 // - web/backend/server.js
 // - web/backend/services/bulkShippingSnapshot.service.js
 // change-log:
+// - 2026-08-21: 대시보드 refresh는 스냅샷 삭제 없이 upsert 재계산(GET이 in-flight에 안 묶임).
 // - 2026-08-19: 대시보드 카드 새로고침 때 출고예정 스냅샷도 같이 재계산(취소 후 stale 건수).
 import { Types } from "mongoose";
 import User from "../models/user.model.js";
@@ -13,7 +14,6 @@ import { recomputePricingReferralDailyOrderBucketsForBusinessAnchorId } from "./
 import { recomputeBulkShippingSnapshotForBusinessAnchorId } from "./bulkShippingSnapshot.service.js";
 import {
   recomputeRequestorDashboardSummarySnapshotsForBusinessAnchorId,
-  invalidateTodayRequestorDashboardSummarySnapshotsForBusinessAnchorId,
 } from "./requestorDashboardSummarySnapshot.service.js";
 import { invalidateDashboardAndBulkCachesForBusinessAnchorId } from "./requestDashboardCache.service.js";
 import { invalidateAdminReferralCachesForBusinessAnchorId } from "./adminReferralCache.service.js";
@@ -191,10 +191,10 @@ export const triggerDashboardSummaryRefreshForAnchorId = (
   const nextRefresh = previousRefresh
     .catch(() => null)
     .then(async () => {
+      // 메모리 캐시만 비우고 DB 스냅샷은 유지(stale-while-revalidate).
+      // 예전처럼 당일 스냅샷을 먼저 지우면 GET이 in-flight를 기다리며 2s+ 걸린다.
       invalidateDashboardAndBulkCachesForBusinessAnchorId(anchorId);
 
-      // 출고예정 스냅샷도 같이 갱신한다. 카드 요약만 재계산하면 취소 직후
-      // GET /bulk-shipping 이 당일 예전 스냅샷을 그대로 내려준다.
       const bulkRefresh = recomputeBulkShippingSnapshotForBusinessAnchorId(
         anchorId,
       ).catch((error) => {
@@ -205,9 +205,6 @@ export const triggerDashboardSummaryRefreshForAnchorId = (
         return null;
       });
 
-      await invalidateTodayRequestorDashboardSummarySnapshotsForBusinessAnchorId(
-        anchorId,
-      );
       const [results] = await Promise.all([
         recomputeRequestorDashboardSummarySnapshotsForBusinessAnchorId(
           anchorId,

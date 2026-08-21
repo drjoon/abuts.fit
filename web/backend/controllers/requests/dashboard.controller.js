@@ -6,6 +6,7 @@
 // - web/backend/utils/practiceTransferStage.js
 // - web/backend/utils/creditSettingsDefaults.js
 // change-log:
+// - 2026-08-21: cards/summary GET은 in-flight 대시보드 refresh를 기다리지 않음.
 // - 2026-08-19: 적용 단가=플랫폼 설정. 90일 1만원·주문량할인 폐지.
 import Request from "../../models/request.model.js";
 import User from "../../models/user.model.js";
@@ -51,7 +52,6 @@ import {
 import { getPricingReferralOrderCountMapByBusinessAnchorIds } from "../../services/pricingReferralOrderBucket.service.js";
 import {
   triggerDashboardSummaryRefreshForAnchorId,
-  waitForDashboardSummaryRefreshForAnchorId,
 } from "../../services/requestSnapshotTriggers.service.js";
 import { getAssignedLikeDashboardSummary } from "../../services/requestDashboardStats.service.js";
 import {
@@ -762,9 +762,8 @@ export async function getMyDashboardCardsSummary(req, res) {
 
     const businessAnchorId = String(freshUser.businessAnchorId || "").trim();
 
-    if (!debug && businessAnchorId) {
-      await waitForDashboardSummaryRefreshForAnchorId(businessAnchorId);
-    }
+    // in-flight refresh 대기 제거: 제출 직후 2s+ 블로킹 방지.
+    // 스냅샷은 upsert stale-while-revalidate, FE는 request:stage-changed로 재조회.
 
     const cardsInFlightKey = `dashboard-cards-summary-inflight:${String(userId || "")}:${businessAnchorId}:${period}`;
 
@@ -902,9 +901,7 @@ export async function getMyDashboardSummary(req, res) {
 
     const businessAnchorId = String(freshUser.businessAnchorId || "").trim();
 
-    if (!debug && businessAnchorId) {
-      await waitForDashboardSummaryRefreshForAnchorId(businessAnchorId);
-    }
+    // in-flight refresh 대기 제거(제출·취소 직후 GET 지연 방지).
 
     const summaryInFlightKey = `dashboard-summary-inflight:${String(
       userId || "",

@@ -5,6 +5,7 @@
 // - web/backend/services/practiceTransferProduction.service.js
 // - web/backend/controllers/requests/common.review.controller.js
 // change-log:
+// - 2026-08-21: 클론 시 source stlFile/camFile 스텁 제거. 생성 직후 원본 filled 있으면 즉시 복사.
 // - 2026-08-21: pending SSOT = 관리자 hexVerificationResultHex 없음(+활성 샘플 없으면 생성)
 // - 2026-08-21: 헥스 확인용 샘플 취소 시(관리자 미완료) pending 재활성화
 // - 2026-08-21: 샘플 생성 성공 후에만 pending 소진(생성 실패 시 pending 유지)
@@ -232,6 +233,10 @@ export async function createHexVerificationSampleClone({
     sourceRequest.caseInfos && typeof sourceRequest.caseInfos === "object"
       ? JSON.parse(JSON.stringify(sourceRequest.caseInfos))
       : {};
+  // source 스프레드의 빈 stlFile/camFile({uploadedAt} 스텁)이 남으면
+  // BG가 camFile만 채운 뒤 resolveFilledStlFile이 스텁을 우선해 샘플 복사가 실패한다.
+  delete sourceCaseInfos.stlFile;
+  delete sourceCaseInfos.camFile;
 
   const cloneCaseInfos = {
     ...sourceCaseInfos,
@@ -247,8 +252,8 @@ export async function createHexVerificationSampleClone({
         : {}),
       mode: oppositeHex,
     },
-    // filled STL: stlFile SSOT (+ legacy camFile mirror). 첫 클론 시엔 보통 null.
-    ...pickFilledStlFileForClone(sourceCaseInfos),
+    // filled STL: stlFile SSOT (+ legacy camFile mirror). 첫 클론 시엔 보통 없음.
+    ...pickFilledStlFileForClone(sourceRequest.caseInfos),
     ncFile: null,
     reviewByStage: {
       request: {
@@ -406,11 +411,34 @@ export async function maybeCreateHexVerificationSampleForFirstOrder({
   });
   if (!pending) return null;
 
-  return createHexVerificationSampleClone({
+  const created = await createHexVerificationSampleClone({
     sourceRequest: list[0],
     actorUserId: actorUserId || userId,
     session,
   });
+  if (!created) return null;
+
+  // 원본 Rhino가 샘플보다 먼저 끝났으면 생성 직후 filled STL을 바로 복사한다.
+  try {
+    const sourceId = list[0]?._id || list[0]?.id;
+    const freshSource = sourceId
+      ? await Request.findById(sourceId).session(session || null)
+      : null;
+    if (freshSource) {
+      await copyFilledStlToHexVerificationSamples(freshSource);
+      const refreshed = await Request.findById(created._id).session(
+        session || null,
+      );
+      if (refreshed) return refreshed;
+    }
+  } catch (copyErr) {
+    console.warn(
+      "[maybeCreateHexVerificationSampleForFirstOrder] copy filled STL failed",
+      copyErr?.message || copyErr,
+    );
+  }
+
+  return created;
 }
 
 const cloneJson = (value) => {

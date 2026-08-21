@@ -8,6 +8,8 @@
 // - web/frontend/src/pages/requestor/new_request/hooks/useNewRequestSubmitV2.ts
 // - web/backend/rules.md
 // change-log:
+// - 2026-08-21: 잔액 사전검사 후 insert만 txn. credit hold·stage-changed는 201 finish·스냅샷 이후.
+// - 2026-08-21: 헥스 확인 샘플 생성·대시보드 refresh를 201 finish 이후로 미룸(제출 응답 단축).
 // - 2026-08-21: 제출 지연 단축. 대시보드 refresh는 201 전송 이후, 응답 data는 requestIds lean.
 // - 2026-08-21: 아노 미설정 폴백을 의뢰자 개인 requestSettings 우선(사업체→기본 ON). 사업체-only race 완화.
 // - 2026-08-19: 제출 트랜잭션에서 크레딧 보류는 잔액 집계 1회·가드 1회로 재사용.
@@ -1255,9 +1257,129 @@ export async function createRequestsFromDraft(req, res) {
       });
     }
 
+    // 크레딧 보류는 201 응답 이후. 부족분은 생성 전에 막아 402 UX 유지.
+    let creditBalanceForHold = null;
+    if (!isPracticeRoutingSubmission && preparedCasesForCreate.length > 0) {
+      creditBalanceForHold = await getBusinessCreditBalanceBreakdown({
+        businessAnchorId,
+      });
+      const {
+        balance,
+        spendableBalance,
+        paidCredit,
+        freeRequestCredit,
+        freeShippingCredit,
+        settlementCredit,
+      } = creditBalanceForHold;
+      console.log("[createRequestsFromDraft] Credit balance check", {
+        t: Date.now() - startTime,
+        balance,
+        spendableBalance,
+        paidCredit,
+        freeRequestCredit,
+        freeShippingCredit,
+        settlementCredit,
+        requiredMachiningFee,
+        totalSpendSupply,
+        totalExpressFee,
+        expressCount,
+      });
+      console.log("[createRequestsFromDraft] Shipping fee calculation", {
+        t: Date.now() - startTime,
+        boxCount,
+        shippingFeePerBox,
+        totalShippingFee,
+      });
+
+      const freeCredit = freeRequestCredit + freeShippingCredit;
+      const totalAvailable = Number(
+        spendableBalance ??
+          paidCredit + freeCredit + Number(settlementCredit || 0),
+      );
+      let remaining = totalAvailable;
+      const allocatedMachining = Math.min(remaining, requiredMachiningFee);
+      remaining -= allocatedMachining;
+      const allocatedShipping = Math.min(remaining, totalShippingFee);
+      const availableForMachining = totalAvailable;
+      const availableForShipping = Math.max(
+        0,
+        totalAvailable - allocatedMachining,
+      );
+      const machiningShortfall =
+        requiredMachiningFee > allocatedMachining
+          ? requiredMachiningFee - allocatedMachining
+          : 0;
+      const shippingShortfall =
+        totalShippingFee > allocatedShipping
+          ? totalShippingFee - allocatedShipping
+          : 0;
+
+      if (machiningShortfall > 0 || shippingShortfall > 0) {
+        let message = "";
+        const details = [];
+        const requestCount = preparedCasesForCreate.length;
+        if (machiningShortfall > 0 && shippingShortfall > 0) {
+          message = "의뢰비와 배송비 크레딧이 모두 부족합니다.";
+          details.push(
+            `의뢰비 필요: ${requiredMachiningFee.toLocaleString()}원 (${requestCount}건 합계${
+              totalExpressFee > 0
+                ? `, 신속 ${expressCount}건 +${totalExpressFee.toLocaleString()}원`
+                : ""
+            }, 보유: ${availableForMachining.toLocaleString()}원)`,
+          );
+          details.push(
+            `배송비 필요: ${totalShippingFee.toLocaleString()}원 (보유: ${availableForShipping.toLocaleString()}원)`,
+          );
+        } else if (machiningShortfall > 0) {
+          message = "의뢰비 크레딧이 부족합니다.";
+          details.push(
+            `필요: ${requiredMachiningFee.toLocaleString()}원 (${requestCount}건 합계${
+              totalExpressFee > 0
+                ? `, 신속 ${expressCount}건 +${totalExpressFee.toLocaleString()}원`
+                : ""
+            }), 보유: ${availableForMachining.toLocaleString()}원`,
+          );
+        } else {
+          message = "배송비 크레딧이 부족합니다.";
+          details.push(
+            `필요: ${totalShippingFee.toLocaleString()}원, 보유: ${availableForShipping.toLocaleString()}원`,
+          );
+        }
+        message +=
+          " " +
+          details.join(", ") +
+          ". 크레딧을 충전한 뒤 다시 시도해주세요.";
+        return res.status(402).json({
+          success: false,
+          message,
+          data: {
+            machiningFee: {
+              required: requiredMachiningFee,
+              available: availableForMachining,
+              shortfall: machiningShortfall,
+              baseAmount: totalSpendSupply,
+              expressFee: totalExpressFee,
+              expressCount,
+            },
+            shippingFee: {
+              required: totalShippingFee,
+              available: availableForShipping,
+              shortfall: shippingShortfall,
+              boxCount,
+              feePerBox: shippingFeePerBox,
+            },
+            reason: "insufficient_credit",
+            requestCount,
+          },
+        });
+      }
+    }
+
     const requestIds = generateRequestIdBatch(preparedCasesForCreate.length);
     let session = null;
     let deferredDashboardRefreshAnchorId = null;
+    let deferredHexSampleContext = null;
+    let deferredCreditHoldContext = null;
     try {
       const [, startedSession] = await Promise.all([
         Promise.all(
@@ -1355,134 +1477,6 @@ export async function createRequestsFromDraft(req, res) {
               throw err;
             }
             // 진행 중인 의뢰도 재의뢰(리메이크)로 신규 접수 가능하도록 허용
-          }
-        }
-
-        let creditBalanceForHold = null;
-        if (!isPracticeRoutingSubmission) {
-          creditBalanceForHold = await getBusinessCreditBalanceBreakdown({
-            businessAnchorId,
-            session,
-          });
-          const {
-            balance,
-            spendableBalance,
-            paidCredit,
-            freeRequestCredit,
-            freeShippingCredit,
-            settlementCredit,
-          } = creditBalanceForHold;
-          console.log("[createRequestsFromDraft] Credit balance check", {
-            t: Date.now() - startTime,
-            balance,
-            spendableBalance,
-            paidCredit,
-            freeRequestCredit,
-            freeShippingCredit,
-            settlementCredit,
-            requiredMachiningFee,
-            totalSpendSupply,
-            totalExpressFee,
-            expressCount,
-          });
-
-          console.log("[createRequestsFromDraft] Shipping fee calculation", {
-            t: Date.now() - startTime,
-            boxCount,
-            shippingFeePerBox,
-            totalShippingFee,
-          });
-
-          // 무료→기공→유료 통합 풀에서 의뢰비(+신속)→배송비 순으로 배정
-          const freeCredit = freeRequestCredit + freeShippingCredit;
-          const totalAvailable = Number(
-            spendableBalance ??
-              paidCredit + freeCredit + Number(settlementCredit || 0),
-          );
-          let remaining = totalAvailable;
-          const allocatedMachining = Math.min(remaining, requiredMachiningFee);
-          remaining -= allocatedMachining;
-          const allocatedShipping = Math.min(remaining, totalShippingFee);
-          const availableForMachining = totalAvailable;
-          const availableForShipping = Math.max(
-            0,
-            totalAvailable - allocatedMachining,
-          );
-
-          const machiningShortfall =
-            requiredMachiningFee > allocatedMachining
-              ? requiredMachiningFee - allocatedMachining
-              : 0;
-          const shippingShortfall =
-            totalShippingFee > allocatedShipping
-              ? totalShippingFee - allocatedShipping
-              : 0;
-
-          // related files:
-          // - web/frontend/src/pages/requestor/new_request/hooks/useNewRequestSubmitV2.ts
-          // - web/backend/controllers/requests/utils.js
-          // 크레딧 부족 안내는 제출 건수(requestCount)를 함께 내려 프론트 토스트와 동일 문맥을 유지한다.
-          if (machiningShortfall > 0 || shippingShortfall > 0) {
-            let message = "";
-            const details = [];
-
-            const requestCount = preparedCasesForCreate.length;
-
-            if (machiningShortfall > 0 && shippingShortfall > 0) {
-              message = "의뢰비와 배송비 크레딧이 모두 부족합니다.";
-              details.push(
-                `의뢰비 필요: ${requiredMachiningFee.toLocaleString()}원 (${requestCount}건 합계${
-                  totalExpressFee > 0
-                    ? `, 신속 ${expressCount}건 +${totalExpressFee.toLocaleString()}원`
-                    : ""
-                }, 보유: ${availableForMachining.toLocaleString()}원)`,
-              );
-              details.push(
-                `배송비 필요: ${totalShippingFee.toLocaleString()}원 (보유: ${availableForShipping.toLocaleString()}원)`,
-              );
-            } else if (machiningShortfall > 0) {
-              message = "의뢰비 크레딧이 부족합니다.";
-              details.push(
-                `필요: ${requiredMachiningFee.toLocaleString()}원 (${requestCount}건 합계${
-                  totalExpressFee > 0
-                    ? `, 신속 ${expressCount}건 +${totalExpressFee.toLocaleString()}원`
-                    : ""
-                }), 보유: ${availableForMachining.toLocaleString()}원`,
-              );
-            } else {
-              message = "배송비 크레딧이 부족합니다.";
-              details.push(
-                `필요: ${totalShippingFee.toLocaleString()}원, 보유: ${availableForShipping.toLocaleString()}원`,
-              );
-            }
-
-            message +=
-              " " +
-              details.join(", ") +
-              ". 크레딧을 충전한 뒤 다시 시도해주세요.";
-
-            const err = new Error(message);
-            err.statusCode = 402;
-            err.payload = {
-              machiningFee: {
-                required: requiredMachiningFee,
-                available: availableForMachining,
-                shortfall: machiningShortfall,
-                baseAmount: totalSpendSupply,
-                expressFee: totalExpressFee,
-                expressCount,
-              },
-              shippingFee: {
-                required: totalShippingFee,
-                available: availableForShipping,
-                shortfall: shippingShortfall,
-                boxCount,
-                feePerBox: shippingFeePerBox,
-              },
-              reason: "insufficient_credit",
-              requestCount,
-            };
-            throw err;
           }
         }
 
@@ -1758,57 +1752,32 @@ export async function createRequestsFromDraft(req, res) {
           session,
         });
         insertedRequests.forEach((doc) => createdRequests.push(doc));
-
-        if (!isPracticeRoutingSubmission && insertedRequests.length > 0) {
-          const holdT0 = Date.now();
-          await holdRequestCreditsOnSubmit({
-            requests: insertedRequests,
-            actorUserId: req.user?._id || null,
-            session,
-            shippingFee: shippingFeePerBox,
-            seedBalance: creditBalanceForHold,
-            devopsAnchorId: devopsAnchorIdPrefetch,
-          });
-          console.log("[createRequestsFromDraft] credit hold done", {
-            t: Date.now() - startTime,
-            dt: Date.now() - holdT0,
-            created: insertedRequests.length,
-          });
-        }
       });
       console.log("[createRequestsFromDraft] transaction done", {
         t: Date.now() - startTime,
         created: createdRequests.length,
       });
 
-      // 헥스 확인용 복사샘플은 트랜잭션 밖에서 생성한다.
-      // (LotCounter/추가 Request 저장이 세션 밖이면 withTransaction write conflict 재시도 루프가 난다)
       if (!isPracticeRoutingSubmission && createdRequests.length > 0) {
-        try {
-          const verificationClone =
-            await maybeCreateHexVerificationSampleForFirstOrder({
-              sourceRequests: createdRequests,
-              userId: req.user?._id,
-              businessAnchorId: shippingOrgId || req.user?.businessAnchorId,
-              actorUserId: req.user?._id,
-            });
-          if (verificationClone) {
-            createdRequests.push(verificationClone);
-            console.log(
-              "[createRequestsFromDraft] hex verification sample created",
-              {
-                sourceRequestId: String(createdRequests[0]?.requestId || ""),
-                sampleRequestId: String(verificationClone.requestId || ""),
-              },
-            );
-          }
-        } catch (hexSampleErr) {
-          console.warn(
-            "[createRequestsFromDraft] hex verification sample failed",
-            hexSampleErr?.message || hexSampleErr,
-          );
-        }
+        deferredCreditHoldContext = {
+          requests: [...createdRequests],
+          actorUserId: req.user?._id || null,
+          shippingFee: shippingFeePerBox,
+          seedBalance: creditBalanceForHold,
+          devopsAnchorId: devopsAnchorIdPrefetch,
+        };
       }
+
+      // 헥스 확인용 복사샘플·credit hold·대시보드 refresh는 201 finish 이후.
+      // LotCounter/추가 Request 저장이 제출 트랜잭션과 겹치면 write conflict 재시도가 나므로
+      // 트랜잭션 밖·응답 뒤로 둔다.
+      const hexSampleSourceRequests =
+        !isPracticeRoutingSubmission && createdRequests.length > 0
+          ? [...createdRequests]
+          : null;
+      const hexSampleUserId = req.user?._id || null;
+      const hexSampleBusinessAnchorId =
+        shippingOrgId || req.user?.businessAnchorId || null;
 
       // [트리거] 트랜잭션 커밋 후 rhino-server에 fill hole 처리 시작을 알린다 (fire-and-forget).
       // 헥스 확인용 복사샘플은 라이노를 돌리지 않는다 — 원본 2-filled 완료 시 stlFile(+legacy camFile)을 복사한다.
@@ -1838,6 +1807,14 @@ export async function createRequestsFromDraft(req, res) {
           req.user?.businessAnchorId ||
           "",
       ).trim();
+      deferredHexSampleContext = hexSampleSourceRequests
+        ? {
+            sourceRequests: hexSampleSourceRequests,
+            userId: hexSampleUserId,
+            businessAnchorId: hexSampleBusinessAnchorId,
+            actorUserId: hexSampleUserId,
+          }
+        : null;
       if (createdAnchorId) {
         try {
           const { clearMyRequestsCache } = await import(
@@ -1847,23 +1824,7 @@ export async function createRequestsFromDraft(req, res) {
         } catch {
           // best-effort
         }
-        if (!isPracticeRoutingSubmission && createdRequests.length > 0) {
-          try {
-            const { emitCreditBalanceUpdatedToBusiness } = await import(
-              "../../utils/creditRealtime.js"
-            );
-            void emitCreditBalanceUpdatedToBusiness({
-              businessAnchorId: createdAnchorId,
-              balanceDelta: 0,
-              reason: "request_submit_hold",
-              refId: createdRequests[0]?._id || null,
-              forceEmit: true,
-            });
-          } catch {
-            // best-effort
-          }
-        }
-        // 대시보드 스냅샷 재계산은 201 전송 이후에만 시작 (응답·Mongo 풀 경합 방지)
+        // credit:balance-updated는 hold 성공 후 finish 핸들러에서 emit
         deferredDashboardRefreshAnchorId = createdAnchorId;
       } else {
         console.warn(
@@ -1917,23 +1878,8 @@ export async function createRequestsFromDraft(req, res) {
           .map((row) => String(row?._id || "").trim())
           .filter(Boolean),
       });
-      if (createdAnchorIdForEvent) {
-        emitAppEventToRoles(["requestor"], "request:stage-changed", {
-          source: "createRequestsFromDraft",
-          action: "created",
-          fromStage: "",
-          toStage: "준비",
-          businessAnchorId: createdAnchorIdForEvent,
-          requestorBusinessAnchorId: createdAnchorIdForEvent,
-          requestIds: createdRequests
-            .map((row) => String(row?.requestId || "").trim())
-            .filter(Boolean),
-          requestMongoIds: createdRequests
-            .map((row) => String(row?._id || "").trim())
-            .filter(Boolean),
-          count: createdRequests.length,
-        });
-      }
+      // request:stage-changed는 대시보드 스냅샷 refresh 이후에 emit
+      // (finish 핸들러). 미리내면 헤더가 stale 0건을 캐시한다.
 
       const designQueueCreated = createdRequests.filter(
         (row) =>
@@ -1998,24 +1944,156 @@ export async function createRequestsFromDraft(req, res) {
         .filter(Boolean),
     };
 
-    if (deferredDashboardRefreshAnchorId) {
+    if (
+      deferredDashboardRefreshAnchorId ||
+      deferredHexSampleContext ||
+      deferredCreditHoldContext
+    ) {
       const refreshAnchorId = deferredDashboardRefreshAnchorId;
       const refreshRequestIds = leanCreated.requestIds;
+      const hexCtx = deferredHexSampleContext;
+      const holdCtx = deferredCreditHoldContext;
       res.once("finish", () => {
-        console.log("[createRequestsFromDraft] Triggering dashboard refresh", {
-          businessAnchorId: refreshAnchorId,
-          createdCount: leanCreated.count,
-          requestIds: refreshRequestIds,
-        });
-        triggerDashboardSummaryRefreshForAnchorId(
-          refreshAnchorId,
-          "request-created",
-        ).catch((err) =>
-          console.error(
-            "[createRequestsFromDraft] dashboard refresh error",
-            err,
-          ),
-        );
+        void (async () => {
+          const requestIdsForRefresh = [...refreshRequestIds];
+          let holdOk = true;
+
+          if (holdCtx?.requests?.length) {
+            const holdT0 = Date.now();
+            try {
+              await holdRequestCreditsOnSubmit({
+                requests: holdCtx.requests,
+                actorUserId: holdCtx.actorUserId,
+                session: null,
+                shippingFee: holdCtx.shippingFee,
+                seedBalance: holdCtx.seedBalance,
+                devopsAnchorId: holdCtx.devopsAnchorId,
+              });
+              console.log("[createRequestsFromDraft] credit hold done", {
+                t: Date.now() - startTime,
+                dt: Date.now() - holdT0,
+                created: holdCtx.requests.length,
+              });
+              if (refreshAnchorId) {
+                try {
+                  const { emitCreditBalanceUpdatedToBusiness } = await import(
+                    "../../utils/creditRealtime.js"
+                  );
+                  void emitCreditBalanceUpdatedToBusiness({
+                    businessAnchorId: refreshAnchorId,
+                    balanceDelta: 0,
+                    reason: "request_submit_hold",
+                    refId: holdCtx.requests[0]?._id || null,
+                    forceEmit: true,
+                  });
+                } catch {
+                  // best-effort
+                }
+              }
+            } catch (holdErr) {
+              holdOk = false;
+              console.error(
+                "[createRequestsFromDraft] credit hold failed after create",
+                holdErr?.message || holdErr,
+              );
+              try {
+                const ids = holdCtx.requests
+                  .map((row) => row?._id)
+                  .filter(Boolean);
+                if (ids.length > 0) {
+                  await Request.updateMany(
+                    { _id: { $in: ids } },
+                    {
+                      $set: {
+                        manufacturerStage: "취소",
+                      },
+                      $push: {
+                        statusHistory: {
+                          status: "취소",
+                          note: "크레딧 보류 실패로 자동 취소",
+                          updatedBy: holdCtx.actorUserId || null,
+                          updatedAt: new Date(),
+                        },
+                      },
+                    },
+                  );
+                  console.warn(
+                    "[createRequestsFromDraft] cancelled requests after hold failure",
+                    {
+                      count: ids.length,
+                      requestIds: holdCtx.requests.map((r) => r.requestId),
+                    },
+                  );
+                }
+              } catch (cancelErr) {
+                console.error(
+                  "[createRequestsFromDraft] cancel after hold failure failed",
+                  cancelErr?.message || cancelErr,
+                );
+              }
+            }
+          }
+
+          // hold 실패로 취소했으면 헥스 샘플·대시보드만 갱신(샘플은 스킵)
+          if (holdOk && hexCtx?.sourceRequests?.length) {
+            try {
+              const verificationClone =
+                await maybeCreateHexVerificationSampleForFirstOrder(hexCtx);
+              if (verificationClone) {
+                const sampleRequestId = String(
+                  verificationClone.requestId || "",
+                ).trim();
+                if (sampleRequestId) requestIdsForRefresh.push(sampleRequestId);
+                console.log(
+                  "[createRequestsFromDraft] hex verification sample created",
+                  {
+                    sourceRequestId: String(
+                      hexCtx.sourceRequests[0]?.requestId || "",
+                    ),
+                    sampleRequestId,
+                  },
+                );
+              }
+            } catch (hexSampleErr) {
+              console.warn(
+                "[createRequestsFromDraft] hex verification sample failed",
+                hexSampleErr?.message || hexSampleErr,
+              );
+            }
+          }
+          if (!refreshAnchorId) return;
+          console.log("[createRequestsFromDraft] Triggering dashboard refresh", {
+            businessAnchorId: refreshAnchorId,
+            createdCount: requestIdsForRefresh.length,
+            requestIds: requestIdsForRefresh,
+            holdOk,
+          });
+          try {
+            await triggerDashboardSummaryRefreshForAnchorId(
+              refreshAnchorId,
+              holdOk ? "request-created" : "request-hold-failed-cancel",
+            );
+          } catch (err) {
+            console.error(
+              "[createRequestsFromDraft] dashboard refresh error",
+              err,
+            );
+          }
+          // 스냅샷 갱신 후에야 헤더가 최신 건수를 읽도록 stage-changed emit
+          emitAppEventToRoles(["requestor"], "request:stage-changed", {
+            source: "createRequestsFromDraft",
+            action: holdOk ? "created" : "hold-failed-cancel",
+            fromStage: "",
+            toStage: holdOk ? "준비" : "취소",
+            businessAnchorId: refreshAnchorId,
+            requestorBusinessAnchorId: refreshAnchorId,
+            requestIds: requestIdsForRefresh,
+            requestMongoIds: (holdCtx?.requests || [])
+              .map((row) => String(row?._id || "").trim())
+              .filter(Boolean),
+            count: requestIdsForRefresh.length,
+          });
+        })();
       });
     }
 
