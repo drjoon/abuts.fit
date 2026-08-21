@@ -1,6 +1,7 @@
 // related files:
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
+// - 2026-08-21: missingFeeNames — 커스텀어벗 등 기공소 미설정 수가를 치과 견적에 안내.
 // - 2026-08-13: 저장된 견적 라인도 치아번호 10→20→30→40번대 순.
 // - 2026-08-14: 환봉 단가 0원(별도 고지) 라인도 파싱.
 // - 2026-08-14: 환봉 요청중은 기공소 어벗 라인(labAbutmentFee)으로 파싱.
@@ -9,6 +10,7 @@ import {
   computePracticeTransferRetailFees,
   DEFAULT_ABUTMENT_RETAIL_PRICE,
   LAB_FEE_SCHEDULE_ZEROS,
+  missingLabFeeItemNames,
   normalizeLabFeeItems,
   normalizeLabFeeMultiplier,
   normalizeConfiguredRushFeeMultiplier,
@@ -55,6 +57,8 @@ export type PracticeTransferFeeQuote = PracticeTransferRetailFees & {
   usedDefaultSchedule?: boolean;
   /** 지정 기공소 마스터 스위치. 자동매칭(기공소 없음)은 true */
   labFeeConfigured?: boolean;
+  /** 이 의뢰 보철에 필요하지만 기공소 수가에 없거나 0원인 항목명 */
+  missingFeeNames?: string[];
   isRemake?: boolean;
   remakeFeeQuote?: PracticeTransferFeeQuote | null;
   /** 자동매칭 기공비(v4 고정수가). min≈max면 단일가 표시 */
@@ -192,6 +196,11 @@ export const parsePracticeTransferFeeQuote = (
     billed: Boolean(r.billed),
     usedDefaultSchedule: Boolean(r.usedDefaultSchedule),
     labFeeConfigured: r.labFeeConfigured !== false,
+    missingFeeNames: Array.isArray(r.missingFeeNames)
+      ? r.missingFeeNames
+          .map((name) => String(name || "").trim())
+          .filter(Boolean)
+      : [],
     isRemake: Boolean(r.isRemake),
     remakeFeeQuote:
       r.remakeFeeQuote && typeof r.remakeFeeQuote === "object"
@@ -307,6 +316,16 @@ export const buildFeeQuoteFromContext = (params: {
     abutmentRetailTotal: fees.abutmentRetailTotal,
     feeRateApplied,
   });
+  const scheduleForMissing = zeroed
+    ? LAB_FEE_SCHEDULE_ZEROS
+    : {
+        ...context.schedule,
+        remake: context.remakeSchedule,
+        items: context.items,
+      };
+  const missingFeeNames = zeroed
+    ? []
+    : missingLabFeeItemNames(scheduleForMissing, params.toothWorks);
   return {
     ...fees,
     lines: fees.lines,
@@ -319,6 +338,7 @@ export const buildFeeQuoteFromContext = (params: {
     billed: false,
     usedDefaultSchedule: zeroed,
     labFeeConfigured: context.labFeeConfigured !== false,
+    missingFeeNames,
     autoMatchBudget: null,
   };
 };

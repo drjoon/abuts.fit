@@ -16,7 +16,7 @@ alwaysApply: false
   - 가공비: `computePriceForRequest`가 산출한 **1개 단가** (`price.amount` 기준, 리메이크 반영).
   - 치과 청구 SSOT: `creditSettings.membershipProductionPrice`(기본 **15,000**) / `membershipDesignAndProductionPrice`(기본 **25,000**). 가입 90일 1만원·치과 멤버십 분기 없음.
   - 디자인비: `디자인+생산 − 생산만` (기본 **10,000원 / 1어벗**). 레거시 `creditSettings.designFee`와 동기화.
-  - 기공의뢰(CA) **수락 기공소 지급** 어벗디자인비: `creditSettings.abutmentDesignLabFee`(기본 10,000원 / 1어벗). `designFee`(의뢰자 과금)와 분리.
+  - 기공의뢰(CA) **수락 기공소 지급** 어벗디자인비: 레거시(치과가 어벗츠 단가 선납)만 `creditSettings.abutmentDesignLabFee`. 신규 PTX는 치과→기공소 `labFeeSchedule` 커스텀어벗 수가로 정산하고, 기공소→어벗츠는 Request 생산비(1.5만).
   - 신속: `creditSettings.expressFee`(기본 **+2,000**). 생산=건당, 디자인+생산=어벗 수 배수.
 - **공식**: `(가공 단가 + 디자인비) × 어벗 수`
   - 예: 어벗 5개, 가공 15,000·디자인 10,000 → `(15,000 + 10,000) × 5 = 125,000`

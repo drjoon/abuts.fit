@@ -592,12 +592,13 @@ export async function createAbutmentRequestsFromPracticeTransfer({
       ? transferDoc.billing
       : {};
   const isTradingPartner = Boolean(billing.isTradingPartner);
-  const abutmentQty = Math.max(0, Number(billing.abutmentQty || 0) || 0);
+  // 치과가 PTX에서 어벗츠 단가(abutmentRetail)를 선납한 경우만 prepaid.
+  // 기공소 수가로 청구된 CA는 기공소→어벗츠 Request가 생산비(1.5만)를 부담.
   const abutmentRetailTotal = Math.max(
     0,
     Number(billing.abutmentRetailTotal || 0) || 0,
   );
-  const practicePrepaidAbutment = abutmentQty > 0 || abutmentRetailTotal > 0;
+  const practicePrepaidAbutment = abutmentRetailTotal > 0;
 
   let expressFeePerRequest = 2000;
   let creditSettingsForQuote = {};
@@ -644,7 +645,7 @@ export async function createAbutmentRequestsFromPracticeTransfer({
     }
 
     // Abuts-first: 워크플로(디자인 큐/핸드오프)는 design_custom_abutment 유지.
-    // 과금은 생산만(멤버십 1.5만) — 디자인은 기공소 외주(abutmentDesignLabFee).
+    // 기공소→어벗츠 Request 과금은 생산만(플랫폼 1.5만). 치과→기공소는 labFeeSchedule.
     // 출고 ETA는 기공소 디자인이므로 생산 리드(custom_abutment)로 잡는다.
     const productMode = "design_custom_abutment";
     const scheduleProductMode = PTX_SHIP_SCHEDULE_PRODUCT_MODE;

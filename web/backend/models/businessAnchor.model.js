@@ -343,7 +343,7 @@ const businessAnchorSchema = new mongoose.Schema(
       customAbutmentDesign: { type: Number, default: 10000, min: 0 },
       customAbutmentDesignAndProduction: {
         type: Number,
-        default: 35000,
+        default: 40000,
         min: 0,
       },
       items: {

@@ -270,13 +270,13 @@
   - **발신**: `requestor` + `practice` (의뢰 발신자)
   - **수신**: `requestor` + `lab` (의뢰 수신자)
   - 제출은 Request 생성 경유 금지. 저장 SSOT: `PracticeTransfer`
-- 환봉방식 커스텀어벗: 치과 프리셋 편집 제조사 선택 마지막「제조사 추가 요청」→ 제조사·브랜드·패밀리 입력, 타입 `헥스(사이즈 미정)` 고정. 요청 시 관리자 문의 자동 접수 + 프리셋 일단 저장. 관리자 플랫폼 설정에서 도입 체크 시 해당 치과 프리셋 정식 채택(되돌리기 가능). 가격 안내는 별도 고지. 프리셋 편집 패밀리 선택은 Regular / Mini / Narrow / Small Narrow +「패밀리 추가」. 기공의뢰 기공비 툴팁 컬럼 순서: 기공소 기공물 / 기공소 어벗 / 어벗츠 어벗. **환봉 요청중(미도입)** 은 기공소 어벗(어벗츠 단가 제외). 도입·CNC는 어벗츠 어벗.
+- 환봉방식 커스텀어벗: 치과 프리셋 편집 제조사 선택 마지막「제조사 추가 요청」→ 제조사·브랜드·패밀리 입력, 타입 `헥스(사이즈 미정)` 고정. 요청 시 관리자 문의 자동 접수 + 프리셋 일단 저장. 관리자 플랫폼 설정에서 도입 체크 시 해당 치과 프리셋 정식 채택(되돌리기 가능). 가격 안내는 별도 고지. 프리셋 편집 패밀리 선택은 Regular / Mini / Narrow / Small Narrow +「패밀리 추가」. 기공의뢰 기공비 툴팁 컬럼 순서: 기공소 기공물 / 기공소 어벗 / 어벗츠 어벗. **PTX CA(환봉 요청중·도입·CNC) 치과 청구는 기공소 `커스텀어벗` 수가.** 어벗츠 플랫폼 단가(생산 1.5만·디자인+생산 2.5만)는 **기공소→어벗츠 Request**.
 - SSOT API:
   - 생성: `POST /api/practice/transfers`
   - 조회(발신): `GET /api/practice/transfers/my`
   - 조회(수신): `GET /api/practice/transfers/received`
   - 취소: `POST /api/practice/transfers/cancel-batch`
-  - **커스텀어벗 Abuts-first**: 수락 시 스캔 기반 Request 생성 → **수락 기공소가 디자인** → design-handoff 업로드 시 제조 자동 착수 + `abutmentDesignLabFee`(기본 10,000원×어벗수)를 기공정산 크레딧 지급(보철기공비와 **한 기공의뢰 장부 행**, 지급 시점은 기공소몫). **생산 후 치과 직납**(기공소 경유 납품 아님). 제조사 출고 목표=`치과도착일 − 2영업일`(`resolveManufacturerTargetShipYmd`). 기공소 `mark-complete`는 크라운 업로드만(배송선택 없음). 어벗생산의뢰(직접 Request) 디자인 파트너 큐와 분리.
+  - **커스텀어벗 Abuts-first**: 수락 시 스캔 기반 Request 생성 → **수락 기공소가 디자인** → design-handoff 업로드 시 제조 자동 착수. 치과→기공소=`labFeeSchedule` 커스텀어벗 수가(기공비 정산). 기공소→어벗츠=생산비(플랫폼 1.5만, Request 과금). 레거시(치과 어벗츠 단가 선납)만 `abutmentDesignLabFee` 외주 지급. **생산 후 치과 직납**(기공소 경유 납품 아님). 제조사 출고 목표=`치과도착일 − 2영업일`(`resolveManufacturerTargetShipYmd`). 기공소 `mark-complete`는 크라운 업로드만(배송선택 없음). 어벗생산의뢰(직접 Request) 디자인 파트너 큐와 분리.
 - 제조사 워크시트 조회에서 practice 전송 태그 의뢰 제외
 - 크레딧/정산은 유료(검증된 수신자·lab) 경로에만 해당. 실 사업자등록번호가 없는 synthetic 앵커에는 환영 크레딧을 지급하지 않으며, synthetic→실BN 검증 승격 시 1회 지급
 - 소개(리퍼럴) 페이지·링크: 발신(practice) 포함 모든 requestor가 접근 가능. 소개 귀속(`referredByAnchorId`)·그룹 할인 적용은 추천인 사업자 앵커 기준. lab 체크·검증되면 유료 소개 혜택 경로로 이어짐
@@ -314,7 +314,7 @@
     - 실제 크레딧 차감 시점(CAM)과 표시 금액 반영 시점을 혼동하지 말 것
 - 디자인+가공 과금: `productMode === "design_custom_abutment"`일 때만 적용
   - **1 STL에 여러 어벗** 가능. 공식: `(가공 단가 + 디자인비) × 어벗 수`
-  - 단가: 치과 청구 SSOT=`creditSettings.membershipProductionPrice`(기본 **15,000**) / `membershipDesignAndProductionPrice`(기본 **25,000**). `designFee`는 디자인+생산 − 생산만과 동기화(기본 **10,000원 / 1어벗**). 기공의뢰 CA 수락 기공소 지급은 `abutmentDesignLabFee`(기본 **10,000원 / 1어벗**, `designFee`와 분리). 배송비 별도·박스당 과금. 신속=`expressFee`(기본 **+2,000**). CNC 관리자「멤버/일반」은 딜러 유무 분배용이며 치과 구독과 무관.
+  - 단가: 치과 청구 SSOT=`creditSettings.membershipProductionPrice`(기본 **15,000**) / `membershipDesignAndProductionPrice`(기본 **25,000**). `designFee`는 디자인+생산 − 생산만과 동기화(기본 **10,000원 / 1어벗**). 기공의뢰(PTX) CA 치과 청구는 기공소 수가. 기공소→어벗츠 생산비는 플랫폼 고시. 레거시 선납 건만 `abutmentDesignLabFee` 외주 지급. 배송비 별도·박스당 과금. 신속=`expressFee`(기본 **+2,000**). CNC 관리자「멤버/일반」은 딜러 유무 분배용이며 치과 구독과 무관.
   - 어벗 수: `caseInfos.toothWorks` 유효 행(없으면 `tooth` 파싱, 최소 1) — `countDesignAbutmentQty`
   - 설정 UI: 동일 `AdminCreditSettingsTab`(`variant=customAbut`) / `PATCH /api/admin/settings/credits`
   - 견적/표시: `designPrice.utils.js` `resolveQuotedPriceWithDesignFee`

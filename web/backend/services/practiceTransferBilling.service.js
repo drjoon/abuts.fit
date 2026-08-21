@@ -11,6 +11,7 @@
 // - web/backend/models/ledgerLine.model.js
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
+// - 2026-08-21: feeQuote.missingFeeNames — 치과 견적에 미설정 수가 항목 안내.
 // - 2026-08-19: 목록 feeQuote에 labFeeConfigured 전달(지정 수가 Off·항목 Off=미설정).
 // - 2026-08-18: rollbackPracticeTransferBilling — 멱등키 조회·저널 삭제를 병렬화.
 // - 2026-08-18: 기공소 공급 어벗은 전역 단가. 의뢰자별 특별가는 적용하지 않음.
@@ -87,6 +88,7 @@ import {
   computePracticeTransferRetailFees,
   LAB_FEE_SCHEDULE_ZEROS,
   attachLabFeeMinToLines,
+  missingLabFeeItemNames,
   resolveQuoteLabFeeConfigured,
   normalizeLabFeeItems,
   normalizeLabFeeMultiplier,
@@ -3254,6 +3256,11 @@ export function toFeeQuoteApi(quote) {
     labFeeConfigured: Boolean(quote?.usedDefaultSchedule)
       ? true
       : quote?.labFeeConfigured !== false,
+    missingFeeNames: Array.isArray(quote?.missingFeeNames)
+      ? quote.missingFeeNames
+          .map((name) => String(name || "").trim())
+          .filter(Boolean)
+      : [],
     isRemake: Boolean(quote?.isRemake || quote?.remake),
     autoMatchBudget: billed
       ? null
@@ -3463,6 +3470,9 @@ export async function buildPracticeTransferQuote({
     remake: useRemake,
     labFeeTotal: fees.labFeeTotal,
   });
+  const missingFeeNames = usedDefaultSchedule
+    ? []
+    : missingLabFeeItemNames(sourceSchedule, toothWorks);
 
   let kind = relationshipKind;
   let partnerId =
@@ -3502,6 +3512,7 @@ export async function buildPracticeTransferQuote({
     labTradingPartnerId: partnerId,
     usedDefaultSchedule,
     labFeeConfigured,
+    missingFeeNames,
     billed: false,
     isRemake: useRemake,
     remake: useRemake,
@@ -3843,11 +3854,11 @@ export async function buildFeeQuotesForTransferDocs({
 }
 
 /**
- * 기공의뢰 CA: 수락 기공소가 디자인을 올리면 어벗디자인비 지급.
- * 크레딧 흐름 SSOT:
- *   치과 →(디자인+생산가, 멤버 2.5만/일반 4만)→ 어벗츠
- *   어벗츠 →(abutmentDesignLabFee, 기본 1만)→ 기공소
- *   어벗츠 생산 몫(멤버 1.5만/일반 2만)은 제조 의뢰비로 표시·제조사 정산(9,000, 면세) 재원.
+ * 기공의뢰 CA: 레거시(치과가 어벗츠 단가 선납 + heldDesignFee)일 때만 어벗디자인비 지급.
+ * 신규 SSOT: 치과→기공소는 labFeeSchedule 커스텀어벗 수가(기공비 정산).
+ *   기공소→어벗츠는 Request 생산비(1.5만). abutmentDesignLabFee 외주 지급 없음.
+ * 레거시 크레딧 흐름:
+ *   치과 →(디자인+생산가)→ 어벗츠 →(abutmentDesignLabFee)→ 기공소
  * REV_DEVOPS/PLATFORM_ESCROW → LAB_SETTLEMENT_CREDIT (idempotent per Request).
  * 기공소 장부 라인은 PRACTICE_TRANSFER — 보철기공비와 같은 의뢰건으로 묶음.
  */
@@ -3900,6 +3911,7 @@ export async function grantAbutmentDesignLabFee({
           "billing.heldDesignFeeTotal": 1,
           "billing.heldLabTotal": 1,
           "billing.labFeeTotal": 1,
+          "billing.abutmentRetailTotal": 1,
           "billing.rushFeeMultiplier": 1,
           "billing.abutmentQty": 1,
         })
@@ -3917,6 +3929,19 @@ export async function grantAbutmentDesignLabFee({
         0,
         Math.round(Number(ptx?.billing?.labFeeTotal || 0)),
       );
+      const abutmentRetail = Math.max(
+        0,
+        Math.round(Number(ptx?.billing?.abutmentRetailTotal || 0)),
+      );
+      // 신규: 기공소 수가로 CA 청구(어벗츠 선납 없음) → 디자인비 외주 지급 생략
+      if (heldDesign <= 0 && abutmentRetail <= 0) {
+        return {
+          granted: false,
+          reason: "lab_schedule_priced",
+          unitFee: 0,
+          qty,
+        };
+      }
       useEscrow = heldDesign > 0 || heldLab > labFee;
       // 보류에 잡힌 디자인비를 우선(신속처리 배수 반영). 없으면 rush 배수로 재계산.
       if (heldDesign > 0) {

@@ -8,19 +8,18 @@
 // - web/backend/tests/unit/labFeeSchedule.test.js
 // - 2026-08-13: 마스터 active(기본 off)가 켜져야 설정 완료. 수가 디폴트는 기본값·항목 on.
 // - 2026-08-19: 수락 포워드용 missingLabFeeItemNames(해당 보철 미제공·0원).
-// - 2026-08-13: 커스텀어벗 단가는 creditSettings 멤버십/일반값을 우선 사용.
+// - 2026-08-21: PTX CA 치과 청구=기공소「커스텀어벗」수가(기본 4만=관리자 기본 기공수가). 어벗츠 1.5/2.5만은 기공소→어벗츠 Request.
 // - 2026-08-13: 유지장치 등 perSet는 연결 스팬당 1세트(끊기면 별도). 연결 없는 레거시는 악궁당.
 // - 2026-08-19: 임시치아(perNTeeth)도 연결 스팬당 구간 수가(같은 하악 3치·2치는 2세트).
 // - 2026-08-20: Pontic 수가 항목 제거. 레거시 Pontic 치아는 브리지 수가. 임시치아 스팬의 구 Pontic은 세트에 포함.
 // - 2026-08-13: 견적 라인은 치아번호 10→20→30→40번대 순.
 // - 2026-08-17: 번대 안은 정중선 가운데(18→11, 21→28, 38→31, 41→48).
 // - 2026-08-13: 유지장치에 남은 커스텀 플래그는 어벗 과금하지 않는다.
-// - 2026-08-19: 임시치아+어벗은 임시치아 수가와 어벗츠 단가를 함께 합산.
+// - 2026-08-19: 임시치아+어벗은 임시치아 수가와 기공소 어벗 수가를 함께 합산.
 // - 2026-08-19: 임시치아 어벗은 묶음 줄과 분리해 치아별 커스텀어벗 단가 줄로 표시.
 // - 2026-08-14: 환봉 프리셋 타입 변경 후에도 제조사·브랜드·패밀리로 매칭.
 // - 2026-08-14: 환봉 단가 0원은 별도 고지(abutmentRetailNote=quote). 견적에서 열이 사라지지 않게.
-// - 2026-08-14: 도입 종류(cnc/round_bar)에 따라 어벗츠 CNC·환봉 단가 분기.
-// - 2026-08-14: 환봉 요청중(헥스 사이즈 미정)은 기공소 어벗. 도입된 환봉·CNC는 어벗츠 어벗.
+// - 2026-08-14: 환봉 요청중·도입·CNC PTX CA 모두 기공소 어벗 수가.
 // - 2026-08-15: 치아번호 없는 자리표시 행(빈 toothNumber+기본 크라운)은 견적에서 제외.
 // - 2026-08-14: 치과별 기공수가 할증(labFeeMultiplier). 기공비·기공소 어벗만 배수.
 // - 2026-08-14: attachLabFeeMinToLines — 자동매칭 예산 하한을 라인에 붙인다.
@@ -176,7 +175,7 @@ export const LAB_FEE_SCHEDULE_DEFAULTS: LabFeeSchedule = {
   removableTemp3: 30000,
   removableTemp6: 50000,
   customAbutmentDesign: 10000,
-  customAbutmentDesignAndProduction: 35000,
+  customAbutmentDesignAndProduction: 40000,
 };
 
 /** 기공소 미지정(자동매칭) 견적 — 기본수가 없음 */
@@ -566,6 +565,13 @@ export const canonicalizeFeeItemName = (name: string) => {
   if (compact === "유지장치" || /^retainer$/i.test(raw)) return "유지장치";
   if (compact === "인레이" || /^inlay$/i.test(raw)) return "인레이";
   if (compact === "크라운" || /^crown$/i.test(raw)) return "크라운";
+  if (
+    compact === "커스텀어벗" ||
+    compact === "커스텀어버트먼트" ||
+    /^customabut(?:ment)?$/i.test(compact)
+  ) {
+    return "커스텀어벗";
+  }
   return raw;
 };
 
@@ -680,6 +686,15 @@ const migrateLegacyLabFeeItems = (
       remake: remake.removableTemp6,
       tiers: [{ n: 6, price: schedule.removableTemp6, remake: remake.removableTemp6 }],
     },
+    {
+      id: "customAbutment",
+      name: "커스텀어벗",
+      unit: "perTooth",
+      enabled: on("customAbutmentDesignAndProduction"),
+      price: schedule.customAbutmentDesignAndProduction,
+      remake: remake.customAbutmentDesignAndProduction,
+      tiers: [],
+    },
   ];
 };
 
@@ -785,13 +800,10 @@ export const findLabFeeItemForProsthesisType = (
 
 export const labFeeItemNameForProsthesisType = (prosthesisType: string) => {
   const raw = String(prosthesisType || "").trim();
-  if (
-    !raw ||
-    isMissingToothProsthesisType(raw) ||
-    isCustomAbutmentProsthesisType(raw)
-  ) {
+  if (!raw || isMissingToothProsthesisType(raw)) {
     return "";
   }
+  if (isCustomAbutmentProsthesisType(raw)) return "커스텀어벗";
   if (isRemovableTempProsthesisType(raw)) return "임시치아";
   return canonicalizeFeeItemName(raw);
 };
@@ -803,6 +815,8 @@ export const labFeeItemNamesNeededForToothWorks = (
     prosthesisType?: string;
     type?: string;
     bridgeLinkedTeeth?: string[];
+    customAbutment?: boolean;
+    hasCustomAbutment?: boolean;
   } | null> | null,
 ) => {
   const rows = (Array.isArray(toothWorks) ? toothWorks : []).filter(
@@ -818,9 +832,18 @@ export const labFeeItemNamesNeededForToothWorks = (
     const name = labFeeItemNameForProsthesisType(
       row.prosthesisType || row.type || "",
     );
-    if (!name || seen.has(name)) continue;
-    seen.add(name);
-    names.push(name);
+    if (name && !seen.has(name)) {
+      seen.add(name);
+      names.push(name);
+    }
+    if (
+      isCustomAbutmentWork(row) &&
+      !isCustomAbutmentProsthesisType(row.prosthesisType || row.type || "") &&
+      !seen.has("커스텀어벗")
+    ) {
+      seen.add("커스텀어벗");
+      names.push("커스텀어벗");
+    }
   }
   return names;
 };
@@ -1085,8 +1108,6 @@ export const computePracticeTransferRetailFees = (params: {
   const items = normalizeLabFeeItems(params.labFeeSchedule);
   const remakeSchedule = normalizeLabFeeRemakeSchedule(params.labFeeSchedule);
   const waiveAbutment = Boolean(useRemake || params.skipAbutmentFees);
-  const pricingTier: AbutsAbutmentPricingTier =
-    params.abutmentPricingTier === "membership" ? "membership" : "regular";
   const rows = Array.isArray(params.toothWorks) ? params.toothWorks : [];
   const absorbedNonTemp = absorbedNonTempTeethInTempSpans(rows);
   const lines: PracticeTransferFeeLine[] = [];
@@ -1102,26 +1123,22 @@ export const computePracticeTransferRetailFees = (params: {
     if (waiveAbutment || !isCustomAbutmentWork(row)) {
       return { abuts: 0, lab: 0, pending: false, quote: false };
     }
+    const lab = resolveLabAbutmentUnitPrice(items, useRemake);
     if (isPendingRoundBarAbutment(row, params.implantFavorites)) {
       return {
         abuts: 0,
-        lab: resolveLabAbutmentUnitPrice(items, useRemake),
+        lab,
         pending: true,
         quote: false,
       };
     }
     const kind = resolveAdoptedAbutmentKind(row, params.implantFavorites);
-    const abuts = resolveAbutsAbutmentUnitPrice({
-      productMode: row?.abutmentProductMode || row?.productMode,
-      pricingTier,
-      prices: params.abutmentPrices,
-      kind,
-    });
+    // 치과→기공소 수가. abutmentRetail(어벗츠 몫)은 PTX에서 쓰지 않음.
     return {
-      abuts,
-      lab: 0,
+      abuts: 0,
+      lab,
       pending: false,
-      quote: kind === "round_bar" && abuts === 0,
+      quote: kind === "round_bar" && lab === 0,
     };
   };
   const addAbutment = (split: {

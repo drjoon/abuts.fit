@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/practice/practiceTransferFeeQuote.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/components/practice/PracticeToothWorkChartReadOnly.tsx
+// - 2026-08-21: 치과 견적 — 커스텀어벗 등 기공소 수가 미설정(missingFeeNames) 안내.
 // - 2026-08-20: 정산(density=detail)만 장부 배송비·크레딧 소비 총액. 견적 툴팁은 기공비 총액까지.
 // - 2026-08-20: 견적 툴팁은 기공비 총액까지. 배송비·크레딧 소비 총액은 주문건당 표시하지 않음(묶음 발송·정산 장부 SSOT).
 // - 2026-08-19: 지정 기공소 수가 Off — 바에「기공비 미설정」(0원 금지). 어벗 단가는 유지.
@@ -561,6 +562,13 @@ export function PracticeTransferFeeEstimate({
       ? `리메이크 기공비 ${formatManWon(quote.total || quote.labFeeTotal)}`
       : null;
   const labFeeUnset = quote.labFeeConfigured === false;
+  const missingFeeNames = Array.isArray(quote.missingFeeNames)
+    ? quote.missingFeeNames.map((name) => String(name || "").trim()).filter(Boolean)
+    : [];
+  const hasMissingFees = !isLab && !labFeeUnset && missingFeeNames.length > 0;
+  const missingFeeLabel = hasMissingFees
+    ? missingFeeNames.join("·")
+    : "";
   /** 기공소만: 생성 스냅샷 배수. 치과 견적에는 표기하지 않음 */
   const surchargeLabel =
     isLab && normalizeLabFeeMultiplier(quote.labFeeMultiplier) > 1
@@ -617,6 +625,13 @@ export function PracticeTransferFeeEstimate({
           {isLab
             ? "기공비를 설정해야 의뢰를 수락할 수 있습니다."
             : "기공소에서 아직 기공비를 설정하지 않았습니다. 기공소에 문의해주세요."}
+        </p>
+      ) : null}
+      {hasMissingFees ? (
+        <p className="text-[12px] font-medium leading-snug text-amber-800/90">
+          「{missingFeeLabel}」 수가가 기공소에 아직 없습니다.
+          <br />
+          설정되면 견적에 포함됩니다.
         </p>
       ) : null}
       {breakdownLines.length > 0 ? (
@@ -767,7 +782,9 @@ export function PracticeTransferFeeEstimate({
         )}
         role="note"
         title={
-          !isLab && !labFeeUnset ? "마우스를 올리면 금액이 보입니다" : undefined
+          !isLab && !labFeeUnset && !hasMissingFees
+            ? "마우스를 올리면 금액이 보입니다"
+            : undefined
         }
         onClick={isCard ? (event) => event.stopPropagation() : undefined}
         onKeyDown={isCard ? (event) => event.stopPropagation() : undefined}
@@ -798,6 +815,7 @@ export function PracticeTransferFeeEstimate({
                     : "",
                   !isLab &&
                     !labFeeUnset &&
+                    !hasMissingFees &&
                     "select-none blur-[8px] transition-[filter] duration-150 group-hover:select-text group-hover:blur-none group-focus-within:select-text group-focus-within:blur-none",
                 )}
               >
@@ -823,6 +841,11 @@ export function PracticeTransferFeeEstimate({
                       {hasBudgetRange && !isLab
                         ? formatWonRange(creditMin, amount)
                         : formatManWon(amount)}
+                      {hasMissingFees ? (
+                        <span className="ml-1.5 text-[11px] font-medium text-amber-700">
+                          · {missingFeeLabel} 미설정
+                        </span>
+                      ) : null}
                     </>
                   )}
                   {surchargeLabel ? (
