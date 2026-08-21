@@ -199,12 +199,7 @@ export const MachineQueueCard = ({
   const headRequestMongoId = currentSlot?.requestMongoId
     ? String(currentSlot.requestMongoId)
     : "";
-  const headRollbackCount = Number((currentSlot as any)?.rollbackCount || 0);
-  const headMachiningCompleted =
-    String(currentSlot?.machiningRecord?.status || "").toUpperCase() ===
-    "COMPLETED";
-  const headCanApproveWithoutRemachining =
-    (headRollbackCount > 0 || headMachiningCompleted) && !!headRequestMongoId;
+  const headCanApproveWithoutRemachining = !!headRequestMongoId;
 
   // Next Up 대기 건수는 전체 가공 대기열에서 현재 Now Playing(실행중) 1건을 제외한 값이다.
   const totalMachiningCount = Math.max(
@@ -501,16 +496,10 @@ export const MachineQueueCard = ({
   }, [lastCompletedRequestId]);
 
   const assignOn = machine?.allowRequestAssign !== false;
-  const nextUpCanApprove = (() => {
-    const rc = Number((nextSlot as any)?.rollbackCount || 0);
-    const mc =
-      String(nextSlot?.machiningRecord?.status || "").toUpperCase() ===
-      "COMPLETED";
-    const id = String((nextSlot as any)?.requestMongoId || "").trim();
-    return (rc > 0 || mc) && !!id;
-  })();
+  const nextUpCanApprove = !!String(
+    (nextSlot as any)?.requestMongoId || "",
+  ).trim();
   const completedCanApprove =
-    Number((effectiveLastCompleted as any)?.rollbackCount || 0) > 0 &&
     !!String((effectiveLastCompleted as any)?.requestMongoId || "").trim() &&
     !!onApproveFromRollback;
 
@@ -801,13 +790,7 @@ export const MachineQueueCard = ({
                     const id = String(
                       (effectiveLastCompleted as any)?.requestMongoId || "",
                     ).trim();
-                    if (
-                      Number(
-                        (effectiveLastCompleted as any)?.rollbackCount || 0,
-                      ) <= 0
-                    )
-                      return;
-                    if (!id) return;
+                    if (!completedCanApprove || !id) return;
                     onApproveFromRollback?.(id);
                   }}
                   disabled={!completedCanApprove}

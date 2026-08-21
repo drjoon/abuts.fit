@@ -1168,16 +1168,9 @@ export const PreviewModal = ({
         | "packing"
         | "shipping"
         | "tracking";
-      // packing 단계에서는 각인 이미지가 있거나, 포장.발송/packing 롤백 이력이 있으면 승인 가능
-      // (롤백 이력 있음 = 이미 각인 라벨 인식 완료된 적 있음)
-      if (key === "packing") {
-        const hasFile =
-          !!activeReq?.caseInfos?.stageFiles?.packing?.s3Key ||
-          !!previewStageUrl;
-        const hasRollbackHistory =
-          Number(activeReq?.caseInfos?.rollbackCounts?.packing || 0) > 0 ||
-          Number(activeReq?.caseInfos?.rollbackCounts?.shipping || 0) > 0;
-        return hasFile || hasRollbackHistory;
+      // 가공/세척.패킹: 롤백·각인 파일 유무와 무관하게 승인 가능
+      if (key === "machining" || key === "packing") {
+        return true;
       }
       return (
         !!activeReq?.caseInfos?.stageFiles?.[key]?.s3Key || !!previewStageUrl
@@ -1187,7 +1180,7 @@ export const PreviewModal = ({
       // NC가 없어도 승인 버튼으로 재생성 명령을 먼저 수행할 수 있게 허용한다.
       return true;
     }
-    // request 단계도 CAM 파일 유무와 무관하게 승인 가능하며,
+    // request(준비) 단계도 CAM 파일 유무와 무관하게 승인 가능하며,
     // 백엔드가 필요한 작업(재사용/재처리)을 결정한다.
     return true;
   })();

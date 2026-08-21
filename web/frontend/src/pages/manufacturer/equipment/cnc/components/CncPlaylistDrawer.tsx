@@ -169,9 +169,8 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
               patient,
               tooth,
             ].filter(Boolean);
-            const rollbackCount = Number(job.rollbackCount || 0);
             const canApproveFromRollback =
-              !readOnly && rollbackCount > 0 && !!job.requestMongoId;
+              !readOnly && !!job.requestMongoId;
             const hasNc =
               job.hasNc === true ||
               Boolean(String(job.s3Key || "").trim()) ||

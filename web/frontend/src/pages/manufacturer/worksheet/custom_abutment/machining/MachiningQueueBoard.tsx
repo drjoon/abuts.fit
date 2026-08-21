@@ -2148,46 +2148,17 @@ export const MachiningQueueBoard = ({
                         <button
                           type="button"
                           className={`inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 ${
-                            (() => {
-                              const rc = Number(
-                                (item as any)?.rollbackCount || 0,
-                              );
-                              const mc =
-                                String(
-                                  item?.machiningRecord?.status || "",
-                                ).toUpperCase() === "COMPLETED";
-                              const id = String(
-                                item.requestMongoId || "",
-                              ).trim();
-                              return (rc > 0 || mc) && id;
-                            })()
+                            String(item.requestMongoId || "").trim()
                               ? ""
                               : "opacity-30 cursor-not-allowed"
                           }`}
                           onClick={(e) => {
                             e.stopPropagation();
-                            const rc = Number(
-                              (item as any)?.rollbackCount || 0,
-                            );
-                            const mc =
-                              String(
-                                item?.machiningRecord?.status || "",
-                              ).toUpperCase() === "COMPLETED";
                             const id = String(item.requestMongoId || "").trim();
-                            if (!(rc > 0 || mc) || !id) return;
+                            if (!id) return;
                             void approveMachiningFromRollback(id);
                           }}
-                          disabled={(() => {
-                            const rc = Number(
-                              (item as any)?.rollbackCount || 0,
-                            );
-                            const mc =
-                              String(
-                                item?.machiningRecord?.status || "",
-                              ).toUpperCase() === "COMPLETED";
-                            const id = String(item.requestMongoId || "").trim();
-                            return !((rc > 0 || mc) && id);
-                          })()}
+                          disabled={!String(item.requestMongoId || "").trim()}
                           title="재가공 없이 승인"
                         >
                           <ArrowRight className="h-3 w-3" />

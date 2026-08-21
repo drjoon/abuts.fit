@@ -409,25 +409,6 @@ export const WorksheetCardGrid = ({
           if (isCamStage) return "cam";
           return "request";
         })();
-        const packingShippingRollbackCount =
-          reviewStageKey === "packing"
-            ? Number(caseInfos.rollbackCounts?.shipping || 0)
-            : 0;
-
-        // packing 단계에서는 각인 이미지가 있어야 승인 가능.
-        // 단, 포장.발송에서 롤백되어 돌아온 경우(shipping 롤백 이력 있음)나
-        // 세척.패킹에서 롤백되었다가 다시 온 경우(packing 롤백 이력 있음)는
-        // 이미 각인 라벨이 인식된 적 있으므로 재인식 없이 승인 가능.
-        const hasEngravingImage =
-          reviewStageKey === "packing"
-            ? packingShippingRollbackCount > 0 ||
-              Number(caseInfos.rollbackCounts?.packing || 0) > 0 ||
-              !!(
-                caseInfos.stageFiles?.packing?.s3Url ||
-                caseInfos.stageFiles?.packing?.filePath
-              )
-            : true;
-
         const resolvedConnectionSpec = resolveImplantConnectionSpec({
           implantManufacturer: caseInfos.implantManufacturer,
           implantBrand: caseInfos.implantBrand,
@@ -442,6 +423,8 @@ export const WorksheetCardGrid = ({
               ? Number((caseInfos as any)?.connectionDiameter)
               : null;
 
+        // 준비/가공/세척.패킹: 롤백 카운터·각인 이미지 유무와 무관하게 → 승인 가능.
+        // (디자인 클레임 peer busy 등 권한 조건만 유지)
         const canApprove = (() => {
           if (enableDesignClaim) {
             const peerBusy = Boolean(
@@ -453,22 +436,14 @@ export const WorksheetCardGrid = ({
             if (peerBusy || !mine) return false;
           }
           if (
-            reviewStageKey === "machining" ||
-            reviewStageKey === "packing" ||
             reviewStageKey === "shipping" ||
             reviewStageKey === "tracking"
           ) {
-            if (reviewStageKey === "packing") {
-              return hasEngravingImage;
-            }
             return Boolean(
               caseInfos.stageFiles?.[reviewStageKey]?.s3Key ||
                 caseInfos.stageFiles?.[reviewStageKey]?.s3Url ||
                 caseInfos.stageFiles?.[reviewStageKey]?.filePath,
             );
-          }
-          if (reviewStageKey === "cam") {
-            return true;
           }
           return true;
         })();
@@ -1007,16 +982,15 @@ export const WorksheetCardGrid = ({
                   }}
                   aria-label="승인"
                   title={
-                    !hasEngravingImage
-                      ? "각인 이미지가 필요합니다"
-                      : isNcGenerating
-                        ? "NC 재생성 완료를 기다리는 중입니다"
-                        : (reviewStageKey === "cam" || reviewStageKey === "request") &&
-                            !hasNcFile
-                          ? "가공 이동을 위해 NC 재생성 명령을 먼저 실행합니다"
-                            : canApprove
-                              ? "승인"
-                              : "다음 공정으로 넘길 파일/데이터가 필요합니다"
+                    isNcGenerating
+                      ? "NC 재생성 완료를 기다리는 중입니다"
+                      : (reviewStageKey === "cam" ||
+                            reviewStageKey === "request") &&
+                          !hasNcFile
+                        ? "가공 이동을 위해 NC 재생성 명령을 먼저 실행합니다"
+                        : canApprove
+                          ? "승인"
+                          : "다음 공정으로 넘길 파일/데이터가 필요합니다"
                   }
                   disabled={!canApprove || isNcGenerating}
                 >

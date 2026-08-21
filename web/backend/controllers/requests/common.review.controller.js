@@ -1395,15 +1395,15 @@ export async function updateReviewStatusByStage(req, res) {
         }
 
         if (effectiveStage === "request") {
-          const requestRollbackCount = Number(
-            request?.caseInfos?.rollbackCounts?.request || 0,
+          const hasExistingNc = Boolean(request?.caseInfos?.ncFile?.s3Key);
+          const hasCamCompletionHistory = Boolean(
+            request?.productionSchedule?.actualCamComplete,
           );
-          const requestCamRollbackCount = Number(
-            request?.caseInfos?.rollbackCounts?.machining || 0,
-          );
+          // 롤백 이력뿐 아니라 기존 NC/CAM 완료 이력이 있으면 재생성 없이 가공으로 이동.
+          // (롤백 카운터 0이어도 → 승인으로 바로 넘길 수 있게)
           const canSkipCamRegeneration =
             !forceReprocessFlag &&
-            (requestRollbackCount > 0 || requestCamRollbackCount > 0);
+            (hasExistingNc || hasCamCompletionHistory);
 
           // 비동기 처리: 의뢰 승인 시점에 manufacturerStage/status 를 CAM으로 바꾸지 않는다.
           // Esprit(NC 생성) 완료 콜백(/api/bg/register-file, sourceStep=3-nc)에서 상태를 CAM으로 전환한다.
@@ -1480,7 +1480,7 @@ export async function updateReviewStatusByStage(req, res) {
           }
 
           if (canSkipCamRegeneration) {
-            // 작업 공정 변경: 재제작(롤백 이력 있음) 승인은 NC 재생성 없이 기존 NC로 바로 가공 단계로 진입한다.
+            // 기존 NC/CAM 이력이 있으면 NC 재생성 없이 바로 가공 단계로 진입한다.
             // CAM은 더 이상 노출/사용하지 않으므로 manufacturerStage는 바로 "가공"으로 설정한다.
             applyStatusMapping(request, "가공");
             request.caseInfos.reviewByStage.cam = {
@@ -1495,7 +1495,7 @@ export async function updateReviewStatusByStage(req, res) {
               // best-effort
             }
             acceptedMessage =
-              "롤백 이력이 확인되어 NC 재생성 없이 가공 단계로 이동했습니다.";
+              "기존 NC/CAM 이력이 확인되어 NC 재생성 없이 가공 단계로 이동했습니다.";
           } else {
             request.productionSchedule.actualCamStart = new Date();
             try {
