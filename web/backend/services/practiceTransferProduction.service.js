@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-08-21: 헥스 확인 샘플은 relatedRequestIds에 넣지 않음(어벗 개수 오인 방지).
 // - 2026-08-21: tryStartAbutmentProduction — Request 가공 진입을 병렬(다치아 confirm 지연 완화).
 // - 2026-08-21: CA Request — 구강스캔 없이 수락·생성(어벗 STL 업로드 가능).
 // - 2026-08-21: 연동 CA Request 한진 배송 요약(mapAbutmentDeliveryByTransferDocs) — 구강스캔으로 UI.
@@ -49,6 +50,7 @@ import {
   resolveHexRotationByDesignSoftware,
 } from "../utils/designSoftwareHex.js";
 import { maybeCreateHexVerificationSampleForFirstOrder } from "./hexVerificationSample.service.js";
+import { isHexVerificationSampleCase } from "../utils/designSoftwareHex.js";
 import {
   normalizeCaseInfosImplantFields,
   addKoreanBusinessDays,
@@ -892,18 +894,14 @@ export async function createAbutmentRequestsFromPracticeTransfer({
     created.push(newRequest);
   }
 
+  // 헥스 확인 샘플은 별도 Request — production.relatedRequestIds(어벗 업로드 대상)에 넣지 않는다.
   try {
-    const verificationClone = await maybeCreateHexVerificationSampleForFirstOrder(
-      {
-        sourceRequests: created,
-        userId: labUserId,
-        businessAnchorId: labAnchorId,
-        actorUserId: actorUserId || labUserId,
-      },
-    );
-    if (verificationClone) {
-      created.push(verificationClone);
-    }
+    await maybeCreateHexVerificationSampleForFirstOrder({
+      sourceRequests: created,
+      userId: labUserId,
+      businessAnchorId: labAnchorId,
+      actorUserId: actorUserId || labUserId,
+    });
   } catch (hexSampleErr) {
     console.warn(
       "[createAbutmentRequestsFromPracticeTransfer] hex verification sample failed",
@@ -933,6 +931,7 @@ export async function createAbutmentRequestsFromPracticeTransfer({
 /**
  * CA 포함이면 Request 생성(이미 있으면 no-op) 후 production.relatedRequestIds·shippingMode 갱신.
  * 이미 생성된 Request는 현재 수락 기공소(targetLabAnchorId)로 소유를 맞춘다.
+ * relatedRequestIds에는 헥스 확인 샘플을 넣지 않는다(레거시 혼입분도 정리).
  */
 export async function ensureAbutmentRequestsOnAccept({
   transferDoc,
@@ -950,8 +949,24 @@ export async function ensureAbutmentRequestsOnAccept({
     return { created: false, requestIds: [], shippingMode: null };
   }
 
-  const requestIds = Array.isArray(result.requestIds) ? result.requestIds : [];
+  let requestIds = Array.isArray(result.requestIds) ? result.requestIds : [];
   const shippingMode = result.shippingMode || transferDoc?.production?.shippingMode || null;
+
+  // 레거시: 헥스 확인 샘플이 relatedRequestIds에 섞인 경우 제거
+  const candidateOids = requestIds
+    .filter((id) => Types.ObjectId.isValid(id))
+    .map((id) => new Types.ObjectId(id));
+  if (candidateOids.length > 0) {
+    const docs = await Request.find({ _id: { $in: candidateOids } })
+      .select({ "caseInfos.hexVerificationSample": 1 })
+      .lean();
+    const productionIds = docs
+      .filter((doc) => !isHexVerificationSampleCase(doc?.caseInfos))
+      .map((doc) => String(doc._id));
+    if (productionIds.length !== requestIds.length) {
+      requestIds = productionIds;
+    }
+  }
 
   const oidList = requestIds
     .filter((id) => Types.ObjectId.isValid(id))

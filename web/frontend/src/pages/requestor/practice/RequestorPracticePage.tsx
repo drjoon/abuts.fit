@@ -23,6 +23,7 @@
 // - web/frontend/src/shared/practice/labReceiveCalendarDateKey.ts
 // - web/backend/utils/labReceiveCalendarDateKey.util.js
 // - web/backend/controllers/users/user.controller.js
+// - 2026-08-21: 어벗 분할 업로드 모달 — 문구 단문화·취소/확인. 헥스 샘플 related 제외.
 // - 2026-08-21: 수신 상단 상태 뱃지에 채팅·미확인 unread. 휴지통(canceled)도 취소 뱃지·캘린더에 표시.
 // - 2026-08-21: 상단 상태 뱃지 다중 표시 on/off(표시 라벨·기본 리셋·ON/OFF 대비).
 // - 2026-08-21: 어벗 디자인 업로드 후 skipDesignConfirm 강제 true 제거(구강스캔으로 치과 설정 존중).
@@ -3717,19 +3718,22 @@ export function RequestorPracticeReceivePage({
         .map((row) => String(row.toothNumber || "").trim())
         .filter(Boolean);
 
-      const requestMetas = await Promise.all(
-        relatedIds.map(async (requestId, idx) => {
-          const meta = await fetchRequestCaseInfos(requestId);
-          const fromRequest = String(meta.caseInfos?.tooth || "").trim();
-          const tooth = fromRequest || caTeethOrdered[idx] || "";
-          return {
-            requestId,
-            tooth,
-            caseInfos: meta.caseInfos,
-            designCompletedAt: meta.designCompletedAt,
-          };
-        }),
-      );
+      const requestMetas = (
+        await Promise.all(
+          relatedIds.map(async (requestId, idx) => {
+            const meta = await fetchRequestCaseInfos(requestId);
+            if (meta.caseInfos?.hexVerificationSample === true) return null;
+            const fromRequest = String(meta.caseInfos?.tooth || "").trim();
+            const tooth = fromRequest || caTeethOrdered[idx] || "";
+            return {
+              requestId,
+              tooth,
+              caseInfos: meta.caseInfos,
+              designCompletedAt: meta.designCompletedAt,
+            };
+          }),
+        )
+      ).filter((row): row is AbutmentPendingMeta => Boolean(row));
 
       // 치아 중복 보강: Request에 tooth가 비어 있으면 치식 CA 순서로 채움(이미 쓴 치아 제외)
       const usedEnrichTeeth = new Set(
@@ -4083,17 +4087,8 @@ export function RequestorPracticeReceivePage({
   ]);
 
   const handleSplitAskDecline = useCallback(() => {
-    const ask = splitAskState;
     setSplitAskState(null);
-    if (!ask) return;
-    toast({
-      title: ask.mode === "abutment" ? "어벗 전체 업로드" : "보철 전체 업로드",
-      description:
-        ask.mode === "abutment"
-          ? `남은 어벗 ${ask.pendingCount}개에 맞춰 STL을 모두 선택한 뒤 다시 올려주세요.`
-          : `남은 보철 ${ask.pendingCount}개에 맞춰 파일을 모두 선택한 뒤 다시 올려주세요.`,
-    });
-  }, [splitAskState, toast]);
+  }, []);
 
   const handleWorkUploadConfirm = useCallback(
     async (assignments: LabReceiveWorkUploadAssignment[]) => {
@@ -4591,19 +4586,15 @@ export function RequestorPracticeReceivePage({
           <AlertDialogHeader>
             <AlertDialogTitle>일부만 올리시나요?</AlertDialogTitle>
             <AlertDialogDescription>
-              {splitAskState
-                ? splitAskState.mode === "abutment"
-                  ? `남은 어벗은 ${splitAskState.pendingCount}개인데 파일은 ${splitAskState.files.length}개입니다. 작업된 것만 먼저 올리고 나머지는 나중에 올릴 수 있습니다.`
-                  : `남은 보철은 ${splitAskState.pendingCount}개인데 파일은 ${splitAskState.files.length}개입니다. 작업된 것만 먼저 저장하고 나머지는 나중에 올릴 수 있습니다.`
-                : null}
+              선택한 파일만 먼저 올립니다. 나머지는 나중에 올릴 수 있습니다.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={handleSplitAskDecline}>
-              모두 올리기
+              취소
             </AlertDialogCancel>
             <AlertDialogAction onClick={handleSplitAskConfirm}>
-              일부만 올리기
+              확인
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

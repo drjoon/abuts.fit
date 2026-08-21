@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/components/practice/LabReceiveWorkUploadDialog.tsx
 // change-log:
+// - 2026-08-21: expectedAbutmentDesigns — 치식 CA 개수 우선(헥스 샘플 related 과다 방지).
 // - 2026-08-21: 미제공 CA 목록·상세 한 줄(formatPendingLabAbutmentDetailLine).
 // - 2026-08-21: 요청중(헥스 사이즈 미정) CA는 어벗츠 생산 CTA·기대 디자인 수에서 제외.
 // - 2026-08-21: unread 배지 — 휴지통(canceled)은 채팅 unread만(사이드바 received-unread와 정합).
@@ -353,12 +354,14 @@ export function countPracticeTransferExpectedAbutmentDesigns(
   if (!transfer) return 0;
   const caTeeth =
     listPracticeTransferAbutsCustomAbutmentToothWorks(transfer).length;
+  // 치식이 있으면 치식 개수 SSOT. relatedRequestIds는 헥스 샘플 혼입 등 과다일 수 있음.
+  if (caTeeth > 0) return caTeeth;
   const related = Array.isArray(transfer.production?.relatedRequestIds)
     ? transfer.production.relatedRequestIds.filter((id) =>
         Boolean(String(id || "").trim()),
       ).length
     : 0;
-  return Math.max(caTeeth, related, 0);
+  return Math.max(related, 0);
 }
 
 /** 어벗츠 CNC 커스텀어벗이 있고 아직 치아별 어벗디자인이 부족한지 */
