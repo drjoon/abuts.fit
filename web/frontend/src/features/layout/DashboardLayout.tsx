@@ -11,6 +11,7 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPath";
 import { cn } from "@/shared/ui/cn";
 
+// - 2026-08-21: 기공소(requestor lab) 사이드 고스트「정산」제거(클릭 시 /dashboard 이탈).
 // - 2026-08-21: 기공소·어벗츠기공소 기공의뢰 하위 — 치과로부터 수신 / 어벗츠로 의뢰.
 // - 2026-08-20: 관리자 포함 전 롤 사이드를 DashboardSidebarNav로 통일. 접히면 아이콘·툴팁·배지.
 // - 2026-08-20: 모바일 작업영역 흰 카드 min-w-0·p-3로 좌우 잘림 완화.
@@ -26,7 +27,7 @@ import { cn } from "@/shared/ui/cn";
 // - 2026-08-18: 치과 사이드 — 기공의뢰 그룹 아래 구강스캔/어벗디자인 서브(관리자 섹션과 동일).
 // - 2026-08-18: 계정 뱃지 salesman=딜러, admin=관리자 (USER_ROLE_LABEL).
 // - 2026-08-17: 관리자 설정 그룹에「사업영역」(플랫폼 설정 아래).
-// - 2026-08-17: 기공소·어벗츠기공소·개발운영사 사이드에 정산 복구.
+// - 2026-08-17: (레거시) 기공소·어벗츠기공소·개발운영사 사이드에 정산 복구 — 기공소(requestor)는 2026-08-21 제거.
 // - 2026-08-17: unread-updated 이벤트는 lab 수신 배지 조회 가능할 때만 반영(치과 유령 배지 방지).
 // - 2026-08-17: 접힌 사이드바에도 practice-transfers/lab-work 미확인 배지 표시.
 // - 2026-08-17: 어벗츠기공소「기공의뢰수신」(/lab-work)에도 수신 미확인·채팅 사이드 배지.
@@ -217,7 +218,6 @@ const buildRequestorSidebarItems = (
     return [
       buildLabGigongRequestSidebarGroup(LAB_RECEIVE_HREF),
       { icon: Wallet, label: "크레딧", href: CREDITS_HREF },
-      { icon: Wallet, label: "정산", href: "/dashboard/payments" },
       ...requestorSidebarCommonTail,
     ];
   }

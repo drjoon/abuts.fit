@@ -254,7 +254,7 @@ const ReferralGroupsRoute = () => {
 
 const PaymentsRoute = () => {
   const { user } = useAuthStore();
-  const { kind } = useRequestorBusinessAccess();
+  const { kind, loading: accessLoading } = useRequestorBusinessAccess();
 
   if (!user) return <Navigate to="/dashboard" replace />;
   if (user.role === "manufacturer") return <ManufacturerPaymentPage />;
@@ -262,8 +262,12 @@ const PaymentsRoute = () => {
   if (user.role === "devops") return <DevopsPaymentsPage />;
   if (user.role === "admin") return <AdminPaymentsPage />;
   if (user.role === "internalLab") return <LabSettlementPayoutTab />;
-  if (user.role === "requestor" && kind === "lab") {
-    return <LabSettlementPayoutTab />;
+  // 기공소(requestor lab) 사이드「정산」은 제거. 구 북마크는 크레딧 내역으로.
+  if (user.role === "requestor") {
+    if (accessLoading) return null;
+    if (kind === "lab") {
+      return <Navigate to="/dashboard/credits?tab=ledger" replace />;
+    }
   }
   return <Navigate to="/dashboard" replace />;
 };

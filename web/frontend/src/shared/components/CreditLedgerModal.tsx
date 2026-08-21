@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-21: 기공소 크레딧 내역 — 지급상태·금액호버·상세를 치과와 동일(기공크레딧 잔액/필터만 lab).
 // - 2026-08-20: PeriodFilter 달력·chevron 커스텀 기간을 원장 조회 from/to에 반영.
 // - 2026-08-19: 구강스캔 호버 — 보철기공비|어벗 디자인+생산비는 견적(6만·2.5만). 경로 보류(7만+1.5만) 아님.
 // - 2026-08-19: 어벗디자인·어벗생산은 의뢰 사업자+예정출고일로 1행·배송비 1건(치과명 무관).
@@ -6,7 +7,7 @@
 // - 2026-08-19: 어벗디자인으로 행도 보류/일부 지급/지급 완료 상태를 표시.
 // - 2026-08-19: 의뢰비·배송비 보류를 기공의뢰-어벗디자인으로 묶음. 기존 기공의뢰는 구강스캔으로.
 // - 2026-08-19: 견적 상세 — 보철기공비|어벗 디자인+생산비(둘 다 기공비). 기공소몫/어벗츠몫 헤더 제거.
-// - 2026-08-17: 기공소 지급 상태는 기공비만. 어벗츠 생산비와 무관.
+// - 2026-08-17: (레거시) 기공소 지급 상태는 기공비만 — 2026-08-21 치과와 동일로 복귀.
 // - 2026-08-17: 기공소 기공의뢰 행 — 치과와 동일(기공비에 디자인 합침·일부 지급·상세 모달).
 // - 2026-08-17: 기공소 보철기공비+디자인비(+지그)를 한 기공의뢰 행으로 묶음.
 // - 2026-08-17: 잔액 카드를 정산 공통 SettlementStatCard로 교체.
@@ -1550,12 +1551,8 @@ export const CreditLedgerModal = ({
   });
 
   const rows = useMemo(
-    () =>
-      groupLedgerItemsForDisplay(
-        Array.isArray(items) ? items : [],
-        showSettlementCredit,
-      ),
-    [items, showSettlementCredit],
+    () => groupLedgerItemsForDisplay(Array.isArray(items) ? items : []),
+    [items],
   );
 
   const toggleSort = (key: LedgerSortKey) => {
@@ -2098,7 +2095,6 @@ export const CreditLedgerModal = ({
                               feeQuote={parsePracticeTransferFeeQuote(
                                 r.item.feeQuote,
                               )}
-                              labShareOnly={showSettlementCredit}
                             />
                           )
                         ) : showSplit ? (
@@ -2290,20 +2286,16 @@ export const CreditLedgerModal = ({
               </div>
               <PracticeTransferFeeEstimate
                 quote={feeQuoteDetail.quote}
-                viewer={showSettlementCredit ? "lab" : "practice"}
+                viewer="practice"
                 density="detail"
                 skipJig={feeQuoteDetail.skipJig}
                 rushProcessing={feeQuoteDetail.rushProcessing}
                 creditLabHoldPending={feeQuoteDetail.creditLabHoldPending}
                 creditAbutmentHoldPending={
-                  showSettlementCredit
-                    ? null
-                    : feeQuoteDetail.creditAbutmentHoldPending
+                  feeQuoteDetail.creditAbutmentHoldPending
                 }
                 settlementShippingLines={
-                  showSettlementCredit
-                    ? []
-                    : feeQuoteDetail.settlementShippingLines
+                  feeQuoteDetail.settlementShippingLines
                 }
               />
             </div>
