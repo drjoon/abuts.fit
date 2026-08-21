@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-21: 기공소 장부 — PTX CA 생산+기공소→어벗츠 배송을 박스키로 한 행. 치과는 레거시 배송 합산 표시 제거.
 // - 2026-08-21: 기공의뢰(PTX) 정산에서 기공소→어벗츠 배송 제외(기공소 부담·의뢰 박스 행).
 // - 2026-08-21: 치과→기공소 배송 무료 — baked labShipping·정산 줄 제거. 소비총액=기공비+→어벗츠만.
 // - 2026-08-21: 기공수가 배송비(기공비 hold 합산)를 크레딧 호버·정산 상세에 분리. 견적 툴팁은 그대로 배송비 없음.
@@ -602,6 +603,7 @@ const quoteWorkTotalExcludingShipping = (
 /**
  * 장부 배송비 = 배송 라벨 행만.
  * 치과→기공소·기공소→어벗츠는 기공의뢰(PTX) 정산에서 제외.
+ * 레거시: 기공비 hold에 배송이 합쳐진 경우 feeQuote 작업액과의 차이를 baked로 떼어 표시에서만 제외.
  */
 const resolvePracticeTransferShippingAmounts = (
   parts: LedgerDisplayPart[] | null | undefined,
@@ -611,7 +613,6 @@ const resolvePracticeTransferShippingAmounts = (
   bakedLabShippingAmount: number;
   workAmount: number;
 } => {
-  void feeQuote;
   let explicitShippingAmount = 0;
   let workAmount = 0;
   for (const part of Array.isArray(parts) ? parts : []) {
@@ -628,9 +629,20 @@ const resolvePracticeTransferShippingAmounts = (
     workAmount += amount;
   }
 
+  let bakedLabShippingAmount = 0;
+  if (feeQuote && workAmount !== 0) {
+    const quoteWork = quoteWorkTotalExcludingShipping(feeQuote);
+    const gap = Math.abs(workAmount) - quoteWork;
+    if (quoteWork > 0 && gap > 0) {
+      const sign = workAmount < 0 ? -1 : 1;
+      bakedLabShippingAmount = sign * gap;
+      workAmount = sign * quoteWork;
+    }
+  }
+
   return {
     explicitShippingAmount,
-    bakedLabShippingAmount: 0,
+    bakedLabShippingAmount,
     workAmount,
   };
 };
@@ -751,7 +763,9 @@ const buildPracticeTransferFeeLeaves = (
     bakedLabShippingAmount,
     workAmount,
   } = resolvePracticeTransferShippingAmounts(parts, quote);
-  const shippingAmount = explicitShippingAmount + bakedLabShippingAmount;
+  // 치과→기공소 배송은 무료 — baked 합산분은 작업액에서만 제거하고 배송 줄로 올리지 않음.
+  void bakedLabShippingAmount;
+  const shippingAmount = explicitShippingAmount;
 
   const hasQuoteSplit =
     Boolean(quote) &&
@@ -773,7 +787,8 @@ const buildPracticeTransferFeeLeaves = (
         kind === "design" || kind === "abutProduction" ? "abutCombined" : kind;
       addFeeLeafAmount(byKind, mapped, Number(part.amount || 0));
     }
-    // 기공수가 배송비는 기공비 라벨 행에 합쳐져 있으므로 labFee에서 분리.
+    // 기공수가 배송비는 기공비 라벨 행에 합쳐져 있으므로 labFee에서 분리(레거시).
+    // 정책상 치과→기공소 무료라 shipping 리프에는 올리지 않는다.
     if (bakedLabShippingAmount !== 0) {
       const peelOrder: PracticeTransferFeeKind[] = [
         "labFee",
@@ -994,9 +1009,22 @@ const isLabToAbutsShippingLedgerItem = (item: CreditLedgerItem) => {
   return false;
 };
 
-const practiceTransferGroupKey = (item: CreditLedgerItem) => {
-  // 기공소→어벗츠 배송은 기공의뢰 정산과 분리(기공소 박스 과금).
+const practiceTransferGroupKey = (
+  item: CreditLedgerItem,
+  opts: { isLabViewer?: boolean } = {},
+) => {
+  const isLabViewer = Boolean(opts.isLabViewer);
+  // 기공소→어벗츠 배송은 박스 행으로(기공의뢰 정산과 분리).
   if (isLabToAbutsShippingLedgerItem(item)) return "";
+  // 기공소 장부: PTX CA 생산도 박스키로 — 배송과 한 행.
+  if (isLabViewer && String(item.refType || "") === "REQUEST") {
+    const relatedFromRequest = String(
+      item.relatedPracticeTransferId ||
+        item.refRequestSummary?.relatedPracticeTransferId ||
+        "",
+    ).trim();
+    if (relatedFromRequest) return "";
+  }
   const refType = String(item.refType || "");
   const isDesignFee = isPtxDesignFeeLedgerItem(item);
   if (refType !== "PRACTICE_TRANSFER" && !isDesignFee) {
@@ -1025,15 +1053,22 @@ const isAbutmentShippingPackageItem = (item: CreditLedgerItem) => {
   return true;
 };
 
-const abutmentDesignGroupKey = (item: CreditLedgerItem) => {
-  if (practiceTransferGroupKey(item)) return "";
+const abutmentDesignGroupKey = (
+  item: CreditLedgerItem,
+  opts: { isLabViewer?: boolean } = {},
+) => {
+  if (practiceTransferGroupKey(item, opts)) return "";
   const refType = String(item.refType || "");
   const relatedPtx = String(
     item.relatedPracticeTransferId ||
       item.refRequestSummary?.relatedPracticeTransferId ||
       "",
   ).trim();
-  if (relatedPtx) return "";
+  // PTX 링크여도 기공소→어벗츠 배송·(기공소) CA 생산은 박스로 묶는다.
+  const allowBoxDespitePtx =
+    isLabToAbutsShippingLedgerItem(item) ||
+    (Boolean(opts.isLabViewer) && refType === "REQUEST");
+  if (relatedPtx && !allowBoxDespitePtx) return "";
 
   const pkg = String(
     item.shippingPackageId || item.refRequestSummary?.shippingPackageId || "",
@@ -1058,7 +1093,12 @@ const abutmentDesignGroupKey = (item: CreditLedgerItem) => {
     item.estimatedShipYmd || item.refRequestSummary?.estimatedShipYmd || "",
   ).trim();
   if (ba && ymd) return `box:${ba}:${ymd}`;
-  if (ba && (refType === "REQUEST" || isAbutmentShippingPackageItem(item))) {
+  if (
+    ba &&
+    (refType === "REQUEST" ||
+      isAbutmentShippingPackageItem(item) ||
+      isLabToAbutsShippingLedgerItem(item))
+  ) {
     return `box:${ba}`;
   }
 
@@ -1083,6 +1123,7 @@ const abutmentDesignGroupKey = (item: CreditLedgerItem) => {
 };
 
 const isAbutmentShippingLedgerItem = (item: CreditLedgerItem) => {
+  if (isLabToAbutsShippingLedgerItem(item)) return true;
   if (String(item.refType || "") === "SHIPPING_PACKAGE") return true;
   if (String(item.spendKind || "") === "shipping_fee") return true;
   const label = String(item.displayLabel || "");
@@ -1151,18 +1192,20 @@ const toDisplayPart = (item: CreditLedgerItem): LedgerDisplayPart => ({
 const groupLedgerItemsForDisplay = (
   items: CreditLedgerItem[],
   labShareOnly = false,
+  isLabViewer = false,
 ): LedgerDisplayRow[] => {
+  const groupOpts = { isLabViewer };
   const ptxMap = new Map<string, CreditLedgerItem[]>();
   const abutmentMap = new Map<string, CreditLedgerItem[]>();
   for (const item of items) {
-    const ptxKey = practiceTransferGroupKey(item);
+    const ptxKey = practiceTransferGroupKey(item, groupOpts);
     if (ptxKey) {
       const list = ptxMap.get(ptxKey);
       if (list) list.push(item);
       else ptxMap.set(ptxKey, [item]);
       continue;
     }
-    const abutmentKey = abutmentDesignGroupKey(item);
+    const abutmentKey = abutmentDesignGroupKey(item, groupOpts);
     if (!abutmentKey) continue;
     const list = abutmentMap.get(abutmentKey);
     if (list) list.push(item);
@@ -1173,7 +1216,7 @@ const groupLedgerItemsForDisplay = (
   const out: LedgerDisplayRow[] = [];
 
   for (const item of items) {
-    const ptxKey = practiceTransferGroupKey(item);
+    const ptxKey = practiceTransferGroupKey(item, groupOpts);
     if (ptxKey) {
       if (seenGroups.has(ptxKey)) continue;
       seenGroups.add(ptxKey);
@@ -1188,7 +1231,18 @@ const groupLedgerItemsForDisplay = (
       const latest = members[members.length - 1];
       const representative =
         [...members].reverse().find((m) => m.feeQuote) || latest;
-      const amount = members.reduce((sum, m) => sum + Number(m.amount || 0), 0);
+      const parts = members.map(toDisplayPart);
+      const quote = parsePracticeTransferFeeQuote(representative.feeQuote);
+      // 치과: 레거시 기공비 hold에 합쳐진 배송은 표시 금액에서 제외.
+      const { workAmount } = resolvePracticeTransferShippingAmounts(parts, quote);
+      const rawAmount = members.reduce(
+        (sum, m) => sum + Number(m.amount || 0),
+        0,
+      );
+      const amount =
+        !isLabViewer && quote && workAmount !== 0 && Math.abs(rawAmount) > Math.abs(workAmount)
+          ? workAmount
+          : rawAmount;
       const spentPaidAmount = members.reduce(
         (sum, m) => sum + Number(m.spentPaidAmount || 0),
         0,
@@ -1212,7 +1266,7 @@ const groupLedgerItemsForDisplay = (
         spentFreeAmount,
         type: latest.type,
         displayLabel: PRACTICE_TRANSFER_TYPE_LABEL,
-        parts: members.map(toDisplayPart),
+        parts,
         practiceTransferPending: pending,
         practiceTransferPayoutStatus: payoutStatus,
         isPracticeTransfer: true,
@@ -1223,7 +1277,7 @@ const groupLedgerItemsForDisplay = (
       continue;
     }
 
-    const abutmentKey = abutmentDesignGroupKey(item);
+    const abutmentKey = abutmentDesignGroupKey(item, groupOpts);
     if (abutmentKey) {
       if (seenGroups.has(abutmentKey)) continue;
       seenGroups.add(abutmentKey);
@@ -1722,9 +1776,25 @@ export const CreditLedgerModal = ({
     },
   });
 
+  const isLabViewer = useMemo(() => {
+    const kind =
+      currentBalanceSnapshot?.requestorKind ||
+      (!businessAnchorId ? accessKind : null);
+    return kind === "lab";
+  }, [
+    accessKind,
+    businessAnchorId,
+    currentBalanceSnapshot?.requestorKind,
+  ]);
+
   const rows = useMemo(
-    () => groupLedgerItemsForDisplay(Array.isArray(items) ? items : []),
-    [items],
+    () =>
+      groupLedgerItemsForDisplay(
+        Array.isArray(items) ? items : [],
+        false,
+        isLabViewer,
+      ),
+    [items, isLabViewer],
   );
 
   const toggleSort = (key: LedgerSortKey) => {

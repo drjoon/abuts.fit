@@ -6,6 +6,7 @@
 // - web/backend/services/practiceTransferBilling.service.js
 // - web/backend/models/businessAnchor.model.js
 // - web/backend/services/requestCreditHold.service.js
+// - 2026-08-21: PTX CA Request도 abutmentBoxGroupKey(BA+출고일) 유지 — 기공소 배송·생산 박스 묶음.
 // - 2026-08-19: 어벗디자인·어벗생산 박스는 의뢰 사업자+예정출고일. 치과명으로 쪼개지 않음.
 // - 2026-08-19: 기본 내역은 최근 라인만 잘라 10건 lookup. 기간 전체 $count 생략.
 // - 2026-08-19: 어벗디자인 원장 — 수신자(박스) 묶음용 mailbox/shippingReceiver 요약. ObjectId 재귀 가드.
@@ -383,12 +384,11 @@ export function buildCreditLedgerRequestSummary(doc) {
   ).trim();
   const requestorBusinessAnchorId = objectIdString(doc?.businessAnchorId);
   const estimatedShipYmd = String(doc?.timeline?.estimatedShipYmd || "").trim();
-  const abutmentBoxGroupKey = relatedPracticeTransferId
-    ? ""
-    : buildAbutmentBoxGroupKey({
-        requestorBusinessAnchorId,
-        estimatedShipYmd,
-      });
+  // PTX CA도 동일 박스키 — 기공소 장부에서 생산비+배송비를 한 행으로 묶는다.
+  const abutmentBoxGroupKey = buildAbutmentBoxGroupKey({
+    requestorBusinessAnchorId,
+    estimatedShipYmd,
+  });
 
   return {
     requestId: String(doc.requestId || ""),

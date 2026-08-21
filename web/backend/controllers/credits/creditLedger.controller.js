@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-21: PTX abuts_shipping enrich — BA+출고일 박스키(기공소 생산·배송 묶음).
 // - 2026-08-19: 어벗디자인 박스 키=의뢰 사업자+예정출고일. 수신자는 의뢰 사업자명.
 // - 2026-08-19: 기본 내역은 10건+hasMore. 기간 전체 $count를 하지 않는다.
 // - 2026-08-19: 원장 GET에서 신속비 보정을 기다리지 않음. 잔액·집계 병렬, enrich 병렬.
@@ -34,6 +35,7 @@ import { scheduleHealMissingExpressSurchargesForBusiness } from "../requests/com
 import { normalizeRequestorKind } from "../../utils/requestorCapabilities.js";
 import {
   attachCreditLedgerRequestFields,
+  buildAbutmentBoxGroupKey,
   buildCreditLedgerRequestSummary,
   buildCreditLedgerShippingPackageMeta,
   hydrateCreditLedgerRequestorNames,
@@ -294,47 +296,62 @@ export async function listMyCreditLedger(req, res) {
   const toObjectIds = (ids) =>
     ids.map((id) => new mongoose.Types.ObjectId(id));
 
-  const [requestDocs, packageDocs, transferDocs, grants] = await Promise.all([
-    requestRefIds.length
-      ? Request.find({ _id: { $in: toObjectIds(requestRefIds) } })
-          .select(CREDIT_LEDGER_REQUEST_SELECT)
-          .lean()
-      : Promise.resolve([]),
-    shippingPackageRefIds.length
-      ? ShippingPackage.find({
-          _id: { $in: toObjectIds(shippingPackageRefIds) },
-        })
-          .select({ _id: 1, requestIds: 1, mailboxAddress: 1 })
-          .lean()
-      : Promise.resolve([]),
-    practiceTransferRefIds.length
-      ? PracticeTransfer.find({
-          _id: { $in: toObjectIds(practiceTransferRefIds) },
-        })
-          .select({
-            _id: 1,
-            transferId: 1,
-            targetLabName: 1,
-            targetLabAnchorId: 1,
-            assigneeLabAnchorId: 1,
-            practiceBusinessAnchorId: 1,
-            matchingMode: 1,
-            transferMemo: 1,
-            files: 1,
-            toothWorks: 1,
-            billing: 1,
-            "production.skipJig": 1,
-            "production.rushProcessing": 1,
-            autoMatch: 1,
+  const [requestDocs, packageDocs, transferDocs, grants, ptxCaRequestDocs] =
+    await Promise.all([
+      requestRefIds.length
+        ? Request.find({ _id: { $in: toObjectIds(requestRefIds) } })
+            .select(CREDIT_LEDGER_REQUEST_SELECT)
+            .lean()
+        : Promise.resolve([]),
+      shippingPackageRefIds.length
+        ? ShippingPackage.find({
+            _id: { $in: toObjectIds(shippingPackageRefIds) },
           })
-          .lean()
-      : Promise.resolve([]),
-    freeCreditGrantIds.length
-      ? FreeCreditGrant.find({ _id: { $in: toObjectIds(freeCreditGrantIds) } })
-          .select({ _id: 1, type: 1, source: 1, overrideReason: 1 })
-          .lean()
-      : Promise.resolve([]),
-  ]);
+            .select({ _id: 1, requestIds: 1, mailboxAddress: 1 })
+            .lean()
+        : Promise.resolve([]),
+      practiceTransferRefIds.length
+        ? PracticeTransfer.find({
+            _id: { $in: toObjectIds(practiceTransferRefIds) },
+          })
+            .select({
+              _id: 1,
+              transferId: 1,
+              targetLabName: 1,
+              targetLabAnchorId: 1,
+              assigneeLabAnchorId: 1,
+              practiceBusinessAnchorId: 1,
+              matchingMode: 1,
+              transferMemo: 1,
+              files: 1,
+              toothWorks: 1,
+              billing: 1,
+              "production.skipJig": 1,
+              "production.rushProcessing": 1,
+              autoMatch: 1,
+            })
+            .lean()
+        : Promise.resolve([]),
+      freeCreditGrantIds.length
+        ? FreeCreditGrant.find({ _id: { $in: toObjectIds(freeCreditGrantIds) } })
+            .select({ _id: 1, type: 1, source: 1, overrideReason: 1 })
+            .lean()
+        : Promise.resolve([]),
+      // PTX→어벗츠 배송 박스키용 CA Request(출고일)
+      practiceTransferRefIds.length
+        ? Request.find({
+            "partnerBilling.relatedPracticeTransferId": {
+              $in: toObjectIds(practiceTransferRefIds),
+            },
+          })
+            .select({
+              businessAnchorId: 1,
+              "timeline.estimatedShipYmd": 1,
+              "partnerBilling.relatedPracticeTransferId": 1,
+            })
+            .lean()
+        : Promise.resolve([]),
+    ]);
 
   const refRequestIdById = new Map();
   const refRequestSummaryById = new Map();
@@ -404,6 +421,35 @@ export async function listMyCreditLedger(req, res) {
 
   const practiceTransferIdById = new Map();
   const practiceTransferMetaById = new Map();
+  /** PTX id → { labBa, estimatedShipYmd, abutmentBoxGroupKey } */
+  const ptxAbutsBoxById = new Map();
+  for (const ca of ptxCaRequestDocs || []) {
+    const ptxId = String(ca?.partnerBilling?.relatedPracticeTransferId || "").trim();
+    if (!ptxId || !mongoose.Types.ObjectId.isValid(ptxId)) continue;
+    const labBa = String(ca?.businessAnchorId || "").trim();
+    const ymd = String(ca?.timeline?.estimatedShipYmd || "").trim();
+    const prev = ptxAbutsBoxById.get(ptxId);
+    if (!prev) {
+      ptxAbutsBoxById.set(ptxId, {
+        labBa,
+        estimatedShipYmd: ymd,
+        abutmentBoxGroupKey: buildAbutmentBoxGroupKey({
+          requestorBusinessAnchorId: labBa,
+          estimatedShipYmd: ymd,
+        }),
+      });
+      continue;
+    }
+    // 동일 PTX CA는 같은 출고일을 기대. 비어 있으면 채운다.
+    if (!prev.estimatedShipYmd && ymd) {
+      prev.estimatedShipYmd = ymd;
+      prev.abutmentBoxGroupKey = buildAbutmentBoxGroupKey({
+        requestorBusinessAnchorId: prev.labBa || labBa,
+        estimatedShipYmd: ymd,
+      });
+    }
+    if (!prev.labBa && labBa) prev.labBa = labBa;
+  }
   for (const doc of transferDocs || []) {
     if (!doc?._id) continue;
     const id = String(doc._id);
@@ -422,6 +468,11 @@ export async function listMyCreditLedger(req, res) {
     const abutmentSettledAt = doc?.billing?.abutmentSettledAt || null;
     const fullySettled = Boolean(settledAt);
     const skipJigRaw = doc?.production?.skipJig;
+    const labBa =
+      String(doc.assigneeLabAnchorId || doc.targetLabAnchorId || "").trim() ||
+      ptxAbutsBoxById.get(id)?.labBa ||
+      "";
+    const boxMeta = ptxAbutsBoxById.get(id) || null;
     practiceTransferIdById.set(id, String(doc.transferId || ""));
     practiceTransferMetaById.set(id, {
       patientName: memoPatient || filePatient,
@@ -440,6 +491,14 @@ export async function listMyCreditLedger(req, res) {
         skipJigRaw === "0"
       ),
       rushProcessing: Boolean(doc?.production?.rushProcessing),
+      labBusinessAnchorId: labBa,
+      estimatedShipYmd: boxMeta?.estimatedShipYmd || "",
+      abutmentBoxGroupKey:
+        boxMeta?.abutmentBoxGroupKey ||
+        buildAbutmentBoxGroupKey({
+          requestorBusinessAnchorId: labBa,
+          estimatedShipYmd: boxMeta?.estimatedShipYmd || "",
+        }),
     });
   }
 
@@ -467,6 +526,13 @@ export async function listMyCreditLedger(req, res) {
       const base = asPtxDesignFee
         ? promoteAbutmentDesignFeeToPracticeTransfer(it, ptxLookupId)
         : it;
+      const holdShare = String(base?.holdShare || it?.holdShare || "").trim();
+      const isAbutsShippingHold =
+        holdShare === "abuts_shipping" ||
+        holdShare === "lab_shipping" ||
+        String(base?.displayLabel || it?.displayLabel || "").includes(
+          "기공소→어벗츠",
+        );
       return {
         ...base,
         refPracticeTransferId: ptxLookupId
@@ -483,6 +549,18 @@ export async function listMyCreditLedger(req, res) {
         feeQuote: meta?.feeQuote || null,
         skipJig: meta?.skipJig !== false,
         rushProcessing: Boolean(meta?.rushProcessing),
+        ...(isAbutsShippingHold
+          ? {
+              relatedPracticeTransferId:
+                String(base?.relatedPracticeTransferId || "").trim() ||
+                ptxLookupId,
+              requestorBusinessAnchorId:
+                meta?.labBusinessAnchorId ||
+                String(base?.requestorBusinessAnchorId || "").trim(),
+              estimatedShipYmd: meta?.estimatedShipYmd || "",
+              abutmentBoxGroupKey: meta?.abutmentBoxGroupKey || "",
+            }
+          : {}),
       };
     }
 
