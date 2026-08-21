@@ -4,6 +4,7 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/shared/hooks/useBackgroundTempUpload.ts
 // - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
+// - 2026-08-21: textarea flex-1 제거·루트 shrink-0 — 채팅 레이아웃에서 입력칸이 내역 높이를 잠식하지 않게.
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -79,7 +80,7 @@ export const ChatComposer = (props: Props) => {
     !!disabled || !!isSending || (!draft.trim() && !hasFiles);
 
   return (
-    <div className="border-t px-3 pt-3 pb-4 sm:px-4 sm:pt-4 sm:pb-6 space-y-2">
+    <div className="shrink-0 border-t px-3 pt-3 pb-4 sm:px-4 sm:pt-4 sm:pb-6 space-y-2">
       {replyTo ? (
         <MessageReply replyTo={replyTo} onCancelReply={onCancelReply} />
       ) : null}
@@ -97,7 +98,7 @@ export const ChatComposer = (props: Props) => {
         value={draft}
         onChange={(e) => onDraftChange(e.target.value)}
         placeholder={placeholder || "메시지를 입력하세요"}
-        className="resize-none flex-1"
+        className="resize-none"
         rows={3}
         disabled={!!disabled || !!isSending}
         onKeyDown={(e) => {

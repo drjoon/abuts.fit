@@ -11,6 +11,7 @@
 // - web/frontend/src/shared/files/modelPreviewFile.ts
 // - web/frontend/src/shared/files/downloadWithProgress.ts
 // - web/frontend/src/shared/files/s3BlobCache.ts
+// - 2026-08-21: 모바일 채팅 — 상세/채팅·메시지/입력을 grid fr로 나눠 내역 높이 확보.
 // - 2026-08-21: 어벗 가공 고정 안내 문구 제거. 수락/생산 취소는 클릭 시 API로 판정·토스트.
 // - 2026-08-21: 컨펌 필요 시 작업 파일 프리뷰를 먼저 열고 안내·CTA를 프리뷰에 표시.
 // - 2026-08-21: 작업 파일도 의뢰 파일과 동일 4열 타일 미리보기.
@@ -49,7 +50,6 @@ import {
 import { Box, CircleHelp, FileIcon, MessageSquare, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { type ChatMessage } from "@/shared/hooks/useChatRooms";
 import { ChatComposer } from "@/features/chat/components/ChatComposer";
 import { ChatMessageBubble } from "@/features/chat/components/ChatMessageBubble";
@@ -878,7 +878,7 @@ export function PracticeTransferDetailChatDialog({
   return (
     <>
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[95vw] max-w-[90rem] h-[86vh] p-0 overflow-hidden flex flex-col">
+      <DialogContent className="flex h-[86vh] w-[95vw] max-w-[90rem] flex-col gap-0 overflow-hidden p-0">
         <DialogHeader className="px-5 pt-5 pb-3 border-b shrink-0">
           <DialogTitle className="flex items-center gap-2 pr-8 text-base">
             <MessageSquare className="h-4 w-4 text-primary-strong" />
@@ -887,7 +887,7 @@ export function PracticeTransferDetailChatDialog({
         </DialogHeader>
 
         <div className="px-5 py-4 flex-1 min-h-0 overflow-hidden">
-          <div className="grid h-full min-h-0 grid-cols-1 gap-4 lg:grid-cols-2">
+          <div className="grid h-full min-h-0 grid-cols-1 grid-rows-[minmax(0,0.3fr)_minmax(0,0.7fr)] gap-4 lg:grid-cols-2 lg:grid-rows-[minmax(0,1fr)]">
             <div className="min-h-0 space-y-4 overflow-y-auto rounded-lg border bg-card p-3 text-[15px]">
               {onEditRequest || onCancelRequest ? (
                 <div className="flex justify-end gap-2">
@@ -1244,8 +1244,8 @@ export function PracticeTransferDetailChatDialog({
                 </div>
               ) : null}
 
-              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                <ScrollArea className="min-h-0 flex-1">
+              <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_auto] overflow-hidden">
+                <div className="min-h-0 overflow-y-auto overscroll-contain">
                   <div className="w-full min-w-0 max-w-full space-y-2 p-3 sm:p-4">
                     {chatLoading ? (
                       <div className="py-4 text-center text-xs text-muted-foreground">
@@ -1299,22 +1299,24 @@ export function PracticeTransferDetailChatDialog({
                     })}
                     <div ref={chatBottomRef} />
                   </div>
-                </ScrollArea>
+                </div>
 
-                <ChatComposer
-                  draft={chatDraft}
-                  onDraftChange={onChangeChatDraft}
-                  onSend={() => void onSendChatMessage()}
-                  placeholder={composerPlaceholder}
-                  disabled={inputDisabled}
-                  isSending={sendDisabled}
-                  pendingUploads={chatAttachedFiles}
-                  onPickFiles={onAttachChatFiles}
-                  onRemovePendingFile={onRemoveAttachedChatFile}
-                  onRetryPendingFile={onRetryAttachedChatFile}
-                  replyTo={replyTo}
-                  onCancelReply={onCancelReply}
-                />
+                <div className="shrink-0">
+                  <ChatComposer
+                    draft={chatDraft}
+                    onDraftChange={onChangeChatDraft}
+                    onSend={() => void onSendChatMessage()}
+                    placeholder={composerPlaceholder}
+                    disabled={inputDisabled}
+                    isSending={sendDisabled}
+                    pendingUploads={chatAttachedFiles}
+                    onPickFiles={onAttachChatFiles}
+                    onRemovePendingFile={onRemoveAttachedChatFile}
+                    onRetryPendingFile={onRetryAttachedChatFile}
+                    replyTo={replyTo}
+                    onCancelReply={onCancelReply}
+                  />
+                </div>
               </div>
             </div>
           </div>
