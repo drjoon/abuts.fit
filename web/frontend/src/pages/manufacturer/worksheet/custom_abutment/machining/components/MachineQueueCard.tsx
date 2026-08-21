@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-08-21: Next Up NC 미수신(CAM 재생성) 시 라이노와 동일 블러 오버레이.
+// - 2026-08-21: Next Up 카드 드래그로 다른 장비 이동(onMoveNextUpToMachine).
 // - 2026-08-08: 공구상태 모달 톤에 맞춰 카드 밀도·CTA·compact 라벨 정리.
 // - 2026-08-07: Complete/Now Playing/Next Up에서 의뢰ID(requestId) 표시 제거.
 // - 2026-08-07: Complete/Now Playing/Next Up에 의뢰자명(businessName) 표시.
@@ -28,6 +30,9 @@ import type { MachineQueueCardProps, QueueItem } from "../types";
 import { buildLabelExtraProps, formatMachiningLabel } from "../utils/label";
 import { MachiningRequestLabel } from "./MachiningRequestLabel";
 import { getMachineStatusLabel } from "@/pages/manufacturer/equipment/cnc/lib/machineStatus";
+
+/** Next Up → 타 장비 드롭 MIME (playlist 재정렬과 구분) */
+const NEXT_UP_MOVE_MIME = "application/x-abuts-nextup-move";
 
 const isMachiningStatus = (slot?: QueueItem) => {
   const s = String(slot?.status || "").trim();
@@ -127,6 +132,7 @@ export const MachineQueueCard = ({
   onRollbackNextUp,
   onRollbackCompleted,
   onApproveFromRollback,
+  onMoveNextUpToMachine,
   materialNeedsReplacement,
   materialAlertTooltip,
 }: MachineQueueCardProps) => {
@@ -304,6 +310,50 @@ export const MachineQueueCard = ({
   const [completedRolledBack, setCompletedRolledBack] = useState(false);
   const isCompletedRolledBack = completedRolledBack;
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [nextUpDropActive, setNextUpDropActive] = useState(false);
+  const nextUpDragActiveRef = useRef(false);
+  const nextUpMoveInFlightRef = useRef(false);
+
+  const nextUpMongoId = String(
+    (nextSlot as { requestMongoId?: string } | null)?.requestMongoId || "",
+  ).trim();
+  const nextUpRequestId = String(nextSlot?.requestId || "").trim();
+  const canDragNextUp =
+    Boolean(onMoveNextUpToMachine) && Boolean(nextUpMongoId);
+  const nextUpHasNc = Boolean(
+    String((nextSlot as any)?.ncFile?.s3Key || "").trim() ||
+      String((nextSlot as any)?.caseInfos?.ncFile?.s3Key || "").trim(),
+  );
+  // 준비 탭 라이노 미완료와 동일 SSOT: NC 없으면 CAM 재생성 대기
+  const nextUpCamRegenPending = Boolean(nextSlot) && !nextUpHasNc;
+
+  const hasNextUpMoveMime = (dt: DataTransfer | null) => {
+    if (!dt) return false;
+    return Array.from(dt.types || []).includes(NEXT_UP_MOVE_MIME);
+  };
+
+  const parseNextUpMovePayload = (dt: DataTransfer | null) => {
+    if (!dt) return null;
+    const raw = dt.getData(NEXT_UP_MOVE_MIME) || "";
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw) as {
+        requestMongoId?: string;
+        requestId?: string;
+        fromMachineId?: string;
+      };
+      const requestMongoId = String(parsed?.requestMongoId || "").trim();
+      const fromMachineId = String(parsed?.fromMachineId || "").trim();
+      if (!requestMongoId || !fromMachineId) return null;
+      return {
+        requestMongoId,
+        requestId: String(parsed?.requestId || "").trim() || undefined,
+        fromMachineId,
+      };
+    } catch {
+      return null;
+    }
+  };
 
   const [queueAdminOpen, setQueueAdminOpen] = useState(false);
   const [queueAdminLoading, setQueueAdminLoading] = useState(false);
@@ -918,13 +968,115 @@ export const MachineQueueCard = ({
           <div
             role="button"
             tabIndex={0}
-            className={`group rounded-xl border border-slate-200 px-3 py-2.5 transition-colors ${
-              !nextSlot
-                ? "bg-white text-slate-400 cursor-not-allowed"
-                : "bg-white hover:bg-slate-50 cursor-pointer"
-            }`}
+            className={`group relative rounded-xl border px-3 py-2.5 transition-colors ${
+              nextUpCamRegenPending ? "overflow-hidden" : ""
+            } ${
+              nextUpDropActive
+                ? "border-primary bg-primary-soft/40 ring-1 ring-primary/30"
+                : "border-slate-200"
+            } ${
+              !nextSlot && !nextUpDropActive
+                ? "bg-white text-slate-400"
+                : "bg-white hover:bg-slate-50"
+            } ${canDragNextUp ? "cursor-grab active:cursor-grabbing" : nextSlot && !nextUpCamRegenPending ? "cursor-pointer" : "cursor-default"}`}
+            draggable={canDragNextUp}
+            title={
+              nextUpCamRegenPending
+                ? "CAM 재생성 중"
+                : canDragNextUp
+                  ? "드래그하여 다른 장비 Next Up으로 이동"
+                  : undefined
+            }
+            onDragStart={(e) => {
+              if (!canDragNextUp) {
+                e.preventDefault();
+                return;
+              }
+              nextUpDragActiveRef.current = true;
+              const payload = JSON.stringify({
+                requestMongoId: nextUpMongoId,
+                requestId: nextUpRequestId || undefined,
+                fromMachineId: machineId,
+              });
+              e.dataTransfer.setData(NEXT_UP_MOVE_MIME, payload);
+              // Safari fallback only; dragOver accepts MIME only
+              e.dataTransfer.setData("text/plain", payload);
+              e.dataTransfer.effectAllowed = "move";
+            }}
+            onDragEnd={() => {
+              // click is often fired after a completed drag — suppress one cycle
+              window.setTimeout(() => {
+                nextUpDragActiveRef.current = false;
+              }, 0);
+            }}
+            onDragOver={(e) => {
+              if (!onMoveNextUpToMachine) return;
+              if (!hasNextUpMoveMime(e.dataTransfer)) return;
+              e.preventDefault();
+              e.dataTransfer.dropEffect = "move";
+              if (!nextUpDropActive) setNextUpDropActive(true);
+            }}
+            onDragLeave={(e) => {
+              const related = e.relatedTarget as Node | null;
+              if (related && e.currentTarget.contains(related)) return;
+              setNextUpDropActive(false);
+            }}
+            onDrop={(e) => {
+              setNextUpDropActive(false);
+              if (!onMoveNextUpToMachine) return;
+              e.preventDefault();
+              e.stopPropagation();
+              if (nextUpMoveInFlightRef.current) return;
+
+              let payload = parseNextUpMovePayload(e.dataTransfer);
+              if (!payload) {
+                // Safari: custom MIME may be empty on drop — try text/plain once
+                const fallbackRaw = e.dataTransfer.getData("text/plain") || "";
+                if (!fallbackRaw) return;
+                try {
+                  const parsed = JSON.parse(fallbackRaw) as {
+                    requestMongoId?: string;
+                    requestId?: string;
+                    fromMachineId?: string;
+                  };
+                  const requestMongoId = String(
+                    parsed?.requestMongoId || "",
+                  ).trim();
+                  const fromMachineId = String(
+                    parsed?.fromMachineId || "",
+                  ).trim();
+                  if (!requestMongoId || !fromMachineId) return;
+                  payload = {
+                    requestMongoId,
+                    requestId:
+                      String(parsed?.requestId || "").trim() || undefined,
+                    fromMachineId,
+                  };
+                } catch {
+                  return;
+                }
+              }
+              if (payload.fromMachineId === machineId) return;
+
+              nextUpMoveInFlightRef.current = true;
+              Promise.resolve(
+                onMoveNextUpToMachine({
+                  requestMongoId: payload.requestMongoId,
+                  requestId: payload.requestId,
+                  fromMachineId: payload.fromMachineId,
+                  toMachineId: machineId,
+                }),
+              ).finally(() => {
+                nextUpMoveInFlightRef.current = false;
+              });
+            }}
             onClick={(e) => {
-              if (!nextSlot) return;
+              if (nextUpDragActiveRef.current) {
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+              }
+              if (!nextSlot || nextUpCamRegenPending) return;
               const nc = nextSlot?.ncFile ?? null;
               const bridgePath = String(nc?.filePath || "").trim();
               const s3Key = String(nc?.s3Key || "").trim();
@@ -953,6 +1105,26 @@ export const MachineQueueCard = ({
               onOpenProgramCode?.(prog, machineId);
             }}
           >
+            {nextUpCamRegenPending ? (
+              <div
+                className="absolute inset-0 z-30 flex items-center justify-center rounded-[inherit] bg-white/55 backdrop-blur-[6px] cursor-not-allowed"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                role="status"
+                aria-live="polite"
+                aria-label="CAM 재생성 중"
+              >
+                <span className="rounded-full border border-primary-muted bg-primary-soft/90 px-3 py-1.5 text-sm font-extrabold text-primary-strong shadow-sm">
+                  CAM 재생성 중
+                </span>
+              </div>
+            ) : null}
             <div className="flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-500">
               <div className="min-w-0 flex flex-wrap items-center gap-1.5">
                 <span className="uppercase tracking-wide text-slate-400">

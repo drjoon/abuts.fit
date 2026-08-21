@@ -11,6 +11,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/components/MachiningPriorityRulesModal.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
 // change-log:
+// - 2026-08-21: Next Up 수동 장비 이동 API(moveProductionQueueRequest) — NC $unset 후 항상 CAM/NC 재생성.
 // - 2026-08-07: 재배정을 소재≥maxDiameter 커버 + 최소 소재 우선으로 통일 (D6 exact-group skip 수정).
 // - 2026-08-07: 생산 큐 응답에 의뢰자명(businessName) 포함.
 // - 2026-08-06: 가공 큐 select에 designSoftware·헥스 회전(rnd/caseInfos) 포함. 프리뷰 누락 수정.
@@ -23,6 +24,7 @@ import {
 import CncMachine from "../../models/cncMachine.model.js";
 import Machine from "../../models/machine.model.js";
 import BridgeSetting from "../../models/bridgeSetting.model.js";
+import mongoose from "mongoose";
 import { buildManufacturerOrgScopeFilter } from "../requests/utils.js";
 import {
   MACHINING_ASSIGN_STAGE_SET,
@@ -34,15 +36,21 @@ import {
   inferRequestDiameterGroup,
   isMachiningInProgress,
   isMachiningCompleted,
+  isRequestDiameterCompatibleWithMachineMaterial,
   getMachiningLoadWeight,
   rankCoveringMachinesForRequest,
 } from "./distribution.utils.js";
-import { compareMachiningQueueOrder } from "../requests/production.utils.js";
+import {
+  compareMachiningQueueOrder,
+  placeRequestAtPolicyQueuePosition,
+} from "../requests/production.utils.js";
 import {
   getLastExpressDeadlineRebalanceAlert,
   rebalanceExpressJobsForFourteenOClockDeadline,
 } from "../requests/expressDeadlineRebalance.utils.js";
 import { getMachiningPriorityRules } from "../requests/machiningPriorityRules.js";
+import { enqueueApproval } from "../../services/reviewApprovalQueue.service.js";
+import { resolveEffectiveShippingMode } from "../requests/shippingPriority.utils.js";
 
 function isMachineOnlineStatus(status) {
   const s = String(status || "")
@@ -599,6 +607,249 @@ export async function getMachiningPriorityRulesHandler(req, res) {
     return res.status(500).json({
       success: false,
       message: "가공 우선순위 룰 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * Next Up(대기) 의뢰를 다른 장비로 수동 이동.
+ * - 가공중/완료 건은 거부
+ * - 대상 장비 소재가 maxDiameter를 커버해야 함
+ * - 장착 직경이 바뀌면 Esprit force 재생성(CAM/NC)
+ */
+export async function moveProductionQueueRequest(req, res) {
+  try {
+    const requestMongoId = String(
+      req.body?.requestMongoId || req.body?.requestId || "",
+    ).trim();
+    const fromMachineId = String(req.body?.fromMachineId || "").trim();
+    const toMachineId = String(req.body?.toMachineId || "").trim();
+
+    if (!requestMongoId || !fromMachineId || !toMachineId) {
+      return res.status(400).json({
+        success: false,
+        message: "requestMongoId, fromMachineId, toMachineId가 필요합니다.",
+      });
+    }
+    if (fromMachineId === toMachineId) {
+      return res.status(400).json({
+        success: false,
+        message: "같은 장비로는 이동할 수 없습니다.",
+      });
+    }
+
+    const scope = await resolveManufacturerMachineScope(req);
+    if (
+      Array.isArray(scope.machineIds) &&
+      scope.machineIds.length > 0 &&
+      (!scope.machineIds.includes(fromMachineId) ||
+        !scope.machineIds.includes(toMachineId))
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: "소유하지 않은 장비로는 이동할 수 없습니다.",
+      });
+    }
+
+    const idFilter = mongoose.isValidObjectId(requestMongoId)
+      ? { $or: [{ _id: requestMongoId }, { requestId: requestMongoId }] }
+      : { requestId: requestMongoId };
+
+    const requestDoc = await Request.findOne({
+      ...idFilter,
+      manufacturerStage: { $in: MACHINING_ASSIGN_STAGE_SET },
+      ...EXCLUDE_UNMACHINABLE_FILTER,
+      ...scope.requestFilter,
+    }).populate({
+      path: "productionSchedule.machiningRecord",
+      select: "status startedAt completedAt machineId",
+    });
+
+    if (!requestDoc) {
+      return res.status(404).json({
+        success: false,
+        message: "이동할 가공 대기 의뢰를 찾을 수 없습니다.",
+      });
+    }
+
+    if (isMachiningInProgress(requestDoc) || isMachiningCompleted(requestDoc)) {
+      return res.status(409).json({
+        success: false,
+        message: "가공 중이거나 완료된 건은 이동할 수 없습니다.",
+      });
+    }
+
+    const currentMachineId = String(
+      requestDoc?.productionSchedule?.assignedMachine ||
+        requestDoc?.assignedMachine ||
+        "",
+    ).trim();
+    if (currentMachineId && currentMachineId !== fromMachineId) {
+      return res.status(409).json({
+        success: false,
+        message: `현재 ${currentMachineId}에 배정된 건입니다. 화면을 새로고침 후 다시 시도하세요.`,
+      });
+    }
+
+    const [toCnc, toMachineFlag, fromDiaSource] = await Promise.all([
+      CncMachine.findOne({ machineId: toMachineId, status: "active" })
+        .select({ machineId: 1, maxModelDiameterGroups: 1, currentMaterial: 1 })
+        .lean(),
+      Machine.findOne({ uid: toMachineId })
+        .select({ uid: 1, allowRequestAssign: 1 })
+        .lean(),
+      CncMachine.findOne({ machineId: fromMachineId })
+        .select({ currentMaterial: 1 })
+        .lean(),
+    ]);
+
+    if (!toCnc) {
+      return res.status(404).json({
+        success: false,
+        message: "대상 장비를 찾을 수 없습니다.",
+      });
+    }
+    if (toMachineFlag?.allowRequestAssign === false) {
+      return res.status(409).json({
+        success: false,
+        message: "대상 장비는 배정이 꺼져 있습니다.",
+      });
+    }
+
+    if (
+      !isRequestDiameterCompatibleWithMachineMaterial({
+        requestDoc,
+        machineMeta: toCnc,
+      })
+    ) {
+      const maxD = Number(requestDoc?.caseInfos?.maxDiameter);
+      const toDia = inferCurrentMaterialDiameter(toCnc);
+      return res.status(409).json({
+        success: false,
+        message: `대상 장비 소재(Ø${
+          Number.isFinite(toDia) ? toDia : "?"
+        })가 의뢰 maxDiameter(${
+          Number.isFinite(maxD) ? maxD : "?"
+        })를 커버하지 않습니다.`,
+      });
+    }
+
+    const fromDia = Number.isFinite(
+      Number(requestDoc?.productionSchedule?.diameter),
+    )
+      ? Number(requestDoc.productionSchedule.diameter)
+      : inferCurrentMaterialDiameter(fromDiaSource);
+    const toDia = inferCurrentMaterialDiameter(toCnc);
+    const toGroup = Number.isFinite(toDia)
+      ? inferDiameterGroupFromValue(toDia)
+      : "";
+    const diameterChanged =
+      Number.isFinite(fromDia) &&
+      Number.isFinite(toDia) &&
+      Math.abs(fromDia - toDia) > 1e-6;
+
+    const nowMs = Date.now();
+    const moveMeta = {
+      at: new Date(nowMs),
+      fromMachineId,
+      toMachineId,
+      fromDiameter: Number.isFinite(fromDia) ? fromDia : null,
+      toDiameter: Number.isFinite(toDia) ? toDia : null,
+      reason: "manual_next_up_move",
+      diameterChanged,
+      ncCleared: true,
+      espritRetriggered: true,
+    };
+
+    const $set = {
+      "productionSchedule.assignedMachine": toMachineId,
+      "productionSchedule.ncPreload": { status: "NONE" },
+      // express 「빠른 가공 재배치」뱃지와 분리 (manualMachineMove만 기록)
+      "productionSchedule.manualMachineMove": moveMeta,
+      assignedMachine: toMachineId,
+    };
+    if (Number.isFinite(toDia) && toDia > 0) {
+      $set["productionSchedule.diameter"] = toDia;
+    }
+    if (toGroup) {
+      $set["productionSchedule.diameterGroup"] = toGroup;
+    }
+
+    // 기존 NC를 반드시 제거한 뒤 CAM 재생성 — 이전 장비 직경 NC 재사용 여지 차단
+    await Request.updateOne(
+      { _id: requestDoc._id },
+      {
+        $set,
+        $unset: { "caseInfos.ncFile": 1 },
+      },
+    );
+
+    await placeRequestAtPolicyQueuePosition({
+      machineId: toMachineId,
+      requestMongoId: requestDoc._id,
+      anodizingEnabled: requestDoc?.caseInfos?.anodizingEnabled,
+      shippingMode: resolveEffectiveShippingMode(requestDoc),
+      RequestModel: Request,
+    });
+
+    const remainingOnFrom = await Request.find({
+      manufacturerStage: { $in: MACHINING_QUEUE_STAGE_SET },
+      ...EXCLUDE_UNMACHINABLE_FILTER,
+      "productionSchedule.assignedMachine": fromMachineId,
+      _id: { $ne: requestDoc._id },
+    })
+      .select(
+        "_id productionSchedule caseInfos shippingMode finalShipping originalShipping",
+      )
+      .populate({
+        path: "productionSchedule.machiningRecord",
+        select: "status startedAt completedAt",
+      });
+
+    const orderedFrom = [...remainingOnFrom].sort(compareMachiningQueueOrder);
+    if (orderedFrom.length > 0) {
+      await Promise.all(
+        orderedFrom.map((item, idx) =>
+          Request.updateOne(
+            { _id: item._id },
+            { $set: { "productionSchedule.queuePosition": idx + 1 } },
+          ),
+        ),
+      );
+    }
+
+    let espritRetriggered = false;
+    const fresh = await Request.findById(requestDoc._id).lean();
+    if (fresh) {
+      await enqueueApproval({
+        taskType: "REQUEST_STAGE_APPROVED",
+        request: fresh,
+        actorUserId: req?.user?._id ? String(req.user._id) : null,
+        forceReprocess: true,
+      });
+      espritRetriggered = true;
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        requestId: String(requestDoc.requestId || ""),
+        requestMongoId: String(requestDoc._id || ""),
+        fromMachineId,
+        toMachineId,
+        fromDiameter: Number.isFinite(fromDia) ? fromDia : null,
+        toDiameter: Number.isFinite(toDia) ? toDia : null,
+        diameterChanged,
+        ncCleared: true,
+        espritRetriggered,
+      },
+    });
+  } catch (error) {
+    console.error("Error in moveProductionQueueRequest:", error);
+    return res.status(500).json({
+      success: false,
+      message: "생산 큐 이동 중 오류가 발생했습니다.",
       error: error.message,
     });
   }

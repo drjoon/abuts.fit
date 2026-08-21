@@ -77,6 +77,9 @@ export const buildLabelExtraProps = (slot?: QueueItem | null): LabelExtra => {
 
   const rebalance =
     (slot as any)?.fastMachiningRebalance || schedule?.fastMachiningRebalance;
+  const rebalanceReason = String(rebalance?.reason || "").trim();
+  // express 14:00 재배치만 「빠른 가공 재배치」뱃지. 수동 Next Up 이동 메타는 제외.
+  const showFastMachiningRebalance = rebalanceReason === "express_deadline_14";
 
   const estimatedShipYmd = String(
     (slot as any)?.estimatedShipYmd ||
@@ -97,7 +100,7 @@ export const buildLabelExtraProps = (slot?: QueueItem | null): LabelExtra => {
     isSample,
     isRndArchivedSample,
     isCopiedSample,
-    showFastMachiningRebalance: Boolean(rebalance),
+    showFastMachiningRebalance,
     estimatedShipYmd: estimatedShipYmd || null,
   };
 };

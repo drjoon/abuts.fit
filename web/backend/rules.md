@@ -196,7 +196,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - 2단계(spread): 한 장비 큐가 **출고일 14:00** 마감을 넘기면, 다른 여유 장비로 분산(소재 직경 작은 장비 우선).
 - 조건: `estimatedShipYmd` 각 건의 출고일 14:00 — 당일만이 아님.
 - 소재 직경 변경 시 Esprit force 재생성 (`REQUEST_STAGE_APPROVED` + `forceReprocess`)
-- 메타/뱃지: `productionSchedule.fastMachiningRebalance` → 프론트 「빠른 가공 재배치」
+- 메타/뱃지: `productionSchedule.fastMachiningRebalance` (`reason=express_deadline_14`) → 프론트 「빠른 가공 재배치」
 - Alert: `SystemSettings.lastExpressDeadlineRebalance` + socket `machining:express-rebalance`
   - API: `GET /api/cnc-machines/queues/express-rebalance-alert`, queues `meta.expressRebalanceAlert`
   - 프론트는 모달/칩 닫기 시 Alert `id`를 dismissed로 저장하고, 같은 건은 새로고침해도 재표시하지 않는다.
@@ -210,6 +210,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 호환 SSOT: 장착 소재 직경 ≥ `caseInfos.maxDiameter` (D6 의뢰 → D8/D10 장비 허용; 그룹 exact-match 금지)
   - 공유 헬퍼: `distribution.utils.js` `isRequestDiameterCompatibleWithMachineMaterial`
 - 재배정: `controllers/cnc/production.js` redistribute — 소재≥maxDiameter 커버 + 최소 소재 우선 (`rankCoveringMachinesForRequest`; diameterGroup exact-match 금지) + express rebalance
+- Next Up 수동 이동: `POST /api/cnc-machines/queues/move` (`moveProductionQueueRequest`) — 대기 건만, 대상 소재≥maxDiameter. **항상** `caseInfos.ncFile` `$unset` 후 `REQUEST_STAGE_APPROVED`+`forceReprocess`로 CAM/NC 재생성(이전 NC 재사용 금지). 메타는 `productionSchedule.manualMachineMove`(express `fastMachiningRebalance` 뱃지와 분리). 프론트: Next Up 카드 드래그→타 장비 Next Up 드롭; NC 없을 때 「CAM 재생성 중」 블러 오버레이(준비 탭 라이노 작업중과 동일 패턴)
 - 표시: 큐/lastCompleted/summary API에 `shippingMode` 포함 → 프론트 `ShippingModeBadge` (프리뷰 추가 round-trip 금지)
 - 표시: 큐/lastCompleted에 `businessName`(BusinessAnchor.name) 포함 → 프론트 가공 카드·예약목록 의뢰자명
   - 배치 조회: `controllers/cnc/shared.js` `buildBusinessNameByAnchorIdMap`

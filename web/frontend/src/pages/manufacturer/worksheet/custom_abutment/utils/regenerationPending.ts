@@ -18,6 +18,11 @@ export function markNcRegenerationPending(requestId: unknown) {
   if (id) pendingNc.add(id);
 }
 
+export function isNcRegenerationPending(requestId: unknown) {
+  const id = normalizeRequestId(requestId);
+  return Boolean(id && pendingNc.has(id));
+}
+
 export function consumeFilledStlRegenerationPending(requestId: unknown) {
   const id = normalizeRequestId(requestId);
   if (!id || !pendingFilled.has(id)) return false;

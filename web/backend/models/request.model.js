@@ -953,6 +953,16 @@ const requestSchema = new mongoose.Schema(
         reason: String,
       },
 
+      // Next Up 수동 장비 이동 메타 (express 뱃지와 분리 — UI 뱃지 없음)
+      manualMachineMove: {
+        at: Date,
+        fromMachineId: String,
+        toMachineId: String,
+        fromDiameter: Number,
+        toDiameter: Number,
+        reason: String,
+      },
+
       ncPreload: {
         status: {
           type: String,

@@ -7,6 +7,8 @@
 // - web/frontend/src/pages/manufacturer/equipment/cnc/components/CncPlaylistDrawer.tsx
 // - web/backend/controllers/requests/common.review.controller.js
 // change-log:
+// - 2026-08-21: Next Up 이동 시 NC 삭제·CAM 항상 재생성 + 대기 오버레이용 pending 표시.
+// - 2026-08-21: Next Up 드래그로 타 장비 이동(moveNextUpToMachine) + 직경 변경 시 CAM 재생성 안내.
 // - 2026-08-18: filled STL 재생성 통보 시 큐 NC 메타를 비워 CAM 재생성을 가능하게 함.
 // - 2026-08-12: 빠른 가공 재배치 Alert 확인(닫기) 후 같은 id는 새로고침해도 재표시하지 않음.
 // - 2026-08-07: 예약목록 PlaylistJobItem에 의뢰자명·치과/환자 구조화 필드 전달.
@@ -41,6 +43,10 @@ import type {
 import { formatMachiningLabel } from "../utils/label";
 import { resolveShippingMode } from "@/shared/shipping/shippingMode";
 import { useCncDashboardMaterials } from "@/pages/manufacturer/equipment/cnc/hooks/useCncDashboardMaterials";
+import {
+  markNcRegenerationPending,
+  consumeNcRegenerationPending,
+} from "../../utils/regenerationPending";
 
 const isMachiningStatus = (status?: string) => {
   const s = String(status || "").trim();
@@ -488,6 +494,7 @@ export const useMachiningBoard = ({
     Record<string, number>
   >({});
   const machiningElapsedBaseRef = useRef<Record<string, number>>({});
+  const moveNextUpInFlightRef = useRef<Set<string>>(new Set());
 
   const [lastCompletedMap, setLastCompletedMap] = useState<
     Record<string, LastCompletedMachining>
@@ -773,6 +780,121 @@ export const useMachiningBoard = ({
       });
     }
   }, [toast, token]);
+
+  const moveNextUpToMachine = useCallback(
+    async (params: {
+      requestMongoId: string;
+      fromMachineId: string;
+      toMachineId: string;
+    }) => {
+      if (!token) return;
+      const requestMongoId = String(params.requestMongoId || "").trim();
+      const fromMachineId = String(params.fromMachineId || "").trim();
+      const toMachineId = String(params.toMachineId || "").trim();
+      if (!requestMongoId || !fromMachineId || !toMachineId) return;
+      if (fromMachineId === toMachineId) return;
+
+      const moveKey = `${requestMongoId}:${fromMachineId}:${toMachineId}`;
+      if (moveNextUpInFlightRef.current.has(moveKey)) return;
+      moveNextUpInFlightRef.current.add(moveKey);
+
+      try {
+        const res = await fetch("/api/cnc-machines/queues/move", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            requestMongoId,
+            fromMachineId,
+            toMachineId,
+          }),
+        });
+        const body: any = await res.json().catch(() => ({}));
+        if (!res.ok || body?.success === false) {
+          throw new Error(body?.message || "장비 이동 실패");
+        }
+
+        const data = body?.data || {};
+        const responseRequestId = String(data?.requestId || "").trim();
+        if (responseRequestId) {
+          markNcRegenerationPending(responseRequestId);
+        }
+
+        // 낙관적 반영: from→to 이동 + NC 메타 제거 → 「CAM 재생성 중」 오버레이 즉시 표시
+        setQueueMap((prev) => {
+          const next: QueueMap = { ...prev };
+          const fromList = Array.isArray(next[fromMachineId])
+            ? [...next[fromMachineId]]
+            : [];
+          const toList = Array.isArray(next[toMachineId])
+            ? [...next[toMachineId]]
+            : [];
+          const idx = fromList.findIndex(
+            (it) =>
+              String(it?.requestMongoId || "").trim() === requestMongoId ||
+              (responseRequestId &&
+                String(it?.requestId || "").trim() === responseRequestId),
+          );
+          let moved: QueueItem | null = null;
+          if (idx >= 0) {
+            const [picked] = fromList.splice(idx, 1);
+            moved = picked;
+            next[fromMachineId] = fromList;
+          }
+          if (moved) {
+            const cleared: QueueItem = {
+              ...moved,
+              ncFile: null,
+              caseInfos: moved.caseInfos
+                ? { ...moved.caseInfos, ncFile: null }
+                : moved.caseInfos,
+              ncPreload: { status: "NONE" },
+            };
+            const already = toList.some(
+              (it) =>
+                String(it?.requestMongoId || "").trim() === requestMongoId ||
+                (responseRequestId &&
+                  String(it?.requestId || "").trim() === responseRequestId),
+            );
+            next[toMachineId] = already
+              ? toList.map((it) =>
+                  String(it?.requestMongoId || "").trim() === requestMongoId ||
+                  (responseRequestId &&
+                    String(it?.requestId || "").trim() === responseRequestId)
+                    ? cleared
+                    : it,
+                )
+              : [...toList, cleared];
+          }
+          return next;
+        });
+
+        window.dispatchEvent(new Event("cnc-queues-updated"));
+
+        const fromDia = data?.fromDiameter;
+        const toDia = data?.toDiameter;
+        toast({
+          title: "장비 이동 완료",
+          description: `${fromMachineId} → ${toMachineId}${
+            fromDia != null || toDia != null
+              ? ` (소재 Ø${fromDia ?? "?"}→Ø${toDia ?? "?"})`
+              : ""
+          }. 기존 NC를 삭제하고 CAM/NC 재생성을 시작했습니다.`,
+        });
+      } catch (e: any) {
+        toast({
+          title: "장비 이동 실패",
+          description: e?.message || "잠시 후 다시 시도해주세요.",
+          variant: "destructive",
+        });
+      } finally {
+        moveNextUpInFlightRef.current.delete(moveKey);
+      }
+    },
+    [toast, token],
+  );
 
   const [statusRefreshing, setStatusRefreshing] = useState(false);
   const [statusRefreshedAt, setStatusRefreshedAt] = useState<string | null>(
@@ -1202,6 +1324,12 @@ export const useMachiningBoard = ({
 
       if (!isNcReadyEvent) return;
 
+      const readyRequestId = String(
+        (eventRequest as any)?.requestId || "",
+      ).trim();
+      if (readyRequestId) {
+        consumeNcRegenerationPending(readyRequestId);
+      }
       patchQueueNcMetaFromRequest(eventRequest as any);
       scheduleNcQueueVerifyRefresh();
     },
@@ -2115,6 +2243,7 @@ export const useMachiningBoard = ({
     statusRefreshErroredAt,
     refreshMachineStatuses,
     reassignProductionQueues,
+    moveNextUpToMachine,
     handleBoardClickCapture,
     isMockFromBackend,
     globalAutoEnabled,

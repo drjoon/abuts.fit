@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-21: Next Up 드래그로 타 장비 이동(moveNextUpToMachine) 연결.
 // - 2026-08-19: NC 코드 에디터 저장 후 PreviewModal NC 텍스트를 즉시 반영(페이지 새로고침 없이).
 // - 2026-08-18: 재생성 완료 alert 클릭으로 CAM 프리뷰를 열던 연결 제거.
 // - 2026-08-13: 가공중(Now Playing) 프리뷰에서 NC 에디터·재생성 잠금 신호를 PreviewModal에 전달.
@@ -325,6 +326,7 @@ export const MachiningQueueBoard = ({
     statusRefreshedAt,
     statusRefreshErroredAt,
     reassignProductionQueues,
+    moveNextUpToMachine,
     handleBoardClickCapture,
     isMockFromBackend,
     globalAutoEnabled,
@@ -1607,6 +1609,9 @@ export const MachiningQueueBoard = ({
               }}
               onRollbackNextUp={(requestId, mid) => {
                 void rollbackRequestInQueue(mid, requestId);
+              }}
+              onMoveNextUpToMachine={(payload) => {
+                void moveNextUpToMachine(payload);
               }}
               onRollbackCompleted={(requestId, mid) => {
                 void rollbackRequestInQueue(mid, requestId);

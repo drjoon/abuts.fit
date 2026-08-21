@@ -149,6 +149,13 @@ export type MachineQueueCardProps = {
   onRollbackNextUp?: (requestId: string, machineId: string) => void;
   onRollbackCompleted?: (requestId: string, machineId: string) => void;
   onApproveFromRollback?: (requestId: string) => void;
+  /** Next Up 의뢰를 다른 장비로 드래그 이동 */
+  onMoveNextUpToMachine?: (params: {
+    requestMongoId: string;
+    requestId?: string;
+    fromMachineId: string;
+    toMachineId: string;
+  }) => void | Promise<void>;
   materialNeedsReplacement?: boolean;
   materialAlertTooltip?: string;
 };

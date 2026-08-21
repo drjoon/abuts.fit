@@ -313,6 +313,13 @@ router.post(
   cncMachineController.reassignProductionQueues,
 );
 
+// Next Up 의뢰를 다른 장비로 수동 이동 (직경 변경 시 CAM/NC 재생성)
+router.post(
+  "/queues/move",
+  authorizeRoles("manufacturer", "admin"),
+  cncMachineController.moveProductionQueueRequest,
+);
+
 // 신속배송 14:00 빠른 가공 재배치 Alert
 router.get(
   "/queues/express-rebalance-alert",
