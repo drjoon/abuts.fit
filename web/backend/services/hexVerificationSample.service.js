@@ -2,9 +2,10 @@
 // - web/backend/utils/designSoftwareHex.js
 // - web/backend/controllers/requests/creation.from-draft.controller.js
 // - web/backend/controllers/requests/common.requests.controller.js
-// - web/backend/services/practiceTransferProduction.service.js
+// - web/backend/services/practiceTransferProduction.service.js (PTX는 샘플 미생성)
 // - web/backend/controllers/requests/common.review.controller.js
 // change-log:
+// - 2026-08-21: PTX(구강스캔 기공의뢰수신)는 샘플 미생성 — from-draft(어벗디자인)만.
 // - 2026-08-21: 워크시트 준비 목록에서 헥스 샘플 filled STL 누락을 원본에서 보정.
 // - 2026-08-21: 클론 저장 후 빈 stlFile/camFile 스텁 $unset. 생성 직후 원본 filled 있으면 즉시 복사.
 // - 2026-08-21: pending SSOT = 관리자 hexVerificationResultHex 없음(+활성 샘플 없으면 생성)
