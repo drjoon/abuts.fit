@@ -12,6 +12,7 @@
 // - web/backend/controllers/bg/bg.controller.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/regenerationPending.ts
 // change-log:
+// - 2026-08-21: 헥스 확인용 원본↔샘플 취소 시 워크시트에서 둘 다 즉시 제거
 // - 2026-08-18: Filled STL/NC 재생성 완료 상단 alert 제거. 캐시 삭제·pending consume은 유지.
 // - 2026-08-18: Filled STL/NC 재생성 완료 시 IndexedDB 캐시 삭제.
 import {
@@ -41,6 +42,7 @@ import {
   patchFilledStlFile,
   type ManufacturerRequest,
 } from "../utils/request";
+import { filterOutHexVerificationCancelCompanions } from "../utils/hexRotation";
 
 type UseWorksheetRealtimeStatusParams = {
   enabled?: boolean;
@@ -370,9 +372,19 @@ export function useWorksheetRealtimeStatus({
         const eventRequest = payload?.request as
           | ManufacturerRequest
           | undefined;
+        const toStage =
+          String(payload?.toStage || "").trim() ||
+          String((eventRequest as any)?.manufacturerStage || "").trim();
         if (eventRequest) {
           setRequests((prev) => {
-            const patched = applyRequestPatch(prev, eventRequest);
+            let patched = applyRequestPatch(prev, eventRequest);
+
+            if (toStage === "취소") {
+              patched = filterOutHexVerificationCancelCompanions(
+                patched,
+                eventRequest,
+              );
+            }
 
             const sourceForInsert = String(payload?.source || "").trim();
             const normalizedSourceForInsert = sourceForInsert.toLowerCase();
@@ -410,9 +422,6 @@ export function useWorksheetRealtimeStatus({
             String(value || "")
               .trim()
               .toUpperCase();
-          const toStage =
-            String(payload?.toStage || "").trim() ||
-            String((eventRequest as any)?.manufacturerStage || "").trim();
           const currentStageNorm = normalizeStage(toStage);
           const expectedStagesNorm = (pendingToastEntry.expectedStages || []).map(
             normalizeStage,

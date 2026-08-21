@@ -7,6 +7,7 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // change-log:
+// - 2026-08-21: 헥스 확인용 원본↔샘플 취소 시 목록에서 둘 다 즉시 제거
 // - 2026-08-21: 추적관리 목록에 한진 배송현황(예: 여수 SUB 도착) 표시. deliveryInfo 포함.
 // - 2026-08-19: 진행중 목록 — 체크박스 선택 후 PATCH /status/batch 일괄 취소.
 // - 2026-08-19: 모달 가로폭을 뷰포트 여백 기준(min 92vw, 최대 1440)으로 맞춤.
@@ -85,8 +86,8 @@ export type PastRequestsModalProps = {
   onCanceled?: () => void;
   /** 상세 모달이 위에 열린 동안 목록을 유지(숨김)하고 바깥 클릭·ESC로 닫지 않음 */
   suspend?: boolean;
-  /** 상세에서 취소한 mongoId — 목록에서 해당 행만 제거 */
-  removeMongoId?: string | null;
+  /** 상세에서 취소한 mongoId(들) — 목록에서 해당 행(+헥스 확인 쌍) 제거 */
+  removeMongoId?: string | string[] | null;
 };
 
 const DEFAULT_MANUFACTURER_STAGE_IN = ["추적관리"];
@@ -94,6 +95,57 @@ const DEFAULT_MANUFACTURER_STAGE_IN = ["추적관리"];
 const PAGE_SIZE = 50;
 
 const requestMongoId = (row: any) => String(row?._id || row?.id || "").trim();
+
+const requestBusinessId = (row: any) => String(row?.requestId || "").trim();
+
+const requestReferenceIds = (row: any) =>
+  (Array.isArray(row?.referenceIds) ? row.referenceIds : [])
+    .map((id: unknown) => String(id || "").trim())
+    .filter(Boolean);
+
+const isHexVerificationSampleRow = (row: any) =>
+  Boolean(row?.caseInfos?.hexVerificationSample === true);
+
+/**
+ * ExoCAD 헥스 확인용 원본↔샘플이 목록에 같이 있으면 취소 UI에서 함께 제거한다.
+ */
+const expandHexVerificationCancelIds = (
+  targets: any[],
+  pool: any[],
+): Set<string> => {
+  const ids = new Set(
+    (targets || []).map((row) => requestMongoId(row)).filter(Boolean),
+  );
+  if (!ids.size) return ids;
+
+  const targetRows = (targets || []).filter((row) => requestMongoId(row));
+  const scanPool = Array.isArray(pool) ? pool : [];
+
+  for (const target of targetRows) {
+    const targetRid = requestBusinessId(target);
+    const targetRefs = requestReferenceIds(target);
+    const targetIsSample = isHexVerificationSampleRow(target);
+
+    for (const row of scanPool) {
+      const oid = requestMongoId(row);
+      if (!oid || ids.has(oid)) continue;
+      const rowRid = requestBusinessId(row);
+      if (targetIsSample && targetRefs.includes(rowRid)) {
+        ids.add(oid);
+        continue;
+      }
+      if (
+        isHexVerificationSampleRow(row) &&
+        targetRid &&
+        requestReferenceIds(row).includes(targetRid)
+      ) {
+        ids.add(oid);
+      }
+    }
+  }
+
+  return ids;
+};
 
 const isPrepCancelable = (row: any) =>
   getNormalizedStageLabelSafe(row) === "준비";
@@ -334,16 +386,30 @@ export const PastRequestsModal = ({
   };
 
   useEffect(() => {
-    const mongoId = String(removeMongoId || "").trim();
-    if (!mongoId) return;
-    setItems((prev) =>
-      prev.filter((row) => requestMongoId(row) !== mongoId),
-    );
+    const seedIds = (
+      Array.isArray(removeMongoId)
+        ? removeMongoId
+        : [removeMongoId]
+    )
+      .map((id) => String(id || "").trim())
+      .filter(Boolean);
+    if (!seedIds.length) return;
+    setItems((prev) => {
+      const seeds = seedIds.map((id) => {
+        const found = prev.find((row) => requestMongoId(row) === id);
+        return found || { _id: id };
+      });
+      const ids = expandHexVerificationCancelIds(seeds, prev);
+      seedIds.forEach((id) => ids.add(id));
+      return prev.filter((row) => !ids.has(requestMongoId(row)));
+    });
     setSelectedIds((prev) => {
-      if (!prev.has(mongoId)) return prev;
+      let changed = false;
       const next = new Set(prev);
-      next.delete(mongoId);
-      return next;
+      for (const id of seedIds) {
+        if (next.delete(id)) changed = true;
+      }
+      return changed ? next : prev;
     });
   }, [removeMongoId]);
 
@@ -353,9 +419,15 @@ export const PastRequestsModal = ({
       setCancelTargets([]);
       return;
     }
-    const ids = new Set(snapshots.map((row) => requestMongoId(row)));
+    const removeIds = expandHexVerificationCancelIds(snapshots, items);
+    snapshots.forEach((row) => removeIds.add(requestMongoId(row)));
+    const removedRows = items.filter((row) =>
+      removeIds.has(requestMongoId(row)),
+    );
     const batch = snapshots.length > 1;
-    setItems((prev) => prev.filter((row) => !ids.has(requestMongoId(row))));
+    setItems((prev) =>
+      prev.filter((row) => !removeIds.has(requestMongoId(row))),
+    );
     setSelectedIds(new Set());
     setCancelTargets([]);
     setCanceling(true);
@@ -372,7 +444,17 @@ export const PastRequestsModal = ({
             failedSet.has(requestMongoId(row)),
           );
           if (failedRows.length) {
-            setItems((prev) => [...failedRows, ...prev]);
+            const restoreIds = expandHexVerificationCancelIds(
+              failedRows,
+              removedRows,
+            );
+            failedRows.forEach((row) => restoreIds.add(requestMongoId(row)));
+            const restoreRows = removedRows.filter((row) =>
+              restoreIds.has(requestMongoId(row)),
+            );
+            if (restoreRows.length) {
+              setItems((prev) => [...restoreRows, ...prev]);
+            }
           }
           const okCount = Array.isArray(okIds) ? okIds.length : 0;
           if (okCount > 0) onCanceled?.();
@@ -398,7 +480,7 @@ export const PastRequestsModal = ({
             });
           }
         } catch {
-          setItems((prev) => [...snapshots, ...prev]);
+          setItems((prev) => [...removedRows, ...prev]);
           toast({
             title: "의뢰 일괄 취소 실패",
             description: "잠시 후 다시 시도해주세요.",
@@ -421,7 +503,14 @@ export const PastRequestsModal = ({
         else failed.push(row);
       }
       if (failed.length) {
-        setItems((prev) => [...failed, ...prev]);
+        const restoreIds = expandHexVerificationCancelIds(failed, removedRows);
+        failed.forEach((row) => restoreIds.add(requestMongoId(row)));
+        const restoreRows = removedRows.filter((row) =>
+          restoreIds.has(requestMongoId(row)),
+        );
+        if (restoreRows.length) {
+          setItems((prev) => [...restoreRows, ...prev]);
+        }
       }
       if (okCount > 0) onCanceled?.();
       if (!batch) return;

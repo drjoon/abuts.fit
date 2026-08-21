@@ -94,6 +94,49 @@ export const isHexVerificationSampleRequest = (
   req?: HexRequestLike | null,
 ): boolean => Boolean(req?.caseInfos?.hexVerificationSample === true);
 
+type HexCancelCompanionLike = {
+  _id?: unknown;
+  requestId?: unknown;
+  referenceIds?: unknown;
+  caseInfos?: HexCaseInfos;
+} | null | undefined;
+
+/**
+ * 헥스 확인용 원본↔샘플 중 하나가 취소되면 목록에서 짝도 함께 제거한다.
+ */
+export const filterOutHexVerificationCancelCompanions = <T extends HexCancelCompanionLike>(
+  list: T[],
+  canceled: HexCancelCompanionLike,
+): T[] => {
+  const rows = Array.isArray(list) ? list : [];
+  if (!canceled) return rows;
+
+  const canceledRid = String(canceled.requestId || "").trim();
+  const canceledRefs = (
+    Array.isArray(canceled.referenceIds) ? canceled.referenceIds : []
+  )
+    .map((id) => String(id || "").trim())
+    .filter(Boolean);
+  const canceledIsSample = isHexVerificationSampleRequest(canceled);
+
+  return rows.filter((item) => {
+    const itemRid = String(item?.requestId || "").trim();
+    if (canceledIsSample && itemRid && canceledRefs.includes(itemRid)) {
+      return false;
+    }
+    if (
+      isHexVerificationSampleRequest(item) &&
+      canceledRid &&
+      (Array.isArray(item?.referenceIds) ? item.referenceIds : [])
+        .map((id) => String(id || "").trim())
+        .includes(canceledRid)
+    ) {
+      return false;
+    }
+    return true;
+  });
+};
+
 export const resolveDefaultPrepHexRotationMode = (
   req: HexRequestLike,
 ): ManufacturerHexRotationMode | null => {

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-21: 헥스 확인용 원본↔샘플 취소 시 목록·건수에서 함께 제거
 // - 2026-08-19: 기공소·어벗츠기공소 어벗생산의뢰에도 동일 헤더(대기보드 대체).
 // - 2026-08-19: 진행중 목록 일괄 취소는 PATCH /status/batch 한 요청으로 처리.
 // - 2026-08-19: 제출·공정 변경 소켓으로 진행중/출고예정 건수 재조회(리프레시 없이).
@@ -63,7 +64,7 @@ export const RequestorAbutmentPageHeader = () => {
   const [listSource, setListSource] = useState<"inProgress" | "past" | null>(
     null,
   );
-  const [canceledMongoId, setCanceledMongoId] = useState<string | null>(null);
+  const [canceledMongoIds, setCanceledMongoIds] = useState<string[]>([]);
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
   const [canceling, setCanceling] = useState(false);
 
@@ -275,8 +276,16 @@ export const RequestorAbutmentPageHeader = () => {
         duration: 2000,
       });
     }
-    decrementInProgressCountOptimistic();
-    removeFromBulkShippingOptimistic(mongoId);
+    const cascaded = Array.isArray(res.data?.data?.cascaded)
+      ? res.data.data.cascaded
+      : [];
+    const cascadedIds = cascaded
+      .map((row: any) => String(row?._id || row?.id || "").trim())
+      .filter(Boolean);
+    const canceledIds = [...new Set([mongoId, ...cascadedIds])];
+    decrementInProgressCountOptimistic(canceledIds.length);
+    removeFromBulkShippingOptimistic(canceledIds);
+    setCanceledMongoIds(canceledIds);
     if (!options?.silent) {
       refreshHeaderCounts();
     }
@@ -330,6 +339,7 @@ export const RequestorAbutmentPageHeader = () => {
     if (okIds.length) {
       decrementInProgressCountOptimistic(okIds.length);
       removeFromBulkShippingOptimistic(okIds);
+      setCanceledMongoIds(okIds);
       refreshHeaderCounts();
     }
     return { okIds, failedIds: failedIds.filter((id) => !okSet.has(id)) };
@@ -351,13 +361,13 @@ export const RequestorAbutmentPageHeader = () => {
       setCancelConfirmOpen(false);
       return;
     }
-    setCanceledMongoId(mongoId);
+    setCanceledMongoIds([mongoId]);
     closeDetailAndRestoreList();
     setCanceling(true);
     try {
       const ok = await cancelRequestByMongoId(mongoId);
       if (!ok) {
-        setCanceledMongoId(null);
+        setCanceledMongoIds([]);
         setSelectedPastRequest(snapshot);
       }
     } finally {
@@ -408,7 +418,7 @@ export const RequestorAbutmentPageHeader = () => {
         initialPeriod={period}
         allowCancel
         suspend={listSource === "inProgress" && Boolean(selectedPastRequest)}
-        removeMongoId={canceledMongoId}
+        removeMongoId={canceledMongoIds}
         onCanceled={refreshHeaderCounts}
         onCancelRequest={cancelRequestByMongoId}
         onCancelRequests={cancelRequestsByMongoIds}
