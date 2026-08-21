@@ -136,7 +136,7 @@ export const AdminPlatformSettingsPage = () => {
       },
       {
         key: "abutsFees",
-        label: "어벗츠 수가",
+        label: "기본 기공수가",
         icon: BadgeJapaneseYen,
         badgeCount: abutsPendingCount,
         content: (

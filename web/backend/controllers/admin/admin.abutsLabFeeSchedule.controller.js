@@ -17,7 +17,7 @@ export async function getAbutsLabFeeSchedule(req, res) {
     console.error("[abutsLabFeeSchedule] get failed", error);
     return res.status(500).json({
       success: false,
-      message: "어벗츠 수가 조회 중 오류가 발생했습니다.",
+      message: "기본 기공수가 조회 중 오류가 발생했습니다.",
       error: error?.message,
     });
   }
@@ -33,7 +33,7 @@ export async function updateAbutsLabFeeSchedule(req, res) {
     console.error("[abutsLabFeeSchedule] update failed", error);
     return res.status(500).json({
       success: false,
-      message: "어벗츠 수가 저장 중 오류가 발생했습니다.",
+      message: "기본 기공수가 저장 중 오류가 발생했습니다.",
       error: error?.message,
     });
   }

@@ -891,7 +891,7 @@ export function PracticeTransferDetailChatDialog({
                           </TooltipTrigger>
                           <TooltipContent className="max-w-xs leading-relaxed">
                             이 치과는 어벗츠기공소 기준 할증 대상입니다. 견적·정산은
-                            어벗츠 수가(생성 시 스냅샷)를 따릅니다.
+                            기본 기공수가(생성 시 스냅샷)를 따릅니다.
                           </TooltipContent>
                         </Tooltip>
                       </TooltipProvider>

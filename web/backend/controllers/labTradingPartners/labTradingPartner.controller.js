@@ -50,8 +50,8 @@ import { invalidatePracticeTransferQuoteCaches } from "../../services/practiceTr
 import { emitAppEventToRoles, emitAppEventToUser } from "../../socket.js";
 
 /**
- * 설정 UI용 수가. 저장된 항목이 없으면 관리자 어벗츠 수가(카탈로그)를 복사.
- * (하드코딩 기본값보다 관리자「어벗츠 수가」SSOT 우선)
+ * 설정 UI용 수가. 저장된 항목이 없으면 관리자 기본 기공수가(카탈로그)를 복사.
+ * (하드코딩 기본값보다 관리자「기본 기공수가」SSOT 우선. 기존 기공소는 덮어쓰지 않음)
  */
 async function resolveLabFeeScheduleForSettingsFromCatalog(schedule) {
   const hasItems =

@@ -197,7 +197,7 @@ export const AdminAbutsLabFeeScheduleTab = ({
       });
       if (!res.ok) {
         toast({
-          title: "어벗츠 수가 조회 실패",
+          title: "기본 기공수가 조회 실패",
           description: res.data?.message || "다시 시도해주세요.",
           variant: "destructive",
         });
@@ -251,7 +251,7 @@ export const AdminAbutsLabFeeScheduleTab = ({
         });
         if (!res.ok) {
           toast({
-            title: "어벗츠 수가 저장 실패",
+            title: "기본 기공수가 저장 실패",
             description: res.data?.message || "다시 시도해주세요.",
             variant: "destructive",
           });
@@ -276,7 +276,7 @@ export const AdminAbutsLabFeeScheduleTab = ({
         return true;
       } catch {
         toast({
-          title: "어벗츠 수가 저장 실패",
+          title: "기본 기공수가 저장 실패",
           description: "네트워크 오류가 발생했습니다.",
           variant: "destructive",
         });
@@ -311,7 +311,7 @@ export const AdminAbutsLabFeeScheduleTab = ({
           <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-primary-soft/60 ring-1 ring-primary-muted/70">
             <Banknote className="h-4 w-4 text-primary-strong" />
           </span>
-          어벗츠 수가
+          기본 기공수가
           {pendingCount > 0 ? (
             <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
               검토 {pendingCount}
@@ -319,8 +319,8 @@ export const AdminAbutsLabFeeScheduleTab = ({
           ) : null}
         </CardTitle>
         <p className="text-sm text-muted-foreground">
-          항목 On/Off·이름 관리용입니다. 기공소 신규 항목은 Off로 들어오니 검증 후
-          On으로 적용하세요.
+          신규 가입 기공소의 기본값입니다. 기존 기공소 설정은 덮어쓰지 않습니다.
+          기공소 신규 항목은 Off로 들어오니 검증 후 On으로 적용하세요.
         </p>
       </CardHeader>
       <CardContent className="space-y-4">

@@ -1134,11 +1134,11 @@ export const DashboardLayout = () => {
         title: "신규 기공비 검토",
         description:
           names.length > 0
-            ? `${labLabel}에서 「${names.join(", ")}」을(를) 추가했습니다. 어벗츠 수가에서 검증 후 On으로 적용하세요.`
-            : `${labLabel}에서 신규 기공비를 추가했습니다. 어벗츠 수가에서 검증 후 On으로 적용하세요.`,
+            ? `${labLabel}에서 「${names.join(", ")}」을(를) 추가했습니다. 기본 기공수가에서 검증 후 On으로 적용하세요.`
+            : `${labLabel}에서 신규 기공비를 추가했습니다. 기본 기공수가에서 검증 후 On으로 적용하세요.`,
         action: (
           <ToastAction
-            altText="어벗츠 수가 열기"
+            altText="기본 기공수가 열기"
             onClick={() => {
               navigate("/dashboard/platform-settings?tab=abutsFees");
             }}
