@@ -550,8 +550,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             try
             {
                 // mode SSOT만 본다. designSoftware(ExoCAD/3Shape)는 여기서 절대 참고하지 않는다.
-                // - STL모델대로 => T4848/T0909/T0606 근접 C축을 C0.0으로 유지/강제
-                // - 헥스30/헥스X => PRC의 C0를 minor/total로 치환
+                // - T4848 => 항상 C0.0 (모드/minorDeg와 무관)
+                // - STL모델대로 => T0909/T0606도 C0.0 유지/강제
+                // - 헥스30/헥스X => T0909/T0606만 totalDeg로 치환
                 if (!TryResolveHexRotationTargets(manufacturerHexRotation, out double minorDeg, out double totalDeg, out string modeLabel, out bool forceZeroCAxis))
                 {
                     AppLogger.Log($"NcFileGenerator: 헥스 회전 NC 후처리 생략 - mode='{manufacturerHexRotation ?? ""}'");
@@ -597,7 +598,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                         double targetDeg;
                         if (string.Equals(toolCode, "T4848", StringComparison.OrdinalIgnoreCase))
                         {
-                            targetDeg = minorDeg;
+                            // SSOT: T4848 C축은 모드와 무관하게 항상 C0.0
+                            targetDeg = 0.0;
                         }
                         else if (string.Equals(toolCode, "T0909", StringComparison.OrdinalIgnoreCase) ||
                                  string.Equals(toolCode, "T0606", StringComparison.OrdinalIgnoreCase))
@@ -624,7 +626,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 }
 
                 File.WriteAllLines(ncFilePath, lines);
-                AppLogger.Log($"NcFileGenerator: 헥스 회전 NC 후처리 완료 - mode={modeLabel}, T4848=C{FormatRotationNumber(minorDeg)}, T0909/T0606=C{FormatRotationNumber(totalDeg)}, replaced={replacedWithinTarget}");
+                AppLogger.Log($"NcFileGenerator: 헥스 회전 NC 후처리 완료 - mode={modeLabel}, T4848=C0.0(always), T0909/T0606=C{FormatRotationNumber(totalDeg)}, minorDeg={FormatRotationNumber(minorDeg)}, replaced={replacedWithinTarget}");
 
                 if (matchedWithinTarget < 6)
                 {
@@ -673,8 +675,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
         }
 
         // 헥스 모드 라벨을 NC 치환각으로 해석한다.
-        // - minorDeg: T4848에 적용되는 각도
-        // - totalDeg: T0909/T0606에 적용되는 각도 (= 30 + minorDeg)
+        // - totalDeg: T0909/T0606에만 적용 (= 30 + minorDeg). T4848은 항상 C0.0.
+        // - minorDeg: 라벨/로그용 (totalDeg - 30). NC의 T4848에는 넣지 않는다.
         // - forceZeroCAxis: STL모델대로일 때 true (C0/C30 잔여분을 C0.0으로 강제)
         // 전달 SSOT:
         // - "헥스X도회전"의 X는 totalDeg 기준 (예: minor 10도 선택 시 라벨은 "헥스40도회전")
@@ -701,7 +703,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 string.Equals(mode, "STL모델대로", StringComparison.Ordinal) ||
                 string.Equals(mode, "0", StringComparison.Ordinal))
             {
-                // STL모델대로: C축 추가 회전 없음. minor/total=0, C0·C30 잔여분은 C0.0으로 강제.
+                // STL모델대로: C축 추가 회전 없음. total=0, C0·C30 잔여분은 C0.0으로 강제.
+                // T4848도 항상 C0.0.
                 minorDeg = 0.0;
                 totalDeg = 0.0;
                 modeLabel = "STL모델대로";
@@ -712,7 +715,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             if (string.Equals(mode, "헥스30도회전", StringComparison.Ordinal) ||
                 string.Equals(mode, "30", StringComparison.Ordinal))
             {
-                // 고정 모드: minor=0, total=30
+                // 고정 모드: T4848=C0.0, T0909/T0606=C30.0
                 minorDeg = 0.0;
                 totalDeg = 30.0;
                 modeLabel = "헥스30도회전";
@@ -732,7 +735,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 // - 백엔드 전달값 X는 totalDeg(=30+minorDeg) 기준이다.
                 //   예) 프론트 minor=10 선택 시 backend label='헥스40도회전'
                 // - 공구별 적용값:
-                //   T4848  => minorDeg = totalDeg - 30
+                //   T4848  => 항상 C0.0 (minorDeg를 NC에 쓰지 않음)
                 //   T0909/T0606 => totalDeg 그대로
                 // 하위호환: legacy 데이터가 '헥스10도회전'(minor)일 수 있으므로 X<30이면
                 //          minor로 간주해 total=30+X로 보정한다.
