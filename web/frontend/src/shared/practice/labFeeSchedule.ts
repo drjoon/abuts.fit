@@ -8,6 +8,7 @@
 // - web/backend/tests/unit/labFeeSchedule.test.js
 // - 2026-08-13: 마스터 active(기본 off)가 켜져야 설정 완료. 수가 디폴트는 기본값·항목 on.
 // - 2026-08-19: 수락 포워드용 missingLabFeeItemNames(해당 보철 미제공·0원).
+// - 2026-08-21: 기공수가「배송비」폐지(치과→기공소 무료). normalize에서 strip.
 // - 2026-08-21: PTX CA 치과 청구=기공소「커스텀어벗」수가(기본 4만=관리자 기본 기공수가). 어벗츠 1.5/2.5만은 기공소→어벗츠 Request.
 // - 2026-08-13: 유지장치 등 perSet는 연결 스팬당 1세트(끊기면 별도). 연결 없는 레거시는 악궁당.
 // - 2026-08-19: 임시치아(perNTeeth)도 연결 스팬당 구간 수가(같은 하악 3치·2치는 2세트).
@@ -521,6 +522,7 @@ export const MAX_LAB_FEE_ITEM_TIERS = 8;
 
 export const LAB_FEE_SHIPPING_ITEM_ID = "shipping";
 export const LAB_FEE_SHIPPING_ITEM_NAME = "배송비";
+/** @deprecated 치과→기공소 배송 무료. */
 export const LAB_FEE_SHIPPING_LAB_DEFAULT_PRICE = 0;
 
 export type LabFeeItemTier = {
@@ -603,6 +605,7 @@ export const isLabFeeShippingItem = (item?: Partial<LabFeeItem> | null) => {
   return canonicalizeFeeItemName(String(item.name || "")) === LAB_FEE_SHIPPING_ITEM_NAME;
 };
 
+/** @deprecated 신규 시드에 쓰지 않음. */
 export const buildLabFeeShippingItem = ({
   price = LAB_FEE_SHIPPING_LAB_DEFAULT_PRICE,
   enabled = false,
@@ -619,19 +622,19 @@ export const buildLabFeeShippingItem = ({
   tiers: [],
 });
 
+/** 레거시「배송비」행 제거. 치과→기공소는 무료. */
+export const stripLabFeeShippingItems = (
+  items: LabFeeItem[],
+): LabFeeItem[] => {
+  const list = Array.isArray(items) ? items : [];
+  return list.filter((item) => !isLabFeeShippingItem(item));
+};
+
+/** @deprecated stripLabFeeShippingItems. 호환: shipping 미삽입·기존 행 제거. */
 export const ensureLabFeeShippingItem = (
   items: LabFeeItem[],
-  {
-    price = LAB_FEE_SHIPPING_LAB_DEFAULT_PRICE,
-    enabled = false,
-  }: { price?: number; enabled?: boolean } = {},
-): LabFeeItem[] => {
-  const list = Array.isArray(items) ? [...items] : [];
-  if (list.some((item) => isLabFeeShippingItem(item))) return list;
-  if (list.length >= MAX_LAB_FEE_ITEMS) return list;
-  list.push(buildLabFeeShippingItem({ price, enabled }));
-  return list;
-};
+  _opts?: { price?: number; enabled?: boolean },
+): LabFeeItem[] => stripLabFeeShippingItems(items);
 
 const isRemovedPonticFeeRow = (
   row?: { id?: string; key?: string; name?: string; label?: string } | null,
@@ -753,10 +756,6 @@ const migrateLegacyLabFeeItems = (
       remake: remake.customAbutmentDesignAndProduction,
       tiers: [],
     },
-    buildLabFeeShippingItem({
-      price: LAB_FEE_SHIPPING_LAB_DEFAULT_PRICE,
-      enabled: false,
-    }),
   ];
 };
 
@@ -821,17 +820,16 @@ export const normalizeLabFeeItems = (
     for (const row of rawItems) {
       if (out.length >= MAX_LAB_FEE_ITEMS) break;
       if (isRemovedPonticFeeRow(row)) continue;
+      if (isLabFeeShippingItem(row)) continue;
       const item = normalizeLabFeeItem(row, out.length);
       if (!item.name) continue;
+      if (isLabFeeShippingItem(item)) continue;
       let id = item.id;
       if (!id || seen.has(id)) id = `item-${out.length + 1}`;
       seen.add(id);
       out.push({ ...item, id });
     }
-    return ensureLabFeeShippingItem(expandPerNTeethTierItems(out), {
-      price: LAB_FEE_SHIPPING_LAB_DEFAULT_PRICE,
-      enabled: false,
-    });
+    return stripLabFeeShippingItems(expandPerNTeethTierItems(out));
   }
   return migrateLegacyLabFeeItems(src as Partial<LabFeeSchedule>);
 };
@@ -927,7 +925,6 @@ export const labFeeItemMatchesNeedName = (
 
 const labFeeItemHasChargePrice = (item: LabFeeItem) => {
   if (!item || item.enabled === false) return false;
-  if (isLabFeeShippingItem(item)) return true;
   const tierPrices = item.tiers.map((tier) =>
     Math.round(Number(tier.price || 0)),
   );
@@ -950,20 +947,13 @@ export const missingLabFeeItemNames = (
 ) => {
   const needed = labFeeItemNamesNeededForToothWorks(toothWorks);
   const items = normalizeLabFeeItems(schedule);
-  const missing = needed.filter(
+  return needed.filter(
     (name) =>
       !items.some(
         (item) =>
           labFeeItemMatchesNeedName(item, name) && labFeeItemHasChargePrice(item),
       ),
   );
-  const shippingConfigured = items.some(
-    (item) => isLabFeeShippingItem(item) && item.enabled !== false,
-  );
-  if (!shippingConfigured && !missing.includes(LAB_FEE_SHIPPING_ITEM_NAME)) {
-    missing.push(LAB_FEE_SHIPPING_ITEM_NAME);
-  }
-  return missing;
 };
 
 /** 보철 형태 → labFeeSchedule 키. 작업X·커스텀어벗(어벗츠/기공소 어벗 단가)·묶음수가 항목은 null */

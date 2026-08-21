@@ -11,6 +11,7 @@
 // - web/backend/models/ledgerLine.model.js
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
+// - 2026-08-21: 치과→기공소 배송 무료(labShippingFee 0). 기공소→어벗츠는 Request 박스키 hold.
 // - 2026-08-21: feeQuote.labShippingFee — 기공수가 배송비. 표시 총액은 배송 제외(크레딧 정산만 합산).
 // - 2026-08-21: feeQuote.missingFeeNames — 치과 견적에 미설정 수가 항목 안내.
 // - 2026-08-21: assertCredit — fees/shipping 재사용 시 견적 DB 재조회 생략(전송 create 핫패스).
@@ -156,33 +157,16 @@ import {
 
 export { shouldChargePracticeTransferLabShipping };
 
-/** 기공수가 배송비 합산 여부(보철/지그 기준). */
-function resolveIncludeLabShippingFee(transfer, feesBase) {
-  return shouldChargePracticeTransferLabShipping({
-    transfer,
-    fees: {
-      labFeeTotal: feesBase?.labFeeTotal,
-      labAbutmentTotal: feesBase?.labAbutmentTotal,
-      abutmentQty: feesBase?.abutmentQty,
-    },
-  });
-}
-
 function computePracticeTransferRetailFeesWithLabShipping(feeArgs, transferLike) {
-  const base = computePracticeTransferRetailFees({
-    ...feeArgs,
-    includeLabShippingFee: false,
-  });
-  if (
-    !transferLike ||
-    !resolveIncludeLabShippingFee(transferLike, base)
-  ) {
-    return { ...base, labShippingFee: 0 };
-  }
-  return computePracticeTransferRetailFees({
-    ...feeArgs,
-    includeLabShippingFee: true,
-  });
+  // 치과→기공소 배송 무료 — labShippingFee 항상 0.
+  void transferLike;
+  return {
+    ...computePracticeTransferRetailFees({
+      ...feeArgs,
+      includeLabShippingFee: false,
+    }),
+    labShippingFee: 0,
+  };
 }
 
 const QUOTE_LOOKUP_CACHE_TTL_MS = 60 * 1000;
@@ -589,47 +573,23 @@ function pushRevenueLines({
  */
 /**
  * 기공의뢰 생성 시 예상 배송비(플랫폼 크레딧).
- * - lab(기공소→치과): 기공수가「배송비」로 이전 → 항상 0
- * - abuts(제조사→기공소): CA 있으면 unitFee (기공소 크레딧 hold/commit)
+ * - lab(치과→기공소): 무료 → 항상 0
+ * - abuts(기공소→어벗츠): Request 박스키(BA+출고일) hold로 이전 — PTX 건당 보류 없음 → 항상 0
  */
 export async function resolveExpectedPracticeTransferShippingFees({
   transfer = null,
   toothWorks = null,
   fees = null,
 }) {
+  void transfer;
+  void toothWorks;
+  void fees;
   const creditSettings = await loadCreditSettingsDefaults();
   const unitFee = Math.max(
     0,
     Math.round(Number(creditSettings?.shippingFee ?? 3500) || 0),
   );
-  if (unitFee <= 0) {
-    return { lab: 0, abuts: 0, total: 0, unitFee: 0 };
-  }
-
-  const works = toothWorks || transfer?.toothWorks || [];
-  const feeSnapshot = {
-    labFeeTotal: Math.max(
-      0,
-      Math.round(
-        Number(fees?.labFeeTotal ?? transfer?.billing?.labFeeTotal ?? 0) || 0,
-      ),
-    ),
-    labAbutmentTotal: Math.max(
-      0,
-      Math.round(Number(fees?.labAbutmentTotal ?? 0) || 0),
-    ),
-    abutmentQty: Math.max(
-      0,
-      Math.round(
-        Number(fees?.abutmentQty ?? transfer?.billing?.abutmentQty ?? 0) || 0,
-      ),
-    ),
-  };
-  const hasCa = (Array.isArray(works) ? works : []).some((row) =>
-    Boolean(row?.customAbutment),
-  );
-  const abuts = hasCa || feeSnapshot.abutmentQty > 0 ? unitFee : 0;
-  return { lab: 0, abuts, total: abuts, unitFee };
+  return { lab: 0, abuts: 0, total: 0, unitFee };
 }
 
 export async function assertPracticeTransferPaidCreditSufficient({

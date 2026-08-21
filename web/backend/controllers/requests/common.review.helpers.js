@@ -1661,6 +1661,10 @@ const collectRelatedPtxIds = (requests = []) => {
   return ids;
 };
 
+/**
+ * 레거시: PTX create 시 건당 abuts_shipping hold가 있으면 집하 시 convert.
+ * 신규: hold 없음 → Request 박스 경로(ensureShippingFeeSpendOnMailboxPickup)로 과금.
+ */
 async function maybeConvertPtxAbutsShippingHolds({
   requests = [],
   actorUserId = null,
@@ -1878,7 +1882,9 @@ export async function ensureShippingFeeSpendOnMailboxPickup({
         usageKind: isPtxAbutsShipping
           ? "practice_transfer_abuts_shipping"
           : "shipping",
-        displayLabel: isPtxAbutsShipping ? "배송비(치과→어벗츠)" : null,
+        displayLabel: isPtxAbutsShipping
+          ? SHIPPING_LEDGER_LABELS.labToAbuts
+          : null,
         displayKind: isPtxAbutsShipping ? "shipping" : null,
         fromEscrowHold: true,
         escrowDevopsAnchorId: holdMeta.devopsAnchorId,
@@ -1964,7 +1970,9 @@ export async function ensureShippingFeeSpendOnMailboxPickup({
     usageKind: isPtxAbutsShipping
       ? "practice_transfer_abuts_shipping"
       : "shipping",
-    displayLabel: isPtxAbutsShipping ? "배송비(치과→어벗츠)" : null,
+    displayLabel: isPtxAbutsShipping
+      ? SHIPPING_LEDGER_LABELS.labToAbuts
+      : null,
     displayKind: isPtxAbutsShipping ? "shipping" : null,
   });
 

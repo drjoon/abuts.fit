@@ -20,12 +20,14 @@ import {
   toothWorksNeedLabFee,
   missingLabFeeItemNames,
   isPendingRoundBarAbutment,
+  isLabFeeShippingItem,
   LAB_FEE_SCHEDULE_SAMPLE,
   LAB_FEE_SCHEDULE_ZEROS,
   normalizeLabFeeItems,
   resolveLabFeeKeyFromProsthesisType,
   resolveLabFeeScheduleSource,
   resolveLabPracticeFeeMultiplierAsOf,
+  resolveLabShippingFeeFromSchedule,
   splitPracticeTransferSettlement,
   upsertLabPracticeFeeMultiplierList,
 } from "../../utils/labFeeSchedule.js";
@@ -657,6 +659,39 @@ describe("labFeeSchedule", () => {
         items: [{ id: "crown", name: "크라운", price: 60000, enabled: true }],
       }),
     ).toBe(true);
+  });
+
+  test("치과→기공소 배송 무료 — normalize strip·missing에 배송비 없음·labShippingFee 0", () => {
+    const items = normalizeLabFeeItems({
+      items: [
+        { id: "crown", name: "크라운", price: 60000, enabled: true },
+        { id: "shipping", name: "배송비", price: 3500, enabled: true, unit: "perSet" },
+      ],
+    });
+    expect(items.some((row) => isLabFeeShippingItem(row))).toBe(false);
+    expect(resolveLabShippingFeeFromSchedule({ items })).toBe(0);
+    expect(
+      missingLabFeeItemNames(
+        {
+          active: true,
+          items: [{ id: "crown", name: "크라운", price: 60000, enabled: true }],
+        },
+        [{ toothNumber: "11", prosthesisType: "크라운" }],
+      ),
+    ).not.toContain("배송비");
+    const fees = computePracticeTransferRetailFees({
+      toothWorks: [{ toothNumber: "11", prosthesisType: "크라운" }],
+      labFeeSchedule: {
+        active: true,
+        items: [
+          { id: "crown", name: "크라운", price: 60000, enabled: true },
+          { id: "shipping", name: "배송비", price: 3500, enabled: true },
+        ],
+      },
+      includeLabShippingFee: true,
+    });
+    expect(fees.labShippingFee).toBe(0);
+    expect(fees.labFeeTotal).toBe(60000);
   });
 
   test("견적 라인은 치아번호 10·20·30·40번대 순이다", () => {

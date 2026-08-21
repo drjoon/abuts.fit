@@ -1,8 +1,11 @@
 // related files:
 // - web/backend/services/requestCreditHold.service.js
+// - 2026-08-21: PTX CA도 박스 배송 hold(shouldSkipShippingHold false).
 import {
   buildRequesterShipBoxKey,
   resolveRequestCreditHoldAnchorId,
+  shouldSkipMachiningHold,
+  shouldSkipShippingHold,
 } from "../../services/requestCreditHold.service.js";
 
 describe("buildRequesterShipBoxKey", () => {
@@ -33,5 +36,24 @@ describe("buildRequesterShipBoxKey", () => {
       caseInfos: { clinicName: "향기로운치과" },
     };
     expect(buildRequesterShipBoxKey(a)).toBe(buildRequesterShipBoxKey(b));
+  });
+});
+
+describe("PTX CA shipping hold policy", () => {
+  const ptxCa = {
+    businessAnchorId: "bbbbbbbbbbbbbbbbbbbbbbbb",
+    partnerBilling: {
+      relatedPracticeTransferId: "aaaaaaaaaaaaaaaaaaaaaaaa",
+      practicePrepaidAbutment: true,
+    },
+    timeline: { estimatedShipYmd: "2026-08-21" },
+  };
+
+  test("PTX CA는 가공 hold skip, 배송 hold는 박스 경로로 허용", () => {
+    expect(shouldSkipMachiningHold(ptxCa)).toBe(true);
+    expect(shouldSkipShippingHold(ptxCa)).toBe(false);
+    expect(buildRequesterShipBoxKey(ptxCa)).toBe(
+      "bbbbbbbbbbbbbbbbbbbbbbbb:2026-08-21",
+    );
   });
 });

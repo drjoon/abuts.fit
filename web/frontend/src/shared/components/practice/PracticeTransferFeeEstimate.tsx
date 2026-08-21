@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/practice/practiceTransferFeeQuote.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/components/practice/PracticeToothWorkChartReadOnly.tsx
+// - 2026-08-21: 치과→기공소 배송 무료. 정산 상세는 →어벗츠(박스)만. skipJig는 물류 안내만.
 // - 2026-08-21: 치과 견적 — 커스텀어벗 등 기공소 수가 미설정(missingFeeNames) 안내.
 // - 2026-08-21: 같은 치아번호는 한 줄. 보철기공비|커스텀어벗 열로 수가 구분.
 // - 2026-08-20: 정산(density=detail)만 장부 배송비·크레딧 소비 총액. 견적 툴팁은 기공비 총액까지.
@@ -687,7 +688,14 @@ export function PracticeTransferFeeEstimate({
             holdPending:
               row.holdPending === undefined ? null : row.holdPending,
           }))
-          .filter((row) => row.key && row.amount > 0)
+          .filter(
+            (row) =>
+              row.key &&
+              row.amount > 0 &&
+              // 치과→기공소 무료 — 어벗츠 구간만 표시
+              !row.label.includes("치과→기공소") &&
+              row.key !== "lab",
+          )
       : [];
   const shippingTotal = shippingHintLines.reduce(
     (sum, row) => sum + row.amount,
@@ -699,9 +707,6 @@ export function PracticeTransferFeeEstimate({
       : labCreditSettled || abutmentCreditSettled
         ? "배송비"
         : "배송비(보류)";
-  const hasLabOriginShip = shippingHintLines.some((row) =>
-    row.label.includes("기공소"),
-  );
   const hasAbutsOriginShip = shippingHintLines.some((row) =>
     row.label.includes("어벗츠"),
   );
@@ -822,8 +827,8 @@ export function PracticeTransferFeeEstimate({
               ) : null}
             </p>
           ))}
-          {skipJig && hasAbutsOriginShip && !hasLabOriginShip ? (
-            <p>지그 필요없음으로 기공소→치과 배송비는 차감하지 않습니다.</p>
+          {skipJig && hasAbutsOriginShip ? (
+            <p>지그 제작 불필요 — 물류만 적용(배송비 과금과 무관).</p>
           ) : null}
         </div>
       ) : null}

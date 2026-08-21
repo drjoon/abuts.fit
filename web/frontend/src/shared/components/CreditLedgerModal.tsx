@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-21: 치과→기공소 배송 무료 — baked labShipping·정산 줄 제거. 소비총액=기공비+→어벗츠만.
 // - 2026-08-21: 기공수가 배송비(기공비 hold 합산)를 크레딧 호버·정산 상세에 분리. 견적 툴팁은 그대로 배송비 없음.
 // - 2026-08-21: 기공소 크레딧 내역 — 지급상태·금액호버·상세를 치과와 동일(기공크레딧 잔액/필터만 lab).
 // - 2026-08-20: PeriodFilter 달력·chevron 커스텀 기간을 원장 조회 from/to에 반영.
@@ -542,8 +543,8 @@ const classifyPracticeTransferPart = (
 };
 
 const settlementShippingRouteLabel = (route: PracticeTransferRoute) => {
-  if (route === "lab") return "치과→기공소";
   if (route === "abuts") return "기공소→어벗츠";
+  if (route === "lab") return "치과→기공소";
   return "배송비";
 };
 
@@ -551,7 +552,7 @@ const isFeeQuoteShippingLine = (prosthesisType: string) =>
   canonicalizeFeeItemName(String(prosthesisType || "")) ===
   LAB_FEE_SHIPPING_ITEM_NAME;
 
-/** 견적 기공비(배송 제외). 기공수가「배송비」는 장부에서만 분리 표시. */
+/** 견적 기공비(배송 제외). 레거시 기공수가「배송비」라인도 제외. */
 const quoteWorkTotalExcludingShipping = (
   quote: PracticeTransferFeeQuote | null | undefined,
 ): number => {
@@ -588,8 +589,7 @@ const quoteWorkTotalExcludingShipping = (
 };
 
 /**
- * 장부 배송비 = (1) 배송 라벨 행 + (2) 기공수가「배송비」가 기공비 hold에 합쳐진 분.
- * 견적 툴팁에는 넘기지 않는다.
+ * 장부 배송비 = 배송 라벨 행만(→어벗츠). 치과→기공소(기공수가)는 무료·표시 안 함.
  */
 const resolvePracticeTransferShippingAmounts = (
   parts: LedgerDisplayPart[] | null | undefined,
@@ -599,56 +599,37 @@ const resolvePracticeTransferShippingAmounts = (
   bakedLabShippingAmount: number;
   workAmount: number;
 } => {
+  void feeQuote;
   let explicitShippingAmount = 0;
   let workAmount = 0;
   for (const part of Array.isArray(parts) ? parts : []) {
-    const { kind } = classifyPracticeTransferPart(part);
+    const { kind, route } = classifyPracticeTransferPart(part);
     const amount = Math.round(Number(part.amount || 0));
     if (kind === "shipping") {
+      // 치과→기공소 레거시 표시 제외
+      if (route === "lab") continue;
       explicitShippingAmount += amount;
       continue;
     }
     workAmount += amount;
   }
 
-  const quoteWork = quoteWorkTotalExcludingShipping(feeQuote);
-  const workAbs = Math.abs(workAmount);
-  const fromQuoteField = Math.max(
-    0,
-    Math.round(Number(feeQuote?.labShippingFee || 0)),
-  );
-  // 장부 실액(실제 차감)을 우선. labShippingFee 필드는 보조.
-  const fromLedgerGap =
-    quoteWork > 0 ? Math.max(0, workAbs - quoteWork) : 0;
-  const bakedAbs =
-    fromLedgerGap > 0
-      ? fromLedgerGap
-      : fromQuoteField > 0
-        ? Math.min(fromQuoteField, workAbs)
-        : 0;
-  const bakedLabShippingAmount =
-    bakedAbs <= 0
-      ? 0
-      : workAmount < 0
-        ? -bakedAbs
-        : workAmount > 0
-          ? bakedAbs
-          : 0;
-
   return {
     explicitShippingAmount,
-    bakedLabShippingAmount,
-    workAmount: workAmount - bakedLabShippingAmount,
+    bakedLabShippingAmount: 0,
+    workAmount,
   };
 };
 
-/** 장부 parts(+기공수가 합산 배송)에서 배송비만 추려 정산 상세에 넘긴다. */
+/** 장부 parts에서 →어벗츠 배송비만 추려 정산 상세에 넘긴다. */
 const toSettlementShippingLines = (
   parts: LedgerDisplayPart[] | null | undefined,
   creditLabHoldPending: boolean | null,
   creditAbutmentHoldPending: boolean | null,
   feeQuote?: PracticeTransferFeeQuote | null,
 ): PracticeTransferSettlementShippingLine[] => {
+  void feeQuote;
+  void creditLabHoldPending;
   const byKey = new Map<string, PracticeTransferSettlementShippingLine>();
   const upsert = (
     key: string,
@@ -669,13 +650,9 @@ const toSettlementShippingLines = (
   (Array.isArray(parts) ? parts : []).forEach((part, index) => {
     const { route, kind } = classifyPracticeTransferPart(part);
     if (kind !== "shipping") return;
+    if (route === "lab") return; // 치과→기공소 무료
     const key = route === "other" ? `other:${index}` : route;
-    const holdPending =
-      route === "lab"
-        ? creditLabHoldPending
-        : route === "abuts"
-          ? creditAbutmentHoldPending
-          : null;
+    const holdPending = route === "abuts" ? creditAbutmentHoldPending : null;
     upsert(
       key,
       settlementShippingRouteLabel(route),
@@ -684,23 +661,10 @@ const toSettlementShippingLines = (
     );
   });
 
-  const { bakedLabShippingAmount } = resolvePracticeTransferShippingAmounts(
-    parts,
-    feeQuote,
-  );
-  if (Math.abs(bakedLabShippingAmount) > 0 && !byKey.has("lab")) {
-    upsert(
-      "lab",
-      settlementShippingRouteLabel("lab"),
-      bakedLabShippingAmount,
-      creditLabHoldPending,
-    );
-  }
-
   return Array.from(byKey.values());
 };
 
-/** 정산 상세용: 기공비 총액에서 배송을 빼고 settlementShippingLines와 합산한다. */
+/** 정산 상세용: 기공비(배송 제외) + settlementShippingLines. 이중합산 금지. */
 const quoteForCreditSettlementDetail = (
   quote: PracticeTransferFeeQuote,
   settlementShippingLines: PracticeTransferSettlementShippingLine[],
@@ -710,28 +674,18 @@ const quoteForCreditSettlementDetail = (
     (sum, row) => sum + Math.max(0, Math.round(Number(row.amount || 0))),
     0,
   );
-  const ship = Math.max(
-    shipFromLines,
-    Math.max(0, Math.round(Number(quote.labShippingFee || 0))),
-  );
   const totalRaw = Math.max(0, Math.round(Number(quote.total || 0)));
   const labFeeRaw = Math.max(0, Math.round(Number(quote.labFeeTotal || 0)));
-  if (work <= 0 || ship <= 0) {
-    return { ...quote, labShippingFee: ship || quote.labShippingFee };
-  }
-  // total/labFeeTotal에 기공수가 배송이 이미 들어 있으면 표시 총액에서 제외.
-  const totalIncludesShip = totalRaw >= work + ship;
-  const labIncludesShip = labFeeRaw >= work - Math.max(
+  const legacyShip = Math.max(
     0,
-    Math.round(Number(quote.abutmentRetailTotal || 0)),
-  ) + ship;
+    Math.round(Number(quote.labShippingFee || 0)),
+  );
+  const workTotal = work > 0 ? work : Math.max(0, totalRaw - legacyShip);
   return {
     ...quote,
-    labFeeTotal: totalIncludesShip || labIncludesShip
-      ? Math.max(0, labFeeRaw - ship)
-      : labFeeRaw,
-    total: totalIncludesShip ? Math.max(work, totalRaw - ship) : totalRaw,
-    labShippingFee: ship,
+    labFeeTotal: Math.max(0, labFeeRaw - legacyShip),
+    total: workTotal,
+    labShippingFee: shipFromLines,
     lines: (Array.isArray(quote.lines) ? quote.lines : []).filter(
       (line) => !isFeeQuoteShippingLine(String(line.prosthesisType || "")),
     ),

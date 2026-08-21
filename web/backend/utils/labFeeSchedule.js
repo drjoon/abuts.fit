@@ -9,7 +9,7 @@
 // - web/backend/utils/roundBarAbutment.js
 // - web/frontend/src/features/settings/tabs/LabFeeScheduleTab.tsx
 // - 2026-08-13: 마스터 active(기본 off)가 켜져야 설정 완료. 수가 디폴트는 기본값·항목 on.
-// - 2026-08-21: 기공수가「배송비」(perSet). lab 기본 0·off / admin 카탈로그 3500·off. 수락 시 enabled 강제.
+// - 2026-08-21: 기공수가「배송비」폐지(치과→기공소 무료). normalize에서 strip. 어벗츠 구간만 박스당.
 // - 2026-08-21: PTX CA 치과 청구=기공소「커스텀어벗」수가(기본 4만=관리자 기본 기공수가). 어벗츠 1.5/2.5만은 기공소→어벗츠 Request.
 // - 2026-08-13: 유지장치 등 perSet는 연결 스팬당 1세트(끊기면 별도). 연결 없는 레거시는 악궁당.
 // - 2026-08-19: 임시치아(perNTeeth)도 연결 스팬당 구간 수가(같은 하악 3치·2치는 2세트).
@@ -389,8 +389,6 @@ export function labFeeItemMatchesNeedName(item, needName) {
 
 function labFeeItemHasChargePrice(item) {
   if (!item || item.enabled === false) return false;
-  // 배송비: enabled면 0원도 설정 완료(기공소가 무료 배송으로 둘 수 있음).
-  if (isLabFeeShippingItem(item)) return true;
   const tierPrices = Array.isArray(item.tiers)
     ? item.tiers.map((tier) => Math.round(Number(tier?.price || 0)))
     : [];
@@ -402,24 +400,17 @@ function labFeeItemHasChargePrice(item) {
   return price > 0;
 }
 
-/** 이 의뢰 보철 중 제공·단가가 없는 수가 항목명. 배송비는 항상 enabled 필수. */
+/** 이 의뢰 보철 중 제공·단가가 없는 수가 항목명. 치과→기공소 배송은 무료(수가 항목 없음). */
 export function missingLabFeeItemNames(schedule, toothWorks) {
   const needed = labFeeItemNamesNeededForToothWorks(toothWorks);
   const items = normalizeLabFeeItems(schedule);
-  const missing = needed.filter(
+  return needed.filter(
     (name) =>
       !items.some(
         (item) =>
           labFeeItemMatchesNeedName(item, name) && labFeeItemHasChargePrice(item),
       ),
   );
-  const shippingConfigured = items.some(
-    (item) => isLabFeeShippingItem(item) && item.enabled !== false,
-  );
-  if (!shippingConfigured && !missing.includes(LAB_FEE_SHIPPING_ITEM_NAME)) {
-    missing.push(LAB_FEE_SHIPPING_ITEM_NAME);
-  }
-  return missing;
 }
 
 export function resolveQuoteLabFeeConfigured({
@@ -493,10 +484,15 @@ export const LAB_FEE_ITEM_UNIT_LABELS = {
 export const MAX_LAB_FEE_ITEMS = 40;
 export const MAX_LAB_FEE_ITEM_TIERS = 8;
 
-/** 기공소→치과 배송비(기공수가). lab 기본 0·off, admin 카탈로그 3500·off. */
+/**
+ * 레거시 기공수가「배송비」(치과→기공소). 정책상 무료 — 시드/정규화에서 strip.
+ * id/name 판별용으로만 유지.
+ */
 export const LAB_FEE_SHIPPING_ITEM_ID = "shipping";
 export const LAB_FEE_SHIPPING_ITEM_NAME = "배송비";
-export const LAB_FEE_SHIPPING_ADMIN_DEFAULT_PRICE = 3500;
+/** @deprecated 치과→기공소 배송 무료. 호환용 상수만 유지. */
+export const LAB_FEE_SHIPPING_ADMIN_DEFAULT_PRICE = 0;
+/** @deprecated 치과→기공소 배송 무료. 호환용 상수만 유지. */
 export const LAB_FEE_SHIPPING_LAB_DEFAULT_PRICE = 0;
 
 export function isLabFeeShippingItem(item) {
@@ -505,6 +501,7 @@ export function isLabFeeShippingItem(item) {
   return canonicalizeFeeItemName(item.name) === LAB_FEE_SHIPPING_ITEM_NAME;
 }
 
+/** @deprecated 신규 시드에 쓰지 않음. */
 export function buildLabFeeShippingItem({
   price = LAB_FEE_SHIPPING_LAB_DEFAULT_PRICE,
   enabled = false,
@@ -520,28 +517,20 @@ export function buildLabFeeShippingItem({
   };
 }
 
-/** items에 배송비가 없으면 append. 있으면 그대로. */
-export function ensureLabFeeShippingItem(
-  items,
-  {
-    price = LAB_FEE_SHIPPING_LAB_DEFAULT_PRICE,
-    enabled = false,
-  } = {},
-) {
-  const list = Array.isArray(items) ? [...items] : [];
-  if (list.some((item) => isLabFeeShippingItem(item))) return list;
-  if (list.length >= MAX_LAB_FEE_ITEMS) return list;
-  list.push(buildLabFeeShippingItem({ price, enabled }));
-  return list;
+/** 레거시「배송비」행 제거. 치과→기공소는 무료. */
+export function stripLabFeeShippingItems(items) {
+  const list = Array.isArray(items) ? items : [];
+  return list.filter((item) => !isLabFeeShippingItem(item));
 }
 
-/** 기공수가 배송비 단가. enabled가 아니면 0. */
-export function resolveLabShippingFeeFromSchedule(schedule) {
-  const item = normalizeLabFeeItems(schedule).find((row) =>
-    isLabFeeShippingItem(row),
-  );
-  if (!item || item.enabled === false) return 0;
-  return Math.max(0, Math.round(Number(item.price || 0)));
+/** @deprecated stripLabFeeShippingItems 사용. 호환: shipping 미삽입·기존 행 제거. */
+export function ensureLabFeeShippingItem(items) {
+  return stripLabFeeShippingItems(items);
+}
+
+/** 기공수가 배송비 — 항상 0(무료). */
+export function resolveLabShippingFeeFromSchedule() {
+  return 0;
 }
 
 export function isMissingToothProsthesisType(prosthesisType) {
@@ -962,10 +951,6 @@ function migrateLegacyLabFeeItems(input) {
       remake: remake.customAbutmentDesignAndProduction,
       tiers: [],
     },
-    buildLabFeeShippingItem({
-      price: LAB_FEE_SHIPPING_LAB_DEFAULT_PRICE,
-      enabled: false,
-    }),
   ];
 }
 
@@ -1024,17 +1009,16 @@ export function normalizeLabFeeItems(input) {
     for (const row of rawItems) {
       if (out.length >= MAX_LAB_FEE_ITEMS) break;
       if (isRemovedPonticFeeRow(row)) continue;
+      if (isLabFeeShippingItem(row)) continue;
       const item = normalizeLabFeeItem(row, out.length);
       if (!item.name) continue;
+      if (isLabFeeShippingItem(item)) continue;
       let id = item.id;
       if (!id || seen.has(id)) id = `item-${out.length + 1}`;
       seen.add(id);
       out.push({ ...item, id });
     }
-    return ensureLabFeeShippingItem(expandPerNTeethTierItems(out), {
-      price: LAB_FEE_SHIPPING_LAB_DEFAULT_PRICE,
-      enabled: false,
-    });
+    return stripLabFeeShippingItems(expandPerNTeethTierItems(out));
   }
   return migrateLegacyLabFeeItems(src);
 }
@@ -1275,7 +1259,7 @@ export function computePracticeTransferRetailFees({
   remake = false,
   labFeeMultiplier = 1,
   rushFeeMultiplier = 1,
-  /** 기공소→치과 배송비를 기공수가「배송비」로 합산 */
+  /** @deprecated 치과→기공소 배송 무료. 무시되며 labShippingFee는 항상 0. */
   includeLabShippingFee = false,
 }) {
   const useRemake = Boolean(remake);
@@ -1512,35 +1496,9 @@ export function computePracticeTransferRetailFees({
     labFeeMultiplier,
   );
   const withRush = applyRushFeeMultiplierToFees(withLabMult, rushFeeMultiplier);
-
-  // 배송비는 할증·신속 배수 제외(flat). enabled+가격만 합산.
-  if (!includeLabShippingFee) return withRush;
-  const shippingFee = resolveLabShippingFeeFromSchedule(labFeeSchedule);
-  if (shippingFee <= 0) {
-    return { ...withRush, labShippingFee: 0 };
-  }
-  const nextLines = [
-    ...(Array.isArray(withRush.lines) ? withRush.lines : []),
-    {
-      toothNumber: "",
-      prosthesisType: LAB_FEE_SHIPPING_ITEM_NAME,
-      labFee: shippingFee,
-      labAbutmentFee: 0,
-      labAbutmentPending: false,
-      abutmentRetail: 0,
-    },
-  ];
-  const nextLabFeeTotal =
-    Math.max(0, Math.round(Number(withRush.labFeeTotal || 0))) + shippingFee;
-  return {
-    ...withRush,
-    labFeeTotal: nextLabFeeTotal,
-    labShippingFee: shippingFee,
-    total:
-      nextLabFeeTotal +
-      Math.max(0, Math.round(Number(withRush.abutmentRetailTotal || 0))),
-    lines: nextLines,
-  };
+  // 치과→기공소 배송은 무료(기공수가「배송비」폐지). includeLabShippingFee 무시.
+  void includeLabShippingFee;
+  return { ...withRush, labShippingFee: 0 };
 }
 
 function feeRowTooth(row) {

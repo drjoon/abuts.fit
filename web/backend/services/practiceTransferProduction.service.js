@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-08-21: PTX CA 배송비는 Request 박스 hold(수락 시 holdRequestCreditsOnSubmit).
 // - 2026-08-21: PTX 작업취소 시 연동 CA 취소 후 어벗츠로의뢰 건수·목록 캐시·소켓 갱신.
 // - 2026-08-21: PTX(구강스캔 기공의뢰수신) CA는 헥스 확인 샘플 미생성 — 어벗츠 직접의뢰(어벗디자인)에서만.
 // - 2026-08-21: 헥스 확인 샘플은 relatedRequestIds에 넣지 않음(어벗 개수 오인 방지).
@@ -81,6 +82,7 @@ import {
 } from "../utils/practiceTransferRush.js";
 import { triggerDashboardSummaryRefreshForAnchorId } from "./requestSnapshotTriggers.service.js";
 import { recomputeBulkShippingSnapshotForBusinessAnchorId } from "./bulkShippingSnapshot.service.js";
+import { holdRequestCreditsOnSubmit } from "./requestCreditHold.service.js";
 import { updateReviewStatusByStage } from "../controllers/requests/common.review.controller.js";
 import { prevKoreanBusinessDayYmd } from "../utils/krBusinessDays.js";
 import { isPendingRoundBarAbutment } from "../utils/labFeeSchedule.js";
@@ -982,6 +984,29 @@ export async function ensureAbutmentRequestsOnAccept({
 
   if (result.skippedReason === "already_created") {
     await syncRelatedRequestOwnershipToAcceptingLab(transferDoc);
+  } else if (requestIds.length > 0) {
+    // 기공소→어벗츠 배송: (기공소 BA + 예정 출고일) 박스당 1회 hold.
+    const createdDocs = await Request.find({
+      _id: {
+        $in: requestIds
+          .filter((id) => Types.ObjectId.isValid(id))
+          .map((id) => new Types.ObjectId(id)),
+      },
+    });
+    if (createdDocs.length) {
+      try {
+        await holdRequestCreditsOnSubmit({
+          requests: createdDocs,
+          actorUserId,
+        });
+      } catch (err) {
+        console.error(
+          "[PTX_CA] shipping hold on accept failed",
+          err?.message || err,
+        );
+        throw err;
+      }
+    }
   }
 
   return {

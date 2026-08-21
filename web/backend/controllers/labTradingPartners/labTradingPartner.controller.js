@@ -35,7 +35,6 @@ import {
   resolveLabPracticeFeeMultiplier,
   upsertLabPracticeFeeMultiplierList,
   buildDefaultLabFeeSchedule,
-  LAB_FEE_SHIPPING_LAB_DEFAULT_PRICE,
 } from "../../utils/labFeeSchedule.js";
 import {
   loadAbutsLabFeeSchedule,
@@ -65,19 +64,18 @@ async function resolveLabFeeScheduleForSettingsFromCatalog(schedule) {
     const abuts = await loadAbutsLabFeeSchedule();
     const catalogItems = normalizeLabFeeItems({
       items: Array.isArray(abuts?.items) ? abuts.items : [],
-    }).filter((item) => item?.name && item.pendingReview !== true);
+    }).filter(
+      (item) =>
+        item?.name &&
+        item.pendingReview !== true &&
+        !isLabFeeShippingItem(item),
+    );
     if (catalogItems.length) {
       return {
         ...buildDefaultLabFeeSchedule(),
         ...(schedule && typeof schedule === "object" ? schedule : {}),
         items: catalogItems.map((item) => ({
           ...item,
-          ...(isLabFeeShippingItem(item)
-            ? {
-                price: LAB_FEE_SHIPPING_LAB_DEFAULT_PRICE,
-                enabled: false,
-              }
-            : {}),
           pendingReview: false,
           proposedByLabName: "",
           proposedByLabAnchorId: "",

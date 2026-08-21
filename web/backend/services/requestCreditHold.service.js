@@ -7,6 +7,7 @@
 // - web/backend/controllers/requests/common.review.helpers.js
 // - web/backend/controllers/requests/mailbox.utils.js
 // change-log:
+// - 2026-08-21: PTX CA 배송비는 Request 박스(BA+출고일) hold — PTX 건당 skip 폐지.
 // - 2026-08-21: 신규 배송비 hold만 올린 그룹은 reconcile 재조회 skip. hold 구간 dt 로그.
 // - 2026-08-19: 같은 출고일 배송비 보류는 형제 목록+저널을 그룹당 1회 배치 조회.
 // - 2026-08-19: 일괄 취소 시 같은 박스에서 함께 취소되는 형제의 배송비 재보류를 생략.
@@ -95,7 +96,7 @@ export function buildShippingReceiverGroupKey(request) {
   return `${org}:${fp}`;
 }
 
-function isPtxCaWithTransferHold(request) {
+function isPtxCaLinkedRequest(request) {
   const relatedPtxId = String(
     request?.partnerBilling?.relatedPracticeTransferId || "",
   ).trim();
@@ -129,12 +130,17 @@ export function resolveRequestCreditHoldAnchorId(request) {
 export function shouldSkipMachiningHold(request) {
   if (isManufacturerSampleRequest(request)) return true;
   if (isPracticePrepaidNonPartner(request)) return true;
+  // PTX CA: 기공의뢰 쪽에서 이미 기공·어벗 보류.
+  if (isPtxCaLinkedRequest(request)) return true;
   return false;
 }
 
+/**
+ * 배송비는 (의뢰 BA + 예정 출고일) 박스당 1회.
+ * PTX CA도 Request 경로로 보류(구: PTX 건당 hold — 폐지).
+ */
 export function shouldSkipShippingHold(request) {
   if (isManufacturerSampleRequest(request)) return true;
-  if (isPtxCaWithTransferHold(request)) return true;
   return false;
 }
 

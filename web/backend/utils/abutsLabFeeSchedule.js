@@ -13,12 +13,11 @@ import SystemSettings from "../models/systemSettings.model.js";
 import {
   buildDefaultLabFeeSchedule,
   canonicalizeFeeItemName,
-  ensureLabFeeShippingItem,
   isLabFeeShippingItem,
   isRemovedPonticFeeRow,
-  LAB_FEE_SHIPPING_ADMIN_DEFAULT_PRICE,
   normalizeLabFeeItem,
   normalizeLabFeeItems,
+  stripLabFeeShippingItems,
 } from "./labFeeSchedule.js";
 
 const MAX_ITEMS = 40;
@@ -54,18 +53,17 @@ function readPendingMeta(src) {
 export function buildDefaultAbutsLabFeeItems() {
   const items = normalizeLabFeeItems(buildDefaultLabFeeSchedule());
   return items
-    .filter((item) => item?.name && !EXCLUDED_CATALOG_IDS.has(String(item.id)))
+    .filter(
+      (item) =>
+        item?.name &&
+        !EXCLUDED_CATALOG_IDS.has(String(item.id)) &&
+        !isLabFeeShippingItem(item),
+    )
     .map((item, index) =>
       normalizeLabFeeItem(
         {
           ...item,
           remake: 0,
-          ...(isLabFeeShippingItem(item)
-            ? {
-                enabled: false,
-                price: LAB_FEE_SHIPPING_ADMIN_DEFAULT_PRICE,
-              }
-            : {}),
         },
         index,
       ),
@@ -78,8 +76,10 @@ export function normalizeAbutsLabFeeItems(rawItems) {
   const seen = new Set();
   for (const row of list) {
     if (out.length >= MAX_ITEMS) break;
+    if (isLabFeeShippingItem(row)) continue;
     const item = normalizeLabFeeItem(row, out.length);
     if (!item.name) continue;
+    if (isLabFeeShippingItem(item)) continue;
     if (isRemovedPonticFeeRow(row) || isRemovedPonticFeeRow(item)) continue;
     if (EXCLUDED_CATALOG_IDS.has(item.id)) continue;
     let id = item.id;
@@ -93,7 +93,7 @@ export function normalizeAbutsLabFeeItems(rawItems) {
       id,
       name: item.name,
       unit: item.unit,
-      enabled: isLabFeeShippingItem(item) ? item.enabled === true : enabled,
+      enabled,
       price: item.price,
       remake: 0,
       tiers: item.tiers,
@@ -112,10 +112,7 @@ export function normalizeAbutsLabFeeItems(rawItems) {
     });
   }
   if (!out.length) return buildDefaultAbutsLabFeeItems();
-  return ensureLabFeeShippingItem(out, {
-    price: LAB_FEE_SHIPPING_ADMIN_DEFAULT_PRICE,
-    enabled: false,
-  });
+  return stripLabFeeShippingItems(out);
 }
 
 export function normalizeAbutsLabFeeSchedule(raw) {
@@ -209,6 +206,7 @@ export function buildPendingAbutsItemsFromLabFees({
     if (catalog.length + added.length >= MAX_ITEMS) break;
     const item = normalizeLabFeeItem(row, added.length);
     if (!item.name) continue;
+    if (isLabFeeShippingItem(item)) continue;
     if (EXCLUDED_CATALOG_IDS.has(String(item.id || ""))) continue;
     if (existingNames.has(item.name)) continue;
     existingNames.add(item.name);
