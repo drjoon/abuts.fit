@@ -383,7 +383,15 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 라이노(2-filled)는 원본만 실행하고 샘플에 `stlFile`(legacy `camFile` 미러)을 복사. Esprit NC(`ncFile`)는 샘플의 반대 헥스로 별도 생성.
   - 의뢰자(기공소/치과) 취소·삭제 시 원본↔헥스 확인 샘플을 **함께** `취소` 처리한다
     (`findHexVerificationCancelSiblings` → `updateRequestStatus` / batch / `deleteRequest`).
-  - 관련: `utils/designSoftwareHex.js`, `services/hexVerificationSample.service.js`
+  - 관리자 헥스 확인 완료: `requestSettings.hexVerificationCompletedAt/By` + `hexVerificationResultHex`
+    (`STL모델대로`|`헥스30도회전`). 대시보드 카드·`GET/POST /api/admin/hex-verification/*`.
+  - ExoCAD 제조사 헥스 해석 SSOT(`resolveExoCadManufacturerHexRotation`):
+    1) 첫의뢰 pending → designSoftware(+exoCadVersion) 강제
+    2) 제조사 `defaultManufacturerHexRotation`(User→BA)
+    3) 관리자 `hexVerificationResultHex`(User→BA)
+    4) designSoftware(+exoCadVersion)
+  - 관련: `utils/designSoftwareHex.js`, `services/hexVerificationSample.service.js`,
+    `controllers/admin/admin.hexVerification.controller.js`
 - 워크시트 응답(`GET /api/requests/all?view=worksheet`)의 `item.business`에는
   `requestSettings.designSoftware`를 포함할 수 있으나, 제조사/의뢰자 UI의 실제 표시는 `caseInfos.designSoftware`를 SSOT로 사용합니다.
   - 관련 파일:

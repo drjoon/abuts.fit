@@ -42,6 +42,8 @@ import BusinessAnchor from "../models/businessAnchor.model.js";
 import User from "../models/user.model.js";
 import {
   normalizeExoCadVersion,
+  normalizeHexVerificationResultHex,
+  resolveExoCadManufacturerHexRotation,
   resolveHexRotationByDesignSoftware,
 } from "../utils/designSoftwareHex.js";
 import { maybeCreateHexVerificationSampleForFirstOrder } from "./hexVerificationSample.service.js";
@@ -229,7 +231,9 @@ const normalizeManufacturerHexRotationOrNull = (value) => {
 };
 
 /**
- * 제조사 헥스 기본값 SSOT: 개인(User) → BusinessAnchor → designSoftware(+exoCadVersion).
+ * 제조사 헥스 기본값 SSOT (ExoCAD):
+ * 제조사 default → 관리자 hexVerificationResultHex → designSoftware(+exoCadVersion).
+ * pending은 loadLabRequestMetaForProduction에서 resolveExoCadManufacturerHexRotation으로 처리.
  * related: common.requests.controller.js updateRndHexRotation
  */
 export function pickLabManufacturerHexRotation(
@@ -237,16 +241,30 @@ export function pickLabManufacturerHexRotation(
   labOrg,
   designSoftware,
   exoCadVersion = null,
+  { hexVerificationPending = false } = {},
 ) {
-  return (
+  const manufacturerDefault =
     normalizeManufacturerHexRotationOrNull(
       labUser?.requestSettings?.defaultManufacturerHexRotation,
     ) ||
     normalizeManufacturerHexRotationOrNull(
       labOrg?.requestSettings?.defaultManufacturerHexRotation,
+    );
+  const adminVerifiedHex =
+    normalizeHexVerificationResultHex(
+      labUser?.requestSettings?.hexVerificationResultHex,
     ) ||
-    resolveHexRotationByDesignSoftware(designSoftware, exoCadVersion)
-  );
+    normalizeHexVerificationResultHex(
+      labOrg?.requestSettings?.hexVerificationResultHex,
+    );
+
+  return resolveExoCadManufacturerHexRotation({
+    designSoftware,
+    exoCadVersion,
+    manufacturerDefault,
+    adminVerifiedHex,
+    hexVerificationPending,
+  });
 }
 
 const normalizeRetentionGrooveValue = (value, fallback = "none") => {
@@ -319,6 +337,7 @@ export async function loadLabRequestMetaForProduction({
             "requestSettings.designSoftware": 1,
             "requestSettings.exoCadVersion": 1,
             "requestSettings.hexVerificationSamplePending": 1,
+            "requestSettings.hexVerificationResultHex": 1,
             "requestSettings.anodizingEnabled": 1,
             "requestSettings.retentionGroove": 1,
             "requestSettings.defaultManufacturerHexRotation": 1,
@@ -331,6 +350,7 @@ export async function loadLabRequestMetaForProduction({
             "requestSettings.designSoftware": 1,
             "requestSettings.exoCadVersion": 1,
             "requestSettings.hexVerificationSamplePending": 1,
+            "requestSettings.hexVerificationResultHex": 1,
             "requestSettings.anodizingEnabled": 1,
             "requestSettings.retentionGroove": 1,
             "requestSettings.defaultManufacturerHexRotation": 1,
@@ -351,14 +371,13 @@ export async function loadLabRequestMetaForProduction({
     designSoftware,
     exoCadVersion,
   );
-  const manufacturerHexRotation = hexVerificationSamplePending
-    ? designSoftwareHex
-    : pickLabManufacturerHexRotation(
-        labUser,
-        labOrg,
-        designSoftware,
-        exoCadVersion,
-      );
+  const manufacturerHexRotation = pickLabManufacturerHexRotation(
+    labUser,
+    labOrg,
+    designSoftware,
+    exoCadVersion,
+    { hexVerificationPending: hexVerificationSamplePending },
+  );
 
   return {
     designSoftware,

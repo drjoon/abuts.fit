@@ -324,6 +324,28 @@ const businessAnchorSchema = new mongoose.Schema(
         type: Boolean,
         default: false,
       },
+      // 관리자 헥스 확인 테스트 완료 시각. related: designSoftwareHex.js resolveExoCadManufacturerHexRotation
+      hexVerificationCompletedAt: {
+        type: Date,
+        default: null,
+      },
+      hexVerificationCompletedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        default: null,
+      },
+      // 관리자 확정 헥스(ExoCAD). 제조사 defaultManufacturerHexRotation보다 낮은 우선순위.
+      hexVerificationResultHex: {
+        type: String,
+        validate: {
+          validator: (v) =>
+            v == null || v === "" || v === "STL모델대로" || v === "헥스30도회전",
+          message:
+            "hexVerificationResultHex는 'STL모델대로' | '헥스30도회전' 이어야 합니다.",
+        },
+        default: null,
+        trim: true,
+      },
       // 의뢰자(사업체) 단위 기본 헥스 회전값 (신규 의뢰 기본값)
       defaultRequestorHexRotation: {
         type: String,
@@ -333,7 +355,7 @@ const businessAnchorSchema = new mongoose.Schema(
       // - canonical: "STL모델대로" | "헥스30도회전" | "헥스X도회전(total)"
       // - 저장 주체: 제조사 (개인 User 우선, 없으면 이 BusinessAnchor)
       // - 적용 대상: 해당 의뢰자/사업체의 이후 신규 의뢰
-      // - 조회 SSOT: User → BusinessAnchor → designSoftware(ExoCAD=헥스30)
+      // - 조회 SSOT: User → BusinessAnchor → 관리자 hexVerificationResultHex → designSoftware
       defaultManufacturerHexRotation: {
         type: String,
         validate: {

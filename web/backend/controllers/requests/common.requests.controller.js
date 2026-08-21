@@ -3219,7 +3219,7 @@ export const updateRndHexRotation = asyncHandler(async (req, res) => {
   // 의뢰자 헥스 기본값 저장 SSOT:
   // - 개인 계정(User.requestSettings.defaultManufacturerHexRotation) 우선
   // - 개인 계정이 없으면 BusinessAnchor.requestSettings.defaultManufacturerHexRotation
-  // 다음 신규 의뢰는 User → Anchor → designSoftware(ExoCAD=헥스30, 그 외=STL) 순으로 읽는다.
+  // 다음 신규 의뢰는 User → Anchor → 관리자 hexVerificationResultHex → designSoftware 순으로 읽는다.
   const requestorUserId = String(
     request?.requestor?._id || request?.requestor || "",
   ).trim();

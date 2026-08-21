@@ -29,6 +29,8 @@ import DraftRequest from "../../models/draftRequest.model.js";
 import User from "../../models/user.model.js";
 import {
   normalizeExoCadVersion,
+  normalizeHexVerificationResultHex,
+  resolveExoCadManufacturerHexRotation,
   resolveHexRotationByDesignSoftware,
 } from "../../utils/designSoftwareHex.js";
 import { maybeCreateHexVerificationSampleForFirstOrder } from "../../services/hexVerificationSample.service.js";
@@ -1201,13 +1203,21 @@ export async function createRequestsFromDraft(req, res) {
       shippingOrg?.requestSettings?.defaultRequestorHexRotation,
       "STL모델대로",
     );
-    // 제조사 헥스 기본값 SSOT: 개인(User) → BusinessAnchor → (없으면 designSoftware+exoCadVersion)
+    // 제조사 헥스 기본값 SSOT: 개인(User) → BusinessAnchor
     const requestorDefaultManufacturerHexRotation =
       normalizeManufacturerHexRotationModeOrNull(
         requestorSettingsDoc?.requestSettings?.defaultManufacturerHexRotation,
       ) ||
       normalizeManufacturerHexRotationModeOrNull(
         shippingOrg?.requestSettings?.defaultManufacturerHexRotation,
+      );
+    // 관리자 헥스 확인 확정값: User → BusinessAnchor
+    const requestorAdminVerifiedHex =
+      normalizeHexVerificationResultHex(
+        requestorSettingsDoc?.requestSettings?.hexVerificationResultHex,
+      ) ||
+      normalizeHexVerificationResultHex(
+        shippingOrg?.requestSettings?.hexVerificationResultHex,
       );
     const requestorExoCadVersion =
       normalizeExoCadVersion(
@@ -1516,16 +1526,20 @@ export async function createRequestsFromDraft(req, res) {
             shippingOrg?.requestSettings?.hexVerificationSamplePending !==
               false;
 
-          const resolvedManufacturerHexRotation = hexVerificationPending
-            ? resolvedRequestorHexRotation
-            : requestorDefaultManufacturerHexRotation || undefined;
+          // ExoCAD: 제조사 > 관리자 확정 > 디자인SW. pending이면 디자인SW 강제.
+          const resolvedManufacturerHexRotation =
+            resolveExoCadManufacturerHexRotation({
+              designSoftware: resolvedDesignSoftware,
+              exoCadVersion: resolvedExoCadVersion,
+              manufacturerDefault: requestorDefaultManufacturerHexRotation,
+              adminVerifiedHex: requestorAdminVerifiedHex,
+              hexVerificationPending,
+            });
 
           const resolvedFinalHexRotation = resolveFinalHexRotationValue({
-            manufacturerHexRotation:
-              resolvedManufacturerHexRotation || resolvedRequestorHexRotation,
+            manufacturerHexRotation: resolvedManufacturerHexRotation,
           });
-          const hexRotationMode =
-            resolvedManufacturerHexRotation || resolvedRequestorHexRotation;
+          const hexRotationMode = resolvedManufacturerHexRotation;
 
           const quotedPrice = isPracticeRoutingSubmission
             ? item.computedPrice

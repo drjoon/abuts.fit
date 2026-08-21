@@ -220,6 +220,23 @@ const userSchema = new mongoose.Schema(
         type: Boolean,
         default: false,
       },
+      // 관리자 헥스 확인 테스트 완료 시각. related: designSoftwareHex.js resolveExoCadManufacturerHexRotation
+      hexVerificationCompletedAt: {
+        type: Date,
+        default: null,
+      },
+      hexVerificationCompletedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        default: null,
+      },
+      // 관리자 확정 헥스(ExoCAD). 제조사 defaultManufacturerHexRotation보다 낮은 우선순위.
+      // - "STL모델대로" | "헥스30도회전"
+      hexVerificationResultHex: {
+        type: String,
+        default: null,
+        trim: true,
+      },
       // 의뢰자(계정) 단위 아노다이징 기본값. 신규 업로드 시드 → caseInfos.anodizingEnabled
       anodizingEnabled: {
         type: Boolean,
@@ -235,7 +252,7 @@ const userSchema = new mongoose.Schema(
       },
       // 제조사 PreviewModal에서 설정한 의뢰자(개인) 단위 기본 헥스 회전.
       // - canonical: "STL모델대로" | "헥스30도회전" | "헥스X도회전(total)"
-      // - 조회 SSOT: 개인(User) → BusinessAnchor → designSoftware(ExoCAD=헥스30, 그 외=STL)
+      // - 조회 SSOT: 개인(User) → BusinessAnchor → 관리자 hexVerificationResultHex → designSoftware
       // related: common.requests.controller.js updateRndHexRotation
       defaultManufacturerHexRotation: {
         type: String,

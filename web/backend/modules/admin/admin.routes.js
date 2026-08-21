@@ -48,6 +48,10 @@ import {
   addHappyCallCompletionMemo,
 } from "../../controllers/admin/admin.dashboard.controller.js";
 import {
+  listHexVerificationInProgress,
+  completeHexVerification,
+} from "../../controllers/admin/admin.hexVerification.controller.js";
+import {
   getSystemLogs,
   getActivityLogs,
   getSecurityLogs,
@@ -279,6 +283,13 @@ router.post(
 router.post(
   "/dashboard/happy-call/completions/:id/memo",
   addHappyCallCompletionMemo,
+);
+
+// ExoCAD 헥스 확인 (관리자)
+router.get("/hex-verification/in-progress", listHexVerificationInProgress);
+router.post(
+  "/hex-verification/:businessAnchorId/complete",
+  completeHexVerification,
 );
 
 // 소통 메뉴 배지 카운트 (초기 로드용)
