@@ -8,6 +8,7 @@
 // - web/frontend/src/pages/requestor/new_request/hooks/useNewRequestSubmitV2.ts
 // - web/backend/rules.md
 // change-log:
+// - 2026-08-21: 아노 미설정 폴백을 의뢰자 개인 requestSettings 우선(사업체→기본 ON). 사업체-only race 완화.
 // - 2026-08-19: 제출 트랜잭션에서 크레딧 보류는 잔액 집계 1회·가드 1회로 재사용.
 // - 2026-08-19: 제출 지연 단축. 공휴일/devops prefetch, 리메이크 가격 조회 생략,
 //   생산스케줄 memo, requestId 로컬 생성, 세션 시작 병렬.
@@ -25,6 +26,7 @@ import crypto from "crypto";
 import Request from "../../models/request.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import DraftRequest from "../../models/draftRequest.model.js";
+import User from "../../models/user.model.js";
 import {
   normalizeCaseInfosImplantFields,
   ensureReviewByStageDefaults,
@@ -306,7 +308,16 @@ export async function createRequestsFromDraft(req, res) {
         year: "numeric",
       }).format(new Date()),
     );
-    const [draft, lockStatus, creditSettingsBase, manufacturerSettings, shippingOrg, devopsAnchorIdPrefetch] =
+    const [
+      draft,
+      lockStatus,
+      creditSettingsBase,
+      manufacturerSettings,
+      shippingOrg,
+      devopsAnchorIdPrefetch,
+      ,
+      requestorSettingsDoc,
+    ] =
       await Promise.all([
         DraftRequest.findById(draftId).lean(),
         earlyOrgId && Types.ObjectId.isValid(earlyOrgId)
@@ -332,6 +343,11 @@ export async function createRequestsFromDraft(req, res) {
         prefetchKoreanHolidaysForYears(
           Number.isFinite(kstYear) ? [kstYear, kstYear + 1] : [],
         ),
+        req.user?._id
+          ? User.findById(req.user._id)
+              .select({ "requestSettings.anodizingEnabled": 1 })
+              .lean()
+          : Promise.resolve(null),
       ]);
     const creditSettings = earlyOrgId
       ? await loadCreditSettingsDefaults({
@@ -1175,9 +1191,12 @@ export async function createRequestsFromDraft(req, res) {
     ).length;
     const requiredMachiningFee = totalSpendSupply + totalExpressFee;
     const requestorAnodizingEnabled =
-      typeof shippingOrg?.requestSettings?.anodizingEnabled === "boolean"
-        ? shippingOrg.requestSettings.anodizingEnabled
-        : true;
+      typeof requestorSettingsDoc?.requestSettings?.anodizingEnabled ===
+      "boolean"
+        ? requestorSettingsDoc.requestSettings.anodizingEnabled
+        : typeof shippingOrg?.requestSettings?.anodizingEnabled === "boolean"
+          ? shippingOrg.requestSettings.anodizingEnabled
+          : true;
     const requestorDefaultHexRotation = normalizeRequestorHexRotation(
       shippingOrg?.requestSettings?.defaultRequestorHexRotation,
       "STL모델대로",

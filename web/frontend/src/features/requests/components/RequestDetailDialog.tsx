@@ -1,6 +1,7 @@
 import { type ReactNode } from "react";
 
 // change-log:
+// - 2026-08-21: 의뢰 상세에 아노다이징(ON/OFF) 행 표시(caseInfos.anodizingEnabled).
 // - 2026-08-20: 주문 상세에서 배송비 행 제거. 배송비는 묶음 발송·크레딧 장부만.
 // - 2026-08-19: dismissLocked — 확인 중 바깥 클릭·ESC로 상세를 닫지 않음.
 // - 2026-08-19: 왼쪽 원본 STL 프리뷰. 준비 단계 취소를 footer로 연결.
@@ -60,6 +61,7 @@ export type RequestDetailDialogCaseInfos = {
   implantFamily?: string;
   implantType?: string;
   designSoftware?: string;
+  anodizingEnabled?: boolean | null;
   maxDiameter?: number | null;
   connectionDiameter?: number | null;
   retentionGroove?: "none" | "shallow" | "deep";
@@ -281,6 +283,12 @@ export const RequestDetailDialog = ({
   const connectionDiameter = caseInfos.connectionDiameter;
   const retentionGrooveLabel =
     caseInfos.retentionGroove === "deep" ? "있음" : "없음";
+  const anodizingLabel =
+    typeof caseInfos.anodizingEnabled === "boolean"
+      ? caseInfos.anodizingEnabled
+        ? "ON"
+        : "OFF"
+      : null;
 
   const estimatedShipYmd =
     request?.timeline?.estimatedShipYmd ||
@@ -604,6 +612,10 @@ export const RequestDetailDialog = ({
                       <span className="text-slate-600">디자인 SW</span>
                       <span className="font-medium text-right">
                         {String(caseInfos.designSoftware || "").trim() || "-"}
+                      </span>
+                      <span className="text-slate-600">아노다이징</span>
+                      <span className="font-medium text-right">
+                        {anodizingLabel || "-"}
                       </span>
                       <span className="text-slate-600">직경</span>
                       <span className="font-medium text-right">

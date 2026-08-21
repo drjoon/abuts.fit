@@ -5,6 +5,7 @@
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // change-log:
+// - 2026-08-21: 설정 GET과 아노 토글 race — 사용자 변경 후 stale 로드가 ON→OFF로 덮지 않음.
 // - 2026-08-16: 미설정 게이트 모달 — 당장은 X/취소로 닫기 가능. 재진입·새로고침 시 재노출.
 // - 2026-08-16: internalLab(어벗츠기공소)도 사업체 기본값으로 로드·저장. 개인(requestor*) 필드 미전송.
 // - 2026-08-16: 의뢰자·internalLab 미설정 시 기공의뢰수신/어벗생산의뢰 진입 모달 강제.
@@ -127,6 +128,12 @@ export function useRequestorRequestSettings(
   const onDefaultsChangeRef = useRef(onDefaultsChange);
   const onGateCompleteRef = useRef(onGateComplete);
   const entryForcedRef = useRef(false);
+  /** 아노 토글/모달 저장 후 stale GET이 OFF로 되돌리는 race 방지 */
+  const anodizingTouchedRef = useRef(false);
+  const anodizingEnabledRef = useRef(anodizingEnabled);
+  const draftAnodizingRef = useRef(draftAnodizingEnabled);
+  const draftDesignSoftwareRef = useRef(draftDesignSoftware);
+  const draftRetentionGrooveRef = useRef(draftRetentionGroove);
 
   useEffect(() => {
     onDefaultsChangeRef.current = onDefaultsChange;
@@ -135,6 +142,22 @@ export function useRequestorRequestSettings(
   useEffect(() => {
     onGateCompleteRef.current = onGateComplete;
   }, [onGateComplete]);
+
+  useEffect(() => {
+    anodizingEnabledRef.current = anodizingEnabled;
+  }, [anodizingEnabled]);
+
+  useEffect(() => {
+    draftAnodizingRef.current = draftAnodizingEnabled;
+  }, [draftAnodizingEnabled]);
+
+  useEffect(() => {
+    draftDesignSoftwareRef.current = draftDesignSoftware;
+  }, [draftDesignSoftware]);
+
+  useEffect(() => {
+    draftRetentionGrooveRef.current = draftRetentionGroove;
+  }, [draftRetentionGroove]);
 
   const isIncomplete = useCallback(
     (designSoftware: string) => !String(designSoftware || "").trim(),
@@ -233,7 +256,10 @@ export function useRequestorRequestSettings(
 
         let requestorDefault = String(data?.requestorDesignSoftware || "").trim();
         let businessDefault = String(data?.designSoftware || "").trim();
-        const draftDefault = String(draftDesignSoftware || "").trim();
+        // draft* 는 마운트 클로저가 아니라 ref(최신)로 시드 — 토글 후 stale GET race 완화
+        const draftDefault = String(draftDesignSoftwareRef.current || "").trim();
+        const draftAno = draftAnodizingRef.current;
+        const draftRetention = draftRetentionGrooveRef.current;
 
         const hasRequestorAno = Boolean(data?.hasRequestorAnodizingSetting);
         const hasBusinessAno = Boolean(data?.hasBusinessAnodizingSetting);
@@ -252,17 +278,21 @@ export function useRequestorRequestSettings(
             : true;
 
         const resolvedAnodizing =
-          typeof draftAnodizingEnabled === "boolean"
-            ? draftAnodizingEnabled
+          typeof draftAno === "boolean"
+            ? draftAno
             : isPersonalRequestor && typeof requestorAnodizing === "boolean"
               ? requestorAnodizing
               : businessAnodizing;
 
-        setAnodizingEnabled(resolvedAnodizing);
+        // 사용자가 이미 토글/모달로 바꾼 뒤면 서버 GET으로 아노를 덮지 않음
+        const skipAnodizingFromLoad = anodizingTouchedRef.current;
+        if (!skipAnodizingFromLoad) {
+          setAnodizingEnabled(resolvedAnodizing);
+        }
         setHasAnodizingSetting(anodizingConfigured);
 
         const resolvedRetention = normalizeRetentionGrooveChoice(
-          draftRetentionGroove ||
+          draftRetention ||
             (isPersonalRequestor ? data?.requestorRetentionGroove : null) ||
             data?.retentionGroove ||
             "none",
@@ -322,18 +352,21 @@ export function useRequestorRequestSettings(
           ? draftDefault || requestorDefault || businessDefault
           : draftDefault || businessDefault;
 
+        const defaultsPatch: Partial<RequestSettingsDefaults> = {
+          retentionGroove: resolvedRetention,
+        };
+        if (!skipAnodizingFromLoad) {
+          defaultsPatch.anodizingEnabled = resolvedAnodizing;
+        }
+
         if (effectiveDesign) {
           setDesignSoftwareValue(effectiveDesign);
           onDefaultsChangeRef.current?.({
             designSoftware: effectiveDesign,
-            anodizingEnabled: resolvedAnodizing,
-            retentionGroove: resolvedRetention,
+            ...defaultsPatch,
           });
         } else {
-          onDefaultsChangeRef.current?.({
-            anodizingEnabled: resolvedAnodizing,
-            retentionGroove: resolvedRetention,
-          });
+          onDefaultsChangeRef.current?.(defaultsPatch);
         }
 
         setLoaded(true);
@@ -346,7 +379,9 @@ export function useRequestorRequestSettings(
           entryForcedRef.current = true;
           openModalForValueRef.current(effectiveDesign, {
             force: true,
-            showCurrentAnodizing: resolvedAnodizing,
+            showCurrentAnodizing: skipAnodizingFromLoad
+              ? anodizingEnabledRef.current
+              : resolvedAnodizing,
           });
         }
       } catch {
@@ -492,6 +527,8 @@ export function useRequestorRequestSettings(
 
       setDesignSoftwareValue(designSoftware);
       setAnodizingEnabled(modalAnodizingEnabled);
+      anodizingTouchedRef.current = true;
+      anodizingEnabledRef.current = modalAnodizingEnabled;
       setHasAnodizingSetting(true);
       setNeedsBusinessDesignSoftwareBootstrap(false);
       setNeedsBusinessAnodizingBootstrap(false);
@@ -551,7 +588,9 @@ export function useRequestorRequestSettings(
 
     const next = !anodizingEnabled;
     const prev = anodizingEnabled;
+    anodizingTouchedRef.current = true;
     setAnodizingEnabled(next);
+    anodizingEnabledRef.current = next;
     onDefaultsChangeRef.current?.({ anodizingEnabled: next });
 
     setAnodizingSaving(true);
@@ -579,6 +618,7 @@ export function useRequestorRequestSettings(
 
         if (!res.ok) {
           setAnodizingEnabled(prev);
+          anodizingEnabledRef.current = prev;
           onDefaultsChangeRef.current?.({ anodizingEnabled: prev });
           const body = (res.data || {}) as { message?: string };
           toast({
@@ -598,11 +638,13 @@ export function useRequestorRequestSettings(
           typeof data?.requestorAnodizingEnabled === "boolean"
         ) {
           setAnodizingEnabled(data.requestorAnodizingEnabled);
+          anodizingEnabledRef.current = data.requestorAnodizingEnabled;
           onDefaultsChangeRef.current?.({
             anodizingEnabled: data.requestorAnodizingEnabled,
           });
         } else if (typeof data?.anodizingEnabled === "boolean") {
           setAnodizingEnabled(data.anodizingEnabled);
+          anodizingEnabledRef.current = data.anodizingEnabled;
           onDefaultsChangeRef.current?.({
             anodizingEnabled: data.anodizingEnabled,
           });
@@ -610,6 +652,7 @@ export function useRequestorRequestSettings(
         setHasAnodizingSetting(true);
       } catch {
         setAnodizingEnabled(prev);
+        anodizingEnabledRef.current = prev;
         onDefaultsChangeRef.current?.({ anodizingEnabled: prev });
         toast({
           title: "저장에 실패했습니다",

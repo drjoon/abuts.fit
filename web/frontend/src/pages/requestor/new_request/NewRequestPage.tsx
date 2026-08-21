@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-21: 아노 토글 시 기존 첨부 카드에도 동기화(툴바 ON인데 제출 OFF race/혼선 방지). 첨부 시드는 툴바 값 우선.
 // - 2026-08-19: 기공소·어벗츠기공소도 상단 생산 현황 헤더(기간·출고·완료·불완전가공). 가입 배너는 수신 페이지.
 // - 2026-08-19: 의뢰하기 클릭 즉시 입력 중 중복 체크 무효화(성공 토스트+중복 모달 동시 표시 방지).
 // - 2026-08-19: 제출 중 중복 클릭 방지. 첨부 즉시 업로드는 useNewRequestPage.
@@ -15,7 +16,6 @@
 // - 2026-08-11: 기공소 어벗의뢰 상단 — 거래 치과 등록 D-day 배너.
 // - 2026-08-12: 소개치과+가입이유 2열 배너로 교체.
 // - 2026-08-11: 상단 헤더(지난 의뢰) 제거 — 대시보드 최근 의뢰 카드로만 제공.
-// - 2026-08-11: 아노다이징/디자인소프트웨어 기본값 변경은 기존 첨부 카드에 미반영(신규 업로드만).
 // - 2026-08-11: 아노다이징을 의뢰건 caseInfos SSOT로 저장·뱃지 표시(디자인소프트웨어와 동일). 사업체는 기본값 시드만.
 // - 2026-08-11: 설정 의뢰 탭 제거 후 아노다이징 토글을 좌측 상단(디자인소프트웨어 옆)으로 이전.
 // - 2026-08-09: 왼쪽 첨부 패널을 넓혀 드롭존 안내 문구가 1줄로 유지되도록 함.
@@ -247,8 +247,19 @@ const NewRequestPageContent = () => {
       if (Object.keys(patch).length > 0) {
         updateCaseInfos("__default__", patch);
       }
+      // 아노는 툴바 선택이 의뢰 스냅샷 SSOT. 기존 첨부 카드에도 반영해
+      // "툴바 ON + 카드/제출 OFF" 혼선을 막는다. (디자인SW는 신규 업로드만)
+      if (typeof next.anodizingEnabled === "boolean") {
+        const ano = next.anodizingEnabled;
+        const fileKeys = Object.keys(caseInfosMap || {}).filter(
+          (key) => key !== "__default__",
+        );
+        for (const fileKey of fileKeys) {
+          updateCaseInfos(fileKey, { anodizingEnabled: ano });
+        }
+      }
     },
-    [updateCaseInfos],
+    [caseInfosMap, updateCaseInfos],
   );
 
   const {
@@ -1278,10 +1289,13 @@ const NewRequestPageContent = () => {
         }
       }
 
+      // 툴바(선택값) 우선 — __default__만 보면 stale GET race로 OFF가 붙을 수 있음
       const currentAnodizing =
-        typeof caseInfosMap?.__default__?.anodizingEnabled === "boolean"
-          ? caseInfosMap.__default__.anodizingEnabled
-          : anodizingEnabled;
+        typeof anodizingEnabled === "boolean"
+          ? anodizingEnabled
+          : typeof caseInfosMap?.__default__?.anodizingEnabled === "boolean"
+            ? caseInfosMap.__default__.anodizingEnabled
+            : true;
       for (const file of stlFiles) {
         const fileKey = toNormalizedFileKey(file);
         if (typeof caseInfosMap?.[fileKey]?.anodizingEnabled !== "boolean") {
