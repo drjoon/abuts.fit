@@ -4,6 +4,7 @@
 // - web/frontend/src/shared/components/practice/PracticeLabReceiveWorkActionsBar.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // change-log:
+// - 2026-08-21: 미제공 CA 안내 문구 단문화(INTRO/OUTRO).
 // - 2026-08-21: 미제공 CA 안내 — 치아·임플란트 상세 + 기공소 자체 처리 문구.
 import {
   formatPendingLabAbutmentDetailLine,

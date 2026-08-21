@@ -6,6 +6,7 @@
 // - web/frontend/src/pages/admin/system/AdminRoundBarAbutmentTab.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // change-log:
+// - 2026-08-21: 미제공 CA 안내 INTRO/OUTRO 단문화.
 // - 2026-08-21: 미제공 CA 안내 INTRO/OUTRO·혼재 문구. 치아 상세는 LabPendingAbutmentGuide.
 // - 2026-08-14: 도입 이벤트가 치과 프리셋에 없으면 행을 추가한다.
 // - 2026-08-14: 관리자 타입 수정 패치.
@@ -45,14 +46,14 @@ export const ROUND_BAR_GUIDE_LINES = [
 ] as const;
 /** 기공소 수신: 임플란트 추가 요청(요청중) — 어벗츠 CNC 미제공 */
 export const LAB_PENDING_ABUTMENT_GUIDE_INTRO =
-  "어벗츠에서 아직 제공하지 않는 임플란트입니다.";
+  "어벗츠 미제공 임플란트입니다.";
 export const LAB_PENDING_ABUTMENT_GUIDE_OUTRO =
-  "기공소에서 자체 처리(기존 CNC업체 이용, 기공소 자체 밀링)해주세요.";
+  "기공소에서 자체 처리하세요.";
 /** 일부만 미제공(어벗츠 CNC 대상과 혼재) */
 export const LAB_PENDING_ABUTMENT_MIXED_GUIDE_INTRO =
-  "일부 치아는 어벗츠에서 아직 제공하지 않는 임플란트입니다.";
+  "일부 치아는 어벗츠 미제공입니다.";
 export const LAB_PENDING_ABUTMENT_MIXED_GUIDE_OUTRO =
-  "해당 커스텀어벗은 기공소에서 자체 처리(기존 CNC업체 이용, 기공소 자체 밀링)하고, 어벗츠 대상만 아래에서 생산의뢰하세요.";
+  "해당 치아는 자체 처리하고, 어벗츠 대상만 생산의뢰하세요.";
 /** @deprecated INTRO/OUTRO + 치아 상세 렌더 사용 */
 export const LAB_PENDING_ABUTMENT_GUIDE_LINES = [
   LAB_PENDING_ABUTMENT_GUIDE_INTRO,
