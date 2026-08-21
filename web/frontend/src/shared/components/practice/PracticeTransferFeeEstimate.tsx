@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/components/practice/PracticeToothWorkChartReadOnly.tsx
 // - 2026-08-21: 치과 견적 — 커스텀어벗 등 기공소 수가 미설정(missingFeeNames) 안내.
+// - 2026-08-21: 같은 치아번호는 한 줄. 보철기공비|커스텀어벗 열로 수가 구분.
 // - 2026-08-20: 정산(density=detail)만 장부 배송비·크레딧 소비 총액. 견적 툴팁은 기공비 총액까지.
 // - 2026-08-20: 견적 툴팁은 기공비 총액까지. 배송비·크레딧 소비 총액은 주문건당 표시하지 않음(묶음 발송·정산 장부 SSOT).
 // - 2026-08-19: 지정 기공소 수가 Off — 바에「기공비 미설정」(0원 금지). 어벗 단가는 유지.
@@ -68,6 +69,7 @@ import {
 import {
   formatLabFeeMultiplierLabel,
   formatRushFeeMultiplierLabel,
+  isCustomAbutmentProsthesisType,
   normalizeLabFeeMultiplier,
   normalizeRushFeeMultiplier,
 } from "@/shared/practice/labFeeSchedule";
@@ -166,7 +168,6 @@ const formatProsthesisCell = (
   amount: number,
   labFacing: boolean,
 ) => {
-  if (amount <= 0 && line.labAbutmentPending) return "요청중";
   // 치과만 하한~상한. 기공소는 설정 수가(단일).
   if (
     !labFacing &&
@@ -182,8 +183,61 @@ const formatProsthesisCell = (
   return formatCell(amount);
 };
 
+const formatLabAbutmentCell = (line: FeeBreakdownLine) => {
+  if (line.labAbutmentFee <= 0 && line.labAbutmentPending) return "요청중";
+  if (line.labAbutmentFee <= 0) return "—";
+  return formatManWon(line.labAbutmentFee);
+};
+
+/** 같은 치아번호 라인을 한 줄로 합친다. 라벨은 보철 형태 우선(커스텀어벗만이면 그대로). */
+const mergeFeeBreakdownLinesByTooth = (
+  lines: FeeBreakdownLine[],
+): FeeBreakdownLine[] => {
+  const order: string[] = [];
+  const byKey = new Map<string, FeeBreakdownLine>();
+  let anon = 0;
+  for (const line of lines) {
+    const tooth = String(line.toothNumber || "").trim();
+    const key = tooth || `\0anon-${anon++}`;
+    const existing = byKey.get(key);
+    if (!existing) {
+      order.push(key);
+      byKey.set(key, { ...line });
+      continue;
+    }
+    const preferType = !isCustomAbutmentProsthesisType(existing.prosthesisType)
+      ? existing.prosthesisType
+      : !isCustomAbutmentProsthesisType(line.prosthesisType)
+        ? line.prosthesisType
+        : existing.prosthesisType || line.prosthesisType;
+    const labFeeMin =
+      existing.labFeeMin != null || line.labFeeMin != null
+        ? (existing.labFeeMin != null && Number.isFinite(existing.labFeeMin)
+            ? existing.labFeeMin
+            : existing.labFee) +
+          (line.labFeeMin != null && Number.isFinite(line.labFeeMin)
+            ? line.labFeeMin
+            : line.labFee)
+        : undefined;
+    byKey.set(key, {
+      toothNumber: existing.toothNumber || line.toothNumber,
+      prosthesisType: preferType || "보철",
+      labFee: existing.labFee + line.labFee,
+      ...(labFeeMin != null ? { labFeeMin } : {}),
+      labAbutmentFee: existing.labAbutmentFee + line.labAbutmentFee,
+      labAbutmentPending: Boolean(
+        existing.labAbutmentPending || line.labAbutmentPending,
+      ),
+      abutmentRetail: existing.abutmentRetail + line.abutmentRetail,
+      abutmentRetailNote:
+        existing.abutmentRetailNote || line.abutmentRetailNote,
+    });
+  }
+  return order.map((key) => byKey.get(key)!);
+};
+
 function FeeBreakdownTable({
-  lines,
+  lines: rawLines,
   labFacing = false,
   labTotalMinOverride = null,
   labTotalMaxOverride = null,
@@ -199,20 +253,21 @@ function FeeBreakdownTable({
   labShareHoldPending?: boolean | null;
   abutmentShareHoldPending?: boolean | null;
 }) {
-  // 치과·기공소 공통: 보철기공비 | 어벗 디자인+생산비. 둘 다 기공비.
-  const prosthesisOf = (line: FeeBreakdownLine) =>
-    line.labFee + line.labAbutmentFee;
+  // 같은 치아 = 한 줄. 열: 보철기공비 | 커스텀어벗 | (있으면) 어벗 디자인+생산비.
+  const lines = mergeFeeBreakdownLinesByTooth(rawLines);
   const showProsthesisColumn = lines.some(
     (line) =>
-      prosthesisOf(line) > 0 ||
-      (line.labFeeMin != null && line.labFeeMin > 0) ||
-      Boolean(line.labAbutmentPending),
+      line.labFee > 0 || (line.labFeeMin != null && line.labFeeMin > 0),
+  );
+  const showLabAbutmentColumn = lines.some(
+    (line) => line.labAbutmentFee > 0 || Boolean(line.labAbutmentPending),
   );
   const showAbutmentColumn = lines.some(
     (line) => line.abutmentRetail > 0 || line.abutmentRetailNote === "quote",
   );
-  const prosthesisSubtotal = lines.reduce(
-    (sum, line) => sum + prosthesisOf(line),
+  const prosthesisSubtotal = lines.reduce((sum, line) => sum + line.labFee, 0);
+  const labAbutmentSubtotal = lines.reduce(
+    (sum, line) => sum + line.labAbutmentFee,
     0,
   );
   const abutmentSubtotal = lines.reduce(
@@ -223,57 +278,71 @@ function FeeBreakdownTable({
     (line) => line.abutmentRetailNote === "quote" && line.abutmentRetail <= 0,
   );
   const labAbutmentPending = lines.some((line) => line.labAbutmentPending);
-  const workTotal = prosthesisSubtotal + abutmentSubtotal;
+  const labShareTotal = prosthesisSubtotal + labAbutmentSubtotal;
+  const workTotal = labShareTotal + abutmentSubtotal;
   const prosthesisMin = lines.reduce((sum, line) => {
     const min =
       line.labFeeMin != null && Number.isFinite(line.labFeeMin)
         ? Math.max(0, Math.round(Number(line.labFeeMin)))
         : line.labFee;
-    return sum + min + line.labAbutmentFee;
+    return sum + min;
   }, 0);
+  const labShareMin = prosthesisMin + labAbutmentSubtotal;
   const hasLabFeeRange = lines.some(
     (line) => line.labFeeMin != null && Number.isFinite(line.labFeeMin),
   );
   const prosthesisSubtotalDisplay =
     !labFacing &&
     labTotalMinOverride != null &&
-    labTotalMaxOverride != null
+    labTotalMaxOverride != null &&
+    !showLabAbutmentColumn
       ? formatWonRange(labTotalMinOverride, labTotalMaxOverride)
       : hasLabFeeRange && !labFacing
         ? formatWonRange(prosthesisMin, prosthesisSubtotal)
-        : labFacing && prosthesisSubtotal <= 0 && labAbutmentPending
+        : formatCell(prosthesisSubtotal);
+  const labAbutmentSubtotalDisplay =
+    labFacing && labAbutmentSubtotal <= 0 && labAbutmentPending
+      ? "요청중"
+      : labAbutmentSubtotal > 0
+        ? formatManWon(labAbutmentSubtotal)
+        : labAbutmentPending
           ? "요청중"
-          : formatCell(prosthesisSubtotal);
+          : "—";
   const abutmentSubtotalDisplay =
     abutmentSubtotal > 0
       ? formatManWon(abutmentSubtotal)
       : abutmentQuotePending
         ? "별도 고지"
         : "—";
+  const labShareRangeMin =
+    labTotalMinOverride != null ? labTotalMinOverride : labShareMin;
+  const labShareRangeMax =
+    labTotalMaxOverride != null ? labTotalMaxOverride : labShareTotal;
   const hasPracticeLabFeeSpread =
     !labFacing &&
-    ((hasLabFeeRange && prosthesisMin !== prosthesisSubtotal) ||
+    ((hasLabFeeRange && labShareMin !== labShareTotal) ||
       (labTotalMinOverride != null &&
         labTotalMaxOverride != null &&
         labTotalMinOverride !== labTotalMaxOverride));
   const workTotalDisplay = hasPracticeLabFeeSpread
     ? formatWonRange(
-        (labTotalMinOverride != null ? labTotalMinOverride : prosthesisMin) +
-          abutmentSubtotal,
-        (labTotalMaxOverride != null
-          ? labTotalMaxOverride
-          : prosthesisSubtotal) + abutmentSubtotal,
+        labShareRangeMin + abutmentSubtotal,
+        labShareRangeMax + abutmentSubtotal,
       )
     : formatManWon(workTotal);
   const amountColCount =
-    Number(showProsthesisColumn) + Number(showAbutmentColumn);
+    Number(showProsthesisColumn) +
+    Number(showLabAbutmentColumn) +
+    Number(showAbutmentColumn);
   const colCount = 1 + amountColCount;
   const gridClass =
-    colCount === 3
-      ? "grid-cols-[minmax(6.5rem,1fr)_auto_auto]"
-      : colCount === 2
-        ? "grid-cols-[minmax(6.5rem,1fr)_auto]"
-        : "grid-cols-1";
+    colCount === 4
+      ? "grid-cols-[minmax(6.5rem,1fr)_auto_auto_auto]"
+      : colCount === 3
+        ? "grid-cols-[minmax(6.5rem,1fr)_auto_auto]"
+        : colCount === 2
+          ? "grid-cols-[minmax(6.5rem,1fr)_auto]"
+          : "grid-cols-1";
   const amountAlign = amountColCount >= 2 ? "text-center" : "text-right";
   const columnHeaderClass = cn(
     "whitespace-nowrap pb-0.5 text-[10px] font-medium text-muted-foreground",
@@ -281,7 +350,11 @@ function FeeBreakdownTable({
   );
   const amountCellClass = cn("whitespace-nowrap", amountAlign);
   const amountSpanClass =
-    amountColCount >= 2 ? "col-span-2" : "col-span-1";
+    amountColCount >= 3
+      ? "col-span-3"
+      : amountColCount >= 2
+        ? "col-span-2"
+        : "col-span-1";
   const showWorkTotal =
     Boolean(labSettlementHint) ||
     (amountColCount >= 2 &&
@@ -295,6 +368,11 @@ function FeeBreakdownTable({
       {showProsthesisColumn ? (
         <span className={cn(columnHeaderClass, "whitespace-normal")}>
           {renderCreditShareHeader("보철기공비", labShareHoldPending)}
+        </span>
+      ) : null}
+      {showLabAbutmentColumn ? (
+        <span className={cn(columnHeaderClass, "whitespace-normal")}>
+          {renderCreditShareHeader("커스텀어벗", labShareHoldPending)}
         </span>
       ) : null}
       {showAbutmentColumn ? (
@@ -313,7 +391,12 @@ function FeeBreakdownTable({
           </span>
           {showProsthesisColumn ? (
             <span className={amountCellClass}>
-              {formatProsthesisCell(line, prosthesisOf(line), labFacing)}
+              {formatProsthesisCell(line, line.labFee, labFacing)}
+            </span>
+          ) : null}
+          {showLabAbutmentColumn ? (
+            <span className={amountCellClass}>
+              {formatLabAbutmentCell(line)}
             </span>
           ) : null}
           {showAbutmentColumn ? (
@@ -334,6 +417,16 @@ function FeeBreakdownTable({
               )}
             >
               {prosthesisSubtotalDisplay}
+            </span>
+          ) : null}
+          {showLabAbutmentColumn ? (
+            <span
+              className={cn(
+                "mt-0.5 border-t border-foreground/15 pt-1.5 font-medium",
+                amountCellClass,
+              )}
+            >
+              {labAbutmentSubtotalDisplay}
             </span>
           ) : null}
           {showAbutmentColumn ? (

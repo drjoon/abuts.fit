@@ -17,6 +17,7 @@
 // - 2026-08-13: 유지장치에 남은 커스텀 플래그는 어벗 과금하지 않는다.
 // - 2026-08-19: 임시치아+어벗은 임시치아 수가와 기공소 어벗 수가를 함께 합산.
 // - 2026-08-19: 임시치아 어벗은 묶음 줄과 분리해 치아별 커스텀어벗 단가 줄로 표시.
+// - 2026-08-21: 크라운·브리지·인레이+어벗도 보철 줄과 커스텀어벗 줄을 분리(수가표와 동일).
 // - 2026-08-14: 환봉 프리셋 타입 변경 후에도 제조사·브랜드·패밀리로 매칭.
 // - 2026-08-14: 환봉 단가 0원은 별도 고지(abutmentRetailNote=quote). 견적에서 열이 사라지지 않게.
 // - 2026-08-14: 환봉 요청중·도입·CNC PTX CA 모두 기공소 어벗 수가.
@@ -1215,15 +1216,31 @@ export const computePracticeTransferRetailFees = (params: {
       const split = abutmentSplitForRow(row);
       labFeeTotal += labFee;
       addAbutment(split);
+      // 수가표와 같이 보철기공비·커스텀어벗을 별도 줄로 표기
       lines.push({
         toothNumber,
         prosthesisType,
         labFee,
-        labAbutmentFee: split.lab,
-        labAbutmentPending: split.pending,
-        abutmentRetail: split.abuts,
-        abutmentRetailNote: retailNote(split),
+        labAbutmentFee: 0,
+        labAbutmentPending: false,
+        abutmentRetail: 0,
       });
+      if (
+        split.abuts > 0 ||
+        split.lab > 0 ||
+        split.pending ||
+        split.quote
+      ) {
+        lines.push({
+          toothNumber,
+          prosthesisType: "커스텀어벗",
+          labFee: 0,
+          labAbutmentFee: split.lab,
+          labAbutmentPending: split.pending,
+          abutmentRetail: split.abuts,
+          abutmentRetailNote: retailNote(split),
+        });
+      }
       continue;
     }
     if (!grouped.has(item.id)) grouped.set(item.id, { item, rows: [] });

@@ -8,6 +8,7 @@
 // - 2026-08-19: 마스터 On + 제공 항목 수가여야 청구 준비.
 // - 2026-08-19: 임시치아+어벗은 임시치아 수가와 기공소 어벗 수가를 함께 합산.
 // - 2026-08-19: 임시치아 어벗은 치아별 커스텀어벗 단가 줄로 분리.
+// - 2026-08-21: 크라운·브리지·인레이+어벗도 보철 줄과 커스텀어벗 줄을 분리.
 // - 2026-08-19: 같은 악궁 임시치아도 연결이 끊기면 스팬별 구간 수가.
 // - 2026-08-20: Pontic 수가 제거. 레거시 Pontic 치아는 브리지. 임시치아 스팬의 구 Pontic은 세트에 포함.
 import {
@@ -158,13 +159,53 @@ describe("labFeeSchedule", () => {
     expect(fees.abutmentRetailTotal).toBe(0);
     expect(fees.abutmentQty).toBe(0);
     expect(fees.total).toBe(340000);
-    const byTooth = Object.fromEntries(
-      fees.lines.map((line) => [line.toothNumber, line]),
+    expect(fees.lines).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          toothNumber: "11",
+          prosthesisType: "커스텀어벗",
+          labFee: 0,
+          labAbutmentFee: 40000,
+          abutmentRetail: 0,
+        }),
+        expect.objectContaining({
+          toothNumber: "21",
+          prosthesisType: "브리지",
+          labFee: 60000,
+          labAbutmentFee: 0,
+        }),
+        expect.objectContaining({
+          toothNumber: "21",
+          prosthesisType: "커스텀어벗",
+          labFee: 0,
+          labAbutmentFee: 40000,
+        }),
+        expect.objectContaining({
+          toothNumber: "22",
+          prosthesisType: "브리지",
+          labFee: 60000,
+          labAbutmentFee: 0,
+        }),
+        expect.objectContaining({
+          toothNumber: "22",
+          prosthesisType: "커스텀어벗",
+          labFee: 0,
+          labAbutmentFee: 40000,
+        }),
+        expect.objectContaining({
+          toothNumber: "23",
+          prosthesisType: "크라운",
+          labFee: 60000,
+          labAbutmentFee: 0,
+        }),
+        expect.objectContaining({
+          toothNumber: "23",
+          prosthesisType: "커스텀어벗",
+          labFee: 0,
+          labAbutmentFee: 40000,
+        }),
+      ]),
     );
-    expect(byTooth["11"]).toMatchObject({ labFee: 0, labAbutmentFee: 40000, abutmentRetail: 0 });
-    expect(byTooth["21"]).toMatchObject({ labFee: 60000, labAbutmentFee: 40000, abutmentRetail: 0 });
-    expect(byTooth["22"]).toMatchObject({ labFee: 60000, labAbutmentFee: 40000, abutmentRetail: 0 });
-    expect(byTooth["23"]).toMatchObject({ labFee: 60000, labAbutmentFee: 40000, abutmentRetail: 0 });
   });
 
   test("리메이크 크라운+어벗은 크라운 리메이크 수가만 쓴다", () => {
@@ -909,12 +950,24 @@ describe("labFeeSchedule", () => {
     expect(fees.labAbutmentTotal).toBe(40000);
     expect(fees.labAbutmentPending).toBe(true);
     expect(fees.abutmentRetailTotal).toBe(0);
-    expect(fees.lines[0]).toMatchObject({
-      labFee: 60000,
-      labAbutmentFee: 40000,
-      labAbutmentPending: true,
-      abutmentRetail: 0,
-    });
+    expect(fees.lines).toEqual([
+      expect.objectContaining({
+        toothNumber: "26",
+        prosthesisType: "크라운",
+        labFee: 60000,
+        labAbutmentFee: 0,
+        labAbutmentPending: false,
+        abutmentRetail: 0,
+      }),
+      expect.objectContaining({
+        toothNumber: "26",
+        prosthesisType: "커스텀어벗",
+        labFee: 0,
+        labAbutmentFee: 40000,
+        labAbutmentPending: true,
+        abutmentRetail: 0,
+      }),
+    ]);
   });
 
   test("할증 updatedAt이 의뢰 createdAt 이후면 해당 건에 미적용", () => {
