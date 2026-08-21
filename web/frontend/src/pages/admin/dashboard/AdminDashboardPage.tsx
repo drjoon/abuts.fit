@@ -1838,35 +1838,54 @@ export const AdminDashboardPage = () => {
                 </CardContent>
               </Card>
 
-              {/* 카드3: 치과 의뢰(파일) 전송 통계 */}
-              <Card className="app-glass-card app-glass-card--lg">
+              {/* 카드3: ExoCAD 헥스 회전 확인 */}
+              <Card className="app-glass-card app-glass-card--lg h-full">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">치과 의뢰(파일) 전송 통계</CardTitle>
-                  <UploadCloud className="h-4 w-4 text-muted-foreground" />
+                  <CardTitle className="text-sm font-medium">
+                    헥스 회전 확인
+                  </CardTitle>
+                  <RotateCw className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
-                <CardContent className="space-y-3">
+                <CardContent>
                   <button
                     type="button"
                     className="w-full px-1 py-1 text-left hover:bg-slate-50/70 transition rounded-sm"
-                    onClick={() => setPracticeTransferStatsDialogOpen(true)}
+                    onClick={() => setHexVerificationDialogOpen(true)}
                   >
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-2">
-                      <div>
-                        <div className="text-[11px] text-muted-foreground">전송</div>
-                        <div className="text-lg font-semibold">{practiceTransferTotal.toLocaleString()}건</div>
-                      </div>
-                      <div>
-                        <div className="text-[11px] text-muted-foreground">파일</div>
-                        <div className="text-lg font-semibold">{practiceTransferTotalFiles.toLocaleString()}개</div>
-                      </div>
-                      <div>
-                        <div className="text-[11px] text-muted-foreground">치과</div>
-                        <div className="text-lg font-semibold text-primary-strong">{practiceTransferTotalPractices.toLocaleString()}곳</div>
-                      </div>
-                      <div>
-                        <div className="text-[11px] text-muted-foreground">기공소</div>
-                        <div className="text-lg font-semibold text-primary-strong">{practiceTransferTotalLabs.toLocaleString()}곳</div>
-                      </div>
+                    <div className="text-2xl font-bold">
+                      {hexVerificationCount.toLocaleString()}
+                      <span className="ml-1 text-sm font-medium text-muted-foreground">
+                        진행중
+                      </span>
+                    </div>
+                    <div className="mt-2 space-y-1">
+                      {hexVerificationItems.slice(0, 3).map((row) => (
+                        <div
+                          key={row.businessAnchorId}
+                          className="truncate text-[11px] text-muted-foreground"
+                        >
+                          {row.businessName || row.ownerName || row.businessAnchorId}
+                          {row.hexVerificationSamplePending ? " · 샘플대기" : ""}
+                          {row.sampleRequestId
+                            ? ` · ${row.sampleRequestId}`
+                            : ""}
+                        </div>
+                      ))}
+                      {hexVerificationItems.length === 0 ? (
+                        <div className="text-[11px] text-muted-foreground">
+                          {loadingHexVerification
+                            ? "불러오는 중…"
+                            : "진행중인 ExoCAD 계정이 없습니다."}
+                        </div>
+                      ) : null}
+                      {hexVerificationItems.length > 3 ? (
+                        <div className="text-[11px] text-muted-foreground">
+                          외 {(hexVerificationItems.length - 3).toLocaleString()}건
+                        </div>
+                      ) : null}
+                    </div>
+                    <div className="mt-2 text-[11px] text-muted-foreground">
+                      클릭하면 확정 헥스를 저장합니다.
                     </div>
                   </button>
                 </CardContent>
@@ -2192,61 +2211,40 @@ export const AdminDashboardPage = () => {
             </div>
 
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-4 items-stretch">
-              {/* ExoCAD 헥스 회전 확인 */}
+              {/* 치과 의뢰(파일) 전송 통계 */}
               <Card className="app-glass-card app-glass-card--lg h-full">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">
-                    헥스 회전 확인
-                  </CardTitle>
-                  <RotateCw className="h-4 w-4 text-muted-foreground" />
+                  <CardTitle className="text-sm font-medium">치과 의뢰(파일) 전송 통계</CardTitle>
+                  <UploadCloud className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
-                <CardContent>
+                <CardContent className="space-y-3">
                   <button
                     type="button"
                     className="w-full px-1 py-1 text-left hover:bg-slate-50/70 transition rounded-sm"
-                    onClick={() => setHexVerificationDialogOpen(true)}
+                    onClick={() => setPracticeTransferStatsDialogOpen(true)}
                   >
-                    <div className="text-2xl font-bold">
-                      {hexVerificationCount.toLocaleString()}
-                      <span className="ml-1 text-sm font-medium text-muted-foreground">
-                        진행중
-                      </span>
-                    </div>
-                    <div className="mt-2 space-y-1">
-                      {hexVerificationItems.slice(0, 3).map((row) => (
-                        <div
-                          key={row.businessAnchorId}
-                          className="truncate text-[11px] text-muted-foreground"
-                        >
-                          {row.businessName || row.ownerName || row.businessAnchorId}
-                          {row.hexVerificationSamplePending ? " · 샘플대기" : ""}
-                          {row.sampleRequestId
-                            ? ` · ${row.sampleRequestId}`
-                            : ""}
-                        </div>
-                      ))}
-                      {hexVerificationItems.length === 0 ? (
-                        <div className="text-[11px] text-muted-foreground">
-                          {loadingHexVerification
-                            ? "불러오는 중…"
-                            : "진행중인 ExoCAD 계정이 없습니다."}
-                        </div>
-                      ) : null}
-                      {hexVerificationItems.length > 3 ? (
-                        <div className="text-[11px] text-muted-foreground">
-                          외 {(hexVerificationItems.length - 3).toLocaleString()}건
-                        </div>
-                      ) : null}
-                    </div>
-                    <div className="mt-2 text-[11px] text-muted-foreground">
-                      클릭하면 확정 헥스를 저장합니다.
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-2">
+                      <div>
+                        <div className="text-[11px] text-muted-foreground">전송</div>
+                        <div className="text-lg font-semibold">{practiceTransferTotal.toLocaleString()}건</div>
+                      </div>
+                      <div>
+                        <div className="text-[11px] text-muted-foreground">파일</div>
+                        <div className="text-lg font-semibold">{practiceTransferTotalFiles.toLocaleString()}개</div>
+                      </div>
+                      <div>
+                        <div className="text-[11px] text-muted-foreground">치과</div>
+                        <div className="text-lg font-semibold text-primary-strong">{practiceTransferTotalPractices.toLocaleString()}곳</div>
+                      </div>
+                      <div>
+                        <div className="text-[11px] text-muted-foreground">기공소</div>
+                        <div className="text-lg font-semibold text-primary-strong">{practiceTransferTotalLabs.toLocaleString()}곳</div>
+                      </div>
                     </div>
                   </button>
                 </CardContent>
               </Card>
-            </div>
 
-            <div className="grid grid-cols-1 gap-3 lg:grid-cols-4 items-stretch">
               {/* 카드7: 거래금액 / 평균 단가 / 배송비 */}
               <Card className="app-glass-card app-glass-card--lg h-full lg:col-span-2">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
