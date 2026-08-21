@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-21: 치과 공급 어벗 UI 삭제. 기공소 공급→커스텀어벗 가격(CNC·환봉 생산만).
 // - 2026-08-19: 고시=생산·디자인+생산. 멤버/일반→딜러 분배 배지. 디자인비+지그 UI 제거.
 // - 2026-08-18: 기공소 공급 CNC·환봉 소제목을 가로 2열로.
 // - 2026-08-18: 기공소 공급 어벗을 의뢰자별이 아니라 치과 공급과 같은 전역 멤버 카드 4장으로.
@@ -250,12 +251,6 @@ function allocateRevenueByPercent(
 
 type AutoSaveState = "idle" | "pending" | "saving" | "saved";
 
-function parseTierLabel(label: string): { title: string; badge?: string } {
-  const match = label.match(/^(.+?)\((.+)\)$/);
-  if (!match) return { title: label };
-  return { title: match[1].trim(), badge: match[2].trim() };
-}
-
 function AutoSaveIndicator({ state }: { state: AutoSaveState }) {
   if (state === "idle") return null;
 
@@ -328,37 +323,19 @@ const CNC_DEFAULT_TIERS: Array<{
 
 type LabSupplyPriceKey =
   | "labProductionPrice"
-  | "labDesignAndProductionPrice"
-  | "labRoundBarProductionPrice"
-  | "labRoundBarDesignAndProductionPrice";
+  | "labRoundBarProductionPrice";
 
-const LAB_SUPPLY_CNC_CARDS: Array<{
+/** 지정 기공소→어벗츠 생산 의뢰 단가. 디자인은 기공소 수행. */
+const CUSTOM_ABUT_PRODUCTION_CARDS: Array<{
   id: LabSupplyPriceKey;
   title: string;
 }> = [
-  { id: "labProductionPrice", title: "생산" },
-  { id: "labDesignAndProductionPrice", title: "디자인+생산" },
-];
-
-const LAB_SUPPLY_ROUND_BAR_CARDS: Array<{
-  id: LabSupplyPriceKey;
-  title: string;
-}> = [
-  { id: "labRoundBarProductionPrice", title: "환봉 생산" },
-  { id: "labRoundBarDesignAndProductionPrice", title: "환봉 디자인+생산" },
+  { id: "labProductionPrice", title: "CNC 어벗 생산" },
+  { id: "labRoundBarProductionPrice", title: "환봉 어벗 생산" },
 ];
 
 function tierPartyFieldKey(prefix: TierPartyPrefix, kind: PartyKind): keyof CreditSettings {
   return `${prefix}${kind}UnitPrice` as keyof CreditSettings;
-}
-
-function readTierParty(settings: Partial<CreditSettings>, prefix: TierPartyPrefix): TierParty {
-  const tier = CNC_DEFAULT_TIERS.find((item) => item.partyPrefix === prefix);
-  const revenue = tier ? Number(settings[tier.revenueKey] ?? 0) || 0 : 0;
-  return allocateRevenueByPercent(
-    revenue,
-    readSharePercents(settings, tier?.shareKind ?? "membership"),
-  );
 }
 
 function buildNormalizedTierPartyFields(
@@ -464,32 +441,6 @@ function buildSharePercentSavePayload(
     devopsRequestUnitPrice: synced.devopsRequestUnitPrice,
     specialRequestorPrices: synced.specialRequestorPrices,
   };
-}
-
-function buildTierSavePayload(
-  settings: CreditSettings,
-  tier: (typeof CNC_DEFAULT_TIERS)[number],
-): Partial<CreditSettings> {
-  const party = readTierParty(settings, tier.partyPrefix);
-  const payload: Partial<CreditSettings> = {
-    [tier.revenueKey]: settings[tier.revenueKey],
-    [tierPartyFieldKey(tier.partyPrefix, "Manufacturer")]: party.manufacturer,
-    [tierPartyFieldKey(tier.partyPrefix, "Salesman")]: party.salesman,
-    [tierPartyFieldKey(tier.partyPrefix, "Devops")]: party.devops,
-  };
-  if (tier.partyPrefix === "membershipProduction") {
-    payload.minCreditForRequest = settings.membershipProductionPrice;
-    payload.manufacturerRequestUnitPrice = party.manufacturer;
-    payload.salesmanRequestUnitPrice = party.salesman;
-    payload.devopsRequestUnitPrice = party.devops;
-  }
-  if (
-    tier.revenueKey === "membershipProductionPrice" ||
-    tier.revenueKey === "membershipDesignAndProductionPrice"
-  ) {
-    payload.designFee = settings.designFee;
-  }
-  return payload;
 }
 
 function PercentField({
@@ -1125,36 +1076,10 @@ function SectionHeader({
   );
 }
 
-function SubSectionHeader({
-  title,
-  description,
-  trailing,
-}: {
-  title: string;
-  description?: string;
-  trailing?: ReactNode;
-}) {
-  return (
-    <div className="flex flex-wrap items-start justify-between gap-3">
-      <div className="min-w-0 space-y-0.5">
-        <h4 className="text-sm font-semibold tracking-tight text-slate-800">
-          {title}
-        </h4>
-        {description ? (
-          <p className="text-[13px] leading-relaxed text-muted-foreground">
-            {description}
-          </p>
-        ) : null}
-      </div>
-      {trailing}
-    </div>
-  );
-}
-
 export type AdminCreditSettingsVariant = "credits" | "customAbut";
 
 type AdminCreditSettingsTabProps = {
-  /** credits: 환영 무료 크레딧·배송. customAbut: 치과·기공소 공급 단가·추가요청. */
+  /** credits: 환영 무료 크레딧·배송. customAbut: 생산 단가·분배·추가요청. */
   variant?: AdminCreditSettingsVariant;
 };
 
@@ -1289,15 +1214,6 @@ export const AdminCreditSettingsTab = ({
       itemSaveTimersRef.current.set(scopeKey, timer);
     },
     [token, loading, toast, queryClient, setScopeSaveState],
-  );
-
-  const scheduleTierSave = useCallback(
-    (tier: (typeof CNC_DEFAULT_TIERS)[number]) => {
-      scheduleItemSave(`tier:${tier.partyPrefix}`, () =>
-        buildTierSavePayload(settingsRef.current, tier),
-      );
-    },
-    [scheduleItemSave],
   );
 
   const applySettingsUpdate = useCallback(
@@ -1536,7 +1452,7 @@ export const AdminCreditSettingsTab = ({
                 <SectionHeader
                   icon={Percent}
                   title="분배 비율 (공통)"
-                  description="환봉어벗을 제외한 고시·딜러없음 매출에 적용합니다. 어벗츠는 잔여분입니다. 멤버십 구독 비율이 아닙니다."
+                  description="환봉어벗을 제외한 CNC 생산 매출 분배에 적용합니다. 어벗츠는 잔여분입니다."
                   trailing={
                     <AutoSaveIndicator
                       state={itemSaveStates.sharePercents ?? "idle"}
@@ -1557,206 +1473,22 @@ export const AdminCreditSettingsTab = ({
               <CardContent className="space-y-5 p-5 sm:p-6">
                 <SectionHeader
                   icon={Package}
-                  title="치과 공급 어벗"
-                  description="공개 정책·청구 고시는 생산·디자인+생산입니다. 고시 배지는 딜러 소개가 있을 때, 딜러없음은 분배식만 다릅니다. 치과 구독/멤버십 단가가 아닙니다."
+                  title="커스텀어벗 가격"
+                  description="지정 기공소가 디자인하고 어벗츠에 생산만 의뢰할 때 적용하는 생산 단가입니다."
                 />
 
-                <div className="space-y-3">
-                  <SubSectionHeader title="CNC어벗" />
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                    {CNC_DEFAULT_TIERS.map((tier) => {
-                      const { title, badge } = parseTierLabel(tier.label);
-                      const scopeKey = `tier:${tier.partyPrefix}`;
-                      return (
-                        <SalesAmountCard
-                          key={tier.revenueKey}
-                          id={tier.revenueKey}
-                          title={title}
-                          badge={badge}
-                          value={settings[tier.revenueKey]}
-                          disabled={loading}
-                          saveState={itemSaveStates[scopeKey] ?? "idle"}
-                          onChange={(next) => {
-                            applySettingsUpdate((prev) => {
-                              const patch: Partial<CreditSettings> = {
-                                [tier.revenueKey]: next,
-                              };
-                              if (
-                                tier.revenueKey === "membershipProductionPrice"
-                              ) {
-                                patch.minCreditForRequest = next;
-                                patch.designFee = Math.max(
-                                  0,
-                                  prev.membershipDesignAndProductionPrice -
-                                    next,
-                                );
-                              }
-                              if (
-                                tier.revenueKey ===
-                                "membershipDesignAndProductionPrice"
-                              ) {
-                                patch.designFee = Math.max(
-                                  0,
-                                  next - prev.membershipProductionPrice,
-                                );
-                              }
-                              return syncComputedPartyFields({
-                                ...prev,
-                                ...patch,
-                              });
-                            });
-                            scheduleTierSave(tier);
-                          }}
-                        />
-                        );
-                      })}
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <SubSectionHeader title="환봉어벗" />
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {CUSTOM_ABUT_PRODUCTION_CARDS.map((card) => (
                     <SalesAmountCard
-                      id="membershipRoundBarProductionPrice"
-                      title="환봉 생산"
-                      badge="고시"
-                      value={settings.membershipRoundBarProductionPrice}
+                      key={card.id}
+                      id={card.id}
+                      title={card.title}
+                      value={settings[card.id]}
                       disabled={loading}
-                      saveState={
-                        itemSaveStates["roundBar:production"] ?? "idle"
-                      }
-                      onChange={(next) => {
-                        applySettingsUpdate((prev) => ({
-                          ...prev,
-                          membershipRoundBarProductionPrice: next,
-                        }));
-                        scheduleItemSave("roundBar:production", () => ({
-                          membershipRoundBarProductionPrice:
-                            settingsRef.current
-                              .membershipRoundBarProductionPrice,
-                          regularRoundBarProductionPrice:
-                            settingsRef.current.regularRoundBarProductionPrice,
-                        }));
-                      }}
+                      saveState={itemSaveStates[`lab:${card.id}`] ?? "idle"}
+                      onChange={(next) => updateLabSupplyPrice(card.id, next)}
                     />
-                    <SalesAmountCard
-                      id="regularRoundBarProductionPrice"
-                      title="환봉 생산"
-                      badge="딜러없음"
-                      value={settings.regularRoundBarProductionPrice}
-                      disabled={loading}
-                      saveState={
-                        itemSaveStates["roundBar:production"] ?? "idle"
-                      }
-                      onChange={(next) => {
-                        applySettingsUpdate((prev) => ({
-                          ...prev,
-                          regularRoundBarProductionPrice: next,
-                        }));
-                        scheduleItemSave("roundBar:production", () => ({
-                          membershipRoundBarProductionPrice:
-                            settingsRef.current
-                              .membershipRoundBarProductionPrice,
-                          regularRoundBarProductionPrice:
-                            settingsRef.current.regularRoundBarProductionPrice,
-                        }));
-                      }}
-                    />
-                    <SalesAmountCard
-                      id="membershipRoundBarDesignAndProductionPrice"
-                      title="환봉 디자인+생산"
-                      badge="고시"
-                      value={
-                        settings.membershipRoundBarDesignAndProductionPrice
-                      }
-                      disabled={loading}
-                      saveState={itemSaveStates["roundBar:design"] ?? "idle"}
-                      onChange={(next) => {
-                        applySettingsUpdate((prev) => ({
-                          ...prev,
-                          membershipRoundBarDesignAndProductionPrice: next,
-                        }));
-                        scheduleItemSave("roundBar:design", () => ({
-                          membershipRoundBarDesignAndProductionPrice:
-                            settingsRef.current
-                              .membershipRoundBarDesignAndProductionPrice,
-                          regularRoundBarDesignAndProductionPrice:
-                            settingsRef.current
-                              .regularRoundBarDesignAndProductionPrice,
-                        }));
-                      }}
-                    />
-                    <SalesAmountCard
-                      id="regularRoundBarDesignAndProductionPrice"
-                      title="환봉 디자인+생산"
-                      badge="딜러없음"
-                      value={settings.regularRoundBarDesignAndProductionPrice}
-                      disabled={loading}
-                      saveState={itemSaveStates["roundBar:design"] ?? "idle"}
-                      onChange={(next) => {
-                        applySettingsUpdate((prev) => ({
-                          ...prev,
-                          regularRoundBarDesignAndProductionPrice: next,
-                        }));
-                        scheduleItemSave("roundBar:design", () => ({
-                          membershipRoundBarDesignAndProductionPrice:
-                            settingsRef.current
-                              .membershipRoundBarDesignAndProductionPrice,
-                          regularRoundBarDesignAndProductionPrice:
-                            settingsRef.current
-                              .regularRoundBarDesignAndProductionPrice,
-                        }));
-                      }}
-                    />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="app-glass-card app-glass-card--lg overflow-hidden">
-              <CardContent className="space-y-5 p-5 sm:p-6">
-                <SectionHeader
-                  icon={Package}
-                  title="기공소 공급 어벗 (레거시 오버레이)"
-                  description="공개 정책은 위 고시와 같습니다. 이 값은 기공소 어벗생산의뢰 장부 오버레이(labProductionPrice)입니다. 고시와 같게 운영하려면 같은 금액으로 맞추세요."
-                />
-
-                <div className="grid gap-5 lg:grid-cols-2">
-                  <div className="space-y-3">
-                    <SubSectionHeader title="CNC어벗" />
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      {LAB_SUPPLY_CNC_CARDS.map((card) => (
-                        <SalesAmountCard
-                          key={card.id}
-                          id={card.id}
-                          title={card.title}
-                          badge="오버레이"
-                          value={settings[card.id]}
-                          disabled={loading}
-                          saveState={itemSaveStates[`lab:${card.id}`] ?? "idle"}
-                          onChange={(next) => updateLabSupplyPrice(card.id, next)}
-                        />
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="space-y-3">
-                    <SubSectionHeader title="환봉어벗" />
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      {LAB_SUPPLY_ROUND_BAR_CARDS.map((card) => (
-                        <SalesAmountCard
-                          key={card.id}
-                          id={card.id}
-                          title={card.title}
-                          badge="오버레이"
-                          value={settings[card.id]}
-                          disabled={loading}
-                          saveState={itemSaveStates[`lab:${card.id}`] ?? "idle"}
-                          onChange={(next) => updateLabSupplyPrice(card.id, next)}
-                        />
-                      ))}
-                    </div>
-                  </div>
+                  ))}
                 </div>
               </CardContent>
             </Card>
