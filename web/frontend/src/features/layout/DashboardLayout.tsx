@@ -11,6 +11,7 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPath";
 import { cn } from "@/shared/ui/cn";
 
+// - 2026-08-21: 기공소·어벗츠기공소 기공의뢰 하위 — 치과로부터 수신 / 어벗츠로 의뢰.
 // - 2026-08-20: 관리자 포함 전 롤 사이드를 DashboardSidebarNav로 통일. 접히면 아이콘·툴팁·배지.
 // - 2026-08-20: 모바일 작업영역 흰 카드 min-w-0·p-3로 좌우 잘림 완화.
 // - 2026-08-20: 구강스캔으로·어벗디자인으로 사이드 아이콘. 접힌 레일에서도 클릭.
@@ -194,14 +195,14 @@ const buildLabGigongRequestSidebarGroup = (
   children: [
     {
       icon: Building2,
-      label: "기공의뢰수신",
+      label: "치과로부터 수신",
       href: receiveHref,
       tooltip: receiveTooltip,
       accent: "기공",
     },
     {
       icon: FileText,
-      label: "어벗생산의뢰",
+      label: "어벗츠로 의뢰",
       href: LAB_ABUTMENT_PRODUCTION_HREF,
       tooltip: ABUTMENT_REQUEST_TOOLTIP,
       accent: "어벗",
