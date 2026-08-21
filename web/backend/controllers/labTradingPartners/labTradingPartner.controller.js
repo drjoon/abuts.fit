@@ -29,11 +29,13 @@ import {
   legacyLabFeeScheduleFromItems,
   isLabFeeScheduleConfigured,
   isLabFeeScheduleReadyToCharge,
+  isLabFeeShippingItem,
   resolveLabFeeScheduleForSettings,
   normalizeLabFeeMultiplier,
   resolveLabPracticeFeeMultiplier,
   upsertLabPracticeFeeMultiplierList,
   buildDefaultLabFeeSchedule,
+  LAB_FEE_SHIPPING_LAB_DEFAULT_PRICE,
 } from "../../utils/labFeeSchedule.js";
 import {
   loadAbutsLabFeeSchedule,
@@ -70,6 +72,12 @@ async function resolveLabFeeScheduleForSettingsFromCatalog(schedule) {
         ...(schedule && typeof schedule === "object" ? schedule : {}),
         items: catalogItems.map((item) => ({
           ...item,
+          ...(isLabFeeShippingItem(item)
+            ? {
+                price: LAB_FEE_SHIPPING_LAB_DEFAULT_PRICE,
+                enabled: false,
+              }
+            : {}),
           pendingReview: false,
           proposedByLabName: "",
           proposedByLabAnchorId: "",

@@ -13,7 +13,10 @@ import SystemSettings from "../models/systemSettings.model.js";
 import {
   buildDefaultLabFeeSchedule,
   canonicalizeFeeItemName,
+  ensureLabFeeShippingItem,
+  isLabFeeShippingItem,
   isRemovedPonticFeeRow,
+  LAB_FEE_SHIPPING_ADMIN_DEFAULT_PRICE,
   normalizeLabFeeItem,
   normalizeLabFeeItems,
 } from "./labFeeSchedule.js";
@@ -57,6 +60,12 @@ export function buildDefaultAbutsLabFeeItems() {
         {
           ...item,
           remake: 0,
+          ...(isLabFeeShippingItem(item)
+            ? {
+                enabled: false,
+                price: LAB_FEE_SHIPPING_ADMIN_DEFAULT_PRICE,
+              }
+            : {}),
         },
         index,
       ),
@@ -84,7 +93,7 @@ export function normalizeAbutsLabFeeItems(rawItems) {
       id,
       name: item.name,
       unit: item.unit,
-      enabled,
+      enabled: isLabFeeShippingItem(item) ? item.enabled === true : enabled,
       price: item.price,
       remake: 0,
       tiers: item.tiers,
@@ -102,7 +111,11 @@ export function normalizeAbutsLabFeeItems(rawItems) {
         : {}),
     });
   }
-  return out.length ? out : buildDefaultAbutsLabFeeItems();
+  if (!out.length) return buildDefaultAbutsLabFeeItems();
+  return ensureLabFeeShippingItem(out, {
+    price: LAB_FEE_SHIPPING_ADMIN_DEFAULT_PRICE,
+    enabled: false,
+  });
 }
 
 export function normalizeAbutsLabFeeSchedule(raw) {

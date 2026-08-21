@@ -9,6 +9,7 @@
 // - web/backend/utils/roundBarAbutment.js
 // - web/frontend/src/features/settings/tabs/LabFeeScheduleTab.tsx
 // - 2026-08-13: 마스터 active(기본 off)가 켜져야 설정 완료. 수가 디폴트는 기본값·항목 on.
+// - 2026-08-21: 기공수가「배송비」(perSet). lab 기본 0·off / admin 카탈로그 3500·off. 수락 시 enabled 강제.
 // - 2026-08-21: PTX CA 치과 청구=기공소「커스텀어벗」수가(기본 4만=관리자 기본 기공수가). 어벗츠 1.5/2.5만은 기공소→어벗츠 Request.
 // - 2026-08-13: 유지장치 등 perSet는 연결 스팬당 1세트(끊기면 별도). 연결 없는 레거시는 악궁당.
 // - 2026-08-19: 임시치아(perNTeeth)도 연결 스팬당 구간 수가(같은 하악 3치·2치는 2세트).
@@ -388,6 +389,8 @@ export function labFeeItemMatchesNeedName(item, needName) {
 
 function labFeeItemHasChargePrice(item) {
   if (!item || item.enabled === false) return false;
+  // 배송비: enabled면 0원도 설정 완료(기공소가 무료 배송으로 둘 수 있음).
+  if (isLabFeeShippingItem(item)) return true;
   const tierPrices = Array.isArray(item.tiers)
     ? item.tiers.map((tier) => Math.round(Number(tier?.price || 0)))
     : [];
@@ -399,17 +402,24 @@ function labFeeItemHasChargePrice(item) {
   return price > 0;
 }
 
-/** 이 의뢰 보철 중 제공·단가가 없는 수가 항목명. */
+/** 이 의뢰 보철 중 제공·단가가 없는 수가 항목명. 배송비는 항상 enabled 필수. */
 export function missingLabFeeItemNames(schedule, toothWorks) {
   const needed = labFeeItemNamesNeededForToothWorks(toothWorks);
   const items = normalizeLabFeeItems(schedule);
-  return needed.filter(
+  const missing = needed.filter(
     (name) =>
       !items.some(
         (item) =>
           labFeeItemMatchesNeedName(item, name) && labFeeItemHasChargePrice(item),
       ),
   );
+  const shippingConfigured = items.some(
+    (item) => isLabFeeShippingItem(item) && item.enabled !== false,
+  );
+  if (!shippingConfigured && !missing.includes(LAB_FEE_SHIPPING_ITEM_NAME)) {
+    missing.push(LAB_FEE_SHIPPING_ITEM_NAME);
+  }
+  return missing;
 }
 
 export function resolveQuoteLabFeeConfigured({
@@ -482,6 +492,57 @@ export const LAB_FEE_ITEM_UNIT_LABELS = {
 };
 export const MAX_LAB_FEE_ITEMS = 40;
 export const MAX_LAB_FEE_ITEM_TIERS = 8;
+
+/** 기공소→치과 배송비(기공수가). lab 기본 0·off, admin 카탈로그 3500·off. */
+export const LAB_FEE_SHIPPING_ITEM_ID = "shipping";
+export const LAB_FEE_SHIPPING_ITEM_NAME = "배송비";
+export const LAB_FEE_SHIPPING_ADMIN_DEFAULT_PRICE = 3500;
+export const LAB_FEE_SHIPPING_LAB_DEFAULT_PRICE = 0;
+
+export function isLabFeeShippingItem(item) {
+  if (!item || typeof item !== "object") return false;
+  if (String(item.id || "").trim() === LAB_FEE_SHIPPING_ITEM_ID) return true;
+  return canonicalizeFeeItemName(item.name) === LAB_FEE_SHIPPING_ITEM_NAME;
+}
+
+export function buildLabFeeShippingItem({
+  price = LAB_FEE_SHIPPING_LAB_DEFAULT_PRICE,
+  enabled = false,
+} = {}) {
+  return {
+    id: LAB_FEE_SHIPPING_ITEM_ID,
+    name: LAB_FEE_SHIPPING_ITEM_NAME,
+    unit: "perSet",
+    enabled: enabled === true,
+    price: Math.max(0, Math.round(Number(price) || 0)),
+    remake: 0,
+    tiers: [],
+  };
+}
+
+/** items에 배송비가 없으면 append. 있으면 그대로. */
+export function ensureLabFeeShippingItem(
+  items,
+  {
+    price = LAB_FEE_SHIPPING_LAB_DEFAULT_PRICE,
+    enabled = false,
+  } = {},
+) {
+  const list = Array.isArray(items) ? [...items] : [];
+  if (list.some((item) => isLabFeeShippingItem(item))) return list;
+  if (list.length >= MAX_LAB_FEE_ITEMS) return list;
+  list.push(buildLabFeeShippingItem({ price, enabled }));
+  return list;
+}
+
+/** 기공수가 배송비 단가. enabled가 아니면 0. */
+export function resolveLabShippingFeeFromSchedule(schedule) {
+  const item = normalizeLabFeeItems(schedule).find((row) =>
+    isLabFeeShippingItem(row),
+  );
+  if (!item || item.enabled === false) return 0;
+  return Math.max(0, Math.round(Number(item.price || 0)));
+}
 
 export function isMissingToothProsthesisType(prosthesisType) {
   const raw = String(prosthesisType || "").trim();
@@ -768,6 +829,7 @@ export function canonicalizeFeeItemName(name) {
   ) {
     return "커스텀어벗";
   }
+  if (compact === "배송비" || /^shipping$/i.test(raw)) return "배송비";
   return raw;
 }
 
@@ -900,6 +962,10 @@ function migrateLegacyLabFeeItems(input) {
       remake: remake.customAbutmentDesignAndProduction,
       tiers: [],
     },
+    buildLabFeeShippingItem({
+      price: LAB_FEE_SHIPPING_LAB_DEFAULT_PRICE,
+      enabled: false,
+    }),
   ];
 }
 
@@ -965,7 +1031,10 @@ export function normalizeLabFeeItems(input) {
       seen.add(id);
       out.push({ ...item, id });
     }
-    return expandPerNTeethTierItems(out);
+    return ensureLabFeeShippingItem(expandPerNTeethTierItems(out), {
+      price: LAB_FEE_SHIPPING_LAB_DEFAULT_PRICE,
+      enabled: false,
+    });
   }
   return migrateLegacyLabFeeItems(src);
 }
@@ -1206,6 +1275,8 @@ export function computePracticeTransferRetailFees({
   remake = false,
   labFeeMultiplier = 1,
   rushFeeMultiplier = 1,
+  /** 기공소→치과 배송비를 기공수가「배송비」로 합산 */
+  includeLabShippingFee = false,
 }) {
   const useRemake = Boolean(remake);
   const items = normalizeLabFeeItems(labFeeSchedule);
@@ -1440,7 +1511,36 @@ export function computePracticeTransferRetailFees({
     },
     labFeeMultiplier,
   );
-  return applyRushFeeMultiplierToFees(withLabMult, rushFeeMultiplier);
+  const withRush = applyRushFeeMultiplierToFees(withLabMult, rushFeeMultiplier);
+
+  // 배송비는 할증·신속 배수 제외(flat). enabled+가격만 합산.
+  if (!includeLabShippingFee) return withRush;
+  const shippingFee = resolveLabShippingFeeFromSchedule(labFeeSchedule);
+  if (shippingFee <= 0) {
+    return { ...withRush, labShippingFee: 0 };
+  }
+  const nextLines = [
+    ...(Array.isArray(withRush.lines) ? withRush.lines : []),
+    {
+      toothNumber: "",
+      prosthesisType: LAB_FEE_SHIPPING_ITEM_NAME,
+      labFee: shippingFee,
+      labAbutmentFee: 0,
+      labAbutmentPending: false,
+      abutmentRetail: 0,
+    },
+  ];
+  const nextLabFeeTotal =
+    Math.max(0, Math.round(Number(withRush.labFeeTotal || 0))) + shippingFee;
+  return {
+    ...withRush,
+    labFeeTotal: nextLabFeeTotal,
+    labShippingFee: shippingFee,
+    total:
+      nextLabFeeTotal +
+      Math.max(0, Math.round(Number(withRush.abutmentRetailTotal || 0))),
+    lines: nextLines,
+  };
 }
 
 function feeRowTooth(row) {

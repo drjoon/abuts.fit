@@ -5,12 +5,9 @@
 // - web/backend/controllers/requests/mailbox.utils.js
 // - web/backend/controllers/requests/common.review.controller.js
 // change-log:
+// - 2026-08-21: PTX CA는 기공소 수취(우편함·한진). 치과 직납 스냅샷/합류 키 사용 안 함.
 // - 2026-08-17: 포장.발송 진입 시 live practice BA로 shippingReceiver 스냅샷(주소 변경 반영).
 // - 2026-08-17: PTX 직납 수취인 스냅샷 빌드·판별·우편함 org 키 헬퍼.
-import BusinessAnchor from "../models/businessAnchor.model.js";
-import User from "../models/user.model.js";
-import PracticeTransfer from "../models/practiceTransfer.model.js";
-
 /**
  * @param {object|null|undefined} practiceAnchor
  * @param {object|null|undefined} practiceUser
@@ -77,6 +74,15 @@ export function buildShippingReceiverFromPractice({
 }
 
 export function getShippingReceiver(requestLike) {
+  // PTX CA는 기공소 수취 — 레거시 치과 스냅샷이 있어도 무시.
+  const pb =
+    requestLike?.partnerBilling &&
+    typeof requestLike.partnerBilling === "object"
+      ? requestLike.partnerBilling
+      : {};
+  if (pb.relatedPracticeTransferId || pb.practiceBusinessAnchorId) {
+    return null;
+  }
   const raw = requestLike?.shippingReceiver;
   if (!raw || typeof raw !== "object") return null;
   const name = String(raw.name || "").trim();
@@ -108,40 +114,25 @@ export function getShippingReceiver(requestLike) {
   };
 }
 
-/** PTX 직납(치과 수취) 여부 */
+/** @deprecated PTX CA는 기공소 수취. 레거시 스냅샷이 남아 있을 때만 true. */
 export function isPracticeDirectShipping(requestLike) {
-  if (getShippingReceiver(requestLike)) return true;
+  // PTX(구강스캔 CA)는 주문 기공소로 배송 — 직납 판별하지 않음.
   const pb =
     requestLike?.partnerBilling &&
     typeof requestLike.partnerBilling === "object"
       ? requestLike.partnerBilling
       : {};
-  if (pb.relatedPracticeTransferId) return true;
-  if (pb.practiceBusinessAnchorId) return true;
-  return false;
+  if (pb.relatedPracticeTransferId || pb.practiceBusinessAnchorId) {
+    return false;
+  }
+  return Boolean(getShippingReceiver(requestLike));
 }
 
 /**
  * 우편함 합류/점유 키.
- * PTX 직납 → practice BA, 그 외 → lab businessAnchorId.
+ * PTX·일반 모두 requestor lab businessAnchorId (치과 직납 키 사용 안 함).
  */
 export function resolveShippingMailboxOrgId(requestLike) {
-  const receiver = getShippingReceiver(requestLike);
-  const fromReceiver = receiver?.sourceAnchorId
-    ? String(receiver.sourceAnchorId._id || receiver.sourceAnchorId).trim()
-    : "";
-  if (fromReceiver) return fromReceiver;
-
-  const pb =
-    requestLike?.partnerBilling &&
-    typeof requestLike.partnerBilling === "object"
-      ? requestLike.partnerBilling
-      : {};
-  const practiceId = String(
-    pb.practiceBusinessAnchorId?._id || pb.practiceBusinessAnchorId || "",
-  ).trim();
-  if (practiceId) return practiceId;
-
   const direct = String(
     requestLike?.businessAnchorId?._id || requestLike?.businessAnchorId || "",
   ).trim();
@@ -156,87 +147,26 @@ export function resolveShippingMailboxOrgId(requestLike) {
 }
 
 /**
- * 세척.패킹 진입(우편함 배정) 시 PTX 직납 수취인을 live practice BA(+ profile)로 덮어쓴다.
- * 합류 지문(이름/전화/주소)과 운송장 수취인이 같은 스냅샷을 쓰게 한다.
- *
- * @returns {Promise<object|null>} 적용된 shippingReceiver 또는 null
+ * PTX는 기공소 수취. 레거시 치과 shippingReceiver 스냅샷이 있으면 지운다.
+ * @returns {Promise<object|null>}
  */
 export async function applyPracticeShippingReceiverSnapshotToRequest(
   requestDoc,
-  { session = null } = {},
+  _opts = {},
 ) {
   if (!requestDoc || typeof requestDoc !== "object") return null;
-  if (!isPracticeDirectShipping(requestDoc)) return null;
-
   const pb =
     requestDoc.partnerBilling && typeof requestDoc.partnerBilling === "object"
       ? requestDoc.partnerBilling
       : {};
-
-  let practiceId = String(
-    pb.practiceBusinessAnchorId?._id || pb.practiceBusinessAnchorId || "",
-  ).trim();
-
-  if (!practiceId && pb.relatedPracticeTransferId) {
-    let transferQuery = PracticeTransfer.findById(
-      pb.relatedPracticeTransferId,
-    ).select({ practiceBusinessAnchorId: 1 });
-    if (session) transferQuery = transferQuery.session(session);
-    const transfer = await transferQuery.lean();
-    practiceId = String(transfer?.practiceBusinessAnchorId || "").trim();
-    if (practiceId) {
-      if (
-        !requestDoc.partnerBilling ||
-        typeof requestDoc.partnerBilling !== "object"
-      ) {
-        requestDoc.partnerBilling = {};
-      }
-      requestDoc.partnerBilling.practiceBusinessAnchorId = practiceId;
-      if (typeof requestDoc.markModified === "function") {
-        requestDoc.markModified("partnerBilling");
-      }
+  if (!pb.relatedPracticeTransferId && !pb.practiceBusinessAnchorId) {
+    return null;
+  }
+  if (requestDoc.shippingReceiver) {
+    requestDoc.shippingReceiver = undefined;
+    if (typeof requestDoc.markModified === "function") {
+      requestDoc.markModified("shippingReceiver");
     }
   }
-
-  if (!practiceId) return null;
-
-  let anchorQuery = BusinessAnchor.findById(practiceId).select({
-    name: 1,
-    metadata: 1,
-  });
-  if (session) anchorQuery = anchorQuery.session(session);
-  const practiceAnchor = await anchorQuery.lean();
-
-  let userQuery = User.findOne({ businessAnchorId: practiceId })
-    .select({ practiceProfile: 1 })
-    .sort({ updatedAt: -1 });
-  if (session) userQuery = userQuery.session(session);
-  const practiceUser = await userQuery.lean();
-
-  const shippingReceiver = buildShippingReceiverFromPractice({
-    practiceAnchor,
-    practiceUser,
-  });
-  if (!shippingReceiver) return null;
-
-  if (
-    (!shippingReceiver.name || shippingReceiver.name === "치과") &&
-    String(requestDoc?.caseInfos?.clinicName || "").trim()
-  ) {
-    shippingReceiver.name = String(requestDoc.caseInfos.clinicName).trim();
-  }
-
-  requestDoc.shippingReceiver = {
-    name: shippingReceiver.name,
-    phone: shippingReceiver.phone,
-    contactName: shippingReceiver.contactName,
-    address: shippingReceiver.address,
-    addressDetail: shippingReceiver.addressDetail,
-    zipCode: shippingReceiver.zipCode,
-    sourceAnchorId: shippingReceiver.sourceAnchorId,
-  };
-  if (typeof requestDoc.markModified === "function") {
-    requestDoc.markModified("shippingReceiver");
-  }
-  return requestDoc.shippingReceiver;
+  return null;
 }

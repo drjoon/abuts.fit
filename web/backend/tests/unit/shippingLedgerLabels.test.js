@@ -6,10 +6,10 @@ import {
 } from "../../utils/shippingLedgerLabels.js";
 
 describe("shipping ledger labels", () => {
-  test("practice transfer abuts shipping is dentist → abuts", () => {
+  test("practice transfer abuts shipping is lab → abuts", () => {
     expect(
       resolveCustomerShippingLabel({ isPracticeTransferAbuts: true }),
-    ).toBe(SHIPPING_LEDGER_LABELS.practiceToAbuts);
+    ).toBe(SHIPPING_LEDGER_LABELS.labToAbuts);
   });
 
   test("lab requestor production shipping is lab → abuts", () => {

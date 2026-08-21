@@ -129,7 +129,7 @@
 - 크레딧 이벤트 발생 시점 SSOT:
   - `REQUEST_SPEND_HOLD` / `SHIPPING_SPEND_HOLD`: **의뢰 제출** 시 에스크로 보류(기공비·신속·배송비).
     치과 어벗디자인·기공소 어벗생산 배송비는 **의뢰 사업자 + 예정 출고일** 1회(치과명으로 쪼개지 않음).
-    PTX(구강스캔)는 치과 직납이라 수취인별. 동일 제출 배치에서도 1회.
+    PTX(구강스캔) CA 배송비는 주문 기공소 크레딧(제조사→기공소). 동일 제출 배치에서도 1회.
   - `REQUEST_SPEND_COMMIT`: **CAM 승인(가공 진입)** 시 보류→매출 전환(레거시 무보류만 실차감)
   - `SHIPPING_SPEND_COMMIT`: **집하(우편함 비우기)** 시 배송 보류→매출 전환(레거시·PTX abuts는 기존 SSOT)
   - `REQUEST` 차감 삭제: **가공 롤백(CAM 복귀)** 시 대응 COMMIT 이벤트/라인 **물리 삭제**(HOLD는 유지)
@@ -276,7 +276,7 @@
   - 조회(발신): `GET /api/practice/transfers/my`
   - 조회(수신): `GET /api/practice/transfers/received`
   - 취소: `POST /api/practice/transfers/cancel-batch`
-  - **커스텀어벗 Abuts-first**: 수락 시 스캔 기반 Request 생성 → **수락 기공소가 디자인** → design-handoff 업로드 시 제조 자동 착수. 치과→기공소=`labFeeSchedule` 커스텀어벗 수가(기공비 정산). 기공소→어벗츠=생산비(플랫폼 1.5만, Request 과금). 레거시(치과 어벗츠 단가 선납)만 `abutmentDesignLabFee` 외주 지급. **생산 후 치과 직납**(기공소 경유 납품 아님). 제조사 출고 목표=`치과도착일 − 2영업일`(`resolveManufacturerTargetShipYmd`). 기공소 `mark-complete`는 크라운 업로드만(배송선택 없음). 어벗생산의뢰(직접 Request) 디자인 파트너 큐와 분리.
+  - **커스텀어벗 Abuts-first**: 수락 시 스캔 기반 Request 생성 → **수락 기공소가 디자인** → design-handoff 업로드 시 제조 자동 착수. 치과→기공소=`labFeeSchedule` 커스텀어벗 수가(기공비 정산). 기공소→어벗츠=생산비(플랫폼 1.5만, Request 과금). 레거시(치과 어벗츠 단가 선납)만 `abutmentDesignLabFee` 외주 지급. **생산 후 주문 기공소 수취**(치과 직납 아님). 제조사 출고 목표=`치과도착일 − 2영업일`(`resolveManufacturerTargetShipYmd`). 기공소 `mark-complete`는 크라운 업로드만(배송선택 없음). 어벗생산의뢰(직접 Request) 디자인 파트너 큐와 분리.
 - 제조사 워크시트 조회에서 practice 전송 태그 의뢰 제외
 - 크레딧/정산은 유료(검증된 수신자·lab) 경로에만 해당. 실 사업자등록번호가 없는 synthetic 앵커에는 환영 크레딧을 지급하지 않으며, synthetic→실BN 검증 승격 시 1회 지급
 - 소개(리퍼럴) 페이지·링크: 발신(practice) 포함 모든 requestor가 접근 가능. 소개 귀속(`referredByAnchorId`)·그룹 할인 적용은 추천인 사업자 앵커 기준. lab 체크·검증되면 유료 소개 혜택 경로로 이어짐
@@ -302,7 +302,7 @@
   - `normal`(묶음) | `express`(신속)
 - 묶음 배송 식별은 박스/패키지 기준으로 유지
 - 우편함 배정 시점: 가공→세척.패킹 진입. 같은 수신자면 집하 전까지 한 칸에 모음(1회 택배비). 포장.발송은 기존 배정 유지. 포장.발송↔세척.패킹·세척.패킹→가공 롤백도 우편함 유지(패킹 라벨 SSOT). 가공→준비 롤백에서만 해제.
-- 합류 키: 수신자 BusinessAnchor. PTX 직납은 치과 BA + 수취인 지문(이름/전화/주소)이 같을 때만 합류. 다른 기공소에서 온 동일 치과도 한 박스. 신속/묶음은 같은 수신자면 같이 묶음.
+- 합류 키: 수신자 BusinessAnchor. PTX CA도 주문 기공소 BA. 신속/묶음은 같은 수신자면 같이 묶음.
 - 배송비 과금 시점: 집하(우편함 비우기) 1회. 운송장 라벨에는 건수를 출력하지 않음(웹앱에서 확인).
 - 신속 배송 추가 의뢰크레딧: `creditSettings.expressFee`(기본 **2,000원**), **가공 진입(CAM 승인) 시 별도 `express_surcharge` 저널로 차감**
   - 설정 UI: 관리자 플랫폼 설정「크레딧」(배송) / 「커스텀어벗」(단가) — `AdminCreditSettingsTab` / `PATCH /api/admin/settings/credits` (`admin`|`devops`)

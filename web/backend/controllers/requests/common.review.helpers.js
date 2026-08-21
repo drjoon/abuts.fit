@@ -1719,20 +1719,17 @@ async function maybeConvertPtxAbutsShippingHolds({
 
 function resolveMailboxPickupPayerAnchorId(requests = []) {
   for (const request of requests) {
-    const practiceFromBilling = normalizeBusinessAnchorId(
-      request?.partnerBilling?.practiceBusinessAnchorId,
-    );
-    if (practiceFromBilling) return practiceFromBilling;
-    const fromReceiver = normalizeBusinessAnchorId(
-      request?.shippingReceiver?.sourceAnchorId,
-    );
-    if (fromReceiver) return fromReceiver;
+    // PTX CA도 기공소(request BA)가 배송비 결제자.
+    const direct = normalizeBusinessAnchorId(request?.businessAnchorId);
+    if (direct) return direct;
     const shippingOrg = normalizeBusinessAnchorId(
       resolveShippingMailboxOrgId(request),
     );
     if (shippingOrg) return shippingOrg;
-    const direct = normalizeBusinessAnchorId(request?.businessAnchorId);
-    if (direct) return direct;
+    const fromRequestor = normalizeBusinessAnchorId(
+      request?.requestor?.businessAnchorId,
+    );
+    if (fromRequestor) return fromRequestor;
   }
   return "";
 }

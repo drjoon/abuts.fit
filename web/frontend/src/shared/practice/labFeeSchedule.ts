@@ -519,6 +519,10 @@ export const LAB_FEE_ITEM_UNIT_LABELS: Record<LabFeeItemUnit, string> = {
 export const MAX_LAB_FEE_ITEMS = 40;
 export const MAX_LAB_FEE_ITEM_TIERS = 8;
 
+export const LAB_FEE_SHIPPING_ITEM_ID = "shipping";
+export const LAB_FEE_SHIPPING_ITEM_NAME = "배송비";
+export const LAB_FEE_SHIPPING_LAB_DEFAULT_PRICE = 0;
+
 export type LabFeeItemTier = {
   n: number;
   price: number;
@@ -589,7 +593,44 @@ export const canonicalizeFeeItemName = (name: string) => {
   ) {
     return "커스텀어벗";
   }
+  if (compact === "배송비" || /^shipping$/i.test(raw)) return "배송비";
   return raw;
+};
+
+export const isLabFeeShippingItem = (item?: Partial<LabFeeItem> | null) => {
+  if (!item || typeof item !== "object") return false;
+  if (String(item.id || "").trim() === LAB_FEE_SHIPPING_ITEM_ID) return true;
+  return canonicalizeFeeItemName(String(item.name || "")) === LAB_FEE_SHIPPING_ITEM_NAME;
+};
+
+export const buildLabFeeShippingItem = ({
+  price = LAB_FEE_SHIPPING_LAB_DEFAULT_PRICE,
+  enabled = false,
+}: {
+  price?: number;
+  enabled?: boolean;
+} = {}): LabFeeItem => ({
+  id: LAB_FEE_SHIPPING_ITEM_ID,
+  name: LAB_FEE_SHIPPING_ITEM_NAME,
+  unit: "perSet",
+  enabled: enabled === true,
+  price: Math.max(0, Math.round(Number(price) || 0)),
+  remake: 0,
+  tiers: [],
+});
+
+export const ensureLabFeeShippingItem = (
+  items: LabFeeItem[],
+  {
+    price = LAB_FEE_SHIPPING_LAB_DEFAULT_PRICE,
+    enabled = false,
+  }: { price?: number; enabled?: boolean } = {},
+): LabFeeItem[] => {
+  const list = Array.isArray(items) ? [...items] : [];
+  if (list.some((item) => isLabFeeShippingItem(item))) return list;
+  if (list.length >= MAX_LAB_FEE_ITEMS) return list;
+  list.push(buildLabFeeShippingItem({ price, enabled }));
+  return list;
 };
 
 const isRemovedPonticFeeRow = (
@@ -712,6 +753,10 @@ const migrateLegacyLabFeeItems = (
       remake: remake.customAbutmentDesignAndProduction,
       tiers: [],
     },
+    buildLabFeeShippingItem({
+      price: LAB_FEE_SHIPPING_LAB_DEFAULT_PRICE,
+      enabled: false,
+    }),
   ];
 };
 
@@ -783,7 +828,10 @@ export const normalizeLabFeeItems = (
       seen.add(id);
       out.push({ ...item, id });
     }
-    return expandPerNTeethTierItems(out);
+    return ensureLabFeeShippingItem(expandPerNTeethTierItems(out), {
+      price: LAB_FEE_SHIPPING_LAB_DEFAULT_PRICE,
+      enabled: false,
+    });
   }
   return migrateLegacyLabFeeItems(src as Partial<LabFeeSchedule>);
 };
@@ -879,6 +927,7 @@ export const labFeeItemMatchesNeedName = (
 
 const labFeeItemHasChargePrice = (item: LabFeeItem) => {
   if (!item || item.enabled === false) return false;
+  if (isLabFeeShippingItem(item)) return true;
   const tierPrices = item.tiers.map((tier) =>
     Math.round(Number(tier.price || 0)),
   );
@@ -901,13 +950,20 @@ export const missingLabFeeItemNames = (
 ) => {
   const needed = labFeeItemNamesNeededForToothWorks(toothWorks);
   const items = normalizeLabFeeItems(schedule);
-  return needed.filter(
+  const missing = needed.filter(
     (name) =>
       !items.some(
         (item) =>
           labFeeItemMatchesNeedName(item, name) && labFeeItemHasChargePrice(item),
       ),
   );
+  const shippingConfigured = items.some(
+    (item) => isLabFeeShippingItem(item) && item.enabled !== false,
+  );
+  if (!shippingConfigured && !missing.includes(LAB_FEE_SHIPPING_ITEM_NAME)) {
+    missing.push(LAB_FEE_SHIPPING_ITEM_NAME);
+  }
+  return missing;
 };
 
 /** 보철 형태 → labFeeSchedule 키. 작업X·커스텀어벗(어벗츠/기공소 어벗 단가)·묶음수가 항목은 null */

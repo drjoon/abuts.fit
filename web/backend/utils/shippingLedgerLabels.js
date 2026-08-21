@@ -15,7 +15,8 @@ export function resolveCustomerShippingLabel({
   isPracticeTransferAbuts = false,
   requestorKind = "",
 } = {}) {
-  if (isPracticeTransferAbuts) return SHIPPING_LEDGER_LABELS.practiceToAbuts;
+  // PTX CA 배송비도 기공소→어벗츠.
+  if (isPracticeTransferAbuts) return SHIPPING_LEDGER_LABELS.labToAbuts;
   if (String(requestorKind || "").trim() === "lab") {
     return SHIPPING_LEDGER_LABELS.labToAbuts;
   }

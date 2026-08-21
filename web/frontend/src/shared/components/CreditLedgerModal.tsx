@@ -537,7 +537,7 @@ const classifyPracticeTransferPart = (
 
 const settlementShippingRouteLabel = (route: PracticeTransferRoute) => {
   if (route === "lab") return "치과→기공소";
-  if (route === "abuts") return "치과→어벗츠";
+  if (route === "abuts") return "기공소→어벗츠";
   return "배송비";
 };
 

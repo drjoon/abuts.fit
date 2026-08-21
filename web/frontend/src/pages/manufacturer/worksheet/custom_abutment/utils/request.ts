@@ -116,28 +116,13 @@ export type PracticeDirectShippingContact = {
 };
 
 /**
- * PTX 직납 치과 연락처.
- * 포장.발송 스냅샷(shippingReceiver) 우선, 없으면 practice BA live metadata.
+ * PTX는 기공소 수취 — 치과 직납 연락처를 쓰지 않는다.
+ * (레거시 스냅샷/practice BA 표시 중단)
  */
 export function resolvePracticeDirectShippingContact(
   req?: ManufacturerRequest | null,
 ): PracticeDirectShippingContact | null {
   if (!req) return null;
-  const snap = req.shippingReceiver;
-  const snapName = String(snap?.name || "").trim();
-  const snapAddress = String(snap?.address || "").trim();
-  if (snapName || snapAddress || String(snap?.phone || "").trim()) {
-    return {
-      name: snapName || null,
-      phone: String(snap?.phone || "").trim() || null,
-      contactName: String(snap?.contactName || "").trim() || null,
-      address: snapAddress || null,
-      addressDetail: String(snap?.addressDetail || "").trim() || null,
-      zipCode: String(snap?.zipCode || "").trim() || null,
-      fromSnapshot: true,
-    };
-  }
-
   const pb = req.partnerBilling;
   const relatedId = String(
     (pb?.relatedPracticeTransferId as { _id?: string })?._id ||
@@ -145,36 +130,13 @@ export function resolvePracticeDirectShippingContact(
       "",
   ).trim();
   const practiceRaw = pb?.practiceBusinessAnchorId;
-  const practiceObj =
-    practiceRaw && typeof practiceRaw === "object" ? practiceRaw : null;
   const practiceId = String(
-    practiceObj?._id || (typeof practiceRaw === "string" ? practiceRaw : ""),
+    (practiceRaw && typeof practiceRaw === "object"
+      ? (practiceRaw as { _id?: string })._id
+      : practiceRaw) || "",
   ).trim();
-  if (!relatedId && !practiceId && !practiceObj) return null;
-
-  const meta =
-    practiceObj?.metadata && typeof practiceObj.metadata === "object"
-      ? practiceObj.metadata
-      : {};
-  const name =
-    String(practiceObj?.name || "").trim() ||
-    String(meta.companyName || "").trim() ||
-    String(req.caseInfos?.clinicName || "").trim();
-  const phone = String(meta.phoneNumber || "").trim();
-  const contactName = String(meta.representativeName || "").trim();
-  const address = String(meta.address || "").trim();
-  const addressDetail = String(meta.addressDetail || "").trim();
-  const zipCode = String(meta.zipCode || "").trim();
-  if (!name && !phone && !address) return null;
-  return {
-    name: name || null,
-    phone: phone || null,
-    contactName: contactName || null,
-    address: address || null,
-    addressDetail: addressDetail || null,
-    zipCode: zipCode || null,
-    fromSnapshot: false,
-  };
+  if (relatedId || practiceId) return null;
+  return null;
 }
 
 export type ReviewStageKey =

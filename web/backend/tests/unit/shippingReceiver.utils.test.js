@@ -48,7 +48,7 @@ describe("buildShippingReceiverFromPractice", () => {
 });
 
 describe("resolveShippingMailboxOrgId", () => {
-  it("prefers shippingReceiver.sourceAnchorId for PTX", () => {
+  it("uses lab businessAnchorId even when practice shippingReceiver exists", () => {
     expect(
       resolveShippingMailboxOrgId({
         businessAnchorId: "bbbbbbbbbbbbbbbbbbbbbbbb",
@@ -60,10 +60,10 @@ describe("resolveShippingMailboxOrgId", () => {
           practiceBusinessAnchorId: "cccccccccccccccccccccccc",
         },
       }),
-    ).toBe("aaaaaaaaaaaaaaaaaaaaaaaa");
+    ).toBe("bbbbbbbbbbbbbbbbbbbbbbbb");
   });
 
-  it("falls back to practiceBusinessAnchorId then lab", () => {
+  it("falls back to requestor lab BA", () => {
     expect(
       resolveShippingMailboxOrgId({
         businessAnchorId: "bbbbbbbbbbbbbbbbbbbbbbbb",
@@ -72,42 +72,61 @@ describe("resolveShippingMailboxOrgId", () => {
           relatedPracticeTransferId: "dddddddddddddddddddddddd",
         },
       }),
-    ).toBe("cccccccccccccccccccccccc");
+    ).toBe("bbbbbbbbbbbbbbbbbbbbbbbb");
 
     expect(
       resolveShippingMailboxOrgId({
-        businessAnchorId: "bbbbbbbbbbbbbbbbbbbbbbbb",
+        requestor: { businessAnchorId: "bbbbbbbbbbbbbbbbbbbbbbbb" },
       }),
     ).toBe("bbbbbbbbbbbbbbbbbbbbbbbb");
   });
 
-  it("uses different practice keys for different clinics", () => {
+  it("joins same lab requests into one mailbox key", () => {
     const lab = "bbbbbbbbbbbbbbbbbbbbbbbb";
     const a = resolveShippingMailboxOrgId({
       businessAnchorId: lab,
-      shippingReceiver: { sourceAnchorId: "aaaaaaaaaaaaaaaaaaaaaaaa" },
+      partnerBilling: { practiceBusinessAnchorId: "aaaaaaaaaaaaaaaaaaaaaaaa" },
     });
     const b = resolveShippingMailboxOrgId({
       businessAnchorId: lab,
-      shippingReceiver: { sourceAnchorId: "cccccccccccccccccccccccc" },
+      partnerBilling: { practiceBusinessAnchorId: "cccccccccccccccccccccccc" },
     });
-    expect(a).not.toBe(b);
+    expect(a).toBe(lab);
+    expect(b).toBe(lab);
   });
 });
 
 describe("isPracticeDirectShipping / getShippingReceiver", () => {
-  it("detects PTX via relatedPracticeTransferId", () => {
+  it("does not treat PTX as practice-direct", () => {
     expect(
       isPracticeDirectShipping({
         partnerBilling: {
           relatedPracticeTransferId: "dddddddddddddddddddddddd",
         },
       }),
-    ).toBe(true);
+    ).toBe(false);
     expect(isPracticeDirectShipping({ businessAnchorId: "x" })).toBe(false);
   });
 
-  it("reads shippingReceiver fields used by Hanjin preference", () => {
+  it("ignores PTX shippingReceiver snapshot for Hanjin preference", () => {
+    const receiver = getShippingReceiver({
+      partnerBilling: {
+        relatedPracticeTransferId: "dddddddddddddddddddddddd",
+        practiceBusinessAnchorId: "aaaaaaaaaaaaaaaaaaaaaaaa",
+      },
+      shippingReceiver: {
+        name: "직납치과",
+        phone: "055-999-8888",
+        contactName: "담당자",
+        address: "서울시 강남구",
+        addressDetail: "3층",
+        zipCode: "06236",
+      },
+    });
+    expect(receiver).toBeNull();
+  });
+
+  it("reads shippingReceiver only for non-PTX requests", () => {
     const receiver = getShippingReceiver({
       shippingReceiver: {
         name: "직납치과",
@@ -126,27 +145,6 @@ describe("isPracticeDirectShipping / getShippingReceiver", () => {
       addressDetail: "3층",
       zipCode: "06236",
     });
-    // Hanjin helpers prefer these fields over lab requestor metadata
     expect(isPracticeDirectShipping({ shippingReceiver: receiver })).toBe(true);
-  });
-
-  it("detects PTX before packing snapshot exists", () => {
-    expect(
-      isPracticeDirectShipping({
-        partnerBilling: {
-          relatedPracticeTransferId: "dddddddddddddddddddddddd",
-          practiceBusinessAnchorId: "aaaaaaaaaaaaaaaaaaaaaaaa",
-        },
-      }),
-    ).toBe(true);
-    expect(
-      resolveShippingMailboxOrgId({
-        businessAnchorId: "bbbbbbbbbbbbbbbbbbbbbbbb",
-        partnerBilling: {
-          practiceBusinessAnchorId: "aaaaaaaaaaaaaaaaaaaaaaaa",
-          relatedPracticeTransferId: "dddddddddddddddddddddddd",
-        },
-      }),
-    ).toBe("aaaaaaaaaaaaaaaaaaaaaaaa");
   });
 });

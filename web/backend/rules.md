@@ -390,7 +390,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - **어벗츠 우선창**: 생성 시 적격 스냅샷에 `internalLab`이 있으면 `autoMatch.priorityLabAnchorIds` + `priorityUntil=createdAt+5분`. 그 동안 타 기공소 수신 목록·클레임 미노출. 만료 또는 **어벗츠 거부 시 `priorityUntil` 조기 종료** 후 타 기공소 노출·소켓. 적격에 어벗츠가 없으면 전원 즉시 공개(2B: 예산·참여 동일 게이트)
     - 기공소 `POST /api/businesses/me/auto-match-participation` `{ active:true }`: 미인증이면 **인증 신청**만(`applied`, 풀 ON 금지). 인증 완료 후 재호출 시 참여(ON). `{ active:false }`는 해지 예약. 관리자 `PATCH /api/devops/practice-transfer-auto-match/:anchorId` `{ enabled, testStatus, memo, status }` — 테스트 통과/`enabled:true` 시 인증 ON. **월정 0원**(`autoMatchMonthlyFee`). 매칭 성공 `platformFeeRate` · 지정은 `directPlatformFeeEnabled`(기본 off=무료) / on 시 `directPlatformFeeRate`. 표시명 마스킹(`redactAutoMatch*`).
     - 수신 목록: 내 지정 건 ∪ (eligible이면) 공개 풀(미배정, **우선창이면 priority lab만**). 타인 활성 claim은 숨김
-    - 수락=`mark-accepted` 원자 FCFS claim(강제 시간 만료 없음; **우선창 클레임 게이트 동일**) + 보류액 확정. 치과에 `practice:transfer-updated`(action=`accepted`, 확정 `feeQuote`) emit. **CA 포함 시 수락 직후** 구강스캔(`files`) 기반 어벗츠 Request 조기 생성(`design_custom_abutment`, **치과 직납·출고목표=치과도착일−2영업일**). 작업완료=`POST .../mark-complete`(크라운 결과파일 필수, **shippingMode 불필요**, 에스크로 해제·기공크레딧 지급). 작업취소=`POST .../mark-release`(auto는 풀 재공개·우선창 종료·치과는 「자동매칭」, direct는 수락 해제+과금 롤백·치과 「취소」). 수락 전 거부=`POST .../mark-reject`(auto 공개풀=해당 기공소만 decline, direct=활성 유지·작업취소로 치과 「취소」·기공소 「거부」; canceled 휴지통 아님)
+    - 수락=`mark-accepted` 원자 FCFS claim(강제 시간 만료 없음; **우선창 클레임 게이트 동일**) + 보류액 확정. 치과에 `practice:transfer-updated`(action=`accepted`, 확정 `feeQuote`) emit. **CA 포함 시 수락 직후** 구강스캔(`files`) 기반 어벗츠 Request 조기 생성(`design_custom_abutment`, **주문 기공소 수취·출고목표=치과도착일−2영업일**). 작업완료=`POST .../mark-complete`(크라운 결과파일 필수, **shippingMode 불필요**, 에스크로 해제·기공크레딧 지급). 작업취소=`POST .../mark-release`(auto는 풀 재공개·우선창 종료·치과는 「자동매칭」, direct는 수락 해제+과금 롤백·치과 「취소」). 수락 전 거부=`POST .../mark-reject`(auto 공개풀=해당 기공소만 decline, direct=활성 유지·작업취소로 치과 「취소」·기공소 「거부」; canceled 휴지통 아님)
     - 어벗 디자인: 기공의뢰(PTX) CA는 **수락 기공소**가 design-claim/handoff. 업로드 시 lab confirm 자동·제조 즉시 착수 + `grantAbutmentDesignLabFee`(`abutmentDesignLabFee`×어벗수 → `LAB_SETTLEMENT_CREDIT`, 기공소 장부 라인 `refType=PRACTICE_TRANSFER` — 보철기공비와 **한 기공의뢰 행**). 레거시 `POST .../confirm-abutment-design`은 미컨펌 건 호환용. 어벗생산의뢰(비PTX)는 기존 디자인 파트너 큐.
     - 치과=`POST .../confirm-production` — (a) 크라운 완료 전·CA·미생략: 어벗 디자인 생산 게이트 (b) 크라운 완료 후: `작업완료→생산진행` (Request 재생성 없음)
     - 「디자인 컨펌 생략」체크 UI는 계정 `practiceTransferSettings.skipDesignConfirm`(기본 **true**). 전송 시 `PracticeTransfer.production.skipDesignConfirm` 스냅샷. 해제 시 FE 안내 모달. 체크된 건은 기공소 `mark-complete` 시 생산진행 자동. 미체크면 어벗 생산에 치과 디자인 컨펌도 필요
@@ -851,7 +851,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 파생 조회(제조사 정산/관리자 대시보드/의뢰자 잔액)는 단일 SSOT 장부 집계값만 사용
 - 우편함/배송 무결성 정책(포장.발송):
   - 우편함 배정 SSOT (가공→세척.패킹 진입):
-    1) 같은 수신자(`businessAnchorId` / PTX 직납이면 practice BA)가 `세척.패킹`/`포장.발송`/`가공`(우편함 유지)에 이미 있으면 그 우편함으로 합류
+    1) 같은 수신자(`businessAnchorId` / PTX CA도 주문 기공소 BA)가 `세척.패킹`/`포장.발송`/`가공`(우편함 유지)에 이미 있으면 그 우편함으로 합류
        - PTX: 치과 BA가 같아도 수취인 지문(이름/전화/우편번호/주소/상세)이 둘 다 있고 다르면 합류하지 않는다
        - 신속/묶음은 같은 수신자면 한 박스
     2) 없으면 A1A1부터 순서상 가장 가까운 빈칸 할당
