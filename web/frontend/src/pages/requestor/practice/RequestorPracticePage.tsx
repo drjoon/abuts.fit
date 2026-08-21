@@ -22,6 +22,7 @@
 // - web/frontend/src/shared/practice/labReceiveCalendarDateKey.ts
 // - web/backend/utils/labReceiveCalendarDateKey.util.js
 // - web/backend/controllers/users/user.controller.js
+// - 2026-08-21: 어벗 STL 업로드 — relatedRequestIds 없으면 보정 재시도. 구강스캔 필수로 오인하는 토스트 제거.
 // - 2026-08-21: 캘린더 전환 후 상세 모달에 어벗·보철 업로드 CTA 복원.
 // - 2026-08-21: 커스텀어벗 배송현황을 상세·캘린더에 표시(치과 발신과 동일).
 // - 2026-08-20: 기공의뢰수신 캘린더 날짜 뱃지 기본=치과도착일. 계정 preferences에 저장.
@@ -160,10 +161,6 @@ import { parsePracticeTransferFeeQuote } from "@/shared/practice/practiceTransfe
 import { normalizeLabFeeMultiplier, formatLabFeeMultiplierLabel, missingLabFeeItemNames, labFeeItemNamesNeededForToothWorks } from "@/shared/practice/labFeeSchedule";
 import { parseStarDowngrade, parseLabRatingSummary } from "@/shared/practice/practiceLabRating";
 import { buildPracticeWorkPeriodSummaryItem } from "@/shared/practice/practiceWorkPeriod";
-import {
-  ORAL_SCAN_REQUIRED_FROM_PRACTICE,
-  needsOralScanForAccept,
-} from "@/shared/practice/oralScanRequirement";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import { REQUESTOR_KIND_LABEL } from "@/shared/business/requestorCapabilities";
 import { PracticeFileTransferPage } from "@/pages/practice/PracticeFileTransferPage";
@@ -1841,8 +1838,6 @@ export function RequestorPracticeReceivePage({
 
       const isOpenPool =
         transfer.matchingMode === "auto" && Boolean(transfer.autoMatch?.openPool);
-      const fileCount = transfer.files?.length || transfer.fileCount || 0;
-      const hasCa = transferHasCustomAbutment(transfer);
 
       if (
         !isOpenPool &&
@@ -1851,21 +1846,6 @@ export function RequestorPracticeReceivePage({
           transfer.requestorDownloadedAt)
       ) {
         return true;
-      }
-
-      if (
-        needsOralScanForAccept({
-          hasCustomAbutment: hasCa,
-          fileCount,
-          matchingMode: transfer.matchingMode,
-        })
-      ) {
-        toast({
-          title: "의뢰수락 실패",
-          description: ORAL_SCAN_REQUIRED_FROM_PRACTICE,
-          variant: "destructive",
-        });
-        return false;
       }
 
       try {
@@ -3619,9 +3599,9 @@ export function RequestorPracticeReceivePage({
 
       if (relatedIds.length === 0) {
         toast({
-          title: "디자인 의뢰 준비 중",
+          title: "생산 의뢰 준비 실패",
           description:
-            "구강스캔이 확보되면 디자인 큐에 의뢰가 생성됩니다. 스캔 업로드 후 다시 시도해주세요.",
+            "어벗츠 생산 의뢰를 준비하지 못했습니다. 잠시 후 다시 시도해주세요.",
           variant: "destructive",
         });
         return;
@@ -4711,22 +4691,7 @@ export function RequestorPracticeReceivePage({
             s3Key: String(file.s3Key || "").trim(),
           })) satisfies PracticeTransferDialogFileItem[]
         }
-        oralScanAttachMode={(() => {
-          if (!selectedTransfer) return null;
-          const hasCa = transferHasCustomAbutment(selectedTransfer);
-          const fileCount =
-            selectedTransfer.files?.length || selectedTransfer.fileCount || 0;
-          if (!hasCa || fileCount > 0) return null;
-          // 지정: 스캔 없이 수락. 자동매칭만 치과 스캔 필수 안내.
-          if (String(selectedTransfer.matchingMode || "").trim() !== "auto") {
-            return null;
-          }
-          const accepted =
-            selectedTransfer.isAccepted ||
-            selectedTransfer.isDownloaded ||
-            selectedTransfer.requestorDownloadedAt;
-          return accepted ? null : "practice_required";
-        })()}
+        oralScanAttachMode={null}
         requestFilesDownloadLocked={false}
         designFiles={
           (selectedTransfer?.production?.designFiles || []).map((file) => ({

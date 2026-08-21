@@ -2,8 +2,6 @@
 // - web/backend/services/practiceTransferProduction.service.js
 // - 2026-08-19: 출고 목표=치과도착−2영업일.
 import {
-  ORAL_SCAN_REQUIRED_FROM_LAB,
-  ORAL_SCAN_REQUIRED_FROM_PRACTICE,
   PTX_CA_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS,
   assertOralScanFilesForCreate,
   canStartAbutmentProduction,
@@ -233,17 +231,18 @@ describe("oral scan requirement for CA accept/create", () => {
     expect(resolved.files).toHaveLength(1);
   });
 
-  test("resolveOralScanFilesForAccept — auto without files rejects", () => {
-    expect(() =>
-      resolveOralScanFilesForAccept({
-        transferDoc: {
-          matchingMode: "auto",
-          toothWorks: caTooth,
-          files: [],
-        },
-        incomingFiles: [scanFile],
-      }),
-    ).toThrow(ORAL_SCAN_REQUIRED_FROM_PRACTICE);
+  test("resolveOralScanFilesForAccept — auto without files allows accept", () => {
+    const resolved = resolveOralScanFilesForAccept({
+      transferDoc: {
+        matchingMode: "auto",
+        toothWorks: caTooth,
+        files: [],
+      },
+      incomingFiles: [scanFile],
+    });
+    // 자동매칭: 기공소 수락 첨부는 무시. 스캔 없어도 수락.
+    expect(resolved.attachedByLab).toBe(false);
+    expect(resolved.files).toHaveLength(0);
   });
 
   test("resolveOralScanFilesForAccept — direct allows lab upload", () => {

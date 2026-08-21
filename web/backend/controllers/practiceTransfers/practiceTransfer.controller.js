@@ -142,6 +142,7 @@ import { resolvePracticeTransferSkipJig } from "../../utils/practiceTransferLabS
 // - 2026-08-20: 기공소 변경 시 이전 기공소를 채팅 참가자·사이드바 unread에서 제거.
 // - 2026-08-20: draft upsert — files 생략 시 기존 첨부 유지. 같은 기공소·환자 건에 파일 append.
 // - 2026-08-20: draft-upserted 이벤트에 filesTouched/draftFilesMode를 실어 FE가 autosave echo로 첨부를 지우지 않게 한다.
+// - 2026-08-21: 수락 시 구강스캔 선택(자동매칭 포함). CA Request는 스캔 없이 생성.
 // - 2026-08-20: draft upsert — 환자명만 필수(기공소는 전송 시). 기공소 미선택 동일 환자 draft는 갱신.
 // - 2026-08-17: trash/empty — 하드삭제 전 rollbackPracticeTransferBilling(배송·디자인비 포함).
 // - 2026-08-16: 어벗 가공(준비 아님)이면 mark-release 거부·목록 abutmentPastReady.
@@ -4378,7 +4379,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
       }
     }
 
-    // 커스텀어벗: 구강스캔 확보(자동=치과만, 지정=기공소 body.files 허용)
+    // 커스텀어벗: 구강스캔은 선택(자동=치과 첨부만 반영, 지정=기공소 body.files 허용)
     try {
       const resolvedScan = resolveOralScanFilesForAccept({
         transferDoc: doc,

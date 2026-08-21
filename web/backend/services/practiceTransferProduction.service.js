@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-08-21: CA Request — 구강스캔 없이 수락·생성(어벗 STL 업로드 가능).
 // - 2026-08-21: 연동 CA Request 한진 배송 요약(mapAbutmentDeliveryByTransferDocs) — 구강스캔으로 UI.
 // - 2026-08-21: 환봉·제조사 추가요청(요청중) CA는 어벗츠 Request 생성 제외 — 지정 기공소가 커스텀어벗 수행.
 // - 2026-08-19: 출고 목표=치과도착−2영업일. 지정 도착일 1영업일 전 배송이 목표.
@@ -115,7 +116,7 @@ const normalizeResultFiles = (raw) => {
 export const ORAL_SCAN_REQUIRED_FOR_AUTO_MATCH_CREATE =
   "자동매칭으로 보낼 때는 구강스캔 파일을 첨부해주세요.";
 
-/** 자동매칭 CA: 스캔 없이 수락 불가(치과 첨부만) */
+/** @deprecated 수락·생성 모두 구강스캔 선택. 레거시 클라이언트용 */
 export const ORAL_SCAN_REQUIRED_FROM_PRACTICE =
   "자동매칭 커스텀어벗 의뢰는 치과에서 구강스캔을 첨부해야 합니다.";
 
@@ -123,17 +124,10 @@ export const ORAL_SCAN_REQUIRED_FROM_PRACTICE =
 export const ORAL_SCAN_REQUIRED_FROM_LAB =
   "커스텀어벗 디자인을 위해 구강스캔 파일을 업로드해주세요.";
 
-const makeOralScanError = (message, code) => {
-  const err = new Error(message);
-  err.code = code;
-  err.statusCode = 409;
-  return err;
-};
-
 /**
- * 커스텀어벗 수락 시 구강스캔 확보.
+ * 커스텀어벗 수락 시 구강스캔(선택).
  * - 이미 transfer.files 있으면 그대로
- * - 자동매칭: 치과 첨부만 허용(기공소 body.files 무시·거절)
+ * - 자동매칭: 치과 첨부만 반영(기공소 body.files 무시). 스캔 없어도 수락
  * - 지정: 스캔 없이 수락 가능(레거시 body.files 첨부는 허용)
  */
 export function resolveOralScanFilesForAccept({
@@ -151,14 +145,8 @@ export function resolveOralScanFilesForAccept({
   const isAuto = String(transferDoc?.matchingMode || "").trim() === "auto";
   const incoming = normalizeResultFiles(incomingFiles);
 
-  if (isAuto) {
-    throw makeOralScanError(
-      ORAL_SCAN_REQUIRED_FROM_PRACTICE,
-      "oral_scan_required_from_practice",
-    );
-  }
-
-  if (incoming.length === 0) {
+  // 자동매칭: 기공소가 수락 시 스캔을 붙이지 않음(치과 전송분만). 미첨부는 허용.
+  if (isAuto || incoming.length === 0) {
     return { files: [], attachedByLab: false };
   }
 
@@ -457,7 +445,7 @@ const clampScheduleToTarget = async (productionSchedule, targetYmd) => {
 
 /**
  * 기공소 수락 시 커스텀어벗 → 어벗츠 디자인+생산 의뢰 생성.
- * 소스 파일 = PTX 구강스캔(files). productMode 고정 design_custom_abutment.
+ * 소스 파일 = PTX 구강스캔(files, 선택). productMode 고정 design_custom_abutment.
  */
 export async function createAbutmentRequestsFromPracticeTransfer({
   transferDoc,
@@ -487,23 +475,8 @@ export async function createAbutmentRequestsFromPracticeTransfer({
     };
   }
 
+  // 구강스캔은 선택 — 없어도 CA Request 생성(어벗 STL 핸드오프용 relatedRequestIds).
   const scanFiles = normalizeResultFiles(transferDoc?.files);
-  if (scanFiles.length === 0) {
-    const isAuto = String(transferDoc?.matchingMode || "").trim() === "auto";
-    if (isAuto) {
-      throw makeOralScanError(
-        ORAL_SCAN_REQUIRED_FROM_PRACTICE,
-        "oral_scan_required_from_practice",
-      );
-    }
-    // 지정 기공소: 수락 후 스캔 업로드 가능 — CA Request는 스캔 확보 시 생성
-    return {
-      created: [],
-      skippedReason: "awaiting_oral_scan",
-      requestIds: [],
-      shippingMode: null,
-    };
-  }
 
   const labAnchorId = String(transferDoc?.targetLabAnchorId || "").trim();
   if (!labAnchorId || !Types.ObjectId.isValid(labAnchorId)) {
@@ -628,12 +601,12 @@ export async function createAbutmentRequestsFromPracticeTransfer({
     const row = customRows[i];
     const tooth = String(row.toothNumber || "").trim();
     const scanFile = pickFileForTooth(scanFiles, tooth, i);
-    if (!scanFile?.file?.s3Key) {
+    if (scanFiles.length > 0 && !scanFile?.file?.s3Key) {
       throw new Error(`치아 #${tooth} 구강스캔 파일을 찾지 못했습니다.`);
     }
 
     const patientName =
-      String(scanFile.patientName || "").trim() || patientNameFallback;
+      String(scanFile?.patientName || "").trim() || patientNameFallback;
     const implantManufacturer = String(row.implantManufacturer || "").trim();
     const implantBrand = String(row.implantBrand || "").trim();
     const implantFamily = String(row.implantFamily || "").trim();
@@ -672,12 +645,16 @@ export async function createAbutmentRequestsFromPracticeTransfer({
       designSoftware,
       anodizingEnabled,
       retentionGroove,
-      file: {
-        originalName: scanFile.file.originalName,
-        mimetype: scanFile.file.mimetype,
-        size: scanFile.file.size,
-        s3Key: scanFile.file.s3Key,
-      },
+      ...(scanFile?.file?.s3Key
+        ? {
+            file: {
+              originalName: scanFile.file.originalName,
+              mimetype: scanFile.file.mimetype,
+              size: scanFile.file.size,
+              s3Key: scanFile.file.s3Key,
+            },
+          }
+        : {}),
       toothWorks: [row],
     };
 
@@ -854,14 +831,6 @@ export async function ensureAbutmentRequestsOnAccept({
     transferDoc,
     actorUserId,
   });
-  if (result.skippedReason === "awaiting_oral_scan") {
-    return {
-      created: false,
-      skippedReason: "awaiting_oral_scan",
-      requestIds: [],
-      shippingMode: null,
-    };
-  }
   if (result.skippedReason === "no_custom_abutment") {
     return { created: false, requestIds: [], shippingMode: null };
   }
