@@ -3,6 +3,7 @@
 // - web/backend/tests/unit/practiceTransferAutoMatchPriority.test.js
 //
 // 자동매칭 우선창·필터 순수 헬퍼 (Mongo 모델 import 없음).
+// - 2026-08-21: 하청 전환은 어벗츠기공소(원청)만 — 타 기공소 지정 의뢰는 canOpenSubcontract=false.
 
 /** 어벗츠기공소(internalLab) 원청 우선 수락 창. 하청 전환 시 즉시 종료. */
 export const PRACTICE_TRANSFER_AUTO_MATCH_PRIORITY_MS = 30 * 60 * 1000;
@@ -184,6 +185,14 @@ export const isLabIdBlockedAsDirectPracticeTarget = (
   );
 };
 
+/** 원청이 어벗츠기공소(기공사업부)인지. 하청 전환은 이 원청만. */
+export const isAbutsPrimePracticeTransfer = (transfer) => {
+  const name = String(transfer?.targetLabName || "").trim();
+  if (name === ABUTS_LAB_DISPLAY_NAME) return true;
+  // 레거시 matchingMode=auto — 원청은 항상 어벗츠
+  return isAutoMatchMode(transfer);
+};
+
 /** 어벗츠 원청 팀원이 아직 하청을 안 연 지정 의뢰를 하청 풀로 열 수 있는지. */
 export const canOpenPracticeTransferSubcontract = (
   transfer,
@@ -193,6 +202,7 @@ export const canOpenPracticeTransferSubcontract = (
   const viewerId = String(viewerLabAnchorId || "").trim();
   const primeId = getPrimeLabAnchorId(transfer);
   if (!viewerId || !primeId || viewerId !== primeId) return false;
+  if (!isAbutsPrimePracticeTransfer(transfer)) return false;
   if (String(transfer?.status || "").trim() === "canceled") return false;
   if (getAssigneeLabAnchorId(transfer)) return false;
   if (isPracticeTransferSubcontracted(transfer)) return false;

@@ -22,6 +22,7 @@
 // - web/frontend/src/shared/practice/labReceiveCalendarDateKey.ts
 // - web/backend/utils/labReceiveCalendarDateKey.util.js
 // - web/backend/controllers/users/user.controller.js
+// - 2026-08-21: 하청 전환 버튼 — 어벗츠기공소(internalLab)만 노출.
 // - 2026-08-21: 어벗 STL 업로드 — relatedRequestIds 없으면 보정 재시도. 구강스캔 필수로 오인하는 토스트 제거.
 // - 2026-08-21: 캘린더 전환 후 상세 모달에 어벗·보철 업로드 CTA 복원.
 // - 2026-08-21: 커스텀어벗 배송현황을 상세·캘린더에 표시(치과 발신과 동일).
@@ -3041,10 +3042,13 @@ export function RequestorPracticeReceivePage({
   const markTransferOpenSubcontract = useCallback(
     async (transfer: ReceivedPracticeTransfer) => {
       if (!token) return false;
-      if (!transfer.autoMatch?.canOpenSubcontract) {
+      if (
+        String(user?.role || "").trim() !== "internalLab" ||
+        !transfer.autoMatch?.canOpenSubcontract
+      ) {
         toast({
           title: "하청 전환 불가",
-          description: "우선 수락 시간이 아니거나 이미 공개된 의뢰입니다.",
+          description: "어벗츠기공소만 하청으로 전환할 수 있습니다.",
           variant: "destructive",
         });
         return false;
@@ -3115,7 +3119,7 @@ export function RequestorPracticeReceivePage({
         return false;
       }
     },
-    [ACTION_UI_MIN_MS, applyAcceptedLocalPatch, loadFirstPage, toast, token],
+    [ACTION_UI_MIN_MS, applyAcceptedLocalPatch, loadFirstPage, toast, token, user?.role],
   );
 
   const resolveTransferChatRoom = useCallback(
@@ -4770,6 +4774,7 @@ export function RequestorPracticeReceivePage({
         }
         openSubcontractBusy={openSubcontractBusy}
         onOpenSubcontract={
+          String(user?.role || "").trim() === "internalLab" &&
           selectedTransfer?.autoMatch?.canOpenSubcontract
             ? () => void handleOpenSubcontract()
             : undefined

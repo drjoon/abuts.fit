@@ -145,9 +145,21 @@ describe("practiceTransferAutoMatch priority (core)", () => {
       matchingMode: "direct",
       status: "active",
       targetLabAnchorId: OID_A,
+      targetLabName: "어벗츠기공소",
     };
     expect(canOpenPracticeTransferSubcontract(direct, OID_A, now)).toBe(true);
     expect(canOpenPracticeTransferSubcontract(direct, OID_B, now)).toBe(false);
+  });
+
+  test("타 기공소 지정 의뢰는 하청 전환 불가", () => {
+    const otherLab = {
+      matchingMode: "direct",
+      status: "active",
+      targetLabAnchorId: OID_B,
+      targetLabName: "테스트기공소",
+    };
+    expect(canOpenPracticeTransferSubcontract(otherLab, OID_B, now)).toBe(false);
+    expect(canOpenPracticeTransferSubcontract(otherLab, OID_A, now)).toBe(false);
   });
 
   test("하청 풀을 연 뒤에는 원청이 다시 하청 전환할 수 없음", () => {
@@ -155,6 +167,7 @@ describe("practiceTransferAutoMatch priority (core)", () => {
       matchingMode: "direct",
       status: "active",
       targetLabAnchorId: OID_A,
+      targetLabName: "어벗츠기공소",
       autoMatch: {
         subcontractPoolOpen: true,
         eligibleLabAnchorIds: [OID_B],
