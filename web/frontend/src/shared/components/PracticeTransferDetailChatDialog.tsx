@@ -11,6 +11,7 @@
 // - web/frontend/src/shared/files/modelPreviewFile.ts
 // - web/frontend/src/shared/files/downloadWithProgress.ts
 // - web/frontend/src/shared/files/s3BlobCache.ts
+// - 2026-08-21: 수락 후 채팅 상단 바에 어벗·보철 업로드 CTA(acceptedWorkActions).
 // - 2026-08-20: 수락 바 작업기간 — 전송 시각 기준 12시 컷오프.
 // - 2026-08-16: 채팅 패널을 ChatComposer·위젯(compact) 패턴에 맞춤.
 // - 2026-08-16: 이미지 미리보기(다운로드 오버레이) + IndexedDB 캐시.
@@ -220,6 +221,11 @@ type PracticeTransferDetailChatDialogProps = {
   /** 수락 후 같은 자리의 작업취소 */
   releaseBusy?: boolean;
   onRelease?: () => void | Promise<void>;
+  /**
+   * 기공의뢰수신: 수락 후 어벗·보철 업로드 CTA.
+   * 캘린더 전환으로 카드 actionBar가 없어져 상세 모달 상단에 둔다.
+   */
+  acceptedWorkActions?: ReactNode;
   chatLoading: boolean;
   chatError: string;
   chatMessages: ChatMessage[];
@@ -310,6 +316,7 @@ export function PracticeTransferDetailChatDialog({
   releaseBusy = false,
   onRelease,
   remainingLabel = null,
+  acceptedWorkActions = null,
   chatLoading,
   chatError,
   chatMessages,
@@ -932,7 +939,8 @@ export function PracticeTransferDetailChatDialog({
                   <p className="text-xs text-muted-foreground">
                     수락된 의뢰입니다. 작업취소하면 수락이 해제됩니다.
                   </p>
-                  <div className="flex shrink-0 items-center gap-2 self-end sm:self-auto">
+                  <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 self-end sm:self-auto">
+                    {acceptedWorkActions}
                     <Button
                       type="button"
                       size="sm"
@@ -947,11 +955,26 @@ export function PracticeTransferDetailChatDialog({
               ) : null}
 
               {showReleaseBlockedBar ? (
-                <div className="shrink-0 border-b bg-muted/40 px-3 py-2">
+                <div className="shrink-0 border-b bg-muted/40 px-3 py-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <p className="text-xs text-muted-foreground">
                     어벗 가공이 시작되어 의뢰 수락을 취소할 수 없습니다. 제조사가
                     준비 단계일 때만 취소할 수 있습니다.
                   </p>
+                  {acceptedWorkActions ? (
+                    <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 self-end sm:self-auto">
+                      {acceptedWorkActions}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {!showReleaseBar &&
+              !showReleaseBlockedBar &&
+              accepted &&
+              !workCanceled &&
+              acceptedWorkActions ? (
+                <div className="shrink-0 border-b bg-muted/40 px-3 py-2 flex flex-wrap items-center justify-end gap-2">
+                  {acceptedWorkActions}
                 </div>
               ) : null}
 

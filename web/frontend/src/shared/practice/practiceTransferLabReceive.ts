@@ -1,8 +1,10 @@
 // related files:
 // - web/frontend/src/shared/components/practice/PracticeTransferLabReceiveCard.tsx
+// - web/frontend/src/shared/components/practice/PracticeLabReceiveWorkActionsBar.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/components/practice/LabReceiveWorkUploadDialog.tsx
 // change-log:
+// - 2026-08-21: resolvePracticeLabReceiveWorkActionState — 카드·상세 모달 CTA 판정 SSOT.
 // - 2026-08-16: prosthetic slots — 크라운은 연결 잔여여도 스팬 묶지 않음; 기대 라벨 헬퍼.
 // - 2026-08-16: prosthetic upload slots — 브리지 1파일·크라운/인레이 치아당 1파일·분할 업로드.
 // - 2026-08-16: expectedAbutmentDesigns / needsMoreAbutmentDesigns — 다치아 어벗 업로드 CTA.
@@ -508,4 +510,110 @@ export function formatPracticeTransferProstheticSlotLabels(
     : listPracticeTransferProstheticUploadSlots(transfer);
   if (slots.length === 0) return "";
   return slots.map((slot) => slot.label).join(", ");
+}
+
+/** 수락 후 어벗·보철 업로드 CTA 노출 판정(카드·상세 모달 공통) */
+export type PracticeLabReceiveWorkActionState = {
+  displayStatus: PracticeTransferLabReceiveDisplayStatus;
+  designFileCount: number;
+  hasCa: boolean;
+  needsMoreAbutmentDesigns: boolean;
+  hasPartialProsthetic: boolean;
+  pendingProstheticCount: number;
+  prostheticSlotLabels: string;
+  productionStarted: boolean;
+  /** 의뢰수락(또는 재오픈) — 업로드 CTA 활성 */
+  showWorkActions: boolean;
+  /** 연동 CA + (디자인 있음 | 스테이지 재오픈) */
+  showAbutmentProductionCancel: boolean;
+  /** 보철완료 후 — 업로드 비활성 + 헤더「작업 완료 취소」 */
+  showCompletedStageHeaderCancel: boolean;
+  /** 레거시: 디자인 업로드 후 기공소 확인 CTA */
+  showDesignConfirm: boolean;
+};
+
+export function resolvePracticeLabReceiveWorkActionState(
+  transfer: PracticeTransferLabReceiveItem | null | undefined,
+): PracticeLabReceiveWorkActionState {
+  const empty: PracticeLabReceiveWorkActionState = {
+    displayStatus: "의뢰",
+    designFileCount: 0,
+    hasCa: false,
+    needsMoreAbutmentDesigns: false,
+    hasPartialProsthetic: false,
+    pendingProstheticCount: 0,
+    prostheticSlotLabels: "",
+    productionStarted: false,
+    showWorkActions: false,
+    showAbutmentProductionCancel: false,
+    showCompletedStageHeaderCancel: false,
+    showDesignConfirm: false,
+  };
+  if (!transfer) return empty;
+
+  const displayStatus = getPracticeTransferLabReceiveDisplayStatus(transfer);
+  const resultCount = Number(
+    transfer.resultFileCount || transfer.resultFiles?.length || 0,
+  );
+  const designFileCount = countPracticeTransferDesignFiles(transfer);
+  const hasCa = practiceTransferHasCustomAbutment(transfer);
+  const needsMoreAbutmentDesigns =
+    practiceTransferNeedsMoreAbutmentDesigns(transfer);
+  const hasPartialProsthetic =
+    practiceTransferHasPartialProstheticUploads(transfer);
+  const pendingProstheticCount =
+    countPracticeTransferPendingProstheticFiles(transfer);
+  const prostheticSlotLabels = formatPracticeTransferProstheticSlotLabels(
+    transfer,
+    { pendingOnly: hasPartialProsthetic },
+  );
+  const isLabAccepted =
+    Boolean(transfer.isAccepted) ||
+    Boolean(transfer.isDownloaded) ||
+    Boolean(String(transfer.requestorDownloadedAt || "").trim()) ||
+    Boolean(String(transfer.requestorAcceptedAt || "").trim());
+  const productionStarted = practiceTransferAbutmentMachiningStarted(transfer);
+  const needsStageReopen =
+    hasCa &&
+    isLabAccepted &&
+    designFileCount === 0 &&
+    (resultCount > 0 ||
+      Boolean(transfer.production?.confirmedAt) ||
+      Boolean(transfer.autoMatch?.completed) ||
+      displayStatus === "생산진행" ||
+      displayStatus === "작업완료");
+  const showWorkActions =
+    displayStatus === "의뢰수락" ||
+    (isLabAccepted &&
+      !productionStarted &&
+      designFileCount === 0 &&
+      resultCount === 0 &&
+      !transfer.production?.confirmedAt &&
+      !transfer.autoMatch?.completed);
+  const showAbutmentProductionCancel =
+    hasCa &&
+    (designFileCount > 0 || needsStageReopen) &&
+    Array.isArray(transfer.production?.relatedRequestIds) &&
+    transfer.production.relatedRequestIds.length > 0;
+  const showCompletedStageHeaderCancel =
+    !showWorkActions && showAbutmentProductionCancel;
+  const showDesignConfirm =
+    hasCa &&
+    designFileCount > 0 &&
+    !transfer.production?.labDesignConfirmedAt;
+
+  return {
+    displayStatus,
+    designFileCount,
+    hasCa,
+    needsMoreAbutmentDesigns,
+    hasPartialProsthetic,
+    pendingProstheticCount,
+    prostheticSlotLabels,
+    productionStarted,
+    showWorkActions,
+    showAbutmentProductionCancel,
+    showCompletedStageHeaderCancel,
+    showDesignConfirm,
+  };
 }

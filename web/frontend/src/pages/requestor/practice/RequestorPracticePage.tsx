@@ -18,9 +18,11 @@
 // - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // - web/frontend/src/shared/components/practice/LabReceiveWorkUploadDialog.tsx
+// - web/frontend/src/shared/components/practice/PracticeLabReceiveWorkActionsBar.tsx
 // - web/frontend/src/shared/practice/labReceiveCalendarDateKey.ts
 // - web/backend/utils/labReceiveCalendarDateKey.util.js
 // - web/backend/controllers/users/user.controller.js
+// - 2026-08-21: 캘린더 전환 후 상세 모달에 어벗·보철 업로드 CTA 복원.
 // - 2026-08-21: 커스텀어벗 배송현황을 상세·캘린더에 표시(치과 발신과 동일).
 // - 2026-08-20: 기공의뢰수신 캘린더 날짜 뱃지 기본=치과도착일. 계정 preferences에 저장.
 // - 2026-08-19: 리메이크는 공정 상태색 + 이중 외곽선.
@@ -153,7 +155,6 @@ import {
   type PracticeTransferDialogFileItem,
   type PracticeTransferDialogSummaryItem,
 } from "@/shared/components/PracticeTransferDetailChatDialog";
-import { openPracticeTransferFilePicker } from "@/shared/components/practice/PracticeTransferFileDropTarget";
 import { LabPracticeFeeSurchargeControl } from "@/shared/components/practice/LabPracticeFeeSurchargeControl";
 import { parsePracticeTransferFeeQuote } from "@/shared/practice/practiceTransferFeeQuote";
 import { normalizeLabFeeMultiplier, formatLabFeeMultiplierLabel, missingLabFeeItemNames, labFeeItemNamesNeededForToothWorks } from "@/shared/practice/labFeeSchedule";
@@ -189,10 +190,19 @@ import {
   practiceTransferHasCustomAbutment,
   practiceTransferLabReceiveUnreadBadgeCount,
   practiceTransferNeedsMoreAbutmentDesigns,
+  resolvePracticeLabReceiveWorkActionState,
   type PracticeTransferLabReceiveFile as ReceivedPracticeFile,
   type PracticeTransferLabReceiveItem as ReceivedPracticeTransfer,
 } from "@/shared/practice/practiceTransferLabReceive";
-import { getPracticeTransferFileExtension } from "@/shared/practice/practiceTransferAccept";
+import {
+  filterPracticeTransferFiles,
+  getPracticeTransferFileExtension,
+  PRACTICE_TRANSFER_ACCEPT,
+} from "@/shared/practice/practiceTransferAccept";
+import { PracticeLabReceiveWorkActionsBar } from "@/shared/components/practice/PracticeLabReceiveWorkActionsBar";
+import {
+  pickPracticeTransferFilesViaInput,
+} from "@/shared/components/practice/PracticeTransferFileDropTarget";
 import {
   resolvePracticeTransferListPatientName,
   resolvePracticeTransferListToothNumbers,
@@ -3260,34 +3270,17 @@ export function RequestorPracticeReceivePage({
   }, [acceptBusy, markTransferRelease, rejectBusy, releaseBusy, selectedTransfer]);
 
   const pickDesignAbutmentFiles = useCallback((): Promise<File[]> => {
-    return new Promise((resolve) => {
-      const input = document.createElement("input");
-      input.type = "file";
-      input.accept = ".stl,model/stl,application/sla";
-      input.multiple = true;
-      input.style.display = "none";
-      let settled = false;
-      const finish = (files: File[]) => {
-        if (settled) return;
-        settled = true;
-        window.removeEventListener("focus", onWindowFocus);
-        input.removeEventListener("change", onChange);
-        input.remove();
-        resolve(files);
-      };
-      const onChange = () => {
-        finish(Array.from(input.files || []));
-      };
-      const onWindowFocus = () => {
-        window.setTimeout(() => {
-          if (!settled) finish(Array.from(input.files || []));
-        }, 400);
-      };
-      input.addEventListener("change", onChange);
-      window.addEventListener("focus", onWindowFocus);
-      document.body.appendChild(input);
-      input.click();
+    return pickPracticeTransferFilesViaInput({
+      accept: ".stl,model/stl,application/sla",
+      multiple: true,
     });
+  }, []);
+
+  const pickProstheticResultFiles = useCallback((): Promise<File[]> => {
+    return pickPracticeTransferFilesViaInput({
+      accept: PRACTICE_TRANSFER_ACCEPT,
+      multiple: true,
+    }).then((files) => filterPracticeTransferFiles(files));
   }, []);
 
   const clearDesignConfirmState = useCallback(() => {
@@ -4136,14 +4129,16 @@ export function RequestorPracticeReceivePage({
   );
 
   const handleCardComplete = useCallback(
-    (transfer: ReceivedPracticeTransfer, event: MouseEvent) => {
+    async (transfer: ReceivedPracticeTransfer, event: MouseEvent) => {
       event.preventDefault();
       event.stopPropagation();
       const id = String(transfer.transferId || transfer._id || "").trim();
       if (!id || cardActionBusyId) return;
-      openPracticeTransferFilePicker(`practice-complete-${id}`);
+      const files = await pickProstheticResultFiles();
+      if (!files.length) return;
+      beginCompleteWithFiles(transfer, files);
     },
-    [cardActionBusyId],
+    [beginCompleteWithFiles, cardActionBusyId, pickProstheticResultFiles],
   );
 
   const handleCardDropFiles = useCallback(
@@ -4819,6 +4814,66 @@ export function RequestorPracticeReceivePage({
         orderedAt={selectedTransfer?.createdAt || null}
         releaseBusy={releaseBusy}
         onRelease={() => void handleReleaseTransfer()}
+        acceptedWorkActions={(() => {
+          if (!selectedTransfer) return null;
+          const workState =
+            resolvePracticeLabReceiveWorkActionState(selectedTransfer);
+          if (
+            !workState.showWorkActions &&
+            !workState.showCompletedStageHeaderCancel
+          ) {
+            return null;
+          }
+          const transferKey = String(
+            selectedTransfer.transferId || selectedTransfer._id || "",
+          );
+          const rowBusy = cardActionBusyId === transferKey || workUploadBusy;
+          return (
+            <>
+              <PracticeLabReceiveWorkActionsBar
+                transfer={selectedTransfer}
+                busy={rowBusy}
+                designConfirmBusy={designConfirmBusyId === transferKey}
+                showProductionCancelInBar
+                onDesignUpload={(event) =>
+                  void handleCardDesignUpload(selectedTransfer, event)
+                }
+                onAbutmentProductionCancel={(event) =>
+                  void handleCardAbutmentProductionCancel(
+                    selectedTransfer,
+                    event,
+                  )
+                }
+                onComplete={(event) =>
+                  void handleCardComplete(selectedTransfer, event)
+                }
+                onDesignConfirm={() => {
+                  void confirmAbutmentDesign(selectedTransfer);
+                }}
+              />
+              {workState.showCompletedStageHeaderCancel &&
+              !workState.productionStarted ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={cardActionBusyId === transferKey}
+                  className="h-8"
+                  onClick={(event) =>
+                    void handleCardAbutmentProductionCancel(
+                      selectedTransfer,
+                      event,
+                    )
+                  }
+                >
+                  {cardActionBusyId === transferKey
+                    ? "처리 중..."
+                    : "작업 완료 취소"}
+                </Button>
+              ) : null}
+            </>
+          );
+        })()}
         chatLoading={chatLoading}
         chatError={String(chatError || "")}
         chatMessages={displayChatMessages}

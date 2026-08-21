@@ -5,6 +5,7 @@
 // - web/frontend/src/features/requests/components/PageFileDropZone.tsx
 // - web/frontend/src/shared/files/extractDroppedFiles.ts
 // - web/frontend/src/shared/practice/practiceTransferAccept.ts
+// - 2026-08-21: pickPracticeTransferFilesViaInput — 상세 모달(카드 없는 경로) 파일 선택.
 // - 2026-08-17: 파일창 오픈 — button+Tooltip+input.click 제거, label/htmlFor + sr-only input.
 import {
   useRef,
@@ -219,3 +220,40 @@ export const openPracticeTransferFilePicker = (fileInputId: string) => {
   const input = document.getElementById(fileInputId) as HTMLInputElement | null;
   input?.click();
 };
+
+/** 카드 DOM input 없이 OS 파일창(상세 모달·캘린더 경로) */
+export function pickPracticeTransferFilesViaInput(opts?: {
+  accept?: string;
+  multiple?: boolean;
+}): Promise<File[]> {
+  const accept = opts?.accept ?? PRACTICE_TRANSFER_ACCEPT;
+  const multiple = opts?.multiple !== false;
+  return new Promise((resolve) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = accept;
+    input.multiple = multiple;
+    input.style.display = "none";
+    let settled = false;
+    const finish = (files: File[]) => {
+      if (settled) return;
+      settled = true;
+      window.removeEventListener("focus", onWindowFocus);
+      input.removeEventListener("change", onChange);
+      input.remove();
+      resolve(files);
+    };
+    const onChange = () => {
+      finish(Array.from(input.files || []));
+    };
+    const onWindowFocus = () => {
+      window.setTimeout(() => {
+        if (!settled) finish(Array.from(input.files || []));
+      }, 400);
+    };
+    input.addEventListener("change", onChange);
+    window.addEventListener("focus", onWindowFocus);
+    document.body.appendChild(input);
+    input.click();
+  });
+}

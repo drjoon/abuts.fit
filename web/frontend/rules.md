@@ -602,13 +602,13 @@ Notes:
   - 치과 전송 내역(`GET /api/practice/transfers/my`)은 동일 치과 businessAnchor 구성원 전송을 공유한다.
   - 수락 전(의뢰 단계) 내용 수정: 최근의뢰 연필(카드 헤더)·상세 좌측 의뢰정보 「의뢰 수정」→ 작성 폼 복원 → `POST .../update-content`. 수락 이후는 삭제와 같이 잠금. 수정 저장은 임시저장 목록 재조회를 기다리지 않음. 최근의뢰·임시저장·휴지통 카드 메타는 1행 1항목(세로 스택, 잘림 없음).
   - practice 페이지 상태 정규화 기준: `src/pages/practice/PracticeFileTransferPage.tsx`의 `toStatusLabel`
-  - 의뢰자 치과 페이지 상태 배지 기준: `src/pages/requestor/practice/RequestorPracticePage.tsx` (`isRead/requestorReadAt`, `isAccepted`/`requestorDownloadedAt`=의뢰수락). 기공의뢰수신 목록은 치과 최근의뢰와 같은 3주 캘린더(`PracticeRecentTransfersCalendar`, 칩=`치과/환자/치아`, 색=상단 뱃지 상태. 리메이크는 공정색+이중선. 치과 최근의뢰는 기공소 그룹색).
+  - 의뢰자 치과 페이지 상태 배지 기준: `src/pages/requestor/practice/RequestorPracticePage.tsx` (`isRead/requestorReadAt`, `isAccepted`/`requestorDownloadedAt`=의뢰수락). 기공의뢰수신 목록은 치과 최근의뢰와 같은 3주 캘린더(`PracticeRecentTransfersCalendar`, 칩=`치과/환자/치아`, 색=상단 뱃지 상태. 리메이크는 공정색+이중선. 치과 최근의뢰는 기공소 그룹색). 수락 후 어벗·보철 업로드 CTA는 상세 모달 채팅 상단 바(`PracticeLabReceiveWorkActionsBar`).
     - 자동매칭 공개 풀 상세 열람만으로는 `mark-read`/사이드바 안읽음 배지를 내리지 않는다(수락 시 갱신).
-  - 기공소 의뢰수락: 상세 다이얼로그 왼쪽 「전체 다운로드」, 오른쪽 「치과와의 소통」 중앙에 안내 문구+「수락」→ `POST .../mark-accepted`(과금). 파일 다운로드는 뱃지/과금과 무관. 작업완료/취소는 모달이 아니라 메인 카드에서. 수락 시 `practice:transfer-updated`(action=`accepted`, `feeQuote` 확정)로 치과 UI가「확정 기공비」를 즉시 표시.
+  - 기공소 의뢰수락: 상세 다이얼로그 왼쪽 「전체 다운로드」, 오른쪽 「치과와의 소통」 상단에 안내 문구+「수락」→ `POST .../mark-accepted`(과금). 파일 다운로드는 뱃지/과금과 무관. 수락 후 같은 자리에 `[어벗 업로드]`·`[보철 업로드 & 작업완료]`·`[작업취소]`. 수락 시 `practice:transfer-updated`(action=`accepted`, `feeQuote` 확정)로 치과 UI가「확정 기공비」를 즉시 표시.
   - **자동매칭(레거시)**: 치과 기공소 픽커의 「자동 매칭」항목은 제거. 신규 의뢰는 지정 기공소 또는 어벗츠기공소(고정). 기존 `matchingMode=auto` 건·공개 풀·우선창 엔진은 유지하되, 작성 UI에서는 쓰지 않는다. 레거시 draft는 어벗츠기공소로 복원. 표시명 마스킹·수신 뱃지 합산 규칙은 기존 건에 적용. UI: `PracticeTransferAutoMatchTab` (관리자 플랫폼 설정「인증 기공소」)
   - 의뢰상세·채팅 우측 상단 평가: 치과=`PracticeLabRatingControl`(1~5점만, 수행 기공소·하청 포함, 기공비 할인/할증 없음). 하청 시 치과 표시는 원청명 + 「인증 협력 기공소에서 처리」(실명 비공개). 기공소=`LabPracticeFeeSurchargeControl` variant=`evaluate`(별점 없음, 해당 치과 수가 할증·다음 지정 의뢰부터). 설정 탭 거래처 할증은 동일 컴포넌트 variant=`surcharge`.
   - 치과 작성 폼: 기공소 픽커 옆 **별점 하한·상한**(기본 3~4). 구간 밖 기공소(어벗츠 포함)는 픽커·생성·재지정에서 제외. 하청 풀도 동일 구간.
-  - 기공소 수신 카드(상태=의뢰수락): 카드 점선 외곽 + 카드 스코프 `PracticeTransferFileDropTarget`(로컬드롭) · `[UploadCloud 작업완료]`(크라운 결과파일)·`[작업취소]`. **커스텀어벗 배송선택 모달 없음.** CA면 수락 시 Request(`design_custom_abutment`) 조기 생성. **수락 기공소가 디자인**해 상단 디자인 큐에서 STL 업로드 → 제조 자동 주문·어벗디자인비 지급. **생산 후 치과 직납**(출고 목표=치과도착일−2영업일). 레거시 미컨펌 건만 「어벗 디자인 확인」 CTA.
+  - 기공소 수신(상태=의뢰수락): 상세 모달 상단 업로드 CTA. **커스텀어벗 배송선택 모달 없음.** CA면 수락 시 Request(`design_custom_abutment`) 조기 생성. **수락 기공소가 디자인**해 상단 디자인 큐에서 STL 업로드 → 제조 자동 주문·어벗디자인비 지급. **생산 후 치과 직납**(출고 목표=치과도착일−2영업일). 레거시 미컨펌 건만 「어벗 디자인 확인」 CTA.
 
 
 - 드롭존 가입(치과 전용, requestor+practice)

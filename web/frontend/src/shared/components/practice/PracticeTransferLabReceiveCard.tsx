@@ -2,8 +2,10 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/pages/internalLab/labWork/LabWorkPage.tsx
 // - web/frontend/src/shared/practice/practiceTransferLabReceive.ts
+// - web/frontend/src/shared/components/practice/PracticeLabReceiveWorkActionsBar.tsx
 // - web/frontend/src/shared/components/practice/PracticeRecentTransferListCardDetail.tsx
 // change-log:
+// - 2026-08-21: 업로드 CTA → PracticeLabReceiveWorkActionsBar(상세 모달과 공유).
 // - 2026-08-17: 미확인 의뢰(!isRead)도 채팅 unread와 합산해 헤더 빨간 배지 표시(사이드바 배지와 정합).
 // - 2026-08-16: 의뢰 수락 취소·작업 완료 취소 → 카드 헤더 우측.
 // - 2026-08-16: 부분 보철「보철 추가 업로드 (n)」·기대 슬롯 툴팁.
@@ -26,7 +28,6 @@
 // - 2026-08-15: 업로드 완료 안내 박스(어벗생산 취소 문구) 제거.
 // - 2026-08-15: 기공의뢰수신 카드 SSOT — 어벗츠기공소·일반 lab 동일 색·스타일·문구.
 import type { KeyboardEvent, MouseEvent } from "react";
-import { UploadCloud, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -42,6 +43,7 @@ import {
 import { isPracticeTransferAcceptOverdue } from "@/shared/practice/practiceAcceptOverdue";
 import { PRACTICE_ACCEPTED_HINT } from "@/shared/practice/practiceTransferAccept";
 import { PracticeAcceptOverdueBadge } from "@/shared/components/practice/PracticeAcceptOverdueBadge";
+import { PracticeLabReceiveWorkActionsBar } from "@/shared/components/practice/PracticeLabReceiveWorkActionsBar";
 import { PracticeTransferFeeEstimate } from "@/shared/components/practice/PracticeTransferFeeEstimate";
 import {
   PracticeTransferFileDropTarget,
@@ -52,15 +54,8 @@ import {
   resolvePracticeTransferListToothNumbers,
 } from "@/shared/components/practice/PracticeRecentTransferListCardDetail";
 import {
-  countPracticeTransferDesignFiles,
-  countPracticeTransferPendingProstheticFiles,
-  formatPracticeTransferProstheticSlotLabels,
-  getPracticeTransferLabReceiveDisplayStatus,
-  practiceTransferAbutmentMachiningStarted,
   practiceTransferLabReceiveUnreadBadgeCount,
-  practiceTransferHasCustomAbutment,
-  practiceTransferHasPartialProstheticUploads,
-  practiceTransferNeedsMoreAbutmentDesigns,
+  resolvePracticeLabReceiveWorkActionState,
   type PracticeTransferLabReceiveItem,
 } from "@/shared/practice/practiceTransferLabReceive";
 
@@ -118,65 +113,22 @@ export function PracticeTransferLabReceiveCard({
   onDesignConfirm,
   onDropFiles,
 }: PracticeTransferLabReceiveCardProps) {
-  const displayStatus = getPracticeTransferLabReceiveDisplayStatus(transfer);
-  const statusLabel = toStatusBadgeLabel(displayStatus);
+  const workState = resolvePracticeLabReceiveWorkActionState(transfer);
+  const statusLabel = toStatusBadgeLabel(workState.displayStatus);
   const cardId = String(transfer.transferId || transfer._id || "").trim();
   const unreadBadgeCount = practiceTransferLabReceiveUnreadBadgeCount(
     transfer,
     chatUnreadCount,
   );
-  const resultCount = Number(
-    transfer.resultFileCount || transfer.resultFiles?.length || 0,
-  );
-  const designFileCount = countPracticeTransferDesignFiles(transfer);
-  const hasCa = practiceTransferHasCustomAbutment(transfer);
-  const needsMoreAbutmentDesigns =
-    practiceTransferNeedsMoreAbutmentDesigns(transfer);
-  const hasPartialProsthetic =
-    practiceTransferHasPartialProstheticUploads(transfer);
-  const pendingProstheticCount =
-    countPracticeTransferPendingProstheticFiles(transfer);
-  const prostheticSlotLabels = formatPracticeTransferProstheticSlotLabels(
-    transfer,
-    { pendingOnly: hasPartialProsthetic },
-  );
-  const isLabAccepted =
-    Boolean(transfer.isAccepted) ||
-    Boolean(transfer.isDownloaded) ||
-    Boolean(String(transfer.requestorDownloadedAt || "").trim()) ||
-    Boolean(String(transfer.requestorAcceptedAt || "").trim());
-  const productionStarted = practiceTransferAbutmentMachiningStarted(transfer);
-  /** 디자인만 지워지고 작업완료/생산진행 플래그가 남은 재작업 가능 상태 */
-  const needsStageReopen =
-    hasCa &&
-    isLabAccepted &&
-    designFileCount === 0 &&
-    (resultCount > 0 ||
-      Boolean(transfer.production?.confirmedAt) ||
-      Boolean(transfer.autoMatch?.completed) ||
-      displayStatus === "생산진행" ||
-      displayStatus === "작업완료");
-  /** 의뢰수락이거나, 재오픈 직후(디자인·결과 없음)면 업로드 CTA */
-  const showWorkActions =
-    displayStatus === "의뢰수락" ||
-    (isLabAccepted &&
-      !productionStarted &&
-      designFileCount === 0 &&
-      resultCount === 0 &&
-      !transfer.production?.confirmedAt &&
-      !transfer.autoMatch?.completed);
-  /** 연동 CA가 있고(디자인 있음 | 스테이지 재오픈) — 가공 중이어도 CTA는 노출 */
-  const showAbutmentProductionCancel =
-    hasCa &&
-    (designFileCount > 0 || needsStageReopen) &&
-    Array.isArray(transfer.production?.relatedRequestIds) &&
-    transfer.production.relatedRequestIds.length > 0;
-  /** 보철완료 후 헤더「작업 완료 취소」(업로드 CTA는 비활성으로 하단 유지) */
-  const showCompletedStageHeaderCancel =
-    !showWorkActions && showAbutmentProductionCancel;
+  const {
+    productionStarted,
+    showWorkActions,
+    showAbutmentProductionCancel,
+    showCompletedStageHeaderCancel,
+  } = workState;
   const completeInputId = `practice-complete-${cardId}`;
   const acceptOverdue = isPracticeTransferAcceptOverdue({
-    status: displayStatus,
+    status: workState.displayStatus,
     orderDate: transfer.orderDate,
     createdAt: transfer.createdAt,
   });
@@ -187,53 +139,6 @@ export function PracticeTransferLabReceiveCard({
       onOpen();
     }
   };
-
-  /** 수락 중(업로드 가능): 어벗디자인 있으면「어벗 생산 취소」(가공 중이면 비활성 유지) */
-  const productionCancelButton =
-    showAbutmentProductionCancel && showWorkActions ? (
-      productionStarted ? (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span className="inline-flex">
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                disabled
-                className="h-8 focus-visible:ring-0 focus-visible:ring-offset-0"
-              >
-                <X className="h-3.5 w-3.5" />
-                어벗 생산 취소
-              </Button>
-            </span>
-          </TooltipTrigger>
-          <TooltipContent side="top" className="max-w-xs text-xs">
-            어벗 가공이 시작된 뒤에는 생산을 취소할 수 없습니다. 제조사가 준비
-            단계일 때만 가능합니다.
-          </TooltipContent>
-        </Tooltip>
-      ) : (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              disabled={cardBusy}
-              className="h-8 focus-visible:ring-0 focus-visible:ring-offset-0"
-              onClick={(event) => void onAbutmentProductionCancel(event)}
-            >
-              <X className="h-3.5 w-3.5" />
-              {cardBusy ? "처리 중..." : "어벗 생산 취소"}
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="top" className="max-w-xs text-xs">
-            제조사가 준비 단계일 때만 생산을 취소할 수 있습니다. 가공이 시작되면
-            변경할 수 없습니다.
-          </TooltipContent>
-        </Tooltip>
-      )
-    ) : null;
 
   /** 헤더 우측 — 수락중「의뢰 수락 취소」/ 완료후「작업 완료 취소」/ 우선창「하청 전환」 */
   const headerCancelButton = transfer.autoMatch?.canOpenSubcontract &&
@@ -327,31 +232,6 @@ export function PracticeTransferLabReceiveCard({
     )
   ) : null;
 
-  /** 보철 완료·발송 단계: 업로드 2개만 비활성(취소는 헤더) */
-  const completedStageDisabledUploads = showCompletedStageHeaderCancel ? (
-    <div className="flex flex-wrap items-center gap-1.5">
-      <Button
-        type="button"
-        size="sm"
-        disabled
-        className="h-8 focus-visible:ring-0 focus-visible:ring-offset-0"
-      >
-        <UploadCloud className="h-3.5 w-3.5" />
-        어벗 업로드
-      </Button>
-      <Button
-        type="button"
-        size="sm"
-        variant="secondary"
-        disabled
-        className="h-8 focus-visible:ring-0 focus-visible:ring-offset-0"
-      >
-        <UploadCloud className="h-3.5 w-3.5" />
-        보철 업로드 & 작업완료
-      </Button>
-    </div>
-  ) : null;
-
   const clinicLabel =
     transfer.matchingMode === "auto"
       ? "자동 매칭"
@@ -359,109 +239,6 @@ export function PracticeTransferLabReceiveCard({
         ? String(transfer.practice.businessName || "").trim() || "비공개"
         : String(transfer.practice.businessName || "").trim() || "-";
   const patientName = resolvePracticeTransferListPatientName(transfer);
-  const prostheticButtonLabel = hasPartialProsthetic
-    ? `보철 추가 업로드 (${pendingProstheticCount})`
-    : "보철 업로드 & 작업완료";
-
-  const actionBar =
-    showWorkActions || completedStageDisabledUploads ? (
-      <div className="mt-3 border-t border-slate-100 pt-3">
-        {showWorkActions ? (
-          <div className="flex flex-wrap items-center gap-1.5">
-            {hasCa &&
-            designFileCount > 0 &&
-            !transfer.production?.labDesignConfirmedAt ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                disabled={designConfirmBusy}
-                className="h-8"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onDesignConfirm();
-                }}
-              >
-                {designConfirmBusy ? "확인 중..." : "어벗 디자인 확인"}
-              </Button>
-            ) : null}
-            {hasCa && needsMoreAbutmentDesigns ? (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    size="sm"
-                    disabled={cardBusy}
-                    className="h-8 focus-visible:ring-0 focus-visible:ring-offset-0"
-                    onClick={(event) => void onDesignUpload(event)}
-                  >
-                    <UploadCloud className="h-3.5 w-3.5" />
-                    {cardBusy
-                      ? "처리 중..."
-                      : designFileCount > 0
-                        ? `어벗 추가 업로드 (${designFileCount})`
-                        : "어벗 업로드"}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="max-w-xs text-xs">
-                  완성 어벗 STL을 올립니다. 파일명에 치아가 없어도 프리뷰에서
-                  직접 지정할 수 있습니다. 치아 수만큼 올리거나, 일부만 분할
-                  업로드할 수 있습니다.
-                </TooltipContent>
-              </Tooltip>
-            ) : null}
-            {productionCancelButton}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                {needsMoreAbutmentDesigns ? (
-                  <span className="inline-flex">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="secondary"
-                      disabled
-                      className="h-8 focus-visible:ring-0 focus-visible:ring-offset-0"
-                    >
-                      <UploadCloud className="h-3.5 w-3.5" />
-                      {prostheticButtonLabel}
-                    </Button>
-                  </span>
-                ) : (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="default"
-                    disabled={cardBusy}
-                    className="h-8 focus-visible:ring-0 focus-visible:ring-offset-0"
-                    onClick={(event) => onComplete(event)}
-                  >
-                    <UploadCloud className="h-3.5 w-3.5" />
-                    {cardBusy ? "처리 중..." : prostheticButtonLabel}
-                  </Button>
-                )}
-              </TooltipTrigger>
-              <TooltipContent side="top" className="max-w-xs text-xs">
-                {needsMoreAbutmentDesigns
-                  ? "어벗디자인을 먼저 업로드한 뒤 보철 파일을 올릴 수 있습니다."
-                  : hasPartialProsthetic
-                    ? `남은 보철 ${pendingProstheticCount}개${
-                        prostheticSlotLabels ? ` (${prostheticSlotLabels})` : ""
-                      }를 이어서 올립니다.`
-                    : prostheticSlotLabels
-                      ? `이 의뢰 보철 ${pendingProstheticCount}개: ${prostheticSlotLabels}. 브리지는 스팬당 1개, 크라운·인레이는 치아당 1개입니다.${
-                          PRACTICE_ACCEPTED_HINT ? ` ${PRACTICE_ACCEPTED_HINT}` : ""
-                        }`
-                      : `브리지는 스팬당 1개, 크라운·인레이는 치아당 1개로 올려 작업완료합니다.${
-                          PRACTICE_ACCEPTED_HINT ? ` ${PRACTICE_ACCEPTED_HINT}` : ""
-                        }`}
-              </TooltipContent>
-            </Tooltip>
-          </div>
-        ) : (
-          completedStageDisabledUploads
-        )}
-      </div>
-    ) : null;
 
   const body = (
     <>
@@ -523,7 +300,22 @@ export function PracticeTransferLabReceiveCard({
         }
       />
 
-      {actionBar}
+      {showWorkActions || showCompletedStageHeaderCancel ? (
+        <div className="mt-3 border-t border-slate-100 pt-3">
+          <PracticeLabReceiveWorkActionsBar
+            transfer={transfer}
+            busy={cardBusy}
+            designConfirmBusy={designConfirmBusy}
+            showProductionCancelInBar={
+              Boolean(showAbutmentProductionCancel && showWorkActions)
+            }
+            onDesignUpload={onDesignUpload}
+            onAbutmentProductionCancel={onAbutmentProductionCancel}
+            onComplete={onComplete}
+            onDesignConfirm={onDesignConfirm}
+          />
+        </div>
+      ) : null}
     </>
   );
 
