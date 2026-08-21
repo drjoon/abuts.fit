@@ -4,8 +4,9 @@
 // - web/frontend/src/shared/practice/transferMemo.ts
 // - web/frontend/src/shared/practice/roundBarAbutment.ts
 // change-log:
+// - 2026-08-21: 프리셋 추가는 목록 sticky 하단(스크롤 시에만 고정). 스캔바디와 독립.
 // - 2026-08-21: 프리셋 라벨 2줄(제조사·브랜드 / 패밀리·타입). 추가요청 메모는 제조사만+요청중.
-// - 2026-08-21: presets 추가=인라인 CNC 드롭다운. 없으면 제조사 추가 요청(메모 1줄).
+// - 2026-08-21: presets 추가=인라인 CNC 드롭다운. 없으면 임플란트 추가 요청(메모 1줄).
 // - 2026-08-21: presets 모드에서 목록을 더 길게, 추가 버튼·수정·삭제 관리 UI 노출.
 // - 2026-08-14: 추가한 패밀리는 select 항목 옆 X로 삭제.
 // - 2026-08-14: 패밀리 선택 Regular/Mini/Narrow/Small Narrow 고정 + 패밀리 추가.
@@ -13,7 +14,7 @@
 // - 2026-08-14: 도입된 프리셋 스펙을 제조사·브랜드·패밀리·타입 선택에 합친다.
 // - 2026-08-14: 환봉 도입 배지 라벨을 「환봉」으로 표시.
 // - 2026-08-14: 도입 배지에 CNC/환봉 종류 표시.
-// - 2026-08-14: 제조사 선택 마지막에 제조사 추가 요청(환봉 헥스 사이즈 미정) + 안내 모달.
+// - 2026-08-14: 제조사 선택 마지막에 임플란트 추가 요청(환봉 헥스 사이즈 미정) + 안내 모달.
 import { useMemo, useState } from "react";
 import { Check, Pencil, Plus, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -1246,7 +1247,7 @@ export const PracticeToothImplantFields = ({
                       value={MANUFACTURER_ADD_REQUEST_VALUE}
                       className="text-sm font-semibold text-primary-strong"
                     >
-                      제조사 추가 요청
+                      임플란트 추가 요청
                     </SelectItem>
                   </>
                 ) : null}
@@ -1305,7 +1306,7 @@ export const PracticeToothImplantFields = ({
                         value={MANUFACTURER_ADD_REQUEST_VALUE}
                         className="text-sm font-semibold text-primary-strong"
                       >
-                        제조사 추가 요청
+                        임플란트 추가 요청
                       </SelectItem>
                     </>
                   ) : null}
@@ -1503,9 +1504,14 @@ export const PracticeToothImplantFields = ({
             저장된 프리셋이 없습니다
           </p>
         ) : (
-          <>
-            <div className={`min-h-0 ${listClass}`}>
-              {favorites.map((fav) => {
+          <div
+            className={cn(
+              "min-h-0",
+              mode === "presets" || stretchList ? "flex-1" : null,
+              listClass,
+            )}
+          >
+            {favorites.map((fav) => {
                 const isEditing = canManagePresets && editingFavoriteId === fav.id;
                 const isActive = favoriteKey(fav) === currentFavoriteKey;
                 if (isEditing) {
@@ -1563,7 +1569,7 @@ export const PracticeToothImplantFields = ({
                                     value={MANUFACTURER_ADD_REQUEST_VALUE}
                                     className="text-sm font-semibold text-primary-strong"
                                   >
-                                    제조사 추가 요청
+                                    임플란트 추가 요청
                                   </SelectItem>
                                 </>
                               ) : null}
@@ -1628,7 +1634,7 @@ export const PracticeToothImplantFields = ({
                                       value={MANUFACTURER_ADD_REQUEST_VALUE}
                                       className="text-sm font-semibold text-primary-strong"
                                     >
-                                      제조사 추가 요청
+                                      임플란트 추가 요청
                                     </SelectItem>
                                   </>
                                 ) : null}
@@ -1864,10 +1870,13 @@ export const PracticeToothImplantFields = ({
                   </div>
                 );
               })}
-              {renderAddPresetForm()}
-              {renderAddPresetButton()}
-            </div>
-          </>
+            {canManagePresets ? (
+              <div className="sticky bottom-0 z-[1] space-y-1.5 bg-primary-soft pt-1.5">
+                {renderAddPresetForm()}
+                {renderAddPresetButton()}
+              </div>
+            ) : null}
+          </div>
         )}
       </div>
     );
@@ -2063,7 +2072,7 @@ export const PracticeToothImplantFields = ({
                       value={MANUFACTURER_ADD_REQUEST_VALUE}
                       className="text-sm font-semibold text-primary-strong"
                     >
-                      제조사 추가 요청
+                      임플란트 추가 요청
                     </SelectItem>
                   </>
                 ) : null}

@@ -14,7 +14,7 @@ import type { PracticeImplantFavorite } from "@/shared/practice/transferMemo";
 
 export const ROUND_BAR_HEX_TYPE = "헥스(사이즈 미정)";
 export const MANUFACTURER_ADD_REQUEST_VALUE = "__add_manufacturer_request__";
-/** 제조사 추가 요청(메모 1줄) 저장 시 brand/family 자리표시 */
+/** 임플란트 추가 요청(메모 1줄) 저장 시 brand/family 자리표시 */
 export const MANUFACTURER_ADD_REQUEST_BRAND = "추가요청";
 export const MANUFACTURER_ADD_REQUEST_FAMILY = "미정";
 export const ROUND_BAR_REQUEST_UPDATED_EVENT = "practice:round-bar-request-updated";
@@ -67,7 +67,7 @@ export type RoundBarRequestPayload = {
 export const isRoundBarFavorite = (row: Partial<PracticeImplantFavorite> | null | undefined) =>
   Boolean(row?.roundBar) || Boolean(String(row?.roundBarRequestId || "").trim());
 
-/** 메모만 넣은 제조사 추가 요청(표시는 manufacturer만) */
+/** 메모만 넣은 임플란트 추가 요청(표시는 manufacturer만) */
 export const isManufacturerAddRequestFavorite = (
   row: Partial<PracticeImplantFavorite> | null | undefined,
 ) =>
@@ -92,7 +92,7 @@ export const implantFavoriteLabelParts = (row: {
 }): ImplantFavoriteLabelParts => {
   const manufacturer = String(row?.manufacturer || "").trim();
   if (isManufacturerAddRequestFavorite(row)) {
-    return { line1: manufacturer || "제조사 추가 요청", line2: "", memoOnly: true };
+    return { line1: manufacturer || "임플란트 추가 요청", line2: "", memoOnly: true };
   }
   const brand = String(row?.brand || "").trim();
   const family = String(row?.family || "").trim();
@@ -190,7 +190,7 @@ export async function submitRoundBarManufacturerRequest(params: {
     skipCache: true,
   });
   if (!res.ok) {
-    throw new Error(res.data?.message || "제조사 추가 요청에 실패했습니다.");
+    throw new Error(res.data?.message || "임플란트 추가 요청에 실패했습니다.");
   }
   return res.data?.data || {};
 }

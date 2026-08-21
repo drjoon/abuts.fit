@@ -6,6 +6,7 @@
 // - web/frontend/src/shared/practice/roundBarAbutment.ts
 // - web/frontend/src/shared/components/practice/PracticeToothImplantFields.tsx
 // change-log:
+// - 2026-08-21: hydrate는 기존 프리셋 도입상태만 동기화. 삭제된 도입 프리셋을 다시 넣지 않음(관리자 도입은 upsertFavoriteOnAnchor).
 // - 2026-08-14: 도입된 요청이 치과 프리셋에 없으면 hydrate가 추가한다.
 // - 2026-08-14: hydrate가 관리자가 고친 타입·스펙도 프리셋에 덮어쓴다.
 // - 2026-08-14: 도입 상태 SSOT=요청 문서. 프리셋 id 매칭(mongoose virtual) 수정 + GET/PATCH hydrate.
@@ -251,7 +252,7 @@ export async function createRoundBarAbutmentRequest(req, res) {
     }
 
     const inquiryMessage = [
-      "제조사 추가 요청 (환봉방식 커스텀어벗)",
+      "임플란트 추가 요청 (환봉방식 커스텀어벗)",
       "",
       `치과: ${practiceName || "-"}`,
       `제조사: ${spec.manufacturer}`,
@@ -266,7 +267,7 @@ export async function createRoundBarAbutmentRequest(req, res) {
       businessType: req.user?.role || "practice",
       userSnapshot: buildUserSnapshot(req.user),
       type: ROUND_BAR_INQUIRY_TYPE,
-      subject: `[제조사 추가 요청] ${spec.manufacturer} / ${spec.brand} / ${spec.family}`,
+      subject: `[임플란트 추가 요청] ${spec.manufacturer} / ${spec.brand} / ${spec.family}`,
       message: inquiryMessage,
       payload: {
         kind: "round_bar_abutment",
@@ -329,7 +330,7 @@ export async function createRoundBarAbutmentRequest(req, res) {
   } catch (error) {
     return res.status(500).json({
       success: false,
-      message: "제조사 추가 요청 중 오류가 발생했습니다.",
+      message: "임플란트 추가 요청 중 오류가 발생했습니다.",
       error: error?.message,
     });
   }
@@ -431,23 +432,9 @@ async function hydrateFavoritesWithRoundBarAdopted(practiceAnchorId, favorites) 
     });
   }
 
-  const missing = [];
-  for (const snapshot of byRequestId.values()) {
-    if (!snapshot.adopted || matchedRequestIds.has(snapshot.requestId)) continue;
-    missing.push({
-      id: snapshot.favoriteId || `imp-rb-${String(snapshot.requestId).slice(-8)}`,
-      manufacturer: snapshot.manufacturer,
-      brand: snapshot.brand,
-      family: snapshot.family,
-      type: snapshot.type,
-      roundBar: true,
-      adopted: true,
-      adoptedKind: snapshot.adoptedKind,
-      roundBarRequestId: snapshot.requestId,
-    });
-  }
-  if (!missing.length) return next;
-  return [...missing, ...next].slice(0, MAX_IMPLANT_FAVORITES);
+  // 도입 요청이 목록에 없어도 다시 넣지 않음 — 치과가 삭제한 프리셋이 복구되면 안 됨.
+  // 관리자 도입 시 프리셋 추가는 upsertFavoriteOnAnchor가 담당.
+  return next;
 }
 
 export {

@@ -2,6 +2,9 @@
 // - web/frontend/src/shared/components/practice/PracticeToothImplantFields.tsx
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/practice/transferMemo.ts
+// change-log:
+// - 2026-08-21: 스캔바디 추가 시 현재 선택값 기본 채움. 스피너 직경 0.5·높이 2, 직접입력 제한 없음.
+// - 2026-08-21: 프리셋 추가는 목록 sticky 하단(스크롤 시에만 고정). 임플란트와 독립.
 import { useState } from "react";
 import { Check, ChevronDown, ChevronUp, Pencil, Plus, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -86,16 +89,16 @@ const NumericStepperInput = ({
 }: {
   value: string;
   placeholder: string;
+  /** 스피너(▲▼) 클릭 단위. 직접 입력은 step 제한 없음. */
   step: number;
   className?: string;
   onValueChange: (next: string) => void;
 }) => (
   <div className="relative">
     <Input
-      type="number"
+      type="text"
       inputMode="decimal"
-      min={0}
-      step={step}
+      autoComplete="off"
       value={value}
       placeholder={placeholder}
       className={[
@@ -187,7 +190,11 @@ export const PracticeToothAbutmentFields = ({
 
   const startAddPreset = () => {
     setEditingFavoriteId(null);
-    setAddDraft(emptyToothWorkAbutment());
+    setAddDraft({
+      abutmentManufacturer: String(value.abutmentManufacturer || ""),
+      abutmentDiameter: String(value.abutmentDiameter || ""),
+      abutmentHeight: String(value.abutmentHeight || ""),
+    });
     setIsAddingPreset(true);
   };
 
@@ -247,7 +254,7 @@ export const PracticeToothAbutmentFields = ({
           <NumericStepperInput
             value={addDraft.abutmentDiameter}
             placeholder="직경"
-            step={0.1}
+            step={0.5}
             className="h-9 pr-8 text-sm"
             onValueChange={(next) =>
               setAddDraft((prev) => ({ ...prev, abutmentDiameter: next }))
@@ -256,7 +263,7 @@ export const PracticeToothAbutmentFields = ({
           <NumericStepperInput
             value={addDraft.abutmentHeight}
             placeholder="높이"
-            step={0.5}
+            step={2}
             className="h-9 pr-8 text-sm"
             onValueChange={(next) =>
               setAddDraft((prev) => ({ ...prev, abutmentHeight: next }))
@@ -361,149 +368,157 @@ export const PracticeToothAbutmentFields = ({
             저장된 프리셋이 없습니다
           </p>
         ) : (
-          <>
-            <div className={`min-h-0 ${listClass}`}>
-              {favorites.map((fav) => {
-                const isEditing = canManagePresets && editingFavoriteId === fav.id;
-                const isActive = favoriteKey(fav) === currentFavoriteKey;
-                if (isEditing) {
-                  return (
-                    <div
-                      key={`edit-${fav.id}`}
-                      className="grid grid-cols-3 gap-1.5 rounded-lg border border-primary-muted bg-white p-2"
-                    >
-                      <Input
-                        value={editDraft.abutmentManufacturer}
-                        placeholder="제조사"
-                        className="h-9 text-sm"
-                        onChange={(e) =>
-                          setEditDraft((prev) => ({
-                            ...prev,
-                            abutmentManufacturer: e.target.value,
-                          }))
-                        }
-                      />
-                      <NumericStepperInput
-                        value={editDraft.abutmentDiameter}
-                        placeholder="직경"
-                        step={0.1}
-                        className="h-9 pr-8 text-sm"
-                        onValueChange={(next) =>
-                          setEditDraft((prev) => ({ ...prev, abutmentDiameter: next }))
-                        }
-                      />
-                      <NumericStepperInput
-                        value={editDraft.abutmentHeight}
-                        placeholder="높이"
-                        step={0.5}
-                        className="h-9 pr-8 text-sm"
-                        onValueChange={(next) =>
-                          setEditDraft((prev) => ({ ...prev, abutmentHeight: next }))
-                        }
-                      />
-                      <div className="col-span-3 flex justify-end gap-1">
-                        <Button
-                          type="button"
-                          size="sm"
-                          className="h-8 px-3 text-sm"
-                          disabled={favoritesBusy}
-                          onClick={() => {
-                            void persistFavorites(
-                              favorites.map((row) =>
-                                row.id === fav.id
-                                  ? {
-                                      ...row,
-                                      manufacturer: editDraft.abutmentManufacturer.trim(),
-                                      diameter: editDraft.abutmentDiameter.trim(),
-                                      height: editDraft.abutmentHeight.trim(),
-                                    }
-                                  : row,
-                              ),
-                            ).then(() => setEditingFavoriteId(null));
-                          }}
-                        >
-                          <Check className="mr-1 h-3.5 w-3.5" />
-                          저장
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 px-3 text-sm"
-                          onClick={() => setEditingFavoriteId(null)}
-                        >
-                          취소
-                        </Button>
-                      </div>
-                    </div>
-                  );
-                }
-
+          <div
+            className={cn(
+              "min-h-0",
+              mode === "presets" || stretchList ? "flex-1" : null,
+              listClass,
+            )}
+          >
+            {favorites.map((fav) => {
+              const isEditing = canManagePresets && editingFavoriteId === fav.id;
+              const isActive = favoriteKey(fav) === currentFavoriteKey;
+              if (isEditing) {
                 return (
                   <div
-                    key={fav.id}
-                    className={
-                      isActive
-                        ? "flex items-center gap-1.5 rounded-xl border border-primary/70 bg-primary-muted/50 px-2.5 py-2 shadow-sm"
-                        : "flex items-center gap-1.5 rounded-xl border border-slate-200/90 bg-white px-2.5 py-2 shadow-sm"
-                    }
+                    key={`edit-${fav.id}`}
+                    className="grid grid-cols-3 gap-1.5 rounded-lg border border-primary-muted bg-white p-2"
                   >
-                    <button
-                      type="button"
-                      className="min-w-0 flex-1 truncate rounded px-1 py-0.5 text-left text-sm font-semibold text-slate-800 hover:text-primary-strong"
-                      title={favoriteLabel(fav)}
-                      onClick={() =>
-                        onChange({
-                          abutmentManufacturer: fav.manufacturer,
-                          abutmentDiameter: fav.diameter,
-                          abutmentHeight: fav.height,
-                        })
+                    <Input
+                      value={editDraft.abutmentManufacturer}
+                      placeholder="제조사"
+                      className="h-9 text-sm"
+                      onChange={(e) =>
+                        setEditDraft((prev) => ({
+                          ...prev,
+                          abutmentManufacturer: e.target.value,
+                        }))
                       }
-                    >
-                      {favoriteLabel(fav)}
-                    </button>
-                    {canManagePresets ? (
-                      <>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 shrink-0 text-slate-400"
-                          onClick={() => {
-                            setIsAddingPreset(false);
-                            setEditingFavoriteId(fav.id);
-                            setEditDraft({
-                              abutmentManufacturer: fav.manufacturer,
-                              abutmentDiameter: fav.diameter,
-                              abutmentHeight: fav.height,
-                            });
-                          }}
-                          aria-label="프리셋 수정"
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 shrink-0 text-slate-400 hover:text-destructive"
-                          disabled={favoritesBusy}
-                          onClick={() =>
-                            void persistFavorites(favorites.filter((row) => row.id !== fav.id))
-                          }
-                          aria-label="프리셋 삭제"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </>
-                    ) : null}
+                    />
+                    <NumericStepperInput
+                      value={editDraft.abutmentDiameter}
+                      placeholder="직경"
+                      step={0.5}
+                      className="h-9 pr-8 text-sm"
+                      onValueChange={(next) =>
+                        setEditDraft((prev) => ({ ...prev, abutmentDiameter: next }))
+                      }
+                    />
+                    <NumericStepperInput
+                      value={editDraft.abutmentHeight}
+                      placeholder="높이"
+                      step={2}
+                      className="h-9 pr-8 text-sm"
+                      onValueChange={(next) =>
+                        setEditDraft((prev) => ({ ...prev, abutmentHeight: next }))
+                      }
+                    />
+                    <div className="col-span-3 flex justify-end gap-1">
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="h-8 px-3 text-sm"
+                        disabled={favoritesBusy}
+                        onClick={() => {
+                          void persistFavorites(
+                            favorites.map((row) =>
+                              row.id === fav.id
+                                ? {
+                                    ...row,
+                                    manufacturer: editDraft.abutmentManufacturer.trim(),
+                                    diameter: editDraft.abutmentDiameter.trim(),
+                                    height: editDraft.abutmentHeight.trim(),
+                                  }
+                                : row,
+                            ),
+                          ).then(() => setEditingFavoriteId(null));
+                        }}
+                      >
+                        <Check className="mr-1 h-3.5 w-3.5" />
+                        저장
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 px-3 text-sm"
+                        onClick={() => setEditingFavoriteId(null)}
+                      >
+                        취소
+                      </Button>
+                    </div>
                   </div>
                 );
-              })}
-              {renderAddPresetForm()}
-              {renderAddPresetButton()}
-            </div>
-          </>
+              }
+
+              return (
+                <div
+                  key={fav.id}
+                  className={
+                    isActive
+                      ? "flex items-center gap-1.5 rounded-xl border border-primary/70 bg-primary-muted/50 px-2.5 py-2 shadow-sm"
+                      : "flex items-center gap-1.5 rounded-xl border border-slate-200/90 bg-white px-2.5 py-2 shadow-sm"
+                  }
+                >
+                  <button
+                    type="button"
+                    className="min-w-0 flex-1 truncate rounded px-1 py-0.5 text-left text-sm font-semibold text-slate-800 hover:text-primary-strong"
+                    title={favoriteLabel(fav)}
+                    onClick={() =>
+                      onChange({
+                        abutmentManufacturer: fav.manufacturer,
+                        abutmentDiameter: fav.diameter,
+                        abutmentHeight: fav.height,
+                      })
+                    }
+                  >
+                    {favoriteLabel(fav)}
+                  </button>
+                  {canManagePresets ? (
+                    <>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 shrink-0 text-slate-400"
+                        onClick={() => {
+                          setIsAddingPreset(false);
+                          setEditingFavoriteId(fav.id);
+                          setEditDraft({
+                            abutmentManufacturer: fav.manufacturer,
+                            abutmentDiameter: fav.diameter,
+                            abutmentHeight: fav.height,
+                          });
+                        }}
+                        aria-label="프리셋 수정"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 shrink-0 text-slate-400 hover:text-destructive"
+                        disabled={favoritesBusy}
+                        onClick={() =>
+                          void persistFavorites(favorites.filter((row) => row.id !== fav.id))
+                        }
+                        aria-label="프리셋 삭제"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </>
+                  ) : null}
+                </div>
+              );
+            })}
+            {canManagePresets ? (
+              <div className="sticky bottom-0 z-[1] space-y-1.5 bg-primary-soft pt-1.5">
+                {renderAddPresetForm()}
+                {renderAddPresetButton()}
+              </div>
+            ) : null}
+          </div>
         )}
       </div>
     );
@@ -557,7 +572,7 @@ export const PracticeToothAbutmentFields = ({
             <NumericStepperInput
               value={value.abutmentDiameter}
               placeholder="예: 4.5"
-              step={0.1}
+              step={0.5}
               className="h-11 px-3 pr-8 text-sm"
               onValueChange={(next) =>
                 onChange({ ...value, abutmentDiameter: next })
@@ -569,7 +584,7 @@ export const PracticeToothAbutmentFields = ({
             <NumericStepperInput
               value={value.abutmentHeight}
               placeholder="예: 5"
-              step={0.5}
+              step={2}
               className="h-11 px-3 pr-8 text-sm"
               onValueChange={(next) =>
                 onChange({ ...value, abutmentHeight: next })

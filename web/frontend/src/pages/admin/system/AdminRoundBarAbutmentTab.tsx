@@ -279,7 +279,7 @@ export const AdminRoundBarAbutmentTab = ({
           </div>
         ) : rows.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-slate-200/90 bg-slate-50/40 px-6 py-12 text-center text-sm text-muted-foreground">
-            치과에서 전달받은 제조사 추가 요청이 없습니다.
+            치과에서 전달받은 임플란트 추가 요청이 없습니다.
           </div>
         ) : (
           <ul className="space-y-3">
