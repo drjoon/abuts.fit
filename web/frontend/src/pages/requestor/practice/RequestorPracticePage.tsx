@@ -56,6 +56,7 @@
 // - 2026-08-16: mark-complete apiFetch body→jsonBody (결과파일 미전달 400 수정).
 // - 2026-08-16: 상세 파일 — 의뢰(구강스캔)/작업(어벗디자인·보철물). 완료 토스트 문구.
 // - 2026-08-16: 보철 완료 후 카드 — 업로드 2개 비활성·오른쪽 취소로 의뢰수락 재오픈.
+// - 2026-08-21: 의뢰 수락 취소 — 로컬 가공 고정 차단 제거. API 409 시에만 토스트.
 // - 2026-08-16: 디자인 STL 업로드 후 버튼 라벨「어벗 생산 취소」(준비 단계만).
 // - 2026-08-15: 수신 카드 → PracticeTransferLabReceiveCard(어벗츠기공소·lab 공통).
 // - 2026-08-15: 디자인 STL 업로드 후 버튼 라벨「어벗생산 취소」(준비 단계만).
@@ -2774,15 +2775,6 @@ export function RequestorPracticeReceivePage({
     async (transfer: ReceivedPracticeTransfer) => {
       if (!token) return false;
       if (transfer.autoMatch?.completed) return false;
-      if (practiceTransferAbutmentMachiningStarted(transfer)) {
-        toast({
-          title: "의뢰 수락 취소 불가",
-          description:
-            "어벗 가공이 시작된 의뢰는 수락 취소할 수 없습니다. 제조사가 준비 단계일 때만 가능합니다.",
-          variant: "destructive",
-        });
-        return false;
-      }
 
       const isAuto = String(transfer.matchingMode || "") === "auto";
       const canceledAt = new Date().toISOString();
@@ -2888,7 +2880,7 @@ export function RequestorPracticeReceivePage({
                 description: String(
                   body.message ||
                     (code === "abutment_machining_started"
-                      ? "어벗 가공이 시작된 의뢰는 수락 취소할 수 없습니다."
+                      ? "어벗 가공이 시작된 의뢰는 수락 취소할 수 없습니다. 제조사가 준비 단계일 때만 가능합니다."
                       : "작업 취소 요청 중 오류가 발생했습니다."),
                 ),
                 variant: "destructive",
@@ -4854,8 +4846,7 @@ export function RequestorPracticeReceivePage({
                   void confirmAbutmentDesign(selectedTransfer);
                 }}
               />
-              {workState.showCompletedStageHeaderCancel &&
-              !workState.productionStarted ? (
+              {workState.showCompletedStageHeaderCancel ? (
                 <Button
                   type="button"
                   size="sm"

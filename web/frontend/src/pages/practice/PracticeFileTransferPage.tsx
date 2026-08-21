@@ -4371,10 +4371,14 @@ export const PracticeFileTransferPage = ({
         });
         return;
       }
-      const data =
+      const body =
         res.data && typeof res.data === "object"
           ? (res.data as Record<string, unknown>)
           : {};
+      const data =
+        body.data && typeof body.data === "object"
+          ? (body.data as Record<string, unknown>)
+          : body;
       const mode = String(data.mode || "").trim();
       const isDesignGate = mode === "abutment-design-gate";
       const confirmedAt = new Date().toISOString();
@@ -4409,7 +4413,7 @@ export const PracticeFileTransferPage = ({
       toast({
         title: isDesignGate ? "어벗 디자인 컨펌" : "생산 진행",
         description: isDesignGate
-          ? data.abutmentProductionStarted
+          ? data.abutmentProductionStarted || data.abutmentProductionStarting
             ? "디자인을 컨펌했습니다. 어벗츠 생산이 시작됩니다."
             : "디자인을 컨펌했습니다. 기공소 확인 후 생산이 시작됩니다."
           : "생산을 확정했습니다.",

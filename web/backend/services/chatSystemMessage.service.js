@@ -4,8 +4,8 @@
 // - web/backend/controllers/chats/chat.controller.js
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 // change-log:
+// - 2026-08-21: systemEvent awaiting_production_confirm / awaiting_design_confirm / design_confirmed.
 // - 2026-08-20: 기공소 변경 시 이전 기공소 유저를 채팅 참가자에서 제거.
-// - 2026-08-21: systemEvent awaiting_production_confirm / awaiting_design_confirm (치과 대응 요청).
 import { Types } from "mongoose";
 import Chat from "../models/chat.model.js";
 import ChatRoom from "../models/chatRoom.model.js";

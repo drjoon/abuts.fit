@@ -170,6 +170,8 @@ import { resolvePracticeTransferSkipJig } from "../../utils/practiceTransferLabS
 // - 2026-08-14: mark-accepted — 과금 직후 응답, billing $set, 사이드이펙트 비동기.
 // - 2026-08-15: mark-accepted — billing+accept $set 병합, 과금 저널/수수료 조회 병렬.
 // - 2026-08-14: mark-release — updateOne + 사이드이펙트 비동기(채팅/emit은 응답 후).
+// - 2026-08-21: confirm-production·lab design-confirm — 게이트 저장·응답 후 생산 시작(CAM) 비동기.
+// - 2026-08-21: 치과 어벗 디자인 컨펌 시 기공소 채팅 안내(design_confirmed).
 // - 2026-08-21: mark-release — past-ready 1회·rollback∥clear·잔액 sync는 응답 후.
 // - 2026-08-21: 채팅 시스템 메시지는 치과 대응이 필요할 때만(취소·거부·생산진행/디자인컨펌 요청). 수락·업로드는 남기지 않음.
 // - 2026-08-14: 수락도 작업취소와 같이 채팅 시스템 메시지(work_accept) 남김. → 2026-08-21 철회.
@@ -1484,6 +1486,66 @@ const emitPracticeTransferEventToPracticeUsers = async ({
   } catch {
     // 실시간 이벤트 실패가 본 API 성공/실패를 좌우하지 않도록 무시
   }
+};
+
+/**
+ * 디자인 컨펌 게이트 충족 후 CA 가공 진입. 응답을 막지 않도록 fire-and-forget.
+ */
+const startAbutmentProductionInBackground = ({
+  transferDoc,
+  actorUserId,
+  action,
+  labAnchorId = null,
+  extraPracticeUserIds = [],
+}) => {
+  void (async () => {
+    try {
+      const startResult = await tryStartAbutmentProduction({
+        transferDoc,
+        actorUserId,
+      });
+      if (!startResult?.started) return;
+      const fresh = await PracticeTransfer.findById(transferDoc._id).lean();
+      const payload = {
+        action,
+        transferId: String(transferDoc.transferId || "").trim(),
+        transferMongoId: String(transferDoc._id || "").trim(),
+        targetLabAnchorId:
+          labAnchorId ||
+          String(transferDoc.targetLabAnchorId || "").trim() ||
+          null,
+        practiceUserId: String(transferDoc.practiceUserId || "").trim() || null,
+        production: toProductionApiFields(
+          fresh?.production || transferDoc.production,
+        ),
+        abutmentProductionStarted: true,
+        updatedAt: fresh?.updatedAt || new Date(),
+      };
+      await emitPracticeTransferEventToPracticeUsers({
+        practiceBusinessAnchorId: transferDoc.practiceBusinessAnchorId,
+        type: "practice:transfer-updated",
+        payload,
+        extraUserIds: [
+          transferDoc.practiceUserId,
+          ...extraPracticeUserIds,
+        ],
+      });
+      const emitLabId = String(payload.targetLabAnchorId || "").trim();
+      if (emitLabId) {
+        await emitPracticeTransferEventToRequestorUsers({
+          targetLabAnchorId: emitLabId,
+          type: "practice:transfer-updated",
+          payload,
+        });
+      }
+    } catch (err) {
+      console.error(
+        "[practiceTransfer] background abutment production start failed",
+        String(transferDoc?._id || ""),
+        err?.message || err,
+      );
+    }
+  })();
 };
 
 export async function getMyPracticeTransferDraft(req, res) {
@@ -5425,21 +5487,7 @@ export async function confirmPracticeTransferAbutmentDesign(req, res) {
       );
     }
 
-    let startResult = { started: false };
-    try {
-      startResult = await tryStartAbutmentProduction({
-        transferDoc: doc,
-        actorUserId: req.user?._id || null,
-      });
-    } catch (startErr) {
-      return res.status(409).json({
-        success: false,
-        message:
-          String(startErr?.message || "").trim() ||
-          "어벗 생산 시작에 실패했습니다.",
-      });
-    }
-
+    const productionStarting = canStartAbutmentProduction(doc);
     const fresh = await PracticeTransfer.findById(doc._id);
     const realtimePayload = {
       action: "abutment-design-confirmed",
@@ -5448,7 +5496,8 @@ export async function confirmPracticeTransferAbutmentDesign(req, res) {
       targetLabAnchorId: labAnchorId,
       practiceUserId: String(doc.practiceUserId || "").trim() || null,
       production: toProductionApiFields(fresh?.production || doc.production),
-      abutmentProductionStarted: Boolean(startResult?.started),
+      abutmentProductionStarted: false,
+      abutmentProductionStarting: productionStarting,
       updatedAt: fresh?.updatedAt || now,
     };
 
@@ -5465,15 +5514,26 @@ export async function confirmPracticeTransferAbutmentDesign(req, res) {
       payload: realtimePayload,
     });
 
+    if (productionStarting) {
+      startAbutmentProductionInBackground({
+        transferDoc: fresh || doc,
+        actorUserId: req.user?._id || null,
+        action: "abutment-production-started",
+        labAnchorId,
+        extraPracticeUserIds: [doc.practiceUserId],
+      });
+    }
+
     return res.status(200).json({
       success: true,
       data: {
         transferId: String(doc.transferId || "").trim(),
         production: toProductionApiFields(fresh?.production || doc.production),
-        abutmentProductionStarted: Boolean(startResult?.started),
+        abutmentProductionStarted: false,
+        abutmentProductionStarting: productionStarting,
         awaitingPracticeDesignConfirm:
-          fresh?.production?.skipDesignConfirm === false &&
-          !fresh?.production?.practiceDesignConfirmedAt,
+          (fresh?.production || doc.production)?.skipDesignConfirm === false &&
+          !(fresh?.production || doc.production)?.practiceDesignConfirmedAt,
       },
     });
   } catch (error) {
@@ -5558,21 +5618,7 @@ export async function confirmPracticeTransferProduction(req, res) {
         );
       }
 
-      let startResult = { started: false };
-      try {
-        startResult = await tryStartAbutmentProduction({
-          transferDoc: doc,
-          actorUserId: req.user?._id || null,
-        });
-      } catch (startErr) {
-        return res.status(409).json({
-          success: false,
-          message:
-            String(startErr?.message || "").trim() ||
-            "어벗 생산 시작에 실패했습니다.",
-        });
-      }
-
+      const productionStarting = canStartAbutmentProduction(doc);
       const fresh = await PracticeTransfer.findById(doc._id);
       const realtimePayload = {
         action: "practice-design-confirmed",
@@ -5581,8 +5627,10 @@ export async function confirmPracticeTransferProduction(req, res) {
         targetLabAnchorId: String(doc.targetLabAnchorId || "").trim() || null,
         practiceUserId: String(doc.practiceUserId || "").trim() || null,
         production: toProductionApiFields(fresh?.production || doc.production),
-        abutmentProductionStarted: Boolean(startResult?.started),
-        awaitingLabDesignConfirm: !fresh?.production?.labDesignConfirmedAt,
+        abutmentProductionStarted: false,
+        abutmentProductionStarting: productionStarting,
+        awaitingLabDesignConfirm: !(fresh?.production || doc.production)
+          ?.labDesignConfirmedAt,
         updatedAt: fresh?.updatedAt || now,
       };
 
@@ -5600,14 +5648,35 @@ export async function confirmPracticeTransferProduction(req, res) {
         });
       }
 
+      // 기공소: 치과 컨펌·생산 시작을 채팅에서 바로 인지
+      void postPracticeTransferSystemChatMessage({
+        transferMongoId: doc._id,
+        senderUserId: req.user?._id,
+        content: productionStarting
+          ? "치과에서 어벗 디자인을 컨펌했습니다. 커스텀 어벗 생산이 시작됩니다."
+          : "치과에서 어벗 디자인을 컨펌했습니다.",
+        systemEvent: "design_confirmed",
+      });
+
+      if (productionStarting) {
+        startAbutmentProductionInBackground({
+          transferDoc: fresh || doc,
+          actorUserId: req.user?._id || null,
+          action: "abutment-production-started",
+          labAnchorId: String(doc.targetLabAnchorId || "").trim() || null,
+          extraPracticeUserIds: [doc.practiceUserId, req.user?._id],
+        });
+      }
+
       return res.status(200).json({
         success: true,
         data: {
           transferId: String(doc.transferId || "").trim(),
           mode: "abutment-design-gate",
           production: toProductionApiFields(fresh?.production || doc.production),
-          abutmentProductionStarted: Boolean(startResult?.started),
-          canStart: canStartAbutmentProduction(fresh || doc),
+          abutmentProductionStarted: false,
+          abutmentProductionStarting: productionStarting,
+          canStart: productionStarting,
         },
       });
     }

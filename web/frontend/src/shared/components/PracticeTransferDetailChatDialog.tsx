@@ -11,6 +11,8 @@
 // - web/frontend/src/shared/files/modelPreviewFile.ts
 // - web/frontend/src/shared/files/downloadWithProgress.ts
 // - web/frontend/src/shared/files/s3BlobCache.ts
+// - 2026-08-21: 어벗 가공 고정 안내 문구 제거. 수락/생산 취소는 클릭 시 API로 판정·토스트.
+// - 2026-08-21: 컨펌 필요 시 작업 파일 프리뷰를 먼저 열고 안내·CTA를 프리뷰에 표시.
 // - 2026-08-21: 작업 파일도 의뢰 파일과 동일 4열 타일 미리보기.
 // - 2026-08-21: 의뢰 파일 — 4열 썸네일(이미지)·유형 아이콘(기타) + 파일명.
 // - 2026-08-21: 수락 바 — 안내 1줄 + CTA 1줄(항상 2단), 작업취소 툴팁.
@@ -313,7 +315,7 @@ export function PracticeTransferDetailChatDialog({
   accepted = false,
   workCanceled = false,
   workCompleted = false,
-  abutmentMachiningStarted = false,
+  abutmentMachiningStarted: _abutmentMachiningStarted = false,
   onAccept,
   rejectBusy = false,
   onReject,
@@ -630,6 +632,92 @@ export function PracticeTransferDetailChatDialog({
     [openFilePreview, previewIndex, previewLoading, previewableFiles],
   );
 
+  /** 컨펌 대상 작업 파일(디자인 우선, 없으면 보철물) */
+  const confirmPreviewTarget = useMemo(() => {
+    if (!showProductionConfirm || !onConfirmProduction) return null;
+    const preferDesign = String(productionConfirmButtonLabel || "").includes(
+      "디자인",
+    );
+    const lists = preferDesign
+      ? [designFiles, resultFiles]
+      : [resultFiles, designFiles];
+    for (const list of lists) {
+      for (const file of Array.isArray(list) ? list : []) {
+        const kind = resolvePreviewKind(file.fileName);
+        if (!kind) continue;
+        if (!String(file.s3Key || "").trim()) continue;
+        return { file, kind };
+      }
+    }
+    return null;
+  }, [
+    designFiles,
+    onConfirmProduction,
+    productionConfirmButtonLabel,
+    resultFiles,
+    showProductionConfirm,
+  ]);
+
+  const confirmPreviewKey = confirmPreviewTarget
+    ? `${s3DownloadBusyKey(confirmPreviewTarget.file)}:${productionConfirmButtonLabel}`
+    : "";
+  const autoConfirmPreviewKeyRef = useRef("");
+  const confirmPreviewSessionRef = useRef(false);
+
+  const openConfirmPreview = useCallback(() => {
+    if (!confirmPreviewTarget) return;
+    confirmPreviewSessionRef.current = true;
+    void openFilePreview(confirmPreviewTarget.file, confirmPreviewTarget.kind);
+  }, [confirmPreviewTarget, openFilePreview]);
+
+  // 컨펌이 필요하면 상세 진입 직후 프리뷰를 먼저 연다.
+  useEffect(() => {
+    if (!open || !confirmPreviewKey || !confirmPreviewTarget) {
+      if (!open) {
+        autoConfirmPreviewKeyRef.current = "";
+        confirmPreviewSessionRef.current = false;
+      }
+      return;
+    }
+    if (autoConfirmPreviewKeyRef.current === confirmPreviewKey) return;
+    autoConfirmPreviewKeyRef.current = confirmPreviewKey;
+    confirmPreviewSessionRef.current = true;
+    void openFilePreview(confirmPreviewTarget.file, confirmPreviewTarget.kind);
+  }, [confirmPreviewKey, confirmPreviewTarget, open, openFilePreview]);
+
+  // 컨펌 완료 후 프리뷰 닫기
+  useEffect(() => {
+    if (
+      open &&
+      !showProductionConfirm &&
+      previewOpen &&
+      confirmPreviewSessionRef.current
+    ) {
+      confirmPreviewSessionRef.current = false;
+      autoConfirmPreviewKeyRef.current = "";
+      resetPreview();
+    }
+  }, [open, previewOpen, resetPreview, showProductionConfirm]);
+
+  const handleConfirmFromPreview = useCallback(async () => {
+    if (!onConfirmProduction || productionConfirmBusy) return;
+    await onConfirmProduction();
+  }, [onConfirmProduction, productionConfirmBusy]);
+
+  const handleConfirmPanelClick = useCallback(() => {
+    if (productionConfirmBusy) return;
+    if (confirmPreviewTarget) {
+      openConfirmPreview();
+      return;
+    }
+    void onConfirmProduction?.();
+  }, [
+    confirmPreviewTarget,
+    onConfirmProduction,
+    openConfirmPreview,
+    productionConfirmBusy,
+  ]);
+
   const previewBusyKey = previewMeta ? s3DownloadBusyKey(previewMeta) : "";
   const previewDownloadBusy =
     Boolean(previewBusyKey) &&
@@ -638,6 +726,21 @@ export function PracticeTransferDetailChatDialog({
   const canPreviewPrev = previewIndex > 0;
   const canPreviewNext =
     previewIndex >= 0 && previewIndex < previewCount - 1;
+  const previewMetaIsConfirmWorkFile = useMemo(() => {
+    if (!previewMeta || !showProductionConfirm) return false;
+    const key = s3DownloadBusyKey(previewMeta);
+    if (!key) return false;
+    const lists = [
+      ...(Array.isArray(designFiles) ? designFiles : []),
+      ...(Array.isArray(resultFiles) ? resultFiles : []),
+    ];
+    return lists.some((file) => s3DownloadBusyKey(file) === key);
+  }, [designFiles, previewMeta, resultFiles, showProductionConfirm]);
+  const previewShowsConfirm = Boolean(
+    showProductionConfirm &&
+      onConfirmProduction &&
+      previewMetaIsConfirmWorkFile,
+  );
 
   const hasToothWorks = Array.isArray(toothWorks) && toothWorks.length > 0;
   const hasCustomAbutment = Boolean(
@@ -648,19 +751,12 @@ export function PracticeTransferDetailChatDialog({
   /** 작업취소 후 수락이 풀렸지만 채팅은 이어갈 때 */
   const showReacceptBar =
     Boolean(onAccept) && !accepted && workCanceled;
-  /** 수락 직후: 수락 버튼 자리에 작업취소(가공 시작 전만) */
+  /** 수락 직후: 수락 버튼 자리에 작업취소(가공 여부는 클릭 시 API 판정) */
   const showReleaseBar =
     Boolean(onRelease) &&
     accepted &&
     !workCanceled &&
-    !workCompleted &&
-    !abutmentMachiningStarted;
-  const showReleaseBlockedBar =
-    Boolean(onRelease) &&
-    accepted &&
-    !workCanceled &&
-    !workCompleted &&
-    abutmentMachiningStarted;
+    !workCompleted;
   /** 지정 기공소: 스캔 없이도 수락 가능. 자동매칭(practice_required)만 차단 */
   const oralScanBlocksAccept = oralScanAttachMode === "practice_required";
   const rawChatError = String(chatError || "").trim();
@@ -967,9 +1063,13 @@ export function PracticeTransferDetailChatDialog({
                     type="button"
                     className="mt-2"
                     disabled={productionConfirmBusy}
-                    onClick={() => void onConfirmProduction()}
+                    onClick={handleConfirmPanelClick}
                   >
-                    {productionConfirmBusy ? "처리 중..." : productionConfirmButtonLabel}
+                    {productionConfirmBusy
+                      ? "처리 중..."
+                      : confirmPreviewTarget
+                        ? `미리보기 · ${productionConfirmButtonLabel}`
+                        : productionConfirmButtonLabel}
                   </Button>
                 </div>
               ) : null}
@@ -1126,7 +1226,8 @@ export function PracticeTransferDetailChatDialog({
                           </Button>
                         </TooltipTrigger>
                         <TooltipContent side="top" className="max-w-xs text-xs">
-                          수락을 해제합니다.
+                          수락을 해제합니다. 어벗 가공이 시작된 뒤에는 취소할 수
+                          없습니다.
                         </TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
@@ -1134,22 +1235,7 @@ export function PracticeTransferDetailChatDialog({
                 </div>
               ) : null}
 
-              {showReleaseBlockedBar ? (
-                <div className="shrink-0 border-b bg-muted/40 px-3 py-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <p className="text-xs text-muted-foreground">
-                    어벗 가공이 시작되어 의뢰 수락을 취소할 수 없습니다. 제조사가
-                    준비 단계일 때만 취소할 수 있습니다.
-                  </p>
-                  {acceptedWorkActions ? (
-                    <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 self-end sm:self-auto">
-                      {acceptedWorkActions}
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
-
               {!showReleaseBar &&
-              !showReleaseBlockedBar &&
               accepted &&
               !workCanceled &&
               acceptedWorkActions ? (
@@ -1239,6 +1325,7 @@ export function PracticeTransferDetailChatDialog({
       open={previewOpen}
       onOpenChange={(next) => {
         if (!next) {
+          confirmPreviewSessionRef.current = false;
           resetPreview();
           return;
         }
@@ -1262,6 +1349,18 @@ export function PracticeTransferDetailChatDialog({
       }
       onNext={
         canPreviewNext ? () => goPreviewRelative(1) : undefined
+      }
+      confirmMessage={
+        previewShowsConfirm ? productionConfirmTitle : undefined
+      }
+      confirmLabel={
+        previewShowsConfirm ? productionConfirmButtonLabel : undefined
+      }
+      confirmBusy={previewShowsConfirm ? productionConfirmBusy : false}
+      onConfirm={
+        previewShowsConfirm
+          ? () => void handleConfirmFromPreview()
+          : undefined
       }
     />
     </>

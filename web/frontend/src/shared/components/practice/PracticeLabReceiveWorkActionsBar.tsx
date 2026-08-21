@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/practice/practiceTransferLabReceive.ts
 // change-log:
+// - 2026-08-21: 어벗 생산 취소 — 가공 중이어도 클릭 가능. API 판정·토스트(준비 복귀 대비).
 // - 2026-08-21: 어벗 CTA「어벗 업로드 & 생산의뢰」·툴팁 단문화.
 // - 2026-08-21: 카드→캘린더 전환 후 상세 모달에서도 어벗·보철 업로드 CTA 공유.
 import type { MouseEvent } from "react";
@@ -63,48 +64,24 @@ export function PracticeLabReceiveWorkActionsBar({
     showProductionCancelInBar &&
     state.showAbutmentProductionCancel &&
     state.showWorkActions ? (
-      state.productionStarted ? (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span className="inline-flex">
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                disabled
-                className="h-8 focus-visible:ring-0 focus-visible:ring-offset-0"
-              >
-                <X className="h-3.5 w-3.5" />
-                어벗 생산 취소
-              </Button>
-            </span>
-          </TooltipTrigger>
-          <TooltipContent side="top" className="max-w-xs text-xs">
-            어벗 가공이 시작된 뒤에는 생산을 취소할 수 없습니다. 제조사가 준비
-            단계일 때만 가능합니다.
-          </TooltipContent>
-        </Tooltip>
-      ) : (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              disabled={busy || !onAbutmentProductionCancel}
-              className="h-8 focus-visible:ring-0 focus-visible:ring-offset-0"
-              onClick={(event) => void onAbutmentProductionCancel?.(event)}
-            >
-              <X className="h-3.5 w-3.5" />
-              {busy ? "처리 중..." : "어벗 생산 취소"}
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="top" className="max-w-xs text-xs">
-            제조사가 준비 단계일 때만 생산을 취소할 수 있습니다. 가공이 시작되면
-            변경할 수 없습니다.
-          </TooltipContent>
-        </Tooltip>
-      )
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            disabled={busy || !onAbutmentProductionCancel}
+            className="h-8 focus-visible:ring-0 focus-visible:ring-offset-0"
+            onClick={(event) => void onAbutmentProductionCancel?.(event)}
+          >
+            <X className="h-3.5 w-3.5" />
+            {busy ? "처리 중..." : "어벗 생산 취소"}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-xs text-xs">
+          제조사가 준비 단계일 때만 생산을 취소할 수 있습니다.
+        </TooltipContent>
+      </Tooltip>
     ) : null;
 
   const completedStageDisabledUploads = state.showCompletedStageHeaderCancel ? (

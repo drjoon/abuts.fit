@@ -153,7 +153,7 @@ export function buildPracticeSenderTransferDetailModel(
     labAnchorId: transfer.targetLabAnchorId || null,
     showProductionConfirm,
     productionConfirmTitle: isDesignConfirm
-      ? "어벗츠 디자인을 확인한 뒤 컨펌하세요. 기공소 확인과 함께 생산이 시작됩니다."
+      ? "STL 디자인을 확인한 뒤 컨펌하세요. 컨펌시 커스텀 어벗 생산이 시작됩니다."
       : "작업 결과를 확인한 뒤 생산을 진행하세요.",
     productionConfirmButtonLabel: isDesignConfirm ? "어벗 디자인 컨펌" : "생산 진행",
     patientName,

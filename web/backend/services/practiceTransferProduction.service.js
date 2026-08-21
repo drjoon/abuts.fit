@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-08-21: tryStartAbutmentProduction — Request 가공 진입을 병렬(다치아 confirm 지연 완화).
 // - 2026-08-21: CA Request — 구강스캔 없이 수락·생성(어벗 STL 업로드 가능).
 // - 2026-08-21: 연동 CA Request 한진 배송 요약(mapAbutmentDeliveryByTransferDocs) — 구강스캔으로 UI.
 // - 2026-08-21: 환봉·제조사 추가요청(요청중) CA는 어벗츠 Request 생성 제외 — 지정 기공소가 커스텀어벗 수행.
@@ -1358,6 +1359,7 @@ export async function tryStartAbutmentProduction({
   }
 
   const startedIds = [];
+  const toApprove = [];
   for (const requestId of requestIds) {
     if (!Types.ObjectId.isValid(requestId)) continue;
     const reqDoc = await Request.findById(requestId).select({
@@ -1374,8 +1376,29 @@ export async function tryStartAbutmentProduction({
     if (!reqDoc.designCompletedAt && !reqDoc.caseInfos?.file?.s3Key) {
       continue;
     }
-    await invokeMachiningApproval(requestId, actorUserId);
-    startedIds.push(requestId);
+    toApprove.push(requestId);
+  }
+
+  if (toApprove.length > 0) {
+    const settled = await Promise.allSettled(
+      toApprove.map((requestId) => invokeMachiningApproval(requestId, actorUserId)),
+    );
+    settled.forEach((result, idx) => {
+      const requestId = toApprove[idx];
+      if (result.status === "fulfilled") {
+        startedIds.push(requestId);
+        return;
+      }
+      console.error(
+        "[tryStartAbutmentProduction] machining approval failed",
+        requestId,
+        result.reason?.message || result.reason,
+      );
+    });
+    const firstReject = settled.find((r) => r.status === "rejected");
+    if (startedIds.length === 0 && firstReject?.status === "rejected") {
+      throw firstReject.reason;
+    }
   }
 
   if (startedIds.length === 0) {

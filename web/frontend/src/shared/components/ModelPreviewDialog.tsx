@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-21: 선택 컨펌 안내·CTA(치과 어벗 디자인 컨펌 등). 이미지도 컨펌 시 푸터 표시.
 // - 2026-08-16: 채팅 위젯 톤 — rounded-xl·muted/50 헤더·h-9 푸터.
 // - 2026-08-16: 파일 여러 개일 때 이전/다음 버튼·인덱스 표시.
 // - 2026-08-16: 3D 프리뷰 영역 고정 높이 + absolute fill로 모델 가운데 정렬.
@@ -40,6 +41,11 @@ export type ModelPreviewDialogProps = {
   previewCount?: number;
   onPrev?: () => void;
   onNext?: () => void;
+  /** 프리뷰 하단 컨펌 안내(치과 디자인 컨펌 등) */
+  confirmMessage?: string;
+  confirmLabel?: string;
+  confirmBusy?: boolean;
+  onConfirm?: () => void | Promise<void>;
 };
 
 export function ModelPreviewDialog({
@@ -56,6 +62,10 @@ export function ModelPreviewDialog({
   previewCount = 0,
   onPrev,
   onNext,
+  confirmMessage,
+  confirmLabel,
+  confirmBusy = false,
+  onConfirm,
 }: ModelPreviewDialogProps) {
   const isImage = kind === "image";
   const title =
@@ -64,6 +74,10 @@ export function ModelPreviewDialog({
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const showNav = previewCount > 1 && previewIndex >= 0;
   const indexLabel = showNav ? `${previewIndex + 1} / ${previewCount}` : "";
+  const confirmText = String(confirmMessage || "").trim();
+  const confirmCta = String(confirmLabel || "").trim();
+  const showConfirm = Boolean(onConfirm && confirmCta);
+  const showFooter = !isImage || showConfirm;
 
   useEffect(() => {
     if (!isImage || !file) {
@@ -80,7 +94,7 @@ export function ModelPreviewDialog({
   useEffect(() => {
     if (!open || !showNav) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (loading) return;
+      if (loading || confirmBusy) return;
       if (event.key === "ArrowLeft") {
         event.preventDefault();
         onPrev?.();
@@ -91,7 +105,7 @@ export function ModelPreviewDialog({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [loading, onNext, onPrev, open, showNav]);
+  }, [confirmBusy, loading, onNext, onPrev, open, showNav]);
 
   const downloadOverlay =
     onDownload && !loading ? (
@@ -116,7 +130,7 @@ export function ModelPreviewDialog({
         variant="secondary"
         className="absolute left-3 top-1/2 z-20 h-10 w-10 -translate-y-1/2 shadow-md"
         onClick={() => onPrev?.()}
-        disabled={loading || !onPrev}
+        disabled={loading || confirmBusy || !onPrev}
         aria-label="이전 파일"
         title="이전 파일"
       >
@@ -128,7 +142,7 @@ export function ModelPreviewDialog({
         variant="secondary"
         className="absolute right-3 top-1/2 z-20 h-10 w-10 -translate-y-1/2 shadow-md"
         onClick={() => onNext?.()}
-        disabled={loading || !onNext}
+        disabled={loading || confirmBusy || !onNext}
         aria-label="다음 파일"
         title="다음 파일"
       >
@@ -202,27 +216,49 @@ export function ModelPreviewDialog({
           </div>
         </div>
 
-        {!isImage ? (
+        {showConfirm && confirmText ? (
+          <div className="shrink-0 border-t bg-primary-soft/40 px-4 py-3 sm:px-5">
+            <p className="text-center text-sm leading-relaxed text-primary-strong">
+              {confirmText}
+            </p>
+          </div>
+        ) : null}
+
+        {showFooter ? (
           <DialogFooter className="shrink-0 gap-2 border-t bg-background px-4 py-3 sm:justify-between sm:px-5">
             <Button
               type="button"
               variant="outline"
               className="h-9"
+              disabled={confirmBusy}
               onClick={() => onOpenChange(false)}
             >
               닫기
             </Button>
-            {onDownload ? (
-              <Button
-                type="button"
-                className="h-9"
-                onClick={() => void onDownload()}
-                disabled={downloadBusy || loading || !fileName}
-              >
-                <Download className="mr-1.5 h-4 w-4" />
-                {downloadBusy ? "다운로드 중..." : "다운로드"}
-              </Button>
-            ) : null}
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {onDownload ? (
+                <Button
+                  type="button"
+                  variant={showConfirm ? "outline" : "default"}
+                  className="h-9"
+                  onClick={() => void onDownload()}
+                  disabled={downloadBusy || loading || confirmBusy || !fileName}
+                >
+                  <Download className="mr-1.5 h-4 w-4" />
+                  {downloadBusy ? "다운로드 중..." : "다운로드"}
+                </Button>
+              ) : null}
+              {showConfirm ? (
+                <Button
+                  type="button"
+                  className="h-9"
+                  disabled={confirmBusy || loading}
+                  onClick={() => void onConfirm?.()}
+                >
+                  {confirmBusy ? "처리 중..." : confirmCta}
+                </Button>
+              ) : null}
+            </div>
           </DialogFooter>
         ) : null}
       </DialogContent>

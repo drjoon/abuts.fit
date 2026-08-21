@@ -5,6 +5,7 @@
 // - web/frontend/src/shared/components/practice/PracticeLabReceiveWorkActionsBar.tsx
 // - web/frontend/src/shared/components/practice/PracticeRecentTransferListCardDetail.tsx
 // change-log:
+// - 2026-08-21: 의뢰 수락/작업 완료 취소 — 가공 중이어도 클릭·API 판정·토스트(고정 비활성 제거).
 // - 2026-08-21: 업로드 CTA → PracticeLabReceiveWorkActionsBar(상세 모달과 공유).
 // - 2026-08-17: 미확인 의뢰(!isRead)도 채팅 unread와 합산해 헤더 빨간 배지 표시(사이드바 배지와 정합).
 // - 2026-08-16: 의뢰 수락 취소·작업 완료 취소 → 카드 헤더 우측.
@@ -121,7 +122,6 @@ export function PracticeTransferLabReceiveCard({
     chatUnreadCount,
   );
   const {
-    productionStarted,
     showWorkActions,
     showAbutmentProductionCancel,
     showCompletedStageHeaderCancel,
@@ -157,79 +157,35 @@ export function PracticeTransferLabReceiveCard({
       {cardBusy ? "처리 중..." : "하청 전환"}
     </Button>
   ) : showWorkActions ? (
-    productionStarted ? (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span className="inline-flex">
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              disabled
-              className="h-7 px-2 text-[11px]"
-            >
-              의뢰 수락 취소
-            </Button>
-          </span>
-        </TooltipTrigger>
-        <TooltipContent side="top" className="max-w-xs text-xs">
-          어벗 가공이 시작된 뒤에는 의뢰 수락을 취소할 수 없습니다. 제조사가
-          준비 단계일 때만 가능합니다.
-        </TooltipContent>
-      </Tooltip>
-    ) : (
-      <Button
-        type="button"
-        size="sm"
-        variant="outline"
-        disabled={cardBusy}
-        className="h-7 px-2 text-[11px]"
-        onClick={(event) => void onRelease(event)}
-      >
-        {cardBusy ? "처리 중..." : "의뢰 수락 취소"}
-      </Button>
-    )
+    <Button
+      type="button"
+      size="sm"
+      variant="outline"
+      disabled={cardBusy}
+      className="h-7 px-2 text-[11px]"
+      onClick={(event) => void onRelease(event)}
+    >
+      {cardBusy ? "처리 중..." : "의뢰 수락 취소"}
+    </Button>
   ) : showCompletedStageHeaderCancel ? (
-    productionStarted ? (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span className="inline-flex">
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              disabled
-              className="h-7 px-2 text-[11px]"
-            >
-              작업 완료 취소
-            </Button>
-          </span>
-        </TooltipTrigger>
-        <TooltipContent side="top" className="max-w-xs text-xs">
-          어벗 가공이 시작된 뒤에는 작업 완료를 취소할 수 없습니다. 제조사가
-          준비 단계일 때만 가능합니다.
-        </TooltipContent>
-      </Tooltip>
-    ) : (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={cardBusy}
-            className="h-7 px-2 text-[11px]"
-            onClick={(event) => void onAbutmentProductionCancel(event)}
-          >
-            {cardBusy ? "처리 중..." : "작업 완료 취소"}
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="top" className="max-w-xs text-xs">
-          발송(작업완료) 단계를 의뢰수락으로 되돌립니다. 이후 어벗·보철을 다시
-          올리거나 작업 취소할 수 있습니다. 제조사 준비 단계에서만 가능합니다.
-        </TooltipContent>
-      </Tooltip>
-    )
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={cardBusy}
+          className="h-7 px-2 text-[11px]"
+          onClick={(event) => void onAbutmentProductionCancel(event)}
+        >
+          {cardBusy ? "처리 중..." : "작업 완료 취소"}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-xs text-xs">
+        발송(작업완료) 단계를 의뢰수락으로 되돌립니다. 제조사 준비 단계에서만
+        가능합니다.
+      </TooltipContent>
+    </Tooltip>
   ) : null;
 
   const clinicLabel =
