@@ -7,8 +7,10 @@
 // - web/frontend/src/features/settings/tabs/AdminCreditSettingsTab.tsx
 // - 2026-08-14: 하단 저장 버튼 제거. 항목 변경은 디바운스 자동 저장. 마스터 스위치는 즉시 저장.
 // - 2026-08-19: 수락 클릭 시 `from=accept` 포워드 모달(LabFeeSetupPrompt).
-// - 2026-08-19: `need` 쿼리 수가 카드를 깜빡이며 입력 안내.
+// - 2026-08-19: `need` 쿼리 수가 카드를 맨 아래에서 깜빡이며 입력 안내.
 // - 2026-08-21: 항목 추가(빈 이름 초안)가 자동저장 응답에 지워지지 않게 로컬 초안을 보존.
+// - 2026-08-21: 라벨 원가→수가. WonInput은 blur 확정(입력 중 need 카드 리마운트로 포커스 끊김 방지).
+// - 2026-08-21: need 강제 입력은 맨 아래에서 작업(입력 후 위치 점프 혼동 방지).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
@@ -21,12 +23,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { Banknote, Plus, Trash2 } from "lucide-react";
 import { useToast } from "@/shared/hooks/use-toast";
 import { request } from "@/shared/api/apiClient";
@@ -110,6 +106,20 @@ function WonInput({
   remake?: boolean;
   onChange: (value: number) => void;
 }) {
+  // 편집 중엔 문자열 초안만 두고 blur 때 확정.
+  // 키마다 onChange하면 price>0 순간 need 카드가 리마운트되어 "4"에서 포커스가 끊긴다.
+  const [draft, setDraft] = useState<string | null>(null);
+  const draftRef = useRef<string | null>(null);
+  const display = draft !== null ? draft : String(toWon(value));
+
+  const commitDraft = () => {
+    const raw = draftRef.current;
+    if (raw === null) return;
+    onChange(toWon(Number(raw.replace(/\D/g, "") || 0)));
+    draftRef.current = null;
+    setDraft(null);
+  };
+
   return (
     <div className="min-w-0">
       <Label
@@ -124,12 +134,29 @@ function WonInput({
       <div className="relative">
         <Input
           id={id}
-          type="number"
-          min={0}
-          step={1000}
-          value={value}
+          type="text"
+          inputMode="numeric"
+          autoComplete="off"
+          value={display}
           disabled={disabled}
-          onChange={(e) => onChange(toWon(Number(e.target.value)))}
+          onFocus={(e) => {
+            const next = toWon(value) === 0 ? "" : String(toWon(value));
+            draftRef.current = next;
+            setDraft(next);
+            e.target.select();
+          }}
+          onBlur={() => commitDraft()}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              e.currentTarget.blur();
+            }
+          }}
+          onChange={(e) => {
+            const digits = e.target.value.replace(/\D/g, "");
+            draftRef.current = digits;
+            setDraft(digits);
+          }}
           className={cn(
             "h-11 rounded-xl border-slate-200 bg-slate-50/70 px-3 pr-8 text-right text-base font-semibold tabular-nums tracking-tight disabled:cursor-not-allowed disabled:bg-slate-50",
             remake && "border-amber-200/80 bg-amber-50/40",
@@ -248,18 +275,27 @@ export const LabFeeScheduleTab = () => {
       const missing = needNames.filter(
         (name) => !prev.some((item) => labFeeItemMatchesNeedName(item, name)),
       );
-      if (!missing.length) return prev;
-      return [
-        ...prev,
-        ...missing.map((name) =>
-          createFeeItem({
-            name,
-            enabled: true,
-            price: 0,
-            unit: name === "임시치아" ? "perNTeeth" : "perTooth",
-          }),
-        ),
-      ];
+      const isNeed = (item: LabFeeItem) =>
+        needNames.some((name) => labFeeItemMatchesNeedName(item, name));
+      const rest = prev.filter((item) => !isNeed(item));
+      const hits = prev.filter((item) => isNeed(item));
+      const created = missing.map((name) =>
+        createFeeItem({
+          name,
+          enabled: true,
+          price: 0,
+          unit: name === "임시치아" ? "perNTeeth" : "perTooth",
+        }),
+      );
+      // 강제 입력은 맨 아래에서 작업. 저장 후에도 같은 위치에 남도록 items 순서를 맞춘다.
+      const next = [...rest, ...hits, ...created];
+      if (
+        next.length === prev.length &&
+        next.every((item, i) => item === prev[i])
+      ) {
+        return prev;
+      }
+      return next;
     });
   }, [loading, needKey, needNames]);
 
@@ -348,34 +384,40 @@ export const LabFeeScheduleTab = () => {
     toast({ title: "기공비를 껐습니다." });
   };
 
-  const orderedItems = useMemo(() => {
-    if (!needNames.length) return items;
-    const hit: LabFeeItem[] = [];
-    const rest: LabFeeItem[] = [];
-    for (const item of items) {
-      if (needNames.some((name) => labFeeItemMatchesNeedName(item, name))) {
-        hit.push(item);
-      } else {
-        rest.push(item);
-      }
-    }
-    return [...hit, ...rest];
-  }, [items, needNames]);
-
-  const firstNeedId = orderedItems.find(
+  const focusNeedId = items.find(
     (item) =>
       needNames.some((name) => labFeeItemMatchesNeedName(item, name)) &&
       !labFeeItemHasChargePrice(item),
   )?.id;
 
-  const firstNeedRef = useRef<HTMLDivElement | null>(null);
+  const focusNeedRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (loading || !needNames.length) return;
     const timer = window.setTimeout(() => {
-      firstNeedRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      focusNeedRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
     }, 80);
     return () => window.clearTimeout(timer);
   }, [loading, needKey, needNames.length]);
+
+  // need 수가 입력이 끝나면 from/need/setup 쿼리를 지워 상단 안내·하이라이트를 끈다.
+  useEffect(() => {
+    if (loading || !hydratedRef.current || !needNames.length) return;
+    const stillMissing = needNames.some((name) => {
+      const item = items.find((row) => labFeeItemMatchesNeedName(row, name));
+      return !item || !labFeeItemHasChargePrice(item);
+    });
+    if (stillMissing) return;
+
+    const next = new URLSearchParams(searchParams);
+    let changed = false;
+    for (const key of ["from", "need", "setup"] as const) {
+      if (next.has(key)) {
+        next.delete(key);
+        changed = true;
+      }
+    }
+    if (changed) setSearchParams(next, { replace: true });
+  }, [loading, items, needNames, searchParams, setSearchParams]);
 
   if (loading) {
     return <SettingsCardSkeleton />;
@@ -418,7 +460,7 @@ export const LabFeeScheduleTab = () => {
         {fromAccept && needNames.length ? (
           <p className="mt-2 text-[13px] font-medium text-red-600">
             수락하려는 의뢰의 「{needNames.join("·")}」 수가가 없습니다. 깜빡이는
-            카드를 켜고 원가를 입력하세요.
+            카드를 켜고 수가를 입력하세요.
           </p>
         ) : active &&
           !items.some(
@@ -432,7 +474,7 @@ export const LabFeeScheduleTab = () => {
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {orderedItems.map((item) => {
+          {items.map((item) => {
             const isProvided = item.enabled !== false;
             const isNeedCard = needNames.some((name) =>
               labFeeItemMatchesNeedName(item, name),
@@ -487,7 +529,7 @@ export const LabFeeScheduleTab = () => {
 
                 {needsInput ? (
                   <p className="rounded-xl bg-red-50 px-3 py-2 text-[12px] font-medium text-red-600">
-                    이 항목을 켜고 원가를 입력해야 의뢰를 수락할 수 있습니다.
+                    이 항목을 켜고 수가를 입력해야 의뢰를 수락할 수 있습니다.
                   </p>
                 ) : null}
 
@@ -560,7 +602,7 @@ export const LabFeeScheduleTab = () => {
                 <div className="grid grid-cols-2 gap-2.5">
                   <WonInput
                     id={`fee-${item.id}`}
-                    label="원가"
+                    label="수가"
                     value={item.unit === "perNTeeth" ? tier.price : item.price}
                     disabled={!isProvided}
                     onChange={(price) =>
@@ -584,29 +626,12 @@ export const LabFeeScheduleTab = () => {
                 </div>
               </div>
             );
-            if (!needsInput) {
-              return (
-                <div
-                  key={item.id}
-                  ref={item.id === firstNeedId ? firstNeedRef : undefined}
-                >
-                  {card}
-                </div>
-              );
-            }
             return (
               <div
                 key={item.id}
-                ref={item.id === firstNeedId ? firstNeedRef : undefined}
+                ref={item.id === focusNeedId ? focusNeedRef : undefined}
               >
-                <TooltipProvider delayDuration={0}>
-                  <Tooltip defaultOpen>
-                    <TooltipTrigger asChild>{card}</TooltipTrigger>
-                    <TooltipContent side="top">
-                      「{item.name || "이 항목"}」 수가를 켜고 원가를 입력하세요.
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
+                {card}
               </div>
             );
           })}

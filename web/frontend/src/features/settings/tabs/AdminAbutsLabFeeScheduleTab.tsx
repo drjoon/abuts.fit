@@ -94,6 +94,19 @@ function WonInput({
   disabled?: boolean;
   onChange: (value: number) => void;
 }) {
+  // 편집 중엔 문자열 초안만 두고 blur 때 확정(키마다 commit하면 카드 리마운트로 포커스가 끊김).
+  const [draft, setDraft] = useState<string | null>(null);
+  const draftRef = useRef<string | null>(null);
+  const display = draft !== null ? draft : String(toWon(value));
+
+  const commitDraft = () => {
+    const raw = draftRef.current;
+    if (raw === null) return;
+    onChange(toWon(Number(raw.replace(/\D/g, "") || 0)));
+    draftRef.current = null;
+    setDraft(null);
+  };
+
   return (
     <div className="min-w-0">
       <Label
@@ -105,12 +118,29 @@ function WonInput({
       <div className="relative">
         <Input
           id={id}
-          type="number"
-          min={0}
-          step={1000}
-          value={value}
+          type="text"
+          inputMode="numeric"
+          autoComplete="off"
+          value={display}
           disabled={disabled}
-          onChange={(e) => onChange(toWon(Number(e.target.value)))}
+          onFocus={(e) => {
+            const next = toWon(value) === 0 ? "" : String(toWon(value));
+            draftRef.current = next;
+            setDraft(next);
+            e.target.select();
+          }}
+          onBlur={() => commitDraft()}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              e.currentTarget.blur();
+            }
+          }}
+          onChange={(e) => {
+            const digits = e.target.value.replace(/\D/g, "");
+            draftRef.current = digits;
+            setDraft(digits);
+          }}
           className="h-11 rounded-xl border-slate-200 bg-slate-50/70 px-3 pr-8 text-right text-base font-semibold tabular-nums tracking-tight disabled:cursor-not-allowed disabled:bg-slate-50"
         />
         <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[11px] font-medium text-slate-400">

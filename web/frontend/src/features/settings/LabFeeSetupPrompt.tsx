@@ -183,7 +183,7 @@ export const LabFeeSetupPrompt = ({
           <AlertDialogDescription>
             {fromAccept
               ? needNames.length
-                ? `「${needNames.join("·")}」 수가가 없습니다. 깜빡이는 카드를 켜고 원가를 입력한 뒤, 기공의뢰수신에서 다시 수락해 주세요.`
+                ? `「${needNames.join("·")}」 수가가 없습니다. 깜빡이는 카드를 켜고 수가를 입력한 뒤, 기공의뢰수신에서 다시 수락해 주세요.`
                 : "의뢰를 수락하려면 기공비를 먼저 설정해야 합니다. 오른쪽 마스터 스위치를 켜고, 제공할 항목을 켠 뒤 저장하세요. 완료 후 기공의뢰수신에서 다시 수락해 주세요."
               : "기공비를 아직 설정하지 않았습니다. 확인을 누르면 기공비 설정 페이지로 이동합니다."}
           </AlertDialogDescription>

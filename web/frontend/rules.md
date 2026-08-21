@@ -165,7 +165,7 @@ Notes:
   - 의뢰자(기공소) 설정: `requestorKind=lab`일 때 알림 **왼쪽**에 「기공비」 탭
     - `src/pages/requestor/settings/SettingsPage.tsx`
     - 구 `?tab=auto-match`·`trading-partners` → 계정. 인증 신청 UI 제거(관리자 `PracticeTransferAutoMatchTab`)
-    - `src/features/settings/tabs/LabFeeScheduleTab.tsx` — 항목 카드(이름·단위·원가/리메이크). 하단 저장 버튼 없음, 항목 변경은 디바운스 자동 저장. 제목 오른쪽 마스터 On/Off(기본 off, 켜면 설정 완료·즉시 저장). 로그인 시 미설정이면 `LabFeeSetupPrompt` → `?tab=lab-fees&setup=1`로 스위치 하이라이트. **수락 클릭 시 미설정이면** `?tab=lab-fees&setup=1&from=accept`로 포워드·안내 모달. 유지장치는 연결 스팬당 1세트(같은 악궁이어도 끊기면 별도). 임시치아는 카드 두 장(이름 모두 「임시치아」, 3치·6치 이하). 청구는 의뢰서 「임시치아」에 치아 수 구간으로 합산. **카탈로그에 없는 신규 항목 저장 시 어벗츠 수가에 Off로 동기화·관리자 알림.**
+    - `src/features/settings/tabs/LabFeeScheduleTab.tsx` — 항목 카드(이름·단위·수가/리메이크). 하단 저장 버튼 없음, 항목 변경은 디바운스 자동 저장. 제목 오른쪽 마스터 On/Off(기본 off, 켜면 설정 완료·즉시 저장). 로그인 시 미설정이면 `LabFeeSetupPrompt` → `?tab=lab-fees&setup=1`로 스위치 하이라이트. **수락 클릭 시 미설정이면** `?tab=lab-fees&setup=1&from=accept`로 포워드·안내 모달. 유지장치는 연결 스팬당 1세트(같은 악궁이어도 끊기면 별도). 임시치아는 카드 두 장(이름 모두 「임시치아」, 3치·6치 이하). 청구는 의뢰서 「임시치아」에 치아 수 구간으로 합산. **카탈로그에 없는 신규 항목 저장 시 어벗츠 수가에 Off로 동기화·관리자 알림.**
     - 가입 이유 배너: `LabDashboardTopBanners` — 기공소 사이드 설정과 계정 팝업 사이(짧은 카피).
       - 가입 이유 (`LabPlatformBenefitsBanner`) → 클릭 시 모달
       - 대시보드 `[정책 안내]` 옆 `[가입 이유]`로도 동일 모달 열기(기공소)
