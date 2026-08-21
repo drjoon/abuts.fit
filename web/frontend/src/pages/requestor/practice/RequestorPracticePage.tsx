@@ -22,7 +22,10 @@
 // - web/frontend/src/shared/components/practice/PracticeLabReceiveWorkActionsBar.tsx
 // - web/frontend/src/shared/practice/labReceiveCalendarDateKey.ts
 // - web/backend/utils/labReceiveCalendarDateKey.util.js
+// - web/frontend/src/shared/practice/labReceiveCalendarHiddenWeekdays.ts
+// - web/backend/utils/labReceiveCalendarHiddenWeekdays.util.js
 // - web/backend/controllers/users/user.controller.js
+// - 2026-08-22: 기공의뢰수신 캘린더 숨길 요일 계정 preferences에 저장.
 // - 2026-08-21: 작업취소 후 어벗츠로의뢰 진행중/출고예정 건수 쿼리 무효화.
 // - 2026-08-21: 어벗 분할 업로드 모달 — 문구 단문화·취소/확인. 헥스 샘플 related 제외.
 // - 2026-08-21: 수신 상단 상태 뱃지에 채팅·미확인 unread. 휴지통(canceled)도 취소 뱃지·캘린더에 표시.
@@ -215,12 +218,12 @@ import {
 } from "@/shared/components/practice/PracticeRecentTransferListCardDetail";
 import { toKstYmd } from "@/shared/date/kst";
 import { normalizeLabReceiveCalendarDateKey } from "@/shared/practice/labReceiveCalendarDateKey";
+import { normalizeLabReceiveCalendarHiddenWeekdays } from "@/shared/practice/labReceiveCalendarHiddenWeekdays";
 import {
   getPracticeAbutmentDeliveryLabel,
   type PracticeAbutmentDeliveryInfo,
 } from "@/shared/shipping/hanjinTrackingLabel";
 import {
-  DEFAULT_HIDDEN_WEEKDAYS,
   PracticeRecentTransfersCalendar,
   resolvePracticeCalendarStatusTone,
   type PracticeCalendarChipItem,
@@ -496,6 +499,12 @@ export function RequestorPracticeReceivePage({
   const setStoredCalendarDateKey = useAuthStore(
     (s) => s.setLabReceiveCalendarDateKey,
   );
+  const storedHiddenWeekdays = useAuthStore(
+    (s) => s.user?.labReceiveCalendarHiddenWeekdays,
+  );
+  const setStoredHiddenWeekdays = useAuthStore(
+    (s) => s.setLabReceiveCalendarHiddenWeekdays,
+  );
   const navigate = useNavigate();
   const { period, setPeriod } = usePeriodStore();
   const { toast } = useToast();
@@ -556,9 +565,9 @@ export function RequestorPracticeReceivePage({
     normalizeLabReceiveCalendarDateKey(storedCalendarDateKey),
   );
   const [cursorYmd, setCursorYmd] = useState(() => toKstYmd(new Date()) || "");
-  const [hiddenWeekdays, setHiddenWeekdays] = useState<number[]>([
-    ...DEFAULT_HIDDEN_WEEKDAYS,
-  ]);
+  const [hiddenWeekdays, setHiddenWeekdays] = useState<number[]>(() =>
+    normalizeLabReceiveCalendarHiddenWeekdays(storedHiddenWeekdays),
+  );
 
   useEffect(() => {
     if (
@@ -569,6 +578,13 @@ export function RequestorPracticeReceivePage({
     }
     setDateKey(storedCalendarDateKey);
   }, [storedCalendarDateKey]);
+
+  useEffect(() => {
+    if (storedHiddenWeekdays == null) return;
+    setHiddenWeekdays(
+      normalizeLabReceiveCalendarHiddenWeekdays(storedHiddenWeekdays),
+    );
+  }, [storedHiddenWeekdays]);
 
   const handleCalendarDateKeyChange = useCallback(
     (key: PracticeCalendarDateKey) => {
@@ -586,6 +602,24 @@ export function RequestorPracticeReceivePage({
       });
     },
     [setStoredCalendarDateKey, token],
+  );
+
+  const handleHiddenWeekdaysChange = useCallback(
+    (nextRaw: number[]) => {
+      const next = normalizeLabReceiveCalendarHiddenWeekdays(nextRaw);
+      setHiddenWeekdays(next);
+      setStoredHiddenWeekdays(next);
+      if (!token) return;
+      void apiFetch({
+        path: "/api/users/lab-receive-calendar-hidden-weekdays",
+        method: "PUT",
+        token,
+        jsonBody: { hiddenWeekdays: next },
+      }).catch(() => {
+        // 저장 실패는 UX를 막지 않음 — 다음 로그인 시 서버 값으로 복원
+      });
+    },
+    [setStoredHiddenWeekdays, token],
   );
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -4515,7 +4549,7 @@ export function RequestorPracticeReceivePage({
               if (transfer) void openTransferDialog(transfer);
             }}
             hiddenWeekdays={hiddenWeekdays}
-            onHiddenWeekdaysChange={setHiddenWeekdays}
+            onHiddenWeekdaysChange={handleHiddenWeekdaysChange}
           />
         </>
       ) : null}

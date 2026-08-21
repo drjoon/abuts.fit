@@ -6,6 +6,7 @@
  * - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
  * - web/frontend/src/pages/practice/components/PracticeStatusFilterBadges.tsx
  * - web/frontend/src/shared/date/kst.ts
+ * - 2026-08-22: 숨길 요일을 계정 preferences에 저장(기본 일·토).
  * - 2026-08-19: 리메이크는 공정 상태색 유지 + 이중 외곽선(흰 채움 아님).
  * - 2026-08-19: 기공의뢰수신 칩은 상단 뱃지 상태색.
  * - 2026-08-19: 치과 캘린더 칩에서 휴지통(의뢰 취소) 바로 이동.
@@ -30,6 +31,7 @@ import {
   toKstYmd,
   toKstYmdLoose,
 } from "@/shared/date/kst";
+import { DEFAULT_LAB_RECEIVE_CALENDAR_HIDDEN_WEEKDAYS } from "@/shared/practice/labReceiveCalendarHiddenWeekdays";
 
 export type PracticeCalendarDateKey = "orderDate" | "arrivalDate";
 
@@ -63,7 +65,8 @@ const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"] as const;
 const WEEK_STARTS_ON = 1;
 const WEEKS_BEFORE = 78;
 const WEEKS_AFTER = 26;
-export const DEFAULT_HIDDEN_WEEKDAYS = [0, 6] as const;
+export const DEFAULT_HIDDEN_WEEKDAYS =
+  DEFAULT_LAB_RECEIVE_CALENDAR_HIDDEN_WEEKDAYS;
 
 type DayCell = {
   ymd: string;
@@ -371,7 +374,7 @@ export function PracticeRecentTransfersCalendar({
           <span className="mr-0.5 text-[11px] text-muted-foreground">숨길 요일</span>
           {WEEKDAYS.map((label, dow) => (
             <button
-              key={label}
+              key={dow}
               type="button"
               className={cn(
                 "h-7 min-w-7 rounded-md px-1.5 text-[11px] tabular-nums",

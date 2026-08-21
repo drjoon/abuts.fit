@@ -49,6 +49,16 @@ router.put(
   userController.updateLabReceiveCalendarDateKey,
 );
 
+// 기공의뢰수신 캘린더 숨길 요일
+router.get(
+  "/lab-receive-calendar-hidden-weekdays",
+  userController.getLabReceiveCalendarHiddenWeekdays,
+);
+router.put(
+  "/lab-receive-calendar-hidden-weekdays",
+  userController.updateLabReceiveCalendarHiddenWeekdays,
+);
+
 // 내 보안 로그 (로그인 기록 등)
 router.get("/security-logs", userController.getMySecurityLogs);
 

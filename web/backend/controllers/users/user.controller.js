@@ -4,6 +4,8 @@
 // - web/backend/server.js
 // - web/backend/utils/labReceiveCalendarDateKey.util.js
 // - web/frontend/src/shared/practice/labReceiveCalendarDateKey.ts
+// - web/backend/utils/labReceiveCalendarHiddenWeekdays.util.js
+// - web/frontend/src/shared/practice/labReceiveCalendarHiddenWeekdays.ts
 import crypto from "crypto";
 import User from "../../models/user.model.js";
 import ActivityLog from "../../models/activityLog.model.js";
@@ -16,6 +18,7 @@ import { resolvePlatformFeeRate } from "../../services/creditRevenuePolicy.servi
 import { normalizeLastDashboardPath } from "../../utils/lastDashboardPath.util.js";
 import { normalizeWorkspaceMode } from "../../utils/workspaceMode.util.js";
 import { normalizeLabReceiveCalendarDateKey } from "../../utils/labReceiveCalendarDateKey.util.js";
+import { normalizeLabReceiveCalendarHiddenWeekdays } from "../../utils/labReceiveCalendarHiddenWeekdays.util.js";
 
 /**
  * 사용자 프로필 조회
@@ -1045,6 +1048,96 @@ async function updateLabReceiveCalendarDateKey(req, res) {
   }
 }
 
+/**
+ * 기공의뢰수신 캘린더 숨길 요일 조회
+ * @route GET /api/users/lab-receive-calendar-hidden-weekdays
+ */
+async function getLabReceiveCalendarHiddenWeekdays(req, res) {
+  try {
+    const user = await User.findById(req.user._id)
+      .select("preferences.labReceiveCalendarHiddenWeekdays")
+      .lean();
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "사용자를 찾을 수 없습니다.",
+      });
+    }
+    return res.status(200).json({
+      success: true,
+      data: {
+        hiddenWeekdays: normalizeLabReceiveCalendarHiddenWeekdays(
+          user?.preferences?.labReceiveCalendarHiddenWeekdays,
+        ),
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "캘린더 숨길 요일 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * 기공의뢰수신 캘린더 숨길 요일 저장
+ * @route PUT /api/users/lab-receive-calendar-hidden-weekdays
+ */
+async function updateLabReceiveCalendarHiddenWeekdays(req, res) {
+  try {
+    if (!Array.isArray(req.body?.hiddenWeekdays)) {
+      return res.status(400).json({
+        success: false,
+        message: "유효하지 않은 숨길 요일입니다.",
+      });
+    }
+    const hiddenWeekdays = normalizeLabReceiveCalendarHiddenWeekdays(
+      req.body.hiddenWeekdays,
+    );
+    // 전 요일 숨김·비배열은 normalize가 기본값으로 돌리므로, 원본이 전부 무효면 400
+    const rawValid = req.body.hiddenWeekdays.filter((item) => {
+      const n = typeof item === "number" ? item : Number(item);
+      return Number.isInteger(n) && n >= 0 && n <= 6;
+    });
+    const unique = new Set(rawValid);
+    if (unique.size >= 7) {
+      return res.status(400).json({
+        success: false,
+        message: "모든 요일을 숨길 수 없습니다.",
+      });
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+      req.user._id,
+      { $set: { "preferences.labReceiveCalendarHiddenWeekdays": hiddenWeekdays } },
+      { new: true, runValidators: true },
+    ).select("preferences.labReceiveCalendarHiddenWeekdays");
+
+    if (!updatedUser) {
+      return res.status(404).json({
+        success: false,
+        message: "사용자를 찾을 수 없습니다.",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        hiddenWeekdays: normalizeLabReceiveCalendarHiddenWeekdays(
+          updatedUser.preferences?.labReceiveCalendarHiddenWeekdays,
+        ),
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "캘린더 숨길 요일 저장 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
 export {
   getProfile,
   updateProfile,
@@ -1058,6 +1151,8 @@ export {
   updateWorkspaceMode,
   getLabReceiveCalendarDateKey,
   updateLabReceiveCalendarDateKey,
+  getLabReceiveCalendarHiddenWeekdays,
+  updateLabReceiveCalendarHiddenWeekdays,
   getMySecurityLogs,
 };
 

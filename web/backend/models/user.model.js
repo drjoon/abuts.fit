@@ -311,6 +311,11 @@ const userSchema = new mongoose.Schema(
         enum: ["orderDate", "arrivalDate"],
         default: "arrivalDate",
       },
+      /** 기공의뢰·기공의뢰수신 캘린더 숨길 요일(0=일…6=토). 기본 일·토 */
+      labReceiveCalendarHiddenWeekdays: {
+        type: [Number],
+        default: () => [0, 6],
+      },
     },
   },
   {

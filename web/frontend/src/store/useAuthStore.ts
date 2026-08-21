@@ -7,9 +7,12 @@
 // - web/frontend/src/features/layout/WorkspaceModeSwitch.tsx
 // - web/frontend/src/shared/practice/labReceiveCalendarDateKey.ts
 // - web/backend/utils/labReceiveCalendarDateKey.util.js
+// - web/frontend/src/shared/practice/labReceiveCalendarHiddenWeekdays.ts
+// - web/backend/utils/labReceiveCalendarHiddenWeekdays.util.js
 // - web/backend/models/user.model.js
 // - web/backend/modules/auth/auth.routes.js
 // - web/backend/controllers/users/user.controller.js
+// - 2026-08-22: 계정 preferences.labReceiveCalendarHiddenWeekdays (캘린더 숨길 요일, 기본 일·토)
 // - 2026-08-20: 계정 preferences.labReceiveCalendarDateKey (기공의뢰 캘린더, 기본 도착일)
 // - 2026-08-15: 계정(개인) preferences.workspaceMode 로그인·전환에 반영 (기본 express)
 // - 2026-08-15: 탭 간 localStorage 인증 SSOT — stale 탭이 다른 계정 세션을 덮어쓰지 않게 가드
@@ -32,6 +35,7 @@ import {
   normalizeLabReceiveCalendarDateKey,
   type LabReceiveCalendarDateKey,
 } from "@/shared/practice/labReceiveCalendarDateKey";
+import { normalizeLabReceiveCalendarHiddenWeekdays } from "@/shared/practice/labReceiveCalendarHiddenWeekdays";
 
 const AUTH_TOKEN_KEY = "abuts_auth_token";
 const AUTH_REFRESH_TOKEN_KEY = "abuts_auth_refresh_token";
@@ -83,6 +87,8 @@ export interface User {
   workspaceMode?: WorkspaceMode;
   /** 기공의뢰·기공의뢰수신 캘린더 날짜 뱃지. 기본 치과도착일 */
   labReceiveCalendarDateKey?: LabReceiveCalendarDateKey;
+  /** 기공의뢰·기공의뢰수신 캘린더 숨길 요일(0=일…6=토). 기본 일·토 */
+  labReceiveCalendarHiddenWeekdays?: number[];
 }
 
 const normalizeApiUser = (u: unknown): User | null => {
@@ -196,6 +202,16 @@ const normalizeApiUser = (u: unknown): User | null => {
         prefs?.labReceiveCalendarDateKey ?? row.labReceiveCalendarDateKey,
       );
     })(),
+    labReceiveCalendarHiddenWeekdays: (() => {
+      const prefs =
+        row.preferences && typeof row.preferences === "object"
+          ? (row.preferences as Record<string, unknown>)
+          : null;
+      return normalizeLabReceiveCalendarHiddenWeekdays(
+        prefs?.labReceiveCalendarHiddenWeekdays ??
+          row.labReceiveCalendarHiddenWeekdays,
+      );
+    })(),
   };
 };
 
@@ -230,6 +246,7 @@ interface AuthState {
   setLastDashboardPath: (path: string | null) => void;
   setWorkspaceMode: (mode: WorkspaceMode) => void;
   setLabReceiveCalendarDateKey: (dateKey: LabReceiveCalendarDateKey) => void;
+  setLabReceiveCalendarHiddenWeekdays: (hiddenWeekdays: number[]) => void;
   logout: () => void;
 }
 
@@ -612,6 +629,22 @@ export const useAuthStore = create<AuthState>((set, get) => {
       const next = {
         ...current,
         labReceiveCalendarDateKey: normalizeLabReceiveCalendarDateKey(dateKey),
+      };
+      try {
+        localStorage.setItem(AUTH_USER_KEY, JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      set({ user: next });
+    },
+    setLabReceiveCalendarHiddenWeekdays: (hiddenWeekdays: number[]) => {
+      if (isMemoryAuthStale(get().token)) return;
+      const current = get().user;
+      if (!current) return;
+      const next = {
+        ...current,
+        labReceiveCalendarHiddenWeekdays:
+          normalizeLabReceiveCalendarHiddenWeekdays(hiddenWeekdays),
       };
       try {
         localStorage.setItem(AUTH_USER_KEY, JSON.stringify(next));

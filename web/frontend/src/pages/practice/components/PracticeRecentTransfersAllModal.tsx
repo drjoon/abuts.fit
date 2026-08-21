@@ -21,6 +21,7 @@
  * 2026-08-21: 커스텀어벗 한진 배송현황을 캘린더 칩·모바일 카드에 표시.
  * 2026-08-21: 휴지통 취소·거부를 목록·취소 뱃지에 포함. 상단 뱃지별 unread.
  * 2026-08-21: 상단 상태 뱃지 다중 표시 on/off(표시 라벨·기본 리셋·ON/OFF 대비).
+ * 2026-08-22: 숨길 요일을 계정 preferences에 저장.
  * 2026-08-20: 모바일 — 가로 스크롤 상태칩·터치 카드·풀높이 시트.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -45,6 +46,7 @@ import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebounc
 import { useIsMobile } from "@/shared/hooks/use-mobile";
 import { toKstYmd } from "@/shared/date/kst";
 import { normalizeLabReceiveCalendarDateKey } from "@/shared/practice/labReceiveCalendarDateKey";
+import { normalizeLabReceiveCalendarHiddenWeekdays } from "@/shared/practice/labReceiveCalendarHiddenWeekdays";
 import { useAuthStore } from "@/store/useAuthStore";
 import {
   type PracticeRecentTransferItem,
@@ -66,7 +68,6 @@ import {
   toStatusBadgeLabel,
 } from "@/shared/practice/practiceRecentTransferList";
 import {
-  DEFAULT_HIDDEN_WEEKDAYS,
   PracticeRecentTransfersCalendar,
   resolvePracticeCalendarStatusTone,
   type PracticeCalendarChipItem,
@@ -125,6 +126,12 @@ export function PracticeRecentTransfersAllModal({
   const setStoredCalendarDateKey = useAuthStore(
     (s) => s.setLabReceiveCalendarDateKey,
   );
+  const storedHiddenWeekdays = useAuthStore(
+    (s) => s.user?.labReceiveCalendarHiddenWeekdays,
+  );
+  const setStoredHiddenWeekdays = useAuthStore(
+    (s) => s.setLabReceiveCalendarHiddenWeekdays,
+  );
   const [search, setSearch] = useState(initialSearch);
   const [statusFilters, setStatusFilters] = useState<Set<PracticeRecentStatusFilterKey>>(() => {
     if (initialStatusFilter && initialStatusFilter !== "all") {
@@ -136,7 +143,9 @@ export function PracticeRecentTransfersAllModal({
     normalizeLabReceiveCalendarDateKey(storedCalendarDateKey),
   );
   const [cursorYmd, setCursorYmd] = useState(() => toKstYmd(new Date()) || "");
-  const [hiddenWeekdays, setHiddenWeekdays] = useState<number[]>([...DEFAULT_HIDDEN_WEEKDAYS]);
+  const [hiddenWeekdays, setHiddenWeekdays] = useState<number[]>(() =>
+    normalizeLabReceiveCalendarHiddenWeekdays(storedHiddenWeekdays),
+  );
   const [alignEpoch, setAlignEpoch] = useState(0);
   const [extraRequests, setExtraRequests] = useState<PracticeRecentRequestItem[]>([]);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -153,9 +162,17 @@ export function PracticeRecentTransfersAllModal({
     }
     setCursorYmd(toKstYmd(new Date()) || "");
     setDateKey(normalizeLabReceiveCalendarDateKey(storedCalendarDateKey));
-    setHiddenWeekdays([...DEFAULT_HIDDEN_WEEKDAYS]);
+    setHiddenWeekdays(
+      normalizeLabReceiveCalendarHiddenWeekdays(storedHiddenWeekdays),
+    );
     setAlignEpoch((n) => n + 1);
-  }, [open, initialSearch, initialStatusFilter, storedCalendarDateKey]);
+  }, [
+    open,
+    initialSearch,
+    initialStatusFilter,
+    storedCalendarDateKey,
+    storedHiddenWeekdays,
+  ]);
 
   const handleCalendarDateKeyChange = useCallback(
     (key: PracticeCalendarDateKey) => {
@@ -173,6 +190,24 @@ export function PracticeRecentTransfersAllModal({
       });
     },
     [setStoredCalendarDateKey, token],
+  );
+
+  const handleHiddenWeekdaysChange = useCallback(
+    (nextRaw: number[]) => {
+      const next = normalizeLabReceiveCalendarHiddenWeekdays(nextRaw);
+      setHiddenWeekdays(next);
+      setStoredHiddenWeekdays(next);
+      if (!token) return;
+      void apiFetch({
+        path: "/api/users/lab-receive-calendar-hidden-weekdays",
+        method: "PUT",
+        token,
+        jsonBody: { hiddenWeekdays: next },
+      }).catch(() => {
+        // 저장 실패는 UX를 막지 않음 — 다음 로그인 시 서버 값으로 복원
+      });
+    },
+    [setStoredHiddenWeekdays, token],
   );
 
   useEffect(() => {
@@ -619,7 +654,7 @@ export function PracticeRecentTransfersAllModal({
                   if (transfer) onDeleteTransfer(transfer);
                 }}
                 hiddenWeekdays={hiddenWeekdays}
-                onHiddenWeekdaysChange={setHiddenWeekdays}
+                onHiddenWeekdaysChange={handleHiddenWeekdaysChange}
                 alignEpoch={alignEpoch}
               />
             </>
