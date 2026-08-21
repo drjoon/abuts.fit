@@ -1,9 +1,11 @@
 /**
  * 치과 기공의뢰 — 최근 전송 목록 매핑·그룹·필터 SSOT.
- * 상단 6뱃지 취소=기공소 작업취소. 리메이크는 발송 건 재의뢰 플래그(파이프라인과 병행).
- * 치과 휴지통(status 취소·거부)은 집계·필터에서 제외.
+ * 상단 6뱃지 취소=작업취소·휴지통(취소·거부). 리메이크는 발송 건 재의뢰 플래그(파이프라인과 병행).
+ * 전체보기 모달 취소 뱃지=작업취소·휴지통(취소·거부). 채팅 unread는 상태 뱃지별 합산.
  * 자동매칭(공개 풀)은 공정상 의뢰 — 뱃지 집계·「의뢰」필터에 포함. 카드 뱃지 문구도「의뢰」(수락 후「수락」).
  * 표시명만 UI 마스킹.
+ * 2026-08-21: 전체보기 취소 뱃지에 휴지통(취소·거부) 포함 + 상태 뱃지별 unread 합.
+ * 2026-08-21: 상단 상태 뱃지 다중 on/off — 켠 항목만 표시(기본 취소 off).
  * 2026-08-17: transferId API 필드 우선 매핑(메시지 파싱 폴백) — 채팅 unread 카드 배지 정합.
  * 2026-08-14: 전체보기 모달은 사이드바와 같은 GET /my 1페이지를 재사용(중복 요청 제거).
  * 2026-08-14: 자동매칭 → 의뢰 집계/필터·뱃지 라벨. matchingMode=auto 기공소명 UI 마스킹.
@@ -183,6 +185,8 @@ export type PracticeRecentStatusFilter =
   | "포장.발송"
   | "리메이크";
 
+export type PracticeRecentStatusFilterKey = Exclude<PracticeRecentStatusFilter, "all">;
+
 export type PracticeRecentStatusCounts = {
   sent: number;
   accepted: number;
@@ -190,6 +194,66 @@ export type PracticeRecentStatusCounts = {
   shipping: number;
   remake: number;
   canceled: number;
+};
+
+/** 전체보기 기본 ON — 취소(휴지통·작업취소)만 off. 뱃지 켜면 표시·끄면 미표시. */
+export const PRACTICE_RECENT_DEFAULT_ON_STATUS_FILTERS: readonly PracticeRecentStatusFilterKey[] =
+  ["발송완료", "의뢰수락", "작업완료", "포장.발송", "리메이크"];
+
+export const createPracticeRecentStatusFilterSet = (
+  keys: readonly PracticeRecentStatusFilterKey[] = PRACTICE_RECENT_DEFAULT_ON_STATUS_FILTERS,
+) => new Set<PracticeRecentStatusFilterKey>(keys);
+
+export const togglePracticeRecentStatusFilter = (
+  prev: ReadonlySet<PracticeRecentStatusFilterKey>,
+  key: PracticeRecentStatusFilterKey,
+) => {
+  const next = new Set(prev);
+  if (next.has(key)) next.delete(key);
+  else next.add(key);
+  return next;
+};
+
+export const practiceTransferMatchesStatusFilters = (
+  transfer: { status?: unknown; isRemake?: boolean },
+  selected: ReadonlySet<PracticeRecentStatusFilterKey>,
+) => {
+  if (selected.size === 0) return false;
+
+  const status = String(transfer.status || "").trim();
+  if (selected.has("리메이크") && transfer.isRemake) return true;
+  if (selected.has("취소") && isPracticeRecentCancelBadgeStatus(status)) return true;
+  if (selected.has("의뢰수락") && (status === "의뢰수락" || status === "다운로드완료")) {
+    return true;
+  }
+  if (
+    selected.has("작업완료") &&
+    status === "작업완료"
+  ) {
+    return true;
+  }
+  if (
+    selected.has("포장.발송") &&
+    (status === "생산진행" || status === "포장.발송")
+  ) {
+    return true;
+  }
+  if (selected.has("발송완료")) {
+    return (
+      status === "발송완료" ||
+      status === "수신완료" ||
+      status === "자동매칭" ||
+      (status !== "의뢰수락" &&
+        status !== "다운로드완료" &&
+        status !== "작업완료" &&
+        status !== "생산진행" &&
+        status !== "취소" &&
+        status !== "거부" &&
+        status !== "작업취소" &&
+        status !== "포장.발송")
+    );
+  }
+  return false;
 };
 
 export const PRACTICE_REMAKE_BADGE_CLASS =
@@ -200,7 +264,7 @@ export const canRemakePracticeTransferByStatus = (status: unknown) => {
   return s === "생산진행" || s === "포장.발송";
 };
 
-/** 최근전송 상단 6뱃지 — 라벨·집계키·빠른툴팁 SSOT. 취소=기공소 작업취소(치과 휴지통 제외). */
+/** 최근전송 상단 6뱃지 — 라벨·집계키·빠른툴팁 SSOT. 취소=작업취소+휴지통(취소·거부). */
 export const PRACTICE_RECENT_STATUS_BADGES = [
   {
     filter: "발송완료",
@@ -224,7 +288,8 @@ export const PRACTICE_RECENT_STATUS_BADGES = [
     filter: "취소",
     label: "취소",
     countKey: "canceled",
-    tooltip: "기공소에서 작업을 취소·거부한 후(치과가 다음 조치를 선택)",
+    tooltip:
+      "기공소 작업취소·지정 거부, 또는 휴지통으로 옮긴 취소 건(채팅 미확인 포함)",
   },
   {
     filter: "포장.발송",
@@ -244,6 +309,12 @@ export const PRACTICE_RECENT_STATUS_BADGES = [
   countKey: keyof PracticeRecentStatusCounts;
   tooltip: string;
 }>;
+
+/** 전체보기 취소 뱃지·필터 — 작업취소 + 휴지통(취소·거부) */
+export const isPracticeRecentCancelBadgeStatus = (status: unknown) => {
+  const s = String(status || "").trim();
+  return s === "작업취소" || s === "취소" || s === "거부";
+};
 
 const extractLabNameFromMessage = (message: string) => {
   const raw = String(message || "").trim();
@@ -965,66 +1036,80 @@ export const groupPracticeRecentRequests = (
     });
 };
 
+const emptyPracticeRecentStatusCounts = (): PracticeRecentStatusCounts => ({
+  sent: 0,
+  accepted: 0,
+  completed: 0,
+  shipping: 0,
+  remake: 0,
+  canceled: 0,
+});
+
+const bumpPracticeRecentStatusCount = (
+  acc: PracticeRecentStatusCounts,
+  status: string,
+  delta: number,
+) => {
+  if (delta <= 0) return;
+  if (status === "작업완료") {
+    acc.completed += delta;
+  } else if (status === "생산진행" || status === "포장.발송") {
+    acc.shipping += delta;
+  } else if (status === "의뢰수락" || status === "다운로드완료") {
+    acc.accepted += delta;
+  } else if (isPracticeRecentCancelBadgeStatus(status)) {
+    acc.canceled += delta;
+  } else {
+    // 발송완료·수신완료·자동매칭(공개 풀) → 의뢰
+    acc.sent += delta;
+  }
+};
+
 export const computeGroupedStatusCounts = (
   groupedTransfers: PracticeRecentTransferItem[],
 ): PracticeRecentStatusCounts =>
-  groupedTransfers.reduce(
-    (acc, request) => {
-      const status = String(request.status || "").trim();
-      if (status === "작업완료") {
-        acc.completed += 1;
-      } else if (status === "생산진행" || status === "포장.발송") {
-        acc.shipping += 1;
-      } else if (status === "의뢰수락" || status === "다운로드완료") {
-        acc.accepted += 1;
-      } else if (status === "작업취소") {
-        acc.canceled += 1;
-      } else if (isPracticeTransferTrashStatus(status)) {
-        // 치과 휴지통(취소·거부)은 최근전송 뱃지 집계에서 제외
-      } else {
-        // 발송완료·수신완료·자동매칭(공개 풀) → 의뢰
-        acc.sent += 1;
-      }
-      if (request.isRemake) acc.remake += 1;
-      return acc;
-    },
-    { sent: 0, accepted: 0, completed: 0, shipping: 0, remake: 0, canceled: 0 },
-  );
+  groupedTransfers.reduce((acc, request) => {
+    const status = String(request.status || "").trim();
+    bumpPracticeRecentStatusCount(acc, status, 1);
+    if (request.isRemake) acc.remake += 1;
+    return acc;
+  }, emptyPracticeRecentStatusCounts());
+
+/** 상태 뱃지별 채팅 unread 합(리메이크는 플래그 건 합산, 다른 버킷과 병행). */
+export const computeGroupedStatusUnreadCounts = (
+  groupedTransfers: PracticeRecentTransferItem[],
+): PracticeRecentStatusCounts =>
+  groupedTransfers.reduce((acc, request) => {
+    const unread = Math.max(0, Number(request.unreadCount || 0));
+    if (unread <= 0) return acc;
+    const status = String(request.status || "").trim();
+    bumpPracticeRecentStatusCount(acc, status, unread);
+    if (request.isRemake) acc.remake += unread;
+    return acc;
+  }, emptyPracticeRecentStatusCounts());
 
 export const filterGroupedTransfersByStatus = (
   groupedTransfers: PracticeRecentTransferItem[],
-  statusFilter: PracticeRecentStatusFilter,
+  statusFilter: PracticeRecentStatusFilter | ReadonlySet<PracticeRecentStatusFilterKey>,
 ) => {
-  if (statusFilter === "all") return groupedTransfers;
-  return groupedTransfers.filter((transfer) => {
-    const status = String(transfer.status || "").trim();
-    if (statusFilter === "발송완료") {
-      return (
-        status === "발송완료" ||
-        status === "수신완료" ||
-        status === "자동매칭" ||
-        (status !== "의뢰수락" &&
-          status !== "다운로드완료" &&
-          status !== "작업완료" &&
-          status !== "생산진행" &&
-          status !== "취소" &&
-          status !== "거부" &&
-          status !== "작업취소" &&
-          status !== "포장.발송")
-      );
-    }
-    if (statusFilter === "포장.발송") {
-      return status === "생산진행" || status === "포장.발송";
-    }
-    if (statusFilter === "의뢰수락") {
-      return status === "의뢰수락" || status === "다운로드완료";
-    }
-    if (statusFilter === "취소") {
-      return status === "작업취소";
-    }
-    if (statusFilter === "리메이크") {
-      return Boolean(transfer.isRemake);
-    }
-    return status === statusFilter;
-  });
+  if (statusFilter instanceof Set) {
+    return groupedTransfers.filter((transfer) =>
+      practiceTransferMatchesStatusFilters(transfer, statusFilter),
+    );
+  }
+  // 레거시 단일 필터: all = 기본 ON 세트(취소 off)
+  if (statusFilter === "all") {
+    return groupedTransfers.filter((transfer) =>
+      practiceTransferMatchesStatusFilters(
+        transfer,
+        createPracticeRecentStatusFilterSet(),
+      ),
+    );
+  }
+  return groupedTransfers.filter((transfer) =>
+    practiceTransferMatchesStatusFilters(
+      transfer,
+      createPracticeRecentStatusFilterSet([statusFilter]),
+    ),
+  );
 };

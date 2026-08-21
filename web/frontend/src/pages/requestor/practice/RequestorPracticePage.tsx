@@ -22,6 +22,8 @@
 // - web/frontend/src/shared/practice/labReceiveCalendarDateKey.ts
 // - web/backend/utils/labReceiveCalendarDateKey.util.js
 // - web/backend/controllers/users/user.controller.js
+// - 2026-08-21: 수신 상단 상태 뱃지에 채팅·미확인 unread. 휴지통(canceled)도 취소 뱃지·캘린더에 표시.
+// - 2026-08-21: 상단 상태 뱃지 다중 on/off — 켠 항목만 표시(기본 취소 off).
 // - 2026-08-21: 어벗 디자인 업로드 후 skipDesignConfirm 강제 true 제거(구강스캔으로 치과 설정 존중).
 // - 2026-08-21: 하청 전환 버튼 — 어벗츠기공소(internalLab)만 노출.
 // - 2026-08-21: 어벗 STL 업로드 — relatedRequestIds 없으면 보정 재시도. 구강스캔 필수로 오인하는 토스트 제거.
@@ -307,6 +309,63 @@ const parsePracticeTransferMemoMeta = (rawMemo: string) => {
 const getTransferDisplayStatus = getPracticeTransferLabReceiveDisplayStatus;
 const transferHasCustomAbutment = practiceTransferHasCustomAbutment;
 
+type LabReceiveStatusFilterKey =
+  | "발송완료"
+  | "의뢰수락"
+  | "작업완료"
+  | "취소"
+  | "거부"
+  | "포장.발송"
+  | "리메이크";
+
+/** 기본 ON — 취소만 off. 뱃지 켜면 표시·끄면 미표시. */
+const LAB_RECEIVE_DEFAULT_ON_STATUS_FILTERS: readonly LabReceiveStatusFilterKey[] = [
+  "발송완료",
+  "의뢰수락",
+  "작업완료",
+  "거부",
+  "포장.발송",
+  "리메이크",
+];
+
+const createLabReceiveStatusFilterSet = (
+  keys: readonly LabReceiveStatusFilterKey[] = LAB_RECEIVE_DEFAULT_ON_STATUS_FILTERS,
+) => new Set<LabReceiveStatusFilterKey>(keys);
+
+const toggleLabReceiveStatusFilter = (
+  prev: ReadonlySet<LabReceiveStatusFilterKey>,
+  key: LabReceiveStatusFilterKey,
+) => {
+  const next = new Set(prev);
+  if (next.has(key)) next.delete(key);
+  else next.add(key);
+  return next;
+};
+
+const labTransferMatchesStatusFilters = (
+  transfer: ReceivedPracticeTransfer,
+  selected: ReadonlySet<LabReceiveStatusFilterKey>,
+) => {
+  if (selected.size === 0) return false;
+  const status = getTransferDisplayStatus(transfer);
+  if (selected.has("리메이크") && transfer.isRemake) return true;
+  if (selected.has("거부") && status === "거부") return true;
+  if (selected.has("취소") && status === "취소") return true;
+  if (selected.has("의뢰수락") && status === "의뢰수락") return true;
+  if (selected.has("작업완료") && status === "작업완료") return true;
+  if (selected.has("포장.발송") && status === "생산진행") return true;
+  if (
+    selected.has("발송완료") &&
+    (status === "발송완료" ||
+      status === "수신완료" ||
+      status === "자동매칭" ||
+      status === "하청대기")
+  ) {
+    return true;
+  }
+  return false;
+};
+
 const labReceiveStatusBadgeClass = (
   tone: PracticeCalendarStatusTone,
   active: boolean,
@@ -482,16 +541,9 @@ export function RequestorPracticeReceivePage({
   const [page, setPage] = useState(1);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<
-    | "all"
-    | "발송완료"
-    | "의뢰수락"
-    | "작업완료"
-    | "취소"
-    | "거부"
-    | "포장.발송"
-    | "리메이크"
-  >("all");
+  const [statusFilters, setStatusFilters] = useState<Set<LabReceiveStatusFilterKey>>(() =>
+    createLabReceiveStatusFilterSet(),
+  );
   const [dateKey, setDateKey] = useState<PracticeCalendarDateKey>(() =>
     normalizeLabReceiveCalendarDateKey(storedCalendarDateKey),
   );
@@ -1432,22 +1484,10 @@ export function RequestorPracticeReceivePage({
 
   const baseFilteredTransfers = useMemo(() => {
     const query = search.trim().toLowerCase();
+    // 휴지통(canceled)도 취소 뱃지·캘린더에 남겨 사이드바 채팅 unread와 맞춘다.
+    if (!query) return transfers;
 
-    const visible = transfers.filter((t) => {
-      const rawStatus = String(t.status || "").trim().toLowerCase();
-      const isCanceled = ["canceled", "cancelled", "deleted", "removed", "취소"].includes(
-        rawStatus,
-      );
-      // 기공소 거부(지정)는 canceled이어도 희미한 카드로 남긴다.
-      if (isCanceled && !t.labRejected && t.manufacturerStage !== "거부") {
-        return false;
-      }
-      return true;
-    });
-
-    if (!query) return visible;
-
-    return visible.filter((t) => {
+    return transfers.filter((t) => {
       const fileText = t.files
         .map((f) => `${f.originalName} ${f.patientName} ${f.tooth}`)
         .join(" ")
@@ -1470,6 +1510,29 @@ export function RequestorPracticeReceivePage({
       return blob.includes(query);
     });
   }, [search, transfers]);
+
+  const chatUnreadByTransferId = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const room of rooms) {
+      const transferId = String(
+        room.relatedPracticeTransferId?.transferId || "",
+      ).trim();
+      if (!transferId) continue;
+      map.set(transferId, Math.max(0, Number(room.unreadCount || 0)));
+    }
+    return map;
+  }, [rooms]);
+
+  const transferUnreadBadgeCount = useCallback(
+    (transfer: ReceivedPracticeTransfer) => {
+      const transferId = String(transfer.transferId || transfer._id || "").trim();
+      return practiceTransferLabReceiveUnreadBadgeCount(
+        transfer,
+        chatUnreadByTransferId.get(transferId) || 0,
+      );
+    },
+    [chatUnreadByTransferId],
+  );
 
   const statusCounts = useMemo(() => {
     const counts = baseFilteredTransfers.reduce(
@@ -1504,31 +1567,45 @@ export function RequestorPracticeReceivePage({
     return counts;
   }, [baseFilteredTransfers]);
 
-  const filteredTransfers = useMemo(() => {
-    if (statusFilter === "all") return baseFilteredTransfers;
-    return baseFilteredTransfers.filter((transfer) => {
+  const statusUnreadCounts = useMemo(() => {
+    const counts = {
+      sent: 0,
+      accepted: 0,
+      completed: 0,
+      canceled: 0,
+      rejected: 0,
+      shipping: 0,
+      remake: 0,
+    };
+    for (const transfer of baseFilteredTransfers) {
+      const unread = transferUnreadBadgeCount(transfer);
+      if (unread <= 0) continue;
       const status = getTransferDisplayStatus(transfer);
-      if (statusFilter === "거부") {
-        return status === "거부";
+      if (status === "거부") counts.rejected += unread;
+      else if (status === "작업완료") counts.completed += unread;
+      else if (status === "생산진행") counts.shipping += unread;
+      else if (status === "의뢰수락") counts.accepted += unread;
+      else if (status === "취소") counts.canceled += unread;
+      else if (
+        status === "발송완료" ||
+        status === "수신완료" ||
+        status === "자동매칭" ||
+        status === "하청대기"
+      ) {
+        counts.sent += unread;
       }
-      if (status === "거부") return false;
-      if (statusFilter === "발송완료") {
-        return (
-          status === "발송완료" ||
-          status === "수신완료" ||
-          status === "자동매칭" ||
-          status === "하청대기"
-        );
-      }
-      if (statusFilter === "포장.발송") {
-        return status === "생산진행";
-      }
-      if (statusFilter === "리메이크") {
-        return Boolean(transfer.isRemake);
-      }
-      return status === statusFilter;
-    });
-  }, [baseFilteredTransfers, statusFilter]);
+      if (transfer.isRemake) counts.remake += unread;
+    }
+    return counts;
+  }, [baseFilteredTransfers, transferUnreadBadgeCount]);
+
+  const filteredTransfers = useMemo(
+    () =>
+      baseFilteredTransfers.filter((transfer) =>
+        labTransferMatchesStatusFilters(transfer, statusFilters),
+      ),
+    [baseFilteredTransfers, statusFilters],
+  );
 
   const sortedFilteredTransfers = useMemo(() => {
     const latestChatTsByTransferId = new Map<string, number>();
@@ -1551,18 +1628,6 @@ export function RequestorPracticeReceivePage({
       return bSortTs - aSortTs;
     });
   }, [filteredTransfers, rooms]);
-
-  const chatUnreadByTransferId = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const room of rooms) {
-      const transferId = String(
-        room.relatedPracticeTransferId?.transferId || "",
-      ).trim();
-      if (!transferId) continue;
-      map.set(transferId, Math.max(0, Number(room.unreadCount || 0)));
-    }
-    return map;
-  }, [rooms]);
 
   const calendarItems = useMemo((): PracticeCalendarChipItem[] => {
     return sortedFilteredTransfers.map((transfer) => {
@@ -1598,13 +1663,10 @@ export function RequestorPracticeReceivePage({
         line: [clinic, patient || "—", teeth || "—", surchargeLabel, deliveryLabel]
           .filter(Boolean)
           .join(" / "),
-        unreadCount: practiceTransferLabReceiveUnreadBadgeCount(
-          transfer,
-          chatUnreadByTransferId.get(transferId) || 0,
-        ),
+        unreadCount: transferUnreadBadgeCount(transfer),
       };
     });
-  }, [chatUnreadByTransferId, sortedFilteredTransfers]);
+  }, [sortedFilteredTransfers, transferUnreadBadgeCount]);
 
   const calendarTransferById = useMemo(() => {
     const map = new Map<string, ReceivedPracticeTransfer>();
@@ -4315,6 +4377,48 @@ export function RequestorPracticeReceivePage({
     toast,
   ]);
 
+  const renderLabReceiveStatusBadge = (
+    filterKey: LabReceiveStatusFilterKey,
+    label: string,
+    tone: PracticeCalendarStatusTone,
+    count: number,
+    unreadCount: number,
+  ) => {
+    const active = statusFilters.has(filterKey);
+    const unread = Math.max(0, Number(unreadCount || 0));
+    return (
+      <button
+        key={filterKey}
+        type="button"
+        className="rounded-full"
+        onClick={() =>
+          setStatusFilters((prev) => toggleLabReceiveStatusFilter(prev, filterKey))
+        }
+        aria-pressed={active}
+        aria-label={
+          unread > 0 ? `${label} ${count}건, 안읽음 ${unread}건` : undefined
+        }
+      >
+        <Badge
+          variant="outline"
+          className={labReceiveStatusBadgeClass(tone, active)}
+        >
+          <span className="inline-flex items-center gap-1">
+            {label} {count}건
+            {unread > 0 ? (
+              <span
+                className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-destructive-foreground"
+                aria-hidden
+              >
+                {unread > 99 ? "99+" : unread}
+              </span>
+            ) : null}
+          </span>
+        </Badge>
+      </button>
+    );
+  };
+
   const transferSearchAndBadges = (
     <div className="flex flex-wrap items-center gap-3">
       <div className="flex flex-wrap items-center gap-2 shrink-0">
@@ -4327,107 +4431,55 @@ export function RequestorPracticeReceivePage({
         />
       </div>
       <div className="flex min-w-0 flex-1 flex-wrap items-center justify-center gap-2">
-        <button
-          type="button"
-          className="rounded-full"
-          onClick={() => setStatusFilter((prev) => (prev === "발송완료" ? "all" : "발송완료"))}
-          aria-pressed={statusFilter === "발송완료"}
-        >
-          <Badge
-            variant="outline"
-            className={labReceiveStatusBadgeClass("sent", statusFilter === "발송완료")}
-          >
-            의뢰 {statusCounts.sent}건
-          </Badge>
-        </button>
-
-        <button
-          type="button"
-          className="rounded-full"
-          onClick={() =>
-            setStatusFilter((prev) => (prev === "의뢰수락" ? "all" : "의뢰수락"))
-          }
-          aria-pressed={statusFilter === "의뢰수락"}
-        >
-          <Badge
-            variant="outline"
-            className={labReceiveStatusBadgeClass("accepted", statusFilter === "의뢰수락")}
-          >
-            수락 {statusCounts.accepted}건
-          </Badge>
-        </button>
-
-        <button
-          type="button"
-          className="rounded-full"
-          onClick={() =>
-            setStatusFilter((prev) => (prev === "작업완료" ? "all" : "작업완료"))
-          }
-          aria-pressed={statusFilter === "작업완료"}
-        >
-          <Badge
-            variant="outline"
-            className={labReceiveStatusBadgeClass("completed", statusFilter === "작업완료")}
-          >
-            완료 {statusCounts.completed}건
-          </Badge>
-        </button>
-
-        <button
-          type="button"
-          className="rounded-full"
-          onClick={() => setStatusFilter((prev) => (prev === "취소" ? "all" : "취소"))}
-          aria-pressed={statusFilter === "취소"}
-        >
-          <Badge
-            variant="outline"
-            className={labReceiveStatusBadgeClass("canceled", statusFilter === "취소")}
-          >
-            취소 {statusCounts.canceled}건
-          </Badge>
-        </button>
-
-        <button
-          type="button"
-          className="rounded-full"
-          onClick={() => setStatusFilter((prev) => (prev === "거부" ? "all" : "거부"))}
-          aria-pressed={statusFilter === "거부"}
-        >
-          <Badge
-            variant="outline"
-            className={labReceiveStatusBadgeClass("rejected", statusFilter === "거부")}
-          >
-            거부 {statusCounts.rejected}건
-          </Badge>
-        </button>
-
-        <button
-          type="button"
-          className="rounded-full"
-          onClick={() => setStatusFilter((prev) => (prev === "포장.발송" ? "all" : "포장.발송"))}
-          aria-pressed={statusFilter === "포장.발송"}
-        >
-          <Badge
-            variant="outline"
-            className={labReceiveStatusBadgeClass("shipping", statusFilter === "포장.발송")}
-          >
-            발송 {statusCounts.shipping}건
-          </Badge>
-        </button>
-
-        <button
-          type="button"
-          className="rounded-full"
-          onClick={() => setStatusFilter((prev) => (prev === "리메이크" ? "all" : "리메이크"))}
-          aria-pressed={statusFilter === "리메이크"}
-        >
-          <Badge
-            variant="outline"
-            className={labReceiveStatusBadgeClass("remake", statusFilter === "리메이크")}
-          >
-            리메이크 {statusCounts.remake}건
-          </Badge>
-        </button>
+        {renderLabReceiveStatusBadge(
+          "발송완료",
+          "의뢰",
+          "sent",
+          statusCounts.sent,
+          statusUnreadCounts.sent,
+        )}
+        {renderLabReceiveStatusBadge(
+          "의뢰수락",
+          "수락",
+          "accepted",
+          statusCounts.accepted,
+          statusUnreadCounts.accepted,
+        )}
+        {renderLabReceiveStatusBadge(
+          "작업완료",
+          "완료",
+          "completed",
+          statusCounts.completed,
+          statusUnreadCounts.completed,
+        )}
+        {renderLabReceiveStatusBadge(
+          "취소",
+          "취소",
+          "canceled",
+          statusCounts.canceled,
+          statusUnreadCounts.canceled,
+        )}
+        {renderLabReceiveStatusBadge(
+          "거부",
+          "거부",
+          "rejected",
+          statusCounts.rejected,
+          statusUnreadCounts.rejected,
+        )}
+        {renderLabReceiveStatusBadge(
+          "포장.발송",
+          "발송",
+          "shipping",
+          statusCounts.shipping,
+          statusUnreadCounts.shipping,
+        )}
+        {renderLabReceiveStatusBadge(
+          "리메이크",
+          "리메이크",
+          "remake",
+          statusCounts.remake,
+          statusUnreadCounts.remake,
+        )}
       </div>
       <div className="relative w-full max-w-xs shrink-0">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />

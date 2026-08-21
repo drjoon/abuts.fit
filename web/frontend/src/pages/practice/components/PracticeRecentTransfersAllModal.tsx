@@ -1,7 +1,7 @@
 /**
  * 치과 기공의뢰 — 최근 전송 「전체 보기」 모달.
  * 3주 세로 스크롤 캘린더. 기간 필터 없음(년/월·검색·상태·요일 숨김).
- * 취소 뱃지=기공소 작업취소(치과 휴지통 제외). 6뱃지 빠른툴팁.
+ * 취소 뱃지=작업취소·휴지통(취소·거부). 상단 상태 뱃지에 채팅 unread 합산.
  * 2026-08-14: 사이드바 1페이지를 시드로 재사용. 열 때 /my 재요청하지 않음.
  * 2026-08-15: 주문 후 1영업일 미수락 「수락대기」뱃지.
  * 2026-08-16: 기공소 작업취소 카드 깜빡임 하이라이트.
@@ -19,6 +19,8 @@
  * 2026-08-20: 날짜 뱃지 기본=치과도착일. 계정 preferences에 저장.
  * 2026-08-20: 모바일은 달력 대신 기공소·환자명·상태 카드 목록.
  * 2026-08-21: 커스텀어벗 한진 배송현황을 캘린더 칩·모바일 카드에 표시.
+ * 2026-08-21: 휴지통 취소·거부를 목록·취소 뱃지에 포함. 상단 뱃지별 unread.
+ * 2026-08-21: 상단 상태 뱃지 다중 on/off — 켠 항목만 표시(기본 취소 off).
  * 2026-08-20: 모바일 — 가로 스크롤 상태칩·터치 카드·풀높이 시트.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -53,14 +55,18 @@ import {
   type PracticeRecentTransferItem,
   type PracticeRecentRequestItem,
   type PracticeRecentStatusFilter,
+  type PracticeRecentStatusFilterKey,
   PRACTICE_MY_TRANSFERS_PAGE_SIZE,
   PRACTICE_RECENT_STATUS_BADGES,
   computeGroupedStatusCounts,
+  computeGroupedStatusUnreadCounts,
   canDeletePracticeTransferByStatus,
+  createPracticeRecentStatusFilterSet,
   filterGroupedTransfersByStatus,
   filterRequestsByPeriodAndSearch,
   groupPracticeRecentRequests,
   mapMyPracticeTransferApiRows,
+  togglePracticeRecentStatusFilter,
   toStatusBadgeLabel,
 } from "@/shared/practice/practiceRecentTransferList";
 import {
@@ -121,7 +127,12 @@ export function PracticeRecentTransfersAllModal({
     (s) => s.setLabReceiveCalendarDateKey,
   );
   const [search, setSearch] = useState(initialSearch);
-  const [statusFilter, setStatusFilter] = useState<PracticeRecentStatusFilter>(initialStatusFilter);
+  const [statusFilters, setStatusFilters] = useState<Set<PracticeRecentStatusFilterKey>>(() => {
+    if (initialStatusFilter && initialStatusFilter !== "all") {
+      return createPracticeRecentStatusFilterSet([initialStatusFilter]);
+    }
+    return createPracticeRecentStatusFilterSet();
+  });
   const [dateKey, setDateKey] = useState<PracticeCalendarDateKey>(() =>
     normalizeLabReceiveCalendarDateKey(storedCalendarDateKey),
   );
@@ -136,7 +147,11 @@ export function PracticeRecentTransfersAllModal({
   useEffect(() => {
     if (!open) return;
     setSearch(initialSearch);
-    setStatusFilter(initialStatusFilter);
+    if (initialStatusFilter && initialStatusFilter !== "all") {
+      setStatusFilters(createPracticeRecentStatusFilterSet([initialStatusFilter]));
+    } else {
+      setStatusFilters(createPracticeRecentStatusFilterSet());
+    }
     setCursorYmd(toKstYmd(new Date()) || "");
     setDateKey(normalizeLabReceiveCalendarDateKey(storedCalendarDateKey));
     setHiddenWeekdays([...DEFAULT_HIDDEN_WEEKDAYS]);
@@ -276,17 +291,9 @@ export function PracticeRecentTransfersAllModal({
     [dateKey, recentRequests, search],
   );
 
-  const activeRequests = useMemo(
-    () =>
-      searchedRequests.filter(
-        (request) => String(request.status || "").trim() !== "취소",
-      ),
-    [searchedRequests],
-  );
-
   const groupedTransfers = useMemo(
-    () => groupPracticeRecentRequests(activeRequests, chatRooms),
-    [activeRequests, chatRooms],
+    () => groupPracticeRecentRequests(searchedRequests, chatRooms),
+    [searchedRequests, chatRooms],
   );
 
   const statusCounts = useMemo(
@@ -294,9 +301,14 @@ export function PracticeRecentTransfersAllModal({
     [groupedTransfers],
   );
 
+  const statusUnreadCounts = useMemo(
+    () => computeGroupedStatusUnreadCounts(groupedTransfers),
+    [groupedTransfers],
+  );
+
   const filteredTransfers = useMemo(
-    () => filterGroupedTransfersByStatus(groupedTransfers, statusFilter),
-    [groupedTransfers, statusFilter],
+    () => filterGroupedTransfersByStatus(groupedTransfers, statusFilters),
+    [groupedTransfers, statusFilters],
   );
 
   const calendarItems = useMemo((): PracticeCalendarChipItem[] => {
@@ -342,21 +354,28 @@ export function PracticeRecentTransfersAllModal({
     filterKey === "리메이크" ? "remake" : resolvePracticeCalendarStatusTone(filterKey);
 
   const renderStatusBadgeToggle = (
-    filterKey: Exclude<PracticeRecentStatusFilter, "all">,
+    filterKey: PracticeRecentStatusFilterKey,
     label: string,
     count: number,
+    unreadCount: number,
     tooltip: string,
   ) => {
-    const active = statusFilter === filterKey;
+    const active = statusFilters.has(filterKey);
     const tone = statusFilterTone(filterKey);
+    const unread = Math.max(0, Number(unreadCount || 0));
     return (
       <Tooltip key={filterKey}>
         <TooltipTrigger asChild>
           <button
             type="button"
-            className="shrink-0 rounded-full"
-            onClick={() => setStatusFilter((prev) => (prev === filterKey ? "all" : filterKey))}
+            className="relative shrink-0 rounded-full"
+            onClick={() =>
+              setStatusFilters((prev) => togglePracticeRecentStatusFilter(prev, filterKey))
+            }
             aria-pressed={active}
+            aria-label={
+              unread > 0 ? `${label} ${count}건, 안읽음 ${unread}건` : undefined
+            }
           >
             <Badge
               variant="outline"
@@ -366,7 +385,17 @@ export function PracticeRecentTransfersAllModal({
                 PRACTICE_STATUS_FILTER_BADGE_CLASS[tone][active ? "active" : "idle"],
               )}
             >
-              {label} {count}
+              <span className="inline-flex items-center gap-1">
+                {label} {count}
+                {unread > 0 ? (
+                  <span
+                    className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-destructive-foreground"
+                    aria-hidden
+                  >
+                    {unread > 99 ? "99+" : unread}
+                  </span>
+                ) : null}
+              </span>
             </Badge>
           </button>
         </TooltipTrigger>
@@ -382,6 +411,7 @@ export function PracticeRecentTransfersAllModal({
       item.filter,
       item.label,
       statusCounts[item.countKey],
+      statusUnreadCounts[item.countKey],
       item.tooltip,
     ),
   );

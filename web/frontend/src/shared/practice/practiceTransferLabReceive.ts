@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/components/practice/LabReceiveWorkUploadDialog.tsx
 // change-log:
+// - 2026-08-21: unread 배지 — 휴지통(canceled)은 채팅 unread만(사이드바 received-unread와 정합).
 // - 2026-08-21: resolvePracticeLabReceiveWorkActionState — 카드·상세 모달 CTA 판정 SSOT.
 // - 2026-08-16: prosthetic slots — 크라운은 연결 잔여여도 스팬 묶지 않음; 기대 라벨 헬퍼.
 // - 2026-08-16: prosthetic upload slots — 브리지 1파일·크라운/인레이 치아당 1파일·분할 업로드.
@@ -134,12 +135,21 @@ export type PracticeTransferLabReceiveDisplayStatus =
   | "수신완료"
   | "발송완료";
 
-/** 사이드바「기공의뢰수신」과 동일: 미확인 의뢰(1) + 채팅 unread. */
+/** 사이드바「기공의뢰수신」과 동일: 미확인 의뢰(1) + 채팅 unread.
+ * 휴지통(status=canceled)은 수신 미확인 집계에서 빠지므로 채팅 unread만 센다.
+ */
 export function practiceTransferLabReceiveUnreadBadgeCount(
-  transfer: { isRead?: boolean | null },
+  transfer: {
+    isRead?: boolean | null;
+    status?: string | null;
+  },
   chatUnreadCount = 0,
 ) {
-  return (transfer.isRead ? 0 : 1) + Math.max(0, Number(chatUnreadCount) || 0);
+  const status = String(transfer.status || "").trim().toLowerCase();
+  const isTrashCanceled =
+    status === "canceled" || status === "cancelled" || status === "취소";
+  const unreadTransfer = isTrashCanceled || transfer.isRead ? 0 : 1;
+  return unreadTransfer + Math.max(0, Number(chatUnreadCount) || 0);
 }
 
 export function getPracticeTransferLabReceiveDisplayStatus(

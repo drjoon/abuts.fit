@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-21: 취소(휴지통) 전송도 기존 채팅방은 열어 미확인 메시지 읽기 허용(신규 방 생성은 409).
 // - 2026-08-20: 기공소 변경 후 이전 기공소는 GET /rooms·사이드바 unread에서 제외.
 // - 2026-08-17: 삭제된 practice transfer 연결 방은 archive·목록 제외(사이드바 유령 unread 방지).
 // - 2026-08-14: GET /rooms — unread만 집계 + lastMessage $lookup 제거 + 10s 캐시.
@@ -1205,9 +1206,8 @@ export async function getOrCreatePracticeTransferChatRoom(req, res) {
       return res.status(404).json({ success: false, message: "전송 내역을 찾을 수 없습니다." });
     }
 
-    if (String(transferDoc?.status || "") === "canceled") {
-      return res.status(409).json({ success: false, message: "취소된 전송 내역입니다." });
-    }
+    const isCanceledTransfer =
+      String(transferDoc?.status || "").trim() === "canceled";
 
     const practiceUserId = String(transferDoc?.practiceUserId || "").trim();
     const targetLabAnchorId =
@@ -1217,6 +1217,7 @@ export async function getOrCreatePracticeTransferChatRoom(req, res) {
     const currentUserBusinessAnchorId = String(req.user?.businessAnchorId || "").trim();
 
     // Fast path: 이미 연결된 room이 있으면 상대 user 해석 로직을 건너뛰고 즉시 반환
+    // 취소(휴지통) 건도 기존 방은 열어 미확인 메시지를 읽을 수 있게 한다.
     const existingRoomMeta = await ChatRoom.findOne({
       relatedPracticeTransferId: transferDoc._id,
       isArchived: false,
@@ -1273,6 +1274,10 @@ export async function getOrCreatePracticeTransferChatRoom(req, res) {
         success: true,
         data: payload,
       });
+    }
+
+    if (isCanceledTransfer) {
+      return res.status(409).json({ success: false, message: "취소된 전송 내역입니다." });
     }
 
     let counterpartUserId = "";
