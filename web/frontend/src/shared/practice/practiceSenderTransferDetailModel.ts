@@ -3,6 +3,7 @@
  * 최근의뢰·전체보기에서 같은 PracticeRecentTransferItem으로 연다.
  * 2026-08-16: 작업 파일(어벗 디자인·보철물) 표시를 한곳에서 구성.
  * 2026-08-21: 커스텀어벗 한진 배송현황 요약 행.
+ * 2026-08-21: 작업취소·휴지통 상태에서는 디자인 컨펌 CTA 숨김.
  */
 import type {
   PracticeRecentTransferFileItem,
@@ -74,26 +75,30 @@ export function buildPracticeSenderTransferDetailModel(
     transfer.transferId && transfer.transferId !== "-"
       ? transfer.transferId
       : transfer.id || "practice-transfer";
+  const status = String(transfer.status || "").trim();
+  const isCanceledLikeStatus = status === "작업취소" || status === "취소";
 
   const showProductionConfirm =
-    (String(transfer.status || "").trim() === "작업완료" &&
+    !isCanceledLikeStatus &&
+    ((status === "작업완료" &&
       !transfer.productionConfirmedAt &&
       resultCount > 0) ||
-    Boolean(
-      transfer.hasCustomAbutment &&
-        transfer.skipDesignConfirm === false &&
-        (transfer.designReadyAt || designCount > 0) &&
-        !transfer.practiceDesignConfirmedAt &&
-        String(transfer.status || "").trim() !== "작업완료" &&
-        String(transfer.status || "").trim() !== "생산진행" &&
-        String(transfer.status || "").trim() !== "포장.발송",
-    );
+      Boolean(
+        transfer.hasCustomAbutment &&
+          transfer.skipDesignConfirm === false &&
+          (transfer.designReadyAt || designCount > 0) &&
+          !transfer.practiceDesignConfirmedAt &&
+          status !== "작업완료" &&
+          status !== "생산진행" &&
+          status !== "포장.발송",
+      ));
 
   const isDesignConfirm =
     Boolean(transfer.hasCustomAbutment) &&
     transfer.skipDesignConfirm === false &&
     !transfer.practiceDesignConfirmedAt &&
-    String(transfer.status || "").trim() !== "작업완료";
+    status !== "작업완료" &&
+    !isCanceledLikeStatus;
 
   const abutmentDeliveryLabel = getPracticeAbutmentDeliveryLabel({
     hasCustomAbutment: Boolean(transfer.hasCustomAbutment),

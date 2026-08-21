@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-21: 디자인 미러 성공 시에만 컨펌 채팅·practice:transfer-updated(치과 상세 작업파일/컨펌 CTA).
 // - 2026-08-21: 구강스캔으로(PTX) 핸드오프 시 skipDesignConfirm 강제 true 제거 — 치과 설정 존중·컨펌 채팅.
 // - 2026-08-21: 치과 디자인 컨펌이 필요할 때만 채팅 시스템 메시지(awaiting_design_confirm).
 // - 2026-08-18: 제조사 준비 큐 진입(생산 승격) 시 로트번호(3글자)를 발급한다.
@@ -32,6 +33,7 @@
 import { Types } from "mongoose";
 import Request from "../../models/request.model.js";
 import PracticeTransfer from "../../models/practiceTransfer.model.js";
+import User from "../../models/user.model.js";
 import {
   canClaimOrHandoffDesignRequest,
   isAcceptingLabForPtxDesignRequest,
@@ -50,10 +52,54 @@ import {
   revokeAbutmentDesignLabFee,
 } from "../../services/practiceTransferBilling.service.js";
 import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
-import { emitAppEventToRoles } from "../../socket.js";
+import { emitAppEventToRoles, emitAppEventToUser } from "../../socket.js";
 import { resolvePrcFileNames } from "./prcMapping.utils.js";
 import { triggerRhinoProcessFileForRequest } from "../rhino/rhino.controller.js";
 import { ensureLotNumberOnReadyEnter } from "./utils.js";
+
+/** 치과 발신 FE — 디자인 미러 후 의뢰상세 작업파일·컨펌 CTA 갱신 */
+const emitAbutmentDesignReadyToPractice = async (transferDoc) => {
+  try {
+    if (!transferDoc?._id) return;
+    const practiceAnchorId = String(
+      transferDoc.practiceBusinessAnchorId || "",
+    ).trim();
+    const practiceUserId = String(transferDoc.practiceUserId || "").trim();
+    const userIdSet = new Set();
+    if (practiceUserId && Types.ObjectId.isValid(practiceUserId)) {
+      userIdSet.add(practiceUserId);
+    }
+    if (practiceAnchorId && Types.ObjectId.isValid(practiceAnchorId)) {
+      const peers = await User.find({
+        businessAnchorId: new Types.ObjectId(practiceAnchorId),
+        role: { $in: ["practice", "requestor"] },
+        active: true,
+      })
+        .select({ _id: 1 })
+        .lean();
+      for (const peer of peers) {
+        const id = String(peer?._id || "").trim();
+        if (id) userIdSet.add(id);
+      }
+    }
+    if (!userIdSet.size) return;
+
+    const payload = {
+      action: "abutment-design-ready",
+      transferId: String(transferDoc.transferId || "").trim(),
+      transferMongoId: String(transferDoc._id || "").trim(),
+      updatedAt: new Date(),
+    };
+    userIdSet.forEach((id) => {
+      emitAppEventToUser(id, "practice:transfer-updated", payload);
+    });
+  } catch (err) {
+    console.warn(
+      "[DESIGN_HANDOFF] abutment-design-ready emit failed",
+      err?.message || err,
+    );
+  }
+};
 
 const PRODUCT_MODE_DESIGN = "design_custom_abutment";
 const PRODUCT_MODE_PRODUCTION = "custom_abutment";
@@ -538,7 +584,7 @@ export async function handoffDesignToProduction(req, res) {
         const priorDesignCount = Array.isArray(transferDoc?.production?.designFiles)
           ? transferDoc.production.designFiles.length
           : 0;
-        await mirrorDesignFileToPracticeTransfer({
+        const mirroredDoc = await mirrorDesignFileToPracticeTransfer({
           transferId: relatedTransferId,
           file: {
             originalName: nextPrimary.originalName,
@@ -549,6 +595,16 @@ export async function handoffDesignToProduction(req, res) {
           tooth: String(request?.caseInfos?.tooth || "").trim(),
           patientName: String(request?.caseInfos?.patientName || "").trim(),
         });
+        const mirroredDesignCount = Array.isArray(
+          mirroredDoc?.production?.designFiles,
+        )
+          ? mirroredDoc.production.designFiles.length
+          : 0;
+        if (!mirroredDoc || mirroredDesignCount <= priorDesignCount) {
+          throw new Error(
+            "PracticeTransfer design mirror failed (designFiles not updated).",
+          );
+        }
 
         if (transferDoc && isAcceptingLab) {
           // 구강스캔으로(기공의뢰) — 수락 lab이 디자인해 올려도 치과 skipDesignConfirm을 존중.
@@ -591,7 +647,7 @@ export async function handoffDesignToProduction(req, res) {
           }
         }
 
-        // 디자인컨펌생략 OFF + 첫 디자인 도착 → 치과 「어벗 디자인 컨펌」 필요(채팅 안내)
+        // 디자인컨펌생략 OFF + 첫 디자인 미러 성공 → 치과 「어벗 디자인 컨펌」 채팅·목록 갱신
         if (
           transferDoc &&
           priorDesignCount === 0 &&
@@ -605,6 +661,7 @@ export async function handoffDesignToProduction(req, res) {
               "어벗 디자인이 준비되었습니다. 확인한 뒤 「어벗 디자인 컨펌」해 주세요.",
             systemEvent: "awaiting_design_confirm",
           });
+          void emitAbutmentDesignReadyToPractice(transferDoc);
         }
       } catch (mirrorErr) {
         console.error("[DESIGN_HANDOFF] PTX mirror failed after request save", mirrorErr);
