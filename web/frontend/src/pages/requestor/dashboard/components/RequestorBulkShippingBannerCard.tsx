@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-21: 출고예정 모달에 기공의뢰(PTX) 뱃지.
 // - 2026-08-19: 출고예정 모달 — 진행중과 같은 가로폭, 신속 포함, 상태·출고·케이스 뱃지. 리드타임 안내 문구 제거.
 // - 2026-08-19: 헤더 버튼 라벨 [출고예정 x건]. 취소 후 스냅샷 갱신과 맞춤.
 // - 2026-08-18: 출고대기·리드타임·오늘출고 모달을 정책 안내와 같은 rounded-2xl 톤으로 정리.
@@ -194,6 +195,7 @@ type ShippingItemApi = {
   designSoftware?: string | null;
   anodizingEnabled?: boolean | null;
   hexVerificationSample?: boolean | null;
+  practiceTransferLinked?: boolean | null;
   productMode?: string | null;
   implantManufacturer?: string | null;
   implantBrand?: string | null;
@@ -984,6 +986,9 @@ export const RequestorBulkShippingBannerCard = ({
                                     }
                                     hexVerificationSample={Boolean(
                                       item.hexVerificationSample,
+                                    )}
+                                    practiceTransferLinked={Boolean(
+                                      item.practiceTransferLinked,
                                     )}
                                   />
                                 </div>

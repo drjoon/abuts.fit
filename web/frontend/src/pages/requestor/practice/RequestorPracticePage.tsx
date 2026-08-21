@@ -23,6 +23,7 @@
 // - web/frontend/src/shared/practice/labReceiveCalendarDateKey.ts
 // - web/backend/utils/labReceiveCalendarDateKey.util.js
 // - web/backend/controllers/users/user.controller.js
+// - 2026-08-21: 작업취소 후 어벗츠로의뢰 진행중/출고예정 건수 쿼리 무효화.
 // - 2026-08-21: 어벗 분할 업로드 모달 — 문구 단문화·취소/확인. 헥스 샘플 related 제외.
 // - 2026-08-21: 수신 상단 상태 뱃지에 채팅·미확인 unread. 휴지통(canceled)도 취소 뱃지·캘린더에 표시.
 // - 2026-08-21: 상단 상태 뱃지 다중 표시 on/off(표시 라벨·기본 리셋·ON/OFF 대비).
@@ -174,6 +175,7 @@ import { PracticeFileTransferPage } from "@/pages/practice/PracticeFileTransferP
 import { DesignQueueSection } from "@/pages/requestor/design/DesignQueueSection";
 import { RequestorPracticePageSkeleton } from "@/shared/ui/skeletons/RequestorPracticePageSkeleton";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   parsePracticeTransferMemoMeta as parsePracticeTransferMemoMetaShared,
   parseToothWorks,
@@ -487,6 +489,7 @@ export function RequestorPracticeReceivePage({
 }) {
   const token = useAuthStore((s) => s.token);
   const user = useAuthStore((s) => s.user);
+  const queryClient = useQueryClient();
   const storedCalendarDateKey = useAuthStore(
     (s) => s.user?.labReceiveCalendarDateKey,
   );
@@ -2987,6 +2990,12 @@ export function RequestorPracticeReceivePage({
                   }
                 : releasePatch,
             );
+            void queryClient.invalidateQueries({
+              queryKey: ["requestor-dashboard-cards-summary"],
+            });
+            void queryClient.invalidateQueries({
+              queryKey: ["requestor-bulk-shipping"],
+            });
             void loadFirstPage({ silent: true });
           })
           .catch(() => {
@@ -3008,7 +3017,7 @@ export function RequestorPracticeReceivePage({
         return false;
       }
     },
-    [ACTION_UI_MIN_MS, applyAcceptedLocalPatch, loadFirstPage, toast, token],
+    [ACTION_UI_MIN_MS, applyAcceptedLocalPatch, loadFirstPage, queryClient, toast, token],
   );
 
   const markTransferReject = useCallback(

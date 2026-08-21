@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-08-21: PTX 작업취소 시 연동 CA 취소 후 어벗츠로의뢰 건수·목록 캐시·소켓 갱신.
 // - 2026-08-21: PTX(구강스캔 기공의뢰수신) CA는 헥스 확인 샘플 미생성 — 어벗츠 직접의뢰(어벗디자인)에서만.
 // - 2026-08-21: 헥스 확인 샘플은 relatedRequestIds에 넣지 않음(어벗 개수 오인 방지).
 // - 2026-08-21: tryStartAbutmentProduction — Request 가공 진입을 병렬(다치아 confirm 지연 완화).
@@ -83,6 +84,7 @@ import { recomputeBulkShippingSnapshotForBusinessAnchorId } from "./bulkShipping
 import { updateReviewStatusByStage } from "../controllers/requests/common.review.controller.js";
 import { prevKoreanBusinessDayYmd } from "../utils/krBusinessDays.js";
 import { isPendingRoundBarAbutment } from "../utils/labFeeSchedule.js";
+import { emitAppEventToRoles } from "../socket.js";
 
 const hasCustomAbutmentToothWorks = (toothWorks) =>
   (Array.isArray(toothWorks) ? toothWorks : []).some(
@@ -1274,6 +1276,76 @@ export async function clearRelatedAbutmentProductionOnRelease(
       },
     );
     canceledRequestCount = Number(cancelResult?.modifiedCount || 0);
+
+    // 어벗츠로의뢰 헤더 건수·진행중 목록이 PTX 작업취소 후에도 맞도록 갱신.
+    if (canceledRequestCount > 0) {
+      const labAnchorId = String(transferDoc?.targetLabAnchorId || "").trim();
+      const canceledRows = await Request.find({ _id: { $in: objectIds } })
+        .select({
+          _id: 1,
+          requestId: 1,
+          businessAnchorId: 1,
+          manufacturerStage: 1,
+        })
+        .lean();
+      const refreshAnchorId =
+        labAnchorId ||
+        String(canceledRows[0]?.businessAnchorId || "").trim() ||
+        null;
+
+      try {
+        const { clearMyRequestsCache } = await import(
+          "../controllers/requests/common.requests.controller.js"
+        );
+        clearMyRequestsCache();
+      } catch (cacheErr) {
+        console.warn(
+          "[clearRelatedAbutmentProductionOnRelease] clearMyRequestsCache failed",
+          cacheErr?.message || cacheErr,
+        );
+      }
+
+      if (refreshAnchorId) {
+        try {
+          await triggerDashboardSummaryRefreshForAnchorId(
+            refreshAnchorId,
+            `ptx-release-cancel:${String(transferDoc._id)}`,
+          );
+        } catch (refreshErr) {
+          console.warn(
+            "[clearRelatedAbutmentProductionOnRelease] dashboard refresh failed",
+            refreshErr?.message || refreshErr,
+          );
+        }
+        try {
+          await recomputeBulkShippingSnapshotForBusinessAnchorId(
+            refreshAnchorId,
+          );
+        } catch {
+          // best-effort
+        }
+      }
+
+      for (const row of canceledRows) {
+        if (String(row?.manufacturerStage || "").trim() !== "취소") continue;
+        const requestorAnchorId = String(row?.businessAnchorId || "").trim();
+        emitAppEventToRoles(
+          ["requestor", "manufacturer", "admin"],
+          "request:stage-changed",
+          {
+            source: "ptx-work-cancel",
+            requestId: row.requestId || null,
+            requestMongoId: row._id ? String(row._id) : null,
+            fromStage: "준비",
+            toStage: "취소",
+            businessAnchorId: requestorAnchorId || null,
+            ownerBusinessAnchorId: requestorAnchorId || null,
+            requestorBusinessAnchorId: requestorAnchorId || null,
+            manufacturerStage: "취소",
+          },
+        );
+      }
+    }
   }
 
   const productionNext = {

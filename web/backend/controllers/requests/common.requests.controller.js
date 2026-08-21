@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-21: 의뢰자 어벗츠로의뢰 취소 — PTX(치과 기공의뢰) 연동 CA는 거부(기공의뢰수신 작업취소 SSOT).
 // - 2026-08-21: GET /my에 referenceIds 포함(헥스 확인 쌍 UI 동시 제거용)
 // - 2026-08-21: 헥스 확인 pending은 관리자 hexVerificationResultHex SSOT(취소 시 플래그 재활성 불필요)
 // - 2026-08-21: 워크시트 준비 목록에서 헥스 샘플 filled STL 누락을 원본에서 보정
@@ -77,7 +78,10 @@ import {
 import { emitAppEventToRoles } from "../../socket.js";
 import { buildMonitoringStageStatsFromGroupedRows } from "../../services/requestStageStats.service.js";
 import { buildCreatedAtFilterFromQuery } from "../../utils/dateRange.js";
-import { ensureRequestCreditRollbackDeleteOnRollbackToCam } from "./common.review.helpers.js";
+import {
+  ensureRequestCreditRollbackDeleteOnRollbackToCam,
+  isPtxLabDesignedAbutmentRequest,
+} from "./common.review.helpers.js";
 import { releaseRequestCreditHoldsOnCancel } from "../../services/requestCreditHold.service.js";
 import { pickFilledStlFileForClone } from "../../utils/filledStlFile.js";
 import {
@@ -90,6 +94,10 @@ const ESPRIT_BASE =
   process.env.ESPRIT_BASE ||
   process.env.ESPRIT_URL ||
   "http://localhost:8001";
+
+/** 어벗츠로의뢰에서의뢰자 취소 거부 — 취소 SSOT는 기공의뢰수신 작업취소 */
+const PRACTICE_TRANSFER_CANCEL_FROM_ABUTS_MESSAGE =
+  "치과 기공의뢰로 들어온 건은 어벗츠로의뢰에서 취소할 수 없습니다. 기공의뢰수신에서 작업취소해 주세요.";
 
 const __myRequestsCache = new Map();
 const __myRequestsInFlight = new Map();
@@ -3579,6 +3587,20 @@ export async function updateRequestStatus(req, res) {
     // 단, 제조사에서 불완전가공 판정을 내린 의뢰(rnd.unmachinableAt 존재)는
     // 의뢰자 판단으로 취소를 허용한다.
     if (manufacturerStage === "취소") {
+      // 치과 기공의뢰(PTX) 연동 CA: 의뢰자 취소는 기공의뢰수신 작업취소만 허용.
+      // 관리자 운영 취소는 예외.
+      if (
+        isRequestor &&
+        !isAdmin &&
+        isPtxLabDesignedAbutmentRequest(request)
+      ) {
+        return res.status(409).json({
+          success: false,
+          message: PRACTICE_TRANSFER_CANCEL_FROM_ABUTS_MESSAGE,
+          code: "practice_transfer_cancel_via_lab_receive",
+        });
+      }
+
       const currentStage = String(request.manufacturerStage || "").trim();
       // manufacturerStage request 단계 SSOT는 `준비` (레거시 `의뢰`/`request`/`CAM` 저장·비교 금지).
       // 취소 허용 판정은 정규화 결과 `request`(=준비)만 본다.
@@ -3811,6 +3833,18 @@ export async function updateRequestStatusBatch(req, res) {
           id,
           message:
             "준비 단계에서만 취소할 수 있습니다. 단, 불완전가공 판정 의뢰는 취소 가능합니다.",
+        });
+        continue;
+      }
+      if (
+        !isAdmin &&
+        isRequestor &&
+        isPtxLabDesignedAbutmentRequest(request)
+      ) {
+        failed.push({
+          id,
+          message: PRACTICE_TRANSFER_CANCEL_FROM_ABUTS_MESSAGE,
+          code: "practice_transfer_cancel_via_lab_receive",
         });
         continue;
       }

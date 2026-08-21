@@ -8,6 +8,7 @@
 // - web/backend/controllers/requests/expressSelectable.utils.js
 // - web/backend/services/bulkShippingSnapshot.service.js
 // change-log:
+// - 2026-08-21: GET bulk-shipping — 구 스냅샷에 practiceTransferLinked 없으면 재계산.
 // - 2026-08-21: GET bulk-shipping — in-flight 재계산 대기를 제거(stale-while-revalidate).
 // - 2026-08-21: GET bulk-shipping — 구 스냅샷에 hexVerificationSample 없으면 재계산.
 // - 2026-08-19: GET bulk-shipping — 케이스 메타(생산모드) 없는 구 스냅샷은 재계산.
@@ -359,6 +360,10 @@ export async function getMyBulkShipping(req, res) {
           Object.prototype.hasOwnProperty.call(
             row || {},
             "hexVerificationSample",
+          ) &&
+          Object.prototype.hasOwnProperty.call(
+            row || {},
+            "practiceTransferLinked",
           ),
       );
     };

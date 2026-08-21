@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-08-21: 기공의뢰(PTX) CA는 어벗츠로의뢰 상세에서 취소 안내만.
+// - 2026-08-21: 기공의뢰 취소 후 헤더 건수 재조회. 마운트 시 summary refetch.
 // - 2026-08-21: 헥스 확인용 원본↔샘플 취소 시 목록·건수에서 함께 제거
 // - 2026-08-19: 기공소·어벗츠기공소 어벗생산의뢰에도 동일 헤더(대기보드 대체).
 // - 2026-08-19: 진행중 목록 일괄 취소는 PATCH /status/batch 한 요청으로 처리.
@@ -37,6 +39,10 @@ import { RequestDetailDialog } from "@/features/requests/components/RequestDetai
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { getNormalizedStageLabelSafe } from "@/utils/stage";
 import type { PeriodFilterValue } from "@/shared/ui/PeriodFilter";
+import {
+  PRACTICE_TRANSFER_CANCEL_FROM_ABUTS_MESSAGE,
+  isPracticeTransferLinkedRequest,
+} from "@/shared/practice/practiceTransferAbutsCancel";
 
 /** 지난의뢰(추적관리)를 제외한 생산 파이프라인 */
 const IN_PROGRESS_MANUFACTURER_STAGES = [
@@ -95,7 +101,7 @@ export const RequestorAbutmentPageHeader = () => {
     },
     retry: false,
     staleTime: 15 * 1000,
-    refetchOnMount: false,
+    refetchOnMount: true,
     refetchOnReconnect: true,
     refetchOnWindowFocus: false,
     enabled: !!token,
@@ -187,7 +193,13 @@ export const RequestorAbutmentPageHeader = () => {
   })();
 
   const bulkData = bulkResponse?.success ? bulkResponse.data : null;
-  const canCancelSelected = isPrepCancelableRequest(selectedPastRequest);
+  const selectedIsPtxLinked = isPracticeTransferLinkedRequest(
+    selectedPastRequest,
+  );
+  const canCancelSelected =
+    isPrepCancelableRequest(selectedPastRequest) && !selectedIsPtxLinked;
+  const canGuidePtxCancelSelected =
+    isPrepCancelableRequest(selectedPastRequest) && selectedIsPtxLinked;
 
   const refreshHeaderCounts = () => {
     window.setTimeout(() => {
@@ -452,14 +464,24 @@ export const RequestorAbutmentPageHeader = () => {
         }}
         request={selectedPastRequest}
         footer={
-          canCancelSelected ? (
+          canCancelSelected || canGuidePtxCancelSelected ? (
             <div className="flex justify-end">
               <Button
                 type="button"
                 variant="destructive"
                 size="sm"
                 disabled={canceling}
-                onClick={() => setCancelConfirmOpen(true)}
+                onClick={() => {
+                  if (canGuidePtxCancelSelected) {
+                    toast({
+                      title: "기공의뢰 건은 여기서 취소할 수 없습니다",
+                      description: PRACTICE_TRANSFER_CANCEL_FROM_ABUTS_MESSAGE,
+                      duration: 4500,
+                    });
+                    return;
+                  }
+                  setCancelConfirmOpen(true);
+                }}
               >
                 의뢰 취소
               </Button>

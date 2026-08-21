@@ -1,6 +1,7 @@
 import { type ReactNode } from "react";
 
 // change-log:
+// - 2026-08-21: 기공의뢰(PTX) 연동 CA에 «기공의뢰» 뱃지.
 // - 2026-08-21: 의뢰 상세에 아노다이징(ON/OFF) 행 표시(caseInfos.anodizingEnabled).
 // - 2026-08-20: 주문 상세에서 배송비 행 제거. 배송비는 묶음 발송·크레딧 장부만.
 // - 2026-08-19: dismissLocked — 확인 중 바깥 클릭·ESC로 상세를 닫지 않음.
@@ -24,6 +25,7 @@ import { type ReactNode } from "react";
 // - web/backend/controllers/requests/designPrice.utils.js
 // - .cursor/rules/design-fee.mdc
 import { Badge } from "@/components/ui/badge";
+import { RequestCaseMetaBadges } from "@/features/requestSettings/RequestCaseMetaBadges";
 import {
   Dialog,
   DialogContent,
@@ -98,6 +100,10 @@ export type RequestDetailDialogRequest = {
     deliveredAt?: string;
   };
   caseInfos?: RequestDetailDialogCaseInfos;
+  partnerBilling?: {
+    relatedPracticeTransferId?: string | { _id?: string } | null;
+    labDesignedAbutment?: boolean | null;
+  } | null;
   dueDate?: string;
   daysOverdue?: number;
   daysUntilDue?: number;
@@ -276,6 +282,10 @@ export const RequestDetailDialog = ({
     systemSettings?.creditSettings?.expressFee ??
     CREDIT_SETTINGS_DEFAULTS.expressFee;
   const caseInfos = request?.caseInfos || {};
+  const practiceTransferLinked = Boolean(
+    (request?.partnerBilling?.relatedPracticeTransferId as { _id?: string })
+      ?._id || request?.partnerBilling?.relatedPracticeTransferId,
+  );
   const implantDisplay = formatImplantDisplay(caseInfos);
   const modelNumberLabel = generateModelNumber(caseInfos);
 
@@ -586,6 +596,14 @@ export const RequestDetailDialog = ({
                   <span className="font-mono text-sm text-right text-slate-900 break-all">
                     {request?.requestId || "-"}
                   </span>
+                  {practiceTransferLinked ? (
+                    <>
+                      <span className="text-slate-600">의뢰 구분</span>
+                      <span className="flex justify-end">
+                        <RequestCaseMetaBadges practiceTransferLinked />
+                      </span>
+                    </>
+                  ) : null}
                   <span className="text-slate-600">의뢰일</span>
                   <span className="font-mono text-sm text-right text-slate-900">
                     {formatTimestamp(request?.createdAt)}

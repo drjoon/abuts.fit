@@ -4,6 +4,7 @@
 // - web/frontend/src/shared/components/PastRequestsModal.tsx
 // - web/frontend/src/features/requestSettings/RequestSettingsToolbar.tsx
 // change-log:
+// - 2026-08-21: 기공의뢰(PTX) 연동 CA에 «기공의뢰» 뱃지.
 // - 2026-08-16: secondary 배경이 카드에서 안 보여 muted+border 필로 명시(가시성).
 // - 2026-08-16: 어벗생산의뢰 파일카드·기공의뢰수신 카드 공통 메타 뱃지(디자인SW·아노).
 import { cn } from "@/shared/ui/cn";
@@ -20,6 +21,8 @@ export type RequestCaseMetaBadgesProps = {
   anodizingEnabled?: boolean | null;
   /** ExoCAD 첫의뢰 헥스 확인용 복사샘플 */
   hexVerificationSample?: boolean | null;
+  /** 치과→기공의뢰수신 → 어벗츠 CA (partnerBilling.relatedPracticeTransferId) */
+  practiceTransferLinked?: boolean | null;
   className?: string;
 };
 
@@ -28,15 +31,29 @@ export function RequestCaseMetaBadges({
   designSoftware,
   anodizingEnabled,
   hexVerificationSample = false,
+  practiceTransferLinked = false,
   className,
 }: RequestCaseMetaBadgesProps) {
   const software = String(designSoftware || "").trim();
   const hasAnodizing = typeof anodizingEnabled === "boolean";
   const isHexSample = Boolean(hexVerificationSample);
-  if (!software && !hasAnodizing && !isHexSample) return null;
+  const isPracticeTransfer = Boolean(practiceTransferLinked);
+  if (!software && !hasAnodizing && !isHexSample && !isPracticeTransfer) {
+    return null;
+  }
 
   return (
     <span className={cn("inline-flex items-center gap-1 flex-wrap", className)}>
+      {isPracticeTransfer ? (
+        <span
+          className={cn(
+            REQUEST_CASE_META_BADGE_CLASS,
+            "border-sky-300 bg-sky-50 text-sky-900 font-semibold",
+          )}
+        >
+          기공의뢰
+        </span>
+      ) : null}
       {isHexSample ? (
         <span
           className={cn(

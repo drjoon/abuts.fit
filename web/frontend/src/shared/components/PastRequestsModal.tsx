@@ -7,6 +7,8 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // change-log:
+// - 2026-08-21: 기공의뢰(PTX) 연동 CA는 어벗츠로의뢰에서 취소 불가·수신 작업취소 안내.
+// - 2026-08-21: 기공의뢰(PTX) 연동 CA에 «기공의뢰» 뱃지.
 // - 2026-08-21: 헥스 확인용 원본↔샘플 취소 시 목록에서 둘 다 즉시 제거
 // - 2026-08-21: 추적관리 목록에 한진 배송현황(예: 여수 SUB 도착) 표시. deliveryInfo 포함.
 // - 2026-08-19: 진행중 목록 — 체크박스 선택 후 PATCH /status/batch 일괄 취소.
@@ -51,6 +53,10 @@ import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
 import { getHanjinDeliveryStatusLabel } from "@/shared/shipping/hanjinTrackingLabel";
 import { RequestCaseMetaBadges } from "@/features/requestSettings/RequestCaseMetaBadges";
+import {
+  PRACTICE_TRANSFER_CANCEL_FROM_ABUTS_MESSAGE,
+  isPracticeTransferLinkedRequest,
+} from "@/shared/practice/practiceTransferAbutsCancel";
 
 type ApiMyRequestsResponse = {
   success: boolean;
@@ -347,7 +353,13 @@ export const PastRequestsModal = ({
   const dismissLocked = Boolean(suspend || cancelTargets.length);
 
   const cancelableRows = useMemo(
-    () => (allowCancel ? filteredRows.filter(isPrepCancelable) : []),
+    () =>
+      allowCancel
+        ? filteredRows.filter(
+            (row) =>
+              isPrepCancelable(row) && !isPracticeTransferLinkedRequest(row),
+          )
+        : [],
     [allowCancel, filteredRows],
   );
   const selectedCount = selectedIds.size;
@@ -686,7 +698,11 @@ export const PastRequestsModal = ({
                       .join(" ") || "-";
                   const implantText = formatImplantDisplay(ci);
                   const requestId = String(r?.requestId || "-");
-                  const canCancelRow = allowCancel && isPrepCancelable(r);
+                  const isPtxLinked = isPracticeTransferLinkedRequest(r);
+                  const canCancelRow =
+                    allowCancel && isPrepCancelable(r) && !isPtxLinked;
+                  const canGuidePtxCancel =
+                    allowCancel && isPrepCancelable(r) && isPtxLinked;
                   return (
                     <TableRow
                       key={id || requestId}
@@ -759,6 +775,9 @@ export const PastRequestsModal = ({
                               (ci as { hexVerificationSample?: boolean })
                                 ?.hexVerificationSample,
                             )}
+                            practiceTransferLinked={isPracticeTransferLinkedRequest(
+                              r,
+                            )}
                           />
                         </div>
                       </TableCell>
@@ -773,9 +792,20 @@ export const PastRequestsModal = ({
                             variant="destructive"
                             size="sm"
                             className="h-7 px-2 text-[11px]"
-                            disabled={!canCancelRow || canceling}
+                            disabled={
+                              (!canCancelRow && !canGuidePtxCancel) || canceling
+                            }
                             onClick={(e) => {
                               e.stopPropagation();
+                              if (canGuidePtxCancel) {
+                                toast({
+                                  title: "기공의뢰 건은 여기서 취소할 수 없습니다",
+                                  description:
+                                    PRACTICE_TRANSFER_CANCEL_FROM_ABUTS_MESSAGE,
+                                  duration: 4500,
+                                });
+                                return;
+                              }
                               if (!canCancelRow) return;
                               setCancelTargets([r]);
                             }}

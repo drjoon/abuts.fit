@@ -10,6 +10,7 @@
 // - web/backend/controllers/requests/shipping.controller.js
 // - web/backend/controllers/requests/shipping.Tracking.helpers.js
 // change-log:
+// - 2026-08-21: isPtxLabDesignedAbutmentRequest export — 어벗츠로의뢰 취소 가드 공용.
 // - 2026-08-19: 원장 GET에서 신속비 보정을 백그라운드·쿨다운으로 분리.
 // - 2026-08-19: 준비 단계 취소는 uniqueKeysOnly 소비 조회로 레거시 풀스캔을 생략.
 // - 2026-08-18: 기공의뢰 CA 생산 견적은 치과 공급 단가(기공소 공급 단가 제외).
@@ -115,6 +116,8 @@ function isPtxLabDesignedAbutmentRequest(request) {
   if (pb.labDesignedAbutment === false) return false;
   return true;
 }
+
+export { isPtxLabDesignedAbutmentRequest };
 
 function buildPtxAbutsProductionQuoteLocal({
   creditSettings,

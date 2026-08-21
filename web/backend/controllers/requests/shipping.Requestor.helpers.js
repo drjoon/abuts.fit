@@ -7,6 +7,7 @@
 // - web/backend/controllers/requests/common.requests.controller.js
 // - web/backend/models/bulkShippingSnapshot.model.js
 // change-log:
+// - 2026-08-21: 출고예정 스냅샷에 기공의뢰(PTX) 연동 플래그.
 // - 2026-08-19: 출고예정 스냅샷에 디자인SW·아노·생산모드·임플란트·최종출고방식.
 import Request from "../../models/request.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
@@ -692,7 +693,7 @@ async function buildBulkShippingCandidatesByFilter({ requestFilter }) {
     },
   })
     .select(
-      "requestId title manufacturerStage caseInfos shippingMode finalShipping requestedShipDate createdAt productionSchedule",
+      "requestId title manufacturerStage caseInfos shippingMode finalShipping requestedShipDate createdAt productionSchedule partnerBilling.relatedPracticeTransferId",
     )
     .lean();
 
@@ -734,6 +735,9 @@ async function buildBulkShippingCandidatesByFilter({ requestFilter }) {
       anodizingEnabled:
         typeof ci.anodizingEnabled === "boolean" ? ci.anodizingEnabled : null,
       hexVerificationSample: Boolean(ci.hexVerificationSample === true),
+      practiceTransferLinked: Boolean(
+        r?.partnerBilling?.relatedPracticeTransferId,
+      ),
       productMode:
         typeof ci.productMode === "string" ? ci.productMode.trim() : "",
       implantManufacturer: ci.implantManufacturer || "",
