@@ -7,6 +7,7 @@
 // - web/backend/controllers/requests/common.review.helpers.js
 // - web/backend/controllers/requests/mailbox.utils.js
 // change-log:
+// - 2026-08-22: 제출/수락 재진입 시 이미 있는 machining·express·shipping hold 키는 queue 전 skip(insertMany 중복 방지).
 // - 2026-08-21: PTX CA도 기공소 부담 의뢰비는 Request hold. 롤백 시 hold 복원·전환 플래그.
 // - 2026-08-21: 우편함 해제 배송 hold는 형제 박스 hold 있으면 재보류 금지. 레거시 PTX 배송 hold 해제.
 // - 2026-08-21: PTX CA 배송비는 Request 박스(BA+출고일) hold — PTX 건당 skip 폐지.
@@ -723,7 +724,9 @@ export async function holdRequestCreditsOnSubmit({
   shippingFee: shippingFeeArg = null,
   seedBalance = null,
 }) {
-  const list = (Array.isArray(requests) ? requests : []).filter(Boolean);
+  const list = (Array.isArray(requests) ? requests : [])
+    .filter(Boolean)
+    .filter((request) => String(request?.manufacturerStage || "").trim() !== "취소");
   if (!list.length) return { held: false, reason: "empty" };
 
   const holdT0 = Date.now();
@@ -791,6 +794,22 @@ export async function holdRequestCreditsOnSubmit({
   };
 
   const pendingJournals = [];
+  // 재진입(already_created 수락 등) 시 이미 POSTED된 hold는 queue하지 않는다.
+  // postGeneralLedgerJournals는 insertMany라 중복 idempotencyKey면 배치 전체가 실패한다.
+  const existingHoldKeys = await getJournalsByIdempotencyKeys({
+    idempotencyKeys: list.flatMap((request) => {
+      if (!request?._id) return [];
+      return [
+        requestMachiningHoldKey(request._id),
+        requestExpressHoldKey(request._id),
+        requestShippingHoldKey(request._id),
+      ];
+    }),
+    session,
+  });
+  const hasExistingHold = (idempotencyKey) =>
+    Boolean(existingHoldKeys.get(String(idempotencyKey || "").trim())?.journalId);
+
   const queueHold = async ({
     request,
     requestorAnchorId,
@@ -800,6 +819,18 @@ export async function holdRequestCreditsOnSubmit({
     idempotencyKey,
     freeOrder,
   }) => {
+    if (hasExistingHold(idempotencyKey)) {
+      results.push({
+        kind: holdKind,
+        held: false,
+        reason: "already_held",
+        amount: Math.max(0, Math.round(Number(amount || 0))),
+        journalId:
+          existingHoldKeys.get(String(idempotencyKey || "").trim())?.journalId ||
+          null,
+      });
+      return;
+    }
     const prepared = prepareOneRequestHold({
       request,
       requestorAnchorId,
@@ -865,6 +896,11 @@ export async function holdRequestCreditsOnSubmit({
       const groupKey = buildRequesterShipBoxKey(request);
       shipBoxRequests.push({ request, requestorAnchorId, groupKey });
       if (!shippingGroupHeld.has(groupKey)) {
+        // 본인 shipping hold가 있으면 형제 검색(excludeSelf)만으로는 못 보고 중복 insert 위험이 있다.
+        if (hasExistingHold(requestShippingHoldKey(request._id))) {
+          shippingGroupHeld.add(groupKey);
+          continue;
+        }
         let boxState = shipBoxStateByKey.get(groupKey);
         if (!boxState) {
           const shipT0 = Date.now();

@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-08-22: already_created여도 연동 CA 크레딧 hold를 다시 시도(누락 hold 보정, 기존은 idempotent skip).
 // - 2026-08-21: PTX CA 배송비는 Request 박스 hold(수락 시 holdRequestCreditsOnSubmit).
 // - 2026-08-21: PTX 작업취소 시 연동 CA 취소 후 어벗츠로의뢰 건수·목록 캐시·소켓 갱신.
 // - 2026-08-21: PTX(구강스캔 기공의뢰수신) CA는 헥스 확인 샘플 미생성 — 어벗츠 직접의뢰(어벗디자인)에서만.
@@ -984,24 +985,30 @@ export async function ensureAbutmentRequestsOnAccept({
 
   if (result.skippedReason === "already_created") {
     await syncRelatedRequestOwnershipToAcceptingLab(transferDoc);
-  } else if (requestIds.length > 0) {
-    // 기공소→어벗츠 배송: (기공소 BA + 예정 출고일) 박스당 1회 hold.
-    const createdDocs = await Request.find({
+  }
+
+  // 신규 생성·already_created 모두 hold. 이미 잡힌 건은 holdRequestCreditsOnSubmit이 skip.
+  // (예전: already_created면 hold 통째 skip → 형제 CA 일부만 보류되는 구멍)
+  if (requestIds.length > 0) {
+    const relatedDocs = await Request.find({
       _id: {
         $in: requestIds
           .filter((id) => Types.ObjectId.isValid(id))
           .map((id) => new Types.ObjectId(id)),
       },
     });
-    if (createdDocs.length) {
+    const holdTargets = relatedDocs.filter(
+      (doc) => String(doc?.manufacturerStage || "").trim() !== "취소",
+    );
+    if (holdTargets.length) {
       try {
         await holdRequestCreditsOnSubmit({
-          requests: createdDocs,
+          requests: holdTargets,
           actorUserId,
         });
       } catch (err) {
         console.error(
-          "[PTX_CA] shipping hold on accept failed",
+          "[PTX_CA] credit hold on accept failed",
           err?.message || err,
         );
         throw err;
