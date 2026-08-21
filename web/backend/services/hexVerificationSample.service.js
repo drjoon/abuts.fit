@@ -5,7 +5,8 @@
 // - web/backend/services/practiceTransferProduction.service.js
 // - web/backend/controllers/requests/common.review.controller.js
 // change-log:
-// - 2026-08-21: 클론 시 source stlFile/camFile 스텁 제거. 생성 직후 원본 filled 있으면 즉시 복사.
+// - 2026-08-21: 워크시트 준비 목록에서 헥스 샘플 filled STL 누락을 원본에서 보정.
+// - 2026-08-21: 클론 저장 후 빈 stlFile/camFile 스텁 $unset. 생성 직후 원본 filled 있으면 즉시 복사.
 // - 2026-08-21: pending SSOT = 관리자 hexVerificationResultHex 없음(+활성 샘플 없으면 생성)
 // - 2026-08-21: 헥스 확인용 샘플 취소 시(관리자 미완료) pending 재활성화
 // - 2026-08-21: 샘플 생성 성공 후에만 pending 소진(생성 실패 시 pending 유지)
@@ -377,6 +378,22 @@ export async function createHexVerificationSampleClone({
   // 트랜잭션 밖 호출 전제. LotCounter는 세션 없이 발급.
   await ensureLotNumbersOnReadyEnter([clonedRequest], null);
   await clonedRequest.save(session ? { session } : undefined);
+
+  // mongoose subdoc default/스프레드로 `{ uploadedAt }`만 남으면
+  // resolveFilledStlFile·BG 복사가 스텁에 가려질 수 있어 비어 있으면 제거한다.
+  const savedFilled = resolveFilledStlFile(clonedRequest.caseInfos);
+  if (!String(savedFilled?.s3Key || "").trim()) {
+    await Request.updateOne(
+      { _id: clonedRequest._id },
+      { $unset: { "caseInfos.stlFile": 1, "caseInfos.camFile": 1 } },
+      session ? { session } : undefined,
+    );
+    if (clonedRequest.caseInfos) {
+      clonedRequest.caseInfos.stlFile = undefined;
+      clonedRequest.caseInfos.camFile = undefined;
+    }
+  }
+
   return clonedRequest;
 }
 
@@ -463,6 +480,24 @@ export async function copyFilledStlToHexVerificationSamples(sourceRequest) {
   const filledStl = resolveFilledStlFile(sourceRequest?.caseInfos);
   if (!filledStl || !String(filledStl.s3Key || "").trim()) return [];
 
+  // 원본이 camFile만 채워진 레거시 콜백이면 stlFile SSOT도 맞춘다.
+  if (
+    sourceRequest?.caseInfos &&
+    typeof sourceRequest.save === "function" &&
+    !String(sourceRequest.caseInfos?.stlFile?.s3Key || "").trim()
+  ) {
+    applyFilledStlFileToCaseInfos(sourceRequest.caseInfos, cloneJson(filledStl));
+    sourceRequest.markModified("caseInfos");
+    try {
+      await sourceRequest.save();
+    } catch (healErr) {
+      console.warn(
+        "[copyFilledStlToHexVerificationSamples] source dual-write heal failed",
+        healErr?.message || healErr,
+      );
+    }
+  }
+
   const samples = await Request.find({
     "caseInfos.hexVerificationSample": true,
     referenceIds: sourceRequestId,
@@ -516,4 +551,73 @@ export async function copyFilledStlToHexVerificationSamples(sourceRequest) {
   }
 
   return updated;
+}
+
+/**
+ * 워크시트 준비 목록용: 헥스 확인 샘플에 filled STL이 없으면 원본에서 복사한다.
+ * Rhino 콜백이 다른 백엔드 인스턴스로 가 filled 복사만 빠진 경우를 보정한다.
+ * @param {object[]} requests lean request list
+ * @returns {Promise<object[]>}
+ */
+export async function backfillMissingFilledStlOnHexSamplesInList(requests) {
+  if (!Array.isArray(requests) || requests.length === 0) return requests;
+
+  const needy = requests.filter((r) => {
+    if (r?.caseInfos?.hexVerificationSample !== true) return false;
+    if (String(r?.manufacturerStage || "").trim() === "취소") return false;
+    return !String(resolveFilledStlFile(r?.caseInfos)?.s3Key || "").trim();
+  });
+  if (!needy.length) return requests;
+
+  const sourceIds = new Set();
+  for (const sample of needy) {
+    for (const ref of Array.isArray(sample.referenceIds)
+      ? sample.referenceIds
+      : []) {
+      const id = String(ref || "").trim();
+      if (id) sourceIds.add(id);
+    }
+  }
+  if (!sourceIds.size) return requests;
+
+  const sources = await Request.find({
+    requestId: { $in: Array.from(sourceIds) },
+    manufacturerStage: { $nin: ["취소"] },
+  });
+  if (!sources.length) return requests;
+
+  const updatedByRequestId = new Map();
+  for (const source of sources) {
+    try {
+      const copied = await copyFilledStlToHexVerificationSamples(source);
+      for (const sample of copied) {
+        const rid = String(sample?.requestId || "").trim();
+        if (!rid) continue;
+        updatedByRequestId.set(
+          rid,
+          typeof sample.toObject === "function" ? sample.toObject() : sample,
+        );
+      }
+    } catch (err) {
+      console.warn(
+        "[backfillMissingFilledStlOnHexSamplesInList] failed",
+        {
+          sourceRequestId: source?.requestId || null,
+          message: err?.message || String(err || ""),
+        },
+      );
+    }
+  }
+
+  if (!updatedByRequestId.size) return requests;
+
+  return requests.map((row) => {
+    const rid = String(row?.requestId || "").trim();
+    const patched = updatedByRequestId.get(rid);
+    if (!patched) return row;
+    return {
+      ...row,
+      caseInfos: patched.caseInfos || row.caseInfos,
+    };
+  });
 }

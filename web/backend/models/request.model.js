@@ -471,6 +471,8 @@ const requestSchema = new mongoose.Schema(
       // - 쓰기: stlFile + 레거시 camFile 동시 미러
       // - 읽기: stlFile 우선, 없으면 camFile 폴백
       // - Esprit NC는 ncFile (아래). camFile ≠ NC.
+      // - uploadedAt에 default를 두지 않는다. default:Date.now 는 빈
+      //   `{ uploadedAt }` 스텁을 만들어 헥스 샘플 filled 복사를 막는다.
       stlFile: {
         fileName: String,
         fileType: String,
@@ -478,10 +480,7 @@ const requestSchema = new mongoose.Schema(
         filePath: String,
         s3Key: String,
         s3Url: String,
-        uploadedAt: {
-          type: Date,
-          default: Date.now,
-        },
+        uploadedAt: Date,
       },
       // [LEGACY] filled STL 옛 필드명. stlFile과 동일 의미.
       // 신규 코드는 stlFile / resolveFilledStlFile() 사용. camFile만 단독 쓰지 말 것.
@@ -492,10 +491,7 @@ const requestSchema = new mongoose.Schema(
         filePath: String,
         s3Key: String,
         s3Url: String,
-        uploadedAt: {
-          type: Date,
-          default: Date.now,
-        },
+        uploadedAt: Date,
       },
       // Esprit(3-nc) 결과 NC 파일. filled STL(stlFile)과 별개.
       ncFile: {

@@ -1183,6 +1183,11 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
             sampleRequestIds: copiedSamples.map((s) => s.requestId),
           },
         );
+      } else {
+        console.log(
+          "[BG-Callback] No active hex verification samples to copy filled STL",
+          { sourceRequestId: updatedRequest.requestId },
+        );
       }
     } catch (copyErr) {
       console.warn(

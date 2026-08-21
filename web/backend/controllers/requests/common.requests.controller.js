@@ -1,6 +1,7 @@
 // change-log:
 // - 2026-08-21: GET /my에 referenceIds 포함(헥스 확인 쌍 UI 동시 제거용)
 // - 2026-08-21: 헥스 확인 pending은 관리자 hexVerificationResultHex SSOT(취소 시 플래그 재활성 불필요)
+// - 2026-08-21: 워크시트 준비 목록에서 헥스 샘플 filled STL 누락을 원본에서 보정
 // - 2026-08-21: 의뢰 취소/삭제 시 ExoCAD 헥스 확인용 샘플과 원본을 함께 취소.
 // - 2026-08-21: worksheet delivery populate에 events 위치·상태 포함. GET /my에 deliveryInfo 포함.
 // - 2026-08-19: PATCH /status/batch — 준비 단계 일괄 취소. 응답 후 웹소켓·스냅샷.
@@ -79,7 +80,10 @@ import { buildCreatedAtFilterFromQuery } from "../../utils/dateRange.js";
 import { ensureRequestCreditRollbackDeleteOnRollbackToCam } from "./common.review.helpers.js";
 import { releaseRequestCreditHoldsOnCancel } from "../../services/requestCreditHold.service.js";
 import { pickFilledStlFileForClone } from "../../utils/filledStlFile.js";
-import { findHexVerificationCancelSiblings } from "../../services/hexVerificationSample.service.js";
+import {
+  findHexVerificationCancelSiblings,
+  backfillMissingFilledStlOnHexSamplesInList,
+} from "../../services/hexVerificationSample.service.js";
 
 const ESPRIT_BASE =
   process.env.ESPRIT_ADDIN_BASE_URL ||
@@ -1554,6 +1558,8 @@ export async function getAllRequests(req, res) {
       "caseInfos.file",
       "caseInfos.stlFile", // Rhino filled STL SSOT
       "caseInfos.camFile", // legacy mirror of stlFile
+      "caseInfos.hexVerificationSample",
+      "caseInfos.hexRotation",
       "caseInfos.ncFile",
       "caseInfos.stageFiles",
       "caseInfos.reviewByStage",
@@ -1815,11 +1821,35 @@ export async function getAllRequests(req, res) {
       await persistReadyLotNumbersIfMissing(rawRequests);
     }
 
+    // Rhino 콜백이 다른 백엔드로 가면 헥스 샘플 filled 복사가 누락될 수 있다.
+    // 준비 워크시트 조회 시 원본 camFile/stlFile로 보정한다.
+    let worksheetRequests = rawRequests;
+    if (isWorksheetView) {
+      const stageHint = String(
+        req.query.manufacturerStage ||
+          (Array.isArray(req.query.manufacturerStageIn)
+            ? req.query.manufacturerStageIn[0]
+            : req.query.manufacturerStageIn) ||
+          "",
+      ).trim();
+      if (!stageHint || stageHint === "준비") {
+        try {
+          worksheetRequests =
+            await backfillMissingFilledStlOnHexSamplesInList(rawRequests);
+        } catch (backfillErr) {
+          console.warn(
+            "[getAllRequests] hex sample filled STL backfill failed",
+            backfillErr?.message || backfillErr,
+          );
+        }
+      }
+    }
+
     // 모니터링 뷰는 초경량 응답: normalize/우선순위 계산 생략
     const requests = isMonitoringView
-      ? rawRequests
+      ? worksheetRequests
       : await Promise.all(
-          rawRequests.map(async (r) => {
+          worksheetRequests.map(async (r) => {
             const [shippingPriority, normalized] = await Promise.all([
               computeShippingPriority({ request: r, now }),
               isWorksheetView
