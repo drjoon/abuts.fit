@@ -36,6 +36,8 @@
  * - web/frontend/src/shared/workspace/workspaceMode.ts
  * - web/frontend/src/shared/components/practice/PracticeTransferExpressWizard.tsx
  * - 2026-08-15: 익스프레스 모드 위저드(한 화면 한 질문). 최근의뢰는 전송 후 표시.
+ * - 2026-08-21: [기공소로 전송] API 성공 직후 버튼 해제·네비. 폼 리셋은 백그라운드.
+ * - 2026-08-21: 의뢰상세 열 때 목록 silent 재조회로 어벗 디자인·컨펌 CTA 동기화.
  * - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
  * - web/frontend/src/shared/practice/toothWorkDraft.ts
  * - web/frontend/src/shared/hooks/useS3TempUpload.ts
@@ -4186,6 +4188,9 @@ export const PracticeFileTransferPage = ({
       return;
     }
 
+    // 어벗 디자인·컨펌 CTA는 목록 production 메타 기준. 열 때 최신으로 맞춤.
+    void loadRecentRequests({ silent: true });
+
     await resolvePracticeTransferChatRoom(String(transfer.transferId || "").trim(), resolveSeq);
   };
 
@@ -5904,6 +5909,10 @@ export const PracticeFileTransferPage = ({
         );
       }
 
+      // 전송 API 성공 직후 UI 해제. 폼 리셋·draft 목록은 백그라운드.
+      requestSubmittingRef.current = false;
+      setRequestSubmitting(false);
+
       suppressLocalFormPersistRef.current = true;
       skipFormAutosaveRef.current = true;
       formAutosaveSeqRef.current += 1;
@@ -5919,15 +5928,6 @@ export const PracticeFileTransferPage = ({
       }
       rememberLab(selectedLab);
 
-      // 전송 시 해당 draft만 서버에서 완전 삭제. 다른 임시저장·휴지통은 그대로.
-      draftListSeqRef.current += 1;
-      await resetIntakeFormAfterTransfer();
-      if (editing) {
-        void loadPracticeTransferDraftList();
-      } else {
-        await loadPracticeTransferDraftList();
-      }
-
       toast({
         title: editing ? "의뢰가 수정되었습니다" : "기공소 전송 완료",
         description: editing
@@ -5936,6 +5936,7 @@ export const PracticeFileTransferPage = ({
             ? `작성 중이던 의뢰만 전송했습니다. 임시저장 ${remainingDraftCount}건은 목록에 남아 있습니다.`
             : "기공소로 정상 전송되었습니다.",
       });
+
       if (isExpressMode) {
         setExpressDone(true);
         setExpressStepId("lab");
@@ -5944,6 +5945,16 @@ export const PracticeFileTransferPage = ({
       } else {
         navigate("/practice/dashboard");
       }
+
+      void (async () => {
+        try {
+          draftListSeqRef.current += 1;
+          await resetIntakeFormAfterTransfer();
+          void loadPracticeTransferDraftList();
+        } catch {
+          // 전송은 이미 성공. 정리 실패는 무시.
+        }
+      })();
     } catch (error) {
       toast({
         title: editingSentTransferRef.current

@@ -7,6 +7,7 @@
 // - web/backend/controllers/files/file.controller.js
 // - web/backend/utils/s3.utils.js
 // - 2026-08-13: 진행률 키에 lastModified 포함(파일카드·토스트 공통).
+// - 2026-08-21: gzip 업로드 후 UI size는 uncompressedSize(원본) 표시.
 import { useCallback } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { prepareUploadBlob } from "@/shared/hooks/compressMeshFile";
@@ -15,10 +16,13 @@ export interface TempUploadedFile {
   _id: string;
   originalName: string;
   mimetype: string;
+  /** 표시용(가능하면 원본 uncompressed). S3 객체 바이트는 별도. */
   size: number;
   fileType?: string;
   location?: string;
   key?: string;
+  contentEncoding?: string;
+  uncompressedSize?: number;
 }
 
 type PresignResponseItem = {
@@ -123,6 +127,23 @@ type PreparedFile = {
   contentEncoding?: "gzip";
   uncompressedSize: number;
   progressKey: string;
+};
+
+const withDisplaySize = (
+  file: TempUploadedFile,
+  prepared: Pick<PreparedFile, "uncompressedSize" | "contentEncoding">,
+): TempUploadedFile => {
+  const uncompressed = Math.max(
+    0,
+    Math.round(Number(prepared.uncompressedSize || 0)),
+  );
+  return {
+    ...file,
+    contentEncoding: prepared.contentEncoding || file.contentEncoding,
+    uncompressedSize: uncompressed || file.uncompressedSize,
+    // UI는 원본 바이트 표시. S3에는 gzip 압축본이 올라감.
+    size: uncompressed > 0 ? uncompressed : Number(file.size || 0),
+  };
 };
 
 const putBlobWithRetry = async (params: {
@@ -292,7 +313,7 @@ export function useS3TempUpload(options: UseS3TempUploadOptions) {
 
           const completedFile =
             ((completeRes.data as any)?.data?.file as TempUploadedFile) || file;
-          return completedFile;
+          return withDisplaySize(completedFile, prepared);
         } catch (err) {
           await apiFetch({
             path: "/api/files/temp/multipart/abort",
@@ -339,7 +360,7 @@ export function useS3TempUpload(options: UseS3TempUploadOptions) {
         onProgress: onByteProgress,
       });
 
-      return item.file;
+      return withDisplaySize(item.file, prepared);
     },
     [token],
   );

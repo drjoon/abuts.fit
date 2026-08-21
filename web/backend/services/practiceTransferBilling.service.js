@@ -12,6 +12,8 @@
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
 // - 2026-08-21: feeQuote.missingFeeNames — 치과 견적에 미설정 수가 항목 안내.
+// - 2026-08-21: assertCredit — fees/shipping 재사용 시 견적 DB 재조회 생략(전송 create 핫패스).
+// - 2026-08-21: resolveHoldShareAmounts — billing 금액 있으면 assert 재호출 금지. devops 캐시.
 // - 2026-08-19: 목록 feeQuote에 labFeeConfigured 전달(지정 수가 Off·항목 Off=미설정).
 // - 2026-08-18: rollbackPracticeTransferBilling — 멱등키 조회·저널 삭제를 병렬화.
 // - 2026-08-18: 기공소 공급 어벗은 전역 단가. 의뢰자별 특별가는 적용하지 않음.
@@ -606,6 +608,10 @@ export async function assertPracticeTransferPaidCreditSufficient({
   catalog: catalogInput = null,
   rushFeeMultiplier = 1,
   skipJig = null,
+  /** 이미 계산된 견적(fees) — 전달 시 lab/practice/catalog 재조회 생략 */
+  fees: feesInput = null,
+  /** 이미 계산된 배송비 — 전달 시 shipping 재계산 생략 */
+  shipping: shippingInput = null,
 }) {
   const practiceId = String(practiceAnchorId || "").trim();
   if (!practiceId || !Types.ObjectId.isValid(practiceId)) {
@@ -614,11 +620,18 @@ export async function assertPracticeTransferPaidCreditSufficient({
     throw err;
   }
 
-  let labFeeSchedule = null;
-  const labId = String(labAnchorId || "").trim();
-  const needLab = labId && Types.ObjectId.isValid(labId);
-  const [catalog, lab, practice, abutmentPricingTier, abutmentPrices] =
-    await Promise.all([
+  let fees = feesInput && typeof feesInput === "object" ? feesInput : null;
+  let shipping =
+    shippingInput && typeof shippingInput === "object" ? shippingInput : null;
+  let budget = null;
+  let abutmentPricingTier = null;
+  let abutmentPrices = null;
+
+  if (!fees) {
+    let labFeeSchedule = null;
+    const labId = String(labAnchorId || "").trim();
+    const needLab = labId && Types.ObjectId.isValid(labId);
+    const [catalog, lab, practice, tiers, prices] = await Promise.all([
       catalogInput != null
         ? Promise.resolve(catalogInput)
         : loadAutoMatchBudgetCatalog(),
@@ -633,48 +646,58 @@ export async function assertPracticeTransferPaidCreditSufficient({
       resolvePracticeAbutmentPricingTier(practiceId),
       loadCachedAbutmentCreditPrices(practiceId),
     ]);
-  const budget = normalizeAutoMatchBudget(autoMatchBudget, catalog);
-  if (lab) labFeeSchedule = lab.labFeeSchedule || null;
+    budget = normalizeAutoMatchBudget(autoMatchBudget, catalog);
+    abutmentPricingTier = tiers;
+    abutmentPrices = prices;
+    if (lab) labFeeSchedule = lab.labFeeSchedule || null;
 
-  const noLab = !labId;
-  const useRemake = Boolean(remake);
-  const fees = computePracticeTransferRetailFees({
-    toothWorks,
-    implantFavorites: implantFavoritesFromPractice(practice),
-    labFeeSchedule: noLab
-      ? LAB_FEE_SCHEDULE_ZEROS
-      : resolveLabFeeScheduleSource(labFeeSchedule),
-    abutmentPricingTier,
-    abutmentPrices,
-    remake: useRemake,
-    skipAbutmentFees: useRemake,
-    labFeeMultiplier: resolveLabPracticeFeeMultiplier(lab, practiceId),
-    rushFeeMultiplier: normalizeRushFeeMultiplier(rushFeeMultiplier),
-  });
-
-  const shipping = await resolveExpectedPracticeTransferShippingFees({
-    transfer: {
+    const noLab = !labId;
+    const useRemake = Boolean(remake);
+    fees = computePracticeTransferRetailFees({
       toothWorks,
-      production: {
-        skipJig:
-          skipJig === false ||
-          skipJig === "false" ||
-          skipJig === 0 ||
-          skipJig === "0" ||
-          skipJig === "N"
-            ? false
-            : skipJig == null
-              ? true
-              : Boolean(skipJig),
+      implantFavorites: implantFavoritesFromPractice(practice),
+      labFeeSchedule: noLab
+        ? LAB_FEE_SCHEDULE_ZEROS
+        : resolveLabFeeScheduleSource(labFeeSchedule),
+      abutmentPricingTier,
+      abutmentPrices,
+      remake: useRemake,
+      skipAbutmentFees: useRemake,
+      labFeeMultiplier: resolveLabPracticeFeeMultiplier(lab, practiceId),
+      rushFeeMultiplier: normalizeRushFeeMultiplier(rushFeeMultiplier),
+    });
+  } else if (autoMatchBudget != null || catalogInput != null) {
+    budget = normalizeAutoMatchBudget(
+      autoMatchBudget,
+      catalogInput != null ? catalogInput : undefined,
+    );
+  }
+
+  if (!shipping) {
+    shipping = await resolveExpectedPracticeTransferShippingFees({
+      transfer: {
+        toothWorks,
+        production: {
+          skipJig:
+            skipJig === false ||
+            skipJig === "false" ||
+            skipJig === 0 ||
+            skipJig === "0" ||
+            skipJig === "N"
+              ? false
+              : skipJig == null
+                ? true
+                : Boolean(skipJig),
+        },
+        billing: {
+          labFeeTotal: fees.labFeeTotal,
+          abutmentQty: fees.abutmentQty,
+        },
       },
-      billing: {
-        labFeeTotal: fees.labFeeTotal,
-        abutmentQty: fees.abutmentQty,
-      },
-    },
-    toothWorks,
-    fees,
-  });
+      toothWorks,
+      fees,
+    });
+  }
   const required = Math.max(0, Math.round(Number(fees.total || 0))) + shipping.total;
 
   if (required <= 0) {
@@ -1190,13 +1213,20 @@ function allocateHoldReturn({
   };
 }
 
+let _cachedDevopsEscrowOwnerId = null;
 async function resolveDevopsEscrowOwnerId(session = null) {
+  // devops 앵커는 프로세스 수명 동안 불변. 세션 없는 조회는 메모리 캐시.
+  if (!session && _cachedDevopsEscrowOwnerId) {
+    return _cachedDevopsEscrowOwnerId;
+  }
   const devops = await BusinessAnchor.findOne({ businessType: "devops" })
     .select({ _id: 1 })
     .sort({ createdAt: 1 })
     .session(session || null)
     .lean();
-  return devops?._id ? String(devops._id) : null;
+  const id = devops?._id ? String(devops._id) : null;
+  if (!session && id) _cachedDevopsEscrowOwnerId = id;
+  return id;
 }
 
 function practiceTransferHoldKey(transferId) {
@@ -1320,7 +1350,9 @@ async function resolveHoldShareAmounts({
     }
   }
 
-  if (lab == null || abut == null || abutmentQty <= 0 || !abutmentPrices) {
+  // lab/abut이 billing·인자로 있으면 견적/잔액 재조회 금지(전송 create 핫패스).
+  // abutmentPrices는 아래 캐시 로드로 충분 — !abutmentPrices로 assert를 타면 안 됨.
+  if (lab == null || abut == null) {
     const check = await assertPracticeTransferPaidCreditSufficient({
       practiceAnchorId: transfer?.practiceBusinessAnchorId,
       labAnchorId: transfer?.targetLabAnchorId || null,
@@ -1352,20 +1384,19 @@ async function resolveHoldShareAmounts({
     }
   }
 
-  if (!abutmentPrices) {
-    abutmentPrices = await loadCachedAbutmentCreditPrices(
-      transfer?.practiceBusinessAnchorId,
-    );
-  }
-  try {
-    const creditSettings = await loadCreditSettingsDefaults();
-    designFeePerTooth = Math.max(
-      0,
-      Math.round(Number(creditSettings?.abutmentDesignLabFee ?? 10000) || 0),
-    );
-  } catch {
-    designFeePerTooth = 10000;
-  }
+  const [cachedPrices, creditSettings] = await Promise.all([
+    abutmentPrices
+      ? Promise.resolve(abutmentPrices)
+      : loadCachedAbutmentCreditPrices(transfer?.practiceBusinessAnchorId),
+    loadCreditSettingsDefaults().catch(() => null),
+  ]);
+  if (!abutmentPrices) abutmentPrices = cachedPrices;
+  designFeePerTooth = Math.max(
+    0,
+    Math.round(
+      Number(creditSettings?.abutmentDesignLabFee ?? 10000) || 0,
+    ),
+  );
 
   // 디자인+생산가 → 생산(어벗츠 경로) / 디자인(기공소 경로) 분해
   const routeSplit = splitAbutmentRetailForRouteHolds({
@@ -1543,6 +1574,9 @@ export async function holdPracticeTransferCredits({
   holdAbutmentAmount = null,
   actorUserId = null,
   session: outerSession = null,
+  shipping: shippingInput = null,
+  /** 방금 create한 전송 등, 기존 hold 저널이 없음이 확실한 경우 조회 스킵 */
+  skipExistingHoldCheck = false,
 }) {
   const transferId = transfer?._id;
   const practiceAnchorId = transfer?.practiceBusinessAnchorId;
@@ -1550,52 +1584,54 @@ export async function holdPracticeTransferCredits({
     return { held: false, reason: "missing_anchors" };
   }
 
-  const existingHolds = await findAnyPracticeTransferHoldJournal(
-    transferId,
-    outerSession,
-  );
-  if (existingHolds.any) {
-    const heldTotal = Math.max(
-      0,
-      Math.round(
-        Number(
-          transfer?.billing?.heldTotal ||
-            (Number(existingHolds.lab?.meta?.heldTotal || 0) +
-              Number(existingHolds.abutment?.meta?.heldTotal || 0) +
-              Number(existingHolds.legacy?.meta?.heldTotal || 0)),
-        ),
-      ),
+  if (!skipExistingHoldCheck) {
+    const existingHolds = await findAnyPracticeTransferHoldJournal(
+      transferId,
+      outerSession,
     );
-    return {
-      held: false,
-      reason: "already_held",
-      journalId:
-        existingHolds.lab?.journalId ||
-        existingHolds.abutment?.journalId ||
-        existingHolds.legacy?.journalId ||
-        null,
-      heldTotal,
-      heldLabTotal: Math.max(
+    if (existingHolds.any) {
+      const heldTotal = Math.max(
         0,
         Math.round(
           Number(
-            transfer?.billing?.heldLabTotal ??
-              existingHolds.lab?.meta?.heldTotal ??
-              0,
+            transfer?.billing?.heldTotal ||
+              (Number(existingHolds.lab?.meta?.heldTotal || 0) +
+                Number(existingHolds.abutment?.meta?.heldTotal || 0) +
+                Number(existingHolds.legacy?.meta?.heldTotal || 0)),
           ),
         ),
-      ),
-      heldAbutmentTotal: Math.max(
-        0,
-        Math.round(
-          Number(
-            transfer?.billing?.heldAbutmentTotal ??
-              existingHolds.abutment?.meta?.heldTotal ??
-              0,
+      );
+      return {
+        held: false,
+        reason: "already_held",
+        journalId:
+          existingHolds.lab?.journalId ||
+          existingHolds.abutment?.journalId ||
+          existingHolds.legacy?.journalId ||
+          null,
+        heldTotal,
+        heldLabTotal: Math.max(
+          0,
+          Math.round(
+            Number(
+              transfer?.billing?.heldLabTotal ??
+                existingHolds.lab?.meta?.heldTotal ??
+                0,
+            ),
           ),
         ),
-      ),
-    };
+        heldAbutmentTotal: Math.max(
+          0,
+          Math.round(
+            Number(
+              transfer?.billing?.heldAbutmentTotal ??
+                existingHolds.abutment?.meta?.heldTotal ??
+                0,
+            ),
+          ),
+        ),
+      };
+    }
   }
 
   const shares = await resolveHoldShareAmounts({
@@ -1620,11 +1656,26 @@ export async function holdPracticeTransferCredits({
       Math.round(Number(transfer?.billing?.abutmentQty ?? 0) || 0),
     ),
   };
-  const shippingResolved = await resolveExpectedPracticeTransferShippingFees({
-    transfer,
-    toothWorks,
-    fees: shippingFeesForGate,
-  });
+  const shippingResolved =
+    shippingInput && typeof shippingInput === "object"
+      ? {
+          lab: Math.max(0, Math.round(Number(shippingInput.lab || 0))),
+          abuts: Math.max(0, Math.round(Number(shippingInput.abuts || 0))),
+          total: Math.max(
+            0,
+            Math.round(
+              Number(
+                shippingInput.total ??
+                  Number(shippingInput.lab || 0) + Number(shippingInput.abuts || 0),
+              ),
+            ),
+          ),
+        }
+      : await resolveExpectedPracticeTransferShippingFees({
+          transfer,
+          toothWorks,
+          fees: shippingFeesForGate,
+        });
   const heldShippingLab = shippingResolved.lab;
   const heldShippingAbuts = shippingResolved.abuts;
   const required = shares.total + heldShippingLab + heldShippingAbuts;

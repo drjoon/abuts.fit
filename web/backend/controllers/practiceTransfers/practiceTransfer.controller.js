@@ -135,6 +135,7 @@ import { resolvePracticeTransferSkipJig } from "../../utils/practiceTransferLabS
 // - web/backend/utils/practiceLabRating.js
 // - web/backend/utils/practiceTransferStage.js
 // - 2026-08-21: GET /received — 연동 CA 한진 배송 요약(abutmentDeliveryInfo) 포함(치과 /my와 동일).
+// - 2026-08-21: createPracticeTransfer — 견적 1회+잔액 재사용, socket/unread 응답 후 비동기.
 // - 2026-08-21: GET /my — 연동 CA 한진 배송 요약(abutmentDeliveryInfo) 포함.
 // - 2026-08-17: mark-complete는 기공소→치과 배송비만. 어벗츠→제조사 배송은 CA 집하.
 // - 2026-08-16: pastReady — 라이브 stage 우선(sticky startedAt OR 제거 시 목록 인자 우선).
@@ -1676,6 +1677,7 @@ export async function upsertPracticeTransferDraft(req, res) {
           size: 1,
           key: 1,
           location: 1,
+          metadata: 1,
         })
         .lean();
 
@@ -1687,11 +1689,16 @@ export async function upsertPracticeTransferDraft(req, res) {
         .map((id) => {
           const row = ownedById.get(id);
           if (!row) return null;
+          const uncompressed = Math.max(
+            0,
+            Math.round(Number(row?.metadata?.uncompressedSize || 0)),
+          );
           return {
             fileId: row._id,
             originalName: String(row.originalName || "").trim(),
             mimetype: String(row.mimetype || "application/octet-stream").trim(),
-            size: Number(row.size || 0),
+            // UI 표시는 원본 크기(gzip 메타). 없으면 S3 객체 size.
+            size: uncompressed > 0 ? uncompressed : Number(row.size || 0),
             s3Key: String(row.key || "").trim(),
             location: String(row.location || "").trim(),
           };
@@ -2305,54 +2312,12 @@ export async function createPracticeTransfer(req, res) {
         message: "대상 기공소를 선택해주세요.",
       });
     }
-    if (
-      await rejectIfSubcontractDirectBlocked(res, {
-        practiceAnchorId,
-        matchingMode,
-        labAnchorId: targetLabAnchorId,
-      })
-    ) {
-      return;
-    }
-
-    const starBand = await loadStarBandForPracticeRequest({
-      practiceAnchorId,
-      body: req.body,
-    });
-    if (
-      await rejectIfLabOutsideStarBand(res, {
-        labAnchorId: targetLabAnchorId,
-        starBand,
-      })
-    ) {
-      return;
-    }
-
     const skipDesignConfirm = parseSkipDesignConfirmInput(req.body, practiceRouting);
     const skipJig = resolvePracticeTransferSkipJig(
       toothWorksRaw,
       parseSkipJigInput(req.body, practiceRouting),
     );
     const rushProcessing = parseRushProcessingInput(req.body, practiceRouting);
-
-    const arrivalPolicy = await resolvePracticeTransferArrivalPolicy({
-      transferMemo,
-      rushProcessing,
-    });
-    if (!arrivalPolicy.ok) {
-      return res.status(arrivalPolicy.statusCode || 400).json({
-        success: false,
-        message: arrivalPolicy.message,
-        reason: arrivalPolicy.reason,
-        orderYmd: arrivalPolicy.orderYmd,
-        arrivalYmd: arrivalPolicy.arrivalYmd,
-        workPlusShipDays: arrivalPolicy.workPlusShipDays,
-      });
-    }
-    const transferMemoResolved = arrivalPolicy.transferMemo;
-    const rushFeeMultiplier = normalizeRushFeeMultiplier(
-      arrivalPolicy.rushFeeMultiplier,
-    );
 
     try {
       assertAbutmentPresetsComplete(toothWorksRaw);
@@ -2382,31 +2347,55 @@ export async function createPracticeTransfer(req, res) {
       });
     }
 
+    // 별점대역·납기정책 병렬. 서브계약 차단은 응답 충돌 방지를 위해 직렬.
+    const [starBand, arrivalPolicy] = await Promise.all([
+      loadStarBandForPracticeRequest({
+        practiceAnchorId,
+        body: req.body,
+      }),
+      resolvePracticeTransferArrivalPolicy({
+        transferMemo,
+        rushProcessing,
+      }),
+    ]);
+    if (
+      await rejectIfSubcontractDirectBlocked(res, {
+        practiceAnchorId,
+        matchingMode,
+        labAnchorId: targetLabAnchorId,
+      })
+    ) {
+      return;
+    }
+    if (
+      await rejectIfLabOutsideStarBand(res, {
+        labAnchorId: targetLabAnchorId,
+        starBand,
+      })
+    ) {
+      return;
+    }
+    if (!arrivalPolicy.ok) {
+      return res.status(arrivalPolicy.statusCode || 400).json({
+        success: false,
+        message: arrivalPolicy.message,
+        reason: arrivalPolicy.reason,
+        orderYmd: arrivalPolicy.orderYmd,
+        arrivalYmd: arrivalPolicy.arrivalYmd,
+        workPlusShipDays: arrivalPolicy.workPlusShipDays,
+      });
+    }
+    const transferMemoResolved = arrivalPolicy.transferMemo;
+    const rushFeeMultiplier = normalizeRushFeeMultiplier(
+      arrivalPolicy.rushFeeMultiplier,
+    );
+
     // 잔액 검사 후 생성. 크레딧은 생성 시 에스크로 보류(기공 적립은 작업완료).
+    // 견적 1회 → 잔액검사는 fees 재사용(중복 lab/practice/catalog RTT 제거).
     const autoMatchBudget = null;
     const autoMatchEligibleLabAnchorIds = undefined;
     const autoMatchPriorityLabAnchorIds = [];
     const autoMatchCatalog = null;
-
-    try {
-      await assertPracticeTransferPaidCreditSufficient({
-        practiceAnchorId,
-        labAnchorId: targetLabAnchorId,
-        toothWorks: toothWorksRaw,
-        autoMatchBudget,
-        catalog: autoMatchCatalog,
-        rushFeeMultiplier,
-        skipJig,
-      });
-    } catch (creditErr) {
-      const status = Number(creditErr?.statusCode || 500);
-      return res.status(status >= 400 && status < 600 ? status : 500).json({
-        success: false,
-        message:
-          creditErr?.message || "기공의뢰 전송 전 유료크레딧 확인에 실패했습니다.",
-        ...(creditErr?.payload || {}),
-      });
-    }
 
     const feeQuote = await buildPracticeTransferQuote({
       practiceAnchorId,
@@ -2418,9 +2407,33 @@ export async function createPracticeTransfer(req, res) {
       rushFeeMultiplier,
     });
 
+    let createShippingFees = null;
+    try {
+      const creditCheck = await assertPracticeTransferPaidCreditSufficient({
+        practiceAnchorId,
+        labAnchorId: targetLabAnchorId,
+        toothWorks: toothWorksRaw,
+        autoMatchBudget,
+        catalog: autoMatchCatalog,
+        rushFeeMultiplier,
+        skipJig,
+        fees: feeQuote.fees,
+      });
+      createShippingFees = creditCheck?.shipping || null;
+    } catch (creditErr) {
+      const status = Number(creditErr?.statusCode || 500);
+      return res.status(status >= 400 && status < 600 ? status : 500).json({
+        success: false,
+        message:
+          creditErr?.message || "기공의뢰 전송 전 유료크레딧 확인에 실패했습니다.",
+        ...(creditErr?.payload || {}),
+      });
+    }
+
     const billingPreview = {
       ...toBillingPreviewFields(feeQuote),
       rushFeeMultiplier,
+      abutmentPricingTier: feeQuote?.abutmentPricingTier || "membership",
     };
     // feeQuote.autoMatchBudget에 합산 minLabFee/maxLabFee가 포함된다.
 
@@ -2493,6 +2506,8 @@ export async function createPracticeTransfer(req, res) {
         holdLabAmount: Number(billingPreview?.labFeeTotal || 0),
         holdAbutmentAmount: Number(billingPreview?.abutmentRetailTotal || 0),
         actorUserId: req.user?._id,
+        shipping: createShippingFees,
+        skipExistingHoldCheck: true,
       });
       if (holdResult?.held || holdResult?.reason === "already_held") {
         const heldAt = new Date();
@@ -2525,12 +2540,12 @@ export async function createPracticeTransfer(req, res) {
           { $set: { billing: heldBilling } },
         );
         if (Number(holdResult.heldTotal || 0) > 0) {
-          await emitCreditBalanceUpdatedToBusiness({
+          void emitCreditBalanceUpdatedToBusiness({
             businessAnchorId: practiceAnchorId,
             balanceDelta: -Number(holdResult.heldTotal || 0),
             reason: "practice_transfer_hold",
             refId: transferDoc._id,
-          });
+          }).catch(() => null);
         }
       } else if (holdResult?.reason && holdResult.reason !== "zero_fee") {
         try {
@@ -2568,43 +2583,11 @@ export async function createPracticeTransfer(req, res) {
       });
     }
 
-    // 전송 성공 시 해당 임시저장은 완전 삭제(휴지통 아님). 최근 전송 내역만 남긴다.
+    // draft 삭제·socket·unread는 응답 후. 클라이언트는 draftId를 이미 알고 목록에서 제거함.
     const rawDraftId = String(req.body?.draftId || "").trim();
-    let clearedDraftId = null;
-    try {
-      let clearedDoc = null;
-      if (rawDraftId && Types.ObjectId.isValid(rawDraftId)) {
-        const { scope } = await buildPracticeOwnedScope(req);
-        clearedDoc = await PracticeTransferDraft.findOneAndDelete({
-          _id: new Types.ObjectId(rawDraftId),
-          ...scope,
-        })
-          .select({ _id: 1, practiceUserId: 1 })
-          .lean();
-      }
-      // draftId 없이 임의 활성 draft를 지우지 않는다(다중 활성 허용).
-      clearedDraftId = clearedDoc?._id ? String(clearedDoc._id) : null;
-    } catch {
-      // 전송 자체는 성공 유지. draft 정리는 프론트에서 재시도할 수 있음.
-    }
-
     const targetLabAnchorIdText = String(targetLabAnchorId || "").trim();
     if (targetLabAnchorIdText) {
       invalidateUnreadCountCache(targetLabAnchorIdText);
-    }
-    const unreadCountForRequestor = targetLabAnchorIdText
-      ? await PracticeTransfer.countDocuments({
-          targetLabAnchorId: new Types.ObjectId(targetLabAnchorIdText),
-          status: { $ne: "canceled" },
-          requestorReadAt: null,
-        })
-      : 0;
-    if (targetLabAnchorIdText) {
-      setRequestPerfCacheValue(
-        unreadCountCacheKey(targetLabAnchorIdText),
-        { unreadCount: unreadCountForRequestor },
-        10 * 1000,
-      );
     }
 
     const realtimePayload = {
@@ -2614,53 +2597,16 @@ export async function createPracticeTransfer(req, res) {
       targetLabAnchorId: targetLabAnchorIdText || null,
       matchingMode,
       practiceUserId: String(req.user?._id || ""),
-      clearedDraftId,
+      clearedDraftId:
+        rawDraftId && Types.ObjectId.isValid(rawDraftId) ? rawDraftId : null,
       status: "active",
       count: files.length,
-      unreadCount: unreadCountForRequestor,
+      unreadCount: 0,
       createdAt: transferDoc?.createdAt || new Date(),
       ...toAutoMatchApiFields(transferDoc),
     };
 
-    await emitPracticeTransferEventToPracticeUsers({
-      practiceBusinessAnchorId: req.user?.businessAnchorId,
-      type: "practice:transfer-created",
-      payload: realtimePayload,
-      extraUserIds: [req.user?._id],
-    });
-
-    if (clearedDraftId) {
-      await emitPracticeTransferEventToPracticeUsers({
-        practiceBusinessAnchorId: req.user?.businessAnchorId,
-        type: "practice:transfer-updated",
-        payload: {
-          source: "createPracticeTransfer",
-          action: "draft-cleared",
-          draftId: clearedDraftId,
-          practiceUserId: String(req.user?._id || ""),
-          practiceBusinessAnchorId:
-            String(req.user?.businessAnchorId || "").trim() || null,
-        },
-        extraUserIds: [req.user?._id],
-      });
-    }
-
-    if (matchingMode === "auto") {
-      await notifyAutoMatchPoolCreatedWithPriority({
-        transfer: transferDoc,
-        realtimePayload,
-        eligibleLabAnchorIds: autoMatchEligibleLabAnchorIds,
-        emitPoolCreated: emitAutoMatchPoolCreated,
-      });
-    } else {
-      await emitPracticeTransferEventToRequestorUsers({
-        targetLabAnchorId,
-        type: "practice:transfer-created",
-        payload: realtimePayload,
-      });
-    }
-
-    return res.status(201).json({
+    res.status(201).json({
       success: true,
       message:
         matchingMode === "auto"
@@ -2671,12 +2617,94 @@ export async function createPracticeTransfer(req, res) {
         transferId,
         matchingMode,
         count: files.length,
-        clearedDraftId,
+        clearedDraftId: realtimePayload.clearedDraftId,
         billing: transferDoc?.billing || null,
         ...toAutoMatchApiFields(transferDoc),
       },
     });
+
+    void (async () => {
+      let clearedDraftId = realtimePayload.clearedDraftId;
+      try {
+        if (clearedDraftId) {
+          const { scope } = await buildPracticeOwnedScope(req);
+          const clearedDoc = await PracticeTransferDraft.findOneAndDelete({
+            _id: new Types.ObjectId(clearedDraftId),
+            ...scope,
+          })
+            .select({ _id: 1, practiceUserId: 1 })
+            .lean();
+          clearedDraftId = clearedDoc?._id ? String(clearedDoc._id) : null;
+        }
+      } catch {
+        clearedDraftId = null;
+      }
+
+      try {
+        const unreadCountForRequestor = targetLabAnchorIdText
+          ? await PracticeTransfer.countDocuments({
+              targetLabAnchorId: new Types.ObjectId(targetLabAnchorIdText),
+              status: { $ne: "canceled" },
+              requestorReadAt: null,
+            })
+          : 0;
+        if (targetLabAnchorIdText) {
+          setRequestPerfCacheValue(
+            unreadCountCacheKey(targetLabAnchorIdText),
+            { unreadCount: unreadCountForRequestor },
+            10 * 1000,
+          );
+        }
+        const payload = {
+          ...realtimePayload,
+          clearedDraftId,
+          unreadCount: unreadCountForRequestor,
+        };
+
+        await emitPracticeTransferEventToPracticeUsers({
+          practiceBusinessAnchorId: req.user?.businessAnchorId,
+          type: "practice:transfer-created",
+          payload,
+          extraUserIds: [req.user?._id],
+        });
+
+        if (clearedDraftId) {
+          await emitPracticeTransferEventToPracticeUsers({
+            practiceBusinessAnchorId: req.user?.businessAnchorId,
+            type: "practice:transfer-updated",
+            payload: {
+              source: "createPracticeTransfer",
+              action: "draft-cleared",
+              draftId: clearedDraftId,
+              practiceUserId: String(req.user?._id || ""),
+              practiceBusinessAnchorId:
+                String(req.user?.businessAnchorId || "").trim() || null,
+            },
+            extraUserIds: [req.user?._id],
+          });
+        }
+
+        if (matchingMode === "auto") {
+          await notifyAutoMatchPoolCreatedWithPriority({
+            transfer: transferDoc,
+            realtimePayload: payload,
+            eligibleLabAnchorIds: autoMatchEligibleLabAnchorIds,
+            emitPoolCreated: emitAutoMatchPoolCreated,
+          });
+        } else {
+          await emitPracticeTransferEventToRequestorUsers({
+            targetLabAnchorId,
+            type: "practice:transfer-created",
+            payload,
+          });
+        }
+      } catch {
+        // 실시간 이벤트 실패는 전송 성공에 영향 없음
+      }
+    })();
+    return;
   } catch (error) {
+    if (res.headersSent) return;
     return res.status(500).json({
       success: false,
       message: "practice 전송 생성 중 오류가 발생했습니다.",
