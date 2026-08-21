@@ -5,7 +5,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/backend/controllers/requests/common.review.controller.js
 import { useCallback } from "react";
-import { type ManufacturerRequest } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
+import { type ManufacturerRequest, resolveFilledStlFile } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
 import { useToast } from "@/shared/hooks/use-toast";
 
 export const useRequestCardHandlers = (
@@ -54,9 +54,9 @@ export const useRequestCardHandlers = (
 
         const fileName =
           isMachiningStage || isCamStage
-            ? req.caseInfos?.camFile?.filePath ||
-              req.caseInfos?.camFile?.fileName ||
-              req.caseInfos?.camFile?.originalName ||
+            ? resolveFilledStlFile(req.caseInfos)?.filePath ||
+              resolveFilledStlFile(req.caseInfos)?.fileName ||
+              resolveFilledStlFile(req.caseInfos)?.originalName ||
               req.caseInfos?.file?.filePath ||
               req.caseInfos?.file?.originalName ||
               "download.stl"

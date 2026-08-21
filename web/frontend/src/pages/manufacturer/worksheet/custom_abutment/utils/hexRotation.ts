@@ -51,17 +51,25 @@ export const toManufacturerHexRotationLabel = (
 
 export const resolveRequestorHexRotationByDesignSoftware = (
   designSoftwareRaw: unknown,
+  exoCadVersionRaw: unknown = null,
 ): ManufacturerHexRotationCanonicalMode | null => {
   const designSoftware = String(designSoftwareRaw || "").trim();
   if (!designSoftware) return null;
   // 정책 SSOT (제조사 기본값이 아직 없을 때만 사용):
-  // - ExoCAD => 헥스30도회전
+  // - ExoCAD 3.0 이하(또는 버전 미지정 레거시) => 헥스30도회전
+  // - ExoCAD 3.2 이상 => STL모델대로
   // - 3Shape 및 기타(custom 포함) => STL모델대로
   // 제조사가 PreviewModal에서 한 번 바꾸면 User(개인)→BusinessAnchor 기본값이
   // 우선하고, 이후 신규 의뢰는 그 값을 hexRotation.mode로 시드한다.
-  if (designSoftware === "ExoCAD") return "헥스30도회전";
-  return "STL모델대로";
+  if (designSoftware !== "ExoCAD") return "STL모델대로";
+  const version = String(exoCadVersionRaw || "").trim();
+  if (version === "ge_3_2" || version === "3.2" || version === ">=3.2") {
+    return "STL모델대로";
+  }
+  return "헥스30도회전";
 };
+
+export const HEX_VERIFICATION_SAMPLE_LABEL = "헥스 확인용 무료 샘플";
 
 type HexCaseInfos = {
   hexRotation?: { mode?: unknown } | null;
@@ -69,6 +77,8 @@ type HexCaseInfos = {
   requestorHexRotation?: unknown;
   finalHexRotation?: unknown;
   designSoftware?: unknown;
+  exoCadVersion?: unknown;
+  hexVerificationSample?: boolean | null;
   anodizingEnabled?: boolean | null;
 } | null | undefined;
 
@@ -79,6 +89,10 @@ type HexRequestLike = {
     requestSettings?: { anodizingEnabled?: boolean | null } | null;
   } | null;
 } | null | undefined;
+
+export const isHexVerificationSampleRequest = (
+  req?: HexRequestLike | null,
+): boolean => Boolean(req?.caseInfos?.hexVerificationSample === true);
 
 export const resolveDefaultPrepHexRotationMode = (
   req: HexRequestLike,
@@ -97,6 +111,7 @@ export const resolveDefaultPrepHexRotationMode = (
 
   const byDesignSoftware = resolveRequestorHexRotationByDesignSoftware(
     req?.caseInfos?.designSoftware,
+    req?.caseInfos?.exoCadVersion,
   );
   if (byDesignSoftware) {
     return toManufacturerHexRotationLabel(byDesignSoftware);

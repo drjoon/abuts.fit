@@ -28,6 +28,11 @@ import BusinessAnchor from "../../models/businessAnchor.model.js";
 import DraftRequest from "../../models/draftRequest.model.js";
 import User from "../../models/user.model.js";
 import {
+  normalizeExoCadVersion,
+  resolveHexRotationByDesignSoftware,
+} from "../../utils/designSoftwareHex.js";
+import { maybeCreateHexVerificationSampleForFirstOrder } from "../../services/hexVerificationSample.service.js";
+import {
   normalizeCaseInfosImplantFields,
   ensureReviewByStageDefaults,
   assertOrderableImplantPresetOrThrow,
@@ -120,22 +125,9 @@ const normalizePracticeRouting = (value) => {
   };
 };
 
-// related files:
-// - web/backend/models/user.model.js
-// - web/backend/controllers/businesses/business.controller.js
-// - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 const normalizeDesignSoftware = (value) => {
   const v = String(value || "").trim();
   return v || "";
-};
-
-const resolveRequestorHexRotationByDesignSoftware = (designSoftwareRaw) => {
-  const designSoftware = String(designSoftwareRaw || "").trim();
-  // 정책 SSOT:
-  // - ExoCAD => 헥스30도회전
-  // - 3Shape 및 기타(custom 포함) => STL모델대로
-  if (designSoftware === "ExoCAD") return "헥스30도회전";
-  return "STL모델대로";
 };
 
 const normalizeManufacturerHexRotationModeOrNull = (value) => {
@@ -333,6 +325,8 @@ export async function createRequestsFromDraft(req, res) {
                 "requestSettings.defaultRequestorHexRotation": 1,
                 "requestSettings.defaultManufacturerHexRotation": 1,
                 "requestSettings.designSoftware": 1,
+                "requestSettings.exoCadVersion": 1,
+                "requestSettings.hexVerificationSamplePending": 1,
                 requestorKind: 1,
                 "verification.verifiedAt": 1,
                 createdAt: 1,
@@ -348,6 +342,9 @@ export async function createRequestsFromDraft(req, res) {
               .select({
                 "requestSettings.anodizingEnabled": 1,
                 "requestSettings.defaultManufacturerHexRotation": 1,
+                "requestSettings.designSoftware": 1,
+                "requestSettings.exoCadVersion": 1,
+                "requestSettings.hexVerificationSamplePending": 1,
               })
               .lean()
           : Promise.resolve(null),
@@ -1204,7 +1201,7 @@ export async function createRequestsFromDraft(req, res) {
       shippingOrg?.requestSettings?.defaultRequestorHexRotation,
       "STL모델대로",
     );
-    // 제조사 헥스 기본값 SSOT: 개인(User) → BusinessAnchor → (없으면 designSoftware)
+    // 제조사 헥스 기본값 SSOT: 개인(User) → BusinessAnchor → (없으면 designSoftware+exoCadVersion)
     const requestorDefaultManufacturerHexRotation =
       normalizeManufacturerHexRotationModeOrNull(
         requestorSettingsDoc?.requestSettings?.defaultManufacturerHexRotation,
@@ -1212,6 +1209,11 @@ export async function createRequestsFromDraft(req, res) {
       normalizeManufacturerHexRotationModeOrNull(
         shippingOrg?.requestSettings?.defaultManufacturerHexRotation,
       );
+    const requestorExoCadVersion =
+      normalizeExoCadVersion(
+        requestorSettingsDoc?.requestSettings?.exoCadVersion,
+      ) ||
+      normalizeExoCadVersion(shippingOrg?.requestSettings?.exoCadVersion);
     const shipDate = createdYmd;
     const boxCount = 1;
     const totalShippingFee = isPracticeRoutingSubmission
@@ -1494,19 +1496,33 @@ export async function createRequestsFromDraft(req, res) {
             throw err;
           }
 
-          const resolvedRequestorHexRotation =
-            resolveRequestorHexRotationByDesignSoftware(resolvedDesignSoftware);
+          const resolvedExoCadVersion =
+            normalizeExoCadVersion(item.caseInfosWithFile?.exoCadVersion) ||
+            (resolvedDesignSoftware === "ExoCAD"
+              ? requestorExoCadVersion
+              : null);
 
-          // related files:
-          // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
-          // - web/backend/controllers/bg/bg.controller.js
-          // Rhino align 기능이 구성정보 기반 전처리를 대체하므로,
-          // 제조사 헥스 회전 모드는 STL모델대로/헥스30도회전(및 헥스X도회전 확장)을 사용한다.
-          const resolvedManufacturerHexRotation =
-            requestorDefaultManufacturerHexRotation || undefined;
+          const resolvedRequestorHexRotation =
+            resolveHexRotationByDesignSoftware(
+              resolvedDesignSoftware,
+              resolvedExoCadVersion,
+            );
+
+          // 첫의뢰 확인용(pending true/미기록)이면 버전 기반 원본 헥스를 강제.
+          const hexVerificationPending =
+            resolvedDesignSoftware === "ExoCAD" &&
+            requestorSettingsDoc?.requestSettings
+              ?.hexVerificationSamplePending !== false &&
+            shippingOrg?.requestSettings?.hexVerificationSamplePending !==
+              false;
+
+          const resolvedManufacturerHexRotation = hexVerificationPending
+            ? resolvedRequestorHexRotation
+            : requestorDefaultManufacturerHexRotation || undefined;
 
           const resolvedFinalHexRotation = resolveFinalHexRotationValue({
-            manufacturerHexRotation: resolvedManufacturerHexRotation,
+            manufacturerHexRotation:
+              resolvedManufacturerHexRotation || resolvedRequestorHexRotation,
           });
           const hexRotationMode =
             resolvedManufacturerHexRotation || resolvedRequestorHexRotation;
@@ -1534,6 +1550,7 @@ export async function createRequestsFromDraft(req, res) {
             caseInfos: {
               ...(item.caseInfosWithFile || {}),
               designSoftware: resolvedDesignSoftware || undefined,
+              exoCadVersion: resolvedExoCadVersion || undefined,
               anodizingEnabled:
                 typeof item.caseInfosWithFile?.anodizingEnabled === "boolean"
                   ? item.caseInfosWithFile.anodizingEnabled
@@ -1749,12 +1766,43 @@ export async function createRequestsFromDraft(req, res) {
         created: createdRequests.length,
       });
 
+      // 헥스 확인용 복사샘플은 트랜잭션 밖에서 생성한다.
+      // (LotCounter/추가 Request 저장이 세션 밖이면 withTransaction write conflict 재시도 루프가 난다)
+      if (!isPracticeRoutingSubmission && createdRequests.length > 0) {
+        try {
+          const verificationClone =
+            await maybeCreateHexVerificationSampleForFirstOrder({
+              sourceRequests: createdRequests,
+              userId: req.user?._id,
+              businessAnchorId: shippingOrgId || req.user?.businessAnchorId,
+              actorUserId: req.user?._id,
+            });
+          if (verificationClone) {
+            createdRequests.push(verificationClone);
+            console.log(
+              "[createRequestsFromDraft] hex verification sample created",
+              {
+                sourceRequestId: String(createdRequests[0]?.requestId || ""),
+                sampleRequestId: String(verificationClone.requestId || ""),
+              },
+            );
+          }
+        } catch (hexSampleErr) {
+          console.warn(
+            "[createRequestsFromDraft] hex verification sample failed",
+            hexSampleErr?.message || hexSampleErr,
+          );
+        }
+      }
+
       // [트리거] 트랜잭션 커밋 후 rhino-server에 fill hole 처리 시작을 알린다 (fire-and-forget).
+      // 헥스 확인용 복사샘플은 라이노를 돌리지 않는다 — 원본 2-filled 완료 시 stlFile(+legacy camFile)을 복사한다.
       // 의뢰별로 STL이 있으면 각각 트리거. 실패해도 의뢰 생성은 그대로 성공 응답된다.
       try {
         const { triggerRhinoProcessFileForRequest } =
           await import("../rhino/rhino.controller.js");
         for (const doc of createdRequests) {
+          if (doc?.caseInfos?.hexVerificationSample === true) continue;
           const filePath = doc?.caseInfos?.file?.filePath;
           if (!filePath) continue;
           triggerRhinoProcessFileForRequest({

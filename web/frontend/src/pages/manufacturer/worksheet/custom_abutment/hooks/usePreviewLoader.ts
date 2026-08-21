@@ -18,6 +18,7 @@ import { getFileBlob, setFileBlob } from "@/shared/files/stlIndexedDb";
 import { fileFromModelBlob } from "@/shared/files/modelPreviewFile";
 import {
   getReviewStageKeyByTab,
+  resolveFilledStlFile,
   type ManufacturerRequest,
 } from "../utils/request";
 import { toast as toastFn, useToast } from "@/shared/hooks/use-toast";
@@ -439,8 +440,9 @@ export function usePreviewLoader({
           buildBlobCacheKey(originalCacheKeyBase, originalFileMeta) ||
           buildFallbackBlobCacheKey(requestStableId, "original", originalFileMeta);
 
-        const camFileMeta: any = (targetReq as any)?.caseInfos?.camFile;
-        const camCacheKeyBase = targetReq.caseInfos?.camFile?.s3Key || null;
+        const filledStl = resolveFilledStlFile(targetReq.caseInfos);
+        const camFileMeta: any = filledStl;
+        const camCacheKeyBase = filledStl?.s3Key || null;
         const camCacheKey =
           buildBlobCacheKey(camCacheKeyBase, camFileMeta) ||
           buildFallbackBlobCacheKey(requestStableId, "cam", camFileMeta);
@@ -468,9 +470,7 @@ export function usePreviewLoader({
         const loadCamStl = async (): Promise<File | null> => {
           if (!requestMongoId) return null;
           const rawCamName =
-            targetReq.caseInfos?.camFile?.filePath ||
-            targetReq.caseInfos?.camFile?.originalName ||
-            originalName;
+            filledStl?.filePath || filledStl?.originalName || originalName;
           const rawBase = String(rawCamName).split("/").pop() || String(rawCamName);
           // StlPreviewViewer는 파일명에 "filled"가 있어야 가이드/오버레이를 켠다.
           const camName = /\.filled\./i.test(rawBase) || /filled/i.test(rawBase)

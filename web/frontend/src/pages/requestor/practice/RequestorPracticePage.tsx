@@ -508,6 +508,8 @@ export function RequestorPracticeReceivePage({
     setDesignSoftwareMode,
     customDesignSoftware,
     setCustomDesignSoftware,
+    exoCadVersion,
+    setExoCadVersion,
     modalAnodizingEnabled,
     setModalAnodizingEnabled,
     forceRequired: requestSettingsForceRequired,
@@ -4530,6 +4532,8 @@ export function RequestorPracticeReceivePage({
         onModeChange={setDesignSoftwareMode}
         customValue={customDesignSoftware}
         onCustomValueChange={setCustomDesignSoftware}
+        exoCadVersion={exoCadVersion}
+        onExoCadVersionChange={setExoCadVersion}
         saving={designSoftwareSaving}
         onSave={() => {
           void handleSaveDesignSoftware();

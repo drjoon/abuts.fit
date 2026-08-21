@@ -193,6 +193,7 @@ type ShippingItemApi = {
   diameter?: string;
   designSoftware?: string | null;
   anodizingEnabled?: boolean | null;
+  hexVerificationSample?: boolean | null;
   productMode?: string | null;
   implantManufacturer?: string | null;
   implantBrand?: string | null;
@@ -974,11 +975,6 @@ export const RequestorBulkShippingBannerCard = ({
                               <TableCell className="text-xs text-slate-700">
                                 <div className="flex flex-wrap items-center gap-1.5">
                                   <span>{caseText}</span>
-                                  {item.diameter ? (
-                                    <span className="inline-flex items-center rounded-md border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium leading-none text-slate-700">
-                                      {item.diameter}
-                                    </span>
-                                  ) : null}
                                   <RequestCaseMetaBadges
                                     designSoftware={item.designSoftware}
                                     anodizingEnabled={
@@ -986,6 +982,9 @@ export const RequestorBulkShippingBannerCard = ({
                                         ? item.anodizingEnabled
                                         : null
                                     }
+                                    hexVerificationSample={Boolean(
+                                      item.hexVerificationSample,
+                                    )}
                                   />
                                 </div>
                               </TableCell>

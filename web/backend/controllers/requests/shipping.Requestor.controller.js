@@ -8,6 +8,8 @@
 // - web/backend/controllers/requests/expressSelectable.utils.js
 // - web/backend/services/bulkShippingSnapshot.service.js
 // change-log:
+// change-log:
+// - 2026-08-21: GET bulk-shipping — 구 스냅샷에 hexVerificationSample 없으면 재계산.
 // - 2026-08-19: GET bulk-shipping — 케이스 메타(생산모드) 없는 구 스냅샷은 재계산.
 // - 2026-08-19: GET bulk-shipping — 재계산 in-flight를 기다린 뒤 스냅샷을 반환(취소 후 stale 건수).
 // - 2026-08-08: 신속 모드 전환 시 ETA 이점(신속 < 묶음) 없으면 400.
@@ -352,8 +354,13 @@ export async function getMyBulkShipping(req, res) {
         ...(Array.isArray(value?.waiting) ? value.waiting : []),
       ];
       if (rows.length === 0) return true;
-      return rows.every((row) =>
-        Object.prototype.hasOwnProperty.call(row || {}, "productMode"),
+      return rows.every(
+        (row) =>
+          Object.prototype.hasOwnProperty.call(row || {}, "productMode") &&
+          Object.prototype.hasOwnProperty.call(
+            row || {},
+            "hexVerificationSample",
+          ),
       );
     };
 

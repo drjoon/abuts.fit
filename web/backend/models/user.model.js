@@ -201,6 +201,25 @@ const userSchema = new mongoose.Schema(
         trim: true,
         maxlength: 120,
       },
+      // ExoCAD 전용 버전. designSoftware==="ExoCAD"일 때만 의미 있음.
+      // - "le_3_0": 3.0 이하 (헥스30 보정)
+      // - "ge_3_2": 3.2 이상 (STL모델대로)
+      // related: web/backend/utils/designSoftwareHex.js
+      exoCadVersion: {
+        type: String,
+        default: null,
+        trim: true,
+        validate: {
+          validator: (v) =>
+            v == null || v === "" || v === "le_3_0" || v === "ge_3_2",
+          message: "exoCadVersion은 le_3_0 | ge_3_2 이어야 합니다.",
+        },
+      },
+      // ExoCAD 첫 설정 후 첫 제조 의뢰에 30도 확인용 복사샘플을 만들면 false로 소진.
+      hexVerificationSamplePending: {
+        type: Boolean,
+        default: false,
+      },
       // 의뢰자(계정) 단위 아노다이징 기본값. 신규 업로드 시드 → caseInfos.anodizingEnabled
       anodizingEnabled: {
         type: Boolean,

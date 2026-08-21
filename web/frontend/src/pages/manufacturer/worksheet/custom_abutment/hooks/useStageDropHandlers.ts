@@ -8,6 +8,7 @@ import { useCallback, useEffect, useState, type DragEvent } from "react";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useS3TempUpload } from "@/shared/hooks/useS3TempUpload";
 import type { ManufacturerRequest } from "../utils/request";
+import { resolveFilledStlFile } from "../utils/request";
 
 type StageDropParams = {
   isMachiningStage: boolean;
@@ -160,10 +161,11 @@ export function useStageDropHandlers({
         filledStlFiles.forEach((file) => {
           const fileBase = normalize(getBase(file.name));
           const matchingReq = requests.find((r) => {
+            const filled = resolveFilledStlFile(r.caseInfos);
             const rBase = normalize(
               getBase(
-                r.caseInfos?.camFile?.filePath ||
-                  r.caseInfos?.camFile?.originalName ||
+                filled?.filePath ||
+                  filled?.originalName ||
                   r.caseInfos?.file?.filePath ||
                   r.caseInfos?.file?.originalName ||
                   "",
@@ -226,11 +228,12 @@ export function useStageDropHandlers({
         filledStlFiles.forEach((file) => {
           const fileBase = normalize(getBase(file.name));
           const matchingReq = requests.find((r) => {
+            const filled = resolveFilledStlFile(r.caseInfos);
             const rBase = normalize(
               getBase(
-                r.caseInfos?.camFile?.filePath ||
-                  r.caseInfos?.camFile?.fileName ||
-                  r.caseInfos?.camFile?.originalName ||
+                filled?.filePath ||
+                  filled?.fileName ||
+                  filled?.originalName ||
                   r.caseInfos?.file?.filePath ||
                   r.caseInfos?.file?.originalName ||
                   "",

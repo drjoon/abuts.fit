@@ -298,7 +298,10 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - 가공 이력의 영속 SSOT는 `MachiningRecord` 입니다.
 - 팝빌/세금계산서 작업은 web이 직접 처리하지 않고 큐에 넣습니다.
 - BG 콜백 의뢰 매칭 우선순위는 `requestMongoId` → `requestId` → 파일명 fallback 입니다.
-- Rhino filled STL(`sourceStep=2-filled`) 재생성 성공 시 기존 `caseInfos.ncFile`을 `$unset` 한다.
+- Rhino filled STL(`sourceStep=2-filled`)은 `caseInfos.stlFile`에 저장한다(SSOT).
+  - 레거시 호환: 동일 메타를 `caseInfos.camFile`에도 미러 기록. 읽기는 `stlFile || camFile` (`utils/filledStlFile.js`).
+  - Esprit NC는 `caseInfos.ncFile` (camFile ≠ NC).
+  - Rhino filled STL 재생성 성공 시 기존 `caseInfos.ncFile`을 `$unset` 한다.
   - 가공 단계 NC는 새 filled STL 기준으로 CAM(NC) 재생성이 필요하다.
   - 웹소켓 `bg-file-processed` / `request:stage-changed` payload에 `regenerated`, `ncCleared`, `uploadedAt`를 포함한다.
   - 구현: `controllers/bg/bg.controller.js`
@@ -367,10 +370,18 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     `controllers/requests/creation.from-draft.controller.js`,
     `controllers/requests/creation.request.controller.js`
 - 의뢰 제출(`POST /api/requests/from-draft`)의 `caseInfos.requestorHexRotation`은
-  케이스별 `caseInfos.designSoftware`를 기준으로 계산합니다.
+  케이스별 `caseInfos.designSoftware`(+ExoCAD면 `exoCadVersion`)를 기준으로 계산합니다.
   - 케이스 디자인 소프트웨어가 비어 있으면 요청을 실패(400) 처리합니다.
-  - `ExoCAD` => `헥스30도회전`
+  - `ExoCAD` + `exoCadVersion=le_3_0`(3.0 이하, 또는 버전 미지정 레거시) => `헥스30도회전`
+  - `ExoCAD` + `exoCadVersion=ge_3_2`(3.2 이상) => `STL모델대로`
   - `3Shape` 및 기타(custom 포함) => `STL모델대로`
+  - ExoCAD를 **처음** 설정하면 `requestSettings.hexVerificationSamplePending=true`(User 우선, BA 차선).
+    첫 제조 의뢰 생성 시 반대 헥스 복사샘플(`source=manufacturer_sample`, `requestCategory=copied_sample`,
+    `caseInfos.hexVerificationSample=true`, 라벨 **헥스 확인용 무료 샘플**)을 1건 추가하고 pending을 소진한다.
+    - 3.2+: 원본=STL모델대로, 복사=헥스30도회전
+    - 3.0 이하: 원본=헥스30도회전, 복사=STL모델대로
+  - 라이노(2-filled)는 원본만 실행하고 샘플에 `stlFile`(legacy `camFile` 미러)을 복사. Esprit NC(`ncFile`)는 샘플의 반대 헥스로 별도 생성.
+  - 관련: `utils/designSoftwareHex.js`, `services/hexVerificationSample.service.js`
 - 워크시트 응답(`GET /api/requests/all?view=worksheet`)의 `item.business`에는
   `requestSettings.designSoftware`를 포함할 수 있으나, 제조사/의뢰자 UI의 실제 표시는 `caseInfos.designSoftware`를 SSOT로 사용합니다.
   - 관련 파일:

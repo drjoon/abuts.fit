@@ -41,6 +41,11 @@ import PracticeTransfer from "../models/practiceTransfer.model.js";
 import BusinessAnchor from "../models/businessAnchor.model.js";
 import User from "../models/user.model.js";
 import {
+  normalizeExoCadVersion,
+  resolveHexRotationByDesignSoftware,
+} from "../utils/designSoftwareHex.js";
+import { maybeCreateHexVerificationSampleForFirstOrder } from "./hexVerificationSample.service.js";
+import {
   normalizeCaseInfosImplantFields,
   addKoreanBusinessDays,
   getTodayYmdInKst,
@@ -207,12 +212,7 @@ const resolveLabRequestorUserId = async ({ transferDoc, fallbackUserId }) => {
   return null;
 };
 
-/** ExoCAD → 헥스30도회전, 그 외(3Shape/custom) → STL모델대로 */
-export const resolveHexRotationByDesignSoftware = (designSoftwareRaw) => {
-  const designSoftware = String(designSoftwareRaw || "").trim();
-  if (designSoftware === "ExoCAD") return "헥스30도회전";
-  return "STL모델대로";
-};
+export { resolveHexRotationByDesignSoftware };
 
 const normalizeManufacturerHexRotationOrNull = (value) => {
   const raw = String(value || "").trim();
@@ -229,10 +229,15 @@ const normalizeManufacturerHexRotationOrNull = (value) => {
 };
 
 /**
- * 제조사 헥스 기본값 SSOT: 개인(User) → BusinessAnchor → designSoftware.
+ * 제조사 헥스 기본값 SSOT: 개인(User) → BusinessAnchor → designSoftware(+exoCadVersion).
  * related: common.requests.controller.js updateRndHexRotation
  */
-export function pickLabManufacturerHexRotation(labUser, labOrg, designSoftware) {
+export function pickLabManufacturerHexRotation(
+  labUser,
+  labOrg,
+  designSoftware,
+  exoCadVersion = null,
+) {
   return (
     normalizeManufacturerHexRotationOrNull(
       labUser?.requestSettings?.defaultManufacturerHexRotation,
@@ -240,7 +245,7 @@ export function pickLabManufacturerHexRotation(labUser, labOrg, designSoftware) 
     normalizeManufacturerHexRotationOrNull(
       labOrg?.requestSettings?.defaultManufacturerHexRotation,
     ) ||
-    resolveHexRotationByDesignSoftware(designSoftware)
+    resolveHexRotationByDesignSoftware(designSoftware, exoCadVersion)
   );
 }
 
@@ -262,6 +267,20 @@ export function pickLabDesignSoftware(labUser, labOrg) {
     String(labUser?.requestSettings?.designSoftware || "").trim() ||
     String(labOrg?.requestSettings?.designSoftware || "").trim() ||
     ""
+  );
+}
+
+export function pickLabExoCadVersion(labUser, labOrg) {
+  return (
+    normalizeExoCadVersion(labUser?.requestSettings?.exoCadVersion) ||
+    normalizeExoCadVersion(labOrg?.requestSettings?.exoCadVersion)
+  );
+}
+
+export function pickLabHexVerificationPending(labUser, labOrg) {
+  return Boolean(
+    labUser?.requestSettings?.hexVerificationSamplePending ||
+      labOrg?.requestSettings?.hexVerificationSamplePending,
   );
 }
 
@@ -298,6 +317,8 @@ export async function loadLabRequestMetaForProduction({
       ? BusinessAnchor.findById(anchorId)
           .select({
             "requestSettings.designSoftware": 1,
+            "requestSettings.exoCadVersion": 1,
+            "requestSettings.hexVerificationSamplePending": 1,
             "requestSettings.anodizingEnabled": 1,
             "requestSettings.retentionGroove": 1,
             "requestSettings.defaultManufacturerHexRotation": 1,
@@ -308,6 +329,8 @@ export async function loadLabRequestMetaForProduction({
       ? User.findById(userId)
           .select({
             "requestSettings.designSoftware": 1,
+            "requestSettings.exoCadVersion": 1,
+            "requestSettings.hexVerificationSamplePending": 1,
             "requestSettings.anodizingEnabled": 1,
             "requestSettings.retentionGroove": 1,
             "requestSettings.defaultManufacturerHexRotation": 1,
@@ -317,16 +340,30 @@ export async function loadLabRequestMetaForProduction({
   ]);
 
   const designSoftware = pickLabDesignSoftware(labUser, labOrg);
-  const anodizingEnabled = pickLabAnodizingEnabled(labUser, labOrg);
-  const retentionGroove = pickLabRetentionGroove(labUser, labOrg);
-  const manufacturerHexRotation = pickLabManufacturerHexRotation(
+  const exoCadVersion = pickLabExoCadVersion(labUser, labOrg);
+  const hexVerificationSamplePending = pickLabHexVerificationPending(
     labUser,
     labOrg,
-    designSoftware,
   );
+  const anodizingEnabled = pickLabAnodizingEnabled(labUser, labOrg);
+  const retentionGroove = pickLabRetentionGroove(labUser, labOrg);
+  const designSoftwareHex = resolveHexRotationByDesignSoftware(
+    designSoftware,
+    exoCadVersion,
+  );
+  const manufacturerHexRotation = hexVerificationSamplePending
+    ? designSoftwareHex
+    : pickLabManufacturerHexRotation(
+        labUser,
+        labOrg,
+        designSoftware,
+        exoCadVersion,
+      );
 
   return {
     designSoftware,
+    exoCadVersion,
+    hexVerificationSamplePending,
     anodizingEnabled,
     retentionGroove,
     manufacturerHexRotation,
@@ -562,6 +599,7 @@ export async function createAbutmentRequestsFromPracticeTransfer({
       "기공소 디자인 소프트웨어가 설정되지 않았습니다. 기공의뢰수신 또는 어벗생산의뢰에서 먼저 설정해주세요.",
     );
   }
+  const exoCadVersion = labMeta.exoCadVersion || null;
   const manufacturerHexRotation = labMeta.manufacturerHexRotation;
   const anodizingEnabled = labMeta.anodizingEnabled;
   const retentionGroove = labMeta.retentionGroove;
@@ -782,6 +820,7 @@ export async function createAbutmentRequestsFromPracticeTransfer({
         ...normalizedCaseInfos,
         shippingMode,
         designSoftware,
+        exoCadVersion: exoCadVersion || undefined,
         anodizingEnabled,
         retentionGroove,
         requestorHexRotation: manufacturerHexRotation,
@@ -830,6 +869,25 @@ export async function createAbutmentRequestsFromPracticeTransfer({
 
     await newRequest.save();
     created.push(newRequest);
+  }
+
+  try {
+    const verificationClone = await maybeCreateHexVerificationSampleForFirstOrder(
+      {
+        sourceRequests: created,
+        userId: labUserId,
+        businessAnchorId: labAnchorId,
+        actorUserId: actorUserId || labUserId,
+      },
+    );
+    if (verificationClone) {
+      created.push(verificationClone);
+    }
+  } catch (hexSampleErr) {
+    console.warn(
+      "[createAbutmentRequestsFromPracticeTransfer] hex verification sample failed",
+      hexSampleErr?.message || hexSampleErr,
+    );
   }
 
   try {

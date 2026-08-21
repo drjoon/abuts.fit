@@ -1,6 +1,7 @@
 // change-log:
 // - 2026-08-18: 준비 탭 의뢰카드에 로트번호 3글자 뱃지 표시.
 // - 2026-08-17: 환자 호버 직납 치과 툴팁 — resolvePracticeDirectShippingContact 사용.
+// - 2026-08-21: 준비 탭 라이노 완료 SSOT=`stlFile.s3Key`(legacy camFile 폴백).
 // - 2026-08-13: 준비 탭 라이노 미완료 카드 블러 + 「라이노 작업중」 오버레이, 클릭 차단. 완료 SSOT=camFile.s3Key.
 // - 2026-08-12: 세척.패킹 카드 오른쪽 스크류 뱃지 위에 각인코드 3글자 뱃지 표시.
 // - 2026-08-04: 신속/묶음배송 뱃지를 하단(마감시간 옆)으로 이동. API shippingMode projection 누락 수정과 맞춤.
@@ -46,8 +47,13 @@ import {
   isAnySampleRequest,
   isRndSampleRequest,
   isRhinoWorkPending,
+  resolveFilledStlFile,
   resolvePracticeDirectShippingContact,
 } from "../utils/request";
+import {
+  HEX_VERIFICATION_SAMPLE_LABEL,
+  isHexVerificationSampleRequest,
+} from "../utils/hexRotation";
 import { RequestInfoSummary } from "./RequestInfoSummary";
 import { resolveShippingMode } from "@/shared/shipping/shippingMode";
 import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
@@ -266,8 +272,9 @@ export const WorksheetCardGrid = ({
 
         const originalFileName =
           caseInfos.file?.filePath || caseInfos.file?.originalName || "";
-        const camFileName = caseInfos.camFile?.s3Key
-          ? caseInfos.camFile?.filePath || caseInfos.camFile?.originalName || ""
+        const filledStl = resolveFilledStlFile(caseInfos);
+        const camFileName = filledStl?.s3Key
+          ? filledStl?.filePath || filledStl?.originalName || ""
           : "";
         const displayFileName = isMachiningStage
           ? caseInfos.ncFile?.filePath || caseInfos.ncFile?.originalName || ""
@@ -341,6 +348,9 @@ export const WorksheetCardGrid = ({
         const isSampleRequest = isAnySampleRequest(request);
         const isRndArchivedSample = isRndSampleRequest(request);
         const isRndVisualSample = isRndArchivedSample;
+        const isHexVerificationSample = isHexVerificationSampleRequest(
+          request as any,
+        );
         const requestObjectId = String(request?._id || "");
         const rndMemoDraft = rndMemoDrafts[requestObjectId] ?? "";
         const rndMemoSaved = String(request.rnd?.memo || "");
@@ -646,10 +656,9 @@ export const WorksheetCardGrid = ({
             return s.split(".").slice(0, -1).join(".");
           };
 
+          const filledStl = resolveFilledStlFile(caseInfos);
           const camFileName =
-            caseInfos.camFile?.filePath ||
-            caseInfos.camFile?.originalName ||
-            "";
+            filledStl?.filePath || filledStl?.originalName || "";
           const expectedBaseName = getBaseName(camFileName).toLowerCase();
 
           const matchingFile = ncFiles.find((f) => {
@@ -768,12 +777,18 @@ export const WorksheetCardGrid = ({
                 <Badge
                   variant="outline"
                   className={`text-[11px] px-2 py-0.5 font-semibold h-7 flex items-center ${
-                    isRndVisualSample
-                      ? "border-primary/70 bg-primary-soft text-primary-strong"
-                      : "border-primary/70 bg-primary-soft text-primary-strong"
+                    isHexVerificationSample
+                      ? "border-amber-500/80 bg-amber-50 text-amber-900"
+                      : isRndVisualSample
+                        ? "border-primary/70 bg-primary-soft text-primary-strong"
+                        : "border-primary/70 bg-primary-soft text-primary-strong"
                   }`}
                 >
-                  {isRndVisualSample ? "R&D" : "샘플"}
+                  {isHexVerificationSample
+                    ? HEX_VERIFICATION_SAMPLE_LABEL
+                    : isRndVisualSample
+                      ? "R&D"
+                      : "샘플"}
                 </Badge>
               )}
             </div>

@@ -277,6 +277,8 @@ const NewRequestPageContent = () => {
     setDesignSoftwareMode,
     customDesignSoftware,
     setCustomDesignSoftware,
+    exoCadVersion,
+    setExoCadVersion,
     modalAnodizingEnabled,
     setModalAnodizingEnabled,
     forceRequired: designSoftwareForceRequired,
@@ -1758,6 +1760,8 @@ const NewRequestPageContent = () => {
           onModeChange={setDesignSoftwareMode}
           customValue={customDesignSoftware}
           onCustomValueChange={setCustomDesignSoftware}
+          exoCadVersion={exoCadVersion}
+          onExoCadVersionChange={setExoCadVersion}
           saving={designSoftwareSaving}
           onSave={() => {
             void handleSaveDesignSoftware();
@@ -1770,7 +1774,7 @@ const NewRequestPageContent = () => {
           showAnodizing
           anodizingEnabled={modalAnodizingEnabled}
           onAnodizingChange={setModalAnodizingEnabled}
-          contentClassName="new-request-page sm:max-w-md"
+          contentClassName="new-request-page sm:max-w-2xl"
         />
 
         <div className="grid grid-cols-1 lg:grid-cols-[minmax(34rem,1.2fr)_minmax(0,1fr)] gap-3 items-stretch flex-1 min-h-0 h-full">

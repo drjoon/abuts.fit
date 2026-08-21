@@ -149,6 +149,9 @@ export const buildPackLabelRenderOptions = ({
     modelName,
     caseType: "Custom Abutment",
     printedAt: new Date().toISOString(),
+    topBannerText: (caseInfos as any)?.hexVerificationSample
+      ? "헥스 확인용 무료 샘플"
+      : null,
     dpi: packLabelDpi,
     targetDots: packLabelDots,
     designDots: packLabelDesignDots,

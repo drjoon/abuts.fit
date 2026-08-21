@@ -797,6 +797,8 @@ export function SelfInspectionReportModal({
           const pts = data?.caseInfos?.finishLine?.points;
           if (Array.isArray(pts) && pts.length >= 2) setFinishLinePoints(pts);
           const rawCamName =
+            data?.caseInfos?.stlFile?.filePath ||
+            data?.caseInfos?.stlFile?.originalName ||
             data?.caseInfos?.camFile?.filePath ||
             data?.caseInfos?.camFile?.originalName ||
             null;

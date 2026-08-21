@@ -306,6 +306,24 @@ const businessAnchorSchema = new mongoose.Schema(
         default: null,
         trim: true,
       },
+      // ExoCAD 전용 버전. designSoftware==="ExoCAD"일 때만 의미 있음.
+      // - "le_3_0": 3.0 이하 / "ge_3_2": 3.2 이상
+      // related: web/backend/utils/designSoftwareHex.js
+      exoCadVersion: {
+        type: String,
+        default: null,
+        trim: true,
+        validate: {
+          validator: (v) =>
+            v == null || v === "" || v === "le_3_0" || v === "ge_3_2",
+          message: "exoCadVersion은 le_3_0 | ge_3_2 이어야 합니다.",
+        },
+      },
+      // ExoCAD 첫 설정 후 첫 제조 의뢰에 30도 확인용 복사샘플을 만들면 false로 소진.
+      hexVerificationSamplePending: {
+        type: Boolean,
+        default: false,
+      },
       // 의뢰자(사업체) 단위 기본 헥스 회전값 (신규 의뢰 기본값)
       defaultRequestorHexRotation: {
         type: String,

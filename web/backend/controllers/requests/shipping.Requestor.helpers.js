@@ -733,6 +733,7 @@ async function buildBulkShippingCandidatesByFilter({ requestFilter }) {
         typeof ci.designSoftware === "string" ? ci.designSoftware.trim() : "",
       anodizingEnabled:
         typeof ci.anodizingEnabled === "boolean" ? ci.anodizingEnabled : null,
+      hexVerificationSample: Boolean(ci.hexVerificationSample === true),
       productMode:
         typeof ci.productMode === "string" ? ci.productMode.trim() : "",
       implantManufacturer: ci.implantManufacturer || "",

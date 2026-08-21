@@ -40,6 +40,7 @@ import {
 } from "../controllers/requests/production.utils.js";
 import { resolveEffectiveShippingMode } from "../controllers/requests/shippingPriority.utils.js";
 import { isMachiningInProgress } from "../controllers/cnc/distribution.utils.js";
+import { pickFilledStlFileForClone } from "../utils/filledStlFile.js";
 
 // 워커 폴링 간격 (ms). 환경변수로 조정 가능.
 const WORKER_POLL_INTERVAL_MS = Number(
@@ -659,7 +660,8 @@ function buildPayload(taskType, request, options = {}) {
       requestId: request?.requestId,
       forceReprocess: options?.forceReprocess === true,
       caseInfos: {
-        camFile: request?.caseInfos?.camFile || null,
+        // filled STL: stlFile SSOT + legacy camFile mirror
+        ...pickFilledStlFileForClone(request?.caseInfos),
         ncFile: request?.caseInfos?.ncFile || null,
         implantManufacturer: request?.caseInfos?.implantManufacturer || null,
         implantBrand: request?.caseInfos?.implantBrand || null,

@@ -34,6 +34,7 @@ import { Types } from "mongoose";
 import Request from "../../models/request.model.js";
 import PracticeTransfer from "../../models/practiceTransfer.model.js";
 import User from "../../models/user.model.js";
+import { clearFilledStlFileOnCaseInfos } from "../../utils/filledStlFile.js";
 import {
   canClaimOrHandoffDesignRequest,
   isAcceptingLabForPtxDesignRequest,
@@ -45,6 +46,7 @@ import {
   loadLabRequestMetaForProduction,
   mirrorDesignFileToPracticeTransfer,
   repriceAndReschedulePtxAbutmentRequest,
+  resolveHexRotationByDesignSoftware,
 } from "../../services/practiceTransferProduction.service.js";
 import { postPracticeTransferSystemChatMessage } from "../../services/chatSystemMessage.service.js";
 import {
@@ -150,8 +152,12 @@ const ensurePtxProductionRhinoReadyFields = async (request) => {
   if (!request.rnd) request.rnd = {};
 
   const designSoftware = String(request.caseInfos.designSoftware || "").trim();
-  const designSoftwareHex =
-    designSoftware === "ExoCAD" ? "헥스30도회전" : designSoftware ? DEFAULT_HEX_ROTATION : "";
+  const designSoftwareHex = designSoftware
+    ? resolveHexRotationByDesignSoftware(
+        designSoftware,
+        request.caseInfos?.exoCadVersion,
+      )
+    : "";
 
   const hex =
     designSoftwareHex ||
@@ -292,7 +298,7 @@ const markPtxRelatedRequestsCancelled = async (transferId) => {
       request.caseInfos.file = restorePrimary;
       request.caseInfos.files = sourceRows.slice(1);
       request.caseInfos.designSourceFiles = [];
-      request.caseInfos.camFile = undefined;
+      clearFilledStlFileOnCaseInfos(request.caseInfos); // stlFile + legacy camFile
       request.caseInfos.ncFile = undefined;
     }
     request.caseInfos.productMode = PRODUCT_MODE_DESIGN;
@@ -536,8 +542,8 @@ export async function handoffDesignToProduction(req, res) {
     request.caseInfos.designSourceFiles = sourceRows;
     request.caseInfos.files = sourceRows;
     request.caseInfos.file = nextPrimary;
-    // 구강스캔 기준 CAM/NC는 무효 — 완성 어벗으로 재생성
-    request.caseInfos.camFile = undefined;
+    // 구강스캔 기준 filled STL(stlFile)/NC는 무효 — 완성 어벗으로 재생성
+    clearFilledStlFileOnCaseInfos(request.caseInfos);
     request.caseInfos.ncFile = undefined;
 
     const labAnchorId = String(req.user?.businessAnchorId || "").trim();
@@ -936,7 +942,7 @@ export async function cancelDesignHandoff(req, res) {
     request.caseInfos.file = restorePrimary;
     request.caseInfos.files = sourceRows.slice(1);
     request.caseInfos.designSourceFiles = [];
-    request.caseInfos.camFile = undefined;
+    clearFilledStlFileOnCaseInfos(request.caseInfos); // stlFile + legacy camFile
     request.caseInfos.ncFile = undefined;
     // 재업로드(핸드오프) 가능하도록 디자인+생산 모드로 복원 후, 제조 큐에서는 취소 처리
     request.caseInfos.productMode = PRODUCT_MODE_DESIGN;

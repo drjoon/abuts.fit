@@ -27,6 +27,7 @@ import { triggerEspritForNc } from "./common.review.esprit.js";
 import { ensureRequestCreditRollbackDeleteOnRollbackToCam } from "./common.review.helpers.js";
 import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
 import { clearPracticeTransferAbutmentMachiningStarted } from "../../services/practiceTransferProduction.service.js";
+import { resolveFilledStlFile } from "../../utils/filledStlFile.js";
 
 async function assertAndClaimManufacturerRequestAccess({ req, request }) {
   if (req?.user?.role !== "manufacturer") return;
@@ -703,21 +704,20 @@ export async function saveNcFileAndMoveToMachining(req, res) {
       return s;
     };
 
+    const filledStl = resolveFilledStlFile(request.caseInfos);
     const originalBase = getBaseName(
       request.caseInfos?.file?.filePath ||
         request.caseInfos?.file?.fileName ||
         request.caseInfos?.file?.originalName,
     );
     const camBase = getBaseName(
-      request.caseInfos?.camFile?.filePath ||
-        request.caseInfos?.camFile?.fileName ||
-        request.caseInfos?.camFile?.originalName,
+      filledStl?.filePath || filledStl?.fileName || filledStl?.originalName,
     );
 
     const originalName =
-      request.caseInfos?.camFile?.filePath ||
-      request.caseInfos?.camFile?.fileName ||
-      request.caseInfos?.camFile?.originalName ||
+      filledStl?.filePath ||
+      filledStl?.fileName ||
+      filledStl?.originalName ||
       request.caseInfos?.file?.filePath ||
       request.caseInfos?.file?.fileName ||
       request.caseInfos?.file?.originalName ||

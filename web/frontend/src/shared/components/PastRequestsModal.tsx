@@ -666,6 +666,10 @@ export const PastRequestsModal = ({
                                 ? ci.anodizingEnabled
                                 : null
                             }
+                            hexVerificationSample={Boolean(
+                              (ci as { hexVerificationSample?: boolean })
+                                ?.hexVerificationSample,
+                            )}
                           />
                         </div>
                       </TableCell>

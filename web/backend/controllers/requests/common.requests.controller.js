@@ -75,6 +75,7 @@ import { buildMonitoringStageStatsFromGroupedRows } from "../../services/request
 import { buildCreatedAtFilterFromQuery } from "../../utils/dateRange.js";
 import { ensureRequestCreditRollbackDeleteOnRollbackToCam } from "./common.review.helpers.js";
 import { releaseRequestCreditHoldsOnCancel } from "../../services/requestCreditHold.service.js";
+import { pickFilledStlFileForClone } from "../../utils/filledStlFile.js";
 
 const ESPRIT_BASE =
   process.env.ESPRIT_ADDIN_BASE_URL ||
@@ -253,15 +254,21 @@ const isRndSampleRequest = (requestLike) => {
 };
 
 const buildNonSampleRequestGuard = () => ({
-  $and: [
-    // 레거시 문서(requestCategory 미기재)도 일반 의뢰건으로 포함하되,
-    // source / price.rule 기준 샘플은 항상 제외한다.
-    { source: { $ne: "manufacturer_sample" } },
-    { "price.rule": { $ne: "manufacturer_sample" } },
+  // 헥스 확인용 무료 샘플은 의뢰자 진행중/출고 목록에 노출한다.
+  $or: [
+    { "caseInfos.hexVerificationSample": true },
     {
-      requestCategory: {
-        $nin: [REQUEST_CATEGORY.RND_SAMPLE, REQUEST_CATEGORY.COPIED_SAMPLE],
-      },
+      $and: [
+        // 레거시 문서(requestCategory 미기재)도 일반 의뢰건으로 포함하되,
+        // source / price.rule 기준 샘플은 항상 제외한다.
+        { source: { $ne: "manufacturer_sample" } },
+        { "price.rule": { $ne: "manufacturer_sample" } },
+        {
+          requestCategory: {
+            $nin: [REQUEST_CATEGORY.RND_SAMPLE, REQUEST_CATEGORY.COPIED_SAMPLE],
+          },
+        },
+      ],
     },
   ],
 });
@@ -1541,7 +1548,8 @@ export async function getAllRequests(req, res) {
       "caseInfos.requestorHexRotation",
       "caseInfos.finalHexRotation",
       "caseInfos.file",
-      "caseInfos.camFile",
+      "caseInfos.stlFile", // Rhino filled STL SSOT
+      "caseInfos.camFile", // legacy mirror of stlFile
       "caseInfos.ncFile",
       "caseInfos.stageFiles",
       "caseInfos.reviewByStage",
@@ -4061,15 +4069,16 @@ function buildClonedCaseInfos(sourceCaseInfos, startStage, now = new Date()) {
   };
 
   // 시작 공정 복사 정책 (생산 샘플 복사 공통):
-  // - 의뢰 시작: CAM(filled STL)은 유지, NC는 제거
+  // - 의뢰 시작: filled STL(stlFile)은 유지, NC는 제거
   //   -> 의뢰자 과금/결제 상태와 무관한 가공 입력 데이터는 복사하고,
   //      NC 산출물은 공정 재생성을 위해 비운다.
-  // - CAM 시작: CAM은 유지, NC는 제거 (재생성 가능)
-  // - 가공/세척.패킹 시작: CAM/NC 모두 유지
+  // - CAM 시작: filled STL은 유지, NC는 제거 (재생성 가능)
+  // - 가공/세척.패킹 시작: filled STL/NC 모두 유지
+  // pickFilledStlFileForClone → stlFile SSOT + legacy camFile mirror
   if (startStage === "가공" || startStage === "세척.패킹") {
     return {
       ...base,
-      camFile: sourceCaseInfos?.camFile || null,
+      ...pickFilledStlFileForClone(sourceCaseInfos),
       ncFile: sourceCaseInfos?.ncFile || null,
     };
   }
@@ -4077,14 +4086,14 @@ function buildClonedCaseInfos(sourceCaseInfos, startStage, now = new Date()) {
   if (startStage === "CAM") {
     return {
       ...base,
-      camFile: sourceCaseInfos?.camFile || null,
+      ...pickFilledStlFileForClone(sourceCaseInfos),
       ncFile: null,
     };
   }
 
   return {
     ...base,
-    camFile: sourceCaseInfos?.camFile || null,
+    ...pickFilledStlFileForClone(sourceCaseInfos),
     ncFile: null,
   };
 }
@@ -4170,7 +4179,7 @@ export async function cloneAsSample(req, res) {
           // - 샘플은 의뢰 단계에서 시작하므로 REQUEST_STAGE_APPROVED 시 Esprit 트리거가 필요
           // - ncFile을 복사하면 ReviewApprovalQueue가 "이미 NC 존재"로 판단해 Esprit를 스킵함
           file: request.caseInfos?.file || null,
-          camFile: request.caseInfos?.camFile || null,
+          ...pickFilledStlFileForClone(request.caseInfos), // stlFile + legacy camFile
           ncFile: null,
           finishLine: request.caseInfos?.finishLine || null,
         },

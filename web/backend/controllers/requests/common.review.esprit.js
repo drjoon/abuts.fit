@@ -11,6 +11,7 @@ import {
   inferDiameterGroupFromDiameter,
 } from "./common.review.machine.js";
 import { resolveCaseInfosHexRotationMode } from "./common.requests.controller.js";
+import { resolveFilledStlFile } from "../../utils/filledStlFile.js";
 
 const ESPRIT_BASE =
   process.env.ESPRIT_ADDIN_BASE_URL ||
@@ -39,9 +40,11 @@ export async function triggerEspritForNc({
     return;
   }
 
-  const camFileName = request?.caseInfos?.camFile?.filePath;
+  // filled STL(stlFile / legacy camFile).filePath → Esprit StlPath
+  const filledStl = resolveFilledStlFile(request?.caseInfos);
+  const camFileName = filledStl?.filePath;
   if (!camFileName) {
-    const err = new Error("CAM 파일이 없어 NC 생성을 시작할 수 없습니다.");
+    const err = new Error("Filled STL이 없어 NC 생성을 시작할 수 없습니다.");
     err.statusCode = 400;
     throw err;
   }
@@ -54,7 +57,7 @@ export async function triggerEspritForNc({
   const camNcName = String(camBaseName || "")
     .replace(/\.stl$/i, ".nc")
     .trim();
-  // 샘플/복사 의뢰와 원본 의뢰가 동일 camFile 경로를 공유할 수 있으므로,
+  // 샘플/복사 의뢰와 원본 의뢰가 동일 filled STL 경로를 공유할 수 있으므로,
   // NC 출력 경로는 항상 requestId 단위로 분리한다. (rules.md §18.8 분리 정책)
   const ncFileName = request?.requestId
     ? `3-nc/${String(request.requestId).trim()}/${camNcName || `${String(request.requestId).trim()}.nc`}`

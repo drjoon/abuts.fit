@@ -28,6 +28,11 @@ import s3Utils, {
 import { emitAppEventToRoles } from "../../socket.js";
 import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
 import { clearPracticeTransferAbutmentMachiningStarted } from "../../services/practiceTransferProduction.service.js";
+import {
+  applyFilledStlFileToCaseInfos,
+  clearFilledStlFileOnCaseInfos,
+  resolveFilledStlFile,
+} from "../../utils/filledStlFile.js";
 import { resolveDesignAccessForUser } from "../../utils/designAccess.js";
 
 export async function getStlFileUrl(req, res) {
@@ -156,7 +161,8 @@ export async function getCamFileUrl(req, res) {
       }
     };
 
-    const camFile = request?.caseInfos?.camFile || null;
+    // filled STL: stlFile SSOT, camFile = legacy mirror
+    const camFile = resolveFilledStlFile(request?.caseInfos) || null;
     const s3Key = String(
       camFile?.s3Key ||
         parseS3KeyFromUrl(camFile?.s3Url) ||
@@ -172,14 +178,14 @@ export async function getCamFileUrl(req, res) {
       s3KeyLen: s3Key ? s3Key.length : 0,
     });
     const fileName =
-      request?.caseInfos?.camFile?.filePath ||
-      request?.caseInfos?.camFile?.fileName ||
-      request?.caseInfos?.camFile?.originalName ||
-      "cam-output.stl";
+      camFile?.filePath ||
+      camFile?.fileName ||
+      camFile?.originalName ||
+      "filled.stl";
     if (!s3Key) {
       if (camFile) {
         console.warn(
-          "[getCamFileUrl] camFile exists but s3Key missing:",
+          "[getCamFileUrl] filled STL exists but s3Key missing:",
           JSON.stringify(
             {
               requestId: request?.requestId,
@@ -242,7 +248,8 @@ export async function saveCamFileAndCompleteCam(req, res) {
       updatedBy: req.user?._id,
       reason: "",
     };
-    request.caseInfos.camFile = {
+    // Rhino filled STL — stlFile SSOT (+ legacy camFile mirror)
+    applyFilledStlFileToCaseInfos(request.caseInfos, {
       fileName: resolvedFileName,
       fileType,
       fileSize,
@@ -250,7 +257,7 @@ export async function saveCamFileAndCompleteCam(req, res) {
       s3Key: s3Key || "",
       s3Url: s3Url || "",
       uploadedAt: new Date(),
-    };
+    });
 
     // 업로드 시 공정 전환은 하지 않고, 기존 단계 유지 (수동 승인 버튼 클릭 시에만 전환)
     // request.manufacturerStage = "CAM";
@@ -258,13 +265,13 @@ export async function saveCamFileAndCompleteCam(req, res) {
 
     return res.status(200).json({
       success: true,
-      message: "CAM 파일이 저장되었습니다.",
+      message: "Filled STL이 저장되었습니다.",
       data: await normalizeRequestForResponse(request),
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: "CAM 파일 저장 중 오류가 발생했습니다.",
+      message: "Filled STL 저장 중 오류가 발생했습니다.",
       error: error.message,
     });
   }
@@ -355,12 +362,12 @@ export async function deleteCamFileAndRollback(req, res) {
       });
     }
 
-    // camFile 제거, 상태 롤백
+    // filled STL 제거(stlFile + legacy camFile), 상태 롤백
     const previousManufacturerStage = String(
       request.manufacturerStage || "",
     ).trim();
     request.caseInfos = request.caseInfos || {};
-    request.caseInfos.camFile = undefined;
+    clearFilledStlFileOnCaseInfos(request.caseInfos);
     ensureReviewByStageDefaults(request);
     request.caseInfos.reviewByStage.cam = {
       status: "PENDING",

@@ -73,6 +73,7 @@ import {
   type ReviewStageKey,
   getDeadlineInfo,
   getReviewStageKeyByTab,
+  resolveFilledStlFile,
   resolvePracticeDirectShippingContact,
 } from "../utils/request";
 import { resolveImplantConnectionSpec } from "@/utils/implantConnectionSpec";
@@ -605,8 +606,8 @@ export const PreviewModal = ({
         if (source !== "bg-file-processed") return false;
       }
 
-      // 메타데이터만 먼저 오는 register-stl-metadata는 camFile 전에 full STL reload 하면
-      // 이후 filled 갱신을 레이스로 덮어쓸 수 있다. cam 준비 전에는 스킵(useStlMetadata가 수치 반영).
+      // 메타데이터만 먼저 오는 register-stl-metadata는 filled STL(stlFile) 전에 full STL reload 하면
+      // 이후 filled 갱신을 레이스로 덮어쓸 수 있다. filled 준비 전에는 스킵(useStlMetadata가 수치 반영).
       // FP/FL 수동 저장도 DB 메타만 바뀌므로 STL 재로드하지 않는다(useStlMetadata가 오버레이 갱신).
       if (evtType === "request:stl-metadata-updated") {
         const source = String(rawPayload.source || "").trim();
@@ -618,10 +619,15 @@ export const PreviewModal = ({
         }
         if (source === "register-stl-metadata") {
           const eventReq = rawPayload.request as
-            | { caseInfos?: { camFile?: { s3Key?: unknown } } }
+            | {
+                caseInfos?: {
+                  stlFile?: { s3Key?: unknown };
+                  camFile?: { s3Key?: unknown };
+                };
+              }
             | undefined;
           const hasCam = Boolean(
-            String(eventReq?.caseInfos?.camFile?.s3Key || "").trim(),
+            String(resolveFilledStlFile(eventReq?.caseInfos)?.s3Key || "").trim(),
           );
           if (!hasCam) return false;
         }
@@ -1201,9 +1207,10 @@ export const PreviewModal = ({
     activeReq?.caseInfos?.file?.filePath ||
     activeReq?.caseInfos?.file?.originalName ||
     "original.stl";
-  const camName = activeReq?.caseInfos?.camFile?.s3Key
-    ? activeReq?.caseInfos?.camFile?.filePath ||
-      activeReq?.caseInfos?.camFile?.originalName ||
+  const filledStlMeta = resolveFilledStlFile(activeReq?.caseInfos);
+  const camName = filledStlMeta?.s3Key
+    ? filledStlMeta?.filePath ||
+      filledStlMeta?.originalName ||
       "filled.stl"
     : "filled.stl";
   const ncName = (() => {
@@ -1298,9 +1305,9 @@ export const PreviewModal = ({
       ]
     : isCamStage
       ? activeReq?.caseInfos?.ncFile
-      : activeReq?.caseInfos?.camFile;
+      : resolveFilledStlFile(activeReq?.caseInfos);
   const hasRightFile = !!rightMeta?.s3Key;
-  const hasCamFile = !!activeReq?.caseInfos?.camFile?.s3Key;
+  const hasCamFile = !!resolveFilledStlFile(activeReq?.caseInfos)?.s3Key;
   const hasNcFile = !!activeReq?.caseInfos?.ncFile?.s3Key;
 
   const canGuideFinishLine =
@@ -1312,8 +1319,8 @@ export const PreviewModal = ({
   const canGuideFrontPoint = canGuideFinishLine;
 
   const guidedFinishLineFilePath = String(
-    activeReq?.caseInfos?.camFile?.filePath ||
-      activeReq?.caseInfos?.camFile?.originalName ||
+    resolveFilledStlFile(activeReq?.caseInfos)?.filePath ||
+      resolveFilledStlFile(activeReq?.caseInfos)?.originalName ||
       activeReq?.caseInfos?.file?.filePath ||
       activeReq?.caseInfos?.file?.originalName ||
       previewFiles.cam?.name ||
@@ -1451,7 +1458,7 @@ export const PreviewModal = ({
       // STL 재생성 성공 시 캐시 무효화 (filled.stl 재생성 시 NC도 재생성되므로 NC 캐시도 무효화)
       markFilledStlRegenerationPending(activeReq?.requestId);
       await invalidateRequestPreviewCaches({
-        camS3Key: activeReq?.caseInfos?.camFile?.s3Key,
+        camS3Key: resolveFilledStlFile(activeReq?.caseInfos)?.s3Key,
         ncS3Key: activeReq?.caseInfos?.ncFile?.s3Key,
         requestMongoId: String(activeReq?._id || "").trim(),
         requestId: String(activeReq?.requestId || "").trim(),

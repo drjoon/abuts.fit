@@ -1,5 +1,6 @@
 // change-log:
 // - 2026-08-17: PTX 직납 치과 연락처 resolve (스냅샷 우선, 없으면 practice BA live).
+// - 2026-08-21: Rhino filled STL SSOT — `caseInfos.stlFile`(legacy `camFile` 폴백). NC는 `ncFile`.
 // - 2026-08-13: 준비 탭 라이노 완료 SSOT — `caseInfos.camFile.s3Key`(2-filled). 없으면 카드 블러·클릭 차단.
 // - 2026-08-03: 준비 탭 카드 미표시 버그 수정 - `deriveStageForFilter`의 request 단계 정규화를 `준비` 단일값으로 통일.
 // - 2026-08-03: manufacturerStage request 단계 레거시 값(`의뢰`, `request`) 의존을 제거하고 `준비` 기준으로 정리.
@@ -33,6 +34,8 @@ export type ManufacturerRequest = RequestBase & {
     };
     requestSettings?: {
       designSoftware?: string | null;
+      exoCadVersion?: string | null;
+      hexVerificationSample?: boolean | null;
       anodizingEnabled?: boolean | null;
     } | null;
   } | null;
@@ -211,9 +214,59 @@ export const isDesignCustomAbutmentRequest = (
   req?: ManufacturerRequest | null,
 ) => resolveProductMode(req) === PRODUCT_MODE.DESIGN_CUSTOM_ABUTMENT;
 
+/**
+ * Rhino(2-filled) filled STL 메타.
+ * SSOT: caseInfos.stlFile. Legacy: caseInfos.camFile (동일 의미 미러/폴백).
+ * NC(Esprit)는 caseInfos.ncFile — camFile ≠ NC.
+ */
+export type FilledStlFileMeta = {
+  fileName?: string;
+  originalName?: string;
+  fileType?: string;
+  fileSize?: number;
+  filePath?: string;
+  s3Key?: string;
+  s3Url?: string;
+  uploadedAt?: string;
+};
+
+const hasFilledStlMeta = (file?: FilledStlFileMeta | null) =>
+  Boolean(
+    String(file?.s3Key || "").trim() ||
+      String(file?.filePath || "").trim() ||
+      String(file?.fileName || "").trim(),
+  );
+
+/** stlFile 우선, 없으면 legacy camFile */
+export const resolveFilledStlFile = (
+  caseInfos?: {
+    stlFile?: FilledStlFileMeta | null;
+    camFile?: FilledStlFileMeta | null;
+  } | null,
+): FilledStlFileMeta | null => {
+  const stl = caseInfos?.stlFile;
+  if (hasFilledStlMeta(stl)) return stl || null;
+  const legacy = caseInfos?.camFile;
+  if (hasFilledStlMeta(legacy)) return legacy || null;
+  return stl || legacy || null;
+};
+
 /** Filled STL(2-filled) 존재 = 라이노 작업 완료 SSOT */
 export const hasFilledStl = (req?: ManufacturerRequest | null) =>
-  Boolean(String(req?.caseInfos?.camFile?.s3Key || "").trim());
+  Boolean(String(resolveFilledStlFile(req?.caseInfos)?.s3Key || "").trim());
+
+/**
+ * 낙관적 패치용 — stlFile SSOT + legacy camFile 미러.
+ * clear 시 둘 다 undefined.
+ */
+export const patchFilledStlFile = (
+  fileMeta: FilledStlFileMeta | undefined | null,
+): { stlFile: FilledStlFileMeta | undefined; camFile: FilledStlFileMeta | undefined } => {
+  if (fileMeta == null) {
+    return { stlFile: undefined, camFile: undefined };
+  }
+  return { stlFile: fileMeta, camFile: fileMeta };
+};
 
 /**
  * 제조사 생산 준비 카드: filled STL 수신 전.

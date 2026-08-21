@@ -196,6 +196,19 @@ export interface RequestCaseInfos {
     s3Url?: string;
   };
 
+  // Rhino(2-filled) filled STL. SSOT. related: utils/request.ts resolveFilledStlFile
+  stlFile?: {
+    fileName?: string;
+    originalName?: string;
+    fileType?: string;
+    fileSize?: number;
+    filePath?: string;
+    s3Key?: string;
+    s3Url?: string;
+    uploadedAt?: string;
+  };
+  // [LEGACY] filled STL 옛 필드명. stlFile과 동일 의미. 읽기 폴백·쓰기 미러용.
+  // NC는 ncFile. camFile ≠ NC.
   camFile?: {
     fileName?: string;
     originalName?: string;
@@ -206,6 +219,7 @@ export interface RequestCaseInfos {
     s3Url?: string;
     uploadedAt?: string;
   };
+  // Esprit(3-nc) NC. filled STL(stlFile)과 별개.
   ncFile?: {
     fileName?: string;
     originalName?: string;

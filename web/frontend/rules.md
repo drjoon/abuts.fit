@@ -348,11 +348,11 @@ Notes:
   - request 탭 API 조회는 `manufacturerStageIn=준비` 단일값만 전달합니다.
   - `manufacturerStage` request 단계 레거시 값(`의뢰`, `request`) 사용/비교는 금지합니다.
   - 상단 카운터/카드 목록 불일치 방지를 위해 탭별 API stage 필터와 클라이언트 stage 비교 문자열을 동일하게 유지합니다.
-  - 라이노 작업 전 카드: 의뢰 생성 직후 준비 탭에 즉시 표시하되, `caseInfos.camFile.s3Key`(2-filled)가 없으면
+  - 라이노 작업 전 카드: 의뢰 생성 직후 준비 탭에 즉시 표시하되, `caseInfos.stlFile.s3Key`(2-filled; legacy `camFile` 폴백)가 없으면
     카드 본문을 블러하고 「라이노 작업중」 오버레이로 클릭을 막는다.
     라이노 완료 웹소켓(`request:stage-changed` source=`bg-file-processed`,
     `request:stl-metadata-updated` source=`bg-file-processed:2-filled`,
-    notification `bg-file-processed` step=`2-filled`)으로 camFile이 패치되면 블러를 해제한다.
+    notification `bg-file-processed` step=`2-filled`)으로 stlFile(+camFile 미러)이 패치되면 블러를 해제한다.
     Filled STL/NC 재생성 완료 시 IndexedDB 캐시(s3Key·버전 키)를 삭제한다.
     디자인+생산 큐(`DesignRequestTransferView`)에는 적용하지 않는다.
   - 준비 탭 의뢰카드 오른쪽에는 로트번호 3글자(영문) 뱃지를 표시합니다.
@@ -496,10 +496,19 @@ Notes:
     - 예) `헥스40도회전`
   - legacy minor 라벨(`헥스10도회전`)은 입력 호환만 제공하고, 화면/저장은 total 라벨로 정규화합니다.
   - 디자인 소프트웨어 표시는 BusinessAnchor 전역값이 아니라 의뢰건 `caseInfos.designSoftware`를 우선 표시합니다.
+  - ExoCAD는 버전(`exoCadVersion`: `le_3_0`=3.0 이하 / `ge_3_2`=3.2 이상)을 함께 설정한다.
+    - 3.0 이하: STL 내보내기 헥스 30° 틀어짐 가능 → 기본 헥스=`헥스30도회전`
+    - 3.2 이상: 수정됨 → 기본 헥스=`STL모델대로`
+  - ExoCAD 첫 설정 후 첫 제조 의뢰는 반대 헥스 확인용 복사샘플(`caseInfos.hexVerificationSample`)을 함께 생성한다.
+    준비 카드·세척.패킹 라벨 상단·진행중/출고예정에 **「헥스 확인용 무료 샘플」**을 표시한다.
+    라이노(2-filled)는 원본만 실행하고 샘플에 stlFile(legacy camFile 미러)을 복사한다. Esprit NC(ncFile)는 샘플의 반대 헥스로 별도 생성.
   - 라벨 매핑/정규화 함수는 fallback 기본값을 두지 않고 명시 분기 + default error를 사용합니다.
   - 관련 파일:
     - `src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`
     - `src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx`
+    - `src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx`
+    - `src/pages/manufacturer/worksheet/custom_abutment/packing/utils/packLabelRenderer.ts`
+    - `src/features/requestSettings/DesignSoftwareSettingsDialog.tsx`
     - `src/features/requests/components/RequestDetailDialog.tsx`
     - `src/pages/requestor/dashboard/components/RequestorRecentRequestsCard.tsx`
 

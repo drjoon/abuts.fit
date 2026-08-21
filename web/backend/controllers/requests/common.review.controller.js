@@ -66,6 +66,7 @@ import {
 } from "./common.review.machine.js";
 import { triggerEspritForNc } from "./common.review.esprit.js";
 import { enqueueApproval } from "../../services/reviewApprovalQueue.service.js";
+import { pickFilledStlFileForClone } from "../../utils/filledStlFile.js";
 import {
   triggerPricingSnapshotForRequestDoc,
   triggerDashboardSummaryRefreshForAnchorId,
@@ -1078,8 +1079,8 @@ const buildCaseInfosForDualHexClone = ({ sourceCaseInfos, now, oppositeHex }) =>
       shipping: null,
       tracking: null,
     },
-    // 원본 의뢰의 CAM 파일을 그대로 사용해 복사본도 즉시 NC 생성 가능해야 한다.
-    camFile: sourceCaseInfos?.camFile || null,
+    // 원본 filled STL(stlFile)을 그대로 사용해 복사본도 즉시 NC 생성 가능해야 한다.
+    ...pickFilledStlFileForClone(sourceCaseInfos),
     ncFile: null,
     finalHexRotation: oppositeHex,
     hexRotation: {

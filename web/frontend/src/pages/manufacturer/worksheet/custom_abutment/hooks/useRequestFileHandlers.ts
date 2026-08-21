@@ -18,6 +18,7 @@ import { useS3TempUpload } from "@/shared/hooks/useS3TempUpload";
 import { deleteCncProgramCache } from "@/shared/files/fileBlobCache";
 import {
   deriveStageForFilter,
+  patchFilledStlFile,
   type ManufacturerRequest,
   type ReviewStageKey,
   getReviewStageKeyByTab,
@@ -881,7 +882,7 @@ export const useRequestFileHandlers = ({
         ...req,
         caseInfos: {
           ...req.caseInfos,
-          camFile: undefined,
+          ...patchFilledStlFile(undefined), // stlFile + legacy camFile clear
           reviewByStage: rollbackOnly
             ? {
                 ...req.caseInfos?.reviewByStage,

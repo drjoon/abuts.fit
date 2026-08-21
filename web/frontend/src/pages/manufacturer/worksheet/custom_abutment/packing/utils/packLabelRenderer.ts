@@ -27,6 +27,8 @@ export type PackLabelRenderOptions = {
   caseType: string;
   printedAt: string;
   modelName?: string;
+  /** 첫의뢰 헥스 확인용 등 — 라벨 최상단 굵은 한 줄 */
+  topBannerText?: string | null;
   dpi?: number;
   targetDots?: { pw: number; ll: number };
   designDots?: { pw: number; ll: number; dpi: number };
@@ -445,13 +447,15 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
   const row2H = 54;
   const row3H = 34;
   const row4H = 34;
+  const bannerText = String(opts.topBannerText || "").trim();
+  const bannerH = bannerText ? 36 : 0;
   const lRow1H = 36;
   const lRow2H = 36;
   const lRow3H = 30;
   const lRow4H = 56; // 설명문 3줄 + 일회용비멸균 인라인
   const legalBodyH = lRow1H + lRow2H + lRow3H + lRow4H;
   const totalContentH =
-    row1H + row2H + row3H + row4H + legalBodyH + 2 + _bottomH;
+    bannerH + row1H + row2H + row3H + row4H + legalBodyH + 2 + _bottomH;
   const computedBaseHeight = M + totalContentH + M;
 
   // 캔버스를 콘텐츠 기반 높이로 재설정
@@ -463,6 +467,13 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
   ctx.textBaseline = "top";
 
   let curY = M;
+
+  // ── 0행(옵션): 첫의뢰 헥스 확인용 등 안내 배너 ──────────────
+  if (bannerText) {
+    ctx.font = "bold 28px Arial";
+    fillTextLeft(bannerText, M, curY + 4, W);
+    curY += bannerH;
+  }
 
   // ── 1행: 메일함코드 | 스크루타입 | 로트번호(끝3자리) + 우상단 QR ──
   const qrTopSize = 70;

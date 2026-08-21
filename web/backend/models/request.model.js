@@ -205,6 +205,22 @@ const requestSchema = new mongoose.Schema(
         trim: true,
         maxlength: 120,
       },
+      // ExoCAD 버전 스냅샷 (le_3_0 | ge_3_2). related: designSoftwareHex.js
+      exoCadVersion: {
+        type: String,
+        default: null,
+        trim: true,
+        validate: {
+          validator: (v) =>
+            v == null || v === "" || v === "le_3_0" || v === "ge_3_2",
+          message: "exoCadVersion은 le_3_0 | ge_3_2 이어야 합니다.",
+        },
+      },
+      // 첫의뢰 헥스 30도 확인용 복사샘플 여부. true면 준비 카드/패킹 라벨에 안내 표시.
+      hexVerificationSample: {
+        type: Boolean,
+        default: false,
+      },
       // 제조사 오버라이드 헥스 회전(canonical)
       // - "STL모델대로" | "헥스30도회전" | "헥스X도회전(total)"
       manufacturerHexRotation: {
@@ -450,6 +466,25 @@ const requestSchema = new mongoose.Schema(
         default: undefined,
       },
 
+      // Rhino(2-filled) 결과 filled STL. SSOT 필드명.
+      // related: web/backend/utils/filledStlFile.js
+      // - 쓰기: stlFile + 레거시 camFile 동시 미러
+      // - 읽기: stlFile 우선, 없으면 camFile 폴백
+      // - Esprit NC는 ncFile (아래). camFile ≠ NC.
+      stlFile: {
+        fileName: String,
+        fileType: String,
+        fileSize: Number,
+        filePath: String,
+        s3Key: String,
+        s3Url: String,
+        uploadedAt: {
+          type: Date,
+          default: Date.now,
+        },
+      },
+      // [LEGACY] filled STL 옛 필드명. stlFile과 동일 의미.
+      // 신규 코드는 stlFile / resolveFilledStlFile() 사용. camFile만 단독 쓰지 말 것.
       camFile: {
         fileName: String,
         fileType: String,
@@ -462,6 +497,7 @@ const requestSchema = new mongoose.Schema(
           default: Date.now,
         },
       },
+      // Esprit(3-nc) 결과 NC 파일. filled STL(stlFile)과 별개.
       ncFile: {
         fileName: String,
         fileType: String,

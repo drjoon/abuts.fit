@@ -18,6 +18,8 @@ export const REQUEST_CASE_META_BADGE_CLASS =
 export type RequestCaseMetaBadgesProps = {
   designSoftware?: string | null;
   anodizingEnabled?: boolean | null;
+  /** ExoCAD 첫의뢰 헥스 확인용 복사샘플 */
+  hexVerificationSample?: boolean | null;
   className?: string;
 };
 
@@ -25,14 +27,26 @@ export type RequestCaseMetaBadgesProps = {
 export function RequestCaseMetaBadges({
   designSoftware,
   anodizingEnabled,
+  hexVerificationSample = false,
   className,
 }: RequestCaseMetaBadgesProps) {
   const software = String(designSoftware || "").trim();
   const hasAnodizing = typeof anodizingEnabled === "boolean";
-  if (!software && !hasAnodizing) return null;
+  const isHexSample = Boolean(hexVerificationSample);
+  if (!software && !hasAnodizing && !isHexSample) return null;
 
   return (
-    <span className={cn("inline-flex items-center gap-1", className)}>
+    <span className={cn("inline-flex items-center gap-1 flex-wrap", className)}>
+      {isHexSample ? (
+        <span
+          className={cn(
+            REQUEST_CASE_META_BADGE_CLASS,
+            "border-amber-300 bg-amber-50 text-amber-900 font-semibold",
+          )}
+        >
+          헥스 확인용 무료 샘플
+        </span>
+      ) : null}
       {software ? (
         <span className={REQUEST_CASE_META_BADGE_CLASS}>{software}</span>
       ) : null}

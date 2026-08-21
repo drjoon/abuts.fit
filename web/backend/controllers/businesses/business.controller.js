@@ -1016,6 +1016,14 @@ function normalizeDesignSoftware(value) {
   return v ? v : null;
 }
 
+// related: web/backend/utils/designSoftwareHex.js
+function normalizeExoCadVersionOrNull(value) {
+  const raw = String(value || "").trim();
+  if (raw === "le_3_0" || raw === "3.0" || raw === "<=3.0") return "le_3_0";
+  if (raw === "ge_3_2" || raw === "3.2" || raw === ">=3.2") return "ge_3_2";
+  return null;
+}
+
 function normalizeRequestorAnodizingEnabled(value) {
   if (typeof value === "boolean") return value;
   return null;
@@ -1045,6 +1053,8 @@ export async function getMyRequestSettings(req, res) {
         businessAnchorId: 1,
         subRole: 1,
         "requestSettings.designSoftware": 1,
+        "requestSettings.exoCadVersion": 1,
+        "requestSettings.hexVerificationSamplePending": 1,
         "requestSettings.anodizingEnabled": 1,
         "requestSettings.retentionGroove": 1,
       })
@@ -1054,6 +1064,9 @@ export async function getMyRequestSettings(req, res) {
 
     const requestorDesignSoftware = normalizeDesignSoftware(
       freshUser?.requestSettings?.designSoftware,
+    );
+    const requestorExoCadVersion = normalizeExoCadVersionOrNull(
+      freshUser?.requestSettings?.exoCadVersion,
     );
     const requestorAnodizingEnabled = normalizeRequestorAnodizingEnabled(
       freshUser?.requestSettings?.anodizingEnabled,
@@ -1081,6 +1094,11 @@ export async function getMyRequestSettings(req, res) {
             typeof requestorAnodizingEnabled === "boolean",
           designSoftware: null,
           requestorDesignSoftware,
+          exoCadVersion: null,
+          requestorExoCadVersion,
+          hexVerificationSamplePending: Boolean(
+            freshUser?.requestSettings?.hexVerificationSamplePending,
+          ),
           retentionGroove: "none",
           requestorRetentionGroove: requestorRetentionGroove || "none",
           defaultRequestorHexRotation: "STL모델대로",
@@ -1107,6 +1125,9 @@ export async function getMyRequestSettings(req, res) {
     });
     const businessDesignSoftware = normalizeDesignSoftware(
       anchor?.requestSettings?.designSoftware,
+    );
+    const businessExoCadVersion = normalizeExoCadVersionOrNull(
+      anchor?.requestSettings?.exoCadVersion,
     );
     const businessRetentionGroove = normalizeRetentionGroove(
       anchor?.requestSettings?.retentionGroove,
@@ -1140,6 +1161,12 @@ export async function getMyRequestSettings(req, res) {
         // 하위 호환: designSoftware는 사업체 공통 기본값을 유지한다.
         designSoftware: businessDesignSoftware,
         requestorDesignSoftware,
+        exoCadVersion: businessExoCadVersion,
+        requestorExoCadVersion,
+        hexVerificationSamplePending: Boolean(
+          freshUser?.requestSettings?.hexVerificationSamplePending ||
+            anchor?.requestSettings?.hexVerificationSamplePending,
+        ),
         retentionGroove: businessRetentionGroove || "none",
         requestorRetentionGroove:
           requestorRetentionGroove || businessRetentionGroove || "none",
@@ -1188,6 +1215,14 @@ export async function updateMyRequestSettings(req, res) {
       req.body || {},
       "requestorDesignSoftware",
     );
+    const hasExoCadVersion = Object.prototype.hasOwnProperty.call(
+      req.body || {},
+      "exoCadVersion",
+    );
+    const hasRequestorExoCadVersion = Object.prototype.hasOwnProperty.call(
+      req.body || {},
+      "requestorExoCadVersion",
+    );
     const hasRetentionGroove = Object.prototype.hasOwnProperty.call(
       req.body || {},
       "retentionGroove",
@@ -1203,13 +1238,15 @@ export async function updateMyRequestSettings(req, res) {
       !hasDefaultRequestorHexRotation &&
       !hasDesignSoftware &&
       !hasRequestorDesignSoftware &&
+      !hasExoCadVersion &&
+      !hasRequestorExoCadVersion &&
       !hasRetentionGroove &&
       !hasRequestorRetentionGroove
     ) {
       return res.status(400).json({
         success: false,
         message:
-          "유효하지 않은 의뢰 설정입니다. anodizingEnabled, requestorAnodizingEnabled, defaultRequestorHexRotation, designSoftware, requestorDesignSoftware, retentionGroove 또는 requestorRetentionGroove가 필요합니다.",
+          "유효하지 않은 의뢰 설정입니다. anodizingEnabled, requestorAnodizingEnabled, defaultRequestorHexRotation, designSoftware, requestorDesignSoftware, exoCadVersion, requestorExoCadVersion, retentionGroove 또는 requestorRetentionGroove가 필요합니다.",
       });
     }
 
@@ -1300,6 +1337,48 @@ export async function updateMyRequestSettings(req, res) {
       requestorDesignSoftware = raw;
     }
 
+    let exoCadVersion;
+    if (hasExoCadVersion) {
+      const raw = req.body?.exoCadVersion;
+      if (raw == null || raw === "") {
+        exoCadVersion = null;
+      } else {
+        const normalized = normalizeExoCadVersionOrNull(raw);
+        if (!normalized) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "유효하지 않은 의뢰 설정입니다. exoCadVersion은 'le_3_0'(3.0 이하) 또는 'ge_3_2'(3.2 이상)이어야 합니다.",
+          });
+        }
+        exoCadVersion = normalized;
+      }
+    }
+
+    let requestorExoCadVersion;
+    if (hasRequestorExoCadVersion) {
+      if (String(req.user?.role || "") !== "requestor") {
+        return res.status(403).json({
+          success: false,
+          message: "의뢰자 계정만 개인 ExoCAD 버전을 저장할 수 있습니다.",
+        });
+      }
+      const raw = req.body?.requestorExoCadVersion;
+      if (raw == null || raw === "") {
+        requestorExoCadVersion = null;
+      } else {
+        const normalized = normalizeExoCadVersionOrNull(raw);
+        if (!normalized) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "유효하지 않은 의뢰 설정입니다. requestorExoCadVersion은 'le_3_0'(3.0 이하) 또는 'ge_3_2'(3.2 이상)이어야 합니다.",
+          });
+        }
+        requestorExoCadVersion = normalized;
+      }
+    }
+
     let retentionGroove;
     if (hasRetentionGroove) {
       retentionGroove = normalizeRetentionGroove(req.body?.retentionGroove);
@@ -1337,6 +1416,8 @@ export async function updateMyRequestSettings(req, res) {
         businessAnchorId: 1,
         subRole: 1,
         "requestSettings.designSoftware": 1,
+        "requestSettings.exoCadVersion": 1,
+        "requestSettings.hexVerificationSamplePending": 1,
         "requestSettings.anodizingEnabled": 1,
         "requestSettings.retentionGroove": 1,
       })
@@ -1347,7 +1428,10 @@ export async function updateMyRequestSettings(req, res) {
     // 헥스 기본값만 대표자 전용. 디자인SW·아노다이징·유지홈은 대표/직원 공통.
     const needsOwnerPermission = hasDefaultRequestorHexRotation;
     const needsBusinessSettingsPermission =
-      hasAnodizingEnabled || hasDesignSoftware || hasRetentionGroove;
+      hasAnodizingEnabled ||
+      hasDesignSoftware ||
+      hasExoCadVersion ||
+      hasRetentionGroove;
 
     let anchor = null;
     let membership = "none";
@@ -1414,6 +1498,44 @@ export async function updateMyRequestSettings(req, res) {
       }
       if (hasDesignSoftware) {
         setPayload["requestSettings.designSoftware"] = designSoftware;
+        const nextIsExo = designSoftware === "ExoCAD";
+        const resolvedExoVersion = hasExoCadVersion
+          ? exoCadVersion
+          : nextIsExo
+            ? normalizeExoCadVersionOrNull(
+                anchor?.requestSettings?.exoCadVersion,
+              )
+            : null;
+
+        if (nextIsExo) {
+          if (!resolvedExoVersion) {
+            return res.status(400).json({
+              success: false,
+              message:
+                "ExoCAD를 선택한 경우 버전(3.0 이하 / 3.2 이상)을 함께 설정해주세요.",
+            });
+          }
+          setPayload["requestSettings.exoCadVersion"] = resolvedExoVersion;
+          // 미소진(false 아님)이면 pending — 레거시 ExoCAD(버전만 추가)도 포함
+          if (
+            anchor?.requestSettings?.hexVerificationSamplePending !== false
+          ) {
+            setPayload["requestSettings.hexVerificationSamplePending"] = true;
+          }
+        } else {
+          setPayload["requestSettings.exoCadVersion"] = null;
+          setPayload["requestSettings.hexVerificationSamplePending"] = false;
+        }
+      } else if (hasExoCadVersion) {
+        setPayload["requestSettings.exoCadVersion"] = exoCadVersion;
+        if (
+          normalizeDesignSoftware(anchor?.requestSettings?.designSoftware) ===
+            "ExoCAD" &&
+          exoCadVersion &&
+          anchor?.requestSettings?.hexVerificationSamplePending !== false
+        ) {
+          setPayload["requestSettings.hexVerificationSamplePending"] = true;
+        }
       }
       if (hasRetentionGroove) {
         setPayload["requestSettings.retentionGroove"] = retentionGroove;
@@ -1432,6 +1554,24 @@ export async function updateMyRequestSettings(req, res) {
 
       // BusinessAnchor 공통 기본값 변경 시, 개인 설정이 비어 있는 의뢰자 계정에만 기본값 주입
       if (hasDesignSoftware && designSoftware) {
+        const propagateSet = {
+          "requestSettings.designSoftware": designSoftware,
+          "requestSettings.updatedAt": now,
+        };
+        if (designSoftware === "ExoCAD") {
+          const v =
+            setPayload["requestSettings.exoCadVersion"] ||
+            normalizeExoCadVersionOrNull(
+              updatedAnchor?.requestSettings?.exoCadVersion,
+            );
+          if (v) {
+            propagateSet["requestSettings.exoCadVersion"] = v;
+            propagateSet["requestSettings.hexVerificationSamplePending"] = true;
+          }
+        } else {
+          propagateSet["requestSettings.exoCadVersion"] = null;
+          propagateSet["requestSettings.hexVerificationSamplePending"] = false;
+        }
         const propagateResult = await User.updateMany(
           {
             businessAnchorId,
@@ -1443,10 +1583,7 @@ export async function updateMyRequestSettings(req, res) {
             ],
           },
           {
-            $set: {
-              "requestSettings.designSoftware": designSoftware,
-              "requestSettings.updatedAt": now,
-            },
+            $set: propagateSet,
           },
         );
         propagatedRequestorDesignSoftwareCount = Number(
@@ -1460,6 +1597,12 @@ export async function updateMyRequestSettings(req, res) {
     let updatedRequestorDesignSoftware = normalizeDesignSoftware(
       freshUser?.requestSettings?.designSoftware,
     );
+    let updatedRequestorExoCadVersion = normalizeExoCadVersionOrNull(
+      freshUser?.requestSettings?.exoCadVersion,
+    );
+    let updatedHexVerificationPending = Boolean(
+      freshUser?.requestSettings?.hexVerificationSamplePending,
+    );
     let updatedRequestorAnodizingEnabled = normalizeRequestorAnodizingEnabled(
       freshUser?.requestSettings?.anodizingEnabled,
     );
@@ -1469,6 +1612,7 @@ export async function updateMyRequestSettings(req, res) {
 
     if (
       hasRequestorDesignSoftware ||
+      hasRequestorExoCadVersion ||
       hasRequestorAnodizingEnabled ||
       hasRequestorRetentionGroove
     ) {
@@ -1478,6 +1622,46 @@ export async function updateMyRequestSettings(req, res) {
       if (hasRequestorDesignSoftware) {
         userSetPayload["requestSettings.designSoftware"] =
           requestorDesignSoftware;
+        const nextIsExo = requestorDesignSoftware === "ExoCAD";
+        const resolvedExoVersion = hasRequestorExoCadVersion
+          ? requestorExoCadVersion
+          : nextIsExo
+            ? normalizeExoCadVersionOrNull(
+                freshUser?.requestSettings?.exoCadVersion,
+              )
+            : null;
+
+        if (nextIsExo) {
+          if (!resolvedExoVersion) {
+            return res.status(400).json({
+              success: false,
+              message:
+                "ExoCAD를 선택한 경우 버전(3.0 이하 / 3.2 이상)을 함께 설정해주세요.",
+            });
+          }
+          userSetPayload["requestSettings.exoCadVersion"] = resolvedExoVersion;
+          if (
+            freshUser?.requestSettings?.hexVerificationSamplePending !== false
+          ) {
+            userSetPayload["requestSettings.hexVerificationSamplePending"] =
+              true;
+          }
+        } else {
+          userSetPayload["requestSettings.exoCadVersion"] = null;
+          userSetPayload["requestSettings.hexVerificationSamplePending"] =
+            false;
+        }
+      } else if (hasRequestorExoCadVersion) {
+        userSetPayload["requestSettings.exoCadVersion"] =
+          requestorExoCadVersion;
+        if (
+          normalizeDesignSoftware(freshUser?.requestSettings?.designSoftware) ===
+            "ExoCAD" &&
+          requestorExoCadVersion &&
+          freshUser?.requestSettings?.hexVerificationSamplePending !== false
+        ) {
+          userSetPayload["requestSettings.hexVerificationSamplePending"] = true;
+        }
       }
       if (hasRequestorAnodizingEnabled) {
         userSetPayload["requestSettings.anodizingEnabled"] =
@@ -1509,6 +1693,12 @@ export async function updateMyRequestSettings(req, res) {
       updatedRequestorDesignSoftware = normalizeDesignSoftware(
         updatedUser?.requestSettings?.designSoftware,
       );
+      updatedRequestorExoCadVersion = normalizeExoCadVersionOrNull(
+        updatedUser?.requestSettings?.exoCadVersion,
+      );
+      updatedHexVerificationPending = Boolean(
+        updatedUser?.requestSettings?.hexVerificationSamplePending,
+      );
       updatedRequestorAnodizingEnabled = normalizeRequestorAnodizingEnabled(
         updatedUser?.requestSettings?.anodizingEnabled,
       );
@@ -1520,6 +1710,9 @@ export async function updateMyRequestSettings(req, res) {
     const requestSettingsSource = updatedAnchor?.requestSettings || anchor?.requestSettings;
     const businessDesignSoftware = normalizeDesignSoftware(
       requestSettingsSource?.designSoftware,
+    );
+    const businessExoCadVersion = normalizeExoCadVersionOrNull(
+      requestSettingsSource?.exoCadVersion,
     );
     const businessRetentionGroove = normalizeRetentionGroove(
       requestSettingsSource?.retentionGroove,
@@ -1553,6 +1746,12 @@ export async function updateMyRequestSettings(req, res) {
         // 하위 호환: designSoftware는 사업체 공통 기본값을 유지한다.
         designSoftware: businessDesignSoftware,
         requestorDesignSoftware: updatedRequestorDesignSoftware,
+        exoCadVersion: businessExoCadVersion,
+        requestorExoCadVersion: updatedRequestorExoCadVersion,
+        hexVerificationSamplePending: Boolean(
+          updatedHexVerificationPending ||
+            requestSettingsSource?.hexVerificationSamplePending,
+        ),
         retentionGroove: businessRetentionGroove || "none",
         requestorRetentionGroove:
           updatedRequestorRetentionGroove ||

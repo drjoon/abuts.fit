@@ -87,6 +87,7 @@ export async function printPackingLabelViaBgServer({
   printer,
   paperProfile = "PACK_80x65",
   copies = 1,
+  topBannerText = null,
 }) {
   const startTime = Date.now();
   console.log("[packPrint] step 1/3: rendering canvas for label", {
@@ -138,6 +139,7 @@ export async function printPackingLabelViaBgServer({
     manufacturingDate,
     caseType: material || "-",
     printedAt: new Date().toISOString(),
+    topBannerText: topBannerText || null,
     dpi: 600, // 출력 DPI
     designDots: { pw: 640, ll: 520, dpi: 203 }, // 디자인 좌표계 (203 DPI 기준, scale ~2.95)
     targetDots: { pw: 1890, ll: 1535 }, // 출력 크기 (600 DPI = 80x65mm)

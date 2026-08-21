@@ -169,13 +169,15 @@ const renderPackLabelToCanvas = async (opts) => {
   const row2H = 54;
   const row3H = 34;
   const row4H = 34;
+  const bannerText = String(opts.topBannerText || "").trim();
+  const bannerH = bannerText ? 36 : 0;
   const lRow1H = 36;
   const lRow2H = 36;
   const lRow3H = 30;
   const lRow4H = 56;
   const legalBodyH = lRow1H + lRow2H + lRow3H + lRow4H;
   const totalContentH =
-    row1H + row2H + row3H + row4H + legalBodyH + 2 + _bottomH;
+    bannerH + row1H + row2H + row3H + row4H + legalBodyH + 2 + _bottomH;
   const computedBaseHeight = M + totalContentH + M;
 
   // ── 캔버스 생성 (최종 높이로 한 번만) ────────────────────────
@@ -330,6 +332,13 @@ const renderPackLabelToCanvas = async (opts) => {
   const FONT_LEGAL_NOTICE = "bold 19px NotoSans, Arial";
 
   let curY = M;
+
+  // ── 0행(옵션): 첫의뢰 헥스 확인용 등 안내 배너 ──────────────
+  if (bannerText) {
+    ctx.font = "bold 28px NotoSans, Arial";
+    fillTextLeft(bannerText, M, curY + 4, W);
+    curY += bannerH;
+  }
 
   // ── 1행: 메일함코드 | 스크루타입 | 로트번호(끝3자리) + 우상단 QR ──
   const qrTopSize = 70;

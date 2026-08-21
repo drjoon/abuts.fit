@@ -37,6 +37,8 @@ import {
 } from "../utils/regenerationPending";
 import {
   deriveStageForFilter,
+  resolveFilledStlFile,
+  patchFilledStlFile,
   type ManufacturerRequest,
 } from "../utils/request";
 
@@ -446,7 +448,8 @@ export function useWorksheetRealtimeStatus({
                 : null;
           if (kind) {
             const camS3Key = String(
-              (eventRequest as any)?.caseInfos?.camFile?.s3Key || "",
+              resolveFilledStlFile((eventRequest as any)?.caseInfos)?.s3Key ||
+                "",
             ).trim();
             const ncS3Key = String(
               (eventRequest as any)?.caseInfos?.ncFile?.s3Key || "",
@@ -474,11 +477,13 @@ export function useWorksheetRealtimeStatus({
 
         if (fetchRequests) void fetchRequests(true);
 
-        // camFile이 포함된 filled 완료 메타만 열린 프리뷰를 갱신한다.
-        // (register-stl-metadata 단독은 cam 전에 레이스를 만들 수 있어 제외)
+        // filled STL(stlFile / legacy camFile)이 포함된 완료 메타만 열린 프리뷰를 갱신한다.
+        // (register-stl-metadata 단독은 filled 전에 레이스를 만들 수 있어 제외)
         const metaSource = String(payload?.source || "").trim();
         const hasCam = Boolean(
-          String((eventRequest as any)?.caseInfos?.camFile?.s3Key || "").trim(),
+          String(
+            resolveFilledStlFile((eventRequest as any)?.caseInfos)?.s3Key || "",
+          ).trim(),
         );
         if (
           requestId &&
@@ -488,7 +493,7 @@ export function useWorksheetRealtimeStatus({
         }
         if (requestId && metaSource === "bg-file-processed:2-filled") {
           const camS3Key = String(
-            (eventRequest as any)?.caseInfos?.camFile?.s3Key || "",
+            resolveFilledStlFile((eventRequest as any)?.caseInfos)?.s3Key || "",
           ).trim();
           invalidateCachesForProcessedFile({
             kind: "filled",
@@ -783,7 +788,8 @@ export function useWorksheetRealtimeStatus({
               delete realtimeBaseRef.current[requestId];
               const prevCaseInfos = ((r as any)?.caseInfos ||
                 {}) as Record<string, any>;
-              const prevCamFile = (prevCaseInfos?.camFile ||
+              const prevCamFile = (resolveFilledStlFile(prevCaseInfos) ||
+                (r as any)?.stlFile ||
                 (r as any)?.camFile ||
                 {}) as Record<string, any>;
               const normalizedFilePath = incomingFileName
@@ -802,10 +808,14 @@ export function useWorksheetRealtimeStatus({
                       : {}),
                   }
                 : prevCamFile;
+              // stlFile SSOT + legacy camFile mirror
+              const filledPatch = incomingS3Key
+                ? patchFilledStlFile(nextCamFile)
+                : {};
               const nextCaseInfos = isSuccess
                 ? {
                     ...prevCaseInfos,
-                    ...(incomingS3Key ? { camFile: nextCamFile } : {}),
+                    ...filledPatch,
                     ncFile: null,
                   }
                 : prevCaseInfos;
@@ -814,7 +824,7 @@ export function useWorksheetRealtimeStatus({
                 ...(isSuccess
                   ? {
                       caseInfos: nextCaseInfos,
-                      ...(incomingS3Key ? { camFile: nextCamFile } : {}),
+                      ...filledPatch,
                       ncFile: null,
                     }
                   : {}),
@@ -877,7 +887,7 @@ export function useWorksheetRealtimeStatus({
         (sourceStep === "2-filled" || sourceStep === "3-nc")
       ) {
         const localCamS3Key = String(
-          (foundRequest as any)?.caseInfos?.camFile?.s3Key || "",
+          resolveFilledStlFile((foundRequest as any)?.caseInfos)?.s3Key || "",
         ).trim();
         const localNcS3Key = String(
           (foundRequest as any)?.caseInfos?.ncFile?.s3Key || "",

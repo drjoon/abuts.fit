@@ -39,6 +39,12 @@ import { normalizeImplantFields } from "../../utils/implantCanonical.js";
 import { emitBgRuntimeStatus } from "./bgRuntimeEvents.js";
 import { emitAppEventToRoles } from "../../socket.js";
 import {
+  mongoMissingFilledStlFileClause,
+  mongoSetFilledStlFile,
+  resolveFilledStlFile,
+} from "../../utils/filledStlFile.js";
+import { copyFilledStlToHexVerificationSamples } from "../../services/hexVerificationSample.service.js";
+import {
   resolvePrcFileNames,
   resolveConnectionTargetDiameter,
 } from "../requests/prcMapping.utils.js";
@@ -327,7 +333,8 @@ export const registerFinishLine = asyncHandler(async (req, res) => {
       $or: [
         { "caseInfos.file.filePath": { $in: directCandidates } },
         { "caseInfos.file.originalName": { $in: directCandidates } },
-        { "caseInfos.camFile.filePath": { $in: directCandidates } },
+        { "caseInfos.stlFile.filePath": { $in: directCandidates } }, // filled STL SSOT
+        { "caseInfos.camFile.filePath": { $in: directCandidates } }, // legacy mirror
         { "caseInfos.ncFile.filePath": { $in: directCandidates } },
       ],
     });
@@ -345,7 +352,7 @@ export const registerFinishLine = asyncHandler(async (req, res) => {
         const ci = r?.caseInfos || {};
         const storedPaths = [
           ci?.file?.filePath,
-          ci?.camFile?.filePath,
+          resolveFilledStlFile(ci)?.filePath,
           ci?.ncFile?.filePath,
         ].filter(Boolean);
 
@@ -577,7 +584,7 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
         const storedNames = [
           ci?.file?.originalName,
           ci?.file?.filePath,
-          ci?.camFile?.filePath,
+          resolveFilledStlFile(ci)?.filePath,
           ci?.ncFile?.filePath,
         ].filter(Boolean);
 
@@ -656,7 +663,7 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
           const ci = r?.caseInfos || {};
           const paths = [
             ci?.file?.filePath,
-            ci?.camFile?.filePath,
+            resolveFilledStlFile(ci)?.filePath,
             ci?.ncFile?.filePath,
           ].filter(Boolean);
           console.log(
@@ -886,9 +893,8 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
     }
   }
 
-  const previousCamS3Key = String(
-    request?.caseInfos?.camFile?.s3Key || "",
-  ).trim();
+  const previousFilledStl = resolveFilledStlFile(request?.caseInfos);
+  const previousCamS3Key = String(previousFilledStl?.s3Key || "").trim();
   const previousNcS3Key = String(request?.caseInfos?.ncFile?.s3Key || "").trim();
   const callbackStep = String(sourceStep || "").trim();
   const isCallbackSuccess =
@@ -904,15 +910,18 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
 
   if (status === "success") {
     switch (sourceStep) {
-      case "2-filled":
-        updateData["caseInfos.camFile"] =
+      case "2-filled": {
+        // Rhino filled STL → stlFile SSOT (+ legacy camFile mirror)
+        const filledMeta =
           s3Info ||
           buildStoredFileMeta({
             filePath: fileName,
             originalName: resolvedOriginalName,
             uploadedAt: now,
           });
+        Object.assign(updateData, mongoSetFilledStlFile(filledMeta));
         break;
+      }
 
       case "3-nc": {
         const ncStoredName = String(fileName || "").trim();
@@ -1121,10 +1130,67 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
     ? await normalizeRequestForResponse(updatedRequest)
     : null;
   console.log(
-    `[BG-Callback] Request updated successfully. caseInfos.camFile=${JSON.stringify(
-      updatedRequest?.caseInfos?.camFile,
+    `[BG-Callback] Request updated successfully. caseInfos.stlFile=${JSON.stringify(
+      resolveFilledStlFile(updatedRequest?.caseInfos),
     )}`,
   );
+
+  // 원본 2-filled → 헥스 확인용 샘플에 stlFile 복사(라이노는 원본만 실행)
+  if (
+    isCallbackSuccess &&
+    callbackStep === "2-filled" &&
+    updatedRequest &&
+    updatedRequest?.caseInfos?.hexVerificationSample !== true
+  ) {
+    try {
+      const copiedSamples = await copyFilledStlToHexVerificationSamples(
+        updatedRequest,
+      );
+      for (const sample of copiedSamples) {
+        const normalizedSample = await normalizeRequestForResponse(sample);
+        const sampleCaseInfos = normalizedSample?.caseInfos || {};
+        emitAppEventToRoles(
+          ["manufacturer", "admin"],
+          "request:stl-metadata-updated",
+          {
+            source: "bg-file-processed:2-filled:hex-verification-copy",
+            requestId: sample?.requestId || null,
+            requestMongoId: String(sample?._id || "").trim() || null,
+            regenerated: false,
+            regenerationKind: "filled",
+            ncCleared: false,
+            metadata: {
+              maxDiameter: sampleCaseInfos?.maxDiameter ?? null,
+              connectionDiameter: sampleCaseInfos?.connectionDiameter ?? null,
+              totalLength: sampleCaseInfos?.totalLength ?? null,
+              updatedAt: sampleCaseInfos?.stlMetadataUpdatedAt ?? null,
+              hexRotation: sampleCaseInfos?.hexRotation ?? null,
+              finishLine: sampleCaseInfos?.finishLine ?? null,
+            },
+            request: normalizedSample,
+          },
+        );
+        emitAppEventToRoles(["manufacturer", "admin"], "request:updated", {
+          request: normalizedSample,
+          source: "hex-verification-camfile-copy",
+        });
+      }
+      if (copiedSamples.length > 0) {
+        console.log(
+          `[BG-Callback] Copied filled STL to ${copiedSamples.length} hex verification sample(s)`,
+          {
+            sourceRequestId: updatedRequest.requestId,
+            sampleRequestIds: copiedSamples.map((s) => s.requestId),
+          },
+        );
+      }
+    } catch (copyErr) {
+      console.warn(
+        "[BG-Callback] copyFilledStlToHexVerificationSamples failed",
+        copyErr?.message || copyErr,
+      );
+    }
+  }
 
   try {
     sendNotificationToRoles(["manufacturer", "admin"], {
@@ -1267,7 +1333,7 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
 
       // Rhino filled STL 수신: 제조사 PreviewModal이 구독하는 메타 이벤트로도 알려
       // 열린 프리뷰가 silent forceRefresh로 cam/finishLine을 무플리커 갱신하게 한다.
-      // 준비 탭 카드는 camFile.s3Key 패치로 「라이노 작업중」 블러를 해제한다.
+      // 준비 탭 카드는 stlFile/camFile.s3Key 패치로 「라이노 작업중」 블러를 해제한다.
       if (step === "2-filled") {
         const caseInfos = normalizedUpdatedRequest?.caseInfos || {};
         emitAppEventToRoles(
@@ -1484,7 +1550,7 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
       const storedNames = [
         ci?.file?.originalName,
         ci?.file?.filePath,
-        ci?.camFile?.filePath,
+        resolveFilledStlFile(ci)?.filePath,
         ci?.ncFile?.filePath,
       ].filter(Boolean);
 
@@ -1631,7 +1697,7 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
 
 // Rhino 서버 재기동 시 backend pending-stl SSOT를 기준으로 입력 STL 캐시를 복구하기 위한 API
 // GET /api/bg/pending-stl
-// 조건: 요청이 취소가 아니고, caseInfos.file은 있으나 camFile이 없는 건
+// 조건: 요청이 취소가 아니고, caseInfos.file은 있으나 filled STL(stlFile/legacy camFile)이 없는 건
 export const listPendingStl = asyncHandler(async (req, res) => {
   const requests = await Request.find({
     manufacturerStage: { $ne: "취소" },
@@ -1640,10 +1706,7 @@ export const listPendingStl = asyncHandler(async (req, res) => {
     // 승인/명령되지 않은 건이 섞이면 안 된다.
     "caseInfos.reviewByStage.request.status": "APPROVED",
     "caseInfos.file.filePath": { $exists: true, $ne: null },
-    $or: [
-      { "caseInfos.camFile": { $exists: false } },
-      { "caseInfos.camFile.s3Key": { $exists: false } },
-    ],
+    ...mongoMissingFilledStlFileClause(),
   })
     .select({
       requestId: 1,
@@ -1683,10 +1746,17 @@ export const listPendingNc = asyncHandler(async (_req, res) => {
     // endpoint는 유지하지만, 현재 esprit-addin startup path는 pending-nc 복구를 사용하지 않는다.
     // 그래도 수동/진단 용도로 호출될 수 있으므로 승인된 건만 내려야 한다.
     "caseInfos.reviewByStage.request.status": "APPROVED",
-    "caseInfos.camFile.filePath": { $exists: true, $ne: null },
     $or: [
-      { "caseInfos.ncFile": { $exists: false } },
-      { "caseInfos.ncFile.s3Key": { $exists: false } },
+      { "caseInfos.stlFile.filePath": { $exists: true, $ne: null } },
+      { "caseInfos.camFile.filePath": { $exists: true, $ne: null } }, // legacy
+    ],
+    $and: [
+      {
+        $or: [
+          { "caseInfos.ncFile": { $exists: false } },
+          { "caseInfos.ncFile.s3Key": { $exists: false } },
+        ],
+      },
     ],
   })
     .select({
@@ -1699,7 +1769,7 @@ export const listPendingNc = asyncHandler(async (_req, res) => {
     requests
       ?.map((r) => {
         const ci = r?.caseInfos || {};
-        const f = ci.camFile || {};
+        const f = resolveFilledStlFile(ci) || {};
         const preferredName = selectStoredCaseFileName(f);
         return {
           requestId: r.requestId,
@@ -1744,8 +1814,8 @@ export const downloadSourceFile = asyncHandler(async (req, res) => {
     for (const r of all) {
       const ci = r?.caseInfos || {};
       const stored = [
-        ci?.camFile?.originalName,
-        ci?.camFile?.filePath,
+        resolveFilledStlFile(ci)?.originalName,
+        resolveFilledStlFile(ci)?.filePath,
         ci?.file?.originalName,
         ci?.file?.filePath,
       ].filter(Boolean);
@@ -1757,7 +1827,7 @@ export const downloadSourceFile = asyncHandler(async (req, res) => {
     }
   }
 
-  const f = requestDoc?.caseInfos?.camFile;
+  const f = resolveFilledStlFile(requestDoc?.caseInfos);
   if (!f) {
     throw new ApiError(404, "Source file not found");
   }
@@ -1966,7 +2036,7 @@ export const getFileProcessingStatus = asyncHandler(async (req, res) => {
   }
 
   // step별로 "처리 완료" 판단 기준을 단순화
-  // - 1-stl -> 2-filled: caseInfos.camFile 존재 여부
+  // - 1-stl -> 2-filled: caseInfos.stlFile(또는 legacy camFile) 존재 여부
   // - 2-filled -> 3-nc: caseInfos.ncFile 존재 여부
   // 취소/완료 여부를 판단해야 하므로 상태 필터 없이 검색
   const requests = await Request.find({})
@@ -1979,7 +2049,7 @@ export const getFileProcessingStatus = asyncHandler(async (req, res) => {
     const storedNames = [
       ci?.file?.originalName,
       ci?.file?.filePath,
-      ci?.camFile?.filePath,
+      resolveFilledStlFile(ci)?.filePath,
       ci?.ncFile?.filePath,
     ].filter(Boolean);
 
@@ -2014,7 +2084,8 @@ export const getFileProcessingStatus = asyncHandler(async (req, res) => {
   const requestReviewStatus = ci?.reviewByStage?.request?.status;
 
   if (step === "1-stl") {
-    const processed = Boolean(ci?.camFile?.fileName || ci?.camFile?.s3Key);
+    const filled = resolveFilledStlFile(ci);
+    const processed = Boolean(filled?.fileName || filled?.s3Key);
     const shouldProcess =
       !processed && requestReviewStatus !== "REJECTED" && !isClosed;
     return res.status(200).json(

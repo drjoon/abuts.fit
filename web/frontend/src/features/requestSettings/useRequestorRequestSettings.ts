@@ -13,10 +13,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useAuthStore } from "@/store/useAuthStore";
-import type { DesignSoftwareMode } from "./DesignSoftwareSettingsDialog";
+import type { DesignSoftwareMode, ExoCadVersion } from "./DesignSoftwareSettingsDialog";
 
 export type RequestSettingsDefaults = {
   designSoftware: string;
+  exoCadVersion?: ExoCadVersion | null;
   anodizingEnabled: boolean;
   retentionGroove: "none" | "deep";
 };
@@ -48,12 +49,21 @@ type RequestSettingsApiData = {
   canEditAnodizing?: boolean;
   designSoftware?: string | null;
   requestorDesignSoftware?: string | null;
+  exoCadVersion?: string | null;
+  requestorExoCadVersion?: string | null;
   anodizingEnabled?: boolean;
   requestorAnodizingEnabled?: boolean;
   hasBusinessAnodizingSetting?: boolean;
   hasRequestorAnodizingSetting?: boolean;
   retentionGroove?: string | null;
   requestorRetentionGroove?: string | null;
+};
+
+const normalizeExoCadVersion = (value: unknown): ExoCadVersion | null => {
+  const raw = String(value || "").trim();
+  if (raw === "le_3_0" || raw === "3.0" || raw === "<=3.0") return "le_3_0";
+  if (raw === "ge_3_2" || raw === "3.2" || raw === ">=3.2") return "ge_3_2";
+  return null;
 };
 
 const resolveModeFromValue = (value: string): {
@@ -100,6 +110,7 @@ export function useRequestorRequestSettings(
   const canUseRequestSettings = isRequestSettingsRole(userRole);
 
   const [designSoftwareValue, setDesignSoftwareValue] = useState("");
+  const [exoCadVersion, setExoCadVersion] = useState<ExoCadVersion | null>(null);
   const [anodizingEnabled, setAnodizingEnabled] = useState(true);
   const [retentionGrooveDefault, setRetentionGrooveDefault] = useState<
     "none" | "deep"
@@ -160,15 +171,32 @@ export function useRequestorRequestSettings(
   }, [draftRetentionGroove]);
 
   const isIncomplete = useCallback(
-    (designSoftware: string) => !String(designSoftware || "").trim(),
+    (designSoftware: string, version: ExoCadVersion | null = null) => {
+      const sw = String(designSoftware || "").trim();
+      if (!sw) return true;
+      if (sw === "ExoCAD" && !version) return true;
+      return false;
+    },
     [],
   );
 
   const openModalForValue = useCallback(
-    (value: string, opts?: { force?: boolean; showCurrentAnodizing?: boolean }) => {
+    (
+      value: string,
+      opts?: {
+        force?: boolean;
+        showCurrentAnodizing?: boolean;
+        exoCadVersion?: ExoCadVersion | null;
+      },
+    ) => {
       const resolved = resolveModeFromValue(value);
       setDesignSoftwareMode(resolved.mode);
       setCustomDesignSoftware(resolved.custom);
+      setExoCadVersion(
+        opts?.exoCadVersion !== undefined
+          ? opts.exoCadVersion
+          : exoCadVersion,
+      );
       setModalAnodizingEnabled(
         typeof opts?.showCurrentAnodizing === "boolean"
           ? opts.showCurrentAnodizing
@@ -177,7 +205,7 @@ export function useRequestorRequestSettings(
       setForceRequired(Boolean(opts?.force));
       setModalOpen(true);
     },
-    [anodizingEnabled],
+    [anodizingEnabled, exoCadVersion],
   );
 
   const openModalForValueRef = useRef(openModalForValue);
@@ -194,15 +222,17 @@ export function useRequestorRequestSettings(
     const current = String(
       designSoftwareValue || draftDesignSoftware || "",
     ).trim();
-    const incomplete = isIncomplete(current);
+    const incomplete = isIncomplete(current, exoCadVersion);
     openModalForValue(current, {
       force: incomplete,
       showCurrentAnodizing: anodizingEnabled,
+      exoCadVersion,
     });
   }, [
     anodizingEnabled,
     designSoftwareValue,
     draftDesignSoftware,
+    exoCadVersion,
     isIncomplete,
     openModalForValue,
   ]);
@@ -256,6 +286,8 @@ export function useRequestorRequestSettings(
 
         let requestorDefault = String(data?.requestorDesignSoftware || "").trim();
         let businessDefault = String(data?.designSoftware || "").trim();
+        let requestorExo = normalizeExoCadVersion(data?.requestorExoCadVersion);
+        let businessExo = normalizeExoCadVersion(data?.exoCadVersion);
         // draft* 는 마운트 클로저가 아니라 ref(최신)로 시드 — 토글 후 stale GET race 완화
         const draftDefault = String(draftDesignSoftwareRef.current || "").trim();
         const draftAno = draftAnodizingRef.current;
@@ -351,6 +383,12 @@ export function useRequestorRequestSettings(
         const effectiveDesign = isPersonalRequestor
           ? draftDefault || requestorDefault || businessDefault
           : draftDefault || businessDefault;
+        const effectiveExo =
+          effectiveDesign === "ExoCAD"
+            ? isPersonalRequestor
+              ? requestorExo || businessExo
+              : businessExo || requestorExo
+            : null;
 
         const defaultsPatch: Partial<RequestSettingsDefaults> = {
           retentionGroove: resolvedRetention,
@@ -361,11 +399,14 @@ export function useRequestorRequestSettings(
 
         if (effectiveDesign) {
           setDesignSoftwareValue(effectiveDesign);
+          setExoCadVersion(effectiveExo);
           onDefaultsChangeRef.current?.({
             designSoftware: effectiveDesign,
+            exoCadVersion: effectiveExo,
             ...defaultsPatch,
           });
         } else {
+          setExoCadVersion(null);
           onDefaultsChangeRef.current?.(defaultsPatch);
         }
 
@@ -374,7 +415,7 @@ export function useRequestorRequestSettings(
         if (
           forceOnEntry &&
           !entryForcedRef.current &&
-          isIncomplete(effectiveDesign)
+          isIncomplete(effectiveDesign, effectiveExo)
         ) {
           entryForcedRef.current = true;
           openModalForValueRef.current(effectiveDesign, {
@@ -382,6 +423,7 @@ export function useRequestorRequestSettings(
             showCurrentAnodizing: skipAnodizingFromLoad
               ? anodizingEnabledRef.current
               : resolvedAnodizing,
+            exoCadVersion: effectiveExo,
           });
         }
       } catch {
@@ -469,6 +511,15 @@ export function useRequestorRequestSettings(
       return;
     }
 
+    if (designSoftware === "ExoCAD" && !exoCadVersion) {
+      toast({
+        title: "ExoCAD 버전이 필요합니다",
+        description: "3.0 이하 또는 3.2 이상을 선택해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     if (!token) {
       toast({
         title: "로그인이 필요합니다",
@@ -480,19 +531,25 @@ export function useRequestorRequestSettings(
 
     setDesignSoftwareSaving(true);
     try {
-      const savePayload: Record<string, string | boolean> = {};
+      const savePayload: Record<string, string | boolean | null> = {};
 
       if (isPersonalRequestor) {
         // 의뢰자: 개인 기본값 + (가능하면) 사업체 기본값
         savePayload.requestorDesignSoftware = designSoftware;
+        savePayload.requestorExoCadVersion =
+          designSoftware === "ExoCAD" ? exoCadVersion : null;
         savePayload.requestorAnodizingEnabled = modalAnodizingEnabled;
         if (
           (needsBusinessDesignSoftwareBootstrap || !designSoftwareValue) &&
           canEditBusinessDesignSoftware
         ) {
           savePayload.designSoftware = designSoftware;
+          savePayload.exoCadVersion =
+            designSoftware === "ExoCAD" ? exoCadVersion : null;
         } else if (canEditBusinessDesignSoftware) {
           savePayload.designSoftware = designSoftware;
+          savePayload.exoCadVersion =
+            designSoftware === "ExoCAD" ? exoCadVersion : null;
         }
         if (canEditBusinessAnodizing || needsBusinessAnodizingBootstrap) {
           savePayload.anodizingEnabled = modalAnodizingEnabled;
@@ -500,6 +557,8 @@ export function useRequestorRequestSettings(
       } else {
         // internalLab 등: 사업체 기본값만 (개인 requestor* 필드는 403)
         savePayload.designSoftware = designSoftware;
+        savePayload.exoCadVersion =
+          designSoftware === "ExoCAD" ? exoCadVersion : null;
         savePayload.anodizingEnabled = modalAnodizingEnabled;
       }
 
@@ -525,7 +584,10 @@ export function useRequestorRequestSettings(
         return;
       }
 
+      const savedExo =
+        designSoftware === "ExoCAD" ? exoCadVersion : null;
       setDesignSoftwareValue(designSoftware);
+      setExoCadVersion(savedExo);
       setAnodizingEnabled(modalAnodizingEnabled);
       anodizingTouchedRef.current = true;
       anodizingEnabledRef.current = modalAnodizingEnabled;
@@ -536,6 +598,7 @@ export function useRequestorRequestSettings(
       setModalOpen(false);
       onDefaultsChangeRef.current?.({
         designSoftware,
+        exoCadVersion: savedExo,
         anodizingEnabled: modalAnodizingEnabled,
       });
 
@@ -561,6 +624,7 @@ export function useRequestorRequestSettings(
     customDesignSoftware,
     designSoftwareMode,
     designSoftwareValue,
+    exoCadVersion,
     isPersonalRequestor,
     modalAnodizingEnabled,
     needsBusinessAnodizingBootstrap,
@@ -686,7 +750,10 @@ export function useRequestorRequestSettings(
     [clearGatePending],
   );
 
-  const settingsComplete = Boolean(String(designSoftwareValue || "").trim());
+  const settingsComplete = Boolean(
+    String(designSoftwareValue || "").trim() &&
+      (String(designSoftwareValue || "").trim() !== "ExoCAD" || exoCadVersion),
+  );
 
   const dialogDescription =
     gatePendingFiles.length > 0
@@ -701,6 +768,8 @@ export function useRequestorRequestSettings(
     loaded,
     designSoftwareValue,
     setDesignSoftwareValue,
+    exoCadVersion,
+    setExoCadVersion,
     anodizingEnabled,
     setAnodizingEnabled,
     retentionGrooveDefault,
