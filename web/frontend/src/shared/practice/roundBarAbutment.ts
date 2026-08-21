@@ -6,6 +6,7 @@
 // - web/frontend/src/pages/admin/system/AdminRoundBarAbutmentTab.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // change-log:
+// - 2026-08-21: 미제공 CA 안내 INTRO/OUTRO·혼재 문구. 치아 상세는 LabPendingAbutmentGuide.
 // - 2026-08-14: 도입 이벤트가 치과 프리셋에 없으면 행을 추가한다.
 // - 2026-08-14: 관리자 타입 수정 패치.
 // - 2026-08-14: 도입 실시간 이벤트(`practice:round-bar-request-updated`) 프리셋 patch.
@@ -17,6 +18,11 @@ export const MANUFACTURER_ADD_REQUEST_VALUE = "__add_manufacturer_request__";
 /** 임플란트 추가 요청(메모 1줄) 저장 시 brand/family 자리표시 */
 export const MANUFACTURER_ADD_REQUEST_BRAND = "추가요청";
 export const MANUFACTURER_ADD_REQUEST_FAMILY = "미정";
+/**
+ * 「임플란트 추가 요청」옵션 SSOT.
+ * pending/어벗츠 미제공 판별은 implantType=헥스(사이즈 미정)가 아니라 이 옵션·플래그를 쓴다.
+ */
+export const IMPLANT_ADD_REQUEST_OPTION = "임플란트 추가 요청";
 export const ROUND_BAR_REQUEST_UPDATED_EVENT = "practice:round-bar-request-updated";
 export const ABUTMENT_ADOPTED_KIND = {
   CNC: "cnc",
@@ -36,6 +42,21 @@ export const ROUND_BAR_GUIDE_TITLE = "안내";
 export const ROUND_BAR_GUIDE_LINES = [
   "어벗츠에서 빠른 시일내 준비하겠습니다.",
   "일단 거래하시는 기공소로 주문합니다.",
+] as const;
+/** 기공소 수신: 임플란트 추가 요청(요청중) — 어벗츠 CNC 미제공 */
+export const LAB_PENDING_ABUTMENT_GUIDE_INTRO =
+  "어벗츠에서 아직 제공하지 않는 임플란트입니다.";
+export const LAB_PENDING_ABUTMENT_GUIDE_OUTRO =
+  "기공소에서 자체 처리(기존 CNC업체 이용, 기공소 자체 밀링)해주세요.";
+/** 일부만 미제공(어벗츠 CNC 대상과 혼재) */
+export const LAB_PENDING_ABUTMENT_MIXED_GUIDE_INTRO =
+  "일부 치아는 어벗츠에서 아직 제공하지 않는 임플란트입니다.";
+export const LAB_PENDING_ABUTMENT_MIXED_GUIDE_OUTRO =
+  "해당 커스텀어벗은 기공소에서 자체 처리(기존 CNC업체 이용, 기공소 자체 밀링)하고, 어벗츠 대상만 아래에서 생산의뢰하세요.";
+/** @deprecated INTRO/OUTRO + 치아 상세 렌더 사용 */
+export const LAB_PENDING_ABUTMENT_GUIDE_LINES = [
+  LAB_PENDING_ABUTMENT_GUIDE_INTRO,
+  LAB_PENDING_ABUTMENT_GUIDE_OUTRO,
 ] as const;
 
 export type RoundBarAbutmentRequest = {
@@ -67,12 +88,42 @@ export type RoundBarRequestPayload = {
 export const isRoundBarFavorite = (row: Partial<PracticeImplantFavorite> | null | undefined) =>
   Boolean(row?.roundBar) || Boolean(String(row?.roundBarRequestId || "").trim());
 
+/** 임플란트 추가 요청 옵션(프리셋·치식). 레거시 brand=추가요청도 동일. */
+export const isImplantAddRequest = (
+  row:
+    | Partial<PracticeImplantFavorite>
+    | Partial<{
+        implantAddRequest?: boolean;
+        implantBrand?: string;
+        implantType?: string;
+        brand?: string;
+        type?: string;
+      }>
+    | null
+    | undefined,
+) => {
+  if (!row) return false;
+  if (Boolean((row as { implantAddRequest?: boolean }).implantAddRequest)) {
+    return true;
+  }
+  const brand = String(
+    (row as { brand?: string }).brand ||
+      (row as { implantBrand?: string }).implantBrand ||
+      "",
+  ).trim();
+  if (brand === MANUFACTURER_ADD_REQUEST_BRAND) return true;
+  const type = String(
+    (row as { type?: string }).type ||
+      (row as { implantType?: string }).implantType ||
+      "",
+  ).trim();
+  return type === IMPLANT_ADD_REQUEST_OPTION;
+};
+
 /** 메모만 넣은 임플란트 추가 요청(표시는 manufacturer만) */
 export const isManufacturerAddRequestFavorite = (
   row: Partial<PracticeImplantFavorite> | null | undefined,
-) =>
-  isRoundBarFavorite(row) &&
-  String(row?.brand || "").trim() === MANUFACTURER_ADD_REQUEST_BRAND;
+) => isImplantAddRequest(row);
 
 export type ImplantFavoriteLabelParts = {
   line1: string;
@@ -184,7 +235,8 @@ export async function submitRoundBarManufacturerRequest(params: {
       manufacturer: String(params.payload.manufacturer || "").trim(),
       brand: String(params.payload.brand || "").trim(),
       family: String(params.payload.family || "").trim(),
-      type: ROUND_BAR_HEX_TYPE,
+      type: IMPLANT_ADD_REQUEST_OPTION,
+      implantAddRequest: true,
       favoriteId: String(params.payload.favoriteId || "").trim() || undefined,
     },
     skipCache: true,

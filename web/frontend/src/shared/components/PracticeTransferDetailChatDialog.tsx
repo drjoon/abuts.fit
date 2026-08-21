@@ -11,6 +11,8 @@
 // - web/frontend/src/shared/files/modelPreviewFile.ts
 // - web/frontend/src/shared/files/downloadWithProgress.ts
 // - web/frontend/src/shared/files/s3BlobCache.ts
+// - 2026-08-21: 미제공 CA 수락 바 — 치아·임플란트 상세 + 자체 처리 안내.
+// - 2026-08-21: 미제공(요청중) CA — 수락 바 안내·어벗츠 자동주문 문구 분리.
 // - 2026-08-21: 모바일 채팅 — 상세/채팅·메시지/입력을 grid fr로 나눠 내역 높이 확보.
 // - 2026-08-21: 어벗 가공 고정 안내 문구 제거. 수락/생산 취소는 클릭 시 API로 판정·토스트.
 // - 2026-08-21: 컨펌 필요 시 작업 파일 프리뷰를 먼저 열고 안내·CTA를 프리뷰에 표시.
@@ -91,8 +93,10 @@ import { fetchS3BlobCached } from "@/shared/files/s3BlobCache";
 import { useToast } from "@/shared/hooks/use-toast";
 import {
   formatLabFeeMultiplierLabel,
+  isPendingRoundBarAbutment,
   normalizeLabFeeMultiplier,
 } from "@/shared/practice/labFeeSchedule";
+import { LabPendingAbutmentGuide } from "@/shared/components/practice/LabPendingAbutmentGuide";
 import {
   getPracticeTransferFileExtension,
   PRACTICE_TRANSFER_IMAGE_EXTENSIONS,
@@ -746,6 +750,16 @@ export function PracticeTransferDetailChatDialog({
   const hasCustomAbutment = Boolean(
     toothWorks?.some((work) => Boolean(work.customAbutment)),
   );
+  const hasPendingLabCustomAbutment = Boolean(
+    toothWorks?.some(
+      (work) => Boolean(work.customAbutment) && isPendingRoundBarAbutment(work),
+    ),
+  );
+  const hasAbutsCustomAbutment = Boolean(
+    toothWorks?.some(
+      (work) => Boolean(work.customAbutment) && !isPendingRoundBarAbutment(work),
+    ),
+  );
   /** 최초 미수락: 채팅은 유지하고 상단에 수락 CTA */
   const showAcceptBar = Boolean(onAccept) && !accepted && !workCanceled;
   /** 작업취소 후 수락이 풀렸지만 채팅은 이어갈 때 */
@@ -1091,7 +1105,13 @@ export function PracticeTransferDetailChatDialog({
                     <p className="text-xs text-muted-foreground">
                       치과 메시지를 확인한 뒤 수락하면 작업을 진행할 수 있습니다.
                     </p>
-                    {hasCustomAbutment ? (
+                    {hasPendingLabCustomAbutment ? (
+                      <LabPendingAbutmentGuide
+                        toothWorks={toothWorks}
+                        mixedWithAbuts={hasAbutsCustomAbutment}
+                      />
+                    ) : null}
+                    {hasAbutsCustomAbutment ? (
                       <TooltipProvider>
                         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                           <span>커스텀 어벗 디자인은 수락 기공소가 진행</span>
@@ -1111,6 +1131,30 @@ export function PracticeTransferDetailChatDialog({
                               <br />
                               완성 어벗 STL 업로드 시 제조사에 자동 주문되며,
                               디자인비+지그제작비가 지급됩니다.
+                            </TooltipContent>
+                          </Tooltip>
+                        </div>
+                      </TooltipProvider>
+                    ) : null}
+                    {hasCustomAbutment &&
+                    !hasAbutsCustomAbutment &&
+                    !hasPendingLabCustomAbutment ? (
+                      <TooltipProvider>
+                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <span>커스텀 어벗 디자인은 수락 기공소가 진행</span>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                className="inline-flex hover:text-foreground"
+                                aria-label="커스텀 어벗 디자인 책임 안내"
+                              >
+                                <CircleHelp className="h-3.5 w-3.5" />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent className="max-w-xs leading-relaxed">
+                              수락 기공소가 커스텀어벗·크라운 디자인과 납기를
+                              담당합니다. 지연 시 치과와 미리 상의하세요.
                             </TooltipContent>
                           </Tooltip>
                         </div>

@@ -4,6 +4,8 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/components/practice/LabReceiveWorkUploadDialog.tsx
 // change-log:
+// - 2026-08-21: 미제공 CA 목록·상세 한 줄(formatPendingLabAbutmentDetailLine).
+// - 2026-08-21: 요청중(헥스 사이즈 미정) CA는 어벗츠 생산 CTA·기대 디자인 수에서 제외.
 // - 2026-08-21: unread 배지 — 휴지통(canceled)은 채팅 unread만(사이드바 received-unread와 정합).
 // - 2026-08-21: resolvePracticeLabReceiveWorkActionState — 카드·상세 모달 CTA 판정 SSOT.
 // - 2026-08-16: prosthetic slots — 크라운은 연결 잔여여도 스팬 묶지 않음; 기대 라벨 헬퍼.
@@ -20,6 +22,7 @@
 // - 2026-08-21: abutmentDeliveryInfo — 연동 CA 한진 배송 요약(치과 발신과 동일).
 // - 2026-08-20: 수신 미확인+채팅 unread 합산(사이드바·캘린더 칩 공통).
 import {
+  formatImplantSummary,
   isBridgeLikeProsthesisType,
   isMissingToothProsthesisType,
   isTemporaryToothProsthesisType,
@@ -28,6 +31,7 @@ import {
   toToothMemoSortNumber,
   type ToothWorkSelection,
 } from "@/shared/practice/transferMemo";
+import { isPendingRoundBarAbutment } from "@/shared/practice/labFeeSchedule";
 import type { PracticeTransferFeeQuote } from "@/shared/practice/practiceTransferFeeQuote";
 import type {
   LabRatingSummary,
@@ -242,6 +246,74 @@ export function practiceTransferHasCustomAbutment(
   );
 }
 
+/** 치식 요약의 커스텀어벗 행 (임플란트 스펙 포함) */
+export function listPracticeTransferCustomAbutmentToothWorks(
+  transfer: PracticeTransferLabReceiveItem | null | undefined,
+) {
+  if (!transfer) return [] as ToothWorkSelection[];
+  return parseToothWorks(transfer.toothWorksSummary).filter((row) =>
+    Boolean(row.customAbutment),
+  );
+}
+
+/**
+ * 어벗츠 CNC Request·「어벗 업로드 & 생산의뢰」대상.
+ * 임플란트 추가 요청(요청중/헥스 사이즈 미정)은 제외 — 기공소가 기존 CNC로 진행.
+ */
+export function listPracticeTransferAbutsCustomAbutmentToothWorks(
+  transfer: PracticeTransferLabReceiveItem | null | undefined,
+) {
+  return listPracticeTransferCustomAbutmentToothWorks(transfer).filter(
+    (row) => !isPendingRoundBarAbutment(row),
+  );
+}
+
+export function practiceTransferHasAbutsCustomAbutment(
+  transfer: PracticeTransferLabReceiveItem | null | undefined,
+) {
+  return listPracticeTransferAbutsCustomAbutmentToothWorks(transfer).length > 0;
+}
+
+/** 요청중 CA가 하나라도 있으면 기공소 CNC 직접 의뢰 안내 */
+export function practiceTransferHasPendingLabCustomAbutment(
+  transfer: PracticeTransferLabReceiveItem | null | undefined,
+) {
+  return listPracticeTransferPendingLabCustomAbutmentToothWorks(transfer).length > 0;
+}
+
+/** 어벗츠 미제공(요청중) 커스텀어벗 치식 — 치아번호 순 */
+export function listPracticeTransferPendingLabCustomAbutmentToothWorks(
+  transfer: PracticeTransferLabReceiveItem | null | undefined,
+) {
+  return listPracticeTransferCustomAbutmentToothWorks(transfer)
+    .filter((row) => isPendingRoundBarAbutment(row))
+    .slice()
+    .sort(
+      (a, b) =>
+        toToothMemoSortNumber(a.toothNumber) -
+        toToothMemoSortNumber(b.toothNumber),
+    );
+}
+
+/** 미제공 안내용 한 줄: `22번 · 오스템 / US` */
+export function formatPendingLabAbutmentDetailLine(
+  row: Pick<
+    ToothWorkSelection,
+    | "toothNumber"
+    | "implantManufacturer"
+    | "implantBrand"
+    | "implantFamily"
+    | "implantType"
+    | "implantAddRequest"
+  > | null | undefined,
+) {
+  const tooth = String(row?.toothNumber || "").trim();
+  const implant = formatImplantSummary(row);
+  if (tooth && implant) return `${tooth}번 · ${implant}`;
+  if (tooth) return `${tooth}번`;
+  return implant || "임플란트 미정";
+}
+
 export function practiceTransferAbutmentMachiningStarted(
   transfer:
     | {
@@ -274,14 +346,13 @@ export function countPracticeTransferDesignFiles(
   );
 }
 
-/** 치식 요약·연동 Request 기준, 올려야 할 어벗디자인 개수 */
+/** 치식 요약·연동 Request 기준, 올려야 할 어벗디자인 개수(어벗츠 CNC 대상만) */
 export function countPracticeTransferExpectedAbutmentDesigns(
   transfer: PracticeTransferLabReceiveItem | null | undefined,
 ) {
   if (!transfer) return 0;
-  const caTeeth = parseToothWorks(transfer.toothWorksSummary).filter((row) =>
-    Boolean(row.customAbutment),
-  ).length;
+  const caTeeth =
+    listPracticeTransferAbutsCustomAbutmentToothWorks(transfer).length;
   const related = Array.isArray(transfer.production?.relatedRequestIds)
     ? transfer.production.relatedRequestIds.filter((id) =>
         Boolean(String(id || "").trim()),
@@ -290,11 +361,11 @@ export function countPracticeTransferExpectedAbutmentDesigns(
   return Math.max(caTeeth, related, 0);
 }
 
-/** 커스텀어벗이 있고 아직 치아별 어벗디자인이 부족한지 */
+/** 어벗츠 CNC 커스텀어벗이 있고 아직 치아별 어벗디자인이 부족한지 */
 export function practiceTransferNeedsMoreAbutmentDesigns(
   transfer: PracticeTransferLabReceiveItem | null | undefined,
 ) {
-  if (!practiceTransferHasCustomAbutment(transfer)) return false;
+  if (!practiceTransferHasAbutsCustomAbutment(transfer)) return false;
   const designCount = countPracticeTransferDesignFiles(transfer);
   const expected = countPracticeTransferExpectedAbutmentDesigns(transfer);
   if (expected <= 0) return designCount === 0;
@@ -526,7 +597,12 @@ export function formatPracticeTransferProstheticSlotLabels(
 export type PracticeLabReceiveWorkActionState = {
   displayStatus: PracticeTransferLabReceiveDisplayStatus;
   designFileCount: number;
+  /** 치식에 커스텀어벗 체크(요청중 포함) */
   hasCa: boolean;
+  /** 어벗츠 CNC 생산의뢰 대상 CA */
+  hasAbutsCa: boolean;
+  /** 임플란트 추가 요청(요청중) CA — 기공소 CNC 직접 */
+  hasPendingLabCa: boolean;
   needsMoreAbutmentDesigns: boolean;
   hasPartialProsthetic: boolean;
   pendingProstheticCount: number;
@@ -549,6 +625,8 @@ export function resolvePracticeLabReceiveWorkActionState(
     displayStatus: "의뢰",
     designFileCount: 0,
     hasCa: false,
+    hasAbutsCa: false,
+    hasPendingLabCa: false,
     needsMoreAbutmentDesigns: false,
     hasPartialProsthetic: false,
     pendingProstheticCount: 0,
@@ -567,6 +645,8 @@ export function resolvePracticeLabReceiveWorkActionState(
   );
   const designFileCount = countPracticeTransferDesignFiles(transfer);
   const hasCa = practiceTransferHasCustomAbutment(transfer);
+  const hasAbutsCa = practiceTransferHasAbutsCustomAbutment(transfer);
+  const hasPendingLabCa = practiceTransferHasPendingLabCustomAbutment(transfer);
   const needsMoreAbutmentDesigns =
     practiceTransferNeedsMoreAbutmentDesigns(transfer);
   const hasPartialProsthetic =
@@ -584,7 +664,7 @@ export function resolvePracticeLabReceiveWorkActionState(
     Boolean(String(transfer.requestorAcceptedAt || "").trim());
   const productionStarted = practiceTransferAbutmentMachiningStarted(transfer);
   const needsStageReopen =
-    hasCa &&
+    hasAbutsCa &&
     isLabAccepted &&
     designFileCount === 0 &&
     (resultCount > 0 ||
@@ -601,14 +681,14 @@ export function resolvePracticeLabReceiveWorkActionState(
       !transfer.production?.confirmedAt &&
       !transfer.autoMatch?.completed);
   const showAbutmentProductionCancel =
-    hasCa &&
+    hasAbutsCa &&
     (designFileCount > 0 || needsStageReopen) &&
     Array.isArray(transfer.production?.relatedRequestIds) &&
     transfer.production.relatedRequestIds.length > 0;
   const showCompletedStageHeaderCancel =
     !showWorkActions && showAbutmentProductionCancel;
   const showDesignConfirm =
-    hasCa &&
+    hasAbutsCa &&
     designFileCount > 0 &&
     !transfer.production?.labDesignConfirmedAt;
 
@@ -616,6 +696,8 @@ export function resolvePracticeLabReceiveWorkActionState(
     displayStatus,
     designFileCount,
     hasCa,
+    hasAbutsCa,
+    hasPendingLabCa,
     needsMoreAbutmentDesigns,
     hasPartialProsthetic,
     pendingProstheticCount,

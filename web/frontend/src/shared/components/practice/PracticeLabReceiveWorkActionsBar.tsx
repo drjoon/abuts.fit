@@ -3,7 +3,10 @@
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/practice/practiceTransferLabReceive.ts
+// - web/frontend/src/shared/practice/roundBarAbutment.ts
 // change-log:
+// - 2026-08-21: 미제공 CA 안내 — 치아·임플란트 상세 + 자체 처리 문구(LabPendingAbutmentGuide).
+// - 2026-08-21: 요청중 CA — 어벗 업로드 CTA 숨김 + 기공소 CNC 직접 의뢰 안내.
 // - 2026-08-21: 어벗 생산 취소 — 가공 중이어도 클릭 가능. API 판정·토스트(준비 복귀 대비).
 // - 2026-08-21: 어벗 CTA「어벗 업로드 & 생산의뢰」·툴팁 단문화.
 // - 2026-08-21: 카드→캘린더 전환 후 상세 모달에서도 어벗·보철 업로드 CTA 공유.
@@ -15,7 +18,9 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { LabPendingAbutmentGuide } from "@/shared/components/practice/LabPendingAbutmentGuide";
 import {
+  listPracticeTransferCustomAbutmentToothWorks,
   resolvePracticeLabReceiveWorkActionState,
   type PracticeTransferLabReceiveItem,
 } from "@/shared/practice/practiceTransferLabReceive";
@@ -59,6 +64,14 @@ export function PracticeLabReceiveWorkActionsBar({
   const prostheticButtonLabel = state.hasPartialProsthetic
     ? `보철 추가 업로드 (${state.pendingProstheticCount})`
     : "보철 업로드 & 작업완료";
+  const showAbutmentUpload =
+    state.hasAbutsCa && state.needsMoreAbutmentDesigns;
+  const pendingLabGuide = state.hasPendingLabCa ? (
+    <LabPendingAbutmentGuide
+      toothWorks={listPracticeTransferCustomAbutmentToothWorks(transfer)}
+      mixedWithAbuts={state.hasAbutsCa}
+    />
+  ) : null;
 
   const productionCancelButton =
     showProductionCancelInBar &&
@@ -110,7 +123,8 @@ export function PracticeLabReceiveWorkActionsBar({
 
   if (state.showWorkActions) {
     return (
-      <div className={className}>
+      <div className={className ? `space-y-1.5 ${className}` : "space-y-1.5"}>
+        {pendingLabGuide}
         <div className="flex flex-wrap items-center gap-1.5">
           {state.showDesignConfirm && onDesignConfirm ? (
             <Button
@@ -127,7 +141,7 @@ export function PracticeLabReceiveWorkActionsBar({
               {designConfirmBusy ? "확인 중..." : "어벗 디자인 확인"}
             </Button>
           ) : null}
-          {state.hasCa && state.needsMoreAbutmentDesigns ? (
+          {showAbutmentUpload ? (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
