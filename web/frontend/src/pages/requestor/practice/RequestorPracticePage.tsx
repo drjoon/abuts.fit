@@ -23,6 +23,7 @@
 // - web/backend/utils/labReceiveCalendarDateKey.util.js
 // - web/backend/controllers/users/user.controller.js
 // - 2026-08-21: 수신 상단 상태 뱃지에 채팅·미확인 unread. 휴지통(canceled)도 취소 뱃지·캘린더에 표시.
+// - 2026-08-21: 상단 상태 뱃지 배타적 선택 — 클릭한 상태만 표시(재클릭 시 기본 ON 복귀).
 // - 2026-08-21: 상단 상태 뱃지 다중 on/off — 켠 항목만 표시(기본 취소 off).
 // - 2026-08-21: 어벗 디자인 업로드 후 skipDesignConfirm 강제 true 제거(구강스캔으로 치과 설정 존중).
 // - 2026-08-21: 하청 전환 버튼 — 어벗츠기공소(internalLab)만 노출.
@@ -318,7 +319,7 @@ type LabReceiveStatusFilterKey =
   | "포장.발송"
   | "리메이크";
 
-/** 기본 ON — 취소만 off. 뱃지 켜면 표시·끄면 미표시. */
+/** 기본 ON — 취소만 off. 배타 선택 해제 시에도 이 집합으로 복귀. */
 const LAB_RECEIVE_DEFAULT_ON_STATUS_FILTERS: readonly LabReceiveStatusFilterKey[] = [
   "발송완료",
   "의뢰수락",
@@ -332,14 +333,15 @@ const createLabReceiveStatusFilterSet = (
   keys: readonly LabReceiveStatusFilterKey[] = LAB_RECEIVE_DEFAULT_ON_STATUS_FILTERS,
 ) => new Set<LabReceiveStatusFilterKey>(keys);
 
+/** 배타적 선택: 클릭한 키만 ON. 이미 그 키만 켜져 있으면 기본 ON으로 복귀. */
 const toggleLabReceiveStatusFilter = (
   prev: ReadonlySet<LabReceiveStatusFilterKey>,
   key: LabReceiveStatusFilterKey,
 ) => {
-  const next = new Set(prev);
-  if (next.has(key)) next.delete(key);
-  else next.add(key);
-  return next;
+  if (prev.size === 1 && prev.has(key)) {
+    return createLabReceiveStatusFilterSet();
+  }
+  return new Set<LabReceiveStatusFilterKey>([key]);
 };
 
 const labTransferMatchesStatusFilters = (
