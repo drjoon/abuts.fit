@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-08-21: 구강스캔(기공의뢰수신) CA도 ensure에서 헥스 확인 샘플 생성(already_created 보정 포함).
 // - 2026-08-21: 헥스 확인 샘플은 relatedRequestIds에 넣지 않음(어벗 개수 오인 방지).
 // - 2026-08-21: tryStartAbutmentProduction — Request 가공 진입을 병렬(다치아 confirm 지연 완화).
 // - 2026-08-21: CA Request — 구강스캔 없이 수락·생성(어벗 STL 업로드 가능).
@@ -555,7 +556,13 @@ export async function createAbutmentRequestsFromPracticeTransfer({
       null,
   );
   if (customRows.length === 0) {
-    return { created: [], skippedReason: "no_custom_abutment", requestIds: [] };
+    return {
+      created: [],
+      skippedReason: "no_custom_abutment",
+      requestIds: [],
+      labUserId: null,
+      labAnchorId: null,
+    };
   }
 
   const existingIds = Array.isArray(transferDoc?.production?.relatedRequestIds)
@@ -568,6 +575,8 @@ export async function createAbutmentRequestsFromPracticeTransfer({
       created: [],
       skippedReason: "already_created",
       requestIds: existingIds,
+      labUserId: null,
+      labAnchorId: String(transferDoc?.targetLabAnchorId || "").trim() || null,
     };
   }
 
@@ -894,20 +903,8 @@ export async function createAbutmentRequestsFromPracticeTransfer({
     created.push(newRequest);
   }
 
-  // 헥스 확인 샘플은 별도 Request — production.relatedRequestIds(어벗 업로드 대상)에 넣지 않는다.
-  try {
-    await maybeCreateHexVerificationSampleForFirstOrder({
-      sourceRequests: created,
-      userId: labUserId,
-      businessAnchorId: labAnchorId,
-      actorUserId: actorUserId || labUserId,
-    });
-  } catch (hexSampleErr) {
-    console.warn(
-      "[createAbutmentRequestsFromPracticeTransfer] hex verification sample failed",
-      hexSampleErr?.message || hexSampleErr,
-    );
-  }
+  // 헥스 확인 샘플은 ensureAbutmentRequestsOnAccept에서 생성한다
+  // (already_created 재수락·작업완료 보정과 SSOT를 맞추기 위함). relatedRequestIds에도 넣지 않는다.
 
   try {
     await triggerDashboardSummaryRefreshForAnchorId(labAnchorId);
@@ -925,6 +922,8 @@ export async function createAbutmentRequestsFromPracticeTransfer({
     skippedReason: null,
     requestIds: created.map((doc) => String(doc._id)),
     shippingMode,
+    labUserId,
+    labAnchorId,
   };
 }
 
@@ -932,6 +931,8 @@ export async function createAbutmentRequestsFromPracticeTransfer({
  * CA 포함이면 Request 생성(이미 있으면 no-op) 후 production.relatedRequestIds·shippingMode 갱신.
  * 이미 생성된 Request는 현재 수락 기공소(targetLabAnchorId)로 소유를 맞춘다.
  * relatedRequestIds에는 헥스 확인 샘플을 넣지 않는다(레거시 혼입분도 정리).
+ * ExoCAD 첫 의뢰 헥스 확인 샘플은 신규·already_created 모두에서 시도한다
+ * (구강스캔 기공의뢰수신 → CA 생산도 어벗디자인 직접주문과 동일).
  */
 export async function ensureAbutmentRequestsOnAccept({
   transferDoc,
@@ -991,6 +992,68 @@ export async function ensureAbutmentRequestsOnAccept({
 
   if (result.skippedReason === "already_created") {
     await syncRelatedRequestOwnershipToAcceptingLab(transferDoc);
+  }
+
+  // 헥스 확인 샘플: 신규 생성·기존 Request(수락/작업완료 재진입) 모두 시도.
+  // relatedRequestIds에는 넣지 않는다(어벗 업로드 개수 오인 방지).
+  try {
+    let sourceRequests = Array.isArray(result.created)
+      ? result.created.filter(
+          (doc) => doc && !isHexVerificationSampleCase(doc?.caseInfos),
+        )
+      : [];
+    if (sourceRequests.length === 0 && oidList.length > 0) {
+      sourceRequests = await Request.find({ _id: { $in: oidList } });
+      sourceRequests = sourceRequests.filter(
+        (doc) => !isHexVerificationSampleCase(doc?.caseInfos),
+      );
+    }
+
+    const labAnchorId =
+      String(result.labAnchorId || transferDoc?.targetLabAnchorId || "").trim() ||
+      null;
+    const labUserId =
+      String(result.labUserId || "").trim() ||
+      (await resolveLabRequestorUserId({
+        transferDoc,
+        fallbackUserId: actorUserId,
+      }));
+
+    if (sourceRequests.length > 0 && labUserId && labAnchorId) {
+      const verificationClone =
+        await maybeCreateHexVerificationSampleForFirstOrder({
+          sourceRequests,
+          userId: labUserId,
+          businessAnchorId: labAnchorId,
+          actorUserId: actorUserId || labUserId,
+        });
+      if (verificationClone) {
+        console.log(
+          "[ensureAbutmentRequestsOnAccept] hex verification sample created",
+          {
+            transferId: String(transferDoc?.transferId || "").trim() || null,
+            sourceRequestId: String(sourceRequests[0]?.requestId || "").trim(),
+            sampleRequestId: String(verificationClone.requestId || "").trim(),
+            skippedReason: result.skippedReason || null,
+          },
+        );
+        try {
+          await triggerDashboardSummaryRefreshForAnchorId(labAnchorId);
+        } catch {
+          // best-effort
+        }
+        try {
+          await recomputeBulkShippingSnapshotForBusinessAnchorId(labAnchorId);
+        } catch {
+          // best-effort
+        }
+      }
+    }
+  } catch (hexSampleErr) {
+    console.warn(
+      "[ensureAbutmentRequestsOnAccept] hex verification sample failed",
+      hexSampleErr?.message || hexSampleErr,
+    );
   }
 
   return {
