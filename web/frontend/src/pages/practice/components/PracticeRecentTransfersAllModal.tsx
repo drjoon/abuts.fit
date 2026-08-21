@@ -18,6 +18,7 @@
  * 2026-08-20: 캘린더 칩에 채팅 안읽음 배지.
  * 2026-08-20: 날짜 뱃지 기본=치과도착일. 계정 preferences에 저장.
  * 2026-08-20: 모바일은 달력 대신 기공소·환자명·상태 카드 목록.
+ * 2026-08-21: 커스텀어벗 한진 배송현황을 캘린더 칩·모바일 카드에 표시.
  * 2026-08-20: 모바일 — 가로 스크롤 상태칩·터치 카드·풀높이 시트.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -38,6 +39,8 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { getHanjinDeliveryStatusLabel } from "@/shared/shipping/hanjinTrackingLabel";
+import type { DeliveryInfoSummary } from "@/types/request";
 import type { PeriodFilterValue } from "@/shared/ui/PeriodFilter";
 import { cn } from "@/shared/ui/cn";
 import { apiFetch } from "@/shared/api/apiClient";
@@ -305,6 +308,13 @@ export function PracticeRecentTransfersAllModal({
           .trim() || "-";
       const patient = resolvePracticeTransferListPatientName(transfer);
       const teeth = resolvePracticeTransferListToothNumbers(transfer);
+      const deliveryLabel =
+        transfer.hasCustomAbutment
+          ? getHanjinDeliveryStatusLabel(
+              (transfer.abutmentDeliveryInfo ||
+                null) as DeliveryInfoSummary | null,
+            )
+          : null;
       return {
         id: `${transfer.id}:${transfer.transferId}`,
         orderDate: transfer.orderDate,
@@ -313,7 +323,9 @@ export function PracticeRecentTransfersAllModal({
         statusTone: resolvePracticeCalendarStatusTone(transfer.status),
         isRemake: Boolean(transfer.isRemake),
         sortLabel: lab,
-        line: [lab, patient || "—", teeth || "—"].join(" / "),
+        line: [lab, patient || "—", teeth || "—", deliveryLabel]
+          .filter(Boolean)
+          .join(" / "),
         unreadCount: Math.max(0, Number(transfer.unreadCount || 0)),
         canDelete: canDeletePracticeTransferByStatus(transfer.status),
       };
@@ -470,7 +482,7 @@ export function PracticeRecentTransfersAllModal({
               </div>
             ) : (
               <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto overscroll-contain pb-2">
-                {filteredTransfers.map((transfer) => {
+                  {filteredTransfers.map((transfer) => {
                   const lab =
                     String(transfer.targetLab || "-")
                       .replace(/\s*→.*$/g, "")
@@ -481,6 +493,13 @@ export function PracticeRecentTransfersAllModal({
                   const canDelete = canDeletePracticeTransferByStatus(transfer.status);
                   const unread = Math.max(0, Number(transfer.unreadCount || 0));
                   const arrival = String(transfer.arrivalDate || "").trim();
+                  const deliveryLabel =
+                    transfer.hasCustomAbutment
+                      ? getHanjinDeliveryStatusLabel(
+                          (transfer.abutmentDeliveryInfo ||
+                            null) as DeliveryInfoSummary | null,
+                        )
+                      : null;
 
                   return (
                     <div
@@ -508,6 +527,18 @@ export function PracticeRecentTransfersAllModal({
                             >
                               {statusLabel}
                             </Badge>
+                            {deliveryLabel ? (
+                              <span
+                                className={
+                                  deliveryLabel === "배송완료"
+                                    ? "inline-block max-w-[9.5rem] truncate rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800"
+                                    : "inline-block max-w-[9.5rem] truncate rounded bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800"
+                                }
+                                title={`커스텀어벗 배송: ${deliveryLabel}`}
+                              >
+                                {deliveryLabel}
+                              </span>
+                            ) : null}
                             {transfer.isRemake ? (
                               <Badge
                                 variant="outline"

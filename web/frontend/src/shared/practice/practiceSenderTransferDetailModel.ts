@@ -2,6 +2,7 @@
  * 치과 발신 의뢰상세 좌측 패널 모델 SSOT.
  * 최근의뢰·전체보기에서 같은 PracticeRecentTransferItem으로 연다.
  * 2026-08-16: 작업 파일(어벗 디자인·보철물) 표시를 한곳에서 구성.
+ * 2026-08-21: 커스텀어벗 한진 배송현황 요약 행.
  */
 import type {
   PracticeRecentTransferFileItem,
@@ -16,6 +17,8 @@ import type {
   PracticeTransferDialogSummaryItem,
 } from "@/shared/components/PracticeTransferDetailChatDialog";
 import { buildPracticeWorkPeriodSummaryItem } from "@/shared/practice/practiceWorkPeriod";
+import { getHanjinDeliveryStatusLabel } from "@/shared/shipping/hanjinTrackingLabel";
+import type { DeliveryInfoSummary } from "@/types/request";
 
 const toDialogFiles = (
   files: PracticeRecentTransferFileItem[] | undefined,
@@ -93,6 +96,12 @@ export function buildPracticeSenderTransferDetailModel(
     !transfer.practiceDesignConfirmedAt &&
     String(transfer.status || "").trim() !== "작업완료";
 
+  const abutmentDeliveryLabel = transfer.hasCustomAbutment
+    ? getHanjinDeliveryStatusLabel(
+        (transfer.abutmentDeliveryInfo || null) as DeliveryInfoSummary | null,
+      )
+    : null;
+
   return {
     summaryItems: [
       {
@@ -113,6 +122,18 @@ export function buildPracticeSenderTransferDetailModel(
       { label: "파일 수", value: `${transfer.fileCount || 0}개` },
       { label: "어벗디자인", value: `${designCount}개` },
       { label: "보철물", value: `${resultCount}개` },
+      ...(abutmentDeliveryLabel
+        ? [
+            {
+              label: "커스텀어벗 배송",
+              value: abutmentDeliveryLabel,
+              valueClassName:
+                abutmentDeliveryLabel === "배송완료"
+                  ? "text-emerald-700"
+                  : "text-amber-800",
+            },
+          ]
+        : []),
     ],
     memo: displayMemo,
     toothWorks: parsed.toothWorks || [],

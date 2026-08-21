@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-08-21: 연동 CA Request 한진 배송 요약(mapAbutmentDeliveryByTransferDocs) — 구강스캔으로 UI.
 // - 2026-08-21: 환봉·제조사 추가요청(요청중) CA는 어벗츠 Request 생성 제외 — 지정 기공소가 커스텀어벗 수행.
 // - 2026-08-19: 출고 목표=치과도착−2영업일. 지정 도착일 1영업일 전 배송이 목표.
 // - 2026-08-18: 기공의뢰 CA 생산 견적은 치과 공급 단가(기공소 공급 단가 제외).
@@ -1607,4 +1608,117 @@ export async function repriceAndReschedulePtxAbutmentRequest({
   }
 
   return requestDoc;
+}
+const DELIVERY_POPULATE_SELECT =
+  "shippedAt pickedUpAt deliveredAt carrier tracking events.statusCode events.statusText events.occurredAt events.location";
+
+const toMs = (value) => {
+  if (!value) return 0;
+  const ms = new Date(value).getTime();
+  return Number.isFinite(ms) ? ms : 0;
+};
+
+const slimDeliveryInfo = (di) => {
+  if (!di || typeof di !== "object") return null;
+  const tracking =
+    di.tracking && typeof di.tracking === "object" ? di.tracking : {};
+  const events = Array.isArray(di.events)
+    ? di.events.map((e) => ({
+        statusCode: e?.statusCode != null ? String(e.statusCode) : undefined,
+        statusText: e?.statusText != null ? String(e.statusText) : undefined,
+        occurredAt: e?.occurredAt || undefined,
+        location: e?.location != null ? String(e.location) : undefined,
+      }))
+    : [];
+  return {
+    carrier: di.carrier != null ? String(di.carrier) : undefined,
+    shippedAt: di.shippedAt || undefined,
+    pickedUpAt: di.pickedUpAt || undefined,
+    deliveredAt: di.deliveredAt || undefined,
+    tracking: {
+      lastStatusCode: tracking.lastStatusCode,
+      lastStatusText: tracking.lastStatusText,
+      lastLocation: tracking.lastLocation,
+      lastEventAt: tracking.lastEventAt,
+      lastSyncedAt: tracking.lastSyncedAt,
+    },
+    events,
+  };
+};
+
+/**
+ * 기공의뢰(PTX) 연동 커스텀어벗 Request들의 한진 배송 요약.
+ * @param {object[]} transferDocs
+ * @returns {Promise<Map<string, object|null>>} transferMongoId → deliveryInfoSummary
+ */
+export async function mapAbutmentDeliveryByTransferDocs(transferDocs = []) {
+  const transferToRequestIds = new Map();
+  const allIds = [];
+  for (const doc of Array.isArray(transferDocs) ? transferDocs : []) {
+    const transferId = String(doc?._id || "").trim();
+    if (!transferId) continue;
+    const ids = (
+      Array.isArray(doc?.production?.relatedRequestIds)
+        ? doc.production.relatedRequestIds
+        : []
+    )
+      .map((id) => String(id || "").trim())
+      .filter((id) => id && Types.ObjectId.isValid(id));
+    if (!ids.length) continue;
+    transferToRequestIds.set(transferId, ids);
+    allIds.push(...ids);
+  }
+
+  const out = new Map();
+  if (!allIds.length) return out;
+
+  const uniqueIds = [...new Set(allIds)];
+  const requests = await Request.find({
+    _id: { $in: uniqueIds.map((id) => new Types.ObjectId(id)) },
+  })
+    .select({ deliveryInfoRef: 1 })
+    .populate("deliveryInfoRef", DELIVERY_POPULATE_SELECT)
+    .lean();
+
+  const diByRequestId = new Map();
+  for (const req of requests) {
+    const di = slimDeliveryInfo(req?.deliveryInfoRef);
+    if (di) diByRequestId.set(String(req._id), di);
+  }
+
+  for (const [transferId, requestIds] of transferToRequestIds.entries()) {
+    const infos = requestIds
+      .map((id) => diByRequestId.get(id))
+      .filter(Boolean);
+    if (!infos.length) {
+      out.set(transferId, null);
+      continue;
+    }
+
+    const delivered = infos.filter((di) => di.deliveredAt);
+    if (delivered.length === infos.length) {
+      delivered.sort(
+        (a, b) => toMs(b.deliveredAt) - toMs(a.deliveredAt),
+      );
+      out.set(transferId, delivered[0]);
+      continue;
+    }
+
+    const inTransit = infos.filter((di) => !di.deliveredAt && di.pickedUpAt);
+    const pool = inTransit.length
+      ? inTransit
+      : infos.filter((di) => !di.deliveredAt);
+    if (!pool.length) {
+      out.set(transferId, null);
+      continue;
+    }
+    pool.sort(
+      (a, b) =>
+        toMs(b.tracking?.lastEventAt || b.pickedUpAt) -
+        toMs(a.tracking?.lastEventAt || a.pickedUpAt),
+    );
+    out.set(transferId, pool[0]);
+  }
+
+  return out;
 }

@@ -68,6 +68,26 @@ export type PracticeRecentRequestItem = {
   designFiles?: PracticeRecentTransferFileItem[];
   hasCustomAbutment?: boolean;
   productionConfirmedAt?: string | null;
+  /** 연동 커스텀어벗 Request 한진 배송 요약 */
+  abutmentDeliveryInfo?: {
+    carrier?: string;
+    shippedAt?: string;
+    pickedUpAt?: string;
+    deliveredAt?: string;
+    tracking?: {
+      lastStatusCode?: string;
+      lastStatusText?: string;
+      lastLocation?: string;
+      lastEventAt?: string;
+      lastSyncedAt?: string;
+    };
+    events?: Array<{
+      statusCode?: string;
+      statusText?: string;
+      occurredAt?: string;
+      location?: string;
+    }>;
+  } | null;
   skipDesignConfirm?: boolean;
   skipJig?: boolean;
   designReadyAt?: string | null;
@@ -104,6 +124,26 @@ export type PracticeRecentTransferItem = {
   designFiles?: PracticeRecentTransferFileItem[];
   hasCustomAbutment?: boolean;
   productionConfirmedAt?: string | null;
+  /** 연동 커스텀어벗 Request 한진 배송 요약 */
+  abutmentDeliveryInfo?: {
+    carrier?: string;
+    shippedAt?: string;
+    pickedUpAt?: string;
+    deliveredAt?: string;
+    tracking?: {
+      lastStatusCode?: string;
+      lastStatusText?: string;
+      lastLocation?: string;
+      lastEventAt?: string;
+      lastSyncedAt?: string;
+    };
+    events?: Array<{
+      statusCode?: string;
+      statusText?: string;
+      occurredAt?: string;
+      location?: string;
+    }>;
+  } | null;
   skipDesignConfirm?: boolean;
   skipJig?: boolean;
   designReadyAt?: string | null;
@@ -448,6 +488,10 @@ export const mapMyPracticeTransferApiRows = (
         productionConfirmedAt: productionRaw?.confirmedAt
           ? String(productionRaw.confirmedAt)
           : null,
+        abutmentDeliveryInfo:
+          r.abutmentDeliveryInfo && typeof r.abutmentDeliveryInfo === "object"
+            ? (r.abutmentDeliveryInfo as PracticeRecentRequestItem["abutmentDeliveryInfo"])
+            : null,
         skipDesignConfirm: productionRaw?.skipDesignConfirm !== false,
         skipJig: Boolean(productionRaw?.skipJig),
         designReadyAt: productionRaw?.designReadyAt
@@ -534,6 +578,10 @@ export const mergeOpenPracticeTransferFromRequestRows = (
     productionConfirmedAt:
       openRows.find((r) => r.productionConfirmedAt)?.productionConfirmedAt ||
       prev.productionConfirmedAt ||
+      null,
+    abutmentDeliveryInfo:
+      openRows.find((r) => r.abutmentDeliveryInfo)?.abutmentDeliveryInfo ||
+      prev.abutmentDeliveryInfo ||
       null,
     skipDesignConfirm:
       openRows.some((r) => r.skipDesignConfirm === false)
@@ -706,6 +754,7 @@ export const groupPracticeRecentRequests = (
         designFiles: Array.isArray(req.designFiles) ? [...req.designFiles] : [],
         hasCustomAbutment: Boolean(req.hasCustomAbutment),
         productionConfirmedAt: req.productionConfirmedAt || null,
+        abutmentDeliveryInfo: req.abutmentDeliveryInfo || null,
         skipDesignConfirm: req.skipDesignConfirm !== false,
         skipJig: Boolean(req.skipJig),
         designReadyAt: req.designReadyAt || null,
@@ -792,6 +841,9 @@ export const groupPracticeRecentRequests = (
       existing.designFiles = mergeFileItemsByS3Key(existing.designFiles, req.designFiles);
     }
     if (req.hasCustomAbutment) existing.hasCustomAbutment = true;
+    if (req.abutmentDeliveryInfo) {
+      existing.abutmentDeliveryInfo = req.abutmentDeliveryInfo;
+    }
     if (req.skipDesignConfirm === false) existing.skipDesignConfirm = false;
     if (req.skipJig === false) existing.skipJig = false;
     else if (req.skipJig) existing.skipJig = true;

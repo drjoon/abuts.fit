@@ -105,6 +105,7 @@ import {
   hasRelatedAbutmentPastReady,
   isAbutmentDesignReady,
   mapAbutmentPastReadyByTransferDocs,
+  mapAbutmentDeliveryByTransferDocs,
   normalizeResultFiles,
   resolveOralScanFilesForAccept,
   shouldLockLabOralScanDownload,
@@ -133,6 +134,7 @@ import { resolvePracticeTransferSkipJig } from "../../utils/practiceTransferLabS
 // - web/backend/utils/practiceTransferAbutmentPresets.js
 // - web/backend/utils/practiceLabRating.js
 // - web/backend/utils/practiceTransferStage.js
+// - 2026-08-21: GET /my — 연동 CA 한진 배송 요약(abutmentDeliveryInfo) 포함.
 // - 2026-08-17: mark-complete는 기공소→치과 배송비만. 어벗츠→제조사 배송은 CA 집하.
 // - 2026-08-16: pastReady — 라이브 stage 우선(sticky startedAt OR 제거 시 목록 인자 우선).
 // - 2026-08-17: trash/empty — 하드삭제 의뢰 채팅방 archive(치과 사이드바 유령 unread 방지).
@@ -3589,6 +3591,7 @@ export async function getMyPracticeTransfers(req, res) {
     const docs = hasMore ? fetched.slice(0, limit) : fetched;
 
     const quotesById = await buildFeeQuotesForTransferDocs({ docs });
+    const abutmentDeliveryById = await mapAbutmentDeliveryByTransferDocs(docs);
 
     let practiceRatings = [];
     const practiceAnchorForRatings = String(
@@ -3627,10 +3630,13 @@ export async function getMyPracticeTransfers(req, res) {
           const labRating = toPracticeLabRatingPublicApi(
             findPracticeLabRating(ratings, labId),
           );
+          const abutmentDeliveryInfo =
+            abutmentDeliveryById.get(String(doc?._id || "")) || null;
           return toVirtualRequestRows(doc).map((row) => ({
             ...row,
             feeQuote,
             labRating,
+            abutmentDeliveryInfo,
           }));
         });
         return res.status(200).json({
@@ -3655,10 +3661,13 @@ export async function getMyPracticeTransfers(req, res) {
       const labRating = toPracticeLabRatingPublicApi(
         findPracticeLabRating(practiceRatings, labId),
       );
+      const abutmentDeliveryInfo =
+        abutmentDeliveryById.get(String(doc?._id || "")) || null;
       return toVirtualRequestRows(doc).map((row) => ({
         ...row,
         feeQuote,
         labRating,
+        abutmentDeliveryInfo,
       }));
     });
 
