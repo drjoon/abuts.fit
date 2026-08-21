@@ -24,7 +24,7 @@ const chatSchema = new mongoose.Schema(
       default: "user",
       index: true,
     },
-    // system 전용 이벤트 키. 예: work_accept, work_cancel
+    // system 전용 이벤트 키. 예: work_cancel, awaiting_production_confirm
     systemEvent: {
       type: String,
       default: null,

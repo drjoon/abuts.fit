@@ -5,6 +5,7 @@
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 // change-log:
 // - 2026-08-20: 기공소 변경 시 이전 기공소 유저를 채팅 참가자에서 제거.
+// - 2026-08-21: systemEvent awaiting_production_confirm / awaiting_design_confirm (치과 대응 요청).
 import { Types } from "mongoose";
 import Chat from "../models/chat.model.js";
 import ChatRoom from "../models/chatRoom.model.js";
@@ -103,7 +104,8 @@ export async function pullUsersFromPracticeTransferChatRoom({
 
 /**
  * PracticeTransfer 채팅방에 시스템 이벤트 메시지를 남긴다.
- * 유저 말풍선이 아니라 상태 변경 기록(작업취소 등)용.
+ * 치과 대응이 필요한 상태 변경(작업취소·거부·생산/디자인 컨펌 요청 등)용.
+ * 수락·어벗/보철 업로드 등 대응 불필요 이벤트에는 쓰지 않는다.
  * @returns {Promise<object|null>}
  */
 export async function postPracticeTransferSystemChatMessage({

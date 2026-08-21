@@ -168,7 +168,8 @@ import { resolvePracticeTransferSkipJig } from "../../utils/practiceTransferLabS
 // - 2026-08-14: mark-accepted — 과금 직후 응답, billing $set, 사이드이펙트 비동기.
 // - 2026-08-15: mark-accepted — billing+accept $set 병합, 과금 저널/수수료 조회 병렬.
 // - 2026-08-14: mark-release — updateOne + 사이드이펙트 비동기(채팅/emit은 응답 후).
-// - 2026-08-14: 수락도 작업취소와 같이 채팅 시스템 메시지(work_accept) 남김.
+// - 2026-08-21: 채팅 시스템 메시지는 치과 대응이 필요할 때만(취소·거부·생산진행/디자인컨펌 요청). 수락·업로드는 남기지 않음.
+// - 2026-08-14: 수락도 작업취소와 같이 채팅 시스템 메시지(work_accept) 남김. → 2026-08-21 철회.
 // - 2026-08-14: mark-accepted — 치과 practice:transfer-updated에 확정 feeQuote 포함.
 // - 2026-08-16: mark-reject 지정=작업취소(치과 취소·휴지통 아님). mark-release auto=자동매칭 재공개.
 // - 2026-08-16: 수신 목록 — 별점 다운그레이드(유효별>의뢰별 수가) 페이로드.
@@ -4637,7 +4638,8 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
           action: "auto-match-claimed",
           source: "autoMatchClaim",
         },
-        systemChatContent: "의뢰를 수락했습니다.",
+        // 수락은 치과 대응 불필요 — 채팅 시스템 메시지 없음
+        systemChatContent: "",
       });
 
       return res.status(200).json({
@@ -4804,11 +4806,6 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
     };
 
     emitAppEventToUser(req.user?._id, "practice:transfer-updated", realtimePayload);
-    const labLabelForChat =
-      String(doc.targetLabName || "").trim() &&
-      String(doc.targetLabName || "").trim() !== AUTO_MATCH_LAB_DISPLAY_NAME
-        ? String(doc.targetLabName || "").trim()
-        : "기공소";
     scheduleAcceptSideEffects({
       doc,
       labAnchorId,
@@ -4818,10 +4815,8 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
       billingResult,
       realtimePayload,
       practiceRealtimePayload: realtimePayload,
-      // 이미 수락된 건 재진입 시 시스템 메시지 중복 방지
-      systemChatContent: alreadyAccepted
-        ? ""
-        : `기공소「${labLabelForChat}」이(가) 의뢰를 수락했습니다.`,
+      // 수락은 치과 대응 불필요 — 채팅 시스템 메시지 없음(방 생성만)
+      systemChatContent: "",
     });
 
     return res.status(200).json({
@@ -5112,6 +5107,18 @@ export async function markReceivedPracticeTransferComplete(req, res) {
         payload: realtimePayload,
       }),
     ];
+    // 디자인컨펌생략 OFF → 치과 「생산 진행」 대응 필요
+    if (!confirmedAt) {
+      emitJobs.push(
+        postPracticeTransferSystemChatMessage({
+          transferMongoId: doc._id,
+          senderUserId: req.user?._id,
+          content:
+            "작업이 완료되었습니다. 결과 파일을 확인한 뒤 「생산 진행」해 주세요.",
+          systemEvent: "awaiting_production_confirm",
+        }),
+      );
+    }
     if (releaseResult?.released) {
       const settlement = Number(releaseResult.labSettlementAmount || 0);
       if (settlement !== 0 && doc.targetLabAnchorId) {

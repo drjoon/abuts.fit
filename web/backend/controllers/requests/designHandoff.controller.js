@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-08-21: 구강스캔으로(PTX) 핸드오프 시 skipDesignConfirm 강제 true 제거 — 치과 설정 존중·컨펌 채팅.
+// - 2026-08-21: 치과 디자인 컨펌이 필요할 때만 채팅 시스템 메시지(awaiting_design_confirm).
 // - 2026-08-18: 제조사 준비 큐 진입(생산 승격) 시 로트번호(3글자)를 발급한다.
 // - 2026-08-16: 다치아 생산 취소 시 연동 Request 전원 구강스캔 복원.
 // - 2026-08-16: 생산 취소 가드 — stage뿐 아니라 actualCamStart(가공 진입 중)도 차단.
@@ -42,6 +44,7 @@ import {
   mirrorDesignFileToPracticeTransfer,
   repriceAndReschedulePtxAbutmentRequest,
 } from "../../services/practiceTransferProduction.service.js";
+import { postPracticeTransferSystemChatMessage } from "../../services/chatSystemMessage.service.js";
 import {
   grantAbutmentDesignLabFee,
   revokeAbutmentDesignLabFee,
@@ -532,6 +535,9 @@ export async function handoffDesignToProduction(req, res) {
       await request.save();
 
       try {
+        const priorDesignCount = Array.isArray(transferDoc?.production?.designFiles)
+          ? transferDoc.production.designFiles.length
+          : 0;
         await mirrorDesignFileToPracticeTransfer({
           transferId: relatedTransferId,
           file: {
@@ -545,6 +551,8 @@ export async function handoffDesignToProduction(req, res) {
         });
 
         if (transferDoc && isAcceptingLab) {
+          // 구강스캔으로(기공의뢰) — 수락 lab이 디자인해 올려도 치과 skipDesignConfirm을 존중.
+          // (어벗생산의뢰 단독 Request는 relatedPracticeTransferId가 없어 이 분기를 타지 않음)
           const productionPatch = {
             ...(transferDoc.production && typeof transferDoc.production === "object"
               ? transferDoc.production
@@ -553,8 +561,6 @@ export async function handoffDesignToProduction(req, res) {
               transferDoc.production?.labDesignConfirmedAt || now,
             labDesignConfirmedBy:
               transferDoc.production?.labDesignConfirmedBy || req.user?._id || null,
-            // 수락 기공소가 직접 디자인 → 치과 컨펌 게이트 생략
-            skipDesignConfirm: true,
           };
           transferDoc.production = productionPatch;
           await PracticeTransfer.updateOne(
@@ -565,7 +571,6 @@ export async function handoffDesignToProduction(req, res) {
                   productionPatch.labDesignConfirmedAt,
                 "production.labDesignConfirmedBy":
                   productionPatch.labDesignConfirmedBy,
-                "production.skipDesignConfirm": true,
               },
             },
           );
@@ -584,6 +589,22 @@ export async function handoffDesignToProduction(req, res) {
               grantErr,
             );
           }
+        }
+
+        // 디자인컨펌생략 OFF + 첫 디자인 도착 → 치과 「어벗 디자인 컨펌」 필요(채팅 안내)
+        if (
+          transferDoc &&
+          priorDesignCount === 0 &&
+          transferDoc.production?.skipDesignConfirm === false &&
+          !transferDoc.production?.practiceDesignConfirmedAt
+        ) {
+          void postPracticeTransferSystemChatMessage({
+            transferMongoId: transferDoc._id,
+            senderUserId: userId,
+            content:
+              "어벗 디자인이 준비되었습니다. 확인한 뒤 「어벗 디자인 컨펌」해 주세요.",
+            systemEvent: "awaiting_design_confirm",
+          });
         }
       } catch (mirrorErr) {
         console.error("[DESIGN_HANDOFF] PTX mirror failed after request save", mirrorErr);

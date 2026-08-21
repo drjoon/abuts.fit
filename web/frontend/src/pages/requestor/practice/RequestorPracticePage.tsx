@@ -22,6 +22,7 @@
 // - web/frontend/src/shared/practice/labReceiveCalendarDateKey.ts
 // - web/backend/utils/labReceiveCalendarDateKey.util.js
 // - web/backend/controllers/users/user.controller.js
+// - 2026-08-21: 어벗 디자인 업로드 후 skipDesignConfirm 강제 true 제거(구강스캔으로 치과 설정 존중).
 // - 2026-08-21: 하청 전환 버튼 — 어벗츠기공소(internalLab)만 노출.
 // - 2026-08-21: 어벗 STL 업로드 — relatedRequestIds 없으면 보정 재시도. 구강스캔 필수로 오인하는 토스트 제거.
 // - 2026-08-21: 캘린더 전환 후 상세 모달에 어벗·보철 업로드 CTA 복원.
@@ -3872,7 +3873,7 @@ export function RequestorPracticeReceivePage({
           designReadyAt: transfer.production?.designReadyAt || nowIso,
           labDesignConfirmedAt:
             transfer.production?.labDesignConfirmedAt || nowIso,
-          skipDesignConfirm: true,
+          // 구강스캔으로: 치과 skipDesignConfirm 유지(업로드로 강제 생략하지 않음)
           abutmentProductionStartedAt: null,
           abutmentPastReady: false,
         };
