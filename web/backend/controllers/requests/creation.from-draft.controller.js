@@ -8,6 +8,7 @@
 // - web/frontend/src/pages/requestor/new_request/hooks/useNewRequestSubmitV2.ts
 // - web/backend/rules.md
 // change-log:
+// - 2026-08-21: 제출 지연 단축. 대시보드 refresh는 201 전송 이후, 응답 data는 requestIds lean.
 // - 2026-08-21: 아노 미설정 폴백을 의뢰자 개인 requestSettings 우선(사업체→기본 ON). 사업체-only race 완화.
 // - 2026-08-19: 제출 트랜잭션에서 크레딧 보류는 잔액 집계 1회·가드 1회로 재사용.
 // - 2026-08-19: 제출 지연 단축. 공휴일/devops prefetch, 리메이크 가격 조회 생략,
@@ -30,6 +31,7 @@ import User from "../../models/user.model.js";
 import {
   normalizeExoCadVersion,
   normalizeHexVerificationResultHex,
+  isHexVerificationPending,
   resolveExoCadManufacturerHexRotation,
   resolveHexRotationByDesignSoftware,
 } from "../../utils/designSoftwareHex.js";
@@ -1255,6 +1257,7 @@ export async function createRequestsFromDraft(req, res) {
 
     const requestIds = generateRequestIdBatch(preparedCasesForCreate.length);
     let session = null;
+    let deferredDashboardRefreshAnchorId = null;
     try {
       const [, startedSession] = await Promise.all([
         Promise.all(
@@ -1518,13 +1521,11 @@ export async function createRequestsFromDraft(req, res) {
               resolvedExoCadVersion,
             );
 
-          // 첫의뢰 확인용(pending true/미기록)이면 버전 기반 원본 헥스를 강제.
-          const hexVerificationPending =
-            resolvedDesignSoftware === "ExoCAD" &&
-            requestorSettingsDoc?.requestSettings
-              ?.hexVerificationSamplePending !== false &&
-            shippingOrg?.requestSettings?.hexVerificationSamplePending !==
-              false;
+          // 관리자 hexVerificationResultHex 미확정이면 버전 기반 원본 헥스 강제.
+          const hexVerificationPending = isHexVerificationPending({
+            designSoftware: resolvedDesignSoftware,
+            adminVerifiedHex: requestorAdminVerifiedHex,
+          });
 
           // ExoCAD: 제조사 > 관리자 확정 > 디자인SW. pending이면 디자인SW 강제.
           const resolvedManufacturerHexRotation =
@@ -1846,11 +1847,6 @@ export async function createRequestsFromDraft(req, res) {
         } catch {
           // best-effort
         }
-        console.log("[createRequestsFromDraft] Triggering dashboard refresh", {
-          businessAnchorId: createdAnchorId,
-          createdCount: createdRequests.length,
-          requestIds: createdRequests.map((r) => r.requestId),
-        });
         if (!isPracticeRoutingSubmission && createdRequests.length > 0) {
           try {
             const { emitCreditBalanceUpdatedToBusiness } = await import(
@@ -1867,15 +1863,8 @@ export async function createRequestsFromDraft(req, res) {
             // best-effort
           }
         }
-        triggerDashboardSummaryRefreshForAnchorId(
-          createdAnchorId,
-          "request-created",
-        ).catch((err) =>
-          console.error(
-            "[createRequestsFromDraft] dashboard refresh error",
-            err,
-          ),
-        );
+        // 대시보드 스냅샷 재계산은 201 전송 이후에만 시작 (응답·Mongo 풀 경합 방지)
+        deferredDashboardRefreshAnchorId = createdAnchorId;
       } else {
         console.warn(
           "[createRequestsFromDraft] No businessAnchorId for dashboard refresh",
@@ -1999,10 +1988,41 @@ export async function createRequestsFromDraft(req, res) {
       );
     }
 
+    const leanCreated = {
+      count: createdRequests.length,
+      requestIds: createdRequests
+        .map((row) => String(row?.requestId || "").trim())
+        .filter(Boolean),
+      requestMongoIds: createdRequests
+        .map((row) => String(row?._id || "").trim())
+        .filter(Boolean),
+    };
+
+    if (deferredDashboardRefreshAnchorId) {
+      const refreshAnchorId = deferredDashboardRefreshAnchorId;
+      const refreshRequestIds = leanCreated.requestIds;
+      res.once("finish", () => {
+        console.log("[createRequestsFromDraft] Triggering dashboard refresh", {
+          businessAnchorId: refreshAnchorId,
+          createdCount: leanCreated.count,
+          requestIds: refreshRequestIds,
+        });
+        triggerDashboardSummaryRefreshForAnchorId(
+          refreshAnchorId,
+          "request-created",
+        ).catch((err) =>
+          console.error(
+            "[createRequestsFromDraft] dashboard refresh error",
+            err,
+          ),
+        );
+      });
+    }
+
     return res.status(201).json({
       success: true,
       message: `${createdRequests.length}건의 의뢰가 Draft에서 생성되었습니다.`,
-      data: createdRequests,
+      data: leanCreated,
       ...(warningParts.length > 0 && {
         warning: warningParts.join(" "),
       }),

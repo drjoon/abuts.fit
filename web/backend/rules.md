@@ -662,9 +662,11 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     같은 제출에서 원장 잔액 집계·CreditBalanceGuard 락은 앵커당 1회 재사용(`holdRequestCreditsOnSubmit`).
     신규 제출 보류 저널은 선행 idempotency 조회 없이 `postGeneralLedgerJournals` insertMany 1회.
     같은 출고일 배송비 보류 형제 저널은 `getJournalsByIdempotencyKeys`로 그룹당 1회 조회.
+    기존 형제 보류 없이 이번 제출에서 배송비 hold만 새로 올린 그룹은 reconcile 재조회 skip.
     `from-draft`는 가격기준일·devops·공휴일·생산스케줄을 트랜잭션 밖에서 prefetch/memo하고,
     리메이크 가격 조회는 중복 조회 결과를 재사용하며, requestId는 로컬 생성, 세션 시작은 스케줄과 병렬,
     로트번호는 `$inc` 1회로 발급한다.
+    대시보드 스냅샷 refresh는 201 응답 `finish` 이후, 성공 body는 `{ count, requestIds, requestMongoIds }` lean.
   - `REQUEST_SPEND_COMMIT`: **가공 진입 승인(준비→가공)** 시 보류→매출(레거시 무보류만 실차감)
   - `SHIPPING_SPEND_COMMIT`: **집하(우편함 비우기)** 시 배송 보류→매출. 포장.발송 진입에서는 우편함만 확인한다.
   - 우편함 합류: 합류 의뢰의 중복 `SHIPPING_SPEND_HOLD` 해제. 칸당 보류 1개 불변.

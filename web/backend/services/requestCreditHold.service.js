@@ -7,6 +7,7 @@
 // - web/backend/controllers/requests/common.review.helpers.js
 // - web/backend/controllers/requests/mailbox.utils.js
 // change-log:
+// - 2026-08-21: 신규 배송비 hold만 올린 그룹은 reconcile 재조회 skip. hold 구간 dt 로그.
 // - 2026-08-19: 같은 출고일 배송비 보류는 형제 목록+저널을 그룹당 1회 배치 조회.
 // - 2026-08-19: 일괄 취소 시 같은 박스에서 함께 취소되는 형제의 배송비 재보류를 생략.
 // - 2026-08-19: 어벗디자인·어벗생산 배송비는 의뢰 사업자+예정출고일 1회(치과명 무관).
@@ -706,6 +707,15 @@ export async function holdRequestCreditsOnSubmit({
   const list = (Array.isArray(requests) ? requests : []).filter(Boolean);
   if (!list.length) return { held: false, reason: "empty" };
 
+  const holdT0 = Date.now();
+  const timing = {
+    lockMs: 0,
+    shipBoxLoadMs: 0,
+    postJournalsMs: 0,
+    reconcileMs: 0,
+    reconcileSkipped: 0,
+  };
+
   const devopsAnchorId =
     String(devopsAnchorIdArg || "").trim() ||
     (await resolveDevopsEscrowOwnerId(session));
@@ -723,6 +733,8 @@ export async function holdRequestCreditsOnSubmit({
   const shippingGroupHeld = new Set();
   const shipBoxRequests = [];
   const shipBoxStateByKey = new Map();
+  // 기존 형제 보류 없이 이번 제출에서 배송비 hold를 새로 올린 그룹 → reconcile no-op 확정
+  const shippingGroupsNewHoldOnly = new Set();
   const lockedAnchors = new Set();
   const balanceByAnchor = new Map();
   let totalHeld = 0;
@@ -730,10 +742,12 @@ export async function holdRequestCreditsOnSubmit({
 
   const takeCachedBalance = async (requestorAnchorId) => {
     if (!lockedAnchors.has(requestorAnchorId)) {
+      const lockT0 = Date.now();
       await lockCreditBalanceGuardByAnchor({
         businessAnchorId: requestorAnchorId,
         session,
       });
+      timing.lockMs += Date.now() - lockT0;
       lockedAnchors.add(requestorAnchorId);
     }
     const cached = balanceByAnchor.get(requestorAnchorId);
@@ -834,12 +848,14 @@ export async function holdRequestCreditsOnSubmit({
       if (!shippingGroupHeld.has(groupKey)) {
         let boxState = shipBoxStateByKey.get(groupKey);
         if (!boxState) {
+          const shipT0 = Date.now();
           boxState = await loadRequesterShipBoxHoldState({
             request,
             requestorAnchorId,
             session,
             includeSelf: true,
           });
+          timing.shipBoxLoadMs += Date.now() - shipT0;
           shipBoxStateByKey.set(groupKey, boxState);
         }
         const existing = findHoldInShipBoxState(boxState, {
@@ -849,6 +865,7 @@ export async function holdRequestCreditsOnSubmit({
           shippingGroupHeld.add(groupKey);
         } else {
           shippingGroupHeld.add(groupKey);
+          shippingGroupsNewHoldOnly.add(groupKey);
           await queueHold({
             request,
             requestorAnchorId,
@@ -866,10 +883,12 @@ export async function holdRequestCreditsOnSubmit({
   }
 
   if (pendingJournals.length > 0) {
+    const postT0 = Date.now();
     const posted = await postGeneralLedgerJournals({
       entries: pendingJournals,
       session,
     });
+    timing.postJournalsMs += Date.now() - postT0;
     let postedIdx = 0;
     for (const row of results) {
       if (row?.reason !== "prepared") continue;
@@ -891,12 +910,27 @@ export async function holdRequestCreditsOnSubmit({
   const reconciledKeys = new Set();
   const postedShippingGroups = new Set(
     results
-      .filter((row) => row?.kind === "shipping_fee" && row?.reason === "posted" && row?.groupKey)
+      .filter(
+        (row) =>
+          row?.kind === "shipping_fee" &&
+          row?.reason === "posted" &&
+          row?.groupKey,
+      )
       .map((row) => row.groupKey),
   );
   for (const row of shipBoxRequests) {
     if (reconciledKeys.has(row.groupKey)) continue;
     reconciledKeys.add(row.groupKey);
+    // 기존 형제 보류가 없어 이번 제출에서 배송비 hold를 새로 올렸으면
+    // holds.length <= 1 확정 → reconcile 재조회 생략
+    if (
+      shippingGroupsNewHoldOnly.has(row.groupKey) &&
+      postedShippingGroups.has(row.groupKey)
+    ) {
+      timing.reconcileSkipped += 1;
+      continue;
+    }
+    const reconT0 = Date.now();
     await reconcileRequesterShipBoxShippingHolds({
       request: row.request,
       requestorAnchorId: row.requestorAnchorId,
@@ -904,6 +938,15 @@ export async function holdRequestCreditsOnSubmit({
       preloadedState: postedShippingGroups.has(row.groupKey)
         ? null
         : shipBoxStateByKey.get(row.groupKey),
+    });
+    timing.reconcileMs += Date.now() - reconT0;
+  }
+
+  if (process.env.NODE_ENV !== "production") {
+    console.log("[holdRequestCreditsOnSubmit] timing", {
+      dt: Date.now() - holdT0,
+      requests: list.length,
+      ...timing,
     });
   }
 
