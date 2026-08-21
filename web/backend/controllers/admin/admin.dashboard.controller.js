@@ -3,9 +3,12 @@
 // - web/backend/models/businessAnchor.model.js
 // - web/backend/models/practiceTransfer.model.js
 // - web/backend/models/ledgerLine.model.js
+// - web/backend/services/unsupportedAbutmentDashboardStats.service.js
 // - web/frontend/src/features/settings/tabs/RequestTab.tsx
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/frontend/src/pages/admin/dashboard/AdminDashboardPage.tsx
+// change-log:
+// - 2026-08-21: unsupportedAbutmentStats — 미제공(요청중) 어벗 대시보드 집계.
 import User from "../../models/user.model.js";
 import Request from "../../models/request.model.js";
 import PracticeTransfer from "../../models/practiceTransfer.model.js";
@@ -28,6 +31,7 @@ import {
   withRequestPerfInFlight,
 } from "../../services/requestDashboardCache.service.js";
 import { collectHappyCallReasonCodes } from "./happyCallReasons.js";
+import { buildUnsupportedAbutmentDashboardStats } from "../../services/unsupportedAbutmentDashboardStats.service.js";
 
 const HAPPY_CALL_REASON_META = {
   first_completion_this_week: {
@@ -331,6 +335,7 @@ async function buildAdminDashboardPayload(req) {
       practiceTransferTopPracticesRaw,
       practiceTransferTopLabsRaw,
       practiceTransferRecentRaw,
+      unsupportedAbutmentStats,
     ] = await Promise.all([
       User.aggregate([{ $group: { _id: "$role", count: { $sum: 1 } } }]),
       User.countDocuments({ role: "requestor" }),
@@ -661,6 +666,7 @@ async function buildAdminDashboardPayload(req) {
           },
         },
       ]),
+      buildUnsupportedAbutmentDashboardStats(),
     ]);
 
     const userStatsByRole = {};
@@ -1215,6 +1221,13 @@ async function buildAdminDashboardPayload(req) {
           recentTransfers: Array.isArray(practiceTransferRecentRaw)
             ? practiceTransferRecentRaw
             : [],
+        },
+        unsupportedAbutmentStats: unsupportedAbutmentStats || {
+          pending: 0,
+          adoptedCnc: 0,
+          adoptedRoundBar: 0,
+          total: 0,
+          items: [],
         },
         // 상세 mismatch 목록은 응답에서 제외(알림만 유지). 용량·지연 절감.
         creditFlowHealth: {

@@ -18,7 +18,9 @@ import { emitAppEventToRoles } from "../../socket.js";
 import {
   ROUND_BAR_HEX_TYPE,
   ROUND_BAR_INQUIRY_TYPE,
+  IMPLANT_ADD_REQUEST_OPTION,
   buildRoundBarSpecKey,
+  isImplantAddRequest,
   normalizeAdoptedKind,
   normalizeRoundBarSpec,
 } from "../../utils/roundBarAbutment.js";
@@ -68,13 +70,17 @@ const normalizeFavoriteRow = (raw) => {
   const type = String(row.type || "").trim();
   if (!manufacturer && !brand && !family && !type) return null;
   const roundBarRequestId = String(row.roundBarRequestId || "").trim();
+  const implantAddRequest =
+    Boolean(row.implantAddRequest) || isImplantAddRequest(row);
   return {
     id: String(row.id || "").trim(),
     manufacturer,
     brand,
     family,
-    type,
-    roundBar: Boolean(row.roundBar) || Boolean(roundBarRequestId),
+    type:
+      implantAddRequest && !type ? IMPLANT_ADD_REQUEST_OPTION : type,
+    roundBar: Boolean(row.roundBar) || Boolean(roundBarRequestId) || implantAddRequest,
+    implantAddRequest: implantAddRequest || undefined,
     adopted: Boolean(row.adopted),
     adoptedKind: normalizeAdoptedKind(row.adoptedKind),
     roundBarRequestId,
@@ -105,6 +111,7 @@ const upsertFavoriteOnAnchor = async ({
     family: spec.family,
     type: spec.type || ROUND_BAR_HEX_TYPE,
     roundBar: true,
+    implantAddRequest: Boolean(spec.implantAddRequest) || isImplantAddRequest(spec),
     adopted: Boolean(adopted),
     adoptedKind: normalizeAdoptedKind(adoptedKind),
     roundBarRequestId: String(roundBarRequestId || "").trim(),
@@ -158,7 +165,9 @@ const toResponse = (doc) => {
     manufacturer: String(row.manufacturer || "").trim(),
     brand: String(row.brand || "").trim(),
     family: String(row.family || "").trim(),
-    type: String(row.type || ROUND_BAR_HEX_TYPE).trim() || ROUND_BAR_HEX_TYPE,
+    type: String(row.type || "").trim() ||
+      (isImplantAddRequest(row) ? IMPLANT_ADD_REQUEST_OPTION : ROUND_BAR_HEX_TYPE),
+    implantAddRequest: isImplantAddRequest(row),
     adopted: Boolean(row.adopted),
     adoptedKind: normalizeAdoptedKind(row.adoptedKind),
     adoptedAt: row.adoptedAt || null,
@@ -224,7 +233,7 @@ export async function createRoundBarAbutmentRequest(req, res) {
       requestDoc.manufacturer = spec.manufacturer;
       requestDoc.brand = spec.brand;
       requestDoc.family = spec.family;
-      requestDoc.type = ROUND_BAR_HEX_TYPE;
+      requestDoc.type = spec.type || IMPLANT_ADD_REQUEST_OPTION;
       requestDoc.specKey = specKey;
       requestDoc.practiceName = practiceName;
       if (favoriteIdInput) requestDoc.favoriteId = favoriteIdInput;
@@ -236,6 +245,7 @@ export async function createRoundBarAbutmentRequest(req, res) {
         spec,
         roundBarRequestId: String(requestDoc._id),
         adopted: Boolean(requestDoc.adopted),
+        adoptedKind: requestDoc.adoptedKind,
       });
       if (favorite.id && favorite.id !== requestDoc.favoriteId) {
         requestDoc.favoriteId = favorite.id;
@@ -258,7 +268,7 @@ export async function createRoundBarAbutmentRequest(req, res) {
       `제조사: ${spec.manufacturer}`,
       `브랜드: ${spec.brand}`,
       `패밀리: ${spec.family}`,
-      `타입: ${ROUND_BAR_HEX_TYPE}`,
+      `타입: ${spec.type || IMPLANT_ADD_REQUEST_OPTION}`,
     ].join("\n");
 
     const inquiry = await BusinessRegistrationInquiry.create({
@@ -274,7 +284,8 @@ export async function createRoundBarAbutmentRequest(req, res) {
         manufacturer: spec.manufacturer,
         brand: spec.brand,
         family: spec.family,
-        type: ROUND_BAR_HEX_TYPE,
+        type: spec.type || IMPLANT_ADD_REQUEST_OPTION,
+        implantAddRequest: true,
       },
     });
 
@@ -296,7 +307,7 @@ export async function createRoundBarAbutmentRequest(req, res) {
       manufacturer: spec.manufacturer,
       brand: spec.brand,
       family: spec.family,
-      type: ROUND_BAR_HEX_TYPE,
+      type: spec.type || IMPLANT_ADD_REQUEST_OPTION,
       specKey,
       adopted: false,
     });

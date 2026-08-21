@@ -22,6 +22,10 @@
 // - 2026-08-19: 브리지 연결 시 한쪽이 임시치아이면 스팬 전체가 임시치아. 커스텀 규격은 형태와 무관하게 유지.
 // - 2026-08-20: Pontic UI 제거. 레거시 Pontic은 브리지로 정규화(기공소가 지대치 없음을 추론).
 import { isPendingRoundBarAbutment } from "@/shared/practice/labFeeSchedule";
+import {
+  IMPLANT_ADD_REQUEST_OPTION,
+  MANUFACTURER_ADD_REQUEST_BRAND,
+} from "@/shared/practice/roundBarAbutment";
 
 export const ABUTMENT_PRODUCT_MODE = {
   PRODUCTION: "custom_abutment",
@@ -69,6 +73,8 @@ export type ToothWorkSelection = {
   implantBrand?: string;
   implantFamily?: string;
   implantType?: string;
+  /** 「임플란트 추가 요청」옵션 — 어벗츠 CNC 미제공·기공소 직접 CNC */
+  implantAddRequest?: boolean;
   /** 커스텀어벗 규격 (제조사/직경/높이) */
   abutmentManufacturer?: string;
   abutmentDiameter?: string;
@@ -148,6 +154,8 @@ export type PracticeImplantFavorite = {
   family: string;
   type: string;
   roundBar?: boolean;
+  /** 「임플란트 추가 요청」옵션 */
+  implantAddRequest?: boolean;
   adopted?: boolean;
   adoptedKind?: "cnc" | "round_bar" | "";
   roundBarRequestId?: string;
@@ -165,6 +173,7 @@ export const emptyToothWorkImplant = () => ({
   implantBrand: "",
   implantFamily: "",
   implantType: "",
+  implantAddRequest: false,
 });
 
 export const emptyToothWorkAbutment = () => ({
@@ -183,11 +192,18 @@ export const pickToothWorkImplant = (
   customAbutment: boolean,
 ) => {
   if (!customAbutment) return emptyToothWorkImplant();
+  const implantBrand = String(row?.implantBrand || "").trim();
+  const implantType = String(row?.implantType || "").trim();
+  const implantAddRequest =
+    Boolean(row?.implantAddRequest) ||
+    implantBrand === MANUFACTURER_ADD_REQUEST_BRAND ||
+    implantType === IMPLANT_ADD_REQUEST_OPTION;
   return {
     implantManufacturer: String(row?.implantManufacturer || "").trim(),
-    implantBrand: String(row?.implantBrand || "").trim(),
+    implantBrand,
     implantFamily: String(row?.implantFamily || "").trim(),
-    implantType: String(row?.implantType || "").trim(),
+    implantType,
+    implantAddRequest,
   };
 };
 
@@ -246,8 +262,14 @@ export const formatImplantSummary = (
 ) => {
   const manufacturer = String(row?.implantManufacturer || "").trim();
   const brand = String(row?.implantBrand || "").trim();
-  // 제조사 추가 요청(메모만) — brand=추가요청 자리표시는 숨김
-  if (brand === "추가요청") return manufacturer;
+  // 임플란트 추가 요청(메모만) — brand/type 옵션 자리표시는 숨김
+  if (
+    Boolean(row?.implantAddRequest) ||
+    brand === MANUFACTURER_ADD_REQUEST_BRAND ||
+    String(row?.implantType || "").trim() === IMPLANT_ADD_REQUEST_OPTION
+  ) {
+    return manufacturer || IMPLANT_ADD_REQUEST_OPTION;
+  }
   return [manufacturer, brand, row?.implantFamily, row?.implantType]
     .map((v) => String(v || "").trim())
     .filter(Boolean)
@@ -408,15 +430,20 @@ export const normalizeImplantFavorites = (items: unknown): PracticeImplantFavori
     const id = String(row.id || "").trim() || `imp-${out.length + 1}-${key.slice(0, 24)}`;
     const roundBarRequestId = String(row.roundBarRequestId || "").trim();
     const roundBar = Boolean(row.roundBar) || Boolean(roundBarRequestId);
+    const implantAddRequest =
+      Boolean(row.implantAddRequest) ||
+      brand === MANUFACTURER_ADD_REQUEST_BRAND ||
+      type === IMPLANT_ADD_REQUEST_OPTION;
     const nextRow: PracticeImplantFavorite = {
       id,
       manufacturer,
       brand,
       family,
-      type,
-      ...(roundBar
+      type: implantAddRequest && !type ? IMPLANT_ADD_REQUEST_OPTION : type,
+      ...(roundBar || implantAddRequest
         ? {
             roundBar: true,
+            implantAddRequest: implantAddRequest || undefined,
             adopted: Boolean(row.adopted),
             adoptedKind:
               String(row.adoptedKind || "").trim() === "round_bar"

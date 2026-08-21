@@ -29,6 +29,10 @@ import {
   type AbutsAbutmentCreditPrices,
   type AbutsAbutmentPricingTier,
 } from "@/shared/pricing/abutsAbutmentService";
+import {
+  IMPLANT_ADD_REQUEST_OPTION,
+  MANUFACTURER_ADD_REQUEST_BRAND,
+} from "@/shared/practice/roundBarAbutment";
 
 /** 기공수가 할증 배수. 1=없음, 최대 5, 소수 둘째 자리. */
 export const normalizeLabFeeMultiplier = (value: unknown): number => {
@@ -280,7 +284,7 @@ export const isCustomAbutmentWork = (row?: {
   return Boolean(row?.hasCustomAbutment) || Boolean(row?.customAbutment);
 };
 
-/** 환봉 제조사 추가요청 타입. `roundBarAbutment.ts`와 동일 문자열 */
+/** @deprecated pending 판별은 IMPLANT_ADD_REQUEST_OPTION / implantAddRequest 사용 */
 export const ROUND_BAR_PENDING_IMPLANT_TYPE = "헥스(사이즈 미정)";
 
 export type ImplantFavoriteForFee = {
@@ -289,6 +293,7 @@ export type ImplantFavoriteForFee = {
   family?: string;
   type?: string;
   roundBar?: boolean;
+  implantAddRequest?: boolean;
   adopted?: boolean;
   adoptedKind?: "cnc" | "round_bar" | "";
   roundBarRequestId?: string;
@@ -299,6 +304,9 @@ type RoundBarToothRow = {
   implantManufacturer?: string;
   implantBrand?: string;
   implantFamily?: string;
+  brand?: string;
+  type?: string;
+  implantAddRequest?: boolean;
   roundBar?: boolean;
   roundBarAdopted?: boolean;
   adopted?: boolean;
@@ -370,16 +378,24 @@ const findRoundBarFavoriteForFee = (
   );
 };
 
-/** 환봉생산 서비스 추가 요청중(미도입). 도입되면 어벗츠 어벗 */
+/** 환봉·임플란트 추가 요청(미도입). 도입되면 어벗츠 어벗.
+ * pending 판별 SSOT: implantAddRequest / roundBar 플래그·요청ID·brand=추가요청·type=임플란트 추가 요청.
+ * implantType=헥스(사이즈 미정)만으로는 판별하지 않는다.
+ */
 export const isPendingRoundBarAbutment = (
   row?: RoundBarToothRow | null,
   favorites?: ReadonlyArray<ImplantFavoriteForFee> | null,
 ) => {
   if (!row) return false;
-  const type = String(row.implantType || "").trim();
+  const brand = String(row.implantBrand || row.brand || "").trim();
+  const type = String(row.implantType || row.type || "").trim();
   const flagged =
-    Boolean(row.roundBar) || Boolean(String(row.roundBarRequestId || "").trim());
-  if (!flagged && type !== ROUND_BAR_PENDING_IMPLANT_TYPE) return false;
+    Boolean(row.implantAddRequest) ||
+    Boolean(row.roundBar) ||
+    Boolean(String(row.roundBarRequestId || "").trim()) ||
+    brand === MANUFACTURER_ADD_REQUEST_BRAND ||
+    type === IMPLANT_ADD_REQUEST_OPTION;
+  if (!flagged) return false;
   if (row.roundBarAdopted === true || row.adopted === true) return false;
   const list = Array.isArray(favorites) ? favorites : [];
   if (list.length === 0) return true;

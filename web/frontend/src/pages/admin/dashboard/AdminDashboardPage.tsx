@@ -48,6 +48,7 @@ import {
   Code2,
   UploadCloud,
   Send,
+  Puzzle,
   type LucideIcon,
 } from "lucide-react";
 
@@ -144,6 +145,7 @@ type AdminDashboardResponseData = {
   };
   systemAlerts?: DashboardData["systemAlerts"];
   practiceTransferStats?: PracticeTransferStats;
+  unsupportedAbutmentStats?: UnsupportedAbutmentStats;
 };
 
 type DashboardData = {
@@ -288,6 +290,55 @@ type PracticeTransferStats = {
     fileCount?: number;
     createdAt?: string;
   }>;
+};
+
+type UnsupportedAbutmentStatus =
+  | "pending"
+  | "adopted_cnc"
+  | "adopted_round_bar";
+
+type UnsupportedAbutmentTransferUsage = {
+  transferId?: string;
+  transferMongoId?: string;
+  labName?: string;
+  labAnchorId?: string;
+  matchingMode?: string | null;
+  createdAt?: string | null;
+  teeth?: string[];
+  implantManufacturer?: string;
+  implantBrand?: string;
+  implantFamily?: string;
+  implantType?: string;
+};
+
+type UnsupportedAbutmentItem = {
+  id: string;
+  status: UnsupportedAbutmentStatus;
+  practiceAnchorId?: string;
+  practiceName?: string;
+  manufacturer?: string;
+  brand?: string;
+  family?: string;
+  type?: string;
+  implantLabel?: string;
+  isManufacturerAddRequest?: boolean;
+  adopted?: boolean;
+  adoptedKind?: string;
+  adoptedAt?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  labs?: Array<{ labName?: string; labAnchorId?: string }>;
+  transfers?: UnsupportedAbutmentTransferUsage[];
+  transferCount?: number;
+  source?: string;
+};
+
+type UnsupportedAbutmentStats = {
+  pending?: number;
+  adoptedCnc?: number;
+  adoptedRoundBar?: number;
+  total?: number;
+  items?: UnsupportedAbutmentItem[];
 };
 
 type UnmachinableDetailCode = "potential" | "judged" | "confirmed" | "none";
@@ -476,6 +527,10 @@ export const AdminDashboardPage = () => {
   });
   const [designSoftwareStatsDialogOpen, setDesignSoftwareStatsDialogOpen] =
     useState(false);
+  const [unsupportedAbutmentStatsDialogOpen, setUnsupportedAbutmentStatsDialogOpen] =
+    useState(false);
+  const [unsupportedAbutmentDetailItem, setUnsupportedAbutmentDetailItem] =
+    useState<UnsupportedAbutmentItem | null>(null);
   const [practiceTransferStatsDialogOpen, setPracticeTransferStatsDialogOpen] =
     useState(false);
   const [restoreTransferTarget, setRestoreTransferTarget] = useState<{
@@ -491,6 +546,8 @@ export const AdminDashboardPage = () => {
   const [designSoftwareStatsFilter, setDesignSoftwareStatsFilter] = useState<
     "all" | "3shape" | "exocad" | "other"
   >("all");
+  const [unsupportedAbutmentStatsFilter, setUnsupportedAbutmentStatsFilter] =
+    useState<"all" | UnsupportedAbutmentStatus>("all");
 
   const openHappyCallBusinessDetail = (
     source: Partial<HappyCallBusinessDetail> | null | undefined,
@@ -979,6 +1036,108 @@ export const AdminDashboardPage = () => {
     { key: "exocad" as const, label: "ExoCAD", count: Number(designSoftwareStats.exocad || 0) },
     { key: "other" as const, label: "기타", count: Number(designSoftwareStats.other || 0) },
   ];
+
+  const unsupportedAbutmentStats =
+    ((adminDashboardResponse?.data as
+      | { unsupportedAbutmentStats?: UnsupportedAbutmentStats }
+      | undefined)?.unsupportedAbutmentStats as UnsupportedAbutmentStats | undefined) ||
+    {};
+  const unsupportedAbutmentItems = Array.isArray(unsupportedAbutmentStats.items)
+    ? unsupportedAbutmentStats.items
+    : [];
+  const unsupportedAbutmentPending = Number(unsupportedAbutmentStats.pending || 0);
+  const unsupportedAbutmentAdoptedCnc = Number(
+    unsupportedAbutmentStats.adoptedCnc || 0,
+  );
+  const unsupportedAbutmentAdoptedRoundBar = Number(
+    unsupportedAbutmentStats.adoptedRoundBar || 0,
+  );
+  const unsupportedAbutmentTotal =
+    Number(unsupportedAbutmentStats.total || 0) ||
+    unsupportedAbutmentPending +
+      unsupportedAbutmentAdoptedCnc +
+      unsupportedAbutmentAdoptedRoundBar;
+
+  const getUnsupportedAbutmentToneClasses = (
+    status: UnsupportedAbutmentStatus,
+  ) => {
+    if (status === "pending") {
+      return {
+        bar: "bg-amber-500",
+        count: "text-amber-800",
+        item: "border-amber-200 bg-amber-50/80 hover:bg-amber-50",
+        badge: "border-amber-300 bg-amber-100 text-amber-900",
+        chip: "border-amber-200 bg-amber-50 text-amber-900 hover:bg-amber-100",
+        chipActive:
+          "border-amber-500 bg-amber-100 text-amber-950 ring-1 ring-amber-400/40",
+      };
+    }
+    if (status === "adopted_cnc") {
+      return {
+        bar: "bg-primary",
+        count: "text-primary-strong",
+        item: "border-primary-muted bg-primary-soft/70 hover:bg-primary-soft",
+        badge: "border-primary-muted bg-primary-soft text-primary-strong",
+        chip: "border-primary-muted bg-primary-soft/70 text-primary-strong hover:bg-primary-soft",
+        chipActive:
+          "border-primary/70 bg-primary-soft text-primary-strong ring-1 ring-primary/30",
+      };
+    }
+    return {
+      bar: "bg-accent",
+      count: "text-accent-strong",
+      item: "border-accent-muted bg-accent-soft/70 hover:bg-accent-soft",
+      badge: "border-accent-muted bg-accent-soft text-accent-strong",
+      chip: "border-accent-muted bg-accent-soft/70 text-accent-strong hover:bg-accent-soft",
+      chipActive:
+        "border-accent/70 bg-accent-soft text-accent-strong ring-1 ring-accent/30",
+    };
+  };
+
+  const unsupportedAbutmentStatusLabel = (status: UnsupportedAbutmentStatus) => {
+    if (status === "pending") return "대기(미제공)";
+    if (status === "adopted_cnc") return "CNC 도입";
+    return "환봉 도입";
+  };
+
+  const unsupportedAbutmentStatRows = [
+    {
+      key: "pending" as const,
+      label: "대기(미제공)",
+      count: unsupportedAbutmentPending,
+    },
+    {
+      key: "adopted_cnc" as const,
+      label: "CNC 도입",
+      count: unsupportedAbutmentAdoptedCnc,
+    },
+    {
+      key: "adopted_round_bar" as const,
+      label: "환봉 도입",
+      count: unsupportedAbutmentAdoptedRoundBar,
+    },
+  ];
+
+  const unsupportedAbutmentMaxCount = Math.max(
+    1,
+    unsupportedAbutmentPending,
+    unsupportedAbutmentAdoptedCnc,
+    unsupportedAbutmentAdoptedRoundBar,
+  );
+
+  const filteredUnsupportedAbutmentItems = unsupportedAbutmentItems.filter(
+    (item) => {
+      if (unsupportedAbutmentStatsFilter === "all") return true;
+      return item.status === unsupportedAbutmentStatsFilter;
+    },
+  );
+
+  const formatUnsupportedAbutmentDate = (value?: string | null) => {
+    if (!value) return "-";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "-";
+    return date.toLocaleString("ko-KR", { timeZone: "Asia/Seoul" });
+  };
 
   const practiceTransferStats =
     ((adminDashboardResponse?.data as { practiceTransferStats?: PracticeTransferStats } | undefined)
@@ -1689,204 +1848,139 @@ export const AdminDashboardPage = () => {
               </Card>
             </div>
 
-            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 items-stretch">
-              <div className="flex h-full flex-col gap-3">
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  {/* 카드8: 지연 위험 요약 */}
-                  <Card className="app-glass-card app-glass-card--lg h-full">
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                      <CardTitle className="text-sm font-medium">지연 위험 요약</CardTitle>
-                      <AlertCircle className="h-4 w-4 text-muted-foreground" />
-                    </CardHeader>
-                    <CardContent>
-                      <button
-                        type="button"
-                        className="w-full px-1 py-1 text-left hover:bg-slate-50/70 transition rounded-sm"
-                        onClick={() => setRiskSummaryDialogOpen(true)}
-                      >
-                        <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                          <span>지연 가능 의뢰: {riskWarningCount.toLocaleString()}건</span>
-                          <span>지연 확정 의뢰: {riskDelayedCount.toLocaleString()}건</span>
-                          <span>
-                            묶음 정시: {riskNormalOnTimeRate.toLocaleString()}%
-                            {riskNormalEvaluatedCount > 0
-                              ? ` (${riskNormalEvaluatedCount.toLocaleString()}건)`
-                              : ""}
-                          </span>
-                          <span>
-                            신속 정시: {riskExpressOnTimeRate.toLocaleString()}%
-                            {riskExpressEvaluatedCount > 0
-                              ? ` (${riskExpressEvaluatedCount.toLocaleString()}건)`
-                              : ""}
-                          </span>
-                        </div>
-                        <div className="mt-1 text-[11px] text-muted-foreground">
-                          클릭하면 지연 위험 상세 내역을 확인할 수 있습니다.
-                        </div>
-                      </button>
-                    </CardContent>
-                  </Card>
-
-                  {/* 카드5-2: 디자인 소프트웨어 통계 */}
-                  <Card className="app-glass-card app-glass-card--lg h-full">
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                      <CardTitle className="text-sm font-medium">
-                        디자인 소프트웨어 통계
-                      </CardTitle>
-                      <Code2 className="h-4 w-4 text-muted-foreground" />
-                    </CardHeader>
-                    <CardContent>
-                      <button
-                        type="button"
-                        className="w-full px-1 py-1 text-left hover:bg-slate-50/70 transition rounded-sm"
-                        onClick={() => {
-                          setDesignSoftwareStatsFilter("all");
-                          setDesignSoftwareStatsDialogOpen(true);
-                        }}
-                      >
-                        <div className="space-y-2">
-                          {designSoftwareStatRows.map((row) => {
-                            const ratio = Math.max(
-                              0,
-                              Math.min(1, row.count / designSoftwareMaxCount),
-                            );
-                            const tone = getDesignSoftwareToneClasses(row.key);
-                            return (
-                              <div key={row.key} className="space-y-1 py-0.5">
-                                <div className="flex items-center justify-between text-[11px]">
-                                  <span className="text-muted-foreground">{row.label}</span>
-                                  <span className={`font-semibold ${tone.count}`}>
-                                    {row.count.toLocaleString()}개
-                                  </span>
-                                </div>
-                                <div className="h-2 w-full rounded bg-slate-100 overflow-hidden">
-                                  <div
-                                    className={`h-full rounded ${tone.bar}`}
-                                    style={{ width: `${ratio * 100}%` }}
-                                  />
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                        <div className="mt-2 text-[11px] text-muted-foreground">
-                          총 {designSoftwareTotalCount.toLocaleString()}개 사업자
-                        </div>
-                      </button>
-                    </CardContent>
-                  </Card>
-                </div>
-
-                {/* 카드7: 거래금액 / 평균 단가 / 배송비 */}
-                <Card className="app-glass-card app-glass-card--lg">
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">
-                      거래금액 / 평균 단가 / 배송비
-                    </CardTitle>
-                    <DollarSign className="h-4 w-4 text-muted-foreground" />
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div className="grid grid-cols-3 gap-3">
-                      <div className="space-y-1">
-                        <div className="text-xs text-muted-foreground">
-                          유료 주문액
-                        </div>
-                        <div className="text-xl font-bold">
-                          ₩{(pricingSummary?.totalRevenue ?? 0).toLocaleString()}
-                        </div>
-                      </div>
-                      <div className="space-y-1">
-                        <div className="text-xs text-muted-foreground">
-                          평균 단가
-                        </div>
-                        <div className="text-xl font-bold">
-                          ₩{(pricingSummary?.avgUnitPrice ?? 0).toLocaleString()}
-                        </div>
-                      </div>
-                      <div className="space-y-1">
-                        <div className="text-xs text-muted-foreground">
-                          전체 배송비
-                        </div>
-                        <div className="text-xl font-bold">
-                          ₩
-                          {(
-                            pricingSummary?.totalShippingFeeSupply ?? 0
-                          ).toLocaleString()}
-                        </div>
-                      </div>
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-4 items-stretch">
+              {/* 카드8: 지연 위험 요약 */}
+              <Card className="app-glass-card app-glass-card--lg h-full">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">지연 위험 요약</CardTitle>
+                  <AlertCircle className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <button
+                    type="button"
+                    className="w-full px-1 py-1 text-left hover:bg-slate-50/70 transition rounded-sm"
+                    onClick={() => setRiskSummaryDialogOpen(true)}
+                  >
+                    <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                      <span>지연 가능 의뢰: {riskWarningCount.toLocaleString()}건</span>
+                      <span>지연 확정 의뢰: {riskDelayedCount.toLocaleString()}건</span>
+                      <span>
+                        묶음 정시: {riskNormalOnTimeRate.toLocaleString()}%
+                        {riskNormalEvaluatedCount > 0
+                          ? ` (${riskNormalEvaluatedCount.toLocaleString()}건)`
+                          : ""}
+                      </span>
+                      <span>
+                        신속 정시: {riskExpressOnTimeRate.toLocaleString()}%
+                        {riskExpressEvaluatedCount > 0
+                          ? ` (${riskExpressEvaluatedCount.toLocaleString()}건)`
+                          : ""}
+                      </span>
                     </div>
-                    <div className="grid grid-cols-3 gap-3">
-                      <div className="space-y-1">
-                        <div className="text-xs text-muted-foreground">
-                          무료 주문액
-                        </div>
-                        <div className="text-sm font-semibold text-muted-foreground">
-                          ₩
-                          {(
-                            pricingSummary?.totalBonusRevenue ?? 0
-                          ).toLocaleString()}
-                        </div>
-                      </div>
-                      <div className="space-y-1">
-                        <div className="text-xs text-muted-foreground">
-                          평균 무료 단가
-                        </div>
-                        <div className="text-sm font-semibold text-muted-foreground">
-                          ₩
-                          {(
-                            pricingSummary?.avgBonusUnitPrice ?? 0
-                          ).toLocaleString()}
-                        </div>
-                      </div>
-                      <div className="space-y-1">
-                        <div className="text-xs text-muted-foreground">
-                          평균 배송비
-                        </div>
-                        <div className="text-sm font-semibold">
-                          ₩
-                          {(
-                            pricingSummary?.avgShippingFeeSupply ?? 0
-                          ).toLocaleString()}
-                        </div>
-                      </div>
+                    <div className="mt-1 text-[11px] text-muted-foreground">
+                      클릭하면 지연 위험 상세 내역을 확인할 수 있습니다.
                     </div>
-                  </CardContent>
-                </Card>
+                  </button>
+                </CardContent>
+              </Card>
 
-                <div className="grid grid-cols-1 gap-3">
-                  {/* 카드9: 시스템 알림 */}
-                  <Card className="app-glass-card app-glass-card--lg">
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                      <CardTitle className="text-sm font-medium">시스템 알림</CardTitle>
-                      <AlertCircle className="h-4 w-4 text-muted-foreground" />
-                    </CardHeader>
-                    <CardContent className="space-y-2">
-                      {data.systemAlerts.length === 0 ? (
-                        <div className="text-xs text-muted-foreground">현재 이상 알림이 없습니다.</div>
-                      ) : (
-                        data.systemAlerts.map((alert) => (
-                          <div
-                            key={alert.id}
-                            className="rounded border bg-accent-soft/60 px-2 py-1.5"
-                          >
-                            <div className="flex items-start gap-2">
-                              <div className="mt-0.5">{getAlertIcon(alert.type)}</div>
-                              <div className="min-w-0">
-                                <div className="text-xs font-medium break-words">
-                                  {alert.message}
-                                </div>
-                                <div className="text-[11px] text-muted-foreground mt-0.5">
-                                  {toDateTimeLabel(alert.date)}
-                                </div>
-                              </div>
+              {/* 카드5-2: 디자인 소프트웨어 통계 */}
+              <Card className="app-glass-card app-glass-card--lg h-full">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">
+                    디자인 소프트웨어 통계
+                  </CardTitle>
+                  <Code2 className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <button
+                    type="button"
+                    className="w-full px-1 py-1 text-left hover:bg-slate-50/70 transition rounded-sm"
+                    onClick={() => {
+                      setDesignSoftwareStatsFilter("all");
+                      setDesignSoftwareStatsDialogOpen(true);
+                    }}
+                  >
+                    <div className="space-y-2">
+                      {designSoftwareStatRows.map((row) => {
+                        const ratio = Math.max(
+                          0,
+                          Math.min(1, row.count / designSoftwareMaxCount),
+                        );
+                        const tone = getDesignSoftwareToneClasses(row.key);
+                        return (
+                          <div key={row.key} className="space-y-1 py-0.5">
+                            <div className="flex items-center justify-between text-[11px]">
+                              <span className="text-muted-foreground">{row.label}</span>
+                              <span className={`font-semibold ${tone.count}`}>
+                                {row.count.toLocaleString()}개
+                              </span>
+                            </div>
+                            <div className="h-2 w-full rounded bg-slate-100 overflow-hidden">
+                              <div
+                                className={`h-full rounded ${tone.bar}`}
+                                style={{ width: `${ratio * 100}%` }}
+                              />
                             </div>
                           </div>
-                        ))
-                      )}
-                    </CardContent>
-                  </Card>
-                </div>
-              </div>
+                        );
+                      })}
+                    </div>
+                    <div className="mt-2 text-[11px] text-muted-foreground">
+                      총 {designSoftwareTotalCount.toLocaleString()}개 사업자
+                    </div>
+                  </button>
+                </CardContent>
+              </Card>
+
+              {/* 카드5-3: 미제공 어벗(임플란트 추가 요청) 통계 */}
+              <Card className="app-glass-card app-glass-card--lg h-full">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">
+                    미제공 어벗 통계
+                  </CardTitle>
+                  <Puzzle className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <button
+                    type="button"
+                    className="w-full px-1 py-1 text-left hover:bg-slate-50/70 transition rounded-sm"
+                    onClick={() => {
+                      setUnsupportedAbutmentStatsFilter("all");
+                      setUnsupportedAbutmentStatsDialogOpen(true);
+                    }}
+                  >
+                    <div className="space-y-2">
+                      {unsupportedAbutmentStatRows.map((row) => {
+                        const ratio = Math.max(
+                          0,
+                          Math.min(1, row.count / unsupportedAbutmentMaxCount),
+                        );
+                        const tone = getUnsupportedAbutmentToneClasses(row.key);
+                        return (
+                          <div key={row.key} className="space-y-1 py-0.5">
+                            <div className="flex items-center justify-between text-[11px]">
+                              <span className="text-muted-foreground">{row.label}</span>
+                              <span className={`font-semibold ${tone.count}`}>
+                                {row.count.toLocaleString()}건
+                              </span>
+                            </div>
+                            <div className="h-2 w-full rounded bg-slate-100 overflow-hidden">
+                              <div
+                                className={`h-full rounded ${tone.bar}`}
+                                style={{ width: `${ratio * 100}%` }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="mt-2 text-[11px] text-muted-foreground">
+                      총 {unsupportedAbutmentTotal.toLocaleString()}건 · 클릭 시 치과·기공소·임플란트 상세
+                    </div>
+                  </button>
+                </CardContent>
+              </Card>
 
               {/* 카드6: 불완전가공 의뢰 현황 */}
               <Card className="app-glass-card app-glass-card--lg h-full flex flex-col">
@@ -1985,6 +2079,114 @@ export const AdminDashboardPage = () => {
                 </CardContent>
               </Card>
             </div>
+
+            {/* 카드7: 거래금액 / 평균 단가 / 배송비 */}
+            <Card className="app-glass-card app-glass-card--lg">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">
+                  거래금액 / 평균 단가 / 배송비
+                </CardTitle>
+                <DollarSign className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="space-y-1">
+                    <div className="text-xs text-muted-foreground">
+                      유료 주문액
+                    </div>
+                    <div className="text-xl font-bold">
+                      ₩{(pricingSummary?.totalRevenue ?? 0).toLocaleString()}
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-xs text-muted-foreground">
+                      평균 단가
+                    </div>
+                    <div className="text-xl font-bold">
+                      ₩{(pricingSummary?.avgUnitPrice ?? 0).toLocaleString()}
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-xs text-muted-foreground">
+                      전체 배송비
+                    </div>
+                    <div className="text-xl font-bold">
+                      ₩
+                      {(
+                        pricingSummary?.totalShippingFeeSupply ?? 0
+                      ).toLocaleString()}
+                    </div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="space-y-1">
+                    <div className="text-xs text-muted-foreground">
+                      무료 주문액
+                    </div>
+                    <div className="text-sm font-semibold text-muted-foreground">
+                      ₩
+                      {(
+                        pricingSummary?.totalBonusRevenue ?? 0
+                      ).toLocaleString()}
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-xs text-muted-foreground">
+                      평균 무료 단가
+                    </div>
+                    <div className="text-sm font-semibold text-muted-foreground">
+                      ₩
+                      {(
+                        pricingSummary?.avgBonusUnitPrice ?? 0
+                      ).toLocaleString()}
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-xs text-muted-foreground">
+                      평균 배송비
+                    </div>
+                    <div className="text-sm font-semibold">
+                      ₩
+                      {(
+                        pricingSummary?.avgShippingFeeSupply ?? 0
+                      ).toLocaleString()}
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* 카드9: 시스템 알림 */}
+            <Card className="app-glass-card app-glass-card--lg">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">시스템 알림</CardTitle>
+                <AlertCircle className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {data.systemAlerts.length === 0 ? (
+                  <div className="text-xs text-muted-foreground">현재 이상 알림이 없습니다.</div>
+                ) : (
+                  data.systemAlerts.map((alert) => (
+                    <div
+                      key={alert.id}
+                      className="rounded border bg-accent-soft/60 px-2 py-1.5"
+                    >
+                      <div className="flex items-start gap-2">
+                        <div className="mt-0.5">{getAlertIcon(alert.type)}</div>
+                        <div className="min-w-0">
+                          <div className="text-xs font-medium break-words">
+                            {alert.message}
+                          </div>
+                          <div className="text-[11px] text-muted-foreground mt-0.5">
+                            {toDateTimeLabel(alert.date)}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </CardContent>
+            </Card>
           </>
         }
         mainLeft={undefined}
@@ -2079,6 +2281,269 @@ export const AdminDashboardPage = () => {
               setDesignSoftwareStatsDialogOpen(false);
               setDesignSoftwareStatsFilter("all");
             },
+          },
+        ]}
+      />
+
+      <MultiActionDialog
+        open={unsupportedAbutmentStatsDialogOpen}
+        onClose={() => {
+          setUnsupportedAbutmentStatsDialogOpen(false);
+          setUnsupportedAbutmentStatsFilter("all");
+        }}
+        title="미제공 어벗 통계"
+        panelClassName="!w-[94vw] !max-w-[1200px]"
+        description={
+          <div className="space-y-3 text-sm text-gray-700">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setUnsupportedAbutmentStatsFilter("all")}
+                  className={`inline-flex items-center rounded-md border px-2.5 py-1 text-xs font-semibold transition ${
+                    unsupportedAbutmentStatsFilter === "all"
+                      ? "border-slate-500 bg-white text-slate-800 ring-1 ring-slate-400"
+                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  전체 ({unsupportedAbutmentItems.length.toLocaleString()})
+                </button>
+                {unsupportedAbutmentStatRows.map((row) => {
+                  const tone = getUnsupportedAbutmentToneClasses(row.key);
+                  const isActive = unsupportedAbutmentStatsFilter === row.key;
+                  return (
+                    <button
+                      key={row.key}
+                      type="button"
+                      onClick={() => setUnsupportedAbutmentStatsFilter(row.key)}
+                      className={`inline-flex items-center rounded-md border px-2.5 py-1 text-xs font-semibold transition ${
+                        isActive ? tone.chipActive : tone.chip
+                      }`}
+                    >
+                      {row.label} ({row.count.toLocaleString()})
+                    </button>
+                  );
+                })}
+              </div>
+              <button
+                type="button"
+                className="text-xs font-medium text-primary-strong hover:underline"
+                onClick={() =>
+                  navigate("/dashboard/platform-settings?tab=customAbut")
+                }
+              >
+                커스텀어벗 설정에서 도입 처리 →
+              </button>
+            </div>
+
+            <div className="max-h-[58vh] overflow-auto pr-1">
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-2 lg:grid-cols-3">
+                {filteredUnsupportedAbutmentItems.length > 0 ? (
+                  filteredUnsupportedAbutmentItems.map((item, idx) => {
+                    const tone = getUnsupportedAbutmentToneClasses(item.status);
+                    const practiceName =
+                      String(item.practiceName || "").trim() ||
+                      String(item.practiceAnchorId || "").trim() ||
+                      `요청 ${idx + 1}`;
+                    const implantLabel =
+                      String(item.implantLabel || "").trim() ||
+                      String(item.manufacturer || "").trim() ||
+                      "-";
+                    const labNames = Array.isArray(item.labs)
+                      ? item.labs
+                          .map((lab) => String(lab?.labName || "").trim())
+                          .filter(Boolean)
+                      : [];
+                    return (
+                      <button
+                        key={item.id || `${practiceName}-${idx}`}
+                        type="button"
+                        className={`w-full rounded-md border px-3 py-2 text-left transition ${tone.item}`}
+                        onClick={() => setUnsupportedAbutmentDetailItem(item)}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="text-sm font-medium truncate">
+                            {practiceName}
+                          </div>
+                          <Badge
+                            variant="outline"
+                            className={`shrink-0 text-[10px] ${tone.badge}`}
+                          >
+                            {unsupportedAbutmentStatusLabel(item.status)}
+                          </Badge>
+                        </div>
+                        <div className="mt-1 text-[11px] font-medium text-slate-800 truncate">
+                          {implantLabel}
+                        </div>
+                        <div className="mt-1 text-[11px] text-muted-foreground truncate">
+                          기공소:{" "}
+                          {labNames.length > 0
+                            ? labNames.join(", ")
+                            : "관련 의뢰 없음"}
+                          {Number(item.transferCount || 0) > 0
+                            ? ` · 의뢰 ${Number(item.transferCount).toLocaleString()}건`
+                            : ""}
+                        </div>
+                        <div className="mt-0.5 text-[10px] text-muted-foreground">
+                          요청 {formatUnsupportedAbutmentDate(item.createdAt)}
+                        </div>
+                      </button>
+                    );
+                  })
+                ) : (
+                  <div className="col-span-full text-xs text-muted-foreground py-8 text-center border border-dashed rounded-md">
+                    조건에 맞는 미제공·도입 요청이 없습니다.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        }
+        actions={[
+          {
+            label: "닫기",
+            variant: "secondary",
+            onClick: () => {
+              setUnsupportedAbutmentStatsDialogOpen(false);
+              setUnsupportedAbutmentStatsFilter("all");
+            },
+          },
+        ]}
+      />
+
+      <MultiActionDialog
+        open={Boolean(unsupportedAbutmentDetailItem)}
+        onClose={() => setUnsupportedAbutmentDetailItem(null)}
+        title="미제공 어벗 상세"
+        panelClassName="!w-[94vw] !max-w-[720px]"
+        description={
+          unsupportedAbutmentDetailItem ? (
+            <div className="space-y-4 text-sm text-gray-700">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge
+                  variant="outline"
+                  className={
+                    getUnsupportedAbutmentToneClasses(
+                      unsupportedAbutmentDetailItem.status,
+                    ).badge
+                  }
+                >
+                  {unsupportedAbutmentStatusLabel(
+                    unsupportedAbutmentDetailItem.status,
+                  )}
+                </Badge>
+                {unsupportedAbutmentDetailItem.isManufacturerAddRequest ? (
+                  <Badge variant="outline" className="text-[10px]">
+                    임플란트 추가 요청
+                  </Badge>
+                ) : null}
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <div className="text-[11px] text-muted-foreground">치과</div>
+                  <div className="font-medium">
+                    {String(unsupportedAbutmentDetailItem.practiceName || "-")}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[11px] text-muted-foreground">요청일</div>
+                  <div className="font-medium">
+                    {formatUnsupportedAbutmentDate(
+                      unsupportedAbutmentDetailItem.createdAt,
+                    )}
+                  </div>
+                </div>
+                <div className="sm:col-span-2">
+                  <div className="text-[11px] text-muted-foreground">임플란트</div>
+                  <div className="font-medium">
+                    {String(
+                      unsupportedAbutmentDetailItem.implantLabel ||
+                        unsupportedAbutmentDetailItem.manufacturer ||
+                        "-",
+                    )}
+                  </div>
+                  {!unsupportedAbutmentDetailItem.isManufacturerAddRequest ? (
+                    <div className="mt-1 text-[11px] text-muted-foreground">
+                      {[
+                        unsupportedAbutmentDetailItem.manufacturer,
+                        unsupportedAbutmentDetailItem.brand,
+                        unsupportedAbutmentDetailItem.family,
+                        unsupportedAbutmentDetailItem.type,
+                      ]
+                        .map((v) => String(v || "").trim())
+                        .filter(Boolean)
+                        .join(" / ")}
+                    </div>
+                  ) : null}
+                </div>
+                <div className="sm:col-span-2">
+                  <div className="text-[11px] text-muted-foreground">기공소</div>
+                  <div className="font-medium">
+                    {Array.isArray(unsupportedAbutmentDetailItem.labs) &&
+                    unsupportedAbutmentDetailItem.labs.length > 0
+                      ? unsupportedAbutmentDetailItem.labs
+                          .map((lab) => String(lab?.labName || "").trim())
+                          .filter(Boolean)
+                          .join(", ")
+                      : "관련 기공의뢰 없음"}
+                  </div>
+                </div>
+              </div>
+
+              {Array.isArray(unsupportedAbutmentDetailItem.transfers) &&
+              unsupportedAbutmentDetailItem.transfers.length > 0 ? (
+                <div className="space-y-2">
+                  <div className="text-[11px] font-medium text-muted-foreground">
+                    관련 기공의뢰 (
+                    {Number(
+                      unsupportedAbutmentDetailItem.transferCount ||
+                        unsupportedAbutmentDetailItem.transfers.length,
+                    ).toLocaleString()}
+                    )
+                  </div>
+                  <div className="max-h-[28vh] space-y-1.5 overflow-auto pr-1">
+                    {unsupportedAbutmentDetailItem.transfers.map((transfer, idx) => (
+                      <div
+                        key={`${transfer.transferMongoId || transfer.transferId || idx}`}
+                        className="rounded-md border border-slate-200 bg-slate-50/80 px-3 py-2 text-[11px]"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="font-medium text-slate-800">
+                            {String(transfer.labName || "-")}
+                          </span>
+                          <span className="text-muted-foreground">
+                            {formatUnsupportedAbutmentDate(transfer.createdAt)}
+                          </span>
+                        </div>
+                        <div className="mt-0.5 text-muted-foreground">
+                          의뢰{" "}
+                          {String(transfer.transferId || transfer.transferMongoId || "-")}
+                          {Array.isArray(transfer.teeth) && transfer.teeth.length > 0
+                            ? ` · 치아 ${transfer.teeth.join(", ")}`
+                            : ""}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : null
+        }
+        actions={[
+          {
+            label: "도입 설정 열기",
+            variant: "primary",
+            onClick: () => {
+              setUnsupportedAbutmentDetailItem(null);
+              navigate("/dashboard/platform-settings?tab=customAbut");
+            },
+          },
+          {
+            label: "닫기",
+            variant: "secondary",
+            onClick: () => setUnsupportedAbutmentDetailItem(null),
           },
         ]}
       />

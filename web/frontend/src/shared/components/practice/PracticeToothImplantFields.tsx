@@ -42,6 +42,7 @@ import {
   MANUFACTURER_ADD_REQUEST_BRAND,
   MANUFACTURER_ADD_REQUEST_FAMILY,
   MANUFACTURER_ADD_REQUEST_VALUE,
+  IMPLANT_ADD_REQUEST_OPTION,
   ROUND_BAR_GUIDE_LINES,
   ROUND_BAR_GUIDE_TITLE,
   ROUND_BAR_HEX_TYPE,
@@ -58,6 +59,8 @@ export type ToothImplantValues = {
   implantBrand: string;
   implantFamily: string;
   implantType: string;
+  /** 「임플란트 추가 요청」옵션 */
+  implantAddRequest?: boolean;
 };
 
 type Props = {
@@ -810,6 +813,7 @@ export const PracticeToothImplantFields = ({
         ...value,
         implantFamily: nextFamily,
         implantType: nextType,
+        implantAddRequest: false,
       });
     }
     if (familyKey(requestDraft.family) === familyKey(family)) {
@@ -845,11 +849,15 @@ export const PracticeToothImplantFields = ({
   };
 
   const applyFavorite = (fav: PracticeImplantFavorite) => {
+    const addRequest = isManufacturerAddRequestFavorite(fav);
     onChange({
       implantManufacturer: fav.manufacturer,
       implantBrand: fav.brand,
       implantFamily: fav.family,
-      implantType: fav.type,
+      implantType: addRequest
+        ? IMPLANT_ADD_REQUEST_OPTION
+        : fav.type,
+      implantAddRequest: addRequest,
     });
   };
 
@@ -926,8 +934,9 @@ export const PracticeToothImplantFields = ({
         manufacturer: memo,
         brand: MANUFACTURER_ADD_REQUEST_BRAND,
         family: MANUFACTURER_ADD_REQUEST_FAMILY,
-        type: ROUND_BAR_HEX_TYPE,
+        type: IMPLANT_ADD_REQUEST_OPTION,
         roundBar: true,
+        implantAddRequest: true,
         adopted: false,
       };
       setFavoritesBusy(true);
@@ -947,8 +956,9 @@ export const PracticeToothImplantFields = ({
               ...nextFavorite,
               ...result.favorite,
               id: favId,
-              type: ROUND_BAR_HEX_TYPE,
+              type: IMPLANT_ADD_REQUEST_OPTION,
               roundBar: true,
+              implantAddRequest: true,
             };
           }
         }
@@ -1034,8 +1044,9 @@ export const PracticeToothImplantFields = ({
         manufacturer: memo,
         brand: MANUFACTURER_ADD_REQUEST_BRAND,
         family: MANUFACTURER_ADD_REQUEST_FAMILY,
-        type: ROUND_BAR_HEX_TYPE,
+        type: IMPLANT_ADD_REQUEST_OPTION,
         roundBar: true,
+        implantAddRequest: true,
         adopted: false,
       };
       setFavoritesBusy(true);
@@ -1054,8 +1065,9 @@ export const PracticeToothImplantFields = ({
             nextFavorite = {
               ...nextFavorite,
               ...result.favorite,
-              type: ROUND_BAR_HEX_TYPE,
+              type: IMPLANT_ADD_REQUEST_OPTION,
               roundBar: true,
+              implantAddRequest: true,
             };
           }
         }
@@ -1142,8 +1154,9 @@ export const PracticeToothImplantFields = ({
       manufacturer,
       brand,
       family,
-      type: ROUND_BAR_HEX_TYPE,
+      type: IMPLANT_ADD_REQUEST_OPTION,
       roundBar: true,
+      implantAddRequest: true,
       adopted: false,
     };
     setRequestBusy(true);
@@ -1157,8 +1170,9 @@ export const PracticeToothImplantFields = ({
           nextFavorite = {
             ...nextFavorite,
             ...result.favorite,
-            type: ROUND_BAR_HEX_TYPE,
+            type: IMPLANT_ADD_REQUEST_OPTION,
             roundBar: true,
+            implantAddRequest: true,
           };
         }
       }
@@ -1170,7 +1184,8 @@ export const PracticeToothImplantFields = ({
         implantManufacturer: nextFavorite.manufacturer,
         implantBrand: nextFavorite.brand,
         implantFamily: nextFavorite.family,
-        implantType: ROUND_BAR_HEX_TYPE,
+        implantType: IMPLANT_ADD_REQUEST_OPTION,
+        implantAddRequest: true,
       });
       closeRequestForm();
       setGuideOpen(true);
@@ -1189,7 +1204,8 @@ export const PracticeToothImplantFields = ({
         implantManufacturer: nextFavorite.manufacturer,
         implantBrand: nextFavorite.brand,
         implantFamily: nextFavorite.family,
-        implantType: ROUND_BAR_HEX_TYPE,
+        implantType: IMPLANT_ADD_REQUEST_OPTION,
+        implantAddRequest: true,
       });
       closeRequestForm();
       setGuideOpen(true);
@@ -1961,7 +1977,7 @@ export const PracticeToothImplantFields = ({
           </div>
           <div className="space-y-1.5">
             <Label className="text-sm text-slate-600">타입</Label>
-            <Input value={ROUND_BAR_HEX_TYPE} readOnly className="h-11 bg-slate-50 text-sm" />
+            <Input value={IMPLANT_ADD_REQUEST_OPTION} readOnly className="h-11 bg-slate-50 text-sm" />
           </div>
           <div className="col-span-1 flex gap-2 sm:col-span-2">
             <Button
@@ -2018,7 +2034,8 @@ export const PracticeToothImplantFields = ({
                     implantManufacturer: manufacturer,
                     implantBrand: "",
                     implantFamily: "",
-                    implantType: ROUND_BAR_HEX_TYPE,
+                    implantType: IMPLANT_ADD_REQUEST_OPTION,
+                    implantAddRequest: true,
                   });
                   return;
                 }
@@ -2030,6 +2047,7 @@ export const PracticeToothImplantFields = ({
                   implantBrand: nextBrand,
                   implantFamily: nextFamily,
                   implantType: nextType,
+                  implantAddRequest: false,
                 });
               }}
             >
@@ -2096,6 +2114,7 @@ export const PracticeToothImplantFields = ({
                   implantBrand: nextBrand,
                   implantFamily: nextFamily,
                   implantType: nextType,
+                  implantAddRequest: false,
                 });
               }}
               disabled={!value.implantManufacturer}
@@ -2137,6 +2156,7 @@ export const PracticeToothImplantFields = ({
                   ...value,
                   implantFamily: nextFamily,
                   implantType: nextType,
+                  implantAddRequest: false,
                 });
               }}
             />
@@ -2150,6 +2170,7 @@ export const PracticeToothImplantFields = ({
                 onChange({
                   ...value,
                   implantType: nextType,
+                  implantAddRequest: false,
                 });
               }}
               disabled={!value.implantFamily}

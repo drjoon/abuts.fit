@@ -29,6 +29,10 @@
 // - 2026-08-15: 할증 history — 배수 변경·해제(1x)도 기존 의뢰는 당시 배수 유지(다음 건부터).
 // - 2026-08-19: 수락·견적 readyToCharge — 마스터 On만으로는 부족, 제공 항목 수가 필요.
 import { applyRushFeeMultiplierToFees } from "./practiceTransferRush.js";
+import {
+  IMPLANT_ADD_REQUEST_OPTION,
+  MANUFACTURER_ADD_REQUEST_BRAND,
+} from "./roundBarAbutment.js";
 
 export {
   PRACTICE_RUSH_FEE_MULTIPLIER,
@@ -517,7 +521,7 @@ export function isCustomAbutmentWork(row) {
   return Boolean(row?.hasCustomAbutment) || Boolean(row?.customAbutment);
 }
 
-/** 환봉 제조사 추가요청 타입. `roundBarAbutment.js`와 동일 문자열 */
+/** @deprecated pending 판별은 IMPLANT_ADD_REQUEST_OPTION / implantAddRequest 사용 */
 export const ROUND_BAR_PENDING_IMPLANT_TYPE = "헥스(사이즈 미정)";
 
 function implantSpecKeyForFee(row) {
@@ -568,13 +572,21 @@ function findRoundBarFavoriteForFee(row, favorites) {
   );
 }
 
-/** 환봉생산 서비스 추가 요청중(미도입). 도입되면 어벗츠 어벗 */
+/** 환봉·임플란트 추가 요청(미도입). 도입되면 어벗츠 어벗.
+ * pending 판별 SSOT: implantAddRequest / roundBar 플래그·요청ID·brand=추가요청·type=임플란트 추가 요청.
+ * implantType=헥스(사이즈 미정)만으로는 판별하지 않는다.
+ */
 export function isPendingRoundBarAbutment(row, favorites) {
   if (!row) return false;
-  const type = String(row.implantType || "").trim();
+  const brand = String(row.implantBrand || row.brand || "").trim();
+  const type = String(row.implantType || row.type || "").trim();
   const flagged =
-    Boolean(row.roundBar) || Boolean(String(row.roundBarRequestId || "").trim());
-  if (!flagged && type !== ROUND_BAR_PENDING_IMPLANT_TYPE) return false;
+    Boolean(row.implantAddRequest) ||
+    Boolean(row.roundBar) ||
+    Boolean(String(row.roundBarRequestId || "").trim()) ||
+    brand === MANUFACTURER_ADD_REQUEST_BRAND ||
+    type === IMPLANT_ADD_REQUEST_OPTION;
+  if (!flagged) return false;
   if (row.roundBarAdopted === true || row.adopted === true) return false;
   const list = Array.isArray(favorites) ? favorites : [];
   if (list.length === 0) return true;

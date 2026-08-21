@@ -712,16 +712,17 @@ describe("labFeeSchedule", () => {
     expect(fees.labFeeTotal).toBe(0);
   });
 
-  test("환봉 요청중 커스텀어벗은 기공소 어벗(어벗츠 단가 제외)", () => {
+  test("임플란트 추가 요청 커스텀어벗은 기공소 어벗(어벗츠 단가 제외)", () => {
     const tooth = {
       toothNumber: "16",
       prosthesisType: "커스텀어벗",
       customAbutment: true,
       abutmentProductMode: "design_custom_abutment",
       implantManufacturer: "Acme",
-      implantBrand: "One",
-      implantFamily: "Regular",
-      implantType: "헥스(사이즈 미정)",
+      implantBrand: "추가요청",
+      implantFamily: "미정",
+      implantType: "임플란트 추가 요청",
+      implantAddRequest: true,
     };
     expect(isPendingRoundBarAbutment(tooth)).toBe(true);
     const fees = computePracticeTransferRetailFees({
@@ -742,7 +743,18 @@ describe("labFeeSchedule", () => {
     });
   });
 
-  test("환봉 요청중+기공소 커스텀어벗 수가가 있으면 기공소 어벗으로 합산한다", () => {
+  
+  test("implantType=헥스(사이즈 미정)만으로는 pending이 아니다", () => {
+    const tooth = {
+      toothNumber: "16",
+      prosthesisType: "커스텀어벗",
+      customAbutment: true,
+      implantType: "헥스(사이즈 미정)",
+    };
+    expect(isPendingRoundBarAbutment(tooth)).toBe(false);
+  });
+
+test("환봉 요청중+기공소 커스텀어벗 수가가 있으면 기공소 어벗으로 합산한다", () => {
     const fees = computePracticeTransferRetailFees({
       toothWorks: [
         {
@@ -750,7 +762,9 @@ describe("labFeeSchedule", () => {
           prosthesisType: "커스텀어벗",
           customAbutment: true,
           abutmentProductMode: "custom_abutment",
-          implantType: "헥스(사이즈 미정)",
+          implantType: "임플란트 추가 요청",
+          implantBrand: "추가요청",
+          implantAddRequest: true,
         },
       ],
       labFeeSchedule: {
@@ -932,7 +946,7 @@ describe("labFeeSchedule", () => {
     });
   });
 
-  test("크라운+환봉 요청중은 기공물과 기공소 어벗을 분리한다", () => {
+  test("크라운+임플란트 추가 요청중은 기공물과 기공소 어벗을 분리한다", () => {
     const fees = computePracticeTransferRetailFees({
       toothWorks: [
         {
@@ -940,7 +954,9 @@ describe("labFeeSchedule", () => {
           prosthesisType: "크라운",
           customAbutment: true,
           abutmentProductMode: "design_custom_abutment",
-          implantType: "헥스(사이즈 미정)",
+          implantType: "임플란트 추가 요청",
+          implantBrand: "추가요청",
+          implantAddRequest: true,
         },
       ],
       labFeeSchedule: LAB_FEE_SCHEDULE_SAMPLE,
