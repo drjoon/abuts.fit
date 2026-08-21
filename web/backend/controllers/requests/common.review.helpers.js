@@ -83,9 +83,7 @@ import {
 } from "../../services/requestCreditHold.service.js";
 import {
   ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
-  ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE,
   pickAbutsAbutmentCreditPrices,
-  resolveAbutsAbutmentPricingTier,
 } from "../../utils/abutsAbutmentService.js";
 import {
   SHIPPING_LEDGER_LABELS,
@@ -122,42 +120,36 @@ function isPtxLabDesignedAbutmentRequest(request) {
 
 export { isPtxLabDesignedAbutmentRequest };
 
+/** PTX CA 생산 견적 — 플랫폼 고시 단일가(membership*). */
 function buildPtxAbutsProductionQuoteLocal({
   creditSettings,
-  pricingTier = "regular",
   shippingMode,
   abutmentQty = 1,
   expressFeePerRequest = 2000,
 }) {
-  const picked = pickAbutsAbutmentCreditPrices(creditSettings || {}, pricingTier);
+  const picked = pickAbutsAbutmentCreditPrices(creditSettings || {});
   const unit = Math.max(
     0,
-    Number(picked.productionPrice) ||
-      (pricingTier === "membership"
-        ? ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE
-        : ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE),
+    Number(picked.productionPrice) || ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
   );
   const practiceUnit = Math.max(
     0,
     Number(picked.designAndProductionPrice) || unit,
   );
   const qty = Math.max(1, Math.floor(Number(abutmentQty) || 1));
-  const tier = pricingTier === "membership" ? "membership" : "regular";
   return resolveQuotedPriceWithExpressFee({
     price: {
       baseAmount: unit,
       discountAmount: 0,
       amount: unit * qty,
       currency: "KRW",
-      rule:
-        tier === "membership"
-          ? "ptx_abuts_production_membership"
-          : "ptx_abuts_production_regular",
+      // 레거시 rule명 유지(스냅샷·집계 호환). _regular 는 신규 미사용.
+      rule: "ptx_abuts_production_membership",
       designFee: null,
       abutmentQty: qty,
       quotedAt: new Date(),
       discountMeta: {
-        pricingTier: tier,
+        pricingTier: "membership",
         practiceDesignAndProductionUnit: practiceUnit,
         abutsProductionUnit: unit,
         labDesignFeeUnit: Math.max(0, practiceUnit - unit),
@@ -167,10 +159,6 @@ function buildPtxAbutsProductionQuoteLocal({
     expressFee: expressFeePerRequest,
     expressQty: qty,
   });
-}
-
-async function resolvePtxPracticePricingTier(_request, _session = null) {
-  return "membership";
 }
 
 async function emitOrQueueCreditBalanceUpdate({
@@ -792,14 +780,12 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
       } catch {
         // defaults
       }
-      const pricingTier = await resolvePtxPracticePricingTier(request, session);
       const abutmentQty = Math.max(
         1,
         countDesignAbutmentQty(request?.caseInfos) || 1,
       );
       request.price = buildPtxAbutsProductionQuoteLocal({
         creditSettings: creditSettingsForQuote,
-        pricingTier,
         shippingMode,
         abutmentQty,
         expressFeePerRequest,
@@ -862,34 +848,23 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
   let expressQty;
   if (isPtxLabDesigned) {
     designFeePerTooth = 0;
-    const pricingTier = await resolvePtxPracticePricingTier(request, session);
-    const picked = pickAbutsAbutmentCreditPrices(
-      creditSettingsForQuote,
-      pricingTier,
-    );
+    const picked = pickAbutsAbutmentCreditPrices(creditSettingsForQuote);
     const unit = Math.max(
       0,
-      Number(picked.productionPrice) ||
-        (pricingTier === "membership"
-          ? ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE
-          : ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE),
+      Number(picked.productionPrice) || ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
     );
     const qty = Math.max(1, abutmentQty || 1);
     expressQty = qty;
-    const tier = pricingTier === "membership" ? "membership" : "regular";
     computedPrice = {
       baseAmount: unit,
       discountAmount: 0,
       amount: unit * qty,
       currency: "KRW",
-      rule:
-        tier === "membership"
-          ? "ptx_abuts_production_membership"
-          : "ptx_abuts_production_regular",
+      rule: "ptx_abuts_production_membership",
       designFee: null,
       abutmentQty: qty,
       quotedAt: new Date(),
-      discountMeta: { pricingTier: tier },
+      discountMeta: { pricingTier: "membership" },
     };
     withDesign = {
       ...computedPrice,

@@ -98,7 +98,6 @@ import {
   type PracticeAbutmentFavorite,
   type PracticeImplantFavorite,
 } from "@/shared/practice/transferMemo";
-import { useAbutsAbutmentPricingTier } from "@/shared/pricing/useAbutsAbutmentPricingTier";
 import {
   applyCycledLinkedSpanProsthesisType,
   applyProsthesisTypeToRow,
@@ -804,13 +803,11 @@ export const PracticeTransferRequestIntakePanel = ({
   const defaultProsthesisType = normalizedProsthesisTypes.includes("크라운")
     ? "크라운"
     : normalizedProsthesisTypes[0] || "크라운";
-  const abutmentPricingTier = useAbutsAbutmentPricingTier();
   const { quote: feeQuote } = usePracticeTransferFeeQuote({
     enabled: showFeeEstimate && Boolean(selectedLab),
     labAnchorId: selectedLab?._id,
     toothWorks,
     implantFavorites,
-    abutmentPricingTier,
     autoMatchBudget: null,
     // 신속처리 할증 없음
     rushFeeMultiplier: 1,

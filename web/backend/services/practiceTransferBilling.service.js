@@ -11,6 +11,7 @@
 // - web/backend/models/ledgerLine.model.js
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
+// - 2026-08-22: 치과 멤버십/일반 청구 이중가 제거. membership* 단일 고시. pricingTier 분기 삭제.
 // - 2026-08-21: 치과→기공소 배송 무료(labShippingFee 0). 기공소→어벗츠는 Request 박스키 hold.
 // - 2026-08-21: feeQuote.labShippingFee — 기공수가 배송비. 표시 총액은 배송 제외(크레딧 정산만 합산).
 // - 2026-08-21: feeQuote.missingFeeNames — 치과 견적에 미설정 수가 항목 안내.
@@ -105,7 +106,6 @@ import {
   normalizeLabFeeMultiplier,
   normalizeLabFeeRemakeSchedule,
   normalizeLabFeeSchedule,
-  resolveAbutsAbutmentPricingTier,
   resolveLabFeeScheduleSource,
   resolveLabPracticeFeeMultiplier,
   resolveLabPracticeFeeMultiplierAsOf,
@@ -320,12 +320,8 @@ export function toRemakeApiFields(doc) {
   };
 }
 
-async function resolvePracticeAbutmentPricingTier(
-  _practiceAnchorId,
-  _session = null,
-) {
-  return "membership";
-}
+/** @deprecated 치과 멤버십 폐지. 항상 고시 단일가 — 호출 제거 권장. */
+const PLATFORM_ABUTMENT_PRICING_TIER = "membership";
 
 async function resolveRevenueOwners({ practiceAnchorId, session }) {
   // Atlas RTT: BA 조회 4건을 한 파도로 묶는다.
@@ -622,14 +618,14 @@ export async function assertPracticeTransferPaidCreditSufficient({
   let shipping =
     shippingInput && typeof shippingInput === "object" ? shippingInput : null;
   let budget = null;
-  let abutmentPricingTier = null;
+  const abutmentPricingTier = PLATFORM_ABUTMENT_PRICING_TIER;
   let abutmentPrices = null;
 
   if (!fees) {
     let labFeeSchedule = null;
     const labId = String(labAnchorId || "").trim();
     const needLab = labId && Types.ObjectId.isValid(labId);
-    const [catalog, lab, practice, tiers, prices] = await Promise.all([
+    const [catalog, lab, practice, prices] = await Promise.all([
       catalogInput != null
         ? Promise.resolve(catalogInput)
         : loadAutoMatchBudgetCatalog(),
@@ -641,11 +637,9 @@ export async function assertPracticeTransferPaidCreditSufficient({
       BusinessAnchor.findById(practiceId)
         .select({ "practiceTransferSettings.implantFavorites": 1 })
         .lean(),
-      resolvePracticeAbutmentPricingTier(practiceId),
       loadCachedAbutmentCreditPrices(practiceId),
     ]);
     budget = normalizeAutoMatchBudget(autoMatchBudget, catalog);
-    abutmentPricingTier = tiers;
     abutmentPrices = prices;
     if (lab) labFeeSchedule = lab.labFeeSchedule || null;
 
@@ -909,7 +903,7 @@ export async function commitPracticeTransferBilling({
       .select({ "practiceTransferSettings.implantFavorites": 1 })
       .session(outerSession || null)
       .lean(),
-    resolvePracticeAbutmentPricingTier(practiceAnchorId, outerSession),
+    Promise.resolve(PLATFORM_ABUTMENT_PRICING_TIER),
     loadCachedAbutmentCreditPrices(practiceAnchorId),
     findLabPracticeRelationship({
       labAnchorId: feeScheduleLabId,
@@ -1438,10 +1432,8 @@ async function resolveHoldShareAmounts({
     0,
     Math.round(Number(transfer?.billing?.abutmentQty || 0)),
   );
-  let pricingTier =
-    transfer?.billing?.abutmentPricingTier === "membership"
-      ? "membership"
-      : "regular";
+  // 치과 멤버십 폐지 — 청구 분해는 항상 플랫폼 고시(membership*).
+  const pricingTier = PLATFORM_ABUTMENT_PRICING_TIER;
   let abutmentPrices = null;
   let designFeePerTooth = null;
 
@@ -1482,10 +1474,6 @@ async function resolveHoldShareAmounts({
         0,
         Math.round(Number(check?.fees?.abutmentQty || 0)),
       );
-    }
-    if (check?.abutmentPricingTier) {
-      pricingTier =
-        check.abutmentPricingTier === "membership" ? "membership" : "regular";
     }
     if (check?.abutmentPrices) {
       abutmentPrices = check.abutmentPrices;
@@ -2173,7 +2161,7 @@ async function computeAcceptedPracticeTransferFees({
         .select({ "practiceTransferSettings.implantFavorites": 1 })
         .session(session || null)
         .lean(),
-      resolvePracticeAbutmentPricingTier(practiceAnchorId, session),
+      Promise.resolve(PLATFORM_ABUTMENT_PRICING_TIER),
       loadCachedAbutmentCreditPrices(practiceAnchorId),
       findLabPracticeRelationship({
         labAnchorId: feeScheduleLabId,
@@ -3093,7 +3081,7 @@ export async function releasePracticeTransferAbutmentShare({
         ),
       ),
     ),
-    pricingTier: computed.abutmentPricingTier || "regular",
+    pricingTier: PLATFORM_ABUTMENT_PRICING_TIER,
     prices: computed.abutmentPrices || null,
     designFeePerTooth: Math.max(
       0,
@@ -3849,7 +3837,7 @@ export async function buildPracticeTransferQuote({
             })
             .lean()
         : Promise.resolve(null),
-      resolvePracticeAbutmentPricingTier(practiceAnchorId),
+      Promise.resolve(PLATFORM_ABUTMENT_PRICING_TIER),
       loadCachedAbutmentCreditPrices(practiceAnchorId),
       needPartner
         ? findLabPracticeRelationship({ labAnchorId, practiceAnchorId })
@@ -4026,7 +4014,7 @@ export async function loadPracticeTransferQuoteContext({
       remakeSchedule: quote.remakeSchedule || LAB_FEE_SCHEDULE_ZEROS,
       items: quote.items || normalizeLabFeeItems(quote.schedule),
       abutmentRetailPrice: quote.abutmentRetailPrice,
-      abutmentPricingTier: quote.abutmentPricingTier || "regular",
+      abutmentPricingTier: PLATFORM_ABUTMENT_PRICING_TIER,
       abutmentPrices: quote.abutmentPrices,
       relationshipKind: quote.relationshipKind,
       feeRateApplied: quote.feeRateApplied,
@@ -4160,7 +4148,7 @@ export async function buildFeeQuotesForTransferDocs({
     const schedule = quoteLabId ? scheduleByLab.get(quoteLabId) : null;
     const noLab = !quoteLabId;
     const remake = isPracticeTransferRemake(doc);
-    const abutmentPricingTier = resolveAbutsAbutmentPricingTier();
+    const abutmentPricingTier = PLATFORM_ABUTMENT_PRICING_TIER;
     const implantFavorites = favoritesByPractice.get(practiceId) || [];
     // 지정·수락됨: billing 스냅샷(있으면). 공개풀·스냅 없는 자동매칭: as-of(history).
     const snapLabFeeMultiplier = normalizeLabFeeMultiplier(

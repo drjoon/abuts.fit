@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-08-22: 치과 멤버십/일반 청구 이중가 제거. 고시 membership* 단일가. pricingTier 분기 삭제.
 // - 2026-08-22: PTX 작업취소 시 연동 CA Request 크레딧 hold도 즉시 해제(내역·잔액 지연 방지).
 // - 2026-08-22: already_created여도 연동 CA 크레딧 hold를 다시 시도(누락 hold 보정, 기존은 idempotent skip).
 // - 2026-08-21: PTX CA 배송비는 Request 박스 hold(수락 시 holdRequestCreditsOnSubmit).
@@ -72,9 +73,7 @@ import { getManufacturerLeadTimesUtil } from "../controllers/businesses/leadTime
 import { loadCreditSettingsDefaults } from "../utils/creditSettingsDefaults.js";
 import {
   ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
-  ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE,
   pickAbutsAbutmentCreditPrices,
-  resolveAbutsAbutmentPricingTier,
 } from "../utils/abutsAbutmentService.js";
 import { checkCreditLock } from "../utils/creditLock.util.js";
 import {
@@ -435,45 +434,38 @@ export async function resolveManufacturerTargetShipYmd(arrivalYmd) {
 
 /**
  * PTX CA 어벗츠 생산 몫 견적(관리자·제조 의뢰비 표시).
- * 치과 청구(디자인+생산)와 분리: 멤버십 치과 2.5만 → 어벗츠 생산 1.5만 + 기공소 디자인 1만.
+ * 치과 청구(디자인+생산)와 분리: 고시 2.5만 → 어벗츠 생산 1.5만 + 기공소 디자인 1만.
  * 배송 3,500은 치과→어벗츠. 제조사 정산 장부(면세): 의뢰 9,000 + 배송 3,500.
+ * 치과 멤버십 폐지 — 항상 플랫폼 고시(membership*) 단일가.
  */
 export function buildPtxAbutsProductionQuote({
   creditSettings,
-  pricingTier = "regular",
   shippingMode,
   abutmentQty = 1,
   expressFeePerRequest = 2000,
   quotedAt = new Date(),
 }) {
-  const picked = pickAbutsAbutmentCreditPrices(creditSettings || {}, pricingTier);
+  const picked = pickAbutsAbutmentCreditPrices(creditSettings || {});
   const unit = Math.max(
     0,
-    Number(picked.productionPrice) ||
-      (pricingTier === "membership"
-        ? ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE
-        : ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE),
+    Number(picked.productionPrice) || ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
   );
   const practiceUnit = Math.max(
     0,
     Number(picked.designAndProductionPrice) || unit,
   );
   const qty = Math.max(1, Math.floor(Number(abutmentQty) || 1));
-  const tier = pricingTier === "membership" ? "membership" : "regular";
   const base = {
     baseAmount: unit,
     discountAmount: 0,
     amount: unit * qty,
     currency: "KRW",
-    rule:
-      tier === "membership"
-        ? "ptx_abuts_production_membership"
-        : "ptx_abuts_production_regular",
+    rule: "ptx_abuts_production_membership",
     designFee: null,
     abutmentQty: qty,
     quotedAt,
     discountMeta: {
-      pricingTier: tier,
+      pricingTier: "membership",
       // 치과 지불(디자인+생산) vs 어벗츠 생산 수취 vs 기공소 디자인비
       practiceDesignAndProductionUnit: practiceUnit,
       abutsProductionUnit: unit,
@@ -486,10 +478,6 @@ export function buildPtxAbutsProductionQuote({
     expressFee: expressFeePerRequest,
     expressQty: qty,
   });
-}
-
-async function resolvePracticePricingTierForTransfer(_transferDoc) {
-  return "membership";
 }
 
 /**
@@ -697,8 +685,6 @@ export async function createAbutmentRequestsFromPracticeTransfer({
   // PTX 신속처리는 flat expressFee 대신 배수 할증(PTX hold). Request 표시가도 동일.
   if (rush) expressFeePerRequest = 0;
 
-  const pricingTier = await resolvePracticePricingTierForTransfer(transferDoc);
-
   const manufacturerSettings = await getManufacturerLeadTimesUtil();
   const leadTimes = manufacturerSettings?.leadTimes || {};
   const created = [];
@@ -773,7 +759,6 @@ export async function createAbutmentRequestsFromPracticeTransfer({
     );
     let quotedPrice = buildPtxAbutsProductionQuote({
       creditSettings: creditSettingsForQuote,
-      pricingTier,
       // 신속처리 할증 없음(expressFee=0). shippingMode는 항상 묶음.
       shippingMode,
       abutmentQty,
@@ -1753,7 +1738,6 @@ export async function repriceAndReschedulePtxAbutmentRequest({
     // defaults
   }
 
-  const pricingTier = await resolvePracticePricingTierForTransfer(transferDoc);
   const rush = isPracticeTransferRushProcessing(transferDoc);
   if (rush) expressFeePerRequest = 0;
 
@@ -1777,7 +1761,6 @@ export async function repriceAndReschedulePtxAbutmentRequest({
   );
   let quotedPrice = buildPtxAbutsProductionQuote({
     creditSettings: creditSettingsForQuote,
-    pricingTier,
     shippingMode,
     abutmentQty,
     expressFeePerRequest,

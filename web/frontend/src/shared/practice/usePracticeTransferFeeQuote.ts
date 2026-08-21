@@ -109,6 +109,7 @@ export const usePracticeTransferFeeQuote = (params: {
   toothWorks?: ToothWorkSelection[] | null;
   implantFavorites?: ReadonlyArray<ImplantFavoriteForFee> | null;
   storedQuote?: PracticeTransferFeeQuote | null;
+  /** @deprecated 무시. 치과 멤버십 폐지 — 항상 고시 단일가. */
   abutmentPricingTier?: AbutsAbutmentPricingTier | null;
   abutmentPrices?: Partial<AbutsAbutmentCreditPrices> | null;
   autoMatchBudget?: PracticeTransferAutoMatchBudget | null;

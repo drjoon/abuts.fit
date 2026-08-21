@@ -94,7 +94,7 @@
     - 지연/모드 전환 취소: `cancelExpressSurchargeIfShipDelayed` → `deleteExpressSurchargeAtomic` (표시 금액도 추가비 제외로 재동기화)
   - 디자인+생산 과금: `caseInfos.productMode === "design_custom_abutment"`일 때만
     - 공식: `(생산 단가 + designFee) × 어벗 수` — 1 STL에 여러 어벗 가능
-    - 단가: 치과 청구 SSOT=`creditSettings.membershipProductionPrice`(기본 15,000) / `membershipDesignAndProductionPrice`(기본 25,000). `designFee`는 디자인+생산 − 생산만과 동기화(기본 10,000, **1어벗당**). 배송비 별도·박스당 과금. 신속=`expressFee`(기본 +2,000). 치과 멤버십 월정·가입 90일 1만원 없음. 기공소 자동 매칭 **월 참여 수수료 0원**(성공 `%`만). 루트 `rules.md` §2.3.
+    - 단가: 치과 청구 SSOT=`creditSettings.membershipProductionPrice`(기본 15,000) / `membershipDesignAndProductionPrice`(기본 25,000). **단일 고시**(치과 멤버십/일반·`pricingTier` 청구 분기 없음). `designFee`는 디자인+생산 − 생산만과 동기화(기본 10,000, **1어벗당**). 배송비 별도·박스당 과금. 신속=`expressFee`(기본 +2,000). 치과 멤버십 월정·가입 90일 1만원 없음. 기공소 자동 매칭 **월 참여 수수료 0원**(성공 `%`만). 루트 `rules.md` §2.3.
     - 특별 공급가: `creditSettings.specialRequestorPrices[]` — 의뢰자별 CNC/환봉 × 생산만·디자인+생산. `amount`=`productionPrice`(레거시). 지정 시 플랫폼 고시가보다 우선.
     - 어벗 수: `designPrice.utils.js` `countDesignAbutmentQty` (`toothWorks` 커스텀어벗·임플란트만, Pontic·작업X 제외 → `tooth` → 1)
     - 견적/표시: `resolveQuotedPriceWithDesignFee`
@@ -245,7 +245,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - 관리자 문자/알림톡 발송은 큐가 아니라 팝빌 즉시 전송(`sendPopbillXMS` / `sendPopbillKakaoATS`)
 
 - 커스텀 어벗 의뢰 단가 SSOT:
-  - 관리자「플랫폼 설정 · 커스텀어벗」. 치과 고시·크레딧 차감=`membershipProductionPrice`(기본 15,000, 신속은 +`expressFee`).
+  - 관리자「플랫폼 설정 · 커스텀어벗」. 치과 고시·크레딧 차감=`membershipProductionPrice`(기본 15,000, 신속은 +`expressFee`). **청구 단일가** — `regular*`·「멤버/일반」은 딜러 유무 분배용.
   - 기공소 어벗생산의뢰 안내는 치과와 동일 플랫폼 고시(`membershipProductionPrice` / `membershipDesignAndProductionPrice`). 가입 90일 1만원 런칭가 없음.
   - 기준일 계산은 `resolveRequestorPricingBaseDate`를 사용하고, 신규 의뢰 견적/의뢰자 대시보드 집계가 동일 규칙명을 공유해야 합니다.
   - 관련 파일:
@@ -528,7 +528,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 치과 프리셋 편집에서 카탈로그에 없는 제조사를 요청. 타입은 `헥스(사이즈 미정)` 고정.
   - 생성: `POST /api/practice/transfers/round-bar-requests` — 문의(`manufacturer_add_request`) 자동 접수 + `RoundBarAbutmentRequest` + 치과 `implantFavorites`에 일단 저장(`roundBar=true`, `adopted=false`).
   - 관리자: `GET|PATCH /api/admin/round-bar-requests` — 프리셋 내용 편집. 도입 전에 `adoptedKind=cnc|round_bar` 필수. 도입 체크 시 해당 치과 프리셋 `adopted=true` + 종류 저장. 치과 단가: CNC=CNC어벗, 환봉=환봉어벗. 체크 해제=`adopted=false` + 문의 재오픈. 실시간 `practice:round-bar-request-updated`. UI는 플랫폼 설정「커스텀어벗 > 어벗 추가 요청」.
-  - 요금 필드: `membership/regularRoundBarProductionPrice`, `membership/regularRoundBarDesignAndProductionPrice` (0이면 별도 고지).
+  - 요금 필드: 청구 고시=`membershipRoundBarProductionPrice` / `membershipRoundBarDesignAndProductionPrice` (0이면 별도 고지). `regularRoundBar*`는 딜러분배 레거시 키(청구 분기 없음).
   - 기공의뢰 견적 툴팁: **보철기공비** / **어벗 디자인+생산비**(둘 다 기공비. 기공소몫·어벗츠몫 헤더 없음). **치과→기공소 배송 무료**(기공수가「배송비」폐지). **기공소→어벗츠 배송**: CA 미러 Request가 `(기공소 BA + 예정 출고일)` 박스당 1회 `SHIPPING_SPEND_HOLD`(수락 시 `holdRequestCreditsOnSubmit`). 집하 시 `ensureShippingFeeSpendOnMailboxPickup`가 보류→매출. 단가=`creditSettings.shippingFee`. 레거시 PTX 건당 `abuts_shipping` hold만 `chargePracticeTransferAbutsShipping` convert. **환봉 요청중(미도입, `헥스(사이즈 미정)`)** 은 보철기공비 — 어벗츠 단가 제외, 기공소 `커스텀어벗` 항목 수가가 있으면 그 금액. 도입되면 어벗 디자인+생산비.
   - 관련 파일:
     - `models/roundBarAbutmentRequest.model.js`

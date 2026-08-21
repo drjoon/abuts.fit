@@ -6,6 +6,7 @@
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - .cursor/rules/design-fee.mdc
 // change-log:
+// - 2026-08-22: 치과 멤버십/일반 이중가 제거. 청구·안내는 membership* 단일 고시. pricingTier 분기 삭제.
 // - 2026-08-19: 치과·기공소 디자인+생산(2.5만) 구강지그 제외. 지르 보철은 보철기공비 6만.
 // - 2026-08-18: 치과 고시 — 서비스 3종 단일가(생산·디자인+생산·풀세트 지그/지르).
 // - 2026-08-14: 환봉 0원은「가격 별도 고지」로 표시.
@@ -14,13 +15,23 @@
 // - 2026-08-13: 생산 일반 2.0만·멤버십 1.5만 / 디자인+생산 일반 4.0만·멤버십 2.5만.
 // - 2026-08-19: 치과 멤버십 폐지. 커스텀어벗 안내는 플랫폼 고시 단가(membership* 필드).
 
+/**
+ * 커스텀어벗 청구·안내 단가 SSOT (플랫폼 고시).
+ * 설정 키는 레거시명 `membership*` 유지. `regular*` 는 관리자 딜러분배용(청구 분기 없음).
+ */
 export const ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE = 15_000;
-export const ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE = 20_000;
 export const ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE = 25_000;
-export const ABUTS_ABUTMENT_REGULAR_DESIGN_AND_PRODUCTION_PRICE = 40_000;
+
+/** @deprecated 청구 단일가. MEMBERSHIP_PRODUCTION 과 동일(레거시 일반가 2만 폐기). */
+export const ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE =
+  ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE;
+/** @deprecated 청구 단일가. MEMBERSHIP_DESIGN_AND_PRODUCTION 과 동일. */
+export const ABUTS_ABUTMENT_REGULAR_DESIGN_AND_PRODUCTION_PRICE =
+  ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE;
 
 export type AbutsAbutmentCreditPrices = {
   membershipProductionPrice: number;
+  /** 딜러분배(무딜러) 설정. 청구에 사용하지 않음. */
   regularProductionPrice: number;
   membershipDesignAndProductionPrice: number;
   regularDesignAndProductionPrice: number;
@@ -41,41 +52,47 @@ export const normalizeAbutsAbutmentCreditPrices = (
   creditSettings?: Partial<AbutsAbutmentCreditPrices> & {
     minCreditForRequest?: number;
   } | null,
-): AbutsAbutmentCreditPrices => ({
-  membershipProductionPrice: toWon(
+): AbutsAbutmentCreditPrices => {
+  const productionPrice = toWon(
     creditSettings?.membershipProductionPrice ??
       creditSettings?.minCreditForRequest,
     ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
-  ),
-  regularProductionPrice: toWon(
-    creditSettings?.regularProductionPrice,
-    ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE,
-  ),
-  membershipDesignAndProductionPrice: toWon(
+  );
+  const designAndProductionPrice = toWon(
     creditSettings?.membershipDesignAndProductionPrice,
     ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE,
-  ),
-  regularDesignAndProductionPrice: toWon(
-    creditSettings?.regularDesignAndProductionPrice,
-    ABUTS_ABUTMENT_REGULAR_DESIGN_AND_PRODUCTION_PRICE,
-  ),
-  membershipRoundBarProductionPrice: toWon(
+  );
+  const roundBarProductionPrice = toWon(
     creditSettings?.membershipRoundBarProductionPrice,
     0,
-  ),
-  regularRoundBarProductionPrice: toWon(
-    creditSettings?.regularRoundBarProductionPrice,
-    0,
-  ),
-  membershipRoundBarDesignAndProductionPrice: toWon(
+  );
+  const roundBarDesignAndProductionPrice = toWon(
     creditSettings?.membershipRoundBarDesignAndProductionPrice,
     0,
-  ),
-  regularRoundBarDesignAndProductionPrice: toWon(
-    creditSettings?.regularRoundBarDesignAndProductionPrice,
-    0,
-  ),
-});
+  );
+  return {
+    membershipProductionPrice: productionPrice,
+    regularProductionPrice: toWon(
+      creditSettings?.regularProductionPrice,
+      productionPrice,
+    ),
+    membershipDesignAndProductionPrice: designAndProductionPrice,
+    regularDesignAndProductionPrice: toWon(
+      creditSettings?.regularDesignAndProductionPrice,
+      designAndProductionPrice,
+    ),
+    membershipRoundBarProductionPrice: roundBarProductionPrice,
+    regularRoundBarProductionPrice: toWon(
+      creditSettings?.regularRoundBarProductionPrice,
+      roundBarProductionPrice,
+    ),
+    membershipRoundBarDesignAndProductionPrice: roundBarDesignAndProductionPrice,
+    regularRoundBarDesignAndProductionPrice: toWon(
+      creditSettings?.regularRoundBarDesignAndProductionPrice,
+      roundBarDesignAndProductionPrice,
+    ),
+  };
+};
 
 /** @deprecated 멤버십 생산 단가. MEMBERSHIP_PRODUCTION 사용 */
 export const ABUTS_ABUTMENT_PRODUCTION_LIST_PRICE =
@@ -109,25 +126,33 @@ export const formatAbutsManwon = (value: number) => {
   return `${text}만원`;
 };
 
+/** @deprecated 치과 멤버십 폐지. 항상 고시 단일가. */
 export type AbutsAbutmentPricingTier = "membership" | "regular";
 
-/** 치과 멤버십 폐지. 플랫폼 고시 단가(membership* 필드)만 사용. */
+/** @deprecated 항상 "membership". 호출·분기 제거 권장. */
 export const resolveAbutsAbutmentPricingTier = (_args?: {
   requestorKind?: string | null;
   practiceMembershipActive?: boolean | null;
-}): AbutsAbutmentPricingTier => "membership";
+}): AbutsAbutmentPricingTier => {
+  void _args;
+  return "membership";
+};
 
+/** 고시 단가(membership*). tier 인자는 무시. */
 export const pickAbutsAbutmentTierPrice = (args: {
-  tier: AbutsAbutmentPricingTier;
+  tier?: AbutsAbutmentPricingTier;
   membershipPrice: number;
-  regularPrice: number;
-}) =>
-  args.tier === "membership" ? args.membershipPrice : args.regularPrice;
+  regularPrice?: number;
+}) => {
+  void args.tier;
+  void args.regularPrice;
+  return args.membershipPrice;
+};
 
 export const formatAbutsAbutmentTierPriceLine = (args: {
-  tier: AbutsAbutmentPricingTier;
+  tier?: AbutsAbutmentPricingTier;
   membershipPrice: number;
-  regularPrice: number;
+  regularPrice?: number;
 }) => {
   const price = pickAbutsAbutmentTierPrice(args);
   if (price <= 0) return "가격 별도 고지";

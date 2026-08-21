@@ -222,7 +222,7 @@ Notes:
   - 신속 추가 의뢰크레딧 금액은 `creditSettings.expressFee`(기본 2,000원)를 사용합니다.
   - 디자인+생산(`design_custom_abutment`): `(생산 단가 + 디자인비) × 어벗 수`.
     - 디자인비는 디자인+생산 − 생산만. 어벗 수는 `toothWorks` 커스텀어벗·임플란트 치아(Pontic·작업X 제외).
-    - 안내·청구 정가 SSOT (`creditSettings` + `src/shared/pricing/abutsAbutmentService.ts`): 생산만 **1.5만원**, 디자인+생산 **2.5만원**(`membership*` 필드). 신속 `expressFee`(기본 +2,000). 배송비 별도·박스당 과금. 치과 멤버십 월정·가입 90일 1만원 없음. 기공소 매칭 월정 0·성공%만 — 루트 `rules.md` §2.3.
+    - 안내·청구 정가 SSOT (`creditSettings` + `src/shared/pricing/abutsAbutmentService.ts`): 생산만 **1.5만원**, 디자인+생산 **2.5만원**(`membership*` 필드, **단일 고시**). 신속 `expressFee`(기본 +2,000). 배송비 별도·박스당 과금. 치과 멤버십 월정·가입 90일 1만원·멤버십/일반 청구 분기 없음. `regular*`는 관리자 딜러분배용. 기공소 매칭 월정 0·성공%만 — 루트 `rules.md` §2.3.
     - 생산(`custom_abutment`)은 Request/STL당 생산 1개. 신속비는 건당.
     - 디자인+생산 신속비는 **어벗 수 배수** (`expressFee × abutmentQty`).
     - 표시 라벨: `커스텀어벗 생산` / `커스텀어벗 디자인+생산` (생략 시 `생산` / `디자인+생산`).

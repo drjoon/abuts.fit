@@ -24,12 +24,13 @@ const systemSettingsSchema = new mongoose.Schema(
     },
     creditSettings: {
       minCreditForRequest: { type: Number, default: 15000 },
-      // 고시=딜러 소개 있을 때 청구·분배. 일반=딜러 없음 분배식. 치과 구독 단가 아님.
+      // 청구 SSOT=membership*(단일 고시). regular*=딜러 없음 분배 매출키(치과 구독 단가 아님).
       membershipProductionPrice: { type: Number, default: 15000 },
       regularProductionPrice: { type: Number, default: 20000 },
       membershipDesignAndProductionPrice: { type: Number, default: 25000 },
       regularDesignAndProductionPrice: { type: Number, default: 40000 },
       // CNC 티어별 건당 분배(제조사·딜러사·개발운영사). 어벗츠=매출−합계.
+      // membership=딜러 있음, regular=딜러 없음. 치과 멤버십/일반 청구 이중가와 무관.
       membershipProductionManufacturerUnitPrice: { type: Number, default: 9000 },
       membershipProductionSalesmanUnitPrice: { type: Number, default: 3000 },
       membershipProductionDevopsUnitPrice: { type: Number, default: 750 },

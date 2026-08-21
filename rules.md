@@ -167,7 +167,7 @@
 - **매칭 과금 SSOT(강제):**
   - 한 줄: **기공소 월 참여 수수료 0원. 치과 멤버십 월 과금 없음.**
   - 기공소(`lab`): 자동 매칭 **월 참여 수수료(`autoMatchMonthlyFee`)는 0원 고정(정책)**. 참여 ON/OFF만 운영. 과금은 자동 매칭 **성공 수수료(`platformFeeRate`%)만** — 작업완료 정산(에스크로 해제) 시 기공비에서 공제. 지정 의뢰는 `directPlatformFeeEnabled` **기본 off=무료**(별도 공지 시까지); on 시 `directPlatformFeeRate%`.
-  - 치과(`practice`): 커스텀어벗은 플랫폼 고시 단가만. 월 구독·가입 90일 1만원 없음.
+  - 치과(`practice`): 커스텀어벗은 플랫폼 고시 단가(**단일가**, `membership*` 키)만. 월 구독·가입 90일 1만원·멤버십/일반 청구 분기 없음.
   - 유료 크레딧 사용처: 기공물·어벗 주문 대금. 기공소 매칭 월정·플랫폼 SaaS 과금에는 쓰지 않는다.
   - 설정: 단가·신속비=`AdminCreditSettingsTab` / `PATCH /api/admin/settings/credits`. 매칭 성공율·지정 수수료 on/off·월정(0)=`DevopsPlatformFeeTab` / `PATCH /api/admin/settings/platform-fees`.
 - 단일 SSOT 장부: `LedgerJournal` + `LedgerLine`(논리적으로 하나의 General Ledger)
@@ -188,7 +188,7 @@
   - paid/free/settlement 혼합 소비는 의뢰자 잔액에서 **무료 → 기공(settlement 상계) → 유료** 순으로 차감
   - 수익 라인(`REV_*`)의 paid/free 표시는 role 순서가 아니라 소비된 paid/free 총량을 role base에 비례 배분(무편향)해 기록
   - 딜러사·개발운영사·어벗츠의 무료 수익은 지급 0원으로 정산완료 상태만 표시 가능. **제조사는 예외**(유료·무료 모두 약정 단가 지급, 말일 일괄).
-- 커스텀 어벗 의뢰 단가 SSOT: 관리자「플랫폼 설정 · 커스텀어벗」`creditSettings.membershipProductionPrice`(기본 **15,000원**). 디자인+생산=`membershipDesignAndProductionPrice`(기본 **25,000원**). 신속=`expressFee`(기본 **+2,000원**). 기공소 어벗생산의뢰는 `labProductionPrice` 오버레이. 가입 90일 1만원·치과 멤버십 분기 없음.
+- 커스텀 어벗 의뢰 단가 SSOT: 관리자「플랫폼 설정 · 커스텀어벗」`creditSettings.membershipProductionPrice`(기본 **15,000원**). 디자인+생산=`membershipDesignAndProductionPrice`(기본 **25,000원**). 신속=`expressFee`(기본 **+2,000원**). 기공소 어벗생산의뢰는 `labProductionPrice` 오버레이. **치과 멤버십/일반 청구 이중가 없음**(항상 고시 단일가). `regular*`·관리자「멤버/일반」은 **딜러 유무 분배**용이며 청구 분기와 무관. 가입 90일 1만원·치과 멤버십 월정 없음.
 - 롤백 원칙:
   - 롤백은 REFUND 추가가 아니라 원본 커밋 이벤트 및 대응 라인의 **물리 삭제**
 - 조회/표시 타입 원칙:
@@ -314,7 +314,7 @@
     - 실제 크레딧 차감 시점(CAM)과 표시 금액 반영 시점을 혼동하지 말 것
 - 디자인+가공 과금: `productMode === "design_custom_abutment"`일 때만 적용
   - **1 STL에 여러 어벗** 가능. 공식: `(가공 단가 + 디자인비) × 어벗 수`
-  - 단가: 치과 청구 SSOT=`creditSettings.membershipProductionPrice`(기본 **15,000**) / `membershipDesignAndProductionPrice`(기본 **25,000**). `designFee`는 디자인+생산 − 생산만과 동기화(기본 **10,000원 / 1어벗**). 기공의뢰(PTX) CA 치과 청구는 기공소 수가. 기공소→어벗츠 생산비는 플랫폼 고시. 레거시 선납 건만 `abutmentDesignLabFee` 외주 지급. 배송비 별도·박스당 과금. 신속=`expressFee`(기본 **+2,000**). CNC 관리자「멤버/일반」은 딜러 유무 분배용이며 치과 구독과 무관.
+  - 단가: 치과 청구 SSOT=`creditSettings.membershipProductionPrice`(기본 **15,000**) / `membershipDesignAndProductionPrice`(기본 **25,000**). `designFee`는 디자인+생산 − 생산만과 동기화(기본 **10,000원 / 1어벗**). 기공의뢰(PTX) CA 치과 청구는 기공소 수가. 기공소→어벗츠 생산비는 플랫폼 고시. 레거시 선납 건만 `abutmentDesignLabFee` 외주 지급. 배송비 별도·박스당 과금. 신속=`expressFee`(기본 **+2,000**). **청구는 고시 단일가**(치과 멤버십/일반·`pricingTier` 분기 없음). CNC 관리자「멤버/일반」·`regular*`는 딜러 유무 분배용이며 치과 구독·청구와 무관.
   - 어벗 수: `caseInfos.toothWorks` 유효 행(없으면 `tooth` 파싱, 최소 1) — `countDesignAbutmentQty`
   - 설정 UI: 동일 `AdminCreditSettingsTab`(`variant=customAbut`) / `PATCH /api/admin/settings/credits`
   - 견적/표시: `designPrice.utils.js` `resolveQuotedPriceWithDesignFee`

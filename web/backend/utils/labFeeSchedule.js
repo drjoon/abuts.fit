@@ -1253,8 +1253,10 @@ export function computePracticeTransferRetailFees({
   toothWorks,
   implantFavorites,
   labFeeSchedule,
-  abutmentPricingTier,
-  abutmentPrices,
+  /** @deprecated 무시. PTX 치과→기공소는 labFeeSchedule 수가만. */
+  abutmentPricingTier: _abutmentPricingTier,
+  /** @deprecated 무시. 어벗츠 몫은 Request hold. */
+  abutmentPrices: _abutmentPrices,
   skipAbutmentFees = false,
   remake = false,
   labFeeMultiplier = 1,
@@ -1262,6 +1264,8 @@ export function computePracticeTransferRetailFees({
   /** @deprecated 치과→기공소 배송 무료. 무시되며 labShippingFee는 항상 0. */
   includeLabShippingFee = false,
 }) {
+  void _abutmentPricingTier;
+  void _abutmentPrices;
   const useRemake = Boolean(remake);
   const items = normalizeLabFeeItems(labFeeSchedule);
   const remakeSchedule = normalizeLabFeeRemakeSchedule(labFeeSchedule);

@@ -6,6 +6,7 @@
 // - web/backend/controllers/admin/admin.settings.controller.js
 // - web/frontend/src/features/settings/tabs/AdminCreditSettingsTab.tsx
 // change-log:
+// - 2026-08-22: 치과 멤버십/일반 청구 이중가 제거. membership* 단일 고시. pricingTier 분기 삭제.
 // - 2026-08-19: 기공소 오버레이 미설정 폴백을 고시(membership*)로.
 // - 2026-08-17: practiceRushFeeMultiplier(기공의뢰 신속처리 할증) 추가.
 // - 2026-08-18: CNC 분배 비율 멤버(60+20+5+15)·일반(60+10+30) 분리.
@@ -367,7 +368,7 @@ export function findSpecialRequestorPrice(creditSettings, requestorOrgId) {
   );
 }
 
-/** 특별 공급가가 있으면 CNC/환봉 단가를 멤버십·일반 모두 동일 금액으로 덮어쓴다. */
+/** 특별 공급가가 있으면 CNC/환봉 고시·레거시 regular 키를 동일 금액으로 덮어쓴다. */
 export function applySpecialRequestorPricesToCreditSettings(
   creditSettings,
   requestorOrgId,
@@ -413,7 +414,8 @@ export function normalizeLoadedCreditSettings(creditSettings = {}) {
     ...SCHEMA_DEFAULTS,
     ...creditSettings,
   });
-  const membership = pickAbutsAbutmentCreditPrices(abutmentPrices, "membership");
+  // 청구 단가: 항상 플랫폼 고시(membership*). regular* 분배는 딜러 유무용.
+  const membership = pickAbutsAbutmentCreditPrices(abutmentPrices);
   const membershipShares = readSharePercents(
     creditSettings,
     SCHEMA_DEFAULTS,
@@ -561,29 +563,23 @@ export async function loadCreditSettingsDefaults(options = {}) {
   const priced = applyLabSupply
     ? applyLabSupplyPricesToCreditSettings(base)
     : base;
-  const pickTier = "membership";
-  const picked = pickAbutsAbutmentCreditPrices(priced, pickTier);
-  const membership = pickTier === "membership";
+  // 치과 멤버십 폐지 — 청구·의뢰비는 플랫폼 고시(membership*) 단일가.
+  // manufacturer/salesman/devops*UnitPrice 의 membership vs regular 는 딜러 유무 분배용.
+  const picked = pickAbutsAbutmentCreditPrices(priced);
   return {
     ...priced,
     minCreditForRequest: picked.productionPrice,
     designFee: picked.designFeePerTooth,
-    abutmentPricingTier: picked.pricingTier,
+    abutmentPricingTier: "membership",
     requestorKind: requestorKind || null,
     manufacturerRequestUnitPrice: Number(
-      membership
-        ? priced.membershipProductionManufacturerUnitPrice
-        : priced.regularProductionManufacturerUnitPrice,
+      priced.membershipProductionManufacturerUnitPrice,
     ),
     salesmanRequestUnitPrice: Number(
-      membership
-        ? priced.membershipProductionSalesmanUnitPrice
-        : priced.regularProductionSalesmanUnitPrice,
+      priced.membershipProductionSalesmanUnitPrice,
     ),
     devopsRequestUnitPrice: Number(
-      membership
-        ? priced.membershipProductionDevopsUnitPrice
-        : priced.regularProductionDevopsUnitPrice,
+      priced.membershipProductionDevopsUnitPrice,
     ),
   };
 }

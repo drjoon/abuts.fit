@@ -93,7 +93,8 @@ export const DEFAULT_QUOTE_CONTEXT: PracticeTransferQuoteContext = {
   remakeSchedule: LAB_FEE_SCHEDULE_ZEROS,
   items: normalizeLabFeeItems(LAB_FEE_SCHEDULE_ZEROS),
   abutmentRetailPrice: 0,
-  abutmentPricingTier: "regular",
+  // 레거시 필드. 청구는 단일 고시(membership*). 분기하지 말 것.
+  abutmentPricingTier: "membership",
   abutmentPrices: normalizeAbutsAbutmentCreditPrices(),
   relationshipKind: "none",
   feeRateApplied: 0,
@@ -224,8 +225,9 @@ export const parsePracticeTransferQuoteContext = (
       : null;
   const feeRateApplied = Number(r.feeRateApplied);
   const usedDefaultSchedule = Boolean(r.usedDefaultSchedule);
-  const abutmentPricingTier: AbutsAbutmentPricingTier =
-    r.abutmentPricingTier === "membership" ? "membership" : "regular";
+  // 치과 멤버십 폐지 — 응답에 regular가 있어도 고시 단일가로 취급.
+  const abutmentPricingTier: AbutsAbutmentPricingTier = "membership";
+  void r.abutmentPricingTier;
   const remakeRaw =
     r.remakeSchedule && typeof r.remakeSchedule === "object"
       ? (r.remakeSchedule as Partial<LabFeeSchedule>)

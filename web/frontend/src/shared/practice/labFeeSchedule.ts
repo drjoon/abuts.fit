@@ -6,6 +6,7 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
 // - web/frontend/src/features/settings/tabs/LabFeeScheduleTab.tsx
 // - web/backend/tests/unit/labFeeSchedule.test.js
+// - 2026-08-22: 치과 멤버십/일반 청구 이중가 제거. resolveAbutsAbutmentUnitPrice는 고시 단일가.
 // - 2026-08-13: 마스터 active(기본 off)가 켜져야 설정 완료. 수가 디폴트는 기본값·항목 on.
 // - 2026-08-19: 수락 포워드용 missingLabFeeItemNames(해당 보철 미제공·0원).
 // - 2026-08-21: 기공수가「배송비」폐지(치과→기공소 무료). normalize에서 strip.
@@ -996,33 +997,25 @@ export const resolveRemakeLabFeeKey = (row?: {
   return resolveLabFeeKeyFromProsthesisType(prosthesisType);
 };
 
+/** 플랫폼 고시(membership*) 단가. pricingTier는 무시(멤버십 폐지). */
 export const resolveAbutsAbutmentUnitPrice = (args: {
   productMode?: string | null;
+  /** @deprecated 무시. 항상 고시 단일가. */
   pricingTier?: AbutsAbutmentPricingTier | null;
   prices?: Partial<AbutsAbutmentCreditPrices> | null;
   kind?: "cnc" | "round_bar" | null;
 }) => {
+  void args.pricingTier;
   const prices = normalizeAbutsAbutmentCreditPrices(args.prices);
   const isDesign = String(args.productMode || "").trim() === "design_custom_abutment";
-  const membership = args.pricingTier === "membership";
   if (args.kind === "round_bar") {
-    if (isDesign) {
-      return membership
-        ? prices.membershipRoundBarDesignAndProductionPrice
-        : prices.regularRoundBarDesignAndProductionPrice;
-    }
-    return membership
-      ? prices.membershipRoundBarProductionPrice
-      : prices.regularRoundBarProductionPrice;
+    return isDesign
+      ? prices.membershipRoundBarDesignAndProductionPrice
+      : prices.membershipRoundBarProductionPrice;
   }
-  if (isDesign) {
-    return membership
-      ? prices.membershipDesignAndProductionPrice
-      : prices.regularDesignAndProductionPrice;
-  }
-  return membership
-    ? prices.membershipProductionPrice
-    : prices.regularProductionPrice;
+  return isDesign
+    ? prices.membershipDesignAndProductionPrice
+    : prices.membershipProductionPrice;
 };
 
 export const splitPracticeTransferSettlement = (args: {
@@ -1160,7 +1153,9 @@ export const computePracticeTransferRetailFees = (params: {
   }> | null;
   implantFavorites?: ReadonlyArray<ImplantFavoriteForFee> | null;
   labFeeSchedule?: (Partial<LabFeeSchedule> & { items?: LabFeeItem[]; remake?: Partial<LabFeeSchedule> }) | null;
+  /** @deprecated 무시. 청구 단일 고시 — PTX는 labFeeSchedule 수가. */
   abutmentPricingTier?: AbutsAbutmentPricingTier | null;
+  /** @deprecated 무시. 어벗츠 몫은 Request hold. */
   abutmentPrices?: Partial<AbutsAbutmentCreditPrices> | null;
   remake?: boolean;
   skipAbutmentFees?: boolean;
