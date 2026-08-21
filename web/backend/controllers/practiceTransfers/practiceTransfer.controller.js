@@ -147,6 +147,7 @@ import { resolvePracticeTransferSkipJig } from "../../utils/practiceTransferLabS
 // - 2026-08-21: 수락 시 구강스캔 선택(자동매칭 포함). CA Request는 스캔 없이 생성.
 // - 2026-08-20: draft upsert — 환자명만 필수(기공소는 전송 시). 기공소 미선택 동일 환자 draft는 갱신.
 // - 2026-08-17: trash/empty — 하드삭제 전 rollbackPracticeTransferBilling(배송·디자인비 포함).
+// - 2026-08-21: trash/empty — billing rollback 병렬 + 잔액 sync/emit·기공소 unread emit 1회/병렬.
 // - 2026-08-16: 어벗 가공(준비 아님)이면 mark-release 거부·목록 abutmentPastReady.
 // - 2026-08-19: 생성 시 구강스캔은 선택(어벗츠기공소/자동매칭 포함).
 // - 2026-08-15: 구강스캔 — 자동매칭 CA는 치과 필수, 지정은 수락 시 기공소 업로드 허용.
@@ -2156,37 +2157,55 @@ export async function emptyPracticeTransferTrash(req, res) {
       .map((doc) => String(doc?._id || "").trim())
       .filter(Boolean);
 
-    if (draftIds.length > 0) {
-      await PracticeTransferDraft.deleteMany({
-        _id: {
-          $in: draftIds
-            .filter((id) => Types.ObjectId.isValid(id))
-            .map((id) => new Types.ObjectId(id)),
-        },
-      });
-    }
+    const draftDeletePromise =
+      draftIds.length > 0
+        ? PracticeTransferDraft.deleteMany({
+            _id: {
+              $in: draftIds
+                .filter((id) => Types.ObjectId.isValid(id))
+                .map((id) => new Types.ObjectId(id)),
+            },
+          })
+        : Promise.resolve();
 
+    const balanceRestoreByAnchor = {};
     if (transferMongoIds.length > 0) {
-      for (const transferMongoId of transferMongoIds) {
-        try {
-          await rollbackPracticeTransferBilling({
+      // 취소 시 이미 롤백된 건이 대부분이지만, 누락 저널 스윕은 유지.
+      // 건마다 sync/emit 하면 N배 지연 → 병렬 롤백 후 잔액은 anchor별 1회.
+      const rollbackResults = await Promise.all(
+        transferMongoIds.map((transferMongoId) =>
+          rollbackPracticeTransferBilling({
             transferId: transferMongoId,
-            emitRealtime: true,
-          });
-        } catch (rollbackErr) {
-          console.warn(
-            "[practiceTransfer] trash-empty billing rollback failed",
-            transferMongoId,
-            rollbackErr?.message || rollbackErr,
-          );
+            emitRealtime: false,
+            syncBalanceCache: false,
+          }).catch((rollbackErr) => {
+            console.warn(
+              "[practiceTransfer] trash-empty billing rollback failed",
+              transferMongoId,
+              rollbackErr?.message || rollbackErr,
+            );
+            return { didRollback: false, balanceRestoreByAnchor: {} };
+          }),
+        ),
+      );
+      for (const result of rollbackResults) {
+        for (const [anchorId, delta] of Object.entries(
+          result?.balanceRestoreByAnchor || {},
+        )) {
+          const n = Number(delta || 0);
+          if (!anchorId || !Number.isFinite(n) || n === 0) continue;
+          balanceRestoreByAnchor[anchorId] =
+            Number(balanceRestoreByAnchor[anchorId] || 0) + n;
         }
       }
+
       const deletedOids = transferMongoIds
         .filter((id) => Types.ObjectId.isValid(id))
         .map((id) => new Types.ObjectId(id));
-      await PracticeTransfer.deleteMany({
-        _id: { $in: deletedOids },
-      });
+      await Promise.all([
+        draftDeletePromise,
+        PracticeTransfer.deleteMany({ _id: { $in: deletedOids } }),
+      ]);
       // 하드삭제된 의뢰 채팅방은 archive — 치과 사이드바 유령 unread 방지.
       if (deletedOids.length > 0) {
         try {
@@ -2201,6 +2220,22 @@ export async function emptyPracticeTransferTrash(req, res) {
           );
         }
       }
+    } else {
+      await draftDeletePromise;
+    }
+
+    if (Object.keys(balanceRestoreByAnchor).length > 0) {
+      try {
+        await applyPracticeTransferBillingRollbackSideEffects({
+          transferId: transferMongoIds[0] || "trash-empty",
+          balanceRestoreByAnchor,
+        });
+      } catch (sideEffectErr) {
+        console.warn(
+          "[practiceTransfer] trash-empty billing side effects failed",
+          sideEffectErr?.message || sideEffectErr,
+        );
+      }
     }
 
     const affectedByAnchor = new Map();
@@ -2214,35 +2249,37 @@ export async function emptyPracticeTransferTrash(req, res) {
       affectedByAnchor.set(targetLabAnchorId, prev);
     }
 
-    for (const [targetLabAnchorId, affected] of affectedByAnchor.entries()) {
-      const scope = {
-        targetLabAnchorId: new Types.ObjectId(targetLabAnchorId),
-      };
-      invalidateUnreadCountCache(scope);
-      const unreadCount = await PracticeTransfer.countDocuments({
-        ...scope,
-        status: { $ne: "canceled" },
-        requestorReadAt: null,
-      });
-      setRequestPerfCacheValue(
-        unreadCountCacheKey(scope),
-        { unreadCount },
-        10 * 1000,
-      );
+    await Promise.all(
+      [...affectedByAnchor.entries()].map(async ([targetLabAnchorId, affected]) => {
+        const scope = {
+          targetLabAnchorId: new Types.ObjectId(targetLabAnchorId),
+        };
+        invalidateUnreadCountCache(scope);
+        const unreadCount = await PracticeTransfer.countDocuments({
+          ...scope,
+          status: { $ne: "canceled" },
+          requestorReadAt: null,
+        });
+        setRequestPerfCacheValue(
+          unreadCountCacheKey(scope),
+          { unreadCount },
+          10 * 1000,
+        );
 
-      await emitPracticeTransferEventToRequestorUsers({
-        targetLabAnchorId,
-        type: "practice:transfer-updated",
-        payload: {
-          action: "purged",
+        await emitPracticeTransferEventToRequestorUsers({
           targetLabAnchorId,
-          affectedTransfers: affected,
-          unreadCount,
-          status: "deleted",
-          updatedAt: new Date(),
-        },
-      });
-    }
+          type: "practice:transfer-updated",
+          payload: {
+            action: "purged",
+            targetLabAnchorId,
+            affectedTransfers: affected,
+            unreadCount,
+            status: "deleted",
+            updatedAt: new Date(),
+          },
+        });
+      }),
+    );
 
     await emitPracticeTransferEventToPracticeUsers({
       practiceBusinessAnchorId: req.user?.businessAnchorId,
