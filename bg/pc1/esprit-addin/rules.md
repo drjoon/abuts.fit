@@ -242,9 +242,12 @@
   - `STL모델대로` / `헥스30도회전` 모두 동일하게
     `Rotate90Degrees` 후 `+30 + (-hexRotation.appliedDeg)` 적용.
 - NC C축 후처리 SSOT(공구 기반):
+  - `STL모델대로` → T4848/T0909/T0606 근접 `C0`·`C30` 잔여분을 `C0.0`으로 강제 (ExoCAD designSoftware와 무관, mode SSOT만)
+  - `헥스30도회전` / `헥스X도회전` → PRC `C0`를 공구별 minor/total로 치환
   - `T4848`  → `minorDeg` 적용 (`minorDeg = totalDeg - 30`)
   - `T0909`, `T0606` → `totalDeg` 적용
   - 공구번호 미검출/미지원은 즉시 예외 발생(백엔드 실패 콜백 경유 → 프론트 토스트)
+- 재제작(시작 공정=가공)으로 복사된 NC는 원본 헥스 모드 기준이다. 준비 단계에서 mode를 바꾸면 `updateRndHexRotation`이 `caseInfos.ncFile`을 비워 다음 승인 때 Esprit가 재생성한다.
 - NC 축 워드 소수점 강제 (CNC 인식):
   - 금지: `C30`, `C0`, `X10`, `Z0` 처럼 소수점 없는 정수 워드.
   - 필수: `C30.0`, `C0.0`, `X10.0`, `Z0.0` (이미 소수점이 있으면 유지).

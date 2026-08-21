@@ -3160,6 +3160,22 @@ export const updateRndHexRotation = asyncHandler(async (req, res) => {
 
   const requestorBusinessAnchorId = String(request.businessAnchorId || "").trim();
 
+  // related files:
+  // - bg/pc1/esprit-addin/Helpers/NcFileGenerator.cs
+  // - web/backend/controllers/requests/common.requests.controller.js (remake-clone)
+  // 재제작(시작 공정=가공)은 원본 NC를 복사한다. 이후 준비 단계에서 헥스 모드만
+  // STL모델대로↔헥스30도회전으로 바꾸면 C축(C0.0/C30.0)이 모드와 어긋난 채 남는다.
+  // ExoCAD requestorHexRotation 기본값(헥스30)과 무관하게, mode가 바뀌면 NC를 비워
+  // 다음 승인 때 Esprit가 현재 mode로 다시 생성하게 한다.
+  const previousHexMode = parseManufacturerHexRotationMode(
+    request?.caseInfos?.hexRotation?.mode ||
+      request?.rnd?.manufacturerHexRotation ||
+      request?.caseInfos?.manufacturerHexRotation ||
+      "",
+  );
+  const hexModeChanged =
+    Boolean(previousHexMode) && previousHexMode !== manufacturerHexRotation;
+
   request.set("rnd.manufacturerHexRotation", manufacturerHexRotation);
   request.set("rnd.manufacturerHexRotationUpdatedAt", new Date());
   request.set(
@@ -3181,6 +3197,14 @@ export const updateRndHexRotation = asyncHandler(async (req, res) => {
     ...existingHexRotation,
     mode: manufacturerHexRotation,
   });
+  if (hexModeChanged && request?.caseInfos?.ncFile) {
+    request.set("caseInfos.ncFile", undefined);
+    console.info("[rnd-hex-rotation] cleared stale ncFile after hex mode change", {
+      requestId: request.requestId,
+      previousHexMode,
+      manufacturerHexRotation,
+    });
+  }
 
   // 의뢰자 사업자 디폴트 헥스 회전값은 canonical 모드(STL모델대로/헥스30도회전/헥스X도회전(total))를 저장한다.
   if (Types.ObjectId.isValid(requestorBusinessAnchorId)) {
@@ -3233,6 +3257,7 @@ export const updateRndHexRotation = asyncHandler(async (req, res) => {
           manufacturerHexRotation,
           finalHexRotation,
           hexRotation: request.caseInfos?.hexRotation || { mode: manufacturerHexRotation },
+          ...(hexModeChanged ? { ncFile: null } : {}),
         },
         rnd: {
           manufacturerHexRotation,
@@ -3253,6 +3278,7 @@ export const updateRndHexRotation = asyncHandler(async (req, res) => {
       manufacturerHexRotation,
       finalHexRotation,
       hexRotation: request.caseInfos?.hexRotation || { mode: manufacturerHexRotation },
+      ...(hexModeChanged ? { ncFile: null } : {}),
       manufacturerHexRotationUpdatedAt:
         request.rnd?.manufacturerHexRotationUpdatedAt || null,
       manufacturerHexRotationUpdatedBy:

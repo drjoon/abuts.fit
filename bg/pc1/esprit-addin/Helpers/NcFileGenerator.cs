@@ -549,7 +549,10 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
         {
             try
             {
-                if (!TryResolveHexRotationTargets(manufacturerHexRotation, out double minorDeg, out double totalDeg, out string modeLabel))
+                // mode SSOT만 본다. designSoftware(ExoCAD/3Shape)는 여기서 절대 참고하지 않는다.
+                // - STL모델대로 => T4848/T0909/T0606 근접 C축을 C0.0으로 유지/강제
+                // - 헥스30/헥스X => PRC의 C0를 minor/total로 치환
+                if (!TryResolveHexRotationTargets(manufacturerHexRotation, out double minorDeg, out double totalDeg, out string modeLabel, out bool forceZeroCAxis))
                 {
                     AppLogger.Log($"NcFileGenerator: 헥스 회전 NC 후처리 생략 - mode='{manufacturerHexRotation ?? ""}'");
                     return;
@@ -562,12 +565,15 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 }
 
                 var lines = new List<string>(File.ReadAllLines(ncFilePath));
-                // C축 0도 표기 허용 범위(치환 대상):
-                // - C0, C0.0, C00.000
-                // - C+0, C-0, C +0.0, C 0.0
-                // (C10, C30 등은 매칭 제외 — 이미 각도가 들어간 워드는 건드리지 않음)
-                // 치환 결과는 반드시 C30.0 처럼 소수점이 있어야 한다. FormatRotationNumber 가 SSOT.
-                var targetRegex = new Regex(@"C\s*[+-]?0+(?:\.0+)?(?![0-9.])", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+                // 치환 대상:
+                // - 공통: C0 / C0.0 / C+0 / C-0 (PRC 원본)
+                // - STL모델대로 추가: C30 / C30.0 (이전 헥스30 후처리·재제작 복사 NC 잔여분)
+                //   → ExoCAD 기본 헥스30으로 만든 NC를 STL모드로 재생성/재처리할 때 C0.0으로 되돌린다.
+                // 치환 결과는 반드시 C0.0 / C30.0 처럼 소수점이 있어야 한다. FormatRotationNumber 가 SSOT.
+                string axisPattern = forceZeroCAxis
+                    ? @"C\s*[+-]?(?:0+(?:\.0+)?|30(?:\.0+)?)(?![0-9.])"
+                    : @"C\s*[+-]?0+(?:\.0+)?(?![0-9.])";
+                var targetRegex = new Regex(axisPattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
                 int matchedWithinTarget = 0;
                 int replacedWithinTarget = 0;
@@ -585,7 +591,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                         string toolCode = FindNearestToolCodeNearLine(lines, currentLineIndex, 10);
                         if (string.IsNullOrWhiteSpace(toolCode))
                         {
-                            throw new InvalidOperationException($"헥스 회전 NC 후처리 실패: C0 계열 #{ordinal} (line {currentLineIndex + 1}) 상방 10줄 내 공구번호(Txxxx)를 찾지 못했습니다.");
+                            throw new InvalidOperationException($"헥스 회전 NC 후처리 실패: C축 후보 #{ordinal} (line {currentLineIndex + 1}) 상방 10줄 내 공구번호(Txxxx)를 찾지 못했습니다.");
                         }
 
                         double targetDeg;
@@ -600,12 +606,12 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                         }
                         else
                         {
-                            throw new InvalidOperationException($"헥스 회전 NC 후처리 실패: C0 계열 #{ordinal} (line {currentLineIndex + 1}) 근접 공구번호 '{toolCode}'는 지원하지 않습니다. 허용 공구: T4848, T0909, T0606");
+                            throw new InvalidOperationException($"헥스 회전 NC 후처리 실패: C축 후보 #{ordinal} (line {currentLineIndex + 1}) 근접 공구번호 '{toolCode}'는 지원하지 않습니다. 허용 공구: T4848, T0909, T0606");
                         }
 
                         matchedWithinTarget++;
                         replacedWithinTarget++;
-                        // C30 금지. FormatRotationNumber 는 반드시 "30.0" 을 반환한다.
+                        // C30 정수 금지. FormatRotationNumber 는 반드시 "30.0" / "0.0" 을 반환한다.
                         // "C" + 30 또는 ToString() 직접 연결 금지.
                         return "C" + FormatRotationNumber(targetDeg);
                     });
@@ -613,7 +619,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
 
                 if (replacedWithinTarget == 0)
                 {
-                    AppLogger.Log($"NcFileGenerator: 헥스 회전 NC 후처리 대상(C0) 없음 - mode={modeLabel}");
+                    AppLogger.Log($"NcFileGenerator: 헥스 회전 NC 후처리 대상 없음 - mode={modeLabel}, forceZero={forceZeroCAxis}");
                     return;
                 }
 
@@ -622,7 +628,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
 
                 if (matchedWithinTarget < 6)
                 {
-                    AppLogger.Log($"NcFileGenerator: ⚠️ 헥스 회전 NC 후처리 - C0 매칭 수 부족 (expected=6, actual={matchedWithinTarget})");
+                    AppLogger.Log($"NcFileGenerator: ⚠️ 헥스 회전 NC 후처리 - C축 매칭 수 부족 (expected=6, actual={matchedWithinTarget})");
                 }
             }
             catch (Exception ex)
@@ -669,15 +675,23 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
         // 헥스 모드 라벨을 NC 치환각으로 해석한다.
         // - minorDeg: T4848에 적용되는 각도
         // - totalDeg: T0909/T0606에 적용되는 각도 (= 30 + minorDeg)
+        // - forceZeroCAxis: STL모델대로일 때 true (C0/C30 잔여분을 C0.0으로 강제)
         // 전달 SSOT:
         // - "헥스X도회전"의 X는 totalDeg 기준 (예: minor 10도 선택 시 라벨은 "헥스40도회전")
+        // - designSoftware(ExoCAD 등)는 입력이 아니다. manufacturerHexRotation mode만 해석한다.
         // 하위호환:
         // - legacy minor 라벨(예: 헥스10도회전)도 허용하며 X<30이면 total=30+X로 보정
-        private static bool TryResolveHexRotationTargets(string manufacturerHexRotation, out double minorDeg, out double totalDeg, out string modeLabel)
+        private static bool TryResolveHexRotationTargets(
+            string manufacturerHexRotation,
+            out double minorDeg,
+            out double totalDeg,
+            out string modeLabel,
+            out bool forceZeroCAxis)
         {
             minorDeg = 0.0;
             totalDeg = 0.0;
             modeLabel = "STL모델대로";
+            forceZeroCAxis = false;
 
             string mode = string.IsNullOrWhiteSpace(manufacturerHexRotation)
                 ? string.Empty
@@ -687,7 +701,12 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 string.Equals(mode, "STL모델대로", StringComparison.Ordinal) ||
                 string.Equals(mode, "0", StringComparison.Ordinal))
             {
-                return false;
+                // STL모델대로: C축 추가 회전 없음. minor/total=0, C0·C30 잔여분은 C0.0으로 강제.
+                minorDeg = 0.0;
+                totalDeg = 0.0;
+                modeLabel = "STL모델대로";
+                forceZeroCAxis = true;
+                return true;
             }
 
             if (string.Equals(mode, "헥스30도회전", StringComparison.Ordinal) ||
@@ -697,6 +716,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 minorDeg = 0.0;
                 totalDeg = 30.0;
                 modeLabel = "헥스30도회전";
+                forceZeroCAxis = false;
                 return true;
             }
 
@@ -731,6 +751,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 // 모드 라벨(로그/주석). NC 워드가 아니므로 정수 "30" 이어도 된다.
                 // 이 포맷을 C축 출력에 재사용 금지.
                 modeLabel = $"헥스{totalDeg.ToString("0.###############", CultureInfo.InvariantCulture)}도회전";
+                forceZeroCAxis = false;
                 return true;
             }
 

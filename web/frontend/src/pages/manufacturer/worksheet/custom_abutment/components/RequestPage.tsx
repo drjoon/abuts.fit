@@ -1749,15 +1749,24 @@ export const RequestPage = ({
       pageState.setRequests((prev) =>
         prev.map((item) => {
           if (String(item?._id || "").trim() !== requestMongoId) return item;
+          const prevMode =
+            normalizeManufacturerHexMode(
+              ((item.caseInfos || {}) as any)?.hexRotation?.mode,
+            ) ||
+            normalizeManufacturerHexMode((item as any)?.rnd?.manufacturerHexRotation) ||
+            null;
+          const modeChanged = Boolean(prevMode) && prevMode !== backendValue;
           return {
             ...item,
             caseInfos: {
               ...(item.caseInfos || {}),
+              manufacturerHexRotation: backendValue,
               finalHexRotation: toFinalHexRotation(nextValue),
               hexRotation: {
                 ...(((item.caseInfos || {}) as any)?.hexRotation || {}),
                 mode: backendValue,
               },
+              ...(modeChanged ? { ncFile: null } : {}),
             },
             rnd: {
               ...(item.rnd || {}),
@@ -1799,22 +1808,28 @@ export const RequestPage = ({
         pageState.setRequests((prev) =>
           prev.map((item) => {
             if (String(item?._id || "").trim() !== requestMongoId) return item;
+            const nextCaseInfos: any = {
+              ...(item.caseInfos || {}),
+              requestorHexRotation:
+                String(item.caseInfos?.requestorHexRotation || "").trim() ===
+                  "헥스30도회전" ||
+                String(item.caseInfos?.requestorHexRotation || "").trim() === "30"
+                  ? "헥스30도회전"
+                  : "STL모델대로",
+              manufacturerHexRotation: savedManufacturer,
+              finalHexRotation: savedFinal,
+              hexRotation: {
+                ...(((item.caseInfos || {}) as any)?.hexRotation || {}),
+                mode: savedManufacturer,
+              },
+            };
+            // 백엔드가 mode 변경 시 stale NC를 비운다 (재제작 복사 NC의 C30.0 잔여 방지).
+            if (Object.prototype.hasOwnProperty.call(data?.data || {}, "ncFile")) {
+              nextCaseInfos.ncFile = data?.data?.ncFile ?? null;
+            }
             return {
               ...item,
-              caseInfos: {
-                ...(item.caseInfos || {}),
-                requestorHexRotation:
-                  String(item.caseInfos?.requestorHexRotation || "").trim() ===
-                    "헥스30도회전" ||
-                  String(item.caseInfos?.requestorHexRotation || "").trim() === "30"
-                    ? "헥스30도회전"
-                    : "STL모델대로",
-                finalHexRotation: savedFinal,
-                hexRotation: {
-                  ...(((item.caseInfos || {}) as any)?.hexRotation || {}),
-                  mode: savedManufacturer,
-                },
-              },
+              caseInfos: nextCaseInfos,
               rnd: {
                 ...(item.rnd || {}),
                 manufacturerHexRotation: savedManufacturer as any,
