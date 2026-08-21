@@ -6,6 +6,8 @@
 //
 // 어벗츠 기공수가(플랫폼 카탈로그). 항목 On/Off·이름 관리. 평균 재계산 없음.
 // 기공소 신규 항목은 Off·검토 대기로 들어오며, On하면 적용·대기 해제.
+// change-log:
+// - 2026-08-21: 항목 추가(빈 이름 초안)가 자동저장 응답에 지워지지 않게 로컬 초안을 보존.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Card,
@@ -61,6 +63,22 @@ const sortCatalogItems = (list: LabFeeItem[]) => {
   const pending = list.filter((item) => item.pendingReview === true);
   const rest = list.filter((item) => item.pendingReview !== true);
   return [...pending, ...rest];
+};
+
+/** 이름 없는 추가 초안. 서버 normalize는 빈 이름을 버리므로 응답 병합 시 보존. */
+const isDraftFeeItem = (item: LabFeeItem) => !String(item.name || "").trim();
+
+const mergeServerItemsWithLocalDrafts = (
+  serverItems: LabFeeItem[],
+  localItems: LabFeeItem[],
+) => {
+  const drafts = localItems.filter(isDraftFeeItem);
+  if (!drafts.length) return serverItems;
+  const serverIds = new Set(serverItems.map((item) => item.id));
+  return sortCatalogItems([
+    ...serverItems,
+    ...drafts.filter((draft) => !serverIds.has(draft.id)),
+  ]);
 };
 
 function WonInput({
@@ -243,11 +261,17 @@ export const AdminAbutsLabFeeScheduleTab = ({
           ? sortCatalogItems(
               normalizeLabFeeItems({ items: res.data.data.items }),
             )
-          : nextItems;
-        savedSnapshotRef.current = snapshotItems(serverItems);
-        if (snapshotItems(itemsRef.current) === snapshotItems(nextItems)) {
-          setItems(serverItems);
-          savedSnapshotRef.current = snapshotItems(serverItems);
+          : nextItems.filter((item) => !isDraftFeeItem(item));
+        const localItems = itemsRef.current;
+        const merged = mergeServerItemsWithLocalDrafts(serverItems, localItems);
+        if (snapshotItems(localItems) === snapshotItems(nextItems)) {
+          setItems(merged);
+          savedSnapshotRef.current = snapshotItems(merged);
+        } else {
+          // 저장 중 추가 편집이 있으면 로컬 유지. 스냅샷만 서버+현재 초안 기준으로 맞춤.
+          savedSnapshotRef.current = snapshotItems(
+            mergeServerItemsWithLocalDrafts(serverItems, localItems),
+          );
         }
         return true;
       } catch {

@@ -8,6 +8,7 @@
 // - 2026-08-14: 하단 저장 버튼 제거. 항목 변경은 디바운스 자동 저장. 마스터 스위치는 즉시 저장.
 // - 2026-08-19: 수락 클릭 시 `from=accept` 포워드 모달(LabFeeSetupPrompt).
 // - 2026-08-19: `need` 쿼리 수가 카드를 깜빡이며 입력 안내.
+// - 2026-08-21: 항목 추가(빈 이름 초안)가 자동저장 응답에 지워지지 않게 로컬 초안을 보존.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
@@ -66,6 +67,22 @@ const createFeeItem = (partial?: Partial<LabFeeItem>): LabFeeItem =>
     tiers: [],
     ...partial,
   });
+
+/** 이름 없는 추가 초안. 서버 normalize는 빈 이름을 버리므로 응답 병합 시 보존. */
+const isDraftFeeItem = (item: LabFeeItem) => !String(item.name || "").trim();
+
+const mergeServerItemsWithLocalDrafts = (
+  serverItems: LabFeeItem[],
+  localItems: LabFeeItem[],
+) => {
+  const drafts = localItems.filter(isDraftFeeItem);
+  if (!drafts.length) return serverItems;
+  const serverIds = new Set(serverItems.map((item) => item.id));
+  return [
+    ...serverItems,
+    ...drafts.filter((draft) => !serverIds.has(draft.id)),
+  ];
+};
 
 const toWon = (value: number) => Math.max(0, Math.round(Number(value) || 0));
 
@@ -269,11 +286,16 @@ export const LabFeeScheduleTab = () => {
         }
         const serverItems = Array.isArray(res.data?.data?.items)
           ? normalizeLabFeeItems({ items: res.data.data.items })
-          : next.items;
-        savedSnapshotRef.current = snapshotItems(serverItems);
-        if (snapshotItems(itemsRef.current) === snapshotItems(next.items)) {
-          setItems(serverItems);
-          savedSnapshotRef.current = snapshotItems(serverItems);
+          : next.items.filter((item) => !isDraftFeeItem(item));
+        const localItems = itemsRef.current;
+        const merged = mergeServerItemsWithLocalDrafts(serverItems, localItems);
+        if (snapshotItems(localItems) === snapshotItems(next.items)) {
+          setItems(merged);
+          savedSnapshotRef.current = snapshotItems(merged);
+        } else {
+          savedSnapshotRef.current = snapshotItems(
+            mergeServerItemsWithLocalDrafts(serverItems, localItems),
+          );
         }
         return true;
       } catch {
