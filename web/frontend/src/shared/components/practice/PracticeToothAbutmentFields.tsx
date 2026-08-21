@@ -294,14 +294,12 @@ export const PracticeToothAbutmentFields = ({
     return (
       <button
         type="button"
-        className="flex w-full items-center gap-1.5 rounded-xl border border-dashed border-slate-300 bg-white px-2.5 py-2 text-left text-sm font-medium text-slate-500 shadow-sm hover:border-primary/50 hover:bg-primary-muted/30 hover:text-primary-strong"
+        className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-slate-300/90 bg-slate-100/90 px-2.5 py-2 text-center text-sm font-medium text-slate-400 shadow-none hover:border-slate-400 hover:bg-slate-200/80 hover:text-slate-600"
         disabled={favoritesBusy}
         onClick={startAddPreset}
       >
-        <span className="flex min-w-0 flex-1 items-center truncate rounded px-1.5 py-1">
-          <Plus className="mr-1.5 h-4 w-4 shrink-0" />
-          추가
-        </span>
+        <Plus className="h-4 w-4 shrink-0" />
+        추가
       </button>
     );
   };

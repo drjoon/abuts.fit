@@ -45,6 +45,7 @@ import {
   ROUND_BAR_GUIDE_TITLE,
   ROUND_BAR_HEX_TYPE,
   implantFavoriteLabelParts,
+  isManufacturerAddRequestFavorite,
   isRoundBarFavorite,
   submitRoundBarManufacturerRequest,
 } from "@/shared/practice/roundBarAbutment";
@@ -307,6 +308,8 @@ export const PracticeToothImplantFields = ({
 }: Props) => {
   const [editingFavoriteId, setEditingFavoriteId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<ToothImplantValues>(emptyToothWorkImplant());
+  const [editRequestMode, setEditRequestMode] = useState(false);
+  const [editRequestMemo, setEditRequestMemo] = useState("");
   const [isAddingPreset, setIsAddingPreset] = useState(false);
   const [addDraft, setAddDraft] = useState<ToothImplantValues>(emptyToothWorkImplant());
   const [addRequestMode, setAddRequestMode] = useState(false);
@@ -719,6 +722,51 @@ export const PracticeToothImplantFields = ({
     ],
   );
 
+  const editBrandOptions = useMemo(
+    () =>
+      uniqueStrings(
+        cncSpecRows
+          .filter((row) => row.manufacturer === editDraft.implantManufacturer)
+          .map((row) => row.brand),
+      ),
+    [editDraft.implantManufacturer, cncSpecRows],
+  );
+
+  const editFamilyOptions = useMemo(
+    () =>
+      uniqueStrings(
+        cncSpecRows
+          .filter(
+            (row) =>
+              row.manufacturer === editDraft.implantManufacturer &&
+              row.brand === editDraft.implantBrand,
+          )
+          .map((row) => row.family)
+          .filter(Boolean),
+      ),
+    [editDraft.implantManufacturer, editDraft.implantBrand, cncSpecRows],
+  );
+
+  const editTypeOptions = useMemo(
+    () =>
+      uniqueStrings(
+        cncSpecRows
+          .filter(
+            (row) =>
+              row.manufacturer === editDraft.implantManufacturer &&
+              row.brand === editDraft.implantBrand &&
+              row.family === editDraft.implantFamily,
+          )
+          .map((row) => row.type),
+      ),
+    [
+      editDraft.implantManufacturer,
+      editDraft.implantBrand,
+      editDraft.implantFamily,
+      cncSpecRows,
+    ],
+  );
+
   const cncManufacturerLabel = (manufacturer: string) => {
     const sample = cncSpecs.find((c) => c.manufacturer === manufacturer);
     return sample?.displayManufacturer || manufacturer;
@@ -818,6 +866,8 @@ export const PracticeToothImplantFields = ({
 
   const startAddPreset = () => {
     setEditingFavoriteId(null);
+    setEditRequestMode(false);
+    setEditRequestMemo("");
     setAddDraft(emptyToothWorkImplant());
     setAddRequestMode(false);
     setAddRequestMemo("");
@@ -830,6 +880,141 @@ export const PracticeToothImplantFields = ({
     setAddRequestMode(false);
     setAddRequestMemo("");
   };
+
+  const startEditPreset = (fav: PracticeImplantFavorite) => {
+    setIsAddingPreset(false);
+    setAddRequestMode(false);
+    setAddRequestMemo("");
+    setEditingFavoriteId(fav.id);
+    if (isManufacturerAddRequestFavorite(fav)) {
+      setEditRequestMode(true);
+      setEditRequestMemo(String(fav.manufacturer || "").trim());
+      setEditDraft(emptyToothWorkImplant());
+      return;
+    }
+    setEditRequestMode(false);
+    setEditRequestMemo("");
+    setEditDraft({
+      implantManufacturer: fav.manufacturer,
+      implantBrand: fav.brand,
+      implantFamily: fav.family,
+      implantType: fav.type,
+    });
+  };
+
+  const cancelEditPreset = () => {
+    setEditingFavoriteId(null);
+    setEditDraft(emptyToothWorkImplant());
+    setEditRequestMode(false);
+    setEditRequestMemo("");
+  };
+
+  const confirmEditPreset = async (favId: string) => {
+    if (editRequestMode) {
+      const memo = editRequestMemo.trim();
+      if (!memo) {
+        toast({
+          title: "입력 필요",
+          description: "임플란트 제조사·제품 브랜드 등을 입력해주세요.",
+          variant: "destructive",
+        });
+        return;
+      }
+      let nextFavorite: PracticeImplantFavorite = {
+        id: favId,
+        manufacturer: memo,
+        brand: MANUFACTURER_ADD_REQUEST_BRAND,
+        family: MANUFACTURER_ADD_REQUEST_FAMILY,
+        type: ROUND_BAR_HEX_TYPE,
+        roundBar: true,
+        adopted: false,
+      };
+      setFavoritesBusy(true);
+      try {
+        if (token) {
+          const result = await submitRoundBarManufacturerRequest({
+            token,
+            payload: {
+              manufacturer: memo,
+              brand: MANUFACTURER_ADD_REQUEST_BRAND,
+              family: MANUFACTURER_ADD_REQUEST_FAMILY,
+              favoriteId: favId,
+            },
+          });
+          if (result.favorite?.id) {
+            nextFavorite = {
+              ...nextFavorite,
+              ...result.favorite,
+              id: favId,
+              type: ROUND_BAR_HEX_TYPE,
+              roundBar: true,
+            };
+          }
+        }
+        await persistFavorites(
+          favorites.map((row) => (row.id === favId ? { ...row, ...nextFavorite } : row)),
+        );
+        applyFavorite(nextFavorite);
+        cancelEditPreset();
+        setGuideOpen(true);
+      } catch (error) {
+        toast({
+          title: "요청 전달 실패",
+          description:
+            error instanceof Error ? error.message : "관리자 문의 전달에 실패했습니다.",
+          variant: "destructive",
+        });
+        await persistFavorites(
+          favorites.map((row) => (row.id === favId ? { ...row, ...nextFavorite } : row)),
+        );
+        applyFavorite(nextFavorite);
+        cancelEditPreset();
+        setGuideOpen(true);
+      } finally {
+        setFavoritesBusy(false);
+      }
+      return;
+    }
+
+    const manufacturer = editDraft.implantManufacturer.trim();
+    const brand = editDraft.implantBrand.trim();
+    const family = editDraft.implantFamily.trim();
+    const type = editDraft.implantType.trim() || "Hex";
+    if (!manufacturer || !brand) {
+      toast({
+        title: "선택 필요",
+        description: "제조사와 브랜드를 선택해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const nextFavorite: PracticeImplantFavorite = {
+      id: favId,
+      manufacturer,
+      brand,
+      family,
+      type,
+    };
+    await persistFavorites(
+      favorites.map((row) =>
+        row.id === favId
+          ? {
+              id: favId,
+              manufacturer,
+              brand,
+              family,
+              type,
+            }
+          : row,
+      ),
+    );
+    applyFavorite(nextFavorite);
+    cancelEditPreset();
+  };
+
+  const canConfirmEditPreset = editRequestMode
+    ? Boolean(editRequestMemo.trim())
+    : Boolean(editDraft.implantManufacturer && editDraft.implantBrand);
 
   const confirmAddPreset = async () => {
     if (addRequestMode) {
@@ -1020,150 +1205,204 @@ export const PracticeToothImplantFields = ({
         key="add-preset-row"
         className="space-y-1.5 rounded-xl border border-primary/70 bg-primary-soft/50 px-2.5 py-2 shadow-sm"
       >
-        <Select
-          value={addRequestMode ? MANUFACTURER_ADD_REQUEST_VALUE : addDraft.implantManufacturer || undefined}
-          onValueChange={(nextManufacturer) => {
-            if (nextManufacturer === MANUFACTURER_ADD_REQUEST_VALUE) {
-              setAddRequestMode(true);
-              setAddDraft(emptyToothWorkImplant());
-              return;
-            }
-            setAddRequestMode(false);
-            setAddRequestMemo("");
-            const nextBrand = pickFirst(getCncBrands(nextManufacturer));
-            const nextFamily = pickPreferredFamily(
-              getCncFamilies(nextManufacturer, nextBrand),
-            );
-            const nextType =
-              pickFirst(getCncTypes(nextManufacturer, nextBrand, nextFamily)) || "Hex";
-            setAddDraft({
-              implantManufacturer: nextManufacturer,
-              implantBrand: nextBrand,
-              implantFamily: nextFamily,
-              implantType: nextType,
-            });
-          }}
-        >
-          <SelectTrigger className={selectClass}>
-            <SelectValue placeholder="제조사 선택" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectGroup>
-              {addCncManufacturers.map((m) => (
-                <SelectItem key={`add-mfr-${m}`} value={m} className="text-sm">
-                  {cncManufacturerLabel(m)}
-                </SelectItem>
-              ))}
-            </SelectGroup>
-            {allowManufacturerRequest ? (
-              <>
-                <SelectSeparator className="my-1.5 h-0.5 bg-slate-300" />
-                <SelectItem
-                  value={MANUFACTURER_ADD_REQUEST_VALUE}
-                  className="text-sm font-semibold text-primary-strong"
-                >
-                  제조사 추가 요청
-                </SelectItem>
-              </>
-            ) : null}
-          </SelectContent>
-        </Select>
-
         {addRequestMode ? (
-          <Input
-            value={addRequestMemo}
-            placeholder="임플란트 제조사, 제품 브랜드 등 입력"
-            className="h-9 text-sm"
-            onChange={(e) => setAddRequestMemo(e.target.value)}
-          />
-        ) : (
-          <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-3">
+          <>
             <Select
-              value={addDraft.implantBrand || undefined}
-              disabled={!addDraft.implantManufacturer}
-              onValueChange={(nextBrand) => {
+              value={MANUFACTURER_ADD_REQUEST_VALUE}
+              onValueChange={(nextManufacturer) => {
+                if (nextManufacturer === MANUFACTURER_ADD_REQUEST_VALUE) return;
+                setAddRequestMode(false);
+                setAddRequestMemo("");
+                const nextBrand = pickFirst(getCncBrands(nextManufacturer));
                 const nextFamily = pickPreferredFamily(
-                  getCncFamilies(addDraft.implantManufacturer, nextBrand),
+                  getCncFamilies(nextManufacturer, nextBrand),
                 );
                 const nextType =
-                  pickFirst(
-                    getCncTypes(addDraft.implantManufacturer, nextBrand, nextFamily),
-                  ) || "Hex";
-                setAddDraft((prev) => ({
-                  ...prev,
+                  pickFirst(getCncTypes(nextManufacturer, nextBrand, nextFamily)) ||
+                  "Hex";
+                setAddDraft({
+                  implantManufacturer: nextManufacturer,
                   implantBrand: nextBrand,
                   implantFamily: nextFamily,
                   implantType: nextType,
-                }));
+                });
               }}
             >
-              <SelectTrigger className={selectClass} disabled={!addDraft.implantManufacturer}>
-                <SelectValue placeholder="브랜드" />
+              <SelectTrigger className={selectClass}>
+                <SelectValue placeholder="제조사 선택" />
               </SelectTrigger>
               <SelectContent>
-                {addBrandOptions.map((b) => (
-                  <SelectItem key={`add-brand-${b}`} value={b} className="text-sm">
-                    {cncBrandLabel(addDraft.implantManufacturer, b)}
-                  </SelectItem>
-                ))}
+                <SelectGroup>
+                  {addCncManufacturers.map((m) => (
+                    <SelectItem key={`add-mfr-${m}`} value={m} className="text-sm">
+                      {cncManufacturerLabel(m)}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+                {allowManufacturerRequest ? (
+                  <>
+                    <SelectSeparator className="my-1.5 h-0.5 bg-slate-300" />
+                    <SelectItem
+                      value={MANUFACTURER_ADD_REQUEST_VALUE}
+                      className="text-sm font-semibold text-primary-strong"
+                    >
+                      제조사 추가 요청
+                    </SelectItem>
+                  </>
+                ) : null}
               </SelectContent>
             </Select>
-            <Select
-              value={addDraft.implantFamily || undefined}
-              disabled={!addDraft.implantBrand || addFamilyOptions.length === 0}
-              onValueChange={(nextFamily) => {
-                const nextType =
-                  pickFirst(
-                    getCncTypes(
-                      addDraft.implantManufacturer,
-                      addDraft.implantBrand,
-                      nextFamily,
-                    ),
-                  ) || "Hex";
-                setAddDraft((prev) => ({
-                  ...prev,
-                  implantFamily: nextFamily,
-                  implantType: nextType,
-                }));
-              }}
-            >
-              <SelectTrigger
-                className={selectClass}
-                disabled={!addDraft.implantBrand || addFamilyOptions.length === 0}
+            <Input
+              value={addRequestMemo}
+              placeholder="임플란트 제조사, 제품 브랜드 등 입력"
+              className="h-9 text-sm"
+              onChange={(e) => setAddRequestMemo(e.target.value)}
+            />
+          </>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-1.5">
+              <Select
+                value={addDraft.implantManufacturer || undefined}
+                onValueChange={(nextManufacturer) => {
+                  if (nextManufacturer === MANUFACTURER_ADD_REQUEST_VALUE) {
+                    setAddRequestMode(true);
+                    setAddDraft(emptyToothWorkImplant());
+                    return;
+                  }
+                  setAddRequestMode(false);
+                  setAddRequestMemo("");
+                  const nextBrand = pickFirst(getCncBrands(nextManufacturer));
+                  const nextFamily = pickPreferredFamily(
+                    getCncFamilies(nextManufacturer, nextBrand),
+                  );
+                  const nextType =
+                    pickFirst(getCncTypes(nextManufacturer, nextBrand, nextFamily)) ||
+                    "Hex";
+                  setAddDraft({
+                    implantManufacturer: nextManufacturer,
+                    implantBrand: nextBrand,
+                    implantFamily: nextFamily,
+                    implantType: nextType,
+                  });
+                }}
               >
-                <SelectValue placeholder="패밀리" />
-              </SelectTrigger>
-              <SelectContent>
-                {addFamilyOptions.map((f) => (
-                  <SelectItem key={`add-family-${f}`} value={f} className="text-sm">
-                    {cncFamilyLabel(
-                      addDraft.implantManufacturer,
-                      addDraft.implantBrand,
-                      f,
-                    )}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select
-              value={addDraft.implantType || undefined}
-              disabled={!addDraft.implantBrand}
-              onValueChange={(nextType) =>
-                setAddDraft((prev) => ({ ...prev, implantType: nextType }))
-              }
-            >
-              <SelectTrigger className={selectClass} disabled={!addDraft.implantBrand}>
-                <SelectValue placeholder="타입" />
-              </SelectTrigger>
-              <SelectContent>
-                {addTypeOptions.map((t) => (
-                  <SelectItem key={`add-type-${t}`} value={t} className="text-sm">
-                    {t}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+                <SelectTrigger className={selectClass}>
+                  <SelectValue placeholder="제조사" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {addCncManufacturers.map((m) => (
+                      <SelectItem key={`add-mfr-${m}`} value={m} className="text-sm">
+                        {cncManufacturerLabel(m)}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                  {allowManufacturerRequest ? (
+                    <>
+                      <SelectSeparator className="my-1.5 h-0.5 bg-slate-300" />
+                      <SelectItem
+                        value={MANUFACTURER_ADD_REQUEST_VALUE}
+                        className="text-sm font-semibold text-primary-strong"
+                      >
+                        제조사 추가 요청
+                      </SelectItem>
+                    </>
+                  ) : null}
+                </SelectContent>
+              </Select>
+              <Select
+                value={addDraft.implantBrand || undefined}
+                disabled={!addDraft.implantManufacturer}
+                onValueChange={(nextBrand) => {
+                  const nextFamily = pickPreferredFamily(
+                    getCncFamilies(addDraft.implantManufacturer, nextBrand),
+                  );
+                  const nextType =
+                    pickFirst(
+                      getCncTypes(addDraft.implantManufacturer, nextBrand, nextFamily),
+                    ) || "Hex";
+                  setAddDraft((prev) => ({
+                    ...prev,
+                    implantBrand: nextBrand,
+                    implantFamily: nextFamily,
+                    implantType: nextType,
+                  }));
+                }}
+              >
+                <SelectTrigger
+                  className={selectClass}
+                  disabled={!addDraft.implantManufacturer}
+                >
+                  <SelectValue placeholder="브랜드" />
+                </SelectTrigger>
+                <SelectContent>
+                  {addBrandOptions.map((b) => (
+                    <SelectItem key={`add-brand-${b}`} value={b} className="text-sm">
+                      {cncBrandLabel(addDraft.implantManufacturer, b)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-1.5">
+              <Select
+                value={addDraft.implantFamily || undefined}
+                disabled={!addDraft.implantBrand || addFamilyOptions.length === 0}
+                onValueChange={(nextFamily) => {
+                  const nextType =
+                    pickFirst(
+                      getCncTypes(
+                        addDraft.implantManufacturer,
+                        addDraft.implantBrand,
+                        nextFamily,
+                      ),
+                    ) || "Hex";
+                  setAddDraft((prev) => ({
+                    ...prev,
+                    implantFamily: nextFamily,
+                    implantType: nextType,
+                  }));
+                }}
+              >
+                <SelectTrigger
+                  className={selectClass}
+                  disabled={!addDraft.implantBrand || addFamilyOptions.length === 0}
+                >
+                  <SelectValue placeholder="패밀리" />
+                </SelectTrigger>
+                <SelectContent>
+                  {addFamilyOptions.map((f) => (
+                    <SelectItem key={`add-family-${f}`} value={f} className="text-sm">
+                      {cncFamilyLabel(
+                        addDraft.implantManufacturer,
+                        addDraft.implantBrand,
+                        f,
+                      )}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select
+                value={addDraft.implantType || undefined}
+                disabled={!addDraft.implantBrand}
+                onValueChange={(nextType) =>
+                  setAddDraft((prev) => ({ ...prev, implantType: nextType }))
+                }
+              >
+                <SelectTrigger className={selectClass} disabled={!addDraft.implantBrand}>
+                  <SelectValue placeholder="타입" />
+                </SelectTrigger>
+                <SelectContent>
+                  {addTypeOptions.map((t) => (
+                    <SelectItem key={`add-type-${t}`} value={t} className="text-sm">
+                      {t}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </>
         )}
 
         <div className="flex justify-end gap-1">
@@ -1197,14 +1436,12 @@ export const PracticeToothImplantFields = ({
     return (
       <button
         type="button"
-        className="flex w-full items-center gap-1.5 rounded-xl border border-dashed border-slate-300 bg-white px-2.5 py-2 text-left text-sm font-medium text-slate-500 shadow-sm hover:border-primary/50 hover:bg-primary-soft/40 hover:text-primary-strong"
+        className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-slate-300/90 bg-slate-100/90 px-2.5 py-2 text-center text-sm font-medium text-slate-400 shadow-none hover:border-slate-400 hover:bg-slate-200/80 hover:text-slate-600"
         disabled={favoritesBusy}
         onClick={startAddPreset}
       >
-        <span className="flex min-w-0 flex-1 items-center px-1 py-0.5">
-          <Plus className="mr-1.5 h-4 w-4 shrink-0" />
-          추가
-        </span>
+        <Plus className="h-4 w-4 shrink-0" />
+        추가
       </button>
     );
   };
@@ -1272,60 +1509,272 @@ export const PracticeToothImplantFields = ({
                 const isEditing = canManagePresets && editingFavoriteId === fav.id;
                 const isActive = favoriteKey(fav) === currentFavoriteKey;
                 if (isEditing) {
+                  const selectClass = "h-9 w-full text-sm";
                   return (
                     <div
                       key={`edit-${fav.id}`}
-                      className="grid grid-cols-2 gap-1.5 rounded-lg border border-primary-muted bg-white p-2 sm:grid-cols-4"
+                      className="space-y-1.5 rounded-xl border border-primary/70 bg-primary-soft/50 px-2.5 py-2 shadow-sm"
                     >
-                      {(
-                        [
-                          ["implantManufacturer", "제조사"],
-                          ["implantBrand", "브랜드"],
-                          ["implantFamily", "패밀리"],
-                          ["implantType", "타입"],
-                        ] as const
-                      ).map(([key, placeholder]) => (
-                        <Input
-                          key={key}
-                          value={editDraft[key]}
-                          placeholder={placeholder}
-                          className="h-9 text-sm"
-                          onChange={(e) =>
-                            setEditDraft((prev) => ({ ...prev, [key]: e.target.value }))
-                          }
-                        />
-                      ))}
-                      <div className="col-span-2 flex justify-end gap-1 sm:col-span-4">
+                      {editRequestMode ? (
+                        <>
+                          <Select
+                            value={MANUFACTURER_ADD_REQUEST_VALUE}
+                            onValueChange={(nextManufacturer) => {
+                              if (nextManufacturer === MANUFACTURER_ADD_REQUEST_VALUE) {
+                                return;
+                              }
+                              setEditRequestMode(false);
+                              setEditRequestMemo("");
+                              const nextBrand = pickFirst(getCncBrands(nextManufacturer));
+                              const nextFamily = pickPreferredFamily(
+                                getCncFamilies(nextManufacturer, nextBrand),
+                              );
+                              const nextType =
+                                pickFirst(
+                                  getCncTypes(nextManufacturer, nextBrand, nextFamily),
+                                ) || "Hex";
+                              setEditDraft({
+                                implantManufacturer: nextManufacturer,
+                                implantBrand: nextBrand,
+                                implantFamily: nextFamily,
+                                implantType: nextType,
+                              });
+                            }}
+                          >
+                            <SelectTrigger className={selectClass}>
+                              <SelectValue placeholder="제조사" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectGroup>
+                                {addCncManufacturers.map((m) => (
+                                  <SelectItem
+                                    key={`edit-mfr-${m}`}
+                                    value={m}
+                                    className="text-sm"
+                                  >
+                                    {cncManufacturerLabel(m)}
+                                  </SelectItem>
+                                ))}
+                              </SelectGroup>
+                              {allowManufacturerRequest ? (
+                                <>
+                                  <SelectSeparator className="my-1.5 h-0.5 bg-slate-300" />
+                                  <SelectItem
+                                    value={MANUFACTURER_ADD_REQUEST_VALUE}
+                                    className="text-sm font-semibold text-primary-strong"
+                                  >
+                                    제조사 추가 요청
+                                  </SelectItem>
+                                </>
+                              ) : null}
+                            </SelectContent>
+                          </Select>
+                          <Input
+                            value={editRequestMemo}
+                            placeholder="임플란트 제조사, 제품 브랜드 등 입력"
+                            className="h-9 text-sm"
+                            onChange={(e) => setEditRequestMemo(e.target.value)}
+                          />
+                        </>
+                      ) : (
+                        <>
+                          <div className="grid grid-cols-2 gap-1.5">
+                            <Select
+                              value={editDraft.implantManufacturer || undefined}
+                              onValueChange={(nextManufacturer) => {
+                                if (nextManufacturer === MANUFACTURER_ADD_REQUEST_VALUE) {
+                                  setEditRequestMode(true);
+                                  setEditRequestMemo("");
+                                  setEditDraft(emptyToothWorkImplant());
+                                  return;
+                                }
+                                setEditRequestMode(false);
+                                setEditRequestMemo("");
+                                const nextBrand = pickFirst(getCncBrands(nextManufacturer));
+                                const nextFamily = pickPreferredFamily(
+                                  getCncFamilies(nextManufacturer, nextBrand),
+                                );
+                                const nextType =
+                                  pickFirst(
+                                    getCncTypes(nextManufacturer, nextBrand, nextFamily),
+                                  ) || "Hex";
+                                setEditDraft({
+                                  implantManufacturer: nextManufacturer,
+                                  implantBrand: nextBrand,
+                                  implantFamily: nextFamily,
+                                  implantType: nextType,
+                                });
+                              }}
+                            >
+                              <SelectTrigger className={selectClass}>
+                                <SelectValue placeholder="제조사" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectGroup>
+                                  {addCncManufacturers.map((m) => (
+                                    <SelectItem
+                                      key={`edit-mfr-${m}`}
+                                      value={m}
+                                      className="text-sm"
+                                    >
+                                      {cncManufacturerLabel(m)}
+                                    </SelectItem>
+                                  ))}
+                                </SelectGroup>
+                                {allowManufacturerRequest ? (
+                                  <>
+                                    <SelectSeparator className="my-1.5 h-0.5 bg-slate-300" />
+                                    <SelectItem
+                                      value={MANUFACTURER_ADD_REQUEST_VALUE}
+                                      className="text-sm font-semibold text-primary-strong"
+                                    >
+                                      제조사 추가 요청
+                                    </SelectItem>
+                                  </>
+                                ) : null}
+                              </SelectContent>
+                            </Select>
+                            <Select
+                              value={editDraft.implantBrand || undefined}
+                              disabled={!editDraft.implantManufacturer}
+                              onValueChange={(nextBrand) => {
+                                const nextFamily = pickPreferredFamily(
+                                  getCncFamilies(editDraft.implantManufacturer, nextBrand),
+                                );
+                                const nextType =
+                                  pickFirst(
+                                    getCncTypes(
+                                      editDraft.implantManufacturer,
+                                      nextBrand,
+                                      nextFamily,
+                                    ),
+                                  ) || "Hex";
+                                setEditDraft((prev) => ({
+                                  ...prev,
+                                  implantBrand: nextBrand,
+                                  implantFamily: nextFamily,
+                                  implantType: nextType,
+                                }));
+                              }}
+                            >
+                              <SelectTrigger
+                                className={selectClass}
+                                disabled={!editDraft.implantManufacturer}
+                              >
+                                <SelectValue placeholder="브랜드" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {editBrandOptions.map((b) => (
+                                  <SelectItem
+                                    key={`edit-brand-${b}`}
+                                    value={b}
+                                    className="text-sm"
+                                  >
+                                    {cncBrandLabel(editDraft.implantManufacturer, b)}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="grid grid-cols-2 gap-1.5">
+                            <Select
+                              value={editDraft.implantFamily || undefined}
+                              disabled={
+                                !editDraft.implantBrand || editFamilyOptions.length === 0
+                              }
+                              onValueChange={(nextFamily) => {
+                                const nextType =
+                                  pickFirst(
+                                    getCncTypes(
+                                      editDraft.implantManufacturer,
+                                      editDraft.implantBrand,
+                                      nextFamily,
+                                    ),
+                                  ) || "Hex";
+                                setEditDraft((prev) => ({
+                                  ...prev,
+                                  implantFamily: nextFamily,
+                                  implantType: nextType,
+                                }));
+                              }}
+                            >
+                              <SelectTrigger
+                                className={selectClass}
+                                disabled={
+                                  !editDraft.implantBrand || editFamilyOptions.length === 0
+                                }
+                              >
+                                <SelectValue placeholder="패밀리" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {editFamilyOptions.map((f) => (
+                                  <SelectItem
+                                    key={`edit-family-${f}`}
+                                    value={f}
+                                    className="text-sm"
+                                  >
+                                    {cncFamilyLabel(
+                                      editDraft.implantManufacturer,
+                                      editDraft.implantBrand,
+                                      f,
+                                    )}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <Select
+                              value={editDraft.implantType || undefined}
+                              disabled={!editDraft.implantBrand}
+                              onValueChange={(nextType) =>
+                                setEditDraft((prev) => ({
+                                  ...prev,
+                                  implantType: nextType,
+                                }))
+                              }
+                            >
+                              <SelectTrigger
+                                className={selectClass}
+                                disabled={!editDraft.implantBrand}
+                              >
+                                <SelectValue placeholder="타입" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {editTypeOptions.map((t) => (
+                                  <SelectItem
+                                    key={`edit-type-${t}`}
+                                    value={t}
+                                    className="text-sm"
+                                  >
+                                    {t}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </>
+                      )}
+                      <div className="flex justify-end gap-1">
                         <Button
                           type="button"
                           size="sm"
                           className="h-8 px-3 text-sm"
-                          disabled={favoritesBusy}
-                          onClick={() => {
-                            void persistFavorites(
-                              favorites.map((row) =>
-                                row.id === fav.id
-                                  ? {
-                                      ...row,
-                                      manufacturer: editDraft.implantManufacturer.trim(),
-                                      brand: editDraft.implantBrand.trim(),
-                                      family: editDraft.implantFamily.trim(),
-                                      type: editDraft.implantType.trim(),
-                                    }
-                                  : row,
-                              ),
-                            ).then(() => setEditingFavoriteId(null));
-                          }}
+                          disabled={favoritesBusy || !canConfirmEditPreset}
+                          onClick={() => void confirmEditPreset(fav.id)}
                         >
                           <Check className="mr-1 h-3.5 w-3.5" />
-                          저장
+                          {editRequestMode
+                            ? favoritesBusy
+                              ? "요청 중..."
+                              : "요청"
+                            : "저장"}
                         </Button>
                         <Button
                           type="button"
                           variant="ghost"
                           size="sm"
                           className="h-8 px-3 text-sm"
-                          onClick={() => setEditingFavoriteId(null)}
+                          disabled={favoritesBusy}
+                          onClick={cancelEditPreset}
                         >
                           취소
                         </Button>
@@ -1392,16 +1841,7 @@ export const PracticeToothImplantFields = ({
                           variant="ghost"
                           size="icon"
                           className="h-8 w-8 shrink-0 text-slate-400"
-                          onClick={() => {
-                            setIsAddingPreset(false);
-                            setEditingFavoriteId(fav.id);
-                            setEditDraft({
-                              implantManufacturer: fav.manufacturer,
-                              implantBrand: fav.brand,
-                              implantFamily: fav.family,
-                              implantType: fav.type,
-                            });
-                          }}
+                          onClick={() => startEditPreset(fav)}
                           aria-label="프리셋 수정"
                         >
                           <Pencil className="h-4 w-4" />
