@@ -277,7 +277,7 @@ Notes:
   - `src/pages/manufacturer/worksheet/custom_abutment/machining/hooks/useMachiningBoard.ts`
   - `src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx`
 - 「우선순위」 버튼 → `MachiningPriorityRulesModal` (`GET /api/cnc-machines/machining-priority-rules`)
-- Next Up 카드 드래그 → 다른 장비 Next Up으로 이동 (`POST /api/cnc-machines/queues/move`). 이동 시 기존 NC를 삭제하고 CAM을 재생성한다. NC 미수신(재생성 중)이면 Next Up에 「CAM 재생성 중」 블러 오버레이(준비 탭 「라이노 작업중」과 동일).
+- Next Up 카드 드래그 → 다른 장비 Next Up으로 이동 (`POST /api/cnc-machines/queues/move`). 이동 시 기존 NC를 삭제하고 CAM을 재생성한다. NC 미수신(재생성 중)이면 Next Up에 「CAM 생성 중」 블러 오버레이(준비 탭 「라이노 작업중」과 동일).
 - 신속배송 14:00 빠른 가공 재배치:
   - socket `machining:express-rebalance` / queues `meta.expressRebalanceAlert`
   - Alert 칩 클릭 → `ExpressRebalanceAlertModal` (장비별 배정·예상 가공시간·예상 완료·예측 기준)

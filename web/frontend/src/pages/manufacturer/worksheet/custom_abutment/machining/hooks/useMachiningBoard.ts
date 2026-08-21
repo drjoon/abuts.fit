@@ -822,7 +822,7 @@ export const useMachiningBoard = ({
           markNcRegenerationPending(responseRequestId);
         }
 
-        // 낙관적 반영: from→to 이동 + NC 메타 제거 → 「CAM 재생성 중」 오버레이 즉시 표시
+        // 낙관적 반영: from→to 이동 + NC 메타 제거 → 「CAM 생성 중」 오버레이 즉시 표시
         setQueueMap((prev) => {
           const next: QueueMap = { ...prev };
           const fromList = Array.isArray(next[fromMachineId])

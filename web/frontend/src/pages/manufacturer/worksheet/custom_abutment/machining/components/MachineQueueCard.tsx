@@ -982,7 +982,7 @@ export const MachineQueueCard = ({
             draggable={canDragNextUp}
             title={
               nextUpCamRegenPending
-                ? "CAM 재생성 중"
+                ? "CAM 생성 중"
                 : canDragNextUp
                   ? "드래그하여 다른 장비 Next Up으로 이동"
                   : undefined
@@ -1118,10 +1118,10 @@ export const MachineQueueCard = ({
                 }}
                 role="status"
                 aria-live="polite"
-                aria-label="CAM 재생성 중"
+                aria-label="CAM 생성 중"
               >
                 <span className="rounded-full border border-primary-muted bg-primary-soft/90 px-3 py-1.5 text-sm font-extrabold text-primary-strong shadow-sm">
-                  CAM 재생성 중
+                  CAM 생성 중
                 </span>
               </div>
             ) : null}
