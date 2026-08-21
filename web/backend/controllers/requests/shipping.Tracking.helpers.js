@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-21: tracking.lastLocation 저장(집하 이후 위치 뱃지용).
 // - 2026-08-17: 집하 완료 시 우편함 단위 배송비를 1회 차감한다.
 // - 2026-08-17: 한진 배송조회는 운송장 숫자만 사용. 하이픈 조회는 ERROR-03 + 빈 wrkList.
 // - 2026-08-17: 배송완료(66)는 wrkList 전체에서 찾고, 오류 행은 접수 상태로 되돌리지 않는다.
@@ -302,6 +303,8 @@ export const applyTrackingRowsToRequests = async ({
       deliveryInfo.tracking.lastStatusCode = last.statusCode;
     if (last?.statusText)
       deliveryInfo.tracking.lastStatusText = last.statusText;
+    if (last?.location)
+      deliveryInfo.tracking.lastLocation = String(last.location).trim();
     if (last?.occurredAt) deliveryInfo.tracking.lastEventAt = last.occurredAt;
     deliveryInfo.tracking.lastSyncedAt = new Date();
     if (events.length) {
@@ -616,6 +619,8 @@ export const syncHanjinTrackingPayload = async ({
     deliveryInfo.tracking = deliveryInfo.tracking || {};
     if (last.statusCode) deliveryInfo.tracking.lastStatusCode = last.statusCode;
     if (last.statusText) deliveryInfo.tracking.lastStatusText = last.statusText;
+    if (last.location)
+      deliveryInfo.tracking.lastLocation = String(last.location).trim();
     if (last.occurredAt) deliveryInfo.tracking.lastEventAt = last.occurredAt;
     deliveryInfo.tracking.lastSyncedAt = new Date();
   } else {

@@ -31,6 +31,7 @@ const deliveryInfoSchema = new mongoose.Schema(
     tracking: {
       lastStatusCode: String,
       lastStatusText: String,
+      lastLocation: String,
       lastEventAt: Date,
       lastSyncedAt: Date,
     },

@@ -33,6 +33,7 @@ export interface DeliveryInfoSummary {
   tracking?: {
     lastStatusCode?: string;
     lastStatusText?: string;
+    lastLocation?: string;
     lastEventAt?: string;
     lastSyncedAt?: string;
   };

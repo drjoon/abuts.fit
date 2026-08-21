@@ -7,6 +7,7 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // change-log:
+// - 2026-08-21: 추적관리 목록에 한진 배송현황(예: 여수 SUB 도착) 표시. deliveryInfo 포함.
 // - 2026-08-19: 진행중 목록 — 체크박스 선택 후 PATCH /status/batch 일괄 취소.
 // - 2026-08-19: 모달 가로폭을 뷰포트 여백 기준(min 92vw, 최대 1440)으로 맞춤.
 // - 2026-08-19: 모달 가로 확장·기간 캘린더 입력 제거·검색을 기간필터 오른쪽·신속/묶음·디자인SW·아노 뱃지.
@@ -47,6 +48,7 @@ import { toKstYmd } from "@/shared/date/kst";
 import { formatImplantDisplay } from "@/utils/implant";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
+import { getHanjinDeliveryStatusLabel } from "@/shared/shipping/hanjinTrackingLabel";
 import { RequestCaseMetaBadges } from "@/features/requestSettings/RequestCaseMetaBadges";
 
 type ApiMyRequestsResponse = {
@@ -289,7 +291,7 @@ export const PastRequestsModal = ({
     });
   }, [items, q]);
 
-  const colSpan = allowCancel ? 8 : 6;
+  const colSpan = allowCancel ? 9 : 7;
   const dismissLocked = Boolean(suspend || cancelTargets.length);
 
   const cancelableRows = useMemo(
@@ -574,6 +576,7 @@ export const PastRequestsModal = ({
                   ) : null}
                   <TableHead className="w-[170px]">일시</TableHead>
                   <TableHead className="w-[90px]">상태</TableHead>
+                  <TableHead className="w-[140px]">배송현황</TableHead>
                   <TableHead className="w-[88px]">출고</TableHead>
                   <TableHead className="min-w-[220px]">케이스</TableHead>
                   <TableHead className="min-w-[220px]">임플란트</TableHead>
@@ -621,6 +624,34 @@ export const PastRequestsModal = ({
                       </TableCell>
                       <TableCell className="text-xs font-medium text-slate-900">
                         {stage}
+                      </TableCell>
+                      <TableCell className="text-xs text-slate-700">
+                        {(() => {
+                          const di =
+                            r?.deliveryInfoRef &&
+                            typeof r.deliveryInfoRef === "object"
+                              ? r.deliveryInfoRef
+                              : null;
+                          const label = getHanjinDeliveryStatusLabel(di);
+                          if (!label) {
+                            return (
+                              <span className="text-slate-400">-</span>
+                            );
+                          }
+                          const isDone = label === "배송완료";
+                          return (
+                            <span
+                              className={
+                                isDone
+                                  ? "inline-block max-w-[9.5rem] truncate rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800"
+                                  : "inline-block max-w-[9.5rem] truncate rounded bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800"
+                              }
+                              title={label}
+                            >
+                              {label}
+                            </span>
+                          );
+                        })()}
                       </TableCell>
                       <TableCell>
                         <ShippingModeBadge source={r} size="sm" />

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-21: worksheet delivery populate에 events 위치·상태 포함. GET /my에 deliveryInfo 포함.
 // - 2026-08-19: PATCH /status/batch — 준비 단계 일괄 취소. 응답 후 웹소켓·스냅샷.
 // - 2026-08-19: 준비 단계 취소는 트랜잭션 없이 uniqueKeys 조회+status updateOne. 웹소켓은 백그라운드.
 // - 2026-08-19: 준비 단계 취소 시 HOLD 해제를 COMMIT 롤백보다 먼저 수행.
@@ -1753,9 +1754,10 @@ export async function getAllRequests(req, res) {
       }
       if (includeDelivery) {
         // 배송 정보가 필요한 경우에만 최소 필드로 populate
+        // events는 위치(lastLocation 미적재 건) 뱃지용으로 slim 필드만 포함
         query = query.populate(
           "deliveryInfoRef",
-          "shippedAt pickedUpAt deliveredAt carrier manualDeliveryMethods trackingNumber updatedAt tracking",
+          "shippedAt pickedUpAt deliveredAt carrier manualDeliveryMethods trackingNumber updatedAt tracking events.statusCode events.statusText events.occurredAt events.location",
         );
       }
     } else {
@@ -2069,7 +2071,7 @@ export async function getMyRequests(req, res) {
       }
     }
 
-    const cacheKey = `my-requests:v2:${String(req.user?._id || "")}:${String(
+    const cacheKey = `my-requests:v3:${String(req.user?._id || "")}:${String(
       req.user?.businessAnchorId || "",
     )}:${JSON.stringify({
       page,
@@ -2081,6 +2083,8 @@ export async function getMyRequests(req, res) {
       productModeNe: req.query.productModeNe || "",
       sortBy: req.query.sortBy || "",
       sortOrder: req.query.sortOrder || "",
+      from: req.query.from || "",
+      to: req.query.to || "",
     })}`;
 
     const cached = getMyRequestsCacheValue(cacheKey);
@@ -2122,7 +2126,12 @@ export async function getMyRequests(req, res) {
             timeline: 1,
             price: 1,
             estimatedShipYmd: 1,
+            deliveryInfoRef: 1,
           })
+          .populate(
+            "deliveryInfoRef",
+            "shippedAt pickedUpAt deliveredAt carrier trackingNumber tracking events.statusCode events.statusText events.occurredAt events.location",
+          )
           .sort(sort)
           .skip(skip)
           .limit(limit)

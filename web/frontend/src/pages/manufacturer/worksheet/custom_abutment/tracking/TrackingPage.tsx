@@ -1,4 +1,7 @@
 // change-log:
+// - 2026-08-21: 한진 운송중 뱃지를 shared 라벨 SSOT로 통일(위치 포함). API events populate 의존.
+// - 2026-08-21: 집하완료·한진 미배송 뱃지를 최신 위치·상태(예: 여수 SUB 도착)로 표시
+// - 2026-08-21: 집하완료·한진 미배송(66 미수신) 카드에 "한진 미처리" 뱃지 표시
 // - 2026-08-04: 컨텐츠 영역 검색 바 제거. 헤더 worksheetSearch만 사용(중복 제거).
 // - 2026-08-04: 집하완료 표시는 deliveryInfo.pickedUpAt(수동=처리시각, 자동=트래킹 이벤트 시각)을 그대로 사용
 // - 2026-08-03: Tracking 페이지의 공정 라벨/재제작 시작 스테이지 기본값을 '준비'로 변경(표시 레벨). 관련 recall 로직/버튼 초기화 반영.
@@ -46,6 +49,7 @@ import {
   RemakeStartQuickModal,
   type RemakeQuickStartStage,
 } from "../components/RemakeStartQuickModal";
+import { getHanjinInTransitBadgeLabel as formatHanjinInTransitBadge } from "@/shared/shipping/hanjinTrackingLabel";
 
 type InquiryTab = "process" | "shipping" | "udi";
 
@@ -204,6 +208,17 @@ const getShippingModeLabel = (requests: ManufacturerRequest[]): string => {
   return "한진택배";
 };
 
+/** 집하완료 컬럼 · 한진 미배송 뱃지 */
+const getHanjinInTransitBadgeLabel = (
+  columnKey: string,
+  di: DeliveryInfoSummary,
+  shippingModeLabel: string,
+): string | null => {
+  if (columnKey !== "pickedUp") return null;
+  if (shippingModeLabel !== "한진택배") return null;
+  return formatHanjinInTransitBadge(di);
+};
+
 export const TrackingInquiryPage = () => {
   const { token } = useAuthStore();
   const { period } = usePeriodStore();
@@ -324,7 +339,7 @@ export const TrackingInquiryPage = () => {
       url.searchParams.set("rndDone", "0");
       url.searchParams.set("rndUnmachinable", "0");
       // backend tracking worksheet 캐시 키 분기용(발송 방식 SSOT를 shippingWorkflow.manualDeliveryMethods로 통일)
-      url.searchParams.set("trackingProjectionV", "5");
+      url.searchParams.set("trackingProjectionV", "6");
       const res = await fetch(url.pathname + url.search, {
         headers: { Authorization: `Bearer ${token}` },
         cache: "no-cache",
@@ -2010,6 +2025,11 @@ export const TrackingInquiryPage = () => {
                         const shippingModeLabel = getShippingModeLabel(
                           requests as ManufacturerRequest[],
                         );
+                        const hanjinInTransitBadge = getHanjinInTransitBadgeLabel(
+                          column.key,
+                          di,
+                          shippingModeLabel,
+                        );
                         const cardRequestIds = requests
                           .map((req: any) => String(req?._id || "").trim())
                           .filter(Boolean);
@@ -2104,9 +2124,19 @@ export const TrackingInquiryPage = () => {
                               </div>
 
                               <div className="mt-2 flex items-center justify-between gap-2 text-xs">
-                                <span className="inline-block bg-primary-soft text-primary-strong font-semibold px-2 py-0.5 rounded whitespace-nowrap">
-                                  {requestCount}건
-                                </span>
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <span className="inline-block bg-primary-soft text-primary-strong font-semibold px-2 py-0.5 rounded whitespace-nowrap">
+                                    {requestCount}건
+                                  </span>
+                                  {hanjinInTransitBadge && (
+                                    <span
+                                      className="inline-block max-w-[11rem] truncate bg-amber-100 text-amber-800 font-semibold px-2 py-0.5 rounded"
+                                      title={hanjinInTransitBadge}
+                                    >
+                                      {hanjinInTransitBadge}
+                                    </span>
+                                  )}
+                                </div>
                                 <span className="text-gray-500 truncate">
                                   {summaryDate || "-"}
                                 </span>
