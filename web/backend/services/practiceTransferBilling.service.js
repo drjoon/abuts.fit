@@ -1828,8 +1828,10 @@ export async function holdPracticeTransferCredits({
           toothWorks,
           fees: shippingFeesForGate,
         });
-  const heldShippingLab = 0; // 기공소→치과는 기공수가「배송비」(치과 기공비 hold에 포함)
-  const heldShippingAbuts = shippingResolved.abuts;
+  const heldShippingLab = 0; // 치과→기공소 무료
+  // 기공소→어벗츠는 Request 박스키 hold SSOT. PTX 건당 보류 금지(치과에 떠넘김 방지).
+  const heldShippingAbuts = 0;
+  void shippingResolved;
   const required = shares.total;
   if (required <= 0 && heldShippingAbuts <= 0) {
     return {

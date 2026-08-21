@@ -361,7 +361,14 @@ function prepareOneRequestHold({
   }
 
   const isShippingHold = holdKind === "shipping_fee";
-  const displayLabel = REQUEST_HOLD_LABELS[holdKind] || "크레딧 보류";
+  const relatedPtxId = String(
+    request?.partnerBilling?.relatedPracticeTransferId || "",
+  ).trim();
+  const displayLabel = isShippingHold
+    ? relatedPtxId
+      ? "배송비 보류(기공소→어벗츠)"
+      : REQUEST_HOLD_LABELS[holdKind] || "크레딧 보류"
+    : REQUEST_HOLD_LABELS[holdKind] || "크레딧 보류";
   const spendMeta = {
     displayKind: isShippingHold ? "shipping_hold" : "request_fee_hold",
     displayLabel,
@@ -373,6 +380,9 @@ function prepareOneRequestHold({
     fromFreeShipping: split.fromFreeShipping,
     fromSettlement: split.fromSettlement,
     devopsAnchorId,
+    ...(relatedPtxId && Types.ObjectId.isValid(relatedPtxId)
+      ? { relatedPracticeTransferId: relatedPtxId }
+      : {}),
   };
 
   return {

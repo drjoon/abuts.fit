@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/practice/practiceTransferFeeQuote.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/components/practice/PracticeToothWorkChartReadOnly.tsx
+// - 2026-08-21: 기공의뢰 정산에서 기공소→어벗츠 배송 제외(기공소 박스 과금).
 // - 2026-08-21: 치과→기공소 배송 무료. 정산 상세는 →어벗츠(박스)만. skipJig는 물류 안내만.
 // - 2026-08-21: 치과 견적 — 커스텀어벗 등 기공소 수가 미설정(missingFeeNames) 안내.
 // - 2026-08-21: 같은 치아번호는 한 줄. 보철기공비|커스텀어벗 열로 수가 구분.
@@ -692,9 +693,12 @@ export function PracticeTransferFeeEstimate({
             (row) =>
               row.key &&
               row.amount > 0 &&
-              // 치과→기공소 무료 — 어벗츠 구간만 표시
+              // 치과→기공소 무료 · 기공소→어벗츠는 기공소 박스 과금(치과 기공의뢰에 미포함)
               !row.label.includes("치과→기공소") &&
-              row.key !== "lab",
+              !row.label.includes("기공소→어벗츠") &&
+              !row.label.includes("기공소 -> 어벗츠") &&
+              row.key !== "lab" &&
+              row.key !== "abuts",
           )
       : [];
   const shippingTotal = shippingHintLines.reduce(

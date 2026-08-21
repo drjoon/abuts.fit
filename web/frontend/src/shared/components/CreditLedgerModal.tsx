@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-21: 기공의뢰(PTX) 정산에서 기공소→어벗츠 배송 제외(기공소 부담·의뢰 박스 행).
 // - 2026-08-21: 치과→기공소 배송 무료 — baked labShipping·정산 줄 제거. 소비총액=기공비+→어벗츠만.
 // - 2026-08-21: 기공수가 배송비(기공비 hold 합산)를 크레딧 호버·정산 상세에 분리. 견적 툴팁은 그대로 배송비 없음.
 // - 2026-08-21: 기공소 크레딧 내역 — 지급상태·금액호버·상세를 치과와 동일(기공크레딧 잔액/필터만 lab).
@@ -548,6 +549,16 @@ const settlementShippingRouteLabel = (route: PracticeTransferRoute) => {
   return "배송비";
 };
 
+/** 기공소→어벗츠 배송 — 기공소(의뢰자) 박스 과금. 치과 기공의뢰 정산에 포함하지 않음. */
+const isLabToAbutsShippingPart = (part: LedgerDisplayPart) => {
+  const label = String(part.label || "");
+  if (label.includes("기공소→어벗츠") || label.includes("기공소 -> 어벗츠")) {
+    return true;
+  }
+  const { route, kind } = classifyPracticeTransferPart(part);
+  return kind === "shipping" && route === "abuts";
+};
+
 const isFeeQuoteShippingLine = (prosthesisType: string) =>
   canonicalizeFeeItemName(String(prosthesisType || "")) ===
   LAB_FEE_SHIPPING_ITEM_NAME;
@@ -589,7 +600,8 @@ const quoteWorkTotalExcludingShipping = (
 };
 
 /**
- * 장부 배송비 = 배송 라벨 행만(→어벗츠). 치과→기공소(기공수가)는 무료·표시 안 함.
+ * 장부 배송비 = 배송 라벨 행만.
+ * 치과→기공소·기공소→어벗츠는 기공의뢰(PTX) 정산에서 제외.
  */
 const resolvePracticeTransferShippingAmounts = (
   parts: LedgerDisplayPart[] | null | undefined,
@@ -606,8 +618,10 @@ const resolvePracticeTransferShippingAmounts = (
     const { kind, route } = classifyPracticeTransferPart(part);
     const amount = Math.round(Number(part.amount || 0));
     if (kind === "shipping") {
-      // 치과→기공소 레거시 표시 제외
-      if (route === "lab") continue;
+      // 치과→기공소 무료 · 기공소→어벗츠는 기공소 박스 과금(PTX에 떠넘기지 않음)
+      if (route === "lab" || route === "abuts" || isLabToAbutsShippingPart(part)) {
+        continue;
+      }
       explicitShippingAmount += amount;
       continue;
     }
@@ -621,7 +635,7 @@ const resolvePracticeTransferShippingAmounts = (
   };
 };
 
-/** 장부 parts에서 →어벗츠 배송비만 추려 정산 상세에 넘긴다. */
+/** 기공의뢰 정산 배송 줄 — 치과→기공소·기공소→어벗츠 제외. */
 const toSettlementShippingLines = (
   parts: LedgerDisplayPart[] | null | undefined,
   creditLabHoldPending: boolean | null,
@@ -630,6 +644,7 @@ const toSettlementShippingLines = (
 ): PracticeTransferSettlementShippingLine[] => {
   void feeQuote;
   void creditLabHoldPending;
+  void creditAbutmentHoldPending;
   const byKey = new Map<string, PracticeTransferSettlementShippingLine>();
   const upsert = (
     key: string,
@@ -650,15 +665,10 @@ const toSettlementShippingLines = (
   (Array.isArray(parts) ? parts : []).forEach((part, index) => {
     const { route, kind } = classifyPracticeTransferPart(part);
     if (kind !== "shipping") return;
-    if (route === "lab") return; // 치과→기공소 무료
-    const key = route === "other" ? `other:${index}` : route;
-    const holdPending = route === "abuts" ? creditAbutmentHoldPending : null;
-    upsert(
-      key,
-      settlementShippingRouteLabel(route),
-      Number(part.amount || 0),
-      holdPending,
-    );
+    if (route === "lab" || route === "abuts") return;
+    if (isLabToAbutsShippingPart(part)) return;
+    const key = `other:${index}`;
+    upsert(key, settlementShippingRouteLabel("other"), Number(part.amount || 0), null);
   });
 
   return Array.from(byKey.values());
@@ -954,7 +964,39 @@ const isPtxDesignFeeLedgerItem = (item: CreditLedgerItem) => {
   return String(item.uniqueKey || "").includes("abutment_design_fee");
 };
 
+/** 기공소→어벗츠(박스) 배송 원장 — 기공의뢰(PTX) 행에 묶지 않음. */
+const isLabToAbutsShippingLedgerItem = (item: CreditLedgerItem) => {
+  const share = String(item.holdShare || "").trim();
+  if (share === "abuts_shipping" || share === "lab_shipping") return true;
+  const spendKind = String(item.spendKind || item.ledgerSource || "").trim();
+  const related = String(
+    item.relatedPracticeTransferId ||
+      item.refRequestSummary?.relatedPracticeTransferId ||
+      "",
+  ).trim();
+  if (
+    related &&
+    (spendKind === "shipping_fee" ||
+      spendKind === "shipping" ||
+      String(item.refType || "") === "SHIPPING_PACKAGE" ||
+      String(item.uniqueKey || "").includes(":shipping_fee") ||
+      String(item.uniqueKey || "").includes(":abuts_shipping"))
+  ) {
+    return true;
+  }
+  const label = String(item.displayLabel || "");
+  if (label.includes("기공소→어벗츠") || label.includes("기공소 -> 어벗츠")) {
+    return true;
+  }
+  if (label.includes("배송") && label.includes("어벗츠") && label.includes("기공소")) {
+    return true;
+  }
+  return false;
+};
+
 const practiceTransferGroupKey = (item: CreditLedgerItem) => {
+  // 기공소→어벗츠 배송은 기공의뢰 정산과 분리(기공소 박스 과금).
+  if (isLabToAbutsShippingLedgerItem(item)) return "";
   const refType = String(item.refType || "");
   const isDesignFee = isPtxDesignFeeLedgerItem(item);
   if (refType !== "PRACTICE_TRANSFER" && !isDesignFee) {
