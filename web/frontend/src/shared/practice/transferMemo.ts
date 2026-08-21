@@ -5,6 +5,7 @@
 // - web/backend/services/practiceTransferProduction.service.js
 // - web/backend/controllers/practiceTransfers/practiceTransferSettings.controller.js
 // change-log:
+// - 2026-08-21: 임플란트 추가 요청 프리셋 type을 옵션명으로 정규화(레거시 헥스 → 선택 가능).
 // - 2026-08-21: 기공소 수신 — 환봉·제조사 추가요청(요청중) CA는 「커스텀어벗」(기공소 수행). 그 외는 「어벗츠 지급」.
 // - 2026-08-16: formatToothNumbersForCard — 의뢰 목록 카드용 치아번호만(11,21).
 // - 2026-08-14: 기공소 수신(labFacing) 치식 표시 — 커스텀어벗 → 어벗츠 지급.
@@ -25,6 +26,7 @@ import { isPendingRoundBarAbutment } from "@/shared/practice/labFeeSchedule";
 import {
   IMPLANT_ADD_REQUEST_OPTION,
   MANUFACTURER_ADD_REQUEST_BRAND,
+  isImplantAddRequest,
 } from "@/shared/practice/roundBarAbutment";
 
 export const ABUTMENT_PRODUCT_MODE = {
@@ -426,20 +428,25 @@ export const normalizeImplantFavorites = (items: unknown): PracticeImplantFavori
     const family = String(row.family || "").trim();
     const type = String(row.type || "").trim();
     if (!manufacturer && !brand && !family && !type) continue;
-    const key = `${manufacturer}|${brand}|${family}|${type}`.toLowerCase();
-    const id = String(row.id || "").trim() || `imp-${out.length + 1}-${key.slice(0, 24)}`;
+    const id = String(row.id || "").trim() || `imp-${out.length + 1}-${`${manufacturer}|${brand}|${family}|${type}`.toLowerCase().slice(0, 24)}`;
     const roundBarRequestId = String(row.roundBarRequestId || "").trim();
     const roundBar = Boolean(row.roundBar) || Boolean(roundBarRequestId);
-    const implantAddRequest =
-      Boolean(row.implantAddRequest) ||
-      brand === MANUFACTURER_ADD_REQUEST_BRAND ||
-      type === IMPLANT_ADD_REQUEST_OPTION;
+    const implantAddRequest = isImplantAddRequest({
+      implantAddRequest: Boolean(row.implantAddRequest),
+      brand,
+      type,
+    });
+    /** 추가요청은 type을 옵션명으로 통일(레거시 헥스(사이즈 미정) 포함) */
+    const normalizedType = implantAddRequest
+      ? IMPLANT_ADD_REQUEST_OPTION
+      : type;
+    const key = `${manufacturer}|${brand}|${family}|${normalizedType}`.toLowerCase();
     const nextRow: PracticeImplantFavorite = {
       id,
       manufacturer,
       brand,
       family,
-      type: implantAddRequest && !type ? IMPLANT_ADD_REQUEST_OPTION : type,
+      type: normalizedType,
       ...(roundBar || implantAddRequest
         ? {
             roundBar: true,

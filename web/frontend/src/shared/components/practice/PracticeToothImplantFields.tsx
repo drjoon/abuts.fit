@@ -4,6 +4,7 @@
 // - web/frontend/src/shared/practice/transferMemo.ts
 // - web/frontend/src/shared/practice/roundBarAbutment.ts
 // change-log:
+// - 2026-08-21: 요청중(임플란트 추가 요청) 프리셋도 클릭 선택·활성 표시. 레거시 type=헥스 키 정규화.
 // - 2026-08-21: 프리셋 추가는 목록 sticky 하단(스크롤 시에만 고정). 스캔바디와 독립.
 // - 2026-08-21: 프리셋 라벨 2줄(제조사·브랜드 / 패밀리·타입). 추가요청 메모는 제조사만+요청중.
 // - 2026-08-21: presets 추가=인라인 CNC 드롭다운. 없으면 임플란트 추가 요청(메모 1줄).
@@ -43,9 +44,9 @@ import {
   MANUFACTURER_ADD_REQUEST_FAMILY,
   MANUFACTURER_ADD_REQUEST_VALUE,
   IMPLANT_ADD_REQUEST_OPTION,
+  MANUFACTURER_ADD_REQUEST_BRAND,
   ROUND_BAR_GUIDE_LINES,
   ROUND_BAR_GUIDE_TITLE,
-  ROUND_BAR_HEX_TYPE,
   implantFavoriteLabelParts,
   isManufacturerAddRequestFavorite,
   isRoundBarFavorite,
@@ -282,13 +283,30 @@ const FamilyField = ({
   );
 };
 
+/** 요청중(메모 추가요청)은 type을 옵션명으로 맞춰 레거시(헥스)와 선택값이 같은 키로 묶인다. */
 const favoriteKey = (row: {
-  manufacturer: string;
-  brand: string;
-  family: string;
-  type: string;
-}) =>
-  `${row.manufacturer}|${row.brand}|${row.family}|${row.type}`.toLowerCase();
+  manufacturer?: string;
+  brand?: string;
+  family?: string;
+  type?: string;
+  implantManufacturer?: string;
+  implantBrand?: string;
+  implantFamily?: string;
+  implantType?: string;
+}) => {
+  const manufacturer = String(
+    row.manufacturer ?? row.implantManufacturer ?? "",
+  ).trim();
+  const brand = String(row.brand ?? row.implantBrand ?? "").trim();
+  const family = String(row.family ?? row.implantFamily ?? "").trim();
+  const rawType = String(row.type ?? row.implantType ?? "").trim();
+  const type =
+    brand === MANUFACTURER_ADD_REQUEST_BRAND ||
+    rawType === IMPLANT_ADD_REQUEST_OPTION
+      ? IMPLANT_ADD_REQUEST_OPTION
+      : rawType;
+  return `${manufacturer}|${brand}|${family}|${type}`.toLowerCase();
+};
 
 /** 프리셋 행(h-8 + py-1.5×2 + border 2px) × 4 + space-y-1.5 × 3. 초과 시 스크롤. */
 const PRESET_LIST_CLASS =
@@ -850,6 +868,9 @@ export const PracticeToothImplantFields = ({
 
   const applyFavorite = (fav: PracticeImplantFavorite) => {
     const addRequest = isManufacturerAddRequestFavorite(fav);
+    /** 요청중(미도입) 환봉·추가요청 — 기공의뢰에서 선택 가능, 어벗츠 CNC 제외 */
+    const pendingUnsupported =
+      addRequest || (isRoundBarFavorite(fav) && !Boolean(fav.adopted));
     onChange({
       implantManufacturer: fav.manufacturer,
       implantBrand: fav.brand,
@@ -857,7 +878,7 @@ export const PracticeToothImplantFields = ({
       implantType: addRequest
         ? IMPLANT_ADD_REQUEST_OPTION
         : fav.type,
-      implantAddRequest: addRequest,
+      implantAddRequest: pendingUnsupported,
     });
   };
 

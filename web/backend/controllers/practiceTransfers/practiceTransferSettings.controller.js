@@ -1,7 +1,7 @@
 import { Types } from "mongoose";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { hydrateFavoritesWithRoundBarAdopted } from "./roundBarAbutmentRequest.controller.js";
-import { normalizeAdoptedKind } from "../../utils/roundBarAbutment.js";
+import { normalizeAdoptedKind, isImplantAddRequest, IMPLANT_ADD_REQUEST_OPTION } from "../../utils/roundBarAbutment.js";
 import {
   loadAutoMatchBudgetCatalog,
   resolveAutoMatchBudgetOrDefaults,
@@ -21,6 +21,7 @@ import { loadStarBandEligibleLabAnchorIds } from "../../utils/practiceTransferAu
 // - 2026-08-14: autoMatchMinLabRating(자동매칭 최소 별·2nd chance).
 // - 2026-08-16: autoMatchBudget version3 — minPct/maxPct.
 // - 2026-08-16: v4 고정가. GET은 최소 별점으로 budget 조립. autoMatchBudget PATCH 무시.
+// - 2026-08-21: 임플란트 추가 요청 프리셋 type을 옵션명으로 정규화(레거시 헥스 포함).
 // - 2026-08-16: autoMatchMaxLabRating(하한·상한 치과 설정, 기본 3~4).
 const DEFAULT_ARRIVAL_DEFAULT_DAYS = 7;
 const ABUTMENT_PRODUCT_MODE_PRODUCTION = "custom_abutment";
@@ -84,17 +85,22 @@ const normalizeImplantFavorites = (items) => {
     const family = String(row.family || "").trim();
     const type = String(row.type || "").trim();
     if (!manufacturer && !brand && !family && !type) continue;
-    const key = `${manufacturer}|${brand}|${family}|${type}`.toLowerCase();
     const id = String(row.id || "").trim() || `imp-${out.length + 1}`;
     const roundBarRequestId = String(row.roundBarRequestId || "").trim();
     const roundBar = Boolean(row.roundBar) || Boolean(roundBarRequestId);
+    const implantAddRequest =
+      Boolean(row.implantAddRequest) ||
+      isImplantAddRequest({ brand, type, implantAddRequest: row.implantAddRequest });
+    const normalizedType = implantAddRequest ? IMPLANT_ADD_REQUEST_OPTION : type;
+    const key = `${manufacturer}|${brand}|${family}|${normalizedType}`.toLowerCase();
     const nextRow = {
       id,
       manufacturer,
       brand,
       family,
-      type,
-      roundBar,
+      type: normalizedType,
+      roundBar: roundBar || implantAddRequest,
+      implantAddRequest: implantAddRequest || undefined,
       adopted: Boolean(row.adopted),
       adoptedKind: normalizeAdoptedKind(row.adoptedKind),
       roundBarRequestId,

@@ -78,7 +78,7 @@ const normalizeFavoriteRow = (raw) => {
     brand,
     family,
     type:
-      implantAddRequest && !type ? IMPLANT_ADD_REQUEST_OPTION : type,
+      implantAddRequest ? IMPLANT_ADD_REQUEST_OPTION : type,
     roundBar: Boolean(row.roundBar) || Boolean(roundBarRequestId) || implantAddRequest,
     implantAddRequest: implantAddRequest || undefined,
     adopted: Boolean(row.adopted),
