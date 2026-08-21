@@ -13,6 +13,8 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
 // - 2026-08-21: feeQuote.missingFeeNames — 치과 견적에 미설정 수가 항목 안내.
 // - 2026-08-21: assertCredit — fees/shipping 재사용 시 견적 DB 재조회 생략(전송 create 핫패스).
+// - 2026-08-21: hold — 슬라이스 저널 insertMany 1회 + txn 잔액은 BusinessCreditBalance 우선.
+// - 2026-08-21: assert balanceMode=snapshot — 스냅샷 없으면 게이트 스킵(응답 지연 방지).
 // - 2026-08-21: resolveHoldShareAmounts — billing 금액 있으면 assert 재호출 금지. devops 캐시.
 // - 2026-08-19: 목록 feeQuote에 labFeeConfigured 전달(지정 수가 Off·항목 Off=미설정).
 // - 2026-08-18: rollbackPracticeTransferBilling — 멱등키 조회·저널 삭제를 병렬화.
@@ -73,10 +75,12 @@ import {
 } from "./creditBalance.service.js";
 import {
   postGeneralLedgerJournal,
+  postGeneralLedgerJournals,
   getJournalByIdempotencyKey,
   getJournalsByIdempotencyKeys,
   deleteGeneralLedgerCommitJournal,
 } from "./generalLedger.service.js";
+import BusinessCreditBalance from "../models/businessCreditBalance.model.js";
 import {
   resolveRevenueOwnerBaseAllocation,
   splitRevenueByCreditKindProRata,
@@ -614,6 +618,11 @@ export async function assertPracticeTransferPaidCreditSufficient({
   fees: feesInput = null,
   /** 이미 계산된 배송비 — 전달 시 shipping 재계산 생략 */
   shipping: shippingInput = null,
+  /**
+   * snapshot: BusinessCreditBalance 단건(전송 create 사전검사용).
+   * ledger: GL 집계(기본, 확정 검증). hold는 항상 ledger로 재검증.
+   */
+  balanceMode = "ledger",
 }) {
   const practiceId = String(practiceAnchorId || "").trim();
   if (!practiceId || !Types.ObjectId.isValid(practiceId)) {
@@ -715,9 +724,52 @@ export async function assertPracticeTransferPaidCreditSufficient({
     };
   }
 
-  const balance = await computeBusinessCreditBalanceFromLedger({
-    businessAnchorId: practiceId,
-  });
+  let balance;
+  if (String(balanceMode || "").trim() === "snapshot") {
+    const snap = await BusinessCreditBalance.findOne({
+      businessAnchorId: new Types.ObjectId(practiceId),
+    })
+      .select({
+        paidCredit: 1,
+        freeRequestCredit: 1,
+        freeShippingCredit: 1,
+      })
+      .lean();
+    if (snap) {
+      const paidCredit = Math.max(0, Math.round(Number(snap.paidCredit || 0)));
+      const freeRequestCredit = Math.max(
+        0,
+        Math.round(Number(snap.freeRequestCredit || 0)),
+      );
+      const freeShippingCredit = Math.max(
+        0,
+        Math.round(Number(snap.freeShippingCredit || 0)),
+      );
+      balance = {
+        paidCredit,
+        freeRequestCredit,
+        freeShippingCredit,
+        freeCredit: freeRequestCredit + freeShippingCredit,
+      };
+    } else {
+      // 스냅샷 없으면 GL 집계로 응답을 막지 않음. hold가 확정 검증.
+      return {
+        ok: true,
+        fees,
+        shipping,
+        paidCredit: null,
+        freeCredit: null,
+        required,
+        skippedBalanceCheck: true,
+        abutmentPricingTier,
+        abutmentPrices,
+      };
+    }
+  } else {
+    balance = await computeBusinessCreditBalanceFromLedger({
+      businessAnchorId: practiceId,
+    });
+  }
   const split = allocateSpendFromCreditBuckets({
     amount: required,
     paidCredit: Number(balance?.paidCredit || 0),
@@ -1433,7 +1485,10 @@ async function resolveHoldShareAmounts({
   };
 }
 
-async function postOneHoldSlice({
+/**
+ * hold 슬라이스 1건을 메모리에서 준비(DB 없음). bucket 잔액을 갱신한 결과를 반환.
+ */
+function prepareHoldSliceEntry({
   transferId,
   practiceAnchorId,
   devopsAnchorId,
@@ -1442,12 +1497,24 @@ async function postOneHoldSlice({
   displayLabel,
   split,
   actorUserId,
-  session,
   freeOrder = ["freeRequest", "freeShipping"],
 }) {
   const amt = Math.max(0, Math.round(Number(amount) || 0));
   if (amt <= 0) {
-    return { posted: false, journalId: null, fromPaid: 0, fromFreeRequest: 0, fromFreeShipping: 0 };
+    return {
+      prepared: false,
+      entry: null,
+      fromPaid: 0,
+      fromFreeRequest: 0,
+      fromFreeShipping: 0,
+      remainingPaid: Number(split.remainingPaid ?? split.paidCredit ?? 0),
+      remainingFreeRequest: Number(
+        split.remainingFreeRequest ?? split.freeRequestCredit ?? 0,
+      ),
+      remainingFreeShipping: Number(
+        split.remainingFreeShipping ?? split.freeShippingCredit ?? 0,
+      ),
+    };
   }
 
   const sliceSplit = allocateSpendFromCreditBuckets({
@@ -1499,51 +1566,47 @@ async function postOneHoldSlice({
           ? practiceTransferHoldAbutsShippingKey(transferId)
           : practiceTransferHoldLabKey(transferId);
 
-  const journal = await postGeneralLedgerJournal({
-    idempotencyKey,
-    eventType: "PRACTICE_TRANSFER_SPEND_HOLD",
-    businessAnchorId: practiceAnchorId,
-    refType: "PRACTICE_TRANSFER",
-    refId: transferId,
-    createdBy: actorUserId,
-    meta: {
-      heldTotal: amt,
-      holdShare: shareKind,
-      fromPaid: sliceSplit.fromPaid,
-      fromFreeRequest: sliceSplit.fromFreeRequest,
-      fromFreeShipping: sliceSplit.fromFreeShipping,
-      devopsAnchorId,
-    },
-    lines: [
-      ...buildPracticeDebitLines({
-        split: sliceSplit,
-        practiceAnchorId,
-        transferId,
-        meta: spendMetaBase,
-      }),
-      {
-        accountCode: "PLATFORM_ESCROW",
-        ownerRole: "devops",
-        ownerId: devopsAnchorId,
-        amount: amt,
-        amountExcludingVat: amt,
-        vatAmount: 0,
-        creditKind: null,
-        refType: "PRACTICE_TRANSFER",
-        refId: transferId,
-        meta: {
-          ...spendMetaBase,
-          source: "practice_transfer_escrow_hold",
-        },
-      },
-    ],
-    session,
-    skipIdempotencyLookup: true,
-  });
-
   return {
-    posted: true,
-    journalId: journal?.journalId || null,
+    prepared: true,
+    entry: {
+      idempotencyKey,
+      eventType: "PRACTICE_TRANSFER_SPEND_HOLD",
+      businessAnchorId: practiceAnchorId,
+      refType: "PRACTICE_TRANSFER",
+      refId: transferId,
+      createdBy: actorUserId,
+      meta: {
+        heldTotal: amt,
+        holdShare: shareKind,
+        fromPaid: sliceSplit.fromPaid,
+        fromFreeRequest: sliceSplit.fromFreeRequest,
+        fromFreeShipping: sliceSplit.fromFreeShipping,
+        devopsAnchorId,
+      },
+      lines: [
+        ...buildPracticeDebitLines({
+          split: sliceSplit,
+          practiceAnchorId,
+          transferId,
+          meta: spendMetaBase,
+        }),
+        {
+          accountCode: "PLATFORM_ESCROW",
+          ownerRole: "devops",
+          ownerId: devopsAnchorId,
+          amount: amt,
+          amountExcludingVat: amt,
+          vatAmount: 0,
+          creditKind: null,
+          refType: "PRACTICE_TRANSFER",
+          refId: transferId,
+          meta: {
+            ...spendMetaBase,
+            source: "practice_transfer_escrow_hold",
+          },
+        },
+      ],
+    },
     fromPaid: sliceSplit.fromPaid,
     fromFreeRequest: sliceSplit.fromFreeRequest,
     fromFreeShipping: sliceSplit.fromFreeShipping,
@@ -1561,6 +1624,37 @@ async function postOneHoldSlice({
       Number(split.remainingFreeShipping ?? split.freeShippingCredit ?? 0) -
         sliceSplit.fromFreeShipping,
     ),
+  };
+}
+
+async function postOneHoldSlice(args) {
+  const prepared = prepareHoldSliceEntry(args);
+  if (!prepared.prepared) {
+    return {
+      posted: false,
+      journalId: null,
+      fromPaid: 0,
+      fromFreeRequest: 0,
+      fromFreeShipping: 0,
+      remainingPaid: prepared.remainingPaid,
+      remainingFreeRequest: prepared.remainingFreeRequest,
+      remainingFreeShipping: prepared.remainingFreeShipping,
+    };
+  }
+  const journal = await postGeneralLedgerJournal({
+    ...prepared.entry,
+    session: args.session,
+    skipIdempotencyLookup: true,
+  });
+  return {
+    posted: true,
+    journalId: journal?.journalId || null,
+    fromPaid: prepared.fromPaid,
+    fromFreeRequest: prepared.fromFreeRequest,
+    fromFreeShipping: prepared.fromFreeShipping,
+    remainingPaid: prepared.remainingPaid,
+    remainingFreeRequest: prepared.remainingFreeRequest,
+    remainingFreeShipping: prepared.remainingFreeShipping,
   };
 }
 
@@ -1694,22 +1788,53 @@ export async function holdPracticeTransferCredits({
   }
 
   const ownSession = !outerSession;
+  // devops 앵커는 불변 — txn 밖 캐시 조회로 세션 findOne 제거.
+  const devopsAnchorId = await resolveDevopsEscrowOwnerId(null);
+  if (!devopsAnchorId) {
+    const err = new Error("에스크로(devops) 사업자를 찾을 수 없습니다.");
+    err.statusCode = 500;
+    throw err;
+  }
+
   const session = outerSession || (await mongoose.startSession());
   if (ownSession) session.startTransaction();
 
   try {
     await lockGuard(practiceAnchorId, session);
-    const [balance, devopsAnchorId] = await Promise.all([
-      computeBusinessCreditBalanceFromLedger({
+    // txn 안 LedgerLine aggregate는 Atlas에서 수 초. 스냅샷 단건을 우선하고 없을 때만 GL.
+    const practiceOid = new Types.ObjectId(String(practiceAnchorId));
+    const snap = await BusinessCreditBalance.findOne({
+      businessAnchorId: practiceOid,
+    })
+      .select({
+        paidCredit: 1,
+        freeRequestCredit: 1,
+        freeShippingCredit: 1,
+      })
+      .session(session)
+      .lean();
+    let balance;
+    if (snap) {
+      const paidCredit = Math.max(0, Math.round(Number(snap.paidCredit || 0)));
+      const freeRequestCredit = Math.max(
+        0,
+        Math.round(Number(snap.freeRequestCredit || 0)),
+      );
+      const freeShippingCredit = Math.max(
+        0,
+        Math.round(Number(snap.freeShippingCredit || 0)),
+      );
+      balance = {
+        paidCredit,
+        freeRequestCredit,
+        freeShippingCredit,
+        freeCredit: freeRequestCredit + freeShippingCredit,
+      };
+    } else {
+      balance = await computeBusinessCreditBalanceFromLedger({
         businessAnchorId: practiceAnchorId,
         session,
-      }),
-      resolveDevopsEscrowOwnerId(session),
-    ]);
-    if (!devopsAnchorId) {
-      const err = new Error("에스크로(devops) 사업자를 찾을 수 없습니다.");
-      err.statusCode = 500;
-      throw err;
+      });
     }
 
     const totalSplit = allocateSpendFromCreditBuckets({
@@ -1720,7 +1845,9 @@ export async function holdPracticeTransferCredits({
       freeOrder: ["freeRequest", "freeShipping"],
     });
     if (!totalSplit.ok) {
-      const err = new Error("치과 크레딧이 부족합니다.");
+      const err = new Error(
+        `크레딧이 부족합니다. (잔액 ${(totalSplit.available).toLocaleString("ko-KR")}원 / 필요 ${required.toLocaleString("ko-KR")}원)`,
+      );
       err.statusCode = 402;
       err.payload = {
         reason: "insufficient_credit_for_practice_transfer",
@@ -1743,95 +1870,107 @@ export async function holdPracticeTransferCredits({
     let fromPaid = 0;
     let fromFreeRequest = 0;
     let fromFreeShipping = 0;
-    const journalIds = [];
+    const pendingEntries = [];
 
-    const labPost = await postOneHoldSlice({
-      transferId,
-      practiceAnchorId,
-      devopsAnchorId,
-      amount: shares.lab,
-      shareKind: "lab",
-      displayLabel: PRACTICE_TRANSFER_LEDGER_LABELS.holdLab,
-      split: bucket,
-      actorUserId,
-      session,
-    });
-    if (labPost.posted) {
-      journalIds.push(labPost.journalId);
-      fromPaid += labPost.fromPaid;
-      fromFreeRequest += labPost.fromFreeRequest;
-      fromFreeShipping += labPost.fromFreeShipping;
+    const sliceSpecs = [
+      {
+        amount: shares.lab,
+        shareKind: "lab",
+        displayLabel: PRACTICE_TRANSFER_LEDGER_LABELS.holdLab,
+      },
+      {
+        amount: shares.abut,
+        shareKind: "abutment",
+        displayLabel: PRACTICE_TRANSFER_LEDGER_LABELS.holdAbutment,
+      },
+      {
+        amount: heldShippingLab,
+        shareKind: "lab_shipping",
+        displayLabel: PRACTICE_TRANSFER_LEDGER_LABELS.holdShippingLab,
+        freeOrder: ["freeShipping", "freeRequest"],
+      },
+      {
+        amount: heldShippingAbuts,
+        shareKind: "abuts_shipping",
+        displayLabel: PRACTICE_TRANSFER_LEDGER_LABELS.holdShippingAbutment,
+        freeOrder: ["freeShipping", "freeRequest"],
+      },
+    ];
+
+    for (const spec of sliceSpecs) {
+      const prepared = prepareHoldSliceEntry({
+        transferId,
+        practiceAnchorId,
+        devopsAnchorId,
+        amount: spec.amount,
+        shareKind: spec.shareKind,
+        displayLabel: spec.displayLabel,
+        split: bucket,
+        actorUserId,
+        freeOrder: spec.freeOrder || ["freeRequest", "freeShipping"],
+      });
+      if (!prepared.prepared) continue;
+      pendingEntries.push(prepared.entry);
+      fromPaid += prepared.fromPaid;
+      fromFreeRequest += prepared.fromFreeRequest;
+      fromFreeShipping += prepared.fromFreeShipping;
       bucket = {
-        remainingPaid: labPost.remainingPaid,
-        remainingFreeRequest: labPost.remainingFreeRequest,
-        remainingFreeShipping: labPost.remainingFreeShipping,
+        remainingPaid: prepared.remainingPaid,
+        remainingFreeRequest: prepared.remainingFreeRequest,
+        remainingFreeShipping: prepared.remainingFreeShipping,
       };
     }
 
-    const abutPost = await postOneHoldSlice({
-      transferId,
-      practiceAnchorId,
-      devopsAnchorId,
-      amount: shares.abut,
-      shareKind: "abutment",
-      displayLabel: PRACTICE_TRANSFER_LEDGER_LABELS.holdAbutment,
-      split: bucket,
-      actorUserId,
-      session,
-    });
-    if (abutPost.posted) {
-      journalIds.push(abutPost.journalId);
-      fromPaid += abutPost.fromPaid;
-      fromFreeRequest += abutPost.fromFreeRequest;
-      fromFreeShipping += abutPost.fromFreeShipping;
-      bucket = {
-        remainingPaid: abutPost.remainingPaid,
-        remainingFreeRequest: abutPost.remainingFreeRequest,
-        remainingFreeShipping: abutPost.remainingFreeShipping,
-      };
-    }
+    const posted =
+      pendingEntries.length > 0
+        ? await postGeneralLedgerJournals({
+            entries: pendingEntries,
+            session,
+          })
+        : [];
+    const journalIds = posted
+      .map((row) => row?.journalId)
+      .filter(Boolean);
 
-    const labShipPost = await postOneHoldSlice({
-      transferId,
-      practiceAnchorId,
-      devopsAnchorId,
-      amount: heldShippingLab,
-      shareKind: "lab_shipping",
-      displayLabel: PRACTICE_TRANSFER_LEDGER_LABELS.holdShippingLab,
-      split: bucket,
-      actorUserId,
-      session,
-      freeOrder: ["freeShipping", "freeRequest"],
-    });
-    if (labShipPost.posted) {
-      journalIds.push(labShipPost.journalId);
-      fromPaid += labShipPost.fromPaid;
-      fromFreeRequest += labShipPost.fromFreeRequest;
-      fromFreeShipping += labShipPost.fromFreeShipping;
-      bucket = {
-        remainingPaid: labShipPost.remainingPaid,
-        remainingFreeRequest: labShipPost.remainingFreeRequest,
-        remainingFreeShipping: labShipPost.remainingFreeShipping,
-      };
-    }
-
-    const abutsShipPost = await postOneHoldSlice({
-      transferId,
-      practiceAnchorId,
-      devopsAnchorId,
-      amount: heldShippingAbuts,
-      shareKind: "abuts_shipping",
-      displayLabel: PRACTICE_TRANSFER_LEDGER_LABELS.holdShippingAbutment,
-      split: bucket,
-      actorUserId,
-      session,
-      freeOrder: ["freeShipping", "freeRequest"],
-    });
-    if (abutsShipPost.posted) {
-      journalIds.push(abutsShipPost.journalId);
-      fromPaid += abutsShipPost.fromPaid;
-      fromFreeRequest += abutsShipPost.fromFreeRequest;
-      fromFreeShipping += abutsShipPost.fromFreeShipping;
+    // 스냅샷을 hold 차감에 맞춰 갱신(다음 hold가 다시 GL aggregate 하지 않게).
+    if (fromPaid || fromFreeRequest || fromFreeShipping) {
+      const incResult = await BusinessCreditBalance.updateOne(
+        { businessAnchorId: practiceOid },
+        {
+          $inc: {
+            paidCredit: -fromPaid,
+            freeRequestCredit: -fromFreeRequest,
+            freeShippingCredit: -fromFreeShipping,
+          },
+        },
+        { session },
+      );
+      if (!incResult?.matchedCount) {
+        await BusinessCreditBalance.updateOne(
+          { businessAnchorId: practiceOid },
+          {
+            $set: {
+              paidCredit: Math.max(
+                0,
+                Number(balance?.paidCredit || 0) - fromPaid,
+              ),
+              freeRequestCredit: Math.max(
+                0,
+                Number(balance?.freeRequestCredit || 0) - fromFreeRequest,
+              ),
+              freeShippingCredit: Math.max(
+                0,
+                Number(balance?.freeShippingCredit || 0) - fromFreeShipping,
+              ),
+            },
+            $setOnInsert: {
+              businessAnchorId: practiceOid,
+              version: 0,
+            },
+          },
+          { upsert: true, session },
+        );
+      }
     }
 
     if (ownSession) await session.commitTransaction();

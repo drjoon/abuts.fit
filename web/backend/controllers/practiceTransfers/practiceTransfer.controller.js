@@ -136,6 +136,7 @@ import { resolvePracticeTransferSkipJig } from "../../utils/practiceTransferLabS
 // - web/backend/utils/practiceLabRating.js
 // - web/backend/utils/practiceTransferStage.js
 // - 2026-08-21: GET /received — 연동 CA 한진 배송 요약(abutmentDeliveryInfo) 포함(치과 /my와 동일).
+// - 2026-08-21: createPracticeTransfer — 응답은 create 직후. hold·기공소 알림은 백그라운드.
 // - 2026-08-21: createPracticeTransfer — 견적 1회+잔액 재사용, socket/unread 응답 후 비동기.
 // - 2026-08-21: GET /my — 연동 CA 한진 배송 요약(abutmentDeliveryInfo) 포함.
 // - 2026-08-17: mark-complete는 기공소→치과 배송비만. 어벗츠→제조사 배송은 CA 집하.
@@ -2320,6 +2321,14 @@ export async function emptyPracticeTransferTrash(req, res) {
 }
 
 export async function createPracticeTransfer(req, res) {
+  const __createT0 = Date.now();
+  const __mark = (label, from) => {
+    const now = Date.now();
+    console.log(
+      `[createPracticeTransfer] ${label}=${now - from}ms total=${now - __createT0}ms`,
+    );
+    return now;
+  };
   try {
     const role = String(req.user?.role || "").trim();
     if (!isPracticeTransferSenderRole(role)) {
@@ -2448,7 +2457,8 @@ export async function createPracticeTransfer(req, res) {
       });
     }
 
-    // 별점대역·납기정책 병렬. 서브계약 차단은 응답 충돌 방지를 위해 직렬.
+    // 별점·납기·견적·차단검사 병렬. 응답은 create 직후, hold·기공소 알림은 이후.
+    let __t = __createT0;
     const [starBand, arrivalPolicy] = await Promise.all([
       loadStarBandForPracticeRequest({
         practiceAnchorId,
@@ -2459,23 +2469,7 @@ export async function createPracticeTransfer(req, res) {
         rushProcessing,
       }),
     ]);
-    if (
-      await rejectIfSubcontractDirectBlocked(res, {
-        practiceAnchorId,
-        matchingMode,
-        labAnchorId: targetLabAnchorId,
-      })
-    ) {
-      return;
-    }
-    if (
-      await rejectIfLabOutsideStarBand(res, {
-        labAnchorId: targetLabAnchorId,
-        starBand,
-      })
-    ) {
-      return;
-    }
+    __t = __mark("star+arrival", __t);
     if (!arrivalPolicy.ok) {
       return res.status(arrivalPolicy.statusCode || 400).json({
         success: false,
@@ -2491,25 +2485,61 @@ export async function createPracticeTransfer(req, res) {
       arrivalPolicy.rushFeeMultiplier,
     );
 
-    // 잔액 검사 후 생성. 크레딧은 생성 시 에스크로 보류(기공 적립은 작업완료).
-    // 견적 1회 → 잔액검사는 fees 재사용(중복 lab/practice/catalog RTT 제거).
     const autoMatchBudget = null;
     const autoMatchEligibleLabAnchorIds = undefined;
     const autoMatchPriorityLabAnchorIds = [];
     const autoMatchCatalog = null;
 
-    const feeQuote = await buildPracticeTransferQuote({
-      practiceAnchorId,
-      labAnchorId: targetLabAnchorId,
-      toothWorks: toothWorksRaw,
-      matchingMode,
-      autoMatchBudget,
-      catalog: autoMatchCatalog,
-      rushFeeMultiplier,
-    });
+    const [feeQuote, subcontractErr, starBandErr] = await Promise.all([
+      buildPracticeTransferQuote({
+        practiceAnchorId,
+        labAnchorId: targetLabAnchorId,
+        toothWorks: toothWorksRaw,
+        matchingMode,
+        autoMatchBudget,
+        catalog: autoMatchCatalog,
+        rushFeeMultiplier,
+      }),
+      String(matchingMode || "").trim() === "direct"
+        ? assertLabAllowedAsDirectPracticeTarget({
+            practiceAnchorId,
+            labAnchorId: targetLabAnchorId,
+          })
+            .then(() => null)
+            .catch((err) => err)
+        : Promise.resolve(null),
+      targetLabAnchorId
+        ? assertLabWithinPracticeStarBand({
+            labAnchorId: targetLabAnchorId,
+            minStars: starBand?.minStars,
+            maxStars: starBand?.maxStars,
+          })
+            .then(() => null)
+            .catch((err) => err)
+        : Promise.resolve(null),
+    ]);
+    __t = __mark("quote+gates", __t);
+    if (subcontractErr) {
+      const status = Number(subcontractErr?.statusCode || 409);
+      return res.status(status >= 400 && status < 600 ? status : 409).json({
+        success: false,
+        message:
+          subcontractErr?.message || SUBCONTRACT_DIRECT_BLOCKED_MESSAGE,
+        reason: subcontractErr?.code || SUBCONTRACT_DIRECT_BLOCKED_REASON,
+      });
+    }
+    if (starBandErr) {
+      const status = Number(starBandErr?.statusCode || 409);
+      return res.status(status >= 400 && status < 600 ? status : 409).json({
+        success: false,
+        message: starBandErr?.message || LAB_OUTSIDE_STAR_BAND_MESSAGE,
+        reason: starBandErr?.code || LAB_OUTSIDE_STAR_BAND_REASON,
+      });
+    }
 
     let createShippingFees = null;
     try {
+      // 전송 버튼 해제용 빠른 잔액 게이트(snapshot). 확정 보류는 응답 후 hold(ledger/snapshot).
       const creditCheck = await assertPracticeTransferPaidCreditSufficient({
         practiceAnchorId,
         labAnchorId: targetLabAnchorId,
@@ -2519,6 +2549,7 @@ export async function createPracticeTransfer(req, res) {
         rushFeeMultiplier,
         skipJig,
         fees: feeQuote.fees,
+        balanceMode: "snapshot",
       });
       createShippingFees = creditCheck?.shipping || null;
     } catch (creditErr) {
@@ -2530,13 +2561,13 @@ export async function createPracticeTransfer(req, res) {
         ...(creditErr?.payload || {}),
       });
     }
+    __t = __mark("creditGate", __t);
 
     const billingPreview = {
       ...toBillingPreviewFields(feeQuote),
       rushFeeMultiplier,
       abutmentPricingTier: feeQuote?.abutmentPricingTier || "membership",
     };
-    // feeQuote.autoMatchBudget에 합산 minLabFee/maxLabFee가 포함된다.
 
     const autoMatchPriorityFields =
       matchingMode === "auto"
@@ -2598,93 +2629,9 @@ export async function createPracticeTransfer(req, res) {
         abutmentProductionStartedAt: null,
       },
     });
+    __mark("create+respond", __t);
 
-    try {
-      const holdResult = await holdPracticeTransferCredits({
-        transfer: transferDoc,
-        toothWorks: toothWorksRaw,
-        holdAmount: Number(billingPreview?.total || feeQuote?.fees?.total || 0),
-        holdLabAmount: Number(billingPreview?.labFeeTotal || 0),
-        holdAbutmentAmount: Number(billingPreview?.abutmentRetailTotal || 0),
-        actorUserId: req.user?._id,
-        shipping: createShippingFees,
-        skipExistingHoldCheck: true,
-      });
-      if (holdResult?.held || holdResult?.reason === "already_held") {
-        const heldAt = new Date();
-        const heldBilling = {
-          ...(transferDoc.billing && typeof transferDoc.billing === "object"
-            ? transferDoc.billing
-            : billingPreview),
-          heldAt,
-          heldTotal: Number(holdResult.heldTotal || billingPreview?.total || 0),
-          heldLabTotal: Number(
-            holdResult.heldLabTotal ?? billingPreview?.labFeeTotal ?? 0,
-          ),
-          heldAbutmentTotal: Number(
-            holdResult.heldAbutmentTotal ??
-              billingPreview?.abutmentRetailTotal ??
-              0,
-          ),
-          heldDesignFeeTotal: Number(holdResult.heldDesignFeeTotal || 0),
-          heldShippingLabTotal: Number(holdResult.heldShippingLabTotal || 0),
-          heldShippingAbutsTotal: Number(
-            holdResult.heldShippingAbutsTotal || 0,
-          ),
-          holdFromPaid: Number(holdResult.fromPaid || 0),
-          holdFromFreeRequest: Number(holdResult.fromFreeRequest || 0),
-          holdFromFreeShipping: Number(holdResult.fromFreeShipping || 0),
-        };
-        transferDoc.billing = heldBilling;
-        await PracticeTransfer.updateOne(
-          { _id: transferDoc._id },
-          { $set: { billing: heldBilling } },
-        );
-        if (Number(holdResult.heldTotal || 0) > 0) {
-          void emitCreditBalanceUpdatedToBusiness({
-            businessAnchorId: practiceAnchorId,
-            balanceDelta: -Number(holdResult.heldTotal || 0),
-            reason: "practice_transfer_hold",
-            refId: transferDoc._id,
-          }).catch(() => null);
-        }
-      } else if (holdResult?.reason && holdResult.reason !== "zero_fee") {
-        try {
-          await rollbackPracticeTransferBilling({ transferId: transferDoc._id });
-        } catch {
-          // ignore
-        }
-        try {
-          await PracticeTransfer.deleteOne({ _id: transferDoc._id });
-        } catch {
-          // ignore
-        }
-        return res.status(500).json({
-          success: false,
-          message: "기공의뢰 크레딧 보류에 실패했습니다.",
-          reason: holdResult.reason,
-        });
-      }
-    } catch (holdErr) {
-      try {
-        await rollbackPracticeTransferBilling({ transferId: transferDoc._id });
-      } catch {
-        // ignore
-      }
-      try {
-        await PracticeTransfer.deleteOne({ _id: transferDoc._id });
-      } catch {
-        // ignore
-      }
-      const status = Number(holdErr?.statusCode || 500);
-      return res.status(status >= 400 && status < 600 ? status : 500).json({
-        success: false,
-        message: holdErr?.message || "기공의뢰 크레딧 보류에 실패했습니다.",
-        ...(holdErr?.payload || {}),
-      });
-    }
-
-    // draft 삭제·socket·unread는 응답 후. 클라이언트는 draftId를 이미 알고 목록에서 제거함.
+    // draft 삭제·hold·socket·unread는 응답 후. 기공소 알림은 hold 성공 뒤에만.
     const rawDraftId = String(req.body?.draftId || "").trim();
     const targetLabAnchorIdText = String(targetLabAnchorId || "").trim();
     if (targetLabAnchorIdText) {
@@ -2725,6 +2672,98 @@ export async function createPracticeTransfer(req, res) {
     });
 
     void (async () => {
+      let holdOk = true;
+      try {
+        const holdResult = await holdPracticeTransferCredits({
+          transfer: transferDoc,
+          toothWorks: toothWorksRaw,
+          holdAmount: Number(billingPreview?.total || feeQuote?.fees?.total || 0),
+          holdLabAmount: Number(billingPreview?.labFeeTotal || 0),
+          holdAbutmentAmount: Number(billingPreview?.abutmentRetailTotal || 0),
+          actorUserId: req.user?._id,
+          shipping: createShippingFees,
+          skipExistingHoldCheck: true,
+        });
+        if (holdResult?.held || holdResult?.reason === "already_held") {
+          const heldAt = new Date();
+          const heldBilling = {
+            ...(transferDoc.billing && typeof transferDoc.billing === "object"
+              ? transferDoc.billing.toObject?.() || transferDoc.billing
+              : billingPreview),
+            heldAt,
+            heldTotal: Number(holdResult.heldTotal || billingPreview?.total || 0),
+            heldLabTotal: Number(
+              holdResult.heldLabTotal ?? billingPreview?.labFeeTotal ?? 0,
+            ),
+            heldAbutmentTotal: Number(
+              holdResult.heldAbutmentTotal ??
+                billingPreview?.abutmentRetailTotal ??
+                0,
+            ),
+            heldDesignFeeTotal: Number(holdResult.heldDesignFeeTotal || 0),
+            heldShippingLabTotal: Number(holdResult.heldShippingLabTotal || 0),
+            heldShippingAbutsTotal: Number(
+              holdResult.heldShippingAbutsTotal || 0,
+            ),
+            holdFromPaid: Number(holdResult.fromPaid || 0),
+            holdFromFreeRequest: Number(holdResult.fromFreeRequest || 0),
+            holdFromFreeShipping: Number(holdResult.fromFreeShipping || 0),
+          };
+          await PracticeTransfer.updateOne(
+            { _id: transferDoc._id },
+            { $set: { billing: heldBilling } },
+          );
+          transferDoc.billing = heldBilling;
+          if (Number(holdResult.heldTotal || 0) > 0) {
+            void emitCreditBalanceUpdatedToBusiness({
+              businessAnchorId: practiceAnchorId,
+              balanceDelta: -Number(holdResult.heldTotal || 0),
+              reason: "practice_transfer_hold",
+              refId: transferDoc._id,
+            }).catch(() => null);
+          }
+        } else if (holdResult?.reason && holdResult.reason !== "zero_fee") {
+          holdOk = false;
+        }
+      } catch (holdErr) {
+        holdOk = false;
+        console.warn(
+          "[practiceTransfer] create hold failed",
+          String(transferDoc?._id || ""),
+          holdErr?.message || holdErr,
+        );
+      }
+
+      if (!holdOk) {
+        try {
+          await rollbackPracticeTransferBilling({ transferId: transferDoc._id });
+        } catch {
+          // ignore
+        }
+        try {
+          await PracticeTransfer.deleteOne({ _id: transferDoc._id });
+        } catch {
+          // ignore
+        }
+        try {
+          await emitPracticeTransferEventToPracticeUsers({
+            practiceBusinessAnchorId: req.user?.businessAnchorId,
+            type: "practice:transfer-updated",
+            payload: {
+              source: "createPracticeTransfer",
+              action: "hold-failed",
+              transferId,
+              transferMongoId: String(transferDoc?._id || ""),
+              status: "deleted",
+            },
+            extraUserIds: [req.user?._id],
+          });
+        } catch {
+          // ignore
+        }
+        return;
+      }
+
       let clearedDraftId = realtimePayload.clearedDraftId;
       try {
         if (clearedDraftId) {
