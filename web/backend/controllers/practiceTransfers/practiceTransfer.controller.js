@@ -723,17 +723,10 @@ const parseSkipDesignConfirmInput = (body, practiceRouting) => {
   return true;
 };
 
-/** body/routing에서 skipJig 파싱. 명시 false만 지그 필요, 그 외 기본 true(불필요) */
-const parseSkipJigInput = (body, practiceRouting) => {
-  const raw =
-    body?.skipJig !== undefined ? body.skipJig : practiceRouting?.skipJig;
-  if (raw === false || raw === "false" || raw === 0 || raw === "0" || raw === "N") {
-    return false;
-  }
-  if (raw === true || raw === "true" || raw === 1 || raw === "1" || raw === "Y") {
-    return true;
-  }
-  return true;
+/** @deprecated 2026-08-22 skipJig 옵션 삭제. 호환용 no-op(항상 기본 true 의미 없음). */
+const parseSkipJigInput = (_body, _practiceRouting) => {
+  // 레거시 필드 — 신규 의뢰는 resolvePracticeTransferSkipJig()가 항상 false.
+  return false;
 };
 
 /** body에서 rushProcessing 파싱. 명시 true만 신속처리 */

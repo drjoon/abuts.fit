@@ -160,8 +160,8 @@ const practiceTransferSchema = new mongoose.Schema(
       rushProcessing: { type: Boolean, default: false },
       // 전송 시점 스냅샷. 체크 UI 기본값은 계정 practiceTransferSettings.skipDesignConfirm(기본 true)
       skipDesignConfirm: { type: Boolean, default: true },
-      // 지그 제작 불필요 — 기공소→치과 배송비 면제(디자인비 금액은 유지).
-      // UI 기본값은 계정 practiceTransferSettings.skipJig(기본 true). 레거시 미설정 문서는 false.
+      // 레거시(2026-08-22 옵션 삭제): production.skipJig — 「지그 제작 불필요」UI/계정 설정 제거.
+      // 필드는 구 스냅샷 호환용. 신규 의뢰는 쓰지 않음. 기공소→치과 배송은 무료.
       skipJig: { type: Boolean, default: true },
       // 어벗츠 디자인 완료 STL (design-handoff 미러). 기공소 다운로드·컨펌용
       designFiles: {

@@ -2,8 +2,9 @@
 // - web/frontend/src/shared/practice/practiceTransferFeeQuote.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/components/practice/PracticeToothWorkChartReadOnly.tsx
+// - 2026-08-22: 기공소→치과 배송 무료. skipJig 옵션/안내 삭제. 정산 상세는 →어벗츠(박스)만.
 // - 2026-08-21: 기공의뢰 정산에서 기공소→어벗츠 배송 제외(기공소 박스 과금).
-// - 2026-08-21: 치과→기공소 배송 무료. 정산 상세는 →어벗츠(박스)만. skipJig는 물류 안내만.
+// - 2026-08-21: 치과→기공소 배송 무료. 정산 상세는 →어벗츠(박스)만.
 // - 2026-08-21: 치과 견적 — 커스텀어벗 등 기공소 수가 미설정(missingFeeNames) 안내.
 // - 2026-08-21: 같은 치아번호는 한 줄. 보철기공비|커스텀어벗 열로 수가 구분.
 // - 2026-08-20: 정산(density=detail)만 장부 배송비·크레딧 소비 총액. 견적 툴팁은 기공비 총액까지.
@@ -95,7 +96,7 @@ type PracticeTransferFeeEstimateProps = {
   leadingAction?: ReactNode;
   /** 카드 총액 오른쪽·치식 차트 견적 바 오른쪽(선택) */
   trailingAction?: ReactNode;
-  /** 지그 제작 불필요 — 정산 상세에서 기공소 배송 면제 안내 */
+  /** @deprecated 2026-08-22 skipJig 옵션 삭제. 무시됨 */
   skipJig?: boolean;
   /** 신속처리 할증 표기 */
   rushProcessing?: boolean;
@@ -475,7 +476,7 @@ export function PracticeTransferFeeEstimate({
   labPending = false,
   leadingAction = null,
   trailingAction = null,
-  skipJig = true,
+  skipJig: _skipJig = true,
   rushProcessing = false,
   labEffectiveStars: _labEffectiveStars = null,
   creditLabHoldPending = null,
@@ -711,9 +712,6 @@ export function PracticeTransferFeeEstimate({
       : labCreditSettled || abutmentCreditSettled
         ? "배송비"
         : "배송비(보류)";
-  const hasAbutsOriginShip = shippingHintLines.some((row) =>
-    row.label.includes("어벗츠"),
-  );
 
   const abutmentOnlyAmount =
     abutmentFromBreakdown > 0
@@ -831,9 +829,7 @@ export function PracticeTransferFeeEstimate({
               ) : null}
             </p>
           ))}
-          {skipJig && hasAbutsOriginShip ? (
-            <p>지그 제작 불필요 — 물류만 적용(배송비 과금과 무관).</p>
-          ) : null}
+          {/* 레거시(2026-08-22): skipJig「지그 제작 불필요」안내 삭제 */}
         </div>
       ) : null}
       {isDetail && !isLab && (quote.total > 0 || shippingTotal > 0) ? (

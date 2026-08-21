@@ -11,7 +11,8 @@
 // - 2026-08-14: 기공소 수신(labFacing) 치식 표시 — 커스텀어벗 → 어벗츠 지급.
 // - 2026-08-14: 같은 스펙이면 환봉 도입 프리셋을 일반 프리셋보다 우선한다.
 // - 2026-08-14: implantFavorites 환봉 제조사 추가요청(roundBar/adopted/roundBarRequestId).
-// - 2026-08-16: 메모 메타 [지그제작생략] — skipJig 스냅샷(기본 true·명시 N만 false).
+// - 2026-08-22: skipJig 옵션 삭제. canOffer/resolve 항상 false. [지그제작생략]은 레거시 파싱만.
+// - 2026-08-16: 메모 메타 [지그제작생략] — skipJig 스냅샷(기본 true·명시 N만 false).(레거시)
 // - 2026-08-13: 커스텀어벗 치아별 생산만/디자인+생산(abutmentProductMode) 저장·직렬화.
 // - 2026-08-13: 계정 기본 모드(defaultAbutmentProductMode)는 디자인+생산. 치아 미설정 레거시는 생산만.
 // - 2026-08-13: 크라운+커스텀어벗 플래그 직렬화 지원(isCustomAbutmentSupportedProsthesisType).
@@ -109,32 +110,21 @@ export const toothWorkHasLabProsthesis = (
 };
 
 /**
- * 「지그 제작 불필요」UI·적용 가능 여부.
- * 디자인+생산 CA만 있고 보철이 하나도 없을 때만 true.
+ * @deprecated 2026-08-22 skipJig UI/옵션 삭제. 항상 false.
+ * 레거시: 「지그 제작 불필요」체크(디자인+생산 CA만·보철 없음).
  */
 export const canOfferPracticeTransferSkipJig = (
-  toothWorks?: Array<Partial<ToothWorkSelection> | null> | null,
-) => {
-  const rows = Array.isArray(toothWorks) ? toothWorks.filter(Boolean) : [];
-  const hasDesignProdCa = rows.some(
-    (row) =>
-      Boolean(row?.customAbutment) &&
-      resolveToothAbutmentProductMode(row) ===
-        ABUTMENT_PRODUCT_MODE.DESIGN_AND_PRODUCTION,
-  );
-  if (!hasDesignProdCa) return false;
-  if (rows.some((row) => toothWorkHasLabProsthesis(row))) return false;
-  return true;
-};
+  _toothWorks?: Array<Partial<ToothWorkSelection> | null> | null,
+) => false;
 
-/** 보철이 섞이면 지그도 배송에 포함(skipJig=false). */
+/**
+ * @deprecated 2026-08-22 skipJig 옵션 삭제. 항상 false.
+ * DB/메모 `[지그제작생략]` 은 레거시 스냅샷 파싱용으로만 남을 수 있음.
+ */
 export const resolvePracticeTransferSkipJig = (
-  toothWorks: Array<Partial<ToothWorkSelection> | null> | null | undefined,
-  accountOrRequestedSkipJig: boolean | undefined,
-) => {
-  if (!canOfferPracticeTransferSkipJig(toothWorks)) return false;
-  return accountOrRequestedSkipJig !== false;
-};
+  _toothWorks?: Array<Partial<ToothWorkSelection> | null> | null,
+  _accountOrRequestedSkipJig?: boolean,
+) => false;
 
 export const pickToothWorkAbutmentProductMode = (
   row: Partial<ToothWorkSelection> | null | undefined,
@@ -504,7 +494,7 @@ export type ParsedPracticeTransferMemoMeta = {
   memo: string;
   /** 의뢰건별 「디자인 컨펌 생략」. 계정 세팅이 아님 */
   skipDesignConfirm: boolean;
-  /** 의뢰건별 「지그 제작 불필요」. 기공소→치과 배송 면제 */
+  /** @deprecated 2026-08-22 skipJig 옵션 삭제. 레거시 메모/스냅샷 파싱용 */
   skipJig: boolean;
 };
 
@@ -1142,7 +1132,7 @@ export const buildPracticeTransferMemo = (params: {
     `[보철물형태목록: ${normalizeProsthesisTypes(params.prosthesisTypes).join(", ")}]`,
     `[치아보철: ${serializeToothWorksForSync(params.toothWorks)}]`,
     `[디자인컨펌생략: ${params.skipDesignConfirm !== false ? "Y" : "N"}]`,
-    `[지그제작생략: ${params.skipJig !== false ? "Y" : "N"}]`,
+    // 레거시(2026-08-22): [지그제작생략] 메모 태그 기록 중단. 파싱만 유지.
   ];
   const memo = String(params.memo || "").trim();
   return memo ? `${lines.join("\n")}\n${memo}` : lines.join("\n");

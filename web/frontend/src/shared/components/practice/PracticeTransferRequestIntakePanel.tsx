@@ -92,8 +92,7 @@ import {
   normalizeAccountAbutmentProductMode,
   pickToothWorkCustomSpecs,
   resolveToothAbutmentProductMode,
-  canOfferPracticeTransferSkipJig,
-  resolvePracticeTransferSkipJig,
+  // 레거시(2026-08-22): canOfferPracticeTransferSkipJig / resolvePracticeTransferSkipJig — skipJig UI 삭제.
   type AbutmentProductMode,
   type PracticeAbutmentFavorite,
   type PracticeImplantFavorite,
@@ -679,8 +678,9 @@ export type PracticeTransferRequestIntakePanelProps = {
   toothChartResetNonce?: number;
   /** 상·하악 사이에 견적(크레딧 소비액) 표시. 기공의뢰서만 */
   showFeeEstimate?: boolean;
-  /** 지그 제작 불필요 — 견적 툴팁 배송·라벨 반영 */
+  /** @deprecated 2026-08-22 skipJig 옵션 삭제. 호환용 props */
   skipJig?: boolean;
+  /** @deprecated 2026-08-22 skipJig 옵션 삭제 */
   onSkipJigChange?: (next: boolean) => void;
   /** 신속처리(합계≤3영업일 확인 후). 견적 할증 */
   rushProcessing?: boolean;
@@ -763,8 +763,9 @@ export const PracticeTransferRequestIntakePanel = ({
   onAlternateAbutmentModeNavigate,
   toothChartResetNonce = 0,
   showFeeEstimate = false,
-  skipJig = true,
-  onSkipJigChange,
+  // 레거시(2026-08-22): skipJig / onSkipJigChange UI 삭제. props는 호환용으로만 수신.
+  skipJig: _skipJig = true,
+  onSkipJigChange: _onSkipJigChange,
   rushProcessing = false,
   autoMatchMinLabRating = DEFAULT_AUTO_MATCH_MIN_LAB_RATING,
   onAutoMatchMinLabRatingChange,
@@ -774,8 +775,7 @@ export const PracticeTransferRequestIntakePanel = ({
   const defaultAbutmentProductMode = normalizeAccountAbutmentProductMode(
     defaultAbutmentProductModeProp ?? DEFAULT_ACCOUNT_ABUTMENT_PRODUCT_MODE,
   );
-  const showSkipJigCheckbox = canOfferPracticeTransferSkipJig(toothWorks);
-  const effectiveSkipJig = resolvePracticeTransferSkipJig(toothWorks, skipJig);
+  // 레거시(2026-08-22): skipJig 옵션·UI 삭제.
   const lockedMode = isAbutmentProductMode(lockedAbutmentProductMode)
     ? lockedAbutmentProductMode
     : null;
@@ -3077,7 +3077,6 @@ export const PracticeTransferRequestIntakePanel = ({
                         !selectedLab ||
                         !/^[a-fA-F0-9]{24}$/.test(String(selectedLab._id || ""))
                       }
-                      skipJig={effectiveSkipJig}
                       rushProcessing={rushProcessing}
                       leadingAction={
                         showChartScroll ? (
@@ -3144,41 +3143,7 @@ export const PracticeTransferRequestIntakePanel = ({
                         ) : null
                       }
                     />
-                    {onSkipJigChange && showSkipJigCheckbox ? (
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <label
-                              htmlFor="practice-intake-skip-jig"
-                              className="flex shrink-0 cursor-pointer items-center gap-2 text-sm text-slate-700 select-none"
-                              data-no-tooth-marquee=""
-                              onPointerDown={(event) => event.stopPropagation()}
-                            >
-                              <Checkbox
-                                id="practice-intake-skip-jig"
-                                checked={skipJig}
-                                onCheckedChange={(value) => {
-                                  onSkipJigChange(value === true);
-                                }}
-                              />
-                              <span>지그 필요없음</span>
-                            </label>
-                          </TooltipTrigger>
-                          <TooltipContent
-                            side="bottom"
-                            className="max-w-none whitespace-nowrap text-xs leading-relaxed"
-                          >
-                            <div className="space-y-1">
-                              <p>
-                                커스텀어벗만 의뢰하면서 지그가 필요 없을 때
-                                체크하세요.
-                              </p>
-                              <p>체크 시 기공소→치과 배송비가 면제됩니다.</p>
-                            </div>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    ) : null}
+                    {/* 레거시(2026-08-22): skipJig「지그 필요없음」체크 UI 삭제 */}
                   </div>
                 ) : showChartScroll ? (
                   <div className="flex items-center justify-center gap-1 rounded-lg border border-primary-muted/50 bg-primary-soft/40 px-2 py-1">

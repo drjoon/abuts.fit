@@ -548,7 +548,8 @@ const businessAnchorSchema = new mongoose.Schema(
         type: Boolean,
         default: true,
       },
-      // 기공의뢰 「지그 제작 불필요」마지막 설정 (계정/앵커 SSOT). 전송 시 의뢰건에 스냅샷. 기본=불필요.
+      // 레거시(2026-08-22 옵션 삭제): practiceTransferSettings.skipJig — 「지그 제작 불필요」UI 제거.
+      // 구 계정 값만 남을 수 있음. 신규 전송·설정에 사용하지 않음.
       skipJig: {
         type: Boolean,
         default: true,

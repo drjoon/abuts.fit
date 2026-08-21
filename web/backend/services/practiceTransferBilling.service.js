@@ -12,7 +12,8 @@
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
 // - 2026-08-22: 치과 멤버십/일반 청구 이중가 제거. membership* 단일 고시. pricingTier 분기 삭제.
-// - 2026-08-21: 치과→기공소 배송 무료(labShippingFee 0). 기공소→어벗츠는 Request 박스키 hold.
+// - 2026-08-22: 기공소→치과 배송 무료(lab_shipping hold 미생성·레거시 hold 해제). 라벨 정정.
+// - 2026-08-21: 기공소→치과·치과→기공소 배송 무료(labShippingFee 0). 기공소→어벗츠는 Request 박스키 hold.
 // - 2026-08-21: feeQuote.labShippingFee — 기공수가 배송비. 표시 총액은 배송 제외(크레딧 정산만 합산).
 // - 2026-08-21: feeQuote.missingFeeNames — 치과 견적에 미설정 수가 항목 안내.
 // - 2026-08-21: assertCredit — fees/shipping 재사용 시 견적 DB 재조회 생략(전송 create 핫패스).
@@ -59,11 +60,10 @@ export const PRACTICE_TRANSFER_LEDGER_LABELS = {
   holdLab: "기공비 보류(치과→기공소)",
   holdAbutment: "기공비 보류(치과→어벗츠)",
   holdAdjust: "기공비 보류 조정",
-  holdShippingLab: "배송비 보류(치과→기공소)",
+  // 레거시: holdShippingLab / shippingLab(기공소→치과) 라벨 삭제 — 해당 방향 배송 무료.
   holdShippingAbutment: "배송비 보류(기공소→어벗츠)",
   releaseLab: "기공비(치과→기공소)",
   releaseAbutment: "기공비(치과→어벗츠)",
-  shippingLab: "배송비(치과→기공소)",
   shippingAbutment: "배송비(기공소→어벗츠)",
   shippingAbutsToManufacturer: "배송비(어벗츠→제조사)",
 };
@@ -158,7 +158,7 @@ import {
 export { shouldChargePracticeTransferLabShipping };
 
 function computePracticeTransferRetailFeesWithLabShipping(feeArgs, transferLike) {
-  // 치과→기공소 배송 무료 — labShippingFee 항상 0.
+  // 기공소→치과·치과→기공소 배송 무료 — labShippingFee 항상 0.
   void transferLike;
   return {
     ...computePracticeTransferRetailFees({
@@ -418,31 +418,8 @@ function pushRevenueLines({
     isShippingSpend: isPtxAbutsShipping,
   });
 
-  // 치과→기공소 배송비: 면세. 기공소가 기공크레딧으로 수취. 제조사 장부 없음.
+  // 기공소→치과 배송 무료 — 레거시 practice_transfer_lab_shipping 매출 라인 생성 금지.
   if (isPtxLabShipping) {
-    const labId = String(
-      labAnchorId?._id || labAnchorId || owners?.labAnchorId || "",
-    ).trim();
-    if (!labId) {
-      throw new Error("기공소 배송비 정산 대상 기공소가 없습니다.");
-    }
-    lines.push({
-      accountCode: "LAB_SETTLEMENT_CREDIT",
-      ownerRole: "requestor",
-      ownerId: labId,
-      amount: spendAmount,
-      amountExcludingVat: spendAmount,
-      vatAmount: 0,
-      amountIncludingVat: spendAmount,
-      creditKind: "SETTLEMENT",
-      refType,
-      refId,
-      meta: {
-        ...meta,
-        displayLabel: SHIPPING_LEDGER_LABELS.practiceToLab,
-        displayKind: "shipping",
-      },
-    });
     return;
   }
 
@@ -569,7 +546,7 @@ function pushRevenueLines({
  */
 /**
  * 기공의뢰 생성 시 예상 배송비(플랫폼 크레딧).
- * - lab(치과→기공소): 무료 → 항상 0
+ * - lab(기공소→치과): 무료 → 항상 0
  * - abuts(기공소→어벗츠): Request 박스키(BA+출고일) hold로 이전 — PTX 건당 보류 없음 → 항상 0
  */
 export async function resolveExpectedPracticeTransferShippingFees({
@@ -1816,7 +1793,7 @@ export async function holdPracticeTransferCredits({
           toothWorks,
           fees: shippingFeesForGate,
         });
-  const heldShippingLab = 0; // 치과→기공소 무료
+  const heldShippingLab = 0; // 기공소→치과 배송 무료
   // 기공소→어벗츠는 Request 박스키 hold SSOT. PTX 건당 보류 금지(치과에 떠넘김 방지).
   const heldShippingAbuts = 0;
   void shippingResolved;
@@ -4549,9 +4526,169 @@ export async function grantAbutmentDesignLabFee({
 }
 
 /**
- * 기공소 출발 배송비.
- * 신규: 기공수가「배송비」로 치과 기공비에 포함 — 플랫폼 크레딧 차감 없음.
- * 레거시: 생성 시 lab_shipping hold가 있으면 에스크로→매출만 전환.
+ * 폐기된 PTX 배송 hold 1건 삭제 → 잔액 복원.
+ * lab_shipping: 기공소→치과 무료. abuts_shipping: Request 박스키 SSOT(PTX 건당 폐지).
+ */
+async function releasePracticeTransferShippingHoldJournal({
+  transferId,
+  holdKey,
+  billingZeroFields = [],
+  session = null,
+  emitRealtime = true,
+  reason = "practice_transfer_shipping_hold_release",
+}) {
+  const id = String(transferId || "").trim();
+  const key = String(holdKey || "").trim();
+  if (!id || !key) {
+    return { released: false, reason: "missing_args" };
+  }
+
+  const holdJournal = await getJournalByIdempotencyKey({
+    idempotencyKey: key,
+    session,
+  });
+  if (!holdJournal?.journalId) {
+    return { released: false, reason: "no_hold" };
+  }
+
+  const journalId = String(holdJournal.journalId);
+  const lines = await LedgerLine.find({ journalId })
+    .select({ accountCode: 1, ownerId: 1, amount: 1 })
+    .session(session || null)
+    .lean();
+
+  const balanceRestoreByAnchor = {};
+  for (const line of lines || []) {
+    const code = String(line?.accountCode || "").trim();
+    if (!PRACTICE_TRANSFER_BALANCE_ACCOUNT_CODES.has(code)) continue;
+    const ownerId = String(line?.ownerId || "").trim();
+    if (!ownerId || !Types.ObjectId.isValid(ownerId)) continue;
+    const amount = Number(line?.amount || 0);
+    if (!Number.isFinite(amount) || amount === 0) continue;
+    // 소비(-) 삭제 → 잔액 복원(+)
+    balanceRestoreByAnchor[ownerId] =
+      Number(balanceRestoreByAnchor[ownerId] || 0) - amount;
+  }
+
+  const deleted = await deleteGeneralLedgerCommitJournal({
+    journalId,
+    expectedEventTypes: ["PRACTICE_TRANSFER_SPEND_HOLD"],
+    session,
+  });
+  if (!deleted?.deleted) {
+    return {
+      released: false,
+      reason: deleted?.reason || "delete_failed",
+      journalId,
+    };
+  }
+
+  if (billingZeroFields.length) {
+    const $set = {};
+    for (const field of billingZeroFields) {
+      $set[`billing.${field}`] = 0;
+    }
+    try {
+      await mongoose.connection.collection("practicetransfers").updateOne(
+        { _id: new Types.ObjectId(id) },
+        { $set },
+        { session: session || undefined },
+      );
+    } catch {
+      // best-effort billing snapshot
+    }
+  }
+
+  const affectedAnchorIds = Object.keys(balanceRestoreByAnchor);
+  await Promise.all(
+    affectedAnchorIds.map(async (anchorId) => {
+      try {
+        await upsertBusinessCreditBalanceFromLedger({
+          businessAnchorId: anchorId,
+          session,
+        });
+      } catch {
+        // best-effort cache
+      }
+    }),
+  );
+
+  if (emitRealtime && affectedAnchorIds.length) {
+    try {
+      const { emitCreditBalanceUpdatedToBusiness } = await import(
+        "../utils/creditRealtime.js"
+      );
+      await Promise.all(
+        affectedAnchorIds.map((anchorId) =>
+          emitCreditBalanceUpdatedToBusiness({
+            businessAnchorId: anchorId,
+            balanceDelta: Number(balanceRestoreByAnchor[anchorId] || 0),
+            reason,
+            refId: id,
+            forceEmit: true,
+          }),
+        ),
+      );
+    } catch {
+      // best-effort
+    }
+  }
+
+  return {
+    released: true,
+    journalId,
+    balanceRestoreByAnchor,
+    heldTotal: Math.max(
+      0,
+      Math.round(Number(holdJournal?.meta?.heldTotal || 0)),
+    ),
+  };
+}
+
+/**
+ * 기공소→치과 배송 hold + (레거시) PTX 건당 어벗츠 배송 hold 해제.
+ * 신규 생성은 hold 0. 레거시 보류만 정리.
+ */
+export async function releasePracticeTransferObsoleteShippingHolds({
+  transfer,
+  transferId = null,
+  session = null,
+  emitRealtime = true,
+}) {
+  const id = String(transferId || transfer?._id || "").trim();
+  if (!id || !Types.ObjectId.isValid(id)) {
+    return { released: false, reason: "invalid_id", results: [] };
+  }
+
+  const lab = await releasePracticeTransferShippingHoldJournal({
+    transferId: id,
+    holdKey: practiceTransferHoldLabShippingKey(id),
+    billingZeroFields: ["heldShippingLabTotal", "labShippingFee"],
+    session,
+    emitRealtime,
+    reason: "practice_transfer_lab_shipping_free_release",
+  });
+  // PTX 건당 abuts_shipping은 Request 박스키로 이전 — 치과/기공소 PTX hold 잔존 시 해제.
+  const abuts = await releasePracticeTransferShippingHoldJournal({
+    transferId: id,
+    holdKey: practiceTransferHoldAbutsShippingKey(id),
+    billingZeroFields: ["heldShippingAbutsTotal"],
+    session,
+    emitRealtime,
+    reason: "practice_transfer_abuts_shipping_box_ssot_release",
+  });
+
+  return {
+    released: Boolean(lab.released || abuts.released),
+    reason: lab.released || abuts.released ? null : "no_hold",
+    lab,
+    abuts,
+  };
+}
+
+/**
+ * 기공소→치과 배송비.
+ * 정책: 무료 — 플랫폼 크레딧 차감 없음. 레거시 lab_shipping hold는 해제(매출 전환 금지).
  */
 export async function chargePracticeTransferLabShipping({
   transfer,
@@ -4559,76 +4696,29 @@ export async function chargePracticeTransferLabShipping({
   actorUserId = null,
   session: outerSession = null,
 }) {
+  void toothWorks;
+  void actorUserId;
   const transferId = transfer?._id;
   const practiceAnchorId = transfer?.practiceBusinessAnchorId;
   if (!transferId || !practiceAnchorId) {
     return { charged: false, reason: "missing_anchors" };
   }
 
-  const holdKey = practiceTransferHoldLabShippingKey(transferId);
-  const holdJournal = await getJournalByIdempotencyKey({
-    idempotencyKey: holdKey,
-    session: outerSession,
-  });
-  if (!holdJournal?.journalId) {
-    return { charged: false, reason: "lab_fee_schedule" };
-  }
-
-  const remake = isPracticeTransferRemake(transfer);
-  const computed =
-    toothWorks || transfer?.toothWorks
-      ? computePracticeTransferRetailFees({
-          toothWorks: toothWorks || transfer?.toothWorks || [],
-          remake,
-          skipAbutmentFees: remake,
-        })
-      : null;
-  const fees = {
-    labFeeTotal: Math.max(
-      0,
-      Math.round(
-        Number(
-          transfer?.billing?.labFeeTotal ?? computed?.labFeeTotal ?? 0,
-        ) || 0,
-      ),
-    ),
-    labAbutmentTotal: Math.max(
-      0,
-      Math.round(
-        Number(
-          transfer?.billing?.labAbutmentTotal ??
-            computed?.labAbutmentTotal ??
-            0,
-        ) || 0,
-      ),
-    ),
-    abutmentQty: Math.max(
-      0,
-      Math.round(
-        Number(
-          transfer?.billing?.abutmentQty ?? computed?.abutmentQty ?? 0,
-        ) || 0,
-      ),
-    ),
-  };
-
-  if (!shouldChargePracticeTransferLabShipping({ transfer, fees })) {
-    return {
-      charged: false,
-      reason: transfer?.production?.skipJig
-        ? "skip_jig_waived"
-        : "no_lab_origin",
-    };
-  }
-
-  return commitPracticeTransferShippingSpend({
+  // 기공소→치과 배송 무료(+레거시 PTX abuts hold 정리). 매출 전환하지 않음.
+  const released = await releasePracticeTransferObsoleteShippingHolds({
     transfer,
     transferId,
-    practiceAnchorId,
-    actorUserId,
-    outerSession,
-    route: "lab",
+    session: outerSession,
+    emitRealtime: true,
   });
+  if (released.released) {
+    return {
+      charged: false,
+      reason: "lab_to_practice_shipping_free",
+      released,
+    };
+  }
+  return { charged: false, reason: "lab_to_practice_shipping_free" };
 }
 
 /**
@@ -4679,19 +4769,15 @@ async function commitPracticeTransferShippingSpend({
   route,
 }) {
   const isLab = route === "lab";
-  const spendUniqueKey = isLab
-    ? `practice_transfer:${String(transferId)}:lab_shipping`
-    : `practice_transfer:${String(transferId)}:abuts_shipping`;
+  // 기공소→치과 배송 무료 — lab route는 매출 전환하지 않음(hold 해제만).
+  if (isLab) {
+    return { charged: false, reason: "lab_to_practice_shipping_free" };
+  }
+  const spendUniqueKey = `practice_transfer:${String(transferId)}:abuts_shipping`;
   const idempotencyKey = `gl:${spendUniqueKey}`;
-  const holdKey = isLab
-    ? practiceTransferHoldLabShippingKey(transferId)
-    : practiceTransferHoldAbutsShippingKey(transferId);
-  const displayLabel = isLab
-    ? PRACTICE_TRANSFER_LEDGER_LABELS.shippingLab
-    : PRACTICE_TRANSFER_LEDGER_LABELS.shippingAbutment;
-  const usageKind = isLab
-    ? "practice_transfer_lab_shipping"
-    : "practice_transfer_abuts_shipping";
+  const holdKey = practiceTransferHoldAbutsShippingKey(transferId);
+  const displayLabel = PRACTICE_TRANSFER_LEDGER_LABELS.shippingAbutment;
+  const usageKind = "practice_transfer_abuts_shipping";
   const source = usageKind;
 
   const [creditSettings, existing, holdJournal] = await Promise.all([
@@ -4714,9 +4800,7 @@ async function commitPracticeTransferShippingSpend({
     Math.round(
       Number(
         holdJournal?.meta?.heldTotal ??
-          (isLab
-            ? transfer?.billing?.heldShippingLabTotal
-            : transfer?.billing?.heldShippingAbutsTotal) ??
+          transfer?.billing?.heldShippingAbutsTotal ??
           0,
       ) || 0,
     ),

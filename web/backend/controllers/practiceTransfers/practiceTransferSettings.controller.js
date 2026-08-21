@@ -335,14 +335,8 @@ export async function upsertPracticeTransferSettings(req, res) {
         body.skipDesignConfirm === "0"
       );
     }
-    if (hasSkipJig) {
-      setPatch["practiceTransferSettings.skipJig"] = !(
-        body.skipJig === false ||
-        body.skipJig === "false" ||
-        body.skipJig === 0 ||
-        body.skipJig === "0"
-      );
-    }
+    // 레거시(2026-08-22): skipJig 옵션 삭제 — 설정 저장 무시.
+    void hasSkipJig;
     if (hasDefaultAbutmentProductMode) {
       setPatch["practiceTransferSettings.defaultAbutmentProductMode"] =
         normalizeDefaultAbutmentProductMode(body.defaultAbutmentProductMode);
