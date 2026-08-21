@@ -24,6 +24,7 @@ import {
   releasePracticeTransferAbutmentShare,
   chargePracticeTransferLabShipping,
   rollbackPracticeTransferBilling,
+  applyPracticeTransferBillingRollbackSideEffects,
   toBillingPreviewFields,
   toFeeQuoteApi,
   toRemakeApiFields,
@@ -102,7 +103,7 @@ import {
   clearRelatedAbutmentProductionOnRelease,
   ensureAbutmentRequestsOnAccept,
   hasCustomAbutmentToothWorks,
-  hasRelatedAbutmentPastReady,
+  resolveRelatedAbutmentPastReady,
   isAbutmentDesignReady,
   mapAbutmentPastReadyByTransferDocs,
   mapAbutmentDeliveryByTransferDocs,
@@ -169,6 +170,7 @@ import { resolvePracticeTransferSkipJig } from "../../utils/practiceTransferLabS
 // - 2026-08-14: mark-accepted — 과금 직후 응답, billing $set, 사이드이펙트 비동기.
 // - 2026-08-15: mark-accepted — billing+accept $set 병합, 과금 저널/수수료 조회 병렬.
 // - 2026-08-14: mark-release — updateOne + 사이드이펙트 비동기(채팅/emit은 응답 후).
+// - 2026-08-21: mark-release — past-ready 1회·rollback∥clear·잔액 sync는 응답 후.
 // - 2026-08-21: 채팅 시스템 메시지는 치과 대응이 필요할 때만(취소·거부·생산진행/디자인컨펌 요청). 수락·업로드는 남기지 않음.
 // - 2026-08-14: 수락도 작업취소와 같이 채팅 시스템 메시지(work_accept) 남김. → 2026-08-21 철회.
 // - 2026-08-14: mark-accepted — 치과 practice:transfer-updated에 확정 feeQuote 포함.
@@ -5792,7 +5794,9 @@ export async function markReceivedPracticeTransferRelease(req, res) {
       });
     }
 
-    if (await hasRelatedAbutmentPastReady(doc)) {
+    const { pastReady, linkedRequestIds } =
+      await resolveRelatedAbutmentPastReady(doc);
+    if (pastReady) {
       return res.status(409).json({
         success: false,
         message:
@@ -5807,35 +5811,44 @@ export async function markReceivedPracticeTransferRelease(req, res) {
     const now = new Date();
     const prevBilling =
       doc.billing && typeof doc.billing === "object" ? doc.billing : {};
-    const spendTotal = Number(prevBilling.total || 0);
-    const settlementAmount = Number(prevBilling.labSettlementAmount || 0);
 
-    try {
-      await rollbackPracticeTransferBilling({ transferId: doc._id });
-    } catch (rollbackErr) {
-      console.warn(
-        "[practiceTransfer] work-cancel billing rollback failed",
-        String(doc?._id || ""),
-        rollbackErr?.message || rollbackErr,
-      );
-    }
-
-    try {
-      const clearResult = await clearRelatedAbutmentProductionOnRelease(doc);
-      if (clearResult?.blockedPastReady) {
-        return res.status(409).json({
-          success: false,
-          message:
-            "어벗 가공이 시작된 의뢰는 수락 취소할 수 없습니다. 제조사가 준비 단계일 때만 가능합니다.",
-          code: "abutment_machining_started",
-        });
-      }
-    } catch (clearErr) {
-      console.warn(
-        "[practiceTransfer] work-cancel abutment production clear failed",
-        String(doc?._id || ""),
-        clearErr?.message || clearErr,
-      );
+    let rollbackResult = {
+      didRollback: false,
+      balanceRestoreByAnchor: {},
+    };
+    const [rollbackSettled, clearResult] = await Promise.all([
+      rollbackPracticeTransferBilling({
+        transferId: doc._id,
+        emitRealtime: false,
+        syncBalanceCache: false,
+      }).catch((rollbackErr) => {
+        console.warn(
+          "[practiceTransfer] work-cancel billing rollback failed",
+          String(doc?._id || ""),
+          rollbackErr?.message || rollbackErr,
+        );
+        return { didRollback: false, balanceRestoreByAnchor: {} };
+      }),
+      clearRelatedAbutmentProductionOnRelease(doc, {
+        linkedRequestIds,
+        skipPastReadyCheck: true,
+      }).catch((clearErr) => {
+        console.warn(
+          "[practiceTransfer] work-cancel abutment production clear failed",
+          String(doc?._id || ""),
+          clearErr?.message || clearErr,
+        );
+        return { cleared: false, blockedPastReady: false };
+      }),
+    ]);
+    rollbackResult = rollbackSettled || rollbackResult;
+    if (clearResult?.blockedPastReady) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "어벗 가공이 시작된 의뢰는 수락 취소할 수 없습니다. 제조사가 준비 단계일 때만 가능합니다.",
+        code: "abutment_machining_started",
+      });
     }
 
     if (isAuto) {
@@ -5945,6 +5958,10 @@ export async function markReceivedPracticeTransferRelease(req, res) {
     void (async () => {
       try {
         const jobs = [
+          applyPracticeTransferBillingRollbackSideEffects({
+            transferId: doc._id,
+            balanceRestoreByAnchor: rollbackResult?.balanceRestoreByAnchor,
+          }),
           postPracticeTransferSystemChatMessage({
             transferMongoId: doc._id,
             senderUserId: req.user?._id,
@@ -5992,26 +6009,6 @@ export async function markReceivedPracticeTransferRelease(req, res) {
                 ? [previousLabAnchorId]
                 : [],
               emitPoolCreated: emitAutoMatchPoolCreated,
-            }),
-          );
-        }
-        if (spendTotal > 0 && doc.practiceBusinessAnchorId) {
-          jobs.push(
-            emitCreditBalanceUpdatedToBusiness({
-              businessAnchorId: doc.practiceBusinessAnchorId,
-              balanceDelta: spendTotal,
-              reason: "practice_transfer_release",
-              refId: doc._id,
-            }),
-          );
-        }
-        if (settlementAmount > 0 && previousLabAnchorId) {
-          jobs.push(
-            emitCreditBalanceUpdatedToBusiness({
-              businessAnchorId: previousLabAnchorId,
-              balanceDelta: -settlementAmount,
-              reason: "practice_transfer_lab_settlement_rollback",
-              refId: doc._id,
             }),
           );
         }

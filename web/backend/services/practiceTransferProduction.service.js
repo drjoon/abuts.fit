@@ -942,26 +942,28 @@ export async function collectLinkedAbutmentRequestObjectIds(transferDoc) {
  * relatedRequestIds가 비거나 stale여도 partnerBilling 링크로 판정한다.
  * 라이브 stage가 SSOT — sticky abutmentProductionStartedAt만으로 true 고정하지 않는다
  * (가공→준비 복귀 후 취소 재개).
+ * linkedRequestIds를 함께 돌려 작업취소 핫패스에서 재조회를 피한다.
  */
-export async function hasRelatedAbutmentPastReady(transferDoc) {
-  const ids = await collectLinkedAbutmentRequestObjectIds(transferDoc);
-  if (ids.length === 0) {
+export async function resolveRelatedAbutmentPastReady(transferDoc) {
+  const linkedRequestIds =
+    await collectLinkedAbutmentRequestObjectIds(transferDoc);
+  if (linkedRequestIds.length === 0) {
     if (transferDoc?.production?.abutmentProductionStartedAt && transferDoc?._id) {
       await clearPracticeTransferAbutmentMachiningStartedByTransferId(
         transferDoc._id,
       );
     }
-    return false;
+    return { pastReady: false, linkedRequestIds };
   }
-  const rows = await Request.find({ _id: { $in: ids } })
+  const rows = await Request.find({ _id: { $in: linkedRequestIds } })
     .select({
       manufacturerStage: 1,
       "productionSchedule.actualCamStart": 1,
     })
     .lean();
-  const past = rows.some((row) => isAbutmentRequestPastReadyForCancel(row));
+  const pastReady = rows.some((row) => isAbutmentRequestPastReadyForCancel(row));
   if (
-    !past &&
+    !pastReady &&
     transferDoc?.production?.abutmentProductionStartedAt &&
     transferDoc?._id
   ) {
@@ -969,7 +971,12 @@ export async function hasRelatedAbutmentPastReady(transferDoc) {
       transferDoc._id,
     );
   }
-  return past;
+  return { pastReady, linkedRequestIds };
+}
+
+export async function hasRelatedAbutmentPastReady(transferDoc) {
+  const { pastReady } = await resolveRelatedAbutmentPastReady(transferDoc);
+  return pastReady;
 }
 
 /**
@@ -1089,29 +1096,48 @@ export async function mapAbutmentPastReadyByTransferDocs(docs) {
  * 작업취소·자동매칭 재공개 시: 이전 기공소가 만든 CA Request/디자인 미러를 정리.
  * 다음 수락 기공소가 소유·디자인 권한을 깨끗이 받도록 한다.
  * 준비 단계가 아닌 Request는 취소하지 않는다(가공 중 강제 취소 방지).
+ *
+ * @param {object} [options]
+ * @param {import("mongoose").Types.ObjectId[]} [options.linkedRequestIds] — 사전 조회 재사용
+ * @param {boolean} [options.skipPastReadyCheck] — 호출자가 이미 past-ready 검사함
  */
-export async function clearRelatedAbutmentProductionOnRelease(transferDoc) {
+export async function clearRelatedAbutmentProductionOnRelease(
+  transferDoc,
+  options = {},
+) {
   if (!transferDoc?._id) {
     return { cleared: false, canceledRequestCount: 0, blockedPastReady: false };
   }
 
-  const objectIds = await collectLinkedAbutmentRequestObjectIds(transferDoc);
+  const linkedRequestIds = Array.isArray(options.linkedRequestIds)
+    ? options.linkedRequestIds
+    : null;
+  const skipPastReadyCheck = Boolean(options.skipPastReadyCheck);
+
+  const objectIds =
+    linkedRequestIds != null
+      ? linkedRequestIds
+      : await collectLinkedAbutmentRequestObjectIds(transferDoc);
 
   let canceledRequestCount = 0;
   if (objectIds.length > 0) {
-    const stageRows = await Request.find({ _id: { $in: objectIds } })
-      .select({
-        manufacturerStage: 1,
-        "productionSchedule.actualCamStart": 1,
-      })
-      .lean();
-    const blockedPastReady = stageRows.some((row) =>
-      isAbutmentRequestPastReadyForCancel(row),
-    );
-    if (
-      blockedPastReady
-    ) {
-      return { cleared: false, canceledRequestCount: 0, blockedPastReady: true };
+    if (!skipPastReadyCheck) {
+      const stageRows = await Request.find({ _id: { $in: objectIds } })
+        .select({
+          manufacturerStage: 1,
+          "productionSchedule.actualCamStart": 1,
+        })
+        .lean();
+      const blockedPastReady = stageRows.some((row) =>
+        isAbutmentRequestPastReadyForCancel(row),
+      );
+      if (blockedPastReady) {
+        return {
+          cleared: false,
+          canceledRequestCount: 0,
+          blockedPastReady: true,
+        };
+      }
     }
 
     const cancelResult = await Request.updateMany(

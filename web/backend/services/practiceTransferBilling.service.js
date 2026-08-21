@@ -16,6 +16,7 @@
 // - 2026-08-21: resolveHoldShareAmounts — billing 금액 있으면 assert 재호출 금지. devops 캐시.
 // - 2026-08-19: 목록 feeQuote에 labFeeConfigured 전달(지정 수가 Off·항목 Off=미설정).
 // - 2026-08-18: rollbackPracticeTransferBilling — 멱등키 조회·저널 삭제를 병렬화.
+// - 2026-08-21: rollback — getJournalsByIdempotencyKeys 1회 + syncBalanceCache/emit 지연 옵션.
 // - 2026-08-18: 기공소 공급 어벗은 전역 단가. 의뢰자별 특별가는 적용하지 않음.
 // - 2026-08-17: adjustPracticeTransferHold — 배송비 보류는 조정 대상에서 제외(fees.total과만 비교).
 // - 2026-08-17: 생성 시 배송비도 SPEND_HOLD. 출고 시 에스크로→매출 전환(재차감 없음).
@@ -73,6 +74,7 @@ import {
 import {
   postGeneralLedgerJournal,
   getJournalByIdempotencyKey,
+  getJournalsByIdempotencyKeys,
   deleteGeneralLedgerCommitJournal,
 } from "./generalLedger.service.js";
 import {
@@ -3042,6 +3044,8 @@ export async function rollbackPracticeTransferBilling({
   transferId,
   session: outerSession = null,
   emitRealtime = true,
+  /** false면 잔액 캐시 upsert·소켓 emit을 호출자가 응답 후 처리(mark-release 핫패스) */
+  syncBalanceCache = true,
 }) {
   const id = String(transferId || "").trim();
   if (!id || !Types.ObjectId.isValid(id)) {
@@ -3110,20 +3114,15 @@ export async function rollbackPracticeTransferBilling({
   ];
 
   const journalEventById = new Map();
-
-  const foundKeys = await Promise.all(
-    keys.map(async ({ key, events }) => {
-      const existing = await getJournalByIdempotencyKey({
-        idempotencyKey: key,
-        session: outerSession,
-      });
-      const jid = String(existing?.journalId || "").trim();
-      return jid ? { jid, events } : null;
-    }),
-  );
-  for (const row of foundKeys) {
-    if (!row) continue;
-    journalEventById.set(row.jid, row.events);
+  const eventsByKey = new Map(keys.map(({ key, events }) => [key, events]));
+  const journalsByKey = await getJournalsByIdempotencyKeys({
+    idempotencyKeys: keys.map(({ key }) => key),
+    session: outerSession,
+  });
+  for (const [key, existing] of journalsByKey.entries()) {
+    const jid = String(existing?.journalId || "").trim();
+    if (!jid) continue;
+    journalEventById.set(jid, eventsByKey.get(key) || PRACTICE_TRANSFER_ROLLBACK_EVENT_TYPES);
   }
 
   // 키 누락·과거 포맷·디자인비 ADJUST 보강: refType+refId 스윕
@@ -3197,18 +3196,20 @@ export async function rollbackPracticeTransferBilling({
 
   if (didRollback) {
     const affectedAnchorIds = Object.keys(balanceRestoreByAnchor);
-    await Promise.all(
-      affectedAnchorIds.map(async (anchorId) => {
-        try {
-          await upsertBusinessCreditBalanceFromLedger({
-            businessAnchorId: anchorId,
-            session: outerSession,
-          });
-        } catch {
-          // best-effort cache; ledger lines are SSOT
-        }
-      }),
-    );
+    if (syncBalanceCache) {
+      await Promise.all(
+        affectedAnchorIds.map(async (anchorId) => {
+          try {
+            await upsertBusinessCreditBalanceFromLedger({
+              businessAnchorId: anchorId,
+              session: outerSession,
+            });
+          } catch {
+            // best-effort cache; ledger lines are SSOT
+          }
+        }),
+      );
+    }
 
     if (emitRealtime) {
       try {
@@ -3238,6 +3239,54 @@ export async function rollbackPracticeTransferBilling({
     deletedJournalIds,
     balanceRestoreByAnchor,
   };
+}
+
+/**
+ * rollbackPracticeTransferBilling({ syncBalanceCache:false, emitRealtime:false }) 이후
+ * 응답 밖에서 잔액 캐시·소켓을 맞춘다.
+ */
+export async function applyPracticeTransferBillingRollbackSideEffects({
+  transferId,
+  balanceRestoreByAnchor = {},
+}) {
+  const id = String(transferId || "").trim();
+  const affectedAnchorIds = Object.keys(balanceRestoreByAnchor || {}).filter(
+    Boolean,
+  );
+  if (!affectedAnchorIds.length) return { applied: false };
+
+  await Promise.all(
+    affectedAnchorIds.map(async (anchorId) => {
+      try {
+        await upsertBusinessCreditBalanceFromLedger({
+          businessAnchorId: anchorId,
+        });
+      } catch {
+        // best-effort cache; ledger lines are SSOT
+      }
+    }),
+  );
+
+  try {
+    const { emitCreditBalanceUpdatedToBusiness } = await import(
+      "../utils/creditRealtime.js"
+    );
+    await Promise.all(
+      affectedAnchorIds.map((anchorId) =>
+        emitCreditBalanceUpdatedToBusiness({
+          businessAnchorId: anchorId,
+          balanceDelta: Number(balanceRestoreByAnchor[anchorId] || 0),
+          reason: "practice_transfer_billing_rollback",
+          refId: id,
+          forceEmit: true,
+        }),
+      ),
+    );
+  } catch {
+    // best-effort
+  }
+
+  return { applied: true, affectedAnchorIds };
 }
 
 function relationshipKindFromPartner(partner) {

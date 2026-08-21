@@ -71,6 +71,7 @@
 // - 2026-08-14: 수락/취소 버튼 — 처리 즉시 시작, UI는 최소 0.5초「…중」후 전환.
 // - 2026-08-14: 상세 모달 수락 자리에 작업취소(mark-release) 노출.
 // - 2026-08-14: 작업취소 — 서버 사이드이펙트 비동기. UI는 수락과 동일 1초 딜레이.
+// - 2026-08-21: 작업취소 — 수락과 같이 낙관적 UI(최소 busy 후 반영, API는 백그라운드).
 // - 2026-08-11: 역할 로딩 스켈레톤(발신/수신)·수신 목록 카드 스켈레톤.
 // - 2026-08-11: 디자인 페이지 삭제 — DesignQueueSection을 의뢰수신 UI에 통합(기간필터 공유).
 // - 2026-08-11: 기공소 의뢰수신 — 발신/수신 탭 제거·항상 수신. 디자인 큐를 의뢰수신으로 편입.
@@ -2786,6 +2787,18 @@ export function RequestorPracticeReceivePage({
       const isAuto = String(transfer.matchingMode || "") === "auto";
       const canceledAt = new Date().toISOString();
 
+      const rollbackPatch: Partial<ReceivedPracticeTransfer> = {
+        isAccepted: transfer.isAccepted,
+        isDownloaded: transfer.isDownloaded,
+        requestorDownloadedAt: transfer.requestorDownloadedAt,
+        requestorAcceptedAt: transfer.requestorAcceptedAt,
+        workCanceledAt: transfer.workCanceledAt,
+        manufacturerStage: transfer.manufacturerStage,
+        targetLabName: transfer.targetLabName,
+        autoMatch: transfer.autoMatch,
+        production: transfer.production,
+      };
+
       const releasePatch: Partial<ReceivedPracticeTransfer> = isAuto
         ? {
             isAccepted: false,
@@ -2837,76 +2850,95 @@ export function RequestorPracticeReceivePage({
       };
 
       try {
-        const [res] = await Promise.all([
-          apiFetch<unknown>({
-            path: `/api/practice/transfers/${encodeURIComponent(transfer.transferId)}/mark-release`,
-            method: "POST",
-            token,
-          }),
-          new Promise<void>((resolve) => {
-            window.setTimeout(resolve, ACTION_UI_MIN_MS);
-          }),
-        ]);
+        const apiPromise = apiFetch<unknown>({
+          path: `/api/practice/transfers/${encodeURIComponent(transfer.transferId)}/mark-release`,
+          method: "POST",
+          token,
+        });
 
-        if (!res.ok) {
-          const body =
-            res.data && typeof res.data === "object"
-              ? (res.data as Record<string, unknown>)
-              : {};
-          const code = String(body.code || "").trim();
-          if (code === "abutment_machining_started") {
-            markLocalMachiningStarted();
-          }
-          toast({
-            title: "의뢰 수락 취소 불가",
-            description: String(
-              body.message ||
-                "어벗 가공이 시작된 의뢰는 수락 취소할 수 없습니다.",
-            ),
-            variant: "destructive",
-          });
-          return false;
-        }
+        await new Promise<void>((resolve) => {
+          window.setTimeout(resolve, ACTION_UI_MIN_MS);
+        });
 
-        const body =
-          res.data && typeof res.data === "object"
-            ? (res.data as Record<string, unknown>)
-            : {};
-        const data =
-          body.data && typeof body.data === "object"
-            ? (body.data as Record<string, unknown>)
-            : body;
-        const autoMatchRaw =
-          data.autoMatch && typeof data.autoMatch === "object"
-            ? (data.autoMatch as Record<string, unknown>)
-            : null;
-
-        applyAcceptedLocalPatch(
-          transfer,
-          isAuto && autoMatchRaw?.releaseCount != null
-            ? {
-                ...releasePatch,
-                autoMatch: {
-                  ...(releasePatch.autoMatch || {}),
-                  releaseCount: Number(autoMatchRaw.releaseCount),
-                  openPool:
-                    autoMatchRaw.openPool != null
-                      ? Boolean(autoMatchRaw.openPool)
-                      : true,
-                },
-                manufacturerStage:
-                  String(data.manufacturerStage || "").trim() ||
-                  releasePatch.manufacturerStage,
-              }
-            : releasePatch,
-        );
-        void loadFirstPage({ silent: true });
+        applyAcceptedLocalPatch(transfer, releasePatch);
         toast({
           title: "작업 취소",
           description: isAuto
             ? "수락을 취소해 공개 풀로 되돌렸습니다."
             : "의뢰수락을 취소했습니다.",
         });
+
+        void apiPromise
+          .then((res) => {
+            if (!res.ok) {
+              const body =
+                res.data && typeof res.data === "object"
+                  ? (res.data as Record<string, unknown>)
+                  : {};
+              const code = String(body.code || "").trim();
+              applyAcceptedLocalPatch(transfer, rollbackPatch);
+              if (code === "abutment_machining_started") {
+                markLocalMachiningStarted();
+              }
+              toast({
+                title:
+                  code === "abutment_machining_started"
+                    ? "의뢰 수락 취소 불가"
+                    : "작업 취소 실패",
+                description: String(
+                  body.message ||
+                    (code === "abutment_machining_started"
+                      ? "어벗 가공이 시작된 의뢰는 수락 취소할 수 없습니다."
+                      : "작업 취소 요청 중 오류가 발생했습니다."),
+                ),
+                variant: "destructive",
+              });
+              return;
+            }
+
+            const body =
+              res.data && typeof res.data === "object"
+                ? (res.data as Record<string, unknown>)
+                : {};
+            const data =
+              body.data && typeof body.data === "object"
+                ? (body.data as Record<string, unknown>)
+                : body;
+            const autoMatchRaw =
+              data.autoMatch && typeof data.autoMatch === "object"
+                ? (data.autoMatch as Record<string, unknown>)
+                : null;
+
+            applyAcceptedLocalPatch(
+              transfer,
+              isAuto && autoMatchRaw?.releaseCount != null
+                ? {
+                    ...releasePatch,
+                    autoMatch: {
+                      ...(releasePatch.autoMatch || {}),
+                      releaseCount: Number(autoMatchRaw.releaseCount),
+                      openPool:
+                        autoMatchRaw.openPool != null
+                          ? Boolean(autoMatchRaw.openPool)
+                          : true,
+                    },
+                    manufacturerStage:
+                      String(data.manufacturerStage || "").trim() ||
+                      releasePatch.manufacturerStage,
+                  }
+                : releasePatch,
+            );
+            void loadFirstPage({ silent: true });
+          })
+          .catch(() => {
+            applyAcceptedLocalPatch(transfer, rollbackPatch);
+            toast({
+              title: "작업 취소 실패",
+              description: "작업 취소 요청 중 오류가 발생했습니다.",
+              variant: "destructive",
+            });
+          });
+
         return true;
       } catch {
         toast({
