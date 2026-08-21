@@ -381,6 +381,8 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - 3.2+: 원본=STL모델대로, 복사=헥스30도회전
     - 3.0 이하: 원본=헥스30도회전, 복사=STL모델대로
   - 라이노(2-filled)는 원본만 실행하고 샘플에 `stlFile`(legacy `camFile` 미러)을 복사. Esprit NC(`ncFile`)는 샘플의 반대 헥스로 별도 생성.
+  - 의뢰자(기공소/치과) 취소·삭제 시 원본↔헥스 확인 샘플을 **함께** `취소` 처리한다
+    (`findHexVerificationCancelSiblings` → `updateRequestStatus` / batch / `deleteRequest`).
   - 관련: `utils/designSoftwareHex.js`, `services/hexVerificationSample.service.js`
 - 워크시트 응답(`GET /api/requests/all?view=worksheet`)의 `item.business`에는
   `requestSettings.designSoftware`를 포함할 수 있으나, 제조사/의뢰자 UI의 실제 표시는 `caseInfos.designSoftware`를 SSOT로 사용합니다.

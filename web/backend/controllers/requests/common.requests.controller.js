@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-21: 의뢰 취소/삭제 시 ExoCAD 헥스 확인용 샘플과 원본을 함께 취소.
 // - 2026-08-21: worksheet delivery populate에 events 위치·상태 포함. GET /my에 deliveryInfo 포함.
 // - 2026-08-19: PATCH /status/batch — 준비 단계 일괄 취소. 응답 후 웹소켓·스냅샷.
 // - 2026-08-19: 준비 단계 취소는 트랜잭션 없이 uniqueKeys 조회+status updateOne. 웹소켓은 백그라운드.
@@ -76,6 +77,7 @@ import { buildCreatedAtFilterFromQuery } from "../../utils/dateRange.js";
 import { ensureRequestCreditRollbackDeleteOnRollbackToCam } from "./common.review.helpers.js";
 import { releaseRequestCreditHoldsOnCancel } from "../../services/requestCreditHold.service.js";
 import { pickFilledStlFileForClone } from "../../utils/filledStlFile.js";
+import { findHexVerificationCancelSiblings } from "../../services/hexVerificationSample.service.js";
 
 const ESPRIT_BASE =
   process.env.ESPRIT_ADDIN_BASE_URL ||
@@ -3573,21 +3575,42 @@ export async function updateRequestStatus(req, res) {
 
     // 의뢰 상태 변경
     if (manufacturerStage === "취소") {
-      await ensureRequestCancelRollbackDelete({
-        request,
-        actorUserId: req.user?._id || null,
-        session: null,
-        deferredCreditEvents,
-      });
-      applyStatusMapping(request, manufacturerStage);
-      await Request.updateOne(
-        { _id: request._id },
-        { $set: { manufacturerStage: request.manufacturerStage } },
+      const siblings = await findHexVerificationCancelSiblings(request);
+      const cascadeTargets = siblings.filter((sibling) =>
+        isCancelableManufacturerStage(sibling),
       );
+      const cancelTargets = [request, ...cascadeTargets];
+      const cancelingIds = new Set(
+        cancelTargets.map((row) => String(row._id)),
+      );
+      const sideEffects = [];
+
+      for (const target of cancelTargets) {
+        const targetPrevStage = String(target.manufacturerStage || "").trim();
+        const targetDeferred = target === request ? deferredCreditEvents : [];
+        await ensureRequestCancelRollbackDelete({
+          request: target,
+          actorUserId: req.user?._id || null,
+          session: null,
+          deferredCreditEvents: targetDeferred,
+          excludeSiblingIds: cancelingIds,
+        });
+        applyStatusMapping(target, manufacturerStage);
+        await Request.updateOne(
+          { _id: target._id },
+          { $set: { manufacturerStage: target.manufacturerStage } },
+        );
+        sideEffects.push({
+          request: target,
+          prevManufacturerStage: targetPrevStage,
+          deferredCreditEvents: targetDeferred,
+        });
+      }
 
       console.log("[updateManufacturerStage] Stage updated", {
         requestId: request.requestId,
         newStage: manufacturerStage,
+        cascadedRequestIds: cascadeTargets.map((row) => row.requestId),
         businessAnchorId: String(request.businessAnchorId || ""),
       });
 
@@ -3620,15 +3643,24 @@ export async function updateRequestStatus(req, res) {
           _id: request._id,
           requestId: request.requestId,
           manufacturerStage: "취소",
+          cascaded: cascadeTargets.map((row) => ({
+            _id: row._id,
+            requestId: row.requestId,
+            manufacturerStage: "취소",
+          })),
         },
       });
 
       setImmediate(() => {
-        void emitCanceledRequestSideEffects({
-          request,
-          prevManufacturerStage,
-          deferredCreditEvents,
-        });
+        void (async () => {
+          for (const item of sideEffects) {
+            await emitCanceledRequestSideEffects({
+              request: item.request,
+              prevManufacturerStage: item.prevManufacturerStage,
+              deferredCreditEvents: item.deferredCreditEvents,
+            });
+          }
+        })();
       });
       return;
     }
@@ -3750,6 +3782,25 @@ export async function updateRequestStatusBatch(req, res) {
         continue;
       }
       eligible.push(request);
+    }
+
+    // ExoCAD 헥스 확인용 샘플↔원본: 한쪽만 골라도 쌍을 함께 취소 대상에 넣는다.
+    const eligibleById = new Map(
+      eligible.map((row) => [String(row._id), row]),
+    );
+    for (const request of [...eligible]) {
+      const siblings = await findHexVerificationCancelSiblings(request);
+      for (const sibling of siblings) {
+        const siblingId = String(sibling._id);
+        if (eligibleById.has(siblingId)) continue;
+        if (String(sibling.manufacturerStage || "").trim() === "취소") continue;
+        if (!isCancelableManufacturerStage(sibling)) continue;
+        const isRequestor = await canAccessRequestAsRequestor(req, sibling);
+        const isAdmin = req.user?.role === "admin";
+        if (!isRequestor && !isAdmin) continue;
+        eligibleById.set(siblingId, sibling);
+        eligible.push(sibling);
+      }
     }
 
     const cancelingIds = new Set(eligible.map((row) => String(row._id)));
@@ -3950,16 +4001,24 @@ export async function deleteRequest(req, res) {
 
     // 의뢰 취소 처리 (상태를 '취소'로 변경)
     const session = await mongoose.startSession();
+    const siblings = await findHexVerificationCancelSiblings(request);
+    const cascadeTargets = siblings.filter((sibling) =>
+      isCancelableManufacturerStage(sibling),
+    );
+    const cancelTargets = [request, ...cascadeTargets];
+    const cancelingIds = new Set(cancelTargets.map((row) => String(row._id)));
     try {
       await session.withTransaction(async () => {
-        await ensureRequestCancelRollbackDelete({
-          request,
-          actorUserId: req.user?._id || null,
-          session,
-        });
-
-        applyStatusMapping(request, "취소");
-        await request.save({ session });
+        for (const target of cancelTargets) {
+          await ensureRequestCancelRollbackDelete({
+            request: target,
+            actorUserId: req.user?._id || null,
+            session,
+            excludeSiblingIds: cancelingIds,
+          });
+          applyStatusMapping(target, "취소");
+          await target.save({ session });
+        }
       });
     } finally {
       session.endSession();
@@ -3967,6 +4026,7 @@ export async function deleteRequest(req, res) {
 
     console.log("[deleteRequest] Request deleted/canceled", {
       requestId: request.requestId,
+      cascadedRequestIds: cascadeTargets.map((row) => row.requestId),
       businessAnchorId: String(request.businessAnchorId || ""),
       stageStatus,
     });

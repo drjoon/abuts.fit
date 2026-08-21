@@ -1,9 +1,11 @@
 // related files:
 // - web/backend/utils/designSoftwareHex.js
 // - web/backend/controllers/requests/creation.from-draft.controller.js
+// - web/backend/controllers/requests/common.requests.controller.js
 // - web/backend/services/practiceTransferProduction.service.js
 // - web/backend/controllers/requests/common.review.controller.js
-    // change-log:
+// change-log:
+// - 2026-08-21: 의뢰 취소 시 헥스 확인용 샘플↔원본 쌍을 함께 찾도록 findHexVerificationCancelSiblings 추가
 // - 2026-08-21: pending 미기록 레거시 ExoCAD도 첫 주문에서 확인용 샘플 생성
 // - 2026-08-21: ExoCAD 첫 설정 후 첫 제조의뢰에 반대 헥스 확인용 복사샘플 자동 생성
 
@@ -22,6 +24,50 @@ import {
   resolveFilledStlFile,
 } from "../utils/filledStlFile.js";
 import { ensureLotNumbersOnReadyEnter } from "../controllers/requests/utils.js";
+
+export const isHexVerificationSampleRequest = (request) =>
+  request?.caseInfos?.hexVerificationSample === true;
+
+/**
+ * 취소 시 함께 처리할 헥스 확인용 쌍(원본↔샘플).
+ * - 원본 취소 → referenceIds에 원본 requestId가 있는 미취소 샘플
+ * - 샘플 취소 → 샘플 referenceIds의 미취소 원본
+ * self는 포함하지 않는다.
+ * @param {object} request
+ * @returns {Promise<object[]>}
+ */
+export async function findHexVerificationCancelSiblings(request) {
+  if (!request) return [];
+
+  const selfMongoId = String(request._id || "").trim();
+  const selfRequestId = String(request.requestId || "").trim();
+  const notCanceled = { manufacturerStage: { $nin: ["취소"] } };
+
+  let siblings = [];
+  if (isHexVerificationSampleRequest(request)) {
+    const refs = (
+      Array.isArray(request.referenceIds) ? request.referenceIds : []
+    )
+      .map((id) => String(id || "").trim())
+      .filter(Boolean);
+    if (!refs.length) return [];
+    siblings = await Request.find({
+      requestId: { $in: refs },
+      ...notCanceled,
+      "caseInfos.hexVerificationSample": { $ne: true },
+    }).populate("requestor", "businessAnchorId");
+  } else if (selfRequestId) {
+    siblings = await Request.find({
+      "caseInfos.hexVerificationSample": true,
+      referenceIds: selfRequestId,
+      ...notCanceled,
+    }).populate("requestor", "businessAnchorId");
+  }
+
+  return (siblings || []).filter(
+    (doc) => String(doc?._id || "").trim() !== selfMongoId,
+  );
+}
 
 const ensureReviewByStageDefaults = (request) => {
   if (!request.caseInfos) request.caseInfos = {};

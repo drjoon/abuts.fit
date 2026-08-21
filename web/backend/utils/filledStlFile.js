@@ -3,6 +3,7 @@
 // - web/backend/controllers/bg/bg.controller.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/request.ts
 // change-log:
+// - 2026-08-21: pickFilledStlFileForClone — 없을 때 null 키를 넣지 않음(빈 uploadedAt 스텁 방지).
 // - 2026-08-21: Rhino filled STL SSOT를 caseInfos.stlFile로 개명. camFile은 레거시 미러/폴백.
 //
 // 필드 의미 SSOT:
@@ -74,11 +75,14 @@ export function clearFilledStlFileOnCaseInfos(caseInfos) {
 
 /**
  * clone/spread용 — 소스에서 filled STL을 읽어 새 caseInfos에 dual 키로 넣는다.
+ * 없으면 키를 넣지 않는다(null 스프레드 시 mongoose subdoc default로
+ * `{ uploadedAt }`만 있는 스텁이 생겨 BG가 camFile만 채우면 stlFile SSOT가 비는 문제가 난다).
  * @param {object|null|undefined} sourceCaseInfos
- * @returns {{ stlFile: object|null, camFile: object|null }}
+ * @returns {{ stlFile?: object, camFile?: object }}
  */
 export function pickFilledStlFileForClone(sourceCaseInfos) {
-  const file = resolveFilledStlFile(sourceCaseInfos) || null;
+  const file = resolveFilledStlFile(sourceCaseInfos);
+  if (!hasFileMeta(file)) return {};
   return {
     stlFile: file,
     camFile: file, // legacy mirror
