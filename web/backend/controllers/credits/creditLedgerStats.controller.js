@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-22: 보철유형 집계 — 견적 라인 공급가 기준·정수 원 반올림(소수 분배 제거).
 // - 2026-08-22: 의뢰자 정산 페이지 통계 탭 — 기간·유형·파트너·보철유형 집계 API.
 // related files:
 // - web/backend/modules/credits/credit.routes.js
@@ -12,6 +13,7 @@ import PracticeTransfer from "../../models/practiceTransfer.model.js";
 import Request from "../../models/request.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { normalizeRequestorKind } from "../../utils/requestorCapabilities.js";
+import { buildFeeQuotesForTransferDocs } from "../../services/practiceTransferBilling.service.js";
 
 const REQUESTOR_CREDIT_ACCOUNT_CODES = [
   "REQ_PAID_CREDIT",
@@ -126,21 +128,25 @@ function resolveStatsCategory(eventType, refType, accountCode, amount) {
   return "other";
 }
 
+function roundSupplyAmount(value) {
+  return Math.max(0, Math.round(Number(value || 0)));
+}
+
 function absSpendSupply(amountBase) {
   const n = Number(amountBase || 0);
-  return n < 0 ? Math.abs(n) : 0;
+  return n < 0 ? roundSupplyAmount(Math.abs(n)) : 0;
 }
 
 function absChargeSupply(amountBase, eventType) {
   const n = Number(amountBase || 0);
   if (!CHARGE_EVENT_TYPES.has(String(eventType || ""))) return 0;
-  return n > 0 ? n : 0;
+  return n > 0 ? roundSupplyAmount(n) : 0;
 }
 
 function bumpMap(map, key, { amount = 0, count = 0 } = {}) {
   const k = String(key || "").trim() || "미분류";
   const prev = map.get(k) || { key: k, label: k, amountSupply: 0, count: 0 };
-  prev.amountSupply += Number(amount || 0);
+  prev.amountSupply = roundSupplyAmount(prev.amountSupply + Number(amount || 0));
   prev.count += Number(count || 0);
   map.set(k, prev);
 }
@@ -156,8 +162,95 @@ function collectProsthesisTypesFromToothWorks(toothWorks) {
 
 function mapToSortedRows(map, { limit = 12 } = {}) {
   return Array.from(map.values())
+    .map((row) => ({
+      ...row,
+      amountSupply: roundSupplyAmount(row.amountSupply),
+    }))
     .sort((a, b) => b.amountSupply - a.amountSupply || b.count - a.count)
     .slice(0, limit);
+}
+
+function lineRetailAmount(line) {
+  return roundSupplyAmount(
+    Number(line?.labFee || 0) +
+      Number(line?.labAbutmentFee || 0) +
+      Number(line?.abutmentRetail || 0),
+  );
+}
+
+function scaleIntegerAllocations(entries, targetAmount) {
+  const target = roundSupplyAmount(targetAmount);
+  if (!entries.length || target <= 0) return entries;
+  const sourceTotal = entries.reduce((sum, [, row]) => sum + row.amountSupply, 0);
+  if (sourceTotal <= 0) {
+    return entries.map(([key, row], index) => {
+      if (index !== entries.length - 1) {
+        return [key, { ...row, amountSupply: 0 }];
+      }
+      return [key, { ...row, amountSupply: target }];
+    });
+  }
+  if (sourceTotal === target) return entries;
+
+  let allocated = 0;
+  return entries.map(([key, row], index) => {
+    if (index === entries.length - 1) {
+      return [key, { ...row, amountSupply: Math.max(0, target - allocated) }];
+    }
+    const share = roundSupplyAmount((row.amountSupply * target) / sourceTotal);
+    allocated += share;
+    return [key, { ...row, amountSupply: share }];
+  });
+}
+
+function buildProsthesisAllocations({ quote, toothWorks, fallbackAmount }) {
+  const lines = Array.isArray(quote?.lines) ? quote.lines : [];
+  if (lines.length) {
+    const byType = new Map();
+    for (const line of lines) {
+      const type = String(line?.prosthesisType || "").trim() || "미분류";
+      const amt = lineRetailAmount(line);
+      if (amt <= 0) continue;
+      bumpMap(byType, type, { amount: amt, count: 1 });
+    }
+    return scaleIntegerAllocations([...byType.entries()], fallbackAmount);
+  }
+
+  const types = [
+    ...new Set(collectProsthesisTypesFromToothWorks(toothWorks).filter(Boolean)),
+  ];
+  if (!types.length) return [];
+
+  const target = roundSupplyAmount(fallbackAmount);
+  if (types.length === 1) {
+    return [
+      [
+        types[0],
+        {
+          key: types[0],
+          label: types[0],
+          amountSupply: target,
+          count: 1,
+        },
+      ],
+    ];
+  }
+
+  const base = Math.floor(target / types.length);
+  let remainder = target - base * types.length;
+  return types.map((type) => {
+    const extra = remainder > 0 ? 1 : 0;
+    if (remainder > 0) remainder -= 1;
+    return [
+      type,
+      {
+        key: type,
+        label: type,
+        amountSupply: base + extra,
+        count: 1,
+      },
+    ];
+  });
 }
 
 export async function getMyCreditLedgerStats(req, res) {
@@ -302,6 +395,14 @@ export async function getMyCreditLedgerStats(req, res) {
     );
   }
 
+  const quotesByPtxId =
+    (ptxDocs || []).length > 0
+      ? await buildFeeQuotesForTransferDocs({
+          docs: ptxDocs,
+          viewingLabAnchorId: isLab ? String(anchorObjectId) : null,
+        })
+      : new Map();
+
   const byPeriodMap = new Map();
   const byCategoryMap = new Map();
   const byPartnerMap = new Map();
@@ -400,22 +501,40 @@ export async function getMyCreditLedgerStats(req, res) {
         : collectProsthesisTypesFromToothWorks(req?.toothWorks);
     }
 
-    const rowAmount =
+    const rowAmount = roundSupplyAmount(
       spendSupply ||
-      settlementEarnSupply ||
-      chargeSupply ||
-      settlementPayoutSupply ||
-      Math.abs(amount);
+        settlementEarnSupply ||
+        chargeSupply ||
+        settlementPayoutSupply ||
+        Math.abs(amount),
+    );
 
     if (partnerLabel) {
       bumpMap(byPartnerMap, partnerLabel, { amount: rowAmount, count: 1 });
     }
 
-    if (prosthesisTypes.length) {
-      for (const pt of prosthesisTypes) {
-        bumpMap(byProsthesisMap, pt, {
-          amount: rowAmount / prosthesisTypes.length,
-          count: 1,
+    if (rt === "PRACTICE_TRANSFER" && ptxById.has(refId)) {
+      const allocations = buildProsthesisAllocations({
+        quote: quotesByPtxId.get(refId) || null,
+        toothWorks: ptxById.get(refId)?.toothWorks,
+        fallbackAmount: rowAmount,
+      });
+      for (const [, allocRow] of allocations) {
+        bumpMap(byProsthesisMap, allocRow.label, {
+          amount: allocRow.amountSupply,
+          count: allocRow.count,
+        });
+      }
+    } else if (prosthesisTypes.length) {
+      const allocations = buildProsthesisAllocations({
+        quote: null,
+        toothWorks: prosthesisTypes.map((type) => ({ prosthesisType: type })),
+        fallbackAmount: rowAmount,
+      });
+      for (const [, allocRow] of allocations) {
+        bumpMap(byProsthesisMap, allocRow.label, {
+          amount: allocRow.amountSupply,
+          count: allocRow.count,
         });
       }
     }
@@ -427,10 +546,10 @@ export async function getMyCreditLedgerStats(req, res) {
       requestorKind,
       period: { key: period, fromYmd, toYmd },
       summary: {
-        totalChargeSupply,
-        totalSpendSupply,
-        totalSettlementEarnSupply,
-        totalSettlementPayoutSupply,
+        totalChargeSupply: roundSupplyAmount(totalChargeSupply),
+        totalSpendSupply: roundSupplyAmount(totalSpendSupply),
+        totalSettlementEarnSupply: roundSupplyAmount(totalSettlementEarnSupply),
+        totalSettlementPayoutSupply: roundSupplyAmount(totalSettlementPayoutSupply),
         transactionCount,
         orderCount,
       },

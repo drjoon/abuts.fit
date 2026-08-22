@@ -70,7 +70,7 @@ export default function RequestorCreditsPage() {
         icon: BarChart3,
         content:
           activeTab === "stats" ? (
-            <div className="h-full min-h-0 overflow-auto">
+            <div className="h-full min-h-0 overflow-y-auto overflow-x-hidden px-0.5 pb-2 pt-2">
               <CreditStatisticsTab />
             </div>
           ) : null,

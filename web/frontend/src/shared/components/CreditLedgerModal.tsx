@@ -44,6 +44,7 @@
 // - 2026-08-11: 중복 일자(from~to) 입력 제거. 검색을 초기화 버튼 우측으로 이동.
 // - 2026-08-11: embedded 무한스크롤 — sentinel 재마운트 시 IntersectionObserver 재연결.
 // - 2026-08-11: embedded 모드에서 "크레딧 내역" 제목 숨김(탭 라벨로 충분). Dialog는 유지.
+// - 2026-08-22: initialFilters·hideBalanceSummary·detailTitle — 통계 탭 드릴다운.
 // - 2026-08-11: embedded 모드 추가 — 의뢰자 크레딧 페이지에서 Dialog 없이 동일 원장 UI 사용.
 // - 2026-08-09: 잔액 요약 우측에 [충전] 버튼 노출 (chargeNavPath 제공 시).
 // - 2026-08-04: 의뢰 차감 행에 신속/묶음배송 뱃지 표시. (display-only)
@@ -157,6 +158,15 @@ type CreditLedgerType =
 
 type LedgerCreditKindFilter = "all" | "PAID" | "FREE" | "SETTLEMENT";
 type LedgerActionFilter = "all" | "CHARGE" | "SPEND" | "ADJUST";
+
+export type CreditLedgerInitialFilters = {
+  period?: PeriodFilterValue;
+  customStartDate?: string;
+  customEndDate?: string;
+  creditKind?: LedgerCreditKindFilter;
+  action?: LedgerActionFilter;
+  q?: string;
+};
 
 type CreditLedgerItem = {
   _id: string;
@@ -279,6 +289,12 @@ export type CreditLedgerModalProps = {
   /** true면 Dialog 없이 페이지 패널로 렌더 */
   embedded?: boolean;
   className?: string;
+  /** 통계 등 드릴다운 — 열릴 때 필터 프리셋 */
+  initialFilters?: CreditLedgerInitialFilters;
+  /** embedded가 아닐 때 Dialog 제목(미설정 시 크레딧 내역) */
+  detailTitle?: string;
+  /** true면 상단 잔액 카드 숨김(드릴다운) */
+  hideBalanceSummary?: boolean;
 };
 
 const PAGE_SIZE = 10;
@@ -1577,6 +1593,9 @@ export const CreditLedgerModal = ({
   chargeNavPath,
   embedded = false,
   className,
+  initialFilters,
+  detailTitle,
+  hideBalanceSummary = false,
 }: CreditLedgerModalProps) => {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -1596,6 +1615,21 @@ export const CreditLedgerModal = ({
   const [creditKind, setCreditKind] = useState<LedgerCreditKindFilter>("all");
   const [action, setAction] = useState<LedgerActionFilter>("all");
   const [q, setQ] = useState("");
+
+  const initialFiltersKey = useMemo(
+    () => JSON.stringify(initialFilters ?? null),
+    [initialFilters],
+  );
+
+  useEffect(() => {
+    if (!initialFilters || (!isOpen && !embedded)) return;
+    setPeriod(initialFilters.period ?? "30d");
+    setCustomStartDate(initialFilters.customStartDate ?? "");
+    setCustomEndDate(initialFilters.customEndDate ?? "");
+    setCreditKind(initialFilters.creditKind ?? "all");
+    setAction(initialFilters.action ?? "all");
+    setQ(initialFilters.q ?? "");
+  }, [embedded, initialFilters, initialFiltersKey, isOpen]);
 
   const [loading, setLoading] = useState(Boolean(embedded));
   const [items, setItems] = useState<CreditLedgerItem[]>([]);
@@ -2029,7 +2063,9 @@ export const CreditLedgerModal = ({
     };
   };
 
-  const title = `크레딧 내역${titleSuffix ? ` · ${titleSuffix}` : ""}`;
+  const title =
+    detailTitle ||
+    `크레딧 내역${titleSuffix ? ` · ${titleSuffix}` : ""}`;
 
   const headerActions = (
     <>
@@ -2070,7 +2106,7 @@ export const CreditLedgerModal = ({
         <CreditLedgerTableSkeleton showSettlement={showSettlementCredit} />
       ) : (
         <>
-          {currentBalanceSnapshot ? (
+          {currentBalanceSnapshot && !hideBalanceSummary ? (
             <div
               className={cn(
                 "grid gap-3",
@@ -2502,7 +2538,7 @@ export const CreditLedgerModal = ({
         </div>
       ) : (
         <Dialog open={open} onOpenChange={onOpenChange}>
-          <DialogContent className="flex max-h-[85vh] w-[92vw] max-w-5xl flex-col gap-0 overflow-hidden rounded-2xl p-0 sm:rounded-2xl">
+          <DialogContent className="flex max-h-[90vh] w-[94vw] max-w-6xl flex-col gap-0 overflow-hidden rounded-2xl p-0 sm:rounded-2xl">
             <DialogHeader className="space-y-0 border-b border-slate-100 px-5 pb-4 pt-5 pr-12 sm:px-6 sm:pr-14">
               <div className="flex items-center justify-between gap-2">
                 <DialogTitle className="text-lg font-semibold tracking-tight text-slate-900">

@@ -1,6 +1,7 @@
 // change-log:
 // - 2026-08-21: PTX abuts_shipping enrich — BA+출고일 박스키(기공소 생산·배송 묶음).
 // - 2026-08-19: 어벗디자인 박스 키=의뢰 사업자+예정출고일. 수신자는 의뢰 사업자명.
+// - 2026-08-22: q 검색 — 기공소명·치과명으로 연결된 기공의뢰 refId 매칭.
 // - 2026-08-19: 기본 내역은 10건+hasMore. 기간 전체 $count를 하지 않는다.
 // - 2026-08-19: 원장 GET에서 신속비 보정을 기다리지 않음. 잔액·집계 병렬, enrich 병렬.
 // - 2026-08-19: 어벗디자인 원장 — 수신자/박스 묶음용 mailbox·shippingPackage 메타.
@@ -200,6 +201,52 @@ export async function listMyCreditLedger(req, res) {
     }
     if (requestIdSearchObjectId) {
       searchOrs.push({ refId: requestIdSearchObjectId });
+    }
+    if (rx && qRaw.length >= 2) {
+      const requestorKind = await resolveRequestorKindForAnchor(
+        anchorObjectId,
+        req.user?.requestorKind,
+      );
+      let ptxMatch = null;
+      if (requestorKind === "practice") {
+        ptxMatch = {
+          practiceBusinessAnchorId: anchorObjectId,
+          $or: [{ targetLabName: rx }, { assigneeLabName: rx }],
+        };
+      } else if (requestorKind === "lab") {
+        const practiceAnchors = await BusinessAnchor.find({
+          businessType: "requestor",
+          $or: [{ name: rx }, { companyName: rx }],
+        })
+          .select({ _id: 1 })
+          .limit(40)
+          .lean();
+        const practiceIds = practiceAnchors
+          .map((row) => row?._id)
+          .filter(Boolean);
+        ptxMatch = {
+          $and: [
+            {
+              $or: [
+                { assigneeLabAnchorId: anchorObjectId },
+                { targetLabAnchorId: anchorObjectId },
+              ],
+            },
+            practiceIds.length
+              ? { practiceBusinessAnchorId: { $in: practiceIds } }
+              : { $or: [{ targetLabName: rx }, { assigneeLabName: rx }] },
+          ],
+        };
+      }
+      if (ptxMatch) {
+        const partnerPtx = await PracticeTransfer.find(ptxMatch)
+          .select({ _id: 1 })
+          .limit(80)
+          .lean();
+        for (const doc of partnerPtx) {
+          if (doc?._id) searchOrs.push({ refId: doc._id });
+        }
+      }
     }
   }
 
