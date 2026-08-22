@@ -2,6 +2,7 @@
 // - 2026-08-21: PTX abuts_shipping enrich — BA+출고일 박스키(기공소 생산·배송 묶음).
 // - 2026-08-19: 어벗디자인 박스 키=의뢰 사업자+예정출고일. 수신자는 의뢰 사업자명.
 // - 2026-08-22: q 검색 — 기공소명·치과명으로 연결된 기공의뢰 refId 매칭.
+// - 2026-08-22: partnerName·prosthesisType·statsCategory(s)·onYmd 드릴다운 필터.
 // - 2026-08-19: 기본 내역은 10건+hasMore. 기간 전체 $count를 하지 않는다.
 // - 2026-08-19: 원장 GET에서 신속비 보정을 기다리지 않음. 잔액·집계 병렬, enrich 병렬.
 // - 2026-08-19: 어벗디자인 원장 — 수신자/박스 묶음용 mailbox·shippingPackage 메타.
@@ -131,6 +132,143 @@ function safeRegex(query) {
   return new RegExp(escaped, "i");
 }
 
+function parseStatsCategoriesQuery(raw) {
+  const single = String(raw?.statsCategory || "").trim();
+  const multi = String(raw?.statsCategories || "")
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean);
+  const merged = [...(single ? [single] : []), ...multi];
+  return Array.from(new Set(merged));
+}
+
+function applyOnYmdToOccurredAt(onYmdRaw, occurredAt) {
+  const ymd = String(onYmdRaw || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return;
+  occurredAt.$gte = new Date(`${ymd}T00:00:00+09:00`);
+  occurredAt.$lte = new Date(`${ymd}T23:59:59.999+09:00`);
+}
+
+async function resolvePartnerRefIds({
+  anchorObjectId,
+  requestorKind,
+  partnerName,
+}) {
+  const name = String(partnerName || "").trim();
+  if (!name) return null;
+  const rx = safeRegex(name);
+  if (!rx) return [];
+
+  if (requestorKind === "practice") {
+    const docs = await PracticeTransfer.find({
+      practiceBusinessAnchorId: anchorObjectId,
+      $or: [{ targetLabName: rx }, { assigneeLabName: rx }],
+    })
+      .select({ _id: 1 })
+      .limit(200)
+      .lean();
+    return docs.map((doc) => doc._id).filter(Boolean);
+  }
+
+  if (requestorKind === "lab") {
+    const practiceAnchors = await BusinessAnchor.find({
+      businessType: "requestor",
+      $or: [{ name: rx }, { companyName: rx }],
+    })
+      .select({ _id: 1 })
+      .limit(40)
+      .lean();
+    const practiceIds = practiceAnchors.map((row) => row?._id).filter(Boolean);
+    const ptxMatch = {
+      $and: [
+        {
+          $or: [
+            { assigneeLabAnchorId: anchorObjectId },
+            { targetLabAnchorId: anchorObjectId },
+          ],
+        },
+        practiceIds.length
+          ? { practiceBusinessAnchorId: { $in: practiceIds } }
+          : { $or: [{ targetLabName: rx }, { assigneeLabName: rx }] },
+      ],
+    };
+    const docs = await PracticeTransfer.find(ptxMatch)
+      .select({ _id: 1 })
+      .limit(200)
+      .lean();
+    return docs.map((doc) => doc._id).filter(Boolean);
+  }
+
+  return [];
+}
+
+async function resolveProsthesisRefIds({
+  anchorObjectId,
+  requestorKind,
+  prosthesisType,
+}) {
+  const type = String(prosthesisType || "").trim();
+  if (!type) return null;
+  const rx = safeRegex(type);
+  if (!rx) return [];
+
+  const refIds = [];
+  const prosthesisOr = [{ prosthesisType: rx }, { "toothWorks.prosthesisType": rx }];
+
+  if (requestorKind === "practice") {
+    const [ptxDocs, requestDocs] = await Promise.all([
+      PracticeTransfer.find({
+        practiceBusinessAnchorId: anchorObjectId,
+        "toothWorks.prosthesisType": rx,
+      })
+        .select({ _id: 1 })
+        .limit(200)
+        .lean(),
+      Request.find({
+        businessAnchorId: anchorObjectId,
+        $or: prosthesisOr,
+      })
+        .select({ _id: 1 })
+        .limit(200)
+        .lean(),
+    ]);
+    refIds.push(...ptxDocs.map((doc) => doc?._id).filter(Boolean));
+    refIds.push(...requestDocs.map((doc) => doc?._id).filter(Boolean));
+    return refIds;
+  }
+
+  if (requestorKind === "lab") {
+    const [ptxDocs, requestDocs] = await Promise.all([
+      PracticeTransfer.find({
+        $and: [
+          {
+            $or: [
+              { assigneeLabAnchorId: anchorObjectId },
+              { targetLabAnchorId: anchorObjectId },
+            ],
+          },
+          { "toothWorks.prosthesisType": rx },
+        ],
+      })
+        .select({ _id: 1 })
+        .limit(200)
+        .lean(),
+      Request.find({
+        "caseInfos.practiceRouting.targetLabAnchorId": anchorObjectId,
+        $or: prosthesisOr,
+      })
+        .select({ _id: 1 })
+        .limit(200)
+        .lean(),
+    ]);
+    refIds.push(...ptxDocs.map((doc) => doc?._id).filter(Boolean));
+    refIds.push(...requestDocs.map((doc) => doc?._id).filter(Boolean));
+    return refIds;
+  }
+
+  return [];
+}
+
 export async function listMyCreditLedger(req, res) {
   const businessAnchorId = req.user?.businessAnchorId;
 
@@ -148,6 +286,10 @@ export async function listMyCreditLedger(req, res) {
   const actionRaw = String(req.query.action || "").trim().toUpperCase();
   const periodRaw = String(req.query.period || "").trim();
   const qRaw = String(req.query.q || "").trim();
+  const partnerNameRaw = String(req.query.partnerName || "").trim();
+  const prosthesisTypeRaw = String(req.query.prosthesisType || "").trim();
+  const onYmdRaw = String(req.query.onYmd || "").trim();
+  const statsCategories = parseStatsCategoriesQuery(req.query);
 
   const page = Math.max(1, Number(req.query.page || 1) || 1);
   const pageSize = Math.min(200, Math.max(1, Number(req.query.pageSize || 10) || 10));
@@ -174,6 +316,29 @@ export async function listMyCreditLedger(req, res) {
     const to = new Date(toRaw);
     if (!Number.isNaN(to.getTime())) occurredAt.$lte = to;
   }
+  if (onYmdRaw) {
+    applyOnYmdToOccurredAt(onYmdRaw, occurredAt);
+  }
+
+  const requestorKind = await resolveRequestorKindForAnchor(
+    anchorObjectId,
+    req.user?.requestorKind,
+  );
+
+  let refIdIn = null;
+  if (partnerNameRaw) {
+    refIdIn = await resolvePartnerRefIds({
+      anchorObjectId,
+      requestorKind,
+      partnerName: partnerNameRaw,
+    });
+  } else if (prosthesisTypeRaw) {
+    refIdIn = await resolveProsthesisRefIds({
+      anchorObjectId,
+      requestorKind,
+      prosthesisType: prosthesisTypeRaw,
+    });
+  }
 
   let requestIdSearchObjectId = null;
   const looksLikeRequestId = /^\d{8}-\d{6}$/.test(qRaw);
@@ -191,7 +356,7 @@ export async function listMyCreditLedger(req, res) {
   });
 
   const searchOrs = [];
-  if (qRaw) {
+  if (qRaw && !partnerNameRaw && !prosthesisTypeRaw) {
     const rx = safeRegex(qRaw);
     if (rx) {
       searchOrs.push({ uniqueKey: rx }, { refType: rx }, { requestIdMeta: rx });
@@ -203,10 +368,6 @@ export async function listMyCreditLedger(req, res) {
       searchOrs.push({ refId: requestIdSearchObjectId });
     }
     if (rx && qRaw.length >= 2) {
-      const requestorKind = await resolveRequestorKindForAnchor(
-        anchorObjectId,
-        req.user?.requestorKind,
-      );
       let ptxMatch = null;
       if (requestorKind === "practice") {
         ptxMatch = {
@@ -257,16 +418,17 @@ export async function listMyCreditLedger(req, res) {
     occurredAt: Object.keys(occurredAt).length ? occurredAt : null,
     filterTypes,
     searchOrs,
+    refIdIn,
+    statsCategories: statsCategories.length ? statsCategories : null,
     startIdx,
     pageSize,
   });
 
-  const [balanceSnapshot, requestorKind, facetRaw] = await Promise.all([
+  const [balanceSnapshot, facetRaw] = await Promise.all([
     getBusinessCreditBalanceSnapshot({
       businessAnchorId: anchorObjectId,
       upsertIfMissing: true,
     }),
-    resolveRequestorKindForAnchor(anchorObjectId, req.user?.requestorKind),
     LedgerLine.aggregate(pipeline),
   ]);
   const currentBalance = Number(balanceSnapshot?.balance || 0);

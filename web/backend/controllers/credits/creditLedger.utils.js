@@ -957,6 +957,87 @@ function pagingFacet({ startIdx, pageSize, itemStages = [], extra = 0 }) {
 
 const JOURNAL_LINE_OVERFETCH = 8;
 
+const CREDIT_LEDGER_STATS_CHARGE_EVENT_TYPES = [
+  "CHARGE_PAID",
+  "CHARGE_FREE_REQUEST",
+  "CHARGE_FREE_SHIPPING",
+];
+
+const CREDIT_LEDGER_STATS_SPEND_EVENT_TYPES = [
+  "REQUEST_SPEND_COMMIT",
+  "SHIPPING_SPEND_COMMIT",
+  "PRACTICE_TRANSFER_SPEND_COMMIT",
+  "PRACTICE_MEMBERSHIP_SPEND",
+];
+
+/** 통계 탭 카테고리와 동일한 분류식(원장 드릴다운용) */
+export function creditLedgerStatsCategoryExpr() {
+  return {
+    $switch: {
+      branches: [
+        {
+          case: { $in: ["$eventType", CREDIT_LEDGER_STATS_CHARGE_EVENT_TYPES] },
+          then: "charge",
+        },
+        { case: { $eq: ["$eventType", "ADJUST"] }, then: "adjust" },
+        { case: { $eq: ["$eventType", "SETTLEMENT_PAYOUT"] }, then: "settlement_payout" },
+        {
+          case: {
+            $or: [
+              { $eq: ["$eventType", "LAB_SETTLEMENT_CHARGE"] },
+              {
+                $and: [
+                  { $eq: ["$eventType", "PRACTICE_TRANSFER_SPEND_COMMIT"] },
+                  { $eq: ["$accountCode", "LAB_SETTLEMENT_CREDIT"] },
+                  { $gt: ["$amount", 0] },
+                ],
+              },
+            ],
+          },
+          then: "settlement_earn",
+        },
+        {
+          case: {
+            $or: [
+              { $regexMatch: { input: "$eventType", regex: "PRACTICE_TRANSFER" } },
+              { $eq: [{ $toUpper: { $ifNull: ["$refType", ""] } }, "PRACTICE_TRANSFER"] },
+            ],
+          },
+          then: "practice_transfer",
+        },
+        {
+          case: {
+            $or: [
+              { $regexMatch: { input: "$eventType", regex: "SHIPPING" } },
+              {
+                $eq: [
+                  { $toUpper: { $ifNull: ["$refType", ""] } },
+                  "SHIPPING_PACKAGE",
+                ],
+              },
+            ],
+          },
+          then: "shipping",
+        },
+        {
+          case: {
+            $or: [
+              { $regexMatch: { input: "$eventType", regex: "REQUEST" } },
+              { $eq: [{ $toUpper: { $ifNull: ["$refType", ""] } }, "REQUEST"] },
+            ],
+          },
+          then: "abutment_production",
+        },
+        {
+          case: { $in: ["$eventType", CREDIT_LEDGER_STATS_SPEND_EVENT_TYPES] },
+          then: "other",
+        },
+      ],
+      default: "other",
+    },
+  };
+}
+
 /**
  * 의뢰자 원장: 기본 조회는 최근 라인만 잘라 저널 10건(+1)만 lookup.
  * 유형/검색 필터가 있을 때만 기간 전체를 저널에 붙인다.
@@ -967,6 +1048,8 @@ export function buildRequestorCreditLedgerPipeline({
   occurredAt,
   filterTypes,
   searchOrs,
+  refIdIn,
+  statsCategories,
   startIdx,
   pageSize,
 }) {
@@ -1000,9 +1083,12 @@ export function buildRequestorCreditLedgerPipeline({
 
   const hasTypeFilter = Array.isArray(filterTypes);
   const hasSearch = Array.isArray(searchOrs) && searchOrs.length > 0;
+  const hasRefIdIn = Array.isArray(refIdIn);
+  const hasStatsCategories =
+    Array.isArray(statsCategories) && statsCategories.length > 0;
   const lookupStages = journalLookupAndTypeStages(journalCollectionName);
 
-  if (hasTypeFilter || hasSearch) {
+  if (hasTypeFilter || hasSearch || hasRefIdIn || hasStatsCategories) {
     pipeline.push(lineGroupStage(), { $sort: { occurredAt: -1, _id: -1 } });
     pipeline.push(...lookupStages);
     if (hasTypeFilter) {
@@ -1011,6 +1097,19 @@ export function buildRequestorCreditLedgerPipeline({
           type: { $in: filterTypes.length ? filterTypes : ["__none__"] },
         },
       });
+    }
+    if (hasRefIdIn) {
+      pipeline.push({
+        $match: {
+          refId: refIdIn.length ? { $in: refIdIn } : null,
+        },
+      });
+    }
+    if (hasStatsCategories) {
+      pipeline.push(
+        { $addFields: { statsCategory: creditLedgerStatsCategoryExpr() } },
+        { $match: { statsCategory: { $in: statsCategories } } },
+      );
     }
     if (hasSearch) {
       pipeline.push({ $match: { $or: searchOrs } });

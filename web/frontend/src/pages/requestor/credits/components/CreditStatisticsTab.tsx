@@ -1,6 +1,6 @@
 // change-log:
 // - 2026-08-22: 클릭 시 CreditLedgerModal(내역 탭 동일 UI). 상단 잘림·카드 높이 정리.
-// - 2026-08-22: glass 카드·균등 그리드. 공급가 정수 원 표시.
+// - 2026-08-22: semantic 팔레트(app-glass-card·primary) 통일. 패널 중첩 button 제거.
 // related files:
 // - web/frontend/src/pages/requestor/credits/RequestorCreditsPage.tsx
 // - web/frontend/src/shared/components/CreditLedgerModal.tsx
@@ -15,11 +15,19 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { ChevronRight } from "lucide-react";
+import {
+  BarChart3,
+  ChevronRight,
+  Layers3,
+  PieChart,
+  TrendingUp,
+  Wallet,
+} from "lucide-react";
 import { apiFetch } from "@/shared/api/apiClient";
 import {
   CreditLedgerModal,
   type CreditLedgerInitialFilters,
+  type CreditLedgerStatsCategory,
 } from "@/shared/components/CreditLedgerModal";
 import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
 import { periodToRange } from "@/store/usePeriodStore";
@@ -77,14 +85,20 @@ type DrillDownState = {
 
 const trendChartConfig = {
   spendSupply: { label: "소비", color: "hsl(var(--primary))" },
-  chargeSupply: { label: "충전", color: "hsl(142 71% 45%)" },
-  settlementEarnSupply: { label: "정산 적립", color: "hsl(38 92% 50%)" },
+  chargeSupply: { label: "충전", color: "hsl(var(--primary-strong))" },
+  settlementEarnSupply: {
+    label: "정산 적립",
+    color: "hsl(var(--primary-muted))",
+  },
 } satisfies ChartConfig;
 
 const supplyTooltipFormatter = (value: number | string) =>
   formatWonWithUnit(roundWon(Number(value || 0)));
 
-const PANEL_MIN_H = "min-h-[16.5rem]";
+const PANEL_MIN_H = "min-h-[17rem]";
+
+const ORDER_STATS_CATEGORIES =
+  "practice_transfer,abutment_production,shipping" as const;
 
 function baseFilters(
   period: PeriodFilterValue,
@@ -105,66 +119,93 @@ function categoryLedgerFilters(
   if (categoryKey === "charge") return { ...base, action: "CHARGE" };
   if (categoryKey === "adjust") return { ...base, action: "ADJUST" };
   if (categoryKey === "settlement_earn" || categoryKey === "settlement_payout") {
-    return { ...base, creditKind: "SETTLEMENT" };
+    return {
+      ...base,
+      statsCategory: categoryKey as CreditLedgerStatsCategory,
+    };
   }
-  return { ...base, action: "SPEND" };
+  return {
+    ...base,
+    action: "SPEND",
+    statsCategory: categoryKey as CreditLedgerStatsCategory,
+  };
 }
 
 function StatsPanel({
   title,
   subtitle,
+  icon: Icon,
   onOpenDetail,
   children,
 }: {
   title: string;
   subtitle?: string;
+  icon: typeof TrendingUp;
   onOpenDetail: () => void;
   children: React.ReactNode;
 }) {
+  const panelTriggerClass =
+    "w-full rounded-xl text-left transition hover:bg-primary-soft/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30";
+
   return (
-    <button
-      type="button"
-      onClick={onOpenDetail}
+    <div
       className={cn(
-        "app-glass-card app-glass-card--lg group flex w-full flex-col rounded-2xl p-4 text-left transition-shadow",
-        "hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
+        "app-glass-card app-glass-card--lg flex w-full flex-col rounded-2xl p-4",
         PANEL_MIN_H,
       )}
     >
-      <div className="mb-3 flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="text-sm font-semibold tracking-tight text-foreground">
-            {title}
+      <button
+        type="button"
+        onClick={onOpenDetail}
+        className={cn(panelTriggerClass, "flex items-start justify-between gap-2 p-1 -m-1")}
+      >
+        <div className="flex min-w-0 items-start gap-2.5">
+          <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary-strong ring-1 ring-primary-muted/60">
+            <Icon className="h-4 w-4" />
           </div>
-          {subtitle ? (
-            <div className="mt-0.5 text-[11px] text-muted-foreground">
-              {subtitle}
+          <div className="min-w-0">
+            <div className="text-sm font-semibold tracking-tight text-foreground">
+              {title}
             </div>
-          ) : null}
+            {subtitle ? (
+              <div className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+                {subtitle}
+              </div>
+            ) : null}
+          </div>
         </div>
-        <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/70 transition group-hover:translate-x-0.5 group-hover:text-primary" />
-      </div>
-      <div className="flex min-h-0 flex-1 flex-col">{children}</div>
-      <div className="mt-3 border-t border-border/50 pt-2 text-[10px] text-muted-foreground/90">
+        <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground/70" />
+      </button>
+      <div className="mt-3 flex min-h-0 flex-1 flex-col">{children}</div>
+      <button
+        type="button"
+        onClick={onOpenDetail}
+        className={cn(
+          panelTriggerClass,
+          "mt-3 border-t border-border/50 px-1 py-2 text-[10px] text-muted-foreground",
+        )}
+      >
         클릭하면 개별 거래 내역 보기
-      </div>
-    </button>
+      </button>
+    </div>
   );
 }
 
 function HorizontalBarList({
   rows,
   onRowClick,
+  emptyHint = "데이터가 없습니다.",
 }: {
   rows: StatsRow[];
   onRowClick?: (row: StatsRow) => void;
+  emptyHint?: string;
 }) {
   const maxAmount = Math.max(1, ...rows.map((r) => roundWon(r.amountSupply)));
 
   if (!rows.length) {
     return (
-      <div className="flex flex-1 items-center justify-center py-6 text-sm text-muted-foreground">
-        데이터가 없습니다.
+      <div className="flex flex-1 flex-col items-center justify-center px-2 py-6 text-center text-sm text-muted-foreground">
+        {emptyHint}
       </div>
     );
   }
@@ -200,7 +241,7 @@ function HorizontalBarList({
             </button>
             <div className="h-2 overflow-hidden rounded-full bg-muted/50">
               <div
-                className="h-full rounded-full bg-gradient-to-r from-primary/90 to-primary/60"
+                className="h-full rounded-full bg-primary/80"
                 style={{ width: `${ratio * 100}%` }}
               />
             </div>
@@ -304,14 +345,17 @@ export function CreditStatisticsTab() {
 
   return (
     <>
-      <div className="flex flex-col gap-4 pb-2 pt-1">
+      <div className="flex flex-col gap-5 pb-2 pt-1">
         <div className="app-glass-card app-glass-card--lg flex flex-wrap items-center justify-between gap-3 rounded-2xl px-4 py-3">
           <div>
-            <div className="text-base font-semibold tracking-tight text-foreground">
+            <div className="flex items-center gap-2 text-base font-semibold tracking-tight text-foreground">
+              <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary-soft text-primary-strong ring-1 ring-primary-muted/60">
+                <BarChart3 className="h-4 w-4" />
+              </span>
               정산 통계
             </div>
             {periodLabel ? (
-              <div className="mt-0.5 text-xs text-muted-foreground">
+              <div className="mt-1 pl-10 text-xs text-muted-foreground">
                 {periodLabel}
               </div>
             ) : null}
@@ -384,7 +428,10 @@ export function CreditStatisticsTab() {
                   onClick={() =>
                     openDrillDown({
                       title: "정산 적립 내역",
-                      filters: { ...filterBase, creditKind: "SETTLEMENT" },
+                      filters: {
+                        ...filterBase,
+                        statsCategory: "settlement_earn",
+                      },
                     })
                   }
                 />
@@ -396,7 +443,10 @@ export function CreditStatisticsTab() {
                 onClick={() =>
                   openDrillDown({
                     title: "주문·배송 내역",
-                    filters: { ...filterBase, action: "SPEND" },
+                    filters: {
+                      ...filterBase,
+                      statsCategories: ORDER_STATS_CATEGORIES,
+                    },
                   })
                 }
               />
@@ -406,6 +456,7 @@ export function CreditStatisticsTab() {
               <StatsPanel
                 title="기간별 추이"
                 subtitle="일별 소비·충전"
+                icon={TrendingUp}
                 onOpenDetail={() =>
                   openDrillDown({
                     title: "기간별 거래 내역",
@@ -484,6 +535,7 @@ export function CreditStatisticsTab() {
               <StatsPanel
                 title="유형별 금액"
                 subtitle="충전·기공의뢰·배송 등"
+                icon={PieChart}
                 onOpenDetail={() =>
                   openDrillDown({
                     title: "유형별 거래 내역",
@@ -542,7 +594,8 @@ export function CreditStatisticsTab() {
                         fill="hsl(var(--primary))"
                         radius={[6, 6, 0, 0]}
                         className="cursor-pointer"
-                        onClick={(barData) => {
+                        onClick={(barData, _index, event) => {
+                          event?.stopPropagation?.();
                           const key = String(
                             (barData as { payload?: { key?: string } })?.payload
                               ?.key || "",
@@ -562,6 +615,7 @@ export function CreditStatisticsTab() {
               <StatsPanel
                 title={`${partnerTitle} 소비`}
                 subtitle="파트너별 공급가 합계"
+                icon={Wallet}
                 onOpenDetail={() =>
                   openDrillDown({
                     title: `${partnerTitle} 거래 내역`,
@@ -571,13 +625,14 @@ export function CreditStatisticsTab() {
               >
                 <HorizontalBarList
                   rows={stats?.byPartner || []}
+                  emptyHint="기공의뢰·소비 내역이 있을 때 파트너별로 표시됩니다."
                   onRowClick={(row) =>
                     openDrillDown({
                       title: `${row.label} 내역`,
                       filters: {
                         ...filterBase,
                         action: "SPEND",
-                        q: row.label,
+                        partnerName: row.label,
                       },
                     })
                   }
@@ -587,6 +642,7 @@ export function CreditStatisticsTab() {
               <StatsPanel
                 title="보철 유형별"
                 subtitle="견적 라인 기준 공급가"
+                icon={Layers3}
                 onOpenDetail={() =>
                   openDrillDown({
                     title: "보철 유형별 거래 내역",
@@ -596,13 +652,14 @@ export function CreditStatisticsTab() {
               >
                 <HorizontalBarList
                   rows={stats?.byProsthesisType || []}
+                  emptyHint="기공의뢰·어벗생산 소비가 있을 때 보철 유형별로 표시됩니다."
                   onRowClick={(row) =>
                     openDrillDown({
                       title: `${row.label} 내역`,
                       filters: {
                         ...filterBase,
                         action: "SPEND",
-                        q: row.label,
+                        prosthesisType: row.label,
                       },
                     })
                   }
@@ -614,11 +671,6 @@ export function CreditStatisticsTab() {
       </div>
 
       <CreditLedgerModal
-        key={
-          drillDown
-            ? `${drillDown.title}:${JSON.stringify(drillDown.filters)}`
-            : "stats-drilldown-closed"
-        }
         open={Boolean(drillDown)}
         onOpenChange={(next) => {
           if (!next) setDrillDown(null);

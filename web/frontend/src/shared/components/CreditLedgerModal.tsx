@@ -159,6 +159,16 @@ type CreditLedgerType =
 type LedgerCreditKindFilter = "all" | "PAID" | "FREE" | "SETTLEMENT";
 type LedgerActionFilter = "all" | "CHARGE" | "SPEND" | "ADJUST";
 
+export type CreditLedgerStatsCategory =
+  | "charge"
+  | "practice_transfer"
+  | "abutment_production"
+  | "shipping"
+  | "settlement_earn"
+  | "settlement_payout"
+  | "adjust"
+  | "other";
+
 export type CreditLedgerInitialFilters = {
   period?: PeriodFilterValue;
   customStartDate?: string;
@@ -166,7 +176,44 @@ export type CreditLedgerInitialFilters = {
   creditKind?: LedgerCreditKindFilter;
   action?: LedgerActionFilter;
   q?: string;
+  partnerName?: string;
+  prosthesisType?: string;
+  statsCategory?: CreditLedgerStatsCategory;
+  statsCategories?: string;
+  onYmd?: string;
 };
+
+type ResolvedLedgerFilters = {
+  period: PeriodFilterValue;
+  customStartDate: string;
+  customEndDate: string;
+  creditKind: LedgerCreditKindFilter;
+  action: LedgerActionFilter;
+  q: string;
+  partnerName: string;
+  prosthesisType: string;
+  statsCategory: CreditLedgerStatsCategory | "";
+  statsCategories: string;
+  onYmd: string;
+};
+
+function resolveLedgerFilters(
+  initial?: CreditLedgerInitialFilters,
+): ResolvedLedgerFilters {
+  return {
+    period: initial?.period ?? "30d",
+    customStartDate: initial?.customStartDate ?? "",
+    customEndDate: initial?.customEndDate ?? "",
+    creditKind: initial?.creditKind ?? "all",
+    action: initial?.action ?? "all",
+    q: initial?.q ?? "",
+    partnerName: initial?.partnerName ?? "",
+    prosthesisType: initial?.prosthesisType ?? "",
+    statsCategory: initial?.statsCategory ?? "",
+    statsCategories: initial?.statsCategories ?? "",
+    onYmd: initial?.onYmd ?? "",
+  };
+}
 
 type CreditLedgerItem = {
   _id: string;
@@ -1609,12 +1656,37 @@ export const CreditLedgerModal = ({
     navigate(chargeNavPath);
   };
 
-  const [period, setPeriod] = useState<PeriodFilterValue>("30d");
-  const [customStartDate, setCustomStartDate] = useState("");
-  const [customEndDate, setCustomEndDate] = useState("");
-  const [creditKind, setCreditKind] = useState<LedgerCreditKindFilter>("all");
-  const [action, setAction] = useState<LedgerActionFilter>("all");
-  const [q, setQ] = useState("");
+  const [period, setPeriod] = useState<PeriodFilterValue>(
+    () => resolveLedgerFilters(initialFilters).period,
+  );
+  const [customStartDate, setCustomStartDate] = useState(
+    () => resolveLedgerFilters(initialFilters).customStartDate,
+  );
+  const [customEndDate, setCustomEndDate] = useState(
+    () => resolveLedgerFilters(initialFilters).customEndDate,
+  );
+  const [creditKind, setCreditKind] = useState<LedgerCreditKindFilter>(
+    () => resolveLedgerFilters(initialFilters).creditKind,
+  );
+  const [action, setAction] = useState<LedgerActionFilter>(
+    () => resolveLedgerFilters(initialFilters).action,
+  );
+  const [q, setQ] = useState(() => resolveLedgerFilters(initialFilters).q);
+  const [partnerName, setPartnerName] = useState(
+    () => resolveLedgerFilters(initialFilters).partnerName,
+  );
+  const [prosthesisType, setProsthesisType] = useState(
+    () => resolveLedgerFilters(initialFilters).prosthesisType,
+  );
+  const [statsCategory, setStatsCategory] = useState<
+    CreditLedgerStatsCategory | ""
+  >(() => resolveLedgerFilters(initialFilters).statsCategory);
+  const [statsCategories, setStatsCategories] = useState(
+    () => resolveLedgerFilters(initialFilters).statsCategories,
+  );
+  const [onYmd, setOnYmd] = useState(
+    () => resolveLedgerFilters(initialFilters).onYmd,
+  );
 
   const initialFiltersKey = useMemo(
     () => JSON.stringify(initialFilters ?? null),
@@ -1623,12 +1695,18 @@ export const CreditLedgerModal = ({
 
   useEffect(() => {
     if (!initialFilters || (!isOpen && !embedded)) return;
-    setPeriod(initialFilters.period ?? "30d");
-    setCustomStartDate(initialFilters.customStartDate ?? "");
-    setCustomEndDate(initialFilters.customEndDate ?? "");
-    setCreditKind(initialFilters.creditKind ?? "all");
-    setAction(initialFilters.action ?? "all");
-    setQ(initialFilters.q ?? "");
+    const next = resolveLedgerFilters(initialFilters);
+    setPeriod(next.period);
+    setCustomStartDate(next.customStartDate);
+    setCustomEndDate(next.customEndDate);
+    setCreditKind(next.creditKind);
+    setAction(next.action);
+    setQ(next.q);
+    setPartnerName(next.partnerName);
+    setProsthesisType(next.prosthesisType);
+    setStatsCategory(next.statsCategory);
+    setStatsCategories(next.statsCategories);
+    setOnYmd(next.onYmd);
   }, [embedded, initialFilters, initialFiltersKey, isOpen]);
 
   const [loading, setLoading] = useState(Boolean(embedded));
@@ -1685,6 +1763,7 @@ export const CreditLedgerModal = ({
   const pageRef = useRef(page);
   const loadingRef = useRef(false);
   const hasMoreRef = useRef(false);
+  const fetchSeqRef = useRef(0);
 
   // page 상태 변경 시 ref 동기화
   useEffect(() => {
@@ -1702,6 +1781,11 @@ export const CreditLedgerModal = ({
     if (creditKind && creditKind !== "all") params.set("creditKind", creditKind);
     if (action && action !== "all") params.set("action", action);
     if (q.trim()) params.set("q", q.trim());
+    if (partnerName.trim()) params.set("partnerName", partnerName.trim());
+    if (prosthesisType.trim()) params.set("prosthesisType", prosthesisType.trim());
+    if (statsCategory) params.set("statsCategory", statsCategory);
+    if (statsCategories.trim()) params.set("statsCategories", statsCategories.trim());
+    if (onYmd.trim()) params.set("onYmd", onYmd.trim());
     params.set("page", String(pageNum));
     params.set("pageSize", String(PAGE_SIZE));
 
@@ -1713,7 +1797,8 @@ export const CreditLedgerModal = ({
 
   const load = async (pageNum: number, reset: boolean) => {
     if (!token) return;
-    if (loadingRef.current) return;
+    if (loadingRef.current && !reset) return;
+    const seq = ++fetchSeqRef.current;
     loadingRef.current = true;
     setLoading(true);
     try {
@@ -1743,6 +1828,7 @@ export const CreditLedgerModal = ({
       }
 
       const data = res.data.data;
+      if (seq !== fetchSeqRef.current) return;
       const fetched = Array.isArray(data?.items)
         ? data.items.map((it) => {
             const quote = parsePracticeTransferFeeQuote(it.feeQuote);
@@ -1764,6 +1850,7 @@ export const CreditLedgerModal = ({
         return next;
       });
     } catch (e: unknown) {
+      if (seq !== fetchSeqRef.current) return;
       if (reset) {
         setItems([]);
         setCurrentBalanceSnapshot(null);
@@ -1778,6 +1865,7 @@ export const CreditLedgerModal = ({
         duration: 3000,
       });
     } finally {
+      if (seq !== fetchSeqRef.current) return;
       loadingRef.current = false;
       setLoading(false);
     }
@@ -1790,9 +1878,25 @@ export const CreditLedgerModal = ({
     pageRef.current = 1;
     setHasMore(true);
     hasMoreRef.current = true;
+    loadingRef.current = false;
     load(1, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, period, customStartDate, customEndDate, creditKind, action, q, businessAnchorId]);
+  }, [
+    isOpen,
+    period,
+    customStartDate,
+    customEndDate,
+    creditKind,
+    action,
+    q,
+    partnerName,
+    prosthesisType,
+    statsCategory,
+    statsCategories,
+    onYmd,
+    businessAnchorId,
+    initialFiltersKey,
+  ]);
 
   // 무한 스크롤
   useEffect(() => {
@@ -2101,7 +2205,12 @@ export const CreditLedgerModal = ({
     : 0;
 
   const body = (
-    <div className="flex min-h-0 flex-1 flex-col gap-4">
+    <div
+      className={cn(
+        "flex min-h-0 flex-1 flex-col gap-4",
+        !embedded && "max-h-[min(58vh,640px)]",
+      )}
+    >
       {loading && items.length === 0 ? (
         <CreditLedgerTableSkeleton showSettlement={showSettlementCredit} />
       ) : (
@@ -2548,7 +2657,7 @@ export const CreditLedgerModal = ({
               </div>
             </DialogHeader>
             <div className="min-h-0 flex-1 overflow-hidden px-5 py-4 sm:px-6">
-              {body}
+              <div className="flex h-full min-h-0 flex-col">{body}</div>
             </div>
           </DialogContent>
         </Dialog>
