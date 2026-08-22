@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-22: Abutment 옆에 Bone Kit·Gum Kit 배치. Guide Kit은 아래.
 // - 2026-08-22: Abutment를 맨 위. GingivalShaper 썸네일 확대로 BoneShaper와 시각 크기 맞춤.
 // - 2026-08-22: Bone Kit·Gum Kit을 한 행에 나란히 배치.
 // - 2026-08-22: Guide Kit=Initial 카탈로그−GBR/Trimmer·케이스 273. GumShaper→GingivalShaper. GumCap 삭제. 심플어벗 206.
@@ -48,12 +49,6 @@ const STORE_CATEGORIES: StoreCategory[] = [
         name: "SimpleHealing2",
         image: "/store/simple-healing.jpg",
         blurb: "심플 힐링 어벗먼트",
-      },
-      {
-        id: "custom-abutment",
-        name: "CustomAbutment",
-        image: "/store/custom-abutment.jpg",
-        blurb: "커스텀 밀링 어벗먼트",
       },
     ],
   },
@@ -219,20 +214,24 @@ export default function RequestorStorePage() {
         </header>
 
         <div className="space-y-10">
-          <CategorySection category={abutment} />
-
-          <CategorySection category={guideKit} />
-
-          <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 sm:gap-6">
+          <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-4 lg:gap-6">
+            <div className="sm:col-span-2">
+              <CategorySection
+                category={abutment}
+                productGridClassName="grid grid-cols-2 gap-3"
+              />
+            </div>
             <CategorySection
               category={boneKit}
-              productGridClassName="grid grid-cols-2 gap-3"
+              productGridClassName="grid grid-cols-1 gap-3 max-w-[50%] sm:max-w-none"
             />
             <CategorySection
               category={gumKit}
-              productGridClassName="grid grid-cols-2 gap-3"
+              productGridClassName="grid grid-cols-1 gap-3 max-w-[50%] sm:max-w-none"
             />
           </div>
+
+          <CategorySection category={guideKit} />
         </div>
       </div>
     </div>
