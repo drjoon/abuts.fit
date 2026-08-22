@@ -4508,12 +4508,12 @@ export function RequestorPracticeReceivePage({
         isDefault={isLabReceiveStatusFilterDefault(statusFilters)}
         countSuffix="건"
       />
-      <div className="relative w-full max-w-xs shrink-0">
+      <div className="relative w-full max-w-xs shrink-0 py-0.5">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="h-9 pl-9"
+          className="h-9 pl-9 focus-visible:ring-inset focus-visible:ring-offset-0"
           placeholder="전송ID, 치과명, 환자명 검색"
         />
       </div>
@@ -4664,8 +4664,8 @@ export function RequestorPracticeReceivePage({
         ) : null}
 
         {showTransfers ? (
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-            <div className="shrink-0 space-y-3 overflow-visible pb-3 pr-1">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden pt-1">
+            <div className="shrink-0 space-y-3 pb-3 pr-1">
               {roleSwitcher ? (
                 <div className="flex flex-wrap items-center gap-3">{roleSwitcher}</div>
               ) : null}
