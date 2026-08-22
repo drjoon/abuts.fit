@@ -8,6 +8,9 @@
 // - web/backend/services/generalLedger.service.js
 // - web/backend/services/creditBalance.service.js
 // - web/backend/services/creditRevenuePolicy.service.js
+// change-log:
+// - 2026-08-22: 준비·취소 단계는 COMMIT 이관 대상에서 제외(의뢰자 HOLD만).
+// - 2026-08-22: 기존 COMMIT은 idempotencyKey뿐 아니라 같은 refId+eventType도 중복으로 본다(레거시 키 충돌 방지).
 import mongoose, { Types } from "mongoose";
 import { connectDb, disconnectDb } from "./_mongo.js";
 import Request from "../../models/request.model.js";
@@ -82,6 +85,16 @@ function isSampleRequest(reqDoc) {
 
 function requestSpendEvidence(reqDoc) {
   const stage = normalizeStage(reqDoc?.manufacturerStage);
+  // 준비·취소 등은 제조사 정산(COMMIT) 대상이 아님. 의뢰자 HOLD만 유지.
+  if (!stage || stage === "준비" || stage === "의뢰" || stage === "request" || stage === "취소") {
+    return {
+      stage,
+      stageEligible: false,
+      strongEvidence: false,
+      confident: false,
+      reason: stage === "취소" ? "cancelled" : "pre_machining",
+    };
+  }
   const reviewCam = String(reqDoc?.caseInfos?.reviewByStage?.cam?.status || "")
     .trim()
     .toLowerCase();
@@ -111,6 +124,16 @@ function requestSpendEvidence(reqDoc) {
 
 function shippingSpendEvidence(reqDoc) {
   const stage = normalizeStage(reqDoc?.manufacturerStage);
+  if (!stage || stage === "준비" || stage === "의뢰" || stage === "request" || stage === "취소") {
+    return {
+      stage,
+      hasPackage: Boolean(reqDoc?.shippingPackageId),
+      stageEligible: false,
+      strongEvidence: false,
+      confident: false,
+      reason: stage === "취소" ? "cancelled" : "pre_shipping",
+    };
+  }
   const hasPackage = Boolean(reqDoc?.shippingPackageId);
   const reviewPacking = String(reqDoc?.caseInfos?.reviewByStage?.packing?.status || "")
     .trim()
@@ -615,10 +638,52 @@ async function migrateAnchor(anchor, { cli, shippingFeeDefault, legacyMaps }) {
   const idempotencyKeys = expectedRows.map((r) => r.idempotencyKey);
   const existingJournals = idempotencyKeys.length
     ? await LedgerJournal.find({ idempotencyKey: { $in: idempotencyKeys } })
-        .select({ journalId: 1, idempotencyKey: 1, eventType: 1 })
+        .select({ journalId: 1, idempotencyKey: 1, eventType: 1, refId: 1 })
         .lean()
     : [];
-  const existingByKey = new Map((existingJournals || []).map((j) => [String(j.idempotencyKey), j]));
+  const existingByKey = new Map(
+    (existingJournals || []).map((j) => [String(j.idempotencyKey), j]),
+  );
+
+  // 레거시 이관 키(gl:legacy_creditledger:…) 등 다른 idempotencyKey로 이미
+  // 같은 refId COMMIT이 있으면 중복 생성하지 않는다.
+  const requestRefIds = [
+    ...new Set(
+      expectedRows
+        .filter((r) => r.kind === "REQUEST" && r.refId)
+        .map((r) => String(r.refId)),
+    ),
+  ];
+  const shippingRefIds = [
+    ...new Set(
+      expectedRows
+        .filter((r) => r.kind === "SHIPPING" && r.refId)
+        .map((r) => String(r.refId)),
+    ),
+  ];
+  const existingByRefEvent = new Set();
+  if (requestRefIds.length > 0) {
+    const rows = await LedgerJournal.find({
+      eventType: "REQUEST_SPEND_COMMIT",
+      refId: { $in: requestRefIds },
+    })
+      .select({ refId: 1, eventType: 1 })
+      .lean();
+    for (const j of rows || []) {
+      existingByRefEvent.add(`REQUEST_SPEND_COMMIT:${String(j.refId)}`);
+    }
+  }
+  if (shippingRefIds.length > 0) {
+    const rows = await LedgerJournal.find({
+      eventType: "SHIPPING_SPEND_COMMIT",
+      refId: { $in: shippingRefIds },
+    })
+      .select({ refId: 1, eventType: 1 })
+      .lean();
+    for (const j of rows || []) {
+      existingByRefEvent.add(`SHIPPING_SPEND_COMMIT:${String(j.refId)}`);
+    }
+  }
 
   let existingCount = 0;
   let missingCount = 0;
@@ -630,6 +695,14 @@ async function migrateAnchor(anchor, { cli, shippingFeeDefault, legacyMaps }) {
   for (const row of expectedRows) {
     const existing = existingByKey.get(row.idempotencyKey);
     if (existing?.journalId) {
+      existingCount += 1;
+      continue;
+    }
+
+    const eventType =
+      row.kind === "SHIPPING" ? "SHIPPING_SPEND_COMMIT" : "REQUEST_SPEND_COMMIT";
+    const refEventKey = `${eventType}:${String(row.refId || "")}`;
+    if (row.refId && existingByRefEvent.has(refEventKey)) {
       existingCount += 1;
       continue;
     }

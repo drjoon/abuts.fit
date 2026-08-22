@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-08-22: 가격 라벨 — 판매가(부가세 면제)·매입가(부가세 포함).
+// - 2026-08-22: 매입가(부가세 포함) 스피너 100원 단위. 판매가는 1,000원.
 // - 2026-08-22: 가격(판매가·매입가) 1,000원 단위 스피너 표시.
 // - 2026-08-22: 가격(판매가·매입가) 카드. 커스텀어벗 가격·제조사 단가 카드 제거. 분배 % 옆 개당 단가.
 // - 2026-08-22: 판매가 CNC·환봉 구분 없이 단일(기본 15,000). 매입가=제조사 고정단가.
@@ -178,6 +180,8 @@ type CreditSettingsApiResponse = {
 
 const AUTO_SAVE_DELAY_MS = 700;
 const AMOUNT_STEP = 1000;
+/** 매입가(부가세 포함) 스피너 단위 */
+const PURCHASE_AMOUNT_STEP = 100;
 const SHIPPING_AMOUNT_STEP = 500;
 const PERCENT_STEP = 5;
 
@@ -1632,7 +1636,7 @@ export const AdminCreditSettingsTab = ({
                 <div className="grid gap-3 sm:grid-cols-2">
                   <SalesAmountCard
                     id="customAbutSalePrice"
-                    title="판매가"
+                    title="판매가(부가세 면제)"
                     value={settings.labProductionPrice}
                     disabled={loading}
                     onChange={updateSalePrice}
@@ -1640,9 +1644,10 @@ export const AdminCreditSettingsTab = ({
                   />
                   <SalesAmountCard
                     id="customAbutPurchasePrice"
-                    title="매입가"
+                    title="매입가(부가세 포함)"
                     value={settings.manufacturerRequestUnitPrice}
                     disabled={loading}
+                    step={PURCHASE_AMOUNT_STEP}
                     onChange={updatePurchasePrice}
                     help="부가세 포함 제조사 고정단가. 판매가에서 먼저 차감한 뒤 잔여를 분배합니다."
                   />
