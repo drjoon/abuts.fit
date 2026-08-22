@@ -130,15 +130,15 @@ describe("manufacturer fixed unit + residual allocation", () => {
     );
   });
 
-  test("request spend without salesman: salesman share → admin", () => {
+  test("request spend without salesman: residual uses 20/80 devops/abuts", () => {
     const alloc = resolveRevenueOwnerBaseAllocation({
       spendAmount: 20000,
       hasSalesmanReferrer: false,
       configuredRates: {
-        manufacturerRate: 0.6,
+        manufacturerRate: 0,
         devopsRate: 0.1,
-        salesmanRate: 0.1,
-        adminRate: 0.2,
+        salesmanRate: 0.3,
+        adminRate: 0.4,
       },
       owners: { ...owners, salesmanAnchorId: null },
       isShippingSpend: false,
@@ -147,9 +147,38 @@ describe("manufacturer fixed unit + residual allocation", () => {
 
     expect(alloc.manufacturer).toBe(9000);
     expect(alloc.salesman).toBe(0);
-    // residual weights devops:admin = 0.1 : (0.2+0.1) = 1:3 of 11000
-    expect(alloc.devops).toBe(2750);
-    expect(alloc.admin).toBe(8250);
+    // residual 11000 · without-salesman 20:80
+    expect(alloc.devops).toBe(2200);
+    expect(alloc.admin).toBe(8800);
+  });
+
+  test("request spend with salesman: residual 30/10/40 weights", () => {
+    const alloc = resolveRevenueOwnerBaseAllocation({
+      spendAmount: 20000,
+      hasSalesmanReferrer: true,
+      configuredRates: {
+        manufacturerRate: 0,
+        devopsRate: 0.1,
+        salesmanRate: 0.3,
+        adminRate: 0.4,
+      },
+      owners,
+      isShippingSpend: false,
+      creditSettings: {
+        manufacturerRequestUnitPrice: 8800,
+        manufacturerShippingUnitPrice: 3500,
+        affiliateVatRate: 0.1,
+      },
+    });
+
+    expect(alloc.manufacturer).toBe(8800);
+    // residual 11200 · weights 30:10:40
+    expect(alloc.salesman).toBe(4200);
+    expect(alloc.devops).toBe(1400);
+    expect(alloc.admin).toBe(5600);
+    expect(alloc.manufacturer + alloc.devops + alloc.salesman + alloc.admin).toBe(
+      20000,
+    );
   });
 
   test("PTX dentist-origin shipping: no manufacturer unit, residual to admin", () => {

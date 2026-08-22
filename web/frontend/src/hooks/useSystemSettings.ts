@@ -57,9 +57,9 @@ export interface CreditSettings {
 export const CREDIT_SETTINGS_DEFAULTS: CreditSettings = {
   minCreditForRequest: ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
   shippingFee: 3500,
-  manufacturerRequestUnitPrice: 9000,
-  devopsRequestUnitPrice: 1000,
-  salesmanRequestUnitPrice: 3000,
+  manufacturerRequestUnitPrice: 8800,
+  devopsRequestUnitPrice: 775,
+  salesmanRequestUnitPrice: 2325,
   manufacturerShippingUnitPrice: 3500,
   affiliateVatRate: 0.1,
   expressFee: 2000,

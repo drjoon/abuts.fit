@@ -6,6 +6,7 @@
 // - web/backend/controllers/admin/admin.settings.controller.js
 // - web/frontend/src/features/settings/tabs/AdminCreditSettingsTab.tsx
 // change-log:
+// - 2026-08-22: 제조사 고정단가(8,800) 선차감 후 잔여 비중 분배(딜러 30:개발 10:어벗츠 40 / 없으면 20:80).
 // - 2026-08-22: 치과 멤버십/일반 청구 이중가 제거. membership* 단일 고시. pricingTier 분기 삭제.
 // - 2026-08-19: 기공소 오버레이 미설정 폴백을 고시(membership*)로.
 // - 2026-08-17: practiceRushFeeMultiplier(기공의뢰 신속처리 할증) 추가.
@@ -60,54 +61,141 @@ function clampSharePercent(value, fallback = 0) {
   return Math.min(100, Math.round(n * 100) / 100);
 }
 
-function readSharePercents(
+const MEMBERSHIP_RESIDUAL_SHARE_PERCENTS = {
+  salesman: 30,
+  devops: 10,
+  abuts: 40,
+};
+
+const REGULAR_RESIDUAL_SHARE_PERCENTS = {
+  salesman: 0,
+  devops: 20,
+  abuts: 80,
+};
+
+const DEFAULT_MANUFACTURER_REQUEST_UNIT_PRICE = 8800;
+
+function readResidualSharePercents(
   creditSettings = {},
   schemaDefaults = SCHEMA_DEFAULTS,
   kind = "membership",
 ) {
   if (kind === "regular") {
+    const salesman = clampSharePercent(
+      creditSettings.regularSalesmanSharePercent ??
+        schemaDefaults.regularSalesmanSharePercent ??
+        REGULAR_RESIDUAL_SHARE_PERCENTS.salesman,
+      REGULAR_RESIDUAL_SHARE_PERCENTS.salesman,
+    );
+    const devops = clampSharePercent(
+      creditSettings.regularDevopsSharePercent ??
+        schemaDefaults.regularDevopsSharePercent ??
+        REGULAR_RESIDUAL_SHARE_PERCENTS.devops,
+      REGULAR_RESIDUAL_SHARE_PERCENTS.devops,
+    );
+    const abutsFallback =
+      creditSettings.regularAbutsSharePercent != null ||
+      schemaDefaults.regularAbutsSharePercent != null
+        ? (schemaDefaults.regularAbutsSharePercent ??
+          REGULAR_RESIDUAL_SHARE_PERCENTS.abuts)
+        : Math.max(0, 100 - salesman - devops);
     return {
-      manufacturer: clampSharePercent(
-        creditSettings.regularManufacturerSharePercent ??
-          schemaDefaults.regularManufacturerSharePercent,
-        schemaDefaults.regularManufacturerSharePercent,
-      ),
-      salesman: clampSharePercent(
-        creditSettings.regularSalesmanSharePercent ??
-          schemaDefaults.regularSalesmanSharePercent,
-        schemaDefaults.regularSalesmanSharePercent,
-      ),
-      devops: clampSharePercent(
-        creditSettings.regularDevopsSharePercent ??
-          schemaDefaults.regularDevopsSharePercent,
-        schemaDefaults.regularDevopsSharePercent,
+      salesman,
+      devops,
+      abuts: clampSharePercent(
+        creditSettings.regularAbutsSharePercent ??
+          schemaDefaults.regularAbutsSharePercent ??
+          abutsFallback,
+        abutsFallback,
       ),
     };
   }
+  const salesman = clampSharePercent(
+    creditSettings.salesmanSharePercent ??
+      schemaDefaults.salesmanSharePercent ??
+      MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.salesman,
+    MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.salesman,
+  );
+  const devops = clampSharePercent(
+    creditSettings.devopsSharePercent ??
+      schemaDefaults.devopsSharePercent ??
+      MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.devops,
+    MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.devops,
+  );
+  const abutsFallback =
+    creditSettings.abutsSharePercent != null ||
+    schemaDefaults.abutsSharePercent != null
+      ? (schemaDefaults.abutsSharePercent ?? MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.abuts)
+      : Math.max(0, 100 - salesman - devops);
   return {
-    manufacturer: clampSharePercent(
-      creditSettings.manufacturerSharePercent ??
-        schemaDefaults.manufacturerSharePercent,
-      schemaDefaults.manufacturerSharePercent,
-    ),
-    salesman: clampSharePercent(
-      creditSettings.salesmanSharePercent ?? schemaDefaults.salesmanSharePercent,
-      schemaDefaults.salesmanSharePercent,
-    ),
-    devops: clampSharePercent(
-      creditSettings.devopsSharePercent ?? schemaDefaults.devopsSharePercent,
-      schemaDefaults.devopsSharePercent,
+    salesman,
+    devops,
+    abuts: clampSharePercent(
+      creditSettings.abutsSharePercent ??
+        schemaDefaults.abutsSharePercent ??
+        abutsFallback,
+      abutsFallback,
     ),
   };
 }
 
-function allocateRevenueByPercent(revenue, shares) {
-  const rev = Math.max(0, Math.round(Number(revenue) || 0));
+function readSharePercents(
+  creditSettings = {},
+  schemaDefaults = SCHEMA_DEFAULTS,
+  kind = "membership",
+) {
+  const residual = readResidualSharePercents(
+    creditSettings,
+    schemaDefaults,
+    kind,
+  );
   return {
-    manufacturer: Math.round((rev * shares.manufacturer) / 100),
-    salesman: Math.round((rev * shares.salesman) / 100),
-    devops: Math.round((rev * shares.devops) / 100),
+    manufacturer: 0,
+    salesman: residual.salesman,
+    devops: residual.devops,
+    abuts: residual.abuts,
   };
+}
+
+function allocateRevenueByFixedManufacturerAndResidualShares(
+  revenue,
+  manufacturerUnitPrice,
+  residualShares,
+) {
+  const rev = Math.max(0, Math.round(Number(revenue) || 0));
+  const manufacturer = Math.min(
+    Math.max(0, Math.round(Number(manufacturerUnitPrice) || 0)),
+    rev,
+  );
+  const residual = Math.max(0, rev - manufacturer);
+  const salesmanW = Math.max(0, Number(residualShares.salesman) || 0);
+  const devopsW = Math.max(0, Number(residualShares.devops) || 0);
+  const abutsW = Math.max(0, Number(residualShares.abuts) || 0);
+  const weightSum = salesmanW + devopsW + abutsW;
+  if (residual <= 0 || weightSum <= 0) {
+    return { manufacturer, salesman: 0, devops: 0 };
+  }
+  return {
+    manufacturer,
+    salesman: Math.round((residual * salesmanW) / weightSum),
+    devops: Math.round((residual * devopsW) / weightSum),
+  };
+}
+
+function allocateRevenueByPercent(
+  revenue,
+  shares,
+  manufacturerUnitPrice = DEFAULT_MANUFACTURER_REQUEST_UNIT_PRICE,
+) {
+  return allocateRevenueByFixedManufacturerAndResidualShares(
+    revenue,
+    manufacturerUnitPrice,
+    {
+      salesman: shares.salesman,
+      devops: shares.devops,
+      abuts: shares.abuts,
+    },
+  );
 }
 
 function pickTierPartySchemaDefaults(pickDefault) {
@@ -123,6 +211,15 @@ function pickTierPartySchemaDefaults(pickDefault) {
 
 function buildNormalizedTierPartyFields(creditSettings = {}, schemaDefaults = {}) {
   const merged = { ...schemaDefaults, ...creditSettings };
+  const manufacturerUnit = Math.max(
+    0,
+    Math.round(
+      Number(
+        merged.manufacturerRequestUnitPrice ??
+          DEFAULT_MANUFACTURER_REQUEST_UNIT_PRICE,
+      ) || 0,
+    ),
+  );
   const out = {};
   for (const prefix of CNC_TIER_PARTY_PREFIXES) {
     const revenueKey = CNC_TIER_REVENUE_KEYS[prefix];
@@ -131,7 +228,11 @@ function buildNormalizedTierPartyFields(creditSettings = {}, schemaDefaults = {}
       schemaDefaults,
       CNC_TIER_SHARE_KIND[prefix],
     );
-    const party = allocateRevenueByPercent(merged[revenueKey], shares);
+    const party = allocateRevenueByPercent(
+      merged[revenueKey],
+      shares,
+      manufacturerUnit,
+    );
     out[`${prefix}ManufacturerUnitPrice`] = party.manufacturer;
     out[`${prefix}SalesmanUnitPrice`] = party.salesman;
     out[`${prefix}DevopsUnitPrice`] = party.devops;
@@ -210,6 +311,7 @@ const SCHEMA_DEFAULTS = (() => {
     manufacturerSharePercent: pickDefault("creditSettings.manufacturerSharePercent"),
     salesmanSharePercent: pickDefault("creditSettings.salesmanSharePercent"),
     devopsSharePercent: pickDefault("creditSettings.devopsSharePercent"),
+    abutsSharePercent: pickDefault("creditSettings.abutsSharePercent"),
     regularManufacturerSharePercent: pickDefault(
       "creditSettings.regularManufacturerSharePercent",
     ),
@@ -218,6 +320,9 @@ const SCHEMA_DEFAULTS = (() => {
     ),
     regularDevopsSharePercent: pickDefault(
       "creditSettings.regularDevopsSharePercent",
+    ),
+    regularAbutsSharePercent: pickDefault(
+      "creditSettings.regularAbutsSharePercent",
     ),
     ...pickTierPartySchemaDefaults(pickDefault),
   };
@@ -263,11 +368,26 @@ export function normalizeSpecialRequestorPrice(item = {}, fallback = {}) {
         : (fallback.membershipRoundBarDesignAndProductionPrice ?? 0),
     ) || 0,
   );
+  const manufacturerUnit = Math.max(
+    0,
+    Math.round(
+      Number(
+        fallback.manufacturerRequestUnitPrice ??
+          SCHEMA_DEFAULTS.manufacturerRequestUnitPrice ??
+          DEFAULT_MANUFACTURER_REQUEST_UNIT_PRICE,
+      ) || 0,
+    ),
+  );
   const shares = readSharePercents(fallback, SCHEMA_DEFAULTS, "membership");
-  const productionParty = allocateRevenueByPercent(productionPrice, shares);
+  const productionParty = allocateRevenueByPercent(
+    productionPrice,
+    shares,
+    manufacturerUnit,
+  );
   const designParty = allocateRevenueByPercent(
     designAndProductionPrice,
     shares,
+    manufacturerUnit,
   );
   const productionManufacturerUnitPrice = productionParty.manufacturer;
   const productionSalesmanUnitPrice = productionParty.salesman;

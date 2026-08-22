@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-22: 제조사=고정단가(8,800·부가세포함) 선차감. 잔여를 딜러/개발운영/어벗츠 비중(30:10:40·없으면 20:80)으로 분배.
 // - 2026-08-22: 치과 청구는 membership* 단일 고시. UI「멤버/일반」은 딜러 유무 분배만(청구 이중가 아님).
 // - 2026-08-21: 치과 공급 어벗 UI 삭제. 기공소 공급→커스텀어벗 가격(CNC·환봉 생산만).
 // - 2026-08-19: 고시=생산·디자인+생산. 멤버/일반→딜러 분배 배지. 디자인비+지그 UI 제거.
@@ -121,12 +122,16 @@ interface CreditSettings {
   regularDesignAndProductionManufacturerUnitPrice: number;
   regularDesignAndProductionSalesmanUnitPrice: number;
   regularDesignAndProductionDevopsUnitPrice: number;
+  /** 레거시. 제조사는 고정단가(manufacturerRequestUnitPrice). 신규 분배에 사용하지 않음. */
   manufacturerSharePercent: number;
   salesmanSharePercent: number;
   devopsSharePercent: number;
+  /** 제조사 선차감 후 잔여분 중 어벗츠 비중(%). 딜러/개발운영과 합산해 정규화. */
+  abutsSharePercent: number;
   regularManufacturerSharePercent: number;
   regularSalesmanSharePercent: number;
   regularDevopsSharePercent: number;
+  regularAbutsSharePercent: number;
 }
 
 type TierPartyPrefix =
@@ -175,17 +180,20 @@ const PERCENT_STEP = 5;
 
 type ShareKind = "membership" | "regular";
 
-const MEMBERSHIP_SHARE_PERCENTS = {
-  manufacturer: 60,
-  salesman: 20,
-  devops: 5,
+/** 제조사 선차감 후 잔여 분배 비중(합계는 정규화). */
+const MEMBERSHIP_RESIDUAL_SHARE_PERCENTS = {
+  salesman: 30,
+  devops: 10,
+  abuts: 40,
 };
 
-const REGULAR_SHARE_PERCENTS = {
-  manufacturer: 60,
+const REGULAR_RESIDUAL_SHARE_PERCENTS = {
   salesman: 0,
-  devops: 10,
+  devops: 20,
+  abuts: 80,
 };
+
+const DEFAULT_MANUFACTURER_REQUEST_UNIT_PRICE = 8800;
 
 function clampSharePercent(value: number, fallback = 0): number {
   const n = Number(value);
@@ -193,61 +201,106 @@ function clampSharePercent(value: number, fallback = 0): number {
   return Math.min(100, Math.round(n * 100) / 100);
 }
 
-function readSharePercents(
+function readResidualSharePercents(
   settings: Partial<CreditSettings>,
   kind: ShareKind = "membership",
 ) {
   if (kind === "regular") {
+    const salesman = clampSharePercent(
+      settings.regularSalesmanSharePercent ??
+        REGULAR_RESIDUAL_SHARE_PERCENTS.salesman,
+      REGULAR_RESIDUAL_SHARE_PERCENTS.salesman,
+    );
+    const devops = clampSharePercent(
+      settings.regularDevopsSharePercent ?? REGULAR_RESIDUAL_SHARE_PERCENTS.devops,
+      REGULAR_RESIDUAL_SHARE_PERCENTS.devops,
+    );
+    const abutsFallback =
+      settings.regularAbutsSharePercent != null
+        ? REGULAR_RESIDUAL_SHARE_PERCENTS.abuts
+        : Math.max(0, 100 - salesman - devops);
     return {
-      manufacturer: clampSharePercent(
-        settings.regularManufacturerSharePercent ??
-          REGULAR_SHARE_PERCENTS.manufacturer,
-        REGULAR_SHARE_PERCENTS.manufacturer,
-      ),
-      salesman: clampSharePercent(
-        settings.regularSalesmanSharePercent ?? REGULAR_SHARE_PERCENTS.salesman,
-        REGULAR_SHARE_PERCENTS.salesman,
-      ),
-      devops: clampSharePercent(
-        settings.regularDevopsSharePercent ?? REGULAR_SHARE_PERCENTS.devops,
-        REGULAR_SHARE_PERCENTS.devops,
+      salesman,
+      devops,
+      abuts: clampSharePercent(
+        settings.regularAbutsSharePercent ?? abutsFallback,
+        abutsFallback,
       ),
     };
   }
+  const salesman = clampSharePercent(
+    settings.salesmanSharePercent ?? MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.salesman,
+    MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.salesman,
+  );
+  const devops = clampSharePercent(
+    settings.devopsSharePercent ?? MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.devops,
+    MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.devops,
+  );
+  const abutsFallback =
+    settings.abutsSharePercent != null
+      ? MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.abuts
+      : Math.max(0, 100 - salesman - devops);
   return {
-    manufacturer: clampSharePercent(
-      settings.manufacturerSharePercent ?? MEMBERSHIP_SHARE_PERCENTS.manufacturer,
-      MEMBERSHIP_SHARE_PERCENTS.manufacturer,
-    ),
-    salesman: clampSharePercent(
-      settings.salesmanSharePercent ?? MEMBERSHIP_SHARE_PERCENTS.salesman,
-      MEMBERSHIP_SHARE_PERCENTS.salesman,
-    ),
-    devops: clampSharePercent(
-      settings.devopsSharePercent ?? MEMBERSHIP_SHARE_PERCENTS.devops,
-      MEMBERSHIP_SHARE_PERCENTS.devops,
+    salesman,
+    devops,
+    abuts: clampSharePercent(
+      settings.abutsSharePercent ?? abutsFallback,
+      abutsFallback,
     ),
   };
 }
 
-function computeAbutsSharePercent(shares: ReturnType<typeof readSharePercents>) {
-  return Math.max(
-    0,
-    Math.round((100 - shares.manufacturer - shares.salesman - shares.devops) * 10) /
-      10,
+/** @deprecated 레거시 호환 별칭. 잔여 비중만 사용. */
+function readSharePercents(
+  settings: Partial<CreditSettings>,
+  kind: ShareKind = "membership",
+) {
+  const residual = readResidualSharePercents(settings, kind);
+  return {
+    manufacturer: 0,
+    salesman: residual.salesman,
+    devops: residual.devops,
+    abuts: residual.abuts,
+  };
+}
+
+function allocateRevenueByFixedManufacturerAndResidualShares(
+  revenue: number,
+  manufacturerUnitPrice: number,
+  residualShares: ReturnType<typeof readResidualSharePercents>,
+): TierParty {
+  const rev = Math.max(0, Math.round(Number(revenue) || 0));
+  const manufacturer = Math.min(
+    Math.max(0, Math.round(Number(manufacturerUnitPrice) || 0)),
+    rev,
   );
+  const residual = Math.max(0, rev - manufacturer);
+  const salesmanW = Math.max(0, Number(residualShares.salesman) || 0);
+  const devopsW = Math.max(0, Number(residualShares.devops) || 0);
+  const abutsW = Math.max(0, Number(residualShares.abuts) || 0);
+  const weightSum = salesmanW + devopsW + abutsW;
+  if (residual <= 0 || weightSum <= 0) {
+    return { manufacturer, salesman: 0, devops: 0 };
+  }
+  const salesman = Math.round((residual * salesmanW) / weightSum);
+  const devops = Math.round((residual * devopsW) / weightSum);
+  return { manufacturer, salesman, devops };
 }
 
 function allocateRevenueByPercent(
   revenue: number,
   shares: ReturnType<typeof readSharePercents>,
+  manufacturerUnitPrice = DEFAULT_MANUFACTURER_REQUEST_UNIT_PRICE,
 ): TierParty {
-  const rev = Math.max(0, Math.round(Number(revenue) || 0));
-  return {
-    manufacturer: Math.round((rev * shares.manufacturer) / 100),
-    salesman: Math.round((rev * shares.salesman) / 100),
-    devops: Math.round((rev * shares.devops) / 100),
-  };
+  return allocateRevenueByFixedManufacturerAndResidualShares(
+    revenue,
+    manufacturerUnitPrice,
+    {
+      salesman: shares.salesman,
+      devops: shares.devops,
+      abuts: shares.abuts,
+    },
+  );
 }
 
 type AutoSaveState = "idle" | "pending" | "saving" | "saved";
@@ -358,12 +411,22 @@ function buildNormalizedTierPartyFields(
   | "regularDesignAndProductionDevopsUnitPrice"
 > {
   const merged = { ...fallback, ...raw };
+  const manufacturerUnit = Math.max(
+    0,
+    Math.round(
+      Number(
+        merged.manufacturerRequestUnitPrice ??
+          DEFAULT_MANUFACTURER_REQUEST_UNIT_PRICE,
+      ) || 0,
+    ),
+  );
   const out = {} as Record<string, number>;
   for (const tier of CNC_DEFAULT_TIERS) {
     const revenue = Number(merged[tier.revenueKey] ?? 0) || 0;
     const party = allocateRevenueByPercent(
       revenue,
       readSharePercents(merged, tier.shareKind),
+      manufacturerUnit,
     );
     out[tierPartyFieldKey(tier.partyPrefix, "Manufacturer")] = party.manufacturer;
     out[tierPartyFieldKey(tier.partyPrefix, "Salesman")] = party.salesman;
@@ -387,20 +450,32 @@ function buildNormalizedTierPartyFields(
 }
 
 function syncComputedPartyFields(settings: CreditSettings): CreditSettings {
+  const manufacturerUnit = Math.max(
+    0,
+    Math.round(
+      Number(
+        settings.manufacturerRequestUnitPrice ??
+          DEFAULT_MANUFACTURER_REQUEST_UNIT_PRICE,
+      ) || 0,
+    ),
+  );
   const tierFields = buildNormalizedTierPartyFields(settings, settings);
   const membershipShares = readSharePercents(settings, "membership");
   const membershipParty = allocateRevenueByPercent(
     settings.membershipProductionPrice,
     membershipShares,
+    manufacturerUnit,
   );
   const specialRequestorPrices = settings.specialRequestorPrices.map((item) => {
     const productionParty = allocateRevenueByPercent(
       item.productionPrice,
       membershipShares,
+      manufacturerUnit,
     );
     const designParty = allocateRevenueByPercent(
       item.designAndProductionPrice,
       membershipShares,
+      manufacturerUnit,
     );
     return {
       ...item,
@@ -410,7 +485,7 @@ function syncComputedPartyFields(settings: CreditSettings): CreditSettings {
       designAndProductionManufacturerUnitPrice: designParty.manufacturer,
       designAndProductionSalesmanUnitPrice: designParty.salesman,
       designAndProductionDevopsUnitPrice: designParty.devops,
-      manufacturerRequestUnitPrice: productionParty.manufacturer,
+      manufacturerRequestUnitPrice: manufacturerUnit,
       devopsRequestUnitPrice: productionParty.devops,
       salesmanRequestUnitPrice: productionParty.salesman,
     };
@@ -418,7 +493,7 @@ function syncComputedPartyFields(settings: CreditSettings): CreditSettings {
   return {
     ...settings,
     ...tierFields,
-    manufacturerRequestUnitPrice: membershipParty.manufacturer,
+    manufacturerRequestUnitPrice: manufacturerUnit,
     salesmanRequestUnitPrice: membershipParty.salesman,
     devopsRequestUnitPrice: membershipParty.devops,
     specialRequestorPrices,
@@ -430,12 +505,14 @@ function buildSharePercentSavePayload(
 ): Partial<CreditSettings> {
   const synced = syncComputedPartyFields(settings);
   return {
-    manufacturerSharePercent: synced.manufacturerSharePercent,
+    manufacturerSharePercent: 0,
     salesmanSharePercent: synced.salesmanSharePercent,
     devopsSharePercent: synced.devopsSharePercent,
-    regularManufacturerSharePercent: synced.regularManufacturerSharePercent,
+    abutsSharePercent: synced.abutsSharePercent,
+    regularManufacturerSharePercent: 0,
     regularSalesmanSharePercent: synced.regularSalesmanSharePercent,
     regularDevopsSharePercent: synced.regularDevopsSharePercent,
+    regularAbutsSharePercent: synced.regularAbutsSharePercent,
     ...buildNormalizedTierPartyFields(synced, synced),
     manufacturerRequestUnitPrice: synced.manufacturerRequestUnitPrice,
     salesmanRequestUnitPrice: synced.salesmanRequestUnitPrice,
@@ -504,23 +581,22 @@ function SharePercentRow({
   shares,
   showSalesman,
   disabled,
-  onManufacturerChange,
   onSalesmanChange,
   onDevopsChange,
+  onAbutsChange,
 }: {
   idPrefix: string;
   title: string;
   description: string;
-  shares: ReturnType<typeof readSharePercents>;
+  shares: ReturnType<typeof readResidualSharePercents>;
   showSalesman: boolean;
   disabled?: boolean;
-  onManufacturerChange: (next: number) => void;
   onSalesmanChange?: (next: number) => void;
   onDevopsChange: (next: number) => void;
+  onAbutsChange: (next: number) => void;
 }) {
-  const overAllocated =
-    shares.manufacturer + shares.salesman + shares.devops > 100.001;
-  const abutsPercent = computeAbutsSharePercent(shares);
+  const weightSum = shares.salesman + shares.devops + shares.abuts;
+  const overAllocated = weightSum <= 0;
 
   return (
     <div className="space-y-3">
@@ -531,22 +607,20 @@ function SharePercentRow({
         <p className="text-[13px] text-muted-foreground">{description}</p>
         {overAllocated ? (
           <span className="text-[12px] font-medium text-amber-700">
-            합계 100% 초과
+            잔여 분배 비중 합계가 0입니다
+          </span>
+        ) : weightSum !== 100 ? (
+          <span className="text-[12px] text-slate-500">
+            비중 합 {weightSum.toLocaleString("ko-KR", { maximumFractionDigits: 1 })}%
+            (정규화)
           </span>
         ) : null}
       </div>
       <div
         className={`grid gap-3 sm:grid-cols-2 ${
-          showSalesman ? "lg:grid-cols-4" : "lg:grid-cols-3"
+          showSalesman ? "lg:grid-cols-3" : "lg:grid-cols-2"
         }`}
       >
-        <PercentField
-          id={`${idPrefix}-manufacturer`}
-          label="제조사"
-          value={shares.manufacturer}
-          disabled={disabled}
-          onChange={onManufacturerChange}
-        />
         {showSalesman ? (
           <PercentField
             id={`${idPrefix}-salesman`}
@@ -566,8 +640,9 @@ function SharePercentRow({
         <PercentField
           id={`${idPrefix}-abuts`}
           label="어벗츠"
-          value={abutsPercent}
-          readOnly
+          value={shares.abuts}
+          disabled={disabled}
+          onChange={onAbutsChange}
         />
       </div>
     </div>
@@ -575,22 +650,24 @@ function SharePercentRow({
 }
 
 function SharePercentPanel({
+  manufacturerUnitPrice,
   membershipShares,
   regularShares,
   disabled,
+  onManufacturerUnitChange,
   onMembershipChange,
   onRegularChange,
 }: {
-  membershipShares: ReturnType<typeof readSharePercents>;
-  regularShares: ReturnType<typeof readSharePercents>;
+  manufacturerUnitPrice: number;
+  membershipShares: ReturnType<typeof readResidualSharePercents>;
+  regularShares: ReturnType<typeof readResidualSharePercents>;
   disabled?: boolean;
+  onManufacturerUnitChange: (next: number) => void;
   onMembershipChange: (
     patch: Partial<
       Pick<
         CreditSettings,
-        | "manufacturerSharePercent"
-        | "salesmanSharePercent"
-        | "devopsSharePercent"
+        "salesmanSharePercent" | "devopsSharePercent" | "abutsSharePercent"
       >
     >,
   ) => void;
@@ -598,44 +675,54 @@ function SharePercentPanel({
     patch: Partial<
       Pick<
         CreditSettings,
-        | "regularManufacturerSharePercent"
         | "regularSalesmanSharePercent"
         | "regularDevopsSharePercent"
+        | "regularAbutsSharePercent"
       >
     >,
   ) => void;
 }) {
   return (
     <div className="space-y-5">
+      <div className="max-w-sm">
+        <SalesAmountCard
+          id="manufacturerRequestUnitPrice"
+          title="제조사 단가"
+          value={manufacturerUnitPrice}
+          disabled={disabled}
+          onChange={onManufacturerUnitChange}
+          help="부가세 포함. CNC 매출에서 먼저 차감 후 잔여를 아래 비율로 분배합니다."
+        />
+      </div>
       <SharePercentRow
         idPrefix="membershipShare"
         title="딜러사 포함"
-        description="의뢰자 소개 코드에 딜러사 있음"
+        description="제조사 선차감 후 잔여 분배 · 의뢰자 소개 코드에 딜러사 있음"
         shares={membershipShares}
         showSalesman
         disabled={disabled}
-        onManufacturerChange={(manufacturerSharePercent) =>
-          onMembershipChange({ manufacturerSharePercent })
-        }
         onSalesmanChange={(salesmanSharePercent) =>
           onMembershipChange({ salesmanSharePercent })
         }
         onDevopsChange={(devopsSharePercent) =>
           onMembershipChange({ devopsSharePercent })
         }
+        onAbutsChange={(abutsSharePercent) =>
+          onMembershipChange({ abutsSharePercent })
+        }
       />
       <SharePercentRow
         idPrefix="regularShare"
         title="딜러사 비포함"
-        description="의뢰자 소개 코드에 딜러사 없음"
+        description="제조사 선차감 후 잔여 분배 · 의뢰자 소개 코드에 딜러사 없음"
         shares={regularShares}
         showSalesman={false}
         disabled={disabled}
-        onManufacturerChange={(regularManufacturerSharePercent) =>
-          onRegularChange({ regularManufacturerSharePercent })
-        }
         onDevopsChange={(regularDevopsSharePercent) =>
           onRegularChange({ regularDevopsSharePercent })
+        }
+        onAbutsChange={(regularAbutsSharePercent) =>
+          onRegularChange({ regularAbutsSharePercent })
         }
       />
     </div>
@@ -665,11 +752,25 @@ function normalizeSpecialRequestorPrice(
         : productionPrice + legacyDesignFee,
     ) || 0,
   );
+  const manufacturerUnit = Math.max(
+    0,
+    Math.round(
+      Number(
+        fallback.manufacturerRequestUnitPrice ??
+          DEFAULT_MANUFACTURER_REQUEST_UNIT_PRICE,
+      ) || 0,
+    ),
+  );
   const shares = readSharePercents(fallback, "membership");
-  const productionParty = allocateRevenueByPercent(productionPrice, shares);
+  const productionParty = allocateRevenueByPercent(
+    productionPrice,
+    shares,
+    manufacturerUnit,
+  );
   const designParty = allocateRevenueByPercent(
     designAndProductionPrice,
     shares,
+    manufacturerUnit,
   );
   const productionManufacturerUnitPrice = productionParty.manufacturer;
   const productionSalesmanUnitPrice = productionParty.salesman;
@@ -853,49 +954,65 @@ function normalizeCreditSettings(
       Number(
         (raw as CreditSettings).manufacturerSharePercent ??
           (fallback as CreditSettings).manufacturerSharePercent ??
-          MEMBERSHIP_SHARE_PERCENTS.manufacturer,
+          0,
       ),
-      MEMBERSHIP_SHARE_PERCENTS.manufacturer,
+      0,
     ),
     salesmanSharePercent: clampSharePercent(
       Number(
         (raw as CreditSettings).salesmanSharePercent ??
           (fallback as CreditSettings).salesmanSharePercent ??
-          MEMBERSHIP_SHARE_PERCENTS.salesman,
+          MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.salesman,
       ),
-      MEMBERSHIP_SHARE_PERCENTS.salesman,
+      MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.salesman,
     ),
     devopsSharePercent: clampSharePercent(
       Number(
         (raw as CreditSettings).devopsSharePercent ??
           (fallback as CreditSettings).devopsSharePercent ??
-          MEMBERSHIP_SHARE_PERCENTS.devops,
+          MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.devops,
       ),
-      MEMBERSHIP_SHARE_PERCENTS.devops,
+      MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.devops,
+    ),
+    abutsSharePercent: clampSharePercent(
+      Number(
+        (raw as CreditSettings).abutsSharePercent ??
+          (fallback as CreditSettings).abutsSharePercent ??
+          MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.abuts,
+      ),
+      MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.abuts,
     ),
     regularManufacturerSharePercent: clampSharePercent(
       Number(
         (raw as CreditSettings).regularManufacturerSharePercent ??
           (fallback as CreditSettings).regularManufacturerSharePercent ??
-          REGULAR_SHARE_PERCENTS.manufacturer,
+          0,
       ),
-      REGULAR_SHARE_PERCENTS.manufacturer,
+      0,
     ),
     regularSalesmanSharePercent: clampSharePercent(
       Number(
         (raw as CreditSettings).regularSalesmanSharePercent ??
           (fallback as CreditSettings).regularSalesmanSharePercent ??
-          REGULAR_SHARE_PERCENTS.salesman,
+          REGULAR_RESIDUAL_SHARE_PERCENTS.salesman,
       ),
-      REGULAR_SHARE_PERCENTS.salesman,
+      REGULAR_RESIDUAL_SHARE_PERCENTS.salesman,
     ),
     regularDevopsSharePercent: clampSharePercent(
       Number(
         (raw as CreditSettings).regularDevopsSharePercent ??
           (fallback as CreditSettings).regularDevopsSharePercent ??
-          REGULAR_SHARE_PERCENTS.devops,
+          REGULAR_RESIDUAL_SHARE_PERCENTS.devops,
       ),
-      REGULAR_SHARE_PERCENTS.devops,
+      REGULAR_RESIDUAL_SHARE_PERCENTS.devops,
+    ),
+    regularAbutsSharePercent: clampSharePercent(
+      Number(
+        (raw as CreditSettings).regularAbutsSharePercent ??
+          (fallback as CreditSettings).regularAbutsSharePercent ??
+          REGULAR_RESIDUAL_SHARE_PERCENTS.abuts,
+      ),
+      REGULAR_RESIDUAL_SHARE_PERCENTS.abuts,
     ),
     ...buildNormalizedTierPartyFields({ ...fallback, ...raw, ...abutmentPrices }, {
       ...CREDIT_SETTINGS_DEFAULTS,
@@ -904,8 +1021,46 @@ function normalizeCreditSettings(
       ...abutmentPrices,
     } as CreditSettings),
   };
-  withPrices.manufacturerRequestUnitPrice =
-    withPrices.membershipProductionManufacturerUnitPrice;
+  withPrices.manufacturerRequestUnitPrice = Math.max(
+    0,
+    Math.round(
+      Number(
+        (raw as CreditSettings).manufacturerRequestUnitPrice ??
+          (fallback as CreditSettings).manufacturerRequestUnitPrice ??
+          DEFAULT_MANUFACTURER_REQUEST_UNIT_PRICE,
+      ) || 0,
+    ),
+  );
+  // 레거시 %분배(제조사 비중 > 0) → 고정단가+잔여비중 기본값으로 승격.
+  const legacyManufacturerShare = Number(
+    (raw as CreditSettings).manufacturerSharePercent ??
+      (fallback as CreditSettings).manufacturerSharePercent ??
+      0,
+  );
+  const hasExplicitAbuts = (raw as CreditSettings).abutsSharePercent != null;
+  if (legacyManufacturerShare > 0 && !hasExplicitAbuts) {
+    withPrices.manufacturerSharePercent = 0;
+    withPrices.salesmanSharePercent = MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.salesman;
+    withPrices.devopsSharePercent = MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.devops;
+    withPrices.abutsSharePercent = MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.abuts;
+    withPrices.regularManufacturerSharePercent = 0;
+    withPrices.regularSalesmanSharePercent = REGULAR_RESIDUAL_SHARE_PERCENTS.salesman;
+    withPrices.regularDevopsSharePercent = REGULAR_RESIDUAL_SHARE_PERCENTS.devops;
+    withPrices.regularAbutsSharePercent = REGULAR_RESIDUAL_SHARE_PERCENTS.abuts;
+    if (
+      !(raw as CreditSettings).manufacturerRequestUnitPrice &&
+      withPrices.manufacturerRequestUnitPrice !==
+        DEFAULT_MANUFACTURER_REQUEST_UNIT_PRICE
+    ) {
+      withPrices.manufacturerRequestUnitPrice =
+        DEFAULT_MANUFACTURER_REQUEST_UNIT_PRICE;
+    }
+    Object.assign(
+      withPrices,
+      buildNormalizedTierPartyFields(withPrices, withPrices),
+    );
+  }
+
   withPrices.salesmanRequestUnitPrice =
     withPrices.membershipProductionSalesmanUnitPrice;
   withPrices.devopsRequestUnitPrice =
@@ -1105,12 +1260,14 @@ export const AdminCreditSettingsTab = ({
         CREDIT_SETTINGS_DEFAULTS.labRoundBarProductionPrice,
       labRoundBarDesignAndProductionPrice:
         CREDIT_SETTINGS_DEFAULTS.labRoundBarDesignAndProductionPrice,
-      manufacturerSharePercent: MEMBERSHIP_SHARE_PERCENTS.manufacturer,
-      salesmanSharePercent: MEMBERSHIP_SHARE_PERCENTS.salesman,
-      devopsSharePercent: MEMBERSHIP_SHARE_PERCENTS.devops,
-      regularManufacturerSharePercent: REGULAR_SHARE_PERCENTS.manufacturer,
-      regularSalesmanSharePercent: REGULAR_SHARE_PERCENTS.salesman,
-      regularDevopsSharePercent: REGULAR_SHARE_PERCENTS.devops,
+      manufacturerSharePercent: 0,
+      salesmanSharePercent: MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.salesman,
+      devopsSharePercent: MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.devops,
+      abutsSharePercent: MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.abuts,
+      regularManufacturerSharePercent: 0,
+      regularSalesmanSharePercent: REGULAR_RESIDUAL_SHARE_PERCENTS.salesman,
+      regularDevopsSharePercent: REGULAR_RESIDUAL_SHARE_PERCENTS.devops,
+      regularAbutsSharePercent: REGULAR_RESIDUAL_SHARE_PERCENTS.abuts,
     } as CreditSettings),
   );
   const [itemSaveStates, setItemSaveStates] = useState<
@@ -1239,12 +1396,15 @@ export const AdminCreditSettingsTab = ({
       patch: Partial<
         Pick<
           CreditSettings,
+          | "manufacturerRequestUnitPrice"
           | "manufacturerSharePercent"
           | "salesmanSharePercent"
           | "devopsSharePercent"
+          | "abutsSharePercent"
           | "regularManufacturerSharePercent"
           | "regularSalesmanSharePercent"
           | "regularDevopsSharePercent"
+          | "regularAbutsSharePercent"
         >
       >,
     ) => {
@@ -1453,7 +1613,7 @@ export const AdminCreditSettingsTab = ({
                 <SectionHeader
                   icon={Percent}
                   title="분배 비율 (공통)"
-                  description="환봉어벗을 제외한 CNC 생산 매출 분배에 적용합니다. 어벗츠는 잔여분입니다."
+                  description="환봉어벗을 제외한 CNC 생산 매출에 적용합니다. 제조사 고정단가를 먼저 차감한 뒤 잔여를 비율로 나눕니다."
                   trailing={
                     <AutoSaveIndicator
                       state={itemSaveStates.sharePercents ?? "idle"}
@@ -1461,9 +1621,13 @@ export const AdminCreditSettingsTab = ({
                   }
                 />
                 <SharePercentPanel
-                  membershipShares={readSharePercents(settings, "membership")}
-                  regularShares={readSharePercents(settings, "regular")}
+                  manufacturerUnitPrice={settings.manufacturerRequestUnitPrice}
+                  membershipShares={readResidualSharePercents(settings, "membership")}
+                  regularShares={readResidualSharePercents(settings, "regular")}
                   disabled={loading}
+                  onManufacturerUnitChange={(manufacturerRequestUnitPrice) =>
+                    updateSharePercent({ manufacturerRequestUnitPrice })
+                  }
                   onMembershipChange={(patch) => updateSharePercent(patch)}
                   onRegularChange={(patch) => updateSharePercent(patch)}
                 />

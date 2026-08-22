@@ -31,25 +31,29 @@ const systemSettingsSchema = new mongoose.Schema(
       regularDesignAndProductionPrice: { type: Number, default: 40000 },
       // CNC 티어별 건당 분배(제조사·딜러사·개발운영사). 어벗츠=매출−합계.
       // membership=딜러 있음, regular=딜러 없음. 치과 멤버십/일반 청구 이중가와 무관.
-      membershipProductionManufacturerUnitPrice: { type: Number, default: 9000 },
-      membershipProductionSalesmanUnitPrice: { type: Number, default: 3000 },
-      membershipProductionDevopsUnitPrice: { type: Number, default: 750 },
-      regularProductionManufacturerUnitPrice: { type: Number, default: 12000 },
+      // 제조사=고정단가 선차감(기본 8,800). 잔여 비중 기본 딜러30:개발10:어벗츠40 / 없으면 20:80.
+      membershipProductionManufacturerUnitPrice: { type: Number, default: 8800 },
+      membershipProductionSalesmanUnitPrice: { type: Number, default: 2325 },
+      membershipProductionDevopsUnitPrice: { type: Number, default: 775 },
+      regularProductionManufacturerUnitPrice: { type: Number, default: 8800 },
       regularProductionSalesmanUnitPrice: { type: Number, default: 0 },
-      regularProductionDevopsUnitPrice: { type: Number, default: 2000 },
-      membershipDesignAndProductionManufacturerUnitPrice: { type: Number, default: 15000 },
-      membershipDesignAndProductionSalesmanUnitPrice: { type: Number, default: 5000 },
-      membershipDesignAndProductionDevopsUnitPrice: { type: Number, default: 1250 },
-      regularDesignAndProductionManufacturerUnitPrice: { type: Number, default: 24000 },
+      regularProductionDevopsUnitPrice: { type: Number, default: 2240 },
+      membershipDesignAndProductionManufacturerUnitPrice: { type: Number, default: 8800 },
+      membershipDesignAndProductionSalesmanUnitPrice: { type: Number, default: 6075 },
+      membershipDesignAndProductionDevopsUnitPrice: { type: Number, default: 2025 },
+      regularDesignAndProductionManufacturerUnitPrice: { type: Number, default: 8800 },
       regularDesignAndProductionSalesmanUnitPrice: { type: Number, default: 0 },
-      regularDesignAndProductionDevopsUnitPrice: { type: Number, default: 4000 },
-      // CNC 매출 분배 비율(%). 멤버=딜러사 포함, 일반=딜러사 없음. 어벗츠=잔여.
-      manufacturerSharePercent: { type: Number, default: 60 },
-      salesmanSharePercent: { type: Number, default: 20 },
-      devopsSharePercent: { type: Number, default: 5 },
-      regularManufacturerSharePercent: { type: Number, default: 60 },
+      regularDesignAndProductionDevopsUnitPrice: { type: Number, default: 6240 },
+      // CNC 잔여 분배 비중(%). 제조사는 manufacturerRequestUnitPrice 고정단가.
+      // manufacturerSharePercent는 레거시(미사용, 0). abutsSharePercent=잔여 어벗츠 비중.
+      manufacturerSharePercent: { type: Number, default: 0 },
+      salesmanSharePercent: { type: Number, default: 30 },
+      devopsSharePercent: { type: Number, default: 10 },
+      abutsSharePercent: { type: Number, default: 40 },
+      regularManufacturerSharePercent: { type: Number, default: 0 },
       regularSalesmanSharePercent: { type: Number, default: 0 },
-      regularDevopsSharePercent: { type: Number, default: 10 },
+      regularDevopsSharePercent: { type: Number, default: 20 },
+      regularAbutsSharePercent: { type: Number, default: 80 },
       membershipRoundBarProductionPrice: { type: Number, default: 0 },
       regularRoundBarProductionPrice: { type: Number, default: 0 },
       membershipRoundBarDesignAndProductionPrice: { type: Number, default: 0 },
@@ -88,12 +92,12 @@ const systemSettingsSchema = new mongoose.Schema(
         default: [],
       },
       shippingFee: { type: Number, default: 3500 },
-      // 제조사(기공소·면세) 하청 공급가
-      manufacturerRequestUnitPrice: { type: Number, default: 9000 },
+      // 제조사(기공소·면세) 하청 공급가(부가세포함 개념의 지급액 8,800).
+      manufacturerRequestUnitPrice: { type: Number, default: 8800 },
       // 개발운영사 어벗 생산 외주 공급가(1어벗당). 지급 시 +VAT.
-      devopsRequestUnitPrice: { type: Number, default: 750 },
+      devopsRequestUnitPrice: { type: Number, default: 775 },
       // 딜러사(salesman BA) 어벗 생산 수수료(1어벗당). 지급 시 +VAT. 없으면 어벗츠 귀속.
-      salesmanRequestUnitPrice: { type: Number, default: 3000 },
+      salesmanRequestUnitPrice: { type: Number, default: 2325 },
       manufacturerShippingUnitPrice: { type: Number, default: 3500 },
       affiliateVatRate: { type: Number, default: 0.1 },
       // 신속 배송 추가 의뢰크레딧 (생산=건당, 디자인+생산=1어벗당, 가공 진입 시 차감)

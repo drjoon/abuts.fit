@@ -227,10 +227,10 @@ const businessAnchorSchema = new mongoose.Schema(
       updatedAt: { type: Date, default: null },
     },
     payoutRates: {
-      manufacturerRate: { type: Number, default: 0.6, min: 0, max: 1 },
+      manufacturerRate: { type: Number, default: 0, min: 0, max: 1 },
       devopsRate: { type: Number, default: 0.1, min: 0, max: 1 },
-      salesmanRate: { type: Number, default: 0.1, min: 0, max: 1 },
-      adminRate: { type: Number, default: 0.2, min: 0, max: 1 },
+      salesmanRate: { type: Number, default: 0.3, min: 0, max: 1 },
+      adminRate: { type: Number, default: 0.4, min: 0, max: 1 },
       // 기공의뢰 플랫폼 수수료율.
       // - subcontractFeeRate: 어벗츠 원청을 타 기공소가 하청 수행할 때 (기본 15%)
       // - platformFeeRate: 레거시 매칭 성공 수수료 (경로 B 자체 수행은 0)

@@ -15,14 +15,21 @@
 // - 2026-08-16: 지정 거래 수수료 적용 on/off(기본 off=별도 공지 시까지 무료).
 
 export const WITH_SALESMAN_DEFAULT_RATES = {
-  manufacturerRate: 0.6,
+  manufacturerRate: 0,
   devopsRate: 0.1,
-  salesmanRate: 0.1,
-  adminRate: 0.2,
+  salesmanRate: 0.3,
+  adminRate: 0.4,
+};
+
+/** 딜러 없을 때 잔여 분배 기본(개발운영 20% / 어벗츠 80%). */
+export const WITHOUT_SALESMAN_RESIDUAL_RATES = {
+  devopsRate: 0.2,
+  salesmanRate: 0,
+  adminRate: 0.8,
 };
 
 /** 제조사 하청 공급가·부가세 SSOT 기본값 (creditSettings와 동기). */
-export const DEFAULT_MANUFACTURER_REQUEST_UNIT_PRICE = 9000;
+export const DEFAULT_MANUFACTURER_REQUEST_UNIT_PRICE = 8800;
 export const DEFAULT_MANUFACTURER_SHIPPING_UNIT_PRICE = 3500;
 export const DEFAULT_AFFILIATE_VAT_RATE = 0.1;
 export const MANUFACTURER_PRODUCTION_LEDGER_LABEL = "커스텀어벗 생산";
@@ -67,14 +74,28 @@ export function resolveRatesWithoutSalesman(configuredRates) {
   };
 }
 
-/** 잔여(비제조사) 분배율: 딜러사 없으면 salesman 몫 → admin. */
+/** 잔여(비제조사) 분배율: 딜러사 없으면 개발운영 20% / 어벗츠 80% (설정 잔여 비중 SSOT). */
 export function resolveResidualRatesWithoutSalesman(configuredRates) {
   const rates = resolveConfiguredRevenueRates(configuredRates);
-  return {
-    devopsRate: roundRate4(rates.devopsRate),
-    salesmanRate: 0,
-    adminRate: roundRate4(Number(rates.adminRate || 0) + Number(rates.salesmanRate || 0)),
-  };
+  const devops = Number(rates.devopsRate || 0);
+  const salesman = Number(rates.salesmanRate || 0);
+  const admin = Number(rates.adminRate || 0);
+  // 레거시 with-salesman 설정만 있을 때 폴드하지 않고 without 기본 비중 사용.
+  if (
+    Math.abs(devops - 0.1) < 1e-9 &&
+    Math.abs(salesman - 0.3) < 1e-9 &&
+    Math.abs(admin - 0.4) < 1e-9
+  ) {
+    return { ...WITHOUT_SALESMAN_RESIDUAL_RATES };
+  }
+  if (salesman <= 0 && devops + admin > 0) {
+    return {
+      devopsRate: roundRate4(devops),
+      salesmanRate: 0,
+      adminRate: roundRate4(admin),
+    };
+  }
+  return { ...WITHOUT_SALESMAN_RESIDUAL_RATES };
 }
 
 export const WITHOUT_SALESMAN_RATES = resolveRatesWithoutSalesman(WITH_SALESMAN_DEFAULT_RATES);
@@ -301,13 +322,14 @@ function allocateResidualAmongAffiliates({
   owners,
 }) {
   const residual = Math.max(0, Math.round(Number(residualAmount || 0)));
-  const rates = resolveConfiguredRevenueRates(configuredRates);
+  const rates = hasSalesmanReferrer
+    ? resolveConfiguredRevenueRates(configuredRates)
+    : resolveResidualRatesWithoutSalesman(configuredRates);
   const devopsWeight = Math.max(0, Number(rates.devopsRate || 0));
   const salesmanWeight = hasSalesmanReferrer
     ? Math.max(0, Number(rates.salesmanRate || 0))
     : 0;
-  const adminWeight = Math.max(0, Number(rates.adminRate || 0)) +
-    (hasSalesmanReferrer ? 0 : Math.max(0, Number(rates.salesmanRate || 0)));
+  const adminWeight = Math.max(0, Number(rates.adminRate || 0));
   const weightSum = devopsWeight + salesmanWeight + adminWeight;
 
   let plannedDevops = 0;
@@ -335,10 +357,57 @@ function allocateResidualAmongAffiliates({
 
 export const REVENUE_OWNER_ORDER = ["manufacturer", "devops", "salesman", "admin"];
 
+/** 플랫폼 creditSettings 잔여 비중(%) → 정산 residual rates. */
+export function resolveResidualRatesFromCreditSettings(
+  creditSettings = {},
+  hasSalesmanReferrer = true,
+) {
+  if (hasSalesmanReferrer) {
+    const salesman = Math.max(0, Number(creditSettings.salesmanSharePercent) || 0);
+    const devops = Math.max(0, Number(creditSettings.devopsSharePercent) || 0);
+    const abuts = Math.max(
+      0,
+      Number(
+        creditSettings.abutsSharePercent ??
+          Math.max(0, 100 - salesman - devops),
+      ) || 0,
+    );
+    if (salesman + devops + abuts > 0) {
+      return {
+        manufacturerRate: 0,
+        devopsRate: devops / 100,
+        salesmanRate: salesman / 100,
+        adminRate: abuts / 100,
+      };
+    }
+  } else {
+    const devops = Math.max(
+      0,
+      Number(creditSettings.regularDevopsSharePercent) || 0,
+    );
+    const abuts = Math.max(
+      0,
+      Number(
+        creditSettings.regularAbutsSharePercent ?? Math.max(0, 100 - devops),
+      ) || 0,
+    );
+    if (devops + abuts > 0) {
+      return {
+        manufacturerRate: 0,
+        devopsRate: devops / 100,
+        salesmanRate: 0,
+        adminRate: abuts / 100,
+      };
+    }
+  }
+  return null;
+}
+
 /**
  * 제조사 = 하청 고정 공급가. 잔여 = spend − 제조사 공급가 → salesman/devops/admin.
  * express 등 applyManufacturerUnit=false 이면 제조사 0·전액 잔여 분배.
  * 배송: 제조사 배송 공급가, 잔여 → admin(및 잔여 비율이 있으면 동일 로직).
+ * residual rates: creditSettings 잔여 비중 우선, 없으면 BA payoutRates.
  */
 export function resolveRevenueOwnerBaseAllocation({
   spendAmount,
@@ -381,10 +450,14 @@ export function resolveRevenueOwnerBaseAllocation({
     };
   }
 
+  const ratesFromCredit = resolveResidualRatesFromCreditSettings(
+    creditSettings,
+    hasSalesmanReferrer,
+  );
   const residualSplit = allocateResidualAmongAffiliates({
     residualAmount: residual,
     hasSalesmanReferrer,
-    configuredRates,
+    configuredRates: ratesFromCredit || configuredRates,
     owners,
   });
 
