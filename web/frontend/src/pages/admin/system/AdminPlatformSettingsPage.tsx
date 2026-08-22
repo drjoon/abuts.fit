@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-22: 작업 영역 가로폭을 사업영역과 동일하게 max-w-4xl로 축소.
 // - 2026-08-21: 커스텀어벗 탭 — 치과 공급 삭제, 기공소 공급→커스텀어벗 가격(생산만).
 // - 2026-08-19: 커스텀어벗 탭 고시 라벨(생산·디자인+생산). 디자인비+지그 설정 카드 제거.
 // - 2026-08-17: 수익분배·사업영역은 별도「사업영역」메뉴(`/dashboard/partners`).
@@ -171,7 +172,6 @@ export const AdminPlatformSettingsPage = () => {
     <SettingsScaffold
       tabs={tabs}
       activeTab={activeTab}
-      contentMaxClassName="max-w-7xl"
       onTabChange={(next) => {
         const nextParams = new URLSearchParams(searchParams);
         nextParams.set("tab", next);

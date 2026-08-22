@@ -54,15 +54,15 @@ const systemSettingsSchema = new mongoose.Schema(
       regularSalesmanSharePercent: { type: Number, default: 0 },
       regularDevopsSharePercent: { type: Number, default: 20 },
       regularAbutsSharePercent: { type: Number, default: 80 },
-      membershipRoundBarProductionPrice: { type: Number, default: 0 },
-      regularRoundBarProductionPrice: { type: Number, default: 0 },
-      membershipRoundBarDesignAndProductionPrice: { type: Number, default: 0 },
-      regularRoundBarDesignAndProductionPrice: { type: Number, default: 0 },
+      membershipRoundBarProductionPrice: { type: Number, default: 15000 },
+      regularRoundBarProductionPrice: { type: Number, default: 15000 },
+      membershipRoundBarDesignAndProductionPrice: { type: Number, default: 25000 },
+      regularRoundBarDesignAndProductionPrice: { type: Number, default: 25000 },
       // 레거시 기공소 어벗생산의뢰 오버레이. 공개 정책은 membership* 고시.
       labProductionPrice: { type: Number, default: 15000 },
       labDesignAndProductionPrice: { type: Number, default: 25000 },
-      labRoundBarProductionPrice: { type: Number, default: 0 },
-      labRoundBarDesignAndProductionPrice: { type: Number, default: 0 },
+      labRoundBarProductionPrice: { type: Number, default: 15000 },
+      labRoundBarDesignAndProductionPrice: { type: Number, default: 25000 },
       // 개발운영사 지정 의뢰자별 커스텀어벗 공급가(CNC/환봉 × 생산만/디자인+생산).
       // amount는 CNC 생산만 레거시 호환(productionPrice와 동기화). 신규 UI는 기공소 전역 단가.
       specialRequestorPrices: {

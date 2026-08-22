@@ -5,6 +5,7 @@
 // - web/frontend/src/features/settings/tabs/AdminCreditSettingsTab.tsx
 // - web/frontend/src/shared/pricing/abutsAbutmentService.ts
 // - 2026-08-19: 기공소 공급 기본값을 고시(1.5만/2.5만)로.
+// - 2026-08-22: 환봉 생산 기본값을 CNC와 동일(1.5만/2.5만)로.
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "@/shared/api/apiClient";
 import {
@@ -78,15 +79,18 @@ export const CREDIT_SETTINGS_DEFAULTS: CreditSettings = {
     ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE,
   regularDesignAndProductionPrice:
     ABUTS_ABUTMENT_REGULAR_DESIGN_AND_PRODUCTION_PRICE,
-  membershipRoundBarProductionPrice: 0,
-  regularRoundBarProductionPrice: 0,
-  membershipRoundBarDesignAndProductionPrice: 0,
-  regularRoundBarDesignAndProductionPrice: 0,
+  membershipRoundBarProductionPrice: ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
+  regularRoundBarProductionPrice: ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
+  membershipRoundBarDesignAndProductionPrice:
+    ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE,
+  regularRoundBarDesignAndProductionPrice:
+    ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE,
   labProductionPrice: ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
   labDesignAndProductionPrice:
     ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE,
-  labRoundBarProductionPrice: 0,
-  labRoundBarDesignAndProductionPrice: 0,
+  labRoundBarProductionPrice: ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
+  labRoundBarDesignAndProductionPrice:
+    ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE,
 };
 
 export interface SystemSettingsData {
@@ -173,42 +177,26 @@ export const useSystemSettings = () => {
         ),
         defaultShippingFreeCredit: 0,
         ...abutmentPrices,
-        membershipRoundBarProductionPrice: Number(
-          raw.membershipRoundBarProductionPrice ??
-            CREDIT_SETTINGS_DEFAULTS.membershipRoundBarProductionPrice,
-        ),
-        regularRoundBarProductionPrice: Number(
-          raw.regularRoundBarProductionPrice ??
-            CREDIT_SETTINGS_DEFAULTS.regularRoundBarProductionPrice,
-        ),
-        membershipRoundBarDesignAndProductionPrice: Number(
-          raw.membershipRoundBarDesignAndProductionPrice ??
-            CREDIT_SETTINGS_DEFAULTS.membershipRoundBarDesignAndProductionPrice,
-        ),
-        regularRoundBarDesignAndProductionPrice: Number(
-          raw.regularRoundBarDesignAndProductionPrice ??
-            CREDIT_SETTINGS_DEFAULTS.regularRoundBarDesignAndProductionPrice,
-        ),
         labProductionPrice: Number(
           raw.labProductionPrice ??
-            raw.regularProductionPrice ??
+            abutmentPrices.membershipProductionPrice ??
             CREDIT_SETTINGS_DEFAULTS.labProductionPrice,
         ),
         labDesignAndProductionPrice: Number(
           raw.labDesignAndProductionPrice ??
-            raw.regularDesignAndProductionPrice ??
+            abutmentPrices.membershipDesignAndProductionPrice ??
             CREDIT_SETTINGS_DEFAULTS.labDesignAndProductionPrice,
         ),
-        labRoundBarProductionPrice: Number(
-          raw.labRoundBarProductionPrice ??
-            raw.regularRoundBarProductionPrice ??
-            CREDIT_SETTINGS_DEFAULTS.labRoundBarProductionPrice,
-        ),
-        labRoundBarDesignAndProductionPrice: Number(
-          raw.labRoundBarDesignAndProductionPrice ??
-            raw.regularRoundBarDesignAndProductionPrice ??
-            CREDIT_SETTINGS_DEFAULTS.labRoundBarDesignAndProductionPrice,
-        ),
+        labRoundBarProductionPrice: (() => {
+          const rawVal = Number(raw.labRoundBarProductionPrice);
+          if (Number.isFinite(rawVal) && rawVal > 0) return Math.round(rawVal);
+          return abutmentPrices.membershipRoundBarProductionPrice;
+        })(),
+        labRoundBarDesignAndProductionPrice: (() => {
+          const rawVal = Number(raw.labRoundBarDesignAndProductionPrice);
+          if (Number.isFinite(rawVal) && rawVal > 0) return Math.round(rawVal);
+          return abutmentPrices.membershipRoundBarDesignAndProductionPrice;
+        })(),
       };
       return { creditSettings } as SystemSettingsData;
     },

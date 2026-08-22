@@ -1,4 +1,7 @@
 // change-log:
+// - 2026-08-22: 가격(판매가·매입가) 1,000원 단위 스피너 표시.
+// - 2026-08-22: 가격(판매가·매입가) 카드. 커스텀어벗 가격·제조사 단가 카드 제거. 분배 % 옆 개당 단가.
+// - 2026-08-22: 판매가 CNC·환봉 구분 없이 단일(기본 15,000). 매입가=제조사 고정단가.
 // - 2026-08-22: 제조사=고정단가(8,800·부가세포함) 선차감. 잔여를 딜러/개발운영/어벗츠 비중(30:10:40·없으면 20:80)으로 분배.
 // - 2026-08-22: 치과 청구는 membership* 단일 고시. UI「멤버/일반」은 딜러 유무 분배만(청구 이중가 아님).
 // - 2026-08-21: 치과 공급 어벗 UI 삭제. 기공소 공급→커스텀어벗 가격(CNC·환봉 생산만).
@@ -70,11 +73,11 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
+  Banknote,
   CircleHelp,
   CloudUpload,
   Gift,
   Loader2,
-  Package,
   Percent,
   Truck,
   Zap,
@@ -264,11 +267,13 @@ function readSharePercents(
   };
 }
 
+type ResidualUnitPrices = TierParty & { abuts: number };
+
 function allocateRevenueByFixedManufacturerAndResidualShares(
   revenue: number,
   manufacturerUnitPrice: number,
   residualShares: ReturnType<typeof readResidualSharePercents>,
-): TierParty {
+): ResidualUnitPrices {
   const rev = Math.max(0, Math.round(Number(revenue) || 0));
   const manufacturer = Math.min(
     Math.max(0, Math.round(Number(manufacturerUnitPrice) || 0)),
@@ -280,11 +285,12 @@ function allocateRevenueByFixedManufacturerAndResidualShares(
   const abutsW = Math.max(0, Number(residualShares.abuts) || 0);
   const weightSum = salesmanW + devopsW + abutsW;
   if (residual <= 0 || weightSum <= 0) {
-    return { manufacturer, salesman: 0, devops: 0 };
+    return { manufacturer, salesman: 0, devops: 0, abuts: 0 };
   }
   const salesman = Math.round((residual * salesmanW) / weightSum);
   const devops = Math.round((residual * devopsW) / weightSum);
-  return { manufacturer, salesman, devops };
+  const abuts = Math.max(0, residual - salesman - devops);
+  return { manufacturer, salesman, devops, abuts };
 }
 
 function allocateRevenueByPercent(
@@ -373,19 +379,6 @@ const CNC_DEFAULT_TIERS: Array<{
     partyPrefix: "regularDesignAndProduction",
     shareKind: "regular",
   },
-];
-
-type LabSupplyPriceKey =
-  | "labProductionPrice"
-  | "labRoundBarProductionPrice";
-
-/** 지정 기공소→어벗츠 생산 의뢰 단가. 디자인은 기공소 수행. */
-const CUSTOM_ABUT_PRODUCTION_CARDS: Array<{
-  id: LabSupplyPriceKey;
-  title: string;
-}> = [
-  { id: "labProductionPrice", title: "CNC 어벗 생산" },
-  { id: "labRoundBarProductionPrice", title: "환봉 어벗 생산" },
 ];
 
 function tierPartyFieldKey(prefix: TierPartyPrefix, kind: PartyKind): keyof CreditSettings {
@@ -528,6 +521,7 @@ function PercentField({
   onChange,
   disabled,
   readOnly = false,
+  unitPrice,
 }: {
   id: string;
   label: string;
@@ -535,41 +529,51 @@ function PercentField({
   onChange?: (next: number) => void;
   disabled?: boolean;
   readOnly?: boolean;
+  /** 판매가−매입가 잔여 × 비중으로 산출한 개당 단가 */
+  unitPrice?: number;
 }) {
   return (
     <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-4 shadow-sm">
       <Label htmlFor={id} className="mb-3 block text-sm font-medium text-slate-800">
         {label}
       </Label>
-      {readOnly ? (
-        <div className="relative">
-          <div className="flex h-11 items-center justify-end rounded-xl border border-slate-200 bg-slate-50/60 pr-10 text-base font-semibold tabular-nums tracking-tight text-slate-800">
-            {value.toLocaleString("ko-KR", { maximumFractionDigits: 1 })}
+      <div className="flex items-center gap-2">
+        {readOnly ? (
+          <div className="relative min-w-0 flex-1">
+            <div className="flex h-11 items-center justify-end rounded-xl border border-slate-200 bg-slate-50/60 pr-10 text-base font-semibold tabular-nums tracking-tight text-slate-800">
+              {value.toLocaleString("ko-KR", { maximumFractionDigits: 1 })}
+            </div>
+            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-slate-400">
+              %
+            </span>
           </div>
-          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-slate-400">
-            %
-          </span>
-        </div>
-      ) : (
-        <div className="relative">
-          <Input
-            id={id}
-            type="number"
-            min="0"
-            max="100"
-            step={PERCENT_STEP}
-            className="h-11 rounded-xl border-slate-200 bg-slate-50/60 pr-10 text-right text-base font-semibold tabular-nums tracking-tight"
-            value={value}
-            disabled={disabled}
-            onChange={(event) =>
-              onChange?.(clampSharePercent(Number(event.target.value), value))
-            }
-          />
-          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-slate-400">
-            %
-          </span>
-        </div>
-      )}
+        ) : (
+          <div className="relative min-w-0 flex-1">
+            <Input
+              id={id}
+              type="number"
+              min="0"
+              max="100"
+              step={PERCENT_STEP}
+              className="h-11 rounded-xl border-slate-200 bg-slate-50/60 pr-10 text-right text-base font-semibold tabular-nums tracking-tight"
+              value={value}
+              disabled={disabled}
+              onChange={(event) =>
+                onChange?.(clampSharePercent(Number(event.target.value), value))
+              }
+            />
+            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-slate-400">
+              %
+            </span>
+          </div>
+        )}
+        {unitPrice != null ? (
+          <div className="min-w-[5.75rem] shrink-0 text-right text-sm font-semibold tabular-nums tracking-tight text-slate-900">
+            {Math.max(0, Math.round(unitPrice)).toLocaleString("ko-KR")}
+            <span className="ml-0.5 text-xs font-medium text-slate-400">원</span>
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -579,6 +583,7 @@ function SharePercentRow({
   title,
   description,
   shares,
+  unitPrices,
   showSalesman,
   disabled,
   onSalesmanChange,
@@ -589,6 +594,7 @@ function SharePercentRow({
   title: string;
   description: string;
   shares: ReturnType<typeof readResidualSharePercents>;
+  unitPrices: Pick<ResidualUnitPrices, "salesman" | "devops" | "abuts">;
   showSalesman: boolean;
   disabled?: boolean;
   onSalesmanChange?: (next: number) => void;
@@ -626,6 +632,7 @@ function SharePercentRow({
             id={`${idPrefix}-salesman`}
             label="딜러사"
             value={shares.salesman}
+            unitPrice={unitPrices.salesman}
             disabled={disabled}
             onChange={onSalesmanChange}
           />
@@ -634,6 +641,7 @@ function SharePercentRow({
           id={`${idPrefix}-devops`}
           label="개발운영사"
           value={shares.devops}
+          unitPrice={unitPrices.devops}
           disabled={disabled}
           onChange={onDevopsChange}
         />
@@ -641,6 +649,7 @@ function SharePercentRow({
           id={`${idPrefix}-abuts`}
           label="어벗츠"
           value={shares.abuts}
+          unitPrice={unitPrices.abuts}
           disabled={disabled}
           onChange={onAbutsChange}
         />
@@ -650,19 +659,19 @@ function SharePercentRow({
 }
 
 function SharePercentPanel({
-  manufacturerUnitPrice,
+  salePrice,
+  purchasePrice,
   membershipShares,
   regularShares,
   disabled,
-  onManufacturerUnitChange,
   onMembershipChange,
   onRegularChange,
 }: {
-  manufacturerUnitPrice: number;
+  salePrice: number;
+  purchasePrice: number;
   membershipShares: ReturnType<typeof readResidualSharePercents>;
   regularShares: ReturnType<typeof readResidualSharePercents>;
   disabled?: boolean;
-  onManufacturerUnitChange: (next: number) => void;
   onMembershipChange: (
     patch: Partial<
       Pick<
@@ -682,23 +691,25 @@ function SharePercentPanel({
     >,
   ) => void;
 }) {
+  const membershipUnits = allocateRevenueByFixedManufacturerAndResidualShares(
+    salePrice,
+    purchasePrice,
+    membershipShares,
+  );
+  const regularUnits = allocateRevenueByFixedManufacturerAndResidualShares(
+    salePrice,
+    purchasePrice,
+    regularShares,
+  );
+
   return (
     <div className="space-y-5">
-      <div className="max-w-sm">
-        <SalesAmountCard
-          id="manufacturerRequestUnitPrice"
-          title="제조사 단가"
-          value={manufacturerUnitPrice}
-          disabled={disabled}
-          onChange={onManufacturerUnitChange}
-          help="부가세 포함. CNC 매출에서 먼저 차감 후 잔여를 아래 비율로 분배합니다."
-        />
-      </div>
       <SharePercentRow
         idPrefix="membershipShare"
         title="딜러사 포함"
-        description="제조사 선차감 후 잔여 분배 · 의뢰자 소개 코드에 딜러사 있음"
+        description="매입가 차감 후 잔여 분배 · 의뢰자 소개 코드에 딜러사 있음"
         shares={membershipShares}
+        unitPrices={membershipUnits}
         showSalesman
         disabled={disabled}
         onSalesmanChange={(salesmanSharePercent) =>
@@ -714,8 +725,9 @@ function SharePercentPanel({
       <SharePercentRow
         idPrefix="regularShare"
         title="딜러사 비포함"
-        description="제조사 선차감 후 잔여 분배 · 의뢰자 소개 코드에 딜러사 없음"
+        description="매입가 차감 후 잔여 분배 · 의뢰자 소개 코드에 딜러사 없음"
         shares={regularShares}
+        unitPrices={regularUnits}
         showSalesman={false}
         disabled={disabled}
         onDevopsChange={(regularDevopsSharePercent) =>
@@ -878,46 +890,12 @@ function normalizeCreditSettings(
     // 환영 지급은 무료크레딧 단일. 레거시 배송 환영 설정값은 저장·표시 모두 0.
     defaultShippingFreeCredit: 0,
     ...abutmentPrices,
-    membershipRoundBarProductionPrice: Math.max(
-      0,
-      Number(
-        raw.membershipRoundBarProductionPrice ??
-          fallback.membershipRoundBarProductionPrice ??
-          0,
-      ) || 0,
-    ),
-    regularRoundBarProductionPrice: Math.max(
-      0,
-      Number(
-        raw.regularRoundBarProductionPrice ??
-          fallback.regularRoundBarProductionPrice ??
-          0,
-      ) || 0,
-    ),
-    membershipRoundBarDesignAndProductionPrice: Math.max(
-      0,
-      Number(
-        raw.membershipRoundBarDesignAndProductionPrice ??
-          fallback.membershipRoundBarDesignAndProductionPrice ??
-          0,
-      ) || 0,
-    ),
-    regularRoundBarDesignAndProductionPrice: Math.max(
-      0,
-      Number(
-        raw.regularRoundBarDesignAndProductionPrice ??
-          fallback.regularRoundBarDesignAndProductionPrice ??
-          0,
-      ) || 0,
-    ),
     labProductionPrice: Math.max(
       0,
       Number(
         (raw as CreditSettings).labProductionPrice ??
           fallback.labProductionPrice ??
-          (raw as CreditSettings).regularProductionPrice ??
-          fallback.regularProductionPrice ??
-          0,
+          abutmentPrices.membershipProductionPrice,
       ) || 0,
     ),
     labDesignAndProductionPrice: Math.max(
@@ -925,31 +903,25 @@ function normalizeCreditSettings(
       Number(
         (raw as CreditSettings).labDesignAndProductionPrice ??
           fallback.labDesignAndProductionPrice ??
-          (raw as CreditSettings).regularDesignAndProductionPrice ??
-          fallback.regularDesignAndProductionPrice ??
-          0,
+          abutmentPrices.membershipDesignAndProductionPrice,
       ) || 0,
     ),
-    labRoundBarProductionPrice: Math.max(
-      0,
-      Number(
+    labRoundBarProductionPrice: (() => {
+      const rawVal = Number(
         (raw as CreditSettings).labRoundBarProductionPrice ??
-          fallback.labRoundBarProductionPrice ??
-          raw.regularRoundBarProductionPrice ??
-          fallback.regularRoundBarProductionPrice ??
-          0,
-      ) || 0,
-    ),
-    labRoundBarDesignAndProductionPrice: Math.max(
-      0,
-      Number(
+          fallback.labRoundBarProductionPrice,
+      );
+      if (Number.isFinite(rawVal) && rawVal > 0) return Math.round(rawVal);
+      return abutmentPrices.membershipRoundBarProductionPrice;
+    })(),
+    labRoundBarDesignAndProductionPrice: (() => {
+      const rawVal = Number(
         (raw as CreditSettings).labRoundBarDesignAndProductionPrice ??
-          fallback.labRoundBarDesignAndProductionPrice ??
-          raw.regularRoundBarDesignAndProductionPrice ??
-          fallback.regularRoundBarDesignAndProductionPrice ??
-          0,
-      ) || 0,
-    ),
+          fallback.labRoundBarDesignAndProductionPrice,
+      );
+      if (Number.isFinite(rawVal) && rawVal > 0) return Math.round(rawVal);
+      return abutmentPrices.membershipRoundBarDesignAndProductionPrice;
+    })(),
     manufacturerSharePercent: clampSharePercent(
       Number(
         (raw as CreditSettings).manufacturerSharePercent ??
@@ -1101,6 +1073,7 @@ function SalesAmountCard({
   disabled,
   saveState = "idle",
   help,
+  step = AMOUNT_STEP,
 }: {
   id: string;
   title: string;
@@ -1110,6 +1083,8 @@ function SalesAmountCard({
   disabled?: boolean;
   saveState?: AutoSaveState;
   help?: string;
+  /** 스피너 증감 단위. 기본 1,000원. */
+  step?: number;
 }) {
   const label = badge ? `${title} (${badge})` : title;
   return (
@@ -1128,15 +1103,15 @@ function SalesAmountCard({
           id={id}
           type="number"
           min="0"
-          step={AMOUNT_STEP}
-          className="h-11 rounded-xl border-slate-200 bg-slate-50/60 pr-9 text-right text-base font-semibold tabular-nums tracking-tight [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+          step={step}
+          className="h-11 rounded-xl border-slate-200 bg-slate-50/60 pr-14 text-right text-base font-semibold tabular-nums tracking-tight"
           value={value}
           disabled={disabled}
           onChange={(event) =>
             onChange(Math.max(0, Number(event.target.value)))
           }
         />
-        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-slate-400">
+        <span className="pointer-events-none absolute right-8 top-1/2 -translate-y-1/2 text-xs font-medium text-slate-400">
           원
         </span>
       </div>
@@ -1419,18 +1394,48 @@ export const AdminCreditSettingsTab = ({
     [applySettingsUpdate, scheduleSharePercentSave],
   );
 
-  const updateLabSupplyPrice = (
-    key: LabSupplyPriceKey,
-    next: number,
-  ) => {
-    applySettingsUpdate((prev) => ({
-      ...prev,
-      [key]: next,
-    }));
-    scheduleItemSave(`lab:${key}`, () => ({
-      [key]: settingsRef.current[key],
-    }));
-  };
+  /** CNC·환봉 구분 없는 단일 판매가. 관련 고시·lab 생산가를 함께 맞춘다. */
+  const updateSalePrice = useCallback(
+    (next: number) => {
+      const sale = Math.max(0, Math.round(Number(next) || 0));
+      applySettingsUpdate((prev) =>
+        syncComputedPartyFields({
+          ...prev,
+          labProductionPrice: sale,
+          labRoundBarProductionPrice: sale,
+          membershipProductionPrice: sale,
+          regularProductionPrice: sale,
+          membershipRoundBarProductionPrice: sale,
+          regularRoundBarProductionPrice: sale,
+          minCreditForRequest: sale,
+        }),
+      );
+      scheduleItemSave("salePrice", () => {
+        const current = settingsRef.current;
+        return {
+          labProductionPrice: current.labProductionPrice,
+          labRoundBarProductionPrice: current.labRoundBarProductionPrice,
+          membershipProductionPrice: current.membershipProductionPrice,
+          regularProductionPrice: current.regularProductionPrice,
+          membershipRoundBarProductionPrice:
+            current.membershipRoundBarProductionPrice,
+          regularRoundBarProductionPrice: current.regularRoundBarProductionPrice,
+          minCreditForRequest: current.minCreditForRequest,
+          ...buildSharePercentSavePayload(current),
+        };
+      });
+    },
+    [applySettingsUpdate, scheduleItemSave],
+  );
+
+  const updatePurchasePrice = useCallback(
+    (next: number) => {
+      updateSharePercent({
+        manufacturerRequestUnitPrice: Math.max(0, Math.round(Number(next) || 0)),
+      });
+    },
+    [updateSharePercent],
+  );
 
   const fetchSettings = useCallback(async () => {
     try {
@@ -1611,9 +1616,46 @@ export const AdminCreditSettingsTab = ({
             <Card className="app-glass-card app-glass-card--lg overflow-hidden">
               <CardContent className="space-y-5 p-5 sm:p-6">
                 <SectionHeader
+                  icon={Banknote}
+                  title="가격"
+                  description="커스텀어벗 판매가와 제조사 매입가입니다. CNC·환봉 구분 없이 동일 판매가를 적용합니다."
+                  trailing={
+                    <AutoSaveIndicator
+                      state={
+                        itemSaveStates.salePrice ??
+                        itemSaveStates.sharePercents ??
+                        "idle"
+                      }
+                    />
+                  }
+                />
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <SalesAmountCard
+                    id="customAbutSalePrice"
+                    title="판매가"
+                    value={settings.labProductionPrice}
+                    disabled={loading}
+                    onChange={updateSalePrice}
+                    help="치과·기공소에 청구하는 커스텀어벗 1개당 단가입니다."
+                  />
+                  <SalesAmountCard
+                    id="customAbutPurchasePrice"
+                    title="매입가"
+                    value={settings.manufacturerRequestUnitPrice}
+                    disabled={loading}
+                    onChange={updatePurchasePrice}
+                    help="부가세 포함 제조사 고정단가. 판매가에서 먼저 차감한 뒤 잔여를 분배합니다."
+                  />
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="app-glass-card app-glass-card--lg overflow-hidden">
+              <CardContent className="space-y-5 p-5 sm:p-6">
+                <SectionHeader
                   icon={Percent}
                   title="분배 비율 (공통)"
-                  description="환봉어벗을 제외한 CNC 생산 매출에 적용합니다. 제조사 고정단가를 먼저 차감한 뒤 잔여를 비율로 나눕니다."
+                  description="판매가에서 매입가를 차감한 잔여를 비율로 나눕니다. 설정 비율 옆은 개당 단가입니다."
                   trailing={
                     <AutoSaveIndicator
                       state={itemSaveStates.sharePercents ?? "idle"}
@@ -1621,40 +1663,14 @@ export const AdminCreditSettingsTab = ({
                   }
                 />
                 <SharePercentPanel
-                  manufacturerUnitPrice={settings.manufacturerRequestUnitPrice}
+                  salePrice={settings.labProductionPrice}
+                  purchasePrice={settings.manufacturerRequestUnitPrice}
                   membershipShares={readResidualSharePercents(settings, "membership")}
                   regularShares={readResidualSharePercents(settings, "regular")}
                   disabled={loading}
-                  onManufacturerUnitChange={(manufacturerRequestUnitPrice) =>
-                    updateSharePercent({ manufacturerRequestUnitPrice })
-                  }
                   onMembershipChange={(patch) => updateSharePercent(patch)}
                   onRegularChange={(patch) => updateSharePercent(patch)}
                 />
-              </CardContent>
-            </Card>
-
-            <Card className="app-glass-card app-glass-card--lg overflow-hidden">
-              <CardContent className="space-y-5 p-5 sm:p-6">
-                <SectionHeader
-                  icon={Package}
-                  title="커스텀어벗 가격"
-                  description="지정 기공소가 디자인하고 어벗츠에 생산만 의뢰할 때 적용하는 생산 단가입니다."
-                />
-
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {CUSTOM_ABUT_PRODUCTION_CARDS.map((card) => (
-                    <SalesAmountCard
-                      key={card.id}
-                      id={card.id}
-                      title={card.title}
-                      value={settings[card.id]}
-                      disabled={loading}
-                      saveState={itemSaveStates[`lab:${card.id}`] ?? "idle"}
-                      onChange={(next) => updateLabSupplyPrice(card.id, next)}
-                    />
-                  ))}
-                </div>
               </CardContent>
             </Card>
 

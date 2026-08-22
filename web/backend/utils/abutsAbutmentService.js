@@ -4,6 +4,7 @@
 // - web/backend/utils/creditSettingsDefaults.js
 // - web/backend/services/practiceTransferBilling.service.js
 // change-log:
+// - 2026-08-22: 환봉 생산가 미설정(0)·폴백을 CNC 고시 생산가와 동일하게.
 // - 2026-08-22: 치과 멤버십/일반 이중가 제거. 청구는 membership* 단일 고시. pricingTier 분기 삭제.
 // - 2026-08-17: splitAbutmentRetailForRouteHolds — 신속처리 배수 시 디자인/생산 분해 정합.
 // - 2026-08-14: 환봉 단가 필드 + resolveAbutsAbutmentUnitPrice(kind=round_bar).
@@ -40,14 +41,17 @@ export function normalizeAbutsAbutmentCreditPrices(creditSettings = {}) {
     creditSettings.membershipDesignAndProductionPrice,
     ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE,
   );
-  const roundBarProductionPrice = toWon(
-    creditSettings.membershipRoundBarProductionPrice,
-    0,
-  );
-  const roundBarDesignAndProductionPrice = toWon(
-    creditSettings.membershipRoundBarDesignAndProductionPrice,
-    0,
-  );
+  const roundBarRaw = creditSettings.membershipRoundBarProductionPrice;
+  const roundBarProductionPrice =
+    roundBarRaw == null || Number(roundBarRaw) <= 0
+      ? productionPrice
+      : toWon(roundBarRaw, productionPrice);
+  const roundBarDesignRaw =
+    creditSettings.membershipRoundBarDesignAndProductionPrice;
+  const roundBarDesignAndProductionPrice =
+    roundBarDesignRaw == null || Number(roundBarDesignRaw) <= 0
+      ? designAndProductionPrice
+      : toWon(roundBarDesignRaw, designAndProductionPrice);
   // regular*: 딜러분배(무딜러) 설정값 — 청구 fallback 으로는 membership* 와 동일하게 맞춤.
   return {
     membershipProductionPrice: productionPrice,
