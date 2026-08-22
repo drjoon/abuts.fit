@@ -24,6 +24,11 @@ export type ManufacturerRequest = RequestBase & {
   requestor?:
     | (RequestBase["requestor"] & {
         business?: string;
+        requestSettings?: {
+          hexVerificationResultHex?: "STL모델대로" | "헥스30도회전" | null;
+          designSoftware?: string | null;
+          exoCadVersion?: string | null;
+        } | null;
       })
     | null;
   business?: {
@@ -37,6 +42,7 @@ export type ManufacturerRequest = RequestBase & {
       designSoftware?: string | null;
       exoCadVersion?: string | null;
       hexVerificationSample?: boolean | null;
+      hexVerificationResultHex?: "STL모델대로" | "헥스30도회전" | null;
       anodizingEnabled?: boolean | null;
     } | null;
   } | null;

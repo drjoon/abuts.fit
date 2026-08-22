@@ -84,6 +84,7 @@ import {
 } from "./common.review.helpers.js";
 import { releaseRequestCreditHoldsOnCancel } from "../../services/requestCreditHold.service.js";
 import { pickFilledStlFileForClone } from "../../utils/filledStlFile.js";
+import { resolveAdminVerifiedHexFromSettings } from "../../utils/designSoftwareHex.js";
 import {
   findHexVerificationCancelSiblings,
   backfillMissingFilledStlOnHexSamplesInList,
@@ -1773,7 +1774,7 @@ export async function getAllRequests(req, res) {
             ? "name business businessAnchorId"
             : isMonitoringView
               ? "name business"
-              : "name business businessAnchorId";
+              : "name business businessAnchorId requestSettings.hexVerificationResultHex requestSettings.designSoftware requestSettings.exoCadVersion";
 
       query = query
         .select(selectedProjection)
@@ -1935,6 +1936,8 @@ export async function getAllRequests(req, res) {
             shippingPolicy: 1,
             "requestSettings.designSoftware": 1,
             "requestSettings.anodizingEnabled": 1,
+            "requestSettings.exoCadVersion": 1,
+            "requestSettings.hexVerificationResultHex": 1,
           })
           .lean();
         for (const row of businesses) {
@@ -1993,6 +1996,17 @@ export async function getAllRequests(req, res) {
           typeof requestorOrgDoc.requestSettings === "object"
             ? requestorOrgDoc.requestSettings
             : undefined;
+        const requestorSettingsRaw =
+          item?.requestor &&
+          typeof item.requestor === "object" &&
+          item.requestor.requestSettings &&
+          typeof item.requestor.requestSettings === "object"
+            ? item.requestor.requestSettings
+            : undefined;
+        const adminVerifiedHex = resolveAdminVerifiedHexFromSettings(
+          requestorSettingsRaw,
+          requestSettingsRaw,
+        );
         const weeklyBatchDaysRaw = Array.isArray(
           shippingPolicyRaw?.weeklyBatchDays,
         )
@@ -2011,12 +2025,21 @@ export async function getAllRequests(req, res) {
           shippingPolicy,
           requestSettings: {
             designSoftware: String(
-              requestSettingsRaw?.designSoftware || "",
+              requestorSettingsRaw?.designSoftware ||
+                requestSettingsRaw?.designSoftware ||
+                "",
             ).trim() || null,
+            exoCadVersion:
+              String(
+                requestorSettingsRaw?.exoCadVersion ||
+                  requestSettingsRaw?.exoCadVersion ||
+                  "",
+              ).trim() || null,
             anodizingEnabled:
               typeof requestSettingsRaw?.anodizingEnabled === "boolean"
                 ? requestSettingsRaw.anodizingEnabled
                 : null,
+            hexVerificationResultHex: adminVerifiedHex,
           },
         };
         item.requestorBusinessAnchor = item.business;

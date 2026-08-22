@@ -1,9 +1,6 @@
-// related files:
-// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
-// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useCardActions.ts
-// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
-// - web/backend/controllers/requests/common.requests.controller.js
-// 확장 규칙(표시/저장 통일):
+// change-log:
+// - 2026-08-22: ExoCAD 관리자 헥스 확인 뱃지(확정/미정) SSOT helper.
+// - 2026-08-06: 준비 단계 헥스 회전 기본값을 designSoftware 정책으로 우선(미저장 finalHexRotation STL 오적용 수정).
 // - 프론트 표시(UI)와 백엔드/Esprit 전달값 모두 total 라벨("헥스40도회전" = 30 + 10)을 사용한다.
 // - legacy minor 라벨(예: 헥스10도회전)은 하위호환으로만 허용하고 total(헥스40도회전)로 정규화한다.
 
@@ -71,6 +68,58 @@ export const resolveRequestorHexRotationByDesignSoftware = (
 
 export const HEX_VERIFICATION_SAMPLE_LABEL = "헥스 확인용 무료 샘플";
 
+export type HexVerificationBadgeLabel = "확정" | "미정";
+
+type HexRequestSettingsLike = {
+  designSoftware?: unknown;
+  exoCadVersion?: unknown;
+  hexVerificationResultHex?: unknown;
+} | null | undefined;
+
+type HexRequestLike = {
+  caseInfos?: HexCaseInfos;
+  rnd?: { manufacturerHexRotation?: unknown } | null;
+  business?: {
+    requestSettings?: HexRequestSettingsLike;
+  } | null;
+  requestor?: {
+    requestSettings?: HexRequestSettingsLike;
+  } | null;
+} | null | undefined;
+
+export const normalizeHexVerificationResultHex = (
+  value: unknown,
+): ManufacturerHexRotationCanonicalMode | null => {
+  const raw = String(value || "").trim();
+  if (raw === "STL모델대로" || raw === "0") return "STL모델대로";
+  if (raw === "헥스30도회전" || raw === "30") return "헥스30도회전";
+  return null;
+};
+
+/** User → BusinessAnchor (관리자 헥스 확인 확정값) */
+export const resolveAdminVerifiedHexFromRequest = (
+  req?: HexRequestLike | null,
+): ManufacturerHexRotationCanonicalMode | null =>
+  normalizeHexVerificationResultHex(
+    req?.requestor?.requestSettings?.hexVerificationResultHex,
+  ) ||
+  normalizeHexVerificationResultHex(
+    req?.business?.requestSettings?.hexVerificationResultHex,
+  );
+
+/** ExoCAD만 헥스 확인 뱃지. 그 외 null. */
+export const resolveHexVerificationBadgeLabel = (
+  req?: HexRequestLike | null,
+): HexVerificationBadgeLabel | null => {
+  const designSoftware = String(
+    req?.caseInfos?.designSoftware ||
+      req?.business?.requestSettings?.designSoftware ||
+      "",
+  ).trim();
+  if (designSoftware !== "ExoCAD") return null;
+  return resolveAdminVerifiedHexFromRequest(req) ? "확정" : "미정";
+};
+
 type HexCaseInfos = {
   hexRotation?: { mode?: unknown } | null;
   manufacturerHexRotation?: unknown;
@@ -80,14 +129,6 @@ type HexCaseInfos = {
   exoCadVersion?: unknown;
   hexVerificationSample?: boolean | null;
   anodizingEnabled?: boolean | null;
-} | null | undefined;
-
-type HexRequestLike = {
-  caseInfos?: HexCaseInfos;
-  rnd?: { manufacturerHexRotation?: unknown } | null;
-  business?: {
-    requestSettings?: { anodizingEnabled?: boolean | null } | null;
-  } | null;
 } | null | undefined;
 
 export const isHexVerificationSampleRequest = (

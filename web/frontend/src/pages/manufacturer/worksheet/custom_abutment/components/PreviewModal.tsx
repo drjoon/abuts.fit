@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-22: ExoCAD 헥스 회전 옆 관리자 확인 뱃지(확정/미정).
 // - 2026-08-18: 준비 단계 프리뷰에도 로트번호를 표시한다.
 // - 2026-08-18: filled STL/NC 재생성 요청 시 pending 표시 + 로컬 캐시 선삭제.
 // - 2026-08-17: 세척.패킹 롤백 시 우편함 유지 안내 토스트.
@@ -85,6 +86,7 @@ import { resolveShippingMode } from "@/shared/shipping/shippingMode";
 import {
   normalizeManufacturerHexRotationMode,
   persistPrepApprovalSettings,
+  resolveHexVerificationBadgeLabel,
   resolveRequestorHexRotationByDesignSoftware,
   toManufacturerHexRotationLabel,
   type ManufacturerHexRotationDraftMode,
@@ -2058,6 +2060,8 @@ export const PreviewModal = ({
   // 의뢰건(caseInfos)에 저장된 값을 사용한다.
   const requestorDesignSoftwareLabel =
     String((activeReq as any)?.caseInfos?.designSoftware || "").trim() || "-";
+  const hexVerificationBadgeLabel =
+    resolveHexVerificationBadgeLabel(activeReq);
   const currentCaseAnodizing = (activeReq as any)?.caseInfos?.anodizingEnabled;
   const currentBusinessDefaultAnodizing =
     (activeReq as any)?.business?.requestSettings?.anodizingEnabled;
@@ -2296,9 +2300,21 @@ export const PreviewModal = ({
                 </span>
               </div>
               <div className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-1.5 py-1">
-                <span className="mr-2 whitespace-nowrap text-[11px] font-semibold text-slate-500">
+                <span className="whitespace-nowrap text-[11px] font-semibold text-slate-500">
                   헥스 회전
                 </span>
+                {hexVerificationBadgeLabel ? (
+                  <Badge
+                    variant="outline"
+                    className={
+                      hexVerificationBadgeLabel === "확정"
+                        ? "h-4 border-emerald-200 bg-emerald-50 px-1 text-[10px] font-semibold leading-none text-emerald-700"
+                        : "h-4 border-amber-200 bg-amber-50 px-1 text-[10px] font-semibold leading-none text-amber-700"
+                    }
+                  >
+                    {hexVerificationBadgeLabel}
+                  </Badge>
+                ) : null}
                 <Select
                   value={manufacturerHexRotationDraft || undefined}
                   onValueChange={(value) => {
