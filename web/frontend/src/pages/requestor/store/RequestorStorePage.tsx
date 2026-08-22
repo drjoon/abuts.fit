@@ -12,102 +12,15 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import { cn } from "@/shared/ui/cn";
-
-type StoreProduct = {
-  id: string;
-  name: string;
-  image: string;
-  blurb: string;
-  /** 원본 여백이 클 때 썸네일 확대 (예: 1.45) */
-  imageScale?: number;
-};
-
-type StoreCategory = {
-  id: string;
-  label: string;
-  products: StoreProduct[];
-};
+import {
+  STORE_CATEGORIES,
+  type StoreCategory,
+  type StoreProduct,
+} from "@/shared/store/storeCatalog";
 
 /**
- * 치과 스토어 카탈로그(임시).
- * Guide Kit: TheSimple Kit Initial 카탈로그에서 GBR Pen·Bone Trimmer 제외.
- * 케이스 이미지는 BonePen Kit Pro [Mini](no=273) 임시 사용.
+ * 치과 스토어 카탈로그 — SSOT: shared/store/storeCatalog.ts
  */
-const STORE_CATEGORIES: StoreCategory[] = [
-  {
-    id: "abutment",
-    label: "Abutment",
-    products: [
-      {
-        id: "simple-abutment-2",
-        name: "SimpleAbutment2",
-        image: "/store/simple-abutment-206.jpg",
-        blurb: "Simple Abut. [DT-Hex]",
-      },
-      {
-        id: "simple-healing-2",
-        name: "SimpleHealing2",
-        image: "/store/simple-healing.jpg",
-        blurb: "심플 힐링 어벗먼트",
-      },
-    ],
-  },
-  {
-    id: "guide-kit",
-    label: "Guide Kit",
-    products: [
-      {
-        id: "guide-kit-case",
-        name: "Guide Kit",
-        image: "/store/guide-kit-case.jpg",
-        blurb: "가이드 키트 케이스",
-      },
-      {
-        id: "guide-pen",
-        name: "GuidePen",
-        image: "/store/guide-pen.jpg",
-        blurb: "가이드 드릴용 Pen",
-      },
-      {
-        id: "cup",
-        name: "Cup",
-        image: "/store/cup.jpg",
-        blurb: "Pen용 Cup",
-      },
-      {
-        id: "guide-pin",
-        name: "GuidePin",
-        image: "/store/guide-pin.jpg",
-        blurb: "가이드 공간 확인용 Pin",
-      },
-    ],
-  },
-  {
-    id: "bone-kit",
-    label: "Bone Kit",
-    products: [
-      {
-        id: "bone-shaper",
-        name: "BoneShaper",
-        image: "/store/bone-shaper.jpg",
-        blurb: "피질골 삭제·성형",
-      },
-    ],
-  },
-  {
-    id: "gum-kit",
-    label: "Gum Kit",
-    products: [
-      {
-        id: "gingival-shaper",
-        name: "GumShaper",
-        image: "/store/gingival-shaper-296.jpg",
-        blurb: "어벗 마진 치은 삭제",
-        imageScale: 1.55,
-      },
-    ],
-  },
-];
 
 function ProductCard({ product }: { product: StoreProduct }) {
   const scale = product.imageScale ?? 1;
