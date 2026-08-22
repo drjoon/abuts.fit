@@ -4485,7 +4485,7 @@ export function RequestorPracticeReceivePage({
   }, []);
 
   const transferSearchAndBadges = (
-    <div className="flex flex-wrap items-center gap-3">
+    <div className="flex min-w-0 flex-wrap items-center gap-3">
       <div className="flex flex-wrap items-center gap-2 shrink-0">
         <RequestSettingsToolbar
           designSoftwareLabel={String(designSoftwareValue || "").trim()}
@@ -4665,7 +4665,7 @@ export function RequestorPracticeReceivePage({
 
         {showTransfers ? (
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-            <div className="shrink-0 space-y-3 pb-3">
+            <div className="shrink-0 space-y-3 overflow-visible pb-3 pr-1">
               {roleSwitcher ? (
                 <div className="flex flex-wrap items-center gap-3">{roleSwitcher}</div>
               ) : null}
