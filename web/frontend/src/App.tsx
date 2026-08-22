@@ -24,6 +24,7 @@ import { useSocket } from "@/shared/hooks/useSocket";
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/pages/requestor/credits/RequestorCreditsPage.tsx
+// - web/frontend/src/pages/requestor/store/RequestorStorePage.tsx
 // - web/frontend/src/pages/devops/DevopsPaymentsPage.tsx
 // - web/frontend/src/features/settings/tabs/LabSettlementPayoutTab.tsx
 // - web/frontend/src/features/dashboard/DashboardHome.tsx
@@ -113,6 +114,7 @@ import { AdminSecurity } from "@/pages/admin/system/AdminSecurity";
 import AdminOrganizationVerification from "@/pages/admin/system/AdminOrganizationVerification";
 import AdminCreditPage from "@/pages/admin/credits/AdminCreditPage";
 import RequestorCreditsPage from "@/pages/requestor/credits/RequestorCreditsPage";
+import RequestorStorePage from "@/pages/requestor/store/RequestorStorePage";
 import AdminBusinessPage from "@/pages/admin/businesses/AdminBusinessPage";
 import ReferralGroupsPage from "@/pages/requestor/referralGroups/ReferralGroupsPage";
 import SalesmanPaymentsPage from "@/pages/salesman/SalesmanPaymentsPage";
@@ -738,6 +740,14 @@ const App = () => {
                         roles={["admin", "requestor", "internalLab"]}
                       >
                         <CreditsRoute />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="store"
+                    element={
+                      <RoleProtectedRoute roles={["requestor"]}>
+                        <RequestorStorePage />
                       </RoleProtectedRoute>
                     }
                   />

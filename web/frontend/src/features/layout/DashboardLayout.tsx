@@ -11,6 +11,7 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPath";
 import { cn } from "@/shared/ui/cn";
 
+// - 2026-08-22: 치과 사이드 — 크레딧 아래「스토어」(/dashboard/store).
 // - 2026-08-21: 기공소(requestor lab) 사이드 고스트「정산」제거(클릭 시 /dashboard 이탈).
 // - 2026-08-21: 기공소·어벗츠기공소 기공의뢰 하위 — 치과로부터 수신 / 어벗츠로 의뢰.
 // - 2026-08-20: 관리자 포함 전 롤 사이드를 DashboardSidebarNav로 통일. 접히면 아이콘·툴팁·배지.
@@ -135,6 +136,7 @@ import {
   Layers,
   ScanLine,
   PenTool,
+  Store,
 } from "lucide-react";
 import { AbutsLogo } from "@/components/branding/AbutsLogo";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
@@ -165,6 +167,7 @@ type SidebarItem = DashboardSidebarItem;
 const CREDIT_LOW_BALANCE_THRESHOLD = 500_000;
 const CREDITS_HREF = "/dashboard/credits";
 const CREDITS_CHARGE_HREF = "/dashboard/credits?tab=charge";
+const STORE_HREF = "/dashboard/store";
 
 const requestorSidebarCommonTail: SidebarItem[] = [
   { icon: MessageSquare, label: "문의", href: "/dashboard/inquiries" },
@@ -246,6 +249,7 @@ const buildRequestorSidebarItems = (
       ],
     },
     { icon: Wallet, label: "크레딧", href: CREDITS_HREF },
+    { icon: Store, label: "스토어", href: STORE_HREF },
     ...requestorSidebarCommonTail,
   ];
 };
