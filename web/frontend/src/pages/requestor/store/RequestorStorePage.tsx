@@ -1,4 +1,7 @@
 // change-log:
+// - 2026-08-22: Abutment를 맨 위. GingivalShaper 썸네일 확대로 BoneShaper와 시각 크기 맞춤.
+// - 2026-08-22: Bone Kit·Gum Kit을 한 행에 나란히 배치.
+// - 2026-08-22: Guide Kit=Initial 카탈로그−GBR/Trimmer·케이스 273. GumShaper→GingivalShaper. GumCap 삭제. 심플어벗 206.
 // - 2026-08-22: 치과 스토어 최소 화면 — 카테고리별 상품 그리드(acrodent 이미지 임시).
 // related files:
 // - web/frontend/src/App.tsx
@@ -14,6 +17,8 @@ type StoreProduct = {
   name: string;
   image: string;
   blurb: string;
+  /** 원본 여백이 클 때 썸네일 확대 (예: 1.45) */
+  imageScale?: number;
 };
 
 type StoreCategory = {
@@ -22,17 +27,57 @@ type StoreCategory = {
   products: StoreProduct[];
 };
 
-/** 치과 스토어 카탈로그(임시). 이미지는 acrodent.com 상품 썸네일. */
+/**
+ * 치과 스토어 카탈로그(임시).
+ * Guide Kit: TheSimple Kit Initial 카탈로그에서 GBR Pen·Bone Trimmer 제외.
+ * 케이스 이미지는 BonePen Kit Pro [Mini](no=273) 임시 사용.
+ */
 const STORE_CATEGORIES: StoreCategory[] = [
+  {
+    id: "abutment",
+    label: "Abutment",
+    products: [
+      {
+        id: "simple-abutment-2",
+        name: "SimpleAbutment2",
+        image: "/store/simple-abutment-206.jpg",
+        blurb: "Simple Abut. [DT-Hex]",
+      },
+      {
+        id: "simple-healing-2",
+        name: "SimpleHealing2",
+        image: "/store/simple-healing.jpg",
+        blurb: "심플 힐링 어벗먼트",
+      },
+      {
+        id: "custom-abutment",
+        name: "CustomAbutment",
+        image: "/store/custom-abutment.jpg",
+        blurb: "커스텀 밀링 어벗먼트",
+      },
+    ],
+  },
   {
     id: "guide-kit",
     label: "Guide Kit",
     products: [
       {
+        id: "guide-kit-case",
+        name: "Guide Kit",
+        image: "/store/guide-kit-case.jpg",
+        blurb: "가이드 키트 케이스",
+      },
+      {
         id: "guide-pen",
         name: "GuidePen",
         image: "/store/guide-pen.jpg",
         blurb: "가이드 드릴용 Pen",
+      },
+      {
+        id: "cup",
+        name: "Cup",
+        image: "/store/cup.jpg",
+        blurb: "Pen용 Cup",
       },
       {
         id: "guide-pin",
@@ -59,46 +104,18 @@ const STORE_CATEGORIES: StoreCategory[] = [
     label: "Gum Kit",
     products: [
       {
-        id: "gum-shaper",
+        id: "gingival-shaper",
         name: "GumShaper",
-        image: "/store/gum-shaper.jpg",
-        blurb: "연조직 성형",
-      },
-    ],
-  },
-  {
-    id: "abutment",
-    label: "Abutment",
-    products: [
-      {
-        id: "gum-cap",
-        name: "GumCap",
-        image: "/store/gum-cap.jpg",
-        blurb: "연조직 형태 유지",
-      },
-      {
-        id: "simple-abutment-2",
-        name: "SimpleAbutment2",
-        image: "/store/simple-abutment.jpg",
-        blurb: "심플 어벗먼트",
-      },
-      {
-        id: "simple-healing-2",
-        name: "SimpleHealing2",
-        image: "/store/simple-healing.jpg",
-        blurb: "심플 힐링 어벗먼트",
-      },
-      {
-        id: "custom-abutment",
-        name: "CustomAbutment",
-        image: "/store/custom-abutment.jpg",
-        blurb: "커스텀 밀링 어벗먼트",
+        image: "/store/gingival-shaper-296.jpg",
+        blurb: "어벗 마진 치은 삭제",
+        imageScale: 1.55,
       },
     ],
   },
 ];
 
 function ProductCard({ product }: { product: StoreProduct }) {
+  const scale = product.imageScale ?? 1;
   return (
     <article
       className={cn(
@@ -106,11 +123,19 @@ function ProductCard({ product }: { product: StoreProduct }) {
         "transition-shadow hover:shadow-sm",
       )}
     >
-      <div className="relative aspect-square bg-muted/40">
+      <div className="relative aspect-square overflow-hidden bg-muted/40">
         <img
           src={product.image}
           alt={product.name}
-          className="h-full w-full object-contain p-4 transition-transform duration-300 group-hover:scale-[1.03]"
+          className={cn(
+            "h-full w-full object-contain p-4 transition-transform duration-300",
+            scale === 1 && "group-hover:scale-[1.03]",
+          )}
+          style={
+            scale !== 1
+              ? { transform: `scale(${scale})`, transformOrigin: "center" }
+              : undefined
+          }
           loading="lazy"
         />
       </div>
@@ -135,6 +160,42 @@ function ProductCard({ product }: { product: StoreProduct }) {
   );
 }
 
+function CategorySection({
+  category,
+  productGridClassName,
+}: {
+  category: StoreCategory;
+  productGridClassName?: string;
+}) {
+  return (
+    <section className="space-y-3">
+      <div className="flex items-baseline gap-2 border-b border-border/70 pb-2">
+        <h2 className="text-base font-semibold tracking-tight">
+          {category.label}
+        </h2>
+        <span className="text-xs text-muted-foreground">
+          {category.products.length}개
+        </span>
+      </div>
+      <div
+        className={
+          productGridClassName ??
+          "grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4"
+        }
+      >
+        {category.products.map((product) => (
+          <ProductCard key={product.id} product={product} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+const abutment = STORE_CATEGORIES.find((c) => c.id === "abutment")!;
+const guideKit = STORE_CATEGORIES.find((c) => c.id === "guide-kit")!;
+const boneKit = STORE_CATEGORIES.find((c) => c.id === "bone-kit")!;
+const gumKit = STORE_CATEGORIES.find((c) => c.id === "gum-kit")!;
+
 export default function RequestorStorePage() {
   const { kind, loading } = useRequestorBusinessAccess();
 
@@ -158,23 +219,20 @@ export default function RequestorStorePage() {
         </header>
 
         <div className="space-y-10">
-          {STORE_CATEGORIES.map((category) => (
-            <section key={category.id} className="space-y-3">
-              <div className="flex items-baseline gap-2 border-b border-border/70 pb-2">
-                <h2 className="text-base font-semibold tracking-tight">
-                  {category.label}
-                </h2>
-                <span className="text-xs text-muted-foreground">
-                  {category.products.length}개
-                </span>
-              </div>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-                {category.products.map((product) => (
-                  <ProductCard key={product.id} product={product} />
-                ))}
-              </div>
-            </section>
-          ))}
+          <CategorySection category={abutment} />
+
+          <CategorySection category={guideKit} />
+
+          <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 sm:gap-6">
+            <CategorySection
+              category={boneKit}
+              productGridClassName="grid grid-cols-2 gap-3"
+            />
+            <CategorySection
+              category={gumKit}
+              productGridClassName="grid grid-cols-2 gap-3"
+            />
+          </div>
         </div>
       </div>
     </div>
