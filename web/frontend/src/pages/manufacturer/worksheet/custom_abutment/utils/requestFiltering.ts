@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-22: 작업용 샘플은 포장.발송·추적관리 탭에 정식 의뢰와 동일 노출(R&D 보관만 제외) 주석 명시.
 // - 2026-08-21: 준비 탭 정렬 — remainingMs(Date.now) 비교 제거. 동일 출고일에서 실시간 리렌더마다 카드 순서가 뒤바뀌던 race 수정.
 // - 2026-08-18: 준비 탭 의뢰카드 정렬 — 출고일(마감) 긴박한 순(위) → 여유 있는 순(아래).
 // - 2026-08-03: 준비 탭 필터 SSOT를 `준비`로 통일해 상단 카운트와 카드 목록 불일치(카운트>0, 카드 0건) 문제를 수정.
@@ -205,7 +206,8 @@ export function filterRequestsByStage(
 
     return requests.filter((req) => {
       if (!passExternalFilter(req)) return false;
-      // R&D 보관 샘플(doneAt!=null)은 일반 공정 탭에서 제외한다.
+      // R&D 보관 샘플(doneAt!=null)만 일반 공정 탭에서 제외.
+      // 작업용 샘플(헥스 확인용 등, doneAt=null)은 정식 의뢰와 같이 포장.발송·추적관리까지 노출.
       if (isDoneRndSample(req)) return false;
       if (isUnmachinable(req)) return false;
       if (normalizedTabStage === "shipping" && isPrePickupShippingVisible(req))
@@ -216,7 +218,7 @@ export function filterRequestsByStage(
 
   return requests.filter((req) => {
     if (!passExternalFilter(req)) return false;
-    // 일반 공정 탭은 작업용 샘플(doneAt=null)만 포함한다.
+    // 작업용 샘플(doneAt=null)은 의뢰~추적관리 전 탭에 포함. R&D 보관만 제외.
     if (isDoneRndSample(req)) return false;
     if (isUnmachinable(req)) return false;
 

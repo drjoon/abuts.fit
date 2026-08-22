@@ -1,9 +1,12 @@
 // related files:
 // - web/backend/controllers/requests/mailbox.utils.js
 // - web/backend/rules.md
+// change-log:
+// - 2026-08-22: 작업용 샘플도 우편함 백필 대상에 포함 (정식 의뢰와 동일 SSOT).
 //
 // 세척.패킹 단계인데 mailboxAddress가 비어 있는 의뢰에
 // 동일 businessAnchor 활성 점유 재사용(없으면 신규)으로 메일함을 붙인다.
+// 헥스 확인용 무료 샘플·R&D 작업용 샘플도 제외하지 않는다.
 //
 // Usage:
 //   ENV_FILE=local.env ABUTS_DB_FORCE=true node scripts/db/assign-mailbox-for-packing-missing.js
@@ -16,10 +19,7 @@ import "../../models/user.model.js";
 import "../../models/businessAnchor.model.js";
 import "../../models/deliveryInfo.model.js";
 import "../../models/mailboxAnchorSlot.model.js";
-import {
-  assignMailboxForCleaningPackingEnter,
-  isManufacturerSampleRequest,
-} from "../../controllers/requests/mailbox.utils.js";
+import { assignMailboxForCleaningPackingEnter } from "../../controllers/requests/mailbox.utils.js";
 
 function parseArgs() {
   const args = process.argv.slice(2);
@@ -100,15 +100,7 @@ async function run() {
 
   const results = [];
   for (const request of targets) {
-    if (isManufacturerSampleRequest(request)) {
-      results.push({
-        requestId: request.requestId,
-        skipped: true,
-        reason: "sample",
-      });
-      continue;
-    }
-
+    // 작업용 샘플도 정식 의뢰와 같이 우편함 배정 (크레딧만 무기록).
     const requestorOrgId =
       request.businessAnchorId || request.requestor?.businessAnchorId || null;
     const before = String(request.mailboxAddress || "").trim() || null;
@@ -124,6 +116,7 @@ async function run() {
       patientName: request.caseInfos?.patientName || null,
       lotNumber: String(request?.lotNumber?.value || "").trim() || null,
       businessAnchorId: String(requestorOrgId || "").trim() || null,
+      requestCategory: String(request.requestCategory || "").trim() || null,
       before,
       after: nextMailboxAddress || null,
     };

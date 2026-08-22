@@ -614,6 +614,8 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - 제조사 샘플(`source=manufacturer_sample`, `requestCategory=rnd_sample|copied_sample`)은
   작업용 상태(`rnd.doneAt=null`)에서 일반 의뢰와 동일하게 `포장.발송`/`추적관리` 공정을 진행합니다.
   - 우편함 배정·포장.발송 진입도 일반 의뢰와 동일 SSOT(`assignMailboxForCleaningPackingEnter`, `retainMailboxOnShippingEnter`)를 따릅니다.
+  - 우편함 **점유 집계**에도 작업용 샘플을 포함한다(`loadActiveMailboxOccupancy` — order만 보면 샘플 점유 칸이 비어 합류/충돌이 깨짐).
+  - `stageProgressionWorker` 세척.패킹→포장.발송 자동 진행에서도 샘플을 제외하지 않는다.
   - 포장.발송 우편함 상세에서 **샘플만 완전 삭제** 가능(`DELETE /api/requests/:id`).
   - R&D 보관 샘플(`rnd.doneAt!=null`)은 R&D 탭 운영 정책으로 분리합니다.
   - 샘플은 크레딧/정산 장부에 무기록(무자료/무상) 처리합니다.

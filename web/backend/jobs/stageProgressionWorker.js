@@ -4,6 +4,8 @@
 // - web/backend/server.js
 // - web/backend/controllers/requests/mailbox.utils.js
 // change-log:
+// - 2026-08-22: 세척.패킹→포장.발송 자동 진행에서 샘플(source/price.rule) 제외 제거.
+//   작업용 샘플도 정식 의뢰와 같이 포장.발송·추적관리까지 진행.
 // - 2026-08-17: 우편함 배정은 가공→세척.패킹, 포장.발송은 기존 배정 유지.
 import "../bootstrap/env.js";
 import mongoose from "mongoose";
@@ -108,11 +110,11 @@ async function progressStages() {
     }
 
     // 4. 세척.패킹 → 포장.발송: 출고 예정일이 도래한 세척·패킹 완료 건
+    // 작업용 샘플(헥스 확인용 등)도 정식 의뢰와 동일하게 자동 진입한다.
+    // (크레딧 무기록은 retain/집하 경로에서 isManufacturerSampleRequest로 유지)
     const packagingToShipping = await Request.find({
       manufacturerStage: "세척.패킹",
       "timeline.estimatedShipYmd": { $exists: true, $lte: oneDayFromNow },
-      source: { $ne: "manufacturer_sample" },
-      "price.rule": { $ne: "manufacturer_sample" },
     }).populate("requestor", "businessAnchorId");
 
     for (const req of packagingToShipping) {

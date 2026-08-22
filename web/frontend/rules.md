@@ -515,6 +515,8 @@ Notes:
 - 제조사 워크시트 샘플 구분 SSOT는 `Request.requestCategory`를 사용합니다.
   - 값: `order`, `rnd_sample`, `copied_sample`
   - 작업용 샘플(`rnd.doneAt=null`)은 일반 의뢰와 동일한 공정 탭 흐름(의뢰~추적관리)으로 처리합니다.
+  - **직경별 요약 카드**(`useDiameterQueue`): 작업용 샘플도 6/8/10/12에 카운트한다.
+    (헤더「진행중인 의뢰 N건」과 직경 카드 합이 일치해야 한다. R&D 보관은 목록 필터에서 이미 제외.)
   - 포장.발송 우편함 상세(`MailboxContentsModal`)에서 **샘플만 삭제** 버튼을 노출합니다.
   - R&D 보관 샘플(`rnd.doneAt!=null`)은 R&D 탭 전용으로 분리합니다.
   - 샘플(`rnd_sample`, `copied_sample`)은 크레딧/정산 장부에 **무기록(무자료/무상)** 처리합니다.

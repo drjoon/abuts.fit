@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-22: isAnySampleRequest는 UI/크레딧 표시용 — 직경 요약·공정 탭 차단에 쓰지 않음.
 // - 2026-08-17: PTX 직납 치과 연락처 resolve (스냅샷 우선, 없으면 practice BA live).
 // - 2026-08-21: Rhino filled STL SSOT — `caseInfos.stlFile`(legacy `camFile` 폴백). NC는 `ncFile`.
 // - 2026-08-13: 준비 탭 라이노 완료 SSOT — `caseInfos.camFile.s3Key`(2-filled). 없으면 카드 블러·클릭 차단.
@@ -164,6 +165,8 @@ export const resolveRequestCategory = (req?: ManufacturerRequest | null) => {
 };
 
 export const isAnySampleRequest = (req?: ManufacturerRequest | null) => {
+  // UI 뱃지·샘플만 삭제 등. 직경 요약/공정 탭 노출 차단에 쓰지 말 것
+  // (작업용 샘플은 정식 의뢰와 동일 흐름 — useDiameterQueue / requestFiltering SSOT).
   const category = resolveRequestCategory(req);
   const source = String(req?.source || "").trim();
   return (

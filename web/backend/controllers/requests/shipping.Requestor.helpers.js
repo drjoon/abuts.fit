@@ -7,6 +7,7 @@
 // - web/backend/controllers/requests/common.requests.controller.js
 // - web/backend/models/bulkShippingSnapshot.model.js
 // change-log:
+// - 2026-08-22: 집하 전 패키지 합류 조회에 작업용 샘플(requestCategory) 포함.
 // - 2026-08-21: 출고예정 스냅샷에 기공의뢰(PTX) 연동 플래그.
 // - 2026-08-19: 출고예정 스냅샷에 디자인SW·아노·생산모드·임플란트·최종출고방식.
 import Request from "../../models/request.model.js";
@@ -181,11 +182,13 @@ export async function ensureShippingPackageForPickup({
   }
 
   if (!pkg?._id) {
+    // 같은 BA의 이미 shippingPackageId를 가진 세척.패킹/포장.발송 건에 합류.
+    // 작업용 샘플만 먼저 박스를 잡은 경우도 정식 의뢰가 합류할 수 있어야 한다.
     const pendingCarrier = await Request.findOne({
       businessAnchorId,
       manufacturerStage: { $in: ["세척.패킹", "포장.발송"] },
       shippingPackageId: { $ne: null },
-      requestCategory: "order",
+      requestCategory: { $in: ["order", "rnd_sample", "copied_sample"] },
     })
       .sort({ createdAt: 1 })
       .select({ shippingPackageId: 1 })

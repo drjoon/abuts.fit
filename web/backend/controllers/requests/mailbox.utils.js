@@ -21,6 +21,8 @@ const MAILBOX_SLOT_HANDOFF_MAX_AGE_MS = 60_000;
 // - web/backend/controllers/cnc/machiningBridge.js
 // - web/backend/controllers/ai/lotCapture.controller.js
 // change-log:
+// - 2026-08-22: 우편함 점유 집계에 작업용 샘플(rnd_sample/copied_sample) 포함.
+//   (ORDER만 보면 샘플 점유 칸이 비어 보여 타 사업자 합류·충돌 판정이 깨짐)
 // - 2026-08-20: 샘플도 우편함 배정·포장.발송 진행(포장.발송 탭에서 샘플 삭제 가능).
 // - 2026-08-17: PTX 합류는 practice BA + 수취인(이름/전화/주소) 지문이 같을 때만.
 // - 2026-08-17: 세척.패킹→가공 롤백도 우편함 유지. 가공 중 점유/합류. 기존 칸 우선.
@@ -81,6 +83,8 @@ export const normalizeBusinessAnchorId = (raw, depth = 0) => {
 };
 
 export const isManufacturerSampleRequest = (requestLike) => {
+  // 크레딧/정산·집하 수수료 skip 판정용.
+  // 공정(우편함·포장.발송·추적관리) 진입 자체는 샘플도 허용한다 — 이 헬퍼로 단계를 막지 말 것.
   if (!requestLike || typeof requestLike !== "object") return false;
   const category = String(requestLike?.requestCategory || "").trim();
   return (
@@ -308,15 +312,29 @@ const isMailboxOccupancyCandidate = (requestDocLike) => {
   return isTrackingMailboxOccupyingRequest(requestDocLike);
 };
 
+/**
+ * 우편함 점유 후보 쿼리.
+ *
+ * - 단계: 세척.패킹 / 포장.발송 / (우편함 유지 중) 가공 / 추적관리
+ * - 카테고리: order + 작업용 샘플(rnd_sample, copied_sample) 모두 포함.
+ *   샘플만 칸을 쓰고 있어도 합류·빈칸 판정에 반영되어야 한다.
+ * - R&D 보관(`rnd.doneAt!=null`)은 보통 이 단계에 없으므로 stage 필터로 자연 제외.
+ */
 const buildActiveMailboxOccupancyFilter = ({
-  requestCategory,
   scopeFilter = {},
   excludeRequestMongoId = "",
 }) => {
   const base = {
     ...normalizeScopeFilter(scopeFilter),
     mailboxAddress: { $ne: null },
-    requestCategory,
+    // 정식 의뢰 + 작업용 샘플. 카테고리로 점유를 숨기지 않는다.
+    requestCategory: {
+      $in: [
+        REQUEST_CATEGORY.ORDER,
+        REQUEST_CATEGORY.RND_SAMPLE,
+        REQUEST_CATEGORY.COPIED_SAMPLE,
+      ],
+    },
     manufacturerStage: {
       $in: [...ACTIVE_MAILBOX_OCCUPY_STAGES, "가공", "추적관리"],
     },
@@ -398,9 +416,9 @@ async function loadActiveMailboxOccupancy({
   excludeRequestMongoId = "",
   session = null,
 }) {
+  // 샘플 점유 칸도 합류/충돌 판정에 포함한다 (ORDER-only 금지).
   let activeRequestsQuery = Request.find(
     buildActiveMailboxOccupancyFilter({
-      requestCategory: REQUEST_CATEGORY.ORDER,
       scopeFilter,
       excludeRequestMongoId,
     }),

@@ -10,6 +10,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers.ts
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
+// - 2026-08-22: 작업용 샘플도 우편함·포장.발송·추적관리 동일(크레딧만 isManufacturerSampleRequest skip).
 // - 2026-08-20: 샘플도 패킹 승인 후 포장.발송·우편함 유지(일반 의뢰와 동일).
 // - 2026-08-17: 배송비는 집하 시 차감. 포장.발송 진입은 우편함만 확인.
 // - 2026-08-17: 우편함 배정 SSOT를 가공→세척.패킹으로 옮기고, 포장.발송은 기존 배정 유지.
@@ -1724,10 +1725,12 @@ export async function updateReviewStatusByStage(req, res) {
               scopeFilter: mailboxAllocationScopeFilter,
             });
           } else if (effectiveStage === "packing") {
-            // 샘플도 일반 의뢰와 동일하게 포장.발송 단계로 진행(포장.발송 탭에서 샘플만 삭제 가능).
+            // 작업용 샘플(헥스 확인용 등)도 정식 의뢰와 동일하게 포장.발송으로 진행.
+            // 크레딧 무기록은 아래 isManufacturerSampleRequest 가드에서만 처리.
+            // 포장.발송 탭 MailboxContentsModal에서 샘플만 삭제 가능.
             applyStatusMapping(request, "포장.발송");
           } else if (effectiveStage === "shipping") {
-            // 샘플 의뢰도 일반 의뢰와 동일하게 추적관리 단계로 진행한다.
+            // 작업용 샘플도 정식 의뢰와 동일하게 추적관리로 진행한다.
             applyStatusMapping(request, "추적관리");
           }
         }

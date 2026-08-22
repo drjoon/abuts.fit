@@ -1,18 +1,29 @@
 // related files:
 // - web/frontend/rules.md
-// - web/frontend/src/App.tsx
-// - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
-// - web/backend/controllers/requests/common.review.controller.js
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/request.ts
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/requestFiltering.ts
+// - web/frontend/src/shared/ui/dashboard/WorksheetQueueSummary.tsx
+// change-log:
+// - 2026-08-22: 작업용 샘플(rnd/copied)도 직경 요약·버킷에 정식 의뢰와 동일하게 카운트.
+// - 이전: isAnySampleRequest면 continue → "진행중인 의뢰 N건"과 6/8/10/12 카드 합이 어긋남.
 import { useMemo } from "react";
 import { type DiameterBucketKey } from "@/shared/ui/dashboard/WorksheetDiameterQueueBar";
 import { type WorksheetQueueItem } from "@/shared/ui/dashboard/WorksheetDiameterQueueModal";
 import {
   type ManufacturerRequest,
   getDiameterBucketIndex,
-  isAnySampleRequest,
 } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
 
+/**
+ * 준비(의뢰) 탭 상단 직경별 요약 카드용 큐.
+ *
+ * SSOT (2026-08-22):
+ * - `filteredAndSorted`에 이미 올라온 건은 **작업용 샘플 포함**해 6/8/10/12에 넣는다.
+ * - R&D 보관 샘플(`rnd.doneAt!=null`)은 `requestFiltering`에서 공정 탭 목록에
+ *   안 들어오므로 여기까지 오지 않는다. 이 훅에서 샘플을 다시 걸러내지 않는다.
+ * - 헤더「진행중인 의뢰 N건」(`serverTotal`)과 직경 카드 합이 맞아야 한다.
+ */
 export const useDiameterQueue = (filteredAndSorted: ManufacturerRequest[]) => {
   const diameterQueueForReceive = useMemo(() => {
     const labels: DiameterBucketKey[] = ["6", "8", "10", "12"];
@@ -25,10 +36,7 @@ export const useDiameterQueue = (filteredAndSorted: ManufacturerRequest[]) => {
     };
 
     for (const req of filteredAndSorted) {
-      // Exclude sample requests from the summary counts
-      // (R&D 샘플 + 복사샘플). 카드 리스트에는 그대로 노출한다.
-      const isSampleRequest = isAnySampleRequest(req);
-
+      // 헥스 확인용 무료 샘플(copied_sample) 포함 — 정식 의뢰와 동일 버킷.
       const caseInfos = req.caseInfos || {};
       const bucketIndex = getDiameterBucketIndex(caseInfos.maxDiameter);
       const item: WorksheetQueueItem = {
@@ -54,14 +62,6 @@ export const useDiameterQueue = (filteredAndSorted: ManufacturerRequest[]) => {
         programText: req.description,
         qty: 1,
       };
-
-      if (isSampleRequest) {
-        // Do not count R&D samples in the summary (counts/total/buckets)
-        // If you want the modal to still show samples when clicking a bucket,
-        // remove this continue and push into buckets anyway. Current requirement
-        // is to exclude them from counts only.
-        continue;
-      }
 
       if (bucketIndex === 0) {
         counts[0]++;
