@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-22: 정산 페이지 탭 순서 — 내역·통계·충전. 사이드바 라벨 정산.
 // - 2026-08-19: 크레딧 페이지 진입 시 사업자 me를 기다리지 않음. 충전 탭은 열 때만 마운트.
 // - 2026-08-14: 기공크레딧(정산) 탭 제거. 내역·충전만. ?tab=settlement → ledger.
 // - 2026-08-14: 내역 탭 UI를 기공크레딧 탭과 동일 최신 스타일로 정리(CreditLedgerModal).
@@ -27,7 +28,7 @@
 // - web/frontend/src/shared/ui/skeletons/RequestorCreditsPageSkeleton.tsx
 import { useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
-import { CreditCard, Wallet } from "lucide-react";
+import { CreditCard, BarChart3, Wallet } from "lucide-react";
 import {
   SettingsScaffold,
   type SettingsTabDef,
@@ -36,13 +37,20 @@ import { PaymentTab } from "@/features/settings/tabs/CreditPaymentTab";
 import { CreditLedgerModal } from "@/shared/components/CreditLedgerModal";
 import { useAuthStore } from "@/store/useAuthStore";
 
-type TabKey = "ledger" | "charge";
+import { CreditStatisticsTab } from "@/pages/requestor/credits/components/CreditStatisticsTab";
+
+type TabKey = "ledger" | "stats" | "charge";
 
 export default function RequestorCreditsPage() {
   const { user } = useAuthStore();
   const [searchParams, setSearchParams] = useSearchParams();
   const tabFromUrl = (searchParams.get("tab") as TabKey | null) || "ledger";
-  const activeTab: TabKey = tabFromUrl === "charge" ? "charge" : "ledger";
+  const activeTab: TabKey =
+    tabFromUrl === "charge"
+      ? "charge"
+      : tabFromUrl === "stats"
+        ? "stats"
+        : "ledger";
 
   const tabs = useMemo<SettingsTabDef[]>(
     () => [
@@ -55,6 +63,17 @@ export default function RequestorCreditsPage() {
             <CreditLedgerModal embedded className="h-full" />
           </div>
         ),
+      },
+      {
+        key: "stats",
+        label: "통계",
+        icon: BarChart3,
+        content:
+          activeTab === "stats" ? (
+            <div className="h-full min-h-0 overflow-auto">
+              <CreditStatisticsTab />
+            </div>
+          ) : null,
       },
       {
         key: "charge",

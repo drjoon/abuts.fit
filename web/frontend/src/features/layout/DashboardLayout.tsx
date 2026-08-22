@@ -11,6 +11,7 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPath";
 import { cn } from "@/shared/ui/cn";
 
+// - 2026-08-22: 치과·기공소 사이드바 크레딧 → 정산 라벨.
 // - 2026-08-22: 치과 사이드 — 크레딧 아래「스토어」(/dashboard/store).
 // - 2026-08-21: 기공소(requestor lab) 사이드 고스트「정산」제거(클릭 시 /dashboard 이탈).
 // - 2026-08-21: 기공소·어벗츠기공소 기공의뢰 하위 — 치과로부터 수신 / 어벗츠로 의뢰.
@@ -220,7 +221,7 @@ const buildRequestorSidebarItems = (
   if (kind === "lab") {
     return [
       buildLabGigongRequestSidebarGroup(LAB_RECEIVE_HREF),
-      { icon: Wallet, label: "크레딧", href: CREDITS_HREF },
+      { icon: Wallet, label: "정산", href: CREDITS_HREF },
       ...requestorSidebarCommonTail,
     ];
   }
@@ -248,7 +249,7 @@ const buildRequestorSidebarItems = (
         },
       ],
     },
-    { icon: Wallet, label: "크레딧", href: CREDITS_HREF },
+    { icon: Wallet, label: "정산", href: CREDITS_HREF },
     { icon: Store, label: "스토어", href: STORE_HREF },
     ...requestorSidebarCommonTail,
   ];

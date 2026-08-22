@@ -13,6 +13,7 @@ import {
   listMyLabSettlementBatchItems,
 } from "../../controllers/credits/credit.controller.js";
 import { listMyCreditLedger } from "../../controllers/credits/creditLedger.controller.js";
+import { getMyCreditLedgerStats } from "../../controllers/credits/creditLedgerStats.controller.js";
 import {
   createChargeOrder,
   listMyChargeOrders,
@@ -38,6 +39,7 @@ router.get("/settlement/daily-summary", getLabSettlementDailySummary);
 router.get("/settlement/payouts", listMyLabSettlementBatchItems);
 router.get("/orders", listMyChargeOrders);
 router.get("/ledger", listMyCreditLedger);
+router.get("/ledger/stats", getMyCreditLedgerStats);
 router.get("/b-plan/orders", listMyChargeOrders);
 router.post("/b-plan/orders", createChargeOrder);
 router.post("/orders", createChargeOrder);
