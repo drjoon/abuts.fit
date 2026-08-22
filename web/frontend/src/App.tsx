@@ -115,6 +115,7 @@ import AdminOrganizationVerification from "@/pages/admin/system/AdminOrganizatio
 import AdminCreditPage from "@/pages/admin/credits/AdminCreditPage";
 import RequestorCreditsPage from "@/pages/requestor/credits/RequestorCreditsPage";
 import RequestorStorePage from "@/pages/requestor/store/RequestorStorePage";
+import RequestorStoreProductPage from "@/pages/requestor/store/RequestorStoreProductPage";
 import AdminBusinessPage from "@/pages/admin/businesses/AdminBusinessPage";
 import ReferralGroupsPage from "@/pages/requestor/referralGroups/ReferralGroupsPage";
 import SalesmanPaymentsPage from "@/pages/salesman/SalesmanPaymentsPage";
@@ -748,6 +749,14 @@ const App = () => {
                     element={
                       <RoleProtectedRoute roles={["requestor"]}>
                         <RequestorStorePage />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="store/:productId"
+                    element={
+                      <RoleProtectedRoute roles={["requestor"]}>
+                        <RequestorStoreProductPage />
                       </RoleProtectedRoute>
                     }
                   />
