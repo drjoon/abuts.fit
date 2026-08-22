@@ -1,3 +1,4 @@
+// - 2026-08-22: 구강스캔 없는 PTX — designSourceFiles 없어도 취소·재업로드(어벗 STL 클리어).
 // - 2026-08-22: design_custom_abutment 레거시. 핸드오프는 PTX(labDesigned)·레거시 mode. 취소 복원은 custom_abutment.
 // - 2026-08-21: 디자인 미러 성공 시에만 컨펌 채팅·practice:transfer-updated(치과 상세 작업파일/컨펌 CTA).
 // - 2026-08-21: 구강스캔으로(PTX) 핸드오프 시 skipDesignConfirm 강제 true 제거 — 치과 설정 존중·컨펌 채팅.
@@ -307,6 +308,13 @@ const markPtxRelatedRequestsCancelled = async (transferId) => {
       request.caseInfos.files = sourceRows.slice(1);
       request.caseInfos.designSourceFiles = [];
       clearFilledStlFileOnCaseInfos(request.caseInfos); // stlFile + legacy camFile
+      request.caseInfos.ncFile = undefined;
+    } else if (request.designCompletedAt) {
+      // 구강스캔 없이 디자인만 올린 CA — primary(어벗 STL) 클리어 후 재업로드
+      request.caseInfos.file = undefined;
+      request.caseInfos.files = [];
+      request.caseInfos.designSourceFiles = [];
+      clearFilledStlFileOnCaseInfos(request.caseInfos);
       request.caseInfos.ncFile = undefined;
     }
     request.caseInfos.productMode = PRODUCT_MODE_PRODUCTION;
@@ -943,16 +951,16 @@ export async function cancelDesignHandoff(req, res) {
       ? request.caseInfos.designSourceFiles.map(toStoredFileMeta).filter(Boolean)
       : [];
     const restorePrimary = sourceRows[0] || null;
-    if (!restorePrimary?.s3Key) {
-      return res.status(400).json({
-        success: false,
-        message: "복원할 구강스캔 파일이 없어 취소할 수 없습니다.",
-      });
-    }
 
     if (!request.caseInfos) request.caseInfos = {};
-    request.caseInfos.file = restorePrimary;
-    request.caseInfos.files = sourceRows.slice(1);
+    if (restorePrimary?.s3Key) {
+      request.caseInfos.file = restorePrimary;
+      request.caseInfos.files = sourceRows.slice(1);
+    } else {
+      // 구강스캔 없이 디자인만 올린 PTX — primary(어벗 STL) 클리어 후 재업로드
+      request.caseInfos.file = undefined;
+      request.caseInfos.files = [];
+    }
     request.caseInfos.designSourceFiles = [];
     clearFilledStlFileOnCaseInfos(request.caseInfos); // stlFile + legacy camFile
     request.caseInfos.ncFile = undefined;
