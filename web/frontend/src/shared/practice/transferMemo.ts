@@ -40,7 +40,7 @@ export type AbutmentProductMode =
 
 /** 계정 설정·신규 커스텀어벗 모달 초기값. 치아 레거시 폴백(resolveToothAbutmentProductMode)과 다름 */
 export const DEFAULT_ACCOUNT_ABUTMENT_PRODUCT_MODE =
-  ABUTMENT_PRODUCT_MODE.DESIGN_AND_PRODUCTION;
+  ABUTMENT_PRODUCT_MODE.PRODUCTION;
 
 export const isAbutmentProductMode = (value: unknown): value is AbutmentProductMode =>
   value === ABUTMENT_PRODUCT_MODE.PRODUCTION ||

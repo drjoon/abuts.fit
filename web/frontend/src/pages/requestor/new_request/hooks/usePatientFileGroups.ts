@@ -153,8 +153,9 @@ export function usePatientFileGroups({
         String(patientNameHint || primaryInfo?.patientName || "").trim() ||
         undefined;
 
+      // 묶음 UI만 유지. productMode는 항상 생산만(design_custom_abutment 폐기).
       syncGroupCaseInfos(group, {
-        productMode: "design_custom_abutment",
+        productMode: "custom_abutment",
         workType: "abutment",
         ...(clinicName ? { clinicName } : {}),
         ...(patientName ? { patientName } : {}),
@@ -164,41 +165,17 @@ export function usePatientFileGroups({
   );
 
   /**
-   * 묶음에서 빠져나온 파일의 productMode 복원.
-   * 묶을 때 전원 design_custom_abutment로 올리므로, 분리 시 크기 휴리스틱으로 되돌린다.
-   * 구강스캔(>=3MB) → 디자인+생산, 그 외(어벗 STL 등) → 생산.
-   * (출고 모드·ETA 재계산은 NewRequestPage.refreshShipScheduleAfterLeaveGroup)
+   * 묶음에서 빠져나온 파일의 productMode 복원 — 항상 생산만.
    */
   const restoreProductModeAfterLeaveGroup = useCallback(
     (fileKey: string) => {
-      if (!enableOralScanGrouping) {
-        updateCaseInfos(fileKey, {
-          productMode: "custom_abutment",
-          workType: "abutment",
-          requestedShipDate: undefined,
-        });
-        return;
-      }
-      const file = files.find((f) => toFileKey(f) === fileKey);
-      const size =
-        typeof file?.size === "number"
-          ? file.size
-          : resolveFileSizeBytes(fileKey);
-      if (isLikelyOralScanSize(size)) {
-        updateCaseInfos(fileKey, {
-          productMode: "design_custom_abutment",
-          workType: "abutment",
-          requestedShipDate: undefined,
-        });
-        return;
-      }
       updateCaseInfos(fileKey, {
         productMode: "custom_abutment",
         workType: "abutment",
         requestedShipDate: undefined,
       });
     },
-    [enableOralScanGrouping, files, toFileKey, updateCaseInfos],
+    [updateCaseInfos],
   );
 
   const applyProductionOnlyProductModes = useCallback(
@@ -314,7 +291,7 @@ export function usePatientFileGroups({
         if (next.some((g) => g.fileKeys.includes(key))) continue;
         if (isLikelyOralScanSize(file.size)) {
           updateCaseInfos(key, {
-            productMode: "design_custom_abutment",
+            productMode: "custom_abutment",
             workType: "abutment",
           });
         } else if (isLikelyCustomAbutDesignSize(file.size)) {
@@ -453,7 +430,7 @@ export function usePatientFileGroups({
 
           for (const key of latest.fileKeys) {
             updateCaseInfos(key, {
-              productMode: "design_custom_abutment",
+              productMode: "custom_abutment",
               workType: "abutment",
               ...(clinicHint ? { clinicName: clinicHint } : {}),
               ...(patientHint ? { patientName: patientHint } : {}),
@@ -484,7 +461,7 @@ export function usePatientFileGroups({
         };
         if (isLikelyOralScanSize(file.size)) {
           updateCaseInfos(key, {
-            productMode: "design_custom_abutment",
+            productMode: "custom_abutment",
             workType: "abutment",
             ...nameHints,
           });

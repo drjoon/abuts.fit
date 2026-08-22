@@ -1,4 +1,4 @@
-// change-log:
+// - 2026-08-22: design_custom_abutment 레거시. 핸드오프는 PTX(labDesigned)·레거시 mode. 취소 복원은 custom_abutment.
 // - 2026-08-21: 디자인 미러 성공 시에만 컨펌 채팅·practice:transfer-updated(치과 상세 작업파일/컨펌 CTA).
 // - 2026-08-21: 구강스캔으로(PTX) 핸드오프 시 skipDesignConfirm 강제 true 제거 — 치과 설정 존중·컨펌 채팅.
 // - 2026-08-21: 치과 디자인 컨펌이 필요할 때만 채팅 시스템 메시지(awaiting_design_confirm).
@@ -48,6 +48,7 @@ import {
   repriceAndReschedulePtxAbutmentRequest,
   resolveHexRotationByDesignSoftware,
 } from "../../services/practiceTransferProduction.service.js";
+import { isPtxLabDesignedAbutmentRequest } from "./common.review.helpers.js";
 import { postPracticeTransferSystemChatMessage } from "../../services/chatSystemMessage.service.js";
 import {
   grantAbutmentDesignLabFee,
@@ -103,8 +104,15 @@ const emitAbutmentDesignReadyToPractice = async (transferDoc) => {
   }
 };
 
-const PRODUCT_MODE_DESIGN = "design_custom_abutment";
+const PRODUCT_MODE_DESIGN = "design_custom_abutment"; // 레거시 문서 읽기 전용
 const PRODUCT_MODE_PRODUCTION = "custom_abutment";
+
+/** 핸드오프 가능: 레거시 디자인+생산 mode 또는 PTX 수주 기공소 디자인 */
+function canDesignHandoffRequest(request) {
+  const productMode = String(request?.caseInfos?.productMode || "").trim();
+  if (productMode === PRODUCT_MODE_DESIGN) return true;
+  return isPtxLabDesignedAbutmentRequest(request);
+}
 const DEFAULT_HEX_ROTATION = "STL모델대로";
 
 /** 기공소 대시보드「어벗 > 준비」스냅샷 — 취소/재업로드 직후 stale 방지 */
@@ -301,7 +309,7 @@ const markPtxRelatedRequestsCancelled = async (transferId) => {
       clearFilledStlFileOnCaseInfos(request.caseInfos); // stlFile + legacy camFile
       request.caseInfos.ncFile = undefined;
     }
-    request.caseInfos.productMode = PRODUCT_MODE_DESIGN;
+    request.caseInfos.productMode = PRODUCT_MODE_PRODUCTION;
     request.designCompletedAt = undefined;
     request.designCompletedBy = undefined;
     request.manufacturerStage = "취소";
@@ -381,10 +389,14 @@ export async function handoffDesignToProduction(req, res) {
       await resolvePtxAcceptingLabContext(request);
 
     const productMode = String(request?.caseInfos?.productMode || "").trim();
-    if (productMode !== PRODUCT_MODE_DESIGN) {
+    if (!canDesignHandoffRequest(request)) {
       return res.status(400).json({
         success: false,
-        message: "디자인+생산 의뢰만 핸드오프할 수 있습니다.",
+        message:
+          productMode === PRODUCT_MODE_PRODUCTION &&
+          !isPtxLabDesignedAbutmentRequest(request)
+            ? "생산만 의뢰는 디자인 핸드오프 대상이 아닙니다."
+            : "디자인 핸드오프할 수 있는 의뢰가 아닙니다.",
       });
     }
 
@@ -944,8 +956,8 @@ export async function cancelDesignHandoff(req, res) {
     request.caseInfos.designSourceFiles = [];
     clearFilledStlFileOnCaseInfos(request.caseInfos); // stlFile + legacy camFile
     request.caseInfos.ncFile = undefined;
-    // 재업로드(핸드오프) 가능하도록 디자인+생산 모드로 복원 후, 제조 큐에서는 취소 처리
-    request.caseInfos.productMode = PRODUCT_MODE_DESIGN;
+    // 재업로드(핸드오프) 가능: 생산 mode 유지 + designCompletedAt 클리어(제조 큐 제외)
+    request.caseInfos.productMode = PRODUCT_MODE_PRODUCTION;
     request.designCompletedAt = undefined;
     request.designCompletedBy = undefined;
     request.manufacturerStage = "취소";

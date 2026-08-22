@@ -794,36 +794,26 @@ const NewRequestPageContent = () => {
   );
 
   const resolveCaseProductMode = useCallback(
-    (fileKey: string, info?: CaseInfos | null) => {
-      if (isLabRequestor) return "custom_abutment";
-      if (groupedFileKeys.has(fileKey)) return "design_custom_abutment";
-      return (info?.productMode as string | null | undefined) ?? null;
+    (_fileKey: string, _info?: CaseInfos | null) => {
+      // design_custom_abutment 폐기 — 어벗츠 직접의뢰는 항상 생산만.
+      // 디자인은 기공의뢰(수주 기공소)·labFeeSchedule.
+      void _fileKey;
+      void _info;
+      return "custom_abutment";
     },
-    [groupedFileKeys, isLabRequestor],
+    [],
   );
 
-  /** 구강스캔·디자인+생산은 메시 직경으로 리드를 잡지 않는다 */
+  /** 메시 직경으로 리드(생산만). 레거시 디자인+1일 없음 */
   const resolveCaseLeadDiameter = useCallback(
-    (fileKey: string, info?: CaseInfos | null) => {
-      const productMode = resolveCaseProductMode(fileKey, info);
-      if (productMode === "design_custom_abutment") return null;
+    (_fileKey: string, info?: CaseInfos | null) => {
       return (info?.maxDiameter as number | null | undefined) ?? null;
     },
-    [resolveCaseProductMode],
+    [],
   );
 
-  /** 우측 기본 신속 카드: 첨부 중 디자인+생산이 있으면 +1영업일로 판정 */
-  const expressSelectProductMode = useMemo(() => {
-    if (isLabRequestor) return null;
-    if (groupedFileKeys.size > 0) return "design_custom_abutment";
-    for (const file of files) {
-      const key = toNormalizedFileKey(file);
-      if (caseInfosMap?.[key]?.productMode === "design_custom_abutment") {
-        return "design_custom_abutment";
-      }
-    }
-    return null;
-  }, [groupedFileKeys, files, caseInfosMap, isLabRequestor, toNormalizedFileKey]);
+  /** 우측 기본 신속 카드: 생산 리드만 (디자인+1일 레거시 제거) */
+  const expressSelectProductMode = useMemo(() => null, []);
 
   /** 우측 신속 카드와 동일 조건 — 카드 신속 버튼·모드 강등에도 공통 적용 */
   const expressSelectableGlobal = useMemo(
@@ -880,18 +870,10 @@ const NewRequestPageContent = () => {
           typeof file?.size === "number"
             ? file.size
             : resolveFileSizeBytes(key);
-        const productMode = isLabRequestor
-          ? "custom_abutment"
-          : isLikelyOralScanSize(size)
-            ? "design_custom_abutment"
-            : "custom_abutment";
+        const productMode = "custom_abutment";
         const info = caseInfosMap?.[key];
         const diameter =
-          productMode === "design_custom_abutment"
-            ? null
-            : typeof info?.maxDiameter === "number"
-              ? info.maxDiameter
-              : null;
+          typeof info?.maxDiameter === "number" ? info.maxDiameter : null;
         const preferred =
           info?.shippingMode === "express" ||
           defaultShippingMode === "express"
@@ -931,7 +913,6 @@ const NewRequestPageContent = () => {
       weeklyBatchDays,
       leadTimes,
       updateCaseInfos,
-      isLabRequestor,
     ],
   );
 

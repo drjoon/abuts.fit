@@ -554,12 +554,12 @@ const businessAnchorSchema = new mongoose.Schema(
         type: Boolean,
         default: true,
       },
-      // 커스텀어벗 설정 모달 기본 모드. 미설정·신규 계정은 디자인+생산.
+      // 커스텀어벗 설정 모달 기본 모드. 신규=생산만(design_custom_abutment 청구 폐기).
       // 치아별 스냅샷은 toothWorks.abutmentProductMode (레거시 미설정=생산만).
       defaultAbutmentProductMode: {
         type: String,
         enum: ["custom_abutment", "design_custom_abutment"],
-        default: "design_custom_abutment",
+        default: "custom_abutment",
       },
       // 자동매칭 기공비 — v4 고정수가(카탈로그 평균, 별점 배수 없음). 레거시 v2/v3 스냅샷 호환.
       autoMatchBudget: {

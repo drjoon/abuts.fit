@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-22: resolveMachiningHoldAmountFromPrice — 견적 amount 기준 hold(디자인비 재가산 금지).
 // - 2026-08-09: 디자인+생산 신속비도 커스텀어벗 수만큼 배수.
 // - 2026-08-09: 과금 어벗= customAbutment(임플란트) 치아만. Pontic 등 제외.
 // - 2026-08-09: Pontic은 커스텀어벗 디자인·생산 대상이 아니므로 과금 어벗 수에서 제외.
@@ -229,6 +230,21 @@ export function resolveMachiningSpendAmount({
   const recordedExpress = Math.max(0, Number(withDesign?.expressFee) || 0);
   const amount = Math.max(0, Number(withDesign?.amount) || 0);
   return Math.max(0, amount - recordedExpress);
+}
+
+/**
+ * 의뢰비 hold 금액 = 견적 amount − 신속비(별도 hold).
+ * 디자인비를 productMode로 재가산하지 않는다.
+ * (PTX CA: design_custom_abutment + designFee null 이어도 생산만 1.5만 유지)
+ */
+export function resolveMachiningHoldAmountFromPrice(price) {
+  const amount = Math.max(0, Math.round(Number(price?.amount || 0)));
+  if (!(amount > 0)) return 0;
+  if (String(price?.expressFeeStatus || "") === "cancelled") {
+    return amount;
+  }
+  const expressFee = Math.max(0, Math.round(Number(price?.expressFee || 0)));
+  return Math.max(0, amount - expressFee);
 }
 
 export { toPlainRequestPrice };

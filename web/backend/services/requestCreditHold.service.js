@@ -7,6 +7,7 @@
 // - web/backend/controllers/requests/common.review.helpers.js
 // - web/backend/controllers/requests/mailbox.utils.js
 // change-log:
+// - 2026-08-22: PTX CA hold — price.designFee 없으면 디자인비 0(기본 5천 재가산 금지 → 생산 1.5만).
 // - 2026-08-22: 제출/수락 재진입 시 이미 있는 machining·express·shipping hold 키는 queue 전 skip(insertMany 중복 방지).
 // - 2026-08-21: PTX CA도 기공소 부담 의뢰비는 Request hold. 롤백 시 hold 복원·전환 플래그.
 // - 2026-08-21: 우편함 해제 배송 hold는 형제 박스 hold 있으면 재보류 금지. 레거시 PTX 배송 hold 해제.
@@ -42,7 +43,7 @@ import {
 import { resolveEffectiveShippingMode } from "../controllers/requests/shippingPriority.utils.js";
 import {
   countDesignAbutmentQty,
-  resolveMachiningSpendAmount,
+  resolveMachiningHoldAmountFromPrice,
 } from "../controllers/requests/designPrice.utils.js";
 import { loadCreditSettingsDefaults } from "../utils/creditSettingsDefaults.js";
 import { emitCreditBalanceUpdatedToBusiness } from "../utils/creditRealtime.js";
@@ -531,19 +532,13 @@ async function postOneRequestHold({
   };
 }
 
-function resolveMachiningHoldAmount(request) {
-  const caseInfos = request?.caseInfos || {};
-  const designFeePerTooth = Math.max(
-    0,
-    Number(request?.price?.designFee?.perTooth ?? request?.price?.designFee ?? 0) ||
-      0,
-  );
-  const base = resolveMachiningSpendAmount({
-    price: request?.price,
-    caseInfos,
-    designFeePerTooth: designFeePerTooth || undefined,
-  });
-  return Math.max(0, Math.round(Number(base || 0)));
+/**
+ * 의뢰비 hold 금액 = 견적 amount − 신속비(별도 hold).
+ * 디자인비를 productMode로 재가산하지 않는다.
+ * (PTX CA: design_custom_abutment + designFee null 이어도 생산만 1.5만 유지)
+ */
+export function resolveMachiningHoldAmount(request) {
+  return resolveMachiningHoldAmountFromPrice(request?.price);
 }
 
 function resolveExpressHoldAmount(request) {

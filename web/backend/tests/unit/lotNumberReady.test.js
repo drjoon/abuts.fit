@@ -31,12 +31,40 @@ describe("shouldAssignLotNumberOnReady", () => {
     expect(shouldAssignLotNumberOnReady({ caseInfos: {} })).toBe(true);
   });
 
-  it("skips design-only requests until production handoff", () => {
+  it("skips legacy design_custom_abutment until designCompletedAt", () => {
     expect(
       shouldAssignLotNumberOnReady({
         caseInfos: { productMode: "design_custom_abutment" },
       }),
     ).toBe(false);
+    expect(
+      shouldAssignLotNumberOnReady({
+        caseInfos: { productMode: "design_custom_abutment" },
+        designCompletedAt: new Date(),
+      }),
+    ).toBe(true);
     expect(shouldAssignLotNumberOnReady(null)).toBe(false);
+  });
+
+  it("skips PTX lab-designed custom_abutment until designCompletedAt", () => {
+    expect(
+      shouldAssignLotNumberOnReady({
+        caseInfos: { productMode: "custom_abutment" },
+        partnerBilling: {
+          relatedPracticeTransferId: "6a88f24c4fbdaeb194911256",
+          labDesignedAbutment: true,
+        },
+      }),
+    ).toBe(false);
+    expect(
+      shouldAssignLotNumberOnReady({
+        caseInfos: { productMode: "custom_abutment" },
+        partnerBilling: {
+          relatedPracticeTransferId: "6a88f24c4fbdaeb194911256",
+          labDesignedAbutment: true,
+        },
+        designCompletedAt: new Date(),
+      }),
+    ).toBe(true);
   });
 });

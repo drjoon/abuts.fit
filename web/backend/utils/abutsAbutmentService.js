@@ -111,18 +111,15 @@ export function resolveAbutsAbutmentUnitPrice({
   kind,
 } = {}) {
   void _pricingTier;
-  const isDesign = String(productMode || "").trim() === "design_custom_abutment";
+  // design_custom_abutment 청구 경로 폐기 — 항상 생산 단가(레거시 mode여도 신규 로직는 생산가).
+  // 옛 원장 표시는 저장된 price.amount / designFee를 쓴다.
+  void productMode;
   const normalized = normalizeAbutsAbutmentCreditPrices(prices || {});
   if (String(kind || "").trim() === "round_bar") {
-    return Math.max(
-      0,
-      isDesign
-        ? normalized.membershipRoundBarDesignAndProductionPrice
-        : normalized.membershipRoundBarProductionPrice,
-    );
+    return Math.max(0, normalized.membershipRoundBarProductionPrice);
   }
   const picked = pickAbutsAbutmentCreditPrices(normalized);
-  return isDesign ? picked.designAndProductionPrice : picked.productionPrice;
+  return picked.productionPrice;
 }
 
 /**

@@ -482,7 +482,7 @@ export function buildPtxAbutsProductionQuote({
 
 /**
  * PTX CA: 디자인은 수락 기공소가 하므로 출고 ETA/신속 판정은 생산 리드(custom_abutment).
- * Request.caseInfos.productMode는 핸드오프 전까지 design_custom_abutment를 유지할 수 있다.
+ * Request.caseInfos.productMode는 생성 시점부터 custom_abutment(생산만).
  */
 const PTX_SHIP_SCHEDULE_PRODUCT_MODE = "custom_abutment";
 
@@ -537,8 +537,8 @@ const clampScheduleToTarget = async (productionSchedule, targetYmd) => {
 };
 
 /**
- * 기공소 수락 시 커스텀어벗 → 어벗츠 디자인+생산 의뢰 생성.
- * 소스 파일 = PTX 구강스캔(files, 선택). productMode 고정 design_custom_abutment.
+ * 기공소 수락 시 커스텀어벗 → 어벗츠 생산 의뢰 생성.
+ * 소스 파일 = PTX 구강스캔(files, 선택). productMode 고정 custom_abutment(생산만).
  */
 export async function createAbutmentRequestsFromPracticeTransfer({
   transferDoc,
@@ -709,10 +709,9 @@ export async function createAbutmentRequestsFromPracticeTransfer({
       );
     }
 
-    // Abuts-first: 워크플로(디자인 큐/핸드오프)는 design_custom_abutment 유지.
-    // 기공소→어벗츠 Request 과금은 생산만(플랫폼 1.5만). 치과→기공소는 labFeeSchedule.
-    // 출고 ETA는 기공소 디자인이므로 생산 리드(custom_abutment)로 잡는다.
-    const productMode = "design_custom_abutment";
+    // Abuts-first: Request는 생산만(custom_abutment). 디자인은 수주 기공소·labFeeSchedule.
+    // 기공소→어벗츠 과금=플랫폼 생산 1.5만. 디자인 대기 여부는 labDesignedAbutment+designCompletedAt.
+    const productMode = "custom_abutment";
     const scheduleProductMode = PTX_SHIP_SCHEDULE_PRODUCT_MODE;
 
     const diameterRaw = String(row.abutmentDiameter || "").trim();

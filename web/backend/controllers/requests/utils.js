@@ -955,10 +955,17 @@ async function nextLotLettersBatch(count, session = null) {
 
 export function shouldAssignLotNumberOnReady(requestDoc) {
   if (!requestDoc) return false;
-  return (
-    String(requestDoc?.caseInfos?.productMode || "").trim() !==
-    "design_custom_abutment"
-  );
+  const mode = String(requestDoc?.caseInfos?.productMode || "").trim();
+  const designDone = Boolean(requestDoc?.designCompletedAt);
+  // 레거시 디자인+생산: 핸드오프 전 로트 미발급
+  if (mode === "design_custom_abutment" && !designDone) return false;
+  // PTX 수주 기공소 디자인 대기(신규는 custom_abutment)
+  const relatedId = String(
+    requestDoc?.partnerBilling?.relatedPracticeTransferId || "",
+  ).trim();
+  const labDesigned = requestDoc?.partnerBilling?.labDesignedAbutment !== false;
+  if (relatedId && labDesigned && !designDone) return false;
+  return true;
 }
 
 function getWorkTypePrefix(requestDoc, { defaultPrefix }) {

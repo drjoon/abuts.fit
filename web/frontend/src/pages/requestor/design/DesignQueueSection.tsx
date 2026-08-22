@@ -65,8 +65,9 @@ export const DesignQueueSection = ({
               </button>
             </TooltipTrigger>
             <TooltipContent className="max-w-xs leading-relaxed">
-              어벗생산의뢰(디자인+생산) 큐입니다. 기공의뢰에 포함된 커스텀어벗
-              디자인은 수락 기공소가 담당합니다.
+              레거시 어벗츠 디자인+생산 큐입니다(신규 유입 없음). 기공의뢰
+              커스텀어벗 디자인은 수락 기공소가 담당하며 기공소 수가에
+              포함됩니다.
               <br />
               작업 완료 책임은 의뢰를 수락한 기공소에 있으며, 지연 시 치과와 미리
               상의하세요.

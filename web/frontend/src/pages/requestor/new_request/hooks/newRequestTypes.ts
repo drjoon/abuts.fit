@@ -15,8 +15,8 @@ export type ClinicFavoriteImplant = {
 
 export type RetentionGrooveValue = "none" | "shallow" | "deep";
 
-/** 신규의뢰 상세 모달: 커스텀어벗 생산 vs 커스텀어벗 디자인+생산 */
-export type NewRequestProductMode = "custom_abutment" | "design_custom_abutment";
+/** 신규의뢰: 커스텀어벗 생산만 (design_custom_abutment 폐기) */
+export type NewRequestProductMode = "custom_abutment";
 
 export type ClinicPreset = {
   id: string;

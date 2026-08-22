@@ -336,7 +336,7 @@ export function NewRequestDetailsSection({
     : lockDesignProductMode
       ? {
           ...detailCaseInfosBase,
-          productMode: "design_custom_abutment" as const,
+          productMode: "custom_abutment" as const,
           workType: "abutment" as const,
         }
       : lockProductionProductMode
@@ -370,7 +370,7 @@ export function NewRequestDetailsSection({
         // 구강스캔(묶음·단일)은 항상 디자인+생산
         const nextUpdates: Partial<CaseInfos> = {
           ...updates,
-          productMode: "design_custom_abutment",
+          productMode: "custom_abutment",
           workType: "abutment",
         };
         const keys = group ? group.fileKeys : [detailFileKey];
@@ -418,7 +418,7 @@ export function NewRequestDetailsSection({
         if (group) {
           for (const key of group.fileKeys) {
             updateCaseInfos(key, {
-              productMode: "design_custom_abutment",
+              productMode: "custom_abutment",
               workType: "abutment",
             });
           }
@@ -551,8 +551,7 @@ export function NewRequestDetailsSection({
       const fileKey = toNormalizedFileKey(file);
       const fileCaseInfos = caseInfosMap?.[fileKey] || caseInfos;
       const missingFields: string[] = [];
-      const isDesignCustomMode =
-        fileCaseInfos?.productMode === "design_custom_abutment";
+      const isDesignCustomMode = false; // design_custom_abutment 폐기 — 생산만 검증
 
       if (isDesignCustomMode) {
         if (!fileCaseInfos?.clinicName) missingFields.push("치과명");

@@ -1,4 +1,4 @@
-// change-log:
+// - 2026-08-22: design_custom_abutment 청구 폐기. 생산 단가·신속·배송만 안내.
 // - 2026-08-19: 치과·기공소 디자인+생산 모두 구강지그 제외.
 // - 2026-08-19: 치과 고시 단가=creditSettings 멤버십 생산/디자인+생산. 크레딧 차감과 동일 SSOT.
 // - 2026-08-18: 치과 리메이크를 의뢰 취소와 같은 카드로 분리. 가격 카드 하단 구강스캔/보철 안내 삭제.
@@ -50,7 +50,6 @@ import {
   useSystemSettings
 } from '@/hooks/useSystemSettings';
 import {
-  ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE,
   ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
   formatAbutsAbutmentServiceWon,
   formatAbutsManwon
@@ -186,13 +185,6 @@ export const PricingPolicyDialog = ({
       systemSettings?.creditSettings?.membershipProductionPrice ??
         ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE
     ) || ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE
-  );
-  const designAndProductionPrice = Math.max(
-    0,
-    Number(
-      systemSettings?.creditSettings?.membershipDesignAndProductionPrice ??
-        ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE
-    ) || ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE
   );
   const shippingFee = Math.max(
     0,
@@ -369,16 +361,6 @@ export const PricingPolicyDialog = ({
                   />
                   <div className='h-px bg-slate-100' />
                   <PriceRow
-                    label={
-                      isLab
-                        ? '기공의뢰수신 · 어벗 디자인+생산'
-                        : '구강스캔으로 · 어벗 디자인+생산'
-                    }
-                    value={formatAbutsManwon(designAndProductionPrice)}
-                    unitLabel='1개당 · 구강지그 제외'
-                  />
-                  <div className='h-px bg-slate-100' />
-                  <PriceRow
                     label='커스텀 어벗 신속 출고'
                     value={`+${formatAbutsAbutmentServiceWon(expressFee)}`}
                     unitLabel='1개당'
@@ -391,6 +373,12 @@ export const PricingPolicyDialog = ({
                   />
                 </div>
               </section>
+
+              <p className='text-xs leading-relaxed text-slate-500 px-1'>
+                기공의뢰(구강스캔) 커스텀어벗 디자인은 수주 기공소가 담당하며,
+                기공소 커스텀어벗 수가에 포함됩니다. 기공소→어벗츠 생산비는 위
+                생산 단가입니다.
+              </p>
 
               <div className='grid gap-3 sm:grid-cols-2'>
                 <PolicySection title='의뢰 취소'>
@@ -431,12 +419,6 @@ export const PricingPolicyDialog = ({
                     <>
                       <span className='font-medium text-slate-800'>신속</span>
                       : 낮 12시 컷오프 (당일 / 익영업일)
-                    </>,
-                    <>
-                      <span className='font-medium text-slate-800'>
-                        디자인+생산
-                      </span>
-                      : 아래 리드타임에 +1영업일
                     </>
                   ]}
                 />
@@ -471,7 +453,6 @@ export const PricingPolicyDialog = ({
                     </div>
                     <p className='mt-1 text-xs leading-relaxed text-slate-600'>
                       설정한 출고 요일 중 가장 빠른 날에 함께 출고합니다.
-                      디자인+생산은 +1영업일 후 요일에 맞춥니다.
                     </p>
                   </div>
                   <div className='rounded-lg border border-slate-200/80 bg-white px-3 py-2.5'>
@@ -480,8 +461,7 @@ export const PricingPolicyDialog = ({
                     </div>
                     <p className='mt-1 text-xs leading-relaxed text-slate-600'>
                       영업일 12시 이전은 당일 16:00, 이후·휴일은 익영업일
-                      16:00 목표. 디자인+생산은 +1영업일. 묶음보다 빠를 때만
-                      선택 가능하며, 1개당 +
+                      16:00 목표. 묶음보다 빠를 때만 선택 가능하며, 1개당 +
                       {formatAbutsAbutmentServiceWon(expressFee)}이 추가됩니다.
                     </p>
                   </div>

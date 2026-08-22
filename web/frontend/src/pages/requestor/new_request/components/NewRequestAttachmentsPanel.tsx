@@ -704,7 +704,7 @@ export function NewRequestAttachmentsPanel({
     const productMode = productionOnly
       ? "custom_abutment"
       : forceDesignProductMode
-        ? "design_custom_abutment"
+        ? "custom_abutment"
         : (fileInfo?.productMode ?? null);
     const expressSelectable =
       expressSelectableGlobal &&
@@ -737,8 +737,7 @@ export function NewRequestAttachmentsPanel({
             : null));
     const isDesignMode =
       !productionOnly &&
-      (forceDesignProductMode ||
-        fileInfo?.productMode === "design_custom_abutment");
+      fileInfo?.productMode === "design_custom_abutment"; // 레거시 문서만
 
     return (
       <div className="flex items-center justify-between gap-2">
