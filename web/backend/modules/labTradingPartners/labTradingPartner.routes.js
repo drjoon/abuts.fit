@@ -14,6 +14,7 @@ import {
   getLabFeeSchedule,
   updateLabFeeSchedule,
   updateLabPracticeFeeMultiplier,
+  updateLabPracticePartnerMemo,
 } from "../../controllers/labTradingPartners/labTradingPartner.controller.js";
 
 const router = express.Router();
@@ -46,6 +47,13 @@ router.put(
   authenticate,
   authorize(["requestor", "internalLab", "admin"]),
   updateLabPracticeFeeMultiplier,
+);
+
+router.put(
+  "/practice-partner-memo",
+  authenticate,
+  authorize(["requestor", "internalLab", "admin"]),
+  updateLabPracticePartnerMemo,
 );
 
 router.post(

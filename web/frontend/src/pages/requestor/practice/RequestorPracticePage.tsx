@@ -149,7 +149,7 @@ import { PeriodFilter } from "@/shared/ui/PeriodFilter";
 import { usePeriodStore } from "@/store/usePeriodStore";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
-import { apiFetch } from "@/shared/api/apiClient";
+import { apiFetch, request } from "@/shared/api/apiClient";
 import { useChatMessages } from "@/shared/hooks/useChatMessages";
 import { useChatRooms, type ChatRoom } from "@/shared/hooks/useChatRooms";
 import { anonymizeAutoMatchChatSenderName } from "@/shared/practice/autoMatchIdentity";
@@ -168,9 +168,15 @@ import {
   type PracticeTransferDialogSummaryItem,
 } from "@/shared/components/PracticeTransferDetailChatDialog";
 import { LabPracticeFeeSurchargeControl } from "@/shared/components/practice/LabPracticeFeeSurchargeControl";
+import { CounterpartyMemoStrip } from "@/shared/components/practice/CounterpartyMemoStrip";
 import { parsePracticeTransferFeeQuote } from "@/shared/practice/practiceTransferFeeQuote";
 import { normalizeLabFeeMultiplier, formatLabFeeMultiplierLabel, missingLabFeeItemNames, labFeeItemNamesNeededForToothWorks } from "@/shared/practice/labFeeSchedule";
 import { parseStarDowngrade, parseLabRatingSummary } from "@/shared/practice/practiceLabRating";
+import {
+  LAB_PRACTICE_PARTNER_MEMO_MAX,
+  parseLabPracticePartnerMemoPublic,
+  type LabPracticePartnerMemoPublic,
+} from "@/shared/practice/labPracticePartnerMemo";
 import { buildPracticeWorkPeriodSummaryItem } from "@/shared/practice/practiceWorkPeriod";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import { REQUESTOR_KIND_LABEL } from "@/shared/business/requestorCapabilities";
@@ -987,6 +993,9 @@ export function RequestorPracticeReceivePage({
           feeQuote: parsePracticeTransferFeeQuote(r.feeQuote),
           starDowngrade: parseStarDowngrade(r.starDowngrade),
           labRatingSummary: parseLabRatingSummary(r.labRatingSummary),
+          practicePartnerMemo: parseLabPracticePartnerMemoPublic(
+            r.practicePartnerMemo,
+          ),
           isRemake: Boolean(
             r.isRemake ||
               (r.remake &&
@@ -4739,17 +4748,63 @@ export function RequestorPracticeReceivePage({
             />
           ) : null
         }
+        counterpartyMemoStrip={
+          selectedTransfer?.practiceBusinessAnchorId ? (
+            <CounterpartyMemoStrip
+              viewer="lab"
+              label="치과 메모"
+              memo={selectedTransfer.practicePartnerMemo?.memo || ""}
+              maxLength={LAB_PRACTICE_PARTNER_MEMO_MAX}
+              onSave={async (memo) => {
+                const practiceAnchorId = String(
+                  selectedTransfer?.practiceBusinessAnchorId || "",
+                ).trim();
+                if (!practiceAnchorId || !token) return false;
+                const res = await request<{
+                  data?: {
+                    practicePartnerMemo?: LabPracticePartnerMemoPublic | null;
+                  };
+                  message?: string;
+                }>({
+                  path: "/api/lab-trading-partners/practice-partner-memo",
+                  method: "PUT",
+                  token,
+                  jsonBody: { practiceAnchorId, memo },
+                });
+                if (!res.ok) {
+                  toast({
+                    title: "치과 메모 저장 실패",
+                    description: res.data?.message || "다시 시도해주세요.",
+                    variant: "destructive",
+                  });
+                  return false;
+                }
+                const saved = res.data?.data?.practicePartnerMemo || null;
+                setSelectedTransfer((prev) =>
+                  prev && prev.practiceBusinessAnchorId === practiceAnchorId
+                    ? { ...prev, practicePartnerMemo: saved }
+                    : prev,
+                );
+                setTransfers((prev) =>
+                  prev.map((row) =>
+                    row.practiceBusinessAnchorId === practiceAnchorId
+                      ? { ...row, practicePartnerMemo: saved }
+                      : row,
+                  ),
+                );
+                return true;
+              }}
+            />
+          ) : null
+        }
         summaryItems={[
           { label: "전송ID", value: selectedTransfer?.transferId || "-" },
           { label: "전송시각", value: selectedTransfer ? formatDateTime(selectedTransfer.createdAt) : "-" },
           { label: "치과", value:
-            selectedTransfer?.matchingMode === "auto"
-              ? "자동 매칭"
-              : selectedTransfer?.autoMatch?.openPool
-                ? selectedTransfer?.practice.businessName || "비공개"
-                : selectedTransfer?.practice.businessName || "-" },
+            selectedTransfer?.autoMatch?.openPool
+              ? "비공개"
+              : selectedTransfer?.practice.businessName || "-" },
           { label: "담당자", value:
-            selectedTransfer?.matchingMode === "auto" ||
             selectedTransfer?.autoMatch?.openPool
               ? "비공개"
               : selectedTransfer?.practice.userName || "-" },

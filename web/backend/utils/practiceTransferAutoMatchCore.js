@@ -155,23 +155,47 @@ export const isSubcontractIdentityHiddenFromViewer = (
   }
   const viewerId = String(viewerLabAnchorId || "").trim();
   const primeId = getPrimeLabAnchorId(transfer);
-  return !(viewerId && primeId && viewerId === primeId);
+  if (viewerId && primeId && viewerId === primeId) return false;
+  // assignee 확정 후 — 수행 기공소는 치과 실명 확인
+  if (isPracticeTransferSubcontracted(transfer)) {
+    const assigneeId = getAssigneeLabAnchorId(transfer);
+    if (viewerId && assigneeId && viewerId === assigneeId) return false;
+    return false;
+  }
+  // 하청 풀 open ~ claim 전
+  return true;
 };
 
 export const SUBCONTRACT_DIRECT_BLOCKED_REASON = "subcontract_direct_blocked";
 export const SUBCONTRACT_DIRECT_BLOCKED_MESSAGE =
   "어벗츠기공소를 선택해 주세요.";
 
-/** 하청 수행(assignee ≠ 원청) 이력이 있는 기공소 ID. 해당 치과는 지정 의뢰 불가. */
-export const collectSubcontractDirectBlockedLabIds = (docs = []) => {
-  const blocked = new Set();
+/**
+ * 하청 수행(assignee ≠ 원청) 이력이 있는 기공소 ID. 해당 치과는 지정 의뢰 불가.
+ * 단, 과거 direct 지정 이력이 있는 기공소(기존 거래처)는 제외.
+ */
+export const collectSubcontractDirectBlockedLabIds = (
+  docs = [],
+  { directTargetDocs = [] } = {},
+) => {
+  const subcontractAssignees = new Set();
   const list = Array.isArray(docs) ? docs : [];
   for (const doc of list) {
     const assignee = String(doc?.assigneeLabAnchorId || "").trim();
     const prime = String(doc?.targetLabAnchorId || "").trim();
-    if (assignee && prime && assignee !== prime) blocked.add(assignee);
+    if (!assignee || !prime || assignee === prime) continue;
+    subcontractAssignees.add(assignee);
   }
-  return [...blocked];
+
+  const priorDirectLabs = new Set();
+  const directList = Array.isArray(directTargetDocs) ? directTargetDocs : [];
+  for (const doc of directList) {
+    if (String(doc?.matchingMode || "").trim() !== "direct") continue;
+    const labId = String(doc?.targetLabAnchorId || "").trim();
+    if (labId) priorDirectLabs.add(labId);
+  }
+
+  return [...subcontractAssignees].filter((id) => !priorDirectLabs.has(id));
 };
 
 export const isLabIdBlockedAsDirectPracticeTarget = (

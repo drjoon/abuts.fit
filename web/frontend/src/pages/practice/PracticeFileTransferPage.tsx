@@ -159,7 +159,7 @@ import {
 import { cn } from "@/shared/ui/cn";
 import { usePeriodStore } from "@/store/usePeriodStore";
 import { useToast } from "@/shared/hooks/use-toast";
-import { apiFetch, invalidateApiGetCache } from "@/shared/api/apiClient";
+import { apiFetch, invalidateApiGetCache, request } from "@/shared/api/apiClient";
 import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules";
 import { toTempUploadFileKey, useFilePreUpload } from "@/shared/hooks/useFilePreUpload";
 import {
@@ -202,6 +202,7 @@ import {
   PracticeTransferDetailChatDialog,
 } from "@/shared/components/PracticeTransferDetailChatDialog";
 import { PracticeLabRatingControl } from "@/shared/components/practice/PracticeLabRatingControl";
+import { CounterpartyMemoStrip } from "@/shared/components/practice/CounterpartyMemoStrip";
 import { PracticeTransferIntakeSection } from "@/shared/components/practice/PracticeTransferIntakeSection";
 import { PracticeTransferMobileOralPhotoIntake } from "@/shared/components/practice/PracticeTransferMobileOralPhotoIntake";
 import { useIsMobile } from "@/shared/hooks/use-mobile";
@@ -239,9 +240,14 @@ import { buildPracticeSenderTransferDetailModel } from "@/shared/practice/practi
 import {
   DEFAULT_AUTO_MATCH_MAX_LAB_RATING,
   DEFAULT_AUTO_MATCH_MIN_LAB_RATING,
+  DEFAULT_PRACTICE_LAB_RATING_STARS,
   normalizeAutoMatchMaxLabRating,
   normalizeAutoMatchMinLabRating,
+  normalizePracticeLabRatingMemo,
+  normalizePracticeLabStars,
+  PRACTICE_LAB_RATING_MEMO_MAX,
   resolveAutoMatchEligibleStarBand,
+  type PracticeLabRatingPublic,
 } from "@/shared/practice/practiceLabRating";
 import { PracticeLabRejectedReselectDialog } from "@/shared/components/practice/PracticeLabRejectedReselectDialog";
 import { normalizeMemoSnippets } from "@/shared/components/practice/PracticeTransferRequestIntakePanel";
@@ -1596,6 +1602,7 @@ export const PracticeFileTransferPage = ({
       const senderId = String(message.sender?._id || "");
       const name = anonymizeAutoMatchChatSenderName({
         matchingMode: selectedTransfer?.matchingMode,
+        openPool: selectedTransfer?.autoMatch?.openPool,
         subcontracted: selectedTransfer?.autoMatch?.subcontracted,
         isOwn: senderId === currentUserId,
         counterpartLabel: "기공소",
@@ -1610,6 +1617,7 @@ export const PracticeFileTransferPage = ({
     authUser,
     chatMessages,
     selectedTransfer?.matchingMode,
+    selectedTransfer?.autoMatch?.openPool,
     selectedTransfer?.autoMatch?.subcontracted,
   ]);
 
@@ -7602,6 +7610,70 @@ export const PracticeFileTransferPage = ({
                         : row,
                     ),
                   );
+                }}
+              />
+            ) : null
+          }
+          counterpartyMemoStrip={
+            selectedTransfer &&
+            selectedTransfer.canRateLab &&
+            selectedTransfer.transferMongoIds?.[0] ? (
+              <CounterpartyMemoStrip
+                viewer="practice"
+                label="기공소 메모"
+                memo={selectedTransfer.labRating?.memo || ""}
+                maxLength={PRACTICE_LAB_RATING_MEMO_MAX}
+                onSave={async (memo) => {
+                  const transferId = String(
+                    selectedTransfer.transferMongoIds?.[0] || "",
+                  ).trim();
+                  if (!transferId || !token) return false;
+                  const stars =
+                    normalizePracticeLabStars(selectedTransfer.labRating?.stars) ??
+                    DEFAULT_PRACTICE_LAB_RATING_STARS;
+                  const res = await request<{
+                    data?: { labRating?: PracticeLabRatingPublic };
+                    message?: string;
+                  }>({
+                    path: `/api/practice/transfers/${encodeURIComponent(transferId)}/lab-rating`,
+                    method: "POST",
+                    token,
+                    jsonBody: {
+                      stars,
+                      memo: normalizePracticeLabRatingMemo(memo),
+                    },
+                  });
+                  if (!res.ok) {
+                    toast({
+                      title: "기공소 메모 저장 실패",
+                      description: res.data?.message || "다시 시도해주세요.",
+                      variant: "destructive",
+                    });
+                    return false;
+                  }
+                  const saved = res.data?.data?.labRating;
+                  if (saved && typeof saved === "object") {
+                    const next: PracticeLabRatingPublic = {
+                      stars:
+                        normalizePracticeLabStars(saved.stars) ?? stars,
+                      memo: normalizePracticeLabRatingMemo(saved.memo),
+                      ratingCount: 1,
+                      updatedAt: saved.updatedAt
+                        ? String(saved.updatedAt)
+                        : null,
+                    };
+                    setSelectedTransfer((prev) =>
+                      prev ? { ...prev, labRating: next, canRateLab: true } : prev,
+                    );
+                    setRecentRequests((prev) =>
+                      prev.map((row) =>
+                        row.requestMongoId === transferId
+                          ? { ...row, labRating: next, canRateLab: true }
+                          : row,
+                      ),
+                    );
+                  }
+                  return true;
                 }}
               />
             ) : null

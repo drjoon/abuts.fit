@@ -36,9 +36,8 @@ import {
 import { cn } from "@/shared/ui/cn";
 
 const DIALOG_DESCRIPTION_LINES = [
-  "1~5점. 실제 작업한 기공소(인증 협력 기공소 포함)에 반영됩니다.",
-  "같은 기공소는 치과당 1회만 반영됩니다. 다시 평가하면 이전 별점은 새 평가로 바뀝니다.",
-  "별점은 기공소에 공개, 치과·메모는 비공개입니다. 협력 기공소 실명은 표시되지 않습니다.",
+  "실제 작업한 기공소에 반영됩니다. 치과당 1회, 재평가 시 덮어씁니다.",
+  "별점은 기공소에 공개, 메모는 우리 치과만 볼 수 있습니다.",
 ] as const;
 
 type PracticeLabRatingControlProps = {

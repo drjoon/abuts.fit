@@ -126,6 +126,8 @@ export type PracticeTransferLabReceiveItem = {
   starDowngrade?: StarDowngradeInfo | null;
   /** 수신 기공소 본인 별점 요약 */
   labRatingSummary?: LabRatingSummary | null;
+  /** 기공소→치과 내부 메모(기공소만 조회) */
+  practicePartnerMemo?: { memo: string; updatedAt?: string | null } | null;
   isRemake?: boolean;
   remakeSourceTransferId?: string;
 };

@@ -208,8 +208,8 @@ describe("practiceTransferAutoMatch priority (core)", () => {
     expect(resolveFeeScheduleLabAnchorId(subcontracted)).not.toBe(OID_B);
   });
 
-  test("하청 식별 정보 — 원청만 assignee·치과 실명", () => {
-    const poolOpen = {
+  test("하청 식별 정보 — 원청·수행 기공소만 assignee·치과 실명", () => {
+    const subcontracted = {
       matchingMode: "direct",
       status: "active",
       targetLabAnchorId: OID_A,
@@ -217,14 +217,18 @@ describe("practiceTransferAutoMatch priority (core)", () => {
       assigneeLabName: "협력 기공소",
       autoMatch: { subcontractPoolOpen: false },
     };
-    expect(isSubcontractIdentityHiddenFromViewer(poolOpen, OID_B)).toBe(true);
-    expect(isSubcontractIdentityHiddenFromViewer(poolOpen, OID_A)).toBe(false);
+    expect(isSubcontractIdentityHiddenFromViewer(subcontracted, OID_B)).toBe(
+      false,
+    );
+    expect(isSubcontractIdentityHiddenFromViewer(subcontracted, OID_A)).toBe(
+      false,
+    );
 
-    const fieldsForPartner = toAutoMatchApiFieldsCore(poolOpen, OID_B);
-    expect(fieldsForPartner.assigneeLabAnchorId).toBeUndefined();
+    const fieldsForPartner = toAutoMatchApiFieldsCore(subcontracted, OID_B);
+    expect(fieldsForPartner.assigneeLabAnchorId).toBe(OID_B);
     expect(fieldsForPartner.autoMatch?.subcontracted).toBe(true);
 
-    const fieldsForPrime = toAutoMatchApiFieldsCore(poolOpen, OID_A);
+    const fieldsForPrime = toAutoMatchApiFieldsCore(subcontracted, OID_A);
     expect(fieldsForPrime.assigneeLabAnchorId).toBe(OID_B);
     expect(fieldsForPrime.assigneeLabName).toBe("협력 기공소");
   });
@@ -275,5 +279,41 @@ describe("practiceTransferAutoMatch priority (core)", () => {
     expect(blocked).toEqual([OID_B]);
     expect(isLabIdBlockedAsDirectPracticeTarget(OID_B, blocked)).toBe(true);
     expect(isLabIdBlockedAsDirectPracticeTarget(OID_A, blocked)).toBe(false);
+  });
+
+  test("과거 direct 지정 이력이 있으면 지정 차단 제외(기존 거래처)", () => {
+    const blocked = collectSubcontractDirectBlockedLabIds(
+      [
+        {
+          targetLabAnchorId: OID_A,
+          assigneeLabAnchorId: OID_B,
+          createdAt: new Date("2026-08-01T10:00:00+09:00"),
+        },
+      ],
+      {
+        directTargetDocs: [
+          {
+            matchingMode: "direct",
+            targetLabAnchorId: OID_B,
+            createdAt: new Date("2026-07-01T10:00:00+09:00"),
+          },
+        ],
+      },
+    );
+    expect(blocked).toEqual([]);
+    expect(isLabIdBlockedAsDirectPracticeTarget(OID_B, blocked)).toBe(false);
+  });
+
+  test("direct 이력 없이 Abuts 하청으로만 만난 기공소는 차단", () => {
+    const blocked = collectSubcontractDirectBlockedLabIds(
+      [
+        {
+          targetLabAnchorId: OID_A,
+          assigneeLabAnchorId: OID_B,
+        },
+      ],
+      { directTargetDocs: [] },
+    );
+    expect(blocked).toEqual([OID_B]);
   });
 });

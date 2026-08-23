@@ -97,13 +97,25 @@ export async function loadSubcontractDirectBlockedLabAnchorIds(
 ) {
   const practiceId = String(practiceAnchorId || "").trim();
   if (!practiceId || !Types.ObjectId.isValid(practiceId)) return [];
-  const docs = await PracticeTransfer.find({
-    practiceBusinessAnchorId: new Types.ObjectId(practiceId),
-    assigneeLabAnchorId: { $exists: true, $ne: null },
-  })
-    .select({ assigneeLabAnchorId: 1, targetLabAnchorId: 1 })
-    .lean();
-  return collectSubcontractDirectBlockedLabIds(docs);
+  const practiceOid = new Types.ObjectId(practiceId);
+  const [subcontractDocs, directTargetDocs] = await Promise.all([
+    PracticeTransfer.find({
+      practiceBusinessAnchorId: practiceOid,
+      assigneeLabAnchorId: { $exists: true, $ne: null },
+    })
+      .select({ assigneeLabAnchorId: 1, targetLabAnchorId: 1, createdAt: 1 })
+      .lean(),
+    PracticeTransfer.find({
+      practiceBusinessAnchorId: practiceOid,
+      matchingMode: "direct",
+      targetLabAnchorId: { $exists: true, $ne: null },
+    })
+      .select({ targetLabAnchorId: 1, matchingMode: 1, createdAt: 1 })
+      .lean(),
+  ]);
+  return collectSubcontractDirectBlockedLabIds(subcontractDocs, {
+    directTargetDocs,
+  });
 }
 
 export async function assertLabAllowedAsDirectPracticeTarget({
@@ -122,20 +134,32 @@ export async function assertLabAllowedAsDirectPracticeTarget({
   throw err;
 }
 
-/** 치과에는 원청(어벗츠기공소)만 보이고, 하청 기공소는 숨긴다. */
+/** 하청 풀 open 중에만 치과에 원청(어벗츠) 표시. assignee 확정 후 수행 기공소 실명. */
 export const redactAutoMatchLabIdentity = (
   matchingMode,
   { targetLabName = "", targetLabAnchorId = null } = {},
   { reveal = false, transfer = null } = {},
 ) => {
   const hideSubcontractAssignee =
-    Boolean(transfer) &&
-    isPracticeTransferSubcontracted(transfer) &&
-    !reveal;
+    Boolean(transfer) && !reveal && isSubcontractPoolOpen(transfer);
   if (
     reveal ||
     (!isAutoMatchMode({ matchingMode }) && !hideSubcontractAssignee)
   ) {
+    if (
+      Boolean(transfer) &&
+      !reveal &&
+      isPracticeTransferSubcontracted(transfer) &&
+      !isSubcontractPoolOpen(transfer)
+    ) {
+      const assigneeName = String(transfer?.assigneeLabName || "").trim();
+      const assigneeId = getAssigneeLabAnchorId(transfer);
+      return {
+        targetLabName:
+          assigneeName || CERTIFIED_PARTNER_LAB_DISPLAY_NAME,
+        targetLabAnchorId: assigneeId || targetLabAnchorId || null,
+      };
+    }
     return {
       targetLabName: String(targetLabName || "").trim(),
       targetLabAnchorId: targetLabAnchorId || null,

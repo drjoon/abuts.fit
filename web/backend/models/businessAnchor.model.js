@@ -469,6 +469,22 @@ const businessAnchorSchema = new mongoose.Schema(
       ],
       default: [],
     },
+    // 기공소→치과 내부 메모. 치과당 1건(재저장 시 덮어쓰기). 기공소만 조회.
+    labPracticePartnerMemos: {
+      type: [
+        {
+          _id: false,
+          practiceAnchorId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "BusinessAnchor",
+            required: true,
+          },
+          memo: { type: String, default: "" },
+          updatedAt: { type: Date, default: null },
+        },
+      ],
+      default: [],
+    },
     // 치과→기공소 rating(1~5)·메모. 별점은 기공소 공개, 치과·메모는 비공개.
     // 치과·기공소 쌍당 1건(재평가 시 덮어쓰기). ratingCount는 항상 1(집계는 평가 치과 수).
     // related: web/backend/utils/practiceLabRating.js

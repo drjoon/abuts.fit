@@ -48,6 +48,12 @@ import {
   resolvePlatformFeeRate,
 } from "../../services/creditRevenuePolicy.service.js";
 import { invalidatePracticeTransferQuoteCaches } from "../../services/practiceTransferBilling.service.js";
+import {
+  findLabPracticePartnerMemo,
+  normalizeLabPracticePartnerMemo,
+  toLabPracticePartnerMemoPublicApi,
+  upsertLabPracticePartnerMemoList,
+} from "../../utils/labPracticePartnerMemo.js";
 import { emitAppEventToRoles, emitAppEventToUser } from "../../socket.js";
 
 /**
@@ -800,6 +806,79 @@ export async function updateLabPracticeFeeMultiplier(req, res) {
     return res.status(500).json({
       success: false,
       message: "기공수가 할증을 저장하지 못했습니다.",
+    });
+  }
+}
+
+export async function updateLabPracticePartnerMemo(req, res) {
+  try {
+    const labAnchorId = String(req.user?.businessAnchorId || "").trim();
+    if (!labAnchorId || !Types.ObjectId.isValid(labAnchorId)) {
+      return res.status(403).json({
+        success: false,
+        message: "기공소 사업자만 이용할 수 있습니다.",
+      });
+    }
+    const practiceAnchorId = String(req.body?.practiceAnchorId || "").trim();
+    if (!practiceAnchorId || !Types.ObjectId.isValid(practiceAnchorId)) {
+      return res.status(400).json({
+        success: false,
+        message: "치과 사업자 ID가 필요합니다.",
+      });
+    }
+    const practice = await BusinessAnchor.findById(practiceAnchorId)
+      .select({
+        _id: 1,
+        businessType: 1,
+        requestorKind: 1,
+        requestorCapabilities: 1,
+      })
+      .lean();
+    if (!practice || String(practice.businessType || "") !== "requestor") {
+      return res.status(404).json({
+        success: false,
+        message: "치과 사업자를 찾을 수 없습니다.",
+      });
+    }
+    if (normalizeRequestorKind(practice.requestorKind) === "lab") {
+      return res.status(400).json({
+        success: false,
+        message: "의뢰 발신자(치과)에만 메모를 남길 수 있습니다.",
+      });
+    }
+
+    const memo = normalizeLabPracticePartnerMemo(req.body?.memo);
+    const lab = await BusinessAnchor.findById(labAnchorId)
+      .select({ labPracticePartnerMemos: 1 })
+      .lean();
+    const nextList = upsertLabPracticePartnerMemoList(
+      lab?.labPracticePartnerMemos,
+      practiceAnchorId,
+      memo,
+    ).map((row) => ({
+      practiceAnchorId: new Types.ObjectId(String(row.practiceAnchorId)),
+      memo: normalizeLabPracticePartnerMemo(row.memo),
+      updatedAt: row.updatedAt ? new Date(row.updatedAt) : new Date(),
+    }));
+
+    await BusinessAnchor.findByIdAndUpdate(labAnchorId, {
+      $set: { labPracticePartnerMemos: nextList },
+    });
+
+    return res.json({
+      success: true,
+      data: {
+        practiceAnchorId,
+        practicePartnerMemo: toLabPracticePartnerMemoPublicApi(
+          findLabPracticePartnerMemo(nextList, practiceAnchorId),
+        ),
+      },
+    });
+  } catch (e) {
+    console.error("[labTradingPartners] updateLabPracticePartnerMemo error", e);
+    return res.status(500).json({
+      success: false,
+      message: "치과 메모를 저장하지 못했습니다.",
     });
   }
 }

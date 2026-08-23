@@ -23,27 +23,30 @@ export const shouldAnonymizeLabViewClinicIdentity = ({
   openPool,
   practiceBusinessName,
   viewerIsInternalLab = false,
+  subcontracted = false,
 }: {
   matchingMode?: string | null;
   openPool?: boolean;
   practiceBusinessName?: string | null;
   viewerIsInternalLab?: boolean;
+  subcontracted?: boolean;
 }) => {
   if (viewerIsInternalLab) return false;
+  if (Boolean(openPool)) return true;
+  if (Boolean(subcontracted)) return false;
   return (
     isAutoMatchModeValue(matchingMode) ||
-    Boolean(openPool) ||
     isRedactedPracticeDisplayName(practiceBusinessName)
   );
 };
 
 export const shouldAnonymizePracticeViewLabIdentity = ({
-  matchingMode,
-  subcontracted,
+  openPool,
 }: {
   matchingMode?: string | null;
   subcontracted?: boolean;
-}) => Boolean(subcontracted) && !isAutoMatchModeValue(matchingMode);
+  openPool?: boolean;
+}) => Boolean(openPool);
 
 export const displayAutoMatchCounterpartyName = (
   matchingMode: string | null | undefined,
@@ -81,6 +84,7 @@ export const anonymizeAutoMatchChatSenderName = ({
       openPool,
       practiceBusinessName,
       viewerIsInternalLab,
+      subcontracted,
     })
   ) {
     return counterpartLabel;
@@ -89,6 +93,7 @@ export const anonymizeAutoMatchChatSenderName = ({
     shouldAnonymizePracticeViewLabIdentity({
       matchingMode,
       subcontracted,
+      openPool,
     })
   ) {
     return counterpartLabel;

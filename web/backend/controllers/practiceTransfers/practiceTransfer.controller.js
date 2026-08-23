@@ -91,6 +91,10 @@ import {
   LAB_OUTSIDE_STAR_BAND_MESSAGE,
   LAB_OUTSIDE_STAR_BAND_REASON,
 } from "../../utils/practiceLabRating.js";
+import {
+  findLabPracticePartnerMemo,
+  toLabPracticePartnerMemoPublicApi,
+} from "../../utils/labPracticePartnerMemo.js";
 import ChatRoom from "../../models/chatRoom.model.js";
 import {
   postPracticeTransferSystemChatMessage,
@@ -756,8 +760,7 @@ const canCancelPracticeTransferByManufacturerStage = (stage) => {
 const toVirtualRequestRows = (transferDoc) => {
   const transferId = String(transferDoc?.transferId || "").trim();
   const matchingMode = isAutoMatchMode(transferDoc) ? "auto" : "direct";
-  const handledByCertifiedPartner =
-    isPracticeTransferSubcontracted(transferDoc);
+  const handledByCertifiedPartner = isSubcontractPoolOpen(transferDoc);
   const labIdentity = redactAutoMatchLabIdentity(
     matchingMode,
     {
@@ -4130,7 +4133,7 @@ export async function getReceivedPracticeTransfers(req, res) {
     ] = await Promise.all([
       labAnchorId && Types.ObjectId.isValid(labAnchorId)
         ? BusinessAnchor.findById(labAnchorId)
-            .select({ labPracticeFeeMultipliers: 1 })
+            .select({ labPracticeFeeMultipliers: 1, labPracticePartnerMemos: 1 })
             .lean()
         : null,
       labAnchorId && Types.ObjectId.isValid(labAnchorId)
@@ -4266,6 +4269,14 @@ export async function getReceivedPracticeTransfers(req, res) {
         })),
         feeQuote,
         labRatingSummary,
+        practicePartnerMemo: practiceAnchorIdForSurcharge
+          ? toLabPracticePartnerMemoPublicApi(
+              findLabPracticePartnerMemo(
+                labMultiplierDoc?.labPracticePartnerMemos,
+                practiceAnchorIdForSurcharge,
+              ),
+            )
+          : null,
         ...toRemakeApiFields(doc),
       };
     });
