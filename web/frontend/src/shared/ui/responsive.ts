@@ -32,7 +32,7 @@ export const RESPONSIVE = {
   pageSplitBalanced:
     "grid grid-cols-1 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] gap-3",
 
-  /** Scrollable data table shell — scrollbar rendered on top via .scroll-x-bar-top */
+  /** Horizontal scroll shell (scrollbar on top). Wrap table only — not a flex-1 vertical scroller. */
   tableShell: "scroll-x-bar-top w-full min-w-0",
   tableMinWide: "w-full min-w-[560px]",
   tableMinExtraWide: "w-full min-w-[920px]",

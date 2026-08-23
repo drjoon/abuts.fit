@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-23: 내역 테이블 — scroll-x-bar-top을 flex-1 세로 스크롤과 분리(rotateX로 행이 아래로 붙던 문제).
 // - 2026-08-22: 기공소→치과 배송 무료 — lab_shipping hold 미표시·레거시 baked 제거. 소비총액=기공비+(→어벗츠 박스만).
 // - 2026-08-21: 어벗디자인 상세 — PTX 레거시 배송 hold는 합산에서 제외(Request 박스 SSOT).
 // - 2026-08-21: 어벗디자인 상세 — 의뢰비·배송비에 지급완료/지급보류 뱃지.
@@ -2588,12 +2589,10 @@ export const CreditLedgerModal = ({
 
           <div
             ref={scrollRef}
-            className={cn(
-              "min-h-0 flex-1 overflow-y-auto rounded-2xl border border-slate-200/80 bg-white/70 shadow-sm",
-              RESPONSIVE.tableShell,
-            )}
+            className="min-h-0 flex-1 overflow-y-auto rounded-2xl border border-slate-200/80 bg-white/70 shadow-sm"
           >
-            <Table className={RESPONSIVE.tableMinExtraWide}>
+            <div className={RESPONSIVE.tableShell}>
+              <Table className={RESPONSIVE.tableMinExtraWide}>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
                   <TableHead className="w-[190px] text-center">
@@ -2874,7 +2873,8 @@ export const CreditLedgerModal = ({
                   </TableRow>
                 )}
               </TableBody>
-            </Table>
+              </Table>
+            </div>
 
             {hasMore ? (
               <div ref={sentinelRef} className="h-8" aria-hidden="true" />
