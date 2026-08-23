@@ -5,6 +5,7 @@
 // - web/backend/modules/admin/admin.routes.js
 // - web/frontend/src/pages/admin/dashboard/AdminDashboardPage.tsx
 // change-log:
+// - 2026-08-23: ExoCAD 확정 계정도 목록에 포함(보기/수정). pendingCount·confirmedCount 분리.
 // - 2026-08-21: pending SSOT = 관리자 hexVerificationResultHex 미확정
 // - 2026-08-21: ExoCAD 헥스 확인 진행중 목록·관리자 완료 API
 
@@ -39,7 +40,7 @@ const pickBusinessName = (anchor) => {
 };
 
 /**
- * ExoCAD 설정 + 관리자 헥스 미확정 BusinessAnchor 목록.
+ * ExoCAD BusinessAnchor 목록(진행중 + 확정).
  * pending SSOT: hexVerificationResultHex 없음.
  * GET /api/admin/hex-verification/in-progress
  */
@@ -47,11 +48,6 @@ export const listHexVerificationInProgress = asyncHandler(async (_req, res) => {
   const anchors = await BusinessAnchor.find({
     businessType: { $in: REQUESTOR_ORG_TYPES },
     "requestSettings.designSoftware": "ExoCAD",
-    $or: [
-      { "requestSettings.hexVerificationResultHex": null },
-      { "requestSettings.hexVerificationResultHex": { $exists: false } },
-      { "requestSettings.hexVerificationResultHex": "" },
-    ],
   })
     .select({
       name: 1,
@@ -61,7 +57,7 @@ export const listHexVerificationInProgress = asyncHandler(async (_req, res) => {
       updatedAt: 1,
     })
     .sort({ updatedAt: -1 })
-    .limit(200)
+    .limit(500)
     .lean();
 
   const anchorIds = (anchors || [])
@@ -81,6 +77,7 @@ export const listHexVerificationInProgress = asyncHandler(async (_req, res) => {
             email: 1,
             businessAnchorId: 1,
             "requestSettings.hexVerificationResultHex": 1,
+            "requestSettings.hexVerificationCompletedAt": 1,
             "requestSettings.defaultManufacturerHexRotation": 1,
             "requestSettings.designSoftware": 1,
             "requestSettings.exoCadVersion": 1,
@@ -133,11 +130,20 @@ export const listHexVerificationInProgress = asyncHandler(async (_req, res) => {
         String(ownerRs.designSoftware || "").trim() ||
         String(rs.designSoftware || "").trim() ||
         "ExoCAD";
+      if (designSoftware !== "ExoCAD") return null;
+
       const pending = isHexVerificationPending({
         designSoftware,
         adminVerifiedHex,
       });
-      if (!pending) return null;
+      const completedAtRaw =
+        ownerRs.hexVerificationCompletedAt || rs.hexVerificationCompletedAt;
+      const completedAt =
+        completedAtRaw instanceof Date
+          ? completedAtRaw
+          : completedAtRaw
+            ? new Date(completedAtRaw)
+            : null;
 
       return {
         businessAnchorId: anchorId,
@@ -150,6 +156,7 @@ export const listHexVerificationInProgress = asyncHandler(async (_req, res) => {
         exoCadVersion:
           normalizeExoCadVersion(ownerRs.exoCadVersion) ||
           normalizeExoCadVersion(rs.exoCadVersion),
+        status: pending ? "pending" : "confirmed",
         hexVerificationSamplePending: pending,
         manufacturerDefaultHex:
           String(
@@ -158,6 +165,10 @@ export const listHexVerificationInProgress = asyncHandler(async (_req, res) => {
               "",
           ).trim() || null,
         adminVerifiedHex,
+        completedAt:
+          completedAt && !Number.isNaN(completedAt.getTime())
+            ? completedAt
+            : null,
         sampleRequestId: sample?.requestId || null,
         sampleStage: sample?.manufacturerStage || null,
         sampleCreatedAt: sample?.createdAt || null,
@@ -165,19 +176,40 @@ export const listHexVerificationInProgress = asyncHandler(async (_req, res) => {
     })
     .filter(Boolean);
 
+  // 진행중(미확정)을 위에, 확정은 완료 시각 최신순.
+  items.sort((a, b) => {
+    if (a.status !== b.status) {
+      return a.status === "pending" ? -1 : 1;
+    }
+    if (a.status === "confirmed") {
+      const aAt = a.completedAt ? new Date(a.completedAt).getTime() : 0;
+      const bAt = b.completedAt ? new Date(b.completedAt).getTime() : 0;
+      return bAt - aAt;
+    }
+    return 0;
+  });
+
+  const pendingCount = items.filter((i) => i.status === "pending").length;
+  const confirmedCount = items.filter((i) => i.status === "confirmed").length;
+
   return res
     .status(200)
     .json(
       new ApiResponse(
         200,
-        { count: items.length, items },
-        "헥스 확인 진행중 목록",
+        {
+          count: pendingCount,
+          pendingCount,
+          confirmedCount,
+          items,
+        },
+        "ExoCAD 헥스 확인 목록",
       ),
     );
 });
 
 /**
- * 관리자 헥스 확인 완료.
+ * 관리자 헥스 확인 완료(또는 확정값 수정).
  * POST /api/admin/hex-verification/:businessAnchorId/complete
  * body: { hexRotation: "STL모델대로" | "헥스30도회전" }
  */
@@ -250,7 +282,7 @@ export const completeHexVerification = asyncHandler(async (req, res) => {
         completedBy: actorId ? String(actorId) : null,
         updatedOwnerCount: owners.length,
       },
-      "헥스 확인이 완료되었습니다.",
+      "헥스 확인이 저장되었습니다.",
     ),
   );
 });

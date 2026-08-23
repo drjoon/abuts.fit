@@ -524,6 +524,9 @@ Notes:
   - ExoCAD 첫 설정 후 첫 제조 의뢰는 반대 헥스 확인용 복사샘플(`caseInfos.hexVerificationSample`)을 함께 생성한다.
     준비 카드·세척.패킹 라벨 상단·진행중/출고예정에 **「헥스 확인용 무료 샘플」**을 표시한다.
     라이노(2-filled)는 원본만 실행하고 샘플에 stlFile(legacy camFile 미러)을 복사한다. Esprit NC(ncFile)는 샘플의 반대 헥스로 별도 생성.
+  - 관리자 대시보드「헥스 회전 확인」모달은 진행중·확정 ExoCAD 계정을 모두 보여 주고, 확정값은 보기/수정할 수 있다.
+  - PreviewModal ExoCAD 「확정/미정」뱃지는 `requestor/business.requestSettings.hexVerificationResultHex` SSOT.
+    가공 큐 스냅샷에 없으면 full request 보강(`usePreviewLoader`).
   - 라벨 매핑/정규화 함수는 fallback 기본값을 두지 않고 명시 분기 + default error를 사용합니다.
   - 관련 파일:
     - `src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`

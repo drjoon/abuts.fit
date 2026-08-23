@@ -8,6 +8,7 @@
 // - web/backend/controllers/requests/creation.from-draft.controller.js
 // - web/backend/controllers/requests/designHandoff.controller.js
 // change-log:
+// - 2026-08-23: normalizeRequestForResponse business.requestSettings에 hexVerificationResultHex 포함.
 // - 2026-08-19: 90일 1만원·주문량할인 폐지. 단가=플랫폼 설정(+신속 expressFee).
 // - 2026-08-19: computePriceForRequest skipExistingLookup — from-draft 중복조회 재사용.
 // - 2026-08-19: computePriceForRequest는 pricingBaseDate 재사용. 제출 시 로트는 ensureLotNumbersOnReadyEnter로 $inc 1회.
@@ -16,6 +17,7 @@ import Request from "../../models/request.model.js";
 import User from "../../models/user.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import SystemSettings from "../../models/systemSettings.model.js";
+import { resolveAdminVerifiedHexFromSettings } from "../../utils/designSoftwareHex.js";
 import LotCounter from "../../models/lotCounter.model.js";
 import Connection from "../../models/connection.model.js";
 import {
@@ -761,7 +763,14 @@ export async function normalizeRequestForResponse(requestDoc) {
     const requestorOrgDoc = await BusinessAnchor.findOne({
       _id: new Types.ObjectId(requestorOrgId),
     })
-      .select({ name: 1, metadata: 1 })
+      .select({
+        name: 1,
+        metadata: 1,
+        "requestSettings.designSoftware": 1,
+        "requestSettings.exoCadVersion": 1,
+        "requestSettings.anodizingEnabled": 1,
+        "requestSettings.hexVerificationResultHex": 1,
+      })
       .lean();
     if (requestorOrgDoc) {
       const metadata =
@@ -776,11 +785,46 @@ export async function normalizeRequestForResponse(requestDoc) {
         typeof metadata?.companyName === "string"
           ? metadata.companyName.trim()
           : "";
+      const requestSettingsRaw =
+        requestorOrgDoc.requestSettings &&
+        typeof requestorOrgDoc.requestSettings === "object"
+          ? requestorOrgDoc.requestSettings
+          : undefined;
+      const requestorSettingsRaw =
+        obj?.requestor &&
+        typeof obj.requestor === "object" &&
+        obj.requestor.requestSettings &&
+        typeof obj.requestor.requestSettings === "object"
+          ? obj.requestor.requestSettings
+          : undefined;
+      const adminVerifiedHex = resolveAdminVerifiedHexFromSettings(
+        requestorSettingsRaw,
+        requestSettingsRaw,
+      );
       // SSOT: metadata 사용 (extracted 레거시 제거)
       obj.business = {
         _id: requestorOrgId,
         name: orgName || companyName || undefined,
         metadata: metadata,
+        requestSettings: {
+          designSoftware:
+            String(
+              requestorSettingsRaw?.designSoftware ||
+                requestSettingsRaw?.designSoftware ||
+                "",
+            ).trim() || null,
+          exoCadVersion:
+            String(
+              requestorSettingsRaw?.exoCadVersion ||
+                requestSettingsRaw?.exoCadVersion ||
+                "",
+            ).trim() || null,
+          anodizingEnabled:
+            typeof requestSettingsRaw?.anodizingEnabled === "boolean"
+              ? requestSettingsRaw.anodizingEnabled
+              : null,
+          hexVerificationResultHex: adminVerifiedHex,
+        },
       };
       obj.requestorBusinessAnchor = obj.business;
     }

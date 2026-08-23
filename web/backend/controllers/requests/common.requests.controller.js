@@ -1,7 +1,8 @@
 // change-log:
 // - 2026-08-21: 의뢰자 어벗츠로의뢰 취소 — PTX(치과 기공의뢰) 연동 CA는 거부(기공의뢰수신 작업취소 SSOT).
 // - 2026-08-21: GET /my에 referenceIds 포함(헥스 확인 쌍 UI 동시 제거용)
-// - 2026-08-21: 헥스 확인 pending은 관리자 hexVerificationResultHex SSOT(취소 시 플래그 재활성 불필요)
+// - 2026-08-23: ExoCAD 헥스 확인 pending은 관리자 hexVerificationResultHex SSOT(취소 시 플래그 재활성 불필요)
+// - 2026-08-23: getRequestById requestor populate에 hexVerificationResultHex 포함.
 // - 2026-08-21: 워크시트 준비 목록에서 헥스 샘플 filled STL 누락을 원본에서 보정
 // - 2026-08-21: 의뢰 취소/삭제 시 ExoCAD 헥스 확인용 샘플과 원본을 함께 취소.
 // - 2026-08-21: worksheet delivery populate에 events 위치·상태 포함. GET /my에 deliveryInfo 포함.
@@ -2292,7 +2293,7 @@ export async function getRequestById(req, res) {
       .select("-messages")
       .populate(
         "requestor",
-        "name email phoneNumber business businessAnchorId role",
+        "name email phoneNumber business businessAnchorId role requestSettings.hexVerificationResultHex requestSettings.designSoftware requestSettings.exoCadVersion",
       );
 
     if (!request) {

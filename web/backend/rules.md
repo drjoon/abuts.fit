@@ -385,6 +385,10 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     (`findHexVerificationCancelSiblings` → `updateRequestStatus` / batch / `deleteRequest`).
   - 관리자 헥스 확인 완료: `requestSettings.hexVerificationCompletedAt/By` + `hexVerificationResultHex`
     (`STL모델대로`|`헥스30도회전`). 대시보드 카드·`GET/POST /api/admin/hex-verification/*`.
+    - `GET .../in-progress`는 ExoCAD 전체(진행중+확정)를 반환한다. `pendingCount`/`confirmedCount`/`status`.
+    - `POST .../complete`는 최초 확정뿐 아니라 확정값 수정도 허용한다.
+  - 의뢰 단건(`GET /api/requests/:id` → `normalizeRequestForResponse`)의 `business.requestSettings`에도
+    `hexVerificationResultHex`를 포함해 제조사 PreviewModal 확정/미정 뱃지에 쓴다.
   - ExoCAD 제조사 헥스 해석 SSOT(`resolveExoCadManufacturerHexRotation`):
     1) 첫의뢰 pending → designSoftware(+exoCadVersion) 강제
     2) 제조사 `defaultManufacturerHexRotation`(User→BA)

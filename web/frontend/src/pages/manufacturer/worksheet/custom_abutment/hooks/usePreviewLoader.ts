@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-23: ExoCAD인데 관리자 헥스 확정값이 없으면 full request로 보강(확정/미정 뱃지).
 // - 2026-08-11: 원본 프리뷰 File MIME/확장자를 STL/PLY/OBJ에 맞게 유지.
 // - 2026-08-11: cam STL 로드 시 파일명에 filled가 없으면 .filled.stl로 정규화(가이드 표시용).
 // - 2026-08-11: 가공(isCamStage) 단일 STL 로드 시 cam 슬롯에도 채워 오른쪽 FL/FP 뷰어가 준비와 동일하게 동작.
@@ -21,6 +22,7 @@ import {
   resolveFilledStlFile,
   type ManufacturerRequest,
 } from "../utils/request";
+import { resolveAdminVerifiedHexFromRequest } from "../utils/hexRotation";
 import { toast as toastFn, useToast } from "@/shared/hooks/use-toast";
 
 const inFlightSignedUrlMap = new Map<string, Promise<{ url: string; fileName?: string }>>();
@@ -233,17 +235,28 @@ export function usePreviewLoader({
               targetReq?.caseInfos?.manufacturerHexRotation ||
               targetReq?.caseInfos?.finalHexRotation ||
               targetReq?.caseInfos?.requestorHexRotation ||
+              (targetReq as any)?.caseInfos?.hexRotation?.mode ||
               "",
           ).trim(),
         );
+        const designSoftwareForBadge = String(
+          targetReq?.caseInfos?.designSoftware ||
+            targetReq?.business?.requestSettings?.designSoftware ||
+            "",
+        ).trim();
+        const needsAdminHexVerification =
+          designSoftwareForBadge === "ExoCAD" &&
+          !resolveAdminVerifiedHexFromRequest(targetReq);
 
-        // forceRefresh / 가공 큐 스냅샷: designSoftware·헥스 회전이 빠질 수 있어 full request로 보강.
+        // forceRefresh / 가공 큐 스냅샷: designSoftware·헥스 회전·관리자 확정이 빠질 수 있어 full request로 보강.
         // (summary API는 해당 필드를 내려주지 않음)
         const shouldEnrichFromFullRequest =
           forceRefresh ||
           ((isCamStage || isMachiningStage) &&
             requestMongoIdForEnrich &&
-            (!hasDesignSoftware || !hasHexRotation));
+            (!hasDesignSoftware ||
+              !hasHexRotation ||
+              needsAdminHexVerification));
 
         if (token && shouldEnrichFromFullRequest && requestMongoIdForEnrich) {
           try {
@@ -277,6 +290,18 @@ export function usePreviewLoader({
                 requestor: {
                   ...(req?.requestor || {}),
                   ...(fullReq?.requestor || {}),
+                  requestSettings: {
+                    ...((req?.requestor as any)?.requestSettings || {}),
+                    ...((fullReq?.requestor as any)?.requestSettings || {}),
+                  },
+                },
+                business: {
+                  ...((req as any)?.business || {}),
+                  ...(fullReq?.business || {}),
+                  requestSettings: {
+                    ...((req as any)?.business?.requestSettings || {}),
+                    ...(fullReq?.business?.requestSettings || {}),
+                  },
                 },
                 lotNumber: {
                   ...(req?.lotNumber || {}),
