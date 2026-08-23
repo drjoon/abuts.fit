@@ -406,7 +406,7 @@ export function NewRequestDesignAbutmentFields({
 
       <Dialog open={prosthesisModalOpen} onOpenChange={setProsthesisModalOpen}>
         <DialogContent
-          className="z-[110] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] gap-3 overflow-x-auto p-4 sm:p-5"
+          className="z-[110] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] gap-3 overflow-x-auto p-4 sm:max-w-[calc(100vw-1rem)] sm:p-5"
           overlayClassName="z-[110]"
         >
           <DialogHeader className="sr-only">

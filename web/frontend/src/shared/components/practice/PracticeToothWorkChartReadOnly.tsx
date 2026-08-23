@@ -544,7 +544,7 @@ export const PracticeToothWorkChartReadOnly = ({
         {/* Above parent 의뢰 상세 dialog (z-[100]); z-[60] hid the chart behind it. */}
         <DialogContent
           overlayClassName="z-[110]"
-          className="z-[110] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] gap-3 p-4 sm:p-5"
+          className="z-[110] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] gap-3 p-4 sm:max-w-[calc(100vw-1rem)] sm:p-5"
         >
           <DialogHeader className="pr-8 text-left">
             <DialogTitle className="text-base">

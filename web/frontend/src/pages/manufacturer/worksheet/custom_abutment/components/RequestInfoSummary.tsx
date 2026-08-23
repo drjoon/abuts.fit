@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-23: PreviewModal row: 폰 가로(landscape)에서도 섹션 가로 배치로 STL 세로 공간 확보.
 // - 2026-08-22: 주문 일자(createdAt) 표시에 KST 시각 포함(formatKstDateTimeToKo).
 // - 2026-08-17: 환자 섹션 호버 시 직납 치과 연락처 툴팁. 배송 섹션은 스냅샷(포장.발송)일 때만.
 // - 2026-08-17: PTX 직납 shippingContact(치과 수취인) 배송 섹션 추가(제조사 카드만).
@@ -244,12 +245,13 @@ export function RequestInfoSummary({
     sectionCount <= 1
       ? "md:grid-cols-1"
       : sectionCount === 2
-        ? "md:grid-cols-2"
+        ? "max-md:landscape:grid-cols-2 md:grid-cols-2"
         : sectionCount === 3
-          ? "md:grid-cols-3"
-          : "md:grid-cols-4";
-  const sectionDividerClass = "md:pr-3 md:border-r md:border-slate-200/80";
-  const sectionPadStartClass = "md:pl-3";
+          ? "max-md:landscape:grid-cols-3 md:grid-cols-3"
+          : "max-md:landscape:grid-cols-4 md:grid-cols-4";
+  const sectionDividerClass =
+    "max-md:landscape:pr-3 max-md:landscape:border-r max-md:landscape:border-slate-200/80 md:pr-3 md:border-r md:border-slate-200/80";
+  const sectionPadStartClass = "max-md:landscape:pl-3 md:pl-3";
 
   if (
     !hasPatient &&
@@ -472,7 +474,7 @@ export function RequestInfoSummary({
       <div
         className={
           isRow
-            ? `grid grid-cols-1 gap-2.5 ${rowGridClass} md:gap-0 md:items-start`
+            ? `grid grid-cols-1 gap-2.5 ${rowGridClass} max-md:landscape:gap-0 max-md:landscape:items-start md:gap-0 md:items-start`
             : "space-y-2.5"
         }
       >

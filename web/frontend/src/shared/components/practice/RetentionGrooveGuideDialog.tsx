@@ -30,7 +30,7 @@ export function RetentionGrooveGuideDialog({
       <DialogContent
         className={
           contentClassName ||
-          "w-[calc(100vw-1rem)] sm:w-[1120px] max-w-[calc(100vw-1rem)] max-h-[90vh] overflow-y-auto p-6"
+          "w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] max-h-[90vh] overflow-y-auto p-6 sm:w-[1120px] sm:max-w-[1120px]"
         }
       >
         <DialogHeader>

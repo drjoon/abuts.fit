@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-23: 좁은 뷰어에서 좌·우 메트릭 오버레이가 겹치지 않도록 flex-wrap 바 레이아웃.
 // - 2026-08-23: geometry 파서는 shared/files/modelPreviewFile.parseModelGeometry 공용.
 // - 2026-08-16: 리사이즈 시 카메라 FOV 재맞춤 — 모달 등에서 모델이 위로 치우치지 않게.
 // - 2026-08-11: 모델 확장자 판별을 shared/files/modelPreviewFile로 통일.
@@ -2116,7 +2117,7 @@ export function StlPreviewViewer({
   return (
     <div
       className={cn(
-        "relative w-full max-w-full h-full min-h-[300px]",
+        "relative w-full max-w-full h-full min-h-[220px] max-md:landscape:min-h-0 md:min-h-[300px]",
         className,
       )}
     >
@@ -2135,58 +2136,58 @@ export function StlPreviewViewer({
         </div>
       )}
       {showOverlay && (
-        <>
-          <div className="pointer-events-none absolute bottom-2 left-2 flex flex-col items-start gap-1 rounded-md bg-white/85 px-2 py-1 text-[11px] md:text-[12px] font-medium text-slate-800 shadow-sm border border-slate-200 z-10">
-            <div className="flex items-center gap-1.5">
-              <span className="text-slate-500">테이퍼 각도 (AAA):</span>
-              <span>
+        <div className="pointer-events-none absolute inset-x-2 bottom-2 z-10 flex flex-wrap gap-1.5 justify-between">
+          <div className="min-w-0 flex-1 basis-[9.5rem] max-w-full rounded-md border border-slate-200 bg-white/90 px-2 py-1 text-[10px] leading-snug font-medium text-slate-800 shadow-sm sm:text-[11px] md:text-[12px]">
+            <div className="flex min-w-0 items-baseline justify-between gap-2">
+              <span className="shrink-0 text-slate-500">테이퍼 (AAA)</span>
+              <span className="tabular-nums">
                 {taperAngleState > 0 ? taperAngleState.toFixed(1) : "-"}°
               </span>
             </div>
-            <div className="flex items-center gap-1.5">
-              <span className="text-slate-500">최대 직경 (DDD):</span>
-              <span>
+            <div className="flex min-w-0 items-baseline justify-between gap-2">
+              <span className="shrink-0 text-slate-500">최대직경 (DDD)</span>
+              <span className="tabular-nums">
                 {maxDiameterState > 0 ? maxDiameterState.toFixed(2) : "-"} mm
               </span>
             </div>
-            <div className="flex items-center gap-1.5">
-              <span className="text-slate-500">전체 길이 (LLL):</span>
-              <span>
+            <div className="flex min-w-0 items-baseline justify-between gap-2">
+              <span className="shrink-0 text-slate-500">전체길이 (LLL)</span>
+              <span className="tabular-nums">
                 {totalLengthState > 0 ? totalLengthState.toFixed(2) : "-"} mm
               </span>
             </div>
           </div>
 
-          <div className="pointer-events-none absolute bottom-2 right-2 flex flex-col items-start gap-1 rounded-md bg-white/85 px-2 py-1 text-[11px] md:text-[12px] font-medium text-slate-800 shadow-sm border border-slate-200 z-10">
-            <div className="flex items-center gap-1.5">
-              <span className="text-slate-500">커넥션 직경:</span>
-              <span>
+          <div className="min-w-0 flex-1 basis-[9.5rem] max-w-full rounded-md border border-slate-200 bg-white/90 px-2 py-1 text-[10px] leading-snug font-medium text-slate-800 shadow-sm sm:text-[11px] md:text-[12px]">
+            <div className="flex min-w-0 items-baseline justify-between gap-2">
+              <span className="shrink-0 text-slate-500">커넥션</span>
+              <span className="tabular-nums">
                 {connectionDiameterState !== null && connectionDiameterState > 0
                   ? connectionDiameterState.toFixed(2)
                   : "-"}{" "}
                 mm
               </span>
             </div>
-            <div className="flex items-center gap-1.5">
-              <span className="text-slate-500">헥스 회전각:</span>
-              <span>
+            <div className="flex min-w-0 items-baseline justify-between gap-2">
+              <span className="shrink-0 text-slate-500">헥스 회전</span>
+              <span className="tabular-nums">
                 {hexRotationDegState !== null &&
                 Number.isFinite(hexRotationDegState)
                   ? `${hexRotationDegState > 0 ? "+" : ""}${hexRotationDegState.toFixed(2)}°`
                   : "-"}
               </span>
             </div>
-            <div className="flex items-center gap-1.5">
-              <span className="text-slate-500">finishLine max_z:</span>
-              <span>
+            <div className="flex min-w-0 items-baseline justify-between gap-2">
+              <span className="shrink-0 text-slate-500">FL max_z</span>
+              <span className="tabular-nums">
                 {Number.isFinite(finishLineMaxZ)
                   ? `${Number(finishLineMaxZ).toFixed(2)} mm`
                   : "-"}
               </span>
             </div>
-            <div className="flex items-center gap-1.5">
-              <span className="text-slate-500">finishLine min_z:</span>
-              <span>
+            <div className="flex min-w-0 items-baseline justify-between gap-2">
+              <span className="shrink-0 text-slate-500">FL min_z</span>
+              <span className="tabular-nums">
                 {Number.isFinite(finishLineMinZ)
                   ? `${Number(finishLineMinZ).toFixed(2)} mm`
                   : "-"}
@@ -2197,9 +2198,9 @@ export function StlPreviewViewer({
               tiltAxisVectorState.x !== undefined &&
               tiltAxisVectorState.y !== undefined &&
               tiltAxisVectorState.z !== undefined && (
-                <div className="flex items-center gap-1.5">
-                  <span className="text-slate-500">경사축 벡터:</span>
-                  <span>
+                <div className="flex min-w-0 items-baseline justify-between gap-2">
+                  <span className="shrink-0 text-slate-500">경사축</span>
+                  <span className="min-w-0 break-all tabular-nums">
                     [{tiltAxisVectorState.x.toFixed(2)},{" "}
                     {tiltAxisVectorState.y.toFixed(2)},{" "}
                     {tiltAxisVectorState.z.toFixed(2)}]
@@ -2207,9 +2208,9 @@ export function StlPreviewViewer({
                 </div>
               )}
             {isFilledFile && frontPointState && (
-              <div className="flex items-center gap-1.5">
-                <span className="text-slate-500">프론트 포인트:</span>
-                <span>
+              <div className="flex min-w-0 items-baseline justify-between gap-2">
+                <span className="shrink-0 text-slate-500">프론트</span>
+                <span className="min-w-0 break-all tabular-nums">
                   [
                   {frontPointState.x !== undefined && frontPointState.x !== null
                     ? frontPointState.x.toFixed(2)
@@ -2227,7 +2228,7 @@ export function StlPreviewViewer({
               </div>
             )}
           </div>
-        </>
+        </div>
       )}
     </div>
   );

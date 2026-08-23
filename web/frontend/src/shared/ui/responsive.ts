@@ -1,6 +1,9 @@
 /**
  * Shared responsive Tailwind class fragments (mobile-first SSOT).
  * Prefer these over one-off fixed pixel widths in pages and dialogs.
+ *
+ * Wide DialogContent must include `sm:max-w-*` (or `sm:max-w-none`).
+ * Unprefixed max-w does not clear Dialog's default `sm:max-w-lg`.
  */
 export const RESPONSIVE = {
   /** Standard dialog — full width on phone, capped on sm+ */
@@ -12,6 +15,12 @@ export const RESPONSIVE = {
     "w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] sm:w-full sm:max-w-2xl lg:max-w-4xl",
   dialogContentFull:
     "w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] sm:w-[96vw] sm:max-w-[96vw]",
+  /**
+   * Worksheet PreviewModal — near-fullscreen on phone; wide on sm+.
+   * Must set sm:max-w-* so Dialog's default sm:max-w-lg does not cap PC at 512px.
+   */
+  dialogContentPreview:
+    "w-[calc(100vw-0.75rem)] max-w-[calc(100vw-0.75rem)] h-[min(96dvh,calc(100dvh-0.75rem))] max-h-[calc(100dvh-0.75rem)] rounded-xl sm:w-[min(1680px,calc(100vw-2rem))] sm:max-w-[min(1680px,calc(100vw-2rem))] sm:h-[85vh] sm:max-h-[85vh] sm:rounded-lg",
 
   /** Fixed-width modal replacements */
   modalMd: "w-[min(560px,calc(100vw-2rem))] max-w-[calc(100vw-2rem)]",

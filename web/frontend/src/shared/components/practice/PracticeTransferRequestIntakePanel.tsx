@@ -3237,7 +3237,7 @@ export const PracticeTransferRequestIntakePanel = ({
                   open={toothChartEnlargeOpen}
                   onOpenChange={setToothChartEnlargeOpen}
                 >
-                  <DialogContent className="w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] gap-3 p-4 sm:p-5">
+                  <DialogContent className="w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] gap-3 p-4 sm:max-w-[calc(100vw-1rem)] sm:p-5">
                     <DialogHeader className="pr-8 text-left">
                       <DialogTitle className="text-base">
                         보철물{" "}

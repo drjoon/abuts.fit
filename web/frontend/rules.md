@@ -331,6 +331,7 @@ Notes:
     `src/pages/manufacturer/worksheet/custom_abutment/components/RequestInfoSummary.tsx`를 사용합니다.
   - 의미 단위 섹션 고정: **환자** → **임플란트** → **생산**(있을 때만).
   - 레이아웃: 카드는 `layout="stack"`(기본), PreviewModal은 `layout="row"`(가로 3열)로 요약 높이를 줄여 STL 영역을 확보합니다. 열 너비를 넘는 문구는 다음 줄로 넘깁니다(1줄 nowrap 강제 금지).
+  - PreviewModal 폭: `RESPONSIVE.dialogContentPreview` — Dialog 기본 `sm:max-w-lg`를 `sm:max-w-[min(1680px,…)]`로 덮어써야 PC에서 ~512px로 찌그러지지 않습니다. 폰 세로는 STL 세로 스택·스크롤, 폰 가로는 `landscape:grid-cols-2`.
   - 중복 금지 / 배치:
     - 상단 조직 줄: 기공소명(`requestor.business|business.name|requestorBusinessAnchor.name|requestor.name`) · 날짜. 기공소명은 1회만.
     - 환자 줄: `치과명 / 환자명 / 치아` (치과명·환자명 나란히, 옆 치아번호).
@@ -342,6 +343,8 @@ Notes:
     - `src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx`
     - `src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`
     - `src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx`
+    - `src/shared/ui/responsive.ts` (`dialogContentPreview`)
+    - `src/components/ui/dialog.tsx`
 
 - 수동 집하(포장.발송)에서 한진 외 발송 방식은 `shippingWorkflow.manualDeliveryMethods`를 표시/관리합니다.
   - 추적관리 발송 방식은 `manualDeliveryMethods` 대표 1개만 표시합니다(다중 폴백 금지).

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-23: Dialog sm:max-w-lg 잔존으로 PC가 ~512px 모바일처럼 보이던 문제 수정. 세로 스택·가로 2열 STL UX.
 // - 2026-08-22: ExoCAD 헥스 회전 옆 관리자 확인 뱃지(확정/미정).
 // - 2026-08-18: 준비 단계 프리뷰에도 로트번호를 표시한다.
 // - 2026-08-18: filled STL/NC 재생성 요청 시 pending 표시 + 로컬 캐시 선삭제.
@@ -92,6 +93,8 @@ import {
   type ManufacturerHexRotationDraftMode,
   type ManufacturerHexRotationMode,
 } from "@/pages/manufacturer/worksheet/custom_abutment/utils/hexRotation";
+import { cn } from "@/shared/ui/cn";
+import { RESPONSIVE } from "@/shared/ui/responsive";
 
 // related files (screw lot tracking):
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx
@@ -2167,19 +2170,22 @@ export const PreviewModal = ({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         hideClose
-        className={`w-[min(1680px,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] h-[85vh] overflow-hidden ${
+        className={cn(
+          // Dialog 기본 sm:max-w-lg를 반드시 sm: 접두로 덮어쓴다(미지정 시 PC도 ~512px).
+          RESPONSIVE.dialogContentPreview,
+          "flex flex-col overflow-hidden gap-3 p-3 sm:gap-4 sm:p-6",
           shouldShowUnmachinableWarning || isUnmachinable
             ? "border-accent-muted ring-2 ring-accent-muted/80"
-            : ""
-        }`}
+            : "",
+        )}
       >
         <DialogTitle className="sr-only">의뢰 미리보기</DialogTitle>
         <DialogDescription className="sr-only">
           의뢰 파일과 NC 내용을 확인하는 영역입니다.
         </DialogDescription>
 
-        <div className="flex h-full min-w-0 flex-col gap-4 overflow-hidden">
-          <div className="flex min-w-0 flex-col gap-2 overflow-x-auto rounded-lg border border-slate-200/80 bg-slate-50/70 px-2 py-2 shrink-0 sm:px-3 md:flex-row md:flex-nowrap md:items-center md:justify-between md:gap-3">
+        <div className="flex h-full min-h-0 min-w-0 flex-col gap-3 overflow-hidden sm:gap-4">
+          <div className="flex min-w-0 flex-col gap-2 overflow-x-auto rounded-lg border border-slate-200/80 bg-slate-50/70 px-2 py-2 shrink-0 max-md:landscape:py-1.5 sm:px-3 md:flex-row md:flex-nowrap md:items-center md:justify-between md:gap-3">
             <div className="flex min-w-0 flex-wrap items-center gap-2 md:flex-nowrap">
               {hasNcMetadata && (
                 <Badge
@@ -2616,7 +2622,7 @@ export const PreviewModal = ({
           </div>
 
           <RequestInfoSummary
-            className="shrink-0"
+            className="shrink-0 max-md:landscape:max-h-[28vh] max-md:landscape:overflow-y-auto"
             layout="row"
             requestorLabel={
               overlayRequestor?.business ||
@@ -2844,12 +2850,12 @@ export const PreviewModal = ({
               <div>STL 불러오는 중...</div>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1 min-h-0 overflow-hidden">
-              <div className="border rounded-lg p-3 space-y-2 flex flex-col overflow-hidden">
-                <div className="flex items-center justify-between gap-2">
+            <div className="grid flex-1 min-h-0 grid-cols-1 gap-3 overflow-y-auto max-md:landscape:grid-cols-2 max-md:landscape:gap-2 max-md:landscape:overflow-hidden md:grid-cols-2 md:gap-4 md:overflow-hidden">
+              <div className="border rounded-lg p-2.5 sm:p-3 space-y-2 flex flex-col overflow-hidden min-h-[min(48vh,420px)] max-md:landscape:min-h-0 md:min-h-0">
+                <div className="flex items-center justify-between gap-2 min-w-0">
                   <button
                     type="button"
-                    className="text-sm font-semibold text-primary-strong hover:underline text-left max-w-[520px] truncate"
+                    className="min-w-0 flex-1 text-sm font-semibold text-primary-strong hover:underline text-left truncate"
                     onClick={() => {
                       if (isMachiningStage) {
                         void onDownloadNcFile(activeReq);
@@ -3056,7 +3062,7 @@ export const PreviewModal = ({
               </div>
 
               <div
-                className="border rounded-lg p-3 space-y-2 flex flex-col overflow-hidden"
+                className="border rounded-lg p-2.5 sm:p-3 space-y-2 flex flex-col overflow-hidden min-h-[min(48vh,420px)] max-md:landscape:min-h-0 md:min-h-0"
                 onDragOver={(e) => {
                   if (!isStageFileStage || isUploading) return;
                   e.preventDefault();
@@ -3071,10 +3077,10 @@ export const PreviewModal = ({
                   onUploadRight(file);
                 }}
               >
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center justify-between gap-2 min-w-0">
                   <button
                     type="button"
-                    className="text-sm font-semibold text-primary-strong hover:underline text-left max-w-[520px] truncate"
+                    className="min-w-0 flex-1 text-sm font-semibold text-primary-strong hover:underline text-left truncate"
                     onClick={onDownload}
                     title={
                       stage === "packing" || stage === "shipping"

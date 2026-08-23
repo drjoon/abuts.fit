@@ -398,7 +398,7 @@ export function AbutmentModelConfirmDialog({
                         }}
                         disabled={!detailFile || confirming}
                         idPrefix={retentionIdPrefix}
-                        guideContentClassName="new-request-page w-[calc(100vw-1rem)] sm:w-[1120px] max-w-[calc(100vw-1rem)] max-h-[90vh] overflow-y-auto p-6"
+                        guideContentClassName="new-request-page w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] max-h-[90vh] overflow-y-auto p-6 sm:w-[1120px] sm:max-w-[1120px]"
                       />
 
                       <div className="flex flex-col gap-2 rounded-lg border border-primary-soft bg-primary-soft/60 px-3 py-2">
