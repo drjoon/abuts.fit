@@ -5,7 +5,8 @@
  * 자동매칭(공개 풀)은 공정상 의뢰 — 뱃지 집계·「의뢰」필터에 포함. 카드 뱃지 문구도「의뢰」(수락 후「수락」).
  * 표시명만 UI 마스킹.
  * 2026-08-21: 전체보기 취소 뱃지에 휴지통(취소·거부) 포함 + 상태 뱃지별 unread 합.
- * 2026-08-21: 상단 상태 뱃지 다중 표시 on/off — 켠 항목만 캘린더 표시(기본 취소 off).
+ * 2026-08-21: 상단 상태 뱃지 다중 표시 on/off — 켠 항목만 캘린더 표시(기본 전부 ON).
+ * 2026-08-23: 기본 ON에 취소(휴지통·작업취소) 포함 — 다른 상태와 동일.
  * 2026-08-17: transferId API 필드 우선 매핑(메시지 파싱 폴백) — 채팅 unread 카드 배지 정합.
  * 2026-08-14: 전체보기 모달은 사이드바와 같은 GET /my 1페이지를 재사용(중복 요청 제거).
  * 2026-08-14: 자동매칭 → 의뢰 집계/필터·뱃지 라벨. matchingMode=auto 기공소명 UI 마스킹.
@@ -199,9 +200,9 @@ export type PracticeRecentStatusCounts = {
   canceled: number;
 };
 
-/** 전체보기 기본 ON — 취소(휴지통·작업취소)만 off. 「기본」 리셋도 이 집합. */
+/** 전체보기 기본 ON — 6상태 전부. 「기본」 리셋도 이 집합. */
 export const PRACTICE_RECENT_DEFAULT_ON_STATUS_FILTERS: readonly PracticeRecentStatusFilterKey[] =
-  ["발송완료", "의뢰수락", "작업완료", "포장.발송", "리메이크"];
+  ["발송완료", "의뢰수락", "작업완료", "취소", "포장.발송", "리메이크"];
 
 export const createPracticeRecentStatusFilterSet = (
   keys: readonly PracticeRecentStatusFilterKey[] = PRACTICE_RECENT_DEFAULT_ON_STATUS_FILTERS,
@@ -1118,7 +1119,7 @@ export const filterGroupedTransfersByStatus = (
       practiceTransferMatchesStatusFilters(transfer, statusFilter),
     );
   }
-  // 레거시 단일 필터: all = 기본 ON 세트(취소 off)
+  // 레거시 단일 필터: all = 기본 ON 세트(6상태 전부)
   if (statusFilter === "all") {
     return groupedTransfers.filter((transfer) =>
       practiceTransferMatchesStatusFilters(

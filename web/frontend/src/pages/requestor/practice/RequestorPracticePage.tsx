@@ -333,11 +333,12 @@ type LabReceiveStatusFilterKey =
   | "포장.발송"
   | "리메이크";
 
-/** 기본 ON — 취소만 off. 「기본」 리셋도 이 집합. */
+/** 기본 ON — 상태 전부. 「기본」 리셋도 이 집합. */
 const LAB_RECEIVE_DEFAULT_ON_STATUS_FILTERS: readonly LabReceiveStatusFilterKey[] = [
   "발송완료",
   "의뢰수락",
   "작업완료",
+  "취소",
   "거부",
   "포장.발송",
   "리메이크",
