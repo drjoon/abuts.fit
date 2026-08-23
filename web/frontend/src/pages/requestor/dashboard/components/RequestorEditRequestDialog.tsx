@@ -142,7 +142,7 @@ export const RequestorEditRequestDialog = ({
         if (!open) onClose();
       }}
     >
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>의뢰 정보 수정</DialogTitle>
         </DialogHeader>

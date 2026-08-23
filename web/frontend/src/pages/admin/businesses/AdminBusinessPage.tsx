@@ -769,7 +769,7 @@ export default function AdminBusinessPage() {
           }))
         }
       >
-        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>크레딧 업데이트</DialogTitle>
             <DialogDescription>
@@ -888,7 +888,7 @@ export default function AdminBusinessPage() {
           }))
         }
       >
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>사업자 세부 정보</DialogTitle>
             <DialogDescription>

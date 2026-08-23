@@ -389,7 +389,7 @@ export const AdminLabFeeSchedulesTab = () => {
           if (!open) setSelected(null);
         }}
       >
-        <DialogContent className="max-h-[85vh] max-w-md gap-0 overflow-hidden p-0 sm:rounded-2xl">
+        <DialogContent className="max-h-[85vh] gap-0 overflow-hidden p-0 sm:max-w-md sm:rounded-2xl">
           {selected ? (
             <>
               <DialogHeader className="border-b border-slate-100 px-6 pb-4 pt-6">

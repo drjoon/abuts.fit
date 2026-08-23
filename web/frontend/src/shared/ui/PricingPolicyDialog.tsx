@@ -269,7 +269,7 @@ export const PricingPolicyDialog = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className='max-h-[85vh] max-w-2xl gap-0 overflow-hidden p-0 sm:rounded-2xl'>
+      <DialogContent className='max-h-[85vh] gap-0 overflow-hidden p-0 sm:max-w-2xl sm:rounded-2xl'>
         <DialogHeader className='border-b border-slate-100 px-6 pb-4 pt-6'>
           <DialogTitle className='text-xl font-semibold tracking-tight text-slate-900'>
             {title}

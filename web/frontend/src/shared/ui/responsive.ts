@@ -22,9 +22,9 @@ export const RESPONSIVE = {
   dialogContentPreview:
     "w-[calc(100vw-0.75rem)] max-w-[calc(100vw-0.75rem)] h-[min(96dvh,calc(100dvh-0.75rem))] max-h-[calc(100dvh-0.75rem)] rounded-xl sm:w-[min(1680px,calc(100vw-2rem))] sm:max-w-[min(1680px,calc(100vw-2rem))] sm:h-[85vh] sm:max-h-[85vh] sm:rounded-lg",
 
-  /** Fixed-width modal replacements */
-  modalMd: "w-[min(560px,calc(100vw-2rem))] max-w-[calc(100vw-2rem)]",
-  modalLg: "w-[min(640px,calc(100vw-2rem))] max-w-[calc(100vw-2rem)]",
+  /** Fixed-width modal replacements — include sm:max-w so Dialog default sm:max-w-lg is cleared */
+  modalMd: "w-[min(560px,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] sm:max-w-[min(560px,calc(100vw-2rem))]",
+  modalLg: "w-[min(640px,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] sm:max-w-[min(640px,calc(100vw-2rem))]",
 
   /** Page split layouts — stack until xl when left pane needs ~34rem */
   pageSplitWideLeft:

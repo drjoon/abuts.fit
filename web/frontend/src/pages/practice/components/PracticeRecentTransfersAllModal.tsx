@@ -430,10 +430,10 @@ export function PracticeRecentTransfersAllModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className={cn(
-          "flex max-w-none flex-col gap-0 overflow-hidden p-0",
+          "flex flex-col gap-0 overflow-hidden p-0",
           isMobile
             ? "inset-0 left-0 top-0 h-[100dvh] w-screen max-h-[100dvh] max-w-none translate-x-0 translate-y-0 rounded-none border-0"
-            : "h-[min(88vh,920px)] w-[min(96vw,1280px)]",
+            : "h-[min(88vh,920px)] w-[min(96vw,1280px)] max-w-none sm:max-w-[min(96vw,1280px)]",
         )}
       >
         <DialogHeader

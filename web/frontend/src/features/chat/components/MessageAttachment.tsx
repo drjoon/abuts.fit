@@ -81,7 +81,7 @@ export function MessageAttachment({
         </div>
 
         <Dialog open={imagePreviewOpen} onOpenChange={setImagePreviewOpen}>
-          <DialogContent className="max-w-4xl">
+          <DialogContent className="sm:max-w-4xl">
             <DialogHeader>
               <DialogTitle className="flex items-center justify-between">
                 <span className="truncate mr-4">{attachment.fileName}</span>

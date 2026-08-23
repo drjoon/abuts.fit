@@ -1013,7 +1013,7 @@ export const RequestorBulkShippingBannerCard = ({
       </Dialog>
 
       <Dialog open={isLeadTimeModalOpen} onOpenChange={setIsLeadTimeModalOpen}>
-        <DialogContent className="max-h-[85vh] max-w-2xl gap-0 overflow-hidden p-0 sm:rounded-2xl">
+        <DialogContent className="max-h-[85vh] gap-0 overflow-hidden p-0 sm:max-w-2xl sm:rounded-2xl">
           <DialogHeader className="space-y-1.5 border-b border-slate-100 px-6 pb-4 pt-6 pr-12 text-left">
             <DialogTitle className="flex items-center gap-2 text-xl font-semibold tracking-tight text-slate-900">
               <Clock className="h-5 w-5 text-primary" />

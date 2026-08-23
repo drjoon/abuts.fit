@@ -1139,7 +1139,7 @@ export const MachineCard = (props: MachineCardProps) => {
 
       {dummyOpen && (
         <Dialog open={dummyOpen} onOpenChange={(open) => setDummyOpen(open)}>
-          <DialogContent className="w-full max-w-[16rem] rounded-2xl p-6">
+          <DialogContent className="w-full max-w-[16rem] rounded-2xl p-6 sm:max-w-[16rem]">
             <DialogHeader>
               <DialogTitle>더미 작업 설정</DialogTitle>
             </DialogHeader>

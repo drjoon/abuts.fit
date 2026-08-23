@@ -121,7 +121,7 @@ export function CncEventLogModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{headerTitle}</DialogTitle>
         </DialogHeader>

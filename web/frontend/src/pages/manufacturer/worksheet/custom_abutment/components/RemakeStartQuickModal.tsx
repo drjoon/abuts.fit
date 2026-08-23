@@ -36,7 +36,7 @@ export const RemakeStartQuickModal = ({
 }: RemakeStartQuickModalProps) => {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl">
+      <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>재제작 시작 공정 선택</DialogTitle>
           <DialogDescription>
