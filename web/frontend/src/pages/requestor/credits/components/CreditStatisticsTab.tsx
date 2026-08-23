@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-23: 요약 카드 — 기공료·쇼핑 라벨·안내 문구 정리.
 // - 2026-08-23: 요약 카드 — 내역과 동일 +/− 연산 레이아웃. 기간 충전·소비·의뢰건수 라벨.
 // - 2026-08-23: 내역 탭과 동일 — 요약 카드 상단, 기간 필터는 그 아래. 정산 통계·기간 안내 문구 제거.
 // - 2026-08-22: 클릭 시 CreditLedgerModal(내역 탭 동일 UI). 상단 잘림·카드 높이 정리.
@@ -380,14 +381,14 @@ export function CreditStatisticsTab() {
         <SettlementEquationOperator symbol="−" />
         <SettlementStatCard
           className={statCardClass}
-          label="기간 소비"
+          label="기공료·쇼핑"
           value={stats?.summary.totalSpendSupply || 0}
           tone="primary"
           hint="안내"
-          hintTooltip="선택한 기간에 소비된 금액 합계입니다."
+          hintTooltip="선택한 기간에 지출한 기공료와 쇼핑 결제 합계입니다."
           onClick={() =>
             openDrillDown({
-              title: "기간 소비 내역",
+              title: "기공료·쇼핑 내역",
               filters: { ...filterBase, action: "SPEND" },
             })
           }

@@ -44,6 +44,7 @@
 // - 2026-08-11: 중복 일자(from~to) 입력 제거. 검색을 초기화 버튼 우측으로 이동.
 // - 2026-08-11: embedded 무한스크롤 — sentinel 재마운트 시 IntersectionObserver 재연결.
 // - 2026-08-11: embedded 모드에서 "크레딧 내역" 제목 숨김(탭 라벨로 충분). Dialog는 유지.
+// - 2026-08-23: 요약 카드 안내 — 현재 잔액(선불금 잔여액), 기공료·쇼핑 라벨·툴팁.
 // - 2026-08-23: 요약 카드 클릭 → 필터된 CreditLedgerModal 드릴다운. 안내 문구는 툴팁만.
 // - 2026-08-23: 치과 기간 소비 — 카드 하단 PeriodFilter·별도 집계 조회. YMD from/to.
 // - 2026-08-23: 치과 정산 내역 상단 — 소비액(필터기간) 카드. 클릭 시 소비 필터.
@@ -2348,7 +2349,7 @@ export const CreditLedgerModal = ({
                     value={currentBalanceTotal}
                     tone="primary"
                     hint="안내"
-                    hintTooltip="유료·무료 충전 잔액의 합입니다. 클릭하면 내역을 볼 수 있습니다."
+                    hintTooltip="충전금에서 소비액을 뺀 선불금 잔여액입니다."
                     onClick={() =>
                       openSummaryDrillDown({
                         title: "현재 잔액 내역",
@@ -2395,13 +2396,13 @@ export const CreditLedgerModal = ({
                   <SettlementEquationOperator symbol="−" />
                   <SettlementStatCard
                     className="min-w-[9.5rem] flex-1 sm:min-w-[10.5rem]"
-                    label="기간 소비"
+                    label="기공료·쇼핑"
                     value={Number(periodSpendSummary?.totalSpendSupply || 0)}
                     hint="안내"
-                    hintTooltip="선택한 기간의 소비 합계입니다."
+                    hintTooltip="선택한 기간에 지출한 기공료와 쇼핑 결제 합계입니다."
                     onClick={() =>
                       openSummaryDrillDown({
-                        title: "기간 소비 내역",
+                        title: "기공료·쇼핑 내역",
                         filters: {
                           ...summaryFilterBase,
                           action: "SPEND",
@@ -2417,11 +2418,8 @@ export const CreditLedgerModal = ({
                   label="현재 잔액"
                   value={currentBalanceTotal}
                   tone="primary"
-                  hint={
-                    showSettlementCredit
-                      ? "유료(선입금) + 무료 + 기공"
-                      : "유료(선입금) + 무료"
-                  }
+                  hint="안내"
+                  hintTooltip="충전금에서 소비액을 뺀 선불금 잔여액입니다."
                   onClick={() =>
                     openSummaryDrillDown({
                       title: "현재 잔액 내역",
