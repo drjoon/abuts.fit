@@ -1,5 +1,6 @@
 // related files:
 // - web/backend/utils/labFeeSchedule.js
+// - 2026-08-23: 커스텀어벗 수가 지그포함(4만)·지그제외(3만) 분리.
 // - 2026-08-21: PTX CA 치과=기공소 수가. 어벗츠 1.5/2.5만은 기공소→어벗츠.
 // - 2026-08-13: 견적 라인 치아번호 10→20→30→40번대 정렬.
 // - 2026-08-17: 번대 안은 정중선 가운데(18→11, 21→28, 38→31, 41→48).
@@ -21,6 +22,8 @@ import {
   missingLabFeeItemNames,
   isPendingRoundBarAbutment,
   isLabFeeShippingItem,
+  LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME,
+  LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_NAME,
   LAB_FEE_SCHEDULE_SAMPLE,
   LAB_FEE_SCHEDULE_ZEROS,
   normalizeLabFeeItems,
@@ -61,11 +64,11 @@ describe("labFeeSchedule", () => {
       abutmentPricingTier: "regular",
       labFeeMultiplier: 1.5,
     });
-    // 크라운 6만·CA 3.5만 ×1.5
-    expect(fees.labFeeTotal).toBe(150000);
-    expect(fees.labAbutmentTotal).toBe(60000);
+    // 크라운 6만·CA 지그제외 3만 ×1.5
+    expect(fees.labFeeTotal).toBe(135000);
+    expect(fees.labAbutmentTotal).toBe(45000);
     expect(fees.abutmentRetailTotal).toBe(0);
-    expect(fees.total).toBe(150000);
+    expect(fees.total).toBe(135000);
     expect(fees.labFeeMultiplier).toBe(1.5);
     expect(fees.lines.find((l) => l.prosthesisType === "크라운")?.labFee).toBe(
       90000,
@@ -99,7 +102,7 @@ describe("labFeeSchedule", () => {
     expect(fees.lines).toHaveLength(2);
   });
 
-  test("커스텀어벗은 기공소 수가를 쓴다", () => {
+  test("커스텀어벗(지그제외)은 기공소 수가를 쓴다", () => {
     const fees = computePracticeTransferRetailFees({
       toothWorks: [
         {
@@ -118,14 +121,14 @@ describe("labFeeSchedule", () => {
       labFeeSchedule: LAB_FEE_SCHEDULE_SAMPLE,
       abutmentPricingTier: "regular",
     });
-    expect(fees.labFeeTotal).toBe(80000);
-    expect(fees.labAbutmentTotal).toBe(80000);
+    expect(fees.labFeeTotal).toBe(60000);
+    expect(fees.labAbutmentTotal).toBe(60000);
     expect(fees.abutmentRetailTotal).toBe(0);
     expect(fees.abutmentQty).toBe(0);
-    expect(fees.total).toBe(80000);
+    expect(fees.total).toBe(60000);
   });
 
-  test("크라운·브리지+어벗은 기공수가와 기공소 어벗 수가를 함께 합산한다", () => {
+  test("크라운·브리지+어벗은 지그포함, 단독 CA는 지그제외 수가를 쓴다", () => {
     const fees = computePracticeTransferRetailFees({
       toothWorks: [
         {
@@ -156,18 +159,18 @@ describe("labFeeSchedule", () => {
       labFeeSchedule: LAB_FEE_SCHEDULE_SAMPLE,
       abutmentPricingTier: "membership",
     });
-    expect(fees.labFeeTotal).toBe(340000);
-    expect(fees.labAbutmentTotal).toBe(160000);
+    expect(fees.labFeeTotal).toBe(330000);
+    expect(fees.labAbutmentTotal).toBe(150000);
     expect(fees.abutmentRetailTotal).toBe(0);
     expect(fees.abutmentQty).toBe(0);
-    expect(fees.total).toBe(340000);
+    expect(fees.total).toBe(330000);
     expect(fees.lines).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           toothNumber: "11",
-          prosthesisType: "커스텀어벗",
+          prosthesisType: LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_NAME,
           labFee: 0,
-          labAbutmentFee: 40000,
+          labAbutmentFee: 30000,
           abutmentRetail: 0,
         }),
         expect.objectContaining({
@@ -178,7 +181,7 @@ describe("labFeeSchedule", () => {
         }),
         expect.objectContaining({
           toothNumber: "21",
-          prosthesisType: "커스텀어벗",
+          prosthesisType: LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME,
           labFee: 0,
           labAbutmentFee: 40000,
         }),
@@ -190,7 +193,7 @@ describe("labFeeSchedule", () => {
         }),
         expect.objectContaining({
           toothNumber: "22",
-          prosthesisType: "커스텀어벗",
+          prosthesisType: LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME,
           labFee: 0,
           labAbutmentFee: 40000,
         }),
@@ -202,7 +205,7 @@ describe("labFeeSchedule", () => {
         }),
         expect.objectContaining({
           toothNumber: "23",
-          prosthesisType: "커스텀어벗",
+          prosthesisType: LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME,
           labFee: 0,
           labAbutmentFee: 40000,
         }),
@@ -438,7 +441,9 @@ describe("labFeeSchedule", () => {
     );
     expect(tempLine).toMatchObject({ labFee: 30000, abutmentRetail: 0 });
     expect(
-      fees.lines.filter((line) => line.prosthesisType === "커스텀어벗"),
+      fees.lines.filter(
+        (line) => line.prosthesisType === LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME,
+      ),
     ).toEqual([
       expect.objectContaining({
         toothNumber: "34",
@@ -652,7 +657,7 @@ describe("labFeeSchedule", () => {
           customAbutment: true,
         },
       ]),
-    ).toEqual(["커스텀어벗"]);
+    ).toEqual([LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_NAME]);
     expect(
       isLabFeeScheduleReadyToCharge({
         active: true,
@@ -768,11 +773,11 @@ describe("labFeeSchedule", () => {
     expect(fees.abutmentRetailTotal).toBe(0);
     expect(fees.abutmentQty).toBe(0);
     expect(fees.labAbutmentPending).toBe(true);
-    expect(fees.labAbutmentTotal).toBe(40000);
+    expect(fees.labAbutmentTotal).toBe(30000);
     expect(fees.lines[0]).toMatchObject({
       toothNumber: "16",
       labFee: 0,
-      labAbutmentFee: 40000,
+      labAbutmentFee: 30000,
       labAbutmentPending: true,
       abutmentRetail: 0,
     });
@@ -806,7 +811,7 @@ test("환봉 요청중+기공소 커스텀어벗 수가가 있으면 기공소 �
         items: [
           {
             id: "lab-abut",
-            name: "커스텀어벗",
+            name: LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_NAME,
             unit: "perTooth",
             enabled: true,
             price: 35000,
@@ -858,10 +863,10 @@ test("환봉 요청중+기공소 커스텀어벗 수가가 있으면 기공소 �
       abutmentPricingTier: "regular",
     });
     expect(fees.abutmentRetailTotal).toBe(0);
-    expect(fees.labAbutmentTotal).toBe(40000);
+    expect(fees.labAbutmentTotal).toBe(30000);
     expect(fees.labAbutmentPending).toBe(false);
     expect(fees.lines[0]).toMatchObject({
-      labAbutmentFee: 40000,
+      labAbutmentFee: 30000,
       labAbutmentPending: false,
       abutmentRetail: 0,
     });
@@ -896,10 +901,10 @@ test("환봉 요청중+기공소 커스텀어벗 수가가 있으면 기공소 �
       abutmentPricingTier: "regular",
     });
     expect(fees.abutmentRetailTotal).toBe(0);
-    expect(fees.labAbutmentTotal).toBe(40000);
+    expect(fees.labAbutmentTotal).toBe(30000);
     expect(fees.labAbutmentPending).toBe(false);
     expect(fees.lines[0]).toMatchObject({
-      labAbutmentFee: 40000,
+      labAbutmentFee: 30000,
       labAbutmentPending: false,
       abutmentRetail: 0,
     });
@@ -934,7 +939,7 @@ test("환봉 요청중+기공소 커스텀어벗 수가가 있으면 기공소 �
       abutmentPricingTier: "regular",
     });
     expect(fees.abutmentRetailTotal).toBe(0);
-    expect(fees.labAbutmentTotal).toBe(40000);
+    expect(fees.labAbutmentTotal).toBe(30000);
     expect(fees.labAbutmentPending).toBe(false);
   });
 
@@ -1012,7 +1017,7 @@ test("환봉 요청중+기공소 커스텀어벗 수가가 있으면 기공소 �
       }),
       expect.objectContaining({
         toothNumber: "26",
-        prosthesisType: "커스텀어벗",
+        prosthesisType: LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME,
         labFee: 0,
         labAbutmentFee: 40000,
         labAbutmentPending: true,

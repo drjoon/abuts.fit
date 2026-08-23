@@ -72,7 +72,7 @@ import {
 import {
   formatLabFeeMultiplierLabel,
   formatRushFeeMultiplierLabel,
-  isCustomAbutmentProsthesisType,
+  isCustomAbutmentLabFeeLineType,
   normalizeLabFeeMultiplier,
   normalizeRushFeeMultiplier,
 } from "@/shared/practice/labFeeSchedule";
@@ -208,9 +208,9 @@ const mergeFeeBreakdownLinesByTooth = (
       byKey.set(key, { ...line });
       continue;
     }
-    const preferType = !isCustomAbutmentProsthesisType(existing.prosthesisType)
+    const preferType = !isCustomAbutmentLabFeeLineType(existing.prosthesisType)
       ? existing.prosthesisType
-      : !isCustomAbutmentProsthesisType(line.prosthesisType)
+      : !isCustomAbutmentLabFeeLineType(line.prosthesisType)
         ? line.prosthesisType
         : existing.prosthesisType || line.prosthesisType;
     const labFeeMin =

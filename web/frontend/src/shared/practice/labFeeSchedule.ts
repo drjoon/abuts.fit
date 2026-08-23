@@ -10,6 +10,7 @@
 // - 2026-08-13: 마스터 active(기본 off)가 켜져야 설정 완료. 수가 디폴트는 기본값·항목 on.
 // - 2026-08-19: 수락 포워드용 missingLabFeeItemNames(해당 보철 미제공·0원).
 // - 2026-08-21: 기공수가「배송비」폐지(치과→기공소 무료). normalize에서 strip.
+// - 2026-08-23: 커스텀어벗 수가 분리 — 지그포함(보철+어벗, 기본 4만)·지그제외(단독 CA, 기본 3만). 레거시「커스텀어벗」→지그포함.
 // - 2026-08-21: PTX CA 치과 청구=기공소「커스텀어벗」수가(기본 4만=관리자 기본 기공수가). 어벗츠 1.5/2.5만은 기공소→어벗츠 Request.
 // - 2026-08-13: 유지장치 등 perSet는 연결 스팬당 1세트(끊기면 별도). 연결 없는 레거시는 악궁당.
 // - 2026-08-19: 임시치아(perNTeeth)도 연결 스팬당 구간 수가(같은 하악 3치·2치는 2세트).
@@ -167,11 +168,55 @@ export const LAB_FEE_SCHEDULE_KEYS = [
   "removableTemp6",
   "customAbutmentDesign",
   "customAbutmentDesignAndProduction",
+  "customAbutmentWithoutJig",
 ] as const;
 
 export type LabFeeScheduleKey = (typeof LAB_FEE_SCHEDULE_KEYS)[number];
 
 export type LabFeeSchedule = Record<LabFeeScheduleKey, number>;
+
+/** 기공소 커스텀어벗 수가 항목명. 지그포함=보철+어벗, 지그제외=단독 커스텀어벗. */
+export const LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME = "커스텀어벗(지그포함)";
+export const LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_NAME = "커스텀어벗(지그제외)";
+export const LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_DEFAULT_PRICE = 40000;
+export const LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_DEFAULT_PRICE = 30000;
+
+export const isCustomAbutmentWithJigFeeName = (name: string) => {
+  const compact = String(name || "")
+    .trim()
+    .replace(/\s+/g, "");
+  return (
+    compact === "커스텀어벗" ||
+    compact === "커스텀어버트먼트" ||
+    compact === "커스텀어벗(지그포함)" ||
+    /^customabut(?:ment)?(?:\(withjig\))?$/i.test(compact)
+  );
+};
+
+export const isCustomAbutmentWithoutJigFeeName = (name: string) => {
+  const compact = String(name || "")
+    .trim()
+    .replace(/\s+/g, "");
+  return (
+    compact === "커스텀어벗(지그제외)" ||
+    /^customabut(?:ment)?\(withoutjig\)$/i.test(compact)
+  );
+};
+
+/** 견적 라인·툴팁 라벨이 커스텀어벗 수가 행인지(지그포함/제외 포함). */
+export const isCustomAbutmentLabFeeLineType = (prosthesisType: string) => {
+  const compact = String(prosthesisType || "")
+    .trim()
+    .replace(/\s+/g, "");
+  if (!compact) return false;
+  return (
+    isCustomAbutmentWithJigFeeName(prosthesisType) ||
+    isCustomAbutmentWithoutJigFeeName(prosthesisType) ||
+    compact === "커스텀어벗" ||
+    /^(?:커스텀)?어벗디자인$/i.test(compact) ||
+    /^커스텀어벗\(/.test(compact)
+  );
+};
 
 /** 기공비 기본 수가(원). 마스터 스위치가 꺼져 있으면 청구하지 않는다. */
 export const LAB_FEE_SCHEDULE_DEFAULTS: LabFeeSchedule = {
@@ -182,7 +227,10 @@ export const LAB_FEE_SCHEDULE_DEFAULTS: LabFeeSchedule = {
   removableTemp3: 30000,
   removableTemp6: 50000,
   customAbutmentDesign: 10000,
-  customAbutmentDesignAndProduction: 40000,
+  /** 레거시 키 → 커스텀어벗(지그포함) */
+  customAbutmentDesignAndProduction:
+    LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_DEFAULT_PRICE,
+  customAbutmentWithoutJig: LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_DEFAULT_PRICE,
 };
 
 /** 기공소 미지정(자동매칭) 견적 — 기본수가 없음 */
@@ -195,6 +243,7 @@ export const LAB_FEE_SCHEDULE_ZEROS: LabFeeSchedule = {
   removableTemp6: 0,
   customAbutmentDesign: 0,
   customAbutmentDesignAndProduction: 0,
+  customAbutmentWithoutJig: 0,
 };
 
 export const LAB_FEE_SCHEDULE_UNSET_ENABLED: Record<LabFeeScheduleKey, boolean> =
@@ -421,10 +470,37 @@ export const resolveAdoptedAbutmentKind = (
 const resolveLabAbutmentUnitPrice = (
   items: LabFeeItem[],
   useRemake: boolean,
+  withJig = true,
 ) => {
-  const item = findLabFeeItemForProsthesisType(items, "커스텀어벗");
+  const feeName = withJig
+    ? LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME
+    : LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_NAME;
+  const item = findLabFeeItemForProsthesisType(items, feeName);
   if (!item || item.unit !== "perTooth") return 0;
   return Math.max(0, Math.round(Number(useRemake ? item.remake : item.price) || 0));
+};
+
+/** 보철+어벗 → 지그포함, 단독 커스텀어벗 → 지그제외 */
+const labAbutmentFeeNameForRow = (row?: {
+  prosthesisType?: string;
+  type?: string;
+} | null) => {
+  const prosthesisType = String(row?.prosthesisType || row?.type || "").trim();
+  if (isCustomAbutmentProsthesisType(prosthesisType)) {
+    return LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_NAME;
+  }
+  return LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME;
+};
+
+const resolveLabAbutmentUnitPriceForRow = (
+  items: LabFeeItem[],
+  useRemake: boolean,
+  row?: { prosthesisType?: string; type?: string } | null,
+) => {
+  const withJig = !isCustomAbutmentProsthesisType(
+    String(row?.prosthesisType || row?.type || "").trim(),
+  );
+  return resolveLabAbutmentUnitPrice(items, useRemake, withJig);
 };
 
 export const isRetainerProsthesisType = (prosthesisType: string) => {
@@ -590,11 +666,18 @@ export const canonicalizeFeeItemName = (name: string) => {
   if (compact === "인레이" || /^inlay$/i.test(raw)) return "인레이";
   if (compact === "크라운" || /^crown$/i.test(raw)) return "크라운";
   if (
+    compact === "커스텀어벗(지그제외)" ||
+    /^customabut(?:ment)?\(withoutjig\)$/i.test(compact)
+  ) {
+    return LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_NAME;
+  }
+  if (
     compact === "커스텀어벗" ||
     compact === "커스텀어버트먼트" ||
-    /^customabut(?:ment)?$/i.test(compact)
+    compact === "커스텀어벗(지그포함)" ||
+    /^customabut(?:ment)?(?:\(withjig\))?$/i.test(compact)
   ) {
-    return "커스텀어벗";
+    return LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME;
   }
   if (compact === "배송비" || /^shipping$/i.test(raw)) return "배송비";
   return raw;
@@ -749,12 +832,22 @@ const migrateLegacyLabFeeItems = (
       tiers: [{ n: 6, price: schedule.removableTemp6, remake: remake.removableTemp6 }],
     },
     {
-      id: "customAbutment",
-      name: "커스텀어벗",
+      id: "customAbutmentWithJig",
+      name: LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME,
       unit: "perTooth",
       enabled: on("customAbutmentDesignAndProduction"),
       price: schedule.customAbutmentDesignAndProduction,
       remake: remake.customAbutmentDesignAndProduction,
+      tiers: [],
+    },
+    {
+      id: "customAbutmentWithoutJig",
+      name: LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_NAME,
+      unit: "perTooth",
+      enabled:
+        on("customAbutmentWithoutJig") && on("customAbutmentDesignAndProduction"),
+      price: schedule.customAbutmentWithoutJig,
+      remake: remake.customAbutmentWithoutJig,
       tiers: [],
     },
   ];
@@ -827,12 +920,69 @@ export const normalizeLabFeeItems = (
       if (isLabFeeShippingItem(item)) continue;
       let id = item.id;
       if (!id || seen.has(id)) id = `item-${out.length + 1}`;
+      if (
+        id === "customAbutment" &&
+        isCustomAbutmentWithJigFeeName(item.name)
+      ) {
+        id = "customAbutmentWithJig";
+      }
+      if (seen.has(id)) id = `item-${out.length + 1}`;
       seen.add(id);
       out.push({ ...item, id });
     }
-    return stripLabFeeShippingItems(expandPerNTeethTierItems(out));
+    return stripLabFeeShippingItems(
+      ensureSplitCustomAbutmentFeeItems(expandPerNTeethTierItems(out)),
+    );
   }
   return migrateLegacyLabFeeItems(src as Partial<LabFeeSchedule>);
+};
+
+/** 레거시 단일「커스텀어벗」이 있으면 지그제외 항목을 기본가로 보완. */
+const ensureSplitCustomAbutmentFeeItems = (items: LabFeeItem[]): LabFeeItem[] => {
+  const list = Array.isArray(items) ? items : [];
+  const withJig = list.find((item) => isCustomAbutmentWithJigFeeName(item.name));
+  const withoutJig = list.find((item) =>
+    isCustomAbutmentWithoutJigFeeName(item.name),
+  );
+  if (!withJig && !withoutJig) return list;
+  const out = [...list];
+  const seen = new Set(out.map((item) => item.id));
+  const takeId = (wanted: string) => {
+    let id = wanted;
+    if (!seen.has(id)) {
+      seen.add(id);
+      return id;
+    }
+    let n = 2;
+    while (seen.has(`${wanted}-${n}`)) n += 1;
+    id = `${wanted}-${n}`;
+    seen.add(id);
+    return id;
+  };
+  if (!withJig && out.length < MAX_LAB_FEE_ITEMS) {
+    out.push({
+      id: takeId("customAbutmentWithJig"),
+      name: LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME,
+      unit: "perTooth",
+      enabled: withoutJig!.enabled !== false,
+      price: LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_DEFAULT_PRICE,
+      remake: 0,
+      tiers: [],
+    });
+  }
+  if (!withoutJig && out.length < MAX_LAB_FEE_ITEMS) {
+    const seed = withJig || withoutJig;
+    out.push({
+      id: takeId("customAbutmentWithoutJig"),
+      name: LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_NAME,
+      unit: "perTooth",
+      enabled: seed?.enabled !== false,
+      price: LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_DEFAULT_PRICE,
+      remake: 0,
+      tiers: [],
+    });
+  }
+  return out.slice(0, MAX_LAB_FEE_ITEMS);
 };
 
 export const findLabFeeItemForProsthesisType = (
@@ -867,7 +1017,9 @@ export const labFeeItemNameForProsthesisType = (prosthesisType: string) => {
   if (!raw || isMissingToothProsthesisType(raw)) {
     return "";
   }
-  if (isCustomAbutmentProsthesisType(raw)) return "커스텀어벗";
+  if (isCustomAbutmentProsthesisType(raw)) {
+    return LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_NAME;
+  }
   if (isRemovableTempProsthesisType(raw)) return "임시치아";
   return canonicalizeFeeItemName(raw);
 };
@@ -903,10 +1055,10 @@ export const labFeeItemNamesNeededForToothWorks = (
     if (
       isCustomAbutmentWork(row) &&
       !isCustomAbutmentProsthesisType(row.prosthesisType || row.type || "") &&
-      !seen.has("커스텀어벗")
+      !seen.has(LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME)
     ) {
-      seen.add("커스텀어벗");
-      names.push("커스텀어벗");
+      seen.add(LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME);
+      names.push(LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME);
     }
   }
   return names;
@@ -1050,6 +1202,7 @@ export const normalizeLabFeeSchedule = (input?: Partial<LabFeeSchedule> | null):
     removableTemp6: pick("removableTemp6"),
     customAbutmentDesign: pick("customAbutmentDesign"),
     customAbutmentDesignAndProduction: pick("customAbutmentDesignAndProduction"),
+    customAbutmentWithoutJig: pick("customAbutmentWithoutJig"),
   };
 };
 
@@ -1076,6 +1229,7 @@ export const normalizeLabFeeRemakeSchedule = (
     removableTemp6: pick("removableTemp6"),
     customAbutmentDesign: pick("customAbutmentDesign"),
     customAbutmentDesignAndProduction: pick("customAbutmentDesignAndProduction"),
+    customAbutmentWithoutJig: pick("customAbutmentWithoutJig"),
   };
 };
 
@@ -1164,7 +1318,6 @@ export const computePracticeTransferRetailFees = (params: {
 }): PracticeTransferRetailFees => {
   const useRemake = Boolean(params.remake);
   const items = normalizeLabFeeItems(params.labFeeSchedule);
-  const remakeSchedule = normalizeLabFeeRemakeSchedule(params.labFeeSchedule);
   const waiveAbutment = Boolean(useRemake || params.skipAbutmentFees);
   const rows = Array.isArray(params.toothWorks) ? params.toothWorks : [];
   const absorbedNonTemp = absorbedNonTempTeethInTempSpans(rows);
@@ -1179,15 +1332,17 @@ export const computePracticeTransferRetailFees = (params: {
 
   const abutmentSplitForRow = (row: (typeof rows)[number]) => {
     if (waiveAbutment || !isCustomAbutmentWork(row)) {
-      return { abuts: 0, lab: 0, pending: false, quote: false };
+      return { abuts: 0, lab: 0, pending: false, quote: false, feeName: "" };
     }
-    const lab = resolveLabAbutmentUnitPrice(items, useRemake);
+    const feeName = labAbutmentFeeNameForRow(row);
+    const lab = resolveLabAbutmentUnitPriceForRow(items, useRemake, row);
     if (isPendingRoundBarAbutment(row, params.implantFavorites)) {
       return {
         abuts: 0,
         lab,
         pending: true,
         quote: false,
+        feeName,
       };
     }
     const kind = resolveAdoptedAbutmentKind(row, params.implantFavorites);
@@ -1197,6 +1352,7 @@ export const computePracticeTransferRetailFees = (params: {
       lab,
       pending: false,
       quote: kind === "round_bar" && lab === 0,
+      feeName,
     };
   };
   const addAbutment = (split: {
@@ -1204,6 +1360,7 @@ export const computePracticeTransferRetailFees = (params: {
     lab: number;
     pending: boolean;
     quote?: boolean;
+    feeName?: string;
   }) => {
     if (split.abuts > 0 || split.quote) {
       abutmentRetailTotal += split.abuts;
@@ -1218,6 +1375,8 @@ export const computePracticeTransferRetailFees = (params: {
   };
   const retailNote = (split: { quote?: boolean }): AbutmentRetailNote | undefined =>
     split.quote ? "quote" : undefined;
+  const abutmentLineType = (split: { feeName?: string }) =>
+    split.feeName || LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME;
 
   for (const row of rows) {
     const toothNumber = String(row?.toothNumber || row?.tooth || "").trim();
@@ -1230,9 +1389,7 @@ export const computePracticeTransferRetailFees = (params: {
 
     if (isCustomAbutmentProsthesisType(prosthesisType)) {
       if (useRemake) {
-        const feeKey = resolveRemakeLabFeeKey(row);
-        if (!feeKey) continue;
-        const remakeFee = Math.max(0, Math.round(Number(remakeSchedule[feeKey] || 0)));
+        const remakeFee = resolveLabAbutmentUnitPrice(items, true, false);
         const pending = isPendingRoundBarAbutment(row, params.implantFavorites);
         labFeeTotal += remakeFee;
         if (pending) {
@@ -1241,7 +1398,7 @@ export const computePracticeTransferRetailFees = (params: {
         }
         lines.push({
           toothNumber,
-          prosthesisType,
+          prosthesisType: LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_NAME,
           labFee: pending ? 0 : remakeFee,
           labAbutmentFee: pending ? remakeFee : 0,
           labAbutmentPending: pending,
@@ -1253,7 +1410,7 @@ export const computePracticeTransferRetailFees = (params: {
       addAbutment(split);
       lines.push({
         toothNumber,
-        prosthesisType,
+        prosthesisType: abutmentLineType(split),
         labFee: 0,
         labAbutmentFee: split.lab,
         labAbutmentPending: split.pending,
@@ -1290,7 +1447,7 @@ export const computePracticeTransferRetailFees = (params: {
       ) {
         lines.push({
           toothNumber,
-          prosthesisType: "커스텀어벗",
+          prosthesisType: abutmentLineType(split),
           labFee: 0,
           labAbutmentFee: split.lab,
           labAbutmentPending: split.pending,
@@ -1340,7 +1497,7 @@ export const computePracticeTransferRetailFees = (params: {
           }
           lines.push({
             toothNumber: tooth,
-            prosthesisType: "커스텀어벗",
+            prosthesisType: abutmentLineType(split),
             labFee: 0,
             labAbutmentFee: split.lab,
             labAbutmentPending: split.pending,

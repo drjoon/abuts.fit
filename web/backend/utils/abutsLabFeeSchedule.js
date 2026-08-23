@@ -13,6 +13,7 @@ import SystemSettings from "../models/systemSettings.model.js";
 import {
   buildDefaultLabFeeSchedule,
   canonicalizeFeeItemName,
+  ensureSplitCustomAbutmentFeeItems,
   isLabFeeShippingItem,
   isRemovedPonticFeeRow,
   normalizeLabFeeItem,
@@ -22,7 +23,7 @@ import {
 
 const MAX_ITEMS = 40;
 
-/** 자동매칭 예산에서 제외할 레거시 디자인/디자인+생산 키(항목명「커스텀어벗」은 기본 기공수가에 포함) */
+/** 자동매칭 예산에서 제외할 레거시 디자인/디자인+생산 키(지그포함·지그제외는 기본 기공수가에 포함) */
 const EXCLUDED_CATALOG_IDS = new Set([
   "customAbutmentDesign",
   "customAbutmentDesignAndProduction",
@@ -112,7 +113,7 @@ export function normalizeAbutsLabFeeItems(rawItems) {
     });
   }
   if (!out.length) return buildDefaultAbutsLabFeeItems();
-  return stripLabFeeShippingItems(out);
+  return stripLabFeeShippingItems(ensureSplitCustomAbutmentFeeItems(out));
 }
 
 export function normalizeAbutsLabFeeSchedule(raw) {
