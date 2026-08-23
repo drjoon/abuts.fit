@@ -15,6 +15,11 @@ namespace DentalAddin
             AppLogger.Log($"DentalAddin: {message}");
         }
 
+        public static PerfScope Measure(string name)
+        {
+            return PerfScope.Measure(name);
+        }
+
         public static void LogException(string context, Exception exception)
         {
             if (exception == null)

@@ -701,6 +701,14 @@ namespace DentalAddin
 
         private static bool TryRunComposite2SplitAB(FreeFormFeature freeFormFeature)
         {
+            using (DentalLogger.Measure("Composite2SplitLine2"))
+            {
+                return TryRunComposite2SplitABCore(freeFormFeature);
+            }
+        }
+
+        private static bool TryRunComposite2SplitABCore(FreeFormFeature freeFormFeature)
+        {
             if (Document == null || freeFormFeature == null)
             {
                 return false;
@@ -1143,7 +1151,15 @@ namespace DentalAddin
             // - backend 경사축 벡터(ABUTS_COMPOSITE_ORIENTATION_VECTOR)가 있으면
             //   FINISH_FRONT(opA)에 OrientationProfile을 런타임 생성/적용한다.
             // - 벡터가 없으면 PRC 기본값을 그대로 사용한다.
-            TryApplyCompositeOrientationProfileFromEnv(opA, "A");
+            // - B_PHASE(!runA)에서는 A OrientationProfile 생성을 생략한다 (중복 비용).
+            if (runA)
+            {
+                TryApplyCompositeOrientationProfileFromEnv(opA, "A");
+            }
+            else
+            {
+                DentalLogger.Log("Composite2SplitLine2 - phaseMode=B_PHASE, A OrientationProfile 생성 생략");
+            }
 
             // [중요] StockAllowance 적용 범위
             // - 과거 장애: A만 적용하고 B 적용이 누락되면, B 활성화 시 후속 NC 단계 불안정 가능.
@@ -1474,9 +1490,12 @@ namespace DentalAddin
             {
                 int beforeCount = Document?.Operations?.Count ?? -1;
                 DentalLogger.Log($"TryAddOperation:{context} - Add 호출 전 (beforeCount={beforeCount}, techType={castTechnology.GetType().Name}, graphicType={graphicObject.GetType().Name}, option={(option == Missing.Value ? "Missing" : option)})");
+                var addSw = System.Diagnostics.Stopwatch.StartNew();
                 Document.Operations.Add(castTechnology, graphicObject, RuntimeHelpers.GetObjectValue(option));
+                addSw.Stop();
                 int afterCount = Document?.Operations?.Count ?? -1;
-                DentalLogger.Log($"TryAddOperation:{context} - Add 호출 성공 (afterCount={afterCount})");
+                DentalLogger.Log($"TryAddOperation:{context} - Add 호출 성공 (afterCount={afterCount}, elapsedMs={addSw.ElapsedMilliseconds})");
+                DentalLogger.Log($"[PERF] TryAddOperation:{context} END elapsedMs={addSw.ElapsedMilliseconds}");
                 TryPruneJustAddedOperationByCamDiameter(context, beforeCount, afterCount);
             }
             catch (Exception ex)
@@ -1605,8 +1624,11 @@ namespace DentalAddin
 
             try
             {
+                var openSw = System.Diagnostics.Stopwatch.StartNew();
                 ITechnology[] result = (ITechnology[])technologyUtility.OpenProcess(fullPath);
-                DentalLogger.Log($"OpenProcess:{context} - PRC 파일 열기 성공 (Count:{result?.Length ?? 0})");
+                openSw.Stop();
+                DentalLogger.Log($"OpenProcess:{context} - PRC 파일 열기 성공 (Count:{result?.Length ?? 0}, elapsedMs={openSw.ElapsedMilliseconds})");
+                DentalLogger.Log($"[PERF] OpenProcess:{context} END elapsedMs={openSw.ElapsedMilliseconds}");
                 return result ?? Array.Empty<ITechnology>();
             }
             catch (Exception ex)

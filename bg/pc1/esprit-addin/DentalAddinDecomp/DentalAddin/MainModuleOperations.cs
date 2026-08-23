@@ -32,8 +32,6 @@ namespace DentalAddin
     {
         public static void OperationSeq()
         {
-
-
             // 2026-06-08: Two-Phase를 기본값으로 변경, One-Phase는 명시적 요청 시에만 사용
             bool onePhaseEnabled = IsOnePhaseEnabled();
             bool roughSplitEnabled = IsRoughSplitEnabled();
@@ -100,11 +98,17 @@ namespace DentalAddin
                 // Back:   Turn -> Rough
                 // Middle_Turn / Middle_Rough는 레거시로 생성하지 않는다 (Front+Back로 커버)
                 // Finish: deep=Front/Back 분할, none=All 단일
-                ExecuteTwoPhaseTurning("FRONT");
-                ExecuteTwoPhaseRough("FRONT");
+                using (DentalLogger.Measure("OperationSeq.FRONT_TurnRough"))
+                {
+                    ExecuteTwoPhaseTurning("FRONT");
+                    ExecuteTwoPhaseRough("FRONT");
+                }
 
-                ValidateBeforeOperation("FrontFaceMill", Array.Empty<string>(), new[] { "3DMilling_FrontFace" });
-                FrontFaceMill();
+                using (DentalLogger.Measure("OperationSeq.FrontFaceMill"))
+                {
+                    ValidateBeforeOperation("FrontFaceMill", Array.Empty<string>(), new[] { "3DMilling_FrontFace" });
+                    FrontFaceMill();
+                }
 
                 // 요청 반영:
                 // Finish_Front는 Front Face와 Back_Turn 사이에 생성한다.
@@ -112,17 +116,26 @@ namespace DentalAddin
                 try
                 {
                     Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", "A_PHASE");
-                    ValidateBeforeOperation("FreeFormMill", Array.Empty<string>(), RequiredFinishFreeFormFeatures());
-                    FreeFormMill();
-                    TryNormalizeCompositeFinishOrderAfterFreeForm();
+                    using (DentalLogger.Measure("OperationSeq.FINISH_FRONT"))
+                    {
+                        ValidateBeforeOperation("FreeFormMill", Array.Empty<string>(), RequiredFinishFreeFormFeatures());
+                        FreeFormMill();
+                        TryNormalizeCompositeFinishOrderAfterFreeForm();
+                    }
 
-                    ExecuteTwoPhaseTurning("BACK");
-                    ExecuteTwoPhaseRough("BACK");
+                    using (DentalLogger.Measure("OperationSeq.BACK_TurnRough"))
+                    {
+                        ExecuteTwoPhaseTurning("BACK");
+                        ExecuteTwoPhaseRough("BACK");
+                    }
 
                     Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", "B_PHASE");
-                    ValidateBeforeOperation("FreeFormMill", Array.Empty<string>(), RequiredFinishFreeFormFeatures());
-                    FreeFormMill();
-                    TryNormalizeCompositeFinishOrderAfterFreeForm();
+                    using (DentalLogger.Measure("OperationSeq.FINISH_BACK"))
+                    {
+                        ValidateBeforeOperation("FreeFormMill", Array.Empty<string>(), RequiredFinishFreeFormFeatures());
+                        FreeFormMill();
+                        TryNormalizeCompositeFinishOrderAfterFreeForm();
+                    }
                 }
                 finally
                 {

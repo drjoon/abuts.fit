@@ -114,6 +114,9 @@ namespace DentalAddin
 
         public static int Eror;
 
+        // MainFree DriveSurface/Emerge 1회 준비 여부 (A/B phase 중복 호출 스킵용)
+        private static bool MainFreePrepared;
+
         public static int TurningTimes;
 
         public static Point Pt12;
@@ -367,6 +370,7 @@ namespace DentalAddin
         public static void Main()
         {
             DentalLogger.Log($"Main 시작 - Document:{(Document != null)}, EspritApp:{(EspritApp != null)}, Jump:{Jump}, RL:{RL}, SpindleSide:{SpindleSide}");
+            ResetPerfRunState();
 
             if (Document == null || EspritApp == null)
             {
@@ -1790,8 +1794,23 @@ namespace DentalAddin
             return true;
         }
 
+
+        private static void ResetPerfRunState()
+        {
+            MainFreePrepared = false;
+            DentalLogger.Log("ResetPerfRunState - MainFreePrepared 초기화");
+        }
+
         public static void Composite()
         {
+            // FreeFormMill 경로는 FinishingMethod==1 일 때 Composite2를 쓰므로
+            // legacy Composite(scale 대상 실패) 호출은 불필요한 오버헤드다.
+            if (NumCombobox != null && NumCombobox.Length > 1 && NumCombobox[1] == 1)
+            {
+                DentalLogger.Log("Composite - FinishingMethod==1(Composite2) 이므로 legacy Composite 건너뜀");
+                return;
+            }
+
             int try0000_dispatch = -1;
             int num2 = default(int);
             int count = default(int);

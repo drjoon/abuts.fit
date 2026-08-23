@@ -302,3 +302,13 @@
   - `RoughBoundryFront1` / `RoughBoundryBack1` — Rough `BoundaryProfiles`
   - `CompositeOrientationProfile_*` — Finish OrientationProfile
   - `TurnRgn*` / `3DMilling_0Degree` / `3DMilling_FrontFace` / `3DRoughMilling_*`
+
+
+## 성능 측정 (PERF)
+
+- 로그 타임스탬프는 `yyyy-MM-dd HH:mm:ss.fff` (ms).
+- `[PERF] name START/END elapsedMs=...` 또는 `DentalLogger.Measure("name")` 구간으로 before/after 비교.
+- 핵심 구간: `StlFileProcessor.Process`, `ResetDocument`, `InvokeDentalAddin`, `OperationSeq.*`, `MainFree`, `Composite2SplitLine2`, `TryAddOperation:*`, `GenerateNc`.
+- 기준 샘플(2026-08-23 KJAWMLCS): 총 ~39s. 병목 = Finish_A Add(~10s), Rough Add, 문서 리셋(~4s), NC(~4s), 중복 MainFree/실패 Composite.
+- 개선: Middle 제거(로컬 반영), MainFree 2회차 스킵, FinishingMethod==1 시 legacy Composite 스킵, B_PHASE A OrientationProfile 스킵.
+- 비교: 로그에서 `[PERF]` / `DentalLogger.Measure` END 줄의 `elapsedMs` 합산. `TryAddOperation:* elapsedMs`가 ESPRIT 툴패스 계산 시간.

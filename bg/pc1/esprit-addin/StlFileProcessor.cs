@@ -155,7 +155,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         public void Process(string stlPath, double? frontLimitX = null, double? backLimitX = null, double? materialDiameter = null, bool twoPhase = false, string requestIdHint = null, double? tiltAxisX = null, double? tiltAxisY = null, double? tiltAxisZ = null, double? stlZLengthMm = null, string manufacturerHexRotationHint = null, double? hexRotationAppliedDegHint = null)
         {
             AppLogger.BeginRun();
+            var processSw = System.Diagnostics.Stopwatch.StartNew();
             AppLogger.Log("StlFileProcessor: Process 시작");
+            AppLogger.Log("[PERF] StlFileProcessor.Process START");
             ResetPerRunState();
             if (string.IsNullOrWhiteSpace(manufacturerHexRotationHint))
             {
@@ -180,7 +182,10 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             }
             _documentManager.EnsureCleanDocument(document);
 
+            var resetSw = System.Diagnostics.Stopwatch.StartNew();
             document = _documentManager.ResetDocument(document, materialDiameter);
+            resetSw.Stop();
+            AppLogger.Log($"[PERF] StlFileProcessor.ResetDocument END elapsedMs={resetSw.ElapsedMilliseconds}");
             if (document == null)
             {
                 AppLogger.Log("StlFileProcessor: 템플릿 문서 초기화에 실패했습니다.");
@@ -412,9 +417,13 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     document.LatheMachineSetup.BarDiameter = backendCamDiameter.Value;
                     AppLogger.Log($"StlFileProcessor: Invoke 직전 CAM 직경 재적용 - BarDiameter={backendCamDiameter.Value:F3}");
                 }
+                var addinSw = System.Diagnostics.Stopwatch.StartNew();
                 InvokeDentalAddin(document, effectiveFrontLimit, effectiveBackLimit, stlBoundingTopZ, finishLineTopZ, finishLineMinZ, finishLineEspritR, twoPhase);
+                addinSw.Stop();
+                AppLogger.Log($"[PERF] StlFileProcessor.InvokeDentalAddin END elapsedMs={addinSw.ElapsedMilliseconds}");
                 CaptureNcMetadata(document);
                 AppLogger.Log("StlFileProcessor: NC 생성 시작");
+                var ncSw = System.Diagnostics.Stopwatch.StartNew();
                 string ncFilePath = _ncGenerator.GenerateNcFile(
                     document,
                     stlPath,
@@ -425,7 +434,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     _prcManager?.ConnectionMachiningProcessFilePath,
                     _backendManufacturerHexRotation,
                     _backendHexRotationAppliedDeg);
+                ncSw.Stop();
                 AppLogger.Log($"StlFileProcessor: NC 생성 종료 - path={ncFilePath ?? "<null>"}");
+                AppLogger.Log($"[PERF] StlFileProcessor.GenerateNc END elapsedMs={ncSw.ElapsedMilliseconds}");
                 if (!string.IsNullOrWhiteSpace(ncFilePath))
                 {
                     AppLogger.Log($"StlFileProcessor: NC file generated - {ncFilePath}");
@@ -436,11 +447,15 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     AppLogger.Log($"StlFileProcessor: NC file generation failed - ncFilePath is empty");
                 }
 
+                processSw.Stop();
                 AppLogger.Log($"StlFileProcessor: 완료 - {stlPath}");
+                AppLogger.Log($"[PERF] StlFileProcessor.Process END elapsedMs={processSw.ElapsedMilliseconds}");
             }
             catch (Exception ex)
             {
+                processSw.Stop();
                 AppLogger.Log($"StlFileProcessor: 처리 중 오류 - {ex.Message}");
+                AppLogger.Log($"[PERF] StlFileProcessor.Process END(error) elapsedMs={processSw.ElapsedMilliseconds}");
                 try
                 {
                     if (!string.IsNullOrWhiteSpace(requestId))
