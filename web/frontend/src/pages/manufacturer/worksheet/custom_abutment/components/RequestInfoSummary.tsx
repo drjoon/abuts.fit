@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-23: PreviewModal row: 섹션 라벨을 내용 왼쪽에 인라인 배치하고 환자 일정을 한 줄로 묶어 요약 카드 세로 높이 축소.
 // - 2026-08-23: PreviewModal row: 폰 가로(landscape)에서도 섹션 가로 배치로 STL 세로 공간 확보.
 // - 2026-08-22: 주문 일자(createdAt) 표시에 KST 시각 포함(formatKstDateTimeToKo).
 // - 2026-08-17: 환자 섹션 호버 시 직납 치과 연락처 툴팁. 배송 섹션은 스냅샷(포장.발송)일 때만.
@@ -125,11 +126,24 @@ function Section({
   label,
   children,
   className = "",
+  /** row(프리뷰): 라벨을 내용 왼쪽에 붙여 세로 높이를 줄인다 */
+  inlineLabel = false,
 }: {
   label: string;
   children: ReactNode;
   className?: string;
+  inlineLabel?: boolean;
 }) {
+  if (inlineLabel) {
+    return (
+      <div className={`flex min-w-0 items-baseline gap-x-2 gap-y-0.5 ${className}`}>
+        <div className="shrink-0 text-[10px] font-semibold tracking-wide text-slate-400">
+          {label}
+        </div>
+        <div className="min-w-0 flex-1 space-y-0.5">{children}</div>
+      </div>
+    );
+  }
   return (
     <div className={`space-y-1 min-w-0 ${className}`}>
       <div className="text-[10px] font-semibold tracking-wide text-slate-400">
@@ -263,41 +277,52 @@ export function RequestInfoSummary({
     return null;
   }
 
-  const patientBody = (
+  const patientScheduleParts = (
     <>
-      {(labName || dateLabel || hasScheduleMeta) && (
-        <MetaRow>
-          {labName && (
-            <span className="min-w-0 break-words font-medium text-slate-800">
-              {labName}
-            </span>
-          )}
-          {dateLabel && (
-            <InlineGroup>
-              {labName ? <Dot /> : null}
-              <span className="tabular-nums text-slate-600">{dateLabel}</span>
-            </InlineGroup>
-          )}
-          {shipLabel && (
-            <InlineGroup>
-              {labName || dateLabel ? <Dot /> : null}
-              <span className="tabular-nums text-slate-600 whitespace-nowrap">
-                {shipLabel}
-              </span>
-            </InlineGroup>
-          )}
-          {deadlineText && (
-            <span
-              className={`inline-flex items-center rounded-full border px-1.5 py-0 text-[10px] font-semibold leading-[1.4] whitespace-nowrap ${
-                deadlineBadgeClass ||
-                "bg-slate-50 text-slate-700 border-slate-200"
-              }`}
-            >
-              {deadlineText}
-            </span>
-          )}
-        </MetaRow>
+      {labName && (
+        <span className="min-w-0 break-words font-medium text-slate-800">
+          {labName}
+        </span>
       )}
+      {dateLabel && (
+        <InlineGroup>
+          {labName ? <Dot /> : null}
+          <span className="tabular-nums text-slate-600">{dateLabel}</span>
+        </InlineGroup>
+      )}
+      {shipLabel && (
+        <InlineGroup>
+          {labName || dateLabel ? <Dot /> : null}
+          <span className="tabular-nums text-slate-600 whitespace-nowrap">
+            {shipLabel}
+          </span>
+        </InlineGroup>
+      )}
+      {deadlineText && (
+        <span
+          className={`inline-flex items-center rounded-full border px-1.5 py-0 text-[10px] font-semibold leading-[1.4] whitespace-nowrap ${
+            deadlineBadgeClass ||
+            "bg-slate-50 text-slate-700 border-slate-200"
+          }`}
+        >
+          {deadlineText}
+        </span>
+      )}
+    </>
+  );
+
+  const hasPatientSchedule = Boolean(labName || dateLabel || hasScheduleMeta);
+
+  // row(프리뷰): 일정·신원을 한 MetaRow로 묶어 라벨 옆 1줄 배치. stack(카드)는 기존 2줄 유지.
+  const patientBody = isRow ? (
+    <MetaRow>
+      {hasPatientSchedule ? patientScheduleParts : null}
+      {hasPatientSchedule ? <Dot /> : null}
+      <span className="min-w-0 break-words">{patientIdentityLine}</span>
+    </MetaRow>
+  ) : (
+    <>
+      {hasPatientSchedule && <MetaRow>{patientScheduleParts}</MetaRow>}
       <MetaRow>
         <span className="min-w-0 break-words">{patientIdentityLine}</span>
       </MetaRow>
@@ -307,6 +332,7 @@ export function RequestInfoSummary({
   const patientSection = hasPatient ? (
     <Section
       label="환자"
+      inlineLabel={isRow}
       className={
         isRow && (hasImplant || hasProduction || hasShippingSection)
           ? sectionDividerClass
@@ -353,6 +379,7 @@ export function RequestInfoSummary({
   const implantSection = hasImplant ? (
     <Section
       label="임플란트"
+      inlineLabel={isRow}
       className={[
         isRow && hasPatient ? sectionPadStartClass : "",
         isRow && (hasProduction || hasShippingSection)
@@ -400,6 +427,7 @@ export function RequestInfoSummary({
   const productionSection = hasProduction ? (
     <Section
       label="생산"
+      inlineLabel={isRow}
       className={[
         isRow && (hasPatient || hasImplant) ? sectionPadStartClass : "",
         isRow && hasShippingSection ? sectionDividerClass : "",
@@ -424,6 +452,7 @@ export function RequestInfoSummary({
   const shippingSection = hasShippingSection ? (
     <Section
       label="배송(직납)"
+      inlineLabel={isRow}
       className={
         isRow && (hasPatient || hasImplant || hasProduction)
           ? sectionPadStartClass
@@ -466,7 +495,7 @@ export function RequestInfoSummary({
   return (
     <div
       className={`rounded-lg border border-slate-200/80 bg-slate-50/70 px-3 ${
-        isRow ? "py-2 space-y-2" : "py-2.5 space-y-2.5"
+        isRow ? "py-1.5 space-y-1.5" : "py-2.5 space-y-2.5"
       } ${className}`}
     >
       {leadingSlot}
@@ -474,7 +503,7 @@ export function RequestInfoSummary({
       <div
         className={
           isRow
-            ? `grid grid-cols-1 gap-2.5 ${rowGridClass} max-md:landscape:gap-0 max-md:landscape:items-start md:gap-0 md:items-start`
+            ? `grid grid-cols-1 gap-1.5 ${rowGridClass} max-md:landscape:gap-0 max-md:landscape:items-baseline md:gap-0 md:items-baseline`
             : "space-y-2.5"
         }
       >

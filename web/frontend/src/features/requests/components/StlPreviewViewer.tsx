@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-23: 오버레이 커넥션·헥스 회전을 왼쪽 열로 옮겨 우측(FL/축) 높이·모델 가림 축소.
 // - 2026-08-23: 좁은 뷰어에서 좌·우 메트릭 오버레이가 겹치지 않도록 flex-wrap 바 레이아웃.
 // - 2026-08-23: geometry 파서는 shared/files/modelPreviewFile.parseModelGeometry 공용.
 // - 2026-08-16: 리사이즈 시 카메라 FOV 재맞춤 — 모달 등에서 모델이 위로 치우치지 않게.
@@ -2136,7 +2137,7 @@ export function StlPreviewViewer({
         </div>
       )}
       {showOverlay && (
-        <div className="pointer-events-none absolute inset-x-2 bottom-2 z-10 flex flex-wrap gap-1.5 justify-between">
+        <div className="pointer-events-none absolute inset-x-2 bottom-2 z-10 flex flex-wrap gap-1.5 justify-between items-end">
           <div className="min-w-0 flex-1 basis-[9.5rem] max-w-full rounded-md border border-slate-200 bg-white/90 px-2 py-1 text-[10px] leading-snug font-medium text-slate-800 shadow-sm sm:text-[11px] md:text-[12px]">
             <div className="flex min-w-0 items-baseline justify-between gap-2">
               <span className="shrink-0 text-slate-500">테이퍼 (AAA)</span>
@@ -2156,9 +2157,6 @@ export function StlPreviewViewer({
                 {totalLengthState > 0 ? totalLengthState.toFixed(2) : "-"} mm
               </span>
             </div>
-          </div>
-
-          <div className="min-w-0 flex-1 basis-[9.5rem] max-w-full rounded-md border border-slate-200 bg-white/90 px-2 py-1 text-[10px] leading-snug font-medium text-slate-800 shadow-sm sm:text-[11px] md:text-[12px]">
             <div className="flex min-w-0 items-baseline justify-between gap-2">
               <span className="shrink-0 text-slate-500">커넥션</span>
               <span className="tabular-nums">
@@ -2177,6 +2175,9 @@ export function StlPreviewViewer({
                   : "-"}
               </span>
             </div>
+          </div>
+
+          <div className="min-w-0 flex-1 basis-[9.5rem] max-w-full rounded-md border border-slate-200 bg-white/90 px-2 py-1 text-[10px] leading-snug font-medium text-slate-800 shadow-sm sm:text-[11px] md:text-[12px]">
             <div className="flex min-w-0 items-baseline justify-between gap-2">
               <span className="shrink-0 text-slate-500">FL max_z</span>
               <span className="tabular-nums">
