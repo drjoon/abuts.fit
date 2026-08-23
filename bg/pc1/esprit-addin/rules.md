@@ -73,28 +73,33 @@
 
 - `Splitline_1 = FrontPointX`
 - `Splitline_2 = TwoPhaseSplitLine` (midpoint 사용 금지)
-- Turn/Rough 경계는 rough 공구 반경 + 안전여유(`+0.2mm`) 오버컷을 적용한다.
-  - 기본(D4): `±2.2mm`
-  - `ROUGH_20=1` 실험(D2): `±1.2mm`
+- 인접 툴패스 겹침(Rough/Finish): **선행 끝 = 경계 정확**, **후행 시작 = 경계 tip쪽(그림 왼쪽, X-) 0.5mm**
+  - 상수: `MainModuleComposite.AdjacentToolpathOverlapMm = 0.5`
+  - Middle_Rough는 경계 2개(`Splitline_1`, `Splitline_2`) 모두 동일 원칙
+  - 구식 공구반경 오버컷(`±2.2`/`±1.2`)은 Rough 경계에 사용하지 않는다
 
-### 4.3.1 SharedFinishSplit / Splitline_2 SSOT (검색 키워드: `SharedFinishSplitX`, `finishlineTop-1mm`, `X=-Z`)
+### 4.3.1 SharedFinishSplit / Splitline_2 SSOT (검색 키워드: `SharedFinishSplitX`, `finishlineTop-1mm`, `X=-Z`, `AdjacentToolpathOverlapMm`)
 
-- 목적: **한 식**으로 아래를 모두 동일 좌표에 둔다.
+- 목적: **한 식**으로 아래를 동일 경계 좌표에 둔다.
   - `Front_Rough` 끝
   - `Splitline_2` / `TwoPhaseSplitLine`
   - `Finish_Front` 끝
-  - `Finish_Back` 시작
 - 기준식:
   - `SharedFinishSplitX = finishLineTopX - 1.0` (tip 쪽 1mm, Z+1 ≡ X-1)
+- 인접 후행 시작(경계에서 tip쪽 0.5mm):
+  - `Finish_Back` 시작 = `SharedFinishSplitX - 0.5`
+  - `Middle_Rough` 시작 = `Splitline_1 - 0.5`
+  - `Middle_Rough` 끝 = `Splitline_2` (정확)
+  - `Back_Rough` 시작 = `Splitline_2 - 0.5`
 - 좌표 변환 (`EspritHttpServer`: `FrontPointX = -FrontPoint.z`):
   - MoveSTL 전: `FinishLineX = -finishLineTopZ`
   - MoveSTL 후: `finishLineTopX = BackPointX - finishLineTopZ`
   - 재해석: `finishLineTopX = BackPointX - FinishLineTopZ + DefaultStlShift`
 - 구현:
   - `TryResolveSharedFinishSplitX` → `TryResolveTwoPhaseSplitLineTargetX`
-  - Rough: `frontEnd = splitline2`
-  - Finish: `opA.LastPassPercent = opB.FirstPassPercent` (안전클램프 시에도 함께 이동)
-- 금지: B만 단독 클램프, `Back + Z - stlTopZ` 구식 변환
+  - Rough: `frontEnd = middleEnd = splitline2`, `middleStart = splitline1 - 0.5`, `backStart = splitline2 - 0.5`
+  - Finish: `opA.LastPassPercent` = 경계, `opB.FirstPassPercent` = 경계 tip쪽 0.5mm (안전클램프 시에도 0.5mm 관계 유지)
+- 금지: Front끝=Back시작 동일 좌표 강제, B만 단독 클램프, `Back + Z - stlTopZ` 구식 변환
 
 ### 4.4 Finish none 처리
 
@@ -199,10 +204,10 @@
   - `MillRough_3D_20.prc`의 기술 파라미터(증분 깊이/절삭 속도/공차/코너값 포함)는
     코드에서 오버라이드하지 않고 PRC 값을 그대로 사용한다.
   - 구현: `MainModuleComposite.AddSplitOp`에서 Roughing/ZLevel에 별도 SetProperty 적용 금지
-- Rough 경계(Front/Middle/Back) 오프셋:
-  - 공통식: `roughToolRadius + 0.2`
-  - 기본(D4): `2.2mm`, 실험(D2): `1.2mm`
-  - 구현: `MainModuleComposite.GetRoughBoundaryOffsetMm`
+- Rough 경계(Front/Middle/Back) 겹침:
+  - SSOT: `AdjacentToolpathOverlapMm = 0.5` (선행 끝=경계, 후행 시작=경계-0.5 tip쪽)
+  - 구식 `roughToolRadius + 0.2` (±2.2/±1.2) 오버컷은 사용하지 않는다
+  - 구현: `MainModuleComposite.TryRunRoughFreeFromMillSplitAB`
 
 ### 4.11 Finish_Cuff Back_Rough 스타일 SSOT (2026-07-11)
 

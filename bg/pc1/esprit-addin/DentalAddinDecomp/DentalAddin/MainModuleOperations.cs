@@ -1464,8 +1464,8 @@ namespace DentalAddin
         // 3-stage turning 분할 준비: region(FRONT/MIDDLE/BACK)에 맞는 X 구간을 계산한다.
         // 기준:
         // - Splitline_1 = FrontPointX
-        // - Splitline_2 = midpoint(Splitline_1, BackPointX)
-        // - 경계 확장: ±2.2mm
+        // - Splitline_2 = SharedFinishSplitX (midpoint 금지)
+        // - Middle Rough 정렬: 시작=Splitline_1-0.5, 끝=Splitline_2 (인접 0.5mm 겹침 SSOT)
         private static bool TryPrepareTurningRegionRange(string region, out double rangeMinX, out double rangeMaxX)
         {
             rangeMinX = 0.0;
@@ -1480,12 +1480,13 @@ namespace DentalAddin
 
                 const double faceToRoughMm = 2.2;
                 const double roughToTurnMm = 2.2;
-                const double middleRoughOverCutMm = 2.2;
+                // Middle Rough와 동일: 경계 tip쪽 0.5mm 겹침 (공구반경 2.2 오버컷 폐기)
+                const double adjacentToolpathOverlapMm = 0.5;
 
                 // Rough 경계(현재 정책): Front Face 끝(FrontPointX+3.0) + faceToRough
                 double frontRoughEnd = Math.Min(xMax, splitline1 + GetFrontFaceEndOffsetFromFrontMm() + faceToRoughMm);
-                double middleRoughStart = Math.Max(xMin, splitline1 - middleRoughOverCutMm);
-                double middleRoughEnd = Math.Min(xMax, splitline2 + middleRoughOverCutMm);
+                double middleRoughStart = Math.Max(xMin, splitline1 - adjacentToolpathOverlapMm);
+                double middleRoughEnd = Math.Min(xMax, splitline2);
 
                 string normalized = (region ?? string.Empty).Trim().ToUpperInvariant();
                 switch (normalized)
