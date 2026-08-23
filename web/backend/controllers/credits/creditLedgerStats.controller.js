@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-23: 보철유형 집계에 커스텀어벗 포함(견적 라인 정규화·toothWorks 플래그·어벗생산).
 // - 2026-08-23: STORE_SALE을 소비·스토어 카테고리에 포함.
 // - 2026-08-22: 보철유형 집계 — 견적 라인 공급가 기준·정수 원 반올림(소수 분배 제거).
 // - 2026-08-22: 의뢰자 정산 페이지 통계 탭 — 기간·유형·파트너·보철유형 집계 API.
@@ -16,6 +17,11 @@ import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { normalizeRequestorKind } from "../../utils/requestorCapabilities.js";
 import { buildFeeQuotesForTransferDocs } from "../../services/practiceTransferBilling.service.js";
 import { parseKstQueryBoundDate } from "../../utils/kstQueryBounds.js";
+import {
+  isCustomAbutmentLabFeeLineType,
+  isCustomAbutmentWork,
+  isRemovableTempFeeName,
+} from "../../utils/labFeeSchedule.js";
 
 const REQUESTOR_CREDIT_ACCOUNT_CODES = [
   "REQ_PAID_CREDIT",
@@ -156,11 +162,32 @@ function bumpMap(map, key, { amount = 0, count = 0 } = {}) {
   map.set(k, prev);
 }
 
+const CUSTOM_ABUTMENT_STATS_LABEL = "커스텀어벗";
+
+function normalizeProsthesisStatsLabel(rawType) {
+  const type = String(rawType || "").trim();
+  if (!type) return "미분류";
+  if (isCustomAbutmentLabFeeLineType(type)) return CUSTOM_ABUTMENT_STATS_LABEL;
+  const compact = type.replace(/\s+/g, "");
+  if (
+    isRemovableTempFeeName(type) ||
+    compact.startsWith("임시치아") ||
+    /가철성\s*임시/i.test(type)
+  ) {
+    return "임시치아";
+  }
+  return type;
+}
+
 function collectProsthesisTypesFromToothWorks(toothWorks) {
   const out = [];
   for (const row of Array.isArray(toothWorks) ? toothWorks : []) {
     const type = String(row?.prosthesisType || row?.type || "").trim();
-    if (type) out.push(type);
+    if (type) out.push(normalizeProsthesisStatsLabel(type));
+    // 크라운·브리지·임시치아 + 커스텀어벗 플래그는 보철과 별도 집계
+    if (isCustomAbutmentWork(row) && type && !isCustomAbutmentLabFeeLineType(type)) {
+      out.push(CUSTOM_ABUTMENT_STATS_LABEL);
+    }
   }
   return out;
 }
@@ -213,12 +240,16 @@ function buildProsthesisAllocations({ quote, toothWorks, fallbackAmount }) {
   if (lines.length) {
     const byType = new Map();
     for (const line of lines) {
-      const type = String(line?.prosthesisType || "").trim() || "미분류";
+      const type = normalizeProsthesisStatsLabel(line?.prosthesisType);
       const amt = lineRetailAmount(line);
       if (amt <= 0) continue;
       bumpMap(byType, type, { amount: amt, count: 1 });
     }
-    return scaleIntegerAllocations([...byType.entries()], fallbackAmount);
+    const entries = [...byType.entries()];
+    // 견적 라인이 있어도 금액이 없으면 toothWorks 폴백(커스텀어벗 플래그 포함)
+    if (entries.length) {
+      return scaleIntegerAllocations(entries, fallbackAmount);
+    }
   }
 
   const types = [
@@ -350,7 +381,15 @@ export async function getMyCreditLedgerStats(req, res) {
             targetLabName: 1,
             assigneeLabName: 1,
             practiceBusinessAnchorId: 1,
+            targetLabAnchorId: 1,
             toothWorks: 1,
+            billing: 1,
+            matchingMode: 1,
+            createdAt: 1,
+            remake: 1,
+            "production.rushProcessing": 1,
+            status: 1,
+            autoMatch: 1,
           })
           .lean()
       : Promise.resolve([]),
@@ -496,14 +535,12 @@ export async function getMyCreditLedgerStats(req, res) {
           "기공소";
       }
       prosthesisTypes = collectProsthesisTypesFromToothWorks(ptx?.toothWorks);
-    } else if (rt === "REQUEST" && requestById.has(refId)) {
+        } else if (rt === "REQUEST" && requestById.has(refId)) {
       const req = requestById.get(refId);
       partnerLabel =
         String(req?.caseInfos?.clinicName || "").trim() || (isLab ? "치과" : "");
-      const singleType = String(req?.prosthesisType || "").trim();
-      prosthesisTypes = singleType
-        ? [singleType]
-        : collectProsthesisTypesFromToothWorks(req?.toothWorks);
+      // 어벗생산(REQUEST) 소비는 커스텀어벗으로 집계
+      prosthesisTypes = [CUSTOM_ABUTMENT_STATS_LABEL];
     }
 
     const rowAmount = roundSupplyAmount(

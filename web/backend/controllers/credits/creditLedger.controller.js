@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-23: 커스텀어벗 통계 드릴다운 — toothWorks 플래그·어벗생산 REQUEST 포함.
 // - 2026-08-21: PTX abuts_shipping enrich — BA+출고일 박스키(기공소 생산·배송 묶음).
 // - 2026-08-19: 어벗디자인 박스 키=의뢰 사업자+예정출고일. 수신자는 의뢰 사업자명.
 // - 2026-08-23: 치과 정산 내역 — 필터 기간 소비액(periodSpendSummary) 응답.
@@ -36,6 +37,7 @@ import { getBusinessCreditBalanceSnapshot } from "../../services/creditBalance.s
 import { buildFeeQuotesForTransferDocs } from "../../services/practiceTransferBilling.service.js";
 import { scheduleHealMissingExpressSurchargesForBusiness } from "../requests/common.review.helpers.js";
 import { normalizeRequestorKind } from "../../utils/requestorCapabilities.js";
+import { isCustomAbutmentLabFeeLineType } from "../../utils/labFeeSchedule.js";
 import { buildOccurredAtFromPeriodQuery } from "../../utils/kstQueryBounds.js";
 import {
   attachCreditLedgerRequestFields,
@@ -215,25 +217,55 @@ async function resolveProsthesisRefIds({
   const rx = safeRegex(type);
   if (!rx) return [];
 
+  const isCustomAbutmentStats =
+    isCustomAbutmentLabFeeLineType(type) || type === "커스텀어벗";
+
+  const toothWorksMatch = isCustomAbutmentStats
+    ? {
+        $or: [
+          { "toothWorks.prosthesisType": rx },
+          { "toothWorks.prosthesisType": /커스텀어벗/ },
+          { "toothWorks.customAbutment": true },
+          { "toothWorks.hasCustomAbutment": true },
+        ],
+      }
+    : { "toothWorks.prosthesisType": rx };
+
+  const prosthesisOr = isCustomAbutmentStats
+    ? [
+        { prosthesisType: rx },
+        { prosthesisType: /커스텀어벗/ },
+        { "toothWorks.prosthesisType": rx },
+        { "toothWorks.prosthesisType": /커스텀어벗/ },
+        { "toothWorks.customAbutment": true },
+        { "toothWorks.hasCustomAbutment": true },
+      ]
+    : [{ prosthesisType: rx }, { "toothWorks.prosthesisType": rx }];
+
   const refIds = [];
-  const prosthesisOr = [{ prosthesisType: rx }, { "toothWorks.prosthesisType": rx }];
 
   if (requestorKind === "practice") {
     const [ptxDocs, requestDocs] = await Promise.all([
       PracticeTransfer.find({
         practiceBusinessAnchorId: anchorObjectId,
-        "toothWorks.prosthesisType": rx,
+        ...toothWorksMatch,
       })
         .select({ _id: 1 })
         .limit(200)
         .lean(),
-      Request.find({
-        businessAnchorId: anchorObjectId,
-        $or: prosthesisOr,
-      })
-        .select({ _id: 1 })
-        .limit(200)
-        .lean(),
+      // 커스텀어벗 통계 드릴다운: 어벗생산 REQUEST 포함
+      isCustomAbutmentStats
+        ? Request.find({ businessAnchorId: anchorObjectId })
+            .select({ _id: 1 })
+            .limit(200)
+            .lean()
+        : Request.find({
+            businessAnchorId: anchorObjectId,
+            $or: prosthesisOr,
+          })
+            .select({ _id: 1 })
+            .limit(200)
+            .lean(),
     ]);
     refIds.push(...ptxDocs.map((doc) => doc?._id).filter(Boolean));
     refIds.push(...requestDocs.map((doc) => doc?._id).filter(Boolean));
@@ -250,19 +282,26 @@ async function resolveProsthesisRefIds({
               { targetLabAnchorId: anchorObjectId },
             ],
           },
-          { "toothWorks.prosthesisType": rx },
+          toothWorksMatch,
         ],
       })
         .select({ _id: 1 })
         .limit(200)
         .lean(),
-      Request.find({
-        "caseInfos.practiceRouting.targetLabAnchorId": anchorObjectId,
-        $or: prosthesisOr,
-      })
-        .select({ _id: 1 })
-        .limit(200)
-        .lean(),
+      isCustomAbutmentStats
+        ? Request.find({
+            "caseInfos.practiceRouting.targetLabAnchorId": anchorObjectId,
+          })
+            .select({ _id: 1 })
+            .limit(200)
+            .lean()
+        : Request.find({
+            "caseInfos.practiceRouting.targetLabAnchorId": anchorObjectId,
+            $or: prosthesisOr,
+          })
+            .select({ _id: 1 })
+            .limit(200)
+            .lean(),
     ]);
     refIds.push(...ptxDocs.map((doc) => doc?._id).filter(Boolean));
     refIds.push(...requestDocs.map((doc) => doc?._id).filter(Boolean));
