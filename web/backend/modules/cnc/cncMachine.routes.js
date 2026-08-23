@@ -113,6 +113,13 @@ router.get(
   cncMachineController.getCompletedMachiningRecords,
 );
 
+// 가공 통계 (제조사, 관리자)
+router.get(
+  "/machining/statistics",
+  authorizeRoles("manufacturer", "admin"),
+  cncMachineController.getMachiningStatistics,
+);
+
 // 자주검사 미확정 가공 완료 목록 조회 (제조사, 관리자)
 router.get(
   "/machining/pending-self-inspections",

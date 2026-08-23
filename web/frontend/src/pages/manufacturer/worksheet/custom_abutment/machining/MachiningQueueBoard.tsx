@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-08-24: 장비 상태 갱신 뱃지 — 직경별 건수 옆(leadingAddon)으로 이동.
+// - 2026-08-24: 상단 헤더 — 진행중 의뢰·직경 카드(좌) + 상태·액션 버튼(우) 한 행. REAL 뱃지 제거.
 // - 2026-08-21: Next Up 드래그로 타 장비 이동(moveNextUpToMachine) 연결.
 // - 2026-08-19: NC 코드 에디터 저장 후 PreviewModal NC 텍스트를 즉시 반영(페이지 새로고침 없이).
 // - 2026-08-18: 재생성 완료 alert 클릭으로 CAM 프리뷰를 열던 연결 제거.
@@ -25,7 +27,7 @@ import { onNotification } from "@/shared/realtime/socket";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { useSearchParams } from "react-router-dom";
-import { AlertTriangle, ArrowLeft, ArrowRight, ListOrdered, X, Zap } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ArrowRight, BarChart3, ListOrdered, X, Zap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/shared/ui/cn";
 import { RESPONSIVE } from "@/shared/ui/responsive";
@@ -63,11 +65,14 @@ import { useManUpload } from "@/pages/manufacturer/equipment/cnc/hooks/useManUpl
 import { MachiningRequestLabel } from "./components/MachiningRequestLabel";
 import { ExpressRebalanceAlertModal } from "./components/ExpressRebalanceAlertModal";
 import { MachiningPriorityRulesModal } from "./components/MachiningPriorityRulesModal";
+import { MachiningStatisticsModal } from "./components/MachiningStatisticsModal";
 import { buildLabelExtraProps } from "./utils/label";
 import { PreviewModal } from "@/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal";
 import { usePreviewLoader } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/usePreviewLoader";
 import { useRequestFileHandlers } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers";
 import type { ManufacturerRequest } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
+import { WorksheetQueueSummary } from "@/shared/ui/dashboard/WorksheetQueueSummary";
+import type { DiameterBucketKey } from "@/shared/ui/dashboard/WorksheetDiameterQueueBar";
 
 type MaterialLikeMachine = {
   currentMaterial?: { diameter?: unknown; diameterGroup?: unknown } | null;
@@ -158,8 +163,14 @@ const isMaterialExhaustedAlarmText = (value: unknown) => {
 
 export const MachiningQueueBoard = ({
   searchQuery,
+  queueTotal = 0,
+  queueLabels = ["6", "8", "10", "12"],
+  queueCounts = [0, 0, 0, 0],
 }: {
   searchQuery?: string;
+  queueTotal?: number;
+  queueLabels?: DiameterBucketKey[];
+  queueCounts?: number[];
 }) => {
   const { token } = useAuthStore();
   const { toast } = useToast();
@@ -330,7 +341,6 @@ export const MachiningQueueBoard = ({
     reassignProductionQueues,
     moveNextUpToMachine,
     handleBoardClickCapture,
-    isMockFromBackend,
     globalAutoEnabled,
     setGlobalAutoEnabled,
     updateMachineAuto,
@@ -377,6 +387,7 @@ export const MachiningQueueBoard = ({
   const [expressRebalanceModalOpen, setExpressRebalanceModalOpen] =
     useState(false);
   const [priorityRulesModalOpen, setPriorityRulesModalOpen] = useState(false);
+  const [statsModalOpen, setStatsModalOpen] = useState(false);
   const lastAutoOpenedExpressRebalanceIdRef = useRef<string>("");
 
   useEffect(() => {
@@ -1321,45 +1332,34 @@ export const MachiningQueueBoard = ({
 
   return (
     <div
-      className="space-y-4"
       onMouseDownCapture={handleBoardClickCapture}
       onTouchStartCapture={handleBoardClickCapture}
     >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-2">
-          {isMockFromBackend != null ? (
-            <Badge
-              variant="outline"
-              className={`shrink-0 border px-2 py-0.5 text-[11px] font-semibold ${
-                isMockFromBackend === true
-                  ? "border-primary-muted bg-primary-soft text-primary-strong"
-                  : "border-slate-200 bg-slate-50 text-slate-700"
-              }`}
-              title={
-                isMockFromBackend === true ? "더미(모의) 가공" : "실제 가공"
-              }
-            >
-              {isMockFromBackend === true ? "MOCK" : "REAL"}
-            </Badge>
-          ) : null}
-
-          <div className="truncate rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-600">
-            {statusRefreshing
-              ? "장비 상태 조회중…"
-              : statusRefreshError
-                ? `장비 상태 조회 실패${
-                    statusRefreshErroredAt ? ` ${statusRefreshErroredAt}` : ""
-                  } (${statusRefreshError})`
-                : statusRefreshedAt
-                  ? `장비 상태 갱신 ${statusRefreshedAt}`
-                  : ""}
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          {hasUnassigned ? (
-            <button
-              type="button"
-              className="min-w-0 max-w-[560px] rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-left text-slate-600 hover:bg-slate-50"
+      <WorksheetQueueSummary
+        total={queueTotal}
+        labels={queueLabels}
+        counts={queueCounts}
+        variant="compact"
+        className="px-4"
+        leadingAddon={
+          statusRefreshing || statusRefreshError || statusRefreshedAt ? (
+            <div className="whitespace-nowrap rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-600">
+              {statusRefreshing
+                ? "장비 상태 조회중…"
+                : statusRefreshError
+                  ? `장비 상태 조회 실패${
+                      statusRefreshErroredAt ? ` ${statusRefreshErroredAt}` : ""
+                    } (${statusRefreshError})`
+                  : `장비 상태 갱신 ${statusRefreshedAt}`}
+            </div>
+          ) : null
+        }
+        toolbar={
+          <>
+            {hasUnassigned ? (
+              <button
+                type="button"
+                className="min-w-0 max-w-[360px] rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-left text-slate-600 hover:bg-slate-50"
               onClick={() => {
                 setUnassignedModalOpen(true);
               }}
@@ -1451,6 +1451,16 @@ export const MachiningQueueBoard = ({
           <button
             type="button"
             className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+            onClick={() => setStatsModalOpen(true)}
+            title="직경별 가공 통계"
+          >
+            <BarChart3 className="h-3.5 w-3.5" />
+            통계
+          </button>
+
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
             onClick={() => setPriorityRulesModalOpen(true)}
             title="가공 우선순위 룰 보기"
           >
@@ -1509,10 +1519,11 @@ export const MachiningQueueBoard = ({
               />
             </button>
           </div>
-        </div>
-      </div>
+          </>
+        }
+      />
 
-      <div className="grid gap-4 sm:gap-5 grid-cols-1 md:grid-cols-2 xl:grid-cols-3 p-4 pb-8">
+      <div className="grid gap-4 sm:gap-5 grid-cols-1 md:grid-cols-2 xl:grid-cols-3 pb-12">
         {displayMachines.map((m) => {
           const statusFromStore = statusByUid?.[m.uid];
           const local = machineStatusMap?.[m.uid] ?? null;
@@ -2226,6 +2237,12 @@ export const MachiningQueueBoard = ({
       <MachiningPriorityRulesModal
         open={priorityRulesModalOpen}
         onOpenChange={setPriorityRulesModalOpen}
+        token={token}
+      />
+
+      <MachiningStatisticsModal
+        open={statsModalOpen}
+        onOpenChange={setStatsModalOpen}
         token={token}
       />
 

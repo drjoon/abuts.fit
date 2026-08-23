@@ -64,6 +64,7 @@ import {
   recordMachiningTickForBridge,
   getLastCompletedMachiningMap,
   getCompletedMachiningRecords,
+  getMachiningStatistics,
   getPendingSelfInspections,
   triggerNextAutoMachiningManually,
 } from "../../controllers/cnc/machiningBridge.js";
@@ -114,5 +115,6 @@ export {
   initializeMachines,
   getLastCompletedMachiningMap,
   getCompletedMachiningRecords,
+  getMachiningStatistics,
   getPendingSelfInspections,
 };

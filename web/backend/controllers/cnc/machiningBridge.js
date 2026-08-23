@@ -50,7 +50,9 @@ import {
   inferRequestDiameterGroup,
   isRequestDiameterCompatibleWithMachineMaterial,
   normalizeDiameterGroupValue,
+  inferDiameterGroupFromValue,
 } from "./distribution.utils.js";
+import { toKstYmd } from "../../utils/krBusinessDays.js";
 
 const REQUEST_ID_REGEX = /(\d{8}-[A-Z0-9]{6,10})/i;
 const STARTED_EMIT_TTL_MS = 30 * 1000;
@@ -288,6 +290,255 @@ export async function getCompletedMachiningRecords(req, res) {
     return res.status(500).json({
       success: false,
       message: "가공 완료 목록 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+const DIAMETER_BUCKET_LABELS = ["6", "8", "10", "12"];
+
+const resolveMachiningDurationSeconds = (record) => {
+  if (
+    typeof record?.durationSeconds === "number" &&
+    Number.isFinite(record.durationSeconds) &&
+    record.durationSeconds >= 0
+  ) {
+    return Math.floor(record.durationSeconds);
+  }
+  if (
+    typeof record?.elapsedSeconds === "number" &&
+    Number.isFinite(record.elapsedSeconds) &&
+    record.elapsedSeconds >= 0
+  ) {
+    return Math.floor(record.elapsedSeconds);
+  }
+  return null;
+};
+
+const percentile = (sortedValues, p) => {
+  if (!sortedValues.length) return 0;
+  const idx = (sortedValues.length - 1) * p;
+  const lower = Math.floor(idx);
+  const upper = Math.ceil(idx);
+  if (lower === upper) return sortedValues[lower];
+  const weight = idx - lower;
+  return sortedValues[lower] * (1 - weight) + sortedValues[upper] * weight;
+};
+
+const buildCompletedAtRangeFromQuery = (req) => {
+  const fromYmd = String(req.query.from || "").trim();
+  const toYmd = String(req.query.to || "").trim();
+  if (fromYmd || toYmd) {
+    const range = {};
+    if (fromYmd) {
+      range.$gte = new Date(`${fromYmd}T00:00:00+09:00`);
+    }
+    if (toYmd) {
+      range.$lte = new Date(`${toYmd}T23:59:59.999+09:00`);
+    }
+    return {
+      completedAt: range,
+      fromYmd: fromYmd || toYmd,
+      toYmd: toYmd || fromYmd,
+    };
+  }
+
+  const period = String(req.query.period || "30d").trim();
+  const now = new Date();
+  const todayKst = toKstYmd(now);
+  const [year, month, day] = todayKst.split("-").map(Number);
+  const todayEnd = new Date(`${todayKst}T23:59:59.999+09:00`);
+
+  if (period === "thisMonth" || period === "lastMonth") {
+    const startOfThisMonth = new Date(
+      `${year}-${String(month).padStart(2, "0")}-01T00:00:00+09:00`,
+    );
+    if (period === "thisMonth") {
+      return {
+        completedAt: { $gte: startOfThisMonth, $lte: todayEnd },
+        fromYmd: toKstYmd(startOfThisMonth),
+        toYmd: todayKst,
+      };
+    }
+    const lastMonth = month === 1 ? 12 : month - 1;
+    const lastYear = month === 1 ? year - 1 : year;
+    const startOfLastMonth = new Date(
+      `${lastYear}-${String(lastMonth).padStart(2, "0")}-01T00:00:00+09:00`,
+    );
+    const endOfLastMonth = new Date(startOfThisMonth.getTime() - 1);
+    return {
+      completedAt: { $gte: startOfLastMonth, $lte: endOfLastMonth },
+      fromYmd: toKstYmd(startOfLastMonth),
+      toYmd: toKstYmd(endOfLastMonth),
+    };
+  }
+
+  let days = 30;
+  if (period === "7d") days = 7;
+  else if (period === "90d") days = 90;
+
+  const fromDate = new Date(todayKst);
+  fromDate.setDate(fromDate.getDate() - (days - 1));
+  const from = new Date(`${toKstYmd(fromDate)}T00:00:00+09:00`);
+  return {
+    completedAt: { $gte: from, $lte: todayEnd },
+    fromYmd: toKstYmd(from),
+    toYmd: todayKst,
+  };
+};
+
+export async function getMachiningStatistics(req, res) {
+  try {
+    const { completedAt, fromYmd, toYmd } = buildCompletedAtRangeFromQuery(req);
+
+    const recs = await MachiningRecord.find({
+      status: "COMPLETED",
+      requestId: { $nin: [null, ""] },
+      completedAt,
+    })
+      .select(
+        "requestId machineId completedAt durationSeconds elapsedSeconds",
+      )
+      .lean();
+
+    const requestIds = [
+      ...new Set(
+        recs.map((r) => String(r?.requestId || "").trim()).filter(Boolean),
+      ),
+    ];
+
+    const requests = requestIds.length
+      ? await Request.find({ requestId: { $in: requestIds } })
+          .select(
+            "requestId caseInfos productionSchedule createdAt businessAnchorId requestor",
+          )
+          .lean()
+      : [];
+
+    const requestMap = new Map();
+    for (const row of requests) {
+      const rid = String(row?.requestId || "").trim();
+      if (rid) requestMap.set(rid, row);
+    }
+
+    const businessNameByAnchorId = await buildBusinessNameByAnchorIdMap(
+      requests.map((r) => r?.businessAnchorId),
+    );
+
+    const bucketItems = Object.fromEntries(
+      DIAMETER_BUCKET_LABELS.map((label) => [label, []]),
+    );
+
+    for (const rec of recs) {
+      const requestId = String(rec?.requestId || "").trim();
+      if (!requestId) continue;
+      const reqDoc = requestMap.get(requestId);
+      const group = normalizeDiameterGroupValue(
+        inferRequestDiameterGroup(reqDoc || {}),
+      );
+      const bucket =
+        DIAMETER_BUCKET_LABELS.includes(group) ? group : inferDiameterGroupFromValue(
+          Number(reqDoc?.productionSchedule?.diameter),
+        );
+      const label = DIAMETER_BUCKET_LABELS.includes(bucket) ? bucket : "12";
+      const durationSeconds = resolveMachiningDurationSeconds(rec);
+      const anchorId = normalizeBusinessAnchorId(reqDoc?.businessAnchorId);
+      const businessName =
+        (anchorId ? businessNameByAnchorId.get(anchorId) : "") ||
+        String(reqDoc?.requestor?.business || reqDoc?.requestor?.name || "").trim();
+
+      bucketItems[label].push({
+        requestId,
+        machineId: String(rec?.machineId || "").trim(),
+        businessName,
+        clinicName: String(reqDoc?.caseInfos?.clinicName || "").trim(),
+        patientName: String(reqDoc?.caseInfos?.patientName || "").trim(),
+        tooth: String(reqDoc?.caseInfos?.tooth || "").trim(),
+        orderedAt: reqDoc?.createdAt
+          ? new Date(reqDoc.createdAt).toISOString()
+          : null,
+        completedAt: rec?.completedAt
+          ? new Date(rec.completedAt).toISOString()
+          : null,
+        durationSeconds,
+      });
+    }
+
+    const totalCount = DIAMETER_BUCKET_LABELS.reduce(
+      (sum, label) => sum + bucketItems[label].length,
+      0,
+    );
+
+    const buckets = DIAMETER_BUCKET_LABELS.map((label) => {
+      const items = bucketItems[label];
+      const count = items.length;
+      const ratioPercent =
+        totalCount > 0 ? Math.round((count / totalCount) * 1000) / 10 : 0;
+
+      const durations = items
+        .map((it) => it.durationSeconds)
+        .filter((v) => typeof v === "number" && v > 0);
+      const sorted = [...durations].sort((a, b) => a - b);
+      const sampleCount = sorted.length;
+      const minSeconds = sampleCount > 0 ? sorted[0] : null;
+      const maxSeconds = sampleCount > 0 ? sorted[sorted.length - 1] : null;
+      const avgSeconds =
+        sampleCount > 0
+          ? Math.round(
+              sorted.reduce((sum, v) => sum + v, 0) / sampleCount,
+            )
+          : null;
+
+      let outliers = [];
+      if (sampleCount >= 4) {
+        const q1 = percentile(sorted, 0.25);
+        const q3 = percentile(sorted, 0.75);
+        const iqr = q3 - q1;
+        const low = q1 - 1.5 * iqr;
+        const high = q3 + 1.5 * iqr;
+        outliers = items
+          .filter(
+            (it) =>
+              typeof it.durationSeconds === "number" &&
+              it.durationSeconds > 0 &&
+              (it.durationSeconds < low || it.durationSeconds > high),
+          )
+          .map((it) => ({
+            ...it,
+            outlierReason:
+              typeof it.durationSeconds === "number" && it.durationSeconds > high
+                ? "high"
+                : "low",
+          }))
+          .sort((a, b) => (b.durationSeconds || 0) - (a.durationSeconds || 0));
+      }
+
+      return {
+        label,
+        count,
+        ratioPercent,
+        duration: {
+          minSeconds,
+          avgSeconds,
+          maxSeconds,
+          sampleCount,
+        },
+        outliers,
+      };
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        period: { from: fromYmd, to: toYmd },
+        totalCount,
+        buckets,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "가공 통계 조회 중 오류가 발생했습니다.",
       error: error.message,
     });
   }
