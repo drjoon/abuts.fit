@@ -972,13 +972,12 @@ namespace DentalAddin
 
             DentalLogger.Log($"Composite2SplitLine2 - FINISH_FRONT 시작점 정책 적용: splitlineResolved={splitlineResolved}, splitline1X={splitline1X:F3}, stlStartX={stlStartX:F3}, requestedStartX(stlMin+0.05)={requestedAStartX:F3}, appliedStartX={appliedAStartX:F3}, minFirst%={minAFirstPercentByStlStart:F2}, overrideGuardApplied={overrideGuardApplied}");
 
-            // 인접 툴패스 공구반경 겹침 SSOT:
-            // - 선행(Finish_Front) 끝 = SharedFinishSplitX (물리 X → StartEndScale %)
-            // - 후행(Finish_Back) 시작 = SharedFinishSplitX - Finish공구반경(D1.2→0.6mm)
+            // Finish seam SSOT:
+            // - 선행(Finish_Front) 끝 = SharedFinishSplitX (= Splitline_2)
+            // - 후행(Finish_Back) 시작 = SharedFinishSplitX (= Splitline_2) — D1.2 반경 겹침 출발 없음
             // 중요: safeBFirstMax로 seam을 당기지 않는다. 당기면 Splitline_2/Front_Rough/Back_Rough와 어긋난다.
-            double finishOverlapMm = GetFinishAdjacentOverlapMm();
             const double aEndOffsetFromSplitMm = 0.0;
-            double bStartOffsetFromSplitMm = -finishOverlapMm;
+            const double bStartOffsetFromSplitMm = 0.0;
             const double compositeEndOffsetFromBackPointMm = 0.0;
 
             double finishFrontEndX = splitX + aEndOffsetFromSplitMm;
@@ -999,7 +998,7 @@ namespace DentalAddin
                 opB.FirstPassPercent = Clamp(requestedBFirstPass, firstPercent, effectiveLastPercent);
                 opB.LastPassPercent = effectiveLastPercent;
             }
-            DentalLogger.Log($"Composite2SplitLine2 - Finish seam 확정: Front.end%={opA.LastPassPercent:F2} (X={finishFrontEndX:F3}), Back.start%={(runB && opB != null ? opB.FirstPassPercent.ToString("F2", CultureInfo.InvariantCulture) : "<skip>")} (X={finishBackStartX:F3}), overlapMm={finishOverlapMm:F1} (D1.2 radius), guardWarn={startEndBFirstGuardApplied}");
+            DentalLogger.Log($"Composite2SplitLine2 - Finish seam 확정: Front.end%={opA.LastPassPercent:F2} (X={finishFrontEndX:F3}), Back.start%={(runB && opB != null ? opB.FirstPassPercent.ToString("F2", CultureInfo.InvariantCulture) : "<skip>")} (X={finishBackStartX:F3}=Splitline_2), guardWarn={startEndBFirstGuardApplied}");
 
             // 정책: Finish_Back 종료 기준점은 BackPointX + 0.0mm
             double compositeEndTargetX = MoveSTL_Module.BackPointX + compositeEndOffsetFromBackPointMm;
@@ -2624,9 +2623,10 @@ namespace DentalAddin
         // - Splitline_1: FrontPointX
         // - Splitline_2 / TwoPhaseSplitLine / Front_Rough끝 / Finish_Front끝
         //   = SharedFinishSplitX (finishLineTopX - 1.0mm, tip 쪽)
-        // - 인접 툴패스 겹침: 선행 끝=경계 정확, 후행 시작=경계 tip쪽(X-) 공구반경
-        //   Rough(Back): GetRoughAdjacentOverlapMm() = D4→2.0 / D2→1.0
-        //   Finish(Back): GetFinishAdjacentOverlapMm() = D1.2→0.6
+        // - 인접 툴패스:
+        //   Rough: 선행 끝=경계 정확, 후행(Back) 시작=경계 tip쪽(X-) 공구반경
+        //     Rough(Back): GetRoughAdjacentOverlapMm() = D4→2.0 / D2→1.0
+        //   Finish: Front 끝 = Back 시작 = Splitline_2 (D1.2 반경 겹침 출발 없음)
         // - Middle_Turn / Middle_Rough는 레거시로 생성하지 않는다 (Front+Back로 커버)
         // SharedFinishSplit 오프셋(mm): finishLine top 기준 tip 방향.
         // X=-Z 이므로 Z+1mm ≡ X-1mm.
@@ -2636,12 +2636,6 @@ namespace DentalAddin
         private static double GetRoughAdjacentOverlapMm()
         {
             return GetActiveRoughToolRadiusMm();
-        }
-
-        // Finish 인접 겹침 = Finish 공통 공구(D1.2) 반경 0.6mm
-        private static double GetFinishAdjacentOverlapMm()
-        {
-            return CompositeFinishCommonToolDiameterMm / 2.0;
         }
 
         private static bool TryGetThreeStageSplitConfig(out double splitline1, out double splitline2, out double xMin, out double xMax)

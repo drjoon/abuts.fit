@@ -73,22 +73,24 @@
 
 - `Splitline_1 = FrontPointX`
 - `Splitline_2 = TwoPhaseSplitLine` (midpoint 사용 금지)
-- 인접 툴패스 겹침: **선행 끝 = 경계 정확**, **후행 시작 = 경계 tip쪽(그림 왼쪽, X-) 공구 반경**
-  - Rough: `GetRoughAdjacentOverlapMm()` = 활성 rough 반경 (D4→`2.0`, `ROUGH_20` D2→`1.0`)
-  - Finish: `GetFinishAdjacentOverlapMm()` = D1.2 반경 `0.6`
+- 인접 툴패스:
+  - Rough: **선행 끝 = 경계 정확**, **후행 시작 = 경계 tip쪽(그림 왼쪽, X-) 공구 반경**
+    - `GetRoughAdjacentOverlapMm()` = 활성 rough 반경 (D4→`2.0`, `ROUGH_20` D2→`1.0`)
+  - Finish: **Front 끝 = Back 시작 = `Splitline_2`** (D1.2 반경 겹침 출발 없음)
 - `Middle_Turn` / `Middle_Rough`는 레거시로 **생성하지 않는다** (Front + Back로 커버)
 
-### 4.3.1 SharedFinishSplit / Splitline_2 SSOT (검색 키워드: `SharedFinishSplitX`, `finishlineTop-1mm`, `X=-Z`, `GetRoughAdjacentOverlapMm`, `GetFinishAdjacentOverlapMm`)
+### 4.3.1 SharedFinishSplit / Splitline_2 SSOT (검색 키워드: `SharedFinishSplitX`, `finishlineTop-1mm`, `X=-Z`, `GetRoughAdjacentOverlapMm`)
 
 - 목적: **한 식**으로 아래를 동일 경계 좌표에 둔다.
   - `Front_Rough` 끝
   - `Splitline_2` / `TwoPhaseSplitLine`
   - `Finish_Front` 끝
+  - `Finish_Back` 시작
 - 기준식:
   - `SharedFinishSplitX = finishLineTopX - 1.0` (tip 쪽 1mm, Z+1 ≡ X-1)
-- 인접 후행 시작(경계에서 tip쪽 공구반경):
+- 인접 후행 시작:
   - `Back_Rough` 시작 = `Splitline_2 - roughRadius` (D4→2.0)
-  - `Finish_Back` 시작 = `SharedFinishSplitX - 0.6` (D1.2)
+  - `Finish_Back` 시작 = `SharedFinishSplitX` (= `Splitline_2`, 겹침 오프셋 없음)
 - 좌표 변환 (`EspritHttpServer`: `FrontPointX = -FrontPoint.z`):
   - MoveSTL 전: `FinishLineX = -finishLineTopZ`
   - MoveSTL 후: `finishLineTopX = BackPointX - finishLineTopZ`
@@ -96,9 +98,9 @@
 - 구현:
   - `TryResolveSharedFinishSplitX` → `TryResolveTwoPhaseSplitLineTargetX`
   - Rough: `frontEnd = splitline2`, `backStart = splitline2 - GetRoughAdjacentOverlapMm()`, Middle skip
-  - Finish: `Finish_Front` 끝 = `SharedFinishSplitX`, `Finish_Back` 시작 = `SharedFinishSplitX - GetFinishAdjacentOverlapMm()`
+  - Finish: `Finish_Front` 끝 = `Finish_Back` 시작 = `SharedFinishSplitX`
   - `safeBFirstMax`는 seam을 당기지 않는다(로그만)
-  - 금지: Front끝=Back시작 동일 좌표 강제, 고정 0.5mm 겹침, `Middle_Turn`/`Middle_Rough` 재도입, `Back + Z - stlTopZ` 구식 변환
+  - 금지: Finish_Back의 D1.2 반경 앞당김, 고정 0.5mm 겹침, `Middle_Turn`/`Middle_Rough` 재도입, `Back + Z - stlTopZ` 구식 변환
 
 ### 4.4 Finish none 처리
 
