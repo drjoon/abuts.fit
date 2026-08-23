@@ -133,6 +133,7 @@ import {
   adminDirectIssueTaxInvoice,
 } from "../../controllers/admin/adminTaxInvoice.controller.js";
 import { adminGenerateLabToPracticeInvoiceDrafts } from "../../controllers/admin/adminPracticeLabInvoice.controller.js";
+import { adminGenerateCustomerMonthlyInvoiceDrafts } from "../../controllers/admin/adminCustomerMonthlyInvoice.controller.js";
 import {
   adminCancelSettlementBatch,
   adminConfirmSettlementBatch,
@@ -532,6 +533,11 @@ router.post("/tax-invoices/direct-issue", adminDirectIssueTaxInvoice);
 router.post(
   "/tax-invoices/lab-to-practice/generate",
   adminGenerateLabToPracticeInvoiceDrafts,
+);
+router.post(
+  "/tax-invoices/customer-monthly/generate",
+  authorize(["admin"], { subRoles: ["owner"] }),
+  adminGenerateCustomerMonthlyInvoiceDrafts,
 );
 
 // 월 정산 배치 — 관리자 확정 후 실제 송금을 마친 항목만 지급완료 처리한다.

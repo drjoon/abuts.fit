@@ -22,6 +22,7 @@ import { startDailyReferralSnapshotWorker } from "./jobs/dailyReferralSnapshotWo
 import { startShippingOnTimeEvalWorker } from "./jobs/shippingOnTimeEvalWorker.js";
 import { startHourlyRequestBackupWorker } from "./jobs/hourlyRequestBackupWorker.js";
 import { startMonthlyPracticeLabInvoiceWorker } from "./jobs/monthlyPracticeLabInvoiceWorker.js";
+import { startMonthlyCustomerInvoiceWorker } from "./jobs/monthlyCustomerInvoiceWorker.js";
 import { startMonthlySettlementBatchWorker } from "./jobs/monthlySettlementBatchWorker.js";
 import { startLabAutoMatchParticipationBillingWorker } from "./jobs/labAutoMatchParticipationBillingWorker.js";
 import { startReviewApprovalWorker } from "./services/reviewApprovalQueue.service.js";
@@ -138,6 +139,7 @@ dbReady
     startShippingOnTimeEvalWorker();
     startHourlyRequestBackupWorker({ runImmediate: false });
     startMonthlyPracticeLabInvoiceWorker();
+    startMonthlyCustomerInvoiceWorker();
     startMonthlySettlementBatchWorker();
     startLabAutoMatchParticipationBillingWorker();
 

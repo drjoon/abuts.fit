@@ -293,7 +293,8 @@ export async function issueStoreInvoice({ draftId, mock = false }) {
 
 /**
  * 입금 매칭/관리자 승인 후 스토어 매출 확정.
- * @returns {{ finalized: boolean, idempotent?: boolean, draftId?: string }}
+ * 건별 과세 draft는 만들지 않음(월말 합산).
+ * @returns {{ finalized: boolean, idempotent?: boolean }}
  */
 export async function finalizeStoreSale({
   orderId,
@@ -302,11 +303,10 @@ export async function finalizeStoreSale({
   matchedByUserId = null,
   adminNote = "",
   session: outerSession = null,
-  issueInline = false,
+  issueInline: _issueInline = false,
 } = {}) {
   const ownSession = !outerSession;
   const session = outerSession || (await mongoose.startSession());
-  let draftId = null;
   let finalized = false;
   let idempotent = false;
 
@@ -320,12 +320,6 @@ export async function finalizeStoreSale({
 
     if (String(order.status) === "PAID") {
       idempotent = true;
-      const existing = await TaxInvoiceDraft.findOne({
-        storeOrderId: order._id,
-      })
-        .session(session)
-        .lean();
-      draftId = existing?._id ? String(existing._id) : null;
       return;
     }
 
@@ -343,8 +337,8 @@ export async function finalizeStoreSale({
       matchedBy: matchedBy || order.matchedBy || "AUTO",
       adminApprovalStatus: "APPROVED",
       adminApprovalAt: now,
-      // 입금 확정 → 출고 대기. 딜러/제조 분배 없음(전액 어벗츠).
       fulfillmentStatus: "READY",
+      paymentMethod: order.paymentMethod || "BANK",
     };
     if (bankTransactionId) setFields.bankTransactionId = bankTransactionId;
     if (matchedByUserId) {
@@ -376,8 +370,6 @@ export async function finalizeStoreSale({
     const vat = Math.max(0, Math.round(Number(order.vatAmount || 0)));
     const total = Math.max(0, Math.round(Number(order.amountTotal || 0)));
 
-    // 스토어 매출 분배 SSOT: 공급가 전액 REV_STORE_TAXABLE → 어벗츠(admin).
-    // 커스텀어벗의 딜러/제조/개발운영 분배 경로를 타지 않는다.
     await postGeneralLedgerJournal({
       idempotencyKey: `gl:store:order:${String(order._id)}:sale`,
       eventType: LEDGER_EVENT_STORE_SALE,
@@ -390,6 +382,7 @@ export async function finalizeStoreSale({
         bankTransactionId: bankTransactionId
           ? String(bankTransactionId)
           : null,
+        paymentMethod: "BANK",
         source:
           matchedBy === "ADMIN" ? "admin_store_approval" : "store_auto_match",
         revenueOwner: STORE_REVENUE_OWNER_ROLE,
@@ -413,16 +406,7 @@ export async function finalizeStoreSale({
       session,
     });
 
-    const draft = await ensureApprovedStoreInvoiceDraft({
-      order: {
-        ...order.toObject(),
-        supplyAmount: supply,
-        vatAmount: vat,
-        amountTotal: total,
-      },
-      session,
-    });
-    draftId = draft?._id ? String(draft._id) : null;
+    // 건별 과세 draft 없음 — 월말 customerMonthlyInvoice 합산.
     finalized = true;
   };
 
@@ -436,32 +420,184 @@ export async function finalizeStoreSale({
     if (ownSession) session.endSession();
   }
 
-  if (finalized && draftId) {
-    const corpNum = process.env.POPBILL_CORP_NUM || "";
-    if (corpNum) {
-      if (issueInline) {
-        await issueStoreInvoice({ draftId }).catch((err) => {
-          console.error(
-            "[finalizeStoreSale] inline issue failed:",
-            err?.message || err,
-          );
-        });
-      } else {
-        enqueueTaxInvoiceIssue({
-          draftId,
-          corpNum,
-          priority: 5,
-        }).catch((err) => {
-          console.error(
-            "[finalizeStoreSale] enqueueTaxInvoiceIssue 실패:",
-            err.message,
-          );
-        });
-      }
+  return { finalized, idempotent };
+}
+
+/**
+ * 유료 선수금으로 스토어 주문 결제. 무료·기공크레딧 사용 금지.
+ * 건별 과세 draft 없음(월말 합산).
+ */
+export async function payStoreOrderWithCredit({
+  orderId,
+  userId = null,
+  session: outerSession = null,
+} = {}) {
+  const {
+    allocateSpendFromCreditBuckets,
+    computeBusinessCreditBalanceFromLedger,
+  } = await import("./creditBalance.service.js");
+  const { emitCreditBalanceUpdatedToBusiness } = await import(
+    "../utils/creditRealtime.js"
+  );
+
+  const ownSession = !outerSession;
+  const session = outerSession || (await mongoose.startSession());
+  let finalized = false;
+  let idempotent = false;
+  let paidTotal = 0;
+  let businessAnchorId = null;
+
+  const run = async () => {
+    const order = await StoreOrder.findById(orderId).session(session);
+    if (!order) {
+      const err = new Error("store_order_not_found");
+      err.statusCode = 404;
+      throw err;
     }
+    businessAnchorId = order.businessAnchorId;
+
+    if (String(order.status) === "PAID") {
+      idempotent = true;
+      return;
+    }
+    if (String(order.status) !== "PENDING") {
+      const err = new Error(`store_order_not_payable:${order.status}`);
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const supply = Math.max(0, Math.round(Number(order.supplyAmount || 0)));
+    const vat = Math.max(0, Math.round(Number(order.vatAmount || 0)));
+    const total = Math.max(0, Math.round(Number(order.amountTotal || 0)));
+    paidTotal = total;
+    if (total <= 0) {
+      const err = new Error("invalid_store_amount");
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const glBalance = await computeBusinessCreditBalanceFromLedger({
+      businessAnchorId: order.businessAnchorId,
+      session,
+    });
+    // 스토어는 유료 선수금만.
+    const split = allocateSpendFromCreditBuckets({
+      amount: total,
+      paidCredit: Number(glBalance?.paidCredit || 0),
+      freeRequestCredit: 0,
+      freeShippingCredit: 0,
+      settlementCredit: 0,
+    });
+    if (!split.ok || split.fromPaid < total) {
+      const err = new Error("유료 거래 선수금 잔액이 부족합니다.");
+      err.statusCode = 402;
+      err.code = "INSUFFICIENT_PAID_CREDIT";
+      err.payload = {
+        required: total,
+        paidCredit: split.paidCredit,
+        shortfall: split.shortfall,
+      };
+      throw err;
+    }
+
+    const now = new Date();
+    const updated = await StoreOrder.updateOne(
+      { _id: order._id, status: "PENDING" },
+      {
+        $set: {
+          status: "PAID",
+          paidAt: now,
+          matchedAt: now,
+          matchedBy: "ADMIN",
+          adminApprovalStatus: "APPROVED",
+          adminApprovalAt: now,
+          fulfillmentStatus: "READY",
+          paymentMethod: "CREDIT",
+        },
+      },
+      { session },
+    );
+    if (!updated?.modifiedCount) {
+      idempotent = true;
+      return;
+    }
+
+    await commitStoreInventory({ items: order.items, session });
+
+    const adminAnchorId = await resolveAdminAnchorId(session);
+    if (!adminAnchorId) {
+      const err = new Error("admin_anchor_missing");
+      err.statusCode = 500;
+      throw err;
+    }
+
+    await postGeneralLedgerJournal({
+      idempotencyKey: `gl:store:order:${String(order._id)}:credit-pay`,
+      eventType: LEDGER_EVENT_STORE_SALE,
+      businessAnchorId: order.businessAnchorId,
+      refType: "STORE_ORDER",
+      refId: order._id,
+      createdBy: userId || order.userId || null,
+      meta: {
+        storeOrderId: String(order._id),
+        paymentMethod: "CREDIT",
+        source: "store_credit_pay",
+        revenueOwner: STORE_REVENUE_OWNER_ROLE,
+        splitToDealer: false,
+        splitToManufacturer: false,
+      },
+      lines: [
+        {
+          accountCode: "REQ_PAID_CREDIT",
+          ownerRole: "requestor",
+          ownerId: order.businessAnchorId,
+          amount: -total,
+          amountExcludingVat: -total,
+          vatAmount: 0,
+          amountIncludingVat: -total,
+          creditKind: "PAID",
+          refType: "STORE_ORDER",
+          refId: order._id,
+        },
+        {
+          accountCode: LEDGER_ACCOUNT_REV_STORE_TAXABLE,
+          ownerRole: STORE_REVENUE_OWNER_ROLE,
+          ownerId: adminAnchorId,
+          amount: supply,
+          amountExcludingVat: supply,
+          vatAmount: vat,
+          amountIncludingVat: total,
+          creditKind: "PAID",
+          refType: "STORE_ORDER",
+          refId: order._id,
+        },
+      ],
+      session,
+    });
+
+    finalized = true;
+  };
+
+  try {
+    if (ownSession) {
+      await session.withTransaction(run);
+    } else {
+      await run();
+    }
+  } finally {
+    if (ownSession) session.endSession();
   }
 
-  return { finalized, idempotent, draftId };
+  if (finalized && businessAnchorId && paidTotal > 0) {
+    await emitCreditBalanceUpdatedToBusiness({
+      businessAnchorId,
+      balanceDelta: -paidTotal,
+      reason: "store_credit_pay",
+      refId: orderId,
+    }).catch(() => {});
+  }
+
+  return { finalized, idempotent };
 }
 
 /**

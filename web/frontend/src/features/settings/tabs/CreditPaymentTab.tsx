@@ -633,8 +633,8 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
       }
       await reloadOrders();
       toast({
-        title: "기공료 선입금 요청이 생성되었습니다",
-        description: "입금 완료 후 기공료 선입금(크레딧)이 자동 반영됩니다.",
+        title: "거래 선수금 충전 요청이 생성되었습니다",
+        description: "입금 완료 후 거래 선수금(크레딧)이 자동 반영됩니다.",
       });
     } catch (e: any) {
       toast({
@@ -1027,7 +1027,7 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
                   >
                     <div className="flex items-center justify-between gap-3">
                       <div className="text-sm font-medium">
-                        기공료 선입금{orderDate ? ` · ${orderDate}` : ""}
+                        거래 선수금{orderDate ? ` · ${orderDate}` : ""}
                         {shortId ? ` · ${shortId}` : ""}
                       </div>
                       <span
@@ -1067,7 +1067,7 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
             </div>
           )}
           <div className="text-xs text-muted-foreground">
-            입금 확인 후 기공료 선입금(크레딧)으로 자동 반영됩니다.
+            입금 확인 후 거래 선수금(크레딧)으로 자동 반영됩니다. (세금)계산서는 사용분 기준 월말 발행입니다.
           </div>
         </div>
       )}

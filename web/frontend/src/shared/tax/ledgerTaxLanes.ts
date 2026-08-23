@@ -19,8 +19,8 @@ export const LEDGER_ACCOUNT_REV_STORE_TAXABLE = "REV_STORE_TAXABLE";
 export const STORE_REVENUE_OWNER_ROLE = "admin";
 
 /**
- * 스토어 장바구니는 커스텀어벗·크레딧 충전과 합치지 않는다.
- * 결제·(세금)계산서·장부 레인 모두 분리.
+ * 스토어 장바구니는 커스텀어벗 주문과 한 체크아웃에 합치지 않는다.
+ * 같은 B2B 거래 선수금 잔액으로 각각 결제하는 것은 허용.
  */
 export const STORE_CART_MERGE_WITH_CREDIT_OR_CUSTOM_ABUTMENT = false;
 

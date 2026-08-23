@@ -807,14 +807,15 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - 스토어 기성품: 부가세 10% · 고객 표시=부가세 포함가 · 세금계산서. 커스텀어벗 계산서와 합치지 않음.
     - 어벗츠↔딜러사·개발운영사 지급: 부가세 10% · 세금계산서. 장부는 공급가, 지급 시 VAT.
   - **마이너스 발행**: 전송 성공 후 상계는 원본 `SENT` 유지 + `kind=REVERSE` 별도 draft. 원본을 `CANCELLED`로 강등하지 않음.
-  - 장부: `STORE_SALE` / `REV_STORE_TAXABLE` — 스토어 입금 확정 시 기록. **전액 어벗츠(admin). 딜러/제조 분배 없음.** 면세 기공·크레딧과 분리.
-  - 스토어 결제: `StoreOrder` + B-plan 입금 매칭/관리자 승인 → 재고 차감 → `STORE_SALE` → 과세 `TaxInvoiceDraft` 발행 → `fulfillmentStatus=READY`. 출고 `SHIPPED`(운송장)·배송완료 `DELIVERED`. 구현: `services/storeSale.service.js`, `modules/store/store.routes.js`, admin `…/store/orders/:id/ship|deliver`.
-  - 장바구니 합치기 금지: 스토어 ↔ 커스텀어벗·크레딧 충전은 별도 장바구니·결제·(세금)계산서. `STORE_CART_MERGE_WITH_CREDIT_OR_CUSTOM_ABUTMENT=false`.
+  - 장부: `STORE_SALE` / `REV_STORE_TAXABLE` — 스토어 결제 확정 시 기록. **전액 어벗츠(admin). 딜러/제조 분배 없음.** 면세 기공과 분리.
+  - 스토어 결제: 크레딧(유료) 또는 B-plan 입금 → 재고 차감 → `STORE_SALE` → `fulfillmentStatus=READY`. **건별 과세 draft 없음**(월말 합산). 출고 `SHIPPED`·배송완료 `DELIVERED`. 구현: `storeSale.service.js`, `modules/store/store.routes.js`.
+  - 장바구니 합치기 금지: 한 체크아웃에 기공+스토어 금지. 같은 선수금 잔액으로 각각 결제는 허용.
   - 팝빌: `POPBILL_IS_TEST=false`(prod)면 실홈택스 발행. local/test는 `true`.
-  - 크레딧은 선불전자지급수단이 아니라 **기공료 선입금(선납 대금)**. 충전 화면·FAQ·약관·입금 확인 알림에 동일 용어를 쓴다.
+  - 크레딧은 선불전자지급수단이 아니라 **B2B 거래 선수금/예치금**(계약 물품·용역만). 충전 화면·FAQ·약관·입금 확인에 동일 용어.
     프론트 카피: `web/frontend/src/shared/legal/creditPrepaidCopy.ts`
     입금 매칭 알림: `utils/creditBPlanMatching.js` `notifyChargePrepaidApplied` / 템플릿 `ats_credit_charged`
-  - 충전 주문(`ChargeOrder`): `vatAmount = 0`, `amountTotal = supplyAmount`.
+  - 충전 주문(`ChargeOrder`): `vatAmount = 0`, `amountTotal = supplyAmount`. **충전 확정 시 TaxInvoiceDraft 생성·발행 금지.**
+  - 월말 고객 증빙: `services/customerMonthlyInvoice.service.js` — 전월 사용분 `ABUTS_TO_CUSTOMER` 면세/과세 각각 합산. 크론 `jobs/monthlyCustomerInvoiceWorker.js`.
   - 충전 단위: `utils/creditChargeUnit.js` — 기공소 50만원, 치과(practice) 100만원. 절대 상한 5,000만원.
     주문 검증 `creditBPlan.controller.js`, insights(월사용량/3·한 달분) `credit.controller.js`.
     UI 2회차 기본 배수 3은 프론트(`CreditPaymentTab`). 잔액 < 50만원 시 사이드바 충전 뱃지는 `DashboardLayout`.
@@ -825,7 +826,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 고객향 계산서 직접발행 세액 기본 0(면세). 정산 배치 Draft: 제조사·기공소=면세, 딜러사·개발운영사=과세 10%.
 
 - (세금)계산서 발행 방향/위수탁 정책(강제, `TaxInvoiceDraft.direction`):
-  - `ABUTS_TO_CUSTOMER`(기존 크레딧 충전 계산서, 치과·기공소→어벗츠 결제의 반대방향): `taxType="면세"`, `issuanceMode="SELF"`(어벗츠가 실제 공급자).
+  - `ABUTS_TO_CUSTOMER`: 사용분 월합(기공·어벗=면세, 스토어=과세). `issuanceMode="SELF"`. 충전(ChargeOrder) 시점 발행 금지. 과거 충전 건별 draft는 유지.
   - `LAB_TO_PRACTICE`(①치과→기공소 기공의뢰비의 반대방향, 월합계): `taxType="면세"`, `issuanceMode="TRUSTEE"`. 실제 공급자는 기공소이지만 기공소는 팝빌 회원가입/인증서가 불필요하고, 어벗츠가 수탁자로 위수탁발행한다(치과·기공소·어벗츠 3자 모두 부가세 면세 원칙 — 어벗츠 공동대표가 기공사라 기공소로 간주).
   - `AFFILIATE_TO_ABUTS`(어벗츠→딜러사·개발운영사·제조사·기공소 정산의 반대방향): 딜러사·개발운영사는 `taxType="과세"`(부가세 10%), 제조사·기공소는 `taxType="면세"`. 모두 `issuanceMode="TRUSTEE"`. 실제 공급자(기공소·제조사·딜러사·개발운영사)는 팝빌 회원 불필요, 어벗츠가 수탁자로 위수탁발행.
   - 정산 배치 확정(`adminConfirmSettlementBatch`) 시 위 역할별 Draft 자동 생성. SSOT: `resolveSettlementInvoiceDraftSpec` in `services/settlement.service.js`.

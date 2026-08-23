@@ -395,91 +395,12 @@ export async function cancelMyChargeOrder(req, res) {
 }
 
 export async function requestTaxInvoice(req, res) {
-  try {
-    const userId = req.user?._id;
-    const businessAnchorId = req.user?.businessAnchorId;
-
-    if (!businessAnchorId) {
-      return res.status(403).json({
-        success: false,
-        message: "기공소 정보가 설정되지 않았습니다.",
-      });
-    }
-
-    const { chargeOrderId } = req.body;
-    if (!chargeOrderId) {
-      return res.status(400).json({
-        success: false,
-        message: "충전 주문 ID가 필요합니다.",
-      });
-    }
-
-    const chargeOrder = await ChargeOrder.findOne({
-      _id: chargeOrderId,
-      businessAnchorId,
-    });
-
-    if (!chargeOrder) {
-      return res.status(404).json({
-        success: false,
-        message: "충전 주문을 찾을 수 없습니다.",
-      });
-    }
-
-    if (chargeOrder.status !== "MATCHED") {
-      return res.status(400).json({
-        success: false,
-        message: "입금이 확인된 주문만 세금계산서를 요청할 수 있습니다.",
-      });
-    }
-
-    const existingDraft = await TaxInvoiceDraft.findOne({
-      chargeOrderId,
-      status: { $in: ["PENDING_APPROVAL", "APPROVED", "SENT"] },
-    });
-
-    if (existingDraft) {
-      return res.status(400).json({
-        success: false,
-        message: "이미 세금계산서 발급 요청이 진행 중입니다.",
-      });
-    }
-
-    const anchor = await BusinessAnchor.findOne({ _id: businessAnchorId });
-    if (!anchor) {
-      return res.status(404).json({
-        success: false,
-        message:
-          "사업자 정보를 찾을 수 없습니다. 사업자 정보를 먼저 등록해주세요.",
-      });
-    }
-
-    const buyer = buildPartySnapshotFromAnchor(anchor, req.user);
-
-    const draft = await TaxInvoiceDraft.create({
-      chargeOrderId,
-      businessAnchorId,
-      userId,
-      status: "PENDING_APPROVAL",
-      direction: "ABUTS_TO_CUSTOMER",
-      issuanceMode: "SELF",
-      taxType: "면세",
-      itemName: "치과기공소 솔루션 이용료",
-      supplyAmount: chargeOrder.supplyAmount || 0,
-      vatAmount: chargeOrder.vatAmount || 0,
-      totalAmount: chargeOrder.amountTotal || 0,
-      buyer,
-    });
-
-    return res.status(201).json({ success: true, data: draft });
-  } catch (error) {
-    console.error("세금계산서 발급 요청 실패:", error);
-    return res.status(500).json({
-      success: false,
-      message: "세금계산서 발급 요청에 실패했습니다.",
-      error: error.message,
-    });
-  }
+  return res.status(400).json({
+    success: false,
+    message:
+      "충전 건에는 (세금)계산서를 발행하지 않습니다. 사용분 기준으로 매월 말 면세/과세가 각각 합산 발행됩니다.",
+    code: "CHARGE_INVOICE_DISABLED",
+  });
 }
 
 export async function listMyTaxInvoices(req, res) {

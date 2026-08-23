@@ -317,8 +317,8 @@ export function RequestorStoreOrderDetailPage() {
                   </Button>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  입금자명에 위 코드를 넣으면 자동 매칭됩니다. 입금 확인 후
-                  세금계산서가 발행됩니다.
+                  입금자명에 위 코드를 넣으면 자동 매칭됩니다. (세금)계산서는
+                  사용분 기준 월말 발행입니다.
                 </p>
                 <Button
                   type="button"
@@ -333,8 +333,8 @@ export function RequestorStoreOrderDetailPage() {
 
             {order.status === "PAID" ? (
               <p className="text-sm text-muted-foreground">
-                결제가 완료되었습니다. 세금계산서는 관리자 (세금)계산서 목록에서
-                확인할 수 있습니다. 출고·배송 상태는 위 뱃지를 확인하세요.
+                결제가 완료되었습니다. (세금)계산서는 사용분 기준 월말
+                합산 발행됩니다. 출고·배송 상태는 위 뱃지를 확인하세요.
               </p>
             ) : null}
 

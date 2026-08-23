@@ -99,6 +99,13 @@ const storeOrderSchema = new mongoose.Schema(
       default: null,
     },
     paidAt: { type: Date, default: null },
+    /** BANK=계좌이체 입금, CREDIT=유료 선수금 차감 */
+    paymentMethod: {
+      type: String,
+      enum: ["BANK", "CREDIT"],
+      default: "BANK",
+      index: true,
+    },
     note: { type: String, default: "" },
   },
   { timestamps: true },

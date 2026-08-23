@@ -20,6 +20,7 @@ import { normalizeRequestorKind } from "../../utils/requestorCapabilities.js";
 import {
   finalizeStoreSale,
   getInventoryMap,
+  payStoreOrderWithCredit,
   releaseStoreInventoryReservation,
   reserveStoreInventory,
 } from "../../services/storeSale.service.js";
@@ -271,6 +272,10 @@ export async function createStoreOrder(req, res) {
     const shipping = assertShippingComplete(
       normalizeShippingInput(req.body?.shipping),
     );
+    const paymentMethod =
+      String(req.body?.paymentMethod || "BANK").toUpperCase() === "CREDIT"
+        ? "CREDIT"
+        : "BANK";
 
     let created = null;
     await session.withTransaction(async () => {
@@ -289,6 +294,7 @@ export async function createStoreOrder(req, res) {
             status: "PENDING",
             fulfillmentStatus: "UNPAID",
             adminApprovalStatus: "PENDING",
+            paymentMethod,
             items,
             shipping,
             supplyAmount,
@@ -302,12 +308,45 @@ export async function createStoreOrder(req, res) {
       created = doc.toObject();
     });
 
+    if (paymentMethod === "CREDIT") {
+      try {
+        await payStoreOrderWithCredit({
+          orderId: created._id,
+          userId,
+        });
+      } catch (payErr) {
+        // 결제 실패 시 예약 해제·주문 취소
+        try {
+          await releaseStoreInventoryReservation({ items: created.items });
+          await StoreOrder.updateOne(
+            { _id: created._id, status: "PENDING" },
+            { $set: { status: "CANCELED", fulfillmentStatus: "CANCELED" } },
+          );
+        } catch {
+          /* ignore cleanup */
+        }
+        const status = payErr.statusCode || 500;
+        return res.status(status).json({
+          success: false,
+          message: payErr.message || "credit_pay_failed",
+          code: payErr.code || undefined,
+          payload: payErr.payload || undefined,
+        });
+      }
+      const paid = await StoreOrder.findById(created._id).lean();
+      return res.status(201).json({
+        success: true,
+        data: { order: paid, paymentMethod: "CREDIT" },
+      });
+    }
+
     const depositAccount = await getDepositAccountInfo();
     return res.status(201).json({
       success: true,
       data: {
         order: created,
         depositAccount,
+        paymentMethod: "BANK",
       },
     });
   } catch (error) {
@@ -319,6 +358,35 @@ export async function createStoreOrder(req, res) {
     });
   } finally {
     session.endSession();
+  }
+}
+
+export async function payMyStoreOrderWithCredit(req, res) {
+  try {
+    assertPracticeRequestor(req);
+    const businessAnchorId = req.user?.businessAnchorId;
+    const id = String(req.params.id || "").trim();
+    const order = await StoreOrder.findOne({
+      _id: id,
+      businessAnchorId,
+    }).lean();
+    if (!order) {
+      return res.status(404).json({ success: false, message: "not_found" });
+    }
+    const result = await payStoreOrderWithCredit({
+      orderId: order._id,
+      userId: req.user?._id || null,
+    });
+    const updated = await StoreOrder.findById(id).lean();
+    return res.json({ success: true, data: updated, pay: result });
+  } catch (error) {
+    const status = error.statusCode || 500;
+    return res.status(status).json({
+      success: false,
+      message: error.message || "pay_failed",
+      code: error.code || undefined,
+      payload: error.payload || undefined,
+    });
   }
 }
 

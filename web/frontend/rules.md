@@ -116,7 +116,7 @@ Notes:
   - `src/pages/requestor/dashboard/components/RequestorDashboardStatsCards.tsx` (치과 행 라벨=구강스캔/어벗디자인)
   - `src/pages/requestor/dashboard/components/RequestorRecentRequestsCard.tsx` (완료 내역 버튼)
   - `src/pages/requestor/credits/RequestorCreditsPage.tsx` (사이드바 크레딧: 내역/충전)
-  - `src/shared/legal/creditPrepaidCopy.ts` (기공료 선입금 UI/FAQ 카피)
+  - `src/shared/legal/creditPrepaidCopy.ts` (B2B 거래 선수금 UI/FAQ 카피)
   - `src/shared/shipping/shippingMode.ts`
   - `src/pages/requestor/practice/RequestorPracticePage.tsx`
   - 디자인 큐
@@ -442,14 +442,14 @@ Notes:
 
 - 부가세(VAT) / 면세 UI 정책(강제, 루트 `rules.md` §2.3) — 겸영 이중 체계:
   - **고객·기공 경로(면세)**: 가격·충전·약관에서 "VAT 별도 / 부가세 포함 / VAT 10%" 문구 금지. 증빙은 **계산서**.
-  - **스토어 기성품(과세)**: 고객 표시는 **부가세 포함가** + `과세 · 부가세 포함`. 장바구니·입금주문·세금계산서. **커스텀어벗·크레딧과 합치지 않음.** 배송지 입력 → 입금 → 출고·배송 추적. `RequestorStorePage` / cart / orders. 헬퍼: `shared/tax/invoiceLabels.ts`.
+  - **스토어 기성품(과세)**: 고객 표시는 **부가세 포함가** + `과세 · 부가세 포함`. 크레딧(유료) 결제 기본·계좌이체 유지. 한 체크아웃에 기공과 합치지 않음. 배송지 → 결제 → 출고. 세금계산서는 월말 합산. `RequestorStorePage` / cart / orders. 헬퍼: `shared/tax/invoiceLabels.ts`.
   - **관리자 스토어**: 재고·입금승인·출고(운송장)·배송완료 `/dashboard/store-admin` (`AdminStorePage`). 매출은 전액 어벗츠(`REV_STORE_TAXABLE`).
   - **과세 지급**: 어벗츠↔딜러사, 어벗츠↔개발운영사. 지급 UI에 공급가·부가세·합계와 **세금계산서** 표시.
   - **면세**: 치과·기공소·제조사·어벗츠(기공·커스텀어벗). 공급가·**계산서**.
   - **관리자 (세금)계산서**: 과세/면세 라벨 구분, 마이너스 발행은 원본 SENT 유지 + REVERSE 탭. `AdminTaxInvoices.tsx`.
   - 공통 UI: `src/shared/settlement/settlementUi.tsx`, VAT 카피 `src/shared/settlement/affiliateVat.ts`
   - 크레딧 충전 UI: 결제·입금 금액 = 공급가. `vatAmount` 표시·가산 금지.
-    화면 제목/안내: **크레딧(기공료 선입금)** — 선불페이(전자금융업)가 아니라 B2B 기공물 대금 선납임을 충전 화면·FAQ·약관에 명시.
+    화면 제목/안내: **크레딧(거래 선수금)** — 선불페이가 아니라 B2B 계약 물품·용역 예치금. 충전 시 계산서 없음, 사용분 월말 면세/과세 각각 발행.
     카피 SSOT: `src/shared/legal/creditPrepaidCopy.ts`
     구현: `src/features/settings/tabs/CreditPaymentTab.tsx`
     FAQ: `src/pages/public/HelpPage.tsx`, 의뢰자 문의 `InquiriesPage`
@@ -458,7 +458,7 @@ Notes:
     첫 충전 기본 1단위. 2회차부터 기본 배수 3(단위≈월사용량 1/3 → 약 한 달분). 추천 버튼은 월사용량 반올림.
     잔액 < 50만원이면 사이드바 `크레딧`에 깜빡이는 충전 뱃지·클릭 시 `?tab=charge` (`DashboardLayout`).
     백엔드: `utils/creditChargeUnit.js`, `creditBPlan.controller.js`, `credit.controller.js` insights.
-  - 공개 안내/약관: `ServicePage`, `TermsPage`, `HelpPage` — 치과·기공소 경로는 면세·부가세 없음, 크레딧=기공료 선입금(선납 대금).
+  - 공개 안내/약관: `ServicePage`, `TermsPage`, `HelpPage` — 크레딧=B2B 거래 선수금. 기공·어벗 경로는 면세, 스토어는 과세(월말 분리 발행).
   - 가격 정책/대시보드: `PricingPolicyDialog` — 치과 고시 어벗디자인으로 생산 1.5만 · 구강스캔으로 디자인+생산 2.5만(구강지그 제외). 기공소는 어벗생산의뢰/기공의뢰수신 동일 고시. 신속 출고 +2,000(1개당) · 배송비 3,500(1박스당). 풀세트·환봉·디자인비+지그 행 없음. 멤버십/구독 행 없음.
   - 관리자 플랫폼 설정「커스텀어벗」: 커스텀어벗 가격(CNC·환봉 생산 단가) + 분배 비율. 지정 기공소 디자인·어벗츠 생산만. 치과 공급·디자인+생산 카드 없음.
   - 제조사 정산규칙: 원청–하청 고정단가(의뢰·배송 공급가, 면세). 고객 유료·무료 구분 없이 약정 단가 전액 · 말일 일괄 지급. % 분배 안내 금지.

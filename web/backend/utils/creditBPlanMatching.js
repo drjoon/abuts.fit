@@ -8,15 +8,12 @@ import mongoose from "mongoose";
 import ChargeOrder from "../models/chargeOrder.model.js";
 import StoreOrder from "../models/storeOrder.model.js";
 import BankTransaction from "../models/bankTransaction.model.js";
-import TaxInvoiceDraft from "../models/taxInvoiceDraft.model.js";
-import BusinessAnchor from "../models/businessAnchor.model.js";
 import User from "../models/user.model.js";
 import AdminSmsTemplate from "../models/adminSmsTemplate.model.js";
 
 import { postGeneralLedgerJournal } from "../services/generalLedger.service.js";
 import { finalizeStoreSale } from "../services/storeSale.service.js";
 import { emitCreditBalanceUpdatedToBusiness } from "./creditRealtime.js";
-import { enqueueTaxInvoiceIssue } from "./queueClient.js";
 import {
   sendPopbillKakaoATS,
   sendPopbillXMS,
@@ -37,7 +34,7 @@ function pickNotifyPhone(...candidates) {
   return "";
 }
 
-/** 입금 매칭 후 기공료 선입금 반영 안내(알림톡 우선, 실패 시 문자). 발송 실패는 충전을 막지 않는다. */
+/** 입금 매칭 후 거래 선수금 반영 안내(알림톡 우선, 실패 시 문자). 발송 실패는 충전을 막지 않는다. */
 export async function notifyChargePrepaidApplied({
   userId,
   businessAnchorId,
@@ -100,7 +97,7 @@ export async function notifyChargePrepaidApplied({
     }
     await sendPopbillXMS({
       items,
-      subject: "기공료 선입금",
+      subject: "거래 선수금",
     });
   } catch (err) {
     console.error("[chargePrepaidNotify] failed:", err?.message || err);
@@ -406,7 +403,6 @@ async function matchTxWithStoreOrder({ tx, order }) {
 
 async function matchTxWithOrder({ tx, order }) {
   const session = await mongoose.startSession();
-  let autoCreatedDraftId = null;
   let matchedChargeDelta = 0;
 
   try {
@@ -486,54 +482,7 @@ async function matchTxWithOrder({ tx, order }) {
         }
       }
 
-      // 세금계산서 Draft 생성 (APPROVED 상태 → 자동발행 큐잉)
-      const existingDraft = await TaxInvoiceDraft.findOne(
-        { chargeOrderId: order._id },
-        null,
-        { session },
-      );
-      if (!existingDraft) {
-        const org = await BusinessAnchor.findById(order.businessAnchorId)
-          .select({
-            "metadata.businessNumber": 1,
-            "metadata.companyName": 1,
-            "metadata.representativeName": 1,
-            "metadata.address": 1,
-            "metadata.businessType": 1,
-            "metadata.businessItem": 1,
-            "metadata.email": 1,
-            "metadata.phoneNumber": 1,
-          })
-          .lean({ session });
-
-        const [createdDraft] = await TaxInvoiceDraft.create(
-          [
-            {
-              chargeOrderId: order._id,
-              userId: order.userId,
-              businessAnchorId: order.businessAnchorId,
-              status: "APPROVED",
-              supplyAmount: Number(order.supplyAmount),
-              vatAmount: Number(order.vatAmount || 0),
-              totalAmount: Number(order.amountTotal || 0),
-              // SSOT: metadata 사용 (extracted 레거시 제거)
-              buyer: {
-                bizNo: org?.metadata?.businessNumber || "",
-                corpName: org?.metadata?.companyName || "",
-                ceoName: org?.metadata?.representativeName || "",
-                addr: org?.metadata?.address || "",
-                bizType: org?.metadata?.businessType || "",
-                bizClass: org?.metadata?.businessItem || "",
-                contactEmail: org?.metadata?.email || "",
-                contactTel: org?.metadata?.phoneNumber || "",
-                contactName: org?.metadata?.representativeName || "",
-              },
-            },
-          ],
-          { session },
-        );
-        autoCreatedDraftId = createdDraft?._id ?? null;
-      }
+      // 충전(선수금) 시점에는 (세금)계산서를 발행하지 않음. 사용분 월말 합산.
 
       return true;
     });
@@ -553,23 +502,6 @@ async function matchTxWithOrder({ tx, order }) {
       }).catch((err) => {
         console.error("[autoMatch] charge prepaid notify failed:", err?.message || err);
       });
-    }
-
-    // 트랜잭션 성공 후: 새로 생성된 APPROVED 드래프트를 발행 큐에 자동 등록
-    if (result && autoCreatedDraftId) {
-      const corpNum = process.env.POPBILL_CORP_NUM || "";
-      if (corpNum) {
-        enqueueTaxInvoiceIssue({
-          draftId: String(autoCreatedDraftId),
-          corpNum,
-          priority: 5,
-        }).catch((err) => {
-          console.error(
-            "[autoMatch] enqueueTaxInvoiceIssue 실패:",
-            err.message,
-          );
-        });
-      }
     }
 
     return result;

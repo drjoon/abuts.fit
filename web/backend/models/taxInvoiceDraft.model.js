@@ -127,7 +127,8 @@ const TaxInvoiceDraftSchema = new mongoose.Schema(
     totalAmount: { type: Number, required: true },
     itemName: { type: String, default: "" },
     buyer: partySchema,
-    // 월합계 발행 대상 기간(LAB_TO_PRACTICE, AFFILIATE_TO_ABUTS). 건별(ABUTS_TO_CUSTOMER)은 null.
+    // 월합계 발행 대상 기간(LAB_TO_PRACTICE, AFFILIATE_TO_ABUTS, ABUTS_TO_CUSTOMER 월합).
+    // 과거 건별 충전/스토어 draft는 null.
     periodStart: { type: Date, default: null },
     periodEnd: { type: Date, default: null },
     // 집계에 포함된 원천 레퍼런스(추적용) — LAB_TO_PRACTICE: PracticeTransfer id들, AFFILIATE_TO_ABUTS: SettlementBatchItem id
@@ -166,12 +167,34 @@ TaxInvoiceDraftSchema.index(
     partialFilterExpression: { storeOrderId: { $type: "objectId" } },
   },
 );
-// 같은 기간(월합계) 중복 생성 방지 — periodStart가 있는 문서에만 적용(부분 유니크 인덱스)
+// 월합 중복 방지 — LAB_TO_PRACTICE / AFFILIATE_TO_ABUTS (seller 있는 방향)
 TaxInvoiceDraftSchema.index(
   { sellerAnchorId: 1, businessAnchorId: 1, direction: 1, periodStart: 1, periodEnd: 1 },
   {
     unique: true,
-    partialFilterExpression: { periodStart: { $type: "date" } },
+    partialFilterExpression: {
+      periodStart: { $type: "date" },
+      direction: { $in: ["LAB_TO_PRACTICE", "AFFILIATE_TO_ABUTS"] },
+    },
+  },
+);
+// 고객향 월합: 사업자+taxType+기간당 NORMAL 1건 (면세/과세 각각)
+TaxInvoiceDraftSchema.index(
+  {
+    businessAnchorId: 1,
+    direction: 1,
+    taxType: 1,
+    periodStart: 1,
+    periodEnd: 1,
+    kind: 1,
+  },
+  {
+    unique: true,
+    partialFilterExpression: {
+      direction: "ABUTS_TO_CUSTOMER",
+      periodStart: { $type: "date" },
+      kind: "NORMAL",
+    },
   },
 );
 

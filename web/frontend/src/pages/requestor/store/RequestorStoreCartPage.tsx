@@ -102,7 +102,7 @@ export default function RequestorStoreCartPage() {
     return <Navigate to="/dashboard/credits" replace />;
   }
 
-  async function checkout() {
+  async function checkout(paymentMethod: "CREDIT" | "BANK") {
     if (rows.length === 0) return;
     if (STORE_CART_MERGE_WITH_CREDIT_OR_CUSTOM_ABUTMENT) {
       toast.error("스토어 장바구니는 크레딧·커스텀어벗과 합칠 수 없습니다.");
@@ -131,6 +131,7 @@ export default function RequestorStoreCartPage() {
             qty: r.line.qty,
           })),
           shipping,
+          paymentMethod,
         },
       });
       const body = res.data;
@@ -138,7 +139,11 @@ export default function RequestorStoreCartPage() {
         throw new Error(body?.message || "주문 생성에 실패했습니다.");
       }
       clear();
-      toast.success("주문이 생성되었습니다. 입금 정보를 확인하세요.");
+      toast.success(
+        paymentMethod === "CREDIT"
+          ? "선수금으로 결제되었습니다."
+          : "주문이 생성되었습니다. 입금 정보를 확인하세요.",
+      );
       navigate(`/dashboard/store/orders/${body.data.order._id}`);
     } catch (err: unknown) {
       const message =
@@ -297,16 +302,26 @@ export default function RequestorStoreCartPage() {
                 </span>
               </div>
               <p className="pt-1 text-xs text-muted-foreground">
-                커스텀어벗·크레딧 경로와 장바구니·세금계산서를 합치지 않습니다.
-                입금 확인 후 세금계산서가 발행되며, 출고·배송은 별도 진행됩니다.
+                기공·커스텀어벗과 한 장바구니에 합치지 않습니다. 같은 거래
+                선수금으로 각각 결제할 수 있으며, (세금)계산서는 사용분 기준
+                월말 면세/과세 각각 발행됩니다.
               </p>
               <Button
                 type="button"
                 className="mt-2 w-full"
                 disabled={submitting}
-                onClick={() => void checkout()}
+                onClick={() => void checkout("CREDIT")}
               >
-                {submitting ? "주문 생성 중…" : "입금 주문하기"}
+                {submitting ? "결제 중…" : "선수금으로 결제"}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                disabled={submitting}
+                onClick={() => void checkout("BANK")}
+              >
+                계좌이체 입금 주문
               </Button>
             </div>
           </>

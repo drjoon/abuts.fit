@@ -9,6 +9,7 @@ import {
   getMyStoreOrder,
   getStoreCatalog,
   listMyStoreOrders,
+  payMyStoreOrderWithCredit,
 } from "../../controllers/store/storeOrder.controller.js";
 
 const router = Router();
@@ -20,6 +21,7 @@ router.get("/catalog", getStoreCatalog);
 router.get("/orders", listMyStoreOrders);
 router.get("/orders/:id", getMyStoreOrder);
 router.post("/orders", createStoreOrder);
+router.post("/orders/:id/pay-with-credit", payMyStoreOrderWithCredit);
 router.post("/orders/:id/cancel", cancelMyStoreOrder);
 
 export default router;

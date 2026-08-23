@@ -318,7 +318,6 @@ async function approveChargeOrder(req, res, { mock = false } = {}) {
 
   const session = await mongoose.startSession();
   let glResult;
-  let invoiceDraft;
 
   try {
     await session.withTransaction(async () => {
@@ -381,7 +380,7 @@ async function approveChargeOrder(req, res, { mock = false } = {}) {
         session,
       });
 
-      invoiceDraft = await ensureApprovedChargeInvoiceDraft({ order, session });
+      // 충전 시점 (세금)계산서 미발행 — 사용분 월말 합산.
     });
   } finally {
     await session.endSession();
@@ -395,11 +394,6 @@ async function approveChargeOrder(req, res, { mock = false } = {}) {
     // A retried/idempotent approval still changes the customer-facing order
     // state, so active credit tabs must refetch even without a new journal.
     forceEmit: true,
-  });
-
-  const invoiceResult = await issueChargeInvoice({
-    draftId: invoiceDraft?._id,
-    mock,
   });
 
   const updated = await ChargeOrder.findById(order._id)
@@ -418,8 +412,6 @@ async function approveChargeOrder(req, res, { mock = false } = {}) {
       businessAnchorId: String(order.businessAnchorId || ""),
       amountTotal: order.amountTotal,
       note,
-      taxInvoiceDraftId: String(invoiceDraft?._id || ""),
-      taxInvoiceStatus: invoiceResult?.draft?.status || "FAILED",
       mock,
     },
   });
@@ -432,8 +424,6 @@ async function approveChargeOrder(req, res, { mock = false } = {}) {
       businessAnchorId: String(order.businessAnchorId || ""),
       amountTotal: order.amountTotal,
       note,
-      taxInvoiceDraftId: String(invoiceDraft?._id || ""),
-      taxInvoiceStatus: invoiceResult?.draft?.status || "FAILED",
       mock,
     },
     severity: "high",
@@ -450,12 +440,10 @@ async function approveChargeOrder(req, res, { mock = false } = {}) {
 
   return res.json({
     success: true,
-    data: { chargeOrder: updated, taxInvoice: invoiceResult?.draft || null },
-    message: invoiceResult?.issued
-      ? mock
-        ? "모의승인 및 면세 계산서 모의 발행을 완료했습니다."
-        : "승인 및 면세 계산서 발행을 완료했습니다."
-      : "승인과 크레딧 지급은 완료됐지만 계산서 발행에 실패했습니다. 계산서 관리에서 재발행하세요.",
+    data: { chargeOrder: updated },
+    message: mock
+      ? "모의승인 및 거래 선수금 지급을 완료했습니다."
+      : "승인 및 거래 선수금 지급을 완료했습니다. (세금)계산서는 사용분 기준 월말 발행입니다.",
   });
 }
 
