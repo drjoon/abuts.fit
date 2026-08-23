@@ -9,9 +9,11 @@
 // - 2026-08-21: hold meta.convertedAt 있으면 SPEND_PAID(지급완료)로 표시.
 // - 2026-08-21: PTX CA Request도 abutmentBoxGroupKey(BA+출고일) 유지 — 기공소 배송·생산 박스 묶음.
 // - 2026-08-19: 어벗디자인·어벗생산 박스는 의뢰 사업자+예정출고일. 치과명으로 쪼개지 않음.
+// - 2026-08-23: 치과 정산 내역 상단 — 필터 기간 소비액 집계(통계 탭 totalSpendSupply와 동일).
 // - 2026-08-19: 기본 내역은 최근 라인만 잘라 10건 lookup. 기간 전체 $count 생략.
 // - 2026-08-19: 어벗디자인 원장 — 수신자(박스) 묶음용 mailbox/shippingReceiver 요약. ObjectId 재귀 가드.
 import mongoose from "mongoose";
+import LedgerLine from "../../models/ledgerLine.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 // - 2026-08-17: PTX 디자인비(+지그) 원장을 기공의뢰(PRACTICE_TRANSFER)로 승격·묶음.
 // - 2026-08-15: 행 시점 잔액 = 유료+무료+기공 합산 러닝(버킷 분리 시 잔액이 리셋되어 보임).
@@ -1150,4 +1152,63 @@ export function parseCreditLedgerFacetResult(facetRaw, { pageSize } = {}) {
     skippedSum: Number(row?.skipped?.[0]?.sum || 0),
     items: hasMore ? rawItems.slice(0, size) : rawItems,
   };
+}
+
+/**
+ * 치과 정산 내역 상단 카드 — 필터 기간 소비 공급가 합계.
+ * creditLedgerStats.controller totalSpendSupply와 동일 저널·이벤트 집계.
+ */
+export async function aggregateRequestorPeriodSpendSupply({
+  ownerObjectId,
+  occurredAt,
+  journalCollectionName,
+}) {
+  const match = {
+    ownerRole: "requestor",
+    ownerId: ownerObjectId,
+    accountCode: { $in: REQUESTOR_CREDIT_ACCOUNT_CODES },
+  };
+  if (occurredAt && Object.keys(occurredAt).length) {
+    match.occurredAt = occurredAt;
+  }
+
+  const rows = await LedgerLine.aggregate([
+    { $match: match },
+    {
+      $lookup: {
+        from: journalCollectionName,
+        localField: "journalId",
+        foreignField: "journalId",
+        as: "journalDoc",
+      },
+    },
+    { $unwind: { path: "$journalDoc", preserveNullAndEmptyArrays: true } },
+    {
+      $addFields: {
+        amountBase: { $ifNull: ["$amountExcludingVat", "$amount"] },
+        eventType: { $ifNull: ["$journalDoc.eventType", ""] },
+      },
+    },
+    {
+      $group: {
+        _id: "$journalId",
+        eventType: { $first: "$eventType" },
+        amount: { $sum: "$amountBase" },
+      },
+    },
+  ]);
+
+  let totalSpendSupply = 0;
+  for (const row of rows) {
+    const eventType = String(row?.eventType || "");
+    const amount = Number(row?.amount || 0);
+    if (
+      CREDIT_LEDGER_STATS_SPEND_EVENT_TYPES.includes(eventType) &&
+      amount < 0
+    ) {
+      totalSpendSupply += Math.abs(amount);
+    }
+  }
+
+  return Math.max(0, Math.round(totalSpendSupply));
 }

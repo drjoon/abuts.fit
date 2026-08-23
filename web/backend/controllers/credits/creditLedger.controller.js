@@ -1,6 +1,7 @@
 // change-log:
 // - 2026-08-21: PTX abuts_shipping enrich — BA+출고일 박스키(기공소 생산·배송 묶음).
 // - 2026-08-19: 어벗디자인 박스 키=의뢰 사업자+예정출고일. 수신자는 의뢰 사업자명.
+// - 2026-08-23: 치과 정산 내역 — 필터 기간 소비액(periodSpendSummary) 응답.
 // - 2026-08-22: q 검색 — 기공소명·치과명으로 연결된 기공의뢰 refId 매칭.
 // - 2026-08-22: partnerName·prosthesisType·statsCategory(s)·onYmd 드릴다운 필터.
 // - 2026-08-19: 기본 내역은 10건+hasMore. 기간 전체 $count를 하지 않는다.
@@ -35,6 +36,7 @@ import { getBusinessCreditBalanceSnapshot } from "../../services/creditBalance.s
 import { buildFeeQuotesForTransferDocs } from "../../services/practiceTransferBilling.service.js";
 import { scheduleHealMissingExpressSurchargesForBusiness } from "../requests/common.review.helpers.js";
 import { normalizeRequestorKind } from "../../utils/requestorCapabilities.js";
+import { buildOccurredAtFromPeriodQuery } from "../../utils/kstQueryBounds.js";
 import {
   attachCreditLedgerRequestFields,
   buildAbutmentBoxGroupKey,
@@ -53,6 +55,7 @@ import {
   resolveFreeCreditGrantIdFromLedgerItem,
   resolveLedgerTypesForFilters,
   buildRequestorCreditLedgerPipeline,
+  aggregateRequestorPeriodSpendSupply,
 } from "./creditLedger.utils.js";
 
 async function resolveRequestorKindForAnchor(businessAnchorId, fallbackKind) {
@@ -284,7 +287,6 @@ export async function listMyCreditLedger(req, res) {
   const typeRaw = String(req.query.type || "").trim().toUpperCase();
   const creditKindRaw = String(req.query.creditKind || "").trim().toUpperCase();
   const actionRaw = String(req.query.action || "").trim().toUpperCase();
-  const periodRaw = String(req.query.period || "").trim();
   const qRaw = String(req.query.q || "").trim();
   const partnerNameRaw = String(req.query.partnerName || "").trim();
   const prosthesisTypeRaw = String(req.query.prosthesisType || "").trim();
@@ -301,21 +303,9 @@ export async function listMyCreditLedger(req, res) {
     limit: 30,
   });
 
-  const occurredAt = {};
-  const sinceFromPeriod = parsePeriod(periodRaw);
-  if (sinceFromPeriod) occurredAt.$gte = sinceFromPeriod;
-
-  const fromRaw = String(req.query.from || "").trim();
-  const toRaw = String(req.query.to || "").trim();
-
-  if (fromRaw) {
-    const from = new Date(fromRaw);
-    if (!Number.isNaN(from.getTime())) occurredAt.$gte = from;
-  }
-  if (toRaw) {
-    const to = new Date(toRaw);
-    if (!Number.isNaN(to.getTime())) occurredAt.$lte = to;
-  }
+  const occurredAt = buildOccurredAtFromPeriodQuery(req.query, {
+    parsePreset: parsePeriod,
+  });
   if (onYmdRaw) {
     applyOnYmdToOccurredAt(onYmdRaw, occurredAt);
   }
@@ -424,12 +414,24 @@ export async function listMyCreditLedger(req, res) {
     pageSize,
   });
 
-  const [balanceSnapshot, facetRaw] = await Promise.all([
+  const periodOccurredAt =
+    Object.keys(occurredAt).length ? occurredAt : null;
+  const periodSpendPromise =
+    page === 1 && requestorKind === "practice"
+      ? aggregateRequestorPeriodSpendSupply({
+          ownerObjectId: anchorObjectId,
+          occurredAt: periodOccurredAt,
+          journalCollectionName: LedgerJournal.collection.name,
+        })
+      : Promise.resolve(null);
+
+  const [balanceSnapshot, facetRaw, periodSpendSupply] = await Promise.all([
     getBusinessCreditBalanceSnapshot({
       businessAnchorId: anchorObjectId,
       upsertIfMissing: true,
     }),
     LedgerLine.aggregate(pipeline),
+    periodSpendPromise,
   ]);
   const currentBalance = Number(balanceSnapshot?.balance || 0);
   const currentSettlementCredit = Number(balanceSnapshot?.settlementCredit || 0);
@@ -823,6 +825,10 @@ export async function listMyCreditLedger(req, res) {
         balanceSnapshot,
         requestorKind,
       ),
+      periodSpendSummary:
+        page === 1 && requestorKind === "practice" && periodSpendSupply != null
+          ? { totalSpendSupply: periodSpendSupply }
+          : null,
     },
   });
 }

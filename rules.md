@@ -359,6 +359,7 @@
   - `web/frontend/src/features/layout/DashboardLayout.tsx`
   - `web/frontend/src/shared/types/role.ts`
   - `web/frontend/src/shared/business/requestorCapabilities.ts` (의뢰자 유형·유료게이트)
+  - 요약 카드(정산·크레딧): 클릭→상세 모달, 수식·설명 문단 상시 노출 금지 → `web/frontend/rules.md`, `.cursor/rules/ui-summary-cards.mdc`
 - 프론트 상세 진입 파일 지도는 `web/frontend/rules.md`를 참조합니다.
 
 ### 4.2 Backend

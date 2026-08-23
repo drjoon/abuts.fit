@@ -37,6 +37,12 @@ Notes:
   - SSOT: `src/components/ui/tooltip.tsx` (`TooltipProvider` 기본값 600),
     루트 `src/App.tsx`, `.cursor/rules/tooltip-delay.mdc`.
   - 중첩 `TooltipProvider`/`Tooltip`에 `delayDuration={0}`/`{200}` 등 다른 지연을 두지 말 것.
+- 요약 카드 (`SettlementStatCard`, 정산·크레딧 상단 요약):
+  - **클릭 → 관련 상세 내역 모달** (`CreditLedgerModal` + `initialFilters` + `hideBalanceSummary`).
+  - 카드 위·사이 **수식·설명 문단 상시 노출 금지** (`현재 잔액 = …` 한 줄, `· 기간 …` 보조 문구 등).
+  - 연산 부호(`=`, `+`, `−`)는 카드 사이 시각만. 설명은 필요 시 카드 **툴팁**만.
+  - SSOT: `src/shared/components/CreditLedgerModal.tsx`, `CreditStatisticsTab.tsx`,
+    `.cursor/rules/ui-summary-cards.mdc`.
 - Requestor dashboard: 상단 카드 '의뢰/취소' -> '준비'로 변경. 취소 항목은 카드에서 제거(내부 DB는 유지). 상세 정책/모달의 '의뢰' 문구는 '준비'로 변경함.
 - 의뢰 취소 정책 SSOT: **준비 단계에서만** 취소 가능(불완전가공 판정 예외 유지). 레거시 '의뢰/CAM 단계 취소' 문구·판정 금지.
   - UI: `RequestorRecentRequestsCard` 취소 버튼/툴팁, `RequestorDashboardPage` 실패 토스트, `PricingPolicyDialog` 6절,
@@ -49,6 +55,8 @@ Notes:
   - 루트 `rules.md` §1.4: 표시·필터·집계는 `Asia/Seoul`. 브라우저 로컬 TZ에 의존하는
     `Date#getDay()`/`toLocaleDateString()` 단독 사용 금지 → `timeZone: "Asia/Seoul"` 또는
     `src/shared/date/kst.ts` / `src/utils/dateFormat.ts` / `src/store/usePeriodStore.ts`
+  - **API 기간 query** (`from`/`to`/`period`): 프론트 `appendPeriodQueryParams` → KST YMD.
+    백엔드 `web/backend/utils/kstQueryBounds.js` (`parseKstQueryBoundDate`, `buildOccurredAtFromPeriodQuery`).
   - 출고 남은시간 뱃지: `src/pages/manufacturer/worksheet/custom_abutment/utils/request.ts` `getDeadlineInfo`
     (문구: `출고 N일전` / `출고 N시간전` / 1시간 미만은 `출고 0시간전`,
      `출고시간 지남`은 16:00 KST 이후만. 기준시각: `estimatedShipYmd` 16:00 KST)
@@ -295,8 +303,9 @@ Notes:
   - 기공소 사이드 설정과 계정 팝업 사이: 가입 이유 배너. 어벗생산의뢰 상단은 생산 현황 헤더(`[정책 안내]`·진행중·출고예정·완료·불완전가공).
   - 크레딧 잔액·장부 UI(`CreditLedgerModal` / 의뢰자 크레딧 페이지):
     - 잔액 요약은 기공크레딧 탭과 동일하게 rounded-2xl 카드 그리드(현재/유료/무료/[기공]).
+    - **요약 카드 클릭 → `CreditLedgerModal` 상세(필터 프리셋)**. 카드 사이 수식·설명 문단 상시 노출 금지(툴팁만). `.cursor/rules/ui-summary-cards.mdc`.
     - 테이블·필터·관리자 모달도 rounded-2xl·slate border 톤으로 통일.
-    - **치과**: 유료크레딧(+무료·의뢰/배송)만 표시. `기공크레딧` 잔액 행·정산 필터 숨김. 기공의뢰 차감은 유료크레딧에서 나가며 장부 항목=`기공비`. 기공의뢰 치식 차트(상·하악 사이)·전송 상세에 견적(크레딧 소비액) 표시.
+    - **치과**: 유료크레딧(+무료·의뢰/배송)만 표시. `기공크레딧` 잔액 행·정산 필터 숨김. **기간 소비**·드릴다운은 필터 줄 **오른쪽** `PeriodFilter`(기간 전용 state). 내역 테이블은 기간 무관. API `from`/`to`는 `appendPeriodQueryParams`(KST YMD SSOT).
     - **기공소 기공의뢰수신**: 의뢰카드·전송 상세에 수령액(청구 − 플랫폼 수수료) 표시.
     - **기공소**: 유료(선입금)·무료·기공크레딧을 **경로별로 분리 표시**. 주문 차감은 무료→기공→유료 통합. 기공 사용=월 정산 상계. 크레딧 페이지 탭은 내역·충전만. 내역 필터: 버킷(유료/무료/기공)·동작(충전/소비/조정). `SPEND_SETTLEMENT`=기공크레딧 주문 사용. 사이드「정산」메뉴 없음(구 `/dashboard/payments` → 크레딧 내역).
     - **기공소 기공의뢰 장부**: 내역 행(지급상태·금액 호버·상세)은 **치과와 동일**. 보철기공비와 어벗 디자인+생산비는 모두 기공비. 금액 호버는 두 열(+배송비)·기공비 총액까지. 기공소→치과·치과→기공소 배송은 무료(기공수가 배송 항목 없음). 지급 상태는 보류/일부 지급/지급 완료. 행 클릭 상세는 치과와 같은 견적 뷰(배송비·크레딧 소비 총액 포함). CA 디자인비 원장(`abutment_design_lab_fee`)을 생산의뢰 행으로 따로 표시하지 않는다.

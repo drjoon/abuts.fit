@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-23: periodToRangeQueryBounds — API용 KST YMD from/to (ISO + 타임존 URL 이슈 회피).
 // - 2026-08-20: 저장된 90일·지난달 선택은 30일·이번달로 승격.
 // - 2026-08-07: thisMonth 종료일을 월말이 아니라 오늘(KST)로 클램프
 // related files:
@@ -9,6 +10,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { PeriodFilterValue } from "@/shared/ui/PeriodFilter";
 import { isPeriodFilterValue } from "@/shared/ui/periodFilterValues";
+import { toKstYmd } from "@/shared/date/kst";
 
 interface PeriodState {
   period: PeriodFilterValue;
@@ -172,4 +174,32 @@ export const periodToRangeQuery = (
   const range = periodToRange(period, options);
   if (!range) return "";
   return `?startDate=${encodeURIComponent(range.startDate)}&endDate=${encodeURIComponent(range.endDate)}`;
+};
+
+/** 장부·집계 API — KST YMD `from`/`to` + `period` (ISO 타임존 `+` URL 파싱 이슈 회피). */
+export const periodToRangeQueryBounds = (
+  period: PeriodFilterValue,
+  options?: { customStartDate?: string; customEndDate?: string },
+) => {
+  const range = periodToRange(period, options);
+  if (!range) {
+    return { fromYmd: "", toYmd: "", period };
+  }
+  return {
+    fromYmd: toKstYmd(range.startDate) || "",
+    toYmd: toKstYmd(range.endDate) || "",
+    period,
+  };
+};
+
+/** URLSearchParams에 from/to/period 추가 (PeriodFilter API SSOT). */
+export const appendPeriodQueryParams = (
+  params: URLSearchParams,
+  period: PeriodFilterValue,
+  options?: { customStartDate?: string; customEndDate?: string },
+) => {
+  const bounds = periodToRangeQueryBounds(period, options);
+  if (bounds.fromYmd) params.set("from", bounds.fromYmd);
+  if (bounds.toYmd) params.set("to", bounds.toYmd);
+  params.set("period", bounds.period);
 };

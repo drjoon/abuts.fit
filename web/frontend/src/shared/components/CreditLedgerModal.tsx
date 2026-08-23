@@ -44,6 +44,9 @@
 // - 2026-08-11: 중복 일자(from~to) 입력 제거. 검색을 초기화 버튼 우측으로 이동.
 // - 2026-08-11: embedded 무한스크롤 — sentinel 재마운트 시 IntersectionObserver 재연결.
 // - 2026-08-11: embedded 모드에서 "크레딧 내역" 제목 숨김(탭 라벨로 충분). Dialog는 유지.
+// - 2026-08-23: 요약 카드 클릭 → 필터된 CreditLedgerModal 드릴다운. 안내 문구는 툴팁만.
+// - 2026-08-23: 치과 기간 소비 — 카드 하단 PeriodFilter·별도 집계 조회. YMD from/to.
+// - 2026-08-23: 치과 정산 내역 상단 — 소비액(필터기간) 카드. 클릭 시 소비 필터.
 // - 2026-08-22: initialFilters·hideBalanceSummary·detailTitle — 통계 탭 드릴다운.
 // - 2026-08-11: embedded 모드 추가 — 의뢰자 크레딧 페이지에서 Dialog 없이 동일 원장 UI 사용.
 // - 2026-08-09: 잔액 요약 우측에 [충전] 버튼 노출 (chargeNavPath 제공 시).
@@ -100,7 +103,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { generateModelNumber } from "@/utils/modelNumber";
 import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
-import { periodToRange } from "@/store/usePeriodStore";
+import { appendPeriodQueryParams } from "@/store/usePeriodStore";
 import { cn } from "@/shared/ui/cn";
 import {
   RequestDetailDialog,
@@ -108,7 +111,10 @@ import {
 } from "@/features/requests/components/RequestDetailDialog";
 import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
 import type { ShippingMode } from "@/shared/shipping/shippingMode";
-import { SettlementStatCard } from "@/shared/settlement/settlementUi";
+import {
+  SettlementEquationOperator,
+  SettlementStatCard,
+} from "@/shared/settlement/settlementUi";
 import {
   Tooltip,
   TooltipContent,
@@ -322,6 +328,15 @@ type CreditBalanceSnapshot = {
   showSettlementCredit?: boolean;
   updatedAt?: string | null;
 };
+
+type PeriodSpendSummary = {
+  totalSpendSupply: number;
+};
+
+type SummaryDrillDownState = {
+  title: string;
+  filters: CreditLedgerInitialFilters;
+} | null;
 
 export type CreditLedgerModalProps = {
   /** embedded=false(기본)일 때 Dialog open. embedded면 무시하고 항상 로드 */
@@ -933,7 +948,6 @@ function PracticeTransferAmountHover({
               "mx-auto inline-flex items-center justify-center gap-1 rounded-lg px-1.5 py-1 font-medium tabular-nums transition-colors hover:bg-slate-50/80",
               totalAmount < 0 ? "text-destructive" : "text-primary-strong",
             )}
-            onClick={(event) => event.stopPropagation()}
           >
             <span>{formatSignedWon(totalAmount)}</span>
             <CircleHelp
@@ -946,7 +960,6 @@ function PracticeTransferAmountHover({
           side="bottom"
           align="center"
           className="pointer-events-auto w-max max-w-[min(100vw-2rem,20rem)] select-text px-3 py-3 text-xs leading-relaxed"
-          onClick={(event) => event.stopPropagation()}
         >
           <div className="space-y-1.5 tabular-nums">
             {detailLines.map((leaf) => (
@@ -1000,7 +1013,6 @@ function LedgerPartsAmountHover({
               "mx-auto inline-flex items-center justify-center gap-1 rounded-lg px-1.5 py-1 font-medium tabular-nums transition-colors hover:bg-slate-50/80",
               totalAmount < 0 ? "text-destructive" : "text-primary-strong",
             )}
-            onClick={(event) => event.stopPropagation()}
           >
             <span>{formatSignedWon(totalAmount)}</span>
             <CircleHelp
@@ -1013,7 +1025,6 @@ function LedgerPartsAmountHover({
           side="bottom"
           align="center"
           className="pointer-events-auto w-max max-w-[min(100vw-2rem,20rem)] select-text px-3 py-3 text-xs leading-relaxed"
-          onClick={(event) => event.stopPropagation()}
         >
           <div className="space-y-1.5 tabular-nums">
             {merged.map((row) => (
@@ -1665,6 +1676,15 @@ export const CreditLedgerModal = ({
   const [customEndDate, setCustomEndDate] = useState(
     () => resolveLedgerFilters(initialFilters).customEndDate,
   );
+  const [spendPeriod, setSpendPeriod] = useState<PeriodFilterValue>(
+    () => resolveLedgerFilters(initialFilters).period,
+  );
+  const [spendCustomStartDate, setSpendCustomStartDate] = useState(
+    () => resolveLedgerFilters(initialFilters).customStartDate,
+  );
+  const [spendCustomEndDate, setSpendCustomEndDate] = useState(
+    () => resolveLedgerFilters(initialFilters).customEndDate,
+  );
   const [creditKind, setCreditKind] = useState<LedgerCreditKindFilter>(
     () => resolveLedgerFilters(initialFilters).creditKind,
   );
@@ -1699,6 +1719,9 @@ export const CreditLedgerModal = ({
     setPeriod(next.period);
     setCustomStartDate(next.customStartDate);
     setCustomEndDate(next.customEndDate);
+    setSpendPeriod(next.period);
+    setSpendCustomStartDate(next.customStartDate);
+    setSpendCustomEndDate(next.customEndDate);
     setCreditKind(next.creditKind);
     setAction(next.action);
     setQ(next.q);
@@ -1737,6 +1760,10 @@ export const CreditLedgerModal = ({
     useState<AbutmentDesignLedgerDetail | null>(null);
   const [currentBalanceSnapshot, setCurrentBalanceSnapshot] =
     useState<CreditBalanceSnapshot | null>(null);
+  const [periodSpendSummary, setPeriodSpendSummary] =
+    useState<PeriodSpendSummary | null>(null);
+  const [summaryDrillDown, setSummaryDrillDown] =
+    useState<SummaryDrillDownState>(null);
 
   const showSettlementCredit = useMemo(() => {
     if (currentBalanceSnapshot?.showSettlementCredit === true) return true;
@@ -1751,6 +1778,48 @@ export const CreditLedgerModal = ({
     currentBalanceSnapshot?.requestorKind,
     currentBalanceSnapshot?.showSettlementCredit,
   ]);
+
+  const isPracticeViewer = useMemo(() => {
+    const kind =
+      currentBalanceSnapshot?.requestorKind ||
+      (!businessAnchorId ? accessKind : null);
+    return kind === "practice";
+  }, [
+    accessKind,
+    businessAnchorId,
+    currentBalanceSnapshot?.requestorKind,
+  ]);
+
+  const practiceLedgerUi =
+    !hideBalanceSummary && !showSettlementCredit && isPracticeViewer;
+
+  const summaryFilterBase = useMemo(
+    (): CreditLedgerInitialFilters =>
+      practiceLedgerUi
+        ? {
+            period: spendPeriod,
+            customStartDate: spendCustomStartDate,
+            customEndDate: spendCustomEndDate,
+          }
+        : {
+            period,
+            customStartDate,
+            customEndDate,
+          },
+    [
+      practiceLedgerUi,
+      spendPeriod,
+      spendCustomStartDate,
+      spendCustomEndDate,
+      period,
+      customStartDate,
+      customEndDate,
+    ],
+  );
+
+  const openSummaryDrillDown = (next: NonNullable<SummaryDrillDownState>) => {
+    setSummaryDrillDown(next);
+  };
 
   useEffect(() => {
     if (!showSettlementCredit && creditKind === "SETTLEMENT") {
@@ -1770,14 +1839,25 @@ export const CreditLedgerModal = ({
     pageRef.current = page;
   }, [page]);
 
-  const buildPath = (pageNum: number) => {
+  const buildPath = (
+    pageNum: number,
+    mode: "ledger" | "spendSummary" = "ledger",
+  ) => {
     const params = new URLSearchParams();
-    const range = periodToRange(period, {
-      customStartDate,
-      customEndDate,
-    });
-    if (range?.startDate) params.set("from", range.startDate);
-    if (range?.endDate) params.set("to", range.endDate);
+    const applyPeriodBounds = mode === "spendSummary" || !practiceLedgerUi;
+    if (applyPeriodBounds) {
+      if (mode === "spendSummary") {
+        appendPeriodQueryParams(params, spendPeriod, {
+          customStartDate: spendCustomStartDate,
+          customEndDate: spendCustomEndDate,
+        });
+      } else {
+        appendPeriodQueryParams(params, period, {
+          customStartDate,
+          customEndDate,
+        });
+      }
+    }
     if (creditKind && creditKind !== "all") params.set("creditKind", creditKind);
     if (action && action !== "all") params.set("action", action);
     if (q.trim()) params.set("q", q.trim());
@@ -1811,6 +1891,7 @@ export const CreditLedgerModal = ({
           pageSize: number;
           hasMore?: boolean;
           currentBalanceSnapshot?: CreditBalanceSnapshot;
+          periodSpendSummary?: PeriodSpendSummary | null;
         };
         message?: string;
       }>({
@@ -1838,6 +1919,9 @@ export const CreditLedgerModal = ({
       const total = Number(data?.total ?? 0);
       if (reset) {
         setCurrentBalanceSnapshot(data?.currentBalanceSnapshot || null);
+        if (!practiceLedgerUi) {
+          setPeriodSpendSummary(data?.periodSpendSummary ?? null);
+        }
       }
       setItems((prev) => {
         const next = reset ? fetched : [...prev, ...fetched];
@@ -1854,6 +1938,7 @@ export const CreditLedgerModal = ({
       if (reset) {
         setItems([]);
         setCurrentBalanceSnapshot(null);
+        setPeriodSpendSummary(null);
       }
       setHasMore(false);
       hasMoreRef.current = false;
@@ -1871,6 +1956,29 @@ export const CreditLedgerModal = ({
     }
   };
 
+  const loadPeriodSpend = async () => {
+    if (!token || !practiceLedgerUi) return;
+    try {
+      const res = await apiFetch<{
+        success: boolean;
+        data?: {
+          periodSpendSummary?: PeriodSpendSummary | null;
+        };
+        message?: string;
+      }>({
+        path: buildPath(1, "spendSummary"),
+        method: "GET",
+        token,
+        skipCache: true,
+      });
+
+      if (!res.ok || !res.data?.success) return;
+      setPeriodSpendSummary(res.data.data?.periodSpendSummary ?? null);
+    } catch {
+      setPeriodSpendSummary(null);
+    }
+  };
+
   // 필터 변경 시 초기화
   useEffect(() => {
     if (!isOpen) return;
@@ -1883,9 +1991,7 @@ export const CreditLedgerModal = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     isOpen,
-    period,
-    customStartDate,
-    customEndDate,
+    ...(practiceLedgerUi ? [] : [period, customStartDate, customEndDate]),
     creditKind,
     action,
     q,
@@ -1896,6 +2002,20 @@ export const CreditLedgerModal = ({
     onYmd,
     businessAnchorId,
     initialFiltersKey,
+    practiceLedgerUi,
+  ]);
+
+  useEffect(() => {
+    if (!isOpen || !practiceLedgerUi) return;
+    void loadPeriodSpend();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    isOpen,
+    practiceLedgerUi,
+    spendPeriod,
+    spendCustomStartDate,
+    spendCustomEndDate,
+    businessAnchorId,
   ]);
 
   // 무한 스크롤
@@ -2204,6 +2324,9 @@ export const CreditLedgerModal = ({
       (showSettlementCredit ? settlementCreditTotal : 0)
     : 0;
 
+  const showPeriodSpendCard =
+    Boolean(currentBalanceSnapshot) && practiceLedgerUi;
+
   const body = (
     <div
       className={cn(
@@ -2216,64 +2339,148 @@ export const CreditLedgerModal = ({
       ) : (
         <>
           {currentBalanceSnapshot && !hideBalanceSummary ? (
-            <div
-              className={cn(
-                "grid gap-3",
-                showSettlementCredit
-                  ? "grid-cols-1 sm:grid-cols-2 xl:grid-cols-4"
-                  : "grid-cols-1 sm:grid-cols-3",
-              )}
-            >
-              <SettlementStatCard
-                label="현재 잔액"
-                value={currentBalanceTotal}
-                tone="primary"
-                hint={
-                  showSettlementCredit
-                    ? "유료(선입금) + 무료 + 기공"
-                    : "유료(선입금) + 무료"
-                }
-              />
-              <SettlementStatCard
-                label="유료크레딧"
-                value={Number(currentBalanceSnapshot.paidCredit || 0)}
-                hint={CREDIT_PAID_BUCKET_HINT}
-                hintTooltip={CREDIT_LEDGER_PREPAID_NOTICE_BODY}
-              />
-              <SettlementStatCard
-                label="무료크레딧"
-                value={freeCreditTotal}
-                hint={CREDIT_FREE_BUCKET_HINT}
-                hintTooltip={CREDIT_LEDGER_FREE_NOTICE_BODY}
-              />
-              {showSettlementCredit ? (
+            showPeriodSpendCard ? (
+              <div className="-mx-1 overflow-x-auto pb-1">
+                <div className="flex min-w-max items-stretch gap-0.5 px-1 sm:gap-1">
+                  <SettlementStatCard
+                    className="min-w-[9.5rem] flex-1 sm:min-w-[10.5rem]"
+                    label="현재 잔액"
+                    value={currentBalanceTotal}
+                    tone="primary"
+                    hint="안내"
+                    hintTooltip="유료·무료 충전 잔액의 합입니다. 클릭하면 내역을 볼 수 있습니다."
+                    onClick={() =>
+                      openSummaryDrillDown({
+                        title: "현재 잔액 내역",
+                        filters: summaryFilterBase,
+                      })
+                    }
+                  />
+                  <SettlementEquationOperator symbol="=" />
+                  <SettlementStatCard
+                    className="min-w-[9.5rem] flex-1 sm:min-w-[10.5rem]"
+                    label="유료 충전"
+                    value={Number(currentBalanceSnapshot.paidCredit || 0)}
+                    hint={CREDIT_PAID_BUCKET_HINT}
+                    hintTooltip={CREDIT_LEDGER_PREPAID_NOTICE_BODY}
+                    onClick={() =>
+                      openSummaryDrillDown({
+                        title: "유료 충전 내역",
+                        filters: {
+                          ...summaryFilterBase,
+                          creditKind: "PAID",
+                          action: "CHARGE",
+                        },
+                      })
+                    }
+                  />
+                  <SettlementEquationOperator symbol="+" />
+                  <SettlementStatCard
+                    className="min-w-[9.5rem] flex-1 sm:min-w-[10.5rem]"
+                    label="무료 충전"
+                    value={freeCreditTotal}
+                    hint={CREDIT_FREE_BUCKET_HINT}
+                    hintTooltip={CREDIT_LEDGER_FREE_NOTICE_BODY}
+                    onClick={() =>
+                      openSummaryDrillDown({
+                        title: "무료 충전 내역",
+                        filters: {
+                          ...summaryFilterBase,
+                          creditKind: "FREE",
+                          action: "CHARGE",
+                        },
+                      })
+                    }
+                  />
+                  <SettlementEquationOperator symbol="−" />
+                  <SettlementStatCard
+                    className="min-w-[9.5rem] flex-1 sm:min-w-[10.5rem]"
+                    label="기간 소비"
+                    value={Number(periodSpendSummary?.totalSpendSupply || 0)}
+                    hint="안내"
+                    hintTooltip="선택한 기간의 소비 합계입니다."
+                    onClick={() =>
+                      openSummaryDrillDown({
+                        title: "기간 소비 내역",
+                        filters: {
+                          ...summaryFilterBase,
+                          action: "SPEND",
+                        },
+                      })
+                    }
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <SettlementStatCard
-                  label="기공크레딧"
-                  value={settlementCreditTotal}
-                  hint={CREDIT_SETTLEMENT_BUCKET_HINT}
-                  hintTooltip={CREDIT_LEDGER_SETTLEMENT_NOTICE_BODY}
+                  label="현재 잔액"
+                  value={currentBalanceTotal}
+                  tone="primary"
+                  hint={
+                    showSettlementCredit
+                      ? "유료(선입금) + 무료 + 기공"
+                      : "유료(선입금) + 무료"
+                  }
+                  onClick={() =>
+                    openSummaryDrillDown({
+                      title: "현재 잔액 내역",
+                      filters: summaryFilterBase,
+                    })
+                  }
                 />
-              ) : null}
-            </div>
+                <SettlementStatCard
+                  label="유료크레딧"
+                  value={Number(currentBalanceSnapshot.paidCredit || 0)}
+                  hint={CREDIT_PAID_BUCKET_HINT}
+                  hintTooltip={CREDIT_LEDGER_PREPAID_NOTICE_BODY}
+                  onClick={() =>
+                    openSummaryDrillDown({
+                      title: "유료 크레딧 내역",
+                      filters: {
+                        ...summaryFilterBase,
+                        creditKind: "PAID",
+                      },
+                    })
+                  }
+                />
+                <SettlementStatCard
+                  label="무료크레딧"
+                  value={freeCreditTotal}
+                  hint={CREDIT_FREE_BUCKET_HINT}
+                  hintTooltip={CREDIT_LEDGER_FREE_NOTICE_BODY}
+                  onClick={() =>
+                    openSummaryDrillDown({
+                      title: "무료 크레딧 내역",
+                      filters: {
+                        ...summaryFilterBase,
+                        creditKind: "FREE",
+                      },
+                    })
+                  }
+                />
+                {showSettlementCredit ? (
+                  <SettlementStatCard
+                    label="기공크레딧"
+                    value={settlementCreditTotal}
+                    hint={CREDIT_SETTLEMENT_BUCKET_HINT}
+                    hintTooltip={CREDIT_LEDGER_SETTLEMENT_NOTICE_BODY}
+                    onClick={() =>
+                      openSummaryDrillDown({
+                        title: "기공크레딧 내역",
+                        filters: {
+                          ...summaryFilterBase,
+                          creditKind: "SETTLEMENT",
+                        },
+                      })
+                    }
+                  />
+                ) : null}
+              </div>
+            )
           ) : null}
 
-          <div className="flex flex-wrap items-center gap-2">
-            <PeriodFilter
-              value={period}
-              onChange={setPeriod}
-              useStoreCustomRange={false}
-              customStartDate={customStartDate}
-              customEndDate={customEndDate}
-              onCustomRangeChange={({ startDate, endDate }) => {
-                setCustomStartDate(startDate);
-                setCustomEndDate(endDate);
-              }}
-              onClearCustomRange={() => {
-                setCustomStartDate("");
-                setCustomEndDate("");
-              }}
-            />
-
+          <div className="flex w-full flex-wrap items-center gap-2">
             <div className="w-[130px]">
               <Select
                 value={creditKind}
@@ -2323,7 +2530,7 @@ export const CreditLedgerModal = ({
               <Button
                 type="button"
                 size="sm"
-                className="ml-auto h-9 rounded-xl px-4 font-semibold"
+                className="h-9 rounded-xl px-4 font-semibold"
                 onClick={goCharge}
                 disabled={loading}
               >
@@ -2331,6 +2538,42 @@ export const CreditLedgerModal = ({
                 충전
               </Button>
             ) : null}
+
+            <div className="ml-auto shrink-0">
+              {practiceLedgerUi ? (
+                <PeriodFilter
+                  value={spendPeriod}
+                  onChange={setSpendPeriod}
+                  useStoreCustomRange={false}
+                  customStartDate={spendCustomStartDate}
+                  customEndDate={spendCustomEndDate}
+                  onCustomRangeChange={({ startDate, endDate }) => {
+                    setSpendCustomStartDate(startDate);
+                    setSpendCustomEndDate(endDate);
+                  }}
+                  onClearCustomRange={() => {
+                    setSpendCustomStartDate("");
+                    setSpendCustomEndDate("");
+                  }}
+                />
+              ) : (
+                <PeriodFilter
+                  value={period}
+                  onChange={setPeriod}
+                  useStoreCustomRange={false}
+                  customStartDate={customStartDate}
+                  customEndDate={customEndDate}
+                  onCustomRangeChange={({ startDate, endDate }) => {
+                    setCustomStartDate(startDate);
+                    setCustomEndDate(endDate);
+                  }}
+                  onClearCustomRange={() => {
+                    setCustomStartDate("");
+                    setCustomEndDate("");
+                  }}
+                />
+              )}
+            </div>
           </div>
 
           <div
@@ -2662,6 +2905,21 @@ export const CreditLedgerModal = ({
           </DialogContent>
         </Dialog>
       )}
+
+      {summaryDrillDown ? (
+        <CreditLedgerModal
+          open
+          onOpenChange={(next) => {
+            if (!next) setSummaryDrillDown(null);
+          }}
+          businessAnchorId={businessAnchorId}
+          titleSuffix={titleSuffix}
+          chargeNavPath={chargeNavPath}
+          initialFilters={summaryDrillDown.filters}
+          detailTitle={summaryDrillDown.title}
+          hideBalanceSummary
+        />
+      ) : null}
 
       <RequestDetailDialog
         open={Boolean(selectedDetail)}

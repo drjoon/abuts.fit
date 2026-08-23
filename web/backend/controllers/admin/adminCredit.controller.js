@@ -59,6 +59,7 @@ import {
 } from "../../utils/krBusinessDays.js";
 import AdminSalesmanCreditsOverviewSnapshot from "../../models/adminSalesmanCreditsOverviewSnapshot.model.js";
 import { buildSalesmanReferralAggregation } from "./adminCredit.salesmanAggregation.js";
+import { buildOccurredAtFromPeriodQuery } from "../../utils/kstQueryBounds.js";
 
 const REFERRAL_LEADER_ROLES = ["salesman", "devops"];
 
@@ -614,23 +615,9 @@ export async function adminGetBusinessLedger(req, res) {
       },
     };
 
-    const occurredAt = {};
-    const sinceFromPeriod = parsePeriod(periodRaw);
-    if (sinceFromPeriod) {
-      occurredAt.$gte = sinceFromPeriod;
-    }
-
-    const fromRaw = String(req.query.from || "").trim();
-    const toRaw = String(req.query.to || "").trim();
-
-    if (fromRaw) {
-      const from = new Date(fromRaw);
-      if (!Number.isNaN(from.getTime())) occurredAt.$gte = from;
-    }
-    if (toRaw) {
-      const to = new Date(toRaw);
-      if (!Number.isNaN(to.getTime())) occurredAt.$lte = to;
-    }
+    const occurredAt = buildOccurredAtFromPeriodQuery(req.query, {
+      parsePreset: parsePeriod,
+    });
 
     if (Object.keys(occurredAt).length) {
       match.occurredAt = occurredAt;
@@ -3060,23 +3047,6 @@ export async function adminGetSalesmanLedger(req, res) {
       occurredAt.$gte = sinceFromPeriod;
     }
 
-    const fromRaw = String(req.query.from || "").trim();
-    const toRaw = String(req.query.to || "").trim();
-
-    if (fromRaw) {
-      const from = new Date(fromRaw);
-      if (!Number.isNaN(from.getTime())) {
-        occurredAt.$gte = from;
-      }
-    }
-
-    if (toRaw) {
-      const to = new Date(toRaw);
-      if (!Number.isNaN(to.getTime())) {
-        occurredAt.$lte = to;
-      }
-    }
-
     if (Object.keys(occurredAt).length) {
       match.occurredAt = occurredAt;
     }
@@ -4285,28 +4255,9 @@ export async function adminGetAdminLedger(req, res) {
       accountCode: "REV_ADMIN",
     };
 
-    const occurredAt = {};
-    const sinceFromPeriod = parsePeriod(periodRaw);
-    if (sinceFromPeriod) {
-      occurredAt.$gte = sinceFromPeriod;
-    }
-
-    const fromRaw = String(req.query.from || "").trim();
-    const toRaw = String(req.query.to || "").trim();
-
-    if (fromRaw) {
-      const from = new Date(fromRaw);
-      if (!Number.isNaN(from.getTime())) {
-        occurredAt.$gte = from;
-      }
-    }
-
-    if (toRaw) {
-      const to = new Date(toRaw);
-      if (!Number.isNaN(to.getTime())) {
-        occurredAt.$lte = to;
-      }
-    }
+    const occurredAt = buildOccurredAtFromPeriodQuery(req.query, {
+      parsePreset: parsePeriod,
+    });
 
     if (Object.keys(occurredAt).length) {
       match.occurredAt = occurredAt;

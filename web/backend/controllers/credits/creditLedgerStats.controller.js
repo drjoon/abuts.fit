@@ -14,6 +14,7 @@ import Request from "../../models/request.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { normalizeRequestorKind } from "../../utils/requestorCapabilities.js";
 import { buildFeeQuotesForTransferDocs } from "../../services/practiceTransferBilling.service.js";
+import { parseKstQueryBoundDate } from "../../utils/kstQueryBounds.js";
 
 const REQUESTOR_CREDIT_ACCOUNT_CODES = [
   "REQ_PAID_CREDIT",
@@ -65,12 +66,12 @@ function parseStatsPeriod(query = {}) {
   let to = todayKst;
 
   if (fromRaw) {
-    const parsed = new Date(fromRaw);
-    if (!Number.isNaN(parsed.getTime())) from = parsed;
+    const parsed = parseKstQueryBoundDate(fromRaw, "start");
+    if (parsed) from = parsed;
   }
   if (toRaw) {
-    const parsed = new Date(toRaw);
-    if (!Number.isNaN(parsed.getTime())) to = parsed;
+    const parsed = parseKstQueryBoundDate(toRaw, "end");
+    if (parsed) to = parsed;
   }
 
   if (!from) {

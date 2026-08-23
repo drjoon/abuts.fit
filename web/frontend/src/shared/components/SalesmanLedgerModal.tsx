@@ -7,7 +7,7 @@ import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
-import { periodToRange } from "@/store/usePeriodStore";
+import { appendPeriodQueryParams } from "@/store/usePeriodStore";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -145,12 +145,10 @@ export const SalesmanLedgerModal = ({
     });
     const hasManualRange = Boolean(from || to);
     if (!hasManualRange) {
-      const range = periodToRange(period, {
+      appendPeriodQueryParams(qs, period, {
         customStartDate,
         customEndDate,
       });
-      if (range?.startDate) qs.set("from", range.startDate);
-      if (range?.endDate) qs.set("to", range.endDate);
     }
     if (type !== "all") qs.set("type", type);
     if (from) qs.set("from", from);

@@ -1,0 +1,39 @@
+---
+description: Summary stat cards — click opens detail modal; no inline formula copy.
+globs: web/frontend/**/*.{tsx,ts}
+alwaysApply: false
+---
+
+# Summary stat cards (강제)
+
+## Policy
+
+- 정산·크레딧 **요약 카드**(`SettlementStatCard` 등)는 **클릭 시 관련 상세 내역 모달**을 열어야 한다.
+  - 통계 탭·장부 상단 카드 → `CreditLedgerModal` + `initialFilters` + `hideBalanceSummary` + `detailTitle`.
+- 카드 위·사이에 **수식·설명 문단**을 상시 노출하지 않는다.
+  - 예: `현재 잔액 = 유료 충전 + …` 한 줄 안내, `· 기간 소비는 …` 보조 문구 **금지**.
+  - 연산 부호(`=`, `+`, `−`)는 카드 사이 시각 요소로만 쓴다.
+- 부가 설명이 필요하면 **툴팁**(`SettlementStatCard` `hint` + `hintTooltip`, 앱 기본 600ms 지연).
+
+## SSOT
+
+- `web/frontend/src/shared/components/CreditLedgerModal.tsx`
+- `web/frontend/src/pages/requestor/credits/components/CreditStatisticsTab.tsx`
+- `web/frontend/src/shared/settlement/settlementUi.tsx`
+- `web/frontend/rules.md` — Tooltip · 요약 카드 섹션
+- `.cursor/rules/tooltip-delay.mdc`
+
+## Do / Don't
+
+```tsx
+// ❌ BAD — 상시 안내 문구
+<p>현재 잔액 = 유료 충전 + 무료 충전 − 기간 소비 · …</p>
+
+// ✅ GOOD — 클릭 → 모달, 설명은 툴팁
+<SettlementStatCard
+  label="기간 소비"
+  hint="안내"
+  hintTooltip="상단 기간 필터와 동일한 기간의 소비 합계입니다."
+  onClick={() => openDrillDown({ title: "기간 소비 내역", filters: { action: "SPEND" } })}
+/>
+```

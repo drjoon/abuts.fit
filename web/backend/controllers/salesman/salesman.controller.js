@@ -11,8 +11,9 @@ import BusinessAnchor from "../../models/businessAnchor.model.js";
 import User from "../../models/user.model.js";
 import LedgerLine from "../../models/ledgerLine.model.js";
 import LedgerJournal from "../../models/ledgerJournal.model.js";
-import { Types } from "mongoose";
-import crypto from "crypto";
+import {
+  buildOccurredAtFromPeriodQuery,
+} from "../../utils/kstQueryBounds.js";
 
 function parsePeriod(input) {
   const raw = String(input || "").trim();
@@ -182,23 +183,9 @@ export async function getSalesmanLedger(req, res) {
       });
     }
 
-    const occurredAt = {};
-
-    const sinceFromPeriod = parseLedgerPeriod(periodRaw);
-    if (sinceFromPeriod) occurredAt.$gte = sinceFromPeriod;
-
-    const fromRaw = String(req.query.from || "").trim();
-    const toRaw = String(req.query.to || "").trim();
-
-    if (fromRaw) {
-      const from = new Date(fromRaw);
-      if (!Number.isNaN(from.getTime())) occurredAt.$gte = from;
-    }
-
-    if (toRaw) {
-      const to = new Date(toRaw);
-      if (!Number.isNaN(to.getTime())) occurredAt.$lte = to;
-    }
+    const occurredAt = buildOccurredAtFromPeriodQuery(req.query, {
+      parsePreset: parseLedgerPeriod,
+    });
 
     if (Object.keys(occurredAt).length) match.occurredAt = occurredAt;
 

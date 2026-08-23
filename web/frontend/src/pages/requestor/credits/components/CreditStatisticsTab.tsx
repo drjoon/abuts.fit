@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-08-23: 요약 카드 — 내역과 동일 +/− 연산 레이아웃. 기간 충전·소비·의뢰건수 라벨.
+// - 2026-08-23: 내역 탭과 동일 — 요약 카드 상단, 기간 필터는 그 아래. 정산 통계·기간 안내 문구 제거.
 // - 2026-08-22: 클릭 시 CreditLedgerModal(내역 탭 동일 UI). 상단 잘림·카드 높이 정리.
 // - 2026-08-22: semantic 팔레트(app-glass-card·primary) 통일. 패널 중첩 button 제거.
 // related files:
@@ -16,7 +18,6 @@ import {
   YAxis,
 } from "recharts";
 import {
-  BarChart3,
   ChevronRight,
   Layers3,
   PieChart,
@@ -30,9 +31,12 @@ import {
   type CreditLedgerStatsCategory,
 } from "@/shared/components/CreditLedgerModal";
 import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
-import { periodToRange } from "@/store/usePeriodStore";
-import { SettlementStatCard } from "@/shared/settlement/settlementUi";
-import { formatWon, formatWonWithUnit, roundWon } from "@/shared/settlement/affiliateVat";
+import { appendPeriodQueryParams } from "@/store/usePeriodStore";
+import {
+  SettlementEquationOperator,
+  SettlementStatCard,
+} from "@/shared/settlement/settlementUi";
+import { formatWonWithUnit, roundWon } from "@/shared/settlement/affiliateVat";
 import {
   ChartContainer,
   ChartTooltip,
@@ -40,7 +44,6 @@ import {
   type ChartConfig,
 } from "@/components/ui/chart";
 import { cn } from "@/shared/ui/cn";
-import { formatKstYmdToKo } from "@/shared/date/kst";
 
 type StatsRow = {
   key: string;
@@ -216,36 +219,37 @@ function HorizontalBarList({
         const ratio = Math.max(0, Math.min(1, row.amountSupply / maxAmount));
         const clickable = Boolean(onRowClick);
         return (
-          <div key={row.key} className="space-y-1.5">
-            <button
-              type="button"
-              disabled={!clickable}
-              onClick={(event) => {
-                if (!onRowClick) return;
-                event.stopPropagation();
-                onRowClick(row);
-              }}
-              className={cn(
-                "flex w-full items-center justify-between gap-3 text-xs",
-                clickable
-                  ? "rounded-md px-1 py-0.5 text-left transition hover:bg-muted/40"
-                  : "cursor-default",
-              )}
-            >
+          <button
+            key={row.key}
+            type="button"
+            disabled={!clickable}
+            onClick={(event) => {
+              if (!onRowClick) return;
+              event.stopPropagation();
+              onRowClick(row);
+            }}
+            className={cn(
+              "w-full space-y-1.5 text-left",
+              clickable
+                ? "rounded-md px-1 py-1 transition hover:bg-muted/40"
+                : "cursor-default",
+            )}
+          >
+            <div className="flex items-center justify-between gap-3 text-xs">
               <span className="truncate font-medium text-foreground/90">
                 {row.label}
               </span>
               <span className="shrink-0 tabular-nums text-muted-foreground">
                 {formatWonWithUnit(row.amountSupply)} · {row.count}건
               </span>
-            </button>
+            </div>
             <div className="h-2 overflow-hidden rounded-full bg-muted/50">
               <div
                 className="h-full rounded-full bg-primary/80"
                 style={{ width: `${ratio * 100}%` }}
               />
             </div>
-          </div>
+          </button>
         );
       })}
       {rows.length > 5 ? (
@@ -270,13 +274,11 @@ export function CreditStatisticsTab() {
   const loadStats = useCallback(async () => {
     setLoading(true);
     try {
-      const range = periodToRange(period, {
+      const params = new URLSearchParams();
+      appendPeriodQueryParams(params, period, {
         customStartDate,
         customEndDate,
       });
-      const params = new URLSearchParams({ period });
-      if (range.startDate) params.set("from", range.startDate);
-      if (range.endDate) params.set("to", range.endDate);
 
       const res = await apiFetch<CreditLedgerStatsResponse>({
         path: `/api/credits/ledger/stats?${params.toString()}`,
@@ -332,123 +334,132 @@ export function CreditStatisticsTab() {
     [],
   );
 
-  const periodLabel =
-    stats?.period?.fromYmd && stats?.period?.toYmd
-      ? `${formatKstYmdToKo(stats.period.fromYmd)} – ${formatKstYmdToKo(stats.period.toYmd)}`
-      : "";
-
   const openDrillDown = (next: DrillDownState) => {
     setDrillDown(next);
   };
 
-  const summaryCardCount = isLab ? 4 : 3;
+  const statCardClass = "min-w-[9.5rem] flex-1 sm:min-w-[10.5rem]";
+
+  const summaryCards = (
+    <div className="-mx-1 overflow-x-auto pb-1">
+      <div className="flex min-w-max items-stretch gap-0.5 px-1 sm:gap-1">
+        <SettlementStatCard
+          className={statCardClass}
+          label="기간 충전"
+          value={stats?.summary.totalChargeSupply || 0}
+          hint="안내"
+          hintTooltip="선택한 기간에 충전된 금액 합계입니다."
+          onClick={() =>
+            openDrillDown({
+              title: "기간 충전 내역",
+              filters: { ...filterBase, action: "CHARGE" },
+            })
+          }
+        />
+        {isLab ? (
+          <>
+            <SettlementEquationOperator symbol="+" />
+            <SettlementStatCard
+              className={statCardClass}
+              label="정산 적립"
+              value={stats?.summary.totalSettlementEarnSupply || 0}
+              hint="안내"
+              hintTooltip="선택한 기간에 적립된 기공 정산 금액입니다."
+              onClick={() =>
+                openDrillDown({
+                  title: "정산 적립 내역",
+                  filters: {
+                    ...filterBase,
+                    statsCategory: "settlement_earn",
+                  },
+                })
+              }
+            />
+          </>
+        ) : null}
+        <SettlementEquationOperator symbol="−" />
+        <SettlementStatCard
+          className={statCardClass}
+          label="기간 소비"
+          value={stats?.summary.totalSpendSupply || 0}
+          tone="primary"
+          hint="안내"
+          hintTooltip="선택한 기간에 소비된 금액 합계입니다."
+          onClick={() =>
+            openDrillDown({
+              title: "기간 소비 내역",
+              filters: { ...filterBase, action: "SPEND" },
+            })
+          }
+        />
+        <SettlementStatCard
+          className={statCardClass}
+          label="의뢰건수"
+          value={`${(stats?.summary.orderCount || 0).toLocaleString("ko-KR")}건`}
+          hint="안내"
+          hintTooltip="기공의뢰·어벗생산·배송 거래 건수입니다."
+          onClick={() =>
+            openDrillDown({
+              title: "의뢰 내역",
+              filters: {
+                ...filterBase,
+                statsCategories: ORDER_STATS_CATEGORIES,
+              },
+            })
+          }
+        />
+      </div>
+    </div>
+  );
 
   return (
     <>
-      <div className="flex flex-col gap-5 pb-2 pt-1">
-        <div className="app-glass-card app-glass-card--lg flex flex-wrap items-center justify-between gap-3 rounded-2xl px-4 py-3">
-          <div>
-            <div className="flex items-center gap-2 text-base font-semibold tracking-tight text-foreground">
-              <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary-soft text-primary-strong ring-1 ring-primary-muted/60">
-                <BarChart3 className="h-4 w-4" />
-              </span>
-              정산 통계
-            </div>
-            {periodLabel ? (
-              <div className="mt-1 pl-10 text-xs text-muted-foreground">
-                {periodLabel}
-              </div>
-            ) : null}
-          </div>
-          <PeriodFilter
-            value={period}
-            onChange={setPeriod}
-            customStartDate={customStartDate}
-            customEndDate={customEndDate}
-            onCustomRangeChange={({ startDate, endDate }) => {
-              setCustomStartDate(startDate);
-              setCustomEndDate(endDate);
-            }}
-            onClearCustomRange={() => {
-              setCustomStartDate("");
-              setCustomEndDate("");
-            }}
-            useStoreCustomRange={false}
-            presets={["30d", "90d", "thisMonth"]}
-          />
-        </div>
-
+      <div className="flex flex-col gap-4 pb-2 pt-1">
         {loading ? (
-          <div className="grid gap-3 md:grid-cols-2">
-            {Array.from({ length: summaryCardCount + 4 }).map((_, i) => (
-              <div
-                key={i}
-                className={cn(
-                  "animate-pulse rounded-2xl border border-border/60 bg-muted/30",
-                  i < summaryCardCount ? "min-h-[7.25rem]" : PANEL_MIN_H,
-                )}
-              />
-            ))}
-          </div>
+          <>
+            <div className="-mx-1 overflow-x-auto pb-1">
+              <div className="flex min-w-max items-stretch gap-0.5 px-1 sm:gap-1">
+                {Array.from({ length: isLab ? 4 : 3 }).map((_, i) => (
+                  <div
+                    key={i}
+                    className="min-h-[7.25rem] min-w-[9.5rem] flex-1 animate-pulse rounded-2xl border border-border/60 bg-muted/30 sm:min-w-[10.5rem]"
+                  />
+                ))}
+              </div>
+            </div>
+            <div className="h-9 w-48 animate-pulse rounded-xl border border-border/60 bg-muted/30" />
+            <div className="grid gap-3 md:grid-cols-2">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div
+                  key={i}
+                  className={cn(
+                    "animate-pulse rounded-2xl border border-border/60 bg-muted/30",
+                    PANEL_MIN_H,
+                  )}
+                />
+              ))}
+            </div>
+          </>
         ) : (
           <>
-            <div
-              className={cn(
-                "grid gap-3",
-                summaryCardCount === 4
-                  ? "sm:grid-cols-2 xl:grid-cols-4"
-                  : "sm:grid-cols-2 lg:grid-cols-3",
-              )}
-            >
-              <SettlementStatCard
-                label="총 소비"
-                value={formatWon(stats?.summary.totalSpendSupply || 0)}
-                tone="primary"
-                onClick={() =>
-                  openDrillDown({
-                    title: "총 소비 내역",
-                    filters: { ...filterBase, action: "SPEND" },
-                  })
-                }
-              />
-              <SettlementStatCard
-                label="총 충전"
-                value={formatWon(stats?.summary.totalChargeSupply || 0)}
-                onClick={() =>
-                  openDrillDown({
-                    title: "총 충전 내역",
-                    filters: { ...filterBase, action: "CHARGE" },
-                  })
-                }
-              />
-              {isLab ? (
-                <SettlementStatCard
-                  label="정산 적립"
-                  value={formatWon(stats?.summary.totalSettlementEarnSupply || 0)}
-                  onClick={() =>
-                    openDrillDown({
-                      title: "정산 적립 내역",
-                      filters: {
-                        ...filterBase,
-                        statsCategory: "settlement_earn",
-                      },
-                    })
-                  }
-                />
-              ) : null}
-              <SettlementStatCard
-                label="주문·배송 건수"
-                value={`${(stats?.summary.orderCount || 0).toLocaleString("ko-KR")}건`}
-                hint={`거래 ${(stats?.summary.transactionCount || 0).toLocaleString("ko-KR")}건`}
-                onClick={() =>
-                  openDrillDown({
-                    title: "주문·배송 내역",
-                    filters: {
-                      ...filterBase,
-                      statsCategories: ORDER_STATS_CATEGORIES,
-                    },
-                  })
-                }
+            {summaryCards}
+
+            <div className="flex flex-wrap items-center gap-2">
+              <PeriodFilter
+                value={period}
+                onChange={setPeriod}
+                customStartDate={customStartDate}
+                customEndDate={customEndDate}
+                onCustomRangeChange={({ startDate, endDate }) => {
+                  setCustomStartDate(startDate);
+                  setCustomEndDate(endDate);
+                }}
+                onClearCustomRange={() => {
+                  setCustomStartDate("");
+                  setCustomEndDate("");
+                }}
+                useStoreCustomRange={false}
+                presets={["30d", "90d", "thisMonth"]}
               />
             </div>
 

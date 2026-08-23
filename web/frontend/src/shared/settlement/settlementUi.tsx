@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-23: SettlementEquationOperator — 정산 요약 카드 사이 = + − 부호.
 // - 2026-08-20: 클릭 카드는 selected만 파란 강조. tone=primary는 비클릭 카드용.
 // - 2026-08-20: SettlementStatCard compact(제조사 정산 요약 높이 축소).
 // - 2026-08-17: 의뢰자 크레딧/기공크레딧 정산 최신 스타일을 역할 정산 페이지 공통 UI로 추출.
@@ -28,6 +29,42 @@ import { formatWon } from "@/shared/settlement/affiliateVat";
 
 export type SettlementStatTone = "default" | "primary";
 export type SettlementSortDirection = "asc" | "desc";
+export type SettlementEquationSymbol = "=" | "+" | "−";
+
+export function SettlementEquationOperator({
+  symbol,
+  className,
+}: {
+  symbol: SettlementEquationSymbol;
+  className?: string;
+}) {
+  const isEquals = symbol === "=";
+  const isMinus = symbol === "−";
+
+  return (
+    <div
+      className={cn(
+        "flex shrink-0 items-center justify-center self-stretch",
+        "min-h-[7.25rem] w-9 sm:w-11",
+        className,
+      )}
+      aria-hidden
+    >
+      <span
+        className={cn(
+          "select-none font-bold leading-none tabular-nums",
+          isEquals
+            ? "text-3xl text-primary-strong sm:text-4xl"
+            : "text-2xl sm:text-3xl",
+          isMinus ? "text-destructive" : "text-slate-400",
+          !isEquals && !isMinus && "text-slate-400",
+        )}
+      >
+        {symbol}
+      </span>
+    </div>
+  );
+}
 
 export function SettlementStatCard({
   label,
@@ -39,6 +76,7 @@ export function SettlementStatCard({
   selected,
   onClick,
   compact = false,
+  className: classNameProp,
 }: {
   label: string;
   value: number | string;
@@ -49,6 +87,7 @@ export function SettlementStatCard({
   selected?: boolean;
   onClick?: () => void;
   compact?: boolean;
+  className?: string;
 }) {
   const selectedTone = Boolean(onClick) && selected;
   // 클릭 가능한 카드는 선택된 칸만 강조한다. tone=primary는 정적(비클릭) 카드용.
@@ -99,6 +138,7 @@ export function SettlementStatCard({
       ? "hover:border-slate-300 hover:bg-white"
       : null,
     onClick ? "cursor-pointer text-left" : null,
+    classNameProp,
   );
 
   const inner = (
