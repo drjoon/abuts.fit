@@ -11,6 +11,7 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPath";
 import { cn } from "@/shared/ui/cn";
 
+// - 2026-08-23: 작업영역 스크롤바 — 흰 카드 오른쪽 경계에 붙이도록 main 우측 패딩을 콘텐츠로 이전.
 // - 2026-08-22: 치과·기공소 사이드바 크레딧 → 정산 라벨.
 // - 2026-08-22: 치과 사이드 — 크레딧 아래「스토어」(/dashboard/store).
 // - 2026-08-21: 기공소(requestor lab) 사이드 고스트「정산」제거(클릭 시 /dashboard 이탈).
@@ -1751,28 +1752,35 @@ export const DashboardLayout = () => {
                     className={cn(
                       "flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden",
                       isLabReceiveWorkArea
-                        ? "rounded-none bg-white p-3 shadow-none sm:p-4"
-                        : "box-border rounded-2xl bg-white/80 p-3 shadow-lg backdrop-blur-xl sm:p-6",
+                        ? "rounded-none bg-white py-3 pl-3 pr-0 shadow-none sm:py-4 sm:pl-4 sm:pr-0"
+                        : "box-border rounded-2xl bg-white/80 py-3 pl-3 pr-0 shadow-lg backdrop-blur-xl sm:py-6 sm:pl-6 sm:pr-0",
                     )}
                   >
                     <div
                       className="custom-scrollbar flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overflow-x-clip"
                       data-dashboard-scroll="1"
                     >
-                      <Outlet
-                        context={{
-                          worksheetSearch,
-                          setWorksheetSearch,
-                          showCompleted,
-                          setShowCompleted,
-                          creditBalance,
-                          paidCredit,
-                          freeRequestCredit,
-                          freeShippingCredit,
-                          settlementCredit,
-                          loadingCreditBalance,
-                        }}
-                      />
+                      <div
+                        className={cn(
+                          "flex min-h-0 min-w-0 flex-1 flex-col",
+                          isLabReceiveWorkArea ? "pr-3 sm:pr-4" : "pr-3 sm:pr-6",
+                        )}
+                      >
+                        <Outlet
+                          context={{
+                            worksheetSearch,
+                            setWorksheetSearch,
+                            showCompleted,
+                            setShowCompleted,
+                            creditBalance,
+                            paidCredit,
+                            freeRequestCredit,
+                            freeShippingCredit,
+                            settlementCredit,
+                            loadingCreditBalance,
+                          }}
+                        />
+                      </div>
                     </div>
                   </main>
 
