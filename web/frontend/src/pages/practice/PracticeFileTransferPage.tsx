@@ -615,6 +615,7 @@ type PracticeTransferSettingsPayload = {
   autoMatchMinLabRating?: number;
   autoMatchMaxLabRating?: number;
   starBandEligibleLabAnchorIds?: string[];
+  ownOneStarBlockedLabAnchorIds?: string[];
   abutsLabFeeCatalog?: AbutsLabFeeCatalogItem[] | null;
   updatedAt?: string | null;
 };
@@ -1167,6 +1168,9 @@ export const PracticeFileTransferPage = ({
   const [starBandEligibleLabIds, setStarBandEligibleLabIds] = useState<
     string[] | null
   >(null);
+  const [ownOneStarBlockedLabIds, setOwnOneStarBlockedLabIds] = useState<
+    string[]
+  >([]);
   const [abutsLabFeeCatalog, setAbutsLabFeeCatalog] = useState<
     AbutsLabFeeCatalogItem[] | null
   >(null);
@@ -1297,6 +1301,7 @@ export const PracticeFileTransferPage = ({
     syncRecentLabsFromTransfers,
   } = usePracticeTransferStep1({
     starBandEligibleLabIds,
+    ownOneStarBlockedLabIds,
   });
 
   // 레거시 「자동 매칭」draft는 어벗츠기공소(고정)로 승격한다.
@@ -1887,6 +1892,13 @@ export const PracticeFileTransferPage = ({
     if (Array.isArray(payload.starBandEligibleLabAnchorIds)) {
       setStarBandEligibleLabIds(
         payload.starBandEligibleLabAnchorIds
+          .map((id) => String(id || "").trim())
+          .filter(Boolean),
+      );
+    }
+    if (Array.isArray(payload.ownOneStarBlockedLabAnchorIds)) {
+      setOwnOneStarBlockedLabIds(
+        payload.ownOneStarBlockedLabAnchorIds
           .map((id) => String(id || "").trim())
           .filter(Boolean),
       );
@@ -2599,6 +2611,13 @@ export const PracticeFileTransferPage = ({
         if (Array.isArray(payload.starBandEligibleLabAnchorIds)) {
           setStarBandEligibleLabIds(
             payload.starBandEligibleLabAnchorIds
+              .map((id) => String(id || "").trim())
+              .filter(Boolean),
+          );
+        }
+        if (Array.isArray(payload.ownOneStarBlockedLabAnchorIds)) {
+          setOwnOneStarBlockedLabIds(
+            payload.ownOneStarBlockedLabAnchorIds
               .map((id) => String(id || "").trim())
               .filter(Boolean),
           );
@@ -7621,6 +7640,16 @@ export const PracticeFileTransferPage = ({
                         : row,
                     ),
                   );
+                  const performingId = String(
+                    selectedTransfer.performingLabAnchorId || "",
+                  ).trim();
+                  if (performingId) {
+                    setOwnOneStarBlockedLabIds((prev) => {
+                      const without = prev.filter((id) => id !== performingId);
+                      if (next.stars === 1) return [...without, performingId];
+                      return without;
+                    });
+                  }
                 }}
               />
             ) : null

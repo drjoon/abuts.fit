@@ -11,6 +11,7 @@ import {
   findPracticeLabRating,
   isLabBlockedByOwnOneStar,
   isLabBlockedByPracticeRating,
+  collectOwnOneStarBlockedLabAnchorIds,
   normalizeAutoMatchMaxLabRating,
   normalizeAutoMatchMinLabRating,
   resolveAutoMatchEligibleStarBand,
@@ -23,8 +24,26 @@ import {
 describe("practiceLabRating auto-match gate", () => {
   const labId = "64b000000000000000000001";
 
-  test("own 1-star no longer hard-blocks; minStars gate only", () => {
+  test("own 1-star hard-blocks order; minStars gate otherwise", () => {
     const ratings = [{ labAnchorId: labId, stars: 1, ratingCount: 1 }];
+    expect(isLabBlockedByOwnOneStar({ ratings, labAnchorId: labId })).toBe(
+      true,
+    );
+    expect(
+      isLabBlockedByPracticeRating({
+        ratings,
+        labAnchorId: labId,
+        minStars: 3,
+        maxStars: 4,
+      }),
+    ).toBe(true);
+    expect(
+      collectOwnOneStarBlockedLabAnchorIds(ratings),
+    ).toEqual([labId]);
+  });
+
+  test("own 2+ stars does not hard-block; grace keeps effective 3 in band", () => {
+    const ratings = [{ labAnchorId: labId, stars: 2, ratingCount: 1 }];
     expect(isLabBlockedByOwnOneStar({ ratings, labAnchorId: labId })).toBe(
       false,
     );

@@ -208,7 +208,7 @@ describe("practiceTransferAutoMatch priority (core)", () => {
     expect(resolveFeeScheduleLabAnchorId(subcontracted)).not.toBe(OID_B);
   });
 
-  test("하청 식별 정보 — 원청·수행 기공소만 assignee·치과 실명", () => {
+  test("하청 식별 정보 — 원청만 실명, 수행 기공소·그 외는 비공개", () => {
     const subcontracted = {
       matchingMode: "direct",
       status: "active",
@@ -218,14 +218,14 @@ describe("practiceTransferAutoMatch priority (core)", () => {
       autoMatch: { subcontractPoolOpen: false },
     };
     expect(isSubcontractIdentityHiddenFromViewer(subcontracted, OID_B)).toBe(
-      false,
+      true,
     );
     expect(isSubcontractIdentityHiddenFromViewer(subcontracted, OID_A)).toBe(
       false,
     );
 
     const fieldsForPartner = toAutoMatchApiFieldsCore(subcontracted, OID_B);
-    expect(fieldsForPartner.assigneeLabAnchorId).toBe(OID_B);
+    expect(fieldsForPartner.assigneeLabAnchorId).toBeUndefined();
     expect(fieldsForPartner.autoMatch?.subcontracted).toBe(true);
 
     const fieldsForPrime = toAutoMatchApiFieldsCore(subcontracted, OID_A);

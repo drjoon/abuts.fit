@@ -155,14 +155,8 @@ export const isSubcontractIdentityHiddenFromViewer = (
   }
   const viewerId = String(viewerLabAnchorId || "").trim();
   const primeId = getPrimeLabAnchorId(transfer);
+  // 원청(어벗츠)만 양쪽 실명 확인. 수행 기공소·그 외는 비공개.
   if (viewerId && primeId && viewerId === primeId) return false;
-  // assignee 확정 후 — 수행 기공소는 치과 실명 확인
-  if (isPracticeTransferSubcontracted(transfer)) {
-    const assigneeId = getAssigneeLabAnchorId(transfer);
-    if (viewerId && assigneeId && viewerId === assigneeId) return false;
-    return false;
-  }
-  // 하청 풀 open ~ claim 전
   return true;
 };
 

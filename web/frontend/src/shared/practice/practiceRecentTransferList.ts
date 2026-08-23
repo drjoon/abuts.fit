@@ -105,6 +105,7 @@ export type PracticeRecentRequestItem = {
   remakeSourceTransferId?: string;
   canRateLab?: boolean;
   labRating?: PracticeLabRatingPublic | null;
+  performingLabAnchorId?: string | null;
   handledByCertifiedPartner?: boolean;
 };
 
@@ -169,6 +170,7 @@ export type PracticeRecentTransferItem = {
   remakeSourceTransferId?: string;
   canRateLab?: boolean;
   labRating?: PracticeLabRatingPublic | null;
+  performingLabAnchorId?: string | null;
   handledByCertifiedPartner?: boolean;
   /** 임시저장 카드용(사이드바·휴지통) */
   practiceUserId?: string;
@@ -616,6 +618,8 @@ export const mapMyPracticeTransferApiRows = (
         ).trim(),
         canRateLab: Boolean(r.canRateLab),
         labRating: parsePracticeLabRatingPublic(r.labRating),
+        performingLabAnchorId:
+          String(r.performingLabAnchorId || "").trim() || null,
         handledByCertifiedPartner,
       };
     })
@@ -679,6 +683,10 @@ export const mergeOpenPracticeTransferFromRequestRows = (
     canRateLab: prev.canRateLab || openRows.some((r) => Boolean(r.canRateLab)),
     labRating:
       openRows.find((r) => r.labRating)?.labRating || prev.labRating || null,
+    performingLabAnchorId:
+      openRows.find((r) => r.performingLabAnchorId)?.performingLabAnchorId ||
+      prev.performingLabAnchorId ||
+      null,
     handledByCertifiedPartner:
       Boolean(prev.handledByCertifiedPartner) ||
       openRows.some((r) => Boolean(r.handledByCertifiedPartner)),
@@ -858,6 +866,7 @@ export const groupPracticeRecentRequests = (
         remakeSourceTransferId: req.remakeSourceTransferId || "",
         canRateLab: Boolean(req.canRateLab),
         labRating: req.labRating || null,
+        performingLabAnchorId: req.performingLabAnchorId || null,
         handledByCertifiedPartner: Boolean(req.handledByCertifiedPartner),
         unreadCount,
         searchBlob: [
@@ -969,6 +978,9 @@ export const groupPracticeRecentRequests = (
     }
     if (req.canRateLab) existing.canRateLab = true;
     if (req.labRating) existing.labRating = req.labRating;
+    if (req.performingLabAnchorId) {
+      existing.performingLabAnchorId = req.performingLabAnchorId;
+    }
     if (req.handledByCertifiedPartner) {
       existing.handledByCertifiedPartner = true;
       existing.targetLab = formatPracticeTargetLabLabel({

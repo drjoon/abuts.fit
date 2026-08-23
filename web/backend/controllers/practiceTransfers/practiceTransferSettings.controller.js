@@ -6,7 +6,7 @@ import {
   loadAutoMatchBudgetCatalog,
   resolveAutoMatchBudgetOrDefaults,
 } from "../../utils/practiceTransferAutoMatchBudget.js";
-import { resolveAutoMatchEligibleStarBand } from "../../utils/practiceLabRating.js";
+import { resolveAutoMatchEligibleStarBand, collectOwnOneStarBlockedLabAnchorIds } from "../../utils/practiceLabRating.js";
 import { loadStarBandEligibleLabAnchorIds } from "../../utils/practiceTransferAutoMatch.js";
 
 // related files:
@@ -193,9 +193,15 @@ const toSettingsResponse = async (anchor, { persistHydrated = false } = {}) => {
     minStars: settings?.autoMatchMinLabRating,
     maxStars: settings?.autoMatchMaxLabRating,
   });
+  const practiceLabRatings = Array.isArray(anchor?.practiceLabRatings)
+    ? anchor.practiceLabRatings
+    : [];
+  // 별점 구간만. 우리치과 1점은 검색에 남기고 주문만 막음 → ownOneStarBlockedLabAnchorIds.
   const starBandEligibleLabAnchorIds = (
     await loadStarBandEligibleLabAnchorIds(starBand)
   ).map((id) => String(id));
+  const ownOneStarBlockedLabAnchorIds =
+    collectOwnOneStarBlockedLabAnchorIds(practiceLabRatings);
 
   return {
     arrivalDefaultDays: normalizeArrivalDefaultDays(settings?.arrivalDefaultDays),
@@ -212,6 +218,7 @@ const toSettingsResponse = async (anchor, { persistHydrated = false } = {}) => {
     autoMatchMinLabRating: starBand.minStars,
     autoMatchMaxLabRating: starBand.maxStars,
     starBandEligibleLabAnchorIds,
+    ownOneStarBlockedLabAnchorIds,
     autoMatchBudget: resolveAutoMatchBudgetOrDefaults(null, catalog),
     abutsLabFeeCatalog: catalog,
     updatedAt: settings?.updatedAt || null,
@@ -234,7 +241,7 @@ export async function getPracticeTransferSettings(req, res) {
     }
 
     const anchor = await BusinessAnchor.findById(anchorId)
-      .select({ practiceTransferSettings: 1 })
+      .select({ practiceTransferSettings: 1, practiceLabRatings: 1 })
       .lean();
 
     if (!anchor) {
@@ -364,7 +371,7 @@ export async function upsertPracticeTransferSettings(req, res) {
         upsert: false,
       },
     )
-      .select({ practiceTransferSettings: 1 })
+      .select({ practiceTransferSettings: 1, practiceLabRatings: 1 })
       .lean();
 
     if (!anchor) {

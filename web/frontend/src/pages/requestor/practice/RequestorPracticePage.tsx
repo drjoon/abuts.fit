@@ -4801,11 +4801,15 @@ export function RequestorPracticeReceivePage({
           { label: "전송ID", value: selectedTransfer?.transferId || "-" },
           { label: "전송시각", value: selectedTransfer ? formatDateTime(selectedTransfer.createdAt) : "-" },
           { label: "치과", value:
-            selectedTransfer?.autoMatch?.openPool
+            String(user?.role || "").trim() !== "internalLab" &&
+            (selectedTransfer?.autoMatch?.openPool ||
+              selectedTransfer?.autoMatch?.subcontracted)
               ? "비공개"
               : selectedTransfer?.practice.businessName || "-" },
           { label: "담당자", value:
-            selectedTransfer?.autoMatch?.openPool
+            String(user?.role || "").trim() !== "internalLab" &&
+            (selectedTransfer?.autoMatch?.openPool ||
+              selectedTransfer?.autoMatch?.subcontracted)
               ? "비공개"
               : selectedTransfer?.practice.userName || "-" },
           { label: "환자명", value: selectedTransferPatientName || "-" },

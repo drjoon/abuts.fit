@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";
-import { SUBCONTRACT_DIRECT_BLOCKED_MESSAGE } from "@/shared/practice/autoMatchIdentity";
+import { SUBCONTRACT_DIRECT_BLOCKED_MESSAGE, OWN_ONE_STAR_BLOCKED_MESSAGE } from "@/shared/practice/autoMatchIdentity";
 import {
   saveFile as saveFileToIndexedDb,
   deleteFile as deleteFileFromIndexedDb,
@@ -113,6 +113,8 @@ type Options = {
   fileCacheMaxTotalBytes?: number;
   /** 별점 구간 안의 기공소 ID. null이면 필터 없음(로딩). */
   starBandEligibleLabIds?: string[] | null;
+  /** 우리 치과가 1점을 준 기공소 ID. 검색 가능·주문 불가. */
+  ownOneStarBlockedLabIds?: string[] | null;
 };
 
 const DEFAULT_FILE_CACHE_META_KEY = "practice_dropzone_file_cache_meta_v1";
@@ -598,6 +600,22 @@ export const usePracticeTransferStep1 = (options?: Options) => {
     return new Set(ids.map((id) => String(id || "").trim()).filter(Boolean));
   }, [options?.starBandEligibleLabIds]);
 
+  const ownOneStarBlockedSet = useMemo(() => {
+    const ids = options?.ownOneStarBlockedLabIds;
+    if (!ids?.length) return null;
+    return new Set(ids.map((id) => String(id || "").trim()).filter(Boolean));
+  }, [options?.ownOneStarBlockedLabIds]);
+
+  const isOwnOneStarBlockedPickerLab = useCallback(
+    (lab?: SearchBusinessResult | null) => {
+      if (!lab || !ownOneStarBlockedSet) return false;
+      if (isPinnedAbutsRecentLab(lab) || isAutoMatchLab(lab)) return false;
+      const id = pickerLabAnchorId(lab);
+      return Boolean(id) && ownOneStarBlockedSet.has(id);
+    },
+    [ownOneStarBlockedSet],
+  );
+
   const resolvePickerLabAnchorIdForStarBand = useCallback(
     (lab?: SearchBusinessResult | null) => {
       if (!lab) return "";
@@ -640,6 +658,13 @@ export const usePracticeTransferStep1 = (options?: Options) => {
           });
           return prev && !isBlockedDirectPickerLab(prev) ? prev : null;
         }
+        if (isOwnOneStarBlockedPickerLab(next)) {
+          toast({
+            title: OWN_ONE_STAR_BLOCKED_MESSAGE,
+            variant: "destructive",
+          });
+          return prev && !isOwnOneStarBlockedPickerLab(prev) ? prev : null;
+        }
         if (isOutsideStarBandPickerLab(next)) {
           toast({
             title:
@@ -651,7 +676,12 @@ export const usePracticeTransferStep1 = (options?: Options) => {
         return next;
       });
     },
-    [isBlockedDirectPickerLab, isOutsideStarBandPickerLab, toast],
+    [
+      isBlockedDirectPickerLab,
+      isOwnOneStarBlockedPickerLab,
+      isOutsideStarBandPickerLab,
+      toast,
+    ],
   );
 
   const pinnedLabs = useMemo(
@@ -686,7 +716,8 @@ export const usePracticeTransferStep1 = (options?: Options) => {
     if (!selectedLab) return;
     if (
       isOutsideStarBandPickerLab(selectedLab) ||
-      isBlockedDirectPickerLab(selectedLab)
+      isBlockedDirectPickerLab(selectedLab) ||
+      isOwnOneStarBlockedPickerLab(selectedLab)
     ) {
       setSelectedLabState(null);
     }
@@ -694,6 +725,7 @@ export const usePracticeTransferStep1 = (options?: Options) => {
     selectedLab,
     isOutsideStarBandPickerLab,
     isBlockedDirectPickerLab,
+    isOwnOneStarBlockedPickerLab,
   ]);
 
   useEffect(() => {

@@ -134,32 +134,21 @@ export async function assertLabAllowedAsDirectPracticeTarget({
   throw err;
 }
 
-/** 하청 풀 open 중에만 치과에 원청(어벗츠) 표시. assignee 확정 후 수행 기공소 실명. */
+/** 하청 풀 open ~ assignee 확정 후까지 치과에 원청(어벗츠)+협력 라벨. 수행 기공소 실명 비공개. */
 export const redactAutoMatchLabIdentity = (
   matchingMode,
   { targetLabName = "", targetLabAnchorId = null } = {},
   { reveal = false, transfer = null } = {},
 ) => {
-  const hideSubcontractAssignee =
-    Boolean(transfer) && !reveal && isSubcontractPoolOpen(transfer);
+  const hideSubcontractPartner =
+    Boolean(transfer) &&
+    !reveal &&
+    (isSubcontractPoolOpen(transfer) ||
+      isPracticeTransferSubcontracted(transfer));
   if (
     reveal ||
-    (!isAutoMatchMode({ matchingMode }) && !hideSubcontractAssignee)
+    (!isAutoMatchMode({ matchingMode }) && !hideSubcontractPartner)
   ) {
-    if (
-      Boolean(transfer) &&
-      !reveal &&
-      isPracticeTransferSubcontracted(transfer) &&
-      !isSubcontractPoolOpen(transfer)
-    ) {
-      const assigneeName = String(transfer?.assigneeLabName || "").trim();
-      const assigneeId = getAssigneeLabAnchorId(transfer);
-      return {
-        targetLabName:
-          assigneeName || CERTIFIED_PARTNER_LAB_DISPLAY_NAME,
-        targetLabAnchorId: assigneeId || targetLabAnchorId || null,
-      };
-    }
     return {
       targetLabName: String(targetLabName || "").trim(),
       targetLabAnchorId: targetLabAnchorId || null,
@@ -170,10 +159,10 @@ export const redactAutoMatchLabIdentity = (
     name === AUTO_MATCH_LAB_DISPLAY_NAME || name === "자동매칭";
   return {
     targetLabName:
-      hideSubcontractAssignee || isLegacyAutoLabel || !name
+      hideSubcontractPartner || isLegacyAutoLabel || !name
         ? ABUTS_LAB_DISPLAY_NAME
         : name,
-    targetLabAnchorId: hideSubcontractAssignee
+    targetLabAnchorId: hideSubcontractPartner
       ? transfer?.targetLabAnchorId || targetLabAnchorId || null
       : targetLabAnchorId || null,
   };
@@ -445,11 +434,12 @@ export const buildAutoMatchClaimableFilter = (
   };
 };
 
-/** 어벗츠 하청 풀: 인증·수가설정 기공소(원청 internalLab 제외). 치과 별점 구간 안만. */
+/** 어벗츠 하청 풀: 인증·수가설정 기공소(원청 internalLab 제외). 치과 별점 구간 안만. 우리치과 1점 제외. */
 export async function loadCertifiedSubcontractLabAnchorIds({
   excludeLabAnchorId = null,
   minStars,
   maxStars,
+  practiceLabRatings = null,
 } = {}) {
   const exclude = String(excludeLabAnchorId || "").trim();
   const labs = await loadAutoMatchEligibleLabAnchors({
@@ -466,6 +456,7 @@ export async function loadCertifiedSubcontractLabAnchorIds({
     labAnchorIds: ids,
     minStars,
     maxStars,
+    practiceLabRatings,
   });
 }
 
@@ -473,6 +464,7 @@ export async function loadCertifiedSubcontractLabAnchorIds({
 export async function loadStarBandEligibleLabAnchorIds({
   minStars,
   maxStars,
+  practiceLabRatings = null,
 } = {}) {
   const labs = await BusinessAnchor.find(verifiedLabCapableAnchorFilter())
     .select({ _id: 1 })
@@ -481,6 +473,7 @@ export async function loadStarBandEligibleLabAnchorIds({
     labAnchorIds: labs.map((lab) => lab._id),
     minStars,
     maxStars,
+    practiceLabRatings,
   });
 };
 

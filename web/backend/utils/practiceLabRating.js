@@ -18,6 +18,7 @@
 // - 2026-08-20: 치과 평가는 별점만. 자동매칭·별점 기공비 할인/할증 없음.
 // - 2026-08-20: 별점은 수행 기공소(하청 포함). 하한·상한은 지정·하청 수신 게이트.
 // - 2026-08-16: scaleAutoMatchFeeToLabStars — 기공소 수신·수락 견적 별점 확정 단일가.
+// - 2026-08-23: 우리 치과 1점 → 검색 가능·주문 불가(지정·하청 수행 동일).
 
 import { Types } from "mongoose";
 import BusinessAnchor from "../models/businessAnchor.model.js";
@@ -79,15 +80,20 @@ export function resolveAutoMatchEligibleStarBand({
 export const LAB_OUTSIDE_STAR_BAND_REASON = "lab_outside_star_band";
 export const LAB_OUTSIDE_STAR_BAND_MESSAGE =
   "선택한 기공소의 별점이 설정 구간 밖이라 이 의뢰를 보낼 수 없습니다.";
+export const LAB_BLOCKED_BY_OWN_ONE_STAR_REASON = "lab_blocked_by_own_one_star";
+export const LAB_BLOCKED_BY_OWN_ONE_STAR_MESSAGE =
+  "1점을 준 기공소라 이 의뢰를 보낼 수 없습니다. 검색은 가능합니다.";
 
 /**
  * 검증 기공소 ID 중 유효 별점이 [하한, 상한] 안인 것만.
  * 평가 3곳 이하·미평가는 유효 3점.
+ * `practiceLabRatings`가 있으면 우리 치과 1점 기공소도 제외.
  */
 export async function filterLabAnchorIdsByStarBand({
   labAnchorIds,
   minStars,
   maxStars,
+  practiceLabRatings = null,
 } = {}) {
   const ids = (Array.isArray(labAnchorIds) ? labAnchorIds : [])
     .map((id) => String(id || "").trim())
@@ -97,6 +103,7 @@ export async function filterLabAnchorIdsByStarBand({
   return ids.filter(
     (id) =>
       !isLabBlockedByPracticeRating({
+        ratings: practiceLabRatings,
         aggregated,
         labAnchorId: id,
         minStars,
@@ -105,17 +112,42 @@ export async function filterLabAnchorIdsByStarBand({
   );
 }
 
+/** 우리 치과가 1점을 준 기공소 ID 목록(주문 게이트용). */
+export function collectOwnOneStarBlockedLabAnchorIds(ratings = []) {
+  const rows = Array.isArray(ratings) ? ratings : [];
+  const out = [];
+  const seen = new Set();
+  for (const row of rows) {
+    const labId = String(row?.labAnchorId || "").trim();
+    if (!labId || seen.has(labId)) continue;
+    if (!isLabBlockedByOwnOneStar({ ratings: rows, labAnchorId: labId })) {
+      continue;
+    }
+    seen.add(labId);
+    out.push(labId);
+  }
+  return out;
+}
+
 export async function assertLabWithinPracticeStarBand({
   labAnchorId,
   minStars,
   maxStars,
+  practiceLabRatings = null,
 } = {}) {
   const labId = String(labAnchorId || "").trim();
   if (!labId) return;
+  if (isLabBlockedByOwnOneStar({ ratings: practiceLabRatings, labAnchorId: labId })) {
+    const err = new Error(LAB_BLOCKED_BY_OWN_ONE_STAR_MESSAGE);
+    err.statusCode = 409;
+    err.code = LAB_BLOCKED_BY_OWN_ONE_STAR_REASON;
+    throw err;
+  }
   const kept = await filterLabAnchorIdsByStarBand({
     labAnchorIds: [labId],
     minStars,
     maxStars,
+    practiceLabRatings,
   });
   if (kept.length) return;
   const err = new Error(LAB_OUTSIDE_STAR_BAND_MESSAGE);
@@ -314,18 +346,24 @@ export function countRatedLabAnchors(ratings) {
 }
 
 /**
- * @deprecated 1점도 매칭 참여 가능. 항상 false(레거시 호출 호환).
+ * 주문 치과가 해당 기공소에 현재 1점을 준 경우(유예·별점 구간과 무관).
+ * 검색은 가능 · 지정/하청 주문·하청 풀 수신은 불가.
  */
-export function isLabBlockedByOwnOneStar() {
-  return false;
+export function isLabBlockedByOwnOneStar({ ratings, labAnchorId } = {}) {
+  const labId = String(labAnchorId || "").trim();
+  if (!labId) return false;
+  const own = findPracticeLabRating(ratings, labId);
+  return own?.stars === PRACTICE_LAB_RATING_MIN;
 }
 
 /**
- * 자동매칭 차단(인증 풀은 별도):
- * 유효 별점(3회 이하→3)이 [하한, 상한] 밖이면 true.
+ * 주문 게이트 차단(인증 풀은 별도):
+ * - 주문 치과가 1점을 준 기공소면 true
+ * - 유효 별점(3회 이하→3)이 [하한, 상한] 밖이면 true
  * 하한·상한은 치과 설정(기본 3~4).
  *
  * `aggregated`가 있으면 전체 치과 합산 행을 쓰고, 없으면 레거시 단일 치과 list.
+ * `ratings`는 주문 치과 `practiceLabRatings`(1점 하드 차단용).
  */
 export function isLabBlockedByPracticeRating({
   ratings,
@@ -336,6 +374,7 @@ export function isLabBlockedByPracticeRating({
 } = {}) {
   const labId = String(labAnchorId || "").trim();
   if (!labId) return false;
+  if (isLabBlockedByOwnOneStar({ ratings, labAnchorId: labId })) return true;
 
   const band = resolveAutoMatchEligibleStarBand({ minStars, maxStars });
   const min = band.minStars;

@@ -8,6 +8,7 @@
 // - 2026-08-16: 1점 매칭 제외 안내 제거(1점도 참여·×0.8).
 // - 2026-08-16: 치과·기공소 쌍당 1건·재평가 덮어쓰기 안내.
 // - 2026-08-19: 자동매칭 제거. 안내는 별점·쌍당 1회·재평가만.
+// - 2026-08-23: 1점=검색 가능·주문 불가 툴팁(지정·하청 수행 동일).
 import { useEffect, useState, type MouseEvent } from "react";
 import { Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -21,6 +22,11 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useToast } from "@/shared/hooks/use-toast";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -39,6 +45,9 @@ const DIALOG_DESCRIPTION_LINES = [
   "실제 작업한 기공소에 반영됩니다. 치과당 1회, 재평가 시 덮어씁니다.",
   "별점은 기공소에 공개, 메모는 우리 치과만 볼 수 있습니다.",
 ] as const;
+
+const RATING_BUTTON_TOOLTIP =
+  "1점이면 검색은 되지만 우리 치과에서는 주문할 수 없습니다. 지정·어벗츠 하청 수행 기공소 모두 동일합니다.";
 
 type PracticeLabRatingControlProps = {
   transferMongoId: string;
@@ -191,21 +200,28 @@ export function PracticeLabRatingControl({
 
   return (
     <>
-      <span className="inline-flex" onPointerDown={onTriggerPointerDown}>
-        <Button
-          type="button"
-          variant={active ? "default" : "outline"}
-          size="sm"
-          className={cn(buttonSizeClass, "gap-1", className)}
-          aria-label={
-            active ? `기공소 ${current?.stars}점` : "기공소 평가"
-          }
-          onClick={() => setOpen(true)}
-        >
-          <Star className="h-3.5 w-3.5 fill-current" />
-          {active ? `${current?.stars}점` : "평가"}
-        </Button>
-      </span>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="inline-flex" onPointerDown={onTriggerPointerDown}>
+            <Button
+              type="button"
+              variant={active ? "default" : "outline"}
+              size="sm"
+              className={cn(buttonSizeClass, "gap-1", className)}
+              aria-label={
+                active ? `기공소 ${current?.stars}점` : "기공소 평가"
+              }
+              onClick={() => setOpen(true)}
+            >
+              <Star className="h-3.5 w-3.5 fill-current" />
+              {active ? `${current?.stars}점` : "평가"}
+            </Button>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" className="max-w-xs text-xs">
+          {RATING_BUTTON_TOOLTIP}
+        </TooltipContent>
+      </Tooltip>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent

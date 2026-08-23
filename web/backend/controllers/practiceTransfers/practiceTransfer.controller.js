@@ -90,6 +90,8 @@ import {
   assertLabWithinPracticeStarBand,
   LAB_OUTSIDE_STAR_BAND_MESSAGE,
   LAB_OUTSIDE_STAR_BAND_REASON,
+  LAB_BLOCKED_BY_OWN_ONE_STAR_MESSAGE,
+  LAB_BLOCKED_BY_OWN_ONE_STAR_REASON,
 } from "../../utils/practiceLabRating.js";
 import {
   findLabPracticePartnerMemo,
@@ -523,24 +525,43 @@ const loadStarBandForPracticeRequest = async ({
   });
 };
 
-const rejectIfLabOutsideStarBand = async (res, { labAnchorId, starBand }) => {
+const rejectIfLabOutsideStarBand = async (
+  res,
+  { labAnchorId, starBand, practiceLabRatings = null },
+) => {
   if (!labAnchorId) return false;
   try {
     await assertLabWithinPracticeStarBand({
       labAnchorId,
       minStars: starBand?.minStars,
       maxStars: starBand?.maxStars,
+      practiceLabRatings,
     });
     return false;
   } catch (err) {
     const status = Number(err?.statusCode || 409);
     res.status(status >= 400 && status < 600 ? status : 409).json({
       success: false,
-      message: err?.message || LAB_OUTSIDE_STAR_BAND_MESSAGE,
+      message:
+        err?.message ||
+        (err?.code === LAB_BLOCKED_BY_OWN_ONE_STAR_REASON
+          ? LAB_BLOCKED_BY_OWN_ONE_STAR_MESSAGE
+          : LAB_OUTSIDE_STAR_BAND_MESSAGE),
       reason: err?.code || LAB_OUTSIDE_STAR_BAND_REASON,
     });
     return true;
   }
+};
+
+const loadPracticeLabRatings = async (practiceAnchorId) => {
+  const id = String(practiceAnchorId || "").trim();
+  if (!id || !Types.ObjectId.isValid(id)) return [];
+  const practice = await BusinessAnchor.findById(id)
+    .select({ practiceLabRatings: 1 })
+    .lean();
+  return Array.isArray(practice?.practiceLabRatings)
+    ? practice.practiceLabRatings
+    : [];
 };
 
 /**
@@ -760,7 +781,9 @@ const canCancelPracticeTransferByManufacturerStage = (stage) => {
 const toVirtualRequestRows = (transferDoc) => {
   const transferId = String(transferDoc?.transferId || "").trim();
   const matchingMode = isAutoMatchMode(transferDoc) ? "auto" : "direct";
-  const handledByCertifiedPartner = isSubcontractPoolOpen(transferDoc);
+  const handledByCertifiedPartner =
+    isSubcontractPoolOpen(transferDoc) ||
+    isPracticeTransferSubcontracted(transferDoc);
   const labIdentity = redactAutoMatchLabIdentity(
     matchingMode,
     {
@@ -2455,7 +2478,7 @@ export async function createPracticeTransfer(req, res) {
 
     // 별점·납기·견적·차단검사 병렬. 응답은 create 직후, hold·기공소 알림은 이후.
     let __t = __createT0;
-    const [starBand, arrivalPolicy] = await Promise.all([
+    const [starBand, arrivalPolicy, practiceLabRatings] = await Promise.all([
       loadStarBandForPracticeRequest({
         practiceAnchorId,
         body: req.body,
@@ -2464,6 +2487,7 @@ export async function createPracticeTransfer(req, res) {
         transferMemo,
         rushProcessing,
       }),
+      loadPracticeLabRatings(practiceAnchorId),
     ]);
     __t = __mark("star+arrival", __t);
     if (!arrivalPolicy.ok) {
@@ -2509,6 +2533,7 @@ export async function createPracticeTransfer(req, res) {
             labAnchorId: targetLabAnchorId,
             minStars: starBand?.minStars,
             maxStars: starBand?.maxStars,
+            practiceLabRatings,
           })
             .then(() => null)
             .catch((err) => err)
@@ -2528,7 +2553,11 @@ export async function createPracticeTransfer(req, res) {
       const status = Number(starBandErr?.statusCode || 409);
       return res.status(status >= 400 && status < 600 ? status : 409).json({
         success: false,
-        message: starBandErr?.message || LAB_OUTSIDE_STAR_BAND_MESSAGE,
+        message:
+          starBandErr?.message ||
+          (starBandErr?.code === LAB_BLOCKED_BY_OWN_ONE_STAR_REASON
+            ? LAB_BLOCKED_BY_OWN_ONE_STAR_MESSAGE
+            : LAB_OUTSIDE_STAR_BAND_MESSAGE),
         reason: starBandErr?.code || LAB_OUTSIDE_STAR_BAND_REASON,
       });
     }
@@ -2981,10 +3010,12 @@ export async function updatePracticeTransferContent(req, res) {
       body: req.body,
       fallbackAutoMatch: doc.autoMatch,
     });
+    const practiceLabRatings = await loadPracticeLabRatings(practiceAnchorId);
     if (
       await rejectIfLabOutsideStarBand(res, {
         labAnchorId: targetLabAnchorId,
         starBand,
+        practiceLabRatings,
       })
     ) {
       return;
@@ -6255,10 +6286,14 @@ export async function openSubcontractPracticeTransfer(req, res) {
       minStars: doc.autoMatch?.minLabRating,
       maxStars: doc.autoMatch?.maxLabRating,
     });
+    const practiceLabRatings = await loadPracticeLabRatings(
+      doc.practiceAnchorId,
+    );
     const eligibleIds = await loadCertifiedSubcontractLabAnchorIds({
       excludeLabAnchorId: labAnchorId,
       minStars: starBand.minStars,
       maxStars: starBand.maxStars,
+      practiceLabRatings,
     });
     if (!eligibleIds.length) {
       return res.status(409).json({
@@ -6794,10 +6829,12 @@ export async function retargetPracticeTransferLab(req, res) {
       body: req.body,
       fallbackAutoMatch: previousAutoMatch,
     });
+    const practiceLabRatings = await loadPracticeLabRatings(practiceAnchorId);
     if (
       await rejectIfLabOutsideStarBand(res, {
         labAnchorId: targetLabAnchorId,
         starBand,
+        practiceLabRatings,
       })
     ) {
       return;
