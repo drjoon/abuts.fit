@@ -963,12 +963,13 @@ namespace DentalAddin
 
             DentalLogger.Log($"Composite2SplitLine2 - FINISH_FRONT 시작점 정책 적용: splitlineResolved={splitlineResolved}, splitline1X={splitline1X:F3}, stlStartX={stlStartX:F3}, requestedStartX(stlMin+0.05)={requestedAStartX:F3}, appliedStartX={appliedAStartX:F3}, minFirst%={minAFirstPercentByStlStart:F2}, overrideGuardApplied={overrideGuardApplied}");
 
-            // 인접 툴패스 0.5mm 겹침 SSOT:
+            // 인접 툴패스 공구반경 겹침 SSOT:
             // - 선행(Finish_Front) 끝 = SharedFinishSplitX (물리 X → StartEndScale %)
-            // - 후행(Finish_Back) 시작 = SharedFinishSplitX - 0.5mm (동일 환산, tip쪽)
+            // - 후행(Finish_Back) 시작 = SharedFinishSplitX - Finish공구반경(D1.2→0.6mm)
             // 중요: safeBFirstMax로 seam을 당기지 않는다. 당기면 Splitline_2/Front_Rough/Back_Rough와 어긋난다.
+            double finishOverlapMm = GetFinishAdjacentOverlapMm();
             const double aEndOffsetFromSplitMm = 0.0;
-            const double bStartOffsetFromSplitMm = -AdjacentToolpathOverlapMm;
+            double bStartOffsetFromSplitMm = -finishOverlapMm;
             const double compositeEndOffsetFromBackPointMm = 0.0;
 
             double finishFrontEndX = splitX + aEndOffsetFromSplitMm;
@@ -989,7 +990,7 @@ namespace DentalAddin
                 opB.FirstPassPercent = Clamp(requestedBFirstPass, firstPercent, effectiveLastPercent);
                 opB.LastPassPercent = effectiveLastPercent;
             }
-            DentalLogger.Log($"Composite2SplitLine2 - Finish seam 확정: Front.end%={opA.LastPassPercent:F2} (X={finishFrontEndX:F3}), Back.start%={(runB && opB != null ? opB.FirstPassPercent.ToString("F2", CultureInfo.InvariantCulture) : "<skip>")} (X={finishBackStartX:F3}), overlapMm={AdjacentToolpathOverlapMm:F1}, guardWarn={startEndBFirstGuardApplied}");
+            DentalLogger.Log($"Composite2SplitLine2 - Finish seam 확정: Front.end%={opA.LastPassPercent:F2} (X={finishFrontEndX:F3}), Back.start%={(runB && opB != null ? opB.FirstPassPercent.ToString("F2", CultureInfo.InvariantCulture) : "<skip>")} (X={finishBackStartX:F3}), overlapMm={finishOverlapMm:F1} (D1.2 radius), guardWarn={startEndBFirstGuardApplied}");
 
             // 정책: Finish_Back 종료 기준점은 BackPointX + 0.0mm
             double compositeEndTargetX = MoveSTL_Module.BackPointX + compositeEndOffsetFromBackPointMm;
@@ -1027,7 +1028,7 @@ namespace DentalAddin
 
             // 정책 변경: Finish_All 단일 패스는 사용하지 않는다(항상 Front/Back 2단).
 
-            // Front/Back seam 재확인: 최종 클램프 후에도 물리 X(SharedFinishSplit / -0.5mm) 기준으로 재동기화
+            // Front/Back seam 재확인: 최종 클램프 후에도 물리 X(SharedFinishSplit / -Finish반경) 기준으로 재동기화
             double aLastBeforeClamp = opA.LastPassPercent;
             opA.LastPassPercent = Clamp(opA.LastPassPercent, opA.FirstPassPercent, effectiveLastPercent);
             if (runB && opB != null)
@@ -2293,31 +2294,18 @@ namespace DentalAddin
                 return true;
             }
 
-            // 인접 Rough 0.5mm 겹침 SSOT:
-            // - Front 끝 / Middle 끝 = Splitline_2 정확
-            // - Middle 시작 = Splitline_1 - 0.5, Back 시작 = Splitline_2 - 0.5
-            // Middle 폭이 rough 공구 직경보다 좁으면 툴패스가 비므로 tip쪽으로 최소폭을 보장한다.
-            double adjacentOverlapMm = AdjacentToolpathOverlapMm;
-            double minMiddleWidthMm = Math.Max(GetActiveRoughToolDiameterMm(), 2.0);
+            // Front/Back만 사용 (Middle_Rough 레거시 제거).
+            // 인접 겹침 SSOT: 선행 끝=경계 정확, 후행 시작=경계 tip쪽 공구반경
+            // Rough D4→2.0mm (ROUGH_20 D2→1.0mm)
+            double roughOverlapMm = GetRoughAdjacentOverlapMm();
 
             double frontStart = xMin;
             // Front_Rough 끝점 SSOT: Splitline_2(= TwoPhaseSplitLine = finishline top 상방 tip쪽 1mm)
             double frontEnd = Clamp(splitline2, xMin + 1e-6, xMax - 1e-6);
             DentalLogger.Log($"RoughFreeFromMillSplitAB - Front_Rough 끝점=Splitline_2: endX={frontEnd:F3}");
 
-            double middleEnd = Clamp(splitline2, xMin + 1e-6, xMax - 1e-6);
-            double preferredMiddleStart = splitline1 - adjacentOverlapMm;
-            double middleStart = preferredMiddleStart;
-            bool middleMinWidthApplied = false;
-            if (middleEnd - middleStart < minMiddleWidthMm - 1e-9)
-            {
-                middleStart = middleEnd - minMiddleWidthMm;
-                middleMinWidthApplied = true;
-            }
-            middleStart = Clamp(middleStart, xMin + 1e-6, middleEnd - 1e-6);
-            DentalLogger.Log($"RoughFreeFromMillSplitAB - Middle_Rough 경계: preferredStart={preferredMiddleStart:F3}, appliedStart={middleStart:F3}, end={middleEnd:F3}, minWidth={minMiddleWidthMm:F3}, minWidthApplied={middleMinWidthApplied}");
-
-            double backStart = Clamp(splitline2 - adjacentOverlapMm, xMin + 1e-6, xMax - 1e-6);
+            double backStart = Clamp(splitline2 - roughOverlapMm, xMin + 1e-6, xMax - 1e-6);
+            DentalLogger.Log($"RoughFreeFromMillSplitAB - Back_Rough 시작=Splitline_2-roughRadius: startX={backStart:F3}, overlapMm={roughOverlapMm:F3}, roughDia={GetActiveRoughToolDiameterMm():F1}");
 
             // 요청 반영:
             // Back_Rough 끝점은 항상 BackPointX로 고정한다.
@@ -2336,23 +2324,21 @@ namespace DentalAddin
 
             double radius = (Document.LatheMachineSetup.BarDiameter + 10.0) / 2.0;
             FeatureChain frontBoundary = EnsureRectBoundary("RoughBoundryFront1", frontStart, frontEnd, radius, -radius);
-            FeatureChain middleBoundary = EnsureRectBoundary("RoughBoundryMiddle1", middleStart, middleEnd, radius, -radius);
             FeatureChain backBoundary = EnsureRectBoundary("RoughBoundryBack1", backStart, backEnd, radius, -radius);
-            if (frontBoundary == null || middleBoundary == null || backBoundary == null)
+            if (frontBoundary == null || backBoundary == null)
             {
-                DentalLogger.Log("RoughFreeFromMillSplitAB - Front/Middle/Back 경계 체인 생성 실패");
+                DentalLogger.Log("RoughFreeFromMillSplitAB - Front/Back 경계 체인 생성 실패");
                 return true;
             }
 
             int keyFront = SafeParseKey(frontBoundary.Key);
-            int keyMiddle = SafeParseKey(middleBoundary.Key);
             int keyBack = SafeParseKey(backBoundary.Key);
             double twoPhaseSplitLineDiag = 0.0;
             if (!TryResolveTwoPhaseSplitLineX(out twoPhaseSplitLineDiag))
             {
                 TryResolveTwoPhaseSplitLineTargetX(out twoPhaseSplitLineDiag, out _);
             }
-            DentalLogger.Log($"RoughFreeFromMillSplitAB - split1:{splitline1:0.###}, split2:{splitline2:0.###}, TwoPhaseSplitLine:{twoPhaseSplitLineDiag:0.###}, Front:[{frontStart:0.###}~{frontEnd:0.###}] key={keyFront}, Middle:[{middleStart:0.###}~{middleEnd:0.###}] key={keyMiddle}, Back:[{backStart:0.###}~{backEnd:0.###}] key={keyBack}, PRC_A:{prcA}, PRC_B:{prcB}");
+            DentalLogger.Log($"RoughFreeFromMillSplitAB - Middle_Rough skip(legacy), split1:{splitline1:0.###}, split2:{splitline2:0.###}, TwoPhaseSplitLine:{twoPhaseSplitLineDiag:0.###}, Front:[{frontStart:0.###}~{frontEnd:0.###}] key={keyFront}, Back:[{backStart:0.###}~{backEnd:0.###}] key={keyBack}, PRC_A:{prcA}, PRC_B:{prcB}");
 
             TechnologyUtility technologyUtility = (TechnologyUtility)Activator.CreateInstance(Marshal.GetTypeFromCLSID(new Guid("C30D1110-1549-48C5-84D0-F66DCAD0F16F")));
             Layer activeLayer = GetOrCreateLayer("RoughFreeFormMill");
@@ -2400,7 +2386,7 @@ namespace DentalAddin
                 roughPrc = fallbackRoughPrc;
             }
 
-            DentalLogger.Log($"RoughFreeFromMillSplitAB - PRC 선택(고정 2-way): Front/Middle/Back 모두 {roughPrc} (rough20={IsRough20Enabled()}, file={roughPrcFileName})");
+            DentalLogger.Log($"RoughFreeFromMillSplitAB - PRC 선택(고정 2-way): Front/Back만 {roughPrc} (Middle_Rough legacy skip, rough20={IsRough20Enabled()}, file={roughPrcFileName})");
 
             if (string.Equals(region, "FRONT", StringComparison.OrdinalIgnoreCase))
             {
@@ -2408,7 +2394,7 @@ namespace DentalAddin
             }
             else if (string.Equals(region, "MIDDLE", StringComparison.OrdinalIgnoreCase))
             {
-                AddSplitOpsForRegion("MIDDLE", roughPrc, keyMiddle, technologyUtility, ff0, ff180);
+                DentalLogger.Log("RoughFreeFromMillSplitAB - MIDDLE region 요청 무시(Middle_Rough legacy 제거)");
             }
             else if (string.Equals(region, "BACK", StringComparison.OrdinalIgnoreCase))
             {
@@ -2417,7 +2403,6 @@ namespace DentalAddin
             else
             {
                 AddSplitOpsForRegion("FRONT", roughPrc, keyFront, technologyUtility, ff0, ff180);
-                AddSplitOpsForRegion("MIDDLE", roughPrc, keyMiddle, technologyUtility, ff0, ff180);
                 AddSplitOpsForRegion("BACK", roughPrc, keyBack, technologyUtility, ff0, ff180);
             }
 
@@ -2615,14 +2600,25 @@ namespace DentalAddin
         // - Splitline_1: FrontPointX
         // - Splitline_2 / TwoPhaseSplitLine / Front_Rough끝 / Finish_Front끝
         //   = SharedFinishSplitX (finishLineTopX - 1.0mm, tip 쪽)
-        // - 인접 툴패스 겹침: 선행 끝=경계 정확, 후행 시작=경계 tip쪽(X-) AdjacentToolpathOverlapMm
-        //   (Finish_Back시작 / Middle_Rough시작 / Back_Rough시작)
+        // - 인접 툴패스 겹침: 선행 끝=경계 정확, 후행 시작=경계 tip쪽(X-) 공구반경
+        //   Rough(Back): GetRoughAdjacentOverlapMm() = D4→2.0 / D2→1.0
+        //   Finish(Back): GetFinishAdjacentOverlapMm() = D1.2→0.6
+        // - Middle_Rough는 레거시로 생성하지 않는다 (Front+Back Rough로 커버)
         // SharedFinishSplit 오프셋(mm): finishLine top 기준 tip 방향.
         // X=-Z 이므로 Z+1mm ≡ X-1mm.
         private const double SharedFinishSplitOffsetFromFinishLineTopMm = -1.0;
 
-        // 인접 툴패스 겹침(mm). tip쪽(그림 왼쪽, X-)으로 후행 시작을 당긴다.
-        private const double AdjacentToolpathOverlapMm = 0.5;
+        // Rough 인접 겹침 = 활성 rough 공구 반경 (D4=2.0, ROUGH_20 D2=1.0)
+        private static double GetRoughAdjacentOverlapMm()
+        {
+            return GetActiveRoughToolRadiusMm();
+        }
+
+        // Finish 인접 겹침 = Finish 공통 공구(D1.2) 반경 0.6mm
+        private static double GetFinishAdjacentOverlapMm()
+        {
+            return CompositeFinishCommonToolDiameterMm / 2.0;
+        }
 
         private static bool TryGetThreeStageSplitConfig(out double splitline1, out double splitline2, out double xMin, out double xMax)
         {

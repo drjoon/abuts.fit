@@ -106,10 +106,10 @@ namespace DentalAddin
                 FrontFaceMill();
 
                 ExecuteTwoPhaseTurning("MIDDLE");
-                ExecuteTwoPhaseRough("MIDDLE");
+                // Middle_Rough는 레거시로 생성하지 않는다 (Front+Back Rough + 공구반경 겹침으로 커버).
 
                 // 요청 반영:
-                // Finish_Front는 마지막 Middle_Rough와 Back_Turn 사이에 생성한다.
+                // Finish_Front는 Middle_Turn과 Back_Turn 사이에 생성한다.
                 Environment.SetEnvironmentVariable("ABUTS_SKIP_FRONTFACE_IN_FREEFORM", "1");
                 try
                 {
@@ -1465,7 +1465,7 @@ namespace DentalAddin
         // 기준:
         // - Splitline_1 = FrontPointX
         // - Splitline_2 = SharedFinishSplitX (midpoint 금지)
-        // - Middle Rough 정렬: 시작=Splitline_1-0.5, 끝=Splitline_2 (인접 0.5mm 겹침 SSOT)
+        // - Middle_Turn 구간: Splitline_1~Splitline_2 (Middle_Rough 레거시 제거 후에도 Turn은 유지)
         private static bool TryPrepareTurningRegionRange(string region, out double rangeMinX, out double rangeMaxX)
         {
             rangeMinX = 0.0;
@@ -1480,8 +1480,8 @@ namespace DentalAddin
 
                 const double faceToRoughMm = 2.2;
                 const double roughToTurnMm = 2.2;
-                // Middle Rough와 동일: 경계 tip쪽 0.5mm 겹침 (공구반경 2.2 오버컷 폐기)
-                const double adjacentToolpathOverlapMm = 0.5;
+                // Middle_Turn 시작 여유: rough 공구 반경(D4=2.0) tip쪽 겹침
+                double adjacentToolpathOverlapMm = GetActiveRoughToolRadiusMm();
 
                 // Rough 경계(현재 정책): Front Face 끝(FrontPointX+3.0) + faceToRough
                 double frontRoughEnd = Math.Min(xMax, splitline1 + GetFrontFaceEndOffsetFromFrontMm() + faceToRoughMm);

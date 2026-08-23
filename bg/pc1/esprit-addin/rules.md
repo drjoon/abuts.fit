@@ -73,12 +73,13 @@
 
 - `Splitline_1 = FrontPointX`
 - `Splitline_2 = TwoPhaseSplitLine` (midpoint 사용 금지)
-- 인접 툴패스 겹침(Rough/Finish): **선행 끝 = 경계 정확**, **후행 시작 = 경계 tip쪽(그림 왼쪽, X-) 0.5mm**
-  - 상수: `MainModuleComposite.AdjacentToolpathOverlapMm = 0.5`
-  - Middle_Rough는 경계 2개(`Splitline_1`, `Splitline_2`) 모두 동일 원칙
-  - 구식 공구반경 오버컷(`±2.2`/`±1.2`)은 Rough 경계에 사용하지 않는다
+- 인접 툴패스 겹침: **선행 끝 = 경계 정확**, **후행 시작 = 경계 tip쪽(그림 왼쪽, X-) 공구 반경**
+  - Rough: `GetRoughAdjacentOverlapMm()` = 활성 rough 반경 (D4→`2.0`, `ROUGH_20` D2→`1.0`)
+  - Finish: `GetFinishAdjacentOverlapMm()` = D1.2 반경 `0.6`
+- `Middle_Rough`는 레거시로 **생성하지 않는다** (Front_Rough + Back_Rough로 커버)
+- `Middle_Turn`은 유지
 
-### 4.3.1 SharedFinishSplit / Splitline_2 SSOT (검색 키워드: `SharedFinishSplitX`, `finishlineTop-1mm`, `X=-Z`, `AdjacentToolpathOverlapMm`)
+### 4.3.1 SharedFinishSplit / Splitline_2 SSOT (검색 키워드: `SharedFinishSplitX`, `finishlineTop-1mm`, `X=-Z`, `GetRoughAdjacentOverlapMm`, `GetFinishAdjacentOverlapMm`)
 
 - 목적: **한 식**으로 아래를 동일 경계 좌표에 둔다.
   - `Front_Rough` 끝
@@ -86,25 +87,19 @@
   - `Finish_Front` 끝
 - 기준식:
   - `SharedFinishSplitX = finishLineTopX - 1.0` (tip 쪽 1mm, Z+1 ≡ X-1)
-- 인접 후행 시작(경계에서 tip쪽 0.5mm):
-  - `Finish_Back` 시작 = `SharedFinishSplitX - 0.5`
-  - `Middle_Rough` 시작 = `Splitline_1 - 0.5`
-  - `Middle_Rough` 끝 = `Splitline_2` (정확)
-  - `Back_Rough` 시작 = `Splitline_2 - 0.5`
+- 인접 후행 시작(경계에서 tip쪽 공구반경):
+  - `Back_Rough` 시작 = `Splitline_2 - roughRadius` (D4→2.0)
+  - `Finish_Back` 시작 = `SharedFinishSplitX - 0.6` (D1.2)
 - 좌표 변환 (`EspritHttpServer`: `FrontPointX = -FrontPoint.z`):
   - MoveSTL 전: `FinishLineX = -finishLineTopZ`
   - MoveSTL 후: `finishLineTopX = BackPointX - finishLineTopZ`
   - 재해석: `finishLineTopX = BackPointX - FinishLineTopZ + DefaultStlShift`
 - 구현:
   - `TryResolveSharedFinishSplitX` → `TryResolveTwoPhaseSplitLineTargetX`
-  - Rough: `frontEnd = middleEnd = splitline2`, `middleStart = splitline1 - 0.5`, `backStart = splitline2 - 0.5`
-    - Middle 폭 < rough 공구 직경이면 tip쪽으로 최소폭 확장 (`minMiddleWidthMm`) — 빈 툴패스 방지
-    - `EnsureRectBoundary`는 X 범위가 바뀌면 체인을 재생성한다 (무조건 재사용 금지)
-  - Finish: 물리 X를 `XToPassPercentByStartEndScale`로 환산
-    - `Finish_Front` 끝 X = `SharedFinishSplitX`
-    - `Finish_Back` 시작 X = `SharedFinishSplitX - 0.5`
-  - `safeBFirstMax`는 seam을 당기지 않는다(로그만). Splitline_2/Front_Rough/Back_Rough와 어긋나기 때문.
-- 금지: Front끝=Back시작 동일 좌표 강제, seam 안전클램프로 Splitline_2 정렬 깨기, `Back + Z - stlTopZ` 구식 변환
+  - Rough: `frontEnd = splitline2`, `backStart = splitline2 - GetRoughAdjacentOverlapMm()`, Middle skip
+  - Finish: `Finish_Front` 끝 = `SharedFinishSplitX`, `Finish_Back` 시작 = `SharedFinishSplitX - GetFinishAdjacentOverlapMm()`
+  - `safeBFirstMax`는 seam을 당기지 않는다(로그만)
+- 금지: Front끝=Back시작 동일 좌표 강제, 고정 0.5mm 겹침, `Middle_Rough` 재도입, `Back + Z - stlTopZ` 구식 변환
 
 ### 4.4 Finish none 처리
 
@@ -209,9 +204,9 @@
   - `MillRough_3D_20.prc`의 기술 파라미터(증분 깊이/절삭 속도/공차/코너값 포함)는
     코드에서 오버라이드하지 않고 PRC 값을 그대로 사용한다.
   - 구현: `MainModuleComposite.AddSplitOp`에서 Roughing/ZLevel에 별도 SetProperty 적용 금지
-- Rough 경계(Front/Middle/Back) 겹침:
-  - SSOT: `AdjacentToolpathOverlapMm = 0.5` (선행 끝=경계, 후행 시작=경계-0.5 tip쪽)
-  - 구식 `roughToolRadius + 0.2` (±2.2/±1.2) 오버컷은 사용하지 않는다
+- Rough 경계(Front/Back) 겹침:
+  - SSOT: `backStart = splitline2 - GetRoughAdjacentOverlapMm()` (D4→2.0)
+  - `Middle_Rough` 미생성
   - 구현: `MainModuleComposite.TryRunRoughFreeFromMillSplitAB`
 
 ### 4.11 Finish_Cuff Back_Rough 스타일 SSOT (2026-07-11)
