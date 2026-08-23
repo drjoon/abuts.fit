@@ -82,7 +82,7 @@ export default function RequestorStorePage() {
           </div>
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" size="sm" asChild>
-              <Link to="/dashboard/store/orders">주문</Link>
+              <Link to="/dashboard/store/orders">주문 내역</Link>
             </Button>
             <Button size="sm" asChild>
               <Link to="/dashboard/store/cart">
