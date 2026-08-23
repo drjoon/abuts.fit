@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-23: 배송·출고 풀필먼트 필드(fulfillmentStatus·shipping).
 // - 2026-08-23: 스토어 기성품 입금주문(과세). ChargeOrder와 분리.
 // related files:
 // - web/backend/services/storeSale.service.js
@@ -15,6 +16,18 @@ const storeOrderItemSchema = new mongoose.Schema(
     supplyAmount: { type: Number, required: true, min: 0 },
     vatAmount: { type: Number, required: true, min: 0 },
     lineTotalInclusive: { type: Number, required: true, min: 0 },
+  },
+  { _id: false },
+);
+
+const storeShippingSchema = new mongoose.Schema(
+  {
+    recipientName: { type: String, default: "", trim: true },
+    phone: { type: String, default: "", trim: true },
+    zipCode: { type: String, default: "", trim: true },
+    address: { type: String, default: "", trim: true },
+    addressDetail: { type: String, default: "", trim: true },
+    memo: { type: String, default: "", trim: true },
   },
   { _id: false },
 );
@@ -41,6 +54,19 @@ const storeOrderSchema = new mongoose.Schema(
       default: "PENDING",
       index: true,
     },
+    /** 결제와 분리된 출고 상태. 입금 확정 시 READY. */
+    fulfillmentStatus: {
+      type: String,
+      enum: ["UNPAID", "READY", "SHIPPED", "DELIVERED", "CANCELED"],
+      default: "UNPAID",
+      index: true,
+    },
+    shipping: { type: storeShippingSchema, default: () => ({}) },
+    courier: { type: String, default: "", trim: true },
+    trackingNumber: { type: String, default: "", trim: true },
+    shippedAt: { type: Date, default: null },
+    deliveredAt: { type: Date, default: null },
+    fulfillmentNote: { type: String, default: "" },
     adminApprovalStatus: {
       type: String,
       enum: ["PENDING", "APPROVED", "REJECTED"],
@@ -88,6 +114,11 @@ storeOrderSchema.index({
   businessAnchorId: 1,
   status: 1,
   expiresAt: 1,
+});
+storeOrderSchema.index({
+  fulfillmentStatus: 1,
+  status: 1,
+  createdAt: -1,
 });
 
 export default mongoose.model("StoreOrder", storeOrderSchema);

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-23: 배송지·출고/배송 상태 표시.
 // - 2026-08-23: 스토어 주문 입금 대기·목록.
 // related files:
 // - web/backend/controllers/store/storeOrder.controller.js
@@ -10,6 +11,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import { STORE_PRICE_TAX_NOTE } from "@/shared/tax/invoiceLabels";
+import {
+  STORE_FULFILLMENT_STATUS_LABEL,
+  type StoreFulfillmentStatus,
+} from "@/shared/tax/ledgerTaxLanes";
 import { formatWonWithUnit } from "@/shared/settlement/affiliateVat";
 import { apiFetch } from "@/shared/api/apiClient";
 
@@ -22,12 +27,25 @@ type DepositAccount = {
 type StoreOrder = {
   _id: string;
   status: string;
+  fulfillmentStatus?: string;
   depositCode: string;
   supplyAmount: number;
   vatAmount: number;
   amountTotal: number;
   expiresAt?: string;
   items?: Array<{ name: string; qty: number; lineTotalInclusive: number }>;
+  shipping?: {
+    recipientName?: string;
+    phone?: string;
+    zipCode?: string;
+    address?: string;
+    addressDetail?: string;
+    memo?: string;
+  };
+  courier?: string;
+  trackingNumber?: string;
+  shippedAt?: string | null;
+  deliveredAt?: string | null;
   paidAt?: string | null;
   createdAt?: string;
 };
@@ -39,6 +57,13 @@ const STATUS_LABEL: Record<string, string> = {
   CANCELED: "취소",
   EXPIRED: "만료",
 };
+
+function fulfillmentLabel(status?: string) {
+  if (!status) return "";
+  return (
+    STORE_FULFILLMENT_STATUS_LABEL[status as StoreFulfillmentStatus] || status
+  );
+}
 
 function copyText(text: string, label: string) {
   void navigator.clipboard.writeText(text).then(
@@ -101,8 +126,12 @@ export default function RequestorStoreOrdersPage() {
                 >
                   <div className="space-y-1">
                     <p className="text-sm font-medium">
-                      {STATUS_LABEL[order.status] || order.status} ·{" "}
-                      {formatWonWithUnit(order.amountTotal)}
+                      {STATUS_LABEL[order.status] || order.status}
+                      {order.fulfillmentStatus &&
+                      order.fulfillmentStatus !== "UNPAID"
+                        ? ` · ${fulfillmentLabel(order.fulfillmentStatus)}`
+                        : ""}{" "}
+                      · {formatWonWithUnit(order.amountTotal)}
                     </p>
                     <p className="text-xs text-muted-foreground">
                       입금코드 {order.depositCode} ·{" "}
@@ -201,6 +230,11 @@ export function RequestorStoreOrderDetailPage() {
           <div className="space-y-4">
             <div className="flex flex-wrap items-center gap-2">
               <Badge>{STATUS_LABEL[order.status] || order.status}</Badge>
+              {order.fulfillmentStatus ? (
+                <Badge variant="secondary">
+                  {fulfillmentLabel(order.fulfillmentStatus)}
+                </Badge>
+              ) : null}
               <Badge variant="outline">{STORE_PRICE_TAX_NOTE}</Badge>
             </div>
 
@@ -224,6 +258,38 @@ export function RequestorStoreOrderDetailPage() {
                 </span>
               </div>
             </div>
+
+            {order.shipping?.address ? (
+              <div className="space-y-1 rounded-xl border border-border/70 p-4 text-sm">
+                <h2 className="font-semibold">배송지</h2>
+                <p>
+                  {order.shipping.recipientName} · {order.shipping.phone}
+                </p>
+                <p className="text-muted-foreground">
+                  {[
+                    order.shipping.zipCode,
+                    order.shipping.address,
+                    order.shipping.addressDetail,
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                </p>
+                {order.shipping.memo ? (
+                  <p className="text-xs text-muted-foreground">
+                    메모 {order.shipping.memo}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+
+            {order.trackingNumber ? (
+              <div className="space-y-1 rounded-xl border border-border/70 p-4 text-sm">
+                <h2 className="font-semibold">배송 추적</h2>
+                <p>
+                  {order.courier || "택배"} {order.trackingNumber}
+                </p>
+              </div>
+            ) : null}
 
             {order.status === "PENDING" && depositAccount ? (
               <div className="space-y-3 rounded-xl border border-border/70 p-4">
@@ -268,7 +334,7 @@ export function RequestorStoreOrderDetailPage() {
             {order.status === "PAID" ? (
               <p className="text-sm text-muted-foreground">
                 결제가 완료되었습니다. 세금계산서는 관리자 (세금)계산서 목록에서
-                확인할 수 있습니다.
+                확인할 수 있습니다. 출고·배송 상태는 위 뱃지를 확인하세요.
               </p>
             ) : null}
 

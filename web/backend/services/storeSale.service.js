@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-23: 풀필먼트(READY→SHIPPED→DELIVERED). 매출 전액 어벗츠(REV_STORE_TAXABLE).
 // - 2026-08-23: 스토어 입금 확정 → 재고 차감 · STORE_SALE 저널 · 과세 세금계산서.
 // related files:
 // - rules.md §2.3
@@ -12,6 +13,7 @@ import BusinessAnchor from "../models/businessAnchor.model.js";
 import {
   LEDGER_EVENT_STORE_SALE,
   LEDGER_ACCOUNT_REV_STORE_TAXABLE,
+  STORE_REVENUE_OWNER_ROLE,
 } from "../constants/ledgerTaxLanes.js";
 import {
   listStoreProductIds,
@@ -341,6 +343,8 @@ export async function finalizeStoreSale({
       matchedBy: matchedBy || order.matchedBy || "AUTO",
       adminApprovalStatus: "APPROVED",
       adminApprovalAt: now,
+      // 입금 확정 → 출고 대기. 딜러/제조 분배 없음(전액 어벗츠).
+      fulfillmentStatus: "READY",
     };
     if (bankTransactionId) setFields.bankTransactionId = bankTransactionId;
     if (matchedByUserId) {
@@ -372,6 +376,8 @@ export async function finalizeStoreSale({
     const vat = Math.max(0, Math.round(Number(order.vatAmount || 0)));
     const total = Math.max(0, Math.round(Number(order.amountTotal || 0)));
 
+    // 스토어 매출 분배 SSOT: 공급가 전액 REV_STORE_TAXABLE → 어벗츠(admin).
+    // 커스텀어벗의 딜러/제조/개발운영 분배 경로를 타지 않는다.
     await postGeneralLedgerJournal({
       idempotencyKey: `gl:store:order:${String(order._id)}:sale`,
       eventType: LEDGER_EVENT_STORE_SALE,
@@ -386,11 +392,14 @@ export async function finalizeStoreSale({
           : null,
         source:
           matchedBy === "ADMIN" ? "admin_store_approval" : "store_auto_match",
+        revenueOwner: STORE_REVENUE_OWNER_ROLE,
+        splitToDealer: false,
+        splitToManufacturer: false,
       },
       lines: [
         {
           accountCode: LEDGER_ACCOUNT_REV_STORE_TAXABLE,
-          ownerRole: "admin",
+          ownerRole: STORE_REVENUE_OWNER_ROLE,
           ownerId: adminAnchorId,
           amount: supply,
           amountExcludingVat: supply,
@@ -453,4 +462,96 @@ export async function finalizeStoreSale({
   }
 
   return { finalized, idempotent, draftId };
+}
+
+/**
+ * 관리자 출고: READY → SHIPPED (운송장).
+ */
+export async function markStoreOrderShipped({
+  orderId,
+  courier = "",
+  trackingNumber = "",
+  note = "",
+  actorUserId = null,
+} = {}) {
+  const order = await StoreOrder.findById(orderId);
+  if (!order) {
+    const err = new Error("store_order_not_found");
+    err.statusCode = 404;
+    throw err;
+  }
+  if (String(order.status) !== "PAID") {
+    const err = new Error("결제 완료 주문만 출고할 수 있습니다.");
+    err.statusCode = 400;
+    throw err;
+  }
+  if (!["READY", "SHIPPED"].includes(String(order.fulfillmentStatus))) {
+    const err = new Error(
+      `출고할 수 없는 상태: ${order.fulfillmentStatus || "UNPAID"}`,
+    );
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const now = new Date();
+  const nextCourier = String(courier || order.courier || "").trim();
+  const nextTracking = String(
+    trackingNumber || order.trackingNumber || "",
+  ).trim();
+  if (!nextTracking) {
+    const err = new Error("운송장 번호가 필요합니다.");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  order.fulfillmentStatus = "SHIPPED";
+  order.courier = nextCourier;
+  order.trackingNumber = nextTracking;
+  order.shippedAt = order.shippedAt || now;
+  if (note) order.fulfillmentNote = String(note).trim();
+  await order.save();
+
+  return {
+    order: order.toObject(),
+    actorUserId: actorUserId ? String(actorUserId) : null,
+  };
+}
+
+/**
+ * 관리자 배송완료: SHIPPED → DELIVERED.
+ */
+export async function markStoreOrderDelivered({
+  orderId,
+  note = "",
+  actorUserId = null,
+} = {}) {
+  const order = await StoreOrder.findById(orderId);
+  if (!order) {
+    const err = new Error("store_order_not_found");
+    err.statusCode = 404;
+    throw err;
+  }
+  if (String(order.status) !== "PAID") {
+    const err = new Error("결제 완료 주문만 배송완료 처리할 수 있습니다.");
+    err.statusCode = 400;
+    throw err;
+  }
+  if (!["SHIPPED", "DELIVERED"].includes(String(order.fulfillmentStatus))) {
+    const err = new Error(
+      `배송완료할 수 없는 상태: ${order.fulfillmentStatus || "UNPAID"}`,
+    );
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const now = new Date();
+  order.fulfillmentStatus = "DELIVERED";
+  order.deliveredAt = order.deliveredAt || now;
+  if (note) order.fulfillmentNote = String(note).trim();
+  await order.save();
+
+  return {
+    order: order.toObject(),
+    actorUserId: actorUserId ? String(actorUserId) : null,
+  };
 }

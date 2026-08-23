@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-23: 스토어 전용 장바구니. 크레딧·커스텀어벗과 합치지 않음(별도 persist key).
 // - 2026-08-23: 스토어 장바구니(localStorage).
 // related files:
 // - web/frontend/src/pages/requestor/store/RequestorStoreCartPage.tsx
@@ -19,6 +20,9 @@ type StoreCartState = {
   clear: () => void;
   totalQty: () => number;
 };
+
+/** 크레딧 충전·커스텀어벗 주문과 키/스토어를 공유하지 않음. */
+export const STORE_CART_STORAGE_KEY = "abuts_store_cart_v1";
 
 export const useStoreCartStore = create<StoreCartState>()(
   persist(
@@ -65,6 +69,6 @@ export const useStoreCartStore = create<StoreCartState>()(
       totalQty: () =>
         get().lines.reduce((sum, l) => sum + Math.max(0, Number(l.qty) || 0), 0),
     }),
-    { name: "abuts_store_cart_v1" },
+    { name: STORE_CART_STORAGE_KEY },
   ),
 );

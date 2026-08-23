@@ -96,6 +96,8 @@ import {
   adminListStoreOrders,
   adminApproveStoreOrder,
   adminRejectStoreOrder,
+  adminShipStoreOrder,
+  adminDeliverStoreOrder,
 } from "../../controllers/admin/adminStore.controller.js";
 import {
   adminGrantFreeShippingCredit,
@@ -424,6 +426,16 @@ router.post(
   "/store/orders/:id/reject",
   authorize(["admin"], { subRoles: ["owner"] }),
   adminRejectStoreOrder,
+);
+router.post(
+  "/store/orders/:id/ship",
+  authorize(["admin"], { subRoles: ["owner"] }),
+  adminShipStoreOrder,
+);
+router.post(
+  "/store/orders/:id/deliver",
+  authorize(["admin"], { subRoles: ["owner"] }),
+  adminDeliverStoreOrder,
 );
 
 // 가격/리퍼럴 정책 통계

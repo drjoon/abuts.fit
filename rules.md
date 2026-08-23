@@ -163,7 +163,8 @@
   - 의뢰자 소비·비제조사 `REV_*` 라인·제조사 `REV_MANUFACTURER`: 공급가 기준, `vatAmount = 0`.
   - 딜러사·개발운영사 수수료/잔여 장부는 공급가(`vatAmount = 0`). **지급 시** 부가세 10%를 더해 **입금·세금계산서**에 반영한다(`SETTLEMENT_PAYOUT`: `amountExcludingVat`=공급가 잔액 차감, `vatAmount`=부가세, `amountIncludingVat`=실입금).
   - 보존식·의뢰자 잔액 집계는 `amountExcludingVat`(없으면 `amount`) = 공급가. 딜러사·개발운영사 지급 VAT는 어벗츠 추가 지급분(의뢰자 크레딧에서 차감하지 않음).
-  - 장부: 과세 스토어 매출 이벤트/계정은 `STORE_SALE` / `REV_STORE_TAXABLE`. 결제 확정(입금 매칭·관리자 승인) 시 저널 기록. 면세 기공·크레딧 장부와 분리 집계.
+  - 장부: 과세 스토어 매출 이벤트/계정은 `STORE_SALE` / `REV_STORE_TAXABLE`. 결제 확정(입금 매칭·관리자 승인) 시 저널 기록. **딜러/제조/개발운영 분배 없이 공급가 전액 어벗츠(`ownerRole=admin`)**. 면세 기공·크레딧 장부와 분리 집계.
+  - 스토어 풀필먼트: `StoreOrder.fulfillmentStatus` `UNPAID→READY(입금확정)→SHIPPED→DELIVERED`. 배송지·운송장은 주문에 스냅샷. 관리자 `/dashboard/store-admin`에서 출고·배송완료.
 - **어벗츠 사업 다각화 SSOT:**
   1. **커스텀 어벗 생산·공급** — 기공소 디자인 → 애크로덴트 생산 → 치과 납품(하청 정산).
   2. **자동매칭 수수료** — 기공비의 `platformFeeRate`(기본 10%). 관리자 플랫폼 설정.

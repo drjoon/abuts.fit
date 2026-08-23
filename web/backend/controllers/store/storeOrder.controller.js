@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-23: 배송지·풀필먼트·장바구니 합치기 금지 가드.
 // - 2026-08-23: 스토어 카탈로그·주문·입금(B-plan) API.
 // related files:
 // - web/backend/services/storeSale.service.js
@@ -6,6 +7,7 @@
 import mongoose from "mongoose";
 import StoreOrder from "../../models/storeOrder.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
+import User from "../../models/user.model.js";
 import SystemSettings from "../../models/systemSettings.model.js";
 import { generateStoreOrderDepositCode } from "../../utils/depositCode.utils.js";
 import { splitInclusiveVat } from "../../utils/storeVat.js";
@@ -13,6 +15,7 @@ import {
   getStoreProductName,
   getStoreProductPriceInclusive,
 } from "../../constants/storeCatalog.js";
+import { STORE_CART_MERGE_WITH_CREDIT_OR_CUSTOM_ABUTMENT } from "../../constants/ledgerTaxLanes.js";
 import { normalizeRequestorKind } from "../../utils/requestorCapabilities.js";
 import {
   finalizeStoreSale,
@@ -132,6 +135,56 @@ function buildOrderItems(rawItems) {
   return { items, supplyAmount, vatAmount, amountTotal };
 }
 
+function normalizeShippingInput(raw = {}) {
+  return {
+    recipientName: String(raw.recipientName || "").trim(),
+    phone: String(raw.phone || "").trim(),
+    zipCode: String(raw.zipCode || "").trim(),
+    address: String(raw.address || "").trim(),
+    addressDetail: String(raw.addressDetail || "").trim(),
+    memo: String(raw.memo || "").trim(),
+  };
+}
+
+function assertShippingComplete(shipping) {
+  if (!shipping.recipientName || !shipping.phone || !shipping.address) {
+    const err = new Error(
+      "배송지(수령인·연락처·주소)를 모두 입력해 주세요.",
+    );
+    err.statusCode = 400;
+    throw err;
+  }
+  return shipping;
+}
+
+async function resolveDefaultShipping({ userId, businessAnchorId }) {
+  const [user, anchor] = await Promise.all([
+    userId
+      ? User.findById(userId)
+          .select({ practiceProfile: 1, name: 1 })
+          .lean()
+      : null,
+    BusinessAnchor.findById(businessAnchorId)
+      .select({ metadata: 1 })
+      .lean(),
+  ]);
+  const profile = user?.practiceProfile || {};
+  const meta = anchor?.metadata || {};
+  return normalizeShippingInput({
+    recipientName:
+      profile.clinicName ||
+      profile.directorName ||
+      meta.companyName ||
+      user?.name ||
+      "",
+    phone: profile.clinicPhone || profile.phone || meta.phoneNumber || "",
+    zipCode: profile.zipCode || meta.zipCode || "",
+    address: profile.address || meta.address || "",
+    addressDetail: profile.addressDetail || meta.addressDetail || "",
+    memo: "",
+  });
+}
+
 export async function getStoreCatalog(req, res) {
   try {
     assertPracticeRequestor(req);
@@ -158,6 +211,13 @@ export async function getStoreCatalog(req, res) {
       data: {
         products,
         taxNote: "과세 · 부가세 포함",
+        // 장바구니 합치기 금지 SSOT (프론트 카피·가드용)
+        cartMergeWithCreditOrCustomAbutment:
+          STORE_CART_MERGE_WITH_CREDIT_OR_CUSTOM_ABUTMENT,
+        defaultShipping: await resolveDefaultShipping({
+          userId: req.user?._id,
+          businessAnchorId,
+        }),
       },
     });
   } catch (error) {
@@ -193,6 +253,25 @@ export async function createStoreOrder(req, res) {
       });
     }
 
+    // 커스텀어벗·크레딧과 동일 장바구니/결제 합치기 금지.
+    if (STORE_CART_MERGE_WITH_CREDIT_OR_CUSTOM_ABUTMENT) {
+      const err = new Error("store_cart_merge_forbidden");
+      err.statusCode = 500;
+      throw err;
+    }
+    if (req.body?.chargeOrderId || req.body?.creditItems || req.body?.requestIds) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "스토어 주문은 커스텀어벗·크레딧 충전과 합칠 수 없습니다. 스토어에서만 주문해 주세요.",
+        code: "STORE_CART_MERGE_FORBIDDEN",
+      });
+    }
+
+    const shipping = assertShippingComplete(
+      normalizeShippingInput(req.body?.shipping),
+    );
+
     let created = null;
     await session.withTransaction(async () => {
       await reserveStoreInventory({ items, session });
@@ -208,8 +287,10 @@ export async function createStoreOrder(req, res) {
             depositCode,
             depositorName: depositCode,
             status: "PENDING",
+            fulfillmentStatus: "UNPAID",
             adminApprovalStatus: "PENDING",
             items,
+            shipping,
             supplyAmount,
             vatAmount,
             amountTotal,
@@ -319,6 +400,7 @@ export async function cancelMyStoreOrder(req, res) {
       });
 
       order.status = "CANCELED";
+      order.fulfillmentStatus = "CANCELED";
       await order.save({ session });
       canceled = order.toObject();
     });

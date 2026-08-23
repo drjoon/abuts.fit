@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-23: 출고·배송완료 API. 거절 시 fulfillment CANCELED.
 // - 2026-08-23: 관리자 스토어 재고·주문.
 // related files:
 // - web/backend/services/storeSale.service.js
@@ -10,6 +11,8 @@ import {
   ensureStoreInventorySeeded,
   finalizeStoreSale,
   getInventoryMap,
+  markStoreOrderDelivered,
+  markStoreOrderShipped,
   releaseStoreInventoryReservation,
 } from "../../services/storeSale.service.js";
 import {
@@ -181,6 +184,7 @@ export async function adminRejectStoreOrder(req, res) {
 
     await releaseStoreInventoryReservation({ items: order.items });
     order.status = "CANCELED";
+    order.fulfillmentStatus = "CANCELED";
     order.adminApprovalStatus = "REJECTED";
     order.adminApprovalNote = note;
     order.adminApprovalAt = new Date();
@@ -200,6 +204,82 @@ export async function adminRejectStoreOrder(req, res) {
     return res.status(500).json({
       success: false,
       message: error.message || "reject_failed",
+    });
+  }
+}
+
+export async function adminShipStoreOrder(req, res) {
+  try {
+    const id = String(req.params.id || "").trim();
+    const courier = String(req.body?.courier || "").trim();
+    const trackingNumber = String(req.body?.trackingNumber || "").trim();
+    const note = String(req.body?.note || "").trim();
+
+    const result = await markStoreOrderShipped({
+      orderId: id,
+      courier,
+      trackingNumber,
+      note,
+      actorUserId: req.user?._id || null,
+    });
+
+    await writeAuditLog({
+      req,
+      action: "STORE_ORDER_SHIP",
+      refType: "StoreOrder",
+      refId: id,
+      details: {
+        courier,
+        trackingNumber,
+        fulfillmentStatus: result.order?.fulfillmentStatus,
+      },
+    });
+
+    return res.json({
+      success: true,
+      message: "출고 처리되었습니다.",
+      data: result.order,
+    });
+  } catch (error) {
+    const status = error.statusCode || 500;
+    return res.status(status).json({
+      success: false,
+      message: error.message || "ship_failed",
+    });
+  }
+}
+
+export async function adminDeliverStoreOrder(req, res) {
+  try {
+    const id = String(req.params.id || "").trim();
+    const note = String(req.body?.note || "").trim();
+
+    const result = await markStoreOrderDelivered({
+      orderId: id,
+      note,
+      actorUserId: req.user?._id || null,
+    });
+
+    await writeAuditLog({
+      req,
+      action: "STORE_ORDER_DELIVER",
+      refType: "StoreOrder",
+      refId: id,
+      details: {
+        fulfillmentStatus: result.order?.fulfillmentStatus,
+      },
+    });
+
+    return res.json({
+      success: true,
+      message: "배송 완료 처리되었습니다.",
+      data: result.order,
+    });
+  } catch (error) {
+    const status = error.statusCode || 500;
+    return res.status(status).json({
+      success: false,
+      message: error.message || "deliver_failed",
     });
   }
 }
