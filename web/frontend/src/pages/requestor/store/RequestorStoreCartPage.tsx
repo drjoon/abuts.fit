@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-23: 배송지 = 설정·사업자 주소(읽기 전용). 변경은 설정 CTA.
 // - 2026-08-23: 기본 배송지 = practiceProfile(즉시). catalog API 호출 제거.
 // - 2026-08-23: 스토어 결제 = 선수금만. 잔액 부족 시 충전 탭으로 이동.
 // - 2026-08-23: 2열 반응형·배송료(10만원 이하 3,300원 부가세 포함).
@@ -7,7 +8,8 @@
 // related files:
 // - web/frontend/src/store/useStoreCartStore.ts
 // - web/frontend/src/shared/store/storeCatalog.ts
-import { useEffect, useMemo, useRef, useState } from "react";
+// - web/frontend/src/shared/store/storeDefaultShipping.ts
+import { useEffect, useMemo, useState } from "react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 import { ArrowLeft, Minus, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -32,7 +34,10 @@ import {
   STORE_SHIPPING_FREE_THRESHOLD_INCLUSIVE,
 } from "@/shared/store/storeShipping";
 import {
-  resolveDefaultStoreShipping,
+  formatStoreShippingAddressLine,
+  isStoreShippingReady,
+  resolveStoreShippingFromBusiness,
+  STORE_BUSINESS_SETTINGS_PATH,
   type StoreShippingForm,
 } from "@/shared/store/storeDefaultShipping";
 
@@ -46,36 +51,39 @@ export default function RequestorStoreCartPage() {
   const removeItem = useStoreCartStore((s) => s.removeItem);
   const clear = useStoreCartStore((s) => s.clear);
   const [submitting, setSubmitting] = useState(false);
+  const [shippingLoading, setShippingLoading] = useState(true);
   const [shipping, setShipping] = useState<StoreShippingForm>(() =>
-    resolveDefaultStoreShipping(user),
+    resolveStoreShippingFromBusiness(user),
   );
-  const shippingTouchedRef = useRef(false);
-  const shippingEnrichedRef = useRef(false);
+  const [memo, setMemo] = useState("");
 
   useEffect(() => {
-    if (shippingTouchedRef.current) return;
-    setShipping(resolveDefaultStoreShipping(user));
-  }, [user]);
-
-  useEffect(() => {
-    if (shippingEnrichedRef.current || shippingTouchedRef.current || !token) {
+    if (!token) {
+      setShipping(resolveStoreShippingFromBusiness(user));
+      setShippingLoading(false);
       return;
     }
-    const fromProfile = resolveDefaultStoreShipping(user);
-    if (fromProfile.recipientName && fromProfile.phone && fromProfile.address) {
-      shippingEnrichedRef.current = true;
-      return;
-    }
-    shippingEnrichedRef.current = true;
+    let cancelled = false;
+    setShippingLoading(true);
     void loadBusinessMeCached({ token, businessType: "requestor" })
       .then((data) => {
-        if (shippingTouchedRef.current || !data?.metadata) return;
-        setShipping(resolveDefaultStoreShipping(user, data.metadata));
+        if (cancelled) return;
+        setShipping(resolveStoreShippingFromBusiness(user, data?.metadata));
       })
       .catch(() => {
-        /* metadata 없으면 practiceProfile만 사용 */
+        if (cancelled) return;
+        setShipping(resolveStoreShippingFromBusiness(user));
+      })
+      .finally(() => {
+        if (!cancelled) setShippingLoading(false);
       });
+    return () => {
+      cancelled = true;
+    };
   }, [token, user]);
+
+  const shippingReady = isStoreShippingReady(shipping);
+  const addressLine = formatStoreShippingAddressLine(shipping);
 
   const rows = useMemo(() => {
     return lines
@@ -116,12 +124,9 @@ export default function RequestorStoreCartPage() {
       toast.error("스토어 장바구니는 크레딧·커스텀어벗과 합칠 수 없습니다.");
       return;
     }
-    if (
-      !shipping.recipientName.trim() ||
-      !shipping.phone.trim() ||
-      !shipping.address.trim()
-    ) {
-      toast.error("배송지(수령인·연락처·주소)를 입력해 주세요.");
+    if (!shippingReady) {
+      toast.error("설정 · 사업자에 배송 주소를 등록해 주세요.");
+      navigate(STORE_BUSINESS_SETTINGS_PATH);
       return;
     }
     setSubmitting(true);
@@ -139,7 +144,7 @@ export default function RequestorStoreCartPage() {
             productId: r.line.productId,
             qty: r.line.qty,
           })),
-          shipping,
+          shipping: { ...shipping, memo: memo.trim() },
           paymentMethod: "CREDIT",
         },
       });
@@ -165,14 +170,6 @@ export default function RequestorStoreCartPage() {
     } finally {
       setSubmitting(false);
     }
-  }
-
-  function patchShipping<K extends keyof StoreShippingForm>(
-    key: K,
-    value: StoreShippingForm[K],
-  ) {
-    shippingTouchedRef.current = true;
-    setShipping((prev) => ({ ...prev, [key]: value }));
   }
 
   return (
@@ -272,46 +269,52 @@ export default function RequestorStoreCartPage() {
               </ul>
 
               <div className="space-y-3 rounded-xl border border-border/70 bg-card p-4 sm:p-6">
-                <h2 className="text-sm font-semibold">배송지</h2>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <Input
-                    placeholder="수령인"
-                    value={shipping.recipientName}
-                    onChange={(e) =>
-                      patchShipping("recipientName", e.target.value)
-                    }
-                  />
-                  <Input
-                    placeholder="연락처"
-                    value={shipping.phone}
-                    onChange={(e) => patchShipping("phone", e.target.value)}
-                  />
-                  <Input
-                    placeholder="우편번호"
-                    value={shipping.zipCode}
-                    onChange={(e) => patchShipping("zipCode", e.target.value)}
-                  />
-                  <Input
-                    className="sm:col-span-2"
-                    placeholder="주소"
-                    value={shipping.address}
-                    onChange={(e) => patchShipping("address", e.target.value)}
-                  />
-                  <Input
-                    className="sm:col-span-2"
-                    placeholder="상세 주소"
-                    value={shipping.addressDetail}
-                    onChange={(e) =>
-                      patchShipping("addressDetail", e.target.value)
-                    }
-                  />
-                  <Input
-                    className="sm:col-span-2"
-                    placeholder="배송 메모 (선택)"
-                    value={shipping.memo}
-                    onChange={(e) => patchShipping("memo", e.target.value)}
-                  />
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h2 className="text-sm font-semibold">배송지</h2>
+                  <Button variant="link" size="sm" className="h-auto px-0" asChild>
+                    <Link to={STORE_BUSINESS_SETTINGS_PATH}>
+                      배송지 변경
+                    </Link>
+                  </Button>
                 </div>
+                <p className="text-xs text-muted-foreground">
+                  사업자 정보에 등록된 주소로 배송합니다.
+                </p>
+                {shippingLoading ? (
+                  <p className="text-sm text-muted-foreground">불러오는 중…</p>
+                ) : shippingReady ? (
+                  <dl className="grid gap-2 text-sm sm:grid-cols-2">
+                    <div>
+                      <dt className="text-muted-foreground">수령인</dt>
+                      <dd className="font-medium">{shipping.recipientName}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted-foreground">연락처</dt>
+                      <dd className="font-medium">{shipping.phone}</dd>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <dt className="text-muted-foreground">주소</dt>
+                      <dd className="font-medium">{addressLine}</dd>
+                    </div>
+                  </dl>
+                ) : (
+                  <div className="space-y-2 rounded-lg border border-dashed border-border/70 bg-muted/30 p-3">
+                    <p className="text-sm text-muted-foreground">
+                      배송 주소가 등록되어 있지 않습니다. 설정 · 사업자에서
+                      주소와 연락처를 입력해 주세요.
+                    </p>
+                    <Button variant="outline" size="sm" asChild>
+                      <Link to={STORE_BUSINESS_SETTINGS_PATH}>
+                        설정 · 사업자로 이동
+                      </Link>
+                    </Button>
+                  </div>
+                )}
+                <Input
+                  placeholder="배송 메모 (선택)"
+                  value={memo}
+                  onChange={(e) => setMemo(e.target.value)}
+                />
               </div>
             </div>
 
@@ -360,7 +363,7 @@ export default function RequestorStoreCartPage() {
               <Button
                 type="button"
                 className="mt-2 w-full"
-                disabled={submitting}
+                disabled={submitting || shippingLoading || !shippingReady}
                 onClick={() => void checkout()}
               >
                 {submitting ? "결제 중…" : "선수금으로 결제"}
