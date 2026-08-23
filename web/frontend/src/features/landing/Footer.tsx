@@ -2,6 +2,7 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/features/landing/landingTheme.ts
 import { Badge } from "@/components/ui/badge";
 import { Mail, Phone, MapPin, Instagram, Facebook } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -14,6 +15,7 @@ import {
   COMPANY_PHONE,
   CONTACT_EMAIL,
 } from "@/shared/lib/contactInfo";
+import { landingIdentity } from "@/features/landing/landingTheme";
 
 export const Footer = () => {
   const support = [
@@ -51,8 +53,7 @@ export const Footer = () => {
             </div>
 
             <p className="text-white/70 mb-6 leading-relaxed">
-              어벗츠 주식회사가 제공하는 커스텀 어벗먼트 관리 플랫폼입니다.
-              커스텀 어벗먼트 제조는 (주)애크로덴트가 단독으로 담당합니다.
+              {landingIdentity.oneLiner}. {landingIdentity.manufacturerNote}
             </p>
 
             <div className="space-y-3">

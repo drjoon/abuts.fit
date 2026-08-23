@@ -1,12 +1,13 @@
 // related files:
 // - web/frontend/src/pages/public/Index.tsx
 // - web/frontend/src/pages/public/components/PublicPageLayout.tsx
+// - web/frontend/src/features/landing/landingTheme.ts
 import { useInView } from "react-intersection-observer";
 import {
   CheckCircle,
   Clock8,
   Layers,
-  MessageSquare,
+  Receipt,
   Send,
   Shield,
 } from "lucide-react";
@@ -21,12 +22,13 @@ import {
 import { useNavigate } from "react-router-dom";
 import {
   landingFeatures,
+  landingIdentity,
   landingPipeline,
   landingTheme,
   whyAbutsPoints,
 } from "./landingTheme";
 
-const FEATURE_ICONS = [Shield, Layers, Clock8, MessageSquare] as const;
+const FEATURE_ICONS = [Layers, Clock8, Shield, Receipt] as const;
 
 interface LandingPlatformSectionProps {
   onContact: () => void;
@@ -44,6 +46,19 @@ export const LandingPlatformSection = ({
       className="relative border-t border-white/[0.06]"
     >
       <div ref={ref} className="mx-auto max-w-6xl space-y-12 px-4 py-14 lg:py-16">
+        <div
+          className={`mx-auto max-w-2xl text-center transition-all duration-700 ${
+            inView ? "translate-y-0 opacity-100" : "translate-y-6 opacity-0"
+          }`}
+        >
+          <h2 className="text-2xl font-semibold text-white md:text-3xl">
+            플랫폼 장점
+          </h2>
+          <p className="mt-3 text-sm leading-relaxed text-white/65 md:text-base">
+            {landingIdentity.identity}
+          </p>
+        </div>
+
         <div
           className={`grid gap-4 sm:grid-cols-2 lg:grid-cols-4 ${
             inView ? "" : "opacity-0"
@@ -153,18 +168,23 @@ export const LandingPlatformSection = ({
             style={{ transitionDelay: "420ms" }}
           >
             <CardHeader>
-              <CardTitle className="text-xl">왜 abuts.fit인가요?</CardTitle>
+              <CardTitle className="text-xl">30초 피치</CardTitle>
               <CardDescription className="text-white/70">
-                제조사는 생산성, 의뢰자는 투명성을 얻습니다.
+                영업·소개에 바로 쓸 수 있는 한 문단입니다.
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-3">
-              {whyAbutsPoints.map((point) => (
-                <div key={point} className="flex items-start gap-3">
-                  <div className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary/70" />
-                  <p className="text-sm text-white/80">{point}</p>
-                </div>
-              ))}
+            <CardContent className="space-y-4">
+              <p className="text-sm leading-relaxed text-white/85">
+                {landingIdentity.pitch30s}
+              </p>
+              <ul className="space-y-3">
+                {whyAbutsPoints.map((point) => (
+                  <li key={point} className="flex items-start gap-3">
+                    <div className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary/70" />
+                    <p className="text-sm text-white/80">{point}</p>
+                  </li>
+                ))}
+              </ul>
             </CardContent>
           </Card>
         </div>

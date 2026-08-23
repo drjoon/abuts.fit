@@ -78,6 +78,12 @@ Notes:
   - `src/features/layout/DashboardLayout.tsx`
   - `src/features/layout/AccountSwitcher.tsx` (사이드바 계정 팝업 · 같은 사업자 계정 전환)
   - `src/store/useAuthStore.ts` (`switchAccount`)
+- 공개 랜딩 (`/`)
+  - `src/pages/public/Index.tsx` — Intro → Audience(치과·기공) → Store → Platform details
+  - 카피 SSOT: `src/features/landing/landingTheme.ts`
+    (`landingIdentity` · `landingAudiencePractice` · `landingAudienceLab` · features/pipeline)
+  - `LandingPlatformIntro` · `LandingAudienceSection` · `LandingStoreShowcase` ·
+    `LandingPlatformSection` · `Footer`
 - 공용 타입(역할 SSOT)
   - `src/shared/types/role.ts`
   - `src/shared/components/RoleSelect.tsx` (역할 Select. 사업영역 주체 등)

@@ -1,6 +1,7 @@
 // related files:
 // - web/frontend/src/pages/public/Index.tsx
 // - web/frontend/src/pages/public/components/PublicPageLayout.tsx
+// - web/frontend/src/features/landing/landingTheme.ts
 import { ArrowRight, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,17 +15,18 @@ import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
 import { resolveEntryDashboardPath } from "@/shared/navigation/lastDashboardPath";
 import { LANDING_CAD_PREVIEW } from "./landingAssets";
-import { landingStats, landingTheme, workflowSteps } from "./landingTheme";
+import {
+  landingIdentity,
+  landingStats,
+  landingTheme,
+  workflowSteps,
+} from "./landingTheme";
 
 export const LandingPlatformIntro = () => {
   const navigate = useNavigate();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const user = useAuthStore((s) => s.user);
   const entryPath = resolveEntryDashboardPath(user);
-
-  const scrollToStore = () => {
-    document.getElementById("store")?.scrollIntoView({ behavior: "smooth" });
-  };
 
   return (
     <section id="platform" className="relative">
@@ -35,17 +37,18 @@ export const LandingPlatformIntro = () => {
             style={{ animationDelay: "0.05s" }}
           >
             <span className="h-1.5 w-1.5 rounded-full bg-primary shadow-[0_0_8px_hsl(var(--primary)/0.8)]" />
-            <span className={landingTheme.accentText}>치과 ↔ 기공소 ↔ 어벗츠</span>
+            <span className={landingTheme.accentText}>
+              {landingIdentity.eyebrow}
+            </span>
           </p>
 
           <h1
             className="text-3xl font-semibold leading-tight text-white md:text-4xl animate-slide-up"
             style={{ animationDelay: "0.1s" }}
           >
-            치과, 기공소 및 CNC 제조사가 함께 쓰는
-            <br />
-            <span className={landingTheme.headlineGradient}>
-              디지털 제작 워크스페이스
+            <span className="block text-white/90">abuts.fit</span>
+            <span className={`mt-2 block ${landingTheme.headlineGradient}`}>
+              {landingIdentity.oneLiner}
             </span>
           </h1>
 
@@ -53,8 +56,7 @@ export const LandingPlatformIntro = () => {
             className="mx-auto max-w-lg text-base leading-relaxed text-white/75 lg:mx-0 animate-slide-up"
             style={{ animationDelay: "0.18s" }}
           >
-            커스텀 어벗 제작을 한 흐름으로 — 주문·생산·추적·결제·계산서까지
-            치과·기공소·어벗츠가 같은 기록으로 이어집니다.
+            {landingIdentity.body}
           </p>
 
           <div
@@ -94,10 +96,12 @@ export const LandingPlatformIntro = () => {
               variant="outline"
               className={`h-11 px-7 border-white/30 bg-transparent text-white hover:bg-white/10 ${landingTheme.ctaGhost}`}
               onClick={() =>
-                navigate(isAuthenticated ? entryPath : "/login")
+                document
+                  .getElementById("audience")
+                  ?.scrollIntoView({ behavior: "smooth" })
               }
             >
-              로그인
+              치과 · 기공소 혜택 보기
             </Button>
           </div>
         </div>
@@ -105,9 +109,9 @@ export const LandingPlatformIntro = () => {
         <div className="space-y-5 animate-hero-rise" style={{ animationDelay: "0.15s" }}>
           <Card className={landingTheme.statCard}>
             <CardHeader className="pb-3">
-              <CardTitle className="text-lg">abuts.fit Snapshot</CardTitle>
+              <CardTitle className="text-lg">왜 abuts.fit인가</CardTitle>
               <CardDescription className="text-sm text-slate-500">
-                제조 파트너들이 매일 확인하는 핵심 지표
+                {landingIdentity.vision}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -126,6 +130,9 @@ export const LandingPlatformIntro = () => {
                   </div>
                 ))}
               </div>
+              <p className="mt-4 text-xs leading-relaxed text-slate-500">
+                {landingIdentity.manufacturerNote}
+              </p>
             </CardContent>
           </Card>
 
