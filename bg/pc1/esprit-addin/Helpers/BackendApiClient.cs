@@ -158,8 +158,10 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 string baseUrl = (AppConfig.GetBackendUrl() ?? "").TrimEnd('/');
                 string url = $"{baseUrl}/bg/register-file";
                 string originalName = string.IsNullOrWhiteSpace(stlPath) ? "" : Path.GetFileName(stlPath);
+                // register-file은 fileName 필수. 실패 시에도 비어 있으면 400이 되므로 placeholder를 둔다.
+                string fileName = string.IsNullOrWhiteSpace(originalName) ? "nc-failed" : originalName;
                 string safeError = (errorMessage ?? "");
-                string json = $"{{\"sourceStep\":\"3-nc\",\"fileName\":\"\",\"originalFileName\":\"{EscapeJson(originalName)}\",\"requestId\":\"{EscapeJson(requestId)}\",\"status\":\"failed\",\"metadata\":{{\"error\":\"{EscapeJson(safeError)}\"}}}}";
+                string json = $"{{\"sourceStep\":\"3-nc\",\"fileName\":\"{EscapeJson(fileName)}\",\"originalFileName\":\"{EscapeJson(originalName)}\",\"requestId\":\"{EscapeJson(requestId)}\",\"status\":\"failed\",\"metadata\":{{\"error\":\"{EscapeJson(safeError)}\",\"action\":\"esprit-nc\"}}}}";
                 using (var req = new HttpRequestMessage(HttpMethod.Post, url))
                 {
                     req.Content = new StringContent(json, Encoding.UTF8, "application/json");

@@ -75,9 +75,19 @@ const normalizeRetentionGroove = (value) => {
   const rg = String(value || "")
     .trim()
     .toLowerCase();
-  if (rg === "deep") return "deep";
-  if (rg === "none" || rg === "shallow") return "none";
+  if (rg === "deep" || rg === "있음") return "deep";
+  if (rg === "none" || rg === "shallow" || rg === "없음") return "none";
   return "deep";
+};
+
+/** request-meta → Esprit: none/deep만 전달. 미설정·비정상은 null(가산기는 예외+토스트). */
+const normalizeRetentionGrooveOrNull = (value) => {
+  const rg = String(value || "")
+    .trim()
+    .toLowerCase();
+  if (rg === "deep" || rg === "있음") return "deep";
+  if (rg === "none" || rg === "shallow" || rg === "없음") return "none";
+  return null;
 };
 
 // related files (manufacturer hex rotation mode validation):
@@ -1060,6 +1070,7 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
             : "machining";
       updateData[`caseInfos.reviewByStage.${stageKey}.status`] = "REJECTED";
       updateData[`caseInfos.reviewByStage.${stageKey}.reason`] =
+        String(metadata?.error || "").trim() ||
         `백그라운드 작업 실패 (${sourceStep})`;
     }
   }
@@ -1387,6 +1398,29 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
         });
       }
     }
+
+    // NC/Filled 실패 → 제조사·관리자 토스트 (useSocket: request:async-action-failed)
+    if (!isSuccess && (step === "3-nc" || step === "2-filled")) {
+      const failMessage =
+        String(metadata?.error || "").trim() ||
+        (step === "3-nc"
+          ? "Esprit NC 생성에 실패했습니다."
+          : "Rhino Filled STL 처리에 실패했습니다.");
+      const failAction =
+        String(metadata?.action || "").trim() ||
+        (step === "3-nc" ? "esprit-nc" : "rhino-filled");
+      emitAppEventToRoles(
+        ["manufacturer", "admin"],
+        "request:async-action-failed",
+        {
+          requestId: request?.requestId || null,
+          requestMongoId: String(request?._id || "").trim() || null,
+          action: failAction,
+          stage: step === "3-nc" ? "cam" : "request",
+          message: failMessage,
+        },
+      );
+    }
   } catch {
     // ignore
   }
@@ -1666,9 +1700,9 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
           connectionDiameter: ci.connectionDiameter || 0,
           connectionTargetDiameter,
           workType: ci.workType || "",
-          // 유지홈 옵션(2단계: 없음/있음) — legacy shallow는 none으로 정규화.
-          // esprit-addin이 5axisComposite_A.prc의 StepIncrement 값을 결정할 때 사용.
-          retentionGroove: normalizeRetentionGroove(ci.retentionGroove),
+          // 유지홈 옵션(2단계: 없음/있음). Esprit는 none/deep만 허용 — 미설정 시 null → NC 중단+토스트.
+          // esprit-addin이 Finish_Front StepIncrement·Finish_Back 1피치 겹침에 사용.
+          retentionGroove: normalizeRetentionGrooveOrNull(ci.retentionGroove),
           lotNumber: lotValue,
           // esprit-addin에서 공정 PRC를 선택하기 위한 의뢰별 설정
           // PRC 파일명이 DB에 저장된 경우 그대로 사용, 없으면 임플란트 정보로 동적 계산.

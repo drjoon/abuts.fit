@@ -76,21 +76,25 @@
 - 인접 툴패스:
   - Rough: **선행 끝 = 경계 정확**, **후행 시작 = 경계 tip쪽(그림 왼쪽, X-) 공구 반경**
     - `GetRoughAdjacentOverlapMm()` = 활성 rough 반경 (D4→`2.0`, `ROUGH_20` D2→`1.0`)
-  - Finish: **Front 끝 = Back 시작 = `Splitline_2`** (D1.2 반경 겹침 출발 없음)
+  - Finish: **Front 끝 = `Splitline_2`**, **Back 시작 = `Splitline_2` − 1피치**
+    - 피치 SSOT: 백엔드 `retentionGroove` (`none`→`0.12`, `deep`→`0.20`) via `ABUTS_RETENTION_GROOVE`
+    - `ABUTS_COMPOSITE_STEP_INCREMENT_A` **미사용**. none/deep 미수신 시 NC 중단 + 프론트 토스트
 - `Middle_Turn` / `Middle_Rough`는 레거시로 **생성하지 않는다** (Front + Back로 커버)
 
-### 4.3.1 SharedFinishSplit / Splitline_2 SSOT (검색 키워드: `SharedFinishSplitX`, `finishlineTop-1mm`, `X=-Z`, `GetRoughAdjacentOverlapMm`)
+### 4.3.1 SharedFinishSplit / Splitline_2 SSOT (검색 키워드: `SharedFinishSplitX`, `finishlineTop-1mm`, `X=-Z`, `GetRoughAdjacentOverlapMm`, `GetFinishAdjacentOverlapMm`, `ABUTS_RETENTION_GROOVE`)
 
 - 목적: **한 식**으로 아래를 동일 경계 좌표에 둔다.
   - `Front_Rough` 끝
   - `Splitline_2` / `TwoPhaseSplitLine`
   - `Finish_Front` 끝
-  - `Finish_Back` 시작
 - 기준식:
   - `SharedFinishSplitX = finishLineTopX - 1.0` (tip 쪽 1mm, Z+1 ≡ X-1)
 - 인접 후행 시작:
   - `Back_Rough` 시작 = `Splitline_2 - roughRadius` (D4→2.0)
-  - `Finish_Back` 시작 = `SharedFinishSplitX` (= `Splitline_2`, 겹침 오프셋 없음)
+  - `Finish_Back` 시작 = `SharedFinishSplitX - GetFinishAdjacentOverlapMm()`
+    - 피치: `ResolveFinishFrontStepIncrementMmFromRetentionGroove()` (`none`→0.12, `deep`→0.20)
+    - `StlFileProcessor.RequireBackendRetentionGrooveOrThrow` — none/deep만 허용, 미수신 시 예외
+    - 실패 보고: `NotifyBackendFailure` → `/bg/register-file` status=failed → `request:async-action-failed` 토스트
 - 좌표 변환 (`EspritHttpServer`: `FrontPointX = -FrontPoint.z`):
   - MoveSTL 전: `FinishLineX = -finishLineTopZ`
   - MoveSTL 후: `finishLineTopX = BackPointX - finishLineTopZ`
@@ -98,9 +102,10 @@
 - 구현:
   - `TryResolveSharedFinishSplitX` → `TryResolveTwoPhaseSplitLineTargetX`
   - Rough: `frontEnd = splitline2`, `backStart = splitline2 - GetRoughAdjacentOverlapMm()`, Middle skip
-  - Finish: `Finish_Front` 끝 = `Finish_Back` 시작 = `SharedFinishSplitX`
+  - Finish: `Finish_Front` 끝 = `SharedFinishSplitX`, `Finish_Back` 시작 = `SharedFinishSplitX - GetFinishAdjacentOverlapMm()`
+  - Finish_Front StepIncrement도 동일 groove 매핑으로 COM SetProperty (`TrySetCompositeStepIncrement`)
   - `safeBFirstMax`는 seam을 당기지 않는다(로그만)
-  - 금지: Finish_Back의 D1.2 반경 앞당김, 고정 0.5mm 겹침, `Middle_Turn`/`Middle_Rough` 재도입, `Back + Z - stlTopZ` 구식 변환
+  - 금지: `ABUTS_COMPOSITE_STEP_INCREMENT_A` 의존, Finish_Back의 D1.2 반경 앞당김, 고정 0.5mm 겹침, `Middle_Turn`/`Middle_Rough` 재도입, `Back + Z - stlTopZ` 구식 변환
 
 ### 4.4 Finish none 처리
 

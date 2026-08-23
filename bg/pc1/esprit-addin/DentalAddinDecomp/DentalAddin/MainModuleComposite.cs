@@ -819,7 +819,8 @@ namespace DentalAddin
 
             double splitPercent = Clamp(splitRatio * 100.0, firstPercent, effectiveLastPercent);
 
-            // [SSOT] Front_Rough 끝 = Splitline_2 = Finish_Front 끝 = Finish_Back 시작
+            // [SSOT] Front_Rough 끝 = Splitline_2 = Finish_Front 끝
+            // Finish_Back 시작 = Splitline_2 - 1피치(retentionGroove→StepIncrement)
             // 모두 TryResolveSharedFinishSplitX() 한 식의 물리 X를 공유한다.
             // Finish A/B는 피처 재해석 없이 이 X를 StartEndScale(20mm)로만 환산한다.
             if (!TryResolveSharedFinishSplitX(out double sharedSplitX, out string sharedSplitSource))
@@ -974,10 +975,11 @@ namespace DentalAddin
 
             // Finish seam SSOT:
             // - 선행(Finish_Front) 끝 = SharedFinishSplitX (= Splitline_2)
-            // - 후행(Finish_Back) 시작 = SharedFinishSplitX (= Splitline_2) — D1.2 반경 겹침 출발 없음
+            // - 후행(Finish_Back) 시작 = SharedFinishSplitX - 1피치(retentionGroove→StepIncrement)
             // 중요: safeBFirstMax로 seam을 당기지 않는다. 당기면 Splitline_2/Front_Rough/Back_Rough와 어긋난다.
+            double finishOverlapMm = GetFinishAdjacentOverlapMm();
             const double aEndOffsetFromSplitMm = 0.0;
-            const double bStartOffsetFromSplitMm = 0.0;
+            double bStartOffsetFromSplitMm = -finishOverlapMm;
             const double compositeEndOffsetFromBackPointMm = 0.0;
 
             double finishFrontEndX = splitX + aEndOffsetFromSplitMm;
@@ -998,7 +1000,7 @@ namespace DentalAddin
                 opB.FirstPassPercent = Clamp(requestedBFirstPass, firstPercent, effectiveLastPercent);
                 opB.LastPassPercent = effectiveLastPercent;
             }
-            DentalLogger.Log($"Composite2SplitLine2 - Finish seam 확정: Front.end%={opA.LastPassPercent:F2} (X={finishFrontEndX:F3}), Back.start%={(runB && opB != null ? opB.FirstPassPercent.ToString("F2", CultureInfo.InvariantCulture) : "<skip>")} (X={finishBackStartX:F3}=Splitline_2), guardWarn={startEndBFirstGuardApplied}");
+            DentalLogger.Log($"Composite2SplitLine2 - Finish seam 확정: Front.end%={opA.LastPassPercent:F2} (X={finishFrontEndX:F3}), Back.start%={(runB && opB != null ? opB.FirstPassPercent.ToString("F2", CultureInfo.InvariantCulture) : "<skip>")} (X={finishBackStartX:F3}=Splitline_2-{finishOverlapMm:F3}), overlapMm={finishOverlapMm:F3} (1 pitch), guardWarn={startEndBFirstGuardApplied}");
 
             // 정책: Finish_Back 종료 기준점은 BackPointX + 0.0mm
             double compositeEndTargetX = MoveSTL_Module.BackPointX + compositeEndOffsetFromBackPointMm;
@@ -1322,32 +1324,21 @@ namespace DentalAddin
             return Clamp(value, 0.0, 100.0);
         }
 
-        // retentionGroove(유지홈) → StepIncrement 적용. PRC 파일을 건드리지 않고
-        // Esprit COM 객체(IDispatch)에 직접 SetProperty 한다. 대상 DispId 는 PRC 의
-        // `StepIncrement; 217;` 토큰과 동일하다. 환경변수 ABUTS_COMPOSITE_STEP_INCREMENT_A
-        // 가 비어 있으면 PRC 기본값을 그대로 사용한다.
+        // retentionGroove(백엔드 none/deep) → Finish_Front StepIncrement.
+        // ABUTS_COMPOSITE_STEP_INCREMENT_A 는 읽지 않는다. Finish_Back(B)는 PRC 기본 유지.
         private static void TrySetCompositeStepIncrement(TechLatheMill5xComposite op, string label)
         {
             if (op == null)
             {
                 return;
             }
-            string envKey = AppConfig.CompositeStepIncrementAEnv;
             if (string.Equals(label, "B", StringComparison.OrdinalIgnoreCase))
             {
-                envKey = AppConfig.CompositeStepIncrementBEnv;
-            }
-            string raw = Environment.GetEnvironmentVariable(envKey);
-            if (string.IsNullOrWhiteSpace(raw))
-            {
-                DentalLogger.Log($"Composite2SplitLine2 - {label} StepIncrement env 비어있음 (env={envKey}), PRC 기본값 사용");
+                DentalLogger.Log("Composite2SplitLine2 - B StepIncrement: PRC 기본값 유지 (retentionGroove는 Finish_Front만 적용)");
                 return;
             }
-            if (!double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out double stepIncrement))
-            {
-                DentalLogger.Log($"Composite2SplitLine2 - {label} StepIncrement env 파싱 실패 (raw='{raw}'), PRC 기본값 사용");
-                return;
-            }
+
+            double stepIncrement = ResolveFinishFrontStepIncrementMmFromRetentionGroove();
             try
             {
                 op.GetType().InvokeMember(
@@ -1357,11 +1348,34 @@ namespace DentalAddin
                     op,
                     new object[] { stepIncrement },
                     CultureInfo.InvariantCulture);
-                DentalLogger.Log($"Composite2SplitLine2 - {label} StepIncrement={stepIncrement.ToString("0.###", CultureInfo.InvariantCulture)} 적용 (PRC 파일 무변경, env={envKey})");
+                DentalLogger.Log($"Composite2SplitLine2 - A StepIncrement={stepIncrement.ToString("0.###", CultureInfo.InvariantCulture)} 적용 (retentionGroove→직접, PRC 파일 무변경)");
             }
             catch (Exception ex)
             {
-                DentalLogger.Log($"Composite2SplitLine2 - {label} StepIncrement 설정 실패: {ex.GetType().Name}:{ex.Message}");
+                DentalLogger.Log($"Composite2SplitLine2 - A StepIncrement 설정 실패: {ex.GetType().Name}:{ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 백엔드 retentionGroove(ABUTS_RETENTION_GROOVE) → Finish_Front StepIncrement(mm).
+        /// none→0.12, deep→0.20. 그 외/미지정은 예외.
+        /// </summary>
+        private static double ResolveFinishFrontStepIncrementMmFromRetentionGroove()
+        {
+            string groove = (GetEnvString("ABUTS_RETENTION_GROOVE") ?? string.Empty).Trim().ToLowerInvariant();
+            if (groove == "없음") groove = "none";
+            if (groove == "있음") groove = "deep";
+
+            switch (groove)
+            {
+                case "none":
+                    return 0.12;
+                case "deep":
+                    return 0.20;
+                default:
+                    string shown = string.IsNullOrWhiteSpace(groove) ? "<empty>" : groove;
+                    throw new InvalidOperationException(
+                        $"유지홈(retentionGroove)이 백엔드에서 전달되지 않았습니다. none 또는 deep이 필요합니다. (received='{shown}')");
             }
         }
 
@@ -2626,16 +2640,22 @@ namespace DentalAddin
         // - 인접 툴패스:
         //   Rough: 선행 끝=경계 정확, 후행(Back) 시작=경계 tip쪽(X-) 공구반경
         //     Rough(Back): GetRoughAdjacentOverlapMm() = D4→2.0 / D2→1.0
-        //   Finish: Front 끝 = Back 시작 = Splitline_2 (D1.2 반경 겹침 출발 없음)
+        //   Finish: Front 끝=Splitline_2, Back 시작=Splitline_2 - 1피치(retentionGroove→StepIncrement)
         // - Middle_Turn / Middle_Rough는 레거시로 생성하지 않는다 (Front+Back로 커버)
         // SharedFinishSplit 오프셋(mm): finishLine top 기준 tip 방향.
         // X=-Z 이므로 Z+1mm ≡ X-1mm.
         private const double SharedFinishSplitOffsetFromFinishLineTopMm = -1.0;
 
-        // Rough 인접 겹침 = 활성 rough 공구 반경 (D4=2.0, ROUGH_20 D2=1.0)
+        // Finish Front/Back PRC Back 기본 StepIncrement는 5axisComposite_Back.prc(0.08). Front는 retentionGroove로 강제.
         private static double GetRoughAdjacentOverlapMm()
         {
             return GetActiveRoughToolRadiusMm();
+        }
+
+        // Finish 인접 겹침 = 백엔드 retentionGroove(none/deep) → Finish_Front 1피치
+        private static double GetFinishAdjacentOverlapMm()
+        {
+            return ResolveFinishFrontStepIncrementMmFromRetentionGroove();
         }
 
         private static bool TryGetThreeStageSplitConfig(out double splitline1, out double splitline2, out double xMin, out double xMax)
@@ -2685,7 +2705,8 @@ namespace DentalAddin
         }
 
         /// <summary>
-        /// [SSOT] Front_Rough 끝 = Splitline_2 = Finish_Front 끝 = Finish_Back 시작.
+        /// [SSOT] Front_Rough 끝 = Splitline_2 = Finish_Front 끝.
+        /// Finish_Back 시작 = Splitline_2 - GetFinishAdjacentOverlapMm() (retentionGroove 1피치).
         /// 식: finishLineTopX + SharedFinishSplitOffsetFromFinishLineTopMm (-1.0mm, tip 쪽).
         /// 좌표: FrontPointX = -FrontPoint.z → finishLineTopX = -finishLineTopZ (+ MoveSTL).
         /// </summary>

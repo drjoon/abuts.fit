@@ -91,6 +91,7 @@ export const useSocket = () => {
 
       const action = toText(data?.action);
       const isCamAutoMachining = action === "cam-auto-machining-trigger";
+      const isEspritNc = action === "esprit-nc";
       const message = toText(data?.message) || "비동기 후처리 작업이 실패했습니다.";
       const requestId = toText(data?.requestId);
       const machineId = toText(data?.machineId);
@@ -98,7 +99,9 @@ export const useSocket = () => {
       toast({
         title: isCamAutoMachining
           ? `자동 가공 시작 실패${machineId ? ` · ${machineId}` : ""}`
-          : "후처리 작업 실패",
+          : isEspritNc
+            ? "Esprit NC 생성 실패"
+            : "후처리 작업 실패",
         description: requestId
           ? `${message} (의뢰번호: ${requestId})`
           : message,
