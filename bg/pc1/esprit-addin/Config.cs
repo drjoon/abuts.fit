@@ -154,11 +154,38 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 
         public static string StorageNcDirectory => GetEnvOrDefault(StorageNcEnv, DefaultStorageNcDirectory);
 
-        public static string AddInRootDirectory => GetEnvOrDefault(AddInRootEnv, DefaultAddInRootDirectory);
+        private static string _resolvedAddInRootDirectory;
+        private static bool _resolvingAddInRoot;
 
-        public static string PrcRootDirectory => GetEnvOrDefault(PrcRootEnv, DefaultPrcRootDirectory);
+        public static string AddInRootDirectory
+        {
+            get
+            {
+                if (!string.IsNullOrWhiteSpace(_resolvedAddInRootDirectory))
+                {
+                    return _resolvedAddInRootDirectory;
+                }
+                // AppLogger 등이 해석 중 재진입할 수 있으므로 가드
+                if (_resolvingAddInRoot)
+                {
+                    return DefaultAddInRootDirectory;
+                }
+                _resolvingAddInRoot = true;
+                try
+                {
+                    _resolvedAddInRootDirectory = ResolveAddInRootDirectory();
+                    return _resolvedAddInRootDirectory;
+                }
+                finally
+                {
+                    _resolvingAddInRoot = false;
+                }
+            }
+        }
 
-        public static string SurfaceRootDirectory => GetEnvOrDefault(SurfaceRootEnv, DefaultSurfaceRootDirectory);
+        public static string PrcRootDirectory => GetEnvOrDefault(PrcRootEnv, Path.Combine(AddInRootDirectory, "AcroDent"));
+
+        public static string SurfaceRootDirectory => GetEnvOrDefault(SurfaceRootEnv, Path.Combine(AddInRootDirectory, "Surface"));
 
         public static double TurningDepth => GetDoubleEnvOrDefault(TurningDepthEnv, DefaultTurningDepth);
 
@@ -450,6 +477,136 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 
             return null;
 
+        }
+
+        private static string ResolveAddInRootDirectory()
+        {
+            var candidates = new System.Collections.Generic.List<string>();
+            var seen = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            void Consider(string path)
+            {
+                if (string.IsNullOrWhiteSpace(path))
+                {
+                    return;
+                }
+                try
+                {
+                    string full = Path.GetFullPath(path);
+                    if (!Directory.Exists(Path.Combine(full, "AcroDent")))
+                    {
+                        return;
+                    }
+                    if (seen.Add(full))
+                    {
+                        candidates.Add(full);
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            // 실행 위치에서 AcroDent를 가진 상위 폴더
+            Consider(DetectDirectoryContainingMarker("AcroDent"));
+
+            // 운영 PC / 개발 PC 레이아웃 차이: bg/esprit-addin vs bg/pc1/esprit-addin
+            string bg = GetEnvOrDefault(BaseDirectoryEnv, DefaultBaseDirectory);
+            Consider(Path.Combine(bg, "esprit-addin"));
+            Consider(Path.Combine(bg, "pc1", "esprit-addin"));
+
+            string fromEnv = GetEnvOrDefault(AddInRootEnv, string.Empty);
+            Consider(fromEnv);
+            Consider(DefaultAddInRootDirectory);
+
+            foreach (string candidate in candidates)
+            {
+                if (IsHealthyAddInRoot(candidate))
+                {
+                    try { AppLogger.Log($"AppConfig: AddInRoot selected (healthy) - {candidate}"); } catch { }
+                    return candidate;
+                }
+            }
+
+            if (candidates.Count > 0)
+            {
+                try { AppLogger.Log($"AppConfig: AddInRoot fallback (AcroDent only) - {candidates[0]}"); } catch { }
+                return candidates[0];
+            }
+
+            return DefaultAddInRootDirectory;
+        }
+
+        private static bool IsHealthyAddInRoot(string root)
+        {
+            try
+            {
+                if (!Directory.Exists(Path.Combine(root, "Templates")))
+                {
+                    return false;
+                }
+                string faceHoleDir = Path.Combine(root, "AcroDent", "1_Face Hole");
+                if (!Directory.Exists(faceHoleDir))
+                {
+                    return false;
+                }
+                foreach (string path in Directory.GetFiles(faceHoleDir))
+                {
+                    if (path.EndsWith(".prc", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+            }
+            catch
+            {
+            }
+            return false;
+        }
+
+        private static string DetectDirectoryContainingMarker(string markerDirName)
+        {
+            string asmDir = null;
+            try { asmDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location); } catch { }
+            string baseDir = null;
+            try { baseDir = AppDomain.CurrentDomain.BaseDirectory; } catch { }
+
+            foreach (string start in new[] { asmDir, baseDir })
+            {
+                string found = FindMarkerUpward(start, markerDirName);
+                if (!string.IsNullOrWhiteSpace(found))
+                {
+                    return found;
+                }
+            }
+            return null;
+        }
+
+        private static string FindMarkerUpward(string startDirectory, string markerDirName)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(startDirectory))
+                {
+                    return null;
+                }
+                string current = Path.GetFullPath(startDirectory);
+                for (int i = 0; i < 10; i++)
+                {
+                    if (Directory.Exists(Path.Combine(current, markerDirName)))
+                    {
+                        return current;
+                    }
+                    var parent = Directory.GetParent(current);
+                    if (parent == null)
+                    {
+                        break;
+                    }
+                    current = parent.FullName;
+                }
+            }
+            catch { }
+            return null;
         }
 
         private static string Unquote(string value)

@@ -358,6 +358,11 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.DentalAddin
             }
         }
 
+        private static string ResolvePrcRootFallback()
+        {
+            return DentalAddinPrcManager.ResolvePrcDirectory();
+        }
+
         private void EnsurePrcSlot(string prcDirectory, string[] paths, string[] names, int index, string relativePath, bool force = false)
         {
             if (paths == null || names == null || index < 0 || index >= paths.Length)
@@ -371,7 +376,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.DentalAddin
             string resolved;
             try
             {
-                string candidate = Path.Combine(AppConfig.AddInRootDirectory, "AcroDent", relativePath);
+                // prcDirectory(AcroDent) 기준 상대 경로
+                string root = string.IsNullOrWhiteSpace(prcDirectory) ? ResolvePrcRootFallback() : prcDirectory;
+                string candidate = Path.Combine(root, relativePath);
                 resolved = Path.GetFullPath(candidate);
             }
             catch (Exception ex)
