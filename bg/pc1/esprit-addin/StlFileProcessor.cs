@@ -1207,16 +1207,13 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             if (finishLineTopZ.HasValue)
             {
                 DentalAddinReflectionHelper.SetStaticField(moveModuleType, "FinishLineTopZ", finishLineTopZ.Value);
-                // FinishLineX는 pre-rotation ESPRIT X 좌표로 변환해야 함
-                // STL Z좌표 → ESPRIT X: backLimitX가 stlTopZ에 대응하므로
-                // FinishLineX = backLimitX + finishLineTopZ - stlTopZ
-                double finishLineEspritX = finishLineTopZ.Value;
-                if (stlTopZ.HasValue && stlTopZ.Value > 0.001)
-                {
-                    finishLineEspritX = backLimitX + finishLineTopZ.Value - stlTopZ.Value;
-                }
+                // [SSOT] STL Z → ESPRIT X (MoveSTL 이전)
+                // EspritHttpServer와 동일: FrontPointX = -FrontPoint.z
+                // 따라서 FinishLineX = -finishLineTopZ
+                // (구식 BackX + Z - stlTopZ 는 tip 쪽으로 수 mm 어긋남)
+                double finishLineEspritX = -finishLineTopZ.Value;
                 DentalAddinReflectionHelper.SetStaticField(moveModuleType, "FinishLineX", finishLineEspritX);
-                AppLogger.Log($"DentalAddin: FinishLineX 변환 - finishLineTopZ:{finishLineTopZ.Value:F4}, stlTopZ:{(stlTopZ.HasValue ? stlTopZ.Value.ToString("F4") : "<null>")}, backLimitX:{backLimitX:F4} → FinishLineX:{finishLineEspritX:F4}");
+                AppLogger.Log($"DentalAddin: FinishLineX 변환 - finishLineTopZ:{finishLineTopZ.Value:F4}, formula:X=-Z, backLimitX:{backLimitX:F4}, stlTopZ:{(stlTopZ.HasValue ? stlTopZ.Value.ToString("F4") : "<null>")}(ignored) → FinishLineX:{finishLineEspritX:F4}");
             }
             if (finishLineEspritR.HasValue)
             {
@@ -1304,9 +1301,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                             catch { }
                         }
 
-                        // 기준점(권위값): backend finishLineTopZ를 MoveSTL 이후 현재 좌표계 X로 직접 변환
-                        // currentFinishX = backX + finishTopZ - stlTopZ
-                        double currentFinishX = backX + finishLineTopZ.Value - stlTopZ.Value;
+                        // 기준점(권위값): backend finishLineTopZ → MoveSTL 이후 ESPRIT X
+                        // SSOT: X = -Z, 초기 BackX=0 이므로 MoveSTL 후 currentFinishX = backX - finishTopZ
+                        double currentFinishX = backX - finishLineTopZ.Value;
 
                         // 오프셋 방향 정책:
                         // - env ABUTS_FINISHLINE_SPLIT_SIDE=front|back 로 명시 가능
@@ -1378,17 +1375,17 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         double xMin = Math.Min(frontX, backX);
                         double xMax = Math.Max(frontX, backX);
 
-                        // 요청 기준:
-                        //   split line = finishLine 최상 Z + 1.0mm (상방)
-                        // 좌표 변환식:
-                        //   ESPRIT X = BackX + Z - stlTopZ
-                        //   → Z+1mm ≡ X+1mm
+                        // 요청 기준(첨3 SSOT):
+                        //   Splitline_2 = finishLine top (Front_Rough 우측 경계와 동일 목표)
+                        // 좌표 변환 SSOT:
+                        //   EspritHttpServer: FrontPointX = -FrontPoint.z
+                        //   MoveSTL 전: FinishLineX = -finishLineTopZ
+                        //   MoveSTL 후(초기 BackX=0): topX = backX - finishLineTopZ
                         // 중요:
-                        //   이 오프셋은 MainModuleComposite.TryResolveTwoPhaseSplitLineTargetX와
-                        //   반드시 동일해야 한다. (env 주입/재해석 경로의 SSOT 일치)
-                        const double splitOffsetMm = 1.0;
+                        //   오프셋/변환은 MainModuleComposite.TryResolveTwoPhaseSplitLineTargetX와 동일해야 한다.
+                        const double splitOffsetMm = 0.0;
                         double targetZ = finishLineTopZ.Value + splitOffsetMm;
-                        double topX = backX + finishLineTopZ.Value - stlTopZ.Value;
+                        double topX = backX - finishLineTopZ.Value;
                         double rawSplitX = topX + splitOffsetMm;
                         double splitX = Math.Max(xMin + 0.01, Math.Min(xMax - 0.01, rawSplitX));
 
@@ -1407,7 +1404,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         double frontRoughEndX = splitX - roughAEndOffsetMm;
                         double faceRightMaxX = frontRoughEndX - faceMinGapMm;
 
-                        AppLogger.Log($"DentalAddin: TwoPhase split 적용 - finishLineTopZ:{finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, targetZ(top+1):{targetZ.ToString("F4", CultureInfo.InvariantCulture)}, stlTopZ:{stlTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, topX:{topX.ToString("F4", CultureInfo.InvariantCulture)}, splitOffsetMm:{splitOffsetMm.ToString("F3", CultureInfo.InvariantCulture)}, rawSplitX(top+1.0):{rawSplitX.ToString("F4", CultureInfo.InvariantCulture)}, splitX(clamped):{splitX.ToString("F4", CultureInfo.InvariantCulture)}, frontRoughEndX(split-0.5):{frontRoughEndX.ToString("F4", CultureInfo.InvariantCulture)}, faceRightMaxX(frontRoughEnd-0.3):{faceRightMaxX.ToString("F4", CultureInfo.InvariantCulture)} (Front:{frontX.ToString("F4", CultureInfo.InvariantCulture)}, Back:{backX.ToString("F4", CultureInfo.InvariantCulture)})");
+                        AppLogger.Log($"DentalAddin: TwoPhase split 적용 - finishLineTopZ:{finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, targetZ(top):{targetZ.ToString("F4", CultureInfo.InvariantCulture)}, stlTopZ:{stlTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}(ignored-for-X), topX:{topX.ToString("F4", CultureInfo.InvariantCulture)}, splitOffsetMm:{splitOffsetMm.ToString("F3", CultureInfo.InvariantCulture)}, rawSplitX(top):{rawSplitX.ToString("F4", CultureInfo.InvariantCulture)}, splitX(clamped):{splitX.ToString("F4", CultureInfo.InvariantCulture)}, frontRoughEndX(split-0.5):{frontRoughEndX.ToString("F4", CultureInfo.InvariantCulture)}, faceRightMaxX(frontRoughEnd-0.3):{faceRightMaxX.ToString("F4", CultureInfo.InvariantCulture)} (Front:{frontX.ToString("F4", CultureInfo.InvariantCulture)}, Back:{backX.ToString("F4", CultureInfo.InvariantCulture)})");
                             }
                             catch (Exception ex)
                             {

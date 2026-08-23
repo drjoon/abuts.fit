@@ -77,23 +77,26 @@
   - 기본(D4): `±2.2mm`
   - `ROUGH_20=1` 실험(D2): `±1.2mm`
 
-### 4.3.1 TwoPhaseSplitLine 계산식 SSOT (검색 키워드: `finishlineTopZ+1mm`, `splitOffsetMm=1.0`)
+### 4.3.1 TwoPhaseSplitLine 계산식 SSOT (검색 키워드: `finishlineTop`, `splitOffsetMm=0`, `X=-Z`)
 
-- 목적: Finish line 최상단에서 **상방(Z+1.0mm)** 지점을 TwoPhase/`Splitline_2` 분할선으로 사용한다.
-  - ESPRIT 변환 `X = BackX + Z - stlTopZ` 에서 Z+1mm ≡ X+1mm
-- 기준식(권장 경로, env 주입):
-  - `finishLineTopX = BackPointX + finishLineTopZ - stlTopZ`
-  - `TwoPhaseSplitLineX = finishLineTopX + 1.0`
-- fallback 식(재해석 경로):
-  - `TwoPhaseSplitLineX = FinishLineX + 1.0` (MoveSTL 이후 ESPRIT X 권위값)
-  - TopZ만 있을 때: `finishLineTopX = BackPointX - FinishLineTopZ + DefaultStlShift`, 그 다음 `+ 1.0`
+- 목적: Finish line 최상단(`FL max_z`)을 TwoPhase/`Splitline_2` 분할선으로 사용한다.
+  - Front_Rough 우측 경계와 동일 목표(첨3 기준)
+- 좌표 변환 SSOT (`EspritHttpServer`: `FrontPointX = -FrontPoint.z`):
+  - MoveSTL 전: `FinishLineX = -finishLineTopZ`
+  - MoveSTL 후(초기 `BackX=0`): `finishLineTopX = BackPointX - finishLineTopZ`
+  - 재해석(필드 `FinishLineTopZ`가 `+DefaultStlShift`된 경우):
+    - `finishLineTopX = BackPointX - FinishLineTopZ + DefaultStlShift`
+- 기준식:
+  - `TwoPhaseSplitLineX = finishLineTopX` (`splitOffsetMm = 0`)
+- 금지(구식, tip 쪽으로 수 mm 어긋남):
+  - `BackPointX + finishLineTopZ - stlTopZ`
 - 구현 SSOT 위치:
   - `DentalAddinDecomp/DentalAddin/MainModuleComposite.cs`
     - `TryResolveTwoPhaseSplitLineTargetX` (가이드라인/공정 분기에서 재해석)
   - `StlFileProcessor.cs`
-    - `TryApplyTwoPhaseSplitByFinishLine` (env 주입 경로)
+    - `ApplyLimitPoints` / `TryApplyTwoPhaseSplitByFinishLine` (FinishLineX·env 주입)
 - 주의:
-  - 위 두 경로의 오프셋 값은 항상 동일해야 한다. 불일치 시 화면 가이드라인과 실제 공정 경계가 어긋난다.
+  - env 주입 경로와 재해석 경로의 변환식/오프셋은 항상 동일해야 한다.
 
 ### 4.4 Finish none 처리
 
@@ -116,10 +119,11 @@
 
 - Front Face 종료점 정책(현행 SSOT):
   - `Face.RightX = FrontPointX + 3.0mm`
+  - 단, 항상 `Face.RightX < Splitline_2` (`Splitline_2 - 0.001mm` 상한 클램프)
   - `LastAppliedFrontFaceDepthMm = 0.5mm` (`FrontFaceFixedDepthMm`)
   - 상수: `MainModuleComposite.FrontFaceEndOffsetFromFrontMm`
-  - 구현 위치: `MainModuleComposite.ApplyFrontFaceFixedDepth`
-  - 단, 후속 안전 가드(`TryApplyFaceRightEndGuard`) 및 경계 클램프로 추가 보정될 수 있다.
+  - 구현 위치: `MainModuleComposite.ApplyFrontFaceFixedDepth` / `ClampFaceRightXBelowSplitline2`
+  - 후속 안전 가드(`TryApplyFaceRightEndGuard`) 후에도 Splitline_2 상한을 다시 적용한다.
 
 - Back Turn 시작점/퇴출 정책(현행 SSOT):
   - 시작점은 `FrontPointX` anchor로 통일한다. (`Front_Turn`, `Middle_Turn`과 동일 기준)
