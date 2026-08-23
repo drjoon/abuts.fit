@@ -802,8 +802,8 @@ export const RequestorBulkShippingBannerCard = ({
       )}
 
       <Dialog open={todayBoxDialogOpen} onOpenChange={setTodayBoxDialogOpen}>
-        <DialogContent className="max-h-[85vh] max-w-lg gap-0 overflow-hidden p-0 sm:rounded-2xl">
-          <DialogHeader className="space-y-1.5 border-b border-slate-100 px-6 pb-4 pt-6 pr-12 text-left">
+        <DialogContent className="flex max-h-[85vh] max-w-lg flex-col gap-0 overflow-hidden p-0 sm:rounded-2xl">
+          <DialogHeader className="shrink-0 space-y-1.5 border-b border-slate-100 px-6 pb-4 pt-6 pr-12 text-left">
             <DialogTitle className="flex items-center gap-2 text-xl font-semibold tracking-tight text-slate-900">
               <Box className="h-5 w-5 text-primary-strong" />
               오늘 출고 박스 내역
@@ -812,7 +812,7 @@ export const RequestorBulkShippingBannerCard = ({
               오늘 출고 예정인 의뢰를 박스 단위로 확인합니다.
             </DialogDescription>
           </DialogHeader>
-          <div className="max-h-[calc(85vh-5.5rem)] overflow-y-auto px-6 py-5">
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 pt-5 pb-8">
             {shippingMemo.todayRequests.length === 0 ? (
               <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-6 py-12 text-center">
                 <Box className="mx-auto mb-3 h-10 w-10 text-slate-300" />
@@ -865,7 +865,7 @@ export const RequestorBulkShippingBannerCard = ({
 
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
         <DialogContent className="flex h-[min(85vh,800px)] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] flex-col gap-0 overflow-hidden p-0 sm:w-[min(92vw,calc(100vw-2rem))] sm:max-w-[min(92vw,1440px)] sm:rounded-2xl">
-          <DialogHeader className="space-y-1.5 border-b border-slate-100 px-4 pb-4 pt-5 pr-12 text-left sm:px-6 sm:pt-6">
+          <DialogHeader className="shrink-0 space-y-1.5 border-b border-slate-100 px-4 pb-4 pt-5 pr-12 text-left sm:px-6 sm:pt-6">
             <DialogTitle className="flex items-center gap-2 text-lg font-semibold tracking-tight text-slate-900 sm:text-xl">
               <Package className="h-5 w-5 text-primary" />
               출고 대기 현황
@@ -874,7 +874,7 @@ export const RequestorBulkShippingBannerCard = ({
               제조사 출고일이 잡힌 대기 의뢰를 예정일별로 확인합니다.
             </DialogDescription>
           </DialogHeader>
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 pt-4 pb-8 sm:px-6 sm:pt-5">
             {!isEtaReady ? (
               <div className="space-y-3 py-2">
                 <Skeleton className="h-6 w-48" />
@@ -1013,8 +1013,8 @@ export const RequestorBulkShippingBannerCard = ({
       </Dialog>
 
       <Dialog open={isLeadTimeModalOpen} onOpenChange={setIsLeadTimeModalOpen}>
-        <DialogContent className="max-h-[85vh] gap-0 overflow-hidden p-0 sm:max-w-2xl sm:rounded-2xl">
-          <DialogHeader className="space-y-1.5 border-b border-slate-100 px-6 pb-4 pt-6 pr-12 text-left">
+        <DialogContent className="flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl sm:rounded-2xl">
+          <DialogHeader className="shrink-0 space-y-1.5 border-b border-slate-100 px-6 pb-4 pt-6 pr-12 text-left">
             <DialogTitle className="flex items-center gap-2 text-xl font-semibold tracking-tight text-slate-900">
               <Clock className="h-5 w-5 text-primary" />
               제조사 출고 리드타임
@@ -1023,7 +1023,7 @@ export const RequestorBulkShippingBannerCard = ({
               직경별 예상 리드타임을 확인하세요.
             </DialogDescription>
           </DialogHeader>
-          <div className="max-h-[calc(85vh-5.5rem)] space-y-4 overflow-y-auto px-6 py-5">
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 pt-5 pb-8">
             <p className="rounded-xl bg-slate-50 px-3.5 py-2.5 text-xs leading-relaxed text-slate-600">
               {SHIP_OUT_INFO_MESSAGE}
             </p>

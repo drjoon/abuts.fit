@@ -431,7 +431,7 @@ export const RequestDetailDialog = ({
           </div>
         </DialogHeader>
         <DialogDescription asChild>
-          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 py-5 text-sm text-foreground">
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 pt-5 pb-8 text-sm text-foreground">
             {isUnmachinable && (
               <div className="space-y-1 rounded-xl border border-accent-muted bg-accent-soft/80 px-4 py-3">
                 <div className="text-sm font-semibold tracking-tight text-accent-strong">불완전가공 판정</div>

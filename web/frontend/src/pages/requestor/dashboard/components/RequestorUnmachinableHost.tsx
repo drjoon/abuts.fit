@@ -476,7 +476,7 @@ export const RequestorUnmachinableHost = ({ period, count }: Props) => {
               )}
 
               <div className="flex min-h-0 flex-col overflow-hidden">
-                <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-0.5">
+                <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-0.5 pb-2">
                   <p className="text-xs font-medium text-slate-500">
                     의뢰번호{" "}
                     <span className="font-mono text-slate-900">{requestId}</span>

@@ -37,8 +37,8 @@ export const PlatformBenefitsDialog = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
-        <DialogHeader className="space-y-2 text-left">
+      <DialogContent className="flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl sm:rounded-2xl">
+        <DialogHeader className="shrink-0 space-y-2 border-b border-slate-100 px-6 pb-4 pt-6 text-left">
           <DialogTitle className="text-xl tracking-tight">
             {config.title}
           </DialogTitle>
@@ -47,7 +47,7 @@ export const PlatformBenefitsDialog = ({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="mt-1 space-y-3">
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 pt-5 pb-8">
           {config.items.map((item, index) => {
             const Icon = item.icon;
             return (

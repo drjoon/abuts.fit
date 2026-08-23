@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-23: SettlementPolicyDialog — flex 스크롤 + 하단 여백(pb-8).
 // - 2026-08-23: SettlementEquationOperator — 정산 요약 카드 사이 = + − 부호.
 // - 2026-08-20: 클릭 카드는 selected만 파란 강조. tone=primary는 비클릭 카드용.
 // - 2026-08-20: SettlementStatCard compact(제조사 정산 요약 높이 축소).
@@ -232,8 +233,8 @@ export function SettlementPolicyDialog({
           {triggerLabel}
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-h-[85vh] max-w-lg gap-0 overflow-hidden p-0 sm:rounded-2xl">
-        <DialogHeader className="border-b border-slate-100 px-6 pb-4 pt-6">
+      <DialogContent className="flex max-h-[85vh] max-w-lg flex-col gap-0 overflow-hidden p-0 sm:rounded-2xl">
+        <DialogHeader className="shrink-0 border-b border-slate-100 px-6 pb-4 pt-6">
           <DialogTitle className="text-xl font-semibold tracking-tight text-slate-900">
             {title}
           </DialogTitle>
@@ -243,7 +244,7 @@ export function SettlementPolicyDialog({
             </DialogDescription>
           ) : null}
         </DialogHeader>
-        <div className="max-h-[calc(85vh-5.5rem)] space-y-3 overflow-y-auto px-6 py-5">
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 pt-5 pb-8">
           {children}
         </div>
       </DialogContent>

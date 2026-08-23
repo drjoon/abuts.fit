@@ -67,8 +67,8 @@ export function MachiningPriorityRulesModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto rounded-2xl border border-slate-200/80 p-0 gap-0 shadow-[0_24px_64px_rgba(15,23,42,0.28)] sm:max-w-2xl">
-        <DialogHeader className="border-b border-slate-100 px-5 py-4 sm:px-6">
+      <DialogContent className="flex max-h-[85vh] flex-col gap-0 overflow-hidden rounded-2xl border border-slate-200/80 p-0 shadow-[0_24px_64px_rgba(15,23,42,0.28)] sm:max-w-2xl">
+        <DialogHeader className="shrink-0 border-b border-slate-100 px-5 py-4 sm:px-6">
           <DialogTitle className="text-lg font-bold tracking-tight text-slate-900">
             {rules?.title || "가공 우선순위 룰"}
           </DialogTitle>
@@ -79,7 +79,7 @@ export function MachiningPriorityRulesModal({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="px-5 py-4 sm:px-6">
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 pt-4 pb-8 sm:px-6">
           {loading ? (
             <div className="py-8 text-center text-sm text-slate-500">로딩…</div>
           ) : error ? (

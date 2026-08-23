@@ -1,3 +1,4 @@
+// - 2026-08-23: 정책 안내 모달 flex 스크롤 + 하단 여백(pb-8).
 // - 2026-08-23: 의뢰자 변형에 부가세 없음(면세) 안내. devops 레거시 65% 문구 제거.
 // - 2026-08-22: design_custom_abutment 청구 폐기. 생산 단가·신속·배송만 안내.
 // - 2026-08-19: 치과·기공소 디자인+생산 모두 구강지그 제외.
@@ -269,8 +270,8 @@ export const PricingPolicyDialog = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className='max-h-[85vh] gap-0 overflow-hidden p-0 sm:max-w-2xl sm:rounded-2xl'>
-        <DialogHeader className='border-b border-slate-100 px-6 pb-4 pt-6'>
+      <DialogContent className='flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl sm:rounded-2xl'>
+        <DialogHeader className='shrink-0 border-b border-slate-100 px-6 pb-4 pt-6'>
           <DialogTitle className='text-xl font-semibold tracking-tight text-slate-900'>
             {title}
           </DialogTitle>
@@ -279,7 +280,7 @@ export const PricingPolicyDialog = ({
           </DialogDescription>
         </DialogHeader>
 
-        <div className='max-h-[calc(85vh-5.5rem)] overflow-y-auto px-6 py-5'>
+        <div className='min-h-0 flex-1 overflow-y-auto px-6 pt-5 pb-8'>
           {variant === 'salesman' ? (
             <div className='space-y-3'>
               <PolicySection title='소개 수수료 (10%)'>

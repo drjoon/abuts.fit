@@ -389,10 +389,10 @@ export const AdminLabFeeSchedulesTab = () => {
           if (!open) setSelected(null);
         }}
       >
-        <DialogContent className="max-h-[85vh] gap-0 overflow-hidden p-0 sm:max-w-md sm:rounded-2xl">
+        <DialogContent className="flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-md sm:rounded-2xl">
           {selected ? (
             <>
-              <DialogHeader className="border-b border-slate-100 px-6 pb-4 pt-6">
+              <DialogHeader className="shrink-0 border-b border-slate-100 px-6 pb-4 pt-6">
                 <div className="flex flex-wrap items-center gap-2 pr-8">
                   <DialogTitle className="text-lg font-semibold tracking-tight text-slate-900">
                     {selected.name || "이름 없음"}
@@ -414,7 +414,7 @@ export const AdminLabFeeSchedulesTab = () => {
                     : "기공비 수가"}
                 </DialogDescription>
               </DialogHeader>
-              <div className="max-h-[calc(85vh-6rem)] overflow-y-auto px-6 py-5">
+              <div className="min-h-0 flex-1 overflow-y-auto px-6 pt-5 pb-8">
                 <LabFeeScheduleBody row={selected} />
               </div>
             </>

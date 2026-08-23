@@ -282,12 +282,12 @@ export const CompletedMachiningRecordsModal = ({
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent
           className={cn(
-            "max-h-[78vh] gap-0 overflow-hidden rounded-2xl border border-slate-200/80 p-0 shadow-[0_24px_64px_rgba(15,23,42,0.28)]",
+            "flex max-h-[78vh] flex-col gap-0 overflow-hidden rounded-2xl border border-slate-200/80 p-0 shadow-[0_24px_64px_rgba(15,23,42,0.28)]",
             RESPONSIVE.dialogContentFull,
             "sm:max-w-3xl",
           )}
         >
-          <DialogHeader className="border-b border-slate-100 px-5 py-4 sm:px-6">
+          <DialogHeader className="shrink-0 border-b border-slate-100 px-5 py-4 sm:px-6">
             <DialogTitle className="text-lg font-bold tracking-tight text-slate-900">
               {effectiveTitle}
             </DialogTitle>
@@ -296,7 +296,7 @@ export const CompletedMachiningRecordsModal = ({
             </p>
           </DialogHeader>
 
-          <div className="mt-0 flex max-h-[62vh] flex-col gap-1.5 overflow-auto px-5 py-4 sm:px-6">
+          <div className="mt-0 flex min-h-0 flex-1 flex-col gap-1.5 overflow-auto px-5 pt-4 pb-8 sm:px-6">
             {!!error && (
               <div className="rounded-xl border border-destructive-muted bg-destructive-soft p-3 text-sm text-destructive">
                 {error}
