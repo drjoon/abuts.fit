@@ -1535,8 +1535,8 @@ export const DashboardLayout = () => {
           <div className="flex-1 min-h-0 bg-gradient-to-br from-gray-50 to-primary-soft">
             <div className="flex flex-col h-full">
               {(isManufacturer && isEquipmentRoute) || isWorksheetRoute ? (
-                <div className="border-b border-border bg-background/80 sticky top-0 z-10">
-                  <div className="px-4 py-2 flex flex-col gap-2">
+                <div className="sticky top-0 z-10 border-b border-border bg-background/80">
+                  <div className="flex flex-col gap-2.5 px-3 py-3 sm:px-4 sm:py-2.5">
                     {isManufacturer && isEquipmentRoute && (
                       <div className="flex gap-2">
                         <Button
@@ -1574,7 +1574,7 @@ export const DashboardLayout = () => {
                           worksheetType === "custom_abutment") && (
                           <>
                             <div className="hidden sm:block h-8 w-px bg-muted-foreground/60 flex-shrink-0" />
-                            <div className="flex flex-nowrap gap-1 text-xs min-w-0 overflow-x-auto">
+                            <div className="-mx-1 flex min-w-0 flex-nowrap gap-1 overflow-x-auto px-1 pb-0.5 text-xs [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                               <Button
                                 variant={
                                   worksheetStage === "request"
@@ -1582,7 +1582,7 @@ export const DashboardLayout = () => {
                                     : "ghost"
                                 }
                                 size="sm"
-                                className="h-8 px-2 text-xs gap-1"
+                                className="h-8 shrink-0 gap-1 px-2 text-xs"
                                 onClick={() =>
                                   navigate(
                                     "/dashboard/worksheet?type=cnc&stage=request",
@@ -1602,7 +1602,7 @@ export const DashboardLayout = () => {
                                     : "ghost"
                                 }
                                 size="sm"
-                                className="h-8 px-2 text-xs gap-1"
+                                className="h-8 shrink-0 gap-1 px-2 text-xs"
                                 onClick={() =>
                                   navigate(
                                     "/dashboard/worksheet?type=cnc&stage=machining",
@@ -1622,7 +1622,7 @@ export const DashboardLayout = () => {
                                     : "ghost"
                                 }
                                 size="sm"
-                                className="h-8 px-2 text-xs gap-1"
+                                className="h-8 shrink-0 gap-1 px-2 text-xs"
                                 onClick={() =>
                                   navigate(
                                     "/dashboard/worksheet?type=cnc&stage=packing",
@@ -1641,7 +1641,7 @@ export const DashboardLayout = () => {
                                     : "ghost"
                                 }
                                 size="sm"
-                                className="h-8 px-2 text-xs gap-1"
+                                className="h-8 shrink-0 gap-1 px-2 text-xs"
                                 onClick={() =>
                                   navigate(
                                     "/dashboard/worksheet?type=cnc&stage=shipping",
@@ -1661,7 +1661,7 @@ export const DashboardLayout = () => {
                                     : "ghost"
                                 }
                                 size="sm"
-                                className="h-8 px-2 text-xs gap-1"
+                                className="h-8 shrink-0 gap-1 px-2 text-xs"
                                 onClick={() =>
                                   navigate(
                                     "/dashboard/worksheet?type=cnc&stage=tracking",
@@ -1679,7 +1679,7 @@ export const DashboardLayout = () => {
                                   worksheetStage === "rnd" ? "default" : "ghost"
                                 }
                                 size="sm"
-                                className="h-8 px-2 text-xs gap-1"
+                                className="h-8 shrink-0 gap-1 px-2 text-xs"
                                 onClick={() =>
                                   navigate(
                                     "/dashboard/worksheet?type=cnc&stage=rnd",
@@ -1698,7 +1698,7 @@ export const DashboardLayout = () => {
                                     : "ghost"
                                 }
                                 size="sm"
-                                className="h-8 px-2 text-xs gap-1"
+                                className="h-8 shrink-0 gap-1 px-2 text-xs"
                                 onClick={() =>
                                   navigate(
                                     "/dashboard/worksheet?type=cnc&stage=unmachinable",
@@ -1747,7 +1747,10 @@ export const DashboardLayout = () => {
                 <div
                   className={cn(
                     "flex h-full min-h-0 flex-col items-stretch",
-                    isLabReceiveWorkArea ? "p-0" : "p-2 sm:p-4 lg:p-6",
+                    // 모바일: 카드 바깥 여백으로 가장자리 스크롤·터치 제스처 공간 확보
+                    isLabReceiveWorkArea
+                      ? "p-0"
+                      : "p-3.5 sm:p-4 lg:p-6",
                   )}
                 >
                   <main
@@ -1759,7 +1762,7 @@ export const DashboardLayout = () => {
                     )}
                   >
                     <div
-                      className="custom-scrollbar flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overflow-x-clip"
+                      className="custom-scrollbar flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overflow-x-auto"
                       data-dashboard-scroll="1"
                     >
                       <div
@@ -1767,7 +1770,7 @@ export const DashboardLayout = () => {
                           "flex min-h-0 min-w-0 flex-1 flex-col",
                           isLabReceiveWorkArea
                             ? "p-3 sm:p-4"
-                            : "p-3 sm:p-6",
+                            : "px-4 pb-5 pt-5 sm:p-6",
                         )}
                       >
                         <Outlet

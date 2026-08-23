@@ -81,7 +81,7 @@ export default function RequestorCreditsPage() {
         icon: CreditCard,
         content:
           activeTab === "charge" ? (
-            <div className="flex h-full min-h-0 items-center justify-center overflow-auto">
+            <div className="flex h-full min-h-0 items-start justify-center overflow-auto px-0.5 pt-1 sm:items-center sm:pt-0">
               <div className="mx-auto w-full max-w-4xl">
                 <PaymentTab userData={user || {}} compact />
               </div>

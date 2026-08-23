@@ -728,11 +728,11 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
 
       {/* 입금 정보(좌) + 충전 금액(우) */}
       <div className="w-full overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
-        <div className="border-b border-slate-200/80 bg-slate-50/80 px-5 py-3 sm:px-6">
-          <div className="text-sm font-semibold text-slate-800">
+        <div className="border-b border-slate-200/80 bg-slate-50/80 px-4 py-4 sm:px-6 sm:py-3.5">
+          <div className="text-sm font-semibold leading-snug text-slate-800">
             {CREDIT_CHARGE_NOTICE_TITLE}
           </div>
-          <p className="mt-1 whitespace-pre-line text-xs leading-relaxed text-muted-foreground">
+          <p className="mt-2 whitespace-pre-line text-xs leading-relaxed text-muted-foreground">
             {CREDIT_CHARGE_NOTICE_BODY}
           </p>
         </div>

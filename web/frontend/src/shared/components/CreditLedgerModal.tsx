@@ -2353,7 +2353,7 @@ export const CreditLedgerModal = ({
         <>
           {currentBalanceSnapshot && !hideBalanceSummary ? (
             showPeriodSpendCard ? (
-              <div className="-mx-1 overflow-x-auto pb-1">
+              <div className="-mx-1 overflow-x-auto px-1 pb-1 pt-0.5">
                 <div className="flex min-w-max items-stretch gap-0.5 px-1 sm:gap-1">
                   <SettlementStatCard
                     className="min-w-[9.5rem] flex-1 sm:min-w-[10.5rem]"

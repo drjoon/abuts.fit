@@ -61,7 +61,7 @@ export const SettingsScaffold = ({
         value={t.key}
         disabled={Boolean(t.disabled)}
         className={cn(
-          "flex min-w-[7.5rem] shrink-0 basis-auto items-center justify-center gap-1.5 px-2.5 py-2.5 text-sm sm:min-w-[96px] sm:shrink sm:flex-1 sm:basis-0 sm:gap-2 sm:px-3",
+          "flex min-w-[6.75rem] shrink-0 basis-auto items-center justify-center gap-1.5 px-2 py-2.5 text-sm sm:min-w-[96px] sm:shrink sm:flex-1 sm:basis-0 sm:gap-2 sm:px-3",
           highlightTabKey === t.key &&
             "ring-2 ring-primary/60 shadow-[0_10px_40px_rgba(14,92,228,0.18)]",
           t.disabled && "pointer-events-none opacity-50",
@@ -127,23 +127,26 @@ export const SettingsScaffold = ({
           className={cn(
             "mx-auto w-full",
             fillHeight
-              ? "flex min-h-0 flex-1 flex-col justify-start gap-4"
+              ? "flex min-h-0 flex-1 flex-col justify-start gap-3 sm:gap-4"
               : cn("space-y-4", resolvedTabsMax),
           )}
         >
           <div
             className={cn(
-              "mx-auto w-full",
+              "mx-auto w-full min-w-0",
               fillHeight ? cn("shrink-0", resolvedTabsMax) : "contents",
             )}
           >
-            <TabsList
-              className={cn(
-                "flex h-auto w-full gap-1.5 overflow-x-auto p-1.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:flex-wrap sm:overflow-visible",
-              )}
-            >
-              {tabTriggers}
-            </TabsList>
+            {/* 모바일: 탭이 넘치면 수평 스크롤. 좌우 패딩으로 첫/끝 탭이 잘리지 않게. */}
+            <div className="min-w-0 overflow-x-auto overscroll-x-contain scroll-pl-1 scroll-pr-1 px-1 pb-1 sm:overflow-visible sm:px-0 sm:pb-0">
+              <TabsList
+                className={cn(
+                  "inline-flex h-auto min-w-full w-max max-w-none justify-start gap-1.5 p-1.5 sm:flex sm:w-full sm:flex-wrap sm:justify-center",
+                )}
+              >
+                {tabTriggers}
+              </TabsList>
+            </div>
           </div>
 
           <div

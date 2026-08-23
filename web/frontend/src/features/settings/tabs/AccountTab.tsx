@@ -717,11 +717,11 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
 
   return (
     <Card className="app-glass-card app-glass-card--lg">
-      <CardHeader className="pb-3">
+      <CardHeader className="space-y-1 pb-3 pt-1 sm:pt-0">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="space-y-1">
-            <CardTitle className="flex flex-wrap items-center gap-2 text-base">
-              <User className="h-5 w-5 text-primary-strong" />
+          <div className="space-y-1.5">
+            <CardTitle className="flex flex-wrap items-center gap-2 text-base leading-snug">
+              <User className="h-5 w-5 shrink-0 text-primary-strong" />
               계정 설정
               <Badge
                 variant={
