@@ -5,6 +5,8 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/frontend/src/components/ui/tooltip.tsx
 // - web/backend/controllers/requests/shipping.controller.js
+// change-log:
+// - 2026-08-23: 세로 스크롤은 RequestPage에 위임, 선반은 가로 스크롤만.
 import * as React from "react";
 
 import {
@@ -104,7 +106,7 @@ export const MailboxShelfGrid = ({
     <TooltipProvider>
       <div
         ref={scrollContainerRef}
-        className="flex-1 flex gap-3 sm:gap-4 overflow-x-auto overflow-y-auto pb-4 w-full justify-start px-2 scroll-smooth p-1 sm:p-2"
+        className="flex w-full justify-start gap-3 overflow-x-auto scroll-smooth p-1 pb-4 sm:gap-4 sm:p-2"
         style={{ scrollBehavior: "smooth", WebkitOverflowScrolling: "touch" }}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}

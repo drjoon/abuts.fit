@@ -1,5 +1,6 @@
 // change-log:
 // - 2026-08-07: 수동 집하 모달 UX — 세그먼트 모드/요약 푸터/사유관리 축약
+// - 2026-08-23: 세로 스크롤은 워크시트(RequestPage)에 맡기고 선반은 가로 스크롤만 유지.
 // - 2026-08-04: 오늘 발송 체크 해제(clearedForceToday)가 persisted summary를 덮어쓰도록 수정
 // related files:
 // - web/frontend/rules.md
@@ -1784,7 +1785,7 @@ export const MailboxGrid = ({
   );
 
   return (
-    <div className="w-full flex flex-col h-full relative">
+    <div className="w-full flex flex-col relative">
       {/* 운송장 출력 우편함 선택 다이얼로그 */}
       {reprintDialogOpen && (
         <BodyPortal>

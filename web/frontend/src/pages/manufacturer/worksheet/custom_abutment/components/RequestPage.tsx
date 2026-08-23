@@ -1,6 +1,6 @@
 // change-log:
+// - 2026-08-23: 워크시트 스크롤바 — 작업영역 카드 오른쪽 끝에 붙이도록 nested scroll breakout.
 // - 2026-08-18: Filled STL/NC 재생성 완료 상단 alert 제거.
-
 // - 2026-08-11: 디자인 어벗 파일 선택은 STL만 허용.
 // - 2026-08-11: 디자인 클레임 목록 갱신 — 프론트 타이머 제거, websocket(request:design-claim-changed)만 사용.
 // - 2026-08-11: transferChat(의뢰수신) 빈/로딩 시 빈 상태 카드 미표시(상위 전송 내역과 중복 방지).
@@ -2599,7 +2599,7 @@ export const RequestPage = ({
       }}
     >
       <div
-        className="flex-1 overflow-y-auto"
+        className="custom-scrollbar workspace-nested-scroll flex-1 overflow-y-auto"
         ref={pageState.setScrollContainer}
         data-worksheet-scroll="1"
         onScroll={() => {

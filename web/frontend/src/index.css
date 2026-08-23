@@ -233,13 +233,12 @@ All colors MUST be HSL.
 }
 
 .custom-scrollbar::-webkit-scrollbar-track {
-  background: hsl(var(--muted));
-  border-radius: 3px;
+  background: transparent;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
   background: hsl(var(--primary) / 0.5);
-  border-radius: 3px;
+  border-radius: 9999px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
@@ -249,7 +248,23 @@ All colors MUST be HSL.
 /* Firefox scrollbar styles */
 .custom-scrollbar {
   scrollbar-width: thin;
-  scrollbar-color: hsl(var(--primary) / 0.5) hsl(var(--muted));
+  scrollbar-color: hsl(var(--primary) / 0.5) transparent;
+}
+
+/*
+ * DashboardLayout 작업영역 콘텐츠 패딩(p-3 / sm:p-6)을 뚫고
+ * 중첩 스크롤바를 흰 카드 오른쪽 끝에 붙인다. 안쪽 패딩은 상·하·좌와 동일.
+ */
+.workspace-nested-scroll {
+  margin: -0.75rem;
+  padding: 0.75rem;
+}
+
+@media (min-width: 640px) {
+  .workspace-nested-scroll {
+    margin: -1.5rem;
+    padding: 1.5rem;
+  }
 }
 
 .hover-scrollbar {

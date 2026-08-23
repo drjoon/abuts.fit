@@ -34,8 +34,8 @@ export default function RequestorStoreProductPage() {
   }
 
   return (
-    <div className="h-full min-h-0 overflow-auto">
-      <div className="mx-auto w-full max-w-5xl space-y-8 px-4 py-6 sm:px-6">
+    <div className="custom-scrollbar workspace-nested-scroll h-full min-h-0 overflow-auto">
+      <div className="mx-auto w-full max-w-5xl space-y-8">
         <div className="flex flex-wrap items-center gap-3">
           <Button variant="ghost" size="sm" asChild className="-ml-2">
             <Link to="/dashboard/store">

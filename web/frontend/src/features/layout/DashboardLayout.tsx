@@ -11,7 +11,7 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPath";
 import { cn } from "@/shared/ui/cn";
 
-// - 2026-08-23: 작업영역 스크롤바 — 흰 카드 오른쪽 경계에 붙이도록 main 우측 패딩을 콘텐츠로 이전.
+// - 2026-08-23: 작업영역 스크롤바 — 둥근 카드는 overflow clip, 안쪽 직사각 스크롤로 카드 오른쪽 끝에 붙이고 콘텐츠 여백은 상·하·좌·우 동일.
 // - 2026-08-22: 치과·기공소 사이드바 크레딧 → 정산 라벨.
 // - 2026-08-22: 치과 사이드 — 크레딧 아래「스토어」(/dashboard/store).
 // - 2026-08-21: 기공소(requestor lab) 사이드 고스트「정산」제거(클릭 시 /dashboard 이탈).
@@ -1752,8 +1752,8 @@ export const DashboardLayout = () => {
                     className={cn(
                       "flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden",
                       isLabReceiveWorkArea
-                        ? "rounded-none bg-white py-3 pl-3 pr-0 shadow-none sm:py-4 sm:pl-4 sm:pr-0"
-                        : "box-border rounded-2xl bg-white/80 py-3 pl-3 pr-0 shadow-lg backdrop-blur-xl sm:py-6 sm:pl-6 sm:pr-0",
+                        ? "rounded-none bg-white shadow-none"
+                        : "box-border rounded-2xl bg-white/80 shadow-lg backdrop-blur-xl",
                     )}
                   >
                     <div
@@ -1763,7 +1763,9 @@ export const DashboardLayout = () => {
                       <div
                         className={cn(
                           "flex min-h-0 min-w-0 flex-1 flex-col",
-                          isLabReceiveWorkArea ? "pr-3 sm:pr-4" : "pr-3 sm:pr-6",
+                          isLabReceiveWorkArea
+                            ? "p-3 sm:p-4"
+                            : "p-3 sm:p-6",
                         )}
                       >
                         <Outlet

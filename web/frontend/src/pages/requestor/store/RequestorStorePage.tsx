@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-23: 작업영역 중첩 스크롤바를 카드 오른쪽 끝에 맞춤(workspace-nested-scroll).
 // - 2026-08-23: 전체 4열·큰 이미지. Abutment·Gingival / Initial·Check 동일 라인.
 // - 2026-08-23: CustomAbutment 제거. GingivalCap 제거.
 // related files:
@@ -58,8 +59,8 @@ export default function RequestorStorePage() {
   }
 
   return (
-    <div className="h-full min-h-0 overflow-auto">
-      <div className="mx-auto w-full max-w-6xl space-y-10 px-4 py-6 sm:px-6">
+    <div className="custom-scrollbar workspace-nested-scroll h-full min-h-0 overflow-auto">
+      <div className="mx-auto w-full max-w-6xl space-y-10">
         <header className="space-y-1.5">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-xl font-semibold tracking-tight">스토어</h1>
