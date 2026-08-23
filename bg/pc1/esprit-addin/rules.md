@@ -52,10 +52,10 @@
 
 ### 4.1 공정 구조 SSOT (3-Stage)
 
-- 기존 A/B 2분할 공정을 3단계로 고정한다.
+- 기존 A/B 2분할 공정을 Front/Back 2-way로 고정한다.
   - Front: `Turn -> Rough -> Front Face`
-  - Middle: `Turn -> Rough`
   - Back: `Turn -> Rough`
+  - `Middle_Turn` / `Middle_Rough`는 레거시로 **생성하지 않는다** (Front+Back로 커버)
 - Finish 정책:
   - `retentionGroove=deep` → `Finish_Front`, `Finish_Back`
   - `retentionGroove=none` 및 `ALL_PHASE` → `Finish_All` 단일 패스
@@ -64,8 +64,8 @@
 
 - Turning/Rough/Face 라벨은 아래 이름으로 고정한다.
   - `Front_Turn`, `Front_Rough`, `Front_Face`
-  - `Middle_Turn`, `Middle_Rough`
   - `Back_Turn`, `Back_Rough`
+  - 레거시(미생성): `Middle_Turn`, `Middle_Rough`
 - Finish 라벨은 모드별로 아래 이름만 사용한다.
   - `Finish_All` 또는 `Finish_Front`, `Finish_Back`
 
@@ -76,8 +76,7 @@
 - 인접 툴패스 겹침: **선행 끝 = 경계 정확**, **후행 시작 = 경계 tip쪽(그림 왼쪽, X-) 공구 반경**
   - Rough: `GetRoughAdjacentOverlapMm()` = 활성 rough 반경 (D4→`2.0`, `ROUGH_20` D2→`1.0`)
   - Finish: `GetFinishAdjacentOverlapMm()` = D1.2 반경 `0.6`
-- `Middle_Rough`는 레거시로 **생성하지 않는다** (Front_Rough + Back_Rough로 커버)
-- `Middle_Turn`은 유지
+- `Middle_Turn` / `Middle_Rough`는 레거시로 **생성하지 않는다** (Front + Back로 커버)
 
 ### 4.3.1 SharedFinishSplit / Splitline_2 SSOT (검색 키워드: `SharedFinishSplitX`, `finishlineTop-1mm`, `X=-Z`, `GetRoughAdjacentOverlapMm`, `GetFinishAdjacentOverlapMm`)
 
@@ -99,7 +98,7 @@
   - Rough: `frontEnd = splitline2`, `backStart = splitline2 - GetRoughAdjacentOverlapMm()`, Middle skip
   - Finish: `Finish_Front` 끝 = `SharedFinishSplitX`, `Finish_Back` 시작 = `SharedFinishSplitX - GetFinishAdjacentOverlapMm()`
   - `safeBFirstMax`는 seam을 당기지 않는다(로그만)
-- 금지: Front끝=Back시작 동일 좌표 강제, 고정 0.5mm 겹침, `Middle_Rough` 재도입, `Back + Z - stlTopZ` 구식 변환
+  - 금지: Front끝=Back시작 동일 좌표 강제, 고정 0.5mm 겹침, `Middle_Turn`/`Middle_Rough` 재도입, `Back + Z - stlTopZ` 구식 변환
 
 ### 4.4 Finish none 처리
 
@@ -113,8 +112,8 @@
 - 백엔드가 전달한 CAM 직경(현재 SSOT: `LatheMachineSetup.BarDiameter`)을 기준으로,
   `Turn`/`Rough`에서 **공구 직경이 CAM 직경보다 큰 오퍼레이션(D12, D10 등)** 은 생성하지 않는다.
 - 적용 범위:
-  - 3-stage `TurningOp` (Front/Middle/Back)
-  - 3-stage `RoughFreeFromMillSplitAB` (Roughing, ZLevel)
+  - 3-stage `TurningOp` (Front/Back; Middle legacy skip)
+  - 3-stage `RoughFreeFromMillSplitAB` (Roughing, ZLevel; Middle legacy skip)
 - 목적:
   - CAM 직경 8.0 케이스에서 대구경 선행 가공을 제거해 불필요 공정/시간을 줄인다.
 
@@ -129,7 +128,7 @@
   - 후속 안전 가드(`TryApplyFaceRightEndGuard`) 후에도 Splitline_2 상한을 다시 적용한다.
 
 - Back Turn 시작점/퇴출 정책(현행 SSOT):
-  - 시작점은 `FrontPointX` anchor로 통일한다. (`Front_Turn`, `Middle_Turn`과 동일 기준)
+  - 시작점은 `FrontPointX` anchor로 통일한다. (`Front_Turn`과 동일 기준)
   - 끝점은 `xMax` 고정 클램프를 쓰지 않고, `exitAllowance`를 더해
     수평 extension + 45도 퇴출 형상이 유지되도록 한다.
   - 구현 위치: `MainModuleOperations.TryPrepareTurningRegionRange` (`BACK`),
@@ -206,7 +205,7 @@
   - 구현: `MainModuleComposite.AddSplitOp`에서 Roughing/ZLevel에 별도 SetProperty 적용 금지
 - Rough 경계(Front/Back) 겹침:
   - SSOT: `backStart = splitline2 - GetRoughAdjacentOverlapMm()` (D4→2.0)
-  - `Middle_Rough` 미생성
+  - `Middle_Turn` / `Middle_Rough` 미생성
   - 구현: `MainModuleComposite.TryRunRoughFreeFromMillSplitAB`
 
 ### 4.11 Finish_Cuff Back_Rough 스타일 SSOT (2026-07-11)

@@ -88,7 +88,7 @@ namespace DentalAddin
             // 기본값: 3-Stage Two-Phase 실행 (RoughType 2.0/3.0 또는 roughSplit/PRC 마커 있을 때)
             if (twoPhaseMode)
             {
-                DentalLogger.Log($"OperationSeq - 3-Stage 실행: Front/Middle/Back Turn+Rough 후 Finish 실행 (RoughType={RoughType}, RoughSplitEnv={roughSplitEnabled})");
+                DentalLogger.Log($"OperationSeq - 3-Stage 실행: Front/Back Turn+Rough 후 Finish 실행 (RoughType={RoughType}, RoughSplitEnv={roughSplitEnabled})");
                 ClearOperationsForTwoPhase();
 
                 ValidateBeforeOperation("CustomCycle", Array.Empty<string>(), Array.Empty<string>());
@@ -96,8 +96,8 @@ namespace DentalAddin
 
                 // 3-stage 순서(요청 반영):
                 // Front:  Turn -> Rough -> Front Face
-                // Middle: Turn -> Rough
                 // Back:   Turn -> Rough
+                // Middle_Turn / Middle_Rough는 레거시로 생성하지 않는다 (Front+Back로 커버)
                 // Finish: deep=Front/Back 분할, none=All 단일
                 ExecuteTwoPhaseTurning("FRONT");
                 ExecuteTwoPhaseRough("FRONT");
@@ -105,11 +105,8 @@ namespace DentalAddin
                 ValidateBeforeOperation("FrontFaceMill", Array.Empty<string>(), new[] { "3DMilling_FrontFace" });
                 FrontFaceMill();
 
-                ExecuteTwoPhaseTurning("MIDDLE");
-                // Middle_Rough는 레거시로 생성하지 않는다 (Front+Back Rough + 공구반경 겹침으로 커버).
-
                 // 요청 반영:
-                // Finish_Front는 Middle_Turn과 Back_Turn 사이에 생성한다.
+                // Finish_Front는 Front Face와 Back_Turn 사이에 생성한다.
                 Environment.SetEnvironmentVariable("ABUTS_SKIP_FRONTFACE_IN_FREEFORM", "1");
                 try
                 {
@@ -358,6 +355,12 @@ namespace DentalAddin
         // 순서: Turn_A → Rough_A → FrontFace → Turn_B → Rough_B
         private static void ExecuteTwoPhaseTurning(string region)
         {
+            if (string.Equals(region, "MIDDLE", StringComparison.OrdinalIgnoreCase))
+            {
+                DentalLogger.Log("ExecuteTwoPhaseTurning(MIDDLE) - MIDDLE region 요청 무시(Middle_Turn legacy 제거)");
+                return;
+            }
+
             Environment.SetEnvironmentVariable(AppConfig.TwoPhaseTurningRegionEnv, region);
             try
             {
@@ -1461,11 +1464,11 @@ namespace DentalAddin
             return false;
         }
 
-        // 3-stage turning 분할 준비: region(FRONT/MIDDLE/BACK)에 맞는 X 구간을 계산한다.
+        // 3-stage turning 분할 준비: region(FRONT/BACK)에 맞는 X 구간을 계산한다.
         // 기준:
         // - Splitline_1 = FrontPointX
         // - Splitline_2 = SharedFinishSplitX (midpoint 금지)
-        // - Middle_Turn 구간: Splitline_1~Splitline_2 (Middle_Rough 레거시 제거 후에도 Turn은 유지)
+        // - Middle_Turn은 레거시로 생성하지 않는다 (ExecuteTwoPhaseTurning에서 skip)
         private static bool TryPrepareTurningRegionRange(string region, out double rangeMinX, out double rangeMaxX)
         {
             rangeMinX = 0.0;
@@ -1480,13 +1483,9 @@ namespace DentalAddin
 
                 const double faceToRoughMm = 2.2;
                 const double roughToTurnMm = 2.2;
-                // Middle_Turn 시작 여유: rough 공구 반경(D4=2.0) tip쪽 겹침
-                double adjacentToolpathOverlapMm = GetActiveRoughToolRadiusMm();
 
                 // Rough 경계(현재 정책): Front Face 끝(FrontPointX+3.0) + faceToRough
                 double frontRoughEnd = Math.Min(xMax, splitline1 + GetFrontFaceEndOffsetFromFrontMm() + faceToRoughMm);
-                double middleRoughStart = Math.Max(xMin, splitline1 - adjacentToolpathOverlapMm);
-                double middleRoughEnd = Math.Min(xMax, splitline2);
 
                 string normalized = (region ?? string.Empty).Trim().ToUpperInvariant();
                 switch (normalized)
@@ -1497,15 +1496,14 @@ namespace DentalAddin
                         rangeMaxX = Math.Min(xMax, frontRoughEnd + roughToTurnMm);
                         break;
                     case "MIDDLE":
-                        // 요청사항: Middle Turn 폭 = Middle Rough 폭 + 2.2mm
-                        rangeMinX = middleRoughStart;
-                        rangeMaxX = Math.Min(xMax, middleRoughEnd + roughToTurnMm);
-                        break;
+                        // Middle_Turn legacy — ExecuteTwoPhaseTurning에서 이미 skip. 방어적으로 거부.
+                        DentalLogger.Log("TurningOp 3-Stage - MIDDLE region 거부(Middle_Turn legacy 제거)");
+                        return false;
                     case "BACK":
                         // 요청사항 반영(2026-07-01):
-                        // 1) 시작점은 Front/Middle과 동일한 anchor(FrontPointX)로 통일한다.
+                        // 1) 시작점은 Front와 동일한 anchor(FrontPointX)로 통일한다.
                         //    - 증상: Back_Turn만 과도하게 좌측(-X)에서 시작해 에러/비정상 접근이 발생.
-                        //    - 조치: 시작 하한을 FrontPointX로 고정해 세 구간의 시작 기준을 일치시킨다.
+                        //    - 조치: 시작 하한을 FrontPointX로 고정해 Front/Back 시작 기준을 일치시킨다.
                         // 2) 끝점은 기존 Back_Turn 형상(수평 extension + 45도 퇴출)을 유지한다.
                         //    - 범위를 xMax로 자르면 퇴출부가 클리핑되어 수평+45 형상이 사라질 수 있다.
                         //    - 따라서 xMax + exitAllowance까지 허용해 기존 퇴출 형상을 보존한다.
