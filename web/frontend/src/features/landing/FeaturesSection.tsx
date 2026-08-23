@@ -64,26 +64,26 @@ export const FeaturesSection = () => {
   };
 
   return (
-    <section id="features" className="py-20 bg-secondary/30">
-      <div className="container mx-auto px-4">
-        <div className="text-center mb-16">
+    <section id="features" className="py-12 sm:py-20 bg-secondary/30">
+      <div className="container mx-auto px-4 sm:px-6">
+        <div className="text-center mb-10 sm:mb-16">
           <Badge className="mb-4" variant="secondary">
             핵심 기능
           </Badge>
-          <h2 className="text-3xl md:text-4xl font-bold mb-4">
+          <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold mb-3 sm:mb-4">
             치과기공소와 제조사를 위한
             <span className="bg-gradient-hero bg-clip-text text-transparent">
               {" "}
               완벽한 솔루션
             </span>
           </h2>
-          <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
+          <p className="text-base sm:text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto">
             복잡한 의뢰 과정을 단순화하고, 품질 높은 커스텀 어벗먼트 제작을 위한
             핵심 도구를 제공합니다.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 gap-5 sm:gap-6 md:grid-cols-2 md:gap-8 lg:grid-cols-3">
           {features.map((feature, index) => (
             <Card
               key={index}

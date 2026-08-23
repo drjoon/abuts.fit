@@ -42,18 +42,18 @@ export const AnnouncementSection = () => {
   };
 
   return (
-    <section className="py-16 bg-muted/30">
-      <div className="max-w-6xl mx-auto px-4">
-        <div className="text-center mb-12">
-          <h2 className="text-3xl font-bold bg-gradient-hero bg-clip-text text-transparent mb-4">
+    <section className="bg-muted/30 py-12 sm:py-16">
+      <div className="mx-auto max-w-6xl px-4 sm:px-6">
+        <div className="mb-8 text-center sm:mb-12">
+          <h2 className="mb-3 text-2xl font-bold bg-gradient-hero bg-clip-text text-transparent sm:mb-4 sm:text-3xl">
             공지사항 & 업데이트
           </h2>
-          <p className="text-muted-foreground text-lg">
+          <p className="text-base text-muted-foreground sm:text-lg">
             최신 소식과 중요한 알림을 확인하세요
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 gap-4 sm:gap-6 md:grid-cols-3">
           {announcements.map((announcement) => (
             <Card
               key={announcement.id}

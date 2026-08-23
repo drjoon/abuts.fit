@@ -2,7 +2,7 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
-import { useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   Card,
@@ -26,9 +26,12 @@ import {
   emptySpam,
   emptyTrash,
 } from "@/features/admin/mail/mailApi";
+import { useIsMobile } from "@/shared/hooks/use-mobile";
 
 export const AdminMailPage = () => {
   const { toast } = useToast();
+  const isMobile = useIsMobile();
+  const [mobileShowList, setMobileShowList] = useState(true);
   const { period, setPeriod } = usePeriodStore();
   const [searchParams] = useSearchParams();
   const initialUnreadOnly = useMemo(
@@ -59,6 +62,72 @@ export const AdminMailPage = () => {
     unreadOnly,
     setUnreadOnly,
   } = useAdminMailBox({ initialUnreadOnly });
+
+  useEffect(() => {
+    setMobileShowList(true);
+  }, [tab]);
+
+  useEffect(() => {
+    if (!selectedId) {
+      setMobileShowList(true);
+    }
+  }, [selectedId]);
+
+  useEffect(() => {
+    if (!isMobile) return;
+    setMobileShowList(!selectedId);
+  }, [isMobile]);
+
+  const handleSelectMail = useCallback(
+    (id: string) => {
+      selectMail(id);
+      if (isMobile) {
+        setMobileShowList(false);
+      }
+    },
+    [isMobile, selectMail],
+  );
+
+  const handleBackToList = useCallback(() => {
+    setMobileShowList(true);
+  }, []);
+
+  const showListPanel = !isMobile || mobileShowList;
+  const showDetailPanel = !isMobile || !mobileShowList;
+
+  const renderMailPanels = (variant: "inbox" | "sent") => (
+    <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+      {showListPanel ? (
+        <AdminMailListPanel
+          q={q}
+          setQ={setQ}
+          loading={listLoading}
+          mails={mails}
+          selectedId={selectedId}
+          onSearch={onSearch}
+          onLoadMore={loadMore}
+          hasMore={hasMore}
+          onSelect={handleSelectMail}
+          variant={variant}
+        />
+      ) : null}
+
+      {showDetailPanel ? (
+        <AdminMailDetailPanel
+          selected={selected}
+          detailLoading={detailLoading}
+          onDownload={handleDownload}
+          onMarkAsRead={handleMarkAsRead}
+          onMarkAsUnread={handleMarkAsUnread}
+          onMoveToSpam={handleMoveToSpam}
+          onTrash={handleTrash}
+          onRestoreToSent={handleRestoreToSent}
+          showBackButton={isMobile && !mobileShowList}
+          onBack={handleBackToList}
+        />
+      ) : null}
+    </div>
+  );
 
   const handleEmptyTrash = async () => {
     try {
@@ -113,7 +182,7 @@ export const AdminMailPage = () => {
   };
 
   return (
-    <div className="p-4 space-y-4">
+    <div className="p-2 sm:p-4 space-y-4">
       <Tabs value={tab} onValueChange={(v) => setTab(v as any)}>
         <TabsList className="flex flex-wrap items-center gap-2 w-full">
           <TabsTrigger value="inbox" className="gap-2">
@@ -183,115 +252,19 @@ export const AdminMailPage = () => {
         </TabsList>
 
         <TabsContent value="inbox" className="mt-4">
-          <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-            <AdminMailListPanel
-              q={q}
-              setQ={setQ}
-              loading={listLoading}
-              mails={mails}
-              selectedId={selectedId}
-              onSearch={onSearch}
-              onLoadMore={loadMore}
-              hasMore={hasMore}
-              onSelect={selectMail}
-              variant="inbox"
-            />
-
-            <AdminMailDetailPanel
-              selected={selected}
-              detailLoading={detailLoading}
-              onDownload={handleDownload}
-              onMarkAsRead={handleMarkAsRead}
-              onMarkAsUnread={handleMarkAsUnread}
-              onMoveToSpam={handleMoveToSpam}
-              onTrash={handleTrash}
-              onRestoreToSent={handleRestoreToSent}
-            />
-          </div>
+          {renderMailPanels("inbox")}
         </TabsContent>
 
         <TabsContent value="sent" className="mt-4">
-          <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-            <AdminMailListPanel
-              q={q}
-              setQ={setQ}
-              loading={listLoading}
-              mails={mails}
-              selectedId={selectedId}
-              onSearch={onSearch}
-              onLoadMore={loadMore}
-              hasMore={hasMore}
-              onSelect={selectMail}
-              variant="sent"
-            />
-
-            <AdminMailDetailPanel
-              selected={selected}
-              detailLoading={detailLoading}
-              onDownload={handleDownload}
-              onMarkAsRead={handleMarkAsRead}
-              onMarkAsUnread={handleMarkAsUnread}
-              onMoveToSpam={handleMoveToSpam}
-              onTrash={handleTrash}
-              onRestoreToSent={handleRestoreToSent}
-            />
-          </div>
+          {renderMailPanels("sent")}
         </TabsContent>
 
         <TabsContent value="trash" className="mt-4 space-y-3">
-          <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-            <AdminMailListPanel
-              q={q}
-              setQ={setQ}
-              loading={listLoading}
-              mails={mails}
-              selectedId={selectedId}
-              onSearch={onSearch}
-              onLoadMore={loadMore}
-              hasMore={hasMore}
-              onSelect={selectMail}
-              variant="inbox"
-            />
-
-            <AdminMailDetailPanel
-              selected={selected}
-              detailLoading={detailLoading}
-              onDownload={handleDownload}
-              onMarkAsRead={handleMarkAsRead}
-              onMarkAsUnread={handleMarkAsUnread}
-              onMoveToSpam={handleMoveToSpam}
-              onTrash={handleTrash}
-              onRestoreToSent={handleRestoreToSent}
-            />
-          </div>
+          {renderMailPanels("inbox")}
         </TabsContent>
 
         <TabsContent value="spam" className="mt-4">
-          <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-            <AdminMailListPanel
-              q={q}
-              setQ={setQ}
-              loading={listLoading}
-              mails={mails}
-              selectedId={selectedId}
-              onSearch={onSearch}
-              onLoadMore={loadMore}
-              hasMore={hasMore}
-              onSelect={selectMail}
-              variant="inbox"
-            />
-
-            <AdminMailDetailPanel
-              selected={selected}
-              detailLoading={detailLoading}
-              onDownload={handleDownload}
-              onMarkAsRead={handleMarkAsRead}
-              onMarkAsUnread={handleMarkAsUnread}
-              onMoveToSpam={handleMoveToSpam}
-              onTrash={handleTrash}
-              onRestoreToSent={handleRestoreToSent}
-            />
-          </div>
+          {renderMailPanels("inbox")}
         </TabsContent>
 
         <TabsContent value="compose" className="mt-4">

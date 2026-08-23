@@ -103,6 +103,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/shared/ui/cn";
+import { RESPONSIVE } from "@/shared/ui/responsive";
 import {
   canSendPracticeTransfer,
   resolveRequestorProfile,
@@ -2455,11 +2456,11 @@ export const PracticeDropzonePage = () => {
     <PageFileDropZone
       onFiles={handleIncomingFiles}
       activeClassName="ring-2 ring-primary/30"
-      className="bg-gradient-subtle p-4 flex flex-col h-full min-h-0 overflow-hidden"
+      className="bg-gradient-subtle flex h-full min-h-0 flex-col overflow-hidden p-3 sm:p-4"
     >
-      <div className="mx-auto flex h-full min-h-0 w-full max-w-4xl flex-col gap-2.5">
+      <div className="mx-auto flex h-full min-h-0 w-full min-w-0 max-w-4xl flex-col gap-2.5">
         <Card className="border-primary-soft bg-gradient-to-br from-white to-primary-soft/70 shadow-sm">
-          <CardHeader className="px-6 py-2.5">
+          <CardHeader className="px-4 py-2.5 sm:px-6">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex min-h-[52px] items-center">
                 <CardTitle className="text-2xl md:text-3xl font-bold tracking-tight">
@@ -2467,7 +2468,7 @@ export const PracticeDropzonePage = () => {
                 </CardTitle>
               </div>
 
-              <div className="w-full rounded-xl border bg-white/80 px-3 py-2 lg:w-[420px]">
+              <div className="w-full min-w-0 rounded-xl border bg-white/80 px-3 py-2 lg:w-[min(420px,100%)]">
                 <ol className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
                   {WIZARD_STEPS.map((label, idx) => {
                     const isActive = step === idx;
@@ -2599,7 +2600,7 @@ export const PracticeDropzonePage = () => {
                     requestMemo,
                     setRequestMemo,
                     memoInputId: "practice-request-memo",
-                    prosthesisTypeSelectWidthClassName: "w-[110px]",
+                    prosthesisTypeSelectWidthClassName: "w-full min-w-0 sm:w-[110px]",
                     showBridgeConnections: false,
                     onClearAll: handleClearRequestIntakeCache,
                     implantConnections,
@@ -3209,7 +3210,7 @@ export const PracticeDropzonePage = () => {
                 }
               }}
             >
-              <DialogContent className="sm:max-w-lg">
+              <DialogContent className={RESPONSIVE.dialogContent}>
                 <DialogHeader>
                   <DialogTitle>보철물 항목 설정</DialogTitle>
                 </DialogHeader>

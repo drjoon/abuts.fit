@@ -30,7 +30,7 @@ export const LandingPlatformIntro = () => {
 
   return (
     <section id="platform" className="relative">
-      <div className="relative z-10 mx-auto grid max-w-6xl items-center gap-10 px-4 py-12 md:py-16 lg:grid-cols-2 lg:gap-14 lg:py-20">
+      <div className="relative z-10 mx-auto grid max-w-6xl items-center gap-8 px-4 pb-12 pt-20 sm:gap-10 sm:px-6 sm:pb-16 sm:pt-24 md:py-16 lg:grid-cols-2 lg:gap-14 lg:py-20">
         <div className="space-y-6 text-center lg:text-left">
           <p
             className={`inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-medium tracking-[0.2em] ${landingTheme.glass} animate-slide-up`}
@@ -115,7 +115,7 @@ export const LandingPlatformIntro = () => {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-3">
                 {landingStats.map((stat) => (
                   <div
                     key={stat.label}

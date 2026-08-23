@@ -43,8 +43,7 @@ export function RetentionGrooveGuideDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="overflow-x-auto">
-          <div className="grid min-w-[960px] grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
             <div className="rounded-lg border border-slate-200 bg-white p-3">
               <img
                 src="/images/new-request/Retention_Groove_good.jpeg"
@@ -92,7 +91,6 @@ export function RetentionGrooveGuideDialog({
                 (유지력 증가)
               </span>
             </div>
-          </div>
         </div>
 
         <DialogFooter>

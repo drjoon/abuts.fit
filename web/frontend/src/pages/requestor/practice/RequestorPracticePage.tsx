@@ -4494,8 +4494,8 @@ export function RequestorPracticeReceivePage({
   }, []);
 
   const transferSearchAndBadges = (
-    <div className="flex min-w-0 flex-wrap items-center gap-3">
-      <div className="flex flex-wrap items-center gap-2 shrink-0">
+    <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
         <RequestSettingsToolbar
           designSoftwareLabel={String(designSoftwareValue || "").trim()}
           onOpenDesignSoftwareModal={openDesignSoftwareModal}
@@ -4505,7 +4505,7 @@ export function RequestorPracticeReceivePage({
         />
       </div>
       <PracticeStatusFilterBadges
-        className="min-w-0 flex-1 justify-center"
+        className="min-w-0 flex-1 sm:justify-center"
         items={labStatusFilterBadgeItems}
         activeKeys={statusFilters}
         onToggle={(key) =>
@@ -4517,7 +4517,7 @@ export function RequestorPracticeReceivePage({
         isDefault={isLabReceiveStatusFilterDefault(statusFilters)}
         countSuffix="건"
       />
-      <div className="relative w-full max-w-xs shrink-0 py-0.5">
+      <div className="relative w-full min-w-0 py-0.5 sm:max-w-xs sm:shrink-0">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           value={search}
@@ -4533,7 +4533,7 @@ export function RequestorPracticeReceivePage({
     <div className="flex min-h-0 flex-1 flex-col gap-2">
       {error ? <div className="shrink-0 text-sm text-destructive">{error}</div> : null}
       {!error && loading && calendarItems.length === 0 ? (
-        <div className="grid grid-cols-5 gap-1">
+        <div className="grid grid-cols-2 gap-1 sm:grid-cols-3 md:grid-cols-5">
           {Array.from({ length: 15 }).map((_, idx) => (
             <Skeleton key={`lab-cal-skel-${idx}`} className="h-24 w-full" />
           ))}
@@ -4571,7 +4571,7 @@ export function RequestorPracticeReceivePage({
   );
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden">
+    <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden px-3 sm:px-4">
       <DesignSoftwareSettingsDialog
         open={requestSettingsModalOpen}
         onOpenChange={handleRequestSettingsModalOpenChange}

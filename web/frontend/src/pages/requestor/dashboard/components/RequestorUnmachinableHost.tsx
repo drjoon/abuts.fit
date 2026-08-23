@@ -27,6 +27,8 @@ import {
   modelFileBasename,
 } from "@/shared/files/modelPreviewFile";
 import type { PeriodFilterValue } from "@/shared/ui/PeriodFilter";
+import { cn } from "@/shared/ui/cn";
+import { RESPONSIVE } from "@/shared/ui/responsive";
 
 type Props = {
   period: PeriodFilterValue;
@@ -425,7 +427,13 @@ export const RequestorUnmachinableHost = ({ period, count }: Props) => {
           if (!next) setFocusedRequestId(null);
         }}
       >
-        <DialogContent className="flex h-[min(82vh,720px)] w-[92vw] max-w-4xl flex-col gap-0 overflow-hidden p-0 sm:rounded-2xl">
+        <DialogContent
+          className={cn(
+            "flex h-[min(82vh,720px)] flex-col gap-0 overflow-hidden p-0 sm:rounded-2xl",
+            RESPONSIVE.dialogContentFull,
+            "sm:max-w-4xl",
+          )}
+        >
           <DialogHeader className="space-y-1.5 border-b border-slate-100 px-6 pb-4 pt-6 pr-12 text-left">
             <DialogTitle className="text-xl font-semibold tracking-tight text-slate-900">
               불완전 가공 안내

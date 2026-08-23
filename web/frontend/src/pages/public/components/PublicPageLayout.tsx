@@ -15,7 +15,7 @@ interface PublicPageLayoutProps {
 }
 
 const DEFAULT_CONTENT_CLASS =
-  "relative z-10 mx-auto w-full max-w-5xl px-4 py-16 lg:px-0 lg:py-24 space-y-10";
+  "relative z-10 mx-auto w-full max-w-5xl space-y-8 px-4 pt-20 pb-12 sm:space-y-10 sm:px-6 sm:pt-24 sm:pb-16 lg:px-8 lg:py-24";
 
 export const PublicPageLayout = ({
   children,

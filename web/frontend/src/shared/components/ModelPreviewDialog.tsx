@@ -23,6 +23,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
+import { cn } from "@/shared/ui/cn";
+import { RESPONSIVE } from "@/shared/ui/responsive";
 
 export type ModelPreviewKind = "model" | "image";
 
@@ -156,7 +158,13 @@ export function ModelPreviewDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex w-[95vw] max-w-[56rem] flex-col gap-0 overflow-hidden p-0">
+      <DialogContent
+        className={cn(
+          "flex flex-col gap-0 overflow-hidden p-0",
+          RESPONSIVE.dialogContentFull,
+          "sm:max-w-[min(96vw,56rem)]",
+        )}
+      >
         <DialogHeader className="shrink-0 space-y-0 border-b bg-muted/50 px-4 py-3 pr-12 sm:px-5">
           <DialogTitle className="truncate text-sm font-medium sm:text-base">
             {title}

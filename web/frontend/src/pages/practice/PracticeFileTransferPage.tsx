@@ -157,6 +157,7 @@ import {
   CommandSeparator,
 } from "@/components/ui/command";
 import { cn } from "@/shared/ui/cn";
+import { RESPONSIVE } from "@/shared/ui/responsive";
 import { usePeriodStore } from "@/store/usePeriodStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { apiFetch, invalidateApiGetCache, request } from "@/shared/api/apiClient";
@@ -6742,7 +6743,7 @@ export const PracticeFileTransferPage = ({
                       forceResync: Boolean(pending.forceResync),
                     });
                   },
-                  prosthesisTypeSelectWidthClassName: "w-[7rem]",
+                  prosthesisTypeSelectWidthClassName: "w-full min-w-0 sm:w-[7rem]",
                   showBridgeConnections: true,
                   showFeeEstimate: true,
                   skipJig,
@@ -7072,7 +7073,12 @@ export const PracticeFileTransferPage = ({
               if (!open) setOralPhotoPreview(null);
             }}
           >
-            <DialogContent className="max-h-[min(92vh,900px)] w-[min(96vw,720px)] max-w-none gap-0 overflow-hidden p-0">
+            <DialogContent
+              className={cn(
+                "max-h-[min(92vh,900px)] max-w-none gap-0 overflow-hidden p-0",
+                RESPONSIVE.dialogContentWide,
+              )}
+            >
               <DialogHeader className="space-y-1 border-b border-slate-200/80 px-4 py-3 pr-12 text-left">
                 <DialogTitle className="truncate text-base font-semibold">
                   {oralPhotoPreview?.name || "사진"}
@@ -7097,7 +7103,7 @@ export const PracticeFileTransferPage = ({
             open={skipDesignConfirmUncheckOpen}
             onOpenChange={setSkipDesignConfirmUncheckOpen}
           >
-            <DialogContent className="sm:max-w-md">
+            <DialogContent className={RESPONSIVE.dialogContent}>
               <DialogHeader>
                 <DialogTitle>디자인 컨펌 생략을 해제할까요?</DialogTitle>
                 <DialogDescription className="leading-relaxed">
@@ -7416,8 +7422,13 @@ export const PracticeFileTransferPage = ({
         </Dialog>
 
         <Dialog open={trashOpen} onOpenChange={setTrashOpen}>
-          <DialogContent className="flex max-h-[min(90vh,820px)] w-[min(96vw,720px)] max-w-none flex-col gap-0 overflow-hidden p-0">
-            <div className="flex shrink-0 items-center justify-between gap-4 border-b border-slate-200/80 px-6 pb-4 pt-5 pr-14">
+          <DialogContent
+            className={cn(
+              "flex max-h-[min(90vh,820px)] max-w-none flex-col gap-0 overflow-hidden p-0",
+              RESPONSIVE.dialogContentWide,
+            )}
+          >
+            <div className="flex shrink-0 items-center justify-between gap-4 border-b border-slate-200/80 px-4 pb-4 pt-5 pr-14 sm:px-6">
               <DialogHeader className="min-w-0 flex-1 space-y-0 text-left">
                 <DialogTitle className="flex min-w-0 flex-wrap items-center gap-2 text-lg font-semibold tracking-tight">
                   <Trash2 className="h-5 w-5 shrink-0 text-slate-500" />
@@ -7446,7 +7457,7 @@ export const PracticeFileTransferPage = ({
                 </DialogTitle>
               </DialogHeader>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4 sm:px-6">
+            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
               {trashGroupedTransfers.length === 0 ? (
                 <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-slate-200 px-6 py-14 text-center">
                   <Trash2 className="h-9 w-9 text-slate-300" />
@@ -7760,7 +7771,7 @@ export const PracticeFileTransferPage = ({
             }
           }}
         >
-          <DialogContent className="sm:max-w-lg">
+          <DialogContent className={RESPONSIVE.dialogContent}>
             <DialogHeader>
               <DialogTitle>보철물 항목 설정</DialogTitle>
             </DialogHeader>

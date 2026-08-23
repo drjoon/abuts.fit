@@ -107,6 +107,7 @@ import { generateModelNumber } from "@/utils/modelNumber";
 import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
 import { appendPeriodQueryParams } from "@/store/usePeriodStore";
 import { cn } from "@/shared/ui/cn";
+import { RESPONSIVE } from "@/shared/ui/responsive";
 import {
   RequestDetailDialog,
   type RequestDetailDialogRequest,
@@ -2489,8 +2490,8 @@ export const CreditLedgerModal = ({
             )
           ) : null}
 
-          <div className="flex w-full flex-wrap items-center gap-2">
-            <div className="w-[130px]">
+          <div className="flex w-full min-w-0 flex-wrap items-center gap-2">
+            <div className="w-full min-w-0 sm:w-[130px]">
               <Select
                 value={creditKind}
                 onValueChange={(v) =>
@@ -2511,7 +2512,7 @@ export const CreditLedgerModal = ({
               </Select>
             </div>
 
-            <div className="w-[130px]">
+            <div className="w-full min-w-0 sm:w-[130px]">
               <Select
                 value={action}
                 onValueChange={(v) => setAction(v as LedgerActionFilter)}
@@ -2548,7 +2549,7 @@ export const CreditLedgerModal = ({
               </Button>
             ) : null}
 
-            <div className="ml-auto shrink-0">
+            <div className="ml-auto w-full min-w-0 shrink-0 sm:w-auto">
               {practiceLedgerUi ? (
                 <PeriodFilter
                   value={spendPeriod}
@@ -2587,9 +2588,12 @@ export const CreditLedgerModal = ({
 
           <div
             ref={scrollRef}
-            className="min-h-0 flex-1 overflow-x-auto overflow-y-auto rounded-2xl border border-slate-200/80 bg-white/70 shadow-sm"
+            className={cn(
+              "min-h-0 flex-1 overflow-y-auto rounded-2xl border border-slate-200/80 bg-white/70 shadow-sm",
+              RESPONSIVE.tableShell,
+            )}
           >
-            <Table>
+            <Table className={RESPONSIVE.tableMinExtraWide}>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
                   <TableHead className="w-[190px] text-center">
@@ -2899,8 +2903,14 @@ export const CreditLedgerModal = ({
         </div>
       ) : (
         <Dialog open={open} onOpenChange={onOpenChange}>
-          <DialogContent className="flex max-h-[90vh] w-[94vw] max-w-6xl flex-col gap-0 overflow-hidden rounded-2xl p-0 sm:rounded-2xl">
-            <DialogHeader className="space-y-0 border-b border-slate-100 px-5 pb-4 pt-5 pr-12 sm:px-6 sm:pr-14">
+          <DialogContent
+            className={cn(
+              "flex max-h-[90vh] flex-col gap-0 overflow-hidden rounded-2xl p-0 sm:rounded-2xl",
+              RESPONSIVE.dialogContentFull,
+              "sm:max-w-6xl",
+            )}
+          >
+            <DialogHeader className="space-y-0 border-b border-slate-100 px-4 pb-4 pt-5 pr-12 sm:px-6 sm:pr-14">
               <div className="flex items-center justify-between gap-2">
                 <DialogTitle className="text-lg font-semibold tracking-tight text-slate-900">
                   {title}
@@ -2908,7 +2918,7 @@ export const CreditLedgerModal = ({
                 {headerActions}
               </div>
             </DialogHeader>
-            <div className="min-h-0 flex-1 overflow-hidden px-5 py-4 sm:px-6">
+            <div className="min-h-0 flex-1 overflow-hidden px-4 py-4 sm:px-6">
               <div className="flex h-full min-h-0 flex-col">{body}</div>
             </div>
           </DialogContent>
@@ -2952,7 +2962,12 @@ export const CreditLedgerModal = ({
           if (!next) setFeeQuoteDetail(null);
         }}
       >
-        <DialogContent className="max-h-[85vh] w-[min(92vw,40rem)] overflow-y-auto rounded-2xl sm:rounded-2xl">
+        <DialogContent
+          className={cn(
+            "max-h-[85vh] overflow-y-auto rounded-2xl sm:rounded-2xl",
+            RESPONSIVE.dialogContentMd,
+          )}
+        >
           <DialogHeader>
             <DialogTitle className="text-base font-semibold tracking-tight text-slate-900">
               {feeQuoteDetail?.title || "기공의뢰-구강스캔으로 상세 내역"}
@@ -2960,7 +2975,7 @@ export const CreditLedgerModal = ({
           </DialogHeader>
           {feeQuoteDetail ? (
             <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 py-2.5 text-xs leading-snug">
+              <div className="grid grid-cols-1 gap-x-3 gap-y-1.5 rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 py-2.5 text-xs leading-snug sm:grid-cols-2">
                 <p className="min-w-0">
                   <span className="text-muted-foreground">환자명</span>{" "}
                   <span className="font-medium text-slate-900">
@@ -2989,7 +3004,7 @@ export const CreditLedgerModal = ({
                       : "—"}
                   </span>
                 </p>
-                <p className="col-span-2 min-w-0 whitespace-pre-wrap break-words">
+                <p className="min-w-0 sm:col-span-2 whitespace-pre-wrap break-words">
                   <span className="text-muted-foreground">메모</span>{" "}
                   <span className="font-medium text-slate-900">
                     {feeQuoteDetail.memo || "—"}

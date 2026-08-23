@@ -27,6 +27,8 @@ import { flushSync } from "react-dom";
 import { useSearchParams } from "react-router-dom";
 import { AlertTriangle, ArrowLeft, ArrowRight, ListOrdered, X, Zap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { cn } from "@/shared/ui/cn";
+import { RESPONSIVE } from "@/shared/ui/responsive";
 import {
   Dialog,
   DialogContent,
@@ -2092,7 +2094,13 @@ export const MachiningQueueBoard = ({
       )}
 
       <Dialog open={unassignedModalOpen} onOpenChange={setUnassignedModalOpen}>
-        <DialogContent className="w-[95vw] max-h-[80vh] overflow-y-auto rounded-2xl border border-slate-200/80 p-0 gap-0 shadow-[0_24px_64px_rgba(15,23,42,0.28)] sm:max-w-2xl">
+        <DialogContent
+          className={cn(
+            "max-h-[80vh] gap-0 overflow-y-auto rounded-2xl border border-slate-200/80 p-0 shadow-[0_24px_64px_rgba(15,23,42,0.28)]",
+            RESPONSIVE.dialogContentFull,
+            "sm:max-w-2xl",
+          )}
+        >
           <DialogHeader className="border-b border-slate-100 px-5 py-4 sm:px-6">
             <DialogTitle className="flex items-center gap-2 text-lg font-bold tracking-tight text-slate-900">
               <span>미배정</span>

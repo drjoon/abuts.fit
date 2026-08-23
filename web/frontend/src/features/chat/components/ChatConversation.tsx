@@ -186,7 +186,7 @@ export const ChatConversation = ({ room, onBack }: ChatConversationProps) => {
                   } mb-2`}
                 >
                   <div
-                    className={`flex items-end gap-2 max-w-[70%] ${
+                    className={`flex items-end gap-2 max-w-[85%] sm:max-w-[75%] md:max-w-[70%] ${
                       isMyMessage ? "flex-row-reverse" : "flex-row"
                     }`}
                   >
@@ -275,39 +275,39 @@ export const ChatConversation = ({ room, onBack }: ChatConversationProps) => {
       </div>
 
       {/* 입력 영역 */}
-      <div className="p-3 sm:p-4 border-t bg-muted/30">
+      <div className="border-t bg-muted/30 p-3 sm:p-4">
         <div className="flex items-end gap-2">
           <Button
             size="sm"
             variant="ghost"
-            className="mb-1 h-8 w-8 sm:h-9 sm:w-9 p-0"
+            className="mb-1 h-10 w-10 shrink-0 p-0 sm:h-9 sm:w-9"
           >
             <Paperclip className="h-3 w-3 sm:h-4 sm:w-4" />
           </Button>
 
-          <div className="flex-1 min-h-[32px] sm:min-h-[40px] max-h-32">
+          <div className="min-h-[44px] flex-1 sm:min-h-[40px] max-h-32">
             <Input
               placeholder="메시지를 입력하세요..."
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
               onKeyPress={handleKeyPress}
-              className="resize-none text-sm sm:text-base"
+              className="h-11 resize-none text-sm sm:h-10 sm:text-base"
             />
           </div>
 
           <Button
             size="sm"
             variant="ghost"
-            className="mb-1 h-8 w-8 sm:h-9 sm:w-9 p-0"
+            className="mb-1 h-10 w-10 shrink-0 p-0 sm:h-9 sm:w-9"
           >
-            <Smile className="h-3 w-3 sm:h-4 sm:w-4" />
+            <Smile className="h-4 w-4 sm:h-4 sm:w-4" />
           </Button>
 
           <Button
             size="sm"
             onClick={handleSendMessage}
             disabled={!newMessage.trim()}
-            className="mb-1 h-8 sm:h-9 px-2 sm:px-3"
+            className="mb-1 h-10 min-w-10 shrink-0 px-2 sm:h-9 sm:min-w-0 sm:px-3"
           >
             <Send className="h-3 w-3 sm:h-4 sm:w-4" />
           </Button>

@@ -9,6 +9,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { cn } from "@/shared/ui/cn";
+import { RESPONSIVE } from "@/shared/ui/responsive";
 import { useAuthStore } from "@/store/useAuthStore";
 import { MachiningRequestLabel } from "@/pages/manufacturer/worksheet/custom_abutment/machining/components/MachiningRequestLabel";
 import { ArrowLeft } from "lucide-react";
@@ -278,7 +280,13 @@ export const CompletedMachiningRecordsModal = ({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="w-[95vw] max-w-3xl max-h-[78vh] overflow-hidden rounded-2xl border border-slate-200/80 p-0 gap-0 shadow-[0_24px_64px_rgba(15,23,42,0.28)]">
+        <DialogContent
+          className={cn(
+            "max-h-[78vh] gap-0 overflow-hidden rounded-2xl border border-slate-200/80 p-0 shadow-[0_24px_64px_rgba(15,23,42,0.28)]",
+            RESPONSIVE.dialogContentFull,
+            "sm:max-w-3xl",
+          )}
+        >
           <DialogHeader className="border-b border-slate-100 px-5 py-4 sm:px-6">
             <DialogTitle className="text-lg font-bold tracking-tight text-slate-900">
               {effectiveTitle}

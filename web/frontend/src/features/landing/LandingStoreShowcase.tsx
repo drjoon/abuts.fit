@@ -82,7 +82,7 @@ export const LandingStoreShowcase = () => {
                 key={slide.id}
                 className="relative min-w-0 shrink-0 grow-0 basis-full"
               >
-                <div className="relative z-10 mx-auto flex h-full min-h-[min(100vh,900px)] max-w-6xl flex-col justify-center px-4 py-16 lg:grid lg:grid-cols-2 lg:items-center lg:gap-14 lg:py-20">
+                <div className="relative z-10 mx-auto flex h-full min-h-[min(100vh,900px)] max-w-6xl flex-col justify-center px-4 py-14 sm:px-6 sm:py-16 lg:grid lg:grid-cols-2 lg:items-center lg:gap-14 lg:py-20">
                   <div
                     className={cn(
                       "space-y-5 text-center transition-all duration-700 ease-out lg:text-left",
@@ -100,7 +100,7 @@ export const LandingStoreShowcase = () => {
                     >
                       {slide.categoryLabel}
                     </span>
-                    <h2 className="text-3xl font-semibold uppercase tracking-wide text-white md:text-5xl">
+                    <h2 className="text-2xl font-semibold uppercase tracking-wide text-white sm:text-3xl md:text-5xl">
                       {slide.name}
                     </h2>
                     <p className="mx-auto max-w-md text-base leading-relaxed text-white/70 lg:mx-0 md:text-lg">
@@ -160,7 +160,7 @@ export const LandingStoreShowcase = () => {
         </div>
       </div>
 
-      <div className="absolute inset-x-0 bottom-0 z-20 px-4 pb-8 pt-16">
+      <div className="absolute inset-x-0 bottom-0 z-20 px-4 pb-[max(2rem,env(safe-area-inset-bottom))] pt-12 sm:pb-8 sm:pt-16">
         <div className="mx-auto flex max-w-6xl flex-col items-center gap-5">
           <div className="h-0.5 w-full max-w-md overflow-hidden rounded-full bg-white/[0.08]">
             <div

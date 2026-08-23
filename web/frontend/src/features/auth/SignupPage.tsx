@@ -1197,7 +1197,7 @@ export const SignupPage = () => {
       </div>
 
       <main
-        className={`relative z-10 mx-auto flex min-h-screen max-w-6xl flex-col justify-center gap-12 px-4 py-16 ${showHeroSection ? "lg:flex-row lg:items-center" : "items-center"}`}
+        className={`relative z-10 mx-auto flex min-h-screen w-full max-w-6xl flex-col justify-center gap-8 px-4 py-10 sm:gap-12 sm:px-6 sm:py-16 ${showHeroSection ? "lg:flex-row lg:items-center" : "items-center"}`}
       >
         {showHeroSection && (
           <section className="w-full space-y-6 text-center lg:w-1/2 lg:flex-1 lg:text-center">
@@ -1244,27 +1244,27 @@ export const SignupPage = () => {
         )}
 
         <section
-          className={`w-full ${showHeroSection ? "lg:w-1/2 lg:flex-1" : "max-w-xl"}`}
+          className={`mx-auto w-full max-w-md sm:max-w-lg ${showHeroSection ? "lg:mx-0 lg:max-w-none lg:w-1/2 lg:flex-1" : "lg:max-w-xl"}`}
         >
           <Card className="border-white/12 bg-white/5 text-white shadow-[0_25px_65px_rgba(7,7,19,0.55)] backdrop-blur-2xl">
-            <CardHeader className="pb-4 text-center px-8">
-              <CardTitle className="text-lg font-medium text-white/90">
+            <CardHeader className="px-4 pb-4 pt-6 text-center sm:px-6 md:px-8">
+              <CardTitle className="text-lg font-medium text-white/90 sm:text-xl">
                 {cardTitle}
               </CardTitle>
             </CardHeader>
-            <CardContent className="px-8 pb-8">
+            <CardContent className="px-4 pb-6 sm:px-6 sm:pb-8 md:px-8">
               {isWizardMode ? (
                 <>
                   {wizardStep === 1 && (
                     <div className="space-y-6">
                       {isStaffSignupRoute ? (
-                        <div className="grid grid-cols-3 gap-2">
+                        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                           {STAFF_SIGNUP_ROLES.map((role) => (
                             <button
                               key={role}
                               type="button"
                               onClick={() => setSignupRole(role)}
-                              className={`h-10 rounded-md border text-sm font-medium transition-colors ${
+                              className={`min-h-11 rounded-md border px-1 text-xs font-medium transition-colors sm:text-sm ${
                                 signupRole === role
                                   ? "border-white/10 bg-white/15 text-white"
                                   : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10"
@@ -1279,7 +1279,7 @@ export const SignupPage = () => {
                           <button
                             type="button"
                             onClick={() => setSignupRole("requestor")}
-                            className={`h-10 rounded-md border text-sm font-medium transition-colors ${
+                            className={`min-h-11 rounded-md border text-sm font-medium transition-colors ${
                               signupRole === "requestor"
                                 ? "border-white/10 bg-white/15 text-white"
                                 : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10"
@@ -1294,7 +1294,7 @@ export const SignupPage = () => {
                               setSignupRole("salesman");
                             }}
                             disabled={isSalesmanDisabled}
-                            className={`h-10 rounded-md border text-sm font-medium transition-colors ${
+                            className={`min-h-11 rounded-md border text-sm font-medium transition-colors ${
                               signupRole === "salesman"
                                 ? "border-white/10 bg-white/15 text-white"
                                 : isSalesmanDisabled

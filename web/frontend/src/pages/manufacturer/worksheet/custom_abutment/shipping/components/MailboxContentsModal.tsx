@@ -8,6 +8,8 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/backend/controllers/requests/common.review.controller.js
 import { useEffect, useRef, useState } from "react";
+import { cn } from "@/shared/ui/cn";
+import { RESPONSIVE } from "@/shared/ui/responsive";
 import {
   Dialog,
   DialogContent,
@@ -401,7 +403,13 @@ export const MailboxContentsModal = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[95vw] sm:max-w-2xl max-h-[80vh] overflow-y-auto p-4 sm:p-6">
+      <DialogContent
+        className={cn(
+          "max-h-[80vh] overflow-y-auto p-4 sm:p-6",
+          RESPONSIVE.dialogContentFull,
+          "sm:max-w-2xl",
+        )}
+      >
         <DialogHeader>
           <DialogTitle className="flex flex-wrap items-center gap-2 text-base text-slate-800">
             <span className="text-lg font-semibold text-slate-900">

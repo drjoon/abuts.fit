@@ -61,7 +61,7 @@ export const SettingsScaffold = ({
         value={t.key}
         disabled={Boolean(t.disabled)}
         className={cn(
-          "flex min-w-[96px] flex-1 basis-0 items-center justify-center gap-2 px-3 py-2.5",
+          "flex min-w-[7.5rem] shrink-0 basis-auto items-center justify-center gap-1.5 px-2.5 py-2.5 text-sm sm:min-w-[96px] sm:shrink sm:flex-1 sm:basis-0 sm:gap-2 sm:px-3",
           highlightTabKey === t.key &&
             "ring-2 ring-primary/60 shadow-[0_10px_40px_rgba(14,92,228,0.18)]",
           t.disabled && "pointer-events-none opacity-50",
@@ -84,7 +84,7 @@ export const SettingsScaffold = ({
     return (
       <Tooltip key={t.key}>
         <TooltipTrigger asChild>
-          <span className="inline-flex min-w-[96px] flex-1 basis-0 cursor-not-allowed">
+          <span className="inline-flex min-w-[7.5rem] shrink-0 cursor-not-allowed sm:min-w-[96px] sm:flex-1 sm:basis-0">
             {trigger}
           </span>
         </TooltipTrigger>
@@ -113,7 +113,7 @@ export const SettingsScaffold = ({
       className={cn(
         fillHeight
           ? "box-border flex h-full min-h-0 flex-col overflow-hidden"
-          : "min-h-screen bg-gradient-subtle p-4",
+          : "min-h-screen bg-gradient-subtle p-3 sm:p-4",
       )}
     >
       <TooltipProvider>
@@ -139,8 +139,7 @@ export const SettingsScaffold = ({
           >
             <TabsList
               className={cn(
-                "flex h-auto w-full flex-wrap justify-stretch gap-1.5",
-                "px-1.5 py-1.5",
+                "flex h-auto w-full gap-1.5 overflow-x-auto p-1.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:flex-wrap sm:overflow-visible",
               )}
             >
               {tabTriggers}

@@ -57,6 +57,8 @@ import {
   PRACTICE_TRANSFER_CANCEL_FROM_ABUTS_MESSAGE,
   isPracticeTransferLinkedRequest,
 } from "@/shared/practice/practiceTransferAbutsCancel";
+import { cn } from "@/shared/ui/cn";
+import { RESPONSIVE } from "@/shared/ui/responsive";
 
 type ApiMyRequestsResponse = {
   success: boolean;
@@ -563,9 +565,12 @@ export const PastRequestsModal = ({
       }}
     >
       <DialogContent
-        className={`flex h-[min(85vh,800px)] w-[min(92vw,calc(100vw-4rem))] max-w-[min(92vw,1440px)] flex-col gap-0 overflow-hidden p-0 sm:rounded-2xl${
-          suspend ? " hidden" : ""
-        }`}
+        className={cn(
+          "flex h-[min(85vh,800px)] flex-col gap-0 overflow-hidden p-0 sm:rounded-2xl",
+          RESPONSIVE.dialogContentFull,
+          "sm:max-w-[min(96vw,1440px)]",
+          suspend && "hidden",
+        )}
         onPointerDownOutside={(e) => {
           if (dismissLocked) e.preventDefault();
         }}
@@ -579,7 +584,7 @@ export const PastRequestsModal = ({
           if (dismissLocked) e.preventDefault();
         }}
       >
-        <DialogHeader className="space-y-1.5 border-b border-slate-100 px-6 pb-4 pt-6 pr-12 text-left">
+        <DialogHeader className="space-y-1.5 border-b border-slate-100 px-4 pb-4 pt-5 pr-12 text-left sm:px-6">
           <DialogTitle className="text-xl font-semibold tracking-tight text-slate-900">
             {title || "완료 내역"}
           </DialogTitle>
@@ -589,7 +594,7 @@ export const PastRequestsModal = ({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex min-h-0 flex-1 flex-col gap-3 px-6 py-5">
+        <div className="flex min-h-0 flex-1 flex-col gap-3 px-4 py-4 sm:px-6 sm:py-5">
           <div className="rounded-xl bg-slate-50 px-3.5 py-3">
             <div className="flex w-full flex-wrap items-center gap-2">
               <div className="flex flex-wrap items-center gap-2 py-0.5">
@@ -645,16 +650,19 @@ export const PastRequestsModal = ({
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 placeholder="검색 (의뢰번호/치과/환자/임플란트)"
-                className="h-9 min-w-[220px] flex-1 rounded-lg bg-white sm:ml-auto sm:max-w-[360px] sm:flex-none sm:w-[320px]"
+                className="h-9 w-full min-w-0 flex-1 rounded-lg bg-white sm:ml-auto sm:max-w-[360px] sm:flex-none sm:w-[320px]"
               />
             </div>
           </div>
 
           <div
             ref={scrollRef}
-            className="min-h-0 flex-1 overflow-y-auto overflow-x-auto rounded-2xl border border-slate-200/80 bg-white/70 shadow-sm"
+            className={cn(
+              "min-h-0 flex-1 overflow-y-auto rounded-2xl border border-slate-200/80 bg-white/70 shadow-sm",
+              RESPONSIVE.tableShell,
+            )}
           >
-            <Table>
+            <Table className={RESPONSIVE.tableMinExtraWide}>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
                   {allowCancel ? (

@@ -261,7 +261,7 @@ function MonthlyHistorySection({
       <div className="border-b border-slate-100 px-4 py-3">
         <div className="text-sm font-semibold text-slate-900">{title}</div>
       </div>
-      <div className="p-4">
+      <div className="min-w-0 p-4">
         {isLoading ? (
           <div className="text-sm text-muted-foreground">
             월별 내역을 불러오는 중입니다.

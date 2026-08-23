@@ -344,7 +344,7 @@ export const NewChatWidget = () => {
         />
       )}
 
-      <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50">
+      <div className="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-50 sm:bottom-6 sm:right-6">
         {!isOpen ? (
           <Button
             size="lg"
@@ -364,7 +364,7 @@ export const NewChatWidget = () => {
           <div onClick={(e) => e.stopPropagation()}>
             <Card
               className={`
-                w-[calc(100vw-2rem)] max-w-96 h-[calc(100vh-8rem)] max-h-[600px] sm:w-96 sm:h-[600px]
+                w-[min(100vw-2rem,24rem)] max-w-[calc(100vw-2rem)] h-[min(calc(100vh-6rem),600px)] sm:w-96 sm:max-w-none sm:h-[600px]
                 border transition-all duration-300 bg-card overflow-hidden 
                 ${isMinimized ? "h-12" : ""}
               `}

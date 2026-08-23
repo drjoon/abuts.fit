@@ -177,8 +177,8 @@ export const LoginPage = () => {
         />
       </div>
 
-      <main className="relative z-10 mx-auto flex min-h-screen max-w-6xl flex-col justify-center gap-12 px-4 py-16 lg:flex-row lg:items-center">
-        <section className="w-full space-y-6 text-center lg:w-1/2 lg:flex-1 lg:text-left">
+      <main className="relative z-10 mx-auto flex min-h-screen w-full max-w-6xl flex-col justify-center gap-8 px-4 py-10 sm:gap-12 sm:px-6 sm:py-16 lg:flex-row lg:items-center">
+        <section className="w-full space-y-5 text-center sm:space-y-6 lg:w-1/2 lg:flex-1 lg:text-left">
           <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1 text-xs uppercase tracking-[0.3em] text-white/70">
             <span>secure access</span>
             <span className="h-1 w-1 rounded-full bg-primary/70" />
@@ -203,13 +203,13 @@ export const LoginPage = () => {
           </div>
         </section>
 
-        <section className="w-full lg:w-1/2 lg:flex-1">
+        <section className="mx-auto w-full max-w-md sm:max-w-lg lg:mx-0 lg:max-w-none lg:w-1/2 lg:flex-1">
           <div className="w-full space-y-6">
             <Card className="border-white/12 bg-white/5 text-white shadow-[0_25px_65px_rgba(7,7,19,0.55)] backdrop-blur-2xl">
-              <CardHeader className="text-center px-8">
-                <CardTitle className="text-2xl text-white">로그인</CardTitle>
+              <CardHeader className="px-4 pt-6 text-center sm:px-6 md:px-8">
+                <CardTitle className="text-xl text-white sm:text-2xl">로그인</CardTitle>
               </CardHeader>
-              <CardContent className="px-8 pb-8">
+              <CardContent className="px-4 pb-6 sm:px-6 sm:pb-8 md:px-8">
                 <div className="space-y-4">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <Button
@@ -274,7 +274,7 @@ export const LoginPage = () => {
                             placeholder="이메일을 입력하세요"
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
-                            className="pl-10 border-white/10 bg-white/5 text-white placeholder:text-white/40"
+                            className="h-11 pl-10 border-white/10 bg-white/5 text-white placeholder:text-white/40"
                             autoComplete="username"
                             required
                             disabled={step === "password"}
@@ -293,7 +293,7 @@ export const LoginPage = () => {
                               placeholder="비밀번호를 입력하세요"
                               value={password}
                               onChange={(e) => setPassword(e.target.value)}
-                              className="pl-10 pr-10 border-white/10 bg-white/5 text-white placeholder:text-white/40"
+                              className="h-11 pl-10 pr-10 border-white/10 bg-white/5 text-white placeholder:text-white/40"
                               autoComplete="current-password"
                               required
                               autoFocus={step === "password"}
@@ -326,10 +326,8 @@ export const LoginPage = () => {
                       <Button
                         type="submit"
                         variant="hero"
-                        className={`w-full md:w-24 flex items-center justify-center text-base ${
-                          step === "password"
-                            ? "h-[40px] md:h-full"
-                            : "h-[40px] md:h-[40px]"
+                        className={`flex h-11 w-full items-center justify-center text-base md:h-auto md:w-24 ${
+                          step === "password" ? "md:h-full" : ""
                         }`}
                         disabled={isLoading}
                       >

@@ -473,8 +473,8 @@ export const SettingsWizard = ({
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#edf2ff] via-white to-[#f8fafc]">
-      <div className="mx-auto flex min-h-screen w-full flex-col items-center justify-center px-4 py-12">
-        <div className="mb-6 text-center">
+      <div className="mx-auto flex min-h-screen w-full flex-col items-center justify-center px-4 py-8 sm:px-6 sm:py-12">
+        <div className="mb-5 text-center sm:mb-6">
           <div className="inline-flex items-center gap-2 rounded-full border border-white/70 bg-white/70 px-4 py-1.5 text-sm font-semibold uppercase tracking-[0.2em] text-slate-500 shadow-sm">
             {STEP_ORDER.indexOf(currentStep) + 1}/{STEP_ORDER.length}
           </div>
@@ -485,16 +485,16 @@ export const SettingsWizard = ({
 
         <Card
           className={cn(
-            "w-full rounded-3xl border border-white/60 bg-white/95 shadow-xl backdrop-blur",
+            "w-full rounded-2xl border border-white/60 bg-white/95 shadow-xl backdrop-blur sm:rounded-3xl",
             cardMaxWidth,
           )}
         >
-          <CardHeader className="space-y-1 border-slate-100/80 px-12 pt-6 pb-0">
-            <CardTitle className="text-3xl font-semibold leading-tight text-slate-900">
+          <CardHeader className="space-y-1 border-slate-100/80 px-4 pb-0 pt-5 sm:px-8 sm:pt-6 md:px-12">
+            <CardTitle className="text-2xl font-semibold leading-tight text-slate-900 sm:text-3xl">
               {stepTitle}
             </CardTitle>
           </CardHeader>
-          <CardContent className="px-12 pb-6 pt-6">
+          <CardContent className="px-4 pb-5 pt-5 sm:px-8 sm:pb-6 sm:pt-6 md:px-12">
             {currentStep === "profile" && (
               <ProfileStep
                 defaultCompleted={stepCompleted.profile}
@@ -536,7 +536,7 @@ export const SettingsWizard = ({
             {(STEP_ORDER.indexOf(currentStep) > 0 ||
               currentStep === "profile" ||
               currentStep === "phone") && (
-              <div className="mt-8 flex justify-between gap-3">
+              <div className="mt-6 flex flex-col-reverse gap-3 sm:mt-8 sm:flex-row sm:justify-between">
                 {STEP_ORDER.indexOf(currentStep) > 0 ? (
                   <Button
                     variant="outline"
@@ -544,14 +544,14 @@ export const SettingsWizard = ({
                     disabled={
                       nextLoading || stepBusy || validationState.validating
                     }
-                    className="h-11 w-20"
+                    className="h-11 w-full sm:w-20"
                   >
                     이전
                   </Button>
                 ) : (
-                  <div />
+                  <div className="hidden sm:block" />
                 )}
-                <div className="flex gap-3">
+                <div className="flex gap-3 sm:ml-auto">
                   {(currentStep === "profile" ||
                     currentStep === "phone" ||
                     currentStep === "role" ||
@@ -566,7 +566,7 @@ export const SettingsWizard = ({
                         (currentStep === "role" && !selectedRole) ||
                         (currentStep === "business" && !canProceedBusinessStep)
                       }
-                      className="h-11 w-20"
+                      className="h-11 w-full sm:w-20"
                     >
                       {nextLoading ? "저장 중..." : "다음"}
                     </Button>

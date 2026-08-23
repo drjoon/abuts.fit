@@ -707,7 +707,7 @@ export const useCncToolPanels = ({
         ) : null}
 
         {rows.length > 0 ? (
-          <div className="max-h-[60vh] overflow-auto rounded-xl border border-gray-100 bg-white shadow-sm">
+          <div className="min-w-0 max-h-[60vh] overflow-auto rounded-xl border border-gray-100 bg-white shadow-sm">
             <table className="w-full text-[11px] sm:text-xs table-fixed">
               <thead className="bg-gray-50 text-gray-500">
                 <tr>
@@ -1558,8 +1558,8 @@ export const useCncToolPanels = ({
             등록된 공구 슬롯이 없습니다.
           </div>
         ) : (
-          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-            <div className="max-h-[48vh] overflow-auto">
+          <div className="min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white">
+            <div className="max-h-[48vh] min-w-0 overflow-auto">
               <table className="w-full min-w-[920px] text-xs">
                 <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 text-[11px] font-semibold text-slate-500">
                   <tr>

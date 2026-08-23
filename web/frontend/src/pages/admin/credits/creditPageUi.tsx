@@ -52,7 +52,7 @@ export function CreditStatTile({
   tone?: "default" | "accent";
 }) {
   return (
-    <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-4 shadow-sm">
+    <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-3 shadow-sm sm:p-4">
       <div className="text-xs font-medium text-slate-500">{label}</div>
       <div
         className={cn(
@@ -81,7 +81,7 @@ export function CreditPanel({
   return (
     <div
       className={cn(
-        "overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm",
+        "min-w-0 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm",
         className,
       )}
     >

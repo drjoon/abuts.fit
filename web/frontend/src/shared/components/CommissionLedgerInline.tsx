@@ -19,6 +19,8 @@ import {
 } from "@/components/ui/table";
 import type { SalesmanLedgerType } from "./SalesmanLedgerModal";
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
+import { cn } from "@/shared/ui/cn";
+import { RESPONSIVE } from "@/shared/ui/responsive";
 
 type LedgerItem = {
   _id: string;
@@ -307,9 +309,12 @@ export const CommissionLedgerInline = ({
 
       <div
         ref={scrollRef}
-        className="max-h-[480px] overflow-y-auto overflow-x-auto rounded-2xl border border-slate-200/80 bg-white/70 shadow-sm"
+        className={cn(
+          "max-h-[480px] overflow-y-auto rounded-2xl border border-slate-200/80 bg-white/70 shadow-sm",
+          RESPONSIVE.tableShell,
+        )}
       >
-        <Table>
+        <Table className={RESPONSIVE.tableMinExtraWide}>
           <TableHeader>
             <TableRow>
               <TableHead className="w-[190px] text-center">

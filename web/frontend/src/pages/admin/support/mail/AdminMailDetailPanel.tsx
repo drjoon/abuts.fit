@@ -15,6 +15,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  ArrowLeft,
   Download,
   Paperclip,
   Mail,
@@ -38,6 +39,8 @@ type Props = {
   onMoveToSpam?: (id: string) => void;
   onTrash?: (id: string) => void;
   onRestoreToSent?: (id: string) => void;
+  onBack?: () => void;
+  showBackButton?: boolean;
 };
 
 export const AdminMailDetailPanel = ({
@@ -49,6 +52,8 @@ export const AdminMailDetailPanel = ({
   onMoveToSpam,
   onTrash,
   onRestoreToSent,
+  onBack,
+  showBackButton = false,
 }: Props) => {
   const selectedDate =
     selected?.createdAt || selected?.receivedAt || selected?.sentAt;
@@ -56,6 +61,17 @@ export const AdminMailDetailPanel = ({
   return (
     <Card className="lg:col-span-3">
       <CardContent className="space-y-3 mt-6">
+        {showBackButton && onBack ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onBack}
+            className="gap-2 -ml-2"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            목록
+          </Button>
+        ) : null}
         {detailLoading ? (
           <div className="space-y-3">
             <Skeleton className="h-6 w-2/3" />

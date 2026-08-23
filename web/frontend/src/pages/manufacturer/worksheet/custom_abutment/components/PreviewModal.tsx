@@ -2167,7 +2167,7 @@ export const PreviewModal = ({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         hideClose
-        className={`w-[96vw] max-w-[1680px] h-[85vh] overflow-hidden ${
+        className={`w-[min(1680px,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] h-[85vh] overflow-hidden ${
           shouldShowUnmachinableWarning || isUnmachinable
             ? "border-accent-muted ring-2 ring-accent-muted/80"
             : ""
@@ -2178,8 +2178,8 @@ export const PreviewModal = ({
           의뢰 파일과 NC 내용을 확인하는 영역입니다.
         </DialogDescription>
 
-        <div className="h-full flex flex-col gap-4 overflow-hidden">
-          <div className="flex flex-nowrap items-center justify-between gap-3 rounded-lg border border-slate-200/80 bg-slate-50/70 px-3 py-2 shrink-0 overflow-x-auto">
+        <div className="flex h-full min-w-0 flex-col gap-4 overflow-hidden">
+          <div className="flex min-w-0 flex-nowrap items-center justify-between gap-3 overflow-x-auto rounded-lg border border-slate-200/80 bg-slate-50/70 px-2 py-2 shrink-0 sm:px-3">
             <div className="flex min-w-0 flex-nowrap items-center gap-2">
               {hasNcMetadata && (
                 <Badge

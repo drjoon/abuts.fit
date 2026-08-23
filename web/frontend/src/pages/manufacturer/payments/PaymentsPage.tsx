@@ -779,7 +779,7 @@ export const ManufacturerPaymentPage = () => {
 
   return (
     <>
-    <div className="flex h-full min-h-0 flex-col overflow-hidden">
+        <div className="flex h-full min-h-0 flex-col overflow-hidden">
     <DashboardShell
       title="정산 내역"
       subtitle=""
@@ -820,7 +820,7 @@ export const ManufacturerPaymentPage = () => {
         </>
       }
       mainLeft={
-        <div className="flex h-full min-h-0 flex-col">
+        <div className="flex h-full min-h-0 min-w-0 flex-col">
           <Tabs
             value={tab}
             onValueChange={handleTabChange}
@@ -905,9 +905,9 @@ export const ManufacturerPaymentPage = () => {
               ) : null}
               <SettlementTableFrame
                 scrollRef={ledgerScrollRef}
-                className="min-h-0 flex-1 overflow-y-auto"
+                className="min-h-0 min-w-0 flex-1 overflow-y-auto"
               >
-                <Table>
+                <Table className="min-w-[640px]">
                   <TableHeader>
                     <TableRow className="hover:bg-transparent">
                       <TableHead className="w-[190px] text-center">
@@ -1064,9 +1064,9 @@ export const ManufacturerPaymentPage = () => {
             >
               <SettlementTableFrame
                 scrollRef={paymentScrollRef}
-                className="min-h-0 flex-1 overflow-y-auto"
+                className="min-h-0 min-w-0 flex-1 overflow-y-auto"
               >
-                <Table>
+                <Table className="min-w-[560px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-[190px] text-center">

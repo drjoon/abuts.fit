@@ -45,7 +45,7 @@ export const LandingPlatformSection = ({
       id="platform-details"
       className="relative border-t border-white/[0.06]"
     >
-      <div ref={ref} className="mx-auto max-w-6xl space-y-12 px-4 py-14 lg:py-16">
+      <div ref={ref} className="mx-auto max-w-6xl space-y-10 px-4 py-12 sm:space-y-12 sm:px-6 sm:py-14 lg:py-16">
         <div
           className={`mx-auto max-w-2xl text-center transition-all duration-700 ${
             inView ? "translate-y-0 opacity-100" : "translate-y-6 opacity-0"

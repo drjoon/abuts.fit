@@ -46,6 +46,7 @@ import {
   type ChartConfig,
 } from "@/components/ui/chart";
 import { cn } from "@/shared/ui/cn";
+import { RESPONSIVE } from "@/shared/ui/responsive";
 
 type StatsRow = {
   key: string;
@@ -340,10 +341,10 @@ export function CreditStatisticsTab() {
     setDrillDown(next);
   };
 
-  const statCardClass = "min-w-[9.5rem] flex-1 sm:min-w-[10.5rem]";
+  const statCardClass = "min-w-[8.5rem] flex-1 sm:min-w-[9.5rem] md:min-w-[10.5rem]";
 
   const summaryCards = (
-    <div className="-mx-1 overflow-x-auto pb-1">
+    <div className={cn("min-w-0", RESPONSIVE.tableShell, "pb-1")}>
       <div className="flex min-w-max items-stretch gap-0.5 px-1 sm:gap-1">
         <SettlementStatCard
           className={statCardClass}
@@ -416,21 +417,21 @@ export function CreditStatisticsTab() {
 
   return (
     <>
-      <div className="flex flex-col gap-4 pb-2 pt-1">
+      <div className="flex min-w-0 flex-col gap-4 pb-2 pt-1">
         {loading ? (
           <>
-            <div className="-mx-1 overflow-x-auto pb-1">
+            <div className={cn("min-w-0", RESPONSIVE.tableShell, "pb-1")}>
               <div className="flex min-w-max items-stretch gap-0.5 px-1 sm:gap-1">
                 {Array.from({ length: isLab ? 4 : 3 }).map((_, i) => (
                   <div
                     key={i}
-                    className="min-h-[7.25rem] min-w-[9.5rem] flex-1 animate-pulse rounded-2xl border border-border/60 bg-muted/30 sm:min-w-[10.5rem]"
+                    className="min-h-[7.25rem] min-w-[8.5rem] flex-1 animate-pulse rounded-2xl border border-border/60 bg-muted/30 sm:min-w-[9.5rem] md:min-w-[10.5rem]"
                   />
                 ))}
               </div>
             </div>
             <div className="h-9 w-48 animate-pulse rounded-xl border border-border/60 bg-muted/30" />
-            <div className="grid gap-3 md:grid-cols-2">
+            <div className="grid min-w-0 gap-3 md:grid-cols-2">
               {Array.from({ length: 4 }).map((_, i) => (
                 <div
                   key={i}
@@ -465,7 +466,7 @@ export function CreditStatisticsTab() {
               />
             </div>
 
-            <div className="grid gap-3 md:grid-cols-2">
+            <div className="grid min-w-0 gap-3 md:grid-cols-2">
               <StatsPanel
                 title="기간별 추이"
                 subtitle="일별 소비·충전"

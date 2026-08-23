@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-22: 주문 일자(createdAt) 표시에 KST 시각 포함(formatKstDateTimeToKo).
 // - 2026-08-17: 환자 섹션 호버 시 직납 치과 연락처 툴팁. 배송 섹션은 스냅샷(포장.발송)일 때만.
 // - 2026-08-17: PTX 직납 shippingContact(치과 수취인) 배송 섹션 추가(제조사 카드만).
 // - 2026-08-12: row(프리뷰)도 열 너비 초과 시 다음 줄로 넘김. nowrap 강제 제거(생산 문구 잘림 수정).
@@ -23,6 +24,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { formatKstDateTimeToKo } from "@/shared/date/kst";
 
 /** lovable-tagger가 Fragment에 data-lov-id를 붙여 경고가 나므로 DOM 노드로 감싼다. */
 function InlineGroup({
@@ -89,11 +91,10 @@ export function resolveOrgLabels(
   return [requestor, clinic];
 }
 
-function formatCreatedAt(value?: string | Date | null): string {
+function formatOrderDateTime(value?: string | Date | null): string {
   if (!value) return "";
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleDateString("ko-KR");
+  const formatted = formatKstDateTimeToKo(value);
+  return formatted === "-" ? "" : formatted;
 }
 
 /** YYYY-MM-DD → 출고 M.D */
@@ -168,7 +169,7 @@ export function RequestInfoSummary({
 }: RequestInfoSummaryProps) {
   const labName = String(requestorLabel || "").trim();
   const clinic = String(clinicName || "").trim();
-  const dateLabel = formatCreatedAt(createdAt);
+  const dateLabel = formatOrderDateTime(createdAt);
   const shipLabel = formatShipYmdLabel(estimatedShipYmd);
   const deadlineText = String(deadlineInfo?.displayText || "").trim();
   const deadlineBadgeClass = String(deadlineInfo?.badgeClass || "").trim();

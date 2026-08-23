@@ -57,6 +57,8 @@ import {
 import { Box, FileIcon, MessageSquare, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { cn } from "@/shared/ui/cn";
+import { RESPONSIVE } from "@/shared/ui/responsive";
 import { type ChatMessage } from "@/shared/hooks/useChatRooms";
 import { ChatComposer } from "@/features/chat/components/ChatComposer";
 import { ChatMessageBubble } from "@/features/chat/components/ChatMessageBubble";
@@ -1024,7 +1026,13 @@ export function PracticeTransferDetailChatDialog({
   return (
     <>
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex h-[86vh] w-[95vw] max-w-[90rem] flex-col gap-0 overflow-hidden p-0">
+      <DialogContent
+        className={cn(
+          "flex h-[86vh] flex-col gap-0 overflow-hidden p-0",
+          RESPONSIVE.dialogContentFull,
+          "sm:max-w-[min(96vw,90rem)]",
+        )}
+      >
         <DialogHeader className="px-5 pt-5 pb-3 border-b shrink-0">
           <DialogTitle className="flex items-center gap-2 pr-8 text-base">
             <MessageSquare className="h-4 w-4 text-primary-strong" />

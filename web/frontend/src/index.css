@@ -398,3 +398,33 @@ All colors MUST be HSL.
   animation: practice-transfer-attention-pulse 1.5s ease-in-out infinite;
 }
 
+/* Responsive layout helpers (mobile-first) */
+.responsive-table-shell {
+  width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.responsive-modal-md {
+  width: min(560px, calc(100vw - 2rem));
+  max-width: calc(100vw - 2rem);
+}
+
+.responsive-modal-lg {
+  width: min(640px, calc(100vw - 2rem));
+  max-width: calc(100vw - 2rem);
+}
+
+.responsive-page-padding {
+  padding-left: max(0.75rem, env(safe-area-inset-left));
+  padding-right: max(0.75rem, env(safe-area-inset-right));
+}
+
+@media (min-width: 640px) {
+  .responsive-page-padding {
+    padding-left: max(1rem, env(safe-area-inset-left));
+    padding-right: max(1rem, env(safe-area-inset-right));
+  }
+}
+

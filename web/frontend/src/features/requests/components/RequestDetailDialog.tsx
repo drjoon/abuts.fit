@@ -33,6 +33,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { cn } from "@/shared/ui/cn";
+import { RESPONSIVE } from "@/shared/ui/responsive";
 import { formatImplantDisplay } from "@/utils/implant";
 import { formatDateWithDay } from "@/utils/dateFormat";
 import { generateModelNumber } from "@/utils/modelNumber";
@@ -384,9 +386,12 @@ export const RequestDetailDialog = ({
     >
       <DialogContent
         overlayClassName="z-[110]"
-        className={`z-[110] flex max-h-[85vh] w-[min(96vw,880px)] max-w-[880px] flex-col gap-0 overflow-hidden p-0 sm:rounded-2xl ${
-          isUnmachinable ? "border-accent-muted" : ""
-        }`}
+        className={cn(
+          "z-[110] flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:rounded-2xl",
+          RESPONSIVE.dialogContentFull,
+          "sm:max-w-[min(96vw,880px)]",
+          isUnmachinable && "border-accent-muted",
+        )}
         onPointerDownOutside={(e) => {
           if (dismissLocked) e.preventDefault();
         }}

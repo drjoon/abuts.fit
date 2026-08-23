@@ -33,7 +33,7 @@ export const LandingAudienceSection = () => {
       id="audience"
       className="relative border-t border-white/[0.06]"
     >
-      <div ref={ref} className="mx-auto max-w-6xl space-y-8 px-4 py-14 lg:py-16">
+      <div ref={ref} className="mx-auto max-w-6xl space-y-8 px-4 py-12 sm:space-y-10 sm:px-6 sm:py-14 lg:py-16">
         <div
           className={`mx-auto max-w-2xl text-center transition-all duration-700 ${
             inView ? "translate-y-0 opacity-100" : "translate-y-6 opacity-0"
@@ -84,7 +84,7 @@ function AudienceCard({
 
   return (
     <article
-      className={`flex flex-col rounded-2xl border border-white/12 bg-gradient-to-br from-white/[0.07] to-white/[0.02] p-6 shadow-[0_24px_60px_rgba(0,0,0,0.35)] backdrop-blur-2xl transition-all duration-700 md:p-8 ${
+      className={`flex flex-col rounded-2xl border border-white/12 bg-gradient-to-br from-white/[0.07] to-white/[0.02] p-5 shadow-[0_24px_60px_rgba(0,0,0,0.35)] backdrop-blur-2xl transition-all duration-700 sm:p-6 md:p-8 ${
         inView ? "translate-y-0 opacity-100" : "translate-y-6 opacity-0"
       }`}
       style={{ transitionDelay: `${delayMs}ms` }}

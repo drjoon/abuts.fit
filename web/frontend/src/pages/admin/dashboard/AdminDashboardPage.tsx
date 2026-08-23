@@ -2352,7 +2352,7 @@ export const AdminDashboardPage = () => {
           setDesignSoftwareStatsFilter("all");
         }}
         title="디자인 소프트웨어 통계"
-        panelClassName="!w-[94vw] !max-w-[1200px]"
+        panelClassName="!w-[min(1200px,calc(100vw-2rem))] !max-w-[calc(100vw-2rem)]"
         description={
           <div className="space-y-3 text-sm text-gray-700">
             <div className="flex flex-wrap gap-2">
@@ -2445,7 +2445,7 @@ export const AdminDashboardPage = () => {
           setUnsupportedAbutmentStatsFilter("all");
         }}
         title="미제공 어벗 통계"
-        panelClassName="!w-[94vw] !max-w-[1200px]"
+        panelClassName="!w-[min(1200px,calc(100vw-2rem))] !max-w-[calc(100vw-2rem)]"
         description={
           <div className="space-y-3 text-sm text-gray-700">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -2568,7 +2568,7 @@ export const AdminDashboardPage = () => {
         open={Boolean(unsupportedAbutmentDetailItem)}
         onClose={() => setUnsupportedAbutmentDetailItem(null)}
         title="미제공 어벗 상세"
-        panelClassName="!w-[94vw] !max-w-[720px]"
+        panelClassName="!w-[min(720px,calc(100vw-2rem))] !max-w-[calc(100vw-2rem)]"
         description={
           unsupportedAbutmentDetailItem ? (
             <div className="space-y-4 text-sm text-gray-700">
@@ -2707,7 +2707,7 @@ export const AdminDashboardPage = () => {
           setPracticeTransferStatsDialogOpen(false);
         }}
         title="치과 의뢰(파일) 전송 통계 상세"
-        panelClassName="!w-[94vw] !max-w-[1120px] !h-[min(88vh,920px)] !max-h-[88vh]"
+        panelClassName="!w-[min(1120px,calc(100vw-2rem))] !max-w-[calc(100vw-2rem)] !h-[min(88vh,920px)] !max-h-[88vh]"
         descriptionScrollable={false}
         descriptionClassName="!mb-4 !max-h-none !overflow-hidden flex min-h-0 flex-1 flex-col"
         description={
@@ -3163,7 +3163,7 @@ export const AdminDashboardPage = () => {
           setRiskSummaryDialogOpen(false);
         }}
         title="지연 위험 상세"
-        panelClassName="!w-[92vw] !max-w-[1100px]"
+        panelClassName="!w-[min(1100px,calc(100vw-2rem))] !max-w-[calc(100vw-2rem)]"
         description={
           <div className="space-y-3 text-sm text-gray-700">
             <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
@@ -3226,7 +3226,7 @@ export const AdminDashboardPage = () => {
         open={hexVerificationDialogOpen}
         onClose={() => setHexVerificationDialogOpen(false)}
         title="ExoCAD 헥스 회전 확인"
-        panelClassName="!w-[92vw] !max-w-[900px]"
+        panelClassName="!w-[min(900px,calc(100vw-2rem))] !max-w-[calc(100vw-2rem)]"
         description={
           <div className="space-y-3 text-sm text-gray-700">
             <div className="text-xs text-muted-foreground">
@@ -3350,7 +3350,7 @@ export const AdminDashboardPage = () => {
           setHappyCallReasonFilter("all");
           setHappyCallDialogTab("targets");
         }}
-        panelClassName="!w-[94vw] !max-w-[1500px] !h-[88vh]"
+        panelClassName="!w-[min(1500px,calc(100vw-2rem))] !max-w-[calc(100vw-2rem)] !h-[88vh]"
         descriptionClassName="h-full"
         descriptionScrollable={false}
         title="이번 주 해피콜 의뢰자 목록"
@@ -3461,7 +3461,7 @@ export const AdminDashboardPage = () => {
                 </div>
 
                 <div className="flex-1 min-h-0 overflow-auto pr-1">
-                  <div className="grid grid-cols-2 xl:grid-cols-3 gap-2">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
                   {filteredHappyCallItems.map((item) => {
                     const anchorId = String(item.businessAnchorId || "").trim();
                     const phone = String(item.phoneNumber || "").trim();
@@ -3667,12 +3667,12 @@ export const AdminDashboardPage = () => {
                     value={happyCallCompletionSearch}
                     onChange={(e) => setHappyCallCompletionSearch(String(e.target.value || ""))}
                     placeholder="의뢰자명/회사명 검색"
-                    className="h-8 min-w-[220px] rounded-md border border-slate-300 px-2.5 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-muted"
+                    className="h-8 min-w-0 w-full flex-1 rounded-md border border-slate-300 px-2.5 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-muted sm:min-w-[180px] sm:w-auto sm:flex-none"
                   />
                 </div>
 
                 <div className="flex-1 min-h-0 overflow-auto pr-1">
-                  <div className="grid grid-cols-2 xl:grid-cols-3 gap-2">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
                     {happyCallCompletionItems.map((row) => {
                       const businessName = String(row.businessName || "").trim();
                       const companyName = String(row.companyName || "").trim();
@@ -3859,7 +3859,7 @@ export const AdminDashboardPage = () => {
           setHappyCallSelectedMemoId(null);
         }}
         title="해피콜 메모"
-        panelClassName="!w-[92vw] !max-w-[1100px] overflow-hidden"
+        panelClassName="!w-[min(1100px,calc(100vw-2rem))] !max-w-[calc(100vw-2rem)] overflow-hidden"
         description={
           <div className="space-y-3 text-sm text-gray-700">
             <div>

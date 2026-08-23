@@ -1758,7 +1758,7 @@ const NewRequestPageContent = () => {
           contentClassName="new-request-page sm:max-w-2xl"
         />
 
-        <div className="grid grid-cols-1 lg:grid-cols-[minmax(34rem,1.2fr)_minmax(0,1fr)] gap-3 items-stretch flex-1 min-h-0 h-full">
+        <div className="grid grid-cols-1 xl:grid-cols-[minmax(34rem,1.2fr)_minmax(0,1fr)] gap-3 items-stretch flex-1 min-h-0 h-full">
           <div className="flex flex-col gap-2.5 flex-1 min-h-0 h-full">
             <NewRequestDetailsSection
               files={files}

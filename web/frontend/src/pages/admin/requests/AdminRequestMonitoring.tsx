@@ -461,10 +461,10 @@ export const AdminRequestMonitoring = () => {
   ];
 
   return (
-    <div className="flex h-full min-h-0 flex-col px-4 pt-4 pb-2 sm:px-4 sm:pt-4">
+    <div className="flex h-full min-h-0 flex-col px-2 pt-4 pb-2 sm:px-4 sm:pt-4">
       <div className="mx-auto flex w-full max-w-7xl flex-1 min-h-0 flex-col gap-4 overflow-y-auto">
         <div className="flex flex-wrap items-center gap-3 px-0.5">
-          <div className="relative min-w-[240px] flex-1">
+          <div className="relative min-w-0 w-full flex-1 sm:min-w-[200px]">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <Input
               placeholder="환자·치과·의뢰자·의뢰번호 검색..."

@@ -27,6 +27,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { PeriodFilterValue } from "@/shared/ui/PeriodFilter";
+import { cn } from "@/shared/ui/cn";
+import { RESPONSIVE } from "@/shared/ui/responsive";
 import {
   RequestorEditRequestDialog,
   type EditingRequestState,
@@ -2265,7 +2267,13 @@ export const RequestorDashboardPage = () => {
           }
         }}
       >
-        <DialogContent className="w-[92vw] max-w-4xl h-[64vh] overflow-hidden flex flex-col">
+        <DialogContent
+          className={cn(
+            "flex h-[64vh] flex-col overflow-hidden",
+            RESPONSIVE.dialogContentFull,
+            "sm:max-w-4xl",
+          )}
+        >
           <DialogHeader>
             <DialogTitle>불완전 가공 안내</DialogTitle>
           </DialogHeader>

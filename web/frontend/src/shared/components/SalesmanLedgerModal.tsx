@@ -25,6 +25,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
+import { cn } from "@/shared/ui/cn";
+import { RESPONSIVE } from "@/shared/ui/responsive";
 
 export type SalesmanLedgerType = "EARN" | "PAYOUT" | "ADJUST";
 
@@ -283,7 +285,13 @@ export const SalesmanLedgerModal = ({
         if (!v) resetFilters();
       }}
     >
-      <DialogContent className="w-[92vw] max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
+      <DialogContent
+        className={cn(
+          "flex max-h-[85vh] flex-col overflow-hidden",
+          RESPONSIVE.dialogContentFull,
+          "sm:max-w-4xl",
+        )}
+      >
         <DialogHeader className="pb-2">
           <DialogTitle className="text-lg">
             {title || "정산 내역"}
@@ -293,7 +301,7 @@ export const SalesmanLedgerModal = ({
 
         <div className="flex flex-col gap-3 min-h-0 flex-1">
           <div className="flex flex-col gap-2">
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
               <PeriodFilter
                 value={period}
                 onChange={setPeriod}
@@ -309,7 +317,7 @@ export const SalesmanLedgerModal = ({
                   setCustomEndDate("");
                 }}
               />
-              <div className="w-[130px]">
+              <div className="w-full min-w-0 sm:w-[130px]">
                 <select
                   className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
                   value={type}
@@ -335,19 +343,19 @@ export const SalesmanLedgerModal = ({
                 초기화
               </Button>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
               <Input
                 type="date"
                 value={from}
                 onChange={(e) => setFrom(e.target.value)}
-                className="h-9 w-[150px]"
+                className="h-9 w-full min-w-0 sm:w-[150px]"
               />
               <span className="text-xs text-muted-foreground">~</span>
               <Input
                 type="date"
                 value={to}
                 onChange={(e) => setTo(e.target.value)}
-                className="h-9 w-[150px]"
+                className="h-9 w-full min-w-0 sm:w-[150px]"
               />
               <Input
                 value={q}
@@ -360,9 +368,12 @@ export const SalesmanLedgerModal = ({
 
           <div
             ref={scrollRef}
-            className="flex-1 min-h-0 overflow-y-auto overflow-x-auto rounded-md border"
+            className={cn(
+              "min-h-0 flex-1 overflow-y-auto rounded-md border",
+              RESPONSIVE.tableShell,
+            )}
           >
-            <Table>
+            <Table className={RESPONSIVE.tableMinWide}>
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[190px] text-center">

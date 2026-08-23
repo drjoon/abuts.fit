@@ -83,13 +83,13 @@ export default function AdminCreditPage() {
   }, [state.salesmen, normalizedSearch]);
 
   return (
-    <div className="min-h-0 space-y-5 p-4">
+    <div className="min-h-0 space-y-5 p-2 sm:p-4">
       <Tabs
         value={state.creditTab}
         onValueChange={(v) => state.setCreditTab(v as "requestor" | "salesman")}
       >
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <TabsList className="h-11 rounded-xl bg-slate-100/80 p-1">
+          <TabsList className="h-auto min-w-0 flex-wrap rounded-xl bg-slate-100/80 p-1">
             <TabsTrigger value="requestor" className="rounded-lg px-5 text-sm">
               치과 · 기공소
             </TabsTrigger>

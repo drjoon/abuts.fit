@@ -52,6 +52,7 @@ import {
   summarizeOrderItems,
 } from "@/pages/requestor/store/storeOrderUi";
 import { resolveStoreOrderShippingFee } from "@/shared/store/storeShipping";
+import { RESPONSIVE } from "@/shared/ui/responsive";
 
 function copyText(text: string, label: string) {
   void navigator.clipboard.writeText(text).then(
@@ -139,8 +140,9 @@ function OrderListTable({
   canceling: boolean;
 }) {
   return (
-    <div className="hidden overflow-hidden rounded-xl border border-border/70 md:block">
-      <table className="w-full text-sm">
+    <div className="hidden rounded-xl border border-border/70 md:block">
+      <div className={RESPONSIVE.tableShell}>
+      <table className={`text-sm ${RESPONSIVE.tableMinWide}`}>
         <thead className="border-b border-border/70 bg-muted/40 text-left text-xs text-muted-foreground">
           <tr>
             <th className="px-4 py-3 font-medium">주문일</th>
@@ -210,6 +212,7 @@ function OrderListTable({
           })}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }
@@ -372,7 +375,7 @@ export default function RequestorStoreOrdersPage() {
             if (!open && !canceling) setCancelTarget(null);
           }}
         >
-          <AlertDialogContent className="z-[200]">
+          <AlertDialogContent className={`z-[200] ${RESPONSIVE.dialogContent}`}>
             <AlertDialogHeader>
               <AlertDialogTitle>주문을 취소할까요?</AlertDialogTitle>
               <AlertDialogDescription>
@@ -520,8 +523,8 @@ export function RequestorStoreOrderDetailPage() {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid gap-6 lg:grid-cols-3 lg:items-start">
-            <div className="space-y-6 lg:col-span-2">
+          <div className="grid min-w-0 gap-4 sm:gap-6 lg:grid-cols-3 lg:items-start">
+            <div className="min-w-0 space-y-4 sm:space-y-6 lg:col-span-2">
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base">주문 진행</CardTitle>
@@ -543,7 +546,7 @@ export function RequestorStoreOrderDetailPage() {
                     {(order.items || []).map((item, idx) => (
                       <li
                         key={`${item.name}-${idx}`}
-                        className="flex items-center justify-between gap-4 px-6 py-4"
+                        className="flex items-center justify-between gap-4 px-4 py-4 sm:px-6"
                       >
                         <div className="min-w-0">
                           <p className="font-medium">{item.name}</p>
@@ -599,7 +602,7 @@ export function RequestorStoreOrderDetailPage() {
               ) : null}
             </div>
 
-            <div className="space-y-4 lg:sticky lg:top-4">
+            <div className="min-w-0 space-y-4 lg:sticky lg:top-4">
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base">결제 정보</CardTitle>
@@ -728,7 +731,7 @@ export function RequestorStoreOrderDetailPage() {
         )}
 
         <AlertDialog open={cancelOpen} onOpenChange={setCancelOpen}>
-          <AlertDialogContent className="z-[200]">
+          <AlertDialogContent className={`z-[200] ${RESPONSIVE.dialogContent}`}>
             <AlertDialogHeader>
               <AlertDialogTitle>주문을 취소할까요?</AlertDialogTitle>
               <AlertDialogDescription>

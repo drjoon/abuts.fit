@@ -401,7 +401,7 @@ export const InquiriesPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-subtle p-4">
+    <div className="min-h-screen bg-gradient-subtle p-2 sm:p-4">
       <div className="mx-auto max-w-4xl space-y-4">
         {/* 헤더 배너 */}
         <Card className="app-glass-card app-glass-card--lg border-primary-muted bg-gradient-to-br from-white via-white to-primary-soft/60">
@@ -552,8 +552,8 @@ export const InquiriesPage = () => {
           <TabsContent value="history">
             <Card className="app-glass-card app-glass-card--lg">
               <CardHeader className="pb-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
                     <CardTitle className="text-base">내 문의 내역</CardTitle>
                     <p className="mt-0.5 text-sm text-muted-foreground">
                       {loading
@@ -704,7 +704,7 @@ export const InquiriesPage = () => {
 
         {/* 문의 상세 다이얼로그 */}
         <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-          <DialogContent className="max-w-lg overflow-hidden rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-primary-soft/40 shadow-[0_20px_60px_rgba(15,23,42,0.12)]">
+          <DialogContent className="w-[min(512px,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-primary-soft/40 shadow-[0_20px_60px_rgba(15,23,42,0.12)]">
             <DialogHeader>
               <DialogTitle>
                 {detailItem?.subject ||

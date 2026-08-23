@@ -1790,7 +1790,7 @@ export const MailboxGrid = ({
       {reprintDialogOpen && (
         <BodyPortal>
         <div className="fixed inset-0 z-[100] flex items-start justify-center bg-black/50 pt-16">
-          <div className="bg-white rounded-2xl shadow-2xl w-[560px] max-h-[75vh] flex flex-col overflow-hidden">
+          <div className="bg-white rounded-2xl shadow-2xl w-[min(560px,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] max-h-[75vh] flex flex-col overflow-hidden">
             {/* 헤더 */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
               <div>
@@ -2035,7 +2035,7 @@ export const MailboxGrid = ({
       {manualPickupDialogOpen && (
         <BodyPortal>
         <div className="fixed inset-0 z-[100] flex items-start justify-center bg-black/50 pt-12 sm:pt-16">
-          <div className="bg-white rounded-2xl shadow-2xl w-[640px] max-w-[94vw] max-h-[calc(100vh-4rem)] overflow-hidden flex flex-col">
+          <div className="bg-white rounded-2xl shadow-2xl w-[min(640px,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] max-h-[calc(100vh-4rem)] overflow-hidden flex flex-col">
             <div className="flex items-start justify-between gap-4 px-5 sm:px-6 py-4 border-b border-slate-100 shrink-0">
               <div className="min-w-0">
                 <div className="font-semibold text-base text-slate-800">

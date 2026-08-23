@@ -211,8 +211,8 @@ export default function RequestorStoreCartPage() {
             </Link>
           </p>
         ) : (
-          <div className="grid gap-6 lg:grid-cols-[1fr_minmax(280px,360px)] lg:items-start">
-            <div className="space-y-6">
+          <div className="grid min-w-0 gap-4 sm:gap-6 lg:grid-cols-[1fr_minmax(280px,360px)] lg:items-start">
+            <div className="min-w-0 space-y-4 sm:space-y-6">
               <ul className="divide-y divide-border/70 rounded-xl border border-border/70 bg-card">
                 {rows.map(({ line, product, unit, lineTotal, split }) => (
                   <li
@@ -318,7 +318,7 @@ export default function RequestorStoreCartPage() {
               </div>
             </div>
 
-            <div className="space-y-2 rounded-xl border border-border/70 bg-card p-4 sm:p-6 lg:sticky lg:top-4">
+            <div className="min-w-0 space-y-2 rounded-xl border border-border/70 bg-card p-4 sm:p-6 lg:sticky lg:top-4">
               <h2 className="text-sm font-semibold">주문 요약</h2>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">상품 합계</span>

@@ -14,7 +14,7 @@ export const NewRequestPageSkeleton = () => {
   return (
     <div className="bg-gradient-subtle p-4 flex flex-col h-full min-h-0 overflow-hidden">
       <div className="max-w-6xl mx-auto w-full space-y-3 flex flex-col flex-1 min-h-0 h-full">
-        <div className="grid grid-cols-1 lg:grid-cols-[minmax(34rem,1.2fr)_minmax(0,1fr)] gap-3 items-stretch flex-1 min-h-0 h-full">
+        <div className="grid grid-cols-1 xl:grid-cols-[minmax(34rem,1.2fr)_minmax(0,1fr)] gap-3 items-stretch flex-1 min-h-0 h-full">
           <div className="flex flex-col gap-2.5 flex-1 min-h-0 h-full">
             <div className="flex-1 min-h-0 space-y-3 rounded-2xl border border-border bg-muted/30 p-4">
               <div className="flex items-center justify-between gap-2">

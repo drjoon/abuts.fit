@@ -480,7 +480,7 @@ export const LabSettlementPayoutTab = () => {
         </>
       }
       mainLeft={
-        <div className="space-y-4">
+        <div className="min-w-0 space-y-4">
           <Tabs value={tab} onValueChange={handleTabChange}>
             <div className="mb-2 flex flex-wrap items-center gap-2">
               <PeriodFilter value={period} onChange={setPeriod} />
@@ -552,9 +552,9 @@ export const LabSettlementPayoutTab = () => {
               </SettlementPolicyDialog>
             </div>
 
-            <TabsContent value="snapshot" className="mt-0">
-              <SettlementTableFrame>
-                <Table>
+            <TabsContent value="snapshot" className="mt-0 min-w-0">
+              <SettlementTableFrame className="min-w-0">
+                <Table className="min-w-[520px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-[110px] text-center">
@@ -687,12 +687,12 @@ export const LabSettlementPayoutTab = () => {
               </SettlementTableFrame>
             </TabsContent>
 
-            <TabsContent value="payments" className="mt-0">
+            <TabsContent value="payments" className="mt-0 min-w-0">
               <SettlementTableFrame
                 scrollRef={scrollRef}
-                className="max-h-[60vh] overflow-y-auto"
+                className="max-h-[60vh] min-w-0 overflow-y-auto"
               >
-                <Table>
+                <Table className="min-w-[560px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-[190px] text-center">

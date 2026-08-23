@@ -10,6 +10,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { cn } from "@/shared/ui/cn";
+import { RESPONSIVE } from "@/shared/ui/responsive";
 
 type MailboxPrintSettingsDialogProps = {
   open: boolean;
@@ -48,7 +50,13 @@ export const MailboxPrintSettingsDialog = ({
 }: MailboxPrintSettingsDialogProps) => {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[95vw] sm:max-w-2xl rounded-2xl border border-slate-200 bg-white/85 backdrop-blur-md shadow-xl">
+      <DialogContent
+        className={cn(
+          "rounded-2xl border border-slate-200 bg-white/85 shadow-xl backdrop-blur-md",
+          RESPONSIVE.dialogContentFull,
+          "sm:max-w-2xl",
+        )}
+      >
         <DialogHeader>
           <DialogTitle className="text-base font-semibold text-slate-900">
             프린터 설정

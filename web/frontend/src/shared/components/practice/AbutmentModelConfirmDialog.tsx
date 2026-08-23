@@ -262,7 +262,7 @@ export function AbutmentModelConfirmDialog({
           onOpenChange(next);
         }}
       >
-        <DialogContent className="new-request-page flex w-[calc(100vw-1rem)] max-h-[92vh] max-w-[calc(100vw-1rem)] flex-col gap-3 overflow-y-auto p-4 sm:w-[1180px] sm:p-5 lg:w-[980px]">
+        <DialogContent className="new-request-page flex w-[calc(100vw-1rem)] max-h-[92vh] max-w-[calc(100vw-1rem)] flex-col gap-3 overflow-y-auto p-4 sm:w-[980px] sm:max-w-[980px] sm:p-5">
           <DialogHeader className="relative shrink-0 space-y-0 pr-8">
             <DialogTitle className="text-lg font-semibold">
               3D 모델 확인 및 정보 입력
