@@ -77,26 +77,24 @@
   - 기본(D4): `±2.2mm`
   - `ROUGH_20=1` 실험(D2): `±1.2mm`
 
-### 4.3.1 TwoPhaseSplitLine 계산식 SSOT (검색 키워드: `finishlineTop`, `splitOffsetMm=0`, `X=-Z`)
+### 4.3.1 SharedFinishSplit / Splitline_2 SSOT (검색 키워드: `SharedFinishSplitX`, `finishlineTop-1mm`, `X=-Z`)
 
-- 목적: Finish line 최상단(`FL max_z`)을 TwoPhase/`Splitline_2` 분할선으로 사용한다.
-  - Front_Rough 우측 경계와 동일 목표(첨3 기준)
-- 좌표 변환 SSOT (`EspritHttpServer`: `FrontPointX = -FrontPoint.z`):
-  - MoveSTL 전: `FinishLineX = -finishLineTopZ`
-  - MoveSTL 후(초기 `BackX=0`): `finishLineTopX = BackPointX - finishLineTopZ`
-  - 재해석(필드 `FinishLineTopZ`가 `+DefaultStlShift`된 경우):
-    - `finishLineTopX = BackPointX - FinishLineTopZ + DefaultStlShift`
+- 목적: **한 식**으로 아래를 모두 동일 좌표에 둔다.
+  - `Front_Rough` 끝
+  - `Splitline_2` / `TwoPhaseSplitLine`
+  - `Finish_Front` 끝
+  - `Finish_Back` 시작
 - 기준식:
-  - `TwoPhaseSplitLineX = finishLineTopX` (`splitOffsetMm = 0`)
-- 금지(구식, tip 쪽으로 수 mm 어긋남):
-  - `BackPointX + finishLineTopZ - stlTopZ`
-- 구현 SSOT 위치:
-  - `DentalAddinDecomp/DentalAddin/MainModuleComposite.cs`
-    - `TryResolveTwoPhaseSplitLineTargetX` (가이드라인/공정 분기에서 재해석)
-  - `StlFileProcessor.cs`
-    - `ApplyLimitPoints` / `TryApplyTwoPhaseSplitByFinishLine` (FinishLineX·env 주입)
-- 주의:
-  - env 주입 경로와 재해석 경로의 변환식/오프셋은 항상 동일해야 한다.
+  - `SharedFinishSplitX = finishLineTopX - 1.0` (tip 쪽 1mm, Z+1 ≡ X-1)
+- 좌표 변환 (`EspritHttpServer`: `FrontPointX = -FrontPoint.z`):
+  - MoveSTL 전: `FinishLineX = -finishLineTopZ`
+  - MoveSTL 후: `finishLineTopX = BackPointX - finishLineTopZ`
+  - 재해석: `finishLineTopX = BackPointX - FinishLineTopZ + DefaultStlShift`
+- 구현:
+  - `TryResolveSharedFinishSplitX` → `TryResolveTwoPhaseSplitLineTargetX`
+  - Rough: `frontEnd = splitline2`
+  - Finish: `opA.LastPassPercent = opB.FirstPassPercent` (안전클램프 시에도 함께 이동)
+- 금지: B만 단독 클램프, `Back + Z - stlTopZ` 구식 변환
 
 ### 4.4 Finish none 처리
 

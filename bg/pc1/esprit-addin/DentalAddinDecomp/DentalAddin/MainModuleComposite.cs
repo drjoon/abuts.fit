@@ -811,32 +811,28 @@ namespace DentalAddin
 
             double splitPercent = Clamp(splitRatio * 100.0, firstPercent, effectiveLastPercent);
 
-            // FINISH_FRONT/FINISH_BACK 경계는 TwoPhaseSplitLine을 기준으로 적용한다.
-            // (TwoPhaseSplitLine = finishLine top, Front_Rough 우측 경계와 동일 목표)
-            if (TryResolveTwoPhaseSplitLineTargetX(out double twoPhaseGuideX, out string twoPhaseGuideSource))
+            // [SSOT] Front_Rough 끝 = Splitline_2 = Finish_Front 끝 = Finish_Back 시작
+            // 모두 TryResolveSharedFinishSplitX() 한 식의 물리 X를 공유한다.
+            // Finish A/B는 피처 재해석 없이 이 X를 StartEndScale(20mm)로만 환산한다.
+            if (!TryResolveSharedFinishSplitX(out double sharedSplitX, out string sharedSplitSource))
             {
-                EnsureTwoPhaseSplitGuideLine(twoPhaseGuideX);
-                DentalLogger.Log($"Composite2SplitLine2 - TwoPhaseSplitLine 등록/확인: X={twoPhaseGuideX:F3}, source={twoPhaseGuideSource}");
-            }
-            if (TryResolveTwoPhaseSplitLineX(out double splitXByGuideLine))
-            {
-                // StartEndPosition pass-percent는 x/20.0 스케일을 사용한다.
-                double splitPercentByGuideLine = XToPassPercentByStartEndScale(splitXByGuideLine, firstPercent, effectiveLastPercent);
-                if (!double.IsNaN(splitPercentByGuideLine) && !double.IsInfinity(splitPercentByGuideLine))
-                {
-                    double splitPercentBySpanDiag = XToPassPercentBySpan(splitXByGuideLine, MoveSTL_Module.FrontPointX, direction, absSpan, firstPercent, effectiveLastPercent);
-                    DentalLogger.Log($"Composite2SplitLine2 - Front/Back 경계 TwoPhaseSplitLine 기준 적용: guideX={splitXByGuideLine:F3}, splitPercent(scale20) {splitPercent:F2}->{splitPercentByGuideLine:F2}, splitPercent(spanDiag)={splitPercentBySpanDiag:F2}");
-                    splitX = splitXByGuideLine;
-                    splitPercent = splitPercentByGuideLine;
-                }
-                else
-                {
-                    DentalLogger.Log($"Composite2SplitLine2 - TwoPhaseSplitLine 기준 무시: splitPercent 계산 불가(guideX={splitXByGuideLine:F3})");
-                }
+                DentalLogger.Log("Composite2SplitLine2 - SharedFinishSplitX 해석 실패: 기존 계산 splitX fallback 사용");
             }
             else
             {
-                DentalLogger.Log("Composite2SplitLine2 - TwoPhaseSplitLine 해석 실패: 계산 splitX fallback 사용");
+                EnsureTwoPhaseSplitGuideLine(sharedSplitX);
+                double splitPercentByShared = XToPassPercentByStartEndScale(sharedSplitX, firstPercent, effectiveLastPercent);
+                if (!double.IsNaN(splitPercentByShared) && !double.IsInfinity(splitPercentByShared))
+                {
+                    double splitPercentBySpanDiag = XToPassPercentBySpan(sharedSplitX, MoveSTL_Module.FrontPointX, direction, absSpan, firstPercent, effectiveLastPercent);
+                    DentalLogger.Log($"Composite2SplitLine2 - SharedFinishSplit SSOT 적용: X={sharedSplitX:F3}, source={sharedSplitSource}, splitPercent(scale20) {splitPercent:F2}->{splitPercentByShared:F2}, splitPercent(spanDiag)={splitPercentBySpanDiag:F2}");
+                    splitX = sharedSplitX;
+                    splitPercent = splitPercentByShared;
+                }
+                else
+                {
+                    DentalLogger.Log($"Composite2SplitLine2 - SharedFinishSplit 퍼센트 환산 실패(guideX={sharedSplitX:F3}), 기존 splitX 유지");
+                }
             }
 
             // StartEndPosition에서 B 시작 퍼센트가 높아지면(실측: ~38%) NC 계산 중 크래시 가능성이 높다.
@@ -967,33 +963,30 @@ namespace DentalAddin
 
             DentalLogger.Log($"Composite2SplitLine2 - FINISH_FRONT 시작점 정책 적용: splitlineResolved={splitlineResolved}, splitline1X={splitline1X:F3}, stlStartX={stlStartX:F3}, requestedStartX(stlMin+0.05)={requestedAStartX:F3}, appliedStartX={appliedAStartX:F3}, minFirst%={minAFirstPercentByStlStart:F2}, overrideGuardApplied={overrideGuardApplied}");
 
-            const double aEndOffsetFromSplitMm = 0.0; // 요청: Finish_Front 끝점 = 기준점(splitPercent)
-            // 요청 반영: Finish_Back 시작점 오프셋 제거(정치수)
-            const double bStartOffsetFromSplitMm = 0.0; // Finish_Back 시작점 = 기준점(splitPercent)
-            // 요청 반영: Finish_Back 끝점 = BackPointX + 0.0mm
+            const double aEndOffsetFromSplitMm = 0.0; // Finish_Front 끝 = SharedFinishSplitX
+            const double bStartOffsetFromSplitMm = 0.0; // Finish_Back 시작 = SharedFinishSplitX (동일 식)
             const double compositeEndOffsetFromBackPointMm = 0.0;
 
-            // 기준점(splitPercent)을 기준으로 A/B 경계를 독립 적용한다.
-            // - A.End: split + 0.0mm(=split)
-            // - B.Start: split - 0.1mm (원통 시작각도 차이 seam 완화용 overlap)
+            // A.End / B.Start 모두 splitPercent(= SharedFinishSplitX)에서 오프셋 0
             double requestedALastPass = ShiftPassPercentByStartEndScaleMm(splitPercent, aEndOffsetFromSplitMm, firstPercent, effectiveLastPercent);
             double requestedBFirstPass = ShiftPassPercentByStartEndScaleMm(splitPercent, bStartOffsetFromSplitMm, firstPercent, effectiveLastPercent);
 
-            // B 시작 퍼센트 상한(안전값) 적용
-            double bFirst = requestedBFirstPass;
-            if (bFirst > safeBFirstMax + 1e-6)
+            // NC 안전 상한: seam이 너무 크면 A끝/B시작을 함께 낮춘다(둘을 다르게 클램프하면 Finish_Front만 finishline 쪽으로 넘어감).
+            double seamPercent = requestedALastPass;
+            if (seamPercent > safeBFirstMax + 1e-6)
             {
-                bFirst = safeBFirstMax;
+                DentalLogger.Log($"Composite2SplitLine2 - Shared seam 안전클램프: seam%{seamPercent:F2}->{safeBFirstMax:F2} (Finish_Front.end=Finish_Back.start 유지)");
+                seamPercent = safeBFirstMax;
                 startEndBFirstGuardApplied = true;
-                DentalLogger.Log($"Composite2SplitLine2 - B 시작 안전클램프 적용: requestedBFirst={requestedBFirstPass:F2}, safeBFirst={bFirst:F2}, env=ABUTS_COMPOSITE_STARTEND_SAFE_B_FIRST_MAX");
             }
 
-            opA.LastPassPercent = Clamp(requestedALastPass, firstPercent, effectiveLastPercent);
+            opA.LastPassPercent = Clamp(seamPercent, firstPercent, effectiveLastPercent);
             if (runB && opB != null)
             {
-                opB.FirstPassPercent = bFirst;
+                opB.FirstPassPercent = opA.LastPassPercent; // SSOT: Front 끝 = Back 시작
                 opB.LastPassPercent = effectiveLastPercent;
             }
+            DentalLogger.Log($"Composite2SplitLine2 - Shared seam 확정: Finish_Front.end%=Finish_Back.start%={opA.LastPassPercent:F2} (X={splitX:F3}, requestedSeam%={requestedBFirstPass:F2}, guard={startEndBFirstGuardApplied})");
 
             // 정책: Finish_Back 종료 기준점은 BackPointX + 0.0mm
             double compositeEndTargetX = MoveSTL_Module.BackPointX + compositeEndOffsetFromBackPointMm;
@@ -1031,12 +1024,13 @@ namespace DentalAddin
 
             // 정책 변경: Finish_All 단일 패스는 사용하지 않는다(항상 Front/Back 2단).
 
-            // Front/Back 끝점 정책 재확인:
-            // - Finish_Front 끝점: 기준점(splitPercent)
-            // - Finish_Back 시작점: 기준점(splitPercent) (오프셋 제거)
-            // - Finish_Back 끝점: BackPointX + 0.0mm
+            // Front/Back seam 재확인: 최종 클램프 후에도 Front 끝 = Back 시작 유지
             double aLastBeforeClamp = opA.LastPassPercent;
             opA.LastPassPercent = Clamp(opA.LastPassPercent, opA.FirstPassPercent, effectiveLastPercent);
+            if (runB && opB != null)
+            {
+                opB.FirstPassPercent = opA.LastPassPercent; // SSOT re-sync after clamp
+            }
 
             double bLastBeforeAdjust = (runB && opB != null) ? opB.LastPassPercent : 0.0;
             double bTargetX = compositeEndTargetX;
@@ -1730,17 +1724,15 @@ namespace DentalAddin
 
             try
             {
-                if (!TryGetThreeStageSplitConfig(out double splitline1, out _, out double xMin, out double xMax))
+                if (!TryGetThreeStageSplitConfig(out _, out double splitline2, out double xMin, out double xMax))
                 {
                     DentalLogger.Log("FaceRoughGuard - 3-stage split 계산 실패로 Front Rough 끝점 계산 생략");
                     return false;
                 }
 
-                // ROUGH_20 실험 모드에서는 D2 기준 오프셋(1.2mm)을 사용한다.
-                // 기본 모드에서는 기존 D4 기준 오프셋(2.2mm)을 유지한다.
-                double faceToRoughMm = GetRoughBoundaryOffsetMm();
-                splitXUsed = splitline1;
-                roughARightEndX = Clamp(splitline1 + GetFrontFaceEndOffsetFromFrontMm() + faceToRoughMm, xMin + 1e-6, xMax - 1e-6);
+                // Front_Rough 끝점 SSOT: Splitline_2(= TwoPhaseSplitLine)
+                splitXUsed = splitline2;
+                roughARightEndX = Clamp(splitline2, xMin + 1e-6, xMax - 1e-6);
                 return true;
             }
             catch (Exception ex)
@@ -2302,8 +2294,9 @@ namespace DentalAddin
             double backRoughOverCutMm = roughBoundaryOffsetMm;
 
             double frontStart = xMin;
-            // Front Rough 끝점: Face(FrontPointX+3.0)보다 rough 경계 오프셋만큼 더 길게 (D4:+2.2 / D2:+1.2)
-            double frontEnd = Clamp(splitline1 + GetFrontFaceEndOffsetFromFrontMm() + faceToRoughMm, xMin + 1e-6, xMax - 1e-6);
+            // Front_Rough 끝점 SSOT: Splitline_2(= TwoPhaseSplitLine = finishline top 상방 tip쪽 1mm)
+            double frontEnd = Clamp(splitline2, xMin + 1e-6, xMax - 1e-6);
+            DentalLogger.Log($"RoughFreeFromMillSplitAB - Front_Rough 끝점=Splitline_2: endX={frontEnd:F3}");
 
             double middleStart = Clamp(splitline1 - middleRoughOverCutMm, xMin + 1e-6, xMax - 1e-6);
             double middleEnd = Clamp(splitline2 + middleRoughOverCutMm, xMin + 1e-6, xMax - 1e-6);
@@ -2604,8 +2597,12 @@ namespace DentalAddin
 
         // 3-stage 분할 기준
         // - Splitline_1: FrontPointX
-        // - Splitline_2: Rough Middle/Back 경계용 선 (= TwoPhaseSplitLine)
-        // - TwoPhaseSplitLine: Finish_Front/Finish_Back 경계용 선(= finishLine top)
+        // - Splitline_2 / TwoPhaseSplitLine / Front_Rough끝 / Finish_Front끝 / Finish_Back시작
+        //   = SharedFinishSplitX (finishLineTopX - 1.0mm, tip 쪽)
+        // SharedFinishSplit 오프셋(mm): finishLine top 기준 tip 방향.
+        // X=-Z 이므로 Z+1mm ≡ X-1mm.
+        private const double SharedFinishSplitOffsetFromFinishLineTopMm = -1.0;
+
         private static bool TryGetThreeStageSplitConfig(out double splitline1, out double splitline2, out double xMin, out double xMax)
         {
             splitline1 = 0.0;
@@ -2628,25 +2625,19 @@ namespace DentalAddin
 
                 splitline1 = Clamp(front, xMin + 1e-6, xMax - 1e-6);
 
-                // Finish 경계용 TwoPhaseSplitLine = finishLine top
-                if (!TryResolveTwoPhaseSplitLineTargetX(out double twoPhaseSplitLineX, out string twoPhaseSource))
+                // SharedFinishSplitX = Splitline_2 = Front_Rough 끝 = Finish seam
+                if (!TryResolveSharedFinishSplitX(out double sharedSplitX, out string sharedSource))
                 {
-                    DentalLogger.Log("ThreeStageSplit - TwoPhaseSplitLine 계산 실패");
+                    DentalLogger.Log("ThreeStageSplit - SharedFinishSplitX 계산 실패");
                     return false;
                 }
 
                 string retentionGroove = (GetEnvString("ABUTS_RETENTION_GROOVE") ?? string.Empty).Trim().ToLowerInvariant();
+                splitline2 = sharedSplitX;
+                DentalLogger.Log($"ThreeStageSplit - Splitline_2=SharedFinishSplitX({splitline2:F3}) 고정 적용, retentionGroove='{retentionGroove}', source={sharedSource}, xRange=[{xMin:F3}~{xMax:F3}], front={front:F3}, back={back:F3}");
 
-                // 정책 보정:
-                // Splitline_2는 retentionGroove 값과 무관하게
-                // finish line 기준(TwoPhaseSplitLine)과 동일 좌표를 사용한다.
-                // (midpoint 분기는 finish line 기준이 중간값으로 내려가는 문제를 유발)
-                splitline2 = twoPhaseSplitLineX;
-                DentalLogger.Log($"ThreeStageSplit - Splitline_2=TwoPhaseSplitLine({splitline2:F3}) 고정 적용, retentionGroove='{retentionGroove}', source={twoPhaseSource}, xRange=[{xMin:F3}~{xMax:F3}], front={front:F3}, back={back:F3}");
-
-                // 두 라인을 모두 유지한다.
                 EnsureThreeStageSplitGuideLines(splitline1, splitline2);
-                EnsureTwoPhaseSplitGuideLine(twoPhaseSplitLineX);
+                EnsureTwoPhaseSplitGuideLine(sharedSplitX);
 
                 return true;
             }
@@ -2655,6 +2646,16 @@ namespace DentalAddin
                 DentalLogger.Log($"ThreeStageSplit - 계산 실패: {ex.GetType().Name}:{ex.Message}");
                 return false;
             }
+        }
+
+        /// <summary>
+        /// [SSOT] Front_Rough 끝 = Splitline_2 = Finish_Front 끝 = Finish_Back 시작.
+        /// 식: finishLineTopX + SharedFinishSplitOffsetFromFinishLineTopMm (-1.0mm, tip 쪽).
+        /// 좌표: FrontPointX = -FrontPoint.z → finishLineTopX = -finishLineTopZ (+ MoveSTL).
+        /// </summary>
+        private static bool TryResolveSharedFinishSplitX(out double splitX, out string source)
+        {
+            return TryResolveTwoPhaseSplitLineTargetX(out splitX, out source);
         }
 
         private static bool TryResolveTwoPhaseSplitLineTargetX(out double splitX, out string source)
@@ -2670,6 +2671,7 @@ namespace DentalAddin
                 double xMin = Math.Min(0.0, frontBackMin);
                 double xMax = Math.Max(front, back);
 
+                // env는 StlFileProcessor가 동일 SSOT 식으로 주입한다. 값이 있으면 그대로 사용.
                 double? envSplitX = GetEnvDoubleNullable(AppConfig.TwoPhaseSplitXEnv) ?? GetEnvDoubleNullable("ABUTS_ROUGHFREEFORM_SPLIT_X");
                 if (envSplitX.HasValue && !double.IsNaN(envSplitX.Value) && !double.IsInfinity(envSplitX.Value))
                 {
@@ -2678,35 +2680,24 @@ namespace DentalAddin
                     return true;
                 }
 
-                // [SSOT] TwoPhaseSplitLine / Splitline_2
-                // - 목표: finish line top (= Front_Rough 우측 경계와 동일)
-                // - 좌표 변환: EspritHttpServer FrontPointX = -FrontPoint.z
-                //   MoveSTL 전 FinishLineX = -finishLineTopZ
-                //   MoveSTL 후(초기 BackX=0, FinishLineTopZ+=DefaultStlShift 보정):
-                //     finishLineTopX = back - FinishLineTopZ + DefaultStlShift
-                // - 오프셋 0: tip 쪽으로 밀리지 않게 finishline top 자체에 고정
-                // - StlFileProcessor.TryApplyTwoPhaseSplitByFinishLine 과 동일해야 한다
-                const double twoPhaseSplitOffsetMm = 0.0;
+                const double offsetMm = SharedFinishSplitOffsetFromFinishLineTopMm;
 
-                // 1순위(비-env): FinishLineX — MoveSTL 이후 ESPRIT X로 유지되는 권위값
+                // 1순위: FinishLineX (MoveSTL 이후 ESPRIT X, ApplyLimitPoints에서 X=-Z로 설정)
                 double finishLineX = MoveSTL_Module.FinishLineX;
                 if (!double.IsNaN(finishLineX) && !double.IsInfinity(finishLineX) && Math.Abs(finishLineX) > 1e-6)
                 {
-                    double requested = finishLineX + twoPhaseSplitOffsetMm;
-                    splitX = Clamp(requested, xMin + 1e-6, xMax - 1e-6);
-                    source = "finishlineX";
+                    splitX = Clamp(finishLineX + offsetMm, xMin + 1e-6, xMax - 1e-6);
+                    source = "finishlineX-1mm";
                     return true;
                 }
 
-                // 2순위: FinishLineTopZ 역산(FinishLineX 없을 때만)
+                // 2순위: FinishLineTopZ 역산 (필드가 MoveSTL에서 +DefaultStlShift 됨)
                 double finishLineTopZ = MoveSTL_Module.FinishLineTopZ;
                 if (!double.IsNaN(finishLineTopZ) && !double.IsInfinity(finishLineTopZ) && finishLineTopZ > 0.001)
                 {
-                    // FinishLineTopZ는 MoveSTL에서 +DefaultStlShift 되어 있으므로 보정한다.
                     double finishLineTopX = back - finishLineTopZ + AppConfig.DefaultStlShift;
-                    double requested = finishLineTopX + twoPhaseSplitOffsetMm;
-                    splitX = Clamp(requested, xMin + 1e-6, xMax - 1e-6);
-                    source = "finishlineTopZ";
+                    splitX = Clamp(finishLineTopX + offsetMm, xMin + 1e-6, xMax - 1e-6);
+                    source = "finishlineTopZ-1mm";
                     return true;
                 }
 

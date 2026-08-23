@@ -1375,36 +1375,22 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         double xMin = Math.Min(frontX, backX);
                         double xMax = Math.Max(frontX, backX);
 
-                        // 요청 기준(첨3 SSOT):
-                        //   Splitline_2 = finishLine top (Front_Rough 우측 경계와 동일 목표)
-                        // 좌표 변환 SSOT:
-                        //   EspritHttpServer: FrontPointX = -FrontPoint.z
-                        //   MoveSTL 전: FinishLineX = -finishLineTopZ
-                        //   MoveSTL 후(초기 BackX=0): topX = backX - finishLineTopZ
-                        // 중요:
-                        //   오프셋/변환은 MainModuleComposite.TryResolveTwoPhaseSplitLineTargetX와 동일해야 한다.
-                        const double splitOffsetMm = 0.0;
-                        double targetZ = finishLineTopZ.Value + splitOffsetMm;
+                        // [SSOT] SharedFinishSplitX
+                        //   Front_Rough끝 = Splitline_2 = Finish_Front끝 = Finish_Back시작
+                        //   = finishLineTopX - 1.0 (tip 쪽; Z+1 ≡ X-1)
+                        // MainModuleComposite.SharedFinishSplitOffsetFromFinishLineTopMm 과 동일해야 한다.
+                        const double splitOffsetMm = -1.0;
+                        double targetZ = finishLineTopZ.Value + 1.0;
                         double topX = backX - finishLineTopZ.Value;
                         double rawSplitX = topX + splitOffsetMm;
                         double splitX = Math.Max(xMin + 0.01, Math.Min(xMax - 0.01, rawSplitX));
 
                         Environment.SetEnvironmentVariable(AppConfig.TwoPhaseEnableEnv, "1");
                         Environment.SetEnvironmentVariable(AppConfig.TwoPhaseSplitXEnv, splitX.ToString(CultureInfo.InvariantCulture));
-
-                        // RoughFreeFromMill SplitAB 구현은 기존 env를 사용하므로 같이 설정
                         Environment.SetEnvironmentVariable(AppConfig.RoughfreeformSplitEnableEnv, "1");
                         Environment.SetEnvironmentVariable("ABUTS_ROUGHFREEFORM_SPLIT_X", splitX.ToString(CultureInfo.InvariantCulture));
 
-                        // Front_Rough/Face 안전 간격 계산 근거를 동일 로그에 남긴다.
-                        // Front_Rough 우측 끝 규칙: frontRoughEnd = splitX - 0.5mm
-                        // Face 우측 끝 허용 상한: frontRoughEnd - 0.3mm
-                        const double roughAEndOffsetMm = 0.5;
-                        const double faceMinGapMm = 0.3;
-                        double frontRoughEndX = splitX - roughAEndOffsetMm;
-                        double faceRightMaxX = frontRoughEndX - faceMinGapMm;
-
-                        AppLogger.Log($"DentalAddin: TwoPhase split 적용 - finishLineTopZ:{finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, targetZ(top):{targetZ.ToString("F4", CultureInfo.InvariantCulture)}, stlTopZ:{stlTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}(ignored-for-X), topX:{topX.ToString("F4", CultureInfo.InvariantCulture)}, splitOffsetMm:{splitOffsetMm.ToString("F3", CultureInfo.InvariantCulture)}, rawSplitX(top):{rawSplitX.ToString("F4", CultureInfo.InvariantCulture)}, splitX(clamped):{splitX.ToString("F4", CultureInfo.InvariantCulture)}, frontRoughEndX(split-0.5):{frontRoughEndX.ToString("F4", CultureInfo.InvariantCulture)}, faceRightMaxX(frontRoughEnd-0.3):{faceRightMaxX.ToString("F4", CultureInfo.InvariantCulture)} (Front:{frontX.ToString("F4", CultureInfo.InvariantCulture)}, Back:{backX.ToString("F4", CultureInfo.InvariantCulture)})");
+                        AppLogger.Log($"DentalAddin: SharedFinishSplit 적용 - finishLineTopZ:{finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, targetZ(top+1):{targetZ.ToString("F4", CultureInfo.InvariantCulture)}, topX:{topX.ToString("F4", CultureInfo.InvariantCulture)}, splitOffsetMm:{splitOffsetMm.ToString("F3", CultureInfo.InvariantCulture)}, sharedSplitX:{splitX.ToString("F4", CultureInfo.InvariantCulture)} (=Front_Rough끝/Splitline_2/Finish seam) (Front:{frontX.ToString("F4", CultureInfo.InvariantCulture)}, Back:{backX.ToString("F4", CultureInfo.InvariantCulture)})");
                             }
                             catch (Exception ex)
                             {
