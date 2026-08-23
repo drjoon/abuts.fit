@@ -1378,19 +1378,17 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         double xMin = Math.Min(frontX, backX);
                         double xMax = Math.Max(frontX, backX);
 
-                        // 요청 기준(2026-07-01):
-                        //   split line 기준은 finishLine 최상 Z점(top)에서 X축 -1.0mm 지점이다.
-                        //   (즉, 기존 정확 기준점에서 좌측으로 1.0mm 이동)
+                        // 요청 기준:
+                        //   split line = finishLine 최상 Z + 1.0mm (상방)
                         // 좌표 변환식:
                         //   ESPRIT X = BackX + Z - stlTopZ
-                        //   topX     = BackX + finishLineTopZ - stlTopZ
-                        //   splitX   = topX + splitOffsetMm
+                        //   → Z+1mm ≡ X+1mm
                         // 중요:
                         //   이 오프셋은 MainModuleComposite.TryResolveTwoPhaseSplitLineTargetX와
                         //   반드시 동일해야 한다. (env 주입/재해석 경로의 SSOT 일치)
-                        const double splitOffsetMm = -1.0;
-                        double targetZ = finishLineTopZ.Value;
-                        double topX = backX + targetZ - stlTopZ.Value;
+                        const double splitOffsetMm = 1.0;
+                        double targetZ = finishLineTopZ.Value + splitOffsetMm;
+                        double topX = backX + finishLineTopZ.Value - stlTopZ.Value;
                         double rawSplitX = topX + splitOffsetMm;
                         double splitX = Math.Max(xMin + 0.01, Math.Min(xMax - 0.01, rawSplitX));
 
@@ -1409,7 +1407,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         double frontRoughEndX = splitX - roughAEndOffsetMm;
                         double faceRightMaxX = frontRoughEndX - faceMinGapMm;
 
-                        AppLogger.Log($"DentalAddin: TwoPhase split 적용 - finishLineTopZ:{finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, targetZ(top):{targetZ.ToString("F4", CultureInfo.InvariantCulture)}, stlTopZ:{stlTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, topX:{topX.ToString("F4", CultureInfo.InvariantCulture)}, splitOffsetMm:{splitOffsetMm.ToString("F3", CultureInfo.InvariantCulture)}, rawSplitX(top-1.0):{rawSplitX.ToString("F4", CultureInfo.InvariantCulture)}, splitX(clamped):{splitX.ToString("F4", CultureInfo.InvariantCulture)}, frontRoughEndX(split-0.5):{frontRoughEndX.ToString("F4", CultureInfo.InvariantCulture)}, faceRightMaxX(frontRoughEnd-0.3):{faceRightMaxX.ToString("F4", CultureInfo.InvariantCulture)} (Front:{frontX.ToString("F4", CultureInfo.InvariantCulture)}, Back:{backX.ToString("F4", CultureInfo.InvariantCulture)})");
+                        AppLogger.Log($"DentalAddin: TwoPhase split 적용 - finishLineTopZ:{finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, targetZ(top+1):{targetZ.ToString("F4", CultureInfo.InvariantCulture)}, stlTopZ:{stlTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, topX:{topX.ToString("F4", CultureInfo.InvariantCulture)}, splitOffsetMm:{splitOffsetMm.ToString("F3", CultureInfo.InvariantCulture)}, rawSplitX(top+1.0):{rawSplitX.ToString("F4", CultureInfo.InvariantCulture)}, splitX(clamped):{splitX.ToString("F4", CultureInfo.InvariantCulture)}, frontRoughEndX(split-0.5):{frontRoughEndX.ToString("F4", CultureInfo.InvariantCulture)}, faceRightMaxX(frontRoughEnd-0.3):{faceRightMaxX.ToString("F4", CultureInfo.InvariantCulture)} (Front:{frontX.ToString("F4", CultureInfo.InvariantCulture)}, Back:{backX.ToString("F4", CultureInfo.InvariantCulture)})");
                             }
                             catch (Exception ex)
                             {

@@ -2643,36 +2643,36 @@ namespace DentalAddin
                     return true;
                 }
 
-                // [SSOT] TwoPhaseSplitLine 오프셋 정책(2026-07-01)
+                // [SSOT] TwoPhaseSplitLine 오프셋 정책
                 // - 기준점: finish line 최상단(top Z)이 변환된 X 좌표
-                // - 가공 요청 보정: 기준점에서 X축 -1.0mm(좌측) 이동
-                //   * 본 코드베이스 좌표계에서 "좌측"은 X 감소 방향이다.
+                // - 가공 요청: finishLineTopZ 상방 +1.0mm
+                //   * ESPRIT 변환(X = BackX + Z - stlTopZ)에서 Z+1mm ≡ X+1mm
                 // - 동일 오프셋을 StlFileProcessor.TryApplyTwoPhaseSplitByFinishLine에도 동일 적용해야 한다.
                 //   (env 주입 경로 / 재계산 경로 불일치 방지)
-                const double twoPhaseSplitOffsetMm = -1.0;
+                const double twoPhaseSplitOffsetMm = 1.0;
 
+                // 1순위(비-env): FinishLineX — MoveSTL 이후 ESPRIT X로 유지되는 권위값
+                double finishLineX = MoveSTL_Module.FinishLineX;
+                if (!double.IsNaN(finishLineX) && !double.IsInfinity(finishLineX) && Math.Abs(finishLineX) > 1e-6)
+                {
+                    double requested = finishLineX + twoPhaseSplitOffsetMm;
+                    splitX = Clamp(requested, xMin + 1e-6, xMax - 1e-6);
+                    source = "finishlineX+1mm";
+                    return true;
+                }
+
+                // 2순위: FinishLineTopZ 역산(FinishLineX 없을 때만)
                 double finishLineTopZ = MoveSTL_Module.FinishLineTopZ;
                 if (!double.IsNaN(finishLineTopZ) && !double.IsInfinity(finishLineTopZ) && finishLineTopZ > 0.001)
                 {
                     // FinishLineTopZ -> X 변환식
                     //   finishLineTopX = back - finishLineTopZ + DefaultStlShift
                     // 최종 split X
-                    //   splitX = finishLineTopX + (-1.0mm)
+                    //   splitX = finishLineTopX + 1.0mm
                     double finishLineTopX = back - finishLineTopZ + AppConfig.DefaultStlShift;
                     double requested = finishLineTopX + twoPhaseSplitOffsetMm;
                     splitX = Clamp(requested, xMin + 1e-6, xMax - 1e-6);
-                    source = "finishlineTopZ-1mm";
-                    return true;
-                }
-
-                // topZ가 없을 때만 FinishLineX를 보조 사용한다.
-                // 동일 정책 유지를 위해 fallback에도 -1.0mm 오프셋을 동일 적용한다.
-                double finishLineX = MoveSTL_Module.FinishLineX;
-                if (!double.IsNaN(finishLineX) && !double.IsInfinity(finishLineX) && Math.Abs(finishLineX) > 1e-6)
-                {
-                    double requested = finishLineX + twoPhaseSplitOffsetMm;
-                    splitX = Clamp(requested, xMin + 1e-6, xMax - 1e-6);
-                    source = "finishlinex-fallback-1mm";
+                    source = "finishlineTopZ+1mm";
                     return true;
                 }
 

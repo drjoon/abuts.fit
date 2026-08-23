@@ -77,14 +77,16 @@
   - 기본(D4): `±2.2mm`
   - `ROUGH_20=1` 실험(D2): `±1.2mm`
 
-### 4.3.1 TwoPhaseSplitLine 계산식 SSOT (검색 키워드: `finishlineTopZ-1mm`, `splitOffsetMm=-1.0`)
+### 4.3.1 TwoPhaseSplitLine 계산식 SSOT (검색 키워드: `finishlineTopZ+1mm`, `splitOffsetMm=1.0`)
 
-- 목적: Finish line 최상단 기준점에서 **좌측(X-방향)으로 1.0mm 이동한 지점**을 TwoPhase 분할선으로 사용한다.
-- 기준식(권장 경로):
-  - `finishLineTopX = BackPointX - FinishLineTopZ + DefaultStlShift`
-  - `TwoPhaseSplitLineX = finishLineTopX - 1.0`
-- fallback 식(TopZ 없을 때):
-  - `TwoPhaseSplitLineX = FinishLineX - 1.0`
+- 목적: Finish line 최상단에서 **상방(Z+1.0mm)** 지점을 TwoPhase/`Splitline_2` 분할선으로 사용한다.
+  - ESPRIT 변환 `X = BackX + Z - stlTopZ` 에서 Z+1mm ≡ X+1mm
+- 기준식(권장 경로, env 주입):
+  - `finishLineTopX = BackPointX + finishLineTopZ - stlTopZ`
+  - `TwoPhaseSplitLineX = finishLineTopX + 1.0`
+- fallback 식(재해석 경로):
+  - `TwoPhaseSplitLineX = FinishLineX + 1.0` (MoveSTL 이후 ESPRIT X 권위값)
+  - TopZ만 있을 때: `finishLineTopX = BackPointX - FinishLineTopZ + DefaultStlShift`, 그 다음 `+ 1.0`
 - 구현 SSOT 위치:
   - `DentalAddinDecomp/DentalAddin/MainModuleComposite.cs`
     - `TryResolveTwoPhaseSplitLineTargetX` (가이드라인/공정 분기에서 재해석)
