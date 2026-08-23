@@ -836,7 +836,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - 정산/지급 정책:
   - 관리자 3사업 축 집계: `GET /api/admin/credits/settlement-business-overview` (`adminGetSettlementBusinessOverview`). 기간은 `period` 또는 `startDate`/`endDate`.
   - 유료/무료 모두 `REV_*` 수익 라인은 기록해 확인 가능해야 합니다.
-  - **제조사(하청)**: 고정단가(면세) — `creditSettings.manufacturerRequestUnitPrice`(기본 9,000, **어벗 1개당**)·`manufacturerShippingUnitPrice`(기본 3,500, 박스당). 고객의 유료·무료 크레딧을 구분하지 않고 모든 의뢰·배송에 약정 단가를 지급. 매달 말일 일괄 지급 전까지 미정산 잔액. 지급액=공급가·계산서.
+  - **제조사(하청)**: 고정단가(면세) — `creditSettings.manufacturerRequestUnitPrice`(기본 8,800, **어벗 1개당**)·`manufacturerShippingUnitPrice`(기본 3,500, 박스당). 고객의 유료·무료 크레딧을 구분하지 않고 모든 의뢰·배송에 약정 단가를 지급. 매달 말일 일괄 지급 전까지 미정산 잔액. 지급액=공급가·계산서.
   - **딜러사·개발운영사**: 장부 적립은 공급가. 지급 시 부가세 10%를 더해 **입금·세금계산서**. 구현: `services/settlement.service.js`(`resolveSettlementPayoutAmounts` / `postSettlementPayoutJournal`). 배치 항목 `amount`=입금합계, `supplyAmount`/`vatAmount` 분해.
   - **어벗츠·기공소**: 정산 지급(PAYOUT)은 유료 수익만(면세 계산서). `EARN/ADJUST`는 `creditKind=PAID|null`만 포함.
   - **제조사**: 정산 지급(PAYOUT)은 유료·무료 수익 전액(면세 계산서). `computeAffiliateSettlementBalance`가 manufacturer는 creditKind를 가리지 않음.
@@ -864,7 +864,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - legacy 이관에서 `amount=0` 소비행, 참조 누락된 상쇄형 SHIPPING SPEND/REFUND 쌍은 `resolvedIgnored`로 분류해 미적재 처리합니다(오류 unresolved로 취급하지 않음).
   - 기존 GL 배송 수익 분배 보정은 `scripts/db/rebalance-shipping-revenue-to-manufacturer.js`로 수행합니다.
   - 기존 GL 혼합 소비(paid/free) 분해를 최신 무편향 분해 정책(의뢰자 무료우선 소비 + 수익라인 비례배분)으로 정렬하는 보정은 `scripts/db/rebalance-mixed-spend-free-first.js`로 수행합니다.
-  - 제조사 하청 고정단가(어벗 1개당 9,000, 면세) 보정은 `scripts/db/rebalance-manufacturer-unit-price.js`로 수행합니다(타 역할 REV 미변경).
+  - 제조사 하청 고정단가(어벗 1개당 8,800, 면세) 보정은 `scripts/db/rebalance-manufacturer-unit-price.js`로 수행합니다(타 역할 REV 미변경).
 
 - 관리자 크레딧 응답 필드 정책:
   - `adminCredit`/잔액 응답에서 무료 크레딧 SSOT 키는 `freeCredit`(합), 하위호환으로 `freeRequestCredit`/`freeShippingCredit`/`freeBalance`입니다.

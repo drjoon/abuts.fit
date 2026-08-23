@@ -166,7 +166,7 @@ Notes:
   - `src/shared/components/CreditLedgerModal.tsx` (내역: 잔액 카드 + rounded-2xl 테이블)
   - `src/features/settings/tabs/AdminCreditSettingsTab.tsx` (요금/expressFee·생산만·디자인+생산 전역 설정 UI)
   - `src/pages/admin/system/AdminPlatformSettingsPage.tsx` (크레딧 · 커스텀어벗 · 인증 기공소 · 어벗츠 수가 · 기공소 수가. 수수료율=`GET|PATCH /api/admin/settings/platform-fees`. 기공소 신규 기공비는 어벗츠 수가 탭 배지·하이라이트)
-  - `src/pages/admin/partners/AdminPartnersPage.tsx` (사이드「사업영역」. 탭당 한 카드: 기공사업 · 어벗사업 · 플랫폼사업. 주체는 role Select(`RoleSelect`). 팀원 검색은 해당 주체 role만. 기공=기공팀·영업팀·개발운영사. 어벗=제조사·개발운영사·딜러사·어벗츠. 플랫폼=어벗츠·개발운영사. 구성원 분배액은 카드 안에서 수정. 분배는 매출에서 배송비를 먼저 차감한 잔여만(배송은 여기 미기재). 기공=내부기공소(기공사업부) 배당 건만 배송비 공통 지출 차감 후 내부 기공팀·영업팀 인센티브(면세)+개발운영사(+VAT). 어벗=건당 제조사 9,000(면세)·개발운영사 1,000·딜러사 3,000+VAT, 잔여 어벗츠. 의뢰서 소개코드(딜러사) 있으면 딜러사·없으면 어벗츠. 특별주문가는 주체별 배분액. 플랫폼=자동매칭·지정(현재 무료)을 어벗츠 90%/개발운영사 10%)
+  - `src/pages/admin/partners/AdminPartnersPage.tsx` (사이드「사업영역」. 탭당 한 카드: 기공사업 · 어벗사업 · 플랫폼사업. 주체는 role Select(`RoleSelect`). 팀원 검색은 해당 주체 role만. 기공=기공팀·영업팀·개발운영사. 어벗=제조사·개발운영사·딜러사·어벗츠. 플랫폼=어벗츠·개발운영사. 구성원 분배액은 카드 안에서 수정. 분배는 매출에서 배송비를 먼저 차감한 잔여만(배송은 여기 미기재). 기공=내부기공소(기공사업부) 배당 건만 배송비 공통 지출 차감 후 내부 기공팀·영업팀 인센티브(면세)+개발운영사(+VAT). 어벗=매입가(기본 8,800, 면세) 선차감 후 잔여를 딜러/개발운영/어벗츠 비중 분배(+VAT는 딜러·개발운영). 의뢰서 소개코드(딜러사) 있으면 딜러사·없으면 어벗츠. 특별주문가는 주체별 배분액. 플랫폼=자동매칭·지정(현재 무료)을 어벗츠 90%/개발운영사 10%)
   - `src/features/settings/tabs/AdminAbutsLabFeeScheduleTab.tsx` (어벗츠 수가. 기공소 신규 항목은 Off·검토 대기; On=적용. 이벤트 `abuts-lab-fee:pending-items`)
   - `src/features/settings/tabs/AdminCreditSettingsTab.tsx` (`variant=credits`: 환영 무료 크레딧·배송 / `variant=customAbut`: 고시 생산·디자인+생산·딜러없음 분배·레거시 기공소 오버레이·환봉 추가요청)
   - `src/pages/admin/system/AdminRoundBarAbutmentTab.tsx` (어벗 추가 요청. 도입 전 CNC어벗/환봉어벗 선택. 종류가 치과 단가에 반영. `GET|PATCH /api/admin/round-bar-requests`)
@@ -201,7 +201,7 @@ Notes:
 - 역할별 정산
   - 공통 UI: `src/shared/settlement/settlementUi.tsx` · VAT 카피 `src/shared/settlement/affiliateVat.ts` (의뢰자 크레딧/기공크레딧 최신 스타일)
   - 기공소/어벗츠기공소: `src/features/settings/tabs/LabSettlementPayoutTab.tsx` — 면세 계산서
-  - 제조사: `src/pages/manufacturer/payments/PaymentsPage.tsx` — 거래 원장(일시·지급상태·금액·잔액·거래내역). 유형 열은 생략(모두 커스텀어벗 생산+배송비). **생산·배송은 KST 하루 1행**(의뢰 1건=어벗 1개라 기공의뢰처럼 못 묶음). 클릭 상세는 의뢰/배송을 별 섹션으로 나누고, 그 안에서 수취자(우편함)별. 장부는 공급가(어벗 1개당 9,000, 면세). 고객 유료·무료 크레딧을 구분하지 않고 약정 단가 전액이 미정산으로 쌓이며, 말일 일괄 지급.
+  - 제조사: `src/pages/manufacturer/payments/PaymentsPage.tsx` — 거래 원장(일시·지급상태·금액·잔액·거래내역). 유형 열은 생략(모두 커스텀어벗 생산+배송비). **생산·배송은 KST 하루 1행**(의뢰 1건=어벗 1개라 기공의뢰처럼 못 묶음). 클릭 상세는 의뢰/배송을 별 섹션으로 나누고, 그 안에서 수취자(우편함)별. 장부는 공급가(어벗 1개당 매입가 기본 8,800, 면세). 고객 유료·무료 크레딧을 구분하지 않고 약정 단가 전액이 미정산으로 쌓이며, 말일 일괄 지급. 정산규칙 모달은 플랫폼 설정 매입가·배송단가를 표시.
   - 딜러: `src/pages/salesman/SalesmanPaymentsPage.tsx` — 공급가 장부, 지급 시 부가세·세금계산서(실입금=공급가+VAT)
   - 개발운영사: `src/pages/devops/DevopsPaymentsPage.tsx` — 잔여 분배 공급가, 지급 시 부가세·세금계산서(실입금=공급가+VAT)
   - 관리자: `src/pages/admin/AdminPaymentsPage.tsx` — 어벗츠 3사업 축 + 관계사 잔여 분배(어벗츠 면세)
@@ -554,7 +554,7 @@ Notes:
     - `src/pages/manufacturer/equipment/cnc/components/CompletedMachiningRecordsModal.tsx`
 
 - 제조사 정산(일별) 표시 정책:
-  - 하청 고정단가: **어벗 1개당** 9,000 / 배송 박스당 3,500(면세). 상단 카드·상세는 의뢰/배송을 **분리** 표시(공급가·건수). 유료/무료 필터·카드 구분 없음.
+  - 하청 고정단가: **어벗 1개당** 매입가(기본 8,800) / 배송 박스당 3,500(면세). 상단 카드·상세는 의뢰/배송을 **분리** 표시(공급가·건수). 유료/무료 필터·카드 구분 없음.
   - 원장 목록은 생산·배송 EARN을 **KST 하루 1행**으로 묶고, 유형 열은 생략한다. 클릭 상세는 의뢰/배송을 별 섹션으로 나누고, 그 안에서 수취자(우편함)별 생산·발송·배송비를 보여준다. 지급은 별행. 조정은 **KST 하루 1행**으로 묶고, 클릭 시 어떤 의뢰를 조정했는지 보여준다.
   - 일별 카드 컬럼(daily-summary): `의뢰/배송/환불·지급·조정/지급 순액`.
   - 의뢰/배송 **건수**는 백엔드 유니크 건수 SSOT. (`machining_spend`+`express_surcharge`를 프론트에서 각각 세지 않음.)

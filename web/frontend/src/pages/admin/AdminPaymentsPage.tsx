@@ -886,7 +886,7 @@ export default function AdminPaymentsPage() {
                     value={`${formatMoney(
                       customAbut?.manufacturerRequestUnitPrice ??
                         manufacturerSummary?.manufacturerRequestUnitPrice ??
-                        9000,
+                        8800,
                     )} / ${formatMoney(
                       customAbut?.manufacturerShippingUnitPrice ??
                         manufacturerSummary?.manufacturerShippingUnitPrice ??

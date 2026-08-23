@@ -6,13 +6,14 @@
 // - web/frontend/src/shared/date/kst.ts
 // - web/frontend/src/features/settings/tabs/LabSettlementPayoutTab.tsx
 // change-log:
+// - 2026-08-23: 정산규칙 모달 단가 — 설정 매입가(기본 8,800)·배송 3,500(면세·계산서).
 // - 2026-08-20: 같은 날 조정을 1행으로 묶고 클릭 시 의뢰 상세.
 // - 2026-08-20: 유료/무료 구분 제거. 약정 단가 전액이 미정산으로 쌓이고 말일 일괄 지급. 요약 2칸·높이 축소.
 // - 2026-08-20: PeriodFilter 달력 좌·우 chevron 커스텀 기간을 조회에 반영.
 // - 2026-08-17: 테이블이 남은 높이를 채워 바깥 스크롤을 없애고 표 스크롤만 남김.
 // - 2026-08-17: 유형 열 생략(모두 커스텀어벗 생산+배송비). 상세 모달은 의뢰/배송 분리.
 // - 2026-08-17: 생산·배송 원장을 KST 하루로 묶고, 클릭 시 수취자(우편함)별 상세.
-// - 2026-08-18: 어벗 1개당 9,000(면세). 기공의뢰 생산도 같은 라벨.
+// - 2026-08-18: 어벗 1개당 고정단가(면세). 기공의뢰 생산도 같은 라벨.
 // - 2026-08-17: 정산 내역을 의뢰자 크레딧과 같은 거래 원장으로 표시. VAT는 지급 안내 한 줄.
 // - 2026-08-11: 기공소 기공크레딧 정산과 동일 UX — 요약 카드 축소·(N건), 일자 제거, 액션 세로열, 초기화 제거.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -45,7 +46,12 @@ import {
   SETTLEMENT_EXEMPT_PAYOUT_NOTICE,
   SETTLEMENT_VAT_POLICY,
   formatWon,
+  formatWonWithUnit,
 } from "@/shared/settlement/affiliateVat";
+import {
+  CREDIT_SETTINGS_DEFAULTS,
+  useSystemSettings,
+} from "@/hooks/useSystemSettings";
 import {
   SettlementPolicyDialog,
   SettlementPolicySection,
@@ -398,6 +404,15 @@ export const ManufacturerPaymentPage = () => {
   const [tab, setTab] = useState<"ledger" | "payments">("ledger");
 
   const { period, setPeriod, customStartDate, customEndDate } = usePeriodStore();
+  const { data: systemSettings } = useSystemSettings();
+  const manufacturerRequestUnitPrice = Number(
+    systemSettings?.creditSettings?.manufacturerRequestUnitPrice ??
+      CREDIT_SETTINGS_DEFAULTS.manufacturerRequestUnitPrice,
+  );
+  const manufacturerShippingUnitPrice = Number(
+    systemSettings?.creditSettings?.manufacturerShippingUnitPrice ??
+      CREDIT_SETTINGS_DEFAULTS.manufacturerShippingUnitPrice,
+  );
   const [q, setQ] = useState("");
   const [paymentSort, setPaymentSort] = useState<{
     key: PaymentSortKey;
@@ -842,9 +857,10 @@ export const ManufacturerPaymentPage = () => {
                   <div className="flex gap-2.5">
                     <HandCoins className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
                     <p>
-                      어벗 1개당 9,000원(면세). 고객이 유료·무료 크레딧 중 무엇으로
-                      결제했는지는 구분하지 않으며, 모든 의뢰건에 약정 단가를
-                      지급합니다.
+                      어벗 1개당{" "}
+                      {formatWonWithUnit(manufacturerRequestUnitPrice)}
+                      (면세). 고객이 유료·무료 크레딧 중 무엇으로 결제했는지는
+                      구분하지 않으며, 모든 의뢰건에 약정 단가를 지급합니다.
                     </p>
                   </div>
                 </SettlementPolicySection>
@@ -852,9 +868,11 @@ export const ManufacturerPaymentPage = () => {
                   <div className="flex gap-2.5">
                     <ReceiptText className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
                     <p>
-                      발송 패키지 1박스당 3,500원(면세). 유료·무료 구분 없이 약정
-                      단가를 지급합니다. 고객(치과·기공소)→어벗츠 배송비는 면세
-                      수취 후, 제조사에는 배송비(어벗츠→제조사)로 지급합니다.
+                      발송 패키지 1박스당{" "}
+                      {formatWonWithUnit(manufacturerShippingUnitPrice)}
+                      (면세). 유료·무료 구분 없이 약정 단가를 지급합니다.
+                      고객(치과·기공소)→어벗츠 배송비는 면세 수취 후, 제조사에는
+                      배송비(어벗츠→제조사)로 지급합니다.
                     </p>
                   </div>
                 </SettlementPolicySection>

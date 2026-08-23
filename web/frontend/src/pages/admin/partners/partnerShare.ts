@@ -70,7 +70,7 @@ export type BusinessAreaState = {
 };
 
 export const DEFAULT_ABUTMENT_UNITS = {
-  manufacturer: 9000,
+  manufacturer: 8800,
   devops: 1000,
   salesman: 3000,
 } as const;

@@ -2578,7 +2578,7 @@ export async function adminGetManufacturerSummary(req, res) {
         periodShippingSupply,
         periodShippingVat,
         manufacturerRequestUnitPrice: Number(
-          creditSettings.manufacturerRequestUnitPrice || 9000,
+          creditSettings.manufacturerRequestUnitPrice || 8800,
         ),
         manufacturerShippingUnitPrice: Number(
           creditSettings.manufacturerShippingUnitPrice || 3500,
@@ -2897,7 +2897,7 @@ export async function adminGetSettlementBusinessOverview(req, res) {
           manufacturerPaidRequest: mfgPaidRequest,
           manufacturerPaidShipping: mfgPaidShipping,
           manufacturerRequestUnitPrice: Number(
-            creditSettings.manufacturerRequestUnitPrice || 9000,
+            creditSettings.manufacturerRequestUnitPrice || 8800,
           ),
           manufacturerShippingUnitPrice: Number(
             creditSettings.manufacturerShippingUnitPrice || 3500,

@@ -13,7 +13,7 @@
 - **레거시 수락즉시 기공크레딧 → 에스크로 보류**:
   `migrate-legacy-practice-transfer-spend-to-escrow-hold.js --transfer PTX-...` (dry-run) / `--apply`.
 
-- **제조사 하청 고정단가 보정(REV_MANUFACTURER만, 어벗 1개당 9,000, 면세)**
+- **제조사 하청 고정단가 보정(REV_MANUFACTURER만, 어벗 1개당 매입가 기본 8,800, 면세)**
 
 ```bash
 cd web/backend && \
