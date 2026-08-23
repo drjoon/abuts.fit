@@ -425,8 +425,6 @@ function pushRevenueLines({
   if (isPtxLabShipping) {
     return;
   }
-
-  const manufacturerPaidCap = Math.max(0, spendAmount - freeTotal);
   const revenueBaseByOwner = resolveRevenueOwnerBaseAllocation({
     spendAmount,
     hasSalesmanReferrer: owners.hasSalesmanReferrer,
@@ -436,7 +434,6 @@ function pushRevenueLines({
     applyManufacturerUnit,
     creditSettings,
     qty: manufacturerQty,
-    manufacturerPaidCap,
   });
   const revenueKindSplit = splitRevenueByCreditKindProRata({
     ownerBaseByRole: revenueBaseByOwner,

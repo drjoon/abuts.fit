@@ -250,7 +250,7 @@ describe("manufacturer fixed unit + residual allocation", () => {
     ).toBe(true);
   });
 
-  test("free credit paidCap: manufacturer unit only from paid portion", () => {
+  test("free credit spend: manufacturer still gets full unit", () => {
     const alloc = resolveRevenueOwnerBaseAllocation({
       spendAmount: 20000,
       hasSalesmanReferrer: true,
@@ -258,27 +258,27 @@ describe("manufacturer fixed unit + residual allocation", () => {
       owners,
       isShippingSpend: false,
       creditSettings,
-      manufacturerPaidCap: 0,
+    });
+    expect(alloc.manufacturer).toBe(8000);
+    expect(alloc.manufacturerVat).toBe(800);
+    expect(
+      alloc.manufacturer + alloc.devops + alloc.salesman + alloc.admin,
+    ).toBe(20000);
+  });
+
+  test("remake via applyManufacturerUnit=false: manufacturer 0", () => {
+    const alloc = resolveRevenueOwnerBaseAllocation({
+      spendAmount: 20000,
+      hasSalesmanReferrer: true,
+      configuredRates: {},
+      owners,
+      isShippingSpend: false,
+      creditSettings,
+      applyManufacturerUnit: false,
     });
     expect(alloc.manufacturer).toBe(0);
     expect(alloc.manufacturerVat).toBe(0);
     expect(alloc.salesman + alloc.devops + alloc.admin).toBe(20000);
-  });
-
-  test("mixed free+paid: manufacturer capped by paid", () => {
-    const alloc = resolveRevenueOwnerBaseAllocation({
-      spendAmount: 20000,
-      hasSalesmanReferrer: true,
-      configuredRates: {},
-      owners,
-      isShippingSpend: false,
-      creditSettings,
-      manufacturerPaidCap: 5000,
-    });
-    expect(alloc.manufacturer).toBe(5000);
-    expect(
-      alloc.manufacturer + alloc.devops + alloc.salesman + alloc.admin,
-    ).toBe(20000);
   });
 });
 

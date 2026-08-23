@@ -439,7 +439,6 @@ async function postSpendCommitGeneralLedger({
       : freeRequestAmount > 0
         ? "REQ_FREE_REQUEST_CREDIT"
         : freeAccountCode;
-  const manufacturerPaidCap = paidAmount + settlementAmount;
   const revenueBaseByOwner = resolveRevenueOwnerBaseAllocation({
     spendAmount,
     hasSalesmanReferrer: owners.hasSalesmanReferrer,
@@ -452,7 +451,6 @@ async function postSpendCommitGeneralLedger({
     creditSettings,
     applyManufacturerUnit,
     qty: manufacturerQty,
-    manufacturerPaidCap,
   });
 
   const assignManufacturer = revenueBaseByOwner.manufacturer;
