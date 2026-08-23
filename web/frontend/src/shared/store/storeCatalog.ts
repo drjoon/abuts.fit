@@ -1,3 +1,5 @@
+// change-log:
+// - 2026-08-23: 상품 blurb·description 문구 축약.
 // related files:
 // - web/frontend/src/pages/requestor/store/RequestorStorePage.tsx
 // - web/frontend/src/pages/requestor/store/RequestorStoreProductPage.tsx
@@ -51,13 +53,8 @@ export const STORE_CATEGORIES: StoreCategory[] = [
         id: "simple-abutment-2",
         name: "SimpleAbutment2",
         image: "/store/simple-abutment-206.jpg",
-        blurb: "Simple Abut. [DT-Hex]",
-        description: [
-          "For Submerged type",
-          "",
-          "Submerged type 임플란트용 Simple Abutment(DT-Hex)입니다.",
-          "환자의 저작 기능 회복을 위해 사용하는 인공 치아와 같은 보철물을 지지하기 위하여 삽입합니다.",
-        ].join("\n"),
+        blurb: "DT-Hex Simple Abut.",
+        description: "Submerged type용 Simple Abutment (DT-Hex).",
         galleryImages: ["/store/simple-abutment-206.jpg"],
         contentImages: ["/store/detail/simple-abutment-2-1.jpg"],
         specs: [
@@ -80,12 +77,8 @@ export const STORE_CATEGORIES: StoreCategory[] = [
         name: "SimpleHealing2",
         image: "/store/simple-healing.jpg",
         blurb: "Healing Abut.",
-        description: [
-          "For Submerged type",
-          "",
-          "Submerged type 임플란트용 Healing Abutment입니다.",
-          "Fixture 식립 후 치은 치유·형성 기간에 사용하며, BoneShaper 등으로 피질골을 정리한 뒤 체결합니다.",
-        ].join("\n"),
+        description:
+          "Fixture 식립 후 치은 치유·형성용 Healing Abutment.",
         galleryImages: ["/store/simple-healing.jpg"],
         contentImages: ["/store/detail/simple-healing-2-1.jpg"],
         specs: [
@@ -113,12 +106,8 @@ export const STORE_CATEGORIES: StoreCategory[] = [
         id: "bone-pen",
         name: "BonePen",
         image: "/store/bone-pen.jpg",
-        blurb: "이니셜 드릴 Pen",
-        description: [
-          "임플란트 시술시 임플란트용 핸드피스에 부착하여 골을 절삭 및 채집하는 것을 목적으로 한다.",
-          "",
-          "Initial Kit의 핵심 기구로, 치조골 삭제·채집 후 동일 컵 사이즈의 BonePin을 사용해 수평·수직 공간을 확인합니다.",
-        ].join("\n"),
+        blurb: "골 절삭·채집",
+        description: "핸드피스 부착용. 치조골 절삭·채집 후 BonePin으로 공간 확인.",
         galleryImages: ["/store/bone-pen.jpg"],
         contentImages: ["/store/detail/bone-pen-1.jpg"],
         specs: [
@@ -144,11 +133,9 @@ export const STORE_CATEGORIES: StoreCategory[] = [
         id: "bone-pin",
         name: "BonePin",
         image: "/store/bone-pin.jpg",
-        blurb: "가상 크라운 역할 Pin",
-        description: [
-          "BonePen으로 삭제한 치조골에 사용한 컵 사이즈와 동일한 직경(색상)의 Pin을 꽂아 가상의 크라운 역할",
-          "1차수술에서 수평·수직공간 확보로 2차수술 및 교합조정이 편해 집니다.",
-        ].join("\n"),
+        blurb: "가상 크라운 Pin",
+        description:
+          "BonePen과 동일 사이즈 Pin으로 수평·수직 공간 확인.",
         galleryImages: ["/store/bone-pin.jpg"],
         contentImages: ["/store/detail/bone-pin-1.jpg"],
         specs: [
@@ -179,11 +166,8 @@ export const STORE_CATEGORIES: StoreCategory[] = [
         id: "check-pin",
         name: "CheckPin",
         image: "/store/check-pin.jpg",
-        blurb: "Fixture 식립 후 교합 높이 확인",
-        description: [
-          "Sub. Fixture 식립 후 식립된 fixture에 꽂아 수평공간 및 수직공간 확인",
-          "1차수술에서 수직공간 확보로 2차수술 및 교합조정이 편해 집니다.",
-        ].join("\n"),
+        blurb: "교합 높이 확인",
+        description: "Fixture 식립 후 수평·수직 공간 확인.",
         galleryImages: ["/store/check-pin.jpg"],
         contentImages: ["/store/detail/check-pin-1.jpg"],
         specs: [
@@ -209,11 +193,7 @@ export const STORE_CATEGORIES: StoreCategory[] = [
         name: "BoneShaper",
         image: "/store/bone-shaper.jpg",
         blurb: "피질골 삭제·성형",
-        description: [
-          "Fixture 식립 후 Healing(Abut.) 체결을 위한 cortical bone 삭제성형",
-          "",
-          "식립된 fixture 주위 피질골을 정리해 Healing Abutment 체결이 원활하도록 돕습니다.",
-        ].join("\n"),
+        description: "Healing Abut. 체결용 피질골 삭제·성형.",
         galleryImages: ["/store/bone-shaper.jpg"],
         contentImages: ["/store/detail/bone-shaper-1.jpg"],
         specs: [
@@ -245,13 +225,9 @@ export const STORE_CATEGORIES: StoreCategory[] = [
         id: "gingival-shaper",
         name: "GingivalShaper",
         image: "/store/gingival-shaper.jpg",
-        blurb: "어벗 마진 치은 삭제",
+        blurb: "마진 치은 삭제",
         imageScale: 1.55,
-        description: [
-          "임플란트 상부구조물(Simple abut.) margin 부위의 치은 삭제용",
-          "",
-          "Simple Abutment 마진 주변 치은을 정리해 보철·어벗먼트 체결 시 적합성을 높입니다.",
-        ].join("\n"),
+        description: "Simple Abut. 마진 부위 치은 삭제.",
         galleryImages: [
           "/store/gingival-shaper.jpg",
           "/store/gingival-shaper-296.jpg",

@@ -1,3 +1,5 @@
+// change-log:
+// - 2026-08-23: 상세 문구·타이포 축소, 중복 배지 정리.
 // related files:
 // - web/frontend/src/shared/store/storeCatalog.ts
 // - web/frontend/src/pages/requestor/store/RequestorStorePage.tsx
@@ -43,30 +45,30 @@ export default function RequestorStoreProductPage() {
 
   return (
     <div className="custom-scrollbar workspace-nested-scroll h-full min-h-0 overflow-auto">
-      <div className="mx-auto w-full max-w-5xl space-y-8">
-        <div className="flex flex-wrap items-center gap-3">
-          <Button variant="ghost" size="sm" asChild className="-ml-2">
+      <div className="mx-auto w-full max-w-5xl space-y-6">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="ghost" size="sm" asChild className="-ml-2 h-8">
             <Link to="/dashboard/store">
-              <ArrowLeft className="mr-1.5 h-4 w-4" />
+              <ArrowLeft className="mr-1 h-3.5 w-3.5" />
               스토어
             </Link>
           </Button>
-          <Badge variant="secondary" className="font-normal">
+          <Badge variant="secondary" className="text-[11px] font-normal">
             {category.label}
           </Badge>
-          <Badge variant="outline" className="font-normal">
+          <Badge variant="outline" className="text-[11px] font-normal">
             {STORE_PRICE_TAX_NOTE}
           </Badge>
         </div>
 
-        <div className="grid gap-8 lg:grid-cols-2">
-          <div className="space-y-3">
-            <div className="overflow-hidden rounded-xl border border-border/70 bg-muted/30">
-              <div className="relative aspect-square">
+        <div className="grid gap-6 lg:grid-cols-2 lg:gap-8">
+          <div className="space-y-2">
+            <div className="overflow-hidden rounded-lg border border-border/70 bg-muted/30">
+              <div className="relative aspect-square max-h-[min(52vh,28rem)] w-full sm:max-h-none">
                 <img
                   src={galleryImages[0]}
                   alt={product.name}
-                  className="h-full w-full object-contain p-6"
+                  className="h-full w-full object-contain p-4 sm:p-6"
                   style={
                     scale !== 1
                       ? {
@@ -79,16 +81,16 @@ export default function RequestorStoreProductPage() {
               </div>
             </div>
             {galleryImages.length > 1 ? (
-              <div className="grid grid-cols-4 gap-2">
+              <div className="grid grid-cols-4 gap-1.5">
                 {galleryImages.map((image) => (
                   <div
                     key={image}
-                    className="overflow-hidden rounded-lg border border-border/60 bg-muted/20"
+                    className="overflow-hidden rounded-md border border-border/60 bg-muted/20"
                   >
                     <img
                       src={image}
                       alt=""
-                      className="aspect-square w-full object-contain p-2"
+                      className="aspect-square w-full object-contain p-1.5"
                     />
                   </div>
                 ))}
@@ -96,69 +98,62 @@ export default function RequestorStoreProductPage() {
             ) : null}
           </div>
 
-          <div className="space-y-5">
-            <header className="space-y-2">
-              <p className="text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">
-                {category.label}
-              </p>
-              <h1 className="text-2xl font-semibold tracking-tight">
+          <div className="space-y-4">
+            <header className="space-y-1.5">
+              <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">
                 {product.name}
               </h1>
-              <p className="text-sm text-muted-foreground">{product.blurb}</p>
-              <div className="flex flex-wrap items-center gap-2 pt-1">
-                <Badge variant="outline" className="font-normal">
-                  {STORE_PRICE_TAX_NOTE}
-                </Badge>
-                {product.listPriceInclusive != null ? (
-                  <span className="text-lg font-semibold tabular-nums">
+              <p className="text-xs text-muted-foreground sm:text-sm">
+                {product.blurb}
+              </p>
+              {product.listPriceInclusive != null ? (
+                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 pt-0.5">
+                  <span className="text-base font-semibold tabular-nums sm:text-lg">
                     {formatWonWithUnit(product.listPriceInclusive)}
                   </span>
-                ) : null}
-              </div>
-              {product.listPriceInclusive != null &&
-              product.listPriceInclusive > 0 ? (
-                <p className="text-xs text-muted-foreground">
-                  공급{" "}
-                  {formatWonWithUnit(
-                    splitInclusiveVat(product.listPriceInclusive).supply,
-                  )}{" "}
-                  · 세액{" "}
-                  {formatWonWithUnit(
-                    splitInclusiveVat(product.listPriceInclusive).vat,
-                  )}
-                </p>
+                  {product.listPriceInclusive > 0 ? (
+                    <span className="text-[11px] text-muted-foreground">
+                      공급{" "}
+                      {formatWonWithUnit(
+                        splitInclusiveVat(product.listPriceInclusive).supply,
+                      )}{" "}
+                      · 세액{" "}
+                      {formatWonWithUnit(
+                        splitInclusiveVat(product.listPriceInclusive).vat,
+                      )}
+                    </span>
+                  ) : null}
+                </div>
               ) : null}
             </header>
 
             {product.description ? (
-              <section className="space-y-2">
-                <h2 className="text-sm font-semibold">상품 설명</h2>
-                <p className="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">
-                  {product.description}
-                </p>
-              </section>
+              <p className="text-xs leading-relaxed text-muted-foreground sm:text-sm">
+                {product.description}
+              </p>
             ) : null}
 
             {product.specs?.length ? (
-              <section className="space-y-2">
-                <h2 className="text-sm font-semibold">상품 정보 제공 고시</h2>
-                <dl className="divide-y divide-border/70 rounded-lg border border-border/70 text-sm">
+              <section className="space-y-1.5">
+                <h2 className="text-xs font-semibold sm:text-sm">상품 정보</h2>
+                <dl className="divide-y divide-border/70 rounded-md border border-border/70 text-xs sm:text-sm">
                   {product.specs.map((spec) => (
                     <div
                       key={spec.label}
-                      className="grid grid-cols-[7.5rem_1fr] gap-3 px-3 py-2.5"
+                      className="grid grid-cols-[6.5rem_1fr] gap-2 px-2.5 py-2 sm:grid-cols-[7rem_1fr] sm:gap-3 sm:px-3"
                     >
                       <dt className="text-muted-foreground">{spec.label}</dt>
-                      <dd className="leading-relaxed">{spec.value}</dd>
+                      <dd className="leading-snug">{spec.value}</dd>
                     </div>
                   ))}
                 </dl>
               </section>
             ) : null}
 
-            <div className="pt-1 flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-2 pt-0.5">
               <Button
                 type="button"
+                size="sm"
                 onClick={() => {
                   addItem(product.id, 1);
                   toast.success("장바구니에 담았습니다.");
@@ -167,7 +162,7 @@ export default function RequestorStoreProductPage() {
               >
                 장바구니 담기
               </Button>
-              <Button type="button" variant="outline" asChild>
+              <Button type="button" variant="outline" size="sm" asChild>
                 <Link to="/dashboard/store/cart">장바구니</Link>
               </Button>
             </div>
@@ -175,18 +170,13 @@ export default function RequestorStoreProductPage() {
         </div>
 
         {contentImages.length > 0 ? (
-          <section className="space-y-3 border-t border-border/70 pt-8">
-            <h2 className="text-base font-semibold tracking-tight">
-              상세 정보 · 사용법
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              애크로덴트 제품 상세 페이지의 사용법·스펙 안내입니다.
-            </p>
-            <div className="space-y-4">
+          <section className="space-y-2.5 border-t border-border/70 pt-6">
+            <h2 className="text-sm font-semibold tracking-tight">상세 · 사용법</h2>
+            <div className="space-y-3">
               {contentImages.map((image) => (
                 <div
                   key={image}
-                  className="overflow-hidden rounded-xl border border-border/70 bg-background"
+                  className="overflow-hidden rounded-lg border border-border/70 bg-background"
                 >
                   <img
                     src={image}

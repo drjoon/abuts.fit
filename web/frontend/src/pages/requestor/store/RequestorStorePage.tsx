@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-23: 문구 축소, 모바일 1열 컴팩트 카드, 반응형 열 수 조정.
 // - 2026-08-23: 미리보기 제거. 장바구니·주문 진입.
 // - 2026-08-23: 작업영역 중첩 스크롤바를 카드 오른쪽 끝에 맞춤(workspace-nested-scroll).
 // related files:
@@ -31,21 +32,22 @@ function ProductRow({
   products: StoreProduct[];
 }) {
   return (
-    <section className="space-y-3">
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-border/70 pb-2">
+    <section className="space-y-2.5">
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 border-b border-border/70 pb-1.5">
         {labels.map((label, index) => (
-          <span key={label} className="flex items-baseline gap-3">
+          <span key={label} className="flex items-baseline gap-2">
             {index > 0 ? (
-              <span className="text-xs text-muted-foreground">·</span>
+              <span className="text-[11px] text-muted-foreground">·</span>
             ) : null}
-            <h2 className="text-base font-semibold tracking-tight">{label}</h2>
+            <h2 className="text-sm font-semibold tracking-tight">{label}</h2>
           </span>
         ))}
-        <span className="text-xs text-muted-foreground">
+        <span className="text-[11px] text-muted-foreground">
           {products.length}개
         </span>
       </div>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
+      {/* portrait phone: 1열 · landscape/sm+: 2 · md: 3 · lg: 4 */}
+      <div className="grid grid-cols-1 gap-2 max-sm:landscape:grid-cols-2 sm:grid-cols-2 sm:gap-3 md:grid-cols-3 lg:grid-cols-4">
         {products.map((product) => (
           <StoreProductCard key={product.id} product={product} />
         ))}
@@ -66,19 +68,16 @@ export default function RequestorStorePage() {
 
   return (
     <div className="custom-scrollbar workspace-nested-scroll h-full min-h-0 overflow-auto">
-      <div className="mx-auto w-full max-w-6xl space-y-10">
-        <header className="flex flex-wrap items-start justify-between gap-3">
-          <div className="space-y-1.5">
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-xl font-semibold tracking-tight">스토어</h1>
-              <Badge variant="outline" className="font-normal">
-                {STORE_PRICE_TAX_NOTE}
-              </Badge>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              기성품은 과세(부가세 포함가)이며 선수금으로 결제합니다.
-              커스텀어벗·크레딧(면세)과 장바구니를 합치지 않습니다.
-            </p>
+      <div className="mx-auto w-full max-w-6xl space-y-6 sm:space-y-8">
+        <header className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-lg font-semibold tracking-tight">스토어</h1>
+            <Badge variant="outline" className="text-[11px] font-normal">
+              {STORE_PRICE_TAX_NOTE}
+            </Badge>
+            <span className="text-[11px] text-muted-foreground">
+              선수금 · 커스텀어벗과 별도
+            </span>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" size="sm" asChild>
@@ -93,7 +92,7 @@ export default function RequestorStorePage() {
           </div>
         </header>
 
-        <div className="space-y-10">
+        <div className="space-y-6 sm:space-y-8">
           <ProductRow
             labels={[abutment.label, gingivalKit.label]}
             products={[...abutment.products, ...gingivalKit.products]}
