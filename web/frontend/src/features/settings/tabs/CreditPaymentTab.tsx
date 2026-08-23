@@ -4,8 +4,8 @@
 // - 2026-08-11: 외곽 glass 카드 제거. 입금정보/입금금액 패널만 남기고 수직 중앙 배치.
 // - 2026-08-11: 페이지 제목(크레딧 결제) 제거 — 탭 라벨로 충분.
 // - 2026-08-11: 1회차 판별 — MATCHED/AUTO_MATCHED 반영, variant 미결정 시 2회차 기본(3) 적용 방지.
-// - 2026-08-11: 2회차 충전 기본 배수 3(단위≈월사용량 1/3 → 한 달분). 추천 버튼은 월사용량 반올림.
-// - 2026-08-11: 충전 단위 — 기공소 50만원, 치과 100만원. 2회차 추천은 월사용량/3 반올림.
+// - 2026-08-23: 2회차 기본값 — 월 사용량 추정치(충전 단위 반올림). 1회차는 치과 100만/기공소 50만(1배).
+// - 2026-08-11: 충전 단위 — 기공소 50만원, 치과 100만원.
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
@@ -103,8 +103,6 @@ const CHARGE_UNIT_LAB = 500_000;
 const CHARGE_UNIT_PRACTICE = 1_000_000;
 const MAX_CHARGE_SUPPLY = 50_000_000;
 const MIN_CHARGE_UNITS = 1;
-/** 2회차부터: 단위≈월사용량 1/3이므로 기본 배수 3(약 한 달분). */
-const DEFAULT_REGULAR_CHARGE_UNITS = 3;
 
 function resolveChargeUnit(kind: "practice" | "lab" | null | undefined) {
   return kind === "practice" ? CHARGE_UNIT_PRACTICE : CHARGE_UNIT_LAB;
@@ -309,7 +307,7 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
       : depositAccount;
 
   const recommendedUnits = useMemo(() => {
-    // 추천 버튼: 한 달 사용량(단위 반올림). 기본 배수는 DEFAULT_REGULAR_CHARGE_UNITS.
+    // 2회차 기본·추천 버튼 공통: 한 달 사용량(충전 단위 반올림).
     const fromApi = Number(
       spendInsights?.recommended?.oneMonthFullSupply ??
         spendInsights?.avgMonthlySpendSupply ??
@@ -318,7 +316,7 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
     if (fromApi > 0) {
       return unitsFromSupply(fromApi, chargeUnit, maxChargeUnits);
     }
-    return DEFAULT_REGULAR_CHARGE_UNITS;
+    return MIN_CHARGE_UNITS;
   }, [
     chargeUnit,
     maxChargeUnits,
@@ -552,18 +550,19 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
 
   useEffect(() => {
     if (loadingOrders) return;
+    if (hasChargedBefore && loadingInsights) return;
     if (pendingOrder) return;
     if (didApplyRecommendedUnits) return;
-    applyChargeUnits(
-      hasChargedBefore ? DEFAULT_REGULAR_CHARGE_UNITS : MIN_CHARGE_UNITS,
-    );
+    applyChargeUnits(hasChargedBefore ? recommendedUnits : MIN_CHARGE_UNITS);
     setDidApplyRecommendedUnits(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     didApplyRecommendedUnits,
     hasChargedBefore,
+    loadingInsights,
     loadingOrders,
     pendingOrder,
+    recommendedUnits,
   ]);
 
   const handleCharge = async () => {
@@ -879,6 +878,21 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
               </div>
 
               <div className="space-y-4">
+                <div className="min-h-5">
+                  {!isFirstCharge &&
+                  !pendingOrder &&
+                  recommendedUnits &&
+                  recommendedUnits !== chargeUnits ? (
+                    <button
+                      type="button"
+                      className="text-xs font-medium text-primary underline-offset-2 hover:underline"
+                      onClick={() => applyChargeUnits(recommendedUnits)}
+                    >
+                      추천 {recommendedUnits}배
+                    </button>
+                  ) : null}
+                </div>
+
                 <div className="flex items-stretch gap-2">
                   <div className="flex h-12 min-w-0 flex-1 items-stretch overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
                     <Input
@@ -945,19 +959,6 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
                     × {formatManwon(chargeUnit)}
                   </div>
                 </div>
-
-                {!isFirstCharge &&
-                !pendingOrder &&
-                recommendedUnits &&
-                recommendedUnits !== chargeUnits ? (
-                  <button
-                    type="button"
-                    className="text-xs font-medium text-primary underline-offset-2 hover:underline"
-                    onClick={() => applyChargeUnits(recommendedUnits)}
-                  >
-                    추천 {recommendedUnits}배
-                  </button>
-                ) : null}
 
                 <Button
                   type="button"
