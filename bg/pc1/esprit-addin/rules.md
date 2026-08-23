@@ -98,8 +98,13 @@
 - 구현:
   - `TryResolveSharedFinishSplitX` → `TryResolveTwoPhaseSplitLineTargetX`
   - Rough: `frontEnd = middleEnd = splitline2`, `middleStart = splitline1 - 0.5`, `backStart = splitline2 - 0.5`
-  - Finish: `opA.LastPassPercent` = 경계, `opB.FirstPassPercent` = 경계 tip쪽 0.5mm (안전클램프 시에도 0.5mm 관계 유지)
-- 금지: Front끝=Back시작 동일 좌표 강제, B만 단독 클램프, `Back + Z - stlTopZ` 구식 변환
+    - Middle 폭 < rough 공구 직경이면 tip쪽으로 최소폭 확장 (`minMiddleWidthMm`) — 빈 툴패스 방지
+    - `EnsureRectBoundary`는 X 범위가 바뀌면 체인을 재생성한다 (무조건 재사용 금지)
+  - Finish: 물리 X를 `XToPassPercentByStartEndScale`로 환산
+    - `Finish_Front` 끝 X = `SharedFinishSplitX`
+    - `Finish_Back` 시작 X = `SharedFinishSplitX - 0.5`
+  - `safeBFirstMax`는 seam을 당기지 않는다(로그만). Splitline_2/Front_Rough/Back_Rough와 어긋나기 때문.
+- 금지: Front끝=Back시작 동일 좌표 강제, seam 안전클램프로 Splitline_2 정렬 깨기, `Back + Z - stlTopZ` 구식 변환
 
 ### 4.4 Finish none 처리
 

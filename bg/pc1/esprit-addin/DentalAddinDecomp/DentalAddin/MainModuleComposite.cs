@@ -964,32 +964,32 @@ namespace DentalAddin
             DentalLogger.Log($"Composite2SplitLine2 - FINISH_FRONT 시작점 정책 적용: splitlineResolved={splitlineResolved}, splitline1X={splitline1X:F3}, stlStartX={stlStartX:F3}, requestedStartX(stlMin+0.05)={requestedAStartX:F3}, appliedStartX={appliedAStartX:F3}, minFirst%={minAFirstPercentByStlStart:F2}, overrideGuardApplied={overrideGuardApplied}");
 
             // 인접 툴패스 0.5mm 겹침 SSOT:
-            // - 선행(Finish_Front) 끝 = 경계(SharedFinishSplitX) 정확
-            // - 후행(Finish_Back) 시작 = 경계의 tip쪽(그림 왼쪽, X-) 0.5mm
+            // - 선행(Finish_Front) 끝 = SharedFinishSplitX (물리 X → StartEndScale %)
+            // - 후행(Finish_Back) 시작 = SharedFinishSplitX - 0.5mm (동일 환산, tip쪽)
+            // 중요: safeBFirstMax로 seam을 당기지 않는다. 당기면 Splitline_2/Front_Rough/Back_Rough와 어긋난다.
             const double aEndOffsetFromSplitMm = 0.0;
             const double bStartOffsetFromSplitMm = -AdjacentToolpathOverlapMm;
             const double compositeEndOffsetFromBackPointMm = 0.0;
 
-            double requestedALastPass = ShiftPassPercentByStartEndScaleMm(splitPercent, aEndOffsetFromSplitMm, firstPercent, effectiveLastPercent);
-            double requestedBFirstPass = ShiftPassPercentByStartEndScaleMm(splitPercent, bStartOffsetFromSplitMm, firstPercent, effectiveLastPercent);
+            double finishFrontEndX = splitX + aEndOffsetFromSplitMm;
+            double finishBackStartX = splitX + bStartOffsetFromSplitMm;
+            double requestedALastPass = XToPassPercentByStartEndScale(finishFrontEndX, firstPercent, effectiveLastPercent);
+            double requestedBFirstPass = XToPassPercentByStartEndScale(finishBackStartX, firstPercent, effectiveLastPercent);
 
-            // NC 안전 상한: Front 끝이 너무 크면 Front 끝을 낮춘 뒤, Back 시작을 Front끝-0.5mm로 재동기화한다.
-            double frontEndPercent = requestedALastPass;
-            if (frontEndPercent > safeBFirstMax + 1e-6)
+            if (requestedALastPass > safeBFirstMax + 1e-6)
             {
-                DentalLogger.Log($"Composite2SplitLine2 - Front seam 안전클램프: Front.end%{frontEndPercent:F2}->{safeBFirstMax:F2} (Back.start=Front.end-{AdjacentToolpathOverlapMm:F1}mm 유지)");
-                frontEndPercent = safeBFirstMax;
+                // 과거 NC 크래시 가드 임계는 로그만 남긴다. seam 위치는 SharedFinishSplitX를 유지한다.
+                DentalLogger.Log($"Composite2SplitLine2 - Front seam%{requestedALastPass:F2} > safeBFirstMax%{safeBFirstMax:F2} (클램프 생략, Splitline_2 정렬 우선)");
                 startEndBFirstGuardApplied = true;
             }
 
-            opA.LastPassPercent = Clamp(frontEndPercent, firstPercent, effectiveLastPercent);
+            opA.LastPassPercent = Clamp(requestedALastPass, firstPercent, effectiveLastPercent);
             if (runB && opB != null)
             {
-                // Front 끝 클램프 후에도 0.5mm tip쪽 겹침을 유지한다.
-                opB.FirstPassPercent = ShiftPassPercentByStartEndScaleMm(opA.LastPassPercent, bStartOffsetFromSplitMm, firstPercent, effectiveLastPercent);
+                opB.FirstPassPercent = Clamp(requestedBFirstPass, firstPercent, effectiveLastPercent);
                 opB.LastPassPercent = effectiveLastPercent;
             }
-            DentalLogger.Log($"Composite2SplitLine2 - Finish seam 확정: Front.end%={opA.LastPassPercent:F2}, Back.start%={(runB && opB != null ? opB.FirstPassPercent.ToString("F2", CultureInfo.InvariantCulture) : "<skip>")} (boundaryX={splitX:F3}, overlapMm={AdjacentToolpathOverlapMm:F1}, requestedBackFirst%={requestedBFirstPass:F2}, guard={startEndBFirstGuardApplied})");
+            DentalLogger.Log($"Composite2SplitLine2 - Finish seam 확정: Front.end%={opA.LastPassPercent:F2} (X={finishFrontEndX:F3}), Back.start%={(runB && opB != null ? opB.FirstPassPercent.ToString("F2", CultureInfo.InvariantCulture) : "<skip>")} (X={finishBackStartX:F3}), overlapMm={AdjacentToolpathOverlapMm:F1}, guardWarn={startEndBFirstGuardApplied}");
 
             // 정책: Finish_Back 종료 기준점은 BackPointX + 0.0mm
             double compositeEndTargetX = MoveSTL_Module.BackPointX + compositeEndOffsetFromBackPointMm;
@@ -1027,12 +1027,17 @@ namespace DentalAddin
 
             // 정책 변경: Finish_All 단일 패스는 사용하지 않는다(항상 Front/Back 2단).
 
-            // Front/Back seam 재확인: 최종 클램프 후에도 Front끝 = 경계, Back시작 = Front끝-0.5mm 유지
+            // Front/Back seam 재확인: 최종 클램프 후에도 물리 X(SharedFinishSplit / -0.5mm) 기준으로 재동기화
             double aLastBeforeClamp = opA.LastPassPercent;
             opA.LastPassPercent = Clamp(opA.LastPassPercent, opA.FirstPassPercent, effectiveLastPercent);
             if (runB && opB != null)
             {
-                opB.FirstPassPercent = ShiftPassPercentByStartEndScaleMm(opA.LastPassPercent, bStartOffsetFromSplitMm, firstPercent, effectiveLastPercent);
+                opB.FirstPassPercent = XToPassPercentByStartEndScale(finishBackStartX, firstPercent, effectiveLastPercent);
+                if (opB.FirstPassPercent > opA.LastPassPercent)
+                {
+                    // Front 끝이 줄어든 극단 케이스에서만 Back 시작을 Front 끝 이하로 맞춤
+                    opB.FirstPassPercent = opA.LastPassPercent;
+                }
             }
 
             double bLastBeforeAdjust = (runB && opB != null) ? opB.LastPassPercent : 0.0;
@@ -2288,19 +2293,29 @@ namespace DentalAddin
                 return true;
             }
 
-            // 인접 Rough 0.5mm 겹침 SSOT (공구반경 오버컷 폐기):
-            // - 선행 끝 = 경계 정확 (Front→Splitline_2, Middle→Splitline_2)
-            // - 후행 시작 = 경계 tip쪽(왼쪽, X-) 0.5mm (Middle←Splitline_1, Back←Splitline_2)
-            // Middle_Rough는 경계 2개(Splitline_1, Splitline_2) 모두 동일 원칙.
+            // 인접 Rough 0.5mm 겹침 SSOT:
+            // - Front 끝 / Middle 끝 = Splitline_2 정확
+            // - Middle 시작 = Splitline_1 - 0.5, Back 시작 = Splitline_2 - 0.5
+            // Middle 폭이 rough 공구 직경보다 좁으면 툴패스가 비므로 tip쪽으로 최소폭을 보장한다.
             double adjacentOverlapMm = AdjacentToolpathOverlapMm;
+            double minMiddleWidthMm = Math.Max(GetActiveRoughToolDiameterMm(), 2.0);
 
             double frontStart = xMin;
             // Front_Rough 끝점 SSOT: Splitline_2(= TwoPhaseSplitLine = finishline top 상방 tip쪽 1mm)
             double frontEnd = Clamp(splitline2, xMin + 1e-6, xMax - 1e-6);
             DentalLogger.Log($"RoughFreeFromMillSplitAB - Front_Rough 끝점=Splitline_2: endX={frontEnd:F3}");
 
-            double middleStart = Clamp(splitline1 - adjacentOverlapMm, xMin + 1e-6, xMax - 1e-6);
             double middleEnd = Clamp(splitline2, xMin + 1e-6, xMax - 1e-6);
+            double preferredMiddleStart = splitline1 - adjacentOverlapMm;
+            double middleStart = preferredMiddleStart;
+            bool middleMinWidthApplied = false;
+            if (middleEnd - middleStart < minMiddleWidthMm - 1e-9)
+            {
+                middleStart = middleEnd - minMiddleWidthMm;
+                middleMinWidthApplied = true;
+            }
+            middleStart = Clamp(middleStart, xMin + 1e-6, middleEnd - 1e-6);
+            DentalLogger.Log($"RoughFreeFromMillSplitAB - Middle_Rough 경계: preferredStart={preferredMiddleStart:F3}, appliedStart={middleStart:F3}, end={middleEnd:F3}, minWidth={minMiddleWidthMm:F3}, minWidthApplied={middleMinWidthApplied}");
 
             double backStart = Clamp(splitline2 - adjacentOverlapMm, xMin + 1e-6, xMax - 1e-6);
 
@@ -3167,37 +3182,80 @@ namespace DentalAddin
             return 0;
         }
 
+        private static bool TryGetFeatureChainXRange(FeatureChain chain, out double xMin, out double xMax)
+        {
+            xMin = double.PositiveInfinity;
+            xMax = double.NegativeInfinity;
+            if (chain == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                for (int i = 0; i <= 8; i++)
+                {
+                    Point pt = chain.PointAlong(i / 8.0);
+                    if (pt == null || double.IsNaN(pt.X) || double.IsInfinity(pt.X))
+                    {
+                        continue;
+                    }
+                    if (pt.X < xMin) xMin = pt.X;
+                    if (pt.X > xMax) xMax = pt.X;
+                }
+                return !double.IsInfinity(xMin) && !double.IsInfinity(xMax) && xMax >= xMin;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         private static FeatureChain EnsureRectBoundary(string name, double x1, double x2, double yTop, double yBottom)
         {
-            // 안전성 우선:
-            // A/B TwoPhase 실행 중 이미 Operation에서 참조 중인 Boundary 체인을 삭제하면
-            // ESPRIT COM이 불안정해질 수 있으므로, 동일 이름 체인이 있으면 재사용한다.
+            // 좌표가 같으면 재사용, 다르면(또는 해석 실패 시) 기존 체인을 제거하고 새로 만든다.
+            // 이전처럼 무조건 재사용하면 Middle/Back 경계 변경이 반영되지 않거나 빈 툴패스가 남을 수 있다.
+            double xLeft = Math.Min(x1, x2);
+            double xRight = Math.Max(x1, x2);
+            double yUpper = Math.Max(yTop, yBottom);
+            double yLower = Math.Min(yTop, yBottom);
+
+            if (Math.Abs(xRight - xLeft) < 1e-6)
+            {
+                xRight = xLeft + 1e-6;
+            }
+            if (Math.Abs(yUpper - yLower) < 1e-6)
+            {
+                yUpper = yLower + 1e-6;
+            }
+
             FeatureChain existing = FindFeatureChainByName(name);
             if (existing != null)
             {
                 int existingKey = SafeParseKey(Convert.ToString(existing.Key, CultureInfo.InvariantCulture));
-                DentalLogger.Log($"EnsureRectBoundary({name}) - 기존 체인 재사용 (Key:{existingKey})");
-                return existing;
-            }
+                bool rangeOk = TryGetFeatureChainXRange(existing, out double exMin, out double exMax);
+                if (rangeOk && Math.Abs(exMin - xLeft) <= 0.001 && Math.Abs(exMax - xRight) <= 0.001)
+                {
+                    DentalLogger.Log($"EnsureRectBoundary({name}) - 기존 체인 재사용 (Key:{existingKey}, X[{exMin:0.###}~{exMax:0.###}])");
+                    return existing;
+                }
 
-            string targetName = name;
+                string oldRangeText = rangeOk
+                    ? $"oldX[{exMin:0.###}~{exMax:0.###}]"
+                    : "oldX[<unresolved>]";
+                try
+                {
+                    Document.FeatureChains.Remove(existing);
+                    DentalLogger.Log($"EnsureRectBoundary({name}) - 좌표 불일치로 재생성 (Key:{existingKey}, {oldRangeText} -> newX[{xLeft:0.###}~{xRight:0.###}])");
+                }
+                catch (Exception ex)
+                {
+                    DentalLogger.Log($"EnsureRectBoundary({name}) - 기존 체인 제거 실패: {ex.GetType().Name}:{ex.Message}");
+                }
+            }
 
             try
             {
-                double xLeft = Math.Min(x1, x2);
-                double xRight = Math.Max(x1, x2);
-                double yUpper = Math.Max(yTop, yBottom);
-                double yLower = Math.Min(yTop, yBottom);
-
-                if (Math.Abs(xRight - xLeft) < 1e-6)
-                {
-                    xRight = xLeft + 1e-6;
-                }
-                if (Math.Abs(yUpper - yLower) < 1e-6)
-                {
-                    yUpper = yLower + 1e-6;
-                }
-
                 Point p1 = Document.GetPoint(xLeft, yUpper, 0);
                 Point p2 = Document.GetPoint(xLeft, yLower, 0);
                 Point p3 = Document.GetPoint(xRight, yLower, 0);
@@ -3208,9 +3266,9 @@ namespace DentalAddin
                 fc.Add(Document.GetSegment(p2, p3));
                 fc.Add(Document.GetSegment(p3, p4));
                 fc.Add(Document.GetSegment(p4, p1));
-                fc.Name = targetName;
+                fc.Name = name;
 
-                DentalLogger.Log($"EnsureRectBoundary({targetName}) 생성 - X[{xLeft:0.###}~{xRight:0.###}], Y[{yLower:0.###}~{yUpper:0.###}]");
+                DentalLogger.Log($"EnsureRectBoundary({name}) 생성 - X[{xLeft:0.###}~{xRight:0.###}], Y[{yLower:0.###}~{yUpper:0.###}]");
                 return fc;
             }
             catch (Exception ex)
