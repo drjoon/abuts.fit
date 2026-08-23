@@ -1884,10 +1884,11 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             }
         }
 
-        // 유지홈(retentionGroove) → Finish_Front StepIncrement 매핑
-        //   none    → 0.1
-        //   shallow → 0.2
-        //   deep    → 0.25
+        // 유지홈(retentionGroove) → Finish_Front(A) StepIncrement 매핑
+        //   none    → 0.12
+        //   shallow → 0.15
+        //   deep    → 0.20  (유지홈 있음; "있음" 별칭도 deep)
+        // Finish_Back(B)는 ABUTS_COMPOSITE_STEP_INCREMENT_B 를 세팅하지 않아 PRC 기본 0.08 유지.
         // 정책:
         //   PRC 파일 사본을 만들지 않는다. 환경변수 ABUTS_COMPOSITE_STEP_INCREMENT_A(legacy key) 에
         //   numeric 값만 주입하고, 실제 StepIncrement 적용은
@@ -1918,7 +1919,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 switch (normalizedGroove)
                 {
                     case "none":  // 유지홈 없음
-                        stepIncrement = 0.08;
+                        stepIncrement = 0.12;
                         // gp.exe 모달 안정화: none/shallow는 Composite 비동적 추가 시도
                         Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_DYNAMIC_DISABLE", "1");
                         // 정책 변경: Finish는 항상 2단(Front/Back). ALL_PHASE 강제 금지.
