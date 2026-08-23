@@ -276,6 +276,7 @@ export function resolveManufacturerUnitApply({
   abutmentQty = 0,
   abutmentRetailTotal = 0,
   isShippingSpend = false,
+  isRemake = false,
 } = {}) {
   const usage = String(usageKind || "").trim();
   const src = String(source || "").trim();
@@ -283,6 +284,14 @@ export function resolveManufacturerUnitApply({
   if (usage === "express_surcharge") return false;
   if (usage === "practice_transfer_lab_shipping") return false;
   if (kind === "platform_fee" || src === "lab_platform_fee") return false;
+  // 리메이크 생산은 제조사 무료(배송 단가는 유지).
+  if (
+    isRemake &&
+    !isShippingSpend &&
+    usage !== "practice_transfer_abuts_shipping"
+  ) {
+    return false;
+  }
   if (isShippingSpend || usage === "practice_transfer_abuts_shipping") {
     return true;
   }
@@ -440,7 +449,8 @@ export function resolveResidualRatesFromCreditSettings(
 
 /**
  * 제조사 = 하청 고정 공급가. 잔여 = spend − 제조사 공급가 → salesman/devops/admin.
- * express 등 applyManufacturerUnit=false 이면 제조사 0·전액 잔여 분배.
+ * express·리메이크 등 applyManufacturerUnit=false 이면 제조사 0·전액 잔여 분배.
+ * 무료크레딧 결제: manufacturerPaidCap(유료+기공상계)로 제조사 단가 캡 → 무료분은 무료 생산.
  * 배송: 제조사 배송 공급가, 잔여 → admin(및 잔여 비율이 있으면 동일 로직).
  * residual rates: creditSettings 잔여 비중 우선, 없으면 BA payoutRates.
  */
@@ -453,6 +463,7 @@ export function resolveRevenueOwnerBaseAllocation({
   creditSettings,
   applyManufacturerUnit = true,
   qty = 1,
+  manufacturerPaidCap = null,
 }) {
   const spend = Math.max(0, Math.round(Number(spendAmount || 0)));
   const unitEarn = resolveManufacturerUnitEarn({
@@ -463,10 +474,16 @@ export function resolveRevenueOwnerBaseAllocation({
   });
 
   // 저널 균형(의뢰자 소비 공급가 = REV 공급가 합): 단가는 소비액으로 캡.
+  // 무료크레딧분은 제조사 무료 생산 — 유료(+기공상계) 캡이 있으면 그 한도만 적용.
   // VAT는 캡된 공급가×요율(어벗츠 추가 지급, 보존식 밖).
+  const paidCapRaw = manufacturerPaidCap;
+  const paidCap =
+    paidCapRaw == null || paidCapRaw === ""
+      ? spend
+      : Math.max(0, Math.min(spend, Math.round(Number(paidCapRaw) || 0)));
   const manufacturer =
     owners?.manufacturerAnchorId && applyManufacturerUnit
-      ? Math.min(unitEarn.supply, spend)
+      ? Math.min(unitEarn.supply, spend, paidCap)
       : 0;
   const manufacturerVat =
     manufacturer > 0 ? Math.round(manufacturer * Number(unitEarn.vatRate || 0)) : 0;

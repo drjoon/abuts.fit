@@ -10,6 +10,7 @@
 // - web/backend/controllers/requests/shipping.controller.js
 // - web/backend/controllers/requests/shipping.Tracking.helpers.js
 // change-log:
+// - 2026-08-23: 리메이크·무료크레딧 결제는 제조사 무료 생산.
 // - 2026-08-21: 가공→준비 롤백 후 의뢰비 hold 복원. hold 전환 시 convertedAt 표시.
 // - 2026-08-21: isPtxLabDesignedAbutmentRequest export — 어벗츠로의뢰 취소 가드 공용.
 // - 2026-08-19: 원장 GET에서 신속비 보정을 백그라운드·쿨다운으로 분리.
@@ -303,10 +304,18 @@ async function postSpendCommitGeneralLedger({
     String(usageKind || "") === "shipping" ||
     String(usageKind || "") === "practice_transfer_abuts_shipping";
   const abutmentQty = countDesignAbutmentQty(request?.caseInfos);
+  const priceRule = String(request?.price?.rule || "").trim();
+  const isRemakeRequest =
+    priceRule === "remake_monthly_free_3" ||
+    priceRule === "remake_general_pricing" ||
+    priceRule === "remake_fixed_10000" ||
+    Boolean(request?.isRemake) ||
+    Boolean(request?.remake);
   const applyManufacturerUnit = resolveManufacturerUnitApply({
     usageKind,
     isShippingSpend: isShippingCommit,
     abutmentQty,
+    isRemake: isRemakeRequest,
   });
   const manufacturerQty = resolveManufacturerUnitQty({
     abutmentQty,
@@ -430,6 +439,7 @@ async function postSpendCommitGeneralLedger({
       : freeRequestAmount > 0
         ? "REQ_FREE_REQUEST_CREDIT"
         : freeAccountCode;
+  const manufacturerPaidCap = paidAmount + settlementAmount;
   const revenueBaseByOwner = resolveRevenueOwnerBaseAllocation({
     spendAmount,
     hasSalesmanReferrer: owners.hasSalesmanReferrer,
@@ -442,6 +452,7 @@ async function postSpendCommitGeneralLedger({
     creditSettings,
     applyManufacturerUnit,
     qty: manufacturerQty,
+    manufacturerPaidCap,
   });
 
   const assignManufacturer = revenueBaseByOwner.manufacturer;

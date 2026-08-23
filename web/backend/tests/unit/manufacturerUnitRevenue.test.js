@@ -232,4 +232,53 @@ describe("manufacturer fixed unit + residual allocation", () => {
     expect(alloc.manufacturerVat).toBe(318);
     expect(alloc.admin).toBe(318);
   });
+
+  test("remake: manufacturer unit not applied", () => {
+    expect(
+      resolveManufacturerUnitApply({
+        source: "abutment_retail",
+        displayKind: "abuts_share",
+        abutmentQty: 1,
+        isRemake: true,
+      }),
+    ).toBe(false);
+    expect(
+      resolveManufacturerUnitApply({
+        isShippingSpend: true,
+        isRemake: true,
+      }),
+    ).toBe(true);
+  });
+
+  test("free credit paidCap: manufacturer unit only from paid portion", () => {
+    const alloc = resolveRevenueOwnerBaseAllocation({
+      spendAmount: 20000,
+      hasSalesmanReferrer: true,
+      configuredRates: {},
+      owners,
+      isShippingSpend: false,
+      creditSettings,
+      manufacturerPaidCap: 0,
+    });
+    expect(alloc.manufacturer).toBe(0);
+    expect(alloc.manufacturerVat).toBe(0);
+    expect(alloc.salesman + alloc.devops + alloc.admin).toBe(20000);
+  });
+
+  test("mixed free+paid: manufacturer capped by paid", () => {
+    const alloc = resolveRevenueOwnerBaseAllocation({
+      spendAmount: 20000,
+      hasSalesmanReferrer: true,
+      configuredRates: {},
+      owners,
+      isShippingSpend: false,
+      creditSettings,
+      manufacturerPaidCap: 5000,
+    });
+    expect(alloc.manufacturer).toBe(5000);
+    expect(
+      alloc.manufacturer + alloc.devops + alloc.salesman + alloc.admin,
+    ).toBe(20000);
+  });
 });
+

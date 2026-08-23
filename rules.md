@@ -187,7 +187,7 @@
   - `CHARGE_PAID`, `CHARGE_FREE_REQUEST`, `CHARGE_FREE_SHIPPING`, `ADJUST`, `SETTLEMENT_PAYOUT`, `STORE_SALE`
 - 수익 계정 SSOT:
   - `REV_MANUFACTURER`, `REV_DEVOPS`, `REV_SALESMAN`, `REV_ADMIN`
-  - **제조사(하청)**: % 분배 금지. **어벗 1개당** 고정 매입가(부가세 포함) — `creditSettings.manufacturerRequestUnitPrice`(기본 8,800)·`manufacturerShippingUnitPrice`(기본 3,500, 박스당). 장부 적립은 공급가(÷1.1)·VAT. 고객의 유료·무료 크레딧을 구분하지 않고 **모든 의뢰·배송에 약정 단가를 지급**. 매달 말일 일괄 지급 전까지는 미정산 잔액으로 적립. 지급 시 부가세·세금계산서.
+  - **제조사(하청)**: % 분배 금지. **어벗 1개당** 고정 매입가(부가세 포함) — `creditSettings.manufacturerRequestUnitPrice`(기본 8,800)·`manufacturerShippingUnitPrice`(기본 3,500, 박스당). 장부 적립은 공급가(÷1.1)·VAT. **유료 크레딧 결제건**에만 약정 단가를 지급. **리메이크·무료 크레딧 결제건은 제조사 무료 생산(지급 0)**. 매달 말일 일괄 지급 전까지는 미정산 잔액으로 적립. 지급 시 부가세·세금계산서.
   - **어벗 생산 분배**: 판매가(배송비 제외)에서 제조사 매입 공급가(기본 8,000=포함 8,800÷1.1)를 선차감하고, 잔여를 딜러/개발운영/어벗츠 비중(기본 딜러 포함 30:10:40 · 없으면 20:80)으로 분배. 제조사·개발운영사·딜러사 지급 시 부가세 10%. 특별주문가는 주체별 배분액. 설정 UI: 관리자「플랫폼 설정 · 커스텀어벗」가격·분배 비율 / 「사업영역」어벗사업. 제조사 박스당 배송 지급은 장부 출고 룰이며 사업영역 분배 UI에는 기재하지 않음.
   - **배송 분배**: 사업영역 분배 재원에서 제외. 매출에서 배송비를 먼저 차감한 나머지만 분배. 제조사 배송 매입가(부가세 포함)·고객 배송비 잔여는 출고 장부 흐름.
   - **플랫폼 분배**: 기공소 자동매칭 수수료·지정 수수료(현재 무료)를 어벗츠 90% / 개발운영사 10%(비율 수정 가능). 개발운영사 지급 시 부가세.
@@ -195,7 +195,7 @@
   - 동일 의뢰 `machining_spend`+`express_surcharge`: 제조사 고정단가는 **어벗 개수×1회**만. express는 잔여 분배에만 포함.
   - paid/free/settlement 혼합 소비는 의뢰자 잔액에서 **무료 → 기공(settlement 상계) → 유료** 순으로 차감
   - 수익 라인(`REV_*`)의 paid/free 표시는 role 순서가 아니라 소비된 paid/free 총량을 role base에 비례 배분(무편향)해 기록
-  - 딜러사·개발운영사·어벗츠의 무료 수익은 지급 0원으로 정산완료 상태만 표시 가능. **제조사는 예외**(유료·무료 모두 약정 단가 지급, 말일 일괄).
+  - 딜러사·개발운영사·어벗츠의 무료 수익은 지급 0원으로 정산완료 상태만 표시 가능. **리메이크·무료 크레딧 결제건은 제조사도 무료 생산(지급 0)**. 유료 결제분만 말일 일괄 지급.
 - 커스텀 어벗 의뢰 단가 SSOT: 관리자「플랫폼 설정 · 커스텀어벗」`creditSettings.membershipProductionPrice`(기본 **15,000원**). **신규 Request는 항상 생산만**(`custom_abutment`). `design_custom_abutment`·`membershipDesignAndProductionPrice`(옛 2.5만)는 **레거시 읽기 전용**(신규 쓰기·청구 분기 없음). 기공의뢰 CA 디자인은 수주 기공소·`labFeeSchedule` 커스텀어벗 수가. 신속=`expressFee`(기본 **+2,000원**). 기공소 어벗생산의뢰는 `labProductionPrice` 오버레이. **치과 멤버십/일반 청구 이중가 없음**. `regular*`·관리자「멤버/일반」은 **딜러 유무 분배**용. 가입 90일 1만원·치과 멤버십 월정 없음.
 - 롤백 원칙:
   - 롤백은 REFUND 추가가 아니라 원본 커밋 이벤트 및 대응 라인의 **물리 삭제**
@@ -212,10 +212,10 @@
   - 구현: `controllers/manufacturers/manufacturer.controller.js` (`buildManufacturerEarnCollapseAndGroupStages`)
 - 정산 지급 가능 잔액 집계 원칙:
   - `SETTLEMENT_PAYOUT`은 포함
-  - **제조사**: 공급가(`amountExcludingVat`) 기준, 지급 시 부가세 10%·세금계산서. 고객 유료·무료와 무관하게 `EARN/ADJUST` 전액이 지급 대상. 매달 말일 일괄 지급 전까지 미정산 잔액.
+  - **제조사**: 공급가(`amountExcludingVat`) 기준, 지급 시 부가세 10%·세금계산서. 유료(`PAID`) `EARN/ADJUST`만 지급 대상(리메이크·무료 크레딧 생산분 제외). 매달 말일 일괄 지급 전까지 미정산 잔액.
   - **어벗츠·기공소**: 공급가(`amountExcludingVat`) 기준, 면세 계산서. `EARN/ADJUST`는 `creditKind=PAID|null`만 포함 (무료 제외)
   - **딜러사·개발운영사**: 장부 적립은 공급가. 지급 시 부가세 10%를 더해 **입금·세금계산서** 수취
-  - 딜러사·개발운영사·어벗츠의 무료(`FREE_REQUEST|FREE_SHIPPING`) 수익은 지급 대상에서 제외(표시·확인용만). 제조사는 포함.
+  - 딜러사·개발운영사·어벗츠의 무료(`FREE_REQUEST|FREE_SHIPPING`) 수익은 지급 대상에서 제외(표시·확인용만). 제조사도 리메이크·무료 크레딧 생산분은 제외(유료만 지급).
 - CreditLedger → GL 이관 보정 원칙:
   - 레거시 `CreditLedger`를 원본으로 이관하되, 정책 위반/무효 행(예: 0원 SPEND, 참조 누락된 상쇄형 SHIPPING SPEND/REFUND 쌍)은 장부 반영 대신 무시 처리
   - 샘플(`rnd_sample|copied_sample`) 및 비의뢰 수동 NC 작업은 장부 무기록 원칙 유지

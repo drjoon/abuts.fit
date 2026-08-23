@@ -6,6 +6,7 @@
 // - web/backend/utils/creditSettingsDefaults.js
 // change-log:
 // - 2026-08-23: 제조사=일반과세 — TAXABLE_SETTLEMENT_ROLES·지급 VAT·세금계산서.
+// - 2026-08-23: 제조사 지급에서 무료크레딧·리메이크 생산분 제외.
 // - 2026-08-20: 제조사 지급 잔액은 고객 유료/무료 크레딧을 가리지 않고 REV 전액(말일 일괄 지급).
 // - 2026-08-18: (철회) 제조사 면세 — 일반과세로 복귀.
 // - 2026-08-17: 영업자·개발운영사 지급 시 VAT 합산(입금·세금계산서·GL).
@@ -117,11 +118,9 @@ export function resolveSettlementPayoutAmounts({
   };
 }
 
-/** 제조사는 고객 유료/무료와 무관하게 EARN/ADJUST 전액이 지급 대상. 그 외는 유료만. */
+/** 제조사·딜러·개발운영 모두 유료(PAID) EARN/ADJUST만 지급. 무료크레딧·리메이크 생산분은 미지급. */
 function affiliatePayoutEarnMatch(ownerRole) {
-  if (ownerRole === "manufacturer") {
-    return { kind: { $in: ["EARN", "ADJUST"] } };
-  }
+  void ownerRole;
   return {
     kind: { $in: ["EARN", "ADJUST"] },
     creditKind: { $in: ["PAID", null] },
@@ -134,7 +133,7 @@ export async function computeAffiliateSettlementBalance({
   accountCode = AFFILIATE_SETTLEMENT_ACCOUNTS[ownerRole],
 }) {
   if (!accountCode) throw new Error("Unsupported affiliate ownerRole.");
-  // 잔액은 공급가(amountExcludingVat). 제조사=전액(말일 일괄), 딜러사·개발운영사=유료만.
+  // 잔액은 공급가(amountExcludingVat). 제조사·딜러·개발운영=유료만(무료·리메이크 생산 미지급). 제조사는 말일 일괄.
   const rows = await LedgerLine.aggregate([
     { $match: { ownerRole, ownerId: ownerAnchorId, accountCode } },
     {

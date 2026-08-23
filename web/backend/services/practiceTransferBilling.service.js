@@ -387,6 +387,7 @@ function pushRevenueLines({
   meta,
   creditSettings = null,
   labAnchorId = null,
+  isRemake = false,
 }) {
   if (spendAmount <= 0) return;
   const freeTotal = Math.max(0, Math.round(Number(freeAmount || 0)));
@@ -413,6 +414,7 @@ function pushRevenueLines({
     abutmentQty,
     abutmentRetailTotal,
     isShippingSpend: isPtxAbutsShipping,
+    isRemake: Boolean(isRemake) || Boolean(meta?.isRemake),
   });
   const manufacturerQty = resolveManufacturerUnitQty({
     abutmentQty,
@@ -424,6 +426,7 @@ function pushRevenueLines({
     return;
   }
 
+  const manufacturerPaidCap = Math.max(0, spendAmount - freeTotal);
   const revenueBaseByOwner = resolveRevenueOwnerBaseAllocation({
     spendAmount,
     hasSalesmanReferrer: owners.hasSalesmanReferrer,
@@ -433,6 +436,7 @@ function pushRevenueLines({
     applyManufacturerUnit,
     creditSettings,
     qty: manufacturerQty,
+    manufacturerPaidCap,
   });
   const revenueKindSplit = splitRevenueByCreditKindProRata({
     ownerBaseByRole: revenueBaseByOwner,
@@ -1089,6 +1093,7 @@ export async function commitPracticeTransferBilling({
       );
       const creditSettings = await loadCreditSettingsDefaults();
       pushRevenueLines({
+      isRemake: isPracticeTransferRemake(transfer),
         lines,
         owners,
         spendAmount: abutsRevenueAmount,
@@ -2910,6 +2915,7 @@ export async function releasePracticeTransferLabShare({
         freeShareOfPlatformFee - freeReqShareOfPlatformFee,
       );
       pushRevenueLines({
+      isRemake: isPracticeTransferRemake(transfer),
         lines: feeLines,
         owners: revenueOwners,
         spendAmount: platformFee,
@@ -3172,6 +3178,7 @@ export async function releasePracticeTransferAbutmentShare({
       fromFree > 0 ? Math.round((freeShare * fromFreeRequest) / fromFree) : 0;
     const freeShipShare = Math.max(0, freeShare - freeReqShare);
     pushRevenueLines({
+      isRemake: isPracticeTransferRemake(transfer),
       lines,
       owners: revenueOwners,
       spendAmount: abutmentRetailTotal,
@@ -4933,6 +4940,7 @@ async function commitPracticeTransferShippingSpend({
       fromHold,
     };
     pushRevenueLines({
+      isRemake: false,
       lines,
       owners,
       spendAmount: fee,
