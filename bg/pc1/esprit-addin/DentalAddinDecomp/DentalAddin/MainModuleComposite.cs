@@ -820,7 +820,8 @@ namespace DentalAddin
             }
             else
             {
-                EnsureTwoPhaseSplitGuideLine(sharedSplitX);
+                // Legacy: TwoPhaseSplitLine은 진단용 가이드 라인만 만들고 툴패스에 관여하지 않는다.
+                // EnsureTwoPhaseSplitGuideLine(sharedSplitX);
                 double splitPercentByShared = XToPassPercentByStartEndScale(sharedSplitX, firstPercent, effectiveLastPercent);
                 if (!double.IsNaN(splitPercentByShared) && !double.IsInfinity(splitPercentByShared))
                 {
@@ -2349,7 +2350,8 @@ namespace DentalAddin
             }
             Document.ActiveLayer = activeLayer;
 
-            EnsureThreeStageSplitGuideLines(splitline1, splitline2);
+            // Legacy: Splitline_1/2 가이드 라인은 시각 진단용이며 툴패스에 관여하지 않는다.
+            // EnsureThreeStageSplitGuideLines(splitline1, splitline2);
 
             string region = (GetEnvString("ABUTS_ROUGHFREEFORM_SPLIT_REGION") ?? string.Empty).Trim().ToUpperInvariant();
 
@@ -2603,7 +2605,7 @@ namespace DentalAddin
         // - 인접 툴패스 겹침: 선행 끝=경계 정확, 후행 시작=경계 tip쪽(X-) 공구반경
         //   Rough(Back): GetRoughAdjacentOverlapMm() = D4→2.0 / D2→1.0
         //   Finish(Back): GetFinishAdjacentOverlapMm() = D1.2→0.6
-        // - Middle_Rough는 레거시로 생성하지 않는다 (Front+Back Rough로 커버)
+        // - Middle_Turn / Middle_Rough는 레거시로 생성하지 않는다 (Front+Back로 커버)
         // SharedFinishSplit 오프셋(mm): finishLine top 기준 tip 방향.
         // X=-Z 이므로 Z+1mm ≡ X-1mm.
         private const double SharedFinishSplitOffsetFromFinishLineTopMm = -1.0;
@@ -2653,8 +2655,9 @@ namespace DentalAddin
                 splitline2 = sharedSplitX;
                 DentalLogger.Log($"ThreeStageSplit - Splitline_2=SharedFinishSplitX({splitline2:F3}) 고정 적용, retentionGroove='{retentionGroove}', source={sharedSource}, xRange=[{xMin:F3}~{xMax:F3}], front={front:F3}, back={back:F3}");
 
-                EnsureThreeStageSplitGuideLines(splitline1, splitline2);
-                EnsureTwoPhaseSplitGuideLine(sharedSplitX);
+                // Legacy: Splitline_1/2, TwoPhaseSplitLine 가이드 피쳐는 툴패스 미관여. 좌표 SSOT만 유지.
+                // EnsureThreeStageSplitGuideLines(splitline1, splitline2);
+                // EnsureTwoPhaseSplitGuideLine(sharedSplitX);
 
                 return true;
             }
@@ -2729,8 +2732,12 @@ namespace DentalAddin
             }
         }
 
+        // Legacy: TwoPhaseSplitLine 진단 가이드. 현행 툴패스는 SharedFinishSplitX 좌표만 사용한다.
         private static void EnsureTwoPhaseSplitGuideLine(double splitX)
         {
+            DentalLogger.Log($"TwoPhaseSplitGuideLine - skipped(legacy unused feature, splitX={splitX:0.###})");
+            return;
+#pragma warning disable CS0162
             try
             {
                 if (Document == null || Document.LatheMachineSetup == null)
@@ -2799,10 +2806,15 @@ namespace DentalAddin
             {
                 DentalLogger.Log($"TwoPhaseSplitGuideLine 생성 실패: {ex.GetType().Name}:{ex.Message}");
             }
+#pragma warning restore CS0162
         }
 
+        // Legacy: Splitline_1/2 진단 가이드. 현행 툴패스는 TryGetThreeStageSplitConfig 좌표만 사용한다.
         private static void EnsureThreeStageSplitGuideLines(double splitline1, double splitline2)
         {
+            DentalLogger.Log($"ThreeStageSplitGuideLine - skipped(legacy unused feature, splitline1={splitline1:0.###}, splitline2={splitline2:0.###})");
+            return;
+#pragma warning disable CS0162
             try
             {
                 if (Document == null || Document.LatheMachineSetup == null)
@@ -2884,6 +2896,7 @@ namespace DentalAddin
             {
                 DentalLogger.Log($"ThreeStageSplitGuideLine 생성 실패: {ex.GetType().Name}:{ex.Message}");
             }
+#pragma warning restore CS0162
         }
 
         private static double ShiftPassPercentByXOffsetMm(

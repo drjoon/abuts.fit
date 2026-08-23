@@ -1601,85 +1601,102 @@ namespace DentalAddin
                                     {
                                         (enumerator as IDisposable)?.Dispose();
                                     }
-                                    Plane plane = GetOrCreatePlane("180", "180Degree");
-                                    if (plane == null)
-                                    {
-                                        DentalLogger.Log("WorkPlane: 180 plane 확보 실패");
-                                        return;
-                                    }
-                                    Plane plane2 = plane;
-                                    plane2.X = 0.0;
-                                    plane2.Y = 0.0;
-                                    plane2.Z = 0.0;
-                                    plane2.Ux = 1.0;
-                                    plane2.Uy = 0.0;
-                                    plane2.Uz = 0.0;
-                                    plane2.Vx = 0.0;
-                                    plane2.Vy = -1.0;
-                                    plane2.Vz = 0.0;
-                                    plane2.Wx = 0.0;
-                                    plane2.Wy = 0.0;
-                                    plane2.Wz = -1.0;
-                                    plane2.IsView = false;
+                                    Plane plane = null;
                                     Layer activeLayer = Document.Layers.Add("FreeFormLayer");
                                     Document.ActiveLayer = activeLayer;
-                                    Document.ActivePlane = plane;
-                                    FreeFormFeature freeFormFeature = Document.FreeFormFeatures.Add();
-                                    freeFormFeature.Name = "3DMilling_180Degree";
-                                    freeFormFeature.Add(RuntimeHelpers.GetObjectValue(obj), espFreeFormElementType.espFreeFormPartSurfaceItem);
-                                    plane = GetOrCreatePlane("270", "270Degree");
-                                    if (plane == null)
+
+                                    // Legacy: 3DMilling_90/180/270은 machinetype==1(3축 병렬평면)에서만 툴패스를 만든다.
+                                    // 현행 4축 Composite finish는 3DMilling_0Degree만 사용하므로 빈 FreeForm 생성을 건너뛴다.
+                                    if (machinetype == 1)
                                     {
-                                        DentalLogger.Log("WorkPlane: 270 plane 확보 실패");
-                                        return;
+                                        plane = GetOrCreatePlane("180", "180Degree");
+                                        if (plane == null)
+                                        {
+                                            DentalLogger.Log("WorkPlane: 180 plane 확보 실패");
+                                            return;
+                                        }
+                                        Plane plane2 = plane;
+                                        plane2.X = 0.0;
+                                        plane2.Y = 0.0;
+                                        plane2.Z = 0.0;
+                                        plane2.Ux = 1.0;
+                                        plane2.Uy = 0.0;
+                                        plane2.Uz = 0.0;
+                                        plane2.Vx = 0.0;
+                                        plane2.Vy = -1.0;
+                                        plane2.Vz = 0.0;
+                                        plane2.Wx = 0.0;
+                                        plane2.Wy = 0.0;
+                                        plane2.Wz = -1.0;
+                                        plane2.IsView = false;
+                                        Document.ActivePlane = plane;
+                                        FreeFormFeature freeFormFeature = Document.FreeFormFeatures.Add();
+                                        freeFormFeature.Name = "3DMilling_180Degree";
+                                        freeFormFeature.Add(RuntimeHelpers.GetObjectValue(obj), espFreeFormElementType.espFreeFormPartSurfaceItem);
+                                        plane = GetOrCreatePlane("270", "270Degree");
+                                        if (plane == null)
+                                        {
+                                            DentalLogger.Log("WorkPlane: 270 plane 확보 실패");
+                                            return;
+                                        }
+                                        Plane plane3 = plane;
+                                        plane3.X = 0.0;
+                                        plane3.Y = 0.0;
+                                        plane3.Z = 0.0;
+                                        plane3.Ux = 1.0;
+                                        plane3.Uy = 0.0;
+                                        plane3.Uz = 0.0;
+                                        plane3.Vx = 0.0;
+                                        plane3.Vy = 0.0;
+                                        plane3.Vz = 1.0;
+                                        plane3.Wx = 0.0;
+                                        plane3.Wy = -1.0;
+                                        plane3.Wz = 0.0;
+                                        plane3.IsView = false;
+                                        Document.ActivePlane = plane;
+                                        FreeFormFeature freeFormFeature2 = Document.FreeFormFeatures.Add();
+                                        freeFormFeature2.Name = "3DMilling_270Degree";
+                                        freeFormFeature2.Add(RuntimeHelpers.GetObjectValue(obj), espFreeFormElementType.espFreeFormPartSurfaceItem);
                                     }
-                                    Plane plane3 = plane;
-                                    plane3.X = 0.0;
-                                    plane3.Y = 0.0;
-                                    plane3.Z = 0.0;
-                                    plane3.Ux = 1.0;
-                                    plane3.Uy = 0.0;
-                                    plane3.Uz = 0.0;
-                                    plane3.Vx = 0.0;
-                                    plane3.Vy = 0.0;
-                                    plane3.Vz = 1.0;
-                                    plane3.Wx = 0.0;
-                                    plane3.Wy = -1.0;
-                                    plane3.Wz = 0.0;
-                                    plane3.IsView = false;
-                                    Document.ActivePlane = plane;
-                                    FreeFormFeature freeFormFeature2 = Document.FreeFormFeatures.Add();
-                                    freeFormFeature2.Name = "3DMilling_270Degree";
-                                    freeFormFeature2.Add(RuntimeHelpers.GetObjectValue(obj), espFreeFormElementType.espFreeFormPartSurfaceItem);
+                                    else
+                                    {
+                                        DentalLogger.Log($"WorkPlane - skip legacy empty FreeForm 90/180/270 (machinetype={machinetype})");
+                                    }
+
                                     plane = Document.Planes["XYZ"];
                                     Document.ActivePlane = plane;
                                     FreeFormFeature freeFormFeature3 = Document.FreeFormFeatures.Add();
                                     freeFormFeature3.Name = "3DMilling_0Degree";
                                     freeFormFeature3.Add(RuntimeHelpers.GetObjectValue(obj), espFreeFormElementType.espFreeFormPartSurfaceItem);
-                                    plane = GetOrCreatePlane("90");
-                                    if (plane == null)
+
+                                    if (machinetype == 1)
                                     {
-                                        DentalLogger.Log("WorkPlane: 90 plane 확보 실패");
-                                        return;
+                                        plane = GetOrCreatePlane("90");
+                                        if (plane == null)
+                                        {
+                                            DentalLogger.Log("WorkPlane: 90 plane 확보 실패");
+                                            return;
+                                        }
+                                        Plane plane4 = plane;
+                                        plane4.X = 0.0;
+                                        plane4.Y = 0.0;
+                                        plane4.Z = 0.0;
+                                        plane4.Ux = 1.0;
+                                        plane4.Uy = 0.0;
+                                        plane4.Uz = 0.0;
+                                        plane4.Vx = 0.0;
+                                        plane4.Vy = 0.0;
+                                        plane4.Vz = -1.0;
+                                        plane4.Wx = 0.0;
+                                        plane4.Wy = 1.0;
+                                        plane4.Wz = 0.0;
+                                        plane4.IsView = false;
+                                        Document.ActivePlane = plane;
+                                        FreeFormFeature freeFormFeature4 = Document.FreeFormFeatures.Add();
+                                        freeFormFeature4.Name = "3DMilling_90Degree";
+                                        freeFormFeature4.Add(RuntimeHelpers.GetObjectValue(obj), espFreeFormElementType.espFreeFormPartSurfaceItem);
                                     }
-                                    Plane plane4 = plane;
-                                    plane4.X = 0.0;
-                                    plane4.Y = 0.0;
-                                    plane4.Z = 0.0;
-                                    plane4.Ux = 1.0;
-                                    plane4.Uy = 0.0;
-                                    plane4.Uz = 0.0;
-                                    plane4.Vx = 0.0;
-                                    plane4.Vy = 0.0;
-                                    plane4.Vz = -1.0;
-                                    plane4.Wx = 0.0;
-                                    plane4.Wy = 1.0;
-                                    plane4.Wz = 0.0;
-                                    plane4.IsView = false;
-                                    Document.ActivePlane = plane;
-                                    FreeFormFeature freeFormFeature4 = Document.FreeFormFeatures.Add();
-                                    freeFormFeature4.Name = "3DMilling_90Degree";
-                                    freeFormFeature4.Add(RuntimeHelpers.GetObjectValue(obj), espFreeFormElementType.espFreeFormPartSurfaceItem);
+
                                     plane = GetOrCreatePlane("Face");
                                     if (plane == null)
                                     {

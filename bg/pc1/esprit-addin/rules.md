@@ -285,3 +285,20 @@
 - `rules.md`에 없는 구현/운영 규칙이 나오면 본 파일에 즉시 추가합니다.
 - 헥스 회전 관련 코드에서 `보정`/`무보정` 문자열이 발견되면 즉시 `STL모델대로`/`헥스30도회전`으로 치환하고, 발견 위치를 규칙 문서에 기록합니다.
 - 기존 rules와 충돌 가능성이 있는 요청이 들어오면, 먼저 사용자 확인(컨펌)을 받은 뒤 진행합니다.
+
+## 6. 레거시 비툴패스 피쳐 (2026-08-23)
+
+캡쳐 피쳐 트리에서 **자식 오퍼레이션이 없는** 진단/잔여 FeatureChain은 생성하지 않거나 공정 종료 시 제거한다.
+
+- 생성 스킵(현행 `machinetype=2` 4축):
+  - `Boundry1` / `Boundry2` / `RoughBoundry1..` (`MoveSTL_Module.Boundry`)
+  - `3DMilling_90/180/270Degree` (`WorkPlane`) — 빈 FreeForm
+  - `Splitline_1` / `Splitline_2` / `TwoPhaseSplitLine` 가이드 라인
+- 공정 종료 시 잔여 제거 (`CleanupLegacyNonToolpathFeatures`):
+  - `Turning` / `TurningProfile*` (TurnRgn 생성 원본)
+  - 기본명 `N 연결`
+  - 위 Boundry/Splitline 잔여분
+- **유지(툴패스 입력)**:
+  - `RoughBoundryFront1` / `RoughBoundryBack1` — Rough `BoundaryProfiles`
+  - `CompositeOrientationProfile_*` — Finish OrientationProfile
+  - `TurnRgn*` / `3DMilling_0Degree` / `3DMilling_FrontFace` / `3DRoughMilling_*`

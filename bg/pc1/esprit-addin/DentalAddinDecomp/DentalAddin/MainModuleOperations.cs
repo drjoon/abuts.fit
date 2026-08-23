@@ -71,7 +71,7 @@ namespace DentalAddin
                     RoughFreeFromMill();
                 }
 
-                ValidateBeforeOperation("FreeFormMill", Array.Empty<string>(), new[] { "3DMilling_0Degree", "3DMilling_90Degree", "3DMilling_180Degree", "3DMilling_270Degree" });
+                ValidateBeforeOperation("FreeFormMill", Array.Empty<string>(), RequiredFinishFreeFormFeatures());
                 FreeFormMill();
                 TryNormalizeCompositeFinishOrderAfterFreeForm();
                 if (Mark.MarkSign)
@@ -82,6 +82,7 @@ namespace DentalAddin
 
                 ValidateBeforeOperation("CustomCycle2", Array.Empty<string>(), Array.Empty<string>());
                 CustomCycle2();
+                CleanupLegacyNonToolpathFeatures();
                 return;
             }
 
@@ -111,7 +112,7 @@ namespace DentalAddin
                 try
                 {
                     Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", "A_PHASE");
-                    ValidateBeforeOperation("FreeFormMill", Array.Empty<string>(), new[] { "3DMilling_0Degree", "3DMilling_90Degree", "3DMilling_180Degree", "3DMilling_270Degree" });
+                    ValidateBeforeOperation("FreeFormMill", Array.Empty<string>(), RequiredFinishFreeFormFeatures());
                     FreeFormMill();
                     TryNormalizeCompositeFinishOrderAfterFreeForm();
 
@@ -119,7 +120,7 @@ namespace DentalAddin
                     ExecuteTwoPhaseRough("BACK");
 
                     Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", "B_PHASE");
-                    ValidateBeforeOperation("FreeFormMill", Array.Empty<string>(), new[] { "3DMilling_0Degree", "3DMilling_90Degree", "3DMilling_180Degree", "3DMilling_270Degree" });
+                    ValidateBeforeOperation("FreeFormMill", Array.Empty<string>(), RequiredFinishFreeFormFeatures());
                     FreeFormMill();
                     TryNormalizeCompositeFinishOrderAfterFreeForm();
                 }
@@ -137,6 +138,7 @@ namespace DentalAddin
 
                 ValidateBeforeOperation("CustomCycle2", Array.Empty<string>(), Array.Empty<string>());
                 CustomCycle2();
+                CleanupLegacyNonToolpathFeatures();
                 return;
             }
 
@@ -153,7 +155,7 @@ namespace DentalAddin
                 ValidateBeforeOperation("OP36", Array.Empty<string>(), Array.Empty<string>());
                 OP36();
             }
-            ValidateBeforeOperation("FreeFormMill", Array.Empty<string>(), new[] { "3DMilling_0Degree", "3DMilling_90Degree", "3DMilling_180Degree", "3DMilling_270Degree" });
+            ValidateBeforeOperation("FreeFormMill", Array.Empty<string>(), RequiredFinishFreeFormFeatures());
             FreeFormMill();
             TryNormalizeCompositeFinishOrderAfterFreeForm();
             if (Mark.MarkSign)
@@ -163,9 +165,78 @@ namespace DentalAddin
             }
             ValidateBeforeOperation("CustomCycle2", Array.Empty<string>(), Array.Empty<string>());
             CustomCycle2();
+            CleanupLegacyNonToolpathFeatures();
         }
 
+        // 현행 4축 Composite는 0Degree만 사용. 90/180/270은 machinetype==1 레거시.
+        private static string[] RequiredFinishFreeFormFeatures()
+        {
+            if (machinetype == 1)
+            {
+                return new[] { "3DMilling_0Degree", "3DMilling_90Degree", "3DMilling_180Degree", "3DMilling_270Degree" };
+            }
+            return new[] { "3DMilling_0Degree" };
+        }
 
+        // TurnRgn 생성 후 남는 Turning/TurningProfile, 이름 없는 "N 연결", 진단 가이드 등
+        // 툴패스에 더 이상 관여하지 않는 레거시 FeatureChain을 제거한다.
+        // 유지: TurnRgn*, RoughBoundryFront/Back, CompositeOrientationProfile_*
+        private static void CleanupLegacyNonToolpathFeatures()
+        {
+            try
+            {
+                if (Document?.FeatureChains == null)
+                {
+                    return;
+                }
+
+                int removed = 0;
+                for (int i = Document.FeatureChains.Count; i >= 1; i--)
+                {
+                    FeatureChain fc = null;
+                    try { fc = Document.FeatureChains[i]; } catch { }
+                    if (fc == null)
+                    {
+                        continue;
+                    }
+
+                    string name = (fc.Name ?? string.Empty).Trim();
+                    bool isLegacy =
+                        string.Equals(name, "Turning", StringComparison.OrdinalIgnoreCase)
+                        || name.StartsWith("TurningProfile", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(name, "Boundry1", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(name, "Boundry2", StringComparison.OrdinalIgnoreCase)
+                        || name.StartsWith("RoughBoundry", StringComparison.OrdinalIgnoreCase)
+                            && !name.StartsWith("RoughBoundryFront", StringComparison.OrdinalIgnoreCase)
+                            && !name.StartsWith("RoughBoundryBack", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(name, "Splitline_1", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(name, "Splitline_2", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(name, "TwoPhaseSplitLine", StringComparison.OrdinalIgnoreCase)
+                        || System.Text.RegularExpressions.Regex.IsMatch(name, @"^\d+\s*연결$");
+
+                    if (!isLegacy)
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        Document.FeatureChains.Remove(i);
+                        removed++;
+                    }
+                    catch
+                    {
+                        try { Document.FeatureChains.Remove(fc.Key); removed++; } catch { }
+                    }
+                }
+
+                DentalLogger.Log($"CleanupLegacyNonToolpathFeatures - removed={removed}");
+            }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"CleanupLegacyNonToolpathFeatures 실패: {ex.GetType().Name}:{ex.Message}");
+            }
+        }
 
         private static void ClearOperationsForTwoPhase()
         {
@@ -389,10 +460,9 @@ namespace DentalAddin
                 string[] roughFreeForms = (RoughType == 2.0)
                     ? new[] { "3DRoughMilling_0Degree", "3DRoughMilling_180Degree" }
                     : new[] { "3DRoughMilling_0Degree", "3DRoughMilling_120Degree", "3DRoughMilling_240Degree" };
-                string[] roughBoundaries = (RoughType == 2.0)
-                    ? new[] { "RoughBoundry1" }
-                    : new[] { "RoughBoundry1", "RoughBoundry2", "RoughBoundry3" };
-                ValidateBeforeOperation($"RoughFreeFromMill_{region}", roughBoundaries, roughFreeForms);
+                // Legacy RoughBoundry1..는 Boundry()에서 더 이상 만들지 않는다.
+                // SplitAB가 RoughBoundryFront/Back을 생성하므로 사전 FeatureChain 검증은 FreeForm만 한다.
+                ValidateBeforeOperation($"RoughFreeFromMill_{region}", Array.Empty<string>(), roughFreeForms);
                 RoughFreeFromMill();
                 TagNewOperations(roughStart, $"ROUGH_{region}");
                 DentalLogger.Log($"ExecuteTwoPhaseRough({region}) 완료");
