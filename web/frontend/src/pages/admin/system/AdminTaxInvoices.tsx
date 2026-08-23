@@ -686,7 +686,7 @@ export const AdminTaxInvoices = () => {
             />
             <div className="border-t pt-3">
               <p className="text-xs text-muted-foreground mb-2">금액 (원)</p>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <LabeledInput
                   label="공급가액"
                   value={editForm.supplyAmount}
@@ -728,7 +728,7 @@ export const AdminTaxInvoices = () => {
           if (!o) resetIssueForm();
         }}
       >
-        <DialogContent className="max-w-[540px] max-h-[88vh] overflow-y-auto p-0 gap-0">
+        <DialogContent className="w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] sm:max-w-[540px] max-h-[88vh] overflow-y-auto p-0 gap-0">
           {/* Header */}
           <div className="flex items-center justify-between px-5 py-4 border-b">
             <DialogTitle className="flex items-center gap-2 text-sm font-semibold">
@@ -889,7 +889,7 @@ export const AdminTaxInvoices = () => {
                   <option value="과세">과세 · 세금계산서</option>
                 </select>
               </div>
-              <div className="grid grid-cols-3 gap-x-3 gap-y-2.5">
+              <div className="grid grid-cols-1 gap-x-3 gap-y-2.5 sm:grid-cols-3">
                 <div className="space-y-1">
                   <Label className="text-xs text-muted-foreground">
                     공급가액 <span className="text-destructive">*</span>

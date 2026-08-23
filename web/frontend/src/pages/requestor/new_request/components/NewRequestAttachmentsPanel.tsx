@@ -1212,7 +1212,7 @@ export function NewRequestAttachmentsPanel({
             ref={listContainerRef}
             // 단독 카드 ≈ 4.75rem + gap-2.5 → 4.5장 노출 (링 여백 py 포함)
             // 좌우 px-7: 마키 드래그 시작용 여유 공간
-            className={`relative flex max-h-[calc(4.5*4.75rem+4*0.625rem+0.5rem)] flex-col gap-2.5 overflow-y-auto overflow-x-hidden px-7 py-1.5 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 ${
+            className={`relative flex max-h-[calc(4.5*4.75rem+4*0.625rem+0.5rem)] flex-col gap-2.5 overflow-y-auto overflow-x-hidden px-3 py-1.5 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 sm:px-7 ${
               onGroupSelectedFiles ? "select-none" : ""
             } ${marquee ? "cursor-crosshair" : ""}`}
             tabIndex={0}

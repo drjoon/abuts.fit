@@ -2179,8 +2179,8 @@ export const PreviewModal = ({
         </DialogDescription>
 
         <div className="flex h-full min-w-0 flex-col gap-4 overflow-hidden">
-          <div className="flex min-w-0 flex-nowrap items-center justify-between gap-3 overflow-x-auto rounded-lg border border-slate-200/80 bg-slate-50/70 px-2 py-2 shrink-0 sm:px-3">
-            <div className="flex min-w-0 flex-nowrap items-center gap-2">
+          <div className="flex min-w-0 flex-col gap-2 overflow-x-auto rounded-lg border border-slate-200/80 bg-slate-50/70 px-2 py-2 shrink-0 sm:px-3 md:flex-row md:flex-nowrap md:items-center md:justify-between md:gap-3">
+            <div className="flex min-w-0 flex-wrap items-center gap-2 md:flex-nowrap">
               {hasNcMetadata && (
                 <Badge
                   variant="outline"
@@ -2262,7 +2262,7 @@ export const PreviewModal = ({
 
             </div>
 
-            <div className="flex shrink-0 flex-nowrap items-center gap-2">
+            <div className="flex w-full shrink-0 flex-wrap items-center gap-2 md:w-auto md:flex-nowrap">
               <label
                 className={`inline-flex items-center gap-1.5 rounded-md border px-1.5 py-1 text-[11px] font-semibold ${
                   canOverrideAnodizing && !approveBusy && !anodizingSaving

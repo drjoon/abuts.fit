@@ -252,9 +252,9 @@ export const WorksheetDiameterQueueModal = ({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="w-[90vw] max-w-5xl h-[82vh] px-6 pt-3 pb-4 overflow-hidden
-                   [&>[aria-label='Close']]:h-12 [&>[aria-label='Close']]:w-12
-                   [&>[aria-label='Close']>svg]:h-12 [&>[aria-label='Close']>svg]:w-12"
+        className="h-[82vh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-hidden px-4 pb-4 pt-3 sm:w-[90vw] sm:max-w-5xl sm:px-6
+                   [&>[aria-label='Close']]:h-9 [&>[aria-label='Close']]:w-9 sm:[&>[aria-label='Close']]:h-12 sm:[&>[aria-label='Close']]:w-12
+                   [&>[aria-label='Close']>svg]:h-5 [&>[aria-label='Close']>svg]:w-5 sm:[&>[aria-label='Close']>svg]:h-12 sm:[&>[aria-label='Close']>svg]:w-12"
       >
         <div className="flex flex-wrap items-center gap-6 mb-4">
           <div className="flex items-center gap-2">

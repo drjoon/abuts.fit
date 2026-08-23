@@ -2117,7 +2117,7 @@ export const AdminDashboardPage = () => {
                   <CardTitle className="text-sm font-medium">불완전가공 의뢰 현황</CardTitle>
                 </CardHeader>
                 <CardContent className="flex flex-1 min-h-0 flex-col space-y-3">
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                     <div className="rounded-md border px-2 py-2">
                       <div className="text-[11px] text-muted-foreground">가능성</div>
                       <div className="text-lg font-semibold">
@@ -2253,7 +2253,7 @@ export const AdminDashboardPage = () => {
                   <DollarSign className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                     <div className="space-y-1">
                       <div className="text-xs text-muted-foreground">유료 주문액</div>
                       <div className="text-xl font-bold">
@@ -2276,7 +2276,7 @@ export const AdminDashboardPage = () => {
                       </div>
                     </div>
                   </div>
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                     <div className="space-y-1">
                       <div className="text-xs text-muted-foreground">무료 주문액</div>
                       <div className="text-sm font-semibold text-muted-foreground">

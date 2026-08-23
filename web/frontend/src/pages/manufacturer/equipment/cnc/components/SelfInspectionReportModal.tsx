@@ -1048,7 +1048,7 @@ export function SelfInspectionReportModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex h-[92vh] w-[calc(100vw-8vh)] max-w-none flex-col overflow-hidden rounded-2xl border border-slate-200/80 p-0 gap-0 shadow-[0_24px_64px_rgba(15,23,42,0.28)]">
+      <DialogContent className="flex h-[92vh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] flex-col overflow-hidden rounded-2xl border border-slate-200/80 p-0 gap-0 shadow-[0_24px_64px_rgba(15,23,42,0.28)] sm:w-[min(1200px,calc(100vw-2rem))] sm:max-w-[min(1200px,calc(100vw-2rem))]">
         <DialogHeader className="shrink-0 border-b border-slate-100 px-4 py-2.5 sm:px-5">
           <DialogTitle className="text-base font-bold tracking-tight text-slate-900 sm:text-lg">
             자주검사성적서
@@ -1058,9 +1058,9 @@ export function SelfInspectionReportModal({
           </p>
         </DialogHeader>
 
-        <div className="flex min-h-0 flex-1 overflow-hidden">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:flex-row">
           {/* ── Left: STL Preview ── */}
-          <div className="flex w-[38%] shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-slate-50">
+          <div className="flex h-[36vh] w-full shrink-0 flex-col overflow-hidden border-b border-slate-200 bg-slate-50 lg:h-auto lg:w-[38%] lg:border-b-0 lg:border-r">
             <div className="relative min-h-0 flex-1">
               {stlLoading || metaLoading ? (
                 <div className="flex h-full items-center justify-center text-xs text-slate-500">

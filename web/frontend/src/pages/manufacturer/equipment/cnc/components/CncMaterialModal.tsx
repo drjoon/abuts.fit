@@ -342,7 +342,7 @@ export const CncMaterialModal = ({
 
               <div className="space-y-1.5">
                 <Label>가공 가능한 최대직경</Label>
-                <div className="grid grid-cols-4 gap-2">
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                   {(["6", "8", "10", "12"] as DiameterGroup[]).map((g) => {
                     const isBase = g === diameterGroup;
                     const isChecked = isBase || maxDiaGroups.includes(g);

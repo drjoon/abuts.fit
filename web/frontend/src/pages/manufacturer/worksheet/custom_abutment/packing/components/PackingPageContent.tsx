@@ -1550,7 +1550,7 @@ export const PackingPageContent = ({
               {screwLotItems.map((row, idx) => (
                 <div
                   key={`${idx}-${row.type}`}
-                  className="grid grid-cols-[120px_minmax(0,1fr)_44px] items-center gap-2"
+                  className="grid grid-cols-1 items-center gap-2 sm:grid-cols-[120px_minmax(0,1fr)_44px]"
                 >
                   <Input
                     value={row.type}

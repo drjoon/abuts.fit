@@ -145,7 +145,7 @@ export function InternationalPhoneInput({
 
   return (
     <div className="space-y-1">
-      <div className="flex gap-2">
+      <div className="flex min-w-0 flex-col gap-2 sm:flex-row">
         <Popover open={open} onOpenChange={setOpen}>
           <PopoverTrigger asChild>
             <Button
@@ -153,7 +153,7 @@ export function InternationalPhoneInput({
               variant="outline"
               disabled={disabled}
               className={cn(
-                "w-[210px] justify-between",
+                "w-full justify-between sm:w-[210px] sm:shrink-0",
                 invalid
                   ? "border-destructive focus-visible:ring-destructive"
                   : "",
@@ -166,7 +166,10 @@ export function InternationalPhoneInput({
               <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
             </Button>
           </PopoverTrigger>
-          <PopoverContent className="w-[320px] p-0" align="start">
+          <PopoverContent
+            className="w-[min(320px,calc(100vw-2rem))] p-0"
+            align="start"
+          >
             <Command>
               <CommandInput placeholder="국가 검색..." />
               <CommandList>

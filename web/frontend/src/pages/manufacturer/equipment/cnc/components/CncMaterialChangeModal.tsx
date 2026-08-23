@@ -176,7 +176,7 @@ export const CncMaterialChangeModal = ({
           {/* 새 예약 폼 */}
           {!scheduledChange && (
             <>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="targetDate">교체 날짜</Label>
                   <Input

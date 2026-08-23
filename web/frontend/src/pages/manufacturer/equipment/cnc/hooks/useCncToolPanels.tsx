@@ -300,7 +300,7 @@ export const useCncToolPanels = ({
       <div className="space-y-4 text-sm text-gray-700">
         <div className="space-y-2">
           <div className="text-xs font-semibold text-gray-500">기하 오프셋</div>
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {["X", "Y", "Z", "R"].map((axis) => (
               <div key={axis} className="space-y-1">
                 <div className="text-[11px] text-gray-500">{axis}</div>
@@ -318,7 +318,7 @@ export const useCncToolPanels = ({
                   onBlur={() => {
                     scheduleSave();
                   }}
-                  className="w-16 bg-white border border-gray-200 rounded-md px-2 py-1 text-[11px] focus:ring-primary focus:border-primary"
+                  className="w-full bg-white border border-gray-200 rounded-md px-2 py-1 text-[11px] focus:ring-primary focus:border-primary sm:w-16"
                 />
               </div>
             ))}
@@ -327,7 +327,7 @@ export const useCncToolPanels = ({
 
         <div className="space-y-2">
           <div className="text-xs font-semibold text-gray-500">마모 오프셋</div>
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {["X", "Y", "Z", "R"].map((axis) => (
               <div key={axis} className="space-y-1">
                 <div className="text-[11px] text-gray-500">{axis}</div>
@@ -345,15 +345,15 @@ export const useCncToolPanels = ({
                   onBlur={() => {
                     scheduleSave();
                   }}
-                  className="w-16 bg-white border border-gray-200 rounded-md px-2 py-1 text-[11px] focus:ring-primary focus:border-primary"
+                  className="w-full bg-white border border-gray-200 rounded-md px-2 py-1 text-[11px] focus:ring-primary focus:border-primary sm:w-16"
                 />
               </div>
             ))}
           </div>
         </div>
 
-        <div className="flex items-end justify-between gap-4 pt-2">
-          <div className="flex-1 space-y-2 max-w-[12rem]">
+        <div className="flex flex-col items-stretch justify-between gap-4 pt-2 sm:flex-row sm:items-end">
+          <div className="w-full max-w-[12rem] flex-1 space-y-2">
             <div className="text-xs font-semibold text-gray-500">
               툴 팁 오프셋(길이)
             </div>
@@ -367,7 +367,7 @@ export const useCncToolPanels = ({
               onBlur={() => {
                 scheduleSave();
               }}
-              className="w-16 bg-white border border-gray-200 rounded-md px-2 py-1 text-[11px] focus:ring-primary focus:border-primary"
+              className="w-full bg-white border border-gray-200 rounded-md px-2 py-1 text-[11px] focus:ring-primary focus:border-primary sm:w-16"
             />
           </div>
 
