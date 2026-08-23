@@ -801,11 +801,11 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 해당 작업은 생산/장비 운영 이벤트로만 취급하고 General Ledger 쓰기를 금지합니다.
 
 - 부가세(VAT) / 면세 정책(강제, 루트 `rules.md` §2.3) — 겸영(과세+면세) 이중 체계:
-  - **겸영**: 어벗츠는 면세 매출(기공·커스텀어벗·크레딧)과 과세 매출(스토어 기성품·딜러/개발운영 지급)을 분리한다.
-  - **면세**: 치과–기공소–제조사–어벗츠. 크레딧 충전·소비·기공정산·제조사 하청·커스텀어벗. `vatAmount = 0`. 증빙은 계산서.
+  - **겸영**: 어벗츠는 면세 매출(기공·커스텀어벗·크레딧)과 과세 매출(스토어 기성품·제조사/딜러/개발운영 지급)을 분리한다.
+  - **면세**: 치과–기공소–어벗츠. 크레딧 충전·소비·기공정산·커스텀어벗(고객 청구). `vatAmount = 0`. 증빙은 계산서.
   - **과세**:
     - 스토어 기성품: 부가세 10% · 고객 표시=부가세 포함가 · 세금계산서. 커스텀어벗 계산서와 합치지 않음.
-    - 어벗츠↔딜러사·개발운영사 지급: 부가세 10% · 세금계산서. 장부는 공급가, 지급 시 VAT.
+    - 어벗츠↔제조사·딜러사·개발운영사 지급: 부가세 10% · 세금계산서. 장부는 공급가, 지급 시 VAT. 제조사=일반과세(기공소 전환 없음).
   - **마이너스 발행**: 전송 성공 후 상계는 원본 `SENT` 유지 + `kind=REVERSE` 별도 draft. 원본을 `CANCELLED`로 강등하지 않음.
   - 장부: `STORE_SALE` / `REV_STORE_TAXABLE` — 스토어 결제 확정 시 기록. **전액 어벗츠(admin). 딜러/제조 분배 없음.** 면세 기공과 분리.
   - 스토어 결제: 크레딧(유료) 또는 B-plan 입금 → 재고 차감 → `STORE_SALE` → `fulfillmentStatus=READY`. **건별 과세 draft 없음**(월말 합산). 출고 `SHIPPED`·배송완료 `DELIVERED`. 구현: `storeSale.service.js`, `modules/store/store.routes.js`.
@@ -823,12 +823,12 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - `REV_*`(제조사 포함): `amount = amountExcludingVat = base`, `vatAmount = 0`.
     구현: `controllers/requests/common.review.helpers.js`, `services/creditRevenuePolicy.service.js`
   - 의뢰자 잔액·보존식 집계는 `amountExcludingVat`(없으면 `amount`) = 공급가. 딜러사·개발운영사 지급 VAT는 어벗츠 추가 지급.
-  - 고객향 계산서 직접발행 세액 기본 0(면세). 정산 배치 Draft: 제조사·기공소=면세, 딜러사·개발운영사=과세 10%.
+  - 고객향 계산서 직접발행 세액 기본 0(면세). 정산 배치 Draft: 기공소=면세, 제조사·딜러사·개발운영사=과세 10%.
 
 - (세금)계산서 발행 방향/위수탁 정책(강제, `TaxInvoiceDraft.direction`):
   - `ABUTS_TO_CUSTOMER`: 사용분 월합(기공·어벗=면세, 스토어=과세). `issuanceMode="SELF"`. 충전(ChargeOrder) 시점 발행 금지. 과거 충전 건별 draft는 유지.
   - `LAB_TO_PRACTICE`(①치과→기공소 기공의뢰비의 반대방향, 월합계): `taxType="면세"`, `issuanceMode="TRUSTEE"`. 실제 공급자는 기공소이지만 기공소는 팝빌 회원가입/인증서가 불필요하고, 어벗츠가 수탁자로 위수탁발행한다(치과·기공소·어벗츠 3자 모두 부가세 면세 원칙 — 어벗츠 공동대표가 기공사라 기공소로 간주).
-  - `AFFILIATE_TO_ABUTS`(어벗츠→딜러사·개발운영사·제조사·기공소 정산의 반대방향): 딜러사·개발운영사는 `taxType="과세"`(부가세 10%), 제조사·기공소는 `taxType="면세"`. 모두 `issuanceMode="TRUSTEE"`. 실제 공급자(기공소·제조사·딜러사·개발운영사)는 팝빌 회원 불필요, 어벗츠가 수탁자로 위수탁발행.
+  - `AFFILIATE_TO_ABUTS`(어벗츠→딜러사·개발운영사·제조사·기공소 정산의 반대방향): 제조사·딜러사·개발운영사는 `taxType="과세"`(부가세 10%), 기공소는 `taxType="면세"`. 모두 `issuanceMode="TRUSTEE"`. 실제 공급자(기공소·제조사·딜러사·개발운영사)는 팝빌 회원 불필요, 어벗츠가 수탁자로 위수탁발행.
   - 정산 배치 확정(`adminConfirmSettlementBatch`) 시 위 역할별 Draft 자동 생성. SSOT: `resolveSettlementInvoiceDraftSpec` in `services/settlement.service.js`.
   - 위수탁발행(`issueType:"위수탁"` + `trusteeCorpNum` 등)은 팝빌 `TaxinvoiceService`가 과세/면세 모두 동일하게 지원한다(별도 서비스 아님). 수탁자(어벗츠)만 팝빌 회원/인증서가 필요하고, 위탁자(실제 공급자)는 회원가입이 불필요하다.
   - 구현: `utils/popbill.util.js`(`buildTaxinvoiceObject`의 `issuanceMode`/`seller`/`taxType`), `models/taxInvoiceDraft.model.js`.
@@ -836,11 +836,11 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - 정산/지급 정책:
   - 관리자 3사업 축 집계: `GET /api/admin/credits/settlement-business-overview` (`adminGetSettlementBusinessOverview`). 기간은 `period` 또는 `startDate`/`endDate`.
   - 유료/무료 모두 `REV_*` 수익 라인은 기록해 확인 가능해야 합니다.
-  - **제조사(하청)**: 고정단가(면세) — `creditSettings.manufacturerRequestUnitPrice`(기본 8,800, **어벗 1개당**)·`manufacturerShippingUnitPrice`(기본 3,500, 박스당). 고객의 유료·무료 크레딧을 구분하지 않고 모든 의뢰·배송에 약정 단가를 지급. 매달 말일 일괄 지급 전까지 미정산 잔액. 지급액=공급가·계산서.
+  - **제조사(하청)**: 고정 매입가(부가세 포함) — `creditSettings.manufacturerRequestUnitPrice`(기본 8,800, **어벗 1개당**)·`manufacturerShippingUnitPrice`(기본 3,500, 박스당). 장부=공급가(÷1.1)+VAT. 고객의 유료·무료 크레딧을 구분하지 않고 모든 의뢰·배송에 약정 단가를 지급. 매달 말일 일괄 지급 전까지 미정산 잔액. 지급액=공급가+VAT·세금계산서. 제조사=일반과세사업자.
   - **딜러사·개발운영사**: 장부 적립은 공급가. 지급 시 부가세 10%를 더해 **입금·세금계산서**. 구현: `services/settlement.service.js`(`resolveSettlementPayoutAmounts` / `postSettlementPayoutJournal`). 배치 항목 `amount`=입금합계, `supplyAmount`/`vatAmount` 분해.
   - **어벗츠·기공소**: 정산 지급(PAYOUT)은 유료 수익만(면세 계산서). `EARN/ADJUST`는 `creditKind=PAID|null`만 포함.
-  - **제조사**: 정산 지급(PAYOUT)은 유료·무료 수익 전액(면세 계산서). `computeAffiliateSettlementBalance`가 manufacturer는 creditKind를 가리지 않음.
-  - 배송: 제조사 고정 배송 공급가(면세). 고객 배송비−제조사 공급가 잔여 → 관리자(`vatAmount=0`).
+  - **제조사**: 정산 지급(PAYOUT)은 유료·무료 수익 전액(과세·세금계산서). `computeAffiliateSettlementBalance`가 manufacturer는 creditKind를 가리지 않음.
+  - 배송: 제조사 고정 배송 매입가(부가세 포함). 고객 배송비−제조사 공급가 잔여 → 관리자(`vatAmount=0`).
   - 딜러사·개발운영사·어벗츠의 무료 수익은 지급금액 0으로 정산 완료 상태만 표시할 수 있습니다. 제조사는 예외.
   - paid/free/settlement 혼합 소비는 의뢰자 잔액에서 **무료 → 기공 → 유료** 차감을 사용합니다.
   - 수익 라인(`REV_*`)의 paid/free 표시는 role 순서가 아니라, 소비된 paid/free 총량을 role별 수익 base에 비례 배분(무편향)해 기록합니다.
@@ -864,7 +864,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - legacy 이관에서 `amount=0` 소비행, 참조 누락된 상쇄형 SHIPPING SPEND/REFUND 쌍은 `resolvedIgnored`로 분류해 미적재 처리합니다(오류 unresolved로 취급하지 않음).
   - 기존 GL 배송 수익 분배 보정은 `scripts/db/rebalance-shipping-revenue-to-manufacturer.js`로 수행합니다.
   - 기존 GL 혼합 소비(paid/free) 분해를 최신 무편향 분해 정책(의뢰자 무료우선 소비 + 수익라인 비례배분)으로 정렬하는 보정은 `scripts/db/rebalance-mixed-spend-free-first.js`로 수행합니다.
-  - 제조사 하청 고정단가(어벗 1개당 8,800, 면세) 보정은 `scripts/db/rebalance-manufacturer-unit-price.js`로 수행합니다(타 역할 REV 미변경).
+  - 제조사 하청 고정단가(어벗 1개당 매입가 8,800 부가세 포함→공급가+VAT) 보정은 `scripts/db/rebalance-manufacturer-unit-price.js`로 수행합니다(타 역할 REV 미변경).
 
 - 관리자 크레딧 응답 필드 정책:
   - `adminCredit`/잔액 응답에서 무료 크레딧 SSOT 키는 `freeCredit`(합), 하위호환으로 `freeRequestCredit`/`freeShippingCredit`/`freeBalance`입니다.

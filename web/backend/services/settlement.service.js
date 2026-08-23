@@ -5,15 +5,21 @@
 // - web/backend/services/creditRevenuePolicy.service.js
 // - web/backend/utils/creditSettingsDefaults.js
 // change-log:
+// - 2026-08-23: 제조사=일반과세 — TAXABLE_SETTLEMENT_ROLES·지급 VAT·세금계산서.
 // - 2026-08-20: 제조사 지급 잔액은 고객 유료/무료 크레딧을 가리지 않고 REV 전액(말일 일괄 지급).
-// - 2026-08-18: 제조사는 기공소(면세) — TAXABLE_SETTLEMENT_ROLES에서 제외. 배치 확정 Draft SSOT 추가.
+// - 2026-08-18: (철회) 제조사 면세 — 일반과세로 복귀.
 // - 2026-08-17: 영업자·개발운영사 지급 시 VAT 합산(입금·세금계산서·GL).
 import LedgerJournal from "../models/ledgerJournal.model.js";
 import LedgerLine from "../models/ledgerLine.model.js";
 import { postGeneralLedgerJournal } from "./generalLedger.service.js";
 import { computeBusinessCreditBalanceFromLedger } from "./creditBalance.service.js";
-import { DEFAULT_AFFILIATE_VAT_RATE } from "./creditRevenuePolicy.service.js";
+import {
+  DEFAULT_AFFILIATE_VAT_RATE,
+  normalizeAffiliateVatRate,
+} from "./creditRevenuePolicy.service.js";
 import { loadCreditSettingsDefaults } from "../utils/creditSettingsDefaults.js";
+
+export { normalizeAffiliateVatRate };
 
 export const AFFILIATE_SETTLEMENT_ACCOUNTS = {
   manufacturer: "REV_MANUFACTURER",
@@ -21,13 +27,16 @@ export const AFFILIATE_SETTLEMENT_ACCOUNTS = {
   devops: "REV_DEVOPS",
 };
 
-/** 지급 시 과세(세금계산서) 대상. 기공소·제조사·어벗츠(관리자)는 면세. */
-export const TAXABLE_SETTLEMENT_ROLES = new Set(["salesman", "devops"]);
+/** 지급 시 과세(세금계산서) 대상. 기공소·어벗츠(관리자)는 면세. */
+export const TAXABLE_SETTLEMENT_ROLES = new Set([
+  "manufacturer",
+  "salesman",
+  "devops",
+]);
 
 /** 정산 배치 확정 시 계산서/세금계산서 Draft 자동 생성 대상(면세 포함). */
 export const SETTLEMENT_INVOICE_DRAFT_ROLES = new Set([
   "lab",
-  "manufacturer",
   ...TAXABLE_SETTLEMENT_ROLES,
 ]);
 
@@ -40,8 +49,8 @@ const SETTLEMENT_INVOICE_ITEM_NAMES = {
 
 /**
  * 정산 배치 항목 → TaxInvoiceDraft 필드 SSOT.
- * - lab/manufacturer: AFFILIATE_TO_ABUTS · 면세 · 위수탁
- * - salesman/devops: AFFILIATE_TO_ABUTS · 과세 · 위수탁
+ * - lab: AFFILIATE_TO_ABUTS · 면세 · 위수탁
+ * - manufacturer/salesman/devops: AFFILIATE_TO_ABUTS · 과세 · 위수탁
  * admin 등 Draft 미생성 role은 null.
  */
 export function resolveSettlementInvoiceDraftSpec({ role, breakdown }) {
@@ -71,12 +80,6 @@ export function resolveSettlementInvoiceDraftSpec({ role, breakdown }) {
   };
 }
 
-export function normalizeAffiliateVatRate(raw) {
-  const n = Number(raw);
-  if (!Number.isFinite(n) || n < 0) return DEFAULT_AFFILIATE_VAT_RATE;
-  return Math.min(1, n);
-}
-
 export async function resolveAffiliateVatRate() {
   const settings = await loadCreditSettingsDefaults();
   return normalizeAffiliateVatRate(settings?.affiliateVatRate);
@@ -84,8 +87,8 @@ export async function resolveAffiliateVatRate() {
 
 /**
  * 원장 미지급 잔액 → 지급(입금) 분해.
- * - lab/manufacturer: 면세. balance=입금액.
- * - salesman/devops: balance=공급가 미지급. 지급 시 VAT 가산.
+ * - lab: 면세. balance=입금액.
+ * - manufacturer/salesman/devops: balance=공급가 미지급. 지급 시 VAT 가산.
  */
 export function resolveSettlementPayoutAmounts({
   role,
@@ -95,7 +98,7 @@ export function resolveSettlementPayoutAmounts({
   const balance = Math.max(0, Math.round(Number(balanceAmount || 0)));
   const rate = normalizeAffiliateVatRate(vatRate);
 
-  if (role === "lab" || role === "manufacturer" || !TAXABLE_SETTLEMENT_ROLES.has(role)) {
+  if (role === "lab" || !TAXABLE_SETTLEMENT_ROLES.has(role)) {
     return {
       supplyAmount: balance,
       vatAmount: 0,
@@ -104,7 +107,6 @@ export function resolveSettlementPayoutAmounts({
     };
   }
 
-  // salesman / devops
   const supplyAmount = balance;
   const vatAmount = Math.round(supplyAmount * rate);
   return {
@@ -180,7 +182,7 @@ export async function computeAffiliateSettlementBalance({
     else if (row._id === "ADJUST") adjust += Number(row.total || 0);
     else earn += Number(row.total || 0);
   }
-  // 제조사 PAYOUT 라인은 음수(면세 차감), 딜러사·개발운영사는 양수. 부호와 무관하게 지급액을 뺀다.
+  // 제조사 PAYOUT 라인은 과세(양수 차감), 레거시 면세는 음수. 부호와 무관하게 지급액을 뺀다.
   return Math.max(0, Math.round(earn - Math.abs(payout) + adjust));
 }
 
@@ -230,11 +232,11 @@ export function hasPayoutAccount(account) {
  * 실송금이 끝난 뒤에만 GL에 지급을 포스팅한다. 배치 item ID가 idempotency key라
  * 관리자 재클릭/네트워크 재시도에도 이중 지급 원장을 만들지 않는다.
  *
- * 과세 관계사(딜러사·개발운영사):
+ * 과세 관계사(제조사·딜러사·개발운영사):
  * - amount = 입금 합계(VAT 포함)
  * - amountExcludingVat = 공급가(원장 잔액 차감)
  * - vatAmount = 부가세
- * 기공소·제조사: 면세. amount = 공급가 = 입금액.
+ * 기공소: 면세. amount = 공급가 = 입금액.
  */
 export async function postSettlementPayoutJournal({
   item,
@@ -266,7 +268,7 @@ export async function postSettlementPayoutJournal({
   const vatAmount = split.vatAmount;
   const accountCode = item.accountCode;
   const ownerRole = isLab ? "requestor" : item.role;
-  const isExempt = isLab || item.role === "manufacturer";
+  const isExempt = isLab || !TAXABLE_SETTLEMENT_ROLES.has(item.role);
   const ledgerClearAmount = supplyAmount;
   const lineClear = isExempt ? -ledgerClearAmount : ledgerClearAmount;
   const lineSupply = isExempt ? -supplyAmount : supplyAmount;

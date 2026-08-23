@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-23: 특별주문 제조사 필드는 장부 공급가(매입 포함가 ÷1.1).
 // - 2026-08-17: 사업영역 분배는 배송비 제외 매출만. 제조사 배송 지급은 여기 미기재.
 // - 2026-08-17: 어벗사업 — 한 카드에 건당 분배·소개코드·특별주문가.
 // related files:
@@ -108,7 +109,7 @@ export function AbutmentBusinessTab() {
         <SectionHeader
           icon={Hexagon}
           title="어벗사업"
-          description="판매가(배송비 제외)에서 건당 몫을 떼고 나머지는 어벗츠. 제조사는 면세, 개발운영사·딜러사는 +VAT."
+          description="판매가(배송비 제외)에서 건당 몫을 떼고 나머지는 어벗츠. 제조사·개발운영사·딜러사는 +VAT. 제조사 입력값은 장부 공급가(매입 포함가 8,800의 공급 8,000)."
           trailing={
             <div className="relative w-36">
               <Input
@@ -169,7 +170,7 @@ export function AbutmentBusinessTab() {
               <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
                 {(
                   [
-                    ["manufacturer", "제조사", false],
+                    ["manufacturer", "제조사(공급가)", true],
                     ["devops", "개발운영사", true],
                     ["salesman", "딜러사", true],
                     ["abuts", "어벗츠", false],

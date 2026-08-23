@@ -111,11 +111,11 @@ export const PaymentTab = ({ userData }: PaymentTabProps) => {
   const getPaymentInfoText = () => {
     switch (userRole) {
       case "requestor":
-        return "의뢰자는 제조사에게 제작 대금을 지불합니다. 자동이체 설정을 통해 간편하게 결제할 수 있습니다.";
+        return "의뢰자(치과·기공소)는 플랫폼 크레딧으로 기공·커스텀어벗 대금을 결제합니다. 자동이체 설정을 통해 충전을 간편하게 할 수 있습니다.";
       case "manufacturer":
-        return "제조사는 의뢰자로부터 대금을 받고, 어벗츠.핏에 정해진 수가를 자동으로 지불합니다. 계좌정보와 자동이체 모두 설정이 필요합니다.";
+        return "제조사는 어벗츠로부터 하청 대금(공급가)을 말일 일괄 지급받습니다. 지급 시 부가세가 합산되며 세금계산서를 발행합니다. 수취 계좌 정보가 필요합니다.";
       case "admin":
-        return "관리자는 제조사로부터 정해진 수가를 자동으로 수령합니다. 계좌정보 설정이 필요합니다.";
+        return "관리자는 관계사 정산·고객 충전 등 플랫폼 입출금을 관리합니다. 필요 시 계좌정보를 등록하세요.";
       default:
         return "계좌이체 정보를 설정하고 자동이체를 등록하세요.";
     }
@@ -159,8 +159,8 @@ export const PaymentTab = ({ userData }: PaymentTabProps) => {
               <h3 className="text-lg font-medium">결제 받기 정보</h3>
               <p className="text-sm text-muted-foreground mb-4">
                 {userRole === "admin"
-                  ? "제조사로부터 결제를 받을 계좌 정보를 입력해주세요."
-                  : "의뢰자로부터 결제를 받을 계좌 정보를 입력해주세요."}
+                  ? "플랫폼 입금을 받을 계좌 정보를 입력해주세요."
+                  : "어벗츠 하청 정산 입금을 받을 계좌 정보를 입력해주세요."}
               </p>
 
               <div className="bg-muted/30 rounded-lg p-4 mb-4">

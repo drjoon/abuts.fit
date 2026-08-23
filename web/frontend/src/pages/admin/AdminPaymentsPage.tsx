@@ -1,8 +1,9 @@
 // change-log:
 // - 2026-08-20: 제조사 지급은 유료/무료 구분 없이 약정 단가 전액(말일 일괄, 미정산 적립).
 // - 2026-08-19: 치과 월 구독료 사업 축 제거(멤버십 폐지).
-// - 2026-08-18: 제조사는 기공소(면세) — 과세 대상에서 제외.
-// - 2026-08-17: 기간 필터 + 영업자·개발운영사 과세(세금계산서) / 제조사·어벗츠·고객 경로 면세(계산서).
+// - 2026-08-23: 제조사=일반과세 — 과세 대상(세금계산서).
+// - 2026-08-18: (철회) 제조사 면세.
+// - 2026-08-17: 기간 필터 + 영업자·개발운영사 과세(세금계산서) / 기공소·어벗츠·고객 경로 면세(계산서).
 // - 2026-08-16: 어벗츠 4사업 축 API 와이어링 + 선택형 상세·모던 UI 리팩터.
 // related files:
 // - web/frontend/rules.md
@@ -855,7 +856,7 @@ export default function AdminPaymentsPage() {
                 <CreditSectionHeader
                   icon={Factory}
                   title="커스텀 어벗 · 제조사 하청"
-                  description="원청(어벗츠)–하청(애크로덴트) 고정단가. 고객 유료·무료 크레딧과 무관하게 모든 의뢰에 약정 단가를 지급하며, 말일 일괄 지급 전까지 미정산으로 적립(면세 · 계산서)."
+                  description="원청(어벗츠)–하청(애크로덴트) 고정 매입가(부가세 포함). 고객 유료·무료 크레딧과 무관하게 모든 의뢰에 약정 단가를 지급하며, 말일 일괄 지급 전까지 미정산으로 적립(과세 · 세금계산서)."
                 />
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                   <CreditStatTile
@@ -892,14 +893,18 @@ export default function AdminPaymentsPage() {
                         manufacturerSummary?.manufacturerShippingUnitPrice ??
                         3500,
                     )}`}
-                    hint="면세 · 어벗 1개 / 박스당"
+                    hint="매입가(부가세 포함) · 어벗 1개 / 박스당"
                   />
                   <CreditStatTile
                     label="하청 미정산"
                     value={formatWon(manufacturerSummary?.periodBalanceAmount)}
                     hint={`사업자 ${Number(
                       manufacturerSummary?.anchorCount || 0,
-                    ).toLocaleString()}곳 · 말일 일괄`}
+                    ).toLocaleString()}곳 · 지급 시 +부가세 ${vatPctLabel()} → ${formatWon(
+                      splitAffiliateVat(
+                        Number(manufacturerSummary?.periodBalanceAmount || 0),
+                      ).total,
+                    )} · ${SETTLEMENT_TAXABLE_INVOICE_LABEL}`}
                   />
                   <CreditStatTile
                     label="하청 적립"
@@ -943,20 +948,20 @@ export default function AdminPaymentsPage() {
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <CreditStatTile
-                    label="의뢰 하청(면세)"
+                    label="의뢰 하청(공급가)"
                     value={formatWon(manufacturerSummary?.periodRequestSupply)}
                     hint={`${(
                       Number(manufacturerSummary?.periodPaidRequestCount || 0) +
                       Number(manufacturerSummary?.periodFreeRequestCount || 0)
-                    ).toLocaleString()}건 · ${SETTLEMENT_EXEMPT_INVOICE_LABEL}`}
+                    ).toLocaleString()}건 · 지급 시 +VAT · ${SETTLEMENT_TAXABLE_INVOICE_LABEL}`}
                   />
                   <CreditStatTile
-                    label="배송 하청(면세)"
+                    label="배송 하청(공급가)"
                     value={formatWon(manufacturerSummary?.periodShippingSupply)}
                     hint={`${(
                       Number(manufacturerSummary?.periodPaidShippingCount || 0) +
                       Number(manufacturerSummary?.periodFreeShippingCount || 0)
-                    ).toLocaleString()}건 · ${SETTLEMENT_EXEMPT_INVOICE_LABEL}`}
+                    ).toLocaleString()}건 · 지급 시 +VAT · ${SETTLEMENT_TAXABLE_INVOICE_LABEL}`}
                   />
                 </div>
                 <MonthlyHistorySection
@@ -1034,7 +1039,7 @@ export default function AdminPaymentsPage() {
               <CreditSectionHeader
                 icon={HandCoins}
                 title="관계사 잔여 분배"
-                description="커스텀 어벗 잔여·매칭 수수료 재분배. 딜러사·개발운영사 지급은 과세(세금계산서), 제조사·어벗츠는 면세(계산서)."
+                description="커스텀 어벗 잔여·매칭 수수료 재분배. 제조사·딜러사·개발운영사 지급은 과세(세금계산서), 어벗츠는 면세(계산서)."
                 trailing={
                   <div className="relative w-full sm:w-[260px]">
                     <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />

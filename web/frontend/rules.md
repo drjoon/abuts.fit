@@ -166,7 +166,7 @@ Notes:
   - `src/shared/components/CreditLedgerModal.tsx` (내역: 잔액 카드 + rounded-2xl 테이블)
   - `src/features/settings/tabs/AdminCreditSettingsTab.tsx` (요금/expressFee·생산만·디자인+생산 전역 설정 UI)
   - `src/pages/admin/system/AdminPlatformSettingsPage.tsx` (크레딧 · 커스텀어벗 · 인증 기공소 · 어벗츠 수가 · 기공소 수가. 수수료율=`GET|PATCH /api/admin/settings/platform-fees`. 기공소 신규 기공비는 어벗츠 수가 탭 배지·하이라이트)
-  - `src/pages/admin/partners/AdminPartnersPage.tsx` (사이드「사업영역」. 탭당 한 카드: 기공사업 · 어벗사업 · 플랫폼사업. 주체는 role Select(`RoleSelect`). 팀원 검색은 해당 주체 role만. 기공=기공팀·영업팀·개발운영사. 어벗=제조사·개발운영사·딜러사·어벗츠. 플랫폼=어벗츠·개발운영사. 구성원 분배액은 카드 안에서 수정. 분배는 매출에서 배송비를 먼저 차감한 잔여만(배송은 여기 미기재). 기공=내부기공소(기공사업부) 배당 건만 배송비 공통 지출 차감 후 내부 기공팀·영업팀 인센티브(면세)+개발운영사(+VAT). 어벗=매입가(기본 8,800, 면세) 선차감 후 잔여를 딜러/개발운영/어벗츠 비중 분배(+VAT는 딜러·개발운영). 의뢰서 소개코드(딜러사) 있으면 딜러사·없으면 어벗츠. 특별주문가는 주체별 배분액. 플랫폼=자동매칭·지정(현재 무료)을 어벗츠 90%/개발운영사 10%)
+  - `src/pages/admin/partners/AdminPartnersPage.tsx` (사이드「사업영역」. 탭당 한 카드: 기공사업 · 어벗사업 · 플랫폼사업. 주체는 role Select(`RoleSelect`). 팀원 검색은 해당 주체 role만. 기공=기공팀·영업팀·개발운영사. 어벗=제조사·개발운영사·딜러사·어벗츠. 플랫폼=어벗츠·개발운영사. 구성원 분배액은 카드 안에서 수정. 분배는 매출에서 배송비를 먼저 차감한 잔여만(배송은 여기 미기재). 기공=내부기공소(기공사업부) 배당 건만 배송비 공통 지출 차감 후 내부 기공팀·영업팀 인센티브(면세)+개발운영사(+VAT). 어벗=매입가(기본 8,800 부가세 포함→공급가 선차감) 후 잔여를 딜러/개발운영/어벗츠 비중 분배(+VAT는 제조사·딜러·개발운영). 의뢰서 소개코드(딜러사) 있으면 딜러사·없으면 어벗츠. 특별주문가는 주체별 배분액. 플랫폼=자동매칭·지정(현재 무료)을 어벗츠 90%/개발운영사 10%)
   - `src/features/settings/tabs/AdminAbutsLabFeeScheduleTab.tsx` (어벗츠 수가. 기공소 신규 항목은 Off·검토 대기; On=적용. 이벤트 `abuts-lab-fee:pending-items`)
   - `src/features/settings/tabs/AdminCreditSettingsTab.tsx` (`variant=credits`: 환영 무료 크레딧·배송 / `variant=customAbut`: 고시 생산·디자인+생산·딜러없음 분배·레거시 기공소 오버레이·환봉 추가요청)
   - `src/pages/admin/system/AdminRoundBarAbutmentTab.tsx` (어벗 추가 요청. 도입 전 CNC어벗/환봉어벗 선택. 종류가 치과 단가에 반영. `GET|PATCH /api/admin/round-bar-requests`)
@@ -201,7 +201,7 @@ Notes:
 - 역할별 정산
   - 공통 UI: `src/shared/settlement/settlementUi.tsx` · VAT 카피 `src/shared/settlement/affiliateVat.ts` (의뢰자 크레딧/기공크레딧 최신 스타일)
   - 기공소/어벗츠기공소: `src/features/settings/tabs/LabSettlementPayoutTab.tsx` — 면세 계산서
-  - 제조사: `src/pages/manufacturer/payments/PaymentsPage.tsx` — 거래 원장(일시·지급상태·금액·잔액·거래내역). 유형 열은 생략(모두 커스텀어벗 생산+배송비). **생산·배송은 KST 하루 1행**(의뢰 1건=어벗 1개라 기공의뢰처럼 못 묶음). 클릭 상세는 의뢰/배송을 별 섹션으로 나누고, 그 안에서 **배송자 BA**(requestor businessAnchor·우편함)별. PTX는 치과명이 아니라 기공소 BA로 표기. 장부는 공급가(어벗 1개당 매입가 기본 8,800, 면세). 고객 유료·무료 크레딧을 구분하지 않고 약정 단가 전액이 미정산으로 쌓이며, 말일 일괄 지급. 정산규칙 모달은 플랫폼 설정 매입가·배송단가를 표시.
+  - 제조사: `src/pages/manufacturer/payments/PaymentsPage.tsx` — 거래 원장(일시·지급상태·금액·잔액·거래내역). 유형 열은 생략(모두 커스텀어벗 생산+배송비). **생산·배송은 KST 하루 1행**(의뢰 1건=어벗 1개라 기공의뢰처럼 못 묶음). 클릭 상세는 의뢰/배송을 별 섹션으로 나누고, 그 안에서 **배송자 BA**(requestor businessAnchor·우편함)별. PTX는 치과명이 아니라 기공소 BA로 표기. 장부는 공급가(어벗 1개당 매입가 기본 8,800 부가세 포함→공급가). 고객 유료·무료 크레딧을 구분하지 않고 약정 단가 전액이 미정산으로 쌓이며, 말일 일괄 지급(지급 시 +VAT·세금계산서). 정산규칙 모달은 플랫폼 설정 매입가·배송단가를 표시.
   - 딜러: `src/pages/salesman/SalesmanPaymentsPage.tsx` — 공급가 장부, 지급 시 부가세·세금계산서(실입금=공급가+VAT)
   - 개발운영사: `src/pages/devops/DevopsPaymentsPage.tsx` — 잔여 분배 공급가, 지급 시 부가세·세금계산서(실입금=공급가+VAT)
   - 관리자: `src/pages/admin/AdminPaymentsPage.tsx` — 어벗츠 3사업 축 + 관계사 잔여 분배(어벗츠 면세)
@@ -444,8 +444,8 @@ Notes:
   - **고객·기공 경로(면세)**: 가격·충전·약관에서 "VAT 별도 / 부가세 포함 / VAT 10%" 문구 금지. 증빙은 **계산서**.
   - **스토어 기성품(과세)**: 고객 표시는 **부가세 포함가** + `과세 · 부가세 포함`. 크레딧(유료) 결제 기본·계좌이체 유지. 한 체크아웃에 기공과 합치지 않음. 배송지 → 결제 → 출고. 세금계산서는 월말 합산. `RequestorStorePage` / cart / orders. 헬퍼: `shared/tax/invoiceLabels.ts`.
   - **관리자 스토어**: 재고·입금승인·출고(운송장)·배송완료 `/dashboard/store-admin` (`AdminStorePage`). 매출은 전액 어벗츠(`REV_STORE_TAXABLE`).
-  - **과세 지급**: 어벗츠↔딜러사, 어벗츠↔개발운영사. 지급 UI에 공급가·부가세·합계와 **세금계산서** 표시.
-  - **면세**: 치과·기공소·제조사·어벗츠(기공·커스텀어벗). 공급가·**계산서**.
+  - **과세 지급**: 어벗츠↔제조사, 어벗츠↔딜러사, 어벗츠↔개발운영사. 지급 UI에 공급가·부가세·합계와 **세금계산서** 표시.
+  - **면세**: 치과·기공소·어벗츠(기공·커스텀어벗 고객 경로). 공급가·**계산서**.
   - **관리자 (세금)계산서**: 과세/면세 라벨 구분, 마이너스 발행은 원본 SENT 유지 + REVERSE 탭. `AdminTaxInvoices.tsx`.
   - 공통 UI: `src/shared/settlement/settlementUi.tsx`, VAT 카피 `src/shared/settlement/affiliateVat.ts`
   - 크레딧 충전 UI: 결제·입금 금액 = 공급가. `vatAmount` 표시·가산 금지.
@@ -458,11 +458,11 @@ Notes:
     첫 충전 기본 1단위. 2회차부터 기본 배수 3(단위≈월사용량 1/3 → 약 한 달분). 추천 버튼은 월사용량 반올림.
     잔액 < 50만원이면 사이드바 `크레딧`에 깜빡이는 충전 뱃지·클릭 시 `?tab=charge` (`DashboardLayout`).
     백엔드: `utils/creditChargeUnit.js`, `creditBPlan.controller.js`, `credit.controller.js` insights.
-  - 공개 안내/약관: `ServicePage`, `TermsPage`, `HelpPage` — 크레딧=B2B 거래 선수금. 기공·어벗 경로는 면세, 스토어는 과세(월말 분리 발행).
-  - 가격 정책/대시보드: `PricingPolicyDialog` — 치과 고시 어벗디자인으로 생산 1.5만 · 구강스캔으로 디자인+생산 2.5만(구강지그 제외). 기공소는 어벗생산의뢰/기공의뢰수신 동일 고시. 신속 출고 +2,000(1개당) · 배송비 3,500(1박스당). 풀세트·환봉·디자인비+지그 행 없음. 멤버십/구독 행 없음.
+  - 공개 안내/약관: `ServicePage`, `TermsPage`, `HelpPage`, `InquiriesPage` — 크레딧=B2B 거래 선수금. 기공·어벗 경로는 면세, 스토어는 과세(월말 분리 발행). 회사=겸영. Terms: 기공회원(기공소·계산서)과 제조회원(일반과세·세금계산서) 분리.
+  - 가격 정책/대시보드: `PricingPolicyDialog` — 치과 고시 어벗디자인으로 생산 1.5만 · 구강스캔으로 디자인+생산 2.5만(구강지그 제외). 기공소는 어벗생산의뢰/기공의뢰수신 동일 고시. 신속 출고 +2,000(1개당) · 배송비 3,500(1박스당). 의뢰자 변형에 **부가세 없음 · 면세** 한 줄. 풀세트·환봉·디자인비+지그 행 없음. 멤버십/구독 행 없음.
   - 관리자 플랫폼 설정「커스텀어벗」: 커스텀어벗 가격(CNC·환봉 생산 단가) + 분배 비율. 지정 기공소 디자인·어벗츠 생산만. 치과 공급·디자인+생산 카드 없음.
-  - 제조사 정산규칙: 원청–하청 고정단가(의뢰·배송 공급가, 면세). 고객 유료·무료 구분 없이 약정 단가 전액 · 말일 일괄 지급. % 분배 안내 금지.
-  - 관리자 고객향 세금계산서 직접발행: 공급가 입력 시 세액 자동 10% 금지(기본 세액 0). 딜러사·개발운영사 `AFFILIATE_TO_ABUTS`만 과세.
+  - 제조사 정산규칙: 원청–하청 고정 매입가(의뢰·배송, 부가세 포함)·장부 공급가·지급 시 VAT·세금계산서. 고객 유료·무료 구분 없이 약정 단가 전액 · 말일 일괄 지급. % 분배 안내 금지.
+  - 관리자 고객향 세금계산서 직접발행: 공급가 입력 시 세액 자동 10% 금지(기본 세액 0). 제조사·딜러사·개발운영사 `AFFILIATE_TO_ABUTS` 과세.
 
 - 단일 SSOT 장부 UI 필드 계약(초안):
   - Journal: `journalId`, `eventType`, `businessAnchorId`, `refType`, `refId`, `stageFrom`, `stageTo`, `occurredAt`
@@ -554,12 +554,12 @@ Notes:
     - `src/pages/manufacturer/equipment/cnc/components/CompletedMachiningRecordsModal.tsx`
 
 - 제조사 정산(일별) 표시 정책:
-  - 하청 고정단가: **어벗 1개당** 매입가(기본 8,800) / 배송 박스당 3,500(면세). 상단 카드·상세는 의뢰/배송을 **분리** 표시(공급가·건수). 유료/무료 필터·카드 구분 없음.
+  - 하청 고정단가: **어벗 1개당** 매입가(기본 8,800 부가세 포함) / 배송 박스당 3,500(부가세 포함). 상단 카드·상세는 의뢰/배송을 **분리** 표시(공급가·건수). 유료/무료 필터·카드 구분 없음. 지급 시 +VAT·세금계산서.
   - 원장 목록은 생산·배송 EARN을 **KST 하루 1행**으로 묶고, 유형 열은 생략한다. 클릭 상세는 의뢰/배송을 별 섹션으로 나누고, 그 안에서 **배송자 BA**(requestor businessAnchor·우편함)별 생산·발송·배송비를 보여준다. PTX는 치과 `clinicName`이 아니라 기공소 BA로 표기하고, 치과명은 건별 메타에만 둔다. 지급은 별행. 조정은 **KST 하루 1행**으로 묶고, 클릭 시 어떤 의뢰를 조정했는지 보여준다.
   - 일별 카드 컬럼(daily-summary): `의뢰/배송/환불·지급·조정/지급 순액`.
   - 의뢰/배송 **건수**는 백엔드 유니크 건수 SSOT. (`machining_spend`+`express_surcharge`를 프론트에서 각각 세지 않음.)
   - 일별 목록은 KST **오늘 이후(미도래 일자)를 표시하지 않는다**. `이번달` 프리셋 종료일도 오늘이다.
-  - 제조사 지급 대상은 **약정 하청비 전액**(면세 · 계산서). 고객 유료·무료 크레딧을 가리지 않는다. 매달 말일 일괄 지급 전까지 상단「미정산」에 쌓인다. 지급 완료분은「지급 합계」.
+  - 제조사 지급 대상은 **약정 하청비 전액**(공급가 + 부가세 · 세금계산서). 고객 유료·무료 크레딧을 가리지 않는다. 매달 말일 일괄 지급 전까지 상단「미정산」에 쌓인다. 지급 완료분은「지급 합계」.
   - 상단 합계는 2칸(`미정산` · `지급 합계`). `DashboardShell.statsGridClassName`을 `sm:grid-cols-2`로 두고 카드 높이는 compact.
 
 - 관리자 정산(`AdminPaymentsPage`) 표시 정책:
@@ -568,7 +568,7 @@ Notes:
     - (1) 의뢰자 유료 소비(`REQUEST_SPEND_COMMIT`/`SHIPPING_SPEND_COMMIT`) + 제조사 하청(유료·무료 약정 단가 전액)
     - (2) `PRACTICE_TRANSFER_ESCROW_RELEASE.meta.abutsRevenueAmount`
     - (3) `internalLab` `LAB_SETTLEMENT_CREDIT` 적립
-  - 카드 선택 시 해당 사업 상세 패널. 하단「관계사 잔여 분배」는 딜러사·개발운영사(과세·세금계산서)·제조사·어벗츠(면세·계산서).
+  - 카드 선택 시 해당 사업 상세 패널. 하단「관계사 잔여 분배」는 제조사·딜러사·개발운영사(과세·세금계산서)·어벗츠(면세·계산서).
   - 기간 필터는 `PeriodFilter`(KST). `PricingPolicyDialog`는 가격·출고 안내만(사업 축 UI 아님).
   - UI: `creditPageUi` 패널/스탯 타일 + 선택형 사업 카드.
 

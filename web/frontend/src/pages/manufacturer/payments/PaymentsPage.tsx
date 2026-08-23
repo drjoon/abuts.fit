@@ -6,14 +6,15 @@
 // - web/frontend/src/shared/date/kst.ts
 // - web/frontend/src/features/settings/tabs/LabSettlementPayoutTab.tsx
 // change-log:
-// - 2026-08-23: 정산규칙 모달 단가 — 설정 매입가(기본 8,800)·배송 3,500(면세·계산서).
+// - 2026-08-23: 제조사=일반과세. 공급가 장부·지급 시 VAT·세금계산서.
+// - 2026-08-23: 정산규칙 모달 단가 — 설정 매입가(기본 8,800 부가세 포함)·배송 3,500.
 // - 2026-08-20: 같은 날 조정을 1행으로 묶고 클릭 시 의뢰 상세.
 // - 2026-08-20: 유료/무료 구분 제거. 약정 단가 전액이 미정산으로 쌓이고 말일 일괄 지급. 요약 2칸·높이 축소.
 // - 2026-08-20: PeriodFilter 달력 좌·우 chevron 커스텀 기간을 조회에 반영.
 // - 2026-08-17: 테이블이 남은 높이를 채워 바깥 스크롤을 없애고 표 스크롤만 남김.
 // - 2026-08-17: 유형 열 생략(모두 커스텀어벗 생산+배송비). 상세 모달은 의뢰/배송 분리.
 // - 2026-08-17: 생산·배송 원장을 KST 하루로 묶고, 클릭 시 수취자(우편함)별 상세.
-// - 2026-08-18: 어벗 1개당 고정단가(면세). 기공의뢰 생산도 같은 라벨.
+// - 2026-08-18: (철회) 어벗 1개당 고정단가 면세 — 일반과세로 복귀.
 // - 2026-08-17: 정산 내역을 의뢰자 크레딧과 같은 거래 원장으로 표시. VAT는 지급 안내 한 줄.
 // - 2026-08-11: 기공소 기공크레딧 정산과 동일 UX — 요약 카드 축소·(N건), 일자 제거, 액션 세로열, 초기화 제거.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -42,11 +43,13 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/shared/ui/cn";
 import {
-  SETTLEMENT_EXEMPT_INVOICE_LABEL,
-  SETTLEMENT_EXEMPT_PAYOUT_NOTICE,
+  SETTLEMENT_TAXABLE_INVOICE_LABEL,
+  SETTLEMENT_VAT_PAYOUT_NOTICE,
   SETTLEMENT_VAT_POLICY,
   formatWon,
   formatWonWithUnit,
+  splitInclusiveVat,
+  vatPctLabel,
 } from "@/shared/settlement/affiliateVat";
 import {
   CREDIT_SETTINGS_DEFAULTS,
@@ -809,8 +812,8 @@ export const ManufacturerPaymentPage = () => {
             tone="primary"
             selected={tab === "ledger"}
             onClick={() => setTab("ledger")}
-            hint="말일 일괄 지급 · 면세"
-            hintTooltip={SETTLEMENT_EXEMPT_PAYOUT_NOTICE}
+            hint={`지급 시 +부가세 ${vatPctLabel()}`}
+            hintTooltip={SETTLEMENT_VAT_PAYOUT_NOTICE}
             footer={
               <div className="text-[11px] tabular-nums text-slate-600">
                 의뢰 {formatWon(snapshotTotals.requestSupplyTotal)} (
@@ -828,7 +831,7 @@ export const ManufacturerPaymentPage = () => {
             onClick={() => setTab("payments")}
             footer={
               <div className="text-[11px] text-muted-foreground">
-                {snapshotTotals.payoutCount}건 · 면세 {SETTLEMENT_EXEMPT_INVOICE_LABEL}
+                {snapshotTotals.payoutCount}건 · 과세 {SETTLEMENT_TAXABLE_INVOICE_LABEL}
               </div>
             }
           />
@@ -851,15 +854,19 @@ export const ManufacturerPaymentPage = () => {
               />
               <SettlementPolicyDialog
                 title="제조사 정산 규칙"
-                description="하청 고정단가 · 면세 · 계산서"
+                description="하청 고정단가 · 과세 · 세금계산서"
               >
                 <SettlementPolicySection title="가공 승인 적립 (하청)">
                   <div className="flex gap-2.5">
                     <HandCoins className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
                     <p>
-                      어벗 1개당{" "}
+                      어벗 1개당 매입가{" "}
                       {formatWonWithUnit(manufacturerRequestUnitPrice)}
-                      (면세). 고객이 유료·무료 크레딧 중 무엇으로 결제했는지는
+                      (부가세 포함, 공급가{" "}
+                      {formatWonWithUnit(
+                        splitInclusiveVat(manufacturerRequestUnitPrice).supply,
+                      )}
+                      ). 고객이 유료·무료 크레딧 중 무엇으로 결제했는지는
                       구분하지 않으며, 모든 의뢰건에 약정 단가를 지급합니다.
                     </p>
                   </div>
@@ -868,9 +875,13 @@ export const ManufacturerPaymentPage = () => {
                   <div className="flex gap-2.5">
                     <ReceiptText className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
                     <p>
-                      발송 패키지 1박스당{" "}
+                      발송 패키지 1박스당 매입가{" "}
                       {formatWonWithUnit(manufacturerShippingUnitPrice)}
-                      (면세). 유료·무료 구분 없이 약정 단가를 지급합니다.
+                      (부가세 포함, 공급가{" "}
+                      {formatWonWithUnit(
+                        splitInclusiveVat(manufacturerShippingUnitPrice).supply,
+                      )}
+                      ). 유료·무료 구분 없이 약정 단가를 지급합니다.
                       고객(치과·기공소)→어벗츠 배송비는 면세 수취 후, 제조사에는
                       배송비(어벗츠→제조사)로 지급합니다.
                     </p>
@@ -885,7 +896,7 @@ export const ManufacturerPaymentPage = () => {
                     </p>
                   </div>
                 </SettlementPolicySection>
-                <SettlementPolicySection title="면세 · 계산서">
+                <SettlementPolicySection title="부가세 · 세금계산서">
                   <div className="flex gap-2.5">
                     <ReceiptText className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
                     <p>{SETTLEMENT_VAT_POLICY.manufacturerEarn}</p>
@@ -904,8 +915,9 @@ export const ManufacturerPaymentPage = () => {
                   <div className="flex gap-2.5">
                     <CalendarClock className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
                     <p>
-                      원장 기준 KST 일자별 실시간 집계. 월 지급은 면세 공급가이며{" "}
-                      {SETTLEMENT_EXEMPT_INVOICE_LABEL}를 발행합니다.
+                      원장 기준 KST 일자별 실시간 집계. 장부는 공급가이며 월 지급
+                      시 부가세를 합산하고 {SETTLEMENT_TAXABLE_INVOICE_LABEL}를
+                      수취합니다.
                     </p>
                   </div>
                 </SettlementPolicySection>

@@ -70,7 +70,8 @@ export type BusinessAreaState = {
 };
 
 export const DEFAULT_ABUTMENT_UNITS = {
-  manufacturer: 8800,
+  /** 제조사 건당 장부 공급가(설정 매입가 부가세 포함 8,800 ÷1.1). */
+  manufacturer: 8000,
   devops: 1000,
   salesman: 3000,
 } as const;
@@ -135,7 +136,7 @@ export function defaultAbutmentDepartments(): Department[] {
       role: "manufacturer",
       shareKind: "perCase",
       perCaseAmount: DEFAULT_ABUTMENT_UNITS.manufacturer,
-      taxable: false,
+      taxable: true,
     }),
     createDepartment({
       id: "abut-devops",

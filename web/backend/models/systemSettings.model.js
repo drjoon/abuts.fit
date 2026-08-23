@@ -92,7 +92,7 @@ const systemSettingsSchema = new mongoose.Schema(
         default: [],
       },
       shippingFee: { type: Number, default: 3500 },
-      // 제조사(기공소·면세) 하청 공급가(부가세포함 개념의 지급액 8,800).
+      // 제조사(일반과세) 하청 매입가(부가세 포함 기본 8,800). 장부는 공급가+VAT.
       manufacturerRequestUnitPrice: { type: Number, default: 8800 },
       // 개발운영사 어벗 생산 외주 공급가(1어벗당). 지급 시 +VAT.
       devopsRequestUnitPrice: { type: Number, default: 775 },

@@ -1,5 +1,7 @@
 // related files:
 // - web/backend/services/settlement.service.js
+// change-log:
+// - 2026-08-23: 제조사=일반과세(지급 VAT·세금계산서).
 import {
   resolveSettlementInvoiceDraftSpec,
   resolveSettlementPayoutAmounts,
@@ -37,17 +39,17 @@ describe("resolveSettlementPayoutAmounts", () => {
     });
   });
 
-  test("manufacturer: exempt — no VAT", () => {
+  test("manufacturer: taxable — supply + 10% VAT", () => {
     expect(
       resolveSettlementPayoutAmounts({
         role: "manufacturer",
-        balanceAmount: 9000,
+        balanceAmount: 8000,
         vatRate: 0.1,
       }),
     ).toEqual({
-      supplyAmount: 9000,
-      vatAmount: 0,
-      amount: 9000,
+      supplyAmount: 8000,
+      vatAmount: 800,
+      amount: 8800,
       vatRate: 0.1,
     });
   });
@@ -68,7 +70,7 @@ describe("resolveSettlementPayoutAmounts", () => {
   });
 
   test("taxable roles set", () => {
-    expect(TAXABLE_SETTLEMENT_ROLES.has("manufacturer")).toBe(false);
+    expect(TAXABLE_SETTLEMENT_ROLES.has("manufacturer")).toBe(true);
     expect(TAXABLE_SETTLEMENT_ROLES.has("salesman")).toBe(true);
     expect(TAXABLE_SETTLEMENT_ROLES.has("devops")).toBe(true);
     expect(TAXABLE_SETTLEMENT_ROLES.has("lab")).toBe(false);
@@ -76,20 +78,20 @@ describe("resolveSettlementPayoutAmounts", () => {
 });
 
 describe("resolveSettlementInvoiceDraftSpec", () => {
-  test("manufacturer: 면세 AFFILIATE_TO_ABUTS draft", () => {
+  test("manufacturer: 과세 AFFILIATE_TO_ABUTS draft", () => {
     expect(
       resolveSettlementInvoiceDraftSpec({
         role: "manufacturer",
-        breakdown: { supplyAmount: 9000, vatAmount: 0, amount: 9000 },
+        breakdown: { supplyAmount: 8000, vatAmount: 800, amount: 8800 },
       }),
     ).toEqual({
       direction: "AFFILIATE_TO_ABUTS",
       issuanceMode: "TRUSTEE",
-      taxType: "면세",
+      taxType: "과세",
       itemName: "커스텀어벗 생산 하청 정산",
-      supplyAmount: 9000,
-      vatAmount: 0,
-      totalAmount: 9000,
+      supplyAmount: 8000,
+      vatAmount: 800,
+      totalAmount: 8800,
     });
   });
 

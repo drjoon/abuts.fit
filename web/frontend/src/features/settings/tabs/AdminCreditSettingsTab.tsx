@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-23: 제조사=일반과세. 매입 공급가로 잔여 분배(부가세 포함가는 표시·설정값).
 // - 2026-08-22: 가격 라벨 — 판매가(부가세 면제)·매입가(부가세 포함).
 // - 2026-08-22: 매입가(부가세 포함) 스피너 100원 단위. 판매가는 1,000원.
 // - 2026-08-22: 가격(판매가·매입가) 1,000원 단위 스피너 표시.
@@ -59,6 +60,10 @@ import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { CREDIT_SETTINGS_DEFAULTS } from "@/hooks/useSystemSettings";
+import {
+  AFFILIATE_VAT_RATE,
+  splitInclusiveVat,
+} from "@/shared/settlement/affiliateVat";
 import {
   normalizeAbutsAbutmentCreditPrices,
 } from "@/shared/pricing/abutsAbutmentService";
@@ -275,26 +280,30 @@ type ResidualUnitPrices = TierParty & { abuts: number };
 
 function allocateRevenueByFixedManufacturerAndResidualShares(
   revenue: number,
-  manufacturerUnitPrice: number,
+  manufacturerInclusiveUnitPrice: number,
   residualShares: ReturnType<typeof readResidualSharePercents>,
 ): ResidualUnitPrices {
   const rev = Math.max(0, Math.round(Number(revenue) || 0));
-  const manufacturer = Math.min(
-    Math.max(0, Math.round(Number(manufacturerUnitPrice) || 0)),
+  // 설정 매입가는 부가세 포함. 잔여 분배는 공급가 선차감(장부 SSOT).
+  const manufacturerSupply = Math.min(
+    splitInclusiveVat(
+      Math.max(0, Math.round(Number(manufacturerInclusiveUnitPrice) || 0)),
+      AFFILIATE_VAT_RATE,
+    ).supply,
     rev,
   );
-  const residual = Math.max(0, rev - manufacturer);
+  const residual = Math.max(0, rev - manufacturerSupply);
   const salesmanW = Math.max(0, Number(residualShares.salesman) || 0);
   const devopsW = Math.max(0, Number(residualShares.devops) || 0);
   const abutsW = Math.max(0, Number(residualShares.abuts) || 0);
   const weightSum = salesmanW + devopsW + abutsW;
   if (residual <= 0 || weightSum <= 0) {
-    return { manufacturer, salesman: 0, devops: 0, abuts: 0 };
+    return { manufacturer: manufacturerSupply, salesman: 0, devops: 0, abuts: 0 };
   }
   const salesman = Math.round((residual * salesmanW) / weightSum);
   const devops = Math.round((residual * devopsW) / weightSum);
   const abuts = Math.max(0, residual - salesman - devops);
-  return { manufacturer, salesman, devops, abuts };
+  return { manufacturer: manufacturerSupply, salesman, devops, abuts };
 }
 
 function allocateRevenueByPercent(
@@ -512,6 +521,7 @@ function buildSharePercentSavePayload(
     regularAbutsSharePercent: synced.regularAbutsSharePercent,
     ...buildNormalizedTierPartyFields(synced, synced),
     manufacturerRequestUnitPrice: synced.manufacturerRequestUnitPrice,
+    manufacturerShippingUnitPrice: synced.manufacturerShippingUnitPrice,
     salesmanRequestUnitPrice: synced.salesmanRequestUnitPrice,
     devopsRequestUnitPrice: synced.devopsRequestUnitPrice,
     specialRequestorPrices: synced.specialRequestorPrices,
@@ -711,7 +721,7 @@ function SharePercentPanel({
       <SharePercentRow
         idPrefix="membershipShare"
         title="딜러사 포함"
-        description="매입가 차감 후 잔여 분배 · 의뢰자 소개 코드에 딜러사 있음"
+        description="매입 공급가 차감 후 잔여 분배 · 의뢰자 소개 코드에 딜러사 있음"
         shares={membershipShares}
         unitPrices={membershipUnits}
         showSalesman
@@ -729,7 +739,7 @@ function SharePercentPanel({
       <SharePercentRow
         idPrefix="regularShare"
         title="딜러사 비포함"
-        description="매입가 차감 후 잔여 분배 · 의뢰자 소개 코드에 딜러사 없음"
+        description="매입 공급가 차감 후 잔여 분배 · 의뢰자 소개 코드에 딜러사 없음"
         shares={regularShares}
         unitPrices={regularUnits}
         showSalesman={false}
@@ -1376,6 +1386,7 @@ export const AdminCreditSettingsTab = ({
         Pick<
           CreditSettings,
           | "manufacturerRequestUnitPrice"
+          | "manufacturerShippingUnitPrice"
           | "manufacturerSharePercent"
           | "salesmanSharePercent"
           | "devopsSharePercent"
@@ -1436,6 +1447,18 @@ export const AdminCreditSettingsTab = ({
     (next: number) => {
       updateSharePercent({
         manufacturerRequestUnitPrice: Math.max(0, Math.round(Number(next) || 0)),
+      });
+    },
+    [updateSharePercent],
+  );
+
+  const updateShippingPurchasePrice = useCallback(
+    (next: number) => {
+      updateSharePercent({
+        manufacturerShippingUnitPrice: Math.max(
+          0,
+          Math.round(Number(next) || 0),
+        ),
       });
     },
     [updateSharePercent],
@@ -1622,7 +1645,7 @@ export const AdminCreditSettingsTab = ({
                 <SectionHeader
                   icon={Banknote}
                   title="가격"
-                  description="커스텀어벗 판매가와 제조사 매입가입니다. CNC·환봉 구분 없이 동일 판매가를 적용합니다."
+                  description="커스텀어벗 판매가와 제조사 매입가(부가세 포함)입니다. CNC·환봉 구분 없이 동일 판매가를 적용합니다."
                   trailing={
                     <AutoSaveIndicator
                       state={
@@ -1633,7 +1656,7 @@ export const AdminCreditSettingsTab = ({
                     />
                   }
                 />
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   <SalesAmountCard
                     id="customAbutSalePrice"
                     title="판매가(부가세 면제)"
@@ -1649,7 +1672,16 @@ export const AdminCreditSettingsTab = ({
                     disabled={loading}
                     step={PURCHASE_AMOUNT_STEP}
                     onChange={updatePurchasePrice}
-                    help="부가세 포함 제조사 고정단가. 판매가에서 먼저 차감한 뒤 잔여를 분배합니다."
+                    help="부가세 포함 제조사 고정단가. 장부·잔여 분배는 공급가(÷1.1) 기준이며, 지급 시 부가세를 합산합니다."
+                  />
+                  <SalesAmountCard
+                    id="customAbutShippingPurchasePrice"
+                    title="배송 매입가(부가세 포함)"
+                    value={settings.manufacturerShippingUnitPrice}
+                    disabled={loading}
+                    step={PURCHASE_AMOUNT_STEP}
+                    onChange={updateShippingPurchasePrice}
+                    help="박스당 제조사 배송 매입가(부가세 포함). 장부는 공급가(÷1.1), 지급 시 부가세 합산."
                   />
                 </div>
               </CardContent>
@@ -1660,7 +1692,7 @@ export const AdminCreditSettingsTab = ({
                 <SectionHeader
                   icon={Percent}
                   title="분배 비율 (공통)"
-                  description="판매가에서 매입가를 차감한 잔여를 비율로 나눕니다. 설정 비율 옆은 개당 단가입니다."
+                  description="판매가에서 매입 공급가를 차감한 잔여를 비율로 나눕니다. 설정 비율 옆은 개당 단가입니다."
                   trailing={
                     <AutoSaveIndicator
                       state={itemSaveStates.sharePercents ?? "idle"}

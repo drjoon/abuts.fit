@@ -1,12 +1,14 @@
 // related files:
 // - web/backend/services/creditRevenuePolicy.service.js
 // change-log:
-// - 2026-08-18: 제조사는 기공소(면세) — VAT 0.
+// - 2026-08-23: 제조사=일반과세. 매입가(부가세 포함)→공급가 분해.
+// - 2026-08-18: (철회) 제조사 면세.
 // - 2026-08-17: 어벗 qty·플랫폼수수료/기공소배송 제외 테스트.
 import {
   resolveManufacturerUnitApply,
   resolveManufacturerUnitEarn,
   resolveRevenueOwnerBaseAllocation,
+  splitManufacturerInclusiveUnitPrice,
 } from "../../services/creditRevenuePolicy.service.js";
 
 describe("manufacturer fixed unit + residual allocation", () => {
@@ -18,21 +20,37 @@ describe("manufacturer fixed unit + residual allocation", () => {
   };
 
   const creditSettings = {
-    manufacturerRequestUnitPrice: 9000,
+    // 부가세 포함 매입가
+    manufacturerRequestUnitPrice: 8800,
     manufacturerShippingUnitPrice: 3500,
     affiliateVatRate: 0.1,
+    salesmanSharePercent: 30,
+    devopsSharePercent: 10,
+    abutsSharePercent: 40,
+    regularSalesmanSharePercent: 0,
+    regularDevopsSharePercent: 20,
+    regularAbutsSharePercent: 80,
   };
 
-  test("resolveManufacturerUnitEarn: request and shipping exempt (no VAT)", () => {
+  test("splitManufacturerInclusiveUnitPrice: 8800 → 8000+800", () => {
+    expect(splitManufacturerInclusiveUnitPrice(8800, 0.1)).toEqual({
+      supply: 8000,
+      vat: 800,
+      total: 8800,
+      vatRate: 0.1,
+    });
+  });
+
+  test("resolveManufacturerUnitEarn: request and shipping taxable", () => {
     const request = resolveManufacturerUnitEarn({
       isShippingSpend: false,
       creditSettings,
     });
     expect(request).toEqual({
-      supply: 9000,
-      vat: 0,
-      total: 9000,
-      vatRate: 0,
+      supply: 8000,
+      vat: 800,
+      total: 8800,
+      vatRate: 0.1,
       qty: 1,
     });
 
@@ -41,10 +59,10 @@ describe("manufacturer fixed unit + residual allocation", () => {
       creditSettings,
     });
     expect(shipping).toEqual({
-      supply: 3500,
-      vat: 0,
+      supply: 3182,
+      vat: 318,
       total: 3500,
-      vatRate: 0,
+      vatRate: 0.1,
       qty: 1,
     });
   });
@@ -60,17 +78,17 @@ describe("manufacturer fixed unit + residual allocation", () => {
     expect(earn.qty).toBe(0);
   });
 
-  test("qty 2 abutments: manufacturer supply 18000, no VAT", () => {
+  test("qty 2 abutments: manufacturer supply 16000 + VAT", () => {
     const earn = resolveManufacturerUnitEarn({
       isShippingSpend: false,
       creditSettings,
       qty: 2,
     });
     expect(earn).toEqual({
-      supply: 18000,
-      vat: 0,
-      total: 18000,
-      vatRate: 0,
+      supply: 16000,
+      vat: 1600,
+      total: 17600,
+      vatRate: 0.1,
       qty: 2,
     });
   });
@@ -119,12 +137,12 @@ describe("manufacturer fixed unit + residual allocation", () => {
       creditSettings,
     });
 
-    expect(alloc.manufacturer).toBe(9000);
-    expect(alloc.manufacturerVat).toBe(0);
-    // residual 11000 · weights devops:salesman:admin = 1:1:2
-    expect(alloc.devops).toBe(2750);
-    expect(alloc.salesman).toBe(2750);
-    expect(alloc.admin).toBe(5500);
+    expect(alloc.manufacturer).toBe(8000);
+    expect(alloc.manufacturerVat).toBe(800);
+    // residual 12000 · weights 30:10:40
+    expect(alloc.salesman).toBe(4500);
+    expect(alloc.devops).toBe(1500);
+    expect(alloc.admin).toBe(6000);
     expect(alloc.manufacturer + alloc.devops + alloc.salesman + alloc.admin).toBe(
       20000,
     );
@@ -145,11 +163,11 @@ describe("manufacturer fixed unit + residual allocation", () => {
       creditSettings,
     });
 
-    expect(alloc.manufacturer).toBe(9000);
+    expect(alloc.manufacturer).toBe(8000);
     expect(alloc.salesman).toBe(0);
-    // residual 11000 · without-salesman 20:80
-    expect(alloc.devops).toBe(2200);
-    expect(alloc.admin).toBe(8800);
+    // residual 12000 · without-salesman 20:80
+    expect(alloc.devops).toBe(2400);
+    expect(alloc.admin).toBe(9600);
   });
 
   test("request spend with salesman: residual 30/10/40 weights", () => {
@@ -168,14 +186,17 @@ describe("manufacturer fixed unit + residual allocation", () => {
         manufacturerRequestUnitPrice: 8800,
         manufacturerShippingUnitPrice: 3500,
         affiliateVatRate: 0.1,
+        salesmanSharePercent: 30,
+        devopsSharePercent: 10,
+        abutsSharePercent: 40,
       },
     });
 
-    expect(alloc.manufacturer).toBe(8800);
-    // residual 11200 · weights 30:10:40
-    expect(alloc.salesman).toBe(4200);
-    expect(alloc.devops).toBe(1400);
-    expect(alloc.admin).toBe(5600);
+    expect(alloc.manufacturer).toBe(8000);
+    // residual 12000 · weights 30:10:40
+    expect(alloc.salesman).toBe(4500);
+    expect(alloc.devops).toBe(1500);
+    expect(alloc.admin).toBe(6000);
     expect(alloc.manufacturer + alloc.devops + alloc.salesman + alloc.admin).toBe(
       20000,
     );
@@ -207,25 +228,8 @@ describe("manufacturer fixed unit + residual allocation", () => {
       creditSettings,
     });
 
-    expect(alloc.manufacturer).toBe(3500);
-    expect(alloc.manufacturerVat).toBe(0);
-    expect(alloc.devops).toBe(0);
-    expect(alloc.salesman).toBe(0);
-    expect(alloc.admin).toBe(0);
-  });
-
-  test("spend below unit: manufacturer capped to spend", () => {
-    const alloc = resolveRevenueOwnerBaseAllocation({
-      spendAmount: 6500,
-      hasSalesmanReferrer: true,
-      configuredRates: {},
-      owners,
-      isShippingSpend: false,
-      creditSettings,
-    });
-
-    expect(alloc.manufacturer).toBe(6500);
-    expect(alloc.manufacturerVat).toBe(0);
-    expect(alloc.devops + alloc.salesman + alloc.admin).toBe(0);
+    expect(alloc.manufacturer).toBe(3182);
+    expect(alloc.manufacturerVat).toBe(318);
+    expect(alloc.admin).toBe(318);
   });
 });

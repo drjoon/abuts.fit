@@ -5,8 +5,9 @@
 // - web/backend/scripts/db/migrate-legacy-creditledger-to-gl.js
 // - web/backend/scripts/db/rebalance-manufacturer-unit-price.js
 // change-log:
+// - 2026-08-23: 제조사=일반과세. 매입가(부가세 포함)→공급가 분해, affiliateVatRate 적용.
 // - 2026-08-19: 견적 표시용 수수료 — 원청(하청 후) 전액 수주 0, 하청은 subcontractFeeRate.
-// - 2026-08-18: 제조사 하청 면세(기공소 등록) — vatRate 0, 공급가=지급액.
+// - 2026-08-18: (철회) 제조사 하청 면세(기공소 등록) — 일반과세로 복귀.
 // - 2026-08-17: 제조사 하청은 어벗 1개당 고정단가(기본 9,000). %분배·타 역할 재분배는 별도.
 // - 2026-08-15: 제조사 의뢰 공급가 기본 8,000 → 9,000.
 // - 2026-08-15: 제조사 %분배 → 하청 고정단가(의뢰/배송). 잔여는 salesman/devops/admin 재분배.
@@ -33,6 +34,28 @@ export const DEFAULT_MANUFACTURER_REQUEST_UNIT_PRICE = 8800;
 export const DEFAULT_MANUFACTURER_SHIPPING_UNIT_PRICE = 3500;
 export const DEFAULT_AFFILIATE_VAT_RATE = 0.1;
 export const MANUFACTURER_PRODUCTION_LEDGER_LABEL = "커스텀어벗 생산";
+
+/** 제조사 매입가(부가세 포함) → 공급가/세액. 스토어 포함가 분해와 동일. */
+export function splitManufacturerInclusiveUnitPrice(
+  inclusiveAmount,
+  vatRate = DEFAULT_AFFILIATE_VAT_RATE,
+) {
+  const total = Math.max(0, Math.round(Number(inclusiveAmount || 0)));
+  const rate = Number(vatRate);
+  if (!Number.isFinite(rate) || rate <= 0) {
+    return { supply: total, vat: 0, total, vatRate: 0 };
+  }
+  const normalizedRate = Math.min(1, rate);
+  const supply = Math.round(total / (1 + normalizedRate));
+  const vat = total - supply;
+  return { supply, vat, total, vatRate: normalizedRate };
+}
+
+export function normalizeAffiliateVatRate(raw) {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) return DEFAULT_AFFILIATE_VAT_RATE;
+  return Math.min(1, n);
+}
 
 /** 제조사 정산 카드·일별 집계에서 의뢰(생산)로 보는 이벤트. */
 export const MANUFACTURER_REQUEST_EARN_EVENT_TYPES = [
@@ -199,7 +222,9 @@ export function isShippingSpendRevenueContext({ refType, freeAccountCode }) {
 }
 
 export function resolveManufacturerUnitSettings(creditSettings = {}) {
-  const requestSupply = Math.max(
+  // 제조사=일반과세. 설정 단가(manufacturer*UnitPrice)는 부가세 포함 매입가.
+  const vatRate = normalizeAffiliateVatRate(creditSettings?.affiliateVatRate);
+  const requestInclusive = Math.max(
     0,
     Math.round(
       Number(
@@ -208,7 +233,7 @@ export function resolveManufacturerUnitSettings(creditSettings = {}) {
       ) || 0,
     ),
   );
-  const shippingSupply = Math.max(
+  const shippingInclusive = Math.max(
     0,
     Math.round(
       Number(
@@ -217,8 +242,18 @@ export function resolveManufacturerUnitSettings(creditSettings = {}) {
       ) || 0,
     ),
   );
-  // 제조사는 기공소(면세)로 등록 — 하청 적립·지급에 부가세 없음.
-  return { requestSupply, shippingSupply, vatRate: 0 };
+  const request = splitManufacturerInclusiveUnitPrice(requestInclusive, vatRate);
+  const shipping = splitManufacturerInclusiveUnitPrice(
+    shippingInclusive,
+    vatRate,
+  );
+  return {
+    requestSupply: request.supply,
+    shippingSupply: shipping.supply,
+    requestInclusive: request.total,
+    shippingInclusive: shipping.total,
+    vatRate,
+  };
 }
 
 export function resolveManufacturerUnitQty({

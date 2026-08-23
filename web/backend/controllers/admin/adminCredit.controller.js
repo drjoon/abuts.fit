@@ -2306,7 +2306,7 @@ export async function adminGetManufacturerSummary(req, res) {
             {
               $addFields: {
                 eventType: { $ifNull: ["$journalDoc.eventType", ""] },
-                // 제조사 하청: 면세(기공소). 공급가 기준.
+                // 제조사 하청: 일반과세. 공급가 기준(+지급 시 VAT).
                 baseAmount: {
                   $ifNull: ["$amountExcludingVat", "$amount"],
                 },

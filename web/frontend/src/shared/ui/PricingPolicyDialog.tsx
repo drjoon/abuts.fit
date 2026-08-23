@@ -1,3 +1,4 @@
+// - 2026-08-23: 의뢰자 변형에 부가세 없음(면세) 안내. devops 레거시 65% 문구 제거.
 // - 2026-08-22: design_custom_abutment 청구 폐기. 생산 단가·신속·배송만 안내.
 // - 2026-08-19: 치과·기공소 디자인+생산 모두 구강지그 제외.
 // - 2026-08-19: 치과 고시 단가=creditSettings 멤버십 생산/디자인+생산. 크레딧 차감과 동일 SSOT.
@@ -313,17 +314,13 @@ export const PricingPolicyDialog = ({
             <div className='space-y-3'>
               <PolicySection title='분배 구조'>
                 <p>
-                  개발·운영사는 유료의뢰비 기준{' '}
-                  <span className='font-semibold text-slate-900'>10%</span>가
-                  정산됩니다.
+                  커스텀어벗 판매가에서 제조사 매입 공급가를 선차감한 뒤, 잔여를
+                  딜러·개발운영·어벗츠 비중으로 나눕니다. 개발운영사 몫은 지급 시
+                  부가세가 합산됩니다.
                 </p>
-                <p>딜러사 소개 유무와 무관하게 개발·운영사 비율은 동일합니다.</p>
-              </PolicySection>
-
-              <PolicySection title='네트워크 반영'>
                 <p>
-                  딜러사 소개 없이 가입한 의뢰 건은 제조사 65% / 어벗츠 25% /
-                  개발·운영사 10% 규칙이 적용됩니다.
+                  딜러사 소개가 없으면 잔여를 개발운영·어벗츠(기본 20:80)로
+                  분배합니다.
                 </p>
               </PolicySection>
 
@@ -377,7 +374,11 @@ export const PricingPolicyDialog = ({
               <p className='text-xs leading-relaxed text-slate-500 px-1'>
                 기공의뢰(구강스캔) 커스텀어벗 디자인은 수주 기공소가 담당하며,
                 기공소 커스텀어벗 수가에 포함됩니다. 기공소→어벗츠 생산비는 위
-                생산 단가입니다.
+                생산 단가입니다. 커스텀어벗·배송은{' '}
+                <span className='font-medium text-slate-700'>
+                  부가세 없음 · 면세
+                </span>
+                입니다.
               </p>
 
               <div className='grid gap-3 sm:grid-cols-2'>

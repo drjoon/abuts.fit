@@ -18,7 +18,8 @@ import {
 import { buildPartySnapshotFromAnchor } from "../../utils/taxInvoiceParty.util.js";
 
 // change-log:
-// - 2026-08-18: 정산 배치 확정 시 제조사·기공소 면세 계산서 Draft 자동 생성.
+// - 2026-08-23: 정산 배치 확정 시 제조사=과세·기공소=면세 Draft 자동 생성.
+// - 2026-08-18: 정산 배치 확정 시 관계사 Draft 자동 생성.
 // - 2026-08-17: 영업자·개발운영사 지급액=공급가+VAT. 세금계산서는 분해 필드 SSOT(제조사 이중 VAT 방지).
 
 const ROLE_FILTERS = [
