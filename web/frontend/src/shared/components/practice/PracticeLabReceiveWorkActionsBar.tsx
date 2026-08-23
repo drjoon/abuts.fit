@@ -5,6 +5,7 @@
 // - web/frontend/src/shared/practice/practiceTransferLabReceive.ts
 // - web/frontend/src/shared/practice/roundBarAbutment.ts
 // change-log:
+// - 2026-08-23: 미제공 CA 안내를 한 줄로 압축(LabPendingAbutmentGuide).
 // - 2026-08-21: 작업취소(수락 해제)를 업로드 CTA와 같은 버튼 행에 둔다.
 // - 2026-08-21: 미제공 CA 안내 — 치아·임플란트 상세 + 자체 처리 문구(LabPendingAbutmentGuide).
 // - 2026-08-21: 요청중 CA — 어벗 업로드 CTA 숨김 + 기공소 CNC 직접 의뢰 안내.

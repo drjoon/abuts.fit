@@ -2,6 +2,8 @@
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
+// change-log:
+// - 2026-08-23: 라벨·메모를 `치과 메모: …` 한 줄로 표시.
 import { useEffect, useState, type MouseEvent } from "react";
 import { HelpCircle, Pencil, StickyNote } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -99,55 +101,50 @@ export function CounterpartyMemoStrip({
     <>
       <div
         className={cn(
-          "flex shrink-0 items-start gap-2 border-b bg-muted/30 px-3 py-2 sm:px-4",
+          "flex shrink-0 items-center gap-2 border-b bg-muted/30 px-3 py-1.5 sm:px-4",
           className,
         )}
         onPointerDown={onTriggerPointerDown}
       >
-        <StickyNote className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <div className="flex items-center gap-1">
-                <p className="text-[11px] font-medium text-muted-foreground">
-                  {label}
-                </p>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      className="inline-flex shrink-0 rounded text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      aria-label={`${label} 안내`}
-                      onClick={(event) => event.stopPropagation()}
-                    >
-                      <HelpCircle className="h-3.5 w-3.5" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" className="max-w-xs text-xs">
-                    {privacy.tooltip}
-                  </TooltipContent>
-                </Tooltip>
-              </div>
-              {hasMemo ? (
-                <p className="mt-0.5 whitespace-pre-wrap break-words text-xs leading-relaxed">
-                  {currentMemo}
-                </p>
-              ) : (
-                <p className="mt-0.5 text-xs text-muted-foreground">{emptyHint}</p>
-              )}
-            </div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-7 shrink-0 px-2 text-xs"
-              onClick={() => setOpen(true)}
-            >
-              <Pencil className="mr-1 h-3.5 w-3.5" />
-              {hasMemo ? "편집" : "작성"}
-            </Button>
-          </div>
+        <StickyNote className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <div className="flex min-w-0 flex-1 items-center gap-1">
+          <p
+            className="min-w-0 truncate text-xs leading-snug"
+            title={hasMemo ? currentMemo : undefined}
+          >
+            <span className="font-medium text-muted-foreground">{label}:</span>{" "}
+            {hasMemo ? (
+              <span className="text-foreground">{currentMemo}</span>
+            ) : (
+              <span className="text-muted-foreground">{emptyHint}</span>
+            )}
+          </p>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className="inline-flex shrink-0 rounded text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                aria-label={`${label} 안내`}
+                onClick={(event) => event.stopPropagation()}
+              >
+                <HelpCircle className="h-3.5 w-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="max-w-xs text-xs">
+              {privacy.tooltip}
+            </TooltipContent>
+          </Tooltip>
         </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-7 shrink-0 px-2 text-xs"
+          onClick={() => setOpen(true)}
+        >
+          <Pencil className="mr-1 h-3.5 w-3.5" />
+          {hasMemo ? "편집" : "작성"}
+        </Button>
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>

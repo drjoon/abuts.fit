@@ -4,16 +4,16 @@
 // - web/frontend/src/shared/components/practice/PracticeLabReceiveWorkActionsBar.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // change-log:
+// - 2026-08-23: `{치아} : 어벗츠 미제공 커스텀어벗은…` 한 줄 형식.
+// - 2026-08-23: 채팅 높이 확보 — 치아 상세를 한 줄(인라인)로 압축.
 // - 2026-08-21: 미제공 CA 안내 문구 단문화(INTRO/OUTRO).
 // - 2026-08-21: 미제공 CA 안내 — 치아·임플란트 상세 + 기공소 자체 처리 문구.
 import {
   formatPendingLabAbutmentDetailLine,
 } from "@/shared/practice/practiceTransferLabReceive";
 import {
-  LAB_PENDING_ABUTMENT_GUIDE_INTRO,
-  LAB_PENDING_ABUTMENT_GUIDE_OUTRO,
-  LAB_PENDING_ABUTMENT_MIXED_GUIDE_INTRO,
-  LAB_PENDING_ABUTMENT_MIXED_GUIDE_OUTRO,
+  LAB_PENDING_ABUTMENT_GUIDE_BODY,
+  LAB_PENDING_ABUTMENT_MIXED_GUIDE_BODY,
 } from "@/shared/practice/roundBarAbutment";
 import { isPendingRoundBarAbutment } from "@/shared/practice/labFeeSchedule";
 import {
@@ -42,7 +42,7 @@ function listPendingRows(toothWorks: ToothWorkSelection[] | null | undefined) {
 
 /**
  * 기공소 수신: 어벗츠 미제공 임플란트(요청중 CA) 안내.
- * 인트로 → 치아·임플란트 상세 → 자체 처리 안내.
+ * `{치아 상세} : {안내}` 한 줄.
  */
 export function LabPendingAbutmentGuide({
   toothWorks,
@@ -52,33 +52,24 @@ export function LabPendingAbutmentGuide({
   const pendingRows = listPendingRows(toothWorks);
   if (pendingRows.length === 0) return null;
 
-  const intro = mixedWithAbuts
-    ? LAB_PENDING_ABUTMENT_MIXED_GUIDE_INTRO
-    : LAB_PENDING_ABUTMENT_GUIDE_INTRO;
-  const outro = mixedWithAbuts
-    ? LAB_PENDING_ABUTMENT_MIXED_GUIDE_OUTRO
-    : LAB_PENDING_ABUTMENT_GUIDE_OUTRO;
+  const body = mixedWithAbuts
+    ? LAB_PENDING_ABUTMENT_MIXED_GUIDE_BODY
+    : LAB_PENDING_ABUTMENT_GUIDE_BODY;
+  const detail = pendingRows
+    .map((row) => formatPendingLabAbutmentDetailLine(row))
+    .join(", ");
 
   return (
-    <div
+    <p
       className={
         className
-          ? `space-y-0.5 text-xs leading-relaxed text-amber-800 dark:text-amber-200 ${className}`
-          : "space-y-0.5 text-xs leading-relaxed text-amber-800 dark:text-amber-200"
+          ? `text-xs leading-snug text-amber-800 dark:text-amber-200 ${className}`
+          : "text-xs leading-snug text-amber-800 dark:text-amber-200"
       }
     >
-      <p>{intro}</p>
-      <ul className="list-none space-y-0.5 pl-0 font-medium">
-        {pendingRows.map((row) => {
-          const tooth = String(row.toothNumber || "").trim() || "—";
-          return (
-            <li key={`pending-ca-${tooth}-${formatPendingLabAbutmentDetailLine(row)}`}>
-              {formatPendingLabAbutmentDetailLine(row)}
-            </li>
-          );
-        })}
-      </ul>
-      <p>{outro}</p>
-    </div>
+      <span className="font-medium">{detail}</span>
+      {" : "}
+      {body}
+    </p>
   );
 }

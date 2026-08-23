@@ -13,6 +13,7 @@
 // - web/frontend/src/shared/files/s3BlobCache.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
 // - 2026-08-23: 작업 파일 STL/PLY/OBJ 타일에 3D 썸네일 표시.
+// - 2026-08-23: 미제공 CA 안내 1줄 압축·수락 바 중복 안내 제거로 채팅 높이 확보.
 // - 2026-08-21: 수락 바 — "치과 메시지 확인 후 수락" 안내 제거.
 // - 2026-08-21: 수락 바 — "커스텀 어벗 디자인은 수락 기공소가 진행" 문구 제거.
 // - 2026-08-21: 수락 바 — 작업취소를 업로드 CTA와 같은 버튼 행에 배치.
@@ -1342,10 +1343,7 @@ export function PracticeTransferDetailChatDialog({
               ) : null}
 
               {showReleaseBar ? (
-                <div className="shrink-0 border-b bg-muted/40 px-3 py-2 flex flex-col gap-2">
-                  <p className="text-xs text-muted-foreground">
-                    수락된 의뢰입니다. 작업취소하면 수락이 해제됩니다.
-                  </p>
+                <div className="shrink-0 border-b bg-muted/40 px-3 py-2 flex flex-col gap-1.5">
                   {typeof acceptedWorkActions === "function" ? (
                     resolvedAcceptedWorkActions
                   ) : resolvedAcceptedWorkActions ? (
@@ -1358,9 +1356,14 @@ export function PracticeTransferDetailChatDialog({
                       ) : null}
                     </div>
                   ) : (
-                    <div className="flex flex-wrap items-center gap-2">
-                      {releaseAction}
-                    </div>
+                    <>
+                      <p className="text-xs text-muted-foreground">
+                        수락된 의뢰입니다. 작업취소하면 수락이 해제됩니다.
+                      </p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {releaseAction}
+                      </div>
+                    </>
                   )}
                 </div>
               ) : null}
