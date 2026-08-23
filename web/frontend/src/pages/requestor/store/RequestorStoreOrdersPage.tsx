@@ -702,7 +702,15 @@ export function RequestorStoreOrderDetailPage() {
                   <CardHeader className="pb-3">
                     <CardTitle className="text-base">주문 관리</CardTitle>
                   </CardHeader>
-                  <CardContent>
+                  <CardContent className="space-y-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full"
+                      asChild
+                    >
+                      <Link to="/dashboard/store/orders">주문 목록</Link>
+                    </Button>
                     <Button
                       type="button"
                       variant="outline"
