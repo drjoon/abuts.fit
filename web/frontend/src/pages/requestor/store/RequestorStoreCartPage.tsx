@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-23: 기본 배송지 = practiceProfile(즉시). catalog API 호출 제거.
 // - 2026-08-23: 스토어 결제 = 선수금만. 잔액 부족 시 충전 탭으로 이동.
 // - 2026-08-23: 2열 반응형·배송료(10만원 이하 3,300원 부가세 포함).
 // - 2026-08-23: 2열 반응형(상품·배송지 / 결제 요약 사이드바).
@@ -6,14 +7,16 @@
 // related files:
 // - web/frontend/src/store/useStoreCartStore.ts
 // - web/frontend/src/shared/store/storeCatalog.ts
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 import { ArrowLeft, Minus, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useAuthStore } from "@/store/useAuthStore";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
+import { loadBusinessMeCached } from "@/shared/components/business/settings/business/businessMeCache";
 import { getStoreProductById } from "@/shared/store/storeCatalog";
 import {
   STORE_PRICE_TAX_NOTE,
@@ -28,58 +31,51 @@ import {
   buildStoreOrderTotalsWithShipping,
   STORE_SHIPPING_FREE_THRESHOLD_INCLUSIVE,
 } from "@/shared/store/storeShipping";
-
-type ShippingForm = {
-  recipientName: string;
-  phone: string;
-  zipCode: string;
-  address: string;
-  addressDetail: string;
-  memo: string;
-};
-
-const EMPTY_SHIPPING: ShippingForm = {
-  recipientName: "",
-  phone: "",
-  zipCode: "",
-  address: "",
-  addressDetail: "",
-  memo: "",
-};
+import {
+  resolveDefaultStoreShipping,
+  type StoreShippingForm,
+} from "@/shared/store/storeDefaultShipping";
 
 export default function RequestorStoreCartPage() {
   const { kind, loading } = useRequestorBusinessAccess();
+  const user = useAuthStore((s) => s.user);
+  const token = useAuthStore((s) => s.token);
   const navigate = useNavigate();
   const lines = useStoreCartStore((s) => s.lines);
   const setQty = useStoreCartStore((s) => s.setQty);
   const removeItem = useStoreCartStore((s) => s.removeItem);
   const clear = useStoreCartStore((s) => s.clear);
   const [submitting, setSubmitting] = useState(false);
-  const [shipping, setShipping] = useState<ShippingForm>(EMPTY_SHIPPING);
+  const [shipping, setShipping] = useState<StoreShippingForm>(() =>
+    resolveDefaultStoreShipping(user),
+  );
+  const shippingTouchedRef = useRef(false);
+  const shippingEnrichedRef = useRef(false);
 
   useEffect(() => {
-    void (async () => {
-      try {
-        const res = await apiFetch<{
-          success: boolean;
-          data?: { defaultShipping?: ShippingForm };
-        }>({ path: "/api/store/catalog" });
-        const def = res.data?.data?.defaultShipping;
-        if (def) {
-          setShipping({
-            recipientName: def.recipientName || "",
-            phone: def.phone || "",
-            zipCode: def.zipCode || "",
-            address: def.address || "",
-            addressDetail: def.addressDetail || "",
-            memo: def.memo || "",
-          });
-        }
-      } catch {
-        /* 기본 배송지 없으면 빈 폼 */
-      }
-    })();
-  }, []);
+    if (shippingTouchedRef.current) return;
+    setShipping(resolveDefaultStoreShipping(user));
+  }, [user]);
+
+  useEffect(() => {
+    if (shippingEnrichedRef.current || shippingTouchedRef.current || !token) {
+      return;
+    }
+    const fromProfile = resolveDefaultStoreShipping(user);
+    if (fromProfile.recipientName && fromProfile.phone && fromProfile.address) {
+      shippingEnrichedRef.current = true;
+      return;
+    }
+    shippingEnrichedRef.current = true;
+    void loadBusinessMeCached({ token, businessType: "requestor" })
+      .then((data) => {
+        if (shippingTouchedRef.current || !data?.metadata) return;
+        setShipping(resolveDefaultStoreShipping(user, data.metadata));
+      })
+      .catch(() => {
+        /* metadata 없으면 practiceProfile만 사용 */
+      });
+  }, [token, user]);
 
   const rows = useMemo(() => {
     return lines
@@ -171,10 +167,11 @@ export default function RequestorStoreCartPage() {
     }
   }
 
-  function patchShipping<K extends keyof ShippingForm>(
+  function patchShipping<K extends keyof StoreShippingForm>(
     key: K,
-    value: ShippingForm[K],
+    value: StoreShippingForm[K],
   ) {
+    shippingTouchedRef.current = true;
     setShipping((prev) => ({ ...prev, [key]: value }));
   }
 

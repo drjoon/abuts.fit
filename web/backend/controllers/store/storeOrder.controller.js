@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-23: 주문 생성+선수금 결제 단일 트랜잭션(이중 commit 제거).
 // - 2026-08-23: 스토어 신규 주문은 선수금만. 계좌이체 입금 경로 제거.
 // - 2026-08-23: 배송지·풀필먼트·장바구니 합치기 금지 가드.
 // - 2026-08-23: 스토어 카탈로그·주문·입금(B-plan) API.
@@ -28,7 +29,6 @@ import {
   finalizeStoreSale,
   getInventoryMap,
   payStoreOrderWithCredit,
-  releaseStoreInventoryReservation,
   reserveStoreInventory,
 } from "../../services/storeSale.service.js";
 
@@ -201,7 +201,13 @@ export async function getStoreCatalog(req, res) {
     }
     await assertPracticeKind(req, businessAnchorId);
 
-    const inventory = await getInventoryMap();
+    const [inventory, defaultShipping] = await Promise.all([
+      getInventoryMap(),
+      resolveDefaultShipping({
+        userId: req.user?._id,
+        businessAnchorId,
+      }),
+    ]);
     const products = Object.keys(inventory).map((productId) => ({
       productId,
       name: getStoreProductName(productId),
@@ -222,10 +228,7 @@ export async function getStoreCatalog(req, res) {
         // 장바구니 합치기 금지 SSOT (프론트 카피·가드용)
         cartMergeWithCreditOrCustomAbutment:
           STORE_CART_MERGE_WITH_CREDIT_OR_CUSTOM_ABUTMENT,
-        defaultShipping: await resolveDefaultShipping({
-          userId: req.user?._id,
-          businessAnchorId,
-        }),
+        defaultShipping,
       },
     });
   } catch (error) {
@@ -305,62 +308,44 @@ export async function createStoreOrder(req, res) {
     const expiresAt = new Date(Date.now() + ORDER_TTL_MS);
 
     let created = null;
-    await session.withTransaction(async () => {
-      await reserveStoreInventory({ items, session });
-
-      const [doc] = await StoreOrder.create(
-        [
-          {
-            businessAnchorId,
-            userId,
-            depositCode,
-            depositorName: depositCode,
-            status: "PENDING",
-            fulfillmentStatus: "UNPAID",
-            adminApprovalStatus: "PENDING",
-            paymentMethod,
-            items,
-            shipping,
-            itemsAmountTotal,
-            shippingFeeInclusive,
-            shippingSupplyAmount,
-            shippingVatAmount,
-            supplyAmount,
-            vatAmount,
-            amountTotal,
-            expiresAt,
-          },
-        ],
-        { session },
-      );
-      created = doc.toObject();
-    });
-
     try {
-      await payStoreOrderWithCredit({
-        orderId: created._id,
-        userId,
+      await session.withTransaction(async () => {
+        await reserveStoreInventory({ items, session });
+
+        const [doc] = await StoreOrder.create(
+          [
+            {
+              businessAnchorId,
+              userId,
+              depositCode,
+              depositorName: depositCode,
+              status: "PENDING",
+              fulfillmentStatus: "UNPAID",
+              adminApprovalStatus: "PENDING",
+              paymentMethod,
+              items,
+              shipping,
+              itemsAmountTotal,
+              shippingFeeInclusive,
+              shippingSupplyAmount,
+              shippingVatAmount,
+              supplyAmount,
+              vatAmount,
+              amountTotal,
+              expiresAt,
+            },
+          ],
+          { session },
+        );
+        created = doc.toObject();
+
+        await payStoreOrderWithCredit({
+          orderId: created._id,
+          userId,
+          session,
+        });
       });
     } catch (payErr) {
-      // 결제 실패 시 예약 해제·주문 취소
-      try {
-        await releaseStoreInventoryReservation({ items: created.items });
-        await StoreOrder.updateOne(
-          { _id: created._id, status: "PENDING" },
-          {
-            $set: {
-              status: "CANCELED",
-              fulfillmentStatus: "CANCELED",
-              canceledAt: new Date(),
-              canceledBy: userId || null,
-              canceledByRole: "SYSTEM",
-              cancelReason: "credit_pay_failed",
-            },
-          },
-        );
-      } catch {
-        /* ignore cleanup */
-      }
       const status = payErr.statusCode || 500;
       return res.status(status).json({
         success: false,

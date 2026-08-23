@@ -1,5 +1,6 @@
 // change-log:
 // - 2026-08-23: 스토어 취소 = STORE_SALE 저널 삭제 + StoreOrder 취소 이력(canceledAt/By).
+// - 2026-08-23: admin 앵커·재고 시드 1회 캐시(카탈로그·주문 latency 감소).
 // - 2026-08-23: 스토어 취소 = STORE_SALE 저널 삭제(기공 롤백과 동일). 환불 행 없음.
 // - 2026-08-23: 풀필먼트(READY→SHIPPED→DELIVERED). 매출 전액 어벗츠(REV_STORE_TAXABLE).
 // - 2026-08-23: 스토어 입금 확정 → 재고 차감 · STORE_SALE 저널 · 과세 세금계산서.
@@ -132,6 +133,13 @@ export async function rollbackStoreSaleJournals({
 }
 
 async function resolveAdminAnchorId(session) {
+  const now = Date.now();
+  if (
+    cachedAdminAnchorId &&
+    now - cachedAdminAnchorIdAt < ADMIN_ANCHOR_CACHE_MS
+  ) {
+    return cachedAdminAnchorId;
+  }
   const adminAnchor = await BusinessAnchor.findOne({
     businessType: "admin",
     status: { $ne: "merged" },
@@ -140,13 +148,22 @@ async function resolveAdminAnchorId(session) {
     .sort({ createdAt: 1, _id: 1 })
     .session(session || null)
     .lean();
-  return adminAnchor?._id || null;
+  cachedAdminAnchorId = adminAnchor?._id || null;
+  cachedAdminAnchorIdAt = now;
+  return cachedAdminAnchorId;
 }
 
+let cachedAdminAnchorId = null;
+let cachedAdminAnchorIdAt = 0;
+const ADMIN_ANCHOR_CACHE_MS = 60_000;
+
 /** 카탈로그 productId에 재고 문서가 없으면 기본 수량으로 생성(1회 bulk). */
+let storeInventorySeeded = false;
+
 export async function ensureStoreInventorySeeded(session) {
   const ids = listStoreProductIds();
   if (ids.length === 0) return;
+  if (storeInventorySeeded) return;
   await StoreInventory.bulkWrite(
     ids.map((productId) => ({
       updateOne: {
@@ -163,6 +180,7 @@ export async function ensureStoreInventorySeeded(session) {
     })),
     { ordered: false, session: session || undefined },
   );
+  storeInventorySeeded = true;
 }
 
 export async function getInventoryMap(session) {
