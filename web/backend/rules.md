@@ -807,7 +807,9 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - 스토어 기성품: 부가세 10% · 고객 표시=부가세 포함가 · 세금계산서. 커스텀어벗 계산서와 합치지 않음.
     - 어벗츠↔딜러사·개발운영사 지급: 부가세 10% · 세금계산서. 장부는 공급가, 지급 시 VAT.
   - **마이너스 발행**: 전송 성공 후 상계는 원본 `SENT` 유지 + `kind=REVERSE` 별도 draft. 원본을 `CANCELLED`로 강등하지 않음.
-  - 장부 골격: `STORE_SALE` / `REV_STORE_TAXABLE`(실결제 전 SSOT 자리). 면세 기공·크레딧과 분리.
+  - 장부: `STORE_SALE` / `REV_STORE_TAXABLE` — 스토어 입금 확정 시 기록. 면세 기공·크레딧과 분리.
+  - 스토어 결제: `StoreOrder` + B-plan 입금 매칭/관리자 승인 → 재고 차감 → `STORE_SALE` → 과세 `TaxInvoiceDraft` 발행. 구현: `services/storeSale.service.js`, `modules/store/store.routes.js`.
+  - 팝빌: `POPBILL_IS_TEST=false`(prod)면 실홈택스 발행. local/test는 `true`.
   - 크레딧은 선불전자지급수단이 아니라 **기공료 선입금(선납 대금)**. 충전 화면·FAQ·약관·입금 확인 알림에 동일 용어를 쓴다.
     프론트 카피: `web/frontend/src/shared/legal/creditPrepaidCopy.ts`
     입금 매칭 알림: `utils/creditBPlanMatching.js` `notifyChargePrepaidApplied` / 템플릿 `ats_credit_charged`

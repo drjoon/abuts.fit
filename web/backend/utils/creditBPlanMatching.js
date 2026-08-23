@@ -6,6 +6,7 @@
 // - web/backend/models/adminSmsTemplate.model.js
 import mongoose from "mongoose";
 import ChargeOrder from "../models/chargeOrder.model.js";
+import StoreOrder from "../models/storeOrder.model.js";
 import BankTransaction from "../models/bankTransaction.model.js";
 import TaxInvoiceDraft from "../models/taxInvoiceDraft.model.js";
 import BusinessAnchor from "../models/businessAnchor.model.js";
@@ -13,6 +14,7 @@ import User from "../models/user.model.js";
 import AdminSmsTemplate from "../models/adminSmsTemplate.model.js";
 
 import { postGeneralLedgerJournal } from "../services/generalLedger.service.js";
+import { finalizeStoreSale } from "../services/storeSale.service.js";
 import { emitCreditBalanceUpdatedToBusiness } from "./creditRealtime.js";
 import { enqueueTaxInvoiceIssue } from "./queueClient.js";
 import {
@@ -219,6 +221,39 @@ export async function autoMatchBankTransactionsOnce({ limit = 200 } = {}) {
         if (ok) matched += 1;
         continue;
       }
+
+      const storeOrder = await StoreOrder.findOne({
+        status: "PENDING",
+        amountTotal: tranAmt,
+        expiresAt: { $gt: now },
+        bankTransactionId: null,
+        depositCode: txDepositCode,
+      })
+        .select({
+          _id: 1,
+          businessAnchorId: 1,
+          userId: 1,
+          supplyAmount: 1,
+          vatAmount: 1,
+          amountTotal: 1,
+        })
+        .sort({ createdAt: -1, _id: -1 })
+        .lean();
+
+      if (storeOrder?._id) {
+        const ok = await matchTxWithStoreOrder({
+          tx,
+          order: storeOrder,
+        }).catch((err) => {
+          console.error(
+            "[autoMatch] store depositCode match failed:",
+            err?.message || err,
+          );
+          return false;
+        });
+        if (ok) matched += 1;
+        continue;
+      }
     }
 
     const candidates = await ChargeOrder.find({
@@ -249,21 +284,124 @@ export async function autoMatchBankTransactionsOnce({ limit = 200 } = {}) {
       }
     }
 
-    if (!matchedOrder) continue;
+    if (matchedOrder) {
+      const ok = await matchTxWithOrder({ tx, order: matchedOrder }).catch(
+        (err) => {
+          console.error(
+            "[autoMatch] depositorName match failed:",
+            err?.message || err,
+          );
+          return false;
+        },
+      );
+      if (ok) matched += 1;
+      continue;
+    }
 
-    const ok = await matchTxWithOrder({ tx, order: matchedOrder }).catch(
-      (err) => {
-        console.error(
-          "[autoMatch] depositorName match failed:",
-          err?.message || err,
-        );
-        return false;
-      },
-    );
+    const storeCandidates = await StoreOrder.find({
+      status: "PENDING",
+      amountTotal: tranAmt,
+      expiresAt: { $gt: now },
+      bankTransactionId: null,
+    })
+      .select({
+        _id: 1,
+        businessAnchorId: 1,
+        userId: 1,
+        supplyAmount: 1,
+        depositorName: 1,
+        vatAmount: 1,
+        amountTotal: 1,
+      })
+      .lean();
+
+    let matchedStore = null;
+    for (const candidate of storeCandidates) {
+      const depositorName = String(candidate?.depositorName || "").trim();
+      if (!depositorName) continue;
+      const pattern = new RegExp(`(^|\\D)${depositorName}(\\D|$)`);
+      if (pattern.test(printedContent)) {
+        matchedStore = candidate;
+        break;
+      }
+    }
+
+    if (!matchedStore) continue;
+
+    const ok = await matchTxWithStoreOrder({
+      tx,
+      order: matchedStore,
+    }).catch((err) => {
+      console.error(
+        "[autoMatch] store depositorName match failed:",
+        err?.message || err,
+      );
+      return false;
+    });
     if (ok) matched += 1;
   }
 
   return { scanned, matched };
+}
+
+async function matchTxWithStoreOrder({ tx, order }) {
+  const session = await mongoose.startSession();
+  let matched = false;
+  try {
+    matched = await session.withTransaction(async () => {
+      const updatedTx = await BankTransaction.updateOne(
+        {
+          _id: tx._id,
+          status: "NEW",
+          chargeOrderId: null,
+          storeOrderId: null,
+        },
+        {
+          $set: {
+            status: "MATCHED",
+            storeOrderId: order._id,
+            matchedAt: new Date(),
+            matchedBy: "AUTO",
+          },
+        },
+        { session },
+      );
+
+      if (!updatedTx?.modifiedCount) return false;
+
+      const updatedOrder = await StoreOrder.updateOne(
+        { _id: order._id, status: "PENDING", bankTransactionId: null },
+        {
+          $set: {
+            status: "MATCHED",
+            bankTransactionId: tx._id,
+            matchedAt: new Date(),
+            matchedBy: "AUTO",
+          },
+        },
+        { session },
+      );
+
+      if (!updatedOrder?.modifiedCount) {
+        throw new Error("StoreOrder update failed");
+      }
+
+      return true;
+    });
+  } finally {
+    session.endSession();
+  }
+
+  if (matched) {
+    await finalizeStoreSale({
+      orderId: order._id,
+      bankTransactionId: tx._id,
+      matchedBy: "AUTO",
+      issueInline: false,
+    });
+  }
+
+  return matched;
 }
 
 async function matchTxWithOrder({ tx, order }) {
@@ -274,7 +412,7 @@ async function matchTxWithOrder({ tx, order }) {
   try {
     const result = await session.withTransaction(async () => {
       const updatedTx = await BankTransaction.updateOne(
-        { _id: tx._id, status: "NEW", chargeOrderId: null },
+        { _id: tx._id, status: "NEW", chargeOrderId: null, storeOrderId: null },
         {
           $set: {
             status: "MATCHED",

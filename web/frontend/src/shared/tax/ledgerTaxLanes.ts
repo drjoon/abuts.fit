@@ -5,7 +5,7 @@
 // - web/backend/models/ledgerJournal.model.js
 // - web/backend/models/ledgerLine.model.js
 
-/** 스토어 기성품 과세 매출 저널 이벤트(실결제 연동 전 자리). */
+/** 스토어 기성품 과세 매출 저널 이벤트. 입금 확정 시 기록. */
 export const LEDGER_EVENT_STORE_SALE = "STORE_SALE";
 
 /** 스토어 과세 매출 계정. */

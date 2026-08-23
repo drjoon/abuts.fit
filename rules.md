@@ -163,7 +163,7 @@
   - 의뢰자 소비·비제조사 `REV_*` 라인·제조사 `REV_MANUFACTURER`: 공급가 기준, `vatAmount = 0`.
   - 딜러사·개발운영사 수수료/잔여 장부는 공급가(`vatAmount = 0`). **지급 시** 부가세 10%를 더해 **입금·세금계산서**에 반영한다(`SETTLEMENT_PAYOUT`: `amountExcludingVat`=공급가 잔액 차감, `vatAmount`=부가세, `amountIncludingVat`=실입금).
   - 보존식·의뢰자 잔액 집계는 `amountExcludingVat`(없으면 `amount`) = 공급가. 딜러사·개발운영사 지급 VAT는 어벗츠 추가 지급분(의뢰자 크레딧에서 차감하지 않음).
-  - 장부 골격: 과세 스토어 매출 이벤트/계정은 `STORE_SALE` / `REV_STORE_TAXABLE`(실결제 연동 전 SSOT 자리만). 면세 기공·크레딧 장부와 분리 집계.
+  - 장부: 과세 스토어 매출 이벤트/계정은 `STORE_SALE` / `REV_STORE_TAXABLE`. 결제 확정(입금 매칭·관리자 승인) 시 저널 기록. 면세 기공·크레딧 장부와 분리 집계.
 - **어벗츠 사업 다각화 SSOT:**
   1. **커스텀 어벗 생산·공급** — 기공소 디자인 → 애크로덴트 생산 → 치과 납품(하청 정산).
   2. **자동매칭 수수료** — 기공비의 `platformFeeRate`(기본 10%). 관리자 플랫폼 설정.
@@ -182,7 +182,7 @@
 - 필수 이벤트 타입 SSOT(저장형):
   - `REQUEST_SPEND_HOLD`, `REQUEST_SPEND_COMMIT`, `SHIPPING_SPEND_HOLD`, `SHIPPING_SPEND_COMMIT`
   - `PRACTICE_MEMBERSHIP_SPEND`(레거시 치과 멤버십 월 구독. 신규 과금 없음)
-  - `CHARGE_PAID`, `CHARGE_FREE_REQUEST`, `CHARGE_FREE_SHIPPING`, `ADJUST`, `SETTLEMENT_PAYOUT`
+  - `CHARGE_PAID`, `CHARGE_FREE_REQUEST`, `CHARGE_FREE_SHIPPING`, `ADJUST`, `SETTLEMENT_PAYOUT`, `STORE_SALE`
 - 수익 계정 SSOT:
   - `REV_MANUFACTURER`, `REV_DEVOPS`, `REV_SALESMAN`, `REV_ADMIN`
   - **제조사(하청)**: % 분배 금지. **어벗 1개당** 고정 공급가(면세) — `creditSettings.manufacturerRequestUnitPrice`(기본 9,000)·`manufacturerShippingUnitPrice`(기본 3,500, 박스당). 고객의 유료·무료 크레딧을 구분하지 않고 **모든 의뢰·배송에 약정 단가를 지급**. 매달 말일 일괄 지급 전까지는 미정산 잔액으로 적립.

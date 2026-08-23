@@ -306,6 +306,7 @@ const sidebarItems = {
     { icon: Wallet, label: "정산", href: "/dashboard/payments" },
     { icon: Wallet, label: "정산 배치", href: "/dashboard/settlement-batches" },
     { icon: FileText, label: "세금계산서", href: "/dashboard/tax-invoices" },
+    { icon: Store, label: "스토어", href: "/dashboard/store-admin" },
     {
       icon: MessageSquare,
       label: "채팅",

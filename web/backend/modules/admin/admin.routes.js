@@ -91,6 +91,13 @@ import {
   adminRejectChargeOrder,
 } from "../../controllers/admin/adminCreditBPlan.controller.js";
 import {
+  adminListStoreInventory,
+  adminPatchStoreInventory,
+  adminListStoreOrders,
+  adminApproveStoreOrder,
+  adminRejectStoreOrder,
+} from "../../controllers/admin/adminStore.controller.js";
+import {
   adminGrantFreeShippingCredit,
   adminListFreeCreditGrants,
   adminOverrideRequestFreeCredit,
@@ -394,6 +401,29 @@ router.post(
   "/credits/b-plan/charge-orders/:id/reject",
   authorize(["admin"], { subRoles: ["owner"] }),
   adminRejectChargeOrder,
+);
+
+// 스토어 재고·주문
+router.get(
+  "/store/inventory",
+  authorize(["admin"]),
+  adminListStoreInventory,
+);
+router.patch(
+  "/store/inventory/:productId",
+  authorize(["admin"], { subRoles: ["owner"] }),
+  adminPatchStoreInventory,
+);
+router.get("/store/orders", authorize(["admin"]), adminListStoreOrders);
+router.post(
+  "/store/orders/:id/approve",
+  authorize(["admin"], { subRoles: ["owner"] }),
+  adminApproveStoreOrder,
+);
+router.post(
+  "/store/orders/:id/reject",
+  authorize(["admin"], { subRoles: ["owner"] }),
+  adminRejectStoreOrder,
 );
 
 // 가격/리퍼럴 정책 통계

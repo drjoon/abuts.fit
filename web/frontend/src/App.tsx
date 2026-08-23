@@ -116,6 +116,11 @@ import AdminCreditPage from "@/pages/admin/credits/AdminCreditPage";
 import RequestorCreditsPage from "@/pages/requestor/credits/RequestorCreditsPage";
 import RequestorStorePage from "@/pages/requestor/store/RequestorStorePage";
 import RequestorStoreProductPage from "@/pages/requestor/store/RequestorStoreProductPage";
+import RequestorStoreCartPage from "@/pages/requestor/store/RequestorStoreCartPage";
+import RequestorStoreOrdersPage, {
+  RequestorStoreOrderDetailPage,
+} from "@/pages/requestor/store/RequestorStoreOrdersPage";
+import AdminStorePage from "@/pages/admin/system/AdminStorePage";
 import AdminBusinessPage from "@/pages/admin/businesses/AdminBusinessPage";
 import ReferralGroupsPage from "@/pages/requestor/referralGroups/ReferralGroupsPage";
 import SalesmanPaymentsPage from "@/pages/salesman/SalesmanPaymentsPage";
@@ -711,6 +716,14 @@ const App = () => {
                     }
                   />
                   <Route
+                    path="store-admin"
+                    element={
+                      <RoleProtectedRoute roles={["admin"]}>
+                        <AdminStorePage />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route
                     path="settlement-batches"
                     element={
                       <RoleProtectedRoute roles={["admin"]}>
@@ -749,6 +762,30 @@ const App = () => {
                     element={
                       <RoleProtectedRoute roles={["requestor"]}>
                         <RequestorStorePage />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="store/cart"
+                    element={
+                      <RoleProtectedRoute roles={["requestor"]}>
+                        <RequestorStoreCartPage />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="store/orders"
+                    element={
+                      <RoleProtectedRoute roles={["requestor"]}>
+                        <RequestorStoreOrdersPage />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="store/orders/:orderId"
+                    element={
+                      <RoleProtectedRoute roles={["requestor"]}>
+                        <RequestorStoreOrderDetailPage />
                       </RoleProtectedRoute>
                     }
                   />

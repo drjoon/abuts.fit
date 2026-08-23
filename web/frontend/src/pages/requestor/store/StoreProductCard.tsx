@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/shared/ui/cn";
@@ -8,6 +9,7 @@ import {
   splitInclusiveVat,
 } from "@/shared/tax/invoiceLabels";
 import { formatWonWithUnit } from "@/shared/settlement/affiliateVat";
+import { useStoreCartStore } from "@/store/useStoreCartStore";
 
 type StoreProductCardProps = {
   product: StoreProduct;
@@ -18,6 +20,7 @@ export function StoreProductCard({ product }: StoreProductCardProps) {
   const inclusive = product.listPriceInclusive;
   const split =
     inclusive != null && inclusive > 0 ? splitInclusiveVat(inclusive) : null;
+  const addItem = useStoreCartStore((s) => s.addItem);
 
   return (
     <article
@@ -79,9 +82,14 @@ export function StoreProductCard({ product }: StoreProductCardProps) {
           variant="outline"
           size="sm"
           className="w-full"
-          disabled
+          disabled={inclusive == null}
+          onClick={(e) => {
+            e.preventDefault();
+            addItem(product.id, 1);
+            toast.success("장바구니에 담았습니다.");
+          }}
         >
-          곧 구매 가능
+          장바구니 담기
         </Button>
       </div>
     </article>

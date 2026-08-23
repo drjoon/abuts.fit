@@ -41,6 +41,12 @@ const TaxInvoiceDraftSchema = new mongoose.Schema(
       ref: "ChargeOrder",
       default: null,
     },
+    /** 스토어 기성품 과세 주문 (ChargeOrder와 상호 exclusive). */
+    storeOrderId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "StoreOrder",
+      default: null,
+    },
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -150,6 +156,14 @@ TaxInvoiceDraftSchema.index(
   {
     unique: true,
     partialFilterExpression: { chargeOrderId: { $type: "objectId" } },
+  },
+);
+// storeOrder당 NORMAL 1건만.
+TaxInvoiceDraftSchema.index(
+  { storeOrderId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { storeOrderId: { $type: "objectId" } },
   },
 );
 // 같은 기간(월합계) 중복 생성 방지 — periodStart가 있는 문서에만 적용(부분 유니크 인덱스)

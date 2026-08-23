@@ -4,6 +4,7 @@
 // - web/frontend/src/App.tsx
 import { Navigate, Link, useParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
+import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
@@ -16,10 +17,12 @@ import {
   splitInclusiveVat,
 } from "@/shared/tax/invoiceLabels";
 import { formatWonWithUnit } from "@/shared/settlement/affiliateVat";
+import { useStoreCartStore } from "@/store/useStoreCartStore";
 
 export default function RequestorStoreProductPage() {
   const { productId } = useParams<{ productId: string }>();
   const { kind, loading } = useRequestorBusinessAccess();
+  const addItem = useStoreCartStore((s) => s.addItem);
   const product = getStoreProductById(productId);
   const category = getStoreCategoryForProduct(productId);
   const galleryImages = product?.galleryImages?.length
@@ -52,7 +55,7 @@ export default function RequestorStoreProductPage() {
             {category.label}
           </Badge>
           <Badge variant="outline" className="font-normal">
-            미리보기
+            {STORE_PRICE_TAX_NOTE}
           </Badge>
         </div>
 
@@ -153,9 +156,19 @@ export default function RequestorStoreProductPage() {
               </section>
             ) : null}
 
-            <div className="pt-1">
-              <Button type="button" disabled>
-                곧 구매 가능
+            <div className="pt-1 flex flex-wrap gap-2">
+              <Button
+                type="button"
+                onClick={() => {
+                  addItem(product.id, 1);
+                  toast.success("장바구니에 담았습니다.");
+                }}
+                disabled={product.listPriceInclusive == null}
+              >
+                장바구니 담기
+              </Button>
+              <Button type="button" variant="outline" asChild>
+                <Link to="/dashboard/store/cart">장바구니</Link>
               </Button>
             </div>
           </div>

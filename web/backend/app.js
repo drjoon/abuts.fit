@@ -257,6 +257,7 @@ import labTradingPartnerRoutes from "./modules/labTradingPartners/labTradingPart
 import designAccessRoutes from "./modules/devops/designAccess.routes.js";
 import practiceTransferAutoMatchRoutes from "./modules/devops/practiceTransferAutoMatch.routes.js";
 import designDeadlineRoutes from "./modules/devops/designDeadline.routes.js";
+import storeRoutes from "./modules/store/store.routes.js";
 
 // 라우트 설정
 app.use("/api/system", systemRoutes);
@@ -280,6 +281,7 @@ app.use("/api/clinics", clinicRoutes);
 app.use("/api/implant-presets", implantPresetRoutes);
 
 app.use("/api/credits", creditRoutes);
+app.use("/api/store", storeRoutes);
 app.use("/api/webhooks", webhookRoutes);
 app.use("/api/chats", chatRoutes);
 app.use("/api/practice/transfers", practiceTransferRoutes);

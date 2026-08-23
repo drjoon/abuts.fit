@@ -5,9 +5,11 @@
 import Counter from "../models/counter.model.js";
 import BusinessAnchor from "../models/businessAnchor.model.js";
 import ChargeOrder from "../models/chargeOrder.model.js";
+import StoreOrder from "../models/storeOrder.model.js";
 
 const BUSINESS_DEPOSIT_CODE_COUNTER_KEY = "business.depositCode.v2";
 const CHARGE_ORDER_DEPOSIT_CODE_COUNTER_KEY = "chargeOrder.depositCode.v2";
+const STORE_ORDER_DEPOSIT_CODE_COUNTER_KEY = "storeOrder.depositCode.v1";
 
 function formatDepositCode(n) {
   const num = Number(n);
@@ -94,6 +96,23 @@ export async function ensureOrganizationDepositCode(businessAnchorId) {
   throw new Error("depositCode 발급에 실패했습니다.");
 }
 
+async function hasActiveDepositCodeConflict(depositCode) {
+  const now = new Date();
+  const [chargeConflict, storeConflict] = await Promise.all([
+    ChargeOrder.exists({
+      depositCode,
+      status: "PENDING",
+      expiresAt: { $gt: now },
+    }),
+    StoreOrder.exists({
+      depositCode,
+      status: "PENDING",
+      expiresAt: { $gt: now },
+    }),
+  ]);
+  return Boolean(chargeConflict || storeConflict);
+}
+
 export async function generateChargeOrderDepositCode() {
   // 동시간대 99건 초과가 없다는 전제 하에 시퀀스 기반으로 01~99 순환 발급
   for (let i = 0; i < 10; i += 1) {
@@ -104,13 +123,25 @@ export async function generateChargeOrderDepositCode() {
     const mod = ((next - 1) % 99) + 1; // 1~99 순환
     const depositCode = formatDepositCode(mod);
 
-    // 현재 활성(PENDING) 건과 충돌하지 않도록 확인
-    const conflict = await ChargeOrder.exists({
-      depositCode,
-      status: "PENDING",
-      expiresAt: { $gt: new Date() },
+    if (await hasActiveDepositCodeConflict(depositCode)) continue;
+
+    return { depositCode };
+  }
+
+  throw new Error("사용 가능한 입금자코드가 부족합니다.");
+}
+
+/** 스토어 주문용 입금코드(01~99). 크레딧 ChargeOrder와 동일 네임스페이스. */
+export async function generateStoreOrderDepositCode() {
+  for (let i = 0; i < 10; i += 1) {
+    const next = await getNextSequence({
+      key: STORE_ORDER_DEPOSIT_CODE_COUNTER_KEY,
+      startAt: 1,
     });
-    if (conflict) continue;
+    const mod = ((next - 1) % 99) + 1;
+    const depositCode = formatDepositCode(mod);
+
+    if (await hasActiveDepositCodeConflict(depositCode)) continue;
 
     return { depositCode };
   }

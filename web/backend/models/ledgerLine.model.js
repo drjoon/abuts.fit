@@ -14,7 +14,7 @@ export const LEDGER_LINE_ACCOUNT_CODES = [
   "REV_DEVOPS",
   "REV_SALESMAN",
   "REV_ADMIN",
-  /** 스토어 기성품 과세 매출 계정(실결제 연동 전 SSOT 자리). */
+  /** 스토어 기성품 과세 매출 계정. */
   "REV_STORE_TAXABLE",
 ];
 

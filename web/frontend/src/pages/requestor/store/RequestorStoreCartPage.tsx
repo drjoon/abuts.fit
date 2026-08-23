@@ -1,0 +1,213 @@
+// change-log:
+// - 2026-08-23: 스토어 장바구니·체크아웃(입금).
+// related files:
+// - web/frontend/src/store/useStoreCartStore.ts
+// - web/frontend/src/shared/store/storeCatalog.ts
+import { useMemo, useState } from "react";
+import { Link, Navigate, useNavigate } from "react-router-dom";
+import { ArrowLeft, Minus, Plus, Trash2 } from "lucide-react";
+import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
+import { getStoreProductById } from "@/shared/store/storeCatalog";
+import {
+  STORE_PRICE_TAX_NOTE,
+  splitInclusiveVat,
+} from "@/shared/tax/invoiceLabels";
+import { formatWonWithUnit } from "@/shared/settlement/affiliateVat";
+import { useStoreCartStore } from "@/store/useStoreCartStore";
+import { apiFetch } from "@/shared/api/apiClient";
+
+export default function RequestorStoreCartPage() {
+  const { kind, loading } = useRequestorBusinessAccess();
+  const navigate = useNavigate();
+  const lines = useStoreCartStore((s) => s.lines);
+  const setQty = useStoreCartStore((s) => s.setQty);
+  const removeItem = useStoreCartStore((s) => s.removeItem);
+  const clear = useStoreCartStore((s) => s.clear);
+  const [submitting, setSubmitting] = useState(false);
+
+  const rows = useMemo(() => {
+    return lines
+      .map((line) => {
+        const product = getStoreProductById(line.productId);
+        if (!product || product.listPriceInclusive == null) return null;
+        const unit = product.listPriceInclusive;
+        const lineTotal = unit * line.qty;
+        const split = splitInclusiveVat(lineTotal);
+        return { line, product, unit, lineTotal, split };
+      })
+      .filter(Boolean) as Array<{
+      line: { productId: string; qty: number };
+      product: NonNullable<ReturnType<typeof getStoreProductById>>;
+      unit: number;
+      lineTotal: number;
+      split: { supply: number; vat: number; total: number };
+    }>;
+  }, [lines]);
+
+  const totals = useMemo(() => {
+    const total = rows.reduce((s, r) => s + r.lineTotal, 0);
+    return splitInclusiveVat(total);
+  }, [rows]);
+
+  if (!loading && kind === "lab") {
+    return <Navigate to="/dashboard/credits" replace />;
+  }
+
+  async function checkout() {
+    if (rows.length === 0) return;
+    setSubmitting(true);
+    try {
+      const res = await apiFetch<{
+        success: boolean;
+        message?: string;
+        data?: { order: { _id: string } };
+      }>({
+        path: "/api/store/orders",
+        method: "POST",
+        jsonBody: {
+          items: rows.map((r) => ({
+            productId: r.line.productId,
+            qty: r.line.qty,
+          })),
+        },
+      });
+      const body = res.data;
+      if (!res.ok || !body?.success || !body.data?.order?._id) {
+        throw new Error(body?.message || "주문 생성에 실패했습니다.");
+      }
+      clear();
+      toast.success("주문이 생성되었습니다. 입금 정보를 확인하세요.");
+      navigate(`/dashboard/store/orders/${body.data.order._id}`);
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "주문 생성에 실패했습니다.";
+      toast.error(message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="custom-scrollbar workspace-nested-scroll h-full min-h-0 overflow-auto">
+      <div className="mx-auto w-full max-w-3xl space-y-6">
+        <div className="flex flex-wrap items-center gap-3">
+          <Button variant="ghost" size="sm" asChild className="-ml-2">
+            <Link to="/dashboard/store">
+              <ArrowLeft className="mr-1.5 h-4 w-4" />
+              스토어
+            </Link>
+          </Button>
+          <h1 className="text-xl font-semibold tracking-tight">장바구니</h1>
+          <Badge variant="outline" className="font-normal">
+            {STORE_PRICE_TAX_NOTE}
+          </Badge>
+        </div>
+
+        {rows.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            장바구니가 비어 있습니다.{" "}
+            <Link to="/dashboard/store" className="underline">
+              스토어로 이동
+            </Link>
+          </p>
+        ) : (
+          <>
+            <ul className="divide-y divide-border/70 rounded-xl border border-border/70">
+              {rows.map(({ line, product, unit, lineTotal, split }) => (
+                <li
+                  key={line.productId}
+                  className="flex flex-wrap items-center gap-3 p-4"
+                >
+                  <img
+                    src={product.image}
+                    alt=""
+                    className="h-16 w-16 rounded-lg border border-border/60 object-contain p-1"
+                  />
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <p className="font-medium">{product.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {formatWonWithUnit(unit)} · 공급{" "}
+                      {formatWonWithUnit(split.supply)} · 세액{" "}
+                      {formatWonWithUnit(split.vat)}
+                    </p>
+                    <div className="flex items-center gap-2 pt-1">
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="outline"
+                        className="h-8 w-8"
+                        onClick={() => setQty(line.productId, line.qty - 1)}
+                      >
+                        <Minus className="h-3.5 w-3.5" />
+                      </Button>
+                      <span className="w-8 text-center tabular-nums text-sm">
+                        {line.qty}
+                      </span>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="outline"
+                        className="h-8 w-8"
+                        onClick={() => setQty(line.productId, line.qty + 1)}
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        className="h-8 w-8 text-muted-foreground"
+                        onClick={() => removeItem(line.productId)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                  <p className="text-sm font-semibold tabular-nums">
+                    {formatWonWithUnit(lineTotal)}
+                  </p>
+                </li>
+              ))}
+            </ul>
+
+            <div className="space-y-2 rounded-xl border border-border/70 p-4">
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">공급가</span>
+                <span className="tabular-nums">
+                  {formatWonWithUnit(totals.supply)}
+                </span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">부가세</span>
+                <span className="tabular-nums">
+                  {formatWonWithUnit(totals.vat)}
+                </span>
+              </div>
+              <div className="flex justify-between text-base font-semibold">
+                <span>합계 (부가세 포함)</span>
+                <span className="tabular-nums">
+                  {formatWonWithUnit(totals.total)}
+                </span>
+              </div>
+              <p className="pt-1 text-xs text-muted-foreground">
+                커스텀어벗·크레딧 경로와 장바구니·세금계산서를 합치지 않습니다.
+                입금 확인 후 세금계산서가 발행됩니다.
+              </p>
+              <Button
+                type="button"
+                className="mt-2 w-full"
+                disabled={submitting}
+                onClick={() => void checkout()}
+              >
+                {submitting ? "주문 생성 중…" : "입금 주문하기"}
+              </Button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}

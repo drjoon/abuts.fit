@@ -21,7 +21,7 @@ export const LEDGER_JOURNAL_EVENT_TYPES = [
   "LAB_SETTLEMENT_CHARGE",
   "ADJUST",
   "SETTLEMENT_PAYOUT",
-  /** 스토어 기성품 과세 매출(실결제 연동 전 SSOT 자리). 루트 rules.md §2.3 */
+  /** 스토어 기성품 과세 매출. 입금 확정 시 기록. 루트 rules.md §2.3 */
   "STORE_SALE",
 ];
 

@@ -32,6 +32,12 @@ const bankTransactionSchema = new mongoose.Schema(
       default: null,
       index: true,
     },
+    storeOrderId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "StoreOrder",
+      default: null,
+      index: true,
+    },
     matchedAt: { type: Date, default: null },
     matchedBy: { type: String, enum: ["AUTO", "ADMIN"], default: null },
     matchedByUserId: {
