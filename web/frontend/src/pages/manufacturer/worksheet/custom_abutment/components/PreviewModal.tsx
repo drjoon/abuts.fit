@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-23: Dialog 기본 닫기(X) 표시. 승인 처리 중에는 닫기·오버레이 닫기 차단.
 // - 2026-08-23: Dialog sm:max-w-lg 잔존으로 PC가 ~512px 모바일처럼 보이던 문제 수정. 세로 스택·가로 2열 STL UX.
 // - 2026-08-22: ExoCAD 헥스 회전 옆 관리자 확인 뱃지(확정/미정).
 // - 2026-08-18: 준비 단계 프리뷰에도 로트번호를 표시한다.
@@ -37,7 +38,6 @@
 // - web/backend/controllers/rhino/rhino.controller.js
 // - web/backend/modules/rhino/rhino.routes.js
 import { useCallback, useEffect, useRef, useState } from "react";
-import { DialogClose } from "@radix-ui/react-dialog";
 import { RefreshCw } from "lucide-react";
 import {
   Dialog,
@@ -2167,13 +2167,20 @@ export const PreviewModal = ({
 
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        // 승인/롤백 처리 중에는 우상단 X·Esc·오버레이로 닫지 않는다.
+        if (!next && approveBusy) return;
+        onOpenChange(next);
+      }}
+    >
       <DialogContent
-        hideClose
         className={cn(
           // Dialog 기본 sm:max-w-lg를 반드시 sm: 접두로 덮어쓴다(미지정 시 PC도 ~512px).
           RESPONSIVE.dialogContentPreview,
-          "flex flex-col overflow-hidden gap-3 p-3 sm:gap-4 sm:p-6",
+          // 우상단 기본 닫기(X)와 헤더 컨트롤이 겹치지 않도록 여유.
+          "flex flex-col overflow-hidden gap-3 p-3 pr-10 sm:gap-4 sm:p-6 sm:pr-12",
           shouldShowUnmachinableWarning || isUnmachinable
             ? "border-accent-muted ring-2 ring-accent-muted/80"
             : "",
@@ -2604,20 +2611,6 @@ export const PreviewModal = ({
               >
                 →
               </button>
-
-              <DialogClose asChild>
-                <button
-                  type="button"
-                  className={`${controlBtnClass} ${
-                    approveBusy
-                      ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
-                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                  }`}
-                  disabled={approveBusy}
-                >
-                  X
-                </button>
-              </DialogClose>
             </div>
           </div>
 
