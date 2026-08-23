@@ -2,6 +2,7 @@
 // - web/frontend/src/pages/manufacturer/payments/PaymentsPage.tsx
 // - web/backend/utils/manufacturerLedgerDisplay.js
 // change-log:
+// - 2026-08-23: 그룹 제목을 배송자 BA로 표기(수취자→배송자).
 // - 2026-08-20: 조정(ADJUST) 일별 묶음 클릭 시 의뢰별 사유·금액을 보여준다.
 // - 2026-08-20: 유료/무료 지급 라벨 제거(약정 단가 전액이 미정산).
 // - 2026-08-17: 수취자 건별 세부는 Collapsible, 초기 닫힘.
@@ -39,6 +40,7 @@ export type ManufacturerLedgerMailboxGroup = {
   key: string;
   mailboxAddress?: string;
   recipientName?: string;
+  recipientBusinessAnchorId?: string;
   productionAmount: number;
   productionCount: number;
   shippingAmount: number;
@@ -127,7 +129,7 @@ function MailboxGroupList({
                 <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform" />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold text-slate-900">
-                    {group.recipientName || "수취자 미확인"}
+                    {group.recipientName || "배송자 미확인"}
                   </p>
                   <p className="text-[11px] text-muted-foreground">
                     {group.mailboxAddress
@@ -246,7 +248,7 @@ export function ManufacturerDailyLedgerDetailDialog({
 
             {!hasAnyGroup ? (
               <p className="py-6 text-center text-sm text-muted-foreground">
-                수취자 상세가 없습니다.
+                배송자 상세가 없습니다.
               </p>
             ) : (
               <>

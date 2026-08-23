@@ -3,6 +3,7 @@
 // - web/backend/services/creditRevenuePolicy.service.js
 // - web/frontend/src/pages/manufacturer/payments/PaymentsPage.tsx
 // change-log:
+// - 2026-08-23: 의뢰/배송 그룹 표기는 배송자 BA(requestor businessAnchor). clinicName은 건별 메타만.
 // - 2026-08-20: ADJUST는 KST 하루 1행으로 묶고, 클릭 상세는 의뢰별(중복 환불은 의뢰 합산).
 // - 2026-08-17: 기공소→치과 배송(practice_transfer_lab_shipping)은 제조사 원장에서 제외.
 // - 2026-08-17: 제조사 장부 표시 — 의뢰 1건=어벗 1개라 기공의뢰처럼 못 묶고, KST 하루+우편함(수취자)으로 묶음.
@@ -129,10 +130,20 @@ export function summarizeManufacturerLedgerRequest(doc = {}) {
     doc?.partnerBilling && typeof doc.partnerBilling === "object"
       ? doc.partnerBilling
       : {};
+  // PTX CA는 기공소(의뢰 BA) 수취 — 레거시 치과 shippingReceiver·clinicName으로 그룹 표기하지 않음.
+  const isPtx = Boolean(
+    partner.relatedPracticeTransferId || partner.practiceBusinessAnchorId,
+  );
+  const requestorBaId = String(
+    doc?.businessAnchorId?._id || doc?.businessAnchorId || "",
+  ).trim();
+  const requestorBaName = String(doc.anchorName || "").trim();
+  const receiverName = isPtx ? "" : String(receiver.name || "").trim();
+  // 그룹 제목 = 배송자 BA (우편함 점유 org와 동일: requestor businessAnchor).
   const recipientName =
-    String(receiver.name || "").trim() ||
-    String(caseInfos.clinicName || "").trim() ||
-    String(doc.anchorName || "").trim();
+    requestorBaName ||
+    receiverName ||
+    String(caseInfos.clinicName || "").trim();
 
   return {
     id: String(doc?._id || "").trim(),
@@ -140,6 +151,7 @@ export function summarizeManufacturerLedgerRequest(doc = {}) {
     mailboxAddress: String(doc?.mailboxAddress || "")
       .trim()
       .toUpperCase(),
+    recipientBusinessAnchorId: requestorBaId,
     recipientName,
     patientName: String(caseInfos.patientName || "").trim(),
     tooth: String(caseInfos.tooth || "").trim(),
@@ -163,15 +175,24 @@ export function summarizeManufacturerLedgerPackage(doc = {}, requestsById) {
       .trim()
       .toUpperCase(),
     requestIds,
+    recipientBusinessAnchorId: String(
+      first?.recipientBusinessAnchorId || "",
+    ).trim(),
     recipientName: String(first?.recipientName || "").trim(),
   };
 }
 
-function mailboxGroupKey(mailboxAddress, recipientName) {
+function mailboxGroupKey(
+  mailboxAddress,
+  recipientName,
+  recipientBusinessAnchorId = "",
+) {
   const mailbox = String(mailboxAddress || "")
     .trim()
     .toUpperCase();
   if (mailbox) return `mb:${mailbox}`;
+  const ba = String(recipientBusinessAnchorId || "").trim();
+  if (ba) return `ba:${ba}`;
   const recipient = String(recipientName || "").trim();
   if (recipient) return `rec:${recipient}`;
   return "unassigned";
@@ -243,12 +264,22 @@ function collapseEarnMembers(members) {
   return [...byKey.values()];
 }
 
-function ensureMailboxGroup(groups, { mailboxAddress, recipientName }) {
-  const key = mailboxGroupKey(mailboxAddress, recipientName);
+function ensureMailboxGroup(
+  groups,
+  { mailboxAddress, recipientName, recipientBusinessAnchorId },
+) {
+  const key = mailboxGroupKey(
+    mailboxAddress,
+    recipientName,
+    recipientBusinessAnchorId,
+  );
   const existing = groups.get(key);
   if (existing) {
     if (!existing.recipientName && recipientName) {
       existing.recipientName = recipientName;
+    }
+    if (!existing.recipientBusinessAnchorId && recipientBusinessAnchorId) {
+      existing.recipientBusinessAnchorId = recipientBusinessAnchorId;
     }
     return existing;
   }
@@ -258,8 +289,9 @@ function ensureMailboxGroup(groups, { mailboxAddress, recipientName }) {
   const group = {
     key,
     mailboxAddress: mailbox,
+    recipientBusinessAnchorId: String(recipientBusinessAnchorId || "").trim(),
     recipientName:
-      recipientName || (mailbox ? `우편함 ${mailbox}` : "우편함 미배정"),
+      recipientName || (mailbox ? `우편함 ${mailbox}` : "배송자 미확인"),
     productionAmount: 0,
     productionCount: 0,
     shippingAmount: 0,
@@ -307,6 +339,9 @@ function collapseAdjustMembers(members, ctx) {
         reason: manufacturerAdjustReason(row),
         mailboxAddress: String(req?.mailboxAddress || "").trim(),
         recipientName: String(req?.recipientName || "").trim(),
+        recipientBusinessAnchorId: String(
+          req?.recipientBusinessAnchorId || "",
+        ).trim(),
         ...requestItemFields(req),
         requestMongoId: requestMongoId || String(req?.id || ""),
       });
@@ -326,6 +361,7 @@ export function buildManufacturerAdjustGroups(members, ctx) {
     const group = ensureMailboxGroup(groups, {
       mailboxAddress: item.mailboxAddress,
       recipientName: item.recipientName,
+      recipientBusinessAnchorId: item.recipientBusinessAnchorId,
     });
     group.productionAmount += Number(item.amount || 0);
     group.productionCount += 1;
@@ -365,6 +401,7 @@ export function buildManufacturerMailboxGroups(members, ctx) {
 
     let mailboxAddress = "";
     let recipientName = "";
+    let recipientBusinessAnchorId = "";
     let relatedRequests = [];
 
     if (pkg) {
@@ -375,9 +412,15 @@ export function buildManufacturerMailboxGroups(members, ctx) {
       recipientName =
         pkg.recipientName ||
         String(relatedRequests[0]?.recipientName || "").trim();
+      recipientBusinessAnchorId =
+        pkg.recipientBusinessAnchorId ||
+        String(relatedRequests[0]?.recipientBusinessAnchorId || "").trim();
     } else if (req) {
       mailboxAddress = req.mailboxAddress;
       recipientName = req.recipientName;
+      recipientBusinessAnchorId = String(
+        req.recipientBusinessAnchorId || "",
+      ).trim();
       relatedRequests = [req];
     } else if (ptxReqs.length) {
       const mailboxes = [
@@ -385,12 +428,16 @@ export function buildManufacturerMailboxGroups(members, ctx) {
       ];
       mailboxAddress = mailboxes.length === 1 ? mailboxes[0] : "";
       recipientName = String(ptxReqs[0]?.recipientName || "").trim();
+      recipientBusinessAnchorId = String(
+        ptxReqs[0]?.recipientBusinessAnchorId || "",
+      ).trim();
       relatedRequests = ptxReqs;
     }
 
     const group = ensureMailboxGroup(groups, {
       mailboxAddress,
       recipientName,
+      recipientBusinessAnchorId,
     });
     const creditKind = String(row.creditKind || "") || null;
 

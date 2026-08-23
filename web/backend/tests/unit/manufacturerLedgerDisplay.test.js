@@ -384,4 +384,49 @@ describe("manufacturerLedgerDisplay", () => {
     expect(groups[0].mailboxAddress).toBe("");
     expect(groups[0].recipientName).toBe("직납치과");
   });
+
+  test("PTX request group label uses requestor BA, not clinicName", () => {
+    const summary = summarizeManufacturerLedgerRequest({
+      _id: "aaaaaaaaaaaaaaaaaaaaaaaa",
+      requestId: "20260821-000001",
+      mailboxAddress: "A1A1",
+      businessAnchorId: "bbbbbbbbbbbbbbbbbbbbbbbb",
+      anchorName: "향기로운기공소",
+      caseInfos: {
+        clinicName: "평온치과",
+        patientName: "김환자",
+        tooth: "11",
+      },
+      shippingReceiver: { name: "평온치과" },
+      partnerBilling: {
+        relatedPracticeTransferId: "cccccccccccccccccccccccc",
+        practiceBusinessAnchorId: "dddddddddddddddddddddddd",
+      },
+    });
+    expect(summary.recipientName).toBe("향기로운기공소");
+    expect(summary.clinicName).toBe("평온치과");
+    expect(summary.recipientBusinessAnchorId).toBe(
+      "bbbbbbbbbbbbbbbbbbbbbbbb",
+    );
+
+    const groups = buildManufacturerMailboxGroups(
+      [
+        {
+          type: "EARN",
+          eventType: "REQUEST_SPEND_COMMIT",
+          amount: 8800,
+          creditKind: "PAID",
+          refType: "REQUEST",
+          refId: "aaaaaaaaaaaaaaaaaaaaaaaa",
+        },
+      ],
+      {
+        requestsById: new Map([["aaaaaaaaaaaaaaaaaaaaaaaa", summary]]),
+        packagesById: new Map(),
+        requestsByPtxId: new Map(),
+      },
+    );
+    expect(groups[0].recipientName).toBe("향기로운기공소");
+    expect(groups[0].items[0].clinicName).toBe("평온치과");
+  });
 });
