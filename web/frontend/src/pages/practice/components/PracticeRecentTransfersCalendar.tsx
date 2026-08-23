@@ -6,7 +6,9 @@
  * - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
  * - web/frontend/src/pages/practice/components/PracticeStatusFilterBadges.tsx
  * - web/frontend/src/shared/date/kst.ts
- * - 2026-08-22: 숨길 요일을 계정 preferences에 저장(기본 일·토).
+ * - web/frontend/src/shared/practice/labReceiveCalendarWeekGrid.ts
+ * - 2026-08-23: 숨길 요일 버튼·캘린더 열 일~토(일요일 시작) 통일.
+ * - 2026-08-23: 숨길 요일 토글·열 정렬 불일치 수정 — 일요일 선택 시 토요일만 숨겨지던 현상.
  * - 2026-08-19: 리메이크는 공정 상태색 유지 + 이중 외곽선(흰 채움 아님).
  * - 2026-08-19: 기공의뢰수신 칩은 상단 뱃지 상태색.
  * - 2026-08-19: 치과 캘린더 칩에서 휴지통(의뢰 취소) 바로 이동.
@@ -32,6 +34,10 @@ import {
   toKstYmdLoose,
 } from "@/shared/date/kst";
 import { DEFAULT_LAB_RECEIVE_CALENDAR_HIDDEN_WEEKDAYS } from "@/shared/practice/labReceiveCalendarHiddenWeekdays";
+import {
+  LAB_RECEIVE_CALENDAR_WEEK_GRID_COLUMNS,
+  LAB_RECEIVE_CALENDAR_WEEK_STARTS_ON,
+} from "@/shared/practice/labReceiveCalendarWeekGrid";
 
 export type PracticeCalendarDateKey = "orderDate" | "arrivalDate";
 
@@ -61,8 +67,6 @@ export type PracticeCalendarChipItem = {
   canDelete?: boolean;
 };
 
-const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"] as const;
-const WEEK_STARTS_ON = 1;
 const WEEKS_BEFORE = 78;
 const WEEKS_AFTER = 26;
 export const DEFAULT_HIDDEN_WEEKDAYS =
@@ -170,17 +174,18 @@ const monthCaption = (ymd: string) => {
 };
 
 const buildWeeksFromOrigin = (originYmd: string): string[][] => {
-  const originMonday = kstStartOfWeek(originYmd, WEEK_STARTS_ON) || originYmd;
-  const firstMonday =
-    kstAddCivilDays(originMonday, -WEEKS_BEFORE * 7) || originMonday;
+  const originWeekStart =
+    kstStartOfWeek(originYmd, LAB_RECEIVE_CALENDAR_WEEK_STARTS_ON) || originYmd;
+  const firstWeekStart =
+    kstAddCivilDays(originWeekStart, -WEEKS_BEFORE * 7) || originWeekStart;
   const weekCount = WEEKS_BEFORE + WEEKS_AFTER + 1;
   const weeks: string[][] = [];
   for (let w = 0; w < weekCount; w += 1) {
-    const monday = kstAddCivilDays(firstMonday, w * 7);
-    if (!monday) continue;
+    const weekStart = kstAddCivilDays(firstWeekStart, w * 7);
+    if (!weekStart) continue;
     const days: string[] = [];
     for (let d = 0; d < 7; d += 1) {
-      const ymd = kstAddCivilDays(monday, d);
+      const ymd = kstAddCivilDays(weekStart, d);
       if (ymd) days.push(ymd);
     }
     if (days.length === 7) weeks.push(days);
@@ -225,7 +230,10 @@ export function PracticeRecentTransfersCalendar({
   const originYmd = todayYmd || cursorYmd;
   const weeks = useMemo(() => buildWeeksFromOrigin(originYmd), [originYmd]);
   const hidden = useMemo(() => new Set(hiddenWeekdays), [hiddenWeekdays]);
-  const visibleDows = WEEKDAYS.map((_, dow) => dow).filter((dow) => !hidden.has(dow));
+  const visibleColumns = LAB_RECEIVE_CALENDAR_WEEK_GRID_COLUMNS.filter(
+    (col) => !hidden.has(col.dow),
+  );
+  const visibleDows = visibleColumns.map((col) => col.dow);
 
   const byDay = useMemo(() => {
     const map = new Map<string, PracticeCalendarChipItem[]>();
@@ -276,8 +284,8 @@ export function PracticeRecentTransfersCalendar({
     const idx = weekIndexForYmd(ymd);
     if (idx < 0) return;
     const topIdx = Math.max(0, idx - 1);
-    const monday = weeks[topIdx]?.[0];
-    const target = monday ? weekElsRef.current.get(monday) : null;
+    const weekStart = weeks[topIdx]?.[0];
+    const target = weekStart ? weekElsRef.current.get(weekStart) : null;
     if (!target) return;
     skipScrollSyncRef.current = true;
     target.scrollIntoView({ block: "start", behavior });
@@ -296,13 +304,13 @@ export function PracticeRecentTransfersCalendar({
     if (!el || skipScrollSyncRef.current) return;
     const midY = el.getBoundingClientRect().top + el.clientHeight / 2;
     for (const week of weeks) {
-      const monday = week[0];
-      if (!monday) continue;
-      const row = weekElsRef.current.get(monday);
+      const weekStart = week[0];
+      if (!weekStart) continue;
+      const row = weekElsRef.current.get(weekStart);
       if (!row) continue;
       const box = row.getBoundingClientRect();
       if (box.top > midY || box.bottom < midY) continue;
-      const monthStart = kstStartOfMonth(monday) || monday;
+      const monthStart = kstStartOfMonth(weekStart) || weekStart;
       const currentMonth = kstStartOfMonth(cursorYmd) || cursorYmd;
       if (monthStart !== currentMonth) onCursorChange(monthStart);
       return;
@@ -372,9 +380,9 @@ export function PracticeRecentTransfersCalendar({
         </div>
         <div className="flex flex-wrap items-center gap-1">
           <span className="mr-0.5 text-[11px] text-muted-foreground">숨길 요일</span>
-          {WEEKDAYS.map((label, dow) => (
+          {LAB_RECEIVE_CALENDAR_WEEK_GRID_COLUMNS.map(({ dow, label }) => (
             <button
-              key={dow}
+              key={`hide-${dow}`}
               type="button"
               className={cn(
                 "h-7 min-w-7 rounded-md px-1.5 text-[11px] tabular-nums",
@@ -383,7 +391,9 @@ export function PracticeRecentTransfersCalendar({
                   : "bg-background text-slate-700 ring-1 ring-inset ring-border hover:bg-muted/40",
               )}
               aria-pressed={hidden.has(dow)}
-              title={hidden.has(dow) ? `${label}요일 표시` : `${label}요일 숨김`}
+              title={
+                hidden.has(dow) ? `${label}요일 표시` : `${label}요일 숨김`
+              }
               onClick={() => toggleHiddenDow(dow)}
             >
               {label}
@@ -432,12 +442,12 @@ export function PracticeRecentTransfersCalendar({
         className="grid border-l border-t"
         style={{ gridTemplateColumns: `repeat(${colCount}, minmax(0, 1fr))` }}
       >
-        {visibleDows.map((dow) => (
+        {visibleColumns.map(({ dow, label }) => (
           <div
-            key={WEEKDAYS[dow]}
+            key={`hdr-${dow}`}
             className="border-b border-r bg-muted/40 px-1.5 py-1.5 text-center text-[11px] font-medium text-muted-foreground"
           >
-            {WEEKDAYS[dow]}
+            {label}
           </div>
         ))}
       </div>
@@ -452,15 +462,17 @@ export function PracticeRecentTransfersCalendar({
             ymd,
             dow: kstYmdWeekday(ymd) ?? 0,
           }));
-          const visibleCells = cells.filter((cell) => !hidden.has(cell.dow));
+          const visibleCells = visibleDows
+            .map((dow) => cells.find((cell) => cell.dow === dow))
+            .filter((cell): cell is DayCell => cell != null);
           return (
             <div
               key={week[0]}
               ref={(node) => {
-                const monday = week[0];
-                if (!monday) return;
-                if (node) weekElsRef.current.set(monday, node);
-                else weekElsRef.current.delete(monday);
+                const weekStart = week[0];
+                if (!weekStart) return;
+                if (node) weekElsRef.current.set(weekStart, node);
+                else weekElsRef.current.delete(weekStart);
               }}
               className="grid items-stretch border-l"
               style={{
