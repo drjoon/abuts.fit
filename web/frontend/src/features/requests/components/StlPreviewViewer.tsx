@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-23: geometry 파서는 shared/files/modelPreviewFile.parseModelGeometry 공용.
 // - 2026-08-16: 리사이즈 시 카메라 FOV 재맞춤 — 모달 등에서 모델이 위로 치우치지 않게.
 // - 2026-08-11: 모델 확장자 판별을 shared/files/modelPreviewFile로 통일.
 // - 2026-08-11: forceFilled prop — cam 파일명에 filled 없어도 가이드/프론트포인트/경사축 표시.
@@ -15,54 +16,15 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
-import { PLYLoader } from "three/examples/jsm/loaders/PLYLoader.js";
-import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
-import {
-  mergeGeometries,
-  mergeVertices,
-} from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { Line2 } from "three/examples/jsm/lines/Line2.js";
 import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
+import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { cn } from "@/shared/ui/cn";
-import { getModelExtLower } from "@/shared/files/modelPreviewFile";
+import {
+  parseModelGeometry,
+} from "@/shared/files/modelPreviewFile";
 import { useStlMetadata, type StlMetadata } from "../hooks/useStlMetadata";
-
-const parseModelGeometry = async (file: File): Promise<THREE.BufferGeometry> => {
-  const buffer = await file.arrayBuffer();
-  const ext = getModelExtLower(file.name);
-
-  if (ext === ".ply") {
-    return new PLYLoader().parse(buffer);
-  }
-
-  if (ext === ".obj") {
-    const text = new TextDecoder().decode(buffer);
-    const group = new OBJLoader().parse(text);
-    group.updateMatrixWorld(true);
-    const parts: THREE.BufferGeometry[] = [];
-    group.traverse((child) => {
-      const mesh = child as THREE.Mesh;
-      if (!mesh.isMesh || !mesh.geometry) return;
-      const geo = mesh.geometry.clone();
-      geo.applyMatrix4(mesh.matrixWorld);
-      parts.push(geo);
-    });
-    if (parts.length === 0) {
-      throw new Error("OBJ에 표시할 메시가 없습니다.");
-    }
-    if (parts.length === 1) return parts[0]!;
-    const merged = mergeGeometries(parts, false);
-    if (!merged) {
-      throw new Error("OBJ 메시를 합치지 못했습니다.");
-    }
-    return merged;
-  }
-
-  // 기본: STL (확장자 없거나 .stl)
-  return new STLLoader().parse(buffer);
-};
 
 type Props = {
   file: File;

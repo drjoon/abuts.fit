@@ -11,6 +11,8 @@
 // - web/frontend/src/shared/files/modelPreviewFile.ts
 // - web/frontend/src/shared/files/downloadWithProgress.ts
 // - web/frontend/src/shared/files/s3BlobCache.ts
+// - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-08-23: 작업 파일 STL/PLY/OBJ 타일에 3D 썸네일 표시.
 // - 2026-08-21: 수락 바 — "치과 메시지 확인 후 수락" 안내 제거.
 // - 2026-08-21: 수락 바 — "커스텀 어벗 디자인은 수락 기공소가 진행" 문구 제거.
 // - 2026-08-21: 수락 바 — 작업취소를 업로드 CTA와 같은 버튼 행에 배치.
@@ -83,6 +85,7 @@ import {
   ORAL_SCAN_REQUIRED_FROM_PRACTICE,
 } from "@/shared/practice/oralScanRequirement";
 import { ModelPreviewDialog, type ModelPreviewKind } from "@/shared/components/ModelPreviewDialog";
+import { StlPreviewThumbnail } from "@/features/requests/components/StlPreviewThumbnail";
 import {
   fileFromModelBlob,
   getModelExtLower,
@@ -383,6 +386,11 @@ export function PracticeTransferDetailChatDialog({
     {},
   );
   const fileThumbUrlsRef = useRef<Record<string, string>>({});
+  /** STL/PLY/OBJ 썸네일용 File (s3Key → file) */
+  const [modelThumbFiles, setModelThumbFiles] = useState<Record<string, File>>(
+    {},
+  );
+  const modelThumbFilesRef = useRef<Record<string, File>>({});
 
   const collectImageThumbFiles = useCallback(() => {
     const out: PracticeTransferDialogFileItem[] = [];
@@ -410,12 +418,41 @@ export function PracticeTransferDetailChatDialog({
     return out;
   }, [designFiles, files, requestFilesDownloadLocked, resultFiles]);
 
+  const collectModelThumbFiles = useCallback(() => {
+    const out: PracticeTransferDialogFileItem[] = [];
+    const seen = new Set<string>();
+    const append = (
+      list: PracticeTransferDialogFileItem[] | undefined,
+      locked: boolean,
+    ) => {
+      if (locked) return;
+      for (const file of Array.isArray(list) ? list : []) {
+        const s3Key = String(file.s3Key || "").trim();
+        if (!s3Key || seen.has(s3Key)) continue;
+        if (!isModelPreviewExt(getModelExtLower(file.fileName))) continue;
+        seen.add(s3Key);
+        out.push(file);
+      }
+    };
+    append(files, requestFilesDownloadLocked);
+    append(designFiles, false);
+    append(resultFiles, false);
+    return out;
+  }, [designFiles, files, requestFilesDownloadLocked, resultFiles]);
+
   const fileImageThumbKey = useMemo(() => {
     if (!open) return "";
     return collectImageThumbFiles()
       .map((file) => String(file.s3Key || "").trim())
       .join("|");
   }, [collectImageThumbFiles, open]);
+
+  const fileModelThumbKey = useMemo(() => {
+    if (!open) return "";
+    return collectModelThumbFiles()
+      .map((file) => String(file.s3Key || "").trim())
+      .join("|");
+  }, [collectModelThumbFiles, open]);
 
   const revokeFileThumbs = useCallback(() => {
     for (const url of Object.values(fileThumbUrlsRef.current)) {
@@ -427,6 +464,11 @@ export function PracticeTransferDetailChatDialog({
     }
     fileThumbUrlsRef.current = {};
     setFileThumbUrls({});
+  }, []);
+
+  const clearModelThumbs = useCallback(() => {
+    modelThumbFilesRef.current = {};
+    setModelThumbFiles({});
   }, []);
 
   useEffect(() => {
@@ -498,6 +540,58 @@ export function PracticeTransferDetailChatDialog({
     collectImageThumbFiles,
     fileImageThumbKey,
     revokeFileThumbs,
+  ]);
+
+  useEffect(() => {
+    if (!fileModelThumbKey || !authToken) {
+      clearModelThumbs();
+      return;
+    }
+    const modelFiles = collectModelThumbFiles();
+    if (!modelFiles.length) {
+      clearModelThumbs();
+      return;
+    }
+
+    const ac = new AbortController();
+    let cancelled = false;
+
+    void (async () => {
+      const next: Record<string, File> = {};
+      for (const file of modelFiles) {
+        if (cancelled || ac.signal.aborted) return;
+        const s3Key = String(file.s3Key || "").trim();
+        const fileName =
+          String(file.fileName || "model.stl").trim() || "model.stl";
+        try {
+          const blob = await fetchS3BlobCached({
+            s3Key,
+            fileName,
+            token: authToken,
+            buildUrl: buildS3ProxyDownloadUrl,
+            signal: ac.signal,
+          });
+          if (cancelled || ac.signal.aborted) return;
+          next[s3Key] = fileFromModelBlob(blob, fileName);
+        } catch {
+          // 썸네일 실패 시 Box placeholder
+        }
+      }
+      if (cancelled || ac.signal.aborted) return;
+      modelThumbFilesRef.current = next;
+      setModelThumbFiles(next);
+    })();
+
+    return () => {
+      cancelled = true;
+      ac.abort();
+      clearModelThumbs();
+    };
+  }, [
+    authToken,
+    clearModelThumbs,
+    collectModelThumbFiles,
+    fileModelThumbKey,
   ]);
 
   const previewableFiles = useMemo(() => {
@@ -853,6 +947,7 @@ export function PracticeTransferDetailChatDialog({
       getPracticeTransferFileExtension(file.fileName),
     );
     const thumbUrl = busyKey ? fileThumbUrls[busyKey] : undefined;
+    const modelThumbFile = busyKey ? modelThumbFiles[busyKey] : undefined;
     const typeLabel = fileTypeLabel(file.fileName);
     const title = locked
       ? requestFilesDownloadLockedReason
@@ -875,7 +970,12 @@ export function PracticeTransferDetailChatDialog({
           className="flex w-full flex-col items-stretch text-left disabled:opacity-60 disabled:pointer-events-none"
         >
           <div className="relative aspect-square w-full overflow-hidden bg-slate-100">
-            {isImage && thumbUrl ? (
+            {isMesh && modelThumbFile ? (
+              <StlPreviewThumbnail
+                file={modelThumbFile}
+                className="pointer-events-none"
+              />
+            ) : isImage && thumbUrl ? (
               <img
                 src={thumbUrl}
                 alt=""
