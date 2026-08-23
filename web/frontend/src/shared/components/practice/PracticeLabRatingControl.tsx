@@ -9,6 +9,8 @@
 // - 2026-08-16: 치과·기공소 쌍당 1건·재평가 덮어쓰기 안내.
 // - 2026-08-19: 자동매칭 제거. 안내는 별점·쌍당 1회·재평가만.
 // - 2026-08-23: 1점=검색 가능·주문 불가 툴팁(지정·하청 수행 동일).
+// - 2026-08-23: 평가 모달 폭·메모 높이 확대, 안내 1줄 축약.
+// - 2026-08-23: 1점 시 툴팁 대신 버튼 왼쪽「1점 기공소 주문 제한」표시.
 import { useEffect, useState, type MouseEvent } from "react";
 import { Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -22,11 +24,6 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { useToast } from "@/shared/hooks/use-toast";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -41,13 +38,10 @@ import {
 } from "@/shared/practice/practiceLabRating";
 import { cn } from "@/shared/ui/cn";
 
-const DIALOG_DESCRIPTION_LINES = [
-  "실제 작업한 기공소에 반영됩니다. 치과당 1회, 재평가 시 덮어씁니다.",
-  "별점은 기공소에 공개, 메모는 우리 치과만 볼 수 있습니다.",
-] as const;
+const DIALOG_DESCRIPTION =
+  "별점 공개 · 메모 비공개 · 치과당 1회(재평가 시 덮어씀)";
 
-const RATING_BUTTON_TOOLTIP =
-  "1점이면 검색은 되지만 우리 치과에서는 주문할 수 없습니다. 지정·어벗츠 하청 수행 기공소 모두 동일합니다.";
+const ONE_STAR_INLINE_HINT = "1점 기공소 주문 제한";
 
 type PracticeLabRatingControlProps = {
   transferMongoId: string;
@@ -197,35 +191,37 @@ export function PracticeLabRatingControl({
   const buttonSizeClass =
     size === "xs" ? "h-6 px-2 text-[11px]" : "h-7 px-2.5 text-xs";
   const active = Boolean(current?.stars);
+  const isOneStar = current?.stars === 1;
 
   return (
     <>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span className="inline-flex" onPointerDown={onTriggerPointerDown}>
-            <Button
-              type="button"
-              variant={active ? "default" : "outline"}
-              size="sm"
-              className={cn(buttonSizeClass, "gap-1", className)}
-              aria-label={
-                active ? `기공소 ${current?.stars}점` : "기공소 평가"
-              }
-              onClick={() => setOpen(true)}
-            >
-              <Star className="h-3.5 w-3.5 fill-current" />
-              {active ? `${current?.stars}점` : "평가"}
-            </Button>
+      <span
+        className="inline-flex items-center gap-1.5"
+        onPointerDown={onTriggerPointerDown}
+      >
+        {isOneStar ? (
+          <span className="text-[11px] font-medium text-rose-600">
+            {ONE_STAR_INLINE_HINT}
           </span>
-        </TooltipTrigger>
-        <TooltipContent side="bottom" className="max-w-xs text-xs">
-          {RATING_BUTTON_TOOLTIP}
-        </TooltipContent>
-      </Tooltip>
+        ) : null}
+        <Button
+          type="button"
+          variant={active ? "default" : "outline"}
+          size="sm"
+          className={cn(buttonSizeClass, "gap-1", className)}
+          aria-label={
+            active ? `기공소 ${current?.stars}점` : "기공소 평가"
+          }
+          onClick={() => setOpen(true)}
+        >
+          <Star className="h-3.5 w-3.5 fill-current" />
+          {active ? `${current?.stars}점` : "평가"}
+        </Button>
+      </span>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent
-          className="max-h-[90vh] w-[calc(100%-1.5rem)] gap-5 overflow-y-auto p-0 sm:max-w-md sm:rounded-2xl"
+          className="max-h-[90vh] w-[calc(100%-1.5rem)] gap-5 overflow-y-auto p-0 sm:max-w-xl sm:rounded-2xl"
           onClick={(event) => event.stopPropagation()}
           onPointerDown={(event) => event.stopPropagation()}
         >
@@ -235,9 +231,7 @@ export function PracticeLabRatingControl({
                 기공소 평가
               </DialogTitle>
               <DialogDescription className="text-sm text-slate-500">
-                {DIALOG_DESCRIPTION_LINES[0]}
-                <br />
-                {DIALOG_DESCRIPTION_LINES[1]}
+                {DIALOG_DESCRIPTION}
               </DialogDescription>
             </DialogHeader>
           </div>
@@ -261,7 +255,7 @@ export function PracticeLabRatingControl({
                 value={draftMemo}
                 maxLength={PRACTICE_LAB_RATING_MEMO_MAX}
                 placeholder="내부 메모 (선택)"
-                className="min-h-[96px] resize-y rounded-lg border-slate-200 bg-white shadow-none focus-visible:ring-slate-300"
+                className="min-h-[180px] resize-y rounded-lg border-slate-200 bg-white shadow-none focus-visible:ring-slate-300"
                 onChange={(e) => setDraftMemo(e.target.value)}
               />
               <div className="text-right text-[11px] tabular-nums text-slate-400">
