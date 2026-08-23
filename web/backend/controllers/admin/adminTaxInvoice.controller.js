@@ -8,6 +8,7 @@ import {
   buildTaxinvoiceObject,
   registIssueInvoice,
   cancelIssuedInvoice,
+  getTaxinvoiceInfo,
 } from "../../utils/popbill.util.js";
 import { verifyBusinessNumber } from "../../services/hometax.service.js";
 
@@ -57,11 +58,20 @@ export async function adminGetTaxInvoiceStats(req, res) {
     ) {
       return res.json({ success: true, data: {} });
     }
-    const agg = await TaxInvoiceDraft.aggregate([
-      { $group: { _id: "$status", count: { $sum: 1 } } },
+    const [byStatus, reverseSent] = await Promise.all([
+      TaxInvoiceDraft.aggregate([
+        {
+          $match: {
+            $or: [{ kind: { $exists: false } }, { kind: "NORMAL" }],
+          },
+        },
+        { $group: { _id: "$status", count: { $sum: 1 } } },
+      ]),
+      TaxInvoiceDraft.countDocuments({ kind: "REVERSE", status: "SENT" }),
     ]);
     const data = {};
-    for (const row of agg) data[row._id] = row.count;
+    for (const row of byStatus) data[row._id] = row.count;
+    data.REVERSE_SENT = reverseSent;
     return res.json({ success: true, data });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
@@ -82,6 +92,7 @@ export async function adminListTaxInvoiceDrafts(req, res) {
   const search = String(req.query.search || "").trim();
   const direction = String(req.query.direction || "").trim().toUpperCase();
   const taxType = String(req.query.taxType || "").trim();
+  const kind = String(req.query.kind || "").trim().toUpperCase();
   const from = req.query.from ? new Date(req.query.from) : null;
   const to = req.query.to ? new Date(req.query.to) : null;
 
@@ -108,6 +119,20 @@ export async function adminListTaxInvoiceDrafts(req, res) {
   }
   if (["과세", "면세"].includes(taxType)) {
     match.taxType = taxType;
+  }
+  if (kind === "REVERSE") {
+    match.kind = "REVERSE";
+  } else if (kind === "NORMAL") {
+    match.$and = [
+      ...(match.$and || []),
+      { $or: [{ kind: { $exists: false } }, { kind: "NORMAL" }] },
+    ];
+  } else if (status === "SENT" && !kind) {
+    // 발행완료 기본: 원본(NORMAL)만. 마이너스는 kind=REVERSE 탭에서.
+    match.$and = [
+      ...(match.$and || []),
+      { $or: [{ kind: { $exists: false } }, { kind: "NORMAL" }] },
+    ];
   }
 
   if (from || to) {
@@ -189,64 +214,227 @@ export async function adminCancelTaxInvoiceDraft(req, res) {
   if (!draft)
     return res.status(404).json({ success: false, message: "not_found" });
 
-  if (String(draft.status) === "SENT") {
-    const corpNum = (process.env.POPBILL_CORP_NUM || "").replace(/-/g, "");
-    if (!corpNum) {
-      return res.status(500).json({
-        success: false,
-        message: "POPBILL_CORP_NUM 환경변수가 설정되지 않았습니다.",
-      });
-    }
-    const mgtKey = String(id).slice(0, 24);
+  // 미발행 초안만 CANCELLED로 폐기. SENT는 원본 유지 + 마이너스(REVERSE) 발행.
+  if (String(draft.status) !== "SENT") {
+    await TaxInvoiceDraft.updateOne(
+      { _id: id, status: { $nin: ["SENT"] } },
+      { $set: { status: "CANCELLED" } },
+    );
+    await writeAuditLog({
+      req,
+      action: "TAX_INVOICE_DRAFT_CANCEL",
+      refType: "TaxInvoiceDraft",
+      refId: id,
+      details: null,
+    });
+    const updated = await TaxInvoiceDraft.findById(id).lean();
+    return res.json({ success: true, data: updated });
+  }
+
+  if (draft.kind === "REVERSE") {
+    return res.status(400).json({
+      success: false,
+      message: "마이너스 발행 건은 다시 취소할 수 없습니다.",
+    });
+  }
+  if (draft.reversedByDraftId) {
+    const existing = await TaxInvoiceDraft.findById(
+      draft.reversedByDraftId,
+    ).lean();
+    return res.json({
+      success: true,
+      message: "이미 마이너스 발행이 연결되어 있습니다.",
+      data: draft,
+      reverse: existing,
+    });
+  }
+
+  const corpNum = (process.env.POPBILL_CORP_NUM || "").replace(/-/g, "");
+  if (!corpNum) {
+    return res.status(500).json({
+      success: false,
+      message: "POPBILL_CORP_NUM 환경변수가 설정되지 않았습니다.",
+    });
+  }
+
+  const mgtKeyType = draft.issuanceMode === "TRUSTEE" ? "TRUSTEE" : "SELL";
+  const mgtKey = String(id).slice(0, 24);
+
+  let popbillInfo = null;
+  try {
+    popbillInfo = await getTaxinvoiceInfo({ corpNum, mgtKey, mgtKeyType });
+  } catch {
+    popbillInfo = null;
+  }
+
+  const stateCode = Number(popbillInfo?.stateCode || 0);
+  const ntsConfirmNum =
+    String(
+      popbillInfo?.ntsconfirmNum ||
+        popbillInfo?.NTSConfirmNum ||
+        draft.ntsConfirmNum ||
+        "",
+    ).trim() || null;
+
+  if (ntsConfirmNum && !draft.ntsConfirmNum) {
+    await TaxInvoiceDraft.updateOne({ _id: id }, { $set: { ntsConfirmNum } });
+  }
+
+  // 발행완료·미전송(300): cancelIssue로 원본 CANCELLED 가능
+  if (stateCode === 300) {
     try {
-      await cancelIssuedInvoice({
-        corpNum,
-        mgtKey,
-        mgtKeyType:
-          draft.issuanceMode === "TRUSTEE" ? "TRUSTEE" : "SELL",
-      });
+      await cancelIssuedInvoice({ corpNum, mgtKey, mgtKeyType });
     } catch (popbillError) {
       const errMsg =
         popbillError?.ErrMsg || popbillError?.message || String(popbillError);
       return res.status(422).json({
         success: false,
-        message: `팝빌 취소 실패: ${errMsg}`,
+        message: `팝빌 발행취소 실패: ${errMsg}`,
       });
     }
     await TaxInvoiceDraft.updateOne(
       { _id: id },
-      { $set: { status: "CANCELLED" } },
+      {
+        $set: {
+          status: "CANCELLED",
+          ntsConfirmNum: ntsConfirmNum || draft.ntsConfirmNum,
+        },
+      },
     );
     await writeAuditLog({
       req,
       action: "TAX_INVOICE_CANCELLED",
       refType: "TaxInvoiceDraft",
       refId: id,
-      details: { mgtKey, via: "cancel_issued" },
+      details: { mgtKey, via: "cancel_issue", stateCode },
     });
     const cancelledDraft = await TaxInvoiceDraft.findById(id).lean();
     return res.json({
       success: true,
-      message: "발행된 세금계산서가 취소되었습니다.",
+      message: "발행취소 완료(전송 전).",
       data: cancelledDraft,
     });
   }
 
+  // 전송성공(304) 등: 원본 SENT 유지 + 마이너스 REVERSE draft 발행
+  const memo = String(req.body?.memo || "데모/계약의 해제").trim();
+  const now = new Date();
+  const reverseDraft = await TaxInvoiceDraft.create({
+    chargeOrderId: null, // unique index — reverse must not share chargeOrderId
+    userId: draft.userId || null,
+    businessAnchorId: draft.businessAnchorId || null,
+    direction: draft.direction || "ABUTS_TO_CUSTOMER",
+    issuanceMode: draft.issuanceMode || "SELF",
+    taxType: draft.taxType === "과세" ? "과세" : "면세",
+    kind: "REVERSE",
+    reversesDraftId: draft._id,
+    modifyCode: "4",
+    orgNtsConfirmNum: ntsConfirmNum,
+    sellerAnchorId: draft.sellerAnchorId || null,
+    seller: draft.seller || undefined,
+    writeDate: now.toISOString().slice(0, 10).replace(/-/g, ""),
+    status: "APPROVED",
+    approvedAt: now,
+    supplyAmount: -Math.abs(Number(draft.supplyAmount) || 0),
+    vatAmount: -Math.abs(Number(draft.vatAmount) || 0),
+    totalAmount: -Math.abs(Number(draft.totalAmount) || 0),
+    itemName: `${draft.itemName || "항목"} (마이너스)`,
+    buyer: draft.buyer || {},
+    sourceRefType: "TaxInvoiceDraft",
+    sourceRefIds: [draft._id],
+  });
+
+  const reverseMgtKey = String(reverseDraft._id).slice(0, 24);
+  const taxinvoice = buildTaxinvoiceObject({
+    draft: reverseDraft.toObject(),
+    mgtKey: reverseMgtKey,
+  });
+
+  let response;
+  try {
+    response = await registIssueInvoice({ corpNum, taxinvoice });
+  } catch (popbillError) {
+    const errMsg =
+      popbillError?.ErrMsg || popbillError?.message || String(popbillError);
+    await TaxInvoiceDraft.updateOne(
+      { _id: reverseDraft._id },
+      {
+        $set: {
+          status: "FAILED",
+          failReason: `[팝빌 오류] ${errMsg}`,
+          lastAttemptAt: now,
+        },
+        $inc: { attemptCount: 1 },
+      },
+    );
+    await writeAuditLog({
+      req,
+      action: "TAX_INVOICE_REVERSE_FAILED",
+      refType: "TaxInvoiceDraft",
+      refId: reverseDraft._id,
+      details: { error: errMsg, originalId: id },
+    });
+    return res.status(422).json({
+      success: false,
+      message: `마이너스 발행 실패: ${errMsg}`,
+      reverseId: reverseDraft._id,
+    });
+  }
+
+  const trxID = response?.trxID || response?.TrxID || reverseMgtKey;
+  const reverseNts =
+    response?.ntsConfirmNum || response?.NTSConfirmNum || null;
+
   await TaxInvoiceDraft.updateOne(
-    { _id: id, status: { $nin: ["SENT"] } },
-    { $set: { status: "CANCELLED" } },
+    { _id: reverseDraft._id },
+    {
+      $set: {
+        status: "SENT",
+        hometaxTrxId: trxID,
+        ntsConfirmNum: reverseNts,
+        sentAt: now,
+        failReason: null,
+        lastAttemptAt: now,
+      },
+      $inc: { attemptCount: 1 },
+    },
+  );
+  await TaxInvoiceDraft.updateOne(
+    { _id: id },
+    {
+      $set: {
+        reversedByDraftId: reverseDraft._id,
+        ntsConfirmNum: ntsConfirmNum || draft.ntsConfirmNum,
+      },
+    },
   );
 
   await writeAuditLog({
     req,
-    action: "TAX_INVOICE_DRAFT_CANCEL",
+    action: "TAX_INVOICE_REVERSED",
     refType: "TaxInvoiceDraft",
     refId: id,
-    details: null,
+    details: {
+      reverseId: reverseDraft._id,
+      reverseMgtKey,
+      trxID,
+      memo,
+      stateCode,
+      orgNtsConfirmNum: ntsConfirmNum,
+    },
   });
 
-  const updated = await TaxInvoiceDraft.findById(id).lean();
-  return res.json({ success: true, data: updated });
+  const [original, reverse] = await Promise.all([
+    TaxInvoiceDraft.findById(id).lean(),
+    TaxInvoiceDraft.findById(reverseDraft._id).lean(),
+  ]);
+
+  return res.json({
+    success: true,
+    message: "마이너스 발행 완료. 원본 발행완료는 유지됩니다.",
+    data: original,
+    reverse,
+  });
 }
 
 export async function adminIssueTaxInvoice(req, res) {

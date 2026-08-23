@@ -11,6 +11,11 @@ import {
   getStoreCategoryForProduct,
   getStoreProductById,
 } from "@/shared/store/storeCatalog";
+import {
+  STORE_PRICE_TAX_NOTE,
+  splitInclusiveVat,
+} from "@/shared/tax/invoiceLabels";
+import { formatWonWithUnit } from "@/shared/settlement/affiliateVat";
 
 export default function RequestorStoreProductPage() {
   const { productId } = useParams<{ productId: string }>();
@@ -97,6 +102,29 @@ export default function RequestorStoreProductPage() {
                 {product.name}
               </h1>
               <p className="text-sm text-muted-foreground">{product.blurb}</p>
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <Badge variant="outline" className="font-normal">
+                  {STORE_PRICE_TAX_NOTE}
+                </Badge>
+                {product.listPriceInclusive != null ? (
+                  <span className="text-lg font-semibold tabular-nums">
+                    {formatWonWithUnit(product.listPriceInclusive)}
+                  </span>
+                ) : null}
+              </div>
+              {product.listPriceInclusive != null &&
+              product.listPriceInclusive > 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  공급{" "}
+                  {formatWonWithUnit(
+                    splitInclusiveVat(product.listPriceInclusive).supply,
+                  )}{" "}
+                  · 세액{" "}
+                  {formatWonWithUnit(
+                    splitInclusiveVat(product.listPriceInclusive).vat,
+                  )}
+                </p>
+              ) : null}
             </header>
 
             {product.description ? (

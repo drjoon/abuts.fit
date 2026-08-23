@@ -22,6 +22,13 @@ export type StoreProduct = {
   /** acrodent 상세 HTML에서 가져온 사용법·스펙 상세 이미지 */
   contentImages?: string[];
   specs?: StoreProductSpec[];
+  /**
+   * 스토어 기성품은 겸영 과세 매출(루트 rules.md §2.3).
+   * 고객 표시는 부가세 포함가.
+   */
+  taxType?: "과세" | "면세";
+  /** 부가세 포함 표시가(원). null이면 라벨만. */
+  listPriceInclusive?: number | null;
 };
 
 export type StoreCategory = {
@@ -287,9 +294,36 @@ export const STORE_SLIDES: StoreSlide[] = STORE_CATEGORIES.flatMap(
     })),
 );
 
+/** 스토어 전 상품 기본: 과세 · 부가세 포함가(데모 단가, 추후 관리 설정으로 교체). */
+const STORE_DEMO_INCLUSIVE_PRICES: Record<string, number> = {
+  "simple-abutment-2": 110_000,
+  "simple-healing-2": 55_000,
+  "bone-pen": 220_000,
+  "bone-pin": 88_000,
+  "check-pin": 165_000,
+  "bone-shaper": 132_000,
+  "gingival-shaper": 99_000,
+};
+
+function withStoreTaxDefaults(product: StoreProduct): StoreProduct {
+  return {
+    ...product,
+    taxType: product.taxType ?? "과세",
+    listPriceInclusive:
+      product.listPriceInclusive !== undefined
+        ? product.listPriceInclusive
+        : (STORE_DEMO_INCLUSIVE_PRICES[product.id] ?? null),
+  };
+}
+
 export const STORE_PRODUCTS: StoreProduct[] = STORE_CATEGORIES.flatMap(
-  (category) => category.products,
+  (category) => category.products.map(withStoreTaxDefaults),
 );
+
+// 카드 렌더용 카테고리 products에도 동일 기본값 적용
+for (const category of STORE_CATEGORIES) {
+  category.products = category.products.map(withStoreTaxDefaults);
+}
 
 export function getStoreProductById(productId: string | undefined) {
   if (!productId) return undefined;

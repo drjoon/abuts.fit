@@ -19,6 +19,8 @@ export const TAX_INVOICE_DIRECTIONS = [
 
 export const TAX_INVOICE_ISSUANCE_MODES = ["SELF", "TRUSTEE"];
 export const TAX_INVOICE_TAX_TYPES = ["과세", "면세"];
+/** NORMAL=일반 발행, REVERSE=마이너스(수정) 발행. 원본 SENT는 유지하고 REVERSE만 별도 문서. */
+export const TAX_INVOICE_KINDS = ["NORMAL", "REVERSE"];
 
 const partySchema = {
   bizNo: { type: String, default: "" },
@@ -67,6 +69,32 @@ const TaxInvoiceDraftSchema = new mongoose.Schema(
       enum: TAX_INVOICE_TAX_TYPES,
       default: "면세",
     },
+    kind: {
+      type: String,
+      enum: TAX_INVOICE_KINDS,
+      default: "NORMAL",
+      index: true,
+    },
+    /** REVERSE만: 원본 draft */
+    reversesDraftId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "TaxInvoiceDraft",
+      default: null,
+      index: true,
+    },
+    /** NORMAL만: 연결된 마이너스 draft */
+    reversedByDraftId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "TaxInvoiceDraft",
+      default: null,
+      index: true,
+    },
+    /** 수정세금계산서 코드 (예: "4"=계약의 해제) */
+    modifyCode: { type: String, default: null },
+    /** 원본 국세청 승인번호 (REVERSE 발행 시) */
+    orgNtsConfirmNum: { type: String, default: null },
+    /** 팝빌/국세청 승인번호 (getInfo·발행 응답) */
+    ntsConfirmNum: { type: String, default: null },
     // 실제 공급자 앵커 (TRUSTEE일 때만 사용, SELF면 null=어벗츠 자신)
     sellerAnchorId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -113,8 +141,17 @@ const TaxInvoiceDraftSchema = new mongoose.Schema(
 );
 
 TaxInvoiceDraftSchema.index({ status: 1, updatedAt: -1 });
+TaxInvoiceDraftSchema.index({ kind: 1, status: 1, updatedAt: -1 });
 TaxInvoiceDraftSchema.index({ businessAnchorId: 1, createdAt: -1 });
 TaxInvoiceDraftSchema.index({ sellerAnchorId: 1, createdAt: -1 });
+// chargeOrder당 NORMAL 1건만. null(수동/REVERSE)은 다건 허용.
+TaxInvoiceDraftSchema.index(
+  { chargeOrderId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { chargeOrderId: { $type: "objectId" } },
+  },
+);
 // 같은 기간(월합계) 중복 생성 방지 — periodStart가 있는 문서에만 적용(부분 유니크 인덱스)
 TaxInvoiceDraftSchema.index(
   { sellerAnchorId: 1, businessAnchorId: 1, direction: 1, periodStart: 1, periodEnd: 1 },

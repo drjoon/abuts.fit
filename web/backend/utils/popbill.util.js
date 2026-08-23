@@ -450,7 +450,33 @@ export const buildTaxinvoiceObject = ({
     taxinvoice.trusteeBizClass = trustee.bizClass;
   }
 
+  // 수정(마이너스) 세금계산서/계산서 — 계약의 해제 등
+  if (draft.modifyCode) {
+    taxinvoice.modifyCode = String(draft.modifyCode);
+  }
+  if (draft.orgNtsConfirmNum) {
+    taxinvoice.orgNTSConfirmNum = String(draft.orgNtsConfirmNum);
+  }
+
   return taxinvoice;
+};
+
+/** 팝빌 세금계산서 상태 조회 (stateCode: 300=발행완료, 304=전송성공, 600=발행취소). */
+export const getTaxinvoiceInfo = ({
+  corpNum,
+  mgtKey,
+  mgtKeyType = "SELL",
+}) => {
+  const cleanCorpNum = String(corpNum || "").replace(/-/g, "");
+  return new Promise((resolve, reject) => {
+    taxinvoiceService.getInfo(
+      cleanCorpNum,
+      mgtKeyType,
+      mgtKey,
+      (response) => resolve(response),
+      (error) => reject(error),
+    );
+  });
 };
 
 export const registIssueInvoice = ({ corpNum, taxinvoice }) => {

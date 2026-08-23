@@ -35,6 +35,13 @@ import {
   type BizVerifyResult,
 } from "@/shared/components/business/BizRegOcrUploader";
 
+import {
+  invoiceTaxTypeBadge,
+  toInclusiveVat,
+  type InvoiceTaxType,
+} from "@/shared/tax/invoiceLabels";
+import { LEDGER_TAX_LANE_NOTICE } from "@/shared/tax/ledgerTaxLanes";
+
 type DraftStatus =
   | "PENDING_APPROVAL"
   | "APPROVED"
@@ -51,6 +58,9 @@ type TaxInvoiceDraft = {
   direction?: "ABUTS_TO_CUSTOMER" | "LAB_TO_PRACTICE" | "AFFILIATE_TO_ABUTS";
   issuanceMode?: "SELF" | "TRUSTEE";
   taxType?: "과세" | "면세";
+  kind?: "NORMAL" | "REVERSE";
+  reversesDraftId?: string | null;
+  reversedByDraftId?: string | null;
   seller?: { corpName?: string; bizNo?: string };
   supplyAmount: number;
   vatAmount: number;
@@ -90,12 +100,15 @@ type EditForm = {
   totalAmount: string;
 };
 
-const STATUS_TABS: DraftStatus[] = ["SENT", "FAILED", "CANCELLED"];
+type ListTab = DraftStatus | "REVERSE";
 
-const STATUS_LABEL: Record<DraftStatus, string> = {
+const STATUS_TABS: ListTab[] = ["SENT", "REVERSE", "FAILED", "CANCELLED"];
+
+const STATUS_LABEL: Record<ListTab, string> = {
   PENDING_APPROVAL: "승인대기",
   APPROVED: "승인됨",
   SENT: "발행완료",
+  REVERSE: "마이너스 발행",
   FAILED: "발행실패",
   REJECTED: "반려",
   CANCELLED: "취소",
@@ -160,9 +173,9 @@ export const AdminTaxInvoices = () => {
   const { token } = useAuthStore();
   const { toast } = useToast();
 
-  const [tab, setTab] = useState<DraftStatus>("SENT");
+  const [tab, setTab] = useState<ListTab>("SENT");
   const [items, setItems] = useState<TaxInvoiceDraft[]>([]);
-  const [stats, setStats] = useState<Partial<Record<DraftStatus, number>>>({});
+  const [stats, setStats] = useState<Partial<Record<ListTab, number>>>({});
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -205,6 +218,7 @@ export const AdminTaxInvoices = () => {
     totalAmount: "",
     writeDate: new Date().toISOString().slice(0, 10),
     itemName: "서비스 이용료",
+    taxType: "면세" as InvoiceTaxType,
   });
   const [bizVerified, setBizVerified] = useState<BizVerifyResult | null>(null);
 
@@ -223,7 +237,13 @@ export const AdminTaxInvoices = () => {
         method: "GET",
         token,
       });
-      if (res.ok) setStats((res.data as any)?.data || {});
+      if (res.ok) {
+        const raw = (res.data as any)?.data || {};
+        setStats({
+          ...raw,
+          REVERSE: raw.REVERSE_SENT ?? raw.REVERSE ?? 0,
+        });
+      }
     } catch {}
   }, [token]);
 
@@ -231,7 +251,14 @@ export const AdminTaxInvoices = () => {
     if (!token) return;
     setLoading(true);
     try {
-      const qs = new URLSearchParams({ status: tab });
+      const qs = new URLSearchParams();
+      if (tab === "REVERSE") {
+        qs.set("kind", "REVERSE");
+        qs.set("status", "SENT");
+      } else {
+        qs.set("status", tab);
+        if (tab === "SENT") qs.set("kind", "NORMAL");
+      }
       if (debouncedSearch) qs.set("search", debouncedSearch);
       const res = await request<any>({
         path: `/api/admin/tax-invoices/drafts?${qs}`,
@@ -301,7 +328,7 @@ export const AdminTaxInvoices = () => {
           return;
         }
         const msgMap: Record<string, string> = {
-          cancel: "취소 처리됨",
+          cancel: "마이너스 발행/취소 처리됨",
           issue: "팝빌 발행 완료",
         };
         toast({ title: msgMap[action] || "처리 완료", duration: 3000 });
@@ -399,6 +426,7 @@ export const AdminTaxInvoices = () => {
       totalAmount: "",
       writeDate: new Date().toISOString().slice(0, 10),
       itemName: "서비스 이용료",
+      taxType: "면세",
     });
     setBizVerified(null);
     setManualInputMode("ocr");
@@ -467,6 +495,7 @@ export const AdminTaxInvoices = () => {
           totalAmount: Number(issueForm.totalAmount) || 0,
           writeDate: issueForm.writeDate,
           itemName: issueForm.itemName,
+          taxType: issueForm.taxType,
         },
       });
       if (!res.ok) {
@@ -479,7 +508,7 @@ export const AdminTaxInvoices = () => {
         });
         return;
       }
-      toast({ title: "세금계산서 발행 완료", duration: 3000 });
+      toast({ title: "(세금)계산서 발행 완료", duration: 3000 });
       setManualOpen(false);
       resetIssueForm();
       await reload();
@@ -496,7 +525,7 @@ export const AdminTaxInvoices = () => {
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h2 className="text-sm font-semibold flex items-center gap-2">
           <FileText className="h-4 w-4" />
-          세금계산서 관리
+          (세금)계산서 관리
         </h2>
         <div className="flex gap-2">
           <Button
@@ -513,8 +542,13 @@ export const AdminTaxInvoices = () => {
         </div>
       </div>
 
+      <p className="text-xs text-muted-foreground leading-relaxed">
+        {LEDGER_TAX_LANE_NOTICE} 발행완료 원본은 유지하고, 상계는「마이너스 발행」탭의
+        REVERSE 문서로 남깁니다.
+      </p>
+
       {/* Stats bar */}
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         {STATUS_TABS.map((s) => (
           <button
             key={s}
@@ -549,7 +583,7 @@ export const AdminTaxInvoices = () => {
       </div>
 
       {/* Status Tabs */}
-      <Tabs value={tab} onValueChange={(v) => setTab(v as DraftStatus)}>
+      <Tabs value={tab} onValueChange={(v) => setTab(v as ListTab)}>
         <TabsList className="flex flex-wrap h-auto gap-0.5">
           {STATUS_TABS.map((s) => (
             <TabsTrigger key={s} value={s} className="text-xs px-3 py-1.5">
@@ -598,7 +632,7 @@ export const AdminTaxInvoices = () => {
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>세금계산서 정보 수정</DialogTitle>
+            <DialogTitle>(세금)계산서 정보 수정</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
@@ -699,7 +733,7 @@ export const AdminTaxInvoices = () => {
           <div className="flex items-center justify-between px-5 py-4 border-b">
             <DialogTitle className="flex items-center gap-2 text-sm font-semibold">
               <FileText className="h-4 w-4 text-muted-foreground" />
-              세금계산서 직접 발행
+              (세금)계산서 직접 발행
             </DialogTitle>
             {/* Mode toggle – segmented control */}
             <div className="flex items-center rounded-md border bg-muted p-0.5 gap-0.5">
@@ -824,6 +858,37 @@ export const AdminTaxInvoices = () => {
               <p className="text-[11px] font-semibold text-muted-foreground">
                 금액
               </p>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">과세 구분</Label>
+                <select
+                  className="flex h-8 w-full rounded-md border border-input bg-background px-2 text-sm"
+                  value={issueForm.taxType}
+                  onChange={(e) => {
+                    const taxType = e.target.value as InvoiceTaxType;
+                    setIssueForm((f) => {
+                      const supply = Number(f.supplyAmount) || 0;
+                      if (taxType === "과세" && supply > 0) {
+                        const split = toInclusiveVat(supply);
+                        return {
+                          ...f,
+                          taxType,
+                          vatAmount: String(split.vat),
+                          totalAmount: String(split.total),
+                        };
+                      }
+                      return {
+                        ...f,
+                        taxType,
+                        vatAmount: "0",
+                        totalAmount: f.supplyAmount || "0",
+                      };
+                    });
+                  }}
+                >
+                  <option value="면세">면세 · 계산서</option>
+                  <option value="과세">과세 · 세금계산서</option>
+                </select>
+              </div>
               <div className="grid grid-cols-3 gap-x-3 gap-y-2.5">
                 <div className="space-y-1">
                   <Label className="text-xs text-muted-foreground">
@@ -834,20 +899,32 @@ export const AdminTaxInvoices = () => {
                     placeholder="0"
                     value={issueForm.supplyAmount}
                     onChange={(e) => {
-                      const sup = Number(e.target.value) || 0;
-                      setIssueForm((f) => ({
-                        ...f,
-                        supplyAmount: e.target.value,
-                        vatAmount: "0",
-                        totalAmount: String(sup),
-                      }));
+                      const supplyAmount = e.target.value;
+                      const supply = Number(supplyAmount) || 0;
+                      setIssueForm((f) => {
+                        if (f.taxType === "과세" && supply > 0) {
+                          const split = toInclusiveVat(supply);
+                          return {
+                            ...f,
+                            supplyAmount,
+                            vatAmount: String(split.vat),
+                            totalAmount: String(split.total),
+                          };
+                        }
+                        return {
+                          ...f,
+                          supplyAmount,
+                          vatAmount: "0",
+                          totalAmount: supplyAmount,
+                        };
+                      });
                     }}
                     className="h-8 text-sm placeholder:text-slate-300"
                   />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs text-muted-foreground">
-                    세액 (면세 기본 0)
+                    세액 (과세 시 자동)
                   </Label>
                   <Input
                     type="number"
@@ -956,8 +1033,19 @@ function DraftCard({
             <div className="flex items-center gap-2 flex-wrap">
               <StatusBadge status={d.status} />
               <Badge variant="outline" className="text-xs">
-                {d.taxType || "면세"} · {d.issuanceMode === "TRUSTEE" ? "위수탁" : "정발행"}
+                {invoiceTaxTypeBadge(d.taxType)} ·{" "}
+                {d.issuanceMode === "TRUSTEE" ? "위수탁" : "정발행"}
               </Badge>
+              {d.kind === "REVERSE" && (
+                <Badge variant="secondary" className="text-xs">
+                  마이너스
+                </Badge>
+              )}
+              {d.reversedByDraftId && d.kind !== "REVERSE" && (
+                <Badge variant="secondary" className="text-xs">
+                  역발행됨
+                </Badge>
+              )}
               {d.buyer?.corpName ? (
                 <span className="text-sm font-medium truncate">
                   {d.buyer.corpName}
@@ -1037,7 +1125,9 @@ function DraftCard({
             </>
           )}
 
-          {d.status === "SENT" && (
+          {d.status === "SENT" &&
+            d.kind !== "REVERSE" &&
+            !d.reversedByDraftId && (
             <Button
               size="sm"
               variant="outline"
@@ -1045,7 +1135,7 @@ function DraftCard({
               disabled={isLoading}
               onClick={onCancel}
             >
-              발행취소
+              마이너스 발행
             </Button>
           )}
         </div>

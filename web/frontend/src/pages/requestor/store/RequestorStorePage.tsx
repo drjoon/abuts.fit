@@ -69,7 +69,9 @@ export default function RequestorStorePage() {
             </Badge>
           </div>
           <p className="text-sm text-muted-foreground">
-            Initial·Check·Gingival Kit과 Abutment 상품을 준비 중입니다.
+            Initial·Check·Gingival Kit과 Abutment 상품을 준비 중입니다. 스토어
+            기성품은 과세(부가세 포함가)이며, 커스텀어벗·크레딧 경로(면세)와
+            구분됩니다.
           </p>
         </header>
 

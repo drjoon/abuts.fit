@@ -440,10 +440,12 @@ Notes:
   - 관리자 크레딧 집계 카드는 `totalChargedFreeAmount`, `totalSpentFreeAmount` 또는
     `totalFreeRequest+totalFreeShipping`, `totalSpentFreeRequestAmount+totalSpentFreeShippingAmount`를 SSOT로 사용합니다.
 
-- 부가세(VAT) / 면세 UI 정책(강제, 루트 `rules.md` §2.3) — 이중 체계:
+- 부가세(VAT) / 면세 UI 정책(강제, 루트 `rules.md` §2.3) — 겸영 이중 체계:
   - **고객·기공 경로(면세)**: 가격·충전·약관에서 "VAT 별도 / 부가세 포함 / VAT 10%" 문구 금지. 증빙은 **계산서**.
+  - **스토어 기성품(과세)**: 고객 표시는 **부가세 포함가** + `과세 · 부가세 포함`. 증빙은 **세금계산서**. 커스텀어벗·크레딧 계산서와 합치지 않음. 헬퍼: `shared/tax/invoiceLabels.ts`.
   - **과세 지급**: 어벗츠↔딜러사, 어벗츠↔개발운영사. 지급 UI에 공급가·부가세·합계와 **세금계산서** 표시.
-  - **면세**: 치과·기공소·제조사·어벗츠. 공급가·**계산서**.
+  - **면세**: 치과·기공소·제조사·어벗츠(기공·커스텀어벗). 공급가·**계산서**.
+  - **관리자 (세금)계산서**: 과세/면세 라벨 구분, 마이너스 발행은 원본 SENT 유지 + REVERSE 탭. `AdminTaxInvoices.tsx`.
   - 공통 UI: `src/shared/settlement/settlementUi.tsx`, VAT 카피 `src/shared/settlement/affiliateVat.ts`
   - 크레딧 충전 UI: 결제·입금 금액 = 공급가. `vatAmount` 표시·가산 금지.
     화면 제목/안내: **크레딧(기공료 선입금)** — 선불페이(전자금융업)가 아니라 B2B 기공물 대금 선납임을 충전 화면·FAQ·약관에 명시.
