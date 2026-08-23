@@ -8,14 +8,14 @@ type ResponsiveTableShellProps = {
   minWidthClassName?: string;
 };
 
-/** Horizontally scrollable table wrapper for narrow viewports. */
+/** Horizontally scrollable table wrapper; scrollbar sits on top for mouse users. */
 export function ResponsiveTableShell({
   children,
   className,
   minWidthClassName = "min-w-[560px]",
 }: ResponsiveTableShellProps) {
   return (
-    <div className={cn("w-full min-w-0 overflow-x-auto", className)}>
+    <div className={cn("scroll-x-bar-top w-full min-w-0", className)}>
       <div className={cn("w-full", minWidthClassName)}>{children}</div>
     </div>
   );

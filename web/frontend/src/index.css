@@ -406,6 +406,21 @@ All colors MUST be HSL.
   -webkit-overflow-scrolling: touch;
 }
 
+/*
+ * Put the horizontal scrollbar on top of the overflow box (mouse-friendly).
+ * Children must be wrapped in a single element (or use HorizontalScrollTop).
+ */
+.scroll-x-bar-top {
+  overflow-x: auto;
+  overflow-y: hidden;
+  transform: rotateX(180deg);
+  -webkit-overflow-scrolling: touch;
+}
+
+.scroll-x-bar-top > * {
+  transform: rotateX(180deg);
+}
+
 .responsive-modal-md {
   width: min(560px, calc(100vw - 2rem));
   max-width: calc(100vw - 2rem);

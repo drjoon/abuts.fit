@@ -1574,7 +1574,7 @@ export const DashboardLayout = () => {
                           worksheetType === "custom_abutment") && (
                           <>
                             <div className="hidden sm:block h-8 w-px bg-muted-foreground/60 flex-shrink-0" />
-                            <div className="-mx-1 flex min-w-0 flex-nowrap gap-1 overflow-x-auto px-1 pb-0.5 text-xs [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                            <div className="scroll-x-bar-top -mx-1 flex min-w-0 flex-nowrap gap-1 px-1 text-xs">
                               <Button
                                 variant={
                                   worksheetStage === "request"
@@ -1762,7 +1762,7 @@ export const DashboardLayout = () => {
                     )}
                   >
                     <div
-                      className="custom-scrollbar flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overflow-x-auto"
+                      className="custom-scrollbar flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overflow-x-hidden"
                       data-dashboard-scroll="1"
                     >
                       <div

@@ -7,6 +7,7 @@
 // - web/backend/controllers/requests/shipping.controller.js
 // change-log:
 // - 2026-08-23: 세로 스크롤은 RequestPage에 위임, 선반은 가로 스크롤만.
+// - 2026-08-23: 가로 스크롤바를 상단 sticky로 옮겨 마우스 환경에서도 바로 조작 가능.
 import * as React from "react";
 
 import {
@@ -15,6 +16,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { HorizontalScrollTop } from "@/shared/ui/HorizontalScrollTop";
 import type { MailboxShippingDayInfo } from "./shippingDay.helpers";
 
 type MailboxPickupStatus =
@@ -74,8 +76,6 @@ export const MailboxShelfGrid = ({
   onBoxClick,
   onBoxPrefetch,
 }: MailboxShelfGridProps) => {
-  void scrollContainerRef;
-
   const buildTooltipLabel = ({
     address,
     isOccupied,
@@ -104,12 +104,12 @@ export const MailboxShelfGrid = ({
 
   return (
     <TooltipProvider>
-      <div
-        ref={scrollContainerRef}
-        className="flex w-full justify-start gap-3 overflow-x-auto scroll-smooth p-1 pb-4 sm:gap-4 sm:p-2"
-        style={{ scrollBehavior: "smooth", WebkitOverflowScrolling: "touch" }}
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}
+      <HorizontalScrollTop
+        bodyRef={scrollContainerRef}
+        stickyTopClassName="top-[var(--mailbox-sticky-h,0px)]"
+        bodyClassName="flex w-full justify-start gap-3 scroll-smooth p-1 pb-4 sm:gap-4 sm:p-2"
+        onBodyTouchStart={handleTouchStart}
+        onBodyTouchEnd={handleTouchEnd}
       >
         {allShelvesToShow.map((shelf) => (
           <div
@@ -326,7 +326,7 @@ export const MailboxShelfGrid = ({
             ))}
           </div>
         ))}
-      </div>
+      </HorizontalScrollTop>
     </TooltipProvider>
   );
 };

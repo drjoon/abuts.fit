@@ -138,7 +138,7 @@ export const SettingsScaffold = ({
             )}
           >
             {/* 모바일: 탭이 넘치면 수평 스크롤. 좌우 패딩으로 첫/끝 탭이 잘리지 않게. */}
-            <div className="min-w-0 overflow-x-auto overscroll-x-contain scroll-pl-1 scroll-pr-1 px-1 pb-1 sm:overflow-visible sm:px-0 sm:pb-0">
+            <div className="min-w-0 overscroll-x-contain scroll-pl-1 scroll-pr-1 px-1 scroll-x-bar-top sm:overflow-visible sm:px-0 sm:[transform:none] sm:[&>*]:[transform:none]">
               <TabsList
                 className={cn(
                   "inline-flex h-auto min-w-full w-max max-w-none justify-start gap-1.5 p-1.5 sm:flex sm:w-full sm:flex-wrap sm:justify-center",
