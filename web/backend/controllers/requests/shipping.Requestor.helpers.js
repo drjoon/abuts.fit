@@ -7,6 +7,7 @@
 // - web/backend/controllers/requests/common.requests.controller.js
 // - web/backend/models/bulkShippingSnapshot.model.js
 // change-log:
+// - 2026-08-23: 기존 shippingPackage 합류 시 businessAnchorId가 다르면 거부(칸 재사용 오염 방지).
 // - 2026-08-22: 집하 전 패키지 합류 조회에 작업용 샘플(requestCategory) 포함.
 // - 2026-08-21: 출고예정 스냅샷에 기공의뢰(PTX) 연동 플래그.
 // - 2026-08-19: 출고예정 스냅샷에 디자인SW·아노·생산모드·임플란트·최종출고방식.
@@ -167,10 +168,16 @@ export async function ensureShippingPackageForPickup({
     })
       .sort({ createdAt: 1 })
       .lean();
-    const canonicalPkg = Array.isArray(existingPkgs) ? existingPkgs[0] : null;
+    const canonicalPkg = Array.isArray(existingPkgs)
+      ? existingPkgs.find(
+          (row) =>
+            String(row?.businessAnchorId || "").trim() ===
+            String(businessAnchorId),
+        ) || null
+      : null;
     if (canonicalPkg?._id) {
       await ShippingPackage.updateOne(
-        { _id: canonicalPkg._id },
+        { _id: canonicalPkg._id, businessAnchorId },
         {
           $addToSet: {
             requestIds: { $each: list.map((request) => request._id) },
@@ -197,14 +204,17 @@ export async function ensureShippingPackageForPickup({
     const pendingPackageId = String(pendingCarrier?.shippingPackageId || "").trim();
     if (pendingPackageId) {
       await ShippingPackage.updateOne(
-        { _id: pendingPackageId },
+        { _id: pendingPackageId, businessAnchorId },
         {
           $addToSet: {
             requestIds: { $each: list.map((request) => request._id) },
           },
         },
       );
-      pkg = await ShippingPackage.findById(pendingPackageId);
+      pkg = await ShippingPackage.findOne({
+        _id: pendingPackageId,
+        businessAnchorId,
+      });
     }
   }
 

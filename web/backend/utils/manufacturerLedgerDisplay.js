@@ -3,6 +3,7 @@
 // - web/backend/services/creditRevenuePolicy.service.js
 // - web/frontend/src/pages/manufacturer/payments/PaymentsPage.tsx
 // change-log:
+// - 2026-08-23: 우편함 그룹 키에 BA 포함 — 같은 칸을 하루에 두 BA가 쓰면 제목이 덮이지 않음.
 // - 2026-08-23: 의뢰/배송 그룹 표기는 배송자 BA(requestor businessAnchor). clinicName은 건별 메타만.
 // - 2026-08-20: ADJUST는 KST 하루 1행으로 묶고, 클릭 상세는 의뢰별(중복 환불은 의뢰 합산).
 // - 2026-08-17: 기공소→치과 배송(practice_transfer_lab_shipping)은 제조사 원장에서 제외.
@@ -169,16 +170,21 @@ export function summarizeManufacturerLedgerPackage(doc = {}, requestsById) {
   const first = requestIds
     .map((id) => requestsById?.get?.(id) || null)
     .find(Boolean);
+  // 패키지 BA가 SSOT — 같은 칸을 다른 BA가 이어 써도 집하 시점 배송자와 맞춰 둔다.
+  const packageBaId = String(
+    doc?.businessAnchorId?._id || doc?.businessAnchorId || "",
+  ).trim();
+  const packageBaName = String(doc?.anchorName || "").trim();
   return {
     id: String(doc?._id || "").trim(),
     mailboxAddress: String(doc?.mailboxAddress || "")
       .trim()
       .toUpperCase(),
     requestIds,
-    recipientBusinessAnchorId: String(
-      first?.recipientBusinessAnchorId || "",
-    ).trim(),
-    recipientName: String(first?.recipientName || "").trim(),
+    recipientBusinessAnchorId:
+      packageBaId || String(first?.recipientBusinessAnchorId || "").trim(),
+    recipientName:
+      packageBaName || String(first?.recipientName || "").trim(),
   };
 }
 
@@ -190,8 +196,10 @@ function mailboxGroupKey(
   const mailbox = String(mailboxAddress || "")
     .trim()
     .toUpperCase();
-  if (mailbox) return `mb:${mailbox}`;
   const ba = String(recipientBusinessAnchorId || "").trim();
+  // 우편함은 집하 후 재사용된다. 같은 날·같은 칸·다른 BA가 섞이면 제목이 덮인다.
+  if (mailbox && ba) return `mb:${mailbox}:ba:${ba}`;
+  if (mailbox) return `mb:${mailbox}`;
   if (ba) return `ba:${ba}`;
   const recipient = String(recipientName || "").trim();
   if (recipient) return `rec:${recipient}`;

@@ -357,6 +357,137 @@ describe("manufacturerLedgerDisplay", () => {
     expect(grouped.every((r) => r.groupKind === "adjust-daily")).toBe(true);
   });
 
+  test("same mailbox on same day with different BAs stay separate groups", () => {
+    const uriBa = "111111111111111111111111";
+    const altoranBa = "222222222222222222222222";
+    const uriReqId = "aaaaaaaaaaaaaaaaaaaaaaaa";
+    const altoranReqId = "bbbbbbbbbbbbbbbbbbbbbbbb";
+    const uriPkgId = "cccccccccccccccccccccccc";
+    const altoranPkgId = "dddddddddddddddddddddddd";
+
+    const rows = [
+      {
+        _id: "prod-uri",
+        type: "EARN",
+        eventType: "REQUEST_SPEND_COMMIT",
+        amount: 8800,
+        creditKind: "PAID",
+        refType: "REQUEST",
+        refId: uriReqId,
+        uniqueKey: `request:${uriReqId}:machining_spend`,
+        occurredAt: "2026-08-21T08:30:00.000Z",
+      },
+      {
+        _id: "ship-uri",
+        type: "EARN",
+        eventType: "SHIPPING_SPEND_COMMIT",
+        amount: 3500,
+        creditKind: "FREE_SHIPPING",
+        refType: "SHIPPING_PACKAGE",
+        refId: uriPkgId,
+        uniqueKey: `shippingPackage:${uriPkgId}:shipping_fee`,
+        occurredAt: "2026-08-21T07:02:00.000Z",
+      },
+      {
+        _id: "ship-altoran",
+        type: "EARN",
+        eventType: "SHIPPING_SPEND_COMMIT",
+        amount: 3500,
+        creditKind: "FREE_SHIPPING",
+        refType: "SHIPPING_PACKAGE",
+        refId: altoranPkgId,
+        uniqueKey: `shippingPackage:${altoranPkgId}:shipping_fee`,
+        occurredAt: "2026-08-21T07:02:01.000Z",
+      },
+    ];
+
+    const requestsById = new Map([
+      [
+        uriReqId,
+        req({
+          _id: uriReqId,
+          requestId: "20260821-URI001",
+          mailboxAddress: "A1A1",
+          businessAnchorId: uriBa,
+          anchorName: "우리치과기공소",
+          caseInfos: {
+            clinicName: "향기로운",
+            patientName: "김환자",
+            tooth: "11",
+          },
+        }),
+      ],
+      [
+        altoranReqId,
+        req({
+          _id: altoranReqId,
+          requestId: "20260821-ALT001",
+          mailboxAddress: "A1A1",
+          businessAnchorId: altoranBa,
+          anchorName: "알토란치과기공소",
+          caseInfos: {
+            clinicName: "알토란기공소",
+            patientName: "석태임",
+            tooth: "26",
+          },
+        }),
+      ],
+    ]);
+
+    const packagesById = new Map([
+      [
+        uriPkgId,
+        {
+          id: uriPkgId,
+          mailboxAddress: "A1B1",
+          requestIds: [uriReqId],
+          recipientBusinessAnchorId: uriBa,
+          recipientName: "우리치과기공소",
+        },
+      ],
+      [
+        altoranPkgId,
+        {
+          id: altoranPkgId,
+          mailboxAddress: "A1A1",
+          requestIds: [altoranReqId],
+          recipientBusinessAnchorId: altoranBa,
+          recipientName: "알토란치과기공소",
+        },
+      ],
+    ]);
+
+    const grouped = groupManufacturerLedgerForDisplay(rows, {
+      requestsById,
+      packagesById,
+    });
+    expect(grouped).toHaveLength(1);
+    expect(grouped[0].shippingCount).toBe(2);
+    expect(grouped[0].shippingAmount).toBe(7000);
+
+    const shippingNames = grouped[0].mailboxGroups
+      .filter((g) => g.shippingCount > 0)
+      .map((g) => g.recipientName)
+      .sort();
+    expect(shippingNames).toEqual(["알토란치과기공소", "우리치과기공소"]);
+
+    const a1a1Altoran = grouped[0].mailboxGroups.find(
+      (g) =>
+        g.mailboxAddress === "A1A1" &&
+        g.recipientBusinessAnchorId === altoranBa,
+    );
+    expect(a1a1Altoran.recipientName).toBe("알토란치과기공소");
+    expect(a1a1Altoran.shippingAmount).toBe(3500);
+
+    const a1a1UriProd = grouped[0].mailboxGroups.find(
+      (g) =>
+        g.mailboxAddress === "A1A1" && g.recipientBusinessAnchorId === uriBa,
+    );
+    expect(a1a1UriProd.recipientName).toBe("우리치과기공소");
+    expect(a1a1UriProd.productionAmount).toBe(8800);
+    expect(a1a1UriProd.shippingAmount).toBe(0);
+  });
+
   test("mailbox groups fall back to recipient when mailbox is empty", () => {
     const groups = buildManufacturerMailboxGroups(
       [

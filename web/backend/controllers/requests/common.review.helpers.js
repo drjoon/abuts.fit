@@ -19,7 +19,9 @@
 // - 2026-08-17: 배송비 차감 SSOT를 집하(우편함 비우기)로 옮김. 포장.발송 진입은 우편함만 확인. 기공의뢰 어벗츠 배송도 집하.
 // - 2026-08-17: 세척.패킹→가공 롤백 시 우편함 유지, 가공→준비에서만 해제.
 // - 2026-08-17: 포장.발송 진입 시 기존 우편함을 유지(다른 박스 합류로 주소를 바꾸지 않음).
-// - 2026-08-18: 배송비 고객 라벨(치과/기공소→어벗츠)과 제조사 라벨(어벗츠→제조사, 면세) 분리.
+// - 2026-08-23: 집하 패키지 합류는 BA가 같을 때만. 칸 재사용으로 다른 BA가 requestIds에 섞이지 않게.
+// - 2026-08-23: 배송비 고객 라벨(치과/기공소→어벗츠, 면세)과 제조사 라벨(어벗츠→제조사, 과세) 분리.
+// - 2026-08-18: 배송비 고객 라벨과 제조사 라벨 분리.
 // - 2026-08-17: 제조사 적립은 어벗 1개당 고정단가. 분배비 미사용.
 import mongoose, { Types } from "mongoose";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
@@ -1752,6 +1754,58 @@ function resolveMailboxPickupPayerAnchorId(requests = []) {
   return "";
 }
 
+function resolveRequestBusinessAnchorId(request) {
+  return (
+    normalizeBusinessAnchorId(resolveShippingMailboxOrgId(request)) ||
+    normalizeBusinessAnchorId(
+      request?.businessAnchorId?._id || request?.businessAnchorId,
+    ) ||
+    ""
+  );
+}
+
+function pickMailboxPickupChargeableCohort(requests = []) {
+  const list = (Array.isArray(requests) ? requests : []).filter(Boolean);
+  const nonSample = list.filter(
+    (request) => !isManufacturerSampleRequest(request),
+  );
+  // 이미 집하·완료된 건은 칸 재사용 후 추적 동기화에 섞여도 패키지에 합류시키지 않는다.
+  const active = nonSample.filter((request) => {
+    const code = String(request?.shippingWorkflow?.code || "")
+      .trim()
+      .toLowerCase();
+    if (code === "completed" || code === "picked_up") return false;
+    return true;
+  });
+  // 이미 집하된 건만 있으면 재차감·타 BA 패키지 오염을 막기 위해 no-op.
+  if (!active.length) return [];
+  const pool = active;
+
+  const byBa = new Map();
+  for (const request of pool) {
+    const ba = resolveRequestBusinessAnchorId(request);
+    if (!ba) continue;
+    const bucket = byBa.get(ba) || [];
+    bucket.push(request);
+    byBa.set(ba, bucket);
+  }
+  if (!byBa.size) return pool;
+
+  let best = [];
+  for (const bucket of byBa.values()) {
+    if (bucket.length > best.length) best = bucket;
+  }
+  if (byBa.size > 1) {
+    console.warn("[SHIPPING_FEE] multi-BA mailbox cohort; using largest BA only", {
+      mailboxAddress: String(pool[0]?.mailboxAddress || "").trim() || null,
+      baCount: byBa.size,
+      chosenBa: resolveRequestBusinessAnchorId(best[0]) || null,
+      chosenCount: best.length,
+    });
+  }
+  return best;
+}
+
 // 타이밍 SSOT: 우편함 집하(비우기) 1회에 배송비 1회.
 export async function ensureShippingFeeSpendOnMailboxPickup({
   mailboxAddress,
@@ -1765,9 +1819,7 @@ export async function ensureShippingFeeSpendOnMailboxPickup({
   const list = (Array.isArray(requests) ? requests : []).filter(Boolean);
   if (!mailbox || !list.length) return null;
 
-  const chargeable = list.filter(
-    (request) => !isManufacturerSampleRequest(request),
-  );
+  const chargeable = pickMailboxPickupChargeableCohort(list);
   if (!chargeable.length) return null;
 
   const ptxHandled = await maybeConvertPtxAbutsShippingHolds({
@@ -1785,10 +1837,15 @@ export async function ensureShippingFeeSpendOnMailboxPickup({
 
   const payerAnchorId = resolveMailboxPickupPayerAnchorId(chargeable);
   const packageAnchorId =
-    normalizeBusinessAnchorId(resolveShippingMailboxOrgId(chargeable[0])) ||
-    payerAnchorId;
+    resolveRequestBusinessAnchorId(chargeable[0]) || payerAnchorId;
   if (!payerAnchorId || !Types.ObjectId.isValid(payerAnchorId)) {
     console.warn("[SHIPPING_FEE] pickup spend skipped (no payer)", {
+      mailboxAddress: mailbox,
+    });
+    return null;
+  }
+  if (!packageAnchorId || !Types.ObjectId.isValid(packageAnchorId)) {
+    console.warn("[SHIPPING_FEE] pickup spend skipped (no package BA)", {
       mailboxAddress: mailbox,
     });
     return null;
@@ -1810,13 +1867,30 @@ export async function ensureShippingFeeSpendOnMailboxPickup({
     existingPkgIds.push(raw);
   }
   if (existingPkgIds.length) {
-    pkg = await ShippingPackage.findById(existingPkgIds[0], null, { session });
+    const candidate = await ShippingPackage.findById(existingPkgIds[0], null, {
+      session,
+    });
+    const candidateBa = normalizeBusinessAnchorId(candidate?.businessAnchorId);
+    if (
+      candidate?._id &&
+      candidateBa &&
+      candidateBa === String(packageAnchorId)
+    ) {
+      pkg = candidate;
+    } else if (candidate?._id) {
+      console.warn("[SHIPPING_FEE] ignore existing package BA mismatch", {
+        mailboxAddress: mailbox,
+        packageId: String(candidate._id),
+        packageBa: candidateBa || null,
+        expectedBa: String(packageAnchorId),
+      });
+    }
   }
   if (!pkg?._id) {
     const created = await ShippingPackage.create(
       [
         {
-          businessAnchorId: packageAnchorId || payerAnchorId,
+          businessAnchorId: packageAnchorId,
           shipDateYmd,
           mailboxAddress: mailbox,
           shippingFeeSupply,
@@ -1830,7 +1904,7 @@ export async function ensureShippingFeeSpendOnMailboxPickup({
     pkg = created?.[0] || null;
   } else if (requestObjectIds.length) {
     await ShippingPackage.updateOne(
-      { _id: pkg._id },
+      { _id: pkg._id, businessAnchorId: packageAnchorId },
       { $addToSet: { requestIds: { $each: requestObjectIds } } },
       { session: session || undefined },
     );

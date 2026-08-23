@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-23: 원장 상세 컨텍스트 — 패키지 businessAnchorId로 배송자 이름 조회(칸 재사용 대비).
 // - 2026-08-20: 제조사 ADJUST uniqueKey는 라인/레거시 키를 우선(중복 환불 사유 표시).
 // - 2026-08-20: 제조사 정산은 유료/무료를 가리지 않고 약정 단가 전액. 말일 지급 전까지 미정산.
 // - 2026-08-17: 제조사 장부는 의뢰 1건=어벗 1개라 KST 하루로 묶고, 상세는 우편함(수취자)별.
@@ -56,7 +57,7 @@ async function loadManufacturerLedgerDisplayContext(rows) {
 
   const packages = packageObjectIds.length
     ? await ShippingPackage.find({ _id: { $in: packageObjectIds } })
-        .select({ mailboxAddress: 1, requestIds: 1 })
+        .select({ mailboxAddress: 1, requestIds: 1, businessAnchorId: 1 })
         .lean()
     : [];
 
@@ -92,9 +93,10 @@ async function loadManufacturerLedgerDisplayContext(rows) {
 
   const anchorIds = [
     ...new Set(
-      requests
-        .map((doc) => String(doc?.businessAnchorId || "").trim())
-        .filter((id) => Types.ObjectId.isValid(id)),
+      [
+        ...requests.map((doc) => String(doc?.businessAnchorId || "").trim()),
+        ...packages.map((doc) => String(doc?.businessAnchorId || "").trim()),
+      ].filter((id) => Types.ObjectId.isValid(id)),
     ),
   ];
   const anchors = anchorIds.length
@@ -123,7 +125,15 @@ async function loadManufacturerLedgerDisplayContext(rows) {
 
   const packagesById = new Map(
     packages.map((doc) => {
-      const summary = summarizeManufacturerLedgerPackage(doc, requestsById);
+      const summary = summarizeManufacturerLedgerPackage(
+        {
+          ...doc,
+          anchorName:
+            anchorNameById.get(String(doc?.businessAnchorId || "").trim()) ||
+            "",
+        },
+        requestsById,
+      );
       return [summary.id, summary];
     }),
   );
