@@ -1615,14 +1615,15 @@ namespace DentalAddin
 
 
 
-        // Front Face 기본 절삭 깊이(mm)
-        // 우선순위: PRC BottomZLimit(절대값) > 기본값
-        private const double FrontFaceFixedDepthMm = 1.0;
+        // Front Face 기본 절삭 깊이(mm) — LastAppliedFrontFaceDepthMm SSOT
+        private const double FrontFaceFixedDepthMm = 0.5;
         private static double LastAppliedFrontFaceDepthMm = FrontFaceFixedDepthMm;
 
         // Front Face 종료점 오프셋(mm): Face.RightX = FrontPointX(STL 상부) + 이 값
         // Rough Front 끝점도 동일 오프셋을 기준으로 faceToRough 여유를 더한다.
-        private const double FrontFaceEndOffsetFromFrontMm = 2.5;
+        private const double FrontFaceEndOffsetFromFrontMm = 3.0;
+
+        private static double GetFrontFaceEndOffsetFromFrontMm() => FrontFaceEndOffsetFromFrontMm;
 
         // Face(EM2_0BALL) 안전가드 상수:
         // Front_Rough 우측 끝보다 Face 우측 끝이 우측으로 더 나가면 공구 파손 위험이 있어,
@@ -1696,7 +1697,7 @@ namespace DentalAddin
                 // 기본 모드에서는 기존 D4 기준 오프셋(2.2mm)을 유지한다.
                 double faceToRoughMm = GetRoughBoundaryOffsetMm();
                 splitXUsed = splitline1;
-                roughARightEndX = Clamp(splitline1 + FrontFaceEndOffsetFromFrontMm + faceToRoughMm, xMin + 1e-6, xMax - 1e-6);
+                roughARightEndX = Clamp(splitline1 + GetFrontFaceEndOffsetFromFrontMm() + faceToRoughMm, xMin + 1e-6, xMax - 1e-6);
                 return true;
             }
             catch (Exception ex)
@@ -1710,7 +1711,8 @@ namespace DentalAddin
 
         /// <summary>
         /// Front Face(ParallelPlanes) 가공 끝점을 FrontPointX 기준으로 고정 적용한다.
-        /// - 목표: Face.RightX = Splitline_1(=FrontPointX) + FrontFaceEndOffsetFromFrontMm(2.5mm)
+        /// - LastAppliedFrontFaceDepthMm = FrontFaceFixedDepthMm(0.5mm)
+        /// - 목표: Face.RightX = Splitline_1(=FrontPointX) + FrontFaceEndOffsetFromFrontMm(3.0mm)
         /// - 단, Face.RightX는 Splitline_2를 침범하지 않도록 항상 Splitline_2보다 작게 클램프한다.
         /// - RL=1: BottomZLimit = -Face.RightX
         /// - RL=2: BottomZLimit = +Face.RightX
@@ -1728,20 +1730,12 @@ namespace DentalAddin
                 double oldTop = faceOp.TopZLimit;
                 double oldBottom = faceOp.BottomZLimit;
 
-                // PRC의 BottomZLimit 절대값을 우선 사용한다. (예: 0.5)
-                double configuredDepthMm = Math.Abs(oldBottom);
-                if (double.IsNaN(configuredDepthMm) || double.IsInfinity(configuredDepthMm) || configuredDepthMm < 1e-6)
-                {
-                    configuredDepthMm = FrontFaceFixedDepthMm;
-                    DentalLogger.Log($"FrontFaceDepth[{context}] - PRC BottomZLimit이 유효하지 않아 기본깊이 fallback 사용: {configuredDepthMm:F3}mm");
-                }
-
-                LastAppliedFrontFaceDepthMm = configuredDepthMm;
+                LastAppliedFrontFaceDepthMm = FrontFaceFixedDepthMm;
 
                 // Front_Face 끝점: Splitline_1(=FrontPointX) + FrontFaceEndOffsetFromFrontMm
                 // 단, Splitline_2를 침범하지 않도록 Splitline_2보다 약간 작은 값으로 상한 클램프한다.
                 const double splitline2NoCrossMarginMm = 0.001;
-                double requestedFaceRightX = MoveSTL_Module.FrontPointX + FrontFaceEndOffsetFromFrontMm;
+                double requestedFaceRightX = MoveSTL_Module.FrontPointX + GetFrontFaceEndOffsetFromFrontMm();
                 double appliedFaceRightX = requestedFaceRightX;
 
                 bool splitline2ClampApplied = false;
@@ -1774,7 +1768,7 @@ namespace DentalAddin
                     DentalLogger.Log($"FrontFaceDepth[{context}] - RL 비정상({RL}), RL=1 기준으로 적용");
                 }
 
-                DentalLogger.Log($"FrontFaceDepth[{context}] - FrontPoint 고정 오프셋 적용: requestRightX={requestedFaceRightX:F3}, appliedRightX={appliedFaceRightX:F3}, TopZ:{oldTop:F3}->{faceOp.TopZLimit:F3}, BottomZ:{oldBottom:F3}->{oldBottom2:F3}->{faceOp.BottomZLimit:F3}, PRCDepthRef={configuredDepthMm:F3}, Splitline2={splitline2Used:F3}, Splitline2Clamp={splitline2ClampApplied}, Splitline2Margin={splitline2NoCrossMarginMm:F3}");
+                DentalLogger.Log($"FrontFaceDepth[{context}] - FrontPoint 고정 오프셋 적용: requestRightX={requestedFaceRightX:F3}, appliedRightX={appliedFaceRightX:F3}, TopZ:{oldTop:F3}->{faceOp.TopZLimit:F3}, BottomZ:{oldBottom:F3}->{oldBottom2:F3}->{faceOp.BottomZLimit:F3}, DepthRef={LastAppliedFrontFaceDepthMm:F3}, Splitline2={splitline2Used:F3}, Splitline2Clamp={splitline2ClampApplied}, Splitline2Margin={splitline2NoCrossMarginMm:F3}");
             }
             catch (Exception ex)
             {
@@ -2273,8 +2267,8 @@ namespace DentalAddin
             double backRoughOverCutMm = roughBoundaryOffsetMm;
 
             double frontStart = xMin;
-            // Front Rough 끝점: Face(FrontPointX+2.5)보다 rough 경계 오프셋만큼 더 길게 (D4:+2.2 / D2:+1.2)
-            double frontEnd = Clamp(splitline1 + FrontFaceEndOffsetFromFrontMm + faceToRoughMm, xMin + 1e-6, xMax - 1e-6);
+            // Front Rough 끝점: Face(FrontPointX+3.0)보다 rough 경계 오프셋만큼 더 길게 (D4:+2.2 / D2:+1.2)
+            double frontEnd = Clamp(splitline1 + GetFrontFaceEndOffsetFromFrontMm() + faceToRoughMm, xMin + 1e-6, xMax - 1e-6);
 
             double middleStart = Clamp(splitline1 - middleRoughOverCutMm, xMin + 1e-6, xMax - 1e-6);
             double middleEnd = Clamp(splitline2 + middleRoughOverCutMm, xMin + 1e-6, xMax - 1e-6);

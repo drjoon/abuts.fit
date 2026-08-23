@@ -113,7 +113,8 @@
 ### 4.6 Front Face/Back Turn 경계 보정 (2026-07-01)
 
 - Front Face 종료점 정책(현행 SSOT):
-  - `Face.RightX = FrontPointX + 2.5mm`
+  - `Face.RightX = FrontPointX + 3.0mm`
+  - `LastAppliedFrontFaceDepthMm = 0.5mm` (`FrontFaceFixedDepthMm`)
   - 상수: `MainModuleComposite.FrontFaceEndOffsetFromFrontMm`
   - 구현 위치: `MainModuleComposite.ApplyFrontFaceFixedDepth`
   - 단, 후속 안전 가드(`TryApplyFaceRightEndGuard`) 및 경계 클램프로 추가 보정될 수 있다.
