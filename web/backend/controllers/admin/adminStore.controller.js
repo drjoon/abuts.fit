@@ -183,11 +183,16 @@ export async function adminRejectStoreOrder(req, res) {
     }
 
     await releaseStoreInventoryReservation({ items: order.items });
+    const now = new Date();
     order.status = "CANCELED";
     order.fulfillmentStatus = "CANCELED";
+    order.canceledAt = now;
+    order.canceledBy = req.user?._id || null;
+    order.canceledByRole = "ADMIN";
+    order.cancelReason = note || "admin_reject";
     order.adminApprovalStatus = "REJECTED";
     order.adminApprovalNote = note;
-    order.adminApprovalAt = new Date();
+    order.adminApprovalAt = now;
     order.adminApprovalBy = req.user?._id || null;
     await order.save();
 

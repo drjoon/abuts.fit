@@ -9,6 +9,7 @@
 // - 2026-08-21: hold meta.convertedAt 있으면 SPEND_PAID(지급완료)로 표시.
 // - 2026-08-21: PTX CA Request도 abutmentBoxGroupKey(BA+출고일) 유지 — 기공소 배송·생산 박스 묶음.
 // - 2026-08-19: 어벗디자인·어벗생산 박스는 의뢰 사업자+예정출고일. 치과명으로 쪼개지 않음.
+// - 2026-08-23: STORE_SALE → SPEND_PAID(소비)·스토어 카테고리. 기간 소비 합계에 포함.
 // - 2026-08-23: 치과 정산 내역 상단 — 필터 기간 소비액 집계(통계 탭 totalSpendSupply와 동일).
 // - 2026-08-19: 기본 내역은 최근 라인만 잘라 10건 lookup. 기간 전체 $count 생략.
 // - 2026-08-19: 어벗디자인 원장 — 수신자(박스) 묶음용 mailbox/shippingReceiver 요약. ObjectId 재귀 가드.
@@ -829,6 +830,24 @@ function creditLedgerRowTypeExpr() {
           then: "LAB_SETTLEMENT_CHARGE",
         },
         CREDIT_LEDGER_DESIGN_FEE_AS_SETTLEMENT_CASE,
+        {
+          case: {
+            $and: [
+              { $eq: ["$eventType", "STORE_SALE"] },
+              { $lt: ["$amount", 0] },
+            ],
+          },
+          then: "SPEND_PAID",
+        },
+        {
+          case: {
+            $and: [
+              { $eq: ["$eventType", "STORE_SALE"] },
+              { $gt: ["$amount", 0] },
+            ],
+          },
+          then: "ADJUST",
+        },
         { case: { $eq: ["$eventType", "ADJUST"] }, then: "ADJUST" },
       ],
       default: "ADJUST",
@@ -970,6 +989,7 @@ const CREDIT_LEDGER_STATS_SPEND_EVENT_TYPES = [
   "SHIPPING_SPEND_COMMIT",
   "PRACTICE_TRANSFER_SPEND_COMMIT",
   "PRACTICE_MEMBERSHIP_SPEND",
+  "STORE_SALE",
 ];
 
 /** 통계 탭 카테고리와 동일한 분류식(원장 드릴다운용) */
@@ -1029,6 +1049,20 @@ export function creditLedgerStatsCategoryExpr() {
             ],
           },
           then: "abutment_production",
+        },
+        {
+          case: {
+            $or: [
+              { $eq: ["$eventType", "STORE_SALE"] },
+              {
+                $eq: [
+                  { $toUpper: { $ifNull: ["$refType", ""] } },
+                  "STORE_ORDER",
+                ],
+              },
+            ],
+          },
+          then: "store",
         },
         {
           case: { $in: ["$eventType", CREDIT_LEDGER_STATS_SPEND_EVENT_TYPES] },

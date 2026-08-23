@@ -84,6 +84,12 @@ const storeOrderSchema = new mongoose.Schema(
     supplyAmount: { type: Number, required: true, min: 0 },
     vatAmount: { type: Number, required: true, min: 0 },
     amountTotal: { type: Number, required: true, min: 0, index: true },
+    /** 상품 합계(부가세 포함, 배송료 제외) */
+    itemsAmountTotal: { type: Number, default: 0, min: 0 },
+    /** 부가세 포함 배송료(0 또는 3,300) */
+    shippingFeeInclusive: { type: Number, default: 0, min: 0 },
+    shippingSupplyAmount: { type: Number, default: 0, min: 0 },
+    shippingVatAmount: { type: Number, default: 0, min: 0 },
     expiresAt: { type: Date, required: true, index: true },
     bankTransactionId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -106,6 +112,21 @@ const storeOrderSchema = new mongoose.Schema(
       default: "BANK",
       index: true,
     },
+    /** 고객·관리자 취소 이력 (원장 삭제형 롤백의 감사 대체) */
+    canceledAt: { type: Date, default: null, index: true },
+    canceledBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+      index: true,
+    },
+    /** USER=의뢰자, ADMIN=관리자 거절, SYSTEM=결제실패 등 자동 */
+    canceledByRole: {
+      type: String,
+      enum: ["USER", "ADMIN", "SYSTEM", ""],
+      default: "",
+    },
+    cancelReason: { type: String, default: "" },
     note: { type: String, default: "" },
   },
   { timestamps: true },

@@ -63,9 +63,9 @@ const formatSignedWon = (amount: number) => {
 };
 
 const itemPayoutStatusLabel = (status: AbutmentDesignItemPayoutStatus) => {
-  if (status === "settled") return "지급완료";
-  if (status === "partial") return "일부 지급";
-  return "지급보류";
+  if (status === "settled") return "결제완료";
+  if (status === "partial") return "일부 결제";
+  return "결제보류";
 };
 
 const itemPayoutStatusClass = (status: AbutmentDesignItemPayoutStatus) => {

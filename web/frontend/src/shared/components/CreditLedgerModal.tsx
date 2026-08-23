@@ -44,6 +44,7 @@
 // - 2026-08-11: 중복 일자(from~to) 입력 제거. 검색을 초기화 버튼 우측으로 이동.
 // - 2026-08-11: embedded 무한스크롤 — sentinel 재마운트 시 IntersectionObserver 재연결.
 // - 2026-08-11: embedded 모드에서 "크레딧 내역" 제목 숨김(탭 라벨로 충분). Dialog는 유지.
+// - 2026-08-23: 스토어 유형 라벨·결제 상태 표기. 요약 카드「기공, 스토어」.
 // - 2026-08-23: 요약 카드 안내 — 현재 잔액(선불금 잔여액), 기공료·쇼핑 라벨·툴팁.
 // - 2026-08-23: 요약 카드 클릭 → 필터된 CreditLedgerModal 드릴다운. 안내 문구는 툴팁만.
 // - 2026-08-23: 치과 기간 소비 — 카드 하단 PeriodFilter·별도 집계 조회. YMD from/to.
@@ -171,6 +172,7 @@ export type CreditLedgerStatsCategory =
   | "practice_transfer"
   | "abutment_production"
   | "shipping"
+  | "store"
   | "settlement_earn"
   | "settlement_payout"
   | "adjust"
@@ -379,6 +381,11 @@ const typeLabel = (t: CreditLedgerType) => {
   return "조정";
 };
 
+const STORE_ORDER_TYPE_LABEL = "스토어";
+
+const isStoreOrderLedgerItem = (item: { refType?: string }) =>
+  String(item?.refType || "").trim().toUpperCase() === "STORE_ORDER";
+
 type LedgerDisplayPart = {
   label: string;
   amount: number;
@@ -418,9 +425,9 @@ const ABUTMENT_DESIGN_TYPE_LABEL = "기공의뢰-어벗디자인으로";
 const practiceTransferPayoutStatusLabel = (
   status: PracticeTransferPayoutStatus,
 ) => {
-  if (status === "settled") return "지급 완료";
-  if (status === "partial") return "일부 지급";
-  return "지급 보류";
+  if (status === "settled") return "결제 완료";
+  if (status === "partial") return "일부 결제";
+  return "결제 보류";
 };
 
 const practiceTransferPayoutStatusClass = (
@@ -563,6 +570,7 @@ const resolvePracticeTransferPayoutStatus = (
 };
 
 const resolvePracticeTransferDisplayLabel = (item: CreditLedgerItem) => {
+  if (isStoreOrderLedgerItem(item)) return STORE_ORDER_TYPE_LABEL;
   if (String(item.refType || "") === "PRACTICE_TRANSFER") {
     return PRACTICE_TRANSFER_TYPE_LABEL;
   }
@@ -1448,11 +1456,13 @@ const groupLedgerItemsForDisplay = (
         item,
         resolvePracticeTransferRoute(item),
       ),
-      practiceTransferPayoutStatus: resolvePracticeTransferPayoutStatus(
-        item,
-        undefined,
-        labShareOnly,
-      ),
+      practiceTransferPayoutStatus: isStoreOrderLedgerItem(item)
+        ? "settled"
+        : resolvePracticeTransferPayoutStatus(
+            item,
+            undefined,
+            labShareOnly,
+          ),
       isPracticeTransfer: String(item.refType || "") === "PRACTICE_TRANSFER",
       ...emptyDisplayRowExtras,
       item,
@@ -1490,6 +1500,7 @@ const REF_TYPE_LABELS: Record<string, string> = {
   FREE_CREDIT_CANCEL: "무료크레딧 취소",
   CREDIT_RECONCILE: "잔액 조정",
   SEED_REQUESTOR_CHARGE: "시드 초기 충전",
+  STORE_ORDER: "스토어",
 };
 
 const refTypeLabel = (refType?: string) => {
@@ -2396,13 +2407,13 @@ export const CreditLedgerModal = ({
                   <SettlementEquationOperator symbol="−" />
                   <SettlementStatCard
                     className="min-w-[9.5rem] flex-1 sm:min-w-[10.5rem]"
-                    label="기공료·쇼핑"
+                    label="기공, 스토어"
                     value={Number(periodSpendSummary?.totalSpendSupply || 0)}
                     hint="안내"
-                    hintTooltip="선택한 기간에 지출한 기공료와 쇼핑 결제 합계입니다."
+                    hintTooltip="선택한 기간에 지출한 기공료와 스토어 결제 합계입니다."
                     onClick={() =>
                       openSummaryDrillDown({
-                        title: "기공료·쇼핑 내역",
+                        title: "기공, 스토어 내역",
                         filters: {
                           ...summaryFilterBase,
                           action: "SPEND",
@@ -2603,7 +2614,7 @@ export const CreditLedgerModal = ({
                   </TableHead>
                   <TableHead className="w-[110px] text-center">
                     <span className="whitespace-nowrap text-xs sm:text-sm">
-                      지급 상태
+                      결제
                     </span>
                   </TableHead>
                   <TableHead className="min-w-[160px] text-center">

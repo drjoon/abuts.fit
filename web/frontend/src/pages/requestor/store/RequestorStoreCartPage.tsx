@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-08-23: 스토어 결제 = 선수금만. 잔액 부족 시 충전 탭으로 이동.
+// - 2026-08-23: 2열 반응형·배송료(10만원 이하 3,300원 부가세 포함).
 // - 2026-08-23: 2열 반응형(상품·배송지 / 결제 요약 사이드바).
 // - 2026-08-23: 배송지 입력. 커스텀어벗·크레딧 합치기 금지 유지.
 // related files:
@@ -22,6 +24,10 @@ import { formatWonWithUnit } from "@/shared/settlement/affiliateVat";
 import { useStoreCartStore } from "@/store/useStoreCartStore";
 import { apiFetch } from "@/shared/api/apiClient";
 import { STORE_SHELL_CLASS } from "@/pages/requestor/store/storeOrderUi";
+import {
+  buildStoreOrderTotalsWithShipping,
+  STORE_SHIPPING_FREE_THRESHOLD_INCLUSIVE,
+} from "@/shared/store/storeShipping";
 
 type ShippingForm = {
   recipientName: string;
@@ -94,16 +100,21 @@ export default function RequestorStoreCartPage() {
     }>;
   }, [lines]);
 
-  const totals = useMemo(() => {
-    const total = rows.reduce((s, r) => s + r.lineTotal, 0);
-    return splitInclusiveVat(total);
-  }, [rows]);
+  const goodsTotal = useMemo(
+    () => rows.reduce((s, r) => s + r.lineTotal, 0),
+    [rows],
+  );
+
+  const orderTotals = useMemo(
+    () => buildStoreOrderTotalsWithShipping(goodsTotal),
+    [goodsTotal],
+  );
 
   if (!loading && kind === "lab") {
     return <Navigate to="/dashboard/credits" replace />;
   }
 
-  async function checkout(paymentMethod: "CREDIT" | "BANK") {
+  async function checkout() {
     if (rows.length === 0) return;
     if (STORE_CART_MERGE_WITH_CREDIT_OR_CUSTOM_ABUTMENT) {
       toast.error("스토어 장바구니는 크레딧·커스텀어벗과 합칠 수 없습니다.");
@@ -122,6 +133,7 @@ export default function RequestorStoreCartPage() {
       const res = await apiFetch<{
         success: boolean;
         message?: string;
+        code?: string;
         data?: { order: { _id: string } };
       }>({
         path: "/api/store/orders",
@@ -132,19 +144,23 @@ export default function RequestorStoreCartPage() {
             qty: r.line.qty,
           })),
           shipping,
-          paymentMethod,
+          paymentMethod: "CREDIT",
         },
       });
       const body = res.data;
+      if (
+        !res.ok &&
+        (body?.code === "INSUFFICIENT_PAID_CREDIT" || res.status === 402)
+      ) {
+        toast.error(body?.message || "선수금 잔액이 부족합니다. 충전 후 다시 주문해 주세요.");
+        navigate("/dashboard/credits?tab=charge");
+        return;
+      }
       if (!res.ok || !body?.success || !body.data?.order?._id) {
         throw new Error(body?.message || "주문 생성에 실패했습니다.");
       }
       clear();
-      toast.success(
-        paymentMethod === "CREDIT"
-          ? "선수금으로 결제되었습니다."
-          : "주문이 생성되었습니다. 입금 정보를 확인하세요.",
-      );
+      toast.success("선수금으로 결제되었습니다.");
       navigate(`/dashboard/store/orders/${body.data.order._id}`);
     } catch (err: unknown) {
       const message =
@@ -305,44 +321,52 @@ export default function RequestorStoreCartPage() {
             <div className="space-y-2 rounded-xl border border-border/70 bg-card p-4 sm:p-6 lg:sticky lg:top-4">
               <h2 className="text-sm font-semibold">주문 요약</h2>
               <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">상품 합계</span>
+                <span className="tabular-nums">
+                  {formatWonWithUnit(orderTotals.itemsAmountTotal)}
+                </span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">배송료</span>
+                <span className="tabular-nums">
+                  {orderTotals.shippingFeeInclusive > 0
+                    ? formatWonWithUnit(orderTotals.shippingFeeInclusive)
+                    : "무료"}
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                상품 {formatWonWithUnit(STORE_SHIPPING_FREE_THRESHOLD_INCLUSIVE)}{" "}
+                초과 시 배송 무료
+              </p>
+              <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">공급가</span>
                 <span className="tabular-nums">
-                  {formatWonWithUnit(totals.supply)}
+                  {formatWonWithUnit(orderTotals.supply)}
                 </span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">부가세</span>
                 <span className="tabular-nums">
-                  {formatWonWithUnit(totals.vat)}
+                  {formatWonWithUnit(orderTotals.vat)}
                 </span>
               </div>
               <div className="flex justify-between border-t border-border/70 pt-3 text-base font-semibold">
                 <span>합계</span>
                 <span className="tabular-nums">
-                  {formatWonWithUnit(totals.total)}
+                  {formatWonWithUnit(orderTotals.total)}
                 </span>
               </div>
               <p className="pt-1 text-xs text-muted-foreground">
-                기공·커스텀어벗과 한 장바구니에 합치지 않습니다. 같은 거래
-                선수금으로 각각 결제할 수 있으며, (세금)계산서는 사용분 기준
-                월말 면세/과세 각각 발행됩니다.
+                스토어는 선수금으로만 결제합니다. 기공·커스텀어벗과 장바구니를
+                합치지 않으며, (세금)계산서는 사용분 기준 월말 과세 발행됩니다.
               </p>
               <Button
                 type="button"
                 className="mt-2 w-full"
                 disabled={submitting}
-                onClick={() => void checkout("CREDIT")}
+                onClick={() => void checkout()}
               >
                 {submitting ? "결제 중…" : "선수금으로 결제"}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full"
-                disabled={submitting}
-                onClick={() => void checkout("BANK")}
-              >
-                계좌이체 입금 주문
               </Button>
             </div>
           </div>

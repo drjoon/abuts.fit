@@ -11,6 +11,7 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPath";
 import { cn } from "@/shared/ui/cn";
 
+// - 2026-08-23: 치과 사이드 — 스토어를 정산 위로.
 // - 2026-08-23: 작업영역 스크롤바 — 둥근 카드는 overflow clip, 안쪽 직사각 스크롤로 카드 오른쪽 끝에 붙이고 콘텐츠 여백은 상·하·좌·우 동일.
 // - 2026-08-22: 치과·기공소 사이드바 크레딧 → 정산 라벨.
 // - 2026-08-22: 치과 사이드 — 크레딧 아래「스토어」(/dashboard/store).
@@ -250,8 +251,8 @@ const buildRequestorSidebarItems = (
         },
       ],
     },
-    { icon: Wallet, label: "정산", href: CREDITS_HREF },
     { icon: Store, label: "스토어", href: STORE_HREF },
+    { icon: Wallet, label: "정산", href: CREDITS_HREF },
     ...requestorSidebarCommonTail,
   ];
 };

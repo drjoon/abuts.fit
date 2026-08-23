@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-23: STORE_SALE을 소비·스토어 카테고리에 포함.
 // - 2026-08-22: 보철유형 집계 — 견적 라인 공급가 기준·정수 원 반올림(소수 분배 제거).
 // - 2026-08-22: 의뢰자 정산 페이지 통계 탭 — 기간·유형·파트너·보철유형 집계 API.
 // related files:
@@ -28,6 +29,7 @@ const SPEND_EVENT_TYPES = new Set([
   "SHIPPING_SPEND_COMMIT",
   "PRACTICE_TRANSFER_SPEND_COMMIT",
   "PRACTICE_MEMBERSHIP_SPEND",
+  "STORE_SALE",
 ]);
 
 const CHARGE_EVENT_TYPES = new Set([
@@ -41,6 +43,7 @@ const CATEGORY_LABELS = {
   practice_transfer: "기공의뢰",
   abutment_production: "어벗생산",
   shipping: "배송",
+  store: "스토어",
   settlement_earn: "정산 적립",
   settlement_payout: "정산 지급",
   adjust: "조정",
@@ -123,6 +126,7 @@ function resolveStatsCategory(eventType, refType, accountCode, amount) {
   if (et.includes("PRACTICE_TRANSFER") || rt === "PRACTICE_TRANSFER") {
     return "practice_transfer";
   }
+  if (et === "STORE_SALE" || rt === "STORE_ORDER") return "store";
   if (et.includes("SHIPPING") || rt === "SHIPPING_PACKAGE") return "shipping";
   if (et.includes("REQUEST") || rt === "REQUEST") return "abutment_production";
   if (SPEND_EVENT_TYPES.has(et)) return "other";

@@ -114,7 +114,7 @@ type PracticeTransferFeeEstimateProps = {
 const formatCell = (value: number) => (value > 0 ? formatManWon(value) : "—");
 
 const creditShareSettlementLabel = (pending: boolean) =>
-  pending ? "지급보류" : "지급완료";
+  pending ? "결제보류" : "결제완료";
 
 const creditShareSettlementClass = (pending: boolean) =>
   pending

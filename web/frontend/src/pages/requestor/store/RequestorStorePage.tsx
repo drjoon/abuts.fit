@@ -76,8 +76,8 @@ export default function RequestorStorePage() {
               </Badge>
             </div>
             <p className="text-sm text-muted-foreground">
-              기성품은 과세(부가세 포함가)이며, 입금 확인 후 세금계산서가
-              발행됩니다. 커스텀어벗·크레딧(면세)과 장바구니를 합치지 않습니다.
+              기성품은 과세(부가세 포함가)이며 선수금으로 결제합니다.
+              커스텀어벗·크레딧(면세)과 장바구니를 합치지 않습니다.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">

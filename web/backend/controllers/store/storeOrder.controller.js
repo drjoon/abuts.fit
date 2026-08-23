@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-23: 스토어 신규 주문은 선수금만. 계좌이체 입금 경로 제거.
 // - 2026-08-23: 배송지·풀필먼트·장바구니 합치기 금지 가드.
 // - 2026-08-23: 스토어 카탈로그·주문·입금(B-plan) API.
 // related files:
@@ -16,8 +17,14 @@ import {
   getStoreProductPriceInclusive,
 } from "../../constants/storeCatalog.js";
 import { STORE_CART_MERGE_WITH_CREDIT_OR_CUSTOM_ABUTMENT } from "../../constants/ledgerTaxLanes.js";
+import {
+  STORE_SHIPPING_FEE_INCLUSIVE,
+  STORE_SHIPPING_FREE_THRESHOLD_INCLUSIVE,
+  applyStoreShippingToOrderTotals,
+} from "../../constants/storeShipping.js";
 import { normalizeRequestorKind } from "../../utils/requestorCapabilities.js";
 import {
+  cancelStoreOrderByUser,
   finalizeStoreSale,
   getInventoryMap,
   payStoreOrderWithCredit,
@@ -34,11 +41,7 @@ const B_PLAN_DEPOSIT_ACCOUNT_DEFAULTS = {
 const ORDER_TTL_MS = 48 * 60 * 60 * 1000;
 
 async function getDepositAccountInfo() {
-  const doc = await SystemSettings.findOneAndUpdate(
-    { key: "global" },
-    { $setOnInsert: { key: "global" } },
-    { new: true, upsert: true, setDefaultsOnInsert: true },
-  )
+  const doc = await SystemSettings.findOne({ key: "global" })
     .select({ bPlanDepositAccount: 1 })
     .lean();
   const info = doc?.bPlanDepositAccount || {};
@@ -133,7 +136,7 @@ function buildOrderItems(rawItems) {
     amountTotal += split.total;
   }
 
-  return { items, supplyAmount, vatAmount, amountTotal };
+  return { items, supplyAmount, vatAmount, amountTotal, itemsAmountTotal: amountTotal };
 }
 
 function normalizeShippingInput(raw = {}) {
@@ -212,6 +215,10 @@ export async function getStoreCatalog(req, res) {
       data: {
         products,
         taxNote: "과세 · 부가세 포함",
+        shippingPolicy: {
+          feeInclusive: STORE_SHIPPING_FEE_INCLUSIVE,
+          freeThresholdInclusive: STORE_SHIPPING_FREE_THRESHOLD_INCLUSIVE,
+        },
         // 장바구니 합치기 금지 SSOT (프론트 카피·가드용)
         cartMergeWithCreditOrCustomAbutment:
           STORE_CART_MERGE_WITH_CREDIT_OR_CUSTOM_ABUTMENT,
@@ -244,9 +251,18 @@ export async function createStoreOrder(req, res) {
     }
     await assertPracticeKind(req, businessAnchorId);
 
-    const { items, supplyAmount, vatAmount, amountTotal } = buildOrderItems(
-      req.body?.items,
-    );
+    const built = buildOrderItems(req.body?.items);
+    const totals = applyStoreShippingToOrderTotals(built);
+    const items = built.items;
+    const {
+      itemsAmountTotal,
+      shippingFeeInclusive,
+      shippingSupplyAmount,
+      shippingVatAmount,
+      supplyAmount,
+      vatAmount,
+      amountTotal,
+    } = totals;
     if (amountTotal <= 0) {
       return res.status(400).json({
         success: false,
@@ -272,17 +288,25 @@ export async function createStoreOrder(req, res) {
     const shipping = assertShippingComplete(
       normalizeShippingInput(req.body?.shipping),
     );
-    const paymentMethod =
-      String(req.body?.paymentMethod || "BANK").toUpperCase() === "CREDIT"
-        ? "CREDIT"
-        : "BANK";
+    // 스토어는 선수금(CREDIT)만 허용.
+    const requestedMethod = String(req.body?.paymentMethod || "CREDIT")
+      .trim()
+      .toUpperCase();
+    if (requestedMethod && requestedMethod !== "CREDIT") {
+      return res.status(400).json({
+        success: false,
+        message: "스토어는 선수금으로만 결제할 수 있습니다. 잔액이 부족하면 충전 후 다시 주문해 주세요.",
+        code: "STORE_CREDIT_ONLY",
+      });
+    }
+    const paymentMethod = "CREDIT";
+
+    const { depositCode } = await generateStoreOrderDepositCode();
+    const expiresAt = new Date(Date.now() + ORDER_TTL_MS);
 
     let created = null;
     await session.withTransaction(async () => {
       await reserveStoreInventory({ items, session });
-
-      const { depositCode } = await generateStoreOrderDepositCode();
-      const expiresAt = new Date(Date.now() + ORDER_TTL_MS);
 
       const [doc] = await StoreOrder.create(
         [
@@ -297,6 +321,10 @@ export async function createStoreOrder(req, res) {
             paymentMethod,
             items,
             shipping,
+            itemsAmountTotal,
+            shippingFeeInclusive,
+            shippingSupplyAmount,
+            shippingVatAmount,
             supplyAmount,
             vatAmount,
             amountTotal,
@@ -308,46 +336,43 @@ export async function createStoreOrder(req, res) {
       created = doc.toObject();
     });
 
-    if (paymentMethod === "CREDIT") {
+    try {
+      await payStoreOrderWithCredit({
+        orderId: created._id,
+        userId,
+      });
+    } catch (payErr) {
+      // 결제 실패 시 예약 해제·주문 취소
       try {
-        await payStoreOrderWithCredit({
-          orderId: created._id,
-          userId,
-        });
-      } catch (payErr) {
-        // 결제 실패 시 예약 해제·주문 취소
-        try {
-          await releaseStoreInventoryReservation({ items: created.items });
-          await StoreOrder.updateOne(
-            { _id: created._id, status: "PENDING" },
-            { $set: { status: "CANCELED", fulfillmentStatus: "CANCELED" } },
-          );
-        } catch {
-          /* ignore cleanup */
-        }
-        const status = payErr.statusCode || 500;
-        return res.status(status).json({
-          success: false,
-          message: payErr.message || "credit_pay_failed",
-          code: payErr.code || undefined,
-          payload: payErr.payload || undefined,
-        });
+        await releaseStoreInventoryReservation({ items: created.items });
+        await StoreOrder.updateOne(
+          { _id: created._id, status: "PENDING" },
+          {
+            $set: {
+              status: "CANCELED",
+              fulfillmentStatus: "CANCELED",
+              canceledAt: new Date(),
+              canceledBy: userId || null,
+              canceledByRole: "SYSTEM",
+              cancelReason: "credit_pay_failed",
+            },
+          },
+        );
+      } catch {
+        /* ignore cleanup */
       }
-      const paid = await StoreOrder.findById(created._id).lean();
-      return res.status(201).json({
-        success: true,
-        data: { order: paid, paymentMethod: "CREDIT" },
+      const status = payErr.statusCode || 500;
+      return res.status(status).json({
+        success: false,
+        message: payErr.message || "credit_pay_failed",
+        code: payErr.code || undefined,
+        payload: payErr.payload || undefined,
       });
     }
-
-    const depositAccount = await getDepositAccountInfo();
+    const paid = await StoreOrder.findById(created._id).lean();
     return res.status(201).json({
       success: true,
-      data: {
-        order: created,
-        depositAccount,
-        paymentMethod: "BANK",
-      },
+      data: { order: paid, paymentMethod: "CREDIT" },
     });
   } catch (error) {
     const status = error.statusCode || 500;
@@ -443,34 +468,21 @@ export async function getMyStoreOrder(req, res) {
 }
 
 export async function cancelMyStoreOrder(req, res) {
-  const session = await mongoose.startSession();
   try {
     assertPracticeRequestor(req);
     const businessAnchorId = req.user?.businessAnchorId;
     const id = String(req.params.id || "").trim();
-
-    let canceled = null;
-    await session.withTransaction(async () => {
-      const order = await StoreOrder.findOne({
-        _id: id,
-        businessAnchorId,
-        status: "PENDING",
-      }).session(session);
-      if (!order) {
-        const err = new Error("취소할 대기 주문이 없습니다.");
-        err.statusCode = 404;
-        throw err;
-      }
-
-      await releaseStoreInventoryReservation({
-        items: order.items,
-        session,
+    if (!businessAnchorId) {
+      return res.status(403).json({
+        success: false,
+        message: "사업자 정보가 없습니다.",
       });
+    }
 
-      order.status = "CANCELED";
-      order.fulfillmentStatus = "CANCELED";
-      await order.save({ session });
-      canceled = order.toObject();
+    const canceled = await cancelStoreOrderByUser({
+      orderId: id,
+      businessAnchorId,
+      userId: req.user?._id || null,
     });
 
     return res.json({ success: true, data: canceled });
@@ -480,8 +492,6 @@ export async function cancelMyStoreOrder(req, res) {
       success: false,
       message: error.message || "cancel_failed",
     });
-  } finally {
-    session.endSession();
   }
 }
 

@@ -26,6 +26,10 @@ export type StoreOrder = {
   supplyAmount: number;
   vatAmount: number;
   amountTotal: number;
+  itemsAmountTotal?: number;
+  shippingFeeInclusive?: number;
+  shippingSupplyAmount?: number;
+  shippingVatAmount?: number;
   expiresAt?: string;
   items?: Array<{ name: string; qty: number; lineTotalInclusive: number }>;
   shipping?: {
@@ -41,6 +45,9 @@ export type StoreOrder = {
   shippedAt?: string | null;
   deliveredAt?: string | null;
   paidAt?: string | null;
+  canceledAt?: string | null;
+  canceledByRole?: string;
+  cancelReason?: string;
   createdAt?: string;
 };
 
@@ -83,6 +90,15 @@ export function orderMatchesFilter(order: StoreOrder, tab: OrderFilterTab) {
   return order.status === "CANCELED" || order.status === "EXPIRED";
 }
 
+/** 출고 전까지 고객이 취소할 수 있는 주문. */
+export function isOrderCustomerCancelable(order: StoreOrder) {
+  const status = String(order.status || "");
+  const fulfillment = String(order.fulfillmentStatus || "");
+  if (status === "PENDING" || status === "MATCHED") return true;
+  if (status === "PAID" && fulfillment === "READY") return true;
+  return false;
+}
+
 export function orderStatusBadgeVariant(status: string) {
   switch (status) {
     case "PAID":
@@ -111,6 +127,15 @@ export function fulfillmentBadgeVariant(status?: string) {
     default:
       return "outline" as const;
   }
+}
+
+export function resolveStoreOrderItemsAmountTotal(order: StoreOrder) {
+  const explicit = Number(order.itemsAmountTotal);
+  if (Number.isFinite(explicit) && explicit > 0) return Math.round(explicit);
+  return (order.items || []).reduce(
+    (sum, item) => sum + Number(item.lineTotalInclusive || 0),
+    0,
+  );
 }
 
 export function summarizeOrderItems(
