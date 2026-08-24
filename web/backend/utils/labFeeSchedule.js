@@ -10,6 +10,8 @@
 // - web/frontend/src/features/settings/tabs/LabFeeScheduleTab.tsx
 // - 2026-08-13: 마스터 active(기본 off)가 켜져야 설정 완료. 수가 디폴트는 기본값·항목 on.
 // - 2026-08-21: 기공수가「배송비」폐지(치과→기공소 무료). normalize에서 strip. 어벗츠 구간만 박스당.
+// - 2026-08-24: items에 CA 행이 없어도 지그포함/제외를 flat·기본가로 보완(어벗 0원 방지).
+// - 2026-08-24: 커스텀어벗 수가 unit=perTooth 강제. 레거시 perSet면 단가 무시되던 버그 수정.
 // - 2026-08-23: 커스텀어벗 수가 분리 — 지그포함(보철+어벗, 기본 4만)·지그제외(단독 CA, 기본 3만). 레거시「커스텀어벗」→지그포함.
 // - 2026-08-21: PTX CA 치과 청구=기공소「커스텀어벗」수가(기본 4만=관리자 기본 기공수가). 어벗츠 1.5/2.5만은 기공소→어벗츠 Request.
 // - 2026-08-13: 유지장치 등 perSet는 연결 스팬당 1세트(끊기면 별도). 연결 없는 레거시는 악궁당.
@@ -699,7 +701,8 @@ function resolveLabAbutmentUnitPrice(items, useRemake, withJig = true) {
     ? LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME
     : LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_NAME;
   const item = findLabFeeItemForProsthesisType(items, feeName);
-  if (!item || item.unit !== "perTooth") return 0;
+  // unit은 normalize가 perTooth로 고정. 레거시 perSet 등도 단가만 쓴다.
+  if (!item) return 0;
   return Math.max(
     0,
     Math.round(Number(useRemake ? item.remake : item.price) || 0),
@@ -911,7 +914,14 @@ function normalizeLabFeeItemTier(input, index) {
 export function normalizeLabFeeItem(input, index = 0) {
   const src = input && typeof input === "object" ? input : {};
   const name = canonicalizeFeeItemName(src.name || src.label || "");
-  const unit = normalizeLabFeeItemUnit(src.unit);
+  let unit = normalizeLabFeeItemUnit(src.unit);
+  // 커스텀어벗 수가는 치아당만. UI/레거시에서 perSet로 저장된 경우 과금이 0이 되지 않게 강제.
+  if (
+    isCustomAbutmentWithJigFeeName(name) ||
+    isCustomAbutmentWithoutJigFeeName(name)
+  ) {
+    unit = "perTooth";
+  }
   const enabled = src.enabled !== false;
   const price = Math.max(0, Math.round(Number(src.price || 0)));
   const remake = Math.max(0, Math.round(Number(src.remake || 0)));
@@ -1105,21 +1115,57 @@ export function normalizeLabFeeItems(input) {
       out.push({ ...item, id });
     }
     return stripLabFeeShippingItems(
-      ensureSplitCustomAbutmentFeeItems(expandPerNTeethTierItems(out)),
+      ensureSplitCustomAbutmentFeeItems(expandPerNTeethTierItems(out), src),
     );
   }
   return migrateLegacyLabFeeItems(src);
 }
 
-/** 레거시 단일「커스텀어벗」이 있으면 지그제외 항목을 기본가로 보완. */
-function ensureSplitCustomAbutmentFeeItems(items) {
+/**
+ * 커스텀어벗(지그포함/제외) 행이 없으면 보완.
+ * items에 보철만 있고 CA가 없으면 flat 키가 무시돼 어벗 과금이 0이 되던 버그 방지.
+ */
+function ensureSplitCustomAbutmentFeeItems(items, scheduleSrc = null) {
   const list = Array.isArray(items) ? items : [];
-  const withJig = list.find((item) => isCustomAbutmentWithJigFeeName(item.name));
-  const withoutJig = list.find((item) =>
+  const src = scheduleSrc && typeof scheduleSrc === "object" ? scheduleSrc : {};
+  const enabledSrc =
+    src.enabled && typeof src.enabled === "object" ? src.enabled : {};
+  const flatWithJig = Math.max(
+    0,
+    Math.round(Number(src.customAbutmentDesignAndProduction || 0)),
+  );
+  const flatWithoutJig = Math.max(
+    0,
+    Math.round(Number(src.customAbutmentWithoutJig || 0)),
+  );
+  const withJigEnabled = enabledSrc.customAbutmentDesignAndProduction !== false;
+  const withoutJigEnabled =
+    enabledSrc.customAbutmentWithoutJig !== false &&
+    enabledSrc.customAbutmentDesignAndProduction !== false;
+
+  const out = list.map((item) => {
+    if (isCustomAbutmentWithJigFeeName(item.name)) {
+      return {
+        ...item,
+        name: LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME,
+        unit: "perTooth",
+        tiers: [],
+      };
+    }
+    if (isCustomAbutmentWithoutJigFeeName(item.name)) {
+      return {
+        ...item,
+        name: LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_NAME,
+        unit: "perTooth",
+        tiers: [],
+      };
+    }
+    return item;
+  });
+  const withJig = out.find((item) => isCustomAbutmentWithJigFeeName(item.name));
+  const withoutJig = out.find((item) =>
     isCustomAbutmentWithoutJigFeeName(item.name),
   );
-  if (!withJig && !withoutJig) return list;
-  const out = [...list];
   const seen = new Set(out.map((item) => item.id));
   const takeId = (wanted) => {
     let id = wanted;
@@ -1138,8 +1184,11 @@ function ensureSplitCustomAbutmentFeeItems(items) {
       id: takeId("customAbutmentWithJig"),
       name: LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME,
       unit: "perTooth",
-      enabled: withoutJig.enabled !== false,
-      price: LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_DEFAULT_PRICE,
+      enabled: withJigEnabled,
+      price:
+        flatWithJig > 0
+          ? flatWithJig
+          : LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_DEFAULT_PRICE,
       remake: 0,
       tiers: [],
     });
@@ -1150,8 +1199,11 @@ function ensureSplitCustomAbutmentFeeItems(items) {
       id: takeId("customAbutmentWithoutJig"),
       name: LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_NAME,
       unit: "perTooth",
-      enabled: seed?.enabled !== false,
-      price: LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_DEFAULT_PRICE,
+      enabled: seed ? seed.enabled !== false : withoutJigEnabled,
+      price:
+        flatWithoutJig > 0
+          ? flatWithoutJig
+          : LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_DEFAULT_PRICE,
       remake: 0,
       tiers: [],
     });
@@ -1178,6 +1230,18 @@ export function legacyLabFeeScheduleFromItems(items, base) {
   const enabled = normalizeLabFeeScheduleEnabled(base);
   const tempItems = [];
   for (const item of Array.isArray(items) ? items : []) {
+    if (isCustomAbutmentWithJigFeeName(item.name)) {
+      schedule.customAbutmentDesignAndProduction = item.price;
+      remake.customAbutmentDesignAndProduction = item.remake;
+      enabled.customAbutmentDesignAndProduction = item.enabled !== false;
+      continue;
+    }
+    if (isCustomAbutmentWithoutJigFeeName(item.name)) {
+      schedule.customAbutmentWithoutJig = item.price;
+      remake.customAbutmentWithoutJig = item.remake;
+      enabled.customAbutmentWithoutJig = item.enabled !== false;
+      continue;
+    }
     const key = legacyKeyFromItemName(item.name);
     if (!key) continue;
     if (key === "removableTemp") {

@@ -1,5 +1,6 @@
 // related files:
 // - web/backend/utils/labFeeSchedule.js
+// - 2026-08-24: 커스텀어벗 수가 perSet·0원 저장이어도 normalize로 perTooth 강제·단가 반영.
 // - 2026-08-23: 커스텀어벗 수가 지그포함(4만)·지그제외(3만) 분리.
 // - 2026-08-21: PTX CA 치과=기공소 수가. 어벗츠 1.5/2.5만은 기공소→어벗츠.
 // - 2026-08-13: 견적 라인 치아번호 10→20→30→40번대 정렬.
@@ -208,6 +209,121 @@ describe("labFeeSchedule", () => {
           prosthesisType: LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME,
           labFee: 0,
           labAbutmentFee: 40000,
+        }),
+      ]),
+    );
+  });
+
+  test("커스텀어벗(지그포함)이 perSet로 저장돼도 치아당 단가로 과금한다", () => {
+    const fees = computePracticeTransferRetailFees({
+      toothWorks: [
+        {
+          toothNumber: "37",
+          prosthesisType: "크라운",
+          customAbutment: true,
+          abutmentProductMode: "design_custom_abutment",
+        },
+      ],
+      labFeeSchedule: {
+        items: [
+          {
+            id: "crown",
+            name: "크라운",
+            unit: "perTooth",
+            enabled: true,
+            price: 60000,
+            remake: 0,
+            tiers: [],
+          },
+          {
+            id: "customAbutmentWithoutJig",
+            name: LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_NAME,
+            unit: "perTooth",
+            enabled: true,
+            price: 30000,
+            remake: 0,
+            tiers: [],
+          },
+          {
+            id: "broken-with-jig",
+            name: LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME,
+            unit: "perSet",
+            enabled: true,
+            price: 40000,
+            remake: 0,
+            tiers: [],
+          },
+        ],
+      },
+    });
+    const items = normalizeLabFeeItems({
+      items: [
+        {
+          id: "broken-with-jig",
+          name: LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME,
+          unit: "perSet",
+          enabled: true,
+          price: 40000,
+          remake: 0,
+          tiers: [],
+        },
+      ],
+    });
+    expect(items.find((i) => i.name === LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME)?.unit).toBe(
+      "perTooth",
+    );
+    expect(fees.labFeeTotal).toBe(100000);
+    expect(fees.labAbutmentTotal).toBe(40000);
+    expect(fees.total).toBe(100000);
+    expect(fees.lines).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          toothNumber: "37",
+          prosthesisType: "크라운",
+          labFee: 60000,
+        }),
+        expect.objectContaining({
+          toothNumber: "37",
+          prosthesisType: LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME,
+          labAbutmentFee: 40000,
+        }),
+      ]),
+    );
+  });
+
+  test("items에 보철만 있어도 flat 커스텀어벗 단가로 어벗을 과금한다", () => {
+    const fees = computePracticeTransferRetailFees({
+      toothWorks: [
+        {
+          toothNumber: "37",
+          prosthesisType: "크라운",
+          customAbutment: true,
+          abutmentProductMode: "design_custom_abutment",
+        },
+      ],
+      labFeeSchedule: {
+        customAbutmentDesignAndProduction: 35000,
+        enabled: { customAbutmentDesignAndProduction: true },
+        items: [
+          {
+            id: "crown",
+            name: "크라운",
+            unit: "perTooth",
+            enabled: true,
+            price: 60000,
+            remake: 0,
+            tiers: [],
+          },
+        ],
+      },
+    });
+    expect(fees.labAbutmentTotal).toBe(35000);
+    expect(fees.total).toBe(95000);
+    expect(fees.lines).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          prosthesisType: LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME,
+          labAbutmentFee: 35000,
         }),
       ]),
     );

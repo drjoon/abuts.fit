@@ -10,6 +10,7 @@
 // - 2026-08-19: `need` 쿼리 수가 카드를 맨 아래에서 깜빡이며 입력 안내.
 // - 2026-08-21: 항목 추가(빈 이름 초안)가 자동저장 응답에 지워지지 않게 로컬 초안을 보존.
 // - 2026-08-21: 라벨 원가→수가. WonInput은 blur 확정(입력 중 need 카드 리마운트로 포커스 끊김 방지).
+// - 2026-08-24: need 강제 입력 시 커스텀어벗(지그포함/제외) 기본가 4만·3만 시드.
 // - 2026-08-21: need 강제 입력은 맨 아래에서 작업(입력 후 위치 점프 혼동 방지).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -32,11 +33,14 @@ import { parseLabFeeNeedNames } from "@/features/settings/LabFeeSetupPrompt";
 import { cn } from "@/shared/ui/cn";
 import {
   LAB_FEE_ITEM_UNIT_LABELS,
+  LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_DEFAULT_PRICE,
+  LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME,
+  LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_DEFAULT_PRICE,
+  LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_NAME,
   MAX_LAB_FEE_ITEMS,
   normalizeLabFeeItem,
   normalizeLabFeeItems,
   labFeeItemMatchesNeedName,
-  type LabFeeItem,
   type LabFeeItem,
   type LabFeeItemUnit,
   type LabFeeSchedule,
@@ -283,7 +287,12 @@ export const LabFeeScheduleTab = () => {
         createFeeItem({
           name,
           enabled: true,
-          price: 0,
+          price:
+            name === LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME
+              ? LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_DEFAULT_PRICE
+              : name === LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_NAME
+                ? LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_DEFAULT_PRICE
+                : 0,
           unit: name === "임시치아" ? "perNTeeth" : "perTooth",
         }),
       );
