@@ -36,6 +36,7 @@
  * - web/frontend/src/shared/workspace/workspaceMode.ts
  * - web/frontend/src/shared/components/practice/PracticeTransferExpressWizard.tsx
  * - 2026-08-15: 익스프레스 모드 위저드(한 화면 한 질문). 최근의뢰는 전송 후 표시.
+ * - 2026-08-24: 기공의뢰 작업영역 하단 여백 — h-full 제거해 스크롤 끝 pb가 전송 버튼 아래에 붙게 함.
  * - 2026-08-21: [기공소로 전송] API 성공 직후 버튼 해제·네비. 폼 리셋은 백그라운드.
  * - 2026-08-21: 의뢰상세 열 때 목록 silent 재조회로 어벗 디자인·컨펌 CTA 동기화.
  * - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
@@ -6774,9 +6775,15 @@ export const PracticeFileTransferPage = ({
     <PageFileDropZone
       onFiles={handleIncomingFiles}
       activeClassName="ring-2 ring-primary/30"
-      className="h-full min-h-0 bg-gradient-subtle"
+      className="min-h-full bg-gradient-subtle"
     >
-      <div className={cn("mx-auto h-full min-h-0 w-full max-w-7xl space-y-3", isMobile ? "box-border min-w-0 px-2" : "p-4")}>
+      <div
+        className={cn(
+          "mx-auto w-full max-w-7xl space-y-3",
+          // h-full이면 pb가 뷰포트 끝에만 붙고, 긴 폼 스크롤 끝(전송 버튼 아래)에는 안 보임
+          isMobile ? "box-border min-w-0 px-2 pb-8" : "px-4 pt-4 pb-12",
+        )}
+      >
         {roleSwitcher ? (
           <div className="flex flex-wrap items-center gap-2">{roleSwitcher}</div>
         ) : null}
