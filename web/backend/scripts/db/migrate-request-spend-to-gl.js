@@ -9,6 +9,7 @@
 // - web/backend/services/creditBalance.service.js
 // - web/backend/services/creditRevenuePolicy.service.js
 // change-log:
+// - 2026-08-24: COMMIT occurredAt을 가공완료/패키지생성 SSOT로 (updatedAt 금지 — 정산일·우편함 혼입).
 // - 2026-08-22: 준비·취소 단계는 COMMIT 이관 대상에서 제외(의뢰자 HOLD만).
 // - 2026-08-22: 기존 COMMIT은 idempotencyKey뿐 아니라 같은 refId+eventType도 중복으로 본다(레거시 키 충돌 방지).
 import mongoose, { Types } from "mongoose";
@@ -27,6 +28,10 @@ import {
   resolveRevenueOwnerBaseAllocation,
   splitRevenueByCreditKindProRata,
 } from "../../services/creditRevenuePolicy.service.js";
+import {
+  pickRequestCommitOccurredAt,
+  pickShippingCommitOccurredAt,
+} from "./_commitOccurredAt.js";
 // 면세 정책: 수익 라인은 공급가 그대로 (VAT 가산 없음)
 function withVat(amount) {
   return Math.round(Number(amount || 0));
@@ -593,7 +598,10 @@ async function migrateAnchor(anchor, { cli, shippingFeeDefault, legacyMaps }) {
         refId: requestMongoId,
         amount: requestAmount,
         freeAccountCode: "REQ_FREE_REQUEST_CREDIT",
-        occurredAt: req?.updatedAt || req?.createdAt || new Date(),
+        occurredAt:
+          pickRequestCommitOccurredAt(req) ||
+          req?.createdAt ||
+          new Date(),
         stageFrom: "CAM",
         stageTo: "가공",
         request: req,
@@ -627,7 +635,11 @@ async function migrateAnchor(anchor, { cli, shippingFeeDefault, legacyMaps }) {
       refId: packageId,
       amount: shippingAmount,
       freeAccountCode: "REQ_FREE_SHIPPING_CREDIT",
-      occurredAt: pkg?.updatedAt || pkg?.createdAt || req?.updatedAt || req?.createdAt || new Date(),
+      occurredAt:
+        pickShippingCommitOccurredAt(pkg, req) ||
+        pkg?.createdAt ||
+        req?.createdAt ||
+        new Date(),
       stageFrom: "세척.패킹",
       stageTo: "포장.발송",
       request: req,

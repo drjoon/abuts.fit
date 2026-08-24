@@ -10,6 +10,13 @@ import LedgerJournal from "../../models/ledgerJournal.model.js";
 import LedgerLine from "../../models/ledgerLine.model.js";
 import Request from "../../models/request.model.js";
 import ShippingPackage from "../../models/shippingPackage.model.js";
+import {
+  pickRequestCommitOccurredAt,
+  pickShippingCommitOccurredAt,
+} from "./_commitOccurredAt.js";
+
+// change-log:
+// - 2026-08-24: occurredAt SSOT를 _commitOccurredAt으로 통일(updatedAt·Start 우선 제거).
 
 const MIGRATION_SOURCES = [
   "legacy_creditledger_rewrite",
@@ -64,37 +71,6 @@ function toIso(v) {
   return d.toISOString();
 }
 
-function pickRequestOccurredAt(req) {
-  if (!req) return null;
-  const ps = req.productionSchedule || {};
-  const candidates = [
-    ps.actualMachiningStart,
-    ps.actualMachiningComplete,
-    req.createdAt,
-  ];
-  for (const c of candidates) {
-    if (!c) continue;
-    const d = new Date(c);
-    if (!Number.isNaN(d.getTime())) return d;
-  }
-  return null;
-}
-
-function pickShippingOccurredAt(pkg, req) {
-  const ps = req?.productionSchedule || {};
-  const candidates = [
-    pkg?.createdAt,
-    ps.actualBatchProcessing,
-    req?.createdAt,
-  ];
-  for (const c of candidates) {
-    if (!c) continue;
-    const d = new Date(c);
-    if (!Number.isNaN(d.getTime())) return d;
-  }
-  return null;
-}
-
 async function run() {
   const cli = parseArgs(process.argv || []);
   console.log(
@@ -136,7 +112,7 @@ async function run() {
       }
     }
 
-    const [requests, shippingPackages] = await Promise.all([
+    const [requestsInitial, shippingPackages] = await Promise.all([
       requestIdSet.size
         ? Request.find({ _id: { $in: Array.from(requestIdSet) } })
             .select({
@@ -153,6 +129,31 @@ async function run() {
             .lean()
         : [],
     ]);
+
+    for (const pkg of shippingPackages || []) {
+      for (const id of pkg?.requestIds || []) {
+        const s = String(id || "").trim();
+        if (s) requestIdSet.add(s);
+      }
+    }
+
+    let requests = requestsInitial || [];
+    const missingPackageRequestIds = [...requestIdSet].filter(
+      (id) => !(requestsInitial || []).some((r) => String(r._id) === id),
+    );
+    if (missingPackageRequestIds.length) {
+      const extra = await Request.find({
+        _id: { $in: missingPackageRequestIds },
+      })
+        .select({
+          _id: 1,
+          requestId: 1,
+          createdAt: 1,
+          productionSchedule: 1,
+        })
+        .lean();
+      requests = [...requests, ...(extra || [])];
+    }
 
     const requestMap = new Map((requests || []).map((r) => [String(r._id), r]));
     const packageMap = new Map(
@@ -174,7 +175,7 @@ async function run() {
       if (eventType === "REQUEST_SPEND_COMMIT") {
         const req = requestMap.get(refId) || null;
         requestId = req?.requestId || null;
-        targetOccurredAt = pickRequestOccurredAt(req);
+        targetOccurredAt = pickRequestCommitOccurredAt(req);
       } else if (eventType === "SHIPPING_SPEND_COMMIT") {
         const pkg = packageMap.get(refId) || null;
         const reqId = Array.isArray(pkg?.requestIds) && pkg.requestIds.length > 0
@@ -182,7 +183,7 @@ async function run() {
           : "";
         const req = reqId ? requestMap.get(reqId) || null : null;
         requestId = req?.requestId || null;
-        targetOccurredAt = pickShippingOccurredAt(pkg, req);
+        targetOccurredAt = pickShippingCommitOccurredAt(pkg, req);
       }
 
       if (!targetOccurredAt) {
