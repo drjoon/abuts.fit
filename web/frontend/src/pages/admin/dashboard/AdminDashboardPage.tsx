@@ -1,5 +1,6 @@
 
 // change-log:
+// - 2026-08-24: 미처리 통신 카드 제거 후 뒤 카드를 끌어올려 4열 유지.
 // - 2026-08-23: ExoCAD 헥스 확인 모달에 확정 계정 보기/수정.
 // - 2026-08-21: ExoCAD 헥스 회전 확인 진행중 카드·완료 다이얼로그.
 // - 2026-08-04: 진행 건수를 묶음배송+신속배송 합으로 표시.
@@ -31,7 +32,6 @@ import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
-import { useAdminCommBadges } from "@/shared/hooks/useAdminCommBadges";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
 import {
@@ -40,16 +40,11 @@ import {
   CheckCircle,
   AlertCircle,
   DollarSign,
-  MessageSquare,
-  Mail,
-  MessageCircle,
-  HelpCircle,
   PhoneCall,
   RotateCcw,
   Trash2,
   Code2,
   UploadCloud,
-  Send,
   Puzzle,
   RotateCw,
   BarChart3,
@@ -503,7 +498,6 @@ export const AdminDashboardPage = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { period, setPeriod } = usePeriodStore();
-  const { counts: commBadgeCounts } = useAdminCommBadges();
   const [happyCallDialogOpen, setHappyCallDialogOpen] = useState(false);
   const [riskSummaryDialogOpen, setRiskSummaryDialogOpen] = useState(false);
   const [hexVerificationDialogOpen, setHexVerificationDialogOpen] =
@@ -1932,94 +1926,6 @@ export const AdminDashboardPage = () => {
                 </CardContent>
               </Card>
 
-              {/* 카드5: 미처리 통신 */}
-              <Card className="app-glass-card app-glass-card--lg h-full">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">
-                    미처리 통신
-                  </CardTitle>
-                  <MessageSquare className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-0.5">
-                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <MessageCircle className="h-3 w-3" />
-                        채팅
-                      </div>
-                      <button
-                        type="button"
-                        className={`text-lg font-bold focus:outline-none ${
-                          commBadgeCounts.chat > 0
-                            ? "text-primary-strong hover:text-primary-strong hover:underline"
-                            : "text-slate-900 hover:underline"
-                        }`}
-                        onClick={() => navigate("/dashboard/chat-management?unread=1")}
-                        aria-label="미확인 채팅 페이지로 이동"
-                      >
-                        {commBadgeCounts.chat.toLocaleString()}
-                      </button>
-                    </div>
-                    <div className="space-y-0.5">
-                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <Send className="h-3 w-3" />
-                        메시지
-                      </div>
-                      <button
-                        type="button"
-                        className={`text-lg font-bold focus:outline-none ${
-                          commBadgeCounts.sms > 0
-                            ? "text-primary-strong hover:text-primary-strong hover:underline"
-                            : "text-slate-900 hover:underline"
-                        }`}
-                        onClick={() => navigate("/dashboard/sms")}
-                        aria-label="메시지 페이지로 이동"
-                      >
-                        {commBadgeCounts.sms.toLocaleString()}
-                      </button>
-                    </div>
-                    <div className="space-y-0.5">
-                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <Mail className="h-3 w-3" />
-                        메일
-                      </div>
-                      <button
-                        type="button"
-                        className={`text-lg font-bold focus:outline-none ${
-                          commBadgeCounts.mail > 0
-                            ? "text-primary-strong hover:text-primary-strong hover:underline"
-                            : "text-slate-900 hover:underline"
-                        }`}
-                        onClick={() => navigate("/dashboard/mail?unread=1")}
-                        aria-label="미확인 메일 페이지로 이동"
-                      >
-                        {commBadgeCounts.mail.toLocaleString()}
-                      </button>
-                    </div>
-                    <div className="space-y-0.5">
-                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <HelpCircle className="h-3 w-3" />
-                        문의
-                      </div>
-                      <button
-                        type="button"
-                        className={`text-lg font-bold focus:outline-none ${
-                          commBadgeCounts.inquiry > 0
-                            ? "text-primary-strong hover:text-primary-strong hover:underline"
-                            : "text-slate-900 hover:underline"
-                        }`}
-                        onClick={() => navigate("/dashboard/inquiries?status=open")}
-                        aria-label="미처리 문의 페이지로 이동"
-                      >
-                        {commBadgeCounts.inquiry.toLocaleString()}
-                      </button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
-            <div className="grid grid-cols-1 gap-3 lg:grid-cols-4 items-stretch">
               {/* 카드8: 지연 위험 요약 */}
               <Card className="app-glass-card app-glass-card--lg h-full">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -2054,7 +1960,9 @@ export const AdminDashboardPage = () => {
                   </button>
                 </CardContent>
               </Card>
+            </div>
 
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-4 items-stretch">
               {/* 카드5-2: 디자인 소프트웨어 통계 */}
               <Card className="app-glass-card app-glass-card--lg h-full">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
