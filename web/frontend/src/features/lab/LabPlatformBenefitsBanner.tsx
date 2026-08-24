@@ -77,10 +77,10 @@ export const LabPlatformBenefitsBanner = ({
       {!collapsed ? (
         <>
           <div className="min-w-0 flex-1 space-y-0.5">
-            <p className="text-sm font-semibold leading-snug tracking-tight">
+            <p className="truncate text-sm font-semibold leading-snug tracking-tight">
               왜 가입할까요?
             </p>
-            <p className="text-xs leading-snug text-primary-strong/85">
+            <p className="truncate text-xs leading-snug text-primary-strong/85">
               의뢰.정산.어벗생산
             </p>
           </div>

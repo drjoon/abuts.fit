@@ -11,6 +11,7 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPath";
 import { cn } from "@/shared/ui/cn";
 
+// - 2026-08-25: 기공의뢰수신(lab) 캘린더는 fillHeight 복구. 사이드 aside에 shrink-0·min-w로 펼침 폭 고정.
 // - 2026-08-24: 작업영역 하단 여백 — 일반 페이지는 min-h-full 문서 흐름(+pb-12), credits/payments만 fillHeight 고정.
 // - 2026-08-23: 치과 사이드 — 스토어를 정산 위로.
 // - 2026-08-23: 작업영역 스크롤바 — 둥근 카드는 overflow clip, 안쪽 직사각 스크롤로 카드 오른쪽 끝에 붙이고 콘텐츠 여백은 상·하·좌·우 동일.
@@ -1234,11 +1235,12 @@ export const DashboardLayout = () => {
     location.pathname.startsWith("/dashboard/lab-work") ||
     (location.pathname.startsWith("/dashboard/practice-transfers") &&
       requestorKind === "lab");
-  // 충전·정산 등 fillHeight 페이지 — 래퍼를 뷰포트 높이에 고정(중첩 스크롤).
-  // 그 외(설정·기공의뢰 등)는 문서 흐름으로 키워 하단 pb가 스크롤 끝에 보이게 함.
+  // 충전·정산·기공의뢰수신 캘린더 — 래퍼를 뷰포트 높이에 고정(중첩 스크롤).
+  // 그 외(설정·치과 기공의뢰 등)는 문서 흐름으로 키워 하단 pb가 스크롤 끝에 보이게 함.
   const isFillHeightWorkArea =
     location.pathname.startsWith("/dashboard/credits") ||
-    location.pathname.startsWith("/dashboard/payments");
+    location.pathname.startsWith("/dashboard/payments") ||
+    isLabReceiveWorkArea;
   const worksheetParams = new URLSearchParams(location.search);
   const worksheetType = worksheetParams.get("type") || "cnc";
   const worksheetStageRaw = worksheetParams.get("stage") || "request";
@@ -1365,9 +1367,9 @@ export const DashboardLayout = () => {
 
         <aside
           className={cn(
-            "fixed inset-y-0 left-0 z-50 bg-card border-r border-border flex flex-col",
+            "fixed inset-y-0 left-0 z-50 flex shrink-0 flex-col border-r border-border bg-card",
             "transform transition-all duration-300 ease-in-out",
-            isOpen ? "w-60" : "w-24",
+            isOpen ? "w-60 min-w-60" : "w-24 min-w-24",
             isOpen
               ? "lg:relative translate-x-0"
               : "-translate-x-full lg:relative lg:translate-x-0",
