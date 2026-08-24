@@ -104,7 +104,7 @@
  * - 2026-08-20: 모바일 구강스캔 — 환자명 후 구강포토 촬영·업로드·임시저장(기공소는 전송 시).
  * - 2026-08-20: 모바일 임시저장=최근과 같은 카드 시트. PC 드롭존에 모바일 쉐이드 안내.
  * - 2026-08-20: 구강포토 썸네일 — private S3 location 대신 blob/proxy 미리보기.
- * - 2026-08-20: 모바일 상단 새로작성·임시저장만. 임시저장 모달 닫기·전체삭제 간격.
+ * - 2026-08-25: 상단 가이드투어 — 기공소·환자·날짜·보철물 전체 투어(휴지통 오른쪽).
  * - 2026-08-20: PC 첨부 목록에도 이미지 썸네일(모바일 동기화 포함).
  * - 2026-08-20: 구강포토 토스트 3초·닫기, CSP blob 썸네일, 클릭 미리보기, 동기화 반영.
  * - 2026-08-20: PC 썸네일 — S3 octet-stream MIME 보정·미리보기 fetch 중단 방지. 파일 전체삭제는 draft를 지우지 않고 빈 파일 스냅샷을 동기화.
@@ -1351,6 +1351,9 @@ export const PracticeFileTransferPage = ({
   const [recentTransfersAllOpen, setRecentTransfersAllOpen] = useState(false);
   const [draftsOpen, setDraftsOpen] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false);
+  const [guideTourActive, setGuideTourActive] = useState(false);
+  const [guideTourStartSignal, setGuideTourStartSignal] = useState(0);
+  const [guideTourExitSignal, setGuideTourExitSignal] = useState(0);
   const [oralPhotoPreview, setOralPhotoPreview] = useState<{
     name: string;
     url: string;
@@ -6511,7 +6514,7 @@ export const PracticeFileTransferPage = ({
     acceptedHint: PRACTICE_ACCEPTED_HINT,
                     fileInputId: "practice-file-transfer-input",
                     requirementNote:
-                      "모바일에서 쉐이드 포토를 바로 찍어 올릴 수 있어요.",
+                      "모바일에서 같은 계정·같은 환자로 사진을 찍어 올리세요.",
                     files: combinedDisplayFiles.map((file) => {
                       const localFile =
                         file.kind === "local" ? files[file.localIndex] : null;
@@ -6769,6 +6772,10 @@ export const PracticeFileTransferPage = ({
                   skipJig,
                   onSkipJigChange: persistSkipJigSetting,
                   rushProcessing,
+                  showInlineGuideTourButton: isMobile,
+                  guideTourStartSignal,
+                  guideTourExitSignal,
+                  onGuideTourActiveChange: setGuideTourActive,
   };
 
   return (
@@ -6861,6 +6868,20 @@ export const PracticeFileTransferPage = ({
                         {trashGroupedTransfers.length}
                       </Badge>
                     ) : null}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-9 px-3"
+                    onClick={() => {
+                      if (guideTourActive) {
+                        setGuideTourExitSignal((n) => n + 1);
+                        return;
+                      }
+                      setGuideTourStartSignal((n) => n + 1);
+                    }}
+                  >
+                    {guideTourActive ? "투어 종료" : "가이드투어"}
                   </Button>
                   {formSyncStatusLabel ? (
                     <span

@@ -89,6 +89,8 @@ export type PracticeOrderArrivalDateRangeFieldProps = {
   /** 신속처리: 날짜 선택 잠금 */
   locked?: boolean;
   lockedHint?: string;
+  /** 팝오버 열림/닫힘 (가이드투어 등) */
+  onOpenChange?: (open: boolean) => void;
 };
 
 export function PracticeOrderArrivalDateRangeField({
@@ -100,8 +102,14 @@ export function PracticeOrderArrivalDateRangeField({
   triggerClassName,
   locked = false,
   lockedHint,
+  onOpenChange,
 }: PracticeOrderArrivalDateRangeFieldProps) {
   const [open, setOpen] = useState(false);
+
+  const setOpenAndNotify = (next: boolean) => {
+    setOpen(next);
+    onOpenChange?.(next);
+  };
   const todayYmd = useMemo(() => toKstYmd(new Date()) || "", []);
   const todayDate = useMemo(() => ymdToKstDate(todayYmd) || undefined, [todayYmd]);
 
@@ -134,12 +142,12 @@ export function PracticeOrderArrivalDateRangeField({
   const handleApply = () => {
     if (!canApply || !todayYmd || !draftArrivalYmd) return;
     onChange({ orderDate: todayYmd, arrivalDate: draftArrivalYmd });
-    setOpen(false);
+    setOpenAndNotify(false);
   };
 
   const handleCancel = () => {
     if (!todayDate || !todayYmd) {
-      setOpen(false);
+      setOpenAndNotify(false);
       return;
     }
     const arrivalYmd =
@@ -150,7 +158,7 @@ export function PracticeOrderArrivalDateRangeField({
       from: todayDate,
       to: ymdToKstDate(arrivalYmd) || todayDate,
     });
-    setOpen(false);
+    setOpenAndNotify(false);
   };
 
   return (
@@ -190,7 +198,10 @@ export function PracticeOrderArrivalDateRangeField({
           />
         ) : null}
       </div>
-      <Popover open={locked ? false : open} onOpenChange={locked ? undefined : setOpen}>
+      <Popover
+        open={locked ? false : open}
+        onOpenChange={locked ? undefined : setOpenAndNotify}
+      >
         <PopoverTrigger asChild>
           <Button
             type="button"

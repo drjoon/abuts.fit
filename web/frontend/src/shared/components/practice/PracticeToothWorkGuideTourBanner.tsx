@@ -3,7 +3,23 @@
 import { Button } from "@/components/ui/button";
 import { cn } from "@/shared/ui/cn";
 
+/** 기공의뢰 작성 전체 체험형 가이드투어 (기공소·환자·날짜 → 보철물) */
 export const PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS = [
+  {
+    id: "lab",
+    title: "기공소 선택",
+    hint: "처음엔 어벗츠기공소만 있습니다. 선택하거나 검색창에 기공소를 입력하세요.",
+  },
+  {
+    id: "patient",
+    title: "환자명",
+    hint: "완성형 한글 환자명을 입력하세요.",
+  },
+  {
+    id: "dates",
+    title: "날짜 확인",
+    hint: "주문·치과도착일 버튼을 눌러 날짜를 확인하세요.",
+  },
   {
     id: "select",
     title: "치아 선택",
@@ -75,9 +91,11 @@ type PracticeToothWorkGuideTourBannerProps = {
   onExit: () => void;
   onFinish: () => void;
   className?: string;
-  /** 임플란트 프리셋 개수 — 없으면 추가 안내 */
+  /** center: 치식 위 중앙 / aside: 헤더 오른쪽 빈 공간 */
+  placement?: "center" | "aside";
+  /** 임플란트 프리셋 개수 — 0이면 추가 유도 문구 */
   implantFavoriteCount?: number;
-  /** 스캔바디 프리셋 개수 — 없으면 추가 안내 */
+  /** 스캔바디 프리셋 개수 — 0이면 추가 유도 문구 */
   scanbodyFavoriteCount?: number;
 };
 
@@ -85,65 +103,82 @@ const resolveTourCopy = (
   step: PracticeToothWorkGuideTourStep,
   implantFavoriteCount: number,
   scanbodyFavoriteCount: number,
-): { title: string; hint: string } => {
+) => {
   const base =
     PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS[step] ?? PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS[0];
-  if (base.id === "implant_preset") {
-    if (implantFavoriteCount <= 0) {
-      return {
-        title: "임플란트 프리셋 추가",
-        hint: "제조사·브랜드·패밀리·타입을 고른 뒤 저장하세요.",
-      };
-    }
+  if (base.id === "implant_preset" && implantFavoriteCount <= 0) {
     return {
-      title: "임플란트 프리셋 선택",
-      hint: "목록에서 임플란트 프리셋을 클릭해 선택하세요.",
+      ...base,
+      hint: "아래에서 제조사·브랜드·패밀리·타입을 고른 뒤 저장하세요.",
     };
   }
-  if (base.id === "scanbody_preset") {
-    if (scanbodyFavoriteCount <= 0) {
-      return {
-        title: "스캔바디 프리셋 추가",
-        hint: "제조사·직경·높이를 입력한 뒤 저장하세요.",
-      };
-    }
+  if (base.id === "scanbody_preset" && scanbodyFavoriteCount <= 0) {
     return {
-      title: "스캔바디 프리셋 선택",
-      hint: "목록에서 스캔바디 프리셋을 클릭해 선택하세요.",
+      ...base,
+      hint: "아래에서 제조사·직경·높이를 입력한 뒤 저장하세요.",
     };
   }
-  return { title: base.title, hint: base.hint };
+  return base;
 };
 
-/** 보철물 치식 위 체험형 가이드투어 안내 바 */
+/** 기공의뢰 작성 전체 체험형 가이드투어 안내 바 */
 export function PracticeToothWorkGuideTourBanner({
   step,
   onSkip,
   onExit,
   onFinish,
   className,
+  placement = "center",
   implantFavoriteCount = 0,
   scanbodyFavoriteCount = 0,
 }: PracticeToothWorkGuideTourBannerProps) {
   const isDone = step >= PRACTICE_TOOTH_WORK_GUIDE_TOUR_DONE_STEP;
   const current = isDone
-    ? { title: "완료", hint: "투어를 마쳤습니다. 필요한 보철물을 이어서 선택해 주세요." }
+    ? {
+        title: "완료",
+        hint: "투어를 마쳤습니다. 기공소·환자·날짜·보철물을 이어서 작성해 주세요.",
+      }
     : resolveTourCopy(step, implantFavoriteCount, scanbodyFavoriteCount);
   const total = PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS.length;
+  const aside = placement === "aside";
 
   return (
-    <div className={cn("flex justify-center px-1", className)}>
+    <div
+      className={cn(
+        aside ? "flex justify-start lg:justify-end" : "flex justify-center px-1",
+        className,
+      )}
+    >
       <div
         role="status"
-        className="inline-flex max-w-full items-center gap-3 overflow-x-auto rounded-lg border border-accent-muted bg-accent-soft px-3 py-2 shadow-sm shadow-accent/15"
+        className={cn(
+          "relative z-20 rounded-lg border border-accent-muted bg-accent-soft px-3 py-2 shadow-sm shadow-accent/15",
+          aside
+            ? "flex w-full max-w-sm flex-col gap-2 lg:max-w-[22rem]"
+            : "inline-flex max-w-full items-center gap-3 overflow-x-auto",
+        )}
       >
-        <div className="flex min-w-0 items-baseline gap-2 whitespace-nowrap">
+        <div
+          className={cn(
+            "min-w-0",
+            aside
+              ? "space-y-0.5"
+              : "flex items-baseline gap-2 whitespace-nowrap",
+          )}
+        >
           <p className="text-xs font-semibold text-accent-strong">
             {isDone ? current.title : `${current.title} · ${step + 1}/${total}`}
           </p>
-          <p className="text-xs text-slate-600">{current.hint}</p>
+          <p
+            className={cn(
+              "text-xs text-slate-600",
+              aside ? "leading-snug" : undefined,
+            )}
+          >
+            {current.hint}
+          </p>
         </div>
-        <div className="flex shrink-0 items-center gap-1.5">
+        <div className={cn("flex shrink-0 items-center gap-1.5", aside && "self-end")}>
           {isDone ? (
             <Button
               type="button"
