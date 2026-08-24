@@ -734,8 +734,7 @@ export function MachiningStatisticsModal({ open, onOpenChange, token }: Props) {
                           ticks={DIAMETER_TICKS}
                           tickLine={false}
                           axisLine={false}
-                          tick={false}
-                          height={8}
+                          tick={{ fontSize: CHART_AXIS_FONT, fill: "hsl(215 16% 47%)" }}
                           interval={0}
                         />
                         <YAxis
