@@ -49,8 +49,10 @@ type Props = {
 const DEFAULT_PRESET_PERIODS: PeriodFilterValue[] = ["30d", "thisMonth"];
 
 const labelMap: Record<PeriodFilterValue, string> = {
+  "7d": "7일",
   "30d": "30일",
   "90d": "90일",
+  "180d": "180일",
   thisMonth: "이번달",
   lastMonth: "지난달",
 };

@@ -27,7 +27,7 @@ import { onNotification } from "@/shared/realtime/socket";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { useSearchParams } from "react-router-dom";
-import { AlertTriangle, ArrowLeft, ArrowRight, BarChart3, ListOrdered, X, Zap } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ArrowRight, ListOrdered, X, Zap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/shared/ui/cn";
 import { RESPONSIVE } from "@/shared/ui/responsive";
@@ -65,7 +65,6 @@ import { useManUpload } from "@/pages/manufacturer/equipment/cnc/hooks/useManUpl
 import { MachiningRequestLabel } from "./components/MachiningRequestLabel";
 import { ExpressRebalanceAlertModal } from "./components/ExpressRebalanceAlertModal";
 import { MachiningPriorityRulesModal } from "./components/MachiningPriorityRulesModal";
-import { MachiningStatisticsModal } from "./components/MachiningStatisticsModal";
 import { buildLabelExtraProps } from "./utils/label";
 import { PreviewModal } from "@/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal";
 import { usePreviewLoader } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/usePreviewLoader";
@@ -387,7 +386,6 @@ export const MachiningQueueBoard = ({
   const [expressRebalanceModalOpen, setExpressRebalanceModalOpen] =
     useState(false);
   const [priorityRulesModalOpen, setPriorityRulesModalOpen] = useState(false);
-  const [statsModalOpen, setStatsModalOpen] = useState(false);
   const lastAutoOpenedExpressRebalanceIdRef = useRef<string>("");
 
   useEffect(() => {
@@ -1451,16 +1449,6 @@ export const MachiningQueueBoard = ({
           <button
             type="button"
             className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-            onClick={() => setStatsModalOpen(true)}
-            title="직경별 가공 통계"
-          >
-            <BarChart3 className="h-3.5 w-3.5" />
-            통계
-          </button>
-
-          <button
-            type="button"
-            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
             onClick={() => setPriorityRulesModalOpen(true)}
             title="가공 우선순위 룰 보기"
           >
@@ -2237,12 +2225,6 @@ export const MachiningQueueBoard = ({
       <MachiningPriorityRulesModal
         open={priorityRulesModalOpen}
         onOpenChange={setPriorityRulesModalOpen}
-        token={token}
-      />
-
-      <MachiningStatisticsModal
-        open={statsModalOpen}
-        onOpenChange={setStatsModalOpen}
         token={token}
       />
 

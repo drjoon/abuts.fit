@@ -135,8 +135,14 @@ export const periodToRange = (
   const now = new Date();
   const { year, month, day } = getKstDateParts(now);
 
-  if (period === "30d" || period === "90d") {
-    const days = period === "30d" ? 30 : 90;
+  if (
+    period === "7d" ||
+    period === "30d" ||
+    period === "90d" ||
+    period === "180d"
+  ) {
+    const days =
+      period === "7d" ? 7 : period === "30d" ? 30 : period === "90d" ? 90 : 180;
     const todayStart = makeUtcFromKst(year, month, day, 0, 0, 0, 0);
     const todayEnd = makeUtcFromKst(year, month, day, 23, 59, 59, 999);
     const start = new Date(

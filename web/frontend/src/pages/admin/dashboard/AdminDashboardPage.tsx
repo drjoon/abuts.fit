@@ -52,8 +52,10 @@ import {
   Send,
   Puzzle,
   RotateCw,
+  BarChart3,
   type LucideIcon,
 } from "lucide-react";
+import { MachiningStatisticsModal } from "@/pages/manufacturer/worksheet/custom_abutment/machining/components/MachiningStatisticsModal";
 
 type PricingSummary = {
   totalOrders?: number;
@@ -563,6 +565,8 @@ export const AdminDashboardPage = () => {
     item: null,
   });
   const [designSoftwareStatsDialogOpen, setDesignSoftwareStatsDialogOpen] =
+    useState(false);
+  const [machiningStatsDialogOpen, setMachiningStatsDialogOpen] =
     useState(false);
   const [unsupportedAbutmentStatsDialogOpen, setUnsupportedAbutmentStatsDialogOpen] =
     useState(false);
@@ -2149,6 +2153,32 @@ export const AdminDashboardPage = () => {
                 </CardContent>
               </Card>
 
+              {/* 카드5-4: 가공 통계 */}
+              <Card className="app-glass-card app-glass-card--lg h-full">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">가공 통계</CardTitle>
+                  <BarChart3 className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <button
+                    type="button"
+                    className="w-full px-1 py-1 text-left hover:bg-slate-50/70 transition rounded-sm"
+                    onClick={() => setMachiningStatsDialogOpen(true)}
+                  >
+                    <div className="text-sm font-semibold text-slate-800">
+                      직경별 제작 · 소요시간
+                    </div>
+                    <div className="mt-1 text-[11px] text-muted-foreground leading-relaxed">
+                      6·8·10·12mm 제작 건수·비율과 최소·평균·최대 가공 시간을
+                      확인합니다.
+                    </div>
+                    <div className="mt-2 text-[11px] text-primary-strong font-medium">
+                      클릭하여 통계 열기
+                    </div>
+                  </button>
+                </CardContent>
+              </Card>
+
               {/* 카드6: 불완전가공 의뢰 현황 */}
               <Card className="app-glass-card app-glass-card--lg h-full flex flex-col">
                 <CardHeader className="pb-2">
@@ -2381,6 +2411,12 @@ export const AdminDashboardPage = () => {
           </>
         }
         mainLeft={undefined}
+      />
+
+      <MachiningStatisticsModal
+        open={machiningStatsDialogOpen}
+        onOpenChange={setMachiningStatsDialogOpen}
+        token={token}
       />
 
       <MultiActionDialog

@@ -315,15 +315,8 @@ const resolveMachiningDurationSeconds = (record) => {
   return null;
 };
 
-const percentile = (sortedValues, p) => {
-  if (!sortedValues.length) return 0;
-  const idx = (sortedValues.length - 1) * p;
-  const lower = Math.floor(idx);
-  const upper = Math.ceil(idx);
-  if (lower === upper) return sortedValues[lower];
-  const weight = idx - lower;
-  return sortedValues[lower] * (1 - weight) + sortedValues[upper] * weight;
-};
+const MACHINING_DURATION_OUTLIER_LOW_MAX_SECONDS = 3 * 60; // 3분 이하
+const MACHINING_DURATION_OUTLIER_HIGH_MIN_SECONDS = 15 * 60; // 15분 이상
 
 const buildCompletedAtRangeFromQuery = (req) => {
   const fromYmd = String(req.query.from || "").trim();
@@ -376,6 +369,7 @@ const buildCompletedAtRangeFromQuery = (req) => {
   let days = 30;
   if (period === "7d") days = 7;
   else if (period === "90d") days = 90;
+  else if (period === "180d") days = 180;
 
   const fromDate = new Date(todayKst);
   fromDate.setDate(fromDate.getDate() - (days - 1));
@@ -480,38 +474,48 @@ export async function getMachiningStatistics(req, res) {
         .filter((v) => typeof v === "number" && v > 0);
       const sorted = [...durations].sort((a, b) => a - b);
       const sampleCount = sorted.length;
-      const minSeconds = sampleCount > 0 ? sorted[0] : null;
-      const maxSeconds = sampleCount > 0 ? sorted[sorted.length - 1] : null;
-      const avgSeconds =
-        sampleCount > 0
-          ? Math.round(
-              sorted.reduce((sum, v) => sum + v, 0) / sampleCount,
-            )
-          : null;
 
       let outliers = [];
-      if (sampleCount >= 4) {
-        const q1 = percentile(sorted, 0.25);
-        const q3 = percentile(sorted, 0.75);
-        const iqr = q3 - q1;
-        const low = q1 - 1.5 * iqr;
-        const high = q3 + 1.5 * iqr;
+      let chartSorted = sorted;
+      if (sampleCount > 0) {
         outliers = items
           .filter(
             (it) =>
               typeof it.durationSeconds === "number" &&
               it.durationSeconds > 0 &&
-              (it.durationSeconds < low || it.durationSeconds > high),
+              (it.durationSeconds <= MACHINING_DURATION_OUTLIER_LOW_MAX_SECONDS ||
+                it.durationSeconds >=
+                  MACHINING_DURATION_OUTLIER_HIGH_MIN_SECONDS),
           )
           .map((it) => ({
             ...it,
             outlierReason:
-              typeof it.durationSeconds === "number" && it.durationSeconds > high
+              typeof it.durationSeconds === "number" &&
+              it.durationSeconds >= MACHINING_DURATION_OUTLIER_HIGH_MIN_SECONDS
                 ? "high"
                 : "low",
           }))
           .sort((a, b) => (b.durationSeconds || 0) - (a.durationSeconds || 0));
+
+        // 차트용 min/avg/max는 아웃라이어 제외 (스케일 왜곡 방지)
+        const inliers = sorted.filter(
+          (v) =>
+            v > MACHINING_DURATION_OUTLIER_LOW_MAX_SECONDS &&
+            v < MACHINING_DURATION_OUTLIER_HIGH_MIN_SECONDS,
+        );
+        if (inliers.length > 0) chartSorted = inliers;
       }
+
+      const chartSampleCount = chartSorted.length;
+      const minSeconds = chartSampleCount > 0 ? chartSorted[0] : null;
+      const maxSeconds =
+        chartSampleCount > 0 ? chartSorted[chartSampleCount - 1] : null;
+      const avgSeconds =
+        chartSampleCount > 0
+          ? Math.round(
+              chartSorted.reduce((sum, v) => sum + v, 0) / chartSampleCount,
+            )
+          : null;
 
       return {
         label,
@@ -521,7 +525,7 @@ export async function getMachiningStatistics(req, res) {
           minSeconds,
           avgSeconds,
           maxSeconds,
-          sampleCount,
+          sampleCount: chartSampleCount,
         },
         outliers,
       };
@@ -532,6 +536,10 @@ export async function getMachiningStatistics(req, res) {
       data: {
         period: { from: fromYmd, to: toYmd },
         totalCount,
+        outlierCriteria: {
+          lowMaxSeconds: MACHINING_DURATION_OUTLIER_LOW_MAX_SECONDS,
+          highMinSeconds: MACHINING_DURATION_OUTLIER_HIGH_MIN_SECONDS,
+        },
         buckets,
       },
     });
