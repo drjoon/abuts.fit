@@ -11,6 +11,7 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPath";
 import { cn } from "@/shared/ui/cn";
 
+// - 2026-08-24: 작업영역 하단 여백 — 일반 페이지는 min-h-full 문서 흐름(+pb-12), credits/payments만 fillHeight 고정.
 // - 2026-08-23: 치과 사이드 — 스토어를 정산 위로.
 // - 2026-08-23: 작업영역 스크롤바 — 둥근 카드는 overflow clip, 안쪽 직사각 스크롤로 카드 오른쪽 끝에 붙이고 콘텐츠 여백은 상·하·좌·우 동일.
 // - 2026-08-22: 치과·기공소 사이드바 크레딧 → 정산 라벨.
@@ -1233,6 +1234,11 @@ export const DashboardLayout = () => {
     location.pathname.startsWith("/dashboard/lab-work") ||
     (location.pathname.startsWith("/dashboard/practice-transfers") &&
       requestorKind === "lab");
+  // 충전·정산 등 fillHeight 페이지 — 래퍼를 뷰포트 높이에 고정(중첩 스크롤).
+  // 그 외(설정·기공의뢰 등)는 문서 흐름으로 키워 하단 pb가 스크롤 끝에 보이게 함.
+  const isFillHeightWorkArea =
+    location.pathname.startsWith("/dashboard/credits") ||
+    location.pathname.startsWith("/dashboard/payments");
   const worksheetParams = new URLSearchParams(location.search);
   const worksheetType = worksheetParams.get("type") || "cnc";
   const worksheetStageRaw = worksheetParams.get("stage") || "request";
@@ -1762,15 +1768,21 @@ export const DashboardLayout = () => {
                     )}
                   >
                     <div
-                      className="custom-scrollbar flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overflow-x-hidden"
+                      className={cn(
+                        "custom-scrollbar h-full min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden",
+                        isFillHeightWorkArea && "flex flex-col",
+                      )}
                       data-dashboard-scroll="1"
                     >
                       <div
                         className={cn(
-                          "flex min-h-0 min-w-0 flex-1 flex-col",
+                          "box-border min-w-0",
+                          isFillHeightWorkArea
+                            ? "flex min-h-0 flex-1 flex-col"
+                            : "min-h-full",
                           isLabReceiveWorkArea
                             ? "p-3 sm:p-4"
-                            : "px-4 pb-5 pt-5 sm:p-6",
+                            : "px-4 pb-8 pt-5 sm:px-6 sm:pb-12 sm:pt-6",
                         )}
                       >
                         <Outlet

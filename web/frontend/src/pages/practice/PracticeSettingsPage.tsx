@@ -5,6 +5,7 @@
 // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
+// - 2026-08-24: 작업영역 하단 여백 — min-h-full + pb-12.
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -256,7 +257,7 @@ export const PracticeSettingsPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-subtle p-4">
+    <div className="min-h-full pb-8 sm:pb-12">
       <div className="max-w-4xl mx-auto space-y-4">
         <Tabs
           value={activeTab}

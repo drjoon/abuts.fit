@@ -3,6 +3,7 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // change-log:
+// - 2026-08-24: 작업영역 하단 여백 — 이중 그라데이션/패딩 제거, pb만 유지(레이아웃 스크롤 끝과 맞춤).
 // - 2026-08-11: tabsMaxClassName — 탭 바만 문의 페이지처럼 max-w-4xl·상단 고정, 콘텐츠는 별도 max-width.
 // - 2026-08-11: fillHeight — 대시보드 작업영역 높이를 채우고 탭 콘텐츠 스크롤/중앙 배치 제어.
 // - 2026-08-11: fillHeight 시 이중 배경·패딩 제거(작업영역 흰 카드 기준).
@@ -113,7 +114,8 @@ export const SettingsScaffold = ({
       className={cn(
         fillHeight
           ? "box-border flex h-full min-h-0 flex-col overflow-hidden"
-          : "min-h-screen bg-gradient-subtle p-3 sm:p-4",
+          : // 대시보드 흰 카드 안 — 이중 그라데이션 없이 하단 pb만 (스크롤 끝에 여백)
+            "min-h-full pb-8 sm:pb-12",
       )}
     >
       <TooltipProvider>

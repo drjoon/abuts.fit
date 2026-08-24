@@ -42,7 +42,7 @@ export const SettingsTabsSkeleton = ({
   tabCount = 6,
 }: SettingsTabsSkeletonProps) => {
   return (
-    <div className="min-h-screen bg-gradient-subtle p-4">
+    <div className="min-h-full pb-8 sm:pb-12">
       <div className="max-w-4xl mx-auto space-y-4">
         <div className="flex h-auto w-full flex-wrap justify-stretch gap-1.5 rounded-xl border border-border bg-muted/30 px-1.5 py-1.5">
           {Array.from({ length: tabCount }).map((_, index) => (
