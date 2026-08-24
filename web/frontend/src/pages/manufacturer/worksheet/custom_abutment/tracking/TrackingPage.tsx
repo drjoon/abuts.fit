@@ -1581,21 +1581,42 @@ export const TrackingInquiryPage = () => {
   }, [currentRows.length]);
 
   return (
-    <div className="relative w-full text-gray-800 flex flex-col items-stretch">
-      <div className="flex-1">
-        <Tabs value={tab} onValueChange={(v) => setTab(v as InquiryTab)}>
-          <div className="flex items-center gap-3">
-            <TabsList className="flex-1 justify-center">
-              <TabsTrigger value="shipping">택배/배송</TabsTrigger>
-              <TabsTrigger value="process">생산공정일지</TabsTrigger>
-              <TabsTrigger value="udi">UDI신고</TabsTrigger>
-            </TabsList>
-            <div className="ml-auto flex items-center gap-2">
+    <div className="relative flex h-full min-h-0 w-full flex-col items-stretch text-gray-800">
+      <div className="flex min-h-0 flex-1 flex-col">
+        <Tabs
+          value={tab}
+          onValueChange={(v) => setTab(v as InquiryTab)}
+          className="flex min-h-0 flex-1 flex-col"
+        >
+          <div className="mb-3 flex flex-row items-center gap-3">
+            <div className="min-w-0 basis-1/3">
+              <TabsList className="h-8 w-full justify-start gap-1 bg-transparent p-0">
+                <TabsTrigger
+                  value="shipping"
+                  className="h-8 rounded-lg px-2.5 text-xs data-[state=active]:bg-primary-soft data-[state=active]:text-primary-strong"
+                >
+                  택배/배송
+                </TabsTrigger>
+                <TabsTrigger
+                  value="process"
+                  className="h-8 rounded-lg px-2.5 text-xs data-[state=active]:bg-primary-soft data-[state=active]:text-primary-strong"
+                >
+                  생산공정일지
+                </TabsTrigger>
+                <TabsTrigger
+                  value="udi"
+                  className="h-8 rounded-lg px-2.5 text-xs data-[state=active]:bg-primary-soft data-[state=active]:text-primary-strong"
+                >
+                  UDI신고
+                </TabsTrigger>
+              </TabsList>
+            </div>
+            <div className="flex min-w-0 basis-2/3 flex-wrap items-center justify-end gap-2">
               {tab === "udi" && (
                 <Button
                   variant="outline"
                   size="sm"
-                  className="px-4"
+                  className="h-8 px-2.5 text-xs"
                   onClick={handleDownloadUdi}
                 >
                   다운로드
@@ -1605,7 +1626,7 @@ export const TrackingInquiryPage = () => {
                 <Button
                   variant={recallMode ? "default" : "outline"}
                   size="sm"
-                  className="px-4"
+                  className="h-8 px-2.5 text-xs"
                   onClick={() => {
                     if (recallSubmitting) return;
                     setRecallMode((prev) => {
@@ -1626,7 +1647,7 @@ export const TrackingInquiryPage = () => {
               <Button
                 variant="default"
                 size="sm"
-                className="px-4"
+                className="h-8 px-2.5 text-xs"
                 onClick={() => handlePrint(tab)}
               >
                 프린트
@@ -1636,7 +1657,7 @@ export const TrackingInquiryPage = () => {
 
           <TabsContent
             value="process"
-            className="space-y-3 mt-4 flex-1 min-h-0 flex flex-col"
+            className="mt-0 flex min-h-0 flex-1 flex-col space-y-2 overflow-hidden data-[state=inactive]:hidden"
           >
             <div
               ref={setScrollContainer}
@@ -1810,7 +1831,7 @@ export const TrackingInquiryPage = () => {
 
           <TabsContent
             value="udi"
-            className="space-y-3 mt-4 flex-1 min-h-0 flex flex-col"
+            className="mt-0 flex min-h-0 flex-1 flex-col space-y-2 overflow-hidden data-[state=inactive]:hidden"
           >
             <div
               ref={setScrollContainer}
@@ -1877,7 +1898,7 @@ export const TrackingInquiryPage = () => {
 
           <TabsContent
             value="shipping"
-            className="space-y-3 mt-4 flex-1 min-h-0 flex flex-col"
+            className="mt-0 flex min-h-0 flex-1 flex-col space-y-2 overflow-hidden data-[state=inactive]:hidden"
           >
             <div
               ref={setScrollContainer}
