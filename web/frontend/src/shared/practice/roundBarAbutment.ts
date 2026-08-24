@@ -6,6 +6,7 @@
 // - web/frontend/src/pages/admin/system/AdminRoundBarAbutmentTab.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // change-log:
+// - 2026-08-24: 관리자 어벗 추가 요청 삭제 API 클라이언트.
 // - 2026-08-23: 미제공 안내 `{치아} : 어벗츠 미제공 커스텀어벗은…`.
 // - 2026-08-21: 미제공 CA 안내 INTRO/OUTRO 단문화.
 // - 2026-08-21: 미제공 CA 안내 INTRO/OUTRO·혼재 문구. 치아 상세는 LabPendingAbutmentGuide.
@@ -171,6 +172,7 @@ export type RoundBarRequestUpdatedPayload = {
   brand?: string;
   family?: string;
   type?: string;
+  deleted?: boolean;
 };
 
 export const applyRoundBarRequestUpdate = (
@@ -180,6 +182,17 @@ export const applyRoundBarRequestUpdate = (
   const requestId = String(payload?.requestId || "").trim();
   const favoriteId = String(payload?.favoriteId || "").trim();
   if (!requestId && !favoriteId) return favorites;
+  if (payload?.deleted) {
+    return favorites.filter((fav) => {
+      if (requestId && String(fav.roundBarRequestId || "").trim() === requestId) {
+        return false;
+      }
+      if (favoriteId && fav.id === favoriteId && !Boolean(fav.adopted)) {
+        return false;
+      }
+      return true;
+    });
+  }
   const adopted = Boolean(payload?.adopted);
   const adoptedKind = normalizeAdoptedKind(payload?.adoptedKind);
   const manufacturer = String(payload?.manufacturer || "").trim();
@@ -301,6 +314,26 @@ export async function patchAdminRoundBarRequest(params: {
   });
   if (!res.ok) {
     throw new Error(res.data?.message || "저장에 실패했습니다.");
+  }
+  return res.data?.data || null;
+}
+
+export async function deleteAdminRoundBarRequest(params: {
+  token: string;
+  id: string;
+}) {
+  const res = await apiFetch<{
+    success?: boolean;
+    message?: string;
+    data?: { id?: string };
+  }>({
+    path: `/api/admin/round-bar-requests/${encodeURIComponent(params.id)}`,
+    method: "DELETE",
+    token: params.token,
+    skipCache: true,
+  });
+  if (!res.ok) {
+    throw new Error(res.data?.message || "삭제에 실패했습니다.");
   }
   return res.data?.data || null;
 }

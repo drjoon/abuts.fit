@@ -190,6 +190,7 @@ import {
 import {
   adminListRoundBarAbutmentRequests,
   adminUpdateRoundBarAbutmentRequest,
+  adminDeleteRoundBarAbutmentRequest,
 } from "../../controllers/admin/admin.roundBarAbutment.controller.js";
 import {
   handleInboundEmailWebhook,
@@ -321,6 +322,7 @@ router.patch(
 
 router.get("/round-bar-requests", adminListRoundBarAbutmentRequests);
 router.patch("/round-bar-requests/:id", adminUpdateRoundBarAbutmentRequest);
+router.delete("/round-bar-requests/:id", adminDeleteRoundBarAbutmentRequest);
 
 // 사업자 관리
 router.get(

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-24: 분배 비율 — 딜러사 포함 섹션·딜러사 비포함 안내문 제거(딜러 분배 중단).
 // - 2026-08-23: 제조사=일반과세. 매입 공급가로 잔여 분배(부가세 포함가는 표시·설정값).
 // - 2026-08-22: 가격 라벨 — 판매가(부가세 면제)·매입가(부가세 포함).
 // - 2026-08-22: 매입가(부가세 포함) 스피너 100원 단위. 판매가는 1,000원.
@@ -594,63 +595,40 @@ function PercentField({
 
 function SharePercentRow({
   idPrefix,
-  title,
-  description,
   shares,
   unitPrices,
-  showSalesman,
   disabled,
-  onSalesmanChange,
   onDevopsChange,
   onAbutsChange,
 }: {
   idPrefix: string;
-  title: string;
-  description: string;
   shares: ReturnType<typeof readResidualSharePercents>;
   unitPrices: Pick<ResidualUnitPrices, "salesman" | "devops" | "abuts">;
-  showSalesman: boolean;
   disabled?: boolean;
-  onSalesmanChange?: (next: number) => void;
   onDevopsChange: (next: number) => void;
   onAbutsChange: (next: number) => void;
 }) {
-  const weightSum = shares.salesman + shares.devops + shares.abuts;
+  const weightSum = shares.devops + shares.abuts;
   const overAllocated = weightSum <= 0;
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-        <h4 className="text-sm font-semibold tracking-tight text-slate-800">
-          {title}
-        </h4>
-        <p className="text-[13px] text-muted-foreground">{description}</p>
-        {overAllocated ? (
-          <span className="text-[12px] font-medium text-amber-700">
-            잔여 분배 비중 합계가 0입니다
-          </span>
-        ) : weightSum !== 100 ? (
-          <span className="text-[12px] text-slate-500">
-            비중 합 {weightSum.toLocaleString("ko-KR", { maximumFractionDigits: 1 })}%
-            (정규화)
-          </span>
-        ) : null}
-      </div>
-      <div
-        className={`grid gap-3 sm:grid-cols-2 ${
-          showSalesman ? "lg:grid-cols-3" : "lg:grid-cols-2"
-        }`}
-      >
-        {showSalesman ? (
-          <PercentField
-            id={`${idPrefix}-salesman`}
-            label="딜러사"
-            value={shares.salesman}
-            unitPrice={unitPrices.salesman}
-            disabled={disabled}
-            onChange={onSalesmanChange}
-          />
-        ) : null}
+      {overAllocated || weightSum !== 100 ? (
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+          {overAllocated ? (
+            <span className="text-[12px] font-medium text-amber-700">
+              잔여 분배 비중 합계가 0입니다
+            </span>
+          ) : (
+            <span className="text-[12px] text-slate-500">
+              비중 합{" "}
+              {weightSum.toLocaleString("ko-KR", { maximumFractionDigits: 1 })}%
+              (정규화)
+            </span>
+          )}
+        </div>
+      ) : null}
+      <div className="grid gap-3 sm:grid-cols-2">
         <PercentField
           id={`${idPrefix}-devops`}
           label="개발운영사"
@@ -675,25 +653,14 @@ function SharePercentRow({
 function SharePercentPanel({
   salePrice,
   purchasePrice,
-  membershipShares,
   regularShares,
   disabled,
-  onMembershipChange,
   onRegularChange,
 }: {
   salePrice: number;
   purchasePrice: number;
-  membershipShares: ReturnType<typeof readResidualSharePercents>;
   regularShares: ReturnType<typeof readResidualSharePercents>;
   disabled?: boolean;
-  onMembershipChange: (
-    patch: Partial<
-      Pick<
-        CreditSettings,
-        "salesmanSharePercent" | "devopsSharePercent" | "abutsSharePercent"
-      >
-    >,
-  ) => void;
   onRegularChange: (
     patch: Partial<
       Pick<
@@ -705,11 +672,6 @@ function SharePercentPanel({
     >,
   ) => void;
 }) {
-  const membershipUnits = allocateRevenueByFixedManufacturerAndResidualShares(
-    salePrice,
-    purchasePrice,
-    membershipShares,
-  );
   const regularUnits = allocateRevenueByFixedManufacturerAndResidualShares(
     salePrice,
     purchasePrice,
@@ -717,41 +679,18 @@ function SharePercentPanel({
   );
 
   return (
-    <div className="space-y-5">
-      <SharePercentRow
-        idPrefix="membershipShare"
-        title="딜러사 포함"
-        description="매입 공급가 차감 후 잔여 분배 · 의뢰자 소개 코드에 딜러사 있음"
-        shares={membershipShares}
-        unitPrices={membershipUnits}
-        showSalesman
-        disabled={disabled}
-        onSalesmanChange={(salesmanSharePercent) =>
-          onMembershipChange({ salesmanSharePercent })
-        }
-        onDevopsChange={(devopsSharePercent) =>
-          onMembershipChange({ devopsSharePercent })
-        }
-        onAbutsChange={(abutsSharePercent) =>
-          onMembershipChange({ abutsSharePercent })
-        }
-      />
-      <SharePercentRow
-        idPrefix="regularShare"
-        title="딜러사 비포함"
-        description="매입 공급가 차감 후 잔여 분배 · 의뢰자 소개 코드에 딜러사 없음"
-        shares={regularShares}
-        unitPrices={regularUnits}
-        showSalesman={false}
-        disabled={disabled}
-        onDevopsChange={(regularDevopsSharePercent) =>
-          onRegularChange({ regularDevopsSharePercent })
-        }
-        onAbutsChange={(regularAbutsSharePercent) =>
-          onRegularChange({ regularAbutsSharePercent })
-        }
-      />
-    </div>
+    <SharePercentRow
+      idPrefix="regularShare"
+      shares={regularShares}
+      unitPrices={regularUnits}
+      disabled={disabled}
+      onDevopsChange={(regularDevopsSharePercent) =>
+        onRegularChange({ regularDevopsSharePercent })
+      }
+      onAbutsChange={(regularAbutsSharePercent) =>
+        onRegularChange({ regularAbutsSharePercent })
+      }
+    />
   );
 }
 
@@ -1702,10 +1641,8 @@ export const AdminCreditSettingsTab = ({
                 <SharePercentPanel
                   salePrice={settings.labProductionPrice}
                   purchasePrice={settings.manufacturerRequestUnitPrice}
-                  membershipShares={readResidualSharePercents(settings, "membership")}
                   regularShares={readResidualSharePercents(settings, "regular")}
                   disabled={loading}
-                  onMembershipChange={(patch) => updateSharePercent(patch)}
                   onRegularChange={(patch) => updateSharePercent(patch)}
                 />
               </CardContent>

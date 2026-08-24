@@ -4,6 +4,7 @@
 // - web/backend/controllers/practiceTransfers/roundBarAbutmentRequest.controller.js
 // - web/frontend/src/pages/admin/system/AdminRoundBarAbutmentTab.tsx
 // change-log:
+// - 2026-08-24: 관리자 어벗 추가 요청 삭제(프리셋·문의 정리).
 // - 2026-08-14: 관리자가 타입(헥스 사이즈)을 수정하면 치과 프리셋에도 반영.
 // - 2026-08-14: 도입 시 치과 프리셋 adopted 동기화 강화 + practice:round-bar-request-updated 이벤트.
 import { Types } from "mongoose";
@@ -21,9 +22,10 @@ import {
 import {
   toRoundBarRequestResponse,
   upsertFavoriteOnAnchor,
+  removeFavoriteFromAnchor,
 } from "../practiceTransfers/roundBarAbutmentRequest.controller.js";
 
-const notifyPracticeRoundBarUpdate = async (doc) => {
+const notifyPracticeRoundBarUpdate = async (doc, extras = {}) => {
   const payload = {
     practiceAnchorId: doc.practiceAnchorId ? String(doc.practiceAnchorId) : "",
     requestId: String(doc._id || ""),
@@ -34,6 +36,7 @@ const notifyPracticeRoundBarUpdate = async (doc) => {
     brand: String(doc.brand || "").trim(),
     family: String(doc.family || "").trim(),
     type: String(doc.type || "").trim() || ROUND_BAR_HEX_TYPE,
+    ...extras,
   };
   const userIds = new Set();
   if (doc.requestedBy) userIds.add(String(doc.requestedBy));
@@ -267,6 +270,80 @@ export async function adminUpdateRoundBarAbutmentRequest(req, res) {
     return res.status(500).json({
       success: false,
       message: "환봉방식 커스텀어벗 요청 저장 중 오류가 발생했습니다.",
+      error: error?.message,
+    });
+  }
+}
+
+export async function adminDeleteRoundBarAbutmentRequest(req, res) {
+  try {
+    const id = String(req.params?.id || "").trim();
+    if (!id || !Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: "요청 ID가 올바르지 않습니다." });
+    }
+
+    const doc = await RoundBarAbutmentRequest.findById(id);
+    if (!doc) {
+      return res.status(404).json({
+        success: false,
+        message: "환봉방식 커스텀어벗 요청을 찾을 수 없습니다.",
+      });
+    }
+
+    const wasAdopted = Boolean(doc.adopted);
+    const snapshot = {
+      _id: doc._id,
+      practiceAnchorId: doc.practiceAnchorId,
+      favoriteId: doc.favoriteId,
+      inquiryId: doc.inquiryId,
+      requestedBy: doc.requestedBy,
+      adopted: doc.adopted,
+      adoptedKind: doc.adoptedKind,
+      manufacturer: doc.manufacturer,
+      brand: doc.brand,
+      family: doc.family,
+      type: doc.type,
+    };
+
+    if (doc.practiceAnchorId) {
+      const anchor = await BusinessAnchor.findById(doc.practiceAnchorId)
+        .select({
+          name: 1,
+          practiceTransferSettings: 1,
+        })
+        .lean();
+      if (anchor && !wasAdopted) {
+        // 미도입 요청만 치과 프리셋에서 제거. 도입된 프리셋은 유지.
+        await removeFavoriteFromAnchor({
+          anchor,
+          favoriteId: doc.favoriteId,
+          roundBarRequestId: String(doc._id),
+        });
+      }
+    }
+
+    await RoundBarAbutmentRequest.deleteOne({ _id: doc._id });
+
+    await setInquiryStatus({
+      inquiryId: snapshot.inquiryId,
+      nextStatus: "resolved",
+      userId: req.user?._id,
+      adminNote: "어벗 추가 요청 삭제",
+    });
+
+    await notifyPracticeRoundBarUpdate(snapshot, {
+      deleted: true,
+      adopted: false,
+    });
+
+    return res.json({
+      success: true,
+      data: { id: String(snapshot._id) },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "어벗 추가 요청 삭제 중 오류가 발생했습니다.",
       error: error?.message,
     });
   }

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-24: 요청 카드별 삭제.
 // - 2026-08-14: 타입(헥스 사이즈) 관리자 수정·자동저장. 치과 프리셋에 반영.
 // - 2026-08-14: CNC어벗=Primary, 환봉어벗=어벗 골드. 선택 전에도 색으로 구분.
 // - 2026-08-14: 도입 전 CNC어벗/환봉어벗 선택 필수. 선택값이 치과 단가에 반영.
@@ -12,16 +13,19 @@
 // - web/backend/controllers/admin/admin.roundBarAbutment.controller.js
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Hexagon, Search } from "lucide-react";
+import { Hexagon, Search, Trash2 } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { cn } from "@/shared/ui/cn";
+import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import {
   ABUTMENT_ADOPTED_KIND,
   ROUND_BAR_HEX_TYPE,
+  deleteAdminRoundBarRequest,
   fetchAdminRoundBarRequests,
   normalizeAdoptedKind,
   patchAdminRoundBarRequest,
@@ -51,6 +55,10 @@ export const AdminRoundBarAbutmentTab = ({
   const [rows, setRows] = useState<RoundBarAbutmentRequest[]>([]);
   const [drafts, setDrafts] = useState<Record<string, DraftRow>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<RoundBarAbutmentRequest | null>(
+    null,
+  );
+  const [deleting, setDeleting] = useState(false);
   const saveTimers = useRef<Record<string, number>>({});
 
   useEffect(() => {
@@ -219,6 +227,39 @@ export const AdminRoundBarAbutmentTab = ({
     }
   };
 
+  const confirmDelete = async () => {
+    if (!token || !deleteTarget) return;
+    const id = deleteTarget.id;
+    setDeleting(true);
+    try {
+      if (saveTimers.current[id]) {
+        window.clearTimeout(saveTimers.current[id]);
+        delete saveTimers.current[id];
+      }
+      await deleteAdminRoundBarRequest({ token, id });
+      setRows((cur) => cur.filter((row) => row.id !== id));
+      setDrafts((cur) => {
+        const next = { ...cur };
+        delete next[id];
+        return next;
+      });
+      setDeleteTarget(null);
+      toast({
+        title: "삭제 완료",
+        description: "어벗 추가 요청을 삭제했습니다.",
+      });
+    } catch (error) {
+      toast({
+        title: "삭제 실패",
+        description:
+          error instanceof Error ? error.message : "요청을 삭제하지 못했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const countBadge =
     !loading && rows.length > 0 ? (
       <span className="inline-flex items-center rounded-full bg-primary-soft px-2.5 py-1 text-[11px] font-semibold tabular-nums text-primary-strong ring-1 ring-primary-muted">
@@ -368,6 +409,18 @@ export const AdminRoundBarAbutmentTab = ({
                         />
                         도입
                       </label>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-slate-400 hover:text-destructive"
+                        disabled={busy || deleting}
+                        title="삭제"
+                        aria-label="요청 삭제"
+                        onClick={() => setDeleteTarget(row)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     </div>
                   </div>
 
@@ -431,11 +484,51 @@ export const AdminRoundBarAbutmentTab = ({
       </div>
   );
 
-  if (embedded) return body;
+  const dialog = (
+    <ConfirmDialog
+      open={Boolean(deleteTarget)}
+      title="어벗 추가 요청 삭제"
+      description={
+        deleteTarget ? (
+          <>
+            <span className="font-medium text-slate-900">
+              {deleteTarget.practiceName || "치과"}
+            </span>
+            의 요청(
+            {[deleteTarget.manufacturer, deleteTarget.brand, deleteTarget.family]
+              .filter(Boolean)
+              .join(" / ") || "스펙 미정"}
+            )을 삭제합니다.
+            {deleteTarget.adopted
+              ? " 도입된 치과 프리셋은 유지됩니다."
+              : " 치과 대기 프리셋도 함께 제거됩니다."}
+          </>
+        ) : null
+      }
+      confirmLabel={deleting ? "삭제 중…" : "삭제"}
+      busy={deleting}
+      onConfirm={() => void confirmDelete()}
+      onCancel={() => {
+        if (!deleting) setDeleteTarget(null);
+      }}
+    />
+  );
+
+  if (embedded) {
+    return (
+      <>
+        {body}
+        {dialog}
+      </>
+    );
+  }
 
   return (
-    <Card className="app-glass-card app-glass-card--lg overflow-hidden">
-      <CardContent className="p-5 sm:p-6">{body}</CardContent>
-    </Card>
+    <>
+      <Card className="app-glass-card app-glass-card--lg overflow-hidden">
+        <CardContent className="p-5 sm:p-6">{body}</CardContent>
+      </Card>
+      {dialog}
+    </>
   );
 };

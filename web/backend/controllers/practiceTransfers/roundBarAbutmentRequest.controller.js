@@ -6,6 +6,7 @@
 // - web/frontend/src/shared/practice/roundBarAbutment.ts
 // - web/frontend/src/shared/components/practice/PracticeToothImplantFields.tsx
 // change-log:
+// - 2026-08-24: 관리자 어벗 추가 요청 삭제 시 미도입 프리셋 제거.
 // - 2026-08-21: hydrate는 기존 프리셋 도입상태만 동기화. 삭제된 도입 프리셋을 다시 넣지 않음(관리자 도입은 upsertFavoriteOnAnchor).
 // - 2026-08-14: 도입된 요청이 치과 프리셋에 없으면 hydrate가 추가한다.
 // - 2026-08-14: hydrate가 관리자가 고친 타입·스펙도 프리셋에 덮어쓴다.
@@ -150,6 +151,36 @@ const upsertFavoriteOnAnchor = async ({
     },
   );
   return nextRow;
+};
+
+const removeFavoriteFromAnchor = async ({
+  anchor,
+  favoriteId,
+  roundBarRequestId,
+}) => {
+  if (!anchor?._id) return false;
+  const requestId = String(roundBarRequestId || "").trim();
+  const favId = String(favoriteId || "").trim();
+  if (!requestId && !favId) return false;
+  const current = listFavorites(anchor);
+  const nextList = current.filter((row) => {
+    if (requestId && String(row.roundBarRequestId || "").trim() === requestId) {
+      return false;
+    }
+    if (favId && String(row.id || "").trim() === favId) return false;
+    return true;
+  });
+  if (nextList.length === current.length) return false;
+  await BusinessAnchor.updateOne(
+    { _id: anchor._id },
+    {
+      $set: {
+        "practiceTransferSettings.implantFavorites": nextList,
+        "practiceTransferSettings.updatedAt": new Date(),
+      },
+    },
+  );
+  return true;
 };
 
 const toResponse = (doc) => {
@@ -451,5 +482,6 @@ async function hydrateFavoritesWithRoundBarAdopted(practiceAnchorId, favorites) 
 export {
   toResponse as toRoundBarRequestResponse,
   upsertFavoriteOnAnchor,
+  removeFavoriteFromAnchor,
   hydrateFavoritesWithRoundBarAdopted,
 };
