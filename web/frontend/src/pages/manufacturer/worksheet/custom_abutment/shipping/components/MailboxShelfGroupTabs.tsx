@@ -16,14 +16,14 @@ export const MailboxShelfGroupTabs = ({
   setSelectedGroupIdx,
 }: MailboxShelfGroupTabsProps) => {
   return (
-    <div className="flex flex-wrap gap-1.5 justify-center pt-1 pb-4 px-2">
+    <div className="flex flex-wrap gap-1 justify-start">
       {shelfGroups.map((group, idx) => (
         <button
           key={idx}
           onClick={() => setSelectedGroupIdx(idx)}
-          className={`px-3 py-1 text-xs font-medium rounded-full transition-colors border ${
+          className={`px-2 py-0.5 text-[11px] font-semibold rounded-full transition-colors border ${
             idx === selectedGroupIdx
-              ? "bg-primary-soft text-primary-strong border-primary-muted shadow-sm"
+              ? "bg-primary-soft text-primary-strong border-primary-muted"
               : "bg-white text-slate-600 border-slate-300 hover:bg-slate-50"
           }`}
         >

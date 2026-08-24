@@ -2378,11 +2378,22 @@ export const MailboxGrid = ({
       )}
 
       <MailboxStickyHeader>
-        <MailboxActionHeader
-          isRequestingPickup={isRequestingPickup}
-          actionButtons={actionButtons}
-          onOpenPrinterSettings={() => setPrinterModalOpen(true)}
-        />
+        <div className="mb-2 flex flex-row items-center gap-3">
+          <div className="min-w-0 basis-1/3">
+            <MailboxShelfGroupTabs
+              shelfGroups={shelfGroups}
+              selectedGroupIdx={selectedGroupIdx}
+              setSelectedGroupIdx={setSelectedGroupIdx}
+            />
+          </div>
+          <div className="min-w-0 basis-2/3">
+            <MailboxActionHeader
+              isRequestingPickup={isRequestingPickup}
+              actionButtons={actionButtons}
+              onOpenPrinterSettings={() => setPrinterModalOpen(true)}
+            />
+          </div>
+        </div>
 
         <MailboxPrintSettingsDialog
           open={printerModalOpen}
@@ -2400,12 +2411,6 @@ export const MailboxGrid = ({
           shippingOutputMode={shippingOutputMode}
           setShippingOutputMode={setShippingOutputMode}
           onRefreshPrinters={() => void fetchPrinters()}
-        />
-
-        <MailboxShelfGroupTabs
-          shelfGroups={shelfGroups}
-          selectedGroupIdx={selectedGroupIdx}
-          setSelectedGroupIdx={setSelectedGroupIdx}
         />
       </MailboxStickyHeader>
 

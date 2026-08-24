@@ -44,44 +44,38 @@ export const MailboxActionHeader = ({
   };
 
   return (
-    <>
-      <div className="flex flex-col sm:flex-row gap-3 justify-center pt-4 pb-1 px-2">
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={onOpenPrinterSettings}
-            className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
-            aria-label="프린터 설정"
-          >
-            <Settings className="h-4 w-4" />
-          </button>
-        </div>
+    <div className="flex flex-wrap items-center justify-end gap-2">
+      <button
+        type="button"
+        onClick={onOpenPrinterSettings}
+        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
+        aria-label="프린터 설정"
+      >
+        <Settings className="h-4 w-4" />
+      </button>
 
-        <div className="flex flex-wrap gap-2 justify-center">
-          {actionButtons.map((button, idx) => (
-            <button
-              key={`${button.ariaLabel || button.label || "action"}-${idx}`}
-              onClick={button.onClick}
-              disabled={isRequestingPickup || button.disabled}
-              aria-label={button.ariaLabel || button.label}
-              className={`${button.iconOnly ? "h-9 w-9 px-0" : "px-4 py-1.5"} text-sm font-medium rounded-lg transition-colors border inline-flex items-center justify-center gap-1 ${
-                isRequestingPickup || button.disabled
-                  ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
-                  : getButtonClass(button.variant)
-              }`}
-            >
-              {button.loading ? (
-                button.loadingLabel || "처리 중..."
-              ) : (
-                <>
-                  {button.icon}
-                  {!button.iconOnly && button.label}
-                </>
-              )}
-            </button>
-          ))}
-        </div>
-      </div>
-    </>
+      {actionButtons.map((button, idx) => (
+        <button
+          key={`${button.ariaLabel || button.label || "action"}-${idx}`}
+          onClick={button.onClick}
+          disabled={isRequestingPickup || button.disabled}
+          aria-label={button.ariaLabel || button.label}
+          className={`${button.iconOnly ? "h-8 w-8 px-0" : "px-2.5 py-1.5"} text-xs font-semibold rounded-lg transition-colors border inline-flex items-center justify-center gap-1 ${
+            isRequestingPickup || button.disabled
+              ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+              : getButtonClass(button.variant)
+          }`}
+        >
+          {button.loading ? (
+            button.loadingLabel || "처리 중..."
+          ) : (
+            <>
+              {button.icon}
+              {!button.iconOnly && button.label}
+            </>
+          )}
+        </button>
+      ))}
+    </div>
   );
 };

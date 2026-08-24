@@ -1315,7 +1315,7 @@ export const PackingPageContent = ({
       onDragLeave={handlePageDragLeave}
     >
       <div className="flex-1">
-        {showQueueBar && (
+        {showQueueBar ? (
           <WorksheetQueueSummary
             total={
               showCompleted
@@ -1324,100 +1324,99 @@ export const PackingPageContent = ({
             }
             labels={diameterQueueForPacking.labels}
             counts={diameterQueueForPacking.counts}
+            variant="compact"
+            className="px-4 pt-2"
+            toolbar={
+              <>
+                <button
+                  type="button"
+                  onClick={handleOpenScrewLotSettings}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-primary/70 bg-primary-soft px-2.5 py-1.5 text-xs font-semibold text-primary-strong hover:bg-primary-muted/50"
+                >
+                  스크류 로트번호 설정
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPrinterModalOpen(true)}
+                  className="inline-flex items-center justify-center h-8 w-8 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
+                  aria-label="프린터 설정"
+                >
+                  <Settings className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={handlePrintPackingLabels}
+                  disabled={
+                    isPrintingPackingLabels ||
+                    selectedPackingRequestIds.length === 0
+                  }
+                  className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                    isPrintingPackingLabels ||
+                    selectedPackingRequestIds.length === 0
+                      ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+                      : "bg-primary-soft text-primary-strong border-primary-muted hover:bg-primary-soft"
+                  }`}
+                >
+                  {isPrintingPackingLabels
+                    ? "출력 중..."
+                    : `패킹 라벨 (${selectedPackingRequestIds.length})`}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSelectUnprintedPackingRequests}
+                  disabled={!unprintedPackingRequestIds.length}
+                  title={`미출력 ${unprintedPackingRequestIds.length}건 선택`}
+                  className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                    !unprintedPackingRequestIds.length
+                      ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+                      : "bg-accent-soft text-accent-strong border-accent-muted hover:bg-accent-soft"
+                  }`}
+                >
+                  미출력 ({unprintedPackingRequestIds.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSelectPrintedPackingRequests}
+                  disabled={!printedPackingRequestIds.length}
+                  title={`기출력 ${printedPackingRequestIds.length}건 선택 (재출력)`}
+                  className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                    !printedPackingRequestIds.length
+                      ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+                      : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
+                  }`}
+                >
+                  기출력 ({printedPackingRequestIds.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSelectAllPackingRequests}
+                  disabled={!allPackingRequestIds.length}
+                  className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                    !allPackingRequestIds.length
+                      ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+                      : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
+                  }`}
+                >
+                  전체
+                </button>
+                <button
+                  type="button"
+                  onClick={handleClearPackingRequests}
+                  disabled={!selectedPackingRequestIds.length}
+                  className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                    !selectedPackingRequestIds.length
+                      ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+                      : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
+                  }`}
+                >
+                  해제
+                </button>
+              </>
+            }
           />
-        )}
+        ) : null}
 
         {isLoading && <WorksheetLoading />}
-
-        <div className="flex-shrink-0 w-full sticky top-0 z-40 -mx-4 px-4 sm:-mx-6 sm:px-6 md:-mx-8 md:px-8 my-2">
-          <div className="flex justify-center pt-4 pb-1 px-2">
-            <div className="flex flex-wrap items-center justify-center gap-2">
-              <button
-                type="button"
-                onClick={handleOpenScrewLotSettings}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-primary/70 bg-primary-soft px-3 py-1.5 text-xs font-semibold text-primary-strong hover:bg-primary-muted/50"
-              >
-                스크류 로트번호 설정
-              </button>
-              <button
-                type="button"
-                onClick={() => setPrinterModalOpen(true)}
-                className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
-                aria-label="프린터 설정"
-              >
-                <Settings className="h-4 w-4" />
-              </button>
-              <button
-                onClick={handlePrintPackingLabels}
-                disabled={
-                  isPrintingPackingLabels ||
-                  selectedPackingRequestIds.length === 0
-                }
-                className={`px-4 py-1 text-sm font-medium rounded-lg transition-colors border ${
-                  isPrintingPackingLabels ||
-                  selectedPackingRequestIds.length === 0
-                    ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
-                    : "bg-primary-soft text-primary-strong border-primary-muted hover:bg-primary-soft shadow-sm"
-                }`}
-              >
-                {isPrintingPackingLabels
-                  ? "출력 중..."
-                  : `🏷️ 패킹 라벨 출력 (${selectedPackingRequestIds.length}건)`}
-              </button>
-              <div className="w-2" />
-              <button
-                type="button"
-                onClick={handleSelectUnprintedPackingRequests}
-                disabled={!unprintedPackingRequestIds.length}
-                title={`미출력 ${unprintedPackingRequestIds.length}건 선택`}
-                className={`px-3 py-1 text-xs rounded-full border transition-colors ${
-                  !unprintedPackingRequestIds.length
-                    ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
-                    : "bg-accent-soft text-accent-strong border-accent-muted hover:bg-accent-soft"
-                }`}
-              >
-                미출력만 ({unprintedPackingRequestIds.length})
-              </button>
-              <button
-                type="button"
-                onClick={handleSelectPrintedPackingRequests}
-                disabled={!printedPackingRequestIds.length}
-                title={`기출력 ${printedPackingRequestIds.length}건 선택 (재출력)`}
-                className={`px-3 py-1 text-xs rounded-full border transition-colors ${
-                  !printedPackingRequestIds.length
-                    ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
-                    : "bg-slate-50 text-slate-600 border-slate-300 hover:bg-slate-100"
-                }`}
-              >
-                기출력만 ({printedPackingRequestIds.length})
-              </button>
-              <button
-                type="button"
-                onClick={handleSelectAllPackingRequests}
-                disabled={!allPackingRequestIds.length}
-                className={`px-3 py-1 text-xs rounded-full border transition-colors ${
-                  !allPackingRequestIds.length
-                    ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
-                    : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
-                }`}
-              >
-                전체
-              </button>
-              <button
-                type="button"
-                onClick={handleClearPackingRequests}
-                disabled={!selectedPackingRequestIds.length}
-                className={`px-3 py-1 text-xs rounded-full border transition-colors ${
-                  !selectedPackingRequestIds.length
-                    ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
-                    : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
-                }`}
-              >
-                해제
-              </button>
-            </div>
-          </div>
-        </div>
 
         {captureHistory.length > 0 && (
           <div className="w-full px-4 pt-2 pb-1">

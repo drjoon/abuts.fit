@@ -38,7 +38,7 @@ export const MailboxStickyHeader = ({ children }: MailboxStickyHeaderProps) => {
   return (
     <div
       ref={ref}
-      className="sticky top-0 z-40 -mx-3 w-full flex-shrink-0 bg-background/95 px-3 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:-mx-6 sm:px-6"
+      className="sticky top-0 z-40 -mx-3 w-full flex-shrink-0 bg-background/95 px-3 pb-2 pt-0 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:-mx-6 sm:px-6"
     >
       {children}
     </div>

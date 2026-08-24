@@ -2564,6 +2564,17 @@ export const RequestPage = ({
 
   const diameterQueueForReceive = useDiameterQueue(filteredAndSorted);
 
+  const queueTotal =
+    showCompleted
+      ? diameterQueueForReceive.total
+      : (pageState.serverTotal ?? diameterQueueForReceive.total);
+
+  const usesCompactQueueHeader =
+    showQueueBar &&
+    (tabStage === "request" ||
+      tabStage === "rnd" ||
+      tabStage === "unmachinable");
+
   if (pageState.isLoading) {
     if (isTransferChatDetail) {
       return null;
@@ -2620,28 +2631,71 @@ export const RequestPage = ({
           </div>
           </BodyPortal>
         )}
-        {showQueueBar && (
+        {usesCompactQueueHeader ? (
           <WorksheetQueueSummary
-            total={
-              showCompleted
-                ? diameterQueueForReceive.total
-                : (pageState.serverTotal ?? diameterQueueForReceive.total)
-            }
+            total={queueTotal}
             labels={diameterQueueForReceive.labels}
             counts={diameterQueueForReceive.counts}
+            variant="compact"
+            className="px-4 pt-2"
+            toolbar={
+              showBulkCamRegenerate && tabStage === "request" ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={!filteredAndSorted.length || bulkCamRegenerating}
+                  onClick={() => {
+                    pageState.setConfirmTitle("전체 Filled STL 재생성");
+                    pageState.setConfirmDescription(
+                      `현재 목록의 ${filteredAndSorted.length}개 의뢰에 전체 Filled STL 재생성 요청을 보냅니다. 진행할까요?`,
+                    );
+                    pageState.setConfirmAction(() => async () => {
+                      await handleRegenerateAllCam();
+                    });
+                    pageState.setConfirmOpen(true);
+                  }}
+                >
+                  {bulkCamRegenerating
+                    ? "Filled STL 재생성 요청 중..."
+                    : "전체 Filled STL 재생성"}
+                </Button>
+              ) : null
+            }
           />
-        )}
+        ) : null}
 
         <div
-          className={`space-y-4 ${tabStage === "shipping" ? "mt-0" : "mt-6"}`}
+          className={`space-y-4 ${
+            tabStage === "shipping"
+              ? "mt-0"
+              : tabStage === "machining"
+                ? "mt-0"
+                : usesCompactQueueHeader
+                  ? "mt-2"
+                  : "mt-6"
+          }`}
         >
-          <div className={`pb-12 ${tabStage === "shipping" ? "pt-0" : "pt-2"}`}>
+          <div
+            className={
+              tabStage === "shipping" || tabStage === "machining"
+                ? "pb-6 pt-0"
+                : "pb-12 pt-2"
+            }
+          >
             {tabStage === "machining" ? (
               // 가공 큐 우선순위/자동시작 정책은 백엔드 SSOT로 관리한다.
               // - 아노다이징 ON 우선
               // - 아노다이징 OFF는 큐 마지막 + "아노 X 가공" 수동 시작
               <MachiningQueueBoard
                 searchQuery={worksheetSearch}
+                queueTotal={
+                  showCompleted
+                    ? diameterQueueForReceive.total
+                    : (pageState.serverTotal ?? diameterQueueForReceive.total)
+                }
+                queueLabels={diameterQueueForReceive.labels}
+                queueCounts={diameterQueueForReceive.counts}
               />
             ) : tabStage === "shipping" ? (
               <div className="w-full">
@@ -2676,66 +2730,6 @@ export const RequestPage = ({
               </div>
             ) : (
               <>
-                {showBulkCamRegenerate &&
-                  (isCamStage || tabStage === "request") && (
-                  <div className="mb-4 flex flex-wrap items-center justify-center gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={
-                        !filteredAndSorted.length || bulkCamRegenerating
-                      }
-                      onClick={() => {
-                        const actionLabel = isCamStage
-                          ? "전체 가공 준비 재생성"
-                          : "전체 Filled STL 재생성";
-                        pageState.setConfirmTitle(actionLabel);
-                        pageState.setConfirmDescription(
-                          `현재 목록의 ${filteredAndSorted.length}개 의뢰에 ${actionLabel} 요청을 보냅니다. 진행할까요?`,
-                        );
-                        pageState.setConfirmAction(() => async () => {
-                          await handleRegenerateAllCam();
-                        });
-                        pageState.setConfirmOpen(true);
-                      }}
-                    >
-                      {bulkCamRegenerating
-                        ? isCamStage
-                          ? "가공 준비 재생성 요청 중..."
-                          : "Filled STL 재생성 요청 중..."
-                        : isCamStage
-                          ? "전체 가공 준비 재생성"
-                          : "전체 Filled STL 재생성"}
-                    </Button>
-                  </div>
-                )}
-                {tabStage === "packing" && (
-                  <div className="mb-4 flex flex-wrap items-center justify-center gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={handleSelectAllPackingRequests}
-                      disabled={!filteredAndSorted.length}
-                    >
-                      전체 선택
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={handleClearPackingRequests}
-                      disabled={!pageState.selectedPackingRequestIds.length}
-                    >
-                      전체 해제
-                    </Button>
-                    <div className="text-xs text-slate-500">
-                      선택 {pageState.selectedPackingRequestIds.length} / 전체{" "}
-                      {filteredAndSorted.length}
-                    </div>
-                  </div>
-                )}
                 {isTransferChatDetail ? (
                   <DesignRequestTransferView
                     requests={paginatedRequests}
