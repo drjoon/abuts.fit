@@ -5,7 +5,7 @@
 // change-log:
 // - 2026-08-21: 스캔바디 추가 시 현재 선택값 기본 채움. 스피너 직경 0.5·높이 2, 직접입력 제한 없음.
 // - 2026-08-21: 프리셋 추가는 목록 sticky 하단(스크롤 시에만 고정). 임플란트와 독립.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Check, ChevronDown, ChevronUp, Pencil, Plus, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,6 +38,8 @@ type Props = {
   /** @deprecated presets 추가는 인라인 입력으로 처리. 무시됨. */
   onAddPreset?: () => void;
   className?: string;
+  /** 가이드투어: 프리셋이 없을 때 추가 폼을 자동으로 연다 */
+  guideOpenAdd?: boolean;
 };
 
 /** 프리셋 행(h-8 + py-1.5×2 + border 2px) × 4 + space-y-1.5 × 3. 초과 시 스크롤. */
@@ -143,6 +145,7 @@ export const PracticeToothAbutmentFields = ({
   allowPresetEdit = true,
   onAddPreset: _onAddPreset,
   className,
+  guideOpenAdd = false,
 }: Props) => {
   const [editingFavoriteId, setEditingFavoriteId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<ToothAbutmentValues>(emptyToothWorkAbutment());
@@ -197,6 +200,15 @@ export const PracticeToothAbutmentFields = ({
     });
     setIsAddingPreset(true);
   };
+
+  useEffect(() => {
+    if (!guideOpenAdd) return;
+    if (!canManagePresets) return;
+    if (favorites.length > 0) return;
+    if (isAddingPreset) return;
+    startAddPreset();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [guideOpenAdd, favorites.length, canManagePresets]);
 
   const cancelAddPreset = () => {
     setIsAddingPreset(false);

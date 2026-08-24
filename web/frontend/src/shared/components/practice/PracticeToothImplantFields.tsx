@@ -16,7 +16,7 @@
 // - 2026-08-14: 환봉 도입 배지 라벨을 「환봉」으로 표시.
 // - 2026-08-14: 도입 배지에 CNC/환봉 종류 표시.
 // - 2026-08-14: 제조사 선택 마지막에 임플란트 추가 요청(환봉 헥스 사이즈 미정) + 안내 모달.
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Check, Pencil, Plus, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -80,6 +80,8 @@ type Props = {
   /** 섹션 제목 (기본: 임플란트) */
   heading?: string;
   className?: string;
+  /** 가이드투어: 프리셋이 없을 때 추가 폼을 자동으로 연다 */
+  guideOpenAdd?: boolean;
 };
 
 const STANDARD_IMPLANT_FAMILIES = ["Regular", "Mini", "Narrow", "Small Narrow"] as const;
@@ -326,6 +328,7 @@ export const PracticeToothImplantFields = ({
   onAddPreset: _onAddPreset,
   heading = "임플란트",
   className,
+  guideOpenAdd = false,
 }: Props) => {
   const [editingFavoriteId, setEditingFavoriteId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<ToothImplantValues>(emptyToothWorkImplant());
@@ -902,6 +905,16 @@ export const PracticeToothImplantFields = ({
     setAddRequestMemo("");
     setIsAddingPreset(true);
   };
+
+  useEffect(() => {
+    if (!guideOpenAdd) return;
+    if (!canManagePresets) return;
+    if (favorites.length > 0) return;
+    if (isAddingPreset) return;
+    startAddPreset();
+    // 투어 진입 시 1회 추가 폼 오픈
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [guideOpenAdd, favorites.length, canManagePresets]);
 
   const cancelAddPreset = () => {
     setIsAddingPreset(false);

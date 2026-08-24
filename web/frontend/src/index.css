@@ -398,6 +398,24 @@ All colors MUST be HSL.
   animation: practice-transfer-attention-pulse 1.5s ease-in-out infinite;
 }
 
+/* Practice: 보철물 치식 체험형 가이드투어 하이라이트 (accent) */
+@keyframes practice-tooth-guide-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 hsl(var(--accent) / 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 5px hsl(var(--accent) / 0.16);
+  }
+}
+
+.practice-tooth-guide-pulse {
+  animation: practice-tooth-guide-pulse 1.35s ease-in-out infinite;
+  outline: 2px solid hsl(var(--accent) / 0.85);
+  outline-offset: 2px;
+  z-index: 25;
+}
+
 /* Responsive layout helpers (mobile-first) */
 .responsive-table-shell {
   width: 100%;
