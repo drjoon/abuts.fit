@@ -3,6 +3,7 @@
 // - web/frontend/src/features/settings/tabs/LabFeeScheduleTab.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/backend/controllers/labTradingPartners/labTradingPartner.controller.js
+// - 2026-08-25: 안내 문구 — 치과 의뢰·기공비 정상 결제 위해 해당 카드 설정 필수.
 // - 2026-08-25: 기본 기공수가 신규 항목(needSetupNames)도 재접속 시 설정 탭·need 하이라이트로 안내.
 // - 2026-08-19: 수락 시 빠진 수가명을 `need` 쿼리로 넘기고 해당 카드를 하이라이트.
 // - 2026-08-13: 기공소 로그인 시 기공비 미설정이면 설정 탭으로 유도.
@@ -252,20 +253,23 @@ export const LabFeeSetupPrompt = ({
 
   const title =
     mode === "catalog"
-      ? "신규 기공수가 설정"
+      ? "기공수가 설정이 필요합니다"
       : fromAccept
-        ? "기공비 설정이 필요합니다"
+        ? "기공수가 설정이 필요합니다"
         : "기공비 미설정";
+
+  const needLabel = (names: string[]) =>
+    names.length ? `「${names.join("·")}」` : "해당";
 
   const description =
     mode === "catalog"
       ? catalogNeedNames.length
-        ? `기본 기공수가에 「${catalogNeedNames.join("·")}」이(가) 추가되었습니다. 깜빡이는 카드를 켜고 수가를 확인·저장해 주세요.`
-        : "기본 기공수가에 새 항목이 추가되었습니다. 확인을 누르면 기공비 설정 페이지로 이동합니다."
+        ? `치과에서 의뢰가 들어올 수 있습니다. 기공비를 정상적으로 받으려면 ${needLabel(catalogNeedNames)} 수가를 켜고 설정하세요.`
+        : "치과 의뢰를 정상적으로 받으려면 기공수가를 설정해야 합니다. 확인을 누르면 기공비 설정 페이지로 이동합니다."
       : fromAccept
         ? needNames.length
-          ? `「${needNames.join("·")}」 수가가 없습니다. 깜빡이는 카드를 켜고 수가를 입력한 뒤, 기공의뢰수신에서 다시 수락해 주세요.`
-          : "의뢰를 수락하려면 기공비를 먼저 설정해야 합니다. 오른쪽 마스터 스위치를 켜고, 제공할 항목을 켠 뒤 저장하세요. 완료 후 기공의뢰수신에서 다시 수락해 주세요."
+          ? `치과에서 의뢰가 들어왔습니다. 기공비를 정상적으로 받으려면 ${needLabel(needNames)} 수가를 켜고 설정한 뒤, 기공의뢰수신에서 다시 수락해 주세요.`
+          : "치과에서 의뢰가 들어왔습니다. 기공비를 정상적으로 받으려면 기공수가를 먼저 설정한 뒤, 기공의뢰수신에서 다시 수락해 주세요."
         : "기공비를 아직 설정하지 않았습니다. 확인을 누르면 기공비 설정 페이지로 이동합니다.";
 
   return (

@@ -207,7 +207,7 @@ const PRACTICE_ALLOWED_EXTENSIONS = new Set([
 
 const LAB_FEE_UNCONFIGURED_REASON = "lab_fee_unconfigured";
 const LAB_FEE_UNCONFIGURED_ACCEPT_MESSAGE =
-  "기공비를 먼저 설정한 뒤 수락해주세요.";
+  "치과에서 의뢰가 들어왔습니다. 기공비를 정상적으로 받으려면 기공수가를 먼저 설정한 뒤 수락해주세요.";
 
 function rejectLabFeeUnconfigured(res, err) {
   const status = Number(err?.statusCode || 409);

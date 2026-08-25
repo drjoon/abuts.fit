@@ -5,6 +5,7 @@
 // - web/backend/controllers/labTradingPartners/labTradingPartner.controller.js
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - web/frontend/src/features/settings/tabs/AdminCreditSettingsTab.tsx
+// - 2026-08-25: 치과 의뢰·기공비 정상 결제용 수가 설정 안내 문구.
 // - 2026-08-14: 하단 저장 버튼 제거. 항목 변경은 디바운스 자동 저장. 마스터 스위치는 즉시 저장.
 // - 2026-08-25: 수가·리메이크 1,000원 단위 스피너.
 // - 2026-08-25: 기본 기공수가 신규(from=catalog·need)도 수락과 같이 카드 하이라이트.
@@ -500,8 +501,8 @@ export const LabFeeScheduleTab = () => {
         {fromNeedGuide && needNames.length ? (
           <p className="mt-2 text-[13px] font-medium text-red-600">
             {fromCatalog
-              ? `기본 기공수가에 「${needNames.join("·")}」이(가) 추가되었습니다. 깜빡이는 카드를 켜고 수가를 확인해 주세요.`
-              : `수락하려는 의뢰의 「${needNames.join("·")}」 수가가 없습니다. 깜빡이는 카드를 켜고 수가를 입력하세요.`}
+              ? `치과에서 의뢰가 들어올 수 있습니다. 기공비를 정상적으로 받으려면 「${needNames.join("·")}」 수가를 켜고 설정하세요.`
+              : `치과에서 의뢰가 들어왔습니다. 기공비를 정상적으로 받으려면 「${needNames.join("·")}」 수가를 켜고 설정하세요.`}
           </p>
         ) : active &&
           !items.some(

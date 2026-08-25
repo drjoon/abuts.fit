@@ -5,6 +5,7 @@
 // - 2026-08-22: 기공소→치과 배송 무료. skipJig 옵션/안내 삭제. 정산 상세는 →어벗츠(박스)만.
 // - 2026-08-21: 기공의뢰 정산에서 기공소→어벗츠 배송 제외(기공소 박스 과금).
 // - 2026-08-21: 치과→기공소 배송 무료. 정산 상세는 →어벗츠(박스)만.
+// - 2026-08-25: 미설정 수가 — 바·툴팁에「미설정」행·경고. labFeeUnset여도 항목명 유지.
 // - 2026-08-21: 치과 견적 — 커스텀어벗 등 기공소 수가 미설정(missingFeeNames) 안내.
 // - 2026-08-21: 같은 치아번호는 한 줄. 보철기공비|커스텀어벗 열로 수가 구분.
 // - 2026-08-20: 정산(density=detail)만 장부 배송비·크레딧 소비 총액. 견적 툴팁은 기공비 총액까지.
@@ -260,7 +261,9 @@ function FeeBreakdownTable({
   const lines = mergeFeeBreakdownLinesByTooth(rawLines);
   const showProsthesisColumn = lines.some(
     (line) =>
-      line.labFee > 0 || (line.labFeeMin != null && line.labFeeMin > 0),
+      line.labFee > 0 ||
+      (line.labFeeMin != null && line.labFeeMin > 0) ||
+      /미설정$/.test(String(line.prosthesisType || "")),
   );
   const showLabAbutmentColumn = lines.some(
     (line) => line.labAbutmentFee > 0 || Boolean(line.labAbutmentPending),
@@ -394,7 +397,9 @@ function FeeBreakdownTable({
           </span>
           {showProsthesisColumn ? (
             <span className={amountCellClass}>
-              {formatProsthesisCell(line, line.labFee, labFacing)}
+              {/미설정$/.test(String(line.prosthesisType || ""))
+                ? "미설정"
+                : formatProsthesisCell(line, line.labFee, labFacing)}
             </span>
           ) : null}
           {showLabAbutmentColumn ? (
@@ -661,10 +666,20 @@ export function PracticeTransferFeeEstimate({
   const missingFeeNames = Array.isArray(quote.missingFeeNames)
     ? quote.missingFeeNames.map((name) => String(name || "").trim()).filter(Boolean)
     : [];
-  const hasMissingFees = !isLab && !labFeeUnset && missingFeeNames.length > 0;
+  // 항목 Off·0원이면 총액과 별도로 미설정 경고(마스터 Off여도 항목명 유지)
+  const hasMissingFees = missingFeeNames.length > 0;
   const missingFeeLabel = hasMissingFees
     ? missingFeeNames.join("·")
     : "";
+  const missingBreakdownLines: FeeBreakdownLine[] = hasMissingFees
+    ? missingFeeNames.map((name) => ({
+        toothNumber: "",
+        prosthesisType: `${name} 미설정`,
+        labFee: 0,
+        labAbutmentFee: 0,
+        abutmentRetail: 0,
+      }))
+    : [];
   /** 기공소만: 생성 스냅샷 배수. 치과 견적에는 표기하지 않음 */
   const surchargeLabel =
     isLab && normalizeLabFeeMultiplier(quote.labFeeMultiplier) > 1
@@ -720,7 +735,7 @@ export function PracticeTransferFeeEstimate({
 
   const breakdownPanel = (
     <>
-      {labFeeUnset ? (
+      {labFeeUnset && !hasMissingFees ? (
         <p className="text-muted-foreground">
           {isLab
             ? "기공비를 설정해야 의뢰를 수락할 수 있습니다."
@@ -729,15 +744,25 @@ export function PracticeTransferFeeEstimate({
       ) : null}
       {hasMissingFees ? (
         <p className="text-[12px] font-medium leading-snug text-amber-800/90">
-          「{missingFeeLabel}」 수가가 기공소에 아직 없습니다.
-          <br />
-          설정되면 견적에 포함됩니다.
+          {isLab ? (
+            <>
+              치과에서 의뢰가 들어왔습니다. 기공비를 정상적으로 받으려면
+              <br />
+              「{missingFeeLabel}」 수가를 설정하세요.
+            </>
+          ) : (
+            <>
+              기공소 수가 미설정: 「{missingFeeLabel}」
+              <br />
+              설정되면 견적에 포함됩니다.
+            </>
+          )}
         </p>
       ) : null}
-      {breakdownLines.length > 0 ? (
+      {breakdownLines.length > 0 || missingBreakdownLines.length > 0 ? (
         <div className="space-y-1.5">
           <FeeBreakdownTable
-            lines={breakdownLines}
+            lines={[...breakdownLines, ...missingBreakdownLines]}
             labFacing={isLab}
             labTotalMinOverride={labTotalMinOverride}
             labTotalMaxOverride={labTotalMaxOverride}
@@ -927,6 +952,11 @@ export function PracticeTransferFeeEstimate({
                     <>
                       <span className="font-medium text-slate-600">기공비 </span>
                       <span className="text-accent-strong">미설정</span>
+                      {hasMissingFees ? (
+                        <span className="ml-1.5 text-[11px] font-medium text-amber-700">
+                          · {missingFeeLabel}
+                        </span>
+                      ) : null}
                       {abutmentOnlyAmount > 0 ? (
                         <span className="ml-1.5 font-semibold tabular-nums text-slate-800">
                           · 어벗 디자인+생산비 {formatManWon(abutmentOnlyAmount)}

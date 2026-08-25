@@ -8,6 +8,7 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
 // - web/backend/utils/roundBarAbutment.js
 // - web/frontend/src/features/settings/tabs/LabFeeScheduleTab.tsx
+// - 2026-08-25: 단독「커스텀어벗」은 심플이어도 지그제외 수가 대상. 크라운+심플만 수가 제외.
 // - 2026-08-25: 심플어벗(치과 재고)은 기공소 어벗 수가·견적에서 제외. 스캔바디 커스텀어벗만 과금.
 // - 2026-08-13: 마스터 active(기본 off)가 켜져야 설정 완료. 수가 디폴트는 기본값·항목 on.
 // - 2026-08-21: 기공수가「배송비」폐지(치과→기공소 무료). normalize에서 strip. 어벗츠 구간만 박스당.
@@ -626,7 +627,13 @@ export function isCustomAbutmentWork(row) {
 /** 심플어벗/심플밀링 — 치과 재고. 기공소 커스텀어벗 수가·견적 제외. */
 const SIMPLE_ABUTMENT_KINDS = new Set(["심플어벗", "심플밀링"]);
 
+/**
+ * 크라운·브리지·임시치아 + 심플어벗만 기공소 CA 수가에서 제외.
+ * 단독「커스텀어벗」형태는 심플이어도 「커스텀어벗(지그제외)」수가 대상.
+ */
 export function isSimpleAbutmentModeForFee(row) {
+  const prosthesisType = String(row?.prosthesisType || row?.type || "").trim();
+  if (isCustomAbutmentProsthesisType(prosthesisType)) return false;
   return SIMPLE_ABUTMENT_KINDS.has(
     String(row?.abutmentManufacturer || row?.manufacturer || "").trim(),
   );

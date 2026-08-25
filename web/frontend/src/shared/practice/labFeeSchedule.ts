@@ -6,6 +6,7 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
 // - web/frontend/src/features/settings/tabs/LabFeeScheduleTab.tsx
 // - web/backend/tests/unit/labFeeSchedule.test.js
+// - 2026-08-25: 단독「커스텀어벗」은 심플이어도 지그제외 수가 대상. 크라운+심플만 수가 제외.
 // - 2026-08-25: 심플어벗(치과 재고)은 기공소 어벗 수가·견적에서 제외. 스캔바디 커스텀어벗만 과금.
 // - 2026-08-22: 치과 멤버십/일반 청구 이중가 제거. resolveAbutsAbutmentUnitPrice는 고시 단일가.
 // - 2026-08-13: 마스터 active(기본 off)가 켜져야 설정 완료. 수가 디폴트는 기본값·항목 on.
@@ -342,12 +343,24 @@ export const isCustomAbutmentWork = (row?: {
 /** 심플어벗/심플밀링 — 치과 재고. 기공소 커스텀어벗 수가·견적 제외(transferMemo와 동일 판별). */
 const SIMPLE_ABUTMENT_KINDS = new Set(["심플어벗", "심플밀링"]);
 
+/**
+ * 크라운·브리지·임시치아 + 심플어벗만 기공소 CA 수가에서 제외.
+ * 단독「커스텀어벗」형태는 심플이어도 「커스텀어벗(지그제외)」수가 대상.
+ */
 export const isSimpleAbutmentModeForFee = (
-  row?: { abutmentManufacturer?: string; manufacturer?: string } | null,
-) =>
-  SIMPLE_ABUTMENT_KINDS.has(
+  row?: {
+    abutmentManufacturer?: string;
+    manufacturer?: string;
+    prosthesisType?: string;
+    type?: string;
+  } | null,
+) => {
+  const prosthesisType = String(row?.prosthesisType || row?.type || "").trim();
+  if (isCustomAbutmentProsthesisType(prosthesisType)) return false;
+  return SIMPLE_ABUTMENT_KINDS.has(
     String(row?.abutmentManufacturer || row?.manufacturer || "").trim(),
   );
+};
 
 /** @deprecated pending 판별은 IMPLANT_ADD_REQUEST_OPTION / implantAddRequest 사용 */
 export const ROUND_BAR_PENDING_IMPLANT_TYPE = "헥스(사이즈 미정)";
