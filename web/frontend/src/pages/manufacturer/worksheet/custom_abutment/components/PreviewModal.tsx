@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-25: 추적관리 프리뷰 오른쪽을 NC코드/각인이미지 탭 뷰어로 변경(앞에서 생성한 파일 확인).
 // - 2026-08-25: 관리자 헥스 확정 시 PreviewModal 헥스 Select 비활성(제조사 변경 불가).
 // - 2026-08-23: Dialog 기본 닫기(X) 표시. 승인 처리 중에는 닫기·오버레이 닫기 차단.
 // - 2026-08-23: Dialog sm:max-w-lg 잔존으로 PC가 ~512px 모바일처럼 보이던 문제 수정. 세로 스택·가로 2열 STL UX.
@@ -567,6 +568,9 @@ export const PreviewModal = ({
     null | "filled" | "nc"
   >(null);
   const [ncRegenConfirmOpen, setNcRegenConfirmOpen] = useState(false);
+  const [trackingRightTab, setTrackingRightTab] = useState<"nc" | "engraving">(
+    "nc",
+  );
   const [manufacturerHexRotationDraft, setManufacturerHexRotationDraft] =
     useState<ManufacturerHexRotationDraftMode>("");
   const [anodizingEnabledDraft, setAnodizingEnabledDraft] = useState<boolean>(true);
@@ -1026,6 +1030,17 @@ export const PreviewModal = ({
     })();
   }, [activeReq, onRefreshPreview, open, stage, token]);
 
+  useEffect(() => {
+    if (!open) return;
+    const reviewStageKey = getReviewStageKeyByTab({
+      stage,
+      isCamStage,
+      isMachiningStage,
+    });
+    if (reviewStageKey !== "tracking") return;
+    setTrackingRightTab("nc");
+  }, [open, stage, isCamStage, isMachiningStage, activeReq?._id]);
+
   if (!activeReq && !open) return null;
 
   const handleRecalculateMetadata = async () => {
@@ -1167,12 +1182,17 @@ export const PreviewModal = ({
   const isRequestStage = currentReviewStageKey === "request";
 
   const isNcStage = currentReviewStageKey === "machining";
+  const isTrackingStage = currentReviewStageKey === "tracking";
   const isImageStage =
     currentReviewStageKey === "packing" ||
     currentReviewStageKey === "shipping" ||
     currentReviewStageKey === "tracking";
+  // 포장.발송·추적관리: 각인 이미지는 세척.패킹(packing)에 저장된다.
   const imageStageKey =
-    currentReviewStageKey === "shipping" ? "packing" : currentReviewStageKey;
+    currentReviewStageKey === "shipping" ||
+    currentReviewStageKey === "tracking"
+      ? "packing"
+      : currentReviewStageKey;
 
   const canApprove = (() => {
     if (isStageFileStage) {
@@ -1239,13 +1259,17 @@ export const PreviewModal = ({
       : isImageStage
         ? camName
         : originalName;
-  const rightTitle = isStageFileStage
-    ? currentReviewStageKey === "machining"
-      ? "로트번호 이미지"
-      : "각인 이미지"
-    : isCamStage
+  const rightTitle = isTrackingStage
+    ? trackingRightTab === "nc"
       ? ncName
-      : camName;
+      : "각인 이미지"
+    : isStageFileStage
+      ? currentReviewStageKey === "machining"
+        ? "로트번호 이미지"
+        : "각인 이미지"
+      : isCamStage
+        ? ncName
+        : camName;
 
   const leftViewer = isCamStage
     ? filledViewer
@@ -1526,6 +1550,16 @@ export const PreviewModal = ({
   };
 
   const onDownload = () => {
+    if (isTrackingStage) {
+      if (trackingRightTab === "nc") {
+        if (!hasNcFile) return;
+        void onDownloadNcFile(activeReq);
+        return;
+      }
+      if (!hasRightFile) return;
+      void onDownloadStageFile(activeReq, imageStageKey);
+      return;
+    }
     if (!hasRightFile) return;
     if (isStageFileStage) {
       void onDownloadStageFile(activeReq, imageStageKey);
@@ -3066,12 +3100,12 @@ export const PreviewModal = ({
               <div
                 className="border rounded-lg p-2.5 sm:p-3 space-y-2 flex flex-col overflow-hidden min-h-[min(48vh,420px)] max-md:landscape:min-h-0 md:min-h-0"
                 onDragOver={(e) => {
-                  if (!isStageFileStage || isUploading) return;
+                  if (!isStageFileStage || isTrackingStage || isUploading) return;
                   e.preventDefault();
                   e.stopPropagation();
                 }}
                 onDrop={(e) => {
-                  if (!isStageFileStage || isUploading) return;
+                  if (!isStageFileStage || isTrackingStage || isUploading) return;
                   e.preventDefault();
                   e.stopPropagation();
                   const file = e.dataTransfer.files?.[0];
@@ -3080,299 +3114,356 @@ export const PreviewModal = ({
                 }}
               >
                 <div className="flex items-center justify-between gap-2 min-w-0">
-                  <button
-                    type="button"
-                    className="min-w-0 flex-1 text-sm font-semibold text-primary-strong hover:underline text-left truncate"
-                    onClick={onDownload}
-                    title={
-                      stage === "packing" || stage === "shipping"
-                        ? "각인 이미지"
-                        : fileLabel
-                    }
-                  >
-                    {stage === "packing" || stage === "shipping"
-                      ? "각인 이미지"
-                      : fileLabel}
-                  </button>
-                  <div className="flex items-center gap-2">
-                    {!isCamStage && (
-                      <TooltipProvider>
-                        {canGuideFinishLine && (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button
-                                type="button"
-                                className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[11px] font-bold transition ${
-                                  guidedFinishLineMode
-                                    ? "border-accent/80 bg-accent-soft text-accent-strong"
-                                    : "border-primary-muted bg-primary-soft text-primary-strong hover:bg-primary-soft"
-                                } ${guidedFinishLineSubmitting || guidedFrontPointSubmitting || isUploading ? "opacity-60 cursor-not-allowed" : ""}`}
-                                disabled={
-                                  guidedFinishLineSubmitting ||
-                                  guidedFrontPointSubmitting ||
-                                  isUploading
-                                }
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  handleToggleFinishLineEdit();
-                                }}
-                                aria-label={
-                                  guidedFinishLineMode
-                                    ? "Finish Line 수동편집 완료"
-                                    : "Finish Line"
-                                }
-                              >
-                                FL
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent side="bottom">
-                              Finish Line
-                            </TooltipContent>
-                          </Tooltip>
-                        )}
-                        {canGuideFrontPoint && (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button
-                                type="button"
-                                className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[11px] font-bold transition ${
-                                  guidedFrontPointMode
-                                    ? "border-accent/80 bg-accent-soft text-accent-strong"
-                                    : "border-primary-muted bg-primary-soft text-primary-strong hover:bg-primary-soft"
-                                } ${guidedFrontPointSubmitting || guidedFinishLineSubmitting || isUploading ? "opacity-60 cursor-not-allowed" : ""}`}
-                                disabled={
-                                  guidedFrontPointSubmitting ||
-                                  guidedFinishLineSubmitting ||
-                                  isUploading
-                                }
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  handleToggleFrontPointEdit();
-                                }}
-                                aria-label={
-                                  guidedFrontPointMode
-                                    ? "Front Point 수동편집 완료"
-                                    : "Front Point"
-                                }
-                              >
-                                FP
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent side="bottom">
-                              Front Point
-                            </TooltipContent>
-                          </Tooltip>
-                        )}
-                      </TooltipProvider>
-                    )}
-                    {isCamStage && onOpenCodeEditor && (
+                  {isTrackingStage ? (
+                    <div className="inline-flex h-8 items-center rounded-md border border-slate-200 bg-slate-50 p-0.5 min-w-0">
                       <button
                         type="button"
-                        className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[12px] font-mono font-bold transition ${
-                          isNcActionLocked
-                            ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
-                            : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                        }`}
-                        disabled={isNcActionLocked}
+                        className={cn(
+                          "h-7 rounded px-2.5 text-[12px] font-semibold transition",
+                          trackingRightTab === "nc"
+                            ? "bg-white text-primary-strong shadow-sm"
+                            : "text-slate-600 hover:text-slate-800",
+                        )}
+                        onClick={() => setTrackingRightTab("nc")}
+                      >
+                        NC코드
+                      </button>
+                      <button
+                        type="button"
+                        className={cn(
+                          "h-7 rounded px-2.5 text-[12px] font-semibold transition",
+                          trackingRightTab === "engraving"
+                            ? "bg-white text-primary-strong shadow-sm"
+                            : "text-slate-600 hover:text-slate-800",
+                        )}
+                        onClick={() => setTrackingRightTab("engraving")}
+                      >
+                        각인이미지
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      className="min-w-0 flex-1 text-sm font-semibold text-primary-strong hover:underline text-left truncate"
+                      onClick={onDownload}
+                      title={
+                        stage === "packing" || stage === "shipping"
+                          ? "각인 이미지"
+                          : fileLabel
+                      }
+                    >
+                      {stage === "packing" || stage === "shipping"
+                        ? "각인 이미지"
+                        : fileLabel}
+                    </button>
+                  )}
+                  <div className="flex items-center gap-2">
+                    {isTrackingStage ? (
+                      <button
+                        type="button"
+                        className={cn(
+                          "inline-flex items-center justify-center h-8 rounded-md border px-2 text-[12px] font-medium transition",
+                          (trackingRightTab === "nc" ? hasNcFile : hasRightFile)
+                            ? "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                            : "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed",
+                        )}
+                        disabled={
+                          trackingRightTab === "nc" ? !hasNcFile : !hasRightFile
+                        }
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          if (!activeReq || isNcActionLocked) return;
-                          void onOpenCodeEditor(activeReq);
+                          onDownload();
                         }}
-                        aria-label="코드 에디터"
-                        title={
-                          isNcActionLocked
-                            ? "가공 중에는 NC 코드를 수정할 수 없습니다."
-                            : "코드 에디터"
-                        }
                       >
-                        {"</>"}
+                        다운로드
                       </button>
-                    )}
-
-                    {isCamStage ? (
+                    ) : (
                       <>
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
+                        {!isCamStage && (
+                          <TooltipProvider>
+                            {canGuideFinishLine && (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <button
+                                    type="button"
+                                    className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[11px] font-bold transition ${
+                                      guidedFinishLineMode
+                                        ? "border-accent/80 bg-accent-soft text-accent-strong"
+                                        : "border-primary-muted bg-primary-soft text-primary-strong hover:bg-primary-soft"
+                                    } ${guidedFinishLineSubmitting || guidedFrontPointSubmitting || isUploading ? "opacity-60 cursor-not-allowed" : ""}`}
+                                    disabled={
+                                      guidedFinishLineSubmitting ||
+                                      guidedFrontPointSubmitting ||
+                                      isUploading
+                                    }
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      handleToggleFinishLineEdit();
+                                    }}
+                                    aria-label={
+                                      guidedFinishLineMode
+                                        ? "Finish Line 수동편집 완료"
+                                        : "Finish Line"
+                                    }
+                                  >
+                                    FL
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent side="bottom">
+                                  Finish Line
+                                </TooltipContent>
+                              </Tooltip>
+                            )}
+                            {canGuideFrontPoint && (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <button
+                                    type="button"
+                                    className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[11px] font-bold transition ${
+                                      guidedFrontPointMode
+                                        ? "border-accent/80 bg-accent-soft text-accent-strong"
+                                        : "border-primary-muted bg-primary-soft text-primary-strong hover:bg-primary-soft"
+                                    } ${guidedFrontPointSubmitting || guidedFinishLineSubmitting || isUploading ? "opacity-60 cursor-not-allowed" : ""}`}
+                                    disabled={
+                                      guidedFrontPointSubmitting ||
+                                      guidedFinishLineSubmitting ||
+                                      isUploading
+                                    }
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      handleToggleFrontPointEdit();
+                                    }}
+                                    aria-label={
+                                      guidedFrontPointMode
+                                        ? "Front Point 수동편집 완료"
+                                        : "Front Point"
+                                    }
+                                  >
+                                    FP
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent side="bottom">
+                                  Front Point
+                                </TooltipContent>
+                              </Tooltip>
+                            )}
+                          </TooltipProvider>
+                        )}
+                        {isCamStage && onOpenCodeEditor && (
+                          <button
+                            type="button"
+                            className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[12px] font-mono font-bold transition ${
+                              isNcActionLocked
+                                ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
+                                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                            }`}
+                            disabled={isNcActionLocked}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              if (!activeReq || isNcActionLocked) return;
+                              void onOpenCodeEditor(activeReq);
+                            }}
+                            aria-label="코드 에디터"
+                            title={
+                              isNcActionLocked
+                                ? "가공 중에는 NC 코드를 수정할 수 없습니다."
+                                : "코드 에디터"
+                            }
+                          >
+                            {"</>"}
+                          </button>
+                        )}
+
+                        {isCamStage ? (
+                          <>
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <button
+                                    type="button"
+                                    className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[13px] font-medium transition ${
+                                      isNcActionLocked ||
+                                      regenerating ||
+                                      isUploading ||
+                                      hexRotationSaving
+                                        ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
+                                        : "border-primary-muted bg-primary-soft text-primary-strong hover:bg-primary-soft"
+                                    }`}
+                                    disabled={
+                                      isNcActionLocked ||
+                                      regenerating ||
+                                      isUploading ||
+                                      hexRotationSaving
+                                    }
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      if (isNcActionLocked) return;
+                                      void onRegenerateNc();
+                                    }}
+                                    aria-label="NC 재생성"
+                                  >
+                                    <RefreshCw
+                                      className={`h-4 w-4 ${regenerating ? "animate-spin" : ""}`}
+                                    />
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent side="bottom">
+                                  {isNcActionLocked
+                                    ? "가공 중에는 NC 코드를 재생성할 수 없습니다."
+                                    : "NC 재생성"}
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                            <button
+                              type="button"
+                              className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[13px] font-medium transition ${
+                                !canDeleteNcOutput ||
+                                isUploading ||
+                                regenerating ||
+                                hexRotationSaving
+                                  ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
+                                  : "border-slate-200 bg-white text-slate-700 hover:bg-destructive-soft hover:border-destructive-muted hover:text-destructive"
+                              }`}
+                              disabled={
+                                !canDeleteNcOutput ||
+                                isUploading ||
+                                regenerating ||
+                                hexRotationSaving
+                              }
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                if (!canDeleteNcOutput) return;
+                                setDeleteConfirmKind("nc");
+                              }}
+                              aria-label="생성된 NC 파일 삭제"
+                              title="생성된 NC 파일 삭제"
+                            >
+                              X
+                            </button>
+                          </>
+                        ) : (
+                          canRegenerateFilledStl && (
+                            <>
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <button
+                                      type="button"
+                                      className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[13px] font-medium transition ${
+                                        regenerating ||
+                                        isUploading ||
+                                        hexRotationSaving
+                                          ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
+                                          : "border-primary-muted bg-primary-soft text-primary-strong hover:bg-primary-soft"
+                                      }`}
+                                      disabled={
+                                        regenerating ||
+                                        isUploading ||
+                                        hexRotationSaving
+                                      }
+                                      onClick={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        void onRegenerate();
+                                      }}
+                                      aria-label="filled.stl 재생성"
+                                    >
+                                      <RefreshCw
+                                        className={`h-4 w-4 ${regenerating ? "animate-spin" : ""}`}
+                                      />
+                                    </button>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="bottom">
+                                    filled.stl 재생성
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+
                               <button
                                 type="button"
                                 className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[13px] font-medium transition ${
-                                  isNcActionLocked ||
-                                  regenerating ||
+                                  !canDeleteFilledOutput ||
                                   isUploading ||
+                                  regenerating ||
                                   hexRotationSaving
                                     ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
-                                    : "border-primary-muted bg-primary-soft text-primary-strong hover:bg-primary-soft"
+                                    : "border-slate-200 bg-white text-slate-700 hover:bg-destructive-soft hover:border-destructive-muted hover:text-destructive"
                                 }`}
                                 disabled={
-                                  isNcActionLocked ||
-                                  regenerating ||
+                                  !canDeleteFilledOutput ||
                                   isUploading ||
+                                  regenerating ||
                                   hexRotationSaving
                                 }
                                 onClick={(e) => {
                                   e.preventDefault();
                                   e.stopPropagation();
-                                  if (isNcActionLocked) return;
-                                  void onRegenerateNc();
+                                  if (!canDeleteFilledOutput) return;
+                                  setDeleteConfirmKind("filled");
                                 }}
-                                aria-label="NC 재생성"
+                                aria-label="생성된 filled STL 삭제"
+                                title="생성된 filled STL 삭제"
                               >
-                                <RefreshCw
-                                  className={`h-4 w-4 ${regenerating ? "animate-spin" : ""}`}
-                                />
+                                X
                               </button>
-                            </TooltipTrigger>
-                            <TooltipContent side="bottom">
-                              {isNcActionLocked
-                                ? "가공 중에는 NC 코드를 재생성할 수 없습니다."
-                                : "NC 재생성"}
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                        <button
-                          type="button"
-                          className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[13px] font-medium transition ${
-                            !canDeleteNcOutput ||
-                            isUploading ||
-                            regenerating ||
-                            hexRotationSaving
-                              ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
-                              : "border-slate-200 bg-white text-slate-700 hover:bg-destructive-soft hover:border-destructive-muted hover:text-destructive"
-                          }`}
-                          disabled={
-                            !canDeleteNcOutput ||
-                            isUploading ||
-                            regenerating ||
-                            hexRotationSaving
-                          }
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            if (!canDeleteNcOutput) return;
-                            setDeleteConfirmKind("nc");
-                          }}
-                          aria-label="생성된 NC 파일 삭제"
-                          title="생성된 NC 파일 삭제"
-                        >
-                          X
-                        </button>
-                      </>
-                    ) : (
-                      canRegenerateFilledStl && (
-                        <>
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <button
-                                  type="button"
-                                  className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[13px] font-medium transition ${
-                                    regenerating || isUploading || hexRotationSaving
-                                      ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
-                                      : "border-primary-muted bg-primary-soft text-primary-strong hover:bg-primary-soft"
-                                  }`}
-                                  disabled={
-                                    regenerating || isUploading || hexRotationSaving
-                                  }
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    void onRegenerate();
-                                  }}
-                                  aria-label="filled.stl 재생성"
-                                >
-                                  <RefreshCw
-                                    className={`h-4 w-4 ${regenerating ? "animate-spin" : ""}`}
-                                  />
-                                </button>
-                              </TooltipTrigger>
-                              <TooltipContent side="bottom">
-                                filled.stl 재생성
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
+                            </>
+                          )
+                        )}
 
-                          <button
-                            type="button"
-                            className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[13px] font-medium transition ${
-                              !canDeleteFilledOutput ||
-                              isUploading ||
-                              regenerating ||
-                              hexRotationSaving
-                                ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
-                                : "border-slate-200 bg-white text-slate-700 hover:bg-destructive-soft hover:border-destructive-muted hover:text-destructive"
-                            }`}
-                            disabled={
-                              !canDeleteFilledOutput ||
-                              isUploading ||
-                              regenerating ||
-                              hexRotationSaving
-                            }
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              if (!canDeleteFilledOutput) return;
-                              setDeleteConfirmKind("filled");
-                            }}
-                            aria-label="생성된 filled STL 삭제"
-                            title="생성된 filled STL 삭제"
-                          >
-                            X
-                          </button>
-                        </>
-                      )
-                    )}
+                        {isStageFileStage && (
+                          <>
+                            <button
+                              type="button"
+                              className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[13px] font-medium transition ${
+                                !hasRightFile || isUploading
+                                  ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
+                                  : "border-slate-200 bg-white text-slate-700 hover:bg-destructive-soft hover:border-destructive-muted hover:text-destructive"
+                              }`}
+                              disabled={!hasRightFile || isUploading}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                onDelete();
+                              }}
+                              aria-label="삭제"
+                              title="삭제"
+                            >
+                              삭제
+                            </button>
 
-                    {isStageFileStage && (
-                      <>
-                        <button
-                          type="button"
-                          className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[13px] font-medium transition ${
-                            !hasRightFile || isUploading
-                              ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
-                              : "border-slate-200 bg-white text-slate-700 hover:bg-destructive-soft hover:border-destructive-muted hover:text-destructive"
-                          }`}
-                          disabled={!hasRightFile || isUploading}
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            onDelete();
-                          }}
-                          aria-label="삭제"
-                          title="삭제"
-                        >
-                          삭제
-                        </button>
-
-                        <label
-                          htmlFor={pickInputId}
-                          className={`inline-flex items-center justify-center h-8 rounded-md border px-2 text-[12px] font-medium transition ${
-                            isUploading
-                              ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
-                              : "border-slate-200 bg-white text-slate-700 cursor-pointer hover:bg-accent-soft hover:border-accent-muted hover:text-accent-strong"
-                          }`}
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          업로드
-                        </label>
-                        <input
-                          id={pickInputId}
-                          type="file"
-                          accept={accept}
-                          className="hidden"
-                          disabled={isUploading}
-                          onChange={(e) => {
-                            e.stopPropagation();
-                            const file = e.target.files?.[0];
-                            if (!file) return;
-                            onUploadRight(file);
-                            e.target.value = "";
-                          }}
-                        />
+                            <label
+                              htmlFor={pickInputId}
+                              className={`inline-flex items-center justify-center h-8 rounded-md border px-2 text-[12px] font-medium transition ${
+                                isUploading
+                                  ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
+                                  : "border-slate-200 bg-white text-slate-700 cursor-pointer hover:bg-accent-soft hover:border-accent-muted hover:text-accent-strong"
+                              }`}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              업로드
+                            </label>
+                            <input
+                              id={pickInputId}
+                              type="file"
+                              accept={accept}
+                              className="hidden"
+                              disabled={isUploading}
+                              onChange={(e) => {
+                                e.stopPropagation();
+                                const file = e.target.files?.[0];
+                                if (!file) return;
+                                onUploadRight(file);
+                                e.target.value = "";
+                              }}
+                            />
+                          </>
+                        )}
                       </>
                     )}
                   </div>
@@ -3380,7 +3471,41 @@ export const PreviewModal = ({
 
 
 
-                {isStageFileStage ? (
+                {isTrackingStage ? (
+                  trackingRightTab === "nc" ? (
+                    previewNcText || hasNcFile ? (
+                      <textarea
+                        className="w-full flex-1 min-h-0 rounded-md border border-slate-200 p-3 font-mono text-xs text-slate-700 resize-none overflow-auto"
+                        value={previewNcText}
+                        readOnly
+                      />
+                    ) : (
+                      <div className="h-full min-h-[300px] flex items-center justify-center text-xs text-slate-500 border rounded-md">
+                        NC코드 없음
+                      </div>
+                    )
+                  ) : (
+                    <div className="flex-1 min-h-0 overflow-auto">
+                      {previewStageUrl ? (
+                        <img
+                          src={previewStageUrl}
+                          alt={previewStageName || "각인 이미지"}
+                          className="w-full rounded-md border border-slate-200"
+                        />
+                      ) : hasRightFile && rightMeta?.s3Url ? (
+                        <img
+                          src={rightMeta.s3Url}
+                          alt="각인 이미지"
+                          className="w-full rounded-md border border-slate-200"
+                        />
+                      ) : (
+                        <div className="h-full min-h-[300px] flex items-center justify-center text-xs text-slate-500 border rounded-md">
+                          각인 이미지 없음
+                        </div>
+                      )}
+                    </div>
+                  )
+                ) : isStageFileStage ? (
                   <div className="flex-1 min-h-0 overflow-auto">
                     {previewStageUrl ? (
                       <img

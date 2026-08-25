@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-08-25: 추적관리 프리뷰는 full request 보강 필수(lean projection에 ncFile/stageFiles 없음).
+// - 2026-08-25: 추적관리 프리뷰에서도 NC 로드 + 각인은 packing stageFiles 사용.
 // - 2026-08-23: ExoCAD인데 관리자 헥스 확정값이 없으면 full request로 보강(확정/미정 뱃지).
 // - 2026-08-11: 원본 프리뷰 File MIME/확장자를 STL/PLY/OBJ에 맞게 유지.
 // - 2026-08-11: cam STL 로드 시 파일명에 filled가 없으면 .filled.stl로 정규화(가이드 표시용).
@@ -249,9 +251,11 @@ export function usePreviewLoader({
           !resolveAdminVerifiedHexFromRequest(targetReq);
 
         // forceRefresh / 가공 큐 스냅샷: designSoftware·헥스 회전·관리자 확정이 빠질 수 있어 full request로 보강.
+        // 추적관리 worksheet projection은 ncFile/stageFiles를 제외하므로 프리뷰 오픈 시 full request 필수.
         // (summary API는 해당 필드를 내려주지 않음)
         const shouldEnrichFromFullRequest =
           forceRefresh ||
+          tabStage === "tracking" ||
           ((isCamStage || isMachiningStage) &&
             requestMongoIdForEnrich &&
             (!hasDesignSoftware ||
@@ -558,9 +562,9 @@ export function usePreviewLoader({
 
         const finishLineResult = await resolveFinishLine();
 
-        // CAM / 가공 탭에서 NC 프리뷰를 보여주기 위해 NC를 읽어온다.
+        // CAM / 가공 / 추적관리: NC 프리뷰를 보여주기 위해 NC를 읽어온다.
         const ncPromise =
-          isCamStage || isMachiningStage
+          isCamStage || isMachiningStage || tabStage === "tracking"
             ? (async () => {
                 const ncMeta = targetReq.caseInfos?.ncFile;
                 if (!ncMeta?.s3Key || !requestMongoId) return;
@@ -590,8 +594,12 @@ export function usePreviewLoader({
           previewStageKey === "shipping" ||
           previewStageKey === "tracking"
             ? (async () => {
+                // 포장.발송·추적관리: 각인은 세척.패킹(packing) stageFiles에 저장된다.
                 const effectiveStageKey =
-                  previewStageKey === "shipping" ? "packing" : previewStageKey;
+                  previewStageKey === "shipping" ||
+                  previewStageKey === "tracking"
+                    ? "packing"
+                    : previewStageKey;
                 const stageMeta =
                   targetReq.caseInfos?.stageFiles?.[effectiveStageKey];
                 if (!requestMongoId || !stageMeta?.s3Key) return;
