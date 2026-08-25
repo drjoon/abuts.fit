@@ -4,6 +4,7 @@
 // - web/backend/server.js
 // - web/backend/controllers/practiceTransfers/roundBarAbutmentRequest.controller.js
 // change-log:
+// - 2026-08-26: AnyOne Mini API 응답 제외·Regular 표기 SSOT.
 // - 2026-08-26: isPublic만으로 전체 치과 카탈로그 노출(도입과 독립).
 // - 2026-08-26: 도입 스펙 brand/family/type OR 값을 카탈로그 조합으로 전개.
 // - 2026-08-26: isPublic+도입 스펙은 모든 치과 카탈로그에 포함.
@@ -23,6 +24,7 @@ import {
   buildPrcFileNamesFromCatalog,
   getPrcTypeCodeByFamily,
 } from "../../utils/prcFilenameCatalog.js";
+import { sanitizeCncImplantConnections } from "../../utils/cncImplantCatalog.js";
 
 function normalizeTypeLabel(type) {
   if (typeof type !== "string") return "";
@@ -274,7 +276,7 @@ export async function getImplantPresets(req, res) {
 
     res.json({
       success: true,
-      data: [...adopted, ...sorted],
+      data: sanitizeCncImplantConnections([...adopted, ...sorted]),
       serverUpdatedAt: serverUpdatedAt || null,
     });
   } catch (error) {

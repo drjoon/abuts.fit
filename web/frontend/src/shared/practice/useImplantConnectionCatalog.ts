@@ -3,11 +3,13 @@
 // - web/frontend/src/pages/requestor/new_request/hooks/useNewRequestImplant.ts
 // - web/backend/controllers/presets/implantPreset.controller.js
 // change-log:
+// - 2026-08-26: AnyOne Mini 캐시(v9) 무효화·API 응답 sanitize.
 // - 2026-08-26: 어벗 추가/공개·삭제 이벤트 시 캐시 무효화 후 카탈로그 재조회.
 // - 2026-08-14: 캐시를 보여준 뒤 서버를 다시 불러 도입 스펙이 빠지지 않게 한다.
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { ROUND_BAR_REQUEST_UPDATED_EVENT } from "@/shared/practice/roundBarAbutment";
+import { sanitizeCncImplantConnections } from "@/shared/practice/cncImplantCatalog";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 
 export type ImplantConnection = {
@@ -29,7 +31,7 @@ export type ImplantConnection = {
   isPublic?: boolean;
 };
 
-const IMPLANT_PRESETS_STORAGE_KEY = "abutsfit:implant-presets:v8";
+const IMPLANT_PRESETS_STORAGE_KEY = "abutsfit:implant-presets:v9";
 const IMPLANT_PRESETS_TTL_MS = 365 * 24 * 60 * 60 * 1000;
 
 export const useImplantConnectionCatalog = (token: string | null) => {
@@ -71,7 +73,7 @@ export const useImplantConnectionCatalog = (token: string | null) => {
           Array.isArray(parsed.data) &&
           parsed.data.length > 0
         ) {
-          return parsed.data;
+          return sanitizeCncImplantConnections(parsed.data);
         }
       } catch {
         // ignore cache read errors
@@ -91,7 +93,9 @@ export const useImplantConnectionCatalog = (token: string | null) => {
           skipCache: true,
         });
         if (!res.ok || cancelled) return;
-        const list = Array.isArray(res.data?.data) ? res.data.data : [];
+        const list = sanitizeCncImplantConnections(
+          Array.isArray(res.data?.data) ? res.data.data : [],
+        );
         if (list.length > 0) setConnections(list);
 
         if (typeof window !== "undefined" && list.length > 0) {

@@ -63,7 +63,7 @@ import {
   expandRoundBarOrCombos,
   splitOrValues,
 } from "@/shared/practice/roundBarAbutment";
-import { mergeCncImplantSpecs } from "@/shared/practice/cncImplantCatalog";
+import { mergeCncImplantSpecs, sanitizeCncImplantConnections, isMegagenAnyOneMiniSpec } from "@/shared/practice/cncImplantCatalog";
 import { implantFavoriteDisplayParts } from "@/shared/practice/implantDisplay";
 import { cn } from "@/shared/ui/cn";
 
@@ -487,8 +487,13 @@ export const PracticeToothImplantFields = ({
   const allowManufacturerRequest = canManagePresets && kind !== "lab";
   const listClass = mode === "presets" ? PRESET_LIST_CLASS_TALL : PRESET_LIST_CLASS;
 
+  const catalogConnections = useMemo(
+    () => sanitizeCncImplantConnections(connections),
+    [connections],
+  );
+
   const connectionOptions = useMemo(() => {
-    const fromCatalog = connections
+    const fromCatalog = catalogConnections
       .filter(
         (c) =>
           typeof c.manufacturer === "string" &&
@@ -524,6 +529,7 @@ export const PracticeToothImplantFields = ({
         const family = String(fav.family || "").trim();
         const type = String(fav.type || "").trim();
         if (!manufacturer) return null;
+        if (isMegagenAnyOneMiniSpec(manufacturer, brand, family)) return null;
         const key = `${manufacturer}|${brand}|${family}|${type}`.toLowerCase();
         if (seen.has(key)) return null;
         seen.add(key);
@@ -543,9 +549,12 @@ export const PracticeToothImplantFields = ({
       })
       .filter((row): row is NonNullable<typeof row> => Boolean(row));
     return [...fromFavorites, ...fromCatalog];
-  }, [connections, favorites]);
+  }, [catalogConnections, favorites]);
 
-  const cncSpecs = useMemo(() => mergeCncImplantSpecs(connections), [connections]);
+  const cncSpecs = useMemo(
+    () => mergeCncImplantSpecs(catalogConnections),
+    [catalogConnections],
+  );
 
   const specRows = useMemo(() => {
     const seen = new Set<string>();
@@ -571,6 +580,7 @@ export const PracticeToothImplantFields = ({
         const manufacturer = String(combo.manufacturer || "").trim();
         const brand = String(combo.brand || "").trim();
         if (!manufacturer || !brand) continue;
+        if (isMegagenAnyOneMiniSpec(manufacturer, brand, combo.family)) continue;
         const family = String(combo.family || "").trim();
         const type = String(combo.type || "").trim();
         const key = `${manufacturer}|${brand}|${family}|${type}`.toLowerCase();
@@ -812,16 +822,23 @@ export const PracticeToothImplantFields = ({
     () =>
       new Map(
         familyOptions.map((family) => {
-          const sample = connectionOptions.find(
-            (c) =>
-              sameManufacturer(c.manufacturer, value.implantManufacturer) &&
-              sameBrand(c.brand || "", value.implantBrand) &&
-              sameFamily(c.family || "", family),
-          );
+          const sample =
+            cncSpecs.find(
+              (c) =>
+                sameManufacturer(c.manufacturer, value.implantManufacturer) &&
+                sameBrand(c.brand, value.implantBrand) &&
+                sameFamily(c.family, family),
+            ) ||
+            connectionOptions.find(
+              (c) =>
+                sameManufacturer(c.manufacturer, value.implantManufacturer) &&
+                sameBrand(c.brand || "", value.implantBrand) &&
+                sameFamily(c.family || "", family),
+            );
           return [family, sample?.displayFamily || family];
         }),
       ),
-    [connectionOptions, familyOptions, value.implantManufacturer, value.implantBrand],
+    [connectionOptions, cncSpecs, familyOptions, value.implantManufacturer, value.implantBrand],
   );
 
   const typeLabelMap = useMemo(
@@ -948,12 +965,19 @@ export const PracticeToothImplantFields = ({
   };
 
   const specFamilyLabel = (manufacturer: string, brand: string, family: string) => {
-    const sample = connectionOptions.find(
-      (c) =>
-        sameManufacturer(c.manufacturer, manufacturer) &&
-        sameBrand(c.brand || "", brand) &&
-        sameFamily(c.family || "", family),
-    );
+    const sample =
+      cncSpecs.find(
+        (c) =>
+          sameManufacturer(c.manufacturer, manufacturer) &&
+          sameBrand(c.brand, brand) &&
+          sameFamily(c.family, family),
+      ) ||
+      connectionOptions.find(
+        (c) =>
+          sameManufacturer(c.manufacturer, manufacturer) &&
+          sameBrand(c.brand || "", brand) &&
+          sameFamily(c.family || "", family),
+      );
     return sample?.displayFamily || family || "(기본)";
   };
 

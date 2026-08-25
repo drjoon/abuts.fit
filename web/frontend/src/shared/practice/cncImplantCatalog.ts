@@ -2,6 +2,7 @@
 // - web/backend/scripts/db/data/connections.seed.js
 // - web/frontend/src/shared/components/practice/PracticeToothImplantFields.tsx
 // change-log:
+// - 2026-08-26: AnyOne Mini API/캐시 유입 차단·Regular 표기 SSOT.
 // - 2026-08-26: AnyOne Internal Mini 제거 — D3.5도 Regular( RH PRC ).
 // - 2026-08-21: CNC 임플란트 표(첨1) SSOT. Dentium Implantium=SuperLine과 동일 패밀리.
 /**
@@ -70,6 +71,73 @@ export const CNC_IMPLANT_CATALOG: ReadonlyArray<CncImplantSpec> = [
   { manufacturer: "DENTIS", brand: "One-Q", family: "Mini", type: "Hex", displayManufacturer: "Dentis" },
   { manufacturer: "DENTIS", brand: "One-Q", family: "Narrow", type: "Hex", displayManufacturer: "Dentis" },
 ];
+
+export const MEGAGEN_ANYONE_REGULAR_DISPLAY_FAMILY = "Regular (Ø3.5 이상)";
+
+const tokenKey = (value: string) =>
+  String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, "");
+
+/** Megagen AnyOne(Internal) Mini — D3.5 포함 Regular만 허용. */
+export const isMegagenAnyOneMiniSpec = (
+  manufacturer: string,
+  brand: string,
+  family: string,
+) => {
+  const mfr = tokenKey(manufacturer);
+  const brandKey = tokenKey(brand);
+  const familyKey = tokenKey(family);
+  if (!mfr.includes("megagen") && mfr !== "메가젠") return false;
+  if (brandKey.includes("miniinternal")) return false;
+  if (!brandKey.includes("anyone")) return false;
+  return familyKey === "mini";
+};
+
+export const sanitizeCncImplantConnection = <
+  T extends {
+    manufacturer: string;
+    brand?: string;
+    family?: string;
+    displayFamily?: string | null;
+  },
+>(
+  row: T,
+): T | null => {
+  const manufacturer = String(row.manufacturer || "").trim();
+  const brand = String(row.brand || "").trim();
+  const family = String(row.family || "").trim();
+  if (!manufacturer || !brand) return null;
+  if (isMegagenAnyOneMiniSpec(manufacturer, brand, family)) return null;
+  if (
+    tokenKey(manufacturer).includes("megagen") &&
+    tokenKey(brand).includes("anyone") &&
+    !tokenKey(brand).includes("miniinternal") &&
+    tokenKey(family) === "regular"
+  ) {
+    return {
+      ...row,
+      family: "Regular",
+      displayFamily: MEGAGEN_ANYONE_REGULAR_DISPLAY_FAMILY,
+    };
+  }
+  return row;
+};
+
+export const sanitizeCncImplantConnections = <
+  T extends {
+    manufacturer: string;
+    brand?: string;
+    family?: string;
+    displayFamily?: string | null;
+  },
+>(
+  rows: T[],
+): T[] =>
+  rows
+    .map((row) => sanitizeCncImplantConnection(row))
+    .filter((row): row is T => Boolean(row));
 
 const catalogKey = (row: {
   manufacturer: string;
@@ -153,7 +221,7 @@ export const mergeCncImplantSpecs = <
       displayFamily: row.displayFamily,
     });
   }
-  for (const row of connections) {
+  for (const row of sanitizeCncImplantConnections(connections)) {
     push({
       manufacturer: row.manufacturer,
       brand: String(row.brand || "").trim(),
