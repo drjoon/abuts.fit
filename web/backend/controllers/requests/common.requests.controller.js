@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-25: 관리자 헥스 확정 시 updateRndHexRotation 제조사 변경 차단.
 // - 2026-08-21: 의뢰자 어벗츠로의뢰 취소 — PTX(치과 기공의뢰) 연동 CA는 거부(기공의뢰수신 작업취소 SSOT).
 // - 2026-08-21: GET /my에 referenceIds 포함(헥스 확인 쌍 UI 동시 제거용)
 // - 2026-08-23: ExoCAD 헥스 확인 pending은 관리자 hexVerificationResultHex SSOT(취소 시 플래그 재활성 불필요)
@@ -3241,12 +3242,41 @@ export const updateRndHexRotation = asyncHandler(async (req, res) => {
   // - web/backend/controllers/requests/common.review.controller.js
   // 정책: 헥스 회전 설정/재설정은 의뢰 단계에서만 가능.
   // CAM 이상 단계에서는 고정되어 변경할 수 없다.
+  // 관리자 hexVerificationResultHex 확정 후에는 제조사 변경 불가(확정값과 동일 저장만 허용).
   const currentManufacturerStage = String(request?.manufacturerStage || "").trim();
   if (currentManufacturerStage && currentManufacturerStage !== "준비") {
     return res.status(409).json({
       success: false,
       message:
         "헥스 회전은 의뢰 단계에서만 설정/재설정할 수 있습니다. CAM 단계부터는 고정됩니다.",
+    });
+  }
+
+  const requestorBusinessAnchorId = String(request.businessAnchorId || "").trim();
+  const requestorUserId = String(
+    request?.requestor?._id || request?.requestor || "",
+  ).trim();
+  const [requestorUser, requestorAnchor] = await Promise.all([
+    Types.ObjectId.isValid(requestorUserId)
+      ? User.findById(requestorUserId)
+          .select({ "requestSettings.hexVerificationResultHex": 1 })
+          .lean()
+      : null,
+    Types.ObjectId.isValid(requestorBusinessAnchorId)
+      ? BusinessAnchor.findById(requestorBusinessAnchorId)
+          .select({ "requestSettings.hexVerificationResultHex": 1 })
+          .lean()
+      : null,
+  ]);
+  const adminVerifiedHex = resolveAdminVerifiedHexFromSettings(
+    requestorUser?.requestSettings,
+    requestorAnchor?.requestSettings,
+  );
+  if (adminVerifiedHex && manufacturerHexRotation !== adminVerifiedHex) {
+    return res.status(409).json({
+      success: false,
+      message:
+        "관리자가 헥스 회전을 확정한 계정입니다. 제조사가 변경할 수 없습니다.",
     });
   }
 
@@ -3266,8 +3296,6 @@ export const updateRndHexRotation = asyncHandler(async (req, res) => {
   const finalHexRotation = resolveFinalHexRotationValue({
     manufacturerHexRotation,
   });
-
-  const requestorBusinessAnchorId = String(request.businessAnchorId || "").trim();
 
   // related files:
   // - bg/pc1/esprit-addin/Helpers/NcFileGenerator.cs
@@ -3318,10 +3346,8 @@ export const updateRndHexRotation = asyncHandler(async (req, res) => {
   // 의뢰자 헥스 기본값 저장 SSOT:
   // - 개인 계정(User.requestSettings.defaultManufacturerHexRotation) 우선
   // - 개인 계정이 없으면 BusinessAnchor.requestSettings.defaultManufacturerHexRotation
-  // 다음 신규 의뢰는 User → Anchor → 관리자 hexVerificationResultHex → designSoftware 순으로 읽는다.
-  const requestorUserId = String(
-    request?.requestor?._id || request?.requestor || "",
-  ).trim();
+  // 다음 신규 의뢰(ExoCAD 확정 후): 관리자 hexVerificationResultHex → 제조사 default → designSoftware
+  // (pending이면 designSoftware 시드. 확정 후에는 제조사 의뢰 단위 변경 불가)
   const nowForDefault = new Date();
   let savedDefaultHexScope = null;
   if (Types.ObjectId.isValid(requestorUserId)) {

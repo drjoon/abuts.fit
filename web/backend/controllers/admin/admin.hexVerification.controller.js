@@ -5,6 +5,7 @@
 // - web/backend/modules/admin/admin.routes.js
 // - web/frontend/src/pages/admin/dashboard/AdminDashboardPage.tsx
 // change-log:
+// - 2026-08-25: 관리자 확정 → 미확인(pending) 되돌리기 API
 // - 2026-08-23: ExoCAD 확정 계정도 목록에 포함(보기/수정). pendingCount·confirmedCount 분리.
 // - 2026-08-21: pending SSOT = 관리자 hexVerificationResultHex 미확정
 // - 2026-08-21: ExoCAD 헥스 확인 진행중 목록·관리자 완료 API
@@ -250,6 +251,9 @@ export const completeHexVerification = asyncHandler(async (req, res) => {
     "requestSettings.hexVerificationResultHex": hexRotation,
     "requestSettings.hexVerificationCompletedAt": now,
     "requestSettings.hexVerificationCompletedBy": actorId,
+    // 확정값과 제조사 기본값을 맞춰 이후 신규 의뢰·UI 표시가 어긋나지 않게 한다.
+    // 확정 후에는 제조사 의뢰 단위 변경 불가(updateRndHexRotation 409).
+    "requestSettings.defaultManufacturerHexRotation": hexRotation,
     "requestSettings.updatedAt": now,
   };
 
@@ -283,6 +287,76 @@ export const completeHexVerification = asyncHandler(async (req, res) => {
         updatedOwnerCount: owners.length,
       },
       "헥스 확인이 저장되었습니다.",
+    ),
+  );
+});
+
+/**
+ * 관리자 헥스 확인 확정 → 미확인(pending) 되돌리기.
+ * pending SSOT: hexVerificationResultHex 없음.
+ * POST /api/admin/hex-verification/:businessAnchorId/revert
+ */
+export const revertHexVerification = asyncHandler(async (req, res) => {
+  const businessAnchorId = String(req.params.businessAnchorId || "").trim();
+  if (!Types.ObjectId.isValid(businessAnchorId)) {
+    throw new ApiError(400, "유효하지 않은 사업자 ID입니다.");
+  }
+
+  const anchor = await BusinessAnchor.findById(businessAnchorId).select({
+    name: 1,
+    metadata: 1,
+    businessType: 1,
+    requestSettings: 1,
+  });
+  if (!anchor) {
+    throw new ApiError(404, "사업자를 찾을 수 없습니다.");
+  }
+
+  const designSoftware = String(
+    anchor.requestSettings?.designSoftware || "",
+  ).trim();
+  if (designSoftware !== "ExoCAD") {
+    throw new ApiError(400, "ExoCAD 계정만 헥스 확인을 되돌릴 수 있습니다.");
+  }
+
+  const now = new Date();
+  const unsetPayload = {
+    "requestSettings.hexVerificationResultHex": "",
+    "requestSettings.hexVerificationCompletedAt": "",
+    "requestSettings.hexVerificationCompletedBy": "",
+  };
+  const setPayload = {
+    "requestSettings.updatedAt": now,
+  };
+
+  await BusinessAnchor.updateOne(
+    { _id: anchor._id },
+    { $unset: unsetPayload, $set: setPayload },
+  );
+
+  const owners = await User.find({
+    role: "requestor",
+    businessAnchorId: anchor._id,
+    subRole: "owner",
+  }).select({ _id: 1 });
+
+  if (owners.length) {
+    await User.updateMany(
+      { _id: { $in: owners.map((u) => u._id) } },
+      { $unset: unsetPayload, $set: setPayload },
+    );
+  }
+
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        businessAnchorId: String(anchor._id),
+        businessName: pickBusinessName(anchor),
+        status: "pending",
+        updatedOwnerCount: owners.length,
+      },
+      "헥스 확인이 미확인으로 되돌려졌습니다.",
     ),
   );
 });

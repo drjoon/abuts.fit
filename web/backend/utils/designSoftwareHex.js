@@ -5,6 +5,7 @@
 // - web/frontend/src/features/requestSettings/DesignSoftwareSettingsDialog.tsx
 // - web/backend/controllers/admin/admin.hexVerification.controller.js
 // change-log:
+// - 2026-08-25: 확정 후 우선순위 관리자 > 제조사. pending은 디자인SW 강제(제조사는 의뢰 단위 변경 가능).
 // - 2026-08-21: 헥스 확인 pending SSOT = ExoCAD && 관리자 hexVerificationResultHex 없음
 // - 2026-08-21: resolveExoCadManufacturerHexRotation — 제조사 > 관리자 확정 > 디자인SW
 // - 2026-08-21: ExoCAD 버전(3.0 이하 / 3.2 이상)별 헥스 기본값 + 첫의뢰 확인용 샘플 라벨 SSOT
@@ -41,10 +42,12 @@ export const normalizeHexVerificationResultHex = (value) => {
 };
 
 /**
- * 디자인 SW(+ExoCAD 버전) → 의뢰자/기본 헥스.
+ * 디자인 SW(+ExoCAD 버전) → pending 기간의 시드 헥스(관리자 확정 전).
  * - ExoCAD 3.0 이하(또는 버전 미지정 레거시): 헥스30도회전
  * - ExoCAD 3.2 이상: STL모델대로
  * - 그 외(3Shape/custom): STL모델대로
+ * 주의: 3.2+라도 실제 계측/샘플 결과에 따라 헥스30도회전일 수 있다.
+ * 최종 SSOT는 관리자 hexVerificationResultHex(샘플 테스트 후 확정).
  */
 export const resolveHexRotationByDesignSoftware = (
   designSoftwareRaw,
@@ -92,9 +95,10 @@ export const isHexVerificationPending = ({
 /**
  * ExoCAD 제조사 헥스 해석 SSOT.
  * 우선순위:
- * 1) 관리자 미확정(pending) → designSoftware(+version) 강제
- * 2) 제조사 defaultManufacturerHexRotation
- * 3) 관리자 hexVerificationResultHex
+ * 1) 관리자 미확정(pending) → designSoftware(+version) 시드만 강제
+ *    (3.2+ 시드=STL이어도 샘플 결과에 따라 30도일 수 있음 → 제조사가 준비 단계에서 의뢰 단위 변경)
+ * 2) 관리자 hexVerificationResultHex (샘플 테스트 후 확정 — 최종 SSOT, 이후 제조사 변경 불가)
+ * 3) 제조사 defaultManufacturerHexRotation
  * 4) designSoftware(+version)
  * 비-ExoCAD: manufacturerDefault || designSoftware 폴백(관리자 필드 무시).
  *
@@ -125,8 +129,8 @@ export const resolveExoCadManufacturerHexRotation = ({
   if (pending) {
     return designFallback;
   }
-  if (mfg) return mfg;
   if (admin) return admin;
+  if (mfg) return mfg;
   return designFallback;
 };
 

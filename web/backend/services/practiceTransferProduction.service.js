@@ -244,7 +244,7 @@ const normalizeManufacturerHexRotationOrNull = (value) => {
 
 /**
  * 제조사 헥스 기본값 SSOT (ExoCAD):
- * 제조사 default → 관리자 hexVerificationResultHex → designSoftware(+exoCadVersion).
+ * 확정 후 관리자 hexVerificationResultHex → 제조사 default → designSoftware(+exoCadVersion).
  * pending은 loadLabRequestMetaForProduction에서 resolveExoCadManufacturerHexRotation으로 처리.
  * related: common.requests.controller.js updateRndHexRotation
  */

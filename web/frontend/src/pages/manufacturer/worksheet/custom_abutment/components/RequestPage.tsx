@@ -94,6 +94,7 @@ import {
   markFilledStlRegenerationPending,
   markNcRegenerationPending,
 } from "@/pages/manufacturer/worksheet/custom_abutment/utils/regenerationPending";
+import { resolveAdminVerifiedHexFromRequest } from "@/pages/manufacturer/worksheet/custom_abutment/utils/hexRotation";
 // related files:
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
@@ -1730,6 +1731,17 @@ export const RequestPage = ({
 
       const nextValue: HexRotationUiMode = value;
       const backendValue = toBackendManufacturerHexRotation(nextValue);
+
+      const adminVerifiedHex = resolveAdminVerifiedHexFromRequest(req as any);
+      if (adminVerifiedHex && backendValue !== adminVerifiedHex) {
+        toast({
+          title: "헥스 회전 변경 불가",
+          description:
+            "관리자가 헥스 회전을 확정한 계정입니다. 제조사가 변경할 수 없습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
 
       const prevManufacturer =
         normalizeManufacturerHexMode((req as any)?.rnd?.manufacturerHexRotation) ||

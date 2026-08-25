@@ -387,13 +387,18 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     (`STL모델대로`|`헥스30도회전`). 대시보드 카드·`GET/POST /api/admin/hex-verification/*`.
     - `GET .../in-progress`는 ExoCAD 전체(진행중+확정)를 반환한다. `pendingCount`/`confirmedCount`/`status`.
     - `POST .../complete`는 최초 확정뿐 아니라 확정값 수정도 허용한다.
+    - `POST .../revert`는 확정값을 unset해 미확인(pending)으로 되돌린다.
   - 의뢰 단건(`GET /api/requests/:id` → `normalizeRequestForResponse`)의 `business.requestSettings`에도
     `hexVerificationResultHex`를 포함해 제조사 PreviewModal 확정/미정 뱃지에 쓴다.
   - ExoCAD 제조사 헥스 해석 SSOT(`resolveExoCadManufacturerHexRotation`):
-    1) 첫의뢰 pending → designSoftware(+exoCadVersion) 강제
-    2) 제조사 `defaultManufacturerHexRotation`(User→BA)
-    3) 관리자 `hexVerificationResultHex`(User→BA)
+    1) 첫의뢰 pending → designSoftware(+exoCadVersion) **시드만** 강제
+       (3.2+ 시드=STL이어도 샘플 결과에 따라 헥스30도회전일 수 있음.
+        제조사는 준비 단계에서 의뢰 단위로 변경 가능)
+    2) 관리자 `hexVerificationResultHex`(User→BA) — **샘플 테스트 후 확정, 최종 SSOT**
+       (확정 후 제조사 `updateRndHexRotation` 변경 불가)
+    3) 제조사 `defaultManufacturerHexRotation`(User→BA)
     4) designSoftware(+exoCadVersion)
+    - `POST .../complete`는 확정값과 함께 `defaultManufacturerHexRotation`도 동일 값으로 맞춘다.
   - 관련: `utils/designSoftwareHex.js`, `services/hexVerificationSample.service.js`,
     `controllers/admin/admin.hexVerification.controller.js`
 - 워크시트 응답(`GET /api/requests/all?view=worksheet`)의 `item.business`에는

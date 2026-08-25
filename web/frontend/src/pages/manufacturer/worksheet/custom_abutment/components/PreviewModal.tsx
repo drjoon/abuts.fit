@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-25: 관리자 헥스 확정 시 PreviewModal 헥스 Select 비활성(제조사 변경 불가).
 // - 2026-08-23: Dialog 기본 닫기(X) 표시. 승인 처리 중에는 닫기·오버레이 닫기 차단.
 // - 2026-08-23: Dialog sm:max-w-lg 잔존으로 PC가 ~512px 모바일처럼 보이던 문제 수정. 세로 스택·가로 2열 STL UX.
 // - 2026-08-23: 가공 큐에서도 관리자 헥스 확정 시 PreviewModal 뱃지「확정」표시(full request 보강).
@@ -1990,7 +1991,12 @@ export const PreviewModal = ({
   const handleSaveManufacturerHexRotation = async (
     next: ManufacturerHexRotationMode,
   ) => {
-    if (!onSaveManufacturerHexRotation || hexRotationSaving || approveBusy) {
+    if (
+      !onSaveManufacturerHexRotation ||
+      hexRotationSaving ||
+      approveBusy ||
+      resolveHexVerificationBadgeLabel(activeReq) === "확정"
+    ) {
       return;
     }
     const prev = manufacturerHexRotationDraft;
@@ -2066,6 +2072,7 @@ export const PreviewModal = ({
     String((activeReq as any)?.caseInfos?.designSoftware || "").trim() || "-";
   const hexVerificationBadgeLabel =
     resolveHexVerificationBadgeLabel(activeReq);
+  const hexAdminLocked = hexVerificationBadgeLabel === "확정";
   const currentCaseAnodizing = (activeReq as any)?.caseInfos?.anodizingEnabled;
   const currentBusinessDefaultAnodizing =
     (activeReq as any)?.business?.requestSettings?.anodizingEnabled;
@@ -2340,7 +2347,8 @@ export const PreviewModal = ({
                     hexRotationSaving ||
                     approveBusy ||
                     !onSaveManufacturerHexRotation ||
-                    !isRequestStage
+                    !isRequestStage ||
+                    hexAdminLocked
                   }
                 >
                   <SelectTrigger className="h-7 min-w-[112px] rounded-md border border-slate-200 bg-slate-50 px-2 text-[12px] font-semibold text-slate-700 shadow-sm focus:ring-1 focus:ring-primary-muted disabled:opacity-60">

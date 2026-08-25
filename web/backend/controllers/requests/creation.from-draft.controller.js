@@ -1521,7 +1521,7 @@ export async function createRequestsFromDraft(req, res) {
             adminVerifiedHex: requestorAdminVerifiedHex,
           });
 
-          // ExoCAD: 제조사 > 관리자 확정 > 디자인SW. pending이면 디자인SW 강제.
+          // ExoCAD: 확정 후 관리자 > 제조사 > 디자인SW. pending이면 디자인SW 강제.
           const resolvedManufacturerHexRotation =
             resolveExoCadManufacturerHexRotation({
               designSoftware: resolvedDesignSoftware,

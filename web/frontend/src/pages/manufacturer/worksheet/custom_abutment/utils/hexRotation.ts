@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-25: 관리자 헥스 확정 시 제조사 persist/승인 경로에서 저장 API 호출 스킵.
 // - 2026-08-22: ExoCAD 관리자 헥스 확인 뱃지(확정/미정) SSOT helper.
 // - 2026-08-06: 준비 단계 헥스 회전 기본값을 designSoftware 정책으로 우선(미저장 finalHexRotation STL 오적용 수정).
 // - 프론트 표시(UI)와 백엔드/Esprit 전달값 모두 total 라벨("헥스40도회전" = 30 + 10)을 사용한다.
@@ -211,6 +212,11 @@ export const resolvePrepHexModeToPersist = (
   req: HexRequestLike,
   hexDraft?: unknown,
 ): { persist: false } | { persist: true; mode: ManufacturerHexRotationMode } | { persist: false; missing: true } => {
+  // 관리자 확정 계정: 제조사 저장 API 호출 금지(확정값으로 이미 시드됨).
+  if (resolveAdminVerifiedHexFromRequest(req)) {
+    return { persist: false };
+  }
+
   if (normalizeManufacturerHexRotationMode(req?.caseInfos?.hexRotation?.mode)) {
     return { persist: false };
   }

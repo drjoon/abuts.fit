@@ -1,5 +1,6 @@
 
 // change-log:
+// - 2026-08-25: ExoCAD 헥스 확인 확정 → 미확인 되돌리기 버튼.
 // - 2026-08-24: 미처리 통신 카드 제거 후 뒤 카드를 끌어올려 4열 유지.
 // - 2026-08-23: ExoCAD 헥스 확인 모달에 확정 계정 보기/수정.
 // - 2026-08-21: ExoCAD 헥스 회전 확인 진행중 카드·완료 다이얼로그.
@@ -508,6 +509,9 @@ export const AdminDashboardPage = () => {
   const [completingHexByAnchor, setCompletingHexByAnchor] = useState<
     Record<string, boolean>
   >({});
+  const [revertingHexByAnchor, setRevertingHexByAnchor] = useState<
+    Record<string, boolean>
+  >({});
   const [happyCallDialogTab, setHappyCallDialogTab] = useState<"targets" | "completed">("targets");
   const [happyCallReasonFilter, setHappyCallReasonFilter] = useState<string>("all");
   const [phoneConfirm, setPhoneConfirm] = useState<{
@@ -794,6 +798,53 @@ export const AdminDashboardPage = () => {
       });
     } finally {
       setCompletingHexByAnchor((prev) => {
+        const next = { ...prev };
+        delete next[anchorId];
+        return next;
+      });
+    }
+  };
+
+  const revertHexVerificationForAnchor = async (
+    item: HexVerificationInProgressItem,
+  ) => {
+    const anchorId = String(item.businessAnchorId || "").trim();
+    if (!anchorId || !token) return;
+
+    setRevertingHexByAnchor((prev) => ({ ...prev, [anchorId]: true }));
+    try {
+      const res = await apiFetch<ApiEnvelope<{ status?: string }>>({
+        path: `/api/admin/hex-verification/${encodeURIComponent(anchorId)}/revert`,
+        method: "POST",
+        token,
+      });
+      if (!res.ok || !res.data?.success) {
+        throw new Error(
+          res.data?.message || "헥스 확인 되돌리기에 실패했습니다.",
+        );
+      }
+      setHexChoiceByAnchor((prev) => {
+        if (!(anchorId in prev)) return prev;
+        const next = { ...prev };
+        delete next[anchorId];
+        return next;
+      });
+      toast({
+        title: "헥스 확인 미확인으로 되돌림",
+        description: `${item.businessName || "사업자"} → 진행중(미확인)`,
+      });
+      await refetchHexVerification();
+      queryClient.invalidateQueries({
+        queryKey: ["admin-hex-verification-in-progress"],
+      });
+    } catch (e: unknown) {
+      toast({
+        title: "헥스 확인 되돌리기 실패",
+        description: e instanceof Error ? e.message : "다시 시도해주세요.",
+        variant: "destructive",
+      });
+    } finally {
+      setRevertingHexByAnchor((prev) => {
         const next = { ...prev };
         delete next[anchorId];
         return next;
@@ -3214,9 +3265,11 @@ export const AdminDashboardPage = () => {
           <div className="space-y-3 text-sm text-gray-700">
             <div className="text-xs text-muted-foreground">
               진행중 {hexVerificationCount.toLocaleString()}건 · 확정{" "}
-              {confirmedHexVerificationCount.toLocaleString()}건 · 완료/수정 시
-              관리자 확정값이 저장되며, 제조사 설정이 있으면 제조사 값이
-              우선합니다.
+              {confirmedHexVerificationCount.toLocaleString()}건 · 샘플 테스트 후
+              관리자가 확정하면 이후 신규 의뢰에 그 값을 씁니다.
+              ExoCAD 버전 시드(3.2+→STL 등)와 다를 수 있으며, 확정 전에는
+              제조사가 준비 단계에서 의뢰 단위로 변경할 수 있고, 확정 후에는
+              제조사 변경이 잠깁니다. 확정 항목은 미확인으로 되돌릴 수 있습니다.
             </div>
             <div className="max-h-[60vh] overflow-auto pr-1 space-y-4">
               <div className="space-y-2">
@@ -3338,7 +3391,9 @@ export const AdminDashboardPage = () => {
                       (item.exoCadVersion === "ge_3_2"
                         ? "STL모델대로"
                         : "헥스30도회전");
-                    const busy = Boolean(completingHexByAnchor[anchorId]);
+                    const completing = Boolean(completingHexByAnchor[anchorId]);
+                    const reverting = Boolean(revertingHexByAnchor[anchorId]);
+                    const busy = completing || reverting;
                     const dirty =
                       Boolean(hexChoiceByAnchor[anchorId]) &&
                       hexChoiceByAnchor[anchorId] !== item.adminVerifiedHex;
@@ -3414,12 +3469,22 @@ export const AdminDashboardPage = () => {
                           <Button
                             type="button"
                             size="sm"
+                            variant="outline"
+                            className="h-7 text-[11px] ml-auto text-amber-700 border-amber-200 hover:bg-amber-50"
+                            onClick={() => revertHexVerificationForAnchor(item)}
+                            disabled={busy}
+                          >
+                            {reverting ? "처리 중…" : "미확인으로"}
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
                             variant={dirty ? "default" : "outline"}
-                            className="h-7 text-[11px] ml-auto"
+                            className="h-7 text-[11px]"
                             onClick={() => completeHexVerificationForAnchor(item)}
                             disabled={busy || !dirty}
                           >
-                            {busy ? "저장 중…" : "수정"}
+                            {completing ? "저장 중…" : "수정"}
                           </Button>
                         </div>
                       </div>

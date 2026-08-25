@@ -50,6 +50,7 @@ import {
 import {
   listHexVerificationInProgress,
   completeHexVerification,
+  revertHexVerification,
 } from "../../controllers/admin/admin.hexVerification.controller.js";
 import {
   getSystemLogs,
@@ -301,6 +302,10 @@ router.get("/hex-verification/in-progress", listHexVerificationInProgress);
 router.post(
   "/hex-verification/:businessAnchorId/complete",
   completeHexVerification,
+);
+router.post(
+  "/hex-verification/:businessAnchorId/revert",
+  revertHexVerification,
 );
 
 // 소통 메뉴 배지 카운트 (초기 로드용)
