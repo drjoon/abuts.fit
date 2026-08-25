@@ -180,6 +180,8 @@ export type PracticeImplantFavorite = {
   implantAddRequest?: boolean;
   adopted?: boolean;
   adoptedKind?: "cnc" | "round_bar" | "";
+  /** 관리자 공개 — 도입 전이면 도입중 */
+  isPublic?: boolean;
   roundBarRequestId?: string;
 };
 
@@ -473,7 +475,7 @@ export const normalizeImplantFavorites = (items: unknown): PracticeImplantFavori
       brand,
       family,
       type: normalizedType,
-      ...(roundBar || implantAddRequest
+      ...(roundBar || implantAddRequest || Boolean(row.isPublic)
         ? {
             roundBar: true,
             implantAddRequest: implantAddRequest || undefined,
@@ -484,6 +486,7 @@ export const normalizeImplantFavorites = (items: unknown): PracticeImplantFavori
                 : String(row.adoptedKind || "").trim() === "cnc"
                   ? "cnc"
                   : "",
+            isPublic: Boolean(row.isPublic) || undefined,
             roundBarRequestId,
           }
         : {}),

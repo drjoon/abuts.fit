@@ -80,10 +80,11 @@ const normalizeFavoriteRow = (raw) => {
     family,
     type:
       implantAddRequest ? IMPLANT_ADD_REQUEST_OPTION : type,
-    roundBar: Boolean(row.roundBar) || Boolean(roundBarRequestId) || implantAddRequest,
+    roundBar: Boolean(row.roundBar) || Boolean(roundBarRequestId) || implantAddRequest || Boolean(row.isPublic),
     implantAddRequest: implantAddRequest || undefined,
     adopted: Boolean(row.adopted),
     adoptedKind: normalizeAdoptedKind(row.adoptedKind),
+    isPublic: Boolean(row.isPublic) || undefined,
     roundBarRequestId,
   };
 };
@@ -101,10 +102,13 @@ const upsertFavoriteOnAnchor = async ({
   roundBarRequestId,
   adopted,
   adoptedKind,
+  isPublic,
 }) => {
   const nextId =
     String(favoriteId || "").trim() ||
     `imp-rb-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  const implantAddRequest =
+    Boolean(spec.implantAddRequest) || isImplantAddRequest(spec);
   const nextRow = {
     id: nextId,
     manufacturer: spec.manufacturer,
@@ -112,9 +116,10 @@ const upsertFavoriteOnAnchor = async ({
     family: spec.family,
     type: spec.type || ROUND_BAR_HEX_TYPE,
     roundBar: true,
-    implantAddRequest: Boolean(spec.implantAddRequest) || isImplantAddRequest(spec),
+    implantAddRequest: implantAddRequest || undefined,
     adopted: Boolean(adopted),
     adoptedKind: normalizeAdoptedKind(adoptedKind),
+    isPublic: Boolean(isPublic),
     roundBarRequestId: String(roundBarRequestId || "").trim(),
   };
   const current = listFavorites(anchor);
@@ -386,6 +391,7 @@ async function hydrateFavoritesWithRoundBarAdopted(practiceAnchorId, favorites) 
     .select({
       adopted: 1,
       adoptedKind: 1,
+      isPublic: 1,
       favoriteId: 1,
       manufacturer: 1,
       brand: 1,
@@ -405,6 +411,7 @@ async function hydrateFavoritesWithRoundBarAdopted(practiceAnchorId, favorites) 
       favoriteId: String(row.favoriteId || "").trim(),
       adopted: Boolean(row.adopted),
       adoptedKind: normalizeAdoptedKind(row.adoptedKind),
+      isPublic: Boolean(row.isPublic),
       manufacturer: String(row.manufacturer || "").trim(),
       brand: String(row.brand || "").trim(),
       family: String(row.family || "").trim(),
@@ -444,19 +451,27 @@ async function hydrateFavoritesWithRoundBarAdopted(practiceAnchorId, favorites) 
     matchedRequestIds.add(snapshot.requestId);
     const adopted = Boolean(snapshot.adopted);
     const adoptedKind = snapshot.adoptedKind;
-    const manufacturer = snapshot.manufacturer || fav.manufacturer;
-    const brand = snapshot.brand || fav.brand;
-    const family = snapshot.family || fav.family;
-    const type = snapshot.type || fav.type;
+    const isPublic = Boolean(snapshot.isPublic);
+    const overwriteSpec = isPublic || adopted;
+    if (!overwriteSpec) {
+      next.push(fav);
+      continue;
+    }
+    const manufacturer = snapshot.manufacturer;
+    const brand = snapshot.brand;
+    const family = snapshot.family;
+    const type = snapshot.type;
     if (
       Boolean(fav.roundBar) &&
       Boolean(fav.adopted) === adopted &&
+      Boolean(fav.isPublic) === isPublic &&
       normalizeAdoptedKind(fav.adoptedKind) === adoptedKind &&
       String(fav.roundBarRequestId || "").trim() === snapshot.requestId &&
       String(fav.manufacturer || "").trim() === String(manufacturer || "").trim() &&
       String(fav.brand || "").trim() === String(brand || "").trim() &&
       String(fav.family || "").trim() === String(family || "").trim() &&
-      String(fav.type || "").trim() === String(type || "").trim()
+      String(fav.type || "").trim() === String(type || "").trim() &&
+      !Boolean(fav.implantAddRequest)
     ) {
       next.push(fav);
       continue;
@@ -467,6 +482,8 @@ async function hydrateFavoritesWithRoundBarAdopted(practiceAnchorId, favorites) 
       roundBar: true,
       adopted,
       adoptedKind,
+      isPublic,
+      implantAddRequest: undefined,
       roundBarRequestId: snapshot.requestId,
       manufacturer,
       brand,

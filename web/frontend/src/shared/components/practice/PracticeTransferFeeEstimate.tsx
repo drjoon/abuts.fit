@@ -188,7 +188,7 @@ const formatProsthesisCell = (
 };
 
 const formatLabAbutmentCell = (line: FeeBreakdownLine) => {
-  if (line.labAbutmentFee <= 0 && line.labAbutmentPending) return "요청중";
+  if (line.labAbutmentFee <= 0 && line.labAbutmentPending) return "미도입";
   if (line.labAbutmentFee <= 0) return "—";
   return formatManWon(line.labAbutmentFee);
 };
@@ -308,11 +308,11 @@ function FeeBreakdownTable({
         : formatCell(prosthesisSubtotal);
   const labAbutmentSubtotalDisplay =
     labFacing && labAbutmentSubtotal <= 0 && labAbutmentPending
-      ? "요청중"
+      ? "미도입"
       : labAbutmentSubtotal > 0
         ? formatManWon(labAbutmentSubtotal)
         : labAbutmentPending
-          ? "요청중"
+          ? "미도입"
           : "—";
   const abutmentSubtotalDisplay =
     abutmentSubtotal > 0

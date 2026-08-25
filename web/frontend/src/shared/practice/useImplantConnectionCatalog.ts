@@ -20,9 +20,13 @@ export type ImplantConnection = {
   screwType?: string | null;
   connectionDiameter?: number | null;
   diameter?: number | null;
+  /** 어벗 추가 요청 카탈로그(공개/도입) */
+  roundBar?: boolean;
+  adopted?: boolean;
+  isPublic?: boolean;
 };
 
-const IMPLANT_PRESETS_STORAGE_KEY = "abutsfit:implant-presets:v7";
+const IMPLANT_PRESETS_STORAGE_KEY = "abutsfit:implant-presets:v8";
 const IMPLANT_PRESETS_TTL_MS = 365 * 24 * 60 * 60 * 1000;
 
 export const useImplantConnectionCatalog = (token: string | null) => {

@@ -374,6 +374,7 @@ export type ImplantFavoriteForFee = {
   implantAddRequest?: boolean;
   adopted?: boolean;
   adoptedKind?: "cnc" | "round_bar" | "";
+  isPublic?: boolean;
   roundBarRequestId?: string;
 };
 
@@ -389,6 +390,7 @@ type RoundBarToothRow = {
   roundBarAdopted?: boolean;
   adopted?: boolean;
   adoptedKind?: "cnc" | "round_bar" | "";
+  isPublic?: boolean;
   roundBarRequestId?: string;
 };
 
@@ -428,7 +430,9 @@ const implantFamilyKeyForFee = (row: {
     .join("|");
 
 const isRoundBarFavoriteRow = (fav?: ImplantFavoriteForFee | null) =>
-  Boolean(fav?.roundBar) || Boolean(String(fav?.roundBarRequestId || "").trim());
+  Boolean(fav?.roundBar) ||
+  Boolean(fav?.isPublic) ||
+  Boolean(String(fav?.roundBarRequestId || "").trim());
 
 const findRoundBarFavoriteForFee = (
   row?: RoundBarToothRow | null,
@@ -456,8 +460,8 @@ const findRoundBarFavoriteForFee = (
   );
 };
 
-/** 환봉·임플란트 추가 요청(미도입). 도입되면 어벗츠 어벗.
- * pending 판별 SSOT: implantAddRequest / roundBar 플래그·요청ID·brand=추가요청·type=임플란트 추가 요청.
+/** 환봉·임플란트 추가 요청(미도입=요청중·도입중). 도입되면 어벗츠 어벗.
+ * pending 판별 SSOT: implantAddRequest / roundBar 플래그·요청ID·brand=추가요청·type=임플란트 추가 요청·isPublic 미도입.
  * implantType=헥스(사이즈 미정)만으로는 판별하지 않는다.
  */
 export const isPendingRoundBarAbutment = (
@@ -465,21 +469,34 @@ export const isPendingRoundBarAbutment = (
   favorites?: ReadonlyArray<ImplantFavoriteForFee> | null,
 ) => {
   if (!row) return false;
+  if (row.roundBarAdopted === true || row.adopted === true) return false;
   const brand = String(row.implantBrand || row.brand || "").trim();
   const type = String(row.implantType || row.type || "").trim();
   const flagged =
     Boolean(row.implantAddRequest) ||
     Boolean(row.roundBar) ||
+    Boolean((row as { isPublic?: boolean }).isPublic) ||
     Boolean(String(row.roundBarRequestId || "").trim()) ||
     brand === MANUFACTURER_ADD_REQUEST_BRAND ||
     type === IMPLANT_ADD_REQUEST_OPTION;
-  if (!flagged) return false;
-  if (row.roundBarAdopted === true || row.adopted === true) return false;
+  if (flagged) {
+    const list = Array.isArray(favorites) ? favorites : [];
+    if (list.length === 0) return true;
+    const match = findRoundBarFavoriteForFee(row, list);
+    if (!match) return true;
+    return match.adopted !== true;
+  }
   const list = Array.isArray(favorites) ? favorites : [];
-  if (list.length === 0) return true;
+  if (list.length === 0) return false;
   const match = findRoundBarFavoriteForFee(row, list);
-  if (!match) return true;
-  return match.adopted !== true;
+  if (!match) return false;
+  if (match.adopted === true) return false;
+  return (
+    Boolean(match.roundBar) ||
+    Boolean((match as { isPublic?: boolean }).isPublic) ||
+    Boolean(match.implantAddRequest) ||
+    Boolean(String(match.roundBarRequestId || "").trim())
+  );
 };
 
 export const resolveAdoptedAbutmentKind = (
@@ -1439,9 +1456,10 @@ export const computePracticeTransferRetailFees = (params: {
     const feeName = labAbutmentFeeNameForRow(row);
     const lab = resolveLabAbutmentUnitPriceForRow(items, useRemake, row);
     if (isPendingRoundBarAbutment(row, params.implantFavorites)) {
+      // 요청중·도입중: 기공소 자체 처리 → 제조사 의뢰·견적 불포함
       return {
         abuts: 0,
-        lab,
+        lab: 0,
         pending: true,
         quote: false,
         feeName,
@@ -1494,16 +1512,16 @@ export const computePracticeTransferRetailFees = (params: {
         if (isSimpleAbutmentModeForFee(row)) continue;
         const remakeFee = resolveLabAbutmentUnitPrice(items, true, false);
         const pending = isPendingRoundBarAbutment(row, params.implantFavorites);
-        labFeeTotal += remakeFee;
-        if (pending) {
-          labAbutmentTotal += remakeFee;
+        if (!pending) {
+          labFeeTotal += remakeFee;
+        } else {
           labAbutmentPending = true;
         }
         lines.push({
           toothNumber,
           prosthesisType: LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_NAME,
           labFee: pending ? 0 : remakeFee,
-          labAbutmentFee: pending ? remakeFee : 0,
+          labAbutmentFee: 0,
           labAbutmentPending: pending,
           abutmentRetail: 0,
         });

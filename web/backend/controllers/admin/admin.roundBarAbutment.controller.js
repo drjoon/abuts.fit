@@ -4,7 +4,9 @@
 // - web/backend/controllers/practiceTransfers/roundBarAbutmentRequest.controller.js
 // - web/frontend/src/pages/admin/system/AdminRoundBarAbutmentTab.tsx
 // change-log:
-// - 2026-08-26: 관리자 임플란트 추가·isPublic·스펙 대문자 저장.
+// - 2026-08-26: 공개/도입 시 관리자 스펙(OR 포함)으로 치과 프리셋 덮어쓰기. 대문자화 제거.
+// - 2026-08-26: isPublic·adopted 독립(공개는 도입 없이도 유지).
+// - 2026-08-26: brand/family/type OR 다중값·도입/공개는 명시 저장과 함께.
 // - 2026-08-24: 관리자 어벗 추가 요청 삭제(프리셋·문의 정리).
 // - 2026-08-14: 관리자가 타입(헥스 사이즈)을 수정하면 치과 프리셋에도 반영.
 // - 2026-08-14: 도입 시 치과 프리셋 adopted 동기화 강화 + practice:round-bar-request-updated 이벤트.
@@ -132,6 +134,8 @@ const applyAdoptFlags = (doc, nextAdopted, userId) => {
 
 const syncFavoriteIfNeeded = async (doc) => {
   if (!doc.practiceAnchorId) return;
+  // 공개·도입 전에는 치과 요청 프리셋 유지. 저장 시 관리자 스펙으로 덮어쓴다.
+  if (!doc.isPublic && !doc.adopted) return;
   const anchor = await BusinessAnchor.findById(doc.practiceAnchorId)
     .select({
       name: 1,
@@ -143,14 +147,16 @@ const syncFavoriteIfNeeded = async (doc) => {
     anchor,
     favoriteId: doc.favoriteId,
     spec: {
-      manufacturer: doc.manufacturer,
-      brand: doc.brand,
-      family: doc.family,
+      manufacturer: String(doc.manufacturer || "").trim(),
+      brand: String(doc.brand || "").trim(),
+      family: String(doc.family || "").trim(),
       type: String(doc.type || "").trim() || ROUND_BAR_HEX_TYPE,
+      implantAddRequest: false,
     },
     roundBarRequestId: String(doc._id),
     adopted: Boolean(doc.adopted),
     adoptedKind: doc.adoptedKind,
+    isPublic: Boolean(doc.isPublic),
   });
   if (favorite?.id && favorite.id !== doc.favoriteId) {
     doc.favoriteId = favorite.id;
@@ -198,7 +204,7 @@ export async function adminListRoundBarAbutmentRequests(req, res) {
 export async function adminCreateRoundBarAbutmentRequest(req, res) {
   try {
     const body = req.body && typeof req.body === "object" ? req.body : {};
-    const spec = normalizeRoundBarSpec(body, { allowType: true, uppercase: true });
+    const spec = normalizeRoundBarSpec(body, { allowType: true });
     if (!spec.manufacturer || !spec.brand || !spec.family) {
       return res.status(400).json({
         success: false,
@@ -278,7 +284,7 @@ export async function adminUpdateRoundBarAbutmentRequest(req, res) {
           family: body.family != null ? body.family : doc.family,
           type: body.type != null ? body.type : doc.type,
         },
-        { allowType: true, uppercase: true },
+        { allowType: true },
       );
       if (!spec.manufacturer || !spec.brand || !spec.family) {
         return res.status(400).json({

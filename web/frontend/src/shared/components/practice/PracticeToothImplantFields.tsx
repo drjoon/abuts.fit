@@ -4,6 +4,7 @@
 // - web/frontend/src/shared/practice/transferMemo.ts
 // - web/frontend/src/shared/practice/roundBarAbutment.ts
 // change-log:
+// - 2026-08-26: 요청중→도입중(공개)→도입(뱃지 제거). 미도입은 제조사·견적 제외.
 // - 2026-08-25: presets 목록 최소 높이 축소(커스텀어벗 설정 모달 세로·3열 대응).
 // - 2026-08-21: 요청중(임플란트 추가 요청) 프리셋도 클릭 선택·활성 표시. 레거시 type=헥스 키 정규화.
 // - 2026-08-21: 프리셋 추가는 목록 sticky 하단(스크롤 시에만 고정). 스캔바디와 독립.
@@ -49,7 +50,9 @@ import {
   ROUND_BAR_GUIDE_TITLE,
   implantFavoriteLabelParts,
   isManufacturerAddRequestFavorite,
+  isPendingAbutmentAdoption,
   isRoundBarFavorite,
+  resolveAbutmentAdoptionStatus,
   submitRoundBarManufacturerRequest,
 } from "@/shared/practice/roundBarAbutment";
 import { mergeCncImplantSpecs } from "@/shared/practice/cncImplantCatalog";
@@ -60,7 +63,7 @@ export type ToothImplantValues = {
   implantBrand: string;
   implantFamily: string;
   implantType: string;
-  /** 「임플란트 추가 요청」옵션 */
+  /** 「임플란트 추가 요청」옵션 · 요청중/도입중(미도입) */
   implantAddRequest?: boolean;
 };
 
@@ -310,6 +313,30 @@ const favoriteKey = (row: {
   return `${manufacturer}|${brand}|${family}|${type}`.toLowerCase();
 };
 
+/** 공개·미도입 카탈로그 스펙 → 치식에 요청중/도입중(기공소 자체) 플래그 */
+const isPendingCatalogSpec = (
+  connections: ImplantConnection[],
+  manufacturer: string,
+  brand: string,
+  family: string,
+  type: string,
+) => {
+  const m = manufacturer.trim().toLowerCase();
+  const b = brand.trim().toLowerCase();
+  const f = family.trim().toLowerCase();
+  const t = type.trim().toLowerCase();
+  if (!m || !b) return false;
+  return connections.some((c) => {
+    if (!c.roundBar || c.adopted) return false;
+    return (
+      String(c.manufacturer || "").trim().toLowerCase() === m &&
+      String(c.brand || "").trim().toLowerCase() === b &&
+      (!f || String(c.family || "").trim().toLowerCase() === f) &&
+      (!t || String(c.type || "").trim().toLowerCase() === t)
+    );
+  });
+};
+
 /** 프리셋 행(h-8 + py-1.5×2 + border 2px) × 4 + space-y-1.5 × 3. 초과 시 스크롤. */
 const PRESET_LIST_CLASS =
   "max-h-[calc(4*(2.75rem+2px)+3*0.375rem)] space-y-1.5 overflow-y-auto overflow-x-hidden pr-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-slate-100";
@@ -398,6 +425,9 @@ export const PracticeToothImplantFields = ({
           displayBrand: brand,
           displayFamily: family,
           displayType: type,
+          roundBar: Boolean(fav.roundBar) || Boolean(fav.isPublic),
+          adopted: Boolean(fav.adopted),
+          isPublic: Boolean(fav.isPublic),
         };
       })
       .filter((row): row is NonNullable<typeof row> => Boolean(row));
@@ -871,9 +901,9 @@ export const PracticeToothImplantFields = ({
 
   const applyFavorite = (fav: PracticeImplantFavorite) => {
     const addRequest = isManufacturerAddRequestFavorite(fav);
-    /** 요청중(미도입) 환봉·추가요청 — 기공의뢰에서 선택 가능, 어벗츠 CNC 제외 */
+    /** 요청중·도입중(미도입) — 기공의뢰에서 선택 가능, 어벗츠 CNC·견적 제외 */
     const pendingUnsupported =
-      addRequest || (isRoundBarFavorite(fav) && !Boolean(fav.adopted));
+      addRequest || isPendingAbutmentAdoption(fav);
     onChange({
       implantManufacturer: fav.manufacturer,
       implantBrand: fav.brand,
@@ -1870,23 +1900,17 @@ export const PracticeToothImplantFields = ({
                               </span>
                             ) : null}
                           </span>
-                          {isRoundBarFavorite(fav) ? (
-                            <span
-                              className={
-                                fav.adopted
-                                  ? "mt-0.5 inline-flex shrink-0 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700"
-                                  : "mt-0.5 inline-flex shrink-0 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700"
-                              }
-                            >
-                              {fav.adopted
-                                ? fav.adoptedKind === "round_bar"
-                                  ? "환봉"
-                                  : fav.adoptedKind === "cnc"
-                                    ? "CNC 도입"
-                                    : "도입"
-                                : "요청중"}
-                            </span>
-                          ) : null}
+                          {(() => {
+                            const status = resolveAbutmentAdoptionStatus(fav);
+                            if (status !== "requesting" && status !== "adopting") {
+                              return null;
+                            }
+                            return (
+                              <span className="mt-0.5 inline-flex shrink-0 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                                {status === "adopting" ? "도입중" : "요청중"}
+                              </span>
+                            );
+                          })()}
                         </button>
                       );
                     })()}
@@ -2081,7 +2105,13 @@ export const PracticeToothImplantFields = ({
                   implantBrand: nextBrand,
                   implantFamily: nextFamily,
                   implantType: nextType,
-                  implantAddRequest: false,
+                  implantAddRequest: isPendingCatalogSpec(
+                    connections,
+                    nextManufacturer,
+                    nextBrand,
+                    nextFamily,
+                    nextType,
+                  ),
                 });
               }}
             >
@@ -2106,8 +2136,14 @@ export const PracticeToothImplantFields = ({
                           value={`${ROUND_BAR_MFR_PREFIX}${m}`}
                           className="text-sm"
                           trailing={
-                            <span className="inline-flex rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
-                              환봉
+                            <span className="inline-flex rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                              {(() => {
+                                const fav = pickRoundBarFavorite(m);
+                                const status = resolveAbutmentAdoptionStatus(fav);
+                                if (status === "adopting") return "도입중";
+                                if (status === "requesting") return "요청중";
+                                return "환봉";
+                              })()}
                             </span>
                           }
                         >
@@ -2148,7 +2184,13 @@ export const PracticeToothImplantFields = ({
                   implantBrand: nextBrand,
                   implantFamily: nextFamily,
                   implantType: nextType,
-                  implantAddRequest: false,
+                  implantAddRequest: isPendingCatalogSpec(
+                    connections,
+                    value.implantManufacturer,
+                    nextBrand,
+                    nextFamily,
+                    nextType,
+                  ),
                 });
               }}
               disabled={!value.implantManufacturer}
@@ -2190,7 +2232,13 @@ export const PracticeToothImplantFields = ({
                   ...value,
                   implantFamily: nextFamily,
                   implantType: nextType,
-                  implantAddRequest: false,
+                  implantAddRequest: isPendingCatalogSpec(
+                    connections,
+                    value.implantManufacturer,
+                    value.implantBrand,
+                    nextFamily,
+                    nextType,
+                  ),
                 });
               }}
             />
@@ -2204,7 +2252,13 @@ export const PracticeToothImplantFields = ({
                 onChange({
                   ...value,
                   implantType: nextType,
-                  implantAddRequest: false,
+                  implantAddRequest: isPendingCatalogSpec(
+                    connections,
+                    value.implantManufacturer,
+                    value.implantBrand,
+                    value.implantFamily,
+                    nextType,
+                  ),
                 });
               }}
               disabled={!value.implantFamily}

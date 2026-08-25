@@ -580,6 +580,7 @@ const businessAnchorSchema = new mongoose.Schema(
             roundBar: { type: Boolean, default: false },
             adopted: { type: Boolean, default: false },
             adoptedKind: { type: String, default: "" },
+            isPublic: { type: Boolean, default: false },
             roundBarRequestId: { type: String, default: "" },
           },
         ],

@@ -6,7 +6,8 @@
 // - web/frontend/src/pages/admin/system/AdminRoundBarAbutmentTab.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // change-log:
-// - 2026-08-26: 관리자 추가·isPublic·스펙 대문자·명시 저장.
+// - 2026-08-26: brand/family/type OR(` | `) 파싱·조인 헬퍼. 요청중/도입중/도입 상태.
+// - 2026-08-26: 관리자 추가·isPublic·명시 저장(입력값 그대로).
 // - 2026-08-24: 관리자 어벗 추가 요청 삭제 API 클라이언트.
 // - 2026-08-23: 미제공 안내 `{치아} : 어벗츠 미제공 커스텀어벗은…`.
 // - 2026-08-21: 미제공 CA 안내 INTRO/OUTRO 단문화.
@@ -28,6 +29,8 @@ export const MANUFACTURER_ADD_REQUEST_FAMILY = "미정";
  */
 export const IMPLANT_ADD_REQUEST_OPTION = "임플란트 추가 요청";
 export const ROUND_BAR_REQUEST_UPDATED_EVENT = "practice:round-bar-request-updated";
+/** brand/family/type 다중 옵션 저장 구분자 (OR) */
+export const ROUND_BAR_OR_JOIN = " | ";
 export const ABUTMENT_ADOPTED_KIND = {
   CNC: "cnc",
   ROUND_BAR: "round_bar",
@@ -41,6 +44,52 @@ export const normalizeAdoptedKind = (value: unknown): AbutmentAdoptedKind => {
     return ABUTMENT_ADOPTED_KIND.ROUND_BAR;
   }
   return "";
+};
+
+/** brand/family/type OR 문자열 → 고유 토큰 배열 */
+export const splitOrValues = (value: unknown): string[] => {
+  if (Array.isArray(value)) {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const item of value) {
+      for (const part of splitOrValues(item)) {
+        const key = part.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(part);
+      }
+    }
+    return out;
+  }
+  const text = String(value || "").trim();
+  if (!text) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const part of text.split(/\s*\|\s*/)) {
+    const token = String(part || "").trim();
+    if (!token) continue;
+    const key = token.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(token);
+  }
+  return out;
+};
+
+export const joinOrValues = (
+  values: unknown,
+  uppercase = false,
+): string => {
+  const parts = splitOrValues(values).map((v) =>
+    uppercase ? String(v).toUpperCase() : String(v),
+  );
+  return parts.join(ROUND_BAR_OR_JOIN);
+};
+
+/** UI 다중 입력용: 비어 있으면 [""] */
+export const orValuesForEdit = (value: unknown): string[] => {
+  const parts = splitOrValues(value);
+  return parts.length > 0 ? parts : [""];
 };
 export const ROUND_BAR_GUIDE_TITLE = "안내";
 export const ROUND_BAR_GUIDE_LINES = [
@@ -95,7 +144,9 @@ export type RoundBarRequestPayload = {
 };
 
 export const isRoundBarFavorite = (row: Partial<PracticeImplantFavorite> | null | undefined) =>
-  Boolean(row?.roundBar) || Boolean(String(row?.roundBarRequestId || "").trim());
+  Boolean(row?.roundBar) ||
+  Boolean(row?.isPublic) ||
+  Boolean(String(row?.roundBarRequestId || "").trim());
 
 /** 임플란트 추가 요청 옵션(프리셋·치식). 레거시 brand=추가요청도 동일. */
 export const isImplantAddRequest = (
@@ -121,18 +172,65 @@ export const isImplantAddRequest = (
       "",
   ).trim();
   if (brand === MANUFACTURER_ADD_REQUEST_BRAND) return true;
+  const brandFirst = splitOrValues(brand)[0] || "";
+  if (brandFirst === MANUFACTURER_ADD_REQUEST_BRAND) return true;
   const type = String(
     (row as { type?: string }).type ||
       (row as { implantType?: string }).implantType ||
       "",
   ).trim();
-  return type === IMPLANT_ADD_REQUEST_OPTION;
+  const typeFirst = splitOrValues(type)[0] || type;
+  return typeFirst === IMPLANT_ADD_REQUEST_OPTION;
 };
 
 /** 메모만 넣은 임플란트 추가 요청(표시는 manufacturer만) */
 export const isManufacturerAddRequestFavorite = (
   row: Partial<PracticeImplantFavorite> | null | undefined,
 ) => isImplantAddRequest(row);
+
+export type AbutmentAdoptionStatus = "" | "requesting" | "adopting" | "adopted";
+
+/**
+ * 어벗 추가 요청 상태 SSOT.
+ * - requesting(요청중): 치과 요청, 관리자 미공개
+ * - adopting(도입중): 공개됨·미도입 → 기공소 자체 처리, 제조사/견적 제외
+ * - adopted(도입): 뱃지 없음, 제조사·견적 정상
+ */
+export const resolveAbutmentAdoptionStatus = (
+  row:
+    | Partial<{
+        roundBar?: boolean;
+        roundBarRequestId?: string;
+        implantAddRequest?: boolean;
+        adopted?: boolean;
+        roundBarAdopted?: boolean;
+        isPublic?: boolean;
+        brand?: string;
+        type?: string;
+        implantBrand?: string;
+        implantType?: string;
+      }>
+    | null
+    | undefined,
+): AbutmentAdoptionStatus => {
+  if (!row) return "";
+  const roundBar =
+    Boolean(row.roundBar) ||
+    Boolean(String(row.roundBarRequestId || "").trim()) ||
+    Boolean(row.isPublic) ||
+    isImplantAddRequest(row);
+  if (!roundBar) return "";
+  if (row.roundBarAdopted === true || row.adopted === true) return "adopted";
+  if (Boolean(row.isPublic)) return "adopting";
+  return "requesting";
+};
+
+export const isPendingAbutmentAdoption = (
+  row: Parameters<typeof resolveAbutmentAdoptionStatus>[0],
+) => {
+  const status = resolveAbutmentAdoptionStatus(row);
+  return status === "requesting" || status === "adopting";
+};
 
 export type ImplantFavoriteLabelParts = {
   line1: string;
@@ -198,6 +296,8 @@ export const applyRoundBarRequestUpdate = (
   }
   const adopted = Boolean(payload?.adopted);
   const adoptedKind = normalizeAdoptedKind(payload?.adoptedKind);
+  const isPublic = Boolean(payload?.isPublic);
+  const overwriteSpec = isPublic || adopted;
   const manufacturer = String(payload?.manufacturer || "").trim();
   const brand = String(payload?.brand || "").trim();
   const family = String(payload?.family || "").trim();
@@ -214,14 +314,16 @@ export const applyRoundBarRequestUpdate = (
       roundBar: true,
       adopted,
       adoptedKind,
+      isPublic,
+      implantAddRequest: overwriteSpec ? undefined : fav.implantAddRequest,
       roundBarRequestId: requestId || fav.roundBarRequestId,
-      manufacturer: manufacturer || fav.manufacturer,
-      brand: brand || fav.brand,
-      family: family || fav.family,
-      type,
+      manufacturer: overwriteSpec ? manufacturer : manufacturer || fav.manufacturer,
+      brand: overwriteSpec ? brand : brand || fav.brand,
+      family: overwriteSpec ? family : family || fav.family,
+      type: overwriteSpec ? type : type || fav.type,
     };
   });
-  if (matched || !adopted || !manufacturer) return next;
+  if (matched || (!adopted && !isPublic) || !manufacturer) return next;
   return [
     {
       id: favoriteId || (requestId ? `imp-rb-${requestId.slice(-8)}` : `imp-rb-${Date.now().toString(36)}`),
@@ -232,6 +334,7 @@ export const applyRoundBarRequestUpdate = (
       roundBar: true,
       adopted,
       adoptedKind,
+      isPublic,
       roundBarRequestId: requestId || undefined,
     },
     ...next,

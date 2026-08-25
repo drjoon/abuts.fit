@@ -4,6 +4,8 @@
 // - web/backend/server.js
 // - web/backend/controllers/practiceTransfers/roundBarAbutmentRequest.controller.js
 // change-log:
+// - 2026-08-26: isPublic만으로 전체 치과 카탈로그 노출(도입과 독립).
+// - 2026-08-26: 도입 스펙 brand/family/type OR 값을 카탈로그 조합으로 전개.
 // - 2026-08-26: isPublic+도입 스펙은 모든 치과 카탈로그에 포함.
 // - 2026-08-14: 로그인 치과면 도입된 환봉 스펙을 카탈로그 앞에 붙여 프리셋 편집 선택에 나오게 한다.
 import mongoose from "mongoose";
@@ -11,7 +13,10 @@ import ImplantPreset from "../../models/implantPreset.model.js";
 import Connection from "../../models/connection.model.js";
 import Request from "../../models/request.model.js";
 import RoundBarAbutmentRequest from "../../models/roundBarAbutmentRequest.model.js";
-import { ROUND_BAR_HEX_TYPE } from "../../utils/roundBarAbutment.js";
+import {
+  ROUND_BAR_HEX_TYPE,
+  expandRoundBarOrCombos,
+} from "../../utils/roundBarAbutment.js";
 import { normalizeImplantFields } from "../../utils/implantCanonical.js";
 import {
   buildExpectedPrcFileName,
@@ -111,38 +116,54 @@ function getBusinessAnchorId(req) {
 }
 
 async function loadAdoptedRoundBarConnections(businessAnchorId) {
-  const or = [{ adopted: true, isPublic: true }];
+  // 공개·도입은 독립: 공개만 되어도 전체 카탈로그에 포함.
+  const or = [{ isPublic: true }];
   if (businessAnchorId && mongoose.Types.ObjectId.isValid(businessAnchorId)) {
     or.push({ practiceAnchorId: businessAnchorId, adopted: true });
   }
   const requests = await RoundBarAbutmentRequest.find({ $or: or })
-    .select({ manufacturer: 1, brand: 1, family: 1, type: 1 })
+    .select({ manufacturer: 1, brand: 1, family: 1, type: 1, adopted: 1, isPublic: 1 })
     .lean();
   const out = [];
   const seen = new Set();
   for (const row of requests) {
-    const manufacturer = String(row.manufacturer || "").trim();
-    const brand = String(row.brand || "").trim();
-    const family = String(row.family || "").trim();
-    const type = String(row.type || "").trim() || ROUND_BAR_HEX_TYPE;
-    if (!manufacturer) continue;
-    const canonicalKey =
-      `rb:${manufacturer}|${brand}|${family}|${type}`.toLowerCase();
-    if (seen.has(canonicalKey)) continue;
-    seen.add(canonicalKey);
-    out.push({
-      manufacturer,
-      brand,
-      family,
-      type,
-      displayManufacturer: manufacturer,
-      displayBrand: brand,
-      displayFamily: family,
-      displayType: type,
-      canonicalKey,
-      prcMatchScore: 0,
-      usageCount: 0,
+    const adopted = Boolean(row.adopted);
+    const isPublic = Boolean(row.isPublic);
+    const combos = expandRoundBarOrCombos({
+      manufacturer: row.manufacturer,
+      brand: row.brand,
+      family: row.family,
+      type: row.type,
+      defaultType: ROUND_BAR_HEX_TYPE,
     });
+    for (const combo of combos) {
+      const manufacturer = combo.manufacturer;
+      const brand = combo.brand;
+      const family = combo.family;
+      const type = combo.type;
+      if (!manufacturer || !brand || !family) continue;
+      const canonicalKey =
+        `rb:${manufacturer}|${brand}|${family}|${type}`.toLowerCase();
+      if (seen.has(canonicalKey)) continue;
+      seen.add(canonicalKey);
+      out.push({
+        manufacturer,
+        brand,
+        family,
+        type,
+        displayManufacturer: manufacturer,
+        displayBrand: brand,
+        displayFamily: family,
+        displayType: type,
+        canonicalKey,
+        // 공개·미도입 = 도입중(기공소 자체). 도입 후 정상 CNC 경로.
+        roundBar: true,
+        adopted,
+        isPublic,
+        prcMatchScore: 0,
+        usageCount: 0,
+      });
+    }
   }
   return out;
 }

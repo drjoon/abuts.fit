@@ -101,10 +101,11 @@ const normalizeImplantFavorites = (items) => {
       brand,
       family,
       type: normalizedType,
-      roundBar: roundBar || implantAddRequest,
+      roundBar: roundBar || implantAddRequest || Boolean(row.isPublic),
       implantAddRequest: implantAddRequest || undefined,
       adopted: Boolean(row.adopted),
       adoptedKind: normalizeAdoptedKind(row.adoptedKind),
+      isPublic: Boolean(row.isPublic) || undefined,
       roundBarRequestId,
     };
     if (seen.has(key)) {

@@ -1,5 +1,7 @@
 // change-log:
-// - 2026-08-26: 디바운스 제거·명시 저장, 관리자 추가, 대문자 입력, 공개 체크·툴팁.
+// - 2026-08-26: 입력 대문자화 제거. 공개/도입 시 관리자 스펙으로 치과 프리셋 덮어쓰기.
+// - 2026-08-26: 공개·도입 독립(공개 왼쪽). 도입 해제해도 공개 유지.
+// - 2026-08-26: 도입/공개/유형도 명시 저장만. 브랜드·패밀리·타입 다중 OR(+).
 // - 2026-08-24: 요청 카드별 삭제.
 // - 2026-08-14: 타입(헥스 사이즈) 관리자 수정·자동저장. 치과 프리셋에 반영.
 // - 2026-08-14: CNC어벗=Primary, 환봉어벗=어벗 골드. 선택 전에도 색으로 구분.
@@ -23,18 +25,19 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Hexagon, Plus, Search, Trash2 } from "lucide-react";
+import { Hexagon, Plus, Search, Trash2, X } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { cn } from "@/shared/ui/cn";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import {
   ABUTMENT_ADOPTED_KIND,
-  ROUND_BAR_HEX_TYPE,
   createAdminRoundBarRequest,
   deleteAdminRoundBarRequest,
   fetchAdminRoundBarRequests,
+  joinOrValues,
   normalizeAdoptedKind,
+  orValuesForEdit,
   patchAdminRoundBarRequest,
   type AbutmentAdoptedKind,
   type RoundBarAbutmentRequest,
@@ -42,41 +45,78 @@ import {
 
 type DraftRow = {
   manufacturer: string;
-  brand: string;
-  family: string;
-  type: string;
+  brands: string[];
+  families: string[];
+  types: string[];
+  adopted: boolean;
+  adoptedKind: AbutmentAdoptedKind;
+  isPublic: boolean;
 };
 
 const emptyDraft = (): DraftRow => ({
   manufacturer: "",
-  brand: "",
-  family: "",
-  type: "HEX",
+  brands: [""],
+  families: [""],
+  types: ["HEX"],
+  adopted: false,
+  adoptedKind: "",
+  isPublic: false,
 });
 
-const toUpperDraft = (draft: DraftRow): DraftRow => ({
-  manufacturer: draft.manufacturer.toUpperCase(),
-  brand: draft.brand.toUpperCase(),
-  family: draft.family.toUpperCase(),
-  type: draft.type.toUpperCase(),
+const normalizeDraft = (draft: DraftRow): DraftRow => ({
+  manufacturer: String(draft.manufacturer || ""),
+  brands: draft.brands.map((v) => String(v || "")),
+  families: draft.families.map((v) => String(v || "")),
+  types: draft.types.map((v) => String(v || "")),
+  adopted: Boolean(draft.adopted),
+  adoptedKind: normalizeAdoptedKind(draft.adoptedKind),
+  isPublic: Boolean(draft.isPublic),
 });
 
 const draftFromRow = (row: RoundBarAbutmentRequest): DraftRow =>
-  toUpperDraft({
+  normalizeDraft({
     manufacturer: row.manufacturer,
-    brand: row.brand,
-    family: row.family,
-    type: row.type || ROUND_BAR_HEX_TYPE,
+    brands: orValuesForEdit(row.brand),
+    families: orValuesForEdit(row.family),
+    types: orValuesForEdit(row.type || "HEX"),
+    adopted: Boolean(row.adopted),
+    adoptedKind: normalizeAdoptedKind(row.adoptedKind),
+    isPublic: Boolean(row.isPublic),
   });
+
+const listsEqual = (a: string[], b: string[]) =>
+  a.length === b.length && a.every((v, i) => v === b[i]);
 
 const isDraftDirty = (draft: DraftRow, row: RoundBarAbutmentRequest) => {
   const saved = draftFromRow(row);
   return (
     draft.manufacturer !== saved.manufacturer ||
-    draft.brand !== saved.brand ||
-    draft.family !== saved.family ||
-    draft.type !== saved.type
+    !listsEqual(draft.brands, saved.brands) ||
+    !listsEqual(draft.families, saved.families) ||
+    !listsEqual(draft.types, saved.types) ||
+    draft.adopted !== saved.adopted ||
+    draft.adoptedKind !== saved.adoptedKind ||
+    draft.isPublic !== saved.isPublic
   );
+};
+
+const serializeDraftSpec = (draft: DraftRow) => {
+  const next = normalizeDraft({
+    ...draft,
+    manufacturer: draft.manufacturer.trim(),
+    brands: draft.brands.map((v) => v.trim()).filter(Boolean),
+    families: draft.families.map((v) => v.trim()).filter(Boolean),
+    types: draft.types.map((v) => v.trim()).filter(Boolean),
+  });
+  return {
+    manufacturer: next.manufacturer,
+    brand: joinOrValues(next.brands),
+    family: joinOrValues(next.families),
+    type: joinOrValues(next.types),
+    adopted: next.adopted,
+    adoptedKind: next.adoptedKind,
+    isPublic: next.isPublic,
+  };
 };
 
 const ADOPT_TOOLTIP = "체크시 해당 치과 프리셋에 정식 채택됩니다.";
@@ -97,7 +137,12 @@ const CheckboxWithTooltip = ({
 }) => (
   <Tooltip>
     <TooltipTrigger asChild>
-      <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+      <label
+        className={cn(
+          "flex items-center gap-2 text-sm text-slate-700",
+          disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer",
+        )}
+      >
         <Checkbox
           checked={checked}
           disabled={disabled}
@@ -111,6 +156,69 @@ const CheckboxWithTooltip = ({
     </TooltipContent>
   </Tooltip>
 );
+
+const OrFieldList = ({
+  label,
+  values,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  values: string[];
+  disabled?: boolean;
+  onChange: (next: string[]) => void;
+}) => {
+  const list = values.length > 0 ? values : [""];
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <Label className="text-xs text-slate-500">{label}</Label>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-7 gap-1 px-2 text-xs text-slate-600"
+          disabled={disabled}
+          onClick={() => onChange([...list, ""])}
+        >
+          <Plus className="h-3.5 w-3.5" />
+          추가
+        </Button>
+      </div>
+      <div className="space-y-2">
+        {list.map((value, index) => (
+          <div key={`${label}-${index}`} className="flex items-center gap-1.5">
+            <Input
+              value={value}
+              className="h-10 text-sm"
+              disabled={disabled}
+              onChange={(e) => {
+                const next = [...list];
+                next[index] = e.target.value;
+                onChange(next);
+              }}
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9 shrink-0 text-slate-400 hover:text-destructive"
+              disabled={disabled || list.length <= 1}
+              title="삭제"
+              aria-label={`${label} 항목 삭제`}
+              onClick={() => onChange(list.filter((_, i) => i !== index))}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        ))}
+      </div>
+      {list.length > 1 ? (
+        <p className="text-[11px] text-slate-400">OR — 치과에서 옵션 선택</p>
+      ) : null}
+    </div>
+  );
+};
 
 export const AdminRoundBarAbutmentTab = ({
   embedded = false,
@@ -180,32 +288,33 @@ export const AdminRoundBarAbutmentTab = ({
     }));
   };
 
-  const updateDraftField = (
-    id: string,
-    key: keyof DraftRow,
-    value: string,
-  ) => {
+  const patchDraft = (id: string, patch: Partial<DraftRow>) => {
     setDrafts((cur) => {
       const prev = cur[id] || emptyDraft();
-      return {
-        ...cur,
-        [id]: { ...prev, [key]: value.toUpperCase() },
-      };
+      return { ...cur, [id]: { ...prev, ...patch } };
     });
   };
 
   const saveSpec = async (id: string, draft: DraftRow) => {
     if (!token) return;
-    const next = toUpperDraft({
-      manufacturer: draft.manufacturer.trim(),
-      brand: draft.brand.trim(),
-      family: draft.family.trim(),
-      type: draft.type.trim(),
-    });
-    if (!next.manufacturer || !next.brand || !next.family || !next.type) {
+    const payload = serializeDraftSpec(draft);
+    if (
+      !payload.manufacturer ||
+      !payload.brand ||
+      !payload.family ||
+      !payload.type
+    ) {
       toast({
         title: "입력 필요",
         description: "제조사, 브랜드, 패밀리, 타입을 모두 입력해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (payload.adopted && !payload.adoptedKind) {
+      toast({
+        title: "유형을 먼저 선택하세요",
+        description: "도입 전에 CNC어벗 또는 환봉어벗을 선택해주세요.",
         variant: "destructive",
       });
       return;
@@ -215,14 +324,15 @@ export const AdminRoundBarAbutmentTab = ({
       const updated = await patchAdminRoundBarRequest({
         token,
         id,
-        patch: next,
+        patch: payload,
       });
       if (updated) applyRow(updated);
-      toast({ title: "저장 완료", description: "스펙을 저장했습니다." });
+      toast({ title: "저장 완료", description: "어벗 추가 요청을 저장했습니다." });
     } catch (error) {
       toast({
         title: "저장 실패",
-        description: error instanceof Error ? error.message : "프리셋 내용을 저장하지 못했습니다.",
+        description:
+          error instanceof Error ? error.message : "저장하지 못했습니다.",
         variant: "destructive",
       });
     } finally {
@@ -232,16 +342,24 @@ export const AdminRoundBarAbutmentTab = ({
 
   const createSpec = async () => {
     if (!token || !newDraft) return;
-    const next = toUpperDraft({
-      manufacturer: newDraft.manufacturer.trim(),
-      brand: newDraft.brand.trim(),
-      family: newDraft.family.trim(),
-      type: newDraft.type.trim(),
-    });
-    if (!next.manufacturer || !next.brand || !next.family || !next.type) {
+    const payload = serializeDraftSpec(newDraft);
+    if (
+      !payload.manufacturer ||
+      !payload.brand ||
+      !payload.family ||
+      !payload.type
+    ) {
       toast({
         title: "입력 필요",
         description: "제조사, 브랜드, 패밀리, 타입을 모두 입력해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (payload.adopted && !payload.adoptedKind) {
+      toast({
+        title: "유형을 먼저 선택하세요",
+        description: "도입 전에 CNC어벗 또는 환봉어벗을 선택해주세요.",
         variant: "destructive",
       });
       return;
@@ -250,7 +368,7 @@ export const AdminRoundBarAbutmentTab = ({
     try {
       const created = await createAdminRoundBarRequest({
         token,
-        payload: next,
+        payload,
       });
       if (created) {
         applyRow(created);
@@ -266,115 +384,6 @@ export const AdminRoundBarAbutmentTab = ({
       });
     } finally {
       setCreating(false);
-    }
-  };
-
-  const setAdoptedKind = async (
-    row: RoundBarAbutmentRequest,
-    adoptedKind: AbutmentAdoptedKind,
-  ) => {
-    if (!token || normalizeAdoptedKind(row.adoptedKind) === adoptedKind) return;
-    setSavingId(row.id);
-    const prev = rows;
-    setRows((cur) =>
-      cur.map((item) => (item.id === row.id ? { ...item, adoptedKind } : item)),
-    );
-    try {
-      const updated = await patchAdminRoundBarRequest({
-        token,
-        id: row.id,
-        patch: { adoptedKind },
-      });
-      if (updated) applyRow(updated);
-    } catch (error) {
-      setRows(prev);
-      toast({
-        title: "유형 저장 실패",
-        description:
-          error instanceof Error ? error.message : "어벗 유형을 저장하지 못했습니다.",
-        variant: "destructive",
-      });
-    } finally {
-      setSavingId(null);
-    }
-  };
-
-  const setAdopted = async (row: RoundBarAbutmentRequest, adopted: boolean) => {
-    if (!token) return;
-    const adoptedKind = normalizeAdoptedKind(row.adoptedKind);
-    if (adopted && !adoptedKind) {
-      toast({
-        title: "유형을 먼저 선택하세요",
-        description: "도입 전에 CNC어벗 또는 환봉어벗을 선택해주세요.",
-        variant: "destructive",
-      });
-      return;
-    }
-    setSavingId(row.id);
-    const prev = rows;
-    setRows((cur) =>
-      cur.map((item) =>
-        item.id === row.id
-          ? { ...item, adopted, isPublic: adopted ? item.isPublic : false }
-          : item,
-      ),
-    );
-    try {
-      const updated = await patchAdminRoundBarRequest({
-        token,
-        id: row.id,
-        patch: {
-          adopted,
-          adoptedKind,
-          ...(adopted ? {} : { isPublic: false }),
-        },
-      });
-      if (updated) applyRow(updated);
-    } catch (error) {
-      setRows(prev);
-      toast({
-        title: adopted ? "도입 실패" : "도입 해제 실패",
-        description:
-          error instanceof Error ? error.message : "도입 상태를 변경하지 못했습니다.",
-        variant: "destructive",
-      });
-    } finally {
-      setSavingId(null);
-    }
-  };
-
-  const setPublic = async (row: RoundBarAbutmentRequest, isPublic: boolean) => {
-    if (!token) return;
-    if (isPublic && !row.adopted) {
-      toast({
-        title: "도입을 먼저 해주세요",
-        description: "공개하려면 먼저 도입을 체크해주세요.",
-        variant: "destructive",
-      });
-      return;
-    }
-    setSavingId(row.id);
-    const prev = rows;
-    setRows((cur) =>
-      cur.map((item) => (item.id === row.id ? { ...item, isPublic } : item)),
-    );
-    try {
-      const updated = await patchAdminRoundBarRequest({
-        token,
-        id: row.id,
-        patch: { isPublic },
-      });
-      if (updated) applyRow(updated);
-    } catch (error) {
-      setRows(prev);
-      toast({
-        title: isPublic ? "공개 실패" : "공개 해제 실패",
-        description:
-          error instanceof Error ? error.message : "공개 상태를 변경하지 못했습니다.",
-        variant: "destructive",
-      });
-    } finally {
-      setSavingId(null);
     }
   };
 
@@ -475,28 +484,106 @@ export const AdminRoundBarAbutmentTab = ({
     draft: DraftRow,
     opts: {
       disabled?: boolean;
-      onChange: (key: keyof DraftRow, value: string) => void;
+      onManufacturer: (value: string) => void;
+      onBrands: (values: string[]) => void;
+      onFamilies: (values: string[]) => void;
+      onTypes: (values: string[]) => void;
     },
   ) => (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-      {(
-        [
-          ["manufacturer", "제조사"],
-          ["brand", "브랜드"],
-          ["family", "패밀리"],
-          ["type", "타입"],
-        ] as const
-      ).map(([key, label]) => (
-        <div key={key} className="space-y-1">
-          <Label className="text-xs text-slate-500">{label}</Label>
-          <Input
-            value={draft[key]}
-            className="h-10 text-sm uppercase"
-            disabled={opts.disabled}
-            onChange={(e) => opts.onChange(key, e.target.value)}
-          />
-        </div>
-      ))}
+      <div className="space-y-1.5">
+        <Label className="text-xs text-slate-500">제조사</Label>
+        <Input
+          value={draft.manufacturer}
+          className="h-10 text-sm"
+          disabled={opts.disabled}
+          onChange={(e) => opts.onManufacturer(e.target.value)}
+        />
+      </div>
+      <OrFieldList
+        label="브랜드"
+        values={draft.brands}
+        disabled={opts.disabled}
+        onChange={opts.onBrands}
+      />
+      <OrFieldList
+        label="패밀리"
+        values={draft.families}
+        disabled={opts.disabled}
+        onChange={opts.onFamilies}
+      />
+      <OrFieldList
+        label="타입"
+        values={draft.types}
+        disabled={opts.disabled}
+        onChange={opts.onTypes}
+      />
+    </div>
+  );
+
+  const renderDraftControls = (
+    draft: DraftRow,
+    opts: {
+      busy?: boolean;
+      onChange: (patch: Partial<DraftRow>) => void;
+    },
+  ) => (
+    <div className="flex flex-wrap items-center gap-2">
+      <div className="inline-flex rounded-xl border border-slate-200 bg-white p-0.5">
+        {(
+          [
+            {
+              id: ABUTMENT_ADOPTED_KIND.CNC,
+              label: "CNC어벗",
+              active: "bg-primary text-primary-foreground shadow-sm",
+              idle: "text-primary-strong/75 hover:bg-primary-soft",
+            },
+            {
+              id: ABUTMENT_ADOPTED_KIND.ROUND_BAR,
+              label: "환봉어벗",
+              active: "bg-service-abut text-service-abut-foreground shadow-sm",
+              idle: "text-service-abut hover:bg-service-abut-soft",
+            },
+          ] as const
+        ).map((option) => {
+          const active = normalizeAdoptedKind(draft.adoptedKind) === option.id;
+          return (
+            <button
+              key={option.id}
+              type="button"
+              disabled={opts.busy}
+              className={cn(
+                "rounded-[10px] px-2.5 py-1 text-xs font-semibold transition-colors",
+                active ? option.active : option.idle,
+              )}
+              onClick={() => opts.onChange({ adoptedKind: option.id })}
+            >
+              {option.label}
+            </button>
+          );
+        })}
+      </div>
+      <CheckboxWithTooltip
+        label="공개"
+        tooltip={PUBLIC_TOOLTIP}
+        checked={Boolean(draft.isPublic)}
+        disabled={opts.busy}
+        onCheckedChange={(checked) => {
+          opts.onChange({ isPublic: checked });
+        }}
+      />
+      <CheckboxWithTooltip
+        label="도입"
+        tooltip={ADOPT_TOOLTIP}
+        checked={draft.adopted}
+        disabled={
+          opts.busy ||
+          (draft.adopted ? false : !normalizeAdoptedKind(draft.adoptedKind))
+        }
+        onCheckedChange={(checked) => {
+          opts.onChange({ adopted: checked });
+        }}
+      />
     </div>
   );
 
@@ -509,8 +596,8 @@ export const AdminRoundBarAbutmentTab = ({
         key={row.id}
         className={cn(
           "rounded-2xl border bg-white/80 p-4 shadow-sm",
-          row.adopted
-            ? normalizeAdoptedKind(row.adoptedKind) ===
+          draft.adopted
+            ? normalizeAdoptedKind(draft.adoptedKind) ===
               ABUTMENT_ADOPTED_KIND.ROUND_BAR
               ? "border-service-abut-muted/80"
               : "border-primary-muted/80"
@@ -529,65 +616,10 @@ export const AdminRoundBarAbutmentTab = ({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <div className="inline-flex rounded-xl border border-slate-200 bg-white p-0.5">
-              {(
-                [
-                  {
-                    id: ABUTMENT_ADOPTED_KIND.CNC,
-                    label: "CNC어벗",
-                    active: "bg-primary text-primary-foreground shadow-sm",
-                    idle: "text-primary-strong/75 hover:bg-primary-soft",
-                  },
-                  {
-                    id: ABUTMENT_ADOPTED_KIND.ROUND_BAR,
-                    label: "환봉어벗",
-                    active:
-                      "bg-service-abut text-service-abut-foreground shadow-sm",
-                    idle: "text-service-abut hover:bg-service-abut-soft",
-                  },
-                ] as const
-              ).map((option) => {
-                const active =
-                  normalizeAdoptedKind(row.adoptedKind) === option.id;
-                return (
-                  <button
-                    key={option.id}
-                    type="button"
-                    disabled={busy}
-                    className={cn(
-                      "rounded-[10px] px-2.5 py-1 text-xs font-semibold transition-colors",
-                      active ? option.active : option.idle,
-                    )}
-                    onClick={() => void setAdoptedKind(row, option.id)}
-                  >
-                    {option.label}
-                  </button>
-                );
-              })}
-            </div>
-            <CheckboxWithTooltip
-              label="도입"
-              tooltip={ADOPT_TOOLTIP}
-              checked={row.adopted}
-              disabled={
-                busy ||
-                (row.adopted
-                  ? false
-                  : !normalizeAdoptedKind(row.adoptedKind))
-              }
-              onCheckedChange={(checked) => {
-                void setAdopted(row, checked);
-              }}
-            />
-            <CheckboxWithTooltip
-              label="공개"
-              tooltip={PUBLIC_TOOLTIP}
-              checked={Boolean(row.isPublic)}
-              disabled={busy || !row.adopted}
-              onCheckedChange={(checked) => {
-                void setPublic(row, checked);
-              }}
-            />
+            {renderDraftControls(draft, {
+              busy,
+              onChange: (patch) => patchDraft(row.id, patch),
+            })}
             <Button
               type="button"
               variant="ghost"
@@ -605,7 +637,11 @@ export const AdminRoundBarAbutmentTab = ({
 
         {renderSpecFields(draft, {
           disabled: busy,
-          onChange: (key, value) => updateDraftField(row.id, key, value),
+          onManufacturer: (value) =>
+            patchDraft(row.id, { manufacturer: value }),
+          onBrands: (values) => patchDraft(row.id, { brands: values }),
+          onFamilies: (values) => patchDraft(row.id, { families: values }),
+          onTypes: (values) => patchDraft(row.id, { types: values }),
         })}
 
         <div className="mt-3 flex justify-end">
@@ -645,10 +681,15 @@ export const AdminRoundBarAbutmentTab = ({
                 새 임플란트 추가
               </p>
               <p className="text-xs text-slate-500">
-                저장 후 CNC/환봉·도입·공개를 설정하세요.
+                CNC/환봉·도입·공개와 스펙을 설정한 뒤 저장하세요.
               </p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {renderDraftControls(newDraft, {
+                busy: creating,
+                onChange: (patch) =>
+                  setNewDraft((cur) => (cur ? { ...cur, ...patch } : cur)),
+              })}
               <Button
                 type="button"
                 variant="ghost"
@@ -672,10 +713,16 @@ export const AdminRoundBarAbutmentTab = ({
           </div>
           {renderSpecFields(newDraft, {
             disabled: creating,
-            onChange: (key, value) =>
+            onManufacturer: (value) =>
               setNewDraft((cur) =>
-                cur ? { ...cur, [key]: value.toUpperCase() } : cur,
+                cur ? { ...cur, manufacturer: value } : cur,
               ),
+            onBrands: (values) =>
+              setNewDraft((cur) => (cur ? { ...cur, brands: values } : cur)),
+            onFamilies: (values) =>
+              setNewDraft((cur) => (cur ? { ...cur, families: values } : cur)),
+            onTypes: (values) =>
+              setNewDraft((cur) => (cur ? { ...cur, types: values } : cur)),
           })}
         </div>
       ) : null}

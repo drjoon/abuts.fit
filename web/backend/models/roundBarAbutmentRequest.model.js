@@ -60,7 +60,7 @@ const roundBarAbutmentRequestSchema = new mongoose.Schema(
       default: "",
       trim: true,
     },
-    /** 체크 시 도입된 스펙을 모든 치과 카탈로그에 공개 */
+    /** 체크 시 모든 치과 카탈로그에 공개 (도입과 독립) */
     isPublic: {
       type: Boolean,
       default: false,
