@@ -540,9 +540,7 @@ const normalizeToothWorks = (items: ToothWorkSelection[]) =>
         String(prosthesisType || "").replace(/\s+/g, ""),
       )
         ? true
-        : isCustomAbutmentSupportedProsthesisType(prosthesisType)
-          ? Boolean(row?.customAbutment)
-          : false;
+        : Boolean(row?.customAbutment);
       const adjacent = getAdjacentTeeth(toothNumber);
       const bridgeLinkedTeeth =
         isLinkableProsthesisType(prosthesisType) && Array.isArray(row?.bridgeLinkedTeeth)

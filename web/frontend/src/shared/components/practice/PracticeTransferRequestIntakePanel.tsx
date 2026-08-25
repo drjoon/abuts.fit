@@ -191,7 +191,8 @@ import {
 // - 2026-08-19: 임시치아(단독·연결)도 커스텀어벗 주문 가능.
 // - 2026-08-19: 브리지 연결 시 한쪽이 임시치아이면 연결된 치아 전체를 임시치아로 맞춘다.
 // - 2026-08-13: 커스텀어벗 프리셋 목록은 4개까지 표시, 초과 시 스크롤.
-// - 2026-08-13: 형태 글자 클릭(인레이→크라운→커스텀어벗)은 설정 모달을 열지 않음.
+// - 2026-08-25: 단독 클릭 순환에 커스텀어벗 유지. 거쳐도 어벗 체크·규격 불변. 커스텀어벗에도 체크박스 표시.
+// - 2026-08-13: 형태 글자 클릭(인레이→크라운→커스텀어벗→임시치아)은 설정 모달을 열지 않음.
 // - 2026-08-13: 연결 형태 클릭 순환에 유지장치·임시치아 추가.
 // - 2026-08-13: 유지장치=연결 전용. 임시치아=단독·연결.
 // - 2026-08-14: 유지장치 등 연결 전체 강제 변경 후 복귀 시, 미클릭 치아는 형태·어벗·임플란트까지 복원.
@@ -497,7 +498,9 @@ const resolveNextProsthesisType = (
       options.some((option) =>
         type === CUSTOM_ABUTMENT_PROSTHESIS_TYPE
           ? isCustomAbutmentProsthesisType(option)
-          : option === type,
+          : type === "임시치아"
+            ? isTemporaryToothProsthesisType(option)
+            : option === type,
       ),
     ).map((type) =>
       type === CUSTOM_ABUTMENT_PROSTHESIS_TYPE
@@ -507,12 +510,14 @@ const resolveNextProsthesisType = (
     const currentIdx = cycle.findIndex((type) =>
       isCustomAbutmentProsthesisType(type)
         ? isCustomAbutmentProsthesisType(current)
-        : type === current,
+        : type === "임시치아"
+          ? isTemporaryToothProsthesisType(current)
+          : type === current,
     );
     nextType =
       cycle.length > 0
         ? cycle[(currentIdx >= 0 ? currentIdx + 1 : 0) % cycle.length]!
-        : options[0]!;
+        : options.find((type) => type === "크라운") || options[0]!;
   }
   if (!nextType || nextType === current) return null;
   return { index: idx, nextType };
@@ -937,10 +942,8 @@ export const PracticeTransferRequestIntakePanel = ({
       prosthesisType,
       lockedMode ?? defaultAbutmentProductMode,
     );
-    if (
-      lockedMode &&
-      (next.customAbutment || isCustomAbutmentProsthesisType(next.prosthesisType))
-    ) {
+    // locked 모드여도 어벗 체크 여부는 유지. 이미 체크된 경우만 모드를 고정한다.
+    if (lockedMode && next.customAbutment) {
       return {
         ...next,
         customAbutment: true,
@@ -3279,14 +3282,14 @@ export const PracticeTransferRequestIntakePanel = ({
                       const isLinked = linkedTeeth.length > 0;
                       const isMissingTooth = isMissingToothProsthesisType(row.prosthesisType);
                       const isCustomType = isCustomAbutmentProsthesisType(row.prosthesisType);
+                      // 커스텀어벗 형태도 어벗 체크박스를 보여 순환 중 체크 상태가 보이게 유지한다.
                       const showAbutmentCheckbox =
                         !isMissingTooth &&
-                        !isCustomType &&
                         isCustomAbutmentSupportedProsthesisType(row.prosthesisType);
+                      // 상세(임플란트·스캔바디)는 체크됐을 때만 — 형태만 커스텀어벗이어도 미체크면 숨김.
                       const showCustomDetails =
-                        isCustomType ||
-                        (isCustomAbutmentSupportedProsthesisType(row.prosthesisType) &&
-                          Boolean(row.customAbutment));
+                        isCustomAbutmentSupportedProsthesisType(row.prosthesisType) &&
+                        Boolean(row.customAbutment);
                       const missingAbutmentPreset =
                         showCustomDetails && !hasCompleteAbutmentPresets(row);
                       const implantSummary = formatImplantSummary(row);
@@ -3573,7 +3576,7 @@ export const PracticeTransferRequestIntakePanel = ({
                               );
                             })()}
 
-                            {/* 3) 크라운·브리지·임시치아 → 어벗 체크. 커스텀어벗 형태는 상세만 */}
+                            {/* 3) 크라운·브리지·임시치아·커스텀어벗 → 어벗 체크. 상세는 체크 시에만 */}
                             {showAbutmentCheckbox ? (
                               <label
                                 data-no-tooth-marquee=""

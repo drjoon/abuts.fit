@@ -785,11 +785,10 @@ export const normalizeToothWorks = (items: ToothWorkSelection[]) =>
       const prosthesisType = toCanonicalProsthesisType(
         String(row?.prosthesisType || "").trim(),
       );
+      // 인레이·작업X 등 어벗 비지원 형태를 거쳐도 체크·규격을 잃지 않는다.
       const customAbutment = isCustomAbutmentProsthesisType(prosthesisType)
         ? true
-        : isCustomAbutmentSupportedProsthesisType(prosthesisType)
-          ? Boolean(row?.customAbutment)
-          : false;
+        : Boolean(row?.customAbutment);
       const adjacent = getAdjacentTeeth(toothNumber);
       const bridgeLinkedTeeth =
         isLinkableProsthesisType(prosthesisType) && Array.isArray(row?.bridgeLinkedTeeth)

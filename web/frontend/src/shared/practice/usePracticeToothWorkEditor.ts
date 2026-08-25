@@ -14,7 +14,8 @@ import { useMemo } from "react";
 // - 2026-08-19: 브리지로 이을 때 스팬에 임시치아가 하나라도 있으면 연결된 치아 전체를 임시치아로 맞춘다.
 // - 2026-08-13: 유지장치 스팬 전환 시 커스텀어벗 플래그·규격은 유지. 브리지로 되돌리면 복구.
 // - 2026-08-14: 유지장치 등 연결 전체 강제 변경 후 복귀 시, 클릭하지 않은 치아는 진입 직전 행 전체(형태·어벗·임플란트) 복원.
-// - 2026-08-13: 단독 순환(인레이↔크라운↔커스텀어벗↔임시치아)도 커스텀 플래그·규격을 유지.
+// - 2026-08-13: 크라운·브리지·임시치아 간 순환은 어벗 체크·규격을 유지.
+// - 2026-08-25: 어벗 체크/미체크·규격은 타입·커스텀어벗 경유와 무관하게 유지. 순환에 커스텀어벗 포함.
 // - 2026-08-13: 클릭한 치아가 작업X를 거쳐도 커스텀을 지우지 않는다.
 // - 2026-08-20: Pontic은 UI에서 제거. 연결 스팬은 브리지·임시치아 등으로 표시하고 기공소가 추론.
 // - 2026-08-19: 임시치아도 크라운·브리지처럼 기존 커스텀 플래그·규격을 유지.
@@ -22,12 +23,9 @@ import { useMemo } from "react";
 
 export type { ToothWorkSelection } from "@/shared/practice/transferMemo";
 import {
-  ABUTMENT_PRODUCT_MODE,
-  clearSimpleAbutmentIfCustomProsthesis,
   CUSTOM_ABUTMENT_PROSTHESIS_TYPE,
   emptyToothWorkCustomSpecs,
   isAbutmentDesignProsthesisType,
-  isAbutmentProductMode,
   isBridgeLikeProsthesisType,
   isCustomAbutmentProsthesisType,
   isCustomAbutmentSupportedProsthesisType,
@@ -37,7 +35,6 @@ import {
   isTemporaryToothProsthesisType,
   NO_WORK_PROSTHESIS_TYPE,
   NO_WORK_PROSTHESIS_TOOLTIP,
-  normalizeAccountAbutmentProductMode,
   toToothMemoSortNumber,
   type AbutmentProductMode,
   type ToothWorkSelection,
@@ -60,7 +57,8 @@ export {
 /** @deprecated 단독 커스텀어벗 형태. CUSTOM_ABUTMENT_PROSTHESIS_TYPE 사용 */
 export const ABUTMENT_DESIGN_PROSTHESIS_TYPE = CUSTOM_ABUTMENT_PROSTHESIS_TYPE;
 
-/** 단독 치아 형태 토글 라벨(인레이↔크라운↔커스텀어벗↔임시치아). 유지장치는 브리지 계열(2치+) */
+/** 단독 치아 형태 클릭 순환(인레이↔크라운↔커스텀어벗↔임시치아).
+ * 커스텀어벗을 거쳐도 customAbutment·규격은 바꾸지 않는다(체크/언체크 유지). */
 export const STANDALONE_PROSTHESIS_TYPES = [
   "인레이",
   "크라운",
@@ -228,29 +226,25 @@ export const resolveProsthesisTypeForLinkState = (
   return options.find((type) => type === "크라운") || options[0] || "크라운";
 };
 
-/** 형태 변경. 클릭 순환(작업X·인레이·유지장치·임시치아 포함)은 커스텀을 유지.
- * 어벗 체크 해제만 규격을 지운다. */
+/** 형태 변경.
+ * 어벗 체크(customAbutment)·규격·모드는 타입과 무관하게 그대로 둔다.
+ * 단독「커스텀어벗」으로 들어가거나 나와도 체크를 켜/끄거나 규격을 지우지 않는다. */
 export const applyProsthesisTypeToRow = (
   row: ToothWorkSelection,
   prosthesisType: string,
-  defaultAbutmentProductMode?: AbutmentProductMode,
+  _defaultAbutmentProductMode?: AbutmentProductMode,
 ): ToothWorkSelection => {
   const nextType = String(prosthesisType || "").trim();
-  const keepCustom =
-    Boolean(row.customAbutment) || isCustomAbutmentProsthesisType(row.prosthesisType);
+  const keepCustom = Boolean(row.customAbutment);
+
   if (isCustomAbutmentProsthesisType(nextType)) {
-    const abutmentProductMode = isAbutmentProductMode(row.abutmentProductMode)
-      ? row.abutmentProductMode
-      : keepCustom
-        ? ABUTMENT_PRODUCT_MODE.PRODUCTION
-        : normalizeAccountAbutmentProductMode(defaultAbutmentProductMode);
-    return clearSimpleAbutmentIfCustomProsthesis({
+    return {
       ...row,
       prosthesisType: CUSTOM_ABUTMENT_PROSTHESIS_TYPE,
-      customAbutment: true,
-      abutmentProductMode,
-    });
+      customAbutment: keepCustom,
+    };
   }
+
   if (
     nextType === "크라운" ||
     nextType === "브리지" ||
@@ -267,6 +261,8 @@ export const applyProsthesisTypeToRow = (
       ...emptyToothWorkCustomSpecs(),
     };
   }
+
+  // 인레이·유지장치·작업X 등: 타입만 바꾸고 어벗 플래그·규격은 유지
   return { ...row, prosthesisType: nextType };
 };
 
