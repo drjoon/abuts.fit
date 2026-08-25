@@ -10,6 +10,7 @@
 // - 2026-08-13: 마스터 active(기본 off)가 켜져야 설정 완료. 수가 디폴트는 기본값·항목 on.
 // - 2026-08-19: 수락 포워드용 missingLabFeeItemNames(해당 보철 미제공·0원).
 // - 2026-08-21: 기공수가「배송비」폐지(치과→기공소 무료). normalize에서 strip.
+// - 2026-08-25: 기존 수가에 없던 CA는 Off 시드(기공소 옵트인). 카탈로그 신규도 Off 병합.
 // - 2026-08-24: items에 CA 행이 없어도 지그포함/제외를 flat·기본가로 보완(어벗 0원 방지).
 // - 2026-08-24: 커스텀어벗 수가 unit=perTooth 강제. 레거시 perSet면 단가 무시되던 버그 수정.
 // - 2026-08-23: 커스텀어벗 수가 분리 — 지그포함(보철+어벗, 기본 4만)·지그제외(단독 CA, 기본 3만). 레거시「커스텀어벗」→지그포함.
@@ -958,6 +959,7 @@ const ensureSplitCustomAbutmentFeeItems = (
   } | null,
 ): LabFeeItem[] => {
   const list = Array.isArray(items) ? items : [];
+  const hadExistingItems = list.length > 0;
   const src = scheduleSrc && typeof scheduleSrc === "object" ? scheduleSrc : {};
   const enabledSrc =
     src.enabled && typeof src.enabled === "object" ? src.enabled : {};
@@ -1011,11 +1013,13 @@ const ensureSplitCustomAbutmentFeeItems = (
     return id;
   };
   if (!withJig && out.length < MAX_LAB_FEE_ITEMS) {
+    const enableNew =
+      hadExistingItems && flatWithJig <= 0 ? false : withJigEnabled;
     out.push({
       id: takeId("customAbutmentWithJig"),
       name: LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME,
       unit: "perTooth",
-      enabled: withJigEnabled,
+      enabled: enableNew,
       price:
         flatWithJig > 0
           ? flatWithJig
@@ -1026,11 +1030,17 @@ const ensureSplitCustomAbutmentFeeItems = (
   }
   if (!withoutJig && out.length < MAX_LAB_FEE_ITEMS) {
     const seed = withJig || withoutJig;
+    const enableNew =
+      hadExistingItems && flatWithoutJig <= 0
+        ? false
+        : seed
+          ? seed.enabled !== false
+          : withoutJigEnabled;
     out.push({
       id: takeId("customAbutmentWithoutJig"),
       name: LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_NAME,
       unit: "perTooth",
-      enabled: seed ? seed.enabled !== false : withoutJigEnabled,
+      enabled: enableNew,
       price:
         flatWithoutJig > 0
           ? flatWithoutJig

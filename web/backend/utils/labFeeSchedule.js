@@ -10,6 +10,7 @@
 // - web/frontend/src/features/settings/tabs/LabFeeScheduleTab.tsx
 // - 2026-08-13: 마스터 active(기본 off)가 켜져야 설정 완료. 수가 디폴트는 기본값·항목 on.
 // - 2026-08-21: 기공수가「배송비」폐지(치과→기공소 무료). normalize에서 strip. 어벗츠 구간만 박스당.
+// - 2026-08-25: 기존 수가에 없던 CA·카탈로그 신규 항목은 Off 시드 + needSetupNames로 기공소 옵트인 안내.
 // - 2026-08-24: items에 CA 행이 없어도 지그포함/제외를 flat·기본가로 보완(어벗 0원 방지).
 // - 2026-08-24: 커스텀어벗 수가 unit=perTooth 강제. 레거시 perSet면 단가 무시되던 버그 수정.
 // - 2026-08-23: 커스텀어벗 수가 분리 — 지그포함(보철+어벗, 기본 4만)·지그제외(단독 CA, 기본 3만). 레거시「커스텀어벗」→지그포함.
@@ -1123,10 +1124,11 @@ export function normalizeLabFeeItems(input) {
 
 /**
  * 커스텀어벗(지그포함/제외) 행이 없으면 보완.
- * items에 보철만 있고 CA가 없으면 flat 키가 무시돼 어벗 과금이 0이 되던 버그 방지.
+ * 기존 items에 보철만 있고 CA가 없으면 Off로 시드(기공소 옵트인). flat 단가가 있으면 그 값을 씀.
  */
 function ensureSplitCustomAbutmentFeeItems(items, scheduleSrc = null) {
   const list = Array.isArray(items) ? items : [];
+  const hadExistingItems = list.length > 0;
   const src = scheduleSrc && typeof scheduleSrc === "object" ? scheduleSrc : {};
   const enabledSrc =
     src.enabled && typeof src.enabled === "object" ? src.enabled : {};
@@ -1180,11 +1182,14 @@ function ensureSplitCustomAbutmentFeeItems(items, scheduleSrc = null) {
     return id;
   };
   if (!withJig && out.length < MAX_LAB_FEE_ITEMS) {
+    // 기존 수가에 없던 CA는 Off. flat 단가가 있으면 레거시 제공 상태를 유지.
+    const enableNew =
+      hadExistingItems && flatWithJig <= 0 ? false : withJigEnabled;
     out.push({
       id: takeId("customAbutmentWithJig"),
       name: LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME,
       unit: "perTooth",
-      enabled: withJigEnabled,
+      enabled: enableNew,
       price:
         flatWithJig > 0
           ? flatWithJig
@@ -1195,11 +1200,17 @@ function ensureSplitCustomAbutmentFeeItems(items, scheduleSrc = null) {
   }
   if (!withoutJig && out.length < MAX_LAB_FEE_ITEMS) {
     const seed = withJig || withoutJig;
+    const enableNew =
+      hadExistingItems && flatWithoutJig <= 0
+        ? false
+        : seed
+          ? seed.enabled !== false
+          : withoutJigEnabled;
     out.push({
       id: takeId("customAbutmentWithoutJig"),
       name: LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_NAME,
       unit: "perTooth",
-      enabled: seed ? seed.enabled !== false : withoutJigEnabled,
+      enabled: enableNew,
       price:
         flatWithoutJig > 0
           ? flatWithoutJig
@@ -1212,6 +1223,108 @@ function ensureSplitCustomAbutmentFeeItems(items, scheduleSrc = null) {
 }
 
 export { ensureSplitCustomAbutmentFeeItems };
+
+/** 저장된 items 이름(정규화 전). ensureSplit·카탈로그 병합으로 생긴 행은 제외. */
+export function listRawPersistedLabFeeItemNames(schedule) {
+  const src = schedule && typeof schedule === "object" ? schedule : {};
+  const names = [];
+  const seen = new Set();
+  const push = (raw) => {
+    const canon = canonicalizeFeeItemName(raw);
+    if (!canon || seen.has(canon)) return;
+    seen.add(canon);
+    names.push(canon);
+  };
+  if (Array.isArray(src.items) && src.items.length) {
+    for (const row of src.items) {
+      push(row?.name);
+    }
+    return names;
+  }
+  // 레거시 flat만 있으면 마이그레이션 결과를 저장된 것으로 본다.
+  for (const item of migrateLegacyLabFeeItems(src)) {
+    push(item.name);
+  }
+  return names;
+}
+
+/**
+ * 설정 UI용: 관리자 기본 기공수가(On)에만 있고 기공소에 없는 항목을 Off로 붙인다.
+ */
+export function mergeEnabledCatalogItemsIntoLabFeeItems(
+  labItems,
+  catalogItems,
+) {
+  const out = Array.isArray(labItems) ? [...labItems] : [];
+  const existing = new Set(
+    out.map((item) => canonicalizeFeeItemName(item?.name)).filter(Boolean),
+  );
+  const catalog = Array.isArray(catalogItems) ? catalogItems : [];
+  for (const row of catalog) {
+    if (out.length >= MAX_LAB_FEE_ITEMS) break;
+    if (!row || row.enabled === false || row.pendingReview === true) continue;
+    if (isLabFeeShippingItem(row)) continue;
+    const item = normalizeLabFeeItem(
+      {
+        ...row,
+        enabled: false,
+        pendingReview: false,
+        proposedByLabName: "",
+        proposedByLabAnchorId: "",
+        proposedAt: null,
+      },
+      out.length,
+    );
+    if (!item.name) continue;
+    if (isLabFeeShippingItem(item)) continue;
+    const canon = canonicalizeFeeItemName(item.name);
+    if (!canon || existing.has(canon)) continue;
+    existing.add(canon);
+    let id = item.id;
+    if (!id || out.some((rowItem) => rowItem.id === id)) {
+      id = `catalog-${out.length + 1}`;
+    }
+    out.push({ ...item, id, enabled: false });
+  }
+  return out.slice(0, MAX_LAB_FEE_ITEMS);
+}
+
+/**
+ * 기공소가 아직 On·단가를 확정하지 않은 기본 기공수가 이름.
+ * - 카탈로그 On 항목이 저장 items에 없거나(신규 추가)
+ * - 커스텀어벗(지그포함/제외)은 Off·0원이면 매 세션 안내
+ */
+export function resolveLabFeeCatalogNeedSetupNames(labSchedule, catalogItems) {
+  const labItems = normalizeLabFeeItems(labSchedule);
+  const rawNames = new Set(listRawPersistedLabFeeItemNames(labSchedule));
+  const names = [];
+  const seen = new Set();
+  const catalog = Array.isArray(catalogItems) ? catalogItems : [];
+
+  for (const row of catalog) {
+    if (!row || row.enabled === false || row.pendingReview === true) continue;
+    if (isLabFeeShippingItem(row)) continue;
+    const displayName = String(row.name || "").trim();
+    const canon = canonicalizeFeeItemName(displayName);
+    if (!canon || seen.has(canon)) continue;
+
+    const chargeable = labItems.some(
+      (item) =>
+        labFeeItemMatchesNeedName(item, displayName) &&
+        labFeeItemHasChargePrice(item),
+    );
+    if (chargeable) continue;
+
+    const isCustomAbutment =
+      canon === LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME ||
+      canon === LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_NAME;
+    if (!rawNames.has(canon) || isCustomAbutment) {
+      seen.add(canon);
+      names.push(isCustomAbutment ? canon : displayName);
+    }
+  }
+  return names;
+}
 
 function legacyKeyFromItemName(name) {
   const canon = canonicalizeFeeItemName(name);

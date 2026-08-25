@@ -6,6 +6,8 @@
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - web/frontend/src/features/settings/tabs/AdminCreditSettingsTab.tsx
 // - 2026-08-14: 하단 저장 버튼 제거. 항목 변경은 디바운스 자동 저장. 마스터 스위치는 즉시 저장.
+// - 2026-08-25: 수가·리메이크 1,000원 단위 스피너.
+// - 2026-08-25: 기본 기공수가 신규(from=catalog·need)도 수락과 같이 카드 하이라이트.
 // - 2026-08-19: 수락 클릭 시 `from=accept` 포워드 모달(LabFeeSetupPrompt).
 // - 2026-08-19: `need` 쿼리 수가 카드를 맨 아래에서 깜빡이며 입력 안내.
 // - 2026-08-21: 항목 추가(빈 이름 초안)가 자동저장 응답에 지워지지 않게 로컬 초안을 보존.
@@ -48,6 +50,8 @@ import {
 
 const UNIT_OPTIONS = Object.keys(LAB_FEE_ITEM_UNIT_LABELS) as LabFeeItemUnit[];
 const AUTO_SAVE_DELAY_MS = 700;
+/** 수가·리메이크 스피너 증감 단위 */
+const WON_AMOUNT_STEP = 1000;
 
 const snapshotItems = (next: LabFeeItem[]) => JSON.stringify(next);
 
@@ -114,12 +118,13 @@ function WonInput({
   // 키마다 onChange하면 price>0 순간 need 카드가 리마운트되어 "4"에서 포커스가 끊긴다.
   const [draft, setDraft] = useState<string | null>(null);
   const draftRef = useRef<string | null>(null);
+  const focusedRef = useRef(false);
   const display = draft !== null ? draft : String(toWon(value));
 
   const commitDraft = () => {
     const raw = draftRef.current;
     if (raw === null) return;
-    onChange(toWon(Number(raw.replace(/\D/g, "") || 0)));
+    onChange(toWon(Number(raw || 0)));
     draftRef.current = null;
     setDraft(null);
   };
@@ -138,18 +143,24 @@ function WonInput({
       <div className="relative">
         <Input
           id={id}
-          type="text"
+          type="number"
           inputMode="numeric"
+          min={0}
+          step={WON_AMOUNT_STEP}
           autoComplete="off"
           value={display}
           disabled={disabled}
           onFocus={(e) => {
+            focusedRef.current = true;
             const next = toWon(value) === 0 ? "" : String(toWon(value));
             draftRef.current = next;
             setDraft(next);
             e.target.select();
           }}
-          onBlur={() => commitDraft()}
+          onBlur={() => {
+            focusedRef.current = false;
+            commitDraft();
+          }}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
               e.preventDefault();
@@ -157,16 +168,34 @@ function WonInput({
             }
           }}
           onChange={(e) => {
-            const digits = e.target.value.replace(/\D/g, "");
-            draftRef.current = digits;
-            setDraft(digits);
+            const next = e.target.value;
+            // 스피너(±1000)는 즉시 반영. 타이핑은 blur까지 초안 유지.
+            if (!focusedRef.current) {
+              onChange(toWon(Number(next || 0)));
+              return;
+            }
+            const prev = draftRef.current;
+            const prevNum = toWon(Number(prev || 0));
+            const nextNum = toWon(Number(next || 0));
+            const spun =
+              prev !== null &&
+              next !== "" &&
+              Math.abs(nextNum - prevNum) === WON_AMOUNT_STEP;
+            if (spun) {
+              draftRef.current = null;
+              setDraft(null);
+              onChange(nextNum);
+              return;
+            }
+            draftRef.current = next;
+            setDraft(next);
           }}
           className={cn(
-            "h-11 rounded-xl border-slate-200 bg-slate-50/70 px-3 pr-8 text-right text-base font-semibold tabular-nums tracking-tight disabled:cursor-not-allowed disabled:bg-slate-50",
+            "h-11 rounded-xl border-slate-200 bg-slate-50/70 px-3 pr-14 text-right text-base font-semibold tabular-nums tracking-tight disabled:cursor-not-allowed disabled:bg-slate-50",
             remake && "border-amber-200/80 bg-amber-50/40",
           )}
         />
-        <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[11px] font-medium text-slate-400">
+        <span className="pointer-events-none absolute inset-y-0 right-8 flex items-center text-[11px] font-medium text-slate-400">
           원
         </span>
       </div>
@@ -180,6 +209,8 @@ export const LabFeeScheduleTab = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const highlightSetup = searchParams.get("setup") === "1";
   const fromAccept = searchParams.get("from") === "accept";
+  const fromCatalog = searchParams.get("from") === "catalog";
+  const fromNeedGuide = fromAccept || fromCatalog;
   const needNames = useMemo(
     () => parseLabFeeNeedNames(searchParams.toString()),
     [searchParams],
@@ -466,10 +497,11 @@ export const LabFeeScheduleTab = () => {
             />
           </div>
         </div>
-        {fromAccept && needNames.length ? (
+        {fromNeedGuide && needNames.length ? (
           <p className="mt-2 text-[13px] font-medium text-red-600">
-            수락하려는 의뢰의 「{needNames.join("·")}」 수가가 없습니다. 깜빡이는
-            카드를 켜고 수가를 입력하세요.
+            {fromCatalog
+              ? `기본 기공수가에 「${needNames.join("·")}」이(가) 추가되었습니다. 깜빡이는 카드를 켜고 수가를 확인해 주세요.`
+              : `수락하려는 의뢰의 「${needNames.join("·")}」 수가가 없습니다. 깜빡이는 카드를 켜고 수가를 입력하세요.`}
           </p>
         ) : active &&
           !items.some(

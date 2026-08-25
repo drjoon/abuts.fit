@@ -5,6 +5,7 @@
 // - web/backend/utils/labFeeSchedule.js
 // - web/frontend/src/features/settings/tabs/LabTradingPartnersTab.tsx
 // - web/frontend/src/features/settings/LabFeeSetupPrompt.tsx
+// - 2026-08-25: GET fee-schedule에 needSetupNames·카탈로그 Off 병합(재접속 안내).
 // - 2026-08-19: configured=제공 항목 수가 있음. active=마스터 스위치.
 // - 2026-08-14: 기공비 저장 시 quote-context 캐시 무효화.
 // - 2026-08-14: 치과별 기공수가 할증 저장 시 해당 치과 사용자에 app-event 이밋.
@@ -35,6 +36,8 @@ import {
   resolveLabPracticeFeeMultiplier,
   upsertLabPracticeFeeMultiplierList,
   buildDefaultLabFeeSchedule,
+  mergeEnabledCatalogItemsIntoLabFeeItems,
+  resolveLabFeeCatalogNeedSetupNames,
 } from "../../utils/labFeeSchedule.js";
 import {
   loadAbutsLabFeeSchedule,
@@ -582,7 +585,24 @@ export async function getLabFeeSchedule(req, res) {
     const source = await resolveLabFeeScheduleForSettingsFromCatalog(
       lab?.labFeeSchedule,
     );
-    const items = normalizeLabFeeItems(source);
+    let catalogItems = [];
+    try {
+      const abuts = await loadAbutsLabFeeSchedule();
+      catalogItems = Array.isArray(abuts?.items) ? abuts.items : [];
+    } catch (error) {
+      console.warn(
+        "[labTradingPartners] load abuts catalog for needSetup failed",
+        error?.message || error,
+      );
+    }
+    const items = mergeEnabledCatalogItemsIntoLabFeeItems(
+      normalizeLabFeeItems(source),
+      catalogItems,
+    );
+    const needSetupNames = resolveLabFeeCatalogNeedSetupNames(
+      lab?.labFeeSchedule,
+      catalogItems,
+    );
     const schedule = normalizeLabFeeSchedule(source);
     const remake = normalizeLabFeeRemakeSchedule(source);
     const enabled = normalizeLabFeeScheduleEnabled(source);
@@ -595,6 +615,7 @@ export async function getLabFeeSchedule(req, res) {
         enabled,
         active,
         configured,
+        needSetupNames,
         updatedAt: lab?.labFeeSchedule?.updatedAt || null,
       },
     });

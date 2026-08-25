@@ -34,6 +34,9 @@ import {
   resolveLabShippingFeeFromSchedule,
   splitPracticeTransferSettlement,
   upsertLabPracticeFeeMultiplierList,
+  ensureSplitCustomAbutmentFeeItems,
+  mergeEnabledCatalogItemsIntoLabFeeItems,
+  resolveLabFeeCatalogNeedSetupNames,
 } from "../../utils/labFeeSchedule.js";
 
 describe("labFeeSchedule", () => {
@@ -1241,5 +1244,179 @@ test("환봉 요청중+기공소 커스텀어벗 수가가 있으면 기공소 �
     expect(rows[0].updatedAt.getTime()).toBe(at.getTime());
     expect(rows[0].history).toHaveLength(1);
     expect(rows[0].history[0].multiplier).toBe(1.1);
+  });
+
+  test("기존 수가에 CA가 없으면 Off로 보완한다", () => {
+    const items = ensureSplitCustomAbutmentFeeItems([
+      {
+        id: "crown",
+        name: "크라운",
+        unit: "perTooth",
+        enabled: true,
+        price: 60000,
+        remake: 0,
+        tiers: [],
+      },
+    ]);
+    const withJig = items.find(
+      (item) => item.name === LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME,
+    );
+    const withoutJig = items.find(
+      (item) => item.name === LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_NAME,
+    );
+    expect(withJig?.enabled).toBe(false);
+    expect(withJig?.price).toBe(40000);
+    expect(withoutJig?.enabled).toBe(false);
+    expect(withoutJig?.price).toBe(30000);
+  });
+
+  test("카탈로그 On 신규·Off CA는 needSetupNames에 들어간다", () => {
+    const schedule = {
+      active: true,
+      items: [
+        {
+          id: "crown",
+          name: "크라운",
+          unit: "perTooth",
+          enabled: true,
+          price: 60000,
+          remake: 0,
+          tiers: [],
+        },
+        {
+          id: "customAbutmentWithJig",
+          name: LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME,
+          unit: "perTooth",
+          enabled: false,
+          price: 40000,
+          remake: 0,
+          tiers: [],
+        },
+        {
+          id: "customAbutmentWithoutJig",
+          name: LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_NAME,
+          unit: "perTooth",
+          enabled: false,
+          price: 30000,
+          remake: 0,
+          tiers: [],
+        },
+      ],
+    };
+    const catalog = [
+      {
+        id: "crown",
+        name: "크라운",
+        unit: "perTooth",
+        enabled: true,
+        price: 60000,
+        remake: 0,
+        tiers: [],
+      },
+      {
+        id: "customAbutmentWithJig",
+        name: LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME,
+        unit: "perTooth",
+        enabled: true,
+        price: 40000,
+        remake: 0,
+        tiers: [],
+      },
+      {
+        id: "customAbutmentWithoutJig",
+        name: LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_NAME,
+        unit: "perTooth",
+        enabled: true,
+        price: 30000,
+        remake: 0,
+        tiers: [],
+      },
+      {
+        id: "new-1",
+        name: "올세라믹",
+        unit: "perTooth",
+        enabled: true,
+        price: 120000,
+        remake: 0,
+        tiers: [],
+      },
+    ];
+    expect(resolveLabFeeCatalogNeedSetupNames(schedule, catalog)).toEqual([
+      LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME,
+      LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_NAME,
+      "올세라믹",
+    ]);
+    const merged = mergeEnabledCatalogItemsIntoLabFeeItems(
+      normalizeLabFeeItems(schedule),
+      catalog,
+    );
+    expect(merged.some((item) => item.name === "올세라믹" && item.enabled === false)).toBe(
+      true,
+    );
+  });
+
+  test("의도적으로 Off한 일반 수가(크라운)는 needSetupNames에 넣지 않는다", () => {
+    const schedule = {
+      active: true,
+      items: [
+        {
+          id: "crown",
+          name: "크라운",
+          unit: "perTooth",
+          enabled: false,
+          price: 60000,
+          remake: 0,
+          tiers: [],
+        },
+        {
+          id: "customAbutmentWithJig",
+          name: LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME,
+          unit: "perTooth",
+          enabled: true,
+          price: 40000,
+          remake: 0,
+          tiers: [],
+        },
+        {
+          id: "customAbutmentWithoutJig",
+          name: LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_NAME,
+          unit: "perTooth",
+          enabled: true,
+          price: 30000,
+          remake: 0,
+          tiers: [],
+        },
+      ],
+    };
+    const catalog = [
+      {
+        id: "crown",
+        name: "크라운",
+        unit: "perTooth",
+        enabled: true,
+        price: 60000,
+        remake: 0,
+        tiers: [],
+      },
+      {
+        id: "customAbutmentWithJig",
+        name: LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME,
+        unit: "perTooth",
+        enabled: true,
+        price: 40000,
+        remake: 0,
+        tiers: [],
+      },
+      {
+        id: "customAbutmentWithoutJig",
+        name: LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_NAME,
+        unit: "perTooth",
+        enabled: true,
+        price: 30000,
+        remake: 0,
+        tiers: [],
+      },
+    ];
+    expect(resolveLabFeeCatalogNeedSetupNames(schedule, catalog)).toEqual([]);
   });
 });
