@@ -4,6 +4,7 @@
 // - web/frontend/src/shared/practice/transferMemo.ts
 // - web/frontend/src/shared/practice/roundBarAbutment.ts
 // change-log:
+// - 2026-08-25: presets 목록 최소 높이 축소(커스텀어벗 설정 모달 세로·3열 대응).
 // - 2026-08-21: 요청중(임플란트 추가 요청) 프리셋도 클릭 선택·활성 표시. 레거시 type=헥스 키 정규화.
 // - 2026-08-21: 프리셋 추가는 목록 sticky 하단(스크롤 시에만 고정). 스캔바디와 독립.
 // - 2026-08-21: 프리셋 라벨 2줄(제조사·브랜드 / 패밀리·타입). 추가요청 메모는 제조사만+요청중.
@@ -314,7 +315,7 @@ const PRESET_LIST_CLASS =
   "max-h-[calc(4*(2.75rem+2px)+3*0.375rem)] space-y-1.5 overflow-y-auto overflow-x-hidden pr-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-slate-100";
 /** presets 전용 — 설정 모달에서 상단 모드 버튼 제거 후 여유 공간 활용(최소 8행). */
 const PRESET_LIST_CLASS_TALL =
-  "min-h-[calc(8*(2.75rem+2px)+7*0.375rem)] flex-1 space-y-1.5 overflow-y-auto overflow-x-hidden pr-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-slate-100";
+  "min-h-[calc(6*(2.75rem+2px)+5*0.375rem)] flex-1 space-y-1.5 overflow-y-auto overflow-x-hidden pr-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-slate-100";
 
 export const PracticeToothImplantFields = ({
   value,
@@ -1940,7 +1941,7 @@ export const PracticeToothImplantFields = ({
       )}
     >
       <div className="flex shrink-0 items-center justify-between gap-2">
-        <p className="text-sm font-semibold text-slate-800">{heading}</p>
+        <p className="text-sm font-semibold text-primary-strong">{heading}</p>
         {showFields ? (
           <Button
             type="button"

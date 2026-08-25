@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-08-25: presets 목록 높이 축소(모달 세로·심플어벗 3열 대응). dimmed 지원(심플어벗 XOR).
 // - 2026-08-21: 스캔바디 추가 시 현재 선택값 기본 채움. 스피너 직경 0.5·높이 2, 직접입력 제한 없음.
 // - 2026-08-21: 프리셋 추가는 목록 sticky 하단(스크롤 시에만 고정). 임플란트와 독립.
 import { useEffect, useState } from "react";
@@ -40,14 +41,16 @@ type Props = {
   className?: string;
   /** 가이드투어: 프리셋이 없을 때 추가 폼을 자동으로 연다 */
   guideOpenAdd?: boolean;
+  /** 심플어벗이 선택된 경우 시각적으로 약하게 */
+  dimmed?: boolean;
 };
 
 /** 프리셋 행(h-8 + py-1.5×2 + border 2px) × 4 + space-y-1.5 × 3. 초과 시 스크롤. */
 const PRESET_LIST_CLASS =
   "max-h-[calc(4*(2.75rem+2px)+3*0.375rem)] space-y-1.5 overflow-y-auto overflow-x-hidden pr-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-slate-100";
-/** presets 전용 — 설정 모달에서 상단 모드 버튼 제거 후 여유 공간 활용(최소 8행). */
+/** presets 전용 — 설정 모달(심플어벗 3열)에 맞춤(최소 6행). */
 const PRESET_LIST_CLASS_TALL =
-  "min-h-[calc(8*(2.75rem+2px)+7*0.375rem)] flex-1 space-y-1.5 overflow-y-auto overflow-x-hidden pr-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-slate-100";
+  "min-h-[calc(6*(2.75rem+2px)+5*0.375rem)] flex-1 space-y-1.5 overflow-y-auto overflow-x-hidden pr-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-slate-100";
 
 const favoriteKey = (row: {
   manufacturer: string;
@@ -146,6 +149,7 @@ export const PracticeToothAbutmentFields = ({
   onAddPreset: _onAddPreset,
   className,
   guideOpenAdd = false,
+  dimmed = false,
 }: Props) => {
   const [editingFavoriteId, setEditingFavoriteId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<ToothAbutmentValues>(emptyToothWorkAbutment());
@@ -249,7 +253,7 @@ export const PracticeToothAbutmentFields = ({
     return (
       <div
         key="add-preset-row"
-        className="space-y-1.5 rounded-lg border border-primary/70 bg-primary-muted/30 px-2 py-1.5"
+        className="space-y-1.5 rounded-lg border border-service-abut/70 bg-service-abut-soft/40 px-2 py-1.5"
       >
         <div className="grid grid-cols-3 gap-1.5">
           <Input
@@ -363,8 +367,8 @@ export const PracticeToothAbutmentFields = ({
             : mode === "presets"
               ? "flex min-h-0 flex-1 flex-col space-y-2"
               : stretchList
-                ? "flex min-h-0 flex-1 flex-col space-y-2 border-t border-primary-soft pt-3"
-                : "space-y-2 border-t border-primary-soft pt-3"
+                ? "flex min-h-0 flex-1 flex-col space-y-2 border-t border-service-abut-soft pt-3"
+                : "space-y-2 border-t border-service-abut-soft pt-3"
         }
       >
         {mode !== "presets" ? (
@@ -394,7 +398,7 @@ export const PracticeToothAbutmentFields = ({
                 return (
                   <div
                     key={`edit-${fav.id}`}
-                    className="grid grid-cols-3 gap-1.5 rounded-lg border border-primary-muted bg-white p-2"
+                    className="grid grid-cols-3 gap-1.5 rounded-lg border border-service-abut-muted bg-white p-2"
                   >
                     <Input
                       value={editDraft.abutmentManufacturer}
@@ -468,13 +472,13 @@ export const PracticeToothAbutmentFields = ({
                   key={fav.id}
                   className={
                     isActive
-                      ? "flex items-center gap-1.5 rounded-xl border border-primary/70 bg-primary-muted/50 px-2.5 py-2 shadow-sm"
+                      ? "flex items-center gap-1.5 rounded-xl border border-service-abut/70 bg-service-abut-soft/60 px-2.5 py-2 shadow-sm"
                       : "flex items-center gap-1.5 rounded-xl border border-slate-200/90 bg-white px-2.5 py-2 shadow-sm"
                   }
                 >
                   <button
                     type="button"
-                    className="min-w-0 flex-1 truncate rounded px-1 py-0.5 text-left text-sm font-semibold text-slate-800 hover:text-primary-strong"
+                    className="min-w-0 flex-1 truncate rounded px-1 py-0.5 text-left text-sm font-semibold text-slate-800 hover:text-service-abut"
                     title={favoriteLabel(fav)}
                     onClick={() =>
                       onChange({
@@ -525,7 +529,7 @@ export const PracticeToothAbutmentFields = ({
               );
             })}
             {canManagePresets ? (
-              <div className="sticky bottom-0 z-[1] space-y-1.5 bg-primary-soft pt-1.5">
+              <div className="sticky bottom-0 z-[1] space-y-1.5 bg-inherit pt-1.5">
                 {renderAddPresetForm()}
                 {renderAddPresetButton()}
               </div>
@@ -539,13 +543,14 @@ export const PracticeToothAbutmentFields = ({
   return (
     <div
       className={cn(
-        "flex flex-col gap-3 rounded-xl border border-primary-muted/80 bg-primary-soft/40 p-3 sm:p-4",
+        "flex flex-col gap-3 rounded-xl border border-service-abut-muted/80 bg-service-abut-soft/40 p-3 sm:p-4",
         mode === "presets" && "min-h-0 flex-1",
+        dimmed && "opacity-55",
         className,
       )}
     >
       <div className="flex shrink-0 items-center justify-between gap-2">
-        <p className="text-sm font-semibold text-slate-800">{heading}</p>
+        <p className="text-sm font-semibold text-service-abut">{heading}</p>
         {showFields ? (
           <Button
             type="button"

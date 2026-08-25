@@ -5,6 +5,7 @@
 // - web/backend/services/practiceTransferProduction.service.js
 // - web/backend/controllers/practiceTransfers/practiceTransferSettings.controller.js
 // change-log:
+// - 2026-08-25: 심플어벗(심플어벗/심플밀링·직경 6–10·높이 S/M/L) — 스캔바디와 XOR. 완성 시 프리셋 충족.
 // - 2026-08-21: 임플란트 추가 요청 프리셋 type을 옵션명으로 정규화(레거시 헥스 → 선택 가능).
 // - 2026-08-21: 기공소 수신 — 환봉·제조사 추가요청(요청중) CA는 「커스텀어벗」(기공소 수행). 그 외는 「어벗츠 지급」.
 // - 2026-08-16: formatToothNumbersForCard — 의뢰 목록 카드용 치아번호만(11,21).
@@ -78,11 +79,39 @@ export type ToothWorkSelection = {
   implantType?: string;
   /** 「임플란트 추가 요청」옵션 — 어벗츠 CNC 미제공·기공소 직접 CNC */
   implantAddRequest?: boolean;
-  /** 커스텀어벗 규격 (제조사/직경/높이) */
+  /**
+   * 커스텀어벗 규격 (제조사/직경/높이).
+   * 스캔바디 프리셋과 심플어벗이 같은 필드를 XOR로 공유한다.
+   * 심플어벗일 때 manufacturer=심플어벗|심플밀링, diameter=6–10, height=S|M|L.
+   */
   abutmentManufacturer?: string;
   abutmentDiameter?: string;
   abutmentHeight?: string;
 };
+
+/** 심플어벗 종류 — abutmentManufacturer에 저장 (스캔바디와 XOR) */
+export const SIMPLE_ABUTMENT_KINDS = ["심플어벗", "심플밀링"] as const;
+export type SimpleAbutmentKind = (typeof SIMPLE_ABUTMENT_KINDS)[number];
+export const SIMPLE_ABUTMENT_DIAMETERS = ["6", "7", "8", "9", "10"] as const;
+export type SimpleAbutmentDiameter = (typeof SIMPLE_ABUTMENT_DIAMETERS)[number];
+export const SIMPLE_ABUTMENT_HEIGHTS = ["S", "M", "L"] as const;
+export type SimpleAbutmentHeight = (typeof SIMPLE_ABUTMENT_HEIGHTS)[number];
+
+export const isSimpleAbutmentKind = (value: unknown): value is SimpleAbutmentKind =>
+  (SIMPLE_ABUTMENT_KINDS as readonly string[]).includes(String(value || "").trim());
+
+export const isSimpleAbutmentDiameter = (
+  value: unknown,
+): value is SimpleAbutmentDiameter =>
+  (SIMPLE_ABUTMENT_DIAMETERS as readonly string[]).includes(String(value || "").trim());
+
+export const isSimpleAbutmentHeight = (value: unknown): value is SimpleAbutmentHeight =>
+  (SIMPLE_ABUTMENT_HEIGHTS as readonly string[]).includes(String(value || "").trim());
+
+/** 심플어벗 모드(종류만 골라도 true). 스캔바디와 XOR 판별용 */
+export const isSimpleAbutmentMode = (
+  row: Partial<ToothWorkSelection> | null | undefined,
+) => isSimpleAbutmentKind(row?.abutmentManufacturer);
 
 export const resolveToothAbutmentProductMode = (
   row?: Partial<ToothWorkSelection> | null,
@@ -291,12 +320,18 @@ export const formatAbutmentSummary = (
     .filter(Boolean)
     .join(" / ");
 
-/** 카드용 짧은 표시: 직경×높이 */
+/** 카드용 짧은 표시: 직경×높이 (심플어벗은 종류 약칭 포함) */
 export const formatAbutmentCompact = (
   row: Partial<ToothWorkSelection> | null | undefined,
 ) => {
+  const manufacturer = String(row?.abutmentManufacturer || "").trim();
   const diameter = String(row?.abutmentDiameter || "").trim();
   const height = String(row?.abutmentHeight || "").trim();
+  if (isSimpleAbutmentKind(manufacturer)) {
+    const kindShort = manufacturer === "심플밀링" ? "밀링" : "심플";
+    if (diameter && height) return `${kindShort} ${diameter}×${height}`;
+    return [kindShort, diameter || height].filter(Boolean).join(" ");
+  }
   if (diameter && height) return `${diameter}×${height}`;
   return diameter || height || "";
 };
@@ -629,6 +664,7 @@ export const hasToothWorkScanbodyPreset = (
   row: Partial<ToothWorkSelection> | null | undefined,
 ) => {
   const specs = pickToothWorkAbutment(row, true);
+  if (isSimpleAbutmentKind(specs.abutmentManufacturer)) return false;
   return Boolean(
     specs.abutmentManufacturer &&
       specs.abutmentDiameter &&
@@ -636,10 +672,27 @@ export const hasToothWorkScanbodyPreset = (
   );
 };
 
-/** 어벗(커스텀어벗 형태 또는 크라운·브리지·임시치아 체크)에 임플란트·스캔바디 프리셋이 모두 있는지 */
+/** 심플어벗 종류·직경·높이가 모두 선택된 경우 */
+export const hasToothWorkSimpleAbutment = (
+  row: Partial<ToothWorkSelection> | null | undefined,
+) => {
+  const specs = pickToothWorkAbutment(row, true);
+  return (
+    isSimpleAbutmentKind(specs.abutmentManufacturer) &&
+    isSimpleAbutmentDiameter(specs.abutmentDiameter) &&
+    isSimpleAbutmentHeight(specs.abutmentHeight)
+  );
+};
+
+/** 스캔바디 프리셋 또는 심플어벗 규격 중 하나 */
+export const hasToothWorkAbutmentSidePreset = (
+  row: Partial<ToothWorkSelection> | null | undefined,
+) => hasToothWorkScanbodyPreset(row) || hasToothWorkSimpleAbutment(row);
+
+/** 어벗(커스텀어벗 형태 또는 크라운·브리지·임시치아 체크)에 임플란트·(스캔바디|심플어벗)이 모두 있는지 */
 export const hasCompleteAbutmentPresets = (
   row: Partial<ToothWorkSelection> | null | undefined,
-) => hasToothWorkImplantPreset(row) && hasToothWorkScanbodyPreset(row);
+) => hasToothWorkImplantPreset(row) && hasToothWorkAbutmentSidePreset(row);
 
 export const isAbutmentPresetRequired = (
   row: Partial<ToothWorkSelection> | null | undefined,

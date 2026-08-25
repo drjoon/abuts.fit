@@ -8,6 +8,7 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
 // - web/backend/utils/roundBarAbutment.js
 // - web/frontend/src/features/settings/tabs/LabFeeScheduleTab.tsx
+// - 2026-08-25: 심플어벗(치과 재고)은 기공소 어벗 수가·견적에서 제외. 스캔바디 커스텀어벗만 과금.
 // - 2026-08-13: 마스터 active(기본 off)가 켜져야 설정 완료. 수가 디폴트는 기본값·항목 on.
 // - 2026-08-21: 기공수가「배송비」폐지(치과→기공소 무료). normalize에서 strip. 어벗츠 구간만 박스당.
 // - 2026-08-25: 기존 수가에 없던 CA·카탈로그 신규 항목은 Off 시드 + needSetupNames로 기공소 옵트인 안내.
@@ -374,17 +375,26 @@ export function labFeeItemNamesNeededForToothWorks(toothWorks) {
     const toothNumber = String(row?.toothNumber || row?.tooth || "").trim();
     if (toothNumber && !/^[1-4][1-8]$/.test(toothNumber)) continue;
     if (absorbed.has(toothNumber)) continue;
-    const name = labFeeItemNameForProsthesisType(
-      row?.prosthesisType || row?.type,
-    );
-    if (name && !seen.has(name)) {
+    const prosthesisType = row?.prosthesisType || row?.type;
+    const simple = isSimpleAbutmentModeForFee(row);
+    const name = labFeeItemNameForProsthesisType(prosthesisType);
+    if (
+      name &&
+      !seen.has(name) &&
+      !(
+        simple &&
+        isCustomAbutmentProsthesisType(prosthesisType) &&
+        name === LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_NAME
+      )
+    ) {
       seen.add(name);
       names.push(name);
     }
-    // 크라운·브리지·임시치아 + CA → 지그포함 수가도 필요
+    // 크라운·브리지·임시치아 + CA → 지그포함 수가도 필요(심플어벗=치과 재고는 제외)
     if (
       isCustomAbutmentWork(row) &&
-      !isCustomAbutmentProsthesisType(row?.prosthesisType || row?.type) &&
+      !simple &&
+      !isCustomAbutmentProsthesisType(prosthesisType) &&
       !seen.has(LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME)
     ) {
       seen.add(LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME);
@@ -611,6 +621,15 @@ export function isCustomAbutmentWork(row) {
     return false;
   }
   return Boolean(row?.hasCustomAbutment) || Boolean(row?.customAbutment);
+}
+
+/** 심플어벗/심플밀링 — 치과 재고. 기공소 커스텀어벗 수가·견적 제외. */
+const SIMPLE_ABUTMENT_KINDS = new Set(["심플어벗", "심플밀링"]);
+
+export function isSimpleAbutmentModeForFee(row) {
+  return SIMPLE_ABUTMENT_KINDS.has(
+    String(row?.abutmentManufacturer || row?.manufacturer || "").trim(),
+  );
 }
 
 /** @deprecated pending 판별은 IMPLANT_ADD_REQUEST_OPTION / implantAddRequest 사용 */
@@ -1598,7 +1617,11 @@ export function computePracticeTransferRetailFees({
   let abutmentQty = 0;
 
   const abutmentSplitForRow = (row) => {
-    if (waiveAbutment || !isCustomAbutmentWork(row)) {
+    if (
+      waiveAbutment ||
+      !isCustomAbutmentWork(row) ||
+      isSimpleAbutmentModeForFee(row)
+    ) {
       return { abuts: 0, lab: 0, pending: false, quote: false, feeName: "" };
     }
     const feeName = labAbutmentFeeNameForRow(row);
@@ -1651,6 +1674,7 @@ export function computePracticeTransferRetailFees({
 
     if (isCustomAbutmentProsthesisType(prosthesisType)) {
       if (useRemake) {
+        if (isSimpleAbutmentModeForFee(row)) continue;
         const remakeFee = resolveLabAbutmentUnitPrice(items, true, false);
         const pending = isPendingRoundBarAbutment(row, implantFavorites);
         labFeeTotal += remakeFee;
@@ -1669,6 +1693,14 @@ export function computePracticeTransferRetailFees({
         continue;
       }
       const split = abutmentSplitForRow(row);
+      if (
+        split.abuts <= 0 &&
+        split.lab <= 0 &&
+        !split.pending &&
+        !split.quote
+      ) {
+        continue;
+      }
       addAbutment(split);
       lines.push({
         toothNumber,

@@ -70,6 +70,7 @@ import {
 } from "@/pages/practice/hooks/usePracticeTransferStep1";
 import { PracticeToothImplantFields } from "@/shared/components/practice/PracticeToothImplantFields";
 import { PracticeToothAbutmentFields } from "@/shared/components/practice/PracticeToothAbutmentFields";
+import { PracticeToothSimpleAbutmentFields } from "@/shared/components/practice/PracticeToothSimpleAbutmentFields";
 import { PracticeCustomSpecsPresetEditDialog } from "@/shared/components/practice/PracticeCustomSpecsPresetEditDialog";
 import {
   getPracticeToothWorkGuideTourStepId,
@@ -93,9 +94,10 @@ import {
   formatImplantCompact,
   formatImplantSummary,
   hasCompleteAbutmentPresets,
+  hasToothWorkAbutmentSidePreset,
   hasToothWorkImplantPreset,
-  hasToothWorkScanbodyPreset,
   isAbutmentProductMode,
+  isSimpleAbutmentMode,
   normalizeAccountAbutmentProductMode,
   pickToothWorkCustomSpecs,
   resolveToothAbutmentProductMode,
@@ -140,8 +142,14 @@ import {
 // - web/frontend/src/shared/components/practice/PracticeOrderArrivalDateRangeField.tsx
 // - web/frontend/src/shared/components/practice/PracticeToothImplantFields.tsx
 // - web/frontend/src/shared/components/practice/PracticeToothAbutmentFields.tsx
+// - web/frontend/src/shared/components/practice/PracticeToothSimpleAbutmentFields.tsx
 // - web/frontend/src/shared/components/practice/PracticeCustomSpecsPresetEditDialog.tsx
 // - web/frontend/src/shared/pricing/abutsAbutmentService.ts
+// - 2026-08-25: 커스텀어벗 설정 — 임플란트(primary)·어벗(service-abut) 색 구분. + 확대·임플란트 열 축소.
+// - 2026-08-25: 가이드투어 어벗 — 스캔바디 커스텀 vs 심플어벗(꽂고 바로 스캔) 두 방식.
+// - 2026-08-25: 커스텀어벗 설정 — 임플란트 + (스캔바디|심플어벗) 구조. + 표시.
+// - 2026-08-25: 커스텀어벗 설정 모달 가로폭 max-w-7xl — 스캔바디 프리셋 라벨이 잘리지 않게.
+// - 2026-08-25: 커스텀어벗 설정 — 스캔바디 좁히고 심플어벗(XOR) 추가. 모달 세로 축소.
 // - 2026-08-18: 기공소 픽커에서 「자동 매칭」제거. 고정=어벗츠기공소, 최근=지정 기공소.
 // - 2026-08-16: 자동매칭 최소 별점 UI는「자동 매칭」선택 시에만(지정 기공소는 기공소 수가).
 // - 2026-08-21: 커스텀어벗 설정 — 프리셋 추가=인라인 CNC/스캔바디 입력. 제목에 모드, 상단 토글 제거.
@@ -579,7 +587,7 @@ const captureToothWorkGuideTourSnapshot = (
       `${tooth}:${hasToothWorkImplantPreset(row) ? "1" : "0"}:${String(row.implantManufacturer || "").trim()}:${String(row.implantBrand || "").trim()}:${String(row.implantType || "").trim()}`,
     );
     scanbodyParts.push(
-      `${tooth}:${hasToothWorkScanbodyPreset(row) ? "1" : "0"}:${String(row.abutmentManufacturer || "").trim()}:${String(row.abutmentDiameter || "").trim()}:${String(row.abutmentHeight || "").trim()}`,
+      `${tooth}:${hasToothWorkAbutmentSidePreset(row) ? "1" : "0"}:${String(row.abutmentManufacturer || "").trim()}:${String(row.abutmentDiameter || "").trim()}:${String(row.abutmentHeight || "").trim()}`,
     );
     contentParts.push(
       `${tooth}:${String(row.prosthesisType || "").trim()}:${row.customAbutment ? "1" : "0"}:${String(row.implantManufacturer || "").trim()}:${String(row.abutmentManufacturer || "").trim()}`,
@@ -1681,8 +1689,11 @@ export const PracticeTransferRequestIntakePanel = ({
       return;
     }
 
-    if (stepId === "scanbody_preset") {
-      if (current.scanbodyKey !== baseline.scanbodyKey) {
+    if (stepId === "abutment_side") {
+      const abutmentSideReady = toothWorks.some((row) =>
+        hasToothWorkAbutmentSidePreset(row),
+      );
+      if (abutmentSideReady && current.scanbodyKey !== baseline.scanbodyKey) {
         goToothWorkGuideTourStep(toothWorkGuideTourStep + 1);
       }
     }
@@ -1901,7 +1912,7 @@ export const PracticeTransferRequestIntakePanel = ({
   useEffect(() => {
     if (
       toothWorkGuideTourStepId !== "implant_preset" &&
-      toothWorkGuideTourStepId !== "scanbody_preset"
+      toothWorkGuideTourStepId !== "abutment_side"
     ) {
       return;
     }
@@ -1972,6 +1983,7 @@ export const PracticeTransferRequestIntakePanel = ({
     const scanbodyTouched = (
       ["abutmentManufacturer", "abutmentDiameter", "abutmentHeight"] as const
     ).some((key) => key in patch);
+    const abutmentSideComplete = hasToothWorkAbutmentSidePreset(merged);
     setToothWorks((prev) => {
       const next = [...prev];
       const current = next[index];
@@ -1983,9 +1995,13 @@ export const PracticeTransferRequestIntakePanel = ({
       };
       return next;
     });
-    if (implantTouched && scanbodyTouched) registerCustomSpecsPick("both");
-    else if (implantTouched) registerCustomSpecsPick("implant");
-    else if (scanbodyTouched) registerCustomSpecsPick("scanbody");
+    if (implantTouched && scanbodyTouched && abutmentSideComplete) {
+      registerCustomSpecsPick("both");
+    } else if (implantTouched) {
+      registerCustomSpecsPick("implant");
+    } else if (scanbodyTouched && abutmentSideComplete) {
+      registerCustomSpecsPick("scanbody");
+    }
   };
 
   useEffect(() => {
@@ -3045,6 +3061,15 @@ export const PracticeTransferRequestIntakePanel = ({
                       const abutmentSummary = formatAbutmentSummary(row);
                       const implantCompact = formatImplantCompact(row);
                       const abutmentCompact = formatAbutmentCompact(row);
+                      const abutmentSidePlaceholder = isSimpleAbutmentMode(row)
+                        ? "심플어벗"
+                        : "스캔바디";
+                      const abutmentSideHint = isSimpleAbutmentMode(row)
+                        ? "심플어벗 규격을 선택해주세요"
+                        : "스캔바디를 선택해주세요";
+                      const abutmentSideEmptyHint = isSimpleAbutmentMode(row)
+                        ? "심플어벗 선택"
+                        : "스캔바디 선택";
                       const chartPrev = chartIdx > 0 ? decade.teeth[chartIdx - 1] : null;
                       const prevConfigured = chartPrev ? byTooth.get(chartPrev) : undefined;
                       const linkedChartNext = Boolean(
@@ -3310,7 +3335,7 @@ export const PracticeTransferRequestIntakePanel = ({
                                 data-no-tooth-marquee=""
                                 title={
                                   missingAbutmentPreset
-                                    ? "임플란트·스캔바디 프리셋을 선택해주세요"
+                                    ? "임플란트·스캔바디/심플어벗을 선택해주세요"
                                     : undefined
                                 }
                                 className={cn(
@@ -3371,7 +3396,7 @@ export const PracticeTransferRequestIntakePanel = ({
                                   "flex w-full flex-col items-center gap-0.5 leading-none",
                                   showAbutmentCheckbox ? "mt-0.5" : "mt-2",
                                   toothWorkGuideTourStepId === "implant_preset" ||
-                                    toothWorkGuideTourStepId === "scanbody_preset"
+                                    toothWorkGuideTourStepId === "abutment_side"
                                     ? "practice-tooth-guide-pulse rounded-md"
                                     : null,
                                 )}
@@ -3398,7 +3423,7 @@ export const PracticeTransferRequestIntakePanel = ({
                                       <TooltipContent side="bottom" className="max-w-[16rem] text-xs">
                                         {implantSummary ||
                                           (missingAbutmentPreset
-                                            ? "임플란트 프리셋을 선택해주세요"
+                                            ? "임플란트를 선택해주세요"
                                             : "임플란트 선택")}
                                       </TooltipContent>
                                     </Tooltip>
@@ -3416,14 +3441,14 @@ export const PracticeTransferRequestIntakePanel = ({
                                           )}
                                           onClick={() => openCustomSpecsModal(originalIndex)}
                                         >
-                                          {abutmentCompact || "스캔바디"}
+                                          {abutmentCompact || abutmentSidePlaceholder}
                                         </button>
                                       </TooltipTrigger>
                                       <TooltipContent side="bottom" className="max-w-[16rem] text-xs">
                                         {abutmentSummary ||
                                           (missingAbutmentPreset
-                                            ? "스캔바디 프리셋을 선택해주세요"
-                                            : "스캔바디 선택")}
+                                            ? abutmentSideHint
+                                            : abutmentSideEmptyHint)}
                                       </TooltipContent>
                                     </Tooltip>
                                   </div>
@@ -3710,7 +3735,7 @@ export const PracticeTransferRequestIntakePanel = ({
       >
         <DialogContent
           className={cn(
-            "flex h-[min(92vh,44rem)] max-h-[92vh] flex-col gap-4 overflow-hidden sm:max-w-5xl",
+            "flex h-[min(90vh,42rem)] max-h-[90vh] flex-col gap-3 overflow-hidden sm:max-w-7xl",
             nestedDialogClassName,
           )}
           overlayClassName={nestedDialogOverlayClassName}
@@ -3766,16 +3791,16 @@ export const PracticeTransferRequestIntakePanel = ({
                     </DialogTitle>
                     <DialogDescription className="sr-only">
                       {lockedMode === ABUTMENT_PRODUCT_MODE.DESIGN_AND_PRODUCTION
-                        ? "디자인+생산 의뢰가 선택됩니다. 생산만 의뢰는 어벗생산의뢰 페이지로 이동합니다. 임플란트와 스캔바디 프리셋을 각각 한 번씩 선택하면 저장되고 닫힙니다."
+                        ? "디자인+생산 의뢰가 선택됩니다. 생산만 의뢰는 어벗생산의뢰 페이지로 이동합니다. 임플란트와 스캔바디(또는 심플어벗)를 각각 한 번씩 선택하면 저장되고 닫힙니다."
                         : lockedMode === ABUTMENT_PRODUCT_MODE.PRODUCTION
-                          ? "생산만 의뢰가 선택됩니다. 디자인+생산 의뢰는 기공의뢰 페이지로 이동합니다. 임플란트와 스캔바디 프리셋을 각각 한 번씩 선택하면 저장되고 닫힙니다."
-                          : "임플란트와 스캔바디 프리셋을 각각 한 번씩 선택하면 저장되고 닫힙니다. 확인도 동일하고, 취소하면 열기 전 값으로 돌아갑니다."}
+                          ? "생산만 의뢰가 선택됩니다. 디자인+생산 의뢰는 기공의뢰 페이지로 이동합니다. 임플란트와 스캔바디(또는 심플어벗)를 각각 한 번씩 선택하면 저장되고 닫힙니다."
+                          : "임플란트와 스캔바디(또는 심플어벗)를 각각 한 번씩 선택하면 저장되고 닫힙니다. 확인도 동일하고, 취소하면 열기 전 값으로 돌아갑니다."}
                     </DialogDescription>
                   </DialogHeader>
 
                   {toothWorkGuideTourStep != null &&
                   (toothWorkGuideTourStepId === "implant_preset" ||
-                    toothWorkGuideTourStepId === "scanbody_preset") ? (
+                    toothWorkGuideTourStepId === "abutment_side") ? (
                     <PracticeToothWorkGuideTourBanner
                       step={toothWorkGuideTourStep}
                       onSkip={skipToothWorkGuideTourStep}
@@ -3788,49 +3813,100 @@ export const PracticeTransferRequestIntakePanel = ({
                   ) : null}
 
                   <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                    <div className="grid min-h-0 flex-1 grid-cols-1 items-stretch gap-3 overflow-y-auto p-1.5 sm:grid-cols-2 sm:gap-4 sm:p-2">
-                      <PracticeToothImplantFields
-                        mode="presets"
-                        allowPresetEdit
-                        heading="임플란트 프리셋"
-                        className={
-                          toothWorkGuideTourStepId === "implant_preset"
-                            ? "practice-tooth-guide-pulse rounded-lg"
-                            : undefined
-                        }
-                        guideOpenAdd={
+                    {(() => {
+                      const modalSpecs = pickToothWorkCustomSpecs(modalTooth, true);
+                      const simpleMode = isSimpleAbutmentMode(modalSpecs);
+                      const scanbodySelected =
+                        !simpleMode &&
+                        Boolean(
+                          modalSpecs.abutmentManufacturer ||
+                            modalSpecs.abutmentDiameter ||
+                            modalSpecs.abutmentHeight,
+                        );
+                      return (
+                    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-1.5 sm:flex-row sm:items-stretch sm:gap-2 sm:p-2">
+                      <div
+                        className={cn(
+                          "flex min-h-0 min-w-0 flex-1 flex-col gap-1.5",
                           toothWorkGuideTourStepId === "implant_preset" &&
-                          implantFavorites.length === 0
-                        }
-                        value={pickToothWorkCustomSpecs(modalTooth, true)}
-                        onChange={(nextImplant) => {
-                          patchCustomSpecsOnTooth(customSpecsModalTarget, nextImplant);
-                        }}
-                        connections={implantConnections}
-                        favorites={implantFavorites}
-                        onFavoritesChange={onImplantFavoritesChange}
-                      />
-                      <PracticeToothAbutmentFields
-                        mode="presets"
-                        allowPresetEdit
-                        heading="스캔바디 프리셋"
-                        className={
-                          toothWorkGuideTourStepId === "scanbody_preset"
-                            ? "practice-tooth-guide-pulse rounded-lg"
-                            : undefined
-                        }
-                        guideOpenAdd={
-                          toothWorkGuideTourStepId === "scanbody_preset" &&
-                          abutmentFavorites.length === 0
-                        }
-                        value={pickToothWorkCustomSpecs(modalTooth, true)}
-                        onChange={(nextAbutment) => {
-                          patchCustomSpecsOnTooth(customSpecsModalTarget, nextAbutment);
-                        }}
-                        favorites={abutmentFavorites}
-                        onFavoritesChange={onAbutmentFavoritesChange}
-                      />
+                            "practice-tooth-guide-pulse rounded-xl",
+                        )}
+                      >
+                        {/* 어벗 쪽 라벨과 카드 상단·높이를 맞추는 자리 */}
+                        <p
+                          className="invisible shrink-0 px-0.5 text-[11px] font-semibold tracking-wide"
+                          aria-hidden
+                        >
+                          어벗 · 스캔바디 또는 심플어벗
+                        </p>
+                        <PracticeToothImplantFields
+                          mode="presets"
+                          allowPresetEdit
+                          heading="임플란트"
+                          className="min-h-0 flex-1 border-primary/50 bg-primary-soft/60"
+                          guideOpenAdd={
+                            toothWorkGuideTourStepId === "implant_preset" &&
+                            implantFavorites.length === 0
+                          }
+                          value={modalSpecs}
+                          onChange={(nextImplant) => {
+                            patchCustomSpecsOnTooth(customSpecsModalTarget, nextImplant);
+                          }}
+                          connections={implantConnections}
+                          favorites={implantFavorites}
+                          onFavoritesChange={onImplantFavoritesChange}
+                        />
+                      </div>
+                      <div
+                        className="flex w-9 shrink-0 items-center justify-center self-stretch sm:w-10"
+                        aria-hidden
+                      >
+                        <span className="select-none text-4xl font-bold leading-none text-slate-400 sm:text-5xl">
+                          +
+                        </span>
+                      </div>
+                      <div
+                        className={cn(
+                          "flex min-h-0 min-w-0 flex-[2] flex-col gap-1.5",
+                          toothWorkGuideTourStepId === "abutment_side" &&
+                            "practice-tooth-guide-pulse rounded-xl",
+                        )}
+                      >
+                        <p className="shrink-0 px-0.5 text-[11px] font-semibold tracking-wide text-service-abut">
+                          어벗 · 스캔바디 또는 심플어벗
+                        </p>
+                        <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1 items-stretch gap-2.5 sm:grid-cols-2 sm:gap-2.5">
+                          <PracticeToothAbutmentFields
+                            mode="presets"
+                            allowPresetEdit
+                            heading="스캔바디"
+                            dimmed={simpleMode}
+                            className="min-h-0 border-service-abut-muted/90 bg-service-abut-soft/40"
+                            guideOpenAdd={
+                              toothWorkGuideTourStepId === "abutment_side" &&
+                              abutmentFavorites.length === 0
+                            }
+                            value={modalSpecs}
+                            onChange={(nextAbutment) => {
+                              patchCustomSpecsOnTooth(customSpecsModalTarget, nextAbutment);
+                            }}
+                            favorites={abutmentFavorites}
+                            onFavoritesChange={onAbutmentFavoritesChange}
+                          />
+                          <PracticeToothSimpleAbutmentFields
+                            heading="심플어벗"
+                            dimmed={scanbodySelected}
+                            className="min-h-0 border-service-abut-muted/90 bg-service-abut-soft/40"
+                            value={modalSpecs}
+                            onChange={(nextSimple) => {
+                              patchCustomSpecsOnTooth(customSpecsModalTarget, nextSimple);
+                            }}
+                          />
+                        </div>
+                      </div>
                     </div>
+                      );
+                    })()}
 
                     <PracticeCustomSpecsPresetEditDialog
                       open={customSpecsPresetEditOpen}

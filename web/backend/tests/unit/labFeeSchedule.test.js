@@ -1,5 +1,6 @@
 // related files:
 // - web/backend/utils/labFeeSchedule.js
+// - 2026-08-25: 심플어벗은 기공소 어벗 수가·견적에서 제외.
 // - 2026-08-24: 커스텀어벗 수가 perSet·0원 저장이어도 normalize로 perTooth 강제·단가 반영.
 // - 2026-08-23: 커스텀어벗 수가 지그포함(4만)·지그제외(3만) 분리.
 // - 2026-08-21: PTX CA 치과=기공소 수가. 어벗츠 1.5/2.5만은 기공소→어벗츠.
@@ -130,6 +131,79 @@ describe("labFeeSchedule", () => {
     expect(fees.abutmentRetailTotal).toBe(0);
     expect(fees.abutmentQty).toBe(0);
     expect(fees.total).toBe(60000);
+  });
+
+  test("심플어벗은 기공소 어벗 수가·견적에서 제외한다", () => {
+    const fees = computePracticeTransferRetailFees({
+      toothWorks: [
+        {
+          toothNumber: "16",
+          prosthesisType: "커스텀어벗",
+          customAbutment: true,
+          abutmentManufacturer: "심플어벗",
+          abutmentDiameter: "8",
+          abutmentHeight: "M",
+        },
+        {
+          toothNumber: "26",
+          prosthesisType: "크라운",
+          customAbutment: true,
+          abutmentManufacturer: "심플밀링",
+          abutmentDiameter: "7",
+          abutmentHeight: "S",
+        },
+        {
+          toothNumber: "36",
+          prosthesisType: "크라운",
+          customAbutment: true,
+          abutmentManufacturer: "Osstem",
+          abutmentDiameter: "4.5",
+          abutmentHeight: "5.5",
+        },
+      ],
+      labFeeSchedule: LAB_FEE_SCHEDULE_SAMPLE,
+      abutmentPricingTier: "regular",
+    });
+    // 단독 심플=0 · 크라운+심플=크라운만 · 크라운+스캔바디 CA=크라운+지그포함
+    const crown = Math.round(
+      Number(
+        LAB_FEE_SCHEDULE_SAMPLE.items.find((i) => i.name === "크라운")?.price ||
+          0,
+      ),
+    );
+    const withJig = Math.round(
+      Number(
+        LAB_FEE_SCHEDULE_SAMPLE.items.find(
+          (i) => i.name === LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME,
+        )?.price || 0,
+      ),
+    );
+    expect(fees.labAbutmentTotal).toBe(withJig);
+    expect(fees.labFeeTotal).toBe(crown * 2 + withJig);
+    expect(fees.abutmentRetailTotal).toBe(0);
+    expect(
+      fees.lines.some(
+        (l) =>
+          l.toothNumber === "16" &&
+          (l.labAbutmentFee > 0 || l.labFee > 0),
+      ),
+    ).toBe(false);
+    expect(
+      fees.lines.find((l) => l.toothNumber === "26" && l.prosthesisType === "크라운")
+        ?.labFee,
+    ).toBe(crown);
+    expect(
+      fees.lines.some(
+        (l) => l.toothNumber === "26" && l.labAbutmentFee > 0,
+      ),
+    ).toBe(false);
+    expect(
+      fees.lines.find(
+        (l) =>
+          l.toothNumber === "36" &&
+          l.prosthesisType === LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME,
+      )?.labAbutmentFee,
+    ).toBe(withJig);
   });
 
   test("크라운·브리지+어벗은 지그포함, 단독 CA는 지그제외 수가를 쓴다", () => {

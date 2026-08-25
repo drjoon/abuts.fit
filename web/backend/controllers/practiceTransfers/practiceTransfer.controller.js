@@ -2455,7 +2455,7 @@ export async function createPracticeTransfer(req, res) {
         success: false,
         message:
           presetErr?.message ||
-          "어벗 프리셋(임플란트·스캔바디)을 선택해주세요.",
+          "어벗 프리셋(임플란트·스캔바디/심플어벗)을 선택해주세요.",
       });
     }
 
@@ -3054,7 +3054,7 @@ export async function updatePracticeTransferContent(req, res) {
         success: false,
         message:
           presetErr?.message ||
-          "어벗 프리셋(임플란트·스캔바디)을 선택해주세요.",
+          "어벗 프리셋(임플란트·스캔바디/심플어벗)을 선택해주세요.",
       });
     }
 

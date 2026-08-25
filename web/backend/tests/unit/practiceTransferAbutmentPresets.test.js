@@ -56,4 +56,27 @@ describe("practiceTransferAbutmentPresets", () => {
     expect(listIncompleteAbutmentPresetTeeth([completeRow])).toEqual([]);
     expect(() => assertAbutmentPresetsComplete([completeRow])).not.toThrow();
   });
+
+  test("임플란트·심플어벗이 모두 있으면 통과한다", () => {
+    const simpleRow = {
+      ...completeRow,
+      abutmentManufacturer: "심플어벗",
+      abutmentDiameter: "8",
+      abutmentHeight: "M",
+    };
+    expect(hasCompleteAbutmentPresets(simpleRow)).toBe(true);
+    expect(listIncompleteAbutmentPresetTeeth([simpleRow])).toEqual([]);
+    expect(() => assertAbutmentPresetsComplete([simpleRow])).not.toThrow();
+  });
+
+  test("심플어벗 규격이 불완전하면 거절한다", () => {
+    const incomplete = {
+      ...completeRow,
+      abutmentManufacturer: "심플밀링",
+      abutmentDiameter: "8",
+      abutmentHeight: "",
+    };
+    expect(hasCompleteAbutmentPresets(incomplete)).toBe(false);
+    expect(listIncompleteAbutmentPresetTeeth([incomplete])).toEqual(["22"]);
+  });
 });

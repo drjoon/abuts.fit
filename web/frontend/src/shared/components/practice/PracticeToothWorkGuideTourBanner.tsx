@@ -1,5 +1,7 @@
 // related files:
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
+// change-log:
+// - 2026-08-25: 어벗 투어 — 스캔바디 커스텀어벗 vs 심플어벗(꽂고 바로 스캔) 두 방식 안내.
 import { Button } from "@/components/ui/button";
 import { cn } from "@/shared/ui/cn";
 
@@ -48,22 +50,22 @@ export const PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS = [
   {
     id: "abutment",
     title: "어벗 선택",
-    hint: "「어벗」 체크를 켜 커스텀어벗을 추가하세요.",
+    hint: "「어벗」을 켜세요. 스캔바디 커스텀어벗과 심플어벗(꽂고 바로 스캔) 두 방식이 있습니다.",
   },
   {
     id: "implant_preset",
-    title: "임플란트 프리셋",
-    hint: "제조사·브랜드·패밀리·타입을 고른 뒤 저장하세요.",
+    title: "임플란트",
+    hint: "임플란트를 고른 뒤, 오른쪽에서 어벗 방식을 이어 선택합니다.",
   },
   {
-    id: "scanbody_preset",
-    title: "스캔바디 프리셋",
-    hint: "제조사·직경·높이를 입력한 뒤 저장하세요.",
+    id: "abutment_side",
+    title: "어벗 방식",
+    hint: "스캔바디(커스텀어벗) 또는 심플어벗·심플밀링 중 하나를 고르세요. 둘은 함께 쓸 수 없습니다.",
   },
   {
     id: "estimate",
     title: "견적 확인",
-    hint: "아래 깜빡이는 견적에 마우스를 올려 툴팁으로 기공비를 확인하세요.",
+    hint: "아래 깜빡이는 견적에 마우스를 올려 툴팁으로 기공비를 확인하세요. 심플어벗은 어벗 기공비가 없습니다.",
   },
 ] as const;
 
@@ -95,7 +97,7 @@ type PracticeToothWorkGuideTourBannerProps = {
   placement?: "center" | "aside";
   /** 임플란트 프리셋 개수 — 0이면 추가 유도 문구 */
   implantFavoriteCount?: number;
-  /** 스캔바디 프리셋 개수 — 0이면 추가 유도 문구 */
+  /** 스캔바디 프리셋 개수 — 0이면 스캔바디 추가·심플 선택 유도 */
   scanbodyFavoriteCount?: number;
 };
 
@@ -109,13 +111,13 @@ const resolveTourCopy = (
   if (base.id === "implant_preset" && implantFavoriteCount <= 0) {
     return {
       ...base,
-      hint: "아래에서 제조사·브랜드·패밀리·타입을 고른 뒤 저장하세요.",
+      hint: "아래에서 제조사·브랜드·패밀리·타입을 고른 뒤 저장하세요. 다음은 어벗 방식입니다.",
     };
   }
-  if (base.id === "scanbody_preset" && scanbodyFavoriteCount <= 0) {
+  if (base.id === "abutment_side" && scanbodyFavoriteCount <= 0) {
     return {
       ...base,
-      hint: "아래에서 제조사·직경·높이를 입력한 뒤 저장하세요.",
+      hint: "스캔바디가 없으면 추가하거나, 오른쪽에서 심플어벗·심플밀링(직경·높이)을 고르세요.",
     };
   }
   return base;
