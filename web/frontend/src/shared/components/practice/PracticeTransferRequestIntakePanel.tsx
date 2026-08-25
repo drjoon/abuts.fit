@@ -145,6 +145,8 @@ import {
 // - web/frontend/src/shared/components/practice/PracticeToothSimpleAbutmentFields.tsx
 // - web/frontend/src/shared/components/practice/PracticeCustomSpecsPresetEditDialog.tsx
 // - web/frontend/src/shared/pricing/abutsAbutmentService.ts
+// - 2026-08-25: 기공소 픽커 보조줄 — 대표·주소만(사업자번호 표시 제거, 검색은 유지).
+// - 2026-08-25: 헤더(기공소·환자·기간) — 가이드투어 aside 자리를 항상 예약(투어 on/off 레이아웃 점프 방지).
 // - 2026-08-25: 커스텀어벗 설정 — 임플란트(primary)·어벗(service-abut) 색 구분. + 확대·임플란트 열 축소.
 // - 2026-08-25: 가이드투어 어벗 — 스캔바디 커스텀 vs 심플어벗(꽂고 바로 스캔) 두 방식.
 // - 2026-08-25: 커스텀어벗 설정 — 임플란트 + (스캔바디|심플어벗) 구조. + 표시.
@@ -2156,15 +2158,7 @@ export const PracticeTransferRequestIntakePanel = ({
       ) : null}
 
       {showAnyHeaderFields ? (
-      <div
-        className={cn(
-          toothWorkGuideTourStep != null &&
-            (toothWorkGuideTourStepId === "lab" ||
-              toothWorkGuideTourStepId === "patient" ||
-              toothWorkGuideTourStepId === "dates") &&
-            "grid grid-cols-1 items-start gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,22rem)]",
-        )}
-      >
+      <div className="grid grid-cols-1 items-start gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,22rem)]">
       <div className={headerGridClassName}>
         {showLabField ? (
         <div className="space-y-2">
@@ -2229,7 +2223,7 @@ export const PracticeTransferRequestIntakePanel = ({
                         const rep = String(b.representativeName || "").trim();
                         const bn = String(b.businessNumber || "").trim();
                         const addr = String(b.address || "").trim();
-                        const meta = [rep ? `대표: ${rep}` : "", bn ? `사업자: ${bn}` : "", addr || ""]
+                        const meta = [rep ? `대표: ${rep}` : "", addr || ""]
                           .filter(Boolean)
                           .join(" · ");
                         const searchValue = [b.name, rep, bn, addr, "고정"].filter(Boolean).join(" ");
@@ -2302,7 +2296,7 @@ export const PracticeTransferRequestIntakePanel = ({
                         const rep = String(b.representativeName || "").trim();
                         const bn = String(b.businessNumber || "").trim();
                         const addr = String(b.address || "").trim();
-                        const meta = [rep ? `대표: ${rep}` : "", bn ? `사업자: ${bn}` : "", addr || ""]
+                        const meta = [rep ? `대표: ${rep}` : "", addr || ""]
                           .filter(Boolean)
                           .join(" · ");
                         const searchValue = [b.name, rep, bn, addr].filter(Boolean).join(" ");
@@ -2388,7 +2382,7 @@ export const PracticeTransferRequestIntakePanel = ({
                           const rep = String(b.representativeName || "").trim();
                           const bn = String(b.businessNumber || "").trim();
                           const addr = String(b.address || "").trim();
-                          const meta = [rep ? `대표: ${rep}` : "", bn ? `사업자: ${bn}` : "", addr || ""]
+                          const meta = [rep ? `대표: ${rep}` : "", addr || ""]
                             .filter(Boolean)
                             .join(" · ");
                           const searchValue = [b.name, rep, bn, addr].filter(Boolean).join(" ");
