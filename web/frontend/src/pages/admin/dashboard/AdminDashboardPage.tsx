@@ -1,5 +1,6 @@
 
 // change-log:
+// - 2026-08-25: ExoCAD 헥스 확인 목록에 디자인 소프트웨어(+버전) 표시.
 // - 2026-08-25: ExoCAD 헥스 확인 확정 → 미확인 되돌리기 버튼.
 // - 2026-08-24: 미처리 통신 카드 제거 후 뒤 카드를 끌어올려 4열 유지.
 // - 2026-08-23: ExoCAD 헥스 확인 모달에 확정 계정 보기/수정.
@@ -453,6 +454,21 @@ const toDateLabel = (raw?: string | null) => {
   const d = new Date(raw);
   if (Number.isNaN(d.getTime())) return "-";
   return d.toLocaleDateString("ko-KR");
+};
+
+/** 헥스 확인 목록: 디자인 소프트웨어 + ExoCAD 버전 라벨 */
+const formatHexVerificationSoftwareLabel = (item: {
+  designSoftware?: string | null;
+  exoCadVersion?: string | null;
+}) => {
+  const software = String(item.designSoftware || "").trim() || "ExoCAD";
+  const version =
+    item.exoCadVersion === "ge_3_2"
+      ? "3.2+"
+      : item.exoCadVersion
+        ? "≤3.0"
+        : "";
+  return version ? `${software} ${version}` : software;
 };
 
 const toDateTimeLabel = (raw?: string | null) => {
@@ -3285,6 +3301,7 @@ export const AdminDashboardPage = () => {
                         ? "STL모델대로"
                         : "헥스30도회전");
                     const busy = Boolean(completingHexByAnchor[anchorId]);
+                    const softwareLabel = formatHexVerificationSoftwareLabel(item);
                     return (
                       <div
                         key={anchorId}
@@ -3298,9 +3315,7 @@ export const AdminDashboardPage = () => {
                             <div className="mt-0.5 text-[11px] text-muted-foreground truncate">
                               {item.ownerName || "-"}
                               {item.ownerEmail ? ` · ${item.ownerEmail}` : ""}
-                              {item.exoCadVersion
-                                ? ` · ${item.exoCadVersion === "ge_3_2" ? "3.2+" : "≤3.0"}`
-                                : ""}
+                              {softwareLabel ? ` · ${softwareLabel}` : ""}
                             </div>
                             <div className="mt-0.5 text-[11px] text-muted-foreground truncate">
                               {item.sampleRequestId
@@ -3397,6 +3412,7 @@ export const AdminDashboardPage = () => {
                     const dirty =
                       Boolean(hexChoiceByAnchor[anchorId]) &&
                       hexChoiceByAnchor[anchorId] !== item.adminVerifiedHex;
+                    const softwareLabel = formatHexVerificationSoftwareLabel(item);
                     return (
                       <div
                         key={anchorId}
@@ -3410,9 +3426,7 @@ export const AdminDashboardPage = () => {
                             <div className="mt-0.5 text-[11px] text-muted-foreground truncate">
                               {item.ownerName || "-"}
                               {item.ownerEmail ? ` · ${item.ownerEmail}` : ""}
-                              {item.exoCadVersion
-                                ? ` · ${item.exoCadVersion === "ge_3_2" ? "3.2+" : "≤3.0"}`
-                                : ""}
+                              {softwareLabel ? ` · ${softwareLabel}` : ""}
                             </div>
                             <div className="mt-0.5 text-[11px] text-muted-foreground truncate">
                               확정: {item.adminVerifiedHex || "-"}
