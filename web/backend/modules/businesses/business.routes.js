@@ -154,30 +154,32 @@ router.post(
   businessController.rejectJoinRequest,
 );
 
-// 어벗츠(admin) 임직원 부서
+// 임직원 부서 (admin · practice · requestor)
+const DEPARTMENT_BUSINESS_ROLES = ["admin", "practice", "requestor"];
+
 router.get(
   "/departments",
-  authorize(["admin"]),
+  authorize(DEPARTMENT_BUSINESS_ROLES),
   businessController.listDepartments,
 );
 router.post(
   "/departments",
-  authorize(["admin"]),
+  authorize(DEPARTMENT_BUSINESS_ROLES),
   businessController.createDepartment,
 );
 router.patch(
   "/departments/:departmentId",
-  authorize(["admin"]),
+  authorize(DEPARTMENT_BUSINESS_ROLES),
   businessController.updateDepartment,
 );
 router.delete(
   "/departments/:departmentId",
-  authorize(["admin"]),
+  authorize(DEPARTMENT_BUSINESS_ROLES),
   businessController.deleteDepartment,
 );
 router.patch(
   "/staff/:userId/department",
-  authorize(["admin"]),
+  authorize(DEPARTMENT_BUSINESS_ROLES),
   businessController.assignStaffDepartment,
 );
 

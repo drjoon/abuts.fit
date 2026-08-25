@@ -14,8 +14,9 @@ import SignupVerification from "../../models/signupVerification.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import {
   anchorUsesInternalDepartments,
-  ensureAdminDefaultDepartments,
+  ensureDefaultDepartments,
   resolveDepartmentLabel,
+  supportsInternalDepartments,
 } from "../../utils/internalDepartments.util.js";
 
 import {
@@ -2000,10 +2001,11 @@ async function listColleagues(req, res) {
 
     let anchor = await BusinessAnchor.findById(myAnchorId).select({
       businessType: 1,
+      requestorKind: 1,
       internalDepartments: 1,
     });
-    if (anchor && String(anchor.businessType || "") === "admin") {
-      anchor = await ensureAdminDefaultDepartments(anchor);
+    if (supportsInternalDepartments(anchor)) {
+      anchor = await ensureDefaultDepartments(anchor);
     }
 
     const usesDepartments = anchorUsesInternalDepartments(anchor);
@@ -2172,10 +2174,11 @@ async function switchAccount(req, res) {
 
     let anchor = await BusinessAnchor.findById(myAnchorId).select({
       businessType: 1,
+      requestorKind: 1,
       internalDepartments: 1,
     });
-    if (anchor && String(anchor.businessType || "") === "admin") {
-      anchor = await ensureAdminDefaultDepartments(anchor);
+    if (supportsInternalDepartments(anchor)) {
+      anchor = await ensureDefaultDepartments(anchor);
     }
     if (anchorUsesInternalDepartments(anchor)) {
       const myDepartmentId = req.user?.internalDepartmentId

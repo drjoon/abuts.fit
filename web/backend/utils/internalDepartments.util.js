@@ -3,16 +3,44 @@
 // - web/backend/controllers/businesses/business.department.controller.js
 // - web/backend/controllers/auth/auth.controller.js
 
+export const INTERNAL_DEPARTMENT_BUSINESS_TYPES = [
+  "admin",
+  "practice",
+  "requestor",
+];
+
 export const DEFAULT_ADMIN_DEPARTMENT_NAMES = [
   "플랫폼관리부",
   "마케팅영업부",
   "기공사업부",
 ];
 
+export function supportsInternalDepartments(anchor) {
+  if (!anchor) return false;
+  return INTERNAL_DEPARTMENT_BUSINESS_TYPES.includes(
+    String(anchor.businessType || ""),
+  );
+}
+
+export function getDefaultDepartmentNames(anchor) {
+  const businessType = String(anchor?.businessType || "");
+  if (businessType === "admin") {
+    return [...DEFAULT_ADMIN_DEPARTMENT_NAMES];
+  }
+  if (businessType === "practice") {
+    return ["치과"];
+  }
+  if (businessType === "requestor") {
+    const kind = String(anchor?.requestorKind || "");
+    if (kind === "lab") return ["기공소"];
+    return ["치과"];
+  }
+  return [];
+}
+
 export function anchorUsesInternalDepartments(anchor) {
   return (
-    anchor &&
-    String(anchor.businessType || "") === "admin" &&
+    supportsInternalDepartments(anchor) &&
     Array.isArray(anchor.internalDepartments) &&
     anchor.internalDepartments.length > 0
   );
@@ -38,8 +66,13 @@ export function resolveDepartmentLabel(anchor, departmentId) {
   return row ? normalizeDepartmentName(row.name) : "";
 }
 
+/** @deprecated use ensureDefaultDepartments */
 export async function ensureAdminDefaultDepartments(anchorDoc) {
-  if (!anchorDoc || String(anchorDoc.businessType || "") !== "admin") {
+  return ensureDefaultDepartments(anchorDoc);
+}
+
+export async function ensureDefaultDepartments(anchorDoc) {
+  if (!supportsInternalDepartments(anchorDoc)) {
     return anchorDoc;
   }
   if (
@@ -49,13 +82,16 @@ export async function ensureAdminDefaultDepartments(anchorDoc) {
     return anchorDoc;
   }
 
-  anchorDoc.internalDepartments = DEFAULT_ADMIN_DEPARTMENT_NAMES.map(
-    (name, index) => ({
-      name,
-      sortOrder: index,
-      createdAt: new Date(),
-    }),
-  );
+  const names = getDefaultDepartmentNames(anchorDoc);
+  if (names.length === 0) {
+    return anchorDoc;
+  }
+
+  anchorDoc.internalDepartments = names.map((name, index) => ({
+    name,
+    sortOrder: index,
+    createdAt: new Date(),
+  }));
   await anchorDoc.save();
   return anchorDoc;
 }

@@ -6,12 +6,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { FunctionalItemCard } from "@/shared/ui/components/FunctionalItemCard";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
-import { Info, UserCheck, UserPlus, Users } from "lucide-react";
+import { Building2, Info, Loader2, Pencil, Plus, UserCheck, UserPlus, Users } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -31,7 +32,14 @@ type StaffMember = {
 type DepartmentOption = {
   _id: string;
   name: string;
+  sortOrder?: number;
 };
+
+const DEPARTMENT_ENABLED_BUSINESS_TYPES = new Set([
+  "admin",
+  "practice",
+  "requestor",
+]);
 
 type PendingJoinRequest = {
   user: { _id: string; name?: string; email?: string } | string;
@@ -81,6 +89,12 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
   const [pendingDepartmentByUserId, setPendingDepartmentByUserId] = useState<
     Record<string, string>
   >({});
+  const [newDepartmentName, setNewDepartmentName] = useState("");
+  const [creatingDepartment, setCreatingDepartment] = useState(false);
+  const [editingDepartmentId, setEditingDepartmentId] = useState("");
+  const [editingDepartmentName, setEditingDepartmentName] = useState("");
+  const [savingDepartmentId, setSavingDepartmentId] = useState("");
+  const [deletingDepartmentId, setDeletingDepartmentId] = useState("");
 
   const mockHeaders = useMemo(() => {
     return {} as Record<string, string>;
@@ -91,7 +105,18 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
     return resolveBusinessType(user?.role || userData?.role, "requestor");
   }, [businessTypeOverride, user?.role, userData?.role]);
 
-  const isAdminBusiness = businessType === "admin";
+  const supportsDepartments = DEPARTMENT_ENABLED_BUSINESS_TYPES.has(businessType);
+
+  const sortedDepartments = useMemo(() => {
+    return [...departments].sort((a, b) => {
+      const orderDiff = Number(a.sortOrder ?? 0) - Number(b.sortOrder ?? 0);
+      if (orderDiff !== 0) return orderDiff;
+      return String(a.name).localeCompare(String(b.name), "ko");
+    });
+  }, [departments]);
+
+  const defaultPendingDepartmentId =
+    sortedDepartments.length === 1 ? sortedDepartments[0]._id : "";
 
   const refreshMembership = useCallback(async () => {
     if (!token) return;
@@ -152,7 +177,7 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
   }, [mockHeaders, businessType, token]);
 
   const refreshDepartments = useCallback(async () => {
-    if (!token || !isAdminBusiness) {
+    if (!token || !supportsDepartments) {
       setDepartments([]);
       return;
     }
@@ -175,10 +200,11 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
         ? data.departments.map((row: any) => ({
             _id: String(row._id),
             name: String(row.name || ""),
+            sortOrder: Number(row.sortOrder ?? 0),
           }))
         : [],
     );
-  }, [businessType, isAdminBusiness, mockHeaders, token]);
+  }, [businessType, supportsDepartments, mockHeaders, token]);
 
   const refreshStaff = useCallback(async () => {
     if (!token) return;
@@ -307,7 +333,7 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
           <SelectValue placeholder="부서 선택" />
         </SelectTrigger>
         <SelectContent>
-          {departments.map((dept) => (
+          {sortedDepartments.map((dept) => (
             <SelectItem key={dept._id} value={dept._id}>
               {dept.name}
             </SelectItem>
@@ -315,6 +341,104 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
         </SelectContent>
       </Select>
     );
+  };
+
+  const handleCreateDepartment = async () => {
+    const name = newDepartmentName.trim();
+    if (!name || !token) return;
+    setCreatingDepartment(true);
+    try {
+      const res = await request<any>({
+        path: `/api/businesses/departments?businessType=${encodeURIComponent(
+          businessType,
+        )}`,
+        method: "POST",
+        token,
+        jsonBody: { name, businessType },
+      });
+      if (!res.ok) {
+        toast({
+          title: "부서 추가에 실패했어요",
+          description: String((res.data as any)?.message || ""),
+          variant: "destructive",
+        });
+        return;
+      }
+      setNewDepartmentName("");
+      toast({ title: "부서가 추가되었습니다" });
+      await Promise.all([
+        refreshDepartments(),
+        refreshStaff(),
+        refreshRepresentatives(),
+      ]);
+    } finally {
+      setCreatingDepartment(false);
+    }
+  };
+
+  const handleSaveDepartmentEdit = async (departmentId: string) => {
+    const name = editingDepartmentName.trim();
+    if (!name || !token) return;
+    setSavingDepartmentId(departmentId);
+    try {
+      const res = await request<any>({
+        path: `/api/businesses/departments/${departmentId}?businessType=${encodeURIComponent(
+          businessType,
+        )}`,
+        method: "PATCH",
+        token,
+        jsonBody: { name, businessType },
+      });
+      if (!res.ok) {
+        toast({
+          title: "부서 수정에 실패했어요",
+          description: String((res.data as any)?.message || ""),
+          variant: "destructive",
+        });
+        return;
+      }
+      setEditingDepartmentId("");
+      setEditingDepartmentName("");
+      toast({ title: "부서 이름이 수정되었습니다" });
+      await Promise.all([
+        refreshDepartments(),
+        refreshStaff(),
+        refreshRepresentatives(),
+      ]);
+    } finally {
+      setSavingDepartmentId("");
+    }
+  };
+
+  const handleDeleteDepartment = async (departmentId: string) => {
+    if (!token) return;
+    setDeletingDepartmentId(departmentId);
+    try {
+      const res = await request<any>({
+        path: `/api/businesses/departments/${departmentId}?businessType=${encodeURIComponent(
+          businessType,
+        )}`,
+        method: "DELETE",
+        token,
+        jsonBody: { businessType },
+      });
+      if (!res.ok) {
+        toast({
+          title: "부서 삭제에 실패했어요",
+          description: String((res.data as any)?.message || ""),
+          variant: "destructive",
+        });
+        return;
+      }
+      toast({ title: "부서가 삭제되었습니다" });
+      await Promise.all([
+        refreshDepartments(),
+        refreshStaff(),
+        refreshRepresentatives(),
+      ]);
+    } finally {
+      setDeletingDepartmentId("");
+    }
   };
 
   const handleRemoveStaff = async (userId: string) => {
@@ -359,7 +483,8 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
       const id = String(userId || "").trim();
       if (!id) return;
 
-      const departmentId = pendingDepartmentByUserId[id] || "";
+      let departmentId =
+        pendingDepartmentByUserId[id] || defaultPendingDepartmentId || "";
       if (usesDepartments && !departmentId) {
         toast({
           title: "부서를 선택해주세요",
@@ -486,11 +611,13 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-base">
           <Users className="h-5 w-5 text-primary-strong" />
-          임직원 관리
+          임직원 · 부서
         </CardTitle>
         <CardDescription className="text-[13px] leading-relaxed">
-          대표·직원 계정과 가입 신청을 관리합니다.
-          {usesDepartments ? " 어벗츠 임직원은 부서별로 배치합니다." : ""}
+          부서와 대표·직원 계정, 가입 신청을 함께 관리합니다.
+          {usesDepartments
+            ? " 사이드바 계정 전환은 같은 부서 계정만 표시됩니다."
+            : ""}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
@@ -505,6 +632,165 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
 
         {membership === "owner" && (
           <>
+            {usesDepartments && (
+              <section className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5">
+                <div className="mb-4 flex items-center gap-2">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200/80">
+                    <Building2 className="h-4 w-4 text-primary-strong" />
+                  </span>
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-900">부서</h3>
+                    <p className="text-xs text-muted-foreground">
+                      임직원을 배치할 부서를 관리합니다
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end">
+                  <div className="flex-1 space-y-2">
+                    <label className="text-xs font-medium text-muted-foreground">
+                      새 부서 이름
+                    </label>
+                    <Input
+                      value={newDepartmentName}
+                      onChange={(event) => setNewDepartmentName(event.target.value)}
+                      placeholder="예: 진료팀"
+                      disabled={creatingDepartment}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          void handleCreateDepartment();
+                        }
+                      }}
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    className="shrink-0"
+                    disabled={creatingDepartment || !newDepartmentName.trim()}
+                    onClick={() => void handleCreateDepartment()}
+                  >
+                    {creatingDepartment ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Plus className="mr-2 h-4 w-4" />
+                    )}
+                    부서 추가
+                  </Button>
+                </div>
+
+                {loading && sortedDepartments.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-slate-200/90 bg-white/50 px-6 py-8 text-center text-sm text-muted-foreground">
+                    불러오는 중...
+                  </div>
+                ) : sortedDepartments.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-slate-200/90 bg-white/50 px-6 py-8 text-center text-sm text-muted-foreground">
+                    등록된 부서가 없습니다.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {sortedDepartments.map((row) => {
+                      const isEditing = editingDepartmentId === row._id;
+                      return (
+                        <FunctionalItemCard
+                          key={row._id}
+                          className="overflow-hidden rounded-2xl border-slate-200/80 bg-white/80 p-0 shadow-sm"
+                          onRemove={() => handleDeleteDepartment(row._id)}
+                          confirmTitle="부서를 삭제할까요?"
+                          confirmDescription={
+                            <div className="text-sm text-muted-foreground">
+                              {row.name}
+                              <div className="mt-1 text-xs">
+                                소속 임직원이 있으면 삭제할 수 없습니다.
+                              </div>
+                            </div>
+                          }
+                          confirmLabel="삭제"
+                          cancelLabel="닫기"
+                          disabled={
+                            deletingDepartmentId === row._id ||
+                            savingDepartmentId === row._id
+                          }
+                        >
+                          <div className="border-t-4 border-primary-strong">
+                            <div className="space-y-3 px-3.5 py-3 pr-8">
+                              {isEditing ? (
+                                <>
+                                  <Input
+                                    value={editingDepartmentName}
+                                    onChange={(event) =>
+                                      setEditingDepartmentName(event.target.value)
+                                    }
+                                    disabled={savingDepartmentId === row._id}
+                                    onKeyDown={(event) => {
+                                      if (event.key === "Enter") {
+                                        event.preventDefault();
+                                        void handleSaveDepartmentEdit(row._id);
+                                      }
+                                    }}
+                                  />
+                                  <div className="flex gap-2">
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      className="h-8 flex-1 rounded-lg text-xs"
+                                      disabled={
+                                        savingDepartmentId === row._id ||
+                                        !editingDepartmentName.trim()
+                                      }
+                                      onClick={() =>
+                                        void handleSaveDepartmentEdit(row._id)
+                                      }
+                                    >
+                                      저장
+                                    </Button>
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-8 flex-1 rounded-lg text-xs"
+                                      disabled={savingDepartmentId === row._id}
+                                      onClick={() => {
+                                        setEditingDepartmentId("");
+                                        setEditingDepartmentName("");
+                                      }}
+                                    >
+                                      취소
+                                    </Button>
+                                  </div>
+                                </>
+                              ) : (
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="min-w-0 flex-1">
+                                    <div className="truncate text-sm font-semibold text-slate-900">
+                                      {row.name}
+                                    </div>
+                                  </div>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 shrink-0"
+                                    disabled={deletingDepartmentId === row._id}
+                                    onClick={() => {
+                                      setEditingDepartmentId(row._id);
+                                      setEditingDepartmentName(row.name);
+                                    }}
+                                  >
+                                    <Pencil className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </FunctionalItemCard>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+            )}
+
             <section className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5">
               <div className="mb-4 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
@@ -736,7 +1022,11 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
                             {usesDepartments ? (
                               <div className="space-y-2">
                                 <Select
-                                  value={pendingDepartmentByUserId[userId] || undefined}
+                                  value={
+                                    pendingDepartmentByUserId[userId] ||
+                                    defaultPendingDepartmentId ||
+                                    undefined
+                                  }
                                   onValueChange={(next) =>
                                     setPendingDepartmentByUserId((prev) => ({
                                       ...prev,
@@ -748,7 +1038,7 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
                                     <SelectValue placeholder="승인 부서 선택" />
                                   </SelectTrigger>
                                   <SelectContent>
-                                    {departments.map((dept) => (
+                                    {sortedDepartments.map((dept) => (
                                       <SelectItem key={dept._id} value={dept._id}>
                                         {dept.name}
                                       </SelectItem>

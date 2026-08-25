@@ -13,11 +13,8 @@ import { assertBusinessRole } from "./businessRole.util.js";
 import {
   enrichMemberWithDepartment,
   loadAnchorDepartmentsForStaff,
+  resolveApprovedDepartmentId,
 } from "./business.department.controller.js";
-import {
-  findDepartmentById,
-  normalizeDepartmentName,
-} from "../../utils/internalDepartments.util.js";
 
 export async function getPendingJoinRequestsForOwner(req, res) {
   try {
@@ -482,26 +479,20 @@ export async function approveJoinRequest(req, res) {
     }
 
     let departmentId = null;
-    if (businessType === "admin") {
-      const departmentIdRaw = req.body?.departmentId;
-      const departmentIdStr = String(departmentIdRaw || "").trim();
-      if (!departmentIdStr || !Types.ObjectId.isValid(departmentIdStr)) {
-        return res.status(400).json({
-          success: false,
-          message: "승인할 부서를 선택해주세요.",
-        });
-      }
-      const anchorWithDepartments = await BusinessAnchor.findById(anchor._id);
-      if (
-        !anchorWithDepartments ||
-        !findDepartmentById(anchorWithDepartments, departmentIdStr)
-      ) {
-        return res.status(404).json({
-          success: false,
-          message: "선택한 부서를 찾을 수 없습니다.",
-        });
-      }
-      departmentId = new Types.ObjectId(departmentIdStr);
+    let departmentName = "";
+    const deptResolved = await resolveApprovedDepartmentId(
+      anchor._id,
+      req.body?.departmentId,
+    );
+    if (deptResolved.error) {
+      return res.status(400).json({
+        success: false,
+        message: deptResolved.error,
+      });
+    }
+    if (deptResolved.departmentId) {
+      departmentId = deptResolved.departmentId;
+      departmentName = deptResolved.departmentName || "";
     }
 
     joinRequest.status = "approved";
@@ -533,14 +524,7 @@ export async function approveJoinRequest(req, res) {
       data: {
         approved: true,
         departmentId: departmentId ? String(departmentId) : null,
-        departmentName: departmentId
-          ? normalizeDepartmentName(
-              findDepartmentById(
-                await BusinessAnchor.findById(anchor._id),
-                String(departmentId),
-              )?.name,
-            )
-          : "",
+        departmentName,
       },
     });
   } catch (error) {

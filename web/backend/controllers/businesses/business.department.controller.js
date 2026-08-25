@@ -2,28 +2,34 @@
 // - web/backend/models/businessAnchor.model.js
 // - web/backend/models/user.model.js
 // - web/backend/utils/internalDepartments.util.js
-// - web/frontend/src/features/settings/tabs/DepartmentsTab.tsx
+// - web/frontend/src/features/settings/tabs/StaffTab.tsx
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import User from "../../models/user.model.js";
 import { Types } from "mongoose";
 import { resolveOwnedBusiness } from "./business.utils.js";
 import { assertBusinessRole } from "./businessRole.util.js";
 import {
-  ensureAdminDefaultDepartments,
+  ensureDefaultDepartments,
   findDepartmentById,
+  INTERNAL_DEPARTMENT_BUSINESS_TYPES,
   normalizeDepartmentName,
   serializeDepartments,
+  supportsInternalDepartments,
 } from "../../utils/internalDepartments.util.js";
 
-async function resolveAdminOwnedAnchor(req, businessType) {
-  if (businessType !== "admin") {
-    return { error: "부서 관리는 어벗츠(admin) 사업자만 지원합니다." };
+const DEPARTMENT_BUSINESS_TYPE_SET = new Set(
+  INTERNAL_DEPARTMENT_BUSINESS_TYPES,
+);
+
+async function resolveDepartmentOwnedAnchor(req, businessType) {
+  if (!DEPARTMENT_BUSINESS_TYPE_SET.has(businessType)) {
+    return { error: "부서 관리를 지원하지 않는 사업자 유형입니다." };
   }
   const anchor = await resolveOwnedBusiness(req, businessType);
   if (!anchor) {
     return { error: "대표자 계정만 부서를 관리할 수 있습니다." };
   }
-  await ensureAdminDefaultDepartments(anchor);
+  await ensureDefaultDepartments(anchor);
   return { anchor };
 }
 
@@ -33,9 +39,9 @@ export async function listDepartments(req, res) {
     if (!roleCheck) return;
     const { businessType } = roleCheck;
 
-    const resolved = await resolveAdminOwnedAnchor(req, businessType);
+    const resolved = await resolveDepartmentOwnedAnchor(req, businessType);
     if (resolved.error) {
-      return res.status(businessType === "admin" ? 403 : 400).json({
+      return res.status(403).json({
         success: false,
         message: resolved.error,
       });
@@ -62,7 +68,7 @@ export async function createDepartment(req, res) {
     if (!roleCheck) return;
     const { businessType } = roleCheck;
 
-    const resolved = await resolveAdminOwnedAnchor(req, businessType);
+    const resolved = await resolveDepartmentOwnedAnchor(req, businessType);
     if (resolved.error) {
       return res.status(403).json({
         success: false,
@@ -140,7 +146,7 @@ export async function updateDepartment(req, res) {
       });
     }
 
-    const resolved = await resolveAdminOwnedAnchor(req, businessType);
+    const resolved = await resolveDepartmentOwnedAnchor(req, businessType);
     if (resolved.error) {
       return res.status(403).json({
         success: false,
@@ -216,7 +222,7 @@ export async function deleteDepartment(req, res) {
       });
     }
 
-    const resolved = await resolveAdminOwnedAnchor(req, businessType);
+    const resolved = await resolveDepartmentOwnedAnchor(req, businessType);
     if (resolved.error) {
       return res.status(403).json({
         success: false,
@@ -277,7 +283,7 @@ export async function assignStaffDepartment(req, res) {
       });
     }
 
-    const resolved = await resolveAdminOwnedAnchor(req, businessType);
+    const resolved = await resolveDepartmentOwnedAnchor(req, businessType);
     if (resolved.error) {
       return res.status(403).json({
         success: false,
@@ -352,18 +358,24 @@ export async function assignStaffDepartment(req, res) {
 }
 
 export async function loadAnchorDepartmentsForStaff(anchorId) {
-  const anchor = await BusinessAnchor.findById(anchorId)
-    .select({ businessType: 1, internalDepartments: 1 })
-    .lean();
-  if (!anchor || String(anchor.businessType || "") !== "admin") {
+  let anchor = await BusinessAnchor.findById(anchorId).select({
+    businessType: 1,
+    requestorKind: 1,
+    internalDepartments: 1,
+  });
+  if (!supportsInternalDepartments(anchor)) {
     return { usesDepartments: false, departments: [], departmentMap: new Map() };
   }
+
+  anchor = await ensureDefaultDepartments(anchor);
+
   if (
     !Array.isArray(anchor.internalDepartments) ||
     anchor.internalDepartments.length === 0
   ) {
     return { usesDepartments: false, departments: [], departmentMap: new Map() };
   }
+
   const departmentMap = new Map(
     anchor.internalDepartments.map((row) => [
       String(row._id),
@@ -387,5 +399,41 @@ export function enrichMemberWithDepartment(member, departmentMap) {
     email: String(member.email || ""),
     internalDepartmentId: deptId || null,
     departmentName: deptId ? departmentMap.get(deptId) || "" : "",
+  };
+}
+
+export async function resolveApprovedDepartmentId(anchorId, requestedDepartmentId) {
+  const deptContext = await loadAnchorDepartmentsForStaff(anchorId);
+  if (!deptContext.usesDepartments) {
+    return { departmentId: null, departmentName: "" };
+  }
+
+  let departmentIdStr = String(requestedDepartmentId || "").trim();
+  if (
+    !departmentIdStr &&
+    deptContext.departments.length === 1 &&
+    deptContext.departments[0]?._id
+  ) {
+    departmentIdStr = String(deptContext.departments[0]._id);
+  }
+
+  if (!departmentIdStr || !Types.ObjectId.isValid(departmentIdStr)) {
+    return {
+      error: "승인할 부서를 선택해주세요.",
+    };
+  }
+
+  const anchor = await BusinessAnchor.findById(anchorId);
+  if (!anchor || !findDepartmentById(anchor, departmentIdStr)) {
+    return {
+      error: "선택한 부서를 찾을 수 없습니다.",
+    };
+  }
+
+  return {
+    departmentId: new Types.ObjectId(departmentIdStr),
+    departmentName: normalizeDepartmentName(
+      findDepartmentById(anchor, departmentIdStr)?.name,
+    ),
   };
 }

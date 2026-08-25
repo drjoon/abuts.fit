@@ -13,12 +13,11 @@ import {
 } from "@/features/components/SettingsScaffold";
 import { AccountTab } from "@/features/settings/tabs/AccountTab";
 import { StaffTab } from "@/features/settings/tabs/StaffTab";
-import { DepartmentsTab } from "@/features/settings/tabs/DepartmentsTab";
 import { NotificationsTab } from "@/features/settings/tabs/NotificationsTab";
 import { BusinessTab } from "@/shared/components/business/settings/BusinessTab";
-import { User, Users, Bell, Building2, Building } from "lucide-react";
+import { User, Users, Bell, Building2 } from "lucide-react";
 
-type TabKey = "account" | "business" | "departments" | "staff" | "notifications";
+type TabKey = "account" | "business" | "staff" | "notifications";
 
 export const AdminSettingsPage = () => {
   const { user } = useAuthStore();
@@ -37,12 +36,6 @@ export const AdminSettingsPage = () => {
         label: "사업자",
         icon: Building2,
         content: <BusinessTab userData={user} businessTypeOverride="admin" />,
-      },
-      {
-        key: "departments",
-        label: "부서",
-        icon: Building,
-        content: <DepartmentsTab />,
       },
       {
         key: "staff",
