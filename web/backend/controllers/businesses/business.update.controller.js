@@ -24,6 +24,7 @@ import {
 import { normalizeBusinessAddressFields } from "./business.address.util.js";
 import { findBusinessByAnchors } from "./business.find.util.js";
 import { grantWelcomeFreeCreditIfEligible } from "./business.freeCredit.util.js";
+import { enableDemoModeAndGrantCreditIfEligible } from "./business.demoMode.util.js";
 import { emitReferralMembershipChanged } from "../../services/requestSnapshotTriggers.service.js";
 import { invalidateMyBusinessCache } from "./business.controller.js";
 import {
@@ -184,6 +185,9 @@ export async function ensureBusinessAnchor({
       $setOnInsert: {
         referredByAnchorId: referredByAnchorId || null,
         defaultReferralAnchorId: referredByAnchorId || null,
+        ...(businessType === "requestor"
+          ? { demoMode: true, demoModeStartedAt: new Date() }
+          : {}),
       },
     },
     {
@@ -195,6 +199,18 @@ export async function ensureBusinessAnchor({
 
   const anchorId = anchor?._id || existingAnchor?._id || null;
   if (!anchorId) return null;
+
+  // 신규 requestor 앵커: 데모 모드 + 데모 크레딧(멱등)
+  if (businessType === "requestor" && !existingAnchor?._id) {
+    try {
+      await enableDemoModeAndGrantCreditIfEligible({
+        businessAnchorId: anchorId,
+        userId,
+      });
+    } catch (e) {
+      console.error("[BusinessAnchor] demo mode grant failed", e);
+    }
+  }
 
   if (
     !existingAnchor?.referredByAnchorId &&
@@ -894,6 +910,9 @@ export async function updateMyBusiness(req, res) {
           owners: [],
           members: [req.user._id],
           status: verificationResult?.verified ? "verified" : "active",
+          ...(businessType === "requestor"
+            ? { demoMode: true, demoModeStartedAt: new Date() }
+            : {}),
           ...createdPersist,
           ...(businessLicense &&
           (businessLicense.s3Key || businessLicense.originalName)
@@ -971,6 +990,20 @@ export async function updateMyBusiness(req, res) {
           });
         const welcomeGranted = !!welcomeFreeCreditAmount;
         const welcomeAmount = Number(welcomeFreeCreditAmount || 0);
+
+        if (businessType === "requestor") {
+          try {
+            await enableDemoModeAndGrantCreditIfEligible({
+              businessAnchorId: created._id,
+              userId: req.user._id,
+            });
+          } catch (e) {
+            console.error(
+              "[BusinessAnchor] demo mode grant on create failed",
+              e,
+            );
+          }
+        }
 
         const labTradingPartner = await bindLabTradingPartnerFromRequest({
           req,

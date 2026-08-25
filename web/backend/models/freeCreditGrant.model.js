@@ -11,7 +11,7 @@ const freeCreditGrantSchema = new mongoose.Schema(
   {
     type: {
       type: String,
-      enum: ["REQUEST_FREE_CREDIT", "SHIPPING_FREE_CREDIT"],
+      enum: ["REQUEST_FREE_CREDIT", "SHIPPING_FREE_CREDIT", "DEMO_CREDIT"],
       required: true,
       index: true,
     },

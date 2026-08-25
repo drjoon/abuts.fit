@@ -14,6 +14,7 @@ import {
   requestorProfilePersistFields,
 } from "../../utils/requestorCapabilities.js";
 import { emitReferralMembershipChanged } from "../../services/requestSnapshotTriggers.service.js";
+import { enableDemoModeAndGrantCreditIfEligible } from "./business.demoMode.util.js";
 
 export const isSyntheticPracticeBusinessNumber = (value) => {
   const bn = String(value || "")
@@ -142,6 +143,8 @@ export async function ensureRequestorOrgAnchor({ user } = {}) {
     primaryContactUserId: user._id,
     owners: [user._id],
     members: [user._id],
+    demoMode: true,
+    demoModeStartedAt: new Date(),
     ...persist,
     metadata: {
       companyName: clinicName,
@@ -175,5 +178,15 @@ export async function ensureRequestorOrgAnchor({ user } = {}) {
   });
 
   emitReferralMembershipChanged(created._id, "business-anchor-linked");
+
+  try {
+    await enableDemoModeAndGrantCreditIfEligible({
+      businessAnchorId: created._id,
+      userId: user._id,
+    });
+  } catch (e) {
+    console.error("[BusinessAnchor] demo mode grant on org ensure failed", e);
+  }
+
   return created;
 }

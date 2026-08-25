@@ -75,6 +75,7 @@
  * - 2026-08-15: 기공소 전송은 작성 중 draft만. 전송/빈 폼 후 최신 임시저장을 폼에 자동 주입하지 않음.
  * - 2026-08-15: Express/Expert 공통 툴바 최근의뢰/임시저장/휴지통(다이얼로그).
  * - 2026-08-18: Expert 상단에도 새로 작성·최근 의뢰·임시저장·휴지통 버튼.
+ * - 2026-08-26: 휴지통 이동 시 채팅 rooms 재조회 — 최근의뢰·사이드 unread 즉시 감소.
  * - 2026-08-21: 「최근 의뢰」배지=사이드바와 동일 채팅 unread(작업취소 카운트 아님).
  * - 2026-08-21: 휴지통 취소 건도 기존 채팅방 열어 미확인 읽기 가능.
  * - 2026-08-18: Expert는 우측 목록을 빼고 작성 폼 전폭. 치식은 full 차트.
@@ -197,6 +198,7 @@ import {
   type PracticeTransferAutoMatchBudget,
 } from "@/shared/practice/autoMatchBudget";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
+import { DemoModeBadge } from "@/shared/demo/DemoModeBadge";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 import {
   Tooltip,
@@ -5187,6 +5189,9 @@ export const PracticeFileTransferPage = ({
               : `${successCount}건을 휴지통으로 옮겼습니다. 아래에서 복구할 수 있습니다.`,
         });
 
+        // 휴지통 이동 직후 채팅 unread(최근의뢰·사이드 배지) 즉시 동기화
+        void fetchRooms();
+
         // 부분 실패면 서버 기준으로 재동기화(실패 건을 다시 표시)
         if (failedIds.length > 0) {
           void loadRecentRequests();
@@ -5354,6 +5359,7 @@ export const PracticeFileTransferPage = ({
               : `${successCount}건을 최근 전송 내역으로 복구했습니다.`,
         });
         void loadRecentRequests({ silent: true });
+        void fetchRooms();
       }
     } catch (error) {
       setRecentRequests(previousRecentRequests);
@@ -5526,6 +5532,7 @@ export const PracticeFileTransferPage = ({
 
       void loadPracticeTransferDraftList();
       void loadRecentRequests({ silent: true });
+      void fetchRooms();
     } catch (error) {
       toast({
         title: "휴지통 비우기 실패",
@@ -6922,6 +6929,7 @@ export const PracticeFileTransferPage = ({
         >
           {guideTourActive ? "투어 종료" : "가이드투어"}
         </Button>
+        <DemoModeBadge />
       </div>
     </>
   );

@@ -19,6 +19,7 @@ export const {
   updateBusinessShippingAddress,
   getMyRequestSettings,
   updateMyRequestSettings,
+  exitMyDemoMode,
 } = businessController;
 
 export const {
@@ -50,6 +51,7 @@ export default {
   updateBusinessShippingAddress,
   getMyRequestSettings,
   updateMyRequestSettings,
+  exitMyDemoMode,
   requestJoinBusiness,
   cancelJoinRequest,
   leaveBusiness,

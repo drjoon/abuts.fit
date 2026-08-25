@@ -26,6 +26,10 @@ import {
   getMyAutoMatchParticipation,
   setMyAutoMatchParticipation,
 } from "./business.update.controller.js";
+import {
+  exitDemoMode as exitDemoModeUtil,
+  enableDemoModeAndGrantCreditIfEligible,
+} from "./business.demoMode.util.js";
 import { resolveRequestorPricingBaseDate } from "../requests/utils.js";
 import {
   isHexVerificationPending,
@@ -538,6 +542,10 @@ export async function getMyBusiness(req, res) {
           businessType === "requestor"
             ? Boolean(anchor?.designAccessEnabled)
             : false,
+        demoMode:
+          businessType === "requestor" ? Boolean(anchor?.demoMode) : false,
+        demoModeExitedAt:
+          businessType === "requestor" ? anchor?.demoModeExitedAt || null : null,
         requestSettings: {
           anodizingEnabled:
             typeof anchor?.requestSettings?.anodizingEnabled === "boolean"
@@ -552,6 +560,21 @@ export async function getMyBusiness(req, res) {
     };
 
     // 캐시 저장
+    if (
+      businessType === "requestor" &&
+      Boolean(anchor?.demoMode) &&
+      !anchor?.demoModeExitedAt
+    ) {
+      try {
+        await enableDemoModeAndGrantCreditIfEligible({
+          businessAnchorId: anchor._id,
+          userId: req.user._id,
+        });
+      } catch (e) {
+        console.error("[BusinessAnchor] demo credit heal failed", e);
+      }
+    }
+
     __getMyBusinessCache.set(cacheKey, {
       ts: Date.now(),
       data: responseData,
@@ -1750,3 +1773,78 @@ export async function updateMyRequestSettings(req, res) {
     });
   }
 }
+
+/**
+ * 데모 → 실사용 전환. 잔여 데모 크레딧 회수 후 뱃지/데모 모드 종료.
+ * @route POST /api/businesses/me/exit-demo
+ */
+export async function exitMyDemoMode(req, res) {
+  try {
+    res.set("x-abuts-handler", "business.exitMyDemoMode");
+    const roleCheck = assertBusinessRole(req, res);
+    if (!roleCheck) return;
+
+    const freshUser = await User.findById(req.user._id)
+      .select({ businessAnchorId: 1, subRole: 1 })
+      .lean();
+    const businessAnchorId = freshUser?.businessAnchorId || req.user.businessAnchorId;
+    if (!businessAnchorId) {
+      return res.status(400).json({
+        success: false,
+        message: "사업자 정보가 설정되지 않았습니다.",
+      });
+    }
+
+    const anchor = await BusinessAnchor.findById(businessAnchorId)
+      .select({
+        businessType: 1,
+        demoMode: 1,
+        owners: 1,
+        primaryContactUserId: 1,
+      })
+      .lean();
+    if (!anchor || String(anchor.businessType || "") !== "requestor") {
+      return res.status(400).json({
+        success: false,
+        message: "의뢰자 사업자만 실사용으로 전환할 수 있습니다.",
+      });
+    }
+
+    const meId = String(req.user._id);
+    const isOwner =
+      String(anchor.primaryContactUserId || "") === meId ||
+      (Array.isArray(anchor.owners) &&
+        anchor.owners.some((id) => String(id) === meId)) ||
+      String(freshUser?.subRole || "") === "owner";
+    if (!isOwner) {
+      return res.status(403).json({
+        success: false,
+        message: "대표 계정만 실사용으로 전환할 수 있습니다.",
+      });
+    }
+
+    const result = await exitDemoModeUtil({
+      businessAnchorId,
+      userId: req.user._id,
+    });
+    invalidateMyBusinessCache(businessAnchorId);
+
+    return res.json({
+      success: true,
+      data: {
+        demoMode: Boolean(result?.demoMode),
+        clawedBack: Number(result?.clawedBack || 0),
+        alreadyExited: Boolean(result?.alreadyExited),
+      },
+    });
+  } catch (error) {
+    const status = Number(error?.statusCode) || 500;
+    return res.status(status).json({
+      success: false,
+      message:
+        error?.message || "실사용 전환 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+

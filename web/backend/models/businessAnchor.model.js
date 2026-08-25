@@ -97,6 +97,25 @@ const businessAnchorSchema = new mongoose.Schema(
       practice: { type: Boolean, default: false },
       lab: { type: Boolean, default: false },
     },
+    /**
+     * 데모 모드(의뢰자). 신규 가입 사업자는 true.
+     * 실사용 전환 시 false + demoModeExitedAt. 기존 사업자는 false 유지.
+     * related: web/backend/controllers/businesses/business.demoMode.util.js
+     */
+    demoMode: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    demoModeStartedAt: {
+      type: Date,
+      default: null,
+    },
+    demoModeExitedAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
     // 개발운영사 지정: 의뢰자 사업자에 디자인 큐(사이드바·API) 접근 허용
     // related files:
     // - web/backend/utils/designAccess.js

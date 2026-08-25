@@ -29,6 +29,8 @@ export const CREDIT_LEDGER_PREPAID_NOTICE_BODY =
 export const CREDIT_LEDGER_FREE_NOTICE_BODY =
   "환영·이벤트 등으로 지급된 무료 크레딧입니다. 기공의뢰·어벗 생산·배송 등에 다른 크레딧보다 먼저 사용되며, 환불 대상이 아닙니다.";
 
+/** 내역 탭 — 데모 모드 안내는 shared/demo/demoModeCopy.ts (CREDIT_LEDGER_DEMO_*). */
+
 /** 내역 탭 — 기공 카드 툴팁(기공소). */
 export const CREDIT_LEDGER_SETTLEMENT_NOTICE_BODY =
   "치과 기공의뢰 작업완료 시 적립되는 정산 대기금입니다. 앱 내 주문 대금에 쓰면 해당 금액만큼 월 정산에서 차감(상계)되며, 남으면 등록 계좌로 지급됩니다.";

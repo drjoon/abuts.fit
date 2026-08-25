@@ -71,7 +71,7 @@ async function resolveRequestorKindForAnchor(businessAnchorId, fallbackKind) {
   );
 }
 
-function buildCurrentBalanceSnapshot(balanceSnapshot, requestorKind) {
+function buildCurrentBalanceSnapshot(balanceSnapshot, requestorKind, demoMode = false) {
   const kind = normalizeRequestorKind(requestorKind) || null;
   const isLab = kind === "lab";
   const freeRequestCredit = Number(balanceSnapshot?.freeRequestCredit || 0);
@@ -94,6 +94,7 @@ function buildCurrentBalanceSnapshot(balanceSnapshot, requestorKind) {
     ),
     requestorKind: kind,
     showSettlementCredit: isLab,
+    demoMode: Boolean(demoMode),
   };
 }
 
@@ -353,6 +354,10 @@ export async function listMyCreditLedger(req, res) {
     anchorObjectId,
     req.user?.requestorKind,
   );
+  const demoModeAnchor = await BusinessAnchor.findById(anchorObjectId)
+    .select({ demoMode: 1 })
+    .lean();
+  const demoMode = Boolean(demoModeAnchor?.demoMode);
 
   let refIdIn = null;
   if (partnerNameRaw) {
@@ -863,6 +868,7 @@ export async function listMyCreditLedger(req, res) {
       currentBalanceSnapshot: buildCurrentBalanceSnapshot(
         balanceSnapshot,
         requestorKind,
+        demoMode,
       ),
       periodSpendSummary:
         page === 1 && requestorKind === "practice" && periodSpendSupply != null

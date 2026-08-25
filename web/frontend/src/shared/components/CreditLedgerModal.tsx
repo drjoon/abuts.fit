@@ -152,6 +152,11 @@ import {
   CREDIT_PAID_BUCKET_HINT,
   CREDIT_SETTLEMENT_BUCKET_HINT,
 } from "@/shared/legal/creditPrepaidCopy";
+import {
+  CREDIT_DEMO_BUCKET_LABEL,
+  CREDIT_LEDGER_DEMO_BALANCE_HINT,
+  CREDIT_LEDGER_DEMO_NOTICE_BODY,
+} from "@/shared/demo/demoModeCopy";
 
 type CreditLedgerType =
   | "CHARGE_PAID"
@@ -331,6 +336,7 @@ type CreditBalanceSnapshot = {
   settlementCredit?: number;
   requestorKind?: "practice" | "lab" | null;
   showSettlementCredit?: boolean;
+  demoMode?: boolean;
   updatedAt?: string | null;
 };
 
@@ -1499,6 +1505,8 @@ const REF_TYPE_LABELS: Record<string, string> = {
   WELCOME_BONUS: "환영 무료크레딧",
   FREE_SHIPPING_CREDIT: "환영 무료크레딧",
   SHIPPING_FREE_CREDIT: "환영 무료크레딧",
+  DEMO_CREDIT: "데모 크레딧",
+  DEMO_CREDIT_EXIT: "데모 크레딧 회수",
   FREE_CREDIT_CANCEL: "무료크레딧 취소",
   CREDIT_RECONCILE: "잔액 조정",
   SEED_REQUESTOR_CHARGE: "시드 초기 충전",
@@ -2340,6 +2348,18 @@ export const CreditLedgerModal = ({
 
   const showPeriodSpendCard =
     Boolean(currentBalanceSnapshot) && practiceLedgerUi;
+  const isDemoMode = Boolean(currentBalanceSnapshot?.demoMode);
+  const freeBucketLabel = isDemoMode ? CREDIT_DEMO_BUCKET_LABEL : "무료 충전";
+  const freeBucketLabelCompact = isDemoMode
+    ? CREDIT_DEMO_BUCKET_LABEL
+    : "무료크레딧";
+  const freeBucketHint = isDemoMode ? "데모 체험" : CREDIT_FREE_BUCKET_HINT;
+  const freeBucketTooltip = isDemoMode
+    ? CREDIT_LEDGER_DEMO_NOTICE_BODY
+    : CREDIT_LEDGER_FREE_NOTICE_BODY;
+  const balanceHintTooltip = isDemoMode
+    ? CREDIT_LEDGER_DEMO_BALANCE_HINT
+    : "충전금에서 소비액을 뺀 선불금 잔여액입니다.";
 
   const body = (
     <div
@@ -2362,7 +2382,7 @@ export const CreditLedgerModal = ({
                     value={currentBalanceTotal}
                     tone="primary"
                     hint="안내"
-                    hintTooltip="충전금에서 소비액을 뺀 선불금 잔여액입니다."
+                    hintTooltip={balanceHintTooltip}
                     onClick={() =>
                       openSummaryDrillDown({
                         title: "현재 잔액 내역",
@@ -2391,13 +2411,15 @@ export const CreditLedgerModal = ({
                   <SettlementEquationOperator symbol="+" />
                   <SettlementStatCard
                     className="min-w-[9.5rem] flex-1 sm:min-w-[10.5rem]"
-                    label="무료 충전"
+                    label={freeBucketLabel}
                     value={freeCreditTotal}
-                    hint={CREDIT_FREE_BUCKET_HINT}
-                    hintTooltip={CREDIT_LEDGER_FREE_NOTICE_BODY}
+                    hint={freeBucketHint}
+                    hintTooltip={freeBucketTooltip}
                     onClick={() =>
                       openSummaryDrillDown({
-                        title: "무료 충전 내역",
+                        title: isDemoMode
+                          ? "데모 충전 내역"
+                          : "무료 충전 내역",
                         filters: {
                           ...summaryFilterBase,
                           creditKind: "FREE",
@@ -2412,7 +2434,11 @@ export const CreditLedgerModal = ({
                     label="기공, 스토어"
                     value={Number(periodSpendSummary?.totalSpendSupply || 0)}
                     hint="안내"
-                    hintTooltip="선택한 기간에 지출한 기공료와 스토어 결제 합계입니다."
+                    hintTooltip={
+                      isDemoMode
+                        ? "데모 모드에서 앱 내 차감된 기공·스토어 합계입니다. 실제 기공비·커스텀어벗 생산비는 기공소에 직접 지급해 주세요."
+                        : "선택한 기간에 지출한 기공료와 스토어 결제 합계입니다."
+                    }
                     onClick={() =>
                       openSummaryDrillDown({
                         title: "기공, 스토어 내역",
@@ -2432,7 +2458,7 @@ export const CreditLedgerModal = ({
                   value={currentBalanceTotal}
                   tone="primary"
                   hint="안내"
-                  hintTooltip="충전금에서 소비액을 뺀 선불금 잔여액입니다."
+                  hintTooltip={balanceHintTooltip}
                   onClick={() =>
                     openSummaryDrillDown({
                       title: "현재 잔액 내역",
@@ -2456,13 +2482,15 @@ export const CreditLedgerModal = ({
                   }
                 />
                 <SettlementStatCard
-                  label="무료크레딧"
+                  label={freeBucketLabelCompact}
                   value={freeCreditTotal}
-                  hint={CREDIT_FREE_BUCKET_HINT}
-                  hintTooltip={CREDIT_LEDGER_FREE_NOTICE_BODY}
+                  hint={freeBucketHint}
+                  hintTooltip={freeBucketTooltip}
                   onClick={() =>
                     openSummaryDrillDown({
-                      title: "무료 크레딧 내역",
+                      title: isDemoMode
+                        ? "데모 크레딧 내역"
+                        : "무료 크레딧 내역",
                       filters: {
                         ...summaryFilterBase,
                         creditKind: "FREE",

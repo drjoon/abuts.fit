@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-26: 데모 모드 뱃지(탭 바 우측). 실사용 전환 확인.
 // - 2026-08-22: 정산 페이지 탭 순서 — 내역·통계·충전. 사이드바 라벨 정산.
 // - 2026-08-19: 크레딧 페이지 진입 시 사업자 me를 기다리지 않음. 충전 탭은 열 때만 마운트.
 // - 2026-08-14: 기공크레딧(정산) 탭 제거. 내역·충전만. ?tab=settlement → ledger.
@@ -26,7 +27,8 @@
 // - web/frontend/src/features/settings/tabs/CreditPaymentTab.tsx
 // - web/frontend/src/shared/components/RequestorWorkspaceHeader.tsx
 // - web/frontend/src/shared/ui/skeletons/RequestorCreditsPageSkeleton.tsx
-import { useMemo } from "react";
+// - web/frontend/src/shared/demo/DemoModeBadge.tsx
+import { useCallback, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { CreditCard, BarChart3, Wallet } from "lucide-react";
 import {
@@ -35,6 +37,7 @@ import {
 } from "@/features/components/SettingsScaffold";
 import { PaymentTab } from "@/features/settings/tabs/CreditPaymentTab";
 import { CreditLedgerModal } from "@/shared/components/CreditLedgerModal";
+import { DemoModeBadge } from "@/shared/demo/DemoModeBadge";
 import { useAuthStore } from "@/store/useAuthStore";
 
 import { CreditStatisticsTab } from "@/pages/requestor/credits/components/CreditStatisticsTab";
@@ -44,6 +47,7 @@ type TabKey = "ledger" | "stats" | "charge";
 export default function RequestorCreditsPage() {
   const { user } = useAuthStore();
   const [searchParams, setSearchParams] = useSearchParams();
+  const [ledgerKey, setLedgerKey] = useState(0);
   const tabFromUrl = (searchParams.get("tab") as TabKey | null) || "ledger";
   const activeTab: TabKey =
     tabFromUrl === "charge"
@@ -51,6 +55,10 @@ export default function RequestorCreditsPage() {
       : tabFromUrl === "stats"
         ? "stats"
         : "ledger";
+
+  const handleDemoExited = useCallback(() => {
+    setLedgerKey((n) => n + 1);
+  }, []);
 
   const tabs = useMemo<SettingsTabDef[]>(
     () => [
@@ -60,7 +68,11 @@ export default function RequestorCreditsPage() {
         icon: Wallet,
         content: (
           <div className="h-full min-h-0 overflow-hidden">
-            <CreditLedgerModal embedded className="h-full" />
+            <CreditLedgerModal
+              key={ledgerKey}
+              embedded
+              className="h-full"
+            />
           </div>
         ),
       },
@@ -89,7 +101,7 @@ export default function RequestorCreditsPage() {
           ) : null,
       },
     ],
-    [activeTab, user],
+    [activeTab, user, ledgerKey],
   );
 
   return (
@@ -100,6 +112,7 @@ export default function RequestorCreditsPage() {
         tabsMaxClassName="max-w-4xl"
         contentMaxClassName="max-w-6xl"
         fillHeight
+        tabsTrailing={<DemoModeBadge onExited={handleDemoExited} />}
         onTabChange={(next) => {
           const nextParams = new URLSearchParams(searchParams);
           nextParams.set("tab", next);

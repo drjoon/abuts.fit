@@ -61,6 +61,12 @@ router.post(
   businessController.setMyAutoMatchParticipation,
 );
 
+router.post(
+  "/me/exit-demo",
+  authorize(["requestor", "practice"]),
+  businessController.exitMyDemoMode,
+);
+
 router.put(
   "/me/request-settings",
   authorize(BUSINESS_ACCOUNT_ROLES),

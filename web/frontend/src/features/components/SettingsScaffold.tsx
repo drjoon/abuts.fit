@@ -38,6 +38,8 @@ type Props = {
   contentMaxClassName?: string;
   /** 탭 바 max-width. 미지정 시 contentMaxClassName과 동일(문의 페이지는 max-w-4xl). */
   tabsMaxClassName?: string;
+  /** 탭 바 오른쪽(예: 데모 뱃지). */
+  tabsTrailing?: ReactNode;
   /**
    * true면 min-h-screen 대신 부모 높이를 채움(대시보드 outlet).
    * 탭 콘텐츠 영역이 flex-1이 되어 스크롤/중앙 배치를 탭별로 제어 가능.
@@ -52,6 +54,7 @@ export const SettingsScaffold = ({
   highlightTabKey,
   contentMaxClassName = "max-w-4xl",
   tabsMaxClassName,
+  tabsTrailing,
   fillHeight = false,
 }: Props) => {
   const resolvedTabsMax = tabsMaxClassName ?? contentMaxClassName;
@@ -139,15 +142,27 @@ export const SettingsScaffold = ({
               fillHeight ? cn("shrink-0", resolvedTabsMax) : "contents",
             )}
           >
-            {/* 모바일: 탭이 넘치면 수평 스크롤. 좌우 패딩으로 첫/끝 탭이 잘리지 않게. */}
-            <div className="min-w-0 overscroll-x-contain scroll-pl-1 scroll-pr-1 px-1 scroll-x-bar-top sm:overflow-visible sm:px-0 sm:[transform:none] sm:[&>*]:[transform:none]">
-              <TabsList
-                className={cn(
-                  "inline-flex h-auto min-w-full w-max max-w-none justify-start gap-1.5 p-1.5 sm:flex sm:w-full sm:flex-wrap sm:justify-center",
-                )}
-              >
-                {tabTriggers}
-              </TabsList>
+            <div
+              className={cn(
+                "flex min-w-0 items-start gap-2",
+                tabsTrailing ? "sm:items-center" : null,
+              )}
+            >
+              {/* 모바일: 탭이 넘치면 수평 스크롤. 좌우 패딩으로 첫/끝 탭이 잘리지 않게. */}
+              <div className="min-w-0 flex-1 overscroll-x-contain scroll-pl-1 scroll-pr-1 px-1 scroll-x-bar-top sm:overflow-visible sm:px-0 sm:[transform:none] sm:[&>*]:[transform:none]">
+                <TabsList
+                  className={cn(
+                    "inline-flex h-auto min-w-full w-max max-w-none justify-start gap-1.5 p-1.5 sm:flex sm:w-full sm:flex-wrap sm:justify-center",
+                  )}
+                >
+                  {tabTriggers}
+                </TabsList>
+              </div>
+              {tabsTrailing ? (
+                <div className="flex shrink-0 items-center self-center pr-1 sm:pr-0">
+                  {tabsTrailing}
+                </div>
+              ) : null}
             </div>
           </div>
 

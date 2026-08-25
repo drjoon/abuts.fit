@@ -225,9 +225,17 @@ export async function getMyCreditBalance(req, res) {
   const scope = { businessAnchorId: String(identity.businessAnchorId || "") };
   const balanceData = await getBalanceBreakdown(scope, req.user?.requestorKind);
 
+  const anchor = await BusinessAnchor.findById(scope.businessAnchorId)
+    .select({ demoMode: 1, demoModeExitedAt: 1 })
+    .lean();
+
   return res.json({
     success: true,
-    data: balanceData,
+    data: {
+      ...balanceData,
+      demoMode: Boolean(anchor?.demoMode),
+      demoModeExitedAt: anchor?.demoModeExitedAt || null,
+    },
   });
 }
 

@@ -179,6 +179,7 @@ const FREE_CREDIT_CHARGE_REF_TYPES = new Set([
   "SHIPPING_FREE_CREDIT",
   "WELCOME_BONUS",
   "REQUEST_FREE_CREDIT",
+  "DEMO_CREDIT",
 ]);
 
 export function isFreeCreditChargeRefType(refType) {
@@ -189,12 +190,13 @@ export function isFreeCreditChargeRefType(refType) {
  * free credit grant uniqueKey 예:
  * - gl:free_credit_grant:<ObjectId>
  * - gl:gl:free_credit_grant:<ObjectId> (idempotencyKey에 gl:가 이미 있을 때)
+ * - gl:demo_credit_grant:<ObjectId>
  */
 export function parseFreeCreditGrantIdFromUniqueKey(uniqueKey) {
   const raw = String(uniqueKey || "")
     .trim()
     .replace(/^(gl:)+/i, "");
-  const m = raw.match(/^free_credit_grant:([a-f0-9]{24})$/i);
+  const m = raw.match(/^(?:free_credit_grant|demo_credit_grant):([a-f0-9]{24})$/i);
   return m ? m[1] : "";
 }
 
@@ -212,7 +214,9 @@ export function buildFreeCreditGrantReason(grant) {
   const grantType = String(grant?.type || "").trim().toUpperCase();
 
   let reason = "환영 무료크레딧";
-  if (
+  if (grantType === "DEMO_CREDIT") {
+    reason = "데모 크레딧";
+  } else if (
     grantType === "SHIPPING_FREE_CREDIT" ||
     grantType === "FREE_SHIPPING_CREDIT"
   ) {
