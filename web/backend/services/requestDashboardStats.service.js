@@ -2,7 +2,9 @@
 // - web/backend/rules.md
 // - web/backend/app.js
 // - web/backend/server.js
+// - web/backend/controllers/requests/common.requests.controller.js
 // change-log:
+// - 2026-08-25: 준비(requestCount) — PTX 디자인 미완료도 제외(가공작업 카드 productModeNe SSOT와 일치).
 // - 2026-08-20: 포장.발송 카운트는 우편함/박스 배정 건만 집계(그리드 SSOT).
 // - 2026-08-04: 진행 중 묶음배송/신속배송 건수 집계 추가.
 // - 2026-08-04: admin dashboard byStatus first-stage key SSOT를 '준비'로 통일 (구 '의뢰' 제거).
@@ -14,6 +16,37 @@ function buildHasMeaningfulValueExpr(fieldPath) {
     $and: [
       { $ne: [{ $ifNull: [fieldPath, null] }, null] },
       { $ne: [{ $ifNull: [fieldPath, ""] }, ""] },
+    ],
+  };
+}
+
+/**
+ * 가공작업 준비 큐에 올릴 수 있는 건인가.
+ * SSOT: common.requests.controller productModeNe=design_custom_abutment
+ * - 레거시 디자인 mode 제외
+ * - PTX 연동 + designCompletedAt 없음 → 디자인 대기, 준비 배지/카드에서 제외
+ */
+function buildIsWorksheetReadyQueueRequestExpr() {
+  return {
+    $and: [
+      {
+        $ne: [
+          { $ifNull: ["$caseInfos.productMode", ""] },
+          "design_custom_abutment",
+        ],
+      },
+      {
+        $or: [
+          {
+            $not: [
+              buildHasMeaningfulValueExpr(
+                "$partnerBilling.relatedPracticeTransferId",
+              ),
+            ],
+          },
+          { $eq: [{ $type: "$designCompletedAt" }, "date"] },
+        ],
+      },
     ],
   };
 }
@@ -260,21 +293,14 @@ export async function getAssignedLikeDashboardSummary({
                 ],
               },
             },
-            // 준비(request) 카운트: 디자인+생산은 디자인 페이지 소관이라 가공작업 배지에서 제외
+            // 준비(request) 카운트: 가공작업 준비 카드 목록(productModeNe)과 동일 제외
             requestCount: {
               $sum: {
                 $cond: [
                   {
                     $and: [
                       { $eq: ["$normalizedStage", "request"] },
-                      {
-                        $ne: [
-                          {
-                            $ifNull: ["$caseInfos.productMode", ""],
-                          },
-                          "design_custom_abutment",
-                        ],
-                      },
+                      buildIsWorksheetReadyQueueRequestExpr(),
                     ],
                   },
                   1,
