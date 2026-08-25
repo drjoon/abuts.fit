@@ -18,7 +18,7 @@ import {
   CREDIT_LEDGER_DEMO_NOTICE_BODY,
   DEMO_MODE_BADGE_LABEL,
   DEMO_MODE_EXIT_CONFIRM_LABEL,
-  DEMO_MODE_EXIT_DESCRIPTION,
+  DEMO_MODE_EXIT_DESCRIPTION_LINES,
   DEMO_MODE_EXIT_TITLE,
 } from "./demoModeCopy";
 import { useDemoMode } from "./useDemoMode";
@@ -67,7 +67,16 @@ export function DemoModeBadge({ className, onExited }: Props) {
       <ConfirmDialog
         open={confirmOpen}
         title={DEMO_MODE_EXIT_TITLE}
-        description={DEMO_MODE_EXIT_DESCRIPTION}
+        panelClassName="max-w-xl"
+        description={
+          <div className="space-y-1.5 leading-relaxed">
+            {DEMO_MODE_EXIT_DESCRIPTION_LINES.map((line) => (
+              <p key={line} className="whitespace-nowrap">
+                {line}
+              </p>
+            ))}
+          </div>
+        }
         confirmLabel={DEMO_MODE_EXIT_CONFIRM_LABEL}
         cancelLabel="취소"
         confirmTone="primary"

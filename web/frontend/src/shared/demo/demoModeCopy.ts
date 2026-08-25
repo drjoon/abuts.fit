@@ -11,8 +11,15 @@ export const DEMO_MODE_BADGE_LABEL = "데모";
 
 export const DEMO_MODE_EXIT_TITLE = "실사용으로 전환할까요?";
 
+/** 실사용 전환 확인 본문(줄 단위). ConfirmDialog 에 줄바꿈으로 렌더. */
+export const DEMO_MODE_EXIT_DESCRIPTION_LINES = [
+  "남은 데모 크레딧은 회수됩니다.",
+  "이후 기공비·커스텀어벗 생산비는 유료 크레딧으로 결제됩니다.",
+  "전환 후에는 데모 모드로 되돌릴 수 없습니다.",
+] as const;
+
 export const DEMO_MODE_EXIT_DESCRIPTION =
-  "실사용으로 전환하면 데모 뱃지가 사라지고, 남은 데모 크레딧은 회수됩니다. 이후 기공비·커스텀어벗 생산비는 앱 내 유료 크레딧(거래 선수금)으로 결제됩니다. 전환 후에는 데모 모드로 되돌릴 수 없습니다.";
+  DEMO_MODE_EXIT_DESCRIPTION_LINES.join("\n");
 
 export const DEMO_MODE_EXIT_CONFIRM_LABEL = "실사용으로 전환";
 
