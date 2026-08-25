@@ -12,6 +12,11 @@
 import User from "../../models/user.model.js";
 import SignupVerification from "../../models/signupVerification.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
+import {
+  anchorUsesInternalDepartments,
+  ensureAdminDefaultDepartments,
+  resolveDepartmentLabel,
+} from "../../utils/internalDepartments.util.js";
 
 import {
   generateToken,
@@ -1989,16 +1994,48 @@ async function listColleagues(req, res) {
     if (!myAnchorId || !Types.ObjectId.isValid(myAnchorId)) {
       return res.status(200).json({
         success: true,
-        data: { colleagues: [] },
+        data: { colleagues: [], usesDepartments: false },
       });
     }
 
-    const rows = await User.find({
+    let anchor = await BusinessAnchor.findById(myAnchorId).select({
+      businessType: 1,
+      internalDepartments: 1,
+    });
+    if (anchor && String(anchor.businessType || "") === "admin") {
+      anchor = await ensureAdminDefaultDepartments(anchor);
+    }
+
+    const usesDepartments = anchorUsesInternalDepartments(anchor);
+    const myDepartmentId = req.user?.internalDepartmentId
+      ? String(req.user.internalDepartmentId)
+      : "";
+    const myDepartmentName = usesDepartments
+      ? resolveDepartmentLabel(anchor, myDepartmentId)
+      : "";
+
+    if (usesDepartments && !myDepartmentId) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          colleagues: [],
+          usesDepartments: true,
+          departmentName: "",
+        },
+      });
+    }
+
+    const query = {
       businessAnchorId: new Types.ObjectId(myAnchorId),
       _id: { $ne: req.user._id },
       active: true,
       approvedAt: { $ne: null },
-    })
+    };
+    if (usesDepartments && myDepartmentId) {
+      query.internalDepartmentId = new Types.ObjectId(myDepartmentId);
+    }
+
+    const rows = await User.find(query)
       .select({
         name: 1,
         email: 1,
@@ -2006,6 +2043,7 @@ async function listColleagues(req, res) {
         subRole: 1,
         profileImage: 1,
         business: 1,
+        internalDepartmentId: 1,
       })
       .sort({ subRole: 1, name: 1 })
       .lean();
@@ -2019,6 +2057,12 @@ async function listColleagues(req, res) {
       profileImage:
         typeof row.profileImage === "string" ? row.profileImage : null,
       companyName: String(row.business || ""),
+      internalDepartmentId: row.internalDepartmentId
+        ? String(row.internalDepartmentId)
+        : null,
+      departmentName: usesDepartments
+        ? resolveDepartmentLabel(anchor, row.internalDepartmentId)
+        : "",
     }));
 
     // owner를 staff보다 앞에 두기 (subRole 알파벳 정렬로는 owner가 뒤로 감)
@@ -2031,7 +2075,11 @@ async function listColleagues(req, res) {
 
     return res.status(200).json({
       success: true,
-      data: { colleagues },
+      data: {
+        colleagues,
+        usesDepartments,
+        departmentName: myDepartmentName,
+      },
     });
   } catch (error) {
     return res.status(500).json({
@@ -2120,6 +2168,44 @@ async function switchAccount(req, res) {
         success: false,
         message: "같은 사업자 소속 계정만 전환할 수 있습니다.",
       });
+    }
+
+    let anchor = await BusinessAnchor.findById(myAnchorId).select({
+      businessType: 1,
+      internalDepartments: 1,
+    });
+    if (anchor && String(anchor.businessType || "") === "admin") {
+      anchor = await ensureAdminDefaultDepartments(anchor);
+    }
+    if (anchorUsesInternalDepartments(anchor)) {
+      const myDepartmentId = req.user?.internalDepartmentId
+        ? String(req.user.internalDepartmentId)
+        : "";
+      const targetDepartmentId = target.internalDepartmentId
+        ? String(target.internalDepartmentId)
+        : "";
+      if (
+        !myDepartmentId ||
+        !targetDepartmentId ||
+        myDepartmentId !== targetDepartmentId
+      ) {
+        await logSecurityEvent({
+          userId: req.user._id,
+          action: "ACCOUNT_SWITCH_FAILED_DIFFERENT_DEPARTMENT",
+          severity: "high",
+          status: "blocked",
+          details: {
+            targetUserId,
+            myDepartmentId,
+            targetDepartmentId,
+          },
+          ipAddress: clientIp,
+        });
+        return res.status(403).json({
+          success: false,
+          message: "같은 부서 소속 계정만 전환할 수 있습니다.",
+        });
+      }
     }
 
     if (!target.password) {

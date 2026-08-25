@@ -677,6 +677,17 @@ const businessAnchorSchema = new mongoose.Schema(
         index: true,
       },
     ],
+    /** 어벗츠(admin) 임직원 부서. related: business.department.controller.js */
+    internalDepartments: {
+      type: [
+        {
+          name: { type: String, required: true, trim: true },
+          sortOrder: { type: Number, default: 0 },
+          createdAt: { type: Date, default: Date.now },
+        },
+      ],
+      default: [],
+    },
     joinRequests: [
       {
         user: {

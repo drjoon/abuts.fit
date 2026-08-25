@@ -154,4 +154,31 @@ router.post(
   businessController.rejectJoinRequest,
 );
 
+// 어벗츠(admin) 임직원 부서
+router.get(
+  "/departments",
+  authorize(["admin"]),
+  businessController.listDepartments,
+);
+router.post(
+  "/departments",
+  authorize(["admin"]),
+  businessController.createDepartment,
+);
+router.patch(
+  "/departments/:departmentId",
+  authorize(["admin"]),
+  businessController.updateDepartment,
+);
+router.delete(
+  "/departments/:departmentId",
+  authorize(["admin"]),
+  businessController.deleteDepartment,
+);
+router.patch(
+  "/staff/:userId/department",
+  authorize(["admin"]),
+  businessController.assignStaffDepartment,
+);
+
 export default router;

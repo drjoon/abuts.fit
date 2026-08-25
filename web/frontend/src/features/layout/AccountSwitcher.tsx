@@ -38,11 +38,17 @@ export type ColleagueAccount = {
   subRole?: string | null;
   profileImage?: string | null;
   companyName?: string;
+  internalDepartmentId?: string | null;
+  departmentName?: string;
 };
 
 type ColleaguesApiResponse = {
   success?: boolean;
-  data?: { colleagues?: ColleagueAccount[] };
+  data?: {
+    colleagues?: ColleagueAccount[];
+    usesDepartments?: boolean;
+    departmentName?: string;
+  };
   message?: string;
 };
 
@@ -66,6 +72,8 @@ export function AccountSwitcherMenuSection({
   const { user, token } = useAuthStore();
   const [colleagues, setColleagues] = useState<ColleagueAccount[]>([]);
   const [loading, setLoading] = useState(false);
+  const [usesDepartments, setUsesDepartments] = useState(false);
+  const [departmentName, setDepartmentName] = useState("");
 
   useEffect(() => {
     if (!menuOpen || !token || !user?.businessAnchorId) {
@@ -86,8 +94,14 @@ export function AccountSwitcherMenuSection({
           ? res.data.data.colleagues
           : [];
         setColleagues(list);
+        setUsesDepartments(Boolean(res.data?.data?.usesDepartments));
+        setDepartmentName(String(res.data?.data?.departmentName || ""));
       } catch {
-        if (!cancelled) setColleagues([]);
+        if (!cancelled) {
+          setColleagues([]);
+          setUsesDepartments(false);
+          setDepartmentName("");
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -103,11 +117,23 @@ export function AccountSwitcherMenuSection({
     return null;
   }
 
+  const sectionLabel = usesDepartments
+    ? departmentName
+      ? `같은 부서 계정 (${departmentName})`
+      : "같은 부서 계정"
+    : "같은 사업자 계정";
+
+  const emptyMessage = usesDepartments
+    ? departmentName
+      ? "전환할 다른 계정이 없습니다."
+      : "부서가 할당되지 않아 다른 계정을 표시할 수 없습니다."
+    : "전환할 다른 계정이 없습니다.";
+
   return (
     <>
       <DropdownMenuLabel className="flex items-center gap-1.5 text-xs text-muted-foreground font-normal">
         <Users className="h-3.5 w-3.5" />
-        같은 사업자 계정
+        {sectionLabel}
       </DropdownMenuLabel>
       {loading ? (
         <div className="flex items-center justify-center py-3 text-muted-foreground">
@@ -115,7 +141,7 @@ export function AccountSwitcherMenuSection({
         </div>
       ) : colleagues.length === 0 ? (
         <div className="px-2 py-2 text-xs text-muted-foreground">
-          전환할 다른 계정이 없습니다.
+          {emptyMessage}
         </div>
       ) : (
         colleagues.map((colleague) => {

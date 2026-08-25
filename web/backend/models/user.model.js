@@ -120,6 +120,12 @@ const userSchema = new mongoose.Schema(
       default: null,
       index: true,
     },
+    /** 어벗츠(admin) 임직원 부서 — BusinessAnchor.internalDepartments._id */
+    internalDepartmentId: {
+      type: mongoose.Schema.Types.ObjectId,
+      default: null,
+      index: true,
+    },
     profileImage: {
       type: String,
       default: "",

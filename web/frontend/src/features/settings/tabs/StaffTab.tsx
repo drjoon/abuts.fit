@@ -12,11 +12,25 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
 import { Info, UserCheck, UserPlus, Users } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 type StaffMember = {
   _id: string;
   name?: string;
   email?: string;
+  internalDepartmentId?: string | null;
+  departmentName?: string;
+};
+
+type DepartmentOption = {
+  _id: string;
+  name: string;
 };
 
 type PendingJoinRequest = {
@@ -62,6 +76,11 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
   >([]);
   const [loading, setLoading] = useState(false);
   const [actionUserId, setActionUserId] = useState<string>("");
+  const [usesDepartments, setUsesDepartments] = useState(false);
+  const [departments, setDepartments] = useState<DepartmentOption[]>([]);
+  const [pendingDepartmentByUserId, setPendingDepartmentByUserId] = useState<
+    Record<string, string>
+  >({});
 
   const mockHeaders = useMemo(() => {
     return {} as Record<string, string>;
@@ -71,6 +90,8 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
     if (businessTypeOverride) return businessTypeOverride;
     return resolveBusinessType(user?.role || userData?.role, "requestor");
   }, [businessTypeOverride, user?.role, userData?.role]);
+
+  const isAdminBusiness = businessType === "admin";
 
   const refreshMembership = useCallback(async () => {
     if (!token) return;
@@ -118,12 +139,46 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
             _id: String(r._id),
             name: r.name,
             email: r.email,
+            internalDepartmentId: r.internalDepartmentId
+              ? String(r.internalDepartmentId)
+              : null,
+            departmentName: r.departmentName ? String(r.departmentName) : "",
           })),
       );
+      setUsesDepartments(Boolean(data?.usesDepartments));
       return;
     }
     setRepresentatives([]);
   }, [mockHeaders, businessType, token]);
+
+  const refreshDepartments = useCallback(async () => {
+    if (!token || !isAdminBusiness) {
+      setDepartments([]);
+      return;
+    }
+    const res = await request<any>({
+      path: `/api/businesses/departments?businessType=${encodeURIComponent(
+        businessType,
+      )}`,
+      method: "GET",
+      token,
+      headers: mockHeaders,
+    });
+    if (!res.ok) {
+      setDepartments([]);
+      return;
+    }
+    const body: any = res.data || {};
+    const data = body.data || body;
+    setDepartments(
+      Array.isArray(data?.departments)
+        ? data.departments.map((row: any) => ({
+            _id: String(row._id),
+            name: String(row.name || ""),
+          }))
+        : [],
+    );
+  }, [businessType, isAdminBusiness, mockHeaders, token]);
 
   const refreshStaff = useCallback(async () => {
     if (!token) return;
@@ -142,6 +197,7 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
     const body: any = res.data || {};
     const data = body.data || body;
     setStaff(Array.isArray(data?.staffMembers) ? data.staffMembers : []);
+    setUsesDepartments(Boolean(data?.usesDepartments));
   }, [mockHeaders, businessType, token]);
 
   const refreshPending = useCallback(async () => {
@@ -186,13 +242,80 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
           refreshRepresentatives(),
           refreshStaff(),
           refreshPending(),
+          refreshDepartments(),
         ]);
       } finally {
         setLoading(false);
       }
     };
     load();
-  }, [membership, refreshPending, refreshRepresentatives, refreshStaff, token]);
+  }, [
+    membership,
+    refreshDepartments,
+    refreshPending,
+    refreshRepresentatives,
+    refreshStaff,
+    token,
+  ]);
+
+  const handleAssignDepartment = async (
+    userId: string,
+    departmentId: string,
+  ) => {
+    try {
+      if (!token || !userId) return;
+      setActionUserId(userId);
+      const res = await request<any>({
+        path: `/api/businesses/staff/${userId}/department?businessType=${encodeURIComponent(
+          businessType,
+        )}`,
+        method: "PATCH",
+        token,
+        jsonBody: { departmentId, businessType },
+      });
+      if (!res.ok) {
+        const message = String((res.data as any)?.message || "").trim();
+        toast({
+          title: "부서 변경에 실패했어요",
+          description: message || "잠시 후 다시 시도해주세요.",
+          variant: "destructive",
+          duration: 3000,
+        });
+        return;
+      }
+      toast({ title: "부서가 변경되었습니다" });
+      await Promise.all([refreshStaff(), refreshRepresentatives()]);
+    } finally {
+      setActionUserId("");
+    }
+  };
+
+  const renderDepartmentControl = (
+    memberId: string,
+    currentDepartmentId?: string | null,
+    compact = false,
+  ) => {
+    if (!usesDepartments || departments.length === 0) return null;
+    const value = currentDepartmentId ? String(currentDepartmentId) : "";
+    return (
+      <Select
+        value={value || undefined}
+        disabled={actionUserId === memberId}
+        onValueChange={(next) => void handleAssignDepartment(memberId, next)}
+      >
+        <SelectTrigger className={compact ? "h-8 text-xs" : "h-9"}>
+          <SelectValue placeholder="부서 선택" />
+        </SelectTrigger>
+        <SelectContent>
+          {departments.map((dept) => (
+            <SelectItem key={dept._id} value={dept._id}>
+              {dept.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    );
+  };
 
   const handleRemoveStaff = async (userId: string) => {
     try {
@@ -236,13 +359,28 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
       const id = String(userId || "").trim();
       if (!id) return;
 
+      const departmentId = pendingDepartmentByUserId[id] || "";
+      if (usesDepartments && !departmentId) {
+        toast({
+          title: "부서를 선택해주세요",
+          description: "승인 전에 배치할 부서를 선택해야 합니다.",
+          variant: "destructive",
+          duration: 3000,
+        });
+        return;
+      }
+
       setActionUserId(id);
       const res = await request<any>({
         path: `/api/businesses/join-requests/${id}/approve`,
         method: "POST",
         token,
         headers: mockHeaders,
-        jsonBody: { role, businessType },
+        jsonBody: {
+          role,
+          businessType,
+          ...(usesDepartments ? { departmentId } : {}),
+        },
       });
 
       if (!res.ok) {
@@ -352,6 +490,7 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
         </CardTitle>
         <CardDescription className="text-[13px] leading-relaxed">
           대표·직원 계정과 가입 신청을 관리합니다.
+          {usesDepartments ? " 어벗츠 임직원은 부서별로 배치합니다." : ""}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
@@ -429,8 +568,22 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
                                 {email}
                               </div>
                             ) : null}
+                            {entry.departmentName ? (
+                              <div className="mt-1 text-xs text-primary-strong">
+                                {entry.departmentName}
+                              </div>
+                            ) : null}
                           </div>
                         </div>
+                        {usesDepartments ? (
+                          <div className="px-3.5 pb-3">
+                            {renderDepartmentControl(
+                              entry._id,
+                              entry.internalDepartmentId,
+                              true,
+                            )}
+                          </div>
+                        ) : null}
                       </div>
                     );
                   })}
@@ -471,6 +624,11 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
                                   {email}
                                 </div>
                               ) : null}
+                              {m.departmentName ? (
+                                <div className="mt-1 text-xs text-primary-strong">
+                                  {m.departmentName}
+                                </div>
+                              ) : null}
                               {actionUserId === m._id ? (
                                 <div className="mt-0.5 text-xs text-muted-foreground">
                                   처리 중...
@@ -478,6 +636,15 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
                               ) : null}
                             </div>
                           </div>
+                          {usesDepartments ? (
+                            <div className="px-3.5 pb-3">
+                              {renderDepartmentControl(
+                                m._id,
+                                m.internalDepartmentId,
+                                true,
+                              )}
+                            </div>
+                          ) : null}
                         </div>
                       </FunctionalItemCard>
                     );
@@ -566,6 +733,30 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
                                 ) : null}
                               </div>
                             </div>
+                            {usesDepartments ? (
+                              <div className="space-y-2">
+                                <Select
+                                  value={pendingDepartmentByUserId[userId] || undefined}
+                                  onValueChange={(next) =>
+                                    setPendingDepartmentByUserId((prev) => ({
+                                      ...prev,
+                                      [userId]: next,
+                                    }))
+                                  }
+                                >
+                                  <SelectTrigger className="h-8 text-xs">
+                                    <SelectValue placeholder="승인 부서 선택" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {departments.map((dept) => (
+                                      <SelectItem key={dept._id} value={dept._id}>
+                                        {dept.name}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            ) : null}
                             <div className="flex gap-2">
                               <Button
                                 type="button"

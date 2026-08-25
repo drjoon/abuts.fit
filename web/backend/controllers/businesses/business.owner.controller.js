@@ -10,6 +10,14 @@ import {
   resolvePrimaryOwnedBusiness,
 } from "./business.utils.js";
 import { assertBusinessRole } from "./businessRole.util.js";
+import {
+  enrichMemberWithDepartment,
+  loadAnchorDepartmentsForStaff,
+} from "./business.department.controller.js";
+import {
+  findDepartmentById,
+  normalizeDepartmentName,
+} from "../../utils/internalDepartments.util.js";
 
 export async function getPendingJoinRequestsForOwner(req, res) {
   try {
@@ -82,44 +90,42 @@ export async function getRepresentatives(req, res) {
     const full = await BusinessAnchor.findById(anchor._id)
       .populate({
         path: "primaryContactUserId",
-        select: "name email",
+        select: "name email internalDepartmentId",
         match: { deletedAt: null },
       })
       .populate({
         path: "owners",
-        select: "name email",
+        select: "name email internalDepartmentId",
         match: { deletedAt: null },
       })
-      .select({ name: 1, primaryContactUserId: 1, owners: 1 })
+      .select({ name: 1, primaryContactUserId: 1, owners: 1, businessType: 1 })
       .lean();
+
+    const { usesDepartments, departmentMap } = await loadAnchorDepartmentsForStaff(
+      full?._id || anchor._id,
+    );
 
     const representatives = [];
     const seen = new Set();
-    if (full?.primaryContactUserId?._id || full?.primaryContactUserId) {
-      const id = String(
-        full.primaryContactUserId._id || full.primaryContactUserId,
+    const pushRep = (row) => {
+      if (!row) return;
+      const id = String(row._id || row);
+      if (!id || seen.has(id)) return;
+      seen.add(id);
+      representatives.push(
+        usesDepartments
+          ? enrichMemberWithDepartment(row, departmentMap)
+          : {
+              _id: id,
+              name: String(row.name || ""),
+              email: String(row.email || ""),
+            },
       );
-      if (id) {
-        seen.add(id);
-        representatives.push({
-          _id: id,
-          name: String(full.primaryContactUserId.name || ""),
-          email: String(full.primaryContactUserId.email || ""),
-        });
-      }
-    }
+    };
+
+    pushRep(full?.primaryContactUserId);
     if (Array.isArray(full?.owners)) {
-      full.owners.forEach((c) => {
-        if (!c) return;
-        const id = String(c._id || c);
-        if (!id || seen.has(id)) return;
-        seen.add(id);
-        representatives.push({
-          _id: id,
-          name: String(c.name || ""),
-          email: String(c.email || ""),
-        });
-      });
+      full.owners.forEach((c) => pushRep(c));
     }
 
     return res.json({
@@ -128,6 +134,7 @@ export async function getRepresentatives(req, res) {
         businessId: String(full?._id || anchor._id),
         businessName: String(full?.name || ""),
         representatives,
+        usesDepartments,
       },
     });
   } catch (error) {
@@ -317,20 +324,26 @@ export async function getMyStaffMembers(req, res) {
     })
       .populate({
         path: "members",
-        select: "name email",
+        select: "name email internalDepartmentId",
         match: { deletedAt: null },
       })
       .populate({
         path: "primaryContactUserId",
-        select: "name email",
+        select: "name email internalDepartmentId",
         match: { deletedAt: null },
       })
       .populate({
         path: "owners",
-        select: "name email",
+        select: "name email internalDepartmentId",
         match: { deletedAt: null },
       })
-      .select({ name: 1, primaryContactUserId: 1, owners: 1, members: 1 })
+      .select({
+        name: 1,
+        primaryContactUserId: 1,
+        owners: 1,
+        members: 1,
+        businessType: 1,
+      })
       .lean();
 
     if (!anchor) {
@@ -339,6 +352,10 @@ export async function getMyStaffMembers(req, res) {
         message: "대표자 계정만 조회할 수 있습니다.",
       });
     }
+
+    const { usesDepartments, departmentMap } = await loadAnchorDepartmentsForStaff(
+      anchor._id,
+    );
 
     const ownerId = String(
       (anchor.primaryContactUserId && anchor.primaryContactUserId._id) ||
@@ -352,28 +369,31 @@ export async function getMyStaffMembers(req, res) {
     const seenRepIds = new Set();
     if (ownerId) {
       seenRepIds.add(ownerId);
-      representatives.push({
-        _id: ownerId,
-        name: String(
-          (anchor.primaryContactUserId && anchor.primaryContactUserId.name) ||
-            "",
-        ),
-        email: String(
-          (anchor.primaryContactUserId && anchor.primaryContactUserId.email) ||
-            "",
-        ),
-      });
+      const row = anchor.primaryContactUserId;
+      representatives.push(
+        usesDepartments
+          ? enrichMemberWithDepartment(row, departmentMap)
+          : {
+              _id: ownerId,
+              name: String((row && row.name) || ""),
+              email: String((row && row.email) || ""),
+            },
+      );
     }
     if (Array.isArray(anchor.owners)) {
       anchor.owners.forEach((c) => {
         const id = String((c && c._id) || c || "");
         if (!id || seenRepIds.has(id)) return;
         seenRepIds.add(id);
-        representatives.push({
-          _id: id,
-          name: String((c && c.name) || ""),
-          email: String((c && c.email) || ""),
-        });
+        representatives.push(
+          usesDepartments
+            ? enrichMemberWithDepartment(c, departmentMap)
+            : {
+                _id: id,
+                name: String((c && c.name) || ""),
+                email: String((c && c.email) || ""),
+              },
+        );
       });
     }
 
@@ -384,11 +404,15 @@ export async function getMyStaffMembers(req, res) {
       anchor.members.forEach((m) => {
         const id = String((m && m._id) || m || "");
         if (!id || allRepIds.has(id)) return;
-        staffMembers.push({
-          _id: id,
-          name: String((m && m.name) || ""),
-          email: String((m && m.email) || ""),
-        });
+        staffMembers.push(
+          usesDepartments
+            ? enrichMemberWithDepartment(m, departmentMap)
+            : {
+                _id: id,
+                name: String((m && m.name) || ""),
+                email: String((m && m.email) || ""),
+              },
+        );
       });
     }
 
@@ -399,6 +423,7 @@ export async function getMyStaffMembers(req, res) {
         businessName: String(anchor.name || ""),
         representatives,
         staffMembers,
+        usesDepartments,
       },
     });
   } catch (error) {
@@ -456,6 +481,29 @@ export async function approveJoinRequest(req, res) {
       });
     }
 
+    let departmentId = null;
+    if (businessType === "admin") {
+      const departmentIdRaw = req.body?.departmentId;
+      const departmentIdStr = String(departmentIdRaw || "").trim();
+      if (!departmentIdStr || !Types.ObjectId.isValid(departmentIdStr)) {
+        return res.status(400).json({
+          success: false,
+          message: "승인할 부서를 선택해주세요.",
+        });
+      }
+      const anchorWithDepartments = await BusinessAnchor.findById(anchor._id);
+      if (
+        !anchorWithDepartments ||
+        !findDepartmentById(anchorWithDepartments, departmentIdStr)
+      ) {
+        return res.status(404).json({
+          success: false,
+          message: "선택한 부서를 찾을 수 없습니다.",
+        });
+      }
+      departmentId = new Types.ObjectId(departmentIdStr);
+    }
+
     joinRequest.status = "approved";
 
     if (!Array.isArray(anchor.members)) anchor.members = [];
@@ -465,17 +513,36 @@ export async function approveJoinRequest(req, res) {
 
     await anchor.save();
 
+    const userUpdate = {
+      businessAnchorId: anchor._id,
+      business: anchor.name,
+      subRole: "staff",
+      onboardingWizardCompleted: true,
+    };
+    if (departmentId) {
+      userUpdate.internalDepartmentId = departmentId;
+    }
+
     // 직원으로 승인 및 온보딩 완료 처리
     await User.findByIdAndUpdate(userId, {
-      $set: {
-        businessAnchorId: anchor._id,
-        business: anchor.name,
-        subRole: "staff",
-        onboardingWizardCompleted: true,
-      },
+      $set: userUpdate,
     });
 
-    return res.json({ success: true, data: { approved: true } });
+    return res.json({
+      success: true,
+      data: {
+        approved: true,
+        departmentId: departmentId ? String(departmentId) : null,
+        departmentName: departmentId
+          ? normalizeDepartmentName(
+              findDepartmentById(
+                await BusinessAnchor.findById(anchor._id),
+                String(departmentId),
+              )?.name,
+            )
+          : "",
+      },
+    });
   } catch (error) {
     return res.status(500).json({
       success: false,

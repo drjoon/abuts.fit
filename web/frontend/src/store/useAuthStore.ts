@@ -57,6 +57,7 @@ export interface User {
   createdAt?: string | null;
   mockUserId?: string | null;
   businessAnchorId?: string | null;
+  internalDepartmentId?: string | null;
   businessVerified?: boolean;
   onboardingWizardCompleted?: boolean;
   signupChannel?: string | null;
@@ -122,6 +123,9 @@ const normalizeApiUser = (u: unknown): User | null => {
     createdAt: row.createdAt ? String(row.createdAt) : null,
     mockUserId: row.mockUserId ? String(row.mockUserId) : null,
     businessAnchorId: row.businessAnchorId ? String(row.businessAnchorId) : null,
+    internalDepartmentId: row.internalDepartmentId
+      ? String(row.internalDepartmentId)
+      : null,
     businessVerified: Boolean(row.businessVerified),
     onboardingWizardCompleted: Boolean(row.onboardingWizardCompleted),
     signupChannel: row.signupChannel ? String(row.signupChannel) : null,

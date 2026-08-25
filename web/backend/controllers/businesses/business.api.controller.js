@@ -5,6 +5,7 @@
 import * as businessController from "./business.controller.js";
 import * as memberController from "./business.member.controller.js";
 import * as ownerController from "./business.owner.controller.js";
+import * as departmentController from "./business.department.controller.js";
 
 export const {
   getMyBusiness,
@@ -40,6 +41,14 @@ export const {
   rejectJoinRequest,
 } = ownerController;
 
+export const {
+  listDepartments,
+  createDepartment,
+  updateDepartment,
+  deleteDepartment,
+  assignStaffDepartment,
+} = departmentController;
+
 export default {
   getMyBusiness,
   searchBusinesses,
@@ -64,4 +73,9 @@ export default {
   removeMember,
   approveJoinRequest,
   rejectJoinRequest,
+  listDepartments,
+  createDepartment,
+  updateDepartment,
+  deleteDepartment,
+  assignStaffDepartment,
 };
