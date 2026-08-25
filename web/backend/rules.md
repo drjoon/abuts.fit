@@ -524,7 +524,9 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - practice 전송 설정 SSOT:
   - 저장 위치: `BusinessAnchor.practiceTransferSettings`
   - API: `GET/POST /api/practice/transfers/settings`
-  - 필드: `arrivalDefaultDays`, `prosthesisTypes`, `memoSnippets`, `promoNoticeDismissedAt`, `skipDesignConfirm`, `skipJig`(레거시·미사용), `defaultAbutmentProductMode`, `implantFavorites`(환봉 요청 시 `roundBar`/`adopted`/`roundBarRequestId`)
+  - 필드: `arrivalDefaultDays`(계정 전역 fallback), `labArrivalDefaults[{ labAnchorId, labName, arrivalDefaultDays, updatedAt }]`(기공소별 주문→치과도착 달력 일수), `prosthesisTypes`, `memoSnippets`, `promoNoticeDismissedAt`, `skipDesignConfirm`, `skipJig`(레거시·미사용), `defaultAbutmentProductMode`, `implantFavorites`(환봉 요청 시 `roundBar`/`adopted`/`roundBarRequestId`)
+  - `labArrivalDefaults`: 기공의뢰에서 기공소 선택 시 해당 일수로 주문-치과도착 적용. 날짜 변경 시 선택 기공소에 upsert(`labArrivalDefault` 단건 또는 `labArrivalDefaults` 전체). 미등록 기공소는 `arrivalDefaultDays`.
+  - UI: 설정 `/dashboard/practice-settings?tab=transfer`, 기공의뢰 작성 화면에서 자동 저장.
   - `memoSnippets`는 의뢰 메모 문장 즐겨찾기(최대 40개, 공백/중복 제거)이며 프론트는 로컬스토리지에도 미러링합니다.
   - `defaultAbutmentProductMode`: 커스텀어벗 설정 모달 계정 기본값. 미설정·신규는 `design_custom_abutment`(디자인+생산). 모달에서 바꾸면 저장하고 다음 모달 초기값으로 씀. 치아별 스냅샷은 `toothWorks.abutmentProductMode`(레거시 미설정=생산만).
   - 관련 파일:
@@ -532,6 +534,9 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - `models/businessAnchor.model.js`
     - `web/frontend/src/pages/practice/PracticeFileTransferPage.tsx`
     - `web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx`
+    - `web/frontend/src/shared/practice/labArrivalDefaults.ts`
+    - `web/frontend/src/pages/practice/PracticeSettingsPage.tsx`
+    - `web/frontend/src/pages/practice/components/PracticeTransferArrivalSettingsTab.tsx`
 
 - 환봉방식 커스텀어벗(제조사 추가 요청) SSOT:
   - 치과 프리셋 편집에서 카탈로그에 없는 제조사를 요청. 타입은 `헥스(사이즈 미정)` 고정.

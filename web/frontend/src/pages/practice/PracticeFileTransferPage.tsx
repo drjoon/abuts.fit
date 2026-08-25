@@ -333,6 +333,13 @@ import {
   shouldEnablePracticeRushProcessing,
 } from "@/shared/practice/practiceWorkPeriod";
 import {
+  normalizeLabArrivalDefaults,
+  resolveLabArrivalDefaultDays,
+  upsertLabArrivalDefault,
+  type PracticeLabArrivalDefault,
+} from "@/shared/practice/labArrivalDefaults";
+// - 2026-08-25: labArrivalDefaults — 기공소별 주문→치과도착 기본 일수.
+import {
   PracticeTransferRequestCardMeta,
   resolvePracticeTransferListPatientName,
   resolvePracticeTransferListToothNumbers,
@@ -613,6 +620,9 @@ const toApiLabAnchorId = (value: unknown): string | null => {
 
 type PracticeTransferSettingsPayload = {
   arrivalDefaultDays?: number;
+  labArrivalDefaults?: PracticeLabArrivalDefault[];
+  /** 단일 기공소 upsert (POST body). GET 응답에는 없음. */
+  labArrivalDefault?: PracticeLabArrivalDefault;
   prosthesisTypes?: string[];
   memoSnippets?: string[];
   implantFavorites?: PracticeImplantFavorite[];
@@ -1313,6 +1323,10 @@ export const PracticeFileTransferPage = ({
     ownOneStarBlockedLabIds,
   });
 
+  const applyArrivalDefaultForLabIdRef = useRef<(labId: string | null | undefined) => void>(
+    () => {},
+  );
+
   // 레거시 「자동 매칭」draft는 어벗츠기공소(고정)로 승격한다.
   useEffect(() => {
     if (!selectedLab) return;
@@ -1320,6 +1334,9 @@ export const PracticeFileTransferPage = ({
     const abuts =
       pinnedLabs.find((lab) => isPinnedAbutsRecentLab(lab)) || ABUTS_PINNED_LAB_SEED;
     setSelectedLab(abuts);
+    if (!editingSentTransferRef.current) {
+      applyArrivalDefaultForLabIdRef.current(abuts?._id);
+    }
   }, [selectedLab, setSelectedLab, pinnedLabs]);
   pendingLocalFilesRef.current = files;
   draftFilesRef.current = draftFiles;
@@ -1341,10 +1358,50 @@ export const PracticeFileTransferPage = ({
   );
   const todayDate = useMemo(() => toKstDateInputValue(new Date()), []);
   const [orderDate, setOrderDate] = useState(todayDate);
+  /** 계정 전역 fallback. 기공소별 값이 없을 때 사용. */
+  const [accountArrivalDefaultDays, setAccountArrivalDefaultDays] = useState(
+    DEFAULT_ARRIVAL_OFFSET_DAYS,
+  );
+  const [labArrivalDefaults, setLabArrivalDefaults] = useState<PracticeLabArrivalDefault[]>(
+    [],
+  );
+  /** 현재 선택 기공소(또는 계정)에 적용 중인 주문→도착 기본 일수. */
   const [arrivalDefaultDays, setArrivalDefaultDays] = useState(DEFAULT_ARRIVAL_OFFSET_DAYS);
   const [arrivalDate, setArrivalDate] = useState(
     addDaysToDateInput(todayDate, DEFAULT_ARRIVAL_OFFSET_DAYS),
   );
+  const accountArrivalDefaultDaysRef = useRef(accountArrivalDefaultDays);
+  accountArrivalDefaultDaysRef.current = accountArrivalDefaultDays;
+  const labArrivalDefaultsRef = useRef(labArrivalDefaults);
+  labArrivalDefaultsRef.current = labArrivalDefaults;
+  const arrivalDefaultDaysRef = useRef(arrivalDefaultDays);
+  arrivalDefaultDaysRef.current = arrivalDefaultDays;
+  const selectedLabIdRef = useRef(String(selectedLab?._id || "").trim());
+  selectedLabIdRef.current = String(selectedLab?._id || "").trim();
+
+  const applyArrivalDefaultForLabId = useCallback(
+    (labId: string | null | undefined) => {
+      const nextDays = resolveLabArrivalDefaultDays(
+        labId,
+        labArrivalDefaultsRef.current,
+        accountArrivalDefaultDaysRef.current,
+      );
+      if (nextDays === arrivalDefaultDaysRef.current) return;
+      setArrivalDefaultDays(nextDays);
+    },
+    [],
+  );
+
+  /** intake 기공소 선택 — 해당 기공소 설정 일수로 주문-치과도착 갱신. */
+  const selectLabForIntake = useCallback(
+    (lab: SearchBusinessResult | null) => {
+      setSelectedLab(lab);
+      if (editingSentTransferRef.current) return;
+      applyArrivalDefaultForLabId(lab?._id);
+    },
+    [applyArrivalDefaultForLabId, setSelectedLab],
+  );
+  applyArrivalDefaultForLabIdRef.current = applyArrivalDefaultForLabId;
 
   const [prosthesisTypeSettingsDialogOpen, setProsthesisTypeSettingsDialogOpen] = useState(false);
   const [prosthesisTypeInput, setProsthesisTypeInput] = useState("");
@@ -1832,9 +1889,15 @@ export const PracticeFileTransferPage = ({
 
   const applyPracticeTransferSettings = useCallback((payload: PracticeTransferSettingsPayload | null) => {
     if (!payload || typeof payload !== "object") return;
-    const nextArrivalDefaultDays = normalizeArrivalDefaultDays(
+    const nextAccountArrivalDefaultDays = normalizeArrivalDefaultDays(
       Number(payload.arrivalDefaultDays ?? DEFAULT_ARRIVAL_OFFSET_DAYS),
     );
+    const nextLabArrivalDefaults = Object.prototype.hasOwnProperty.call(
+      payload,
+      "labArrivalDefaults",
+    )
+      ? normalizeLabArrivalDefaults(payload.labArrivalDefaults)
+      : null;
     const nextProsthesisTypes = ensurePresetProsthesisTypes(
       Array.isArray(payload.prosthesisTypes) ? payload.prosthesisTypes : [...PRESET_PROSTHESIS_TYPES],
     );
@@ -1887,7 +1950,18 @@ export const PracticeFileTransferPage = ({
       setAbutsLabFeeCatalog(payload.abutsLabFeeCatalog);
     }
 
-    setArrivalDefaultDays(nextArrivalDefaultDays);
+    setAccountArrivalDefaultDays(nextAccountArrivalDefaultDays);
+    if (nextLabArrivalDefaults) {
+      setLabArrivalDefaults(nextLabArrivalDefaults);
+      labArrivalDefaultsRef.current = nextLabArrivalDefaults;
+    }
+    accountArrivalDefaultDaysRef.current = nextAccountArrivalDefaultDays;
+    const nextActiveArrivalDefaultDays = resolveLabArrivalDefaultDays(
+      selectedLabIdRef.current,
+      nextLabArrivalDefaults ?? labArrivalDefaultsRef.current,
+      nextAccountArrivalDefaultDays,
+    );
+    setArrivalDefaultDays(nextActiveArrivalDefaultDays);
     setProsthesisTypeCatalog(nextProsthesisTypes);
     setProsthesisTypeCatalogDraft(nextProsthesisTypes);
     setMemoSnippets(nextMemoSnippets);
@@ -1940,6 +2014,10 @@ export const PracticeFileTransferPage = ({
       if (!authToken) return false;
 
       const hasArrivalDefaultDays = typeof params.arrivalDefaultDays === "number";
+      const hasLabArrivalDefaults = Array.isArray(params.labArrivalDefaults);
+      const hasLabArrivalDefault =
+        params.labArrivalDefault != null &&
+        typeof params.labArrivalDefault === "object";
       const hasProsthesisTypes = Array.isArray(params.prosthesisTypes);
       const hasMemoSnippets = Array.isArray(params.memoSnippets);
       const hasImplantFavorites = Array.isArray(params.implantFavorites);
@@ -1965,6 +2043,18 @@ export const PracticeFileTransferPage = ({
       const jsonBody: Record<string, unknown> = {};
       if (hasArrivalDefaultDays) {
         jsonBody.arrivalDefaultDays = normalizeArrivalDefaultDays(Number(params.arrivalDefaultDays));
+      }
+      if (hasLabArrivalDefaults) {
+        jsonBody.labArrivalDefaults = normalizeLabArrivalDefaults(params.labArrivalDefaults);
+      }
+      if (hasLabArrivalDefault && params.labArrivalDefault) {
+        jsonBody.labArrivalDefault = {
+          labAnchorId: String(params.labArrivalDefault.labAnchorId || "").trim(),
+          labName: String(params.labArrivalDefault.labName || "").trim(),
+          arrivalDefaultDays: normalizeArrivalDefaultDays(
+            Number(params.labArrivalDefault.arrivalDefaultDays),
+          ),
+        };
       }
       if (hasProsthesisTypes) {
         jsonBody.prosthesisTypes = normalizeProsthesisTypes(params.prosthesisTypes || []);
@@ -2034,6 +2124,11 @@ export const PracticeFileTransferPage = ({
             arrivalDefaultDays: normalizeArrivalDefaultDays(
               Number(payload?.arrivalDefaultDays ?? DEFAULT_ARRIVAL_OFFSET_DAYS),
             ),
+            labArrivalDefaults: normalizeLabArrivalDefaults(
+              Array.isArray(payload?.labArrivalDefaults)
+                ? payload.labArrivalDefaults
+                : labArrivalDefaults,
+            ),
             prosthesisTypes: normalizeProsthesisTypes(
               Array.isArray(payload?.prosthesisTypes)
                 ? payload?.prosthesisTypes
@@ -2082,6 +2177,7 @@ export const PracticeFileTransferPage = ({
       memoSnippets,
       implantFavorites,
       abutmentFavorites,
+      labArrivalDefaults,
       abutsLabFeeCatalog,
       autoMatchMinLabRating,
       autoMatchMaxLabRating,
@@ -2654,12 +2750,35 @@ export const PracticeFileTransferPage = ({
         if (Array.isArray(payload.abutsLabFeeCatalog)) {
           setAbutsLabFeeCatalog(payload.abutsLabFeeCatalog);
         }
+        if (typeof payload.arrivalDefaultDays === "number") {
+          const nextAccount = normalizeArrivalDefaultDays(payload.arrivalDefaultDays);
+          setAccountArrivalDefaultDays(nextAccount);
+          accountArrivalDefaultDaysRef.current = nextAccount;
+        }
+        if (Array.isArray(payload.labArrivalDefaults)) {
+          const nextLabs = normalizeLabArrivalDefaults(payload.labArrivalDefaults);
+          setLabArrivalDefaults(nextLabs);
+          labArrivalDefaultsRef.current = nextLabs;
+        }
+        if (
+          typeof payload.arrivalDefaultDays === "number" ||
+          Array.isArray(payload.labArrivalDefaults)
+        ) {
+          setArrivalDefaultDays(
+            resolveLabArrivalDefaultDays(
+              selectedLabIdRef.current,
+              labArrivalDefaultsRef.current,
+              accountArrivalDefaultDaysRef.current,
+            ),
+          );
+        }
       }
       try {
         localStorage.setItem(
           PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY,
           JSON.stringify({
             arrivalDefaultDays: normalizeArrivalDefaultDays(Number(payload?.arrivalDefaultDays ?? DEFAULT_ARRIVAL_OFFSET_DAYS)),
+            labArrivalDefaults: normalizeLabArrivalDefaults(payload?.labArrivalDefaults),
             prosthesisTypes: normalizeProsthesisTypes(
               Array.isArray(payload?.prosthesisTypes)
                 ? payload?.prosthesisTypes
@@ -6254,8 +6373,10 @@ export const PracticeFileTransferPage = ({
     setSelectedLab(null);
     setPatientName("");
     setRequestMemo("");
+    const nextArrivalDefaultDays = accountArrivalDefaultDays;
+    setArrivalDefaultDays(nextArrivalDefaultDays);
     const nextOrderDate = todayDate;
-    const nextArrivalDate = addDaysToDateInput(todayDate, arrivalDefaultDays);
+    const nextArrivalDate = addDaysToDateInput(todayDate, nextArrivalDefaultDays);
     setOrderDate(nextOrderDate);
     setArrivalDate(nextArrivalDate);
     setRushProcessing(
@@ -6301,7 +6422,7 @@ export const PracticeFileTransferPage = ({
       patientName: "",
       orderDate: nextOrderDate,
       arrivalDate: nextArrivalDate,
-      arrivalDefaultDays,
+      arrivalDefaultDays: nextArrivalDefaultDays,
       requestMemo: "",
       prosthesisTypes: normalizedProsthesisTypes,
       toothWorks: normalizeToothWorksForSync(nextToothWorks),
@@ -6334,6 +6455,23 @@ export const PracticeFileTransferPage = ({
       skipNextArrivalAutoSyncRef.current = true;
       setArrivalDefaultDays(nextDays);
 
+      const labId = String(selectedLab?._id || "").trim();
+      const labName = String(selectedLab?.name || "").trim();
+      const isLabScoped = isMongoObjectIdString(labId);
+      let nextLabArrivalDefaults = labArrivalDefaults;
+      if (isLabScoped) {
+        nextLabArrivalDefaults = upsertLabArrivalDefault(labArrivalDefaults, {
+          labAnchorId: labId,
+          labName,
+          arrivalDefaultDays: nextDays,
+        });
+        setLabArrivalDefaults(nextLabArrivalDefaults);
+        labArrivalDefaultsRef.current = nextLabArrivalDefaults;
+      } else {
+        setAccountArrivalDefaultDays(nextDays);
+        accountArrivalDefaultDaysRef.current = nextDays;
+      }
+
       try {
         const existingRaw = localStorage.getItem(PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY);
         const existing =
@@ -6344,7 +6482,10 @@ export const PracticeFileTransferPage = ({
           PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY,
           JSON.stringify({
             ...existing,
-            arrivalDefaultDays: nextDays,
+            arrivalDefaultDays: isLabScoped
+              ? accountArrivalDefaultDays
+              : nextDays,
+            labArrivalDefaults: nextLabArrivalDefaults,
             prosthesisTypes: normalizedProsthesisTypes,
             memoSnippets,
             implantFavorites,
@@ -6356,17 +6497,31 @@ export const PracticeFileTransferPage = ({
         // ignore
       }
 
-      void savePracticeTransferSettingsToServer({ arrivalDefaultDays: nextDays }).catch(() => {
+      void savePracticeTransferSettingsToServer(
+        isLabScoped
+          ? {
+              labArrivalDefault: {
+                labAnchorId: labId,
+                labName,
+                arrivalDefaultDays: nextDays,
+              },
+            }
+          : { arrivalDefaultDays: nextDays },
+      ).catch(() => {
         // 날짜 적용은 유지하고, 서버 저장 실패는 다음 저장 기회에 재시도
       });
     },
     [
       abutmentFavorites,
+      accountArrivalDefaultDays,
       arrivalDefaultDays,
       implantFavorites,
+      labArrivalDefaults,
       memoSnippets,
       normalizedProsthesisTypes,
       savePracticeTransferSettingsToServer,
+      selectedLab?._id,
+      selectedLab?.name,
     ],
   );
 
@@ -6741,7 +6896,7 @@ export const PracticeFileTransferPage = ({
     variant: "plain",
     toothChartDisplayMode: "full",
                     selectedLab,
-                  setSelectedLab,
+                  setSelectedLab: selectLabForIntake,
                   labOpen,
                   setLabOpen,
                   labSearch,

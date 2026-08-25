@@ -519,6 +519,28 @@ const businessAnchorSchema = new mongoose.Schema(
         min: 0,
         max: 365,
       },
+      // 기공소별 주문→치과도착 기본 일수(달력일). 미등록 기공소는 arrivalDefaultDays.
+      labArrivalDefaults: {
+        type: [
+          {
+            _id: false,
+            labAnchorId: {
+              type: mongoose.Schema.Types.ObjectId,
+              ref: "BusinessAnchor",
+              required: true,
+            },
+            labName: { type: String, default: "" },
+            arrivalDefaultDays: {
+              type: Number,
+              default: 7,
+              min: 0,
+              max: 365,
+            },
+            updatedAt: { type: Date, default: null },
+          },
+        ],
+        default: [],
+      },
       prosthesisTypes: {
         type: [String],
         default: ["인레이", "크라운", "커스텀어벗", "브리지", "유지장치", "임시치아"],

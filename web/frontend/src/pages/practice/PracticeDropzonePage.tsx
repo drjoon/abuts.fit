@@ -162,6 +162,12 @@ import {
   shouldEnablePracticeRushProcessing,
 } from "@/shared/practice/practiceWorkPeriod";
 import {
+  normalizeLabArrivalDefaults,
+  resolveLabArrivalDefaultDays,
+  upsertLabArrivalDefault,
+  type PracticeLabArrivalDefault,
+} from "@/shared/practice/labArrivalDefaults";
+import {
   PRACTICE_DROPZONE_DRAFT_KEY,
   clearPracticeSharedFormLocalStorage,
   readPreferredIntakeFormForDropzone,
@@ -394,6 +400,10 @@ const makeTransferId = () => {
 };
 
 const DEFAULT_ARRIVAL_OFFSET_DAYS = 7;
+const OBJECT_ID_RE = /^[a-f\d]{24}$/i;
+
+const normalizeArrivalDefaultDays = (value: number) =>
+  Math.max(0, Math.min(365, Math.floor(Number(value || 0))));
 const PRESET_PROSTHESIS_TYPES = ["인레이", "크라운", "커스텀어벗", "브리지", "유지장치", "임시치아", "결손치"] as const;
 
 type ToothWorkSelection = SharedToothWorkSelection;
@@ -416,8 +426,6 @@ const addDaysToDateInput = (dateInput: string, days: number) => {
   d.setDate(d.getDate() + Number(days || 0));
   return toKstDateInputValue(d);
 };
-
-const normalizeArrivalDefaultDays = (value: number) => Math.max(0, Math.floor(Number(value || 0)));
 
 const sanitizeProsthesisTypeLabel = (value: string) => {
   const trimmed = String(value || "").trim();
@@ -747,10 +755,190 @@ export const PracticeDropzonePage = () => {
 
   const todayDate = useMemo(() => toKstDateInputValue(new Date()), []);
   const [orderDate, setOrderDate] = useState(todayDate);
+  const [accountArrivalDefaultDays, setAccountArrivalDefaultDays] = useState(
+    DEFAULT_ARRIVAL_OFFSET_DAYS,
+  );
+  const [labArrivalDefaults, setLabArrivalDefaults] = useState<PracticeLabArrivalDefault[]>(
+    [],
+  );
   const [arrivalDefaultDays, setArrivalDefaultDays] = useState(DEFAULT_ARRIVAL_OFFSET_DAYS);
   const [arrivalDate, setArrivalDate] = useState(
     addDaysToDateInput(todayDate, DEFAULT_ARRIVAL_OFFSET_DAYS),
   );
+  const accountArrivalDefaultDaysRef = useRef(accountArrivalDefaultDays);
+  accountArrivalDefaultDaysRef.current = accountArrivalDefaultDays;
+  const labArrivalDefaultsRef = useRef(labArrivalDefaults);
+  labArrivalDefaultsRef.current = labArrivalDefaults;
+
+  const applyArrivalDefaultForLabId = useCallback((labId: string | null | undefined) => {
+    const nextDays = resolveLabArrivalDefaultDays(
+      labId,
+      labArrivalDefaultsRef.current,
+      accountArrivalDefaultDaysRef.current,
+    );
+    setArrivalDefaultDays((prev) => (prev === nextDays ? prev : nextDays));
+  }, []);
+
+  const selectLabForIntake = useCallback(
+    (lab: SearchBusinessResult | null) => {
+      setSelectedLab(lab);
+      applyArrivalDefaultForLabId(lab?._id);
+    },
+    [applyArrivalDefaultForLabId, setSelectedLab],
+  );
+
+  const persistLabArrivalDefault = useCallback(
+    (nextDays: number) => {
+      const labId = String(selectedLab?._id || "").trim();
+      const labName = String(selectedLab?.name || "").trim();
+      if (OBJECT_ID_RE.test(labId)) {
+        const nextLabs = upsertLabArrivalDefault(labArrivalDefaultsRef.current, {
+          labAnchorId: labId,
+          labName,
+          arrivalDefaultDays: nextDays,
+        });
+        setLabArrivalDefaults(nextLabs);
+        labArrivalDefaultsRef.current = nextLabs;
+        try {
+          const existingRaw = localStorage.getItem(PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY);
+          const existing =
+            existingRaw && typeof existingRaw === "string"
+              ? (JSON.parse(existingRaw) as Record<string, unknown>)
+              : {};
+          localStorage.setItem(
+            PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY,
+            JSON.stringify({
+              ...existing,
+              labArrivalDefaults: nextLabs,
+              arrivalDefaultDays: accountArrivalDefaultDaysRef.current,
+              savedAt: Date.now(),
+            }),
+          );
+        } catch {
+          // ignore
+        }
+        if (authToken) {
+          void apiFetch({
+            path: "/api/practice/transfers/settings",
+            method: "POST",
+            token: authToken,
+            jsonBody: {
+              labArrivalDefault: {
+                labAnchorId: labId,
+                labName,
+                arrivalDefaultDays: nextDays,
+              },
+            },
+          }).catch(() => {});
+        }
+        return;
+      }
+      setAccountArrivalDefaultDays(nextDays);
+      accountArrivalDefaultDaysRef.current = nextDays;
+      try {
+        const existingRaw = localStorage.getItem(PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY);
+        const existing =
+          existingRaw && typeof existingRaw === "string"
+            ? (JSON.parse(existingRaw) as Record<string, unknown>)
+            : {};
+        localStorage.setItem(
+          PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY,
+          JSON.stringify({
+            ...existing,
+            arrivalDefaultDays: nextDays,
+            labArrivalDefaults: labArrivalDefaultsRef.current,
+            savedAt: Date.now(),
+          }),
+        );
+      } catch {
+        // ignore
+      }
+      if (authToken) {
+        void apiFetch({
+          path: "/api/practice/transfers/settings",
+          method: "POST",
+          token: authToken,
+          jsonBody: { arrivalDefaultDays: nextDays },
+        }).catch(() => {});
+      }
+    },
+    [authToken, selectedLab?._id, selectedLab?.name],
+  );
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      if (typeof parsed.arrivalDefaultDays === "number") {
+        const nextAccount = normalizeArrivalDefaultDays(parsed.arrivalDefaultDays);
+        setAccountArrivalDefaultDays(nextAccount);
+        accountArrivalDefaultDaysRef.current = nextAccount;
+      }
+      if (Array.isArray(parsed.labArrivalDefaults)) {
+        const nextLabs = normalizeLabArrivalDefaults(parsed.labArrivalDefaults);
+        setLabArrivalDefaults(nextLabs);
+        labArrivalDefaultsRef.current = nextLabs;
+      }
+      setArrivalDefaultDays(
+        resolveLabArrivalDefaultDays(
+          selectedLab?._id,
+          labArrivalDefaultsRef.current,
+          accountArrivalDefaultDaysRef.current,
+        ),
+      );
+    } catch {
+      // ignore
+    }
+    // 최초 마운트 hydrate만. selectedLab 변경은 selectLabForIntake가 담당.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!authToken) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await apiFetch<{
+          data?: {
+            arrivalDefaultDays?: number;
+            labArrivalDefaults?: unknown;
+          };
+        }>({
+          path: "/api/practice/transfers/settings",
+          method: "GET",
+          token: authToken,
+        });
+        if (!res.ok || cancelled) return;
+        const payload = res.data?.data;
+        if (!payload) return;
+        if (typeof payload.arrivalDefaultDays === "number") {
+          const nextAccount = normalizeArrivalDefaultDays(payload.arrivalDefaultDays);
+          setAccountArrivalDefaultDays(nextAccount);
+          accountArrivalDefaultDaysRef.current = nextAccount;
+        }
+        if (Array.isArray(payload.labArrivalDefaults)) {
+          const nextLabs = normalizeLabArrivalDefaults(payload.labArrivalDefaults);
+          setLabArrivalDefaults(nextLabs);
+          labArrivalDefaultsRef.current = nextLabs;
+        }
+        setArrivalDefaultDays(
+          resolveLabArrivalDefaultDays(
+            selectedLab?._id,
+            labArrivalDefaultsRef.current,
+            accountArrivalDefaultDaysRef.current,
+          ),
+        );
+      } catch {
+        // ignore
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authToken]);
+
   const [rushProcessing, setRushProcessing] = useState(false);
   const [rushConfirmOpen, setRushConfirmOpen] = useState(false);
   const [pendingRushArrivalYmd, setPendingRushArrivalYmd] = useState("");
@@ -2547,7 +2735,7 @@ export const PracticeDropzonePage = () => {
                   }}
                   requestIntakeProps={{
                     selectedLab,
-                    setSelectedLab,
+                    setSelectedLab: selectLabForIntake,
                     labOpen,
                     setLabOpen,
                     labSearch,
@@ -2589,6 +2777,7 @@ export const PracticeDropzonePage = () => {
                       const nextDays = normalizeArrivalDefaultDays(diff);
                       if (nextDays === arrivalDefaultDays) return;
                       setArrivalDefaultDays(nextDays);
+                      persistLabArrivalDefault(nextDays);
                     },
                     arrivalDefaultDays,
                     rushProcessing,
@@ -3192,6 +3381,7 @@ export const PracticeDropzonePage = () => {
                     const nextDays = normalizeArrivalDefaultDays(diff);
                     if (nextDays !== arrivalDefaultDays) {
                       setArrivalDefaultDays(nextDays);
+                      persistLabArrivalDefault(nextDays);
                     }
                   }
                 }

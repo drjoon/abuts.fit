@@ -23,7 +23,9 @@ import { loadStarBandEligibleLabAnchorIds } from "../../utils/practiceTransferAu
 // - 2026-08-16: v4 고정가. GET은 최소 별점으로 budget 조립. autoMatchBudget PATCH 무시.
 // - 2026-08-21: 임플란트 추가 요청 프리셋 type을 옵션명으로 정규화(레거시 헥스 포함).
 // - 2026-08-16: autoMatchMaxLabRating(하한·상한 치과 설정, 기본 3~4).
+// - 2026-08-25: labArrivalDefaults(기공소별 주문→치과도착 기본 일수).
 const DEFAULT_ARRIVAL_DEFAULT_DAYS = 7;
+const MAX_LAB_ARRIVAL_DEFAULTS = 80;
 const ABUTMENT_PRODUCT_MODE_PRODUCTION = "custom_abutment";
 const ABUTMENT_PRODUCT_MODE_DESIGN_AND_PRODUCTION = "design_custom_abutment";
 const DEFAULT_ABUTMENT_PRODUCT_MODE = ABUTMENT_PRODUCT_MODE_PRODUCTION;
@@ -146,6 +148,61 @@ const normalizeArrivalDefaultDays = (value) => {
   return Math.min(365, Math.max(0, Math.floor(raw)));
 };
 
+const normalizeLabArrivalDefaults = (items) => {
+  const list = Array.isArray(items) ? items : [];
+  const byId = new Map();
+
+  for (const raw of list) {
+    const row = raw && typeof raw === "object" ? raw : {};
+    const labAnchorId = String(row.labAnchorId || "").trim();
+    if (!Types.ObjectId.isValid(labAnchorId)) continue;
+    const updatedAtRaw = row.updatedAt ? new Date(row.updatedAt) : new Date();
+    byId.set(labAnchorId, {
+      labAnchorId: new Types.ObjectId(labAnchorId),
+      labName: String(row.labName || "").trim().slice(0, 120),
+      arrivalDefaultDays: normalizeArrivalDefaultDays(row.arrivalDefaultDays),
+      updatedAt: Number.isNaN(updatedAtRaw.getTime()) ? new Date() : updatedAtRaw,
+    });
+  }
+
+  return Array.from(byId.values())
+    .sort((a, b) => {
+      const at = a.updatedAt?.getTime?.() || 0;
+      const bt = b.updatedAt?.getTime?.() || 0;
+      return bt - at;
+    })
+    .slice(0, MAX_LAB_ARRIVAL_DEFAULTS);
+};
+
+const mergeLabArrivalDefault = (existingItems, patch) => {
+  const row = patch && typeof patch === "object" ? patch : {};
+  const labAnchorId = String(row.labAnchorId || "").trim();
+  if (!Types.ObjectId.isValid(labAnchorId)) {
+    return normalizeLabArrivalDefaults(existingItems);
+  }
+  const current = normalizeLabArrivalDefaults(existingItems);
+  const nextRow = {
+    labAnchorId,
+    labName: String(row.labName || "").trim().slice(0, 120),
+    arrivalDefaultDays: normalizeArrivalDefaultDays(row.arrivalDefaultDays),
+    updatedAt: new Date().toISOString(),
+  };
+  const without = current.filter(
+    (item) => String(item.labAnchorId || "") !== labAnchorId,
+  );
+  return normalizeLabArrivalDefaults([nextRow, ...without]);
+};
+
+const serializeLabArrivalDefaults = (items) =>
+  normalizeLabArrivalDefaults(items).map((row) => ({
+    labAnchorId: String(row.labAnchorId || ""),
+    labName: String(row.labName || "").trim(),
+    arrivalDefaultDays: normalizeArrivalDefaultDays(row.arrivalDefaultDays),
+    updatedAt: row.updatedAt
+      ? new Date(row.updatedAt).toISOString()
+      : null,
+  }));
+
 const normalizeDefaultAbutmentProductMode = (value) => {
   const raw = String(value || "").trim();
   if (
@@ -205,6 +262,7 @@ const toSettingsResponse = async (anchor, { persistHydrated = false } = {}) => {
 
   return {
     arrivalDefaultDays: normalizeArrivalDefaultDays(settings?.arrivalDefaultDays),
+    labArrivalDefaults: serializeLabArrivalDefaults(settings?.labArrivalDefaults),
     prosthesisTypes: normalizeProsthesisTypes(settings?.prosthesisTypes),
     memoSnippets: normalizeMemoSnippets(settings?.memoSnippets),
     implantFavorites,
@@ -281,6 +339,8 @@ export async function upsertPracticeTransferSettings(req, res) {
 
     const body = req.body && typeof req.body === "object" ? req.body : {};
     const hasArrivalDefaultDays = Object.prototype.hasOwnProperty.call(body, "arrivalDefaultDays");
+    const hasLabArrivalDefaults = Object.prototype.hasOwnProperty.call(body, "labArrivalDefaults");
+    const hasLabArrivalDefault = Object.prototype.hasOwnProperty.call(body, "labArrivalDefault");
     const hasProsthesisTypes = Object.prototype.hasOwnProperty.call(body, "prosthesisTypes");
     const hasMemoSnippets = Object.prototype.hasOwnProperty.call(body, "memoSnippets");
     const hasImplantFavorites = Object.prototype.hasOwnProperty.call(body, "implantFavorites");
@@ -307,6 +367,16 @@ export async function upsertPracticeTransferSettings(req, res) {
 
     if (hasArrivalDefaultDays) {
       setPatch["practiceTransferSettings.arrivalDefaultDays"] = normalizeArrivalDefaultDays(body.arrivalDefaultDays);
+    }
+    if (hasLabArrivalDefaults || hasLabArrivalDefault) {
+      const existing = await BusinessAnchor.findById(anchorId)
+        .select({ "practiceTransferSettings.labArrivalDefaults": 1 })
+        .lean();
+      const currentRows = existing?.practiceTransferSettings?.labArrivalDefaults;
+      const nextRows = hasLabArrivalDefaults
+        ? normalizeLabArrivalDefaults(body.labArrivalDefaults)
+        : mergeLabArrivalDefault(currentRows, body.labArrivalDefault);
+      setPatch["practiceTransferSettings.labArrivalDefaults"] = nextRows;
     }
     if (hasProsthesisTypes) {
       setPatch["practiceTransferSettings.prosthesisTypes"] = normalizeProsthesisTypes(body.prosthesisTypes);

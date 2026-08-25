@@ -6,6 +6,7 @@
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
 // - 2026-08-24: 작업영역 하단 여백 — min-h-full + pb-12.
+// - 2026-08-25: 기공의뢰 탭 — 기공소별 주문-치과도착 기본 일수.
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -32,6 +33,7 @@ import {
   RefreshCcw,
   Building2,
   Users,
+  CalendarDays,
 } from "lucide-react";
 import { NotificationsTab } from "@/features/settings/tabs/NotificationsTab";
 import { RequestorSecurity as PracticeSecurity } from "@/pages/requestor/settings/Security";
@@ -39,8 +41,15 @@ import { BusinessTab } from "@/shared/components/business/settings/BusinessTab";
 import { StaffTab } from "@/features/settings/tabs/StaffTab";
 import { useAvatarCarousel } from "@/shared/hooks/useAvatarCarousel";
 import { avatarSeedFromUrl } from "@/shared/lib/avatarOptions";
+import { PracticeTransferArrivalSettingsTab } from "@/pages/practice/components/PracticeTransferArrivalSettingsTab";
 
-type TabKey = "account" | "business" | "staff" | "notifications" | "security";
+type TabKey =
+  | "account"
+  | "business"
+  | "staff"
+  | "transfer"
+  | "notifications"
+  | "security";
 
 type PracticeAccountForm = {
   staffName: string;
@@ -93,7 +102,8 @@ export const PracticeSettingsPage = () => {
       raw === "security" ||
       raw === "staff" ||
       raw === "account" ||
-      raw === "business"
+      raw === "business" ||
+      raw === "transfer"
     ) {
       return raw as TabKey;
     }
@@ -266,6 +276,7 @@ export const PracticeSettingsPage = () => {
               next === "account" ||
               next === "business" ||
               next === "staff" ||
+              next === "transfer" ||
               next === "notifications" ||
               next === "security"
                 ? next
@@ -297,6 +308,13 @@ export const PracticeSettingsPage = () => {
             >
               <Users className="h-4 w-4" />
               임직원
+            </TabsTrigger>
+            <TabsTrigger
+              value="transfer"
+              className="flex min-w-[96px] flex-1 basis-0 items-center justify-center gap-2 px-3 py-2.5"
+            >
+              <CalendarDays className="h-4 w-4" />
+              기공의뢰
             </TabsTrigger>
             <TabsTrigger
               value="notifications"
@@ -503,6 +521,10 @@ export const PracticeSettingsPage = () => {
               }}
               businessTypeOverride="practice"
             />
+          </TabsContent>
+
+          <TabsContent value="transfer">
+            <PracticeTransferArrivalSettingsTab />
           </TabsContent>
 
           <TabsContent value="notifications">
