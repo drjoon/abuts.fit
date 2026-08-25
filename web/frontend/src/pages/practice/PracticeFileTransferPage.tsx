@@ -8459,10 +8459,7 @@ export const PracticeFileTransferPage = ({
           description={
             <div className="space-y-1">
               <div className="text-sm text-muted-foreground">
-                휴지통의 임시저장·취소된 전송을 모두 영구 삭제합니다.
-                {trashGroupedTransfers.length > 0
-                  ? ` (현재 목록 ${trashGroupedTransfers.length}건)`
-                  : ""}
+                휴지통 내용을 모두 영구 삭제합니다.
               </div>
               <div className="text-sm text-muted-foreground">
                 이 작업은 되돌릴 수 없습니다.
