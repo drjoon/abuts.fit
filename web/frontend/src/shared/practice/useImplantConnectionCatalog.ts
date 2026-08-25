@@ -3,9 +3,12 @@
 // - web/frontend/src/pages/requestor/new_request/hooks/useNewRequestImplant.ts
 // - web/backend/controllers/presets/implantPreset.controller.js
 // change-log:
+// - 2026-08-26: 어벗 추가/공개·삭제 이벤트 시 캐시 무효화 후 카탈로그 재조회.
 // - 2026-08-14: 캐시를 보여준 뒤 서버를 다시 불러 도입 스펙이 빠지지 않게 한다.
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
+import { ROUND_BAR_REQUEST_UPDATED_EVENT } from "@/shared/practice/roundBarAbutment";
+import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 
 export type ImplantConnection = {
   _id?: string;
@@ -31,6 +34,24 @@ const IMPLANT_PRESETS_TTL_MS = 365 * 24 * 60 * 60 * 1000;
 
 export const useImplantConnectionCatalog = (token: string | null) => {
   const [connections, setConnections] = useState<ImplantConnection[]>([]);
+  const [reloadNonce, setReloadNonce] = useState(0);
+
+  useAppEventDebouncedReload({
+    enabled: Boolean(token),
+    eventTypes: [ROUND_BAR_REQUEST_UPDATED_EVENT],
+    delayMs: 0,
+    deferWhenEditing: false,
+    onMatch: () => {
+      if (typeof window !== "undefined") {
+        try {
+          window.localStorage.removeItem(IMPLANT_PRESETS_STORAGE_KEY);
+        } catch {
+          // ignore
+        }
+      }
+      setReloadNonce((value) => value + 1);
+    },
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -92,7 +113,7 @@ export const useImplantConnectionCatalog = (token: string | null) => {
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [token, reloadNonce]);
 
   return { connections };
 };

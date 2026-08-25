@@ -6,6 +6,7 @@
 // - web/frontend/src/pages/admin/system/AdminRoundBarAbutmentTab.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // change-log:
+// - 2026-08-26: 카탈로그 매칭으로 프리셋 도입중/요청중 뱃지·플래그 보강.
 // - 2026-08-26: brand/family/type OR(` | `) 파싱·조인 헬퍼. 요청중/도입중/도입 상태.
 // - 2026-08-26: 관리자 추가·isPublic·명시 저장(입력값 그대로).
 // - 2026-08-24: 관리자 어벗 추가 요청 삭제 API 클라이언트.
@@ -230,6 +231,94 @@ export const isPendingAbutmentAdoption = (
 ) => {
   const status = resolveAbutmentAdoptionStatus(row);
   return status === "requesting" || status === "adopting";
+};
+
+export type RoundBarCatalogRow = {
+  manufacturer?: string;
+  brand?: string;
+  family?: string;
+  type?: string;
+  roundBar?: boolean;
+  adopted?: boolean;
+  isPublic?: boolean;
+};
+
+const normalizeSpecToken = (value: unknown) =>
+  String(value || "").trim().toLowerCase();
+
+const sameSpecManufacturer = (a: string, b: string) => {
+  const left = normalizeSpecToken(a);
+  const right = normalizeSpecToken(b);
+  return Boolean(left) && left === right;
+};
+
+/** fav·카탈로그 행 스펙 일치(대소문자 무시, family/type 빈 값은 와일드카드). */
+export const matchesRoundBarCatalogSpec = (
+  row: { manufacturer?: string; brand?: string; family?: string; type?: string },
+  catalogRow: RoundBarCatalogRow,
+) => {
+  const manufacturer = normalizeSpecToken(row.manufacturer);
+  const brand = normalizeSpecToken(row.brand);
+  const family = normalizeSpecToken(row.family);
+  const type = normalizeSpecToken(row.type);
+  const catalogManufacturer = normalizeSpecToken(catalogRow.manufacturer);
+  const catalogBrand = normalizeSpecToken(catalogRow.brand);
+  const catalogFamily = normalizeSpecToken(catalogRow.family);
+  const catalogType = normalizeSpecToken(catalogRow.type);
+  if (!manufacturer || !brand || !catalogManufacturer || !catalogBrand) return false;
+  if (!sameSpecManufacturer(manufacturer, catalogManufacturer)) return false;
+  if (brand !== catalogBrand) return false;
+  if (family && catalogFamily && family !== catalogFamily) return false;
+  if (type && catalogType && type !== catalogType) return false;
+  return true;
+};
+
+export const findRoundBarCatalogMatch = (
+  catalog: RoundBarCatalogRow[],
+  row: { manufacturer?: string; brand?: string; family?: string; type?: string },
+): RoundBarCatalogRow | null => {
+  for (const entry of catalog) {
+    if (!entry.roundBar) continue;
+    if (matchesRoundBarCatalogSpec(row, entry)) return entry;
+  }
+  return null;
+};
+
+/** 프리셋 자체 플래그가 없어도 공개 카탈로그와 일치하면 도입중/요청중 판별. */
+export const resolveAbutmentAdoptionStatusWithCatalog = (
+  row: Parameters<typeof resolveAbutmentAdoptionStatus>[0],
+  catalog: RoundBarCatalogRow[] = [],
+): AbutmentAdoptionStatus => {
+  const direct = resolveAbutmentAdoptionStatus(row);
+  if (direct) return direct;
+  const match = findRoundBarCatalogMatch(catalog, row || {});
+  if (!match) return "";
+  if (match.adopted) return "adopted";
+  if (match.isPublic) return "adopting";
+  return "requesting";
+};
+
+export const isPendingAbutmentAdoptionWithCatalog = (
+  row: Parameters<typeof resolveAbutmentAdoptionStatus>[0],
+  catalog: RoundBarCatalogRow[] = [],
+) => {
+  const status = resolveAbutmentAdoptionStatusWithCatalog(row, catalog);
+  return status === "requesting" || status === "adopting";
+};
+
+export const enrichImplantFavoriteFromCatalog = <T extends PracticeImplantFavorite>(
+  fav: T,
+  catalog: RoundBarCatalogRow[],
+): T => {
+  if (resolveAbutmentAdoptionStatus(fav)) return fav;
+  const match = findRoundBarCatalogMatch(catalog, fav);
+  if (!match) return fav;
+  return {
+    ...fav,
+    roundBar: true,
+    isPublic: Boolean(match.isPublic) || undefined,
+    adopted: Boolean(match.adopted) || undefined,
+  };
 };
 
 export type ImplantFavoriteLabelParts = {

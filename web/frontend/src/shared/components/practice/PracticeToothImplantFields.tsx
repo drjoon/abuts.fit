@@ -4,6 +4,8 @@
 // - web/frontend/src/shared/practice/transferMemo.ts
 // - web/frontend/src/shared/practice/roundBarAbutment.ts
 // change-log:
+// - 2026-08-26: 프리셋 도입중 뱃지 — 카탈로그 일치 시 isPublic/roundBar 플래그 보강.
+// - 2026-08-26: 프리셋 추가/수정 제조사 드롭다운에 관리자 공개(도입중) 스펙·삭제 반영.
 // - 2026-08-26: 프리셋 라벨 카탈로그 display* 우선(혼합 대소문자 NeoBiotech 유지).
 // - 2026-08-26: 요청중→도입중(공개)→도입(뱃지 제거). 미도입은 제조사·견적 제외.
 // - 2026-08-25: presets 목록 최소 높이 축소(커스텀어벗 설정 모달 세로·3열 대응).
@@ -50,9 +52,10 @@ import {
   ROUND_BAR_GUIDE_LINES,
   ROUND_BAR_GUIDE_TITLE,
   isManufacturerAddRequestFavorite,
-  isPendingAbutmentAdoption,
+  isPendingAbutmentAdoptionWithCatalog,
   isRoundBarFavorite,
-  resolveAbutmentAdoptionStatus,
+  enrichImplantFavoriteFromCatalog,
+  resolveAbutmentAdoptionStatusWithCatalog,
   submitRoundBarManufacturerRequest,
 } from "@/shared/practice/roundBarAbutment";
 import { mergeCncImplantSpecs } from "@/shared/practice/cncImplantCatalog";
@@ -477,17 +480,6 @@ export const PracticeToothImplantFields = ({
     [connectionOptions],
   );
 
-  const cncSpecRows = useMemo(
-    () =>
-      cncSpecs.map((c) => ({
-        manufacturer: c.manufacturer,
-        brand: c.brand,
-        family: c.family,
-        type: c.type,
-      })),
-    [cncSpecs],
-  );
-
   const cncManufacturerOptions = useMemo(() => {
     const catalog = uniqueManufacturers(
       connections
@@ -534,12 +526,18 @@ export const PracticeToothImplantFields = ({
   const roundBarManufacturerOptions = useMemo(
     () =>
       uniqueManufacturers(
-        favorites
-          .filter((fav) => isRoundBarFavorite(fav))
-          .map((fav) => fav.manufacturer)
-          .filter((manufacturer) => !cncManufacturerKeySet.has(manufacturerKey(manufacturer))),
+        [
+          ...connections
+            .filter((c) => Boolean(c.roundBar) || Boolean(c.isPublic))
+            .map((c) => c.manufacturer),
+          ...favorites
+            .filter((fav) => isRoundBarFavorite(fav))
+            .map((fav) => fav.manufacturer),
+        ].filter(
+          (manufacturer) => !cncManufacturerKeySet.has(manufacturerKey(manufacturer)),
+        ),
       ),
-    [favorites, cncManufacturerKeySet],
+    [connections, favorites, cncManufacturerKeySet],
   );
 
   const manufacturerOptions = useMemo(
@@ -565,8 +563,18 @@ export const PracticeToothImplantFields = ({
       (fav) =>
         isRoundBarFavorite(fav) && sameManufacturer(fav.manufacturer, manufacturer),
     );
-    return rows.find((fav) => fav.adopted) || rows[0] || null;
+    const found = rows.find((fav) => fav.adopted) || rows[0] || null;
+    if (found) return found;
+    const catalogEntry = connections.find(
+      (c) =>
+        (Boolean(c.roundBar) || Boolean(c.isPublic)) &&
+        sameManufacturer(c.manufacturer, manufacturer),
+    );
+    return catalogEntry || null;
   };
+
+  const favoriteAdoptionStatus = (fav: PracticeImplantFavorite) =>
+    resolveAbutmentAdoptionStatusWithCatalog(fav, connections);
 
   const brandOptions = useMemo(() => {
     const options = uniqueStrings(
@@ -746,148 +754,73 @@ export const PracticeToothImplantFields = ({
         .map((row) => row.type),
     );
 
-  const getCncBrands = (manufacturer: string) =>
-    uniqueStrings(
-      cncSpecRows
-        .filter((row) => sameManufacturer(row.manufacturer, manufacturer))
-        .map((row) => row.brand),
-    );
-
-  const getCncFamilies = (manufacturer: string, brand: string) =>
-    uniqueStrings(
-      cncSpecRows
-        .filter(
-          (row) => sameManufacturer(row.manufacturer, manufacturer) && row.brand === brand,
-        )
-        .map((row) => row.family)
-        .filter(Boolean),
-    );
-
-  const getCncTypes = (manufacturer: string, brand: string, family: string) =>
-    uniqueStrings(
-      cncSpecRows
-        .filter(
-          (row) =>
-            sameManufacturer(row.manufacturer, manufacturer) &&
-            row.brand === brand &&
-            row.family === family,
-        )
-        .map((row) => row.type),
-    );
-
-  const addCncManufacturers = useMemo(
-    () => uniqueManufacturers(cncSpecs.map((c) => c.manufacturer)),
-    [cncSpecs],
-  );
-
   const addBrandOptions = useMemo(
-    () =>
-      uniqueStrings(
-        cncSpecRows
-          .filter((row) =>
-            sameManufacturer(row.manufacturer, addDraft.implantManufacturer),
-          )
-          .map((row) => row.brand),
-      ),
-    [addDraft.implantManufacturer, cncSpecRows],
+    () => getBrands(addDraft.implantManufacturer),
+    [addDraft.implantManufacturer, specRows],
   );
 
   const addFamilyOptions = useMemo(
     () =>
-      uniqueStrings(
-        cncSpecRows
-          .filter(
-            (row) =>
-              sameManufacturer(row.manufacturer, addDraft.implantManufacturer) &&
-              row.brand === addDraft.implantBrand,
-          )
-          .map((row) => row.family)
-          .filter(Boolean),
+      mergeFamilyOptions(
+        getFamilies(addDraft.implantManufacturer, addDraft.implantBrand),
+        addDraft.implantFamily ? [addDraft.implantFamily] : [],
       ),
-    [addDraft.implantManufacturer, addDraft.implantBrand, cncSpecRows],
+    [addDraft.implantManufacturer, addDraft.implantBrand, addDraft.implantFamily, specRows],
   );
 
   const addTypeOptions = useMemo(
     () =>
-      uniqueStrings(
-        cncSpecRows
-          .filter(
-            (row) =>
-              sameManufacturer(row.manufacturer, addDraft.implantManufacturer) &&
-              row.brand === addDraft.implantBrand &&
-              row.family === addDraft.implantFamily,
-          )
-          .map((row) => row.type),
+      getTypes(
+        addDraft.implantManufacturer,
+        addDraft.implantBrand,
+        addDraft.implantFamily,
       ),
     [
       addDraft.implantManufacturer,
       addDraft.implantBrand,
       addDraft.implantFamily,
-      cncSpecRows,
+      specRows,
     ],
   );
 
   const editBrandOptions = useMemo(
-    () =>
-      uniqueStrings(
-        cncSpecRows
-          .filter((row) =>
-            sameManufacturer(row.manufacturer, editDraft.implantManufacturer),
-          )
-          .map((row) => row.brand),
-      ),
-    [editDraft.implantManufacturer, cncSpecRows],
+    () => getBrands(editDraft.implantManufacturer),
+    [editDraft.implantManufacturer, specRows],
   );
 
   const editFamilyOptions = useMemo(
     () =>
-      uniqueStrings(
-        cncSpecRows
-          .filter(
-            (row) =>
-              sameManufacturer(row.manufacturer, editDraft.implantManufacturer) &&
-              row.brand === editDraft.implantBrand,
-          )
-          .map((row) => row.family)
-          .filter(Boolean),
+      mergeFamilyOptions(
+        getFamilies(editDraft.implantManufacturer, editDraft.implantBrand),
+        editDraft.implantFamily ? [editDraft.implantFamily] : [],
       ),
-    [editDraft.implantManufacturer, editDraft.implantBrand, cncSpecRows],
+    [editDraft.implantManufacturer, editDraft.implantBrand, editDraft.implantFamily, specRows],
   );
 
   const editTypeOptions = useMemo(
     () =>
-      uniqueStrings(
-        cncSpecRows
-          .filter(
-            (row) =>
-              sameManufacturer(row.manufacturer, editDraft.implantManufacturer) &&
-              row.brand === editDraft.implantBrand &&
-              row.family === editDraft.implantFamily,
-          )
-          .map((row) => row.type),
+      getTypes(
+        editDraft.implantManufacturer,
+        editDraft.implantBrand,
+        editDraft.implantFamily,
       ),
     [
       editDraft.implantManufacturer,
       editDraft.implantBrand,
       editDraft.implantFamily,
-      cncSpecRows,
+      specRows,
     ],
   );
 
-  const cncManufacturerLabel = (manufacturer: string) => {
-    const sample = cncSpecs.find((c) => sameManufacturer(c.manufacturer, manufacturer));
-    return sample?.displayManufacturer || manufacturer;
-  };
-
-  const cncBrandLabel = (manufacturer: string, brand: string) => {
-    const sample = cncSpecs.find(
+  const specBrandLabel = (manufacturer: string, brand: string) => {
+    const sample = connectionOptions.find(
       (c) => sameManufacturer(c.manufacturer, manufacturer) && c.brand === brand,
     );
     return sample?.displayBrand || brand;
   };
 
-  const cncFamilyLabel = (manufacturer: string, brand: string, family: string) => {
-    const sample = cncSpecs.find(
+  const specFamilyLabel = (manufacturer: string, brand: string, family: string) => {
+    const sample = connectionOptions.find(
       (c) =>
         sameManufacturer(c.manufacturer, manufacturer) &&
         c.brand === brand &&
@@ -895,6 +828,77 @@ export const PracticeToothImplantFields = ({
     );
     return sample?.displayFamily || family || "(기본)";
   };
+
+  const presetManufacturerSelectValue = (manufacturer: string) => {
+    const current = String(manufacturer || "").trim();
+    if (!current) return undefined;
+    const inRoundBar = roundBarManufacturerOptions.some((m) =>
+      sameManufacturer(m, current),
+    );
+    const inCnc = cncManufacturerOptions.some((m) => sameManufacturer(m, current));
+    if (inRoundBar && !inCnc) return `${ROUND_BAR_MFR_PREFIX}${current}`;
+    return current;
+  };
+
+  const resolvePresetManufacturerValue = (nextManufacturer: string) =>
+    nextManufacturer.startsWith(ROUND_BAR_MFR_PREFIX)
+      ? nextManufacturer.slice(ROUND_BAR_MFR_PREFIX.length)
+      : nextManufacturer;
+
+  const applyPresetManufacturerDraft = (
+    nextManufacturer: string,
+    apply: (draft: ToothImplantValues) => void,
+  ) => {
+    const manufacturer = resolvePresetManufacturerValue(nextManufacturer);
+    const nextBrand = pickFirst(getBrands(manufacturer));
+    const nextFamily = pickPreferredFamily(getFamilies(manufacturer, nextBrand));
+    const nextType = pickFirst(getTypes(manufacturer, nextBrand, nextFamily)) || "Hex";
+    apply({
+      implantManufacturer: manufacturer,
+      implantBrand: nextBrand,
+      implantFamily: nextFamily,
+      implantType: nextType,
+    });
+  };
+
+  const renderPresetManufacturerSelectItems = () => (
+    <>
+      <SelectGroup>
+        {cncManufacturerOptions.map((m) => (
+          <SelectItem key={`preset-mfr-${m}`} value={m} className="text-sm">
+            {manufacturerLabelMap.get(m) || m}
+          </SelectItem>
+        ))}
+      </SelectGroup>
+      {roundBarManufacturerOptions.length > 0 ? (
+        <>
+          <SelectSeparator className="my-1.5 h-0.5 bg-slate-300" />
+          <SelectGroup>
+            {roundBarManufacturerOptions.map((m) => (
+              <SelectItem
+                key={`preset-rb-mfr-${m}`}
+                value={`${ROUND_BAR_MFR_PREFIX}${m}`}
+                className="text-sm"
+                trailing={
+                  <span className="inline-flex rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                    {(() => {
+                      const fav = pickRoundBarFavorite(m);
+                      const status = resolveAbutmentAdoptionStatusWithCatalog(fav, connections);
+                      if (status === "adopting") return "도입중";
+                      if (status === "requesting") return "요청중";
+                      return "환봉";
+                    })()}
+                  </span>
+                }
+              >
+                {manufacturerLabelMap.get(m) || m}
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        </>
+      ) : null}
+    </>
+  );
 
   const addCustomFamily = (family: string) => {
     setCustomFamilies((prev) => pushUniqueFamily(prev, family));
@@ -952,17 +956,18 @@ export const PracticeToothImplantFields = ({
   };
 
   const applyFavorite = (fav: PracticeImplantFavorite) => {
-    const addRequest = isManufacturerAddRequestFavorite(fav);
+    const enriched = enrichImplantFavoriteFromCatalog(fav, connections);
+    const addRequest = isManufacturerAddRequestFavorite(enriched);
     /** 요청중·도입중(미도입) — 기공의뢰에서 선택 가능, 어벗츠 CNC·견적 제외 */
     const pendingUnsupported =
-      addRequest || isPendingAbutmentAdoption(fav);
+      addRequest || isPendingAbutmentAdoptionWithCatalog(enriched, connections);
     onChange({
-      implantManufacturer: fav.manufacturer,
-      implantBrand: fav.brand,
-      implantFamily: fav.family,
+      implantManufacturer: enriched.manufacturer,
+      implantBrand: enriched.brand,
+      implantFamily: enriched.family,
       implantType: addRequest
         ? IMPLANT_ADD_REQUEST_OPTION
-        : fav.type,
+        : enriched.type,
       implantAddRequest: pendingUnsupported,
     });
   };
@@ -970,13 +975,16 @@ export const PracticeToothImplantFields = ({
   const saveCurrentAsFavorite = () =>
     void persistFavorites([
       ...favorites,
-      {
-        id: `imp-${Date.now().toString(36)}`,
-        manufacturer: value.implantManufacturer,
-        brand: value.implantBrand,
-        family: value.implantFamily,
-        type: value.implantType,
-      },
+      enrichImplantFavoriteFromCatalog(
+        {
+          id: `imp-${Date.now().toString(36)}`,
+          manufacturer: value.implantManufacturer,
+          brand: value.implantBrand,
+          family: value.implantFamily,
+          type: value.implantType,
+        },
+        connections,
+      ),
     ]);
 
   const startAddPreset = () => {
@@ -1228,13 +1236,16 @@ export const PracticeToothImplantFields = ({
       });
       return;
     }
-    const nextFavorite: PracticeImplantFavorite = {
-      id: `imp-${Date.now().toString(36)}`,
-      manufacturer,
-      brand,
-      family,
-      type,
-    };
+    const nextFavorite = enrichImplantFavoriteFromCatalog(
+      {
+        id: `imp-${Date.now().toString(36)}`,
+        manufacturer,
+        brand,
+        family,
+        type,
+      },
+      connections,
+    );
     const withoutDup = favorites.filter(
       (row) => favoriteKey(row) !== favoriteKey(nextFavorite),
     );
@@ -1346,32 +1357,14 @@ export const PracticeToothImplantFields = ({
                 if (nextManufacturer === MANUFACTURER_ADD_REQUEST_VALUE) return;
                 setAddRequestMode(false);
                 setAddRequestMemo("");
-                const nextBrand = pickFirst(getCncBrands(nextManufacturer));
-                const nextFamily = pickPreferredFamily(
-                  getCncFamilies(nextManufacturer, nextBrand),
-                );
-                const nextType =
-                  pickFirst(getCncTypes(nextManufacturer, nextBrand, nextFamily)) ||
-                  "Hex";
-                setAddDraft({
-                  implantManufacturer: nextManufacturer,
-                  implantBrand: nextBrand,
-                  implantFamily: nextFamily,
-                  implantType: nextType,
-                });
+                applyPresetManufacturerDraft(nextManufacturer, setAddDraft);
               }}
             >
               <SelectTrigger className={selectClass}>
                 <SelectValue placeholder="제조사 선택" />
               </SelectTrigger>
               <SelectContent>
-                <SelectGroup>
-                  {addCncManufacturers.map((m) => (
-                    <SelectItem key={`add-mfr-${m}`} value={m} className="text-sm">
-                      {cncManufacturerLabel(m)}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
+                {renderPresetManufacturerSelectItems()}
                 {allowManufacturerRequest ? (
                   <>
                     <SelectSeparator className="my-1.5 h-0.5 bg-slate-300" />
@@ -1396,7 +1389,7 @@ export const PracticeToothImplantFields = ({
           <>
             <div className="grid grid-cols-2 gap-1.5">
               <Select
-                value={addDraft.implantManufacturer || undefined}
+                value={presetManufacturerSelectValue(addDraft.implantManufacturer)}
                 onValueChange={(nextManufacturer) => {
                   if (nextManufacturer === MANUFACTURER_ADD_REQUEST_VALUE) {
                     setAddRequestMode(true);
@@ -1405,32 +1398,14 @@ export const PracticeToothImplantFields = ({
                   }
                   setAddRequestMode(false);
                   setAddRequestMemo("");
-                  const nextBrand = pickFirst(getCncBrands(nextManufacturer));
-                  const nextFamily = pickPreferredFamily(
-                    getCncFamilies(nextManufacturer, nextBrand),
-                  );
-                  const nextType =
-                    pickFirst(getCncTypes(nextManufacturer, nextBrand, nextFamily)) ||
-                    "Hex";
-                  setAddDraft({
-                    implantManufacturer: nextManufacturer,
-                    implantBrand: nextBrand,
-                    implantFamily: nextFamily,
-                    implantType: nextType,
-                  });
+                  applyPresetManufacturerDraft(nextManufacturer, setAddDraft);
                 }}
               >
                 <SelectTrigger className={selectClass}>
                   <SelectValue placeholder="제조사" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectGroup>
-                    {addCncManufacturers.map((m) => (
-                      <SelectItem key={`add-mfr-${m}`} value={m} className="text-sm">
-                        {cncManufacturerLabel(m)}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
+                  {renderPresetManufacturerSelectItems()}
                   {allowManufacturerRequest ? (
                     <>
                       <SelectSeparator className="my-1.5 h-0.5 bg-slate-300" />
@@ -1449,11 +1424,11 @@ export const PracticeToothImplantFields = ({
                 disabled={!addDraft.implantManufacturer}
                 onValueChange={(nextBrand) => {
                   const nextFamily = pickPreferredFamily(
-                    getCncFamilies(addDraft.implantManufacturer, nextBrand),
+                    getFamilies(addDraft.implantManufacturer, nextBrand),
                   );
                   const nextType =
                     pickFirst(
-                      getCncTypes(addDraft.implantManufacturer, nextBrand, nextFamily),
+                      getTypes(addDraft.implantManufacturer, nextBrand, nextFamily),
                     ) || "Hex";
                   setAddDraft((prev) => ({
                     ...prev,
@@ -1472,7 +1447,7 @@ export const PracticeToothImplantFields = ({
                 <SelectContent>
                   {addBrandOptions.map((b) => (
                     <SelectItem key={`add-brand-${b}`} value={b} className="text-sm">
-                      {cncBrandLabel(addDraft.implantManufacturer, b)}
+                      {specBrandLabel(addDraft.implantManufacturer, b)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -1485,7 +1460,7 @@ export const PracticeToothImplantFields = ({
                 onValueChange={(nextFamily) => {
                   const nextType =
                     pickFirst(
-                      getCncTypes(
+                      getTypes(
                         addDraft.implantManufacturer,
                         addDraft.implantBrand,
                         nextFamily,
@@ -1507,7 +1482,7 @@ export const PracticeToothImplantFields = ({
                 <SelectContent>
                   {addFamilyOptions.map((f) => (
                     <SelectItem key={`add-family-${f}`} value={f} className="text-sm">
-                      {cncFamilyLabel(
+                      {specFamilyLabel(
                         addDraft.implantManufacturer,
                         addDraft.implantBrand,
                         f,
@@ -1663,37 +1638,14 @@ export const PracticeToothImplantFields = ({
                               }
                               setEditRequestMode(false);
                               setEditRequestMemo("");
-                              const nextBrand = pickFirst(getCncBrands(nextManufacturer));
-                              const nextFamily = pickPreferredFamily(
-                                getCncFamilies(nextManufacturer, nextBrand),
-                              );
-                              const nextType =
-                                pickFirst(
-                                  getCncTypes(nextManufacturer, nextBrand, nextFamily),
-                                ) || "Hex";
-                              setEditDraft({
-                                implantManufacturer: nextManufacturer,
-                                implantBrand: nextBrand,
-                                implantFamily: nextFamily,
-                                implantType: nextType,
-                              });
+                              applyPresetManufacturerDraft(nextManufacturer, setEditDraft);
                             }}
                           >
                             <SelectTrigger className={selectClass}>
                               <SelectValue placeholder="제조사" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectGroup>
-                                {addCncManufacturers.map((m) => (
-                                  <SelectItem
-                                    key={`edit-mfr-${m}`}
-                                    value={m}
-                                    className="text-sm"
-                                  >
-                                    {cncManufacturerLabel(m)}
-                                  </SelectItem>
-                                ))}
-                              </SelectGroup>
+                              {renderPresetManufacturerSelectItems()}
                               {allowManufacturerRequest ? (
                                 <>
                                   <SelectSeparator className="my-1.5 h-0.5 bg-slate-300" />
@@ -1718,7 +1670,7 @@ export const PracticeToothImplantFields = ({
                         <>
                           <div className="grid grid-cols-2 gap-1.5">
                             <Select
-                              value={editDraft.implantManufacturer || undefined}
+                              value={presetManufacturerSelectValue(editDraft.implantManufacturer)}
                               onValueChange={(nextManufacturer) => {
                                 if (nextManufacturer === MANUFACTURER_ADD_REQUEST_VALUE) {
                                   setEditRequestMode(true);
@@ -1728,37 +1680,14 @@ export const PracticeToothImplantFields = ({
                                 }
                                 setEditRequestMode(false);
                                 setEditRequestMemo("");
-                                const nextBrand = pickFirst(getCncBrands(nextManufacturer));
-                                const nextFamily = pickPreferredFamily(
-                                  getCncFamilies(nextManufacturer, nextBrand),
-                                );
-                                const nextType =
-                                  pickFirst(
-                                    getCncTypes(nextManufacturer, nextBrand, nextFamily),
-                                  ) || "Hex";
-                                setEditDraft({
-                                  implantManufacturer: nextManufacturer,
-                                  implantBrand: nextBrand,
-                                  implantFamily: nextFamily,
-                                  implantType: nextType,
-                                });
+                                applyPresetManufacturerDraft(nextManufacturer, setEditDraft);
                               }}
                             >
                               <SelectTrigger className={selectClass}>
                                 <SelectValue placeholder="제조사" />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectGroup>
-                                  {addCncManufacturers.map((m) => (
-                                    <SelectItem
-                                      key={`edit-mfr-${m}`}
-                                      value={m}
-                                      className="text-sm"
-                                    >
-                                      {cncManufacturerLabel(m)}
-                                    </SelectItem>
-                                  ))}
-                                </SelectGroup>
+                                {renderPresetManufacturerSelectItems()}
                                 {allowManufacturerRequest ? (
                                   <>
                                     <SelectSeparator className="my-1.5 h-0.5 bg-slate-300" />
@@ -1777,11 +1706,11 @@ export const PracticeToothImplantFields = ({
                               disabled={!editDraft.implantManufacturer}
                               onValueChange={(nextBrand) => {
                                 const nextFamily = pickPreferredFamily(
-                                  getCncFamilies(editDraft.implantManufacturer, nextBrand),
+                                  getFamilies(editDraft.implantManufacturer, nextBrand),
                                 );
                                 const nextType =
                                   pickFirst(
-                                    getCncTypes(
+                                    getTypes(
                                       editDraft.implantManufacturer,
                                       nextBrand,
                                       nextFamily,
@@ -1808,7 +1737,7 @@ export const PracticeToothImplantFields = ({
                                     value={b}
                                     className="text-sm"
                                   >
-                                    {cncBrandLabel(editDraft.implantManufacturer, b)}
+                                    {specBrandLabel(editDraft.implantManufacturer, b)}
                                   </SelectItem>
                                 ))}
                               </SelectContent>
@@ -1823,7 +1752,7 @@ export const PracticeToothImplantFields = ({
                               onValueChange={(nextFamily) => {
                                 const nextType =
                                   pickFirst(
-                                    getCncTypes(
+                                    getTypes(
                                       editDraft.implantManufacturer,
                                       editDraft.implantBrand,
                                       nextFamily,
@@ -1851,7 +1780,7 @@ export const PracticeToothImplantFields = ({
                                     value={f}
                                     className="text-sm"
                                   >
-                                    {cncFamilyLabel(
+                                    {specFamilyLabel(
                                       editDraft.implantManufacturer,
                                       editDraft.implantBrand,
                                       f,
@@ -1953,7 +1882,7 @@ export const PracticeToothImplantFields = ({
                             ) : null}
                           </span>
                           {(() => {
-                            const status = resolveAbutmentAdoptionStatus(fav);
+                            const status = resolveAbutmentAdoptionStatusWithCatalog(fav, connections);
                             if (status !== "requesting" && status !== "adopting") {
                               return null;
                             }
@@ -2191,7 +2120,7 @@ export const PracticeToothImplantFields = ({
                             <span className="inline-flex rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
                               {(() => {
                                 const fav = pickRoundBarFavorite(m);
-                                const status = resolveAbutmentAdoptionStatus(fav);
+                                const status = resolveAbutmentAdoptionStatusWithCatalog(fav, connections);
                                 if (status === "adopting") return "도입중";
                                 if (status === "requesting") return "요청중";
                                 return "환봉";
