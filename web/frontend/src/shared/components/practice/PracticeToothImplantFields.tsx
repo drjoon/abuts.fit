@@ -4,6 +4,7 @@
 // - web/frontend/src/shared/practice/transferMemo.ts
 // - web/frontend/src/shared/practice/roundBarAbutment.ts
 // change-log:
+// - 2026-08-26: 프리셋 라벨 카탈로그 display* 우선(혼합 대소문자 NeoBiotech 유지).
 // - 2026-08-26: 요청중→도입중(공개)→도입(뱃지 제거). 미도입은 제조사·견적 제외.
 // - 2026-08-25: presets 목록 최소 높이 축소(커스텀어벗 설정 모달 세로·3열 대응).
 // - 2026-08-21: 요청중(임플란트 추가 요청) 프리셋도 클릭 선택·활성 표시. 레거시 type=헥스 키 정규화.
@@ -48,7 +49,6 @@ import {
   IMPLANT_ADD_REQUEST_OPTION,
   ROUND_BAR_GUIDE_LINES,
   ROUND_BAR_GUIDE_TITLE,
-  implantFavoriteLabelParts,
   isManufacturerAddRequestFavorite,
   isPendingAbutmentAdoption,
   isRoundBarFavorite,
@@ -56,6 +56,7 @@ import {
   submitRoundBarManufacturerRequest,
 } from "@/shared/practice/roundBarAbutment";
 import { mergeCncImplantSpecs } from "@/shared/practice/cncImplantCatalog";
+import { implantFavoriteDisplayParts } from "@/shared/practice/implantDisplay";
 import { cn } from "@/shared/ui/cn";
 
 export type ToothImplantValues = {
@@ -100,6 +101,26 @@ const uniqueStrings = (values: Array<string | undefined | null>) => {
     const value = String(raw || "").trim();
     if (!value || seen.has(value)) continue;
     seen.add(value);
+    out.push(value);
+  }
+  return out;
+};
+const manufacturerKey = (value: string) => String(value || "").trim().toLowerCase();
+const sameManufacturer = (a: string, b: string) => {
+  const left = manufacturerKey(a);
+  const right = manufacturerKey(b);
+  return Boolean(left) && left === right;
+};
+/** 제조사: 대소문자만 다른 중복 제거. 먼저 나온(카탈로그) 표기 유지. */
+const uniqueManufacturers = (values: Array<string | undefined | null>) => {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of values) {
+    const value = String(raw || "").trim();
+    if (!value) continue;
+    const key = manufacturerKey(value);
+    if (seen.has(key)) continue;
+    seen.add(key);
     out.push(value);
   }
   return out;
@@ -329,7 +350,7 @@ const isPendingCatalogSpec = (
   return connections.some((c) => {
     if (!c.roundBar || c.adopted) return false;
     return (
-      String(c.manufacturer || "").trim().toLowerCase() === m &&
+      sameManufacturer(c.manufacturer, manufacturer) &&
       String(c.brand || "").trim().toLowerCase() === b &&
       (!f || String(c.family || "").trim().toLowerCase() === f) &&
       (!t || String(c.type || "").trim().toLowerCase() === t)
@@ -406,9 +427,18 @@ export const PracticeToothImplantFields = ({
           `${c.manufacturer}|${c.brand}|${c.family}|${c.type}`.toLowerCase(),
       ),
     );
+    const canonicalManufacturer = new Map<string, string>();
+    for (const c of fromCatalog) {
+      const key = manufacturerKey(c.manufacturer);
+      if (key && !canonicalManufacturer.has(key)) {
+        canonicalManufacturer.set(key, c.manufacturer);
+      }
+    }
     const fromFavorites = favorites
       .map((fav) => {
-        const manufacturer = String(fav.manufacturer || "").trim();
+        const manufacturer =
+          canonicalManufacturer.get(manufacturerKey(fav.manufacturer || "")) ||
+          String(fav.manufacturer || "").trim();
         const brand = String(fav.brand || "").trim();
         const family = String(fav.family || "").trim();
         const type = String(fav.type || "").trim();
@@ -458,18 +488,8 @@ export const PracticeToothImplantFields = ({
     [cncSpecs],
   );
 
-  const roundBarManufacturerOptions = useMemo(
-    () =>
-      uniqueStrings(
-        favorites
-          .filter((fav) => isRoundBarFavorite(fav))
-          .map((fav) => fav.manufacturer),
-      ),
-    [favorites],
-  );
-
   const cncManufacturerOptions = useMemo(() => {
-    const catalog = uniqueStrings(
+    const catalog = uniqueManufacturers(
       connections
         .filter(
           (c) =>
@@ -484,13 +504,17 @@ export const PracticeToothImplantFields = ({
     const currentIsRoundBar = favorites.some(
       (fav) =>
         isRoundBarFavorite(fav) &&
-        fav.manufacturer === current &&
+        sameManufacturer(fav.manufacturer, current) &&
         fav.brand === value.implantBrand &&
         fav.family === value.implantFamily &&
         fav.type === value.implantType,
     );
-    if (current && !currentIsRoundBar && !catalog.includes(current)) {
-      return [current, ...catalog];
+    if (
+      current &&
+      !currentIsRoundBar &&
+      !catalog.some((m) => sameManufacturer(m, current))
+    ) {
+      return uniqueManufacturers([current, ...catalog]);
     }
     return catalog;
   }, [
@@ -502,8 +526,24 @@ export const PracticeToothImplantFields = ({
     value.implantType,
   ]);
 
+  const cncManufacturerKeySet = useMemo(
+    () => new Set(cncManufacturerOptions.map(manufacturerKey)),
+    [cncManufacturerOptions],
+  );
+
+  const roundBarManufacturerOptions = useMemo(
+    () =>
+      uniqueManufacturers(
+        favorites
+          .filter((fav) => isRoundBarFavorite(fav))
+          .map((fav) => fav.manufacturer)
+          .filter((manufacturer) => !cncManufacturerKeySet.has(manufacturerKey(manufacturer))),
+      ),
+    [favorites, cncManufacturerKeySet],
+  );
+
   const manufacturerOptions = useMemo(
-    () => uniqueStrings([...cncManufacturerOptions, ...roundBarManufacturerOptions]),
+    () => uniqueManufacturers([...cncManufacturerOptions, ...roundBarManufacturerOptions]),
     [cncManufacturerOptions, roundBarManufacturerOptions],
   );
 
@@ -512,7 +552,7 @@ export const PracticeToothImplantFields = ({
       favorites.some(
         (fav) =>
           isRoundBarFavorite(fav) &&
-          fav.manufacturer === value.implantManufacturer &&
+          sameManufacturer(fav.manufacturer, value.implantManufacturer) &&
           fav.brand === value.implantBrand &&
           fav.family === value.implantFamily &&
           fav.type === value.implantType,
@@ -522,7 +562,8 @@ export const PracticeToothImplantFields = ({
 
   const pickRoundBarFavorite = (manufacturer: string) => {
     const rows = favorites.filter(
-      (fav) => isRoundBarFavorite(fav) && fav.manufacturer === manufacturer,
+      (fav) =>
+        isRoundBarFavorite(fav) && sameManufacturer(fav.manufacturer, manufacturer),
     );
     return rows.find((fav) => fav.adopted) || rows[0] || null;
   };
@@ -530,7 +571,7 @@ export const PracticeToothImplantFields = ({
   const brandOptions = useMemo(() => {
     const options = uniqueStrings(
       specRows
-        .filter((row) => row.manufacturer === value.implantManufacturer)
+        .filter((row) => sameManufacturer(row.manufacturer, value.implantManufacturer))
         .map((row) => row.brand),
     );
     const current = String(value.implantBrand || "").trim();
@@ -544,7 +585,7 @@ export const PracticeToothImplantFields = ({
         specRows
           .filter(
             (row) =>
-              row.manufacturer === value.implantManufacturer &&
+              sameManufacturer(row.manufacturer, value.implantManufacturer) &&
               row.brand === value.implantBrand,
           )
           .map((row) => familyKey(row.family))
@@ -557,7 +598,7 @@ export const PracticeToothImplantFields = ({
     const fromSpecs = specRows
       .filter(
         (row) =>
-          row.manufacturer === value.implantManufacturer &&
+          sameManufacturer(row.manufacturer, value.implantManufacturer) &&
           row.brand === value.implantBrand,
       )
       .map((row) => row.family);
@@ -589,7 +630,7 @@ export const PracticeToothImplantFields = ({
       specRows
         .filter(
           (row) =>
-            row.manufacturer === value.implantManufacturer &&
+            sameManufacturer(row.manufacturer, value.implantManufacturer) &&
             row.brand === value.implantBrand &&
             row.family === value.implantFamily,
         )
@@ -610,7 +651,9 @@ export const PracticeToothImplantFields = ({
     () =>
       new Map(
         manufacturerOptions.map((manufacturer) => {
-          const sample = connectionOptions.find((c) => c.manufacturer === manufacturer);
+          const sample = connectionOptions.find((c) =>
+            sameManufacturer(c.manufacturer, manufacturer),
+          );
           return [manufacturer, sample?.displayManufacturer || manufacturer];
         }),
       ),
@@ -622,7 +665,8 @@ export const PracticeToothImplantFields = ({
       new Map(
         brandOptions.map((brand) => {
           const sample = connectionOptions.find(
-            (c) => c.manufacturer === value.implantManufacturer && c.brand === brand,
+            (c) =>
+              sameManufacturer(c.manufacturer, value.implantManufacturer) && c.brand === brand,
           );
           return [brand, sample?.displayBrand || brand];
         }),
@@ -636,7 +680,7 @@ export const PracticeToothImplantFields = ({
         familyOptions.map((family) => {
           const sample = connectionOptions.find(
             (c) =>
-              c.manufacturer === value.implantManufacturer &&
+              sameManufacturer(c.manufacturer, value.implantManufacturer) &&
               c.brand === value.implantBrand &&
               c.family === family,
           );
@@ -652,7 +696,7 @@ export const PracticeToothImplantFields = ({
         typeOptions.map((type) => {
           const sample = connectionOptions.find(
             (c) =>
-              c.manufacturer === value.implantManufacturer &&
+              sameManufacturer(c.manufacturer, value.implantManufacturer) &&
               c.brand === value.implantBrand &&
               c.family === value.implantFamily &&
               c.type === type,
@@ -677,14 +721,16 @@ export const PracticeToothImplantFields = ({
   const getBrands = (manufacturer: string) =>
     uniqueStrings(
       specRows
-        .filter((row) => row.manufacturer === manufacturer)
+        .filter((row) => sameManufacturer(row.manufacturer, manufacturer))
         .map((row) => row.brand),
     );
 
   const getFamilies = (manufacturer: string, brand: string) =>
     uniqueStrings(
       specRows
-        .filter((row) => row.manufacturer === manufacturer && row.brand === brand)
+        .filter(
+          (row) => sameManufacturer(row.manufacturer, manufacturer) && row.brand === brand,
+        )
         .map((row) => row.family),
     );
 
@@ -693,7 +739,7 @@ export const PracticeToothImplantFields = ({
       specRows
         .filter(
           (row) =>
-            row.manufacturer === manufacturer &&
+            sameManufacturer(row.manufacturer, manufacturer) &&
             row.brand === brand &&
             row.family === family,
         )
@@ -703,14 +749,16 @@ export const PracticeToothImplantFields = ({
   const getCncBrands = (manufacturer: string) =>
     uniqueStrings(
       cncSpecRows
-        .filter((row) => row.manufacturer === manufacturer)
+        .filter((row) => sameManufacturer(row.manufacturer, manufacturer))
         .map((row) => row.brand),
     );
 
   const getCncFamilies = (manufacturer: string, brand: string) =>
     uniqueStrings(
       cncSpecRows
-        .filter((row) => row.manufacturer === manufacturer && row.brand === brand)
+        .filter(
+          (row) => sameManufacturer(row.manufacturer, manufacturer) && row.brand === brand,
+        )
         .map((row) => row.family)
         .filter(Boolean),
     );
@@ -720,7 +768,7 @@ export const PracticeToothImplantFields = ({
       cncSpecRows
         .filter(
           (row) =>
-            row.manufacturer === manufacturer &&
+            sameManufacturer(row.manufacturer, manufacturer) &&
             row.brand === brand &&
             row.family === family,
         )
@@ -728,7 +776,7 @@ export const PracticeToothImplantFields = ({
     );
 
   const addCncManufacturers = useMemo(
-    () => uniqueStrings(cncSpecs.map((c) => c.manufacturer)),
+    () => uniqueManufacturers(cncSpecs.map((c) => c.manufacturer)),
     [cncSpecs],
   );
 
@@ -736,7 +784,9 @@ export const PracticeToothImplantFields = ({
     () =>
       uniqueStrings(
         cncSpecRows
-          .filter((row) => row.manufacturer === addDraft.implantManufacturer)
+          .filter((row) =>
+            sameManufacturer(row.manufacturer, addDraft.implantManufacturer),
+          )
           .map((row) => row.brand),
       ),
     [addDraft.implantManufacturer, cncSpecRows],
@@ -748,7 +798,7 @@ export const PracticeToothImplantFields = ({
         cncSpecRows
           .filter(
             (row) =>
-              row.manufacturer === addDraft.implantManufacturer &&
+              sameManufacturer(row.manufacturer, addDraft.implantManufacturer) &&
               row.brand === addDraft.implantBrand,
           )
           .map((row) => row.family)
@@ -763,7 +813,7 @@ export const PracticeToothImplantFields = ({
         cncSpecRows
           .filter(
             (row) =>
-              row.manufacturer === addDraft.implantManufacturer &&
+              sameManufacturer(row.manufacturer, addDraft.implantManufacturer) &&
               row.brand === addDraft.implantBrand &&
               row.family === addDraft.implantFamily,
           )
@@ -781,7 +831,9 @@ export const PracticeToothImplantFields = ({
     () =>
       uniqueStrings(
         cncSpecRows
-          .filter((row) => row.manufacturer === editDraft.implantManufacturer)
+          .filter((row) =>
+            sameManufacturer(row.manufacturer, editDraft.implantManufacturer),
+          )
           .map((row) => row.brand),
       ),
     [editDraft.implantManufacturer, cncSpecRows],
@@ -793,7 +845,7 @@ export const PracticeToothImplantFields = ({
         cncSpecRows
           .filter(
             (row) =>
-              row.manufacturer === editDraft.implantManufacturer &&
+              sameManufacturer(row.manufacturer, editDraft.implantManufacturer) &&
               row.brand === editDraft.implantBrand,
           )
           .map((row) => row.family)
@@ -808,7 +860,7 @@ export const PracticeToothImplantFields = ({
         cncSpecRows
           .filter(
             (row) =>
-              row.manufacturer === editDraft.implantManufacturer &&
+              sameManufacturer(row.manufacturer, editDraft.implantManufacturer) &&
               row.brand === editDraft.implantBrand &&
               row.family === editDraft.implantFamily,
           )
@@ -823,13 +875,13 @@ export const PracticeToothImplantFields = ({
   );
 
   const cncManufacturerLabel = (manufacturer: string) => {
-    const sample = cncSpecs.find((c) => c.manufacturer === manufacturer);
+    const sample = cncSpecs.find((c) => sameManufacturer(c.manufacturer, manufacturer));
     return sample?.displayManufacturer || manufacturer;
   };
 
   const cncBrandLabel = (manufacturer: string, brand: string) => {
     const sample = cncSpecs.find(
-      (c) => c.manufacturer === manufacturer && c.brand === brand,
+      (c) => sameManufacturer(c.manufacturer, manufacturer) && c.brand === brand,
     );
     return sample?.displayBrand || brand;
   };
@@ -837,7 +889,7 @@ export const PracticeToothImplantFields = ({
   const cncFamilyLabel = (manufacturer: string, brand: string, family: string) => {
     const sample = cncSpecs.find(
       (c) =>
-        c.manufacturer === manufacturer &&
+        sameManufacturer(c.manufacturer, manufacturer) &&
         c.brand === brand &&
         c.family === family,
     );
@@ -1879,7 +1931,7 @@ export const PracticeToothImplantFields = ({
                     }
                   >
                     {(() => {
-                      const label = implantFavoriteLabelParts(fav);
+                      const label = implantFavoriteDisplayParts(fav, cncSpecs);
                       const title = label.line2
                         ? `${label.line1} · ${label.line2}`
                         : label.line1;
