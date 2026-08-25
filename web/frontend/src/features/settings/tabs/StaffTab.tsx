@@ -204,6 +204,9 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
           }))
         : [],
     );
+    setUsesDepartments(
+      Array.isArray(data?.departments) && data.departments.length > 0,
+    );
   }, [businessType, supportsDepartments, mockHeaders, token]);
 
   const refreshStaff = useCallback(async () => {
@@ -321,7 +324,7 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
     currentDepartmentId?: string | null,
     compact = false,
   ) => {
-    if (!usesDepartments || departments.length === 0) return null;
+    if (!supportsDepartments || departments.length === 0) return null;
     const value = currentDepartmentId ? String(currentDepartmentId) : "";
     return (
       <Select
@@ -485,7 +488,7 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
 
       let departmentId =
         pendingDepartmentByUserId[id] || defaultPendingDepartmentId || "";
-      if (usesDepartments && !departmentId) {
+      if (supportsDepartments && !departmentId) {
         toast({
           title: "부서를 선택해주세요",
           description: "승인 전에 배치할 부서를 선택해야 합니다.",
@@ -504,7 +507,7 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
         jsonBody: {
           role,
           businessType,
-          ...(usesDepartments ? { departmentId } : {}),
+          ...(supportsDepartments ? { departmentId } : {}),
         },
       });
 
@@ -615,7 +618,7 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
         </CardTitle>
         <CardDescription className="text-[13px] leading-relaxed">
           부서와 대표·직원 계정, 가입 신청을 함께 관리합니다.
-          {usesDepartments
+          {supportsDepartments
             ? " 사이드바 계정 전환은 같은 부서 계정만 표시됩니다."
             : ""}
         </CardDescription>
@@ -632,7 +635,7 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
 
         {membership === "owner" && (
           <>
-            {usesDepartments && (
+            {supportsDepartments && (
               <section className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5">
                 <div className="mb-4 flex items-center gap-2">
                   <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200/80">
@@ -861,7 +864,7 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
                             ) : null}
                           </div>
                         </div>
-                        {usesDepartments ? (
+                        {supportsDepartments ? (
                           <div className="px-3.5 pb-3">
                             {renderDepartmentControl(
                               entry._id,
@@ -922,7 +925,7 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
                               ) : null}
                             </div>
                           </div>
-                          {usesDepartments ? (
+                          {supportsDepartments ? (
                             <div className="px-3.5 pb-3">
                               {renderDepartmentControl(
                                 m._id,
@@ -1019,7 +1022,7 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
                                 ) : null}
                               </div>
                             </div>
-                            {usesDepartments ? (
+                            {supportsDepartments ? (
                               <div className="space-y-2">
                                 <Select
                                   value={

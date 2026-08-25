@@ -30,18 +30,7 @@ export async function getPendingJoinRequestsForOwner(req, res) {
       });
     }
 
-    const anchor = await BusinessAnchor.findOne({
-      _id: myBusinessAnchorId,
-      businessType,
-      $or: [{ primaryContactUserId: req.user._id }, { owners: req.user._id }],
-    })
-      .populate({
-        path: "joinRequests.user",
-        select: "name email",
-        match: { deletedAt: null },
-      })
-      .lean();
-
+    const anchor = await resolveOwnedBusiness(req, businessType);
     if (!anchor) {
       return res.status(404).json({
         success: false,
@@ -49,15 +38,23 @@ export async function getPendingJoinRequestsForOwner(req, res) {
       });
     }
 
-    const pending = (anchor.joinRequests || []).filter(
+    const populated = await BusinessAnchor.findById(anchor._id)
+      .populate({
+        path: "joinRequests.user",
+        select: "name email",
+        match: { deletedAt: null },
+      })
+      .lean();
+
+    const pending = (populated?.joinRequests || []).filter(
       (r) => r?.status === "pending" && r?.user,
     );
 
     return res.json({
       success: true,
       data: {
-        businessId: anchor._id,
-        businessName: anchor.name,
+        businessId: populated?._id || anchor._id,
+        businessName: populated?.name || anchor.name,
         joinRequests: pending,
       },
     });
@@ -314,11 +311,15 @@ export async function getMyStaffMembers(req, res) {
       });
     }
 
-    const anchor = await BusinessAnchor.findOne({
-      _id: myBusinessAnchorId,
-      businessType,
-      $or: [{ primaryContactUserId: req.user._id }, { owners: req.user._id }],
-    })
+    const anchorDoc = await resolveOwnedBusiness(req, businessType);
+    if (!anchorDoc) {
+      return res.status(403).json({
+        success: false,
+        message: "대표자 계정만 조회할 수 있습니다.",
+      });
+    }
+
+    const anchor = await BusinessAnchor.findById(anchorDoc._id)
       .populate({
         path: "members",
         select: "name email internalDepartmentId",
@@ -340,6 +341,7 @@ export async function getMyStaffMembers(req, res) {
         owners: 1,
         members: 1,
         businessType: 1,
+        requestorKind: 1,
       })
       .lean();
 
@@ -454,11 +456,7 @@ export async function approveJoinRequest(req, res) {
       });
     }
 
-    const anchor = await BusinessAnchor.findOne({
-      _id: myBusinessAnchorId,
-      businessType,
-      $or: [{ primaryContactUserId: req.user._id }, { owners: req.user._id }],
-    });
+    const anchor = await resolveOwnedBusiness(req, businessType);
 
     if (!anchor) {
       return res.status(403).json({

@@ -3,6 +3,10 @@
 // - web/backend/controllers/businesses/business.department.controller.js
 // - web/backend/controllers/auth/auth.controller.js
 
+import {
+  resolveOrgKindForDefaults,
+} from "../../utils/orgBusinessType.util.js";
+
 export const INTERNAL_DEPARTMENT_BUSINESS_TYPES = [
   "admin",
   "practice",
@@ -17,9 +21,9 @@ export const DEFAULT_ADMIN_DEPARTMENT_NAMES = [
 
 export function supportsInternalDepartments(anchor) {
   if (!anchor) return false;
-  return INTERNAL_DEPARTMENT_BUSINESS_TYPES.includes(
-    String(anchor.businessType || ""),
-  );
+  const businessType = String(anchor.businessType || "");
+  if (businessType === "practice") return true;
+  return INTERNAL_DEPARTMENT_BUSINESS_TYPES.includes(businessType);
 }
 
 export function getDefaultDepartmentNames(anchor) {
@@ -31,7 +35,7 @@ export function getDefaultDepartmentNames(anchor) {
     return ["치과"];
   }
   if (businessType === "requestor") {
-    const kind = String(anchor?.requestorKind || "");
+    const kind = resolveOrgKindForDefaults(anchor);
     if (kind === "lab") return ["기공소"];
     return ["치과"];
   }
