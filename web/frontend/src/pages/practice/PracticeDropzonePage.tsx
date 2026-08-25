@@ -765,24 +765,37 @@ export const PracticeDropzonePage = () => {
   const [arrivalDate, setArrivalDate] = useState(
     addDaysToDateInput(todayDate, DEFAULT_ARRIVAL_OFFSET_DAYS),
   );
+  const [rushProcessing, setRushProcessing] = useState(false);
   const accountArrivalDefaultDaysRef = useRef(accountArrivalDefaultDays);
   accountArrivalDefaultDaysRef.current = accountArrivalDefaultDays;
   const labArrivalDefaultsRef = useRef(labArrivalDefaults);
   labArrivalDefaultsRef.current = labArrivalDefaults;
 
-  const applyArrivalDefaultForLabId = useCallback((labId: string | null | undefined) => {
+  const applyArrivalDefaultForLabId = useCallback((labId: string | null | undefined, labName?: string | null) => {
     const nextDays = resolveLabArrivalDefaultDays(
       labId,
       labArrivalDefaultsRef.current,
       accountArrivalDefaultDaysRef.current,
+      labName,
     );
-    setArrivalDefaultDays((prev) => (prev === nextDays ? prev : nextDays));
-  }, []);
+    const orderYmd = String(orderDate || todayDate || "").trim() || todayDate;
+    const nextArrival = addDaysToDateInput(orderYmd, nextDays);
+    setArrivalDefaultDays(nextDays);
+    if (nextArrival) {
+      setArrivalDate(nextArrival);
+      setRushProcessing(
+        shouldEnablePracticeRushProcessing({
+          orderYmd,
+          arrivalYmd: nextArrival,
+        }),
+      );
+    }
+  }, [orderDate, todayDate]);
 
   const selectLabForIntake = useCallback(
     (lab: SearchBusinessResult | null) => {
       setSelectedLab(lab);
-      applyArrivalDefaultForLabId(lab?._id);
+      applyArrivalDefaultForLabId(lab?._id, lab?.name);
     },
     [applyArrivalDefaultForLabId, setSelectedLab],
   );
@@ -885,6 +898,7 @@ export const PracticeDropzonePage = () => {
           selectedLab?._id,
           labArrivalDefaultsRef.current,
           accountArrivalDefaultDaysRef.current,
+          selectedLab?.name,
         ),
       );
     } catch {
@@ -927,6 +941,7 @@ export const PracticeDropzonePage = () => {
             selectedLab?._id,
             labArrivalDefaultsRef.current,
             accountArrivalDefaultDaysRef.current,
+            selectedLab?.name,
           ),
         );
       } catch {
@@ -939,7 +954,6 @@ export const PracticeDropzonePage = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authToken]);
 
-  const [rushProcessing, setRushProcessing] = useState(false);
   const [rushConfirmOpen, setRushConfirmOpen] = useState(false);
   const [pendingRushArrivalYmd, setPendingRushArrivalYmd] = useState("");
   const [prosthesisTypes, setProsthesisTypes] = useState<string[]>([...PRESET_PROSTHESIS_TYPES]);

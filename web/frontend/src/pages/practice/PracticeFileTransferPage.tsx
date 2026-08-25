@@ -1323,9 +1323,9 @@ export const PracticeFileTransferPage = ({
     ownOneStarBlockedLabIds,
   });
 
-  const applyArrivalDefaultForLabIdRef = useRef<(labId: string | null | undefined) => void>(
-    () => {},
-  );
+  const applyArrivalDefaultForLabIdRef = useRef<
+    (labId: string | null | undefined, labName?: string | null) => void
+  >(() => {});
 
   // 레거시 「자동 매칭」draft는 어벗츠기공소(고정)로 승격한다.
   useEffect(() => {
@@ -1335,7 +1335,7 @@ export const PracticeFileTransferPage = ({
       pinnedLabs.find((lab) => isPinnedAbutsRecentLab(lab)) || ABUTS_PINNED_LAB_SEED;
     setSelectedLab(abuts);
     if (!editingSentTransferRef.current) {
-      applyArrivalDefaultForLabIdRef.current(abuts?._id);
+      applyArrivalDefaultForLabIdRef.current(abuts?._id, abuts?.name);
     }
   }, [selectedLab, setSelectedLab, pinnedLabs]);
   pendingLocalFilesRef.current = files;
@@ -1378,16 +1378,38 @@ export const PracticeFileTransferPage = ({
   arrivalDefaultDaysRef.current = arrivalDefaultDays;
   const selectedLabIdRef = useRef(String(selectedLab?._id || "").trim());
   selectedLabIdRef.current = String(selectedLab?._id || "").trim();
+  const selectedLabNameRef = useRef(String(selectedLab?.name || "").trim());
+  selectedLabNameRef.current = String(selectedLab?.name || "").trim();
+  const todayDateRef = useRef(todayDate);
+  todayDateRef.current = todayDate;
+  const orderDateRef = useRef(orderDate);
+  orderDateRef.current = orderDate;
 
   const applyArrivalDefaultForLabId = useCallback(
-    (labId: string | null | undefined) => {
+    (labId: string | null | undefined, labName?: string | null) => {
       const nextDays = resolveLabArrivalDefaultDays(
         labId,
         labArrivalDefaultsRef.current,
         accountArrivalDefaultDaysRef.current,
+        labName,
       );
-      if (nextDays === arrivalDefaultDaysRef.current) return;
+      const orderYmd = String(orderDateRef.current || todayDateRef.current || "").trim();
+      const nextArrival = orderYmd
+        ? addDaysToDateInput(orderYmd, nextDays)
+        : addDaysToDateInput(todayDateRef.current, nextDays);
+      // effect auto-sync와 경합하지 않도록 스킵 후 도착일을 직접 맞춘다.
+      skipNextArrivalAutoSyncRef.current = true;
+      arrivalDefaultDaysRef.current = nextDays;
       setArrivalDefaultDays(nextDays);
+      if (nextArrival) {
+        setArrivalDate(nextArrival);
+        setRushProcessing(
+          shouldEnablePracticeRushProcessing({
+            orderYmd: orderYmd || todayDateRef.current,
+            arrivalYmd: nextArrival,
+          }),
+        );
+      }
     },
     [],
   );
@@ -1397,7 +1419,7 @@ export const PracticeFileTransferPage = ({
     (lab: SearchBusinessResult | null) => {
       setSelectedLab(lab);
       if (editingSentTransferRef.current) return;
-      applyArrivalDefaultForLabId(lab?._id);
+      applyArrivalDefaultForLabId(lab?._id, lab?.name);
     },
     [applyArrivalDefaultForLabId, setSelectedLab],
   );
@@ -1960,6 +1982,7 @@ export const PracticeFileTransferPage = ({
       selectedLabIdRef.current,
       nextLabArrivalDefaults ?? labArrivalDefaultsRef.current,
       nextAccountArrivalDefaultDays,
+      selectedLabNameRef.current,
     );
     setArrivalDefaultDays(nextActiveArrivalDefaultDays);
     setProsthesisTypeCatalog(nextProsthesisTypes);
@@ -2769,6 +2792,7 @@ export const PracticeFileTransferPage = ({
               selectedLabIdRef.current,
               labArrivalDefaultsRef.current,
               accountArrivalDefaultDaysRef.current,
+              selectedLabNameRef.current,
             ),
           );
         }
@@ -6915,12 +6939,23 @@ export const PracticeFileTransferPage = ({
                   arrivalDate,
                   setArrivalDate,
                   onOrderArrivalDatesChange: ({ arrivalDate: nextArrival }) => {
-                    skipNextArrivalAutoSyncRef.current = true;
-                    setOrderDate(todayDate);
                     const arrival =
                       String(nextArrival || "").trim() >= todayDate
                         ? String(nextArrival || "").trim()
                         : addDaysToDateInput(todayDate, arrivalDefaultDays);
+                    const nextDays =
+                      kstYmdDiffDays(todayDate, arrival) == null
+                        ? arrivalDefaultDays
+                        : normalizeArrivalDefaultDays(
+                            Number(kstYmdDiffDays(todayDate, arrival)),
+                          );
+                    const willChangeOrder = orderDate !== todayDate;
+                    const willChangeDays = nextDays !== arrivalDefaultDays;
+                    // 일수가 안 바뀌면 effect가 돌지 않아 skip이 남을 수 있음 → 필요할 때만 켠다.
+                    if (willChangeOrder || willChangeDays) {
+                      skipNextArrivalAutoSyncRef.current = true;
+                    }
+                    setOrderDate(todayDate);
                     const days = getPracticeWorkPeriodDays(todayDate, arrival);
                     if (isPracticeWorkPeriodBlocked(days)) {
                       toast({

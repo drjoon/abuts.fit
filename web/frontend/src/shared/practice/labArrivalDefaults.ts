@@ -60,15 +60,24 @@ export const resolveLabArrivalDefaultDays = (
   labAnchorId: string | null | undefined,
   labArrivalDefaults: PracticeLabArrivalDefault[] | null | undefined,
   accountArrivalDefaultDays: number = DEFAULT_PRACTICE_ARRIVAL_OFFSET_DAYS,
+  labName?: string | null,
 ): number => {
   const id = String(labAnchorId || "").trim();
+  const name = String(labName || "").trim();
   const fallback = normalizeArrivalDefaultDays(accountArrivalDefaultDays);
-  if (!OBJECT_ID_RE.test(id)) return fallback;
-  const hit = (labArrivalDefaults || []).find(
-    (row) => String(row.labAnchorId || "").trim() === id,
-  );
-  if (!hit) return fallback;
-  return normalizeArrivalDefaultDays(hit.arrivalDefaultDays);
+  const rows = labArrivalDefaults || [];
+  if (OBJECT_ID_RE.test(id)) {
+    const hit = rows.find((row) => String(row.labAnchorId || "").trim() === id);
+    if (hit) return normalizeArrivalDefaultDays(hit.arrivalDefaultDays);
+  }
+  // 어벗츠 시드 id(recent:…) 등 ObjectId 전 선택 → 이름으로 매칭
+  if (name) {
+    const byName = rows.find(
+      (row) => String(row.labName || "").trim() === name,
+    );
+    if (byName) return normalizeArrivalDefaultDays(byName.arrivalDefaultDays);
+  }
+  return fallback;
 };
 
 export const upsertLabArrivalDefault = (
