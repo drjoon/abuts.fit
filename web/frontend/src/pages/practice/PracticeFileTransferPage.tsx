@@ -107,6 +107,7 @@
  * - 2026-08-25: 익스프레스에도 엑스퍼트와 같은 가이드투어 카드 배치. 투어 중 모드 전환·단계 동기화.
  * - 2026-08-25: 엑스퍼트 가이드투어 카드 — 헤더 버튼~기공소·환자·날짜 행 세로 맞춤(폭=주문-치과도착).
  * - 2026-08-25: 익스프레스 단계 표시 ↔ 가이드투어(기공소·환자·날짜) 위치 교체 — 투어는 상단 오른쪽, 단계는 헤더 필드 옆.
+ * - 2026-08-25: 상단 가이드투어 — 기공소·환자·날짜·보철물 전체 투어(툴바 오른쪽 위).
  * - 2026-08-25: 상단 가이드투어 — 기공소·환자·날짜·보철물 전체 투어(휴지통 오른쪽).
  * - 2026-08-20: PC 첨부 목록에도 이미지 썸네일(모바일 동기화 포함).
  * - 2026-08-20: 구강포토 토스트 3초·닫기, CSP blob 썸네일, 클릭 미리보기, 동기화 반영.
@@ -6886,33 +6887,35 @@ export const PracticeFileTransferPage = ({
           </Badge>
         ) : null}
       </Button>
-      <Button
-        type="button"
-        size="sm"
-        className="h-9 px-3"
-        onClick={() => {
-          if (guideTourActive) {
-            setGuideTourExitSignal((n) => n + 1);
-            return;
-          }
-          setGuideTourStartSignal((n) => n + 1);
-        }}
-      >
-        {guideTourActive ? "투어 종료" : "가이드투어"}
-      </Button>
-      {formSyncStatusLabel ? (
-        <span
-          title={formSyncStatusLabel}
-          className={cn(
-            "truncate text-xs font-normal",
-            formSyncStatus === "error"
-              ? "text-destructive"
-              : "text-muted-foreground",
-          )}
+      <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
+        {formSyncStatusLabel ? (
+          <span
+            title={formSyncStatusLabel}
+            className={cn(
+              "truncate text-xs font-normal",
+              formSyncStatus === "error"
+                ? "text-destructive"
+                : "text-muted-foreground",
+            )}
+          >
+            {formSyncStatusLabel}
+          </span>
+        ) : null}
+        <Button
+          type="button"
+          size="sm"
+          className="h-9 px-3"
+          onClick={() => {
+            if (guideTourActive) {
+              setGuideTourExitSignal((n) => n + 1);
+              return;
+            }
+            setGuideTourStartSignal((n) => n + 1);
+          }}
         >
-          {formSyncStatusLabel}
-        </span>
-      ) : null}
+          {guideTourActive ? "투어 종료" : "가이드투어"}
+        </Button>
+      </div>
     </>
   );
 
@@ -7168,7 +7171,7 @@ export const PracticeFileTransferPage = ({
           <Card className="min-w-0 border-0 bg-transparent shadow-none hover:shadow-none">
             {isMobile || useIntakeHeaderToolbar ? null : (
             <CardHeader className="px-0 pb-2 pt-0">
-              <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <div className="flex w-full min-w-0 flex-wrap items-center gap-2">
                 {practiceWorkspaceToolbar}
               </div>
             </CardHeader>

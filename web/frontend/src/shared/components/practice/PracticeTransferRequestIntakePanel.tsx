@@ -2351,7 +2351,7 @@ export const PracticeTransferRequestIntakePanel = ({
         <>
           {portaledHeaderTour}
           {headerToolbar ? (
-            <div className="mb-7 flex min-w-0 flex-wrap items-center gap-2">
+            <div className="mb-7 flex w-full min-w-0 flex-wrap items-center gap-2">
               {headerToolbar}
             </div>
           ) : null}

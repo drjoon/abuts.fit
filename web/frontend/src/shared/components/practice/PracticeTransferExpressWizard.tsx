@@ -438,7 +438,7 @@ export function PracticeTransferExpressWizard({
   return (
     <div className="flex min-h-0 flex-col gap-6">
       {headerToolbar ? (
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <div className="flex w-full min-w-0 flex-wrap items-center gap-2">
           {headerToolbar}
         </div>
       ) : null}
