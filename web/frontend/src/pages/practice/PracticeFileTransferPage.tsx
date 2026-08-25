@@ -6734,7 +6734,7 @@ export const PracticeFileTransferPage = ({
     acceptedHint: PRACTICE_ACCEPTED_HINT,
                     fileInputId: "practice-file-transfer-input",
                     requirementNote:
-                      "모바일에서 같은 계정·같은 환자로 사진을 찍어 올리세요.",
+                      "모바일에서 환자 사진 찍어 첨부할 수 있어요.",
                     files: combinedDisplayFiles.map((file) => {
                       const localFile =
                         file.kind === "local" ? files[file.localIndex] : null;
