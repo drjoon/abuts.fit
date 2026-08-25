@@ -201,6 +201,7 @@ const toResponse = (doc) => {
     implantAddRequest: isImplantAddRequest(row),
     adopted: Boolean(row.adopted),
     adoptedKind: normalizeAdoptedKind(row.adoptedKind),
+    isPublic: Boolean(row.isPublic),
     adoptedAt: row.adoptedAt || null,
     revertedAt: row.revertedAt || null,
     createdAt: row.createdAt || null,

@@ -4,6 +4,7 @@
 // - web/backend/server.js
 // - web/backend/controllers/practiceTransfers/roundBarAbutmentRequest.controller.js
 // change-log:
+// - 2026-08-26: isPublic+도입 스펙은 모든 치과 카탈로그에 포함.
 // - 2026-08-14: 로그인 치과면 도입된 환봉 스펙을 카탈로그 앞에 붙여 프리셋 편집 선택에 나오게 한다.
 import mongoose from "mongoose";
 import ImplantPreset from "../../models/implantPreset.model.js";
@@ -110,13 +111,11 @@ function getBusinessAnchorId(req) {
 }
 
 async function loadAdoptedRoundBarConnections(businessAnchorId) {
-  if (!businessAnchorId || !mongoose.Types.ObjectId.isValid(businessAnchorId)) {
-    return [];
+  const or = [{ adopted: true, isPublic: true }];
+  if (businessAnchorId && mongoose.Types.ObjectId.isValid(businessAnchorId)) {
+    or.push({ practiceAnchorId: businessAnchorId, adopted: true });
   }
-  const requests = await RoundBarAbutmentRequest.find({
-    practiceAnchorId: businessAnchorId,
-    adopted: true,
-  })
+  const requests = await RoundBarAbutmentRequest.find({ $or: or })
     .select({ manufacturer: 1, brand: 1, family: 1, type: 1 })
     .lean();
   const out = [];

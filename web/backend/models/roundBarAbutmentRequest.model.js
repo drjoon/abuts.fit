@@ -3,6 +3,8 @@
 // - web/backend/controllers/practiceTransfers/roundBarAbutmentRequest.controller.js
 // - web/backend/controllers/admin/admin.roundBarAbutment.controller.js
 // - web/frontend/src/pages/admin/system/AdminRoundBarAbutmentTab.tsx
+// change-log:
+// - 2026-08-26: isPublic(모든 치과 공개). 관리자 추가는 practiceAnchorId 선택.
 import mongoose from "mongoose";
 import { ROUND_BAR_HEX_TYPE } from "../utils/roundBarAbutment.js";
 
@@ -11,7 +13,8 @@ const roundBarAbutmentRequestSchema = new mongoose.Schema(
     practiceAnchorId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "BusinessAnchor",
-      required: true,
+      required: false,
+      default: null,
       index: true,
     },
     practiceName: {
@@ -56,6 +59,12 @@ const roundBarAbutmentRequestSchema = new mongoose.Schema(
       enum: ["cnc", "round_bar", ""],
       default: "",
       trim: true,
+    },
+    /** 체크 시 도입된 스펙을 모든 치과 카탈로그에 공개 */
+    isPublic: {
+      type: Boolean,
+      default: false,
+      index: true,
     },
     adoptedAt: { type: Date, default: null },
     adoptedBy: {

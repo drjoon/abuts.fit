@@ -190,6 +190,7 @@ import {
 } from "../../controllers/support/support.controller.js";
 import {
   adminListRoundBarAbutmentRequests,
+  adminCreateRoundBarAbutmentRequest,
   adminUpdateRoundBarAbutmentRequest,
   adminDeleteRoundBarAbutmentRequest,
 } from "../../controllers/admin/admin.roundBarAbutment.controller.js";
@@ -326,6 +327,7 @@ router.patch(
 );
 
 router.get("/round-bar-requests", adminListRoundBarAbutmentRequests);
+router.post("/round-bar-requests", adminCreateRoundBarAbutmentRequest);
 router.patch("/round-bar-requests/:id", adminUpdateRoundBarAbutmentRequest);
 router.delete("/round-bar-requests/:id", adminDeleteRoundBarAbutmentRequest);
 

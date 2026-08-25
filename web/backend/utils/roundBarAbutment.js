@@ -48,18 +48,23 @@ export const buildRoundBarSpecKey = ({ manufacturer, brand, family, type }) =>
 export const normalizeRoundBarSpec = (raw, options = {}) => {
   const row = raw && typeof raw === "object" ? raw : {};
   const allowType = Boolean(options.allowType);
+  const uppercase = Boolean(options.uppercase);
   const implantAddRequest = Boolean(
     options.implantAddRequest || isImplantAddRequest(row),
   );
   const defaultType = implantAddRequest
     ? IMPLANT_ADD_REQUEST_OPTION
     : ROUND_BAR_HEX_TYPE;
+  const normalizeText = (value) => {
+    const text = String(value || "").trim();
+    return uppercase ? text.toUpperCase() : text;
+  };
   return {
-    manufacturer: String(row.manufacturer || "").trim(),
-    brand: String(row.brand || "").trim(),
-    family: String(row.family || "").trim(),
+    manufacturer: normalizeText(row.manufacturer),
+    brand: normalizeText(row.brand),
+    family: normalizeText(row.family),
     type: allowType
-      ? String(row.type || "").trim() || defaultType
+      ? normalizeText(row.type) || defaultType
       : defaultType,
     implantAddRequest,
   };

@@ -6,6 +6,7 @@
 // - web/frontend/src/pages/admin/system/AdminRoundBarAbutmentTab.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // change-log:
+// - 2026-08-26: 관리자 추가·isPublic·스펙 대문자·명시 저장.
 // - 2026-08-24: 관리자 어벗 추가 요청 삭제 API 클라이언트.
 // - 2026-08-23: 미제공 안내 `{치아} : 어벗츠 미제공 커스텀어벗은…`.
 // - 2026-08-21: 미제공 CA 안내 INTRO/OUTRO 단문화.
@@ -79,6 +80,7 @@ export type RoundBarAbutmentRequest = {
   type: string;
   adopted: boolean;
   adoptedKind?: AbutmentAdoptedKind;
+  isPublic?: boolean;
   adoptedAt?: string | null;
   revertedAt?: string | null;
   createdAt?: string | null;
@@ -168,6 +170,7 @@ export type RoundBarRequestUpdatedPayload = {
   favoriteId?: string;
   adopted?: boolean;
   adoptedKind?: AbutmentAdoptedKind;
+  isPublic?: boolean;
   manufacturer?: string;
   brand?: string;
   family?: string;
@@ -291,13 +294,51 @@ export async function fetchAdminRoundBarRequests(params: {
   return Array.isArray(res.data?.data) ? res.data.data : [];
 }
 
+export async function createAdminRoundBarRequest(params: {
+  token: string;
+  payload: Partial<
+    Pick<
+      RoundBarAbutmentRequest,
+      | "manufacturer"
+      | "brand"
+      | "family"
+      | "type"
+      | "adopted"
+      | "adoptedKind"
+      | "isPublic"
+    >
+  >;
+}) {
+  const res = await apiFetch<{
+    success?: boolean;
+    message?: string;
+    data?: RoundBarAbutmentRequest;
+  }>({
+    path: "/api/admin/round-bar-requests",
+    method: "POST",
+    token: params.token,
+    jsonBody: params.payload,
+    skipCache: true,
+  });
+  if (!res.ok) {
+    throw new Error(res.data?.message || "추가에 실패했습니다.");
+  }
+  return res.data?.data || null;
+}
+
 export async function patchAdminRoundBarRequest(params: {
   token: string;
   id: string;
   patch: Partial<
     Pick<
       RoundBarAbutmentRequest,
-      "manufacturer" | "brand" | "family" | "type" | "adopted" | "adoptedKind"
+      | "manufacturer"
+      | "brand"
+      | "family"
+      | "type"
+      | "adopted"
+      | "adoptedKind"
+      | "isPublic"
     >
   >;
 }) {
