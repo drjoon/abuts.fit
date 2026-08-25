@@ -1,7 +1,7 @@
 /**
  * 치과 기공의뢰 — 최근 전송 「전체 보기」 모달.
  * 3주 세로 스크롤 캘린더. 기간 필터 없음(년/월·검색·상태·요일 숨김).
- * 취소 뱃지=작업취소·휴지통(취소·거부). 상단 상태 뱃지에 채팅 unread 합산.
+ * 취소 뱃지=작업취소(휴지통 취소·거부는 제외 — 휴지통 서랍). 상단 상태 뱃지에 채팅 unread 합산.
  * 2026-08-14: 사이드바 1페이지를 시드로 재사용. 열 때 /my 재요청하지 않음.
  * 2026-08-15: 주문 후 1영업일 미수락 「수락대기」뱃지.
  * 2026-08-16: 기공소 작업취소 카드 깜빡임 하이라이트.
@@ -25,6 +25,7 @@
  * 2026-08-20: 모바일 — 가로 스크롤 상태칩·터치 카드·풀높이 시트.
  * 2026-08-25: 데스크톱도 풀스크린. 닫기 아이콘·히트영역 확대.
  * 2026-08-25: 캘린더 칩에서 휴지통(취소·거부) 제외 — 삭제 즉시 달력에서 사라짐.
+ * 2026-08-25: 휴지통 건은 상단 뱃지 카운트·목록에서도 제외(취소=작업취소만, 휴지통 서랍과 정합).
  * 2026-08-25: 캘린더 칩에서 「생산 전」등 생산단계 문구 제거(운송·배송완료만).
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -359,51 +360,57 @@ export function PracticeRecentTransfersAllModal({
     [searchedRequests, chatRooms],
   );
 
-  const statusCounts = useMemo(
-    () => computeGroupedStatusCounts(groupedTransfers),
+  // 휴지통(취소·거부)은 메인 휴지통 서랍으로 — 전체보기 뱃지·달력·목록에서 제외
+  const visibleGroupedTransfers = useMemo(
+    () =>
+      groupedTransfers.filter(
+        (transfer) => !isPracticeTransferTrashStatus(transfer.status),
+      ),
     [groupedTransfers],
+  );
+
+  const statusCounts = useMemo(
+    () => computeGroupedStatusCounts(visibleGroupedTransfers),
+    [visibleGroupedTransfers],
   );
 
   const statusUnreadCounts = useMemo(
-    () => computeGroupedStatusUnreadCounts(groupedTransfers),
-    [groupedTransfers],
+    () => computeGroupedStatusUnreadCounts(visibleGroupedTransfers),
+    [visibleGroupedTransfers],
   );
 
   const filteredTransfers = useMemo(
-    () => filterGroupedTransfersByStatus(groupedTransfers, statusFilters),
-    [groupedTransfers, statusFilters],
+    () => filterGroupedTransfersByStatus(visibleGroupedTransfers, statusFilters),
+    [visibleGroupedTransfers, statusFilters],
   );
 
   const calendarItems = useMemo((): PracticeCalendarChipItem[] => {
-    // 휴지통(치과 취소·거부)은 상단 뱃지·모바일 목록에만 두고, 달력에서는 즉시 제거
-    return filteredTransfers
-      .filter((transfer) => !isPracticeTransferTrashStatus(transfer.status))
-      .map((transfer) => {
-        const lab =
-          String(transfer.targetLab || "-")
-            .replace(/\s*→.*$/g, "")
-            .trim() || "-";
-        const patient = resolvePracticeTransferListPatientName(transfer);
-        const teeth = resolvePracticeTransferListToothNumbers(transfer);
-        const deliveryLabel = getPracticeAbutmentDeliveryChipLabel({
-          hasCustomAbutment: Boolean(transfer.hasCustomAbutment),
-          abutmentDeliveryInfo: transfer.abutmentDeliveryInfo || null,
-        });
-        return {
-          id: `${transfer.id}:${transfer.transferId}`,
-          orderDate: transfer.orderDate,
-          arrivalDate: transfer.arrivalDate,
-          colorKey: String(transfer.targetLabAnchorId || "").trim() || lab,
-          statusTone: resolvePracticeCalendarStatusTone(transfer.status),
-          isRemake: Boolean(transfer.isRemake),
-          sortLabel: lab,
-          line: [lab, patient || "—", teeth || "—", deliveryLabel]
-            .filter(Boolean)
-            .join(" / "),
-          unreadCount: Math.max(0, Number(transfer.unreadCount || 0)),
-          canDelete: canDeletePracticeTransferByStatus(transfer.status),
-        };
+    return filteredTransfers.map((transfer) => {
+      const lab =
+        String(transfer.targetLab || "-")
+          .replace(/\s*→.*$/g, "")
+          .trim() || "-";
+      const patient = resolvePracticeTransferListPatientName(transfer);
+      const teeth = resolvePracticeTransferListToothNumbers(transfer);
+      const deliveryLabel = getPracticeAbutmentDeliveryChipLabel({
+        hasCustomAbutment: Boolean(transfer.hasCustomAbutment),
+        abutmentDeliveryInfo: transfer.abutmentDeliveryInfo || null,
       });
+      return {
+        id: `${transfer.id}:${transfer.transferId}`,
+        orderDate: transfer.orderDate,
+        arrivalDate: transfer.arrivalDate,
+        colorKey: String(transfer.targetLabAnchorId || "").trim() || lab,
+        statusTone: resolvePracticeCalendarStatusTone(transfer.status),
+        isRemake: Boolean(transfer.isRemake),
+        sortLabel: lab,
+        line: [lab, patient || "—", teeth || "—", deliveryLabel]
+          .filter(Boolean)
+          .join(" / "),
+        unreadCount: Math.max(0, Number(transfer.unreadCount || 0)),
+        canDelete: canDeletePracticeTransferByStatus(transfer.status),
+      };
+    });
   }, [filteredTransfers]);
 
   const calendarItemById = useMemo(() => {
@@ -424,7 +431,10 @@ export function PracticeRecentTransfersAllModal({
           : resolvePracticeCalendarStatusTone(item.filter),
       count: statusCounts[item.countKey],
       unreadCount: statusUnreadCounts[item.countKey],
-      tooltip: item.tooltip,
+      tooltip:
+        item.filter === "취소"
+          ? "기공소 작업취소·지정 거부 건(휴지통으로 옮긴 건은 휴지통에서 확인)"
+          : item.tooltip,
     }));
   }, [statusCounts, statusUnreadCounts]);
 
