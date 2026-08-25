@@ -5,6 +5,7 @@
 // - 2026-08-19: 수가 Off면 live quote-context로 기공비 미설정·어벗 단가 표시.
 // - 2026-08-19: 치아 옆 스크롤·R/M/L 제거. 견적 바에 << < > >>(1칸·5칸).
 // - 2026-08-24: 의뢰상세 — 치료할 치아만 표시. 상·하 각 6개 이하면 크게보기·스크롤 숨김.
+// - 2026-08-25: 구강스캔(기공의뢰)은 디자인+생산 고정 — 치식 카드 모드 라벨 제거(작성 UI와 동일).
 import { useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -23,12 +24,10 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/shared/ui/cn";
 import {
-  ABUTMENT_PRODUCT_MODE_SHORT_LABEL,
   formatAbutmentCompact,
   formatAbutmentSummary,
   formatImplantCompact,
   formatImplantSummary,
-  resolveToothAbutmentProductMode,
   type ToothWorkSelection,
 } from "@/shared/practice/transferMemo";
 import {
@@ -350,13 +349,6 @@ export const PracticeToothWorkChartReadOnly = ({
                           isTemporaryToothProsthesisType(row.prosthesisType)
                             ? "어벗"
                             : "커스텀"}
-                        </span>
-                        <span className="h-4 w-full truncate px-0.5 text-center text-[10px] leading-none text-primary-strong">
-                          {
-                            ABUTMENT_PRODUCT_MODE_SHORT_LABEL[
-                              resolveToothAbutmentProductMode(row)
-                            ]
-                          }
                         </span>
                         <TooltipProvider>
                           <div className="flex w-full flex-col items-stretch gap-0.5 px-0.5">
