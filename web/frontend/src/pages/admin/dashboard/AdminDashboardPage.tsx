@@ -3209,6 +3209,7 @@ export const AdminDashboardPage = () => {
         onClose={() => setHexVerificationDialogOpen(false)}
         title="ExoCAD 헥스 회전 확인"
         panelClassName="!w-[min(900px,calc(100vw-2rem))] !max-w-[calc(100vw-2rem)]"
+        descriptionScrollable={false}
         description={
           <div className="space-y-3 text-sm text-gray-700">
             <div className="text-xs text-muted-foreground">

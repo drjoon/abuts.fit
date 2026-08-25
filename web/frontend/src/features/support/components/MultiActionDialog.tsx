@@ -2,7 +2,8 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
-import type { ReactNode } from "react";
+// - 2026-08-25: open 시 body·대시보드 스크롤 잠금(바깥 스크롤바 제거).
+import { useEffect, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 
@@ -51,6 +52,29 @@ export const MultiActionDialog = ({
   descriptionScrollable = true,
 }: MultiActionDialogProps) => {
   const hasActions = actions.length > 0;
+
+  useEffect(() => {
+    if (!open || typeof document === "undefined") return;
+
+    const dashboardScroll = document.querySelector(
+      '[data-dashboard-scroll="1"]',
+    ) as HTMLElement | null;
+    const prevBodyOverflow = document.body.style.overflow;
+    const prevDashboardOverflowY = dashboardScroll?.style.overflowY ?? "";
+
+    document.body.style.overflow = "hidden";
+    if (dashboardScroll) {
+      dashboardScroll.style.overflowY = "hidden";
+    }
+
+    return () => {
+      document.body.style.overflow = prevBodyOverflow;
+      if (dashboardScroll) {
+        dashboardScroll.style.overflowY = prevDashboardOverflowY;
+      }
+    };
+  }, [open]);
+
   if (!open) return null;
 
   if (typeof document === "undefined") return null;
