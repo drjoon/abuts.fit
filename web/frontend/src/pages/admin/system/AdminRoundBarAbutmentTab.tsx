@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-26: 도입 체크박스 항상 활성. 유형 미선택 시 체크 시도하면 토스트.
 // - 2026-08-26: 입력 대문자화 제거. 공개/도입 시 관리자 스펙으로 치과 프리셋 덮어쓰기.
 // - 2026-08-26: 공개·도입 독립(공개 왼쪽). 도입 해제해도 공개 유지.
 // - 2026-08-26: 도입/공개/유형도 명시 저장만. 브랜드·패밀리·타입 다중 OR(+).
@@ -576,11 +577,16 @@ export const AdminRoundBarAbutmentTab = ({
         label="도입"
         tooltip={ADOPT_TOOLTIP}
         checked={draft.adopted}
-        disabled={
-          opts.busy ||
-          (draft.adopted ? false : !normalizeAdoptedKind(draft.adoptedKind))
-        }
+        disabled={opts.busy}
         onCheckedChange={(checked) => {
+          if (checked && !normalizeAdoptedKind(draft.adoptedKind)) {
+            toast({
+              title: "유형을 먼저 선택하세요",
+              description: "도입 전에 CNC어벗 또는 환봉어벗을 선택해주세요.",
+              variant: "destructive",
+            });
+            return;
+          }
           opts.onChange({ adopted: checked });
         }}
       />

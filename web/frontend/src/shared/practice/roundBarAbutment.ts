@@ -6,6 +6,7 @@
 // - web/frontend/src/pages/admin/system/AdminRoundBarAbutmentTab.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // change-log:
+// - 2026-08-26: OR(` | `) 스펙 전개 헬퍼(드롭다운 개별 옵션).
 // - 2026-08-26: 카탈로그 매칭으로 프리셋 도입중/요청중 뱃지·플래그 보강.
 // - 2026-08-26: brand/family/type OR(` | `) 파싱·조인 헬퍼. 요청중/도입중/도입 상태.
 // - 2026-08-26: 관리자 추가·isPublic·명시 저장(입력값 그대로).
@@ -91,6 +92,54 @@ export const joinOrValues = (
 export const orValuesForEdit = (value: unknown): string[] => {
   const parts = splitOrValues(value);
   return parts.length > 0 ? parts : [""];
+};
+
+/** OR 스펙을 manufacturer×brand×family×type 조합으로 전개(드롭다운·카탈로그). */
+export const expandRoundBarOrCombos = ({
+  manufacturer,
+  brand,
+  family,
+  type,
+  defaultType = "Hex",
+}: {
+  manufacturer?: string;
+  brand?: string;
+  family?: string;
+  type?: string;
+  defaultType?: string;
+} = {}) => {
+  const mfr = String(manufacturer || "").trim();
+  if (!mfr) return [];
+  const brands = splitOrValues(brand);
+  const families = splitOrValues(family);
+  const types = splitOrValues(type);
+  const brandList = brands.length ? brands : [""];
+  const familyList = families.length ? families : [""];
+  const typeList = types.length ? types : [defaultType];
+  const out: Array<{
+    manufacturer: string;
+    brand: string;
+    family: string;
+    type: string;
+  }> = [];
+  const seen = new Set<string>();
+  for (const b of brandList) {
+    for (const f of familyList) {
+      for (const t of typeList) {
+        const typeValue = String(t || "").trim() || defaultType;
+        const key = `${mfr}|${b}|${f}|${typeValue}`.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push({
+          manufacturer: mfr,
+          brand: String(b || "").trim(),
+          family: String(f || "").trim(),
+          type: typeValue,
+        });
+      }
+    }
+  }
+  return out;
 };
 export const ROUND_BAR_GUIDE_TITLE = "안내";
 export const ROUND_BAR_GUIDE_LINES = [

@@ -225,12 +225,13 @@ export const CONNECTIONS_SEED = [
   },
 
   // 5) Megagen / AnyOne Internal, MiNi Internal
+  // AnyOne Internal: D3.5 포함 Regular만(RH PRC). MH PRC 파일 없음.
   {
     manufacturer: "MEGAGEN",
     brand: "AnyOne Internal",
     displayBrand: "AnyOne Internal",
     family: "Regular",
-    displayFamily: "Regular (Ø4.0 이상)",
+    displayFamily: "Regular (Ø3.5 이상)",
     type: "Hex",
     displayType: "HEX 2.5",
     category: "hanhwa-connection",
@@ -241,22 +242,6 @@ export const CONNECTIONS_SEED = [
     screwType: "A",
     internalGauge: "G19",
     protrusionLength: 1.35,
-    isActive: true,
-  },
-  {
-    manufacturer: "MEGAGEN",
-    brand: "AnyOne Internal",
-    displayBrand: "AnyOne Internal",
-    family: "Mini",
-    displayFamily: "Mini (Ø3.5)",
-    type: "Hex",
-    displayType: "HEX 2.3",
-    category: "hanhwa-connection",
-    fileName: "메가젠_AnyOne_MH_Connection.prc",
-    diameter: 3.1,
-    l2: 2.1,
-    hexSize: 2.3,
-    screwType: "C",
     isActive: true,
   },
   {

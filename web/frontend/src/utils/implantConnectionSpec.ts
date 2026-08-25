@@ -102,14 +102,6 @@ const TABLE_ROWS: ImplantSpecRow[] = [
   },
   {
     manufacturer: "MEGAGEN",
-    brands: ["AnyOne"],
-    family: "Mini",
-    screwType: "C",
-    connectionDiameter: 3.1,
-    hexSize: 2.3,
-  },
-  {
-    manufacturer: "MEGAGEN",
     brands: ["MiNi"],
     family: "Mini",
     screwType: "E",

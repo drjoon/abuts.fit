@@ -385,13 +385,6 @@ const PACK_IMPLANT_SPEC_TABLE = [
   },
   {
     manufacturer: "MEGAGEN",
-    brands: ["ANYONE"],
-    family: "MINI",
-    screwType: "C",
-    connectionDiameter: 3.1,
-  },
-  {
-    manufacturer: "MEGAGEN",
     brands: ["MINI"],
     family: "MINI",
     screwType: "E",

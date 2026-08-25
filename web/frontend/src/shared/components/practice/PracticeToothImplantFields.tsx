@@ -4,6 +4,9 @@
 // - web/frontend/src/shared/practice/transferMemo.ts
 // - web/frontend/src/shared/practice/roundBarAbutment.ts
 // change-log:
+// - 2026-08-26: OR(` | `) 결합값을 드롭다운에서 개별 옵션으로 전개.
+// - 2026-08-26: 브랜드 매칭·드롭다운 대소문자 무시(철자 같으면 동일).
+// - 2026-08-26: 패밀리 드롭다운을 카탈로그(브랜드별) 한정. CNC SSOT·표준 4종 일괄 노출 제거.
 // - 2026-08-26: 프리셋 도입중 뱃지 — 카탈로그 일치 시 isPublic/roundBar 플래그 보강.
 // - 2026-08-26: 프리셋 추가/수정 제조사 드롭다운에 관리자 공개(도입중) 스펙·삭제 반영.
 // - 2026-08-26: 프리셋 라벨 카탈로그 display* 우선(혼합 대소문자 NeoBiotech 유지).
@@ -57,6 +60,8 @@ import {
   enrichImplantFavoriteFromCatalog,
   resolveAbutmentAdoptionStatusWithCatalog,
   submitRoundBarManufacturerRequest,
+  expandRoundBarOrCombos,
+  splitOrValues,
 } from "@/shared/practice/roundBarAbutment";
 import { mergeCncImplantSpecs } from "@/shared/practice/cncImplantCatalog";
 import { implantFavoriteDisplayParts } from "@/shared/practice/implantDisplay";
@@ -129,6 +134,56 @@ const uniqueManufacturers = (values: Array<string | undefined | null>) => {
   return out;
 };
 const familyKey = (value: string) => String(value || "").trim().toLowerCase();
+const brandKey = (value: string) => String(value || "").trim().toLowerCase();
+const sameBrand = (a: string, b: string) => {
+  const left = brandKey(a);
+  const right = brandKey(b);
+  return Boolean(left) && left === right;
+};
+/** 브랜드: 대소문자만 다른 중복 제거. 먼저 나온(카탈로그) 표기 유지. */
+const uniqueBrands = (values: Array<string | undefined | null>) => {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of values) {
+    const value = String(raw || "").trim();
+    if (!value) continue;
+    const key = brandKey(value);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(value);
+  }
+  return out;
+};
+const resolveBrandForSelect = (brand: string, options: string[]) => {
+  const parts = splitOrValues(brand);
+  if (!parts.length) return undefined;
+  for (const part of parts) {
+    const match = options.find((option) => sameBrand(option, part));
+    if (match) return match;
+  }
+  return parts[0];
+};
+const sameFamily = (a: string, b: string) => familyKey(a) === familyKey(b);
+const resolveFamilyForSelect = (family: string, options: string[]) => {
+  const parts = splitOrValues(family);
+  if (!parts.length) return undefined;
+  for (const part of parts) {
+    const match = options.find((option) => sameFamily(option, part));
+    if (match) return match;
+  }
+  return parts[0];
+};
+const typeKey = (value: string) => String(value || "").trim().toLowerCase();
+const sameType = (a: string, b: string) => typeKey(a) === typeKey(b);
+const resolveTypeForSelect = (type: string, options: string[]) => {
+  const parts = splitOrValues(type);
+  if (!parts.length) return undefined;
+  for (const part of parts) {
+    const match = options.find((option) => sameType(option, part));
+    if (match) return match;
+  }
+  return parts[0];
+};
 const isStandardFamily = (value: string) =>
   STANDARD_IMPLANT_FAMILIES.some((family) => familyKey(family) === familyKey(value));
 const pickPreferredFamily = (families: string[]) => {
@@ -136,6 +191,27 @@ const pickPreferredFamily = (families: string[]) => {
   return regular || pickFirst(families);
 };
 
+const sortFamilyOptions = (families: string[]) => {
+  const standard: string[] = [];
+  const custom: string[] = [];
+  for (const family of families) {
+    if (isStandardFamily(family)) standard.push(family);
+    else custom.push(family);
+  }
+  standard.sort((a, b) => {
+    const ai = STANDARD_IMPLANT_FAMILIES.findIndex(
+      (item) => familyKey(item) === familyKey(a),
+    );
+    const bi = STANDARD_IMPLANT_FAMILIES.findIndex(
+      (item) => familyKey(item) === familyKey(b),
+    );
+    return ai - bi;
+  });
+  custom.sort((a, b) => a.localeCompare(b, "ko"));
+  return [...standard, ...custom];
+};
+
+/** 카탈로그·커스텀 등 전달된 목록만 합친다(브랜드별 한정). */
 const mergeFamilyOptions = (...lists: Array<Iterable<string>>) => {
   const seen = new Set<string>();
   const out: string[] = [];
@@ -147,12 +223,15 @@ const mergeFamilyOptions = (...lists: Array<Iterable<string>>) => {
     seen.add(key);
     out.push(value);
   };
-  STANDARD_IMPLANT_FAMILIES.forEach(push);
   for (const list of lists) {
     for (const item of list) push(item);
   }
-  return out;
+  return sortFamilyOptions(out);
 };
+
+/** 임플란트 추가 요청 폼 — 표준 패밀리 전체 + 커스텀. */
+const mergeFamilyOptionsWithAllStandards = (...lists: Array<Iterable<string>>) =>
+  mergeFamilyOptions(STANDARD_IMPLANT_FAMILIES, ...lists);
 
 const pushUniqueFamily = (list: string[], raw: string) => {
   const value = String(raw || "").trim();
@@ -346,15 +425,14 @@ const isPendingCatalogSpec = (
   type: string,
 ) => {
   const m = manufacturer.trim().toLowerCase();
-  const b = brand.trim().toLowerCase();
   const f = family.trim().toLowerCase();
   const t = type.trim().toLowerCase();
-  if (!m || !b) return false;
+  if (!m || !brand.trim()) return false;
   return connections.some((c) => {
     if (!c.roundBar || c.adopted) return false;
     return (
       sameManufacturer(c.manufacturer, manufacturer) &&
-      String(c.brand || "").trim().toLowerCase() === b &&
+      sameBrand(c.brand || "", brand) &&
       (!f || String(c.family || "").trim().toLowerCase() === f) &&
       (!t || String(c.type || "").trim().toLowerCase() === t)
     );
@@ -469,16 +547,56 @@ export const PracticeToothImplantFields = ({
 
   const cncSpecs = useMemo(() => mergeCncImplantSpecs(connections), [connections]);
 
-  const specRows = useMemo(
-    () =>
-      connectionOptions.map((c) => ({
+  const specRows = useMemo(() => {
+    const seen = new Set<string>();
+    const rows: Array<{
+      manufacturer: string;
+      brand: string;
+      family: string;
+      type: string;
+    }> = [];
+    const push = (row: {
+      manufacturer: string;
+      brand: string;
+      family: string;
+      type: string;
+    }) => {
+      const combos = expandRoundBarOrCombos({
+        manufacturer: row.manufacturer,
+        brand: row.brand,
+        family: row.family,
+        type: row.type,
+      });
+      for (const combo of combos) {
+        const manufacturer = String(combo.manufacturer || "").trim();
+        const brand = String(combo.brand || "").trim();
+        if (!manufacturer || !brand) continue;
+        const family = String(combo.family || "").trim();
+        const type = String(combo.type || "").trim();
+        const key = `${manufacturer}|${brand}|${family}|${type}`.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        rows.push({ manufacturer, brand, family, type });
+      }
+    };
+    for (const c of cncSpecs) {
+      push({
+        manufacturer: c.manufacturer,
+        brand: c.brand,
+        family: c.family,
+        type: c.type,
+      });
+    }
+    for (const c of connectionOptions) {
+      push({
         manufacturer: c.manufacturer,
         brand: String(c.brand || "").trim(),
         family: String(c.family || "").trim(),
         type: String(c.type || "").trim(),
-      })),
-    [connectionOptions],
-  );
+      });
+    }
+    return rows;
+  }, [cncSpecs, connectionOptions]);
 
   const cncManufacturerOptions = useMemo(() => {
     const catalog = uniqueManufacturers(
@@ -497,9 +615,9 @@ export const PracticeToothImplantFields = ({
       (fav) =>
         isRoundBarFavorite(fav) &&
         sameManufacturer(fav.manufacturer, current) &&
-        fav.brand === value.implantBrand &&
-        fav.family === value.implantFamily &&
-        fav.type === value.implantType,
+        sameBrand(fav.brand || "", value.implantBrand) &&
+        sameFamily(fav.family || "", value.implantFamily) &&
+        sameType(fav.type || "", value.implantType),
     );
     if (
       current &&
@@ -551,9 +669,9 @@ export const PracticeToothImplantFields = ({
         (fav) =>
           isRoundBarFavorite(fav) &&
           sameManufacturer(fav.manufacturer, value.implantManufacturer) &&
-          fav.brand === value.implantBrand &&
-          fav.family === value.implantFamily &&
-          fav.type === value.implantType,
+          sameBrand(fav.brand || "", value.implantBrand) &&
+          sameFamily(fav.family || "", value.implantFamily) &&
+          sameType(fav.type || "", value.implantType),
       ),
     [favorites, value],
   );
@@ -577,13 +695,17 @@ export const PracticeToothImplantFields = ({
     resolveAbutmentAdoptionStatusWithCatalog(fav, connections);
 
   const brandOptions = useMemo(() => {
-    const options = uniqueStrings(
+    const options = uniqueBrands(
       specRows
         .filter((row) => sameManufacturer(row.manufacturer, value.implantManufacturer))
         .map((row) => row.brand),
     );
-    const current = String(value.implantBrand || "").trim();
-    if (current && !options.includes(current)) options.unshift(current);
+    const currentParts = splitOrValues(value.implantBrand);
+    for (const part of currentParts) {
+      if (part && !options.some((option) => sameBrand(option, part))) {
+        options.unshift(part);
+      }
+    }
     return options;
   }, [specRows, value.implantManufacturer, value.implantBrand]);
 
@@ -594,7 +716,7 @@ export const PracticeToothImplantFields = ({
           .filter(
             (row) =>
               sameManufacturer(row.manufacturer, value.implantManufacturer) &&
-              row.brand === value.implantBrand,
+              sameBrand(row.brand, value.implantBrand),
           )
           .map((row) => familyKey(row.family))
           .filter(Boolean),
@@ -607,14 +729,13 @@ export const PracticeToothImplantFields = ({
       .filter(
         (row) =>
           sameManufacturer(row.manufacturer, value.implantManufacturer) &&
-          row.brand === value.implantBrand,
+          sameBrand(row.brand, value.implantBrand),
       )
       .map((row) => row.family);
-    const current = String(value.implantFamily || "").trim();
     return mergeFamilyOptions(
       fromSpecs,
       customFamilies,
-      current ? [current] : [],
+      splitOrValues(value.implantFamily),
     );
   }, [
     specRows,
@@ -639,13 +760,17 @@ export const PracticeToothImplantFields = ({
         .filter(
           (row) =>
             sameManufacturer(row.manufacturer, value.implantManufacturer) &&
-            row.brand === value.implantBrand &&
-            row.family === value.implantFamily,
+            sameBrand(row.brand, value.implantBrand) &&
+            sameFamily(row.family, value.implantFamily),
         )
         .map((row) => row.type),
     );
-    const current = String(value.implantType || "").trim();
-    if (current && !options.includes(current)) options.unshift(current);
+    const currentParts = splitOrValues(value.implantType);
+    for (const part of currentParts) {
+      if (part && !options.some((option) => sameType(option, part))) {
+        options.unshift(part);
+      }
+    }
     return options;
   }, [
     specRows,
@@ -674,7 +799,8 @@ export const PracticeToothImplantFields = ({
         brandOptions.map((brand) => {
           const sample = connectionOptions.find(
             (c) =>
-              sameManufacturer(c.manufacturer, value.implantManufacturer) && c.brand === brand,
+              sameManufacturer(c.manufacturer, value.implantManufacturer) &&
+              sameBrand(c.brand || "", brand),
           );
           return [brand, sample?.displayBrand || brand];
         }),
@@ -689,8 +815,8 @@ export const PracticeToothImplantFields = ({
           const sample = connectionOptions.find(
             (c) =>
               sameManufacturer(c.manufacturer, value.implantManufacturer) &&
-              c.brand === value.implantBrand &&
-              c.family === family,
+              sameBrand(c.brand || "", value.implantBrand) &&
+              sameFamily(c.family || "", family),
           );
           return [family, sample?.displayFamily || family];
         }),
@@ -705,9 +831,9 @@ export const PracticeToothImplantFields = ({
           const sample = connectionOptions.find(
             (c) =>
               sameManufacturer(c.manufacturer, value.implantManufacturer) &&
-              c.brand === value.implantBrand &&
-              c.family === value.implantFamily &&
-              c.type === type,
+              sameBrand(c.brand || "", value.implantBrand) &&
+              sameFamily(c.family || "", value.implantFamily) &&
+              sameType(c.type || "", type),
           );
           const base = sample?.displayType || type;
           const screw = String(sample?.screwType || "").trim();
@@ -727,7 +853,7 @@ export const PracticeToothImplantFields = ({
   );
 
   const getBrands = (manufacturer: string) =>
-    uniqueStrings(
+    uniqueBrands(
       specRows
         .filter((row) => sameManufacturer(row.manufacturer, manufacturer))
         .map((row) => row.brand),
@@ -737,9 +863,11 @@ export const PracticeToothImplantFields = ({
     uniqueStrings(
       specRows
         .filter(
-          (row) => sameManufacturer(row.manufacturer, manufacturer) && row.brand === brand,
+          (row) =>
+            sameManufacturer(row.manufacturer, manufacturer) && sameBrand(row.brand, brand),
         )
-        .map((row) => row.family),
+        .map((row) => row.family)
+        .filter(Boolean),
     );
 
   const getTypes = (manufacturer: string, brand: string, family: string) =>
@@ -748,8 +876,8 @@ export const PracticeToothImplantFields = ({
         .filter(
           (row) =>
             sameManufacturer(row.manufacturer, manufacturer) &&
-            row.brand === brand &&
-            row.family === family,
+            sameBrand(row.brand, brand) &&
+            sameFamily(row.family, family),
         )
         .map((row) => row.type),
     );
@@ -763,7 +891,7 @@ export const PracticeToothImplantFields = ({
     () =>
       mergeFamilyOptions(
         getFamilies(addDraft.implantManufacturer, addDraft.implantBrand),
-        addDraft.implantFamily ? [addDraft.implantFamily] : [],
+        splitOrValues(addDraft.implantFamily),
       ),
     [addDraft.implantManufacturer, addDraft.implantBrand, addDraft.implantFamily, specRows],
   );
@@ -792,7 +920,7 @@ export const PracticeToothImplantFields = ({
     () =>
       mergeFamilyOptions(
         getFamilies(editDraft.implantManufacturer, editDraft.implantBrand),
-        editDraft.implantFamily ? [editDraft.implantFamily] : [],
+        splitOrValues(editDraft.implantFamily),
       ),
     [editDraft.implantManufacturer, editDraft.implantBrand, editDraft.implantFamily, specRows],
   );
@@ -814,7 +942,7 @@ export const PracticeToothImplantFields = ({
 
   const specBrandLabel = (manufacturer: string, brand: string) => {
     const sample = connectionOptions.find(
-      (c) => sameManufacturer(c.manufacturer, manufacturer) && c.brand === brand,
+      (c) => sameManufacturer(c.manufacturer, manufacturer) && sameBrand(c.brand || "", brand),
     );
     return sample?.displayBrand || brand;
   };
@@ -823,8 +951,8 @@ export const PracticeToothImplantFields = ({
     const sample = connectionOptions.find(
       (c) =>
         sameManufacturer(c.manufacturer, manufacturer) &&
-        c.brand === brand &&
-        c.family === family,
+        sameBrand(c.brand || "", brand) &&
+        sameFamily(c.family || "", family),
     );
     return sample?.displayFamily || family || "(기본)";
   };
@@ -909,10 +1037,9 @@ export const PracticeToothImplantFields = ({
       prev.filter((item) => familyKey(item) !== familyKey(family)),
     );
     if (familyKey(value.implantFamily) === familyKey(family)) {
-      const nextFamily =
-        pickPreferredFamily(
-          getFamilies(value.implantManufacturer, value.implantBrand),
-        ) || pickPreferredFamily([...STANDARD_IMPLANT_FAMILIES]);
+      const nextFamily = pickPreferredFamily(
+        getFamilies(value.implantManufacturer, value.implantBrand),
+      );
       const nextType = pickFirst(
         getTypes(value.implantManufacturer, value.implantBrand, nextFamily),
       );
@@ -1420,7 +1547,7 @@ export const PracticeToothImplantFields = ({
                 </SelectContent>
               </Select>
               <Select
-                value={addDraft.implantBrand || undefined}
+                value={resolveBrandForSelect(addDraft.implantBrand, addBrandOptions) || undefined}
                 disabled={!addDraft.implantManufacturer}
                 onValueChange={(nextBrand) => {
                   const nextFamily = pickPreferredFamily(
@@ -1455,7 +1582,10 @@ export const PracticeToothImplantFields = ({
             </div>
             <div className="grid grid-cols-2 gap-1.5">
               <Select
-                value={addDraft.implantFamily || undefined}
+                value={
+                  resolveFamilyForSelect(addDraft.implantFamily, addFamilyOptions) ||
+                  undefined
+                }
                 disabled={!addDraft.implantBrand || addFamilyOptions.length === 0}
                 onValueChange={(nextFamily) => {
                   const nextType =
@@ -1492,7 +1622,9 @@ export const PracticeToothImplantFields = ({
                 </SelectContent>
               </Select>
               <Select
-                value={addDraft.implantType || undefined}
+                value={
+                  resolveTypeForSelect(addDraft.implantType, addTypeOptions) || undefined
+                }
                 disabled={!addDraft.implantBrand}
                 onValueChange={(nextType) =>
                   setAddDraft((prev) => ({ ...prev, implantType: nextType }))
@@ -1702,7 +1834,12 @@ export const PracticeToothImplantFields = ({
                               </SelectContent>
                             </Select>
                             <Select
-                              value={editDraft.implantBrand || undefined}
+                              value={
+                                resolveBrandForSelect(
+                                  editDraft.implantBrand,
+                                  editBrandOptions,
+                                ) || undefined
+                              }
                               disabled={!editDraft.implantManufacturer}
                               onValueChange={(nextBrand) => {
                                 const nextFamily = pickPreferredFamily(
@@ -1745,7 +1882,12 @@ export const PracticeToothImplantFields = ({
                           </div>
                           <div className="grid grid-cols-2 gap-1.5">
                             <Select
-                              value={editDraft.implantFamily || undefined}
+                              value={
+                                resolveFamilyForSelect(
+                                  editDraft.implantFamily,
+                                  editFamilyOptions,
+                                ) || undefined
+                              }
                               disabled={
                                 !editDraft.implantBrand || editFamilyOptions.length === 0
                               }
@@ -1790,7 +1932,12 @@ export const PracticeToothImplantFields = ({
                               </SelectContent>
                             </Select>
                             <Select
-                              value={editDraft.implantType || undefined}
+                              value={
+                                resolveTypeForSelect(
+                                  editDraft.implantType,
+                                  editTypeOptions,
+                                ) || undefined
+                              }
                               disabled={!editDraft.implantBrand}
                               onValueChange={(nextType) =>
                                 setEditDraft((prev) => ({
@@ -1998,7 +2145,7 @@ export const PracticeToothImplantFields = ({
             <Label className="text-sm text-slate-600">패밀리</Label>
             <FamilyField
               value={requestDraft.family}
-              options={mergeFamilyOptions(
+              options={mergeFamilyOptionsWithAllStandards(
                 customFamilies,
                 requestDraft.family ? [requestDraft.family] : [],
               )}
@@ -2152,7 +2299,7 @@ export const PracticeToothImplantFields = ({
           <div className="space-y-1.5">
             <Label className="text-sm text-slate-600">브랜드</Label>
             <Select
-              value={value.implantBrand || undefined}
+              value={resolveBrandForSelect(value.implantBrand, brandOptions) || undefined}
               onValueChange={(nextBrand) => {
                 const nextFamily = pickPreferredFamily(
                   getFamilies(value.implantManufacturer, nextBrand),
@@ -2193,7 +2340,9 @@ export const PracticeToothImplantFields = ({
             <Label className="text-sm text-slate-600">패밀리</Label>
             <FamilyField
               key={`${value.implantManufacturer}|${value.implantBrand}`}
-              value={value.implantFamily}
+              value={
+                resolveFamilyForSelect(value.implantFamily, familyOptions) || ""
+              }
               options={familyOptions}
               labelMap={familyLabelMap}
               removableFamilies={removableFamilies}
@@ -2228,7 +2377,7 @@ export const PracticeToothImplantFields = ({
           <div className="space-y-1.5">
             <Label className="text-sm text-slate-600">타입</Label>
             <Select
-              value={value.implantType || undefined}
+              value={resolveTypeForSelect(value.implantType, typeOptions) || undefined}
               onValueChange={(nextType) => {
                 onChange({
                   ...value,

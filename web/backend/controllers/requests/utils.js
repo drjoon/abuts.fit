@@ -613,8 +613,6 @@ export async function normalizeCaseInfosImplantFields(
 /**
  * 신규 주문/수정 시점 주문 가능 프리셋 검증.
  * - isActive=true 조합만 주문 가능
- * - 현재 정책상 Mini 계열은 대부분 비활성화되어 있고,
- *   seed 기준 MEGAGEN AnyOne Mini(Hex)만 활성화되어 주문 가능하다.
  */
 export async function assertOrderableImplantPresetOrThrow(caseInfos) {
   const normalized = normalizeImplantFields(caseInfos || {});

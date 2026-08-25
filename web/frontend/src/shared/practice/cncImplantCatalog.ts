@@ -2,6 +2,7 @@
 // - web/backend/scripts/db/data/connections.seed.js
 // - web/frontend/src/shared/components/practice/PracticeToothImplantFields.tsx
 // change-log:
+// - 2026-08-26: AnyOne Internal Mini 제거 — D3.5도 Regular( RH PRC ).
 // - 2026-08-21: CNC 임플란트 표(첨1) SSOT. Dentium Implantium=SuperLine과 동일 패밀리.
 /**
  * 치과 커스텀어벗 설정 — CNC 임플란트 선택 표.
@@ -52,14 +53,7 @@ export const CNC_IMPLANT_CATALOG: ReadonlyArray<CncImplantSpec> = [
     type: "Hex",
     displayManufacturer: "Megagen",
     displayBrand: "AnyOne",
-  },
-  {
-    manufacturer: "MEGAGEN",
-    brand: "AnyOne Internal",
-    family: "Mini",
-    type: "Hex",
-    displayManufacturer: "Megagen",
-    displayBrand: "AnyOne",
+    displayFamily: "Regular (Ø3.5 이상)",
   },
   {
     manufacturer: "MEGAGEN",

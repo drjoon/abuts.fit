@@ -253,11 +253,9 @@ _BRAND_DIAMETER_FALLBACK: dict[tuple[str, str, str, str], float] = {
     ("DIO", "UF", "Narrow", "Non-Hex"): 2.30,
     ("DIO", "Mini", "Mini", "Hex"): 2.3,
     ("DIO", "Mini", "Mini", "Non-Hex"): 2.3,
-    # Megagen
+    # Megagen — AnyOne Internal은 Regular(RH)만. D3.5 포함.
     ("MEGAGEN", "AnyOne", "Regular", "Hex"): 3.3,
     ("MEGAGEN", "AnyOne", "Regular", "Non-Hex"): 3.3,
-    ("MEGAGEN", "AnyOne", "Mini", "Hex"): 3.10,
-    ("MEGAGEN", "AnyOne", "Mini", "Non-Hex"): 3.10,
     ("MEGAGEN", "Mini internal", "Mini internal", "Hex"): 2.30,
     ("MEGAGEN", "Mini internal", "Mini internal", "Non-Hex"): 2.30,
     # Osstem
