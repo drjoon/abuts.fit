@@ -594,6 +594,20 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
       );
   }, [isDeletedAccount, staff]);
 
+  const registeredMemberCount =
+    representativeEntries.length + staffEntries.length;
+
+  // 대표 본인만 등록된 경우(직원·공동대표 없음) 목록에서 숨김
+  const visibleRepresentatives = useMemo(() => {
+    if (registeredMemberCount === 1 && staffEntries.length === 0) {
+      return [];
+    }
+    return representativeEntries;
+  }, [registeredMemberCount, representativeEntries, staffEntries.length]);
+
+  const visibleMemberCount =
+    visibleRepresentatives.length + staffEntries.length;
+
   const pendingEntries = useMemo(() => {
     return pending.filter((r) => {
       const u: any = (r as any)?.user;
@@ -810,18 +824,15 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
                   </div>
                 </div>
                 <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold tabular-nums text-slate-600 ring-1 ring-slate-200/80">
-                  {representativeEntries.length + staffEntries.length}명
+                  {visibleMemberCount}명
                 </span>
               </div>
 
-              {loading &&
-              representativeEntries.length === 0 &&
-              staffEntries.length === 0 ? (
+              {loading && visibleMemberCount === 0 ? (
                 <div className="rounded-2xl border border-dashed border-slate-200/90 bg-white/50 px-6 py-8 text-center text-sm text-muted-foreground">
                   불러오는 중...
                 </div>
-              ) : representativeEntries.length === 0 &&
-                staffEntries.length === 0 ? (
+              ) : visibleMemberCount === 0 ? (
                 <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200/90 bg-white/50 px-6 py-10 text-center">
                   <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white ring-1 ring-slate-200/80">
                     <Users className="h-5 w-5 text-slate-400" />
@@ -835,7 +846,7 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {representativeEntries.map((entry) => {
+                  {visibleRepresentatives.map((entry) => {
                     const name = String(entry.name || "").trim() || entry._id;
                     const email = String(entry.email || "").trim();
                     return (

@@ -21,6 +21,7 @@ import {
   normalizeBusinessAddressFields,
 } from "./business.address.util.js";
 import { findBusinessByAnchors } from "./business.find.util.js";
+import { buildOrgBusinessTypeQuery } from "../../utils/orgBusinessType.util.js";
 import {
   updateMyBusiness,
   getMyAutoMatchParticipation,
@@ -298,22 +299,16 @@ export async function getMyBusiness(req, res) {
     if (businessAnchorId) {
       anchor = await BusinessAnchor.findOne({
         _id: businessAnchorId,
-        businessType,
+        ...buildOrgBusinessTypeQuery(businessType),
       }).lean();
 
       // 레거시 businessType=practice 앵커 → requestor로 승격 후 사용
-      if (
-        !anchor &&
-        (businessType === "requestor" || businessType === "practice")
-      ) {
-        const legacy = await BusinessAnchor.findById(businessAnchorId).lean();
-        if (legacy && String(legacy.businessType || "") === "practice") {
-          await BusinessAnchor.updateOne(
-            { _id: legacy._id },
-            { $set: { businessType: "requestor" } },
-          );
-          anchor = { ...legacy, businessType: "requestor" };
-        }
+      if (anchor && String(anchor.businessType || "") === "practice") {
+        await BusinessAnchor.updateOne(
+          { _id: anchor._id },
+          { $set: { businessType: "requestor" } },
+        );
+        anchor = { ...anchor, businessType: "requestor" };
       }
     }
 

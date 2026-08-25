@@ -5,7 +5,7 @@
 
 import {
   resolveOrgKindForDefaults,
-} from "../../utils/orgBusinessType.util.js";
+} from "./orgBusinessType.util.js";
 
 export const INTERNAL_DEPARTMENT_BUSINESS_TYPES = [
   "admin",
