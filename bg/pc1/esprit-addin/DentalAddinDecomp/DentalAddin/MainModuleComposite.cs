@@ -941,9 +941,8 @@ namespace DentalAddin
                 opB.PassPosition = espMill5xCompositePassPosition.espMill5xCompositePassPositionStartEndPosition;
             }
             double? firstPassPercentOverride = TryGetCompositeFirstPassPercentOverride();
-            // 요청 반영:
-            // - Finish_Front 시작점: STL 모델 최좌측(xMin) + 0.05mm
-            const double finishFrontStartOffsetFromStlMinMm = 0.05;
+            // Finish_Front 시작점: FirstPassPercent=0 (요청 SSOT). offset도 0mm.
+            const double finishFrontStartOffsetFromStlMinMm = 0.0;
 
             double splitline1X = MoveSTL_Module.FrontPointX;
             double stlStartX = Math.Min(0.0, Math.Min(MoveSTL_Module.FrontPointX, MoveSTL_Module.BackPointX));
@@ -971,7 +970,7 @@ namespace DentalAddin
                 baseAFirstPercent = overridePercent;
             }
 
-            DentalLogger.Log($"Composite2SplitLine2 - FINISH_FRONT 시작점 정책 적용: splitlineResolved={splitlineResolved}, splitline1X={splitline1X:F3}, stlStartX={stlStartX:F3}, requestedStartX(stlMin+0.05)={requestedAStartX:F3}, appliedStartX={appliedAStartX:F3}, minFirst%={minAFirstPercentByStlStart:F2}, overrideGuardApplied={overrideGuardApplied}");
+            DentalLogger.Log($"Composite2SplitLine2 - FINISH_FRONT 시작점 정책 적용: splitlineResolved={splitlineResolved}, splitline1X={splitline1X:F3}, stlStartX={stlStartX:F3}, requestedStartX(stlMin+{finishFrontStartOffsetFromStlMinMm:F3})={requestedAStartX:F3}, appliedStartX={appliedAStartX:F3}, minFirst%={minAFirstPercentByStlStart:F2}, overrideGuardApplied={overrideGuardApplied}");
 
             // Finish seam SSOT:
             // - 선행(Finish_Front) 끝 = SharedFinishSplitX (= Splitline_2)
@@ -1011,9 +1010,9 @@ namespace DentalAddin
             }
 
             // Finish_Front 시작점 정책:
-            // - 기본값: STL 시작점(xMin) + 0.05mm
+            // - 기본값: FirstPassPercent=0
             // - env(ABUTS_COMPOSITE_FIRST_PASS_PERCENT_A) 지정 시 env(퍼센트) 우선
-            double requestedAFirstPass = baseAFirstPercent;
+            double requestedAFirstPass = firstPassPercentOverride ?? 0.0;
             opA.FirstPassPercent = Clamp(requestedAFirstPass, 0.0, opA.LastPassPercent);
 
             // 극단적으로 A 구간이 거의 사라질 때만 최소 폭(1.0%) 보정한다.
