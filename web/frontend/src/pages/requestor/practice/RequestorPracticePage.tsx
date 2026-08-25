@@ -109,6 +109,7 @@
 // - 2026-08-15: 기공기간 5일 미만 빨간 표시·거부 가능 툴팁(목록·상세).
 // - 2026-08-15: 주문 후 1영업일 미수락 「수락대기」뱃지(목록).
 // - 2026-08-16: 지정 거부=치과 취소 상태 전달(휴지통 아님). 자동매칭 거부는 타 기공소 공개.
+// - 2026-08-26: 수신 상세 모달 거부 — ConfirmDialog 확인 후 처리.
 import {
   useCallback,
   useEffect,
@@ -117,6 +118,7 @@ import {
   useState,
   type MouseEvent,
 } from "react";
+import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { DesignSoftwareSettingsDialog } from "@/features/requestSettings/DesignSoftwareSettingsDialog";
 import { RequestSettingsToolbar } from "@/features/requestSettings/RequestSettingsToolbar";
 import { useRequestorRequestSettings } from "@/features/requestSettings/useRequestorRequestSettings";
@@ -635,6 +637,7 @@ export function RequestorPracticeReceivePage({
   const [selectedTransfer, setSelectedTransfer] = useState<ReceivedPracticeTransfer | null>(null);
   const [acceptBusy, setAcceptBusy] = useState(false);
   const [rejectBusy, setRejectBusy] = useState(false);
+  const [rejectConfirmOpen, setRejectConfirmOpen] = useState(false);
   const [openSubcontractBusy, setOpenSubcontractBusy] = useState(false);
   const [releaseBusy, setReleaseBusy] = useState(false);
   const [cardActionBusyId, setCardActionBusyId] = useState<string>("");
@@ -3382,12 +3385,25 @@ export function RequestorPracticeReceivePage({
     selectedTransfer,
   ]);
 
-  const handleRejectTransfer = useCallback(async () => {
+  const handleRejectTransfer = useCallback(() => {
+    if (!selectedTransfer || rejectBusy || acceptBusy || releaseBusy || openSubcontractBusy)
+      return;
+    setRejectConfirmOpen(true);
+  }, [
+    acceptBusy,
+    openSubcontractBusy,
+    rejectBusy,
+    releaseBusy,
+    selectedTransfer,
+  ]);
+
+  const handleConfirmRejectTransfer = useCallback(async () => {
     if (!selectedTransfer || rejectBusy || acceptBusy || releaseBusy || openSubcontractBusy)
       return;
     setRejectBusy(true);
     try {
-      await markTransferReject(selectedTransfer);
+      const ok = await markTransferReject(selectedTransfer);
+      if (ok) setRejectConfirmOpen(false);
     } finally {
       setRejectBusy(false);
     }
@@ -4742,6 +4758,7 @@ export function RequestorPracticeReceivePage({
         onOpenChange={(open) => {
           setDialogOpen(open);
           if (!open) {
+            setRejectConfirmOpen(false);
             chatRoomResolveSeqRef.current += 1;
             setSelectedTransfer(null);
             setActiveChatRoom(null);
@@ -5082,6 +5099,33 @@ export function RequestorPracticeReceivePage({
         composerPlaceholder="치과에 전달할 내용을 입력하세요"
         inputDisabled={chatLoading || chatSending || !activeChatRoom?._id}
         sendDisabled={chatSending}
+      />
+      <ConfirmDialog
+        open={rejectConfirmOpen}
+        title="이 의뢰를 거부할까요?"
+        description={
+          <div className="space-y-1">
+            {selectedTransfer?.transferId ? (
+              <div className="text-sm text-muted-foreground">
+                대상: {selectedTransfer.transferId}
+              </div>
+            ) : null}
+            <div className="text-sm text-muted-foreground">
+              {selectedTransfer?.matchingMode === "auto" &&
+              selectedTransfer.autoMatch?.openPool
+                ? "거부하면 다른 기공소에 계속 공개됩니다."
+                : "거부하면 치과에 취소 상태로 전달됩니다."}
+            </div>
+          </div>
+        }
+        confirmLabel="거부"
+        cancelLabel="취소"
+        busy={rejectBusy}
+        onConfirm={() => void handleConfirmRejectTransfer()}
+        onCancel={() => {
+          if (rejectBusy) return;
+          setRejectConfirmOpen(false);
+        }}
       />
       </>
       ) : null}
