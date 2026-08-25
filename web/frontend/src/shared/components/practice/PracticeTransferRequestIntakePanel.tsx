@@ -147,6 +147,7 @@ import {
 // - web/frontend/src/shared/components/practice/PracticeToothSimpleAbutmentFields.tsx
 // - web/frontend/src/shared/components/practice/PracticeCustomSpecsPresetEditDialog.tsx
 // - web/frontend/src/shared/pricing/abutsAbutmentService.ts
+// - 2026-08-25: 가이드투어 견적·완료 중 어벗 모달 재오픈 허용 — 스텝 진입 시에만 닫고, 열기 직후 effect로 닫지 않음.
 // - 2026-08-25: 기공소 픽커 보조줄 — 대표·주소만(사업자번호 표시 제거, 검색은 유지).
 // - 2026-08-25: 헤더(기공소·환자·기간) — 가이드투어 aside 자리를 항상 예약(투어 on/off 레이아웃 점프 방지).
 // - 2026-08-25: 커스텀어벗 보철 형태 — 어벗 모달에서 심플어벗 비활성(스캔바디만).
@@ -1942,7 +1943,8 @@ export const PracticeTransferRequestIntakePanel = ({
     openCustomSpecsModal(index);
   }, [toothWorkGuideTourStepId, customSpecsModalTarget, toothWorks]);
 
-  // 견적(·완료)은 메인에서 — 프리셋 모달이 열려 있으면 선택값 유지한 채 닫기
+  // 견적(·완료) 등 메인 스텝으로 들어올 때만 모달 닫기.
+  // customSpecsModalTarget를 deps에 넣으면 견적 중 어벗 체크→모달 오픈 직후 바로 닫힌다.
   useEffect(() => {
     if (customSpecsModalTarget === null) return;
     const onMainTourStep =
@@ -1954,7 +1956,8 @@ export const PracticeTransferRequestIntakePanel = ({
         toothWorkGuideTourStep >= PRACTICE_TOOTH_WORK_GUIDE_TOUR_DONE_STEP);
     if (!onMainTourStep) return;
     confirmCustomSpecsModal();
-  }, [toothWorkGuideTourStepId, toothWorkGuideTourStep, customSpecsModalTarget]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 투어 스텝 전환만; 모달 오픈은 유지
+  }, [toothWorkGuideTourStepId, toothWorkGuideTourStep]);
 
   const tryConfirmCustomSpecsModalAfterPicks = () => {
     if (customSpecsPresetEditOpenRef.current) return;
