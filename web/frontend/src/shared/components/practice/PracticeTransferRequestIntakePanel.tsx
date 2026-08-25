@@ -210,6 +210,7 @@ import {
 // - 2026-08-25: 환자명 투어 — 이미 채워진 이름이면 변경 전 자동 진행 안 함(2→3 점프 방지).
 // - 2026-08-25: full 치식 — 카드가 전폭을 나눠 갖고 스크롤 없이 16칸 표시. 위·아래 여백으로 경계 보존.
 // - 2026-08-25: preferGuideTourAside(위저드 레일)일 때 패널 쪽 투어 레일 중복 렌더 방지.
+// - 2026-08-25: full 치식 카드 높이 12rem 복구·형태 버튼 shrink-0 — 어벗 상세 시 유형 스위치 가림 방지.
 
 const PRACTICE_MEMO_SNIPPETS_LOCAL_KEY = "practice_transfer_memo_snippets_v1";
 const MAX_MEMO_SNIPPETS = 40;
@@ -218,10 +219,10 @@ const MEMO_SUGGEST_MIN_CHARS = 1;
 const TOOTH_CHART_VISIBLE = 6;
 const TOOTH_CHART_SCROLL_STEP = 1;
 const TOOTH_CHART_SCROLL_JUMP = 5;
-/** 카드 높이: 커스텀 임플란트/스캔바디 2줄까지 표시한 기준 */
+/** 카드 높이: 번호+형태+어벗+임플란트/스캔바디 2줄+복사 기준(이보다 짧으면 형태 버튼이 flex-shrink로 가려짐) */
 const TOOTH_CARD_HEIGHT_CLASS = "h-[12rem]";
-/** full(16칸) — 뷰포트에 맞추기 위해 조금 낮춤(세로 스크롤 방지) */
-const TOOTH_CARD_HEIGHT_FULL_CLASS = "h-[9rem]";
+/** full(16칸) — compact와 동일. 9rem은 어벗 상세 시 유형 스위치가 찌그러짐 */
+const TOOTH_CARD_HEIGHT_FULL_CLASS = "h-[12rem]";
 /** compact(6칸) — 남는 폭을 나눠 가짐 */
 const TOOTH_SLOT_COMPACT_CLASS = "min-w-[3.5rem] flex-1";
 /** full(16칸) — 전폭을 균등 분할(가로 스크롤·프로그레스 겹침 방지) */
@@ -3501,7 +3502,7 @@ export const PracticeTransferRequestIntakePanel = ({
                                   data-no-tooth-marquee=""
                                   data-prosthesis-type-toggle=""
                                   className={cn(
-                                    "relative mt-1.5 flex h-7 w-full min-w-0 cursor-pointer items-center justify-center truncate rounded-md px-0.5 text-center text-[11px]",
+                                    "relative mt-1.5 flex h-7 w-full min-w-0 shrink-0 cursor-pointer items-center justify-center truncate rounded-md px-0.5 text-center text-[11px]",
                                     isMissingTooth
                                       ? "z-20 bg-transparent text-slate-500 hover:bg-transparent"
                                       : "z-[1] text-slate-600 hover:bg-primary-soft hover:text-primary-strong",
@@ -3636,7 +3637,7 @@ export const PracticeTransferRequestIntakePanel = ({
                               <div
                                 data-no-tooth-marquee=""
                                 className={cn(
-                                  "flex w-full flex-col items-center gap-0.5 leading-none",
+                                  "flex w-full shrink-0 flex-col items-center gap-0.5 leading-none",
                                   showAbutmentCheckbox ? "mt-0.5" : "mt-2",
                                   toothWorkGuideTourStepId === "implant_preset" ||
                                     toothWorkGuideTourStepId === "abutment_side"
