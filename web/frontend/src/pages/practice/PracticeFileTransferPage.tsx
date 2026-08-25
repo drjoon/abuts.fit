@@ -104,6 +104,8 @@
  * - 2026-08-20: 모바일 구강스캔 — 환자명 후 구강포토 촬영·업로드·임시저장(기공소는 전송 시).
  * - 2026-08-20: 모바일 임시저장=최근과 같은 카드 시트. PC 드롭존에 모바일 쉐이드 안내.
  * - 2026-08-20: 구강포토 썸네일 — private S3 location 대신 blob/proxy 미리보기.
+ * - 2026-08-25: 엑스퍼트 가이드투어 카드 — 헤더 버튼~기공소·환자·날짜 행 세로 맞춤(폭=주문-치과도착).
+ * - 2026-08-25: 익스프레스 단계 표시 ↔ 가이드투어(기공소·환자·날짜) 위치 교체 — 투어는 상단 오른쪽, 단계는 헤더 필드 옆.
  * - 2026-08-25: 상단 가이드투어 — 기공소·환자·날짜·보철물 전체 투어(휴지통 오른쪽).
  * - 2026-08-20: PC 첨부 목록에도 이미지 썸네일(모바일 동기화 포함).
  * - 2026-08-20: 구강포토 토스트 3초·닫기, CSP blob 썸네일, 클릭 미리보기, 동기화 반영.
@@ -1354,6 +1356,8 @@ export const PracticeFileTransferPage = ({
   const [guideTourActive, setGuideTourActive] = useState(false);
   const [guideTourStartSignal, setGuideTourStartSignal] = useState(0);
   const [guideTourExitSignal, setGuideTourExitSignal] = useState(0);
+  const [guideTourHeaderSlotEl, setGuideTourHeaderSlotEl] =
+    useState<HTMLDivElement | null>(null);
   const [oralPhotoPreview, setOralPhotoPreview] = useState<{
     name: string;
     url: string;
@@ -6569,6 +6573,133 @@ export const PracticeFileTransferPage = ({
                     },
   };
 
+  const expressStepInHeaderAside =
+    !isMobile &&
+    showExpressWizard &&
+    (expressStepId === "lab" ||
+      expressStepId === "patient" ||
+      expressStepId === "schedule");
+
+  const expressStepProgressNode = showExpressWizard ? (
+    <PracticeTransferExpressStepProgress
+      key={expressWizardEpoch}
+      className="min-w-0"
+      stepId={expressStepId}
+      onStepIdChange={setExpressStepId}
+      stepOkById={{
+        lab: expressStepGate.lab.ok,
+        patient: expressStepGate.patient.ok,
+        // 일정은 항상 기본값이 있어 게이트 ok여도 체크하지 않는다
+        schedule: false,
+        prosthesis: expressStepGate.prosthesis.ok,
+        // 파일은 실제 첨부가 있을 때만 체크(선택 첨부의 빈 상태 제외)
+        files: files.length + draftFiles.length > 0,
+        confirm: expressStepGate.confirm.ok,
+      }}
+    />
+  ) : null;
+
+  /** 엑스퍼트 PC — 툴바를 intake에 넣어 투어 카드와 세로 맞춤 */
+  const useIntakeHeaderToolbar = !isMobile && !isExpressMode;
+
+  const practiceWorkspaceToolbar = (
+    <>
+      <WorkspaceModeSwitch />
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-9 px-3"
+            onClick={() => void handleStartNewTransfer()}
+          >
+            새로 작성
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" className="max-w-xs text-xs">
+          작성 화면만 비웁니다. 임시저장은 목록에 남습니다.
+        </TooltipContent>
+      </Tooltip>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="h-9 gap-1.5 px-3"
+        onClick={() => setRecentTransfersAllOpen(true)}
+      >
+        <ClipboardList className="h-4 w-4 shrink-0" />
+        최근 의뢰
+        {recentChatUnreadCount > 0 ? (
+          <Badge
+            variant="destructive"
+            className="ml-0.5 h-4 min-w-4 justify-center px-1 text-[10px] leading-none"
+            aria-label={`안읽음 ${recentChatUnreadCount}건`}
+          >
+            {recentChatUnreadCount > 99 ? "99+" : recentChatUnreadCount}
+          </Badge>
+        ) : null}
+      </Button>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="h-9 gap-1.5 px-3"
+        onClick={() => setDraftsOpen(true)}
+      >
+        <BookmarkPlus className="h-4 w-4 shrink-0" />
+        임시저장
+        {draftGroupedTransfers.length > 0 ? (
+          <Badge variant="secondary" className="ml-0.5">
+            {draftGroupedTransfers.length}
+          </Badge>
+        ) : null}
+      </Button>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="h-9 gap-1.5 px-3"
+        onClick={() => setTrashOpen(true)}
+      >
+        <Trash2 className="h-4 w-4 shrink-0" />
+        휴지통
+        {trashGroupedTransfers.length > 0 ? (
+          <Badge variant="secondary" className="ml-0.5">
+            {trashGroupedTransfers.length}
+          </Badge>
+        ) : null}
+      </Button>
+      <Button
+        type="button"
+        size="sm"
+        className="h-9 px-3"
+        onClick={() => {
+          if (guideTourActive) {
+            setGuideTourExitSignal((n) => n + 1);
+            return;
+          }
+          setGuideTourStartSignal((n) => n + 1);
+        }}
+      >
+        {guideTourActive ? "투어 종료" : "가이드투어"}
+      </Button>
+      {formSyncStatusLabel ? (
+        <span
+          title={formSyncStatusLabel}
+          className={cn(
+            "truncate text-xs font-normal",
+            formSyncStatus === "error"
+              ? "text-destructive"
+              : "text-muted-foreground",
+          )}
+        >
+          {formSyncStatusLabel}
+        </span>
+      ) : null}
+    </>
+  );
+
   const practiceTransferRequestIntakeProps: PracticeTransferRequestIntakePanelProps = {
     variant: "plain",
     toothChartDisplayMode: "full",
@@ -6776,6 +6907,15 @@ export const PracticeFileTransferPage = ({
                   guideTourStartSignal,
                   guideTourExitSignal,
                   onGuideTourActiveChange: setGuideTourActive,
+                  headerAsideContent: expressStepInHeaderAside
+                    ? expressStepProgressNode
+                    : null,
+                  headerToolbar: useIntakeHeaderToolbar
+                    ? practiceWorkspaceToolbar
+                    : null,
+                  guideTourHeaderSlotEl: useIntakeHeaderToolbar
+                    ? null
+                    : guideTourHeaderSlotEl,
   };
 
   return (
@@ -6797,125 +6937,20 @@ export const PracticeFileTransferPage = ({
 
         <div className="flex min-w-0 w-full flex-col gap-3">
           <Card className="min-w-0 border-0 bg-transparent shadow-none hover:shadow-none">
-            {isMobile ? null : (
+            {isMobile || useIntakeHeaderToolbar ? null : (
             <CardHeader className="px-0 pb-2 pt-0">
               <div className="flex items-center gap-4">
                 <div className="flex min-w-0 flex-wrap items-center gap-2">
-                  <WorkspaceModeSwitch />
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-9 px-3"
-                        onClick={() => void handleStartNewTransfer()}
-                      >
-                        새로 작성
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom" className="max-w-xs text-xs">
-                      작성 화면만 비웁니다. 임시저장은 목록에 남습니다.
-                    </TooltipContent>
-                  </Tooltip>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-9 gap-1.5 px-3"
-                    onClick={() => setRecentTransfersAllOpen(true)}
-                  >
-                    <ClipboardList className="h-4 w-4 shrink-0" />
-                    최근 의뢰
-                    {recentChatUnreadCount > 0 ? (
-                      <Badge
-                        variant="destructive"
-                        className="ml-0.5 h-4 min-w-4 justify-center px-1 text-[10px] leading-none"
-                        aria-label={`안읽음 ${recentChatUnreadCount}건`}
-                      >
-                        {recentChatUnreadCount > 99
-                          ? "99+"
-                          : recentChatUnreadCount}
-                      </Badge>
-                    ) : null}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-9 gap-1.5 px-3"
-                    onClick={() => setDraftsOpen(true)}
-                  >
-                    <BookmarkPlus className="h-4 w-4 shrink-0" />
-                    임시저장
-                    {draftGroupedTransfers.length > 0 ? (
-                      <Badge variant="secondary" className="ml-0.5">
-                        {draftGroupedTransfers.length}
-                      </Badge>
-                    ) : null}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-9 gap-1.5 px-3"
-                    onClick={() => setTrashOpen(true)}
-                  >
-                    <Trash2 className="h-4 w-4 shrink-0" />
-                    휴지통
-                    {trashGroupedTransfers.length > 0 ? (
-                      <Badge variant="secondary" className="ml-0.5">
-                        {trashGroupedTransfers.length}
-                      </Badge>
-                    ) : null}
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="h-9 px-3"
-                    onClick={() => {
-                      if (guideTourActive) {
-                        setGuideTourExitSignal((n) => n + 1);
-                        return;
-                      }
-                      setGuideTourStartSignal((n) => n + 1);
-                    }}
-                  >
-                    {guideTourActive ? "투어 종료" : "가이드투어"}
-                  </Button>
-                  {formSyncStatusLabel ? (
-                    <span
-                      title={formSyncStatusLabel}
-                      className={cn(
-                        "truncate text-xs font-normal",
-                        formSyncStatus === "error"
-                          ? "text-destructive"
-                          : "text-muted-foreground",
-                      )}
-                    >
-                      {formSyncStatusLabel}
-                    </span>
-                  ) : null}
+                  {practiceWorkspaceToolbar}
                 </div>
-              <div className="flex flex-1 items-center justify-end gap-4">
-                {showExpressWizard ? (
-                  <PracticeTransferExpressStepProgress
-                    key={expressWizardEpoch}
-                    className="min-w-0"
-                    stepId={expressStepId}
-                    onStepIdChange={setExpressStepId}
-                    stepOkById={{
-                      lab: expressStepGate.lab.ok,
-                      patient: expressStepGate.patient.ok,
-                      // 일정은 항상 기본값이 있어 게이트 ok여도 체크하지 않는다
-                      schedule: false,
-                      prosthesis: expressStepGate.prosthesis.ok,
-                      // 파일은 실제 첨부가 있을 때만 체크(선택 첨부의 빈 상태 제외)
-                      files: files.length + draftFiles.length > 0,
-                      confirm: expressStepGate.confirm.ok,
-                    }}
-                  />
-                ) : null}
+              <div className="flex flex-1 items-start justify-end gap-3">
+                <div
+                  ref={setGuideTourHeaderSlotEl}
+                  className="min-w-0 max-w-sm lg:max-w-[22rem]"
+                />
+                {showExpressWizard && !expressStepInHeaderAside
+                  ? expressStepProgressNode
+                  : null}
               </div>
               </div>
             </CardHeader>
@@ -6926,7 +6961,7 @@ export const PracticeFileTransferPage = ({
                 업데이트됩니다. 새로 작성하면 수정이 취소됩니다.
               </div>
             ) : null}
-            <CardContent className={cn("min-w-0 px-0", isMobile ? "pt-0" : "pt-5")}>
+            <CardContent className={cn("min-w-0 px-0", isMobile || useIntakeHeaderToolbar ? "pt-0" : "pt-5")}>
               {isMobile ? (
                 <PracticeTransferMobileOralPhotoIntake
                   requestIntakeProps={practiceTransferRequestIntakeProps}

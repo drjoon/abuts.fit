@@ -10,6 +10,7 @@ import {
   type ReactNode,
   type SetStateAction,
 } from "react";
+import { createPortal } from "react-dom";
 import {
   Check,
   ChevronLeft,
@@ -147,9 +148,11 @@ import {
 // - web/frontend/src/shared/components/practice/PracticeToothSimpleAbutmentFields.tsx
 // - web/frontend/src/shared/components/practice/PracticeCustomSpecsPresetEditDialog.tsx
 // - web/frontend/src/shared/pricing/abutsAbutmentService.ts
+// - 2026-08-25: 기공소·환자·날짜 투어 카드 — 헤더 버튼~입력 행 세로 맞춤, 폭=주문-치과도착 열.
+// - 2026-08-25: 기공소·환자·날짜 투어 배너 → 상단 오른쪽(CardHeader 슬롯). aside는 익스프레스 단계 표시용.
 // - 2026-08-25: 가이드투어 견적·완료 중 어벗 모달 재오픈 허용 — 스텝 진입 시에만 닫고, 열기 직후 effect로 닫지 않음.
 // - 2026-08-25: 기공소 픽커 보조줄 — 대표·주소만(사업자번호 표시 제거, 검색은 유지).
-// - 2026-08-25: 헤더(기공소·환자·기간) — 가이드투어 aside 자리를 항상 예약(투어 on/off 레이아웃 점프 방지).
+// - 2026-08-25: 헤더(기공소·환자·기간) — 투어 시 날짜 열 폭만큼 오른쪽 카드, 아니면 익스프레스 aside만.
 // - 2026-08-25: 커스텀어벗 보철 형태 — 어벗 모달에서 심플어벗 비활성(스캔바디만).
 // - 2026-08-25: 커스텀어벗 설정 — 임플란트(primary)·어벗(service-abut) 색 구분. + 확대·임플란트 열 축소.
 // - 2026-08-25: 가이드투어 어벗 — 스캔바디 커스텀 vs 심플어벗(꽂고 바로 스캔) 두 방식.
@@ -787,6 +790,18 @@ export type PracticeTransferRequestIntakePanelProps = {
   guideTourExitSignal?: number;
   /** 투어 진행 중 여부 알림(외부 버튼 라벨용) */
   onGuideTourActiveChange?: (active: boolean) => void;
+  /**
+   * 헤더 필드 오른쪽 슬롯(익스프레스 단계 표시 등).
+   * 기공소·환자·날짜 투어 배너는 headerToolbar와 함께 세로로 맞추거나 guideTourHeaderSlotEl로 올린다.
+   */
+  headerAsideContent?: ReactNode;
+  /**
+   * 엑스퍼트 PC — 기공소·환자·날짜 위 툴바(모드·새로작성·투어 등).
+   * 있으면 투어 카드가 툴바 윗단~입력 아랫단을 한 그리드로 맞춘다.
+   */
+  headerToolbar?: ReactNode;
+  /** 상단 CardHeader 오른쪽 — 기공소·환자·날짜 투어 배너 포털 대상(툴바 미사용 시) */
+  guideTourHeaderSlotEl?: HTMLElement | null;
 };
 
 export const PracticeTransferRequestIntakePanel = ({
@@ -865,6 +880,9 @@ export const PracticeTransferRequestIntakePanel = ({
   guideTourStartSignal = 0,
   guideTourExitSignal = 0,
   onGuideTourActiveChange,
+  headerAsideContent = null,
+  headerToolbar = null,
+  guideTourHeaderSlotEl = null,
 }: PracticeTransferRequestIntakePanelProps) => {
   const showLabField = showLabFieldProp ?? showHeaderFields;
   const showPatientField = showPatientFieldProp ?? showHeaderFields;
@@ -2157,6 +2175,34 @@ export const PracticeTransferRequestIntakePanel = ({
         ? "grid grid-cols-1 items-end gap-3"
         : "grid grid-cols-1 items-end gap-3 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,0.7fr)_minmax(0,0.95fr)]";
 
+  const isHeaderTourStep =
+    toothWorkGuideTourStep != null &&
+    (toothWorkGuideTourStepId === "lab" ||
+      toothWorkGuideTourStepId === "patient" ||
+      toothWorkGuideTourStepId === "dates");
+  /** 툴바+입력+투어 한 그리드 — 윗단=버튼, 아랫단=입력, 폭=주문-치과도착 열 */
+  const useSpanningHeaderTour = Boolean(headerToolbar) && isHeaderTourStep;
+  const headerTourBanner = isHeaderTourStep ? (
+    <PracticeToothWorkGuideTourBanner
+      placement="aside"
+      step={toothWorkGuideTourStep}
+      onSkip={skipToothWorkGuideTourStep}
+      onExit={exitToothWorkGuideTour}
+      onFinish={exitToothWorkGuideTour}
+      implantFavoriteCount={implantFavorites.length}
+      scanbodyFavoriteCount={abutmentFavorites.length}
+    />
+  ) : null;
+  const portaledHeaderTour =
+    headerTourBanner && !useSpanningHeaderTour && guideTourHeaderSlotEl
+      ? createPortal(headerTourBanner, guideTourHeaderSlotEl)
+      : null;
+  const inlineHeaderTour =
+    headerTourBanner && !useSpanningHeaderTour && !guideTourHeaderSlotEl
+      ? headerTourBanner
+      : null;
+  const showHeaderAsideColumn = Boolean(headerAsideContent || inlineHeaderTour);
+
   return (
     <div
       className={cn(
@@ -2184,8 +2230,34 @@ export const PracticeTransferRequestIntakePanel = ({
         </div>
       ) : null}
 
-      {showAnyHeaderFields ? (
-      <div className="grid grid-cols-1 items-start gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,22rem)]">
+      {showAnyHeaderFields || headerToolbar ? (
+        <>
+          {portaledHeaderTour}
+          <div
+            className={cn(
+              useSpanningHeaderTour &&
+                "grid grid-cols-1 items-stretch gap-x-3 gap-y-7 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,22rem)] lg:gap-x-12",
+              !useSpanningHeaderTour &&
+                headerToolbar &&
+                showAnyHeaderFields &&
+                "flex flex-col gap-y-7",
+              !useSpanningHeaderTour &&
+                !headerToolbar &&
+                showHeaderAsideColumn &&
+                "grid grid-cols-1 items-start gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,22rem)]",
+            )}
+          >
+            {headerToolbar ? (
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                {headerToolbar}
+              </div>
+            ) : null}
+            {useSpanningHeaderTour ? (
+              <div className="min-h-0 min-w-0 lg:col-start-2 lg:row-span-2 lg:row-start-1">
+                {headerTourBanner}
+              </div>
+            ) : null}
+            {showAnyHeaderFields ? (
       <div className={headerGridClassName}>
         {showLabField ? (
         <div className="space-y-2">
@@ -2543,22 +2615,15 @@ export const PracticeTransferRequestIntakePanel = ({
         />
         ) : null}
       </div>
-      {toothWorkGuideTourStep != null &&
-      (toothWorkGuideTourStepId === "lab" ||
-        toothWorkGuideTourStepId === "patient" ||
-        toothWorkGuideTourStepId === "dates") ? (
-        <PracticeToothWorkGuideTourBanner
-          placement="aside"
-          className="lg:pt-7"
-          step={toothWorkGuideTourStep}
-          onSkip={skipToothWorkGuideTourStep}
-          onExit={exitToothWorkGuideTour}
-          onFinish={exitToothWorkGuideTour}
-          implantFavoriteCount={implantFavorites.length}
-          scanbodyFavoriteCount={abutmentFavorites.length}
-        />
-      ) : null}
-      </div>
+            ) : null}
+            {showHeaderAsideColumn && !useSpanningHeaderTour ? (
+              <div className="flex min-w-0 flex-col items-stretch gap-2 lg:items-end lg:pt-7">
+                {inlineHeaderTour}
+                {headerAsideContent}
+              </div>
+            ) : null}
+          </div>
+        </>
       ) : null}
 
       {showMemoSection || besideMemoContent ? (

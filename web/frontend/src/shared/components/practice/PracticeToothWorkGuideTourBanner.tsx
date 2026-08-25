@@ -1,6 +1,7 @@
 // related files:
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // change-log:
+// - 2026-08-25: aside — 헤더 버튼~입력 행을 세로로 채우도록 h-full·space-between.
 // - 2026-08-25: 어벗 투어 — 스캔바디 커스텀어벗 vs 심플어벗(꽂고 바로 스캔) 두 방식 안내.
 import { Button } from "@/components/ui/button";
 import { cn } from "@/shared/ui/cn";
@@ -93,7 +94,7 @@ type PracticeToothWorkGuideTourBannerProps = {
   onExit: () => void;
   onFinish: () => void;
   className?: string;
-  /** center: 치식 위 중앙 / aside: 헤더 오른쪽 빈 공간 */
+  /** center: 치식 위 중앙 / aside: 헤더 버튼~기공소·환자·날짜 행 오른쪽 세로 맞춤 */
   placement?: "center" | "aside";
   /** 임플란트 프리셋 개수 — 0이면 추가 유도 문구 */
   implantFavoriteCount?: number;
@@ -147,7 +148,7 @@ export function PracticeToothWorkGuideTourBanner({
   return (
     <div
       className={cn(
-        aside ? "flex justify-start lg:justify-end" : "flex justify-center px-1",
+        aside ? "flex h-full min-h-0 w-full" : "flex justify-center px-1",
         className,
       )}
     >
@@ -156,7 +157,7 @@ export function PracticeToothWorkGuideTourBanner({
         className={cn(
           "relative z-20 rounded-lg border border-accent-muted bg-accent-soft px-3 py-2 shadow-sm shadow-accent/15",
           aside
-            ? "flex w-full max-w-sm flex-col gap-2 lg:max-w-[22rem]"
+            ? "flex h-full w-full max-w-sm min-h-0 flex-col justify-between gap-2 lg:max-w-[22rem]"
             : "inline-flex max-w-full items-center gap-3 overflow-x-auto",
         )}
       >
