@@ -206,6 +206,9 @@ import {
 // - 2026-08-20: 메모 라벨·?툴팁 제거. 메모|드롭존 높이 stretch 맞춤.
 // - 2026-08-25: 보철물 가이드투어 — 선택·해제·브리지·형태·복사·어벗·프리셋·견적 체험.
 // - 2026-08-25: 전체 가이드투어 — 기공소·환자·날짜 선행 후 보철물. 상단 버튼으로 시작.
+// - 2026-08-25: 환자명 투어 — 이미 채워진 이름이면 변경 전 자동 진행 안 함(2→3 점프 방지).
+// - 2026-08-25: full 치식 — 카드가 전폭을 나눠 갖고 스크롤 없이 16칸 표시. 위·아래 여백으로 경계 보존.
+// - 2026-08-25: preferGuideTourAside(위저드 레일)일 때 패널 쪽 투어 레일 중복 렌더 방지.
 
 const PRACTICE_MEMO_SNIPPETS_LOCAL_KEY = "practice_transfer_memo_snippets_v1";
 const MAX_MEMO_SNIPPETS = 40;
@@ -216,11 +219,17 @@ const TOOTH_CHART_SCROLL_STEP = 1;
 const TOOTH_CHART_SCROLL_JUMP = 5;
 /** 카드 높이: 커스텀 임플란트/스캔바디 2줄까지 표시한 기준 */
 const TOOTH_CARD_HEIGHT_CLASS = "h-[12rem]";
-/** full 16치 한 줄에서도 체크+「어벗」이 한 줄에 들어가게 */
-const TOOTH_SLOT_CLASS = "min-w-[3.5rem] flex-1";
+/** full(16칸) — 뷰포트에 맞추기 위해 조금 낮춤(세로 스크롤 방지) */
+const TOOTH_CARD_HEIGHT_FULL_CLASS = "h-[9rem]";
+/** compact(6칸) — 남는 폭을 나눠 가짐 */
+const TOOTH_SLOT_COMPACT_CLASS = "min-w-[3.5rem] flex-1";
+/** full(16칸) — 전폭을 균등 분할(가로 스크롤·프로그레스 겹침 방지) */
+const TOOTH_SLOT_FULL_CLASS = "min-w-0 flex-1 basis-0";
 const BRIDGE_GAP_LINKED_CLASS =
   "w-1.5 border-y border-primary bg-gradient-to-b from-primary-soft via-primary-soft to-white";
-const BRIDGE_GAP_UNLINKED_CLASS = "w-2";
+const BRIDGE_GAP_UNLINKED_CLASS = "w-1.5";
+/** 정중선(11–21 / 41–31) 이음 — 좌우 악궁을 조금 띄움 */
+const BRIDGE_GAP_MIDLINE_CLASS = "w-2.5";
 const BRIDGE_BUTTON_CLASS =
   "absolute left-1/2 top-1/2 z-10 flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border shadow-sm transition-colors";
 
@@ -1783,7 +1792,11 @@ export const PracticeTransferRequestIntakePanel = ({
     guideTourHoldForHiddenHeaderFields,
   ]);
 
-  /** 기공소·환자 투어 — 뒤로 돌아온 경우에만「값 변경」후에 진행(1·2 클릭 플리커 방지) */
+  /**
+   * 기공소·환자 투어 — 이미 유효한 값이 있으면「값 변경」후에만 진행.
+   * (1→2 클릭 시 환자명이 채워져 있으면 바로 3(날짜)로 튕기던 플리커 방지.
+   *  뒤로가기뿐 아니라 프로그레스로 앞으로 점프할 때도 동일.)
+   */
   const guideTourLabBaselineRef = useRef<string | null>(null);
   const guideTourLabRequireChangeRef = useRef(false);
   const guideTourPatientBaselineRef = useRef<string | null>(null);
@@ -1799,9 +1812,11 @@ export const PracticeTransferRequestIntakePanel = ({
       toothWorkGuideTourStep < prev;
 
     if (toothWorkGuideTourStepId === "lab" && toothWorkGuideTourStep != null) {
-      guideTourLabBaselineRef.current = selectedLab
+      const labKey = selectedLab
         ? String(selectedLab._id || selectedLab.name || "").trim()
         : "";
+      guideTourLabBaselineRef.current = labKey;
+      // 투어 시작 시 이미 선택된 기공소는 자동 진행 유지. 뒤로/재진입만 변경 요구.
       guideTourLabRequireChangeRef.current = wentBack;
     } else {
       guideTourLabBaselineRef.current = null;
@@ -1809,8 +1824,10 @@ export const PracticeTransferRequestIntakePanel = ({
     }
 
     if (toothWorkGuideTourStepId === "patient" && toothWorkGuideTourStep != null) {
-      guideTourPatientBaselineRef.current = String(patientName || "").trim();
-      guideTourPatientRequireChangeRef.current = wentBack;
+      const name = String(patientName || "").trim();
+      guideTourPatientBaselineRef.current = name;
+      // 이미 완성형 한글이면 변경(또는 건너뛰기) 전에는 날짜로 넘기지 않음
+      guideTourPatientRequireChangeRef.current = wentBack || /[가-힣]/.test(name);
     } else {
       guideTourPatientBaselineRef.current = null;
       guideTourPatientRequireChangeRef.current = false;
@@ -2922,7 +2939,7 @@ export const PracticeTransferRequestIntakePanel = ({
       </div>
       ) : null}
       {showProsthesisSection ? (
-      <div className="space-y-2">
+      <div className={cn("space-y-2", showFullToothChart && "min-w-0")}>
         {showInlineToothChartHeader ? (
         <div className="relative flex min-h-8 items-center">
           <div className="flex items-center gap-1.5">
@@ -3072,14 +3089,32 @@ export const PracticeTransferRequestIntakePanel = ({
             const scrollBtnClass =
               "h-7 w-7 shrink-0 rounded-md text-slate-500 hover:bg-white/80 hover:text-primary-strong disabled:opacity-30";
 
+            const toothSlotClass = showFullToothChart
+              ? TOOTH_SLOT_FULL_CLASS
+              : TOOTH_SLOT_COMPACT_CLASS;
+            const toothCardHeightClass = showFullToothChart
+              ? TOOTH_CARD_HEIGHT_FULL_CLASS
+              : TOOTH_CARD_HEIGHT_CLASS;
+
             const chartRows = TOOTH_CHART_ROWS.map((decade) => {
               const maxOffset = Math.max(0, decade.teeth.length - toothChartVisibleCount);
               const offset = Math.min(maxOffset, toothChartOffsets[decade.key] ?? 0);
               const visible = decade.teeth.slice(offset, offset + toothChartVisibleCount);
 
               return (
-                <div key={`decade-${decade.key}`} className="flex items-stretch gap-0.5">
-                  <div className="flex min-w-0 flex-1 items-stretch">
+                <div
+                  key={`decade-${decade.key}`}
+                  className={cn(
+                    "flex w-full items-stretch",
+                    showFullToothChart ? "gap-0" : "gap-0.5",
+                  )}
+                >
+                  <div
+                    className={cn(
+                      "flex w-full min-w-0 items-stretch",
+                      showFullToothChart ? "gap-0.5" : "flex-1",
+                    )}
+                  >
                     {visible.map((toothNumber, visibleIndex) => {
                       const configured = byTooth.get(toothNumber);
                       const chartIdx = decade.teeth.indexOf(toothNumber);
@@ -3090,6 +3125,9 @@ export const PracticeTransferRequestIntakePanel = ({
                       const nextVisible = visible[visibleIndex + 1];
                       const showBridgeControl =
                         Boolean(chartNext) && nextVisible === chartNext;
+                      const isMidlinePair =
+                        (toothNumber === "11" && chartNext === "21") ||
+                        (toothNumber === "41" && chartNext === "31");
                       const nextConfigured = chartNext ? byTooth.get(chartNext) : undefined;
                       const bridgeLinked = Boolean(
                         chartNext &&
@@ -3100,6 +3138,11 @@ export const PracticeTransferRequestIntakePanel = ({
                               Array.isArray(nextConfigured.row.bridgeLinkedTeeth) &&
                               nextConfigured.row.bridgeLinkedTeeth.includes(toothNumber))),
                       );
+                      const bridgeGapClass = bridgeLinked
+                        ? BRIDGE_GAP_LINKED_CLASS
+                        : isMidlinePair
+                          ? BRIDGE_GAP_MIDLINE_CLASS
+                          : BRIDGE_GAP_UNLINKED_CLASS;
 
                       const card = !configured ? (
                         <div
@@ -3110,7 +3153,7 @@ export const PracticeTransferRequestIntakePanel = ({
                           data-tooth-slot-empty=""
                           className={cn(
                             "flex w-full touch-none flex-col items-center justify-start rounded-xl border border-slate-200/90 bg-gradient-to-b from-white to-slate-50/80 px-0.5 pt-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] transition-all",
-                            TOOTH_CARD_HEIGHT_CLASS,
+                            toothCardHeightClass,
                             "hover:border-primary/70 hover:from-primary-soft/80 hover:to-white hover:shadow-sm hover:shadow-primary-soft/60",
                             toothMarqueePreview?.teeth.has(toothNumber) &&
                               toothMarqueePreview.mode === "select" &&
@@ -3131,7 +3174,12 @@ export const PracticeTransferRequestIntakePanel = ({
                             toothSelectAnchorRef.current = toothNumber;
                           }}
                         >
-                          <span className="flex h-10 items-center text-xl font-semibold tabular-nums tracking-tight text-slate-400/90">
+                          <span
+                            className={cn(
+                              "flex items-center font-semibold tabular-nums tracking-tight text-slate-400/90",
+                              showFullToothChart ? "h-8 text-base" : "h-10 text-xl",
+                            )}
+                          >
                             {toothNumber}
                           </span>
                           {renderToothCopyHandle(toothNumber, false)}
@@ -3145,9 +3193,7 @@ export const PracticeTransferRequestIntakePanel = ({
                             data-bridge-linked={bridgeLinked ? "1" : "0"}
                             className={cn(
                               "relative z-20 flex shrink-0 items-center justify-center self-stretch",
-                              bridgeLinked
-                                ? BRIDGE_GAP_LINKED_CLASS
-                                : BRIDGE_GAP_UNLINKED_CLASS,
+                              bridgeGapClass,
                               toothMarqueePreview?.bridges.has(`${toothNumber}|${chartNext}`) &&
                                 toothMarqueePreview.mode === "select" &&
                                 "bg-primary-soft/80",
@@ -3208,12 +3254,18 @@ export const PracticeTransferRequestIntakePanel = ({
                             </button>
                           </div>
                         ) : visibleIndex < visible.length - 1 ? (
-                          <div className="w-2 shrink-0" aria-hidden />
+                          <div
+                            className={cn(
+                              "shrink-0",
+                              showFullToothChart ? "w-1.5" : "w-2",
+                            )}
+                            aria-hidden
+                          />
                         ) : null;
 
                         return (
                           <div key={`tooth-slot-${toothNumber}`} className="contents">
-                            <div className={TOOTH_SLOT_CLASS}>{card}</div>
+                            <div className={toothSlotClass}>{card}</div>
                             {emptyBridgeControl}
                           </div>
                         );
@@ -3273,9 +3325,7 @@ export const PracticeTransferRequestIntakePanel = ({
                           data-bridge-linked={bridgeLinked ? "1" : "0"}
                           className={cn(
                             "relative z-20 flex shrink-0 items-center justify-center self-stretch",
-                            bridgeLinked
-                              ? BRIDGE_GAP_LINKED_CLASS
-                              : BRIDGE_GAP_UNLINKED_CLASS,
+                            bridgeGapClass,
                             toothMarqueePreview?.bridges.has(`${toothNumber}|${chartNext}`) &&
                               toothMarqueePreview.mode === "select" &&
                               "bg-primary-soft/80",
@@ -3335,12 +3385,18 @@ export const PracticeTransferRequestIntakePanel = ({
                           </button>
                         </div>
                       ) : visibleIndex < visible.length - 1 ? (
-                        <div className="w-2 shrink-0" aria-hidden />
+                        <div
+                          className={cn(
+                            "shrink-0",
+                            showFullToothChart ? "w-1.5" : "w-2",
+                          )}
+                          aria-hidden
+                        />
                       ) : null;
 
                       return (
                           <div key={`tooth-slot-${toothNumber}`} className="contents">
-                          <div className={cn("relative", TOOTH_SLOT_CLASS)}>
+                          <div className={cn("relative", toothSlotClass)}>
                           {linkedChartNext && !showBridgeControl ? (
                             <span
                               aria-hidden
@@ -3359,7 +3415,7 @@ export const PracticeTransferRequestIntakePanel = ({
                             data-tooth-slot-selected=""
                             className={cn(
                               "relative flex w-full min-w-0 flex-col items-center justify-start overflow-hidden border px-0.5 pb-1 pt-1.5 shadow-sm",
-                              TOOTH_CARD_HEIGHT_CLASS,
+                              toothCardHeightClass,
                               isMissingTooth
                                 ? isLinked
                                   ? "border-primary bg-slate-50"
@@ -3418,7 +3474,12 @@ export const PracticeTransferRequestIntakePanel = ({
                             ) : null}
 
                             {/* 1) 치아번호 (차트 슬롯으로만 선택 — 번호 변경 팝업 없음) */}
-                            <span className="relative z-[1] flex h-10 shrink-0 items-center text-xl font-bold tabular-nums tracking-tight text-slate-800">
+                            <span
+                              className={cn(
+                                "relative z-[1] flex shrink-0 items-center font-bold tabular-nums tracking-tight text-slate-800",
+                                showFullToothChart ? "h-8 text-base" : "h-10 text-xl",
+                              )}
+                            >
                               {row.toothNumber}
                             </span>
 
@@ -3668,7 +3729,8 @@ export const PracticeTransferRequestIntakePanel = ({
                 ref={toothChartRef}
                 data-tooth-chart
                 className={cn(
-                  "relative select-none space-y-2 px-1 py-1",
+                  "relative select-none px-1",
+                  showFullToothChart ? "space-y-3 py-2.5" : "space-y-2 py-1",
                   toothMarquee ? "cursor-crosshair" : null,
                   toothCopyDrag ? "cursor-copy" : null,
                 )}

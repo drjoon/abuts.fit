@@ -35,6 +35,7 @@ import { PRACTICE_CA_DIRECT_SHIP_NOTE } from "@/shared/practice/practiceWorkPeri
 // - web/frontend/src/shared/workspace/workspaceMode.ts
 // - 2026-08-25: 1~6 단계 공통 크롬 — 툴바 / (본문 | 투어→프로그레스) 고정 자리.
 // - 2026-08-25: 파일 단계에도 상단 툴바(가이드투어·프로그레스) 표시.
+// - 2026-08-25: 보철물 단계 — 제목·투어 아래 전폭 치식. 카드 폭을 나눠 스크롤·겹침 방지.
 // - 2026-08-15: 기공의뢰 익스프레스 모드 — 한 화면 한 질문 위저드.
 // - 2026-08-15: Enter로 다음 단계(마지막은 전송). 메모 textarea·팝오버는 제외.
 // - 2026-08-15: 상단 1~6 단계 버튼은 언제든 바로가기.
@@ -411,6 +412,29 @@ export function PracticeTransferExpressWizard({
       </div>
     );
 
+  const isProsthesisStep = stepId === "prosthesis";
+
+  const guideRail = (
+    <>
+      {guideTourStep != null && onGuideTourStepChange ? (
+        <PracticeToothWorkGuideTourBanner
+          placement="aside"
+          step={guideTourStep}
+          onSkip={() => {
+            if (guideTourStep >= PRACTICE_TOOTH_WORK_GUIDE_TOUR_DONE_STEP) {
+              onGuideTourStepChange(null);
+              return;
+            }
+            onGuideTourStepChange(guideTourStep + 1);
+          }}
+          onExit={() => onGuideTourStepChange(null)}
+          onFinish={() => onGuideTourStepChange(null)}
+        />
+      ) : null}
+      {headerAsideContent}
+    </>
+  );
+
   return (
     <div className="flex min-h-0 flex-col gap-6">
       {headerToolbar ? (
@@ -419,38 +443,42 @@ export function PracticeTransferExpressWizard({
         </div>
       ) : null}
 
-      <div className="grid grid-cols-1 items-start gap-x-12 gap-y-7 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,22rem)]">
-        <div className="flex min-w-0 flex-col gap-y-7">
-          <div className="space-y-2">
-            <h2 className="text-2xl font-bold tracking-tight text-slate-900">
-              {stepMeta.title}
-            </h2>
-            <p className="text-sm leading-relaxed text-muted-foreground">
-              {stepId === "files" ? filesHint : stepMeta.hint}
-            </p>
+      {isProsthesisStep ? (
+        <div className="flex min-w-0 flex-col gap-5">
+          <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start lg:justify-between lg:gap-8">
+            <div className="min-w-0 flex-1 space-y-2">
+              <h2 className="text-2xl font-bold tracking-tight text-slate-900">
+                {stepMeta.title}
+              </h2>
+              <p className="text-sm leading-relaxed text-muted-foreground">
+                {stepMeta.hint}
+              </p>
+            </div>
+            <div className="flex w-full min-w-0 shrink-0 flex-col gap-3 lg:max-w-[22rem]">
+              {guideRail}
+            </div>
           </div>
-          {stepBody}
+          <div className="min-w-0 w-full">{stepBody}</div>
         </div>
+      ) : (
+        <div className="grid grid-cols-1 items-start gap-x-12 gap-y-7 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,22rem)]">
+          <div className="flex min-w-0 flex-col gap-y-7">
+            <div className="space-y-2">
+              <h2 className="text-2xl font-bold tracking-tight text-slate-900">
+                {stepMeta.title}
+              </h2>
+              <p className="text-sm leading-relaxed text-muted-foreground">
+                {stepId === "files" ? filesHint : stepMeta.hint}
+              </p>
+            </div>
+            {stepBody}
+          </div>
 
-        <div className="flex w-full min-w-0 flex-col gap-3 self-start lg:sticky lg:top-4 lg:max-w-[22rem]">
-          {guideTourStep != null && onGuideTourStepChange ? (
-            <PracticeToothWorkGuideTourBanner
-              placement="aside"
-              step={guideTourStep}
-              onSkip={() => {
-                if (guideTourStep >= PRACTICE_TOOTH_WORK_GUIDE_TOUR_DONE_STEP) {
-                  onGuideTourStepChange(null);
-                  return;
-                }
-                onGuideTourStepChange(guideTourStep + 1);
-              }}
-              onExit={() => onGuideTourStepChange(null)}
-              onFinish={() => onGuideTourStepChange(null)}
-            />
-          ) : null}
-          {headerAsideContent}
+          <div className="flex w-full min-w-0 flex-col gap-3 self-start lg:sticky lg:top-4 lg:max-w-[22rem]">
+            {guideRail}
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200/80 pt-4">
         <Button
