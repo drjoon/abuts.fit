@@ -52,7 +52,13 @@ describe("practiceTransferStage pending-accept edit", () => {
   test("휴지통·작업취소는 수정 불가", () => {
     expect(
       canEditPracticeTransferContent({
-        status: "canceled",
+        status: "deleted",
+        matchingMode: "direct",
+      }),
+    ).toBe(false);
+    expect(
+      canEditPracticeTransferContent({
+        status: "canceled", // 레거시 휴지통
         matchingMode: "direct",
       }),
     ).toBe(false);

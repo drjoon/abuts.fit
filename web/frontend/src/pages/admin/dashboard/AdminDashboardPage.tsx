@@ -1372,27 +1372,34 @@ export const AdminDashboardPage = () => {
     : [];
   const practiceTransferRecentActive = useMemo(
     () =>
-      practiceTransferRecentTransfers.filter(
-        (row) => String(row?.status || "").trim() !== "canceled",
-      ),
+      practiceTransferRecentTransfers.filter((row) => {
+        const s = String(row?.status || "").trim().toLowerCase();
+        return s !== "canceled" && s !== "deleted" && s !== "cancelled";
+      }),
     [practiceTransferRecentTransfers],
   );
   const practiceTransferRecentCanceled = useMemo(
     () =>
-      practiceTransferRecentTransfers.filter(
-        (row) => String(row?.status || "").trim() === "canceled",
-      ),
+      practiceTransferRecentTransfers.filter((row) => {
+        const s = String(row?.status || "").trim().toLowerCase();
+        return s === "canceled" || s === "deleted" || s === "cancelled";
+      }),
     [practiceTransferRecentTransfers],
   );
 
   const patchPracticeTransferStatusInCache = (args: {
     transferId: string;
     transferMongoId: string;
-    nextStatus: "canceled" | "active";
+    nextStatus: "deleted" | "active";
   }) => {
     const transferId = String(args.transferId || "").trim();
     const transferMongoId = String(args.transferMongoId || "").trim();
     if (!transferId && !transferMongoId) return;
+
+    const isDeletedStatus = (status: string) => {
+      const s = String(status || "").trim().toLowerCase();
+      return s === "deleted" || s === "canceled" || s === "cancelled";
+    };
 
     queryClient.setQueryData(
       ["admin-dashboard-page", period],
@@ -1412,21 +1419,21 @@ export const AdminDashboardPage = () => {
           if (!isMatch) return row;
           matched = true;
           const prevStatus = String(row?.status || "").trim();
-          if (args.nextStatus === "canceled" && prevStatus === "canceled") {
+          if (args.nextStatus === "deleted" && isDeletedStatus(prevStatus)) {
             return row;
           }
-          if (args.nextStatus === "active" && prevStatus !== "canceled") {
+          if (args.nextStatus === "active" && !isDeletedStatus(prevStatus)) {
             return row;
           }
           return {
             ...row,
-            status: args.nextStatus === "canceled" ? "canceled" : "active",
+            status: args.nextStatus === "deleted" ? "deleted" : "active",
           };
         });
         if (!matched) return prev;
 
-        const activeDelta = args.nextStatus === "canceled" ? -1 : 1;
-        const canceledDelta = args.nextStatus === "canceled" ? 1 : -1;
+        const activeDelta = args.nextStatus === "deleted" ? -1 : 1;
+        const canceledDelta = args.nextStatus === "deleted" ? 1 : -1;
         return {
           ...prev,
           data: {
@@ -1558,7 +1565,7 @@ export const AdminDashboardPage = () => {
       patchPracticeTransferStatusInCache({
         transferId: deleteTransferTarget.transferId,
         transferMongoId: deleteTransferTarget.transferMongoId,
-        nextStatus: "canceled",
+        nextStatus: "deleted",
       });
       setDeleteTransferTarget(null);
       void refetchAdminDashboardFresh();

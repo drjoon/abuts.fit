@@ -1207,6 +1207,7 @@ export async function getOrCreatePracticeTransferChatRoom(req, res) {
     }
 
     const isCanceledTransfer =
+      String(transferDoc?.status || "").trim() === "deleted" ||
       String(transferDoc?.status || "").trim() === "canceled";
 
     const practiceUserId = String(transferDoc?.practiceUserId || "").trim();

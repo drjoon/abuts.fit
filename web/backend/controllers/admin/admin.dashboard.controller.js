@@ -442,7 +442,13 @@ async function buildAdminDashboardPayload(req) {
               $sum: { $cond: [{ $eq: ["$status", "active"] }, 1, 0] },
             },
             canceledTransfers: {
-              $sum: { $cond: [{ $eq: ["$status", "canceled"] }, 1, 0] },
+              $sum: {
+                $cond: [
+                  { $in: ["$status", ["deleted", "canceled"]] },
+                  1,
+                  0,
+                ],
+              },
             },
             totalFiles: { $sum: "$fileCount" },
             unreadTransfers: { $sum: "$unreadFlag" },

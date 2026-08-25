@@ -28,7 +28,8 @@
 // - 2026-08-22: 기공의뢰수신 캘린더 숨길 요일 계정 preferences에 저장.
 // - 2026-08-21: 작업취소 후 어벗츠로의뢰 진행중/출고예정 건수 쿼리 무효화.
 // - 2026-08-21: 어벗 분할 업로드 모달 — 문구 단문화·취소/확인. 헥스 샘플 related 제외.
-// - 2026-08-21: 수신 상단 상태 뱃지에 채팅·미확인 unread. 휴지통(canceled)도 취소 뱃지·캘린더에 표시.
+// - 2026-08-25: status deleted=치과 의뢰 삭제. 수신 목록·취소 뱃지에서 제외. canceled=레거시 휴지통. 작업취소=workCanceledAt.
+// - 2026-08-21: 수신 상단 상태 뱃지에 채팅·미확인 unread.
 // - 2026-08-21: 상단 상태 뱃지 다중 표시 on/off(표시 라벨·기본 리셋·ON/OFF 대비).
 // - 2026-08-21: 어벗 디자인 업로드 후 skipDesignConfirm 강제 true 제거(구강스캔으로 치과 설정 존중).
 // - 2026-08-21: 하청 전환 버튼 — 어벗츠기공소(internalLab)만 노출.
@@ -1248,6 +1249,20 @@ export function RequestorPracticeReceivePage({
           : {};
 
       const transferId = String(payload.transferId || "").trim();
+      const affectedTransferIds = Array.isArray(payload.affectedTransfers)
+        ? payload.affectedTransfers
+            .map((row) =>
+              String(
+                row && typeof row === "object"
+                  ? (row as { transferId?: unknown }).transferId || ""
+                  : "",
+              ).trim(),
+            )
+            .filter(Boolean)
+        : [];
+      const removedTransferIdSet = new Set(
+        [transferId, ...affectedTransferIds].filter(Boolean),
+      );
       const action = String(payload.action || "").trim().toLowerCase();
       const hasUnreadCount =
         payload.unreadCount != null &&
@@ -1275,6 +1290,29 @@ export function RequestorPracticeReceivePage({
       const requestorDownloadedAt = payload.requestorDownloadedAt
         ? String(payload.requestorDownloadedAt)
         : null;
+
+      // 치과 의뢰 삭제(deleted) fan-out는 transferId 없이 affectedTransfers만 올 수 있다.
+      if (type === "practice:transfer-updated" && isRemovedEvent && removedTransferIdSet.size > 0) {
+        setTransfers((prev) =>
+          prev.filter((row) => !removedTransferIdSet.has(row.transferId)),
+        );
+        setSelectedTransfer((prev) => {
+          if (!prev || !removedTransferIdSet.has(prev.transferId)) return prev;
+          return null;
+        });
+        setDialogOpen(false);
+        if (hasUnreadCount) {
+          emitUnreadBadgeRefresh(unreadCount);
+        }
+        // 목록 API가 삭제 건을 제외하므로 reload로도 재유입되지 않는다.
+        if (realtimeReloadTimerRef.current) {
+          window.clearTimeout(realtimeReloadTimerRef.current);
+        }
+        realtimeReloadTimerRef.current = window.setTimeout(() => {
+          void loadFirstPage({ silent: true });
+        }, 140);
+        return;
+      }
 
       if (type === "practice:transfer-updated" && transferId) {
         if (
@@ -1402,14 +1440,7 @@ export function RequestorPracticeReceivePage({
           }
           return;
         }
-        if (isRemovedEvent) {
-          setTransfers((prev) => prev.filter((row) => row.transferId !== transferId));
-          setSelectedTransfer((prev) => {
-            if (!prev || prev.transferId !== transferId) return prev;
-            return null;
-          });
-          setDialogOpen(false);
-        } else {
+        if (!isRemovedEvent) {
           const relatedFromRealtime = pickRelatedRequestIdsFromPayload(payload);
           const productionRawFromRealtime =
             payload.production && typeof payload.production === "object"
@@ -1536,11 +1567,16 @@ export function RequestorPracticeReceivePage({
   }, [fetchTransferPage, hasMore, loading, loadingMore, page]);
 
   const baseFilteredTransfers = useMemo(() => {
+    // 치과 의뢰 삭제(status=deleted|레거시 canceled)는 수신·취소 뱃지·캘린더에서 제외.
+    // 기공소 작업취소(workCanceledAt / manufacturerStage=작업취소)만 「취소」로 남긴다.
+    const visible = transfers.filter((t) => {
+      const raw = String(t.status || "").trim().toLowerCase();
+      return raw !== "deleted" && raw !== "canceled" && raw !== "cancelled";
+    });
     const query = search.trim().toLowerCase();
-    // 휴지통(canceled)도 취소 뱃지·캘린더에 남겨 사이드바 채팅 unread와 맞춘다.
-    if (!query) return transfers;
+    if (!query) return visible;
 
-    return transfers.filter((t) => {
+    return visible.filter((t) => {
       const fileText = t.files
         .map((f) => `${f.originalName} ${f.patientName} ${f.tooth}`)
         .join(" ")
@@ -4462,7 +4498,7 @@ export function RequestorPracticeReceivePage({
         tone: "canceled",
         count: statusCounts.canceled,
         unreadCount: statusUnreadCounts.canceled,
-        tooltip: "작업취소·휴지통 취소 건",
+        tooltip: "기공소 작업취소 건",
       },
       {
         key: "거부",
@@ -4916,8 +4952,7 @@ export function RequestorPracticeReceivePage({
         chatUnlocked={Boolean(activeChatRoom?._id)}
         workCanceled={Boolean(
           String(selectedTransfer?.workCanceledAt || "").trim() ||
-            selectedTransfer?.manufacturerStage === "작업취소" ||
-            selectedTransfer?.manufacturerStage === "취소",
+            selectedTransfer?.manufacturerStage === "작업취소",
         )}
         workCompleted={Boolean(
           selectedTransfer?.autoMatch?.completed ||

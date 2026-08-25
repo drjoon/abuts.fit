@@ -129,9 +129,11 @@ const practiceTransferSchema = new mongoose.Schema(
       default: "practice_file_transfer",
       trim: true,
     },
+    // active | deleted(치과 의뢰 삭제·휴지통) | canceled(레거시 휴지통, deleted와 동일)
+    // 기공소 작업취소는 status를 바꾸지 않고 workCanceledAt만 사용.
     status: {
       type: String,
-      enum: ["active", "canceled"],
+      enum: ["active", "deleted", "canceled"],
       default: "active",
       index: true,
     },
@@ -284,7 +286,7 @@ const practiceTransferSchema = new mongoose.Schema(
       ref: "User",
       default: null,
     },
-    // 기공소 「작업취소」(수락 해제). status=canceled(치과 휴지통)과 별개.
+    // 기공소 「작업취소」(수락 해제). status=deleted(치과 의뢰 삭제)과 별개.
     workCanceledAt: {
       type: Date,
       default: null,
@@ -307,6 +309,7 @@ const practiceTransferSchema = new mongoose.Schema(
       default: null,
       index: true,
     },
+    // 치과 의뢰 삭제(휴지통) 시각. 필드명은 레거시(status=deleted|canceled 공용).
     canceledAt: {
       type: Date,
       default: null,

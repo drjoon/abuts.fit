@@ -3,6 +3,7 @@
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 // - web/backend/services/practiceTransferDashboardStats.service.js
 // - web/frontend/src/shared/practice/practiceRecentTransferList.ts
+// - 2026-08-25: status deleted=치과 의뢰 삭제(휴지통). canceled=레거시 동일. 기공소 작업취소는 workCanceledAt.
 // - 2026-08-15: 대시보드 버킷에 거부 추가. 수락/거부·완료/취소 병기.
 // - 2026-08-16: 공개풀 decline의 labRejectedAt은 미배정 취소 시 「취소」(거부 아님).
 // - 2026-08-16: 자동매칭 재공개(openPool)는 작업취소보다 우선 → 「자동매칭」.
@@ -11,6 +12,27 @@ import {
   isAutoMatchMode,
   toAutoMatchApiFields,
 } from "./practiceTransferAutoMatch.js";
+
+/**
+ * 치과 의뢰 삭제(휴지통).
+ * - status=deleted (신규)
+ * - status=canceled (레거시 휴지통 — 기공소 작업취소와 무관)
+ * 기공소 작업취소는 status를 바꾸지 않고 workCanceledAt만 둔다.
+ */
+export const PRACTICE_TRANSFER_DELETED_STATUSES = ["deleted", "canceled"];
+
+export const isPracticeTransferDeletedStatus = (status) => {
+  const s = String(status || "").trim().toLowerCase();
+  return s === "deleted" || s === "canceled" || s === "cancelled";
+};
+
+export const practiceTransferNotDeletedMongoFilter = () => ({
+  status: { $nin: PRACTICE_TRANSFER_DELETED_STATUSES },
+});
+
+export const practiceTransferDeletedMongoFilter = () => ({
+  status: { $in: PRACTICE_TRANSFER_DELETED_STATUSES },
+});
 
 /**
  * 기공의뢰 manufacturerStage SSOT (UI·대시보드 집계 공통).
@@ -40,9 +62,9 @@ export const resolvePracticeTransferManufacturerStage = (
   if (declinedByViewer || rejectedByViewer) return "거부";
 
   const status = String(transferDoc?.status || "").trim();
-  // 지정/배정 거부 → canceled + labRejectedAt (발신 치과에서도 거부로 집계).
-  // 공개 풀 decline도 labRejectedAt을 남기므로, 미배정 자동매칭 취소는 휴지통「취소」로 본다.
-  if (status === "canceled") {
+  // 치과 삭제(휴지통). 지정/배정 거부 흔적(labRejectedAt)이 있으면 발신 치과 「거부」.
+  // 공개 풀 decline도 labRejectedAt을 남기므로, 미배정 자동매칭 삭제는 휴지통「취소」로 본다.
+  if (isPracticeTransferDeletedStatus(status)) {
     if (transferDoc?.labRejectedAt) {
       const hasAssignee = Boolean(
         String(transferDoc?.targetLabAnchorId || "").trim(),

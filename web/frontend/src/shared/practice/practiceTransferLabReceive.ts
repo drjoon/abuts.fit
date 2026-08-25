@@ -7,6 +7,7 @@
 // - 2026-08-21: expectedAbutmentDesigns — 치식 CA 개수 우선(헥스 샘플 related 과다 방지).
 // - 2026-08-21: 미제공 CA 목록·상세 한 줄(formatPendingLabAbutmentDetailLine).
 // - 2026-08-21: 요청중(헥스 사이즈 미정) CA는 어벗츠 생산 CTA·기대 디자인 수에서 제외.
+// - 2026-08-25: unread — 치과 삭제(deleted|레거시 canceled)는 채팅 unread만.
 // - 2026-08-21: unread 배지 — 휴지통(canceled)은 채팅 unread만(사이드바 received-unread와 정합).
 // - 2026-08-21: resolvePracticeLabReceiveWorkActionState — 카드·상세 모달 CTA 판정 SSOT.
 // - 2026-08-16: prosthetic slots — 크라운은 연결 잔여여도 스팬 묶지 않음; 기대 라벨 헬퍼.
@@ -143,7 +144,7 @@ export type PracticeTransferLabReceiveDisplayStatus =
   | "발송완료";
 
 /** 사이드바「기공의뢰수신」과 동일: 미확인 의뢰(1) + 채팅 unread.
- * 휴지통(status=canceled)은 수신 미확인 집계에서 빠지므로 채팅 unread만 센다.
+ * 치과 삭제(status=deleted|레거시 canceled)는 수신 미확인 집계에서 빠지므로 채팅 unread만 센다.
  */
 export function practiceTransferLabReceiveUnreadBadgeCount(
   transfer: {
@@ -153,9 +154,12 @@ export function practiceTransferLabReceiveUnreadBadgeCount(
   chatUnreadCount = 0,
 ) {
   const status = String(transfer.status || "").trim().toLowerCase();
-  const isTrashCanceled =
-    status === "canceled" || status === "cancelled" || status === "취소";
-  const unreadTransfer = isTrashCanceled || transfer.isRead ? 0 : 1;
+  const isPracticeDeleted =
+    status === "deleted" ||
+    status === "canceled" ||
+    status === "cancelled" ||
+    status === "취소";
+  const unreadTransfer = isPracticeDeleted || transfer.isRead ? 0 : 1;
   return unreadTransfer + Math.max(0, Number(chatUnreadCount) || 0);
 }
 

@@ -121,6 +121,9 @@ import {
 import { assertAbutmentPresetsComplete } from "../../utils/practiceTransferAbutmentPresets.js";
 import {
   canEditPracticeTransferContent,
+  isPracticeTransferDeletedStatus,
+  practiceTransferDeletedMongoFilter,
+  practiceTransferNotDeletedMongoFilter,
   resolvePracticeTransferManufacturerStage,
 } from "../../utils/practiceTransferStage.js";
 import { resolvePracticeTransferSkipJig } from "../../utils/practiceTransferLabShipping.js";
@@ -141,6 +144,7 @@ import { resolvePracticeTransferSkipJig } from "../../utils/practiceTransferLabS
 // - web/backend/utils/practiceTransferAbutmentPresets.js
 // - web/backend/utils/practiceLabRating.js
 // - web/backend/utils/practiceTransferStage.js
+// - 2026-08-25: status deleted=치과 의뢰 삭제(휴지통). GET /received에서 제외. canceled=레거시 호환. 작업취소=workCanceledAt.
 // - 2026-08-21: GET /received — 연동 CA 한진 배송 요약(abutmentDeliveryInfo) 포함(치과 /my와 동일).
 // - 2026-08-21: createPracticeTransfer — 응답은 create 직후. hold·기공소 알림은 백그라운드.
 // - 2026-08-21: createPracticeTransfer — 견적 1회+잔액 재사용, socket/unread 응답 후 비동기.
@@ -1036,7 +1040,7 @@ const scheduleAcceptSideEffects = ({
       const jobs = [
         PracticeTransfer.countDocuments({
           ...scope,
-          status: { $ne: "canceled" },
+          status: { $nin: ["deleted", "canceled"] },
           requestorReadAt: null,
         }).then((unreadCount) => {
           if (labAnchorId) {
@@ -2158,7 +2162,7 @@ export async function emptyPracticeTransferTrash(req, res) {
         .select({ _id: 1, practiceUserId: 1 })
         .lean(),
       PracticeTransfer.find({
-        $and: [baseScope, { status: "canceled" }],
+        $and: [baseScope, practiceTransferDeletedMongoFilter()],
       })
         .select({
           _id: 1,
@@ -2277,7 +2281,7 @@ export async function emptyPracticeTransferTrash(req, res) {
         invalidateUnreadCountCache(scope);
         const unreadCount = await PracticeTransfer.countDocuments({
           ...scope,
-          status: { $ne: "canceled" },
+          status: { $nin: ["deleted", "canceled"] },
           requestorReadAt: null,
         });
         setRequestPerfCacheValue(
@@ -2809,7 +2813,7 @@ export async function createPracticeTransfer(req, res) {
         const unreadCountForRequestor = targetLabAnchorIdText
           ? await PracticeTransfer.countDocuments({
               targetLabAnchorId: new Types.ObjectId(targetLabAnchorIdText),
-              status: { $ne: "canceled" },
+              status: { $nin: ["deleted", "canceled"] },
               requestorReadAt: null,
             })
           : 0;
@@ -3252,7 +3256,7 @@ export async function updatePracticeTransferContent(req, res) {
     const now = new Date();
     const pendingFilter = {
       _id: doc._id,
-      status: { $ne: "canceled" },
+      status: { $nin: ["deleted", "canceled"] },
       requestorDownloadedAt: null,
     };
     const nextSet = {
@@ -3548,7 +3552,7 @@ export async function remakePracticeTransfers(req, res) {
     const sources = await PracticeTransfer.find({
       ...scope,
       _id: { $in: objectIds },
-      status: { $ne: "canceled" },
+      status: { $nin: ["deleted", "canceled"] },
     });
 
     const created = [];
@@ -3678,7 +3682,7 @@ export async function remakePracticeTransfers(req, res) {
       const unreadCountForRequestor = targetLabAnchorIdText
         ? await PracticeTransfer.countDocuments({
             targetLabAnchorId: new Types.ObjectId(targetLabAnchorIdText),
-            status: { $ne: "canceled" },
+            status: { $nin: ["deleted", "canceled"] },
             requestorReadAt: null,
           })
         : 0;
@@ -4106,9 +4110,12 @@ export async function getReceivedPracticeTransfers(req, res) {
     }
 
     // 레거시: 3시간 deadline 만료 재공개는 폐기(수락은 작업완료/취소까지 유지).
+    // 치과 의뢰 삭제(status=deleted|레거시 canceled)는 수신 목록·총건수에서 제외.
+    // 기공소 작업취소(workCanceledAt, status=active)는 계속 「취소」로 노출.
+    const listScope = { $and: [scope, practiceTransferNotDeletedMongoFilter()] };
 
     const [docs, totalCount, unreadCount] = await Promise.all([
-      PracticeTransfer.find(scope)
+      PracticeTransfer.find(listScope)
         .sort({ createdAt: -1, _id: -1 })
         .skip(skip)
         .limit(limit)
@@ -4118,10 +4125,10 @@ export async function getReceivedPracticeTransfers(req, res) {
           "name practiceProfile.clinicName practiceProfile.staffName",
         )
         .lean(),
-      PracticeTransfer.countDocuments(scope),
+      PracticeTransfer.countDocuments(listScope),
       PracticeTransfer.countDocuments({
         ...scope,
-        status: { $ne: "canceled" },
+        status: { $nin: ["deleted", "canceled"] },
         requestorReadAt: null,
         ...(labAnchorId && Types.ObjectId.isValid(labAnchorId)
           ? {
@@ -4364,7 +4371,7 @@ export async function getReceivedPracticeTransferUnreadCount(req, res) {
     const unreadCount = await withRequestPerfInFlight(cacheKey, async () => {
       const count = await PracticeTransfer.countDocuments({
         ...scope,
-        status: { $ne: "canceled" },
+        status: { $nin: ["deleted", "canceled"] },
         requestorReadAt: null,
         ...(labAnchorId && Types.ObjectId.isValid(labAnchorId)
           ? {
@@ -4439,7 +4446,7 @@ export async function markReceivedPracticeTransferRead(req, res) {
     ) {
       const unreadCount = await PracticeTransfer.countDocuments({
         ...scope,
-        status: { $ne: "canceled" },
+        status: { $nin: ["deleted", "canceled"] },
         requestorReadAt: null,
       });
       if (labAnchorId) {
@@ -4472,7 +4479,7 @@ export async function markReceivedPracticeTransferRead(req, res) {
 
     const unreadCount = await PracticeTransfer.countDocuments({
       ...scope,
-      status: { $ne: "canceled" },
+      status: { $nin: ["deleted", "canceled"] },
       requestorReadAt: null,
     });
     if (labAnchorId) {
@@ -4563,10 +4570,10 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
       return res.status(404).json({ success: false, message: "전송 내역을 찾을 수 없습니다." });
     }
 
-    if (String(doc.status || "").trim() === "canceled") {
+    if (isPracticeTransferDeletedStatus(doc.status)) {
       return res.status(409).json({
         success: false,
-        message: "취소된 기공의뢰는 수락할 수 없습니다.",
+        message: "삭제된 기공의뢰는 수락할 수 없습니다.",
       });
     }
 
@@ -5079,10 +5086,10 @@ export async function markReceivedPracticeTransferComplete(req, res) {
       return res.status(404).json({ success: false, message: "전송 내역을 찾을 수 없습니다." });
     }
 
-    if (String(doc.status || "").trim() === "canceled") {
+    if (isPracticeTransferDeletedStatus(doc.status)) {
       return res.status(409).json({
         success: false,
-        message: "취소된 기공의뢰는 완료할 수 없습니다.",
+        message: "삭제된 기공의뢰는 완료할 수 없습니다.",
       });
     }
 
@@ -5400,10 +5407,10 @@ export async function appendReceivedPracticeTransferResultFiles(req, res) {
       return res.status(404).json({ success: false, message: "전송 내역을 찾을 수 없습니다." });
     }
 
-    if (String(doc.status || "").trim() === "canceled") {
+    if (isPracticeTransferDeletedStatus(doc.status)) {
       return res.status(409).json({
         success: false,
-        message: "취소된 기공의뢰에는 결과 파일을 추가할 수 없습니다.",
+        message: "삭제된 기공의뢰에는 결과 파일을 추가할 수 없습니다.",
       });
     }
 
@@ -5552,10 +5559,10 @@ export async function confirmPracticeTransferAbutmentDesign(req, res) {
       return res.status(404).json({ success: false, message: "전송 내역을 찾을 수 없습니다." });
     }
 
-    if (String(doc.status || "").trim() === "canceled") {
+    if (isPracticeTransferDeletedStatus(doc.status)) {
       return res.status(409).json({
         success: false,
-        message: "취소된 기공의뢰는 디자인 컨펌할 수 없습니다.",
+        message: "삭제된 기공의뢰는 디자인 컨펌할 수 없습니다.",
       });
     }
 
@@ -5686,10 +5693,10 @@ export async function confirmPracticeTransferProduction(req, res) {
       return res.status(404).json({ success: false, message: "전송 내역을 찾을 수 없습니다." });
     }
 
-    if (String(doc.status || "").trim() === "canceled") {
+    if (isPracticeTransferDeletedStatus(doc.status)) {
       return res.status(409).json({
         success: false,
-        message: "취소된 기공의뢰는 생산 진행할 수 없습니다.",
+        message: "삭제된 기공의뢰는 생산 진행할 수 없습니다.",
       });
     }
 
@@ -5926,10 +5933,10 @@ export async function markReceivedPracticeTransferRelease(req, res) {
       return res.status(404).json({ success: false, message: "전송 내역을 찾을 수 없습니다." });
     }
 
-    if (String(doc.status || "").trim() === "canceled") {
+    if (isPracticeTransferDeletedStatus(doc.status)) {
       return res.status(409).json({
         success: false,
-        message: "이미 취소된 기공의뢰입니다.",
+        message: "이미 삭제된 기공의뢰입니다.",
       });
     }
 
@@ -6268,10 +6275,10 @@ export async function openSubcontractPracticeTransfer(req, res) {
       });
     }
 
-    if (String(doc.status || "").trim() === "canceled") {
+    if (isPracticeTransferDeletedStatus(doc.status)) {
       return res.status(409).json({
         success: false,
-        message: "이미 취소된 기공의뢰입니다.",
+        message: "이미 삭제된 기공의뢰입니다.",
       });
     }
 
@@ -6383,7 +6390,7 @@ export async function openSubcontractPracticeTransfer(req, res) {
 /**
  * 기공소 수락 전 「거부」.
  * - 자동매칭 공개 풀: 이 기공소만 declinedLabAnchorIds에 넣고 목록에서 제외(의뢰는 타 기공소에 유지).
- * - 지정 기공소: canceled(휴지통)로 보내지 않고 작업취소로 둔다. 치과 「취소」·기공소 「거부」.
+ * - 지정 기공소: deleted(휴지통)로 보내지 않고 작업취소로 둔다. 치과 「취소」·기공소 「거부」.
  */
 export async function markReceivedPracticeTransferReject(req, res) {
   try {
@@ -6415,10 +6422,10 @@ export async function markReceivedPracticeTransferReject(req, res) {
       return res.status(404).json({ success: false, message: "전송 내역을 찾을 수 없습니다." });
     }
 
-    if (String(doc.status || "").trim() === "canceled") {
+    if (isPracticeTransferDeletedStatus(doc.status)) {
       return res.status(409).json({
         success: false,
-        message: "이미 취소된 기공의뢰입니다.",
+        message: "이미 삭제된 기공의뢰입니다.",
       });
     }
 
@@ -6729,7 +6736,7 @@ export async function retargetPracticeTransferLab(req, res) {
       });
     }
 
-    if (String(doc.status || "").trim() === "canceled") {
+    if (isPracticeTransferDeletedStatus(doc.status)) {
       return res.status(409).json({
         success: false,
         message: "휴지통의 의뢰는 기공소를 변경할 수 없습니다. 먼저 복구해 주세요.",
@@ -7234,7 +7241,7 @@ export async function cancelPracticeTransfersBatch(req, res) {
 
     const { scope: baseScope } = await buildPracticeOwnedScope(req);
 
-    // canceled 포함 조회 — 이미 휴지통인 건은 idempotent 성공 처리
+    // deleted|레거시 canceled 포함 조회 — 이미 휴지통인 건은 idempotent 성공 처리
     const docs = await PracticeTransfer.find({
       $and: [baseScope, { $or: filterOr }],
     });
@@ -7267,7 +7274,7 @@ export async function cancelPracticeTransfersBatch(req, res) {
 
     for (const doc of docs) {
       try {
-        if (String(doc?.status || "").trim() === "canceled") {
+        if (isPracticeTransferDeletedStatus(doc?.status)) {
           successCount += 1;
           continue;
         }
@@ -7286,7 +7293,7 @@ export async function cancelPracticeTransfersBatch(req, res) {
             rollbackErr?.message || rollbackErr,
           );
         }
-        doc.status = "canceled";
+        doc.status = "deleted";
         doc.canceledAt = new Date();
         doc.canceledBy = req.user?._id || null;
         await doc.save();
@@ -7303,13 +7310,13 @@ export async function cancelPracticeTransfersBatch(req, res) {
         }
 
         const realtimePayload = {
-          action: "canceled",
+          action: "deleted",
           transferId,
           transferMongoId,
           targetLabAnchorId: targetLabAnchorId || null,
           practiceUserId: String(doc.practiceUserId || "").trim() || null,
           unreadCount: null,
-          status: "canceled",
+          status: "deleted",
           updatedAt: doc.updatedAt || new Date(),
         };
 
@@ -7331,7 +7338,7 @@ export async function cancelPracticeTransfersBatch(req, res) {
       invalidateUnreadCountCache(scope);
       const unreadCount = await PracticeTransfer.countDocuments({
         ...scope,
-        status: { $ne: "canceled" },
+        ...practiceTransferNotDeletedMongoFilter(),
         requestorReadAt: null,
       });
       setRequestPerfCacheValue(
@@ -7344,11 +7351,11 @@ export async function cancelPracticeTransfersBatch(req, res) {
         targetLabAnchorId,
         type: "practice:transfer-updated",
         payload: {
-          action: "canceled",
+          action: "deleted",
           targetLabAnchorId,
           affectedTransfers: affected,
           unreadCount,
-          status: "canceled",
+          status: "deleted",
           updatedAt: new Date(),
         },
       });
@@ -7412,7 +7419,7 @@ export async function restorePracticeTransfersBatch(req, res) {
     const { scope: baseScope } = await buildPracticeOwnedScope(req);
 
     const docs = await PracticeTransfer.find({
-      $and: [baseScope, { $or: filterOr }, { status: "canceled" }],
+      $and: [baseScope, { $or: filterOr }, practiceTransferDeletedMongoFilter()],
     });
 
     let successCount = 0;
@@ -7487,7 +7494,7 @@ export async function restorePracticeTransfersBatch(req, res) {
       invalidateUnreadCountCache(scope);
       const unreadCount = await PracticeTransfer.countDocuments({
         ...scope,
-        status: { $ne: "canceled" },
+        status: { $nin: ["deleted", "canceled"] },
         requestorReadAt: null,
       });
       setRequestPerfCacheValue(

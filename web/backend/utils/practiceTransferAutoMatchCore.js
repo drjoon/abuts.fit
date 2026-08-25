@@ -94,7 +94,11 @@ export const isAutoMatchClaimActive = (transfer, _now = Date.now()) => {
 
 export const isAutoMatchOpenPool = (transfer, now = Date.now()) => {
   if (!isAutoMatchMode(transfer)) return false;
-  if (String(transfer?.status || "").trim() === "canceled") return false;
+  // deleted|레거시 canceled = 치과 의뢰 삭제
+  const status = String(transfer?.status || "").trim().toLowerCase();
+  if (status === "deleted" || status === "canceled" || status === "cancelled") {
+    return false;
+  }
   if (isAutoMatchCompleted(transfer)) return false;
   if (!isAutoMatchClaimActive(transfer, now)) return true;
   return false;
@@ -125,7 +129,10 @@ export const isAutoMatchPriorityActive = (transfer, now = Date.now()) => {
 
 /** 어벗츠 원청이 연 인증 기공소 하청 풀(지정 의뢰). */
 export const isSubcontractPoolOpen = (transfer) => {
-  if (String(transfer?.status || "").trim() === "canceled") return false;
+  const status = String(transfer?.status || "").trim().toLowerCase();
+  if (status === "deleted" || status === "canceled" || status === "cancelled") {
+    return false;
+  }
   if (isAutoMatchCompleted(transfer)) return false;
   if (getAssigneeLabAnchorId(transfer)) return false;
   return Boolean(transfer?.autoMatch?.subcontractPoolOpen);
@@ -221,7 +228,10 @@ export const canOpenPracticeTransferSubcontract = (
   const primeId = getPrimeLabAnchorId(transfer);
   if (!viewerId || !primeId || viewerId !== primeId) return false;
   if (!isAbutsPrimePracticeTransfer(transfer)) return false;
-  if (String(transfer?.status || "").trim() === "canceled") return false;
+  const status = String(transfer?.status || "").trim().toLowerCase();
+  if (status === "deleted" || status === "canceled" || status === "cancelled") {
+    return false;
+  }
   if (getAssigneeLabAnchorId(transfer)) return false;
   if (isPracticeTransferSubcontracted(transfer)) return false;
   if (isSubcontractPoolOpen(transfer)) return false;
