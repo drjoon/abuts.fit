@@ -264,7 +264,7 @@ export const buildAutoMatchDeadlineAt = (
 ) => null;
 
 /**
- * 수신 목록: 내 지정 건 ∪ (eligible이면) 공개 풀 ∪ 내가 거부한 공개 풀 건
+ * 수신 목록: 내 지정 건(지정·클레임 거부 제외) ∪ (eligible이면) 아직 거부하지 않은 공개 풀
  */
 export const buildReceivedScopeWithAutoMatch = ({
   labAnchorId,
@@ -276,9 +276,23 @@ export const buildReceivedScopeWithAutoMatch = ({
 
   const labOid = new Types.ObjectId(labId);
   const mine = {
-    $or: [
-      { targetLabAnchorId: labOid },
-      { assigneeLabAnchorId: labOid },
+    $and: [
+      {
+        $or: [
+          { targetLabAnchorId: labOid },
+          { assigneeLabAnchorId: labOid },
+        ],
+      },
+      // 지정·클레임 거부 — 기공소 목록에서 제외(자동매칭 decline은 declinedLabAnchorIds 경로).
+      {
+        $or: [
+          { labRejectedByLabAnchorId: { $ne: labOid } },
+          { labRejectedByLabAnchorId: null },
+          { labRejectedByLabAnchorId: { $exists: false } },
+          { labRejectedAt: null },
+          { labRejectedAt: { $exists: false } },
+        ],
+      },
     ],
   };
 
@@ -350,23 +364,6 @@ export const buildReceivedScopeWithAutoMatch = ({
           ...subcontractPoolBase.$and,
           { "autoMatch.declinedLabAnchorIds": { $nin: [labOid] } },
         ],
-      },
-      // 내가 거부한 공개 풀(희미한 카드·거부 뱃지용)
-      {
-        matchingMode: "auto",
-        status: "active",
-        "autoMatch.declinedLabAnchorIds": labOid,
-      },
-      {
-        matchingMode: "direct",
-        status: "active",
-        "autoMatch.subcontractPoolOpen": true,
-        "autoMatch.declinedLabAnchorIds": labOid,
-      },
-      // 지정 의뢰를 거부·취소한 건
-      {
-        labRejectedByLabAnchorId: labOid,
-        labRejectedAt: { $ne: null },
       },
     ],
   };

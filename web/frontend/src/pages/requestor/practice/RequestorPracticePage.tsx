@@ -110,6 +110,9 @@
 // - 2026-08-15: 주문 후 1영업일 미수락 「수락대기」뱃지(목록).
 // - 2026-08-16: 지정 거부=치과 취소 상태 전달(휴지통 아님). 자동매칭 거부는 타 기공소 공개.
 // - 2026-08-26: 수신 상세 모달 거부 — ConfirmDialog 확인 후 처리.
+// - 2026-08-26: 거부 ConfirmDialog — 포털 클릭 시 상세 모달이 닫히지 않게 하고 대상 ref 보관.
+// - 2026-08-26: 지정 거부 후 기공소 목록·캘린더에서 즉시 제거.
+// - 2026-08-26: 기공소 수신 상단 — 취소·거부 필터 뱃지 제거(종료 건은 목록에 두지 않음).
 import {
   useCallback,
   useEffect,
@@ -203,6 +206,7 @@ import {
 import {
   formatPracticeTransferProstheticSlotLabels,
   getPracticeTransferLabReceiveDisplayStatus,
+  isLabReceiveHiddenTerminalStatus,
   listPracticeTransferPendingProstheticSlots,
   practiceTransferAbutmentMachiningStarted,
   practiceTransferHasCustomAbutment,
@@ -332,8 +336,6 @@ type LabReceiveStatusFilterKey =
   | "발송완료"
   | "의뢰수락"
   | "작업완료"
-  | "취소"
-  | "거부"
   | "포장.발송"
   | "리메이크";
 
@@ -342,8 +344,6 @@ const LAB_RECEIVE_DEFAULT_ON_STATUS_FILTERS: readonly LabReceiveStatusFilterKey[
   "발송완료",
   "의뢰수락",
   "작업완료",
-  "취소",
-  "거부",
   "포장.발송",
   "리메이크",
 ];
@@ -377,8 +377,6 @@ const labTransferMatchesStatusFilters = (
   if (selected.size === 0) return false;
   const status = getTransferDisplayStatus(transfer);
   if (selected.has("리메이크") && transfer.isRemake) return true;
-  if (selected.has("거부") && status === "거부") return true;
-  if (selected.has("취소") && status === "취소") return true;
   if (selected.has("의뢰수락") && status === "의뢰수락") return true;
   if (selected.has("작업완료") && status === "작업완료") return true;
   if (selected.has("포장.발송") && status === "생산진행") return true;
@@ -638,6 +636,7 @@ export function RequestorPracticeReceivePage({
   const [acceptBusy, setAcceptBusy] = useState(false);
   const [rejectBusy, setRejectBusy] = useState(false);
   const [rejectConfirmOpen, setRejectConfirmOpen] = useState(false);
+  const rejectTargetRef = useRef<ReceivedPracticeTransfer | null>(null);
   const [openSubcontractBusy, setOpenSubcontractBusy] = useState(false);
   const [releaseBusy, setReleaseBusy] = useState(false);
   const [cardActionBusyId, setCardActionBusyId] = useState<string>("");
@@ -1241,6 +1240,33 @@ export function RequestorPracticeReceivePage({
     void loadFirstPage();
   }, [loadFirstPage, token]);
 
+  const removeLabReceiveTransferFromList = useCallback(
+    (transfer: Pick<ReceivedPracticeTransfer, "_id" | "transferId">) => {
+      const transferId = String(transfer.transferId || "").trim();
+      const mongoId = String(transfer._id || "").trim();
+      setTransfers((prev) =>
+        prev.filter(
+          (row) =>
+            (transferId
+              ? String(row.transferId || "").trim() !== transferId
+              : true) &&
+            (mongoId ? String(row._id || "").trim() !== mongoId : true),
+        ),
+      );
+      setSelectedTransfer((prev) => {
+        if (!prev) return prev;
+        if (transferId && String(prev.transferId || "").trim() === transferId) {
+          return null;
+        }
+        if (mongoId && String(prev._id || "").trim() === mongoId) {
+          return null;
+        }
+        return prev;
+      });
+    },
+    [],
+  );
+
   useAppEventListener({
     enabled: Boolean(token),
     eventTypes: ["practice:transfer-created", "practice:transfer-updated"],
@@ -1395,49 +1421,44 @@ export function RequestorPracticeReceivePage({
           }
           return;
         }
-        if (action === "rejected") {
-          const rejectedAt =
-            payload.labRejectedAt != null
-              ? String(payload.labRejectedAt)
-              : new Date().toISOString();
-          setTransfers((prev) =>
-            prev.map((row) => {
-              if (row.transferId !== transferId) return row;
-              return {
-                ...row,
-                status: status || row.status,
-                labRejected: true,
-                labRejectedAt: rejectedAt,
-                manufacturerStage: "거부",
-                autoMatch: row.autoMatch
-                  ? {
-                      ...row.autoMatch,
-                      declinedByMe: true,
-                      claimActive: false,
-                      mine: false,
-                    }
-                  : row.autoMatch,
-              };
-            }),
-          );
-          setSelectedTransfer((prev) => {
-            if (!prev || prev.transferId !== transferId) return prev;
-            return {
-              ...prev,
-              status: status || prev.status,
-              labRejected: true,
-              labRejectedAt: rejectedAt,
-              manufacturerStage: "거부",
-              autoMatch: prev.autoMatch
-                ? {
-                    ...prev.autoMatch,
-                    declinedByMe: true,
-                    claimActive: false,
-                    mine: false,
-                  }
-                : prev.autoMatch,
-            };
+        if (action === "lab-rejected") {
+          const transferMongoId = String(payload.transferMongoId || "").trim();
+          removeLabReceiveTransferFromList({
+            transferId,
+            _id: transferMongoId || transferId,
           });
+          if (dialogOpen && String(selectedTransfer?.transferId || "").trim() === transferId) {
+            setDialogOpen(false);
+            chatRoomResolveSeqRef.current += 1;
+            setActiveChatRoom(null);
+            setChatMessages([]);
+            setChatDraft("");
+            setChatReplyTo(null);
+            chatUploads.clear();
+            setChatError("");
+            resetDownloads();
+          }
+          if (hasUnreadCount) {
+            emitUnreadBadgeRefresh(unreadCount);
+          }
+          return;
+        }
+        if (action === "rejected") {
+          removeLabReceiveTransferFromList({
+            transferId,
+            _id: String(payload.transferMongoId || "").trim() || transferId,
+          });
+          if (dialogOpen && String(selectedTransfer?.transferId || "").trim() === transferId) {
+            setDialogOpen(false);
+            chatRoomResolveSeqRef.current += 1;
+            setActiveChatRoom(null);
+            setChatMessages([]);
+            setChatDraft("");
+            setChatReplyTo(null);
+            chatUploads.clear();
+            setChatError("");
+            resetDownloads();
+          }
           if (hasUnreadCount) {
             emitUnreadBadgeRefresh(unreadCount);
           }
@@ -1570,11 +1591,13 @@ export function RequestorPracticeReceivePage({
   }, [fetchTransferPage, hasMore, loading, loadingMore, page]);
 
   const baseFilteredTransfers = useMemo(() => {
-    // 치과 의뢰 삭제(status=deleted|레거시 canceled)는 수신·취소 뱃지·캘린더에서 제외.
-    // 기공소 작업취소(workCanceledAt / manufacturerStage=작업취소)만 「취소」로 남긴다.
+    // 치과 삭제 + 기공소 거부·작업취소(취소)는 수신·캘린더에서 제외.
     const visible = transfers.filter((t) => {
       const raw = String(t.status || "").trim().toLowerCase();
-      return raw !== "deleted" && raw !== "canceled" && raw !== "cancelled";
+      if (raw === "deleted" || raw === "canceled" || raw === "cancelled") {
+        return false;
+      }
+      return !isLabReceiveHiddenTerminalStatus(getTransferDisplayStatus(t));
     });
     const query = search.trim().toLowerCase();
     if (!query) return visible;
@@ -1630,11 +1653,9 @@ export function RequestorPracticeReceivePage({
     const counts = baseFilteredTransfers.reduce(
       (acc, transfer) => {
         const status = getTransferDisplayStatus(transfer);
-        if (status === "거부") acc.rejected += 1;
-        else if (status === "작업완료") acc.completed += 1;
+        if (status === "작업완료") acc.completed += 1;
         else if (status === "생산진행") acc.shipping += 1;
         else if (status === "의뢰수락") acc.accepted += 1;
-        else if (status === "취소") acc.canceled += 1;
         else if (
           status === "발송완료" ||
           status === "수신완료" ||
@@ -1650,8 +1671,6 @@ export function RequestorPracticeReceivePage({
         sent: 0,
         accepted: 0,
         completed: 0,
-        canceled: 0,
-        rejected: 0,
         shipping: 0,
         remake: 0,
       },
@@ -1664,8 +1683,6 @@ export function RequestorPracticeReceivePage({
       sent: 0,
       accepted: 0,
       completed: 0,
-      canceled: 0,
-      rejected: 0,
       shipping: 0,
       remake: 0,
     };
@@ -1673,11 +1690,9 @@ export function RequestorPracticeReceivePage({
       const unread = transferUnreadBadgeCount(transfer);
       if (unread <= 0) continue;
       const status = getTransferDisplayStatus(transfer);
-      if (status === "거부") counts.rejected += unread;
-      else if (status === "작업완료") counts.completed += unread;
+      if (status === "작업완료") counts.completed += unread;
       else if (status === "생산진행") counts.shipping += unread;
       else if (status === "의뢰수락") counts.accepted += unread;
-      else if (status === "취소") counts.canceled += unread;
       else if (
         status === "발송완료" ||
         status === "수신완료" ||
@@ -3146,53 +3161,7 @@ export function RequestorPracticeReceivePage({
           return false;
         }
 
-        const body =
-          res.data && typeof res.data === "object"
-            ? (res.data as Record<string, unknown>)
-            : {};
-        const data =
-          body.data && typeof body.data === "object"
-            ? (body.data as Record<string, unknown>)
-            : body;
-        const canceled = Boolean(data.canceled);
-        const rejectedAt =
-          data.labRejectedAt != null
-            ? String(data.labRejectedAt)
-            : new Date().toISOString();
-        const workCanceledAt =
-          data.workCanceledAt != null
-            ? String(data.workCanceledAt)
-            : !isOpenPool
-              ? rejectedAt
-              : transfer.workCanceledAt || null;
-
-        applyAcceptedLocalPatch(transfer, {
-          labRejected: true,
-          labRejectedAt: rejectedAt,
-          workCanceledAt,
-          manufacturerStage: "거부",
-          status: canceled ? "canceled" : transfer.status,
-          autoMatch: transfer.autoMatch
-            ? {
-                ...transfer.autoMatch,
-                declinedByMe: true,
-                openPool:
-                  transfer.matchingMode === "auto"
-                    ? true
-                    : transfer.autoMatch.openPool,
-                claimActive: false,
-                mine: false,
-              }
-            : transfer.matchingMode === "auto"
-              ? {
-                  declinedByMe: true,
-                  openPool: true,
-                  claimActive: false,
-                  mine: false,
-                  completed: false,
-                }
-              : transfer.autoMatch,
-        });
+        removeLabReceiveTransferFromList(transfer);
 
         setDialogOpen(false);
         chatRoomResolveSeqRef.current += 1;
@@ -3221,7 +3190,7 @@ export function RequestorPracticeReceivePage({
         return false;
       }
     },
-    [ACTION_UI_MIN_MS, applyAcceptedLocalPatch, chatUploads, resetDownloads, toast, token],
+    [ACTION_UI_MIN_MS, chatUploads, removeLabReceiveTransferFromList, resetDownloads, toast, token],
   );
 
   const markTransferOpenSubcontract = useCallback(
@@ -3388,6 +3357,7 @@ export function RequestorPracticeReceivePage({
   const handleRejectTransfer = useCallback(() => {
     if (!selectedTransfer || rejectBusy || acceptBusy || releaseBusy || openSubcontractBusy)
       return;
+    rejectTargetRef.current = selectedTransfer;
     setRejectConfirmOpen(true);
   }, [
     acceptBusy,
@@ -3398,12 +3368,16 @@ export function RequestorPracticeReceivePage({
   ]);
 
   const handleConfirmRejectTransfer = useCallback(async () => {
-    if (!selectedTransfer || rejectBusy || acceptBusy || releaseBusy || openSubcontractBusy)
+    const transfer = rejectTargetRef.current ?? selectedTransfer;
+    if (!transfer || rejectBusy || acceptBusy || releaseBusy || openSubcontractBusy)
       return;
     setRejectBusy(true);
     try {
-      const ok = await markTransferReject(selectedTransfer);
-      if (ok) setRejectConfirmOpen(false);
+      const ok = await markTransferReject(transfer);
+      if (ok) {
+        setRejectConfirmOpen(false);
+        rejectTargetRef.current = null;
+      }
     } finally {
       setRejectBusy(false);
     }
@@ -4509,22 +4483,6 @@ export function RequestorPracticeReceivePage({
         tooltip: "기공작업 완료·파일 업로드 후",
       },
       {
-        key: "취소",
-        label: "취소",
-        tone: "canceled",
-        count: statusCounts.canceled,
-        unreadCount: statusUnreadCounts.canceled,
-        tooltip: "기공소 작업취소 건",
-      },
-      {
-        key: "거부",
-        label: "거부",
-        tone: "rejected",
-        count: statusCounts.rejected,
-        unreadCount: statusUnreadCounts.rejected,
-        tooltip: "지정 거부 건",
-      },
-      {
         key: "포장.발송",
         label: "발송",
         tone: "shipping",
@@ -4756,9 +4714,11 @@ export function RequestorPracticeReceivePage({
       <PracticeTransferDetailChatDialog
         open={dialogOpen}
         onOpenChange={(open) => {
+          if (!open && rejectConfirmOpen) return;
           setDialogOpen(open);
           if (!open) {
             setRejectConfirmOpen(false);
+            rejectTargetRef.current = null;
             chatRoomResolveSeqRef.current += 1;
             setSelectedTransfer(null);
             setActiveChatRoom(null);
@@ -5125,6 +5085,7 @@ export function RequestorPracticeReceivePage({
         onCancel={() => {
           if (rejectBusy) return;
           setRejectConfirmOpen(false);
+          rejectTargetRef.current = null;
         }}
       />
       </>

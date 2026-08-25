@@ -19,6 +19,8 @@
 // - 2026-08-16: labRatingSummary(내 별점·평가 횟수) 수신 타입.
 // - 2026-08-16: 생산 취소 시 confirmedAt·autoMatch.completed·manufacturerStage 클리어 →「의뢰수락」.
 // - 2026-08-15: 기공의뢰수신(어벗츠기공소·일반 lab) 카드 SSOT — 상태·CA 판정·타입.
+// - 2026-08-26: 기공소 수신 — 거부·작업취소(취소) 건은 목록·캘린더에서 제외.
+// - 2026-08-26: 지정·클레임 거부 후 기공소 목록 제거 — 자동매칭 decline도 동일.
 // - 2026-08-16: 자동매칭 재공개(openPool)는 workCanceledAt보다 우선 →「자동매칭」(수락 취소 후 수락 잔상 방지).
 // - 2026-08-19: 임시치아+Pontic 스팬 업로드 라벨은 임시치아.
 // - 2026-08-21: abutmentDeliveryInfo — 연동 CA 한진 배송 요약(치과 발신과 동일).
@@ -161,6 +163,13 @@ export function practiceTransferLabReceiveUnreadBadgeCount(
     status === "취소";
   const unreadTransfer = isPracticeDeleted || transfer.isRead ? 0 : 1;
   return unreadTransfer + Math.max(0, Number(chatUnreadCount) || 0);
+}
+
+/** 기공소 수신 캘린더·목록에서 숨기는 종료 상태(거부·작업취소). */
+export function isLabReceiveHiddenTerminalStatus(
+  status: PracticeTransferLabReceiveDisplayStatus,
+): boolean {
+  return status === "취소" || status === "거부";
 }
 
 export function getPracticeTransferLabReceiveDisplayStatus(

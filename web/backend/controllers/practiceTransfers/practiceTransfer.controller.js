@@ -6584,7 +6584,7 @@ export async function markReceivedPracticeTransferReject(req, res) {
       });
     }
 
-    // 지정 기공소: 활성 유지 + 작업취소(치과 「취소」). 기공소 뷰는 labRejected로 「거부」.
+    // 지정 기공소: 활성 유지 + 작업취소(치과 「취소」). 기공소 수신 목록에서는 제외(자동매칭 decline과 동일).
     const targetId = String(doc.targetLabAnchorId || "").trim();
     if (targetId && targetId !== labAnchorId && role !== "admin") {
       return res.status(403).json({

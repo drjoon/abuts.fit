@@ -7,6 +7,7 @@
 // - 2026-08-16: 의뢰상세 채팅 헤더는 트리거 라벨「치과 평가」(모달 동일).
 // - 2026-08-19: 채팅「치과 평가」= 별점 없음·수가 할증만. 설정 탭은 할증 안내 유지.
 // - 2026-08-20: 평가 모달 안내에서「고품질」삭제. 채팅 헤더는 할증율+「치과 평가」버튼.
+// - 2026-08-26: 할증 힌트 툴팁 — 포커스(모달 오픈)가 아닌 마우스 호버에서만 표시.
 import { useEffect, useState, type MouseEvent } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -93,6 +94,7 @@ export function LabPracticeFeeSurchargeControl({
   const { token } = useAuthStore();
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
+  const [hintOpen, setHintOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [current, setCurrent] = useState(() =>
     normalizeLabFeeMultiplier(multiplier),
@@ -112,6 +114,10 @@ export function LabPracticeFeeSurchargeControl({
     setDraft(next);
     setCustomText(isPresetValue(next) ? "" : String(next));
   }, [open, current]);
+
+  useEffect(() => {
+    if (open) setHintOpen(false);
+  }, [open]);
 
   const practiceId = String(practiceAnchorId || "").trim();
   if (!practiceId) return null;
@@ -203,7 +209,12 @@ export function LabPracticeFeeSurchargeControl({
 
   return (
     <>
-      <Tooltip>
+      <Tooltip
+        open={hintOpen}
+        onOpenChange={(next) => {
+          if (!next) setHintOpen(false);
+        }}
+      >
         <TooltipTrigger asChild>
           <span
             className={cn(
@@ -211,6 +222,8 @@ export function LabPracticeFeeSurchargeControl({
               className,
             )}
             onPointerDown={onTriggerPointerDown}
+            onPointerEnter={() => setHintOpen(true)}
+            onPointerLeave={() => setHintOpen(false)}
           >
             {isEvaluate ? (
               <span
