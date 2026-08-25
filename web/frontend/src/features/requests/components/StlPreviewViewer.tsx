@@ -1,4 +1,7 @@
 // change-log:
+// - 2026-08-26: 좌우=카메라 azimuth(yaw), 위아래=카메라 polar — roll·반전 수정.
+// - 2026-08-26: 3D 프리뷰 회전을 화면 기준(screen-space) 오빗으로 변경 — 현재 뷰 각도에서 부드럽게 누적 회전.
+// - 2026-08-26: Z-up turntable 회전 — 좌우 드래그가 수직(Z)축 기준으로 돌도록 OrbitControls 교체.
 // - 2026-08-23: 오버레이 커넥션·헥스 회전을 왼쪽 열로 옮겨 우측(FL/축) 높이·모델 가림 축소.
 // - 2026-08-23: 좁은 뷰어에서 좌·우 메트릭 오버레이가 겹치지 않도록 flex-wrap 바 레이아웃.
 // - 2026-08-23: geometry 파서는 shared/files/modelPreviewFile.parseModelGeometry 공용.
@@ -17,7 +20,7 @@
 // - web/frontend/src/shared/files/modelPreviewFile.ts
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { ScreenSpaceOrbitControls } from "@/shared/three/screenSpaceOrbitControls";
 import { Line2 } from "three/examples/jsm/lines/Line2.js";
 import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
@@ -74,6 +77,7 @@ export function StlPreviewViewer({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const onDiameterComputedRef = useRef(onDiameterComputed);
   const sceneRef = useRef<THREE.Scene | null>(null);
+  const modelPivotRef = useRef<THREE.Group | null>(null);
   const meshRef = useRef<THREE.Mesh | null>(null);
   const dblClickHandlerRef = useRef<((event: MouseEvent) => void) | null>(null);
   const contextMenuHandlerRef = useRef<((event: MouseEvent) => void) | null>(null);
@@ -197,9 +201,7 @@ export function StlPreviewViewer({
   const disposeFrontPointMesh = () => {
     const existing = frontPointMeshRef.current;
     if (!existing) return;
-    if (sceneRef.current) {
-      sceneRef.current.remove(existing);
-    }
+    existing.parent?.remove(existing);
     existing.geometry?.dispose?.();
     const material = existing.material;
     if (Array.isArray(material)) {
@@ -335,6 +337,7 @@ export function StlPreviewViewer({
     const pointFromMetadata = toValidPoint(resolvedMetadata?.frontPoint);
     const point = pointFromMetadata ?? frontPointState ?? null;
     const scene = sceneRef.current;
+    const modelPivot = modelPivotRef.current;
     const scenePosition = point ? resolveFrontPointScenePosition(point) : null;
 
     // 원본 STL은 front point 표시 안함, filled STL만 표시
@@ -343,6 +346,7 @@ export function StlPreviewViewer({
       !showOverlay ||
       !isFilled ||
       !scene ||
+      !modelPivot ||
       !scenePosition ||
       maxDiameterRef.current <= 0
     ) {
@@ -361,7 +365,7 @@ export function StlPreviewViewer({
       dotMaterial.depthWrite = false;
       const mesh = new THREE.Mesh(dotGeometry, dotMaterial);
       mesh.renderOrder = 999;
-      scene.add(mesh);
+      modelPivot.add(mesh);
       frontPointMeshRef.current = mesh;
     }
 
@@ -434,9 +438,11 @@ export function StlPreviewViewer({
     rimLight.position.set(15, 90, -60);
     scene.add(rimLight);
 
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.1;
+    const modelPivot = new THREE.Group();
+    scene.add(modelPivot);
+    modelPivotRef.current = modelPivot;
+
+    const controls = new ScreenSpaceOrbitControls(camera, renderer.domElement);
 
     if (showGrid) {
       const grid = new THREE.GridHelper(60, 12, 0xaaaaaa, 0xe5e7eb);
@@ -487,7 +493,10 @@ export function StlPreviewViewer({
         const position = geometry.getAttribute("position");
         const index = geometry.getIndex();
         if (!bbox || !position) {
-          scene.add(mesh);
+          if (!isFilled) {
+            mesh.position.sub(center);
+          }
+          modelPivot.add(mesh);
           return;
         }
 
@@ -1366,10 +1375,16 @@ export function StlPreviewViewer({
         // 메타데이터는 백엔드 캐시에서만 사용 (프론트 계산 제거)
         // STL 메시 추가
         // filled STL은 이미 원점 정렬되어 있으므로 center를 빼지 않음
+        const viewTarget = isFilled
+          ? bbox.getCenter(new THREE.Vector3())
+          : new THREE.Vector3(0, 0, 0);
+        modelPivot.position.copy(viewTarget);
         if (!isFilled) {
           mesh.position.sub(center);
+        } else {
+          mesh.position.set(-viewTarget.x, -viewTarget.y, -viewTarget.z);
         }
-        scene.add(mesh);
+        modelPivot.add(mesh);
         meshRef.current = mesh;
 
         if (onSurfacePointDoubleClickRef.current || onManualUndoRef.current) {
@@ -1459,7 +1474,7 @@ export function StlPreviewViewer({
           taperAxisGuide = new Line2(axisGeom, axisMat);
           taperAxisGuide.computeLineDistances();
           taperAxisGuide.renderOrder = 13;
-          scene.add(taperAxisGuide);
+          modelPivot.add(taperAxisGuide);
         }
 
         const bboxSize = new THREE.Vector3();
@@ -1632,7 +1647,7 @@ export function StlPreviewViewer({
               const line = new Line2(lineGeom, lineMat);
               line.renderOrder = 20;
               line.computeLineDistances();
-              scene.add(line);
+              modelPivot.add(line);
               multiDirectionLines.push(line);
 
               // 시작점과 끝점 (각도 호 및 텍스트 위치용)
@@ -1672,7 +1687,7 @@ export function StlPreviewViewer({
                 const textScale = isMaxPair ? 3.0 : 2.0;
                 sprite.scale.set(textScale, textScale * 0.25, 1);
                 sprite.renderOrder = 21;
-                scene.add(sprite);
+                modelPivot.add(sprite);
                 multiDirectionSprites.push(sprite);
               }
             });
@@ -1731,7 +1746,7 @@ export function StlPreviewViewer({
             });
             finishLine = new THREE.Mesh(tubeGeometry, tubeMaterial);
             finishLine.renderOrder = 10;
-            scene.add(finishLine);
+            modelPivot.add(finishLine);
           }
         }
 
@@ -1795,7 +1810,7 @@ export function StlPreviewViewer({
             finishLineMaxPointMarker = new THREE.Mesh(g, m);
             finishLineMaxPointMarker.position.copy(toSceneVec(maxPoint));
             finishLineMaxPointMarker.renderOrder = 30;
-            scene.add(finishLineMaxPointMarker);
+            modelPivot.add(finishLineMaxPointMarker);
           }
 
           if (minPoint) {
@@ -1806,7 +1821,7 @@ export function StlPreviewViewer({
             finishLineMinPointMarker = new THREE.Mesh(g, m);
             finishLineMinPointMarker.position.copy(toSceneVec(minPoint));
             finishLineMinPointMarker.renderOrder = 30;
-            scene.add(finishLineMinPointMarker);
+            modelPivot.add(finishLineMinPointMarker);
           }
         }
 
@@ -1831,9 +1846,6 @@ export function StlPreviewViewer({
 
         // filled는 메시를 원점 재정렬하지 않으므로 bbox 중심을 바라본다.
         // (원점 lookAt이면 +Z 치우친 어버트먼트가 위로 밀려 상단이 잘림)
-        const viewTarget = isFilled
-          ? bbox.getCenter(new THREE.Vector3())
-          : new THREE.Vector3(0, 0, 0);
         const viewDir = new THREE.Vector3(1, -1, 0.9).normalize();
 
         applyCameraFit = () => {
@@ -1854,8 +1866,10 @@ export function StlPreviewViewer({
           camera.near = Math.max(distance / 200, 0.01);
           camera.far = Math.max(distance * 40, 2000);
           camera.updateProjectionMatrix();
+          camera.up.set(0, 0, 1);
           camera.lookAt(viewTarget);
           controls.target.copy(viewTarget);
+          controls.syncFromCamera();
           controls.update();
         };
 
@@ -2046,6 +2060,7 @@ export function StlPreviewViewer({
       controls.dispose();
       renderer.dispose();
       sceneRef.current = null;
+      modelPivotRef.current = null;
       centerRef.current = null;
       centeredBoundsRef.current = null;
       maxDiameterRef.current = 0;
@@ -2077,11 +2092,11 @@ export function StlPreviewViewer({
   ]);
 
   useEffect(() => {
-    const scene = sceneRef.current;
-    if (!scene) return;
+    const modelPivot = modelPivotRef.current;
+    if (!modelPivot) return;
 
     manualPickMarkersRef.current.forEach((marker) => {
-      scene.remove(marker);
+      modelPivot.remove(marker);
       marker.geometry?.dispose?.();
       if (Array.isArray(marker.material)) {
         marker.material.forEach((mm) => mm.dispose());
@@ -2110,7 +2125,7 @@ export function StlPreviewViewer({
       const marker = new THREE.Mesh(g, m);
       marker.position.set(x, y, z);
       marker.renderOrder = 32;
-      scene.add(marker);
+      modelPivot.add(marker);
       manualPickMarkersRef.current.push(marker);
     }
   }, [manualPickPoints, stableFileKey]);
