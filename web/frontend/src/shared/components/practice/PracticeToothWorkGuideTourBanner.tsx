@@ -88,6 +88,42 @@ export const getPracticeToothWorkGuideTourStepId = (
   return PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS[step]?.id ?? null;
 };
 
+/**
+ * 가이드투어 스텝 → 익스프레스 위저드 단계.
+ * lab/patient/dates 이후 보철·견적 투어는 prosthesis에 고정(파일·확인으로 새지 않음).
+ */
+export const getExpressStepIdForGuideTourStep = (
+  step: PracticeToothWorkGuideTourStep | null,
+): "lab" | "patient" | "schedule" | "prosthesis" | null => {
+  if (step == null) return null;
+  if (step >= PRACTICE_TOOTH_WORK_GUIDE_TOUR_DONE_STEP) return "prosthesis";
+  const id = getPracticeToothWorkGuideTourStepId(step);
+  if (id === "lab") return "lab";
+  if (id === "patient") return "patient";
+  if (id === "dates") return "schedule";
+  if (id != null) return "prosthesis";
+  return null;
+};
+
+/** 익스프레스 단계 클릭 시 투어 스텝을 맞춤. 파일·확인은 투어를 완료로 점프시키지 않음. */
+export const getGuideTourStepForExpressStepId = (
+  expressStepId: "lab" | "patient" | "schedule" | "prosthesis" | "files" | "confirm",
+  currentTourStep: PracticeToothWorkGuideTourStep | null,
+): PracticeToothWorkGuideTourStep | null => {
+  if (currentTourStep == null) return null;
+  if (expressStepId === "lab") return 0;
+  if (expressStepId === "patient") return 1;
+  if (expressStepId === "schedule") return 2;
+  if (expressStepId === "prosthesis") {
+    if (currentTourStep >= PRACTICE_TOOTH_WORK_GUIDE_TOUR_DONE_STEP) {
+      return 3;
+    }
+    return currentTourStep >= 3 ? currentTourStep : 3;
+  }
+  // 파일·확인: 투어 스텝 유지(이미 완료면 완료 유지). 완료로 강제 점프하지 않음.
+  return currentTourStep;
+};
+
 type PracticeToothWorkGuideTourBannerProps = {
   step: PracticeToothWorkGuideTourStep;
   onSkip: () => void;
@@ -148,7 +184,7 @@ export function PracticeToothWorkGuideTourBanner({
   return (
     <div
       className={cn(
-        aside ? "flex h-full min-h-0 w-full" : "flex justify-center px-1",
+        aside ? "flex w-full min-w-0" : "flex justify-center px-1",
         className,
       )}
     >
@@ -157,7 +193,7 @@ export function PracticeToothWorkGuideTourBanner({
         className={cn(
           "relative z-20 rounded-lg border border-accent-muted bg-accent-soft px-3 py-2 shadow-sm shadow-accent/15",
           aside
-            ? "flex h-full w-full max-w-sm min-h-0 flex-col justify-between gap-2 lg:max-w-[22rem]"
+            ? "flex w-full max-w-sm flex-col gap-2 lg:max-w-[22rem]"
             : "inline-flex max-w-full items-center gap-3 overflow-x-auto",
         )}
       >

@@ -104,6 +104,7 @@
  * - 2026-08-20: 모바일 구강스캔 — 환자명 후 구강포토 촬영·업로드·임시저장(기공소는 전송 시).
  * - 2026-08-20: 모바일 임시저장=최근과 같은 카드 시트. PC 드롭존에 모바일 쉐이드 안내.
  * - 2026-08-20: 구강포토 썸네일 — private S3 location 대신 blob/proxy 미리보기.
+ * - 2026-08-25: 익스프레스에도 엑스퍼트와 같은 가이드투어 카드 배치. 투어 중 모드 전환·단계 동기화.
  * - 2026-08-25: 엑스퍼트 가이드투어 카드 — 헤더 버튼~기공소·환자·날짜 행 세로 맞춤(폭=주문-치과도착).
  * - 2026-08-25: 익스프레스 단계 표시 ↔ 가이드투어(기공소·환자·날짜) 위치 교체 — 투어는 상단 오른쪽, 단계는 헤더 필드 옆.
  * - 2026-08-25: 상단 가이드투어 — 기공소·환자·날짜·보철물 전체 투어(휴지통 오른쪽).
@@ -220,6 +221,11 @@ import {
 } from "@/shared/components/practice/PracticeTransferExpressWizard";
 import type { PracticeTransferFilePaneProps } from "@/shared/components/practice/PracticeTransferFilePane";
 import type { PracticeTransferRequestIntakePanelProps } from "@/shared/components/practice/PracticeTransferRequestIntakePanel";
+import {
+  getExpressStepIdForGuideTourStep,
+  getGuideTourStepForExpressStepId,
+  type PracticeToothWorkGuideTourStep,
+} from "@/shared/components/practice/PracticeToothWorkGuideTourBanner";
 import { PracticeRecentTransfersAllModal } from "@/pages/practice/components/PracticeRecentTransfersAllModal";
 import {
   DEFAULT_WORKSPACE_MODE,
@@ -1356,8 +1362,9 @@ export const PracticeFileTransferPage = ({
   const [guideTourActive, setGuideTourActive] = useState(false);
   const [guideTourStartSignal, setGuideTourStartSignal] = useState(0);
   const [guideTourExitSignal, setGuideTourExitSignal] = useState(0);
-  const [guideTourHeaderSlotEl, setGuideTourHeaderSlotEl] =
-    useState<HTMLDivElement | null>(null);
+  /** 패널 unmount(모드 전환) 후에도 투어 스텝 유지 */
+  const [guideTourStep, setGuideTourStep] =
+    useState<PracticeToothWorkGuideTourStep | null>(null);
   const [oralPhotoPreview, setOralPhotoPreview] = useState<{
     name: string;
     url: string;
@@ -6134,6 +6141,7 @@ export const PracticeFileTransferPage = ({
       "files",
       "confirm",
     ];
+    const tourMapped = getExpressStepIdForGuideTourStep(guideTourStep);
     const firstIncomplete =
       order.find((id) => !expressStepGate[id]?.ok) || "confirm";
     const prev = prevWorkspaceModeRef.current;
@@ -6142,15 +6150,40 @@ export const PracticeFileTransferPage = ({
       prevWorkspaceModeRef.current = workspaceMode;
       if (expressStepRestoredRef.current) return;
       expressStepRestoredRef.current = true;
-      setExpressStepId(firstIncomplete);
+      setExpressStepId(tourMapped ?? firstIncomplete);
       return;
     }
     prevWorkspaceModeRef.current = workspaceMode;
     if (prev === "express") return;
     setExpressDone(false);
     expressStepRestoredRef.current = true;
-    setExpressStepId(firstIncomplete);
-  }, [expressStepGate, isExpressMode, localFormHydrated, workspaceMode]);
+    // 투어 중 익스프레스 진입 시 투어 스텝에 맞는 위저드 단계로
+    setExpressStepId(tourMapped ?? firstIncomplete);
+  }, [
+    expressStepGate,
+    guideTourStep,
+    isExpressMode,
+    localFormHydrated,
+    workspaceMode,
+  ]);
+
+  // 투어가 앞으로 진행될 때만 익스프레스 단계를 맞춤.
+  // (1·2 클릭으로 투어를 뒤로 보낼 때는 onStepIdChange가 express를 직접 설정)
+  const prevGuideTourStepRef = useRef<PracticeToothWorkGuideTourStep | null>(null);
+  useEffect(() => {
+    const prevTour = prevGuideTourStepRef.current;
+    prevGuideTourStepRef.current = guideTourStep;
+    if (!isExpressMode || !showExpressWizard) return;
+    if (guideTourStep == null) return;
+    if (prevTour != null && guideTourStep < prevTour) return;
+    const mapped = getExpressStepIdForGuideTourStep(guideTourStep);
+    if (!mapped) return;
+    setExpressStepId((prev) => {
+      // 파일·확인은 사용자가 고른 자리 유지(투어 보철 스텝이 끌어오지 않음)
+      if (prev === "files" || prev === "confirm") return prev;
+      return prev === mapped ? prev : mapped;
+    });
+  }, [guideTourStep, isExpressMode, showExpressWizard]);
 
   useEffect(() => {
     if (!orderDate) return;
@@ -6257,6 +6290,9 @@ export const PracticeFileTransferPage = ({
     setExpressStepId("lab");
     setExpressWizardEpoch((n) => n + 1);
     expressStepRestoredRef.current = true;
+    setGuideTourStep(null);
+    setGuideTourActive(false);
+    setGuideTourExitSignal((n) => n + 1);
 
     // 빈 폼 baseline — 이후 의뢰서 항목을 바꾸거나 파일을 업로드하면 그때 동기화된다.
     const baselineFingerprint = buildPracticeTransferFormFingerprint({
@@ -6573,19 +6609,20 @@ export const PracticeFileTransferPage = ({
                     },
   };
 
-  const expressStepInHeaderAside =
-    !isMobile &&
-    showExpressWizard &&
-    (expressStepId === "lab" ||
-      expressStepId === "patient" ||
-      expressStepId === "schedule");
-
+  /** 익스프레스 1~6 — 오른쪽 레일에 프로그레스(투어 카드 아래) */
   const expressStepProgressNode = showExpressWizard ? (
     <PracticeTransferExpressStepProgress
       key={expressWizardEpoch}
-      className="min-w-0"
+      className="w-full flex-col items-stretch gap-2 sm:flex-col"
       stepId={expressStepId}
-      onStepIdChange={setExpressStepId}
+      onStepIdChange={(next) => {
+        setExpressStepId(next);
+        if (guideTourStep == null) return;
+        const jumped = getGuideTourStepForExpressStepId(next, guideTourStep);
+        if (jumped != null && jumped !== guideTourStep) {
+          setGuideTourStep(jumped);
+        }
+      }}
       stepOkById={{
         lab: expressStepGate.lab.ok,
         patient: expressStepGate.patient.ok,
@@ -6599,8 +6636,8 @@ export const PracticeFileTransferPage = ({
     />
   ) : null;
 
-  /** 엑스퍼트 PC — 툴바를 intake에 넣어 투어 카드와 세로 맞춤 */
-  const useIntakeHeaderToolbar = !isMobile && !isExpressMode;
+  /** PC — 툴바를 intake/위저드에 넣어 투어 카드와 세로 맞춤(완료 화면은 CardHeader) */
+  const useIntakeHeaderToolbar = !isMobile && (!isExpressMode || showExpressWizard);
 
   const practiceWorkspaceToolbar = (
     <>
@@ -6907,15 +6944,17 @@ export const PracticeFileTransferPage = ({
                   guideTourStartSignal,
                   guideTourExitSignal,
                   onGuideTourActiveChange: setGuideTourActive,
-                  headerAsideContent: expressStepInHeaderAside
+                  guideTourStep,
+                  onGuideTourStepChange: setGuideTourStep,
+                  guideTourHoldForHiddenHeaderFields: isExpressMode,
+                  preferGuideTourAside: isExpressMode && showExpressWizard,
+                  headerAsideContent: showExpressWizard
                     ? expressStepProgressNode
                     : null,
                   headerToolbar: useIntakeHeaderToolbar
                     ? practiceWorkspaceToolbar
                     : null,
-                  guideTourHeaderSlotEl: useIntakeHeaderToolbar
-                    ? null
-                    : guideTourHeaderSlotEl,
+                  guideTourHeaderSlotEl: null,
   };
 
   return (
@@ -6939,19 +6978,8 @@ export const PracticeFileTransferPage = ({
           <Card className="min-w-0 border-0 bg-transparent shadow-none hover:shadow-none">
             {isMobile || useIntakeHeaderToolbar ? null : (
             <CardHeader className="px-0 pb-2 pt-0">
-              <div className="flex items-center gap-4">
-                <div className="flex min-w-0 flex-wrap items-center gap-2">
-                  {practiceWorkspaceToolbar}
-                </div>
-              <div className="flex flex-1 items-start justify-end gap-3">
-                <div
-                  ref={setGuideTourHeaderSlotEl}
-                  className="min-w-0 max-w-sm lg:max-w-[22rem]"
-                />
-                {showExpressWizard && !expressStepInHeaderAside
-                  ? expressStepProgressNode
-                  : null}
-              </div>
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                {practiceWorkspaceToolbar}
               </div>
             </CardHeader>
             )}

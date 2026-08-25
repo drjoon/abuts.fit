@@ -8,6 +8,10 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
+  PracticeToothWorkGuideTourBanner,
+  PRACTICE_TOOTH_WORK_GUIDE_TOUR_DONE_STEP,
+} from "@/shared/components/practice/PracticeToothWorkGuideTourBanner";
+import {
   PracticeTransferFilePane,
   type PracticeTransferFilePaneProps,
 } from "@/shared/components/practice/PracticeTransferFilePane";
@@ -29,6 +33,8 @@ import { PRACTICE_CA_DIRECT_SHIP_NOTE } from "@/shared/practice/practiceWorkPeri
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/components/practice/PracticeTransferFilePane.tsx
 // - web/frontend/src/shared/workspace/workspaceMode.ts
+// - 2026-08-25: 1~6 단계 공통 크롬 — 툴바 / (본문 | 투어→프로그레스) 고정 자리.
+// - 2026-08-25: 파일 단계에도 상단 툴바(가이드투어·프로그레스) 표시.
 // - 2026-08-15: 기공의뢰 익스프레스 모드 — 한 화면 한 질문 위저드.
 // - 2026-08-15: Enter로 다음 단계(마지막은 전송). 메모 textarea·팝오버는 제외.
 // - 2026-08-15: 상단 1~6 단계 버튼은 언제든 바로가기.
@@ -147,7 +153,7 @@ export function PracticeTransferExpressStepProgress({
   );
 
   return (
-    <div className={cn("flex min-w-0 items-center gap-3", className)}>
+    <div className={cn("flex min-w-0 flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:gap-3", className)}>
       <div className="flex shrink-0 flex-wrap gap-1.5">
         {PRACTICE_TRANSFER_EXPRESS_STEPS.map((step, index) => {
           const current = index === stepIndex;
@@ -175,7 +181,7 @@ export function PracticeTransferExpressStepProgress({
           );
         })}
       </div>
-      <div className="flex w-28 shrink-0 items-center gap-2 sm:w-36">
+      <div className="flex w-full min-w-0 items-center gap-2 sm:w-36 sm:shrink-0">
         <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-muted">
           <div
             className="h-full rounded-full bg-primary-strong transition-[width] duration-300 ease-out"
@@ -218,13 +224,26 @@ export function PracticeTransferExpressWizard({
     ? "구강스캔 첨부가 필수입니다."
     : stepMeta.hint;
 
+  const {
+    headerToolbar = null,
+    headerAsideContent = null,
+    guideTourStep = null,
+    onGuideTourStepChange,
+  } = requestIntakeProps;
+
   const stepIntakeProps = useMemo((): PracticeTransferRequestIntakePanelProps => {
-    const base = {
+    const base: PracticeTransferRequestIntakePanelProps = {
       ...requestIntakeProps,
-      variant: "plain" as const,
+      variant: "plain",
       hideEnlargeButton: true,
-      toothChartDisplayMode: "full" as const,
+      toothChartDisplayMode: "full",
       showFeeEstimate: stepId === "prosthesis" || stepId === "confirm",
+      // 크롬(툴바·제목·프로그레스·투어)은 위저드가 담당 — 1~6 자리 고정
+      headerToolbar: null,
+      headerAsideContent: null,
+      headerIntro: null,
+      // 중앙 배너 억제(투어 카드는 위저드 오른쪽 레일)
+      preferGuideTourAside: true,
     };
     switch (stepId) {
       case "lab":
@@ -276,6 +295,29 @@ export function PracticeTransferExpressWizard({
           showDateFields: false,
           showProsthesisSection: false,
           showMemoSection: true,
+          aboveMemoContent: (
+            <div className="mb-6 w-full max-w-sm space-y-1.5 rounded-xl border border-slate-200/80 bg-slate-50/80 px-4 py-3 text-sm">
+              <SummaryRow label="기공소" value={summary.labLabel || "-"} />
+              <SummaryRow label="환자" value={summary.patientName || "-"} />
+              <SummaryRow
+                label="일정"
+                value={
+                  summary.orderDate && summary.arrivalDate ? (
+                    <PracticeWorkPeriodText
+                      orderDate={summary.orderDate}
+                      arrivalDate={summary.arrivalDate}
+                      variant="orderArrival"
+                      className="text-sm"
+                    />
+                  ) : (
+                    "-"
+                  )
+                }
+              />
+              <SummaryRow label="보철" value={`${summary.toothCount}개 치아`} />
+              <SummaryRow label="파일" value={`${summary.fileCount}개`} />
+            </div>
+          ),
         };
       default:
         return {
@@ -288,7 +330,7 @@ export function PracticeTransferExpressWizard({
           showMemoSection: false,
         };
     }
-  }, [requestIntakeProps, stepId]);
+  }, [requestIntakeProps, stepId, summary]);
 
   const goPrev = () => {
     if (isFirst) return;
@@ -358,48 +400,56 @@ export function PracticeTransferExpressWizard({
     submitting,
   ]);
 
+  const stepBody =
+    stepId === "files" ? (
+      <div className="min-h-[12rem]">
+        <PracticeTransferFilePane {...filePaneProps} />
+      </div>
+    ) : (
+      <div className="min-h-[12rem]">
+        <PracticeTransferRequestIntakePanel {...stepIntakeProps} />
+      </div>
+    );
+
   return (
     <div className="flex min-h-0 flex-col gap-6">
-      <div className="space-y-2">
-        <h2 className="text-2xl font-bold tracking-tight text-slate-900">
-          {stepMeta.title}
-        </h2>
-        <p className="text-sm leading-relaxed text-muted-foreground">
-          {stepId === "files" ? filesHint : stepMeta.hint}
-        </p>
-      </div>
+      {headerToolbar ? (
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          {headerToolbar}
+        </div>
+      ) : null}
 
-      <div className="min-h-[12rem]">
-        {stepId === "files" ? (
-          <PracticeTransferFilePane {...filePaneProps} />
-        ) : (
-          <>
-            {stepId === "confirm" ? (
-              <div className="mb-6 w-full max-w-sm space-y-1.5 rounded-xl border border-slate-200/80 bg-slate-50/80 px-4 py-3 text-sm">
-                <SummaryRow label="기공소" value={summary.labLabel || "-"} />
-                <SummaryRow label="환자" value={summary.patientName || "-"} />
-                <SummaryRow
-                  label="일정"
-                  value={
-                    summary.orderDate && summary.arrivalDate ? (
-                      <PracticeWorkPeriodText
-                        orderDate={summary.orderDate}
-                        arrivalDate={summary.arrivalDate}
-                        variant="orderArrival"
-                        className="text-sm"
-                      />
-                    ) : (
-                      "-"
-                    )
-                  }
-                />
-                <SummaryRow label="보철" value={`${summary.toothCount}개 치아`} />
-                <SummaryRow label="파일" value={`${summary.fileCount}개`} />
-              </div>
-            ) : null}
-            <PracticeTransferRequestIntakePanel {...stepIntakeProps} />
-          </>
-        )}
+      <div className="grid grid-cols-1 items-start gap-x-12 gap-y-7 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,22rem)]">
+        <div className="flex min-w-0 flex-col gap-y-7">
+          <div className="space-y-2">
+            <h2 className="text-2xl font-bold tracking-tight text-slate-900">
+              {stepMeta.title}
+            </h2>
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              {stepId === "files" ? filesHint : stepMeta.hint}
+            </p>
+          </div>
+          {stepBody}
+        </div>
+
+        <div className="flex w-full min-w-0 flex-col gap-3 self-start lg:sticky lg:top-4 lg:max-w-[22rem]">
+          {guideTourStep != null && onGuideTourStepChange ? (
+            <PracticeToothWorkGuideTourBanner
+              placement="aside"
+              step={guideTourStep}
+              onSkip={() => {
+                if (guideTourStep >= PRACTICE_TOOTH_WORK_GUIDE_TOUR_DONE_STEP) {
+                  onGuideTourStepChange(null);
+                  return;
+                }
+                onGuideTourStepChange(guideTourStep + 1);
+              }}
+              onExit={() => onGuideTourStepChange(null)}
+              onFinish={() => onGuideTourStepChange(null)}
+            />
+          ) : null}
+          {headerAsideContent}
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200/80 pt-4">

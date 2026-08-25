@@ -149,6 +149,7 @@ import {
 // - web/frontend/src/shared/components/practice/PracticeCustomSpecsPresetEditDialog.tsx
 // - web/frontend/src/shared/pricing/abutsAbutmentService.ts
 // - 2026-08-25: 기공소·환자·날짜 투어 카드 — 헤더 버튼~입력 행 세로 맞춤, 폭=주문-치과도착 열.
+// - 2026-08-25: 가이드투어 스텝 상위로 제어 가능(모드 전환 유지). 익스프레스 숨김 필드는 자동 스킵 안 함.
 // - 2026-08-25: 기공소·환자·날짜 투어 배너 → 상단 오른쪽(CardHeader 슬롯). aside는 익스프레스 단계 표시용.
 // - 2026-08-25: 가이드투어 견적·완료 중 어벗 모달 재오픈 허용 — 스텝 진입 시에만 닫고, 열기 직후 effect로 닫지 않음.
 // - 2026-08-25: 기공소 픽커 보조줄 — 대표·주소만(사업자번호 표시 제거, 검색은 유지).
@@ -791,15 +792,32 @@ export type PracticeTransferRequestIntakePanelProps = {
   /** 투어 진행 중 여부 알림(외부 버튼 라벨용) */
   onGuideTourActiveChange?: (active: boolean) => void;
   /**
+   * 가이드투어 스텝(제어). onGuideTourStepChange와 함께 쓰면 패널 unmount 후에도 유지.
+   */
+  guideTourStep?: PracticeToothWorkGuideTourStep | null;
+  onGuideTourStepChange?: (step: PracticeToothWorkGuideTourStep | null) => void;
+  /**
+   * true면 숨겨진 기공소·환자·날짜 필드로 투어를 자동 스킵하지 않음
+   * (익스프레스가 단계 동기화로 필드를 보여줄 때).
+   */
+  guideTourHoldForHiddenHeaderFields?: boolean;
+  /**
+   * true면 모든 투어 스텝을 오른쪽 레일(aside)에 두고 중앙 배너는 쓰지 않음.
+   * 익스프레스 1~6 단계 UI 통일용.
+   */
+  preferGuideTourAside?: boolean;
+  /**
    * 헤더 필드 오른쪽 슬롯(익스프레스 단계 표시 등).
    * 기공소·환자·날짜 투어 배너는 headerToolbar와 함께 세로로 맞추거나 guideTourHeaderSlotEl로 올린다.
    */
   headerAsideContent?: ReactNode;
   /**
-   * 엑스퍼트 PC — 기공소·환자·날짜 위 툴바(모드·새로작성·투어 등).
+   * PC — 기공소·환자·날짜 위 툴바(모드·새로작성·투어 등).
    * 있으면 투어 카드가 툴바 윗단~입력 아랫단을 한 그리드로 맞춘다.
    */
   headerToolbar?: ReactNode;
+  /** 툴바 아래·헤더 필드 위(익스프레스 단계 제목 등) */
+  headerIntro?: ReactNode;
   /** 상단 CardHeader 오른쪽 — 기공소·환자·날짜 투어 배너 포털 대상(툴바 미사용 시) */
   guideTourHeaderSlotEl?: HTMLElement | null;
 };
@@ -880,8 +898,13 @@ export const PracticeTransferRequestIntakePanel = ({
   guideTourStartSignal = 0,
   guideTourExitSignal = 0,
   onGuideTourActiveChange,
+  guideTourStep: guideTourStepProp,
+  onGuideTourStepChange,
+  guideTourHoldForHiddenHeaderFields = false,
+  preferGuideTourAside = false,
   headerAsideContent = null,
   headerToolbar = null,
+  headerIntro = null,
   guideTourHeaderSlotEl = null,
 }: PracticeTransferRequestIntakePanelProps) => {
   const showLabField = showLabFieldProp ?? showHeaderFields;
@@ -960,9 +983,21 @@ export const PracticeTransferRequestIntakePanel = ({
     initialToothChartOffsets,
   );
   const [toothChartEnlargeOpen, setToothChartEnlargeOpen] = useState(false);
-  /** null = 투어 종료. 0..N-1 체험, N 완료 */
-  const [toothWorkGuideTourStep, setToothWorkGuideTourStep] =
+  /** null = 투어 종료. 0..N-1 체험, N 완료 — 상위 제어 시 guideTourStep 사용 */
+  const [toothWorkGuideTourStepUncontrolled, setToothWorkGuideTourStepUncontrolled] =
     useState<PracticeToothWorkGuideTourStep | null>(null);
+  const guideTourStepControlled = onGuideTourStepChange != null;
+  const toothWorkGuideTourStep = guideTourStepControlled
+    ? (guideTourStepProp ?? null)
+    : toothWorkGuideTourStepUncontrolled;
+  const setToothWorkGuideTourStep = (
+    next: PracticeToothWorkGuideTourStep | null,
+  ) => {
+    if (!guideTourStepControlled) {
+      setToothWorkGuideTourStepUncontrolled(next);
+    }
+    onGuideTourStepChange?.(next);
+  };
   /** 현재 스텝 진입 시점 스냅샷(스텝마다 갱신) */
   const toothWorkGuideTourStepBaselineRef = useRef<ToothWorkGuideTourSnapshot | null>(
     null,
@@ -1726,7 +1761,8 @@ export const PracticeTransferRequestIntakePanel = ({
   // 기공소 · 환자명 · 날짜 선택 후 보철물 단계로
   useEffect(() => {
     if (toothWorkGuideTourStep == null) return;
-    // 익스프레스 등에서 해당 필드가 숨겨진 단계는 건너뜀
+    // 익스프레스는 단계 동기화로 필드를 보여 주므로 숨김만으로 스킵하지 않음
+    if (guideTourHoldForHiddenHeaderFields) return;
     if (toothWorkGuideTourStepId === "lab" && !showLabField) {
       goToothWorkGuideTourStep(toothWorkGuideTourStep + 1);
       return;
@@ -1744,7 +1780,43 @@ export const PracticeTransferRequestIntakePanel = ({
     showLabField,
     showPatientField,
     showDateFields,
+    guideTourHoldForHiddenHeaderFields,
   ]);
+
+  /** 기공소·환자 투어 — 뒤로 돌아온 경우에만「값 변경」후에 진행(1·2 클릭 플리커 방지) */
+  const guideTourLabBaselineRef = useRef<string | null>(null);
+  const guideTourLabRequireChangeRef = useRef(false);
+  const guideTourPatientBaselineRef = useRef<string | null>(null);
+  const guideTourPatientRequireChangeRef = useRef(false);
+  const guideTourPrevStepRef = useRef<PracticeToothWorkGuideTourStep | null>(null);
+
+  useEffect(() => {
+    const prev = guideTourPrevStepRef.current;
+    guideTourPrevStepRef.current = toothWorkGuideTourStep;
+    const wentBack =
+      prev != null &&
+      toothWorkGuideTourStep != null &&
+      toothWorkGuideTourStep < prev;
+
+    if (toothWorkGuideTourStepId === "lab" && toothWorkGuideTourStep != null) {
+      guideTourLabBaselineRef.current = selectedLab
+        ? String(selectedLab._id || selectedLab.name || "").trim()
+        : "";
+      guideTourLabRequireChangeRef.current = wentBack;
+    } else {
+      guideTourLabBaselineRef.current = null;
+      guideTourLabRequireChangeRef.current = false;
+    }
+
+    if (toothWorkGuideTourStepId === "patient" && toothWorkGuideTourStep != null) {
+      guideTourPatientBaselineRef.current = String(patientName || "").trim();
+      guideTourPatientRequireChangeRef.current = wentBack;
+    } else {
+      guideTourPatientBaselineRef.current = null;
+      guideTourPatientRequireChangeRef.current = false;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 스텝 전환 시 스냅샷만
+  }, [toothWorkGuideTourStep, toothWorkGuideTourStepId]);
 
   useEffect(() => {
     if (toothWorkGuideTourStepId !== "lab") return;
@@ -1761,6 +1833,10 @@ export const PracticeTransferRequestIntakePanel = ({
     if (toothWorkGuideTourStepId !== "lab") return;
     if (toothWorkGuideTourStep == null) return;
     if (!selectedLab) return;
+    const labKey = String(selectedLab._id || selectedLab.name || "").trim();
+    if (guideTourLabRequireChangeRef.current) {
+      if (labKey === (guideTourLabBaselineRef.current ?? "")) return;
+    }
     const labId = String(selectedLab._id || "").trim();
     const ok =
       isAutoMatchLab(selectedLab) ||
@@ -1773,7 +1849,11 @@ export const PracticeTransferRequestIntakePanel = ({
   useEffect(() => {
     if (toothWorkGuideTourStepId !== "patient") return;
     if (toothWorkGuideTourStep == null) return;
-    if (!/[가-힣]/.test(String(patientName || "").trim())) return;
+    const name = String(patientName || "").trim();
+    if (!/[가-힣]/.test(name)) return;
+    if (guideTourPatientRequireChangeRef.current) {
+      if (name === (guideTourPatientBaselineRef.current ?? "")) return;
+    }
     goToothWorkGuideTourStep(toothWorkGuideTourStep + 1);
   }, [toothWorkGuideTourStep, toothWorkGuideTourStepId, patientName]);
 
@@ -2180,9 +2260,15 @@ export const PracticeTransferRequestIntakePanel = ({
     (toothWorkGuideTourStepId === "lab" ||
       toothWorkGuideTourStepId === "patient" ||
       toothWorkGuideTourStepId === "dates");
-  /** 툴바+입력+투어 한 그리드 — 윗단=버튼, 아랫단=입력, 폭=주문-치과도착 열 */
-  const useSpanningHeaderTour = Boolean(headerToolbar) && isHeaderTourStep;
-  const headerTourBanner = isHeaderTourStep ? (
+  /** 익스프레스: 모든 투어를 오른쪽 레일. 엑스퍼트: 기공소·환자·날짜만 aside */
+  const useAsideTourRail =
+    Boolean(headerToolbar) &&
+    toothWorkGuideTourStep != null &&
+    (preferGuideTourAside || isHeaderTourStep);
+  /** 툴바+본문 | 오른쪽 레일(투어→프로그레스) — 익스프레스 전 단계 또는 엑스퍼트 헤더 투어 */
+  const useExpressStyleChrome =
+    Boolean(headerToolbar) && (preferGuideTourAside || useAsideTourRail);
+  const asideTourBanner = useAsideTourRail ? (
     <PracticeToothWorkGuideTourBanner
       placement="aside"
       step={toothWorkGuideTourStep}
@@ -2194,14 +2280,26 @@ export const PracticeTransferRequestIntakePanel = ({
     />
   ) : null;
   const portaledHeaderTour =
-    headerTourBanner && !useSpanningHeaderTour && guideTourHeaderSlotEl
-      ? createPortal(headerTourBanner, guideTourHeaderSlotEl)
-      : null;
-  const inlineHeaderTour =
-    headerTourBanner && !useSpanningHeaderTour && !guideTourHeaderSlotEl
-      ? headerTourBanner
-      : null;
-  const showHeaderAsideColumn = Boolean(headerAsideContent || inlineHeaderTour);
+    !preferGuideTourAside &&
+    isHeaderTourStep &&
+    !useAsideTourRail &&
+    guideTourHeaderSlotEl ? (
+      createPortal(
+        <PracticeToothWorkGuideTourBanner
+          placement="aside"
+          step={toothWorkGuideTourStep!}
+          onSkip={skipToothWorkGuideTourStep}
+          onExit={exitToothWorkGuideTour}
+          onFinish={exitToothWorkGuideTour}
+          implantFavoriteCount={implantFavorites.length}
+          scanbodyFavoriteCount={abutmentFavorites.length}
+        />,
+        guideTourHeaderSlotEl,
+      )
+    ) : null;
+  const showRightRail = Boolean(
+    headerAsideContent || asideTourBanner || useExpressStyleChrome,
+  );
 
   return (
     <div
@@ -2230,34 +2328,24 @@ export const PracticeTransferRequestIntakePanel = ({
         </div>
       ) : null}
 
-      {showAnyHeaderFields || headerToolbar ? (
+      {showAnyHeaderFields || headerToolbar || headerIntro || showRightRail ? (
         <>
           {portaledHeaderTour}
+          {headerToolbar ? (
+            <div className="mb-7 flex min-w-0 flex-wrap items-center gap-2">
+              {headerToolbar}
+            </div>
+          ) : null}
           <div
             className={cn(
-              useSpanningHeaderTour &&
-                "grid grid-cols-1 items-stretch gap-x-3 gap-y-7 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,22rem)] lg:gap-x-12",
-              !useSpanningHeaderTour &&
-                headerToolbar &&
-                showAnyHeaderFields &&
-                "flex flex-col gap-y-7",
-              !useSpanningHeaderTour &&
-                !headerToolbar &&
-                showHeaderAsideColumn &&
-                "grid grid-cols-1 items-start gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,22rem)]",
+              showRightRail
+                ? "grid grid-cols-1 items-start gap-x-12 gap-y-7 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,22rem)]"
+                : "flex flex-col gap-y-7",
             )}
           >
-            {headerToolbar ? (
-              <div className="flex min-w-0 flex-wrap items-center gap-2">
-                {headerToolbar}
-              </div>
-            ) : null}
-            {useSpanningHeaderTour ? (
-              <div className="min-h-0 min-w-0 lg:col-start-2 lg:row-span-2 lg:row-start-1">
-                {headerTourBanner}
-              </div>
-            ) : null}
-            {showAnyHeaderFields ? (
+            <div className="flex min-w-0 flex-col gap-y-7">
+              {headerIntro ? headerIntro : null}
+              {showAnyHeaderFields ? (
       <div className={headerGridClassName}>
         {showLabField ? (
         <div className="space-y-2">
@@ -2615,10 +2703,11 @@ export const PracticeTransferRequestIntakePanel = ({
         />
         ) : null}
       </div>
-            ) : null}
-            {showHeaderAsideColumn && !useSpanningHeaderTour ? (
-              <div className="flex min-w-0 flex-col items-stretch gap-2 lg:items-end lg:pt-7">
-                {inlineHeaderTour}
+              ) : null}
+            </div>
+            {showRightRail ? (
+              <div className="flex w-full min-w-0 flex-col gap-3 self-start lg:max-w-[22rem]">
+                {asideTourBanner}
                 {headerAsideContent}
               </div>
             ) : null}
@@ -2903,6 +2992,8 @@ export const PracticeTransferRequestIntakePanel = ({
         ) : null}
 
         {toothWorkGuideTourStep != null &&
+        !preferGuideTourAside &&
+        !useAsideTourRail &&
         customSpecsModalTarget === null &&
         toothWorkGuideTourStepId !== "lab" &&
         toothWorkGuideTourStepId !== "patient" &&
