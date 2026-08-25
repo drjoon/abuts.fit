@@ -153,6 +153,7 @@ import {
 // - 2026-08-25: 기공소·환자·날짜 투어 배너 → 상단 오른쪽(CardHeader 슬롯). aside는 익스프레스 단계 표시용.
 // - 2026-08-25: 가이드투어 견적·완료 중 어벗 모달 재오픈 허용 — 스텝 진입 시에만 닫고, 열기 직후 effect로 닫지 않음.
 // - 2026-08-25: 기공소 픽커 보조줄 — 대표·주소만(사업자번호 표시 제거, 검색은 유지).
+// - 2026-08-25: 헤더(기공소·환자·기간) — PC 툴바 있으면 오른쪽 레일 항상 예약(투어 카드 on/off 폭 점프 방지).
 // - 2026-08-25: 헤더(기공소·환자·기간) — 투어 시 날짜 열 폭만큼 오른쪽 카드, 아니면 익스프레스 aside만.
 // - 2026-08-25: 커스텀어벗 보철 형태 — 어벗 모달에서 심플어벗 비활성(스캔바디만).
 // - 2026-08-25: 커스텀어벗 설정 — 임플란트(primary)·어벗(service-abut) 색 구분. + 확대·임플란트 열 축소.
@@ -2282,9 +2283,6 @@ export const PracticeTransferRequestIntakePanel = ({
     Boolean(headerToolbar) &&
     toothWorkGuideTourStep != null &&
     (preferGuideTourAside || isHeaderTourStep);
-  /** 툴바+본문 | 오른쪽 레일(투어→프로그레스) — 익스프레스 전 단계 또는 엑스퍼트 헤더 투어 */
-  const useExpressStyleChrome =
-    Boolean(headerToolbar) && (preferGuideTourAside || useAsideTourRail);
   const asideTourBanner = useAsideTourRail ? (
     <PracticeToothWorkGuideTourBanner
       placement="aside"
@@ -2314,8 +2312,12 @@ export const PracticeTransferRequestIntakePanel = ({
         guideTourHeaderSlotEl,
       )
     ) : null;
+  /**
+   * PC 툴바 크롬이면 오른쪽 레일(투어·단계) 자리를 항상 예약.
+   * 카드가 없어도 기공소·환자명·주문-치과도착 폭/위치가 투어 on과 같게 유지된다.
+   */
   const showRightRail = Boolean(
-    headerAsideContent || asideTourBanner || useExpressStyleChrome,
+    headerToolbar || headerAsideContent || asideTourBanner,
   );
 
   return (
