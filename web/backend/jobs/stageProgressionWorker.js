@@ -20,6 +20,8 @@ import {
   retainMailboxOnShippingEnter,
 } from "../controllers/requests/mailbox.utils.js";
 import { applyPracticeShippingReceiverSnapshotToRequest } from "../utils/shippingReceiver.utils.js";
+import { ensureShippingFeeSpendOnPackingApprove } from "../controllers/requests/common.review.helpers.js";
+import { isManufacturerSampleRequest } from "../controllers/requests/mailbox.utils.js";
 import { resolveMongoUri } from "../utils/mongoUri.js";
 
 /**
@@ -138,6 +140,17 @@ async function progressStages() {
           requestId: req.requestId,
           message: error?.message || String(error),
         });
+      }
+      if (!isManufacturerSampleRequest(req)) {
+        try {
+          await ensureShippingFeeSpendOnPackingApprove({ request: req });
+        } catch (error) {
+          console.error("[STAGE_WORKER] shipping fee spend failed", {
+            requestId: req.requestId,
+            message: error?.message || String(error),
+          });
+          continue;
+        }
       }
       applyStatusMapping(req, "포장.발송");
       await req.save();

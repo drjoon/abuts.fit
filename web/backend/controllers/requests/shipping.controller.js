@@ -1,4 +1,4 @@
-// - 2026-08-17: 배송비는 우편함 집하(비우기) 시 1회 차감.
+// - 2026-08-17: 배송비는 우편함 집하(비우기) 시 1회 차감 → 2026-08-26: 포장.발송 진입 시 commit(집하는 패키지 연결만).
 // - 2026-08-17: PTX 직납 수취인(shippingReceiver) 주소 스냅샷 수정 API.
 // - 2026-08-11: mailbox-requests 성능 — exact mailboxAddress, lean+batch hydrate, 15s 캐시, requestIds 단축 경로
 // - 2026-08-04: 수동 집하 pickedUpAt/deliveredAt을 당일 16:00 고정 → 실제 처리 시각(now)으로 기록
@@ -1225,28 +1225,11 @@ export async function manualHanjinPickupCompleted(req, res) {
         mailboxTrackingNumberRaw,
       );
 
-      try {
-        await ensureShippingFeeSpendOnMailboxPickup({
-          mailboxAddress,
-          requests: effectiveMailboxRequests,
-          actorUserId: req.user?._id || null,
-          throwOnInsufficient: true,
-        });
-      } catch (spendErr) {
-        if (Number(spendErr?.statusCode) === 402) {
-          results.push({
-            mailboxAddress,
-            success: false,
-            reason: "insufficient_credit_for_shipping",
-            message: spendErr.message,
-            payload: spendErr.payload || null,
-            requestCount: effectiveMailboxRequests.length,
-            processedCount: 0,
-          });
-          continue;
-        }
-        throw spendErr;
-      }
+      await ensureShippingFeeSpendOnMailboxPickup({
+        mailboxAddress,
+        requests: effectiveMailboxRequests,
+        actorUserId: req.user?._id || null,
+      });
 
       for (const group of groups) {
         const trackingNumber = mailboxTrackingNumber;

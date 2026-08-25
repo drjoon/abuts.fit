@@ -707,7 +707,7 @@ export async function triggerManufacturerDailySettlementSnapshotRecalc(
     const { start, end } = utcRange;
     // SSOT 정책:
     // - REQUEST_SPEND_COMMIT: CAM 승인(가공 진입) 시점 소비
-    // - SHIPPING_SPEND_COMMIT: 세척.패킹 승인(포장.발송 진입) 시점 소비
+    // - SHIPPING_SPEND_COMMIT: 포장.발송 진입(세척.패킹 승인) 시점 소비
     // - 롤백은 REFUND 적재가 아니라 COMMIT 물리삭제이므로 refundAmount는 0 고정(legacy 스키마 호환)
     const [summary] = await LedgerLine.aggregate([
       {

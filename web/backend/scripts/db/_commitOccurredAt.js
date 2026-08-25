@@ -34,13 +34,14 @@ export function pickRequestCommitOccurredAt(req) {
 
 /**
  * 제조사 배송비 COMMIT 시각.
- * 패키지 생성(집하) → 배치 처리 → 의뢰 생성. package.updatedAt은 쓰지 않는다.
+ * 포장.발송 진입 → 패키지 생성 → 의뢰 생성. package.updatedAt은 쓰지 않는다.
  */
 export function pickShippingCommitOccurredAt(pkg, req) {
+  const packingReview = req?.caseInfos?.reviewByStage?.packing;
   const ps = req?.productionSchedule || {};
   const candidates = [
+    packingReview?.updatedAt,
     pkg?.createdAt,
-    ps.actualShipPickup,
     ps.actualBatchProcessing,
     req?.createdAt,
   ];

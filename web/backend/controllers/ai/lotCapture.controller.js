@@ -26,6 +26,8 @@ import {
   normalizeBusinessAnchorId,
 } from "../requests/mailbox.utils.js";
 import { applyPracticeShippingReceiverSnapshotToRequest } from "../../utils/shippingReceiver.utils.js";
+import { ensureShippingFeeSpendOnPackingApprove } from "../requests/common.review.helpers.js";
+import { isManufacturerSampleRequest } from "../requests/mailbox.utils.js";
 import sharp from "sharp";
 
 let _apiKey = null;
@@ -453,6 +455,17 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
       requestId: request.requestId,
       message: err?.message || String(err),
     });
+  }
+  if (!isManufacturerSampleRequest(request)) {
+    try {
+      await ensureShippingFeeSpendOnPackingApprove({ request });
+    } catch (err) {
+      console.error("[lot-capture] shipping fee spend failed", {
+        requestId: request.requestId,
+        message: err?.message || String(err),
+      });
+      throw err;
+    }
   }
   applyStatusMapping(request, "발송");
 

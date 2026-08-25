@@ -1814,7 +1814,7 @@ export async function updateReviewStatusByStage(req, res) {
           }
 
           // 샘플/치과 드롭존 의뢰는 전체 공정 진행은 동일하게 허용하되, 배송비 크레딧은 차감하지 않는다.
-          // 배송비 차감은 집하(우편함 비우기) SSOT. 여기서는 우편함만 확인한다.
+          // 배송비 차감 SSOT: 포장.발송 진입(세척.패킹 승인) 시 1회 commit.
           if (
             resolvedBusinessAnchorId &&
             !isManufacturerSampleRequest(request) &&
@@ -1822,6 +1822,9 @@ export async function updateReviewStatusByStage(req, res) {
           ) {
             await ensureShippingFeeSpendOnPackingApprove({
               request,
+              actorUserId: req.user?._id || null,
+              session,
+              deferredCreditEvents,
             });
           }
 
