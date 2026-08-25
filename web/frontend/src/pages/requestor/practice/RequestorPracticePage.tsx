@@ -226,6 +226,7 @@ import { toKstYmd } from "@/shared/date/kst";
 import { normalizeLabReceiveCalendarDateKey } from "@/shared/practice/labReceiveCalendarDateKey";
 import { normalizeLabReceiveCalendarHiddenWeekdays } from "@/shared/practice/labReceiveCalendarHiddenWeekdays";
 import {
+  getPracticeAbutmentDeliveryChipLabel,
   getPracticeAbutmentDeliveryLabel,
   type PracticeAbutmentDeliveryInfo,
 } from "@/shared/shipping/hanjinTrackingLabel";
@@ -1696,7 +1697,7 @@ export function RequestorPracticeReceivePage({
         surchargeMultiplier > 1
           ? formatLabFeeMultiplierLabel(surchargeMultiplier)
           : "";
-      const deliveryLabel = getPracticeAbutmentDeliveryLabel({
+      const deliveryLabel = getPracticeAbutmentDeliveryChipLabel({
         hasCustomAbutment: Boolean(transfer.hasCustomAbutment),
         abutmentDeliveryInfo: transfer.abutmentDeliveryInfo || null,
       });

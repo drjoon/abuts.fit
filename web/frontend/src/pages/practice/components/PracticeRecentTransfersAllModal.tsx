@@ -24,6 +24,7 @@
  * 2026-08-22: 숨길 요일을 계정 preferences에 저장.
  * 2026-08-20: 모바일 — 가로 스크롤 상태칩·터치 카드·풀높이 시트.
  * 2026-08-25: 데스크톱도 풀스크린. 닫기 아이콘·히트영역 확대.
+ * 2026-08-25: 캘린더 칩에서 「생산 전」등 생산단계 문구 제거(운송·배송완료만).
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronRight, Search, Trash2, X } from "lucide-react";
@@ -39,7 +40,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { getPracticeAbutmentDeliveryLabel } from "@/shared/shipping/hanjinTrackingLabel";
+import {
+  getPracticeAbutmentDeliveryChipLabel,
+  getPracticeAbutmentDeliveryLabel,
+} from "@/shared/shipping/hanjinTrackingLabel";
 import type { PeriodFilterValue } from "@/shared/ui/PeriodFilter";
 import { cn } from "@/shared/ui/cn";
 import { apiFetch } from "@/shared/api/apiClient";
@@ -355,7 +359,7 @@ export function PracticeRecentTransfersAllModal({
           .trim() || "-";
       const patient = resolvePracticeTransferListPatientName(transfer);
       const teeth = resolvePracticeTransferListToothNumbers(transfer);
-      const deliveryLabel = getPracticeAbutmentDeliveryLabel({
+      const deliveryLabel = getPracticeAbutmentDeliveryChipLabel({
         hasCustomAbutment: Boolean(transfer.hasCustomAbutment),
         abutmentDeliveryInfo: transfer.abutmentDeliveryInfo || null,
       });
