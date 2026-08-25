@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-26: GET /rooms — 휴지통(deleted|canceled) 의뢰 방은 목록·unread 제외(직접 open은 유지).
 // - 2026-08-21: 취소(휴지통) 전송도 기존 채팅방은 열어 미확인 메시지 읽기 허용(신규 방 생성은 409).
 // - 2026-08-20: 기공소 변경 후 이전 기공소는 GET /rooms·사이드바 unread에서 제외.
 // - 2026-08-17: 삭제된 practice transfer 연결 방은 archive·목록 제외(사이드바 유령 unread 방지).
@@ -34,6 +35,7 @@ import {
   canJoinPracticeTransferAsPracticePeer as canJoinPracticeTransferAsPracticePeerCore,
   shouldListPracticeTransferChatRoomForUser,
 } from "../../utils/practiceTransferChatAccess.js";
+import { isPracticeTransferDeletedStatus } from "../../utils/practiceTransferStage.js";
 import { emitAppEventToUser, emitToUser } from "../../socket.js";
 
 const __chatPerfCache = new Map();
@@ -494,7 +496,8 @@ export async function getMyChatRooms(req, res) {
         return [];
       }
 
-      // relatedPracticeTransferId는 populate 대신 수동 조인 — 삭제된 의뢰 방은 archive.
+      // relatedPracticeTransferId는 populate 대신 수동 조인 — 하드삭제된 의뢰 방은 archive.
+      // 휴지통(deleted|canceled)은 archive하지 않고 목록·unread만 제외(복구·직접 open 유지).
       // 기공소 변경 후 이전 기공소는 목록·unread에서 제외(치과·현재 수신 기공소만).
       const relatedIds = roomsRaw
         .map((r) => r.relatedPracticeTransferId)
@@ -505,6 +508,7 @@ export async function getMyChatRooms(req, res) {
           ? await PracticeTransfer.find({ _id: { $in: relatedIds } })
               .select({
                 transferId: 1,
+                status: 1,
                 practiceUserId: 1,
                 practiceBusinessAnchorId: 1,
                 targetLabAnchorId: 1,
@@ -517,6 +521,7 @@ export async function getMyChatRooms(req, res) {
       );
       const orphanRoomIds = [];
       const detachedRoomIds = [];
+      const trashedRoomIds = [];
       for (const room of roomsRaw) {
         const rawId = room.relatedPracticeTransferId;
         if (!rawId) {
@@ -527,6 +532,11 @@ export async function getMyChatRooms(req, res) {
         if (!transfer) {
           orphanRoomIds.push(room._id);
           room.relatedPracticeTransferId = null;
+          continue;
+        }
+        if (isPracticeTransferDeletedStatus(transfer.status)) {
+          // 휴지통: 사이드바·최근 의뢰 unread에서 제외. 방 자체는 유지(휴지통에서 채팅 open 가능).
+          trashedRoomIds.push(room._id);
           continue;
         }
         if (
@@ -553,10 +563,13 @@ export async function getMyChatRooms(req, res) {
         ).catch(() => {});
       }
 
+      const excludedRoomIdSet = new Set(
+        [...orphanRoomIds, ...detachedRoomIds, ...trashedRoomIds].map((id) =>
+          String(id),
+        ),
+      );
       const rooms = roomsRaw.filter(
-        (room) =>
-          !orphanRoomIds.some((id) => String(id) === String(room._id)) &&
-          !detachedRoomIds.some((id) => String(id) === String(room._id)),
+        (room) => !excludedRoomIdSet.has(String(room._id)),
       );
 
       if (rooms.length === 0) {

@@ -144,6 +144,7 @@ import { resolvePracticeTransferSkipJig } from "../../utils/practiceTransferLabS
 // - web/backend/utils/practiceTransferAbutmentPresets.js
 // - web/backend/utils/practiceLabRating.js
 // - web/backend/utils/practiceTransferStage.js
+// - 2026-08-26: cancel/restore/empty — 휴지통 이동 시 채팅 rooms 캐시 무효화(최근의뢰·사이드 unread 즉시 반영).
 // - 2026-08-25: status deleted=치과 의뢰 삭제(휴지통). GET /received에서 제외. canceled=레거시 호환. 작업취소=workCanceledAt.
 // - 2026-08-21: GET /received — 연동 CA 한진 배송 요약(abutmentDeliveryInfo) 포함(치과 /my와 동일).
 // - 2026-08-21: createPracticeTransfer — 응답은 create 직후. hold·기공소 알림은 백그라운드.
@@ -350,6 +351,39 @@ const ensurePracticeTransferChatRoomOnAccept = async ({
     return room._id;
   } catch {
     return null;
+  }
+};
+
+/** 휴지통 이동/복구/비우기 후 GET /chats/rooms 캐시를 깨 사이드·최근의뢰 unread를 즉시 맞춘다. */
+const invalidateChatPerfForPracticeTransferRooms = async (transferMongoIds) => {
+  const oids = (Array.isArray(transferMongoIds) ? transferMongoIds : [])
+    .map((id) => String(id || "").trim())
+    .filter((id) => Types.ObjectId.isValid(id))
+    .map((id) => new Types.ObjectId(id));
+  if (oids.length === 0) return;
+  try {
+    const rooms = await ChatRoom.find({
+      relatedPracticeTransferId: { $in: oids },
+    })
+      .select({ participants: 1 })
+      .lean();
+    const userIds = [
+      ...new Set(
+        rooms.flatMap((room) =>
+          (Array.isArray(room?.participants) ? room.participants : [])
+            .map((id) => String(id || "").trim())
+            .filter(Boolean),
+        ),
+      ),
+    ];
+    if (userIds.length > 0) {
+      invalidateChatPerfForUsers(userIds);
+    }
+  } catch (err) {
+    console.warn(
+      "[practiceTransfer] chat rooms cache invalidate failed",
+      err?.message || err,
+    );
   }
 };
 
@@ -2243,6 +2277,7 @@ export async function emptyPracticeTransferTrash(req, res) {
             archiveErr?.message || archiveErr,
           );
         }
+        await invalidateChatPerfForPracticeTransferRooms(transferMongoIds);
       }
     } else {
       await draftDeletePromise;
@@ -7249,6 +7284,8 @@ export async function cancelPracticeTransfersBatch(req, res) {
     let successCount = 0;
     const failedIds = [];
     const affectedByAnchor = new Map();
+    const newlyDeletedMongoIds = [];
+    const practiceEmitJobs = [];
 
     // 요청했지만 scope에서 찾지 못한 ID는 실패 목록에 반환한다.
     const foundTransferIdSet = new Set(
@@ -7298,6 +7335,7 @@ export async function cancelPracticeTransfersBatch(req, res) {
         doc.canceledBy = req.user?._id || null;
         await doc.save();
         successCount += 1;
+        newlyDeletedMongoIds.push(String(doc._id));
 
         const targetLabAnchorId = String(doc.targetLabAnchorId || "").trim();
         const transferId = String(doc.transferId || "").trim();
@@ -7309,26 +7347,35 @@ export async function cancelPracticeTransfersBatch(req, res) {
           affectedByAnchor.set(targetLabAnchorId, prev);
         }
 
-        const realtimePayload = {
-          action: "deleted",
-          transferId,
-          transferMongoId,
-          targetLabAnchorId: targetLabAnchorId || null,
-          practiceUserId: String(doc.practiceUserId || "").trim() || null,
-          unreadCount: null,
-          status: "deleted",
-          updatedAt: doc.updatedAt || new Date(),
-        };
-
-        await emitPracticeTransferEventToPracticeUsers({
+        practiceEmitJobs.push({
           practiceBusinessAnchorId: doc.practiceBusinessAnchorId,
-          type: "practice:transfer-updated",
-          payload: realtimePayload,
-          extraUserIds: [doc.practiceUserId],
+          practiceUserId: doc.practiceUserId,
+          payload: {
+            action: "deleted",
+            transferId,
+            transferMongoId,
+            targetLabAnchorId: targetLabAnchorId || null,
+            practiceUserId: String(doc.practiceUserId || "").trim() || null,
+            unreadCount: null,
+            status: "deleted",
+            updatedAt: doc.updatedAt || new Date(),
+          },
         });
       } catch {
         failedIds.push(String(doc?.transferId || doc?._id || ""));
       }
+    }
+
+    // rooms 캐시를 먼저 깨고 emit — FE 재조회가 stale unread를 다시 받지 않게.
+    await invalidateChatPerfForPracticeTransferRooms(newlyDeletedMongoIds);
+
+    for (const job of practiceEmitJobs) {
+      await emitPracticeTransferEventToPracticeUsers({
+        practiceBusinessAnchorId: job.practiceBusinessAnchorId,
+        type: "practice:transfer-updated",
+        payload: job.payload,
+        extraUserIds: [job.practiceUserId],
+      });
     }
 
     for (const [targetLabAnchorId, affected] of affectedByAnchor.entries()) {
@@ -7425,6 +7472,8 @@ export async function restorePracticeTransfersBatch(req, res) {
     let successCount = 0;
     const failedIds = [];
     const affectedByAnchor = new Map();
+    const restoredMongoIds = [];
+    const practiceEmitJobs = [];
 
     const foundTransferIdSet = new Set(
       docs.map((doc) => String(doc?.transferId || "").trim()).filter(Boolean),
@@ -7454,6 +7503,7 @@ export async function restorePracticeTransfersBatch(req, res) {
         doc.canceledBy = null;
         await doc.save();
         successCount += 1;
+        restoredMongoIds.push(String(doc._id));
 
         const targetLabAnchorId = String(doc.targetLabAnchorId || "").trim();
         const transferId = String(doc.transferId || "").trim();
@@ -7465,26 +7515,34 @@ export async function restorePracticeTransfersBatch(req, res) {
           affectedByAnchor.set(targetLabAnchorId, prev);
         }
 
-        const realtimePayload = {
-          action: "restored",
-          transferId,
-          transferMongoId,
-          targetLabAnchorId: targetLabAnchorId || null,
-          practiceUserId: String(doc.practiceUserId || "").trim() || null,
-          unreadCount: null,
-          status: "active",
-          updatedAt: doc.updatedAt || new Date(),
-        };
-
-        await emitPracticeTransferEventToPracticeUsers({
+        practiceEmitJobs.push({
           practiceBusinessAnchorId: doc.practiceBusinessAnchorId,
-          type: "practice:transfer-updated",
-          payload: realtimePayload,
-          extraUserIds: [doc.practiceUserId],
+          practiceUserId: doc.practiceUserId,
+          payload: {
+            action: "restored",
+            transferId,
+            transferMongoId,
+            targetLabAnchorId: targetLabAnchorId || null,
+            practiceUserId: String(doc.practiceUserId || "").trim() || null,
+            unreadCount: null,
+            status: "active",
+            updatedAt: doc.updatedAt || new Date(),
+          },
         });
       } catch {
         failedIds.push(String(doc?.transferId || doc?._id || ""));
       }
+    }
+
+    await invalidateChatPerfForPracticeTransferRooms(restoredMongoIds);
+
+    for (const job of practiceEmitJobs) {
+      await emitPracticeTransferEventToPracticeUsers({
+        practiceBusinessAnchorId: job.practiceBusinessAnchorId,
+        type: "practice:transfer-updated",
+        payload: job.payload,
+        extraUserIds: [job.practiceUserId],
+      });
     }
 
     for (const [targetLabAnchorId, affected] of affectedByAnchor.entries()) {

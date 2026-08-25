@@ -75,6 +75,7 @@
  * - 2026-08-15: 기공소 전송은 작성 중 draft만. 전송/빈 폼 후 최신 임시저장을 폼에 자동 주입하지 않음.
  * - 2026-08-15: Express/Expert 공통 툴바 최근의뢰/임시저장/휴지통(다이얼로그).
  * - 2026-08-18: Expert 상단에도 새로 작성·최근 의뢰·임시저장·휴지통 버튼.
+ * - 2026-08-26: 휴지통 이동 시 공유 chat-rooms refresh + 휴지통 unread 합산 제외(새로고침 없이 배지 감소).
  * - 2026-08-26: 휴지통 이동 시 채팅 rooms 재조회 — 최근의뢰·사이드 unread 즉시 감소.
  * - 2026-08-21: 「최근 의뢰」배지=사이드바와 동일 채팅 unread(작업취소 카운트 아님).
  * - 2026-08-21: 휴지통 취소 건도 기존 채팅방 열어 미확인 읽기 가능.
@@ -189,7 +190,11 @@ import {
   ABUTS_PINNED_LAB_SEED,
   type SearchBusinessResult,
 } from "@/pages/practice/hooks/usePracticeTransferStep1";
-import { useChatRooms, type ChatRoom } from "@/shared/hooks/useChatRooms";
+import {
+  useChatRooms,
+  requestChatRoomsRefresh,
+  type ChatRoom,
+} from "@/shared/hooks/useChatRooms";
 import { useChatMessages } from "@/shared/hooks/useChatMessages";
 import { anonymizeAutoMatchChatSenderName } from "@/shared/practice/autoMatchIdentity";
 import {
@@ -3715,6 +3720,17 @@ export const PracticeFileTransferPage = ({
     [filteredRecentRequests, chatRooms],
   );
 
+  // 휴지통으로 옮긴 전송의 unread는 합산에서 제외(optimistic status=취소 즉시 반영)
+  const trashTransferIdSet = useMemo(() => {
+    const ids = new Set<string>();
+    for (const req of recentRequests) {
+      if (!isPracticeTransferTrashStatus(req.status)) continue;
+      const tid = String(req.transferId || "").trim();
+      if (tid && tid !== "-") ids.add(tid);
+    }
+    return ids;
+  }, [recentRequests]);
+
   // 사이드바「기공의뢰」와 동일: practice transfer 채팅 unread 합산
   const recentChatUnreadCount = useMemo(
     () =>
@@ -3722,10 +3738,10 @@ export const PracticeFileTransferPage = ({
         const transferId = String(
           room.relatedPracticeTransferId?.transferId || "",
         ).trim();
-        if (!transferId) return sum;
+        if (!transferId || trashTransferIdSet.has(transferId)) return sum;
         return sum + Math.max(0, Number(room.unreadCount || 0));
       }, 0),
-    [chatRooms],
+    [chatRooms, trashTransferIdSet],
   );
 
   const draftGroupedTransfers = useMemo(() => {
@@ -5140,6 +5156,15 @@ export const PracticeFileTransferPage = ({
         return matched ? { ...row, status: "취소" } : row;
       }),
     );
+    // 사이드바·페이지 useChatRooms 인스턴스 모두 unread 즉시 동기화
+    // refetch는 API 성공 후 — 완료 전 재조회하면 stale unread가 배지를 되돌림
+    invalidateApiGetCache("/api/chats/rooms");
+    requestChatRoomsRefresh({
+      action: "deleted",
+      transferIds,
+      transferMongoIds,
+      refetch: false,
+    });
     finishDeleteConfirmAndReturnToAllModal();
 
     try {
@@ -5175,6 +5200,8 @@ export const PracticeFileTransferPage = ({
       if (successCount <= 0) {
         // 전건 실패 시 optimistic 변경 롤백
         setRecentRequests(previousRecentRequests);
+        invalidateApiGetCache("/api/chats/rooms");
+        requestChatRoomsRefresh({ skipCache: true });
         toast({
           title: "휴지통 이동 실패",
           description: "삭제 권한 또는 대상 상태를 확인해주세요.",
@@ -5189,8 +5216,13 @@ export const PracticeFileTransferPage = ({
               : `${successCount}건을 휴지통으로 옮겼습니다. 아래에서 복구할 수 있습니다.`,
         });
 
-        // 휴지통 이동 직후 채팅 unread(최근의뢰·사이드 배지) 즉시 동기화
-        void fetchRooms();
+        invalidateApiGetCache("/api/chats/rooms");
+        requestChatRoomsRefresh({
+          action: "deleted",
+          transferIds,
+          transferMongoIds,
+          skipCache: true,
+        });
 
         // 부분 실패면 서버 기준으로 재동기화(실패 건을 다시 표시)
         if (failedIds.length > 0) {
@@ -5201,6 +5233,8 @@ export const PracticeFileTransferPage = ({
     } catch (error) {
       // 통신/서버 오류 시 optimistic 변경 롤백
       setRecentRequests(previousRecentRequests);
+      invalidateApiGetCache("/api/chats/rooms");
+      requestChatRoomsRefresh({ skipCache: true });
       toast({
         title: "휴지통 이동 실패",
         description:
@@ -5359,7 +5393,11 @@ export const PracticeFileTransferPage = ({
               : `${successCount}건을 최근 전송 내역으로 복구했습니다.`,
         });
         void loadRecentRequests({ silent: true });
-        void fetchRooms();
+        invalidateApiGetCache("/api/chats/rooms");
+        requestChatRoomsRefresh({
+          action: "restored",
+          skipCache: true,
+        });
       }
     } catch (error) {
       setRecentRequests(previousRecentRequests);
@@ -5532,7 +5570,11 @@ export const PracticeFileTransferPage = ({
 
       void loadPracticeTransferDraftList();
       void loadRecentRequests({ silent: true });
-      void fetchRooms();
+      invalidateApiGetCache("/api/chats/rooms");
+      requestChatRoomsRefresh({
+        action: "trash-emptied",
+        skipCache: true,
+      });
     } catch (error) {
       toast({
         title: "휴지통 비우기 실패",

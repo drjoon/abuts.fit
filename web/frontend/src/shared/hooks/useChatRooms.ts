@@ -63,11 +63,14 @@ export interface ChatMessage {
 // related files:
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
+// - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/shared/realtime/useAppEventListener.ts
 // - web/frontend/src/shared/hooks/useChatMessages.ts
 // - web/backend/models/chatRoom.model.js
 // - web/backend/controllers/chats/chat.controller.js
 // change-log:
+// - 2026-08-26: 휴지통 이동 시 전 인스턴스 공유 refresh(skipCache) — 사이드·최근의뢰 배지 즉시 동기화.
+// - 2026-08-26: 휴지통 이동/복구/비우기 시 rooms 재조회로 최근의뢰·사이드 unread 즉시 반영.
 // - 2026-08-20: 기공소 변경(lab-retargeted*) 시 방 목록 재조회로 이전 기공소 유령 unread 제거.
 export interface ChatRoom {
   _id: string;
@@ -91,6 +94,86 @@ export interface ChatRoom {
   updatedAt: string;
 }
 
+/** 페이지·사이드바 useChatRooms 인스턴스에 동일 갱신을 알린다. */
+export const CHAT_ROOMS_REFRESH_EVENT = "abuts:chat-rooms:refresh";
+
+export type ChatRoomsRefreshDetail = {
+  action?: string;
+  transferIds?: string[];
+  transferMongoIds?: string[];
+  skipCache?: boolean;
+  /** false면 로컬 drop만(삭제 API 완료 전 stale 재조회 방지). 기본 true. */
+  refetch?: boolean;
+};
+
+export function requestChatRoomsRefresh(detail: ChatRoomsRefreshDetail = {}) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent<ChatRoomsRefreshDetail>(CHAT_ROOMS_REFRESH_EVENT, {
+      detail: {
+        skipCache: true,
+        ...detail,
+      },
+    }),
+  );
+}
+
+const collectTransferKeysFromPayload = (payload: Record<string, unknown>) => {
+  const mongoIds = new Set<string>();
+  const transferIds = new Set<string>();
+  const ownMongo = String(payload.transferMongoId || "").trim();
+  const ownTransfer = String(payload.transferId || "").trim();
+  if (ownMongo) mongoIds.add(ownMongo);
+  if (ownTransfer) transferIds.add(ownTransfer);
+
+  const fromArrays = [
+    ...(Array.isArray(payload.transferMongoIds) ? payload.transferMongoIds : []),
+    ...(Array.isArray(payload.transferIds) ? payload.transferIds : []),
+  ];
+  for (const raw of fromArrays) {
+    const id = String(raw || "").trim();
+    if (!id) continue;
+    if (/^[a-f0-9]{24}$/i.test(id)) mongoIds.add(id);
+    else transferIds.add(id);
+  }
+
+  const affected = Array.isArray(payload.affectedTransfers)
+    ? payload.affectedTransfers
+    : [];
+  for (const row of affected) {
+    if (!row || typeof row !== "object") {
+      const asId = String(row || "").trim();
+      if (!asId) continue;
+      if (/^[a-f0-9]{24}$/i.test(asId)) mongoIds.add(asId);
+      else transferIds.add(asId);
+      continue;
+    }
+    const rec = row as { transferMongoId?: unknown; transferId?: unknown };
+    const mid = String(rec.transferMongoId || "").trim();
+    const tid = String(rec.transferId || "").trim();
+    if (mid) mongoIds.add(mid);
+    if (tid) transferIds.add(tid);
+  }
+
+  return { mongoIds, transferIds };
+};
+
+const dropRoomsForTransferKeys = (
+  rooms: ChatRoom[],
+  mongoIds: Set<string>,
+  transferIds: Set<string>,
+) => {
+  if (mongoIds.size === 0 && transferIds.size === 0) return rooms;
+  return rooms.filter((room) => {
+    const related = room.relatedPracticeTransferId;
+    const mid = String(related?._id || "").trim();
+    const tid = String(related?.transferId || "").trim();
+    if (mid && mongoIds.has(mid)) return false;
+    if (tid && transferIds.has(tid)) return false;
+    return true;
+  });
+};
+
 export const useChatRooms = () => {
   const { token, user } = useAuthStore();
   const { toast } = useToast();
@@ -107,45 +190,49 @@ export const useChatRooms = () => {
     return new Set(ids);
   }, [user]);
 
-  const fetchRooms = useCallback(async () => {
-    if (!token) return;
+  const fetchRooms = useCallback(
+    async (opts?: { skipCache?: boolean }) => {
+      if (!token) return;
 
-    setLoading(true);
-    setError(null);
+      setLoading(true);
+      setError(null);
 
-    try {
-      const res = await apiFetch<{ success: boolean; data: ChatRoom[] }>({
-        path: "/api/chats/rooms",
-        method: "GET",
-        token,
-      });
+      try {
+        const res = await apiFetch<{ success: boolean; data: ChatRoom[] }>({
+          path: "/api/chats/rooms",
+          method: "GET",
+          token,
+          skipCache: Boolean(opts?.skipCache),
+        });
 
-      if (res.ok && res.data?.success) {
-        setRooms(res.data.data || []);
-      } else {
-        throw new Error("채팅방 목록 조회에 실패했습니다.");
+        if (res.ok && res.data?.success) {
+          setRooms(res.data.data || []);
+        } else {
+          throw new Error("채팅방 목록 조회에 실패했습니다.");
+        }
+      } catch (e: unknown) {
+        const errorMsg =
+          e instanceof Error
+            ? e.message
+            : "채팅방 목록을 불러오는 중 오류가 발생했습니다.";
+        setError(errorMsg);
+        toast({
+          title: "오류",
+          description: errorMsg,
+          variant: "destructive",
+        });
+      } finally {
+        setLoading(false);
       }
-    } catch (e: unknown) {
-      const errorMsg =
-        e instanceof Error
-          ? e.message
-          : "채팅방 목록을 불러오는 중 오류가 발생했습니다.";
-      setError(errorMsg);
-      toast({
-        title: "오류",
-        description: errorMsg,
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
-    }
-  }, [token, toast]);
+    },
+    [token, toast],
+  );
 
   const createOrGetChatRoom = useCallback(
     async (
       participantIds: string[],
       title?: string,
-      relatedRequestId?: string
+      relatedRequestId?: string,
     ) => {
       if (!token) return null;
 
@@ -166,7 +253,7 @@ export const useChatRooms = () => {
         });
 
         if (res.ok && res.data?.success) {
-          await fetchRooms();
+          await fetchRooms({ skipCache: true });
           return res.data.data;
         } else {
           throw new Error(res.data?.message || "채팅방 생성에 실패했습니다.");
@@ -181,7 +268,7 @@ export const useChatRooms = () => {
         return null;
       }
     },
-    [token, toast, fetchRooms]
+    [token, toast, fetchRooms],
   );
 
   useEffect(() => {
@@ -192,14 +279,44 @@ export const useChatRooms = () => {
     roomsRef.current = rooms;
   }, [rooms]);
 
-  const scheduleFallbackReload = useCallback(() => {
-    if (fallbackReloadTimerRef.current) {
-      window.clearTimeout(fallbackReloadTimerRef.current);
-    }
-    fallbackReloadTimerRef.current = window.setTimeout(() => {
-      void fetchRooms();
-    }, 160);
-  }, [fetchRooms]);
+  const scheduleFallbackReload = useCallback(
+    (opts?: { skipCache?: boolean }) => {
+      if (fallbackReloadTimerRef.current) {
+        window.clearTimeout(fallbackReloadTimerRef.current);
+      }
+      fallbackReloadTimerRef.current = window.setTimeout(() => {
+        void fetchRooms({ skipCache: opts?.skipCache !== false });
+      }, 160);
+    },
+    [fetchRooms],
+  );
+
+  // 레이아웃·페이지 각각 useChatRooms — 삭제 직후 공유 이벤트로 둘 다 갱신.
+  useEffect(() => {
+    const onRefresh = (evt: Event) => {
+      const detail =
+        evt instanceof CustomEvent && evt.detail && typeof evt.detail === "object"
+          ? (evt.detail as ChatRoomsRefreshDetail)
+          : {};
+      const action = String(detail.action || "").trim();
+      if (action === "deleted" || action === "trash-emptied" || action === "purged") {
+        const { mongoIds, transferIds } = collectTransferKeysFromPayload({
+          transferIds: detail.transferIds,
+          transferMongoIds: detail.transferMongoIds,
+        });
+        if (mongoIds.size > 0 || transferIds.size > 0) {
+          setRooms((prev) => dropRoomsForTransferKeys(prev, mongoIds, transferIds));
+        }
+      }
+      // 삭제 optimistic은 refetch:false — API 완료 전 stale rooms로 배지가 되살아나지 않게.
+      if (detail.refetch === false) return;
+      scheduleFallbackReload({ skipCache: detail.skipCache !== false });
+    };
+    window.addEventListener(CHAT_ROOMS_REFRESH_EVENT, onRefresh);
+    return () => {
+      window.removeEventListener(CHAT_ROOMS_REFRESH_EVENT, onRefresh);
+    };
+  }, [scheduleFallbackReload]);
 
   useAppEventListener({
     enabled: Boolean(token),
@@ -222,9 +339,26 @@ export const useChatRooms = () => {
         if (
           action === "lab-retargeted-away" ||
           action === "lab-retargeted" ||
-          action === "lab_retarget"
+          action === "lab_retarget" ||
+          action === "deleted" ||
+          action === "restored" ||
+          action === "trash-emptied" ||
+          action === "purged"
         ) {
-          scheduleFallbackReload();
+          if (
+            action === "deleted" ||
+            action === "trash-emptied" ||
+            action === "purged"
+          ) {
+            const { mongoIds, transferIds } =
+              collectTransferKeysFromPayload(payload);
+            if (mongoIds.size > 0 || transferIds.size > 0) {
+              setRooms((prev) =>
+                dropRoomsForTransferKeys(prev, mongoIds, transferIds),
+              );
+            }
+          }
+          scheduleFallbackReload({ skipCache: true });
         }
         return;
       }
@@ -237,7 +371,9 @@ export const useChatRooms = () => {
           payload.message && typeof payload.message === "object"
             ? (payload.message as ChatMessage)
             : null;
-        const senderId = String(payload.senderId || message?.sender?._id || "").trim();
+        const senderId = String(
+          payload.senderId || message?.sender?._id || "",
+        ).trim();
         const isMine = senderId ? myIdCandidates.has(senderId) : false;
 
         const roomExists = roomsRef.current.some(
@@ -253,13 +389,15 @@ export const useChatRooms = () => {
               ...room,
               unreadCount: isMine ? prevUnread : prevUnread + 1,
               lastMessage: message || room.lastMessage,
-              lastMessageAt: String(message?.createdAt || room.lastMessageAt || ""),
+              lastMessageAt: String(
+                message?.createdAt || room.lastMessageAt || "",
+              ),
             };
           }),
         );
 
         if (!roomExists) {
-          scheduleFallbackReload();
+          scheduleFallbackReload({ skipCache: true });
         }
         return;
       }
