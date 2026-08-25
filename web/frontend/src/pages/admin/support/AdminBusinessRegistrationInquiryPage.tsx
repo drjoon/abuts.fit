@@ -6,9 +6,10 @@
 // - web/frontend/src/shared/realtime/useAppEventDebouncedReload.ts
 // - web/backend/controllers/support/support.controller.js
 // change-log:
+// - 2026-08-26: 최신 admin 소통 UI(채팅/메일) 스타일로 레이아웃·카드·배지 리팩터.
 // - 2026-08-15: lab_fee_item_add_request(기공비 항목 추가 요청) 유형 라벨.
 // - 2026-08-14: manufacturer_add_request(임플란트 추가 요청) 유형 라벨.
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   BusinessRegistrationInquiry,
@@ -22,18 +23,9 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/shared/hooks/use-toast";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -44,13 +36,26 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
+import { INQUIRY_TYPE_LABEL } from "@/features/support/InquiriesPage";
+import { cn } from "@/shared/ui/cn";
+import { useIsMobile } from "@/shared/hooks/use-mobile";
+import { ArrowLeft, Download, Search } from "lucide-react";
 
 const formatDate = (value?: string | null) => {
   if (!value) return "-";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("ko-KR");
+  return date.toLocaleString("ko-KR", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 };
 
 const statusLabelMap: Record<string, string> = {
@@ -58,29 +63,15 @@ const statusLabelMap: Record<string, string> = {
   resolved: "처리완료",
 };
 
-const typeLabelMap: Record<string, string> = {
-  manufacturing: "의뢰/제작",
-  delivery: "배송",
-  billing: "청구/결제",
-  credit: "크레딧",
-  design: "디자인",
-  file_transfer: "파일전송/기공의뢰서",
-  account: "계정/사업자",
-  order_intake: "의뢰 접수",
-  cam_machining: "가공",
-  equipment: "장비/소프트웨어",
-  packing: "패킹/출고",
-  settlement: "정산",
-  referral_commission: "소개/수당",
-  operation: "운영",
-  system: "시스템/오류",
-  partnership: "제휴/파트너십",
-  general: "일반",
-  other: "기타",
-  business_registration: "사업자등록",
-  user_registration: "사용자등록",
-  manufacturer_add_request: "임플란트 추가 요청",
-  lab_fee_item_add_request: "기공비 항목 추가 요청",
+const getInquiryStatusBadge = (status?: string | null) => {
+  if (status === "resolved") {
+    return <Badge variant="secondary">처리완료</Badge>;
+  }
+  return (
+    <Badge className="bg-primary-soft text-primary-strong border-primary-muted">
+      미처리
+    </Badge>
+  );
 };
 
 const toErrorMessage = (error: unknown, fallback: string) => {
@@ -88,8 +79,36 @@ const toErrorMessage = (error: unknown, fallback: string) => {
   return fallback;
 };
 
+const DetailField = ({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) => (
+  <div className="flex items-start justify-between gap-3 rounded-xl border border-slate-200/80 bg-slate-50/70 px-3.5 py-2.5 text-sm">
+    <span className="shrink-0 text-muted-foreground">{label}</span>
+    <div className="min-w-0 text-right font-medium">{children}</div>
+  </div>
+);
+
+const ContentBlock = ({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) => (
+  <div className="space-y-2 rounded-xl border border-slate-200/80 bg-slate-50/70 px-3.5 py-3">
+    <div className="text-xs font-medium text-muted-foreground">{label}</div>
+    <div className="text-sm">{children}</div>
+  </div>
+);
+
 export const AdminBusinessRegistrationInquiryPage = () => {
   const { toast } = useToast();
+  const isMobile = useIsMobile();
+  const [mobileShowList, setMobileShowList] = useState(true);
   const [searchParams] = useSearchParams();
   const initialStatusParam = searchParams.get("status");
   const initialStatusFilter: "all" | "open" | "resolved" =
@@ -193,6 +212,28 @@ export const AdminBusinessRegistrationInquiryPage = () => {
     setAdminNote(selected?.adminNote || "");
   }, [selected]);
 
+  useEffect(() => {
+    setMobileShowList(true);
+  }, [statusFilter, typeFilter]);
+
+  useEffect(() => {
+    if (!selectedId) {
+      setMobileShowList(true);
+    }
+  }, [selectedId]);
+
+  useEffect(() => {
+    if (!isMobile) return;
+    setMobileShowList(!selectedId);
+  }, [isMobile, selectedId]);
+
+  const handleSelectInquiry = (id: string) => {
+    setSelectedId(id);
+    if (isMobile) {
+      setMobileShowList(false);
+    }
+  };
+
   const toggleSelection = (id: string, checked: boolean) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -253,7 +294,7 @@ export const AdminBusinessRegistrationInquiryPage = () => {
       return {
         id: item._id,
         createdAt: item.createdAt || "",
-        type: typeLabelMap[item.type || "general"] || "",
+        type: INQUIRY_TYPE_LABEL[item.type || "general"] || "",
         status: statusLabelMap[item.status || "open"] || "",
         subject: item.subject || "",
         message: item.message || "",
@@ -277,12 +318,10 @@ export const AdminBusinessRegistrationInquiryPage = () => {
       .concat(
         rows.map((row) =>
           header
-            .map(
-              (key) => {
-                const safeRow = row as Record<string, unknown>;
-                return `"${String(safeRow[key] || "").replace(/"/g, '""')}"`;
-              },
-            )
+            .map((key) => {
+              const safeRow = row as Record<string, unknown>;
+              return `"${String(safeRow[key] || "").replace(/"/g, '""')}"`;
+            })
             .join(","),
         ),
       )
@@ -319,296 +358,367 @@ export const AdminBusinessRegistrationInquiryPage = () => {
     }
   };
 
+  const showListPanel = !isMobile || mobileShowList;
+  const showDetailPanel = !isMobile || !mobileShowList;
+
+  const statusFilters: Array<{ value: "all" | "open" | "resolved"; label: string }> =
+    [
+      { value: "open", label: "미처리" },
+      { value: "resolved", label: "처리완료" },
+      { value: "all", label: "전체" },
+    ];
+
+  const typeFilters: Array<{ value: string; label: string }> = [
+    { value: "all", label: "전체 유형" },
+    { value: "general", label: "일반" },
+    { value: "business_registration", label: "사업자등록" },
+    { value: "user_registration", label: "사용자등록" },
+  ];
+
   return (
-    <div className="p-4 space-y-4">
-      <Card>
-        <CardHeader className="space-y-3">
-          <div>
-            <CardTitle>문의</CardTitle>
-            <CardDescription>
-              문의 목록을 확인하고 처리 상태를 관리합니다.
-            </CardDescription>
-          </div>
-          <div className="flex flex-col gap-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <Tabs
-                value={statusFilter}
-                onValueChange={(value) =>
-                  setStatusFilter(value as "all" | "open" | "resolved")
-                }
-              >
-                <TabsList className="gap-2">
-                  <TabsTrigger value="open">미처리</TabsTrigger>
-                  <TabsTrigger value="resolved">처리완료</TabsTrigger>
-                  <TabsTrigger value="all">전체</TabsTrigger>
-                </TabsList>
-              </Tabs>
-              <Tabs
-                value={typeFilter}
-                onValueChange={(value) => setTypeFilter(value)}
-              >
-                <TabsList className="gap-2">
-                  <TabsTrigger value="all">전체</TabsTrigger>
-                  <TabsTrigger value="general">일반</TabsTrigger>
-                  <TabsTrigger value="business_registration">
-                    사업자등록
-                  </TabsTrigger>
-                  <TabsTrigger value="user_registration">
-                    사용자등록
-                  </TabsTrigger>
-                </TabsList>
-              </Tabs>
-            </div>
+    <div className="flex flex-col h-full min-h-0 bg-gradient-subtle p-2 sm:p-4">
+      <div className="max-w-7xl w-full mx-auto space-y-4 sm:space-y-6 flex flex-col flex-1 min-h-0">
+        <div className="space-y-1">
+          <h1 className="text-2xl font-bold tracking-tight">문의</h1>
+          <p className="text-sm text-muted-foreground">
+            문의 목록을 확인하고 처리 상태를 관리합니다.
+          </p>
+        </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <Input
-                type="text"
-                placeholder="검색 (제목, 내용, 사업장, 담당자, 이메일)"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="max-w-md"
-              />
-              <Button type="button" variant="outline" onClick={handleExportCsv}>
-                CSV
-              </Button>
-              <Select
-                value={bulkStatus}
-                onValueChange={(value) =>
-                  setBulkStatus(value as "open" | "resolved")
-                }
-              >
-                <SelectTrigger className="w-[140px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="resolved">처리완료</SelectItem>
-                  <SelectItem value="open">미처리</SelectItem>
-                </SelectContent>
-              </Select>
-              <Button
-                type="button"
-                onClick={handleBulkStatusChange}
-                disabled={saving || !selectedIds.size}
-              >
-                선택 상태 변경
-              </Button>
-              <div className="ml-auto text-sm text-muted-foreground">
-                {loading ? "불러오는 중..." : `총 ${filteredItems.length}건`}
-                {selectedIds.size > 0 ? ` · 선택 ${selectedIds.size}건` : ""}
-              </div>
-            </div>
-          </div>
-        </CardHeader>
-      </Card>
-
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
-        <Card className="min-h-0">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">문의 목록</CardTitle>
-          </CardHeader>
-          <CardContent className="min-h-0">
-            <div className="overflow-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-12">
-                      <Checkbox
-                        checked={
-                          filteredItems.length > 0 &&
-                          selectedIds.size === filteredItems.length
-                        }
-                        onCheckedChange={(value) =>
-                          handleSelectAll(Boolean(value))
-                        }
-                      />
-                    </TableHead>
-                    <TableHead className="w-[120px]">상태</TableHead>
-                    <TableHead className="w-[120px]">유형</TableHead>
-                    <TableHead className="w-[180px]">사업장</TableHead>
-                    <TableHead className="w-[120px]">담당자</TableHead>
-                    <TableHead>제목</TableHead>
-                    <TableHead className="w-[150px]">접수일</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredItems.map((item) => {
-                    const user = item.user || item.userSnapshot || {};
-                    const isChecked = selectedIds.has(item._id);
-                    const isSelected = item._id === selectedId;
-                    return (
-                      <TableRow
-                        key={item._id}
-                        className={
-                          isSelected ? "bg-slate-50" : "cursor-pointer"
-                        }
-                        onClick={() => setSelectedId(item._id)}
-                      >
-                        <TableCell>
-                          <Checkbox
-                            checked={isChecked}
-                            onCheckedChange={(value) =>
-                              toggleSelection(item._id, Boolean(value))
-                            }
-                            onClick={(event) => event.stopPropagation()}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            variant={
-                              item.status === "resolved" ? "outline" : "default"
-                            }
-                          >
-                            {statusLabelMap[item.status || "open"] || "미처리"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          {typeLabelMap[item.type || "general"] || "일반 문의"}
-                        </TableCell>
-                        <TableCell className="truncate">
-                          {user.business || "-"}
-                        </TableCell>
-                        <TableCell>{user.name || "-"}</TableCell>
-                        <TableCell className="truncate">
-                          {item.subject || "-"}
-                        </TableCell>
-                        <TableCell>{formatDate(item.createdAt)}</TableCell>
-                      </TableRow>
-                    );
-                  })}
-                  {!filteredItems.length && !loading && (
-                    <TableRow>
-                      <TableCell
-                        colSpan={7}
-                        className="text-center text-sm text-slate-400"
-                      >
-                        문의 내역이 없습니다.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="min-h-0">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">문의 상세</CardTitle>
-            <CardDescription>
-              선택한 문의의 상세 정보와 관리자 메모를 확인합니다.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {!selected ? (
-              <div className="text-sm text-slate-400">
-                문의 내역을 선택해주세요.
-              </div>
-            ) : (
-              <>
-                <div className="grid gap-2 text-sm">
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-slate-500">상태</span>
-                    <Badge
-                      variant={
-                        selected.status === "resolved" ? "outline" : "default"
-                      }
-                    >
-                      {statusLabelMap[selected.status || "open"] || "미처리"}
-                    </Badge>
-                  </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-slate-500">유형</span>
-                    <span>
-                      {typeLabelMap[selected.type || "general"] || "일반 문의"}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-slate-500">접수일</span>
-                    <span>{formatDate(selected.createdAt)}</span>
-                  </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-slate-500">사업장</span>
-                    <span className="text-right">
-                      {selectedUser.business || "-"}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-slate-500">담당자</span>
-                    <span>{selectedUser.name || "-"}</span>
-                  </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-slate-500">이메일</span>
-                    <span className="text-right">
-                      {selectedUser.email || "-"}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-slate-500">역할</span>
-                    <span>{selectedUser.role || "-"}</span>
-                  </div>
-                </div>
-
-                <div className="space-y-2 rounded-lg border p-3">
-                  <div className="text-xs text-slate-500">제목</div>
-                  <div className="text-sm font-medium">
-                    {selected.subject || "-"}
-                  </div>
-                </div>
-
-                <div className="space-y-2 rounded-lg border p-3">
-                  <div className="text-xs text-slate-500">내용</div>
-                  <div className="whitespace-pre-wrap break-words text-sm">
-                    {selected.message || "-"}
-                  </div>
-                </div>
-
-                {selected.reason || selected.payload?.errorMessage ? (
-                  <div className="space-y-2 rounded-lg border p-3">
-                    <div className="text-xs text-slate-500">추가 정보</div>
-                    <div className="space-y-1 text-sm">
-                      <div>
-                        <span className="text-slate-500">문의 사유</span>
-                        <div>{selected.reason || "-"}</div>
-                      </div>
-                      <div>
-                        <span className="text-slate-500">오류 메시지</span>
-                        <div>{selected.payload?.errorMessage || "-"}</div>
-                      </div>
-                    </div>
-                  </div>
-                ) : null}
-
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">관리자 메모</label>
-                  <Textarea
-                    rows={5}
-                    value={adminNote}
-                    onChange={(event) => setAdminNote(event.target.value)}
-                    placeholder="처리 내용을 입력하세요"
+        <div className="grid grid-cols-1 lg:grid-cols-[420px_1fr] gap-4 flex-1 min-h-0">
+          {showListPanel ? (
+            <Card className="flex flex-col overflow-hidden min-h-0">
+              <CardHeader className="space-y-3 shrink-0 pb-3">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    type="text"
+                    placeholder="제목, 내용, 사업장, 담당자, 이메일 검색"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-10"
                   />
                 </div>
 
                 <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    onClick={() => handleUpdate("resolved")}
-                    disabled={saving}
-                  >
-                    처리 완료
-                  </Button>
+                  {statusFilters.map((filter) => (
+                    <Button
+                      key={filter.value}
+                      type="button"
+                      size="sm"
+                      variant={statusFilter === filter.value ? "default" : "outline"}
+                      onClick={() => setStatusFilter(filter.value)}
+                    >
+                      {filter.label}
+                    </Button>
+                  ))}
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  {typeFilters.map((filter) => (
+                    <Button
+                      key={filter.value}
+                      type="button"
+                      size="sm"
+                      variant={typeFilter === filter.value ? "default" : "outline"}
+                      onClick={() => setTypeFilter(filter.value)}
+                    >
+                      {filter.label}
+                    </Button>
+                  ))}
+                </div>
+
+                <Separator />
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <Checkbox
+                    checked={
+                      filteredItems.length > 0 &&
+                      selectedIds.size === filteredItems.length
+                    }
+                    onCheckedChange={(value) => handleSelectAll(Boolean(value))}
+                  />
+                  <span className="text-xs text-muted-foreground">전체 선택</span>
+                  <div className="ml-auto text-xs text-muted-foreground">
+                    {loading ? "불러오는 중..." : `총 ${filteredItems.length}건`}
+                    {selectedIds.size > 0 ? ` · 선택 ${selectedIds.size}건` : ""}
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => handleUpdate("open")}
-                    disabled={saving}
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={handleExportCsv}
                   >
-                    미처리로 변경
+                    <Download className="h-3.5 w-3.5" />
+                    CSV
+                  </Button>
+                  <Select
+                    value={bulkStatus}
+                    onValueChange={(value) =>
+                      setBulkStatus(value as "open" | "resolved")
+                    }
+                  >
+                    <SelectTrigger className="h-8 w-[120px] text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="resolved">처리완료</SelectItem>
+                      <SelectItem value="open">미처리</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={handleBulkStatusChange}
+                    disabled={saving || !selectedIds.size}
+                  >
+                    선택 상태 변경
                   </Button>
                 </div>
-              </>
-            )}
-          </CardContent>
-        </Card>
+              </CardHeader>
+
+              <CardContent className="p-0 flex-1 min-h-0">
+                <ScrollArea className="h-[520px]">
+                  <div className="space-y-2 p-2 pt-0">
+                    {loading && filteredItems.length === 0 ? (
+                      <div className="space-y-2">
+                        <Skeleton className="h-[72px] w-full rounded-lg" />
+                        <Skeleton className="h-[72px] w-full rounded-lg" />
+                        <Skeleton className="h-[72px] w-full rounded-lg" />
+                      </div>
+                    ) : filteredItems.length === 0 ? (
+                      <div className="py-10 text-center text-sm text-muted-foreground">
+                        문의 내역이 없습니다.
+                      </div>
+                    ) : (
+                      filteredItems.map((item) => {
+                        const user = item.user || item.userSnapshot || {};
+                        const isChecked = selectedIds.has(item._id);
+                        const isSelected = item._id === selectedId;
+                        const typeLabel =
+                          INQUIRY_TYPE_LABEL[item.type || "general"] || "일반";
+
+                        return (
+                          <div
+                            key={item._id}
+                            className={cn(
+                              "flex items-start gap-2 rounded-lg border px-2.5 py-2.5 transition-colors",
+                              isSelected
+                                ? "border-primary bg-primary text-primary-foreground"
+                                : "hover:bg-muted/50",
+                            )}
+                          >
+                            <Checkbox
+                              checked={isChecked}
+                              onCheckedChange={(value) =>
+                                toggleSelection(item._id, Boolean(value))
+                              }
+                              onClick={(event) => event.stopPropagation()}
+                              className={cn(
+                                "mt-1",
+                                isSelected && "border-primary-foreground/60",
+                              )}
+                            />
+                            <button
+                              type="button"
+                              className="min-w-0 flex-1 text-left"
+                              onClick={() => handleSelectInquiry(item._id)}
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  {isSelected ? (
+                                    <Badge
+                                      variant="secondary"
+                                      className="bg-primary-foreground/15 text-primary-foreground border-primary-foreground/20"
+                                    >
+                                      {statusLabelMap[item.status || "open"]}
+                                    </Badge>
+                                  ) : (
+                                    getInquiryStatusBadge(item.status)
+                                  )}
+                                  <Badge
+                                    variant="outline"
+                                    className={cn(
+                                      "text-xs",
+                                      isSelected &&
+                                        "border-primary-foreground/30 text-primary-foreground",
+                                    )}
+                                  >
+                                    {typeLabel}
+                                  </Badge>
+                                </div>
+                                <span
+                                  className={cn(
+                                    "shrink-0 text-xs",
+                                    isSelected
+                                      ? "text-primary-foreground/75"
+                                      : "text-muted-foreground",
+                                  )}
+                                >
+                                  {formatDate(item.createdAt)}
+                                </span>
+                              </div>
+                              <div
+                                className={cn(
+                                  "mt-1.5 truncate text-sm font-medium",
+                                  isSelected && "text-primary-foreground",
+                                )}
+                              >
+                                {item.subject || "(제목 없음)"}
+                              </div>
+                              <div
+                                className={cn(
+                                  "mt-0.5 truncate text-xs",
+                                  isSelected
+                                    ? "text-primary-foreground/75"
+                                    : "text-muted-foreground",
+                                )}
+                              >
+                                {[user.business, user.name].filter(Boolean).join(" · ") ||
+                                  "-"}
+                              </div>
+                            </button>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {showDetailPanel ? (
+            <Card className="flex flex-col overflow-hidden min-h-0">
+              <CardHeader className="shrink-0 space-y-1 pb-3">
+                {isMobile && !mobileShowList ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setMobileShowList(true)}
+                    className="-ml-2 gap-2"
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                    목록
+                  </Button>
+                ) : null}
+                <CardTitle className="text-base">
+                  {selected?.subject || "문의 상세"}
+                </CardTitle>
+                <CardDescription>
+                  선택한 문의의 상세 정보와 관리자 메모를 확인합니다.
+                </CardDescription>
+              </CardHeader>
+
+              <CardContent className="min-h-0 flex-1">
+                <ScrollArea className="h-[520px] pr-3">
+                  {!selected ? (
+                    <div className="py-16 text-center text-sm text-muted-foreground">
+                      문의 내역을 선택해주세요.
+                    </div>
+                  ) : loading ? (
+                    <div className="space-y-3">
+                      <Skeleton className="h-10 w-full rounded-xl" />
+                      <Skeleton className="h-10 w-full rounded-xl" />
+                      <Skeleton className="h-10 w-full rounded-xl" />
+                      <Skeleton className="h-32 w-full rounded-xl" />
+                    </div>
+                  ) : (
+                    <div className="space-y-4 pb-2">
+                      <div className="grid gap-2">
+                        <DetailField label="상태">
+                          {getInquiryStatusBadge(selected.status)}
+                        </DetailField>
+                        <DetailField label="유형">
+                          {INQUIRY_TYPE_LABEL[selected.type || "general"] ||
+                            "일반"}
+                        </DetailField>
+                        <DetailField label="접수일">
+                          {formatDate(selected.createdAt)}
+                        </DetailField>
+                        <DetailField label="사업장">
+                          {selectedUser.business || "-"}
+                        </DetailField>
+                        <DetailField label="담당자">
+                          {selectedUser.name || "-"}
+                        </DetailField>
+                        <DetailField label="이메일">
+                          <span className="break-all">{selectedUser.email || "-"}</span>
+                        </DetailField>
+                        <DetailField label="역할">
+                          {selectedUser.role || "-"}
+                        </DetailField>
+                      </div>
+
+                      <ContentBlock label="제목">
+                        <div className="font-medium">{selected.subject || "-"}</div>
+                      </ContentBlock>
+
+                      <ContentBlock label="내용">
+                        <div className="whitespace-pre-wrap break-words">
+                          {selected.message || "-"}
+                        </div>
+                      </ContentBlock>
+
+                      {selected.reason || selected.payload?.errorMessage ? (
+                        <ContentBlock label="추가 정보">
+                          <div className="space-y-2">
+                            <div>
+                              <div className="text-xs text-muted-foreground">
+                                문의 사유
+                              </div>
+                              <div>{selected.reason || "-"}</div>
+                            </div>
+                            <div>
+                              <div className="text-xs text-muted-foreground">
+                                오류 메시지
+                              </div>
+                              <div>{selected.payload?.errorMessage || "-"}</div>
+                            </div>
+                          </div>
+                        </ContentBlock>
+                      ) : null}
+
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">관리자 메모</label>
+                        <Textarea
+                          rows={5}
+                          value={adminNote}
+                          onChange={(event) => setAdminNote(event.target.value)}
+                          placeholder="처리 내용을 입력하세요"
+                          className="rounded-xl border-slate-200/80 bg-white"
+                        />
+                      </div>
+
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        <Button
+                          type="button"
+                          onClick={() => handleUpdate("resolved")}
+                          disabled={saving}
+                        >
+                          처리 완료
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => handleUpdate("open")}
+                          disabled={saving}
+                        >
+                          미처리로 변경
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          ) : null}
+        </div>
       </div>
     </div>
   );
