@@ -23,12 +23,14 @@
  * 2026-08-21: 상단 상태 뱃지 다중 표시 on/off(표시 라벨·기본 리셋·ON/OFF 대비).
  * 2026-08-22: 숨길 요일을 계정 preferences에 저장.
  * 2026-08-20: 모바일 — 가로 스크롤 상태칩·터치 카드·풀높이 시트.
+ * 2026-08-25: 데스크톱도 풀스크린. 닫기 아이콘·히트영역 확대.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronRight, Search, Trash2 } from "lucide-react";
+import { ChevronRight, Search, Trash2, X } from "lucide-react";
 
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogHeader,
   DialogTitle,
@@ -429,17 +431,23 @@ export function PracticeRecentTransfersAllModal({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className={cn(
-          "flex flex-col gap-0 overflow-hidden p-0",
-          isMobile
-            ? "inset-0 left-0 top-0 h-[100dvh] w-screen max-h-[100dvh] max-w-none translate-x-0 translate-y-0 rounded-none border-0"
-            : "h-[min(88vh,920px)] w-[min(96vw,1280px)] max-w-none sm:max-w-[min(96vw,1280px)]",
-        )}
+        hideClose
+        className="inset-0 left-0 top-0 flex h-[100dvh] w-screen max-h-[100dvh] max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-0 p-0 sm:max-w-none"
       >
+        <DialogClose
+          className={cn(
+            "absolute z-10 inline-flex items-center justify-center rounded-md opacity-70 ring-offset-background transition-opacity hover:opacity-100 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none",
+            isMobile ? "right-2.5 top-2.5 h-11 w-11" : "right-3 top-2.5 h-12 w-12",
+          )}
+          aria-label="닫기"
+        >
+          <X className={isMobile ? "h-6 w-6" : "h-7 w-7"} strokeWidth={2.25} />
+          <span className="sr-only">Close</span>
+        </DialogClose>
         <DialogHeader
           className={cn(
             "shrink-0 border-b bg-white/95 text-left backdrop-blur supports-[backdrop-filter]:bg-white/80",
-            isMobile ? "space-y-0 px-4 pb-3 pt-4 pr-12" : "px-6 py-3 pr-16",
+            isMobile ? "space-y-0 px-4 pb-3 pt-4 pr-14" : "px-6 py-3 pr-[4.25rem]",
           )}
         >
           {isMobile ? (
