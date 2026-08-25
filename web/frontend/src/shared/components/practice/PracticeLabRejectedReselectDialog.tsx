@@ -7,6 +7,7 @@
  * - 2026-08-16: labOpen은 모달 로컬 상태. Popover 클릭으로 Dialog가 닫히지 않게.
  * - 2026-08-16: 「기공소 변경 전송」클릭 시 즉시 retarget API 호출.
  * - 2026-08-19: 모달에서 바로 휴지통(의뢰 취소) 이동.
+ * - 2026-08-25: 제목 한 줄용 max-w 36rem. 기공소 Popover는 intake에서 modal+스크롤 허용.
  */
 import { ArrowRightLeft } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -99,7 +100,7 @@ export function PracticeLabRejectedReselectDialog({
       }}
     >
       <DialogContent
-        className="w-[calc(100vw-2rem)] max-w-[calc(100vw-2rem)] gap-0 overflow-visible p-0 sm:w-max sm:max-w-[min(100vw-2rem,28rem)] sm:rounded-2xl"
+        className="w-[calc(100vw-2rem)] max-w-[calc(100vw-2rem)] gap-0 overflow-visible p-0 sm:w-max sm:max-w-[min(100vw-2rem,36rem)] sm:rounded-2xl"
         onOpenAutoFocus={(e) => {
           // 첫 포커스가 별/도움말로 가면 툴팁이 모달과 함께 뜬다 → 제목으로 둔다
           e.preventDefault();

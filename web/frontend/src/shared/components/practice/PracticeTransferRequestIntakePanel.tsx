@@ -2387,7 +2387,11 @@ export const PracticeTransferRequestIntakePanel = ({
               />
             ) : null}
           </div>
-          <Popover open={labOpen} onOpenChange={setLabOpen}>
+          {/*
+            modal: Dialog RemoveScroll이 포털된 Popover 휠/터치를 막지 않게
+            (스크롤바 드래그만 되고 터치·트랙패드가 안 되는 증상).
+          */}
+          <Popover modal open={labOpen} onOpenChange={setLabOpen}>
             <PopoverTrigger asChild>
               <Button
                 type="button"
@@ -2410,8 +2414,10 @@ export const PracticeTransferRequestIntakePanel = ({
               </Button>
             </PopoverTrigger>
             <PopoverContent
-              className="w-[min(26.25rem,calc(100vw-2rem))] p-0"
+              className="w-[var(--radix-popover-trigger-width)] min-w-[min(26.25rem,calc(100vw-2rem))] p-0"
               align="start"
+              onWheel={(e) => e.stopPropagation()}
+              onTouchMove={(e) => e.stopPropagation()}
             >
               <Command>
                 <CommandInput
@@ -2421,7 +2427,7 @@ export const PracticeTransferRequestIntakePanel = ({
                     setLabSearch(v);
                   }}
                 />
-                <CommandList>
+                <CommandList className="overscroll-contain touch-pan-y">
                   {!recentLabsInitialized ? (
                     <div className="px-3 py-2 text-sm text-muted-foreground">불러오는 중...</div>
                   ) : null}
