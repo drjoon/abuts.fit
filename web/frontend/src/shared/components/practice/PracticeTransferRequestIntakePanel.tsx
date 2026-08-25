@@ -98,6 +98,8 @@ import {
   hasToothWorkImplantPreset,
   isAbutmentProductMode,
   isSimpleAbutmentMode,
+  clearSimpleAbutmentIfCustomProsthesis,
+  emptyToothWorkAbutment,
   normalizeAccountAbutmentProductMode,
   pickToothWorkCustomSpecs,
   resolveToothAbutmentProductMode,
@@ -147,6 +149,7 @@ import {
 // - web/frontend/src/shared/pricing/abutsAbutmentService.ts
 // - 2026-08-25: 기공소 픽커 보조줄 — 대표·주소만(사업자번호 표시 제거, 검색은 유지).
 // - 2026-08-25: 헤더(기공소·환자·기간) — 가이드투어 aside 자리를 항상 예약(투어 on/off 레이아웃 점프 방지).
+// - 2026-08-25: 커스텀어벗 보철 형태 — 어벗 모달에서 심플어벗 비활성(스캔바디만).
 // - 2026-08-25: 커스텀어벗 설정 — 임플란트(primary)·어벗(service-abut) 색 구분. + 확대·임플란트 열 축소.
 // - 2026-08-25: 가이드투어 어벗 — 스캔바디 커스텀 vs 심플어벗(꽂고 바로 스캔) 두 방식.
 // - 2026-08-25: 커스텀어벗 설정 — 임플란트 + (스캔바디|심플어벗) 구조. + 표시.
@@ -1835,12 +1838,13 @@ export const PracticeTransferRequestIntakePanel = ({
   const openCustomSpecsModal = (index: number) => {
     const current = toothWorks[index];
     if (current) {
+      const snapshotRow = clearSimpleAbutmentIfCustomProsthesis({
+        ...current,
+        bridgeLinkedTeeth: [...(current.bridgeLinkedTeeth || [])],
+      });
       customSpecsModalSnapshotRef.current = {
         index,
-        row: {
-          ...current,
-          bridgeLinkedTeeth: [...(current.bridgeLinkedTeeth || [])],
-        },
+        row: snapshotRow,
         accountMode: defaultAbutmentProductMode,
       };
     } else {
@@ -1861,15 +1865,21 @@ export const PracticeTransferRequestIntakePanel = ({
         : isAbutmentProductMode(row.abutmentProductMode)
           ? row.abutmentProductMode
           : defaultAbutmentProductMode;
+      const cleared = clearSimpleAbutmentIfCustomProsthesis(row);
+      const clearedSimple =
+        cleared.abutmentManufacturer !== row.abutmentManufacturer ||
+        cleared.abutmentDiameter !== row.abutmentDiameter ||
+        cleared.abutmentHeight !== row.abutmentHeight;
       if (
         row.customAbutment &&
-        row.abutmentProductMode === nextMode
+        row.abutmentProductMode === nextMode &&
+        !clearedSimple
       ) {
         return prev;
       }
       const next = [...prev];
       next[index] = {
-        ...row,
+        ...cleared,
         customAbutment: true,
         abutmentProductMode: nextMode,
       };
@@ -1975,6 +1985,17 @@ export const PracticeTransferRequestIntakePanel = ({
   ) => {
     const row = toothWorks[index];
     if (!row) return;
+    const customProsthesis = isCustomAbutmentProsthesisType(row.prosthesisType);
+    // 커스텀어벗 보철 형태에서는 심플어벗 패치 무시
+    if (
+      customProsthesis &&
+      ("abutmentManufacturer" in patch ||
+        "abutmentDiameter" in patch ||
+        "abutmentHeight" in patch) &&
+      isSimpleAbutmentMode({ ...row, ...patch })
+    ) {
+      patch = { ...patch, ...emptyToothWorkAbutment() };
+    }
     const merged = {
       ...pickToothWorkCustomSpecs(row, true),
       ...patch,
@@ -1985,7 +2006,10 @@ export const PracticeTransferRequestIntakePanel = ({
     const scanbodyTouched = (
       ["abutmentManufacturer", "abutmentDiameter", "abutmentHeight"] as const
     ).some((key) => key in patch);
-    const abutmentSideComplete = hasToothWorkAbutmentSidePreset(merged);
+    const abutmentSideComplete = hasToothWorkAbutmentSidePreset({
+      ...row,
+      ...merged,
+    });
     setToothWorks((prev) => {
       const next = [...prev];
       const current = next[index];
@@ -3055,15 +3079,18 @@ export const PracticeTransferRequestIntakePanel = ({
                       const abutmentSummary = formatAbutmentSummary(row);
                       const implantCompact = formatImplantCompact(row);
                       const abutmentCompact = formatAbutmentCompact(row);
-                      const abutmentSidePlaceholder = isSimpleAbutmentMode(row)
-                        ? "심플어벗"
-                        : "스캔바디";
-                      const abutmentSideHint = isSimpleAbutmentMode(row)
-                        ? "심플어벗 규격을 선택해주세요"
-                        : "스캔바디를 선택해주세요";
-                      const abutmentSideEmptyHint = isSimpleAbutmentMode(row)
-                        ? "심플어벗 선택"
-                        : "스캔바디 선택";
+                      const abutmentSidePlaceholder =
+                        !isCustomType && isSimpleAbutmentMode(row)
+                          ? "심플어벗"
+                          : "스캔바디";
+                      const abutmentSideHint =
+                        !isCustomType && isSimpleAbutmentMode(row)
+                          ? "심플어벗 규격을 선택해주세요"
+                          : "스캔바디를 선택해주세요";
+                      const abutmentSideEmptyHint =
+                        !isCustomType && isSimpleAbutmentMode(row)
+                          ? "심플어벗 선택"
+                          : "스캔바디 선택";
                       const chartPrev = chartIdx > 0 ? decade.teeth[chartIdx - 1] : null;
                       const prevConfigured = chartPrev ? byTooth.get(chartPrev) : undefined;
                       const linkedChartNext = Boolean(
@@ -3784,11 +3811,23 @@ export const PracticeTransferRequestIntakePanel = ({
                       {`커스텀어벗 설정${toothLabel} : ${ABUTMENT_PRODUCT_MODE_LABEL[modalMode]}`}
                     </DialogTitle>
                     <DialogDescription className="sr-only">
-                      {lockedMode === ABUTMENT_PRODUCT_MODE.DESIGN_AND_PRODUCTION
-                        ? "디자인+생산 의뢰가 선택됩니다. 생산만 의뢰는 어벗생산의뢰 페이지로 이동합니다. 임플란트와 스캔바디(또는 심플어벗)를 각각 한 번씩 선택하면 저장되고 닫힙니다."
-                        : lockedMode === ABUTMENT_PRODUCT_MODE.PRODUCTION
-                          ? "생산만 의뢰가 선택됩니다. 디자인+생산 의뢰는 기공의뢰 페이지로 이동합니다. 임플란트와 스캔바디(또는 심플어벗)를 각각 한 번씩 선택하면 저장되고 닫힙니다."
-                          : "임플란트와 스캔바디(또는 심플어벗)를 각각 한 번씩 선택하면 저장되고 닫힙니다. 확인도 동일하고, 취소하면 열기 전 값으로 돌아갑니다."}
+                      {(() => {
+                        const customProsthesis = isCustomAbutmentProsthesisType(
+                          modalTooth.prosthesisType,
+                        );
+                        const abutmentSideHint = customProsthesis
+                          ? "임플란트와 스캔바디를 각각 한 번씩 선택하면 저장되고 닫힙니다."
+                          : "임플란트와 스캔바디(또는 심플어벗)를 각각 한 번씩 선택하면 저장되고 닫힙니다.";
+                        if (
+                          lockedMode === ABUTMENT_PRODUCT_MODE.DESIGN_AND_PRODUCTION
+                        ) {
+                          return `디자인+생산 의뢰가 선택됩니다. 생산만 의뢰는 어벗생산의뢰 페이지로 이동합니다. ${abutmentSideHint}`;
+                        }
+                        if (lockedMode === ABUTMENT_PRODUCT_MODE.PRODUCTION) {
+                          return `생산만 의뢰가 선택됩니다. 디자인+생산 의뢰는 기공의뢰 페이지로 이동합니다. ${abutmentSideHint}`;
+                        }
+                        return `${abutmentSideHint} 확인도 동일하고, 취소하면 열기 전 값으로 돌아갑니다.`;
+                      })()}
                     </DialogDescription>
                   </DialogHeader>
 
@@ -3809,7 +3848,12 @@ export const PracticeTransferRequestIntakePanel = ({
                   <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
                     {(() => {
                       const modalSpecs = pickToothWorkCustomSpecs(modalTooth, true);
-                      const simpleMode = isSimpleAbutmentMode(modalSpecs);
+                      const customProsthesis = isCustomAbutmentProsthesisType(
+                        modalTooth.prosthesisType,
+                      );
+                      const simpleDisabled = customProsthesis;
+                      const simpleMode =
+                        !simpleDisabled && isSimpleAbutmentMode(modalSpecs);
                       const scanbodySelected =
                         !simpleMode &&
                         Boolean(
@@ -3817,6 +3861,9 @@ export const PracticeTransferRequestIntakePanel = ({
                             modalSpecs.abutmentDiameter ||
                             modalSpecs.abutmentHeight,
                         );
+                      const abutmentSideLabel = simpleDisabled
+                        ? "어벗 · 스캔바디"
+                        : "어벗 · 스캔바디 또는 심플어벗";
                       return (
                     <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-1.5 sm:flex-row sm:items-stretch sm:gap-2 sm:p-2">
                       <div
@@ -3831,7 +3878,7 @@ export const PracticeTransferRequestIntakePanel = ({
                           className="invisible shrink-0 px-0.5 text-[11px] font-semibold tracking-wide"
                           aria-hidden
                         >
-                          어벗 · 스캔바디 또는 심플어벗
+                          {abutmentSideLabel}
                         </p>
                         <PracticeToothImplantFields
                           mode="presets"
@@ -3867,7 +3914,7 @@ export const PracticeTransferRequestIntakePanel = ({
                         )}
                       >
                         <p className="shrink-0 px-0.5 text-[11px] font-semibold tracking-wide text-service-abut">
-                          어벗 · 스캔바디 또는 심플어벗
+                          {abutmentSideLabel}
                         </p>
                         <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1 items-stretch gap-2.5 sm:grid-cols-2 sm:gap-2.5">
                           <PracticeToothAbutmentFields
@@ -3889,7 +3936,9 @@ export const PracticeTransferRequestIntakePanel = ({
                           />
                           <PracticeToothSimpleAbutmentFields
                             heading="심플어벗"
-                            dimmed={scanbodySelected}
+                            dimmed={!simpleDisabled && scanbodySelected}
+                            disabled={simpleDisabled}
+                            disabledHint="커스텀어벗 형태에서는 스캔바디만 선택할 수 있습니다."
                             className="min-h-0 border-service-abut-muted/90 bg-service-abut-soft/40"
                             value={modalSpecs}
                             onChange={(nextSimple) => {

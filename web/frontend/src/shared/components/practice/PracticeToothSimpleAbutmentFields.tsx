@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-08-25: disabled — 커스텀어벗 보철 형태에서는 심플어벗 선택 불가(스캔바디만).
 // - 2026-08-25: 심플어벗 섹션 — 종류(심플어벗/심플밀링)·직경(6–10)·높이(S/M/L). 스캔바디와 XOR.
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -32,6 +33,9 @@ type Props = {
   className?: string;
   /** 스캔바디가 선택된 경우 시각적으로 약하게 */
   dimmed?: boolean;
+  /** 커스텀어벗 보철 형태 등 — 선택 자체 불가 */
+  disabled?: boolean;
+  disabledHint?: string;
 };
 
 const ChoiceChip = ({
@@ -39,19 +43,24 @@ const ChoiceChip = ({
   active,
   onClick,
   className,
+  disabled = false,
 }: {
   label: string;
   active: boolean;
   onClick: () => void;
   className?: string;
+  disabled?: boolean;
 }) => (
   <button
     type="button"
+    disabled={disabled}
     className={cn(
       "h-9 rounded-lg border px-2 text-sm font-semibold transition-colors",
       active
         ? "border-service-abut/70 bg-service-abut-soft/60 text-slate-900 shadow-sm"
         : "border-slate-200/90 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50",
+      disabled &&
+        "cursor-not-allowed opacity-50 hover:border-slate-200/90 hover:bg-white",
       className,
     )}
     onClick={onClick}
@@ -66,6 +75,8 @@ export const PracticeToothSimpleAbutmentFields = ({
   heading = "심플어벗",
   className,
   dimmed = false,
+  disabled = false,
+  disabledHint,
 }: Props) => {
   const kind = String(value.abutmentManufacturer || "").trim();
   const diameter = String(value.abutmentDiameter || "").trim();
@@ -73,8 +84,10 @@ export const PracticeToothSimpleAbutmentFields = ({
   const activeKind = isSimpleAbutmentKind(kind) ? kind : "";
   const activeDiameter = isSimpleAbutmentDiameter(diameter) ? diameter : "";
   const activeHeight = isSimpleAbutmentHeight(height) ? height : "";
+  const inactive = disabled || dimmed;
 
   const selectKind = (next: SimpleAbutmentKind) => {
+    if (disabled) return;
     if (activeKind === next) {
       onChange(emptyToothWorkAbutment());
       return;
@@ -87,6 +100,7 @@ export const PracticeToothSimpleAbutmentFields = ({
   };
 
   const selectDiameter = (next: string) => {
+    if (disabled) return;
     if (activeDiameter === next && activeKind) {
       onChange({
         abutmentManufacturer: activeKind,
@@ -103,6 +117,7 @@ export const PracticeToothSimpleAbutmentFields = ({
   };
 
   const selectHeight = (next: string) => {
+    if (disabled) return;
     if (activeHeight === next && activeKind) {
       onChange({
         abutmentManufacturer: activeKind,
@@ -124,9 +139,12 @@ export const PracticeToothSimpleAbutmentFields = ({
     <div
       className={cn(
         "flex min-h-0 flex-1 flex-col gap-3 rounded-xl border border-service-abut-muted/80 bg-service-abut-soft/40 p-3 sm:p-4",
-        dimmed && "opacity-55",
+        inactive && "opacity-55",
+        disabled && "pointer-events-none",
         className,
       )}
+      aria-disabled={disabled || undefined}
+      title={disabled ? disabledHint : undefined}
     >
       <div className="flex shrink-0 items-center justify-between gap-2">
         <p className="text-sm font-semibold text-service-abut">{heading}</p>
@@ -135,13 +153,17 @@ export const PracticeToothSimpleAbutmentFields = ({
           variant="ghost"
           size="sm"
           className="h-8 px-2 text-sm text-slate-500"
-          disabled={!hasAny}
+          disabled={disabled || !hasAny}
           onClick={() => onChange(emptyToothWorkAbutment())}
         >
           <X className="mr-1 h-4 w-4" />
           비우기
         </Button>
       </div>
+
+      {disabled && disabledHint ? (
+        <p className="text-[11px] leading-snug text-slate-500">{disabledHint}</p>
+      ) : null}
 
       <div className="space-y-1.5">
         <Label className="text-sm text-slate-600">종류</Label>
@@ -151,6 +173,7 @@ export const PracticeToothSimpleAbutmentFields = ({
               key={option}
               label={option}
               active={activeKind === option}
+              disabled={disabled}
               className="min-w-0 flex-1"
               onClick={() => selectKind(option)}
             />
@@ -166,6 +189,7 @@ export const PracticeToothSimpleAbutmentFields = ({
               key={option}
               label={option}
               active={activeDiameter === option}
+              disabled={disabled}
               className="min-w-[2.25rem] flex-1"
               onClick={() => selectDiameter(option)}
             />
@@ -181,6 +205,7 @@ export const PracticeToothSimpleAbutmentFields = ({
               key={option}
               label={option}
               active={activeHeight === option}
+              disabled={disabled}
               className="min-w-0 flex-1"
               onClick={() => selectHeight(option)}
             />

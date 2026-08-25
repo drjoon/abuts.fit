@@ -5,6 +5,7 @@ import { useMemo } from "react";
 // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/shared/practice/transferMemo.ts
+// - 2026-08-25: 커스텀어벗 보철 형태로 바꿀 때 심플어벗 규격 제거(스캔바디만).
 // - 2026-08-13: 신규 커스텀어벗은 계정 기본 모드(디자인+생산). 기존 커스텀 치아 미설정은 생산만 유지.
 // - 2026-08-13: 형태 클릭 순환은 커스텀 플래그·규격을 유지. 어벗 체크 해제만 지운다.
 // - 2026-08-13: 연결 형태 토글에 유지장치·임시치아 추가(단독 토글도 유지).
@@ -22,6 +23,7 @@ import { useMemo } from "react";
 export type { ToothWorkSelection } from "@/shared/practice/transferMemo";
 import {
   ABUTMENT_PRODUCT_MODE,
+  clearSimpleAbutmentIfCustomProsthesis,
   CUSTOM_ABUTMENT_PROSTHESIS_TYPE,
   emptyToothWorkCustomSpecs,
   isAbutmentDesignProsthesisType,
@@ -242,12 +244,12 @@ export const applyProsthesisTypeToRow = (
       : keepCustom
         ? ABUTMENT_PRODUCT_MODE.PRODUCTION
         : normalizeAccountAbutmentProductMode(defaultAbutmentProductMode);
-    return {
+    return clearSimpleAbutmentIfCustomProsthesis({
       ...row,
       prosthesisType: CUSTOM_ABUTMENT_PROSTHESIS_TYPE,
       customAbutment: true,
       abutmentProductMode,
-    };
+    });
   }
   if (
     nextType === "크라운" ||

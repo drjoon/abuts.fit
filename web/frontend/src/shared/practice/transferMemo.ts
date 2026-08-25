@@ -5,6 +5,7 @@
 // - web/backend/services/practiceTransferProduction.service.js
 // - web/backend/controllers/practiceTransfers/practiceTransferSettings.controller.js
 // change-log:
+// - 2026-08-25: 커스텀어벗 보철 형태는 심플어벗 불가 — 어벗 쪽 완성=스캔바디만.
 // - 2026-08-25: 심플어벗(심플어벗/심플밀링·직경 6–10·높이 S/M/L) — 스캔바디와 XOR. 완성 시 프리셋 충족.
 // - 2026-08-21: 임플란트 추가 요청 프리셋 type을 옵션명으로 정규화(레거시 헥스 → 선택 가능).
 // - 2026-08-21: 기공소 수신 — 환봉·제조사 추가요청(요청중) CA는 「커스텀어벗」(기공소 수행). 그 외는 「어벗츠 지급」.
@@ -684,15 +685,39 @@ export const hasToothWorkSimpleAbutment = (
   );
 };
 
-/** 스캔바디 프리셋 또는 심플어벗 규격 중 하나 */
+/**
+ * 어벗 쪽 완성: 스캔바디 프리셋 또는 심플어벗 규격.
+ * 커스텀어벗 보철 형태는 스캔바디만 허용(심플어벗=치과 재고는 크라운·브리지·임시치아+어벗만).
+ */
 export const hasToothWorkAbutmentSidePreset = (
   row: Partial<ToothWorkSelection> | null | undefined,
-) => hasToothWorkScanbodyPreset(row) || hasToothWorkSimpleAbutment(row);
+) => {
+  if (isCustomAbutmentProsthesisType(String(row?.prosthesisType || ""))) {
+    return hasToothWorkScanbodyPreset(row);
+  }
+  return hasToothWorkScanbodyPreset(row) || hasToothWorkSimpleAbutment(row);
+};
 
 /** 어벗(커스텀어벗 형태 또는 크라운·브리지·임시치아 체크)에 임플란트·(스캔바디|심플어벗)이 모두 있는지 */
 export const hasCompleteAbutmentPresets = (
   row: Partial<ToothWorkSelection> | null | undefined,
 ) => hasToothWorkImplantPreset(row) && hasToothWorkAbutmentSidePreset(row);
+
+/** 커스텀어벗 보철 형태에 걸린 심플어벗 규격을 비운다 */
+export const clearSimpleAbutmentIfCustomProsthesis = <
+  T extends Partial<ToothWorkSelection>,
+>(
+  row: T,
+): T => {
+  if (!isCustomAbutmentProsthesisType(String(row?.prosthesisType || ""))) {
+    return row;
+  }
+  if (!isSimpleAbutmentKind(row?.abutmentManufacturer)) return row;
+  return {
+    ...row,
+    ...emptyToothWorkAbutment(),
+  };
+};
 
 export const isAbutmentPresetRequired = (
   row: Partial<ToothWorkSelection> | null | undefined,
@@ -779,7 +804,10 @@ export const normalizeToothWorks = (items: ToothWorkSelection[]) =>
         customAbutment,
         ...pickToothWorkAbutmentProductMode(row, customAbutment),
         bridgeLinkedTeeth,
-        ...pickToothWorkCustomSpecs(row, customAbutment),
+        ...clearSimpleAbutmentIfCustomProsthesis({
+          prosthesisType,
+          ...pickToothWorkCustomSpecs(row, customAbutment),
+        }),
       };
     })
     .filter((row) => /^[1-4][1-8]$/.test(row.toothNumber) && row.prosthesisType);
@@ -817,7 +845,10 @@ export const normalizeToothWorksForSync = (items: ToothWorkSelection[]) =>
         customAbutment,
         ...pickToothWorkAbutmentProductMode(row, customAbutment),
         bridgeLinkedTeeth,
-        ...pickToothWorkCustomSpecs(row, customAbutment),
+        ...clearSimpleAbutmentIfCustomProsthesis({
+          prosthesisType,
+          ...pickToothWorkCustomSpecs(row, customAbutment),
+        }),
       };
     })
     .filter((row) => Boolean(row.prosthesisType) || Boolean(row.toothNumber));
