@@ -82,6 +82,17 @@ const machiningRecordSchema = new mongoose.Schema(
       type: Array,
       default: [],
     },
+
+    // 의뢰 라벨 스냅샷 — 샘플 하드삭제 후에도 가공완료 목록에 표시
+    clinicName: { type: String, default: null },
+    patientName: { type: String, default: null },
+    tooth: { type: String, default: null },
+    lotNumberValue: { type: String, default: null },
+    requestCategory: { type: String, default: null },
+    source: { type: String, default: null },
+    displayLabel: { type: String, default: null },
+    // 샘플(의뢰) 하드삭제 시각. 있으면 되돌리기/자주검사 비활성
+    requestDeletedAt: { type: Date, default: null, index: true },
   },
   { timestamps: true },
 );

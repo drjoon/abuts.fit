@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-26: 샘플 하드삭제 시 MachiningRecord.requestDeletedAt 마킹(완료 목록 라벨 유지).
 // - 2026-08-25: 관리자 헥스 확정 시 updateRndHexRotation 제조사 변경 차단.
 // - 2026-08-21: 의뢰자 어벗츠로의뢰 취소 — PTX(치과 기공의뢰) 연동 CA는 거부(기공의뢰수신 작업취소 SSOT).
 // - 2026-08-21: GET /my에 referenceIds 포함(헥스 확인 쌍 UI 동시 제거용)
@@ -37,6 +38,7 @@ import Request from "../../models/request.model.js";
 import Connection from "../../models/connection.model.js";
 import CncMachine from "../../models/cncMachine.model.js";
 import Machine from "../../models/machine.model.js";
+import MachiningRecord from "../../models/machiningRecord.model.js";
 import ShippingPackage from "../../models/shippingPackage.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
@@ -2161,19 +2163,7 @@ export async function getMyRequests(req, res) {
       const productModeNe = String(req.query.productModeNe || "").trim();
       if (productModeNe === "design_custom_abutment") {
         const andParts = Array.isArray(filter.$and) ? [...filter.$and] : [];
-        andParts.push({
-          $or: [
-            { "caseInfos.productMode": { $ne: "design_custom_abutment" } },
-            { "caseInfos.productMode": { $exists: false } },
-          ],
-        });
-        andParts.push({
-          $or: [
-            { "partnerBilling.relatedPracticeTransferId": null },
-            { "partnerBilling.relatedPracticeTransferId": { $exists: false } },
-            { designCompletedAt: { $type: "date" } },
-          ],
-        });
+        andParts.push(buildWorksheetReadyQueueGuard());
         filter.$and = andParts;
       } else if (productModeNe) {
         filter["caseInfos.productMode"] = { $ne: productModeNe };
@@ -4111,6 +4101,21 @@ export async function deleteRequest(req, res) {
 
     // R&D 샘플은 제조사 조직 임직원/관리자가 완전 삭제
     if (isSampleRequest && (isAdmin || isSampleManufacturerOrgMember)) {
+      const sampleRequestId = String(request.requestId || "").trim();
+      if (sampleRequestId) {
+        try {
+          await MachiningRecord.updateMany(
+            { requestId: sampleRequestId },
+            { $set: { requestDeletedAt: new Date() } },
+          );
+        } catch (err) {
+          console.warn("[deleteRequest] machiningRecord mark failed", {
+            requestId: sampleRequestId,
+            error: err?.message,
+          });
+        }
+      }
+
       await Request.findByIdAndDelete(request._id);
 
       console.log("[deleteRequest] 샘플 의뢰 완전 삭제", {

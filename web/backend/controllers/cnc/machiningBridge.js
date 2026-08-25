@@ -6,6 +6,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
 // - web/frontend/src/pages/manufacturer/equipment/cnc/hooks/useManUpload.ts
 // change-log:
+// - 2026-08-26: 가공기록에 의뢰 라벨 스냅샷. 샘플 삭제 후에도 완료 목록 라벨 유지.
 // - 2026-08-17: 우편함 배정 SSOT는 가공→세척.패킹 진입. 포장.발송은 기존 배정 유지.
 // - 2026-08-08: 가공 완료 시 NC(T0707→#7) 툴번호로 사용량·수명 카운트.
 // - 2026-08-07: last-completed 맵에 의뢰자명(businessName) 포함.
@@ -176,9 +177,7 @@ export async function getCompletedMachiningRecords(req, res) {
     const recs = await MachiningRecord.find(query)
       .sort({ completedAt: -1, _id: -1 })
       .limit(fetchLimit)
-      .select(
-        "requestId jobId status completedAt durationSeconds elapsedSeconds displayLabel lotNumber clinicName patientName tooth",
-      )
+      .select(MACHINING_RECORD_LABEL_SELECT)
       .lean();
 
     const validRecs = [];
@@ -244,17 +243,12 @@ export async function getCompletedMachiningRecords(req, res) {
     }
 
     const items = validRecs.map((r) => {
-      const displayLabel =
-        String(
-          r?.displayLabel || r?.originalFileName || r?.fileName || "",
-        ).trim() || null;
       const recRequestId = String(r?.requestId || "").trim() || null;
       const reqInfo = recRequestId ? requestInfoMap.get(recRequestId) : null;
+      const labels = resolveCompletedRecordLabels(r, reqInfo);
       return {
         id: String(r?._id || ""),
         machineId: String(r?.machineId || "").trim(),
-        requestId: recRequestId,
-        requestMongoId: reqInfo?.requestMongoId || null,
         jobId: r?.jobId != null ? String(r.jobId) : null,
         status: String(r?.status || "").trim(),
         completedAt: r?.completedAt
@@ -266,19 +260,7 @@ export async function getCompletedMachiningRecords(req, res) {
             : typeof r?.elapsedSeconds === "number" && r.elapsedSeconds >= 0
               ? Math.floor(r.elapsedSeconds)
               : 0,
-        displayLabel,
-        lotNumber: reqInfo?.lotNumber || null,
-        clinicName: reqInfo?.clinicName || null,
-        patientName: reqInfo?.patientName || null,
-        tooth: reqInfo?.tooth || null,
-        rollbackCount: reqInfo?.rollbackCount ?? 0,
-        implantManufacturer: reqInfo?.implantManufacturer || null,
-        implantBrand: reqInfo?.implantBrand || null,
-        implantFamily: reqInfo?.implantFamily || null,
-        implantType: reqInfo?.implantType || null,
-        caseInfos: reqInfo?.caseInfos || null,
-        source: reqInfo?.source || null,
-        requestCategory: reqInfo?.requestCategory || null,
+        ...labels,
       };
     });
 
@@ -724,6 +706,95 @@ function formatRequestLabelForCompleted(reqDoc, fallbackRequestId) {
   return "-";
 }
 
+/** 가공기록에 남길 의뢰 라벨 스냅샷 (샘플 하드삭제 대비) */
+function buildRequestLabelSnapshot(reqDoc) {
+  if (!reqDoc) return {};
+  const clinicName = String(reqDoc?.caseInfos?.clinicName || "").trim() || null;
+  const patientName =
+    String(reqDoc?.caseInfos?.patientName || "").trim() || null;
+  const tooth = String(reqDoc?.caseInfos?.tooth || "").trim() || null;
+  const lotNumberValue = String(reqDoc?.lotNumber?.value || "").trim() || null;
+  const requestCategory = String(reqDoc?.requestCategory || "").trim() || null;
+  const source = String(reqDoc?.source || "").trim() || null;
+  const displayLabel =
+    formatRequestLabelForCompleted(reqDoc, reqDoc?.requestId) || null;
+  return {
+    clinicName,
+    patientName,
+    tooth,
+    lotNumberValue,
+    requestCategory,
+    source,
+    displayLabel,
+  };
+}
+
+const MACHINING_RECORD_LABEL_SELECT =
+  "requestId jobId status completedAt durationSeconds elapsedSeconds displayLabel lotNumberValue clinicName patientName tooth requestCategory source requestDeletedAt fileName originalFileName bridgePath";
+
+/** 완료 목록 항목: live Request 조인 우선, 없으면 Record 스냅샷 */
+function resolveCompletedRecordLabels(rec, reqInfo) {
+  const recRequestId = String(rec?.requestId || "").trim() || null;
+  const requestDeleted =
+    Boolean(rec?.requestDeletedAt) || (Boolean(recRequestId) && !reqInfo);
+
+  const live = reqInfo && !rec?.requestDeletedAt ? reqInfo : null;
+  const clinicName =
+    String(live?.clinicName || rec?.clinicName || "").trim() || null;
+  const patientName =
+    String(live?.patientName || rec?.patientName || "").trim() || null;
+  const tooth = String(live?.tooth || rec?.tooth || "").trim() || null;
+  const lotFromLive = live?.lotNumber?.value
+    ? live.lotNumber
+    : rec?.lotNumberValue
+      ? { value: String(rec.lotNumberValue).trim() }
+      : null;
+  const displayLabel =
+    String(
+      live
+        ? formatRequestLabelForCompleted(
+            {
+              requestId: recRequestId,
+              caseInfos: {
+                clinicName,
+                patientName,
+                tooth,
+              },
+              lotNumber: lotFromLive,
+            },
+            recRequestId,
+          )
+        : rec?.displayLabel ||
+            rec?.originalFileName ||
+            rec?.fileName ||
+            "",
+    ).trim() || null;
+
+  return {
+    requestId: recRequestId,
+    requestMongoId: requestDeleted ? null : live?.requestMongoId || null,
+    requestDeleted,
+    clinicName,
+    patientName,
+    tooth,
+    lotNumber: lotFromLive,
+    displayLabel,
+    rollbackCount: requestDeleted ? 0 : (live?.rollbackCount ?? 0),
+    implantManufacturer: requestDeleted
+      ? null
+      : live?.implantManufacturer || null,
+    implantBrand: requestDeleted ? null : live?.implantBrand || null,
+    implantFamily: requestDeleted ? null : live?.implantFamily || null,
+    implantType: requestDeleted ? null : live?.implantType || null,
+    caseInfos: requestDeleted ? null : live?.caseInfos || null,
+    source:
+      String(live?.source || rec?.source || "").trim() || null,
+    requestCategory:
+      String(live?.requestCategory || rec?.requestCategory || "").trim() ||
+      null,
+  };
+}
+
 async function fetchMachineAlarmsFromBridge(machineId) {
   const mid = String(machineId || "").trim();
   if (!mid) return [];
@@ -830,7 +901,7 @@ export async function getLastCompletedMachiningMap(req, res) {
         })
           .sort({ completedAt: -1, updatedAt: -1 })
           .select(
-            "machineId jobId requestId fileName originalFileName completedAt updatedAt durationSeconds elapsedSeconds",
+            `machineId jobId requestId fileName originalFileName completedAt updatedAt durationSeconds elapsedSeconds ${MACHINING_RECORD_LABEL_SELECT}`,
           )
           .lean(),
       ),
@@ -961,7 +1032,7 @@ export async function getLastCompletedMachiningMap(req, res) {
           const nextRec = await MachiningRecord.findOne(nextFilter)
             .sort({ completedAt: -1, updatedAt: -1 })
             .select(
-              "machineId jobId requestId fileName originalFileName completedAt updatedAt durationSeconds elapsedSeconds",
+              `machineId jobId requestId fileName originalFileName completedAt updatedAt durationSeconds elapsedSeconds ${MACHINING_RECORD_LABEL_SELECT}`,
             )
             .lean();
           if (nextRec) byMachine.set(mid, nextRec);
@@ -1045,18 +1116,12 @@ export async function getLastCompletedMachiningMap(req, res) {
       const rec = byMachine.get(mid) || null;
       if (!rec) continue;
 
-      const displayLabel =
-        String(
-          rec?.displayLabel || rec?.originalFileName || rec?.fileName || "",
-        ).trim() || null;
       const recRequestId = String(rec?.requestId || "").trim() || null;
       const reqInfo = recRequestId ? requestInfoMap.get(recRequestId) : null;
-      const businessName = reqInfo ? reqInfo.businessName : "";
-      const clinicName = reqInfo ? reqInfo.clinicName : "";
-      const patientName = reqInfo ? reqInfo.patientName : "";
-      const tooth = reqInfo ? reqInfo.tooth : "";
-      const lotNumber = reqInfo ? reqInfo.lotNumber : { value: undefined };
-      const caseInfos = reqInfo ? reqInfo.caseInfos : null;
+      const labels = resolveCompletedRecordLabels(rec, reqInfo);
+      const businessName = labels.requestDeleted
+        ? ""
+        : reqInfo?.businessName || "";
       const completedAt = rec?.completedAt
         ? new Date(rec.completedAt).toISOString()
         : rec?.updatedAt
@@ -1072,22 +1137,21 @@ export async function getLastCompletedMachiningMap(req, res) {
       data[mid] = {
         machineId: mid,
         jobId: rec?.jobId != null ? String(rec.jobId) : null,
-        requestId: recRequestId,
-        requestMongoId: reqInfo?.requestMongoId || null,
-        displayLabel: displayLabel || null,
+        ...labels,
+        lotNumber: labels.lotNumber || { value: undefined },
         businessName,
-        clinicName,
-        patientName,
-        tooth,
-        rollbackCount: reqInfo?.rollbackCount ?? 0,
-        lotNumber: lotNumber || { value: undefined },
-        caseInfos,
-        shippingMode: reqInfo?.shippingMode || null,
-        finalShipping: reqInfo?.finalShipping || null,
-        originalShipping: reqInfo?.originalShipping || null,
-        source: reqInfo?.source || null,
-        requestCategory: reqInfo?.requestCategory || null,
-        estimatedShipYmd: reqInfo?.estimatedShipYmd || null,
+        shippingMode: labels.requestDeleted
+          ? null
+          : reqInfo?.shippingMode || null,
+        finalShipping: labels.requestDeleted
+          ? null
+          : reqInfo?.finalShipping || null,
+        originalShipping: labels.requestDeleted
+          ? null
+          : reqInfo?.originalShipping || null,
+        estimatedShipYmd: labels.requestDeleted
+          ? null
+          : reqInfo?.estimatedShipYmd || null,
         completedAt,
         durationSeconds,
       };
@@ -1690,8 +1754,20 @@ export async function recordMachiningStartForBridge(req, res) {
         _id: 1,
         manufacturerStage: 1,
         status: 1,
+        caseInfos: 1,
+        lotNumber: 1,
+        source: 1,
+        requestCategory: 1,
       });
       const fromStage = String(existing?.manufacturerStage || "").trim() || null;
+
+      if (record?._id && existing) {
+        const labelSnap = buildRequestLabelSnapshot(existing);
+        await MachiningRecord.updateOne(
+          { _id: record._id },
+          { $set: labelSnap },
+        );
+      }
 
       const update = {
         $set: {
@@ -2239,6 +2315,7 @@ export async function recordMachiningCompleteForBridge(req, res) {
             )
           : 0;
 
+        const labelSnap = buildRequestLabelSnapshot(request);
         const recordId = request?.productionSchedule?.machiningRecord || null;
         const record = recordId
           ? await MachiningRecord.findByIdAndUpdate(
@@ -2258,6 +2335,7 @@ export async function recordMachiningCompleteForBridge(req, res) {
                   percent: 100,
                   elapsedSeconds: durationSeconds,
                   durationSeconds,
+                  ...labelSnap,
                 },
               },
               { new: true },
@@ -2276,6 +2354,7 @@ export async function recordMachiningCompleteForBridge(req, res) {
               percent: 100,
               elapsedSeconds: durationSeconds,
               durationSeconds,
+              ...labelSnap,
             });
 
         request.productionSchedule = request.productionSchedule || {};

@@ -2,6 +2,8 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+// change-log:
+// - 2026-08-26: requestDeleted(샘플 삭제) 건은 스냅샷 라벨 + 되돌리기/자주검사 비활성.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Dialog,
@@ -24,6 +26,8 @@ type CompletedMachiningItem = {
   machineId: string;
   requestId: string | null;
   requestMongoId?: string | null;
+  /** 샘플 등 의뢰 하드삭제 — 라벨은 스냅샷, 되돌리기/자주검사 비활성 */
+  requestDeleted?: boolean;
   jobId: string | null;
   status: string;
   completedAt: string | null;
@@ -310,31 +314,39 @@ export const CompletedMachiningRecordsModal = ({
             )}
 
             {formattedItems.map((row, index) => {
-              const rollbackCount = Number((row as any)?.rollbackCount || 0);
+              const item = items[index];
+              const rollbackCount = Number((item as any)?.rollbackCount || 0);
+              const requestDeleted = Boolean(item?.requestDeleted);
+              const canActOnRequest = Boolean(row.rid) && !requestDeleted;
               const isRolledBack =
                 (row.rid ? rolledBackIds.has(row.rid) : false) ||
                 rollbackCount > 0;
               return (
                 <div
-                  key={items[index].id}
-                  role="button"
-                  tabIndex={0}
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 transition-colors hover:bg-slate-50 cursor-pointer"
+                  key={item.id}
+                  role={canActOnRequest ? "button" : undefined}
+                  tabIndex={canActOnRequest ? 0 : undefined}
+                  className={cn(
+                    "rounded-xl border border-slate-200 bg-white px-3 py-2.5 transition-colors",
+                    canActOnRequest
+                      ? "hover:bg-slate-50 cursor-pointer"
+                      : "cursor-default",
+                    requestDeleted && "opacity-80",
+                  )}
                   onClick={() => {
-                    const it = items[index];
-                    if (!it.requestId) return;
+                    if (!canActOnRequest) return;
                     setInspectionItem({
-                      requestId: it.requestId,
-                      requestMongoId: it.requestMongoId,
-                      clinicName: it.clinicName,
-                      patientName: it.patientName,
-                      tooth: it.tooth,
-                      lotNumber: it.lotNumber?.value,
-                      completedAt: it.completedAt,
-                      implantManufacturer: it.implantManufacturer ?? undefined,
-                      implantBrand: it.implantBrand ?? undefined,
-                      implantFamily: it.implantFamily ?? undefined,
-                      implantType: it.implantType ?? undefined,
+                      requestId: item.requestId!,
+                      requestMongoId: item.requestMongoId,
+                      clinicName: item.clinicName,
+                      patientName: item.patientName,
+                      tooth: item.tooth,
+                      lotNumber: item.lotNumber?.value,
+                      completedAt: item.completedAt,
+                      implantManufacturer: item.implantManufacturer ?? undefined,
+                      implantBrand: item.implantBrand ?? undefined,
+                      implantFamily: item.implantFamily ?? undefined,
+                      implantType: item.implantType ?? undefined,
                     });
                     setInspectionOpen(true);
                   }}
@@ -344,6 +356,9 @@ export const CompletedMachiningRecordsModal = ({
                       <div className="text-[11px] font-medium text-slate-500">
                         종료 {row.hhmm}
                         <span className="ml-3">소요 {row.mmss}</span>
+                        {requestDeleted ? (
+                          <span className="ml-3 text-slate-400">삭제됨</span>
+                        ) : null}
                       </div>
                       <div
                         className={`mt-0.5 ${isRolledBack ? "line-through opacity-50" : ""}`}
@@ -355,26 +370,27 @@ export const CompletedMachiningRecordsModal = ({
                           tooth={row.tooth}
                           requestId={row.rid}
                           lotShortCode={row.lotRaw.slice(-3).toUpperCase()}
-                          caseInfos={(items[index] as any)?.caseInfos}
+                          caseInfos={(item as any)?.caseInfos}
                           isSample={(() => {
                             const category = String(
-                              (items[index] as any)?.requestCategory || "",
+                              (item as any)?.requestCategory || "",
                             ).trim();
                             return (
                               category === "rnd_sample" ||
-                              category === "copied_sample"
+                              category === "copied_sample" ||
+                              requestDeleted
                             );
                           })()}
                           isRndArchivedSample={
                             String(
-                              (items[index] as any)?.requestCategory || "",
+                              (item as any)?.requestCategory || "",
                             ).trim() === "rnd_sample"
                           }
                           hideRequestId
                         />
                       </div>
                     </div>
-                    {row.rid && onRollbackRequest ? (
+                    {canActOnRequest && onRollbackRequest ? (
                       <button
                         type="button"
                         className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
