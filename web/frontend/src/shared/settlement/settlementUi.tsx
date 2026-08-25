@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-26: SettlementEquationOperator — = 색이 slate에 덮이지 않게 primary-strong 유지.
 // - 2026-08-23: SettlementPolicyDialog — flex 스크롤 + 하단 여백(pb-8).
 // - 2026-08-23: SettlementEquationOperator — 정산 요약 카드 사이 = + − 부호.
 // - 2026-08-20: 클릭 카드는 selected만 파란 강조. tone=primary는 비클릭 카드용.
@@ -54,11 +55,12 @@ export function SettlementEquationOperator({
       <span
         className={cn(
           "select-none font-bold leading-none tabular-nums",
+          // 부호별 색을 분리 — slate 가 primary/destructive 를 twMerge 로 덮지 않게.
           isEquals
             ? "text-3xl text-primary-strong sm:text-4xl"
-            : "text-2xl sm:text-3xl",
-          isMinus ? "text-destructive" : "text-slate-400",
-          !isEquals && !isMinus && "text-slate-400",
+            : isMinus
+              ? "text-2xl text-destructive sm:text-3xl"
+              : "text-2xl text-slate-400 sm:text-3xl",
         )}
       >
         {symbol}

@@ -3,6 +3,7 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // change-log:
+// - 2026-08-26: tabsTrailing — 탭 바는 tabsMax, 뱃지만 contentMax 우측 끝.
 // - 2026-08-24: 작업영역 하단 여백 — 이중 그라데이션/패딩 제거, pb만 유지(레이아웃 스크롤 끝과 맞춤).
 // - 2026-08-11: tabsMaxClassName — 탭 바만 문의 페이지처럼 max-w-4xl·상단 고정, 콘텐츠는 별도 max-width.
 // - 2026-08-11: fillHeight — 대시보드 작업영역 높이를 채우고 탭 콘텐츠 스크롤/중앙 배치 제어.
@@ -138,32 +139,49 @@ export const SettingsScaffold = ({
         >
           <div
             className={cn(
-              "mx-auto w-full min-w-0",
-              fillHeight ? cn("shrink-0", resolvedTabsMax) : "contents",
+              "relative mx-auto w-full min-w-0",
+              // trailing(뱃지)은 콘텐츠 폭 우측 끝. 탭 바 자체는 아래 resolvedTabsMax.
+              fillHeight
+                ? cn("shrink-0", tabsTrailing ? contentMaxClassName : resolvedTabsMax)
+                : "contents",
             )}
           >
             <div
               className={cn(
-                "flex min-w-0 items-start gap-2",
-                tabsTrailing ? "sm:items-center" : null,
+                "mx-auto w-full min-w-0",
+                // fillHeight+trailing: 바깥이 contentMax 이므로 탭만 tabsMax로 좁혀 중앙.
+                fillHeight && tabsTrailing ? resolvedTabsMax : null,
               )}
             >
-              {/* 모바일: 탭이 넘치면 수평 스크롤. 좌우 패딩으로 첫/끝 탭이 잘리지 않게. */}
-              <div className="min-w-0 flex-1 overscroll-x-contain scroll-pl-1 scroll-pr-1 px-1 scroll-x-bar-top sm:overflow-visible sm:px-0 sm:[transform:none] sm:[&>*]:[transform:none]">
-                <TabsList
-                  className={cn(
-                    "inline-flex h-auto min-w-full w-max max-w-none justify-start gap-1.5 p-1.5 sm:flex sm:w-full sm:flex-wrap sm:justify-center",
-                  )}
-                >
-                  {tabTriggers}
-                </TabsList>
-              </div>
-              {tabsTrailing ? (
-                <div className="flex shrink-0 items-center self-center pr-1 sm:pr-0">
-                  {tabsTrailing}
+              <div
+                className={cn(
+                  "flex min-w-0 items-start gap-2",
+                  tabsTrailing && !fillHeight ? "sm:items-center" : null,
+                )}
+              >
+                {/* 모바일: 탭이 넘치면 수평 스크롤. 좌우 패딩으로 첫/끝 탭이 잘리지 않게. */}
+                <div className="min-w-0 flex-1 overscroll-x-contain scroll-pl-1 scroll-pr-1 px-1 scroll-x-bar-top sm:overflow-visible sm:px-0 sm:[transform:none] sm:[&>*]:[transform:none]">
+                  <TabsList
+                    className={cn(
+                      "inline-flex h-auto min-w-full w-max max-w-none justify-start gap-1.5 p-1.5 sm:flex sm:w-full sm:flex-wrap sm:justify-center",
+                    )}
+                  >
+                    {tabTriggers}
+                  </TabsList>
                 </div>
-              ) : null}
+                {/* fillHeight 가 아니면 탭 옆. fillHeight+trailing 은 아래 absolute(콘텐츠 우측). */}
+                {tabsTrailing && !fillHeight ? (
+                  <div className="flex shrink-0 items-center self-center pr-1 sm:pr-0">
+                    {tabsTrailing}
+                  </div>
+                ) : null}
+              </div>
             </div>
+            {tabsTrailing && fillHeight ? (
+              <div className="absolute right-0 top-1/2 z-10 flex shrink-0 -translate-y-1/2 items-center pr-1 sm:pr-0">
+                {tabsTrailing}
+              </div>
+            ) : null}
           </div>
 
           <div

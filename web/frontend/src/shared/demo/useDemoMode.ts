@@ -3,6 +3,8 @@
 // - web/frontend/src/shared/demo/demoModeCopy.ts
 // - web/backend/modules/businesses/business.routes.js
 // - web/backend/controllers/businesses/business.demoMode.util.js
+// change-log:
+// - 2026-08-26: apiFetch 응답 언랩 수정 — res.data.data.demoMode (뱃지 미표시 원인).
 import { useCallback, useEffect, useState } from "react";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -49,6 +51,7 @@ export function useDemoMode(): DemoModeState {
     }
     setLoading(true);
     try {
+      // apiFetch: res.data = 서버 JSON 전체 → demoMode 는 res.data.data.*
       const res = await request<{
         success?: boolean;
         data?: { demoMode?: boolean };
@@ -56,7 +59,9 @@ export function useDemoMode(): DemoModeState {
         path: "/api/businesses/me?businessType=requestor",
         method: "GET",
       });
-      const next = Boolean(res?.data?.demoMode);
+      const body = res.data || {};
+      const payload = body.data || (body as { demoMode?: boolean });
+      const next = Boolean(payload?.demoMode);
       setDemoMode(next);
       cachedDemoMode = next;
       cachedAnchorId = String(businessAnchorId);
@@ -70,7 +75,9 @@ export function useDemoMode(): DemoModeState {
           path: "/api/credits/balance",
           method: "GET",
         });
-        const next = Boolean(bal?.data?.demoMode);
+        const body = bal.data || {};
+        const payload = body.data || (body as { demoMode?: boolean });
+        const next = Boolean(payload?.demoMode);
         setDemoMode(next);
         cachedDemoMode = next;
         cachedAnchorId = String(businessAnchorId);
@@ -96,7 +103,7 @@ export function useDemoMode(): DemoModeState {
         path: "/api/businesses/me/exit-demo",
         method: "POST",
       });
-      if (!res?.success) return false;
+      if (!res.ok || !res.data?.success) return false;
       setDemoMode(false);
       cachedDemoMode = false;
       cachedAnchorId = businessAnchorId ? String(businessAnchorId) : null;
