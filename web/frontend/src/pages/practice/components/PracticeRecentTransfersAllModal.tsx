@@ -24,6 +24,7 @@
  * 2026-08-22: 숨길 요일을 계정 preferences에 저장.
  * 2026-08-20: 모바일 — 가로 스크롤 상태칩·터치 카드·풀높이 시트.
  * 2026-08-25: 데스크톱도 풀스크린. 닫기 아이콘·히트영역 확대.
+ * 2026-08-25: 캘린더 칩에서 휴지통(취소·거부) 제외 — 삭제 즉시 달력에서 사라짐.
  * 2026-08-25: 캘린더 칩에서 「생산 전」등 생산단계 문구 제거(운송·배송완료만).
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -69,6 +70,7 @@ import {
   filterRequestsByPeriodAndSearch,
   groupPracticeRecentRequests,
   isPracticeRecentStatusFilterDefault,
+  isPracticeTransferTrashStatus,
   mapMyPracticeTransferApiRows,
   togglePracticeRecentStatusFilter,
   toStatusBadgeLabel,
@@ -229,7 +231,26 @@ export function PracticeRecentTransfersAllModal({
   }, [open, extraRequests.length, initialHasMore]);
 
   const recentRequests = useMemo(() => {
-    if (extraRequests.length === 0) return initialRequests;
+    // 시드(1페이지)에서 휴지통으로 바뀐 transferId는 extra(추가 페이지)에도 반영
+    const trashStatusByTransferId = new Map<string, string>();
+    for (const row of initialRequests) {
+      const transferId = String(row.transferId || "").trim();
+      if (!transferId || transferId === "-") continue;
+      if (!isPracticeTransferTrashStatus(row.status)) continue;
+      trashStatusByTransferId.set(transferId, String(row.status || "").trim());
+    }
+    const applyTrashStatus = (row: PracticeRecentRequestItem) => {
+      const transferId = String(row.transferId || "").trim();
+      const trashStatus = transferId
+        ? trashStatusByTransferId.get(transferId)
+        : undefined;
+      if (!trashStatus || row.status === trashStatus) return row;
+      return { ...row, status: trashStatus };
+    };
+
+    if (extraRequests.length === 0) {
+      return initialRequests.map(applyTrashStatus);
+    }
     const merged = [...initialRequests];
     const seen = new Set(initialRequests.map((row) => `${row.id}:${row.fileS3Key}`));
     for (const row of extraRequests) {
@@ -238,7 +259,9 @@ export function PracticeRecentTransfersAllModal({
       seen.add(key);
       merged.push(row);
     }
-    return merged.sort((a, b) => (b.createdAtTs || 0) - (a.createdAtTs || 0));
+    return merged
+      .map(applyTrashStatus)
+      .sort((a, b) => (b.createdAtTs || 0) - (a.createdAtTs || 0));
   }, [extraRequests, initialRequests]);
 
   const loading = Boolean(initialLoading) && recentRequests.length === 0;
@@ -352,32 +375,35 @@ export function PracticeRecentTransfersAllModal({
   );
 
   const calendarItems = useMemo((): PracticeCalendarChipItem[] => {
-    return filteredTransfers.map((transfer) => {
-      const lab =
-        String(transfer.targetLab || "-")
-          .replace(/\s*→.*$/g, "")
-          .trim() || "-";
-      const patient = resolvePracticeTransferListPatientName(transfer);
-      const teeth = resolvePracticeTransferListToothNumbers(transfer);
-      const deliveryLabel = getPracticeAbutmentDeliveryChipLabel({
-        hasCustomAbutment: Boolean(transfer.hasCustomAbutment),
-        abutmentDeliveryInfo: transfer.abutmentDeliveryInfo || null,
+    // 휴지통(치과 취소·거부)은 상단 뱃지·모바일 목록에만 두고, 달력에서는 즉시 제거
+    return filteredTransfers
+      .filter((transfer) => !isPracticeTransferTrashStatus(transfer.status))
+      .map((transfer) => {
+        const lab =
+          String(transfer.targetLab || "-")
+            .replace(/\s*→.*$/g, "")
+            .trim() || "-";
+        const patient = resolvePracticeTransferListPatientName(transfer);
+        const teeth = resolvePracticeTransferListToothNumbers(transfer);
+        const deliveryLabel = getPracticeAbutmentDeliveryChipLabel({
+          hasCustomAbutment: Boolean(transfer.hasCustomAbutment),
+          abutmentDeliveryInfo: transfer.abutmentDeliveryInfo || null,
+        });
+        return {
+          id: `${transfer.id}:${transfer.transferId}`,
+          orderDate: transfer.orderDate,
+          arrivalDate: transfer.arrivalDate,
+          colorKey: String(transfer.targetLabAnchorId || "").trim() || lab,
+          statusTone: resolvePracticeCalendarStatusTone(transfer.status),
+          isRemake: Boolean(transfer.isRemake),
+          sortLabel: lab,
+          line: [lab, patient || "—", teeth || "—", deliveryLabel]
+            .filter(Boolean)
+            .join(" / "),
+          unreadCount: Math.max(0, Number(transfer.unreadCount || 0)),
+          canDelete: canDeletePracticeTransferByStatus(transfer.status),
+        };
       });
-      return {
-        id: `${transfer.id}:${transfer.transferId}`,
-        orderDate: transfer.orderDate,
-        arrivalDate: transfer.arrivalDate,
-        colorKey: String(transfer.targetLabAnchorId || "").trim() || lab,
-        statusTone: resolvePracticeCalendarStatusTone(transfer.status),
-        isRemake: Boolean(transfer.isRemake),
-        sortLabel: lab,
-        line: [lab, patient || "—", teeth || "—", deliveryLabel]
-          .filter(Boolean)
-          .join(" / "),
-        unreadCount: Math.max(0, Number(transfer.unreadCount || 0)),
-        canDelete: canDeletePracticeTransferByStatus(transfer.status),
-      };
-    });
   }, [filteredTransfers]);
 
   const calendarItemById = useMemo(() => {

@@ -5123,13 +5123,22 @@ export const PracticeFileTransferPage = ({
     setDeletingTransfer(true);
 
     const deletedSet = new Set(requestIds);
+    const deletedMongoSet = new Set(transferMongoIds);
     const previousRecentRequests = recentRequests;
 
-    // optimistic UI: 최근 내역에서 제외하고 휴지통(취소)으로 이동
+    // optimistic UI: 최근 내역·전체보기 달력에서 휴지통(취소)으로 이동(즉시 칩 제거)
     setRecentRequests((prev) =>
-      prev.map((row) =>
-        deletedSet.has(row.id) ? { ...row, status: "취소" } : row,
-      ),
+      prev.map((row) => {
+        const rowTransferId = String(row.transferId || "").trim();
+        const rowMongoId = String(row.requestMongoId || "").trim();
+        const matched =
+          deletedSet.has(row.id) ||
+          (targetTransferId &&
+            targetTransferId !== "-" &&
+            rowTransferId === targetTransferId) ||
+          (rowMongoId && deletedMongoSet.has(rowMongoId));
+        return matched ? { ...row, status: "취소" } : row;
+      }),
     );
     finishDeleteConfirmAndReturnToAllModal();
 
