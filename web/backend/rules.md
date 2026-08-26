@@ -78,6 +78,7 @@
 - **3Shape/TRIOS**: 스캔 데이터는 Communicate로 치과→지정 기공소(어벗츠기공소 포함) 직송. 어벗츠는 중간 플랫폼으로 스캔을 받지 않음.
 - **기공의뢰서**: 치식·메모·수가·매칭 등은 어벗츠 기공의뢰(PracticeTransfer)로 작성.
 - **비 3Shape**: STL/PLY/OBJ 등 현행처럼 웹앱에 업로드해 기공의뢰와 함께 전송.
+- **UI**: Communicate/TRIOS 전용 안내 탭·배너·문구 없음.
 
 - 신속 배송(`express`) 복원 메모:
   - Draft/Request `shippingMode` 필드를 다시 저장합니다. (`models/draftRequest.model.js`, `models/request.model.js`)

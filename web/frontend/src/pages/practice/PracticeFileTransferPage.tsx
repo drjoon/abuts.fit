@@ -218,7 +218,6 @@ import { PracticeLabRatingControl } from "@/shared/components/practice/PracticeL
 import { CounterpartyMemoStrip } from "@/shared/components/practice/CounterpartyMemoStrip";
 import { PracticeTransferIntakeSection } from "@/shared/components/practice/PracticeTransferIntakeSection";
 import { PracticeTransferMobileOralPhotoIntake } from "@/shared/components/practice/PracticeTransferMobileOralPhotoIntake";
-import { ScanOrderGuideBanner } from "@/shared/components/practice/ScanOrderGuideBanner";
 import { useIsMobile } from "@/shared/hooks/use-mobile";
 import {
   PracticeTransferExpressDonePanel,
@@ -6792,6 +6791,8 @@ export const PracticeFileTransferPage = ({
                     fileInputId: "practice-file-transfer-input",
                     requirementNote:
                       "모바일에서 환자 사진 찍어 첨부할 수 있어요.",
+                    requirementNoteExtra:
+                      "TRIOS 스캔은 Communicate로 기공소에 보내 주세요.",
                     files: combinedDisplayFiles.map((file) => {
                       const localFile =
                         file.kind === "local" ? files[file.localIndex] : null;
@@ -7224,8 +7225,6 @@ export const PracticeFileTransferPage = ({
         {roleSwitcher ? (
           <div className="flex flex-wrap items-center gap-2">{roleSwitcher}</div>
         ) : null}
-
-        <ScanOrderGuideBanner audience="practice" />
 
         <div className="flex min-w-0 w-full flex-col gap-3">
           <Card className="min-w-0 border-0 bg-transparent shadow-none hover:shadow-none">

@@ -11,7 +11,6 @@ import { BusinessTab } from "@/shared/components/business/settings/BusinessTab";
 import { StaffTab } from "@/features/settings/tabs/StaffTab";
 import { NotificationsTab } from "@/features/settings/tabs/NotificationsTab";
 import { LabFeeScheduleTab } from "@/features/settings/tabs/LabFeeScheduleTab";
-import { ScanOrderGuideTab } from "@/features/settings/tabs/ScanOrderGuideTab";
 import {
   User,
   Building2,
@@ -19,7 +18,6 @@ import {
   Users,
   Shield,
   Banknote,
-  Scan,
 } from "lucide-react";
 import { RequestorSecurity } from "./Security";
 import { formatKstDateTimeToKo, toKstYmd } from "@/shared/date/kst";
@@ -38,21 +36,22 @@ import { InternalLabOrgBanner } from "@/features/settings/InternalLabOrgBanner";
 // 2026-08-14: 「치과 등록」탭 제거 → 「자동 매칭 참여」.
 // 2026-08-11: 기공소 전용 「치과 등록」「기공비」탭(알림 왼쪽).
 // 2026-08-18: 치과 「구독」탭 제거(월정 폐기). 구 `?tab=subscription` → 계정.
+// 2026-08-26: 「스캔·의뢰」탭 제거. 구 `?tab=scan-order`·`3shape` → 계정.
 
 type TabKey =
   | "account"
   | "business"
   | "staff"
   | "lab-fees"
-  | "scan-order"
   | "notifications"
   | "security";
 
 const LEGACY_TAB_REDIRECT: Partial<Record<string, TabKey>> = {
+  "3shape": "account",
+  "scan-order": "account",
+  subscription: "account",
   "auto-match": "account",
   "trading-partners": "account",
-  subscription: "account",
-  "3shape": "scan-order",
 };
 
 export const RequestorSettingsPage = () => {
@@ -143,15 +142,6 @@ export const RequestorSettingsPage = () => {
       });
     }
 
-    base.push({
-      key: "scan-order",
-      label: "스캔·의뢰",
-      icon: Scan,
-      content: (
-        <ScanOrderGuideTab audience={isLab ? "lab" : "practice"} />
-      ),
-    });
-
     base.push(
       {
         key: "notifications",
@@ -185,7 +175,7 @@ export const RequestorSettingsPage = () => {
       (tabs[0]?.key as TabKey);
 
   if (accessLoading) {
-    return <SettingsTabsSkeleton tabCount={isLab ? 7 : 6} />;
+    return <SettingsTabsSkeleton tabCount={isLab ? 6 : 5} />;
   }
 
   return (

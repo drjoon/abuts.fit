@@ -29,6 +29,7 @@ import type { PreUploadFileStatus } from "@/shared/hooks/useFilePreUpload";
 // - 2026-08-20: 이미지 첨부는 카드에 썸네일 미리보기.
 // - 2026-08-20: 썸네일 클릭 시 크게 보기. 파일명도 같은 미리보기.
 // - 2026-08-20: fillHeight — 메모 옆 열에서 빈 드롭존 높이 맞춤.
+// - 2026-08-26: requirementNoteExtra — TRIOS Communicate 한 줄.
 
 export type PracticeTransferFileDisplayItem = {
   key: string;
@@ -55,8 +56,10 @@ export type PracticeTransferFilePaneProps = {
   onClearAllFiles: () => void;
   listViewportClassName?: string;
   disabled?: boolean;
-  /** 드롭존 아래 안내(예: 자동매칭 구강스캔 필수) */
+  /** 드롭존 아래 안내(예: 모바일 환자 사진) */
   requirementNote?: string | null;
+  /** requirementNote 아래 보조 한 줄 */
+  requirementNoteExtra?: string | null;
   /** 대기 중인 로컬 파일을 서버 임시저장으로 업로드 */
   syncUploadLabel?: string;
   syncUploadBusyLabel?: string;
@@ -107,6 +110,7 @@ export const PracticeTransferFilePane = ({
   listViewportClassName = PRACTICE_FILE_LIST_VIEWPORT_CLASS,
   disabled = false,
   requirementNote = null,
+  requirementNoteExtra = null,
   syncUploadLabel = "업로드",
   syncUploadBusyLabel = "업로드 중...",
   syncUploadDisabled = false,
@@ -137,12 +141,24 @@ export const PracticeTransferFilePane = ({
         label="클릭하거나 파일을 드래그해 추가"
       />
 
-      {requirementNote ? (
-        <div className="flex items-center justify-center gap-1.5 px-1 text-center">
-          <Camera className="h-3.5 w-3.5 shrink-0 text-primary-strong/80" aria-hidden />
-          <p className="text-xs leading-snug text-muted-foreground">
-            {requirementNote}
-          </p>
+      {requirementNote || requirementNoteExtra ? (
+        <div className="flex flex-col items-center gap-1 px-1 text-center">
+          {requirementNote ? (
+            <div className="flex items-center justify-center gap-1.5">
+              <Camera
+                className="h-3.5 w-3.5 shrink-0 text-primary-strong/80"
+                aria-hidden
+              />
+              <p className="text-xs leading-snug text-muted-foreground">
+                {requirementNote}
+              </p>
+            </div>
+          ) : null}
+          {requirementNoteExtra ? (
+            <p className="text-[11px] leading-snug text-muted-foreground/90">
+              {requirementNoteExtra}
+            </p>
+          ) : null}
         </div>
       ) : null}
 

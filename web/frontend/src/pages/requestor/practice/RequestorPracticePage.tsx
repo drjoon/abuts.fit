@@ -175,7 +175,6 @@ import {
 } from "@/shared/components/PracticeTransferDetailChatDialog";
 import { LabPracticeFeeSurchargeControl } from "@/shared/components/practice/LabPracticeFeeSurchargeControl";
 import { CounterpartyMemoStrip } from "@/shared/components/practice/CounterpartyMemoStrip";
-import { ScanOrderGuideBanner } from "@/shared/components/practice/ScanOrderGuideBanner";
 import { parsePracticeTransferFeeQuote } from "@/shared/practice/practiceTransferFeeQuote";
 import { normalizeLabFeeMultiplier, formatLabFeeMultiplierLabel, missingLabFeeItemNames, labFeeItemNamesNeededForToothWorks } from "@/shared/practice/labFeeSchedule";
 import { parseStarDowngrade, parseLabRatingSummary } from "@/shared/practice/practiceLabRating";
@@ -4691,7 +4690,6 @@ export function RequestorPracticeReceivePage({
               {roleSwitcher ? (
                 <div className="flex flex-wrap items-center gap-3">{roleSwitcher}</div>
               ) : null}
-              <ScanOrderGuideBanner audience="lab" />
               {transferSearchAndBadges}
             </div>
             <div
