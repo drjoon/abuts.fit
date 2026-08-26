@@ -12,6 +12,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
 // change-log:
 // - 2026-08-21: Next Up 수동 장비 이동 API(moveProductionQueueRequest) — NC $unset 후 항상 CAM/NC 재생성.
+// - 2026-08-26: 재배정 시 소재 직경 불일치 NC는 $unset 후 Esprit force 재생성.
 // - 2026-08-07: 재배정을 소재≥maxDiameter 커버 + 최소 소재 우선으로 통일 (D6 exact-group skip 수정).
 // - 2026-08-07: 생산 큐 응답에 의뢰자명(businessName) 포함.
 // - 2026-08-06: 가공 큐 select에 designSoftware·헥스 회전(rnd/caseInfos) 포함. 프리뷰 누락 수정.
@@ -51,6 +52,10 @@ import {
 import { getMachiningPriorityRules } from "../requests/machiningPriorityRules.js";
 import { enqueueApproval } from "../../services/reviewApprovalQueue.service.js";
 import { resolveEffectiveShippingMode } from "../requests/shippingPriority.utils.js";
+import {
+  clearNcAndForceEspritRetrigger,
+  shouldRetriggerEspritForMaterialDiameter,
+} from "../requests/espritDiameterRetrigger.utils.js";
 
 function isMachineOnlineStatus(status) {
   const s = String(status || "")
@@ -238,6 +243,7 @@ export async function rebalanceProductionQueuesInternal({
 
   const assignmentsByMachine = new Map();
   const ops = [];
+  const espritRetriggerByDiameter = new Map();
   const sortedRequests = [...requests].sort(compareMachiningQueueOrder);
 
   for (const reqItem of sortedRequests) {
@@ -298,6 +304,14 @@ export async function rebalanceProductionQueuesInternal({
       ? inferDiameterGroupFromValue(materialDia)
       : "";
     list.forEach((reqItem, idx) => {
+      const prevDia = Number(reqItem?.productionSchedule?.diameter);
+      const hasNc = Boolean(reqItem?.caseInfos?.ncFile?.s3Key);
+      const needsEspritRetrigger = shouldRetriggerEspritForMaterialDiameter({
+        previousDiameter: prevDia,
+        nextDiameter: materialDia,
+        hasNc,
+        ncMaterialDiameter: Number(reqItem?.caseInfos?.ncFile?.materialDiameter),
+      });
       const $set = {
         "productionSchedule.assignedMachine": uid,
         "productionSchedule.queuePosition": idx + 1,
@@ -309,10 +323,24 @@ export async function rebalanceProductionQueuesInternal({
       if (diameterGroup) {
         $set["productionSchedule.diameterGroup"] = diameterGroup;
       }
+      const update = { $set };
+      if (needsEspritRetrigger) {
+        $set["productionSchedule.ncPreload"] = { status: "NONE" };
+        update.$unset = { "caseInfos.ncFile": 1 };
+        const key = `${materialDia}|${diameterGroup || ""}`;
+        if (!espritRetriggerByDiameter.has(key)) {
+          espritRetriggerByDiameter.set(key, {
+            diameter: materialDia,
+            diameterGroup,
+            requestIds: [],
+          });
+        }
+        espritRetriggerByDiameter.get(key).requestIds.push(reqItem._id);
+      }
       ops.push({
         updateOne: {
           filter: { _id: reqItem._id },
-          update: { $set },
+          update,
         },
       });
     });
@@ -322,9 +350,22 @@ export async function rebalanceProductionQueuesInternal({
     await Request.bulkWrite(ops);
   }
 
+  let espritRetriggered = 0;
+  for (const batch of espritRetriggerByDiameter.values()) {
+    const result = await clearNcAndForceEspritRetrigger({
+      requestIds: batch.requestIds,
+      diameter: batch.diameter,
+      diameterGroup: batch.diameterGroup,
+      actorUserId: req?.user?._id ? String(req.user._id) : null,
+      reason: "queue_redistribute_diameter_changed",
+    });
+    espritRetriggered += Number(result?.enqueued || 0);
+  }
+
   return {
     reassignedCount: ops.length,
     eligibleMachineIds: Array.from(eligibleMachineSet),
+    espritRetriggered,
   };
 }
 
@@ -534,7 +575,8 @@ const inferDiameterGroup = (reqItem) => {
     if (diameter <= 6) return "6";
     if (diameter <= 8) return "8";
     if (diameter <= 10) return "10";
-    return "12";
+    if (diameter <= 12) return "12";
+    return "14";
   }
   return "";
 };

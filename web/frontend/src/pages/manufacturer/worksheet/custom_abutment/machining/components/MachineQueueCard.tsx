@@ -243,8 +243,7 @@ export const MachineQueueCard = ({
     }
 
     if (Number.isFinite(numeric) && numeric > 0) {
-      const v = numeric > 10 ? 12 : numeric;
-      return `${Number.isInteger(v) ? v : v.toFixed(1)}`;
+      return `${Number.isInteger(numeric) ? numeric : numeric.toFixed(1)}`;
     }
     return "";
   }, [machine]);

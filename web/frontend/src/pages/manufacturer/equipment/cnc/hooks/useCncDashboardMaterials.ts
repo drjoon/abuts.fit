@@ -16,7 +16,7 @@ interface CncMachineMeta {
     schedules?: any[];
     excludeHolidays?: boolean;
   };
-  maxModelDiameterGroups?: ("6" | "8" | "10" | "12")[];
+  maxModelDiameterGroups?: ("6" | "8" | "10" | "12" | "14")[];
 }
 
 interface Params {
@@ -418,9 +418,9 @@ export function useCncDashboardMaterials({
       materialType: string;
       heatNo: string;
       diameter: number;
-      diameterGroup: "6" | "8" | "10" | "12";
+      diameterGroup: "6" | "8" | "10" | "12" | "14";
       remainingLength: number;
-      maxModelDiameterGroups: ("6" | "8" | "10" | "12")[];
+      maxModelDiameterGroups: ("6" | "8" | "10" | "12" | "14")[];
     }) => {
       if (!materialModalTarget || !token) return;
       const res = await fetch(

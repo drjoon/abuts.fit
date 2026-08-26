@@ -9,8 +9,12 @@ const normalizeDiameterGroup = (v) => {
   if (!raw) return raw;
   if (raw.includes("+")) return "12";
   const numeric = Number.parseFloat(raw.replace(/[^0-9.]/g, ""));
-  if (Number.isFinite(numeric) && numeric > 10) return "12";
-  return raw;
+  if (!Number.isFinite(numeric) || numeric <= 0) return raw;
+  if (numeric <= 6) return "6";
+  if (numeric <= 8) return "8";
+  if (numeric <= 10) return "10";
+  if (numeric <= 12) return "12";
+  return "14";
 };
 
 const cncMachineSchema = new mongoose.Schema(
@@ -35,7 +39,7 @@ const cncMachineSchema = new mongoose.Schema(
       type: [
         {
           type: String,
-          enum: ["6", "8", "10", "12"],
+          enum: ["6", "8", "10", "12", "14"],
           set: normalizeDiameterGroup,
         },
       ],
@@ -58,7 +62,7 @@ const cncMachineSchema = new mongoose.Schema(
       },
       diameterGroup: {
         type: String,
-        enum: ["6", "8", "10", "12"],
+        enum: ["6", "8", "10", "12", "14"],
         set: normalizeDiameterGroup,
         required: true,
       },
@@ -77,7 +81,7 @@ const cncMachineSchema = new mongoose.Schema(
       newDiameter: Number,
       newDiameterGroup: {
         type: String,
-        enum: ["6", "8", "10", "12"],
+        enum: ["6", "8", "10", "12", "14"],
         set: normalizeDiameterGroup,
       },
       scheduledBy: {

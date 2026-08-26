@@ -55,8 +55,7 @@ const resolveMachineMaterialDiameter = (machine: MaterialLikeMachine): number | 
   }
 
   if (!Number.isFinite(numeric) || numeric <= 0) return null;
-  const normalized = numeric > 10 ? 12 : numeric;
-  return Number(normalized.toFixed(3));
+  return Number(numeric.toFixed(3));
 };
 
 export const CncDashboardPageView = (props: any) => {

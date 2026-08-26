@@ -99,7 +99,9 @@ export async function triggerEspritForNc({
   if (!Number.isFinite(matDia) || matDia <= 0) {
     const maxD = Number(request?.caseInfos?.maxDiameter);
     if (Number.isFinite(maxD) && maxD > 0) {
-      matDia = maxD <= 6 ? 6 : maxD <= 8 ? 8 : maxD <= 10 ? 10 : 12;
+      const group = inferDiameterGroupFromDiameter(maxD);
+      const fromGroup = Number(group);
+      matDia = Number.isFinite(fromGroup) && fromGroup > 0 ? fromGroup : 12;
     }
   }
   const matGroup =

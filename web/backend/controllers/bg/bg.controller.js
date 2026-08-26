@@ -956,6 +956,22 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
             originalName: resolvedOriginalName,
             uploadedAt: now,
           });
+        {
+          const ncMaterialDiameter = Number(
+            metadata?.MaterialDiameter ??
+              metadata?.materialDiameter ??
+              request?.productionSchedule?.diameter,
+          );
+          if (Number.isFinite(ncMaterialDiameter) && ncMaterialDiameter > 0) {
+            updateData["caseInfos.ncFile"] = {
+              ...(updateData["caseInfos.ncFile"] &&
+              typeof updateData["caseInfos.ncFile"] === "object"
+                ? updateData["caseInfos.ncFile"]
+                : {}),
+              materialDiameter: ncMaterialDiameter,
+            };
+          }
+        }
         updateData["productionSchedule.actualCamComplete"] = now;
 
         // 승인(의뢰 -> CAM) 경로에서 생성된 NC일 때만 단계를 CAM으로 승격한다.

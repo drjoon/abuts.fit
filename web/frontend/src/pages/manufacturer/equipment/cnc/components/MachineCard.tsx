@@ -415,7 +415,6 @@ export const MachineCard = (props: MachineCardProps) => {
     const group = machine.currentMaterial?.diameterGroup;
     if (group) {
       const numeric = Number.parseFloat(String(group).replace(/[^0-9.]/g, ""));
-      if (Number.isFinite(numeric) && numeric > 10) return "12";
       if (Number.isFinite(numeric) && numeric > 0) {
         return Number.isInteger(numeric) ? String(numeric) : numeric.toFixed(1);
       }

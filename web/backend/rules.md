@@ -210,6 +210,9 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 호환 SSOT: 장착 소재 직경 ≥ `caseInfos.maxDiameter` (D6 의뢰 → D8/D10 장비 허용; 그룹 exact-match 금지)
   - 공유 헬퍼: `distribution.utils.js` `isRequestDiameterCompatibleWithMachineMaterial`
 - 재배정: `controllers/cnc/production.js` redistribute — 소재≥maxDiameter 커버 + 최소 소재 우선 (`rankCoveringMachinesForRequest`; diameterGroup exact-match 금지) + express rebalance
+  - 배정 소재 직경이 기존 NC와 다르면 `caseInfos.ncFile` `$unset` 후 Esprit force 재생성
+- 소재 교체: `controllers/cnc/material.js` `updateMachineMaterial` — 해당 장비 대기 큐 중 직경 불일치 NC도 동일하게 재생성
+- 준비→가공 진입: `common.review.controller.js` — 배정 장비 소재 직경 ≠ 기존 NC 직경이면 NC 제거 후 Esprit force 재생성 (기존 NC 재사용 금지)
 - Next Up 수동 이동: `POST /api/cnc-machines/queues/move` (`moveProductionQueueRequest`) — 대기 건만, 대상 소재≥maxDiameter. **항상** `caseInfos.ncFile` `$unset` 후 `REQUEST_STAGE_APPROVED`+`forceReprocess`로 CAM/NC 재생성(이전 NC 재사용 금지). 메타는 `productionSchedule.manualMachineMove`(express `fastMachiningRebalance` 뱃지와 분리). 프론트: Next Up 카드 드래그→타 장비 Next Up 드롭; NC 없을 때 「CAM 생성 중」 블러 오버레이(준비 탭 라이노 작업중과 동일 패턴)
 - 표시: 큐/lastCompleted/summary API에 `shippingMode` 포함 → 프론트 `ShippingModeBadge` (프리뷰 추가 round-trip 금지)
 - 표시: 큐/lastCompleted에 `businessName`(BusinessAnchor.name) 포함 → 프론트 가공 카드·예약목록 의뢰자명

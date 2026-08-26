@@ -925,37 +925,6 @@ export const useMachiningBoard = ({
   const [completedModalMachineId, setCompletedModalMachineId] = useState("");
   const [completedModalTitle, setCompletedModalTitle] = useState<string>("");
 
-  const [cncMachineMetaMap, setCncMachineMetaMap] = useState<
-    Record<string, any>
-  >({});
-
-  useEffect(() => {
-    if (!token) return;
-    let mounted = true;
-    void (async () => {
-      try {
-        const res = await fetch("/api/cnc-machines", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const body: any = await res.json().catch(() => ({}));
-        if (!res.ok || body?.success === false) return;
-        const list: any[] = Array.isArray(body?.data) ? body.data : [];
-        const next: Record<string, any> = {};
-        for (const item of list) {
-          const machineId = String(item?.machineId || "");
-          if (!machineId) continue;
-          next[machineId] = item;
-        }
-        if (mounted) setCncMachineMetaMap(next);
-      } catch {
-        // ignore
-      }
-    })();
-    return () => {
-      mounted = false;
-    };
-  }, [token]);
-
   const {
     materialModalOpen,
     setMaterialModalOpen,
@@ -964,23 +933,8 @@ export const useMachiningBoard = ({
     handleReplaceMaterial,
     handleAddMaterial,
     refreshCncMachineMeta,
+    mergedMachines,
   } = useCncDashboardMaterials({ token, machines, setMachines, toast });
-
-  const mergedMachines = useMemo(() => {
-    return (machines || []).map((m: any) => {
-      const meta = cncMachineMetaMap[m.uid];
-      if (!meta) return m;
-      return {
-        ...m,
-        currentMaterial: meta.currentMaterial || m.currentMaterial,
-        scheduledMaterialChange:
-          meta.scheduledMaterialChange || m.scheduledMaterialChange,
-        maxModelDiameterGroups:
-          meta.maxModelDiameterGroups || m.maxModelDiameterGroups,
-        dummySettings: meta.dummySettings || m.dummySettings,
-      };
-    });
-  }, [cncMachineMetaMap, machines]);
 
   const queueOnlyMachines = useMemo(() => {
     const knownIds = new Set(

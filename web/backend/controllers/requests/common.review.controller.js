@@ -1176,6 +1176,7 @@ export async function updateReviewStatusByStage(req, res) {
     let pendingEspritTriggerRequest = null;
     const pendingAdditionalEspritTriggerRequests = [];
     let pendingCamStageEspritTriggerRequest = null;
+    let pendingCamStageEspritForceReprocess = false;
     let requestStageMachineSelection = null;
     let isDuplicateRequestApprovalNoop = false;
     const deferredCreditEvents = [];
@@ -1948,12 +1949,39 @@ export async function updateReviewStatusByStage(req, res) {
           const triggerSource = String(approvalTriggerSource || "").trim();
           const shouldCheckNcOnNextUp =
             nextUpCamRunGuard === true &&
-            (triggerSource === "preview-modal" || triggerSource === "worksheet-tab");
+            (triggerSource === "preview-modal" ||
+              triggerSource === "worksheet-tab");
           const hasNcMeta = Boolean(request?.caseInfos?.ncFile?.s3Key);
-          if (status === "APPROVED" && shouldCheckNcOnNextUp && !hasNcMeta) {
-            pendingCamStageEspritTriggerRequest = request.toObject
-              ? request.toObject()
-              : JSON.parse(JSON.stringify(request));
+          const selectedDiameter = Number(selected.diameter);
+          // schedule.diameter는 이전 시도에서 이미 장비 직경으로 갱신됐을 수 있음.
+          // NC 실제 소재 직경(#521 / ncFile.materialDiameter)과 비교한다.
+          // materialDiameter 메타가 없는 레거시 NC는 불일치로 보고 강제 재생성.
+          const ncMaterialDiameter = Number(
+            request?.caseInfos?.ncFile?.materialDiameter,
+          );
+          const diameterMismatch =
+            hasNcMeta &&
+            Number.isFinite(selectedDiameter) &&
+            selectedDiameter > 0 &&
+            (!Number.isFinite(ncMaterialDiameter) ||
+              ncMaterialDiameter <= 0 ||
+              Math.abs(ncMaterialDiameter - selectedDiameter) > 1e-6);
+
+          // 기존 NC가 없으면 생성. 장비 소재 직경이 바뀌었으면 기존 NC(#521)를 버리고 재생성.
+          if (status === "APPROVED" && shouldCheckNcOnNextUp) {
+            if (diameterMismatch) {
+              if (request.caseInfos) {
+                request.caseInfos.ncFile = undefined;
+                request.markModified("caseInfos");
+              }
+              request.productionSchedule.ncPreload = { status: "NONE" };
+              pendingCamStageEspritForceReprocess = true;
+            }
+            if (!hasNcMeta || diameterMismatch) {
+              pendingCamStageEspritTriggerRequest = request.toObject
+                ? request.toObject()
+                : JSON.parse(JSON.stringify(request));
+            }
           }
         }
       } else if (status === "PENDING") {
@@ -1984,6 +2012,13 @@ export async function updateReviewStatusByStage(req, res) {
       }
 
       await request.save({ session });
+      if (pendingCamStageEspritForceReprocess) {
+        await Request.updateOne(
+          { _id: request._id },
+          { $unset: { "caseInfos.ncFile": 1 } },
+          { session },
+        );
+      }
       resultRequest = request;
     });
 
@@ -2368,7 +2403,7 @@ export async function updateReviewStatusByStage(req, res) {
           taskType: "REQUEST_STAGE_APPROVED",
           request: pendingCamStageEspritTriggerRequest,
           actorUserId: req?.user?._id ? String(req.user._id) : null,
-          forceReprocess: false,
+          forceReprocess: pendingCamStageEspritForceReprocess,
         });
         camRunTriggered = true;
         camRunQueueId = String(camRunEnqueueResult?.queueId || "").trim() || null;

@@ -34,11 +34,12 @@ export function normalizeDiameterGroupValue(value) {
   if (!raw) return "";
   if (raw.includes("+")) return "12";
   const numeric = Number.parseFloat(raw.replace(/[^0-9.]/g, ""));
-  if (Number.isFinite(numeric) && numeric > 10) return "12";
-  if (Number.isFinite(numeric) && numeric > 0) {
-    return String(Math.round(numeric));
-  }
-  return raw;
+  if (!Number.isFinite(numeric) || numeric <= 0) return raw;
+  if (numeric <= 6) return "6";
+  if (numeric <= 8) return "8";
+  if (numeric <= 10) return "10";
+  if (numeric <= 12) return "12";
+  return "14";
 }
 
 export function inferDiameterGroupFromValue(diameter) {
@@ -46,7 +47,8 @@ export function inferDiameterGroupFromValue(diameter) {
   if (diameter <= 6) return "6";
   if (diameter <= 8) return "8";
   if (diameter <= 10) return "10";
-  return "12";
+  if (diameter <= 12) return "12";
+  return "14";
 }
 
 export function inferMaterialDiameterGroup(machine) {
@@ -70,6 +72,7 @@ export function inferCurrentMaterialDiameter(machine) {
   if (materialGroup === "8") return 8;
   if (materialGroup === "10") return 10;
   if (materialGroup === "12") return 12;
+  if (materialGroup === "14") return 14;
 
   return null;
 }

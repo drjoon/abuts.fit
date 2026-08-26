@@ -207,7 +207,8 @@ export const CncMaterialChangeModal = ({
                     if (value === "6") setNewDiameter(6);
                     else if (value === "8") setNewDiameter(8);
                     else if (value === "10") setNewDiameter(10);
-                    else setNewDiameter(12);
+                    else if (value === "12") setNewDiameter(12);
+                    else setNewDiameter(14);
                   }}
                 >
                   <SelectTrigger>
@@ -218,6 +219,7 @@ export const CncMaterialChangeModal = ({
                     <SelectItem value="8">8mm</SelectItem>
                     <SelectItem value="10">10mm</SelectItem>
                     <SelectItem value="12">12mm</SelectItem>
+                    <SelectItem value="14">14mm</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

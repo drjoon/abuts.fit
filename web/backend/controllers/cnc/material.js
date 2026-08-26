@@ -15,6 +15,18 @@ import {
   Request,
   CAM_RETRY_BATCH_LIMIT,
 } from "./shared.js";
+import {
+  MACHINING_QUEUE_STAGE_SET,
+  EXCLUDE_UNMACHINABLE_FILTER,
+  isMachiningInProgress,
+  isMachiningCompleted,
+  inferDiameterGroupFromValue,
+} from "./distribution.utils.js";
+import {
+  clearNcAndForceEspritRetrigger,
+  isMaterialDiameterChanged,
+  shouldRetriggerEspritForMaterialDiameter,
+} from "../requests/espritDiameterRetrigger.utils.js";
 
 async function fetchBridgeMachineStatusMap() {
   const controller = new AbortController();
@@ -64,12 +76,13 @@ async function syncMachineMaterialToBridge(machineId, material) {
       const raw = String(v || "").trim();
       if (!raw) return "";
       if (raw.includes("+")) return "12";
-      if (raw === "6" || raw === "8" || raw === "10") return raw;
       const numeric = Number.parseFloat(raw.replace(/[^0-9.]/g, ""));
-      if (Number.isFinite(numeric) && numeric > 10) return "12";
-      if (Number.isFinite(numeric) && numeric > 0)
-        return String(Math.trunc(numeric));
-      return "";
+      if (!Number.isFinite(numeric) || numeric <= 0) return "";
+      if (numeric <= 6) return "6";
+      if (numeric <= 8) return "8";
+      if (numeric <= 10) return "10";
+      if (numeric <= 12) return "12";
+      return "14";
     };
 
     await fetch(`${BRIDGE_BASE.replace(/\/$/, "")}/api/bridge/material`, {
@@ -154,7 +167,7 @@ export async function updateMachineMaterial(req, res) {
     const rawGroup = String(diameterGroup || "").trim();
     const normalizedGroup = rawGroup.replace(/mm$/i, "");
 
-    if (!normalizedGroup || !["6", "8", "10", "12"].includes(normalizedGroup)) {
+    if (!normalizedGroup || !["6", "8", "10", "12", "14"].includes(normalizedGroup)) {
       return res.status(400).json({
         success: false,
         message: "유효하지 않은 직경 그룹입니다.",
@@ -181,7 +194,7 @@ export async function updateMachineMaterial(req, res) {
 
     if (normalizedMaxGroups.length > 0) {
       const uniq = Array.from(new Set(normalizedMaxGroups));
-      const ok = uniq.every((g) => ["6", "8", "10", "12"].includes(g));
+      const ok = uniq.every((g) => ["6", "8", "10", "12", "14"].includes(g));
       if (!ok) {
         return res.status(400).json({
           success: false,
@@ -193,6 +206,7 @@ export async function updateMachineMaterial(req, res) {
       machine.maxModelDiameterGroups = [normalizedGroup];
     }
 
+    const previousDiameter = toNumberOrNull(machine.currentMaterial?.diameter);
     const nextMaterial = {
       materialType: String(materialType || "").trim(),
       heatNo: String(heatNo || "").trim(),
@@ -216,6 +230,62 @@ export async function updateMachineMaterial(req, res) {
       machineId,
       normalizedGroup,
     );
+
+    let espritRetrigger = null;
+    const nextDiameter = toNumberOrNull(machine.currentMaterial?.diameter);
+    if (isMaterialDiameterChanged(previousDiameter, nextDiameter)) {
+      try {
+        const queueDocs = await Request.find({
+          manufacturerStage: { $in: MACHINING_QUEUE_STAGE_SET },
+          ...EXCLUDE_UNMACHINABLE_FILTER,
+          "productionSchedule.assignedMachine": machineId,
+        })
+          .select({
+            _id: 1,
+            requestId: 1,
+            productionSchedule: 1,
+            caseInfos: 1,
+          })
+          .populate({
+            path: "productionSchedule.machiningRecord",
+            select: "status startedAt completedAt",
+          })
+          .lean();
+
+        const retriggerIds = queueDocs
+          .filter(
+            (doc) =>
+              !isMachiningInProgress(doc) && !isMachiningCompleted(doc),
+          )
+          .filter((doc) =>
+            shouldRetriggerEspritForMaterialDiameter({
+              previousDiameter: Number(doc?.productionSchedule?.diameter),
+              nextDiameter,
+              hasNc: Boolean(doc?.caseInfos?.ncFile?.s3Key),
+              ncMaterialDiameter: Number(
+                doc?.caseInfos?.ncFile?.materialDiameter,
+              ),
+            }),
+          )
+          .map((doc) => doc._id);
+
+        if (retriggerIds.length) {
+          espritRetrigger = await clearNcAndForceEspritRetrigger({
+            requestIds: retriggerIds,
+            diameter: nextDiameter,
+            diameterGroup:
+              normalizedGroup || inferDiameterGroupFromValue(nextDiameter),
+            actorUserId: req.user?._id ? String(req.user._id) : null,
+            reason: "machine_material_changed",
+          });
+        }
+      } catch (retriggerErr) {
+        console.warn("[updateMachineMaterial] esprit retrigger failed", {
+          machineId,
+          error: String(retriggerErr?.message || retriggerErr),
+        });
+      }
+    }
 
     try {
       const matDia = toNumberOrNull(machine.currentMaterial?.diameter);
@@ -282,6 +352,7 @@ export async function updateMachineMaterial(req, res) {
       data: {
         machine,
         assignedCount,
+        espritRetrigger,
       },
     });
   } catch (error) {
@@ -306,7 +377,7 @@ export async function scheduleMaterialChange(req, res) {
       });
     }
 
-    if (!["6", "8", "10", "12"].includes(newDiameterGroup)) {
+    if (!["6", "8", "10", "12", "14"].includes(newDiameterGroup)) {
       return res.status(400).json({
         success: false,
         message: "유효하지 않은 직경 그룹입니다.",

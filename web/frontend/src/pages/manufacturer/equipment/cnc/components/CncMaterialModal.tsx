@@ -36,13 +36,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-type DiameterGroup = "6" | "8" | "10" | "12";
+type DiameterGroup = "6" | "8" | "10" | "12" | "14";
 
 const diameterRank: Record<DiameterGroup, number> = {
   "6": 6,
   "8": 8,
   "10": 10,
   "12": 12,
+  "14": 14,
 };
 
 export type CncMaterialInfo = {
@@ -77,7 +78,8 @@ const toDiameterGroup = (d: number): DiameterGroup => {
   if (d <= 6) return "6";
   if (d <= 8) return "8";
   if (d <= 10) return "10";
-  return "12";
+  if (d <= 12) return "12";
+  return "14";
 };
 
 export const CncMaterialModal = ({
@@ -336,14 +338,15 @@ export const CncMaterialModal = ({
                     <SelectItem value="8">8mm</SelectItem>
                     <SelectItem value="10">10mm</SelectItem>
                     <SelectItem value="12">12mm</SelectItem>
+                    <SelectItem value="14">14mm</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
               <div className="space-y-1.5">
                 <Label>가공 가능한 최대직경</Label>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                  {(["6", "8", "10", "12"] as DiameterGroup[]).map((g) => {
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+                  {(["6", "8", "10", "12", "14"] as DiameterGroup[]).map((g) => {
                     const isBase = g === diameterGroup;
                     const isChecked = isBase || maxDiaGroups.includes(g);
                     const isDisabled = isBase || !canCheckMaxDiaGroup(g);

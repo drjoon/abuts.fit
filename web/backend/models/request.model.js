@@ -501,6 +501,8 @@ const requestSchema = new mongoose.Schema(
         filePath: String,
         s3Key: String,
         s3Url: String,
+        // NC 생성 시 사용한 소재 직경(#521). 장비 소재와 불일치 시 재생성 SSOT.
+        materialDiameter: Number,
         uploadedAt: {
           type: Date,
           default: Date.now,

@@ -189,7 +189,8 @@ function toDiameterGroup(diameter) {
   if (d <= 6) return "6";
   if (d <= 8) return "8";
   if (d <= 10) return "10";
-  return "12";
+  if (d <= 12) return "12";
+  return "14";
 }
 
 function makeDirectRootNcName({ requestId, fileName }) {
