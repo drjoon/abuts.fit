@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-26: filled pivot을 bbox 중심으로 옮기며 메시만 보정해 FL·A포인트·경사축이 위로 밀리던 회귀 수정.
 // - 2026-08-26: 좌우=카메라 azimuth(yaw), 위아래=카메라 polar — roll·반전 수정.
 // - 2026-08-26: 3D 프리뷰 회전을 화면 기준(screen-space) 오빗으로 변경 — 현재 뷰 각도에서 부드럽게 누적 회전.
 // - 2026-08-26: Z-up turntable 회전 — 좌우 드래그가 수직(Z)축 기준으로 돌도록 OrbitControls 교체.
@@ -1374,15 +1375,15 @@ export function StlPreviewViewer({
 
         // 메타데이터는 백엔드 캐시에서만 사용 (프론트 계산 제거)
         // STL 메시 추가
-        // filled STL은 이미 원점 정렬되어 있으므로 center를 빼지 않음
+        // filled STL은 이미 원점 정렬되어 있으므로 center를 빼지 않음.
+        // 오빗은 카메라 target(viewTarget)만 쓰면 되므로 pivot은 원점 유지 —
+        // pivot을 bbox 중심으로 옮기고 메시만 -viewTarget 보정하면
+        // 같은 pivot에 붙는 FL/A포인트/경사축이 viewTarget만큼 위로 밀린다.
         const viewTarget = isFilled
           ? bbox.getCenter(new THREE.Vector3())
           : new THREE.Vector3(0, 0, 0);
-        modelPivot.position.copy(viewTarget);
         if (!isFilled) {
           mesh.position.sub(center);
-        } else {
-          mesh.position.set(-viewTarget.x, -viewTarget.y, -viewTarget.z);
         }
         modelPivot.add(mesh);
         meshRef.current = mesh;
