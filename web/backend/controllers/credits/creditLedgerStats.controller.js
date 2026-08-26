@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-26: 보철유형 — 견적 라인 공급가 그대로(장부 비례배분 제거·의뢰당 1회).
 // - 2026-08-26: 소비 집계에 HOLD(에스크로 REQ_* 차감) 포함.
 // - 2026-08-23: 보철유형 집계에 커스텀어벗 포함(견적 라인 정규화·toothWorks 플래그·어벗생산).
 // - 2026-08-23: STORE_SALE을 소비·스토어 카테고리에 포함.
@@ -215,31 +216,6 @@ function lineRetailAmount(line) {
   );
 }
 
-function scaleIntegerAllocations(entries, targetAmount) {
-  const target = roundSupplyAmount(targetAmount);
-  if (!entries.length || target <= 0) return entries;
-  const sourceTotal = entries.reduce((sum, [, row]) => sum + row.amountSupply, 0);
-  if (sourceTotal <= 0) {
-    return entries.map(([key, row], index) => {
-      if (index !== entries.length - 1) {
-        return [key, { ...row, amountSupply: 0 }];
-      }
-      return [key, { ...row, amountSupply: target }];
-    });
-  }
-  if (sourceTotal === target) return entries;
-
-  let allocated = 0;
-  return entries.map(([key, row], index) => {
-    if (index === entries.length - 1) {
-      return [key, { ...row, amountSupply: Math.max(0, target - allocated) }];
-    }
-    const share = roundSupplyAmount((row.amountSupply * target) / sourceTotal);
-    allocated += share;
-    return [key, { ...row, amountSupply: share }];
-  });
-}
-
 function buildProsthesisAllocations({ quote, toothWorks, fallbackAmount }) {
   const lines = Array.isArray(quote?.lines) ? quote.lines : [];
   if (lines.length) {
@@ -251,10 +227,8 @@ function buildProsthesisAllocations({ quote, toothWorks, fallbackAmount }) {
       bumpMap(byType, type, { amount: amt, count: 1 });
     }
     const entries = [...byType.entries()];
-    // 견적 라인이 있어도 금액이 없으면 toothWorks 폴백(커스텀어벗 플래그 포함)
-    if (entries.length) {
-      return scaleIntegerAllocations(entries, fallbackAmount);
-    }
+    // 견적 라인 공급가 그대로(장부 소비액 비례배분 금지 → 천원 단위 유지)
+    if (entries.length) return entries;
   }
 
   const types = [
@@ -456,6 +430,9 @@ export async function getMyCreditLedgerStats(req, res) {
   const byCategoryMap = new Map();
   const byPartnerMap = new Map();
   const byProsthesisMap = new Map();
+  // 기공의뢰별 소비(폴백용) + 어벗생산 소비 — 보철유형은 의뢰당 1회만 집계
+  const ptxSpendForProsthesis = new Map();
+  const requestSpendForProsthesis = new Map();
 
   let totalChargeSupply = 0;
   let totalSpendSupply = 0;
@@ -526,7 +503,6 @@ export async function getMyCreditLedgerStats(req, res) {
     const refId = row?.refId ? String(row.refId) : "";
     const rt = refType.trim().toUpperCase();
     let partnerLabel = "";
-    let prosthesisTypes = [];
 
     if (rt === "PRACTICE_TRANSFER" && ptxById.has(refId)) {
       const ptx = ptxById.get(refId);
@@ -539,13 +515,10 @@ export async function getMyCreditLedgerStats(req, res) {
           String(ptx?.assigneeLabName || ptx?.targetLabName || "").trim() ||
           "기공소";
       }
-      prosthesisTypes = collectProsthesisTypesFromToothWorks(ptx?.toothWorks);
-        } else if (rt === "REQUEST" && requestById.has(refId)) {
+    } else if (rt === "REQUEST" && requestById.has(refId)) {
       const req = requestById.get(refId);
       partnerLabel =
         String(req?.caseInfos?.clinicName || "").trim() || (isLab ? "치과" : "");
-      // 어벗생산(REQUEST) 소비는 커스텀어벗으로 집계
-      prosthesisTypes = [CUSTOM_ABUTMENT_STATS_LABEL];
     }
 
     const rowAmount = roundSupplyAmount(
@@ -560,30 +533,51 @@ export async function getMyCreditLedgerStats(req, res) {
       bumpMap(byPartnerMap, partnerLabel, { amount: rowAmount, count: 1 });
     }
 
+    const prosthesisAmount = roundSupplyAmount(spendSupply || settlementEarnSupply);
+    if (prosthesisAmount <= 0) continue;
+
     if (rt === "PRACTICE_TRANSFER" && ptxById.has(refId)) {
-      const allocations = buildProsthesisAllocations({
-        quote: quotesByPtxId.get(refId) || null,
-        toothWorks: ptxById.get(refId)?.toothWorks,
-        fallbackAmount: rowAmount,
+      ptxSpendForProsthesis.set(
+        refId,
+        roundSupplyAmount(
+          (ptxSpendForProsthesis.get(refId) || 0) + prosthesisAmount,
+        ),
+      );
+    } else if (rt === "REQUEST" && requestById.has(refId)) {
+      requestSpendForProsthesis.set(
+        refId,
+        roundSupplyAmount(
+          (requestSpendForProsthesis.get(refId) || 0) + prosthesisAmount,
+        ),
+      );
+    }
+  }
+
+  for (const [refId, fallbackAmount] of ptxSpendForProsthesis) {
+    const allocations = buildProsthesisAllocations({
+      quote: quotesByPtxId.get(refId) || null,
+      toothWorks: ptxById.get(refId)?.toothWorks,
+      fallbackAmount,
+    });
+    for (const [, allocRow] of allocations) {
+      bumpMap(byProsthesisMap, allocRow.label, {
+        amount: allocRow.amountSupply,
+        count: allocRow.count,
       });
-      for (const [, allocRow] of allocations) {
-        bumpMap(byProsthesisMap, allocRow.label, {
-          amount: allocRow.amountSupply,
-          count: allocRow.count,
-        });
-      }
-    } else if (prosthesisTypes.length) {
-      const allocations = buildProsthesisAllocations({
-        quote: null,
-        toothWorks: prosthesisTypes.map((type) => ({ prosthesisType: type })),
-        fallbackAmount: rowAmount,
+    }
+  }
+
+  for (const [refId, fallbackAmount] of requestSpendForProsthesis) {
+    const allocations = buildProsthesisAllocations({
+      quote: null,
+      toothWorks: [{ prosthesisType: CUSTOM_ABUTMENT_STATS_LABEL }],
+      fallbackAmount,
+    });
+    for (const [, allocRow] of allocations) {
+      bumpMap(byProsthesisMap, allocRow.label, {
+        amount: allocRow.amountSupply,
+        count: allocRow.count,
       });
-      for (const [, allocRow] of allocations) {
-        bumpMap(byProsthesisMap, allocRow.label, {
-          amount: allocRow.amountSupply,
-          count: allocRow.count,
-        });
-      }
     }
   }
 
