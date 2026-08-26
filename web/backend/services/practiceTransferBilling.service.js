@@ -11,6 +11,7 @@
 // - web/backend/models/ledgerLine.model.js
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
+// - 2026-08-26: labAbutmentPending는 미도입 플래그만(금액>0과 OR 하지 않음).
 // - 2026-08-22: 치과 멤버십/일반 청구 이중가 제거. membership* 단일 고시. pricingTier 분기 삭제.
 // - 2026-08-22: 기공소→치과 배송 무료(lab_shipping hold 미생성·레거시 hold 해제). 라벨 정정.
 // - 2026-08-21: 기공소→치과·치과→기공소 배송 무료(labShippingFee 0). 기공소→어벗츠는 Request 박스키 hold.
@@ -3625,8 +3626,7 @@ export function toFeeQuoteApi(quote) {
   return {
     labFeeTotal: Math.max(0, Math.round(Number(fees.labFeeTotal || 0))),
     labAbutmentTotal,
-    labAbutmentPending:
-      Boolean(fees.labAbutmentPending) || labAbutmentTotal > 0,
+    labAbutmentPending: Boolean(fees.labAbutmentPending),
     abutmentRetailTotal: Math.max(
       0,
       Math.round(Number(fees.abutmentRetailTotal || 0)),

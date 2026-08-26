@@ -6,6 +6,7 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
 // - web/frontend/src/features/settings/tabs/LabFeeScheduleTab.tsx
 // - web/backend/tests/unit/labFeeSchedule.test.js
+// - 2026-08-26: 미도입(요청중·도입중)도 기공소 커스텀어벗 수가를 합산(0원이면 미도입·수락 시 기공수가 포워드).
 // - 2026-08-25: 단독「커스텀어벗」은 심플이어도 지그제외 수가 대상. 크라운+심플만 수가 제외.
 // - 2026-08-25: 심플어벗(치과 재고)은 기공소 어벗 수가·견적에서 제외. 스캔바디 커스텀어벗만 과금.
 // - 2026-08-22: 치과 멤버십/일반 청구 이중가 제거. resolveAbutsAbutmentUnitPrice는 고시 단일가.
@@ -1456,10 +1457,11 @@ export const computePracticeTransferRetailFees = (params: {
     const feeName = labAbutmentFeeNameForRow(row);
     const lab = resolveLabAbutmentUnitPriceForRow(items, useRemake, row);
     if (isPendingRoundBarAbutment(row, params.implantFavorites)) {
-      // 요청중·도입중: 기공소 자체 처리 → 제조사 의뢰·견적 불포함
+      // 요청중·도입중: 기공소 자체 처리 → 제조사·어벗츠 단가 제외.
+      // 기공소 커스텀어벗 수가가 있으면 그 금액(0원이면 미도입 표시·수락 시 기공수가 포워드).
       return {
         abuts: 0,
-        lab: 0,
+        lab,
         pending: true,
         quote: false,
         feeName,

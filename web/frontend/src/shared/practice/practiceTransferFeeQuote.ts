@@ -1,6 +1,7 @@
 // related files:
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
+// - 2026-08-26: labAbutmentPending는 미도입 플래그만(금액>0과 OR 하지 않음).
 // - 2026-08-21: labShippingFee 파싱(크레딧 정산 배송 분리용. 견적 툴팁 미사용).
 // - 2026-08-21: missingFeeNames — 커스텀어벗 등 기공소 미설정 수가를 치과 견적에 안내.
 // - 2026-08-13: 저장된 견적 라인도 치아번호 10→20→30→40번대 순.
@@ -161,7 +162,7 @@ export const parsePracticeTransferFeeQuote = (
           labFee: Math.max(0, Math.round(Number(item.labFee || 0))),
           ...(labFeeMin != null ? { labFeeMin } : {}),
           labAbutmentFee,
-          labAbutmentPending: Boolean(item.labAbutmentPending) || labAbutmentFee > 0,
+          labAbutmentPending: Boolean(item.labAbutmentPending),
           abutmentRetail: Math.max(0, Math.round(Number(item.abutmentRetail || 0))),
           abutmentRetailNote,
         };
@@ -182,7 +183,6 @@ export const parsePracticeTransferFeeQuote = (
     labAbutmentTotal,
     labAbutmentPending:
       Boolean(r.labAbutmentPending) ||
-      labAbutmentTotal > 0 ||
       lines.some((line) => line.labAbutmentPending),
     abutmentQuotePending:
       Boolean(r.abutmentQuotePending) ||
