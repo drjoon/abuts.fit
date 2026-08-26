@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-26: 관리자 모니터링(view=monitoring) — 제조사 준비 큐(productModeNe)와 동일 제외(PTX 디자인 미완료·레거시 디자인 mode).
 // - 2026-08-26: 샘플 하드삭제 시 MachiningRecord.requestDeletedAt 마킹(완료 목록 라벨 유지).
 // - 2026-08-25: 관리자 헥스 확정 시 updateRndHexRotation 제조사 변경 차단.
 // - 2026-08-21: 의뢰자 어벗츠로의뢰 취소 — PTX(치과 기공의뢰) 연동 CA는 거부(기공의뢰수신 작업취소 SSOT).
@@ -93,6 +94,7 @@ import {
   findHexVerificationCancelSiblings,
   backfillMissingFilledStlOnHexSamplesInList,
 } from "../../services/hexVerificationSample.service.js";
+import { buildWorksheetReadyQueueGuard } from "../../services/worksheetReadyQueue.guard.js";
 
 const ESPRIT_BASE =
   process.env.ESPRIT_ADDIN_BASE_URL ||
@@ -1426,20 +1428,7 @@ export async function getAllRequests(req, res) {
       const productModeNe = String(req.query.productModeNe || "").trim();
       if (productModeNe === "design_custom_abutment") {
         const andParts = Array.isArray(filter.$and) ? [...filter.$and] : [];
-        andParts.push({
-          $or: [
-            { "caseInfos.productMode": { $ne: "design_custom_abutment" } },
-            { "caseInfos.productMode": { $exists: false } },
-          ],
-        });
-        // PTX 수주 기공소 디자인 대기분은 제조 준비 큐에 올리지 않음
-        andParts.push({
-          $or: [
-            { "partnerBilling.relatedPracticeTransferId": null },
-            { "partnerBilling.relatedPracticeTransferId": { $exists: false } },
-            { designCompletedAt: { $type: "date" } },
-          ],
-        });
+        andParts.push(buildWorksheetReadyQueueGuard());
         filter.$and = andParts;
       } else if (productModeNe) {
         // $ne는 필드 누락(레거시 생산)도 포함한다.
@@ -1480,15 +1469,19 @@ export async function getAllRequests(req, res) {
       filter.createdAt = createdAtFilter;
     }
 
-    // 관리자 모니터링: 내부 샘플/R&D·복사 샘플은 운영 의뢰로 집계·표시하지 않음
-    // (price.rule=manufacturer_sample 이고 source/requestCategory 누락된 레거시 고스트 포함)
+    // 관리자 모니터링: 내부 샘플/R&D·복사 샘플 제외 + 제조사 준비 큐와 동일 범위
+    // (PTX 디자인 미완료·레거시 design_custom_abutment는 제조사-준비에 없으므로 표시하지 않음)
     if (view === "monitoring") {
+      const monitoringGuards = [
+        buildNonSampleRequestGuard(),
+        buildWorksheetReadyQueueGuard(),
+      ];
       if (Array.isArray(filter.$and)) {
-        filter.$and = [...filter.$and, buildNonSampleRequestGuard()];
+        filter.$and = [...filter.$and, ...monitoringGuards];
       } else if (Object.keys(filter).length === 0) {
-        filter = buildNonSampleRequestGuard();
+        filter = { $and: monitoringGuards };
       } else {
-        filter = { $and: [filter, buildNonSampleRequestGuard()] };
+        filter = { $and: [filter, ...monitoringGuards] };
       }
     }
 
@@ -1752,6 +1745,9 @@ export async function getAllRequests(req, res) {
       "caseInfos.clinicName",
       "caseInfos.patientName",
       "caseInfos.tooth",
+      "caseInfos.productMode",
+      "designCompletedAt",
+      "partnerBilling.relatedPracticeTransferId",
       "requestor",
     ].join(" ");
 

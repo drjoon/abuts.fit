@@ -3,6 +3,8 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/shared/realtime/useAppEventListener.ts
+// change-log:
+// - 2026-08-26: 초기 fetch가 방문 clear를 덮어쓰지 않도록 cleared 키 유지.
 import { useState, useEffect, useCallback, useRef } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -32,13 +34,14 @@ const INITIAL_COUNTS: CommBadgeCounts = {
  * 관리자 소통 메뉴 배지 카운트 관리 훅.
  *
  * - 마운트 시 /api/admin/comm-badges 로 초기 카운트를 1회 조회
- * - 이후 app-event comm:badge-update 소켓 이벤트로 실시간 증가 수신
+ * - 이후 app-event comm:badge-update 소켓 이벤트로 실시간 증가 반영
  * - 해당 페이지 방문 시 해당 키의 카운트를 0으로 초기화
  */
 export function useAdminCommBadges() {
   const { token, user } = useAuthStore();
   const [counts, setCounts] = useState<CommBadgeCounts>(INITIAL_COUNTS);
   const fetchedRef = useRef(false);
+  const clearedKeysRef = useRef<Set<CommBadgeKey>>(new Set());
 
   const fetchInitialCounts = useCallback(async () => {
     if (!token || user?.role !== "admin") return;
@@ -49,7 +52,11 @@ export function useAdminCommBadges() {
         token,
       });
       if (res.ok && res.data?.success) {
-        setCounts(res.data.data);
+        const next = { ...INITIAL_COUNTS, ...res.data.data };
+        for (const key of clearedKeysRef.current) {
+          next[key] = 0;
+        }
+        setCounts(next);
       }
     } catch {
       // silent
@@ -62,7 +69,6 @@ export function useAdminCommBadges() {
     void fetchInitialCounts();
   }, [fetchInitialCounts, token, user?.role]);
 
-  // 소켓 이벤트로 실시간 카운트 업데이트
   useAppEventListener({
     enabled: user?.role === "admin",
     eventTypes: ["comm:badge-update"],
@@ -73,6 +79,8 @@ export function useAdminCommBadges() {
         delta?: number;
       };
       if (key && typeof delta === "number") {
+        // 현재 보고 있는 메뉴는 unread로만 쓰므로 +delta 무시
+        if (clearedKeysRef.current.has(key) && delta > 0) return;
         setCounts((prev) => ({
           ...prev,
           [key]: Math.max(0, (prev[key] ?? 0) + delta),
@@ -87,13 +95,14 @@ export function useAdminCommBadges() {
    */
   const clearBadgeForPath = useCallback((pathname: string) => {
     const key = COMM_BADGE_HREFS[pathname];
-    if (!key) return;
-    setCounts((prev) => (prev[key] === 0 ? prev : { ...prev, [key]: 0 }));
+    const nextCleared = new Set<CommBadgeKey>();
+    if (key) {
+      nextCleared.add(key);
+      setCounts((prev) => (prev[key] === 0 ? prev : { ...prev, [key]: 0 }));
+    }
+    clearedKeysRef.current = nextCleared;
   }, []);
 
-  /**
-   * href를 받아 해당 메뉴의 배지 카운트를 반환.
-   */
   const getBadgeForHref = useCallback(
     (href: string): number => {
       const key = COMM_BADGE_HREFS[href];

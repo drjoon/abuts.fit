@@ -1,3 +1,4 @@
+// - 2026-08-26: PTX 디자인 핸드오프 → 제조사 준비 진입 시 관리자 의뢰 배지 +1.
 // - 2026-08-22: 구강스캔 없는 PTX — designSourceFiles 없어도 취소·재업로드(어벗 STL 클리어).
 // - 2026-08-22: design_custom_abutment 레거시. 핸드오프는 PTX(labDesigned)·레거시 mode. 취소 복원은 custom_abutment.
 // - 2026-08-21: 디자인 미러 성공 시에만 컨펌 채팅·practice:transfer-updated(치과 상세 작업파일/컨펌 CTA).
@@ -719,6 +720,10 @@ export async function handoffDesignToProduction(req, res) {
         emitAppEventToRoles(["manufacturer", "admin"], "worksheet:count-update", {
           reason: "ptx-design-handoff",
           requestId: String(request._id),
+        });
+        emitAppEventToRoles(["admin"], "comm:badge-update", {
+          key: "request",
+          delta: 1,
         });
       } catch (emitErr) {
         console.error("[DESIGN_HANDOFF] worksheet count emit failed", emitErr);

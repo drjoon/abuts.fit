@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-26: 제조사 준비 큐와 동일 범위 — PTX 디자인 미완료·레거시 디자인 mode 제외(BE monitoring 가드와 맞춤).
 // - 2026-08-09: 샘플(고스트) 제외 확인용 FE 가드. 직원명 숨기고 치과명 표시. 필터/요약 좌측 여백 정리.
 // - 2026-08-09: 진행중 stage를 목록 상단 정렬. 의뢰ID 숨김·신속/묶음 뱃지·필터/요약 여백. 카운트는 목록과 동일 소스만 사용.
 // - 2026-08-09: 준비/세척.패킹 카운트·필터 불일치 수정(모니터링 stage 정규화 통일). 카드 밀도·슬레이트 톤으로 정리.
@@ -80,6 +81,20 @@ const isSampleRequest = (request: any) => {
     requestCategory === "rnd_sample" ||
     requestCategory === "copied_sample"
   );
+};
+
+/**
+ * 제조사 준비 큐 대상인지 — BE buildWorksheetReadyQueueGuard / productModeNe SSOT
+ * - 레거시 design_custom_abutment 제외
+ * - PTX 연동 + designCompletedAt 없음 → 기공소 디자인 대기, 제외
+ */
+const isWorksheetReadyQueueRequest = (request: any) => {
+  const productMode = String(request?.caseInfos?.productMode || "").trim();
+  if (productMode === "design_custom_abutment") return false;
+  const relatedPtxId =
+    request?.partnerBilling?.relatedPracticeTransferId ?? null;
+  if (relatedPtxId && !request?.designCompletedAt) return false;
+  return true;
 };
 
 const formatKstDate = (value: unknown) => {
@@ -310,6 +325,7 @@ export const AdminRequestMonitoring = () => {
 
     return requests.filter((request) => {
       if (isSampleRequest(request)) return false;
+      if (!isWorksheetReadyQueueRequest(request)) return false;
       const createdAtMs = new Date(request?.createdAt || 0).getTime();
       if (!Number.isFinite(createdAtMs)) return false;
       return createdAtMs >= startMs && createdAtMs <= endMs;

@@ -2,11 +2,16 @@
 // - web/backend/rules.md
 // - web/backend/app.js
 // - web/backend/server.js
+// - web/backend/services/worksheetReadyQueue.guard.js
+// - web/frontend/src/shared/hooks/useAdminCommBadges.ts
+// change-log:
+// - 2026-08-26: 의뢰 배지 = 제조사 준비 큐와 동일(PTX 디자인 미완료·레거시 디자인 mode 제외).
 import Request from "../../models/request.model.js";
 import BusinessRegistrationInquiry from "../../models/businessRegistrationInquiry.model.js";
 import Mail from "../../models/mail.model.js";
 import Chat from "../../models/chat.model.js";
 import ChatRoom from "../../models/chatRoom.model.js";
+import { buildWorksheetReadyQueueGuard } from "../../services/worksheetReadyQueue.guard.js";
 
 /**
  * 관리자 소통 메뉴 배지 카운트 조회
@@ -19,11 +24,13 @@ export async function adminGetCommBadges(req, res) {
   try {
     const [requestCount, inquiryCount, mailCount, chatCount] =
       await Promise.all([
-        // 준비: 아직 가공 검토 전인 새 의뢰 (준비 단계)
-        // R&D 샘플은 통계/배지에서 제외
+        // 준비: 제조사 준비 큐와 동일 범위(PTX 디자인 대기·레거시 디자인 mode 제외)
         Request.countDocuments({
-          manufacturerStage: "준비",
-          source: { $ne: "manufacturer_sample" },
+          $and: [
+            { manufacturerStage: "준비" },
+            { source: { $ne: "manufacturer_sample" } },
+            buildWorksheetReadyQueueGuard(),
+          ],
         }),
 
         // 문의: 처리되지 않은 열린 문의

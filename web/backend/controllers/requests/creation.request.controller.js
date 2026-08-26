@@ -6,6 +6,7 @@
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/requests/common.requests.controller.js
 // change-log:
+// - 2026-08-26: 관리자 의뢰 배지는 제조사 준비 큐 진입 건만 +1(PTX 디자인 대기 제외).
 // - 2026-08-18: 생산 의뢰는 준비 단계 진입(생성) 시 로트번호(3글자)를 발급한다.
 // - 2026-08-11: 아노다이징은 의뢰건 caseInfos 우선, 미설정 시 사업체 기본값(ON) 폴백.
 import { Types } from "mongoose";
@@ -42,6 +43,7 @@ import { emitAppEventToRoles } from "../../socket.js";
 import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
 import { recomputeBulkShippingSnapshotForBusinessAnchorId } from "../../services/bulkShippingSnapshot.service.js";
 import { loadCreditSettingsDefaults } from "../../utils/creditSettingsDefaults.js";
+import { isWorksheetReadyQueueRequest } from "../../services/worksheetReadyQueue.guard.js";
 
 /**
  * 새 의뢰 생성
@@ -365,10 +367,12 @@ export async function createRequest(req, res) {
       });
     }
 
-    emitAppEventToRoles(["admin"], "comm:badge-update", {
-      key: "request",
-      delta: 1,
-    });
+    if (isWorksheetReadyQueueRequest(newRequest)) {
+      emitAppEventToRoles(["admin"], "comm:badge-update", {
+        key: "request",
+        delta: 1,
+      });
+    }
 
     const createdAnchorId = String(
       newRequest?.businessAnchorId || req.user?.businessAnchorId || "",
