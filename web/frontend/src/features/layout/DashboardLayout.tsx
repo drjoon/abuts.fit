@@ -97,6 +97,7 @@ import { cn } from "@/shared/ui/cn";
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import { LabFeeSetupPrompt } from "@/features/settings/LabFeeSetupPrompt";
+import { ThreeShapeConnectPrompt } from "@/features/settings/ThreeShapeConnectPrompt";
 import { LabDashboardTopBanners } from "@/features/lab/LabDashboardTopBanners";
 import { getRequestorRoleBadgeLabel } from "@/shared/business/requestorCapabilities";
 import { getAppUserRoleLabel } from "@/shared/types/role";
@@ -1353,6 +1354,10 @@ export const DashboardLayout = () => {
   return (
     <div className="min-h-screen bg-background">
       <LabFeeSetupPrompt
+        isLab={requestorKind === "lab" || user.role === "internalLab"}
+        ready={!requestorAccessLoading || user.role === "internalLab"}
+      />
+      <ThreeShapeConnectPrompt
         isLab={requestorKind === "lab" || user.role === "internalLab"}
         ready={!requestorAccessLoading || user.role === "internalLab"}
       />

@@ -73,6 +73,15 @@
 
 ## 2. 구현 메모
 
+### 3Shape Communicate Inbox (lab)
+
+- 파트너 신청 초안: `docs/integrations/3shape-partner-application.md`
+- Lab별 연결: `ScannerIntegration` (`provider: "3shape"`) + `/api/integrations/3shape`
+- 자격증명: `SCANNER_INTEGRATION_SECRET` AES-GCM (`utils/scannerIntegrationCrypto.js`)
+- 수신: webhook `POST /api/webhooks/3shape` · worker `startThreeShapeInboxSyncWorker` (`THREE_SHAPE_SYNC_ENABLED`)
+- 클라이언트: `services/integrations/threeShape/client.js` — `THREE_SHAPE_CLIENT_MODE=fixture|live`
+- 착지: `PracticeTransfer` `source=3shape` + `externalCaseId` 멱등 (`createPracticeTransferFromExternalIngest`)
+
 - 신속 배송(`express`) 복원 메모:
   - Draft/Request `shippingMode` 필드를 다시 저장합니다. (`models/draftRequest.model.js`, `models/request.model.js`)
   - 생성 경로에서 `"normal"` 강제 금지: `draftRequest.controller.js`, `creation.draft.controller.js`, `creation.from-draft.controller.js`, `creation.request.controller.js`

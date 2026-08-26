@@ -4248,7 +4248,10 @@ export async function getReceivedPracticeTransfers(req, res) {
         matchingMode,
         {
           businessName: String(
-            practiceBusiness?.name || practiceProfile?.clinicName || "",
+            practiceBusiness?.name ||
+              practiceProfile?.clinicName ||
+              doc?.externalPractice?.name ||
+              "",
           ).trim(),
           userName: String(
             practiceProfile?.staffName || practiceUser?.name || "",
@@ -4285,6 +4288,14 @@ export async function getReceivedPracticeTransfers(req, res) {
       return {
         _id: String(doc?._id || ""),
         transferId: String(doc?.transferId || "").trim(),
+        source: String(doc?.source || "abuts").trim() || "abuts",
+        externalCaseId: String(doc?.externalCaseId || "").trim() || null,
+        externalPractice: {
+          name: String(doc?.externalPractice?.name || "").trim(),
+          email: String(doc?.externalPractice?.email || "").trim(),
+          communicateId: String(doc?.externalPractice?.communicateId || "").trim(),
+        },
+        designSoftware: String(doc?.designSoftware || "").trim() || null,
         targetLabAnchorId: String(doc?.targetLabAnchorId || "").trim() || null,
         targetLabName: String(doc?.targetLabName || "").trim(),
         transferMemo: String(doc?.transferMemo || "").trim(),

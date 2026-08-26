@@ -11,6 +11,7 @@ import { BusinessTab } from "@/shared/components/business/settings/BusinessTab";
 import { StaffTab } from "@/features/settings/tabs/StaffTab";
 import { NotificationsTab } from "@/features/settings/tabs/NotificationsTab";
 import { LabFeeScheduleTab } from "@/features/settings/tabs/LabFeeScheduleTab";
+import { ThreeShapeIntegrationTab } from "@/features/settings/tabs/ThreeShapeIntegrationTab";
 import {
   User,
   Building2,
@@ -18,6 +19,7 @@ import {
   Users,
   Shield,
   Banknote,
+  Scan,
 } from "lucide-react";
 import { RequestorSecurity } from "./Security";
 import { formatKstDateTimeToKo, toKstYmd } from "@/shared/date/kst";
@@ -42,6 +44,7 @@ type TabKey =
   | "business"
   | "staff"
   | "lab-fees"
+  | "3shape"
   | "notifications"
   | "security";
 
@@ -137,6 +140,12 @@ export const RequestorSettingsPage = () => {
         icon: Banknote,
         content: <LabFeeScheduleTab />,
       });
+      base.push({
+        key: "3shape",
+        label: "3Shape",
+        icon: Scan,
+        content: <ThreeShapeIntegrationTab />,
+      });
     }
 
     base.push(
@@ -172,7 +181,7 @@ export const RequestorSettingsPage = () => {
       (tabs[0]?.key as TabKey);
 
   if (accessLoading) {
-    return <SettingsTabsSkeleton tabCount={isLab ? 6 : 5} />;
+    return <SettingsTabsSkeleton tabCount={isLab ? 7 : 5} />;
   }
 
   return (

@@ -174,6 +174,8 @@ type PracticeTransferDetailChatDialogProps = {
   chatHeaderAction?: ReactNode;
   /** 채팅 헤더 바로 아래 — 상대방 내부 메모 */
   counterpartyMemoStrip?: ReactNode;
+  /** 요약 그리드 아래 — 예: 미가입 치과 초대 CTA */
+  summaryBanner?: ReactNode;
   summaryItems: PracticeTransferDialogSummaryItem[];
   memo: string;
   /** 보철물 치식 차트(읽기 전용). 있으면 의뢰 메모 위에 표시 */
@@ -301,6 +303,7 @@ export function PracticeTransferDetailChatDialog({
   authToken = null,
   chatHeaderAction = null,
   counterpartyMemoStrip = null,
+  summaryBanner = null,
   summaryItems,
   memo,
   toothWorks,
@@ -1109,6 +1112,10 @@ export function PracticeTransferDetailChatDialog({
                   );
                 })}
               </div>
+
+              {summaryBanner ? (
+                <div className="pt-1">{summaryBanner}</div>
+              ) : null}
 
               {hasToothWorks ? (
                 <PracticeToothWorkChartReadOnly

@@ -400,12 +400,21 @@ export async function createLabTradingPartnerInvite(req, res) {
 
     // 링크/안내문구 복사용 토큰만 발급. 목록 카드는 치과 가입(pending) 때부터 표시.
     const inviteToken = createInviteToken();
+    const hintRaw =
+      req.body?.practiceHint && typeof req.body.practiceHint === "object"
+        ? req.body.practiceHint
+        : {};
+    const practiceHint = {
+      name: String(hintRaw.name || "").trim().slice(0, 120),
+      phone: String(hintRaw.phone || "").trim().slice(0, 40),
+      memo: String(hintRaw.memo || "").trim().slice(0, 500),
+    };
     const doc = await LabTradingPartner.create({
       labAnchorId: new Types.ObjectId(labAnchorId),
       inviteToken,
       status: "invited",
       invitedAfterWindow,
-      practiceHint: { name: "", phone: "", memo: "" },
+      practiceHint,
       invitedAt: new Date(),
       invitedByUserId: req.user?._id || null,
     });

@@ -173,6 +173,10 @@ import {
   type PracticeTransferDialogFileItem,
   type PracticeTransferDialogSummaryItem,
 } from "@/shared/components/PracticeTransferDetailChatDialog";
+import {
+  isUnregisteredExternalPractice,
+  PracticeExternalInviteCta,
+} from "@/shared/components/practice/PracticeExternalInviteCta";
 import { LabPracticeFeeSurchargeControl } from "@/shared/components/practice/LabPracticeFeeSurchargeControl";
 import { CounterpartyMemoStrip } from "@/shared/components/practice/CounterpartyMemoStrip";
 import { parsePracticeTransferFeeQuote } from "@/shared/practice/practiceTransferFeeQuote";
@@ -930,6 +934,24 @@ export function RequestorPracticeReceivePage({
         return {
           _id: String(r._id || "").trim(),
           transferId: String(r.transferId || "").trim(),
+          source: String(r.source || "abuts").trim() || "abuts",
+          externalCaseId: String(r.externalCaseId || "").trim() || null,
+          externalPractice:
+            r.externalPractice && typeof r.externalPractice === "object"
+              ? {
+                  name: String(
+                    (r.externalPractice as { name?: unknown }).name || "",
+                  ).trim(),
+                  email: String(
+                    (r.externalPractice as { email?: unknown }).email || "",
+                  ).trim(),
+                  communicateId: String(
+                    (r.externalPractice as { communicateId?: unknown })
+                      .communicateId || "",
+                  ).trim(),
+                }
+              : null,
+          designSoftware: String(r.designSoftware || "").trim() || null,
           targetLabName: String(r.targetLabName || "").trim(),
           transferMemo: parsedMemo.memo,
           rawTransferMemo: String(r.transferMemo || "").trim(),
@@ -4809,6 +4831,17 @@ export function RequestorPracticeReceivePage({
                 );
                 return true;
               }}
+            />
+          ) : null
+        }
+        summaryBanner={
+          selectedTransfer && isUnregisteredExternalPractice(selectedTransfer) ? (
+            <PracticeExternalInviteCta
+              clinicName={
+                selectedTransfer.externalPractice?.name ||
+                selectedTransfer.practice?.businessName
+              }
+              clinicEmail={selectedTransfer.externalPractice?.email}
             />
           ) : null
         }

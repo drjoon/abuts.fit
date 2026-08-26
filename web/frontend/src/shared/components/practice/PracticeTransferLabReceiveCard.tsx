@@ -38,6 +38,10 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/shared/ui/cn";
 import {
+  isUnregisteredExternalPractice,
+  UnregisteredPracticeBadge,
+} from "@/shared/components/practice/PracticeExternalInviteCta";
+import {
   PRACTICE_REMAKE_BADGE_CLASS,
   toStatusBadgeLabel,
 } from "@/shared/practice/practiceRecentTransferList";
@@ -215,6 +219,17 @@ export function PracticeTransferLabReceiveCard({
               >
                 리메이크
               </Badge>
+            ) : null}
+            {String(transfer.source || "") === "3shape" ? (
+              <Badge
+                variant="outline"
+                className="h-5 shrink-0 border-sky-300 bg-sky-50 px-1.5 text-[11px] leading-none text-sky-900"
+              >
+                3Shape
+              </Badge>
+            ) : null}
+            {isUnregisteredExternalPractice(transfer) ? (
+              <UnregisteredPracticeBadge />
             ) : null}
             {transfer.production?.rushProcessing ? (
               <Badge
