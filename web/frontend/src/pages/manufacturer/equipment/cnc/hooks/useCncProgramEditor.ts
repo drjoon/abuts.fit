@@ -1,3 +1,5 @@
+// change-log:
+// - 2026-08-26: NC S3 로드 시 버전리스 IndexedDB(cnc:s3:key) 히트 제거 — 동일 키 재생성 후 구 #521 고착 방지.
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
@@ -7,11 +9,7 @@ import { useRef, useState } from "react";
 import type { Machine } from "@/pages/manufacturer/equipment/cnc/types";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
-import {
-  getFileBlob,
-  setFileBlob,
-  deleteCncProgramCache,
-} from "@/shared/files/fileBlobCache";
+import { deleteCncProgramCache } from "@/shared/files/fileBlobCache";
 
 interface UseCncProgramEditorParams {
   workUid: string;
@@ -102,13 +100,10 @@ export const useCncProgramEditor = ({
 
     const s3Key = String(prog?.s3Key || "").trim();
     if (s3Key && token) {
-      const cacheKey = `cnc:s3:${s3Key}`;
+      // 동일 s3Key 덮어쓰기(NC 재생성) 시 버전리스 IndexedDB는 구 내용을 영원히 돌려준다.
+      // 에디터는 항상 S3에서 읽고, 남은 구 캐시만 정리한다.
       try {
-        const cachedBlob = await getFileBlob(cacheKey);
-        if (cachedBlob) {
-          const cachedText = await cachedBlob.text();
-          if (cachedText != null) return cachedText;
-        }
+        await deleteCncProgramCache(s3Key);
       } catch {
         // no-op
       }
@@ -133,17 +128,11 @@ export const useCncProgramEditor = ({
         throw new Error("다운로드 URL이 올바르지 않습니다.");
       }
 
-      const resp = await fetch(downloadUrl, { method: "GET" });
+      const resp = await fetch(downloadUrl, { method: "GET", cache: "no-store" });
       if (!resp.ok) {
         throw new Error(`S3 다운로드 실패 (HTTP ${resp.status})`);
       }
-      const text = await resp.text();
-      try {
-        await setFileBlob(cacheKey, new Blob([text], { type: "text/plain" }));
-      } catch {
-        // no-op
-      }
-      return text;
+      return await resp.text();
     }
 
     // SSOT 원칙상 브리지 파일시스템(bridge-store)을 직접 조회하지 않는다.

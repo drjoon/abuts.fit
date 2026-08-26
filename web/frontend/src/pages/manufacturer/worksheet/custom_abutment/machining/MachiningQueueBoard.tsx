@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-26: 큐→프리뷰 ncFile에 uploadedAt/fileSize/materialDiameter 전달(버전 캐시·#521 검증용).
 // - 2026-08-24: 장비 상태 갱신 뱃지 — 직경별 건수 옆(leadingAddon)으로 이동.
 // - 2026-08-24: 상단 헤더 — 진행중 의뢰·직경 카드(좌) + 상태·액션 버튼(우) 한 행. REAL 뱃지 제거.
 // - 2026-08-21: Next Up 드래그로 타 장비 이동(moveNextUpToMachine) 연결.
@@ -651,15 +652,57 @@ export const MachiningQueueBoard = ({
           requestorHexRotation:
             String(queueCaseInfos?.requestorHexRotation || "").trim() ||
             undefined,
-          ncFile: {
-            s3Key: String(prog?.s3Key || "").trim(),
-            filePath: String(prog?.bridgePath || "").trim(),
-            s3Bucket: String(prog?.s3Bucket || "").trim(),
-          },
+          ncFile: (() => {
+            const queueNc =
+              prog?.ncFile && typeof prog.ncFile === "object"
+                ? (prog.ncFile as Record<string, unknown>)
+                : queueCaseInfos?.ncFile &&
+                    typeof queueCaseInfos.ncFile === "object"
+                  ? (queueCaseInfos.ncFile as Record<string, unknown>)
+                  : {};
+            const materialDiameterRaw =
+              queueNc?.materialDiameter ??
+              prog?.materialDiameter ??
+              prog?.diameter;
+            const materialDiameter = Number(materialDiameterRaw);
+            return {
+              s3Key: String(prog?.s3Key || queueNc?.s3Key || "").trim(),
+              filePath: String(
+                prog?.bridgePath || queueNc?.filePath || "",
+              ).trim(),
+              s3Bucket: String(
+                prog?.s3Bucket || queueNc?.s3Bucket || "",
+              ).trim(),
+              ...(queueNc?.fileSize != null
+                ? { fileSize: queueNc.fileSize }
+                : prog?.fileSize != null
+                  ? { fileSize: prog.fileSize }
+                  : {}),
+              ...(queueNc?.uploadedAt
+                ? { uploadedAt: queueNc.uploadedAt }
+                : prog?.uploadedAt
+                  ? { uploadedAt: prog.uploadedAt }
+                  : {}),
+              ...(Number.isFinite(materialDiameter) && materialDiameter > 0
+                ? { materialDiameter }
+                : {}),
+            };
+          })(),
         },
+        productionSchedule: (() => {
+          const diameter = Number(
+            prog?.materialDiameter ??
+              prog?.diameter ??
+              (prog?.ncFile as { materialDiameter?: unknown } | undefined)
+                ?.materialDiameter,
+          );
+          return Number.isFinite(diameter) && diameter > 0
+            ? { diameter }
+            : undefined;
+        })(),
       } as unknown as ManufacturerRequest;
 
-      await handleOpenPreview(previewReq);
+      await handleOpenPreview(previewReq, { forceRefresh: true });
     },
     [handleOpenPreview, toast],
   );

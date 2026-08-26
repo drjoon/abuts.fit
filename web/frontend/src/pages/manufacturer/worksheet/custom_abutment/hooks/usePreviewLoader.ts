@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-26: NC 프리뷰 — uploadedAt/fileSize 없는 버전리스 IndexedDB 캐시 금지, full request 보강, #521↔소재직경 불일치 시 재다운로드.
 // - 2026-08-25: 추적관리 프리뷰는 full request 보강 필수(lean projection에 ncFile/stageFiles 없음).
 // - 2026-08-25: 추적관리 프리뷰에서도 NC 로드 + 각인은 packing stageFiles 사용.
 // - 2026-08-23: ExoCAD인데 관리자 헥스 확정값이 없으면 full request로 보강(확정/미정 뱃지).
@@ -14,10 +15,12 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
 // - web/frontend/src/shared/files/modelPreviewFile.ts
+// - web/frontend/src/shared/files/fileBlobCache.ts
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/cnc/production.js
 import { useCallback, useRef } from "react";
 import { getFileBlob, setFileBlob } from "@/shared/files/stlIndexedDb";
+import { deleteCncProgramCache } from "@/shared/files/fileBlobCache";
 import { fileFromModelBlob } from "@/shared/files/modelPreviewFile";
 import {
   getReviewStageKeyByTab,
@@ -26,6 +29,29 @@ import {
 } from "../utils/request";
 import { resolveAdminVerifiedHexFromRequest } from "../utils/hexRotation";
 import { toast as toastFn, useToast } from "@/shared/hooks/use-toast";
+
+function hasNcVersionMeta(
+  meta?: { fileSize?: unknown; uploadedAt?: unknown } | null,
+): boolean {
+  if (!meta || typeof meta !== "object") return false;
+  if (meta.fileSize != null && String(meta.fileSize).trim() !== "") return true;
+  return Boolean(String(meta.uploadedAt || "").trim());
+}
+
+function parseNcStockDiameter(text: string): number | null {
+  const match = String(text || "").match(/#521\s*=\s*([0-9]+(?:\.[0-9]+)?)/i);
+  if (!match) return null;
+  const value = Number(match[1]);
+  return Number.isFinite(value) ? value : null;
+}
+
+function resolveExpectedMaterialDiameter(req: ManufacturerRequest): number | null {
+  const ncDia = Number((req as any)?.caseInfos?.ncFile?.materialDiameter);
+  if (Number.isFinite(ncDia) && ncDia > 0) return ncDia;
+  const scheduleDia = Number((req as any)?.productionSchedule?.diameter);
+  if (Number.isFinite(scheduleDia) && scheduleDia > 0) return scheduleDia;
+  return null;
+}
 
 const inFlightSignedUrlMap = new Map<string, Promise<{ url: string; fileName?: string }>>();
 const inFlightBlobMap = new Map<string, Promise<Blob>>();
@@ -250,12 +276,21 @@ export function usePreviewLoader({
           designSoftwareForBadge === "ExoCAD" &&
           !resolveAdminVerifiedHexFromRequest(targetReq);
 
-        // forceRefresh / 가공 큐 스냅샷: designSoftware·헥스 회전·관리자 확정이 빠질 수 있어 full request로 보강.
+        const needsNcPreview =
+          isCamStage || isMachiningStage || tabStage === "tracking";
+        const incomingNcMeta = (req as any)?.caseInfos?.ncFile;
+        const ncMetaNeedsEnrich =
+          needsNcPreview &&
+          Boolean(String(incomingNcMeta?.s3Key || "").trim()) &&
+          !hasNcVersionMeta(incomingNcMeta);
+
+        // forceRefresh / 가공 큐 스냅샷: designSoftware·헥스 회전·관리자 확정·NC 버전 메타가 빠질 수 있어 full request로 보강.
         // 추적관리 worksheet projection은 ncFile/stageFiles를 제외하므로 프리뷰 오픈 시 full request 필수.
         // (summary API는 해당 필드를 내려주지 않음)
         const shouldEnrichFromFullRequest =
           forceRefresh ||
           tabStage === "tracking" ||
+          ncMetaNeedsEnrich ||
           ((isCamStage || isMachiningStage) &&
             requestMongoIdForEnrich &&
             (!hasDesignSoftware ||
@@ -563,26 +598,73 @@ export function usePreviewLoader({
         const finishLineResult = await resolveFinishLine();
 
         // CAM / 가공 / 추적관리: NC 프리뷰를 보여주기 위해 NC를 읽어온다.
+        // 동일 s3Key 덮어쓰기(재생성) 시 버전 메타 없는 IndexedDB 키는 구 NC를 영원히 돌려준다.
         const ncPromise =
-          isCamStage || isMachiningStage || tabStage === "tracking"
+          needsNcPreview
             ? (async () => {
-                const ncMeta = targetReq.caseInfos?.ncFile;
-                if (!ncMeta?.s3Key || !requestMongoId) return;
+                const ncMeta = targetReq.caseInfos?.ncFile as
+                  | {
+                      s3Key?: string;
+                      originalName?: string;
+                      filePath?: string;
+                      fileSize?: unknown;
+                      uploadedAt?: unknown;
+                      materialDiameter?: unknown;
+                    }
+                  | null
+                  | undefined;
+                const ncS3Key = String(ncMeta?.s3Key || "").trim();
+                if (!ncS3Key || !requestMongoId) return;
                 const ncNameRaw =
                   ncMeta?.originalName || ncMeta?.filePath || "program.nc";
                 const ncName = ncNameRaw.split("/").pop() || ncNameRaw;
-                const ncVersionedKey = buildBlobCacheKey(ncMeta?.s3Key, ncMeta);
-                const ncCacheKey = ncVersionedKey
-                  ? `cnc:s3:${ncVersionedKey}`
-                  : null;
-                const ncFile = await fetchAsFileWithCache(
-                  ncCacheKey,
-                  () => fetchSignedUrl(`/api/requests/${requestMongoId}/nc-file-url`),
-                  ncName,
-                  { disableCache: forceRefresh },
-                );
-                const buf = await ncFile.arrayBuffer();
-                const text = decodeNcText(buf);
+                const versioned = hasNcVersionMeta(ncMeta);
+                const ncVersionedKey = buildBlobCacheKey(ncS3Key, ncMeta);
+                // 버전 메타가 없으면 unversioned 키로 캐시하지 않는다(구 #521 고착 방지).
+                const ncCacheKey =
+                  versioned && ncVersionedKey
+                    ? `cnc:s3:${ncVersionedKey}`
+                    : null;
+                const disableNcCache = forceRefresh || !versioned;
+                if (disableNcCache) {
+                  await deleteCncProgramCache(ncS3Key);
+                }
+
+                const loadNcText = async (opts: { disableCache: boolean }) => {
+                  const file = await fetchAsFileWithCache(
+                    opts.disableCache ? null : ncCacheKey,
+                    () =>
+                      fetchSignedUrl(
+                        `/api/requests/${requestMongoId}/nc-file-url`,
+                      ),
+                    ncName,
+                    { disableCache: opts.disableCache },
+                  );
+                  const buf = await file.arrayBuffer();
+                  return decodeNcText(buf);
+                };
+
+                let text = await loadNcText({ disableCache: disableNcCache });
+                const expectedDia = resolveExpectedMaterialDiameter(targetReq);
+                const actualDia = parseNcStockDiameter(text);
+                if (
+                  expectedDia != null &&
+                  actualDia != null &&
+                  Math.abs(actualDia - expectedDia) >= 0.05
+                ) {
+                  console.warn(
+                    "[usePreviewLoader] NC #521 mismatch vs materialDiameter — refetch",
+                    {
+                      requestId: targetReq.requestId,
+                      expectedDia,
+                      actualDia,
+                      ncS3Key,
+                    },
+                  );
+                  await deleteCncProgramCache(ncS3Key);
+                  text = await loadNcText({ disableCache: true });
+                }
+
                 setPreviewNcText(text);
                 setPreviewNcName(ncName);
               })()
