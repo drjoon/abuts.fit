@@ -3,6 +3,7 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // change-log:
+// - 2026-08-26: 되돌리기 이력(rollbackCount) 취소선·흐림 표시 제거.
 // - 2026-08-26: requestDeleted(샘플 삭제) 건은 스냅샷 라벨 + 되돌리기/자주검사 비활성.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -72,9 +73,6 @@ export const CompletedMachiningRecordsModal = ({
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [rolledBackIds, setRolledBackIds] = useState<Set<string>>(
-    () => new Set(),
-  );
   const [inspectionOpen, setInspectionOpen] = useState(false);
   const [inspectionItem, setInspectionItem] =
     useState<SelfInspectionReportItem | null>(null);
@@ -315,12 +313,8 @@ export const CompletedMachiningRecordsModal = ({
 
             {formattedItems.map((row, index) => {
               const item = items[index];
-              const rollbackCount = Number((item as any)?.rollbackCount || 0);
               const requestDeleted = Boolean(item?.requestDeleted);
               const canActOnRequest = Boolean(row.rid) && !requestDeleted;
-              const isRolledBack =
-                (row.rid ? rolledBackIds.has(row.rid) : false) ||
-                rollbackCount > 0;
               return (
                 <div
                   key={item.id}
@@ -360,9 +354,7 @@ export const CompletedMachiningRecordsModal = ({
                           <span className="ml-3 text-slate-400">삭제됨</span>
                         ) : null}
                       </div>
-                      <div
-                        className={`mt-0.5 ${isRolledBack ? "line-through opacity-50" : ""}`}
-                      >
+                      <div className="mt-0.5">
                         <MachiningRequestLabel
                           density="compact"
                           clinicName={row.clinic}
@@ -396,11 +388,6 @@ export const CompletedMachiningRecordsModal = ({
                         className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                         onClick={(e) => {
                           e.stopPropagation();
-                          setRolledBackIds((prev) => {
-                            const next = new Set(prev);
-                            next.add(row.rid);
-                            return next;
-                          });
                           onRollbackRequest(row.rid, machineId);
                         }}
                         title="준비로 되돌리기"
