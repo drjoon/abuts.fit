@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-26: 소비 집계에 HOLD(에스크로 REQ_* 차감) 포함.
 // - 2026-08-23: 보철유형 집계에 커스텀어벗 포함(견적 라인 정규화·toothWorks 플래그·어벗생산).
 // - 2026-08-23: STORE_SALE을 소비·스토어 카테고리에 포함.
 // - 2026-08-22: 보철유형 집계 — 견적 라인 공급가 기준·정수 원 반올림(소수 분배 제거).
@@ -32,8 +33,12 @@ const REQUESTOR_CREDIT_ACCOUNT_CODES = [
 
 const SPEND_EVENT_TYPES = new Set([
   "REQUEST_SPEND_COMMIT",
+  "REQUEST_SPEND_HOLD",
   "SHIPPING_SPEND_COMMIT",
+  "SHIPPING_SPEND_HOLD",
   "PRACTICE_TRANSFER_SPEND_COMMIT",
+  "PRACTICE_TRANSFER_SPEND_HOLD",
+  "PRACTICE_TRANSFER_HOLD_ADJUST",
   "PRACTICE_MEMBERSHIP_SPEND",
   "STORE_SALE",
 ]);

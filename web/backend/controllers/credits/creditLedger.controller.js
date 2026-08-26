@@ -2,6 +2,7 @@
 // - 2026-08-23: 커스텀어벗 통계 드릴다운 — toothWorks 플래그·어벗생산 REQUEST 포함.
 // - 2026-08-21: PTX abuts_shipping enrich — BA+출고일 박스키(기공소 생산·배송 묶음).
 // - 2026-08-19: 어벗디자인 박스 키=의뢰 사업자+예정출고일. 수신자는 의뢰 사업자명.
+// - 2026-08-26: periodSpendSummary — 유료/무료 충전 합계 포함. 소비에 HOLD 반영.
 // - 2026-08-23: 치과 정산 내역 — 필터 기간 소비액(periodSpendSummary) 응답.
 // - 2026-08-22: q 검색 — 기공소명·치과명으로 연결된 기공의뢰 refId 매칭.
 // - 2026-08-22: partnerName·prosthesisType·statsCategory(s)·onYmd 드릴다운 필터.
@@ -57,7 +58,7 @@ import {
   resolveFreeCreditGrantIdFromLedgerItem,
   resolveLedgerTypesForFilters,
   buildRequestorCreditLedgerPipeline,
-  aggregateRequestorPeriodSpendSupply,
+  aggregateRequestorPeriodLedgerSummary,
 } from "./creditLedger.utils.js";
 
 async function resolveRequestorKindForAnchor(businessAnchorId, fallbackKind) {
@@ -460,22 +461,22 @@ export async function listMyCreditLedger(req, res) {
 
   const periodOccurredAt =
     Object.keys(occurredAt).length ? occurredAt : null;
-  const periodSpendPromise =
+  const periodSummaryPromise =
     page === 1 && requestorKind === "practice"
-      ? aggregateRequestorPeriodSpendSupply({
+      ? aggregateRequestorPeriodLedgerSummary({
           ownerObjectId: anchorObjectId,
           occurredAt: periodOccurredAt,
           journalCollectionName: LedgerJournal.collection.name,
         })
       : Promise.resolve(null);
 
-  const [balanceSnapshot, facetRaw, periodSpendSupply] = await Promise.all([
+  const [balanceSnapshot, facetRaw, periodLedgerSummary] = await Promise.all([
     getBusinessCreditBalanceSnapshot({
       businessAnchorId: anchorObjectId,
       upsertIfMissing: true,
     }),
     LedgerLine.aggregate(pipeline),
-    periodSpendPromise,
+    periodSummaryPromise,
   ]);
   const currentBalance = Number(balanceSnapshot?.balance || 0);
   const currentSettlementCredit = Number(balanceSnapshot?.settlementCredit || 0);
@@ -871,8 +872,18 @@ export async function listMyCreditLedger(req, res) {
         demoMode,
       ),
       periodSpendSummary:
-        page === 1 && requestorKind === "practice" && periodSpendSupply != null
-          ? { totalSpendSupply: periodSpendSupply }
+        page === 1 && requestorKind === "practice" && periodLedgerSummary
+          ? {
+              totalPaidChargeSupply: Number(
+                periodLedgerSummary.totalPaidChargeSupply || 0,
+              ),
+              totalFreeChargeSupply: Number(
+                periodLedgerSummary.totalFreeChargeSupply || 0,
+              ),
+              totalSpendSupply: Number(
+                periodLedgerSummary.totalSpendSupply || 0,
+              ),
+            }
           : null,
     },
   });

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-26: 치과 요약 — 유료/무료 충전·소비는 기간 합계(잔여 버킷 아님). HOLD 소비 반영.
 // - 2026-08-23: 내역 테이블 — scroll-x-bar-top을 flex-1 세로 스크롤과 분리(rotateX로 행이 아래로 붙던 문제).
 // - 2026-08-22: 기공소→치과 배송 무료 — lab_shipping hold 미표시·레거시 baked 제거. 소비총액=기공비+(→어벗츠 박스만).
 // - 2026-08-21: 어벗디자인 상세 — PTX 레거시 배송 hold는 합산에서 제외(Request 박스 SSOT).
@@ -341,6 +342,8 @@ type CreditBalanceSnapshot = {
 };
 
 type PeriodSpendSummary = {
+  totalPaidChargeSupply?: number;
+  totalFreeChargeSupply?: number;
   totalSpendSupply: number;
 };
 
@@ -1880,14 +1883,23 @@ export const CreditLedgerModal = ({
         });
       }
     }
-    if (creditKind && creditKind !== "all") params.set("creditKind", creditKind);
-    if (action && action !== "all") params.set("action", action);
-    if (q.trim()) params.set("q", q.trim());
-    if (partnerName.trim()) params.set("partnerName", partnerName.trim());
-    if (prosthesisType.trim()) params.set("prosthesisType", prosthesisType.trim());
-    if (statsCategory) params.set("statsCategory", statsCategory);
-    if (statsCategories.trim()) params.set("statsCategories", statsCategories.trim());
-    if (onYmd.trim()) params.set("onYmd", onYmd.trim());
+    // 기간 요약 집계는 테이블 필터(버킷·동작·검색)와 무관하게 기간만 사용.
+    if (mode !== "spendSummary") {
+      if (creditKind && creditKind !== "all") {
+        params.set("creditKind", creditKind);
+      }
+      if (action && action !== "all") params.set("action", action);
+      if (q.trim()) params.set("q", q.trim());
+      if (partnerName.trim()) params.set("partnerName", partnerName.trim());
+      if (prosthesisType.trim()) {
+        params.set("prosthesisType", prosthesisType.trim());
+      }
+      if (statsCategory) params.set("statsCategory", statsCategory);
+      if (statsCategories.trim()) {
+        params.set("statsCategories", statsCategories.trim());
+      }
+      if (onYmd.trim()) params.set("onYmd", onYmd.trim());
+    }
     params.set("page", String(pageNum));
     params.set("pageSize", String(PAGE_SIZE));
 
@@ -2346,6 +2358,16 @@ export const CreditLedgerModal = ({
       (showSettlementCredit ? settlementCreditTotal : 0)
     : 0;
 
+  const periodPaidChargeTotal = Number(
+    periodSpendSummary?.totalPaidChargeSupply || 0,
+  );
+  const periodFreeChargeTotal = Number(
+    periodSpendSummary?.totalFreeChargeSupply || 0,
+  );
+  const periodSpendTotal = Number(
+    periodSpendSummary?.totalSpendSupply || 0,
+  );
+
   const showPeriodSpendCard =
     Boolean(currentBalanceSnapshot) && practiceLedgerUi;
   const isDemoMode = Boolean(currentBalanceSnapshot?.demoMode);
@@ -2360,6 +2382,14 @@ export const CreditLedgerModal = ({
   const balanceHintTooltip = isDemoMode
     ? CREDIT_LEDGER_DEMO_BALANCE_HINT
     : "충전금에서 소비액을 뺀 선불금 잔여액입니다.";
+  const periodPaidChargeTooltip =
+    "선택한 기간에 유료(선입금)로 충전된 금액 합계입니다.";
+  const periodFreeChargeTooltip = isDemoMode
+    ? CREDIT_LEDGER_DEMO_NOTICE_BODY
+    : "선택한 기간에 무료로 충전된 금액 합계입니다.";
+  const periodSpendTooltip = isDemoMode
+    ? "데모 모드에서 앱 내 차감된 기공·스토어 합계입니다. 실제 기공비·커스텀어벗 생산비는 기공소에 직접 지급해 주세요."
+    : "선택한 기간에 지출한 기공료와 스토어 결제 합계입니다.";
 
   const body = (
     <div
@@ -2394,9 +2424,9 @@ export const CreditLedgerModal = ({
                   <SettlementStatCard
                     className="min-w-[9.5rem] flex-1 sm:min-w-[10.5rem]"
                     label="유료 충전"
-                    value={Number(currentBalanceSnapshot.paidCredit || 0)}
-                    hint={CREDIT_PAID_BUCKET_HINT}
-                    hintTooltip={CREDIT_LEDGER_PREPAID_NOTICE_BODY}
+                    value={periodPaidChargeTotal}
+                    hint="안내"
+                    hintTooltip={periodPaidChargeTooltip}
                     onClick={() =>
                       openSummaryDrillDown({
                         title: "유료 충전 내역",
@@ -2412,9 +2442,9 @@ export const CreditLedgerModal = ({
                   <SettlementStatCard
                     className="min-w-[9.5rem] flex-1 sm:min-w-[10.5rem]"
                     label={freeBucketLabel}
-                    value={freeCreditTotal}
-                    hint={freeBucketHint}
-                    hintTooltip={freeBucketTooltip}
+                    value={periodFreeChargeTotal}
+                    hint="안내"
+                    hintTooltip={periodFreeChargeTooltip}
                     onClick={() =>
                       openSummaryDrillDown({
                         title: isDemoMode
@@ -2432,13 +2462,9 @@ export const CreditLedgerModal = ({
                   <SettlementStatCard
                     className="min-w-[9.5rem] flex-1 sm:min-w-[10.5rem]"
                     label="기공, 스토어"
-                    value={Number(periodSpendSummary?.totalSpendSupply || 0)}
+                    value={periodSpendTotal}
                     hint="안내"
-                    hintTooltip={
-                      isDemoMode
-                        ? "데모 모드에서 앱 내 차감된 기공·스토어 합계입니다. 실제 기공비·커스텀어벗 생산비는 기공소에 직접 지급해 주세요."
-                        : "선택한 기간에 지출한 기공료와 스토어 결제 합계입니다."
-                    }
+                    hintTooltip={periodSpendTooltip}
                     onClick={() =>
                       openSummaryDrillDown({
                         title: "기공, 스토어 내역",

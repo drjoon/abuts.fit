@@ -9,6 +9,7 @@
 // - 2026-08-21: hold meta.convertedAt 있으면 SPEND_PAID(지급완료)로 표시.
 // - 2026-08-21: PTX CA Request도 abutmentBoxGroupKey(BA+출고일) 유지 — 기공소 배송·생산 박스 묶음.
 // - 2026-08-19: 어벗디자인·어벗생산 박스는 의뢰 사업자+예정출고일. 치과명으로 쪼개지 않음.
+// - 2026-08-26: 기간 요약 — 유료/무료 충전 + 소비. 소비에 HOLD(에스크로 차감) 포함.
 // - 2026-08-23: STORE_SALE → SPEND_PAID(소비)·스토어 카테고리. 기간 소비 합계에 포함.
 // - 2026-08-23: 치과 정산 내역 상단 — 필터 기간 소비액 집계(통계 탭 totalSpendSupply와 동일).
 // - 2026-08-19: 기본 내역은 최근 라인만 잘라 10건 lookup. 기간 전체 $count 생략.
@@ -988,10 +989,26 @@ const CREDIT_LEDGER_STATS_CHARGE_EVENT_TYPES = [
   "CHARGE_FREE_SHIPPING",
 ];
 
+const CREDIT_LEDGER_STATS_PAID_CHARGE_EVENT_TYPES = ["CHARGE_PAID"];
+
+const CREDIT_LEDGER_STATS_FREE_CHARGE_EVENT_TYPES = [
+  "CHARGE_FREE_REQUEST",
+  "CHARGE_FREE_SHIPPING",
+];
+
+/**
+ * 치과 잔액 차감 기준 소비 이벤트.
+ * 에스크로 HOLD가 REQ_*를 먼저 차감하고, HOLD→COMMIT은 PLATFORM_ESCROW만 움직이므로
+ * COMMIT만 세면 소비 합계가 0으로 나온다. HOLD를 포함한다.
+ */
 const CREDIT_LEDGER_STATS_SPEND_EVENT_TYPES = [
   "REQUEST_SPEND_COMMIT",
+  "REQUEST_SPEND_HOLD",
   "SHIPPING_SPEND_COMMIT",
+  "SHIPPING_SPEND_HOLD",
   "PRACTICE_TRANSFER_SPEND_COMMIT",
+  "PRACTICE_TRANSFER_SPEND_HOLD",
+  "PRACTICE_TRANSFER_HOLD_ADJUST",
   "PRACTICE_MEMBERSHIP_SPEND",
   "STORE_SALE",
 ];
@@ -1193,10 +1210,10 @@ export function parseCreditLedgerFacetResult(facetRaw, { pageSize } = {}) {
 }
 
 /**
- * 치과 정산 내역 상단 카드 — 필터 기간 소비 공급가 합계.
- * creditLedgerStats.controller totalSpendSupply와 동일 저널·이벤트 집계.
+ * 치과 정산 내역 상단 카드 — 필터 기간 유료/무료 충전·소비 공급가.
+ * 소비는 REQ_* 실차감(HOLD 포함). 통계 탭 spend와 동일 이벤트 기준.
  */
-export async function aggregateRequestorPeriodSpendSupply({
+export async function aggregateRequestorPeriodLedgerSummary({
   ownerObjectId,
   occurredAt,
   journalCollectionName,
@@ -1236,11 +1253,23 @@ export async function aggregateRequestorPeriodSpendSupply({
     },
   ]);
 
+  let totalPaidChargeSupply = 0;
+  let totalFreeChargeSupply = 0;
   let totalSpendSupply = 0;
   for (const row of rows) {
     const eventType = String(row?.eventType || "");
     const amount = Number(row?.amount || 0);
     if (
+      CREDIT_LEDGER_STATS_PAID_CHARGE_EVENT_TYPES.includes(eventType) &&
+      amount > 0
+    ) {
+      totalPaidChargeSupply += amount;
+    } else if (
+      CREDIT_LEDGER_STATS_FREE_CHARGE_EVENT_TYPES.includes(eventType) &&
+      amount > 0
+    ) {
+      totalFreeChargeSupply += amount;
+    } else if (
       CREDIT_LEDGER_STATS_SPEND_EVENT_TYPES.includes(eventType) &&
       amount < 0
     ) {
@@ -1248,5 +1277,15 @@ export async function aggregateRequestorPeriodSpendSupply({
     }
   }
 
-  return Math.max(0, Math.round(totalSpendSupply));
+  return {
+    totalPaidChargeSupply: Math.max(0, Math.round(totalPaidChargeSupply)),
+    totalFreeChargeSupply: Math.max(0, Math.round(totalFreeChargeSupply)),
+    totalSpendSupply: Math.max(0, Math.round(totalSpendSupply)),
+  };
+}
+
+/** @deprecated Use aggregateRequestorPeriodLedgerSummary */
+export async function aggregateRequestorPeriodSpendSupply(args) {
+  const summary = await aggregateRequestorPeriodLedgerSummary(args);
+  return summary.totalSpendSupply;
 }
