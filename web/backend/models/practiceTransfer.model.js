@@ -27,46 +27,17 @@ const practiceTransferSchema = new mongoose.Schema(
       index: true,
       trim: true,
     },
-    // abuts UI 발신 경로에서는 필수. source=3shape(외부 Communicate)는 미가입 치과 허용.
     practiceUserId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: function requiredPracticeUserId() {
-        return String(this.source || "abuts") !== "3shape";
-      },
+      required: true,
       index: true,
-      default: null,
     },
     practiceBusinessAnchorId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "BusinessAnchor",
       default: null,
       index: true,
-    },
-    // abuts | 3shape (스캐너 Inbox 수신)
-    source: {
-      type: String,
-      enum: ["abuts", "3shape"],
-      default: "abuts",
-      index: true,
-      trim: true,
-    },
-    externalCaseId: {
-      type: String,
-      default: "",
-      trim: true,
-      index: true,
-    },
-    externalPractice: {
-      name: { type: String, default: "", trim: true },
-      email: { type: String, default: "", trim: true, lowercase: true },
-      communicateId: { type: String, default: "", trim: true },
-    },
-    // 구강스캔 출처 CAD 힌트(hex 정책 등과 별개 스냅샷)
-    designSoftware: {
-      type: String,
-      default: "",
-      trim: true,
     },
     targetLabAnchorId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -366,16 +337,6 @@ practiceTransferSchema.index({
   createdAt: -1,
 });
 practiceTransferSchema.index({ transferId: 1, practiceUserId: 1 }, { unique: true });
-practiceTransferSchema.index(
-  { source: 1, externalCaseId: 1 },
-  {
-    unique: true,
-    partialFilterExpression: {
-      source: "3shape",
-      externalCaseId: { $type: "string", $gt: "" },
-    },
-  },
-);
 // received-unread-count 폴링: targetLab + unread + status
 practiceTransferSchema.index({
   targetLabAnchorId: 1,

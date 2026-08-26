@@ -73,14 +73,11 @@
 
 ## 2. 구현 메모
 
-### 3Shape Communicate Inbox (lab)
+### 구강스캔 · 기공의뢰서 경로
 
-- 파트너 신청 초안: `docs/integrations/3shape-partner-application.md`
-- Lab별 연결: `ScannerIntegration` (`provider: "3shape"`) + `/api/integrations/3shape`
-- 자격증명: `SCANNER_INTEGRATION_SECRET` AES-GCM (`utils/scannerIntegrationCrypto.js`)
-- 수신: webhook `POST /api/webhooks/3shape` · worker `startThreeShapeInboxSyncWorker` (`THREE_SHAPE_SYNC_ENABLED`)
-- 클라이언트: `services/integrations/threeShape/client.js` — `THREE_SHAPE_CLIENT_MODE=fixture|live`
-- 착지: `PracticeTransfer` `source=3shape` + `externalCaseId` 멱등 (`createPracticeTransferFromExternalIngest`)
+- **3Shape/TRIOS**: 스캔 데이터는 Communicate로 치과→지정 기공소(어벗츠기공소 포함) 직송. 어벗츠는 중간 플랫폼으로 스캔을 받지 않음.
+- **기공의뢰서**: 치식·메모·수가·매칭 등은 어벗츠 기공의뢰(PracticeTransfer)로 작성.
+- **비 3Shape**: STL/PLY/OBJ 등 현행처럼 웹앱에 업로드해 기공의뢰와 함께 전송.
 
 - 신속 배송(`express`) 복원 메모:
   - Draft/Request `shippingMode` 필드를 다시 저장합니다. (`models/draftRequest.model.js`, `models/request.model.js`)

@@ -11,7 +11,7 @@ import { BusinessTab } from "@/shared/components/business/settings/BusinessTab";
 import { StaffTab } from "@/features/settings/tabs/StaffTab";
 import { NotificationsTab } from "@/features/settings/tabs/NotificationsTab";
 import { LabFeeScheduleTab } from "@/features/settings/tabs/LabFeeScheduleTab";
-import { ThreeShapeIntegrationTab } from "@/features/settings/tabs/ThreeShapeIntegrationTab";
+import { ScanOrderGuideTab } from "@/features/settings/tabs/ScanOrderGuideTab";
 import {
   User,
   Building2,
@@ -44,7 +44,7 @@ type TabKey =
   | "business"
   | "staff"
   | "lab-fees"
-  | "3shape"
+  | "scan-order"
   | "notifications"
   | "security";
 
@@ -52,6 +52,7 @@ const LEGACY_TAB_REDIRECT: Partial<Record<string, TabKey>> = {
   "auto-match": "account",
   "trading-partners": "account",
   subscription: "account",
+  "3shape": "scan-order",
 };
 
 export const RequestorSettingsPage = () => {
@@ -140,13 +141,16 @@ export const RequestorSettingsPage = () => {
         icon: Banknote,
         content: <LabFeeScheduleTab />,
       });
-      base.push({
-        key: "3shape",
-        label: "3Shape",
-        icon: Scan,
-        content: <ThreeShapeIntegrationTab />,
-      });
     }
+
+    base.push({
+      key: "scan-order",
+      label: "스캔·의뢰",
+      icon: Scan,
+      content: (
+        <ScanOrderGuideTab audience={isLab ? "lab" : "practice"} />
+      ),
+    });
 
     base.push(
       {
@@ -181,7 +185,7 @@ export const RequestorSettingsPage = () => {
       (tabs[0]?.key as TabKey);
 
   if (accessLoading) {
-    return <SettingsTabsSkeleton tabCount={isLab ? 7 : 5} />;
+    return <SettingsTabsSkeleton tabCount={isLab ? 7 : 6} />;
   }
 
   return (

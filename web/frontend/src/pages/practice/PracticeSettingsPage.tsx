@@ -34,8 +34,10 @@ import {
   Building2,
   Users,
   CalendarDays,
+  Scan,
 } from "lucide-react";
 import { NotificationsTab } from "@/features/settings/tabs/NotificationsTab";
+import { ScanOrderGuideTab } from "@/features/settings/tabs/ScanOrderGuideTab";
 import { RequestorSecurity as PracticeSecurity } from "@/pages/requestor/settings/Security";
 import { BusinessTab } from "@/shared/components/business/settings/BusinessTab";
 import { StaffTab } from "@/features/settings/tabs/StaffTab";
@@ -48,6 +50,7 @@ type TabKey =
   | "business"
   | "staff"
   | "transfer"
+  | "scan-order"
   | "notifications"
   | "security";
 
@@ -97,13 +100,15 @@ export const PracticeSettingsPage = () => {
 
   const activeTab = (() => {
     const raw = String(searchParams.get("tab") || "account");
+    if (raw === "3shape") return "scan-order" as TabKey;
     if (
       raw === "notifications" ||
       raw === "security" ||
       raw === "staff" ||
       raw === "account" ||
       raw === "business" ||
-      raw === "transfer"
+      raw === "transfer" ||
+      raw === "scan-order"
     ) {
       return raw as TabKey;
     }
@@ -317,6 +322,13 @@ export const PracticeSettingsPage = () => {
               기공의뢰
             </TabsTrigger>
             <TabsTrigger
+              value="scan-order"
+              className="flex min-w-[96px] flex-1 basis-0 items-center justify-center gap-2 px-3 py-2.5"
+            >
+              <Scan className="h-4 w-4" />
+              스캔·의뢰
+            </TabsTrigger>
+            <TabsTrigger
               value="notifications"
               className="flex min-w-[96px] flex-1 basis-0 items-center justify-center gap-2 px-3 py-2.5"
             >
@@ -525,6 +537,10 @@ export const PracticeSettingsPage = () => {
 
           <TabsContent value="transfer">
             <PracticeTransferArrivalSettingsTab />
+          </TabsContent>
+
+          <TabsContent value="scan-order">
+            <ScanOrderGuideTab audience="practice" />
           </TabsContent>
 
           <TabsContent value="notifications">

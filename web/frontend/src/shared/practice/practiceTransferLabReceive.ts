@@ -56,15 +56,6 @@ export type PracticeTransferLabReceiveFile = {
 export type PracticeTransferLabReceiveItem = {
   _id: string;
   transferId: string;
-  /** abuts UI 발신 | 3shape Communicate Inbox */
-  source?: "abuts" | "3shape" | string;
-  externalCaseId?: string | null;
-  externalPractice?: {
-    name?: string;
-    email?: string;
-    communicateId?: string;
-  } | null;
-  designSoftware?: string | null;
   targetLabName: string;
   transferMemo: string;
   rawTransferMemo: string;
