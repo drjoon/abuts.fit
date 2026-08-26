@@ -132,6 +132,7 @@
     PTX(구강스캔) CA 배송비는 주문 기공소 크레딧(제조사→기공소). 동일 제출 배치에서도 1회.
   - `REQUEST_SPEND_COMMIT`: **CAM 승인(가공 진입)** 시 보류→매출 전환(레거시 무보류만 실차감)
   - `SHIPPING_SPEND_COMMIT`: **포장.발송 진입(세척.패킹 승인)** 시 배송 보류→매출 전환(레거시·PTX abuts는 기존 SSOT)
+  - **포장.발송 진입 SSOT**: `enterManufacturerShippingStage()` (`common.review.helpers.js`) — 우편함 유지·수취인 스냅샷·배송비 commit·단계 매핑. 새 경로 추가 시 이 함수만 호출(백필·단위 테스트 제외).
   - `REQUEST` 차감 삭제: **가공 롤백(CAM 복귀)** 시 대응 COMMIT 이벤트/라인 **물리 삭제**(HOLD는 유지)
   - `SHIPPING` 차감 삭제: **포장.발송 롤백(세척.패킹 복귀)** 시 대응 COMMIT 이벤트/라인 **물리 삭제**
   - 준비 단계 **취소**: 미전환 HOLD 전부 해제(물리 삭제)

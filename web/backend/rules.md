@@ -124,7 +124,7 @@
     - 약속일 KST 자정까지 당일 집하 없으면 `shipOutcome=late`
     - 신속 late → `cancelExpressSurchargeIfShipDelayed`로 추가비 취소
   - 정시 성공률(묶음/신속): 지연 위험 요약에 표시 (`dashboardRiskSummary.service.js`)
-  - 포장.발송 진입(`packingEnterShipYmd.utils.js` / `updateCurrentEstimatedShipYmdOnPackingEnter`):
+  - 포장.발송 진입(`enterManufacturerShippingStage` / `updateCurrentEstimatedShipYmdOnPackingEnter` when `updateShipYmd: true`):
     빈 timeline 필드만 보정. 날짜를 오늘/다음 영업일로 밀지 않음.
   - 묶음 발송 요일 정렬: `resolveNextWeeklyBatchYmd` — YMD 달력일 요일은 서버 로컬 `getDay()` 금지
     (UTC noon 기준). UTC 서버에서 `T00:00:00+09:00`.getDay()를 쓰면 금→토로 읽고
@@ -546,7 +546,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 생성: `POST /api/practice/transfers/round-bar-requests` — 문의(`manufacturer_add_request`) 자동 접수 + `RoundBarAbutmentRequest` + 치과 `implantFavorites`에 일단 저장(`roundBar=true`, `adopted=false`).
   - 관리자: `GET|PATCH /api/admin/round-bar-requests` — 프리셋 내용 편집. 도입 전에 `adoptedKind=cnc|round_bar` 필수. 도입 체크 시 해당 치과 프리셋 `adopted=true` + 종류 저장. 치과 단가: CNC=CNC어벗, 환봉=환봉어벗. 체크 해제=`adopted=false` + 문의 재오픈. 실시간 `practice:round-bar-request-updated`. UI는 플랫폼 설정「커스텀어벗 > 어벗 추가 요청」.
   - 요금 필드: 청구 고시=`membershipRoundBarProductionPrice` / `membershipRoundBarDesignAndProductionPrice` (0이면 별도 고지). `regularRoundBar*`는 딜러분배 레거시 키(청구 분기 없음).
-  - 기공의뢰 견적 툴팁: **보철기공비** / **어벗 디자인+생산비**(둘 다 기공비. 기공소몫·어벗츠몫 헤더 없음). **기공소→치과·치과→기공소 배송 무료**(기공수가「배송비」폐지·`lab_shipping` hold 없음). **기공소→어벗츠 배송**: CA 미러 Request가 `(기공소 BA + 예정 출고일)` 박스당 1회 `SHIPPING_SPEND_HOLD`(수락 시 `holdRequestCreditsOnSubmit`). **포장.발송 진입** 시 `ensureShippingFeeSpendOnPackingApprove`가 보류→매출. 단가=`creditSettings.shippingFee`. 레거시 PTX 건당 `abuts_shipping`/`lab_shipping` hold는 `chargePracticeTransferLabShipping`/`releasePracticeTransferObsoleteShippingHolds`로 해제(치과 크레딧 복원, 매출 전환 없음). **환봉 요청중(미도입, `헥스(사이즈 미정)`)** 은 보철기공비 — 어벗츠 단가 제외, 기공소 `커스텀어벗` 항목 수가가 있으면 그 금액. 도입되면 어벗 디자인+생산비.
+  - 기공의뢰 견적 툴팁: **보철기공비** / **어벗 디자인+생산비**(둘 다 기공비. 기공소몫·어벗츠몫 헤더 없음). **기공소→치과·치과→기공소 배송 무료**(기공수가「배송비」폐지·`lab_shipping` hold 없음). **기공소→어벗츠 배송**: CA 미러 Request가 `(기공소 BA + 예정 출고일)` 박스당 1회 `SHIPPING_SPEND_HOLD`(수락 시 `holdRequestCreditsOnSubmit`). **포장.발송 진입** 시 `enterManufacturerShippingStage()`가 보류→매출. 단가=`creditSettings.shippingFee`. 레거시 PTX 건당 `abuts_shipping`/`lab_shipping` hold는 `chargePracticeTransferLabShipping`/`releasePracticeTransferObsoleteShippingHolds`로 해제(치과 크레딧 복원, 매출 전환 없음). **환봉 요청중(미도입, `헥스(사이즈 미정)`)** 은 보철기공비 — 어벗츠 단가 제외, 기공소 `커스텀어벗` 항목 수가가 있으면 그 금액. 도입되면 어벗 디자인+생산비.
   - 관련 파일:
     - `models/roundBarAbutmentRequest.model.js`
     - `utils/roundBarAbutment.js`
@@ -630,7 +630,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - `package.json`
 - 제조사 샘플(`source=manufacturer_sample`, `requestCategory=rnd_sample|copied_sample`)은
   작업용 상태(`rnd.doneAt=null`)에서 일반 의뢰와 동일하게 `포장.발송`/`추적관리` 공정을 진행합니다.
-  - 우편함 배정·포장.발송 진입도 일반 의뢰와 동일 SSOT(`assignMailboxForCleaningPackingEnter`, `retainMailboxOnShippingEnter`)를 따릅니다.
+  - 우편함 배정·포장.발송 진입도 일반 의뢰와 동일 SSOT(`assignMailboxForCleaningPackingEnter`, `enterManufacturerShippingStage`)를 따릅니다.
   - 우편함 **점유 집계**에도 작업용 샘플을 포함한다(`loadActiveMailboxOccupancy` — order만 보면 샘플 점유 칸이 비어 합류/충돌이 깨짐).
   - `stageProgressionWorker` 세척.패킹→포장.발송 자동 진행에서도 샘플을 제외하지 않는다.
   - 포장.발송 우편함 상세에서 **샘플만 완전 삭제** 가능(`DELETE /api/requests/:id`).
@@ -691,6 +691,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     cards/bulk-shipping GET은 in-flight refresh를 기다리지 않고 스냅샷 upsert(stale-while-revalidate).
   - `REQUEST_SPEND_COMMIT`: **가공 진입 승인(준비→가공)** 시 보류→매출(레거시 무보류만 실차감)
   - `SHIPPING_SPEND_COMMIT`: **포장.발송 진입(세척.패킹 승인)** 시 배송 보류→매출. 집하는 패키지 연결만 보강(`ensureShippingFeeSpendOnMailboxPickup`).
+  - **포장.발송 진입 SSOT**: `enterManufacturerShippingStage()` (`controllers/requests/common.review.helpers.js`) — 우편함 유지·수취인 스냅샷·배송비 commit·단계 매핑. 세척.패킹 승인·lot-capture·stageProgressionWorker 등 **모든** 진입 경로는 이 함수만 호출. 새 경로 추가 시에도 동일(백필·단위 테스트 제외).
   - 우편함 합류: 합류 의뢰의 중복 `SHIPPING_SPEND_HOLD` 해제. 칸당 보류 1개 불변.
   - 준비 단계 **취소**: 미전환 HOLD 전부 물리 삭제(잔액 복원)
   - `REQUEST` 차감 삭제: **가공→준비 롤백** 시 대응 커밋 이벤트/라인 **물리 삭제**
@@ -797,6 +798,8 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
       (Create as new 권장 후 검증, 필요 시 Overwrite). Continuous Cloud Backup 켜져 있어야 함.
     - `GET /api/requests?view=monitoring`: find+stage aggregate 병렬, page>1은 includeTotal 없이 목록만,
       projection은 카드 UI 필드만. 인덱스 `Request(createdAt, _id)`.
+      샘플 제외 + 제조사 준비 큐(productModeNe)와 동일 — PTX 디자인 미완료·레거시 `design_custom_abutment` 제외.
+    - `GET /api/admin/comm-badges` 의뢰(request) 배지도 동일 준비 큐 범위(PTX 디자인 대기 제외).
   - 관리자 크레딧(`credit:balance-updated`)은 `requestor`, `admin` role fan-out으로 발행하고,
     각 페이지는 payload(`businessAnchorId` 등) 조건이 맞을 때만 갱신합니다.
   - `emitCreditBalanceUpdatedToBusiness` payload 표준:
@@ -916,7 +919,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - 포장.발송 진입에서는 이미 배정된 `mailboxAddress`를 유지한다 (없으면 위 로직으로 1회 보정)
     - 포장.발송 → 세척.패킹, 세척.패킹 → 가공 롤백에서도 우편함을 유지한다
     - 가공 → 준비 롤백에서만 `mailboxAddress = null`로 해제한다
-    - 배송비 보류 SSOT: 의뢰 제출(및 PTX CA 수락 시 미러 Request)에서 의뢰 사업자+예정 출고일 1회 `SHIPPING_SPEND_HOLD`(치과명으로 쪼개지 않음). 우편함 합류 시 중복 보류 해제. **포장.발송 진입** 시 보류→매출(`SHIPPING_SPEND_COMMIT`, `ensureShippingFeeSpendOnPackingApprove`). **기공소→치과·치과→기공소 배송 무료**(PTX `lab_shipping` hold 미생성·레거시는 해제).
+    - 배송비 보류 SSOT: 의뢰 제출(및 PTX CA 수락 시 미러 Request)에서 의뢰 사업자+예정 출고일 1회 `SHIPPING_SPEND_HOLD`(치과명으로 쪼개지 않음). 우편함 합류 시 중복 보류 해제. **포장.발송 진입** 시 `enterManufacturerShippingStage()` → 보류→매출(`SHIPPING_SPEND_COMMIT`). **기공소→치과·치과→기공소 배송 무료**(PTX `lab_shipping` hold 미생성·레거시는 해제).
     - 배송비 차감 SSOT: 집하(수동 집하 / 한진 status 11) 때 우편함 1회. `ShippingPackage`는 집하 장부 행이며 점유 정체성이 아니다
     - `(businessAnchorId, shipDateYmd, mailboxAddress)` unique 인덱스는 쓰지 않는다. 같은 칸을 하루에 두 번 비울 수 있다
     - 운송장 라벨 비고는 `우편함 / 사업자명`만. 건수는 웹앱에서 확인

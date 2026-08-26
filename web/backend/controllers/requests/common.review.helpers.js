@@ -17,6 +17,7 @@
 // - 2026-08-19: 준비 단계 취소는 uniqueKeysOnly 소비 조회로 레거시 풀스캔을 생략.
 // - 2026-08-18: 기공의뢰 CA 생산 견적은 치과 공급 단가(기공소 공급 단가 제외).
 // - 2026-08-17: 의뢰·배송 크레딧 보류(제출)→에스크로→CAM/집하 매출 전환.
+// - 2026-08-26: enterManufacturerShippingStage SSOT — 포장.발송 진입 부수효과 단일 진입점.
 // - 2026-08-26: 배송비 SHIPPING_SPEND_COMMIT SSOT를 포장.발송 진입으로 이동(집하는 패키지 연결만).
 // - 2026-08-17: 배송비 차감 SSOT를 집하(우편함 비우기)로 옮김. 포장.발송 진입은 우편함만 확인. 기공의뢰 어벗츠 배송도 집하.
 // - 2026-08-17: 세척.패킹→가공 롤백 시 우편함 유지, 가공→준비에서만 해제.
@@ -93,6 +94,8 @@ import {
   SHIPPING_LEDGER_LABELS,
   resolveCustomerShippingLabel,
 } from "../../utils/shippingLedgerLabels.js";
+import { retainMailboxOnShippingEnter } from "./mailbox.utils.js";
+import { applyPracticeShippingReceiverSnapshotToRequest } from "../../utils/shippingReceiver.utils.js";
 
 const SHIPPING_FEE_SUPPLY_FALLBACK = 3500;
 
@@ -639,6 +642,95 @@ export async function updateCurrentEstimatedShipYmdOnPackingEnter(request) {
     resolved.originalEstimatedShipYmd;
   request.timeline.nextEstimatedShipYmd = resolved.nextEstimatedShipYmd;
   request.timeline.estimatedShipYmd = resolved.estimatedShipYmd;
+}
+
+/** 치과 드롭존 의뢰 — 공정은 진행하되 배송비 크레딧은 차감하지 않는다. */
+export function isPracticeDropzoneRequest(request) {
+  return (
+    String(request?.caseInfos?.newSystemRequest?.tag || "").trim() ===
+    "practice_dropzone"
+  );
+}
+
+/**
+ * 포장.발송 진입 SSOT.
+ *
+ * 세척.패킹→포장.발송 전환 시 공통 부수효과(우편함 유지·수취인 스냅샷·배송비 commit·단계 매핑)는
+ * 반드시 이 함수만 사용한다. 새 진입 경로를 추가할 때도 여기만 호출할 것.
+ *
+ * @see rules.md §2.2 SHIPPING_SPEND_COMMIT
+ * @see web/backend/rules.md — 배송비 보류·commit SSOT
+ */
+export async function enterManufacturerShippingStage({
+  request,
+  requestorOrgId = null,
+  actorUserId = null,
+  session = null,
+  deferredCreditEvents = null,
+  scopeFilter = null,
+  updateShipYmd = false,
+  throwOnInsufficient = true,
+  source = "unknown",
+}) {
+  if (!request?._id) return { entered: false, reason: "no_request" };
+
+  const orgId =
+    String(requestorOrgId || "").trim() ||
+    normalizeBusinessAnchorId(request?.businessAnchorId) ||
+    normalizeBusinessAnchorId(request?.requestor?.businessAnchorId) ||
+    "";
+
+  if (updateShipYmd) {
+    // 출고일은 의뢰 시점 약속 고정. 신속 추가비 취소는 shippingOnTimeEvalWorker.
+    await updateCurrentEstimatedShipYmdOnPackingEnter(request);
+  }
+
+  try {
+    await applyPracticeShippingReceiverSnapshotToRequest(request, { session });
+  } catch (err) {
+    console.error("[SHIPPING_ENTER] shippingReceiver snapshot failed", {
+      source,
+      requestId: request?.requestId || null,
+      message: err?.message || String(err),
+    });
+  }
+
+  try {
+    const nextMailboxAddress = await retainMailboxOnShippingEnter({
+      request,
+      requestorOrgId: orgId || null,
+      session,
+      scopeFilter,
+    });
+    if (nextMailboxAddress) {
+      request.mailboxAddress = nextMailboxAddress;
+    }
+  } catch (err) {
+    console.error("[SHIPPING_ENTER] mailbox retain/fallback failed", {
+      source,
+      requestId: request?.requestId || null,
+      message: err?.message || String(err),
+    });
+  }
+
+  const shouldBill =
+    Boolean(orgId) &&
+    !isManufacturerSampleRequest(request) &&
+    !isPracticeDropzoneRequest(request);
+
+  if (shouldBill) {
+    await ensureShippingFeeSpendOnPackingApprove({
+      request,
+      actorUserId,
+      session,
+      deferredCreditEvents,
+      throwOnInsufficient,
+    });
+  }
+
+  applyStatusMapping(request, "포장.발송");
+
+  return { entered: true, source, billed: shouldBill };
 }
 
 /**
@@ -1655,7 +1747,7 @@ export async function ensureRequestCreditRollbackDeleteOnRollbackToCam({
   });
 }
 
-// 포장.발송 진입 SSOT: 우편함 확인 + 발송 박스 생성 + 배송비 1회 commit.
+// 포장.발송 진입: enterManufacturerShippingStage가 호출. 직접 호출 금지(백필·단위 테스트 제외).
 export async function ensureShippingFeeSpendOnPackingApprove({
   request,
   actorUserId = null,

@@ -17,11 +17,8 @@ import {
 } from "../controllers/requests/utils.js";
 import {
   assignMailboxForCleaningPackingEnter,
-  retainMailboxOnShippingEnter,
 } from "../controllers/requests/mailbox.utils.js";
-import { applyPracticeShippingReceiverSnapshotToRequest } from "../utils/shippingReceiver.utils.js";
-import { ensureShippingFeeSpendOnPackingApprove } from "../controllers/requests/common.review.helpers.js";
-import { isManufacturerSampleRequest } from "../controllers/requests/mailbox.utils.js";
+import { enterManufacturerShippingStage } from "../controllers/requests/common.review.helpers.js";
 import { resolveMongoUri } from "../utils/mongoUri.js";
 
 /**
@@ -120,39 +117,22 @@ async function progressStages() {
     }).populate("requestor", "businessAnchorId");
 
     for (const req of packagingToShipping) {
+      const requestorOrgId =
+        req.businessAnchorId || req.requestor?.businessAnchorId || null;
       try {
-        const requestorOrgId =
-          req.businessAnchorId || req.requestor?.businessAnchorId || null;
-        await retainMailboxOnShippingEnter({
+        await enterManufacturerShippingStage({
           request: req,
           requestorOrgId,
+          throwOnInsufficient: false,
+          source: "stage_progression_worker",
         });
       } catch (error) {
-        console.error("[STAGE_WORKER] mailbox retain/fallback failed", {
+        console.error("[STAGE_WORKER] shipping enter failed", {
           requestId: req.requestId,
           message: error?.message || String(error),
         });
+        continue;
       }
-      try {
-        await applyPracticeShippingReceiverSnapshotToRequest(req);
-      } catch (error) {
-        console.error("[STAGE_WORKER] shippingReceiver snapshot failed", {
-          requestId: req.requestId,
-          message: error?.message || String(error),
-        });
-      }
-      if (!isManufacturerSampleRequest(req)) {
-        try {
-          await ensureShippingFeeSpendOnPackingApprove({ request: req });
-        } catch (error) {
-          console.error("[STAGE_WORKER] shipping fee spend failed", {
-            requestId: req.requestId,
-            message: error?.message || String(error),
-          });
-          continue;
-        }
-      }
-      applyStatusMapping(req, "포장.발송");
       await req.save();
       updatedCount++;
       console.log(

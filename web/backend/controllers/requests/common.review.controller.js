@@ -38,11 +38,9 @@ import {
 } from "./utils.js";
 import {
   assignMailboxForCleaningPackingEnter,
-  retainMailboxOnShippingEnter,
   isManufacturerSampleRequest,
   normalizeBusinessAnchorId,
 } from "./mailbox.utils.js";
-import { applyPracticeShippingReceiverSnapshotToRequest } from "../../utils/shippingReceiver.utils.js";
 import { triggerNextAutoMachiningAfterComplete } from "../cnc/machiningBridge.js";
 import { markPracticeTransferAbutmentMachiningStarted } from "../../services/practiceTransferProduction.service.js";
 import s3Utils, { deleteFileFromS3 } from "../../utils/s3.utils.js";
@@ -53,11 +51,10 @@ import {
   revertManufacturerStageByReviewStage,
   ensureRequestCreditSpendOnMachiningEnter,
   ensureRequestCreditRollbackDeleteOnRollbackToCam,
-  ensureShippingFeeSpendOnPackingApprove,
+  enterManufacturerShippingStage,
   ensureShippingFeeRollbackDeleteOnShippingRollback,
   ensureDeliveryInfoShippedAtNow,
   hasRequestShippingOrCompletionHistory,
-  updateCurrentEstimatedShipYmdOnPackingEnter,
 } from "./common.review.helpers.js";
 import {
   screenCamMachineForRequest,
@@ -1727,9 +1724,7 @@ export async function updateReviewStatusByStage(req, res) {
             });
           } else if (effectiveStage === "packing") {
             // 작업용 샘플(헥스 확인용 등)도 정식 의뢰와 동일하게 포장.발송으로 진행.
-            // 크레딧 무기록은 아래 isManufacturerSampleRequest 가드에서만 처리.
-            // 포장.발송 탭 MailboxContentsModal에서 샘플만 삭제 가능.
-            applyStatusMapping(request, "포장.발송");
+            // 단계·배송비 SSOT: enterManufacturerShippingStage (아래 packing 블록).
           } else if (effectiveStage === "shipping") {
             // 작업용 샘플도 정식 의뢰와 동일하게 추적관리로 진행한다.
             applyStatusMapping(request, "추적관리");
@@ -1780,54 +1775,16 @@ export async function updateReviewStatusByStage(req, res) {
 
         if (effectiveStage === "packing") {
           await ensureFinishedLotNumberForPacking(request);
-          // 출고일은 의뢰 시점 약속 고정. 포장.발송 진입으로 날짜를 바꾸거나
-          // 신속 추가비를 여기서 취소하지 않는다(자정 이후 shippingOnTimeEvalWorker).
-          await updateCurrentEstimatedShipYmdOnPackingEnter(request);
-          // PTX 직납: 운송장 수취인만 최신 practice 주소로 맞춘다.
-          // 우편함 합류 지문은 세척.패킹 배정 시점 스냅샷을 쓴다.
-          try {
-            await applyPracticeShippingReceiverSnapshotToRequest(request, {
-              session,
-            });
-          } catch (err) {
-            console.error("[SHIPPING_RECEIVER_SNAPSHOT_ERROR]", {
-              requestId: request?.requestId || null,
-              message: err?.message || String(err),
-            });
-          }
-          // 포장.발송 진입: 세척.패킹에서 배정한 우편함을 유지한다.
-          try {
-            const requestorBusinessAnchorId = resolvedBusinessAnchorId;
-            console.log(
-              `[PACKING_APPROVAL] 의뢰 ${request.requestId} 우편함 유지/보정 시작 - 사업자 anchor ID: ${requestorBusinessAnchorId}`,
-            );
-            const nextMailboxAddress = await retainMailboxOnShippingEnter({
-              request,
-              requestorOrgId: requestorBusinessAnchorId,
-              session,
-              scopeFilter: mailboxAllocationScopeFilter,
-            });
-            console.log(
-              `[PACKING_APPROVAL] 의뢰 ${request.requestId} 우편함 유지/보정 완료: ${nextMailboxAddress || request.mailboxAddress || "-"}`,
-            );
-          } catch (err) {
-            console.error("[MAILBOX_ALLOCATION_ERROR]", err);
-          }
-
-          // 샘플/치과 드롭존 의뢰는 전체 공정 진행은 동일하게 허용하되, 배송비 크레딧은 차감하지 않는다.
-          // 배송비 차감 SSOT: 포장.발송 진입(세척.패킹 승인) 시 1회 commit.
-          if (
-            resolvedBusinessAnchorId &&
-            !isManufacturerSampleRequest(request) &&
-            !isPracticeDropzoneRequest
-          ) {
-            await ensureShippingFeeSpendOnPackingApprove({
-              request,
-              actorUserId: req.user?._id || null,
-              session,
-              deferredCreditEvents,
-            });
-          }
+          await enterManufacturerShippingStage({
+            request,
+            requestorOrgId: resolvedBusinessAnchorId,
+            actorUserId: req.user?._id || null,
+            session,
+            deferredCreditEvents,
+            scopeFilter: mailboxAllocationScopeFilter,
+            updateShipYmd: true,
+            source: "review.packing_approve",
+          });
 
           // PTX 연동 CA: 제조사 발송=어벗츠몫 에스크로 해제(배송비 면제 경로에서도 실행).
           {

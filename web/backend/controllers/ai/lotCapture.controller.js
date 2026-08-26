@@ -17,17 +17,13 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { emitAppEventGlobal } from "../../socket.js";
 import { emitBgRuntimeStatus } from "../bg/bgRuntimeEvents.js";
 import {
-  applyStatusMapping,
   ensureFinishedLotNumberForPacking,
   normalizeRequestForResponse,
 } from "../../controllers/requests/utils.js";
 import {
-  retainMailboxOnShippingEnter,
   normalizeBusinessAnchorId,
 } from "../requests/mailbox.utils.js";
-import { applyPracticeShippingReceiverSnapshotToRequest } from "../../utils/shippingReceiver.utils.js";
-import { ensureShippingFeeSpendOnPackingApprove } from "../requests/common.review.helpers.js";
-import { isManufacturerSampleRequest } from "../requests/mailbox.utils.js";
+import { enterManufacturerShippingStage } from "../requests/common.review.helpers.js";
 import sharp from "sharp";
 
 let _apiKey = null;
@@ -432,42 +428,12 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
     request.businessAnchorId = request.requestor.businessAnchorId;
   }
 
-  // 세척.패킹 각인 후 포장.발송 전환. 샘플도 동일(포장.발송 탭에서 샘플만 삭제 가능).
-  try {
-    const nextMailboxAddress = await retainMailboxOnShippingEnter({
-      request,
-      requestorOrgId: effectiveAnchorIdStr,
-    });
-    if (nextMailboxAddress) {
-      request.mailboxAddress = nextMailboxAddress;
-    }
-  } catch (err) {
-    console.error("[lot-capture] mailbox retain/fallback failed", {
-      requestId: request.requestId,
-      requestMongoId: String(request._id || ""),
-      message: err?.message || String(err),
-    });
-  }
-  try {
-    await applyPracticeShippingReceiverSnapshotToRequest(request);
-  } catch (err) {
-    console.error("[lot-capture] shippingReceiver snapshot failed", {
-      requestId: request.requestId,
-      message: err?.message || String(err),
-    });
-  }
-  if (!isManufacturerSampleRequest(request)) {
-    try {
-      await ensureShippingFeeSpendOnPackingApprove({ request });
-    } catch (err) {
-      console.error("[lot-capture] shipping fee spend failed", {
-        requestId: request.requestId,
-        message: err?.message || String(err),
-      });
-      throw err;
-    }
-  }
-  applyStatusMapping(request, "발송");
+  // 세척.패킹 각인 후 포장.발송 전환. SSOT: enterManufacturerShippingStage.
+  await enterManufacturerShippingStage({
+    request,
+    requestorOrgId: effectiveAnchorIdStr,
+    source: "lot_capture",
+  });
 
   const legacyHexRotationNormalized =
     normalizeLegacyManufacturerHexRotationOnRequest(request);
