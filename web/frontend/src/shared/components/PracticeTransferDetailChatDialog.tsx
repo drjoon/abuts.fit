@@ -27,6 +27,7 @@
 // - 2026-08-21: 수락 바 — 안내 1줄 + CTA 1줄(항상 2단), 작업취소 툴팁.
 // - 2026-08-21: 수락 후 채팅 상단 바에 어벗·보철 업로드 CTA(acceptedWorkActions).
 // - 2026-08-20: 수락 바 작업기간 — 전송 시각 기준 12시 컷오프.
+// - 2026-08-27: 채팅 이미지 첨부 — authToken으로 썸네일·미리보기.
 // - 2026-08-16: 채팅 패널을 ChatComposer·위젯(compact) 패턴에 맞춤.
 // - 2026-08-16: 이미지 미리보기(다운로드 오버레이) + IndexedDB 캐시.
 // - 2026-08-16: 프리뷰 파일 여러 개일 때 이전/다음 이동.
@@ -1417,6 +1418,7 @@ export function PracticeTransferDetailChatDialog({
                           message={message}
                           isMine={isMyMessage(senderId)}
                           currentUserId={currentUserId}
+                          authToken={authToken}
                           formatTime={formatChatTime}
                           formatFileSize={formatFileSize}
                           showSenderName={false}

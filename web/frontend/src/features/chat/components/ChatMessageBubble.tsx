@@ -5,8 +5,11 @@
 // - web/frontend/src/features/chat/components/MessageReply.tsx
 // - web/frontend/src/features/chat/components/chatReactions.ts
 // - web/frontend/src/shared/files/useS3FileDownload.ts
+// - web/frontend/src/shared/files/s3BlobCache.ts
+// - web/frontend/src/shared/components/ModelPreviewDialog.tsx
 // - 2026-08-13: 채팅 첨부 다운로드 중 프로그레스바.
-import { useMemo, useState } from "react";
+// - 2026-08-27: 이미지 첨부 썸네일 + ModelPreviewDialog 미리보기(의뢰상세와 동일).
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Reply, SmilePlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,11 +21,19 @@ import { cn } from "@/shared/ui/cn";
 import type { ChatMessage, ChatMessageReaction } from "@/shared/hooks/useChatRooms";
 import { MessageReply } from "@/features/chat/components/MessageReply";
 import { CHAT_REACTION_EMOJIS } from "@/features/chat/components/chatReactions";
+import { ModelPreviewDialog } from "@/shared/components/ModelPreviewDialog";
+import { fetchS3BlobCached } from "@/shared/files/s3BlobCache";
+import { buildS3ProxyDownloadUrl } from "@/shared/files/useS3FileDownload";
+import {
+  getPracticeTransferFileExtension,
+  PRACTICE_TRANSFER_IMAGE_EXTENSIONS,
+} from "@/shared/practice/practiceTransferAccept";
 
 export type ChatBubbleAttachment = {
   fileId?: string;
   fileName: string;
   fileSize?: number;
+  fileType?: string;
   s3Key?: string;
   s3Url?: string;
 };
@@ -34,6 +45,8 @@ type ChatMessageBubbleProps = {
   formatTime: (createdAt: string) => string;
   showSenderName?: boolean;
   compact?: boolean;
+  /** S3 프록시 썸네일·미리보기용 JWT */
+  authToken?: string | null;
   onReply?: (message: ChatMessage) => void;
   onToggleReaction?: (messageId: string, emoji: string) => void | Promise<void>;
   onOpenAttachment?: (file: ChatBubbleAttachment) => void | Promise<void>;
@@ -47,6 +60,55 @@ export function chatAttachmentBusyKey(file: {
   fileId?: string;
 }): string {
   return String(file?.s3Key || file?.fileId || "").trim();
+}
+
+export function isChatImageAttachment(file: {
+  fileName?: string;
+  fileType?: string;
+}): boolean {
+  const type = String(file.fileType || "").toLowerCase();
+  if (
+    type.startsWith("image/") &&
+    !type.includes("heic") &&
+    !type.includes("heif")
+  ) {
+    return true;
+  }
+  const ext = getPracticeTransferFileExtension(String(file.fileName || ""));
+  return PRACTICE_TRANSFER_IMAGE_EXTENSIONS.has(ext);
+}
+
+function mimeTypeForImageFileName(name: string): string {
+  const ext = getPracticeTransferFileExtension(name);
+  if (ext === ".png") return "image/png";
+  if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
+  if (ext === ".webp") return "image/webp";
+  if (ext === ".gif") return "image/gif";
+  if (ext === ".bmp") return "image/bmp";
+  return "image/jpeg";
+}
+
+function fileFromImageBlob(blob: Blob, fileName: string): File {
+  const name = String(fileName || "image").trim() || "image";
+  const blobType = String(blob?.type || "").trim().toLowerCase();
+  const type =
+    blobType && blobType !== "application/octet-stream"
+      ? blob.type
+      : mimeTypeForImageFileName(name);
+  return new File([blob], name, { type });
+}
+
+function toBubbleAttachment(
+  file: NonNullable<ChatMessage["attachments"]>[number],
+): ChatBubbleAttachment {
+  return {
+    fileId: file?.fileId,
+    fileName: String(file?.fileName || "첨부파일").trim() || "첨부파일",
+    fileSize: Number(file?.fileSize || 0),
+    fileType: String(file?.fileType || "").trim(),
+    s3Key: String(file?.s3Key || "").trim(),
+    s3Url: String(file?.s3Url || "").trim(),
+  };
 }
 
 type ReactionGroup = {
@@ -122,7 +184,9 @@ const groupReactions = (
     if (currentUserId && uid === currentUserId) prev.reactedByMe = true;
     map.set(emoji, prev);
   }
-  return Array.from(map.values()).sort((a, b) => b.count - a.count || a.emoji.localeCompare(b.emoji));
+  return Array.from(map.values()).sort(
+    (a, b) => b.count - a.count || a.emoji.localeCompare(b.emoji),
+  );
 };
 
 export function ChatMessageBubble({
@@ -132,6 +196,7 @@ export function ChatMessageBubble({
   formatTime,
   showSenderName = true,
   compact = false,
+  authToken,
   onReply,
   onToggleReaction,
   onOpenAttachment,
@@ -153,7 +218,190 @@ export function ChatMessageBubble({
     !isSystem &&
     (typeof onReply === "function" || typeof onToggleReaction === "function");
   const replyTargetId = String(replyPreview?._id || "").trim();
-  const canJumpToReply = Boolean(replyTargetId) && replyPreview?.content !== "삭제된 메시지입니다.";
+  const canJumpToReply =
+    Boolean(replyTargetId) && replyPreview?.content !== "삭제된 메시지입니다.";
+
+  const attachments = useMemo(() => {
+    const list = Array.isArray(message.attachments) ? message.attachments : [];
+    return list.map(toBubbleAttachment);
+  }, [message.attachments]);
+
+  const imageAttachments = useMemo(
+    () => attachments.filter((file) => isChatImageAttachment(file)),
+    [attachments],
+  );
+  const otherAttachments = useMemo(
+    () => attachments.filter((file) => !isChatImageAttachment(file)),
+    [attachments],
+  );
+
+  const imageThumbKey = useMemo(
+    () =>
+      imageAttachments
+        .map((file) => String(file.s3Key || "").trim())
+        .filter(Boolean)
+        .join("|"),
+    [imageAttachments],
+  );
+
+  const [thumbUrls, setThumbUrls] = useState<Record<string, string>>({});
+  const thumbUrlsRef = useRef<Record<string, string>>({});
+
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewItems, setPreviewItems] = useState<ChatBubbleAttachment[]>([]);
+  const [previewIndex, setPreviewIndex] = useState(0);
+  const [previewFile, setPreviewFile] = useState<File | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewProgress, setPreviewProgress] = useState(0);
+  const previewAbortRef = useRef<AbortController | null>(null);
+
+  const revokeThumbs = () => {
+    for (const url of Object.values(thumbUrlsRef.current)) {
+      try {
+        URL.revokeObjectURL(url);
+      } catch {
+        // ignore
+      }
+    }
+    thumbUrlsRef.current = {};
+    setThumbUrls({});
+  };
+
+  useEffect(() => {
+    const token = String(authToken || "").trim();
+    if (!token || !imageThumbKey) {
+      revokeThumbs();
+      return;
+    }
+
+    const ac = new AbortController();
+    let cancelled = false;
+    const files = imageAttachments.filter((file) => String(file.s3Key || "").trim());
+
+    void (async () => {
+      const next: Record<string, string> = {};
+      for (const file of files) {
+        if (cancelled || ac.signal.aborted) return;
+        const s3Key = String(file.s3Key || "").trim();
+        const fileName = String(file.fileName || "image").trim() || "image";
+        try {
+          const blob = await fetchS3BlobCached({
+            s3Key,
+            fileName,
+            token,
+            buildUrl: buildS3ProxyDownloadUrl,
+            signal: ac.signal,
+          });
+          if (cancelled || ac.signal.aborted) return;
+          const typed =
+            blob.type && blob.type !== "application/octet-stream"
+              ? blob
+              : new Blob([blob], { type: mimeTypeForImageFileName(fileName) });
+          next[s3Key] = URL.createObjectURL(typed);
+        } catch {
+          // 썸네일 실패 시 placeholder
+        }
+      }
+      if (cancelled || ac.signal.aborted) {
+        for (const url of Object.values(next)) {
+          try {
+            URL.revokeObjectURL(url);
+          } catch {
+            // ignore
+          }
+        }
+        return;
+      }
+      for (const url of Object.values(thumbUrlsRef.current)) {
+        try {
+          URL.revokeObjectURL(url);
+        } catch {
+          // ignore
+        }
+      }
+      thumbUrlsRef.current = next;
+      setThumbUrls(next);
+    })();
+
+    return () => {
+      cancelled = true;
+      ac.abort();
+      revokeThumbs();
+    };
+    // imageAttachments identity changes with message; key captures s3 list
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- imageThumbKey is SSOT
+  }, [authToken, imageThumbKey]);
+
+  const resetPreview = () => {
+    previewAbortRef.current?.abort();
+    previewAbortRef.current = null;
+    setPreviewOpen(false);
+    setPreviewItems([]);
+    setPreviewIndex(0);
+    setPreviewFile(null);
+    setPreviewLoading(false);
+    setPreviewProgress(0);
+  };
+
+  const loadPreviewAt = async (
+    items: ChatBubbleAttachment[],
+    index: number,
+  ) => {
+    const token = String(authToken || "").trim();
+    const target = items[index];
+    const s3Key = String(target?.s3Key || "").trim();
+    const fileName = String(target?.fileName || "image").trim() || "image";
+    if (!token || !s3Key) {
+      setPreviewFile(null);
+      setPreviewLoading(false);
+      return;
+    }
+
+    previewAbortRef.current?.abort();
+    const ac = new AbortController();
+    previewAbortRef.current = ac;
+    setPreviewLoading(true);
+    setPreviewProgress(0);
+    setPreviewFile(null);
+
+    try {
+      const blob = await fetchS3BlobCached({
+        s3Key,
+        fileName,
+        token,
+        buildUrl: buildS3ProxyDownloadUrl,
+        signal: ac.signal,
+        onProgress: setPreviewProgress,
+      });
+      if (ac.signal.aborted) return;
+      setPreviewFile(fileFromImageBlob(blob, fileName));
+    } catch (err) {
+      if ((err as { name?: string })?.name === "AbortError") return;
+      setPreviewFile(null);
+    } finally {
+      if (previewAbortRef.current === ac) {
+        previewAbortRef.current = null;
+        setPreviewLoading(false);
+      }
+    }
+  };
+
+  const openImagePreview = (index: number) => {
+    if (!imageAttachments.length) return;
+    const nextIndex = Math.max(0, Math.min(index, imageAttachments.length - 1));
+    setPreviewItems(imageAttachments);
+    setPreviewIndex(nextIndex);
+    setPreviewOpen(true);
+    void loadPreviewAt(imageAttachments, nextIndex);
+  };
+
+  const goPreviewRelative = (delta: number) => {
+    if (previewLoading || previewItems.length <= 1) return;
+    const next =
+      (previewIndex + delta + previewItems.length) % previewItems.length;
+    setPreviewIndex(next);
+    void loadPreviewAt(previewItems, next);
+  };
 
   const handleToggle = (emoji: string) => {
     if (!onToggleReaction) return;
@@ -165,6 +413,15 @@ export function ChatMessageBubble({
     if (!canJumpToReply) return;
     scrollToChatMessage(replyTargetId);
   };
+
+  const previewMeta = previewItems[previewIndex] || null;
+  const previewDownloadBusy = Boolean(
+    previewMeta &&
+      (() => {
+        const busyKey = chatAttachmentBusyKey(previewMeta);
+        return busyKey && downloadingFileKeys.includes(busyKey);
+      })(),
+  );
 
   if (isSystem) {
     return (
@@ -190,222 +447,355 @@ export function ChatMessageBubble({
   }
 
   return (
-    <div
-      id={chatMessageDomId(String(message._id || ""))}
-      className={cn(
-        "group flex w-full min-w-0 scroll-mt-4 rounded-lg transition-[box-shadow,background-color]",
-        isMine ? "justify-end" : "justify-start",
-      )}
-    >
+    <>
       <div
+        id={chatMessageDomId(String(message._id || ""))}
         className={cn(
-          "relative w-fit max-w-[min(80%,100%)] min-w-0 flex flex-col gap-1",
-          isMine ? "items-end" : "items-start",
+          "group flex w-full min-w-0 scroll-mt-4 rounded-lg transition-[box-shadow,background-color]",
+          isMine ? "justify-end" : "justify-start",
         )}
       >
         <div
           className={cn(
-            "min-w-0 max-w-full rounded-lg px-3.5 py-2.5 shadow-sm",
-            compact ? "text-xs sm:text-sm" : "text-sm",
-            isMine ? "bg-primary text-primary-foreground" : "bg-muted",
+            "relative w-fit max-w-[min(80%,100%)] min-w-0 flex flex-col gap-1",
+            isMine ? "items-end" : "items-start",
           )}
         >
-          {showSenderName ? (
-            <p className="opacity-80 mb-1 font-medium break-words">{senderName}</p>
-          ) : null}
-          <p className={cn("opacity-70 mb-1", compact ? "text-[10px]" : "")}>
-            {formatTime(message.createdAt)}
-          </p>
+          <div
+            className={cn(
+              "min-w-0 max-w-full rounded-lg px-3.5 py-2.5 shadow-sm",
+              compact ? "text-xs sm:text-sm" : "text-sm",
+              isMine ? "bg-primary text-primary-foreground" : "bg-muted",
+            )}
+          >
+            {showSenderName ? (
+              <p className="opacity-80 mb-1 font-medium break-words">{senderName}</p>
+            ) : null}
+            <p className={cn("opacity-70 mb-1", compact ? "text-[10px]" : "")}>
+              {formatTime(message.createdAt)}
+            </p>
 
-          {replyPreview ? (
-            <button
-              type="button"
-              onClick={handleJumpToReply}
-              disabled={!canJumpToReply}
-              className={cn(
-                "mb-2 block w-full min-w-0 rounded border-l-2 px-2 py-1 text-left transition-opacity",
-                isMine
-                  ? "border-primary-foreground/50 bg-primary-foreground/10"
-                  : "border-primary bg-background/60",
-                canJumpToReply
-                  ? "cursor-pointer hover:opacity-90"
-                  : "cursor-default opacity-80",
-              )}
-              aria-label="원본 메시지로 이동"
-              title={canJumpToReply ? "원본 메시지로 이동" : undefined}
-            >
-              <MessageReply replyTo={replyPreview} embedded />
-            </button>
-          ) : null}
+            {replyPreview ? (
+              <button
+                type="button"
+                onClick={handleJumpToReply}
+                disabled={!canJumpToReply}
+                className={cn(
+                  "mb-2 block w-full min-w-0 rounded border-l-2 px-2 py-1 text-left transition-opacity",
+                  isMine
+                    ? "border-primary-foreground/50 bg-primary-foreground/10"
+                    : "border-primary bg-background/60",
+                  canJumpToReply
+                    ? "cursor-pointer hover:opacity-90"
+                    : "cursor-default opacity-80",
+                )}
+                aria-label="원본 메시지로 이동"
+                title={canJumpToReply ? "원본 메시지로 이동" : undefined}
+              >
+                <MessageReply replyTo={replyPreview} embedded />
+              </button>
+            ) : null}
 
-          <p className="min-w-0 whitespace-pre-wrap break-words [overflow-wrap:anywhere] leading-snug">
-            {message.content}
-          </p>
+            {String(message.content || "").trim() ? (
+              <p className="min-w-0 whitespace-pre-wrap break-words [overflow-wrap:anywhere] leading-snug">
+                {message.content}
+              </p>
+            ) : null}
 
-          {Array.isArray(message.attachments) && message.attachments.length > 0 ? (
-            <div className="mt-2 space-y-1">
-              {message.attachments.map((file, idx) => {
-                const fileName = String(file?.fileName || "첨부파일").trim();
-                const fileSizeNum = Number(file?.fileSize || 0);
-                const sizeLabel =
-                  typeof formatFileSize === "function"
-                    ? formatFileSize(fileSizeNum)
-                    : fileSizeNum > 0
-                      ? `${fileSizeNum} B`
-                      : "";
-                const s3Key = String(file?.s3Key || "").trim();
-                const canOpen = typeof onOpenAttachment === "function" && (s3Key || file?.s3Url);
-                const busyKey = chatAttachmentBusyKey({
-                  s3Key,
-                  fileId: file?.fileId,
-                });
-                const isBusy = Boolean(
-                  busyKey && downloadingFileKeys.includes(busyKey),
-                );
-                const progress = busyKey
-                  ? Number(downloadProgressByKey[busyKey] ?? 0)
-                  : 0;
-                const barWidth = isBusy
-                  ? Math.max(6, Math.min(100, Math.round(progress)))
-                  : 0;
+            {imageAttachments.length > 0 ? (
+              <div
+                className={cn(
+                  "grid gap-1.5",
+                  String(message.content || "").trim() ? "mt-2" : "mt-0.5",
+                  imageAttachments.length === 1
+                    ? "grid-cols-1 max-w-[13.5rem] sm:max-w-[15rem]"
+                    : "grid-cols-2 max-w-[15rem] sm:max-w-[17rem]",
+                )}
+              >
+                {imageAttachments.map((file, idx) => {
+                  const s3Key = String(file.s3Key || "").trim();
+                  const thumbUrl = s3Key ? thumbUrls[s3Key] : "";
+                  const canPreview =
+                    Boolean(authToken && s3Key) ||
+                    (typeof onOpenAttachment === "function" &&
+                      (s3Key || file.s3Url));
+                  const busyKey = chatAttachmentBusyKey(file);
+                  const isBusy = Boolean(
+                    busyKey && downloadingFileKeys.includes(busyKey),
+                  );
+                  const progress = busyKey
+                    ? Number(downloadProgressByKey[busyKey] ?? 0)
+                    : 0;
+                  const barWidth = isBusy
+                    ? Math.max(6, Math.min(100, Math.round(progress)))
+                    : 0;
 
-                return canOpen ? (
-                  <button
-                    key={`${message._id}:file:${idx}`}
-                    type="button"
-                    disabled={isBusy}
-                    onClick={() => {
-                      if (isBusy) return;
-                      void onOpenAttachment({
-                        fileId: file?.fileId,
-                        fileName,
-                        fileSize: fileSizeNum,
-                        s3Key,
-                        s3Url: String(file?.s3Url || "").trim(),
-                      });
-                    }}
-                    className="block w-full rounded border border-current/20 px-2 py-1 text-xs text-left underline-offset-2 hover:underline disabled:pointer-events-none disabled:no-underline disabled:opacity-80"
-                    aria-busy={isBusy}
-                    aria-label={
-                      isBusy
-                        ? `${fileName} 다운로드 중 ${Math.round(progress)}%`
-                        : fileName
-                    }
-                  >
-                    <span className="block">
-                      {isBusy
-                        ? `다운로드 중 ${Math.round(progress)}% · `
-                        : ""}
+                  return (
+                    <button
+                      key={`${message._id}:img:${idx}`}
+                      type="button"
+                      disabled={!canPreview || isBusy}
+                      onClick={() => {
+                        if (isBusy) return;
+                        if (authToken && s3Key) {
+                          openImagePreview(idx);
+                          return;
+                        }
+                        if (onOpenAttachment) void onOpenAttachment(file);
+                      }}
+                      className={cn(
+                        "relative aspect-square w-full overflow-hidden rounded-md border text-left transition-opacity",
+                        isMine
+                          ? "border-primary-foreground/25 bg-primary-foreground/10"
+                          : "border-border/70 bg-background/70",
+                        canPreview && !isBusy
+                          ? "cursor-zoom-in hover:opacity-95"
+                          : "cursor-default opacity-80",
+                      )}
+                      aria-busy={isBusy}
+                      aria-label={
+                        isBusy
+                          ? `${file.fileName} 다운로드 중 ${Math.round(progress)}%`
+                          : `${file.fileName} 미리보기`
+                      }
+                    >
+                      {thumbUrl ? (
+                        <img
+                          src={thumbUrl}
+                          alt=""
+                          className="h-full w-full object-cover"
+                          draggable={false}
+                        />
+                      ) : (
+                        <span
+                          className={cn(
+                            "flex h-full w-full items-center justify-center px-2 text-center text-[10px] leading-snug",
+                            isMine
+                              ? "bg-primary-foreground/15 text-primary-foreground/80"
+                              : "bg-muted-foreground/10 text-muted-foreground",
+                          )}
+                        >
+                          {file.fileName}
+                        </span>
+                      )}
+                      {isBusy ? (
+                        <span className="absolute inset-x-0 bottom-0 bg-black/55 px-1.5 py-1">
+                          <span className="mb-0.5 block text-[10px] text-white tabular-nums">
+                            {Math.round(progress)}%
+                          </span>
+                          <span className="block h-1 w-full overflow-hidden rounded-full bg-white/25">
+                            <span
+                              className="block h-full rounded-full bg-white transition-[width]"
+                              style={{ width: `${barWidth}%` }}
+                            />
+                          </span>
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
+
+            {otherAttachments.length > 0 ? (
+              <div
+                className={cn(
+                  "space-y-1",
+                  imageAttachments.length > 0 ||
+                    String(message.content || "").trim()
+                    ? "mt-2"
+                    : "mt-0.5",
+                )}
+              >
+                {otherAttachments.map((file, idx) => {
+                  const fileName = file.fileName;
+                  const fileSizeNum = Number(file.fileSize || 0);
+                  const sizeLabel =
+                    typeof formatFileSize === "function"
+                      ? formatFileSize(fileSizeNum)
+                      : fileSizeNum > 0
+                        ? `${fileSizeNum} B`
+                        : "";
+                  const s3Key = String(file.s3Key || "").trim();
+                  const canOpen =
+                    typeof onOpenAttachment === "function" &&
+                    (s3Key || file.s3Url);
+                  const busyKey = chatAttachmentBusyKey(file);
+                  const isBusy = Boolean(
+                    busyKey && downloadingFileKeys.includes(busyKey),
+                  );
+                  const progress = busyKey
+                    ? Number(downloadProgressByKey[busyKey] ?? 0)
+                    : 0;
+                  const barWidth = isBusy
+                    ? Math.max(6, Math.min(100, Math.round(progress)))
+                    : 0;
+
+                  return canOpen ? (
+                    <button
+                      key={`${message._id}:file:${idx}`}
+                      type="button"
+                      disabled={isBusy}
+                      onClick={() => {
+                        if (isBusy) return;
+                        void onOpenAttachment(file);
+                      }}
+                      className="block w-full rounded border border-current/20 px-2 py-1 text-xs text-left underline-offset-2 hover:underline disabled:pointer-events-none disabled:no-underline disabled:opacity-80"
+                      aria-busy={isBusy}
+                      aria-label={
+                        isBusy
+                          ? `${fileName} 다운로드 중 ${Math.round(progress)}%`
+                          : fileName
+                      }
+                    >
+                      <span className="block">
+                        {isBusy
+                          ? `다운로드 중 ${Math.round(progress)}% · `
+                          : ""}
+                        {fileName}
+                        {sizeLabel ? ` · ${sizeLabel}` : ""}
+                      </span>
+                      {isBusy ? (
+                        <span className="mt-1 block h-1 w-full overflow-hidden rounded-full bg-current/20">
+                          <span
+                            className="block h-full rounded-full bg-current/80 transition-[width]"
+                            style={{ width: `${barWidth}%` }}
+                          />
+                        </span>
+                      ) : null}
+                    </button>
+                  ) : (
+                    <div
+                      key={`${message._id}:file:${idx}`}
+                      className="rounded border border-current/20 px-2 py-1 text-xs"
+                    >
                       {fileName}
                       {sizeLabel ? ` · ${sizeLabel}` : ""}
-                    </span>
-                    {isBusy ? (
-                      <span className="mt-1 block h-1 w-full overflow-hidden rounded-full bg-current/20">
-                        <span
-                          className="block h-full rounded-full bg-current/80 transition-[width]"
-                          style={{ width: `${barWidth}%` }}
-                        />
-                      </span>
-                    ) : null}
-                  </button>
-                ) : (
-                  <div
-                    key={`${message._id}:file:${idx}`}
-                    className="rounded border border-current/20 px-2 py-1 text-xs"
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
+          </div>
+
+          {reactionGroups.length > 0 ? (
+            <div
+              className={cn(
+                "flex flex-wrap gap-1 max-w-full",
+                isMine ? "justify-end" : "justify-start",
+              )}
+            >
+              {reactionGroups.map((group) => (
+                <button
+                  key={`${message._id}:rx:${group.emoji}`}
+                  type="button"
+                  disabled={!onToggleReaction}
+                  onClick={() => handleToggle(group.emoji)}
+                  className={cn(
+                    "inline-flex items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-xs bg-background shadow-sm transition-colors",
+                    group.reactedByMe
+                      ? "border-primary/70 bg-primary-soft text-primary-strong"
+                      : "border-border text-foreground hover:bg-muted",
+                    !onToggleReaction && "cursor-default",
+                  )}
+                  aria-label={`${group.emoji} 리액션 ${group.count}개`}
+                >
+                  <span>{group.emoji}</span>
+                  <span className="tabular-nums text-[10px]">{group.count}</span>
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          {canInteract ? (
+            <div
+              className={cn(
+                "flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100",
+                isMine ? "flex-row-reverse" : "flex-row",
+              )}
+            >
+              {typeof onReply === "function" ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={() => onReply(message)}
+                  aria-label="답글"
+                  title="답글"
+                >
+                  <Reply className="h-3.5 w-3.5" />
+                </Button>
+              ) : null}
+
+              {typeof onToggleReaction === "function" ? (
+                <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      aria-label="리액션"
+                      title="리액션"
+                    >
+                      <SmilePlus className="h-3.5 w-3.5" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    className="w-auto p-1.5"
+                    align={isMine ? "end" : "start"}
                   >
-                    {fileName}
-                    {sizeLabel ? ` · ${sizeLabel}` : ""}
-                  </div>
-                );
-              })}
+                    <div className="flex items-center gap-0.5">
+                      {CHAT_REACTION_EMOJIS.map((emoji) => (
+                        <button
+                          key={emoji}
+                          type="button"
+                          className="h-8 w-8 rounded-md text-base hover:bg-muted"
+                          onClick={() => handleToggle(emoji)}
+                          aria-label={`${emoji} 리액션`}
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              ) : null}
             </div>
           ) : null}
         </div>
-
-        {reactionGroups.length > 0 ? (
-          <div
-            className={cn(
-              "flex flex-wrap gap-1 max-w-full",
-              isMine ? "justify-end" : "justify-start",
-            )}
-          >
-            {reactionGroups.map((group) => (
-              <button
-                key={`${message._id}:rx:${group.emoji}`}
-                type="button"
-                disabled={!onToggleReaction}
-                onClick={() => handleToggle(group.emoji)}
-                className={cn(
-                  "inline-flex items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-xs bg-background shadow-sm transition-colors",
-                  group.reactedByMe
-                    ? "border-primary/70 bg-primary-soft text-primary-strong"
-                    : "border-border text-foreground hover:bg-muted",
-                  !onToggleReaction && "cursor-default",
-                )}
-                aria-label={`${group.emoji} 리액션 ${group.count}개`}
-              >
-                <span>{group.emoji}</span>
-                <span className="tabular-nums text-[10px]">{group.count}</span>
-              </button>
-            ))}
-          </div>
-        ) : null}
-
-        {canInteract ? (
-          <div
-            className={cn(
-              "flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100",
-              isMine ? "flex-row-reverse" : "flex-row",
-            )}
-          >
-            {typeof onReply === "function" ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                onClick={() => onReply(message)}
-                aria-label="답글"
-                title="답글"
-              >
-                <Reply className="h-3.5 w-3.5" />
-              </Button>
-            ) : null}
-
-            {typeof onToggleReaction === "function" ? (
-              <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
-                <PopoverTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7"
-                    aria-label="리액션"
-                    title="리액션"
-                  >
-                    <SmilePlus className="h-3.5 w-3.5" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-1.5" align={isMine ? "end" : "start"}>
-                  <div className="flex items-center gap-0.5">
-                    {CHAT_REACTION_EMOJIS.map((emoji) => (
-                      <button
-                        key={emoji}
-                        type="button"
-                        className="h-8 w-8 rounded-md text-base hover:bg-muted"
-                        onClick={() => handleToggle(emoji)}
-                        aria-label={`${emoji} 리액션`}
-                      >
-                        {emoji}
-                      </button>
-                    ))}
-                  </div>
-                </PopoverContent>
-              </Popover>
-            ) : null}
-          </div>
-        ) : null}
       </div>
-    </div>
+
+      <ModelPreviewDialog
+        open={previewOpen}
+        onOpenChange={(next) => {
+          if (!next) {
+            resetPreview();
+            return;
+          }
+          setPreviewOpen(true);
+        }}
+        kind="image"
+        fileName={previewMeta?.fileName || ""}
+        file={previewFile}
+        loading={previewLoading}
+        progress={previewProgress}
+        downloadBusy={previewDownloadBusy}
+        onDownload={
+          previewMeta && onOpenAttachment
+            ? () => void onOpenAttachment(previewMeta)
+            : undefined
+        }
+        previewIndex={previewItems.length > 1 ? previewIndex : -1}
+        previewCount={previewItems.length}
+        onPrev={
+          previewItems.length > 1 ? () => goPreviewRelative(-1) : undefined
+        }
+        onNext={
+          previewItems.length > 1 ? () => goPreviewRelative(1) : undefined
+        }
+      />
+    </>
   );
 }

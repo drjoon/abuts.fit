@@ -8,6 +8,7 @@
 // - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
 // - web/frontend/src/shared/files/useS3FileDownload.ts
 // - 2026-08-13: 채팅 첨부 다운로드 프로그레스바.
+// - 2026-08-27: 채팅 이미지 썸네일·미리보기(authToken).
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
@@ -635,6 +636,7 @@ export const AdminChatManagement = () => {
                               message={msg}
                               isMine={isMine}
                               currentUserId={String(user?.id || "").trim()}
+                              authToken={token}
                               formatTime={formatTime}
                               onReply={(message) => {
                                 setReplyTo({

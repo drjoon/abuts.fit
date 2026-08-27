@@ -6,6 +6,7 @@
 // - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
 // - web/frontend/src/shared/files/useS3FileDownload.ts
 // - 2026-08-13: 채팅 첨부 다운로드 프로그레스바.
+// - 2026-08-27: 채팅 이미지 썸네일·미리보기(authToken).
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -414,6 +415,7 @@ export const NewChatWidget = () => {
                               message={m}
                               isMine={isMine}
                               currentUserId={String(user?.id || "").trim()}
+                              authToken={token}
                               formatTime={formatChatTs}
                               showSenderName={false}
                               compact
