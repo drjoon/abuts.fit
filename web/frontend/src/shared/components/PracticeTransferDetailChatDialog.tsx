@@ -21,6 +21,8 @@
 // - 2026-08-28: 탭 UI 폴리시 — 제목/소통헤더 제거, 평가→탭줄, 박스 없이 채움.
 // - 2026-08-28: 기공소 오픈 시 의뢰상세 탭 우선. 활성 탭 primary(파란).
 // - 2026-08-28: 의뢰상세·채팅 좌우 분할 → 탭 전환(치과 기본 채팅).
+// - 2026-08-28: 채팅 탭 라벨 → 진행 상황(치과·기공소 공통).
+// - 2026-08-28: 치과 의뢰취소·수정 CTA — 의뢰상세 → 진행 상황 탭 상단.
 // - 2026-08-27: 채팅 버블에 보낸사람 이름 표시.
 // - 2026-08-27: 재도착일 — 오늘=재주문일·선택일=재도착일 동시 누적(주문일/도착일 캘린더).
 // - 2026-08-27: 재도착일 — 오늘 이후 1개만(다시 고르면 교체). 과거·오늘만 캘린더 이력.
@@ -1228,7 +1230,7 @@ export function PracticeTransferDetailChatDialog({
                   className="gap-1.5 px-4 py-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
                 >
                   <MessageSquare className="h-3.5 w-3.5" />
-                  채팅
+                  진행 상황
                 </TabsTrigger>
               </TabsList>
             )}
@@ -1247,37 +1249,6 @@ export function PracticeTransferDetailChatDialog({
             className="custom-scrollbar mt-0 max-h-[inherit] overflow-y-auto px-5 py-3 text-sm focus-visible:ring-0"
           >
             <div className="space-y-6">
-              {onEditRequest || onCancelRequest ? (
-                <div className="flex flex-wrap justify-end gap-2">
-                  {onCancelRequest ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="shrink-0 gap-1.5 border-destructive-muted text-destructive hover:bg-destructive-soft hover:text-destructive"
-                      disabled={cancelRequestDisabled}
-                      onClick={() => onCancelRequest()}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                      의뢰 취소
-                    </Button>
-                  ) : null}
-                  {onEditRequest ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="shrink-0 gap-1.5"
-                      disabled={editRequestDisabled}
-                      onClick={() => onEditRequest()}
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                      의뢰 수정
-                    </Button>
-                  ) : null}
-                </div>
-              ) : null}
-
               <section className="space-y-1">
                 <h3 className="text-[13px] font-semibold text-foreground">
                   기본 정보
@@ -1570,6 +1541,37 @@ export function PracticeTransferDetailChatDialog({
             className="mt-0 flex min-h-0 flex-1 flex-col overflow-hidden focus-visible:ring-0"
           >
               {counterpartyMemoStrip}
+
+              {onEditRequest || onCancelRequest ? (
+                <div className="flex shrink-0 flex-wrap justify-end gap-2 border-b bg-muted/40 px-3 py-2">
+                  {onCancelRequest ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0 gap-1.5 border-destructive-muted text-destructive hover:bg-destructive-soft hover:text-destructive"
+                      disabled={cancelRequestDisabled}
+                      onClick={() => onCancelRequest()}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      의뢰 취소
+                    </Button>
+                  ) : null}
+                  {onEditRequest ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0 gap-1.5"
+                      disabled={editRequestDisabled}
+                      onClick={() => onEditRequest()}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                      의뢰 수정
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
 
               {showAcceptBar ? (
                 <div className="shrink-0 border-b bg-muted/40 px-3 py-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
