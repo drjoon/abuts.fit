@@ -58,6 +58,10 @@ type Props = {
 
   replyTo?: ReplyToMessage | null;
   onCancelReply?: () => void;
+
+  /** 모달 등 — 하단 여백을 줄인 컴팩트 패딩 */
+  compact?: boolean;
+  className?: string;
 };
 
 export const ChatComposer = (props: Props) => {
@@ -76,6 +80,8 @@ export const ChatComposer = (props: Props) => {
     onInsertRequestId,
     replyTo,
     onCancelReply,
+    compact = false,
+    className,
   } = props;
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -133,7 +139,12 @@ export const ChatComposer = (props: Props) => {
     <div
       className={cn(
         "shrink-0 border-t space-y-2",
-        isMobile ? "px-3 pt-2.5 pb-[max(0.75rem,env(safe-area-inset-bottom))]" : "px-3 pt-3 pb-4 sm:px-4 sm:pt-4 sm:pb-6",
+        isMobile
+          ? "px-3 pt-2.5 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+            : compact
+            ? "px-3 pt-1.5 pb-1.5 sm:px-4"
+            : "px-3 pt-3 pb-4 sm:px-4 sm:pt-4 sm:pb-6",
+        className,
       )}
     >
       {replyTo ? (
@@ -153,8 +164,13 @@ export const ChatComposer = (props: Props) => {
         value={draft}
         onChange={(e) => onDraftChange(e.target.value)}
         placeholder={placeholder || "메시지를 입력하세요"}
-        className={cn("resize-none", isMobile && "min-h-[4.5rem] text-base")}
-        rows={isMobile ? 2 : 3}
+        className={cn(
+          "resize-none",
+          compact &&
+            "min-h-0 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0",
+          isMobile && "min-h-[4.5rem] text-base",
+        )}
+        rows={isMobile ? 2 : compact ? 2 : 3}
         disabled={!!disabled || !!isSending}
         onKeyDown={(e) => {
           if (e.key === "Enter" && !e.shiftKey) {

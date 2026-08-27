@@ -2,6 +2,7 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+// - 2026-08-28: hideOverlay — 플로팅 핀 모드에서 딤 제거.
 import * as React from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
@@ -37,10 +38,16 @@ const DialogContent = React.forwardRef<
     hideClose?: boolean;
     /** Nested dialogs need overlay above the parent (default z-[100]). */
     overlayClassName?: string;
+    /** Skip dim overlay (floating pin / browse-behind). */
+    hideOverlay?: boolean;
+    /** Extra classes for the close button. */
+    closeClassName?: string;
+    /** Extra classes for the close icon. */
+    closeIconClassName?: string;
   }
->(({ className, children, hideClose, overlayClassName, ...props }, ref) => (
+>(({ className, children, hideClose, overlayClassName, hideOverlay, closeClassName, closeIconClassName, ...props }, ref) => (
   <DialogPortal>
-    <DialogOverlay className={overlayClassName} />
+    {!hideOverlay ? <DialogOverlay className={overlayClassName} /> : null}
     <DialogPrimitive.Content
       ref={ref}
       // Wide dialogs must pass sm:max-w-* (or sm:max-w-none); bare max-w-* does not override sm:max-w-lg.
@@ -52,8 +59,13 @@ const DialogContent = React.forwardRef<
     >
       {children}
       {!hideClose && (
-        <DialogPrimitive.Close className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground">
-          <X className="h-4 w-4" />
+        <DialogPrimitive.Close
+          className={cn(
+            "absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground",
+            closeClassName,
+          )}
+        >
+          <X className={cn("h-4 w-4", closeIconClassName)} />
           <span className="sr-only">Close</span>
         </DialogPrimitive.Close>
       )}

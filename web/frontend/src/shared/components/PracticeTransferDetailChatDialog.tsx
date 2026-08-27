@@ -1,4 +1,6 @@
 // related files:
+// - web/frontend/src/shared/components/practice/usePracticeTransferPanelLayout.ts
+// - web/frontend/src/components/ui/dialog.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/hooks/useChatRooms.ts
@@ -12,6 +14,12 @@
 // - web/frontend/src/shared/files/downloadWithProgress.ts
 // - web/frontend/src/shared/files/s3BlobCache.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-08-28: 맥/카톡 스타일 신호등(닫기·최소화·최대화) 헤더.
+// - 2026-08-28: 플로팅 — 항상 논모달(페이드 없음)·헤더 threshold 드래그·큰 닫기.
+// - 2026-08-28: 플로팅 패널 — 드래그·리사이즈·좌우도킹·핀(목록 클릭 전환).
+// - 2026-08-28: 의뢰상세 탭 — 요약 행·섹션 계층으로 가독성 개선.
+// - 2026-08-28: 탭 UI 폴리시 — 제목/소통헤더 제거, 평가→탭줄, 박스 없이 채움.
+// - 2026-08-28: 의뢰상세·채팅 좌우 분할 → 탭 전환(기본 채팅).
 // - 2026-08-27: 채팅 버블에 보낸사람 이름 표시.
 // - 2026-08-27: 재도착일 — 오늘=재주문일·선택일=재도착일 동시 누적(주문일/도착일 캘린더).
 // - 2026-08-27: 재도착일 — 오늘 이후 1개만(다시 고르면 교체). 과거·오늘만 캘린더 이력.
@@ -53,6 +61,7 @@
 // - 2026-08-14: 수락 후 같은 자리(채팅 상단 바)에 작업취소 버튼.
 // - 2026-08-15: 요약 작업기간 — 5일 미만 빨간 표시·툴팁. 수락 바 거부·짧은 작업기간.
 import {
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
   type RefObject,
   useCallback,
@@ -64,20 +73,21 @@ import {
 import { Box, CalendarClock, FileIcon, MessageSquare, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/shared/ui/cn";
-import { RESPONSIVE } from "@/shared/ui/responsive";
 import { toKstYmd, ymdToKstDate } from "@/shared/date/kst";
 import { type ChatMessage } from "@/shared/hooks/useChatRooms";
 import { ChatComposer } from "@/features/chat/components/ChatComposer";
 import { ChatMessageBubble } from "@/features/chat/components/ChatMessageBubble";
 import { type ReplyToMessage } from "@/features/chat/components/MessageReply";
 import { PracticeToothWorkChartReadOnly } from "@/shared/components/practice/PracticeToothWorkChartReadOnly";
+import { usePracticeTransferPanelLayout } from "@/shared/components/practice/usePracticeTransferPanelLayout";
 import type { ToothWorkSelection } from "@/shared/practice/transferMemo";
 import type {
   PracticeTransferFeeQuote,
@@ -316,7 +326,7 @@ export function PracticeTransferDetailChatDialog({
   open,
   onOpenChange,
   title,
-  conversationTitle,
+  conversationTitle: _conversationTitle,
   authToken = null,
   chatHeaderAction = null,
   counterpartyMemoStrip = null,
@@ -399,9 +409,48 @@ export function PracticeTransferDetailChatDialog({
   cancelRequestDisabled = false,
 }: PracticeTransferDetailChatDialogProps) {
   const { toast } = useToast();
+  const {
+    layout,
+    minimized,
+    maximized,
+    beginHeaderDrag,
+    beginResize,
+    minimize,
+    toggleMaximize,
+  } = usePracticeTransferPanelLayout();
+  const [panelTab, setPanelTab] = useState<"detail" | "chat">("chat");
   const [rearrivalOpen, setRearrivalOpen] = useState(false);
   const [rearrivalDraft, setRearrivalDraft] = useState<Date | undefined>(undefined);
   const [previewOpen, setPreviewOpen] = useState(false);
+
+  useEffect(() => {
+    if (open) setPanelTab("chat");
+  }, [open]);
+
+  const handlePanelTabChange = useCallback((value: string) => {
+    setPanelTab(value === "detail" ? "detail" : "chat");
+  }, []);
+
+  const handleChromePointerDown = useCallback(
+    (e: ReactPointerEvent) => {
+      if (e.button !== 0) return;
+      const target = e.target as HTMLElement | null;
+      if (target?.closest("button, a, input, textarea, select, [data-no-drag]")) {
+        return;
+      }
+      // 탭 클릭은 유지 — threshold 드래그로 이동
+      beginHeaderDrag(e.clientX, e.clientY);
+    },
+    [beginHeaderDrag],
+  );
+
+  useEffect(() => {
+    if (!open || panelTab !== "chat") return;
+    const id = requestAnimationFrame(() => {
+      chatBottomRef.current?.scrollIntoView({ behavior: "auto" });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [open, panelTab, chatBottomRef, chatMessages.length]);
   const todayYmd = useMemo(() => toKstYmd(new Date()) || "", []);
   const currentArrivalYmd = useMemo(
     () => String(arrivalDate || "").trim(),
@@ -1078,24 +1127,114 @@ export function PracticeTransferDetailChatDialog({
 
   return (
     <>
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={onOpenChange} modal={false}>
       <DialogContent
+        hideOverlay
+        hideClose
+        onPointerDownOutside={(e) => e.preventDefault()}
+        onInteractOutside={(e) => e.preventDefault()}
+        onFocusOutside={(e) => e.preventDefault()}
+        style={{
+          position: "fixed",
+          left: layout.x,
+          top: layout.y,
+          width: layout.w,
+          height:
+            panelTab === "detail" && !minimized && !maximized
+              ? "auto"
+              : layout.h,
+          maxWidth: "none",
+          maxHeight: layout.h,
+          transform: "none",
+        }}
         className={cn(
-          "flex h-[86vh] flex-col gap-0 overflow-hidden p-0",
-          RESPONSIVE.dialogContentFull,
-          "sm:max-w-[min(96vw,90rem)]",
+          "relative z-[300] flex flex-col gap-0 overflow-hidden rounded-lg border bg-background p-0 shadow-2xl duration-0",
+          "translate-x-0 translate-y-0",
+          "w-auto max-w-none sm:w-auto sm:max-w-none sm:p-0",
+          "data-[state=open]:animate-none data-[state=closed]:animate-none",
         )}
       >
-        <DialogHeader className="px-5 pt-5 pb-3 border-b shrink-0">
-          <DialogTitle className="flex items-center gap-2 pr-8 text-base">
-            <MessageSquare className="h-4 w-4 text-primary-strong" />
-            <span className="min-w-0 truncate">{title}</span>
-          </DialogTitle>
-        </DialogHeader>
+        <DialogTitle className="sr-only">{title}</DialogTitle>
 
-        <div className="px-5 py-4 flex-1 min-h-0 overflow-hidden">
-          <div className="grid h-full min-h-0 grid-cols-1 grid-rows-[minmax(0,0.3fr)_minmax(0,0.7fr)] gap-4 lg:grid-cols-2 lg:grid-rows-[minmax(0,1fr)]">
-            <div className="min-h-0 space-y-4 overflow-y-auto rounded-lg border bg-card p-3 text-[15px]">
+        <Tabs
+          value={panelTab}
+          onValueChange={handlePanelTabChange}
+          className={cn(
+            "flex min-h-0 flex-col overflow-hidden",
+            panelTab === "chat" || minimized || maximized ? "flex-1" : "",
+          )}
+        >
+          <div
+            className={cn(
+              "grid shrink-0 cursor-grab grid-cols-[auto_1fr_auto] items-center gap-2 border-b px-3 active:cursor-grabbing",
+              minimized ? "h-12 py-0" : "py-3.5",
+            )}
+            onPointerDown={handleChromePointerDown}
+            onDoubleClick={(e) => {
+              const target = e.target as HTMLElement | null;
+              if (target?.closest("button, [data-no-drag]")) return;
+              toggleMaximize();
+            }}
+          >
+            <div className="flex items-center gap-1.5 pl-0.5" data-no-drag>
+              <button
+                type="button"
+                className="h-3 w-3 shrink-0 rounded-full bg-[#ff5f57] shadow-sm ring-1 ring-black/10 transition hover:brightness-95"
+                aria-label="닫기"
+                title="닫기"
+                onClick={() => onOpenChange(false)}
+              />
+              <button
+                type="button"
+                className="h-3 w-3 shrink-0 rounded-full bg-[#febc2e] shadow-sm ring-1 ring-black/10 transition hover:brightness-95"
+                aria-label={minimized ? "창 복원" : "최소화"}
+                title={minimized ? "창 복원" : "최소화"}
+                onClick={() => minimize()}
+              />
+              <button
+                type="button"
+                className="h-3 w-3 shrink-0 rounded-full bg-[#28c840] shadow-sm ring-1 ring-black/10 transition hover:brightness-95"
+                aria-label={maximized ? "창 복원" : "최대화"}
+                title={maximized ? "창 복원" : "최대화"}
+                onClick={() => toggleMaximize()}
+              />
+            </div>
+            {minimized ? (
+              <button
+                type="button"
+                className="min-w-0 truncate text-left text-sm font-medium text-foreground"
+                onClick={() => minimize()}
+                data-no-drag
+              >
+                {title}
+              </button>
+            ) : (
+              <TabsList className="mx-auto h-11 w-auto shrink-0 justify-self-center p-1">
+                <TabsTrigger value="detail" className="gap-1.5 px-4 py-2">
+                  <FileIcon className="h-3.5 w-3.5" />
+                  의뢰 상세
+                </TabsTrigger>
+                <TabsTrigger value="chat" className="gap-1.5 px-4 py-2">
+                  <MessageSquare className="h-3.5 w-3.5" />
+                  채팅
+                </TabsTrigger>
+              </TabsList>
+            )}
+            <div
+              className="flex min-w-0 items-center justify-end"
+              data-no-drag
+            >
+              {!minimized ? chatHeaderAction : null}
+            </div>
+          </div>
+
+          {!minimized ? (
+          <>
+          <TabsContent
+            value="detail"
+            className="custom-scrollbar mt-0 max-h-[inherit] overflow-y-auto px-5 py-3 text-sm focus-visible:ring-0"
+          >
+            <div className="space-y-6">
               {onEditRequest || onCancelRequest ? (
                 <div className="flex flex-wrap justify-end gap-2">
                   {onCancelRequest ? (
@@ -1126,173 +1265,193 @@ export function PracticeTransferDetailChatDialog({
                   ) : null}
                 </div>
               ) : null}
-              <div className="grid grid-cols-2 gap-3">
-                {summaryItems.map((row, idx) => {
-                  const isArrivalRow =
-                    row.label === "치과도착일" || row.label === "재도착일";
-                  const valueNode = (
-                    <p
-                      className={
-                        row.valueClassName
-                          ? `font-medium break-words ${row.valueClassName}`
-                          : "font-medium break-words"
-                      }
-                    >
-                      {row.value || "-"}
-                    </p>
-                  );
-                  const valueWithAction =
-                    isArrivalRow && onAppendArrival ? (
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        {row.tooltip ? (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <span className="inline-flex cursor-help">
-                                {valueNode}
-                              </span>
-                            </TooltipTrigger>
-                            <TooltipContent
-                              side="top"
-                              className="max-w-xs text-left text-xs leading-relaxed"
-                            >
-                              {row.tooltip}
-                            </TooltipContent>
-                          </Tooltip>
-                        ) : (
-                          valueNode
+
+              <section className="space-y-1">
+                <h3 className="text-[13px] font-semibold text-foreground">
+                  기본 정보
+                </h3>
+                <dl className="divide-y divide-border/70">
+                  {summaryItems.map((row, idx) => {
+                    const isArrivalRow =
+                      row.label === "치과도착일" || row.label === "재도착일";
+                    const valueNode = (
+                      <p
+                        className={cn(
+                          "text-sm font-medium leading-snug break-words text-foreground",
+                          row.valueClassName,
                         )}
-                        <Popover
-                          open={rearrivalOpen}
-                          onOpenChange={setRearrivalOpen}
-                        >
-                          <PopoverTrigger asChild>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="h-7 shrink-0 gap-1 px-2 text-xs"
-                              disabled={
-                                appendArrivalDisabled || appendArrivalBusy
-                              }
-                              title="재도착일 선택 시 오늘이 재주문일로 함께 반영됩니다. 오늘 이후 재도착일 1개만 두며, 다시 고르면 수정되고 크레딧은 추가 차감되지 않습니다."
-                            >
-                              <CalendarClock className="h-3.5 w-3.5" />
-                              {appendArrivalBusy ? "반영 중…" : "재도착일"}
-                            </Button>
-                          </PopoverTrigger>
-                          <PopoverContent
-                            align="start"
-                            className="w-auto p-0"
-                            onOpenAutoFocus={(e) => e.preventDefault()}
-                          >
-                            <div className="border-b px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
-                              선택일=재도착일, 오늘=재주문일로 반영됩니다.
-                              오늘 이후 재도착일은 1개만 유지되며, 다시
-                              고르면 수정되고 크레딧은 추가 차감되지
-                              않습니다.
-                            </div>
-                            <Calendar
-                              mode="single"
-                              required
-                              numberOfMonths={1}
-                              selected={rearrivalDraft}
-                              onSelect={(date) => {
-                                if (date) setRearrivalDraft(date);
-                              }}
-                              defaultMonth={rearrivalDraft}
-                              disabled={(date) => {
-                                const ymd = toKstYmd(date) || "";
-                                if (!ymd) return true;
-                                if (rearrivalMinYmd && ymd < rearrivalMinYmd) {
-                                  return true;
-                                }
-                                return false;
-                              }}
-                              classNames={{
-                                cell: "h-9 w-9 text-center text-sm p-0 relative focus-within:relative focus-within:z-20",
-                                day_range_start: "",
-                                day_range_end: "",
-                                day_range_middle: "",
-                              }}
-                              initialFocus
-                            />
-                            <div className="flex items-center justify-end gap-2 border-t px-3 py-2">
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setRearrivalOpen(false)}
-                              >
-                                취소
-                              </Button>
-                              <Button
-                                type="button"
-                                size="sm"
-                                disabled={
-                                  !rearrivalDraft || appendArrivalBusy
-                                }
-                                onClick={() => confirmRearrival()}
-                              >
-                                적용
-                              </Button>
-                            </div>
-                          </PopoverContent>
-                        </Popover>
-                      </div>
-                    ) : row.tooltip ? (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <span className="inline-flex cursor-help">
-                            {valueNode}
-                          </span>
-                        </TooltipTrigger>
-                        <TooltipContent
-                          side="top"
-                          className="max-w-xs text-left text-xs leading-relaxed"
-                        >
-                          {row.tooltip}
-                        </TooltipContent>
-                      </Tooltip>
-                    ) : (
-                      valueNode
+                      >
+                        {row.value || "-"}
+                      </p>
                     );
-                  return (
-                    <div key={`${row.label}:${idx}`}>
-                      <p className="text-muted-foreground">{row.label}</p>
-                      {valueWithAction}
-                    </div>
-                  );
-                })}
-              </div>
+                    const valueWithAction =
+                      isArrivalRow && onAppendArrival ? (
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {row.tooltip ? (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="inline-flex cursor-help">
+                                  {valueNode}
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent
+                                side="top"
+                                className="max-w-xs text-left text-xs leading-relaxed"
+                              >
+                                {row.tooltip}
+                              </TooltipContent>
+                            </Tooltip>
+                          ) : (
+                            valueNode
+                          )}
+                          <Popover
+                            open={rearrivalOpen}
+                            onOpenChange={setRearrivalOpen}
+                          >
+                            <PopoverTrigger asChild>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-7 shrink-0 gap-1 px-2 text-xs"
+                                disabled={
+                                  appendArrivalDisabled || appendArrivalBusy
+                                }
+                                title="재도착일 선택 시 오늘이 재주문일로 함께 반영됩니다. 오늘 이후 재도착일 1개만 두며, 다시 고르면 수정되고 크레딧은 추가 차감되지 않습니다."
+                              >
+                                <CalendarClock className="h-3.5 w-3.5" />
+                                {appendArrivalBusy ? "반영 중…" : "재도착일"}
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent
+                              align="start"
+                              className="w-auto p-0"
+                              onOpenAutoFocus={(e) => e.preventDefault()}
+                            >
+                              <div className="border-b px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
+                                선택일=재도착일, 오늘=재주문일로 반영됩니다.
+                                오늘 이후 재도착일은 1개만 유지되며, 다시
+                                고르면 수정되고 크레딧은 추가 차감되지
+                                않습니다.
+                              </div>
+                              <Calendar
+                                mode="single"
+                                required
+                                numberOfMonths={1}
+                                selected={rearrivalDraft}
+                                onSelect={(date) => {
+                                  if (date) setRearrivalDraft(date);
+                                }}
+                                defaultMonth={rearrivalDraft}
+                                disabled={(date) => {
+                                  const ymd = toKstYmd(date) || "";
+                                  if (!ymd) return true;
+                                  if (rearrivalMinYmd && ymd < rearrivalMinYmd) {
+                                    return true;
+                                  }
+                                  return false;
+                                }}
+                                classNames={{
+                                  cell: "h-9 w-9 text-center text-sm p-0 relative focus-within:relative focus-within:z-20",
+                                  day_range_start: "",
+                                  day_range_end: "",
+                                  day_range_middle: "",
+                                }}
+                                initialFocus
+                              />
+                              <div className="flex items-center justify-end gap-2 border-t px-3 py-2">
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => setRearrivalOpen(false)}
+                                >
+                                  취소
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  disabled={
+                                    !rearrivalDraft || appendArrivalBusy
+                                  }
+                                  onClick={() => confirmRearrival()}
+                                >
+                                  적용
+                                </Button>
+                              </div>
+                            </PopoverContent>
+                          </Popover>
+                        </div>
+                      ) : row.tooltip ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="inline-flex cursor-help">
+                              {valueNode}
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent
+                            side="top"
+                            className="max-w-xs text-left text-xs leading-relaxed"
+                          >
+                            {row.tooltip}
+                          </TooltipContent>
+                        </Tooltip>
+                      ) : (
+                        valueNode
+                      );
+                    return (
+                      <div
+                        key={`${row.label}:${idx}`}
+                        className="grid grid-cols-[6.75rem_minmax(0,1fr)] items-start gap-x-3 py-2 sm:grid-cols-[7.5rem_minmax(0,1fr)]"
+                      >
+                        <dt className="pt-0.5 text-[13px] leading-snug text-muted-foreground">
+                          {row.label}
+                        </dt>
+                        <dd className="min-w-0">{valueWithAction}</dd>
+                      </div>
+                    );
+                  })}
+                </dl>
+              </section>
 
               {summaryBanner ? (
-                <div className="pt-1">{summaryBanner}</div>
+                <div>{summaryBanner}</div>
               ) : null}
 
               {hasToothWorks ? (
-                <PracticeToothWorkChartReadOnly
-                  key={toothWorksKey || "tooth-works"}
-                  toothWorks={toothWorks}
-                  feeQuote={feeQuote}
-                  feeViewer={feeViewer}
-                  labAnchorId={labAnchorId}
-                  skipJig={skipJig}
-                  labEffectiveStars={labEffectiveStars}
-                />
+                <section className="space-y-2.5 border-t border-border/70 pt-5">
+                  <h3 className="text-[13px] font-semibold text-foreground">
+                    치식 · 보철물
+                  </h3>
+                  <PracticeToothWorkChartReadOnly
+                    key={toothWorksKey || "tooth-works"}
+                    toothWorks={toothWorks}
+                    feeQuote={feeQuote}
+                    feeViewer={feeViewer}
+                    labAnchorId={labAnchorId}
+                    skipJig={skipJig}
+                    labEffectiveStars={labEffectiveStars}
+                  />
+                </section>
               ) : null}
 
-              <div>
-                <p className="text-muted-foreground">의뢰 메모</p>
-                <p className="mt-1 font-medium whitespace-pre-wrap break-words max-h-48 overflow-y-auto pr-1">
+              <section className="space-y-2.5 border-t border-border/70 pt-5">
+                <h3 className="text-[13px] font-semibold text-foreground">
+                  의뢰 메모
+                </h3>
+                <p className="custom-scrollbar max-h-48 overflow-y-auto rounded-md bg-muted/40 px-3 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words text-foreground">
                   {memo || "-"}
                 </p>
-              </div>
+              </section>
 
-              <div>
+              <section className="space-y-2.5 border-t border-border/70 pt-5">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-muted-foreground">
-                    {filesLabel} ({files.length}개)
-                  </p>
+                  <h3 className="text-[13px] font-semibold text-foreground">
+                    {filesLabel}{" "}
+                    <span className="font-normal text-muted-foreground">
+                      ({files.length}개)
+                    </span>
+                  </h3>
                   <Button
                     type="button"
                     variant="outline"
@@ -1308,12 +1467,12 @@ export function PracticeTransferDetailChatDialog({
                   </Button>
                 </div>
                 {requestFilesDownloadLocked && files.length > 0 ? (
-                  <p className="mt-2 text-xs leading-relaxed text-amber-800 dark:text-amber-200">
+                  <p className="text-xs leading-relaxed text-amber-800 dark:text-amber-200">
                     {requestFilesDownloadLockedReason}
                   </p>
                 ) : null}
                 {files.length ? (
-                  <div className="mt-2 max-h-64 overflow-y-auto pr-1">
+                  <div className="custom-scrollbar max-h-64 overflow-y-auto pr-1">
                     <div className="grid grid-cols-4 gap-2">
                       {files.map((file, idx) =>
                         renderFileTile(
@@ -1326,23 +1485,26 @@ export function PracticeTransferDetailChatDialog({
                     </div>
                   </div>
                 ) : oralScanAttachMode === "practice_required" ? (
-                  <p className="mt-2 text-sm text-destructive leading-relaxed">
+                  <p className="text-sm leading-relaxed text-destructive">
                     {ORAL_SCAN_REQUIRED_FROM_PRACTICE}
                   </p>
                 ) : (
-                  <p className="font-medium">-</p>
+                  <p className="text-sm text-muted-foreground">파일 없음</p>
                 )}
-              </div>
+              </section>
 
               {showWorkFilesSection ? (
-                <div className="space-y-3">
-                  <p className="text-muted-foreground">{workFilesLabel}</p>
+                <section className="space-y-3 border-t border-border/70 pt-5">
+                  <h3 className="text-[13px] font-semibold text-foreground">
+                    {workFilesLabel}
+                  </h3>
                   {designFileList.length > 0 ? (
-                    <div className="pl-1">
-                      <p className="text-xs font-medium text-slate-600">
-                        {designFilesLabel} ({designFileList.length}개)
+                    <div className="space-y-1.5">
+                      <p className="text-[13px] text-muted-foreground">
+                        {designFilesLabel}{" "}
+                        <span>({designFileList.length}개)</span>
                       </p>
-                      <div className="mt-1.5 max-h-64 overflow-y-auto pr-1">
+                      <div className="custom-scrollbar max-h-64 overflow-y-auto pr-1">
                         <div className="grid grid-cols-4 gap-2">
                           {designFileList.map((file, idx) =>
                             renderFileTile(file, idx, "design"),
@@ -1352,11 +1514,12 @@ export function PracticeTransferDetailChatDialog({
                     </div>
                   ) : null}
                   {resultFileList.length > 0 ? (
-                    <div className="pl-1">
-                      <p className="text-xs font-medium text-slate-600">
-                        {resultFilesLabel} ({resultFileList.length}개)
+                    <div className="space-y-1.5">
+                      <p className="text-[13px] text-muted-foreground">
+                        {resultFilesLabel}{" "}
+                        <span>({resultFileList.length}개)</span>
                       </p>
-                      <div className="mt-1.5 max-h-64 overflow-y-auto pr-1">
+                      <div className="custom-scrollbar max-h-64 overflow-y-auto pr-1">
                         <div className="grid grid-cols-4 gap-2">
                           {resultFileList.map((file, idx) =>
                             renderFileTile(file, idx, "result"),
@@ -1365,7 +1528,7 @@ export function PracticeTransferDetailChatDialog({
                       </div>
                     </div>
                   ) : null}
-                </div>
+                </section>
               ) : null}
 
               {showProductionConfirm && onConfirmProduction ? (
@@ -1388,17 +1551,12 @@ export function PracticeTransferDetailChatDialog({
                 </div>
               ) : null}
             </div>
+          </TabsContent>
 
-            <div className="flex min-h-0 flex-col overflow-hidden rounded-lg border bg-card">
-              <div className="flex shrink-0 items-center justify-between gap-2 border-b bg-muted/50 px-3 py-3 sm:px-4">
-                <div className="min-w-0 truncate text-sm font-medium">
-                  {conversationTitle}
-                </div>
-                {chatHeaderAction ? (
-                  <div className="shrink-0">{chatHeaderAction}</div>
-                ) : null}
-              </div>
-
+          <TabsContent
+            value="chat"
+            className="mt-0 flex min-h-0 flex-1 flex-col overflow-hidden focus-visible:ring-0"
+          >
               {counterpartyMemoStrip}
 
               {showAcceptBar ? (
@@ -1537,8 +1695,8 @@ export function PracticeTransferDetailChatDialog({
               ) : null}
 
               <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_auto] overflow-hidden">
-                <div className="min-h-0 overflow-y-auto overscroll-contain">
-                  <div className="w-full min-w-0 max-w-full space-y-2 p-3 sm:p-4">
+                <div className="custom-scrollbar min-h-0 overflow-y-auto overscroll-contain">
+                  <div className="w-full min-w-0 max-w-full space-y-2 px-3 py-1.5 sm:px-4 sm:py-2">
                     {chatLoading ? (
                       <div className="py-4 text-center text-xs text-muted-foreground">
                         채팅을 불러오는 중입니다...
@@ -1608,12 +1766,49 @@ export function PracticeTransferDetailChatDialog({
                     onRetryPendingFile={onRetryAttachedChatFile}
                     replyTo={replyTo}
                     onCancelReply={onCancelReply}
+                    compact
                   />
                 </div>
               </div>
-            </div>
-          </div>
-        </div>
+          </TabsContent>
+          </>
+          ) : null}
+        </Tabs>
+
+        {!minimized && !maximized ? (
+          <>
+        <div
+          data-no-drag
+          className="absolute bottom-0 right-0 top-12 z-30 w-3 cursor-ew-resize touch-none"
+          onPointerDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+            beginResize("e", e.clientX, e.clientY);
+          }}
+        />
+        <div
+          data-no-drag
+          className="absolute bottom-0 left-0 right-3 z-30 h-3 cursor-ns-resize touch-none"
+          onPointerDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+            beginResize("s", e.clientX, e.clientY);
+          }}
+        />
+        <div
+          data-no-drag
+          className="absolute bottom-0 right-0 z-40 h-4 w-4 cursor-nwse-resize touch-none"
+          onPointerDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+            beginResize("se", e.clientX, e.clientY);
+          }}
+        />
+          </>
+        ) : null}
       </DialogContent>
     </Dialog>
     <ModelPreviewDialog
