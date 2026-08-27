@@ -11,6 +11,7 @@
 // - web/backend/models/ledgerLine.model.js
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
+// - 2026-08-27: billed 견적 — 레거시 abutmentRetail 스냅샷이면 기공소 CA 수가(live)로 표시 승격.
 // - 2026-08-26: labAbutmentPending는 미도입 플래그만(금액>0과 OR 하지 않음).
 // - 2026-08-22: 치과 멤버십/일반 청구 이중가 제거. membership* 단일 고시. pricingTier 분기 삭제.
 // - 2026-08-22: 기공소→치과 배송 무료(lab_shipping hold 미생성·레거시 hold 해제). 라벨 정정.
@@ -4246,28 +4247,48 @@ export async function buildFeeQuotesForTransferDocs({
     });
 
     if (useStored) {
-      const storedQuote = feeQuoteFromBillingDoc(billing, {
-        lines: fees.lines,
-        billed,
-      });
-      // 청구 완료(billed): 예산 구간·별점 확정가 재부착 없이 billing 스냅샷 유지.
-      // feeRateApplied만 뷰어(원청/하청)에 맞게 덮어쓴다.
-      const split = splitPracticeTransferSettlement({
-        labFeeTotal: storedQuote.labFeeTotal,
-        abutmentRetailTotal: storedQuote.abutmentRetailTotal,
-        feeRateApplied,
-      });
-      out.set(docId, {
-        ...storedQuote,
-        labShippingFee:
-          Math.max(0, Math.round(Number(storedQuote.labShippingFee || 0))) ||
-          labShippingFee,
-        feeRateApplied,
-        labSettlementAmount: split.labSettlementAmount,
-        abutsRevenueAmount: split.abutsRevenueAmount,
-        remakeFeeQuote,
-      });
-      continue;
+      const storedRetail = Math.max(
+        0,
+        Math.round(Number(billing?.abutmentRetailTotal || 0)),
+      );
+      const liveRetail = Math.max(
+        0,
+        Math.round(Number(fees.abutmentRetailTotal || 0)),
+      );
+      const liveLabAbut = Math.max(
+        0,
+        Math.round(Number(fees.labAbutmentTotal || 0)),
+      );
+      // 레거시: PTX CA를 어벗츠 몫(retail)으로 스냅샷. 신규 SSOT는 기공소 커스텀어벗 수가.
+      // 스냅샷 total(예: 8.5만) + live 라인(6+4=10만) 불일치 방지 → live 견적 사용.
+      const promoteLegacyRetailToLabCa =
+        storedRetail > 0 && liveRetail === 0 && liveLabAbut > 0;
+
+      if (!promoteLegacyRetailToLabCa) {
+        const storedQuote = feeQuoteFromBillingDoc(billing, {
+          lines: fees.lines,
+          billed,
+        });
+        // 청구 완료(billed): 예산 구간·별점 확정가 재부착 없이 billing 스냅샷 유지.
+        // feeRateApplied만 뷰어(원청/하청)에 맞게 덮어쓴다.
+        const split = splitPracticeTransferSettlement({
+          labFeeTotal: storedQuote.labFeeTotal,
+          abutmentRetailTotal: storedQuote.abutmentRetailTotal,
+          feeRateApplied,
+        });
+        out.set(docId, {
+          ...storedQuote,
+          labShippingFee:
+            Math.max(0, Math.round(Number(storedQuote.labShippingFee || 0))) ||
+            labShippingFee,
+          feeRateApplied,
+          labSettlementAmount: split.labSettlementAmount,
+          abutsRevenueAmount: split.abutsRevenueAmount,
+          remakeFeeQuote,
+        });
+        continue;
+      }
+      // fall through: live fees (lab CA SSOT) + billed 플래그
     }
 
     const { abutsRevenueAmount, labSettlementAmount } =
@@ -4288,7 +4309,8 @@ export async function buildFeeQuotesForTransferDocs({
           labSettlementAmount,
           abutsRevenueAmount,
           labTradingPartnerId: partner?._id ? String(partner._id) : null,
-          billed: false,
+          // 레거시 retail→lab CA 승격 fall-through도 billed 유지
+          billed,
           usedDefaultSchedule: !quoteLabId,
           labFeeConfigured: resolveQuoteLabFeeConfigured({
             usedDefaultSchedule: !quoteLabId,

@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/practice/practiceTransferFeeQuote.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/components/practice/PracticeToothWorkChartReadOnly.tsx
+// - 2026-08-27: 확정 기공비도 툴팁 라인 합 우선(레거시 abutmentRetail 스냅샷 불일치 방지).
 // - 2026-08-22: 기공소→치과 배송 무료. skipJig 옵션/안내 삭제. 정산 상세는 →어벗츠(박스)만.
 // - 2026-08-21: 기공의뢰 정산에서 기공소→어벗츠 배송 제외(기공소 박스 과금).
 // - 2026-08-21: 치과→기공소 배송 무료. 정산 상세는 →어벗츠(박스)만.
@@ -629,13 +630,16 @@ export function PracticeTransferFeeEstimate({
     0,
     Math.round(Number(quote.abutmentRetailTotal || 0)),
   );
+  // 확정(billed)도 툴팁 라인 합을 우선 — 스냅샷 total과 라인 불일치(레거시 retail) 방지.
   const amount = isLab
     ? workTotalFromBreakdown > 0
       ? workTotalFromBreakdown
       : labFeeTotalForLab + abutmentRetailTotal
-    : hasBudgetRange
-      ? budgetLabFeeMax + abutmentRetailTotal
-      : quote.total;
+    : confirmed && workTotalFromBreakdown > 0
+      ? workTotalFromBreakdown
+      : hasBudgetRange
+        ? budgetLabFeeMax + abutmentRetailTotal
+        : quote.total;
   const creditMin = hasBudgetRange
     ? budgetLabFeeMin + abutmentRetailTotal
     : quote.total;
