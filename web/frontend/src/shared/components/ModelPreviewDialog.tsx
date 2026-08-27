@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-28: z-[320]/overlay z-[310] — 플로팅 의뢰상세(z-300) 위에 프리뷰.
 // - 2026-08-21: 선택 컨펌 안내·CTA(치과 어벗 디자인 컨펌 등). 이미지도 컨펌 시 푸터 표시.
 // - 2026-08-16: 채팅 위젯 톤 — rounded-xl·muted/50 헤더·h-9 푸터.
 // - 2026-08-16: 파일 여러 개일 때 이전/다음 버튼·인덱스 표시.
@@ -159,11 +160,13 @@ export function ModelPreviewDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
+        // Above floating transfer panel (z-300). Same band as other nested modals.
         className={cn(
-          "flex flex-col gap-0 overflow-hidden p-0",
+          "z-[320] flex flex-col gap-0 overflow-hidden p-0",
           RESPONSIVE.dialogContentFull,
           "sm:max-w-[min(96vw,56rem)]",
         )}
+        overlayClassName="z-[310]"
       >
         <DialogHeader className="shrink-0 space-y-0 border-b bg-muted/50 px-4 py-3 pr-12 sm:px-5">
           <DialogTitle className="truncate text-sm font-medium sm:text-base">
