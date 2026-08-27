@@ -152,6 +152,7 @@ import {
 // - 2026-08-25: 가이드투어 스텝 상위로 제어 가능(모드 전환 유지). 익스프레스 숨김 필드는 자동 스킵 안 함.
 // - 2026-08-25: 기공소·환자·날짜 투어 배너 → 상단 오른쪽(CardHeader 슬롯). aside는 익스프레스 단계 표시용.
 // - 2026-08-25: 가이드투어 견적·완료 중 어벗 모달 재오픈 허용 — 스텝 진입 시에만 닫고, 열기 직후 effect로 닫지 않음.
+// - 2026-08-27: 커스텀어벗 설정 — 「어벗 · 스캔바디 또는 심플어벗」섹션 라벨 제거.
 // - 2026-08-27: 커스텀어벗 설정 — 임플란트·스캔바디 프리셋 2열·호버 액션. 모달 max-w-[90rem].
 // - 2026-08-25: 기공소 픽커 보조줄 — 대표·주소만(사업자번호 표시 제거, 검색은 유지).
 // - 2026-08-25: 헤더(기공소·환자·기간) — PC 툴바 있으면 오른쪽 레일 항상 예약(투어 카드 on/off 폭 점프 방지).
@@ -4095,9 +4096,6 @@ export const PracticeTransferRequestIntakePanel = ({
                             modalSpecs.abutmentDiameter ||
                             modalSpecs.abutmentHeight,
                         );
-                      const abutmentSideLabel = simpleDisabled
-                        ? "어벗 · 스캔바디"
-                        : "어벗 · 스캔바디 또는 심플어벗";
                       return (
                     <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-1.5 sm:flex-row sm:items-stretch sm:gap-2 sm:p-2">
                       <div
@@ -4107,13 +4105,6 @@ export const PracticeTransferRequestIntakePanel = ({
                             "practice-tooth-guide-pulse rounded-xl",
                         )}
                       >
-                        {/* 어벗 쪽 라벨과 카드 상단·높이를 맞추는 자리 */}
-                        <p
-                          className="invisible shrink-0 px-0.5 text-[11px] font-semibold tracking-wide"
-                          aria-hidden
-                        >
-                          {abutmentSideLabel}
-                        </p>
                         <PracticeToothImplantFields
                           mode="presets"
                           allowPresetEdit
@@ -4147,9 +4138,6 @@ export const PracticeTransferRequestIntakePanel = ({
                             "practice-tooth-guide-pulse rounded-xl",
                         )}
                       >
-                        <p className="shrink-0 px-0.5 text-[11px] font-semibold tracking-wide text-service-abut">
-                          {abutmentSideLabel}
-                        </p>
                         <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1 items-stretch gap-2.5 sm:grid-cols-2 sm:gap-2.5">
                           <PracticeToothAbutmentFields
                             mode="presets"
