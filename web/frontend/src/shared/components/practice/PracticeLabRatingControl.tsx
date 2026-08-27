@@ -221,7 +221,8 @@ export function PracticeLabRatingControl({
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent
-          className="max-h-[90vh] w-[calc(100%-1.5rem)] gap-5 overflow-y-auto p-0 sm:max-w-xl sm:rounded-2xl"
+          className="z-[320] max-h-[90vh] w-[calc(100%-1.5rem)] gap-5 overflow-y-auto p-0 sm:max-w-xl sm:rounded-2xl"
+          overlayClassName="z-[310]"
           onClick={(event) => event.stopPropagation()}
           onPointerDown={(event) => event.stopPropagation()}
         >

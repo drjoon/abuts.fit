@@ -28,6 +28,8 @@
  * 2026-08-25: 휴지통 건은 상단 뱃지 카운트·목록에서도 제외(취소=작업취소만, 휴지통 서랍과 정합).
  * 2026-08-25: 캘린더 칩에서 「생산 전」등 생산단계 문구 제거(운송·배송완료만).
  * 2026-08-27: 검색어 localStorage 유지 — 의뢰상세 후 전체보기 복귀 시 직전 검색 복원.
+ * 2026-08-28: 의뢰상세 플로팅과 동시 오픈 — modal 해제·outside 무시로 독립 입력.
+ * 2026-08-28: 항상 non-modal·outside 무시·애니메이션 제거 — 상세 열고 닫을 때 플리커 방지.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronRight, Search, Trash2, X } from "lucide-react";
@@ -132,6 +134,11 @@ type PracticeRecentTransfersAllModalProps = {
   initialHasMore?: boolean;
   initialLoading?: boolean;
   initialError?: string;
+  /**
+   * 의뢰상세 플로팅이 같이 떠 있을 때.
+   * 플로팅·중첩 다이얼로그 focus로 전체보기가 닫히지 않게 한다.
+   */
+  floatingDetailOpen?: boolean;
   onSelectTransfer: (transfer: PracticeRecentTransferItem) => void;
   onDeleteTransfer: (transfer: PracticeRecentTransferItem) => void;
   onAskRemake?: (transfer: PracticeRecentTransferItem) => void;
@@ -149,10 +156,12 @@ export function PracticeRecentTransfersAllModal({
   initialHasMore = false,
   initialLoading = false,
   initialError = "",
+  floatingDetailOpen = false,
   onSelectTransfer,
   onDeleteTransfer,
 }: PracticeRecentTransfersAllModalProps) {
   const isMobile = useIsMobile();
+  const forceCloseRef = useRef(false);
   const storedCalendarDateKey = useAuthStore(
     (s) => s.user?.labReceiveCalendarDateKey,
   );
@@ -527,10 +536,32 @@ export function PracticeRecentTransfersAllModal({
     ) : null;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next && floatingDetailOpen && !forceCloseRef.current) {
+          // 플로팅·메모/별점 모달 포커스로 인한 오닫힘만 무시
+          return;
+        }
+        forceCloseRef.current = false;
+        onOpenChange(next);
+      }}
+      modal={false}
+    >
       <DialogContent
         hideClose
-        className="inset-0 left-0 top-0 flex h-[100dvh] w-screen max-h-[100dvh] max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-0 p-0 sm:max-w-none"
+        hideOverlay
+        className={cn(
+          "inset-0 left-0 top-0 flex h-[100dvh] w-screen max-h-[100dvh] max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-0 p-0 sm:max-w-none",
+          "duration-0 data-[state=open]:animate-none data-[state=closed]:animate-none",
+        )}
+        onPointerDownOutside={(e) => e.preventDefault()}
+        onInteractOutside={(e) => e.preventDefault()}
+        onFocusOutside={(e) => e.preventDefault()}
+        onOpenAutoFocus={(e) => {
+          // 플로팅 상세가 이미 있으면 포커스 탈취로 플리커·입력 깨짐 방지
+          if (floatingDetailOpen) e.preventDefault();
+        }}
       >
         <DialogClose
           className={cn(
@@ -538,6 +569,9 @@ export function PracticeRecentTransfersAllModal({
             isMobile ? "right-2.5 top-2.5 h-11 w-11" : "right-3 top-2.5 h-12 w-12",
           )}
           aria-label="닫기"
+          onPointerDown={() => {
+            forceCloseRef.current = true;
+          }}
         >
           <X className={isMobile ? "h-6 w-6" : "h-7 w-7"} strokeWidth={2.25} />
           <span className="sr-only">Close</span>

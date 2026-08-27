@@ -4,8 +4,9 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // change-log:
 // - 2026-08-23: 라벨·메모를 `치과 메모: …` 한 줄로 표시.
-import { useEffect, useState, type MouseEvent } from "react";
-import { HelpCircle, Pencil, StickyNote } from "lucide-react";
+// - 2026-08-28: 빈 메모·툴팁 제거 → `라벨 [작성]`. trailingAction(별점). 안내 줄바꿈.
+import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
+import { Pencil, StickyNote } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -17,27 +18,22 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { cn } from "@/shared/ui/cn";
 
 export type CounterpartyMemoViewer = "practice" | "lab";
 
 const PRIVACY_COPY: Record<
   CounterpartyMemoViewer,
-  { tooltip: string; dialog: string; placeholder: string }
+  { dialog: string; placeholder: string }
 > = {
   practice: {
-    tooltip: "우리 치과만 보는 메모입니다. 기공소에는 공개되지 않습니다.",
-    dialog: "우리 치과 임직원만 볼 수 있습니다. 기공소·외부에 공개되지 않습니다.",
+    dialog:
+      "우리 치과 임직원만 볼 수 있습니다.\n기공소·외부에 공개되지 않습니다.",
     placeholder: "품질, 납기, 주의사항 등",
   },
   lab: {
-    tooltip: "우리 기공소만 보는 메모입니다. 치과에는 공개되지 않습니다.",
-    dialog: "우리 기공소 구성원만 볼 수 있습니다. 치과·외부에 공개되지 않습니다.",
+    dialog:
+      "우리 기공소 구성원만 볼 수 있습니다.\n치과·외부에 공개되지 않습니다.",
     placeholder: "의뢰 성향, 주의사항 등",
   },
 };
@@ -49,8 +45,9 @@ type CounterpartyMemoStripProps = {
   maxLength: number;
   onSave: (memo: string) => Promise<boolean>;
   className?: string;
-  emptyHint?: string;
   stopPropagation?: boolean;
+  /** 예: 별점 버튼 — 작성 버튼 오른쪽 */
+  trailingAction?: ReactNode;
 };
 
 export function CounterpartyMemoStrip({
@@ -60,8 +57,8 @@ export function CounterpartyMemoStrip({
   maxLength,
   onSave,
   className,
-  emptyHint = "메모 없음",
   stopPropagation = true,
+  trailingAction = null,
 }: CounterpartyMemoStripProps) {
   const privacy = PRIVACY_COPY[viewer];
   const [open, setOpen] = useState(false);
@@ -107,33 +104,19 @@ export function CounterpartyMemoStrip({
         onPointerDown={onTriggerPointerDown}
       >
         <StickyNote className="h-4 w-4 shrink-0 text-muted-foreground" />
-        <div className="flex min-w-0 flex-1 items-center gap-1">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5">
           <p
             className="min-w-0 truncate text-xs leading-snug"
             title={hasMemo ? currentMemo : undefined}
           >
-            <span className="font-medium text-muted-foreground">{label}:</span>{" "}
+            <span className="font-medium text-muted-foreground">{label}</span>
             {hasMemo ? (
-              <span className="text-foreground">{currentMemo}</span>
-            ) : (
-              <span className="text-muted-foreground">{emptyHint}</span>
-            )}
+              <>
+                {" "}
+                <span className="text-foreground">{currentMemo}</span>
+              </>
+            ) : null}
           </p>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                className="inline-flex shrink-0 rounded text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                aria-label={`${label} 안내`}
-                onClick={(event) => event.stopPropagation()}
-              >
-                <HelpCircle className="h-3.5 w-3.5" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" className="max-w-xs text-xs">
-              {privacy.tooltip}
-            </TooltipContent>
-          </Tooltip>
         </div>
         <Button
           type="button"
@@ -145,13 +128,21 @@ export function CounterpartyMemoStrip({
           <Pencil className="mr-1 h-3.5 w-3.5" />
           {hasMemo ? "편집" : "작성"}
         </Button>
+        {trailingAction}
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-md" onPointerDown={onTriggerPointerDown}>
+        <DialogContent
+          className="z-[320] sm:max-w-md"
+          overlayClassName="z-[310]"
+          onPointerDown={onTriggerPointerDown}
+          onClick={(event) => event.stopPropagation()}
+        >
           <DialogHeader>
             <DialogTitle>{label}</DialogTitle>
-            <DialogDescription>{privacy.dialog}</DialogDescription>
+            <DialogDescription className="whitespace-pre-line">
+              {privacy.dialog}
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
             <Label htmlFor="counterparty-memo">메모</Label>

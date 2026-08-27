@@ -1,6 +1,8 @@
 // related files:
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // - 2026-08-28: 플로팅 패널 — 드래그·리사이즈·엣지 스냅·최소/최대화.
+// - 2026-08-28: MIN_W — 신호등·탭(의뢰상세/채팅)·별점이 겹치지 않게 400.
+// - 2026-08-28: 리사이즈 — 좌·상·모서리(n/w/nw/ne/sw) 지원, 고정 변 기준 min clamp.
 import { useCallback, useEffect, useRef, useState } from "react";
 
 export type PracticeTransferPanelLayout = {
@@ -13,7 +15,8 @@ export type PracticeTransferPanelLayout = {
 /** v3 — 항상 browse-behind */
 const STORAGE_KEY = "abuts.practiceTransferPanel.layout.v3";
 const MARGIN = 8;
-const MIN_W = 320;
+/** 신호등 + TabsList(의뢰 상세/채팅) + 별점 액션이 한 줄에 겹치지 않는 최소 폭 */
+const MIN_W = 400;
 const MIN_H = 360;
 const MINIMIZED_H = 48;
 const DEFAULT_W = 480;
@@ -247,13 +250,25 @@ export function usePracticeTransferPanelLayout() {
   );
 
   const beginResize = useCallback(
-    (edge: "e" | "s" | "se", clientX: number, clientY: number) => {
+    (
+      edge: "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw",
+      clientX: number,
+      clientY: number,
+    ) => {
       if (maximized || minimizedRef.current) return;
       const start = layoutRef.current;
       const originX = clientX;
       const originY = clientY;
+      const baseX = start.x;
+      const baseY = start.y;
       const baseW = start.w;
       const baseH = start.h;
+      const right = baseX + baseW;
+      const bottom = baseY + baseH;
+      const fromW = edge.includes("w");
+      const fromE = edge.includes("e");
+      const fromN = edge.includes("n");
+      const fromS = edge.includes("s");
 
       document.body.style.userSelect = "none";
 
@@ -261,14 +276,34 @@ export function usePracticeTransferPanelLayout() {
         ev.preventDefault();
         const dx = ev.clientX - originX;
         const dy = ev.clientY - originY;
-        setLayout(
-          {
-            ...layoutRef.current,
-            w: edge === "s" ? baseW : baseW + dx,
-            h: edge === "e" ? baseH : baseH + dy,
-          },
-          { persist: false },
-        );
+        let x = baseX;
+        let y = baseY;
+        let w = baseW;
+        let h = baseH;
+
+        if (fromW) {
+          x = baseX + dx;
+          w = right - x;
+        } else if (fromE) {
+          w = baseW + dx;
+        }
+        if (fromN) {
+          y = baseY + dy;
+          h = bottom - y;
+        } else if (fromS) {
+          h = baseH + dy;
+        }
+
+        if (w < MIN_W) {
+          w = MIN_W;
+          if (fromW) x = right - MIN_W;
+        }
+        if (h < MIN_H) {
+          h = MIN_H;
+          if (fromN) y = bottom - MIN_H;
+        }
+
+        setLayout({ x, y, w, h }, { persist: false });
       };
 
       const onUp = () => {

@@ -4449,10 +4449,8 @@ export const PracticeFileTransferPage = ({
   ) => {
     const fromTrash = Boolean(options?.fromTrash);
     const returnToAllModal = Boolean(options?.returnToAllModal);
+    // 최근의뢰(전체보기)에서 연 경우 — 전체보기는 유지하고 플로팅 상세만 독립 운영
     returnToAllModalRef.current = returnToAllModal;
-    if (returnToAllModal) {
-      setRecentTransfersAllOpen(false);
-    }
     const isDraftTransfer =
       transfer.status === "임시저장" ||
       transfer.transferId === PRACTICE_DRAFT_TRANSFER_ID;
@@ -4573,7 +4571,6 @@ export const PracticeFileTransferPage = ({
 
   const handleCloseTransferDialog = () => {
     chatRoomResolveSeqRef.current += 1;
-    const reopenAllModal = returnToAllModalRef.current;
     returnToAllModalRef.current = false;
     setTransferDialogOpen(false);
     transferDialogOpenRef.current = false;
@@ -4586,9 +4583,6 @@ export const PracticeFileTransferPage = ({
     chatUploads.clear();
     setChatError("");
     resetDownloads();
-    if (reopenAllModal) {
-      setRecentTransfersAllOpen(true);
-    }
   };
 
   const handleSendChatMessage = async () => {
@@ -8156,6 +8150,7 @@ export const PracticeFileTransferPage = ({
           }}
           token={authToken}
           chatRooms={chatRooms}
+          floatingDetailOpen={transferDialogOpen}
           initialPeriod={period}
           initialSearch=""
           initialStatusFilter="all"
@@ -8219,40 +8214,7 @@ export const PracticeFileTransferPage = ({
               : undefined
           }
           cancelRequestDisabled={deletingTransfer}
-          chatHeaderAction={
-            selectedTransfer &&
-            selectedTransfer.canRateLab &&
-            selectedTransfer.transferMongoIds?.[0] ? (
-              <PracticeLabRatingControl
-                transferMongoId={String(selectedTransfer.transferMongoIds[0])}
-                rating={selectedTransfer.labRating || null}
-                size="sm"
-                onChanged={(next) => {
-                  setSelectedTransfer((prev) =>
-                    prev ? { ...prev, labRating: next, canRateLab: true } : prev,
-                  );
-                  setRecentRequests((prev) =>
-                    prev.map((row) =>
-                      row.requestMongoId ===
-                        String(selectedTransfer.transferMongoIds?.[0] || "")
-                        ? { ...row, labRating: next, canRateLab: true }
-                        : row,
-                    ),
-                  );
-                  const performingId = String(
-                    selectedTransfer.performingLabAnchorId || "",
-                  ).trim();
-                  if (performingId) {
-                    setOwnOneStarBlockedLabIds((prev) => {
-                      const without = prev.filter((id) => id !== performingId);
-                      if (next.stars === 1) return [...without, performingId];
-                      return without;
-                    });
-                  }
-                }}
-              />
-            ) : null
-          }
+          chatHeaderAction={null}
           counterpartyMemoStrip={
             selectedTransfer &&
             selectedTransfer.canRateLab &&
@@ -8262,11 +8224,43 @@ export const PracticeFileTransferPage = ({
                 label="기공소 메모"
                 memo={selectedTransfer.labRating?.memo || ""}
                 maxLength={PRACTICE_LAB_RATING_MEMO_MAX}
+                trailingAction={
+                  <PracticeLabRatingControl
+                    transferMongoId={String(selectedTransfer.transferMongoIds[0])}
+                    rating={selectedTransfer.labRating || null}
+                    size="sm"
+                    onChanged={(next) => {
+                      setSelectedTransfer((prev) =>
+                        prev
+                          ? { ...prev, labRating: next, canRateLab: true }
+                          : prev,
+                      );
+                      setRecentRequests((prev) =>
+                        prev.map((row) =>
+                          row.requestMongoId ===
+                            String(selectedTransfer.transferMongoIds?.[0] || "")
+                            ? { ...row, labRating: next, canRateLab: true }
+                            : row,
+                        ),
+                      );
+                      const performingId = String(
+                        selectedTransfer.performingLabAnchorId || "",
+                      ).trim();
+                      if (performingId) {
+                        setOwnOneStarBlockedLabIds((prev) => {
+                          const without = prev.filter((id) => id !== performingId);
+                          if (next.stars === 1) return [...without, performingId];
+                          return without;
+                        });
+                      }
+                    }}
+                  />
+                }
                 onSave={async (memo) => {
                   const transferId = String(
                     selectedTransfer.transferMongoIds?.[0] || "",
                   ).trim();
-                  if (!transferId || !token) return false;
+                  if (!transferId || !authToken) return false;
                   const stars =
                     normalizePracticeLabStars(selectedTransfer.labRating?.stars) ??
                     DEFAULT_PRACTICE_LAB_RATING_STARS;
@@ -8276,7 +8270,7 @@ export const PracticeFileTransferPage = ({
                   }>({
                     path: `/api/practice/transfers/${encodeURIComponent(transferId)}/lab-rating`,
                     method: "POST",
-                    token,
+                    token: authToken,
                     jsonBody: {
                       stars,
                       memo: normalizePracticeLabRatingMemo(memo),

@@ -1131,6 +1131,7 @@ export function PracticeTransferDetailChatDialog({
       <DialogContent
         hideOverlay
         hideClose
+        onOpenAutoFocus={(e) => e.preventDefault()}
         onPointerDownOutside={(e) => e.preventDefault()}
         onInteractOutside={(e) => e.preventDefault()}
         onFocusOutside={(e) => e.preventDefault()}
@@ -1146,9 +1147,11 @@ export function PracticeTransferDetailChatDialog({
           maxWidth: "none",
           maxHeight: layout.h,
           transform: "none",
+          pointerEvents: "auto",
         }}
         className={cn(
-          "relative z-[300] flex flex-col gap-0 overflow-hidden rounded-lg border bg-background p-0 shadow-2xl duration-0",
+          "pointer-events-auto relative z-[300] flex flex-col gap-0 overflow-hidden rounded-lg border bg-background p-0 duration-0",
+          "shadow-[0_4px_16px_rgba(15,23,42,0.18),0_18px_48px_rgba(15,23,42,0.32),0_40px_80px_-12px_rgba(15,23,42,0.28)]",
           "translate-x-0 translate-y-0",
           "w-auto max-w-none sm:w-auto sm:max-w-none sm:p-0",
           "data-[state=open]:animate-none data-[state=closed]:animate-none",
@@ -1221,7 +1224,7 @@ export function PracticeTransferDetailChatDialog({
               </TabsList>
             )}
             <div
-              className="flex min-w-0 items-center justify-end"
+              className="flex shrink-0 items-center justify-end"
               data-no-drag
             >
               {!minimized ? chatHeaderAction : null}
@@ -1777,36 +1780,86 @@ export function PracticeTransferDetailChatDialog({
 
         {!minimized && !maximized ? (
           <>
-        <div
-          data-no-drag
-          className="absolute bottom-0 right-0 top-12 z-30 w-3 cursor-ew-resize touch-none"
-          onPointerDown={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
-            beginResize("e", e.clientX, e.clientY);
-          }}
-        />
-        <div
-          data-no-drag
-          className="absolute bottom-0 left-0 right-3 z-30 h-3 cursor-ns-resize touch-none"
-          onPointerDown={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
-            beginResize("s", e.clientX, e.clientY);
-          }}
-        />
-        <div
-          data-no-drag
-          className="absolute bottom-0 right-0 z-40 h-4 w-4 cursor-nwse-resize touch-none"
-          onPointerDown={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
-            beginResize("se", e.clientX, e.clientY);
-          }}
-        />
+            <div
+              data-no-drag
+              className="absolute left-3 right-3 top-0 z-30 h-3 cursor-ns-resize touch-none"
+              onPointerDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+                beginResize("n", e.clientX, e.clientY);
+              }}
+            />
+            <div
+              data-no-drag
+              className="absolute bottom-0 left-3 right-3 z-30 h-3 cursor-ns-resize touch-none"
+              onPointerDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+                beginResize("s", e.clientX, e.clientY);
+              }}
+            />
+            <div
+              data-no-drag
+              className="absolute bottom-3 left-0 top-3 z-30 w-3 cursor-ew-resize touch-none"
+              onPointerDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+                beginResize("w", e.clientX, e.clientY);
+              }}
+            />
+            <div
+              data-no-drag
+              className="absolute bottom-3 right-0 top-3 z-30 w-3 cursor-ew-resize touch-none"
+              onPointerDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+                beginResize("e", e.clientX, e.clientY);
+              }}
+            />
+            <div
+              data-no-drag
+              className="absolute left-0 top-0 z-40 h-4 w-4 cursor-nwse-resize touch-none"
+              onPointerDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+                beginResize("nw", e.clientX, e.clientY);
+              }}
+            />
+            <div
+              data-no-drag
+              className="absolute right-0 top-0 z-40 h-4 w-4 cursor-nesw-resize touch-none"
+              onPointerDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+                beginResize("ne", e.clientX, e.clientY);
+              }}
+            />
+            <div
+              data-no-drag
+              className="absolute bottom-0 left-0 z-40 h-4 w-4 cursor-nesw-resize touch-none"
+              onPointerDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+                beginResize("sw", e.clientX, e.clientY);
+              }}
+            />
+            <div
+              data-no-drag
+              className="absolute bottom-0 right-0 z-40 h-4 w-4 cursor-nwse-resize touch-none"
+              onPointerDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+                beginResize("se", e.clientX, e.clientY);
+              }}
+            />
           </>
         ) : null}
       </DialogContent>
