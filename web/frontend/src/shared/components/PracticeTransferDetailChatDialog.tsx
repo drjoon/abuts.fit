@@ -14,6 +14,7 @@
 // - web/frontend/src/shared/files/downloadWithProgress.ts
 // - web/frontend/src/shared/files/s3BlobCache.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-08-28: 플로팅 z-300 — 견적 등 툴팁은 ui/tooltip z-400(가림 방지).
 // - 2026-08-28: 맥/카톡 스타일 신호등(닫기·최소화·최대화) 헤더.
 // - 2026-08-28: 플로팅 — 항상 논모달(페이드 없음)·헤더 threshold 드래그·큰 닫기.
 // - 2026-08-28: 플로팅 패널 — 드래그·리사이즈·좌우도킹·핀(목록 클릭 전환).

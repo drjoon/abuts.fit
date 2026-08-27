@@ -34,6 +34,8 @@ Notes:
   - 마우스 호버 툴팁은 **0.6초 지연** 후 표시 (`delayDuration={600}`).
   - 가로폭은 **내용에 맞춤** (`w-max`), 좌우 여백 대칭 (`px-3`). 기본 상한
     `max-w-[min(100vw-2rem,20rem)]` — 표·긴 안내는 호출부에서만 `max-w` 완화.
+  - 포털 z-index **`z-[400]`** (Popover/Dropdown/Select와 동일 밴드). 플로팅
+    의뢰상세(`z-[300]`)·중첩 모달(`z-[320]`)보다 위여야 견적 등 호버 툴팁이 보임.
   - SSOT: `src/components/ui/tooltip.tsx` (`TooltipProvider` 기본값 600),
     루트 `src/App.tsx`, `.cursor/rules/tooltip-delay.mdc`.
   - 중첩 `TooltipProvider`/`Tooltip`에 `delayDuration={0}`/`{200}` 등 다른 지연을 두지 말 것.

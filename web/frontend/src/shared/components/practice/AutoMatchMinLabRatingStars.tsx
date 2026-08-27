@@ -164,7 +164,7 @@ export function AutoMatchMinLabRatingStars({
           </TooltipTrigger>
           <TooltipContent
             side="bottom"
-            className="z-[210] max-w-[min(100vw-2rem,40rem)] overflow-visible space-y-1 text-xs leading-relaxed"
+            className="max-w-[min(100vw-2rem,40rem)] overflow-visible space-y-1 text-xs leading-relaxed"
           >
             {tooltipLines.map((line) => (
               <p key={line}>{line}</p>
