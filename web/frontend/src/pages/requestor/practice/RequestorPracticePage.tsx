@@ -25,6 +25,7 @@
 // - web/frontend/src/shared/practice/labReceiveCalendarHiddenWeekdays.ts
 // - web/backend/utils/labReceiveCalendarHiddenWeekdays.util.js
 // - web/backend/controllers/users/user.controller.js
+// - 2026-08-28: 치과 메모 [작성] 왼쪽·[평가] 오른쪽. 헤더 할증라벨 제거·설정 시 배수만.
 // - 2026-08-27: 미확인은 3주 창 밖이어도 목록·안내 바에 포함(사이드바 배지와 맞춤). 클릭 시 해당일로 점프.
 // - 2026-08-27: 미확인 상단 안내 바 복구(버튼·뱃지 없음). 미확인 건은 캘린더에 항상 표시.
 // - 2026-08-22: 기공의뢰수신 캘린더 숨길 요일 계정 preferences에 저장.
@@ -4869,36 +4870,7 @@ export function RequestorPracticeReceivePage({
         title="의뢰 상세 · 치과 채팅"
         conversationTitle="치과와의 소통"
         authToken={token}
-        chatHeaderAction={
-          selectedTransfer?.practiceBusinessAnchorId ? (
-            <LabPracticeFeeSurchargeControl
-              practiceAnchorId={selectedTransfer.practiceBusinessAnchorId}
-              multiplier={selectedTransfer.labFeeMultiplier}
-              size="sm"
-              buttonLabel="치과 평가"
-              dialogTitle="치과 평가"
-              variant="evaluate"
-              onChanged={(next) => {
-                // live 설정만 갱신. 해당 의뢰 feeQuote(스냅샷)는 바꾸지 않는다.
-                const practiceAnchorId =
-                  selectedTransfer.practiceBusinessAnchorId;
-                setTransfers((prev) =>
-                  prev.map((row) =>
-                    row.practiceBusinessAnchorId === practiceAnchorId
-                      ? { ...row, labFeeMultiplier: next }
-                      : row,
-                  ),
-                );
-                setSelectedTransfer((prev) =>
-                  prev && prev.practiceBusinessAnchorId === practiceAnchorId
-                    ? { ...prev, labFeeMultiplier: next }
-                    : prev,
-                );
-                void loadCalendarTransfers({ silent: true });
-              }}
-            />
-          ) : null
-        }
+        chatHeaderAction={null}
         counterpartyMemoStrip={
           selectedTransfer?.practiceBusinessAnchorId ? (
             <CounterpartyMemoStrip
@@ -4906,6 +4878,34 @@ export function RequestorPracticeReceivePage({
               label="치과 메모"
               memo={selectedTransfer.practicePartnerMemo?.memo || ""}
               maxLength={LAB_PRACTICE_PARTNER_MEMO_MAX}
+              trailingAction={
+                <LabPracticeFeeSurchargeControl
+                  practiceAnchorId={selectedTransfer.practiceBusinessAnchorId}
+                  multiplier={selectedTransfer.labFeeMultiplier}
+                  size="sm"
+                  buttonLabel="평가"
+                  dialogTitle="치과 평가"
+                  variant="evaluate"
+                  onChanged={(next) => {
+                    // live 설정만 갱신. 해당 의뢰 feeQuote(스냅샷)는 바꾸지 않는다.
+                    const practiceAnchorId =
+                      selectedTransfer.practiceBusinessAnchorId;
+                    setTransfers((prev) =>
+                      prev.map((row) =>
+                        row.practiceBusinessAnchorId === practiceAnchorId
+                          ? { ...row, labFeeMultiplier: next }
+                          : row,
+                      ),
+                    );
+                    setSelectedTransfer((prev) =>
+                      prev && prev.practiceBusinessAnchorId === practiceAnchorId
+                        ? { ...prev, labFeeMultiplier: next }
+                        : prev,
+                    );
+                    void loadCalendarTransfers({ silent: true });
+                  }}
+                />
+              }
               onSave={async (memo) => {
                 const practiceAnchorId = String(
                   selectedTransfer?.practiceBusinessAnchorId || "",

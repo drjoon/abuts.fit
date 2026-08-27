@@ -3,7 +3,10 @@
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // change-log:
+// - 2026-08-28: 라벨·내용 구분 — `라벨:` muted + 본문 foreground.
+// - 2026-08-28: [작성]/[편집] 제거 — 메모 줄 클릭으로 열기(연필 아이콘만).
 // - 2026-08-23: 라벨·메모를 `치과 메모: …` 한 줄로 표시.
+// - 2026-08-28: `[작성]`을 라벨 왼쪽 옆, trailingAction(평가·별점)은 오른쪽.
 // - 2026-08-28: 빈 메모·툴팁 제거 → `라벨 [작성]`. trailingAction(별점). 안내 줄바꿈.
 import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
 import { Pencil, StickyNote } from "lucide-react";
@@ -46,7 +49,7 @@ type CounterpartyMemoStripProps = {
   onSave: (memo: string) => Promise<boolean>;
   className?: string;
   stopPropagation?: boolean;
-  /** 예: 별점 버튼 — 작성 버튼 오른쪽 */
+  /** 예: 평가·별점 — 줄 오른쪽 끝 */
   trailingAction?: ReactNode;
 };
 
@@ -103,31 +106,41 @@ export function CounterpartyMemoStrip({
         )}
         onPointerDown={onTriggerPointerDown}
       >
-        <StickyNote className="h-4 w-4 shrink-0 text-muted-foreground" />
-        <div className="flex min-w-0 flex-1 items-center gap-1.5">
-          <p
-            className="min-w-0 truncate text-xs leading-snug"
-            title={hasMemo ? currentMemo : undefined}
-          >
-            <span className="font-medium text-muted-foreground">{label}</span>
-            {hasMemo ? (
-              <>
-                {" "}
-                <span className="text-foreground">{currentMemo}</span>
-              </>
-            ) : null}
-          </p>
-        </div>
-        <Button
+        <button
           type="button"
-          variant="ghost"
-          size="sm"
-          className="h-7 shrink-0 px-2 text-xs"
+          className={cn(
+            "group flex min-w-0 flex-1 items-center gap-2 rounded-md text-left transition-colors",
+            "hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            "-mx-1 px-1 py-0.5",
+          )}
+          aria-label={hasMemo ? `${label} 편집` : `${label} 작성`}
           onClick={() => setOpen(true)}
         >
-          <Pencil className="mr-1 h-3.5 w-3.5" />
-          {hasMemo ? "편집" : "작성"}
-        </Button>
+          <StickyNote className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <span
+            className="min-w-0 flex-1 truncate text-xs leading-snug"
+            title={hasMemo ? currentMemo : undefined}
+          >
+            <span className="shrink-0 font-medium text-slate-400">
+              {label}
+              {hasMemo ? ":" : ""}
+            </span>
+            {hasMemo ? (
+              <span className="ml-1.5 font-normal text-slate-800">
+                {currentMemo}
+              </span>
+            ) : null}
+          </span>
+          <Pencil
+            className={cn(
+              "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-opacity",
+              hasMemo
+                ? "opacity-50 group-hover:opacity-100"
+                : "opacity-40 group-hover:opacity-80",
+            )}
+            aria-hidden
+          />
+        </button>
         {trailingAction}
       </div>
 

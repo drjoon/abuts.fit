@@ -8,6 +8,7 @@
 // - 2026-08-19: 채팅「치과 평가」= 별점 없음·수가 할증만. 설정 탭은 할증 안내 유지.
 // - 2026-08-20: 평가 모달 안내에서「고품질」삭제. 채팅 헤더는 할증율+「치과 평가」버튼.
 // - 2026-08-26: 할증 힌트 툴팁 — 포커스(모달 오픈)가 아닌 마우스 호버에서만 표시.
+// - 2026-08-28: evaluate — 별도「할증 없음」라벨 제거. 미설정=버튼라벨, 설정=배수만(1.2x).
 import { useEffect, useState, type MouseEvent } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -206,6 +207,14 @@ export function LabPracticeFeeSurchargeControl({
     size === "xs" ? "h-6 px-2 text-[11px]" : "h-7 px-2.5 text-xs";
   const customSelected = Boolean(customText.trim()) || !isPresetValue(draft);
   const multiplierLabel = formatLabFeeMultiplierLabel(current);
+  const evaluateMultiplierShort = active
+    ? `${Number.isInteger(current) ? String(current) : String(current)}x`
+    : null;
+  const triggerLabel = isEvaluate
+    ? evaluateMultiplierShort || buttonLabel
+    : active
+      ? multiplierLabel
+      : buttonLabel;
 
   return (
     <>
@@ -217,30 +226,19 @@ export function LabPracticeFeeSurchargeControl({
       >
         <TooltipTrigger asChild>
           <span
-            className={cn(
-              "inline-flex items-center gap-1.5",
-              className,
-            )}
+            className={cn("inline-flex items-center", className)}
             onPointerDown={onTriggerPointerDown}
             onPointerEnter={() => setHintOpen(true)}
             onPointerLeave={() => setHintOpen(false)}
           >
-            {isEvaluate ? (
-              <span
-                className={cn(
-                  "tabular-nums text-xs font-medium",
-                  active ? "text-amber-700" : "text-muted-foreground",
-                )}
-                aria-label={`기공수가 할증 ${multiplierLabel}`}
-              >
-                {multiplierLabel}
-              </span>
-            ) : null}
             <Button
               type="button"
-              variant={active && !isEvaluate ? "default" : "outline"}
+              variant={active ? "default" : "outline"}
               size="sm"
-              className={buttonSizeClass}
+              className={cn(
+                buttonSizeClass,
+                isEvaluate && active && "tabular-nums",
+              )}
               aria-label={
                 isEvaluate
                   ? `${buttonLabel} 설정 · 현재 ${multiplierLabel}`
@@ -250,11 +248,7 @@ export function LabPracticeFeeSurchargeControl({
               }
               onClick={() => setOpen(true)}
             >
-              {isEvaluate
-                ? buttonLabel
-                : active
-                  ? multiplierLabel
-                  : buttonLabel}
+              {triggerLabel}
             </Button>
           </span>
         </TooltipTrigger>

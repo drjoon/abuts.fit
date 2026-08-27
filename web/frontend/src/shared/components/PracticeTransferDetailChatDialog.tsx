@@ -19,7 +19,8 @@
 // - 2026-08-28: 플로팅 패널 — 드래그·리사이즈·좌우도킹·핀(목록 클릭 전환).
 // - 2026-08-28: 의뢰상세 탭 — 요약 행·섹션 계층으로 가독성 개선.
 // - 2026-08-28: 탭 UI 폴리시 — 제목/소통헤더 제거, 평가→탭줄, 박스 없이 채움.
-// - 2026-08-28: 의뢰상세·채팅 좌우 분할 → 탭 전환(기본 채팅).
+// - 2026-08-28: 기공소 오픈 시 의뢰상세 탭 우선. 활성 탭 primary(파란).
+// - 2026-08-28: 의뢰상세·채팅 좌우 분할 → 탭 전환(치과 기본 채팅).
 // - 2026-08-27: 채팅 버블에 보낸사람 이름 표시.
 // - 2026-08-27: 재도착일 — 오늘=재주문일·선택일=재도착일 동시 누적(주문일/도착일 캘린더).
 // - 2026-08-27: 재도착일 — 오늘 이후 1개만(다시 고르면 교체). 과거·오늘만 캘린더 이력.
@@ -418,14 +419,16 @@ export function PracticeTransferDetailChatDialog({
     minimize,
     toggleMaximize,
   } = usePracticeTransferPanelLayout();
-  const [panelTab, setPanelTab] = useState<"detail" | "chat">("chat");
+  const defaultPanelTab: "detail" | "chat" =
+    feeViewer === "lab" ? "detail" : "chat";
+  const [panelTab, setPanelTab] = useState<"detail" | "chat">(defaultPanelTab);
   const [rearrivalOpen, setRearrivalOpen] = useState(false);
   const [rearrivalDraft, setRearrivalDraft] = useState<Date | undefined>(undefined);
   const [previewOpen, setPreviewOpen] = useState(false);
 
   useEffect(() => {
-    if (open) setPanelTab("chat");
-  }, [open]);
+    if (open) setPanelTab(feeViewer === "lab" ? "detail" : "chat");
+  }, [open, feeViewer]);
 
   const handlePanelTabChange = useCallback((value: string) => {
     setPanelTab(value === "detail" ? "detail" : "chat");
@@ -1213,11 +1216,17 @@ export function PracticeTransferDetailChatDialog({
               </button>
             ) : (
               <TabsList className="mx-auto h-11 w-auto shrink-0 justify-self-center p-1">
-                <TabsTrigger value="detail" className="gap-1.5 px-4 py-2">
+                <TabsTrigger
+                  value="detail"
+                  className="gap-1.5 px-4 py-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
+                >
                   <FileIcon className="h-3.5 w-3.5" />
                   의뢰 상세
                 </TabsTrigger>
-                <TabsTrigger value="chat" className="gap-1.5 px-4 py-2">
+                <TabsTrigger
+                  value="chat"
+                  className="gap-1.5 px-4 py-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
+                >
                   <MessageSquare className="h-3.5 w-3.5" />
                   채팅
                 </TabsTrigger>
