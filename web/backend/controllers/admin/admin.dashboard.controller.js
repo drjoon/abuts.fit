@@ -261,7 +261,7 @@ export async function getDashboardStats(req, res) {
     const forceFresh =
       String(req.query?.fresh || "").trim() === "1" ||
       String(req.query?.fresh || "").trim().toLowerCase() === "true";
-    const cacheKey = `admin-dashboard:v3:${periodKey}`;
+    const cacheKey = `admin-dashboard:v4:${periodKey}`;
     if (!forceFresh) {
       const cached = getRequestPerfCacheValue(cacheKey);
       if (cached) {

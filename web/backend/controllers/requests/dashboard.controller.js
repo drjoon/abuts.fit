@@ -262,7 +262,7 @@ export async function getAssignedDashboardSummary(req, res) {
       role === "manufacturer"
         ? String(req.user?.businessAnchorId || req.user?._id || "").trim()
         : "admin";
-    const cacheKey = `assigned-dashboard-summary:${cacheScope}:${String(period)}`;
+    const cacheKey = `assigned-dashboard-summary:v2:${cacheScope}:${String(period)}`;
     const cached = getRequestPerfCacheValue(cacheKey);
     if (cached) {
       return res.status(200).json({

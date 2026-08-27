@@ -807,6 +807,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
       projection은 카드 UI 필드만. 인덱스 `Request(createdAt, _id)`.
       샘플 제외 + 제조사 준비 큐(productModeNe)와 동일 — PTX 디자인 미완료·레거시 `design_custom_abutment` 제외.
     - `GET /api/admin/comm-badges` 의뢰(request) 배지도 동일 준비 큐 범위(PTX 디자인 대기 제외).
+    - 어드민/제조사 대시보드 `inProgress*`(`requestDashboardStats`)도 준비 stage에서 동일 준비 큐 필터.
   - 관리자 크레딧(`credit:balance-updated`)은 `requestor`, `admin` role fan-out으로 발행하고,
     각 페이지는 payload(`businessAnchorId` 등) 조건이 맞을 때만 갱신합니다.
   - `emitCreditBalanceUpdatedToBusiness` payload 표준:

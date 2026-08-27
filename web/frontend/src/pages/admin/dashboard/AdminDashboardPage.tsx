@@ -1068,6 +1068,7 @@ export const AdminDashboardPage = () => {
     ? (adminDashboardResponse.data?.happyCallSummary ?? null)
     : null;
 
+  // change-log: 2026-08-27 - 진행 = 준비 배지와 동일(PTX 디자인 대기 제외) + 가공~포장.발송
   // change-log: 2026-08-04 - 진행 = 진행 중 묶음배송 + 신속배송 합계 (준비~포장.발송, 추적관리 이후 제외)
   const inProgressNormalCount = Number(
     adminDashboardResponse?.data?.requestStats?.inProgressByShippingMode
