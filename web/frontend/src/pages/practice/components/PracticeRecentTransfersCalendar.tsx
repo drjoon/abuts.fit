@@ -487,7 +487,7 @@ export function PracticeRecentTransfersCalendar({
               role="status"
               className="flex max-w-full items-center gap-1 text-[11px] font-medium leading-snug text-red-600"
             >
-              <span className="min-w-0 truncate">신규의뢰하려면 도착 날짜를 클릭하세요</span>
+              <span className="min-w-0 truncate">신규의뢰하려면 캘린더에서 도착 날짜를 클릭하세요.</span>
               {onDismissNewRequestHint ? (
                 <button
                   type="button"
