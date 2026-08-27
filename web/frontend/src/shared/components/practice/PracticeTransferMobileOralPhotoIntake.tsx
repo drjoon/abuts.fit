@@ -28,6 +28,7 @@ import type { PreUploadFileStatus } from "@/shared/hooks/useFilePreUpload";
 // - 2026-08-20: 세그먼트 툴바·큰 촬영 CTA·터치 친화 카드.
 // - 2026-08-20: 상단 메뉴 새로작성·임시저장 2칸만.
 // - 2026-08-27: 상단 메뉴 새로작성·최근의뢰·임시저장·휴지통 4칸(2×2).
+// - 2026-08-28: 최근의뢰를 2×2 왼쪽 상단으로.
 // - 2026-08-20: iPhone HEIC→JPEG 변환 시도, 빈 파일 거부, MIME 보정.
 // - 2026-08-20: 썸네일 클릭 시 원본 미리보기.
 // - 2026-08-27: normalizeOralPhotoFiles namePrefix 옵션(채팅 사진찍기 재사용).
@@ -249,16 +250,6 @@ export function PracticeTransferMobileOralPhotoIntake({
           type="button"
           variant="ghost"
           size="sm"
-          className="h-10 min-w-0 rounded-xl px-2 text-sm font-medium hover:bg-white hover:shadow-sm"
-          onClick={onStartNew}
-        >
-          <Plus className="mr-1 h-3.5 w-3.5 shrink-0" />
-          새로작성
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
           className="h-10 min-w-0 gap-1 rounded-xl px-2 text-sm font-medium hover:bg-white hover:shadow-sm"
           onClick={onOpenRecent}
         >
@@ -273,6 +264,16 @@ export function PracticeTransferMobileOralPhotoIntake({
               {recentUnreadCount > 99 ? "99+" : recentUnreadCount}
             </Badge>
           ) : null}
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-10 min-w-0 rounded-xl px-2 text-sm font-medium hover:bg-white hover:shadow-sm"
+          onClick={onStartNew}
+        >
+          <Plus className="mr-1 h-3.5 w-3.5 shrink-0" />
+          새로작성
         </Button>
         <Button
           type="button"

@@ -119,6 +119,7 @@
  * - 2026-08-20: 원격 draft 파일은 union merge. autosave echo(파일 없음)가 업로드 직후 목록을 비우지 않게 한다.
  * - 2026-08-20: filesTouched/replace만 첨부 축소 허용. autosave HTTP가 소켓 반영을 덮지 않게 ref 동기화.
  * - 2026-08-20: 로컬 첨부는 peek 재실행 대신 ensureFilesUploaded로 이어서 draft append. iOS 카메라 복귀 후 focus에서도 재시도.
+ * - 2026-08-28: 모드 전환(익스프레스) 제거·엑스퍼트 고정. 최근의뢰 좌·작성액션 우 묶음.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -148,7 +149,6 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { PageFileDropZone } from "@/features/requests/components/PageFileDropZone";
-import { WorkspaceModeSwitch } from "@/features/layout/WorkspaceModeSwitch";
 import {
   Popover,
   PopoverContent,
@@ -235,10 +235,6 @@ import {
   type PracticeToothWorkGuideTourStep,
 } from "@/shared/components/practice/PracticeToothWorkGuideTourBanner";
 import { PracticeRecentTransfersAllModal } from "@/pages/practice/components/PracticeRecentTransfersAllModal";
-import {
-  DEFAULT_WORKSPACE_MODE,
-  normalizeWorkspaceMode,
-} from "@/shared/workspace/workspaceMode";
 import {
   PRACTICE_MY_TRANSFERS_PAGE_SIZE,
   canDeletePracticeTransferByStatus,
@@ -1161,10 +1157,9 @@ export const PracticeFileTransferPage = ({
   const { toast } = useToast();
   const authToken = useAuthStore((s) => s.token);
   const authUser = useAuthStore((s) => s.user);
-  const workspaceMode = normalizeWorkspaceMode(
-    authUser?.workspaceMode ?? DEFAULT_WORKSPACE_MODE,
-  );
-  const isExpressMode = workspaceMode === "express";
+  /** 익스프레스 모드·전환 UI 제거 — 엑스퍼트(전폭 작성)만 */
+  const isExpressMode = false;
+  const workspaceMode = "expert" as const;
   const [remakeSelectedIds, setRemakeSelectedIds] = useState<string[]>([]);
   const [remakeConfirmOpen, setRemakeConfirmOpen] = useState(false);
   const [remakeBusy, setRemakeBusy] = useState(false);
@@ -6981,23 +6976,6 @@ export const PracticeFileTransferPage = ({
 
   const practiceWorkspaceToolbar = (
     <>
-      <WorkspaceModeSwitch />
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-9 px-3"
-            onClick={() => void handleStartNewTransfer()}
-          >
-            새로 작성
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="bottom" className="max-w-xs text-xs">
-          작성 화면만 비웁니다. 임시저장은 목록에 남습니다.
-        </TooltipContent>
-      </Tooltip>
       <Button
         type="button"
         variant="outline"
@@ -7017,37 +6995,55 @@ export const PracticeFileTransferPage = ({
           </Badge>
         ) : null}
       </Button>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="h-9 gap-1.5 px-3"
-        onClick={() => setDraftsOpen(true)}
-      >
-        <BookmarkPlus className="h-4 w-4 shrink-0" />
-        임시저장
-        {draftGroupedTransfers.length > 0 ? (
-          <Badge variant="secondary" className="ml-0.5">
-            {draftGroupedTransfers.length}
-          </Badge>
-        ) : null}
-      </Button>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="h-9 gap-1.5 px-3"
-        onClick={() => setTrashOpen(true)}
-      >
-        <Trash2 className="h-4 w-4 shrink-0" />
-        휴지통
-        {trashGroupedTransfers.length > 0 ? (
-          <Badge variant="secondary" className="ml-0.5">
-            {trashGroupedTransfers.length}
-          </Badge>
-        ) : null}
-      </Button>
       <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-9 px-3"
+                onClick={() => void handleStartNewTransfer()}
+              >
+                새로 작성
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="max-w-xs text-xs">
+              작성 화면만 비웁니다. 임시저장은 목록에 남습니다.
+            </TooltipContent>
+          </Tooltip>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-9 gap-1.5 px-3"
+            onClick={() => setDraftsOpen(true)}
+          >
+            <BookmarkPlus className="h-4 w-4 shrink-0" />
+            임시저장
+            {draftGroupedTransfers.length > 0 ? (
+              <Badge variant="secondary" className="ml-0.5">
+                {draftGroupedTransfers.length}
+              </Badge>
+            ) : null}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-9 gap-1.5 px-3"
+            onClick={() => setTrashOpen(true)}
+          >
+            <Trash2 className="h-4 w-4 shrink-0" />
+            휴지통
+            {trashGroupedTransfers.length > 0 ? (
+              <Badge variant="secondary" className="ml-0.5">
+                {trashGroupedTransfers.length}
+              </Badge>
+            ) : null}
+          </Button>
+        </div>
         {formSyncStatusLabel ? (
           <span
             title={formSyncStatusLabel}
