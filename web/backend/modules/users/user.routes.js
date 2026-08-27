@@ -39,6 +39,10 @@ router.put("/last-dashboard-path", userController.updateLastDashboardPath);
 router.get("/workspace-mode", userController.getWorkspaceMode);
 router.put("/workspace-mode", userController.updateWorkspaceMode);
 
+// 계정(개인) 데스크톱 사이드바 펼침
+router.get("/sidebar-open", userController.getSidebarOpen);
+router.put("/sidebar-open", userController.updateSidebarOpen);
+
 // 기공의뢰수신 캘린더 날짜 뱃지(주문일/치과도착일)
 router.get(
   "/lab-receive-calendar-date-key",

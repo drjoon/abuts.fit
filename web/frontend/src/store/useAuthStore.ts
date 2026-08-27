@@ -12,6 +12,9 @@
 // - web/backend/models/user.model.js
 // - web/backend/modules/auth/auth.routes.js
 // - web/backend/controllers/users/user.controller.js
+// - web/frontend/src/shared/layout/sidebarOpen.ts
+// - web/backend/utils/sidebarOpen.util.js
+// - 2026-08-27: 계정 preferences.sidebarOpen (데스크톱 사이드바 펼침, 기본 open)
 // - 2026-08-22: 계정 preferences.labReceiveCalendarHiddenWeekdays (캘린더 숨길 요일, 기본 일·토)
 // - 2026-08-20: 계정 preferences.labReceiveCalendarDateKey (기공의뢰 캘린더, 기본 도착일)
 // - 2026-08-15: 계정(개인) preferences.workspaceMode 로그인·전환에 반영 (기본 express)
@@ -31,6 +34,10 @@ import {
   normalizeWorkspaceMode,
   type WorkspaceMode,
 } from "@/shared/workspace/workspaceMode";
+import {
+  DEFAULT_SIDEBAR_OPEN,
+  normalizeSidebarOpen,
+} from "@/shared/layout/sidebarOpen";
 import {
   normalizeLabReceiveCalendarDateKey,
   type LabReceiveCalendarDateKey,
@@ -86,6 +93,8 @@ export interface User {
   lastDashboardPath?: string | null;
   /** 계정(개인) 단위 UI 모드. 기본 엑스퍼트 */
   workspaceMode?: WorkspaceMode;
+  /** 데스크톱 사이드바 펼침. 기본 open */
+  sidebarOpen?: boolean;
   /** 기공의뢰·기공의뢰수신 캘린더 날짜 뱃지. 기본 치과도착일 */
   labReceiveCalendarDateKey?: LabReceiveCalendarDateKey;
   /** 기공의뢰·기공의뢰수신 캘린더 숨길 요일(0=일…6=토). 기본 일·토 */
@@ -197,6 +206,15 @@ const normalizeApiUser = (u: unknown): User | null => {
         prefs?.workspaceMode ?? row.workspaceMode,
       );
     })(),
+    sidebarOpen: (() => {
+      const prefs =
+        row.preferences && typeof row.preferences === "object"
+          ? (row.preferences as Record<string, unknown>)
+          : null;
+      const raw = prefs?.sidebarOpen ?? row.sidebarOpen;
+      if (raw === undefined || raw === null) return DEFAULT_SIDEBAR_OPEN;
+      return normalizeSidebarOpen(raw);
+    })(),
     labReceiveCalendarDateKey: (() => {
       const prefs =
         row.preferences && typeof row.preferences === "object"
@@ -249,6 +267,7 @@ interface AuthState {
   setUser: (user: User | null) => void;
   setLastDashboardPath: (path: string | null) => void;
   setWorkspaceMode: (mode: WorkspaceMode) => void;
+  setSidebarOpen: (open: boolean) => void;
   setLabReceiveCalendarDateKey: (dateKey: LabReceiveCalendarDateKey) => void;
   setLabReceiveCalendarHiddenWeekdays: (hiddenWeekdays: number[]) => void;
   logout: () => void;
@@ -618,6 +637,21 @@ export const useAuthStore = create<AuthState>((set, get) => {
       const next = {
         ...current,
         workspaceMode: normalizeWorkspaceMode(mode),
+      };
+      try {
+        localStorage.setItem(AUTH_USER_KEY, JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      set({ user: next });
+    },
+    setSidebarOpen: (open: boolean) => {
+      if (isMemoryAuthStale(get().token)) return;
+      const current = get().user;
+      if (!current) return;
+      const next = {
+        ...current,
+        sidebarOpen: normalizeSidebarOpen(open),
       };
       try {
         localStorage.setItem(AUTH_USER_KEY, JSON.stringify(next));

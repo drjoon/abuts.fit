@@ -311,6 +311,11 @@ const userSchema = new mongoose.Schema(
         enum: ["express", "expert"],
         default: "express",
       },
+      /** 데스크톱 사이드바 펼침. 기본 open(첫 가입·미설정) */
+      sidebarOpen: {
+        type: Boolean,
+        default: true,
+      },
       /** 기공의뢰·기공의뢰수신 캘린더 날짜 뱃지. 기본 치과도착일 */
       labReceiveCalendarDateKey: {
         type: String,

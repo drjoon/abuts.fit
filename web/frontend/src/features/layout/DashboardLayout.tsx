@@ -9,8 +9,13 @@ import { apiFetch } from "@/shared/api/apiClient";
 import { toKstYmd } from "@/shared/date/kst";
 import { useToast } from "@/shared/hooks/use-toast";
 import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPath";
+import {
+  DEFAULT_SIDEBAR_OPEN,
+  normalizeSidebarOpen,
+} from "@/shared/layout/sidebarOpen";
 import { cn } from "@/shared/ui/cn";
 
+// - 2026-08-27: 데스크톱 사이드바 펼침을 계정 preferences.sidebarOpen으로 서버 저장·복원(기본 open). 모바일 드로어는 분리.
 // - 2026-08-25: 기공의뢰수신(lab) 캘린더는 fillHeight 복구. 사이드 aside에 shrink-0·min-w로 펼침 폭 고정.
 // - 2026-08-24: 작업영역 하단 여백 — 일반 페이지는 min-h-full 문서 흐름(+pb-12), credits/payments만 fillHeight 고정.
 // - 2026-08-23: 치과 사이드 — 스토어를 정산 위로.
@@ -74,8 +79,10 @@ import { cn } from "@/shared/ui/cn";
 // - web/frontend/src/features/layout/AccountSwitcher.tsx
 // - web/frontend/src/features/settings/LabFeeSetupPrompt.tsx
 // - web/frontend/src/store/useAuthStore.ts
+// - web/frontend/src/shared/layout/sidebarOpen.ts
 // - web/frontend/src/shared/navigation/lastDashboardPath.ts
 // - web/backend/controllers/users/user.controller.js
+// - web/backend/utils/sidebarOpen.util.js
 // - web/backend/controllers/auth/auth.controller.js
 // - web/backend/modules/auth/auth.routes.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
@@ -475,7 +482,7 @@ const getRoleBadgeVariant = (role: string) => {
 };
 
 export const DashboardLayout = () => {
-  const { user, logout, token, loginWithToken, setLastDashboardPath } =
+  const { user, logout, token, loginWithToken, setLastDashboardPath, setSidebarOpen } =
     useAuthStore();
   const {
     period,
@@ -498,8 +505,12 @@ export const DashboardLayout = () => {
   );
   const [settlementCredit, setSettlementCredit] = useState<number | null>(null);
   const [loadingCreditBalance, setLoadingCreditBalance] = useState(false);
-  const [isOpen, setIsOpen] = useState(false);
-  const sidebarCollapsed = !isOpen;
+  const sidebarOpen = normalizeSidebarOpen(
+    user?.sidebarOpen ?? DEFAULT_SIDEBAR_OPEN,
+  );
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const showExpandedChrome = sidebarOpen || mobileNavOpen;
+  const sidebarCollapsed = !showExpandedChrome;
   const [worksheetSearch, setWorksheetSearch] = useState("");
   const [showCompleted, setShowCompleted] = useState(false);
   const [bootstrappingAuth, setBootstrappingAuth] = useState(false);
@@ -592,9 +603,27 @@ export const DashboardLayout = () => {
         persistLastDashboardPath("/dashboard");
       }
       navigate(href);
-      setIsOpen(false);
+      setMobileNavOpen(false);
     },
     [navigate, persistLastDashboardPath],
+  );
+
+  /** 데스크톱 접기/펼치기 아이콘 — 의도적 변경만 서버 저장 */
+  const persistSidebarOpen = useCallback(
+    (nextOpen: boolean) => {
+      const open = normalizeSidebarOpen(nextOpen);
+      setSidebarOpen(open);
+      if (!token || !user?.id) return;
+      void apiFetch({
+        path: "/api/users/sidebar-open",
+        method: "PUT",
+        token,
+        jsonBody: { open },
+      }).catch(() => {
+        // 저장 실패는 UX를 막지 않음 — 다음 로그인 시 서버 값으로 복원
+      });
+    },
+    [setSidebarOpen, token, user?.id],
   );
 
   useEffect(() => {
@@ -1360,18 +1389,18 @@ export const DashboardLayout = () => {
         <div
           className={cn(
             "fixed inset-0 z-50 bg-black/20 backdrop-blur-sm lg:hidden",
-            isOpen ? "block" : "hidden",
+            mobileNavOpen ? "block" : "hidden",
           )}
-          onClick={() => setIsOpen(false)}
+          onClick={() => setMobileNavOpen(false)}
         ></div>
 
         <aside
           className={cn(
             "fixed inset-y-0 left-0 z-50 flex shrink-0 flex-col border-r border-border bg-card",
             "transform transition-all duration-300 ease-in-out",
-            isOpen ? "w-60 min-w-60" : "w-24 min-w-24",
-            isOpen
-              ? "lg:relative translate-x-0"
+            showExpandedChrome ? "w-60 min-w-60" : "w-24 min-w-24",
+            mobileNavOpen
+              ? "translate-x-0 lg:relative"
               : "-translate-x-full lg:relative lg:translate-x-0",
           )}
         >
@@ -1387,11 +1416,11 @@ export const DashboardLayout = () => {
 
           <button
             type="button"
-            aria-label={isOpen ? "사이드 메뉴 접기" : "사이드 메뉴 펼치기"}
-            onClick={() => setIsOpen((prev) => !prev)}
+            aria-label={sidebarOpen ? "사이드 메뉴 접기" : "사이드 메뉴 펼치기"}
+            onClick={() => persistSidebarOpen(!sidebarOpen)}
             className="hidden lg:flex items-center justify-center absolute top-20 -right-4 w-8 h-8 rounded-full bg-card border border-border shadow-sm hover:bg-muted/60 hover:border-muted-foreground/40 transition-colors"
           >
-            {isOpen ? (
+            {sidebarOpen ? (
               <PanelLeft className="w-4 h-4" />
             ) : (
               <PanelLeftOpen className="w-4 h-4" />
@@ -1512,7 +1541,7 @@ export const DashboardLayout = () => {
 
         <main className="flex-1 flex flex-col lg:ml-0 min-w-0 min-h-0">
           <div className="lg:hidden flex items-center justify-between p-4 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-            <Button variant="ghost" size="sm" onClick={() => setIsOpen(true)}>
+            <Button variant="ghost" size="sm" onClick={() => setMobileNavOpen(true)}>
               <div className="flex flex-col space-y-1">
                 <div className="w-4 h-0.5 bg-current"></div>
                 <div className="w-4 h-0.5 bg-current"></div>
