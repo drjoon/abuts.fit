@@ -4,6 +4,7 @@
 // - web/frontend/src/shared/practice/transferMemo.ts
 // - web/frontend/src/shared/practice/roundBarAbutment.ts
 // change-log:
+// - 2026-08-27: 프리셋 카드 2열 + 도입중/편집/삭제는 호버 시 우상단 표시(커스텀어벗 설정).
 // - 2026-08-26: OR(` | `) 결합값을 드롭다운에서 개별 옵션으로 전개.
 // - 2026-08-26: 브랜드 매칭·드롭다운 대소문자 무시(철자 같으면 동일).
 // - 2026-08-26: 패밀리 드롭다운을 카탈로그(브랜드별) 한정. CNC SSOT·표준 4종 일괄 노출 제거.
@@ -441,10 +442,10 @@ const isPendingCatalogSpec = (
 
 /** 프리셋 행(h-8 + py-1.5×2 + border 2px) × 4 + space-y-1.5 × 3. 초과 시 스크롤. */
 const PRESET_LIST_CLASS =
-  "max-h-[calc(4*(2.75rem+2px)+3*0.375rem)] space-y-1.5 overflow-y-auto overflow-x-hidden pr-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-slate-100";
+  "max-h-[calc(4*(2.75rem+2px)+3*0.375rem)] grid grid-cols-2 content-start gap-1.5 overflow-y-auto overflow-x-hidden pr-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-slate-100";
 /** presets 전용 — 설정 모달에서 상단 모드 버튼 제거 후 여유 공간 활용(최소 8행). */
 const PRESET_LIST_CLASS_TALL =
-  "min-h-[calc(6*(2.75rem+2px)+5*0.375rem)] flex-1 space-y-1.5 overflow-y-auto overflow-x-hidden pr-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-slate-100";
+  "min-h-[calc(6*(2.75rem+2px)+5*0.375rem)] flex-1 grid grid-cols-2 content-start gap-1.5 overflow-y-auto overflow-x-hidden pr-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-slate-100";
 
 export const PracticeToothImplantFields = ({
   value,
@@ -1782,7 +1783,7 @@ export const PracticeToothImplantFields = ({
                   return (
                     <div
                       key={`edit-${fav.id}`}
-                      className="space-y-1.5 rounded-xl border border-primary/70 bg-primary-soft/50 px-2.5 py-2 shadow-sm"
+                      className="col-span-2 space-y-1.5 rounded-xl border border-primary/70 bg-primary-soft/50 px-2.5 py-2 shadow-sm"
                     >
                       {editRequestMode ? (
                         <>
@@ -2021,83 +2022,81 @@ export const PracticeToothImplantFields = ({
                   );
                 }
 
+                const label = implantFavoriteDisplayParts(fav, cncSpecs);
+                const title = label.line2
+                  ? `${label.line1} · ${label.line2}`
+                  : label.line1;
+                const status = resolveAbutmentAdoptionStatusWithCatalog(fav, connections);
+                const showStatus = status === "requesting" || status === "adopting";
+                const showHoverActions = canManagePresets || showStatus;
                 return (
                   <div
                     key={fav.id}
-                    className={
+                    className={cn(
+                      "group relative rounded-xl border px-2.5 py-2 shadow-sm",
                       isActive
-                        ? "flex items-center gap-1.5 rounded-xl border border-primary/70 bg-primary-soft px-2.5 py-2 shadow-sm"
-                        : "flex items-center gap-1.5 rounded-xl border border-slate-200/90 bg-white px-2.5 py-2 shadow-sm"
-                    }
+                        ? "border-primary/70 bg-primary-soft"
+                        : "border-slate-200/90 bg-white",
+                    )}
                   >
-                    {(() => {
-                      const label = implantFavoriteDisplayParts(fav, cncSpecs);
-                      const title = label.line2
-                        ? `${label.line1} · ${label.line2}`
-                        : label.line1;
-                      return (
-                        <button
-                          type="button"
-                          className="flex min-w-0 flex-1 items-start gap-2 rounded px-1 py-0.5 text-left hover:text-primary-strong"
-                          title={title}
-                          onClick={() => applyFavorite(fav)}
-                        >
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-sm font-semibold text-slate-800">
-                              {label.line1}
-                            </span>
-                            {label.line2 ? (
-                              <span className="mt-0.5 block truncate text-xs font-medium text-slate-500">
-                                {label.line2}
-                              </span>
-                            ) : null}
+                    <button
+                      type="button"
+                      className="block w-full min-w-0 rounded px-0.5 py-0.5 text-left hover:text-primary-strong"
+                      title={title}
+                      onClick={() => applyFavorite(fav)}
+                    >
+                      <span className="block truncate text-sm font-semibold text-slate-800">
+                        {label.line1}
+                      </span>
+                      {label.line2 ? (
+                        <span className="mt-0.5 block truncate text-xs font-medium text-slate-500">
+                          {label.line2}
+                        </span>
+                      ) : null}
+                    </button>
+                    {showHoverActions ? (
+                      <div className="absolute right-1 top-1 z-10 flex items-center gap-0.5 rounded-md bg-white/95 p-0.5 shadow-sm opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                        {showStatus ? (
+                          <span className="inline-flex shrink-0 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                            {status === "adopting" ? "도입중" : "요청중"}
                           </span>
-                          {(() => {
-                            const status = resolveAbutmentAdoptionStatusWithCatalog(fav, connections);
-                            if (status !== "requesting" && status !== "adopting") {
-                              return null;
-                            }
-                            return (
-                              <span className="mt-0.5 inline-flex shrink-0 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
-                                {status === "adopting" ? "도입중" : "요청중"}
-                              </span>
-                            );
-                          })()}
-                        </button>
-                      );
-                    })()}
-                    {canManagePresets ? (
-                      <>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 shrink-0 text-slate-400"
-                          onClick={() => startEditPreset(fav)}
-                          aria-label="프리셋 수정"
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 shrink-0 text-slate-400 hover:text-destructive"
-                          disabled={favoritesBusy}
-                          onClick={() =>
-                            void persistFavorites(favorites.filter((row) => row.id !== fav.id))
-                          }
-                          aria-label="프리셋 삭제"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </>
+                        ) : null}
+                        {canManagePresets ? (
+                          <>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 shrink-0 text-slate-400"
+                              onClick={() => startEditPreset(fav)}
+                              aria-label="프리셋 수정"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 shrink-0 text-slate-400 hover:text-destructive"
+                              disabled={favoritesBusy}
+                              onClick={() =>
+                                void persistFavorites(
+                                  favorites.filter((row) => row.id !== fav.id),
+                                )
+                              }
+                              aria-label="프리셋 삭제"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </>
+                        ) : null}
+                      </div>
                     ) : null}
                   </div>
                 );
               })}
             {canManagePresets ? (
-              <div className="sticky bottom-0 z-[1] space-y-1.5 bg-primary-soft pt-1.5">
+              <div className="sticky bottom-0 z-[1] col-span-2 space-y-1.5 bg-primary-soft pt-1.5">
                 {renderAddPresetForm()}
                 {renderAddPresetButton()}
               </div>

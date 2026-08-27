@@ -152,6 +152,7 @@ import {
 // - 2026-08-25: 가이드투어 스텝 상위로 제어 가능(모드 전환 유지). 익스프레스 숨김 필드는 자동 스킵 안 함.
 // - 2026-08-25: 기공소·환자·날짜 투어 배너 → 상단 오른쪽(CardHeader 슬롯). aside는 익스프레스 단계 표시용.
 // - 2026-08-25: 가이드투어 견적·완료 중 어벗 모달 재오픈 허용 — 스텝 진입 시에만 닫고, 열기 직후 effect로 닫지 않음.
+// - 2026-08-27: 커스텀어벗 설정 — 임플란트·스캔바디 프리셋 2열·호버 액션. 모달 max-w-[90rem].
 // - 2026-08-25: 기공소 픽커 보조줄 — 대표·주소만(사업자번호 표시 제거, 검색은 유지).
 // - 2026-08-25: 헤더(기공소·환자·기간) — PC 툴바 있으면 오른쪽 레일 항상 예약(투어 카드 on/off 폭 점프 방지).
 // - 2026-08-25: 헤더(기공소·환자·기간) — 투어 시 날짜 열 폭만큼 오른쪽 카드, 아니면 익스프레스 aside만.
@@ -3989,7 +3990,7 @@ export const PracticeTransferRequestIntakePanel = ({
       >
         <DialogContent
           className={cn(
-            "flex h-[min(90vh,42rem)] max-h-[90vh] flex-col gap-3 overflow-hidden sm:max-w-7xl",
+            "flex h-[min(90vh,42rem)] max-h-[90vh] flex-col gap-3 overflow-hidden sm:max-w-[90rem]",
             nestedDialogClassName,
           )}
           overlayClassName={nestedDialogOverlayClassName}

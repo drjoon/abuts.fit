@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-08-27: 프리셋 카드 2열 + 편집/삭제는 호버 시 우상단 표시(커스텀어벗 설정).
 // - 2026-08-25: presets 목록 높이 축소(모달 세로·심플어벗 3열 대응). dimmed 지원(심플어벗 XOR).
 // - 2026-08-21: 스캔바디 추가 시 현재 선택값 기본 채움. 스피너 직경 0.5·높이 2, 직접입력 제한 없음.
 // - 2026-08-21: 프리셋 추가는 목록 sticky 하단(스크롤 시에만 고정). 임플란트와 독립.
@@ -45,12 +46,12 @@ type Props = {
   dimmed?: boolean;
 };
 
-/** 프리셋 행(h-8 + py-1.5×2 + border 2px) × 4 + space-y-1.5 × 3. 초과 시 스크롤. */
+/** 프리셋 행(h-8 + py-1.5×2 + border 2px) × 4 + gap × 3. 2열·초과 시 스크롤. */
 const PRESET_LIST_CLASS =
-  "max-h-[calc(4*(2.75rem+2px)+3*0.375rem)] space-y-1.5 overflow-y-auto overflow-x-hidden pr-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-slate-100";
+  "max-h-[calc(4*(2.75rem+2px)+3*0.375rem)] grid grid-cols-2 content-start gap-1.5 overflow-y-auto overflow-x-hidden pr-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-slate-100";
 /** presets 전용 — 설정 모달(심플어벗 3열)에 맞춤(최소 6행). */
 const PRESET_LIST_CLASS_TALL =
-  "min-h-[calc(6*(2.75rem+2px)+5*0.375rem)] flex-1 space-y-1.5 overflow-y-auto overflow-x-hidden pr-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-slate-100";
+  "min-h-[calc(6*(2.75rem+2px)+5*0.375rem)] flex-1 grid grid-cols-2 content-start gap-1.5 overflow-y-auto overflow-x-hidden pr-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-slate-100";
 
 const favoriteKey = (row: {
   manufacturer: string;
@@ -398,7 +399,7 @@ export const PracticeToothAbutmentFields = ({
                 return (
                   <div
                     key={`edit-${fav.id}`}
-                    className="grid grid-cols-3 gap-1.5 rounded-lg border border-service-abut-muted bg-white p-2"
+                    className="col-span-2 grid grid-cols-3 gap-1.5 rounded-lg border border-service-abut-muted bg-white p-2"
                   >
                     <Input
                       value={editDraft.abutmentManufacturer}
@@ -470,15 +471,16 @@ export const PracticeToothAbutmentFields = ({
               return (
                 <div
                   key={fav.id}
-                  className={
+                  className={cn(
+                    "group relative rounded-xl border px-2.5 py-2 shadow-sm",
                     isActive
-                      ? "flex items-center gap-1.5 rounded-xl border border-service-abut/70 bg-service-abut-soft/60 px-2.5 py-2 shadow-sm"
-                      : "flex items-center gap-1.5 rounded-xl border border-slate-200/90 bg-white px-2.5 py-2 shadow-sm"
-                  }
+                      ? "border-service-abut/70 bg-service-abut-soft/60"
+                      : "border-slate-200/90 bg-white",
+                  )}
                 >
                   <button
                     type="button"
-                    className="min-w-0 flex-1 truncate rounded px-1 py-0.5 text-left text-sm font-semibold text-slate-800 hover:text-service-abut"
+                    className="block w-full min-w-0 truncate rounded px-0.5 py-0.5 text-left text-sm font-semibold text-slate-800 hover:text-service-abut"
                     title={favoriteLabel(fav)}
                     onClick={() =>
                       onChange({
@@ -491,12 +493,12 @@ export const PracticeToothAbutmentFields = ({
                     {favoriteLabel(fav)}
                   </button>
                   {canManagePresets ? (
-                    <>
+                    <div className="absolute right-1 top-1 z-10 flex items-center gap-0.5 rounded-md bg-white/95 p-0.5 shadow-sm opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
                       <Button
                         type="button"
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8 shrink-0 text-slate-400"
+                        className="h-7 w-7 shrink-0 text-slate-400"
                         onClick={() => {
                           setIsAddingPreset(false);
                           setEditingFavoriteId(fav.id);
@@ -508,28 +510,28 @@ export const PracticeToothAbutmentFields = ({
                         }}
                         aria-label="프리셋 수정"
                       >
-                        <Pencil className="h-4 w-4" />
+                        <Pencil className="h-3.5 w-3.5" />
                       </Button>
                       <Button
                         type="button"
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8 shrink-0 text-slate-400 hover:text-destructive"
+                        className="h-7 w-7 shrink-0 text-slate-400 hover:text-destructive"
                         disabled={favoritesBusy}
                         onClick={() =>
                           void persistFavorites(favorites.filter((row) => row.id !== fav.id))
                         }
                         aria-label="프리셋 삭제"
                       >
-                        <Trash2 className="h-4 w-4" />
+                        <Trash2 className="h-3.5 w-3.5" />
                       </Button>
-                    </>
+                    </div>
                   ) : null}
                 </div>
               );
             })}
             {canManagePresets ? (
-              <div className="sticky bottom-0 z-[1] space-y-1.5 bg-inherit pt-1.5">
+              <div className="sticky bottom-0 z-[1] col-span-2 space-y-1.5 bg-inherit pt-1.5">
                 {renderAddPresetForm()}
                 {renderAddPresetButton()}
               </div>
