@@ -202,7 +202,7 @@ import { resolvePracticeTransferSkipJig } from "../../utils/practiceTransferLabS
 // - 2026-08-18: 수락 전 의뢰 내용 수정 POST /:transferId/update-content.
 // - 2026-08-19: mark-accepted — 기공비 미설정(마스터 Off·항목 Off·해당 보철 0원)이면 409 lab_fee_unconfigured.
 const PRACTICE_TAGS = ["practice_dropzone", "practice_file_transfer"];
-const PRACTICE_ALLOWED_MODEL_EXTENSIONS = new Set([".stl", ".ply", ".obj"]);
+const PRACTICE_ALLOWED_MODEL_EXTENSIONS = new Set([".stl", ".ply", ".obj", ".dcm"]);
 const PRACTICE_ALLOWED_IMAGE_EXTENSIONS = new Set([
   ".png",
   ".jpg",

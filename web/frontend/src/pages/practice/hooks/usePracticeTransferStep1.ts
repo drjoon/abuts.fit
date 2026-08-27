@@ -16,9 +16,13 @@ import {
 // - web/frontend/rules.md (practice 최근 전송 기공소 SSOT)
 // - 2026-08-18: 치과 픽커 「자동 매칭」제거. 고정=어벗츠기공소, 최근=지정 기공소.
 // - 2026-08-20: 모바일 구강포토 동기화 후 로컬 파일만 키로 제거(removeFilesByKeys).
-export {
+import {
   PRACTICE_ACCEPTED_HINT,
+  PRACTICE_TRANSFER_IMAGE_EXTENSIONS,
+  PRACTICE_TRANSFER_MODEL_EXTENSIONS,
 } from "@/shared/practice/practiceTransferAccept";
+
+export { PRACTICE_ACCEPTED_HINT };
 
 export type SearchBusinessResult = {
   _id: string;
@@ -818,15 +822,10 @@ export const usePracticeTransferStep1 = (options?: Options) => {
   };
 
   const isPracticeModelExt = (ext: string) =>
-    ext === ".stl" || ext === ".ply" || ext === ".obj";
+    PRACTICE_TRANSFER_MODEL_EXTENSIONS.has(ext);
 
   const isPracticeImageExt = (ext: string) =>
-    ext === ".png" ||
-    ext === ".jpg" ||
-    ext === ".jpeg" ||
-    ext === ".webp" ||
-    ext === ".bmp" ||
-    ext === ".gif";
+    PRACTICE_TRANSFER_IMAGE_EXTENSIONS.has(ext);
 
   const classifyIncomingFiles = (selectedFiles: File[]): ClassifiedUploadBatch => {
     const modelFiles: File[] = [];
@@ -851,7 +850,7 @@ export const usePracticeTransferStep1 = (options?: Options) => {
 
       rejectedFiles.push({
         name: file.name,
-        reason: "3D 모델(STL, PLY, OBJ) 및 그림 파일만 업로드할 수 있어요.",
+        reason: "3D 모델(STL, PLY, OBJ, DCM) 및 그림 파일만 업로드할 수 있어요.",
       });
     });
 

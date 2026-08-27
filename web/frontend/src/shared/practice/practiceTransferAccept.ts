@@ -5,12 +5,13 @@
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 
 export const PRACTICE_TRANSFER_ACCEPT =
-  ".stl,.ply,.obj,.png,.jpg,.jpeg,.webp,.bmp,.gif";
+  ".stl,.ply,.obj,.dcm,.png,.jpg,.jpeg,.webp,.bmp,.gif";
 
 export const PRACTICE_TRANSFER_MODEL_EXTENSIONS = new Set([
   ".stl",
   ".ply",
   ".obj",
+  ".dcm",
 ]);
 
 export const PRACTICE_TRANSFER_IMAGE_EXTENSIONS = new Set([
@@ -28,7 +29,7 @@ export const PRACTICE_TRANSFER_ALLOWED_EXTENSIONS = new Set([
 ]);
 
 /** 기공의뢰 첨부 확장자 안내 (치과 intake · 기공소 결과파일 공통) */
-export const PRACTICE_ACCEPTED_HINT = "STL · PLY · OBJ · 이미지";
+export const PRACTICE_ACCEPTED_HINT = "STL · PLY · OBJ · DCM · 이미지";
 
 export const getPracticeTransferFileExtension = (fileName: string) => {
   const name = String(fileName || "").trim().toLowerCase();
