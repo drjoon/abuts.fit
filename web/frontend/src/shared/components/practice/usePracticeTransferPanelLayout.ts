@@ -3,6 +3,7 @@
 // - 2026-08-28: 플로팅 패널 — 드래그·리사이즈·엣지 스냅·최소/최대화.
 // - 2026-08-28: MIN_W — 신호등·탭(의뢰상세/채팅)·별점이 겹치지 않게 400.
 // - 2026-08-28: 리사이즈 — 좌·상·모서리(n/w/nw/ne/sw) 지원, 고정 변 기준 min clamp.
+// - 2026-08-28: 좌·우 엣지 스냅 — 가로 절반이 아니라 MIN_W 유지(세로만 full).
 import { useCallback, useEffect, useRef, useState } from "react";
 
 export type PracticeTransferPanelLayout = {
@@ -99,23 +100,22 @@ function snapAfterDrag(
 ): PracticeTransferPanelLayout {
   const { vw, vh } = viewportSize();
   const fullH = vh - MARGIN * 2;
-  const halfW = Math.max(MIN_W, Math.round((vw - MARGIN * 2) / 2));
 
   if (layout.x <= SNAP_PX) {
     return clampLayout({
       ...layout,
       x: MARGIN,
       y: MARGIN,
-      w: halfW,
+      w: MIN_W,
       h: fullH,
     });
   }
   if (layout.x + layout.w >= vw - SNAP_PX) {
     return clampLayout({
       ...layout,
-      x: vw - halfW - MARGIN,
+      x: vw - MIN_W - MARGIN,
       y: MARGIN,
-      w: halfW,
+      w: MIN_W,
       h: fullH,
     });
   }
