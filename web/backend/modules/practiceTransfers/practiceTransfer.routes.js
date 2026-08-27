@@ -40,6 +40,7 @@ import {
   upsertPracticeTransferDraft,
   upsertPracticeTransferLabRating,
   updatePracticeTransferContent,
+  appendPracticeTransferArrival,
 } from "../../controllers/practiceTransfers/practiceTransfer.controller.js";
 import {
   getPracticeTransferSettings,
@@ -125,6 +126,13 @@ router.post(
   authenticate,
   sendAuth,
   updatePracticeTransferContent,
+);
+
+router.post(
+  "/:transferId/append-arrival",
+  authenticate,
+  sendAuth,
+  appendPracticeTransferArrival,
 );
 
 router.get("/received", authenticate, receiveAuth, getReceivedPracticeTransfers);

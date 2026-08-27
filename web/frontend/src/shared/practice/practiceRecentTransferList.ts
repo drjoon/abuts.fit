@@ -63,6 +63,8 @@ export type PracticeRecentRequestItem = {
   transferId: string;
   orderDate: string;
   arrivalDate: string;
+  /** 누적 치과도착일(마지막=최종). 없으면 [arrivalDate] */
+  arrivalDates?: string[];
   transferMemo: string;
   rawTransferMemo: string;
   fileName: string;
@@ -120,6 +122,8 @@ export type PracticeRecentTransferItem = {
   targetLab: string;
   orderDate: string;
   arrivalDate: string;
+  /** 누적 치과도착일(마지막=최종). 캘린더 다중 표시·연결용 */
+  arrivalDates?: string[];
   status: string;
   fileCount: number;
   patientCount: number;
@@ -533,6 +537,19 @@ export const mapMyPracticeTransferApiRows = (
       const transferMemo = extractTransferMemoFromMessage(message);
       const orderDate = String(r.orderDate || parsedMemo.orderDate || "").trim();
       const arrivalDate = String(r.arrivalDate || parsedMemo.arrivalDate || "").trim();
+      const arrivalDatesRaw = Array.isArray(r.arrivalDates)
+        ? (r.arrivalDates as unknown[])
+            .map((d) => String(d || "").trim())
+            .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
+        : [];
+      const arrivalDates =
+        arrivalDatesRaw.length > 0
+          ? arrivalDatesRaw.includes(arrivalDate) || !arrivalDate
+            ? arrivalDatesRaw
+            : [...arrivalDatesRaw, arrivalDate]
+          : arrivalDate
+            ? [arrivalDate]
+            : [];
       const fileObj =
         ci.file && typeof ci.file === "object" ? (ci.file as Record<string, unknown>) : {};
 
@@ -564,6 +581,7 @@ export const mapMyPracticeTransferApiRows = (
           extractTransferIdFromMessage(message),
         orderDate,
         arrivalDate,
+        arrivalDates,
         transferMemo,
         rawTransferMemo: strippedTransferMemo,
         fileName: String(fileObj.originalName || fileObj.name || "").trim(),
@@ -651,6 +669,11 @@ export const mergeOpenPracticeTransferFromRequestRows = (
   return {
     ...prev,
     status: openRow.status || prev.status,
+    arrivalDate: openRow.arrivalDate || prev.arrivalDate,
+    arrivalDates:
+      Array.isArray(openRow.arrivalDates) && openRow.arrivalDates.length > 0
+        ? [...openRow.arrivalDates]
+        : prev.arrivalDates,
     resultFiles: mergedResultFiles,
     designFiles: mergedDesignFiles,
     designFileCount: nextDesignFileCount,
@@ -834,6 +857,7 @@ export const groupPracticeRecentRequests = (
         targetLab: req.targetLab,
         orderDate: req.orderDate,
         arrivalDate: req.arrivalDate,
+        arrivalDates: Array.isArray(req.arrivalDates) ? [...req.arrivalDates] : undefined,
         status: req.status,
         fileCount: hasFile ? 1 : 0,
         patientCount: Math.max(1, initialPatients.size),
@@ -927,6 +951,11 @@ export const groupPracticeRecentRequests = (
     }
     if (!existing.arrivalDate && req.arrivalDate) {
       existing.arrivalDate = req.arrivalDate;
+    }
+    if (Array.isArray(req.arrivalDates) && req.arrivalDates.length > 0) {
+      existing.arrivalDates = [...req.arrivalDates];
+      existing.arrivalDate =
+        req.arrivalDates[req.arrivalDates.length - 1] || existing.arrivalDate;
     }
     if (Array.isArray(req.resultFiles) && req.resultFiles.length > 0) {
       existing.resultFiles = mergeFileItemsByS3Key(existing.resultFiles, req.resultFiles);

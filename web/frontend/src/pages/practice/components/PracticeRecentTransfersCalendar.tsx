@@ -7,6 +7,7 @@
  * - web/frontend/src/pages/practice/components/PracticeStatusFilterBadges.tsx
  * - web/frontend/src/shared/date/kst.ts
  * - web/frontend/src/shared/practice/labReceiveCalendarWeekGrid.ts
+ * - 2026-08-27: 누적 도착일 칩 — 이전 날짜 흐리게·연결 표시.
  * - 2026-08-23: 숨길 요일 버튼·캘린더 열 일~토(일요일 시작) 통일.
  * - 2026-08-23: 숨길 요일 토글·열 정렬 불일치 수정 — 일요일 선택 시 토요일만 숨겨지던 현상.
  * - 2026-08-27: 미확인 칩=빨간 이중 외곽선(리메이크 슬레이트보다 우선).
@@ -62,6 +63,13 @@ export type PracticeCalendarChipItem = {
   statusTone?: PracticeCalendarStatusTone;
   /** 리메이크: 공정 색 유지 + 이중 외곽선 */
   isRemake?: boolean;
+  /**
+   * 누적 도착일 중 이전 날짜 칩(최종이 아님).
+   * 동일 transfer 연결 표시용 — 클릭은 같은 의뢰상세.
+   */
+  isPriorArrival?: boolean;
+  /** 연결 도착일 전체(툴팁) */
+  linkedArrivalDates?: string[];
   sortLabel: string;
   line: string;
   /** 사이드바와 동일 합산(수신 미확인 + 채팅). 있으면 칩에 빨간 숫자 */
@@ -69,6 +77,50 @@ export type PracticeCalendarChipItem = {
   /** 치과 발신: 수락 전·작업취소 건 휴지통 이동 */
   canDelete?: boolean;
 };
+
+/** 치과도착일 누적 → 캘린더 칩 다중 배치(같은 건·크레딧 중복 없음). */
+export function expandPracticeCalendarChipsByArrivalDates(
+  items: PracticeCalendarChipItem[],
+  dateKey: PracticeCalendarDateKey,
+): PracticeCalendarChipItem[] {
+  if (dateKey !== "arrivalDate") return items;
+  const out: PracticeCalendarChipItem[] = [];
+  for (const item of items) {
+    const linked = Array.isArray(item.linkedArrivalDates)
+      ? item.linkedArrivalDates
+          .map((d) => String(d || "").trim())
+          .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
+      : [];
+    const dates =
+      linked.length > 0
+        ? linked
+        : [String(item.arrivalDate || "").trim()].filter((d) =>
+            /^\d{4}-\d{2}-\d{2}$/.test(d),
+          );
+    if (dates.length <= 1) {
+      out.push({
+        ...item,
+        linkedArrivalDates: dates.length ? dates : item.linkedArrivalDates,
+        isPriorArrival: false,
+      });
+      continue;
+    }
+    dates.forEach((ymd, idx) => {
+      const isPrior = idx < dates.length - 1;
+      out.push({
+        ...item,
+        id: `${item.id}:arr:${ymd}`,
+        arrivalDate: ymd,
+        isPriorArrival: isPrior,
+        linkedArrivalDates: dates,
+        // 이전 도착일 칩은 삭제 버튼 숨김(최종만)
+        canDelete: isPrior ? false : item.canDelete,
+        unreadCount: isPrior ? 0 : item.unreadCount,
+      });
+    });
+  }
+  return out;
+}
 
 export const DEFAULT_HIDDEN_WEEKDAYS =
   DEFAULT_LAB_RECEIVE_CALENDAR_HIDDEN_WEEKDAYS;
@@ -510,6 +562,7 @@ export function PracticeRecentTransfersCalendar({
                             key={`${item.id}:${day.ymd}`}
                             className={cn(
                               "flex items-start gap-0.5 rounded pr-0.5 hover:brightness-95",
+                              item.isPriorArrival && "opacity-55",
                               Number(item.unreadCount || 0) > 0
                                 ? "border-[3px] border-double border-red-600"
                                 : item.isRemake &&
@@ -521,14 +574,19 @@ export function PracticeRecentTransfersCalendar({
                               type="button"
                               className="flex min-w-0 flex-1 items-start gap-0.5 px-1 py-0.5 text-left text-[10px] leading-snug"
                               title={
-                                unreadCount > 0
-                                  ? `${item.line} · 안읽음 ${unreadLabel}`
-                                  : item.line
+                                item.linkedArrivalDates &&
+                                item.linkedArrivalDates.length > 1
+                                  ? `${item.line} · 연결 도착일 ${item.linkedArrivalDates.join(" → ")}${
+                                      item.isPriorArrival ? " (이전)" : " (최종)"
+                                    }`
+                                  : unreadCount > 0
+                                    ? `${item.line} · 안읽음 ${unreadLabel}`
+                                    : item.line
                               }
                               onClick={() => onSelectItem(item)}
                             >
                               <span className="min-w-0 flex-1 line-clamp-2 break-all">
-                                {item.line}
+                                {item.isPriorArrival ? `↗ ${item.line}` : item.line}
                               </span>
                               {unreadCount > 0 ? (
                                 <span

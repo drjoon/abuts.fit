@@ -74,8 +74,16 @@ import {
 import { resolveLabPracticeFeeMultiplier, isLabFeeScheduleConfigured, isLabFeeScheduleReadyToCharge, missingLabFeeItemNames, labFeeItemNamesNeededForToothWorks, toothWorksNeedLabFee } from "../../utils/labFeeSchedule.js";
 import {
   normalizeRushFeeMultiplier,
+  parseOrderYmdFromMemo,
   resolvePracticeTransferArrivalPolicy,
 } from "../../utils/practiceTransferRush.js";
+import {
+  appendPracticeArrivalDate,
+  PRACTICE_ARRIVAL_SHADE_EXTEND_CIVIL_DAYS,
+  resolveCurrentArrivalYmd,
+  resolvePracticeArrivalDates,
+  syncArrivalDatesWithMemoYmd,
+} from "../../utils/practiceTransferArrivalDates.js";
 import {
   buildPracticeTransferCalendarDateRangeFilter,
   mergeCalendarRangeWithUnreadFilter,
@@ -150,6 +158,7 @@ import { resolvePracticeTransferSkipJig } from "../../utils/practiceTransferLabS
 // - web/backend/utils/practiceTransferAbutmentPresets.js
 // - web/backend/utils/practiceLabRating.js
 // - web/backend/utils/practiceTransferStage.js
+// - 2026-08-27: append-arrival — 동일 건 치과도착일 누적(캘린더 다중 표시, 크레딧 미중복).
 // - 2026-08-26: cancel/restore/empty — 휴지통 이동 시 채팅 rooms 캐시 무효화(최근의뢰·사이드 unread 즉시 반영).
 // - 2026-08-25: status deleted=치과 의뢰 삭제(휴지통). GET /received에서 제외. canceled=레거시 호환. 작업취소=workCanceledAt.
 // - 2026-08-21: GET /received — 연동 CA 한진 배송 요약(abutmentDeliveryInfo) 포함(치과 /my와 동일).
@@ -885,6 +894,9 @@ const toVirtualRequestRows = (transferDoc) => {
   const memoPatientMatch = transferMemo.match(/\[\s*환자명\s*:\s*([^\]]+)\]/);
   const memoPatientName = String(memoPatientMatch?.[1] || "").trim();
   const sourceRows = files.length > 0 ? files : [null];
+  const arrivalDates = resolvePracticeArrivalDates(transferDoc);
+  const currentArrivalYmd = resolveCurrentArrivalYmd(arrivalDates);
+  const orderYmd = parseOrderYmdFromMemo(transferMemo);
 
   return sourceRows.map((item, idx) => ({
     _id: `${String(transferDoc._id)}:${idx + 1}`,
@@ -898,6 +910,9 @@ const toVirtualRequestRows = (transferDoc) => {
     autoMatch: autoFields.autoMatch,
     toothWorks,
     hasCustomAbutment: hasCustomAbutmentToothWorks(toothWorks),
+    arrivalDates,
+    arrivalDate: currentArrivalYmd || null,
+    orderDate: orderYmd || null,
     resultFiles: resultFiles.map((rf, rfIdx) => ({
       id: `${String(transferDoc._id)}::result::${rfIdx + 1}`,
       patientName: String(rf?.patientName || "").trim(),
@@ -2750,6 +2765,11 @@ export async function createPracticeTransfer(req, res) {
           : {}),
       },
       transferMemo: transferMemoResolved,
+      arrivalDates: syncArrivalDatesWithMemoYmd({
+        previousArrivalDates: [],
+        previousMemo: "",
+        nextMemo: transferMemoResolved,
+      }),
       tag,
       status: "active",
       files,
@@ -3379,6 +3399,11 @@ export async function updatePracticeTransferContent(req, res) {
       matchingMode,
       autoMatch: nextAutoMatch,
       transferMemo: transferMemoResolved,
+      arrivalDates: syncArrivalDatesWithMemoYmd({
+        previousArrivalDates: doc.arrivalDates,
+        previousMemo: doc.transferMemo,
+        nextMemo: transferMemoResolved,
+      }),
       tag: tag || doc.tag,
       files,
       toothWorks: toothWorksRaw,
@@ -3629,6 +3654,158 @@ export async function updatePracticeTransferContent(req, res) {
   }
 }
 
+/**
+ * 동일 전송에 치과도착일만 누적(쉐이드 변경 등).
+ * 신규 transfer/과금 없음 — 기존 건 캘린더 유지 + 새 도착일에 동일 건 추가 표시.
+ */
+export async function appendPracticeTransferArrival(req, res) {
+  try {
+    const role = String(req.user?.role || "").trim();
+    if (!isPracticeTransferSenderRole(role)) {
+      return res.status(403).json({ success: false, message: "권한이 없습니다." });
+    }
+
+    const transferIdFilter = buildTransferIdFilter(req.params?.transferId);
+    if (!transferIdFilter) {
+      return res.status(400).json({
+        success: false,
+        message: "transferId가 필요합니다.",
+      });
+    }
+
+    const { scope } = await buildPracticeOwnedScope(req);
+    const doc = await PracticeTransfer.findOne({
+      ...scope,
+      ...transferIdFilter,
+      ...practiceTransferNotDeletedMongoFilter(),
+    });
+    if (!doc) {
+      return res.status(404).json({
+        success: false,
+        message: "전송 내역을 찾을 수 없습니다.",
+      });
+    }
+
+    const rawYmd = String(req.body?.arrivalYmd || req.body?.arrivalDate || "").trim();
+    const offsetRaw = req.body?.offsetCivilDays;
+    const offsetCivilDays =
+      offsetRaw == null || offsetRaw === ""
+        ? PRACTICE_ARRIVAL_SHADE_EXTEND_CIVIL_DAYS
+        : Number(offsetRaw);
+
+    const appended = appendPracticeArrivalDate({
+      transferMemo: doc.transferMemo,
+      arrivalDates: doc.arrivalDates,
+      nextYmd: rawYmd || undefined,
+      offsetCivilDays: Number.isFinite(offsetCivilDays)
+        ? offsetCivilDays
+        : PRACTICE_ARRIVAL_SHADE_EXTEND_CIVIL_DAYS,
+    });
+    if (!appended.ok) {
+      return res.status(appended.statusCode || 400).json({
+        success: false,
+        message: appended.message,
+        reason: appended.reason,
+      });
+    }
+
+    if (appended.unchanged) {
+      return res.status(200).json({
+        success: true,
+        message: "치과도착일이 이미 해당일입니다.",
+        data: {
+          _id: String(doc._id || ""),
+          transferId: String(doc.transferId || "").trim(),
+          arrivalDates: appended.arrivalDates,
+          arrivalDate: appended.nextYmd,
+          previousArrivalDate: appended.previousYmd,
+          billingUnchanged: true,
+        },
+      });
+    }
+
+    const updated = await PracticeTransfer.findOneAndUpdate(
+      { _id: doc._id, ...practiceTransferNotDeletedMongoFilter() },
+      {
+        $set: {
+          transferMemo: appended.transferMemo,
+          arrivalDates: appended.arrivalDates,
+        },
+      },
+      { new: true },
+    );
+    if (!updated) {
+      return res.status(409).json({
+        success: false,
+        message: "전송 내역을 갱신하지 못했습니다.",
+      });
+    }
+
+    const prevLabel = appended.previousYmd || "-";
+    const nextLabel = appended.nextYmd;
+    try {
+      await postPracticeTransferSystemChatMessage({
+        transferMongoId: String(updated._id),
+        senderUserId: req.user?._id,
+        content: `치과도착일이 ${prevLabel} → ${nextLabel}(으)로 변경되었습니다. 이전 도착일은 캘린더에 유지됩니다.`,
+        systemEvent: "practice_transfer_arrival_appended",
+      });
+    } catch {
+      // 채팅 실패는 도착일 갱신을 막지 않음
+    }
+
+    const targetLabAnchorIdText = String(updated.targetLabAnchorId || "").trim();
+    const realtimePayload = {
+      source: "appendPracticeTransferArrival",
+      transferId: String(updated.transferId || "").trim(),
+      transferMongoId: String(updated._id || ""),
+      targetLabAnchorId: targetLabAnchorIdText || null,
+      practiceUserId: String(req.user?._id || ""),
+      arrivalDates: appended.arrivalDates,
+      arrivalDate: appended.nextYmd,
+      previousArrivalDate: appended.previousYmd,
+      billingUnchanged: true,
+    };
+    try {
+      await emitPracticeTransferEventToPracticeUsers({
+        practiceBusinessAnchorId: req.user?.businessAnchorId,
+        type: "practice:transfer-updated",
+        payload: realtimePayload,
+        extraUserIds: [req.user?._id],
+      });
+      if (targetLabAnchorIdText) {
+        await emitPracticeTransferEventToRequestorUsers({
+          targetLabAnchorId: targetLabAnchorIdText,
+          type: "practice:transfer-updated",
+          payload: realtimePayload,
+        });
+      }
+    } catch {
+      // realtime best-effort
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "치과도착일이 누적 반영되었습니다. 크레딧은 추가 차감되지 않습니다.",
+      data: {
+        _id: String(updated._id || ""),
+        transferId: String(updated.transferId || "").trim(),
+        arrivalDates: appended.arrivalDates,
+        arrivalDate: appended.nextYmd,
+        previousArrivalDate: appended.previousYmd,
+        transferMemo: String(updated.transferMemo || ""),
+        billingUnchanged: true,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "치과도착일 누적 중 오류가 발생했습니다.",
+      error: error?.message,
+    });
+  }
+}
+
 export async function remakePracticeTransfers(req, res) {
   try {
     const role = String(req.user?.role || "").trim();
@@ -3760,6 +3937,7 @@ export async function remakePracticeTransfers(req, res) {
         targetLabName: String(source.targetLabName || "").trim(),
         matchingMode: "direct",
         transferMemo: String(source.transferMemo || "").trim(),
+        arrivalDates: resolvePracticeArrivalDates(source),
         tag: String(source.tag || "practice_file_transfer").trim(),
         status: "active",
         files,
@@ -4367,6 +4545,9 @@ export async function getReceivedPracticeTransfers(req, res) {
       const feeQuote = quotesById.get(String(doc?._id || "")) || null;
       const abutmentDeliveryInfo =
         abutmentDeliveryById.get(String(doc?._id || "")) || null;
+      const arrivalDates = resolvePracticeArrivalDates(doc);
+      const arrivalDate = resolveCurrentArrivalYmd(arrivalDates);
+      const orderDate = parseOrderYmdFromMemo(doc?.transferMemo);
 
       return {
         _id: String(doc?._id || ""),
@@ -4374,6 +4555,9 @@ export async function getReceivedPracticeTransfers(req, res) {
         targetLabAnchorId: String(doc?.targetLabAnchorId || "").trim() || null,
         targetLabName: String(doc?.targetLabName || "").trim(),
         transferMemo: String(doc?.transferMemo || "").trim(),
+        orderDate: orderDate || null,
+        arrivalDate: arrivalDate || null,
+        arrivalDates,
         status: String(doc?.status || "").trim() || "active",
         manufacturerStage,
         labRejected,

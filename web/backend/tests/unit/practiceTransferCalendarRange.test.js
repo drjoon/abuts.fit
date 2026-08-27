@@ -57,13 +57,15 @@ describe("buildPracticeTransferCalendarDateRangeFilter", () => {
     expect(filter.$expr).toBeTruthy();
   });
 
-  it("builds arrivalDate memo filter", () => {
+  it("builds arrivalDate filter with arrivalDates OR memo fallback", () => {
     const filter = buildPracticeTransferCalendarDateRangeFilter({
       fromYmd: "2026-08-01",
       toYmd: "2026-08-31",
       dateKey: "arrivalDate",
     });
     expect(filter).toBeTruthy();
+    expect(Array.isArray(filter.$or)).toBe(true);
+    expect(String(JSON.stringify(filter))).toContain("arrivalDates");
     expect(String(JSON.stringify(filter))).toContain("치과도착일");
   });
 });

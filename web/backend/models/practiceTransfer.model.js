@@ -124,6 +124,15 @@ const practiceTransferSchema = new mongoose.Schema(
       default: "",
       trim: true,
     },
+    /**
+     * 치과도착일 누적(YMD). 마지막=최종 도착일(transferMemo 태그와 동기).
+     * 쉐이드 변경 등으로 연기해도 이전 날짜를 남겨 캘린더에 동일 건을 다중 표시.
+     * 신규 전송이 아니므로 크레딧 중복 지급 없음.
+     */
+    arrivalDates: {
+      type: [String],
+      default: undefined,
+    },
     tag: {
       type: String,
       default: "practice_file_transfer",

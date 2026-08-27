@@ -27,6 +27,7 @@
  * 2026-08-25: 캘린더 칩에서 휴지통(취소·거부) 제외 — 삭제 즉시 달력에서 사라짐.
  * 2026-08-25: 휴지통 건은 상단 뱃지 카운트·목록에서도 제외(취소=작업취소만, 휴지통 서랍과 정합).
  * 2026-08-25: 캘린더 칩에서 「생산 전」등 생산단계 문구 제거(운송·배송완료만).
+ * 2026-08-27: 검색어 localStorage 유지 — 의뢰상세 후 전체보기 복귀 시 직전 검색 복원.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronRight, Search, Trash2, X } from "lucide-react";
@@ -81,6 +82,7 @@ import {
 } from "@/shared/practice/practiceRecentTransferList";
 import {
   PracticeRecentTransfersCalendar,
+  expandPracticeCalendarChipsByArrivalDates,
   resolvePracticeCalendarStatusTone,
   type PracticeCalendarChipItem,
   type PracticeCalendarDateKey,
@@ -95,6 +97,27 @@ import {
   resolvePracticeTransferListPatientName,
   resolvePracticeTransferListToothNumbers,
 } from "@/shared/components/practice/PracticeRecentTransferListCardDetail";
+
+const PRACTICE_RECENT_TRANSFERS_ALL_SEARCH_KEY =
+  "practice_recent_transfers_all_search_v1";
+
+function readStoredRecentTransfersAllSearch(fallback = ""): string {
+  try {
+    const raw = localStorage.getItem(PRACTICE_RECENT_TRANSFERS_ALL_SEARCH_KEY);
+    if (raw == null) return fallback;
+    return String(raw);
+  } catch {
+    return fallback;
+  }
+}
+
+function writeStoredRecentTransfersAllSearch(value: string) {
+  try {
+    localStorage.setItem(PRACTICE_RECENT_TRANSFERS_ALL_SEARCH_KEY, value);
+  } catch {
+    // quota / private mode — ignore
+  }
+}
 
 type PracticeRecentTransfersAllModalProps = {
   open: boolean;
@@ -142,7 +165,11 @@ export function PracticeRecentTransfersAllModal({
   const setStoredHiddenWeekdays = useAuthStore(
     (s) => s.setLabReceiveCalendarHiddenWeekdays,
   );
-  const [search, setSearch] = useState(initialSearch);
+  const [search, setSearch] = useState(() =>
+    String(initialSearch || "").trim()
+      ? String(initialSearch || "")
+      : readStoredRecentTransfersAllSearch(""),
+  );
   const [statusFilters, setStatusFilters] = useState<Set<PracticeRecentStatusFilterKey>>(() => {
     if (initialStatusFilter && initialStatusFilter !== "all") {
       return createPracticeRecentStatusFilterSet([initialStatusFilter]);
@@ -166,9 +193,17 @@ export function PracticeRecentTransfersAllModal({
     [cursorYmd],
   );
 
+  const handleSearchChange = useCallback((value: string) => {
+    setSearch(value);
+    writeStoredRecentTransfersAllSearch(value);
+  }, []);
+
   useEffect(() => {
     if (!open) return;
-    setSearch(initialSearch);
+    // 부모가 비어 있는 initialSearch를 넘기면(기본) 직전 검색을 복원.
+    // 의뢰상세 → 전체보기 재오픈 시에도 검색창이 비지 않게 한다.
+    const seeded = String(initialSearch || "").trim();
+    setSearch(seeded ? seeded : readStoredRecentTransfersAllSearch(""));
     if (initialStatusFilter && initialStatusFilter !== "all") {
       setStatusFilters(createPracticeRecentStatusFilterSet([initialStatusFilter]));
     } else {
@@ -374,7 +409,7 @@ export function PracticeRecentTransfersAllModal({
   );
 
   const calendarItems = useMemo((): PracticeCalendarChipItem[] => {
-    return filteredTransfers.map((transfer) => {
+    const base = filteredTransfers.map((transfer) => {
       const lab =
         String(transfer.targetLab || "-")
           .replace(/\s*→.*$/g, "")
@@ -385,10 +420,17 @@ export function PracticeRecentTransfersAllModal({
         hasCustomAbutment: Boolean(transfer.hasCustomAbutment),
         abutmentDeliveryInfo: transfer.abutmentDeliveryInfo || null,
       });
+      const linkedArrivalDates =
+        Array.isArray(transfer.arrivalDates) && transfer.arrivalDates.length > 0
+          ? transfer.arrivalDates
+          : transfer.arrivalDate
+            ? [transfer.arrivalDate]
+            : [];
       return {
         id: `${transfer.id}:${transfer.transferId}`,
         orderDate: transfer.orderDate,
         arrivalDate: transfer.arrivalDate,
+        linkedArrivalDates,
         colorKey: String(transfer.targetLabAnchorId || "").trim() || lab,
         statusTone: resolvePracticeCalendarStatusTone(transfer.status),
         isRemake: Boolean(transfer.isRemake),
@@ -400,12 +442,23 @@ export function PracticeRecentTransfersAllModal({
         canDelete: canDeletePracticeTransferByStatus(transfer.status),
       };
     });
-  }, [filteredTransfers]);
+    return expandPracticeCalendarChipsByArrivalDates(base, dateKey);
+  }, [dateKey, filteredTransfers]);
 
   const calendarItemById = useMemo(() => {
     const map = new Map<string, (typeof filteredTransfers)[number]>();
     for (const transfer of filteredTransfers) {
-      map.set(`${transfer.id}:${transfer.transferId}`, transfer);
+      const baseId = `${transfer.id}:${transfer.transferId}`;
+      map.set(baseId, transfer);
+      const dates =
+        Array.isArray(transfer.arrivalDates) && transfer.arrivalDates.length > 0
+          ? transfer.arrivalDates
+          : transfer.arrivalDate
+            ? [transfer.arrivalDate]
+            : [];
+      for (const ymd of dates) {
+        map.set(`${baseId}:arr:${ymd}`, transfer);
+      }
     }
     return map;
   }, [filteredTransfers]);
@@ -488,7 +541,7 @@ export function PracticeRecentTransfersAllModal({
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   value={search}
-                  onChange={(e) => setSearch(e.target.value)}
+                  onChange={(e) => handleSearchChange(e.target.value)}
                   className="h-11 w-full rounded-xl border-slate-200 bg-slate-50 pl-9 text-base"
                   placeholder="기공소, 환자명 검색"
                 />
@@ -509,7 +562,7 @@ export function PracticeRecentTransfersAllModal({
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   value={search}
-                  onChange={(e) => setSearch(e.target.value)}
+                  onChange={(e) => handleSearchChange(e.target.value)}
                   className="h-9 w-full pl-9"
                   placeholder="기공소, 환자명, 전송ID 검색"
                 />

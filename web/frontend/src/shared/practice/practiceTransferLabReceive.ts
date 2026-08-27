@@ -61,6 +61,8 @@ export type PracticeTransferLabReceiveItem = {
   rawTransferMemo: string;
   orderDate: string;
   arrivalDate: string;
+  /** 누적 치과도착일(마지막=최종). 캘린더 다중 표시 */
+  arrivalDates?: string[];
   prosthesisTypes: string[];
   toothWorksSummary: string;
   status: string;

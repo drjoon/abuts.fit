@@ -246,6 +246,7 @@ import {
 } from "@/shared/shipping/hanjinTrackingLabel";
 import {
   PracticeRecentTransfersCalendar,
+  expandPracticeCalendarChipsByArrivalDates,
   resolvePracticeCalendarStatusTone,
   type PracticeCalendarChipItem,
   type PracticeCalendarDateKey,
@@ -947,6 +948,22 @@ export function RequestorPracticeReceivePage({
           rawTransferMemo: String(r.transferMemo || "").trim(),
           orderDate: String(r.orderDate || parsedMemo.orderDate || "").trim(),
           arrivalDate: String(r.arrivalDate || parsedMemo.arrivalDate || "").trim(),
+          arrivalDates: (() => {
+            const fromApi = Array.isArray(r.arrivalDates)
+              ? (r.arrivalDates as unknown[])
+                  .map((d) => String(d || "").trim())
+                  .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
+              : [];
+            const current = String(
+              r.arrivalDate || parsedMemo.arrivalDate || "",
+            ).trim();
+            if (fromApi.length > 0) {
+              return fromApi.includes(current) || !current
+                ? fromApi
+                : [...fromApi, current];
+            }
+            return current ? [current] : [];
+          })(),
           prosthesisTypes: parsedMemo.prosthesisTypes,
           toothWorksSummary: toothWorksFromApi?.length
             ? serializeToothWorks(toothWorksFromApi)
@@ -1731,7 +1748,7 @@ export function RequestorPracticeReceivePage({
   }, [filteredTransfers, rooms]);
 
   const calendarItems = useMemo((): PracticeCalendarChipItem[] => {
-    return sortedFilteredTransfers.map((transfer) => {
+    const base = sortedFilteredTransfers.map((transfer) => {
       const clinic =
         transfer.matchingMode === "auto"
           ? "자동 매칭"
@@ -1750,11 +1767,18 @@ export function RequestorPracticeReceivePage({
         abutmentDeliveryInfo: transfer.abutmentDeliveryInfo || null,
       });
       const transferId = String(transfer.transferId || transfer._id || "").trim();
+      const linkedArrivalDates =
+        Array.isArray(transfer.arrivalDates) && transfer.arrivalDates.length > 0
+          ? transfer.arrivalDates
+          : transfer.arrivalDate
+            ? [transfer.arrivalDate]
+            : [];
       return {
         id: transferId,
         orderDate: transfer.orderDate || transfer.createdAt,
         arrivalDate:
           transfer.arrivalDate || transfer.orderDate || transfer.createdAt,
+        linkedArrivalDates,
         colorKey:
           String(transfer.practiceBusinessAnchorId || "").trim() || clinic,
         statusTone: resolvePracticeCalendarStatusTone(
@@ -1768,13 +1792,24 @@ export function RequestorPracticeReceivePage({
         unreadCount: transferUnreadBadgeCount(transfer),
       };
     });
-  }, [sortedFilteredTransfers, transferUnreadBadgeCount]);
+    return expandPracticeCalendarChipsByArrivalDates(base, dateKey);
+  }, [dateKey, sortedFilteredTransfers, transferUnreadBadgeCount]);
 
   const calendarTransferById = useMemo(() => {
     const map = new Map<string, ReceivedPracticeTransfer>();
     for (const transfer of sortedFilteredTransfers) {
       const id = String(transfer.transferId || transfer._id || "").trim();
-      if (id) map.set(id, transfer);
+      if (!id) continue;
+      map.set(id, transfer);
+      const dates =
+        Array.isArray(transfer.arrivalDates) && transfer.arrivalDates.length > 0
+          ? transfer.arrivalDates
+          : transfer.arrivalDate
+            ? [transfer.arrivalDate]
+            : [];
+      for (const ymd of dates) {
+        map.set(`${id}:arr:${ymd}`, transfer);
+      }
     }
     return map;
   }, [sortedFilteredTransfers]);

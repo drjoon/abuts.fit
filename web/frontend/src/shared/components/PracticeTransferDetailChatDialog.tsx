@@ -13,6 +13,8 @@
 // - web/frontend/src/shared/files/s3BlobCache.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
 // - 2026-08-27: 채팅 버블에 보낸사람 이름 표시.
+// - 2026-08-27: 치과도착일 옆 「재도착일」날짜 선택(누적·과금 없음).
+// - 2026-08-27: 치과도착일 +1주 누적(동일 건·크레딧 미중복).
 // - 2026-08-23: 작업 파일 STL/PLY/OBJ 타일에 3D 썸네일 표시.
 // - 2026-08-23: 미제공 CA 안내 1줄 압축·수락 바 중복 안내 제거로 채팅 높이 확보.
 // - 2026-08-21: 수락 바 — "치과 메시지 확인 후 수락" 안내 제거.
@@ -57,11 +59,18 @@ import {
   useRef,
   useState,
 } from "react";
-import { Box, FileIcon, MessageSquare, Pencil, Trash2 } from "lucide-react";
+import { Box, CalendarClock, FileIcon, MessageSquare, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Calendar } from "@/components/ui/calendar";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { cn } from "@/shared/ui/cn";
 import { RESPONSIVE } from "@/shared/ui/responsive";
+import { toKstYmd, ymdToKstDate } from "@/shared/date/kst";
 import { type ChatMessage } from "@/shared/hooks/useChatRooms";
 import { ChatComposer } from "@/features/chat/components/ChatComposer";
 import { ChatMessageBubble } from "@/features/chat/components/ChatMessageBubble";
@@ -292,6 +301,10 @@ type PracticeTransferDetailChatDialogProps = {
   /** 치과: 수락 전 의뢰 내용을 작성 폼으로 불러와 수정 */
   onEditRequest?: () => void;
   editRequestDisabled?: boolean;
+  /** 치과: 쉐이드 변경 등 — 동일 건 재도착일 누적(신규·과금 없음). 선택 YMD 전달 */
+  onAppendArrival?: (arrivalYmd: string) => void;
+  appendArrivalDisabled?: boolean;
+  appendArrivalBusy?: boolean;
   /** 치과: 수락 전·작업취소 건을 휴지통으로 */
   onCancelRequest?: () => void;
   cancelRequestDisabled?: boolean;
@@ -377,11 +390,43 @@ export function PracticeTransferDetailChatDialog({
   sendDisabled = false,
   onEditRequest,
   editRequestDisabled = false,
+  onAppendArrival,
+  appendArrivalDisabled = false,
+  appendArrivalBusy = false,
   onCancelRequest,
   cancelRequestDisabled = false,
 }: PracticeTransferDetailChatDialogProps) {
   const { toast } = useToast();
+  const [rearrivalOpen, setRearrivalOpen] = useState(false);
+  const [rearrivalDraft, setRearrivalDraft] = useState<Date | undefined>(undefined);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const todayYmd = useMemo(() => toKstYmd(new Date()) || "", []);
+  const currentArrivalYmd = useMemo(
+    () => String(arrivalDate || "").trim(),
+    [arrivalDate],
+  );
+  const rearrivalMinYmd = todayYmd;
+
+  useEffect(() => {
+    if (!rearrivalOpen) return;
+    const seedYmd = currentArrivalYmd || todayYmd;
+    setRearrivalDraft(ymdToKstDate(seedYmd) || undefined);
+  }, [rearrivalOpen, currentArrivalYmd, todayYmd]);
+
+  const confirmRearrival = useCallback(() => {
+    const ymd = toKstYmd(rearrivalDraft) || "";
+    if (!ymd || !onAppendArrival) return;
+    if (todayYmd && ymd < todayYmd) {
+      toast({
+        title: "재도착일 확인",
+        description: "재도착일은 오늘 이후로 선택해 주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setRearrivalOpen(false);
+    onAppendArrival(ymd);
+  }, [onAppendArrival, rearrivalDraft, todayYmd, toast]);
   const [previewKind, setPreviewKind] = useState<ModelPreviewKind>("model");
   const [previewFile, setPreviewFile] = useState<File | null>(null);
   const [previewMeta, setPreviewMeta] =
@@ -1050,7 +1095,7 @@ export function PracticeTransferDetailChatDialog({
           <div className="grid h-full min-h-0 grid-cols-1 grid-rows-[minmax(0,0.3fr)_minmax(0,0.7fr)] gap-4 lg:grid-cols-2 lg:grid-rows-[minmax(0,1fr)]">
             <div className="min-h-0 space-y-4 overflow-y-auto rounded-lg border bg-card p-3 text-[15px]">
               {onEditRequest || onCancelRequest ? (
-                <div className="flex justify-end gap-2">
+                <div className="flex flex-wrap justify-end gap-2">
                   {onCancelRequest ? (
                     <Button
                       type="button"
@@ -1081,6 +1126,7 @@ export function PracticeTransferDetailChatDialog({
               ) : null}
               <div className="grid grid-cols-2 gap-3">
                 {summaryItems.map((row, idx) => {
+                  const isArrivalRow = row.label === "치과도착일";
                   const valueNode = (
                     <p
                       className={
@@ -1092,24 +1138,124 @@ export function PracticeTransferDetailChatDialog({
                       {row.value || "-"}
                     </p>
                   );
+                  const valueWithAction =
+                    isArrivalRow && onAppendArrival ? (
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {row.tooltip ? (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="inline-flex cursor-help">
+                                {valueNode}
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent
+                              side="top"
+                              className="max-w-xs text-left text-xs leading-relaxed"
+                            >
+                              {row.tooltip}
+                            </TooltipContent>
+                          </Tooltip>
+                        ) : (
+                          valueNode
+                        )}
+                        <Popover
+                          open={rearrivalOpen}
+                          onOpenChange={setRearrivalOpen}
+                        >
+                          <PopoverTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-7 shrink-0 gap-1 px-2 text-xs"
+                              disabled={
+                                appendArrivalDisabled || appendArrivalBusy
+                              }
+                              title="새 치과도착일을 선택합니다. 이전 날짜는 캘린더에 남고 크레딧은 추가 차감되지 않습니다."
+                            >
+                              <CalendarClock className="h-3.5 w-3.5" />
+                              {appendArrivalBusy ? "반영 중…" : "재도착일"}
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent
+                            align="start"
+                            className="w-auto p-0"
+                            onOpenAutoFocus={(e) => e.preventDefault()}
+                          >
+                            <div className="border-b px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
+                              재도착일(하루)만 선택합니다. 이전 도착일은
+                              캘린더에 유지되고, 크레딧은 추가 차감되지
+                              않습니다.
+                            </div>
+                            <Calendar
+                              mode="single"
+                              required
+                              numberOfMonths={1}
+                              selected={rearrivalDraft}
+                              onSelect={(date) => {
+                                if (date) setRearrivalDraft(date);
+                              }}
+                              defaultMonth={rearrivalDraft}
+                              disabled={(date) => {
+                                const ymd = toKstYmd(date) || "";
+                                if (!ymd) return true;
+                                if (rearrivalMinYmd && ymd < rearrivalMinYmd) {
+                                  return true;
+                                }
+                                return false;
+                              }}
+                              classNames={{
+                                cell: "h-9 w-9 text-center text-sm p-0 relative focus-within:relative focus-within:z-20",
+                                day_range_start: "",
+                                day_range_end: "",
+                                day_range_middle: "",
+                              }}
+                              initialFocus
+                            />
+                            <div className="flex items-center justify-end gap-2 border-t px-3 py-2">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setRearrivalOpen(false)}
+                              >
+                                취소
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                disabled={
+                                  !rearrivalDraft || appendArrivalBusy
+                                }
+                                onClick={() => confirmRearrival()}
+                              >
+                                적용
+                              </Button>
+                            </div>
+                          </PopoverContent>
+                        </Popover>
+                      </div>
+                    ) : row.tooltip ? (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="inline-flex cursor-help">
+                            {valueNode}
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent
+                          side="top"
+                          className="max-w-xs text-left text-xs leading-relaxed"
+                        >
+                          {row.tooltip}
+                        </TooltipContent>
+                      </Tooltip>
+                    ) : (
+                      valueNode
+                    );
                   return (
                     <div key={`${row.label}:${idx}`}>
                       <p className="text-muted-foreground">{row.label}</p>
-                      {row.tooltip ? (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span className="inline-flex cursor-help">{valueNode}</span>
-                          </TooltipTrigger>
-                          <TooltipContent
-                            side="top"
-                            className="max-w-xs text-left text-xs leading-relaxed"
-                          >
-                            {row.tooltip}
-                          </TooltipContent>
-                        </Tooltip>
-                      ) : (
-                        valueNode
-                      )}
+                      {valueWithAction}
                     </div>
                   );
                 })}

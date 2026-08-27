@@ -1245,6 +1245,7 @@ export const PracticeFileTransferPage = ({
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteTargetTransfer, setDeleteTargetTransfer] = useState<RecentTransferItem | null>(null);
   const [deletingTransfer, setDeletingTransfer] = useState(false);
+  const [appendArrivalBusy, setAppendArrivalBusy] = useState(false);
   const [restoreConfirmOpen, setRestoreConfirmOpen] = useState(false);
   const [restoreTargetTransfer, setRestoreTargetTransfer] = useState<RecentTransferItem | null>(null);
   const [restoringTransfer, setRestoringTransfer] = useState(false);
@@ -3930,6 +3931,99 @@ export const PracticeFileTransferPage = ({
     setRemakeSelectedIds([key]);
     setRemakeConfirmOpen(true);
   }, []);
+
+  const handleAppendArrival = useCallback(async (arrivalYmdRaw?: string) => {
+    if (!authToken || !selectedTransfer) return;
+    const transferId = String(selectedTransfer.transferId || "").trim();
+    if (!transferId || transferId === "-") {
+      toast({
+        title: "도착일 변경 실패",
+        description: "전송ID를 확인할 수 없습니다.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const arrivalYmd = String(arrivalYmdRaw || "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(arrivalYmd)) {
+      toast({
+        title: "도착일 변경 실패",
+        description: "재도착일을 선택해 주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setAppendArrivalBusy(true);
+    try {
+      const res = await apiFetch<{
+        message?: string;
+        data?: {
+          arrivalDates?: string[];
+          arrivalDate?: string;
+          previousArrivalDate?: string | null;
+          transferMemo?: string;
+          billingUnchanged?: boolean;
+        };
+      }>({
+        path: `/api/practice/transfers/${encodeURIComponent(transferId)}/append-arrival`,
+        method: "POST",
+        token: authToken,
+        jsonBody: { arrivalYmd },
+      });
+      if (!res.ok) {
+        const body = res.data && typeof res.data === "object" ? res.data : {};
+        toast({
+          title: "도착일 변경 실패",
+          description:
+            String((body as { message?: string }).message || "").trim() ||
+            "치과도착일을 갱신하지 못했습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+      const data = res.data?.data || {};
+      const nextArrival = String(data.arrivalDate || "").trim();
+      const nextDates = Array.isArray(data.arrivalDates)
+        ? data.arrivalDates.map((d) => String(d || "").trim()).filter(Boolean)
+        : [];
+      const nextMemo = String(data.transferMemo || "").trim();
+      const patch = (prev: RecentTransferItem): RecentTransferItem => ({
+        ...prev,
+        arrivalDate: nextArrival || prev.arrivalDate,
+        arrivalDates: nextDates.length ? nextDates : prev.arrivalDates,
+        transferMemo: nextMemo || prev.transferMemo,
+        rawTransferMemo: nextMemo || prev.rawTransferMemo,
+      });
+      setSelectedTransfer((prev) => (prev ? patch(prev) : prev));
+      setRecentRequests((prev) =>
+        prev.map((row) =>
+          String(row.transferId || "").trim() === transferId
+            ? {
+                ...row,
+                arrivalDate: nextArrival || row.arrivalDate,
+                arrivalDates: nextDates.length ? nextDates : row.arrivalDates,
+                transferMemo: nextMemo || row.transferMemo,
+                rawTransferMemo: nextMemo || row.rawTransferMemo,
+              }
+            : row,
+        ),
+      );
+      toast({
+        title: "재도착일 반영",
+        description: nextArrival
+          ? `최종 도착일 ${nextArrival}. 이전 날짜는 캘린더에 유지되며 크레딧은 추가 차감되지 않습니다.`
+          : "동일 건에 도착일이 누적되었습니다.",
+      });
+      void loadRecentRequests({ silent: true });
+    } catch (error) {
+      toast({
+        title: "도착일 변경 실패",
+        description: error instanceof Error ? error.message : "네트워크 오류",
+        variant: "destructive",
+      });
+    } finally {
+      setAppendArrivalBusy(false);
+    }
+  }, [authToken, loadRecentRequests, selectedTransfer, toast]);
 
   const handleConfirmRemake = useCallback(async () => {
     if (!authToken || remakeSelectedTransfers.length === 0) return;
@@ -8087,6 +8181,23 @@ export const PracticeFileTransferPage = ({
             canEditPracticeTransferByStatus(selectedTransfer.status)
               ? () => handleBeginEditSentTransfer(selectedTransfer)
               : undefined
+          }
+          onAppendArrival={
+            selectedTransfer &&
+            selectedTransfer.transferId &&
+            selectedTransfer.transferId !== "-" &&
+            selectedTransfer.status !== "취소" &&
+            selectedTransfer.status !== "작업취소"
+              ? (arrivalYmd) => void handleAppendArrival(arrivalYmd)
+              : undefined
+          }
+          appendArrivalBusy={appendArrivalBusy}
+          orderDate={selectedTransfer?.orderDate || null}
+          arrivalDate={selectedTransfer?.arrivalDate || null}
+          orderedAt={
+            selectedTransfer?.createdAtTs
+              ? new Date(selectedTransfer.createdAtTs)
+              : null
           }
           onCancelRequest={
             selectedTransfer &&

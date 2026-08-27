@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-27: 치과도착일 누적(arrivalDates) — 구간 내 아무 날짜라도 매칭
 // - 2026-08-27: 캘린더 3주 필터에 미확인(전 기간) OR 병합 헬퍼 추가
 // - 2026-08-27: 캘린더 표시 구간(fromYmd~toYmd) + 주문일/치과도착일 Mongo 필터 SSOT
 // related files:
@@ -6,6 +7,7 @@
 // - web/frontend/src/shared/practice/labReceiveCalendarYmdRange.ts
 // - web/backend/utils/labReceiveCalendarDateKey.util.js
 // - web/backend/utils/practiceTransferRush.js
+// - web/backend/utils/practiceTransferArrivalDates.js
 
 import { normalizeLabReceiveCalendarDateKey } from "./labReceiveCalendarDateKey.util.js";
 
@@ -40,6 +42,7 @@ export function mergeCalendarRangeWithUnreadFilter(calendarFilter, unreadFilter)
 
 /**
  * transferMemo 주문일/치과도착일 파싱 실패 시 createdAt KST YMD로 대체.
+ * arrivalDate: arrivalDates 누적 중 구간 내 날짜가 있으면 매칭(이전·최종 모두).
  * @param {{ fromYmd: string, toYmd: string, dateKey: "orderDate"|"arrivalDate" }} range
  */
 export function buildPracticeTransferCalendarDateRangeFilter(range) {
@@ -55,53 +58,83 @@ export function buildPracticeTransferCalendarDateRangeFilter(range) {
       ? "\\[\\s*주문일\\s*:\\s*([0-9]{4}-[0-9]{2}-[0-9]{2})\\s*\\]"
       : "\\[\\s*(?:치과도착일|도착일)\\s*:\\s*([0-9]{4}-[0-9]{2}-[0-9]{2})\\s*\\]";
 
-  return {
-    $expr: {
-      $let: {
-        vars: {
-          memoYmd: {
-            $let: {
-              vars: {
-                matched: {
-                  $regexFind: {
-                    input: { $ifNull: ["$transferMemo", ""] },
-                    regex: memoRegex,
-                    options: "i",
-                  },
-                },
-              },
-              in: {
-                $cond: [
-                  { $ne: ["$$matched", null] },
-                  { $arrayElemAt: ["$$matched.captures", 0] },
-                  null,
-                ],
-              },
-            },
-          },
-          createdYmd: {
-            $dateToString: {
-              format: "%Y-%m-%d",
-              date: "$createdAt",
-              timezone: "Asia/Seoul",
-            },
-          },
-        },
-        in: {
+  const memoOrCreatedExpr = {
+    $let: {
+      vars: {
+        memoYmd: {
           $let: {
             vars: {
-              anchorYmd: { $ifNull: ["$$memoYmd", "$$createdYmd"] },
+              matched: {
+                $regexFind: {
+                  input: { $ifNull: ["$transferMemo", ""] },
+                  regex: memoRegex,
+                  options: "i",
+                },
+              },
             },
             in: {
-              $and: [
-                { $ne: ["$$anchorYmd", null] },
-                { $gte: ["$$anchorYmd", fromYmd] },
-                { $lte: ["$$anchorYmd", toYmd] },
+              $cond: [
+                { $ne: ["$$matched", null] },
+                { $arrayElemAt: ["$$matched.captures", 0] },
+                null,
               ],
             },
           },
         },
+        createdYmd: {
+          $dateToString: {
+            format: "%Y-%m-%d",
+            date: "$createdAt",
+            timezone: "Asia/Seoul",
+          },
+        },
+      },
+      in: {
+        $let: {
+          vars: {
+            anchorYmd: { $ifNull: ["$$memoYmd", "$$createdYmd"] },
+          },
+          in: {
+            $and: [
+              { $ne: ["$$anchorYmd", null] },
+              { $gte: ["$$anchorYmd", fromYmd] },
+              { $lte: ["$$anchorYmd", toYmd] },
+            ],
+          },
+        },
       },
     },
+  };
+
+  if (dateKey !== "arrivalDate") {
+    return { $expr: memoOrCreatedExpr };
+  }
+
+  // 누적 도착일 중 하나라도 구간에 있으면 포함 + 레거시(메모만) 호환
+  return {
+    $or: [
+      {
+        $expr: {
+          $gt: [
+            {
+              $size: {
+                $filter: {
+                  input: { $ifNull: ["$arrivalDates", []] },
+                  as: "d",
+                  cond: {
+                    $and: [
+                      { $gte: ["$$d", fromYmd] },
+                      { $lte: ["$$d", toYmd] },
+                    ],
+                  },
+                },
+              },
+            },
+            0,
+          ],
+        },
+      },
+      { $expr: memoOrCreatedExpr },
+    ],
   };
 }
