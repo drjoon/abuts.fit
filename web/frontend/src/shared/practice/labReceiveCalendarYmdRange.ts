@@ -1,11 +1,12 @@
 // change-log:
-// - 2026-08-27: DB 조회는 화면 3주(전주~이번주~다음주). UI 스크롤 그리드는 별도.
+// - 2026-08-27: DB 조회는 화면 3주(전주~이번주~다음주). 미확인은 서버에서 창 밖도 OR 포함.
 // - 2026-08-27: 캘린더 그리드 첫·마지막 YMD SSOT — 주문일/치과도착일 범위 DB 조회용
 // related files:
 // - web/frontend/src/pages/practice/components/PracticeRecentTransfersCalendar.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/pages/practice/components/PracticeRecentTransfersAllModal.tsx
 // - web/backend/utils/practiceTransferCalendarRange.util.js
+// - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 
 import { kstAddCivilDays, kstStartOfWeek, toKstYmd } from "@/shared/date/kst";
 import type { LabReceiveCalendarDateKey } from "@/shared/practice/labReceiveCalendarDateKey";
@@ -19,7 +20,7 @@ export const LAB_RECEIVE_CALENDAR_WEEKS_AFTER = 26;
 
 /**
  * 한 화면에 보이는 3주 — 기준주 전주 + 기준주 + 다음주.
- * DB fromYmd~toYmd 조회에만 사용.
+ * DB fromYmd~toYmd 조회에만 사용. (미확인은 서버가 이 창과 OR로 합침)
  */
 export const LAB_RECEIVE_CALENDAR_FETCH_WEEKS_BEFORE = 1;
 export const LAB_RECEIVE_CALENDAR_FETCH_WEEKS_AFTER = 1;

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-27: 캘린더 3주 필터에 미확인(전 기간) OR 병합 헬퍼 추가
 // - 2026-08-27: 캘린더 표시 구간(fromYmd~toYmd) + 주문일/치과도착일 Mongo 필터 SSOT
 // related files:
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
@@ -23,6 +24,18 @@ export function parsePracticeTransferCalendarRangeQuery(query = {}) {
   if (fromYmd > toYmd) return null;
   const dateKey = normalizeLabReceiveCalendarDateKey(query.dateKey);
   return { fromYmd, toYmd, dateKey };
+}
+
+/**
+ * 화면 3주 날짜 필터 ∪ 미확인(사이드바 배지와 동일 집합).
+ * 창 밖 미확인이 캘린더 조회에서 빠지지 않게 한다.
+ * @param {Record<string, unknown>} calendarFilter
+ * @param {Record<string, unknown>} unreadFilter
+ */
+export function mergeCalendarRangeWithUnreadFilter(calendarFilter, unreadFilter) {
+  return {
+    $or: [calendarFilter, unreadFilter],
+  };
 }
 
 /**

@@ -2,6 +2,7 @@ import { describe, expect, it } from "@jest/globals";
 
 import {
   buildPracticeTransferCalendarDateRangeFilter,
+  mergeCalendarRangeWithUnreadFilter,
   parsePracticeTransferCalendarRangeQuery,
 } from "../../utils/practiceTransferCalendarRange.util.js";
 
@@ -64,5 +65,15 @@ describe("buildPracticeTransferCalendarDateRangeFilter", () => {
     });
     expect(filter).toBeTruthy();
     expect(String(JSON.stringify(filter))).toContain("치과도착일");
+  });
+});
+
+describe("mergeCalendarRangeWithUnreadFilter", () => {
+  it("ORs date-range filter with unread match so out-of-window unread stays listed", () => {
+    const calendarFilter = { createdAt: { $gte: "x" } };
+    const unreadFilter = { $and: [{ requestorReadAt: null }] };
+    expect(mergeCalendarRangeWithUnreadFilter(calendarFilter, unreadFilter)).toEqual({
+      $or: [calendarFilter, unreadFilter],
+    });
   });
 });

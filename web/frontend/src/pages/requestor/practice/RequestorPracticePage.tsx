@@ -25,6 +25,7 @@
 // - web/frontend/src/shared/practice/labReceiveCalendarHiddenWeekdays.ts
 // - web/backend/utils/labReceiveCalendarHiddenWeekdays.util.js
 // - web/backend/controllers/users/user.controller.js
+// - 2026-08-27: 미확인은 3주 창 밖이어도 목록·안내 바에 포함(사이드바 배지와 맞춤). 클릭 시 해당일로 점프.
 // - 2026-08-27: 미확인 상단 안내 바 복구(버튼·뱃지 없음). 미확인 건은 캘린더에 항상 표시.
 // - 2026-08-22: 기공의뢰수신 캘린더 숨길 요일 계정 preferences에 저장.
 // - 2026-08-21: 작업취소 후 어벗츠로의뢰 진행중/출고예정 건수 쿼리 무효화.
@@ -230,7 +231,7 @@ import {
   resolvePracticeTransferListPatientName,
   resolvePracticeTransferListToothNumbers,
 } from "@/shared/components/practice/PracticeRecentTransferListCardDetail";
-import { toKstYmd } from "@/shared/date/kst";
+import { toKstYmd, toKstYmdLoose } from "@/shared/date/kst";
 import { normalizeLabReceiveCalendarDateKey } from "@/shared/practice/labReceiveCalendarDateKey";
 import { normalizeLabReceiveCalendarHiddenWeekdays } from "@/shared/practice/labReceiveCalendarHiddenWeekdays";
 import {
@@ -4507,7 +4508,20 @@ export function RequestorPracticeReceivePage({
     );
   }, [baseFilteredTransfers, transferUnreadBadgeCount]);
 
-  const unreadNoticeTotal = loadedUnreadNoticeTotal;
+  // 사이드바와 동일: 서버 미확인(전 기간) + 채팅 unread. 로드 합이 더 크면(창 안 채팅) 그쪽 사용.
+  const unreadNoticeTotal = useMemo(() => {
+    const chatUnreadTotal = Array.from(chatUnreadByTransferId.values()).reduce(
+      (sum, n) => sum + Math.max(0, Number(n) || 0),
+      0,
+    );
+    const sidebarAligned =
+      Math.max(0, Number(receivedTransferUnreadCount || 0)) + chatUnreadTotal;
+    return Math.max(loadedUnreadNoticeTotal, sidebarAligned);
+  }, [
+    chatUnreadByTransferId,
+    loadedUnreadNoticeTotal,
+    receivedTransferUnreadCount,
+  ]);
 
   const unreadNoticeItems = useMemo(() => {
     return baseFilteredTransfers
@@ -4529,6 +4543,18 @@ export function RequestorPracticeReceivePage({
       })
       .filter((row): row is NonNullable<typeof row> => Boolean(row));
   }, [baseFilteredTransfers, transferUnreadBadgeCount]);
+
+  const jumpCalendarToTransferDate = useCallback(
+    (transfer: ReceivedPracticeTransfer) => {
+      const raw =
+        dateKey === "arrivalDate"
+          ? transfer.arrivalDate || transfer.orderDate || transfer.createdAt
+          : transfer.orderDate || transfer.createdAt;
+      const ymd = toKstYmdLoose(raw) || toKstYmd(raw);
+      if (ymd) setCursorYmd(ymd);
+    },
+    [dateKey],
+  );
 
   const resetLabStatusFiltersToDefault = useCallback(() => {
     setStatusFilters(createLabReceiveStatusFilterSet());
@@ -4593,7 +4619,9 @@ export function RequestorPracticeReceivePage({
                   (row) =>
                     String(row.transferId || row._id || "").trim() === id,
                 );
-              if (transfer) void openTransferDialog(transfer);
+              if (!transfer) return;
+              jumpCalendarToTransferDate(transfer);
+              void openTransferDialog(transfer);
             }}
             className="shrink-0"
           />

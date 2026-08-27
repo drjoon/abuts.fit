@@ -78,6 +78,7 @@ import {
 } from "../../utils/practiceTransferRush.js";
 import {
   buildPracticeTransferCalendarDateRangeFilter,
+  mergeCalendarRangeWithUnreadFilter,
   parsePracticeTransferCalendarRangeQuery,
   PRACTICE_TRANSFER_CALENDAR_RANGE_MAX,
 } from "../../utils/practiceTransferCalendarRange.util.js";
@@ -297,6 +298,30 @@ const unreadCountCacheKey = (scopeOrLabId) => {
 
 const invalidateUnreadCountCache = (scopeOrLabId) => {
   deleteRequestPerfCacheValue(unreadCountCacheKey(scopeOrLabId));
+};
+
+/**
+ * 사이드바 received-unread-count와 동일: 미확인(requestorReadAt null) + 거부/거절 제외.
+ * 캘린더 3주 조회에도 OR로 합쳐 창 밖 미확인이 캘린더에서 빠지지 않게 한다.
+ * @param {string|null|undefined} labAnchorId
+ * @returns {Record<string, unknown>[]}
+ */
+const buildLabReceiveUnreadMatchParts = (labAnchorId) => {
+  const parts = [
+    { status: { $nin: ["deleted", "canceled"] } },
+    { requestorReadAt: null },
+  ];
+  if (labAnchorId && Types.ObjectId.isValid(labAnchorId)) {
+    parts.push({
+      $or: [{ labRejectedAt: null }, { labRejectedAt: { $exists: false } }],
+    });
+    parts.push({
+      "autoMatch.declinedLabAnchorIds": {
+        $nin: [new Types.ObjectId(labAnchorId)],
+      },
+    });
+  }
+  return parts;
 };
 
 /**
@@ -4206,15 +4231,19 @@ export async function getReceivedPracticeTransfers(req, res) {
     // 레거시: 3시간 deadline 만료 재공개는 폐기(수락은 작업완료/취소까지 유지).
     // 치과 의뢰 삭제(status=deleted|레거시 canceled)는 수신 목록·총건수에서 제외.
     // 기공소 작업취소(workCanceledAt, status=active)는 계속 「취소」로 노출.
+    // 캘린더 3주 창 + 미확인(전 기간) OR — 사이드바 배지와 캘린더 누락을 막는다.
     const calendarFilter = calendarRange
       ? buildPracticeTransferCalendarDateRangeFilter(calendarRange)
       : null;
+    const unreadMatchParts = buildLabReceiveUnreadMatchParts(labAnchorId);
     const listScope = calendarFilter
       ? {
           $and: [
             scope,
             practiceTransferNotDeletedMongoFilter(),
-            calendarFilter,
+            mergeCalendarRangeWithUnreadFilter(calendarFilter, {
+              $and: unreadMatchParts,
+            }),
           ],
         }
       : { $and: [scope, practiceTransferNotDeletedMongoFilter()] };
@@ -4238,26 +4267,7 @@ export async function getReceivedPracticeTransfers(req, res) {
         ? Promise.resolve(null)
         : PracticeTransfer.countDocuments(listScope),
       PracticeTransfer.countDocuments({
-        ...scope,
-        status: { $nin: ["deleted", "canceled"] },
-        requestorReadAt: null,
-        ...(labAnchorId && Types.ObjectId.isValid(labAnchorId)
-          ? {
-              $and: [
-                {
-                  $or: [
-                    { labRejectedAt: null },
-                    { labRejectedAt: { $exists: false } },
-                  ],
-                },
-                {
-                  "autoMatch.declinedLabAnchorIds": {
-                    $nin: [new Types.ObjectId(labAnchorId)],
-                  },
-                },
-              ],
-            }
-          : {}),
+        $and: [scope, ...unreadMatchParts],
       }),
     ]);
 
@@ -4483,26 +4493,7 @@ export async function getReceivedPracticeTransferUnreadCount(req, res) {
 
     const unreadCount = await withRequestPerfInFlight(cacheKey, async () => {
       const count = await PracticeTransfer.countDocuments({
-        ...scope,
-        status: { $nin: ["deleted", "canceled"] },
-        requestorReadAt: null,
-        ...(labAnchorId && Types.ObjectId.isValid(labAnchorId)
-          ? {
-              $and: [
-                {
-                  $or: [
-                    { labRejectedAt: null },
-                    { labRejectedAt: { $exists: false } },
-                  ],
-                },
-                {
-                  "autoMatch.declinedLabAnchorIds": {
-                    $nin: [new Types.ObjectId(labAnchorId)],
-                  },
-                },
-              ],
-            }
-          : {}),
+        $and: [scope, ...buildLabReceiveUnreadMatchParts(labAnchorId)],
       });
       setRequestPerfCacheValue(cacheKey, { unreadCount: count }, 10 * 1000);
       return count;

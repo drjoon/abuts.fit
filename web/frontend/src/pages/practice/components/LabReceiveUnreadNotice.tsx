@@ -1,6 +1,7 @@
 /**
  * 기공의뢰수신 — 미확인 건 상단 안내 바 + 클릭 가능한 의뢰 칩.
  * 상태 필터·캘린더 스크롤과 무관하게 미확인을 항상 알려 수락 누락을 막는다.
+ * (목록은 3주 창 + 미확인 전 기간 OR로 서버에서 합친다.)
  *
  * related files:
  * - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
