@@ -89,8 +89,10 @@ import {
 } from "../../utils/practiceTransferArrivalDates.js";
 import {
   buildPracticeTransferCalendarDateRangeFilter,
+  filterTransferDocsToCalendarRange,
   mergeCalendarRangeWithUnreadFilter,
   parsePracticeTransferCalendarRangeQuery,
+  PRACTICE_TRANSFER_CALENDAR_LIST_SELECT,
   PRACTICE_TRANSFER_CALENDAR_RANGE_MAX,
 } from "../../utils/practiceTransferCalendarRange.util.js";
 import {
@@ -960,6 +962,62 @@ const toVirtualRequestRows = (transferDoc) => {
   }));
 };
 
+/**
+ * 캘린더용 — 전송 1건 = 응답 1행(파일수만큼 복제하지 않음).
+ * 칩·검색용 환자/치식만 합치고, fee/배송 enrich는 생략.
+ */
+const toCalendarOwnedRequestRows = (transferDoc) => {
+  const rows = toVirtualRequestRows(transferDoc);
+  if (!rows.length) return [];
+  const first = rows[0];
+  const patients = [];
+  const teeth = [];
+  const seenPatient = new Set();
+  const seenTooth = new Set();
+  for (const row of rows) {
+    const patient = String(row?.caseInfos?.patientName || "").trim();
+    if (patient && patient !== "-" && !seenPatient.has(patient)) {
+      seenPatient.add(patient);
+      patients.push(patient);
+    }
+    const tooth = String(row?.caseInfos?.tooth || "").trim();
+    if (tooth && !seenTooth.has(tooth)) {
+      seenTooth.add(tooth);
+      teeth.push(tooth);
+    }
+  }
+  return [
+    {
+      ...first,
+      feeQuote: null,
+      labRating: null,
+      abutmentDeliveryInfo: null,
+      caseInfos: {
+        ...first.caseInfos,
+        patientName: patients.join(", ") || first.caseInfos?.patientName || "",
+        tooth: teeth.join(",") || first.caseInfos?.tooth || "",
+      },
+    },
+  ];
+};
+
+const isLabReceiveUnreadDoc = (doc, labAnchorId) => {
+  const status = String(doc?.status || "").trim();
+  if (status === "deleted" || status === "canceled") return false;
+  if (doc?.requestorReadAt) return false;
+  if (doc?.labRejectedAt) {
+    const rejectedBy = String(doc?.labRejectedByLabAnchorId || "").trim();
+    if (!labAnchorId || !rejectedBy || rejectedBy === String(labAnchorId)) {
+      return false;
+    }
+  }
+  const declined = Array.isArray(doc?.autoMatch?.declinedLabAnchorIds)
+    ? doc.autoMatch.declinedLabAnchorIds.map((id) => String(id || "").trim())
+    : [];
+  if (labAnchorId && declined.includes(String(labAnchorId))) return false;
+  return true;
+};
+
 const buildReceivedScope = async (req) => {
   const role = String(req.user?.role || "").trim();
   if (role === "admin") {
@@ -1504,6 +1562,9 @@ const fetchOwnedPracticeTransfersPage = async ({
   const calendarFilter = calendarRange
     ? buildPracticeTransferCalendarDateRangeFilter(calendarRange)
     : null;
+  const calendarSelect = calendarRange
+    ? PRACTICE_TRANSFER_CALENDAR_LIST_SELECT
+    : null;
 
   if (calendarRange && calendarFilter) {
     const take = PRACTICE_TRANSFER_CALENDAR_RANGE_MAX;
@@ -1515,36 +1576,46 @@ const fetchOwnedPracticeTransfersPage = async ({
       typeof scope === "object" &&
       Array.isArray(scope.$or);
 
+    const applyCalendarSelect = (query) =>
+      calendarSelect ? query.select(calendarSelect) : query;
+
     if (canSplit) {
       const ownerIds = Array.isArray(practiceUserObjectIds)
         ? practiceUserObjectIds
         : [];
       const [byAnchor, byLegacy] = await Promise.all([
-        PracticeTransfer.find({
-          practiceBusinessAnchorId: new Types.ObjectId(anchorId),
-          ...calendarFilter,
-        })
-          .sort(sort)
-          .limit(take)
-          .lean(),
+        applyCalendarSelect(
+          PracticeTransfer.find({
+            practiceBusinessAnchorId: new Types.ObjectId(anchorId),
+            ...calendarFilter,
+          })
+            .sort(sort)
+            .limit(take),
+        ).lean(),
         ownerIds.length
-          ? PracticeTransfer.find({
-              practiceBusinessAnchorId: null,
-              practiceUserId: { $in: ownerIds },
-              ...calendarFilter,
-            })
-              .sort(sort)
-              .limit(take)
-              .lean()
+          ? applyCalendarSelect(
+              PracticeTransfer.find({
+                practiceBusinessAnchorId: null,
+                practiceUserId: { $in: ownerIds },
+                ...calendarFilter,
+              })
+                .sort(sort)
+                .limit(take),
+            ).lean()
           : Promise.resolve([]),
       ]);
-      return mergeNewestTransferDocs(byAnchor, byLegacy, take);
+      return filterTransferDocsToCalendarRange(
+        mergeNewestTransferDocs(byAnchor, byLegacy, take),
+        calendarRange,
+      );
     }
 
-    return PracticeTransfer.find({ ...scope, ...calendarFilter })
-      .sort(sort)
-      .limit(take)
-      .lean();
+    const docs = await applyCalendarSelect(
+      PracticeTransfer.find({ ...scope, ...calendarFilter })
+        .sort(sort)
+        .limit(take),
+    ).lean();
+    return filterTransferDocsToCalendarRange(docs, calendarRange);
   }
 
   const pageSize = Math.max(1, Number(limit) || 1);
@@ -4151,80 +4222,92 @@ export async function getMyPracticeTransfers(req, res) {
         ? fetched.slice(0, limit)
         : fetched;
 
-    const quotesById = await buildFeeQuotesForTransferDocs({ docs });
-    const abutmentDeliveryById = await mapAbutmentDeliveryByTransferDocs(docs);
+    // 캘린더: fee/배송/별점 enrich 생략(칩에 불필요, 상세는 별도 갱신)
+    const quotesById = calendarRange
+      ? new Map()
+      : await buildFeeQuotesForTransferDocs({ docs });
+    const abutmentDeliveryById = calendarRange
+      ? new Map()
+      : await mapAbutmentDeliveryByTransferDocs(docs);
 
     let practiceRatings = [];
-    const practiceAnchorForRatings = String(
-      req.user?.businessAnchorId || "",
-    ).trim();
-    if (practiceAnchorForRatings && Types.ObjectId.isValid(practiceAnchorForRatings)) {
-      const practiceDoc = await BusinessAnchor.findById(practiceAnchorForRatings)
-        .select({ practiceLabRatings: 1 })
-        .lean();
-      practiceRatings = Array.isArray(practiceDoc?.practiceLabRatings)
-        ? practiceDoc.practiceLabRatings
-        : [];
-    } else if (role === "admin") {
-      // 관리자: 목록의 치과 앵커별 rating을 모아 조회(기공소에는 노출하지 않음)
-      const practiceIds = [
-        ...new Set(
-          docs
-            .map((doc) => String(doc?.practiceBusinessAnchorId || "").trim())
-            .filter((id) => id && Types.ObjectId.isValid(id)),
-        ),
-      ];
-      if (practiceIds.length) {
-        const anchors = await BusinessAnchor.find({
-          _id: { $in: practiceIds.map((id) => new Types.ObjectId(id)) },
-        })
+    if (!calendarRange) {
+      const practiceAnchorForRatings = String(
+        req.user?.businessAnchorId || "",
+      ).trim();
+      if (practiceAnchorForRatings && Types.ObjectId.isValid(practiceAnchorForRatings)) {
+        const practiceDoc = await BusinessAnchor.findById(practiceAnchorForRatings)
           .select({ practiceLabRatings: 1 })
           .lean();
-        const byPractice = new Map(
-          anchors.map((a) => [String(a._id), a.practiceLabRatings || []]),
-        );
-        const requests = docs.flatMap((doc) => {
-          const feeQuote = quotesById.get(String(doc?._id || "")) || null;
-          const ratings =
-            byPractice.get(String(doc?.practiceBusinessAnchorId || "")) || [];
-          const labId = String(resolvePerformingLabAnchorId(doc) || "").trim();
-          const labRating = toPracticeLabRatingPublicApi(
-            findPracticeLabRating(ratings, labId),
+        practiceRatings = Array.isArray(practiceDoc?.practiceLabRatings)
+          ? practiceDoc.practiceLabRatings
+          : [];
+      } else if (role === "admin") {
+        // 관리자: 목록의 치과 앵커별 rating을 모아 조회(기공소에는 노출하지 않음)
+        const practiceIds = [
+          ...new Set(
+            docs
+              .map((doc) => String(doc?.practiceBusinessAnchorId || "").trim())
+              .filter((id) => id && Types.ObjectId.isValid(id)),
+          ),
+        ];
+        if (practiceIds.length) {
+          const anchors = await BusinessAnchor.find({
+            _id: { $in: practiceIds.map((id) => new Types.ObjectId(id)) },
+          })
+            .select({ practiceLabRatings: 1 })
+            .lean();
+          const byPractice = new Map(
+            anchors.map((a) => [String(a._id), a.practiceLabRatings || []]),
           );
-          const abutmentDeliveryInfo =
-            abutmentDeliveryById.get(String(doc?._id || "")) || null;
-          return toVirtualRequestRows(doc).map((row) => ({
-            ...row,
-            feeQuote,
-            labRating,
-            abutmentDeliveryInfo,
-          }));
-        });
-        return res.status(200).json({
-          success: true,
-          data: {
-            requests,
-            pagination: {
-              page,
-              limit,
-              count: requests.length,
-              total: skip + docs.length + (hasMore ? 1 : 0),
-              hasMore,
+          const requests = docs.flatMap((doc) => {
+            const feeQuote = quotesById.get(String(doc?._id || "")) || null;
+            const ratings =
+              byPractice.get(String(doc?.practiceBusinessAnchorId || "")) || [];
+            const labId = String(resolvePerformingLabAnchorId(doc) || "").trim();
+            const labRating = toPracticeLabRatingPublicApi(
+              findPracticeLabRating(ratings, labId),
+            );
+            const abutmentDeliveryInfo =
+              abutmentDeliveryById.get(String(doc?._id || "")) || null;
+            return toVirtualRequestRows(doc).map((row) => ({
+              ...row,
+              feeQuote,
+              labRating,
+              abutmentDeliveryInfo,
+            }));
+          });
+          return res.status(200).json({
+            success: true,
+            data: {
+              requests,
+              pagination: {
+                page,
+                limit,
+                count: requests.length,
+                total: skip + docs.length + (hasMore ? 1 : 0),
+                hasMore,
+              },
             },
-          },
-        });
+          });
+        }
       }
     }
 
+    const mapRows = calendarRange
+      ? toCalendarOwnedRequestRows
+      : toVirtualRequestRows;
     const requests = docs.flatMap((doc) => {
       const feeQuote = quotesById.get(String(doc?._id || "")) || null;
       const labId = String(resolvePerformingLabAnchorId(doc) || "").trim();
-      const labRating = toPracticeLabRatingPublicApi(
-        findPracticeLabRating(practiceRatings, labId),
-      );
+      const labRating = calendarRange
+        ? null
+        : toPracticeLabRatingPublicApi(
+            findPracticeLabRating(practiceRatings, labId),
+          );
       const abutmentDeliveryInfo =
         abutmentDeliveryById.get(String(doc?._id || "")) || null;
-      return toVirtualRequestRows(doc).map((row) => ({
+      return mapRows(doc).map((row) => ({
         ...row,
         feeQuote,
         labRating,
@@ -4489,20 +4572,25 @@ export async function getReceivedPracticeTransfers(req, res) {
         }
       : { $and: [scope, practiceTransferNotDeletedMongoFilter()] };
 
-    const listQuery = PracticeTransfer.find(listScope)
-      .sort({ createdAt: -1, _id: -1 })
+    const listQuery = PracticeTransfer.find(listScope).sort({
+      createdAt: -1,
+      _id: -1,
+    });
+    if (calendarRange) {
+      listQuery
+        .select(PRACTICE_TRANSFER_CALENDAR_LIST_SELECT)
+        .limit(PRACTICE_TRANSFER_CALENDAR_RANGE_MAX);
+    } else {
+      listQuery.skip(skip).limit(limit);
+    }
+    listQuery
       .populate("practiceBusinessAnchorId", "name")
       .populate(
         "practiceUserId",
         "name practiceProfile.clinicName practiceProfile.staffName",
       );
-    if (calendarRange) {
-      listQuery.limit(PRACTICE_TRANSFER_CALENDAR_RANGE_MAX);
-    } else {
-      listQuery.skip(skip).limit(limit);
-    }
 
-    const [docs, totalCount, unreadCount] = await Promise.all([
+    const [rawDocs, totalCount, unreadCount] = await Promise.all([
       listQuery.lean(),
       calendarRange
         ? Promise.resolve(null)
@@ -4512,6 +4600,12 @@ export async function getReceivedPracticeTransfers(req, res) {
       }),
     ]);
 
+    const docs = calendarRange
+      ? filterTransferDocsToCalendarRange(rawDocs, calendarRange, {
+          keepExtra: (doc) => isLabReceiveUnreadDoc(doc, labAnchorId),
+        })
+      : rawDocs;
+
     if (labAnchorId) {
       setRequestPerfCacheValue(
         unreadCountCacheKey(labAnchorId),
@@ -4520,6 +4614,7 @@ export async function getReceivedPracticeTransfers(req, res) {
       );
     }
 
+    // 캘린더: 배송·과거가공·별점 enrich 생략. 기공비는 상세에 필요해 유지.
     const quotesById = await buildFeeQuotesForTransferDocs({
       docs,
       viewingLabAnchorId: labAnchorId,
@@ -4536,15 +4631,21 @@ export async function getReceivedPracticeTransfers(req, res) {
             .select({ labPracticeFeeMultipliers: 1, labPracticePartnerMemos: 1 })
             .lean()
         : null,
-      labAnchorId && Types.ObjectId.isValid(labAnchorId)
+      !calendarRange && labAnchorId && Types.ObjectId.isValid(labAnchorId)
         ? loadGlobalLabRatingAggregates({ labAnchorIds: [labAnchorId] })
         : Promise.resolve(new Map()),
-      mapAbutmentPastReadyByTransferDocs(docs),
-      mapAbutmentDeliveryByTransferDocs(docs),
+      calendarRange
+        ? Promise.resolve(new Map())
+        : mapAbutmentPastReadyByTransferDocs(docs),
+      calendarRange
+        ? Promise.resolve(new Map())
+        : mapAbutmentDeliveryByTransferDocs(docs),
     ]);
-    const labRatingSummary = toLabRatingSummaryApi(
-      labAnchorId ? labRatingAggMap.get(String(labAnchorId)) : null,
-    );
+    const labRatingSummary = calendarRange
+      ? null
+      : toLabRatingSummaryApi(
+          labAnchorId ? labRatingAggMap.get(String(labAnchorId)) : null,
+        );
 
     const transfers = docs.map((doc) => {
       const practiceBusiness =

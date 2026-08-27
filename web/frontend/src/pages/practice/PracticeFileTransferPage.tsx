@@ -26,6 +26,7 @@
  * - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
  * - web/frontend/src/shared/components/practice/PracticeLabRatingControl.tsx
  * - web/frontend/src/shared/practice/practiceLabRating.ts
+ * - 2026-08-28: 구강스캔 캘린더 진입 시 /my?page=1 병렬 조회 제거(캘린더 구간 API만). 상세·휴지통·전송 후 지연 로드.
  * - 2026-08-14: 의뢰 상세 · 기공소 채팅 rating(1~5)·메모. 자동매칭 최소 별.
  * - 2026-08-15: 기공기간 5일 미만 빨간 표시·거부 가능 툴팁(목록·상세).
  * - web/frontend/src/shared/components/practice/PracticeTransferFilePane.tsx
@@ -3023,9 +3024,14 @@ export const PracticeFileTransferPage = ({
     void loadPracticeTransferSettingsFromServer();
   }, [loadPracticeTransferSettingsFromServer]);
 
+  // 캘린더가 메인 — page=1 fat 목록은 상세/휴지통/전송 이후에만(초기 병렬 조회 제거)
   useEffect(() => {
-    void loadRecentRequests();
-  }, [loadRecentRequests]);
+    if (!authToken) return;
+    const timer = window.setTimeout(() => {
+      void loadRecentRequests({ silent: true });
+    }, 2500);
+    return () => window.clearTimeout(timer);
+  }, [authToken, loadRecentRequests]);
 
   useEffect(() => {
     const state = location.state as { practiceTransferSubmittedToast?: boolean } | null;
@@ -7079,7 +7085,10 @@ export const PracticeFileTransferPage = ({
             variant="outline"
             size="sm"
             className="h-9 gap-1.5 px-3"
-            onClick={() => setTrashOpen(true)}
+            onClick={() => {
+              setTrashOpen(true);
+              void loadRecentRequests({ silent: true });
+            }}
           >
             <Trash2 className="h-4 w-4 shrink-0" />
             휴지통
@@ -7145,7 +7154,10 @@ export const PracticeFileTransferPage = ({
         variant="outline"
         size="sm"
         className="h-9 gap-1.5 px-3"
-        onClick={() => setTrashOpen(true)}
+        onClick={() => {
+          setTrashOpen(true);
+          void loadRecentRequests({ silent: true });
+        }}
       >
         <Trash2 className="h-4 w-4 shrink-0" />
         휴지통
@@ -7550,7 +7562,10 @@ export const PracticeFileTransferPage = ({
                       setFilePromoteRetryNonce((n) => n + 1);
                     }
                   }}
-                  onOpenTrash={() => setTrashOpen(true)}
+                  onOpenTrash={() => {
+                    setTrashOpen(true);
+                    void loadRecentRequests({ silent: true });
+                  }}
                   recentUnreadCount={recentChatUnreadCount}
                   draftCount={draftGroupedTransfers.length}
                   trashCount={trashGroupedTransfers.length}

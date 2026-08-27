@@ -2,6 +2,7 @@
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
+// - 2026-08-28: 캘린더 조회용 orderDates/arrivalDates compound index.
 // - 2026-08-14: /my 정렬용 compound index (anchor+createdAt+_id, legacy user).
 import mongoose from "mongoose";
 
@@ -375,6 +376,23 @@ practiceTransferSchema.index({
   "autoMatch.eligibleLabAnchorIds": 1,
   "autoMatch.deadlineAt": 1,
   "autoMatch.completedAt": 1,
+});
+
+practiceTransferSchema.index({
+  practiceBusinessAnchorId: 1,
+  orderDates: 1,
+});
+practiceTransferSchema.index({
+  practiceBusinessAnchorId: 1,
+  arrivalDates: 1,
+});
+practiceTransferSchema.index({
+  targetLabAnchorId: 1,
+  orderDates: 1,
+});
+practiceTransferSchema.index({
+  targetLabAnchorId: 1,
+  arrivalDates: 1,
 });
 
 const PracticeTransfer = mongoose.model("PracticeTransfer", practiceTransferSchema);
