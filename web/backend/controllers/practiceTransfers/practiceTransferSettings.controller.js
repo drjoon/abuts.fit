@@ -24,6 +24,7 @@ import { loadStarBandEligibleLabAnchorIds } from "../../utils/practiceTransferAu
 // - 2026-08-21: 임플란트 추가 요청 프리셋 type을 옵션명으로 정규화(레거시 헥스 포함).
 // - 2026-08-16: autoMatchMaxLabRating(하한·상한 치과 설정, 기본 3~4).
 // - 2026-08-25: labArrivalDefaults(기공소별 주문→치과도착 기본 일수).
+// - 2026-08-28: calendarNewRequestHintDismissedAt(도착일 클릭 신규의뢰 안내 닫음).
 const DEFAULT_ARRIVAL_DEFAULT_DAYS = 7;
 const MAX_LAB_ARRIVAL_DEFAULTS = 80;
 const ABUTMENT_PRODUCT_MODE_PRODUCTION = "custom_abutment";
@@ -225,6 +226,9 @@ const toSettingsResponse = async (anchor, { persistHydrated = false } = {}) => {
   const promoNoticeDismissedAt = settings?.promoNoticeDismissedAt
     ? new Date(settings.promoNoticeDismissedAt).toISOString()
     : null;
+  const calendarNewRequestHintDismissedAt = settings?.calendarNewRequestHintDismissedAt
+    ? new Date(settings.calendarNewRequestHintDismissedAt).toISOString()
+    : null;
 
   const normalizedFavorites = normalizeImplantFavorites(settings?.implantFavorites);
   const implantFavorites = await hydrateFavoritesWithRoundBarAdopted(
@@ -269,6 +273,7 @@ const toSettingsResponse = async (anchor, { persistHydrated = false } = {}) => {
     implantFavorites,
     abutmentFavorites: normalizeAbutmentFavorites(settings?.abutmentFavorites),
     promoNoticeDismissedAt,
+    calendarNewRequestHintDismissedAt,
     skipDesignConfirm: settings?.skipDesignConfirm !== false,
     skipJig: settings?.skipJig !== false,
     defaultAbutmentProductMode: normalizeDefaultAbutmentProductMode(
@@ -347,6 +352,10 @@ export async function upsertPracticeTransferSettings(req, res) {
     const hasImplantFavorites = Object.prototype.hasOwnProperty.call(body, "implantFavorites");
     const hasAbutmentFavorites = Object.prototype.hasOwnProperty.call(body, "abutmentFavorites");
     const hasPromoNoticeDismissedAt = Object.prototype.hasOwnProperty.call(body, "promoNoticeDismissedAt");
+    const hasCalendarNewRequestHintDismissedAt = Object.prototype.hasOwnProperty.call(
+      body,
+      "calendarNewRequestHintDismissedAt",
+    );
     const hasSkipDesignConfirm = Object.prototype.hasOwnProperty.call(body, "skipDesignConfirm");
     const hasSkipJig = Object.prototype.hasOwnProperty.call(body, "skipJig");
     const hasDefaultAbutmentProductMode = Object.prototype.hasOwnProperty.call(
@@ -402,6 +411,16 @@ export async function upsertPracticeTransferSettings(req, res) {
       } else {
         const parsed = new Date(raw);
         setPatch["practiceTransferSettings.promoNoticeDismissedAt"] =
+          Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+      }
+    }
+    if (hasCalendarNewRequestHintDismissedAt) {
+      const raw = body.calendarNewRequestHintDismissedAt;
+      if (!raw) {
+        setPatch["practiceTransferSettings.calendarNewRequestHintDismissedAt"] = null;
+      } else {
+        const parsed = new Date(raw);
+        setPatch["practiceTransferSettings.calendarNewRequestHintDismissedAt"] =
           Number.isNaN(parsed.getTime()) ? new Date() : parsed;
       }
     }

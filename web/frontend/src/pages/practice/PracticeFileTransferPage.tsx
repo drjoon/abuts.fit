@@ -122,6 +122,7 @@
  * - 2026-08-28: 신규 의뢰 모달 — 새로작성·임시저장·휴지통·가이드투어를 DialogHeader로.
  * - 2026-08-28: 모드 전환(익스프레스) 제거·엑스퍼트 고정. 최근의뢰 좌·작성액션 우 묶음.
  * - 2026-08-28: 메인=전송 캘린더, 미래일 클릭·신규 의뢰=전체화면 작성 모달(도착일 지정).
+ * - 2026-08-28: 캘린더 「신규 의뢰」버튼 → 도착일 클릭 안내(닫으면 계정 설정에 저장).
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -635,6 +636,8 @@ type PracticeTransferSettingsPayload = {
   abutmentFavorites?: PracticeAbutmentFavorite[];
   skipDesignConfirm?: boolean;
   skipJig?: boolean;
+  /** 캘린더 「도착일 클릭으로 신규의뢰」안내 닫은 시각(ISO). null/없음=표시 */
+  calendarNewRequestHintDismissedAt?: string | null;
   defaultAbutmentProductMode?: AbutmentProductMode;
   autoMatchBudget?: PracticeTransferAutoMatchBudget | null;
   autoMatchMinLabRating?: number;
@@ -1169,6 +1172,9 @@ export const PracticeFileTransferPage = ({
   const [skipDesignConfirm, setSkipDesignConfirm] = useState(true);
   const [skipDesignConfirmUncheckOpen, setSkipDesignConfirmUncheckOpen] = useState(false);
   const [skipJig, setSkipJig] = useState(true);
+  /** false면 캘린더 「도착일 클릭으로 신규의뢰」안내 표시 */
+  const [calendarNewRequestHintDismissed, setCalendarNewRequestHintDismissed] =
+    useState(false);
   const [rushProcessing, setRushProcessing] = useState(false);
   const [rushConfirmOpen, setRushConfirmOpen] = useState(false);
   const [pendingRushArrivalYmd, setPendingRushArrivalYmd] = useState("");
@@ -1991,6 +1997,16 @@ export const PracticeFileTransferPage = ({
     setAbutmentFavorites(nextAbutmentFavorites);
     setSkipDesignConfirm(nextSkipDesignConfirm);
     setSkipJig(nextSkipJig);
+    if (
+      Object.prototype.hasOwnProperty.call(
+        payload,
+        "calendarNewRequestHintDismissedAt",
+      )
+    ) {
+      setCalendarNewRequestHintDismissed(
+        Boolean(payload.calendarNewRequestHintDismissedAt),
+      );
+    }
     setDefaultAbutmentProductMode(nextDefaultAbutmentProductMode);
     // 로컬 캐시에 키가 없으면 기본값으로 덮지 않음(서버 응답·명시 저장만 반영)
     if (nextAutoMatchBudget) {
@@ -2049,6 +2065,10 @@ export const PracticeFileTransferPage = ({
         "skipDesignConfirm",
       );
       const hasSkipJig = Object.prototype.hasOwnProperty.call(params, "skipJig");
+      const hasCalendarNewRequestHintDismissedAt = Object.prototype.hasOwnProperty.call(
+        params,
+        "calendarNewRequestHintDismissedAt",
+      );
       const hasDefaultAbutmentProductMode = Object.prototype.hasOwnProperty.call(
         params,
         "defaultAbutmentProductMode",
@@ -2095,6 +2115,10 @@ export const PracticeFileTransferPage = ({
       }
       if (hasSkipJig) {
         jsonBody.skipJig = params.skipJig !== false;
+      }
+      if (hasCalendarNewRequestHintDismissedAt) {
+        jsonBody.calendarNewRequestHintDismissedAt =
+          params.calendarNewRequestHintDismissedAt || null;
       }
       if (hasDefaultAbutmentProductMode) {
         jsonBody.defaultAbutmentProductMode = normalizeAccountAbutmentProductMode(
@@ -2169,6 +2193,8 @@ export const PracticeFileTransferPage = ({
             ),
             skipDesignConfirm: payload?.skipDesignConfirm !== false,
             skipJig: payload?.skipJig !== false,
+            calendarNewRequestHintDismissedAt:
+              payload?.calendarNewRequestHintDismissedAt || null,
             defaultAbutmentProductMode: normalizeAccountAbutmentProductMode(
               payload?.defaultAbutmentProductMode,
             ),
@@ -2730,6 +2756,16 @@ export const PracticeFileTransferPage = ({
         setMemoSnippets(normalizeMemoSnippets(payload.memoSnippets));
         setSkipDesignConfirm(payload.skipDesignConfirm !== false);
         setSkipJig(payload.skipJig !== false);
+        if (
+          Object.prototype.hasOwnProperty.call(
+            payload,
+            "calendarNewRequestHintDismissedAt",
+          )
+        ) {
+          setCalendarNewRequestHintDismissed(
+            Boolean(payload.calendarNewRequestHintDismissedAt),
+          );
+        }
         setDefaultAbutmentProductMode(
           normalizeAccountAbutmentProductMode(payload.defaultAbutmentProductMode),
         );
@@ -2818,6 +2854,8 @@ export const PracticeFileTransferPage = ({
             ),
             skipDesignConfirm: payload?.skipDesignConfirm !== false,
             skipJig: payload?.skipJig !== false,
+            calendarNewRequestHintDismissedAt:
+              payload?.calendarNewRequestHintDismissedAt || null,
             defaultAbutmentProductMode: normalizeAccountAbutmentProductMode(
               payload?.defaultAbutmentProductMode,
             ),
@@ -7084,17 +7122,9 @@ export const PracticeFileTransferPage = ({
     </>
   );
 
-  /** 캘린더 메인 헤더 — 신규 의뢰·임시저장·휴지통 */
+  /** 캘린더 메인 헤더 — 임시저장·휴지통 */
   const calendarHeaderActions = (
     <>
-      <Button
-        type="button"
-        size="sm"
-        className="h-9 gap-1.5 px-3"
-        onClick={() => void handleStartNewTransfer({ openCompose: true })}
-      >
-        신규 의뢰
-      </Button>
       <Button
         type="button"
         variant="outline"
@@ -7127,6 +7157,35 @@ export const PracticeFileTransferPage = ({
       </Button>
     </>
   );
+
+  const dismissCalendarNewRequestHint = useCallback(() => {
+    const dismissedAt = new Date().toISOString();
+    setCalendarNewRequestHintDismissed(true);
+    try {
+      const existingRaw = localStorage.getItem(
+        PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY,
+      );
+      const existing =
+        existingRaw && typeof existingRaw === "string"
+          ? (JSON.parse(existingRaw) as Record<string, unknown>)
+          : {};
+      localStorage.setItem(
+        PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY,
+        JSON.stringify({
+          ...existing,
+          calendarNewRequestHintDismissedAt: dismissedAt,
+          savedAt: Date.now(),
+        }),
+      );
+    } catch {
+      // ignore
+    }
+    void savePracticeTransferSettingsToServer({
+      calendarNewRequestHintDismissedAt: dismissedAt,
+    }).catch(() => {
+      // UI는 닫힌 상태 유지. 다음 저장 기회에 재시도
+    });
+  }, [savePracticeTransferSettingsToServer]);
 
   const practiceTransferRequestIntakeProps: PracticeTransferRequestIntakePanelProps = {
     variant: "plain",
@@ -7379,6 +7438,8 @@ export const PracticeFileTransferPage = ({
           initialLoading={recentRequestsLoading}
           initialError={recentRequestsError}
           headerActions={calendarHeaderActions}
+          showCalendarNewRequestHint={!calendarNewRequestHintDismissed}
+          onDismissCalendarNewRequestHint={dismissCalendarNewRequestHint}
           onSelectFutureDay={openComposeForArrival}
           onSelectTransfer={(transfer) => {
             void handleOpenTransferDialog(transfer, {

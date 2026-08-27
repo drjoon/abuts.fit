@@ -532,6 +532,7 @@ const businessAnchorSchema = new mongoose.Schema(
       // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
       // - 2026-08-14: implantFavorites roundBar/adopted/roundBarRequestId (환봉 제조사 추가요청)
       // - 2026-08-13: defaultAbutmentProductMode(커스텀어벗 모달 계정 기본=디자인+생산)
+      // - 2026-08-28: calendarNewRequestHintDismissedAt(도착일 클릭 신규의뢰 안내 닫음)
       arrivalDefaultDays: {
         type: Number,
         default: 7,
@@ -598,6 +599,11 @@ const businessAnchorSchema = new mongoose.Schema(
         default: [],
       },
       promoNoticeDismissedAt: {
+        type: Date,
+        default: null,
+      },
+      // 캘린더 「도착일 클릭으로 신규의뢰」안내 닫음(계정/앵커). null이면 표시.
+      calendarNewRequestHintDismissedAt: {
         type: Date,
         default: null,
       },

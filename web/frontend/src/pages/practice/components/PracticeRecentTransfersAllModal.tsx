@@ -31,6 +31,7 @@
  * 2026-08-28: 의뢰상세 플로팅과 동시 오픈 — modal 해제·outside 무시로 독립 입력.
  * 2026-08-28: 항상 non-modal·outside 무시·애니메이션 제거 — 상세 열고 닫을 때 플리커 방지.
  * 2026-08-28: variant page|modal — 구강스캔 메인 캘린더 + 미래일 신규 의뢰.
+ * - 2026-08-28: 페이지 헤더 「구강스캔」라벨 제거. 검색폭 축소.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronRight, Search, Trash2, X } from "lucide-react";
@@ -143,8 +144,11 @@ type PracticeRecentTransfersAllModalProps = {
    * 플로팅·중첩 다이얼로그 focus로 전체보기가 닫히지 않게 한다.
    */
   floatingDetailOpen?: boolean;
-  /** 헤더 우측(검색 옆) — 신규 의뢰·임시저장·휴지통 등 */
+  /** 헤더 우측(검색 옆) — 임시저장·휴지통 등 */
   headerActions?: ReactNode;
+  /** 캘린더 「주문일」뱃지 왼쪽 — 도착일 클릭 신규의뢰 안내 */
+  showCalendarNewRequestHint?: boolean;
+  onDismissCalendarNewRequestHint?: () => void;
   /** 오늘 이후 날짜 셀 → 신규 의뢰(도착일) */
   onSelectFutureDay?: (ymd: string) => void;
   onSelectTransfer: (transfer: PracticeRecentTransferItem) => void;
@@ -167,6 +171,8 @@ export function PracticeRecentTransfersAllModal({
   initialError = "",
   floatingDetailOpen = false,
   headerActions,
+  showCalendarNewRequestHint = false,
+  onDismissCalendarNewRequestHint,
   onSelectFutureDay,
   onSelectTransfer,
   onDeleteTransfer,
@@ -548,8 +554,8 @@ export function PracticeRecentTransfersAllModal({
       />
     ) : null;
 
-  const headerTitle = isPage ? "구강스캔" : "전송 내역 전체 보기";
-  const mobileTitle = isPage ? "구강스캔" : "최근 의뢰";
+  const headerTitle = isPage ? "기공의뢰" : "전송 내역 전체 보기";
+  const mobileTitle = isPage ? "기공의뢰" : "최근 의뢰";
 
   const headerBlock = (
     <div
@@ -564,21 +570,19 @@ export function PracticeRecentTransfersAllModal({
         <div className="flex flex-col gap-3">
           <div className="flex min-w-0 items-center gap-2">
             {isPage ? (
-              <h1 className="min-w-0 flex-1 text-base font-semibold tracking-tight">
-                {mobileTitle}
-              </h1>
+              <h1 className="sr-only">{mobileTitle}</h1>
             ) : (
               <DialogTitle className="min-w-0 flex-1 text-base font-semibold tracking-tight">
                 {mobileTitle}
               </DialogTitle>
             )}
             {headerActions ? (
-              <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+              <div className="flex min-w-0 flex-1 shrink-0 flex-wrap items-center justify-end gap-1.5">
                 {headerActions}
               </div>
             ) : null}
           </div>
-          <div className="relative w-full">
+          <div className="relative w-full max-w-[14rem]">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={search}
@@ -594,7 +598,7 @@ export function PracticeRecentTransfersAllModal({
       ) : (
         <div className="flex flex-wrap items-center gap-3">
           {isPage ? (
-            <h1 className="shrink-0 text-lg font-semibold">{headerTitle}</h1>
+            <h1 className="sr-only">{headerTitle}</h1>
           ) : (
             <DialogTitle className="shrink-0 text-lg font-semibold">
               {headerTitle}
@@ -603,7 +607,7 @@ export function PracticeRecentTransfersAllModal({
           <div className="flex min-w-0 flex-1 flex-wrap items-center justify-center gap-2">
             {statusBadges}
           </div>
-          <div className="relative w-full max-w-xs shrink-0">
+          <div className="relative w-44 shrink-0">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={search}
@@ -796,6 +800,8 @@ export function PracticeRecentTransfersAllModal({
                   if (transfer) onDeleteTransfer(transfer);
                 }}
                 onSelectFutureDay={onSelectFutureDay}
+                showNewRequestHint={showCalendarNewRequestHint}
+                onDismissNewRequestHint={onDismissCalendarNewRequestHint}
                 hiddenWeekdays={hiddenWeekdays}
                 onHiddenWeekdaysChange={handleHiddenWeekdaysChange}
                 alignEpoch={alignEpoch}
