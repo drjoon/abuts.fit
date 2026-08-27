@@ -2,8 +2,10 @@ import { useRef } from "react";
 import {
   BookmarkPlus,
   Camera,
+  ClipboardList,
   ImagePlus,
   Plus,
+  Trash2,
   X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -25,6 +27,7 @@ import type { PreUploadFileStatus } from "@/shared/hooks/useFilePreUpload";
 // - 2026-08-20: 상단 새로/최근/임시 1줄, 제목·안내 제거, 여백 보정.
 // - 2026-08-20: 세그먼트 툴바·큰 촬영 CTA·터치 친화 카드.
 // - 2026-08-20: 상단 메뉴 새로작성·임시저장 2칸만.
+// - 2026-08-27: 상단 메뉴 새로작성·최근의뢰·임시저장·휴지통 4칸(2×2).
 // - 2026-08-20: iPhone HEIC→JPEG 변환 시도, 빈 파일 거부, MIME 보정.
 // - 2026-08-20: 썸네일 클릭 시 원본 미리보기.
 
@@ -182,8 +185,12 @@ type PracticeTransferMobileOralPhotoIntakeProps = {
   onClearPhotos: () => void;
   onPreviewPhoto?: (photo: PracticeTransferMobilePhotoItem) => void;
   onStartNew: () => void;
+  onOpenRecent: () => void;
   onOpenDrafts: () => void;
+  onOpenTrash: () => void;
+  recentUnreadCount: number;
   draftCount: number;
+  trashCount: number;
 };
 
 export function PracticeTransferMobileOralPhotoIntake({
@@ -195,8 +202,12 @@ export function PracticeTransferMobileOralPhotoIntake({
   onClearPhotos,
   onPreviewPhoto,
   onStartNew,
+  onOpenRecent,
   onOpenDrafts,
+  onOpenTrash,
+  recentUnreadCount,
   draftCount,
+  trashCount,
 }: PracticeTransferMobileOralPhotoIntakeProps) {
   const { toast } = useToast();
   const albumInputRef = useRef<HTMLInputElement | null>(null);
@@ -244,6 +255,25 @@ export function PracticeTransferMobileOralPhotoIntake({
           variant="ghost"
           size="sm"
           className="h-10 min-w-0 gap-1 rounded-xl px-2 text-sm font-medium hover:bg-white hover:shadow-sm"
+          onClick={onOpenRecent}
+        >
+          <ClipboardList className="h-3.5 w-3.5 shrink-0" />
+          최근의뢰
+          {recentUnreadCount > 0 ? (
+            <Badge
+              variant="destructive"
+              className="ml-0.5 h-5 min-w-5 rounded-full px-1.5 text-[10px] tabular-nums"
+              aria-label={`안읽음 ${recentUnreadCount}건`}
+            >
+              {recentUnreadCount > 99 ? "99+" : recentUnreadCount}
+            </Badge>
+          ) : null}
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-10 min-w-0 gap-1 rounded-xl px-2 text-sm font-medium hover:bg-white hover:shadow-sm"
           onClick={onOpenDrafts}
         >
           <BookmarkPlus className="h-3.5 w-3.5 shrink-0" />
@@ -254,6 +284,24 @@ export function PracticeTransferMobileOralPhotoIntake({
               className="ml-0.5 h-5 min-w-5 rounded-full px-1.5 text-[10px] tabular-nums"
             >
               {draftCount}
+            </Badge>
+          ) : null}
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-10 min-w-0 gap-1 rounded-xl px-2 text-sm font-medium hover:bg-white hover:shadow-sm"
+          onClick={onOpenTrash}
+        >
+          <Trash2 className="h-3.5 w-3.5 shrink-0" />
+          휴지통
+          {trashCount > 0 ? (
+            <Badge
+              variant="secondary"
+              className="ml-0.5 h-5 min-w-5 rounded-full px-1.5 text-[10px] tabular-nums"
+            >
+              {trashCount}
             </Badge>
           ) : null}
         </Button>

@@ -349,6 +349,7 @@ import {
 // - 2026-08-25: labArrivalDefaults — 기공소별 주문→치과도착 기본 일수.
 import {
   PracticeTransferRequestCardMeta,
+  practiceTransferStatusBadgeClass,
   resolvePracticeTransferListPatientName,
   resolvePracticeTransferListToothNumbers,
 } from "@/shared/components/practice/PracticeRecentTransferListCardDetail";
@@ -7269,6 +7270,7 @@ export const PracticeFileTransferPage = ({
                     });
                   }}
                   onStartNew={() => void handleStartNewTransfer()}
+                  onOpenRecent={() => setRecentTransfersAllOpen(true)}
                   onOpenDrafts={() => {
                     setDraftsOpen(true);
                     if (pendingLocalFilesRef.current.length > 0) {
@@ -7279,7 +7281,10 @@ export const PracticeFileTransferPage = ({
                       setFilePromoteRetryNonce((n) => n + 1);
                     }
                   }}
+                  onOpenTrash={() => setTrashOpen(true)}
+                  recentUnreadCount={recentChatUnreadCount}
                   draftCount={draftGroupedTransfers.length}
+                  trashCount={trashGroupedTransfers.length}
                 />
               ) : showExpressWizard ? (
                 <PracticeTransferExpressWizard
@@ -7785,14 +7790,30 @@ export const PracticeFileTransferPage = ({
 
         <Dialog open={trashOpen} onOpenChange={setTrashOpen}>
           <DialogContent
+            hideClose={isMobile}
             className={cn(
-              "flex max-h-[min(90vh,820px)] max-w-none flex-col gap-0 overflow-hidden p-0",
-              RESPONSIVE.dialogContentWide,
+              "flex flex-col gap-0 overflow-hidden p-0",
+              isMobile
+                ? "inset-0 left-0 top-0 h-[100dvh] w-screen max-h-[100dvh] max-w-none translate-x-0 translate-y-0 rounded-none border-0"
+                : cn(
+                    "max-h-[min(90vh,820px)] max-w-none",
+                    RESPONSIVE.dialogContentWide,
+                  ),
             )}
           >
-            <div className="flex shrink-0 items-center justify-between gap-4 border-b border-slate-200/80 px-4 pb-4 pt-5 pr-14 sm:px-6">
+            <div
+              className={cn(
+                "flex shrink-0 items-center justify-between gap-3 border-b border-slate-200/80 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80",
+                isMobile ? "px-4 pb-3 pt-4" : "px-4 pb-4 pt-5 pr-14 sm:px-6",
+              )}
+            >
               <DialogHeader className="min-w-0 flex-1 space-y-0 text-left">
-                <DialogTitle className="flex min-w-0 flex-wrap items-center gap-2 text-lg font-semibold tracking-tight">
+                <DialogTitle
+                  className={cn(
+                    "flex min-w-0 flex-wrap items-center gap-2 font-semibold tracking-tight",
+                    isMobile ? "text-base" : "text-lg",
+                  )}
+                >
                   <Trash2 className="h-5 w-5 shrink-0 text-slate-500" />
                   휴지통
                   {trashGroupedTransfers.length > 0 ? (
@@ -7808,7 +7829,10 @@ export const PracticeFileTransferPage = ({
                       type="button"
                       variant="outline"
                       size="sm"
-                      className="h-8 shrink-0 gap-1.5 border-destructive-muted px-2.5 text-xs text-destructive hover:bg-destructive-soft hover:text-destructive"
+                      className={cn(
+                        "shrink-0 gap-1.5 border-destructive-muted text-xs text-destructive hover:bg-destructive-soft hover:text-destructive",
+                        isMobile ? "h-8 px-2" : "h-8 px-2.5",
+                      )}
                       disabled={emptyingTrash}
                       onClick={handleAskEmptyTrash}
                     >
@@ -7818,15 +7842,123 @@ export const PracticeFileTransferPage = ({
                   ) : null}
                 </DialogTitle>
               </DialogHeader>
+              {isMobile ? (
+                <button
+                  type="button"
+                  className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  aria-label="닫기"
+                  onClick={() => setTrashOpen(false)}
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              ) : null}
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
+            <div
+              className={cn(
+                "min-h-0 flex-1 overflow-y-auto overscroll-contain",
+                isMobile ? "bg-slate-50/80 px-3 py-3" : "px-4 py-4 sm:px-6",
+              )}
+            >
               {trashGroupedTransfers.length === 0 ? (
-                <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-slate-200 px-6 py-14 text-center">
+                <div
+                  className={cn(
+                    "flex flex-col items-center gap-2 border border-dashed border-slate-200 px-6 py-14 text-center",
+                    isMobile ? "rounded-2xl bg-white" : "rounded-xl",
+                  )}
+                >
                   <Trash2 className="h-9 w-9 text-slate-300" />
                   <p className="text-sm font-medium text-slate-600">휴지통이 비어 있습니다</p>
                   <p className="max-w-sm text-xs leading-relaxed text-muted-foreground">
                     삭제한 임시저장·의뢰가 여기에 모입니다.
                   </p>
+                </div>
+              ) : isMobile ? (
+                <div className="space-y-2.5 pb-2">
+                  {trashGroupedTransfers.map((transfer) => {
+                    const targetLabText =
+                      String(transfer.targetLab || "-")
+                        .replace(/\s*→.*$/g, "")
+                        .trim() || "-";
+                    const patient =
+                      resolvePracticeTransferListPatientName(transfer) || "—";
+                    const isDraftTrash =
+                      transfer.status === "임시저장" ||
+                      transfer.transferId === PRACTICE_DRAFT_TRANSFER_ID;
+                    const statusLabel = isDraftTrash
+                      ? "임시저장"
+                      : toStatusBadgeLabel(transfer.status);
+                    const arrival = String(transfer.arrivalDate || "").trim();
+
+                    return (
+                      <div
+                        key={`trash:${transfer.id}:${transfer.createdAt}`}
+                        role="button"
+                        tabIndex={0}
+                        className="w-full cursor-pointer rounded-2xl border border-slate-200/80 bg-white p-3.5 text-left shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-[transform,box-shadow,border-color] active:scale-[0.985] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        onClick={() => void handleOpenTransferDialog(transfer, { fromTrash: true })}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            void handleOpenTransferDialog(transfer, { fromTrash: true });
+                          }
+                        }}
+                      >
+                        <div className="flex min-w-0 items-center gap-2">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                              <Badge
+                                variant="outline"
+                                className={cn(
+                                  "h-6 shrink-0 px-2 text-[11px] font-semibold leading-none",
+                                  practiceTransferStatusBadgeClass(statusLabel),
+                                )}
+                              >
+                                {statusLabel}
+                              </Badge>
+                              {isDraftTrash && transfer.practiceUserLabel ? (
+                                <Badge
+                                  variant="outline"
+                                  className="h-6 px-1.5 text-[10px]"
+                                >
+                                  {transfer.practiceUserLabel}
+                                </Badge>
+                              ) : null}
+                              <span className="ml-auto shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                                {transfer.createdAt}
+                              </span>
+                            </div>
+                            <p className="mt-2 truncate text-[15px] font-semibold leading-snug text-slate-900">
+                              {targetLabText}
+                            </p>
+                            <div className="mt-1 flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
+                              <span className="truncate">{patient}</span>
+                              {arrival ? (
+                                <>
+                                  <span className="shrink-0 text-slate-300">·</span>
+                                  <span className="shrink-0 tabular-nums">
+                                    도착 {arrival}
+                                  </span>
+                                </>
+                              ) : null}
+                            </div>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-10 w-10 shrink-0 text-slate-500 hover:bg-primary-soft hover:text-primary-strong"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleAskRestoreTransfer(transfer);
+                            }}
+                            aria-label={isDraftTrash ? "임시저장 복구" : "의뢰서 복구"}
+                          >
+                            <RotateCcw className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="space-y-3">
