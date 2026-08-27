@@ -13,6 +13,7 @@
 // - web/frontend/src/shared/files/s3BlobCache.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
 // - 2026-08-27: 채팅 버블에 보낸사람 이름 표시.
+// - 2026-08-27: 재도착일 — 오늘 이후 1개만(다시 고르면 교체). 과거·오늘만 캘린더 이력.
 // - 2026-08-27: 치과도착일 옆 「재도착일」날짜 선택(누적·과금 없음).
 // - 2026-08-27: 치과도착일 +1주 누적(동일 건·크레딧 미중복).
 // - 2026-08-23: 작업 파일 STL/PLY/OBJ 타일에 3D 썸네일 표시.
@@ -301,7 +302,7 @@ type PracticeTransferDetailChatDialogProps = {
   /** 치과: 수락 전 의뢰 내용을 작성 폼으로 불러와 수정 */
   onEditRequest?: () => void;
   editRequestDisabled?: boolean;
-  /** 치과: 쉐이드 변경 등 — 동일 건 재도착일 누적(신규·과금 없음). 선택 YMD 전달 */
+  /** 치과: 쉐이드 변경 등 — 동일 건 재도착일(오늘 이후 1개·교체, 과금 없음). 선택 YMD 전달 */
   onAppendArrival?: (arrivalYmd: string) => void;
   appendArrivalDisabled?: boolean;
   appendArrivalBusy?: boolean;
@@ -1171,7 +1172,7 @@ export function PracticeTransferDetailChatDialog({
                               disabled={
                                 appendArrivalDisabled || appendArrivalBusy
                               }
-                              title="새 치과도착일을 선택합니다. 이전 날짜는 캘린더에 남고 크레딧은 추가 차감되지 않습니다."
+                              title="오늘 이후 재도착일 1개만 둡니다. 다시 고르면 수정되며 크레딧은 추가 차감되지 않습니다."
                             >
                               <CalendarClock className="h-3.5 w-3.5" />
                               {appendArrivalBusy ? "반영 중…" : "재도착일"}
@@ -1183,8 +1184,8 @@ export function PracticeTransferDetailChatDialog({
                             onOpenAutoFocus={(e) => e.preventDefault()}
                           >
                             <div className="border-b px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
-                              재도착일(하루)만 선택합니다. 이전 도착일은
-                              캘린더에 유지되고, 크레딧은 추가 차감되지
+                              오늘 이후 재도착일은 1개만 유지됩니다. 다시
+                              고르면 수정되고, 크레딧은 추가 차감되지
                               않습니다.
                             </div>
                             <Calendar

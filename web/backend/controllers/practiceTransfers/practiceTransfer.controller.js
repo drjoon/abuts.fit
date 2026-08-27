@@ -3747,7 +3747,7 @@ export async function appendPracticeTransferArrival(req, res) {
       await postPracticeTransferSystemChatMessage({
         transferMongoId: String(updated._id),
         senderUserId: req.user?._id,
-        content: `치과도착일이 ${prevLabel} → ${nextLabel}(으)로 변경되었습니다. 이전 도착일은 캘린더에 유지됩니다.`,
+        content: `치과도착일이 ${prevLabel} → ${nextLabel}(으)로 변경되었습니다.`,
         systemEvent: "practice_transfer_arrival_appended",
       });
     } catch {

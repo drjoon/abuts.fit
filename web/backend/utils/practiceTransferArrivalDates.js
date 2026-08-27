@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-27: 재도착일 — 오늘(KST) 이후는 하나만. 다시 고르면 교체(과거·오늘 이력만 캘린더 유지).
 // - 2026-08-27: 치과도착일 누적(arrivalDates). 최종일=배열 끝·메모 태그. 신규 전송 없이 캘린더 다중 표시.
 // related files:
 // - web/backend/utils/practiceTransferRush.js
@@ -78,7 +79,8 @@ export function resolveCurrentArrivalYmd(arrivalDates) {
 }
 
 /**
- * 동일 전송에 도착일만 누적. 새 transfer/과금 없음.
+ * 동일 전송에 재도착일 반영. 새 transfer/과금 없음.
+ * 오늘(KST) 이후 날짜는 최종 1개만 — 다시 고르면 교체. 오늘 이전·오늘 이력은 캘린더용으로 유지.
  * @returns {{
  *   ok: true,
  *   arrivalDates: string[],
@@ -116,17 +118,6 @@ export function appendPracticeArrivalDate({
     };
   }
 
-  if (previousYmd && next === previousYmd) {
-    return {
-      ok: true,
-      arrivalDates: currentList.length ? currentList : [next],
-      previousYmd,
-      nextYmd: next,
-      transferMemo: upsertMemoArrivalYmd(memo, next),
-      unchanged: true,
-    };
-  }
-
   const todayYmd = toKstYmd(now) || "";
   if (todayYmd && next < todayYmd) {
     return {
@@ -137,9 +128,28 @@ export function appendPracticeArrivalDate({
     };
   }
 
-  // 오늘 이후면 최종으로 올리고, 나머지 이력은 날짜순으로 캘린더에 유지
-  const others = currentList.filter((d) => d !== next).sort();
-  const nextList = [...others, next];
+  // 오늘 이후는 최종 1개만(교체). 오늘·과거만 이력으로 남김.
+  const historical = currentList
+    .filter((d) => d !== next && (!todayYmd || d <= todayYmd))
+    .sort();
+  const nextList = [...historical, next];
+
+  const unchanged =
+    Boolean(previousYmd) &&
+    next === previousYmd &&
+    nextList.length === currentList.length &&
+    nextList.every((d, i) => d === currentList[i]);
+
+  if (unchanged) {
+    return {
+      ok: true,
+      arrivalDates: nextList,
+      previousYmd,
+      nextYmd: next,
+      transferMemo: upsertMemoArrivalYmd(memo, next),
+      unchanged: true,
+    };
+  }
 
   return {
     ok: true,
@@ -149,6 +159,26 @@ export function appendPracticeArrivalDate({
     transferMemo: upsertMemoArrivalYmd(memo, next),
     unchanged: false,
   };
+}
+
+/**
+ * 오늘(KST) 이후 날짜가 여러 개면 최종(배열 끝)만 남기고 정리.
+ * @param {unknown} arrivalDates
+ * @param {Date} [now]
+ * @returns {string[]}
+ */
+export function compactPracticeArrivalDatesToSingleFuture(
+  arrivalDates,
+  now = new Date(),
+) {
+  const list = normalizePracticeArrivalDates(arrivalDates);
+  if (list.length <= 1) return list;
+  const todayYmd = toKstYmd(now) || "";
+  const current = list[list.length - 1];
+  const historical = list
+    .filter((d) => d !== current && (!todayYmd || d <= todayYmd))
+    .sort();
+  return [...historical, current];
 }
 
 /**

@@ -3,6 +3,7 @@ import { describe, expect, it } from "@jest/globals";
 import {
   addCivilDaysYmd,
   appendPracticeArrivalDate,
+  compactPracticeArrivalDatesToSingleFuture,
   PRACTICE_ARRIVAL_SHADE_EXTEND_CIVIL_DAYS,
   resolvePracticeArrivalDates,
   syncArrivalDatesWithMemoYmd,
@@ -50,7 +51,7 @@ describe("practiceTransferArrivalDates", () => {
     expect(result.arrivalDates).toEqual(["2026-08-20", "2026-09-03"]);
   });
 
-  it("allows picking an earlier future day as new final while keeping history", () => {
+  it("replaces future re-arrival instead of stacking (keep only past/today history)", () => {
     const result = appendPracticeArrivalDate({
       transferMemo: "[치과도착일: 2026-09-10]",
       arrivalDates: ["2026-08-27", "2026-09-03", "2026-09-10"],
@@ -59,12 +60,23 @@ describe("practiceTransferArrivalDates", () => {
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.arrivalDates).toEqual([
-      "2026-08-27",
-      "2026-09-10",
-      "2026-09-03",
-    ]);
+    // 09-03·09-10은 모두 오늘(08-27) 이후 → 최종 09-03만 남고 잘못 고른 09-10은 제거
+    expect(result.arrivalDates).toEqual(["2026-08-27", "2026-09-03"]);
+    expect(result.previousYmd).toBe("2026-09-10");
     expect(result.nextYmd).toBe("2026-09-03");
+  });
+
+  it("keeps a single future slot when changing from one future day to another", () => {
+    const result = appendPracticeArrivalDate({
+      transferMemo: "[치과도착일: 2026-09-03]",
+      arrivalDates: ["2026-08-27", "2026-09-03"],
+      nextYmd: "2026-09-10",
+      now: new Date("2026-08-27T07:00:00+09:00"),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.arrivalDates).toEqual(["2026-08-27", "2026-09-10"]);
+    expect(result.previousYmd).toBe("2026-09-03");
   });
 
   it("rejects dates before today", () => {
@@ -87,5 +99,14 @@ describe("practiceTransferArrivalDates", () => {
         nextMemo: "[치과도착일: 2026-08-27]",
       }),
     ).toEqual(["2026-08-27"]);
+  });
+
+  it("compacts stacked future dates down to current + past/today history", () => {
+    expect(
+      compactPracticeArrivalDatesToSingleFuture(
+        ["2026-08-27", "2026-09-10", "2026-09-03"],
+        new Date("2026-08-27T07:00:00+09:00"),
+      ),
+    ).toEqual(["2026-08-27", "2026-09-03"]);
   });
 });
