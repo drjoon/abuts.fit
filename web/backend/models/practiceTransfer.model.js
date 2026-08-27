@@ -133,6 +133,14 @@ const practiceTransferSchema = new mongoose.Schema(
       type: [String],
       default: undefined,
     },
+    /**
+     * 주문일 누적(YMD). 마지막=최종 주문일(transferMemo 태그와 동기).
+     * 재도착 설정 시 오늘(KST)을 붙여 주문일/도착일 캘린더 모두에서 확인 가능.
+     */
+    orderDates: {
+      type: [String],
+      default: undefined,
+    },
     tag: {
       type: String,
       default: "practice_file_transfer",

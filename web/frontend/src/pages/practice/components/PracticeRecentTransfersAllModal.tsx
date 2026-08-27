@@ -426,11 +426,18 @@ export function PracticeRecentTransfersAllModal({
           : transfer.arrivalDate
             ? [transfer.arrivalDate]
             : [];
+      const linkedOrderDates =
+        Array.isArray(transfer.orderDates) && transfer.orderDates.length > 0
+          ? transfer.orderDates
+          : transfer.orderDate
+            ? [transfer.orderDate]
+            : [];
       return {
         id: `${transfer.id}:${transfer.transferId}`,
         orderDate: transfer.orderDate,
         arrivalDate: transfer.arrivalDate,
         linkedArrivalDates,
+        linkedOrderDates,
         colorKey: String(transfer.targetLabAnchorId || "").trim() || lab,
         statusTone: resolvePracticeCalendarStatusTone(transfer.status),
         isRemake: Boolean(transfer.isRemake),
@@ -450,14 +457,23 @@ export function PracticeRecentTransfersAllModal({
     for (const transfer of filteredTransfers) {
       const baseId = `${transfer.id}:${transfer.transferId}`;
       map.set(baseId, transfer);
-      const dates =
+      const arrivalDates =
         Array.isArray(transfer.arrivalDates) && transfer.arrivalDates.length > 0
           ? transfer.arrivalDates
           : transfer.arrivalDate
             ? [transfer.arrivalDate]
             : [];
-      for (const ymd of dates) {
+      for (const ymd of arrivalDates) {
         map.set(`${baseId}:arr:${ymd}`, transfer);
+      }
+      const orderDates =
+        Array.isArray(transfer.orderDates) && transfer.orderDates.length > 0
+          ? transfer.orderDates
+          : transfer.orderDate
+            ? [transfer.orderDate]
+            : [];
+      for (const ymd of orderDates) {
+        map.set(`${baseId}:ord:${ymd}`, transfer);
       }
     }
     return map;

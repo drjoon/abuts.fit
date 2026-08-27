@@ -63,7 +63,9 @@ export type PracticeRecentRequestItem = {
   transferId: string;
   orderDate: string;
   arrivalDate: string;
-  /** 누적 치과도착일(마지막=최종). 없으면 [arrivalDate] */
+  /** 누적 주문일(마지막=최종·재주문일). 없으면 [orderDate] */
+  orderDates?: string[];
+  /** 누적 치과도착일(마지막=최종·재도착일). 없으면 [arrivalDate] */
   arrivalDates?: string[];
   transferMemo: string;
   rawTransferMemo: string;
@@ -122,7 +124,9 @@ export type PracticeRecentTransferItem = {
   targetLab: string;
   orderDate: string;
   arrivalDate: string;
-  /** 누적 치과도착일(마지막=최종). 캘린더 다중 표시·연결용 */
+  /** 누적 주문일(마지막=최종·재주문일). 캘린더 다중 표시·연결용 */
+  orderDates?: string[];
+  /** 누적 치과도착일(마지막=최종·재도착일). 캘린더 다중 표시·연결용 */
   arrivalDates?: string[];
   status: string;
   fileCount: number;
@@ -537,6 +541,19 @@ export const mapMyPracticeTransferApiRows = (
       const transferMemo = extractTransferMemoFromMessage(message);
       const orderDate = String(r.orderDate || parsedMemo.orderDate || "").trim();
       const arrivalDate = String(r.arrivalDate || parsedMemo.arrivalDate || "").trim();
+      const orderDatesRaw = Array.isArray(r.orderDates)
+        ? (r.orderDates as unknown[])
+            .map((d) => String(d || "").trim())
+            .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
+        : [];
+      const orderDates =
+        orderDatesRaw.length > 0
+          ? orderDatesRaw.includes(orderDate) || !orderDate
+            ? orderDatesRaw
+            : [...orderDatesRaw, orderDate]
+          : orderDate
+            ? [orderDate]
+            : [];
       const arrivalDatesRaw = Array.isArray(r.arrivalDates)
         ? (r.arrivalDates as unknown[])
             .map((d) => String(d || "").trim())
@@ -580,6 +597,7 @@ export const mapMyPracticeTransferApiRows = (
           String(r.transferId || "").trim() ||
           extractTransferIdFromMessage(message),
         orderDate,
+        orderDates,
         arrivalDate,
         arrivalDates,
         transferMemo,
@@ -669,6 +687,11 @@ export const mergeOpenPracticeTransferFromRequestRows = (
   return {
     ...prev,
     status: openRow.status || prev.status,
+    orderDate: openRow.orderDate || prev.orderDate,
+    orderDates:
+      Array.isArray(openRow.orderDates) && openRow.orderDates.length > 0
+        ? [...openRow.orderDates]
+        : prev.orderDates,
     arrivalDate: openRow.arrivalDate || prev.arrivalDate,
     arrivalDates:
       Array.isArray(openRow.arrivalDates) && openRow.arrivalDates.length > 0
@@ -856,6 +879,7 @@ export const groupPracticeRecentRequests = (
         requestDate: req.requestDate,
         targetLab: req.targetLab,
         orderDate: req.orderDate,
+        orderDates: Array.isArray(req.orderDates) ? [...req.orderDates] : undefined,
         arrivalDate: req.arrivalDate,
         arrivalDates: Array.isArray(req.arrivalDates) ? [...req.arrivalDates] : undefined,
         status: req.status,
@@ -948,6 +972,11 @@ export const groupPracticeRecentRequests = (
     }
     if (!existing.orderDate && req.orderDate) {
       existing.orderDate = req.orderDate;
+    }
+    if (Array.isArray(req.orderDates) && req.orderDates.length > 0) {
+      existing.orderDates = [...req.orderDates];
+      existing.orderDate =
+        req.orderDates[req.orderDates.length - 1] || existing.orderDate;
     }
     if (!existing.arrivalDate && req.arrivalDate) {
       existing.arrivalDate = req.arrivalDate;

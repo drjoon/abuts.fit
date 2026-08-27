@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-27: 주문일 누적(orderDates) — 구간 내 아무 날짜라도 매칭
 // - 2026-08-27: 치과도착일 누적(arrivalDates) — 구간 내 아무 날짜라도 매칭
 // - 2026-08-27: 캘린더 3주 필터에 미확인(전 기간) OR 병합 헬퍼 추가
 // - 2026-08-27: 캘린더 표시 구간(fromYmd~toYmd) + 주문일/치과도착일 Mongo 필터 SSOT
@@ -43,6 +44,7 @@ export function mergeCalendarRangeWithUnreadFilter(calendarFilter, unreadFilter)
 /**
  * transferMemo 주문일/치과도착일 파싱 실패 시 createdAt KST YMD로 대체.
  * arrivalDate: arrivalDates 누적 중 구간 내 날짜가 있으면 매칭(이전·최종 모두).
+ * orderDate: orderDates 누적 중 구간 내 날짜가 있으면 매칭(이전·최종 모두).
  * @param {{ fromYmd: string, toYmd: string, dateKey: "orderDate"|"arrivalDate" }} range
  */
 export function buildPracticeTransferCalendarDateRangeFilter(range) {
@@ -106,11 +108,10 @@ export function buildPracticeTransferCalendarDateRangeFilter(range) {
     },
   };
 
-  if (dateKey !== "arrivalDate") {
-    return { $expr: memoOrCreatedExpr };
-  }
+  const linkedField =
+    dateKey === "orderDate" ? "orderDates" : "arrivalDates";
 
-  // 누적 도착일 중 하나라도 구간에 있으면 포함 + 레거시(메모만) 호환
+  // 누적 일자 중 하나라도 구간에 있으면 포함 + 레거시(메모만) 호환
   return {
     $or: [
       {
@@ -119,7 +120,7 @@ export function buildPracticeTransferCalendarDateRangeFilter(range) {
             {
               $size: {
                 $filter: {
-                  input: { $ifNull: ["$arrivalDates", []] },
+                  input: { $ifNull: [`$${linkedField}`, []] },
                   as: "d",
                   cond: {
                     $and: [

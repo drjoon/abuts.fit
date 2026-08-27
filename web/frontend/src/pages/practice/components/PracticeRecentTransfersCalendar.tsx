@@ -64,12 +64,14 @@ export type PracticeCalendarChipItem = {
   /** 리메이크: 공정 색 유지 + 이중 외곽선 */
   isRemake?: boolean;
   /**
-   * 누적 도착일 중 이전 날짜 칩(최종이 아님).
+   * 누적 도착일/주문일 중 이전 날짜 칩(최종이 아님).
    * 동일 transfer 연결 표시용 — 클릭은 같은 의뢰상세.
    */
   isPriorArrival?: boolean;
   /** 연결 도착일 전체(툴팁) */
   linkedArrivalDates?: string[];
+  /** 연결 주문일 전체(툴팁·주문일 캘린더 다중 칩) */
+  linkedOrderDates?: string[];
   sortLabel: string;
   line: string;
   /** 사이드바와 동일 합산(수신 미확인 + 채팅). 있으면 칩에 빨간 숫자 */
@@ -78,29 +80,43 @@ export type PracticeCalendarChipItem = {
   canDelete?: boolean;
 };
 
-/** 치과도착일 누적 → 캘린더 칩 다중 배치(같은 건·크레딧 중복 없음). */
+/** 누적 주문일·도착일 → 캘린더 칩 다중 배치(같은 건·크레딧 중복 없음). */
 export function expandPracticeCalendarChipsByArrivalDates(
   items: PracticeCalendarChipItem[],
   dateKey: PracticeCalendarDateKey,
 ): PracticeCalendarChipItem[] {
-  if (dateKey !== "arrivalDate") return items;
+  if (dateKey !== "arrivalDate" && dateKey !== "orderDate") return items;
   const out: PracticeCalendarChipItem[] = [];
   for (const item of items) {
-    const linked = Array.isArray(item.linkedArrivalDates)
-      ? item.linkedArrivalDates
+    const linkedRaw =
+      dateKey === "orderDate"
+        ? item.linkedOrderDates
+        : item.linkedArrivalDates;
+    const linked = Array.isArray(linkedRaw)
+      ? linkedRaw
           .map((d) => String(d || "").trim())
           .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
       : [];
+    const fallback =
+      dateKey === "orderDate"
+        ? String(item.orderDate || "").trim()
+        : String(item.arrivalDate || "").trim();
     const dates =
       linked.length > 0
         ? linked
-        : [String(item.arrivalDate || "").trim()].filter((d) =>
-            /^\d{4}-\d{2}-\d{2}$/.test(d),
-          );
+        : [fallback].filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d));
     if (dates.length <= 1) {
       out.push({
         ...item,
-        linkedArrivalDates: dates.length ? dates : item.linkedArrivalDates,
+        ...(dateKey === "orderDate"
+          ? {
+              linkedOrderDates: dates.length ? dates : item.linkedOrderDates,
+            }
+          : {
+              linkedArrivalDates: dates.length
+                ? dates
+                : item.linkedArrivalDates,
+            }),
         isPriorArrival: false,
       });
       continue;
@@ -109,11 +125,12 @@ export function expandPracticeCalendarChipsByArrivalDates(
       const isPrior = idx < dates.length - 1;
       out.push({
         ...item,
-        id: `${item.id}:arr:${ymd}`,
-        arrivalDate: ymd,
+        id: `${item.id}:${dateKey === "orderDate" ? "ord" : "arr"}:${ymd}`,
+        ...(dateKey === "orderDate"
+          ? { orderDate: ymd, linkedOrderDates: dates }
+          : { arrivalDate: ymd, linkedArrivalDates: dates }),
         isPriorArrival: isPrior,
-        linkedArrivalDates: dates,
-        // 이전 도착일 칩은 삭제 버튼 숨김(최종만)
+        // 이전 일자 칩은 삭제 버튼 숨김(최종만)
         canDelete: isPrior ? false : item.canDelete,
         unreadCount: isPrior ? 0 : item.unreadCount,
       });
@@ -574,14 +591,21 @@ export function PracticeRecentTransfersCalendar({
                               type="button"
                               className="flex min-w-0 flex-1 items-start gap-0.5 px-1 py-0.5 text-left text-[10px] leading-snug"
                               title={
-                                item.linkedArrivalDates &&
-                                item.linkedArrivalDates.length > 1
-                                  ? `${item.line} · 연결 도착일 ${item.linkedArrivalDates.join(" → ")}${
+                                item.linkedOrderDates &&
+                                item.linkedOrderDates.length > 1
+                                  ? `${item.line} · 연결 주문일 ${item.linkedOrderDates.join(" → ")}${
                                       item.isPriorArrival ? " (이전)" : " (최종)"
                                     }`
-                                  : unreadCount > 0
-                                    ? `${item.line} · 안읽음 ${unreadLabel}`
-                                    : item.line
+                                  : item.linkedArrivalDates &&
+                                      item.linkedArrivalDates.length > 1
+                                    ? `${item.line} · 연결 도착일 ${item.linkedArrivalDates.join(" → ")}${
+                                        item.isPriorArrival
+                                          ? " (이전)"
+                                          : " (최종)"
+                                      }`
+                                    : unreadCount > 0
+                                      ? `${item.line} · 안읽음 ${unreadLabel}`
+                                      : item.line
                               }
                               onClick={() => onSelectItem(item)}
                             >

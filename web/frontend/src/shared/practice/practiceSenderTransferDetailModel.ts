@@ -117,7 +117,22 @@ export function buildPracticeSenderTransferDetailModel(
       { label: "전송시각", value: transfer.createdAt || "-" },
       { label: "기공소", value: transfer.targetLab || "-" },
       { label: "환자명", value: patientName || "-" },
-      { label: "주문일", value: transfer.orderDate || "-" },
+      {
+        label: "주문일",
+        value: transfer.orderDate || "-",
+        tooltip:
+          Array.isArray(transfer.orderDates) && transfer.orderDates.length > 1
+            ? `연결 주문일: ${transfer.orderDates.join(" → ")}`
+            : undefined,
+      },
+      ...(Array.isArray(transfer.orderDates) && transfer.orderDates.length > 1
+        ? [
+            {
+              label: "이전 주문일",
+              value: transfer.orderDates.slice(0, -1).join(", "),
+            } satisfies PracticeTransferDialogSummaryItem,
+          ]
+        : []),
       {
         label: "치과도착일",
         value: transfer.arrivalDate || "-",

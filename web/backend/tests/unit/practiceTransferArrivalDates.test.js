@@ -6,7 +6,9 @@ import {
   compactPracticeArrivalDatesToSingleFuture,
   PRACTICE_ARRIVAL_SHADE_EXTEND_CIVIL_DAYS,
   resolvePracticeArrivalDates,
+  resolvePracticeOrderDates,
   syncArrivalDatesWithMemoYmd,
+  syncOrderDatesWithMemoYmd,
 } from "../../utils/practiceTransferArrivalDates.js";
 
 describe("practiceTransferArrivalDates", () => {
@@ -24,26 +26,61 @@ describe("practiceTransferArrivalDates", () => {
     ).toEqual(["2026-08-27"]);
   });
 
-  it("appends new arrival and updates memo current tag", () => {
+  it("seeds orderDates from memo", () => {
+    expect(
+      resolvePracticeOrderDates({
+        orderDates: [],
+        transferMemo: "[주문일: 2026-08-19]\n[치과도착일: 2026-08-27]",
+      }),
+    ).toEqual(["2026-08-19"]);
+  });
+
+  it("appends re-arrival and today as re-order date", () => {
     const result = appendPracticeArrivalDate({
       transferMemo: "[주문일: 2026-08-19]\n[치과도착일: 2026-08-27]\n메모",
       arrivalDates: ["2026-08-27"],
+      orderDates: ["2026-08-19"],
       nextYmd: "2026-09-03",
+      now: new Date("2026-08-27T07:00:00+09:00"),
+      alsoAppendOrderToday: true,
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.arrivalDates).toEqual(["2026-08-27", "2026-09-03"]);
     expect(result.previousYmd).toBe("2026-08-27");
     expect(result.nextYmd).toBe("2026-09-03");
+    expect(result.orderDates).toEqual(["2026-08-19", "2026-08-27"]);
+    expect(result.previousOrderYmd).toBe("2026-08-19");
+    expect(result.nextOrderYmd).toBe("2026-08-27");
+    expect(result.transferMemo).toContain("[주문일: 2026-08-27]");
     expect(result.transferMemo).toContain("[도착일: 2026-09-03]");
     expect(result.unchanged).toBe(false);
   });
 
+  it("does not stack orderDates when re-arriving again same day", () => {
+    const result = appendPracticeArrivalDate({
+      transferMemo: "[주문일: 2026-08-27]\n[도착일: 2026-09-03]",
+      arrivalDates: ["2026-08-27", "2026-09-03"],
+      orderDates: ["2026-08-19", "2026-08-27"],
+      nextYmd: "2026-09-10",
+      now: new Date("2026-08-27T07:00:00+09:00"),
+      alsoAppendOrderToday: true,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.arrivalDates).toEqual(["2026-08-27", "2026-09-10"]);
+    expect(result.orderDates).toEqual(["2026-08-19", "2026-08-27"]);
+    expect(result.nextOrderYmd).toBe("2026-08-27");
+    expect(result.previousOrderYmd).toBe("2026-08-27");
+  });
+
   it("defaults next to today+7 civil days", () => {
     const result = appendPracticeArrivalDate({
-      transferMemo: "[치과도착일: 2026-08-20]",
+      transferMemo: "[주문일: 2026-08-20]\n[치과도착일: 2026-08-20]",
       arrivalDates: ["2026-08-20"],
+      orderDates: ["2026-08-20"],
       now: new Date("2026-08-27T07:00:00+09:00"),
+      alsoAppendOrderToday: false,
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -57,6 +94,7 @@ describe("practiceTransferArrivalDates", () => {
       arrivalDates: ["2026-08-27", "2026-09-03", "2026-09-10"],
       nextYmd: "2026-09-03",
       now: new Date("2026-08-27T07:00:00+09:00"),
+      alsoAppendOrderToday: false,
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -72,6 +110,7 @@ describe("practiceTransferArrivalDates", () => {
       arrivalDates: ["2026-08-27", "2026-09-03"],
       nextYmd: "2026-09-10",
       now: new Date("2026-08-27T07:00:00+09:00"),
+      alsoAppendOrderToday: false,
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -99,6 +138,16 @@ describe("practiceTransferArrivalDates", () => {
         nextMemo: "[치과도착일: 2026-08-27]",
       }),
     ).toEqual(["2026-08-27"]);
+  });
+
+  it("syncs create memo into single orderDates entry", () => {
+    expect(
+      syncOrderDatesWithMemoYmd({
+        previousOrderDates: [],
+        previousMemo: "",
+        nextMemo: "[주문일: 2026-08-19]\n[치과도착일: 2026-08-27]",
+      }),
+    ).toEqual(["2026-08-19"]);
   });
 
   it("compacts stacked future dates down to current + past/today history", () => {

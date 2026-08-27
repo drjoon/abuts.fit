@@ -47,14 +47,16 @@ describe("parsePracticeTransferCalendarRangeQuery", () => {
 });
 
 describe("buildPracticeTransferCalendarDateRangeFilter", () => {
-  it("builds orderDate memo filter", () => {
+  it("builds orderDate filter with orderDates OR memo fallback", () => {
     const filter = buildPracticeTransferCalendarDateRangeFilter({
       fromYmd: "2026-08-01",
       toYmd: "2026-08-31",
       dateKey: "orderDate",
     });
     expect(filter).toBeTruthy();
-    expect(filter.$expr).toBeTruthy();
+    expect(Array.isArray(filter.$or)).toBe(true);
+    expect(String(JSON.stringify(filter))).toContain("orderDates");
+    expect(String(JSON.stringify(filter))).toContain("주문일");
   });
 
   it("builds arrivalDate filter with arrivalDates OR memo fallback", () => {

@@ -206,6 +206,16 @@ export function parseArrivalYmdFromMemo(memo) {
   return String(matched?.[1] || "").trim() || null;
 }
 
+export function upsertMemoOrderYmd(memo, orderYmd) {
+  const ymd = String(orderYmd || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return String(memo || "");
+  const raw = String(memo || "");
+  if (/\[\s*주문일\s*:/i.test(raw)) {
+    return raw.replace(/\[\s*주문일\s*:\s*[^\]]*\]/gi, `[주문일: ${ymd}]`);
+  }
+  return `[주문일: ${ymd}]\n${raw}`.trim();
+}
+
 export function upsertMemoArrivalYmd(memo, arrivalYmd) {
   const ymd = String(arrivalYmd || "").trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return String(memo || "");

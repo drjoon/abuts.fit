@@ -948,6 +948,22 @@ export function RequestorPracticeReceivePage({
           rawTransferMemo: String(r.transferMemo || "").trim(),
           orderDate: String(r.orderDate || parsedMemo.orderDate || "").trim(),
           arrivalDate: String(r.arrivalDate || parsedMemo.arrivalDate || "").trim(),
+          orderDates: (() => {
+            const fromApi = Array.isArray(r.orderDates)
+              ? (r.orderDates as unknown[])
+                  .map((d) => String(d || "").trim())
+                  .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
+              : [];
+            const current = String(
+              r.orderDate || parsedMemo.orderDate || "",
+            ).trim();
+            if (fromApi.length > 0) {
+              return fromApi.includes(current) || !current
+                ? fromApi
+                : [...fromApi, current];
+            }
+            return current ? [current] : [];
+          })(),
           arrivalDates: (() => {
             const fromApi = Array.isArray(r.arrivalDates)
               ? (r.arrivalDates as unknown[])
@@ -1773,12 +1789,19 @@ export function RequestorPracticeReceivePage({
           : transfer.arrivalDate
             ? [transfer.arrivalDate]
             : [];
+      const linkedOrderDates =
+        Array.isArray(transfer.orderDates) && transfer.orderDates.length > 0
+          ? transfer.orderDates
+          : transfer.orderDate
+            ? [transfer.orderDate]
+            : [];
       return {
         id: transferId,
         orderDate: transfer.orderDate || transfer.createdAt,
         arrivalDate:
           transfer.arrivalDate || transfer.orderDate || transfer.createdAt,
         linkedArrivalDates,
+        linkedOrderDates,
         colorKey:
           String(transfer.practiceBusinessAnchorId || "").trim() || clinic,
         statusTone: resolvePracticeCalendarStatusTone(
@@ -1801,14 +1824,23 @@ export function RequestorPracticeReceivePage({
       const id = String(transfer.transferId || transfer._id || "").trim();
       if (!id) continue;
       map.set(id, transfer);
-      const dates =
+      const arrivalDates =
         Array.isArray(transfer.arrivalDates) && transfer.arrivalDates.length > 0
           ? transfer.arrivalDates
           : transfer.arrivalDate
             ? [transfer.arrivalDate]
             : [];
-      for (const ymd of dates) {
+      for (const ymd of arrivalDates) {
         map.set(`${id}:arr:${ymd}`, transfer);
+      }
+      const orderDates =
+        Array.isArray(transfer.orderDates) && transfer.orderDates.length > 0
+          ? transfer.orderDates
+          : transfer.orderDate
+            ? [transfer.orderDate]
+            : [];
+      for (const ymd of orderDates) {
+        map.set(`${id}:ord:${ymd}`, transfer);
       }
     }
     return map;

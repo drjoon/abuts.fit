@@ -81,8 +81,11 @@ import {
   appendPracticeArrivalDate,
   PRACTICE_ARRIVAL_SHADE_EXTEND_CIVIL_DAYS,
   resolveCurrentArrivalYmd,
+  resolveCurrentOrderYmd,
   resolvePracticeArrivalDates,
+  resolvePracticeOrderDates,
   syncArrivalDatesWithMemoYmd,
+  syncOrderDatesWithMemoYmd,
 } from "../../utils/practiceTransferArrivalDates.js";
 import {
   buildPracticeTransferCalendarDateRangeFilter,
@@ -158,6 +161,7 @@ import { resolvePracticeTransferSkipJig } from "../../utils/practiceTransferLabS
 // - web/backend/utils/practiceTransferAbutmentPresets.js
 // - web/backend/utils/practiceLabRating.js
 // - web/backend/utils/practiceTransferStage.js
+// - 2026-08-27: append-arrival — 재주문일(오늘)+재도착일 누적(주문일/도착일 캘린더, 크레딧 미중복).
 // - 2026-08-27: append-arrival — 동일 건 치과도착일 누적(캘린더 다중 표시, 크레딧 미중복).
 // - 2026-08-27: 재도착일 변경 시 requestorReadAt 초기화(기공소 unread).
 // - 2026-08-26: cancel/restore/empty — 휴지통 이동 시 채팅 rooms 캐시 무효화(최근의뢰·사이드 unread 즉시 반영).
@@ -897,7 +901,9 @@ const toVirtualRequestRows = (transferDoc) => {
   const sourceRows = files.length > 0 ? files : [null];
   const arrivalDates = resolvePracticeArrivalDates(transferDoc);
   const currentArrivalYmd = resolveCurrentArrivalYmd(arrivalDates);
-  const orderYmd = parseOrderYmdFromMemo(transferMemo);
+  const orderDates = resolvePracticeOrderDates(transferDoc);
+  const orderYmd =
+    resolveCurrentOrderYmd(orderDates) || parseOrderYmdFromMemo(transferMemo);
 
   return sourceRows.map((item, idx) => ({
     _id: `${String(transferDoc._id)}:${idx + 1}`,
@@ -913,6 +919,7 @@ const toVirtualRequestRows = (transferDoc) => {
     hasCustomAbutment: hasCustomAbutmentToothWorks(toothWorks),
     arrivalDates,
     arrivalDate: currentArrivalYmd || null,
+    orderDates,
     orderDate: orderYmd || null,
     resultFiles: resultFiles.map((rf, rfIdx) => ({
       id: `${String(transferDoc._id)}::result::${rfIdx + 1}`,
@@ -2771,6 +2778,11 @@ export async function createPracticeTransfer(req, res) {
         previousMemo: "",
         nextMemo: transferMemoResolved,
       }),
+      orderDates: syncOrderDatesWithMemoYmd({
+        previousOrderDates: [],
+        previousMemo: "",
+        nextMemo: transferMemoResolved,
+      }),
       tag,
       status: "active",
       files,
@@ -3405,6 +3417,11 @@ export async function updatePracticeTransferContent(req, res) {
         previousMemo: doc.transferMemo,
         nextMemo: transferMemoResolved,
       }),
+      orderDates: syncOrderDatesWithMemoYmd({
+        previousOrderDates: doc.orderDates,
+        previousMemo: doc.transferMemo,
+        nextMemo: transferMemoResolved,
+      }),
       tag: tag || doc.tag,
       files,
       toothWorks: toothWorksRaw,
@@ -3697,10 +3714,12 @@ export async function appendPracticeTransferArrival(req, res) {
     const appended = appendPracticeArrivalDate({
       transferMemo: doc.transferMemo,
       arrivalDates: doc.arrivalDates,
+      orderDates: doc.orderDates,
       nextYmd: rawYmd || undefined,
       offsetCivilDays: Number.isFinite(offsetCivilDays)
         ? offsetCivilDays
         : PRACTICE_ARRIVAL_SHADE_EXTEND_CIVIL_DAYS,
+      alsoAppendOrderToday: true,
     });
     if (!appended.ok) {
       return res.status(appended.statusCode || 400).json({
@@ -3720,6 +3739,9 @@ export async function appendPracticeTransferArrival(req, res) {
           arrivalDates: appended.arrivalDates,
           arrivalDate: appended.nextYmd,
           previousArrivalDate: appended.previousYmd,
+          orderDates: appended.orderDates,
+          orderDate: appended.nextOrderYmd,
+          previousOrderDate: appended.previousOrderYmd,
           billingUnchanged: true,
         },
       });
@@ -3731,6 +3753,7 @@ export async function appendPracticeTransferArrival(req, res) {
         $set: {
           transferMemo: appended.transferMemo,
           arrivalDates: appended.arrivalDates,
+          orderDates: appended.orderDates,
           // 기공소 수신함 unread — 의뢰 내용 수정과 동일
           requestorReadAt: null,
           requestorReadBy: null,
@@ -3747,11 +3770,18 @@ export async function appendPracticeTransferArrival(req, res) {
 
     const prevLabel = appended.previousYmd || "-";
     const nextLabel = appended.nextYmd;
+    const prevOrderLabel = appended.previousOrderYmd || "-";
+    const nextOrderLabel = appended.nextOrderYmd || "-";
+    const orderChanged =
+      Boolean(appended.nextOrderYmd) &&
+      appended.nextOrderYmd !== appended.previousOrderYmd;
     try {
       await postPracticeTransferSystemChatMessage({
         transferMongoId: String(updated._id),
         senderUserId: req.user?._id,
-        content: `치과도착일이 ${prevLabel} → ${nextLabel}(으)로 변경되었습니다.`,
+        content: orderChanged
+          ? `재도착 반영: 주문일 ${prevOrderLabel} → ${nextOrderLabel}, 치과도착일 ${prevLabel} → ${nextLabel}.`
+          : `치과도착일이 ${prevLabel} → ${nextLabel}(으)로 변경되었습니다.`,
         systemEvent: "practice_transfer_arrival_appended",
       });
     } catch {
@@ -3787,6 +3817,9 @@ export async function appendPracticeTransferArrival(req, res) {
       arrivalDates: appended.arrivalDates,
       arrivalDate: appended.nextYmd,
       previousArrivalDate: appended.previousYmd,
+      orderDates: appended.orderDates,
+      orderDate: appended.nextOrderYmd,
+      previousOrderDate: appended.previousOrderYmd,
       requestorReadAt: null,
       unreadCount: unreadCountForRequestor,
       billingUnchanged: true,
@@ -3818,6 +3851,9 @@ export async function appendPracticeTransferArrival(req, res) {
         arrivalDates: appended.arrivalDates,
         arrivalDate: appended.nextYmd,
         previousArrivalDate: appended.previousYmd,
+        orderDates: appended.orderDates,
+        orderDate: appended.nextOrderYmd,
+        previousOrderDate: appended.previousOrderYmd,
         transferMemo: String(updated.transferMemo || ""),
         requestorReadAt: null,
         billingUnchanged: true,
@@ -3964,6 +4000,7 @@ export async function remakePracticeTransfers(req, res) {
         matchingMode: "direct",
         transferMemo: String(source.transferMemo || "").trim(),
         arrivalDates: resolvePracticeArrivalDates(source),
+        orderDates: resolvePracticeOrderDates(source),
         tag: String(source.tag || "practice_file_transfer").trim(),
         status: "active",
         files,
@@ -4573,7 +4610,10 @@ export async function getReceivedPracticeTransfers(req, res) {
         abutmentDeliveryById.get(String(doc?._id || "")) || null;
       const arrivalDates = resolvePracticeArrivalDates(doc);
       const arrivalDate = resolveCurrentArrivalYmd(arrivalDates);
-      const orderDate = parseOrderYmdFromMemo(doc?.transferMemo);
+      const orderDates = resolvePracticeOrderDates(doc);
+      const orderDate =
+        resolveCurrentOrderYmd(orderDates) ||
+        parseOrderYmdFromMemo(doc?.transferMemo);
 
       return {
         _id: String(doc?._id || ""),
@@ -4582,6 +4622,7 @@ export async function getReceivedPracticeTransfers(req, res) {
         targetLabName: String(doc?.targetLabName || "").trim(),
         transferMemo: String(doc?.transferMemo || "").trim(),
         orderDate: orderDate || null,
+        orderDates,
         arrivalDate: arrivalDate || null,
         arrivalDates,
         status: String(doc?.status || "").trim() || "active",

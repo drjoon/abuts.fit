@@ -3960,6 +3960,9 @@ export const PracticeFileTransferPage = ({
           arrivalDates?: string[];
           arrivalDate?: string;
           previousArrivalDate?: string | null;
+          orderDates?: string[];
+          orderDate?: string | null;
+          previousOrderDate?: string | null;
           transferMemo?: string;
           billingUnchanged?: boolean;
         };
@@ -3985,11 +3988,17 @@ export const PracticeFileTransferPage = ({
       const nextDates = Array.isArray(data.arrivalDates)
         ? data.arrivalDates.map((d) => String(d || "").trim()).filter(Boolean)
         : [];
+      const nextOrder = String(data.orderDate || "").trim();
+      const nextOrderDates = Array.isArray(data.orderDates)
+        ? data.orderDates.map((d) => String(d || "").trim()).filter(Boolean)
+        : [];
       const nextMemo = String(data.transferMemo || "").trim();
       const patch = (prev: RecentTransferItem): RecentTransferItem => ({
         ...prev,
         arrivalDate: nextArrival || prev.arrivalDate,
         arrivalDates: nextDates.length ? nextDates : prev.arrivalDates,
+        orderDate: nextOrder || prev.orderDate,
+        orderDates: nextOrderDates.length ? nextOrderDates : prev.orderDates,
         transferMemo: nextMemo || prev.transferMemo,
         rawTransferMemo: nextMemo || prev.rawTransferMemo,
       });
@@ -4001,6 +4010,10 @@ export const PracticeFileTransferPage = ({
                 ...row,
                 arrivalDate: nextArrival || row.arrivalDate,
                 arrivalDates: nextDates.length ? nextDates : row.arrivalDates,
+                orderDate: nextOrder || row.orderDate,
+                orderDates: nextOrderDates.length
+                  ? nextOrderDates
+                  : row.orderDates,
                 transferMemo: nextMemo || row.transferMemo,
                 rawTransferMemo: nextMemo || row.rawTransferMemo,
               }
@@ -4010,7 +4023,7 @@ export const PracticeFileTransferPage = ({
       toast({
         title: "재도착일 반영",
         description: nextArrival
-          ? `최종 도착일 ${nextArrival}. 이전 날짜는 캘린더에 유지되며 크레딧은 추가 차감되지 않습니다.`
+          ? `재주문일 ${nextOrder || "오늘"} · 재도착일 ${nextArrival}. 이전 일자는 캘린더에 유지되며 크레딧은 추가 차감되지 않습니다.`
           : "동일 건에 도착일이 누적되었습니다.",
       });
       void loadRecentRequests({ silent: true });

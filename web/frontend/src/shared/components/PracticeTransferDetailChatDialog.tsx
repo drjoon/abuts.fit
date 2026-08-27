@@ -13,6 +13,7 @@
 // - web/frontend/src/shared/files/s3BlobCache.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
 // - 2026-08-27: 채팅 버블에 보낸사람 이름 표시.
+// - 2026-08-27: 재도착일 — 오늘=재주문일·선택일=재도착일 동시 누적(주문일/도착일 캘린더).
 // - 2026-08-27: 재도착일 — 오늘 이후 1개만(다시 고르면 교체). 과거·오늘만 캘린더 이력.
 // - 2026-08-27: 치과도착일 옆 「재도착일」날짜 선택(누적·과금 없음).
 // - 2026-08-27: 치과도착일 +1주 누적(동일 건·크레딧 미중복).
@@ -1172,7 +1173,7 @@ export function PracticeTransferDetailChatDialog({
                               disabled={
                                 appendArrivalDisabled || appendArrivalBusy
                               }
-                              title="오늘 이후 재도착일 1개만 둡니다. 다시 고르면 수정되며 크레딧은 추가 차감되지 않습니다."
+                              title="재도착일 선택 시 오늘이 재주문일로 함께 반영됩니다. 오늘 이후 재도착일 1개만 두며, 다시 고르면 수정되고 크레딧은 추가 차감되지 않습니다."
                             >
                               <CalendarClock className="h-3.5 w-3.5" />
                               {appendArrivalBusy ? "반영 중…" : "재도착일"}
@@ -1184,8 +1185,9 @@ export function PracticeTransferDetailChatDialog({
                             onOpenAutoFocus={(e) => e.preventDefault()}
                           >
                             <div className="border-b px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
-                              오늘 이후 재도착일은 1개만 유지됩니다. 다시
-                              고르면 수정되고, 크레딧은 추가 차감되지
+                              선택일=재도착일, 오늘=재주문일로 반영됩니다.
+                              오늘 이후 재도착일은 1개만 유지되며, 다시
+                              고르면 수정되고 크레딧은 추가 차감되지
                               않습니다.
                             </div>
                             <Calendar

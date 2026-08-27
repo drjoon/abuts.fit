@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 동일 PracticeTransfer에 치과도착일 누적(쉐이드 등). 신규/과금 없음.
+ * 동일 PracticeTransfer에 재주문일(오늘)·재도착일 누적. 신규/과금 없음.
  *
  * Usage:
  *   cd web/backend && \
@@ -40,8 +40,10 @@ async function main() {
   const result = appendPracticeArrivalDate({
     transferMemo: doc.transferMemo,
     arrivalDates: doc.arrivalDates,
+    orderDates: doc.orderDates,
     nextYmd: rawYmd || undefined,
     offsetCivilDays,
+    alsoAppendOrderToday: true,
   });
   if (!result.ok) {
     console.error(result.message, result.reason);
@@ -57,6 +59,8 @@ async function main() {
           transferId,
           arrivalDates: result.arrivalDates,
           arrivalDate: result.nextYmd,
+          orderDates: result.orderDates,
+          orderDate: result.nextOrderYmd,
         },
         null,
         2,
@@ -68,6 +72,7 @@ async function main() {
 
   doc.transferMemo = result.transferMemo;
   doc.arrivalDates = result.arrivalDates;
+  doc.orderDates = result.orderDates;
   await doc.save();
 
   console.log(
@@ -78,6 +83,9 @@ async function main() {
         previousArrivalDate: result.previousYmd,
         arrivalDate: result.nextYmd,
         arrivalDates: result.arrivalDates,
+        previousOrderDate: result.previousOrderYmd,
+        orderDate: result.nextOrderYmd,
+        orderDates: result.orderDates,
         billingUnchanged: true,
       },
       null,
