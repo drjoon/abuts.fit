@@ -2,6 +2,7 @@
  * 치과 발신 의뢰상세 좌측 패널 모델 SSOT.
  * 최근의뢰·전체보기에서 같은 PracticeRecentTransferItem으로 연다.
  * 2026-08-16: 작업 파일(어벗 디자인·보철물) 표시를 한곳에서 구성.
+ * 2026-08-27: 재도착 이력 — 주문일→도착일 / 재주문일→재도착일 쌍 표시.
  * 2026-08-21: 커스텀어벗 한진 배송현황 요약 행.
  * 2026-08-21: 작업취소·휴지통 상태에서는 디자인 컨펌 CTA 숨김.
  */
@@ -19,6 +20,95 @@ import type {
 } from "@/shared/components/PracticeTransferDetailChatDialog";
 import { buildPracticeWorkPeriodSummaryItem } from "@/shared/practice/practiceWorkPeriod";
 import { getPracticeAbutmentDeliveryLabel } from "@/shared/shipping/hanjinTrackingLabel";
+
+const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+const normalizeYmdList = (values: unknown, fallback?: string | null): string[] => {
+  const fromArr = Array.isArray(values)
+    ? values
+        .map((d) => String(d || "").trim())
+        .filter((d) => YMD_RE.test(d))
+    : [];
+  const fb = String(fallback || "").trim();
+  if (fromArr.length > 0) {
+    if (fb && !fromArr.includes(fb)) return [...fromArr, fb];
+    return fromArr;
+  }
+  return fb && YMD_RE.test(fb) ? [fb] : [];
+};
+
+/**
+ * 의뢰상세 날짜 행.
+ * 단건: 주문일 / 치과도착일
+ * 재도착 이력: 주문일→도착일 + 재주문일→재도착일
+ */
+export function buildPracticeTransferDateSummaryItems(
+  transfer: Pick<
+    PracticeRecentTransferItem,
+    "orderDate" | "arrivalDate" | "orderDates" | "arrivalDates"
+  >,
+): PracticeTransferDialogSummaryItem[] {
+  const orderDates = normalizeYmdList(transfer.orderDates, transfer.orderDate);
+  const arrivalDates = normalizeYmdList(
+    transfer.arrivalDates,
+    transfer.arrivalDate,
+  );
+  const hasReorder =
+    orderDates.length > 1 || arrivalDates.length > 1;
+  if (!hasReorder) {
+    return [
+      { label: "주문일", value: orderDates[0] || transfer.orderDate || "-" },
+      {
+        label: "치과도착일",
+        value: arrivalDates[0] || transfer.arrivalDate || "-",
+      },
+    ];
+  }
+
+  const originalOrder = orderDates[0] || "-";
+  const originalArrival = arrivalDates[0] || "-";
+  const reorderYmd =
+    orderDates.length > 1 ? orderDates[orderDates.length - 1] : "-";
+  const rearrivalYmd =
+    arrivalDates.length > 1
+      ? arrivalDates[arrivalDates.length - 1]
+      : arrivalDates[0] || "-";
+
+  return [
+    {
+      label: "주문일",
+      value: originalOrder,
+      tooltip:
+        orderDates.length > 1
+          ? `연결 주문일: ${orderDates.join(" → ")}`
+          : undefined,
+    },
+    {
+      label: "도착일",
+      value: originalArrival,
+      tooltip:
+        arrivalDates.length > 1
+          ? `연결 도착일: ${arrivalDates.join(" → ")}`
+          : undefined,
+    },
+    {
+      label: "재주문일",
+      value: reorderYmd,
+      tooltip:
+        orderDates.length > 1
+          ? `연결 주문일: ${orderDates.join(" → ")}`
+          : "재도착 설정 시 오늘이 재주문일로 반영됩니다.",
+    },
+    {
+      label: "재도착일",
+      value: rearrivalYmd,
+      tooltip:
+        arrivalDates.length > 1
+          ? `연결 도착일: ${arrivalDates.join(" → ")}`
+          : undefined,
+    },
+  ];
+}
 
 const toDialogFiles = (
   files: PracticeRecentTransferFileItem[] | undefined,
@@ -60,9 +150,25 @@ export function buildPracticeSenderTransferDetailModel(
     String(transfer.draftPatientName || "").trim();
   // 상세 좌 메모: 메타 태그 원본에서 자유 입력 메모만 (환자명·보철물 요약 제외)
   const displayMemo = String(parsed.memo || "").trim() || "-";
-  const workPeriodSummary = buildPracticeWorkPeriodSummaryItem(
-    transfer.orderDate,
+  const orderDates = normalizeYmdList(transfer.orderDates, transfer.orderDate);
+  const arrivalDates = normalizeYmdList(
+    transfer.arrivalDates,
     transfer.arrivalDate,
+  );
+  const hasReorder = orderDates.length > 1 || arrivalDates.length > 1;
+  const currentOrderYmd = hasReorder
+    ? orderDates.length > 1
+      ? orderDates[orderDates.length - 1]
+      : orderDates[0] || transfer.orderDate
+    : transfer.orderDate;
+  const currentArrivalYmd = hasReorder
+    ? arrivalDates.length > 1
+      ? arrivalDates[arrivalDates.length - 1]
+      : arrivalDates[0] || transfer.arrivalDate
+    : transfer.arrivalDate;
+  const workPeriodSummary = buildPracticeWorkPeriodSummaryItem(
+    currentOrderYmd,
+    currentArrivalYmd,
     "practice",
     transfer.createdAtTs,
   );
@@ -117,40 +223,7 @@ export function buildPracticeSenderTransferDetailModel(
       { label: "전송시각", value: transfer.createdAt || "-" },
       { label: "기공소", value: transfer.targetLab || "-" },
       { label: "환자명", value: patientName || "-" },
-      {
-        label: "주문일",
-        value: transfer.orderDate || "-",
-        tooltip:
-          Array.isArray(transfer.orderDates) && transfer.orderDates.length > 1
-            ? `연결 주문일: ${transfer.orderDates.join(" → ")}`
-            : undefined,
-      },
-      ...(Array.isArray(transfer.orderDates) && transfer.orderDates.length > 1
-        ? [
-            {
-              label: "이전 주문일",
-              value: transfer.orderDates.slice(0, -1).join(", "),
-            } satisfies PracticeTransferDialogSummaryItem,
-          ]
-        : []),
-      {
-        label: "치과도착일",
-        value: transfer.arrivalDate || "-",
-        tooltip:
-          Array.isArray(transfer.arrivalDates) &&
-          transfer.arrivalDates.length > 1
-            ? `연결 도착일: ${transfer.arrivalDates.join(" → ")}`
-            : undefined,
-      },
-      ...(Array.isArray(transfer.arrivalDates) &&
-      transfer.arrivalDates.length > 1
-        ? [
-            {
-              label: "이전 도착일",
-              value: transfer.arrivalDates.slice(0, -1).join(", "),
-            } satisfies PracticeTransferDialogSummaryItem,
-          ]
-        : []),
+      ...buildPracticeTransferDateSummaryItems(transfer),
       ...(workPeriodSummary
         ? [workPeriodSummary as PracticeTransferDialogSummaryItem]
         : []),

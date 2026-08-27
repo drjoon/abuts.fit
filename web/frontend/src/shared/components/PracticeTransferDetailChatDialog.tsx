@@ -1128,7 +1128,8 @@ export function PracticeTransferDetailChatDialog({
               ) : null}
               <div className="grid grid-cols-2 gap-3">
                 {summaryItems.map((row, idx) => {
-                  const isArrivalRow = row.label === "치과도착일";
+                  const isArrivalRow =
+                    row.label === "치과도착일" || row.label === "재도착일";
                   const valueNode = (
                     <p
                       className={

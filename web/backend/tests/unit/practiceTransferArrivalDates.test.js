@@ -57,6 +57,24 @@ describe("practiceTransferArrivalDates", () => {
     expect(result.unchanged).toBe(false);
   });
 
+  it("fills reorder today when arrival unchanged but orderDates missing reorder", () => {
+    const result = appendPracticeArrivalDate({
+      transferMemo: "[주문일: 2026-08-19]\n[도착일: 2026-09-03]",
+      arrivalDates: ["2026-08-27", "2026-09-03"],
+      orderDates: ["2026-08-19"],
+      nextYmd: "2026-09-03",
+      now: new Date("2026-08-27T07:00:00+09:00"),
+      alsoAppendOrderToday: true,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.unchanged).toBe(false);
+    expect(result.arrivalDates).toEqual(["2026-08-27", "2026-09-03"]);
+    expect(result.orderDates).toEqual(["2026-08-19", "2026-08-27"]);
+    expect(result.nextOrderYmd).toBe("2026-08-27");
+    expect(result.transferMemo).toContain("[주문일: 2026-08-27]");
+  });
+
   it("does not stack orderDates when re-arriving again same day", () => {
     const result = appendPracticeArrivalDate({
       transferMemo: "[주문일: 2026-08-27]\n[도착일: 2026-09-03]",

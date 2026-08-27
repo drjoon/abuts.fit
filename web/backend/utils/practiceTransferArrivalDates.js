@@ -239,6 +239,28 @@ export function appendPracticeArrivalDate({
     nextList.every((d, i) => d === currentList[i]);
 
   if (arrivalUnchanged) {
+    // 레거시: 재도착만 있고 재주문일 미반영인 경우 — 도착일이 같아도 오늘을 재주문일로 채움
+    if (alsoAppendOrderToday) {
+      const withArrivalMemo = upsertMemoArrivalYmd(memo, next);
+      const orderAppended = appendPracticeOrderDateToday({
+        transferMemo: withArrivalMemo,
+        orderDates: orderResolved,
+        now,
+      });
+      if (!orderAppended.unchanged) {
+        return {
+          ok: true,
+          arrivalDates: nextList,
+          previousYmd,
+          nextYmd: next,
+          orderDates: orderAppended.orderDates,
+          previousOrderYmd: orderAppended.previousYmd,
+          nextOrderYmd: orderAppended.nextYmd,
+          transferMemo: orderAppended.transferMemo,
+          unchanged: false,
+        };
+      }
+    }
     return {
       ok: true,
       arrivalDates: nextList,

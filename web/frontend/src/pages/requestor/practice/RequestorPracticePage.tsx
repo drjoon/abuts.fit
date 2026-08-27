@@ -186,6 +186,7 @@ import {
   type LabPracticePartnerMemoPublic,
 } from "@/shared/practice/labPracticePartnerMemo";
 import { buildPracticeWorkPeriodSummaryItem } from "@/shared/practice/practiceWorkPeriod";
+import { buildPracticeTransferDateSummaryItems } from "@/shared/practice/practiceSenderTransferDetailModel";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import { REQUESTOR_KIND_LABEL } from "@/shared/business/requestorCapabilities";
 import { PracticeFileTransferPage } from "@/pages/practice/PracticeFileTransferPage";
@@ -4963,8 +4964,12 @@ export function RequestorPracticeReceivePage({
               ? "비공개"
               : selectedTransfer?.practice.userName || "-" },
           { label: "환자명", value: selectedTransferPatientName || "-" },
-          { label: "주문일", value: selectedTransfer?.orderDate || "-" },
-          { label: "치과도착일", value: selectedTransfer?.arrivalDate || "-" },
+          ...buildPracticeTransferDateSummaryItems({
+            orderDate: selectedTransfer?.orderDate || "",
+            arrivalDate: selectedTransfer?.arrivalDate || "",
+            orderDates: selectedTransfer?.orderDates,
+            arrivalDates: selectedTransfer?.arrivalDates,
+          }),
           ...(selectedTransferWorkPeriodSummary
             ? [selectedTransferWorkPeriodSummary]
             : []),
