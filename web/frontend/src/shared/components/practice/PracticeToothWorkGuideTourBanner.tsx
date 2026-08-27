@@ -21,7 +21,7 @@ export const PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS = [
   {
     id: "dates",
     title: "날짜 확인",
-    hint: "주문·치과도착일 버튼을 눌러 날짜를 확인하세요.",
+    hint: "주문·도착일 버튼을 눌러 날짜를 확인하세요.",
   },
   {
     id: "select",

@@ -7,6 +7,7 @@
  * - web/frontend/src/pages/practice/components/PracticeStatusFilterBadges.tsx
  * - web/frontend/src/shared/date/kst.ts
  * - web/frontend/src/shared/practice/labReceiveCalendarWeekGrid.ts
+ * - 2026-08-27: 캘린더 날짜키 뱃지 「도착일」(치과도착일) — 작은 글씨에서 치과의사 오인 방지.
  * - 2026-08-27: 누적 도착일 칩 — 이전 날짜 흐리게·연결 표시.
  * - 2026-08-23: 숨길 요일 버튼·캘린더 열 일~토(일요일 시작) 통일.
  * - 2026-08-23: 숨길 요일 토글·열 정렬 불일치 수정 — 일요일 선택 시 토요일만 숨겨지던 현상.
@@ -463,12 +464,14 @@ export function PracticeRecentTransfersCalendar({
           <button
             type="button"
             className="rounded-full"
+            title="주문일"
+            aria-label="주문일"
             onClick={() => onDateKeyChange("orderDate")}
           >
             <Badge
               variant="outline"
               className={cn(
-                "cursor-pointer",
+                "cursor-pointer leading-snug tracking-normal",
                 dateKey === "orderDate"
                   ? "border-primary/70 bg-primary-soft text-primary-strong"
                   : "hover:bg-muted/40",
@@ -480,18 +483,21 @@ export function PracticeRecentTransfersCalendar({
           <button
             type="button"
             className="rounded-full"
+            title="치과도착일"
+            aria-label="치과도착일"
             onClick={() => onDateKeyChange("arrivalDate")}
           >
             <Badge
               variant="outline"
               className={cn(
-                "cursor-pointer",
+                // leading-none+작은 글씨에서 「치과도착일」이 「치과의사착일」로 오인되는 경우 방지
+                "cursor-pointer leading-snug tracking-normal",
                 dateKey === "arrivalDate"
                   ? "border-primary/70 bg-primary-soft text-primary-strong"
                   : "hover:bg-muted/40",
               )}
             >
-              치과도착일
+              도착일
             </Badge>
           </button>
         </div>
