@@ -119,6 +119,7 @@
  * - 2026-08-20: 원격 draft 파일은 union merge. autosave echo(파일 없음)가 업로드 직후 목록을 비우지 않게 한다.
  * - 2026-08-20: filesTouched/replace만 첨부 축소 허용. autosave HTTP가 소켓 반영을 덮지 않게 ref 동기화.
  * - 2026-08-20: 로컬 첨부는 peek 재실행 대신 ensureFilesUploaded로 이어서 draft append. iOS 카메라 복귀 후 focus에서도 재시도.
+ * - 2026-08-28: 신규 의뢰 모달 — 새로작성·임시저장·휴지통·가이드투어를 DialogHeader로.
  * - 2026-08-28: 모드 전환(익스프레스) 제거·엑스퍼트 고정. 최근의뢰 좌·작성액션 우 묶음.
  * - 2026-08-28: 메인=전송 캘린더, 미래일 클릭·신규 의뢰=전체화면 작성 모달(도착일 지정).
  */
@@ -142,7 +143,6 @@ import {
 import {
   Card,
   CardContent,
-  CardHeader,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -6998,8 +6998,8 @@ export const PracticeFileTransferPage = ({
     />
   ) : null;
 
-  /** PC — 툴바를 intake/위저드에 넣어 투어 카드와 세로 맞춤(완료 화면은 CardHeader) */
-  const useIntakeHeaderToolbar = !isMobile && (!isExpressMode || showExpressWizard);
+  /** PC — 툴바는 작성 DialogHeader. intake는 투어 레일만 예약 */
+  const showComposeHeaderToolbar = !isMobile;
 
   const practiceWorkspaceToolbar = (
     <>
@@ -7353,9 +7353,8 @@ export const PracticeFileTransferPage = ({
                   headerAsideContent: showExpressWizard
                     ? expressStepProgressNode
                     : null,
-                  headerToolbar: useIntakeHeaderToolbar
-                    ? practiceWorkspaceToolbar
-                    : null,
+                  headerToolbar: null,
+                  reserveGuideTourAside: showComposeHeaderToolbar,
                   guideTourHeaderSlotEl: null,
   };
 
@@ -7422,12 +7421,15 @@ export const PracticeFileTransferPage = ({
           <DialogHeader
             className={cn(
               "shrink-0 border-b bg-white/95 text-left backdrop-blur supports-[backdrop-filter]:bg-white/80",
-              isMobile ? "space-y-0 px-4 pb-3 pt-4 pr-14" : "px-6 py-3 pr-[4.25rem]",
+              isMobile
+                ? "space-y-0 px-4 pb-3 pt-4 pr-14"
+                : "flex flex-row items-center gap-3 space-y-0 px-6 py-2.5 pr-[4.25rem]",
             )}
           >
-            <DialogTitle className="text-base font-semibold tracking-tight sm:text-lg">
+            <DialogTitle className="shrink-0 text-base font-semibold tracking-tight sm:text-lg">
               {editingSentTransfer ? "의뢰 수정" : "신규 의뢰"}
             </DialogTitle>
+            {showComposeHeaderToolbar ? practiceWorkspaceToolbar : null}
           </DialogHeader>
           <PageFileDropZone
             onFiles={handleIncomingFiles}
@@ -7442,20 +7444,13 @@ export const PracticeFileTransferPage = ({
             >
               <div className="flex min-w-0 w-full flex-col gap-3">
                 <Card className="min-w-0 border-0 bg-transparent shadow-none hover:shadow-none">
-            {isMobile || useIntakeHeaderToolbar ? null : (
-            <CardHeader className="px-0 pb-2 pt-0">
-              <div className="flex w-full min-w-0 flex-wrap items-center gap-2">
-                {practiceWorkspaceToolbar}
-              </div>
-            </CardHeader>
-            )}
             {editingSentTransfer ? (
               <div className="mb-1 rounded-md border border-primary/30 bg-primary-soft px-3 py-2 text-sm text-primary-strong">
                 기공소가 수락하기 전인 의뢰를 수정 중입니다. 저장하면 같은 의뢰가
                 업데이트됩니다. 새로 작성하면 수정이 취소됩니다.
               </div>
             ) : null}
-            <CardContent className={cn("min-w-0 px-0", isMobile || useIntakeHeaderToolbar ? "pt-0" : "pt-5")}>
+            <CardContent className="min-w-0 px-0 pt-0">
               {isMobile ? (
                 <PracticeTransferMobileOralPhotoIntake
                   requestIntakeProps={practiceTransferRequestIntakeProps}

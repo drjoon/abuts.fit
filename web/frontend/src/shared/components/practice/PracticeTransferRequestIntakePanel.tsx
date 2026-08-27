@@ -152,6 +152,8 @@ import {
 // - 2026-08-25: 가이드투어 스텝 상위로 제어 가능(모드 전환 유지). 익스프레스 숨김 필드는 자동 스킵 안 함.
 // - 2026-08-25: 기공소·환자·날짜 투어 배너 → 상단 오른쪽(CardHeader 슬롯). aside는 익스프레스 단계 표시용.
 // - 2026-08-25: 가이드투어 견적·완료 중 어벗 모달 재오픈 허용 — 스텝 진입 시에만 닫고, 열기 직후 effect로 닫지 않음.
+// - 2026-08-28: 커스텀어벗 설정 모달 — 상하 여백과 같은 좌우 여백(max-w=calc).
+// - 2026-08-28: reserveGuideTourAside — 작성 툴바가 DialogHeader로 올라가도 오른쪽 투어 레일 예약.
 // - 2026-08-27: 커스텀어벗 설정 — 「어벗 · 스캔바디 또는 심플어벗」섹션 라벨 제거.
 // - 2026-08-27: 커스텀어벗 설정 — 임플란트·스캔바디 프리셋 2열·호버 액션. 모달 max-w-[90rem].
 // - 2026-08-25: 기공소 픽커 보조줄 — 대표·주소만(사업자번호 표시 제거, 검색은 유지).
@@ -834,6 +836,11 @@ export type PracticeTransferRequestIntakePanelProps = {
    * 있으면 투어 카드가 툴바 윗단~입력 아랫단을 한 그리드로 맞춘다.
    */
   headerToolbar?: ReactNode;
+  /**
+   * headerToolbar 없이도 오른쪽 레일(투어) 자리를 예약.
+   * 작성 툴바가 DialogHeader로 올라도 기공소·환자·날짜 폭이 투어 on/off에 점프하지 않게.
+   */
+  reserveGuideTourAside?: boolean;
   /** 툴바 아래·헤더 필드 위(익스프레스 단계 제목 등) */
   headerIntro?: ReactNode;
   /** 상단 CardHeader 오른쪽 — 기공소·환자·날짜 투어 배너 포털 대상(툴바 미사용 시) */
@@ -922,6 +929,7 @@ export const PracticeTransferRequestIntakePanel = ({
   preferGuideTourAside = false,
   headerAsideContent = null,
   headerToolbar = null,
+  reserveGuideTourAside = false,
   headerIntro = null,
   guideTourHeaderSlotEl = null,
 }: PracticeTransferRequestIntakePanelProps) => {
@@ -2285,8 +2293,9 @@ export const PracticeTransferRequestIntakePanel = ({
       toothWorkGuideTourStepId === "patient" ||
       toothWorkGuideTourStepId === "dates");
   /** 익스프레스: 모든 투어를 오른쪽 레일. 엑스퍼트: 기공소·환자·날짜만 aside */
+  const reserveAsideChrome = Boolean(headerToolbar) || reserveGuideTourAside;
   const useAsideTourRail =
-    Boolean(headerToolbar) &&
+    reserveAsideChrome &&
     toothWorkGuideTourStep != null &&
     (preferGuideTourAside || isHeaderTourStep);
   const asideTourBanner = useAsideTourRail ? (
@@ -2319,11 +2328,11 @@ export const PracticeTransferRequestIntakePanel = ({
       )
     ) : null;
   /**
-   * PC 툴바 크롬이면 오른쪽 레일(투어·단계) 자리를 항상 예약.
+   * PC 툴바 크롬(또는 reserve)이면 오른쪽 레일(투어·단계) 자리를 항상 예약.
    * 카드가 없어도 기공소·환자명·주문-치과도착 폭/위치가 투어 on과 같게 유지된다.
    */
   const showRightRail = Boolean(
-    headerToolbar || headerAsideContent || asideTourBanner,
+    reserveAsideChrome || headerAsideContent || asideTourBanner,
   );
 
   return (
@@ -3991,7 +4000,7 @@ export const PracticeTransferRequestIntakePanel = ({
       >
         <DialogContent
           className={cn(
-            "flex h-[min(90vh,42rem)] max-h-[90vh] flex-col gap-3 overflow-hidden sm:max-w-[90rem]",
+            "flex h-[min(90vh,42rem)] max-h-[90vh] flex-col gap-3 overflow-hidden sm:max-w-[calc(100vw-100vh+min(90vh,42rem))]",
             nestedDialogClassName,
           )}
           overlayClassName={nestedDialogOverlayClassName}
