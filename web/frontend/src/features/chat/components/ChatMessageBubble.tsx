@@ -12,6 +12,7 @@
 // - 2026-08-13: 채팅 첨부 다운로드 중 프로그레스바.
 // - 2026-08-27: 이미지 첨부 썸네일 + ModelPreviewDialog 미리보기(의뢰상세와 동일).
 // - 2026-08-28: STL/PLY/OBJ도 의뢰상세와 동일 썸네일·ModelPreviewDialog.
+// - 2026-08-28: 모델 확장자 우선 분류(잘못된 image MIME 오인 방지).
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Box, Reply, SmilePlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -97,8 +98,9 @@ export function isChatModelAttachment(file: { fileName?: string }): boolean {
 export function resolveChatPreviewKind(
   file: ChatBubbleAttachment,
 ): ModelPreviewKind | null {
-  if (isChatImageAttachment(file)) return "image";
+  // 확장자 우선 — STL이 잘못된 image/* MIME으로 올라와도 이미지로 오인하지 않음
   if (isChatModelAttachment(file)) return "model";
+  if (isChatImageAttachment(file)) return "image";
   return null;
 }
 

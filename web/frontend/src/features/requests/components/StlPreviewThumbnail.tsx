@@ -2,8 +2,10 @@
 // - web/frontend/src/shared/files/modelPreviewFile.ts
 // - web/frontend/src/features/requests/components/StlPreviewViewer.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
+// - web/frontend/src/features/chat/components/ChatMessageBubble.tsx
 // - 2026-08-23: 의뢰 상세 작업 파일 타일용 정적 3D 썸네일.
-import { useEffect, useRef, useState } from "react";
+// - 2026-08-28: WebGL은 1회 렌더 후 PNG 스냅샷·즉시 dispose — 모달 뷰어와 컨텍스트 충돌 방지.
+import { useEffect, useState } from "react";
 import * as THREE from "three";
 import { Box } from "lucide-react";
 import { cn } from "@/shared/ui/cn";
@@ -13,6 +15,9 @@ type Props = {
   file: File;
   className?: string;
 };
+
+/** 썸네일 캡처 해상도(CSS px). DPR 보정은 renderer에서. */
+const THUMB_CSS_SIZE = 160;
 
 function fitCameraToGeometry(
   camera: THREE.PerspectiveCamera,
@@ -44,37 +49,90 @@ function fitCameraToGeometry(
   camera.lookAt(viewTarget);
 }
 
+function releaseWebGl(
+  renderer: THREE.WebGLRenderer | null,
+  mesh: THREE.Mesh | null,
+  geometry: THREE.BufferGeometry | null,
+  scene: THREE.Scene | null,
+): void {
+  if (mesh && scene) {
+    scene.remove(mesh);
+    const material = mesh.material;
+    if (Array.isArray(material)) {
+      material.forEach((item) => item.dispose());
+    } else {
+      material.dispose();
+    }
+  }
+  geometry?.dispose();
+  if (!renderer) return;
+  try {
+    const gl = renderer.getContext();
+    gl?.getExtension?.("WEBGL_lose_context")?.loseContext();
+  } catch {
+    // ignore
+  }
+  try {
+    renderer.dispose();
+  } catch {
+    // ignore
+  }
+  try {
+    renderer.forceContextLoss?.();
+  } catch {
+    // ignore
+  }
+  try {
+    renderer.domElement.remove();
+  } catch {
+    // ignore
+  }
+}
+
 export function StlPreviewThumbnail({ file, className }: Props) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [thumbUrl, setThumbUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
+    let cancelled = false;
+    let released = false;
+    let mesh: THREE.Mesh | null = null;
+    let geometry: THREE.BufferGeometry | null = null;
+    let scene: THREE.Scene | null = null;
+    let renderer: THREE.WebGLRenderer | null = null;
+
+    const release = () => {
+      if (released) return;
+      released = true;
+      releaseWebGl(renderer, mesh, geometry, scene);
+      renderer = null;
+      mesh = null;
+      geometry = null;
+      scene = null;
+    };
 
     setFailed(false);
-    let cancelled = false;
-    let resizeObserver: ResizeObserver | null = null;
+    setThumbUrl(null);
 
-    const scene = new THREE.Scene();
+    scene = new THREE.Scene();
     scene.background = new THREE.Color(0xf1f5f9);
 
     const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
     camera.up.set(0, 0, 1);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    // preserveDrawingBuffer: toDataURL 캡처용. 썸네일은 1프레임만 쓰므로 OK.
+    renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      preserveDrawingBuffer: true,
+      alpha: false,
+    });
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    renderer.setPixelRatio(dpr);
+    renderer.setSize(THUMB_CSS_SIZE, THUMB_CSS_SIZE, false);
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.0;
 
-    container.replaceChildren(renderer.domElement);
-    renderer.domElement.style.width = "100%";
-    renderer.domElement.style.height = "100%";
-    renderer.domElement.style.display = "block";
-    renderer.domElement.style.pointerEvents = "none";
-
-    const hemi = new THREE.HemisphereLight(0xf7fafc, 0xc5d0de, 0.5);
-    scene.add(hemi);
+    scene.add(new THREE.HemisphereLight(0xf7fafc, 0xc5d0de, 0.5));
     scene.add(new THREE.AmbientLight(0xffffff, 0.18));
 
     const keyLight = new THREE.DirectionalLight(0xffffff, 0.9);
@@ -89,30 +147,10 @@ export function StlPreviewThumbnail({ file, className }: Props) {
     rimLight.position.set(15, 90, -60);
     scene.add(rimLight);
 
-    let mesh: THREE.Mesh | null = null;
-    let geometry: THREE.BufferGeometry | null = null;
-
-    const renderOnce = () => {
-      renderer.render(scene, camera);
-    };
-
-    const updateSize = () => {
-      if (!container) return;
-      const width = container.clientWidth || 1;
-      const height = container.clientHeight || 1;
-      camera.aspect = width / Math.max(height, 1);
-      camera.updateProjectionMatrix();
-      renderer.setSize(width, height, false);
-      if (geometry?.boundingBox) {
-        fitCameraToGeometry(camera, geometry.boundingBox);
-      }
-      renderOnce();
-    };
-
     void (async () => {
       try {
         geometry = await parseModelGeometry(file);
-        if (cancelled) return;
+        if (cancelled || released) return;
 
         geometry.computeBoundingBox();
         geometry.computeBoundingSphere();
@@ -124,37 +162,26 @@ export function StlPreviewThumbnail({ file, className }: Props) {
           roughness: 0.6,
         });
         mesh = new THREE.Mesh(geometry, material);
-        scene.add(mesh);
+        scene?.add(mesh);
 
-        updateSize();
-        requestAnimationFrame(() => {
-          if (!cancelled) updateSize();
-        });
+        if (geometry.boundingBox) {
+          fitCameraToGeometry(camera, geometry.boundingBox);
+        }
+        renderer?.render(scene!, camera);
+
+        const dataUrl = renderer!.domElement.toDataURL("image/png");
+        if (cancelled || released) return;
+        setThumbUrl(dataUrl);
       } catch {
         if (!cancelled) setFailed(true);
+      } finally {
+        release();
       }
     })();
 
-    if (typeof ResizeObserver !== "undefined") {
-      resizeObserver = new ResizeObserver(() => updateSize());
-      resizeObserver.observe(container);
-    }
-
     return () => {
       cancelled = true;
-      resizeObserver?.disconnect();
-      if (mesh) {
-        scene.remove(mesh);
-        const material = mesh.material;
-        if (Array.isArray(material)) {
-          material.forEach((item) => item.dispose());
-        } else {
-          material.dispose();
-        }
-      }
-      geometry?.dispose();
-      renderer.dispose();
-      container.replaceChildren();
+      release();
     };
   }, [file]);
 
@@ -171,11 +198,26 @@ export function StlPreviewThumbnail({ file, className }: Props) {
     );
   }
 
+  if (!thumbUrl) {
+    return (
+      <div
+        className={cn(
+          "flex h-full w-full flex-col items-center justify-center gap-1 text-slate-400",
+          className,
+        )}
+        aria-hidden
+      >
+        <Box className="h-7 w-7 shrink-0 opacity-60" />
+      </div>
+    );
+  }
+
   return (
-    <div
-      ref={containerRef}
-      className={cn("h-full w-full", className)}
-      aria-hidden
+    <img
+      src={thumbUrl}
+      alt=""
+      className={cn("h-full w-full object-cover", className)}
+      draggable={false}
     />
   );
 }
