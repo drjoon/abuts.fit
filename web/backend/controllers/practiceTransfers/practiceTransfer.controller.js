@@ -77,6 +77,11 @@ import {
   resolvePracticeTransferArrivalPolicy,
 } from "../../utils/practiceTransferRush.js";
 import {
+  buildPracticeTransferCalendarDateRangeFilter,
+  parsePracticeTransferCalendarRangeQuery,
+  PRACTICE_TRANSFER_CALENDAR_RANGE_MAX,
+} from "../../utils/practiceTransferCalendarRange.util.js";
+import {
   findPracticeLabRating,
   loadGlobalLabRatingAggregates,
   normalizePracticeLabStars,
@@ -1445,11 +1450,58 @@ const fetchOwnedPracticeTransfersPage = async ({
   practiceUserObjectIds,
   skip,
   limit,
+  calendarRange,
 }) => {
+  const sort = { createdAt: -1, _id: -1 };
+  const calendarFilter = calendarRange
+    ? buildPracticeTransferCalendarDateRangeFilter(calendarRange)
+    : null;
+
+  if (calendarRange && calendarFilter) {
+    const take = PRACTICE_TRANSFER_CALENDAR_RANGE_MAX;
+    const anchorId = String(practiceBusinessAnchorId || "").trim();
+    const canSplit =
+      Boolean(anchorId) &&
+      Types.ObjectId.isValid(anchorId) &&
+      scope &&
+      typeof scope === "object" &&
+      Array.isArray(scope.$or);
+
+    if (canSplit) {
+      const ownerIds = Array.isArray(practiceUserObjectIds)
+        ? practiceUserObjectIds
+        : [];
+      const [byAnchor, byLegacy] = await Promise.all([
+        PracticeTransfer.find({
+          practiceBusinessAnchorId: new Types.ObjectId(anchorId),
+          ...calendarFilter,
+        })
+          .sort(sort)
+          .limit(take)
+          .lean(),
+        ownerIds.length
+          ? PracticeTransfer.find({
+              practiceBusinessAnchorId: null,
+              practiceUserId: { $in: ownerIds },
+              ...calendarFilter,
+            })
+              .sort(sort)
+              .limit(take)
+              .lean()
+          : Promise.resolve([]),
+      ]);
+      return mergeNewestTransferDocs(byAnchor, byLegacy, take);
+    }
+
+    return PracticeTransfer.find({ ...scope, ...calendarFilter })
+      .sort(sort)
+      .limit(take)
+      .lean();
+  }
+
   const pageSize = Math.max(1, Number(limit) || 1);
   const offset = Math.max(0, Number(skip) || 0);
   const take = pageSize + 1;
-  const sort = { createdAt: -1, _id: -1 };
   const anchorId = String(practiceBusinessAnchorId || "").trim();
   const canSplit =
     Boolean(anchorId) &&
@@ -3802,6 +3854,7 @@ export async function getMyPracticeTransfers(req, res) {
       return res.status(403).json({ success: false, message: "권한이 없습니다." });
     }
 
+    const calendarRange = parsePracticeTransferCalendarRangeQuery(req.query);
     const page = Math.max(1, Number(req.query?.page || 1));
     const limit = Math.min(200, Math.max(1, Number(req.query?.limit || 100)));
     const skip = (page - 1) * limit;
@@ -3821,11 +3874,16 @@ export async function getMyPracticeTransfers(req, res) {
           ? null
           : practiceBusinessAnchorId,
       practiceUserObjectIds,
-      skip,
+      skip: calendarRange ? 0 : skip,
       limit,
+      calendarRange,
     });
-    const hasMore = fetched.length > limit;
-    const docs = hasMore ? fetched.slice(0, limit) : fetched;
+    const hasMore = calendarRange ? false : fetched.length > limit;
+    const docs = calendarRange
+      ? fetched
+      : hasMore
+        ? fetched.slice(0, limit)
+        : fetched;
 
     const quotesById = await buildFeeQuotesForTransferDocs({ docs });
     const abutmentDeliveryById = await mapAbutmentDeliveryByTransferDocs(docs);
@@ -4122,6 +4180,7 @@ export async function getReceivedPracticeTransfers(req, res) {
       return res.status(403).json({ success: false, message: "권한이 없습니다." });
     }
 
+    const calendarRange = parsePracticeTransferCalendarRangeQuery(req.query);
     const page = Math.max(1, Number(req.query?.page || 1));
     const limit = Math.min(200, Math.max(1, Number(req.query?.limit || 10)));
     const skip = (page - 1) * limit;
@@ -4147,20 +4206,37 @@ export async function getReceivedPracticeTransfers(req, res) {
     // 레거시: 3시간 deadline 만료 재공개는 폐기(수락은 작업완료/취소까지 유지).
     // 치과 의뢰 삭제(status=deleted|레거시 canceled)는 수신 목록·총건수에서 제외.
     // 기공소 작업취소(workCanceledAt, status=active)는 계속 「취소」로 노출.
-    const listScope = { $and: [scope, practiceTransferNotDeletedMongoFilter()] };
+    const calendarFilter = calendarRange
+      ? buildPracticeTransferCalendarDateRangeFilter(calendarRange)
+      : null;
+    const listScope = calendarFilter
+      ? {
+          $and: [
+            scope,
+            practiceTransferNotDeletedMongoFilter(),
+            calendarFilter,
+          ],
+        }
+      : { $and: [scope, practiceTransferNotDeletedMongoFilter()] };
+
+    const listQuery = PracticeTransfer.find(listScope)
+      .sort({ createdAt: -1, _id: -1 })
+      .populate("practiceBusinessAnchorId", "name")
+      .populate(
+        "practiceUserId",
+        "name practiceProfile.clinicName practiceProfile.staffName",
+      );
+    if (calendarRange) {
+      listQuery.limit(PRACTICE_TRANSFER_CALENDAR_RANGE_MAX);
+    } else {
+      listQuery.skip(skip).limit(limit);
+    }
 
     const [docs, totalCount, unreadCount] = await Promise.all([
-      PracticeTransfer.find(listScope)
-        .sort({ createdAt: -1, _id: -1 })
-        .skip(skip)
-        .limit(limit)
-        .populate("practiceBusinessAnchorId", "name")
-        .populate(
-          "practiceUserId",
-          "name practiceProfile.clinicName practiceProfile.staffName",
-        )
-        .lean(),
-      PracticeTransfer.countDocuments(listScope),
+      listQuery.lean(),
+      calendarRange
+        ? Promise.resolve(null)
+        : PracticeTransfer.countDocuments(listScope),
       PracticeTransfer.countDocuments({
         ...scope,
         status: { $nin: ["deleted", "canceled"] },
@@ -4363,8 +4439,10 @@ export async function getReceivedPracticeTransfers(req, res) {
           page,
           limit,
           count: transfers.length,
-          total: totalCount,
-          hasMore: skip + transfers.length < totalCount,
+          total: calendarRange ? transfers.length : totalCount,
+          hasMore: calendarRange
+            ? false
+            : skip + transfers.length < totalCount,
         },
       },
     });

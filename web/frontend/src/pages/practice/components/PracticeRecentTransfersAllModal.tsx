@@ -28,7 +28,7 @@
  * 2026-08-25: 휴지통 건은 상단 뱃지 카운트·목록에서도 제외(취소=작업취소만, 휴지통 서랍과 정합).
  * 2026-08-25: 캘린더 칩에서 「생산 전」등 생산단계 문구 제거(운송·배송완료만).
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronRight, Search, Trash2, X } from "lucide-react";
 
 import {
@@ -55,13 +55,16 @@ import { useIsMobile } from "@/shared/hooks/use-mobile";
 import { toKstYmd } from "@/shared/date/kst";
 import { normalizeLabReceiveCalendarDateKey } from "@/shared/practice/labReceiveCalendarDateKey";
 import { normalizeLabReceiveCalendarHiddenWeekdays } from "@/shared/practice/labReceiveCalendarHiddenWeekdays";
+import {
+  buildLabReceiveCalendarYmdRange,
+  buildPracticeTransferCalendarApiQuery,
+} from "@/shared/practice/labReceiveCalendarYmdRange";
 import { useAuthStore } from "@/store/useAuthStore";
 import {
   type PracticeRecentTransferItem,
   type PracticeRecentRequestItem,
   type PracticeRecentStatusFilter,
   type PracticeRecentStatusFilterKey,
-  PRACTICE_MY_TRANSFERS_PAGE_SIZE,
   PRACTICE_RECENT_STATUS_BADGES,
   computeGroupedStatusCounts,
   computeGroupedStatusUnreadCounts,
@@ -92,8 +95,6 @@ import {
   resolvePracticeTransferListPatientName,
   resolvePracticeTransferListToothNumbers,
 } from "@/shared/components/practice/PracticeRecentTransferListCardDetail";
-
-const PAGE_SIZE = PRACTICE_MY_TRANSFERS_PAGE_SIZE;
 
 type PracticeRecentTransfersAllModalProps = {
   open: boolean;
@@ -156,10 +157,14 @@ export function PracticeRecentTransfersAllModal({
     normalizeLabReceiveCalendarHiddenWeekdays(storedHiddenWeekdays),
   );
   const [alignEpoch, setAlignEpoch] = useState(0);
-  const [extraRequests, setExtraRequests] = useState<PracticeRecentRequestItem[]>([]);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(false);
+  const [calendarRequests, setCalendarRequests] = useState<PracticeRecentRequestItem[]>([]);
+  const [calendarLoading, setCalendarLoading] = useState(false);
+  const [calendarError, setCalendarError] = useState("");
+
+  const calendarYmdRange = useMemo(
+    () => buildLabReceiveCalendarYmdRange(cursorYmd || toKstYmd(new Date()) || ""),
+    [cursorYmd],
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -219,20 +224,83 @@ export function PracticeRecentTransfersAllModal({
     [setStoredHiddenWeekdays, token],
   );
 
+  const fetchCalendarTransfers = useCallback(
+    async (options?: { silent?: boolean }) => {
+      if (!token) return;
+      const silent = options?.silent === true;
+      if (!silent) {
+        setCalendarLoading(true);
+        setCalendarError("");
+      }
+      try {
+        const qs = buildPracticeTransferCalendarApiQuery(calendarYmdRange, dateKey);
+        const res = await apiFetch<unknown>({
+          path: `/api/practice/transfers/my?${qs}`,
+          method: "GET",
+          token,
+        });
+
+        if (!res.ok) {
+          const body =
+            res.data && typeof res.data === "object"
+              ? (res.data as Record<string, unknown>)
+              : {};
+          if (!silent) {
+            setCalendarRequests([]);
+            setCalendarError(
+              String(body.message || "전송 내역을 불러오지 못했습니다."),
+            );
+          }
+          return;
+        }
+
+        const body = res.data;
+        const data =
+          body && typeof body === "object" && "data" in (body as Record<string, unknown>)
+            ? (body as { data?: unknown }).data
+            : body;
+        const list =
+          data &&
+          typeof data === "object" &&
+          Array.isArray((data as { requests?: unknown }).requests)
+            ? ((data as { requests: unknown[] }).requests ?? [])
+            : [];
+
+        setCalendarRequests(mapMyPracticeTransferApiRows(list));
+        if (!silent) setCalendarError("");
+      } catch {
+        if (!silent) {
+          setCalendarRequests([]);
+          setCalendarError("전송 내역 조회 중 오류가 발생했습니다.");
+        }
+      } finally {
+        if (!silent) setCalendarLoading(false);
+      }
+    },
+    [calendarYmdRange, dateKey, token],
+  );
+
+  const hasLoadedCalendarRef = useRef(false);
+
   useEffect(() => {
     if (!open) {
-      setExtraRequests([]);
-      setPage(1);
-      setHasMore(false);
+      setCalendarRequests([]);
+      setCalendarError("");
+      hasLoadedCalendarRef.current = false;
       return;
     }
-    if (extraRequests.length === 0) {
-      setHasMore(Boolean(initialHasMore));
-    }
-  }, [open, extraRequests.length, initialHasMore]);
+    const silent = hasLoadedCalendarRef.current;
+    const delayMs = silent ? 220 : 0;
+    const timer = window.setTimeout(() => {
+      void fetchCalendarTransfers({ silent }).then(() => {
+        hasLoadedCalendarRef.current = true;
+      });
+    }, delayMs);
+    return () => window.clearTimeout(timer);
+  }, [fetchCalendarTransfers, open]);
 
   const recentRequests = useMemo(() => {
-    // 시드(1페이지)에서 휴지통으로 바뀐 transferId는 extra(추가 페이지)에도 반영
+    // 시드(1페이지)에서 휴지통으로 바뀐 transferId는 캘린더 목록에도 반영
     const trashStatusByTransferId = new Map<string, string>();
     for (const row of initialRequests) {
       const transferId = String(row.transferId || "").trim();
@@ -249,102 +317,23 @@ export function PracticeRecentTransfersAllModal({
       return { ...row, status: trashStatus };
     };
 
-    if (extraRequests.length === 0) {
-      return initialRequests.map(applyTrashStatus);
-    }
-    const merged = [...initialRequests];
-    const seen = new Set(initialRequests.map((row) => `${row.id}:${row.fileS3Key}`));
-    for (const row of extraRequests) {
-      const key = `${row.id}:${row.fileS3Key}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      merged.push(row);
-    }
-    return merged
+    return calendarRequests
       .map(applyTrashStatus)
       .sort((a, b) => (b.createdAtTs || 0) - (a.createdAtTs || 0));
-  }, [extraRequests, initialRequests]);
+  }, [calendarRequests, initialRequests]);
 
-  const loading = Boolean(initialLoading) && recentRequests.length === 0;
-  const displayError = recentRequests.length === 0 ? initialError : "";
-
-  const fetchMore = useCallback(async () => {
-    if (!token || loadingMore || !hasMore) return;
-
-    const nextPage = page + 1;
-    setLoadingMore(true);
-    try {
-      const res = await apiFetch<unknown>({
-        path: `/api/practice/transfers/my?page=${nextPage}&limit=${PAGE_SIZE}`,
-        method: "GET",
-        token,
-      });
-
-      if (!res.ok) {
-        setHasMore(false);
-        return;
-      }
-
-      const body = res.data;
-      const data =
-        body && typeof body === "object" && "data" in (body as Record<string, unknown>)
-          ? (body as { data?: unknown }).data
-          : body;
-      const list =
-        data &&
-        typeof data === "object" &&
-        Array.isArray((data as { requests?: unknown }).requests)
-          ? ((data as { requests: unknown[] }).requests ?? [])
-          : [];
-      const pagination =
-        data &&
-        typeof data === "object" &&
-        (data as { pagination?: unknown }).pagination &&
-        typeof (data as { pagination?: unknown }).pagination === "object"
-          ? ((data as { pagination: Record<string, unknown> }).pagination ?? {})
-          : {};
-
-      const mapped = mapMyPracticeTransferApiRows(list);
-      setExtraRequests((prev) => {
-        const merged = [...prev];
-        const seen = new Set(prev.map((row) => `${row.id}:${row.fileS3Key}`));
-        for (const row of mapped) {
-          const key = `${row.id}:${row.fileS3Key}`;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          merged.push(row);
-        }
-        return merged;
-      });
-      setPage(nextPage);
-      const paginationHasMore = pagination.hasMore;
-      if (typeof paginationHasMore === "boolean") {
-        setHasMore(paginationHasMore);
-      } else {
-        setHasMore(mapped.length >= PAGE_SIZE);
-      }
-    } catch {
-      setHasMore(false);
-    } finally {
-      setLoadingMore(false);
-    }
-  }, [hasMore, loadingMore, page, token]);
+  const loading = calendarLoading && recentRequests.length === 0;
+  const displayError =
+    recentRequests.length === 0 ? calendarError || initialError : "";
 
   useAppEventDebouncedReload({
     enabled: open && Boolean(token),
     eventTypes: ["practice:transfer-created", "practice:transfer-updated"],
     onMatch: () => {
-      setExtraRequests([]);
-      setPage(1);
-      setHasMore(Boolean(initialHasMore));
+      void fetchCalendarTransfers();
     },
     delayMs: 140,
   });
-
-  useEffect(() => {
-    if (!open || !hasMore || loading || loadingMore) return;
-    void fetchMore();
-  }, [fetchMore, hasMore, loading, loadingMore, open]);
 
   const searchedRequests = useMemo(
     () =>
@@ -708,11 +697,6 @@ export function PracticeRecentTransfersAllModal({
             </>
           )}
 
-          {loadingMore ? (
-            <div className="py-2 text-center text-xs text-muted-foreground">
-              더 불러오는 중...
-            </div>
-          ) : null}
         </div>
       </DialogContent>
     </Dialog>

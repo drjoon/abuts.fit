@@ -9,6 +9,7 @@
  * - web/frontend/src/shared/practice/labReceiveCalendarWeekGrid.ts
  * - 2026-08-23: 숨길 요일 버튼·캘린더 열 일~토(일요일 시작) 통일.
  * - 2026-08-23: 숨길 요일 토글·열 정렬 불일치 수정 — 일요일 선택 시 토요일만 숨겨지던 현상.
+ * - 2026-08-27: 미확인 칩=빨간 이중 외곽선(리메이크 슬레이트보다 우선).
  * - 2026-08-19: 리메이크는 공정 상태색 유지 + 이중 외곽선(흰 채움 아님).
  * - 2026-08-19: 기공의뢰수신 칩은 상단 뱃지 상태색.
  * - 2026-08-19: 치과 캘린더 칩에서 휴지통(의뢰 취소) 바로 이동.
@@ -38,6 +39,7 @@ import {
   LAB_RECEIVE_CALENDAR_WEEK_GRID_COLUMNS,
   LAB_RECEIVE_CALENDAR_WEEK_STARTS_ON,
 } from "@/shared/practice/labReceiveCalendarWeekGrid";
+import { buildLabReceiveCalendarWeeks } from "@/shared/practice/labReceiveCalendarYmdRange";
 
 export type PracticeCalendarDateKey = "orderDate" | "arrivalDate";
 
@@ -48,7 +50,8 @@ export type PracticeCalendarStatusTone =
   | "canceled"
   | "rejected"
   | "shipping"
-  | "remake";
+  | "remake"
+  | "unread";
 
 export type PracticeCalendarChipItem = {
   id: string;
@@ -67,8 +70,6 @@ export type PracticeCalendarChipItem = {
   canDelete?: boolean;
 };
 
-const WEEKS_BEFORE = 78;
-const WEEKS_AFTER = 26;
 export const DEFAULT_HIDDEN_WEEKDAYS =
   DEFAULT_LAB_RECEIVE_CALENDAR_HIDDEN_WEEKDAYS;
 
@@ -76,6 +77,8 @@ type DayCell = {
   ymd: string;
   dow: number;
 };
+
+const buildWeeksFromOrigin = buildLabReceiveCalendarWeeks;
 
 const hashString = (value: string) => {
   let h = 2166136261;
@@ -110,6 +113,7 @@ export const PRACTICE_CALENDAR_STATUS_CHIP_STYLE: Record<
   canceled: { backgroundColor: "hsl(0 55% 90%)", color: "hsl(0 48% 34%)" },
   rejected: { backgroundColor: "hsl(24 72% 88%)", color: "hsl(24 55% 30%)" },
   remake: { backgroundColor: "#ffffff", color: "hsl(210 12% 28%)" },
+  unread: { backgroundColor: "#ffffff", color: "hsl(0 48% 34%)" },
 };
 
 /** ON=캘린더 칩과 같은 진한 상태색 / OFF=흐린 무채색 — 표시 on/off가 즉시 읽히게. */
@@ -146,11 +150,16 @@ export const PRACTICE_STATUS_FILTER_BADGE_CLASS: Record<
     active:
       "border-[3px] border-double border-slate-700 bg-white text-slate-900 shadow-sm",
   },
+  unread: {
+    idle: "border-[3px] border-double border-red-200 bg-white text-red-300 opacity-40 hover:opacity-60",
+    active:
+      "border-[3px] border-double border-red-600 bg-white text-red-700 shadow-sm",
+  },
 };
 
 export const resolvePracticeCalendarStatusTone = (
   status: unknown,
-): Exclude<PracticeCalendarStatusTone, "remake"> => {
+): Exclude<PracticeCalendarStatusTone, "remake" | "unread"> => {
   const s = String(status || "").trim();
   if (s === "거부") return "rejected";
   if (s === "작업완료") return "completed";
@@ -162,7 +171,9 @@ export const resolvePracticeCalendarStatusTone = (
 
 export const calendarChipStyleForItem = (item: PracticeCalendarChipItem) => {
   const tone =
-    item.statusTone && item.statusTone !== "remake" ? item.statusTone : null;
+    item.statusTone && item.statusTone !== "remake" && item.statusTone !== "unread"
+      ? item.statusTone
+      : null;
   return tone
     ? PRACTICE_CALENDAR_STATUS_CHIP_STYLE[tone]
     : calendarGroupChipStyle(item.colorKey);
@@ -171,26 +182,6 @@ export const calendarChipStyleForItem = (item: PracticeCalendarChipItem) => {
 const monthCaption = (ymd: string) => {
   const [y, m] = ymd.split("-").map(Number);
   return y && m ? `${y}년 ${m}월` : "";
-};
-
-const buildWeeksFromOrigin = (originYmd: string): string[][] => {
-  const originWeekStart =
-    kstStartOfWeek(originYmd, LAB_RECEIVE_CALENDAR_WEEK_STARTS_ON) || originYmd;
-  const firstWeekStart =
-    kstAddCivilDays(originWeekStart, -WEEKS_BEFORE * 7) || originWeekStart;
-  const weekCount = WEEKS_BEFORE + WEEKS_AFTER + 1;
-  const weeks: string[][] = [];
-  for (let w = 0; w < weekCount; w += 1) {
-    const weekStart = kstAddCivilDays(firstWeekStart, w * 7);
-    if (!weekStart) continue;
-    const days: string[] = [];
-    for (let d = 0; d < 7; d += 1) {
-      const ymd = kstAddCivilDays(weekStart, d);
-      if (ymd) days.push(ymd);
-    }
-    if (days.length === 7) weeks.push(days);
-  }
-  return weeks;
 };
 
 const shiftMonth = (cursorYmd: string, direction: -1 | 1): string => {
@@ -310,9 +301,8 @@ export function PracticeRecentTransfersCalendar({
       if (!row) continue;
       const box = row.getBoundingClientRect();
       if (box.top > midY || box.bottom < midY) continue;
-      const monthStart = kstStartOfMonth(weekStart) || weekStart;
-      const currentMonth = kstStartOfMonth(cursorYmd) || cursorYmd;
-      if (monthStart !== currentMonth) onCursorChange(monthStart);
+      // 화면 중앙 주가 바뀌면 부모에서 3주(전주~다음주) 구간을 다시 조회한다.
+      if (weekStart !== cursorYmd) onCursorChange(weekStart);
       return;
     }
   };
@@ -326,9 +316,9 @@ export function PracticeRecentTransfersCalendar({
   const jumpToToday = () => {
     const target = todayYmd || cursorYmd;
     if (!target) return;
-    const monthStart = kstStartOfMonth(target) || target;
-    const currentMonth = kstStartOfMonth(cursorYmd) || cursorYmd;
-    if (monthStart !== currentMonth) onCursorChange(monthStart);
+    const weekStart =
+      kstStartOfWeek(target, LAB_RECEIVE_CALENDAR_WEEK_STARTS_ON) || target;
+    if (weekStart !== cursorYmd) onCursorChange(weekStart);
     scrollToYmd(target, "smooth");
   };
 
@@ -520,8 +510,10 @@ export function PracticeRecentTransfersCalendar({
                             key={`${item.id}:${day.ymd}`}
                             className={cn(
                               "flex items-start gap-0.5 rounded pr-0.5 hover:brightness-95",
-                              item.isRemake &&
-                                "border-[3px] border-double border-slate-700",
+                              Number(item.unreadCount || 0) > 0
+                                ? "border-[3px] border-double border-red-600"
+                                : item.isRemake &&
+                                  "border-[3px] border-double border-slate-700",
                             )}
                             style={chipStyle}
                           >

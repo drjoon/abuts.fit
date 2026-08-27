@@ -3,6 +3,7 @@
  * 뱃지 + 기본값과 다를 때 「기본」 리셋.
  * 2026-08-21: 배타 필터 → 다중 표시 on/off. ON/OFF 대비·기본 리셋.
  * 2026-08-21: 「표시」 라벨 제거.
+ * 2026-08-27: 발송 뒤 리메이크·미확인 간격. 미확인 전용 뱃지용 nested unread 숨김.
  *
  * related files:
  * - web/frontend/src/pages/practice/components/PracticeRecentTransfersAllModal.tsx
@@ -40,6 +41,10 @@ type PracticeStatusFilterBadgesProps = {
   isDefault: boolean;
   /** 건수 뒤 접미사. 치과 모달="", 기공의뢰수신="건" */
   countSuffix?: string;
+  /** 이 키들 앞에 간격(발송 | 리메이크·미확인) */
+  gapBeforeKeys?: readonly string[];
+  /** true면 뱃지 안 빨간 unread 점 숨김(전용 미확인 뱃지 쓸 때) */
+  hideNestedUnread?: boolean;
   compact?: boolean;
   className?: string;
 };
@@ -51,9 +56,12 @@ export function PracticeStatusFilterBadges({
   onResetToDefault,
   isDefault,
   countSuffix = "",
+  gapBeforeKeys,
+  hideNestedUnread = false,
   compact = false,
   className,
 }: PracticeStatusFilterBadgesProps) {
+  const gapKeySet = new Set(gapBeforeKeys || []);
   return (
     <div
       className={cn(
@@ -65,7 +73,9 @@ export function PracticeStatusFilterBadges({
     >
       {items.map((item) => {
         const active = activeKeys.has(item.key);
-        const unread = Math.max(0, Number(item.unreadCount || 0));
+        const unread = hideNestedUnread
+          ? 0
+          : Math.max(0, Number(item.unreadCount || 0));
         const countLabel = `${item.count}${countSuffix}`;
         const actionHint = active
           ? "캘린더에서 숨기기"
@@ -73,13 +83,17 @@ export function PracticeStatusFilterBadges({
         const tooltipBody = item.tooltip
           ? `${actionHint}. ${item.tooltip}`
           : actionHint;
+        const withGap = gapKeySet.has(item.key);
 
         return (
           <Tooltip key={item.key}>
             <TooltipTrigger asChild>
               <button
                 type="button"
-                className="relative shrink-0 rounded-full"
+                className={cn(
+                  "relative shrink-0 rounded-full",
+                  withGap && "ml-3",
+                )}
                 onClick={() => onToggle(item.key)}
                 aria-pressed={active}
                 aria-label={

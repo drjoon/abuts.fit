@@ -25,6 +25,7 @@
 // - web/frontend/src/shared/practice/labReceiveCalendarHiddenWeekdays.ts
 // - web/backend/utils/labReceiveCalendarHiddenWeekdays.util.js
 // - web/backend/controllers/users/user.controller.js
+// - 2026-08-27: 미확인 상단 안내 바 복구(버튼·뱃지 없음). 미확인 건은 캘린더에 항상 표시.
 // - 2026-08-22: 기공의뢰수신 캘린더 숨길 요일 계정 preferences에 저장.
 // - 2026-08-21: 작업취소 후 어벗츠로의뢰 진행중/출고예정 건수 쿼리 무효화.
 // - 2026-08-21: 어벗 분할 업로드 모달 — 문구 단문화·취소/확인. 헥스 샘플 related 제외.
@@ -233,6 +234,10 @@ import { toKstYmd } from "@/shared/date/kst";
 import { normalizeLabReceiveCalendarDateKey } from "@/shared/practice/labReceiveCalendarDateKey";
 import { normalizeLabReceiveCalendarHiddenWeekdays } from "@/shared/practice/labReceiveCalendarHiddenWeekdays";
 import {
+  buildLabReceiveCalendarYmdRange,
+  buildPracticeTransferCalendarApiQuery,
+} from "@/shared/practice/labReceiveCalendarYmdRange";
+import {
   getPracticeAbutmentDeliveryChipLabel,
   getPracticeAbutmentDeliveryLabel,
   type PracticeAbutmentDeliveryInfo,
@@ -248,6 +253,7 @@ import {
   PracticeStatusFilterEmptyHint,
   type PracticeStatusFilterBadgeItem,
 } from "@/pages/practice/components/PracticeStatusFilterBadges";
+import { LabReceiveUnreadNotice } from "@/pages/practice/components/LabReceiveUnreadNotice";
 import {
   labFeeSettingsFromAcceptPath,
   LAB_FEE_UNCONFIGURED_REASON,
@@ -293,8 +299,6 @@ type ReceivedTransfersResponse = {
     hasMore?: boolean;
   };
 };
-
-const PAGE_SIZE = 10; // 2열 x 5행
 
 const formatDateTime = (value: unknown) => {
   const d = new Date(String(value || ""));
@@ -373,7 +377,11 @@ const isLabReceiveStatusFilterDefault = (
 const labTransferMatchesStatusFilters = (
   transfer: ReceivedPracticeTransfer,
   selected: ReadonlySet<LabReceiveStatusFilterKey>,
+  unreadCount = 0,
 ) => {
+  // 미확인은 상태 필터 on/off·전부 off와 무관하게 항상 캘린더 표시.
+  if (Math.max(0, Number(unreadCount || 0)) > 0) return true;
+
   if (selected.size === 0) return false;
   const status = getTransferDisplayStatus(transfer);
   if (selected.has("리메이크") && transfer.isRemake) return true;
@@ -561,10 +569,8 @@ export function RequestorPracticeReceivePage({
   } = useS3FileDownload(token);
 
   const [transfers, setTransfers] = useState<ReceivedPracticeTransfer[]>([]);
+  const [receivedTransferUnreadCount, setReceivedTransferUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [hasMore, setHasMore] = useState(false);
-  const [page, setPage] = useState(1);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [statusFilters, setStatusFilters] = useState<Set<LabReceiveStatusFilterKey>>(() =>
@@ -576,6 +582,10 @@ export function RequestorPracticeReceivePage({
   const [cursorYmd, setCursorYmd] = useState(() => toKstYmd(new Date()) || "");
   const [hiddenWeekdays, setHiddenWeekdays] = useState<number[]>(() =>
     normalizeLabReceiveCalendarHiddenWeekdays(storedHiddenWeekdays),
+  );
+  const calendarYmdRange = useMemo(
+    () => buildLabReceiveCalendarYmdRange(cursorYmd || toKstYmd(new Date()) || ""),
+    [cursorYmd],
   );
 
   useEffect(() => {
@@ -1129,18 +1139,18 @@ export function RequestorPracticeReceivePage({
     [buildProductionCancelLocalPatch, isStuckNeedsStageReopen, token],
   );
 
-  const fetchTransferPage = useCallback(
-    async (nextPage: number, append: boolean, options?: { silent?: boolean }) => {
+  const fetchCalendarTransfers = useCallback(
+    async (options?: { silent?: boolean }) => {
       if (!token) return;
       const silent = options?.silent === true;
 
-      if (append) setLoadingMore(true);
-      else if (!silent) setLoading(true);
-      if (!append && !silent) setError("");
+      if (!silent) setLoading(true);
+      if (!silent) setError("");
 
       try {
+        const qs = buildPracticeTransferCalendarApiQuery(calendarYmdRange, dateKey);
         const res = await apiFetch<unknown>({
-          path: `/api/practice/transfers/received?page=${nextPage}&limit=${PAGE_SIZE}`,
+          path: `/api/practice/transfers/received?${qs}`,
           method: "GET",
           token,
         });
@@ -1150,11 +1160,9 @@ export function RequestorPracticeReceivePage({
             res.data && typeof res.data === "object"
               ? (res.data as Record<string, unknown>)
               : {};
-          if (!append && !silent) {
+          if (!silent) {
             setTransfers([]);
             setError(String(body.message || "치과 전송 내역 조회에 실패했습니다."));
-            setHasMore(false);
-            setPage(1);
           }
           return;
         }
@@ -1162,57 +1170,34 @@ export function RequestorPracticeReceivePage({
         const parsed = parseTransfersBody(res.data);
         const mapped = mapTransferRows(parsed.transfers);
 
-        setTransfers((prev) => {
-          if (!append) return mapped;
-          const merged = [...prev];
-          const existingIds = new Set(prev.map((x) => x._id || x.transferId));
-          for (const row of mapped) {
-            const key = row._id || row.transferId;
-            if (!existingIds.has(key)) {
-              merged.push(row);
-              existingIds.add(key);
-            }
-          }
-          return merged;
+        setTransfers(mapped);
+        setSelectedTransfer((prev) => {
+          if (!prev) return prev;
+          const key = String(prev.transferId || prev._id || "").trim();
+          if (!key) return prev;
+          const next = mapped.find(
+            (row) =>
+              String(row.transferId || "").trim() === key ||
+              String(row._id || "").trim() === key,
+          );
+          return next || prev;
         });
-        if (!append) {
-          setSelectedTransfer((prev) => {
-            if (!prev) return prev;
-            const key = String(prev.transferId || prev._id || "").trim();
-            if (!key) return prev;
-            const next = mapped.find(
-              (row) =>
-                String(row.transferId || "").trim() === key ||
-                String(row._id || "").trim() === key,
-            );
-            return next || prev;
-          });
-        }
-
-        setPage(nextPage);
-
-        const paginationHasMore = parsed.pagination?.hasMore;
-        if (typeof paginationHasMore === "boolean") {
-          setHasMore(paginationHasMore);
-        } else {
-          setHasMore(mapped.length === PAGE_SIZE);
-        }
 
         emitUnreadBadgeRefresh(parsed.unreadCount);
+        setReceivedTransferUnreadCount(Math.max(0, Number(parsed.unreadCount || 0)));
         void reopenStuckTransfers(mapped);
       } catch {
-        if (!append && !silent) {
+        if (!silent) {
           setTransfers([]);
           setError("치과 전송 내역 조회 중 오류가 발생했습니다.");
-          setHasMore(false);
-          setPage(1);
         }
       } finally {
-        if (append) setLoadingMore(false);
-        else if (!silent) setLoading(false);
+        if (!silent) setLoading(false);
       }
     },
     [
+      calendarYmdRange,
+      dateKey,
       emitUnreadBadgeRefresh,
       mapTransferRows,
       parseTransfersBody,
@@ -1221,24 +1206,32 @@ export function RequestorPracticeReceivePage({
     ],
   );
 
-  const loadFirstPage = useCallback(
+  const loadCalendarTransfers = useCallback(
     async (options?: { silent?: boolean }) => {
-      setHasMore(false);
-      setPage(1);
-      await fetchTransferPage(1, false, options);
+      await fetchCalendarTransfers(options);
     },
-    [fetchTransferPage],
+    [fetchCalendarTransfers],
   );
+
+  const hasLoadedCalendarRef = useRef(false);
 
   useEffect(() => {
     if (!token) {
       setTransfers([]);
       setError("로그인이 필요합니다.");
-      setHasMore(false);
+      hasLoadedCalendarRef.current = false;
       return;
     }
-    void loadFirstPage();
-  }, [loadFirstPage, token]);
+    // 스크롤로 주가 바뀔 때는 스피너 없이 debounce 후 3주 구간만 재조회
+    const silent = hasLoadedCalendarRef.current;
+    const delayMs = silent ? 220 : 0;
+    const timer = window.setTimeout(() => {
+      void loadCalendarTransfers({ silent }).then(() => {
+        hasLoadedCalendarRef.current = true;
+      });
+    }, delayMs);
+    return () => window.clearTimeout(timer);
+  }, [loadCalendarTransfers, token]);
 
   const removeLabReceiveTransferFromList = useCallback(
     (transfer: Pick<ReceivedPracticeTransfer, "_id" | "transferId">) => {
@@ -1338,7 +1331,7 @@ export function RequestorPracticeReceivePage({
           window.clearTimeout(realtimeReloadTimerRef.current);
         }
         realtimeReloadTimerRef.current = window.setTimeout(() => {
-          void loadFirstPage({ silent: true });
+          void loadCalendarTransfers({ silent: true });
         }, 140);
         return;
       }
@@ -1415,7 +1408,7 @@ export function RequestorPracticeReceivePage({
                 : prev,
             );
           }
-          void loadFirstPage({ silent: true });
+          void loadCalendarTransfers({ silent: true });
           if (hasUnreadCount) {
             emitUnreadBadgeRefresh(unreadCount);
           }
@@ -1565,7 +1558,7 @@ export function RequestorPracticeReceivePage({
           window.clearTimeout(realtimeReloadTimerRef.current);
         }
         realtimeReloadTimerRef.current = window.setTimeout(() => {
-          void loadFirstPage({ silent: true });
+          void loadCalendarTransfers({ silent: true });
         }, 140);
       }
     },
@@ -1584,11 +1577,6 @@ export function RequestorPracticeReceivePage({
     if (!dialogOpen) return;
     chatBottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [dialogOpen, messages]);
-
-  useEffect(() => {
-    if (!hasMore || loading || loadingMore) return;
-    void fetchTransferPage(page + 1, true);
-  }, [fetchTransferPage, hasMore, loading, loadingMore, page]);
 
   const baseFilteredTransfers = useMemo(() => {
     // 치과 삭제 + 기공소 거부·작업취소(취소)는 수신·캘린더에서 제외.
@@ -1709,9 +1697,13 @@ export function RequestorPracticeReceivePage({
   const filteredTransfers = useMemo(
     () =>
       baseFilteredTransfers.filter((transfer) =>
-        labTransferMatchesStatusFilters(transfer, statusFilters),
+        labTransferMatchesStatusFilters(
+          transfer,
+          statusFilters,
+          transferUnreadBadgeCount(transfer),
+        ),
       ),
-    [baseFilteredTransfers, statusFilters],
+    [baseFilteredTransfers, statusFilters, transferUnreadBadgeCount],
   );
 
   const sortedFilteredTransfers = useMemo(() => {
@@ -1758,8 +1750,9 @@ export function RequestorPracticeReceivePage({
       const transferId = String(transfer.transferId || transfer._id || "").trim();
       return {
         id: transferId,
-        orderDate: transfer.orderDate,
-        arrivalDate: transfer.arrivalDate,
+        orderDate: transfer.orderDate || transfer.createdAt,
+        arrivalDate:
+          transfer.arrivalDate || transfer.orderDate || transfer.createdAt,
         colorKey:
           String(transfer.practiceBusinessAnchorId || "").trim() || clinic,
         statusTone: resolvePracticeCalendarStatusTone(
@@ -1880,7 +1873,10 @@ export function RequestorPracticeReceivePage({
         );
 
         if (hasUnreadCount) {
+          setReceivedTransferUnreadCount(unreadCount);
           emitUnreadBadgeRefresh(unreadCount);
+        } else if (!transfer.isRead) {
+          setReceivedTransferUnreadCount((prev) => Math.max(0, prev - 1));
         }
       } catch {
         // ignore
@@ -2117,7 +2113,7 @@ export function RequestorPracticeReceivePage({
                   ),
                 );
               } else if (String(body.message || "").includes("다른 기공소")) {
-                void loadFirstPage({ silent: true });
+                void loadCalendarTransfers({ silent: true });
               }
               return;
             }
@@ -2140,7 +2136,10 @@ export function RequestorPracticeReceivePage({
                 : optimisticPatch.requestorAcceptedAt;
             const unreadCount = Number(data.unreadCount);
             if (Number.isFinite(unreadCount)) {
+              setReceivedTransferUnreadCount(Math.max(0, unreadCount));
               emitUnreadBadgeRefresh(unreadCount);
+            } else if (!transfer.isRead) {
+              setReceivedTransferUnreadCount((prev) => Math.max(0, prev - 1));
             }
             const autoMatchRaw =
               data.autoMatch && typeof data.autoMatch === "object"
@@ -2268,7 +2267,7 @@ export function RequestorPracticeReceivePage({
       ACTION_UI_MIN_MS,
       applyAcceptedLocalPatch,
       emitUnreadBadgeRefresh,
-      loadFirstPage,
+      loadCalendarTransfers,
       mergeProductionRelatedRequestIds,
       navigate,
       openDesignSoftwareModal,
@@ -3095,7 +3094,7 @@ export function RequestorPracticeReceivePage({
             void queryClient.invalidateQueries({
               queryKey: ["requestor-bulk-shipping"],
             });
-            void loadFirstPage({ silent: true });
+            void loadCalendarTransfers({ silent: true });
           })
           .catch(() => {
             applyAcceptedLocalPatch(transfer, rollbackPatch);
@@ -3116,7 +3115,7 @@ export function RequestorPracticeReceivePage({
         return false;
       }
     },
-    [ACTION_UI_MIN_MS, applyAcceptedLocalPatch, loadFirstPage, queryClient, toast, token],
+    [ACTION_UI_MIN_MS, applyAcceptedLocalPatch, loadCalendarTransfers, queryClient, toast, token],
   );
 
   const markTransferReject = useCallback(
@@ -3258,7 +3257,7 @@ export function RequestorPracticeReceivePage({
                 : new Date().toISOString(),
           },
         });
-        void loadFirstPage({ silent: true });
+        void loadCalendarTransfers({ silent: true });
         toast({
           title: "하청 전환",
           description: "인증 기공소에 즉시 공개했습니다.",
@@ -3273,7 +3272,7 @@ export function RequestorPracticeReceivePage({
         return false;
       }
     },
-    [ACTION_UI_MIN_MS, applyAcceptedLocalPatch, loadFirstPage, toast, token, user?.role],
+    [ACTION_UI_MIN_MS, applyAcceptedLocalPatch, loadCalendarTransfers, toast, token, user?.role],
   );
 
   const resolveTransferChatRoom = useCallback(
@@ -4501,6 +4500,36 @@ export function RequestorPracticeReceivePage({
     ];
   }, [statusCounts, statusUnreadCounts]);
 
+  const loadedUnreadNoticeTotal = useMemo(() => {
+    return baseFilteredTransfers.reduce(
+      (sum, transfer) => sum + transferUnreadBadgeCount(transfer),
+      0,
+    );
+  }, [baseFilteredTransfers, transferUnreadBadgeCount]);
+
+  const unreadNoticeTotal = loadedUnreadNoticeTotal;
+
+  const unreadNoticeItems = useMemo(() => {
+    return baseFilteredTransfers
+      .map((transfer) => {
+        const id = String(transfer.transferId || transfer._id || "").trim();
+        const unreadCount = transferUnreadBadgeCount(transfer);
+        if (!id || unreadCount <= 0) return null;
+        const clinic =
+          transfer.matchingMode === "auto"
+            ? "자동 매칭"
+            : String(transfer.practice?.businessName || "").trim() || "-";
+        const patient = resolvePracticeTransferListPatientName(transfer);
+        const teeth = resolvePracticeTransferListToothNumbers(transfer);
+        return {
+          id,
+          unreadCount,
+          label: [clinic, patient || "—", teeth || "—"].join(" / "),
+        };
+      })
+      .filter((row): row is NonNullable<typeof row> => Boolean(row));
+  }, [baseFilteredTransfers, transferUnreadBadgeCount]);
+
   const resetLabStatusFiltersToDefault = useCallback(() => {
     setStatusFilters(createLabReceiveStatusFilterSet());
   }, []);
@@ -4528,6 +4557,7 @@ export function RequestorPracticeReceivePage({
         onResetToDefault={resetLabStatusFiltersToDefault}
         isDefault={isLabReceiveStatusFilterDefault(statusFilters)}
         countSuffix="건"
+        gapBeforeKeys={["리메이크"]}
       />
       <div className="relative w-full min-w-0 py-0.5 sm:max-w-xs sm:shrink-0">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -4553,6 +4583,20 @@ export function RequestorPracticeReceivePage({
       ) : null}
       {!error && !loading ? (
         <>
+          <LabReceiveUnreadNotice
+            unreadTotal={unreadNoticeTotal}
+            items={unreadNoticeItems}
+            onSelectItem={(id) => {
+              const transfer =
+                calendarTransferById.get(id) ||
+                baseFilteredTransfers.find(
+                  (row) =>
+                    String(row.transferId || row._id || "").trim() === id,
+                );
+              if (transfer) void openTransferDialog(transfer);
+            }}
+            className="shrink-0"
+          />
           {statusFilters.size === 0 ? (
             <PracticeStatusFilterEmptyHint
               onResetToDefault={resetLabStatusFiltersToDefault}
@@ -4573,11 +4617,6 @@ export function RequestorPracticeReceivePage({
             onHiddenWeekdaysChange={handleHiddenWeekdaysChange}
           />
         </>
-      ) : null}
-      {loadingMore ? (
-        <div className="py-1 text-center text-xs text-muted-foreground">
-          더 불러오는 중...
-        </div>
       ) : null}
     </div>
   );
@@ -4758,7 +4797,7 @@ export function RequestorPracticeReceivePage({
                     ? { ...prev, labFeeMultiplier: next }
                     : prev,
                 );
-                void loadFirstPage({ silent: true });
+                void loadCalendarTransfers({ silent: true });
               }}
             />
           ) : null
