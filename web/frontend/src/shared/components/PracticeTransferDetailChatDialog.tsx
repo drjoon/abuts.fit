@@ -12,6 +12,7 @@
 // - web/frontend/src/shared/files/downloadWithProgress.ts
 // - web/frontend/src/shared/files/s3BlobCache.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-08-27: 채팅 버블에 보낸사람 이름 표시.
 // - 2026-08-23: 작업 파일 STL/PLY/OBJ 타일에 3D 썸네일 표시.
 // - 2026-08-23: 미제공 CA 안내 1줄 압축·수락 바 중복 안내 제거로 채팅 높이 확보.
 // - 2026-08-21: 수락 바 — "치과 메시지 확인 후 수락" 안내 제거.
@@ -1421,7 +1422,7 @@ export function PracticeTransferDetailChatDialog({
                           authToken={authToken}
                           formatTime={formatChatTime}
                           formatFileSize={formatFileSize}
-                          showSenderName={false}
+                          showSenderName
                           compact
                           downloadingFileKeys={downloadingFileKeys}
                           downloadProgressByKey={downloadProgressByKey}
