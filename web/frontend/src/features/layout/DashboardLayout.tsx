@@ -15,6 +15,7 @@ import {
 } from "@/shared/layout/sidebarOpen";
 import { cn } from "@/shared/ui/cn";
 
+// - 2026-08-28: 사이드바 토글 UI를 로컬 오버라이드로 유지(/me 레이스·스토어 덮어쓰기 방지). 접기 버튼 z-index.
 // - 2026-08-27: 데스크톱 사이드바 펼침을 계정 preferences.sidebarOpen으로 서버 저장·복원(기본 open). 모바일 드로어는 분리.
 // - 2026-08-25: 기공의뢰수신(lab) 캘린더는 fillHeight 복구. 사이드 aside에 shrink-0·min-w로 펼침 폭 고정.
 // - 2026-08-24: 작업영역 하단 여백 — 일반 페이지는 min-h-full 문서 흐름(+pb-12), credits/payments만 fillHeight 고정.
@@ -505,8 +506,12 @@ export const DashboardLayout = () => {
   );
   const [settlementCredit, setSettlementCredit] = useState<number | null>(null);
   const [loadingCreditBalance, setLoadingCreditBalance] = useState(false);
+  /** 토글 직후 /me 등이 스토어를 덮어도 데스크톱 접힘 UI는 유지 */
+  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState<boolean | null>(
+    null,
+  );
   const sidebarOpen = normalizeSidebarOpen(
-    user?.sidebarOpen ?? DEFAULT_SIDEBAR_OPEN,
+    desktopSidebarOpen ?? user?.sidebarOpen ?? DEFAULT_SIDEBAR_OPEN,
   );
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const showExpandedChrome = sidebarOpen || mobileNavOpen;
@@ -612,6 +617,7 @@ export const DashboardLayout = () => {
   const persistSidebarOpen = useCallback(
     (nextOpen: boolean) => {
       const open = normalizeSidebarOpen(nextOpen);
+      setDesktopSidebarOpen(open);
       setSidebarOpen(open);
       if (!token || !user?.id) return;
       void apiFetch({
@@ -625,6 +631,10 @@ export const DashboardLayout = () => {
     },
     [setSidebarOpen, token, user?.id],
   );
+
+  useEffect(() => {
+    setDesktopSidebarOpen(null);
+  }, [user?.id]);
 
   useEffect(() => {
     if (!token) return;
@@ -1418,7 +1428,7 @@ export const DashboardLayout = () => {
             type="button"
             aria-label={sidebarOpen ? "사이드 메뉴 접기" : "사이드 메뉴 펼치기"}
             onClick={() => persistSidebarOpen(!sidebarOpen)}
-            className="hidden lg:flex items-center justify-center absolute top-20 -right-4 w-8 h-8 rounded-full bg-card border border-border shadow-sm hover:bg-muted/60 hover:border-muted-foreground/40 transition-colors"
+            className="hidden lg:flex items-center justify-center absolute top-20 -right-4 z-10 w-8 h-8 rounded-full bg-card border border-border shadow-sm hover:bg-muted/60 hover:border-muted-foreground/40 transition-colors"
           >
             {sidebarOpen ? (
               <PanelLeft className="w-4 h-4" />

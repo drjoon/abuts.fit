@@ -14,6 +14,7 @@
 // - web/backend/controllers/users/user.controller.js
 // - web/frontend/src/shared/layout/sidebarOpen.ts
 // - web/backend/utils/sidebarOpen.util.js
+// - 2026-08-28: /me 응답이 진행 중 토글한 sidebarOpen을 덮어쓰지 않게 epoch 가드
 // - 2026-08-27: 계정 preferences.sidebarOpen (데스크톱 사이드바 펼침, 기본 open)
 // - 2026-08-22: 계정 preferences.labReceiveCalendarHiddenWeekdays (캘린더 숨길 요일, 기본 일·토)
 // - 2026-08-20: 계정 preferences.labReceiveCalendarDateKey (기공의뢰 캘린더, 기본 도착일)
@@ -47,6 +48,9 @@ import { normalizeLabReceiveCalendarHiddenWeekdays } from "@/shared/practice/lab
 const AUTH_TOKEN_KEY = "abuts_auth_token";
 const AUTH_REFRESH_TOKEN_KEY = "abuts_auth_refresh_token";
 const AUTH_USER_KEY = "abuts_auth_user";
+
+/** setSidebarOpen이 /api/auth/me 레이스보다 최신일 때 메모리 값을 지킨다. */
+let sidebarOpenEpoch = 0;
 
 export type UserRole = AppUserRole;
 
@@ -541,6 +545,8 @@ export const useAuthStore = create<AuthState>((set, get) => {
           }
         }
 
+        const sidebarEpochAtStart = sidebarOpenEpoch;
+
         const res = await request<unknown>({
           path: "/api/auth/me",
           method: "GET",
@@ -579,6 +585,16 @@ export const useAuthStore = create<AuthState>((set, get) => {
           return stored.token && stored.user
             ? { status: "ok" }
             : { status: "unavailable" };
+        }
+
+        // PUT /sidebar-open 낙관적 업데이트와 /me 레이스 — 토글이 더 최신이면 유지
+        const current = get().user;
+        if (
+          sidebarOpenEpoch !== sidebarEpochAtStart &&
+          current?.id === normalizedUser.id &&
+          typeof current.sidebarOpen === "boolean"
+        ) {
+          normalizedUser.sidebarOpen = current.sidebarOpen;
         }
 
         try {
@@ -649,6 +665,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
       if (isMemoryAuthStale(get().token)) return;
       const current = get().user;
       if (!current) return;
+      sidebarOpenEpoch += 1;
       const next = {
         ...current,
         sidebarOpen: normalizeSidebarOpen(open),
