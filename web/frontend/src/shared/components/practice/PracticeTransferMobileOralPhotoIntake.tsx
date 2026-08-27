@@ -30,6 +30,7 @@ import type { PreUploadFileStatus } from "@/shared/hooks/useFilePreUpload";
 // - 2026-08-27: 상단 메뉴 새로작성·최근의뢰·임시저장·휴지통 4칸(2×2).
 // - 2026-08-20: iPhone HEIC→JPEG 변환 시도, 빈 파일 거부, MIME 보정.
 // - 2026-08-20: 썸네일 클릭 시 원본 미리보기.
+// - 2026-08-27: normalizeOralPhotoFiles namePrefix 옵션(채팅 사진찍기 재사용).
 
 export type PracticeTransferMobilePhotoItem = {
   key: string;
@@ -138,8 +139,12 @@ const tryConvertHeicToJpeg = async (file: File): Promise<File | null> => {
   }
 };
 
-export const normalizeOralPhotoFiles = async (raw: File[]) => {
+export const normalizeOralPhotoFiles = async (
+  raw: File[],
+  options?: { namePrefix?: string },
+) => {
   const stamp = Date.now();
+  const namePrefix = String(options?.namePrefix || "구강포토").trim() || "구강포토";
   const out: File[] = [];
   let skippedHeic = 0;
   let skippedEmpty = 0;
@@ -163,7 +168,7 @@ export const normalizeOralPhotoFiles = async (raw: File[]) => {
     }
 
     const ext = extensionForOralPhoto(source);
-    const nextName = `구강포토-${stamp}-${out.length + 1}${ext}`;
+    const nextName = `${namePrefix}-${stamp}-${out.length + 1}${ext}`;
     const mime = normalizeImageMime(source.type, ext);
     out.push(
       new File([source], nextName, {
