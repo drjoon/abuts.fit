@@ -7,6 +7,10 @@
 export const PRACTICE_TRANSFER_ACCEPT =
   ".stl,.ply,.obj,.dcm,.png,.jpg,.jpeg,.webp,.bmp,.gif";
 
+/** STL 전용 input accept — Windows는 확장자(.stl/.STL) 위주, MIME은 보조 */
+export const PRACTICE_TRANSFER_STL_ACCEPT =
+  ".stl,.STL,model/stl,application/sla,application/vnd.ms-pki.stl";
+
 export const PRACTICE_TRANSFER_MODEL_EXTENSIONS = new Set([
   ".stl",
   ".ply",

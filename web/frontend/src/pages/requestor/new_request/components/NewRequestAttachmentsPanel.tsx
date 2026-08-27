@@ -97,7 +97,7 @@ function formatAttachmentSize(bytes: number): string {
   return `${mb < 10 ? mb.toFixed(1) : Math.round(mb)}MB`;
 }
 
-const NEW_REQUEST_STL_ACCEPT = ".stl,model/stl,application/sla";
+import { PRACTICE_TRANSFER_STL_ACCEPT } from "@/shared/practice/practiceTransferAccept";
 
 function pickUploadProgress(
   filesForCard: Array<File | undefined>,
@@ -1175,7 +1175,7 @@ export function NewRequestAttachmentsPanel({
         <PracticeTransferFileDropTarget
           fileInputId="new-request-stl-upload"
           onFiles={onFilesSelected}
-          accept={NEW_REQUEST_STL_ACCEPT}
+          accept={PRACTICE_TRANSFER_STL_ACCEPT}
           acceptedHint=""
           filterFiles={(incoming) => incoming}
           compact={hasAnyAttachment}

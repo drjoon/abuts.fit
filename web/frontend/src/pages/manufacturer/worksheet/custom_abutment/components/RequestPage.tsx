@@ -105,6 +105,8 @@ import { useMailboxSync } from "@/pages/manufacturer/worksheet/custom_abutment/h
 import { useDiameterQueue } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useDiameterQueue";
 import { WorksheetLoading } from "@/shared/ui/WorksheetLoading";
 import { BodyPortal } from "@/shared/ui/BodyPortal";
+import { pickOsFilesViaInput } from "@/shared/files/pickOsFilesViaInput";
+import { PRACTICE_TRANSFER_STL_ACCEPT } from "@/shared/practice/practiceTransferAccept";
 import {
   RemakeStartQuickModal,
   type RemakeQuickStartStage,
@@ -2182,33 +2184,10 @@ export const RequestPage = ({
   );
 
   const pickDesignAbutmentFile = useCallback((): Promise<File | null> => {
-    return new Promise((resolve) => {
-      const input = document.createElement("input");
-      input.type = "file";
-      input.accept = ".stl,model/stl,application/sla";
-      input.style.display = "none";
-      let settled = false;
-      const finish = (file: File | null) => {
-        if (settled) return;
-        settled = true;
-        window.removeEventListener("focus", onWindowFocus);
-        input.removeEventListener("change", onChange);
-        input.remove();
-        resolve(file);
-      };
-      const onChange = () => {
-        finish(input.files?.[0] || null);
-      };
-      const onWindowFocus = () => {
-        window.setTimeout(() => {
-          if (!settled) finish(input.files?.[0] || null);
-        }, 400);
-      };
-      input.addEventListener("change", onChange);
-      window.addEventListener("focus", onWindowFocus);
-      document.body.appendChild(input);
-      input.click();
-    });
+    return pickOsFilesViaInput({
+      accept: PRACTICE_TRANSFER_STL_ACCEPT,
+      multiple: false,
+    }).then((files) => files[0] || null);
   }, []);
 
   const handleDesignHandoffApprove = useCallback(

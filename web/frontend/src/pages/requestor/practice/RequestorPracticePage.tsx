@@ -222,6 +222,7 @@ import {
   filterPracticeTransferFiles,
   getPracticeTransferFileExtension,
   PRACTICE_TRANSFER_ACCEPT,
+  PRACTICE_TRANSFER_STL_ACCEPT,
 } from "@/shared/practice/practiceTransferAccept";
 import { PracticeLabReceiveWorkActionsBar } from "@/shared/components/practice/PracticeLabReceiveWorkActionsBar";
 import {
@@ -3427,7 +3428,7 @@ export function RequestorPracticeReceivePage({
 
   const pickDesignAbutmentFiles = useCallback((): Promise<File[]> => {
     return pickPracticeTransferFilesViaInput({
-      accept: ".stl,model/stl,application/sla",
+      accept: PRACTICE_TRANSFER_STL_ACCEPT,
       multiple: true,
     });
   }, []);
