@@ -159,6 +159,7 @@ import { resolvePracticeTransferSkipJig } from "../../utils/practiceTransferLabS
 // - web/backend/utils/practiceLabRating.js
 // - web/backend/utils/practiceTransferStage.js
 // - 2026-08-27: append-arrival — 동일 건 치과도착일 누적(캘린더 다중 표시, 크레딧 미중복).
+// - 2026-08-27: 재도착일 변경 시 requestorReadAt 초기화(기공소 unread).
 // - 2026-08-26: cancel/restore/empty — 휴지통 이동 시 채팅 rooms 캐시 무효화(최근의뢰·사이드 unread 즉시 반영).
 // - 2026-08-25: status deleted=치과 의뢰 삭제(휴지통). GET /received에서 제외. canceled=레거시 호환. 작업취소=workCanceledAt.
 // - 2026-08-21: GET /received — 연동 CA 한진 배송 요약(abutmentDeliveryInfo) 포함(치과 /my와 동일).
@@ -3730,6 +3731,9 @@ export async function appendPracticeTransferArrival(req, res) {
         $set: {
           transferMemo: appended.transferMemo,
           arrivalDates: appended.arrivalDates,
+          // 기공소 수신함 unread — 의뢰 내용 수정과 동일
+          requestorReadAt: null,
+          requestorReadBy: null,
         },
       },
       { new: true },
@@ -3755,8 +3759,27 @@ export async function appendPracticeTransferArrival(req, res) {
     }
 
     const targetLabAnchorIdText = String(updated.targetLabAnchorId || "").trim();
+    if (targetLabAnchorIdText) {
+      invalidateUnreadCountCache(targetLabAnchorIdText);
+    }
+    const unreadCountForRequestor = targetLabAnchorIdText
+      ? await PracticeTransfer.countDocuments({
+          targetLabAnchorId: new Types.ObjectId(targetLabAnchorIdText),
+          status: { $nin: ["deleted", "canceled"] },
+          requestorReadAt: null,
+        })
+      : 0;
+    if (targetLabAnchorIdText) {
+      setRequestPerfCacheValue(
+        unreadCountCacheKey(targetLabAnchorIdText),
+        { unreadCount: unreadCountForRequestor },
+        10 * 1000,
+      );
+    }
+
     const realtimePayload = {
       source: "appendPracticeTransferArrival",
+      action: "arrival-appended",
       transferId: String(updated.transferId || "").trim(),
       transferMongoId: String(updated._id || ""),
       targetLabAnchorId: targetLabAnchorIdText || null,
@@ -3764,6 +3787,8 @@ export async function appendPracticeTransferArrival(req, res) {
       arrivalDates: appended.arrivalDates,
       arrivalDate: appended.nextYmd,
       previousArrivalDate: appended.previousYmd,
+      requestorReadAt: null,
+      unreadCount: unreadCountForRequestor,
       billingUnchanged: true,
     };
     try {
@@ -3786,7 +3811,7 @@ export async function appendPracticeTransferArrival(req, res) {
 
     return res.status(200).json({
       success: true,
-      message: "치과도착일이 누적 반영되었습니다. 크레딧은 추가 차감되지 않습니다.",
+      message: "치과도착일이 반영되었습니다. 크레딧은 추가 차감되지 않습니다.",
       data: {
         _id: String(updated._id || ""),
         transferId: String(updated.transferId || "").trim(),
@@ -3794,13 +3819,14 @@ export async function appendPracticeTransferArrival(req, res) {
         arrivalDate: appended.nextYmd,
         previousArrivalDate: appended.previousYmd,
         transferMemo: String(updated.transferMemo || ""),
+        requestorReadAt: null,
         billingUnchanged: true,
       },
     });
   } catch (error) {
     return res.status(500).json({
       success: false,
-      message: "치과도착일 누적 중 오류가 발생했습니다.",
+      message: "치과도착일 반영 중 오류가 발생했습니다.",
       error: error?.message,
     });
   }
