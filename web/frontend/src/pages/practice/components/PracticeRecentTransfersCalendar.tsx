@@ -7,6 +7,8 @@
  * - web/frontend/src/pages/practice/components/PracticeStatusFilterBadges.tsx
  * - web/frontend/src/shared/date/kst.ts
  * - web/frontend/src/shared/practice/labReceiveCalendarWeekGrid.ts
+ * - 2026-08-28: 요일 헤더에 스크롤바 폭 패딩 동기화 + custom-scrollbar(빈 레일 열·railRef 제거).
+ * - 2026-08-28: onSelectFutureDay — 오늘 이후 셀 빈 영역 클릭(칩은 stopPropagation).
  * - 2026-08-27: 캘린더 날짜키 뱃지 「도착일」(치과도착일) — 작은 글씨에서 치과의사 오인 방지.
  * - 2026-08-27: 누적 도착일 칩 — 이전 날짜 흐리게·연결 표시.
  * - 2026-08-23: 숨길 요일 버튼·캘린더 열 일~토(일요일 시작) 통일.
@@ -270,6 +272,11 @@ type PracticeRecentTransfersCalendarProps = {
   onDateKeyChange: (key: PracticeCalendarDateKey) => void;
   onSelectItem: (item: PracticeCalendarChipItem) => void;
   onDeleteItem?: (item: PracticeCalendarChipItem) => void;
+  /**
+   * 오늘(KST) 이후 날짜 셀 빈 영역 클릭. 오늘·과거는 호출하지 않음.
+   * 칩/휴지통은 stopPropagation으로 상세·취소만.
+   */
+  onSelectFutureDay?: (ymd: string) => void;
   hiddenWeekdays: number[];
   onHiddenWeekdaysChange: (next: number[]) => void;
   alignEpoch?: number;
@@ -283,6 +290,7 @@ export function PracticeRecentTransfersCalendar({
   onDateKeyChange,
   onSelectItem,
   onDeleteItem,
+  onSelectFutureDay,
   hiddenWeekdays,
   onHiddenWeekdaysChange,
   alignEpoch = 0,
@@ -295,6 +303,7 @@ export function PracticeRecentTransfersCalendar({
     (col) => !hidden.has(col.dow),
   );
   const visibleDows = visibleColumns.map((col) => col.dow);
+  const colCount = Math.max(1, visibleDows.length);
 
   const byDay = useMemo(() => {
     const map = new Map<string, PracticeCalendarChipItem[]>();
@@ -325,16 +334,22 @@ export function PracticeRecentTransfersCalendar({
   const weekElsRef = useRef(new Map<string, HTMLDivElement>());
   const skipScrollSyncRef = useRef(false);
   const [minRowH, setMinRowH] = useState(140);
+  /** 본문 스크롤바 폭 — 요일 헤더 padding과 맞춰 열 정렬 */
+  const [scrollbarW, setScrollbarW] = useState(0);
 
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const apply = () => setMinRowH(Math.max(112, Math.floor(el.clientHeight / 3)));
+    const apply = () => {
+      setMinRowH(Math.max(112, Math.floor(el.clientHeight / 3)));
+      setScrollbarW(Math.max(0, el.offsetWidth - el.clientWidth));
+    };
     apply();
     const ro = new ResizeObserver(apply);
     ro.observe(el);
+    for (const child of Array.from(el.children)) ro.observe(child);
     return () => ro.disconnect();
-  }, []);
+  }, [weeks, items, colCount]);
 
   const weekIndexForYmd = (ymd: string) =>
     weeks.findIndex((week) => week[0] && ymd >= week[0] && ymd <= (week[6] || week[0]));
@@ -352,6 +367,7 @@ export function PracticeRecentTransfersCalendar({
     target.scrollIntoView({ block: "start", behavior });
     window.setTimeout(() => {
       skipScrollSyncRef.current = false;
+      setScrollbarW(Math.max(0, el.offsetWidth - el.clientWidth));
     }, 120);
   };
 
@@ -402,7 +418,6 @@ export function PracticeRecentTransfersCalendar({
 
   const captionMonth = kstStartOfMonth(cursorYmd) || cursorYmd;
   const captionMonthEnd = kstEndOfMonth(captionMonth) || captionMonth;
-  const colCount = Math.max(1, visibleDows.length);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
@@ -503,154 +518,196 @@ export function PracticeRecentTransfersCalendar({
         </div>
       </div>
 
-      <div
-        className="grid border-l border-t"
-        style={{ gridTemplateColumns: `repeat(${colCount}, minmax(0, 1fr))` }}
-      >
-        {visibleColumns.map(({ dow, label }) => (
-          <div
-            key={`hdr-${dow}`}
-            className="border-b border-r bg-muted/40 px-1.5 py-1.5 text-center text-[11px] font-medium text-muted-foreground"
-          >
-            {label}
-          </div>
-        ))}
-      </div>
-
-      <div
-        ref={scrollRef}
-        className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
-        onScroll={handleScroll}
-      >
-        {weeks.map((week) => {
-          const cells: DayCell[] = week.map((ymd) => ({
-            ymd,
-            dow: kstYmdWeekday(ymd) ?? 0,
-          }));
-          const visibleCells = visibleDows
-            .map((dow) => cells.find((cell) => cell.dow === dow))
-            .filter((cell): cell is DayCell => cell != null);
-          return (
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div
+          className="grid shrink-0 border-l border-t"
+          style={{
+            gridTemplateColumns: `repeat(${colCount}, minmax(0, 1fr))`,
+            paddingInlineEnd: scrollbarW,
+          }}
+        >
+          {visibleColumns.map(({ dow, label }) => (
             <div
-              key={week[0]}
-              ref={(node) => {
-                const weekStart = week[0];
-                if (!weekStart) return;
-                if (node) weekElsRef.current.set(weekStart, node);
-                else weekElsRef.current.delete(weekStart);
-              }}
-              className="grid items-stretch border-l"
-              style={{
-                gridTemplateColumns: `repeat(${colCount}, minmax(0, 1fr))`,
-                minHeight: minRowH,
-              }}
+              key={`hdr-${dow}`}
+              className="border-b border-r bg-muted/40 px-1.5 py-1.5 text-center text-[11px] font-medium text-muted-foreground"
             >
-              {visibleCells.map((day) => {
-                const dayItems = byDay.get(day.ymd) || [];
-                const isToday = day.ymd === todayYmd;
-                const inCaptionMonth =
-                  day.ymd >= captionMonth && day.ymd <= captionMonthEnd;
-                const monthNum = Number(day.ymd.slice(5, 7));
-                const dayNum = Number(day.ymd.slice(-2));
-                return (
-                  <div
-                    key={day.ymd}
-                    className={cn(
-                      "flex h-full min-h-0 flex-col border-b border-r p-1",
-                      !inCaptionMonth && "bg-muted/20",
-                      isToday && "bg-primary-soft/40",
-                    )}
-                  >
-                    <p
+              {label}
+            </div>
+          ))}
+        </div>
+
+        <div
+          ref={scrollRef}
+          className="custom-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain"
+          onScroll={handleScroll}
+        >
+          {weeks.map((week) => {
+            const cells: DayCell[] = week.map((ymd) => ({
+              ymd,
+              dow: kstYmdWeekday(ymd) ?? 0,
+            }));
+            const visibleCells = visibleDows
+              .map((dow) => cells.find((cell) => cell.dow === dow))
+              .filter((cell): cell is DayCell => cell != null);
+            return (
+              <div
+                key={week[0]}
+                ref={(node) => {
+                  const weekStart = week[0];
+                  if (!weekStart) return;
+                  if (node) weekElsRef.current.set(weekStart, node);
+                  else weekElsRef.current.delete(weekStart);
+                }}
+                className="grid items-stretch border-l"
+                style={{
+                  gridTemplateColumns: `repeat(${colCount}, minmax(0, 1fr))`,
+                  minHeight: minRowH,
+                }}
+              >
+                {visibleCells.map((day) => {
+                  const dayItems = byDay.get(day.ymd) || [];
+                  const isToday = day.ymd === todayYmd;
+                  const isFutureDay = Boolean(
+                    onSelectFutureDay && todayYmd && day.ymd > todayYmd,
+                  );
+                  const inCaptionMonth =
+                    day.ymd >= captionMonth && day.ymd <= captionMonthEnd;
+                  const monthNum = Number(day.ymd.slice(5, 7));
+                  const dayNum = Number(day.ymd.slice(-2));
+                  return (
+                    <div
+                      key={day.ymd}
+                      role={isFutureDay ? "button" : undefined}
+                      tabIndex={isFutureDay ? 0 : undefined}
+                      aria-label={
+                        isFutureDay
+                          ? `${monthNum}/${dayNum} 신규 의뢰 (도착일)`
+                          : undefined
+                      }
+                      title={
+                        isFutureDay
+                          ? "클릭하면 이 날을 치과도착일로 신규 의뢰를 작성합니다"
+                          : undefined
+                      }
                       className={cn(
-                        "mb-1 shrink-0 text-right text-[11px] tabular-nums",
-                        isToday
-                          ? "font-semibold text-primary-strong"
-                          : inCaptionMonth
-                            ? "text-slate-700"
-                            : "text-muted-foreground",
+                        "flex h-full min-h-0 flex-col border-b border-r p-1",
+                        !inCaptionMonth && "bg-muted/20",
+                        isToday && "bg-primary-soft/40",
+                        isFutureDay &&
+                          "cursor-pointer hover:bg-primary-soft/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
                       )}
-                    >
-                      {monthNum}/{dayNum}
-                    </p>
-                    <div className="flex flex-col gap-0.5">
-                      {dayItems.map((item) => {
-                        const showDelete = Boolean(item.canDelete && onDeleteItem);
-                        const chipStyle = calendarChipStyleForItem(item);
-                        const unreadCount = Math.max(0, Number(item.unreadCount || 0));
-                        const unreadLabel =
-                          unreadCount > 99 ? "99+" : String(unreadCount);
-                        return (
-                          <div
-                            key={`${item.id}:${day.ymd}`}
-                            className={cn(
-                              "flex items-start gap-0.5 rounded pr-0.5 hover:brightness-95",
-                              item.isPriorArrival && "opacity-55",
-                              Number(item.unreadCount || 0) > 0
-                                ? "border-[3px] border-double border-red-600"
-                                : item.isRemake &&
-                                  "border-[3px] border-double border-slate-700",
-                            )}
-                            style={chipStyle}
-                          >
-                            <button
-                              type="button"
-                              className="flex min-w-0 flex-1 items-start gap-0.5 px-1 py-0.5 text-left text-[10px] leading-snug"
-                              title={
-                                item.linkedOrderDates &&
-                                item.linkedOrderDates.length > 1
-                                  ? `${item.line} · 연결 주문일 ${item.linkedOrderDates.join(" → ")}${
-                                      item.isPriorArrival ? " (이전)" : " (최종)"
-                                    }`
-                                  : item.linkedArrivalDates &&
-                                      item.linkedArrivalDates.length > 1
-                                    ? `${item.line} · 연결 도착일 ${item.linkedArrivalDates.join(" → ")}${
-                                        item.isPriorArrival
-                                          ? " (이전)"
-                                          : " (최종)"
-                                      }`
-                                    : unreadCount > 0
-                                      ? `${item.line} · 안읽음 ${unreadLabel}`
-                                      : item.line
+                      onClick={
+                        isFutureDay
+                          ? () => onSelectFutureDay?.(day.ymd)
+                          : undefined
+                      }
+                      onKeyDown={
+                        isFutureDay
+                          ? (e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                onSelectFutureDay?.(day.ymd);
                               }
-                              onClick={() => onSelectItem(item)}
+                            }
+                          : undefined
+                      }
+                    >
+                      <p
+                        className={cn(
+                          "mb-1 shrink-0 text-right text-[11px] tabular-nums",
+                          isToday
+                            ? "font-semibold text-primary-strong"
+                            : inCaptionMonth
+                              ? "text-slate-700"
+                              : "text-muted-foreground",
+                        )}
+                      >
+                        {monthNum}/{dayNum}
+                      </p>
+                      <div className="flex flex-col gap-0.5">
+                        {dayItems.map((item) => {
+                          const showDelete = Boolean(item.canDelete && onDeleteItem);
+                          const chipStyle = calendarChipStyleForItem(item);
+                          const unreadCount = Math.max(0, Number(item.unreadCount || 0));
+                          const unreadLabel =
+                            unreadCount > 99 ? "99+" : String(unreadCount);
+                          return (
+                            <div
+                              key={`${item.id}:${day.ymd}`}
+                              className={cn(
+                                "flex items-start gap-0.5 rounded pr-0.5 hover:brightness-95",
+                                item.isPriorArrival && "opacity-55",
+                                Number(item.unreadCount || 0) > 0
+                                  ? "border-[3px] border-double border-red-600"
+                                  : item.isRemake &&
+                                    "border-[3px] border-double border-slate-700",
+                              )}
+                              style={chipStyle}
+                              onClick={(e) => e.stopPropagation()}
+                              onKeyDown={(e) => e.stopPropagation()}
                             >
-                              <span className="min-w-0 flex-1 line-clamp-2 break-all">
-                                {item.isPriorArrival ? `↗ ${item.line}` : item.line}
-                              </span>
-                              {unreadCount > 0 ? (
-                                <span
-                                  className="mt-px inline-flex h-3.5 min-w-3.5 shrink-0 items-center justify-center rounded-full bg-destructive px-0.5 text-[9px] font-semibold leading-none text-white"
-                                  aria-label={`안읽음 ${unreadLabel}`}
-                                >
-                                  {unreadLabel}
-                                </span>
-                              ) : null}
-                            </button>
-                            {showDelete ? (
                               <button
                                 type="button"
-                                className="mt-0.5 shrink-0 rounded p-0.5 text-current/70 hover:bg-black/10 hover:text-destructive"
-                                aria-label="의뢰 취소"
-                                title="의뢰 취소(휴지통)"
+                                className="flex min-w-0 flex-1 items-start gap-0.5 px-1 py-0.5 text-left text-[10px] leading-snug"
+                                title={
+                                  item.linkedOrderDates &&
+                                  item.linkedOrderDates.length > 1
+                                    ? `${item.line} · 연결 주문일 ${item.linkedOrderDates.join(" → ")}${
+                                        item.isPriorArrival ? " (이전)" : " (최종)"
+                                      }`
+                                    : item.linkedArrivalDates &&
+                                        item.linkedArrivalDates.length > 1
+                                      ? `${item.line} · 연결 도착일 ${item.linkedArrivalDates.join(" → ")}${
+                                          item.isPriorArrival
+                                            ? " (이전)"
+                                            : " (최종)"
+                                        }`
+                                      : unreadCount > 0
+                                        ? `${item.line} · 안읽음 ${unreadLabel}`
+                                        : item.line
+                                }
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  onDeleteItem?.(item);
+                                  onSelectItem(item);
                                 }}
                               >
-                                <Trash2 className="h-3 w-3" />
+                                <span className="min-w-0 flex-1 line-clamp-2 break-all">
+                                  {item.isPriorArrival ? `↗ ${item.line}` : item.line}
+                                </span>
+                                {unreadCount > 0 ? (
+                                  <span
+                                    className="mt-px inline-flex h-3.5 min-w-3.5 shrink-0 items-center justify-center rounded-full bg-destructive px-0.5 text-[9px] font-semibold leading-none text-white"
+                                    aria-label={`안읽음 ${unreadLabel}`}
+                                  >
+                                    {unreadLabel}
+                                  </span>
+                                ) : null}
                               </button>
-                            ) : null}
-                          </div>
-                        );
-                      })}
+                              {showDelete ? (
+                                <button
+                                  type="button"
+                                  className="mt-0.5 shrink-0 rounded p-0.5 text-current/70 hover:bg-black/10 hover:text-destructive"
+                                  aria-label="의뢰 취소"
+                                  title="의뢰 취소(휴지통)"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onDeleteItem?.(item);
+                                  }}
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </button>
+                              ) : null}
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          );
-        })}
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

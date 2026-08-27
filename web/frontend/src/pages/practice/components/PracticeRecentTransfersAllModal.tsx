@@ -30,15 +30,15 @@
  * 2026-08-27: 검색어 localStorage 유지 — 의뢰상세 후 전체보기 복귀 시 직전 검색 복원.
  * 2026-08-28: 의뢰상세 플로팅과 동시 오픈 — modal 해제·outside 무시로 독립 입력.
  * 2026-08-28: 항상 non-modal·outside 무시·애니메이션 제거 — 상세 열고 닫을 때 플리커 방지.
+ * 2026-08-28: variant page|modal — 구강스캔 메인 캘린더 + 미래일 신규 의뢰.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronRight, Search, Trash2, X } from "lucide-react";
 
 import {
   Dialog,
   DialogClose,
   DialogContent,
-  DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
@@ -122,8 +122,12 @@ function writeStoredRecentTransfersAllSearch(value: string) {
 }
 
 type PracticeRecentTransfersAllModalProps = {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+  /**
+   * page: 구강스캔 메인(Dialog 없음). modal: 전체화면 Dialog(레거시).
+   */
+  variant?: "page" | "modal";
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
   token: string | null;
   chatRooms: ChatRoom[];
   initialPeriod: PeriodFilterValue;
@@ -139,6 +143,10 @@ type PracticeRecentTransfersAllModalProps = {
    * 플로팅·중첩 다이얼로그 focus로 전체보기가 닫히지 않게 한다.
    */
   floatingDetailOpen?: boolean;
+  /** 헤더 우측(검색 옆) — 신규 의뢰·임시저장·휴지통 등 */
+  headerActions?: ReactNode;
+  /** 오늘 이후 날짜 셀 → 신규 의뢰(도착일) */
+  onSelectFutureDay?: (ymd: string) => void;
   onSelectTransfer: (transfer: PracticeRecentTransferItem) => void;
   onDeleteTransfer: (transfer: PracticeRecentTransferItem) => void;
   onAskRemake?: (transfer: PracticeRecentTransferItem) => void;
@@ -146,7 +154,8 @@ type PracticeRecentTransfersAllModalProps = {
 };
 
 export function PracticeRecentTransfersAllModal({
-  open,
+  variant = "modal",
+  open: openProp,
   onOpenChange,
   token,
   chatRooms,
@@ -157,9 +166,13 @@ export function PracticeRecentTransfersAllModal({
   initialLoading = false,
   initialError = "",
   floatingDetailOpen = false,
+  headerActions,
+  onSelectFutureDay,
   onSelectTransfer,
   onDeleteTransfer,
 }: PracticeRecentTransfersAllModalProps) {
+  const isPage = variant === "page";
+  const open = isPage ? true : Boolean(openProp);
   const isMobile = useIsMobile();
   const forceCloseRef = useRef(false);
   const storedCalendarDateKey = useAuthStore(
@@ -535,96 +548,85 @@ export function PracticeRecentTransfersAllModal({
       />
     ) : null;
 
-  return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        if (!next && floatingDetailOpen && !forceCloseRef.current) {
-          // 플로팅·메모/별점 모달 포커스로 인한 오닫힘만 무시
-          return;
-        }
-        forceCloseRef.current = false;
-        onOpenChange(next);
-      }}
-      modal={false}
-    >
-      <DialogContent
-        hideClose
-        hideOverlay
-        className={cn(
-          "inset-0 left-0 top-0 flex h-[100dvh] w-screen max-h-[100dvh] max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-0 p-0 sm:max-w-none",
-          "duration-0 data-[state=open]:animate-none data-[state=closed]:animate-none",
-        )}
-        onPointerDownOutside={(e) => e.preventDefault()}
-        onInteractOutside={(e) => e.preventDefault()}
-        onFocusOutside={(e) => e.preventDefault()}
-        onOpenAutoFocus={(e) => {
-          // 플로팅 상세가 이미 있으면 포커스 탈취로 플리커·입력 깨짐 방지
-          if (floatingDetailOpen) e.preventDefault();
-        }}
-      >
-        <DialogClose
-          className={cn(
-            "absolute z-10 inline-flex items-center justify-center rounded-md opacity-70 ring-offset-background transition-opacity hover:opacity-100 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none",
-            isMobile ? "right-2.5 top-2.5 h-11 w-11" : "right-3 top-2.5 h-12 w-12",
-          )}
-          aria-label="닫기"
-          onPointerDown={() => {
-            forceCloseRef.current = true;
-          }}
-        >
-          <X className={isMobile ? "h-6 w-6" : "h-7 w-7"} strokeWidth={2.25} />
-          <span className="sr-only">Close</span>
-        </DialogClose>
-        <DialogHeader
-          className={cn(
-            "shrink-0 border-b bg-white/95 text-left backdrop-blur supports-[backdrop-filter]:bg-white/80",
-            isMobile ? "space-y-0 px-4 pb-3 pt-4 pr-14" : "px-6 py-3 pr-[4.25rem]",
-          )}
-        >
-          {isMobile ? (
-            <div className="flex flex-col gap-3">
-              <DialogTitle className="text-base font-semibold tracking-tight">
-                최근 의뢰
-              </DialogTitle>
-              <div className="relative w-full">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={search}
-                  onChange={(e) => handleSearchChange(e.target.value)}
-                  className="h-11 w-full rounded-xl border-slate-200 bg-slate-50 pl-9 text-base"
-                  placeholder="기공소, 환자명 검색"
-                />
-              </div>
-              <div className="-mx-4 flex gap-1.5 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                {statusBadges}
-              </div>
-            </div>
-          ) : (
-            <div className="flex items-center gap-3">
-              <DialogTitle className="shrink-0 text-lg font-semibold">
-                전송 내역 전체 보기
-              </DialogTitle>
-              <div className="flex min-w-0 flex-1 flex-wrap items-center justify-center gap-2">
-                {statusBadges}
-              </div>
-              <div className="relative w-full max-w-xs shrink-0">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={search}
-                  onChange={(e) => handleSearchChange(e.target.value)}
-                  className="h-9 w-full pl-9"
-                  placeholder="기공소, 환자명, 전송ID 검색"
-                />
-              </div>
-            </div>
-          )}
-        </DialogHeader>
+  const headerTitle = isPage ? "구강스캔" : "전송 내역 전체 보기";
+  const mobileTitle = isPage ? "구강스캔" : "최근 의뢰";
 
+  const headerBlock = (
+    <div
+      className={cn(
+        "shrink-0 border-b bg-white/95 text-left backdrop-blur supports-[backdrop-filter]:bg-white/80",
+        isMobile
+          ? cn("space-y-0 px-4 pb-3 pt-4", !isPage && "pr-14")
+          : cn("px-6 py-3", !isPage && "pr-[4.25rem]"),
+      )}
+    >
+      {isMobile ? (
+        <div className="flex flex-col gap-3">
+          <div className="flex min-w-0 items-center gap-2">
+            {isPage ? (
+              <h1 className="min-w-0 flex-1 text-base font-semibold tracking-tight">
+                {mobileTitle}
+              </h1>
+            ) : (
+              <DialogTitle className="min-w-0 flex-1 text-base font-semibold tracking-tight">
+                {mobileTitle}
+              </DialogTitle>
+            )}
+            {headerActions ? (
+              <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+                {headerActions}
+              </div>
+            ) : null}
+          </div>
+          <div className="relative w-full">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(e) => handleSearchChange(e.target.value)}
+              className="h-11 w-full rounded-xl border-slate-200 bg-slate-50 pl-9 text-base"
+              placeholder="기공소, 환자명 검색"
+            />
+          </div>
+          <div className="-mx-4 flex gap-1.5 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {statusBadges}
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center gap-3">
+          {isPage ? (
+            <h1 className="shrink-0 text-lg font-semibold">{headerTitle}</h1>
+          ) : (
+            <DialogTitle className="shrink-0 text-lg font-semibold">
+              {headerTitle}
+            </DialogTitle>
+          )}
+          <div className="flex min-w-0 flex-1 flex-wrap items-center justify-center gap-2">
+            {statusBadges}
+          </div>
+          <div className="relative w-full max-w-xs shrink-0">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(e) => handleSearchChange(e.target.value)}
+              className="h-9 w-full pl-9"
+              placeholder="기공소, 환자명, 전송ID 검색"
+            />
+          </div>
+          {headerActions ? (
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
+              {headerActions}
+            </div>
+          ) : null}
+        </div>
+      )}
+    </div>
+  );
+
+  const bodyBlock = (
         <div
           className={cn(
             "flex min-h-0 flex-1 flex-col overflow-hidden",
-            isMobile ? "bg-slate-50/80 px-3 py-3" : "px-6 py-3",
+            isMobile ? "bg-slate-50/80 px-3 py-3" : isPage ? "px-3 py-2 sm:px-4" : "px-6 py-3",
           )}
         >
           {loading ? (
@@ -793,14 +795,67 @@ export function PracticeRecentTransfersAllModal({
                   const transfer = calendarItemById.get(item.id);
                   if (transfer) onDeleteTransfer(transfer);
                 }}
+                onSelectFutureDay={onSelectFutureDay}
                 hiddenWeekdays={hiddenWeekdays}
                 onHiddenWeekdaysChange={handleHiddenWeekdaysChange}
                 alignEpoch={alignEpoch}
               />
             </>
           )}
-
         </div>
+  );
+
+  const panel = (
+    <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-gradient-subtle">
+      {headerBlock}
+      {bodyBlock}
+    </div>
+  );
+
+  if (isPage) {
+    return panel;
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next && floatingDetailOpen && !forceCloseRef.current) {
+          return;
+        }
+        forceCloseRef.current = false;
+        onOpenChange?.(next);
+      }}
+      modal={false}
+    >
+      <DialogContent
+        hideClose
+        hideOverlay
+        className={cn(
+          "inset-0 left-0 top-0 flex h-[100dvh] w-screen max-h-[100dvh] max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-0 p-0 sm:max-w-none",
+          "duration-0 data-[state=open]:animate-none data-[state=closed]:animate-none",
+        )}
+        onPointerDownOutside={(e) => e.preventDefault()}
+        onInteractOutside={(e) => e.preventDefault()}
+        onFocusOutside={(e) => e.preventDefault()}
+        onOpenAutoFocus={(e) => {
+          if (floatingDetailOpen) e.preventDefault();
+        }}
+      >
+        <DialogClose
+          className={cn(
+            "absolute z-10 inline-flex items-center justify-center rounded-md opacity-70 ring-offset-background transition-opacity hover:opacity-100 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none",
+            isMobile ? "right-2.5 top-2.5 h-11 w-11" : "right-3 top-2.5 h-12 w-12",
+          )}
+          aria-label="닫기"
+          onPointerDown={() => {
+            forceCloseRef.current = true;
+          }}
+        >
+          <X className={isMobile ? "h-6 w-6" : "h-7 w-7"} strokeWidth={2.25} />
+          <span className="sr-only">Close</span>
+        </DialogClose>
+        {panel}
       </DialogContent>
     </Dialog>
   );

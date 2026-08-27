@@ -1274,12 +1274,16 @@ export const DashboardLayout = () => {
     location.pathname.startsWith("/dashboard/lab-work") ||
     (location.pathname.startsWith("/dashboard/practice-transfers") &&
       requestorKind === "lab");
-  // 충전·정산·기공의뢰수신 캘린더 — 래퍼를 뷰포트 높이에 고정(중첩 스크롤).
-  // 그 외(설정·치과 기공의뢰 등)는 문서 흐름으로 키워 하단 pb가 스크롤 끝에 보이게 함.
+  const isPracticeOralScanWorkArea =
+    location.pathname.startsWith("/dashboard/practice-transfers") &&
+    requestorKind === "practice";
+  // 충전·정산·기공의뢰수신·치과 구강스캔 캘린더 — 래퍼를 뷰포트 높이에 고정(중첩 스크롤).
+  // 그 외(설정 등)는 문서 흐름으로 키워 하단 pb가 스크롤 끝에 보이게 함.
   const isFillHeightWorkArea =
     location.pathname.startsWith("/dashboard/credits") ||
     location.pathname.startsWith("/dashboard/payments") ||
-    isLabReceiveWorkArea;
+    isLabReceiveWorkArea ||
+    isPracticeOralScanWorkArea;
   const worksheetParams = new URLSearchParams(location.search);
   const worksheetType = worksheetParams.get("type") || "cnc";
   const worksheetStageRaw = worksheetParams.get("stage") || "request";
@@ -1795,7 +1799,7 @@ export const DashboardLayout = () => {
                   className={cn(
                     "flex h-full min-h-0 flex-col items-stretch",
                     // 모바일: 카드 바깥 여백으로 가장자리 스크롤·터치 제스처 공간 확보
-                    isLabReceiveWorkArea
+                    isLabReceiveWorkArea || isPracticeOralScanWorkArea
                       ? "p-0"
                       : "p-3.5 sm:p-4 lg:p-6",
                   )}
@@ -1803,7 +1807,7 @@ export const DashboardLayout = () => {
                   <main
                     className={cn(
                       "flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden",
-                      isLabReceiveWorkArea
+                      isLabReceiveWorkArea || isPracticeOralScanWorkArea
                         ? "rounded-none bg-white shadow-none"
                         : "box-border rounded-2xl bg-white/80 shadow-lg backdrop-blur-xl",
                     )}
@@ -1821,7 +1825,7 @@ export const DashboardLayout = () => {
                           isFillHeightWorkArea
                             ? "flex min-h-0 flex-1 flex-col"
                             : "min-h-full",
-                          isLabReceiveWorkArea
+                          isLabReceiveWorkArea || isPracticeOralScanWorkArea
                             ? "p-3 sm:p-4"
                             : "px-4 pb-8 pt-5 sm:px-6 sm:pb-12 sm:pt-6",
                         )}

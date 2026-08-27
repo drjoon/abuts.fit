@@ -120,13 +120,13 @@
  * - 2026-08-20: filesTouched/replace만 첨부 축소 허용. autosave HTTP가 소켓 반영을 덮지 않게 ref 동기화.
  * - 2026-08-20: 로컬 첨부는 peek 재실행 대신 ensureFilesUploaded로 이어서 draft append. iOS 카메라 복귀 후 focus에서도 재시도.
  * - 2026-08-28: 모드 전환(익스프레스) 제거·엑스퍼트 고정. 최근의뢰 좌·작성액션 우 묶음.
+ * - 2026-08-28: 메인=전송 캘린더, 미래일 클릭·신규 의뢰=전체화면 작성 모달(도착일 지정).
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 
 import {
-  ClipboardList,
   Trash2,
   RotateCcw,
   BookmarkPlus,
@@ -276,6 +276,7 @@ import {
 } from "@/shared/practice/practiceTransferFormLocal";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -1438,7 +1439,7 @@ export const PracticeFileTransferPage = ({
   const [memoSnippets, setMemoSnippets] = useState<string[]>([]);
   const [implantFavorites, setImplantFavorites] = useState<PracticeImplantFavorite[]>([]);
   const [abutmentFavorites, setAbutmentFavorites] = useState<PracticeAbutmentFavorite[]>([]);
-  const [recentTransfersAllOpen, setRecentTransfersAllOpen] = useState(false);
+  const [composeOpen, setComposeOpen] = useState(false);
   const [draftsOpen, setDraftsOpen] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false);
   const [guideTourActive, setGuideTourActive] = useState(false);
@@ -1657,16 +1658,11 @@ export const PracticeFileTransferPage = ({
   } = useFilePreUpload({ token: authToken });
   const { rooms: chatRooms, fetchRooms } = useChatRooms();
 
-  // 삭제된 의뢰 채팅 잔상(유령 unread) 정리 — 목록 진입·전체보기 시 rooms 재조회.
+  // 삭제된 의뢰 채팅 잔상(유령 unread) 정리 — 캘린더 메인 진입 시 rooms 재조회.
   useEffect(() => {
     if (!authToken) return;
     void fetchRooms();
   }, [authToken, fetchRooms]);
-
-  useEffect(() => {
-    if (!authToken || !recentTransfersAllOpen) return;
-    void fetchRooms();
-  }, [authToken, fetchRooms, recentTransfersAllOpen]);
 
   const resolveUploadedTempFiles = useCallback(
     async (targetFiles: File[]) => {
@@ -4327,6 +4323,7 @@ export const PracticeFileTransferPage = ({
       // 목록 카드보다 서버 최신 스냅샷을 우선해, 빈 기공소/환자명·파일도 정확히 맞춘다.
       void loadPracticeTransferDraft({ draftId: draft.id, forceResync: true });
       setDraftsOpen(false);
+      setComposeOpen(true);
       toast({
         title: draft.isMine ? "임시저장 불러옴" : "함께 이어쓰기",
         description: draft.isMine
@@ -4422,8 +4419,8 @@ export const PracticeFileTransferPage = ({
       selectedTransferIdRef.current = "";
       setSelectedTransfer(null);
       setActiveChatRoom(null);
-      setRecentTransfersAllOpen(false);
       setDraftsOpen(false);
+      setComposeOpen(true);
       toast({
         title: "의뢰 수정",
         description:
@@ -5060,8 +5057,7 @@ export const PracticeFileTransferPage = ({
     setDeleteConfirmOpen(false);
     setDeleteTargetTransfer(null);
     if (deleteReturnToAllModalRef.current) {
-      setRecentTransfersAllOpen(true);
-      // Confirm 포털 unmount 직후 Radix Dialog onOpenChange(false)가 한 틱 더 올 수 있음
+      // 캘린더가 메인 — Confirm 포털 unmount 직후 suppress 플래그만 정리
       window.setTimeout(() => {
         suppressRecentAllModalCloseRef.current = false;
         deleteReturnToAllModalRef.current = false;
@@ -5095,7 +5091,6 @@ export const PracticeFileTransferPage = ({
       return;
     }
     if (
-      recentTransfersAllOpen ||
       options?.returnToAllModal ||
       returnToAllModalRef.current
     ) {
@@ -6287,9 +6282,10 @@ export const PracticeFileTransferPage = ({
         setExpressDone(true);
         setExpressStepId("lab");
         void loadRecentRequests({ silent: true });
-        setRecentTransfersAllOpen(true);
+        setComposeOpen(false);
       } else {
-        navigate("/practice/dashboard");
+        setComposeOpen(false);
+        void loadRecentRequests({ silent: true });
       }
 
       void (async () => {
@@ -6532,7 +6528,11 @@ export const PracticeFileTransferPage = ({
     ]);
   };
 
-  const handleStartNewTransfer = async () => {
+  const handleStartNewTransfer = async (options?: {
+    arrivalYmd?: string;
+    openCompose?: boolean;
+    silentToast?: boolean;
+  }) => {
     clearPracticeSharedFormLocalStorage();
 
     formAutosaveSeqRef.current += 1;
@@ -6554,9 +6554,24 @@ export const PracticeFileTransferPage = ({
     const nextArrivalDefaultDays = accountArrivalDefaultDays;
     setArrivalDefaultDays(nextArrivalDefaultDays);
     const nextOrderDate = todayDate;
-    const nextArrivalDate = addDaysToDateInput(todayDate, nextArrivalDefaultDays);
+    const requestedArrival = String(options?.arrivalYmd || "").trim();
+    const nextArrivalDate =
+      /^\d{4}-\d{2}-\d{2}$/.test(requestedArrival) &&
+      requestedArrival > todayDate
+        ? requestedArrival
+        : addDaysToDateInput(todayDate, nextArrivalDefaultDays);
+    skipNextArrivalAutoSyncRef.current = true;
     setOrderDate(nextOrderDate);
     setArrivalDate(nextArrivalDate);
+    if (
+      /^\d{4}-\d{2}-\d{2}$/.test(requestedArrival) &&
+      requestedArrival > todayDate
+    ) {
+      const diff = kstYmdDiffDays(todayDate, nextArrivalDate);
+      if (diff != null) {
+        setArrivalDefaultDays(normalizeArrivalDefaultDays(diff));
+      }
+    }
     setRushProcessing(
       shouldEnablePracticeRushProcessing({
         orderYmd: nextOrderDate,
@@ -6614,12 +6629,24 @@ export const PracticeFileTransferPage = ({
       skipFormAutosaveRef.current = false;
     });
 
-    toast({
-      title: "새로 작성",
-      description: isExpressMode
-        ? "작성 화면을 비웠습니다. 전송 후에는 최근 의뢰에서 다시 확인할 수 있습니다."
-        : "작성 화면을 비웠습니다. 임시저장은 임시저장 목록에 남아 다시 불러올 수 있습니다.",
-    });
+    if (options?.openCompose !== false) {
+      setComposeOpen(true);
+    }
+
+    if (!options?.silentToast) {
+      toast({
+        title: options?.arrivalYmd ? "신규 의뢰" : "새로 작성",
+        description: options?.arrivalYmd
+          ? `치과도착일 ${options.arrivalYmd}. 기공소·환자·보철물을 입력해 전송하세요.`
+          : isExpressMode
+            ? "작성 화면을 비웠습니다. 전송 후에는 캘린더에서 다시 확인할 수 있습니다."
+            : "작성 화면을 비웠습니다. 임시저장은 임시저장 목록에 남아 다시 불러올 수 있습니다.",
+      });
+    }
+  };
+
+  const openComposeForArrival = (ymd: string) => {
+    void handleStartNewTransfer({ arrivalYmd: ymd, openCompose: true });
   };
 
   const persistArrivalDefaultDaysFromRange = useCallback(
@@ -6976,25 +7003,6 @@ export const PracticeFileTransferPage = ({
 
   const practiceWorkspaceToolbar = (
     <>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="h-9 gap-1.5 px-3"
-        onClick={() => setRecentTransfersAllOpen(true)}
-      >
-        <ClipboardList className="h-4 w-4 shrink-0" />
-        최근 의뢰
-        {recentChatUnreadCount > 0 ? (
-          <Badge
-            variant="destructive"
-            className="ml-0.5 h-4 min-w-4 justify-center px-1 text-[10px] leading-none"
-            aria-label={`안읽음 ${recentChatUnreadCount}건`}
-          >
-            {recentChatUnreadCount > 99 ? "99+" : recentChatUnreadCount}
-          </Badge>
-        ) : null}
-      </Button>
       <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
         <div className="flex flex-wrap items-center gap-2">
           <Tooltip>
@@ -7004,7 +7012,7 @@ export const PracticeFileTransferPage = ({
                 variant="outline"
                 size="sm"
                 className="h-9 px-3"
-                onClick={() => void handleStartNewTransfer()}
+                onClick={() => void handleStartNewTransfer({ openCompose: true })}
               >
                 새로 작성
               </Button>
@@ -7073,6 +7081,50 @@ export const PracticeFileTransferPage = ({
         </Button>
         <DemoModeBadge />
       </div>
+    </>
+  );
+
+  /** 캘린더 메인 헤더 — 신규 의뢰·임시저장·휴지통 */
+  const calendarHeaderActions = (
+    <>
+      <Button
+        type="button"
+        size="sm"
+        className="h-9 gap-1.5 px-3"
+        onClick={() => void handleStartNewTransfer({ openCompose: true })}
+      >
+        신규 의뢰
+      </Button>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="h-9 gap-1.5 px-3"
+        onClick={() => setDraftsOpen(true)}
+      >
+        <BookmarkPlus className="h-4 w-4 shrink-0" />
+        임시저장
+        {draftGroupedTransfers.length > 0 ? (
+          <Badge variant="secondary" className="ml-0.5">
+            {draftGroupedTransfers.length}
+          </Badge>
+        ) : null}
+      </Button>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="h-9 gap-1.5 px-3"
+        onClick={() => setTrashOpen(true)}
+      >
+        <Trash2 className="h-4 w-4 shrink-0" />
+        휴지통
+        {trashGroupedTransfers.length > 0 ? (
+          <Badge variant="secondary" className="ml-0.5">
+            {trashGroupedTransfers.length}
+          </Badge>
+        ) : null}
+      </Button>
     </>
   );
 
@@ -7308,24 +7360,88 @@ export const PracticeFileTransferPage = ({
   };
 
   return (
-    <PageFileDropZone
-      onFiles={handleIncomingFiles}
-      activeClassName="ring-2 ring-primary/30"
-      className="min-h-full bg-gradient-subtle"
-    >
-      <div
-        className={cn(
-          "mx-auto w-full max-w-7xl space-y-3",
-          // h-full이면 pb가 뷰포트 끝에만 붙고, 긴 폼 스크롤 끝(전송 버튼 아래)에는 안 보임
-          isMobile ? "box-border min-w-0 px-2 pb-8" : "px-4 pt-4 pb-12",
-        )}
-      >
+    <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
         {roleSwitcher ? (
-          <div className="flex flex-wrap items-center gap-2">{roleSwitcher}</div>
+          <div className="flex shrink-0 flex-wrap items-center gap-2 px-3 pt-2 sm:px-4">
+            {roleSwitcher}
+          </div>
         ) : null}
+        <PracticeRecentTransfersAllModal
+          variant="page"
+          token={authToken}
+          chatRooms={chatRooms}
+          floatingDetailOpen={transferDialogOpen}
+          initialPeriod={period}
+          initialSearch=""
+          initialStatusFilter="all"
+          initialRequests={recentRequests}
+          initialHasMore={recentRequestsHasMore}
+          initialLoading={recentRequestsLoading}
+          initialError={recentRequestsError}
+          headerActions={calendarHeaderActions}
+          onSelectFutureDay={openComposeForArrival}
+          onSelectTransfer={(transfer) => {
+            void handleOpenTransferDialog(transfer, {
+              returnToAllModal: true,
+            });
+          }}
+          onDeleteTransfer={(transfer) => {
+            handleAskDeleteTransfer(transfer, { returnToAllModal: true });
+          }}
+          onAskRemake={(transfer) => askRemakeForTransfer(transfer)}
+          onEditTransfer={(transfer) => {
+            handleBeginEditSentTransfer(transfer);
+          }}
+        />
+      </div>
 
-        <div className="flex min-w-0 w-full flex-col gap-3">
-          <Card className="min-w-0 border-0 bg-transparent shadow-none hover:shadow-none">
+      <Dialog
+        open={composeOpen}
+        onOpenChange={(open) => {
+          setComposeOpen(open);
+        }}
+      >
+        <DialogContent
+          hideClose
+          className={cn(
+            "inset-0 left-0 top-0 flex h-[100dvh] w-screen max-h-[100dvh] max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-0 p-0 sm:max-w-none",
+            "duration-0 data-[state=open]:animate-none data-[state=closed]:animate-none",
+          )}
+        >
+          <DialogClose
+            className={cn(
+              "absolute z-10 inline-flex items-center justify-center rounded-md opacity-70 ring-offset-background transition-opacity hover:opacity-100 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+              isMobile ? "right-2.5 top-2.5 h-11 w-11" : "right-3 top-2.5 h-12 w-12",
+            )}
+            aria-label="닫기"
+          >
+            <X className={isMobile ? "h-6 w-6" : "h-7 w-7"} strokeWidth={2.25} />
+            <span className="sr-only">Close</span>
+          </DialogClose>
+          <DialogHeader
+            className={cn(
+              "shrink-0 border-b bg-white/95 text-left backdrop-blur supports-[backdrop-filter]:bg-white/80",
+              isMobile ? "space-y-0 px-4 pb-3 pt-4 pr-14" : "px-6 py-3 pr-[4.25rem]",
+            )}
+          >
+            <DialogTitle className="text-base font-semibold tracking-tight sm:text-lg">
+              {editingSentTransfer ? "의뢰 수정" : "신규 의뢰"}
+            </DialogTitle>
+          </DialogHeader>
+          <PageFileDropZone
+            onFiles={handleIncomingFiles}
+            activeClassName="ring-2 ring-primary/30"
+            className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-gradient-subtle"
+          >
+            <div
+              className={cn(
+                "mx-auto w-full max-w-7xl space-y-3",
+                isMobile ? "box-border min-w-0 px-2 pb-8 pt-2" : "px-4 pt-4 pb-12",
+              )}
+            >
+              <div className="flex min-w-0 w-full flex-col gap-3">
+                <Card className="min-w-0 border-0 bg-transparent shadow-none hover:shadow-none">
             {isMobile || useIntakeHeaderToolbar ? null : (
             <CardHeader className="px-0 pb-2 pt-0">
               <div className="flex w-full min-w-0 flex-wrap items-center gap-2">
@@ -7366,8 +7482,8 @@ export const PracticeFileTransferPage = ({
                       url,
                     });
                   }}
-                  onStartNew={() => void handleStartNewTransfer()}
-                  onOpenRecent={() => setRecentTransfersAllOpen(true)}
+                  onStartNew={() => void handleStartNewTransfer({ openCompose: true, silentToast: true })}
+                  onOpenRecent={() => setComposeOpen(false)}
                   onOpenDrafts={() => {
                     setDraftsOpen(true);
                     if (pendingLocalFilesRef.current.length > 0) {
@@ -7417,8 +7533,8 @@ export const PracticeFileTransferPage = ({
                 />
               ) : isExpressMode && expressDone ? (
                 <PracticeTransferExpressDonePanel
-                  onStartNew={() => void handleStartNewTransfer()}
-                  onViewRecent={() => setRecentTransfersAllOpen(true)}
+                  onStartNew={() => void handleStartNewTransfer({ openCompose: true, silentToast: true })}
+                  onViewRecent={() => setComposeOpen(false)}
                 />
               ) : (
                 <PracticeTransferIntakeSection
@@ -7623,7 +7739,11 @@ export const PracticeFileTransferPage = ({
               setPendingRushArrivalYmd("");
             }}
           />
-        </div>
+              </div>
+            </div>
+          </PageFileDropZone>
+        </DialogContent>
+      </Dialog>
 
         <Dialog open={draftsOpen} onOpenChange={setDraftsOpen}>
           <DialogContent
@@ -8137,36 +8257,6 @@ export const PracticeFileTransferPage = ({
           </DialogContent>
         </Dialog>
 
-        <PracticeRecentTransfersAllModal
-          open={recentTransfersAllOpen}
-          onOpenChange={(open) => {
-            // ConfirmDialog(포털) 포커스/아웃사이드 상호작용으로 전체보기가 같이 닫히지 않게 함
-            if (!open && suppressRecentAllModalCloseRef.current) return;
-            setRecentTransfersAllOpen(open);
-          }}
-          token={authToken}
-          chatRooms={chatRooms}
-          floatingDetailOpen={transferDialogOpen}
-          initialPeriod={period}
-          initialSearch=""
-          initialStatusFilter="all"
-          initialRequests={recentRequests}
-          initialHasMore={recentRequestsHasMore}
-          initialLoading={recentRequestsLoading}
-          initialError={recentRequestsError}
-          onSelectTransfer={(transfer) => {
-            void handleOpenTransferDialog(transfer, {
-              returnToAllModal: true,
-            });
-          }}
-          onDeleteTransfer={(transfer) => {
-            handleAskDeleteTransfer(transfer);
-          }}
-          onAskRemake={(transfer) => askRemakeForTransfer(transfer)}
-          onEditTransfer={(transfer) => {
-            handleBeginEditSentTransfer(transfer);
-          }}
-        />
 
         <PracticeTransferDetailChatDialog
           open={transferDialogOpen}
@@ -8719,7 +8809,6 @@ export const PracticeFileTransferPage = ({
           onConfirm={() => void handleConfirmEmptyTrash()}
           onCancel={handleCancelEmptyTrash}
         />
-      </div>
-    </PageFileDropZone>
+    </div>
   );
 };
