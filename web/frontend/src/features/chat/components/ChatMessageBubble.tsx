@@ -7,10 +7,13 @@
 // - web/frontend/src/shared/files/useS3FileDownload.ts
 // - web/frontend/src/shared/files/s3BlobCache.ts
 // - web/frontend/src/shared/components/ModelPreviewDialog.tsx
+// - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - web/frontend/src/shared/files/modelPreviewFile.ts
 // - 2026-08-13: 채팅 첨부 다운로드 중 프로그레스바.
 // - 2026-08-27: 이미지 첨부 썸네일 + ModelPreviewDialog 미리보기(의뢰상세와 동일).
+// - 2026-08-28: STL/PLY/OBJ도 의뢰상세와 동일 썸네일·ModelPreviewDialog.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Reply, SmilePlus } from "lucide-react";
+import { Box, Reply, SmilePlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -21,8 +24,17 @@ import { cn } from "@/shared/ui/cn";
 import type { ChatMessage, ChatMessageReaction } from "@/shared/hooks/useChatRooms";
 import { MessageReply } from "@/features/chat/components/MessageReply";
 import { CHAT_REACTION_EMOJIS } from "@/features/chat/components/chatReactions";
-import { ModelPreviewDialog } from "@/shared/components/ModelPreviewDialog";
+import { StlPreviewThumbnail } from "@/features/requests/components/StlPreviewThumbnail";
+import {
+  ModelPreviewDialog,
+  type ModelPreviewKind,
+} from "@/shared/components/ModelPreviewDialog";
 import { fetchS3BlobCached } from "@/shared/files/s3BlobCache";
+import {
+  fileFromModelBlob,
+  getModelExtLower,
+  isModelPreviewExt,
+} from "@/shared/files/modelPreviewFile";
 import { buildS3ProxyDownloadUrl } from "@/shared/files/useS3FileDownload";
 import {
   getPracticeTransferFileExtension,
@@ -78,6 +90,18 @@ export function isChatImageAttachment(file: {
   return PRACTICE_TRANSFER_IMAGE_EXTENSIONS.has(ext);
 }
 
+export function isChatModelAttachment(file: { fileName?: string }): boolean {
+  return isModelPreviewExt(getModelExtLower(String(file.fileName || "")));
+}
+
+export function resolveChatPreviewKind(
+  file: ChatBubbleAttachment,
+): ModelPreviewKind | null {
+  if (isChatImageAttachment(file)) return "image";
+  if (isChatModelAttachment(file)) return "model";
+  return null;
+}
+
 function mimeTypeForImageFileName(name: string): string {
   const ext = getPracticeTransferFileExtension(name);
   if (ext === ".png") return "image/png";
@@ -96,6 +120,15 @@ function fileFromImageBlob(blob: Blob, fileName: string): File {
       ? blob.type
       : mimeTypeForImageFileName(name);
   return new File([blob], name, { type });
+}
+
+function fileFromPreviewBlob(
+  blob: Blob,
+  fileName: string,
+  kind: ModelPreviewKind,
+): File {
+  if (kind === "model") return fileFromModelBlob(blob, fileName);
+  return fileFromImageBlob(blob, fileName);
 }
 
 function toBubbleAttachment(
@@ -226,30 +259,48 @@ export function ChatMessageBubble({
     return list.map(toBubbleAttachment);
   }, [message.attachments]);
 
-  const imageAttachments = useMemo(
-    () => attachments.filter((file) => isChatImageAttachment(file)),
+  const previewableAttachments = useMemo(
+    () =>
+      attachments.filter((file) => resolveChatPreviewKind(file) != null),
     [attachments],
   );
   const otherAttachments = useMemo(
-    () => attachments.filter((file) => !isChatImageAttachment(file)),
+    () =>
+      attachments.filter((file) => resolveChatPreviewKind(file) == null),
     [attachments],
   );
 
   const imageThumbKey = useMemo(
     () =>
-      imageAttachments
+      previewableAttachments
+        .filter((file) => resolveChatPreviewKind(file) === "image")
         .map((file) => String(file.s3Key || "").trim())
         .filter(Boolean)
         .join("|"),
-    [imageAttachments],
+    [previewableAttachments],
+  );
+
+  const modelThumbKey = useMemo(
+    () =>
+      previewableAttachments
+        .filter((file) => resolveChatPreviewKind(file) === "model")
+        .map((file) => String(file.s3Key || "").trim())
+        .filter(Boolean)
+        .join("|"),
+    [previewableAttachments],
   );
 
   const [thumbUrls, setThumbUrls] = useState<Record<string, string>>({});
   const thumbUrlsRef = useRef<Record<string, string>>({});
+  const [modelThumbFiles, setModelThumbFiles] = useState<Record<string, File>>(
+    {},
+  );
+  const modelThumbFilesRef = useRef<Record<string, File>>({});
 
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewItems, setPreviewItems] = useState<ChatBubbleAttachment[]>([]);
   const [previewIndex, setPreviewIndex] = useState(0);
+  const [previewKind, setPreviewKind] = useState<ModelPreviewKind>("image");
   const [previewFile, setPreviewFile] = useState<File | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewProgress, setPreviewProgress] = useState(0);
@@ -267,6 +318,11 @@ export function ChatMessageBubble({
     setThumbUrls({});
   };
 
+  const clearModelThumbs = () => {
+    modelThumbFilesRef.current = {};
+    setModelThumbFiles({});
+  };
+
   useEffect(() => {
     const token = String(authToken || "").trim();
     if (!token || !imageThumbKey) {
@@ -276,7 +332,11 @@ export function ChatMessageBubble({
 
     const ac = new AbortController();
     let cancelled = false;
-    const files = imageAttachments.filter((file) => String(file.s3Key || "").trim());
+    const files = previewableAttachments.filter(
+      (file) =>
+        resolveChatPreviewKind(file) === "image" &&
+        String(file.s3Key || "").trim(),
+    );
 
     void (async () => {
       const next: Record<string, string> = {};
@@ -328,9 +388,58 @@ export function ChatMessageBubble({
       ac.abort();
       revokeThumbs();
     };
-    // imageAttachments identity changes with message; key captures s3 list
+    // previewableAttachments identity changes with message; key captures s3 list
     // eslint-disable-next-line react-hooks/exhaustive-deps -- imageThumbKey is SSOT
   }, [authToken, imageThumbKey]);
+
+  useEffect(() => {
+    const token = String(authToken || "").trim();
+    if (!token || !modelThumbKey) {
+      clearModelThumbs();
+      return;
+    }
+
+    const ac = new AbortController();
+    let cancelled = false;
+    const files = previewableAttachments.filter(
+      (file) =>
+        resolveChatPreviewKind(file) === "model" &&
+        String(file.s3Key || "").trim(),
+    );
+
+    void (async () => {
+      const next: Record<string, File> = {};
+      for (const file of files) {
+        if (cancelled || ac.signal.aborted) return;
+        const s3Key = String(file.s3Key || "").trim();
+        const fileName =
+          String(file.fileName || "model.stl").trim() || "model.stl";
+        try {
+          const blob = await fetchS3BlobCached({
+            s3Key,
+            fileName,
+            token,
+            buildUrl: buildS3ProxyDownloadUrl,
+            signal: ac.signal,
+          });
+          if (cancelled || ac.signal.aborted) return;
+          next[s3Key] = fileFromModelBlob(blob, fileName);
+        } catch {
+          // 썸네일 실패 시 Box placeholder
+        }
+      }
+      if (cancelled || ac.signal.aborted) return;
+      modelThumbFilesRef.current = next;
+      setModelThumbFiles(next);
+    })();
+
+    return () => {
+      cancelled = true;
+      ac.abort();
+      clearModelThumbs();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- modelThumbKey is SSOT
+  }, [authToken, modelThumbKey]);
 
   const resetPreview = () => {
     previewAbortRef.current?.abort();
@@ -338,6 +447,7 @@ export function ChatMessageBubble({
     setPreviewOpen(false);
     setPreviewItems([]);
     setPreviewIndex(0);
+    setPreviewKind("image");
     setPreviewFile(null);
     setPreviewLoading(false);
     setPreviewProgress(0);
@@ -349,8 +459,12 @@ export function ChatMessageBubble({
   ) => {
     const token = String(authToken || "").trim();
     const target = items[index];
+    const kind = resolveChatPreviewKind(target || { fileName: "" }) || "image";
     const s3Key = String(target?.s3Key || "").trim();
-    const fileName = String(target?.fileName || "image").trim() || "image";
+    const fileName =
+      String(
+        target?.fileName || (kind === "image" ? "image" : "model.stl"),
+      ).trim() || (kind === "image" ? "image" : "model.stl");
     if (!token || !s3Key) {
       setPreviewFile(null);
       setPreviewLoading(false);
@@ -360,6 +474,7 @@ export function ChatMessageBubble({
     previewAbortRef.current?.abort();
     const ac = new AbortController();
     previewAbortRef.current = ac;
+    setPreviewKind(kind);
     setPreviewLoading(true);
     setPreviewProgress(0);
     setPreviewFile(null);
@@ -374,7 +489,7 @@ export function ChatMessageBubble({
         onProgress: setPreviewProgress,
       });
       if (ac.signal.aborted) return;
-      setPreviewFile(fileFromImageBlob(blob, fileName));
+      setPreviewFile(fileFromPreviewBlob(blob, fileName, kind));
     } catch (err) {
       if ((err as { name?: string })?.name === "AbortError") return;
       setPreviewFile(null);
@@ -386,13 +501,16 @@ export function ChatMessageBubble({
     }
   };
 
-  const openImagePreview = (index: number) => {
-    if (!imageAttachments.length) return;
-    const nextIndex = Math.max(0, Math.min(index, imageAttachments.length - 1));
-    setPreviewItems(imageAttachments);
+  const openAttachmentPreview = (index: number) => {
+    if (!previewableAttachments.length) return;
+    const nextIndex = Math.max(
+      0,
+      Math.min(index, previewableAttachments.length - 1),
+    );
+    setPreviewItems(previewableAttachments);
     setPreviewIndex(nextIndex);
     setPreviewOpen(true);
-    void loadPreviewAt(imageAttachments, nextIndex);
+    void loadPreviewAt(previewableAttachments, nextIndex);
   };
 
   const goPreviewRelative = (delta: number) => {
@@ -422,6 +540,8 @@ export function ChatMessageBubble({
         return busyKey && downloadingFileKeys.includes(busyKey);
       })(),
   );
+
+  const hasTextContent = Boolean(String(message.content || "").trim());
 
   if (isSystem) {
     return (
@@ -496,25 +616,27 @@ export function ChatMessageBubble({
               </button>
             ) : null}
 
-            {String(message.content || "").trim() ? (
+            {hasTextContent ? (
               <p className="min-w-0 whitespace-pre-wrap break-words [overflow-wrap:anywhere] leading-snug">
                 {message.content}
               </p>
             ) : null}
 
-            {imageAttachments.length > 0 ? (
+            {previewableAttachments.length > 0 ? (
               <div
                 className={cn(
                   "grid gap-1.5",
-                  String(message.content || "").trim() ? "mt-2" : "mt-0.5",
-                  imageAttachments.length === 1
+                  hasTextContent ? "mt-2" : "mt-0.5",
+                  previewableAttachments.length === 1
                     ? "grid-cols-1 max-w-[13.5rem] sm:max-w-[15rem]"
                     : "grid-cols-2 max-w-[15rem] sm:max-w-[17rem]",
                 )}
               >
-                {imageAttachments.map((file, idx) => {
+                {previewableAttachments.map((file, idx) => {
+                  const kind = resolveChatPreviewKind(file) || "image";
                   const s3Key = String(file.s3Key || "").trim();
                   const thumbUrl = s3Key ? thumbUrls[s3Key] : "";
+                  const modelThumb = s3Key ? modelThumbFiles[s3Key] : undefined;
                   const canPreview =
                     Boolean(authToken && s3Key) ||
                     (typeof onOpenAttachment === "function" &&
@@ -532,13 +654,13 @@ export function ChatMessageBubble({
 
                   return (
                     <button
-                      key={`${message._id}:img:${idx}`}
+                      key={`${message._id}:preview:${idx}`}
                       type="button"
                       disabled={!canPreview || isBusy}
                       onClick={() => {
                         if (isBusy) return;
                         if (authToken && s3Key) {
-                          openImagePreview(idx);
+                          openAttachmentPreview(idx);
                           return;
                         }
                         if (onOpenAttachment) void onOpenAttachment(file);
@@ -556,10 +678,22 @@ export function ChatMessageBubble({
                       aria-label={
                         isBusy
                           ? `${file.fileName} 다운로드 중 ${Math.round(progress)}%`
-                          : `${file.fileName} 미리보기`
+                          : kind === "model"
+                            ? `${file.fileName} 3D 미리보기`
+                            : `${file.fileName} 미리보기`
+                      }
+                      title={
+                        kind === "model"
+                          ? "클릭하여 3D 미리보기"
+                          : "클릭하여 이미지 미리보기"
                       }
                     >
-                      {thumbUrl ? (
+                      {kind === "model" && modelThumb ? (
+                        <StlPreviewThumbnail
+                          file={modelThumb}
+                          className="pointer-events-none"
+                        />
+                      ) : kind === "image" && thumbUrl ? (
                         <img
                           src={thumbUrl}
                           alt=""
@@ -569,13 +703,16 @@ export function ChatMessageBubble({
                       ) : (
                         <span
                           className={cn(
-                            "flex h-full w-full items-center justify-center px-2 text-center text-[10px] leading-snug",
+                            "flex h-full w-full flex-col items-center justify-center gap-1 px-2 text-center text-[10px] leading-snug",
                             isMine
                               ? "bg-primary-foreground/15 text-primary-foreground/80"
                               : "bg-muted-foreground/10 text-muted-foreground",
                           )}
                         >
-                          {file.fileName}
+                          {kind === "model" ? (
+                            <Box className="h-7 w-7 shrink-0" aria-hidden />
+                          ) : null}
+                          <span className="line-clamp-3">{file.fileName}</span>
                         </span>
                       )}
                       {isBusy ? (
@@ -601,8 +738,7 @@ export function ChatMessageBubble({
               <div
                 className={cn(
                   "space-y-1",
-                  imageAttachments.length > 0 ||
-                    String(message.content || "").trim()
+                  previewableAttachments.length > 0 || hasTextContent
                     ? "mt-2"
                     : "mt-0.5",
                 )}
@@ -776,7 +912,7 @@ export function ChatMessageBubble({
           }
           setPreviewOpen(true);
         }}
-        kind="image"
+        kind={previewKind}
         fileName={previewMeta?.fileName || ""}
         file={previewFile}
         loading={previewLoading}
