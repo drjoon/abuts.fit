@@ -11,6 +11,7 @@
 // - web/frontend/src/shared/files/modelPreviewFile.ts
 // - 2026-08-13: 채팅 첨부 다운로드 중 프로그레스바.
 // - 2026-08-27: 이미지 첨부 썸네일 + ModelPreviewDialog 미리보기(의뢰상세와 동일).
+// - 2026-08-28: PLY/OBJ 칼라 텍스처(동반 이미지) 프리뷰 전달.
 // - 2026-08-28: STL/PLY/OBJ도 의뢰상세와 동일 썸네일·ModelPreviewDialog.
 // - 2026-08-28: 모델 확장자 우선 분류(잘못된 image MIME 오인 방지).
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -32,9 +33,12 @@ import {
 } from "@/shared/components/ModelPreviewDialog";
 import { fetchS3BlobCached } from "@/shared/files/s3BlobCache";
 import {
+  fileFromImageBlob,
   fileFromModelBlob,
   getModelExtLower,
   isModelPreviewExt,
+  peekPlyHeaderInfo,
+  resolveCompanionTextureFileName,
 } from "@/shared/files/modelPreviewFile";
 import { buildS3ProxyDownloadUrl } from "@/shared/files/useS3FileDownload";
 import {
@@ -304,6 +308,12 @@ export function ChatMessageBubble({
   const [previewIndex, setPreviewIndex] = useState(0);
   const [previewKind, setPreviewKind] = useState<ModelPreviewKind>("image");
   const [previewFile, setPreviewFile] = useState<File | null>(null);
+  const [previewTextureFile, setPreviewTextureFile] = useState<File | null>(
+    null,
+  );
+  const [previewCompanionFiles, setPreviewCompanionFiles] = useState<File[]>(
+    [],
+  );
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewProgress, setPreviewProgress] = useState(0);
   const previewAbortRef = useRef<AbortController | null>(null);
@@ -451,6 +461,8 @@ export function ChatMessageBubble({
     setPreviewIndex(0);
     setPreviewKind("image");
     setPreviewFile(null);
+    setPreviewTextureFile(null);
+    setPreviewCompanionFiles([]);
     setPreviewLoading(false);
     setPreviewProgress(0);
   };
@@ -469,6 +481,8 @@ export function ChatMessageBubble({
       ).trim() || (kind === "image" ? "image" : "model.stl");
     if (!token || !s3Key) {
       setPreviewFile(null);
+      setPreviewTextureFile(null);
+      setPreviewCompanionFiles([]);
       setPreviewLoading(false);
       return;
     }
@@ -480,6 +494,8 @@ export function ChatMessageBubble({
     setPreviewLoading(true);
     setPreviewProgress(0);
     setPreviewFile(null);
+    setPreviewTextureFile(null);
+    setPreviewCompanionFiles([]);
 
     try {
       const blob = await fetchS3BlobCached({
@@ -491,10 +507,61 @@ export function ChatMessageBubble({
         onProgress: setPreviewProgress,
       });
       if (ac.signal.aborted) return;
-      setPreviewFile(fileFromPreviewBlob(blob, fileName, kind));
+      const mainFile = fileFromPreviewBlob(blob, fileName, kind);
+      setPreviewFile(mainFile);
+
+      if (kind === "model") {
+        const imageItems = items.filter((item) => isChatImageAttachment(item));
+        const companionFiles: File[] = [];
+        for (const item of imageItems) {
+          const key = String(item.s3Key || "").trim();
+          const name = String(item.fileName || "image").trim() || "image";
+          if (!key) continue;
+          try {
+            const imgBlob = await fetchS3BlobCached({
+              s3Key: key,
+              fileName: name,
+              token,
+              buildUrl: buildS3ProxyDownloadUrl,
+              signal: ac.signal,
+            });
+            if (ac.signal.aborted) return;
+            companionFiles.push(fileFromImageBlob(imgBlob, name));
+          } catch {
+            // skip missing companion
+          }
+        }
+
+        let preferredTexture: string | null = null;
+        if (getModelExtLower(fileName) === ".ply") {
+          preferredTexture = peekPlyHeaderInfo(
+            await mainFile.arrayBuffer(),
+          ).textureFileName;
+        }
+        const matchedName = resolveCompanionTextureFileName(
+          fileName,
+          preferredTexture,
+          companionFiles.map((f) => f.name),
+        );
+        const textureFile = matchedName
+          ? companionFiles.find(
+              (f) =>
+                f.name.toLowerCase() === matchedName.toLowerCase() ||
+                f.name.split("/").pop()?.toLowerCase() ===
+                  matchedName.toLowerCase(),
+            ) || null
+          : null;
+
+        if (!ac.signal.aborted) {
+          setPreviewTextureFile(textureFile);
+          setPreviewCompanionFiles(companionFiles);
+        }
+      }
     } catch (err) {
       if ((err as { name?: string })?.name === "AbortError") return;
       setPreviewFile(null);
+      setPreviewTextureFile(null);
+      setPreviewCompanionFiles([]);
     } finally {
       if (previewAbortRef.current === ac) {
         previewAbortRef.current = null;
@@ -917,6 +984,8 @@ export function ChatMessageBubble({
         kind={previewKind}
         fileName={previewMeta?.fileName || ""}
         file={previewFile}
+        textureFile={previewTextureFile}
+        companionFiles={previewCompanionFiles}
         loading={previewLoading}
         progress={previewProgress}
         downloadBusy={previewDownloadBusy}

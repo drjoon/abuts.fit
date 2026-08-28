@@ -5,14 +5,21 @@
 // - web/frontend/src/features/chat/components/ChatMessageBubble.tsx
 // - 2026-08-23: 의뢰 상세 작업 파일 타일용 정적 3D 썸네일.
 // - 2026-08-28: WebGL은 1회 렌더 후 PNG 스냅샷·즉시 dispose — 모달 뷰어와 컨텍스트 충돌 방지.
+// - 2026-08-28: PLY/OBJ 버텍스 컬러·TextureFile 칼라 표시.
 import { useEffect, useState } from "react";
 import * as THREE from "three";
 import { Box } from "lucide-react";
 import { cn } from "@/shared/ui/cn";
-import { parseModelGeometry } from "@/shared/files/modelPreviewFile";
+import {
+  createModelPreviewMaterial,
+  isScanColorPreview,
+  parseModelPreview,
+} from "@/shared/files/modelPreviewFile";
 
 type Props = {
   file: File;
+  textureFile?: File | null;
+  companionFiles?: File[] | null;
   className?: string;
 };
 
@@ -54,6 +61,7 @@ function releaseWebGl(
   mesh: THREE.Mesh | null,
   geometry: THREE.BufferGeometry | null,
   scene: THREE.Scene | null,
+  texture: THREE.Texture | null,
 ): void {
   if (mesh && scene) {
     scene.remove(mesh);
@@ -65,6 +73,7 @@ function releaseWebGl(
     }
   }
   geometry?.dispose();
+  texture?.dispose?.();
   if (!renderer) return;
   try {
     const gl = renderer.getContext();
@@ -89,7 +98,12 @@ function releaseWebGl(
   }
 }
 
-export function StlPreviewThumbnail({ file, className }: Props) {
+export function StlPreviewThumbnail({
+  file,
+  textureFile = null,
+  companionFiles = null,
+  className,
+}: Props) {
   const [thumbUrl, setThumbUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -98,16 +112,18 @@ export function StlPreviewThumbnail({ file, className }: Props) {
     let released = false;
     let mesh: THREE.Mesh | null = null;
     let geometry: THREE.BufferGeometry | null = null;
+    let previewTexture: THREE.Texture | null = null;
     let scene: THREE.Scene | null = null;
     let renderer: THREE.WebGLRenderer | null = null;
 
     const release = () => {
       if (released) return;
       released = true;
-      releaseWebGl(renderer, mesh, geometry, scene);
+      releaseWebGl(renderer, mesh, geometry, scene, previewTexture);
       renderer = null;
       mesh = null;
       geometry = null;
+      previewTexture = null;
       scene = null;
     };
 
@@ -149,18 +165,26 @@ export function StlPreviewThumbnail({ file, className }: Props) {
 
     void (async () => {
       try {
-        geometry = await parseModelGeometry(file);
-        if (cancelled || released) return;
+        const parsed = await parseModelPreview(file, {
+          textureFile,
+          companionFiles,
+        });
+        if (cancelled || released) {
+          parsed.texture?.dispose?.();
+          parsed.geometry.dispose();
+          return;
+        }
 
+        geometry = parsed.geometry;
+        previewTexture = parsed.texture;
         geometry.computeBoundingBox();
         geometry.computeBoundingSphere();
         geometry.computeVertexNormals();
 
-        const material = new THREE.MeshStandardMaterial({
-          color: 0x5b9dff,
-          metalness: 0.08,
-          roughness: 0.6,
-        });
+        const material = createModelPreviewMaterial(geometry, previewTexture);
+        if (isScanColorPreview(geometry, previewTexture)) {
+          renderer.toneMappingExposure = 1.35;
+        }
         mesh = new THREE.Mesh(geometry, material);
         scene?.add(mesh);
 
@@ -183,7 +207,7 @@ export function StlPreviewThumbnail({ file, className }: Props) {
       cancelled = true;
       release();
     };
-  }, [file]);
+  }, [file, textureFile, companionFiles]);
 
   if (failed) {
     return (

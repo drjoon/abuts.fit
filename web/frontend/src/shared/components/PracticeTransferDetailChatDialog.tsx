@@ -138,9 +138,13 @@ import {
 import { ModelPreviewDialog, type ModelPreviewKind } from "@/shared/components/ModelPreviewDialog";
 import { StlPreviewThumbnail } from "@/features/requests/components/StlPreviewThumbnail";
 import {
+  fileFromImageBlob,
   fileFromModelBlob,
   getModelExtLower,
   isModelPreviewExt,
+  peekPlyHeaderInfo,
+  resolveCompanionTextureFileName,
+  siblingTextureS3Key,
 } from "@/shared/files/modelPreviewFile";
 import {
   buildS3ProxyDownloadUrl,
@@ -541,6 +545,12 @@ export function PracticeTransferDetailChatDialog({
   }, [onAppendArrival, rearrivalDraft, todayYmd, toast]);
   const [previewKind, setPreviewKind] = useState<ModelPreviewKind>("model");
   const [previewFile, setPreviewFile] = useState<File | null>(null);
+  const [previewTextureFile, setPreviewTextureFile] = useState<File | null>(
+    null,
+  );
+  const [previewCompanionFiles, setPreviewCompanionFiles] = useState<File[]>(
+    [],
+  );
   const [previewMeta, setPreviewMeta] =
     useState<PracticeTransferDialogFileItem | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -551,6 +561,11 @@ export function PracticeTransferDetailChatDialog({
     {},
   );
   const fileThumbUrlsRef = useRef<Record<string, string>>({});
+  /** 칼라 텍스처용 이미지 File (s3Key → file) */
+  const [imageThumbFiles, setImageThumbFiles] = useState<Record<string, File>>(
+    {},
+  );
+  const imageThumbFilesRef = useRef<Record<string, File>>({});
   /** STL/PLY/OBJ 썸네일용 File (s3Key → file) */
   const [modelThumbFiles, setModelThumbFiles] = useState<Record<string, File>>(
     {},
@@ -629,6 +644,8 @@ export function PracticeTransferDetailChatDialog({
     }
     fileThumbUrlsRef.current = {};
     setFileThumbUrls({});
+    imageThumbFilesRef.current = {};
+    setImageThumbFiles({});
   }, []);
 
   const clearModelThumbs = useCallback(() => {
@@ -651,7 +668,8 @@ export function PracticeTransferDetailChatDialog({
     let cancelled = false;
 
     void (async () => {
-      const next: Record<string, string> = {};
+      const nextUrls: Record<string, string> = {};
+      const nextFiles: Record<string, File> = {};
       for (const file of imageFiles) {
         if (cancelled || ac.signal.aborted) return;
         const s3Key = String(file.s3Key || "").trim();
@@ -669,13 +687,14 @@ export function PracticeTransferDetailChatDialog({
             blob.type && blob.type !== "application/octet-stream"
               ? blob
               : new Blob([blob], { type: mimeTypeForImageFileName(fileName) });
-          next[s3Key] = URL.createObjectURL(typed);
+          nextUrls[s3Key] = URL.createObjectURL(typed);
+          nextFiles[s3Key] = fileFromImageBlob(typed, fileName);
         } catch {
           // 썸네일 실패 시 아이콘 placeholder
         }
       }
       if (cancelled || ac.signal.aborted) {
-        for (const url of Object.values(next)) {
+        for (const url of Object.values(nextUrls)) {
           try {
             URL.revokeObjectURL(url);
           } catch {
@@ -691,8 +710,10 @@ export function PracticeTransferDetailChatDialog({
           // ignore
         }
       }
-      fileThumbUrlsRef.current = next;
-      setFileThumbUrls(next);
+      fileThumbUrlsRef.current = nextUrls;
+      imageThumbFilesRef.current = nextFiles;
+      setFileThumbUrls(nextUrls);
+      setImageThumbFiles(nextFiles);
     })();
 
     return () => {
@@ -796,6 +817,8 @@ export function PracticeTransferDetailChatDialog({
     setPreviewOpen(false);
     setPreviewKind("model");
     setPreviewFile(null);
+    setPreviewTextureFile(null);
+    setPreviewCompanionFiles([]);
     setPreviewMeta(null);
     setPreviewLoading(false);
     setPreviewProgress(0);
@@ -829,6 +852,8 @@ export function PracticeTransferDetailChatDialog({
       setPreviewKind(kind);
       setPreviewMeta(file);
       setPreviewFile(null);
+      setPreviewTextureFile(null);
+      setPreviewCompanionFiles([]);
       setPreviewLoading(true);
       setPreviewProgress(0);
       setPreviewOpen(true);
@@ -843,7 +868,95 @@ export function PracticeTransferDetailChatDialog({
           onProgress: setPreviewProgress,
         });
         if (ac.signal.aborted) return;
-        setPreviewFile(fileFromPreviewBlob(blob, fileName, kind));
+        const modelOrImage = fileFromPreviewBlob(blob, fileName, kind);
+        setPreviewFile(modelOrImage);
+
+        if (kind === "model") {
+          const imageItems = collectImageThumbFiles();
+          const companionFiles = imageItems
+            .map((item) => {
+              const key = String(item.s3Key || "").trim();
+              return key ? imageThumbFilesRef.current[key] : null;
+            })
+            .filter((f): f is File => Boolean(f));
+
+          let preferredTexture: string | null = null;
+          const ext = getModelExtLower(fileName);
+          if (ext === ".ply") {
+            preferredTexture = peekPlyHeaderInfo(
+              await modelOrImage.arrayBuffer(),
+            ).textureFileName;
+          }
+
+          const matchedName = resolveCompanionTextureFileName(
+            fileName,
+            preferredTexture,
+            imageItems.map((item) => String(item.fileName || "")),
+          );
+
+          let textureFile: File | null = null;
+          if (matchedName) {
+            const matchedBase = matchedName.toLowerCase();
+            const matchedItem = imageItems.find((item) => {
+              const name = String(item.fileName || "").trim();
+              const base = name.split("/").pop() || name;
+              return (
+                name.toLowerCase() === matchedBase ||
+                base.toLowerCase() === matchedBase
+              );
+            });
+            if (matchedItem) {
+              const texKey = String(matchedItem.s3Key || "").trim();
+              const texName =
+                String(matchedItem.fileName || matchedName).trim() ||
+                matchedName;
+              textureFile =
+                (texKey && imageThumbFilesRef.current[texKey]) || null;
+              if (!textureFile && texKey) {
+                try {
+                  const texBlob = await fetchS3BlobCached({
+                    s3Key: texKey,
+                    fileName: texName,
+                    token: authToken,
+                    buildUrl: buildS3ProxyDownloadUrl,
+                    signal: ac.signal,
+                  });
+                  if (!ac.signal.aborted) {
+                    textureFile = fileFromImageBlob(texBlob, texName);
+                  }
+                } catch {
+                  textureFile = null;
+                }
+              }
+            }
+          }
+
+          // 목록에 이미지가 없어도 PLY TextureFile이 같은 S3 폴더에 있으면 시도
+          if (!textureFile && preferredTexture) {
+            const siblingKey = siblingTextureS3Key(s3Key, preferredTexture);
+            if (siblingKey && siblingKey !== s3Key) {
+              try {
+                const texBlob = await fetchS3BlobCached({
+                  s3Key: siblingKey,
+                  fileName: preferredTexture,
+                  token: authToken,
+                  buildUrl: buildS3ProxyDownloadUrl,
+                  signal: ac.signal,
+                });
+                if (!ac.signal.aborted) {
+                  textureFile = fileFromImageBlob(texBlob, preferredTexture);
+                }
+              } catch {
+                // 텍스처 객체가 없으면 무시
+              }
+            }
+          }
+
+          if (!ac.signal.aborted) {
+            setPreviewTextureFile(textureFile);
+            setPreviewCompanionFiles(companionFiles);
+          }
+        }
       } catch (err) {
         if ((err as { name?: string })?.name === "AbortError") return;
         toast({
@@ -856,6 +969,8 @@ export function PracticeTransferDetailChatDialog({
         });
         // 다음/이전 이동 중 실패해도 모달은 유지(빈 상태)
         setPreviewFile(null);
+        setPreviewTextureFile(null);
+        setPreviewCompanionFiles([]);
         setPreviewLoading(false);
         if (previewAbortRef.current === ac) previewAbortRef.current = null;
         return;
@@ -866,7 +981,7 @@ export function PracticeTransferDetailChatDialog({
         }
       }
     },
-    [authToken, toast],
+    [authToken, collectImageThumbFiles, toast],
   );
 
   const handleFileRowClick = useCallback(
@@ -1162,6 +1277,7 @@ export function PracticeTransferDetailChatDialog({
             {isMesh && modelThumbFile ? (
               <StlPreviewThumbnail
                 file={modelThumbFile}
+                companionFiles={Object.values(imageThumbFiles)}
                 className="pointer-events-none"
               />
             ) : isImage && thumbUrl ? (
@@ -2095,6 +2211,8 @@ export function PracticeTransferDetailChatDialog({
       kind={previewKind}
       fileName={previewMeta?.fileName || ""}
       file={previewFile}
+      textureFile={previewTextureFile}
+      companionFiles={previewCompanionFiles}
       loading={previewLoading}
       progress={previewProgress}
       downloadBusy={previewDownloadBusy}

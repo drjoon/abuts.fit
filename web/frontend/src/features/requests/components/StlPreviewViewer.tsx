@@ -1,4 +1,7 @@
 // change-log:
+// - 2026-08-28: PLY TextureFile·버텍스 컬러 칼라 표시 (parseModelPreview). 스캔 칼라는 언릿+노출↑.
+// - 2026-08-28: 패닝(중클릭·우클릭·Shift+좌클릭) — ScreenSpaceOrbitControls. 우드래그 후 수동픽 undo 스킵.
+// - 2026-08-28: PLY/OBJ 버텍스 컬러는 createModelPreviewMaterial로 칼라 표시.
 // - 2026-08-26: filled pivot을 bbox 중심으로 옮기며 메시만 보정해 FL·A포인트·경사축이 위로 밀리던 회귀 수정.
 // - 2026-08-26: 좌우=카메라 azimuth(yaw), 위아래=카메라 polar — roll·반전 수정.
 // - 2026-08-26: 3D 프리뷰 회전을 화면 기준(screen-space) 오빗으로 변경 — 현재 뷰 각도에서 부드럽게 누적 회전.
@@ -28,12 +31,18 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { cn } from "@/shared/ui/cn";
 import {
-  parseModelGeometry,
+  createModelPreviewMaterial,
+  isScanColorPreview,
+  parseModelPreview,
 } from "@/shared/files/modelPreviewFile";
 import { useStlMetadata, type StlMetadata } from "../hooks/useStlMetadata";
 
 type Props = {
   file: File;
+  /** PLY TextureFile / OBJ map_Kd 동반 칼라 이미지 */
+  textureFile?: File | null;
+  /** MTL·추가 텍스처 등 (이름 매칭) */
+  companionFiles?: File[] | null;
   requestId?: string;
   onDiameterComputed?: (
     filename: string,
@@ -60,6 +69,8 @@ type Props = {
 
 export function StlPreviewViewer({
   file,
+  textureFile = null,
+  companionFiles = null,
   requestId,
   onDiameterComputed,
   showOverlay = true,
@@ -189,7 +200,13 @@ export function StlPreviewViewer({
 
   // File 객체 참조가 변경되어도 name+size가 같으면 같은 파일로 간주 (씬 재생성 방지)
   const fileKeyRef = useRef<string>("");
-  const fileKey = `${file.name}:${file.size}`;
+  const textureKey = textureFile
+    ? `${textureFile.name}:${textureFile.size}`
+    : "";
+  const companionKey = Array.isArray(companionFiles)
+    ? companionFiles.map((f) => `${f.name}:${f.size}`).join("|")
+    : "";
+  const fileKey = `${file.name}:${file.size}:${textureKey}:${companionKey}`;
   if (fileKeyRef.current !== fileKey) {
     // 제조사 페이지(showOverlay=true)에서는 메타데이터 축이 준비될 때까지 대기
     const hasTiltAxis = toValidPoint(resolvedMetadata?.tiltAxisVector) !== null;
@@ -453,6 +470,7 @@ export function StlPreviewViewer({
 
     let mesh: THREE.Mesh | null = null;
     let geometry: THREE.BufferGeometry | null = null;
+    let previewTexture: THREE.Texture | null = null;
     let finishLine: THREE.Object3D | null = null;
     let finishLineMaxPointMarker: THREE.Mesh | null = null;
     let finishLineMinPointMarker: THREE.Mesh | null = null;
@@ -466,8 +484,17 @@ export function StlPreviewViewer({
     let cancelled = false;
     (async () => {
       try {
-        geometry = await parseModelGeometry(file);
-        if (cancelled) return;
+        const parsed = await parseModelPreview(file, {
+          textureFile,
+          companionFiles,
+        });
+        if (cancelled) {
+          parsed.texture?.dispose?.();
+          parsed.geometry.dispose();
+          return;
+        }
+        geometry = parsed.geometry;
+        previewTexture = parsed.texture;
 
         geometry = mergeVertices(geometry, 1e-5);
         geometry.computeBoundingBox();
@@ -484,11 +511,11 @@ export function StlPreviewViewer({
           ? new THREE.Vector3(0, 0, 0)
           : center.clone();
 
-        const material = new THREE.MeshStandardMaterial({
-          color: 0x5b9dff,
-          metalness: 0.08,
-          roughness: 0.6,
-        });
+        const material = createModelPreviewMaterial(geometry, previewTexture);
+        // 스캔 칼라/텍스처는 ACES가 뭉개지 않게 노출을 살짝 올린다.
+        if (isScanColorPreview(geometry, previewTexture)) {
+          renderer.toneMappingExposure = 1.35;
+        }
         mesh = new THREE.Mesh(geometry, material);
 
         const position = geometry.getAttribute("position");
@@ -1425,6 +1452,8 @@ export function StlPreviewViewer({
             if (!enableManualPickRef.current) return;
             event.preventDefault();
             event.stopPropagation();
+            // 우클릭 드래그 패닝 직후에는 undo하지 않는다.
+            if (controls.lastGestureMoved) return;
             onManualUndoRef.current?.();
           };
           if (contextMenuHandlerRef.current) {
@@ -2058,6 +2087,7 @@ export function StlPreviewViewer({
       if (geometry) {
         geometry.dispose();
       }
+      previewTexture?.dispose?.();
       controls.dispose();
       renderer.dispose();
       sceneRef.current = null;

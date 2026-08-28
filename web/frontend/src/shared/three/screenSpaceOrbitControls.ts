@@ -4,9 +4,13 @@ type ScreenSpaceOrbitControlsEvent = "start" | "change" | "end";
 
 type ScreenSpaceOrbitControlsListener = () => void;
 
+type DragMode = "none" | "rotate" | "pan";
+
 export type ScreenSpaceOrbitControlsOptions = {
   rotateSpeed?: number;
   zoomSpeed?: number;
+  panSpeed?: number;
+  enablePan?: boolean;
   minPolarAngle?: number;
   maxPolarAngle?: number;
   minDistance?: number;
@@ -17,20 +21,31 @@ export type ScreenSpaceOrbitControlsOptions = {
  * Dental preview orbit — decoupled to avoid roll:
  * - Horizontal: camera azimuth around viewTarget (screen-vertical / yaw, see left/right)
  * - Vertical: camera elevation (polar) only
+ * - Pan: middle / right / Shift+left drag (screen-space)
  */
 export class ScreenSpaceOrbitControls {
   readonly target = new THREE.Vector3();
 
   rotateSpeed: number;
   zoomSpeed: number;
+  panSpeed: number;
+  enablePan: boolean;
   minPolarAngle: number;
   maxPolarAngle: number;
   minDistance: number;
   maxDistance: number;
 
+  /**
+   * True if the last completed pointer gesture moved the camera (rotate/pan).
+   * Used by viewers to ignore contextmenu undo after a right-drag pan.
+   */
+  lastGestureMoved = false;
+
   private readonly camera: THREE.PerspectiveCamera;
   private readonly domElement: HTMLElement;
   private readonly worldUp = new THREE.Vector3(0, 0, 1);
+  private readonly panRight = new THREE.Vector3();
+  private readonly panUp = new THREE.Vector3();
   private readonly listeners = new Map<
     ScreenSpaceOrbitControlsEvent,
     Set<ScreenSpaceOrbitControlsListener>
@@ -42,16 +57,21 @@ export class ScreenSpaceOrbitControls {
   private polar = Math.PI / 4;
   private radius = 10;
 
-  private dragging = false;
+  private dragMode: DragMode = "none";
   private disposed = false;
   private activePointerId: number | null = null;
   private lastPointer = new THREE.Vector2();
 
   private readonly onPointerDown = (event: PointerEvent) => {
-    if (this.disposed || event.button !== 0) return;
+    if (this.disposed) return;
+
+    const mode = this.resolveDragMode(event);
+    if (mode === "none") return;
+
     this.syncFromCamera();
     this.activePointerId = event.pointerId;
-    this.dragging = true;
+    this.dragMode = mode;
+    this.lastGestureMoved = false;
     this.lastPointer.set(event.clientX, event.clientY);
     this.domElement.setPointerCapture(event.pointerId);
     this.dispatch("start");
@@ -61,7 +81,7 @@ export class ScreenSpaceOrbitControls {
   private readonly onPointerMove = (event: PointerEvent) => {
     if (
       this.disposed ||
-      !this.dragging ||
+      this.dragMode === "none" ||
       this.activePointerId === null ||
       event.pointerId !== this.activePointerId
     ) {
@@ -73,7 +93,15 @@ export class ScreenSpaceOrbitControls {
     this.lastPointer.set(event.clientX, event.clientY);
     if (deltaX === 0 && deltaY === 0) return;
 
-    this.rotateFromScreenDelta(deltaX, deltaY);
+    if (Math.abs(deltaX) + Math.abs(deltaY) >= 2) {
+      this.lastGestureMoved = true;
+    }
+
+    if (this.dragMode === "pan") {
+      this.panFromScreenDelta(deltaX, deltaY);
+    } else {
+      this.rotateFromScreenDelta(deltaX, deltaY);
+    }
     this.dispatch("change");
     event.preventDefault();
   };
@@ -82,7 +110,7 @@ export class ScreenSpaceOrbitControls {
     if (this.activePointerId === null || event.pointerId !== this.activePointerId) {
       return;
     }
-    this.dragging = false;
+    this.dragMode = "none";
     this.activePointerId = null;
     try {
       this.domElement.releasePointerCapture(event.pointerId);
@@ -106,6 +134,11 @@ export class ScreenSpaceOrbitControls {
     this.dispatch("change");
   };
 
+  private readonly onContextMenu = (event: Event) => {
+    // Right-drag pan uses button 2; block the browser menu.
+    event.preventDefault();
+  };
+
   constructor(
     camera: THREE.PerspectiveCamera,
     domElement: HTMLElement,
@@ -115,6 +148,8 @@ export class ScreenSpaceOrbitControls {
     this.domElement = domElement;
     this.rotateSpeed = options.rotateSpeed ?? 1;
     this.zoomSpeed = options.zoomSpeed ?? 1;
+    this.panSpeed = options.panSpeed ?? 1;
+    this.enablePan = options.enablePan ?? true;
     this.minPolarAngle = options.minPolarAngle ?? 0.05;
     this.maxPolarAngle = options.maxPolarAngle ?? Math.PI - 0.05;
     this.minDistance = options.minDistance ?? 0.01;
@@ -126,6 +161,7 @@ export class ScreenSpaceOrbitControls {
     domElement.addEventListener("pointerup", this.onPointerUp);
     domElement.addEventListener("pointercancel", this.onPointerUp);
     domElement.addEventListener("wheel", this.onWheel, { passive: false });
+    domElement.addEventListener("contextmenu", this.onContextMenu);
   }
 
   addEventListener(
@@ -175,8 +211,21 @@ export class ScreenSpaceOrbitControls {
     this.domElement.removeEventListener("pointerup", this.onPointerUp);
     this.domElement.removeEventListener("pointercancel", this.onPointerUp);
     this.domElement.removeEventListener("wheel", this.onWheel);
+    this.domElement.removeEventListener("contextmenu", this.onContextMenu);
     this.domElement.style.touchAction = "";
     this.listeners.clear();
+  }
+
+  private resolveDragMode(event: PointerEvent): DragMode {
+    // Middle or right → pan. Shift+left → pan. Left → rotate.
+    if (event.button === 1 || event.button === 2) {
+      return this.enablePan ? "pan" : "none";
+    }
+    if (event.button === 0) {
+      if (event.shiftKey && this.enablePan) return "pan";
+      return "rotate";
+    }
+    return "none";
   }
 
   private rotateFromScreenDelta(deltaX: number, deltaY: number) {
@@ -201,6 +250,25 @@ export class ScreenSpaceOrbitControls {
     if (cameraChanged) {
       this.applyCamera();
     }
+  }
+
+  private panFromScreenDelta(deltaX: number, deltaY: number) {
+    const elementHeight = Math.max(this.domElement.clientHeight, 1);
+    // Match three.js OrbitControls perspective pan scale (screen-space).
+    const targetDistance =
+      this.radius *
+      Math.tan(THREE.MathUtils.degToRad(this.camera.fov * 0.5));
+    const panScale =
+      ((2 * targetDistance) / elementHeight) * this.panSpeed;
+
+    this.camera.updateMatrixWorld();
+    this.panRight.setFromMatrixColumn(this.camera.matrix, 0);
+    this.panUp.setFromMatrixColumn(this.camera.matrix, 1);
+
+    // Drag right → content follows cursor (target moves left in camera space).
+    this.target.addScaledVector(this.panRight, -deltaX * panScale);
+    this.target.addScaledVector(this.panUp, deltaY * panScale);
+    this.applyCamera();
   }
 
   private applyCamera() {

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-28: PLY/OBJ 칼라 텍스처(TextureFile·동반 이미지) 프리뷰 전달.
 // - 2026-08-28: z-[320]/overlay z-[310] — 플로팅 의뢰상세(z-300) 위에 프리뷰.
 // - 2026-08-21: 선택 컨펌 안내·CTA(치과 어벗 디자인 컨펌 등). 이미지도 컨펌 시 푸터 표시.
 // - 2026-08-16: 채팅 위젯 톤 — rounded-xl·muted/50 헤더·h-9 푸터.
@@ -35,6 +36,9 @@ export type ModelPreviewDialogProps = {
   fileName: string;
   kind?: ModelPreviewKind;
   file: File | null;
+  /** PLY/OBJ 칼라 텍스처(동반 JPG/PNG) */
+  textureFile?: File | null;
+  companionFiles?: File[] | null;
   loading?: boolean;
   progress?: number;
   onDownload?: () => void | Promise<void>;
@@ -57,6 +61,8 @@ export function ModelPreviewDialog({
   fileName,
   kind = "model",
   file,
+  textureFile = null,
+  companionFiles = null,
   loading = false,
   progress = 0,
   onDownload,
@@ -215,6 +221,8 @@ export function ModelPreviewDialog({
             ) : file && !loading ? (
               <StlPreviewViewer
                 file={file}
+                textureFile={textureFile}
+                companionFiles={companionFiles}
                 showOverlay={false}
                 showGrid={false}
                 className="absolute inset-0 h-full min-h-0 w-full"
