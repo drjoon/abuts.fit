@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-28: 좌우 드래그=화면 Y축(카메라 local up) 회전 — 월드 Z 턴테이블 제거(스캔 수평 유지).
 // - 2026-08-28: PLY TextureFile·버텍스 컬러 칼라 표시 (parseModelPreview). 스캔 칼라는 언릿+노출↑.
 // - 2026-08-28: 패닝(중클릭·우클릭·Shift+좌클릭) — ScreenSpaceOrbitControls. 우드래그 후 수동픽 undo 스킵.
 // - 2026-08-28: PLY/OBJ 버텍스 컬러는 createModelPreviewMaterial로 칼라 표시.

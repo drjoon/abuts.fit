@@ -11,17 +11,18 @@ export type ScreenSpaceOrbitControlsOptions = {
   zoomSpeed?: number;
   panSpeed?: number;
   enablePan?: boolean;
-  minPolarAngle?: number;
-  maxPolarAngle?: number;
   minDistance?: number;
   maxDistance?: number;
 };
 
 /**
- * Dental preview orbit — decoupled to avoid roll:
- * - Horizontal: camera azimuth around viewTarget (screen-vertical / yaw, see left/right)
- * - Vertical: camera elevation (polar) only
+ * Dental preview orbit — screen-space axes (no world-up lock):
+ * - Horizontal drag: rotate around screen Y (camera local up) → keeps current horizon level
+ * - Vertical drag: rotate around screen X (camera local right)
  * - Pan: middle / right / Shift+left drag (screen-space)
+ *
+ * World Z turntable is intentionally not used: scan PLY axes often disagree with
+ * “level teeth” on screen, so Z-azimuth feels like spinning/tilting.
  */
 export class ScreenSpaceOrbitControls {
   readonly target = new THREE.Vector3();
@@ -30,8 +31,6 @@ export class ScreenSpaceOrbitControls {
   zoomSpeed: number;
   panSpeed: number;
   enablePan: boolean;
-  minPolarAngle: number;
-  maxPolarAngle: number;
   minDistance: number;
   maxDistance: number;
 
@@ -43,7 +42,9 @@ export class ScreenSpaceOrbitControls {
 
   private readonly camera: THREE.PerspectiveCamera;
   private readonly domElement: HTMLElement;
-  private readonly worldUp = new THREE.Vector3(0, 0, 1);
+  private readonly offset = new THREE.Vector3();
+  private readonly screenRight = new THREE.Vector3();
+  private readonly screenUp = new THREE.Vector3();
   private readonly panRight = new THREE.Vector3();
   private readonly panUp = new THREE.Vector3();
   private readonly listeners = new Map<
@@ -51,10 +52,6 @@ export class ScreenSpaceOrbitControls {
     Set<ScreenSpaceOrbitControlsListener>
   >();
 
-  /** Camera azimuth in XY plane — horizontal drag (yaw around screen vertical). */
-  private azimuth = 0;
-  /** Colatitude from +Z. 0 = above, π/2 = horizon. */
-  private polar = Math.PI / 4;
   private radius = 10;
 
   private dragMode: DragMode = "none";
@@ -130,7 +127,13 @@ export class ScreenSpaceOrbitControls {
       this.minDistance,
       this.maxDistance,
     );
-    this.applyCamera();
+    this.offset.subVectors(this.camera.position, this.target);
+    if (this.offset.lengthSq() < 1e-16) {
+      this.offset.set(0, -1, 0);
+    }
+    this.offset.setLength(this.radius);
+    this.camera.position.copy(this.target).add(this.offset);
+    this.camera.lookAt(this.target);
     this.dispatch("change");
   };
 
@@ -150,8 +153,6 @@ export class ScreenSpaceOrbitControls {
     this.zoomSpeed = options.zoomSpeed ?? 1;
     this.panSpeed = options.panSpeed ?? 1;
     this.enablePan = options.enablePan ?? true;
-    this.minPolarAngle = options.minPolarAngle ?? 0.05;
-    this.maxPolarAngle = options.maxPolarAngle ?? Math.PI - 0.05;
     this.minDistance = options.minDistance ?? 0.01;
     this.maxDistance = options.maxDistance ?? Infinity;
 
@@ -182,23 +183,10 @@ export class ScreenSpaceOrbitControls {
   }
 
   syncFromCamera() {
-    const dx = this.camera.position.x - this.target.x;
-    const dy = this.camera.position.y - this.target.y;
-    const dz = this.camera.position.z - this.target.z;
-    this.radius = Math.max(Math.hypot(dx, dy, dz), this.minDistance);
-
-    if (this.radius <= 1e-8) {
-      this.azimuth = 0;
-      this.polar = Math.PI / 4;
-      return;
-    }
-
-    this.polar = THREE.MathUtils.clamp(
-      Math.acos(THREE.MathUtils.clamp(dz / this.radius, -1, 1)),
-      this.minPolarAngle,
-      this.maxPolarAngle,
+    this.radius = Math.max(
+      this.camera.position.distanceTo(this.target),
+      this.minDistance,
     );
-    this.azimuth = Math.atan2(dy, dx);
   }
 
   update() {}
@@ -231,25 +219,33 @@ export class ScreenSpaceOrbitControls {
   private rotateFromScreenDelta(deltaX: number, deltaY: number) {
     const elementSize = Math.max(this.domElement.clientHeight, 1);
     const rotateScale = (this.rotateSpeed * (Math.PI * 2)) / elementSize;
-    let cameraChanged = false;
+
+    this.offset.subVectors(this.camera.position, this.target);
+    this.camera.updateMatrixWorld();
+    // Camera basis = screen axes (column 0 = right/X, column 1 = up/Y).
+    this.screenRight.setFromMatrixColumn(this.camera.matrixWorld, 0).normalize();
+    this.screenUp.setFromMatrixColumn(this.camera.matrixWorld, 1).normalize();
 
     if (deltaX !== 0) {
-      this.azimuth -= deltaX * rotateScale;
-      cameraChanged = true;
+      // Left/right → yaw around screen Y (keeps current horizon).
+      this.offset.applyAxisAngle(this.screenUp, -deltaX * rotateScale);
     }
 
     if (deltaY !== 0) {
-      this.polar = THREE.MathUtils.clamp(
-        this.polar - deltaY * rotateScale,
-        this.minPolarAngle,
-        this.maxPolarAngle,
-      );
-      cameraChanged = true;
+      // Up/down → pitch around screen X; rotate up with it so horizon stays.
+      const pitch = -deltaY * rotateScale;
+      this.offset.applyAxisAngle(this.screenRight, pitch);
+      this.camera.up.applyAxisAngle(this.screenRight, pitch);
     }
 
-    if (cameraChanged) {
-      this.applyCamera();
-    }
+    this.radius = THREE.MathUtils.clamp(
+      this.offset.length(),
+      this.minDistance,
+      this.maxDistance,
+    );
+    this.offset.setLength(this.radius);
+    this.camera.position.copy(this.target).add(this.offset);
+    this.camera.lookAt(this.target);
   }
 
   private panFromScreenDelta(deltaX: number, deltaY: number) {
@@ -262,25 +258,16 @@ export class ScreenSpaceOrbitControls {
       ((2 * targetDistance) / elementHeight) * this.panSpeed;
 
     this.camera.updateMatrixWorld();
-    this.panRight.setFromMatrixColumn(this.camera.matrix, 0);
-    this.panUp.setFromMatrixColumn(this.camera.matrix, 1);
+    this.panRight.setFromMatrixColumn(this.camera.matrixWorld, 0);
+    this.panUp.setFromMatrixColumn(this.camera.matrixWorld, 1);
 
-    // Drag right → content follows cursor (target moves left in camera space).
-    this.target.addScaledVector(this.panRight, -deltaX * panScale);
-    this.target.addScaledVector(this.panUp, deltaY * panScale);
-    this.applyCamera();
-  }
-
-  private applyCamera() {
-    const sinP = Math.sin(this.polar);
-    const cosP = Math.cos(this.polar);
-    this.camera.position.set(
-      this.target.x + this.radius * sinP * Math.cos(this.azimuth),
-      this.target.y + this.radius * sinP * Math.sin(this.azimuth),
-      this.target.z + this.radius * cosP,
-    );
-    this.camera.up.copy(this.worldUp);
-    this.camera.lookAt(this.target);
+    // Drag right → content follows cursor (camera + target move together).
+    const mx = -deltaX * panScale;
+    const my = deltaY * panScale;
+    this.target.addScaledVector(this.panRight, mx);
+    this.target.addScaledVector(this.panUp, my);
+    this.camera.position.addScaledVector(this.panRight, mx);
+    this.camera.position.addScaledVector(this.panUp, my);
   }
 
   private dispatch(type: ScreenSpaceOrbitControlsEvent) {
