@@ -12,6 +12,7 @@
  * - 2026-08-28: 「도착일 클릭으로 신규의뢰」안내 — 헤더 검색 자리(PracticeRecentTransfersAllModal).
  * - 2026-08-28: 검색 입력 — 주문일·도착일 뱃지 왼쪽(헤더와 위치 교환).
  * - 2026-08-27: 캘린더 날짜키 뱃지 「도착일」(치과도착일) — 작은 글씨에서 치과의사 오인 방지.
+ * - 2026-08-28: 누적 연결 칩 — 이전=↗(보냄)·최종=↙(받음) 표시.
  * - 2026-08-27: 누적 도착일 칩 — 이전 날짜 흐리게·연결 표시.
  * - 2026-08-23: 숨길 요일 버튼·캘린더 열 일~토(일요일 시작) 통일.
  * - 2026-08-23: 숨길 요일 토글·열 정렬 불일치 수정 — 일요일 선택 시 토요일만 숨겨지던 현상.
@@ -652,6 +653,17 @@ export function PracticeRecentTransfersCalendar({
                           const unreadCount = Math.max(0, Number(item.unreadCount || 0));
                           const unreadLabel =
                             unreadCount > 99 ? "99+" : String(unreadCount);
+                          const hasLinkedChain =
+                            (Array.isArray(item.linkedOrderDates) &&
+                              item.linkedOrderDates.length > 1) ||
+                            (Array.isArray(item.linkedArrivalDates) &&
+                              item.linkedArrivalDates.length > 1);
+                          /** 이전 일자=보냄(↗) · 최종 일자=받음(↙) */
+                          const linkPrefix = item.isPriorArrival
+                            ? "↗ "
+                            : hasLinkedChain
+                              ? "↙ "
+                              : "";
                           return (
                             <div
                               key={`${item.id}:${day.ymd}`}
@@ -674,14 +686,14 @@ export function PracticeRecentTransfersCalendar({
                                   item.linkedOrderDates &&
                                   item.linkedOrderDates.length > 1
                                     ? `${item.line} · 연결 주문일 ${item.linkedOrderDates.join(" → ")}${
-                                        item.isPriorArrival ? " (이전)" : " (최종)"
+                                        item.isPriorArrival ? " (이전·보냄)" : " (최종·받음)"
                                       }`
                                     : item.linkedArrivalDates &&
                                         item.linkedArrivalDates.length > 1
                                       ? `${item.line} · 연결 도착일 ${item.linkedArrivalDates.join(" → ")}${
                                           item.isPriorArrival
-                                            ? " (이전)"
-                                            : " (최종)"
+                                            ? " (이전·보냄)"
+                                            : " (최종·받음)"
                                         }`
                                       : unreadCount > 0
                                         ? `${item.line} · 안읽음 ${unreadLabel}`
@@ -693,7 +705,8 @@ export function PracticeRecentTransfersCalendar({
                                 }}
                               >
                                 <span className="min-w-0 flex-1 line-clamp-2 break-all">
-                                  {item.isPriorArrival ? `↗ ${item.line}` : item.line}
+                                  {linkPrefix}
+                                  {item.line}
                                 </span>
                                 {unreadCount > 0 ? (
                                   <span
