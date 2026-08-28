@@ -14,7 +14,8 @@
 // - web/frontend/src/shared/files/downloadWithProgress.ts
 // - web/frontend/src/shared/files/s3BlobCache.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
-// - 2026-08-28: 기공소 수락 후 상세 모달 — 창 전체 드롭존·드래그 오버레이·안내 문구.
+// - 2026-08-28: 기공소 의뢰상세 — A5 프린트(기본정보·치식·메모).
+// - 2026-08-28: 기공소 수락 후 상세 모달 — 채팅 영역 점선 드롭존·빈 상태 안내.
 // - 2026-08-28: 플로팅 z-300 — 견적 등 툴팁은 ui/tooltip z-400(가림 방지).
 // - 2026-08-28: 모바일 채팅 — 신호등 제거·오른쪽 큰 닫기(X).
 // - 2026-08-28: 맥/카톡 스타일 신호등(닫기·최소화·최대화) 헤더(PC).
@@ -83,6 +84,7 @@ import {
   FileIcon,
   MessageSquare,
   Pencil,
+  Printer,
   Trash2,
   UploadCloud,
   X,
@@ -152,6 +154,7 @@ import {
   PRACTICE_TRANSFER_IMAGE_EXTENSIONS,
 } from "@/shared/practice/practiceTransferAccept";
 import { PracticeTransferFileDropTarget } from "@/shared/components/practice/PracticeTransferFileDropTarget";
+import { printPracticeTransferDetail } from "@/shared/practice/practiceTransferDetailPrint";
 
 function isImagePreviewExt(ext: string): boolean {
   return PRACTICE_TRANSFER_IMAGE_EXTENSIONS.has(String(ext || "").toLowerCase());
@@ -210,7 +213,7 @@ export type PracticeTransferWorkFileDropConfig = {
   fileInputId: string;
   onFiles: (files: File[]) => void;
   disabled?: boolean;
-  /** 업로드 바·빈 채팅 등 상시 안내 */
+  /** 채팅 드롭존 중앙 안내(메시지 유무와 무관) */
   guideText: string;
   /** 드래그 오버레이 부제. 미지정 시 PRACTICE_ACCEPTED_HINT */
   dropHint?: string;
@@ -1000,6 +1003,14 @@ export function PracticeTransferDetailChatDialog({
   );
 
   const hasToothWorks = Array.isArray(toothWorks) && toothWorks.length > 0;
+  const handlePrintDetail = useCallback(() => {
+    printPracticeTransferDetail({
+      title,
+      summaryItems,
+      toothWorks: toothWorks || [],
+      memo,
+    });
+  }, [title, summaryItems, toothWorks, memo]);
   const hasPendingLabCustomAbutment = Boolean(
     toothWorks?.some(
       (work) => Boolean(work.customAbutment) && isPendingRoundBarAbutment(work),
@@ -1201,8 +1212,6 @@ export function PracticeTransferDetailChatDialog({
         }}
         className={cn(
           "pointer-events-auto relative z-[300] flex flex-col gap-0 overflow-hidden rounded-lg border bg-background p-0 duration-0",
-          workFileDropActive &&
-            "ring-2 ring-inset ring-dashed ring-primary/30",
           "shadow-[0_4px_16px_rgba(15,23,42,0.18),0_18px_48px_rgba(15,23,42,0.32),0_40px_80px_-12px_rgba(15,23,42,0.28)]",
           "translate-x-0 translate-y-0",
           "w-auto max-w-none sm:w-auto sm:max-w-none sm:p-0",
@@ -1350,9 +1359,24 @@ export function PracticeTransferDetailChatDialog({
           >
             <div className="space-y-6">
               <section className="space-y-1">
-                <h3 className="text-[13px] font-semibold text-foreground">
-                  기본 정보
-                </h3>
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="text-[13px] font-semibold text-foreground">
+                    기본 정보
+                  </h3>
+                  {feeViewer === "lab" ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 shrink-0 gap-1.5 px-2.5 text-xs"
+                      title="의뢰 상세 인쇄 (A5)"
+                      onClick={handlePrintDetail}
+                    >
+                      <Printer className="h-3.5 w-3.5" />
+                      프린트
+                    </Button>
+                  ) : null}
+                </div>
                 <dl className="divide-y divide-border/70">
                   {summaryItems.map((row, idx) => {
                     const isArrivalRow =
@@ -1796,11 +1820,6 @@ export function PracticeTransferDetailChatDialog({
                       </div>
                     </>
                   )}
-                  {workFileDropGuideText ? (
-                    <p className="text-[11px] leading-relaxed text-muted-foreground">
-                      {workFileDropGuideText}
-                    </p>
-                  ) : null}
                 </div>
               ) : null}
 
@@ -1814,65 +1833,88 @@ export function PracticeTransferDetailChatDialog({
               ) : null}
 
               <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_auto] overflow-hidden">
-                <div className="custom-scrollbar min-h-0 overflow-y-auto overscroll-contain">
-                  <div className="w-full min-w-0 max-w-full space-y-2 px-3 py-1.5 sm:px-4 sm:py-2">
-                    {chatLoading ? (
-                      <div className="py-4 text-center text-xs text-muted-foreground">
-                        채팅을 불러오는 중입니다...
-                      </div>
-                    ) : null}
-
-                    {!chatLoading && visibleChatError ? (
-                      <div className="flex min-h-[12rem] items-center justify-center py-4">
-                        <p className="text-center text-xs text-muted-foreground">
-                          {visibleChatError}
+                <div
+                  className={cn(
+                    "relative min-h-0",
+                    workFileDropActive &&
+                      "m-2 rounded-md border-2 border-dashed border-primary/45 bg-primary/[0.03]",
+                  )}
+                >
+                  {workFileDropGuideText &&
+                  !chatLoading &&
+                  !visibleChatError ? (
+                    <div
+                      className="pointer-events-none absolute inset-0 z-0 flex flex-col items-center justify-center gap-2.5 px-4 text-center"
+                      aria-hidden
+                    >
+                      {chatMessages.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">
+                          아직 메시지가 없습니다.
                         </p>
-                      </div>
-                    ) : null}
+                      ) : null}
+                      <p className="max-w-xs text-base font-semibold leading-snug text-primary sm:text-lg">
+                        {workFileDropGuideText}
+                      </p>
+                    </div>
+                  ) : null}
+                  <div className="custom-scrollbar relative z-[1] h-full min-h-0 overflow-y-auto overscroll-contain">
+                    <div className="w-full min-w-0 max-w-full space-y-2 px-3 py-1.5 sm:px-4 sm:py-2">
+                      {chatLoading ? (
+                        <div className="py-4 text-center text-xs text-muted-foreground">
+                          채팅을 불러오는 중입니다...
+                        </div>
+                      ) : null}
 
-                    {!chatLoading &&
-                    !visibleChatError &&
-                    chatMessages.length === 0 ? (
-                      <div className="py-6 text-center text-xs text-muted-foreground">
-                        아직 메시지가 없습니다.
-                        {workFileDropGuideText ? (
-                          <p className="mx-auto mt-3 max-w-sm text-[11px] leading-relaxed text-primary/80">
-                            {workFileDropGuideText}
+                      {!chatLoading && visibleChatError ? (
+                        <div className="flex min-h-[12rem] items-center justify-center py-4">
+                          <p className="text-center text-xs text-muted-foreground">
+                            {visibleChatError}
                           </p>
-                        ) : null}
-                      </div>
-                    ) : null}
+                        </div>
+                      ) : null}
 
-                    {chatMessages.map((message) => {
-                      const senderId = String(message.sender?._id || "").trim();
-                      return (
-                        <ChatMessageBubble
-                          key={message._id}
-                          message={message}
-                          isMine={isMyMessage(senderId)}
-                          currentUserId={currentUserId}
-                          authToken={authToken}
-                          formatTime={formatChatTime}
-                          formatFileSize={formatFileSize}
-                          showSenderName
-                          compact
-                          downloadingFileKeys={downloadingFileKeys}
-                          downloadProgressByKey={downloadProgressByKey}
-                          onReply={onReplyToMessage}
-                          onToggleReaction={onToggleReaction}
-                          onOpenAttachment={(file) =>
-                            void onDownloadChatAttachment({
-                              fileId: file.fileId,
-                              fileName: file.fileName,
-                              fileSize: Number(file.fileSize || 0),
-                              s3Key: String(file.s3Key || ""),
-                              s3Url: String(file.s3Url || ""),
-                            })
-                          }
-                        />
-                      );
-                    })}
-                    <div ref={chatBottomRef} />
+                      {!chatLoading &&
+                      !visibleChatError &&
+                      chatMessages.length === 0 &&
+                      !workFileDropGuideText ? (
+                        <div className="py-6 text-center text-sm text-muted-foreground">
+                          아직 메시지가 없습니다.
+                        </div>
+                      ) : null}
+
+                      {chatMessages.map((message) => {
+                        const senderId = String(
+                          message.sender?._id || "",
+                        ).trim();
+                        return (
+                          <ChatMessageBubble
+                            key={message._id}
+                            message={message}
+                            isMine={isMyMessage(senderId)}
+                            currentUserId={currentUserId}
+                            authToken={authToken}
+                            formatTime={formatChatTime}
+                            formatFileSize={formatFileSize}
+                            showSenderName
+                            compact
+                            downloadingFileKeys={downloadingFileKeys}
+                            downloadProgressByKey={downloadProgressByKey}
+                            onReply={onReplyToMessage}
+                            onToggleReaction={onToggleReaction}
+                            onOpenAttachment={(file) =>
+                              void onDownloadChatAttachment({
+                                fileId: file.fileId,
+                                fileName: file.fileName,
+                                fileSize: Number(file.fileSize || 0),
+                                s3Key: String(file.s3Key || ""),
+                                s3Url: String(file.s3Url || ""),
+                              })
+                            }
+                          />
+                        );
+                      })}
+                      <div ref={chatBottomRef} />
+                    </div>
                   </div>
                 </div>
 

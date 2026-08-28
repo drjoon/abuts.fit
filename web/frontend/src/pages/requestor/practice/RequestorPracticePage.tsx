@@ -4400,8 +4400,8 @@ export function RequestorPracticeReceivePage({
       disabled: rowBusy,
       onFiles: (files: File[]) => handleCardDropFiles(selectedTransfer, files),
       guideText: needsAbutment
-        ? "창 어디에나 어벗 STL을 드래그해 올릴 수 있습니다."
-        : "창 어디에나 보철 파일을 드래그해 올릴 수 있습니다.",
+        ? "어벗 STL을 여기에 드래그하세요"
+        : "보철 파일을 여기에 드래그하세요",
       dropHint: needsAbutment ? "어벗 STL" : undefined,
     };
   }, [
