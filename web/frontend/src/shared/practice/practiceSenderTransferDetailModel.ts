@@ -114,12 +114,16 @@ const toDialogFiles = (
   files: PracticeRecentTransferFileItem[] | undefined,
   keyPrefix: string,
 ): PracticeTransferDialogFileItem[] =>
-  (files || []).map((file, idx) => ({
-    id: `${file.s3Key}:${keyPrefix}:${idx}`,
-    fileName: file.fileName,
-    size: Number(file.size || 0),
-    s3Key: String(file.s3Key || "").trim(),
-  }));
+  (files || []).map((file) => {
+    const s3Key = String(file.s3Key || "").trim();
+    return {
+      // idx 제외 — 목록 병합·순서 변경 시 타일 remount/썸네일 플리커 방지
+      id: `${keyPrefix}:${s3Key || file.fileName}`,
+      fileName: file.fileName,
+      size: Number(file.size || 0),
+      s3Key,
+    };
+  });
 
 export type PracticeSenderTransferDetailModel = {
   summaryItems: PracticeTransferDialogSummaryItem[];

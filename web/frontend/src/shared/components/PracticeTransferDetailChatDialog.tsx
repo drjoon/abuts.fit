@@ -14,6 +14,7 @@
 // - web/frontend/src/shared/files/downloadWithProgress.ts
 // - web/frontend/src/shared/files/s3BlobCache.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-08-28: 썸네일 — 파일 목록 증분 로드·키 정렬. cleanup에서 전체 revoke 금지(플리커 방지).
 // - 2026-08-28: 기공소 의뢰상세 — A5 프린트(기본정보·치식·메모).
 // - 2026-08-28: 기공소 수락 후 상세 모달 — 채팅 영역 점선 드롭존·빈 상태 안내.
 // - 2026-08-28: 플로팅 z-300 — 견적 등 툴팁은 ui/tooltip z-400(가림 방지).
@@ -624,6 +625,8 @@ export function PracticeTransferDetailChatDialog({
     if (!open) return "";
     return collectImageThumbFiles()
       .map((file) => String(file.s3Key || "").trim())
+      .filter(Boolean)
+      .sort()
       .join("|");
   }, [collectImageThumbFiles, open]);
 
@@ -631,8 +634,15 @@ export function PracticeTransferDetailChatDialog({
     if (!open) return "";
     return collectModelThumbFiles()
       .map((file) => String(file.s3Key || "").trim())
+      .filter(Boolean)
+      .sort()
       .join("|");
   }, [collectModelThumbFiles, open]);
+
+  const imageCompanionFiles = useMemo(
+    () => Object.values(imageThumbFiles),
+    [imageThumbFiles],
+  );
 
   const revokeFileThumbs = useCallback(() => {
     for (const url of Object.values(fileThumbUrlsRef.current)) {
@@ -653,24 +663,61 @@ export function PracticeTransferDetailChatDialog({
     setModelThumbFiles({});
   }, []);
 
+  // 모달 닫힐 때만 전체 정리. 목록 갱신 cleanup에서 revoke하면 이미 로드된 썸네일이 깜빡인다.
   useEffect(() => {
-    if (!fileImageThumbKey || !authToken) {
+    if (!open) {
       revokeFileThumbs();
-      return;
+      clearModelThumbs();
     }
+  }, [clearModelThumbs, open, revokeFileThumbs]);
+
+  useEffect(() => {
+    if (!open || !fileImageThumbKey || !authToken) return;
     const imageFiles = collectImageThumbFiles();
     if (!imageFiles.length) {
-      revokeFileThumbs();
+      if (Object.keys(fileThumbUrlsRef.current).length > 0) revokeFileThumbs();
       return;
     }
+
+    const wanted = new Set(
+      imageFiles.map((file) => String(file.s3Key || "").trim()).filter(Boolean),
+    );
+
+    // 목록에서 빠진 키만 revoke
+    let pruned = false;
+    const nextUrls = { ...fileThumbUrlsRef.current };
+    const nextFiles = { ...imageThumbFilesRef.current };
+    for (const key of Object.keys(nextUrls)) {
+      if (wanted.has(key)) continue;
+      try {
+        URL.revokeObjectURL(nextUrls[key]);
+      } catch {
+        // ignore
+      }
+      delete nextUrls[key];
+      delete nextFiles[key];
+      pruned = true;
+    }
+    if (pruned) {
+      fileThumbUrlsRef.current = nextUrls;
+      imageThumbFilesRef.current = nextFiles;
+      setFileThumbUrls(nextUrls);
+      setImageThumbFiles(nextFiles);
+    }
+
+    const missing = imageFiles.filter((file) => {
+      const s3Key = String(file.s3Key || "").trim();
+      return s3Key && !fileThumbUrlsRef.current[s3Key];
+    });
+    if (!missing.length) return;
 
     const ac = new AbortController();
     let cancelled = false;
 
     void (async () => {
-      const nextUrls: Record<string, string> = {};
-      const nextFiles: Record<string, File> = {};
-      for (const file of imageFiles) {
+      const addedUrls: Record<string, string> = {};
+      const addedFiles: Record<string, File> = {};
+      for (const file of missing) {
         if (cancelled || ac.signal.aborted) return;
         const s3Key = String(file.s3Key || "").trim();
         const fileName = String(file.fileName || "image").trim() || "image";
@@ -687,14 +734,14 @@ export function PracticeTransferDetailChatDialog({
             blob.type && blob.type !== "application/octet-stream"
               ? blob
               : new Blob([blob], { type: mimeTypeForImageFileName(fileName) });
-          nextUrls[s3Key] = URL.createObjectURL(typed);
-          nextFiles[s3Key] = fileFromImageBlob(typed, fileName);
+          addedUrls[s3Key] = URL.createObjectURL(typed);
+          addedFiles[s3Key] = fileFromImageBlob(typed, fileName);
         } catch {
           // 썸네일 실패 시 아이콘 placeholder
         }
       }
       if (cancelled || ac.signal.aborted) {
-        for (const url of Object.values(nextUrls)) {
+        for (const url of Object.values(addedUrls)) {
           try {
             URL.revokeObjectURL(url);
           } catch {
@@ -703,48 +750,63 @@ export function PracticeTransferDetailChatDialog({
         }
         return;
       }
-      for (const url of Object.values(fileThumbUrlsRef.current)) {
-        try {
-          URL.revokeObjectURL(url);
-        } catch {
-          // ignore
-        }
-      }
-      fileThumbUrlsRef.current = nextUrls;
-      imageThumbFilesRef.current = nextFiles;
-      setFileThumbUrls(nextUrls);
-      setImageThumbFiles(nextFiles);
+      if (!Object.keys(addedUrls).length) return;
+      const mergedUrls = { ...fileThumbUrlsRef.current, ...addedUrls };
+      const mergedFiles = { ...imageThumbFilesRef.current, ...addedFiles };
+      fileThumbUrlsRef.current = mergedUrls;
+      imageThumbFilesRef.current = mergedFiles;
+      setFileThumbUrls(mergedUrls);
+      setImageThumbFiles(mergedFiles);
     })();
 
     return () => {
       cancelled = true;
       ac.abort();
-      revokeFileThumbs();
     };
   }, [
     authToken,
     collectImageThumbFiles,
     fileImageThumbKey,
+    open,
     revokeFileThumbs,
   ]);
 
   useEffect(() => {
-    if (!fileModelThumbKey || !authToken) {
-      clearModelThumbs();
-      return;
-    }
+    if (!open || !fileModelThumbKey || !authToken) return;
     const modelFiles = collectModelThumbFiles();
     if (!modelFiles.length) {
-      clearModelThumbs();
+      if (Object.keys(modelThumbFilesRef.current).length > 0) clearModelThumbs();
       return;
     }
+
+    const wanted = new Set(
+      modelFiles.map((file) => String(file.s3Key || "").trim()).filter(Boolean),
+    );
+
+    let pruned = false;
+    const kept: Record<string, File> = { ...modelThumbFilesRef.current };
+    for (const key of Object.keys(kept)) {
+      if (wanted.has(key)) continue;
+      delete kept[key];
+      pruned = true;
+    }
+    if (pruned) {
+      modelThumbFilesRef.current = kept;
+      setModelThumbFiles(kept);
+    }
+
+    const missing = modelFiles.filter((file) => {
+      const s3Key = String(file.s3Key || "").trim();
+      return s3Key && !modelThumbFilesRef.current[s3Key];
+    });
+    if (!missing.length) return;
 
     const ac = new AbortController();
     let cancelled = false;
 
     void (async () => {
-      const next: Record<string, File> = {};
-      for (const file of modelFiles) {
+      const added: Record<string, File> = {};
+      for (const file of missing) {
         if (cancelled || ac.signal.aborted) return;
         const s3Key = String(file.s3Key || "").trim();
         const fileName =
@@ -758,26 +820,28 @@ export function PracticeTransferDetailChatDialog({
             signal: ac.signal,
           });
           if (cancelled || ac.signal.aborted) return;
-          next[s3Key] = fileFromModelBlob(blob, fileName);
+          added[s3Key] = fileFromModelBlob(blob, fileName);
         } catch {
           // 썸네일 실패 시 Box placeholder
         }
       }
       if (cancelled || ac.signal.aborted) return;
-      modelThumbFilesRef.current = next;
-      setModelThumbFiles(next);
+      if (!Object.keys(added).length) return;
+      const merged = { ...modelThumbFilesRef.current, ...added };
+      modelThumbFilesRef.current = merged;
+      setModelThumbFiles(merged);
     })();
 
     return () => {
       cancelled = true;
       ac.abort();
-      clearModelThumbs();
     };
   }, [
     authToken,
     clearModelThumbs,
     collectModelThumbFiles,
     fileModelThumbKey,
+    open,
   ]);
 
   const previewableFiles = useMemo(() => {
@@ -1263,7 +1327,7 @@ export function PracticeTransferDetailChatDialog({
 
     return (
       <div
-        key={`${keyPrefix}:${file.id}:${idx}`}
+        key={`${keyPrefix}:${busyKey || file.id || idx}`}
         className="relative min-w-0 overflow-hidden rounded-md border bg-slate-50"
       >
         <button
@@ -1277,7 +1341,7 @@ export function PracticeTransferDetailChatDialog({
             {isMesh && modelThumbFile ? (
               <StlPreviewThumbnail
                 file={modelThumbFile}
-                companionFiles={Object.values(imageThumbFiles)}
+                companionFiles={imageCompanionFiles}
                 className="pointer-events-none"
               />
             ) : isImage && thumbUrl ? (

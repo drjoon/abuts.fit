@@ -6,7 +6,8 @@
 // - 2026-08-23: 의뢰 상세 작업 파일 타일용 정적 3D 썸네일.
 // - 2026-08-28: WebGL은 1회 렌더 후 PNG 스냅샷·즉시 dispose — 모달 뷰어와 컨텍스트 충돌 방지.
 // - 2026-08-28: PLY/OBJ 버텍스 컬러·TextureFile 칼라 표시.
-import { useEffect, useState } from "react";
+// - 2026-08-28: companionFiles 참조 변경만으로 썸네일 null 리셋하지 않음(플리커 방지).
+import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { Box } from "lucide-react";
 import { cn } from "@/shared/ui/cn";
@@ -98,6 +99,20 @@ function releaseWebGl(
   }
 }
 
+function fileIdentityKey(file: File | null | undefined): string {
+  if (!file) return "";
+  return `${file.name}:${file.size}:${file.lastModified}`;
+}
+
+function companionFilesIdentityKey(files: File[] | null | undefined): string {
+  if (!Array.isArray(files) || files.length === 0) return "";
+  return files
+    .map((file) => fileIdentityKey(file))
+    .filter(Boolean)
+    .sort()
+    .join("|");
+}
+
 export function StlPreviewThumbnail({
   file,
   textureFile = null,
@@ -106,6 +121,10 @@ export function StlPreviewThumbnail({
 }: Props) {
   const [thumbUrl, setThumbUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
+  const fileKey = fileIdentityKey(file);
+  const textureKey = fileIdentityKey(textureFile);
+  const companionKey = companionFilesIdentityKey(companionFiles);
+  const shownFileKeyRef = useRef("");
 
   useEffect(() => {
     let cancelled = false;
@@ -128,7 +147,10 @@ export function StlPreviewThumbnail({
     };
 
     setFailed(false);
-    setThumbUrl(null);
+    // 모델 파일이 바뀐 경우에만 placeholder. companion/texture 갱신은 이전 PNG 유지.
+    if (shownFileKeyRef.current && shownFileKeyRef.current !== fileKey) {
+      setThumbUrl(null);
+    }
 
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0xf1f5f9);
@@ -195,6 +217,7 @@ export function StlPreviewThumbnail({
 
         const dataUrl = renderer!.domElement.toDataURL("image/png");
         if (cancelled || released) return;
+        shownFileKeyRef.current = fileKey;
         setThumbUrl(dataUrl);
       } catch {
         if (!cancelled) setFailed(true);
@@ -207,7 +230,9 @@ export function StlPreviewThumbnail({
       cancelled = true;
       release();
     };
-  }, [file, textureFile, companionFiles]);
+    // file/texture/companion 객체 참조가 매 렌더 바뀌어도 identity key가 같으면 재캡처하지 않는다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- identity keys are SSOT
+  }, [companionKey, fileKey, textureKey]);
 
   if (failed) {
     return (
