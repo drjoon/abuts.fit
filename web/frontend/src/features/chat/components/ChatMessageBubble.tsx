@@ -118,16 +118,6 @@ function mimeTypeForImageFileName(name: string): string {
   return "image/jpeg";
 }
 
-function fileFromImageBlob(blob: Blob, fileName: string): File {
-  const name = String(fileName || "image").trim() || "image";
-  const blobType = String(blob?.type || "").trim().toLowerCase();
-  const type =
-    blobType && blobType !== "application/octet-stream"
-      ? blob.type
-      : mimeTypeForImageFileName(name);
-  return new File([blob], name, { type });
-}
-
 function fileFromPreviewBlob(
   blob: Blob,
   fileName: string,
