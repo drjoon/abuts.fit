@@ -21,6 +21,9 @@ import {
   ROUND_BAR_INQUIRY_TYPE,
   IMPLANT_ADD_REQUEST_OPTION,
   buildRoundBarSpecKey,
+  expandRoundBarOrCombos,
+  expandImplantFavoriteList,
+  hasOrSpecValues,
   isImplantAddRequest,
   normalizeAdoptedKind,
   normalizeRoundBarSpec,
@@ -104,48 +107,102 @@ const upsertFavoriteOnAnchor = async ({
   adoptedKind,
   isPublic,
 }) => {
-  const nextId =
+  const baseId =
     String(favoriteId || "").trim() ||
     `imp-rb-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   const implantAddRequest =
     Boolean(spec.implantAddRequest) || isImplantAddRequest(spec);
-  const nextRow = {
-    id: nextId,
-    manufacturer: spec.manufacturer,
-    brand: spec.brand,
-    family: spec.family,
-    type: spec.type || ROUND_BAR_HEX_TYPE,
+  const requestIdStr = String(roundBarRequestId || "").trim();
+  const baseMeta = {
     roundBar: true,
     implantAddRequest: implantAddRequest || undefined,
     adopted: Boolean(adopted),
     adoptedKind: normalizeAdoptedKind(adoptedKind),
     isPublic: Boolean(isPublic),
-    roundBarRequestId: String(roundBarRequestId || "").trim(),
+    roundBarRequestId: requestIdStr,
   };
-  const current = listFavorites(anchor);
-  const byId = nextId
-    ? current.findIndex((row) => row.id === nextId)
-    : -1;
-  const byRequest = nextRow.roundBarRequestId
-    ? current.findIndex(
-        (row) => row.roundBarRequestId === nextRow.roundBarRequestId,
-      )
-    : -1;
-  const nextSpecKey = buildRoundBarSpecKey(nextRow);
-  const bySpec = current.findIndex(
-    (row) =>
-      (Boolean(row.roundBar) || Boolean(row.roundBarRequestId)) &&
-      buildRoundBarSpecKey(row) === nextSpecKey,
-  );
-  const idx = byId >= 0 ? byId : byRequest >= 0 ? byRequest : bySpec;
-  const nextList = [...current];
-  if (idx >= 0) {
-    nextList[idx] = { ...nextList[idx], ...nextRow, id: nextList[idx].id || nextId };
-    nextRow.id = nextList[idx].id;
-  } else {
-    nextList.unshift(nextRow);
+  const defaultType = implantAddRequest
+    ? IMPLANT_ADD_REQUEST_OPTION
+    : ROUND_BAR_HEX_TYPE;
+  const combos = expandRoundBarOrCombos({
+    manufacturer: spec.manufacturer,
+    brand: spec.brand,
+    family: spec.family,
+    type: spec.type || defaultType,
+    defaultType,
+  });
+  const rowsToUpsert =
+    combos.length > 0
+      ? combos.map((combo, idx) => ({
+          id:
+            idx === 0
+              ? baseId
+              : `${baseId}-exp-${idx}`,
+          manufacturer: combo.manufacturer,
+          brand: combo.brand,
+          family: combo.family,
+          type: combo.type,
+          ...baseMeta,
+        }))
+      : [
+          {
+            id: baseId,
+            manufacturer: spec.manufacturer,
+            brand: spec.brand,
+            family: spec.family,
+            type: spec.type || defaultType,
+            ...baseMeta,
+          },
+        ];
+
+  let current = listFavorites(anchor);
+  const inputSpecKey = buildRoundBarSpecKey({
+    manufacturer: spec.manufacturer,
+    brand: spec.brand,
+    family: spec.family,
+    type: spec.type || defaultType,
+  });
+  const inputHasOr = hasOrSpecValues(spec);
+
+  current = current.filter((row) => {
+    if (requestIdStr && String(row.roundBarRequestId || "").trim() === requestIdStr) {
+      if (rowsToUpsert.length > 1 || hasOrSpecValues(row) || inputHasOr) {
+        return false;
+      }
+      return false;
+    }
+    if (inputHasOr && rowsToUpsert.length > 1) {
+      if (buildRoundBarSpecKey(row) === inputSpecKey) return false;
+    }
+    return true;
+  });
+
+  for (const nextRow of rowsToUpsert) {
+    const nextSpecKey = buildRoundBarSpecKey(nextRow);
+    const byId = nextRow.id
+      ? current.findIndex((row) => row.id === nextRow.id)
+      : -1;
+    const byRequest = requestIdStr
+      ? current.findIndex(
+          (row) =>
+            String(row.roundBarRequestId || "").trim() === requestIdStr &&
+            buildRoundBarSpecKey(row) === nextSpecKey,
+        )
+      : -1;
+    const bySpec = current.findIndex(
+      (row) =>
+        (Boolean(row.roundBar) || Boolean(row.roundBarRequestId)) &&
+        buildRoundBarSpecKey(row) === nextSpecKey,
+    );
+    const idx = byId >= 0 ? byId : byRequest >= 0 ? byRequest : bySpec;
+    if (idx >= 0) {
+      current[idx] = { ...current[idx], ...nextRow, id: current[idx].id || nextRow.id };
+    } else {
+      current.unshift(nextRow);
+    }
   }
-  const trimmed = nextList.slice(0, MAX_IMPLANT_FAVORITES);
+
+  const trimmed = expandImplantFavoriteList(current).slice(0, MAX_IMPLANT_FAVORITES);
   await BusinessAnchor.updateOne(
     { _id: anchor._id },
     {
@@ -155,7 +212,7 @@ const upsertFavoriteOnAnchor = async ({
       },
     },
   );
-  return nextRow;
+  return rowsToUpsert[0];
 };
 
 const removeFavoriteFromAnchor = async ({
@@ -494,7 +551,7 @@ async function hydrateFavoritesWithRoundBarAdopted(practiceAnchorId, favorites) 
 
   // 도입 요청이 목록에 없어도 다시 넣지 않음 — 치과가 삭제한 프리셋이 복구되면 안 됨.
   // 관리자 도입 시 프리셋 추가는 upsertFavoriteOnAnchor가 담당.
-  return next;
+  return expandImplantFavoriteList(next);
 }
 
 export {

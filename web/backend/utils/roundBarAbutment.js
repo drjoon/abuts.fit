@@ -151,6 +151,83 @@ export const expandRoundBarOrCombos = ({
   return out;
 };
 
+/** brand/family/type에 OR(` | `) 다중값이 있는지 */
+export const hasOrSpecValues = (row) => {
+  if (!row || typeof row !== "object") return false;
+  return (
+    splitOrValues(row.brand).length > 1 ||
+    splitOrValues(row.family).length > 1 ||
+    splitOrValues(row.type).length > 1
+  );
+};
+
+/**
+ * OR 스펙 프리셋을 개별 manufacturer×brand×family×type 행으로 전개.
+ * 카탈로그·드롭다운과 동일 — 프리셋 카드에 3.5 | 4.0 합쳐 표시하지 않음.
+ */
+export const expandImplantFavoriteRow = (row) => {
+  if (!row || typeof row !== "object") return [];
+  if (isImplantAddRequest(row)) return [row];
+  if (!hasOrSpecValues(row)) return [row];
+  const defaultType = isImplantAddRequest(row)
+    ? IMPLANT_ADD_REQUEST_OPTION
+    : ROUND_BAR_HEX_TYPE;
+  const combos = expandRoundBarOrCombos({
+    manufacturer: row.manufacturer,
+    brand: row.brand,
+    family: row.family,
+    type: row.type,
+    defaultType,
+  });
+  if (combos.length <= 1) return [row];
+  const baseId = String(row.id || "").trim();
+  return combos.map((combo, idx) => ({
+    ...row,
+    id:
+      idx === 0 && baseId
+        ? baseId
+        : baseId
+          ? `${baseId}-exp-${idx}`
+          : `imp-or-${idx}`,
+    manufacturer: combo.manufacturer,
+    brand: combo.brand,
+    family: combo.family,
+    type: combo.type,
+  }));
+};
+
+/** 프리셋 목록 OR 전개 + 스펙 중복 제거(개별 행 우선). */
+export const expandImplantFavoriteList = (favorites) => {
+  const list = Array.isArray(favorites) ? favorites : [];
+  const out = [];
+  const seen = new Map();
+  for (const fav of list) {
+    for (const expanded of expandImplantFavoriteRow(fav)) {
+      const type = String(expanded.type || "").trim();
+      const key = [
+        String(expanded.manufacturer || "").trim(),
+        String(expanded.brand || "").trim(),
+        String(expanded.family || "").trim(),
+        type,
+      ]
+        .map((v) => v.toLowerCase())
+        .join("|");
+      if (!key.replace(/\|/g, "")) continue;
+      if (seen.has(key)) {
+        const idx = seen.get(key);
+        const prev = out[idx];
+        if (!prev.roundBar && expanded.roundBar) {
+          out[idx] = { ...prev, ...expanded, id: prev.id || expanded.id };
+        }
+        continue;
+      }
+      seen.set(key, out.length);
+      out.push(expanded);
+    }
+  }
+  return out;
+};
+
 export const buildRoundBarSpecKey = ({ manufacturer, brand, family, type }) =>
   [manufacturer, brand, family, type || ROUND_BAR_HEX_TYPE]
     .map((v) => String(v || "").trim().toLowerCase())

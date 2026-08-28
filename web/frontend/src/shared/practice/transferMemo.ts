@@ -29,6 +29,7 @@ import { isPendingRoundBarAbutment } from "@/shared/practice/labFeeSchedule";
 import {
   IMPLANT_ADD_REQUEST_OPTION,
   MANUFACTURER_ADD_REQUEST_BRAND,
+  expandImplantFavoriteList,
   isImplantAddRequest,
 } from "@/shared/practice/roundBarAbutment";
 
@@ -500,7 +501,7 @@ export const normalizeImplantFavorites = (items: unknown): PracticeImplantFavori
     out.push(nextRow);
     if (out.length >= 40) break;
   }
-  return out;
+  return expandImplantFavoriteList(out);
 };
 
 export const normalizeAbutmentFavorites = (items: unknown): PracticeAbutmentFavorite[] => {

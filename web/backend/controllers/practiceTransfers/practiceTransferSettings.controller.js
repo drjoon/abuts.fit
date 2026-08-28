@@ -1,7 +1,7 @@
 import { Types } from "mongoose";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { hydrateFavoritesWithRoundBarAdopted } from "./roundBarAbutmentRequest.controller.js";
-import { normalizeAdoptedKind, isImplantAddRequest, IMPLANT_ADD_REQUEST_OPTION } from "../../utils/roundBarAbutment.js";
+import { normalizeAdoptedKind, isImplantAddRequest, IMPLANT_ADD_REQUEST_OPTION, expandImplantFavoriteList } from "../../utils/roundBarAbutment.js";
 import {
   loadAutoMatchBudgetCatalog,
   resolveAutoMatchBudgetOrDefaults,
@@ -119,7 +119,7 @@ const normalizeImplantFavorites = (items) => {
     if (out.length >= MAX_IMPLANT_FAVORITES) break;
   }
 
-  return out;
+  return expandImplantFavoriteList(out);
 };
 
 const normalizeAbutmentFavorites = (items) => {
