@@ -163,6 +163,7 @@ import { resolvePracticeTransferSkipJig } from "../../utils/practiceTransferLabS
 // - web/backend/utils/practiceTransferAbutmentPresets.js
 // - web/backend/utils/practiceLabRating.js
 // - web/backend/utils/practiceTransferStage.js
+// - 2026-08-28: 캘린더 /my — toCalendarOwnedRequestRows에 files[] 전부(상세 모달 1개→N개 지연 표시 방지).
 // - 2026-08-27: append-arrival — 재주문일(오늘)+재도착일 누적(주문일/도착일 캘린더, 크레딧 미중복).
 // - 2026-08-27: append-arrival — 동일 건 치과도착일 누적(캘린더 다중 표시, 크레딧 미중복).
 // - 2026-08-27: 재도착일 변경 시 requestorReadAt 초기화(기공소 unread).
@@ -965,6 +966,7 @@ const toVirtualRequestRows = (transferDoc) => {
 /**
  * 캘린더용 — 전송 1건 = 응답 1행(파일수만큼 복제하지 않음).
  * 칩·검색용 환자/치식만 합치고, fee/배송 enrich는 생략.
+ * 의뢰 파일은 files[] 전부 포함(단건 caseInfos.file만 있으면 상세가 1개→N개로 늦게 채워짐).
  */
 const toCalendarOwnedRequestRows = (transferDoc) => {
   const rows = toVirtualRequestRows(transferDoc);
@@ -992,6 +994,8 @@ const toCalendarOwnedRequestRows = (transferDoc) => {
       feeQuote: null,
       labRating: null,
       abutmentDeliveryInfo: null,
+      // 가상행은 파일당 1건이라 first에 첨부가 1개뿐 → 상세 즉시 표시용으로 전체 files[] 부착
+      ...toTransferFilesApiFields(transferDoc),
       caseInfos: {
         ...first.caseInfos,
         patientName: patients.join(", ") || first.caseInfos?.patientName || "",

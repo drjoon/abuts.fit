@@ -28,6 +28,7 @@
  * - web/frontend/src/shared/practice/practiceLabRating.ts
  * - 2026-08-28: 구강스캔 캘린더 진입 시 /my?page=1 병렬 조회 제거(캘린더 구간 API만). 상세·휴지통·전송 후 지연 로드.
  * - 2026-08-28: 의뢰 파일 — /my files[] 전부 표시(스캔·이미지). 단건 caseInfos.file 폴백만.
+ * - 2026-08-28: 전송 시 draftFilesRef+로컬 잔여를 합치고, promote 동기화 완료를 기다림(파일 일부 누락 방지).
  * - 2026-08-14: 의뢰 상세 · 기공소 채팅 rating(1~5)·메모. 자동매칭 최소 별.
  * - 2026-08-15: 기공기간 5일 미만 빨간 표시·거부 가능 툴팁(목록·상세).
  * - web/frontend/src/shared/components/practice/PracticeTransferFilePane.tsx
@@ -6174,8 +6175,15 @@ export const PracticeFileTransferPage = ({
     requestSubmittingRef.current = true;
     setRequestSubmitting(true);
     try {
+      // promote(로컬→draft) 도중 stale draftFiles/빈 files로 전송되면 스캔이 빠진다.
+      if (pendingLocalFilesRef.current.length > 0) {
+        setFilePromoteRetryNonce((n) => n + 1);
+      }
+      await waitForComposeFileSyncIdle(60_000);
+
+      const localFilesForSubmit = pendingLocalFilesRef.current;
       const uploadedTempFiles: TempUploadedFile[] =
-        await resolveUploadedTempFiles(files);
+        await resolveUploadedTempFiles(localFilesForSubmit);
 
       const localTempFiles = uploadedTempFiles
         .map((f) => ({
@@ -6188,7 +6196,19 @@ export const PracticeFileTransferPage = ({
         }))
         .filter((row) => row.originalName && row.s3Key);
 
-      const transferFiles = [...draftFiles, ...localTempFiles];
+      const draftSnapshot = draftFilesRef.current;
+      const seenS3 = new Set(
+        draftSnapshot
+          .map((row) => String(row.s3Key || "").trim())
+          .filter(Boolean),
+      );
+      const transferFiles = [
+        ...draftSnapshot,
+        ...localTempFiles.filter((row) => {
+          const key = String(row.s3Key || "").trim();
+          return Boolean(key) && !seenS3.has(key);
+        }),
+      ];
       const clinicName = autoClinicName;
       const editing = editingSentTransferRef.current;
       const transferId = editing?.transferId || makeTransferId();
