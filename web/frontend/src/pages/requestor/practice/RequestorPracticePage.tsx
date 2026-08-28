@@ -648,6 +648,10 @@ export function RequestorPracticeReceivePage({
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedTransfer, setSelectedTransfer] = useState<ReceivedPracticeTransfer | null>(null);
+  /** 열 때 탭 고정 — mark-read 후 isRead 갱신으로 탭이 바뀌지 않게 */
+  const [dialogInitialPanelTab, setDialogInitialPanelTab] = useState<"detail" | "chat">(
+    "detail",
+  );
   const [acceptBusy, setAcceptBusy] = useState(false);
   const [rejectBusy, setRejectBusy] = useState(false);
   const [rejectConfirmOpen, setRejectConfirmOpen] = useState(false);
@@ -4413,6 +4417,8 @@ export function RequestorPracticeReceivePage({
       if (!token) return;
       const resolveSeq = ++chatRoomResolveSeqRef.current;
 
+      // 미읽음(첫 확인) → 의뢰 상세, 이미 읽음(진행중) → 진행 상황
+      setDialogInitialPanelTab(transfer.isRead ? "chat" : "detail");
       setSelectedTransfer(transfer);
       setDialogOpen(true);
       setChatError("");
@@ -4870,6 +4876,7 @@ export function RequestorPracticeReceivePage({
         title="의뢰 상세 · 치과 채팅"
         conversationTitle="치과와의 소통"
         authToken={token}
+        initialPanelTab={dialogInitialPanelTab}
         chatHeaderAction={null}
         counterpartyMemoStrip={
           selectedTransfer?.practiceBusinessAnchorId ? (

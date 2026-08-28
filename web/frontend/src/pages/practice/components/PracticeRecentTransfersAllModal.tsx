@@ -31,9 +31,9 @@
  * 2026-08-28: 의뢰상세 플로팅과 동시 오픈 — modal 해제·outside 무시로 독립 입력.
  * 2026-08-28: 항상 non-modal·outside 무시·애니메이션 제거 — 상세 열고 닫을 때 플리커 방지.
  * 2026-08-28: variant page|modal — 구강스캔 메인 캘린더 + 미래일 신규 의뢰.
+ * - 2026-08-28: 모바일 — 검색을 상태뱃지(리메이크) 오른쪽 같은 줄로 옮겨 헤더 줄 수 축소.
  * - 2026-08-28: 페이지 헤더 「구강스캔」라벨 제거. 검색폭 축소.
- */
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+ */import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronRight, Search, Trash2, X } from "lucide-react";
 
 import {
@@ -543,6 +543,7 @@ export function PracticeRecentTransfersAllModal({
       onResetToDefault={resetStatusFiltersToDefault}
       isDefault={isPracticeRecentStatusFilterDefault(statusFilters)}
       compact={isMobile}
+      className={isMobile ? "contents" : undefined}
     />
   );
 
@@ -562,13 +563,13 @@ export function PracticeRecentTransfersAllModal({
       className={cn(
         "shrink-0 border-b bg-white/95 text-left backdrop-blur supports-[backdrop-filter]:bg-white/80",
         isMobile
-          ? cn("space-y-0 px-4 pb-3 pt-4", !isPage && "pr-14")
+          ? cn("space-y-0 px-4 pb-4 pt-4", !isPage && "pr-14")
           : cn("px-6 py-3", !isPage && "pr-[4.25rem]"),
       )}
     >
       {isMobile ? (
-        <div className="flex flex-col gap-3">
-          <div className="flex min-w-0 items-center gap-2">
+        <div className="flex flex-col gap-4">
+          <div className="flex min-w-0 items-center gap-2 pb-0.5">
             {isPage ? (
               <h1 className="sr-only">{mobileTitle}</h1>
             ) : (
@@ -577,22 +578,22 @@ export function PracticeRecentTransfersAllModal({
               </DialogTitle>
             )}
             {headerActions ? (
-              <div className="flex min-w-0 flex-1 shrink-0 flex-wrap items-center justify-end gap-1.5">
+              <div className="flex w-full shrink-0 flex-nowrap items-center justify-center">
                 {headerActions}
               </div>
             ) : null}
           </div>
-          <div className="relative w-full max-w-[14rem]">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={search}
-              onChange={(e) => handleSearchChange(e.target.value)}
-              className="h-11 w-full rounded-xl border-slate-200 bg-slate-50 pl-9 text-base"
-              placeholder="기공소, 환자명 검색"
-            />
-          </div>
-          <div className="-mx-4 flex gap-1.5 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="flex flex-wrap items-center gap-1.5">
             {statusBadges}
+            <div className="relative ml-auto min-w-[7.5rem] w-[9.5rem] shrink-0">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={search}
+                onChange={(e) => handleSearchChange(e.target.value)}
+                className="h-8 w-full rounded-full border-slate-200 bg-slate-50 pl-8 text-sm"
+                placeholder="기공소, 환자명"
+              />
+            </div>
           </div>
         </div>
       ) : (

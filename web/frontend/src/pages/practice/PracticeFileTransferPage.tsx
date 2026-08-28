@@ -120,6 +120,12 @@
  * - 2026-08-20: 원격 draft 파일은 union merge. autosave echo(파일 없음)가 업로드 직후 목록을 비우지 않게 한다.
  * - 2026-08-20: filesTouched/replace만 첨부 축소 허용. autosave HTTP가 소켓 반영을 덮지 않게 ref 동기화.
  * - 2026-08-20: 로컬 첨부는 peek 재실행 대신 ensureFilesUploaded로 이어서 draft append. iOS 카메라 복귀 후 focus에서도 재시도.
+ * - 2026-08-28: 모바일 휴지통 — 의뢰현황과 동일 인셋 시트·헤더·카드 스타일.
+ * - 2026-08-28: 모바일 — 메인 의뢰/휴지, 의뢰현황(+신규), 작성 모달 안내·휴지만. 모달 오픈 토스트 생략.
+ * - 2026-08-28: 모바일 신규의뢰 — 인셋 시트·라운드·세이프에리어. 본문 패딩 확대.
+ * - 2026-08-28: 모바일 신규의뢰 모달 — 퀵메뉴 1줄·헤더 배치, 촬영 CTA 축소.
+ * - 2026-08-28: 모바일 헤더 액션 — 신규·임시·휴지 아이콘 버튼(한 줄).
+ * - 2026-08-28: 모바일 목록 헤더에 신규의뢰 CTA(PC는 캘린더 날짜 클릭).
  * - 2026-08-28: 신규 의뢰 모달 — 새로작성·임시저장·휴지통·가이드투어를 DialogHeader로.
  * - 2026-08-28: 모드 전환(익스프레스) 제거·엑스퍼트 고정. 최근의뢰 좌·작성액션 우 묶음.
  * - 2026-08-28: 메인=전송 캘린더, 미래일 클릭·신규 의뢰=전체화면 작성 모달(도착일 지정).
@@ -219,7 +225,10 @@ import {
 import { PracticeLabRatingControl } from "@/shared/components/practice/PracticeLabRatingControl";
 import { CounterpartyMemoStrip } from "@/shared/components/practice/CounterpartyMemoStrip";
 import { PracticeTransferIntakeSection } from "@/shared/components/practice/PracticeTransferIntakeSection";
-import { PracticeTransferMobileOralPhotoIntake } from "@/shared/components/practice/PracticeTransferMobileOralPhotoIntake";
+import {
+  PracticeTransferMobileComposeToolbar,
+  PracticeTransferMobileOralPhotoIntake,
+} from "@/shared/components/practice/PracticeTransferMobileOralPhotoIntake";
 import { useIsMobile } from "@/shared/hooks/use-mobile";
 import {
   PracticeTransferExpressDonePanel,
@@ -4368,13 +4377,6 @@ export const PracticeFileTransferPage = ({
       void loadPracticeTransferDraft({ draftId: draft.id, forceResync: true });
       setDraftsOpen(false);
       setComposeOpen(true);
-      toast({
-        title: draft.isMine ? "임시저장 불러옴" : "함께 이어쓰기",
-        description: draft.isMine
-          ? "작성 폼에 반영했습니다."
-          : `${draft.practiceUserLabel || "동료"} 건에 참여했습니다.`,
-        duration: 3000,
-      });
     },
     [
       applyDraftSummaryToForm,
@@ -5150,7 +5152,10 @@ export const PracticeFileTransferPage = ({
     finishDeleteConfirmAndReturnToAllModal();
   };
 
-  const handleDeleteDraftTransfer = async (target: RecentTransferItem) => {
+  const handleDeleteDraftTransfer = async (
+    target: RecentTransferItem,
+    options?: { silent?: boolean },
+  ) => {
     if (deletingTransfer) return;
     if (!authToken) {
       toast({
@@ -5182,17 +5187,21 @@ export const PracticeFileTransferPage = ({
       }
       invalidateApiGetCache("/api/practice/transfers/drafts");
       await loadPracticeTransferDraftList();
-      toast({
-        title: "휴지통으로 이동",
-        description: "임시저장을 휴지통으로 옮겼습니다. 아래에서 복구할 수 있습니다.",
-      });
+      if (!options?.silent) {
+        toast({
+          title: "휴지통으로 이동",
+          description: "임시저장을 휴지통으로 옮겼습니다. 아래에서 복구할 수 있습니다.",
+        });
+      }
     } catch (error) {
-      toast({
-        title: "휴지통 이동 실패",
-        description:
-          error instanceof Error ? error.message : "임시저장 삭제 중 오류가 발생했습니다.",
-        variant: "destructive",
-      });
+      if (!options?.silent) {
+        toast({
+          title: "휴지통 이동 실패",
+          description:
+            error instanceof Error ? error.message : "임시저장 삭제 중 오류가 발생했습니다.",
+          variant: "destructive",
+        });
+      }
     } finally {
       setDeletingTransfer(false);
     }
@@ -6677,7 +6686,8 @@ export const PracticeFileTransferPage = ({
       setComposeOpen(true);
     }
 
-    if (!options?.silentToast) {
+    // 작성 모달을 열 때는 안내 토스트를 띄우지 않는다.
+    if (!options?.silentToast && options?.openCompose === false) {
       toast({
         title: options?.arrivalYmd ? "신규 의뢰" : "새로 작성",
         description: options?.arrivalYmd
@@ -6690,8 +6700,108 @@ export const PracticeFileTransferPage = ({
   };
 
   const openComposeForArrival = (ymd: string) => {
-    void handleStartNewTransfer({ arrivalYmd: ymd, openCompose: true });
+    void handleStartNewTransfer({
+      arrivalYmd: ymd,
+      openCompose: true,
+      silentToast: true,
+    });
   };
+
+  const openNewComposeFromDrafts = () => {
+    setDraftsOpen(false);
+    void handleStartNewTransfer({ openCompose: true, silentToast: true });
+  };
+
+  const waitForComposeFileSyncIdle = async (maxMs = 8000) => {
+    const start = Date.now();
+    while (fileSyncInFlightRef.current && Date.now() - start < maxMs) {
+      await new Promise<void>((resolve) => {
+        window.setTimeout(resolve, 100);
+      });
+    }
+  };
+
+  /** 모바일 작성 — 현재 내용 임시저장 후 빈 폼 */
+  const handleSaveComposeDraftAndStartNew = async () => {
+    if (editingSentTransferRef.current) return;
+    if (!hasAutosaveReadyPatientName(normalizedPatientName)) {
+      toast({
+        title: "임시저장할 수 없어요",
+        description: "완성형 한글 환자명을 입력한 뒤 다시 시도해 주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (formAutosaveTimerRef.current) {
+      window.clearTimeout(formAutosaveTimerRef.current);
+      formAutosaveTimerRef.current = null;
+    }
+
+    const seq = ++formAutosaveSeqRef.current;
+    const needsFormSave =
+      lastSavedFormFingerprintRef.current === null ||
+      currentFormFingerprintRef.current !== lastSavedFormFingerprintRef.current ||
+      pendingLocalFormEditRef.current;
+
+    if (needsFormSave) {
+      await persistFormDraftAutosave(seq);
+    }
+
+    if (pendingLocalFilesRef.current.length > 0) {
+      setFilePromoteRetryNonce((n) => n + 1);
+      await waitForComposeFileSyncIdle();
+    }
+
+    await handleStartNewTransfer({ openCompose: true, silentToast: true });
+  };
+
+  /** 모바일 작성 — 현재 작성 내용 삭제(임시저장은 휴지통) */
+  const handleDiscardComposeWork = async () => {
+    if (editingSentTransferRef.current) return;
+
+    formAutosaveSeqRef.current += 1;
+    if (formAutosaveTimerRef.current) {
+      window.clearTimeout(formAutosaveTimerRef.current);
+      formAutosaveTimerRef.current = null;
+    }
+    skipFormAutosaveRef.current = true;
+
+    const activeId = String(activeDraftIdRef.current || "").trim();
+    if (activeId) {
+      const draftTarget =
+        draftGroupedTransfers.find((row) => row.id === activeId) ||
+        practiceDraftList.find((row) => row.id === activeId);
+      if (draftTarget) {
+        await handleDeleteDraftTransfer(draftTarget as RecentTransferItem, {
+          silent: true,
+        });
+      } else if (authToken) {
+        try {
+          await apiFetch<unknown>({
+            path: `/api/practice/transfers/draft?draftId=${encodeURIComponent(activeId)}`,
+            method: "DELETE",
+            token: authToken,
+          });
+          invalidateApiGetCache("/api/practice/transfers/drafts");
+          await loadPracticeTransferDraftList();
+        } catch {
+          // 삭제 실패 시에도 폼은 비운다
+        }
+      }
+    }
+
+    await handleStartNewTransfer({ openCompose: true, silentToast: true });
+    skipFormAutosaveRef.current = false;
+  };
+
+  const mobileComposeCanSaveDraft = hasSubstantialContentForNewDraft;
+  const mobileComposeCanDiscard =
+    Boolean(activeDraftId) ||
+    files.length > 0 ||
+    draftFiles.length > 0 ||
+    Boolean(normalizedPatientName.trim()) ||
+    Boolean(String(requestMemo || "").trim());
 
   const persistArrivalDefaultDaysFromRange = useCallback(
     (nextOrder: string, nextArrival: string) => {
@@ -7131,8 +7241,62 @@ export const PracticeFileTransferPage = ({
     </>
   );
 
-  /** 캘린더 메인 헤더 — 임시저장·휴지통 */
-  const calendarHeaderActions = (
+  /** 메인 헤더 — 모바일: 의뢰(임시저장 목록)·휴지통. PC: 임시저장·휴지통 */
+  const calendarHeaderActions = isMobile ? (
+    <div className="flex w-full shrink-0 flex-nowrap items-center justify-center gap-2.5">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="h-9 shrink-0 gap-1 rounded-full border-slate-200 bg-white px-3 shadow-sm"
+        aria-label={
+          draftGroupedTransfers.length > 0
+            ? `의뢰 ${draftGroupedTransfers.length}건`
+            : "의뢰"
+        }
+        title="의뢰 현황"
+        onClick={() => setDraftsOpen(true)}
+      >
+        <BookmarkPlus className="h-4 w-4 shrink-0" />
+        의뢰
+        {draftGroupedTransfers.length > 0 ? (
+          <Badge
+            variant="secondary"
+            className="h-4 min-w-4 justify-center rounded-full px-1 text-[10px] leading-none"
+          >
+            {draftGroupedTransfers.length}
+          </Badge>
+        ) : null}
+      </Button>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="h-9 shrink-0 gap-1 rounded-full border-slate-200 bg-white px-3 shadow-sm"
+        aria-label={
+          trashGroupedTransfers.length > 0
+            ? `휴지통 ${trashGroupedTransfers.length}건`
+            : "휴지통"
+        }
+        title="휴지통"
+        onClick={() => {
+          setTrashOpen(true);
+          void loadRecentRequests({ silent: true });
+        }}
+      >
+        <Trash2 className="h-4 w-4 shrink-0" />
+        휴지통
+        {trashGroupedTransfers.length > 0 ? (
+          <Badge
+            variant="secondary"
+            className="h-4 min-w-4 justify-center rounded-full px-1 text-[10px] leading-none"
+          >
+            {trashGroupedTransfers.length}
+          </Badge>
+        ) : null}
+      </Button>
+    </div>
+  ) : (
     <>
       <Button
         type="button"
@@ -7477,42 +7641,89 @@ export const PracticeFileTransferPage = ({
         <DialogContent
           hideClose
           className={cn(
-            "inset-0 left-0 top-0 flex h-[100dvh] w-screen max-h-[100dvh] max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-0 p-0 sm:max-w-none",
-            "duration-0 data-[state=open]:animate-none data-[state=closed]:animate-none",
+            "flex flex-col gap-0 overflow-hidden p-0 duration-200",
+            isMobile
+              ? cn(
+                  "left-3 right-3 top-[max(0.75rem,env(safe-area-inset-top))] bottom-[max(0.75rem,env(safe-area-inset-bottom))]",
+                  "h-auto max-h-none w-auto max-w-none translate-x-0 translate-y-0",
+                  "rounded-2xl border border-slate-200/90 bg-white",
+                  "shadow-[0_12px_40px_-8px_rgba(15,23,42,0.28),0_4px_16px_rgba(15,23,42,0.08)]",
+                  "data-[state=open]:animate-in data-[state=closed]:animate-out",
+                  "data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0",
+                  "data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95",
+                )
+              : cn(
+                  "inset-0 left-0 top-0 h-[100dvh] w-screen max-h-[100dvh] max-w-none translate-x-0 translate-y-0",
+                  "rounded-none border-0 sm:max-w-none",
+                  "duration-0 data-[state=open]:animate-none data-[state=closed]:animate-none",
+                ),
           )}
         >
           <DialogClose
             className={cn(
-              "absolute z-10 inline-flex items-center justify-center rounded-md opacity-70 ring-offset-background transition-opacity hover:opacity-100 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
-              isMobile ? "right-2.5 top-2.5 h-11 w-11" : "right-3 top-2.5 h-12 w-12",
+              "absolute z-10 inline-flex items-center justify-center opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+              isMobile
+                ? "right-3 top-3 h-10 w-10 rounded-full bg-slate-100/90 text-slate-600 hover:bg-slate-200/90 hover:text-slate-900"
+                : "right-3 top-2.5 h-12 w-12 rounded-md hover:bg-slate-100",
             )}
             aria-label="닫기"
           >
-            <X className={isMobile ? "h-6 w-6" : "h-7 w-7"} strokeWidth={2.25} />
+            <X className={isMobile ? "h-5 w-5" : "h-7 w-7"} strokeWidth={2.25} />
             <span className="sr-only">Close</span>
           </DialogClose>
           <DialogHeader
             className={cn(
-              "shrink-0 border-b bg-white/95 text-left backdrop-blur supports-[backdrop-filter]:bg-white/80",
+              "shrink-0 border-b text-left",
               isMobile
-                ? "space-y-0 px-4 pb-3 pt-4 pr-14"
-                : "flex flex-row items-center gap-3 space-y-0 px-6 py-2.5 pr-[4.25rem]",
+                ? "space-y-3 border-slate-100 bg-white px-4 pb-4 pt-4 pr-14"
+                : "flex flex-row items-center gap-3 space-y-0 border-border bg-white/95 px-6 py-2.5 pr-[4.25rem] backdrop-blur supports-[backdrop-filter]:bg-white/80",
             )}
           >
-            <DialogTitle className="shrink-0 text-base font-semibold tracking-tight sm:text-lg">
+            <DialogTitle
+              className={cn(
+                "shrink-0 font-semibold tracking-tight",
+                isMobile ? "text-[17px]" : "text-base sm:text-lg",
+              )}
+            >
               {editingSentTransfer ? "의뢰 수정" : "신규 의뢰"}
             </DialogTitle>
+            {isMobile && !editingSentTransfer ? (
+              <PracticeTransferMobileComposeToolbar
+                onSaveDraft={() => void handleSaveComposeDraftAndStartNew()}
+                onDiscard={() => void handleDiscardComposeWork()}
+                canSaveDraft={mobileComposeCanSaveDraft}
+                canDiscard={mobileComposeCanDiscard}
+              />
+            ) : null}
+            {isMobile && formSyncStatusLabel ? (
+              <p
+                title={formSyncStatusLabel}
+                className={cn(
+                  "text-center text-xs font-normal leading-snug",
+                  formSyncStatus === "error"
+                    ? "text-destructive"
+                    : "text-muted-foreground",
+                )}
+              >
+                {formSyncStatusLabel}
+              </p>
+            ) : null}
             {showComposeHeaderToolbar ? practiceWorkspaceToolbar : null}
           </DialogHeader>
           <PageFileDropZone
             onFiles={handleIncomingFiles}
             activeClassName="ring-2 ring-primary/30"
-            className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-gradient-subtle"
+            className={cn(
+              "min-h-0 flex-1 overflow-y-auto overscroll-contain",
+              isMobile ? "bg-slate-50/80" : "bg-gradient-subtle",
+            )}
           >
             <div
               className={cn(
-                "mx-auto w-full max-w-7xl space-y-3",
-                isMobile ? "box-border min-w-0 px-2 pb-8 pt-2" : "px-4 pt-4 pb-12",
+                "mx-auto w-full max-w-7xl",
+                isMobile
+                  ? "box-border min-w-0 space-y-4 px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-4"
+                  : "space-y-3 px-4 pt-4 pb-12",
               )}
             >
               <div className="flex min-w-0 w-full flex-col gap-3">
@@ -7550,25 +7761,7 @@ export const PracticeFileTransferPage = ({
                       url,
                     });
                   }}
-                  onStartNew={() => void handleStartNewTransfer({ openCompose: true, silentToast: true })}
-                  onOpenRecent={() => setComposeOpen(false)}
-                  onOpenDrafts={() => {
-                    setDraftsOpen(true);
-                    if (pendingLocalFilesRef.current.length > 0) {
-                      logPracticeFileSync("promote:retry-bump", {
-                        reason: "open-drafts",
-                        localFiles: pendingLocalFilesRef.current.length,
-                      });
-                      setFilePromoteRetryNonce((n) => n + 1);
-                    }
-                  }}
-                  onOpenTrash={() => {
-                    setTrashOpen(true);
-                    void loadRecentRequests({ silent: true });
-                  }}
-                  recentUnreadCount={recentChatUnreadCount}
-                  draftCount={draftGroupedTransfers.length}
-                  trashCount={trashGroupedTransfers.length}
+                  hideToolbar
                 />
               ) : showExpressWizard ? (
                 <PracticeTransferExpressWizard
@@ -7822,7 +8015,12 @@ export const PracticeFileTransferPage = ({
             className={cn(
               "flex flex-col gap-0 overflow-hidden p-0",
               isMobile
-                ? "inset-0 left-0 top-0 h-[100dvh] w-screen max-h-[100dvh] max-w-none translate-x-0 translate-y-0 rounded-none border-0"
+                ? cn(
+                    "left-3 right-3 top-[max(0.75rem,env(safe-area-inset-top))] bottom-[max(0.75rem,env(safe-area-inset-bottom))]",
+                    "h-auto max-h-none w-auto max-w-none translate-x-0 translate-y-0",
+                    "rounded-2xl border border-slate-200/90 bg-white",
+                    "shadow-[0_12px_40px_-8px_rgba(15,23,42,0.28),0_4px_16px_rgba(15,23,42,0.08)]",
+                  )
                 : "max-h-[min(90vh,820px)] w-[min(96vw,720px)] max-w-none sm:max-w-[min(96vw,720px)]",
             )}
           >
@@ -7840,7 +8038,7 @@ export const PracticeFileTransferPage = ({
                   )}
                 >
                   <BookmarkPlus className="h-5 w-5 shrink-0 text-primary-strong" />
-                  임시저장
+                  {isMobile ? "의뢰 현황" : "임시저장"}
                   {draftGroupedTransfers.length > 0 ? (
                     <Badge
                       variant="secondary"
@@ -7885,21 +8083,37 @@ export const PracticeFileTransferPage = ({
                 isMobile ? "bg-slate-50/80 px-3 py-3" : "px-5 py-4 sm:px-6",
               )}
             >
-              {draftGroupedTransfers.length === 0 ? (
-                <div
-                  className={cn(
-                    "flex flex-col items-center gap-2 border border-dashed border-slate-200 px-6 py-14 text-center",
-                    isMobile ? "rounded-2xl bg-white" : "rounded-xl",
-                  )}
-                >
-                  <BookmarkPlus className="h-9 w-9 text-slate-300" />
-                  <p className="text-sm font-medium text-slate-600">임시저장 없음</p>
-                  <p className="max-w-sm text-xs leading-relaxed text-muted-foreground">
-                    기공소와 완성형 한글 환자명을 입력하면 자동으로 저장됩니다.
-                  </p>
-                </div>
-              ) : isMobile ? (
+              {isMobile ? (
                 <div className="space-y-2.5 pb-2">
+                  <button
+                    type="button"
+                    className="w-full cursor-pointer rounded-2xl border-0 bg-primary p-3.5 text-left text-primary-foreground shadow-[0_1px_2px_rgba(15,23,42,0.08)] transition-[transform,box-shadow] active:scale-[0.985] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    onClick={openNewComposeFromDrafts}
+                  >
+                    <div className="flex min-w-0 items-center gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                          <span
+                            className="inline-flex h-6 shrink-0 items-center rounded-md bg-white/20 px-2 text-[11px] font-semibold leading-none"
+                          >
+                            새로 작성
+                          </span>
+                        </div>
+                        <p className="mt-2 truncate text-[15px] font-semibold leading-snug">
+                          신규 의뢰
+                        </p>
+                        <div className="mt-1 text-sm text-primary-foreground/85">
+                          새 의뢰를 시작합니다
+                        </div>
+                      </div>
+                      <span
+                        className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/20"
+                        aria-hidden
+                      >
+                        <Plus className="h-5 w-5" />
+                      </span>
+                    </div>
+                  </button>
                   {draftGroupedTransfers.map((transfer) => {
                     const targetLabText =
                       String(transfer.targetLab || "-")
@@ -7988,6 +8202,14 @@ export const PracticeFileTransferPage = ({
                       </div>
                     );
                   })}
+                </div>
+              ) : draftGroupedTransfers.length === 0 ? (
+                <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-slate-200 px-6 py-14 text-center">
+                  <BookmarkPlus className="h-9 w-9 text-slate-300" />
+                  <p className="text-sm font-medium text-slate-600">임시저장 없음</p>
+                  <p className="max-w-sm text-xs leading-relaxed text-muted-foreground">
+                    기공소와 완성형 한글 환자명을 입력하면 자동으로 저장됩니다.
+                  </p>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -8078,11 +8300,16 @@ export const PracticeFileTransferPage = ({
 
         <Dialog open={trashOpen} onOpenChange={setTrashOpen}>
           <DialogContent
-            hideClose={isMobile}
+            hideClose
             className={cn(
               "flex flex-col gap-0 overflow-hidden p-0",
               isMobile
-                ? "inset-0 left-0 top-0 h-[100dvh] w-screen max-h-[100dvh] max-w-none translate-x-0 translate-y-0 rounded-none border-0"
+                ? cn(
+                    "left-3 right-3 top-[max(0.75rem,env(safe-area-inset-top))] bottom-[max(0.75rem,env(safe-area-inset-bottom))]",
+                    "h-auto max-h-none w-auto max-w-none translate-x-0 translate-y-0",
+                    "rounded-2xl border border-slate-200/90 bg-white",
+                    "shadow-[0_12px_40px_-8px_rgba(15,23,42,0.28),0_4px_16px_rgba(15,23,42,0.08)]",
+                  )
                 : cn(
                     "max-h-[min(90vh,820px)] max-w-none",
                     RESPONSIVE.dialogContentWide,
@@ -8102,12 +8329,17 @@ export const PracticeFileTransferPage = ({
                     isMobile ? "text-base" : "text-lg",
                   )}
                 >
-                  <Trash2 className="h-5 w-5 shrink-0 text-slate-500" />
+                  <Trash2
+                    className={cn(
+                      "h-5 w-5 shrink-0",
+                      isMobile ? "text-destructive" : "text-slate-500",
+                    )}
+                  />
                   휴지통
                   {trashGroupedTransfers.length > 0 ? (
                     <Badge
                       variant="secondary"
-                      className="rounded-md px-1.5 py-0 text-[11px] font-medium tabular-nums"
+                      className="rounded-full px-1.5 py-0 text-[11px] font-medium tabular-nums"
                     >
                       {trashGroupedTransfers.length}
                     </Badge>
@@ -8118,8 +8350,8 @@ export const PracticeFileTransferPage = ({
                       variant="outline"
                       size="sm"
                       className={cn(
-                        "shrink-0 gap-1.5 border-destructive-muted text-xs text-destructive hover:bg-destructive-soft hover:text-destructive",
-                        isMobile ? "h-8 px-2" : "h-8 px-2.5",
+                        "shrink-0 gap-1.5 rounded-full border-destructive-muted text-xs text-destructive hover:bg-destructive-soft hover:text-destructive",
+                        isMobile ? "h-8 px-2.5" : "h-8 px-2.5",
                       )}
                       disabled={emptyingTrash}
                       onClick={handleAskEmptyTrash}
@@ -8130,16 +8362,17 @@ export const PracticeFileTransferPage = ({
                   ) : null}
                 </DialogTitle>
               </DialogHeader>
-              {isMobile ? (
-                <button
-                  type="button"
-                  className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  aria-label="닫기"
-                  onClick={() => setTrashOpen(false)}
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              ) : null}
+              <button
+                type="button"
+                className={cn(
+                  "inline-flex shrink-0 items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  isMobile ? "h-11 w-11" : "h-9 w-9",
+                )}
+                aria-label="닫기"
+                onClick={() => setTrashOpen(false)}
+              >
+                <X className={isMobile ? "h-5 w-5" : "h-4 w-4"} />
+              </button>
             </div>
             <div
               className={cn(

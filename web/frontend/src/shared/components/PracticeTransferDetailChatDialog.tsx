@@ -15,11 +15,13 @@
 // - web/frontend/src/shared/files/s3BlobCache.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
 // - 2026-08-28: 플로팅 z-300 — 견적 등 툴팁은 ui/tooltip z-400(가림 방지).
-// - 2026-08-28: 맥/카톡 스타일 신호등(닫기·최소화·최대화) 헤더.
+// - 2026-08-28: 모바일 채팅 — 신호등 제거·오른쪽 큰 닫기(X).
+// - 2026-08-28: 맥/카톡 스타일 신호등(닫기·최소화·최대화) 헤더(PC).
 // - 2026-08-28: 플로팅 — 항상 논모달(페이드 없음)·헤더 threshold 드래그·큰 닫기.
 // - 2026-08-28: 플로팅 패널 — 드래그·리사이즈·좌우도킹·핀(목록 클릭 전환).
 // - 2026-08-28: 의뢰상세 탭 — 요약 행·섹션 계층으로 가독성 개선.
 // - 2026-08-28: 탭 UI 폴리시 — 제목/소통헤더 제거, 평가→탭줄, 박스 없이 채움.
+// - 2026-08-28: 기공소 — 미읽음은 의뢰상세, 이미 읽음은 진행 상황 탭으로 오픈.
 // - 2026-08-28: 기공소 오픈 시 의뢰상세 탭 우선. 활성 탭 primary(파란).
 // - 2026-08-28: 의뢰상세·채팅 좌우 분할 → 탭 전환(치과 기본 채팅).
 // - 2026-08-28: 채팅 탭 라벨 → 진행 상황(치과·기공소 공통).
@@ -74,7 +76,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { Box, CalendarClock, FileIcon, MessageSquare, Pencil, Trash2 } from "lucide-react";
+import { Box, CalendarClock, FileIcon, MessageSquare, Pencil, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -92,6 +94,7 @@ import { ChatMessageBubble } from "@/features/chat/components/ChatMessageBubble"
 import { type ReplyToMessage } from "@/features/chat/components/MessageReply";
 import { PracticeToothWorkChartReadOnly } from "@/shared/components/practice/PracticeToothWorkChartReadOnly";
 import { usePracticeTransferPanelLayout } from "@/shared/components/practice/usePracticeTransferPanelLayout";
+import { useIsMobile } from "@/shared/hooks/use-mobile";
 import type { ToothWorkSelection } from "@/shared/practice/transferMemo";
 import type {
   PracticeTransferFeeQuote,
@@ -211,6 +214,11 @@ type PracticeTransferDetailChatDialogProps = {
   feeQuote?: PracticeTransferFeeQuote | null;
   skipJig?: boolean;
   feeViewer?: PracticeTransferFeeQuoteViewer;
+  /**
+   * 열릴 때 기본 탭. 미지정 시 feeViewer 기준(lab→의뢰 상세, practice→진행 상황).
+   * 기공소 캘린더: 미읽음→detail, 이미 읽음→chat.
+   */
+  initialPanelTab?: "detail" | "chat";
   labAnchorId?: string | null;
   /** 기공소 뷰 — 자동매칭 기공비 별점 확정가 */
   labEffectiveStars?: number | null;
@@ -342,6 +350,7 @@ export function PracticeTransferDetailChatDialog({
   feeQuote = null,
   skipJig = false,
   feeViewer = "practice",
+  initialPanelTab,
   labAnchorId = null,
   labEffectiveStars = null,
   filesLabel,
@@ -413,6 +422,7 @@ export function PracticeTransferDetailChatDialog({
   cancelRequestDisabled = false,
 }: PracticeTransferDetailChatDialogProps) {
   const { toast } = useToast();
+  const isMobile = useIsMobile();
   const {
     layout,
     minimized,
@@ -422,16 +432,20 @@ export function PracticeTransferDetailChatDialog({
     minimize,
     toggleMaximize,
   } = usePracticeTransferPanelLayout();
-  const defaultPanelTab: "detail" | "chat" =
-    feeViewer === "lab" ? "detail" : "chat";
-  const [panelTab, setPanelTab] = useState<"detail" | "chat">(defaultPanelTab);
+  const resolvedInitialPanelTab: "detail" | "chat" =
+    initialPanelTab === "detail" || initialPanelTab === "chat"
+      ? initialPanelTab
+      : feeViewer === "lab"
+        ? "detail"
+        : "chat";
+  const [panelTab, setPanelTab] = useState<"detail" | "chat">(resolvedInitialPanelTab);
   const [rearrivalOpen, setRearrivalOpen] = useState(false);
   const [rearrivalDraft, setRearrivalDraft] = useState<Date | undefined>(undefined);
   const [previewOpen, setPreviewOpen] = useState(false);
 
   useEffect(() => {
-    if (open) setPanelTab(feeViewer === "lab" ? "detail" : "chat");
-  }, [open, feeViewer]);
+    if (open) setPanelTab(resolvedInitialPanelTab);
+  }, [open, resolvedInitialPanelTab]);
 
   const handlePanelTabChange = useCallback((value: string) => {
     setPanelTab(value === "detail" ? "detail" : "chat");
@@ -1175,39 +1189,45 @@ export function PracticeTransferDetailChatDialog({
         >
           <div
             className={cn(
-              "grid shrink-0 cursor-grab grid-cols-[auto_1fr_auto] items-center gap-2 border-b px-3 active:cursor-grabbing",
+              "grid shrink-0 cursor-grab items-center gap-2 border-b px-3 active:cursor-grabbing",
+              isMobile
+                ? "grid-cols-[1fr_auto]"
+                : "grid-cols-[auto_1fr_auto]",
               minimized ? "h-12 py-0" : "py-3.5",
             )}
             onPointerDown={handleChromePointerDown}
             onDoubleClick={(e) => {
+              if (isMobile) return;
               const target = e.target as HTMLElement | null;
               if (target?.closest("button, [data-no-drag]")) return;
               toggleMaximize();
             }}
           >
-            <div className="flex items-center gap-1.5 pl-0.5" data-no-drag>
-              <button
-                type="button"
-                className="h-3 w-3 shrink-0 rounded-full bg-[#ff5f57] shadow-sm ring-1 ring-black/10 transition hover:brightness-95"
-                aria-label="닫기"
-                title="닫기"
-                onClick={() => onOpenChange(false)}
-              />
-              <button
-                type="button"
-                className="h-3 w-3 shrink-0 rounded-full bg-[#febc2e] shadow-sm ring-1 ring-black/10 transition hover:brightness-95"
-                aria-label={minimized ? "창 복원" : "최소화"}
-                title={minimized ? "창 복원" : "최소화"}
-                onClick={() => minimize()}
-              />
-              <button
-                type="button"
-                className="h-3 w-3 shrink-0 rounded-full bg-[#28c840] shadow-sm ring-1 ring-black/10 transition hover:brightness-95"
-                aria-label={maximized ? "창 복원" : "최대화"}
-                title={maximized ? "창 복원" : "최대화"}
-                onClick={() => toggleMaximize()}
-              />
-            </div>
+            {!isMobile ? (
+              <div className="flex items-center gap-1.5 pl-0.5" data-no-drag>
+                <button
+                  type="button"
+                  className="h-3 w-3 shrink-0 rounded-full bg-[#ff5f57] shadow-sm ring-1 ring-black/10 transition hover:brightness-95"
+                  aria-label="닫기"
+                  title="닫기"
+                  onClick={() => onOpenChange(false)}
+                />
+                <button
+                  type="button"
+                  className="h-3 w-3 shrink-0 rounded-full bg-[#febc2e] shadow-sm ring-1 ring-black/10 transition hover:brightness-95"
+                  aria-label={minimized ? "창 복원" : "최소화"}
+                  title={minimized ? "창 복원" : "최소화"}
+                  onClick={() => minimize()}
+                />
+                <button
+                  type="button"
+                  className="h-3 w-3 shrink-0 rounded-full bg-[#28c840] shadow-sm ring-1 ring-black/10 transition hover:brightness-95"
+                  aria-label={maximized ? "창 복원" : "최대화"}
+                  title={maximized ? "창 복원" : "최대화"}
+                  onClick={() => toggleMaximize()}
+                />
+              </div>
+            ) : null}
             {minimized ? (
               <button
                 type="button"
@@ -1218,7 +1238,12 @@ export function PracticeTransferDetailChatDialog({
                 {title}
               </button>
             ) : (
-              <TabsList className="mx-auto h-11 w-auto shrink-0 justify-self-center p-1">
+              <TabsList
+                className={cn(
+                  "h-11 w-auto shrink-0 p-1",
+                  isMobile ? "justify-self-start" : "mx-auto justify-self-center",
+                )}
+              >
                 <TabsTrigger
                   value="detail"
                   className="gap-1.5 px-4 py-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
@@ -1236,10 +1261,21 @@ export function PracticeTransferDetailChatDialog({
               </TabsList>
             )}
             <div
-              className="flex shrink-0 items-center justify-end"
+              className="flex shrink-0 items-center justify-end gap-1"
               data-no-drag
             >
               {!minimized ? chatHeaderAction : null}
+              {isMobile ? (
+                <button
+                  type="button"
+                  className="inline-flex h-11 w-11 items-center justify-center rounded-md opacity-70 ring-offset-background transition-opacity hover:bg-slate-100 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                  aria-label="닫기"
+                  title="닫기"
+                  onClick={() => onOpenChange(false)}
+                >
+                  <X className="h-6 w-6" strokeWidth={2.25} />
+                </button>
+              ) : null}
             </div>
           </div>
 
@@ -1790,7 +1826,7 @@ export function PracticeTransferDetailChatDialog({
           ) : null}
         </Tabs>
 
-        {!minimized && !maximized ? (
+        {!minimized && !maximized && !isMobile ? (
           <>
             <div
               data-no-drag

@@ -2,9 +2,7 @@ import { useRef } from "react";
 import {
   BookmarkPlus,
   Camera,
-  ClipboardList,
   ImagePlus,
-  Plus,
   Trash2,
   X,
 } from "lucide-react";
@@ -29,6 +27,10 @@ import type { PreUploadFileStatus } from "@/shared/hooks/useFilePreUpload";
 // - 2026-08-20: 상단 메뉴 새로작성·임시저장 2칸만.
 // - 2026-08-27: 상단 메뉴 새로작성·최근의뢰·임시저장·휴지통 4칸(2×2).
 // - 2026-08-28: 최근의뢰를 2×2 왼쪽 상단으로.
+// - 2026-08-28: 상단 메뉴 1줄(새로작성·임시저장·휴지). 최근의뢰 제거. hideToolbar로 헤더 이관.
+// - 2026-08-28: 모바일 툴바 휴지만. 환자사진-only 안내. 임시/새로작성 제거.
+// - 2026-08-28: 모바일 툴바 pill 버튼·촬영 CTA 카드 스타일.
+// - 2026-08-28: 작성 모달 툴바 — 저장&새로작성·삭제&새로작성.
 // - 2026-08-20: iPhone HEIC→JPEG 변환 시도, 빈 파일 거부, MIME 보정.
 // - 2026-08-20: 썸네일 클릭 시 원본 미리보기.
 // - 2026-08-27: normalizeOralPhotoFiles namePrefix 옵션(채팅 사진찍기 재사용).
@@ -190,14 +192,62 @@ type PracticeTransferMobileOralPhotoIntakeProps = {
   onRemovePhoto: (key: string) => void;
   onClearPhotos: () => void;
   onPreviewPhoto?: (photo: PracticeTransferMobilePhotoItem) => void;
-  onStartNew: () => void;
-  onOpenRecent: () => void;
-  onOpenDrafts: () => void;
-  onOpenTrash: () => void;
-  recentUnreadCount: number;
-  draftCount: number;
-  trashCount: number;
+  onSaveDraft?: () => void;
+  onDiscard?: () => void;
+  canSaveDraft?: boolean;
+  canDiscard?: boolean;
+  /** true면 상단 퀵메뉴 숨김(DialogHeader 등 바깥에서 렌더) */
+  hideToolbar?: boolean;
 };
+
+export function PracticeTransferMobileComposeToolbar({
+  onSaveDraft,
+  onDiscard,
+  canSaveDraft = true,
+  canDiscard = false,
+  className,
+}: {
+  onSaveDraft: () => void;
+  onDiscard: () => void;
+  canSaveDraft?: boolean;
+  canDiscard?: boolean;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex w-full min-w-0 shrink-0 flex-nowrap items-center justify-center gap-2.5",
+        className,
+      )}
+    >
+      <Button
+        type="button"
+        size="sm"
+        className="h-9 shrink-0 gap-1 rounded-full px-3 shadow-sm"
+        aria-label="저장 후 새로 작성"
+        title="작성 내용을 임시저장한 뒤 새로 작성합니다"
+        disabled={!canSaveDraft}
+        onClick={onSaveDraft}
+      >
+        <BookmarkPlus className="h-4 w-4 shrink-0" />
+        저장&새로작성
+      </Button>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="h-9 shrink-0 gap-1 rounded-full border-destructive-muted bg-white px-3 text-destructive shadow-sm hover:bg-destructive-soft hover:text-destructive"
+        aria-label="삭제 후 새로 작성"
+        title="작성 중인 내용을 삭제한 뒤 새로 작성합니다"
+        disabled={!canDiscard}
+        onClick={onDiscard}
+      >
+        <Trash2 className="h-4 w-4 shrink-0" />
+        삭제&새로작성
+      </Button>
+    </div>
+  );
+}
 
 export function PracticeTransferMobileOralPhotoIntake({
   requestIntakeProps,
@@ -207,13 +257,11 @@ export function PracticeTransferMobileOralPhotoIntake({
   onRemovePhoto,
   onClearPhotos,
   onPreviewPhoto,
-  onStartNew,
-  onOpenRecent,
-  onOpenDrafts,
-  onOpenTrash,
-  recentUnreadCount,
-  draftCount,
-  trashCount,
+  onSaveDraft,
+  onDiscard,
+  canSaveDraft = true,
+  canDiscard = false,
+  hideToolbar = false,
 }: PracticeTransferMobileOralPhotoIntakeProps) {
   const { toast } = useToast();
   const albumInputRef = useRef<HTMLInputElement | null>(null);
@@ -244,73 +292,21 @@ export function PracticeTransferMobileOralPhotoIntake({
   };
 
   return (
-    <div className="box-border flex w-full min-w-0 flex-col gap-3.5">
-      <div className="grid w-full min-w-0 grid-cols-2 gap-1 rounded-2xl border border-slate-200/80 bg-slate-50/90 p-1">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="h-10 min-w-0 gap-1 rounded-xl px-2 text-sm font-medium hover:bg-white hover:shadow-sm"
-          onClick={onOpenRecent}
-        >
-          <ClipboardList className="h-3.5 w-3.5 shrink-0" />
-          최근의뢰
-          {recentUnreadCount > 0 ? (
-            <Badge
-              variant="destructive"
-              className="ml-0.5 h-5 min-w-5 rounded-full px-1.5 text-[10px] tabular-nums"
-              aria-label={`안읽음 ${recentUnreadCount}건`}
-            >
-              {recentUnreadCount > 99 ? "99+" : recentUnreadCount}
-            </Badge>
-          ) : null}
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="h-10 min-w-0 rounded-xl px-2 text-sm font-medium hover:bg-white hover:shadow-sm"
-          onClick={onStartNew}
-        >
-          <Plus className="mr-1 h-3.5 w-3.5 shrink-0" />
-          새로작성
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="h-10 min-w-0 gap-1 rounded-xl px-2 text-sm font-medium hover:bg-white hover:shadow-sm"
-          onClick={onOpenDrafts}
-        >
-          <BookmarkPlus className="h-3.5 w-3.5 shrink-0" />
-          임시저장
-          {draftCount > 0 ? (
-            <Badge
-              variant="secondary"
-              className="ml-0.5 h-5 min-w-5 rounded-full px-1.5 text-[10px] tabular-nums"
-            >
-              {draftCount}
-            </Badge>
-          ) : null}
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="h-10 min-w-0 gap-1 rounded-xl px-2 text-sm font-medium hover:bg-white hover:shadow-sm"
-          onClick={onOpenTrash}
-        >
-          <Trash2 className="h-3.5 w-3.5 shrink-0" />
-          휴지통
-          {trashCount > 0 ? (
-            <Badge
-              variant="secondary"
-              className="ml-0.5 h-5 min-w-5 rounded-full px-1.5 text-[10px] tabular-nums"
-            >
-              {trashCount}
-            </Badge>
-          ) : null}
-        </Button>
+    <div className="box-border flex w-full min-w-0 flex-col gap-3">
+      {!hideToolbar && onSaveDraft && onDiscard ? (
+        <PracticeTransferMobileComposeToolbar
+          onSaveDraft={onSaveDraft}
+          onDiscard={onDiscard}
+          canSaveDraft={canSaveDraft}
+          canDiscard={canDiscard}
+        />
+      ) : null}
+
+      <div className="rounded-2xl border border-sky-200/80 bg-sky-50/90 px-3.5 py-3 text-[13px] leading-relaxed text-sky-950">
+        <p className="font-semibold tracking-tight">모바일에서는 환자 사진만 업로드할 수 있어요</p>
+        <p className="mt-1 text-sky-900/85">
+          구강스캔 파일 첨부·치아 선택 등은 PC(데스크탑)에서 이어서 작성해 주세요.
+        </p>
       </div>
 
       <PracticeTransferRequestIntakePanel
@@ -349,27 +345,29 @@ export function PracticeTransferMobileOralPhotoIntake({
           htmlFor={canCapture ? CAMERA_INPUT_ID : undefined}
           aria-disabled={!canCapture || undefined}
           className={cn(
-            "box-border flex min-h-[9rem] w-full min-w-0 flex-col items-center justify-center gap-2.5 rounded-2xl border-2 border-dashed px-3 py-5 text-center transition-[transform,colors] active:scale-[0.99]",
+            "box-border flex min-h-[8rem] w-full min-w-0 flex-col items-center justify-center gap-2.5 rounded-2xl border border-dashed px-4 py-5 text-center transition-[transform,colors,box-shadow] active:scale-[0.99]",
             canCapture
-              ? "cursor-pointer border-primary/35 bg-gradient-to-b from-primary-soft/70 to-white text-primary-strong shadow-[0_1px_2px_rgba(15,23,42,0.04)]"
+              ? "cursor-pointer border-primary/30 bg-white text-primary-strong shadow-[0_1px_2px_rgba(15,23,42,0.04)] hover:border-primary/45 hover:shadow-sm"
               : "cursor-not-allowed border-slate-200 bg-slate-50 text-muted-foreground",
           )}
         >
           <span
             className={cn(
-              "inline-flex h-14 w-14 items-center justify-center rounded-full shadow-sm",
-              canCapture ? "bg-white text-primary-strong" : "bg-white text-slate-400",
+              "inline-flex h-12 w-12 items-center justify-center rounded-full",
+              canCapture
+                ? "bg-primary-soft text-primary-strong"
+                : "bg-white text-slate-400",
             )}
           >
-            <Camera className="h-6 w-6" />
+            <Camera className="h-5 w-5" />
           </span>
-          <span className="text-[17px] font-semibold tracking-tight">구강포토 촬영</span>
+          <span className="text-[15px] font-semibold tracking-tight">구강포토 촬영</span>
         </label>
 
         <Button
           type="button"
           variant="outline"
-          className="h-12 w-full min-w-0 rounded-2xl border-slate-200 text-base font-medium"
+          className="h-11 w-full min-w-0 rounded-xl border-slate-200 bg-white text-sm font-medium shadow-sm"
           disabled={!canCapture}
           onClick={() => albumInputRef.current?.click()}
         >

@@ -4,6 +4,7 @@
 // - 2026-08-28: MIN_W — 신호등·탭(의뢰상세/채팅)·별점이 겹치지 않게 400.
 // - 2026-08-28: 리사이즈 — 좌·상·모서리(n/w/nw/ne/sw) 지원, 고정 변 기준 min clamp.
 // - 2026-08-28: 좌·우 엣지 스냅 — 가로 절반이 아니라 MIN_W 유지(세로만 full).
+// - 2026-08-28: 좁은 뷰포트 — MIN_W가 화면보다 커도 오른쪽 잘리지 않게 maxW로 clamp.
 import { useCallback, useEffect, useRef, useState } from "react";
 
 export type PracticeTransferPanelLayout = {
@@ -23,6 +24,8 @@ const MINIMIZED_H = 48;
 const DEFAULT_W = 480;
 const SNAP_PX = 28;
 const DRAG_THRESHOLD_PX = 4;
+/** useIsMobile(768)과 맞춤 — 좁으면 인셋 풀스크린 */
+const NARROW_VW = 768;
 
 function viewportSize() {
   if (typeof window === "undefined") {
@@ -31,10 +34,21 @@ function viewportSize() {
   return { vw: window.innerWidth, vh: window.innerHeight };
 }
 
+/** 가용 폭을 넘지 않는 최소 폭(모바일에서 MIN_W=400 오버플로 방지) */
+function effectiveMinW(vw: number) {
+  const maxW = Math.max(1, vw - MARGIN * 2);
+  return Math.min(MIN_W, maxW);
+}
+
 function defaultLayout(): PracticeTransferPanelLayout {
   const { vw, vh } = viewportSize();
-  const w = Math.min(DEFAULT_W, Math.max(MIN_W, vw - MARGIN * 2));
-  const h = Math.min(Math.round(vh * 0.92), Math.max(MIN_H, vh - MARGIN * 2));
+  if (vw < NARROW_VW) return fullscreenLayout();
+  const minW = effectiveMinW(vw);
+  const maxW = Math.max(1, vw - MARGIN * 2);
+  const w = Math.min(DEFAULT_W, Math.max(minW, maxW));
+  const maxH = Math.max(1, vh - MARGIN * 2);
+  const minH = Math.min(MIN_H, maxH);
+  const h = Math.min(Math.round(vh * 0.92), Math.max(minH, maxH));
   return {
     x: Math.max(MARGIN, Math.round((vw - w) / 2)),
     y: Math.max(MARGIN, Math.round((vh - h) / 2)),
@@ -48,9 +62,15 @@ function clampLayout(
   opts?: { allowMinimizedHeight?: boolean },
 ): PracticeTransferPanelLayout {
   const { vw, vh } = viewportSize();
-  const minH = opts?.allowMinimizedHeight ? MINIMIZED_H : MIN_H;
-  const w = Math.min(Math.max(MIN_W, next.w), Math.max(MIN_W, vw - MARGIN * 2));
-  const h = Math.min(Math.max(minH, next.h), Math.max(minH, vh - MARGIN * 2));
+  const maxW = Math.max(1, vw - MARGIN * 2);
+  const maxH = Math.max(1, vh - MARGIN * 2);
+  const minW = effectiveMinW(vw);
+  const minH = Math.min(
+    opts?.allowMinimizedHeight ? MINIMIZED_H : MIN_H,
+    maxH,
+  );
+  const w = Math.min(Math.max(minW, next.w), maxW);
+  const h = Math.min(Math.max(minH, next.h), maxH);
   const maxX = Math.max(MARGIN, vw - w - MARGIN);
   const maxY = Math.max(MARGIN, vh - h - MARGIN);
   return {
@@ -99,23 +119,24 @@ function snapAfterDrag(
   layout: PracticeTransferPanelLayout,
 ): PracticeTransferPanelLayout {
   const { vw, vh } = viewportSize();
-  const fullH = vh - MARGIN * 2;
+  const fullH = Math.max(1, vh - MARGIN * 2);
+  const dockW = effectiveMinW(vw);
 
   if (layout.x <= SNAP_PX) {
     return clampLayout({
       ...layout,
       x: MARGIN,
       y: MARGIN,
-      w: MIN_W,
+      w: dockW,
       h: fullH,
     });
   }
   if (layout.x + layout.w >= vw - SNAP_PX) {
     return clampLayout({
       ...layout,
-      x: vw - MIN_W - MARGIN,
+      x: vw - dockW - MARGIN,
       y: MARGIN,
-      w: MIN_W,
+      w: dockW,
       h: fullH,
     });
   }
@@ -173,7 +194,8 @@ export function usePracticeTransferPanelLayout() {
 
   useEffect(() => {
     const onResize = () => {
-      if (maximized) {
+      const { vw } = viewportSize();
+      if (maximized || vw < NARROW_VW) {
         setLayout(fullscreenLayout(), { persist: false });
         return;
       }
@@ -186,6 +208,7 @@ export function usePracticeTransferPanelLayout() {
       }
       setLayout((prev) => clampLayout(prev));
     };
+    onResize();
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, [maximized, setLayout]);
@@ -294,13 +317,16 @@ export function usePracticeTransferPanelLayout() {
           h = baseH + dy;
         }
 
-        if (w < MIN_W) {
-          w = MIN_W;
-          if (fromW) x = right - MIN_W;
+        const { vw, vh } = viewportSize();
+        const minW = effectiveMinW(vw);
+        const minH = Math.min(MIN_H, Math.max(1, vh - MARGIN * 2));
+        if (w < minW) {
+          w = minW;
+          if (fromW) x = right - minW;
         }
-        if (h < MIN_H) {
-          h = MIN_H;
-          if (fromN) y = bottom - MIN_H;
+        if (h < minH) {
+          h = minH;
+          if (fromN) y = bottom - minH;
         }
 
         setLayout({ x, y, w, h }, { persist: false });
