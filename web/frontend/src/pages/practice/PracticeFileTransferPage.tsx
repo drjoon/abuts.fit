@@ -27,6 +27,7 @@
  * - web/frontend/src/shared/components/practice/PracticeLabRatingControl.tsx
  * - web/frontend/src/shared/practice/practiceLabRating.ts
  * - 2026-08-28: 구강스캔 캘린더 진입 시 /my?page=1 병렬 조회 제거(캘린더 구간 API만). 상세·휴지통·전송 후 지연 로드.
+ * - 2026-08-28: 의뢰 파일 — /my files[] 전부 표시(스캔·이미지). 단건 caseInfos.file 폴백만.
  * - 2026-08-14: 의뢰 상세 · 기공소 채팅 rating(1~5)·메모. 자동매칭 최소 별.
  * - 2026-08-15: 기공기간 5일 미만 빨간 표시·거부 가능 툴팁(목록·상세).
  * - web/frontend/src/shared/components/practice/PracticeTransferFilePane.tsx
@@ -257,6 +258,7 @@ import {
   isPracticeTransferTrashStatus,
   mapMyPracticeTransferApiRows,
   mergeOpenPracticeTransferFromRequestRows,
+  collectPracticeRequestFiles,
   type PracticeRecentRequestItem,
   type PracticeRecentTransferFileItem,
   type PracticeRecentTransferItem,
@@ -3857,6 +3859,7 @@ export const PracticeFileTransferPage = ({
             : `id:${req.id}`;
       const existing = byKey.get(key);
       if (!existing) {
+        const requestFiles = collectPracticeRequestFiles(req);
         byKey.set(key, {
           id: req.id,
           transferId: req.transferId || "-",
@@ -3869,15 +3872,12 @@ export const PracticeFileTransferPage = ({
           orderDate: req.orderDate,
           arrivalDate: req.arrivalDate,
           status: "취소",
-          fileCount: req.fileName ? 1 : 0,
+          fileCount: requestFiles.length,
           patientCount: 1,
           requestIds: [req.id],
           transferMongoIds: req.requestMongoId ? [req.requestMongoId] : [],
-          fileNames: req.fileName ? [req.fileName] : [],
-          files:
-            req.fileName && req.fileS3Key
-              ? [{ fileName: req.fileName, s3Key: req.fileS3Key, size: req.fileSize }]
-              : [],
+          fileNames: requestFiles.map((file) => file.fileName).filter(Boolean),
+          files: requestFiles,
           transferMemo: req.transferMemo,
           rawTransferMemo: req.rawTransferMemo,
           unreadCount: 0,
@@ -3892,14 +3892,11 @@ export const PracticeFileTransferPage = ({
           new Set([...existing.transferMongoIds, req.requestMongoId]),
         );
       }
-      if (req.fileName && req.fileS3Key) {
-        const already = existing.files.some((file) => file.s3Key === req.fileS3Key);
+      for (const file of collectPracticeRequestFiles(req)) {
+        const already = existing.files.some((row) => row.s3Key === file.s3Key);
         if (!already) {
-          existing.files = [
-            ...existing.files,
-            { fileName: req.fileName, s3Key: req.fileS3Key, size: req.fileSize },
-          ];
-          existing.fileNames = existing.files.map((file) => file.fileName);
+          existing.files = [...existing.files, file];
+          existing.fileNames = existing.files.map((row) => row.fileName);
           existing.fileCount = existing.files.length;
         }
       }

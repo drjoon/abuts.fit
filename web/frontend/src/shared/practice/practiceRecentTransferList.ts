@@ -12,6 +12,7 @@
  * 2026-08-14: 자동매칭 → 의뢰 집계/필터·뱃지 라벨. matchingMode=auto 기공소명 UI 마스킹.
  * 2026-08-16: 작업 파일(designFiles·resultFiles)·생산 메타를 사이드바·전체보기 공통 매핑.
  * 2026-08-19: 기간 필터는 periodToRange(커스텀 시작~끝) + 주문일/치과도착일 앵커.
+ * 2026-08-28: 의뢰 파일 — PracticeTransfer.files[] 전부 매핑(STL·PLY·이미지 등). caseInfos.file 단건 폴백만.
  *
  * related files:
  * - web/frontend/src/pages/practice/components/PracticeRecentTransfersAllModal.tsx
@@ -69,9 +70,12 @@ export type PracticeRecentRequestItem = {
   arrivalDates?: string[];
   transferMemo: string;
   rawTransferMemo: string;
+  /** 레거시·검색용 대표 파일(보통 files[0]) */
   fileName: string;
   fileS3Key: string;
   fileSize: number;
+  /** 의뢰 원본 첨부 전체(스캔·쉐이드 포토 등). /my files[] SSOT */
+  files?: PracticeRecentTransferFileItem[];
   resultFiles?: PracticeRecentTransferFileItem[];
   designFiles?: PracticeRecentTransferFileItem[];
   hasCustomAbutment?: boolean;
@@ -468,13 +472,40 @@ const mapApiFileItems = (raw: unknown): PracticeRecentTransferFileItem[] => {
   return raw
     .map((row) => {
       const item = row && typeof row === "object" ? (row as Record<string, unknown>) : {};
+      const nested =
+        item.file && typeof item.file === "object"
+          ? (item.file as Record<string, unknown>)
+          : null;
       return {
-        fileName: String(item.originalName || item.fileName || "").trim(),
-        s3Key: String(item.s3Key || "").trim(),
-        size: Number(item.size || 0),
+        fileName: String(
+          item.originalName ||
+            item.fileName ||
+            nested?.originalName ||
+            nested?.name ||
+            "",
+        ).trim(),
+        s3Key: String(item.s3Key || nested?.s3Key || nested?.key || "").trim(),
+        size: Number(item.size ?? nested?.size ?? 0),
       };
     })
     .filter((f) => f.fileName && f.s3Key);
+};
+
+/** request row → 의뢰 파일 목록. files[] 우선, 없으면 단건 fileName 폴백 */
+export const collectPracticeRequestFiles = (
+  req: Pick<
+    PracticeRecentRequestItem,
+    "files" | "fileName" | "fileS3Key" | "fileSize"
+  >,
+): PracticeRecentTransferFileItem[] => {
+  const fromList = Array.isArray(req.files)
+    ? req.files.filter((f) => f?.fileName && f?.s3Key)
+    : [];
+  if (fromList.length > 0) return fromList;
+  const fileName = String(req.fileName || "").trim();
+  const s3Key = String(req.fileS3Key || "").trim();
+  if (!fileName || !s3Key) return [];
+  return [{ fileName, s3Key, size: Number(req.fileSize || 0) }];
 };
 
 const mergeFileItemsByS3Key = (
@@ -573,6 +604,23 @@ export const mapMyPracticeTransferApiRows = (
       const patientName = String(ci.patientName || "").trim() || "-";
       const requestId = String(r.requestId || r._id || "").trim();
       const requestMongoId = String(r.practiceTransferId || r._id || "").trim();
+      const filesFromApi = mapApiFileItems(r.files);
+      const legacyFileName = String(fileObj.originalName || fileObj.name || "").trim();
+      const legacyS3Key = String(fileObj.s3Key || "").trim();
+      const legacySize = Number(fileObj.size || 0);
+      const files =
+        filesFromApi.length > 0
+          ? filesFromApi
+          : legacyFileName && legacyS3Key
+            ? [
+                {
+                  fileName: legacyFileName,
+                  s3Key: legacyS3Key,
+                  size: legacySize,
+                },
+              ]
+            : [];
+      const primaryFile = files[0];
       const resultFiles = mapApiFileItems(r.resultFiles);
       const productionRaw =
         r.production && typeof r.production === "object"
@@ -602,9 +650,10 @@ export const mapMyPracticeTransferApiRows = (
         arrivalDates,
         transferMemo,
         rawTransferMemo: strippedTransferMemo,
-        fileName: String(fileObj.originalName || fileObj.name || "").trim(),
-        fileS3Key: String(fileObj.s3Key || "").trim(),
-        fileSize: Number(fileObj.size || 0),
+        fileName: primaryFile?.fileName || "",
+        fileS3Key: primaryFile?.s3Key || "",
+        fileSize: Number(primaryFile?.size || 0),
+        files,
         resultFiles,
         designFiles,
         hasCustomAbutment: Boolean(r.hasCustomAbutment),
@@ -663,13 +712,17 @@ export const mapMyPracticeTransferApiRows = (
     .filter((item) => Boolean(item.id))
     .sort((a, b) => (b.createdAtTs || 0) - (a.createdAtTs || 0));
 
-/** 열린 의뢰상세에 목록 재조회 row를 병합(작업 파일·생산 메타·견적). */
+/** 열린 의뢰상세에 목록 재조회 row를 병합(의뢰·작업 파일·생산 메타·견적). */
 export const mergeOpenPracticeTransferFromRequestRows = (
   prev: PracticeRecentTransferItem,
   openRows: PracticeRecentRequestItem[],
 ): PracticeRecentTransferItem => {
   if (openRows.length === 0) return prev;
   const openRow = openRows[0];
+  const mergedRequestFiles = openRows.reduce<PracticeRecentTransferFileItem[]>(
+    (acc, row) => mergeFileItemsByS3Key(acc, collectPracticeRequestFiles(row)),
+    Array.isArray(prev.files) ? prev.files : [],
+  );
   const mergedResultFiles = openRows.reduce<PracticeRecentTransferFileItem[]>(
     (acc, row) => mergeFileItemsByS3Key(acc, row.resultFiles),
     [],
@@ -697,6 +750,9 @@ export const mergeOpenPracticeTransferFromRequestRows = (
       Array.isArray(openRow.arrivalDates) && openRow.arrivalDates.length > 0
         ? [...openRow.arrivalDates]
         : prev.arrivalDates,
+    files: mergedRequestFiles,
+    fileCount: mergedRequestFiles.length,
+    fileNames: mergedRequestFiles.map((f) => f.fileName).filter(Boolean),
     resultFiles: mergedResultFiles,
     designFiles: mergedDesignFiles,
     designFileCount: nextDesignFileCount,
@@ -809,6 +865,9 @@ export const filterRequestsByPeriodAndSearch = (
       request.arrivalDate,
       request.status,
       request.fileName,
+      ...(Array.isArray(request.files)
+        ? request.files.map((f) => f.fileName)
+        : []),
       request.transferMemo,
     ]
       .join(" ")
@@ -861,15 +920,11 @@ export const groupPracticeRecentRequests = (
       const transferMongoIds = new Set<string>();
       if (req.requestMongoId) transferMongoIds.add(req.requestMongoId);
       const files = new Map<string, PracticeRecentTransferFileItem>();
-      if (req.fileName && req.fileS3Key) {
-        files.set(req.fileS3Key, {
-          fileName: req.fileName,
-          s3Key: req.fileS3Key,
-          size: Number(req.fileSize || 0),
-        });
+      for (const file of collectPracticeRequestFiles(req)) {
+        files.set(file.s3Key, file);
       }
       const unreadCount = Number(unreadByTransferId.get(req.transferId) || 0);
-      const hasFile = Boolean(req.fileName && req.fileS3Key);
+      const fileList = Array.from(files.values());
       byKey.set(key, {
         id: req.id,
         transferId: req.transferId || "-",
@@ -883,14 +938,12 @@ export const groupPracticeRecentRequests = (
         arrivalDate: req.arrivalDate,
         arrivalDates: Array.isArray(req.arrivalDates) ? [...req.arrivalDates] : undefined,
         status: req.status,
-        fileCount: hasFile ? 1 : 0,
+        fileCount: fileList.length,
         patientCount: Math.max(1, initialPatients.size),
         requestIds: [req.id],
         transferMongoIds: req.requestMongoId ? [req.requestMongoId] : [],
-        fileNames: hasFile ? [req.fileName] : [],
-        files: hasFile
-          ? [{ fileName: req.fileName, s3Key: req.fileS3Key, size: Number(req.fileSize || 0) }]
-          : [],
+        fileNames: fileList.map((f) => f.fileName).filter(Boolean),
+        files: fileList,
         resultFiles: Array.isArray(req.resultFiles) ? [...req.resultFiles] : [],
         designFiles: Array.isArray(req.designFiles) ? [...req.designFiles] : [],
         hasCustomAbutment: Boolean(req.hasCustomAbutment),
@@ -930,7 +983,7 @@ export const groupPracticeRecentRequests = (
           req.status,
           req.transferMemo,
           req.transferId,
-          req.fileName,
+          ...fileList.map((f) => f.fileName),
         ]
           .join(" ")
           .toLowerCase(),
@@ -943,12 +996,8 @@ export const groupPracticeRecentRequests = (
       continue;
     }
 
-    if (req.fileName && req.fileS3Key) {
-      existing._files.set(req.fileS3Key, {
-        fileName: req.fileName,
-        s3Key: req.fileS3Key,
-        size: Number(req.fileSize || 0),
-      });
+    for (const file of collectPracticeRequestFiles(req)) {
+      existing._files.set(file.s3Key, file);
     }
     existing.files = Array.from(existing._files.values());
     existing.fileNames = existing.files.map((f) => f.fileName).filter(Boolean);
@@ -1068,6 +1117,7 @@ export const groupPracticeRecentRequests = (
       req.arrivalDate,
       req.transferMemo,
       req.fileName,
+      ...collectPracticeRequestFiles(req).map((f) => f.fileName),
     ].join(" ")}`.toLowerCase();
     if (!existing.transferId || existing.transferId === "-") {
       existing.deleteTargetLabel = req.id;
