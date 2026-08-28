@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-28: 확인 중 버튼「처리 중…」(백그라운드 S3 완료 후 API 저장과 구분).
 // - 2026-08-28: lab-handoff — 현재 파일 S3 업로드 프로그레스바.
 // - 2026-08-28: z-[320]/overlay z-[310] — 플로팅 의뢰상세(z-300) 위에 3D 확인 모달.
 // - 2026-08-16: lab-handoff confirmLabel·progressLabel(다파일 큐).
@@ -519,7 +520,7 @@ export function AbutmentModelConfirmDialog({
                           }}
                           disabled={!detailFile || confirming}
                         >
-                          {confirming ? "업로드 중…" : labConfirmLabel}
+                          {confirming ? "처리 중…" : labConfirmLabel}
                         </Button>
                       </>
                     ) : (

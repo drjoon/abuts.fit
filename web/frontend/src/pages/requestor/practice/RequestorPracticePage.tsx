@@ -25,6 +25,8 @@
 // - web/frontend/src/shared/practice/labReceiveCalendarHiddenWeekdays.ts
 // - web/backend/utils/labReceiveCalendarHiddenWeekdays.util.js
 // - web/backend/controllers/users/user.controller.js
+// - 2026-08-28: 어벗 확인 모달 열면 드롭존 바 숨김·확인 버튼「처리 중」(S3 1회만).
+// - 2026-08-28: 분할 확인 전 S3 프리업로드·API 처리 중 드롭존 바 재표시 제거(한 번만 업로드).
 // - 2026-08-28: 드롭/파일오픈 — 채팅 드롭존·확인 모달에 업로드 프로그레스바.
 // - 2026-08-28: 채팅 드롭존 guideDetail — 어벗 생산 시작·보철 업로드 시 작업 완료 안내.
 // - 2026-08-28: 작업 완료 취소를 업로드 CTA 바 trailing으로 넣어 2줄 레이아웃 유지.
@@ -2761,18 +2763,14 @@ export function RequestorPracticeReceivePage({
   );
 
   const workUploadProgressSummary = useMemo(() => {
+    // 어벗 3D 확인 모달이 열려 있으면 모달 바가 SSOT — 드롭존과 이중 표시 금지.
+    if (designConfirmOpen) return null;
     const files =
       workUploadTrackedFiles.length > 0
         ? workUploadTrackedFiles
-        : workUploadState?.files ||
-          designConfirmQueue.map((row) => row.file) ||
-          [];
-    if (!files.length) {
-      if (workUploadBusy) {
-        return { active: true, percent: 100, label: "처리 중…" };
-      }
-      return null;
-    }
+        : workUploadState?.files || [];
+    // S3 진행만 드롭존 바에 표시. API 저장/완료(workUploadBusy)는 모달 버튼「처리 중」만.
+    if (!files.length) return null;
     let sum = 0;
     let uploading = 0;
     let done = 0;
@@ -2790,25 +2788,17 @@ export function RequestorPracticeReceivePage({
       else if (progress.status === "error") error += 1;
       else uploading += 1;
     }
-    const percent = Math.round(sum / files.length);
     const s3Active = uploading > 0 || done + error < files.length;
-    if (workUploadBusy) {
-      return {
-        active: true,
-        percent: s3Active ? percent : 100,
-        label: s3Active ? `업로드 중… ${percent}%` : "처리 중…",
-      };
-    }
     if (!s3Active) return null;
+    const percent = Math.round(sum / files.length);
     return {
       active: true,
       percent,
       label: `업로드 중… ${percent}%`,
     };
   }, [
-    designConfirmQueue,
+    designConfirmOpen,
     uploadProgress,
-    workUploadBusy,
     workUploadState?.files,
     workUploadTrackedFiles,
   ]);
@@ -2963,7 +2953,7 @@ export function RequestorPracticeReceivePage({
       }
 
       if (nextFiles.length < slotOptions.length) {
-        beginWorkFilePreUpload(nextFiles);
+        // 분할 확인 전에는 S3에 올리지 않음 — 확인 후 지정 모달/제출에서 한 번만.
         setSplitAskState({
           mode: "prosthetic",
           transfer,
@@ -3012,7 +3002,6 @@ export function RequestorPracticeReceivePage({
       });
     },
     [
-      beginWorkFilePreUpload,
       cardActionBusyId,
       openWorkUploadDialog,
       resolveProstheticAssignments,
@@ -4053,7 +4042,7 @@ export function RequestorPracticeReceivePage({
       }
 
       if (stlFiles.length < pendingMetas.length) {
-        beginWorkFilePreUpload(stlFiles);
+        // 분할 확인 전에는 S3에 올리지 않음 — 확인 후 디자인 모달에서 한 번만.
         setSplitAskState({
           mode: "abutment",
           transfer: workingTransfer,
@@ -4072,7 +4061,6 @@ export function RequestorPracticeReceivePage({
     },
     [
       applyAcceptedLocalPatch,
-      beginWorkFilePreUpload,
       cardActionBusyId,
       designConfirmBusy,
       fetchRequestCaseInfos,

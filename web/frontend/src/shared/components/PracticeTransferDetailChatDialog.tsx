@@ -1079,7 +1079,7 @@ export function PracticeTransferDetailChatDialog({
     : remainingLabel
       ? `다시 수락 [${remainingLabel}]`
       : "다시 수락";
-  const releaseButtonLabel = releaseBusy ? "취소 중..." : "작업취소";
+  const releaseButtonLabel = releaseBusy ? "취소 중..." : "작업 취소";
   const releaseAction =
     showReleaseBar && onRelease ? (
       <TooltipProvider>

@@ -86,7 +86,7 @@ export function PracticeLabReceiveWorkActionsBar({
       ? `어벗 추가 업로드 (${state.designFileCount})`
       : "어벗 업로드";
   const prostheticButtonLabel = state.hasPartialProsthetic
-    ? `보철 추가 업로드 (${state.pendingProstheticCount})`
+    ? `보철 업로드 (${state.pendingProstheticCount})`
     : "보철 업로드";
   const showAbutmentUpload =
     state.hasAbutsCa && state.needsMoreAbutmentDesigns;
@@ -112,7 +112,7 @@ export function PracticeLabReceiveWorkActionsBar({
             onClick={(event) => void onAbutmentProductionCancel?.(event)}
           >
             <X className="h-3.5 w-3.5" />
-            {busy ? "처리 중..." : "어벗 생산 취소"}
+            {busy ? "처리 중..." : "어벗 취소"}
           </Button>
         </TooltipTrigger>
         <TooltipContent side="top" className="max-w-xs text-xs">
