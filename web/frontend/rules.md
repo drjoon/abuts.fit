@@ -650,6 +650,7 @@ Notes:
   - 의뢰상세·채팅 우측 상단 평가: 치과=`PracticeLabRatingControl`(1~5점만, 수행 기공소·하청 포함, 기공비 할인/할증 없음). **1점=검색 가능·주문 불가**(지정·어벗츠 하청 수행 동일, 버튼 툴팁). 하청 시 치과 표시는 원청명 + 「인증 협력 기공소에서 처리」(실명 비공개·확정 후에도 동일). 기공소=`LabPracticeFeeSurchargeControl` variant=`evaluate`(별점 없음, 해당 치과 수가 할증·다음 지정 의뢰부터). 설정 탭 거래처 할증은 동일 컴포넌트 variant=`surcharge`.
   - 치과 작성 폼: 기공소 픽커 옆 **별점 하한·상한**(기본 3~4). 구간 밖 기공소(어벗츠 포함)는 픽커·생성·재지정에서 제외. 하청 풀도 동일 구간.
   - 기공소 수신(상태=의뢰수락): 상세 모달 상단 업로드 CTA. **커스텀어벗 배송선택 모달 없음.** CA면 수락 시 Request(`design_custom_abutment`) 조기 생성. **수락 기공소가 디자인**해 상단 디자인 큐에서 STL 업로드 → 제조 자동 주문·어벗디자인비 지급. **생산 후 주문 기공소 수취**(출고 목표=치과도착일−2영업일). 레거시 미컨펌 건만 「어벗 디자인 확인」 CTA.
+  - CA 연동 「어벗 진행상황」(`getPracticeAbutmentDeliveryLabel` / `PRACTICE_ABUTMENT_PROGRESS_FIELD_LABEL`): 한진 운송·배송완료 우선, 없으면 제조 `manufacturerStages`를 준비·가공·세척·패킹·포장·발송·추적관리로 표시(구「생산 중」합침 없음). SSOT=`src/shared/shipping/hanjinTrackingLabel.ts`.
 
 
 - 드롭존 가입(치과 전용, requestor+practice)

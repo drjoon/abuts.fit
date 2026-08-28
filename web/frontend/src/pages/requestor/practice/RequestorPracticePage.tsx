@@ -46,6 +46,7 @@
 // - 2026-08-28: 상세 모달 workFileDrop — 수락 후 창 전체 드래그 업로드(카드와 동일 라우팅).
 // - 2026-08-21: 캘린더 전환 후 상세 모달에 어벗·보철 업로드 CTA 복원.
 // - 2026-08-21: 커스텀어벗 배송현황을 상세·캘린더에 표시(치과 발신과 동일).
+// - 2026-08-29: 상세 필드「어벗 진행상황」— 제조 공정(세척·패킹 등) 표시.
 // - 2026-08-20: 기공의뢰수신 캘린더 날짜 뱃지 기본=치과도착일. 계정 preferences에 저장.
 // - 2026-08-19: 리메이크는 공정 상태색 + 이중 외곽선.
 // - 2026-08-19: 기공의뢰수신 캘린더 칩·상단 뱃지를 상태색으로 구분.
@@ -253,8 +254,10 @@ import {
   buildPracticeTransferCalendarApiQuery,
 } from "@/shared/practice/labReceiveCalendarYmdRange";
 import {
+  PRACTICE_ABUTMENT_PROGRESS_FIELD_LABEL,
   getPracticeAbutmentDeliveryChipLabel,
   getPracticeAbutmentDeliveryLabel,
+  practiceAbutmentProgressValueClassName,
   type PracticeAbutmentDeliveryInfo,
 } from "@/shared/shipping/hanjinTrackingLabel";
 import {
@@ -5130,17 +5133,11 @@ export function RequestorPracticeReceivePage({
           ...(selectedTransferAbutmentDeliveryLabel
             ? [
                 {
-                  label: "커스텀어벗 배송",
+                  label: PRACTICE_ABUTMENT_PROGRESS_FIELD_LABEL,
                   value: selectedTransferAbutmentDeliveryLabel,
-                  valueClassName:
-                    selectedTransferAbutmentDeliveryLabel === "배송완료"
-                      ? "text-emerald-700"
-                      : selectedTransferAbutmentDeliveryLabel === "생산 전" ||
-                          selectedTransferAbutmentDeliveryLabel === "생산 준비" ||
-                          selectedTransferAbutmentDeliveryLabel === "생산 중" ||
-                          selectedTransferAbutmentDeliveryLabel === "출고 대기"
-                        ? "text-slate-600"
-                        : "text-amber-800",
+                  valueClassName: practiceAbutmentProgressValueClassName(
+                    selectedTransferAbutmentDeliveryLabel,
+                  ),
                 },
               ]
             : []),

@@ -47,8 +47,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  PRACTICE_ABUTMENT_PROGRESS_FIELD_LABEL,
   getPracticeAbutmentDeliveryChipLabel,
   getPracticeAbutmentDeliveryLabel,
+  practiceAbutmentProgressBadgeClassName,
 } from "@/shared/shipping/hanjinTrackingLabel";
 import type { PeriodFilterValue } from "@/shared/ui/PeriodFilter";
 import { cn } from "@/shared/ui/cn";
@@ -724,17 +726,10 @@ export function PracticeRecentTransfersAllModal({
                             </Badge>
                             {deliveryLabel ? (
                               <span
-                                className={
-                                  deliveryLabel === "배송완료"
-                                    ? "inline-block max-w-[9.5rem] truncate rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800"
-                                    : deliveryLabel === "생산 전" ||
-                                        deliveryLabel === "생산 준비" ||
-                                        deliveryLabel === "생산 중" ||
-                                        deliveryLabel === "출고 대기"
-                                      ? "inline-block max-w-[9.5rem] truncate rounded bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700"
-                                      : "inline-block max-w-[9.5rem] truncate rounded bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800"
-                                }
-                                title={`커스텀어벗 배송: ${deliveryLabel}`}
+                                className={practiceAbutmentProgressBadgeClassName(
+                                  deliveryLabel,
+                                )}
+                                title={`${PRACTICE_ABUTMENT_PROGRESS_FIELD_LABEL}: ${deliveryLabel}`}
                               >
                                 {deliveryLabel}
                               </span>

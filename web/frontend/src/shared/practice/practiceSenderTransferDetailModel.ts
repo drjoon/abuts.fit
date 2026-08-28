@@ -5,6 +5,7 @@
  * 2026-08-27: 재도착 이력 — 주문일→도착일 / 재주문일→재도착일 쌍 표시.
  * 2026-08-21: 커스텀어벗 한진 배송현황 요약 행.
  * 2026-08-21: 작업취소·휴지통 상태에서는 디자인 컨펌 CTA 숨김.
+ * 2026-08-29: 요약 필드「어벗 진행상황」— 제조 공정 라벨 표시.
  */
 import type {
   PracticeRecentTransferFileItem,
@@ -19,7 +20,11 @@ import type {
   PracticeTransferDialogSummaryItem,
 } from "@/shared/components/PracticeTransferDetailChatDialog";
 import { buildPracticeWorkPeriodSummaryItem } from "@/shared/practice/practiceWorkPeriod";
-import { getPracticeAbutmentDeliveryLabel } from "@/shared/shipping/hanjinTrackingLabel";
+import {
+  PRACTICE_ABUTMENT_PROGRESS_FIELD_LABEL,
+  getPracticeAbutmentDeliveryLabel,
+  practiceAbutmentProgressValueClassName,
+} from "@/shared/shipping/hanjinTrackingLabel";
 
 const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -237,17 +242,10 @@ export function buildPracticeSenderTransferDetailModel(
       ...(abutmentDeliveryLabel
         ? [
             {
-              label: "커스텀어벗 배송",
+              label: PRACTICE_ABUTMENT_PROGRESS_FIELD_LABEL,
               value: abutmentDeliveryLabel,
               valueClassName:
-                abutmentDeliveryLabel === "배송완료"
-                  ? "text-emerald-700"
-                  : abutmentDeliveryLabel === "생산 전" ||
-                      abutmentDeliveryLabel === "생산 준비" ||
-                      abutmentDeliveryLabel === "생산 중" ||
-                      abutmentDeliveryLabel === "출고 대기"
-                    ? "text-slate-600"
-                    : "text-amber-800",
+                practiceAbutmentProgressValueClassName(abutmentDeliveryLabel),
             },
           ]
         : []),
