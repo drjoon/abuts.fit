@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-28: lab-handoff — 현재 파일 S3 업로드 프로그레스바.
 // - 2026-08-28: z-[320]/overlay z-[310] — 플로팅 의뢰상세(z-300) 위에 3D 확인 모달.
 // - 2026-08-16: lab-handoff confirmLabel·progressLabel(다파일 큐).
 // - 2026-08-16: 어벗생산의뢰·기공의뢰수신 공통 3D 확인 다이얼로그로 통합.
@@ -29,6 +30,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
 import { cn } from "@/shared/ui/cn";
 import type {
   CaseInfos,
@@ -117,6 +119,9 @@ export type AbutmentModelConfirmDialogProps = {
   confirmLabel?: string;
   /** 다파일 큐 진행 표시 (예: 1/3) */
   progressLabel?: string;
+  /** 현재 파일 S3 사전업로드 진행률(0~100). null이면 숨김 */
+  fileUploadPercent?: number | null;
+  fileUploadLabel?: string | null;
 };
 
 export function AbutmentModelConfirmDialog({
@@ -165,10 +170,17 @@ export function AbutmentModelConfirmDialog({
   confirming = false,
   confirmLabel,
   progressLabel,
+  fileUploadPercent = null,
+  fileUploadLabel = null,
 }: AbutmentModelConfirmDialogProps) {
   const isLabHandoff = variant === "lab-handoff";
   const labConfirmLabel = String(confirmLabel || "").trim() || "확인 & 업로드";
   const labProgressLabel = String(progressLabel || "").trim();
+  const uploadPercent =
+    typeof fileUploadPercent === "number" && Number.isFinite(fileUploadPercent)
+      ? Math.max(0, Math.min(100, Math.round(fileUploadPercent)))
+      : null;
+  const uploadLabel = String(fileUploadLabel || "").trim();
   const [showNewSystemForm, setShowNewSystemForm] = useState(false);
   const [newSystemManufacturer, setNewSystemManufacturer] = useState("");
   const [newSystemBrand, setNewSystemBrand] = useState("");
@@ -283,6 +295,22 @@ export function AbutmentModelConfirmDialog({
                 : "3D 모델을 확인하고 환자/임플란트 정보를 입력한 뒤 다음 케이스로 이동합니다."}
             </DialogDescription>
           </DialogHeader>
+
+          {uploadPercent != null ? (
+            <div
+              className="shrink-0 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2"
+              role="status"
+              aria-live="polite"
+            >
+              <div className="mb-1.5 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                <span className="truncate font-medium text-foreground">
+                  {uploadLabel || "파일 업로드 중…"}
+                </span>
+                <span className="shrink-0 tabular-nums">{uploadPercent}%</span>
+              </div>
+              <Progress value={uploadPercent} className="h-1.5" />
+            </div>
+          ) : null}
 
           <div className="grid min-h-0 flex-1 grid-cols-1 items-stretch gap-3 sm:pr-2 lg:grid-cols-[52%_48%]">
             <div className="app-glass-card app-glass-card--lg flex h-full min-h-[240px] flex-col !p-2 gap-2">

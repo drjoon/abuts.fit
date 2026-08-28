@@ -4,6 +4,7 @@
 // - web/frontend/src/shared/components/practice/RetentionGrooveField.tsx
 // - web/backend/controllers/requests/designHandoff.controller.js
 // change-log:
+// - 2026-08-28: 현재 파일 S3 업로드 프로그레스를 확인 모달에 전달.
 // - 2026-08-16: teethOptions — 남은 CA 치아를 확인 모달에서 직접 선택(지정 다이얼로그 생략).
 // - 2026-08-16: 다파일 큐 progress·확인 버튼 라벨 전달.
 // - 2026-08-16: AbutmentModelConfirmDialog(lab-handoff) 어댑터로 통합.
@@ -43,6 +44,9 @@ type Props = {
   queueTotal?: number;
   /** 남은 치아 선택지(없으면 자유 입력) */
   teethOptions?: { id: string; label: string }[];
+  /** 현재 파일 S3 사전업로드 */
+  fileUploadPercent?: number | null;
+  fileUploadLabel?: string | null;
   onConfirm: (caseInfos: AbutmentDesignConfirmCaseInfos) => void | Promise<void>;
   onCancel?: () => void;
 };
@@ -86,6 +90,8 @@ export function AbutmentDesignConfirmDialog({
   queueCurrent,
   queueTotal,
   teethOptions = emptyOptions,
+  fileUploadPercent = null,
+  fileUploadLabel = null,
   onConfirm,
   onCancel,
 }: Props) {
@@ -301,6 +307,8 @@ export function AbutmentDesignConfirmDialog({
       confirming={confirming}
       confirmLabel={queueProgress.confirmLabel}
       progressLabel={queueProgress.progressLabel}
+      fileUploadPercent={fileUploadPercent}
+      fileUploadLabel={fileUploadLabel}
       onRetentionGrooveAccountSave={onRetentionGrooveAccountSave}
     />
   );

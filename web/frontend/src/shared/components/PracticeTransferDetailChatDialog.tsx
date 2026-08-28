@@ -32,6 +32,12 @@
 // - 2026-08-27: 재도착일 — 오늘=재주문일·선택일=재도착일 동시 누적(주문일/도착일 캘린더).
 // - 2026-08-27: 재도착일 — 오늘 이후 1개만(다시 고르면 교체). 과거·오늘만 캘린더 이력.
 // - 2026-08-27: 치과도착일 옆 「재도착일」날짜 선택(누적·과금 없음).
+// - 2026-08-28: 드롭 안내 — primary 짙은 파랑·채팅 영역 상단 고정.
+// - 2026-08-28: 드롭존 활성 시 채팅 메시지 opacity로 살짝 흐리게.
+// - 2026-08-28: 채팅 드롭존 — 메시지는 위, 안내/업로드바는 하단 고정.
+// - 2026-08-28: 채팅 드롭존 — 드롭/파일오픈 업로드 프로그레스바.
+// - 2026-08-28: 채팅 드롭존 — 드래그 안내 아래 업로드 결과(생산 시작·작업 완료) 한 줄.
+// - 2026-08-28: 작업완료 단계 수락 바 — flex-wrap justify-end 제거(CTA 바가 자체 2단 배치).
 // - 2026-08-27: 치과도착일 +1주 누적(동일 건·크레딧 미중복).
 // - 2026-08-23: 작업 파일 STL/PLY/OBJ 타일에 3D 썸네일 표시.
 // - 2026-08-23: 미제공 CA 안내 1줄 압축·수락 바 중복 안내 제거로 채팅 높이 확보.
@@ -215,8 +221,14 @@ export type PracticeTransferWorkFileDropConfig = {
   disabled?: boolean;
   /** 채팅 드롭존 중앙 안내(메시지 유무와 무관) */
   guideText: string;
+  /** guideText 아래 한 줄(업로드 결과 안내 등) */
+  guideDetail?: string;
   /** 드래그 오버레이 부제. 미지정 시 PRACTICE_ACCEPTED_HINT */
   dropHint?: string;
+  /** 드롭/파일오픈 직후 S3 사전업로드·제출 진행률(0~100) */
+  uploadProgressPercent?: number | null;
+  /** 예: 업로드 중… 45% / 처리 중… */
+  uploadProgressLabel?: string | null;
 };
 
 type PracticeTransferDetailChatDialogProps = {
@@ -1036,6 +1048,18 @@ export function PracticeTransferDetailChatDialog({
     workFileDrop && !workFileDrop.disabled && !minimized,
   );
   const workFileDropGuideText = String(workFileDrop?.guideText || "").trim();
+  const workFileDropGuideDetail = String(
+    workFileDrop?.guideDetail || "",
+  ).trim();
+  const workFileDropUploadPercent =
+    typeof workFileDrop?.uploadProgressPercent === "number" &&
+    Number.isFinite(workFileDrop.uploadProgressPercent)
+      ? Math.max(0, Math.min(100, Math.round(workFileDrop.uploadProgressPercent)))
+      : null;
+  const workFileDropUploadLabel = String(
+    workFileDrop?.uploadProgressLabel || "",
+  ).trim();
+  const workFileDropUploading = workFileDropUploadPercent != null;
   /** 지정 기공소: 스캔 없이도 수락 가능. 자동매칭(practice_required)만 차단 */
   const oralScanBlocksAccept = oralScanAttachMode === "practice_required";
   const rawChatError = String(chatError || "").trim();
@@ -1827,7 +1851,7 @@ export function PracticeTransferDetailChatDialog({
               accepted &&
               !workCanceled &&
               resolvedAcceptedWorkActions ? (
-                <div className="shrink-0 border-b bg-muted/40 px-3 py-2 flex flex-wrap items-center justify-end gap-2">
+                <div className="shrink-0 border-b bg-muted/40 px-3 py-2">
                   {resolvedAcceptedWorkActions}
                 </div>
               ) : null}
@@ -1835,29 +1859,58 @@ export function PracticeTransferDetailChatDialog({
               <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_auto] overflow-hidden">
                 <div
                   className={cn(
-                    "relative min-h-0",
+                    "relative flex min-h-0 flex-col",
                     workFileDropActive &&
                       "m-2 rounded-md border-2 border-dashed border-primary/45 bg-primary/[0.03]",
                   )}
                 >
-                  {workFileDropGuideText &&
-                  !chatLoading &&
-                  !visibleChatError ? (
+                  {workFileDropUploading ? (
                     <div
-                      className="pointer-events-none absolute inset-0 z-0 flex flex-col items-center justify-center gap-2.5 px-4 text-center"
+                      className="pointer-events-none z-[2] shrink-0 border-b border-primary/25 bg-primary px-3 py-2.5 text-primary-foreground"
+                      role="status"
+                      aria-live="polite"
+                    >
+                      <div className="mx-auto flex w-full max-w-sm flex-col gap-1.5">
+                        <div className="flex items-center justify-between gap-2 text-xs">
+                          <span className="truncate font-medium">
+                            {workFileDropUploadLabel || "업로드 중…"}
+                          </span>
+                          <span className="shrink-0 tabular-nums opacity-90">
+                            {workFileDropUploadPercent}%
+                          </span>
+                        </div>
+                        <Progress
+                          value={workFileDropUploadPercent}
+                          className="h-1.5 bg-primary-foreground/25 [&>div]:bg-primary-foreground"
+                        />
+                      </div>
+                    </div>
+                  ) : workFileDropGuideText &&
+                    !chatLoading &&
+                    !visibleChatError ? (
+                    <div
+                      className="pointer-events-none z-[2] shrink-0 bg-primary px-3 py-2.5 text-center text-primary-foreground"
                       aria-hidden
                     >
-                      {chatMessages.length === 0 ? (
-                        <p className="text-sm text-muted-foreground">
-                          아직 메시지가 없습니다.
-                        </p>
-                      ) : null}
-                      <p className="max-w-xs text-base font-semibold leading-snug text-primary sm:text-lg">
+                      <p className="text-sm font-semibold leading-snug">
                         {workFileDropGuideText}
                       </p>
+                      {workFileDropGuideDetail ? (
+                        <p className="mt-0.5 text-xs leading-snug text-primary-foreground/85">
+                          {workFileDropGuideDetail}
+                        </p>
+                      ) : null}
                     </div>
                   ) : null}
-                  <div className="custom-scrollbar relative z-[1] h-full min-h-0 overflow-y-auto overscroll-contain">
+
+                  <div
+                    className={cn(
+                      "custom-scrollbar relative z-[1] min-h-0 flex-1 overflow-y-auto overscroll-contain transition-opacity",
+                      workFileDropActive &&
+                        !workFileDropUploading &&
+                        "opacity-45",
+                    )}
+                  >
                     <div className="w-full min-w-0 max-w-full space-y-2 px-3 py-1.5 sm:px-4 sm:py-2">
                       {chatLoading ? (
                         <div className="py-4 text-center text-xs text-muted-foreground">
@@ -1875,9 +1928,8 @@ export function PracticeTransferDetailChatDialog({
 
                       {!chatLoading &&
                       !visibleChatError &&
-                      chatMessages.length === 0 &&
-                      !workFileDropGuideText ? (
-                        <div className="py-6 text-center text-sm text-muted-foreground">
+                      chatMessages.length === 0 ? (
+                        <div className="py-4 text-center text-sm text-muted-foreground">
                           아직 메시지가 없습니다.
                         </div>
                       ) : null}

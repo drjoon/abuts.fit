@@ -25,6 +25,9 @@
 // - web/frontend/src/shared/practice/labReceiveCalendarHiddenWeekdays.ts
 // - web/backend/utils/labReceiveCalendarHiddenWeekdays.util.js
 // - web/backend/controllers/users/user.controller.js
+// - 2026-08-28: 드롭/파일오픈 — 채팅 드롭존·확인 모달에 업로드 프로그레스바.
+// - 2026-08-28: 채팅 드롭존 guideDetail — 어벗 생산 시작·보철 업로드 시 작업 완료 안내.
+// - 2026-08-28: 작업 완료 취소를 업로드 CTA 바 trailing으로 넣어 2줄 레이아웃 유지.
 // - 2026-08-28: 검색 입력 — 캘린더 주문일·도착일 뱃지 왼쪽(치과 기공의뢰와 동일).
 // - 2026-08-28: 치과 메모 [작성] 왼쪽·[평가] 오른쪽. 헤더 할증라벨 제거·설정 시 배수만.
 // - 2026-08-27: 미확인은 3주 창 밖이어도 목록·안내 바에 포함(사이드바 배지와 맞춤). 클릭 시 해당일로 점프.
@@ -164,7 +167,8 @@ import { useChatMessages } from "@/shared/hooks/useChatMessages";
 import { useChatRooms, type ChatRoom } from "@/shared/hooks/useChatRooms";
 import { anonymizeAutoMatchChatSenderName } from "@/shared/practice/autoMatchIdentity";
 import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
-import { useFilePreUpload } from "@/shared/hooks/useFilePreUpload";
+import { useFilePreUpload, toTempUploadFileKey } from "@/shared/hooks/useFilePreUpload";
+import type { PreUploadFileProgress } from "@/shared/hooks/useFilePreUpload";
 import {
   toChatMessageAttachments,
   useBackgroundTempUpload,
@@ -227,7 +231,11 @@ import {
   PRACTICE_TRANSFER_ACCEPT,
   PRACTICE_TRANSFER_STL_ACCEPT,
 } from "@/shared/practice/practiceTransferAccept";
-import { PracticeLabReceiveWorkActionsBar } from "@/shared/components/practice/PracticeLabReceiveWorkActionsBar";
+import {
+  LAB_RECEIVE_ABUTMENT_UPLOAD_HINT,
+  LAB_RECEIVE_PROSTHETIC_UPLOAD_HINT,
+  PracticeLabReceiveWorkActionsBar,
+} from "@/shared/components/practice/PracticeLabReceiveWorkActionsBar";
 import {
   pickPracticeTransferFilesViaInput,
 } from "@/shared/components/practice/PracticeTransferFileDropTarget";
@@ -682,6 +690,19 @@ export function RequestorPracticeReceivePage({
   const designConfirmFile = designConfirmEntry?.file || null;
   const designConfirmRequestId = designConfirmEntry?.requestId || "";
   const designConfirmCaseInfos = designConfirmEntry?.caseInfos || null;
+  const designConfirmFileUpload = useMemo(() => {
+    if (!designConfirmFile || !designConfirmOpen) return null;
+    const progress = uploadProgress[toTempUploadFileKey(designConfirmFile)];
+    if (!progress) {
+      return { percent: 0, label: "파일 업로드 중…" };
+    }
+    if (progress.status === "done") return null;
+    if (progress.status === "error") {
+      return { percent: progress.percent, label: "업로드 실패" };
+    }
+    const percent = Math.max(0, Math.min(100, Math.round(progress.percent)));
+    return { percent, label: `파일 업로드 중… ${percent}%` };
+  }, [designConfirmFile, designConfirmOpen, uploadProgress]);
   const designConfirmTeethOptions = useMemo(() => {
     const fromPending = designConfirmPendingMetas
       .map((meta) => String(meta.tooth || "").trim())
@@ -701,6 +722,10 @@ export function RequestorPracticeReceivePage({
   const [workUploadState, setWorkUploadState] =
     useState<LabReceiveWorkUploadState | null>(null);
   const [workUploadBusy, setWorkUploadBusy] = useState(false);
+  /** 드롭/파일오픈으로 시작한 S3 사전업로드 추적(채팅 드롭존 프로그레스) */
+  const [workUploadTrackedFiles, setWorkUploadTrackedFiles] = useState<File[]>(
+    [],
+  );
   const { connections } = useNewRequestImplant({ token });
   const [activeChatRoom, setActiveChatRoom] = useState<ChatRoom | null>(null);
   const [chatError, setChatError] = useState("");
@@ -2725,12 +2750,97 @@ export function RequestorPracticeReceivePage({
     [buildResultFilePayloadFromAssignments, mapApiResultFiles, toast, token],
   );
 
-  const openWorkUploadDialog = useCallback(
-    (state: LabReceiveWorkUploadState) => {
-      preUploadFiles(state.files);
-      setWorkUploadState(state);
+  const beginWorkFilePreUpload = useCallback(
+    (files: File[]) => {
+      const next = Array.from(files || []).filter(Boolean);
+      if (!next.length) return;
+      setWorkUploadTrackedFiles(next);
+      preUploadFiles(next);
     },
     [preUploadFiles],
+  );
+
+  const workUploadProgressSummary = useMemo(() => {
+    const files =
+      workUploadTrackedFiles.length > 0
+        ? workUploadTrackedFiles
+        : workUploadState?.files ||
+          designConfirmQueue.map((row) => row.file) ||
+          [];
+    if (!files.length) {
+      if (workUploadBusy) {
+        return { active: true, percent: 100, label: "처리 중…" };
+      }
+      return null;
+    }
+    let sum = 0;
+    let uploading = 0;
+    let done = 0;
+    let error = 0;
+    for (const file of files) {
+      const progress = uploadProgress[toTempUploadFileKey(file)] as
+        | PreUploadFileProgress
+        | undefined;
+      if (!progress) {
+        uploading += 1;
+        continue;
+      }
+      sum += Math.max(0, Math.min(100, progress.percent));
+      if (progress.status === "done") done += 1;
+      else if (progress.status === "error") error += 1;
+      else uploading += 1;
+    }
+    const percent = Math.round(sum / files.length);
+    const s3Active = uploading > 0 || done + error < files.length;
+    if (workUploadBusy) {
+      return {
+        active: true,
+        percent: s3Active ? percent : 100,
+        label: s3Active ? `업로드 중… ${percent}%` : "처리 중…",
+      };
+    }
+    if (!s3Active) return null;
+    return {
+      active: true,
+      percent,
+      label: `업로드 중… ${percent}%`,
+    };
+  }, [
+    designConfirmQueue,
+    uploadProgress,
+    workUploadBusy,
+    workUploadState?.files,
+    workUploadTrackedFiles,
+  ]);
+
+  useEffect(() => {
+    if (workUploadBusy) return;
+    if (workUploadState) return;
+    if (designConfirmOpen) return;
+    if (!workUploadTrackedFiles.length) return;
+    const allSettled = workUploadTrackedFiles.every((file) => {
+      const progress = uploadProgress[toTempUploadFileKey(file)];
+      return progress?.status === "done" || progress?.status === "error";
+    });
+    if (!allSettled) return;
+    const timer = window.setTimeout(() => {
+      setWorkUploadTrackedFiles([]);
+    }, 600);
+    return () => window.clearTimeout(timer);
+  }, [
+    designConfirmOpen,
+    uploadProgress,
+    workUploadBusy,
+    workUploadState,
+    workUploadTrackedFiles,
+  ]);
+
+  const openWorkUploadDialog = useCallback(
+    (state: LabReceiveWorkUploadState) => {
+      beginWorkFilePreUpload(state.files);
+      setWorkUploadState(state);
+    },
+    [beginWorkFilePreUpload],
   );
 
   const resolveProstheticAssignments = useCallback(
@@ -2773,7 +2883,7 @@ export function RequestorPracticeReceivePage({
     }) => {
       const { transfer, assignments, pendingSlotCount, splitMode } = params;
       if (!assignments.length || workUploadBusy) return false;
-      preUploadFiles(assignments.map((row) => row.file));
+      beginWorkFilePreUpload(assignments.map((row) => row.file));
       setWorkUploadBusy(true);
       setCardActionBusyId(String(transfer.transferId || transfer._id || ""));
       try {
@@ -2791,8 +2901,8 @@ export function RequestorPracticeReceivePage({
     },
     [
       appendTransferResultFiles,
+      beginWorkFilePreUpload,
       markTransferComplete,
-      preUploadFiles,
       workUploadBusy,
     ],
   );
@@ -2853,7 +2963,7 @@ export function RequestorPracticeReceivePage({
       }
 
       if (nextFiles.length < slotOptions.length) {
-        preUploadFiles(nextFiles);
+        beginWorkFilePreUpload(nextFiles);
         setSplitAskState({
           mode: "prosthetic",
           transfer,
@@ -2902,9 +3012,9 @@ export function RequestorPracticeReceivePage({
       });
     },
     [
+      beginWorkFilePreUpload,
       cardActionBusyId,
       openWorkUploadDialog,
-      preUploadFiles,
       resolveProstheticAssignments,
       submitProstheticAssignments,
       toast,
@@ -3729,7 +3839,7 @@ export function RequestorPracticeReceivePage({
       pendingMetas: AbutmentPendingMeta[],
     ) => {
       if (!files.length || !pendingMetas.length) return;
-      preUploadFiles(files);
+      beginWorkFilePreUpload(files);
       const fileTeeth = await resolveAbutmentDesignTeethFromFiles(files);
       const usedRequestIds = new Set<string>();
       const queue: Array<{
@@ -3782,8 +3892,8 @@ export function RequestorPracticeReceivePage({
       setDesignConfirmOpen(true);
     },
     [
+      beginWorkFilePreUpload,
       buildDesignConfirmDefaults,
-      preUploadFiles,
       resolveAbutmentDesignTeethFromFiles,
       toast,
     ],
@@ -3943,7 +4053,7 @@ export function RequestorPracticeReceivePage({
       }
 
       if (stlFiles.length < pendingMetas.length) {
-        preUploadFiles(stlFiles);
+        beginWorkFilePreUpload(stlFiles);
         setSplitAskState({
           mode: "abutment",
           transfer: workingTransfer,
@@ -3962,13 +4072,13 @@ export function RequestorPracticeReceivePage({
     },
     [
       applyAcceptedLocalPatch,
+      beginWorkFilePreUpload,
       cardActionBusyId,
       designConfirmBusy,
       fetchRequestCaseInfos,
       mergeProductionRelatedRequestIds,
       openAbutmentDesignConfirmQueue,
       pickRelatedRequestIdsFromPayload,
-      preUploadFiles,
       toast,
       token,
       workUploadBusy,
@@ -4402,12 +4512,22 @@ export function RequestorPracticeReceivePage({
       guideText: needsAbutment
         ? "어벗 STL을 여기에 드래그하세요"
         : "보철 파일을 여기에 드래그하세요",
+      guideDetail: needsAbutment
+        ? LAB_RECEIVE_ABUTMENT_UPLOAD_HINT
+        : LAB_RECEIVE_PROSTHETIC_UPLOAD_HINT,
       dropHint: needsAbutment ? "어벗 STL" : undefined,
+      uploadProgressPercent: workUploadProgressSummary?.active
+        ? workUploadProgressSummary.percent
+        : null,
+      uploadProgressLabel: workUploadProgressSummary?.active
+        ? workUploadProgressSummary.label
+        : null,
     };
   }, [
     selectedTransfer,
     cardActionBusyId,
     workUploadBusy,
+    workUploadProgressSummary,
     handleCardDropFiles,
   ]);
 
@@ -4795,6 +4915,8 @@ export function RequestorPracticeReceivePage({
         queueTotal={
           designConfirmQueue.length > 0 ? designConfirmQueue.length : undefined
         }
+        fileUploadPercent={designConfirmFileUpload?.percent ?? null}
+        fileUploadLabel={designConfirmFileUpload?.label ?? null}
         onConfirm={handleDesignConfirmSubmit}
         onCancel={clearDesignConfirmState}
       />
@@ -5158,50 +5280,48 @@ export function RequestorPracticeReceivePage({
             selectedTransfer.transferId || selectedTransfer._id || "",
           );
           const rowBusy = cardActionBusyId === transferKey || workUploadBusy;
+          const completedCancelAction = workState.showCompletedStageHeaderCancel ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={cardActionBusyId === transferKey}
+              className="h-8"
+              onClick={(event) =>
+                void handleCardAbutmentProductionCancel(
+                  selectedTransfer,
+                  event,
+                )
+              }
+            >
+              {cardActionBusyId === transferKey
+                ? "처리 중..."
+                : "작업 완료 취소"}
+            </Button>
+          ) : null;
           return (
-            <>
-              <PracticeLabReceiveWorkActionsBar
-                transfer={selectedTransfer}
-                busy={rowBusy}
-                designConfirmBusy={designConfirmBusyId === transferKey}
-                showProductionCancelInBar
-                trailingActions={releaseAction}
-                onDesignUpload={(event) =>
-                  void handleCardDesignUpload(selectedTransfer, event)
-                }
-                onAbutmentProductionCancel={(event) =>
-                  void handleCardAbutmentProductionCancel(
-                    selectedTransfer,
-                    event,
-                  )
-                }
-                onComplete={(event) =>
-                  void handleCardComplete(selectedTransfer, event)
-                }
-                onDesignConfirm={() => {
-                  void confirmAbutmentDesign(selectedTransfer);
-                }}
-              />
-              {workState.showCompletedStageHeaderCancel ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={cardActionBusyId === transferKey}
-                  className="h-8"
-                  onClick={(event) =>
-                    void handleCardAbutmentProductionCancel(
-                      selectedTransfer,
-                      event,
-                    )
-                  }
-                >
-                  {cardActionBusyId === transferKey
-                    ? "처리 중..."
-                    : "작업 완료 취소"}
-                </Button>
-              ) : null}
-            </>
+            <PracticeLabReceiveWorkActionsBar
+              transfer={selectedTransfer}
+              busy={rowBusy}
+              designConfirmBusy={designConfirmBusyId === transferKey}
+              showProductionCancelInBar
+              trailingActions={completedCancelAction || releaseAction}
+              onDesignUpload={(event) =>
+                void handleCardDesignUpload(selectedTransfer, event)
+              }
+              onAbutmentProductionCancel={(event) =>
+                void handleCardAbutmentProductionCancel(
+                  selectedTransfer,
+                  event,
+                )
+              }
+              onComplete={(event) =>
+                void handleCardComplete(selectedTransfer, event)
+              }
+              onDesignConfirm={() => {
+                void confirmAbutmentDesign(selectedTransfer);
+              }}
+            />
           );
         }}
         chatLoading={chatLoading}
