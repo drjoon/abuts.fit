@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-08-29: 세척.패킹「출력 완료」뱃지를 하단 → 오른쪽 로트/스크류 스택 아래로 이동.
+// - 2026-08-29: 의뢰카드 RequestInfoSummary에 출고예정일·실제 출고일시(shippedAt) 전달.
 // - 2026-08-18: 준비 탭 의뢰카드에 로트번호 3글자 뱃지 표시.
 // - 2026-08-17: 환자 호버 직납 치과 툴팁 — resolvePracticeDirectShippingContact 사용.
 // - 2026-08-21: 준비 탭 라이노 완료 SSOT=`stlFile.s3Key`(legacy camFile 폴백).
@@ -607,7 +609,8 @@ export const WorksheetCardGrid = ({
         const showSideSpecBadges =
           shouldShowAnodizingOffBadge ||
           showLotShortBadge ||
-          (tabStage === "packing" && Boolean(resolvedConnectionSpec.screwType));
+          (tabStage === "packing" && Boolean(resolvedConnectionSpec.screwType)) ||
+          (tabStage === "packing" && isPrinted);
 
         const hasTopFloatingControls =
           Boolean(onToggleSelected) ||
@@ -1044,10 +1047,6 @@ export const WorksheetCardGrid = ({
                     스크류 {resolvedConnectionSpec.screwType}
                   </Badge>
                 )}
-              </div>
-            )}
-            {hasBottomFloatingBadges ? (
-              <div className="absolute right-2 bottom-2 z-20 flex items-center gap-1 flex-nowrap">
                 {tabStage === "packing" && isPrinted && (
                   <Badge
                     variant="outline"
@@ -1056,6 +1055,10 @@ export const WorksheetCardGrid = ({
                     ✓ 출력 완료
                   </Badge>
                 )}
+              </div>
+            )}
+            {hasBottomFloatingBadges ? (
+              <div className="absolute right-2 bottom-2 z-20 flex items-center gap-1 flex-nowrap">
                 {shouldShowFullLot && (
                   <Badge variant="outline" className={`${lotBadgeClass} whitespace-nowrap`}>
                     {lotCodeSource}
@@ -1128,6 +1131,16 @@ export const WorksheetCardGrid = ({
                   }
                   clinicName={caseInfos.clinicName}
                   createdAt={request.createdAt}
+                  shippedAt={
+                    request.deliveryInfoRef &&
+                    typeof request.deliveryInfoRef === "object"
+                      ? ((request.deliveryInfoRef as { shippedAt?: string | Date | null })
+                          .shippedAt ?? null)
+                      : null
+                  }
+                  estimatedShipYmd={
+                    request.timeline?.estimatedShipYmd || null
+                  }
                   patientName={caseInfos.patientName}
                   tooth={caseInfos.tooth}
                   connectionDiameter={displayConnectionDiameter}

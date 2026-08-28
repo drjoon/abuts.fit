@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-29: 프리뷰 요약에 실제 출고일시(shippedAt) 전달(있으면 출고예정일보다 우선).
 // - 2026-08-25: 추적관리 프리뷰 오른쪽을 NC코드/각인이미지 탭 뷰어로 변경(앞에서 생성한 파일 확인).
 // - 2026-08-25: 관리자 헥스 확정 시 PreviewModal 헥스 Select 비활성(제조사 변경 불가).
 // - 2026-08-23: Dialog 기본 닫기(X) 표시. 승인 처리 중에는 닫기·오버레이 닫기 차단.
@@ -2671,6 +2672,13 @@ export const PreviewModal = ({
               overlayCaseInfos?.clinicName || overlayFlat?.clinicName
             }
             createdAt={activeReq?.createdAt}
+            shippedAt={
+              activeReq?.deliveryInfoRef &&
+              typeof activeReq.deliveryInfoRef === "object"
+                ? ((activeReq.deliveryInfoRef as { shippedAt?: string | Date | null })
+                    .shippedAt ?? null)
+                : null
+            }
             patientName={
               overlayCaseInfos?.patientName || overlayFlat?.patientName
             }

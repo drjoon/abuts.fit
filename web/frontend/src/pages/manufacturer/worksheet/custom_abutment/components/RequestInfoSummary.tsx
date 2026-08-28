@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-29: 주문일시 옆에 출고일시(shippedAt) 표시. 없으면 출고예정일(estimatedShipYmd) 유지.
 // - 2026-08-23: PreviewModal row: 섹션 라벨을 내용 왼쪽에 인라인 배치하고 환자 일정을 한 줄로 묶어 요약 카드 세로 높이 축소.
 // - 2026-08-23: PreviewModal row: 폰 가로(landscape)에서도 섹션 가로 배치로 STL 세로 공간 확보.
 // - 2026-08-22: 주문 일자(createdAt) 표시에 KST 시각 포함(formatKstDateTimeToKo).
@@ -41,7 +42,10 @@ export type RequestInfoSummaryProps = {
   /** 기공소명(의뢰 사업자). 상단 조직 줄에만 사용 */
   requestorLabel?: string | null;
   clinicName?: string | null;
+  /** 주문일시(의뢰 생성) */
   createdAt?: string | Date | null;
+  /** 실제 출고일시(deliveryInfo.shippedAt). 있으면 estimatedShipYmd보다 우선 */
+  shippedAt?: string | Date | null;
   patientName?: string | null;
   tooth?: string | number | null;
   connectionDiameter?: number | null;
@@ -57,7 +61,7 @@ export type RequestInfoSummaryProps = {
   className?: string;
   /** 카드 본문 앞에 붙일 보조 배지/상태 행 */
   leadingSlot?: ReactNode;
-  /** 출고예정일 YYYY-MM-DD. 환자 첫 줄에 인라인 표시 */
+  /** 출고예정일 YYYY-MM-DD. shippedAt 없을 때 환자 첫 줄에 인라인 표시 */
   estimatedShipYmd?: string | null;
   /** 마감까지 남은시간. 환자 첫 줄에 인라인 뱃지 */
   deadlineInfo?: Pick<DeadlineInfo, "displayText" | "badgeClass"> | null;
@@ -99,7 +103,7 @@ function formatOrderDateTime(value?: string | Date | null): string {
   return formatted === "-" ? "" : formatted;
 }
 
-/** YYYY-MM-DD → 출고 M.D */
+/** YYYY-MM-DD → 출고 M.D (예정) */
 function formatShipYmdLabel(ymd?: string | null): string {
   const raw = String(ymd || "").trim();
   const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -108,6 +112,12 @@ function formatShipYmdLabel(ymd?: string | null): string {
   const day = Number(m[3]);
   if (!month || !day) return "";
   return `출고 ${month}.${day}`;
+}
+
+/** 실제 출고일시 → 출고 {KST datetime} */
+function formatShippedAtLabel(value?: string | Date | null): string {
+  const formatted = formatOrderDateTime(value);
+  return formatted ? `출고 ${formatted}` : "";
 }
 
 function Dot() {
@@ -166,6 +176,7 @@ export function RequestInfoSummary({
   requestorLabel,
   clinicName,
   createdAt,
+  shippedAt,
   patientName,
   tooth,
   connectionDiameter,
@@ -185,7 +196,9 @@ export function RequestInfoSummary({
   const labName = String(requestorLabel || "").trim();
   const clinic = String(clinicName || "").trim();
   const dateLabel = formatOrderDateTime(createdAt);
-  const shipLabel = formatShipYmdLabel(estimatedShipYmd);
+  // 실제 출고일시 우선. 없으면 출고예정일(날짜만).
+  const shipLabel =
+    formatShippedAtLabel(shippedAt) || formatShipYmdLabel(estimatedShipYmd);
   const deadlineText = String(deadlineInfo?.displayText || "").trim();
   const deadlineBadgeClass = String(deadlineInfo?.badgeClass || "").trim();
   const patient = String(patientName || "").trim() || "미지정";

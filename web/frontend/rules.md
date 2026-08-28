@@ -338,7 +338,7 @@ Notes:
   - PreviewModal 폭: `RESPONSIVE.dialogContentPreview` — Dialog 기본 `sm:max-w-lg`를 `sm:max-w-[min(1680px,…)]`로 덮어써야 PC에서 ~512px로 찌그러지지 않습니다. 폰 세로는 STL 세로 스택·스크롤, 폰 가로는 `landscape:grid-cols-2`.
   - 넓은 Dialog/모달은 반드시 `sm:max-w-*`(또는 `sm:max-w-none`)를 넣는다. unprefixed `max-w-2xl`/`max-w-none`만으로는 Dialog 기본 `sm:max-w-lg`가 남는다.
   - 중복 금지 / 배치:
-    - 상단 조직 줄: 기공소명(`requestor.business|business.name|requestorBusinessAnchor.name|requestor.name`) · 날짜. 기공소명은 1회만.
+    - 상단 조직 줄: 기공소명(`requestor.business|business.name|requestorBusinessAnchor.name|requestor.name`) · 주문일시(`createdAt`) · 출고일시(`deliveryInfo.shippedAt`, 없으면 출고예정 `estimatedShipYmd`→`출고 M.D`). 기공소명은 1회만.
     - 환자 줄: `치과명 / 환자명 / 치아` (치과명·환자명 나란히, 옆 치아번호).
     - 기공소명과 치과명이 같거나 포함 관계면 환자 줄에서 치과명을 생략합니다.
     - PreviewModal에서 STL 뷰어 오버레이가 보이는 경우(가공 NC 텍스트 단계 제외) 커넥션/최대직경/길이는 요약에서 생략하고 오버레이만 사용합니다.
