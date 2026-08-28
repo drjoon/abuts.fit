@@ -93,6 +93,56 @@ describe("practiceTransferProduction Abuts-first helpers", () => {
     );
   });
 
+  test("hasCustomAbutmentToothWorks excludes simple abutment (stock)", () => {
+    expect(
+      hasCustomAbutmentToothWorks([
+        {
+          customAbutment: true,
+          toothNumber: "16",
+          prosthesisType: "크라운",
+          abutmentManufacturer: "심플어벗",
+          abutmentDiameter: "6",
+          abutmentHeight: "M",
+        },
+      ]),
+    ).toBe(false);
+    expect(
+      hasCustomAbutmentToothWorks([
+        {
+          customAbutment: true,
+          toothNumber: "16",
+          prosthesisType: "크라운",
+          abutmentManufacturer: "심플어벗",
+        },
+        {
+          customAbutment: true,
+          toothNumber: "17",
+          prosthesisType: "커스텀어벗",
+        },
+      ]),
+    ).toBe(true);
+  });
+
+  test("listCustomAbutmentToothWorks excludes simple abutment", async () => {
+    const { listCustomAbutmentToothWorks } = await import(
+      "../../services/practiceTransferProduction.service.js"
+    );
+    const rows = listCustomAbutmentToothWorks([
+      {
+        customAbutment: true,
+        toothNumber: "21",
+        prosthesisType: "크라운",
+        abutmentManufacturer: "심플어벗",
+      },
+      {
+        customAbutment: true,
+        toothNumber: "22",
+        prosthesisType: "커스텀어벗",
+      },
+    ]);
+    expect(rows.map((r) => r.toothNumber)).toEqual(["22"]);
+  });
+
   test("isAbutmentDesignReady from designFiles or designReadyAt", () => {
     expect(isAbutmentDesignReady({ production: {} })).toBe(false);
     expect(

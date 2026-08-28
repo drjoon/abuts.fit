@@ -211,6 +211,7 @@ import {
   formatPracticeTransferProstheticSlotLabels,
   getPracticeTransferLabReceiveDisplayStatus,
   isLabReceiveHiddenTerminalStatus,
+  listPracticeTransferAbutsCustomAbutmentToothWorks,
   listPracticeTransferPendingProstheticSlots,
   practiceTransferAbutmentMachiningStarted,
   practiceTransferHasCustomAbutment,
@@ -688,8 +689,9 @@ export function RequestorPracticeReceivePage({
     const teeth =
       fromPending.length > 0
         ? fromPending
-        : parseToothWorks(designConfirmTransfer?.toothWorksSummary || "")
-            .filter((row) => Boolean(row.customAbutment))
+        : listPracticeTransferAbutsCustomAbutmentToothWorks(
+            designConfirmTransfer,
+          )
             .map((row) => String(row.toothNumber || "").trim())
             .filter(Boolean);
     return [...new Set(teeth)].map((tooth) => ({ id: tooth, label: tooth }));
@@ -3867,10 +3869,12 @@ export function RequestorPracticeReceivePage({
           workingTransfer.production?.designFiles?.length ||
           0,
       );
-      const caTeethOrdered = parseToothWorks(workingTransfer.toothWorksSummary || "")
-        .filter((row) => Boolean(row.customAbutment))
+      const caTeethOrdered = listPracticeTransferAbutsCustomAbutmentToothWorks(
+        workingTransfer,
+      )
         .map((row) => String(row.toothNumber || "").trim())
         .filter(Boolean);
+      const caToothSet = new Set(caTeethOrdered);
 
       const requestMetas = (
         await Promise.all(
@@ -3903,9 +3907,14 @@ export function RequestorPracticeReceivePage({
         return { ...meta, tooth: fallback };
       });
 
+      // 심플어벗·치식 외 relatedRequestIds(레거시 혼입)는 업로드 대상에서 제외
       let pendingMetas = enrichedMetas.filter((meta) => {
         if (meta.designCompletedAt) return false;
-        if (meta.tooth && existingTeeth.has(meta.tooth)) return false;
+        const tooth = String(meta.tooth || "").trim();
+        if (tooth && existingTeeth.has(tooth)) return false;
+        if (caToothSet.size > 0) {
+          if (!tooth || !caToothSet.has(tooth)) return false;
+        }
         return true;
       });
 

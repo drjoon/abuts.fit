@@ -1,3 +1,5 @@
+// change-log:
+// - 2026-08-28: z-[330]/overlay z-[325] — 3D 확인 모달(z-320) 위 유지홈 안내.
 // related files:
 // - web/frontend/src/shared/components/practice/RetentionGrooveField.tsx
 // - web/frontend/src/shared/components/practice/AbutmentModelConfirmDialog.tsx
@@ -11,6 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { cn } from "@/shared/ui/cn";
 
 type RetentionGrooveGuideDialogProps = {
   open: boolean;
@@ -28,10 +31,11 @@ export function RetentionGrooveGuideDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className={
-          contentClassName ||
-          "w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] max-h-[90vh] overflow-y-auto p-6 sm:w-[1120px] sm:max-w-[1120px]"
-        }
+        className={cn(
+          "z-[330] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] max-h-[90vh] overflow-y-auto p-6 sm:w-[1120px] sm:max-w-[1120px]",
+          contentClassName,
+        )}
+        overlayClassName="z-[325]"
       >
         <DialogHeader>
           <DialogTitle className="text-2xl font-bold text-slate-800">

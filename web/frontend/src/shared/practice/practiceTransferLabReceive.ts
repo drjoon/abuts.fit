@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/components/practice/LabReceiveWorkUploadDialog.tsx
 // change-log:
+// - 2026-08-28: 심플어벗(치과 재고)은 어벗츠 CNC·디자인 업로드 기대 개수에서 제외.
 // - 2026-08-21: expectedAbutmentDesigns — 치식 CA 개수 우선(헥스 샘플 related 과다 방지).
 // - 2026-08-21: 미제공 CA 목록·상세 한 줄(formatPendingLabAbutmentDetailLine).
 // - 2026-08-21: 요청중(헥스 사이즈 미정) CA는 어벗츠 생산 CTA·기대 디자인 수에서 제외.
@@ -35,7 +36,10 @@ import {
   toToothMemoSortNumber,
   type ToothWorkSelection,
 } from "@/shared/practice/transferMemo";
-import { isPendingRoundBarAbutment } from "@/shared/practice/labFeeSchedule";
+import {
+  isPendingRoundBarAbutment,
+  isSimpleAbutmentModeForFee,
+} from "@/shared/practice/labFeeSchedule";
 import type { PracticeTransferFeeQuote } from "@/shared/practice/practiceTransferFeeQuote";
 import type {
   LabRatingSummary,
@@ -258,27 +262,33 @@ export function practiceTransferHasCustomAbutment(
   transfer: PracticeTransferLabReceiveItem | null | undefined,
 ) {
   if (!transfer) return false;
+  // 치식 요약이 있으면 심플어벗 제외 목록이 SSOT(레거시 hasCustomAbutment 과다 true 보정).
+  if (String(transfer.toothWorksSummary || "").trim()) {
+    return listPracticeTransferCustomAbutmentToothWorks(transfer).length > 0;
+  }
   if (typeof transfer.hasCustomAbutment === "boolean") {
     return transfer.hasCustomAbutment;
   }
-  return parseToothWorks(transfer.toothWorksSummary).some((row) =>
-    Boolean(row.customAbutment),
-  );
+  return false;
 }
 
-/** 치식 요약의 커스텀어벗 행 (임플란트 스펙 포함) */
+/**
+ * 치식 요약의 커스텀어벗 행 (스캔바디 CNC·요청중 포함).
+ * 심플어벗(치과 재고)은 제외 — STL 업로드·어벗츠 Request 대상 아님.
+ */
 export function listPracticeTransferCustomAbutmentToothWorks(
   transfer: PracticeTransferLabReceiveItem | null | undefined,
 ) {
   if (!transfer) return [] as ToothWorkSelection[];
-  return parseToothWorks(transfer.toothWorksSummary).filter((row) =>
-    Boolean(row.customAbutment),
+  return parseToothWorks(transfer.toothWorksSummary).filter(
+    (row) =>
+      Boolean(row.customAbutment) && !isSimpleAbutmentModeForFee(row),
   );
 }
 
 /**
  * 어벗츠 CNC Request·「어벗 업로드 & 생산의뢰」대상.
- * 임플란트 추가 요청(요청중/헥스 사이즈 미정)은 제외 — 기공소가 기존 CNC로 진행.
+ * 임플란트 추가 요청(요청중/헥스 사이즈 미정)·심플어벗은 제외.
  */
 export function listPracticeTransferAbutsCustomAbutmentToothWorks(
   transfer: PracticeTransferLabReceiveItem | null | undefined,

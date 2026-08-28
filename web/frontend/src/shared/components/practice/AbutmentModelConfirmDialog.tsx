@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-28: z-[320]/overlay z-[310] — 플로팅 의뢰상세(z-300) 위에 3D 확인 모달.
 // - 2026-08-16: lab-handoff confirmLabel·progressLabel(다파일 큐).
 // - 2026-08-16: 어벗생산의뢰·기공의뢰수신 공통 3D 확인 다이얼로그로 통합.
 // - 2026-08-16: 유지홈 미선택 허용(강제 선택). 기본 none 자동주입 제거.
@@ -262,7 +263,11 @@ export function AbutmentModelConfirmDialog({
           onOpenChange(next);
         }}
       >
-        <DialogContent className="new-request-page flex w-[calc(100vw-1rem)] max-h-[92vh] max-w-[calc(100vw-1rem)] flex-col gap-3 overflow-y-auto p-4 sm:w-[980px] sm:max-w-[980px] sm:p-5">
+        <DialogContent
+          // Above floating transfer panel (z-300). Same band as ModelPreviewDialog.
+          className="new-request-page z-[320] flex w-[calc(100vw-1rem)] max-h-[92vh] max-w-[calc(100vw-1rem)] flex-col gap-3 overflow-y-auto p-4 sm:w-[980px] sm:max-w-[980px] sm:p-5"
+          overlayClassName="z-[310]"
+        >
           <DialogHeader className="relative shrink-0 space-y-0 pr-8">
             <DialogTitle className="text-lg font-semibold">
               3D 모델 확인 및 정보 입력

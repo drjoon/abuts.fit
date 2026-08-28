@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-08-28: 심플어벗(치과 재고)은 어벗츠 CA Request 생성 대상에서 제외.
 // - 2026-08-22: 치과 멤버십/일반 청구 이중가 제거. 고시 membership* 단일가. pricingTier 분기 삭제.
 // - 2026-08-22: PTX 작업취소 시 연동 CA Request 크레딧 hold도 즉시 해제(내역·잔액 지연 방지).
 // - 2026-08-22: already_created여도 연동 CA 크레딧 hold를 다시 시도(누락 hold 보정, 기존은 idempotent skip).
@@ -89,20 +90,28 @@ import {
 } from "./requestCreditHold.service.js";
 import { updateReviewStatusByStage } from "../controllers/requests/common.review.controller.js";
 import { prevKoreanBusinessDayYmd } from "../utils/krBusinessDays.js";
-import { isPendingRoundBarAbutment } from "../utils/labFeeSchedule.js";
+import { isPendingRoundBarAbutment, isSimpleAbutmentModeForFee } from "../utils/labFeeSchedule.js";
 import { emitAppEventToRoles } from "../socket.js";
 
+/** 커스텀어벗 치식(요청중 포함). 심플어벗(치과 재고) 제외. */
+const isCustomAbutmentToothWorkRow = (row) =>
+  Boolean(row?.customAbutment) &&
+  String(row?.toothNumber || "").trim() &&
+  !isSimpleAbutmentModeForFee(row);
+
 const hasCustomAbutmentToothWorks = (toothWorks) =>
-  (Array.isArray(toothWorks) ? toothWorks : []).some(
-    (row) => Boolean(row?.customAbutment) && String(row?.toothNumber || "").trim(),
+  (Array.isArray(toothWorks) ? toothWorks : []).some((row) =>
+    isCustomAbutmentToothWorkRow(row),
   );
 
-/** 어벗츠 CA Request 대상. 환봉·제조사 추가요청(요청중)은 지정 기공소가 커스텀어벗 수행. */
+/**
+ * 어벗츠 CA Request 대상.
+ * 환봉·제조사 추가요청(요청중)·심플어벗(치과 재고)은 지정 기공소/재고로 처리.
+ */
 const listCustomAbutmentToothWorks = (toothWorks, implantFavorites = null) =>
   (Array.isArray(toothWorks) ? toothWorks : []).filter(
     (row) =>
-      Boolean(row?.customAbutment) &&
-      String(row?.toothNumber || "").trim() &&
+      isCustomAbutmentToothWorkRow(row) &&
       !isPendingRoundBarAbutment(row, implantFavorites),
   );
 
