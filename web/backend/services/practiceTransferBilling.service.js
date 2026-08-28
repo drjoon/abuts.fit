@@ -34,6 +34,7 @@
 // - 2026-08-14: quote-context — 기공소/티어/단가/거래처/수수료율 parallel + 60s 캐시(5회 직렬 RTT 제거).
 // - 2026-08-14: 환봉 요청중 판별용 치과 implantFavorites를 견적·청구 계산에 전달.
 // - 2026-08-14: 치과별 기공수가 할증(labPracticeFeeMultipliers → labFeeMultiplier).
+// - 2026-08-29: 치과별 특별공급가(labPracticeSpecialSupplyPrices) 견적·청구 반영.
 // - 2026-08-14: 지정 기공소: 생성 시 billing.labFeeMultiplier 스냅샷(할증 소급 금지).
 // - 2026-08-14: 자동매칭: 치과별 할증 사용. 할증 updatedAt > 의뢰 createdAt 이면 해당 건 미적용.
 // - 2026-08-14: 자동매칭 수락 예산 검증은 공개 수가(할증 제외). 할증은 청구에만.
@@ -110,6 +111,8 @@ import {
   normalizeLabFeeRemakeSchedule,
   normalizeLabFeeSchedule,
   resolveLabFeeScheduleSource,
+  resolveLabFeeScheduleSourceForPractice,
+  applyLabPracticeSpecialSupplyToSchedule,
   resolveLabPracticeFeeMultiplier,
   resolveLabPracticeFeeMultiplierAsOf,
   splitPracticeTransferSettlement,
@@ -214,7 +217,11 @@ async function loadLabAnchorsForFeeComputation({
   ];
   if (!ids.length) return { feeScheduleLab: null, performingLab: null };
   const docs = await BusinessAnchor.find({ _id: { $in: ids } })
-    .select({ labFeeSchedule: 1, labPracticeFeeMultipliers: 1 })
+    .select({
+      labFeeSchedule: 1,
+      labPracticeFeeMultipliers: 1,
+      labPracticeSpecialSupplyPrices: 1,
+    })
     .session(session || null)
     .lean();
   const byId = new Map(docs.map((doc) => [String(doc._id), doc]));
@@ -603,7 +610,6 @@ export async function assertPracticeTransferPaidCreditSufficient({
   let abutmentPrices = null;
 
   if (!fees) {
-    let labFeeSchedule = null;
     const labId = String(labAnchorId || "").trim();
     const needLab = labId && Types.ObjectId.isValid(labId);
     const [catalog, lab, practice, prices] = await Promise.all([
@@ -612,7 +618,11 @@ export async function assertPracticeTransferPaidCreditSufficient({
         : loadAutoMatchBudgetCatalog(),
       needLab
         ? BusinessAnchor.findById(labId)
-            .select({ labFeeSchedule: 1, labPracticeFeeMultipliers: 1 })
+            .select({
+              labFeeSchedule: 1,
+              labPracticeFeeMultipliers: 1,
+              labPracticeSpecialSupplyPrices: 1,
+            })
             .lean()
         : Promise.resolve(null),
       BusinessAnchor.findById(practiceId)
@@ -622,7 +632,6 @@ export async function assertPracticeTransferPaidCreditSufficient({
     ]);
     budget = normalizeAutoMatchBudget(autoMatchBudget, catalog);
     abutmentPrices = prices;
-    if (lab) labFeeSchedule = lab.labFeeSchedule || null;
 
     const noLab = !labId;
     const useRemake = Boolean(remake);
@@ -632,7 +641,7 @@ export async function assertPracticeTransferPaidCreditSufficient({
         implantFavorites: implantFavoritesFromPractice(practice),
         labFeeSchedule: noLab
           ? LAB_FEE_SCHEDULE_ZEROS
-          : resolveLabFeeScheduleSource(labFeeSchedule),
+          : resolveLabFeeScheduleSourceForPractice(lab, practiceId),
         abutmentPricingTier,
         abutmentPrices,
         remake: useRemake,
@@ -921,7 +930,10 @@ export async function commitPracticeTransferBilling({
     {
       toothWorks,
       implantFavorites: implantFavoritesFromPractice(practice),
-      labFeeSchedule: resolveLabFeeScheduleSource(feeScheduleLab?.labFeeSchedule),
+      labFeeSchedule: resolveLabFeeScheduleSourceForPractice(
+        feeScheduleLab,
+        practiceAnchorId,
+      ),
       abutmentPricingTier,
       abutmentPrices,
       remake,
@@ -2170,7 +2182,10 @@ async function computeAcceptedPracticeTransferFees({
     {
       toothWorks,
       implantFavorites: implantFavoritesFromPractice(practice),
-      labFeeSchedule: resolveLabFeeScheduleSource(feeScheduleLab?.labFeeSchedule),
+      labFeeSchedule: resolveLabFeeScheduleSourceForPractice(
+        feeScheduleLab,
+        practiceAnchorId,
+      ),
       abutmentPricingTier,
       abutmentPrices,
       remake,
@@ -3809,7 +3824,11 @@ export async function buildPracticeTransferQuote({
     await Promise.all([
       needLab
         ? BusinessAnchor.findById(labId)
-            .select({ labFeeSchedule: 1, labPracticeFeeMultipliers: 1 })
+            .select({
+              labFeeSchedule: 1,
+              labPracticeFeeMultipliers: 1,
+              labPracticeSpecialSupplyPrices: 1,
+            })
             .lean()
         : Promise.resolve(null),
       needFavorites
@@ -3851,7 +3870,13 @@ export async function buildPracticeTransferQuote({
   if (usedDefaultSchedule) {
     schedule = LAB_FEE_SCHEDULE_ZEROS;
   } else if (loadedFromDb) {
-    schedule = resolveLabFeeScheduleSource(schedule);
+    schedule = resolveLabFeeScheduleSourceForPractice(lab, practiceId);
+  } else {
+    schedule = applyLabPracticeSpecialSupplyToSchedule(
+      schedule,
+      lab,
+      practiceId,
+    );
   }
 
   const useRemake = Boolean(remake);
@@ -4060,7 +4085,11 @@ export async function buildFeeQuotesForTransferDocs({
       loadCachedAbutmentCreditPrices(),
       labIdList.length
         ? BusinessAnchor.find({ _id: { $in: labIdList } })
-            .select({ labFeeSchedule: 1, labPracticeFeeMultipliers: 1 })
+            .select({
+              labFeeSchedule: 1,
+              labPracticeFeeMultipliers: 1,
+              labPracticeSpecialSupplyPrices: 1,
+            })
             .lean()
         : Promise.resolve([]),
       practiceIdList.length
@@ -4092,6 +4121,7 @@ export async function buildFeeQuotesForTransferDocs({
   const scheduleByLab = new Map(
     labs.map((lab) => [String(lab._id), lab.labFeeSchedule || null]),
   );
+  const labDocById = new Map(labs.map((lab) => [String(lab._id), lab]));
   const multiplierByLab = new Map(
     labs.map((lab) => [String(lab._id), lab]),
   );
@@ -4158,7 +4188,10 @@ export async function buildFeeQuotesForTransferDocs({
     const remakeLabFeeMultiplier = liveLabFeeMultiplier;
     const feeSchedule = noLab
       ? LAB_FEE_SCHEDULE_ZEROS
-      : resolveLabFeeScheduleSource(schedule);
+      : resolveLabFeeScheduleSourceForPractice(
+          labDocById.get(quoteLabId) || { labFeeSchedule: schedule },
+          practiceId,
+        );
     const remakeFees = computePracticeTransferRetailFees({
       toothWorks,
       implantFavorites,

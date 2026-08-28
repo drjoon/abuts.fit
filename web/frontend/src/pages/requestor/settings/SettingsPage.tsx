@@ -11,6 +11,7 @@ import { BusinessTab } from "@/shared/components/business/settings/BusinessTab";
 import { StaffTab } from "@/features/settings/tabs/StaffTab";
 import { NotificationsTab } from "@/features/settings/tabs/NotificationsTab";
 import { LabFeeScheduleTab } from "@/features/settings/tabs/LabFeeScheduleTab";
+import { LabPracticeSpecialSupplyTab } from "@/features/settings/tabs/LabPracticeSpecialSupplyTab";
 import {
   User,
   Building2,
@@ -18,6 +19,7 @@ import {
   Users,
   Shield,
   Banknote,
+  Tag,
 } from "lucide-react";
 import { RequestorSecurity } from "./Security";
 import { formatKstDateTimeToKo, toKstYmd } from "@/shared/date/kst";
@@ -37,12 +39,14 @@ import { InternalLabOrgBanner } from "@/features/settings/InternalLabOrgBanner";
 // 2026-08-11: 기공소 전용 「치과 등록」「기공비」탭(알림 왼쪽).
 // 2026-08-18: 치과 「구독」탭 제거(월정 폐기). 구 `?tab=subscription` → 계정.
 // 2026-08-26: 「스캔·의뢰」탭 제거. 구 `?tab=scan-order`·`3shape` → 계정.
+// 2026-08-29: 기공소 「특별공급가」탭(기공비 오른쪽).
 
 type TabKey =
   | "account"
   | "business"
   | "staff"
   | "lab-fees"
+  | "lab-special-supply"
   | "notifications"
   | "security";
 
@@ -134,12 +138,20 @@ export const RequestorSettingsPage = () => {
     ];
 
     if (isLab) {
-      base.push({
-        key: "lab-fees",
-        label: "기공비",
-        icon: Banknote,
-        content: <LabFeeScheduleTab />,
-      });
+      base.push(
+        {
+          key: "lab-fees",
+          label: "기공비",
+          icon: Banknote,
+          content: <LabFeeScheduleTab />,
+        },
+        {
+          key: "lab-special-supply",
+          label: "특별공급가",
+          icon: Tag,
+          content: <LabPracticeSpecialSupplyTab />,
+        },
+      );
     }
 
     base.push(
@@ -175,7 +187,7 @@ export const RequestorSettingsPage = () => {
       (tabs[0]?.key as TabKey);
 
   if (accessLoading) {
-    return <SettingsTabsSkeleton tabCount={isLab ? 6 : 5} />;
+    return <SettingsTabsSkeleton tabCount={isLab ? 7 : 5} />;
   }
 
   return (

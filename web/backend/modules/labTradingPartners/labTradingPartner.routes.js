@@ -15,6 +15,8 @@ import {
   updateLabFeeSchedule,
   updateLabPracticeFeeMultiplier,
   updateLabPracticePartnerMemo,
+  getLabPracticeSpecialSupplyPrices,
+  updateLabPracticeSpecialSupplyPrices,
 } from "../../controllers/labTradingPartners/labTradingPartner.controller.js";
 
 const router = express.Router();
@@ -54,6 +56,20 @@ router.put(
   authenticate,
   authorize(["requestor", "internalLab", "admin"]),
   updateLabPracticePartnerMemo,
+);
+
+router.get(
+  "/special-supply-prices",
+  authenticate,
+  authorize(["requestor", "internalLab", "admin"]),
+  getLabPracticeSpecialSupplyPrices,
+);
+
+router.put(
+  "/special-supply-prices",
+  authenticate,
+  authorize(["requestor", "internalLab", "admin"]),
+  updateLabPracticeSpecialSupplyPrices,
 );
 
 router.post(

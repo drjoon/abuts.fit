@@ -15,6 +15,7 @@
 // - 2026-08-21: 라벨 원가→수가. WonInput은 blur 확정(입력 중 need 카드 리마운트로 포커스 끊김 방지).
 // - 2026-08-24: need 강제 입력 시 커스텀어벗(지그포함/제외) 기본가 4만·3만 시드.
 // - 2026-08-21: need 강제 입력은 맨 아래에서 작업(입력 후 위치 점프 혼동 방지).
+// - 2026-08-29: 특별공급가는 별도 탭(LabPracticeSpecialSupplyTab)으로 분리.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {

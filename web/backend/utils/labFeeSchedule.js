@@ -36,6 +36,7 @@
 // - 2026-08-15: 치아번호 없는 자리표시 행(빈 toothNumber+기본 크라운)은 견적에서 제외.
 // - 2026-08-15: 할증 history — 배수 변경·해제(1x)도 기존 의뢰는 당시 배수 유지(다음 건부터).
 // - 2026-08-19: 수락·견적 readyToCharge — 마스터 On만으로는 부족, 제공 항목 수가 필요.
+// - 2026-08-29: 치과별 특별공급가(labPracticeSpecialSupplyPrices) — 할인율 또는 항목별 할인금액.
 import { applyRushFeeMultiplierToFees } from "./practiceTransferRush.js";
 import {
   IMPLANT_ADD_REQUEST_OPTION,
@@ -525,6 +526,200 @@ export function resolveLabFeeScheduleSource(schedule) {
   return isLabFeeScheduleConfigured(schedule)
     ? schedule
     : buildUnsetLabFeeSchedule();
+}
+
+const toSpecialSupplyWon = (value) =>
+  Math.max(0, Math.round(Number(value) || 0));
+
+/** 0~100, 소수 둘째 자리. */
+export function normalizeLabPracticeSpecialSupplyDiscountRate(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.min(100, Math.round(n * 100) / 100);
+}
+
+export function normalizeLabPracticeSpecialSupplyMode(value) {
+  return String(value || "").trim() === "rate" ? "rate" : "amount";
+}
+
+/** 치과별 특별공급 항목(할인금액) 정규화. 할인 0인 항목은 제외. */
+export function normalizeLabPracticeSpecialSupplyItems(rawItems) {
+  const list = Array.isArray(rawItems) ? rawItems : [];
+  const byId = new Map();
+  for (const row of list) {
+    const feeItemId = String(row?.feeItemId || "").trim();
+    if (!feeItemId) continue;
+    // 레거시 absolute price/remake → 할인금액으로 해석하지 않고 무시(신규 필드만).
+    const discountAmount = toSpecialSupplyWon(
+      row?.discountAmount ?? row?.priceDiscount,
+    );
+    const remakeDiscountAmount = toSpecialSupplyWon(
+      row?.remakeDiscountAmount ?? row?.remakeDiscount,
+    );
+    if (discountAmount <= 0 && remakeDiscountAmount <= 0) continue;
+    byId.set(feeItemId, {
+      feeItemId,
+      feeItemName: String(row?.feeItemName || "").trim(),
+      discountAmount,
+      remakeDiscountAmount,
+    });
+  }
+  return Array.from(byId.values());
+}
+
+function specialSupplyRowHasEffect(row) {
+  if (!row) return false;
+  if (row.mode === "rate") return row.discountRate > 0;
+  return Array.isArray(row.items) && row.items.length > 0;
+}
+
+/** 치과별 특별공급 행 목록 정규화. 효과 없는 치과는 제외. */
+export function normalizeLabPracticeSpecialSupplyList(raw) {
+  const list = Array.isArray(raw) ? raw : [];
+  const byPractice = new Map();
+  for (const row of list) {
+    const practiceAnchorId = String(row?.practiceAnchorId || "").trim();
+    if (!practiceAnchorId) continue;
+    const mode = normalizeLabPracticeSpecialSupplyMode(row?.mode);
+    const discountRate = normalizeLabPracticeSpecialSupplyDiscountRate(
+      row?.discountRate,
+    );
+    const items =
+      mode === "amount"
+        ? normalizeLabPracticeSpecialSupplyItems(row?.items)
+        : [];
+    const next = {
+      practiceAnchorId,
+      mode,
+      discountRate: mode === "rate" ? discountRate : 0,
+      items: mode === "amount" ? items : [],
+      updatedAt: row?.updatedAt ? new Date(row.updatedAt) : null,
+    };
+    if (!specialSupplyRowHasEffect(next)) continue;
+    byPractice.set(practiceAnchorId, next);
+  }
+  return Array.from(byPractice.values());
+}
+
+export function resolveLabPracticeSpecialSupplyRow(labDoc, practiceAnchorId) {
+  const practiceId = String(practiceAnchorId || "").trim();
+  if (!practiceId) return null;
+  const rows = normalizeLabPracticeSpecialSupplyList(
+    labDoc?.labPracticeSpecialSupplyPrices,
+  );
+  return rows.find((row) => row.practiceAnchorId === practiceId) || null;
+}
+
+function applyDiscountToUnit(base, { rate = 0, amount = 0 } = {}) {
+  const baseWon = toSpecialSupplyWon(base);
+  if (rate > 0) {
+    return Math.max(
+      0,
+      Math.round(baseWon * (1 - normalizeLabPracticeSpecialSupplyDiscountRate(rate) / 100)),
+    );
+  }
+  if (amount > 0) {
+    return Math.max(0, baseWon - toSpecialSupplyWon(amount));
+  }
+  return baseWon;
+}
+
+/**
+ * 치과별 특별공급(할인율·할인금액)을 수가표 items에 반영.
+ * rate: 전 항목 동일 %. amount: feeItemId/name 매칭 항목만 차감.
+ */
+export function applyLabPracticeSpecialSupplyToSchedule(
+  schedule,
+  labDoc,
+  practiceAnchorId,
+) {
+  const row = resolveLabPracticeSpecialSupplyRow(labDoc, practiceAnchorId);
+  if (!row || !specialSupplyRowHasEffect(row)) return schedule;
+
+  const baseItems = normalizeLabFeeItems(schedule);
+  let changed = false;
+  const byId =
+    row.mode === "amount"
+      ? new Map(row.items.map((item) => [item.feeItemId, item]))
+      : null;
+  const byName =
+    row.mode === "amount"
+      ? new Map(
+          row.items
+            .filter((item) => item.feeItemName)
+            .map((item) => [item.feeItemName, item]),
+        )
+      : null;
+
+  const nextItems = baseItems.map((item) => {
+    let price;
+    let remake;
+    if (row.mode === "rate") {
+      const basePrice =
+        item.unit === "perNTeeth"
+          ? item.tiers?.[0]?.price ?? item.price
+          : item.price;
+      const baseRemake =
+        item.unit === "perNTeeth"
+          ? item.tiers?.[0]?.remake ?? item.remake
+          : item.remake;
+      price = applyDiscountToUnit(basePrice, { rate: row.discountRate });
+      remake = applyDiscountToUnit(baseRemake, { rate: row.discountRate });
+      if (price === toSpecialSupplyWon(basePrice) && remake === toSpecialSupplyWon(baseRemake)) {
+        return item;
+      }
+      changed = true;
+    } else {
+      const override =
+        byId.get(String(item.id || "")) ||
+        byName.get(String(item.name || "").trim());
+      if (!override) return item;
+      const basePrice =
+        item.unit === "perNTeeth"
+          ? item.tiers?.[0]?.price ?? item.price
+          : item.price;
+      const baseRemake =
+        item.unit === "perNTeeth"
+          ? item.tiers?.[0]?.remake ?? item.remake
+          : item.remake;
+      price = applyDiscountToUnit(basePrice, {
+        amount: override.discountAmount,
+      });
+      remake = applyDiscountToUnit(baseRemake, {
+        amount: override.remakeDiscountAmount,
+      });
+      changed = true;
+    }
+
+    if (item.unit === "perNTeeth") {
+      const tiers =
+        Array.isArray(item.tiers) && item.tiers.length > 0
+          ? item.tiers.map((tier, idx) =>
+              idx === 0 ? { ...tier, price, remake } : tier,
+            )
+          : [{ n: 3, price, remake }];
+      return { ...item, price, remake, tiers };
+    }
+    return { ...item, price, remake };
+  });
+  if (!changed) return schedule;
+
+  const legacy = legacyLabFeeScheduleFromItems(nextItems, schedule);
+  return {
+    ...legacy,
+    items: nextItems,
+    active: schedule?.active !== false && schedule?.active !== 0,
+  };
+}
+
+/** 청구·견적용. 마스터 Off면 0원, On이면 치과 특별공급가 반영. */
+export function resolveLabFeeScheduleSourceForPractice(labDoc, practiceAnchorId) {
+  const base = resolveLabFeeScheduleSource(labDoc?.labFeeSchedule);
+  return applyLabPracticeSpecialSupplyToSchedule(
+    base,
+    labDoc,
+    practiceAnchorId,
+  );
 }
 
 export const LAB_TRADING_PARTNER_WINDOW_DAYS = 60;

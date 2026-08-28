@@ -39,6 +39,7 @@ import {
   ensureSplitCustomAbutmentFeeItems,
   mergeEnabledCatalogItemsIntoLabFeeItems,
   resolveLabFeeCatalogNeedSetupNames,
+  resolveLabFeeScheduleSourceForPractice,
 } from "../../utils/labFeeSchedule.js";
 
 describe("labFeeSchedule", () => {
@@ -1568,5 +1569,108 @@ test("환봉 요청중+기공소 커스텀어벗 수가가 있으면 기공소 �
       },
     ];
     expect(resolveLabFeeCatalogNeedSetupNames(schedule, catalog)).toEqual([]);
+  });
+});
+
+describe("labPracticeSpecialSupplyPrices", () => {
+  test("할인율 모드는 전 항목에 동일 비율을 적용한다", () => {
+    const schedule = {
+      active: true,
+      items: [
+        {
+          id: "crown",
+          name: "크라운",
+          unit: "perTooth",
+          enabled: true,
+          price: 50000,
+          remake: 10000,
+          tiers: [],
+        },
+        {
+          id: "bridge",
+          name: "브리지",
+          unit: "perTooth",
+          enabled: true,
+          price: 60000,
+          remake: 12000,
+          tiers: [],
+        },
+      ],
+    };
+    const lab = {
+      labFeeSchedule: schedule,
+      labPracticeSpecialSupplyPrices: [
+        {
+          practiceAnchorId: "64b000000000000000000099",
+          mode: "rate",
+          discountRate: 20,
+          items: [],
+        },
+      ],
+    };
+    const next = resolveLabFeeScheduleSourceForPractice(
+      lab,
+      "64b000000000000000000099",
+    );
+    const crown = next.items.find((item) => item.id === "crown");
+    const bridge = next.items.find((item) => item.id === "bridge");
+    expect(crown.price).toBe(40000);
+    expect(crown.remake).toBe(8000);
+    expect(bridge.price).toBe(48000);
+    expect(bridge.remake).toBe(9600);
+  });
+
+  test("할인금액 모드는 지정 항목만 차감한다", () => {
+    const schedule = {
+      active: true,
+      items: [
+        {
+          id: "crown",
+          name: "크라운",
+          unit: "perTooth",
+          enabled: true,
+          price: 50000,
+          remake: 10000,
+          tiers: [],
+        },
+        {
+          id: "bridge",
+          name: "브리지",
+          unit: "perTooth",
+          enabled: true,
+          price: 60000,
+          remake: 12000,
+          tiers: [],
+        },
+      ],
+    };
+    const lab = {
+      labFeeSchedule: schedule,
+      labPracticeSpecialSupplyPrices: [
+        {
+          practiceAnchorId: "64b000000000000000000099",
+          mode: "amount",
+          discountRate: 0,
+          items: [
+            {
+              feeItemId: "crown",
+              feeItemName: "크라운",
+              discountAmount: 8000,
+              remakeDiscountAmount: 3000,
+            },
+          ],
+        },
+      ],
+    };
+    const next = resolveLabFeeScheduleSourceForPractice(
+      lab,
+      "64b000000000000000000099",
+    );
+    const crown = next.items.find((item) => item.id === "crown");
+    const bridge = next.items.find((item) => item.id === "bridge");
+    expect(crown.price).toBe(42000);
+    expect(crown.remake).toBe(7000);
+    expect(bridge.price).toBe(60000);
+    expect(bridge.remake).toBe(12000);
   });
 });

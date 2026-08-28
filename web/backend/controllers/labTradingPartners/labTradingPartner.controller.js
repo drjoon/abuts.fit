@@ -13,6 +13,7 @@
 // - 2026-08-14: 기공소 신규 기공비 → 어벗츠 수가(off·검토) 동기화 + 관리자 알림.
 // - 2026-08-15: internalLab 기공비 API 허용. 미저장 시 관리자 어벗츠 수가 카탈로그 복사.
 // - 2026-08-20: 치과별 기공수가 할증도 internalLab 허용(라우트 authorize).
+// - 2026-08-29: 치과별 특별공급가 GET/PUT (labPracticeSpecialSupplyPrices).
 import { Types } from "mongoose";
 import LabTradingPartner from "../../models/labTradingPartner.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
@@ -38,6 +39,10 @@ import {
   buildDefaultLabFeeSchedule,
   mergeEnabledCatalogItemsIntoLabFeeItems,
   resolveLabFeeCatalogNeedSetupNames,
+  normalizeLabPracticeSpecialSupplyList,
+  normalizeLabPracticeSpecialSupplyItems,
+  normalizeLabPracticeSpecialSupplyMode,
+  normalizeLabPracticeSpecialSupplyDiscountRate,
 } from "../../utils/labFeeSchedule.js";
 import {
   loadAbutsLabFeeSchedule,
@@ -909,6 +914,216 @@ export async function updateLabPracticePartnerMemo(req, res) {
     return res.status(500).json({
       success: false,
       message: "치과 메모를 저장하지 못했습니다.",
+    });
+  }
+}
+
+async function assertPracticeAnchorForLabSpecialSupply(practiceAnchorId) {
+  const id = String(practiceAnchorId || "").trim();
+  if (!id || !Types.ObjectId.isValid(id)) {
+    const err = new Error("치과 사업자 ID가 필요합니다.");
+    err.statusCode = 400;
+    throw err;
+  }
+  const practice = await BusinessAnchor.findById(id)
+    .select({
+      _id: 1,
+      name: 1,
+      metadata: 1,
+      businessType: 1,
+      requestorKind: 1,
+      requestorCapabilities: 1,
+    })
+    .lean();
+  if (!practice || String(practice.businessType || "") !== "requestor") {
+    const err = new Error("치과 사업자를 찾을 수 없습니다.");
+    err.statusCode = 404;
+    throw err;
+  }
+  if (normalizeRequestorKind(practice.requestorKind) === "lab") {
+    const err = new Error(
+      "의뢰 발신자(치과)에만 특별공급가를 적용할 수 있습니다.",
+    );
+    err.statusCode = 400;
+    throw err;
+  }
+  return practice;
+}
+
+function toSpecialSupplyPublicRow(row, practiceDoc = null) {
+  const mode = normalizeLabPracticeSpecialSupplyMode(row.mode);
+  return {
+    practiceAnchorId: String(row.practiceAnchorId || ""),
+    practiceName:
+      String(practiceDoc?.name || "").trim() ||
+      String(practiceDoc?.metadata?.companyName || "").trim() ||
+      "",
+    practiceAddress: String(practiceDoc?.metadata?.address || "").trim(),
+    practiceRepresentativeName: String(
+      practiceDoc?.metadata?.representativeName || "",
+    ).trim(),
+    mode,
+    discountRate:
+      mode === "rate"
+        ? normalizeLabPracticeSpecialSupplyDiscountRate(row.discountRate)
+        : 0,
+    items:
+      mode === "amount"
+        ? normalizeLabPracticeSpecialSupplyItems(row.items)
+        : [],
+    updatedAt: row.updatedAt || null,
+  };
+}
+
+/** GET — 기공소의 치과별 특별공급가 목록 */
+export async function getLabPracticeSpecialSupplyPrices(req, res) {
+  try {
+    const labAnchorId = await resolveCallerLabAnchorId(req);
+    if (!labAnchorId) {
+      return res.status(403).json({
+        success: false,
+        message: "기공소 사업자만 이용할 수 있습니다.",
+      });
+    }
+    const lab = await BusinessAnchor.findById(labAnchorId)
+      .select({ labPracticeSpecialSupplyPrices: 1 })
+      .lean();
+    const rows = normalizeLabPracticeSpecialSupplyList(
+      lab?.labPracticeSpecialSupplyPrices,
+    );
+    const practiceIds = rows
+      .map((row) => row.practiceAnchorId)
+      .filter((id) => Types.ObjectId.isValid(id));
+    const practices = practiceIds.length
+      ? await BusinessAnchor.find({ _id: { $in: practiceIds } })
+          .select({ name: 1, metadata: 1 })
+          .lean()
+      : [];
+    const byId = new Map(practices.map((doc) => [String(doc._id), doc]));
+    return res.json({
+      success: true,
+      data: {
+        items: rows.map((row) =>
+          toSpecialSupplyPublicRow(row, byId.get(row.practiceAnchorId)),
+        ),
+      },
+    });
+  } catch (e) {
+    console.error(
+      "[labTradingPartners] getLabPracticeSpecialSupplyPrices error",
+      e,
+    );
+    return res.status(500).json({
+      success: false,
+      message: "특별공급가를 조회하지 못했습니다.",
+    });
+  }
+}
+
+/**
+ * PUT body: {
+ *   items: [{
+ *     practiceAnchorId,
+ *     mode: "rate"|"amount",
+ *     discountRate?,
+ *     items?: [{ feeItemId, feeItemName?, discountAmount, remakeDiscountAmount }]
+ *   }]
+ * }
+ * 전체 목록 교체(효과 없는 치과는 제거).
+ */
+export async function updateLabPracticeSpecialSupplyPrices(req, res) {
+  try {
+    const labAnchorId = await resolveCallerLabAnchorId(req);
+    if (!labAnchorId) {
+      return res.status(403).json({
+        success: false,
+        message: "기공소 사업자만 이용할 수 있습니다.",
+      });
+    }
+
+    const rawItems = Array.isArray(req.body?.items) ? req.body.items : [];
+    const practiceIds = [
+      ...new Set(
+        rawItems
+          .map((row) => String(row?.practiceAnchorId || "").trim())
+          .filter(Boolean),
+      ),
+    ];
+    const practiceDocs = [];
+    for (const practiceId of practiceIds) {
+      practiceDocs.push(await assertPracticeAnchorForLabSpecialSupply(practiceId));
+    }
+    const practiceById = new Map(
+      practiceDocs.map((doc) => [String(doc._id), doc]),
+    );
+
+    const lab = await BusinessAnchor.findById(labAnchorId)
+      .select({ labFeeSchedule: 1 })
+      .lean();
+    const feeItems = normalizeLabFeeItems(lab?.labFeeSchedule);
+    const feeById = new Map(feeItems.map((item) => [String(item.id), item]));
+
+    const now = new Date();
+    const nextList = [];
+    for (const row of rawItems) {
+      const practiceAnchorId = String(row?.practiceAnchorId || "").trim();
+      if (!practiceAnchorId || !practiceById.has(practiceAnchorId)) continue;
+      const mode = normalizeLabPracticeSpecialSupplyMode(row?.mode);
+      const discountRate = normalizeLabPracticeSpecialSupplyDiscountRate(
+        row?.discountRate,
+      );
+      const items =
+        mode === "amount"
+          ? normalizeLabPracticeSpecialSupplyItems(row?.items).map((item) => {
+              const fee = feeById.get(item.feeItemId);
+              return {
+                feeItemId: item.feeItemId,
+                feeItemName:
+                  item.feeItemName || String(fee?.name || "").trim() || "",
+                discountAmount: item.discountAmount,
+                remakeDiscountAmount: item.remakeDiscountAmount,
+              };
+            })
+          : [];
+      if (mode === "rate" && discountRate <= 0) continue;
+      if (mode === "amount" && !items.length) continue;
+      nextList.push({
+        practiceAnchorId: new Types.ObjectId(practiceAnchorId),
+        mode,
+        discountRate: mode === "rate" ? discountRate : 0,
+        items: mode === "amount" ? items : [],
+        updatedAt: now,
+      });
+    }
+
+    await BusinessAnchor.findByIdAndUpdate(labAnchorId, {
+      $set: { labPracticeSpecialSupplyPrices: nextList },
+    });
+    invalidatePracticeTransferQuoteCaches(labAnchorId);
+
+    const normalized = normalizeLabPracticeSpecialSupplyList(nextList);
+    return res.json({
+      success: true,
+      data: {
+        items: normalized.map((row) =>
+          toSpecialSupplyPublicRow(row, practiceById.get(row.practiceAnchorId)),
+        ),
+      },
+    });
+  } catch (e) {
+    if (e?.statusCode) {
+      return res.status(e.statusCode).json({
+        success: false,
+        message: e.message,
+      });
+    }
+    console.error(
+      "[labTradingPartners] updateLabPracticeSpecialSupplyPrices error",
+      e,
+    );
+    return res.status(500).json({
+      success: false,
+      message: "특별공급가를 저장하지 못했습니다.",
     });
   }
 }
