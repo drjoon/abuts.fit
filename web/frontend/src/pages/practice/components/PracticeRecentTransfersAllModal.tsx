@@ -32,7 +32,7 @@
  * 2026-08-28: 항상 non-modal·outside 무시·애니메이션 제거 — 상세 열고 닫을 때 플리커 방지.
  * 2026-08-28: variant page|modal — 구강스캔 메인 캘린더 + 미래일 신규 의뢰.
  * - 2026-08-28: 모바일 — 검색을 상태뱃지(리메이크) 오른쪽 같은 줄로 옮겨 헤더 줄 수 축소.
- * - 2026-08-28: 페이지 헤더 「구강스캔」라벨 제거. 검색폭 축소.
+ * - 2026-08-28: 검색↔신규의뢰 안내 위치 교환 — 안내=헤더, 검색=캘린더 툴바.
  */import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronRight, Search, Trash2, X } from "lucide-react";
 
@@ -144,9 +144,9 @@ type PracticeRecentTransfersAllModalProps = {
    * 플로팅·중첩 다이얼로그 focus로 전체보기가 닫히지 않게 한다.
    */
   floatingDetailOpen?: boolean;
-  /** 헤더 우측(검색 옆) — 임시저장·휴지통 등 */
+  /** 헤더 우측(안내 옆) — 임시저장·휴지통 등 */
   headerActions?: ReactNode;
-  /** 캘린더 「주문일」뱃지 왼쪽 — 도착일 클릭 신규의뢰 안내 */
+  /** 헤더 검색 자리 — 도착일 클릭 신규의뢰 안내 */
   showCalendarNewRequestHint?: boolean;
   onDismissCalendarNewRequestHint?: () => void;
   /** 오늘 이후 날짜 셀 → 신규 의뢰(도착일) */
@@ -608,15 +608,26 @@ export function PracticeRecentTransfersAllModal({
           <div className="flex min-w-0 flex-1 flex-wrap items-center justify-center gap-2">
             {statusBadges}
           </div>
-          <div className="relative w-44 shrink-0">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={search}
-              onChange={(e) => handleSearchChange(e.target.value)}
-              className="h-9 w-full pl-9"
-              placeholder="기공소, 환자명, 전송ID 검색"
-            />
-          </div>
+          {showCalendarNewRequestHint ? (
+            <div
+              role="status"
+              className="flex max-w-full shrink-0 items-center gap-1 text-[11px] font-medium leading-snug text-red-600"
+            >
+              <span className="min-w-0 truncate">
+                신규의뢰하려면 캘린더에서 도착 날짜를 클릭하세요.
+              </span>
+              {onDismissCalendarNewRequestHint ? (
+                <button
+                  type="button"
+                  className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-red-600/70 hover:bg-red-50 hover:text-red-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  aria-label="안내 닫기"
+                  onClick={onDismissCalendarNewRequestHint}
+                >
+                  <X className="h-3 w-3" strokeWidth={2.25} />
+                </button>
+              ) : null}
+            </div>
+          ) : null}
           {headerActions ? (
             <div className="flex shrink-0 flex-wrap items-center gap-2">
               {headerActions}
@@ -801,8 +812,9 @@ export function PracticeRecentTransfersAllModal({
                   if (transfer) onDeleteTransfer(transfer);
                 }}
                 onSelectFutureDay={onSelectFutureDay}
-                showNewRequestHint={showCalendarNewRequestHint}
-                onDismissNewRequestHint={onDismissCalendarNewRequestHint}
+                search={search}
+                onSearchChange={handleSearchChange}
+                searchPlaceholder="기공소, 환자명, 전송ID 검색"
                 hiddenWeekdays={hiddenWeekdays}
                 onHiddenWeekdaysChange={handleHiddenWeekdaysChange}
                 alignEpoch={alignEpoch}

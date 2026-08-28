@@ -9,7 +9,8 @@
  * - web/frontend/src/shared/practice/labReceiveCalendarWeekGrid.ts
  * - 2026-08-28: 요일 헤더에 스크롤바 폭 패딩 동기화 + custom-scrollbar(빈 레일 열·railRef 제거).
  * - 2026-08-28: onSelectFutureDay — 오늘 이후 셀 빈 영역 클릭(칩은 stopPropagation).
- * - 2026-08-28: 「도착일 클릭으로 신규의뢰」안내 — 주문일 뱃지 왼쪽(빨강).
+ * - 2026-08-28: 「도착일 클릭으로 신규의뢰」안내 — 헤더 검색 자리(PracticeRecentTransfersAllModal).
+ * - 2026-08-28: 검색 입력 — 주문일·도착일 뱃지 왼쪽(헤더와 위치 교환).
  * - 2026-08-27: 캘린더 날짜키 뱃지 「도착일」(치과도착일) — 작은 글씨에서 치과의사 오인 방지.
  * - 2026-08-27: 누적 도착일 칩 — 이전 날짜 흐리게·연결 표시.
  * - 2026-08-23: 숨길 요일 버튼·캘린더 열 일~토(일요일 시작) 통일.
@@ -25,9 +26,10 @@
  * - 2026-08-21: 상단 필터 뱃지 ON=진한 상태색 / OFF=흐린 무채색(표시 on/off 대비).
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Trash2, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Search, Trash2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/shared/ui/cn";
 import {
@@ -278,9 +280,10 @@ type PracticeRecentTransfersCalendarProps = {
    * 칩/휴지통은 stopPropagation으로 상세·취소만.
    */
   onSelectFutureDay?: (ymd: string) => void;
-  /** 「주문일」뱃지 왼쪽 — 도착일 클릭 신규의뢰 안내(닫으면 계정 설정 저장) */
-  showNewRequestHint?: boolean;
-  onDismissNewRequestHint?: () => void;
+  /** 「주문일」뱃지 왼쪽 — 전송 검색(헤더와 위치 교환) */
+  search?: string;
+  onSearchChange?: (value: string) => void;
+  searchPlaceholder?: string;
   hiddenWeekdays: number[];
   onHiddenWeekdaysChange: (next: number[]) => void;
   alignEpoch?: number;
@@ -295,8 +298,9 @@ export function PracticeRecentTransfersCalendar({
   onSelectItem,
   onDeleteItem,
   onSelectFutureDay,
-  showNewRequestHint = false,
-  onDismissNewRequestHint,
+  search,
+  onSearchChange,
+  searchPlaceholder = "기공소, 환자명, 전송ID 검색",
   hiddenWeekdays,
   onHiddenWeekdaysChange,
   alignEpoch = 0,
@@ -482,22 +486,15 @@ export function PracticeRecentTransfersCalendar({
           ))}
         </div>
         <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
-          {showNewRequestHint ? (
-            <div
-              role="status"
-              className="flex max-w-full items-center gap-1 text-[11px] font-medium leading-snug text-red-600"
-            >
-              <span className="min-w-0 truncate">신규의뢰하려면 캘린더에서 도착 날짜를 클릭하세요.</span>
-              {onDismissNewRequestHint ? (
-                <button
-                  type="button"
-                  className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-red-600/70 hover:bg-red-50 hover:text-red-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  aria-label="안내 닫기"
-                  onClick={onDismissNewRequestHint}
-                >
-                  <X className="h-3 w-3" strokeWidth={2.25} />
-                </button>
-              ) : null}
+          {onSearchChange ? (
+            <div className="relative w-44 shrink-0">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={search ?? ""}
+                onChange={(e) => onSearchChange(e.target.value)}
+                className="h-9 w-full pl-9"
+                placeholder={searchPlaceholder}
+              />
             </div>
           ) : null}
           <button

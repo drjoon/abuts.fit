@@ -25,6 +25,7 @@
 // - web/frontend/src/shared/practice/labReceiveCalendarHiddenWeekdays.ts
 // - web/backend/utils/labReceiveCalendarHiddenWeekdays.util.js
 // - web/backend/controllers/users/user.controller.js
+// - 2026-08-28: 검색 입력 — 캘린더 주문일·도착일 뱃지 왼쪽(치과 기공의뢰와 동일).
 // - 2026-08-28: 치과 메모 [작성] 왼쪽·[평가] 오른쪽. 헤더 할증라벨 제거·설정 시 배수만.
 // - 2026-08-27: 미확인은 3주 창 밖이어도 목록·안내 바에 포함(사이드바 배지와 맞춤). 클릭 시 해당일로 점프.
 // - 2026-08-27: 미확인 상단 안내 바 복구(버튼·뱃지 없음). 미확인 건은 캘린더에 항상 표시.
@@ -152,7 +153,6 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PeriodFilter } from "@/shared/ui/PeriodFilter";
 import { usePeriodStore } from "@/store/usePeriodStore";
@@ -169,7 +169,6 @@ import {
   useBackgroundTempUpload,
 } from "@/shared/hooks/useBackgroundTempUpload";
 import { useS3FileDownload } from "@/shared/files/useS3FileDownload";
-import { Search } from "lucide-react";
 import { cn } from "@/shared/ui/cn";
 import {
   PracticeTransferDetailChatDialog,
@@ -4661,15 +4660,6 @@ export function RequestorPracticeReceivePage({
         countSuffix="건"
         gapBeforeKeys={["리메이크"]}
       />
-      <div className="relative w-full min-w-0 py-0.5 sm:max-w-xs sm:shrink-0">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="h-9 pl-9 focus-visible:ring-inset focus-visible:ring-offset-0"
-          placeholder="전송ID, 치과명, 환자명 검색"
-        />
-      </div>
     </div>
   );
 
@@ -4717,6 +4707,9 @@ export function RequestorPracticeReceivePage({
               const transfer = calendarTransferById.get(item.id);
               if (transfer) void openTransferDialog(transfer);
             }}
+            search={search}
+            onSearchChange={setSearch}
+            searchPlaceholder="전송ID, 치과명, 환자명 검색"
             hiddenWeekdays={hiddenWeekdays}
             onHiddenWeekdaysChange={handleHiddenWeekdaysChange}
           />
