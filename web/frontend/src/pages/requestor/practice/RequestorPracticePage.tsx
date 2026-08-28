@@ -38,6 +38,7 @@
 // - 2026-08-21: 어벗 디자인 업로드 후 skipDesignConfirm 강제 true 제거(구강스캔으로 치과 설정 존중).
 // - 2026-08-21: 하청 전환 버튼 — 어벗츠기공소(internalLab)만 노출.
 // - 2026-08-21: 어벗 STL 업로드 — relatedRequestIds 없으면 보정 재시도. 구강스캔 필수로 오인하는 토스트 제거.
+// - 2026-08-28: 상세 모달 workFileDrop — 수락 후 창 전체 드래그 업로드(카드와 동일 라우팅).
 // - 2026-08-21: 캘린더 전환 후 상세 모달에 어벗·보철 업로드 CTA 복원.
 // - 2026-08-21: 커스텀어벗 배송현황을 상세·캘린더에 표시(치과 발신과 동일).
 // - 2026-08-20: 기공의뢰수신 캘린더 날짜 뱃지 기본=치과도착일. 계정 preferences에 저장.
@@ -4375,6 +4376,32 @@ export function RequestorPracticeReceivePage({
     [beginCompleteWithFiles, beginDesignUploadWithFiles],
   );
 
+  const dialogWorkFileDrop = useMemo(() => {
+    if (!selectedTransfer) return null;
+    const workState = resolvePracticeLabReceiveWorkActionState(selectedTransfer);
+    if (!workState.showWorkActions) return null;
+    const transferKey = String(
+      selectedTransfer.transferId || selectedTransfer._id || "",
+    ).trim();
+    if (!transferKey) return null;
+    const rowBusy = cardActionBusyId === transferKey || workUploadBusy;
+    const needsAbutment = workState.needsMoreAbutmentDesigns;
+    return {
+      fileInputId: `practice-modal-work-drop-${transferKey}`,
+      disabled: rowBusy,
+      onFiles: (files: File[]) => handleCardDropFiles(selectedTransfer, files),
+      guideText: needsAbutment
+        ? "창 어디에나 어벗 STL을 드래그해 올릴 수 있습니다."
+        : "창 어디에나 보철 파일을 드래그해 올릴 수 있습니다.",
+      dropHint: needsAbutment ? "어벗 STL" : undefined,
+    };
+  }, [
+    selectedTransfer,
+    cardActionBusyId,
+    workUploadBusy,
+    handleCardDropFiles,
+  ]);
+
   const handleCardRelease = useCallback(
     async (transfer: ReceivedPracticeTransfer, event: MouseEvent) => {
       event.preventDefault();
@@ -5107,6 +5134,7 @@ export function RequestorPracticeReceivePage({
         orderedAt={selectedTransfer?.createdAt || null}
         releaseBusy={releaseBusy}
         onRelease={() => void handleReleaseTransfer()}
+        workFileDrop={dialogWorkFileDrop}
         acceptedWorkActions={({ releaseAction }) => {
           if (!selectedTransfer) return releaseAction;
           const workState =

@@ -14,6 +14,7 @@
 // - web/frontend/src/shared/files/downloadWithProgress.ts
 // - web/frontend/src/shared/files/s3BlobCache.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-08-28: 기공소 수락 후 상세 모달 — 창 전체 드롭존·드래그 오버레이·안내 문구.
 // - 2026-08-28: 플로팅 z-300 — 견적 등 툴팁은 ui/tooltip z-400(가림 방지).
 // - 2026-08-28: 모바일 채팅 — 신호등 제거·오른쪽 큰 닫기(X).
 // - 2026-08-28: 맥/카톡 스타일 신호등(닫기·최소화·최대화) 헤더(PC).
@@ -76,7 +77,16 @@ import {
   useRef,
   useState,
 } from "react";
-import { Box, CalendarClock, FileIcon, MessageSquare, Pencil, Trash2, X } from "lucide-react";
+import {
+  Box,
+  CalendarClock,
+  FileIcon,
+  MessageSquare,
+  Pencil,
+  Trash2,
+  UploadCloud,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -138,8 +148,10 @@ import {
 import { LabPendingAbutmentGuide } from "@/shared/components/practice/LabPendingAbutmentGuide";
 import {
   getPracticeTransferFileExtension,
+  PRACTICE_ACCEPTED_HINT,
   PRACTICE_TRANSFER_IMAGE_EXTENSIONS,
 } from "@/shared/practice/practiceTransferAccept";
+import { PracticeTransferFileDropTarget } from "@/shared/components/practice/PracticeTransferFileDropTarget";
 
 function isImagePreviewExt(ext: string): boolean {
   return PRACTICE_TRANSFER_IMAGE_EXTENSIONS.has(String(ext || "").toLowerCase());
@@ -191,6 +203,17 @@ export type PracticeTransferDialogFileItem = {
   fileName: string;
   size: number;
   s3Key: string;
+};
+
+/** 기공의뢰수신 — 수락 후 창 전체 파일 드롭(카드와 동일 라우팅) */
+export type PracticeTransferWorkFileDropConfig = {
+  fileInputId: string;
+  onFiles: (files: File[]) => void;
+  disabled?: boolean;
+  /** 업로드 바·빈 채팅 등 상시 안내 */
+  guideText: string;
+  /** 드래그 오버레이 부제. 미지정 시 PRACTICE_ACCEPTED_HINT */
+  dropHint?: string;
 };
 
 type PracticeTransferDetailChatDialogProps = {
@@ -292,6 +315,8 @@ type PracticeTransferDetailChatDialogProps = {
   acceptedWorkActions?:
     | ReactNode
     | ((slots: { releaseAction: ReactNode | null }) => ReactNode);
+  /** 수락 후 창 전체 드롭존(기공의뢰수신). 미전달 시 버튼 파일창만 */
+  workFileDrop?: PracticeTransferWorkFileDropConfig | null;
   chatLoading: boolean;
   chatError: string;
   chatMessages: ChatMessage[];
@@ -390,6 +415,7 @@ export function PracticeTransferDetailChatDialog({
   onRelease,
   remainingLabel = null,
   acceptedWorkActions = null,
+  workFileDrop = null,
   chatLoading,
   chatError,
   chatMessages,
@@ -995,6 +1021,10 @@ export function PracticeTransferDetailChatDialog({
     accepted &&
     !workCanceled &&
     !workCompleted;
+  const workFileDropActive = Boolean(
+    workFileDrop && !workFileDrop.disabled && !minimized,
+  );
+  const workFileDropGuideText = String(workFileDrop?.guideText || "").trim();
   /** 지정 기공소: 스캔 없이도 수락 가능. 자동매칭(practice_required)만 차단 */
   const oralScanBlocksAccept = oralScanAttachMode === "practice_required";
   const rawChatError = String(chatError || "").trim();
@@ -1171,6 +1201,8 @@ export function PracticeTransferDetailChatDialog({
         }}
         className={cn(
           "pointer-events-auto relative z-[300] flex flex-col gap-0 overflow-hidden rounded-lg border bg-background p-0 duration-0",
+          workFileDropActive &&
+            "ring-2 ring-inset ring-dashed ring-primary/30",
           "shadow-[0_4px_16px_rgba(15,23,42,0.18),0_18px_48px_rgba(15,23,42,0.32),0_40px_80px_-12px_rgba(15,23,42,0.28)]",
           "translate-x-0 translate-y-0",
           "w-auto max-w-none sm:w-auto sm:max-w-none sm:p-0",
@@ -1178,6 +1210,37 @@ export function PracticeTransferDetailChatDialog({
         )}
       >
         <DialogTitle className="sr-only">{title}</DialogTitle>
+
+        <PracticeTransferFileDropTarget
+          fileInputId={
+            workFileDrop?.fileInputId || "practice-transfer-detail-noop-drop"
+          }
+          onFiles={workFileDrop?.onFiles ?? (() => {})}
+          disabled={!workFileDrop || workFileDrop.disabled || minimized}
+          showDefaultUi={false}
+          fillHeight
+          acceptedHint={workFileDrop?.dropHint || PRACTICE_ACCEPTED_HINT}
+          className="flex min-h-0 flex-1 flex-col"
+          activeClassName="ring-2 ring-inset ring-primary bg-primary-soft/25"
+        >
+          {({ isDragActive }) => (
+            <>
+              {isDragActive && workFileDropActive ? (
+                <div
+                  className="pointer-events-none absolute inset-0 z-[305] flex flex-col items-center justify-center gap-2 rounded-lg bg-primary/10 px-6 backdrop-blur-[2px]"
+                  aria-hidden
+                >
+                  <div className="rounded-full bg-primary-soft p-3 text-primary-strong shadow-sm">
+                    <UploadCloud className="h-8 w-8" />
+                  </div>
+                  <p className="text-sm font-semibold text-primary-strong">
+                    파일을 놓아 업로드
+                  </p>
+                  <p className="text-center text-xs text-muted-foreground">
+                    {workFileDrop?.dropHint || PRACTICE_ACCEPTED_HINT}
+                  </p>
+                </div>
+              ) : null}
 
         <Tabs
           value={panelTab}
@@ -1733,6 +1796,11 @@ export function PracticeTransferDetailChatDialog({
                       </div>
                     </>
                   )}
+                  {workFileDropGuideText ? (
+                    <p className="text-[11px] leading-relaxed text-muted-foreground">
+                      {workFileDropGuideText}
+                    </p>
+                  ) : null}
                 </div>
               ) : null}
 
@@ -1767,6 +1835,11 @@ export function PracticeTransferDetailChatDialog({
                     chatMessages.length === 0 ? (
                       <div className="py-6 text-center text-xs text-muted-foreground">
                         아직 메시지가 없습니다.
+                        {workFileDropGuideText ? (
+                          <p className="mx-auto mt-3 max-w-sm text-[11px] leading-relaxed text-primary/80">
+                            {workFileDropGuideText}
+                          </p>
+                        ) : null}
                       </div>
                     ) : null}
 
@@ -1910,6 +1983,9 @@ export function PracticeTransferDetailChatDialog({
             />
           </>
         ) : null}
+            </>
+          )}
+        </PracticeTransferFileDropTarget>
       </DialogContent>
     </Dialog>
     <ModelPreviewDialog
