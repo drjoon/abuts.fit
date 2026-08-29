@@ -9,6 +9,7 @@
 // - 2026-08-16: 자동매칭 재공개(openPool)는 작업취소보다 우선 → 「자동매칭」.
 // - 2026-08-18: 수락 전(의뢰) 내용 수정 게이트 canEditPracticeTransferContent.
 // - 2026-08-29: 보철 디자인 업로드(완료)=작업완료. skip 자동 confirmedAt은 출고로 올리지 않음.
+// - 2026-08-29: 출고=연동 CA 포장.발송·택배. 디자인=어벗 designFiles 또는 보철 resultFiles.
 import {
   isAutoMatchMode,
   toAutoMatchApiFields,
@@ -35,16 +36,74 @@ export const practiceTransferDeletedMongoFilter = () => ({
   status: { $in: PRACTICE_TRANSFER_DELETED_STATUSES },
 });
 
+/** 연동 CA 제조 공정·택배 — 출고(생산진행)로 보는 단계 */
+const PRACTICE_TRANSFER_OUTBOUND_MANUFACTURER_STAGES = new Set([
+  "포장.발송",
+  "발송",
+  "추적관리",
+  "shipping",
+  "tracking",
+]);
+
+/**
+ * 연동 커스텀어벗이 제조사 포장.발송·택배 단계인지.
+ * @param {object|null|undefined} abutmentDeliveryInfo mapAbutmentDeliveryByTransferDocs 요약
+ */
+export const isPracticeTransferAbutmentOutbound = (abutmentDeliveryInfo) => {
+  const di =
+    abutmentDeliveryInfo && typeof abutmentDeliveryInfo === "object"
+      ? abutmentDeliveryInfo
+      : null;
+  if (!di) return false;
+  if (di.shippedAt || di.pickedUpAt || di.deliveredAt) return true;
+  if (String(di.tracking?.lastStatusText || "").trim()) return true;
+  const stages = Array.isArray(di.manufacturerStages)
+    ? di.manufacturerStages
+    : [];
+  return stages.some((stage) =>
+    PRACTICE_TRANSFER_OUTBOUND_MANUFACTURER_STAGES.has(String(stage || "").trim()),
+  );
+};
+
+/** 어벗 디자인(designFiles) 또는 보철(resultFiles) 업로드 여부 */
+export const practiceTransferHasDesignOrResultFiles = (transferDoc) => {
+  const production =
+    transferDoc?.production && typeof transferDoc.production === "object"
+      ? transferDoc.production
+      : {};
+  const designFiles = Array.isArray(production.designFiles)
+    ? production.designFiles
+    : Array.isArray(transferDoc?.designFiles)
+      ? transferDoc.designFiles
+      : [];
+  const resultFiles = Array.isArray(transferDoc?.resultFiles)
+    ? transferDoc.resultFiles
+    : [];
+  const designCount = Math.max(
+    designFiles.length,
+    Number(production.designFileCount || transferDoc?.designFileCount || 0) || 0,
+  );
+  const resultCount = Math.max(
+    resultFiles.length,
+    Number(transferDoc?.resultFileCount || 0) || 0,
+  );
+  return (
+    designCount > 0 ||
+    resultCount > 0 ||
+    Boolean(production.designReadyAt || transferDoc?.designReadyAt)
+  );
+};
+
 /**
  * 기공의뢰 manufacturerStage SSOT (UI·대시보드 집계 공통).
- * 생산진행 = 치과 「생산 진행」 컨펌 후(production.confirmedAt).
+ * - 출고(생산진행): 연동 CA 포장.발송·택배, 또는 치과 수동 생산진행(skipDesignConfirm=false)
+ * - 디자인(작업완료): 어벗 designFiles 또는 보철 resultFiles 업로드(수락 후)
  * @param {object} transferDoc
- * @param {{ viewerLabAnchorId?: string|null }} [options]
- *   viewerLabAnchorId: 기공소 수신 뷰 — 내가 거부한 공개 풀/지정 건을 「거부」로.
+ * @param {{ viewerLabAnchorId?: string|null, abutmentDeliveryInfo?: object|null }} [options]
  */
 export const resolvePracticeTransferManufacturerStage = (
   transferDoc,
-  { viewerLabAnchorId = null } = {},
+  { viewerLabAnchorId = null, abutmentDeliveryInfo = null } = {},
 ) => {
   const matchingMode = isAutoMatchMode(transferDoc) ? "auto" : "direct";
   const autoFields = toAutoMatchApiFields(transferDoc, viewerLabAnchorId);
@@ -74,14 +133,38 @@ export const resolvePracticeTransferManufacturerStage = (
     }
     return "취소";
   }
-  // 보철 디자인 파일 업로드(완료) → 작업완료(UI「디자인」).
-  // skipDesignConfirm 자동 confirmedAt은 출고로 올리지 않음 — 치과 수동 생산진행만 출고.
-  if (autoFields.autoMatch?.completed) {
-    const skipDesignConfirm = production?.skipDesignConfirm !== false;
-    if (production?.confirmedAt && !skipDesignConfirm) return "생산진행";
+
+  const delivery =
+    abutmentDeliveryInfo ??
+    (transferDoc?.abutmentDeliveryInfo &&
+    typeof transferDoc.abutmentDeliveryInfo === "object"
+      ? transferDoc.abutmentDeliveryInfo
+      : null);
+  // 제조사 포장.발송·택배 기록이 있으면 출고(UI「출고」)
+  if (isPracticeTransferAbutmentOutbound(delivery)) return "생산진행";
+
+  const hasDesignOrResult = practiceTransferHasDesignOrResultFiles(transferDoc);
+  const accepted = Boolean(transferDoc?.requestorDownloadedAt);
+  // 어벗·보철 디자인 파일 업로드(수락 후) 또는 작업완료 → 디자인
+  if (
+    accepted &&
+    (autoFields.autoMatch?.completed || hasDesignOrResult)
+  ) {
+    // 치과 수동 생산진행(컨펌 생략 OFF)만 출고. skip 자동 confirmedAt은 디자인 유지.
+    if (
+      production?.confirmedAt &&
+      production?.skipDesignConfirm === false &&
+      autoFields.autoMatch?.completed
+    ) {
+      return "생산진행";
+    }
     return "작업완료";
   }
-  if (production?.confirmedAt) return "생산진행";
+
+  if (production?.confirmedAt && production?.skipDesignConfirm === false) {
+    return "생산진행";
+  }
+
   // 자동매칭 공개 풀(작업취소 재공개 포함) — 치과·타 기공소에는 「자동매칭」
   // 레거시 자동매칭 공개 풀 — 치과·타 기공소 「자동매칭」
   if (matchingMode === "auto" && openPool) return "자동매칭";

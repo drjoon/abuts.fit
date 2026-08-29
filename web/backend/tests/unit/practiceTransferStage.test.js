@@ -113,4 +113,43 @@ describe("practiceTransferStage pending-accept edit", () => {
     };
     expect(resolvePracticeTransferManufacturerStage(doc)).toBe("작업완료");
   });
+
+  test("어벗 designFiles만 있어도 수락 후 작업완료(디자인)", () => {
+    const doc = {
+      status: "active",
+      matchingMode: "direct",
+      targetLabAnchorId: "64a000000000000000000002",
+      requestorDownloadedAt: new Date("2026-08-18T02:00:00.000Z"),
+      production: {
+        skipDesignConfirm: true,
+        designFiles: [{ s3Key: "a.stl", originalName: "a.stl" }],
+      },
+    };
+    expect(resolvePracticeTransferManufacturerStage(doc)).toBe("작업완료");
+  });
+
+  test("연동 CA 포장.발송·택배면 생산진행(출고)", () => {
+    const doc = {
+      status: "active",
+      matchingMode: "direct",
+      targetLabAnchorId: "64a000000000000000000002",
+      requestorDownloadedAt: new Date("2026-08-18T02:00:00.000Z"),
+      autoMatch: { completedAt: new Date("2026-08-29T01:00:00.000Z") },
+      production: {
+        skipDesignConfirm: true,
+        confirmedAt: new Date("2026-08-29T01:00:00.000Z"),
+        designFiles: [{ s3Key: "a.stl" }],
+      },
+      resultFiles: [{ tooth: "46", file: { s3Key: "c.stl" } }],
+    };
+    expect(
+      resolvePracticeTransferManufacturerStage(doc, {
+        abutmentDeliveryInfo: {
+          shippedAt: new Date("2026-08-28T06:15:34.295Z"),
+          manufacturerStages: ["추적관리"],
+          tracking: { lastStatusText: "상품출발" },
+        },
+      }),
+    ).toBe("생산진행");
+  });
 });

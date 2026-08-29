@@ -4705,7 +4705,7 @@ export function RequestorPracticeReceivePage({
         tone: "completed",
         count: statusCounts.completed,
         unreadCount: statusUnreadCounts.completed,
-        tooltip: "보철 디자인 파일 업로드 후(치과·기공소 공통)",
+        tooltip: "어벗·보철 디자인 파일 업로드 후(치과·기공소 공통)",
       },
       {
         key: "포장.발송",
@@ -4713,7 +4713,7 @@ export function RequestorPracticeReceivePage({
         tone: "shipping",
         count: statusCounts.shipping,
         unreadCount: statusUnreadCounts.shipping,
-        tooltip: "디자인 완료 후 치과가 생산·출고를 진행한 후",
+        tooltip: "연동 커스텀어벗 제조사 포장.발송·택배 진행 후",
       },
       {
         key: "리메이크",

@@ -214,25 +214,62 @@ export function getPracticeTransferLabReceiveDisplayStatus(
   }
   // 보철 디자인 파일 업로드(완료) → 작업완료(UI「디자인」).
   // skipDesignConfirm 자동 confirmedAt은 출고로 올리지 않음 — backend stage SSOT와 동일.
+  // 연동 CA 포장.발송·택배면 출고(생산진행).
+  const delivery = transfer.abutmentDeliveryInfo;
+  if (
+    delivery?.shippedAt ||
+    delivery?.pickedUpAt ||
+    delivery?.deliveredAt ||
+    String(delivery?.tracking?.lastStatusText || "").trim() ||
+    (Array.isArray(delivery?.manufacturerStages) &&
+      delivery.manufacturerStages.some((s) =>
+        ["포장.발송", "발송", "추적관리", "shipping", "tracking"].includes(
+          String(s || "").trim(),
+        ),
+      ))
+  ) {
+    return "생산진행";
+  }
+  // API manufacturerStage가 이미 출고면 유지(delivery enrich 누락 대비)
+  if (transfer.manufacturerStage === "생산진행") {
+    return "생산진행";
+  }
+
+  const designCount = Math.max(
+    Number(transfer.production?.designFileCount || 0) || 0,
+    Array.isArray(transfer.production?.designFiles)
+      ? transfer.production.designFiles.length
+      : 0,
+  );
+  const resultCount = Math.max(
+    Number(transfer.resultFileCount || 0) || 0,
+    Array.isArray(transfer.resultFiles) ? transfer.resultFiles.length : 0,
+  );
+  const hasDesignOrResult =
+    designCount > 0 ||
+    resultCount > 0 ||
+    Boolean(transfer.production?.designReadyAt);
+
   if (
     transfer.autoMatch?.completed ||
-    transfer.manufacturerStage === "작업완료"
+    transfer.manufacturerStage === "작업완료" ||
+    (hasDesignOrResult &&
+      (Boolean(transfer.isAccepted) ||
+        Boolean(transfer.isDownloaded) ||
+        Boolean(String(transfer.requestorDownloadedAt || "").trim()) ||
+        Boolean(String(transfer.requestorAcceptedAt || "").trim()) ||
+        transfer.manufacturerStage === "의뢰수락" ||
+        transfer.manufacturerStage === "작업완료"))
   ) {
     const skipDesignConfirm = transfer.production?.skipDesignConfirm !== false;
     if (
-      (transfer.production?.confirmedAt ||
-        transfer.manufacturerStage === "생산진행") &&
-      !skipDesignConfirm
+      transfer.production?.confirmedAt &&
+      !skipDesignConfirm &&
+      transfer.autoMatch?.completed
     ) {
       return "생산진행";
     }
     return "작업완료";
-  }
-  if (
-    transfer.production?.confirmedAt ||
-    transfer.manufacturerStage === "생산진행"
-  ) {
-    return "생산진행";
   }
 
   // 자동매칭 재공개(수락 취소 포함) — workCanceledAt이 남아 있어도 공개 풀이면 「자동매칭」

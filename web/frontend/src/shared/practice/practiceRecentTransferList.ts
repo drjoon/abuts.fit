@@ -14,6 +14,7 @@
  * 2026-08-19: 기간 필터는 periodToRange(커스텀 시작~끝) + 주문일/치과도착일 앵커.
  * 2026-08-28: 의뢰 파일 — PracticeTransfer.files[] 전부 매핑(STL·PLY·이미지 등). caseInfos.file 단건 폴백만.
  * 2026-08-29: 상단 뱃지 라벨 완료→디자인·발송→출고. 디자인=보철 디자인 파일 업로드(치과·기공소 공통).
+ * 2026-08-29: 출고=연동 CA 포장.발송·택배. 디자인=어벗 designFiles 또는 보철 resultFiles.
  *
  * related files:
  * - web/frontend/src/pages/practice/components/PracticeRecentTransfersAllModal.tsx
@@ -290,6 +291,70 @@ export const canRemakePracticeTransferByStatus = (status: unknown) => {
   return s === "작업완료" || s === "생산진행" || s === "포장.발송";
 };
 
+const PRACTICE_OUTBOUND_MFG_STAGES = new Set([
+  "포장.발송",
+  "발송",
+  "추적관리",
+  "shipping",
+  "tracking",
+]);
+
+/** 연동 CA 포장.발송·택배 → 출고. API manufacturerStage 보강용. */
+export const isPracticeRecentAbutmentOutbound = (
+  abutmentDeliveryInfo: PracticeRecentRequestItem["abutmentDeliveryInfo"] | null | undefined,
+) => {
+  const di = abutmentDeliveryInfo;
+  if (!di) return false;
+  if (di.shippedAt || di.pickedUpAt || di.deliveredAt) return true;
+  if (String(di.tracking?.lastStatusText || "").trim()) return true;
+  const stages = Array.isArray(di.manufacturerStages) ? di.manufacturerStages : [];
+  return stages.some((s) => PRACTICE_OUTBOUND_MFG_STAGES.has(String(s || "").trim()));
+};
+
+/** 목록 매핑용 표시 단계 — API stage + 배송·디자인 파일 보강 */
+export const resolvePracticeRecentDisplayStatus = (row: {
+  manufacturerStage?: unknown;
+  status?: unknown;
+  abutmentDeliveryInfo?: PracticeRecentRequestItem["abutmentDeliveryInfo"] | null;
+  designFiles?: unknown;
+  designFileCount?: unknown;
+  designReadyAt?: unknown;
+  resultFiles?: unknown;
+  productionConfirmedAt?: unknown;
+  skipDesignConfirm?: unknown;
+}) => {
+  if (isPracticeRecentAbutmentOutbound(row.abutmentDeliveryInfo)) {
+    return "생산진행";
+  }
+  const apiStage = toStatusLabel(row.manufacturerStage || row.status);
+  if (apiStage === "생산진행" || apiStage === "포장.발송") return apiStage;
+
+  const designN = Math.max(
+    Array.isArray(row.designFiles) ? row.designFiles.length : 0,
+    Number(row.designFileCount || 0) || 0,
+  );
+  const resultN = Array.isArray(row.resultFiles) ? row.resultFiles.length : 0;
+  const hasFiles =
+    designN > 0 || resultN > 0 || Boolean(row.designReadyAt);
+  if (
+    hasFiles &&
+    (apiStage === "의뢰수락" ||
+      apiStage === "다운로드완료" ||
+      apiStage === "작업완료" ||
+      apiStage === "생산진행")
+  ) {
+    if (
+      row.productionConfirmedAt &&
+      row.skipDesignConfirm === false &&
+      apiStage !== "의뢰수락"
+    ) {
+      return "생산진행";
+    }
+    return "작업완료";
+  }
+  return apiStage;
+};
+
 /** 최근전송 상단 6뱃지 — 라벨·집계키·빠른툴팁 SSOT. 취소=작업취소+휴지통(취소·거부). */
 export const PRACTICE_RECENT_STATUS_BADGES = [
   {
@@ -308,7 +373,7 @@ export const PRACTICE_RECENT_STATUS_BADGES = [
     filter: "작업완료",
     label: "디자인",
     countKey: "completed",
-    tooltip: "기공소에서 보철 디자인 파일을 업로드한 후(치과·기공소 공통)",
+    tooltip: "기공소에서 보철·어벗 디자인 파일을 업로드한 후(치과·기공소 공통)",
   },
   {
     filter: "취소",
@@ -321,7 +386,7 @@ export const PRACTICE_RECENT_STATUS_BADGES = [
     filter: "포장.발송",
     label: "출고",
     countKey: "shipping",
-    tooltip: "디자인 완료 후 치과가 생산·출고를 진행한 후",
+    tooltip: "연동 커스텀어벗 제조사 포장.발송·택배 진행 후",
   },
   {
     filter: "리메이크",
@@ -641,7 +706,19 @@ export const mapMyPracticeTransferApiRows = (
         targetLab,
         targetLabAnchorId: matchingMode === "auto" ? "" : targetLabAnchorId,
         matchingMode,
-        status: toStatusLabel(r.manufacturerStage),
+        status: resolvePracticeRecentDisplayStatus({
+          manufacturerStage: r.manufacturerStage,
+          abutmentDeliveryInfo:
+            r.abutmentDeliveryInfo && typeof r.abutmentDeliveryInfo === "object"
+              ? (r.abutmentDeliveryInfo as PracticeRecentRequestItem["abutmentDeliveryInfo"])
+              : null,
+          designFiles,
+          designFileCount: productionRaw?.designFileCount,
+          designReadyAt: productionRaw?.designReadyAt,
+          resultFiles,
+          productionConfirmedAt: productionRaw?.confirmedAt,
+          skipDesignConfirm: productionRaw?.skipDesignConfirm !== false,
+        }),
         createdAtTs: new Date(createdAtRaw).getTime(),
         transferId:
           String(r.transferId || "").trim() ||

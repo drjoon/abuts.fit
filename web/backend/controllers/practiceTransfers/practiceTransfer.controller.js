@@ -4226,13 +4226,11 @@ export async function getMyPracticeTransfers(req, res) {
         ? fetched.slice(0, limit)
         : fetched;
 
-    // 캘린더: fee/배송/별점 enrich 생략(칩에 불필요, 상세는 별도 갱신)
+    // 캘린더도 배송 요약 필요 — 출고(포장.발송·택배) 뱃지 판정에 사용. fee/별점은 생략.
     const quotesById = calendarRange
       ? new Map()
       : await buildFeeQuotesForTransferDocs({ docs });
-    const abutmentDeliveryById = calendarRange
-      ? new Map()
-      : await mapAbutmentDeliveryByTransferDocs(docs);
+    const abutmentDeliveryById = await mapAbutmentDeliveryByTransferDocs(docs);
 
     let practiceRatings = [];
     if (!calendarRange) {
@@ -4274,8 +4272,13 @@ export async function getMyPracticeTransfers(req, res) {
             );
             const abutmentDeliveryInfo =
               abutmentDeliveryById.get(String(doc?._id || "")) || null;
+            const manufacturerStage = resolvePracticeTransferManufacturerStage(
+              doc,
+              { abutmentDeliveryInfo },
+            );
             return toVirtualRequestRows(doc).map((row) => ({
               ...row,
+              manufacturerStage,
               feeQuote,
               labRating,
               abutmentDeliveryInfo,
@@ -4311,8 +4314,12 @@ export async function getMyPracticeTransfers(req, res) {
           );
       const abutmentDeliveryInfo =
         abutmentDeliveryById.get(String(doc?._id || "")) || null;
+      const manufacturerStage = resolvePracticeTransferManufacturerStage(doc, {
+        abutmentDeliveryInfo,
+      });
       return mapRows(doc).map((row) => ({
         ...row,
+        manufacturerStage,
         feeQuote,
         labRating,
         abutmentDeliveryInfo,
@@ -4706,13 +4713,14 @@ export async function getReceivedPracticeTransfers(req, res) {
         declinedByMe ||
         (labRejectedByAnchor && Boolean(doc?.labRejectedAt));
       // openPool 재공개는 작업취소보다 우선(자동매칭). 인라인 workCanceledAt 우선은 수락 취소 후 뱃지 어긋남.
+      const abutmentDeliveryInfo =
+        abutmentDeliveryById.get(String(doc?._id || "")) || null;
       const manufacturerStage = resolvePracticeTransferManufacturerStage(doc, {
         viewerLabAnchorId: labAnchorId,
+        abutmentDeliveryInfo,
       });
       const oralScanDownloadLocked = shouldLockLabOralScanDownload(doc);
       const feeQuote = quotesById.get(String(doc?._id || "")) || null;
-      const abutmentDeliveryInfo =
-        abutmentDeliveryById.get(String(doc?._id || "")) || null;
       const arrivalDates = resolvePracticeArrivalDates(doc);
       const arrivalDate = resolveCurrentArrivalYmd(arrivalDates);
       const orderDates = resolvePracticeOrderDates(doc);

@@ -17,6 +17,7 @@ import {
   resolvePracticeTransferManufacturerStage,
   toPracticeTransferDashboardBucket,
 } from "../utils/practiceTransferStage.js";
+import { mapAbutmentDeliveryByTransferDocs } from "./practiceTransferProduction.service.js";
 import { toKstYmd } from "../controllers/requests/utils.js";
 
 export { emptyPracticeTransferDashboardStats };
@@ -170,10 +171,16 @@ export async function getPracticeTransferDashboardStats({
     .lean();
 
   const stats = emptyPracticeTransferDashboardStats();
-  const stageOptions =
+  const stageOptionsBase =
     resolvedKind === "lab" ? { viewerLabAnchorId: anchorId } : {};
+  const abutmentDeliveryById = await mapAbutmentDeliveryByTransferDocs(docs);
   for (const doc of docs) {
-    const stage = resolvePracticeTransferManufacturerStage(doc, stageOptions);
+    const abutmentDeliveryInfo =
+      abutmentDeliveryById.get(String(doc?._id || "")) || null;
+    const stage = resolvePracticeTransferManufacturerStage(doc, {
+      ...stageOptionsBase,
+      abutmentDeliveryInfo,
+    });
     const bucket = toPracticeTransferDashboardBucket(stage);
     if (!bucket) continue;
     stats[bucket] += 1;
