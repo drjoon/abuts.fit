@@ -12,6 +12,7 @@
 // - web/backend/controllers/bg/bg.controller.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/regenerationPending.ts
 // change-log:
+// - 2026-08-29: 재제작(copied_sample) count-update에 R&D 토스트를 띄우지 않음 — rnd_sample/rnd stage만.
 // - 2026-08-21: 헥스 확인용 원본↔샘플 취소 시 워크시트에서 둘 다 즉시 제거
 // - 2026-08-18: Filled STL/NC 재생성 완료 상단 alert 제거. 캐시 삭제·pending consume은 유지.
 // - 2026-08-18: Filled STL/NC 재생성 완료 시 IndexedDB 캐시 삭제.
@@ -560,18 +561,16 @@ export function useWorksheetRealtimeStatus({
       }
       case "worksheet:count-update": {
         const stage = String(payload?.stage || "").trim();
-        const source = String(payload?.source || "").trim();
         const requestCategory = String(payload?.requestCategory || "").trim();
         const delta = Number(payload?.delta || 0);
         const action = String(payload?.action || "").trim();
         if (fetchRequests) {
           void fetchRequests(true);
         }
-        if (
-          source === "manufacturer_sample" ||
-          requestCategory === "rnd_sample" ||
-          requestCategory === "copied_sample"
-        ) {
+        // R&D 보관 샘플(clone-as-sample)만 토스트. 재제작(copied_sample)은 호출측 토스트를 쓴다.
+        const isRndSampleEvent =
+          stage === "rnd" || requestCategory === "rnd_sample";
+        if (isRndSampleEvent) {
           if (delta < 0 || action === "deleted") {
             toast({
               title: "R&D 샘플 삭제됨",

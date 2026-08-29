@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-29: 재제작(count-update) 시 전체 목록 리셋 금지 — 펼침/페이지 유지, 관련 stage만 soft refresh.
 // - 2026-08-21: 한진 운송중 뱃지를 shared 라벨 SSOT로 통일(위치 포함). API events populate 의존.
 // - 2026-08-21: 집하완료·한진 미배송 뱃지를 최신 위치·상태(예: 여수 SUB 도착)로 표시
 // - 2026-08-21: 집하완료·한진 미배송(66 미수신) 카드에 "한진 미처리" 뱃지 표시
@@ -532,12 +533,42 @@ export const TrackingInquiryPage = () => {
 
 
 
+  // 이미 불러온 페이지(1..N)만 silent 재조회해 병합한다.
+  // pageRef=1로 리셋하면 펼친 카드가 shippingRows에서 사라져 expandedBoxes가 비워진다.
   const refreshTrackingRealtime = useCallback(async () => {
     if (!token) return;
-    pageRef.current = 1;
-    hasMoreRef.current = true;
-    await runTrackingFetch({ silent: true, append: false });
-  }, [runTrackingFetch, token]);
+    const pagesLoaded = Math.max(1, pageRef.current);
+    const fetchSeq = ++fetchSequenceRef.current;
+    isFetchingPageRef.current = true;
+    try {
+      const merged = new Map<string, ManufacturerRequest>();
+      let lastBatchSize = 0;
+      for (let page = 1; page <= pagesLoaded; page += 1) {
+        const list = await fetchTrackingPage(page);
+        if (fetchSeq !== fetchSequenceRef.current) return;
+        lastBatchSize = list.length;
+        for (const r of list) {
+          const key = getStableRequestKey(r);
+          if (!key) continue;
+          merged.set(key, r);
+        }
+      }
+      if (fetchSeq !== fetchSequenceRef.current) return;
+      setRequests(Array.from(merged.values()));
+      pageRef.current = pagesLoaded;
+      hasMoreRef.current = lastBatchSize >= PAGE_LIMIT;
+    } catch (e: any) {
+      toast({
+        title: "조회 실패",
+        description: e?.message || "네트워크 오류가 발생했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      if (fetchSeq === fetchSequenceRef.current) {
+        isFetchingPageRef.current = false;
+      }
+    }
+  }, [fetchTrackingPage, getStableRequestKey, token, toast]);
 
   useEffect(() => {
     if (!token) return;
@@ -573,6 +604,36 @@ export const TrackingInquiryPage = () => {
       "request:rnd-unmachinable-confirmed",
     ],
     delayMs: 160,
+    shouldHandle: (evt) => {
+      const evtType = String(evt?.type || "").trim();
+      if (evtType !== "worksheet:count-update") return true;
+
+      const rawPayload =
+        evt?.data && typeof evt.data === "object"
+          ? (evt.data as Record<string, unknown>)
+          : {};
+      const stage = String(rawPayload.stage || "")
+        .trim()
+        .toLowerCase();
+      const requestCategory = String(rawPayload.requestCategory || "")
+        .trim()
+        .toLowerCase();
+
+      // 재제작/샘플 복사는 준비·가공 등 다른 탭 카운트만 바뀐다. 추적관리 목록·펼침은 그대로 둔다.
+      if (
+        requestCategory === "copied_sample" ||
+        requestCategory === "rnd_sample"
+      ) {
+        return false;
+      }
+      if (!stage) return true;
+      return (
+        stage === "tracking" ||
+        stage === "추적관리" ||
+        stage === "shipping" ||
+        stage === "포장.발송"
+      );
+    },
     onMatch: () => {
       void refreshTrackingRealtime();
     },
