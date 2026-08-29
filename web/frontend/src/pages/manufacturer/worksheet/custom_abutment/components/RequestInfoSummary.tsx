@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-29: MetaRow를 인라인 텍스트 흐름으로 바꿔 flex 항목 경계에서 강제 줄바꿈되지 않게 함.
 // - 2026-08-29: 환자·임플란트 섹션을 한 MetaRow로 묶어 가로폭 내에서 자연 줄바꿈.
 // - 2026-08-29: 주문일시 옆에 출고일시(shippedAt) 표시. 없으면 출고예정일(estimatedShipYmd) 유지.
 // - 2026-08-23: PreviewModal row: 섹션 라벨을 내용 왼쪽에 인라인 배치하고 환자 일정을 한 줄로 묶어 요약 카드 세로 높이 축소.
@@ -122,12 +123,17 @@ function formatShippedAtLabel(value?: string | Date | null): string {
 }
 
 function Dot() {
-  return <span className="text-slate-300 select-none" aria-hidden>•</span>;
+  return (
+    <span className="text-slate-300 select-none" aria-hidden>
+      {" · "}
+    </span>
+  );
 }
 
+/** 인라인 텍스트 흐름. flex-wrap이면 긴 앞 항목이 한 줄을 차지해 뒤 항목이 강제 개행된다. */
 function MetaRow({ children }: { children: ReactNode }) {
   return (
-    <div className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-[13px] leading-snug text-slate-700">
+    <div className="min-w-0 break-words text-[13px] leading-snug text-slate-700">
       {children}
     </div>
   );
@@ -294,9 +300,7 @@ export function RequestInfoSummary({
   const patientScheduleParts = (
     <>
       {labName && (
-        <span className="min-w-0 break-words font-medium text-slate-800">
-          {labName}
-        </span>
+        <span className="font-medium text-slate-800">{labName}</span>
       )}
       {dateLabel && (
         <InlineGroup>
@@ -313,26 +317,29 @@ export function RequestInfoSummary({
         </InlineGroup>
       )}
       {deadlineText && (
-        <span
-          className={`inline-flex items-center rounded-full border px-1.5 py-0 text-[10px] font-semibold leading-[1.4] whitespace-nowrap ${
-            deadlineBadgeClass ||
-            "bg-slate-50 text-slate-700 border-slate-200"
-          }`}
-        >
-          {deadlineText}
-        </span>
+        <InlineGroup>
+          {labName || dateLabel || shipLabel ? <Dot /> : null}
+          <span
+            className={`inline-flex items-center rounded-full border px-1.5 py-0 text-[10px] font-semibold leading-[1.4] whitespace-nowrap ${
+              deadlineBadgeClass ||
+              "bg-slate-50 text-slate-700 border-slate-200"
+            }`}
+          >
+            {deadlineText}
+          </span>
+        </InlineGroup>
       )}
     </>
   );
 
   const hasPatientSchedule = Boolean(labName || dateLabel || hasScheduleMeta);
 
-  // 일정·신원을 한 MetaRow로 묶어 가로폭 내에서 자연 줄바꿈(카드/프리뷰 공통).
+  // 일정·신원을 한 인라인 흐름으로 묶어 가로폭 내에서 자연 줄바꿈(카드/프리뷰 공통).
   const patientBody = (
     <MetaRow>
       {hasPatientSchedule ? patientScheduleParts : null}
       {hasPatientSchedule ? <Dot /> : null}
-      <span className="min-w-0 break-words">{patientIdentityLine}</span>
+      <span>{patientIdentityLine}</span>
     </MetaRow>
   );
 
@@ -398,16 +405,12 @@ export function RequestInfoSummary({
     >
       <MetaRow>
         {implantLine ? (
-          <span className="min-w-0 break-words font-medium text-slate-800">
-            {implantLine}
-          </span>
+          <span className="font-medium text-slate-800">{implantLine}</span>
         ) : null}
         {retention ? (
           <InlineGroup>
             {implantLine ? <Dot /> : null}
-            <span className="min-w-0 break-words text-slate-600">
-              유지홈 {retention}
-            </span>
+            <span className="text-slate-600">유지홈 {retention}</span>
           </InlineGroup>
         ) : null}
         {geometryItems.map((item, idx) => (
@@ -433,13 +436,10 @@ export function RequestInfoSummary({
     >
       <MetaRow>
         {productionItems.map((item, idx) => (
-          <span
-            key={`${item}-${idx}`}
-            className="inline-flex min-w-0 max-w-full items-baseline gap-1.5"
-          >
+          <InlineGroup key={`${item}-${idx}`}>
             {idx > 0 ? <Dot /> : null}
-            <span className="min-w-0 break-words text-slate-600">{item}</span>
-          </span>
+            <span className="text-slate-600">{item}</span>
+          </InlineGroup>
         ))}
       </MetaRow>
     </Section>
@@ -458,16 +458,12 @@ export function RequestInfoSummary({
       {(shipName || shipContactName || shipPhone) && (
         <MetaRow>
           {shipName ? (
-            <span className="min-w-0 break-words font-medium text-slate-800">
-              {shipName}
-            </span>
+            <span className="font-medium text-slate-800">{shipName}</span>
           ) : null}
           {shipContactName ? (
             <InlineGroup>
               {shipName ? <Dot /> : null}
-              <span className="min-w-0 break-words text-slate-600">
-                {shipContactName}
-              </span>
+              <span className="text-slate-600">{shipContactName}</span>
             </InlineGroup>
           ) : null}
           {shipPhone ? (
@@ -480,9 +476,7 @@ export function RequestInfoSummary({
       )}
       {shipAddressLine ? (
         <MetaRow>
-          <span className="min-w-0 break-words text-slate-600">
-            {shipAddressLine}
-          </span>
+          <span className="text-slate-600">{shipAddressLine}</span>
         </MetaRow>
       ) : null}
     </Section>
