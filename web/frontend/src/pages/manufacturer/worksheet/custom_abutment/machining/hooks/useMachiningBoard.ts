@@ -7,6 +7,7 @@
 // - web/frontend/src/pages/manufacturer/equipment/cnc/components/CncPlaylistDrawer.tsx
 // - web/backend/controllers/requests/common.review.controller.js
 // change-log:
+// - 2026-08-29: 예약 관리 열린 동안 큐 NC 메타 변경 시 playlistJobs 동기화.
 // - 2026-08-29: PreviewModal NC 재생성 시 cam-processing-started로 큐 NC 즉시 제거(Next Up「CAM 생성 중」).
 // - 2026-08-21: Next Up 이동 시 NC 삭제·CAM 항상 재생성 + 대기 오버레이용 pending 표시.
 // - 2026-08-21: Next Up 드래그로 타 장비 이동(moveNextUpToMachine) + 직경 변경 시 CAM 재생성 안내.
@@ -1114,6 +1115,20 @@ export const useMachiningBoard = ({
     },
     [buildPlaylistJobsFromQueue, queueMap],
   );
+
+  // 예약 관리가 열린 동안 큐 NC 메타가 바뀌면(재생성 시작/완료) 목록을 즉시 동기화한다.
+  useEffect(() => {
+    if (!playlistOpen) return;
+    const mid = String(playlistMachineId || "").trim();
+    if (!mid) return;
+    const raw = Array.isArray(queueMap?.[mid]) ? queueMap[mid] : [];
+    setPlaylistJobs(buildPlaylistJobsFromQueue(raw));
+  }, [
+    buildPlaylistJobsFromQueue,
+    playlistMachineId,
+    playlistOpen,
+    queueMap,
+  ]);
 
   useEffect(() => {
     let mounted = true;

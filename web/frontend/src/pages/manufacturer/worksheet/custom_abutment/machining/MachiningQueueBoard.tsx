@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-29: 예약 관리 목록에서 CAM(NC) 재생성 — NC 제거·「CAM 생성 중」블러.
 // - 2026-08-26: 큐→프리뷰 ncFile에 uploadedAt/fileSize/materialDiameter 전달(버전 캐시·#521 검증용).
 // - 2026-08-24: 장비 상태 갱신 뱃지 — 직경별 건수 옆(leadingAddon)으로 이동.
 // - 2026-08-24: 상단 헤더 — 진행중 의뢰·직경 카드(좌) + 상태·액션 버튼(우) 한 행. REAL 뱃지 제거.
@@ -71,6 +72,8 @@ import { PreviewModal } from "@/pages/manufacturer/worksheet/custom_abutment/com
 import { usePreviewLoader } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/usePreviewLoader";
 import { useRequestFileHandlers } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers";
 import type { ManufacturerRequest } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
+import { markNcRegenerationPending } from "@/pages/manufacturer/worksheet/custom_abutment/utils/regenerationPending";
+import { deleteCncProgramCache } from "@/shared/files/fileBlobCache";
 import { WorksheetQueueSummary } from "@/shared/ui/dashboard/WorksheetQueueSummary";
 import type { DiameterBucketKey } from "@/shared/ui/dashboard/WorksheetDiameterQueueBar";
 
@@ -199,6 +202,9 @@ export const MachiningQueueBoard = ({
   const [siOpen, setSiOpen] = useState(false);
   const [siFetching, setSiFetching] = useState(false);
   const [anodizingOffTriggering, setAnodizingOffTriggering] = useState(false);
+  const [playlistRegeneratingIds, setPlaylistRegeneratingIds] = useState<
+    Set<string>
+  >(() => new Set());
   const [, setSearchParams] = useSearchParams();
 
   const [camPreviewOpen, setCamPreviewOpen] = useState(false);
@@ -702,7 +708,9 @@ export const MachiningQueueBoard = ({
         })(),
       } as unknown as ManufacturerRequest;
 
-      await handleOpenPreview(previewReq, { forceRefresh: true });
+      // forceRefresh 금지: 매번 IndexedDB를 건너뛰고 STL/NC를 재다운로드한다.
+      // 큐 스냅샷 보강은 usePreviewLoader의 full-request enrich가 담당한다.
+      await handleOpenPreview(previewReq);
     },
     [handleOpenPreview, toast],
   );
@@ -1861,8 +1869,137 @@ export const MachiningQueueBoard = ({
         jobs={playlistJobs}
         readOnly={false}
         deleteVariant="worksheet"
+        regeneratingJobIds={playlistRegeneratingIds}
         onApproveFromRollback={(requestMongoId) => {
           void approveMachiningFromRollback(requestMongoId);
+        }}
+        onRegenerateCam={(jobId) => {
+          void (async () => {
+            if (!token) {
+              toast({
+                title: "실패",
+                description: "로그인이 필요합니다.",
+                variant: "destructive",
+              });
+              return;
+            }
+            const mid = String(playlistMachineId || "").trim();
+            const job = (Array.isArray(playlistJobs) ? playlistJobs : []).find(
+              (j) => j.id === jobId,
+            );
+            const requestId = String(
+              job?.requestId || job?.id || jobId || "",
+            ).trim();
+            if (!requestId) {
+              toast({
+                title: "실패",
+                description: "requestId가 없어 CAM 재생성을 진행할 수 없습니다.",
+                variant: "destructive",
+              });
+              return;
+            }
+            if (playlistRegeneratingIds.has(requestId)) return;
+
+            setPlaylistRegeneratingIds((prev) => {
+              const next = new Set(prev);
+              next.add(requestId);
+              return next;
+            });
+
+            try {
+              const controller = new AbortController();
+              const timeoutRef = window.setTimeout(
+                () => controller.abort(),
+                20000,
+              );
+              let res: Response;
+              try {
+                res = await fetch(
+                  `/api/requests/by-request/${encodeURIComponent(requestId)}/nc-file/regenerate-2phase`,
+                  {
+                    method: "POST",
+                    headers: {
+                      Authorization: `Bearer ${token}`,
+                      "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({}),
+                    signal: controller.signal,
+                  },
+                );
+              } finally {
+                window.clearTimeout(timeoutRef);
+              }
+              const body: any = await res.json().catch(() => ({}));
+              if (!res.ok || body?.success === false) {
+                toast({
+                  title: "CAM 재생성 실패",
+                  description:
+                    body?.message ||
+                    body?.error ||
+                    body?.detail ||
+                    "CAM 재생성 요청에 실패했습니다.",
+                  variant: "destructive",
+                });
+                return;
+              }
+
+              const s3Key = String(job?.s3Key || "").trim();
+              if (s3Key) {
+                await deleteCncProgramCache(s3Key);
+              }
+              markNcRegenerationPending(requestId);
+              // PreviewModal과 동일: 큐 NC 제거 → Next Up·예약 관리「CAM 생성 중」
+              window.dispatchEvent(
+                new CustomEvent("nc-regeneration-started", {
+                  detail: {
+                    requestId,
+                    requestMongoId: String(job?.requestMongoId || "").trim(),
+                    ncCleared: true,
+                  },
+                }),
+              );
+
+              // 소켓/effect 반영 전에도 예약 목록에서 NC·경로를 즉시 제거
+              setPlaylistJobs((prev) =>
+                (Array.isArray(prev) ? prev : []).map((j) => {
+                  const rid = String(j.requestId || j.id || "").trim();
+                  if (rid !== requestId) return j;
+                  return {
+                    ...j,
+                    hasNc: false,
+                    s3Key: "",
+                    s3Bucket: "",
+                    bridgePath: "",
+                  };
+                }),
+              );
+
+              toast({
+                title: "CAM 재생성 요청",
+                description:
+                  "기존 NC를 삭제하고 Esprit NC 재생성을 시작했습니다.",
+              });
+
+              if (mid) {
+                void loadProductionQueueForMachine(mid);
+              }
+            } catch (err: any) {
+              const isAbort = String(err?.name || "") === "AbortError";
+              toast({
+                title: "CAM 재생성 실패",
+                description: isAbort
+                  ? "재생성 요청 시간이 초과되었습니다. 잠시 후 다시 시도해주세요."
+                  : err?.message || "CAM 재생성 요청에 실패했습니다.",
+                variant: "destructive",
+              });
+            } finally {
+              setPlaylistRegeneratingIds((prev) => {
+                const next = new Set(prev);
+                next.delete(requestId);
+                return next;
+              });
+            }
+          })();
         }}
         onClose={() => {
           setPlaylistOpen(false);
