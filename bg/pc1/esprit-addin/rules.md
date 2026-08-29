@@ -271,12 +271,12 @@
   - `STL모델대로` → 전부 `C0.0` (C30 잔여분 강제)
   - `헥스30도회전` → T4848=`C0.0`, T0909/T0606=`C30.0`
   - `STL모델+` / `헥스30+` → 위 플러스 공식 (appliedDeg 필수)
-  - 출력은 반드시 `C##.0` 형태 (`FormatRotationNumber`)
+  - 출력은 반드시 소수점 이하 **3자리** (`FormatRotationNumber` → `C0.231` / `C30.000`)
   - 공구번호 미검출/미지원은 즉시 예외
 - 재제작(시작 공정=가공)으로 복사된 NC는 원본 헥스 모드 기준이다. 준비 단계에서 mode를 바꾸면 `updateRndHexRotation`이 `caseInfos.ncFile`을 비워 다음 승인 때 Esprit가 재생성한다.
 - NC 축 워드 소수점 강제 (CNC 인식):
   - 금지: `C30`, `C0`, `X10`, `Z0` 처럼 소수점 없는 정수 워드.
-  - 필수: `C30.0`, `C0.0`, `C0.23`, `X10.0`, `Z0.0`
+  - 필수: C축 헥스 치환값은 `C30.000`, `C0.000`, `C0.231` (소수 3자리 고정).
   - SSOT: `FormatRotationNumber`, `FormatNcNumber`, `EnsureNcDecimalLiteral`, `EnsureNcCoordinateDecimalsOnFile`.
 - 구현 위치:
   - `Helpers/NcFileGenerator.cs`

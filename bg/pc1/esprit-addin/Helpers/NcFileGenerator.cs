@@ -17,8 +17,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
 {
     /// <summary>
     /// NC 파일 생성 및 후처리.
-    /// CNC 컨트롤러는 축 워드 정수(C30, X10, Z0)를 인식하지 못한다. 반드시 C30.0 처럼 소수점을 명시한다.
-    /// 숫자 ToString 최적화("0.###", 정수 단축, TrimEnd 0) 금지. FormatRotationNumber / FormatNcNumber / EnsureNcCoordinateDecimalsOnFile 참고.
+    /// CNC 컨트롤러는 축 워드 정수(C30, X10, Z0)를 인식하지 못한다. 반드시 소수점을 명시한다.
+    /// C축 헥스 치환은 FormatRotationNumber 로 소수점 이하 3자리 고정 (C0.231 / C30.000).
+    /// FormatNcNumber / EnsureNcCoordinateDecimalsOnFile 참고. 정수 단축·TrimEnd 0 금지.
     /// </summary>
     public class NcFileGenerator
     {
@@ -562,11 +563,11 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
         // - STL모델대로: T4848/T0909/T0606 → C0.0 (C30 잔여분도 C0.0 강제)
         // - 헥스30도회전: T4848 → C0.0, T0909/T0606 → C30.0
         // - STL모델+ / 헥스30+ (구 헥스40도회전 분기):
-        //     addDeg = 30 + hexRotation.appliedDeg   (예: 30+(-29.77)=0.23)
-        //     T4848        → C(0.0 + addDeg)          = C0.23
+        //     addDeg = 30 + hexRotation.appliedDeg   (예: 30+(-29.76889…)→0.231)
+        //     T4848        → C(0.0 + addDeg)          = C0.231
         //     T0909/T0606  → C(modeBase + addDeg)     STL모델+ modeBase=0.0, 헥스30+ modeBase=30.0
-        //       → STL모델+: C0.23 / 헥스30+: C30.23
-        // 출력은 반드시 C##.0 형태(소수점 강제). FormatRotationNumber SSOT.
+        //       → STL모델+: C0.231 / 헥스30+: C30.231
+        // 출력은 반드시 소수점 이하 3자리 (C0.231 / C30.000). FormatRotationNumber SSOT.
         private void ApplyManufacturerHexRotationToNc(
             string ncFilePath,
             string manufacturerHexRotation,
@@ -644,7 +645,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
 
                         matchedWithinTarget++;
                         replacedWithinTarget++;
-                        // C30 정수 금지. FormatRotationNumber 는 반드시 "30.0" / "0.0" / "0.23" 을 반환한다.
+                        // C30 정수 금지. FormatRotationNumber 는 반드시 "30.000" / "0.000" / "0.231" (소수 3자리).
                         return "C" + FormatRotationNumber(targetDeg);
                     });
                 }
@@ -797,7 +798,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
         }
 
         // 플러스 모드 가산량 SSOT: 30 + hexRotation.appliedDeg
-        // 예) appliedDeg=-29.77 → addDeg=0.23 → C0.23 / C30.23
+        // 예) appliedDeg=-29.76889… → addDeg≈0.231 → C0.231 / C30.231 (FormatRotationNumber 소수 3자리)
         private static double ResolvePlusModeAddDeg(double? hexRotationAppliedDeg)
         {
             if (!hexRotationAppliedDeg.HasValue ||
@@ -814,24 +815,26 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
         //
         // CNC 장비는 정수 워드를 인식하지 못한다.
         //   금지: C30, C0, C10
-        //   필수: C30.0, C0.0, C10.0, C10.5
+        //   필수: C30.000, C0.000, C0.231  (소수점 이하 3자리 고정)
         //
         // 과거 버그: ToString("0.###############") / 0도일 때 "0" 반환
         //   → 30.0 이 "30" 이 되어 NC에 C30 이 기록됨.
-        // "불필요한 .0 제거", "정수면 짧게", G29/0.### 포맷은 재발하므로 사용 금지.
-        // 0도도 "0"이 아니라 "0.0" 이어야 한다. 절대 특수케이스로 정수를 반환하지 말 것.
+        //   → 플러스 모드 addDeg 가 C0.231108033977449 처럼 과도하게 길어짐.
+        // "불필요한 .0 제거", "정수면 짧게", TrimEnd('0') 금지.
+        // 0도도 "0"이 아니라 "0.000" 이어야 한다.
         private static string FormatRotationNumber(double value)
         {
             if (double.IsNaN(value) || double.IsInfinity(value))
             {
-                return "0.0";
+                return "0.000";
             }
-            if (Math.Abs(value) < 0.0000000001)
+            // 소수점 이하 3자리 반올림 고정. "0.###" / "0.0##############" 사용 금지.
+            double rounded = Math.Round(value, 3, MidpointRounding.AwayFromZero);
+            if (Math.Abs(rounded) < 0.0005)
             {
-                return "0.0";
+                return "0.000";
             }
-            // "0.0##############" = 소수점 이하 최소 1자리 강제. "0.###" 로 바꾸지 말 것.
-            string text = value.ToString("0.0##############", CultureInfo.InvariantCulture);
+            string text = rounded.ToString("0.000", CultureInfo.InvariantCulture);
             return EnsureNcDecimalLiteral(text);
         }
 
