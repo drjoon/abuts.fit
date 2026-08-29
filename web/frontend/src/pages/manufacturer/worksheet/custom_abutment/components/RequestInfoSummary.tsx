@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-29: 환자·임플란트 섹션을 한 MetaRow로 묶어 가로폭 내에서 자연 줄바꿈.
 // - 2026-08-29: 주문일시 옆에 출고일시(shippedAt) 표시. 없으면 출고예정일(estimatedShipYmd) 유지.
 // - 2026-08-23: PreviewModal row: 섹션 라벨을 내용 왼쪽에 인라인 배치하고 환자 일정을 한 줄로 묶어 요약 카드 세로 높이 축소.
 // - 2026-08-23: PreviewModal row: 폰 가로(landscape)에서도 섹션 가로 배치로 STL 세로 공간 확보.
@@ -326,20 +327,13 @@ export function RequestInfoSummary({
 
   const hasPatientSchedule = Boolean(labName || dateLabel || hasScheduleMeta);
 
-  // row(프리뷰): 일정·신원을 한 MetaRow로 묶어 라벨 옆 1줄 배치. stack(카드)는 기존 2줄 유지.
-  const patientBody = isRow ? (
+  // 일정·신원을 한 MetaRow로 묶어 가로폭 내에서 자연 줄바꿈(카드/프리뷰 공통).
+  const patientBody = (
     <MetaRow>
       {hasPatientSchedule ? patientScheduleParts : null}
       {hasPatientSchedule ? <Dot /> : null}
       <span className="min-w-0 break-words">{patientIdentityLine}</span>
     </MetaRow>
-  ) : (
-    <>
-      {hasPatientSchedule && <MetaRow>{patientScheduleParts}</MetaRow>}
-      <MetaRow>
-        <span className="min-w-0 break-words">{patientIdentityLine}</span>
-      </MetaRow>
-    </>
   );
 
   const patientSection = hasPatient ? (
@@ -402,38 +396,27 @@ export function RequestInfoSummary({
         .filter(Boolean)
         .join(" ")}
     >
-      {implantLine && (
-        <MetaRow>
+      <MetaRow>
+        {implantLine ? (
           <span className="min-w-0 break-words font-medium text-slate-800">
             {implantLine}
           </span>
-          {retention && (
-            <InlineGroup>
-              <Dot />
-              <span className="min-w-0 break-words text-slate-600">
-                유지홈 {retention}
-              </span>
-            </InlineGroup>
-          )}
-        </MetaRow>
-      )}
-      {!implantLine && retention && (
-        <MetaRow>
-          <span className="min-w-0 break-words text-slate-600">
-            유지홈 {retention}
-          </span>
-        </MetaRow>
-      )}
-      {geometryItems.length > 0 && (
-        <MetaRow>
-          {geometryItems.map((item, idx) => (
-            <InlineGroup key={item}>
-              {idx > 0 && <Dot />}
-              <span className="tabular-nums text-slate-600">{item}</span>
-            </InlineGroup>
-          ))}
-        </MetaRow>
-      )}
+        ) : null}
+        {retention ? (
+          <InlineGroup>
+            {implantLine ? <Dot /> : null}
+            <span className="min-w-0 break-words text-slate-600">
+              유지홈 {retention}
+            </span>
+          </InlineGroup>
+        ) : null}
+        {geometryItems.map((item, idx) => (
+          <InlineGroup key={item}>
+            {implantLine || retention || idx > 0 ? <Dot /> : null}
+            <span className="tabular-nums text-slate-600">{item}</span>
+          </InlineGroup>
+        ))}
+      </MetaRow>
     </Section>
   ) : null;
 
