@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-29: NC 재생성 성공 시 큐 NC 즉시 제거 이벤트 발행(Next Up「CAM 생성 중」).
 // - 2026-08-29: 프리뷰 요약에 실제 출고일시(shippedAt) 전달(있으면 출고예정일보다 우선).
 // - 2026-08-25: 추적관리 프리뷰 오른쪽을 NC코드/각인이미지 탭 뷰어로 변경(앞에서 생성한 파일 확인).
 // - 2026-08-25: 관리자 헥스 확정 시 PreviewModal 헥스 Select 비활성(제조사 변경 불가).
@@ -33,6 +34,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestInfoSummary.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/hooks/useMachiningBoard.ts
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/usePreviewLoader.ts
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers.ts
 // - web/frontend/src/shared/shipping/ShippingModeBadge.tsx
@@ -1685,10 +1687,20 @@ export const PreviewModal = ({
         await deleteCncProgramCache(s3Key);
       }
       markNcRegenerationPending(requestId);
+      // 소켓 수신 전에도 Next Up「CAM 생성 중」이 보이도록 큐 NC 제거를 즉시 요청
+      window.dispatchEvent(
+        new CustomEvent("nc-regeneration-started", {
+          detail: {
+            requestId,
+            requestMongoId: String(activeReq?._id || "").trim(),
+            ncCleared: true,
+          },
+        }),
+      );
 
       toast({
         title: "NC 재생성 요청",
-        description: "Esprit NC 재생성 요청을 전송했습니다.",
+        description: "기존 NC를 삭제하고 Esprit NC 재생성을 시작했습니다.",
       });
       onOpenChange(false);
     } catch (err: any) {

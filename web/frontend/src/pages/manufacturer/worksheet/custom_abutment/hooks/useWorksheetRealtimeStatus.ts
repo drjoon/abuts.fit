@@ -12,6 +12,7 @@
 // - web/backend/controllers/bg/bg.controller.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/regenerationPending.ts
 // change-log:
+// - 2026-08-29: NC 재생성 시작(cam-processing-started) 시 목록/카드에서 ncFile을 즉시 제거.
 // - 2026-08-29: 재제작(copied_sample) count-update에 R&D 토스트를 띄우지 않음 — rnd_sample/rnd stage만.
 // - 2026-08-21: 헥스 확인용 원본↔샘플 취소 시 워크시트에서 둘 다 즉시 제거
 // - 2026-08-18: Filled STL/NC 재생성 완료 상단 alert 제거. 캐시 삭제·pending consume은 유지.
@@ -304,8 +305,17 @@ export function useWorksheetRealtimeStatus({
             if (String((r as any)?.requestId || "").trim() !== requestId) {
               return r;
             }
+            const prevCaseInfos =
+              (r as any)?.caseInfos && typeof (r as any).caseInfos === "object"
+                ? (r as any).caseInfos
+                : {};
             return {
               ...(r as any),
+              caseInfos: {
+                ...prevCaseInfos,
+                ncFile: null,
+              },
+              ncFile: null,
               realtimeProgress: {
                 badge: "NC 생성중",
                 elapsedSeconds: 0,

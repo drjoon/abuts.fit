@@ -7,6 +7,7 @@
 // - web/frontend/src/pages/manufacturer/equipment/cnc/components/CncPlaylistDrawer.tsx
 // - web/backend/controllers/requests/common.review.controller.js
 // change-log:
+// - 2026-08-29: PreviewModal NC 재생성 시 cam-processing-started로 큐 NC 즉시 제거(Next Up「CAM 생성 중」).
 // - 2026-08-21: Next Up 이동 시 NC 삭제·CAM 항상 재생성 + 대기 오버레이용 pending 표시.
 // - 2026-08-21: Next Up 드래그로 타 장비 이동(moveNextUpToMachine) + 직경 변경 시 CAM 재생성 안내.
 // - 2026-08-18: filled STL 재생성 통보 시 큐 NC 메타를 비워 CAM 재생성을 가능하게 함.
@@ -673,7 +674,8 @@ export const useMachiningBoard = ({
           ? requestRaw.ncFile
           : null;
 
-    if (!requestCaseInfos && !requestNcFile) return;
+    // clearNc만 요청된 경우(cam-processing-started 등) caseInfos 없이 큐에서 NC를 제거한다.
+    if (!opts?.clearNc && !requestCaseInfos && !requestNcFile) return;
 
     setQueueMap((prev) => {
       let changed = false;
@@ -1145,6 +1147,7 @@ export const useMachiningBoard = ({
     eventTypes: [
       "request:stage-changed",
       "request:stl-metadata-updated",
+      "request:cam-processing-started",
       "machining:express-rebalance",
     ],
     onMatch: (evt) => {
@@ -1156,6 +1159,25 @@ export const useMachiningBoard = ({
           applyExpressRebalanceAlert(payload);
           void refreshProductionQueues();
         }
+        return;
+      }
+
+      if (type === "request:cam-processing-started") {
+        const startedRequestId = String(payload["requestId"] || "").trim();
+        const startedMongoId = String(payload["requestMongoId"] || "").trim();
+        if (startedRequestId) {
+          markNcRegenerationPending(startedRequestId);
+        }
+        // PreviewModal·일괄 재생성: 기존 NC 뱃지 제거 + Next Up「CAM 생성 중」블러
+        patchQueueNcMetaFromRequest(
+          {
+            requestId: startedRequestId,
+            _id: startedMongoId,
+            caseInfos: { ncFile: null },
+          },
+          { clearNc: true },
+        );
+        scheduleNcQueueVerifyRefresh();
         return;
       }
 
@@ -1294,11 +1316,45 @@ export const useMachiningBoard = ({
       void refreshProductionQueues();
     };
 
+    const handleNcRegenerationStarted = (evt: Event) => {
+      const detail =
+        evt && typeof evt === "object" && "detail" in evt
+          ? ((evt as CustomEvent).detail as Record<string, unknown> | null)
+          : null;
+      const startedRequestId = String(detail?.requestId || "").trim();
+      const startedMongoId = String(detail?.requestMongoId || "").trim();
+      if (!startedRequestId && !startedMongoId) return;
+      if (startedRequestId) {
+        markNcRegenerationPending(startedRequestId);
+      }
+      patchQueueNcMetaFromRequest(
+        {
+          requestId: startedRequestId,
+          _id: startedMongoId,
+          caseInfos: { ncFile: null },
+        },
+        { clearNc: true },
+      );
+      scheduleNcQueueVerifyRefresh();
+    };
+
     window.addEventListener("cnc-queues-updated", handleQueuesUpdated);
+    window.addEventListener(
+      "nc-regeneration-started",
+      handleNcRegenerationStarted as EventListener,
+    );
     return () => {
       window.removeEventListener("cnc-queues-updated", handleQueuesUpdated);
+      window.removeEventListener(
+        "nc-regeneration-started",
+        handleNcRegenerationStarted as EventListener,
+      );
     };
-  }, [refreshProductionQueues]);
+  }, [
+    patchQueueNcMetaFromRequest,
+    refreshProductionQueues,
+    scheduleNcQueueVerifyRefresh,
+  ]);
 
   const refreshLastCompletedFromServer = useCallback(async () => {
     if (!token) return;

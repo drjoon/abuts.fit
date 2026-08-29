@@ -9,6 +9,7 @@
 // - web/backend/services/requestSnapshotTriggers.service.js
 // - web/frontend/src/pages/admin/dashboard/AdminDashboardPage.tsx
 // change-log:
+// - 2026-08-29: NC 재생성 시 기존 caseInfos.ncFile 삭제 + cam-processing-started(ncCleared) (Next Up「CAM 생성 중」).
 // - 2026-08-17: NC 롤백(준비) 시 우편함 해제.
 // - 2026-08-16: NC 롤백(준비) 시 PTX abutmentProductionStartedAt 클리어.
 import mongoose, { Types } from "mongoose";
@@ -28,6 +29,27 @@ import { ensureRequestCreditRollbackDeleteOnRollbackToCam } from "./common.revie
 import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
 import { clearPracticeTransferAbutmentMachiningStarted } from "../../services/practiceTransferProduction.service.js";
 import { resolveFilledStlFile } from "../../utils/filledStlFile.js";
+
+/**
+ * NC 재생성 시작 전 기존 NC 메타를 제거한다.
+ * (Next Up 장비 이동 / 직경 변경 재생성과 동일 SSOT — UI「CAM 생성 중」조건)
+ */
+async function clearNcMetaBeforeRegeneration(request) {
+  if (!request?._id) return;
+  await Request.updateOne(
+    { _id: request._id },
+    {
+      $set: { "productionSchedule.ncPreload": { status: "NONE" } },
+      $unset: { "caseInfos.ncFile": 1 },
+    },
+  );
+  if (request.caseInfos && typeof request.caseInfos === "object") {
+    request.caseInfos.ncFile = undefined;
+  }
+  if (request.productionSchedule && typeof request.productionSchedule === "object") {
+    request.productionSchedule.ncPreload = { status: "NONE" };
+  }
+}
 
 async function assertAndClaimManufacturerRequestAccess({ req, request }) {
   if (req?.user?.role !== "manufacturer") return;
@@ -378,6 +400,7 @@ export async function regenerateNcByRequestId(req, res) {
         .json({ success: false, message: "의뢰를 찾을 수 없습니다." });
     }
 
+    await clearNcMetaBeforeRegeneration(request);
     await triggerEspritForNc({ request, force: true });
 
     emitAppEventToRoles(
@@ -387,13 +410,14 @@ export async function regenerateNcByRequestId(req, res) {
         source: "nc-regenerate",
         requestId: request?.requestId || null,
         requestMongoId: String(request?._id || "").trim() || null,
+        ncCleared: true,
       },
     );
 
     return res.status(200).json({
       success: true,
       message: "NC 재생성 요청을 전송했습니다.",
-      data: { requestId },
+      data: { requestId, ncCleared: true },
     });
   } catch (error) {
     const status = Number(error?.statusCode || 500);
@@ -445,7 +469,8 @@ export async function regenerateNcByRequestIdTwoPhase(req, res) {
       );
     }
 
-    // trigger Esprit with default Two-Phase (2026-06-08: Two-Phase is default)
+    // 기존 NC 삭제 후 Two-Phase 재생성 (Next Up「CAM 생성 중」표시용)
+    await clearNcMetaBeforeRegeneration(request);
     await triggerEspritForNc({ request, force: true, onePhase: false });
 
     emitAppEventToRoles(
@@ -455,13 +480,14 @@ export async function regenerateNcByRequestIdTwoPhase(req, res) {
         source: "nc-regenerate-2phase",
         requestId: request?.requestId || null,
         requestMongoId: String(request?._id || "").trim() || null,
+        ncCleared: true,
       },
     );
 
     return res.status(200).json({
       success: true,
       message: "NC 재생성 요청을 전송했습니다. (Two-Phase 기본)",
-      data: { requestId },
+      data: { requestId, ncCleared: true },
     });
   } catch (error) {
     const status = Number(error?.statusCode || 500);
@@ -513,7 +539,7 @@ export async function regenerateNcByRequestIdOnePhase(req, res) {
       );
     }
 
-    // trigger Esprit with One-Phase flag (명시적 One-Phase 요청)
+    await clearNcMetaBeforeRegeneration(request);
     await triggerEspritForNc({ request, force: true, onePhase: true });
 
     emitAppEventToRoles(
@@ -523,13 +549,14 @@ export async function regenerateNcByRequestIdOnePhase(req, res) {
         source: "nc-regenerate-onephase",
         requestId: request?.requestId || null,
         requestMongoId: String(request?._id || "").trim() || null,
+        ncCleared: true,
       },
     );
 
     return res.status(200).json({
       success: true,
       message: "NC 재생성 요청을 전송했습니다. (One-Phase)",
-      data: { requestId },
+      data: { requestId, ncCleared: true },
     });
   } catch (error) {
     const status = Number(error?.statusCode || 500);
