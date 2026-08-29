@@ -92,19 +92,19 @@
   - `Splitline_2` / `TwoPhaseSplitLine`
   - `Finish_Front` 끝
 - 기준식:
-  - `SharedFinishSplitX = finishLineTopX - 1.0` (tip 쪽 1mm)
+  - `SharedFinishSplitX = finishLineTopX - 1.0` (피니시라인 topZ **상방**=tip쪽 1mm, X-)
 - 인접 후행 시작:
   - `Back_Rough` 시작 = `Splitline_2 - roughRadius` (D4→2.0)
   - `Finish_Back` 시작 = `SharedFinishSplitX - GetFinishAdjacentOverlapMm()`
     - 피치: `ResolveFinishFrontStepIncrementMmFromRetentionGroove()` (`none`→0.12, `deep`→0.20)
     - `StlFileProcessor.RequireBackendRetentionGrooveOrThrow` — none/deep만 허용, 미수신 시 예외
     - 실패 보고: `NotifyBackendFailure` → `/bg/register-file` status=failed → `request:async-action-failed` 토스트
-- 좌표 변환 (`FrontPointX = -FrontPoint.z` 와 별개; FinishLine은 Back 기준):
-  - MoveSTL 전: `FinishLineX = BackLimitX + finishLineTopZ - stlTopZ`
-  - MoveSTL/Chazhi: `FinishLineX += delta` (`Math.Abs(FinishLineX) > 1e-6` — 양수 가드 금지)
-  - MoveSTL 후 / env: `finishLineTopX = BackPointX + finishLineTopZ - stlTopZ`
+- 좌표 변환 (`FrontPointX = -FrontPoint.z` 와 동일 X=-Z):
+  - MoveSTL 전: `FinishLineX = -finishLineTopZ`
+  - MoveSTL/Chazhi: `FinishLineX += delta` (`Math.Abs(FinishLineX) > 1e-6` — 양수 가드 금지; 음수면 시프트 누락)
+  - MoveSTL 후 / env: `finishLineTopX = BackPointX - finishLineTopZ`
   - 재해석 우선순위: env → `FinishLineX` → `FinishLineTopZ` (`Back - FinishLineTopZ + DefaultStlShift`) → midpoint
-  - 금지: `FinishLineX = -finishLineTopZ` (bee5c856). MoveSTL 시프트가 빠져 seam이 tip 쪽으로 당겨짐.
+  - 금지: `Back + Z - stlTopZ`. finish line이 헥스/하방으로 밀려 Splitline_2가 피니시라인을 넘어감.
 - 구현:
   - `TryResolveSharedFinishSplitX` → `TryResolveTwoPhaseSplitLineTargetX`
   - Rough: `frontEnd = splitline2`, `backStart = splitline2 - GetRoughAdjacentOverlapMm()`, Middle skip

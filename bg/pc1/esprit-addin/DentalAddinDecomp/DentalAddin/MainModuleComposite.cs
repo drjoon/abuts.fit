@@ -2750,7 +2750,8 @@ namespace DentalAddin
         //     Rough(Back): GetRoughAdjacentOverlapMm() = D4→2.0 / D2→1.0
         //   Finish: Front 끝=Splitline_2, Back 시작=Splitline_2 - 1피치(retentionGroove→StepIncrement)
         // - Middle_Turn / Middle_Rough는 레거시로 생성하지 않는다 (Front+Back로 커버)
-        // SharedFinishSplit 오프셋(mm): finishLine top 기준 tip 방향(X-).
+        // SharedFinishSplit 오프셋(mm): finishLine top 기준 tip/상방(X-).
+        // X=-Z 이므로 Z+1mm(상방) ≡ X-1mm.
         private const double SharedFinishSplitOffsetFromFinishLineTopMm = -1.0;
 
         // Finish Front/Back PRC Back 기본 StepIncrement는 5axisComposite_Back.prc(0.08). Front는 retentionGroove로 강제.
@@ -2814,9 +2815,9 @@ namespace DentalAddin
         /// <summary>
         /// [SSOT] Front_Rough 끝 = Splitline_2 = Finish_Front 끝.
         /// Finish_Back 시작 = Splitline_2 - GetFinishAdjacentOverlapMm() (retentionGroove 1피치).
-        /// 식: finishLineTopX + SharedFinishSplitOffsetFromFinishLineTopMm (-1.0mm, tip 쪽).
-        /// 좌표(MoveSTL 이후): finishLineTopX = BackPointX + finishLineTopZ - stlTopZ
-        ///   (= ApplyLimitPoints FinishLineX + totalDeltaX).
+        /// 식: finishLineTopX + SharedFinishSplitOffsetFromFinishLineTopMm (-1.0mm = tip/상방).
+        /// 좌표(MoveSTL 이후, FrontPoint와 동일 X=-Z): finishLineTopX = BackPointX - finishLineTopZ
+        ///   (= ApplyLimitPoints FinishLineX=-Z 후 Abs 시프트).
         /// </summary>
         private static bool TryResolveSharedFinishSplitX(out double splitX, out string source)
         {
@@ -2847,7 +2848,7 @@ namespace DentalAddin
 
                 const double offsetMm = SharedFinishSplitOffsetFromFinishLineTopMm;
 
-                // 1순위: FinishLineX (MoveSTL/Chazhi 이후 ESPRIT X = Back + finishTopZ - stlTopZ)
+                // 1순위: FinishLineX (MoveSTL/Chazhi 이후 ESPRIT X = -finishTopZ + delta)
                 double finishLineX = MoveSTL_Module.FinishLineX;
                 if (!double.IsNaN(finishLineX) && !double.IsInfinity(finishLineX) && Math.Abs(finishLineX) > 1e-6)
                 {
