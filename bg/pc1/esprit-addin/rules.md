@@ -128,13 +128,17 @@
 
 ### 4.6 Front Face/Back Turn 경계 보정 (2026-07-01)
 
-- Front Face 종료점 정책(현행 SSOT):
-  - `Face.RightX = FrontPointX + 3.0mm`
+- Front Face 시작/종료점 정책(현행 SSOT):
+  - 시작: `Face.StartX = FrontPointX - 1.0mm` (`FrontFaceTipClearanceMm`, MoveSTL 이후 tip SSOT)
+    - RL=1: `TopZLimit = -StartX` / RL=2: `TopZLimit = +StartX` (구 `TopZ=1.0` 원점 고정 폐기)
+  - 끝: `Face.RightX = FrontPointX + 3.0mm`
   - 단, 항상 `Face.RightX < Splitline_2` (`Splitline_2 - 0.001mm` 상한 클램프)
   - `LastAppliedFrontFaceDepthMm = 0.5mm` (`FrontFaceFixedDepthMm`)
-  - 상수: `MainModuleComposite.FrontFaceEndOffsetFromFrontMm`
-  - 구현 위치: `MainModuleComposite.ApplyFrontFaceFixedDepth` / `ClampFaceRightXBelowSplitline2`
+  - 상수: `FrontFaceTipClearanceMm`, `FrontFaceEndOffsetFromFrontMm`
+  - 구현 위치: `ApplyFrontFaceFixedDepth` / `ResolveFrontFaceStartX` / `ClampFaceRightXBelowSplitline2`
   - 후속 가드(`TryApplyFaceRightEndGuard`): Face가 Front_Rough 끝을 넘지 않게만 보정하고, Splitline_2 상한을 다시 적용한다 (0.3mm 추가 단축 없음).
+  - `FACE.prc` step SSOT: `StepPercentOfDiameter=2`, `StepOver=0.05`, `StockAllowanceWalls=0.0`
+    (8/23 `bd529436`의 4%/0.08/0.2는 tip 잔재로 되돌림)
 
 - Back Turn 시작점/퇴출 정책(현행 SSOT):
   - 시작점은 `FrontPointX` anchor로 통일한다. (`Front_Turn`과 동일 기준)

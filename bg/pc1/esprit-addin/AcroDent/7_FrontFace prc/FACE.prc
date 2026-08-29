@@ -86,7 +86,7 @@ BEGIN_OPERATION; 552; EM2.0BALL; 0;
    Clearance; 172; 1;  CAPTION; 여유; SOURCE; 2; TECHCODETYPE; 2;
    PositionOnModelLimit; 1022; 2;  CAPTION; 모델리미트에 위치; SOURCE; 3; TECHCODETYPE; 452;
    BottomZLimit; 1294; 0.3;  CAPTION; 바닥 Z 리미트; SOURCE; 2; TECHCODETYPE; 2;
-   StepPercentOfDiameter; 444; 4;  CAPTION; 스텝 직경의 % 값|스텝 오버, 직경의 %값; SOURCE; 3; TECHCODETYPE; 1;
+   StepPercentOfDiameter; 444; 2;  CAPTION; 스텝 직경의 % 값|스텝 오버, 직경의 %값; SOURCE; 3; TECHCODETYPE; 1;
    4436; 4436; 9;  SOURCE; 0; TECHCODETYPE; 1;
    BEGIN_SUB_TECHNOLOGY; 6833; 714; CAPTION; 5 축 나가기 이동; SOURCE; 2; TECHCODETYPE; 410;
    ExitMovesType; 6834; 4;  CAPTION; 5 축 나가기 이동; SOURCE; 6; TECHCODETYPE; 563;
@@ -165,7 +165,7 @@ BEGIN_OPERATION; 552; EM2.0BALL; 0;
 		:
 	END_STRING
    ApproachInsideBoundary; 3277; 1;  CAPTION; 내부 경계; SOURCE; 1; TECHCODETYPE; 67;
-   StepOver; 217; 0.08;  CAPTION; 스텝 오버|스텝 오버, 직경의 %값; SOURCE; 2; TECHCODETYPE; 2;
+   StepOver; 217; 0.05;  CAPTION; 스텝 오버|스텝 오버, 직경의 %값; SOURCE; 2; TECHCODETYPE; 2;
    4430; 4430; 7;  SOURCE; 0; TECHCODETYPE; 2;
    4906; 4906; ;  SOURCE; 0; TECHCODETYPE; 3;
 	BEGIN_STRING; 4906;;
