@@ -131,7 +131,9 @@
 ### 4.6 Front Face/Back Turn 경계 보정 (2026-07-01, Face offset 동적화 2026-08-29)
 
 - Front Face 시작/종료점 정책(현행 SSOT):
-  - 시작: `TopZLimit = 1.0` (원점 쪽 고정)
+  - 시작: `Face.StartX = FrontPointX - FrontFaceTipClearanceMm(1.0)` (MoveSTL 이후 tip SSOT).
+    - RL=1: `TopZLimit = -StartX` / RL=2: `TopZLimit = +StartX` (BottomZ와 동일 부호 규칙)
+    - 구 `TopZLimit = 1.0` 원점 고정은 MoveSTL tip과 어긋나 폐기
   - 끝: `Face.RightX = FrontPointX + L`, 단 항상 `Face.RightX < Splitline_2` (`Splitline_2 - 0.001mm` 상한 클램프)
   - `L` 동적(구 고정 3.0mm 폐기):
     - 강제: env `ABUTS_FRONT_FACE_END_OFFSET_MM` (≥0, 상한 3.0)
@@ -139,11 +141,11 @@
     - `R_tip` 우선순위: `ABUTS_MAX_DIAMETER`×0.20 → `HighY`×0.45 → `BarDiameter`×0.20 (각 [1.2, 3.5])
     - 추정 실패 시 fallback `L=2.0`
   - `LastAppliedFrontFaceDepthMm = 0.5mm` (`FrontFaceFixedDepthMm`)
-  - 구현 위치: `GetFrontFaceEndOffsetFromFrontMm` / `ApplyFrontFaceFixedDepth` / `ClampFaceRightXBelowSplitline2`
+  - 구현 위치: `ResolveFrontFaceStartX` / `GetFrontFaceEndOffsetFromFrontMm` / `ApplyFrontFaceFixedDepth` / `ClampFaceRightXBelowSplitline2`
   - `ABUTS_MAX_DIAMETER` 주입: `StlFileProcessor` request-meta `maxDiameter`
   - 후속 가드(`TryApplyFaceRightEndGuard`): Front_Rough 끝(=Splitline_2)을 넘지 않게만 보정하고, Splitline_2 상한을 다시 적용한다 (0.3mm 추가 단축 없음).
     - 현행 RoughA.RightX SSOT가 Splitline_2라서 Splitline_2 클램프와 동일 상한이다.
-  - `FACE.prc` step SSOT: `StepPercentOfDiameter=4`, `StepOver=0.08`, `StockAllowanceWalls=0.0`
+  - `FACE.prc` step SSOT: `StepPercentOfDiameter=2`, `StepOver=0.05`, `StockAllowanceWalls=0.0`
 
 - Back Turn 시작점/퇴출 정책(현행 SSOT):
   - 시작점은 `FrontPointX` anchor로 통일한다. (`Front_Turn`과 동일 기준)

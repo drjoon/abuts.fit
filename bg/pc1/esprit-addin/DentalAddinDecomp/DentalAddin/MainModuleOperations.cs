@@ -405,7 +405,7 @@ namespace DentalAddin
                     return;
                 }
 
-                // Front Face 끝점: RightX = FrontPointX + dynamic tip offset (Splitline_2 미만). 시작 TopZ=1.0.
+                // Front Face: 시작=FrontPointX-tipClearance, 끝=FrontPointX+dynamic tip offset (Splitline_2 미만).
                 ApplyFrontFaceFixedDepth(techLatheMoldParallelPlanes, "FrontFaceMill");
 
                 ZH = Math.Abs(MoveSTL_Module.FrontPointX);

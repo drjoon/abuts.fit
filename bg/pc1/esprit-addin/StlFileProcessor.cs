@@ -1239,10 +1239,10 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             if (finishLineTopZ.HasValue)
             {
                 DentalAddinReflectionHelper.SetStaticField(moveModuleType, "FinishLineTopZ", finishLineTopZ.Value);
-                // [SSOT] STL Z → ESPRIT X (MoveSTL 이전)
-                // EspritHttpServer와 동일: FrontPointX = -FrontPoint.z
-                // 따라서 FinishLineX = -finishLineTopZ
-                // (구식 BackX + Z - stlTopZ 는 tip 쪽으로 수 mm 어긋남)
+                // [SSOT] STL Z → ESPRIT X (MoveSTL 이전), FrontPointX = -FrontPoint.z 와 동일
+                //   FinishLineX = -finishLineTopZ
+                // 8/20 구식: backLimitX + finishLineTopZ - stlTopZ → FrontPoint(X=-Z)와 불일치, tip 쪽 수 mm 어긋남.
+                // 2026-08-23 bee5c856 이후 현행 유지. tip 미삭과 무관(Split/Rough/Finish seam SSOT).
                 double finishLineEspritX = -finishLineTopZ.Value;
                 DentalAddinReflectionHelper.SetStaticField(moveModuleType, "FinishLineX", finishLineEspritX);
                 AppLogger.Log($"DentalAddin: FinishLineX 변환 - finishLineTopZ:{finishLineTopZ.Value:F4}, formula:X=-Z, backLimitX:{backLimitX:F4}, stlTopZ:{(stlTopZ.HasValue ? stlTopZ.Value.ToString("F4") : "<null>")}(ignored) → FinishLineX:{finishLineEspritX:F4}");
@@ -1407,12 +1407,19 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         double xMin = Math.Min(frontX, backX);
                         double xMax = Math.Max(frontX, backX);
 
-                        // [SSOT] SharedFinishSplitX
+                        // [SSOT] SharedFinishSplitX (2026-08-23 bee5c856)
                         //   Front_Rough끝 = Splitline_2 = Finish_Front끝 = Finish_Back시작
                         //   = finishLineTopX - 1.0 (tip 쪽; Z+1 ≡ X-1)
+                        //   finishLineTopX = backX - finishLineTopZ  (MoveSTL 이후, X=-Z)
                         // MainModuleComposite.SharedFinishSplitOffsetFromFinishLineTopMm 과 동일해야 한다.
+                        //
+                        // 8/20 이전 구식: topX = backX + finishLineTopZ - stlTopZ
+                        //   → FrontPointX(= -FrontPoint.z)와 불일치, tip 쪽으로 수 mm 어긋남.
+                        // 현행: FrontPoint/FinishLine 모두 X=-Z 로 통일. 의도된 SSOT이며 tip 미삭과 무관.
                         const double splitOffsetMm = -1.0;
-                        double targetZ = finishLineTopZ.Value + 1.0;
+                        // 주석 처리: ea118004 잔여. finishLineTopZ+1 은 split 계산에 쓰이지 않음.
+                        // Z+1mm ≡ X-1mm 는 아래 splitOffsetMm=-1.0 으로만 반영한다.
+                        // double targetZ = finishLineTopZ.Value + 1.0;
                         double topX = backX - finishLineTopZ.Value;
                         double rawSplitX = topX + splitOffsetMm;
                         double splitX = Math.Max(xMin + 0.01, Math.Min(xMax - 0.01, rawSplitX));
@@ -1422,7 +1429,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         Environment.SetEnvironmentVariable(AppConfig.RoughfreeformSplitEnableEnv, "1");
                         Environment.SetEnvironmentVariable("ABUTS_ROUGHFREEFORM_SPLIT_X", splitX.ToString(CultureInfo.InvariantCulture));
 
-                        AppLogger.Log($"DentalAddin: SharedFinishSplit 적용 - finishLineTopZ:{finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, targetZ(top+1):{targetZ.ToString("F4", CultureInfo.InvariantCulture)}, topX:{topX.ToString("F4", CultureInfo.InvariantCulture)}, splitOffsetMm:{splitOffsetMm.ToString("F3", CultureInfo.InvariantCulture)}, sharedSplitX:{splitX.ToString("F4", CultureInfo.InvariantCulture)} (=Front_Rough끝/Splitline_2/Finish seam) (Front:{frontX.ToString("F4", CultureInfo.InvariantCulture)}, Back:{backX.ToString("F4", CultureInfo.InvariantCulture)})");
+                        AppLogger.Log($"DentalAddin: SharedFinishSplit 적용 - finishLineTopZ:{finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, topX:{topX.ToString("F4", CultureInfo.InvariantCulture)}, splitOffsetMm:{splitOffsetMm.ToString("F3", CultureInfo.InvariantCulture)}, sharedSplitX:{splitX.ToString("F4", CultureInfo.InvariantCulture)} (=Front_Rough끝/Splitline_2/Finish seam) (Front:{frontX.ToString("F4", CultureInfo.InvariantCulture)}, Back:{backX.ToString("F4", CultureInfo.InvariantCulture)})");
                             }
                             catch (Exception ex)
                             {
