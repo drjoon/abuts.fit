@@ -1,5 +1,6 @@
 // change-log:
-// - 2026-08-29: 프리뷰 오픈 시 IndexedDB 히트 복구 — forceRefresh는 읽기만 스킵·쓰기는 유지, 가공 큐는 filled STL 없으면 full request 보강.
+// - 2026-08-29: forceRefresh가 STL/NC 캐시를 통째로 건너뛰지 않음 — 버전 키·선택 무효화로 바뀐 파일만 재다운로드.
+// - 2026-08-29: 프리뷰 오픈 시 IndexedDB 히트 복구 — 다운로드 blob은 항상 캐시 저장, 가공 큐는 filled STL 없으면 full request 보강.
 // - 2026-08-26: NC 프리뷰 — uploadedAt/fileSize 없는 버전리스 IndexedDB 캐시 금지, full request 보강, #521↔소재직경 불일치 시 재다운로드.
 // - 2026-08-25: 추적관리 프리뷰는 full request 보강 필수(lean projection에 ncFile/stageFiles 없음).
 // - 2026-08-25: 추적관리 프리뷰에서도 NC 로드 + 각인은 packing stageFiles 사용.
@@ -524,7 +525,7 @@ export function usePreviewLoader({
           isCamStage,
           isMachiningStage,
         });
-        const disableStlCache = forceRefresh;
+        // forceRefresh는 full-request 보강용. 파일 blob은 버전 키·선택 invalidate로만 갱신한다.
 
         const shouldUseSingleLeftStl = isCamStage;
 
@@ -535,7 +536,6 @@ export function usePreviewLoader({
             () =>
               fetchSignedUrl(`/api/requests/${requestMongoId}/original-file-url`),
             originalName,
-            { disableCache: disableStlCache },
           ).catch(() => null);
         };
 
@@ -554,7 +554,6 @@ export function usePreviewLoader({
             camCacheKey,
             () => fetchSignedUrl(`/api/requests/${requestMongoId}/cam-file-url`),
             camName,
-            { disableCache: disableStlCache },
           ).catch(() => null);
         };
 
@@ -633,8 +632,9 @@ export function usePreviewLoader({
                   versioned && ncVersionedKey
                     ? `cnc:s3:${ncVersionedKey}`
                     : null;
-                const disableNcCache = forceRefresh || !versioned;
-                if (disableNcCache) {
+                // forceRefresh만으로 NC 캐시를 비우지 않는다(STL 등 무관 파일 재다운로드 방지).
+                const disableNcCache = !versioned;
+                if (!versioned) {
                   await deleteCncProgramCache(ncS3Key);
                 }
 

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-29: 예약 관리 모달 가로폭 lg→xl.
 // - 2026-08-29: CAM 재생성 버튼·NC 미수신 시 Next Up과 동일 블러「CAM 생성 중」오버레이.
 // - 2026-08-08: CncModalShell 적용. 예약 관리 톤·compact 라벨로 정리.
 // - 2026-08-07: 재생목록 행에 의뢰자명(businessName) 표시. 구조화 필드 우선.
@@ -125,7 +126,7 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
       open={open}
       title="예약 관리"
       subtitle={`${title} · 대기 큐 · 순서 · 되돌리기`}
-      size="lg"
+      size="xl"
       onClose={onClose}
       titleId="cnc-playlist-title"
       headerActions={headerExtras}

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-29: BG 완료 후 열린 프리뷰 — NC/filled만 선택 무효화 후 갱신(STL 불필요 재다운로드 방지).
 // - 2026-08-29: 큐→프리뷰 오픈 시 forceRefresh 제거 — IndexedDB STL/NC 캐시 재사용.
 // - 2026-08-29: 예약 관리 목록에서 CAM(NC) 재생성 — NC 제거·「CAM 생성 중」블러.
 // - 2026-08-26: 큐→프리뷰 ncFile에 uploadedAt/fileSize/materialDiameter 전달(버전 캐시·#521 검증용).
@@ -72,9 +73,15 @@ import { buildLabelExtraProps } from "./utils/label";
 import { PreviewModal } from "@/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal";
 import { usePreviewLoader } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/usePreviewLoader";
 import { useRequestFileHandlers } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers";
-import type { ManufacturerRequest } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
+import {
+  resolveFilledStlFile,
+  type ManufacturerRequest,
+} from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
 import { markNcRegenerationPending } from "@/pages/manufacturer/worksheet/custom_abutment/utils/regenerationPending";
-import { deleteCncProgramCache } from "@/shared/files/fileBlobCache";
+import {
+  deleteCncProgramCache,
+  invalidateRequestPreviewCaches,
+} from "@/shared/files/fileBlobCache";
 import { WorksheetQueueSummary } from "@/shared/ui/dashboard/WorksheetQueueSummary";
 import type { DiameterBucketKey } from "@/shared/ui/dashboard/WorksheetDiameterQueueBar";
 
@@ -484,11 +491,29 @@ export const MachiningQueueBoard = ({
       const openReq = camPreviewFiles?.request as ManufacturerRequest | undefined;
       const openRid = String(openReq?.requestId || "").trim();
       if (!requestId || !openRid || requestId !== openRid || !openReq) return;
-      void handleOpenPreview(openReq, {
-        forceRefresh: true,
-        openOnlyIfAlreadyOpen: true,
-        silent: true,
-      });
+      void (async () => {
+        const camS3Key = String(
+          resolveFilledStlFile(openReq?.caseInfos)?.s3Key || "",
+        ).trim();
+        const ncS3Key = String(openReq?.caseInfos?.ncFile?.s3Key || "").trim();
+        if (sourceStep === "2-filled") {
+          await invalidateRequestPreviewCaches({
+            camS3Key: camS3Key || null,
+            ncS3Key: ncS3Key || null,
+            requestMongoId: String(openReq?._id || "").trim(),
+            requestId,
+          });
+        } else {
+          await invalidateRequestPreviewCaches({
+            ncS3Key: ncS3Key || null,
+          });
+        }
+        void handleOpenPreview(openReq, {
+          forceRefresh: true,
+          openOnlyIfAlreadyOpen: true,
+          silent: true,
+        });
+      })();
     });
     return () => {
       if (typeof unsub === "function") unsub();
