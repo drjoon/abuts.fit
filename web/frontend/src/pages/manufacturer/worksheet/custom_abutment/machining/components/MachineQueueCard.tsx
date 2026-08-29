@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-29: Now Playing NC 프리로드 READY(준비됨) 뱃지 숨김 — UPLOADING/FAILED만 표시.
 // - 2026-08-21: Next Up NC 미수신(CAM 재생성) 시 라이노와 동일 블러 오버레이.
 // - 2026-08-21: Next Up 카드 드래그로 다른 장비 이동(onMoveNextUpToMachine).
 // - 2026-08-08: 공구상태 모달 톤에 맞춰 카드 밀도·CTA·compact 라벨 정리.
@@ -52,11 +53,12 @@ const normalizeBridgePathForMatch = (raw: unknown) =>
     .replace(/\.(nc|stl)$/i, "")
     .toLowerCase();
 
+/** NC 프리로드 진행/실패만 표시. READY는 정상 완료라 Now Playing에서 노이즈. */
 const getNcPreloadBadge = (slot: QueueItem | null) => {
   const status = String(slot?.ncPreload?.status || "").trim();
   if (!status) return null;
   const s = status.toUpperCase();
-  if (!s || s === "NONE") return null;
+  if (!s || s === "NONE" || s === "READY") return null;
   if (s === "UPLOADING") {
     return (
       <Badge
@@ -64,16 +66,6 @@ const getNcPreloadBadge = (slot: QueueItem | null) => {
         className="shrink-0 rounded-md border-accent-muted bg-accent-soft px-1.5 py-0.5 text-[10px] font-semibold text-accent-strong"
       >
         업로드중
-      </Badge>
-    );
-  }
-  if (s === "READY") {
-    return (
-      <Badge
-        variant="outline"
-        className="shrink-0 rounded-md border-primary-muted bg-primary-soft px-1.5 py-0.5 text-[10px] font-semibold text-primary-strong"
-      >
-        준비됨
       </Badge>
     );
   }
