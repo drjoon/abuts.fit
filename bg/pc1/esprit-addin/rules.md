@@ -143,7 +143,7 @@
   - `ABUTS_MAX_DIAMETER` 주입: `StlFileProcessor` request-meta `maxDiameter`
   - 후속 가드(`TryApplyFaceRightEndGuard`): Front_Rough 끝(=Splitline_2)을 넘지 않게만 보정하고, Splitline_2 상한을 다시 적용한다 (0.3mm 추가 단축 없음).
     - 현행 RoughA.RightX SSOT가 Splitline_2라서 Splitline_2 클램프와 동일 상한이다.
-  - `FACE.prc` step SSOT: `StepPercentOfDiameter=2`, `StepOver=0.05`, `StockAllowanceWalls=0.0`
+  - `FACE.prc` step SSOT: `StepPercentOfDiameter=4`, `StepOver=0.08`, `StockAllowanceWalls=0.0`
 
 - Back Turn 시작점/퇴출 정책(현행 SSOT):
   - 시작점은 `FrontPointX` anchor로 통일한다. (`Front_Turn`과 동일 기준)
