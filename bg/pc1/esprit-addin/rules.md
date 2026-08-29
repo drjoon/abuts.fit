@@ -17,6 +17,7 @@
 - Esprit는 `2-filled`를 입력으로 받아 `3-nc`를 생성합니다.
 - 백엔드가 준 PRC 파일명이 비어 있거나 파일을 찾을 수 없으면 폴백 없이 실패합니다.
 - 재기동 시 pending 전체를 자동 복구하지 않고, 승인된 단일 작업만 처리합니다.
+- `POST /cancel` `{ RequestId }`: 대기 큐에서 제거 + 진행 중이면 NC 업로드 스킵(프론트「생성 중단」).
 - `UserData`와 PRC 경로 초기화는 자동 실행 경로에서도 UI와 동일하게 맞춰야 합니다.
 - NC 출력 파일명은 최종적으로 `*.nc`로 정규화합니다.
 - request-meta 조회/등록 귀속의 SSOT는 HTTP payload의 `RequestId` 입니다.

@@ -156,6 +156,9 @@ export type MachineQueueCardProps = {
     fromMachineId: string;
     toMachineId: string;
   }) => void | Promise<void>;
+  /** Next Up CAM 생성 중단 */
+  onCancelCamGeneration?: (requestId: string) => void | Promise<void>;
+  cancellingCamRequestIds?: ReadonlySet<string> | string[];
   materialNeedsReplacement?: boolean;
   materialAlertTooltip?: string;
 };

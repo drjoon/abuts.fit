@@ -672,6 +672,13 @@ router.post(
   authorizeManufacturerOrDesignPartner(),
   requestController.regenerateNcByRequestIdOnePhase,
 );
+// 제조사/관리자: CAM/NC 생성 중단 (블러 해제 + NC 삭제 + Esprit abort)
+router.post(
+  "/by-request/:requestId/nc-file/cancel-regeneration",
+  authenticate,
+  authorizeManufacturerOrDesignPartner(),
+  requestController.cancelNcRegenerationByRequestId,
+);
 router.get(
   "/:id/nc-file-url",
   authenticate,

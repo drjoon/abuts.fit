@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-29: Next Up「CAM 생성 중」블러 옆 생성 중단 버튼.
 // - 2026-08-29: Now Playing NC 프리로드 READY(준비됨) 뱃지 숨김 — UPLOADING/FAILED만 표시.
 // - 2026-08-21: Next Up NC 미수신(CAM 재생성) 시 라이노와 동일 블러 오버레이.
 // - 2026-08-21: Next Up 카드 드래그로 다른 장비 이동(onMoveNextUpToMachine).
@@ -11,6 +12,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/components/MachiningRequestLabel.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/regenerationPending.ts
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/cnc/production.js
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -31,6 +33,7 @@ import type { MachineQueueCardProps, QueueItem } from "../types";
 import { buildLabelExtraProps, formatMachiningLabel } from "../utils/label";
 import { MachiningRequestLabel } from "./MachiningRequestLabel";
 import { getMachineStatusLabel } from "@/pages/manufacturer/equipment/cnc/lib/machineStatus";
+import { isCamGenerationOverlayPending } from "@/pages/manufacturer/worksheet/custom_abutment/utils/regenerationPending";
 
 /** Next Up → 타 장비 드롭 MIME (playlist 재정렬과 구분) */
 const NEXT_UP_MOVE_MIME = "application/x-abuts-nextup-move";
@@ -125,6 +128,8 @@ export const MachineQueueCard = ({
   onRollbackCompleted,
   onApproveFromRollback,
   onMoveNextUpToMachine,
+  onCancelCamGeneration,
+  cancellingCamRequestIds,
   materialNeedsReplacement,
   materialAlertTooltip,
 }: MachineQueueCardProps) => {
@@ -310,8 +315,27 @@ export const MachineQueueCard = ({
     String((nextSlot as any)?.ncFile?.s3Key || "").trim() ||
       String((nextSlot as any)?.caseInfos?.ncFile?.s3Key || "").trim(),
   );
-  // 준비 탭 라이노 미완료와 동일 SSOT: NC 없으면 CAM 재생성 대기
-  const nextUpCamRegenPending = Boolean(nextSlot) && !nextUpHasNc;
+  const nextUpNcPreloadStatus = String(
+    (nextSlot as any)?.ncPreload?.status ||
+      (nextSlot as any)?.productionSchedule?.ncPreload?.status ||
+      "",
+  ).trim();
+  const nextUpCamRegenPending =
+    Boolean(nextSlot) &&
+    isCamGenerationOverlayPending({
+      requestId: nextUpRequestId,
+      hasNc: nextUpHasNc,
+      ncPreloadStatus: nextUpNcPreloadStatus,
+    });
+  const nextUpCamCancelling = (() => {
+    if (!nextUpRequestId || !cancellingCamRequestIds) return false;
+    if (cancellingCamRequestIds instanceof Set) {
+      return cancellingCamRequestIds.has(nextUpRequestId);
+    }
+    return (Array.isArray(cancellingCamRequestIds) ? cancellingCamRequestIds : [])
+      .map((id) => String(id || "").trim())
+      .includes(nextUpRequestId);
+  })();
 
   const hasNextUpMoveMime = (dt: DataTransfer | null) => {
     if (!dt) return false;
@@ -1081,7 +1105,7 @@ export const MachineQueueCard = ({
           >
             {nextUpCamRegenPending ? (
               <div
-                className="absolute inset-0 z-30 flex items-center justify-center rounded-[inherit] bg-white/55 backdrop-blur-[6px] cursor-not-allowed"
+                className="absolute inset-0 z-30 flex items-center justify-center gap-2 rounded-[inherit] bg-white/55 backdrop-blur-[6px]"
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -1097,6 +1121,26 @@ export const MachineQueueCard = ({
                 <span className="rounded-full border border-primary-muted bg-primary-soft/90 px-3 py-1.5 text-sm font-extrabold text-primary-strong shadow-sm">
                   CAM 생성 중
                 </span>
+                {onCancelCamGeneration && nextUpRequestId ? (
+                  <button
+                    type="button"
+                    className="rounded-full border border-slate-300 bg-white/95 px-3 py-1.5 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50"
+                    disabled={nextUpCamCancelling}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (nextUpCamCancelling) return;
+                      void onCancelCamGeneration(nextUpRequestId);
+                    }}
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                    }}
+                    title="생성 중단"
+                    aria-label="생성 중단"
+                  >
+                    {nextUpCamCancelling ? "중단 중…" : "생성 중단"}
+                  </button>
+                ) : null}
               </div>
             ) : null}
             <div className="flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-500">

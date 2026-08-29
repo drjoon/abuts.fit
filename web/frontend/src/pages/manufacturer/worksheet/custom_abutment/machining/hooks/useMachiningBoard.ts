@@ -7,6 +7,7 @@
 // - web/frontend/src/pages/manufacturer/equipment/cnc/components/CncPlaylistDrawer.tsx
 // - web/backend/controllers/requests/common.review.controller.js
 // change-log:
+// - 2026-08-29: CAM 생성 중단 소켓/커스텀 이벤트 — ncPreload CANCELLED·블러 해제.
 // - 2026-08-29: 예약 관리 열린 동안 큐 NC 메타 변경 시 playlistJobs 동기화.
 // - 2026-08-29: PreviewModal NC 재생성 시 cam-processing-started로 큐 NC 즉시 제거(Next Up「CAM 생성 중」).
 // - 2026-08-21: Next Up 이동 시 NC 삭제·CAM 항상 재생성 + 대기 오버레이용 pending 표시.
@@ -746,6 +747,12 @@ export const useMachiningBoard = ({
               item?.tooth,
             caseInfos: mergedCaseInfos,
             ncFile: mergedNcFile,
+            ncPreload: opts?.clearNc
+              ? { status: "GENERATING", updatedAt: new Date().toISOString() }
+              : requestRaw?.productionSchedule?.ncPreload &&
+                  typeof requestRaw.productionSchedule.ncPreload === "object"
+                ? requestRaw.productionSchedule.ncPreload
+                : item?.ncPreload,
           };
         });
 
@@ -1058,6 +1065,12 @@ export const useMachiningBoard = ({
             (q as { caseInfos?: { ncFile?: { s3Key?: string } } })?.caseInfos
               ?.ncFile?.s3Key,
         );
+        const ncPreloadStatus = String(
+          (q as { ncPreload?: { status?: string } })?.ncPreload?.status ||
+            (q as { productionSchedule?: { ncPreload?: { status?: string } } })
+              ?.productionSchedule?.ncPreload?.status ||
+            "",
+        ).trim();
         const maxDiameterRaw = Number(
           (q as { caseInfos?: { maxDiameter?: number } })?.caseInfos
             ?.maxDiameter,
@@ -1091,6 +1104,7 @@ export const useMachiningBoard = ({
           anodizingEnabled,
           shippingMode,
           hasNc,
+          ncPreloadStatus: ncPreloadStatus || null,
           maxDiameter,
           businessName: String(q?.businessName || "").trim() || undefined,
           clinicName: String(q?.clinicName || "").trim() || undefined,
@@ -1163,6 +1177,7 @@ export const useMachiningBoard = ({
       "request:stage-changed",
       "request:stl-metadata-updated",
       "request:cam-processing-started",
+      "request:cam-regeneration-cancelled",
       "machining:express-rebalance",
     ],
     onMatch: (evt) => {
@@ -1189,9 +1204,64 @@ export const useMachiningBoard = ({
             requestId: startedRequestId,
             _id: startedMongoId,
             caseInfos: { ncFile: null },
+            productionSchedule: { ncPreload: { status: "GENERATING" } },
           },
           { clearNc: true },
         );
+        scheduleNcQueueVerifyRefresh();
+        return;
+      }
+
+      if (type === "request:cam-regeneration-cancelled") {
+        const cancelledRequestId = String(payload["requestId"] || "").trim();
+        const cancelledMongoId = String(payload["requestMongoId"] || "").trim();
+        if (cancelledRequestId) {
+          consumeNcRegenerationPending(cancelledRequestId);
+        }
+        const eventRequest = payload["request"];
+        if (eventRequest && typeof eventRequest === "object") {
+          patchQueueNcMetaFromRequest(eventRequest as any);
+        } else {
+          patchQueueNcMetaFromRequest({
+            requestId: cancelledRequestId,
+            _id: cancelledMongoId,
+            caseInfos: { ncFile: null },
+            productionSchedule: { ncPreload: { status: "CANCELLED" } },
+          });
+        }
+        // clearNc 경로의 GENERATING 낙관을 덮어쓴다
+        setQueueMap((prev) => {
+          let changed = false;
+          const next: QueueMap = {};
+          Object.entries(prev || {}).forEach(([machineId, list]) => {
+            const arr = Array.isArray(list) ? list : [];
+            const patched = arr.map((item: any) => {
+              const itemRequestId = String(item?.requestId || "").trim();
+              const itemMongoId = String(item?.requestMongoId || "").trim();
+              const isTarget =
+                (cancelledRequestId && itemRequestId === cancelledRequestId) ||
+                (cancelledMongoId && itemMongoId === cancelledMongoId);
+              if (!isTarget) return item;
+              changed = true;
+              return {
+                ...item,
+                ncFile: null,
+                caseInfos: {
+                  ...(item?.caseInfos && typeof item.caseInfos === "object"
+                    ? item.caseInfos
+                    : {}),
+                  ncFile: null,
+                },
+                ncPreload: {
+                  status: "CANCELLED",
+                  updatedAt: new Date().toISOString(),
+                },
+              };
+            });
+            next[machineId] = patched;
+          });
+          return changed ? next : prev;
+        });
         scheduleNcQueueVerifyRefresh();
         return;
       }
@@ -1347,9 +1417,56 @@ export const useMachiningBoard = ({
           requestId: startedRequestId,
           _id: startedMongoId,
           caseInfos: { ncFile: null },
+          productionSchedule: { ncPreload: { status: "GENERATING" } },
         },
         { clearNc: true },
       );
+      scheduleNcQueueVerifyRefresh();
+    };
+
+    const handleNcRegenerationCancelled = (evt: Event) => {
+      const detail =
+        evt && typeof evt === "object" && "detail" in evt
+          ? ((evt as CustomEvent).detail as Record<string, unknown> | null)
+          : null;
+      const cancelledRequestId = String(detail?.requestId || "").trim();
+      const cancelledMongoId = String(detail?.requestMongoId || "").trim();
+      if (!cancelledRequestId && !cancelledMongoId) return;
+      if (cancelledRequestId) {
+        consumeNcRegenerationPending(cancelledRequestId);
+      }
+      setQueueMap((prev) => {
+        let changed = false;
+        const next: QueueMap = {};
+        Object.entries(prev || {}).forEach(([machineId, list]) => {
+          const arr = Array.isArray(list) ? list : [];
+          const patched = arr.map((item: any) => {
+            const itemRequestId = String(item?.requestId || "").trim();
+            const itemMongoId = String(item?.requestMongoId || "").trim();
+            const isTarget =
+              (cancelledRequestId && itemRequestId === cancelledRequestId) ||
+              (cancelledMongoId && itemMongoId === cancelledMongoId);
+            if (!isTarget) return item;
+            changed = true;
+            return {
+              ...item,
+              ncFile: null,
+              caseInfos: {
+                ...(item?.caseInfos && typeof item.caseInfos === "object"
+                  ? item.caseInfos
+                  : {}),
+                ncFile: null,
+              },
+              ncPreload: {
+                status: "CANCELLED",
+                updatedAt: new Date().toISOString(),
+              },
+            };
+          });
+          next[machineId] = patched;
+        });
+        return changed ? next : prev;
+      });
       scheduleNcQueueVerifyRefresh();
     };
 
@@ -1358,11 +1475,19 @@ export const useMachiningBoard = ({
       "nc-regeneration-started",
       handleNcRegenerationStarted as EventListener,
     );
+    window.addEventListener(
+      "nc-regeneration-cancelled",
+      handleNcRegenerationCancelled as EventListener,
+    );
     return () => {
       window.removeEventListener("cnc-queues-updated", handleQueuesUpdated);
       window.removeEventListener(
         "nc-regeneration-started",
         handleNcRegenerationStarted as EventListener,
+      );
+      window.removeEventListener(
+        "nc-regeneration-cancelled",
+        handleNcRegenerationCancelled as EventListener,
       );
     };
   }, [

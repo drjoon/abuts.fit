@@ -1,6 +1,7 @@
 // change-log:
 // - 2026-08-29: BG 완료 후 열린 프리뷰 — NC/filled만 선택 무효화 후 갱신(STL 불필요 재다운로드 방지).
 // - 2026-08-29: 큐→프리뷰 오픈 시 forceRefresh 제거 — IndexedDB STL/NC 캐시 재사용.
+// - 2026-08-29: 예약 관리·Next Up「생성 중단」— cancel-regeneration API.
 // - 2026-08-29: 예약 관리 목록에서 CAM(NC) 재생성 — NC 제거·「CAM 생성 중」블러.
 // - 2026-08-26: 큐→프리뷰 ncFile에 uploadedAt/fileSize/materialDiameter 전달(버전 캐시·#521 검증용).
 // - 2026-08-24: 장비 상태 갱신 뱃지 — 직경별 건수 옆(leadingAddon)으로 이동.
@@ -77,7 +78,10 @@ import {
   resolveFilledStlFile,
   type ManufacturerRequest,
 } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
-import { markNcRegenerationPending } from "@/pages/manufacturer/worksheet/custom_abutment/utils/regenerationPending";
+import {
+  markNcRegenerationPending,
+  consumeNcRegenerationPending,
+} from "@/pages/manufacturer/worksheet/custom_abutment/utils/regenerationPending";
 import {
   deleteCncProgramCache,
   invalidateRequestPreviewCaches,
@@ -211,6 +215,9 @@ export const MachiningQueueBoard = ({
   const [siFetching, setSiFetching] = useState(false);
   const [anodizingOffTriggering, setAnodizingOffTriggering] = useState(false);
   const [playlistRegeneratingIds, setPlaylistRegeneratingIds] = useState<
+    Set<string>
+  >(() => new Set());
+  const [playlistCancellingIds, setPlaylistCancellingIds] = useState<
     Set<string>
   >(() => new Set());
   const [, setSearchParams] = useSearchParams();
@@ -429,6 +436,118 @@ export const MachiningQueueBoard = ({
       if (!open) clearExpressRebalanceAlert();
     },
     [clearExpressRebalanceAlert],
+  );
+
+  const cancelCamGeneration = useCallback(
+    async (requestIdRaw: string) => {
+      const requestId = String(requestIdRaw || "").trim();
+      if (!requestId) return;
+      if (!token) {
+        toast({
+          title: "실패",
+          description: "로그인이 필요합니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (playlistCancellingIds.has(requestId)) return;
+
+      setPlaylistCancellingIds((prev) => {
+        const next = new Set(prev);
+        next.add(requestId);
+        return next;
+      });
+
+      try {
+        const controller = new AbortController();
+        const timeoutRef = window.setTimeout(() => controller.abort(), 20000);
+        let res: Response;
+        try {
+          res = await fetch(
+            `/api/requests/by-request/${encodeURIComponent(requestId)}/nc-file/cancel-regeneration`,
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({}),
+              signal: controller.signal,
+            },
+          );
+        } finally {
+          window.clearTimeout(timeoutRef);
+        }
+        const body: any = await res.json().catch(() => ({}));
+        if (!res.ok || body?.success === false) {
+          toast({
+            title: "생성 중단 실패",
+            description:
+              body?.message ||
+              body?.error ||
+              "CAM 생성 중단에 실패했습니다.",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        consumeNcRegenerationPending(requestId);
+        setPlaylistJobs((prev) =>
+          (Array.isArray(prev) ? prev : []).map((j) => {
+            const rid = String(j.requestId || j.id || "").trim();
+            if (rid !== requestId) return j;
+            return {
+              ...j,
+              hasNc: false,
+              s3Key: "",
+              s3Bucket: "",
+              bridgePath: "",
+              ncPreloadStatus: "CANCELLED",
+            };
+          }),
+        );
+        window.dispatchEvent(
+          new CustomEvent("nc-regeneration-cancelled", {
+            detail: {
+              requestId,
+              requestMongoId: String(body?.data?.request?._id || "").trim(),
+              ncCleared: true,
+            },
+          }),
+        );
+        toast({
+          title: "생성 중단",
+          description: "CAM 생성을 중단하고 NC를 삭제했습니다.",
+        });
+        const mid = String(playlistMachineId || "").trim();
+        if (mid) {
+          void loadProductionQueueForMachine(mid);
+        }
+      } catch (err: any) {
+        const isAbort = String(err?.name || "") === "AbortError";
+        toast({
+          title: "생성 중단 실패",
+          description: isAbort
+            ? "중단 요청 시간이 초과되었습니다. 잠시 후 다시 시도해주세요."
+            : err?.message || "CAM 생성 중단에 실패했습니다.",
+          variant: "destructive",
+        });
+      } finally {
+        setPlaylistCancellingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(requestId);
+          return next;
+        });
+      }
+    },
+    [
+      token,
+      toast,
+      playlistCancellingIds,
+      setPlaylistJobs,
+      playlistMachineId,
+      loadProductionQueueForMachine,
+    ],
   );
 
   const decodeNcText = useCallback((buffer: ArrayBuffer) => {
@@ -1690,6 +1809,10 @@ export const MachiningQueueBoard = ({
               onMoveNextUpToMachine={(payload) => {
                 void moveNextUpToMachine(payload);
               }}
+              onCancelCamGeneration={(requestId) => {
+                void cancelCamGeneration(requestId);
+              }}
+              cancellingCamRequestIds={playlistCancellingIds}
               onRollbackCompleted={(requestId, mid) => {
                 void rollbackRequestInQueue(mid, requestId);
               }}
@@ -1896,8 +2019,19 @@ export const MachiningQueueBoard = ({
         readOnly={false}
         deleteVariant="worksheet"
         regeneratingJobIds={playlistRegeneratingIds}
+        cancellingJobIds={playlistCancellingIds}
         onApproveFromRollback={(requestMongoId) => {
           void approveMachiningFromRollback(requestMongoId);
+        }}
+        onCancelCamGeneration={(jobId) => {
+          const job = (Array.isArray(playlistJobs) ? playlistJobs : []).find(
+            (j) => j.id === jobId,
+          );
+          const requestId = String(
+            job?.requestId || job?.id || jobId || "",
+          ).trim();
+          if (!requestId) return;
+          void cancelCamGeneration(requestId);
         }}
         onRegenerateCam={(jobId) => {
           void (async () => {
@@ -1996,6 +2130,7 @@ export const MachiningQueueBoard = ({
                     s3Key: "",
                     s3Bucket: "",
                     bridgePath: "",
+                    ncPreloadStatus: "GENERATING",
                   };
                 }),
               );

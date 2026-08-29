@@ -83,6 +83,21 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
         {
             try
             {
+                if (NcJobCancellation.IsCancelled(requestId))
+                {
+                    AppLogger.Log($"BackendApiClient: register-file skip (cancelled) requestId={requestId}");
+                    try
+                    {
+                        if (!string.IsNullOrWhiteSpace(ncPath) && File.Exists(ncPath))
+                        {
+                            File.Delete(ncPath);
+                        }
+                    }
+                    catch { }
+                    NcJobCancellation.Clear(requestId);
+                    return;
+                }
+
                 if (string.IsNullOrWhiteSpace(ncPath) || !File.Exists(ncPath))
                 {
                     AppLogger.Log($"BackendApiClient: register-file skip (invalid ncPath) ncPath={ncPath}");
