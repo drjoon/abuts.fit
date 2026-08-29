@@ -253,9 +253,11 @@
   - 플러스 모드(구 헥스40도회전 분기):
     - `STL모델+` → modeBase **0.0**
     - `헥스30+` → modeBase **30.0**
-    - 가산량 `addDeg = hexRotation.appliedDeg` (예: +29.85 → **29.850**). `30+appliedDeg` 금지.
-    - T4848 → `C(0.0 + addDeg)` (예: C29.850)
-    - T0909/T0606 → `C(modeBase + addDeg)` (STL모델+: C29.850, 헥스30+: C59.850)
+    - 가산량 `addDeg = 30 + hexRotation.appliedDeg` (예: 30+(-29.77)=**0.23**)
+    - T4848 → `C(0.0 + addDeg)`
+    - T0909/T0606 → `C(modeBase + addDeg)`
+    - `STL모델+`(modeBase=0): T4848·T0909/T0606 **모두** `C(30+appliedDeg)`
+    - `헥스30+`(modeBase=30): T4848=`C(addDeg)`, T0909/T0606=`C(30+addDeg)`
   - 레거시 `"헥스40도회전"` / `"헥스10도회전"` / 기타 `헥스X도회전` → `STL모델+` 로 정규화.
   - 레거시 `"0"`/`"30"` 허용. **default fallback 주입 금지**.
 - 제조사 헥스 기본값(다음 의뢰 시드):
