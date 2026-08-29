@@ -426,10 +426,13 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     AppLogger.Log($"StlFileProcessor: Invoke 직전 CAM 직경 재적용 - BarDiameter={backendCamDiameter.Value:F3}");
                 }
                 var addinSw = System.Diagnostics.Stopwatch.StartNew();
+                NcJobCancellation.ThrowIfCurrentCancelled("before-InvokeDentalAddin");
                 InvokeDentalAddin(document, effectiveFrontLimit, effectiveBackLimit, stlBoundingTopZ, finishLineTopZ, finishLineMinZ, finishLineEspritR, twoPhase);
                 addinSw.Stop();
                 AppLogger.Log($"[PERF] StlFileProcessor.InvokeDentalAddin END elapsedMs={addinSw.ElapsedMilliseconds}");
+                NcJobCancellation.ThrowIfCurrentCancelled("after-InvokeDentalAddin");
                 CaptureNcMetadata(document);
+                NcJobCancellation.ThrowIfCurrentCancelled("before-GenerateNc");
                 AppLogger.Log("StlFileProcessor: NC 생성 시작");
                 var ncSw = System.Diagnostics.Stopwatch.StartNew();
                 string ncFilePath = _ncGenerator.GenerateNcFile(
@@ -445,6 +448,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 ncSw.Stop();
                 AppLogger.Log($"StlFileProcessor: NC 생성 종료 - path={ncFilePath ?? "<null>"}");
                 AppLogger.Log($"[PERF] StlFileProcessor.GenerateNc END elapsedMs={ncSw.ElapsedMilliseconds}");
+                NcJobCancellation.ThrowIfCurrentCancelled("before-NotifyBackendSuccess");
                 if (!string.IsNullOrWhiteSpace(ncFilePath))
                 {
                     AppLogger.Log($"StlFileProcessor: NC file generated - {ncFilePath}");
@@ -458,6 +462,14 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 processSw.Stop();
                 AppLogger.Log($"StlFileProcessor: 완료 - {stlPath}");
                 AppLogger.Log($"[PERF] StlFileProcessor.Process END elapsedMs={processSw.ElapsedMilliseconds}");
+            }
+            catch (OperationCanceledException oce)
+            {
+                processSw.Stop();
+                AppLogger.Log($"StlFileProcessor: CAM 생성 중단 - {oce.Message}");
+                AppLogger.Log($"[PERF] StlFileProcessor.Process END(cancelled) elapsedMs={processSw.ElapsedMilliseconds}");
+                // 프론트 cancel-regeneration이 이미 CANCELLED 처리. 실패 콜백/REJECTED 금지.
+                throw;
             }
             catch (Exception ex)
             {

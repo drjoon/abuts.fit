@@ -510,6 +510,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     return;
                 }
 
+                NcJobCancellation.SetCurrent(req?.RequestId);
+
                 // STL 파일 경로 정규화
                 string stlPath = NormalizeFilePath(req.StlPath);
                 AppLogger.Log($"[NC Processing] Resolved STL path: {stlPath}");
@@ -618,6 +620,18 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     NcJobCancellation.Clear(req?.RequestId);
                 }
             }
+            catch (OperationCanceledException oce)
+            {
+                AppLogger.Log($"[NC Processing] CAM cancelled: {req?.RequestId} ({oce.Message})");
+                await NotifyRuntimeStatus(
+                    req?.RequestId,
+                    "cancelled",
+                    "CAM 생성 중단",
+                    "slate",
+                    clear: true
+                );
+                NcJobCancellation.Clear(req?.RequestId);
+            }
             catch (Exception ex)
             {
                 AppLogger.Log($"[NC Processing] CAM processing failed: {ex.Message}");
@@ -629,6 +643,10 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     "rose",
                     new { error = ex.Message }
                 );
+            }
+            finally
+            {
+                NcJobCancellation.ClearCurrent();
             }
         }
         private void RunCamProcessing(NcGenerationRequest req, string stlPath)
@@ -730,9 +748,22 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         try
                         {
                             _currentProcessingRequestId = req.RequestId;
+                            NcJobCancellation.SetCurrent(req.RequestId);
                             AppLogger.Log($"[Queue Processor] Processing: {req.RequestId} (TwoPhase: {req.TwoPhase}) (Remaining in queue: {_ncQueue.Count})");
                             await ProcessNcRequest(req);
                             AppLogger.Log($"[Queue Processor] Completed: {req.RequestId}");
+                        }
+                        catch (OperationCanceledException oce)
+                        {
+                            AppLogger.Log($"[Queue Processor] Cancelled: {req.RequestId} ({oce.Message})");
+                            await NotifyRuntimeStatus(
+                                req?.RequestId,
+                                "cancelled",
+                                "CAM 생성 중단",
+                                "slate",
+                                clear: true
+                            );
+                            NcJobCancellation.Clear(req?.RequestId);
                         }
                         catch (Exception ex)
                         {
@@ -747,6 +778,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         }
                         finally
                         {
+                            NcJobCancellation.ClearCurrent();
                             _currentProcessingRequestId = null;
                         }
                     }
