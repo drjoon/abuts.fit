@@ -125,16 +125,12 @@ namespace DentalAddin
                         return false;
                     }
 
-                    // Front Face 끝점 정책:
-                    // - Face.RightX = FrontPointX + 2.5mm 로 고정 적용한다.
-                    // - 단, Splitline_2를 침범하지 않도록 상한 클램프한다.
-                    // - 이후 Rough 대비 안전가드(0.3mm)를 추가 적용해 공구 파손 위험을 방지한다.
+                    // Front Face 끝점: RightX = FrontPointX + 3.0 (Splitline_2 미만). 시작 TopZ=1.0.
                     ApplyFrontFaceFixedDepth(faceOp, "TryRunFreeFormMillSafe:FrontFace");
 
                     ZH = Math.Abs(MoveSTL_Module.FrontPointX);
 
-                    // 안전가드: Rough_A 우측 선행절삭이 Face보다 최소 0.3mm 더 우측에 있도록 보정.
-                    // (Face가 더 우측으로 나가면 공구 파손 위험)
+                    // Face가 Front_Rough(=Splitline_2) 끝을 넘지 않게만 보정
                     TryApplyFaceRightEndGuard(faceOp, "TryRunFreeFormMillSafe:FrontFace");
 
                     TryAddOperation(faceOp, frontFace, "TryRunFreeFormMillSafe FrontFace");

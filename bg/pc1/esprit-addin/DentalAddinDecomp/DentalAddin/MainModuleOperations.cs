@@ -405,13 +405,12 @@ namespace DentalAddin
                     return;
                 }
 
-                // Front Face 시작/끝: MoveSTL 이후 FrontPointX 기준 (TopZ 원점 고정 아님).
-                // - StartX = FrontPointX - tipClearance(1.0), RightX = FrontPointX + 3.0 (Splitline_2 미만)
+                // Front Face 끝점: RightX = FrontPointX + 3.0 (Splitline_2 미만). 시작 TopZ=1.0.
                 ApplyFrontFaceFixedDepth(techLatheMoldParallelPlanes, "FrontFaceMill");
 
                 ZH = Math.Abs(MoveSTL_Module.FrontPointX);
 
-                // Face가 Front_Rough/Splitline_2 끝을 넘지 않게만 보정
+                // Face가 Front_Rough(=Splitline_2) 끝을 넘지 않게만 보정
                 TryApplyFaceRightEndGuard(techLatheMoldParallelPlanes, "FrontFaceMill");
 
                 FreeFormFeature frontFace = FindFreeFormFeatureByName("3DMilling_FrontFace");
