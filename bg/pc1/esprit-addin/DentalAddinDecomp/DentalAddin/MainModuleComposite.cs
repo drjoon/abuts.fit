@@ -1667,9 +1667,9 @@ namespace DentalAddin
         private const double FrontFaceEndOffsetMaxMm = 2.5;
         private const double FrontFaceEndOffsetFallbackMm = 2.0;
 
-        // Front Face tip 시작 여유(mm): Face.StartX = FrontPointX - 이 값 (MoveSTL 이후 tip SSOT).
-        // EM2.0BALL 반경(1.0) 공중 진입. 구 TopZ=1.0 원점 고정은 MoveSTL tip과 어긋남.
-        private const double FrontFaceTipClearanceMm = 1.0;
+        // Front Face tip 시작: 원점(X=0)에서 출발.
+        // FrontPointX는 tip과 어긋날 수 있어 FrontPointX-여유 방식은 공중 진입이 깨질 수 있음.
+        // MoveSTL 후 바 tip/스핀들 쪽은 보통 원점 근처이므로 원점 시작이 안전하다.
 
         /// <summary>
         /// Face 축 끝 오프셋. 우선순위: env 강제값 → maxDiameter/HighY/BarDia로 tip 반경 추정 → fallback.
@@ -1801,14 +1801,12 @@ namespace DentalAddin
         }
 
         /// <summary>
-        /// MoveSTL 이후 Face tip 시작 X.
-        /// - tip SSOT: FrontPointX
-        /// - startX = FrontPointX - FrontFaceTipClearanceMm
+        /// Face tip 시작 X = 원점(0). FrontPointX tip 어긋남과 무관하게 스핀들/바 tip 쪽에서 진입.
         /// </summary>
         private static double ResolveFrontFaceStartX(out double frontX)
         {
             frontX = MoveSTL_Module.FrontPointX;
-            return frontX - FrontFaceTipClearanceMm;
+            return 0.0;
         }
 
         // Front_Rough 우측 종료 오프셋
@@ -1889,8 +1887,8 @@ namespace DentalAddin
 
 
         /// <summary>
-        /// Front Face(ParallelPlanes) 시작/끝점을 MoveSTL 이후 FrontPointX 기준으로 적용한다.
-        /// - 시작: Face.StartX = FrontPointX - FrontFaceTipClearanceMm (구 TopZ=1.0 원점 고정 폐기)
+        /// Front Face(ParallelPlanes) 시작/끝점을 적용한다.
+        /// - 시작: Face.StartX = 0 (원점). FrontPointX tip 어긋남과 무관
         /// - 끝: Face.RightX = FrontPointX + GetFrontFaceEndOffsetFromFrontMm(), 단 Splitline_2 - 0.001 상한
         /// - LastAppliedFrontFaceDepthMm = FrontFaceFixedDepthMm(0.5mm)
         /// - RL=1: TopZ=-StartX, BottomZ=-RightX / RL=2: TopZ=+StartX, BottomZ=+RightX
@@ -1916,10 +1914,10 @@ namespace DentalAddin
                 double requestedFaceRightX = frontX + faceEndOffsetMm;
                 double appliedFaceRightX = ClampFaceRightXBelowSplitline2(requestedFaceRightX, out double splitline2Used, out bool splitline2ClampApplied);
 
-                // 시작이 끝보다 안쪽이면 tip 여유를 유지한 채 끝 바로 앞으로 당김
+                // 원점 시작이 끝보다 안쪽(또는 동일)이면 끝 바로 앞으로만 당김 (비정상 FrontPointX 가드)
                 if (faceStartX >= appliedFaceRightX - 1e-6)
                 {
-                    faceStartX = appliedFaceRightX - FrontFaceTipClearanceMm;
+                    faceStartX = appliedFaceRightX - 0.001;
                     DentalLogger.Log($"FrontFaceDepth[{context}] - StartX를 RightX 미만으로 보정: startX={faceStartX:F3}, rightX={appliedFaceRightX:F3}");
                 }
 
@@ -1931,7 +1929,7 @@ namespace DentalAddin
                 SetFaceTopZLimitFromStartX(faceOp, faceStartX);
                 SetFaceBottomZLimitFromRightX(faceOp, appliedFaceRightX);
 
-                DentalLogger.Log($"FrontFaceDepth[{context}] - FrontPoint 오프셋 적용: frontX={frontX:F3}, startX={faceStartX:F3}, endOffset={faceEndOffsetMm:F3}, requestRightX={requestedFaceRightX:F3}, appliedRightX={appliedFaceRightX:F3}, TopZ:{oldTop:F3}->{faceOp.TopZLimit:F3}, BottomZ:{oldBottom:F3}->{oldBottom2:F3}->{faceOp.BottomZLimit:F3}, DepthRef={LastAppliedFrontFaceDepthMm:F3}, Splitline2={splitline2Used:F3}, Splitline2Clamp={splitline2ClampApplied}, Splitline2Margin={FrontFaceSplitline2NoCrossMarginMm:F3}");
+                DentalLogger.Log($"FrontFaceDepth[{context}] - FrontPoint 오프셋 적용: frontX={frontX:F3}, startX={faceStartX:F3}(origin), endOffset={faceEndOffsetMm:F3}, requestRightX={requestedFaceRightX:F3}, appliedRightX={appliedFaceRightX:F3}, TopZ:{oldTop:F3}->{faceOp.TopZLimit:F3}, BottomZ:{oldBottom:F3}->{oldBottom2:F3}->{faceOp.BottomZLimit:F3}, DepthRef={LastAppliedFrontFaceDepthMm:F3}, Splitline2={splitline2Used:F3}, Splitline2Clamp={splitline2ClampApplied}, Splitline2Margin={FrontFaceSplitline2NoCrossMarginMm:F3}");
             }
             catch (Exception ex)
             {

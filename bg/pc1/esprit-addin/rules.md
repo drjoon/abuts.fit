@@ -131,9 +131,9 @@
 ### 4.6 Front Face/Back Turn 경계 보정 (2026-07-01, Face offset 동적화 2026-08-29)
 
 - Front Face 시작/종료점 정책(현행 SSOT):
-  - 시작: `Face.StartX = FrontPointX - FrontFaceTipClearanceMm(1.0)` (MoveSTL 이후 tip SSOT).
+  - 시작: `Face.StartX = 0` (원점). FrontPointX가 tip과 어긋나도 스핀들/바 tip 쪽에서 진입.
     - RL=1: `TopZLimit = -StartX` / RL=2: `TopZLimit = +StartX` (BottomZ와 동일 부호 규칙)
-    - 구 `TopZLimit = 1.0` 원점 고정은 MoveSTL tip과 어긋나 폐기
+    - 구 `TopZLimit = 1.0`·`FrontPointX - 1.0` 방식 폐기 (원점/+tip 어긋남)
   - 끝: `Face.RightX = FrontPointX + L`, 단 항상 `Face.RightX < Splitline_2` (`Splitline_2 - 0.001mm` 상한 클램프)
   - `L` 동적(구 고정 3.0mm 폐기):
     - 강제: env `ABUTS_FRONT_FACE_END_OFFSET_MM` (≥0, 상한 3.0)
