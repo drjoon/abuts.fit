@@ -26,9 +26,11 @@
 
 - 공정 직전 피처/오퍼레이션 검증 로그를 남겨 원인 추적이 가능해야 합니다.
 - Roughworkplane에서 STL 모델을 찾지 못하면 즉시 종료하고 로그를 남깁니다.
-- TwoPhase에서 `Rough_A` 이후 `Face(EM2_0BALL)`가 실행될 때는 공구 파손 방지를 위해 우측 끝 안전 간격을 강제합니다.
-  - 기준: `roughAEndX = splitX - 0.5mm`
-  - 규칙: `(roughAEndX - faceRightX) < 0.3mm` 이면 `faceRightX = roughAEndX - 0.3mm`로 보정
+- TwoPhase에서 `Rough_A` 이후 `Face(EM2_0BALL)` 끝점은 Front_Rough/Splitline_2를 넘지 않게만 보정합니다.
+  - Front_Rough 끝 SSOT: `roughAEndX = Splitline_2`
+  - 규칙: `faceRightX > roughAEndX - 0.001` 이면 `faceRightX = roughAEndX - 0.001`
+  - 최종 상한: 항상 `faceRightX < Splitline_2` (`Splitline_2 - 0.001`)
+  - 구 0.3mm 강제 단축은 Front_Rough=Splitline_2 SSOT와 충돌하므로 사용하지 않는다
   - 적용 위치: `MainModuleComposite.TryApplyFaceRightEndGuard` (실행 지점: `FrontFaceMill`, `TryRunFreeFormMillSafe`)
 
 ## 3. 이번 세션 리팩터링 기록 (2026-06-20)
@@ -132,7 +134,7 @@
   - `LastAppliedFrontFaceDepthMm = 0.5mm` (`FrontFaceFixedDepthMm`)
   - 상수: `MainModuleComposite.FrontFaceEndOffsetFromFrontMm`
   - 구현 위치: `MainModuleComposite.ApplyFrontFaceFixedDepth` / `ClampFaceRightXBelowSplitline2`
-  - 후속 안전 가드(`TryApplyFaceRightEndGuard`) 후에도 Splitline_2 상한을 다시 적용한다.
+  - 후속 가드(`TryApplyFaceRightEndGuard`): Face가 Front_Rough 끝을 넘지 않게만 보정하고, Splitline_2 상한을 다시 적용한다 (0.3mm 추가 단축 없음).
 
 - Back Turn 시작점/퇴출 정책(현행 SSOT):
   - 시작점은 `FrontPointX` anchor로 통일한다. (`Front_Turn`과 동일 기준)

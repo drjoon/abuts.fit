@@ -1707,11 +1707,6 @@ namespace DentalAddin
             }
         }
 
-        // Face(EM2_0BALL) 안전가드 상수:
-        // Front_Rough 우측 끝보다 Face 우측 끝이 우측으로 더 나가면 공구 파손 위험이 있어,
-        // 최소 0.3mm의 선행 절삭 여유를 강제한다.
-        private const double FaceRightGuardMinGapMm = 0.3;
-
         // Front_Rough 우측 종료 오프셋
         // 요청 반영: 기존 끝점에서 +2.0mm 이동
         // 기존 roughAEnd = splitX - 0.5mm  ->  변경 roughAEnd = splitX + 1.5mm
@@ -1793,11 +1788,11 @@ namespace DentalAddin
         /// Front Face(ParallelPlanes) 가공 끝점을 FrontPointX 기준으로 고정 적용한다.
         /// - LastAppliedFrontFaceDepthMm = FrontFaceFixedDepthMm(0.5mm)
         /// - 목표: Face.RightX = Splitline_1(=FrontPointX) + FrontFaceEndOffsetFromFrontMm(3.0mm)
-        /// - 단, Face.RightX는 항상 Splitline_2보다 짧게 클램프한다.
+        /// - 단, Face.RightX는 항상 Splitline_2보다 짧게 클램프한다 (Splitline_2 - 0.001).
         /// - RL=1: BottomZLimit = -Face.RightX
         /// - RL=2: BottomZLimit = +Face.RightX
-        /// 주의: 이 설정 이후에 Rough 안전가드(TryApplyFaceRightEndGuard)가 추가 보정할 수 있다.
-        ///       가드 보정 후에도 Splitline_2 상한은 다시 적용한다.
+        /// 주의: 이후 TryApplyFaceRightEndGuard는 Face가 Front_Rough 끝을 넘지 않게만 막으며,
+        ///       Splitline_2 상한은 다시 적용한다. (구 0.3mm 강제 단축 없음)
         /// </summary>
         private static void ApplyFrontFaceFixedDepth(TechLatheMoldParallelPlanes faceOp, string context)
         {
@@ -1834,9 +1829,10 @@ namespace DentalAddin
         }
 
         /// <summary>
-        /// Face(ParallelPlanes)의 우측 끝을 Front_Rough 우측 끝 기준으로 안전 보정한다.
-        /// 규칙: (Front_Rough.RightX - Face.RightX) < 0.3mm 이면 Face.RightX = Front_Rough.RightX - 0.3mm 로 조정.
-        /// 보정 후에도 Face.RightX는 Splitline_2보다 짧게 유지한다.
+        /// Face가 Front_Rough 끝(또는 Splitline_2)을 넘지 않도록만 보정한다.
+        /// - Face.RightX &gt; Rough.RightX - margin 이면 Rough.RightX - margin 으로 당김
+        /// - 최종적으로 항상 Splitline_2 - margin 상한 재적용
+        /// - 구 규칙(Rough보다 0.3mm 짧게 강제)은 Front_Rough=Splitline_2 SSOT와 충돌하므로 제거
         /// </summary>
         private static bool TryApplyFaceRightEndGuard(TechLatheMoldParallelPlanes faceOp, string context)
         {
@@ -1861,19 +1857,20 @@ namespace DentalAddin
                     return false;
                 }
 
+                double maxByRough = roughARightX - FrontFaceSplitline2NoCrossMarginMm;
                 double currentGap = roughARightX - currentFaceRightX;
                 double candidateFaceRightX = currentFaceRightX;
                 bool roughGuardApplied = false;
-                if (currentGap < FaceRightGuardMinGapMm)
+                if (currentFaceRightX > maxByRough + 1e-9)
                 {
-                    candidateFaceRightX = roughARightX - FaceRightGuardMinGapMm;
+                    candidateFaceRightX = maxByRough;
                     roughGuardApplied = true;
                 }
 
                 double adjustedFaceRightX = ClampFaceRightXBelowSplitline2(candidateFaceRightX, out double splitline2Used, out bool splitline2ClampApplied);
                 if (!roughGuardApplied && !splitline2ClampApplied)
                 {
-                    DentalLogger.Log($"FaceRoughGuard[{context}] - 유지 (gap={currentGap:F3}mm >= {FaceRightGuardMinGapMm:F3}mm, RoughA.RightX={roughARightX:F3}, Face.RightX={currentFaceRightX:F3}, splitX={splitXUsed:F3}, Splitline2={splitline2Used:F3})");
+                    DentalLogger.Log($"FaceRoughGuard[{context}] - 유지 (gap={currentGap:F3}mm, RoughA.RightX={roughARightX:F3}, Face.RightX={currentFaceRightX:F3}, maxByRough={maxByRough:F3}, splitX={splitXUsed:F3}, Splitline2={splitline2Used:F3})");
                     return false;
                 }
 
