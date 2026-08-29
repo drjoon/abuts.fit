@@ -501,11 +501,28 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 Type moveModuleType = DentalAddinReflectionHelper.ResolveMoveModuleType(mainModuleType);
                 AppLogger.Log($"StlFileProcessor: MoveModuleType resolved = {(moveModuleType != null ? moveModuleType.FullName : "null")}");
 
+                // Front도 Back과 동일하게 post-MoveSTL 값을 사용한다.
+                // 이전에는 Front만 payload(_effectiveFrontLimitX, 이동 전)를 그대로 썼고
+                // Back만 MoveSTL 이후 필드를 읽어 비대칭이었다(NC 헤더/ResolveFrontPointForNc 왜곡).
                 _capturedFrontPointX = _effectiveFrontLimitX;
                 _capturedBackPointX = null;
 
                 if (moveModuleType != null)
                 {
+                    object frontPointXObj = DentalAddinReflectionHelper.GetMainModuleField<object>(moveModuleType, "FrontPointX");
+                    AppLogger.Log($"StlFileProcessor: FrontPointX 필드 읽기 - obj={frontPointXObj}, type={frontPointXObj?.GetType().Name ?? "null"}");
+
+                    if (frontPointXObj != null && frontPointXObj is double)
+                    {
+                        double preShiftFrontPointX = _capturedFrontPointX ?? double.NaN;
+                        _capturedFrontPointX = (double)frontPointXObj;
+                        AppLogger.Log($"StlFileProcessor: FrontPointX 캡처 성공(post-MoveSTL) - {preShiftFrontPointX:F4}(이동 전) -> {_capturedFrontPointX:F4}");
+                    }
+                    else
+                    {
+                        AppLogger.Log("StlFileProcessor: FrontPointX 캡처 실패 - frontPointXObj가 null이거나 double이 아님, payload(_effectiveFrontLimitX) fallback 유지");
+                    }
+
                     object backPointXObj = DentalAddinReflectionHelper.GetMainModuleField<object>(moveModuleType, "BackPointX");
                     AppLogger.Log($"StlFileProcessor: BackPointX 필드 읽기 - obj={backPointXObj}, type={backPointXObj?.GetType().Name ?? "null"}");
 
@@ -521,7 +538,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 }
                 else
                 {
-                    AppLogger.Log("StlFileProcessor: MoveModuleType이 null - BackPointX 캡처 불가");
+                    AppLogger.Log("StlFileProcessor: MoveModuleType이 null - Front/BackPointX 캡처 불가");
                 }
 
                 double barDiameter = document?.LatheMachineSetup?.BarDiameter ?? 0;

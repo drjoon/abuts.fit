@@ -606,7 +606,13 @@ namespace DentalAddin
                 Layer activeLayer = Document.Layers.Add("FaceDrill");
                 Document.ActiveLayer = activeLayer;
 
-                double stlShift = AppConfig.DefaultStlShift;
+                // PRC ZLimit은 원점 기준값이므로 MoveSTL에서 실제로 적용한 총 X 이동량
+                // (deltaX + DefaultStlShift)만큼 보정해야 한다. DefaultStlShift 상수만 더하면
+                // stock-align deltaX가 누락되어 FaceHole 위치가 STL 이동량만큼 어긋난다.
+                // MoveSTL 미실행(0)이면 안전하게 DefaultStlShift만이라도 폴백 적용한다.
+                double stlShift = Math.Abs(MoveSTL_Module.LastAppliedMoveDeltaX) > 1e-6
+                    ? MoveSTL_Module.LastAppliedMoveDeltaX
+                    : AppConfig.DefaultStlShift;
                 try
                 {
                     var techType = pITechnology.GetType();
@@ -618,7 +624,7 @@ namespace DentalAddin
                         {
                             double newZ = originalZ + stlShift;
                             prop.SetValue(pITechnology, newZ);
-                            DentalLogger.Log($"CustomCycle - FaceHole ZLimit shift 적용: {originalZ:F3} -> {newZ:F3} (shift:{stlShift:F3})");
+                            DentalLogger.Log($"CustomCycle - FaceHole ZLimit shift 적용: {originalZ:F3} -> {newZ:F3} (shift:{stlShift:F3}, source={(Math.Abs(MoveSTL_Module.LastAppliedMoveDeltaX) > 1e-6 ? "LastAppliedMoveDeltaX" : "DefaultStlShift-fallback")})");
                         }
                         else
                         {
@@ -653,7 +659,11 @@ namespace DentalAddin
                 Layer activeLayer = Document.Layers.Add("EndTurning");
                 Document.ActiveLayer = activeLayer;
 
-                double stlShift = AppConfig.DefaultStlShift;
+                // FaceHole(CustomCycle)과 동일 사유: DefaultStlShift 상수만이 아니라
+                // MoveSTL에서 실제 적용한 총 X 이동량을 사용해야 Connection 위치가 어긋나지 않는다.
+                double stlShift = Math.Abs(MoveSTL_Module.LastAppliedMoveDeltaX) > 1e-6
+                    ? MoveSTL_Module.LastAppliedMoveDeltaX
+                    : AppConfig.DefaultStlShift;
                 try
                 {
                     var techType = pITechnology.GetType();
@@ -665,7 +675,7 @@ namespace DentalAddin
                         {
                             double newZ = originalZ + stlShift;
                             prop.SetValue(pITechnology, newZ);
-                            DentalLogger.Log($"CustomCycle2 - Connection ZLimit shift 적용: {originalZ:F3} -> {newZ:F3} (shift:{stlShift:F3})");
+                            DentalLogger.Log($"CustomCycle2 - Connection ZLimit shift 적용: {originalZ:F3} -> {newZ:F3} (shift:{stlShift:F3}, source={(Math.Abs(MoveSTL_Module.LastAppliedMoveDeltaX) > 1e-6 ? "LastAppliedMoveDeltaX" : "DefaultStlShift-fallback")})");
                         }
                         else
                         {

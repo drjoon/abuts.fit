@@ -51,6 +51,12 @@ namespace DentalAddin
 
         public static double FinishLineR;
 
+        // MoveSTL에서 실제로 STL 모델에 적용한 총 X 이동량(deltaX + DefaultStlShift).
+        // FaceHole/Connection(CustomCycle/CustomCycle2)처럼 원점 기준 Z를 STL 이동량만큼
+        // 보정해야 하는 소비자는 AppConfig.DefaultStlShift 상수만 쓰지 말고 이 필드를 사용한다.
+        // MoveSTL 미실행 시 0 유지(호출부에서 0이면 DefaultStlShift로 폴백).
+        public static double LastAppliedMoveDeltaX;
+
         private static int[] FeaList;
 
         public static void RotateSTL()
@@ -457,7 +463,11 @@ namespace DentalAddin
                 {
                     FinishLineX += totalDeltaX;
                 }
-                DentalLogger.Log($"MoveSTL - 초기 X이동(SpindleSide) dX:{deltaX:0.###} + shift:{stlShift:0.###} = {totalDeltaX:0.###}, FrontPointX:{FrontPointX:0.###}, BackPointX:{BackPointX:0.###}, FinishLineX:{FinishLineX:0.###}, FinishLineTopZ:{FinishLineTopZ:0.###}");
+                LastAppliedMoveDeltaX = totalDeltaX;
+                // FirstPX(첫 포인트/tip쪽 경계 X) SSOT: post-MoveSTL FrontPointX.
+                // 이전에는 선언만 되고 대입이 없어 항상 0으로 남아 ExtendEnd 등에서 원점 기준으로 잘못 비교됨.
+                FirstPX = FrontPointX;
+                DentalLogger.Log($"MoveSTL - 초기 X이동(SpindleSide) dX:{deltaX:0.###} + shift:{stlShift:0.###} = {totalDeltaX:0.###}, FrontPointX:{FrontPointX:0.###}, BackPointX:{BackPointX:0.###}, FinishLineX:{FinishLineX:0.###}, FinishLineTopZ:{FinishLineTopZ:0.###}, FirstPX:{FirstPX:0.###}");
             }
             else
             {
@@ -486,7 +496,10 @@ namespace DentalAddin
                 {
                     FinishLineX += totalDeltaX;
                 }
-                DentalLogger.Log($"MoveSTL - 초기 X이동 dX:{deltaX:0.###} + shift:{stlShift:0.###} = {totalDeltaX:0.###}, FrontPointX:{FrontPointX:0.###}, BackPointX:{BackPointX:0.###}, FinishLineX:{FinishLineX:0.###}, FinishLineTopZ:{FinishLineTopZ:0.###}");
+                LastAppliedMoveDeltaX = totalDeltaX;
+                // FirstPX(첫 포인트/tip쪽 경계 X) SSOT: post-MoveSTL FrontPointX. (SpindleSide 분기와 동일 처리)
+                FirstPX = FrontPointX;
+                DentalLogger.Log($"MoveSTL - 초기 X이동 dX:{deltaX:0.###} + shift:{stlShift:0.###} = {totalDeltaX:0.###}, FrontPointX:{FrontPointX:0.###}, BackPointX:{BackPointX:0.###}, FinishLineX:{FinishLineX:0.###}, FinishLineTopZ:{FinishLineTopZ:0.###}, FirstPX:{FirstPX:0.###}");
             }
 
             selectionSet.RemoveAll();

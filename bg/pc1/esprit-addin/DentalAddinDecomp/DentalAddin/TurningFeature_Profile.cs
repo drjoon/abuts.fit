@@ -89,7 +89,9 @@ internal sealed class TurningFeature_Profile
 		double y = default(double);
 		double x = default(double);
 		Point point2 = default(Point);
-		double trimX = (MoveSTL_Module.FinishLineX > 0.001) ? MoveSTL_Module.FinishLineX : MoveSTL_Module.BackPointX;
+		// FinishLineX는 tip 쪽(음수)일 수 있음(MoveSTL_Module의 >0.001 게이트와 동일 사유).
+		// 양수 전용 가드는 음수 FinishLineX를 걸러 BackPointX로 새서 finish-line trim이 누락된다.
+		double trimX = (Math.Abs(MoveSTL_Module.FinishLineX) > 0.001) ? MoveSTL_Module.FinishLineX : MoveSTL_Module.BackPointX;
 		DentalLogger.Log($"TurningProfile: trimX={trimX:F3} (FinishLineX={MoveSTL_Module.FinishLineX:F3}, BackPointX={MoveSTL_Module.BackPointX:F3})");
 		for (i = 1; i <= count; i = checked(i + 1))
 		{

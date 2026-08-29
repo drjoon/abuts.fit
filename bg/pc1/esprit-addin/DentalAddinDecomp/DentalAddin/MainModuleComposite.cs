@@ -2601,8 +2601,11 @@ namespace DentalAddin
                     }
 
                     // 요청 반영:
-                    // MillRough_3D_20.prc 의 기술 파라미터는 코드에서 오버라이드하지 않는다.
-                    // Roughing은 PRC 값을 그대로 사용한다.
+                    // MillRough_3D_20.prc 의 기술 파라미터(증분 깊이/절삭 속도/공차/코너값)는 코드에서 오버라이드하지 않는다.
+                    // 단, BottomZLimit(원점 기준 고정값 -2.2)은 예외: FaceHole/Connection과 동일 사유로
+                    // MoveSTL이 실제 적용한 X 이동량만큼 보정하지 않으면 STL 위치와 어긋난다.
+                    TryShiftRoughBottomZLimitByMoveDelta(roughing, $"SplitAB:{region}:{angleLabel}:Roughing");
+
                     TryAddOperation(roughing, freeFormFeature, $"SplitAB:{region}:{angleLabel}:Roughing");
                 }
             }
@@ -2629,6 +2632,50 @@ namespace DentalAddin
             }
 
             DentalLogger.Log($"RoughFreeFromMillSplitAB - AddOp 완료 Region:{region} Angle:{angleLabel} BoundaryKey:{boundaryKey}");
+        }
+
+        /// <summary>
+        /// Rough PRC(MillRough_3D*.prc)의 BottomZLimit(원점 기준 고정값, 기본 -2.2)을
+        /// MoveSTL이 실제로 적용한 총 X 이동량(MoveSTL_Module.LastAppliedMoveDeltaX)만큼 보정한다.
+        /// FaceHole/Connection(MainModuleOperations.CustomCycle/CustomCycle2)과 동일한 이유:
+        /// 원점 기준 PRC 값은 STL이 이동한 만큼 함께 옮겨줘야 실제 모델 위치와 맞는다.
+        /// MoveSTL 미실행(0)이면 보정하지 않고 PRC 원본값을 그대로 둔다(과거 동작 유지, 안전 폴백).
+        /// 다른 기술 파라미터(증분 깊이/절삭 속도/공차/코너값 등)는 여기서 손대지 않는다(rules.md 4.10 유지).
+        /// </summary>
+        private static void TryShiftRoughBottomZLimitByMoveDelta(TechLatheMoldRoughing roughing, string context)
+        {
+            try
+            {
+                double deltaX = MoveSTL_Module.LastAppliedMoveDeltaX;
+                if (Math.Abs(deltaX) <= 1e-6)
+                {
+                    DentalLogger.Log($"TryShiftRoughBottomZLimitByMoveDelta[{context}] - LastAppliedMoveDeltaX~0, 보정 스킵(PRC 원본값 유지)");
+                    return;
+                }
+
+                Type techType = roughing.GetType();
+                PropertyInfo prop = techType.GetProperty("BottomZLimit");
+                if (prop == null || !prop.CanRead || !prop.CanWrite)
+                {
+                    DentalLogger.Log($"TryShiftRoughBottomZLimitByMoveDelta[{context}] - BottomZLimit 속성 없음, 보정 스킵");
+                    return;
+                }
+
+                object raw = prop.GetValue(roughing);
+                if (raw == null || !double.TryParse(Convert.ToString(raw, CultureInfo.InvariantCulture), NumberStyles.Float, CultureInfo.InvariantCulture, out double originalZ))
+                {
+                    DentalLogger.Log($"TryShiftRoughBottomZLimitByMoveDelta[{context}] - BottomZLimit 값 변환 실패, 보정 스킵");
+                    return;
+                }
+
+                double newZ = originalZ + deltaX;
+                prop.SetValue(roughing, newZ);
+                DentalLogger.Log($"TryShiftRoughBottomZLimitByMoveDelta[{context}] - BottomZLimit 보정 적용: {originalZ:F3} -> {newZ:F3} (deltaX:{deltaX:F3})");
+            }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"TryShiftRoughBottomZLimitByMoveDelta[{context}] 실패: {ex.GetType().Name}:{ex.Message}");
+            }
         }
 
 
