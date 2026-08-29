@@ -10,8 +10,7 @@
 // - 2026-08-29: 할인금액은 전 항목 나열 대신 항목 개별 추가. 미지정은 기본 기공비.
 // - 2026-08-29: 할인율 UI −/+·5% 단위.
 // - 2026-08-29: 할인금액 모드는 할인가(최종가) 입력·1천원 스피너. 저장은 기본가−할인가.
-// - 2026-08-29: 입력 rows·펼침 상태를 lab별 localStorage 캐시.
-// - 2026-08-29: 캐시 복원 레이스 수정 — 로드 중 write 금지·캐시 우선 reconcile·스냅샷 정렬.
+// - 2026-08-29: localStorage 캐시 제거 — 서버 GET/PUT만 사용(레이스 제거).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Card,
@@ -58,7 +57,8 @@ const AUTO_SAVE_DELAY_MS = 700;
 const WON_AMOUNT_STEP = 1000;
 const RATE_STEP = 5;
 const SEARCH_DEBOUNCE_MS = 280;
-const SPECIAL_SUPPLY_CACHE_PREFIX = "abutsfit:lab-special-supply:v1:";
+/** 과거 localStorage 캐시 키 — 로드 시 일회 제거. */
+const LEGACY_SPECIAL_SUPPLY_CACHE_PREFIX = "abutsfit:lab-special-supply:v1:";
 
 export type LabSpecialSupplyMode = "rate" | "amount";
 
@@ -78,14 +78,6 @@ export type LabPracticeSpecialSupplyRow = {
   discountRate: number;
   items: LabPracticeSpecialSupplyItem[];
   updatedAt?: string | null;
-};
-
-type SpecialSupplyCachePayload = {
-  v: 1;
-  rows: LabPracticeSpecialSupplyRow[];
-  expandedIds: string[];
-  /** 이 클라이언트에서 마지막 서버 동기화 시점의 snapshotRows */
-  syncedSnapshot: string;
 };
 
 type PracticeSearchHit = {
@@ -206,125 +198,18 @@ const snapshotRows = (rows: LabPracticeSpecialSupplyRow[]) => {
   return JSON.stringify(normalized);
 };
 
-/** 캐시용 — 할인 0원 초안 항목도 유지. */
-const normalizeRowFromCache = (
-  raw: Partial<LabPracticeSpecialSupplyRow>,
-): LabPracticeSpecialSupplyRow => {
-  const mode = normalizeMode(raw.mode);
-  const items = Array.isArray(raw.items)
-    ? raw.items
-        .map((item) => ({
-          feeItemId: String(item?.feeItemId || "").trim(),
-          feeItemName: String(item?.feeItemName || "").trim(),
-          discountAmount: toWon(item?.discountAmount),
-          remakeDiscountAmount: toWon(item?.remakeDiscountAmount),
-        }))
-        .filter((item) => item.feeItemId)
-    : [];
-  return {
-    practiceAnchorId: String(raw.practiceAnchorId || "").trim(),
-    practiceName: String(raw.practiceName || "").trim() || "치과",
-    practiceAddress: String(raw.practiceAddress || "").trim(),
-    practiceRepresentativeName: String(
-      raw.practiceRepresentativeName || "",
-    ).trim(),
-    mode,
-    discountRate: mode === "rate" ? normalizeRate(raw.discountRate) : 0,
-    items: mode === "amount" ? items : [],
-    updatedAt: raw.updatedAt ?? null,
-  };
-};
-
-const specialSupplyCacheKey = (labId: string) =>
-  `${SPECIAL_SUPPLY_CACHE_PREFIX}${labId || "guest"}`;
-
-const readSpecialSupplyCache = (
-  labId: string,
-): SpecialSupplyCachePayload | null => {
-  if (typeof window === "undefined") return null;
+const clearLegacySpecialSupplyCache = () => {
+  if (typeof window === "undefined") return;
   try {
-    const raw = window.localStorage.getItem(specialSupplyCacheKey(labId));
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<SpecialSupplyCachePayload>;
-    if (!parsed || parsed.v !== 1 || !Array.isArray(parsed.rows)) return null;
-    return {
-      v: 1,
-      rows: parsed.rows
-        .map(normalizeRowFromCache)
-        .filter((row) => row.practiceAnchorId),
-      expandedIds: Array.isArray(parsed.expandedIds)
-        ? parsed.expandedIds.map(String).filter(Boolean)
-        : [],
-      syncedSnapshot:
-        typeof parsed.syncedSnapshot === "string" ? parsed.syncedSnapshot : "",
-    };
-  } catch {
-    return null;
-  }
-};
-
-const writeSpecialSupplyCache = (
-  labId: string,
-  payload: Omit<SpecialSupplyCachePayload, "v">,
-) => {
-  if (typeof window === "undefined" || !labId) return;
-  try {
-    const body: SpecialSupplyCachePayload = {
-      v: 1,
-      rows: payload.rows,
-      expandedIds: payload.expandedIds,
-      syncedSnapshot: payload.syncedSnapshot,
-    };
-    window.localStorage.setItem(
-      specialSupplyCacheKey(labId),
-      JSON.stringify(body),
-    );
-  } catch {
-    // quota / private mode
-  }
-};
-
-/**
- * 로컬 작업본을 유지한 채 서버 이름·주소만 갱신.
- * 로컬이 서버와 이미 동기화된 경우에만 서버에만 있는 치과를 추가.
- */
-const mergeLocalAndServer = (
-  localRows: LabPracticeSpecialSupplyRow[],
-  serverRows: LabPracticeSpecialSupplyRow[],
-  serverSnap: string,
-): LabPracticeSpecialSupplyRow[] => {
-  const serverById = new Map(
-    serverRows.map((row) => [row.practiceAnchorId, row]),
-  );
-  const seen = new Set<string>();
-  const merged: LabPracticeSpecialSupplyRow[] = [];
-
-  for (const local of localRows) {
-    const id = local.practiceAnchorId;
-    if (!id || seen.has(id)) continue;
-    seen.add(id);
-    const server = serverById.get(id);
-    merged.push(
-      server
-        ? {
-            ...local,
-            practiceName: server.practiceName || local.practiceName,
-            practiceAddress: server.practiceAddress || local.practiceAddress,
-            practiceRepresentativeName:
-              server.practiceRepresentativeName ||
-              local.practiceRepresentativeName,
-          }
-        : local,
-    );
-  }
-
-  if (snapshotRows(localRows) === serverSnap) {
-    for (const server of serverRows) {
-      if (seen.has(server.practiceAnchorId)) continue;
-      merged.push(server);
+    const keys: string[] = [];
+    for (let i = 0; i < window.localStorage.length; i += 1) {
+      const key = window.localStorage.key(i);
+      if (key?.startsWith(LEGACY_SPECIAL_SUPPLY_CACHE_PREFIX)) keys.push(key);
     }
+    for (const key of keys) window.localStorage.removeItem(key);
+  } catch {
+    // ignore
   }
-  return merged;
 };
 
 const formatWon = (value: number) =>
@@ -579,12 +464,7 @@ export function LabPracticeSpecialSupplySection({
   feeItems,
 }: LabPracticeSpecialSupplySectionProps) {
   const { toast } = useToast();
-  const { token, user } = useAuthStore();
-  const labCacheId = useMemo(
-    () =>
-      String(user?.businessAnchorId || user?.id || user?.email || "").trim(),
-    [user?.businessAnchorId, user?.email, user?.id],
-  );
+  const { token } = useAuthStore();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [rows, setRows] = useState<LabPracticeSpecialSupplyRow[]>([]);
@@ -597,13 +477,9 @@ export function LabPracticeSpecialSupplySection({
   const [searching, setSearching] = useState(false);
   const [searchHits, setSearchHits] = useState<PracticeSearchHit[]>([]);
   const hydratedRef = useRef(false);
-  const skipCacheWriteRef = useRef(true);
-  const loadGenRef = useRef(0);
   const savedSnapshotRef = useRef("");
   const rowsRef = useRef(rows);
-  const expandedIdsRef = useRef(expandedIds);
   rowsRef.current = rows;
-  expandedIdsRef.current = expandedIds;
 
   const namedFeeItems = useMemo(
     () => feeItems.filter((item) => String(item.name || "").trim()),
@@ -620,25 +496,9 @@ export function LabPracticeSpecialSupplySection({
 
   const load = useCallback(async () => {
     if (!token) return;
-    const gen = ++loadGenRef.current;
-    skipCacheWriteRef.current = true;
-
-    const cache = labCacheId ? readSpecialSupplyCache(labCacheId) : null;
-    if (cache) {
-      // 캐시 즉시 표시 — 서버 GET이 로컬 입력을 지우지 않게 함
-      rowsRef.current = cache.rows;
-      setRows(cache.rows);
-      setExpandedIds(new Set(cache.expandedIds));
-      savedSnapshotRef.current =
-        cache.syncedSnapshot || snapshotRows(cache.rows);
-      hydratedRef.current = true;
-      skipCacheWriteRef.current = false;
-      setLoading(false);
-    } else {
-      hydratedRef.current = false;
-      setLoading(true);
-    }
-
+    setLoading(true);
+    hydratedRef.current = false;
+    clearLegacySpecialSupplyCache();
     try {
       const res = await request<{
         data?: { items?: Partial<LabPracticeSpecialSupplyRow>[] };
@@ -648,7 +508,6 @@ export function LabPracticeSpecialSupplySection({
         method: "GET",
         token,
       });
-      if (gen !== loadGenRef.current) return;
       if (!res.ok) {
         toast({
           title: "특별공급가 조회 실패",
@@ -657,70 +516,28 @@ export function LabPracticeSpecialSupplySection({
         });
         return;
       }
-      const serverItems = (Array.isArray(res.data?.data?.items)
+      const items = (Array.isArray(res.data?.data?.items)
         ? res.data.data.items
         : []
       )
         .map(normalizeRowFromApi)
         .filter((row) => row.practiceAnchorId);
-      const serverSnap = snapshotRows(serverItems);
-
-      skipCacheWriteRef.current = true;
-      if (hydratedRef.current) {
-        const nextRows = mergeLocalAndServer(
-          rowsRef.current,
-          serverItems,
-          serverSnap,
-        );
-        setRows(nextRows);
-        setExpandedIds((prev) => {
-          const next = new Set(
-            [...prev].filter((id) =>
-              nextRows.some((row) => row.practiceAnchorId === id),
-            ),
-          );
-          if (next.size === 0 && nextRows.length === 1) {
-            next.add(nextRows[0].practiceAnchorId);
-          }
-          return next;
-        });
+      setRows(items);
+      savedSnapshotRef.current = snapshotRows(items);
+      hydratedRef.current = true;
+      if (items.length === 1) {
+        setExpandedIds(new Set([items[0].practiceAnchorId]));
       } else {
-        setRows(serverItems);
-        setExpandedIds(
-          serverItems.length === 1
-            ? new Set([serverItems[0].practiceAnchorId])
-            : new Set(),
-        );
-        hydratedRef.current = true;
+        setExpandedIds(new Set());
       }
-      savedSnapshotRef.current = serverSnap;
-      skipCacheWriteRef.current = false;
     } finally {
-      if (gen === loadGenRef.current) {
-        setLoading(false);
-      }
+      setLoading(false);
     }
-  }, [token, toast, labCacheId]);
+  }, [token, toast]);
 
   useEffect(() => {
     void load();
   }, [load]);
-
-  useEffect(() => {
-    if (
-      skipCacheWriteRef.current ||
-      !hydratedRef.current ||
-      loading ||
-      !labCacheId
-    ) {
-      return;
-    }
-    writeSpecialSupplyCache(labCacheId, {
-      rows,
-      expandedIds: Array.from(expandedIds),
-      syncedSnapshot: savedSnapshotRef.current,
-    });
-  }, [rows, expandedIds, labCacheId, loading]);
 
   const persist = useCallback(
     async (nextRows: LabPracticeSpecialSupplyRow[]) => {
@@ -775,7 +592,7 @@ export function LabPracticeSpecialSupplySection({
         )
           .map(normalizeRowFromApi)
           .filter((row) => row.practiceAnchorId);
-        // 아직 할인 미입력인 초안 치과·항목은 로컬에 유지
+        // 아직 할인 미입력인 초안 치과·항목은 세션 메모리에 유지
         const savedIds = new Set(saved.map((row) => row.practiceAnchorId));
         const localById = new Map(
           nextRows.map((row) => [row.practiceAnchorId, row]),
@@ -801,17 +618,7 @@ export function LabPracticeSpecialSupplySection({
         );
         const merged = [...mergedSaved, ...drafts];
         setRows(merged);
-        const synced = snapshotRows(saved);
-        savedSnapshotRef.current = synced;
-        if (labCacheId) {
-          writeSpecialSupplyCache(labCacheId, {
-            rows: merged,
-            expandedIds: Array.from(expandedIdsRef.current).filter((id) =>
-              merged.some((row) => row.practiceAnchorId === id),
-            ),
-            syncedSnapshot: synced,
-          });
-        }
+        savedSnapshotRef.current = snapshotRows(saved);
         return true;
       } catch {
         toast({
@@ -822,7 +629,7 @@ export function LabPracticeSpecialSupplySection({
         return false;
       }
     },
-    [token, toast, feeNameById, labCacheId],
+    [token, toast, feeNameById],
   );
 
   useEffect(() => {
