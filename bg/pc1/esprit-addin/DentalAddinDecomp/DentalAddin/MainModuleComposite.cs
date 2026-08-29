@@ -980,7 +980,8 @@ namespace DentalAddin
             double finishOverlapMm = GetFinishAdjacentOverlapMm();
             const double aEndOffsetFromSplitMm = 0.0;
             double bStartOffsetFromSplitMm = -finishOverlapMm;
-            const double compositeEndOffsetFromBackPointMm = 0.0;
+            // [중요] Finish_Back 끝 = BackPointX + 0.3mm. 미적용 시 헥스 쪽 홈/미삭 ~0.3mm.
+            const double compositeEndOffsetFromBackPointMm = 0.3;
 
             double finishFrontEndX = splitX + aEndOffsetFromSplitMm;
             double finishBackStartX = splitX + bStartOffsetFromSplitMm;
@@ -1002,7 +1003,7 @@ namespace DentalAddin
             }
             DentalLogger.Log($"Composite2SplitLine2 - Finish seam 확정: Front.end%={opA.LastPassPercent:F2} (X={finishFrontEndX:F3}), Back.start%={(runB && opB != null ? opB.FirstPassPercent.ToString("F2", CultureInfo.InvariantCulture) : "<skip>")} (X={finishBackStartX:F3}=Splitline_2-{finishOverlapMm:F3}), overlapMm={finishOverlapMm:F3} (1 pitch), guardWarn={startEndBFirstGuardApplied}");
 
-            // 정책: Finish_Back 종료 기준점은 BackPointX + 0.0mm
+            // 정책: Finish_Back 종료 기준점은 BackPointX + 0.3mm
             double compositeEndTargetX = MoveSTL_Module.BackPointX + compositeEndOffsetFromBackPointMm;
             double compositeEndPassPercent = XToPassPercentByStartEndScale(compositeEndTargetX, 0.0, 100.0);
             if (runB && opB != null)

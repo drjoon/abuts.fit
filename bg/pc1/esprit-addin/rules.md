@@ -105,6 +105,8 @@
   - `TryResolveSharedFinishSplitX` → `TryResolveTwoPhaseSplitLineTargetX`
   - Rough: `frontEnd = splitline2`, `backStart = splitline2 - GetRoughAdjacentOverlapMm()`, Middle skip
   - Finish: `Finish_Front` 끝 = `SharedFinishSplitX`, `Finish_Back` 시작 = `SharedFinishSplitX - GetFinishAdjacentOverlapMm()`
+  - `Finish_Back` 끝 = `BackPointX + 0.3mm` (`compositeEndOffsetFromBackPointMm`)
+    - +0.3 미적용 시 헥스 쪽 ~0.3mm 홈/미삭. 임의로 0.0으로 되돌리지 말 것.
   - Finish_Front StepIncrement도 동일 groove 매핑으로 COM SetProperty (`TrySetCompositeStepIncrement`)
   - `safeBFirstMax`는 seam을 당기지 않는다(로그만)
   - 금지: `ABUTS_COMPOSITE_STEP_INCREMENT_A` 의존, Finish_Back의 D1.2 반경 앞당김, 고정 0.5mm 겹침, `Middle_Turn`/`Middle_Rough` 재도입, `Back + Z - stlTopZ` 구식 변환
