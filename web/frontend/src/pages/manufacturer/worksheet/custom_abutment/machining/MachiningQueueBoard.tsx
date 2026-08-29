@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-29: 큐→프리뷰 오픈 시 forceRefresh 제거 — IndexedDB STL/NC 캐시 재사용.
 // - 2026-08-29: 예약 관리 목록에서 CAM(NC) 재생성 — NC 제거·「CAM 생성 중」블러.
 // - 2026-08-26: 큐→프리뷰 ncFile에 uploadedAt/fileSize/materialDiameter 전달(버전 캐시·#521 검증용).
 // - 2026-08-24: 장비 상태 갱신 뱃지 — 직경별 건수 옆(leadingAddon)으로 이동.
