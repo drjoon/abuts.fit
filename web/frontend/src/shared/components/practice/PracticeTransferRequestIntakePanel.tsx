@@ -169,7 +169,8 @@ import {
 // - 2026-08-16: 자동매칭 최소 별점 UI는「자동 매칭」선택 시에만(지정 기공소는 기공소 수가).
 // - 2026-08-21: 커스텀어벗 설정 — 프리셋 추가=인라인 CNC/스캔바디 입력. 제목에 모드, 상단 토글 제거.
 // - 2026-08-21: 커스텀어벗 설정 모달 — 제목에 모드, 상단 토글 제거, 대체 모드는 취소 왼쪽, 프리셋 인라인 관리·높이 확대.
-// - 2026-08-13: 기공의뢰 모달=디자인+생산 고정(생산만→어벗생산의뢰). 어벗생산의뢰=생산만 고정(디자인+생산→기공의뢰).
+// - 2026-08-29: 생산만 고정→디자인+생산 안내 라벨 — 구강스캔으로/치과로부터 수신(기공의뢰 폐기).
+// - 2026-08-13: 기공의뢰 모달=디자인+생산 고정(생산만→어벗생산의뢰). 어벗생산의뢰=생산만 고정(디자인+생산→구강스캔/수신).
 // - 2026-08-13: 생산·디자인+생산 단가를 creditSettings 멤버십/일반값으로 표시.
 // - 2026-08-11: 기공소 선택에 "자동 매칭" 옵션(+빠른툴팁) 추가.
 // - 2026-08-11: 안내문구 최소화 — 플레이스홀더·메모 도움말·커스텀규격 설명을 즉시툴팁으로.
@@ -775,8 +776,13 @@ export type PracticeTransferRequestIntakePanelProps = {
   ) => void | Promise<void>;
   /** 고정 모드. 해당 항목 항상 체크. 다른 항목 클릭은 onAlternateAbutmentModeNavigate */
   lockedAbutmentProductMode?: AbutmentProductMode;
-  /** 고정 모드의 반대 항목 클릭 시 이동(기공의뢰↔어벗생산의뢰) */
+  /** 고정 모드의 반대 항목 클릭 시 이동(구강스캔↔어벗생산의뢰) */
   onAlternateAbutmentModeNavigate?: () => void;
+  /**
+   * 생산만 고정일 때 디자인+생산 이동 안내 라벨.
+   * 치과=`구강스캔으로`, 기공소=`치과로부터 수신`. 기본=`구강스캔으로`.
+   */
+  alternateAbutmentModePageLabel?: string;
   /** 값이 바뀌면 치식 차트를 M(전치부) 위치로 되돌린다 (새로 작성 등) */
   toothChartResetNonce?: number;
   /** 상·하악 사이에 견적(크레딧 소비액) 표시. 기공의뢰서만 */
@@ -909,6 +915,7 @@ export const PracticeTransferRequestIntakePanel = ({
   onDefaultAbutmentProductModeChange,
   lockedAbutmentProductMode,
   onAlternateAbutmentModeNavigate,
+  alternateAbutmentModePageLabel = "구강스캔으로",
   toothChartResetNonce = 0,
   showFeeEstimate = false,
   // 레거시(2026-08-22): skipJig / onSkipJigChange UI 삭제. props는 호환용으로만 수신.
@@ -4068,7 +4075,7 @@ export const PracticeTransferRequestIntakePanel = ({
                           return `디자인+생산 의뢰가 선택됩니다. 생산만 의뢰는 어벗생산의뢰 페이지로 이동합니다. ${abutmentSideHint}`;
                         }
                         if (lockedMode === ABUTMENT_PRODUCT_MODE.PRODUCTION) {
-                          return `생산만 의뢰가 선택됩니다. 디자인+생산 의뢰는 기공의뢰 페이지로 이동합니다. ${abutmentSideHint}`;
+                          return `생산만 의뢰가 선택됩니다. 디자인+생산 의뢰는 ${alternateAbutmentModePageLabel} 페이지로 이동합니다. ${abutmentSideHint}`;
                         }
                         return `${abutmentSideHint} 확인도 동일하고, 취소하면 열기 전 값으로 돌아갑니다.`;
                       })()}

@@ -3,7 +3,8 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/backend/controllers/practiceTransfers/practiceTransferSettings.controller.js
-// - 2026-08-13: 어벗생산의뢰 모달=생산만 고정. 디자인+생산 클릭은 기공의뢰로 이동.
+// - 2026-08-29: 디자인+생산 클릭 — 치과「구강스캔으로」·기공소「치과로부터 수신」.
+// - 2026-08-13: 어벗생산의뢰 모달=생산만 고정. 디자인+생산 클릭은 구강스캔/수신으로 이동.
 // - 2026-08-14: 프리셋 편집을 열 때 도입 스펙을 서버에서 다시 불러온다.
 // - 2026-08-14: 환봉 도입 이벤트 수신 시 프리셋 배지 갱신.
 import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
@@ -39,6 +40,7 @@ import {
 import LabeledAutocompleteField from "@/shared/ui/forms/LabeledAutocompleteField";
 import { cn } from "@/shared/ui/cn";
 import { useAuthStore } from "@/store/useAuthStore";
+import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 import {
   ROUND_BAR_REQUEST_UPDATED_EVENT,
@@ -94,7 +96,17 @@ export function NewRequestDesignAbutmentFields({
   clearAllPatientPresets,
   handleAddOrSelectClinic,
 }: Props) {
-  const { token } = useAuthStore();
+  const { token, user: authUser } = useAuthStore();
+  const { kind: requestorKind } = useRequestorBusinessAccess();
+  const isLabRequestor = requestorKind === "lab";
+  const oralScanPageLabel = isLabRequestor
+    ? "치과로부터 수신"
+    : "구강스캔으로";
+  const oralScanPageHref = isLabRequestor
+    ? authUser?.role === "internalLab"
+      ? "/dashboard/lab-work"
+      : "/dashboard/practice-transfers?mode=receive"
+    : "/dashboard/practice-transfers?mode=send";
   const navigate = useNavigate();
   const { connections: implantConnections } = useImplantConnectionCatalog(token);
 
@@ -280,8 +292,9 @@ export function NewRequestDesignAbutmentFields({
     implantConnections,
     lockedAbutmentProductMode: ABUTMENT_PRODUCT_MODE.PRODUCTION,
     onAlternateAbutmentModeNavigate: () => {
-      navigate("/dashboard/practice-transfers?mode=send");
+      navigate(oralScanPageHref);
     },
+    alternateAbutmentModePageLabel: oralScanPageLabel,
     implantFavorites,
     onPresetEditorOpen: () => {
       void loadFavoritesFromServer();

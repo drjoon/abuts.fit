@@ -10,9 +10,10 @@
 // - 2026-08-12: 치과 첫 진입 안내 모달 — 닫기/다시 보지 않기, CNC 생산 의뢰 문구.
 // - 2026-08-12: 디자인SW 미설정 시 진입 에러 토스트 제거. 파일 첨부 시 설정 모달만 노출(저장 전 첨부 보류).
 // - 2026-08-11: 첨부 직후 S3 사전 업로드(useFilePreUpload) — 기공의뢰와 동일 가속 경로.
-// - 2026-08-11: 어벗생산의뢰 첨부는 STL만 허용(PLY/OBJ는 기공의뢰).
-// - 2026-08-11: 3MB 초과 확인 모달 «기공의뢰» 클릭 시 prefilledFiles로 기공의뢰 페이지에 첨부.
-// - 2026-08-11: 3MB 초과 드롭/오픈 시 3D 프리뷰+ConfirmDialog로 커스텀어벗 여부 확인(구강스캔→기공의뢰 안내).
+// - 2026-08-29: 3MB 초과·PLY/OBJ 안내 — 치과「구강스캔으로」·기공소「치과로부터 수신」(기공의뢰 라벨 폐기).
+// - 2026-08-11: 어벗생산의뢰 첨부는 STL만 허용(PLY/OBJ는 구강스캔/수신).
+// - 2026-08-11: 3MB 초과 확인 모달 링크 클릭 시 prefilledFiles로 구강스캔(치과) 페이지에 첨부.
+// - 2026-08-11: 3MB 초과 드롭/오픈 시 3D 프리뷰+ConfirmDialog로 커스텀어벗 여부 확인.
 // - 2026-08-11: 기공소 어벗의뢰 상단 — 거래 치과 등록 D-day 배너.
 // - 2026-08-12: 소개치과+가입이유 2열 배너로 교체.
 // - 2026-08-11: 상단 헤더(지난 의뢰) 제거 — 대시보드 최근 의뢰 카드로만 제공.
@@ -119,6 +120,15 @@ const NewRequestPageContent = () => {
   const { kind: requestorKind } = useRequestorBusinessAccess();
   const isLabRequestor = requestorKind === "lab";
   const isPracticeRequestor = requestorKind === "practice";
+  /** 사이드바 SSOT: 치과=구강스캔으로, 기공소=치과로부터 수신 */
+  const oralScanPageLabel = isLabRequestor
+    ? "치과로부터 수신"
+    : "구강스캔으로";
+  const oralScanPageHref = isLabRequestor
+    ? authUser?.role === "internalLab"
+      ? "/dashboard/lab-work"
+      : "/dashboard/practice-transfers?mode=receive"
+    : "/dashboard/practice-transfers?mode=send";
 
   const [practiceIntroOpen, setPracticeIntroOpen] = useState(false);
   /** 3MB 초과(구강스캔 후보) — ConfirmDialog 확인 후 첨부 */
@@ -1193,8 +1203,7 @@ const NewRequestPageContent = () => {
       if (ext === ".ply" || ext === ".obj") {
         rejectedFiles.push({
           name: file.name,
-          reason:
-            "어벗생산의뢰는 STL만 받을 수 있어요. PLY/OBJ는 기공의뢰를 이용해주세요.",
+          reason: `어벗생산의뢰는 STL만 받을 수 있어요. PLY/OBJ는 ${oralScanPageLabel} 페이지를 이용해주세요.`,
         });
         return;
       }
@@ -1566,7 +1575,12 @@ const NewRequestPageContent = () => {
                   onClick={() => {
                     const filesToPrefill = [...oversizedPendingFiles];
                     clearOversizedPending();
-                    navigate("/dashboard/practice-transfers?mode=send", {
+                    // 치과만 발신(send)+prefill. 기공소는 수신 페이지로만 안내.
+                    if (isLabRequestor) {
+                      navigate(oralScanPageHref);
+                      return;
+                    }
+                    navigate(oralScanPageHref, {
                       state: {
                         prefilledFiles: filesToPrefill,
                         source: "new-request-oversized",
@@ -1574,7 +1588,7 @@ const NewRequestPageContent = () => {
                     });
                   }}
                 >
-                  기공의뢰
+                  {oralScanPageLabel}
                 </button>{" "}
                 페이지를 이용해주세요.
               </p>
