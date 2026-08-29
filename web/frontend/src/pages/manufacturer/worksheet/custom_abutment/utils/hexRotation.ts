@@ -1,16 +1,15 @@
 // change-log:
+// - 2026-08-29: 헥스40도회전 → STL모델+(base=0) / 헥스30+(base=30) 분기. NC C축=modeBase+(30+appliedDeg).
 // - 2026-08-25: 관리자 헥스 확정 시 제조사 persist/승인 경로에서 저장 API 호출 스킵.
 // - 2026-08-22: ExoCAD 관리자 헥스 확인 뱃지(확정/미정) SSOT helper.
 // - 2026-08-06: 준비 단계 헥스 회전 기본값을 designSoftware 정책으로 우선(미저장 finalHexRotation STL 오적용 수정).
-// - 프론트 표시(UI)와 백엔드/Esprit 전달값 모두 total 라벨("헥스40도회전" = 30 + 10)을 사용한다.
-// - legacy minor 라벨(예: 헥스10도회전)은 하위호환으로만 허용하고 total(헥스40도회전)로 정규화한다.
+// related: NcFileGenerator.ApplyManufacturerHexRotationToNc, PreviewModal hex select
 
 export type ManufacturerHexRotationCanonicalMode = "STL모델대로" | "헥스30도회전";
-export type HexXRotationLabel = `헥스${number}도회전`;
+export type ManufacturerHexRotationPlusMode = "STL모델+" | "헥스30+";
 export type ManufacturerHexRotationMode =
-  | "STL모델대로"
-  | "헥스30도회전"
-  | HexXRotationLabel;
+  | ManufacturerHexRotationCanonicalMode
+  | ManufacturerHexRotationPlusMode;
 export type ManufacturerHexRotationDraftMode = ManufacturerHexRotationMode | "";
 
 export const normalizeManufacturerHexRotationMode = (
@@ -20,18 +19,20 @@ export const normalizeManufacturerHexRotationMode = (
   if (!raw) return null;
   if (raw === "STL모델대로") return "STL모델대로";
   if (raw === "헥스30도회전") return "헥스30도회전";
+  if (raw === "STL모델+") return "STL모델+";
+  if (raw === "헥스30+") return "헥스30+";
 
   if (raw === "0") return "STL모델대로";
   if (raw === "30") return "헥스30도회전";
 
+  // 레거시 헥스40/헥스10/기타 헥스X도회전 → STL모델+ (modeBase=0)
+  if (raw === "헥스40도회전" || raw === "헥스10도회전") return "STL모델+";
   const matched = raw.match(/^헥스\s*([+-]?\d+(?:\.\d+)?)\s*도회전$/);
   if (!matched) return null;
   const parsedX = Number(matched[1]);
   if (!Number.isFinite(parsedX)) return null;
   if (parsedX === 30) return "헥스30도회전";
-
-  const totalDeg = parsedX < 30 ? parsedX + 30 : parsedX;
-  return `헥스${String(totalDeg)}도회전` as ManufacturerHexRotationMode;
+  return "STL모델+";
 };
 
 export const toManufacturerHexRotationLabel = (
@@ -242,7 +243,7 @@ export const resolvePrepAnodizingToPersist = (
 export const PREP_HEX_SAVE_MISSING_HANDLER =
   "헥스 회전 저장 핸들러가 없어 승인할 수 없습니다.";
 export const PREP_HEX_MISSING_MODE =
-  "헥스 회전값이 비어 있습니다. 'STL모델대로', '헥스30도회전', '헥스X도회전' 중 하나를 선택해 주세요.";
+  "헥스 회전값이 비어 있습니다. 'STL모델대로', '헥스30도회전', 'STL모델+', '헥스30+' 중 하나를 선택해 주세요.";
 
 export async function persistPrepApprovalSettings(opts: {
   req: HexRequestLike;

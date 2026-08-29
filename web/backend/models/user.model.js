@@ -258,7 +258,7 @@ const userSchema = new mongoose.Schema(
         trim: true,
       },
       // 제조사 PreviewModal에서 설정한 의뢰자(개인) 단위 기본 헥스 회전.
-      // - canonical: "STL모델대로" | "헥스30도회전" | "헥스X도회전(total)"
+      // - canonical: "STL모델대로" | "헥스30도회전" | "STL모델+" | "헥스30+"
       // - 조회 SSOT: 개인(User) → BusinessAnchor → 관리자 hexVerificationResultHex → designSoftware
       // related: common.requests.controller.js updateRndHexRotation
       defaultManufacturerHexRotation: {

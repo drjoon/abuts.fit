@@ -417,29 +417,28 @@ const normalizeHexRotationValue = (value) => {
 };
 
 // 헥스 회전 확장 포인트:
-// - 신규 라벨은 "헥스X도회전" 패턴으로 이 함수에서만 정규화한다.
-// - SSOT: 백엔드/Esprit 전달용 X는 totalDeg(=30+minorDeg) 기준으로 저장/전달한다.
-//   예) 프론트가 minor 10도("헥스10도회전")를 선택하면 canonical은 "헥스40도회전".
-// - 하위호환: 과거 저장값이 "헥스10도회전"(minor)일 수 있으므로 X<30이면 +30 보정한다.
-// - 관련 파일: PreviewModal.tsx / RequestPage.tsx / bg.controller.js / NcFileGenerator.cs
+// - 플러스 모드: "STL모델+"(modeBase=0) / "헥스30+"(modeBase=30)
+// - NC C축: T4848=0+addDeg, T0909/T0606=modeBase+addDeg, addDeg=30+appliedDeg
+// - 레거시 "헥스40도회전"/"헥스X도회전" → STL모델+
+// - 관련 파일: PreviewModal.tsx / hexRotation.ts / bg.controller.js / NcFileGenerator.cs
 const parseHexXRotationLabel = (value) => {
   const raw = String(value || "").trim();
   if (!raw) return null;
+  if (raw === "헥스40도회전" || raw === "헥스10도회전") return "STL모델+";
   const matched = raw.match(/^헥스\s*([+-]?\d+(?:\.\d+)?)\s*도회전$/);
   if (!matched) return null;
   const parsedX = Number(matched[1]);
   if (!Number.isFinite(parsedX)) return null;
-  const totalDeg = parsedX < 30 ? 30 + parsedX : parsedX;
-  if (totalDeg === 30) return "헥스30도회전";
-  return `헥스${String(totalDeg)}도회전`;
+  if (parsedX === 30) return "헥스30도회전";
+  return "STL모델+";
 };
 
 const parseManufacturerHexRotationMode = (value) => {
   const v = String(value || "").trim();
   if (v === "STL모델대로") return "STL모델대로";
   if (v === "헥스30도회전") return "헥스30도회전";
-  // "헥스X도회전" 라벨 입력 허용
-  // - 입력 minor(예: 헥스10도회전) -> canonical total(헥스40도회전)로 정규화
+  if (v === "STL모델+") return "STL모델+";
+  if (v === "헥스30+") return "헥스30+";
   const hexXLabel = parseHexXRotationLabel(v);
   if (hexXLabel) return hexXLabel;
   // legacy "헥스회전각" 호환: 0=STL모델대로, 30=헥스30도회전
@@ -453,7 +452,7 @@ const normalizeManufacturerHexRotationMode = (value) => {
   if (!parsed) {
     const raw = String(value || "").trim();
     throw new Error(
-      `유효하지 않은 manufacturerHexRotation 값입니다. canonical 'STL모델대로' | '헥스30도회전' | '헥스X도회전(total)'만 허용됩니다. 입력값='${raw}'`,
+      `유효하지 않은 manufacturerHexRotation 값입니다. canonical 'STL모델대로' | '헥스30도회전' | 'STL모델+' | '헥스30+'만 허용됩니다. 입력값='${raw}'`,
     );
   }
   return parsed;
@@ -464,14 +463,11 @@ const resolveFinalHexRotationValue = ({
 }) => {
   const mode = normalizeManufacturerHexRotationMode(manufacturerHexRotation);
   // finalHexRotation은 canonical 모드 문자열만 사용한다.
-  // 매핑:
-  // - STL모델대로 => STL모델대로
-  // - 헥스30도회전 => 헥스30도회전
-  // - 헥스X도회전(total) => 헥스X도회전(total)
   if (
     mode === "STL모델대로" ||
     mode === "헥스30도회전" ||
-    parseHexXRotationLabel(mode)
+    mode === "STL모델+" ||
+    mode === "헥스30+"
   ) {
     return mode;
   }
@@ -3190,7 +3186,7 @@ export const updateRndHexRotation = asyncHandler(async (req, res) => {
     return res.status(400).json({
       success: false,
       message:
-        "유효하지 않은 manufacturerHexRotation 값입니다. canonical 'STL모델대로' | '헥스30도회전' | '헥스X도회전(total)'만 사용할 수 있습니다.",
+        "유효하지 않은 manufacturerHexRotation 값입니다. canonical 'STL모델대로' | '헥스30도회전' | 'STL모델+' | '헥스30+'만 사용할 수 있습니다.",
     });
   }
 

@@ -365,8 +365,8 @@ export interface RequestBase {
       | null;
     requestorContinueMessage?: string | null;
     memo?: string | null;
-    // canonical: "STL모델대로" | "헥스30도회전" | "헥스X도회전(total)"
-    // legacy "0"|"30"은 하위호환 입력/표시용으로만 사용
+    // canonical: "STL모델대로" | "헥스30도회전" | "STL모델+" | "헥스30+"
+    // legacy "0"|"30"|"헥스40도회전"은 하위호환 입력/표시용으로만 사용
     manufacturerHexRotation?: string | null;
     manufacturerHexRotationUpdatedAt?: string | null;
     manufacturerHexRotationUpdatedBy?: string | null;

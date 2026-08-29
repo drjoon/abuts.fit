@@ -141,35 +141,30 @@ const normalizeManufacturerHexRotationModeOrNull = (value) => {
   if (!v) return null;
   if (v === "헥스30도회전") return "헥스30도회전";
   if (v === "STL모델대로") return "STL모델대로";
+  if (v === "STL모델+") return "STL모델+";
+  if (v === "헥스30+") return "헥스30+";
+  if (v === "헥스40도회전" || v === "헥스10도회전") return "STL모델+";
 
-  // "헥스X도회전" 전달 SSOT: X는 totalDeg(=30+minorDeg)
-  // 하위호환: legacy minor(예: 헥스10도회전)는 X<30일 때 +30 보정
   const matched = v.match(/^헥스\s*([+-]?\d+(?:\.\d+)?)\s*도회전$/);
   if (!matched) return null;
   const parsedX = Number(matched[1]);
   if (!Number.isFinite(parsedX)) return null;
-  const totalDeg = parsedX < 30 ? 30 + parsedX : parsedX;
-  if (totalDeg === 30) return "헥스30도회전";
-  return `헥스${String(totalDeg)}도회전`;
+  if (parsedX === 30) return "헥스30도회전";
+  return "STL모델+";
 };
 
 const resolveFinalHexRotationValue = ({
   manufacturerHexRotation,
 }) => {
   const mode = normalizeManufacturerHexRotationModeOrNull(manufacturerHexRotation);
-  // finalHexRotation은 canonical 모드 문자열만 사용한다.
-  // 매핑 고정:
-  // - STL모델대로 => STL모델대로
-  // - 헥스30도회전 => 헥스30도회전
-  // - 헥스X도회전(total) => 헥스X도회전(total)
   if (
     mode === "STL모델대로" ||
     mode === "헥스30도회전" ||
-    /^헥스\s*[+-]?\d+(?:\.\d+)?\s*도회전$/.test(mode)
+    mode === "STL모델+" ||
+    mode === "헥스30+"
   ) {
     return mode;
   }
-  if (mode && /^헥스\s*[+-]?\d+(?:\.\d+)?\s*도회전$/.test(mode)) return mode;
   return "STL모델대로";
 };
 

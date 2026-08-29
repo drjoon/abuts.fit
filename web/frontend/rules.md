@@ -519,12 +519,13 @@ Notes:
   - 저장 API: `PATCH /api/requests/:id/anodizing-override`
   - 관련 파일: `src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`, `src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx`, `src/pages/requestor/new_request/NewRequestPage.tsx`
 
-- 헥스 회전 라벨은 **표시(UI)와 전달(canonical)을 total 기준으로 통일**합니다.
+- 헥스 회전 라벨은 **표시(UI)와 전달(canonical)을 동일 문자열**로 통일합니다.
   - 코드에서 `보정`/`무보정` 문자열 사용 금지(레거시).
   - 발견 시 즉시 `STL모델대로`/`헥스30도회전`로 치환하고 rules에 기록합니다.
-  - UI/백엔드 모두 `STL모델대로` / `헥스30도회전` / `헥스X도회전(total)` 사용
-    - 예) `헥스40도회전`
-  - legacy minor 라벨(`헥스10도회전`)은 입력 호환만 제공하고, 화면/저장은 total 라벨로 정규화합니다.
+  - UI/백엔드 canonical: `STL모델대로` / `헥스30도회전` / `STL모델+` / `헥스30+`
+    - 플러스 모드(구 헥스40도회전): `STL모델+`(modeBase=0) / `헥스30+`(modeBase=30)
+    - NC C축: `addDeg=30+appliedDeg`, T4848=`C(0+addDeg)`, T0909/T0606=`C(modeBase+addDeg)`
+  - legacy `헥스40도회전`/`헥스10도회전`/`헥스X도회전`은 `STL모델+`로 정규화합니다.
   - 디자인 소프트웨어 표시는 BusinessAnchor 전역값이 아니라 의뢰건 `caseInfos.designSoftware`를 우선 표시합니다.
   - ExoCAD는 버전(`exoCadVersion`: `le_3_0`=3.0 이하 / `ge_3_2`=3.2 이상)을 함께 설정한다.
     - 3.0 이하: STL 내보내기 헥스 30° 틀어짐 가능 → 기본 헥스=`헥스30도회전`

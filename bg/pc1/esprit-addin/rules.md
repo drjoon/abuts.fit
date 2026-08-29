@@ -245,43 +245,48 @@
 - `boundaryKey/prc/angle(0,180)`
 - 생성 결과: `BackRoughStyle 종료(created=...)`
 
-### 4.13 제조사 헥스 회전 모드 정책 (2026-07-28 개정)
+### 4.13 제조사 헥스 회전 모드 정책 (2026-08-29 개정)
 
-검색 키워드: `manufacturerHexRotation`, `hexRotation.appliedDeg`, `request-meta`, `헥스40도회전`, `minorDeg`, `totalDeg`
+검색 키워드: `manufacturerHexRotation`, `hexRotation.appliedDeg`, `request-meta`, `STL모델+`, `헥스30+`, `HEX_C_AXIS`, `ApplyManufacturerHexRotationToNc`
 
-- `request-meta.caseInfos.manufacturerHexRotation` canonical은 `STL모델대로` / `헥스30도회전` / `헥스X도회전(total)`.
-  - 전달 SSOT: `헥스X도회전`의 X는 **totalDeg(=30+minorDeg)**.
-  - 예) 프론트 minor 10도 선택(`헥스10도회전`) → 백엔드/Esprit 전달값 `헥스40도회전`.
-  - 레거시 `"0"`/`"30"`, `헥스10도회전`(minor)은 하위호환으로 정규화 허용.
-  - **default fallback 주입 금지**: 빈값/미지원값은 즉시 예외 처리.
+- `request-meta.caseInfos.manufacturerHexRotation` canonical은 `STL모델대로` / `헥스30도회전` / `STL모델+` / `헥스30+`.
+  - 플러스 모드(구 헥스40도회전 분기):
+    - `STL모델+` → modeBase **0.0**
+    - `헥스30+` → modeBase **30.0**
+    - 가산량 `addDeg = 30 + hexRotation.appliedDeg` (예: 30+(-29.77)=**0.23**)
+    - T4848 → `C(0.0 + addDeg)` (예: C0.23)
+    - T0909/T0606 → `C(modeBase + addDeg)` (STL모델+: C0.23, 헥스30+: C30.23)
+  - 레거시 `"헥스40도회전"` / `"헥스10도회전"` / 기타 `헥스X도회전` → `STL모델+` 로 정규화.
+  - 레거시 `"0"`/`"30"` 허용. **default fallback 주입 금지**.
 - 제조사 헥스 기본값(다음 의뢰 시드):
   - 저장: PreviewModal에서 제조사가 mode를 바꾸면 `User.requestSettings.defaultManufacturerHexRotation` 우선, 개인 계정 없으면 `BusinessAnchor.requestSettings.defaultManufacturerHexRotation`.
   - 조회: User → BusinessAnchor → designSoftware(`ExoCAD`=`헥스30도회전`, 그 외=`STL모델대로`).
   - NC는 저장된 `caseInfos.hexRotation.mode`만 따르며 designSoftware를 직접 보지 않는다.
 - STL 회전 SSOT:
-  - `STL모델대로` / `헥스30도회전` 모두 동일하게
+  - `STL모델대로` / `헥스30도회전` / `STL모델+` / `헥스30+` 모두
     `Rotate90Degrees` 후 `+30 + (-hexRotation.appliedDeg)` 적용.
-- NC C축 후처리 SSOT(공구 기반):
-  - `STL모델대로` → T4848/T0909/T0606 근접 `C0`·`C30` 잔여분을 `C0.0`으로 강제 (ExoCAD designSoftware와 무관, mode SSOT만)
-  - `헥스30도회전` / `헥스X도회전` → PRC `C0`를 T0909/T0606에만 `totalDeg`로 치환
-  - `T4848` → **항상 `C0.0`** (모드/`minorDeg`와 무관. `minorDeg`는 라벨·로그용만)
-  - `T0909`, `T0606` → `totalDeg` 적용
-  - 공구번호 미검출/미지원은 즉시 예외 발생(백엔드 실패 콜백 경유 → 프론트 토스트)
+  - 플러스 모드의 차이는 **NC C축 후처리**뿐 (STL 실회전은 보정=STL모델대로와 동일).
+- NC C축 후처리 SSOT(공구 기반, 검색: `HEX_C_AXIS_MAX_MATCHES`):
+  - 지정 C축 후보(현재 최대 6곳: T4848 1 + T0909/T0606 5). 개수 변경 시 `ApplyManufacturerHexRotationToNc` 상수·화이트리스트만 수정.
+  - `STL모델대로` → 전부 `C0.0` (C30 잔여분 강제)
+  - `헥스30도회전` → T4848=`C0.0`, T0909/T0606=`C30.0`
+  - `STL모델+` / `헥스30+` → 위 플러스 공식 (appliedDeg 필수)
+  - 출력은 반드시 `C##.0` 형태 (`FormatRotationNumber`)
+  - 공구번호 미검출/미지원은 즉시 예외
 - 재제작(시작 공정=가공)으로 복사된 NC는 원본 헥스 모드 기준이다. 준비 단계에서 mode를 바꾸면 `updateRndHexRotation`이 `caseInfos.ncFile`을 비워 다음 승인 때 Esprit가 재생성한다.
 - NC 축 워드 소수점 강제 (CNC 인식):
   - 금지: `C30`, `C0`, `X10`, `Z0` 처럼 소수점 없는 정수 워드.
-  - 필수: `C30.0`, `C0.0`, `X10.0`, `Z0.0` (이미 소수점이 있으면 유지).
-  - `ToString("0.###")` / `"0.###############"` / 정수 단축 / `TrimEnd('0')` 금지. 30.0 이 `"30"` 으로 떨어진다.
+  - 필수: `C30.0`, `C0.0`, `C0.23`, `X10.0`, `Z0.0`
   - SSOT: `FormatRotationNumber`, `FormatNcNumber`, `EnsureNcDecimalLiteral`, `EnsureNcCoordinateDecimalsOnFile`.
-  - G/M/T/O/P/N/S/F 정수 코드(G0, M50, T0909, F1000)는 그대로 둔다.
 - 구현 위치:
   - `Helpers/NcFileGenerator.cs`
-    - `TryResolveHexRotationTargets` (total→minor 계산)
-    - `FindNearestToolCodeNearLine` (상방 10줄 공구 탐색)
+    - `TryResolveHexRotationTargets` / `ResolvePlusModeAddDeg`
+    - `FindNearestToolCodeNearLine`
     - `ApplyManufacturerHexRotationToNc` (공구별 C축 치환)
-    - `FormatRotationNumber` / `EnsureNcCoordinateDecimalsOnFile` (C30.0 소수점 강제)
+    - `FormatRotationNumber` / `EnsureNcCoordinateDecimalsOnFile`
   - `StlFileProcessor.Process` (request-meta 전달/에러 전파)
   - `Helpers/BackendApiClient.RequestMetaCaseInfos` (request-meta 바인딩)
+  - PreviewModal Select: `STL모델대로` / `헥스30도회전` / `STL모델+` / `헥스30+`
 
 ## 5. 정리 원칙
 

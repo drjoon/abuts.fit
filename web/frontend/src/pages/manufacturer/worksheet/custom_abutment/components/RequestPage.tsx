@@ -94,7 +94,8 @@ import {
   markFilledStlRegenerationPending,
   markNcRegenerationPending,
 } from "@/pages/manufacturer/worksheet/custom_abutment/utils/regenerationPending";
-import { resolveAdminVerifiedHexFromRequest } from "@/pages/manufacturer/worksheet/custom_abutment/utils/hexRotation";
+import { resolveAdminVerifiedHexFromRequest, normalizeManufacturerHexRotationMode } from "@/pages/manufacturer/worksheet/custom_abutment/utils/hexRotation";
+import type { ManufacturerHexRotationMode } from "@/pages/manufacturer/worksheet/custom_abutment/utils/hexRotation";
 // related files:
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
@@ -1670,64 +1671,23 @@ export const RequestPage = ({
   const handleSaveManufacturerHexRotation = useCallback(
     async (
       req: ManufacturerRequest,
-      value: "STL모델대로" | "헥스30도회전" | `헥스${number}도회전`,
+      value: ManufacturerHexRotationMode,
     ) => {
       if (!req?._id) return;
       const requestMongoId = String(req._id || "").trim();
 
-      type HexRotationUiMode =
-        | "STL모델대로"
-        | "헥스30도회전"
-        | `헥스${number}도회전`;
+      type HexRotationUiMode = ManufacturerHexRotationMode;
 
-      const normalizeManufacturerHexMode = (raw: unknown): HexRotationUiMode | null => {
-        const v = String(raw || "").trim();
-        if (v === "STL모델대로" || v === "0") {
-          return "STL모델대로";
-        }
-        if (v === "헥스30도회전" || v === "30") {
-          return "헥스30도회전";
-        }
-
-        const matched = v.match(/^헥스\s*([+-]?\d+(?:\.\d+)?)\s*도회전$/);
-        if (!matched) return null;
-        const parsedX = Number(matched[1]);
-        if (!Number.isFinite(parsedX)) return null;
-        if (parsedX === 30) return "헥스30도회전";
-
-        // 전달/표시 SSOT: total 라벨 사용
-        const totalDeg = parsedX < 30 ? parsedX + 30 : parsedX;
-        return `헥스${String(totalDeg)}도회전` as HexRotationUiMode;
-      };
+      const normalizeManufacturerHexMode = (raw: unknown): HexRotationUiMode | null =>
+        normalizeManufacturerHexRotationMode(raw);
 
       const toBackendManufacturerHexRotation = (
         mode: HexRotationUiMode,
-      ): "STL모델대로" | "헥스30도회전" | `헥스${number}도회전` => {
-        if (mode === "STL모델대로" || mode === "헥스30도회전") {
-          return mode;
-        }
-
-        const matched = String(mode).match(/^헥스\s*([+-]?\d+(?:\.\d+)?)\s*도회전$/);
-        if (!matched) {
-          return mode;
-        }
-
-        const uiMinorDeg = Number(matched[1]);
-        if (!Number.isFinite(uiMinorDeg)) {
-          return mode;
-        }
-
-        // 전달/표시 SSOT: X는 totalDeg. legacy minor(X<30)만 +30 보정.
-        const totalDeg = uiMinorDeg < 30 ? uiMinorDeg + 30 : uiMinorDeg;
-        return `헥스${String(totalDeg)}도회전` as `헥스${number}도회전`;
-      };
+      ): ManufacturerHexRotationMode => mode;
 
       const toFinalHexRotation = (
         mode: HexRotationUiMode,
-      ): "STL모델대로" | "헥스30도회전" => {
-        if (mode === "헥스30도회전") return "헥스30도회전";
-        return "STL모델대로";
-      };
+      ): ManufacturerHexRotationMode => mode;
 
       const toHexRotationLabel = (mode: HexRotationUiMode) => mode;
 
@@ -1751,10 +1711,8 @@ export const RequestPage = ({
         normalizeManufacturerHexMode((req as any)?.caseInfos?.requestorHexRotation) ||
         "STL모델대로";
       const prevFinalRaw = String((req as any)?.caseInfos?.finalHexRotation || "").trim();
-      const prevFinal: "STL모델대로" | "헥스30도회전" =
-        prevFinalRaw === "헥스30도회전" || prevFinalRaw === "30"
-          ? "헥스30도회전"
-          : "STL모델대로";
+      const prevFinal: ManufacturerHexRotationMode =
+        normalizeManufacturerHexMode(prevFinalRaw) || "STL모델대로";
       const prevUpdatedAt = (req as any)?.rnd?.manufacturerHexRotationUpdatedAt || null;
       const prevUpdatedBy = (req as any)?.rnd?.manufacturerHexRotationUpdatedBy || null;
 
@@ -1784,7 +1742,7 @@ export const RequestPage = ({
             },
             rnd: {
               ...(item.rnd || {}),
-              // UI/서버 모두 total 라벨 유지(예: 헥스40도회전)
+              // UI/서버 canonical: STL모델대로 | 헥스30도회전 | STL모델+ | 헥스30+
               manufacturerHexRotation: nextValue as any,
               manufacturerHexRotationUpdatedAt: new Date().toISOString(),
             },
@@ -1800,7 +1758,6 @@ export const RequestPage = ({
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            // 백엔드 canonical 전달값: total 라벨(예: 헥스40도회전)
             manufacturerHexRotation: backendValue,
           }),
         });
@@ -1813,11 +1770,9 @@ export const RequestPage = ({
         const savedManufacturer =
           normalizeManufacturerHexMode(data?.data?.manufacturerHexRotation) ||
           nextValue;
-        const savedFinalRaw = String(data?.data?.finalHexRotation || "").trim();
-        const savedFinal: "STL모델대로" | "헥스30도회전" =
-          savedFinalRaw === "헥스30도회전" || savedFinalRaw === "30"
-            ? "헥스30도회전"
-            : "STL모델대로";
+        const savedFinal: ManufacturerHexRotationMode =
+          normalizeManufacturerHexMode(data?.data?.finalHexRotation) ||
+          savedManufacturer;
 
         pageState.setRequests((prev) =>
           prev.map((item) => {

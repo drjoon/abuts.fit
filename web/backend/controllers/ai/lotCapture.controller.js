@@ -63,14 +63,16 @@ function parseManufacturerHexRotationModeOrNull(value) {
   if (!v) return null;
   if (v === "STL모델대로") return "STL모델대로";
   if (v === "헥스30도회전") return "헥스30도회전";
+  if (v === "STL모델+") return "STL모델+";
+  if (v === "헥스30+") return "헥스30+";
+  if (v === "헥스40도회전" || v === "헥스10도회전") return "STL모델+";
 
   const matched = v.match(/^헥스\s*([+-]?\d+(?:\.\d+)?)\s*도회전$/);
   if (matched) {
     const parsedX = Number(matched[1]);
     if (Number.isFinite(parsedX)) {
-      const totalDeg = parsedX < 30 ? 30 + parsedX : parsedX;
-      if (totalDeg === 30) return "헥스30도회전";
-      return `헥스${String(totalDeg)}도회전`;
+      if (parsedX === 30) return "헥스30도회전";
+      return "STL모델+";
     }
   }
 

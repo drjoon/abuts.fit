@@ -16,11 +16,14 @@ export const REQUEST_CATEGORY_VALUES = [
   "copied_sample",
 ];
 
+const MANUFACTURER_HEX_PLUS_MODES = new Set(["STL모델+", "헥스30+"]);
 const MANUFACTURER_HEX_ROTATION_REGEX = /^헥스\s*[+-]?\d+(?:\.\d+)?\s*도회전$/;
 const isCanonicalManufacturerHexRotation = (value) => {
   if (typeof value !== "string") return false;
   const v = value.trim();
   if (v === "STL모델대로" || v === "헥스30도회전") return true;
+  if (MANUFACTURER_HEX_PLUS_MODES.has(v)) return true;
+  // 레거시 헥스X도회전 허용(읽기/마이그레이션). 신규 저장은 STL모델+/헥스30+ 권장.
   return MANUFACTURER_HEX_ROTATION_REGEX.test(v);
 };
 
@@ -108,13 +111,13 @@ const requestSchema = new mongoose.Schema(
       // - 미지정 시 Esprit 기본값 1.0 사용
       frontFaceEndOffsetMm: Number,
       hexRotation: {
-        // Esprit 가공 SSOT: "STL모델대로" | "헥스30도회전" | "헥스X도회전(total)"
+        // Esprit 가공 SSOT: "STL모델대로" | "헥스30도회전" | "STL모델+" | "헥스30+"
         mode: {
           type: String,
           validate: {
             validator: (v) => v == null || isCanonicalManufacturerHexRotation(v),
             message:
-              "hexRotation.mode는 'STL모델대로' | '헥스30도회전' | '헥스X도회전(total)' 형식이어야 합니다.",
+              "hexRotation.mode는 'STL모델대로' | '헥스30도회전' | 'STL모델+' | '헥스30+' 형식이어야 합니다.",
           },
         },
         version: Number,
@@ -222,13 +225,13 @@ const requestSchema = new mongoose.Schema(
         default: false,
       },
       // 제조사 오버라이드 헥스 회전(canonical)
-      // - "STL모델대로" | "헥스30도회전" | "헥스X도회전(total)"
+      // - "STL모델대로" | "헥스30도회전" | "STL모델+" | "헥스30+"
       manufacturerHexRotation: {
         type: String,
         validate: {
           validator: (v) => v == null || isCanonicalManufacturerHexRotation(v),
           message:
-            "manufacturerHexRotation은 'STL모델대로' | '헥스30도회전' | '헥스X도회전(total)' 형식이어야 합니다.",
+            "manufacturerHexRotation은 'STL모델대로' | '헥스30도회전' | 'STL모델+' | '헥스30+' 형식이어야 합니다.",
         },
       },
       // 의뢰자 헥스 회전 선택값
@@ -660,7 +663,7 @@ const requestSchema = new mongoose.Schema(
         default: null,
       },
       // 제조사 헥스 회전/좌표계 전처리 선택값 (canonical)
-      // - "STL모델대로" | "헥스30도회전" | "헥스X도회전(total)"
+      // - "STL모델대로" | "헥스30도회전" | "STL모델+" | "헥스30+"
       // related files:
       // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
       // - web/backend/controllers/bg/bg.controller.js
@@ -670,7 +673,7 @@ const requestSchema = new mongoose.Schema(
         validate: {
           validator: (v) => v == null || isCanonicalManufacturerHexRotation(v),
           message:
-            "rnd.manufacturerHexRotation은 'STL모델대로' | '헥스30도회전' | '헥스X도회전(total)' 형식이어야 합니다.",
+            "rnd.manufacturerHexRotation은 'STL모델대로' | '헥스30도회전' | 'STL모델+' | '헥스30+' 형식이어야 합니다.",
         },
         default: null,
       },

@@ -365,10 +365,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             [DataMember] public string faceHolePrcFileName { get; set; }
             [DataMember] public string connectionPrcFileName { get; set; }
             // 제조사 수동 헥스 회전 모드값
-            // - canonical: "STL모델대로" | "헥스30도회전" | "헥스X도회전"
-            // - "헥스X도회전"의 X는 totalDeg(= 30 + minorDeg) 기준으로 전달된다.
-            //   예) minor 10도 선택 시 canonical 라벨: "헥스40도회전"
-            // - legacy 입력("0"|"30")은 add-in에서 canonical로 정규화해 처리
+            // - canonical: "STL모델대로" | "헥스30도회전" | "STL모델+" | "헥스30+"
+            // - STL모델+ modeBase=0.0 / 헥스30+ modeBase=30.0 (NC: modeBase + (30+appliedDeg))
+            // - legacy "헥스40도회전"|"헥스10도회전" → STL모델+
             [DataMember(Name = "manufacturerHexRotation")] public string manufacturerHexRotation { get; set; }
             // 유지홈 옵션 ("none"|"deep", legacy "shallow" 허용) —
             // 5axisComposite_A.prc StepIncrement 오버라이드에 사용.

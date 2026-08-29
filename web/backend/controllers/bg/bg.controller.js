@@ -96,23 +96,21 @@ const normalizeRetentionGrooveOrNull = (value) => {
 const parseManufacturerHexRotationModeOrNull = (value) => {
   const v = String(value || "").trim();
 
-  // 프론트 라벨(현행)
   if (v === "STL모델대로") return "STL모델대로";
   if (v === "헥스30도회전") return "헥스30도회전";
+  if (v === "STL모델+") return "STL모델+";
+  if (v === "헥스30+") return "헥스30+";
 
-  // "헥스X도회전" 라벨 입력 허용
-  // - 전달 SSOT: X는 totalDeg(=30+minorDeg)
-  // - 하위호환: 과거 값이 minor(예: 헥스10도회전)일 수 있으므로 X<30이면 +30 보정
+  // 레거시 헥스40/헥스X → STL모델+ (modeBase=0). 헥스30도회전만 예외.
+  if (v === "헥스40도회전" || v === "헥스10도회전") return "STL모델+";
   const xModeMatched = v.match(/^헥스\s*([+-]?\d+(?:\.\d+)?)\s*도회전$/);
   if (xModeMatched) {
     const parsedX = Number(xModeMatched[1]);
     if (Number.isFinite(parsedX)) {
-      const totalDeg = parsedX < 30 ? 30 + parsedX : parsedX;
-      if (totalDeg === 30) return "헥스30도회전";
-      return `헥스${String(totalDeg)}도회전`;
+      if (parsedX === 30) return "헥스30도회전";
+      return "STL모델+";
     }
   }
-  // legacy "헥스회전각" 호환: 0=STL모델대로, 30=헥스30도회전
   if (v === "0") return "STL모델대로";
   if (v === "30") return "헥스30도회전";
   return null;
@@ -1582,7 +1580,7 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
         requestId: 1,
         caseInfos: 1,
         lotNumber: 1,
-        // 제조사 수동 좌표계 전처리 모드(canonical: "STL모델대로"|"헥스30도회전"|"헥스X도회전(total)")도 함께 로드한다.
+        // 제조사 수동 좌표계 전처리 모드(canonical: "STL모델대로"|"헥스30도회전"|"STL모델+"|"헥스30+")도 함께 로드한다.
         "rnd.manufacturerHexRotation": 1,
       })
       .lean();

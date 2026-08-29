@@ -356,7 +356,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - Now Playing 시작은 `allowAutoMachining` OFF→ON 전환(장비 설정 저장) 또는 가공 완료/실패 후 auto-next 트리거 시점에서만 수행합니다.
 
 - 제조사 헥스 회전 모드(`manufacturerHexRotation`)는 백엔드에서 fallback 기본값으로 보정하지 않습니다.
-  - 허용값: canonical `STL모델대로` / `헥스30도회전` / `헥스X도회전(total)`
+  - 허용값: canonical `STL모델대로` / `헥스30도회전` / `STL모델+` / `헥스30+`
 - 제조사 아노다이징 override는 `caseInfos.anodizingEnabled` SSOT로 저장합니다.
   - endpoint: `PATCH /api/requests/:id/anodizing-override`
   - 변경 가능 단계: `준비`, `가공` (레거시 `CAM` 호환, 그 외 단계는 409)
@@ -365,9 +365,9 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 제조사 워크시트 응답의 `item.business.requestSettings.anodizingEnabled`를 함께 제공해
     프론트가 **레거시** `caseInfos` 미설정 시 사업자 기본값으로 표시할 수 있어야 합니다.
   - 관련: `creation.from-draft.controller.js`, `creation.request.controller.js`, `business.controller.js` request-settings
-  - 전달 SSOT: `헥스X도회전`의 X는 `totalDeg(=30+minorDeg)`
-    - 예) canonical `헥스40도회전`
-  - 하위호환 입력: 레거시 `0`/`30`, 기존 minor 저장값(`헥스10도회전`)은 `헥스40도회전`으로 정규화 허용
+  - 플러스 모드 SSOT: `STL모델+` modeBase=0.0 / `헥스30+` modeBase=30.0
+    - NC: `addDeg=30+appliedDeg`, T4848=`C(0+addDeg)`, T0909/T0606=`C(modeBase+addDeg)`
+  - 하위호환 입력: 레거시 `0`/`30`, `헥스40도회전`/`헥스10도회전`/`헥스X도회전` → `STL모델+`
   - 미지원/빈값은 request-meta 응답 및 저장 로직에서 즉시 오류로 처리합니다.
 - `manufacturerStage` request 단계 SSOT는 `준비` 단일값입니다. (`의뢰`, `request` 저장/비교 금지)
 - 의뢰 취소 정책 SSOT: `PATCH /api/requests/:id/status`로 `manufacturerStage=취소` 시

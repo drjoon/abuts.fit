@@ -42,6 +42,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         // 하위호환: 백엔드가 레거시 "0"/"30"을 보내도 내부에서 canonical 모드로 정규화한다.
         private const string ManufacturerHexModeCorrected = "STL모델대로";
         private const string ManufacturerHexModeUncorrected = "헥스30도회전";
+        // 헥스40 계열(NC C축 가산): STL모델+(base=0) / 헥스30+(base=30). STL 실회전은 보정(STL모델대로)와 동일.
+        private const string ManufacturerHexModeStlPlus = "STL모델+";
+        private const string ManufacturerHexModeHex30Plus = "헥스30+";
 
 
         private const double CompositeFinishToleranceThresholdZMm = 15.0;
@@ -109,10 +112,10 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         private string _backendRequestId;
         private string _backendImplantLabel;
         private double[][] _backendFinishLinePoints;
-        // request-meta(caseInfos.manufacturerHexRotation) 제조사 헥스 회전 모드값
-        // - canonical: "STL모델대로" | "헥스30도회전" | "헥스X도회전(total)"
-        // - 하위호환: "0"|"30", legacy minor 라벨("헥스10도회전") 허용
-        private string _backendManufacturerHexRotation;
+            // request-meta(caseInfos.manufacturerHexRotation) 제조사 헥스 회전 모드값
+            // - canonical: "STL모델대로" | "헥스30도회전" | "STL모델+" | "헥스30+"
+            // - 하위호환: "0"|"30", legacy "헥스40도회전"/"헥스10도회전" → STL모델+
+            private string _backendManufacturerHexRotation;
         // request-meta(caseInfos.hexRotation.appliedDeg)
         // Rhino가 실제 mesh에는 적용하지 않고 전달하는 "가상 보정량" telemetry.
         // 주의: Rhino와 Esprit의 회전 부호 기준이 달라, Esprit 적용 시 부호를 반전해 사용한다.
@@ -622,8 +625,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             [DataMember] public string faceHolePrcFileName { get; set; }
             [DataMember] public string connectionPrcFileName { get; set; }
             // 제조사 수동 헥스 회전 모드값
-            // - canonical: "STL모델대로" | "헥스30도회전" | "헥스X도회전(total)"
-            // - legacy: "0" | "30" (하위호환 입력)
+            // - canonical: "STL모델대로" | "헥스30도회전" | "STL모델+" | "헥스30+"
+            // - legacy: "0" | "30" | "헥스40도회전" (→ STL모델+)
             [DataMember] public string manufacturerHexRotation { get; set; }
             // 유지홈(retentionGroove) — Finish_Front(legacy A env 경로) StepIncrement
             // 값을 의뢰별로 덮어쓰기 위한 필드. rules.md §7.4.1 참조.
@@ -883,12 +886,21 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             {
                 return ManufacturerHexModeUncorrected;
             }
+            // 플러스 모드: STL 실회전은 STL모델대로(보정)와 동일. NC C축만 modeBase+addDeg.
+            // 검색: STL모델+, 헥스30+, ApplyManufacturerHexRotationToNc
+            if (string.Equals(mode, ManufacturerHexModeStlPlus, StringComparison.Ordinal) ||
+                string.Equals(mode, "헥스40도회전", StringComparison.Ordinal) ||
+                string.Equals(mode, "헥스10도회전", StringComparison.Ordinal))
+            {
+                return ManufacturerHexModeCorrected;
+            }
+            if (string.Equals(mode, ManufacturerHexModeHex30Plus, StringComparison.Ordinal))
+            {
+                return ManufacturerHexModeCorrected;
+            }
             if (Regex.IsMatch(mode, @"^\s*헥스\s*[+-]?\d+(?:\.\d+)?\s*도회전\s*$", RegexOptions.CultureInvariant))
             {
-                // 확장 모드: "헥스X도회전" 라벨(X=totalDeg)은 STL 회전 기준을 "STL모델대로(보정)"와 동일하게 따르고,
-                // NC 후처리에서 공구번호 기준으로 C축을 치환한다.
-                // - T4848: minorDeg = totalDeg - 30
-                // - T0909/T0606: totalDeg
+                // 레거시 헥스X도회전 → STL 회전은 보정(STL모델대로) 경로. NC는 GenerateNcFile 원본 라벨로 후처리.
                 return ManufacturerHexModeCorrected;
             }
 
@@ -904,7 +916,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 
             if (string.IsNullOrWhiteSpace(mode))
             {
-                throw new InvalidOperationException("manufacturerHexRotation 값이 비어 있습니다. request-meta.caseInfos.manufacturerHexRotation은 'STL모델대로' 또는 '헥스30도회전'이어야 합니다.");
+                throw new InvalidOperationException("manufacturerHexRotation 값이 비어 있습니다. request-meta.caseInfos.manufacturerHexRotation은 'STL모델대로' | '헥스30도회전' | 'STL모델+' | '헥스30+' 이어야 합니다.");
             }
 
             throw new InvalidOperationException($"지원하지 않는 manufacturerHexRotation 값입니다. value='{mode}'");

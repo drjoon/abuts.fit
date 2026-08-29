@@ -7,11 +7,13 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 import mongoose from "mongoose";
 
+const MANUFACTURER_HEX_PLUS_MODES = new Set(["STL모델+", "헥스30+"]);
 const MANUFACTURER_HEX_ROTATION_REGEX = /^헥스\s*[+-]?\d+(?:\.\d+)?\s*도회전$/;
 const isCanonicalManufacturerHexRotation = (value) => {
   if (typeof value !== "string") return false;
   const v = value.trim();
   if (v === "STL모델대로" || v === "헥스30도회전") return true;
+  if (MANUFACTURER_HEX_PLUS_MODES.has(v)) return true;
   return MANUFACTURER_HEX_ROTATION_REGEX.test(v);
 };
 
@@ -372,7 +374,7 @@ const businessAnchorSchema = new mongoose.Schema(
         default: "STL모델대로",
       },
       // 제조사 워크시트(PreviewModal)에서 설정하는 의뢰자 단위 기본 좌표계 전처리 모드
-      // - canonical: "STL모델대로" | "헥스30도회전" | "헥스X도회전(total)"
+      // - canonical: "STL모델대로" | "헥스30도회전" | "STL모델+" | "헥스30+"
       // - 저장 주체: 제조사 (개인 User 우선, 없으면 이 BusinessAnchor)
       // - 적용 대상: 해당 의뢰자/사업체의 이후 신규 의뢰
       // - 조회 SSOT: User → BusinessAnchor → 관리자 hexVerificationResultHex → designSoftware
@@ -381,7 +383,7 @@ const businessAnchorSchema = new mongoose.Schema(
         validate: {
           validator: (v) => v == null || isCanonicalManufacturerHexRotation(v),
           message:
-            "defaultManufacturerHexRotation은 'STL모델대로' | '헥스30도회전' | '헥스X도회전(total)' 형식이어야 합니다.",
+            "defaultManufacturerHexRotation은 'STL모델대로' | '헥스30도회전' | 'STL모델+' | '헥스30+' 형식이어야 합니다.",
         },
         default: null,
       },
