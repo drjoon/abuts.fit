@@ -294,6 +294,12 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         }
                         TryApplyCompositeFirstPassPercentEnv(requestMeta.tooth);
                         TryApplyCompositeOrientationVectorEnv(requestMeta);
+                        if (requestMeta.maxDiameter > 0.0)
+                        {
+                            Environment.SetEnvironmentVariable(
+                                "ABUTS_MAX_DIAMETER",
+                                requestMeta.maxDiameter.ToString("0.###", CultureInfo.InvariantCulture));
+                        }
                         AppLogger.Log($"StlFileProcessor: request-meta loaded requestId={requestId}, Clinic={requestMeta.clinicName}, Patient={requestMeta.patientName}, Tooth={requestMeta.tooth}, Implant={requestMeta.implantManufacturer}/{requestMeta.implantBrand}/{requestMeta.implantType}, MaxDia={requestMeta.maxDiameter}, ConnDia={requestMeta.connectionDiameter}, CamDia={requestMeta.camDiameter}, WorkType={requestMeta.workType}, Lot={requestMeta.lotNumber}, SerialCode={(_backendSerialCode ?? "")}, RetentionGroove={(_backendRetentionGroove ?? "<null>")}, ManufacturerHexRotation(mode)={(_backendManufacturerHexRotation ?? "<null>")}, HexAppliedDeg={(_backendHexRotationAppliedDeg.HasValue ? _backendHexRotationAppliedDeg.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}");
                         AppLogger.Log($"StlFileProcessor: finishLine topZ={(finishLineTopZ.HasValue ? finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}, minZ={(finishLineMinZ.HasValue ? finishLineMinZ.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}, espritR={(finishLineEspritR.HasValue ? finishLineEspritR.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}, TwoPhase={twoPhase}");
                         if (!_prcManager.ApplyBackendPrcNames((BackendApiClient.RequestMetaCaseInfos)requestMeta, requestId, _backendImplantLabel))
@@ -564,6 +570,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", null);
             Environment.SetEnvironmentVariable("ABUTS_RETENTION_GROOVE", null);
             Environment.SetEnvironmentVariable("ABUTS_CAM_DIAMETER", null);
+            Environment.SetEnvironmentVariable("ABUTS_MAX_DIAMETER", null);
+            Environment.SetEnvironmentVariable("ABUTS_FRONT_FACE_END_OFFSET_MM", null);
             Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_ORIENTATION_VECTOR", null);
             Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_ORIENTATION_PROFILE_LENGTH_MM", null);
             Environment.SetEnvironmentVariable(CompositeOrientationWAxisDegreesEnv, null);

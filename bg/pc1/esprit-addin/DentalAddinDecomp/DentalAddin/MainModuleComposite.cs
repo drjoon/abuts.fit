@@ -1659,11 +1659,80 @@ namespace DentalAddin
         private const double FrontFaceFixedDepthMm = 0.5;
         private static double LastAppliedFrontFaceDepthMm = FrontFaceFixedDepthMm;
 
-        // Front Face 종료점 오프셋(mm): Face.RightX = FrontPointX(STL 상부) + 이 값
-        // Rough Front 끝점도 동일 오프셋을 기준으로 faceToRough 여유를 더한다.
-        private const double FrontFaceEndOffsetFromFrontMm = 3.0;
+        // Front Face 종료점 오프셋(mm): Face.RightX = FrontPointX + offset
+        // 구 고정 3.0mm → 팁 반경 추정 기반(약간 여유). 상한만 예전 3.0 유지.
+        private const string FrontFaceEndOffsetEnv = "ABUTS_FRONT_FACE_END_OFFSET_MM";
+        private const string MaxDiameterEnv = "ABUTS_MAX_DIAMETER";
+        private const double FrontFaceEndOffsetMinMm = 1.2;
+        private const double FrontFaceEndOffsetMaxMm = 2.5;
+        private const double FrontFaceEndOffsetFallbackMm = 2.0;
 
-        private static double GetFrontFaceEndOffsetFromFrontMm() => FrontFaceEndOffsetFromFrontMm;
+        /// <summary>
+        /// Face 축 끝 오프셋. 우선순위: env 강제값 → maxDiameter/HighY/BarDia로 tip 반경 추정 → fallback.
+        /// L ≈ 0.45·R_tip + 0.85 (반구 tip ~50° 구간 + D2 여유), [1.2, 2.5] clamp.
+        /// </summary>
+        private static double GetFrontFaceEndOffsetFromFrontMm()
+        {
+            try
+            {
+                string rawOverride = Environment.GetEnvironmentVariable(FrontFaceEndOffsetEnv);
+                if (!string.IsNullOrWhiteSpace(rawOverride)
+                    && double.TryParse(rawOverride, NumberStyles.Float, CultureInfo.InvariantCulture, out double envOffset)
+                    && !double.IsNaN(envOffset)
+                    && !double.IsInfinity(envOffset)
+                    && envOffset >= 0.0)
+                {
+                    double forced = Clamp(envOffset, 0.0, FrontFaceEndOffsetFromFrontLegacyCapMm);
+                    DentalLogger.Log($"FrontFaceOffset - env override {FrontFaceEndOffsetEnv}={forced:F3}");
+                    return forced;
+                }
+
+                double rTipEst = 0.0;
+                string tipSource = "fallback";
+
+                string rawMaxDia = Environment.GetEnvironmentVariable(MaxDiameterEnv);
+                if (!string.IsNullOrWhiteSpace(rawMaxDia)
+                    && double.TryParse(rawMaxDia, NumberStyles.Float, CultureInfo.InvariantCulture, out double maxDia)
+                    && maxDia > 1.0)
+                {
+                    // tip ≈ body max의 ~20% 반경 대역(rhino frontPoint minRadius 계열보다 약간 여유)
+                    rTipEst = Clamp(maxDia * 0.20, 1.2, 3.5);
+                    tipSource = $"maxDiameter={maxDia:F3}";
+                }
+                else if (HighY > 0.8)
+                {
+                    rTipEst = Clamp(HighY * 0.45, 1.2, 3.5);
+                    tipSource = $"HighY={HighY:F3}";
+                }
+                else
+                {
+                    double barDia = Document?.LatheMachineSetup?.BarDiameter ?? 0.0;
+                    if (barDia > 1.0)
+                    {
+                        rTipEst = Clamp(barDia * 0.20, 1.2, 3.5);
+                        tipSource = $"BarDiameter={barDia:F3}";
+                    }
+                }
+
+                if (rTipEst <= 0.0)
+                {
+                    DentalLogger.Log($"FrontFaceOffset - tip 추정 실패, fallback={FrontFaceEndOffsetFallbackMm:F3}");
+                    return FrontFaceEndOffsetFallbackMm;
+                }
+
+                double offset = Clamp(rTipEst * 0.45 + 0.85, FrontFaceEndOffsetMinMm, FrontFaceEndOffsetMaxMm);
+                DentalLogger.Log($"FrontFaceOffset - dynamic L={offset:F3} (R_tip≈{rTipEst:F3}, src={tipSource})");
+                return offset;
+            }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"FrontFaceOffset - 계산 실패, fallback={FrontFaceEndOffsetFallbackMm:F3}: {ex.GetType().Name}:{ex.Message}");
+                return FrontFaceEndOffsetFallbackMm;
+            }
+        }
+
+        // env 강제/레거시 상한(구 고정 3.0). 동적 기본 상한은 FrontFaceEndOffsetMaxMm.
+        private const double FrontFaceEndOffsetFromFrontLegacyCapMm = 3.0;
 
         // Face.RightX는 Splitline_2를 침범하면 안 된다(항상 Splitline_2보다 짧게).
         private const double FrontFaceSplitline2NoCrossMarginMm = 0.001;
@@ -1788,7 +1857,7 @@ namespace DentalAddin
         /// <summary>
         /// Front Face(ParallelPlanes) 끝점을 FrontPointX 기준으로 적용한다.
         /// - 시작: TopZLimit = 1.0 (원점 쪽 고정)
-        /// - 끝: Face.RightX = FrontPointX + FrontFaceEndOffsetFromFrontMm(3.0), 단 Splitline_2 - 0.001 상한
+        /// - 끝: Face.RightX = FrontPointX + GetFrontFaceEndOffsetFromFrontMm(), 단 Splitline_2 - 0.001 상한
         /// - LastAppliedFrontFaceDepthMm = FrontFaceFixedDepthMm(0.5mm)
         /// - RL=1: BottomZ=-RightX / RL=2: BottomZ=+RightX
         /// 주의: 이후 TryApplyFaceRightEndGuard는 Face가 Front_Rough(=Splitline_2) 끝을 넘지 않게만 막으며,
@@ -1808,8 +1877,8 @@ namespace DentalAddin
 
                 LastAppliedFrontFaceDepthMm = FrontFaceFixedDepthMm;
 
-                // Front_Face 끝점: FrontPointX + 3.0mm, 단 Splitline_2보다 짧게
-                double requestedFaceRightX = MoveSTL_Module.FrontPointX + GetFrontFaceEndOffsetFromFrontMm();
+                double faceEndOffsetMm = GetFrontFaceEndOffsetFromFrontMm();
+                double requestedFaceRightX = MoveSTL_Module.FrontPointX + faceEndOffsetMm;
                 double appliedFaceRightX = ClampFaceRightXBelowSplitline2(requestedFaceRightX, out double splitline2Used, out bool splitline2ClampApplied);
 
                 faceOp.TopZLimit = 1.0;
@@ -1820,7 +1889,7 @@ namespace DentalAddin
                 }
                 SetFaceBottomZLimitFromRightX(faceOp, appliedFaceRightX);
 
-                DentalLogger.Log($"FrontFaceDepth[{context}] - FrontPoint 고정 오프셋 적용: requestRightX={requestedFaceRightX:F3}, appliedRightX={appliedFaceRightX:F3}, TopZ:{oldTop:F3}->{faceOp.TopZLimit:F3}, BottomZ:{oldBottom:F3}->{oldBottom2:F3}->{faceOp.BottomZLimit:F3}, DepthRef={LastAppliedFrontFaceDepthMm:F3}, Splitline2={splitline2Used:F3}, Splitline2Clamp={splitline2ClampApplied}, Splitline2Margin={FrontFaceSplitline2NoCrossMarginMm:F3}");
+                DentalLogger.Log($"FrontFaceDepth[{context}] - FrontPoint 오프셋 적용: endOffset={faceEndOffsetMm:F3}, requestRightX={requestedFaceRightX:F3}, appliedRightX={appliedFaceRightX:F3}, TopZ:{oldTop:F3}->{faceOp.TopZLimit:F3}, BottomZ:{oldBottom:F3}->{oldBottom2:F3}->{faceOp.BottomZLimit:F3}, DepthRef={LastAppliedFrontFaceDepthMm:F3}, Splitline2={splitline2Used:F3}, Splitline2Clamp={splitline2ClampApplied}, Splitline2Margin={FrontFaceSplitline2NoCrossMarginMm:F3}");
             }
             catch (Exception ex)
             {

@@ -405,7 +405,7 @@ namespace DentalAddin
                     return;
                 }
 
-                // Front Face 끝점: RightX = FrontPointX + 3.0 (Splitline_2 미만). 시작 TopZ=1.0.
+                // Front Face 끝점: RightX = FrontPointX + dynamic tip offset (Splitline_2 미만). 시작 TopZ=1.0.
                 ApplyFrontFaceFixedDepth(techLatheMoldParallelPlanes, "FrontFaceMill");
 
                 ZH = Math.Abs(MoveSTL_Module.FrontPointX);
@@ -1563,7 +1563,7 @@ namespace DentalAddin
                 const double faceToRoughMm = 2.2;
                 const double roughToTurnMm = 2.2;
 
-                // Rough 경계(현재 정책): Front Face 끝(FrontPointX+3.0) + faceToRough
+                // Rough 경계: Front Face 끝(FrontPointX+dynamic tip offset) + faceToRough
                 double frontRoughEnd = Math.Min(xMax, splitline1 + GetFrontFaceEndOffsetFromFrontMm() + faceToRoughMm);
 
                 string normalized = (region ?? string.Empty).Trim().ToUpperInvariant();

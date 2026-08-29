@@ -128,15 +128,19 @@
 - 목적:
   - CAM 직경 8.0 케이스에서 대구경 선행 가공을 제거해 불필요 공정/시간을 줄인다.
 
-### 4.6 Front Face/Back Turn 경계 보정 (2026-07-01)
+### 4.6 Front Face/Back Turn 경계 보정 (2026-07-01, Face offset 동적화 2026-08-29)
 
 - Front Face 시작/종료점 정책(현행 SSOT):
   - 시작: `TopZLimit = 1.0` (원점 쪽 고정)
-  - 끝: `Face.RightX = FrontPointX + 3.0mm`
-  - 단, 항상 `Face.RightX < Splitline_2` (`Splitline_2 - 0.001mm` 상한 클램프)
+  - 끝: `Face.RightX = FrontPointX + L`, 단 항상 `Face.RightX < Splitline_2` (`Splitline_2 - 0.001mm` 상한 클램프)
+  - `L` 동적(구 고정 3.0mm 폐기):
+    - 강제: env `ABUTS_FRONT_FACE_END_OFFSET_MM` (≥0, 상한 3.0)
+    - 기본: tip 반경 추정 `R_tip` → `L = clamp(0.45·R_tip + 0.85, 1.2, 2.5)`
+    - `R_tip` 우선순위: `ABUTS_MAX_DIAMETER`×0.20 → `HighY`×0.45 → `BarDiameter`×0.20 (각 [1.2, 3.5])
+    - 추정 실패 시 fallback `L=2.0`
   - `LastAppliedFrontFaceDepthMm = 0.5mm` (`FrontFaceFixedDepthMm`)
-  - 상수: `FrontFaceEndOffsetFromFrontMm`
-  - 구현 위치: `ApplyFrontFaceFixedDepth` / `ClampFaceRightXBelowSplitline2`
+  - 구현 위치: `GetFrontFaceEndOffsetFromFrontMm` / `ApplyFrontFaceFixedDepth` / `ClampFaceRightXBelowSplitline2`
+  - `ABUTS_MAX_DIAMETER` 주입: `StlFileProcessor` request-meta `maxDiameter`
   - 후속 가드(`TryApplyFaceRightEndGuard`): Front_Rough 끝(=Splitline_2)을 넘지 않게만 보정하고, Splitline_2 상한을 다시 적용한다 (0.3mm 추가 단축 없음).
     - 현행 RoughA.RightX SSOT가 Splitline_2라서 Splitline_2 클램프와 동일 상한이다.
   - `FACE.prc` step SSOT: `StepPercentOfDiameter=2`, `StepOver=0.05`, `StockAllowanceWalls=0.0`
