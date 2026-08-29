@@ -458,7 +458,7 @@ const NewRequestPageContent = () => {
       return {
         fileName: file?.name || "",
         patientName: String(info?.patientName || parsed?.patientName || ""),
-        tooth: String(info?.tooth || parsed?.tooth || ""),
+        tooth: String(info?.tooth || ""),
         clinicName: String(info?.clinicName || parsed?.clinicName || ""),
       };
     },

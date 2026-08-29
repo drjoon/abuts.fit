@@ -11,7 +11,6 @@
  * - web/frontend/src/features/auth/LoginPage.tsx
  * - web/frontend/src/store/useAuthStore.ts
  * - web/frontend/src/shared/business/requestorCapabilities.ts
- * - web/frontend/src/shared/filename/parseFilenameWithRules.ts
  * - web/backend/controllers/auth/auth.controller.js
  * - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
  * - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
@@ -66,7 +65,6 @@ import { GuestChatModal } from "@/features/support/components/GuestChatModal";
 import { useToast } from "@/shared/hooks/use-toast";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore, type User } from "@/store/useAuthStore";
-import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules";
 import { toTempUploadFileKey, useFilePreUpload } from "@/shared/hooks/useFilePreUpload";
 import {
   Popover,
@@ -1930,13 +1928,12 @@ export const PracticeDropzonePage = () => {
         files.length > 0
           ? files.map((file, index) => {
               const tempFile = uploadedTempFiles[index];
-              const parsed = parseFilenameWithRules(file.name);
-              const tooth = String(parsed.tooth || "").trim();
 
               return {
                 clinicName: autoClinicName,
                 patientName: normalizedPatientName,
-                tooth,
+                // 치아번호는 파일명 자동인식 대신 toothWorks(수동 치식) SSOT
+                tooth: "",
                 workType: "abutment",
                 designSoftware: "3Shape",
                 file: {

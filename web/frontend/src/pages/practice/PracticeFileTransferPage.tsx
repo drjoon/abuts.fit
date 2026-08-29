@@ -178,7 +178,6 @@ import { RESPONSIVE } from "@/shared/ui/responsive";
 import { usePeriodStore } from "@/store/usePeriodStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { apiFetch, invalidateApiGetCache, request } from "@/shared/api/apiClient";
-import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules";
 import { toTempUploadFileKey, useFilePreUpload } from "@/shared/hooks/useFilePreUpload";
 import {
   toChatMessageAttachments,
@@ -6249,13 +6248,12 @@ export const PracticeFileTransferPage = ({
         transferFiles.length > 0
           ? transferFiles.map((tempFile) => {
               const originalName = String(tempFile.originalName || "").trim();
-              const parsed = parseFilenameWithRules(originalName);
-              const tooth = String(parsed.tooth || "").trim();
 
               return {
                 clinicName,
                 patientName: normalizedPatientName,
-                tooth,
+                // 치아번호는 파일명 자동인식 대신 toothWorks(수동 치식) SSOT
+                tooth: "",
                 workType: "abutment",
                 designSoftware: "3Shape",
                 file: {

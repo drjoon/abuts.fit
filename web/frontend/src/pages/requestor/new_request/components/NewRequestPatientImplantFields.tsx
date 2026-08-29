@@ -431,7 +431,7 @@ export function NewRequestPatientImplantFields({
                 });
               }}
               options={teethOptions}
-              placeholder="치아번호"
+              placeholder="치아번호 (직접 입력)"
               onOptionSelect={(label) => {
                 if (readOnly) return;
                 setCaseInfos({

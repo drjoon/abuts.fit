@@ -1,3 +1,5 @@
+// change-log:
+// - 2026-08-29: 파일명 AI/룰은 치과·환자만 자동 채움. 치아번호는 의뢰자 수동 입력.
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
@@ -350,12 +352,15 @@ export const useNewRequestFilesV2 = ({
 
         // optimistic 단계에서도 파일명 기반 정보 추출을 선반영한다.
         // (첫 파일이 선택된 상태에서 Draft 응답 반영이 늦어 누락되는 케이스 방지)
+        // 치아번호는 오인식이 잦아 자동 채우지 않음 — 의뢰자 수동 입력.
         if (updateCaseInfos) {
           filesToProcess.forEach((f) => {
             const normalizedName = normalize(f.name);
             const fileKey = `${normalizedName}:${f.size}`;
             const parsed = parseFilenameWithRules(normalizedName);
-            if (!parsed.clinicName && !parsed.patientName && !parsed.tooth) {
+            const clinicName = String(parsed.clinicName || "").trim();
+            const patientName = String(parsed.patientName || "").trim();
+            if (!clinicName && !patientName) {
               return;
             }
 
@@ -364,15 +369,11 @@ export const useNewRequestFilesV2 = ({
             updateCaseInfos(fileKey, {
               clinicName:
                 String(existing?.clinicName || "").trim() ||
-                String(parsed.clinicName || "").trim() ||
+                clinicName ||
                 undefined,
               patientName:
                 String(existing?.patientName || "").trim() ||
-                String(parsed.patientName || "").trim() ||
-                undefined,
-              tooth:
-                String(existing?.tooth || "").trim() ||
-                String(parsed.tooth || "").trim() ||
+                patientName ||
                 undefined,
             });
           });
@@ -653,10 +654,10 @@ export const useNewRequestFilesV2 = ({
             duration: 2000,
           });
 
-          // 6. 파일 업로드 직후 자동 인식
+          // 6. 파일 업로드 직후 자동 인식 (치과명·환자명만)
           //    1차: 룰/regex 기반으로 빠르게 선반영
-          //    2차: 백엔드 AI(/api/ai/parse-filenames)는 "완전히 비어있는" 케이스만 호출
-          //         (치과/환자/치아 중 하나라도 이미 값이 있으면 재호출하지 않음)
+          //    2차: 백엔드 AI(/api/ai/parse-filenames)는 치과/환자가 모두 비어 있을 때만 호출
+          //    치아번호는 오인식이 잦아 자동 채우지 않음 — 의뢰자 수동 입력.
           if (updateCaseInfos) {
             const filenamesForAi: string[] = [];
             const fileKeysForAi: string[] = [];
@@ -685,42 +686,35 @@ export const useNewRequestFilesV2 = ({
                   (caseInfosMapRef.current as any)[fileKey]) ||
                 {};
 
-              const hasAnyCurrentValue =
+              const hasClinicOrPatientCurrent =
                 !!trimText(current?.clinicName) ||
-                !!trimText(current?.patientName) ||
-                !!trimText(current?.tooth);
+                !!trimText(current?.patientName);
 
-              const hasAnyParsedValue =
+              const hasClinicOrPatientParsed =
                 !!trimText(parsed?.clinicName) ||
-                !!trimText(parsed?.patientName) ||
-                !!trimText(parsed?.tooth);
+                !!trimText(parsed?.patientName);
 
-              if (hasAnyParsedValue) {
-                // 1차 룰 결과 선반영
+              if (hasClinicOrPatientParsed) {
+                // 1차 룰 결과 선반영 (치아번호 제외)
                 updateCaseInfos(fileKey, {
                   _id: draftCase?._id,
                   clinicName: parsed.clinicName || "",
                   patientName: parsed.patientName || "",
-                  tooth: parsed.tooth || "",
                 });
               }
 
-              // 비용 절감을 위해 완전히 비어있는 케이스만 AI 호출
-              // (치과/환자/치아 중 하나라도 값이 있으면 이미 한 번 인식/입력된 것으로 간주)
-              if (!hasAnyCurrentValue && !hasAnyParsedValue) {
+              // 비용 절감: 치과/환자가 모두 비어 있을 때만 AI 호출
+              if (!hasClinicOrPatientCurrent && !hasClinicOrPatientParsed) {
                 const cacheKey = toFilenameAiCacheKey(originalName, size);
                 const cached = getFilenameAiCache(cacheKey);
-                const hasAnyCachedValue =
-                  !!trimText(cached?.clinicName) ||
-                  !!trimText(cached?.patientName) ||
-                  !!trimText(cached?.tooth);
+                const cachedClinic = trimText(cached?.clinicName);
+                const cachedPatient = trimText(cached?.patientName);
 
-                if (hasAnyCachedValue && cached) {
+                if ((cachedClinic || cachedPatient) && cached) {
                   updateCaseInfos(fileKey, {
                     _id: draftCase?._id,
-                    clinicName: trimText(cached.clinicName),
-                    patientName: trimText(cached.patientName),
-                    tooth: trimText(cached.tooth),
+                    clinicName: cachedClinic,
+                    patientName: cachedPatient,
                   });
                   return;
                 }
@@ -789,7 +783,7 @@ export const useNewRequestFilesV2 = ({
                     const fallback = parsedByRule.get(fileKey) || {};
 
                     // 수동 입력이 이미 있으면 유지하고,
-                    // 빈 값만 AI -> 룰 순으로 채운다.
+                    // 빈 값만 AI -> 룰 순으로 채운다. 치아번호는 자동 채우지 않음.
                     const aiClinicName = trimText(item?.clinicName);
                     const aiPatientName = trimText(item?.patientName);
                     const aiTooth = trimText(item?.tooth);
@@ -802,16 +796,11 @@ export const useNewRequestFilesV2 = ({
                       trimText(current?.patientName) ||
                       aiPatientName ||
                       trimText(fallback?.patientName);
-                    const tooth =
-                      trimText(current?.tooth) ||
-                      aiTooth ||
-                      trimText(fallback?.tooth);
 
                     updateCaseInfos(fileKey, {
                       _id: item._id || draftCase?._id,
                       clinicName,
                       patientName,
-                      tooth,
                     });
 
                     const cacheKey = aiCacheKeyByFileKey.get(fileKey);

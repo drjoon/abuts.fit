@@ -1,5 +1,6 @@
 // change-log:
-// - 2026-08-09: 신규의뢰 V3 로컬 업로드에서도 파일명 AI로 치과/환자/치아 보강.
+// - 2026-08-29: 파일명 AI/룰은 치과·환자만 자동 채움. 치아번호는 의뢰자 수동 입력.
+// - 2026-08-09: 신규의뢰 V3 로컬 업로드에서도 파일명 AI로 치과/환자 보강.
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
@@ -25,7 +26,6 @@ export type LocalUploadParsedMeta = {
   fileKey: string;
   clinicName?: string;
   patientName?: string;
-  tooth?: string;
 };
 
 const trimText = (value: unknown) => String(value || "").trim();
@@ -64,7 +64,7 @@ export const useNewRequestLocalFiles = ({
       files: File[];
       parsedByRule: Map<
         string,
-        { clinicName?: string; patientName?: string; tooth?: string }
+        { clinicName?: string; patientName?: string }
       >;
     }) => {
       if (!updateCaseInfos) return [] as LocalUploadParsedMeta[];
@@ -83,7 +83,6 @@ export const useNewRequestLocalFiles = ({
           trimText(current?.clinicName) || trimText(fallback?.clinicName);
         const patientName =
           trimText(current?.patientName) || trimText(fallback?.patientName);
-        const tooth = trimText(current?.tooth) || trimText(fallback?.tooth);
 
         // 치과명·환자명 중 하나라도 비어 있으면 AI로 보강
         if (clinicName && patientName) continue;
@@ -92,22 +91,18 @@ export const useNewRequestLocalFiles = ({
         const cached = getFilenameAiCache(cacheKey);
         const cachedClinic = trimText(cached?.clinicName);
         const cachedPatient = trimText(cached?.patientName);
-        const cachedTooth = trimText(cached?.tooth);
 
-        if (cachedClinic || cachedPatient || cachedTooth) {
+        if (cachedClinic || cachedPatient) {
           const nextClinic = clinicName || cachedClinic || undefined;
           const nextPatient = patientName || cachedPatient || undefined;
-          const nextTooth = tooth || cachedTooth || undefined;
           updateCaseInfos(fileKey, {
             ...(nextClinic ? { clinicName: nextClinic } : {}),
             ...(nextPatient ? { patientName: nextPatient } : {}),
-            ...(nextTooth ? { tooth: nextTooth } : {}),
           });
           enriched.push({
             fileKey,
             clinicName: nextClinic,
             patientName: nextPatient,
-            tooth: nextTooth,
           });
           continue;
         }
@@ -179,23 +174,16 @@ export const useNewRequestLocalFiles = ({
             aiPatientName ||
             trimText(fallback?.patientName) ||
             undefined;
-          const nextTooth =
-            trimText(current?.tooth) ||
-            aiTooth ||
-            trimText(fallback?.tooth) ||
-            undefined;
 
-          if (nextClinic || nextPatient || nextTooth) {
+          if (nextClinic || nextPatient) {
             updateCaseInfos(fileKey, {
               ...(nextClinic ? { clinicName: nextClinic } : {}),
               ...(nextPatient ? { patientName: nextPatient } : {}),
-              ...(nextTooth ? { tooth: nextTooth } : {}),
             });
             enriched.push({
               fileKey,
               clinicName: nextClinic,
               patientName: nextPatient,
-              tooth: nextTooth,
             });
           }
 
@@ -274,7 +262,7 @@ export const useNewRequestLocalFiles = ({
         const parsedMeta: LocalUploadParsedMeta[] = [];
         const parsedByRule = new Map<
           string,
-          { clinicName?: string; patientName?: string; tooth?: string }
+          { clinicName?: string; patientName?: string }
         >();
 
         normalizedFiles.forEach((file) => {
@@ -283,19 +271,17 @@ export const useNewRequestLocalFiles = ({
           const parsed = parseFilenameWithRules(normalizedName);
           const clinicName = trimText(parsed.clinicName) || undefined;
           const patientName = trimText(parsed.patientName) || undefined;
-          const tooth = trimText(parsed.tooth) || undefined;
 
-          parsedByRule.set(fileKey, { clinicName, patientName, tooth });
-          parsedMeta.push({ fileKey, clinicName, patientName, tooth });
+          parsedByRule.set(fileKey, { clinicName, patientName });
+          parsedMeta.push({ fileKey, clinicName, patientName });
 
           if (!updateCaseInfos) return;
-          if (!clinicName && !patientName && !tooth) return;
+          if (!clinicName && !patientName) return;
 
           const existing = caseInfosMapRef.current?.[fileKey] || null;
           updateCaseInfos(fileKey, {
             clinicName: trimText(existing?.clinicName) || clinicName,
             patientName: trimText(existing?.patientName) || patientName,
-            tooth: trimText(existing?.tooth) || tooth,
           });
         });
 
@@ -307,7 +293,7 @@ export const useNewRequestLocalFiles = ({
           duration: 2000,
         });
 
-        // 룰로 치과/환자가 비면 AI로 보강 (구강 스캔처럼 치식 없는 파일명 포함)
+        // 룰로 치과/환자가 비면 AI로 보강 (치아번호는 자동 채우지 않음)
         void enrichWithAi({ files: normalizedFiles, parsedByRule }).then(
           (enriched) => {
             if (!enriched.length) return;
