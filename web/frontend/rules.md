@@ -524,7 +524,8 @@ Notes:
   - 발견 시 즉시 `STL모델대로`/`헥스30도회전`로 치환하고 rules에 기록합니다.
   - UI/백엔드 canonical: `STL모델대로` / `헥스30도회전` / `STL모델+` / `헥스30+`
     - 플러스 모드(구 헥스40도회전): `STL모델+`(modeBase=0) / `헥스30+`(modeBase=30)
-    - NC C축: `addDeg=30+appliedDeg`, T4848=`C(0+addDeg)`, T0909/T0606=`C(modeBase+addDeg)`
+    - PreviewModal(준비) Select: `STL모델대로` / `헥스30도회전` / `STL모델+` (`헥스30+` UI 옵션 없음)
+    - NC C축: `addDeg=appliedDeg`, T4848=`C(0+addDeg)`, T0909/T0606=`C(modeBase+addDeg)`
   - legacy `헥스40도회전`/`헥스10도회전`/`헥스X도회전`은 `STL모델+`로 정규화합니다.
   - 디자인 소프트웨어 표시는 BusinessAnchor 전역값이 아니라 의뢰건 `caseInfos.designSoftware`를 우선 표시합니다.
   - ExoCAD는 버전(`exoCadVersion`: `le_3_0`=3.0 이하 / `ge_3_2`=3.2 이상)을 함께 설정한다.

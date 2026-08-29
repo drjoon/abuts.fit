@@ -418,7 +418,7 @@ const normalizeHexRotationValue = (value) => {
 
 // 헥스 회전 확장 포인트:
 // - 플러스 모드: "STL모델+"(modeBase=0) / "헥스30+"(modeBase=30)
-// - NC C축: T4848=0+addDeg, T0909/T0606=modeBase+addDeg, addDeg=30+appliedDeg
+// - NC C축: T4848=0+addDeg, T0909/T0606=modeBase+addDeg, addDeg=appliedDeg
 // - 레거시 "헥스40도회전"/"헥스X도회전" → STL모델+
 // - 관련 파일: PreviewModal.tsx / hexRotation.ts / bg.controller.js / NcFileGenerator.cs
 const parseHexXRotationLabel = (value) => {

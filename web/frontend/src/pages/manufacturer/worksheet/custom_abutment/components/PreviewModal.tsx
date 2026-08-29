@@ -2399,10 +2399,6 @@ export const PreviewModal = ({
                     <SelectItem value="STL모델+" className="text-[12px] font-medium">
                       STL모델+
                     </SelectItem>
-                    <SelectItem value="헥스30+" className="text-[12px] font-medium">
-                      헥스30+
-                    </SelectItem>
-
                   </SelectContent>
                 </Select>
               </div>

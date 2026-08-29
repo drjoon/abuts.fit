@@ -101,7 +101,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             UpdateSerialBlocks(executedNcPath, serialForNc, connectionPrcPath);
             // 헥스 C축 후처리 SSOT: ApplyManufacturerHexRotationToNc
             // - STL모델대로 / 헥스30도회전 / STL모델+ / 헥스30+
-            // - STL모델+·헥스30+ 는 appliedDeg 필수 (addDeg=30+appliedDeg)
+            // - STL모델+·헥스30+ 는 appliedDeg 필수 (addDeg=appliedDeg)
             ApplyManufacturerHexRotationToNc(executedNcPath, manufacturerHexRotation, hexRotationAppliedDeg);
             StripBlankNcLines(executedNcPath);
             // CNC 컨트롤러는 축 워드 정수(C30, X10, Z0)를 인식하지 못한다.
@@ -563,11 +563,11 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
         // - STL모델대로: T4848/T0909/T0606 → C0.0 (C30 잔여분도 C0.0 강제)
         // - 헥스30도회전: T4848 → C0.0, T0909/T0606 → C30.0
         // - STL모델+ / 헥스30+ (구 헥스40도회전 분기):
-        //     addDeg = 30 + hexRotation.appliedDeg   (예: 30+(-29.76889…)→0.231)
-        //     T4848        → C(0.0 + addDeg)          = C0.231
+        //     addDeg = hexRotation.appliedDeg         (예: +29.85 → 29.850)
+        //     T4848        → C(0.0 + addDeg)          = C29.850
         //     T0909/T0606  → C(modeBase + addDeg)     STL모델+ modeBase=0.0, 헥스30+ modeBase=30.0
-        //       → STL모델+: C0.231 / 헥스30+: C30.231
-        // 출력은 반드시 소수점 이하 3자리 (C0.231 / C30.000). FormatRotationNumber SSOT.
+        //       → STL모델+: C29.850 / 헥스30+: C59.850
+        // 출력은 반드시 소수점 이하 3자리 (C29.850 / C30.000). FormatRotationNumber SSOT.
         private void ApplyManufacturerHexRotationToNc(
             string ncFilePath,
             string manufacturerHexRotation,
@@ -710,7 +710,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
         // 헥스 모드 라벨 → NC 치환각 (검색: TryResolveHexRotationTargets, STL모델+, 헥스30+)
         //
         // modeBaseDeg: T0909/T0606 기본각 (STL모델대로·STL모델+=0.0, 헥스30도회전·헥스30+=30.0)
-        // addDeg: 플러스 모드 전용 가산량 = 30 + appliedDeg (없으면 0). 기본 모드에서는 0.
+        // addDeg: 플러스 모드 전용 가산량 = appliedDeg (없으면 오류). 기본 모드에서는 0.
         // forceZeroCAxis: STL모델대로 — C0/C30 잔여분을 C0.0으로 강제
         // isPlusMode: STL모델+ / 헥스30+ (및 레거시 헥스40도회전→STL모델+)
         //
@@ -797,8 +797,10 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             return false;
         }
 
-        // 플러스 모드 가산량 SSOT: 30 + hexRotation.appliedDeg
-        // 예) appliedDeg=-29.76889… → addDeg≈0.231 → C0.231 / C30.231 (FormatRotationNumber 소수 3자리)
+        // 플러스 모드 가산량 SSOT: hexRotation.appliedDeg 그대로
+        // 예) appliedDeg=+29.85 → addDeg=29.850
+        //     T4848=C(0+addDeg)=C29.850 / STL모델+ T0909=C29.850 / 헥스30+ T0909=C59.850
+        // 주의: 30+appliedDeg 가산 금지 (C59.849 오적용 원인).
         private static double ResolvePlusModeAddDeg(double? hexRotationAppliedDeg)
         {
             if (!hexRotationAppliedDeg.HasValue ||
@@ -808,7 +810,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 throw new InvalidOperationException(
                     "헥스 플러스 모드(STL모델+/헥스30+) NC 후처리 실패: hexRotation.appliedDeg 가 없습니다.");
             }
-            return 30.0 + hexRotationAppliedDeg.Value;
+            return hexRotationAppliedDeg.Value;
         }
 
         // C축(및 동일 경로로 쓰는 회전각) NC 리터럴 포맷.
