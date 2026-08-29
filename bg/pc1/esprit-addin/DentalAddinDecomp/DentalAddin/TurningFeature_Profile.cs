@@ -89,10 +89,19 @@ internal sealed class TurningFeature_Profile
 		double y = default(double);
 		double x = default(double);
 		Point point2 = default(Point);
-		// FinishLineX는 tip 쪽(음수)일 수 있음(MoveSTL_Module의 >0.001 게이트와 동일 사유).
-		// 양수 전용 가드는 음수 FinishLineX를 걸러 BackPointX로 새서 finish-line trim이 누락된다.
-		double trimX = (Math.Abs(MoveSTL_Module.FinishLineX) > 0.001) ? MoveSTL_Module.FinishLineX : MoveSTL_Module.BackPointX;
-		DentalLogger.Log($"TurningProfile: trimX={trimX:F3} (FinishLineX={MoveSTL_Module.FinishLineX:F3}, BackPointX={MoveSTL_Module.BackPointX:F3})");
+		// FinishLineX trim 게이트 (2026-08-30): Math.Abs > 0.001 안전망 적용.
+		// 구 게이트(FinishLineX > 0.001)는 tip 쪽 음수 FinishLineX를 걸러 BackPointX로 새서
+		// finish-line trim이 누락될 수 있음(MoveSTL_Module FinishLineX 시프트 게이트와 동일 사유).
+		// 양수 샘플(예: FinishLineX=4.699)에서는 구/신 게이트 결과 동일 — Abs는 SpindleSide 등
+		// 음수 FinishLineX 케이스용 안전망. 실행 로그에 gateSource로 어떤 경로인지 남긴다.
+		// 검색: TurningProfile Abs trim, FinishLineX, rules.md §7
+		bool finishLineGatePass = Math.Abs(MoveSTL_Module.FinishLineX) > 0.001;
+		bool legacyPositiveGateWouldPass = MoveSTL_Module.FinishLineX > 0.001;
+		double trimX = finishLineGatePass ? MoveSTL_Module.FinishLineX : MoveSTL_Module.BackPointX;
+		string trimGateSource = finishLineGatePass
+			? (legacyPositiveGateWouldPass ? "FinishLineX(Abs+positive)" : "FinishLineX(Abs-only; legacy>0.001 would miss)")
+			: "BackPointX-fallback";
+		DentalLogger.Log($"TurningProfile: trimX={trimX:F3} (FinishLineX={MoveSTL_Module.FinishLineX:F3}, BackPointX={MoveSTL_Module.BackPointX:F3}, gate=Abs>0.001, gateSource={trimGateSource})");
 		for (i = 1; i <= count; i = checked(i + 1))
 		{
 			GraphicObject graphicObject = (GraphicObject)((IFeatureChain)MainModule.tfc).get_Item(i);

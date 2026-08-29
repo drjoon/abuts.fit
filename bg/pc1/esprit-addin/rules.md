@@ -336,20 +336,34 @@
   - `CompositeOrientationProfile_*` — Finish OrientationProfile
   - `TurnRgn*` / `3DMilling_0Degree` / `3DMilling_FrontFace` / `3DRoughMilling_*`
 
-## 7. MoveSTL 좌표 이동 누락 감사 후속 조치 (2026-08-30)
+## 7. MoveSTL 좌표 이동 감사 후속 (2026-08-30, 되돌림 포함)
 
-검색 키워드: `LastAppliedMoveDeltaX`, `FirstPX`, `CustomCycle`, `CustomCycle2`, `TryShiftRoughBottomZLimitByMoveDelta`
+검색 키워드: `LastAppliedMoveDeltaX`, `FirstPX`, `CustomCycle`, `CustomCycle2`, `CaptureNcMetadata`, `TurningProfile Abs trim`, `BottomZLimit=-2.2`
 
-- `MoveSTL_Module.LastAppliedMoveDeltaX` 신설: `MoveSTL()`에서 실제로 STL에 적용한 총 X 이동량(`deltaX + AppConfig.DefaultStlShift`)을 저장한다.
-  - 원점 기준 PRC 값(ZLimit 계열)을 STL 이동 후 좌표에 맞추려는 소비자는 `AppConfig.DefaultStlShift` 상수만 쓰지 말고 이 필드를 우선 사용한다.
-  - MoveSTL 미실행(0)이면 각 소비자는 `DefaultStlShift`로 안전 폴백한다.
-  - 적용 위치: `MainModuleOperations.CustomCycle`(FaceHole ZLimit), `CustomCycle2`(Connection ZLimit).
-- `MainModuleComposite.TryShiftRoughBottomZLimitByMoveDelta`: Rough PRC(`MillRough_3D*.prc`)의 `BottomZLimit`(원점 기준 고정값, 기본 `-2.2`)를 `LastAppliedMoveDeltaX`만큼 보정한다.
-  - §4.10 "Rough 기술 파라미터는 코드에서 오버라이드하지 않는다"는 증분 깊이/절삭 속도/공차/코너값 등에 한정되며, `BottomZLimit`은 STL 위치 정합을 위한 예외로 취급한다(사용자 확인 후 적용, 2026-08-30).
-  - 적용 위치: `MainModuleComposite.AddSplitOp`(Roughing 분기, `TryAddOperation` 직전).
-- `MoveSTL_Module.FirstPX`: 선언만 있고 대입이 없어 항상 0이던 문제를 수정. `MoveSTL()` 양쪽 분기(SpindleSide/일반)에서 post-shift `FrontPointX`를 대입한다. 소비자: `MainModuleGeometryUtils.ExtendEnd`.
-- `TurningFeature_Profile` trim 게이트: `FinishLineX > 0.001` → `Math.Abs(FinishLineX) > 0.001`로 변경(§4.3.1 `FinishLineX` 게이트와 동일 사유 — 음수 FinishLineX가 걸러져 finish-line trim이 누락됨).
-- `StlFileProcessor.CaptureNcMetadata`: `_capturedFrontPointX`가 payload(`_effectiveFrontLimitX`, 이동 전)만 쓰던 것을 Back과 동일하게 post-MoveSTL `MoveSTL_Module.FrontPointX`를 우선 사용하도록 수정(리플렉션 실패 시에만 payload 폴백).
+샘플 기준(요청 `20260829-ESJPNACP`, MoveSTL `dX:10.945 + shift:0.05 = 10.995`, Front post=`2.365`, Back=`10.995`, FinishLineX=`4.699`):
+
+### 유지(적용 유지)
+
+- `MoveSTL_Module.LastAppliedMoveDeltaX`: MoveSTL 총 X 이동량 기록. FaceHole/Connection **탐지 로그**의 후보 shift에만 사용.
+- `MoveSTL_Module.FirstPX`: post-MoveSTL `FrontPointX` 대입(이전엔 선언만·항상 0). 소비자 `ExtendEnd`.
+- `TurningFeature_Profile` trim 게이트: `Math.Abs(FinishLineX) > 0.001` 안전망 유지.
+  - 양수 샘플에서는 구 게이트와 결과 동일. 음수 FinishLineX(SpindleSide 등)에서만 차이.
+  - 실행 로그: `gate=Abs>0.001`, `gateSource=FinishLineX(Abs+positive|Abs-only; legacy>0.001 would miss|BackPointX-fallback)`.
+
+### FaceHole / Connection ZLimit — 시프트 미적용(탐지 로그만)
+
+- 위치: `MainModuleOperations.CustomCycle` / `CustomCycle2`.
+- 제조사 커스텀 PRC(예: 덴티움_SuperLine_RH_*)는 라이브에서 `ZLimit 속성 없음` → 시프트 경로 미실행이 흔함. **죽은 코드가 아니라** 속성 있는 PRC 샘플이 나오면 재검토.
+- 정책: `prop.SetValue` 시프트는 **주석 처리**. 속성 유무·`originalZ`·`wouldBeNewZ`·`candidateShift`(LastAppliedMoveDeltaX 우선)만 로그.
+- 로그 키: `FaceHole ZLimit 탐지(시프트 미적용)`, `Connection ZLimit 탐지(시프트 미적용)`, `ZLimit 속성 없음 (...재검토)`.
+- 추후: 로그에 `탐지(시프트 미적용)`이 뜨면 그때 시프트량/속성명 결정. `SetValue` 주석 해제 전 rules·사용자 확인.
+
+### 되돌림(정상 가공과 충돌 → 원상태 유지)
+
+- **NC Front 메타** (`StlFileProcessor.CaptureNcMetadata`): Front는 payload `_effectiveFrontLimitX`(이동 전) 유지. Back만 post-MoveSTL.
+  - post-MoveSTL로 맞추면 샘플 `-8.630 → 2.365`로 NC/`ResolveFrontPointForNc`가 크게 바뀌어 현재 정상 가공과 충돌.
+- **Rough PRC `BottomZLimit=-2.2`**: 코드 오버라이드 금지(§4.10 유지). `TryShiftRoughBottomZLimitByMoveDelta` 제거.
+  - `LastAppliedMoveDeltaX` 보정 시 샘플 `-2.2 → +8.795`로 크게 바뀌어 정상 가공과 충돌.
 
 ## 성능 측정 (PERF)
 

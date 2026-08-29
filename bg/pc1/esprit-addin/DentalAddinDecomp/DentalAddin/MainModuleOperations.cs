@@ -606,13 +606,19 @@ namespace DentalAddin
                 Layer activeLayer = Document.Layers.Add("FaceDrill");
                 Document.ActiveLayer = activeLayer;
 
-                // PRC ZLimit은 원점 기준값이므로 MoveSTL에서 실제로 적용한 총 X 이동량
-                // (deltaX + DefaultStlShift)만큼 보정해야 한다. DefaultStlShift 상수만 더하면
-                // stock-align deltaX가 누락되어 FaceHole 위치가 STL 이동량만큼 어긋난다.
-                // MoveSTL 미실행(0)이면 안전하게 DefaultStlShift만이라도 폴백 적용한다.
-                double stlShift = Math.Abs(MoveSTL_Module.LastAppliedMoveDeltaX) > 1e-6
+                // FaceHole ZLimit 시프트 (2026-08-30 감사 후속):
+                // - 제조사 커스텀 PRC(예: 덴티움_SuperLine_RH_FaceHole)는 라이브 로그상
+                //   "ZLimit 속성 없음" → 시프트 경로가 실행되지 않는 케이스가 많다(죽은 코드 아님,
+                //   속성 있는 PRC 샘플이 나오면 그때 시프트량/속성명 재결정).
+                // - 실제 SetValue 시프트는 주석 처리. 탐지/후보값만 로그로 남겨 추후 확인한다.
+                // - 후보 shift: LastAppliedMoveDeltaX(MoveSTL 총 이동) 우선, 없으면 DefaultStlShift.
+                // 검색: CustomCycle FaceHole ZLimit, LastAppliedMoveDeltaX, rules.md §7
+                double candidateShift = Math.Abs(MoveSTL_Module.LastAppliedMoveDeltaX) > 1e-6
                     ? MoveSTL_Module.LastAppliedMoveDeltaX
                     : AppConfig.DefaultStlShift;
+                string candidateSource = Math.Abs(MoveSTL_Module.LastAppliedMoveDeltaX) > 1e-6
+                    ? "LastAppliedMoveDeltaX"
+                    : "DefaultStlShift-fallback";
                 try
                 {
                     var techType = pITechnology.GetType();
@@ -622,23 +628,24 @@ namespace DentalAddin
                         object raw = prop.GetValue(pITechnology);
                         if (raw != null && double.TryParse(Convert.ToString(raw, CultureInfo.InvariantCulture), NumberStyles.Float, CultureInfo.InvariantCulture, out double originalZ))
                         {
-                            double newZ = originalZ + stlShift;
-                            prop.SetValue(pITechnology, newZ);
-                            DentalLogger.Log($"CustomCycle - FaceHole ZLimit shift 적용: {originalZ:F3} -> {newZ:F3} (shift:{stlShift:F3}, source={(Math.Abs(MoveSTL_Module.LastAppliedMoveDeltaX) > 1e-6 ? "LastAppliedMoveDeltaX" : "DefaultStlShift-fallback")})");
+                            double wouldBeNewZ = originalZ + candidateShift;
+                            // 시프트 미적용(의도적). 속성 있는 샘플이 로그에 뜨면 그때 적용 여부 결정.
+                            // prop.SetValue(pITechnology, wouldBeNewZ);
+                            DentalLogger.Log($"CustomCycle - FaceHole ZLimit 탐지(시프트 미적용): originalZ={originalZ:F3}, wouldBeNewZ={wouldBeNewZ:F3}, candidateShift={candidateShift:F3}, source={candidateSource}, LastAppliedMoveDeltaX={MoveSTL_Module.LastAppliedMoveDeltaX:F3}");
                         }
                         else
                         {
-                            DentalLogger.Log("CustomCycle - FaceHole ZLimit 값 변환 실패");
+                            DentalLogger.Log($"CustomCycle - FaceHole ZLimit 속성 있으나 값 변환 실패 (candidateShift={candidateShift:F3}, source={candidateSource})");
                         }
                     }
                     else
                     {
-                        DentalLogger.Log("CustomCycle - FaceHole PRC 기술에 ZLimit 속성 없음");
+                        DentalLogger.Log($"CustomCycle - FaceHole PRC 기술에 ZLimit 속성 없음 (candidateShift={candidateShift:F3}, source={candidateSource}; 시프트 경로 미실행 — 속성 있는 PRC 샘플 나오면 재검토)");
                     }
                 }
                 catch (Exception ex)
                 {
-                    DentalLogger.Log($"CustomCycle - FaceHole shift 적용 실패: {ex.GetType().Name}:{ex.Message}");
+                    DentalLogger.Log($"CustomCycle - FaceHole ZLimit 탐지 실패: {ex.GetType().Name}:{ex.Message}");
                 }
 
                 Document.Operations.Add(pITechnology, null, RuntimeHelpers.GetObjectValue(Missing.Value));
@@ -659,11 +666,15 @@ namespace DentalAddin
                 Layer activeLayer = Document.Layers.Add("EndTurning");
                 Document.ActiveLayer = activeLayer;
 
-                // FaceHole(CustomCycle)과 동일 사유: DefaultStlShift 상수만이 아니라
-                // MoveSTL에서 실제 적용한 총 X 이동량을 사용해야 Connection 위치가 어긋나지 않는다.
-                double stlShift = Math.Abs(MoveSTL_Module.LastAppliedMoveDeltaX) > 1e-6
+                // Connection ZLimit 시프트 — FaceHole(CustomCycle)과 동일 정책(2026-08-30):
+                // 실제 SetValue 시프트는 주석 처리. ZLimit 속성 유무/후보 shift만 로그.
+                // 검색: CustomCycle2 Connection ZLimit, LastAppliedMoveDeltaX, rules.md §7
+                double candidateShift = Math.Abs(MoveSTL_Module.LastAppliedMoveDeltaX) > 1e-6
                     ? MoveSTL_Module.LastAppliedMoveDeltaX
                     : AppConfig.DefaultStlShift;
+                string candidateSource = Math.Abs(MoveSTL_Module.LastAppliedMoveDeltaX) > 1e-6
+                    ? "LastAppliedMoveDeltaX"
+                    : "DefaultStlShift-fallback";
                 try
                 {
                     var techType = pITechnology.GetType();
@@ -673,23 +684,24 @@ namespace DentalAddin
                         object raw = prop.GetValue(pITechnology);
                         if (raw != null && double.TryParse(Convert.ToString(raw, CultureInfo.InvariantCulture), NumberStyles.Float, CultureInfo.InvariantCulture, out double originalZ))
                         {
-                            double newZ = originalZ + stlShift;
-                            prop.SetValue(pITechnology, newZ);
-                            DentalLogger.Log($"CustomCycle2 - Connection ZLimit shift 적용: {originalZ:F3} -> {newZ:F3} (shift:{stlShift:F3}, source={(Math.Abs(MoveSTL_Module.LastAppliedMoveDeltaX) > 1e-6 ? "LastAppliedMoveDeltaX" : "DefaultStlShift-fallback")})");
+                            double wouldBeNewZ = originalZ + candidateShift;
+                            // 시프트 미적용(의도적). 속성 있는 샘플이 로그에 뜨면 그때 적용 여부 결정.
+                            // prop.SetValue(pITechnology, wouldBeNewZ);
+                            DentalLogger.Log($"CustomCycle2 - Connection ZLimit 탐지(시프트 미적용): originalZ={originalZ:F3}, wouldBeNewZ={wouldBeNewZ:F3}, candidateShift={candidateShift:F3}, source={candidateSource}, LastAppliedMoveDeltaX={MoveSTL_Module.LastAppliedMoveDeltaX:F3}");
                         }
                         else
                         {
-                            DentalLogger.Log("CustomCycle2 - Connection ZLimit 값 변환 실패");
+                            DentalLogger.Log($"CustomCycle2 - Connection ZLimit 속성 있으나 값 변환 실패 (candidateShift={candidateShift:F3}, source={candidateSource})");
                         }
                     }
                     else
                     {
-                        DentalLogger.Log("CustomCycle2 - Connection PRC 기술에 ZLimit 속성 없음");
+                        DentalLogger.Log($"CustomCycle2 - Connection PRC 기술에 ZLimit 속성 없음 (candidateShift={candidateShift:F3}, source={candidateSource}; 시프트 경로 미실행 — 속성 있는 PRC 샘플 나오면 재검토)");
                     }
                 }
                 catch (Exception ex)
                 {
-                    DentalLogger.Log($"CustomCycle2 - Connection shift 적용 실패: {ex.GetType().Name}:{ex.Message}");
+                    DentalLogger.Log($"CustomCycle2 - Connection ZLimit 탐지 실패: {ex.GetType().Name}:{ex.Message}");
                 }
 
                 Document.Operations.Add(pITechnology, null, RuntimeHelpers.GetObjectValue(Missing.Value));
