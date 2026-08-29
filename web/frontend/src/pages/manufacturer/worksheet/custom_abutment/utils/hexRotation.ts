@@ -1,5 +1,5 @@
 // change-log:
-// - 2026-08-29: 헥스40도회전 → STL모델+(base=0) / 헥스30+(base=30) 분기. NC C축 addDeg=30+appliedDeg (STL모델+ 전 공구).
+// - 2026-08-29: 헥스40도회전 → STL모델+(base=0) / 헥스30+(base=30) 분기. NC: T4848=C0.0(always), T0909/T0606만 addDeg=30+appliedDeg.
 // - 2026-08-25: 관리자 헥스 확정 시 제조사 persist/승인 경로에서 저장 API 호출 스킵.
 // - 2026-08-22: ExoCAD 관리자 헥스 확인 뱃지(확정/미정) SSOT helper.
 // - 2026-08-06: 준비 단계 헥스 회전 기본값을 designSoftware 정책으로 우선(미저장 finalHexRotation STL 오적용 수정).

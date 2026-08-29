@@ -253,11 +253,11 @@
   - 플러스 모드(구 헥스40도회전 분기):
     - `STL모델+` → modeBase **0.0**
     - `헥스30+` → modeBase **30.0**
-    - 가산량 `addDeg = 30 + hexRotation.appliedDeg` (예: 30+(-29.77)=**0.23**)
-    - T4848 → `C(0.0 + addDeg)`
+    - 가산량 `addDeg = 30 + hexRotation.appliedDeg` (예: 30+(-29.77)=**0.23**) — **T0909/T0606만**
+    - T4848 → 전 모드 **항상 `C0.0`**
     - T0909/T0606 → `C(modeBase + addDeg)`
-    - `STL모델+`(modeBase=0): T4848·T0909/T0606 **모두** `C(30+appliedDeg)`
-    - `헥스30+`(modeBase=30): T4848=`C(addDeg)`, T0909/T0606=`C(30+addDeg)`
+    - `STL모델+`(modeBase=0): T0909/T0606 = `C(30+appliedDeg)`
+    - `헥스30+`(modeBase=30): T0909/T0606 = `C(30+addDeg)`=`C(60+appliedDeg)`
   - 레거시 `"헥스40도회전"` / `"헥스10도회전"` / 기타 `헥스X도회전` → `STL모델+` 로 정규화.
   - 레거시 `"0"`/`"30"` 허용. **default fallback 주입 금지**.
 - 제조사 헥스 기본값(다음 의뢰 시드):
@@ -270,9 +270,10 @@
   - 플러스 모드의 차이는 **NC C축 후처리**뿐 (STL 실회전은 보정=STL모델대로와 동일).
 - NC C축 후처리 SSOT(공구 기반, 검색: `HEX_C_AXIS_MAX_MATCHES`):
   - 지정 C축 후보(현재 최대 6곳: T4848 1 + T0909/T0606 5). 개수 변경 시 `ApplyManufacturerHexRotationToNc` 상수·화이트리스트만 수정.
-  - `STL모델대로` → 전부 `C0.0` (C30 잔여분 강제)
-  - `헥스30도회전` → T4848=`C0.0`, T0909/T0606=`C30.0`
-  - `STL모델+` / `헥스30+` → 위 플러스 공식 (appliedDeg 필수)
+  - T4848 → 전 모드 항상 `C0.0`
+  - `STL모델대로` → T0909/T0606 `C0.0` (C30 잔여분 강제)
+  - `헥스30도회전` → T0909/T0606=`C30.0`
+  - `STL모델+` / `헥스30+` → T0909/T0606에만 위 플러스 공식 (appliedDeg 필수)
   - 출력은 반드시 소수점 이하 **3자리** (`FormatRotationNumber` → `C0.231` / `C30.000`)
   - 공구번호 미검출/미지원은 즉시 예외
 - 재제작(시작 공정=가공)으로 복사된 NC는 원본 헥스 모드 기준이다. 준비 단계에서 mode를 바꾸면 `updateRndHexRotation`이 `caseInfos.ncFile`을 비워 다음 승인 때 Esprit가 재생성한다.
