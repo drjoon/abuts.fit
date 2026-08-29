@@ -85,24 +85,26 @@
     - `ABUTS_COMPOSITE_STEP_INCREMENT_A` **미사용**. none/deep 미수신 시 NC 중단 + 프론트 토스트
 - `Middle_Turn` / `Middle_Rough`는 레거시로 **생성하지 않는다** (Front + Back로 커버)
 
-### 4.3.1 SharedFinishSplit / Splitline_2 SSOT (검색 키워드: `SharedFinishSplitX`, `finishlineTop-1mm`, `X=-Z`, `GetRoughAdjacentOverlapMm`, `GetFinishAdjacentOverlapMm`, `ABUTS_RETENTION_GROOVE`)
+### 4.3.1 SharedFinishSplit / Splitline_2 SSOT (검색 키워드: `SharedFinishSplitX`, `finishlineTop-1mm`, `GetRoughAdjacentOverlapMm`, `GetFinishAdjacentOverlapMm`, `ABUTS_RETENTION_GROOVE`)
 
 - 목적: **한 식**으로 아래를 동일 경계 좌표에 둔다.
   - `Front_Rough` 끝
   - `Splitline_2` / `TwoPhaseSplitLine`
   - `Finish_Front` 끝
 - 기준식:
-  - `SharedFinishSplitX = finishLineTopX - 1.0` (tip 쪽 1mm, Z+1 ≡ X-1)
+  - `SharedFinishSplitX = finishLineTopX - 1.0` (tip 쪽 1mm)
 - 인접 후행 시작:
   - `Back_Rough` 시작 = `Splitline_2 - roughRadius` (D4→2.0)
   - `Finish_Back` 시작 = `SharedFinishSplitX - GetFinishAdjacentOverlapMm()`
     - 피치: `ResolveFinishFrontStepIncrementMmFromRetentionGroove()` (`none`→0.12, `deep`→0.20)
     - `StlFileProcessor.RequireBackendRetentionGrooveOrThrow` — none/deep만 허용, 미수신 시 예외
     - 실패 보고: `NotifyBackendFailure` → `/bg/register-file` status=failed → `request:async-action-failed` 토스트
-- 좌표 변환 (`EspritHttpServer`: `FrontPointX = -FrontPoint.z`):
-  - MoveSTL 전: `FinishLineX = -finishLineTopZ`
-  - MoveSTL 후: `finishLineTopX = BackPointX - finishLineTopZ`
-  - 재해석: `finishLineTopX = BackPointX - FinishLineTopZ + DefaultStlShift`
+- 좌표 변환 (`FrontPointX = -FrontPoint.z` 와 별개; FinishLine은 Back 기준):
+  - MoveSTL 전: `FinishLineX = BackLimitX + finishLineTopZ - stlTopZ`
+  - MoveSTL/Chazhi: `FinishLineX += delta` (`Math.Abs(FinishLineX) > 1e-6` — 양수 가드 금지)
+  - MoveSTL 후 / env: `finishLineTopX = BackPointX + finishLineTopZ - stlTopZ`
+  - 재해석 우선순위: env → `FinishLineX` → `FinishLineTopZ` (`Back - FinishLineTopZ + DefaultStlShift`) → midpoint
+  - 금지: `FinishLineX = -finishLineTopZ` (bee5c856). MoveSTL 시프트가 빠져 seam이 tip 쪽으로 당겨짐.
 - 구현:
   - `TryResolveSharedFinishSplitX` → `TryResolveTwoPhaseSplitLineTargetX`
   - Rough: `frontEnd = splitline2`, `backStart = splitline2 - GetRoughAdjacentOverlapMm()`, Middle skip
@@ -111,7 +113,8 @@
     - +0.3 미적용 시 헥스 쪽 ~0.3mm 홈/미삭. 임의로 0.0으로 되돌리지 말 것.
   - Finish_Front StepIncrement도 동일 groove 매핑으로 COM SetProperty (`TrySetCompositeStepIncrement`)
   - `safeBFirstMax`는 seam을 당기지 않는다(로그만)
-  - 금지: `ABUTS_COMPOSITE_STEP_INCREMENT_A` 의존, Finish_Back의 D1.2 반경 앞당김, 고정 0.5mm 겹침, `Middle_Turn`/`Middle_Rough` 재도입, `Back + Z - stlTopZ` 구식 변환
+  - 금지: `ABUTS_COMPOSITE_STEP_INCREMENT_A` 의존, Finish_Back의 D1.2 반경 앞당김, 고정 0.5mm 겹침, `Middle_Turn`/`Middle_Rough` 재도입
+  - 유지: SharedFinishSplit 한 식 SSOT, 미사용 Esprit 가이드 피처 skip
 
 ### 4.4 Finish none 처리
 

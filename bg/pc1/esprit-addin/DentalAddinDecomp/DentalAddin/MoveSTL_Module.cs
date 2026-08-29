@@ -452,11 +452,12 @@ namespace DentalAddin
                 {
                     FinishLineTopZ += stlShift;
                 }
-                if (FinishLineX > 0.001)
+                // FinishLineX는 tip 쪽(음수)일 수 있음. >0.001 가드는 시프트를 건너뛰어 seam이 스테일 값에 고정됨.
+                if (Math.Abs(FinishLineX) > 1e-6)
                 {
                     FinishLineX += totalDeltaX;
                 }
-                DentalLogger.Log($"MoveSTL - 초기 X이동(SpindleSide) dX:{deltaX:0.###} + shift:{stlShift:0.###} = {totalDeltaX:0.###}, FrontPointX:{FrontPointX:0.###}, BackPointX:{BackPointX:0.###}, FinishLineTopZ:{FinishLineTopZ:0.###}");
+                DentalLogger.Log($"MoveSTL - 초기 X이동(SpindleSide) dX:{deltaX:0.###} + shift:{stlShift:0.###} = {totalDeltaX:0.###}, FrontPointX:{FrontPointX:0.###}, BackPointX:{BackPointX:0.###}, FinishLineX:{FinishLineX:0.###}, FinishLineTopZ:{FinishLineTopZ:0.###}");
             }
             else
             {
@@ -481,11 +482,11 @@ namespace DentalAddin
                 {
                     FinishLineTopZ += stlShift;
                 }
-                if (FinishLineX > 0.001)
+                if (Math.Abs(FinishLineX) > 1e-6)
                 {
                     FinishLineX += totalDeltaX;
                 }
-                DentalLogger.Log($"MoveSTL - 초기 X이동 dX:{deltaX:0.###} + shift:{stlShift:0.###} = {totalDeltaX:0.###}, FrontPointX:{FrontPointX:0.###}, BackPointX:{BackPointX:0.###}, FinishLineTopZ:{FinishLineTopZ:0.###}");
+                DentalLogger.Log($"MoveSTL - 초기 X이동 dX:{deltaX:0.###} + shift:{stlShift:0.###} = {totalDeltaX:0.###}, FrontPointX:{FrontPointX:0.###}, BackPointX:{BackPointX:0.###}, FinishLineX:{FinishLineX:0.###}, FinishLineTopZ:{FinishLineTopZ:0.###}");
             }
 
             selectionSet.RemoveAll();
@@ -1079,7 +1080,7 @@ namespace DentalAddin
                         MainModule.Document.Layers.Remove("LayG");
                         FrontPointX += Chazhi;
                         BackPointX += Chazhi;
-                        if (FinishLineX > 0.001)
+                        if (Math.Abs(FinishLineX) > 1e-6)
                         {
                             FinishLineX += Chazhi;
                         }
