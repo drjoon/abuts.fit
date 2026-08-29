@@ -2559,8 +2559,13 @@ export function RequestorPracticeReceivePage({
         const autoConfirmedAt = productionRawFromRes?.confirmedAt
           ? String(productionRawFromRes.confirmedAt)
           : null;
+        const skipDesignConfirm =
+          productionRawFromRes?.skipDesignConfirm !== false &&
+          transfer.production?.skipDesignConfirm !== false;
+        // 보철 파일 업로드=작업완료(디자인). skip 자동 confirmedAt이어도 출고로 올리지 않음.
+        const apiStage = String(data.manufacturerStage || "").trim();
         const manufacturerStage =
-          String(data.manufacturerStage || "").trim() === "생산진행" || autoConfirmedAt
+          apiStage === "생산진행" && !skipDesignConfirm
             ? "생산진행"
             : "작업완료";
         const productionPatch = {
@@ -2570,9 +2575,7 @@ export function RequestorPracticeReceivePage({
               : productionRawFromRes?.shippingMode === "normal"
                 ? ("normal" as const)
                 : transfer.production?.shippingMode || null,
-          skipDesignConfirm:
-            productionRawFromRes?.skipDesignConfirm !== false &&
-            transfer.production?.skipDesignConfirm !== false,
+          skipDesignConfirm,
           skipJig:
             Boolean(productionRawFromRes?.skipJig) ||
             Boolean(transfer.production?.skipJig),
@@ -4698,19 +4701,19 @@ export function RequestorPracticeReceivePage({
       },
       {
         key: "작업완료",
-        label: "완료",
+        label: "디자인",
         tone: "completed",
         count: statusCounts.completed,
         unreadCount: statusUnreadCounts.completed,
-        tooltip: "기공작업 완료·파일 업로드 후",
+        tooltip: "보철 디자인 파일 업로드 후(치과·기공소 공통)",
       },
       {
         key: "포장.발송",
-        label: "발송",
+        label: "출고",
         tone: "shipping",
         count: statusCounts.shipping,
         unreadCount: statusUnreadCounts.shipping,
-        tooltip: "기공물 발송·생산 진행 후",
+        tooltip: "디자인 완료 후 치과가 생산·출고를 진행한 후",
       },
       {
         key: "리메이크",
@@ -4718,7 +4721,7 @@ export function RequestorPracticeReceivePage({
         tone: "remake",
         count: statusCounts.remake,
         unreadCount: statusUnreadCounts.remake,
-        tooltip: "리메이크 의뢰 건",
+        tooltip: "출고·디자인 완료 건 리메이크 의뢰",
       },
     ];
   }, [statusCounts, statusUnreadCounts]);

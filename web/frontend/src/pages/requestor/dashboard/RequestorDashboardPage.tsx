@@ -1967,7 +1967,7 @@ export const RequestorDashboardPage = () => {
   })();
 
   // 기공(기공의뢰서) 라인 — dashboard-cards-summary.practiceTransferStats
-  // 뱃지 SSOT: 의뢰 · 수락/거부 · 완료/취소 · 발송 · 추적관리
+  // 뱃지 SSOT: 의뢰 · 수락/거부 · 디자인/취소 · 출고 · 추적관리
   const practiceTransferStats: RequestorDashboardStat[] = (() => {
     const raw =
       cardsSummaryResponse?.success &&
@@ -1999,13 +1999,13 @@ export const RequestorDashboardPage = () => {
         interactive: false,
       },
       {
-        label: "완료/취소",
+        label: "디자인/취소",
         value: `${completedSafe}/${canceledSafe}`,
         icon: ClipboardCheck,
         interactive: false,
       },
       {
-        label: "발송",
+        label: "출고",
         value: String(Number.isFinite(shipping) ? shipping : 0),
         icon: Package,
         interactive: false,

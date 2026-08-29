@@ -8,6 +8,7 @@
 // - 2026-08-16: 공개풀 decline의 labRejectedAt은 미배정 취소 시 「취소」(거부 아님).
 // - 2026-08-16: 자동매칭 재공개(openPool)는 작업취소보다 우선 → 「자동매칭」.
 // - 2026-08-18: 수락 전(의뢰) 내용 수정 게이트 canEditPracticeTransferContent.
+// - 2026-08-29: 보철 디자인 업로드(완료)=작업완료. skip 자동 confirmedAt은 출고로 올리지 않음.
 import {
   isAutoMatchMode,
   toAutoMatchApiFields,
@@ -73,8 +74,14 @@ export const resolvePracticeTransferManufacturerStage = (
     }
     return "취소";
   }
+  // 보철 디자인 파일 업로드(완료) → 작업완료(UI「디자인」).
+  // skipDesignConfirm 자동 confirmedAt은 출고로 올리지 않음 — 치과 수동 생산진행만 출고.
+  if (autoFields.autoMatch?.completed) {
+    const skipDesignConfirm = production?.skipDesignConfirm !== false;
+    if (production?.confirmedAt && !skipDesignConfirm) return "생산진행";
+    return "작업완료";
+  }
   if (production?.confirmedAt) return "생산진행";
-  if (autoFields.autoMatch?.completed) return "작업완료";
   // 자동매칭 공개 풀(작업취소 재공개 포함) — 치과·타 기공소에는 「자동매칭」
   // 레거시 자동매칭 공개 풀 — 치과·타 기공소 「자동매칭」
   if (matchingMode === "auto" && openPool) return "자동매칭";
@@ -108,8 +115,8 @@ export const canEditPracticeTransferContent = (
  * 대시보드 기공 행 버킷.
  * 의뢰←발송완료|수신완료|자동매칭,
  * 수락←의뢰수락 / 거부←거부(수락/거부 카드에 병기),
- * 완료←작업완료 / 취소←작업취소|취소(완료/취소 카드에 병기),
- * 발송←생산진행|포장.발송, 추적관리←추적관리.
+ * 디자인←작업완료 / 취소←작업취소|취소(디자인/취소 카드에 병기),
+ * 출고←생산진행|포장.발송, 추적관리←추적관리.
  */
 export const toPracticeTransferDashboardBucket = (manufacturerStage) => {
   const stage = String(manufacturerStage || "").trim();

@@ -71,4 +71,46 @@ describe("practiceTransferStage pending-accept edit", () => {
       }),
     ).toBe(false);
   });
+
+  test("보철 완료+skipDesignConfirm 자동확정은 작업완료(디자인)", () => {
+    const doc = {
+      status: "active",
+      matchingMode: "direct",
+      targetLabAnchorId: "64a000000000000000000002",
+      requestorDownloadedAt: new Date("2026-08-18T02:00:00.000Z"),
+      autoMatch: { completedAt: new Date("2026-08-29T01:00:00.000Z") },
+      production: {
+        skipDesignConfirm: true,
+        confirmedAt: new Date("2026-08-29T01:00:00.000Z"),
+      },
+    };
+    expect(resolvePracticeTransferManufacturerStage(doc)).toBe("작업완료");
+  });
+
+  test("보철 완료 후 치과 수동 생산진행(skip OFF)은 생산진행(출고)", () => {
+    const doc = {
+      status: "active",
+      matchingMode: "direct",
+      targetLabAnchorId: "64a000000000000000000002",
+      requestorDownloadedAt: new Date("2026-08-18T02:00:00.000Z"),
+      autoMatch: { completedAt: new Date("2026-08-29T01:00:00.000Z") },
+      production: {
+        skipDesignConfirm: false,
+        confirmedAt: new Date("2026-08-29T02:00:00.000Z"),
+      },
+    };
+    expect(resolvePracticeTransferManufacturerStage(doc)).toBe("생산진행");
+  });
+
+  test("보철 완료·미확정은 작업완료", () => {
+    const doc = {
+      status: "active",
+      matchingMode: "direct",
+      targetLabAnchorId: "64a000000000000000000002",
+      requestorDownloadedAt: new Date("2026-08-18T02:00:00.000Z"),
+      autoMatch: { completedAt: new Date("2026-08-29T01:00:00.000Z") },
+      production: { skipDesignConfirm: false },
+    };
+    expect(resolvePracticeTransferManufacturerStage(doc)).toBe("작업완료");
+  });
 });

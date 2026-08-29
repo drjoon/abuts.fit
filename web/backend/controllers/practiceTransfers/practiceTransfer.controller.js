@@ -5673,10 +5673,10 @@ export async function markReceivedPracticeTransferComplete(req, res) {
     let confirmedAt = null;
     let manufacturerStage = "작업완료";
 
-    // skipDesignConfirm: 크라운 완료 후 치과 컨펌 없이 생산진행
+    // skipDesignConfirm: 치과 「생산 진행」CTA 없이 confirmedAt만 찍음.
+    // 뱃지(manufacturerStage)는 보철 디자인 업로드=작업완료(UI「디자인」)로 유지.
     if (skipDesignConfirm) {
       confirmedAt = now;
-      manufacturerStage = "생산진행";
     }
 
     const relatedAfterEnsure = Array.isArray(doc.production?.relatedRequestIds)
@@ -5748,7 +5748,8 @@ export async function markReceivedPracticeTransferComplete(req, res) {
     await doc.save();
 
     const realtimePayload = {
-      action: confirmedAt ? "production-confirmed" : "completed",
+      // skip 자동 confirmedAt이어도 뱃지는 작업완료(디자인) — completed로 알림.
+      action: "completed",
       transferId: String(doc.transferId || "").trim(),
       transferMongoId: String(doc._id || "").trim(),
       targetLabAnchorId: labAnchorId,

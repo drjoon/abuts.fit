@@ -13,6 +13,7 @@
  * 2026-08-16: 작업 파일(designFiles·resultFiles)·생산 메타를 사이드바·전체보기 공통 매핑.
  * 2026-08-19: 기간 필터는 periodToRange(커스텀 시작~끝) + 주문일/치과도착일 앵커.
  * 2026-08-28: 의뢰 파일 — PracticeTransfer.files[] 전부 매핑(STL·PLY·이미지 등). caseInfos.file 단건 폴백만.
+ * 2026-08-29: 상단 뱃지 라벨 완료→디자인·발송→출고. 디자인=보철 디자인 파일 업로드(치과·기공소 공통).
  *
  * related files:
  * - web/frontend/src/pages/practice/components/PracticeRecentTransfersAllModal.tsx
@@ -285,7 +286,8 @@ export const PRACTICE_REMAKE_BADGE_CLASS =
 
 export const canRemakePracticeTransferByStatus = (status: unknown) => {
   const s = String(status || "").trim();
-  return s === "생산진행" || s === "포장.발송";
+  // 디자인(작업완료)=보철 파일 업로드 후. skipDesignConfirm 자동확정도 여기.
+  return s === "작업완료" || s === "생산진행" || s === "포장.발송";
 };
 
 /** 최근전송 상단 6뱃지 — 라벨·집계키·빠른툴팁 SSOT. 취소=작업취소+휴지통(취소·거부). */
@@ -304,9 +306,9 @@ export const PRACTICE_RECENT_STATUS_BADGES = [
   },
   {
     filter: "작업완료",
-    label: "완료",
+    label: "디자인",
     countKey: "completed",
-    tooltip: "기공소에서 기공작업을 완료한 뒤 관련 파일을 업로드한 후",
+    tooltip: "기공소에서 보철 디자인 파일을 업로드한 후(치과·기공소 공통)",
   },
   {
     filter: "취소",
@@ -317,15 +319,15 @@ export const PRACTICE_RECENT_STATUS_BADGES = [
   },
   {
     filter: "포장.발송",
-    label: "발송",
+    label: "출고",
     countKey: "shipping",
-    tooltip: "완료된 기공물을 치과로 발송한 후 (완료 후 1일 경과시)",
+    tooltip: "디자인 완료 후 치과가 생산·출고를 진행한 후",
   },
   {
     filter: "리메이크",
     label: "리메이크",
     countKey: "remake",
-    tooltip: "발송된 기공물을 리메이크 의뢰한 후. 의뢰부터 발송까지 다시 진행됩니다.",
+    tooltip: "출고된 기공물을 리메이크 의뢰한 후. 의뢰부터 출고까지 다시 진행됩니다.",
   },
 ] as const satisfies ReadonlyArray<{
   filter: Exclude<PracticeRecentStatusFilter, "all">;
@@ -413,16 +415,16 @@ export const toStatusLabel = (manufacturerStage: unknown) => {
   return "발송완료";
 };
 
-/** 목록/카드 뱃지 라벨 — 상단 필터(의뢰·수락·완료·취소·발송)와 동일 문구 */
+/** 목록/카드 뱃지 라벨 — 상단 필터(의뢰·수락·디자인·취소·출고)와 동일 문구 */
 export const toStatusBadgeLabel = (status: unknown) => {
   const s = String(status || "").trim();
   if (!s) return "-";
   if (s === "발송완료" || s === "수신완료" || s === "자동매칭" || s === "하청대기") return "의뢰";
   if (s === "의뢰수락" || s === "다운로드완료") return "수락";
-  if (s === "작업완료") return "완료";
+  if (s === "작업완료") return "디자인";
   if (s === "작업취소" || s === "취소") return "취소";
   if (s === "거부") return "거부";
-  if (s === "생산진행" || s === "포장.발송") return "발송";
+  if (s === "생산진행" || s === "포장.발송") return "출고";
   return s;
 };
 

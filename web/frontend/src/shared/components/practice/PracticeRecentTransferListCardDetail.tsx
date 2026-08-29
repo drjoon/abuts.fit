@@ -91,7 +91,7 @@ export function resolvePracticeTransferListToothNumbers(transfer: {
 export function practiceTransferStatusBadgeClass(statusOrLabel: string) {
   const label = toStatusBadgeLabel(statusOrLabel);
   if (label === "취소" || label === "거부") return SEMANTIC_BADGE.dangerSoft;
-  if (label === "수락" || label === "완료" || label === "발송") {
+  if (label === "수락" || label === "디자인" || label === "출고") {
     return SEMANTIC_BADGE.primarySoft;
   }
   if (label === "의뢰" || label === "임시저장") return SEMANTIC_BADGE.neutral;

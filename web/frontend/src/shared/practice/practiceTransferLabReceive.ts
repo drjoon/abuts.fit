@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/components/practice/LabReceiveWorkUploadDialog.tsx
 // change-log:
+// - 2026-08-29: 보철 디자인 업로드=작업완료(디자인). skip 자동 confirmedAt은 출고로 올리지 않음.
 // - 2026-08-28: 심플어벗(치과 재고)은 어벗츠 CNC·디자인 업로드 기대 개수에서 제외.
 // - 2026-08-21: expectedAbutmentDesigns — 치식 CA 개수 우선(헥스 샘플 related 과다 방지).
 // - 2026-08-21: 미제공 CA 목록·상세 한 줄(formatPendingLabAbutmentDetailLine).
@@ -211,17 +212,27 @@ export function getPracticeTransferLabReceiveDisplayStatus(
   ) {
     return "거부";
   }
+  // 보철 디자인 파일 업로드(완료) → 작업완료(UI「디자인」).
+  // skipDesignConfirm 자동 confirmedAt은 출고로 올리지 않음 — backend stage SSOT와 동일.
+  if (
+    transfer.autoMatch?.completed ||
+    transfer.manufacturerStage === "작업완료"
+  ) {
+    const skipDesignConfirm = transfer.production?.skipDesignConfirm !== false;
+    if (
+      (transfer.production?.confirmedAt ||
+        transfer.manufacturerStage === "생산진행") &&
+      !skipDesignConfirm
+    ) {
+      return "생산진행";
+    }
+    return "작업완료";
+  }
   if (
     transfer.production?.confirmedAt ||
     transfer.manufacturerStage === "생산진행"
   ) {
     return "생산진행";
-  }
-  if (
-    transfer.autoMatch?.completed ||
-    transfer.manufacturerStage === "작업완료"
-  ) {
-    return "작업완료";
   }
 
   // 자동매칭 재공개(수락 취소 포함) — workCanceledAt이 남아 있어도 공개 풀이면 「자동매칭」

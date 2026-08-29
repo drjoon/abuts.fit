@@ -1092,16 +1092,16 @@ const toStatusLabel = (manufacturerStage: unknown) => {
   return "발송완료";
 };
 
-/** 목록/카드 뱃지 라벨 — 상단 필터(의뢰·수락·완료·취소·발송)와 동일 문구 */
+/** 목록/카드 뱃지 라벨 — 상단 필터(의뢰·수락·디자인·취소·출고)와 동일 문구 */
 const toStatusBadgeLabel = (status: unknown) => {
   const s = String(status || "").trim();
   if (!s) return "-";
   if (s === "발송완료" || s === "수신완료" || s === "자동매칭" || s === "하청대기") return "의뢰";
   if (s === "의뢰수락" || s === "다운로드완료") return "수락";
-  if (s === "작업완료") return "완료";
+  if (s === "작업완료") return "디자인";
   if (s === "작업취소" || s === "취소") return "취소";
   if (s === "거부") return "거부";
-  if (s === "생산진행" || s === "포장.발송") return "발송";
+  if (s === "생산진행" || s === "포장.발송") return "출고";
   return s;
 };
 
@@ -9091,14 +9091,14 @@ export const PracticeFileTransferPage = ({
 
         <ConfirmDialog
           open={remakeConfirmOpen}
-          title="발송 건을 리메이크 의뢰할까요?"
+          title="출고·디자인 건을 리메이크 의뢰할까요?"
           description={
             <div className="space-y-1">
               <div className="text-sm text-muted-foreground">
                 리메이크비 무료 · 배송비는 차감됩니다
               </div>
               <div className="text-sm text-muted-foreground">
-                의뢰부터 발송까지 다시 진행됩니다.
+                의뢰부터 출고까지 다시 진행됩니다.
               </div>
             </div>
           }
