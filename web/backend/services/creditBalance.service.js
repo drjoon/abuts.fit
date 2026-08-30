@@ -402,12 +402,18 @@ export async function spendRequestCreditAtomic({
     session,
   });
 
+  // 데모 무료의뢰는 PTX 전용. 커스텀어벗 가공 차감은 실크레딧만.
+  const { resolveDemoFreeRequestReserveCap, excludeDemoFreeRequestFromBalance } =
+    await import("../controllers/businesses/business.demoMode.util.js");
+  const demoCap = await resolveDemoFreeRequestReserveCap(anchorObjectId);
+  const spendable = excludeDemoFreeRequestFromBalance(glBalance, demoCap);
+
   const split = allocateSpendFromCreditBuckets({
     amount: resolvedAmount,
-    paidCredit: Number(glBalance?.paidCredit || 0),
-    freeRequestCredit: Number(glBalance?.freeRequestCredit || 0),
-    freeShippingCredit: Number(glBalance?.freeShippingCredit || 0),
-    settlementCredit: Number(glBalance?.settlementCredit || 0),
+    paidCredit: Number(spendable?.paidCredit || 0),
+    freeRequestCredit: Number(spendable?.freeRequestCredit || 0),
+    freeShippingCredit: Number(spendable?.freeShippingCredit || 0),
+    settlementCredit: Number(spendable?.settlementCredit || 0),
     freeOrder: ["freeRequest", "freeShipping"],
   });
 
@@ -500,12 +506,18 @@ export async function spendShippingCreditAtomic({
     session,
   });
 
+  // 데모 무료의뢰는 PTX 전용. 어벗 배송비 차감은 실크레딧만.
+  const { resolveDemoFreeRequestReserveCap, excludeDemoFreeRequestFromBalance } =
+    await import("../controllers/businesses/business.demoMode.util.js");
+  const demoCap = await resolveDemoFreeRequestReserveCap(anchorObjectId);
+  const spendable = excludeDemoFreeRequestFromBalance(glBalance, demoCap);
+
   const split = allocateSpendFromCreditBuckets({
     amount,
-    paidCredit: Number(glBalance?.paidCredit || 0),
-    freeRequestCredit: Number(glBalance?.freeRequestCredit || 0),
-    freeShippingCredit: Number(glBalance?.freeShippingCredit || 0),
-    settlementCredit: Number(glBalance?.settlementCredit || 0),
+    paidCredit: Number(spendable?.paidCredit || 0),
+    freeRequestCredit: Number(spendable?.freeRequestCredit || 0),
+    freeShippingCredit: Number(spendable?.freeShippingCredit || 0),
+    settlementCredit: Number(spendable?.settlementCredit || 0),
     freeOrder: ["freeShipping", "freeRequest"],
   });
 

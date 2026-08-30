@@ -35,8 +35,6 @@ import {
   CREDIT_CHARGE_NOTICE_TITLE,
   CREDIT_PREPAID_BALANCE_LABEL,
 } from "@/shared/legal/creditPrepaidCopy";
-import { CREDIT_DEMO_CHARGE_BLOCKED_BODY } from "@/shared/demo/demoModeCopy";
-import { useDemoMode } from "@/shared/demo/useDemoMode";
 
 type Props = {
   userData: {
@@ -185,7 +183,6 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
   const { toast } = useToast();
   const { token, user } = useAuthStore();
   const { kind: accessKind } = useRequestorBusinessAccess();
-  const { demoMode } = useDemoMode();
 
   const requestorKind =
     accessKind ||
@@ -569,15 +566,6 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
   ]);
 
   const handleCharge = async () => {
-    if (demoMode) {
-      toast({
-        title: "데모 모드에서는 충전할 수 없습니다",
-        description: CREDIT_DEMO_CHARGE_BLOCKED_BODY,
-        variant: "destructive",
-      });
-      return;
-    }
-
     if (!token) {
       toast({
         title: "로그인이 필요합니다",
@@ -745,9 +733,7 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
             {CREDIT_CHARGE_NOTICE_TITLE}
           </div>
           <p className="mt-2 whitespace-pre-line text-xs leading-relaxed text-muted-foreground">
-            {demoMode
-              ? CREDIT_DEMO_CHARGE_BLOCKED_BODY
-              : CREDIT_CHARGE_NOTICE_BODY}
+            {CREDIT_CHARGE_NOTICE_BODY}
           </p>
         </div>
         <div className="grid md:grid-cols-2">
@@ -978,17 +964,13 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
                   type="button"
                   className="h-11 w-full text-base"
                   onClick={handleCharge}
-                  disabled={
-                    demoMode || creatingOrder || Boolean(pendingOrder)
-                  }
+                  disabled={creatingOrder || Boolean(pendingOrder)}
                 >
-                  {demoMode
-                    ? "데모 모드 — 충전 불가"
-                    : pendingOrder
-                      ? "입금 대기중"
-                      : creatingOrder
-                        ? "요청 중..."
-                        : "충전하기"}
+                  {pendingOrder
+                    ? "입금 대기중"
+                    : creatingOrder
+                      ? "요청 중..."
+                      : "충전하기"}
                 </Button>
               </div>
             </div>

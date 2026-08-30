@@ -28,6 +28,10 @@ import {
   computeBusinessCreditBalanceFromLedger,
 } from "./creditBalance.service.js";
 import {
+  excludeDemoFreeRequestFromBalance,
+  resolveDemoFreeRequestReserveCap,
+} from "../controllers/businesses/business.demoMode.util.js";
+import {
   deleteGeneralLedgerCommitJournal,
   getJournalByIdempotencyKey,
   getJournalsByIdempotencyKeys,
@@ -335,6 +339,8 @@ function prepareOneRequestHold({
   freeOrder = ["freeRequest", "freeShipping"],
   actorUserId = null,
   cachedBalance = null,
+  /** 데모 무료의뢰 예약분 — 커스텀어벗 등 실사용 차감 시 제외 */
+  demoFreeRequestReserveCap = 0,
 }) {
   const amt = Math.max(0, Math.round(Number(amount || 0)));
   const requestId = request?._id;
@@ -343,12 +349,16 @@ function prepareOneRequestHold({
   }
 
   const balance = normalizeHoldBalanceBuckets(cachedBalance);
+  const spendable = excludeDemoFreeRequestFromBalance(
+    balance,
+    demoFreeRequestReserveCap,
+  );
   const split = allocateSpendFromCreditBuckets({
     amount: amt,
-    paidCredit: Number(balance?.paidCredit || 0),
-    freeRequestCredit: Number(balance?.freeRequestCredit || 0),
-    freeShippingCredit: Number(balance?.freeShippingCredit || 0),
-    settlementCredit: Number(balance?.settlementCredit || 0),
+    paidCredit: Number(spendable?.paidCredit || 0),
+    freeRequestCredit: Number(spendable?.freeRequestCredit || 0),
+    freeShippingCredit: Number(spendable?.freeShippingCredit || 0),
+    settlementCredit: Number(spendable?.settlementCredit || 0),
     freeOrder,
   });
 
@@ -398,6 +408,7 @@ function prepareOneRequestHold({
     fromFreeRequest: split.fromFreeRequest,
     fromFreeShipping: split.fromFreeShipping,
     fromSettlement: split.fromSettlement,
+    // 잔액 캐시는 전체(데모 포함)에서 차감해 다음 hold에 데모 예약분이 유지되게 한다.
     balanceAfter: applyHoldSplitToBalance(balance, split),
     journal: {
       idempotencyKey,
@@ -496,6 +507,9 @@ async function postOneRequestHold({
         session,
       });
 
+  const demoFreeRequestReserveCap =
+    await resolveDemoFreeRequestReserveCap(requestorAnchorId);
+
   const prepared = prepareOneRequestHold({
     request,
     requestorAnchorId,
@@ -507,6 +521,7 @@ async function postOneRequestHold({
     freeOrder,
     actorUserId,
     cachedBalance: balance,
+    demoFreeRequestReserveCap,
   });
   if (!prepared?.held || !prepared.journal) {
     return prepared;
@@ -754,8 +769,18 @@ export async function holdRequestCreditsOnSubmit({
   const shippingGroupsNewHoldOnly = new Set();
   const lockedAnchors = new Set();
   const balanceByAnchor = new Map();
+  const demoReserveCapByAnchor = new Map();
   let totalHeld = 0;
   const results = [];
+
+  const resolveDemoCap = async (requestorAnchorId) => {
+    if (demoReserveCapByAnchor.has(requestorAnchorId)) {
+      return demoReserveCapByAnchor.get(requestorAnchorId);
+    }
+    const cap = await resolveDemoFreeRequestReserveCap(requestorAnchorId);
+    demoReserveCapByAnchor.set(requestorAnchorId, cap);
+    return cap;
+  };
 
   const takeCachedBalance = async (requestorAnchorId) => {
     if (!lockedAnchors.has(requestorAnchorId)) {
@@ -837,6 +862,7 @@ export async function holdRequestCreditsOnSubmit({
       freeOrder,
       actorUserId,
       cachedBalance: await takeCachedBalance(requestorAnchorId),
+      demoFreeRequestReserveCap: await resolveDemoCap(requestorAnchorId),
     });
     if (!prepared?.held || !prepared.journal) {
       results.push({ kind: holdKind, ...prepared });

@@ -12,7 +12,7 @@ import { postGeneralLedgerJournal } from "../../services/generalLedger.service.j
 import { getBusinessCreditBalanceSnapshot } from "../../services/creditBalance.service.js";
 import { isDuplicateKeyError } from "./business.validation.util.js";
 
-/** 데모 크레딧 초기 충전액(원). 유료/무료와 동일하게 기공·어벗 차감에 사용. */
+/** 데모 크레딧 초기 충전액(원). 치과↔기공소 기공의뢰(PTX) 차감 전용. */
 export const DEMO_CREDIT_AMOUNT = 10_000_000;
 
 const DEMO_GRANT_TYPE = "DEMO_CREDIT";
@@ -355,6 +355,50 @@ export async function getDemoModeState(businessAnchorId) {
     demoMode: Boolean(anchor?.demoMode),
     demoModeExitedAt: anchor?.demoModeExitedAt || null,
     demoModeStartedAt: anchor?.demoModeStartedAt || null,
+  };
+}
+
+/**
+ * 데모 모드에서 무료의뢰 버킷 중 "데모 예약분" 상한(원).
+ * 치과↔기공소 기공의뢰(PTX)만 이 예약을 쓰고, 스토어·커스텀어벗 등은 제외한다.
+ */
+export async function resolveDemoFreeRequestReserveCap(businessAnchorId) {
+  if (!businessAnchorId) return 0;
+  const state = await getDemoModeState(businessAnchorId);
+  if (!state.demoMode || state.demoModeExitedAt) return 0;
+
+  const anchor = await BusinessAnchor.findById(businessAnchorId)
+    .select({ businessNumberNormalized: 1, metadata: 1 })
+    .lean();
+  const businessNumber = resolveDemoGrantBusinessNumber(anchor || {});
+  if (!businessNumber) return DEMO_CREDIT_AMOUNT;
+
+  const grant = await FreeCreditGrant.findOne({
+    type: DEMO_GRANT_TYPE,
+    businessNumber,
+    isOverride: false,
+  })
+    .select({ amount: 1, canceledAt: 1 })
+    .lean();
+  if (!grant || grant.canceledAt) return 0;
+  return Math.max(0, Math.round(Number(grant.amount || DEMO_CREDIT_AMOUNT)));
+}
+
+/**
+ * 잔액 스냅샷에서 데모 예약 무료의뢰분을 제외(스토어·커스텀어벗 등 실사용 차감용).
+ */
+export function excludeDemoFreeRequestFromBalance(balance, demoReserveCap) {
+  const cap = Math.max(0, Math.round(Number(demoReserveCap || 0)));
+  if (!cap || !balance) return balance;
+  const freeRequest = Math.max(
+    0,
+    Math.round(Number(balance.freeRequestCredit || 0)),
+  );
+  const reserved = Math.min(freeRequest, cap);
+  if (reserved <= 0) return balance;
+  return {
+    ...balance,
+    freeRequestCredit: Math.max(0, freeRequest - reserved),
   };
 }
 

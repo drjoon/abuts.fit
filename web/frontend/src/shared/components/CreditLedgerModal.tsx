@@ -157,6 +157,7 @@ import {
   CREDIT_DEMO_BUCKET_LABEL,
   CREDIT_LEDGER_DEMO_BALANCE_HINT,
   CREDIT_LEDGER_DEMO_NOTICE_BODY,
+  CREDIT_LEDGER_DEMO_PERIOD_SPEND_HINT,
 } from "@/shared/demo/demoModeCopy";
 
 type CreditLedgerType =
@@ -2388,7 +2389,7 @@ export const CreditLedgerModal = ({
     ? CREDIT_LEDGER_DEMO_NOTICE_BODY
     : "선택한 기간에 무료로 충전된 금액 합계입니다.";
   const periodSpendTooltip = isDemoMode
-    ? "데모 모드에서 앱 내 차감된 기공·스토어 합계입니다. 실제 기공비·커스텀어벗 생산비는 기공소에 직접 지급해 주세요."
+    ? CREDIT_LEDGER_DEMO_PERIOD_SPEND_HINT
     : "선택한 기간에 지출한 기공료와 스토어 결제 합계입니다.";
 
   const body = (
