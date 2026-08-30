@@ -97,7 +97,8 @@
     - 실패 보고: `NotifyBackendFailure` → `/bg/register-file` status=failed → `request:async-action-failed` 토스트
 - 좌표 변환 (`EspritHttpServer`: `FrontPointX = -FrontPoint.z`):
   - MoveSTL 전: `FinishLineX = -finishLineTopZ`
-  - MoveSTL 후: `finishLineTopX = BackPointX - finishLineTopZ`
+  - MoveSTL/`Chazhi` 시프트: `Math.Abs(FinishLineX) > 1e-6` 일 때 `+= totalDeltaX` (`> 0.001` 금지 — 음수면 시프트 누락)
+  - MoveSTL 후: `finishLineTopX = BackPointX - finishLineTopZ` (= 시프트된 `FinishLineX`)
   - 재해석: `finishLineTopX = BackPointX - FinishLineTopZ + DefaultStlShift`
 - 구현:
   - `TryResolveSharedFinishSplitX` → `TryResolveTwoPhaseSplitLineTargetX`
@@ -105,7 +106,7 @@
   - Finish: `Finish_Front` 끝 = `SharedFinishSplitX`, `Finish_Back` 시작 = `SharedFinishSplitX - GetFinishAdjacentOverlapMm()`
   - Finish_Front StepIncrement도 동일 groove 매핑으로 COM SetProperty (`TrySetCompositeStepIncrement`)
   - `safeBFirstMax`는 seam을 당기지 않는다(로그만)
-  - 금지: `ABUTS_COMPOSITE_STEP_INCREMENT_A` 의존, Finish_Back의 D1.2 반경 앞당김, 고정 0.5mm 겹침, `Middle_Turn`/`Middle_Rough` 재도입, `Back + Z - stlTopZ` 구식 변환
+  - 금지: `ABUTS_COMPOSITE_STEP_INCREMENT_A` 의존, Finish_Back의 D1.2 반경 앞당김, 고정 0.5mm 겹침, `Middle_Turn`/`Middle_Rough` 재도입, `Back + Z - stlTopZ` 구식 변환 (FL 하방 침범)
 
 ### 4.4 Finish none 처리
 
@@ -124,15 +125,20 @@
 - 목적:
   - CAM 직경 8.0 케이스에서 대구경 선행 가공을 제거해 불필요 공정/시간을 줄인다.
 
-### 4.6 Front Face/Back Turn 경계 보정 (2026-07-01)
+### 4.6 Front Face/Back Turn 경계 보정 (2026-07-01, Face offset tip-2 이식 2026-08-30)
 
-- Front Face 종료점 정책(현행 SSOT):
-  - `Face.RightX = FrontPointX + 3.0mm`
-  - 단, 항상 `Face.RightX < Splitline_2` (`Splitline_2 - 0.001mm` 상한 클램프)
-  - `LastAppliedFrontFaceDepthMm = 0.5mm` (`FrontFaceFixedDepthMm`)
-  - 상수: `MainModuleComposite.FrontFaceEndOffsetFromFrontMm`
-  - 구현 위치: `MainModuleComposite.ApplyFrontFaceFixedDepth` / `ClampFaceRightXBelowSplitline2`
-  - 후속 안전 가드(`TryApplyFaceRightEndGuard`) 후에도 Splitline_2 상한을 다시 적용한다.
+- Front Face 시작/종료점 정책(현행 SSOT):
+  - 시작: `Face.StartX = 0` (원점). TopZ는 FACE.prc 유지
+  - 끝: `Face.RightX = FrontPointX + L` (소재/팁 직경 기반)
+  - 클램프: 항상 `Face.RightX ≤ Splitline_2 - 1.0` (= **FinishLine top 상방 2mm**)
+    - `Splitline_2 = finishLineTopX - 1.0` 이므로 margin 1.0 → FL top − 2.0
+  - `L` 산출 (`GetFrontFaceEndOffsetFromFrontMm`):
+    - env `ABUTS_FRONT_FACE_END_OFFSET_MM` 강제값 우선
+    - 아니면 `R_tip`: `ABUTS_MAX_DIAMETER`×0.20 → `HighY`×0.45 → `BarDiameter`×0.20 (각 [1.2, 3.5])
+    - `L = clamp(0.45·R_tip + 0.85, 1.2, 2.5)`, fallback 2.0
+  - `LastAppliedFrontFaceDepthMm = 0.5mm`
+  - 구현: `ApplyFrontFaceFixedDepth` / `ClampFaceRightXBelowSplitline2` / `TryApplyFaceRightEndGuard`
+  - `ABUTS_MAX_DIAMETER`은 `StlFileProcessor`가 request-meta `maxDiameter`로 주입
 
 - Back Turn 시작점/퇴출 정책(현행 SSOT):
   - 시작점은 `FrontPointX` anchor로 통일한다. (`Front_Turn`과 동일 기준)
@@ -157,20 +163,28 @@
 - 실행 초기화 정책:
   - `ResetPerRunState()`에서 `ABUTS_COMPOSITE_ORIENTATION_PROFILE_START_X`를 반드시 clear 한다.
 
-### 4.8 Back_Turn Turning Extend direct 적용 SSOT (2026-07-11)
+### 4.8 Back_Turn Turning Extend direct 적용 SSOT (2026-07-11, trim 개정 2026-08-30)
 
 - 혼동 포인트 정리:
-  - `Turning Extend` 값은 `Tech_Default_Path.xml`(또는 env)에서 주입된 `MainModule.TurningExtend`를 사용한다.
+  - `Turning Extend` 값은 `Tech_Default_Path.xml` `NumData[5]`(또는 env)에서 주입된 `MainModule.TurningExtend`를 사용한다.
   - 코드에서 고정값(예: 6.0)이나 `finishLineMinZ` 계산으로 재override하지 않는다.
+- OD 프로파일 trim (필수 전제):
+  - `TurningFeature_Profile.TurningProfile` trimX = **`BackPointX`(헥스 끝)**.
+  - `FinishLineX`에서 자르면 `EndXValue`가 피니시라인이 되어 `ExtendTurning(4.0)`만으로는
+    예전 Middle_Turn 수준에서 끝나고 헥스 이후까지 못 간다.
+  - Front 구간 제한은 `BuildTurningRangeChain`이 담당한다 (여기서 FinishLineX로 미리 자르지 않음).
 - Back_Turn/ExtendTurning 최종 정책:
   - `BackT`, `ResolveBackTurningExtendForBackTurnRange`, `ExtendTurning` 모두
     `MainModule.TurningExtend` 값을 **direct 적용**한다.
+  - 기대 끝점: `BackPointX + TurningExtend` (+ chamfer rise).
 - 적용 위치(코드 SSOT):
+  - `DentalAddinDecomp/DentalAddin/TurningFeature_Profile.cs` — trimX=`BackPointX`
   - `DentalAddinDecomp/DentalAddin/TurningFeature_Extension.cs`
     - `BackT`, `ExtendTurning`
   - `DentalAddinDecomp/DentalAddin/MainModuleOperations.cs`
     - `ResolveBackTurningExtendForBackTurnRange`
 - 디버깅 기준 로그:
+  - `TurningProfile: trimX=... gateSource=BackPointX(Back_Turn past-hex)`
   - `TurningOp BACK - TurningExtend direct 적용: ... (source=MainModule.TurningExtend)`
   - `BackT: TurningExtend direct 적용 - ... (source=MainModule.TurningExtend)`
   - `ExtendTurning: TurningExtend direct 적용 - ... (source=MainModule.TurningExtend)`

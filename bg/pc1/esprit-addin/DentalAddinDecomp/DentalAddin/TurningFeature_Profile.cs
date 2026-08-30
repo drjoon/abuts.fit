@@ -89,8 +89,16 @@ internal sealed class TurningFeature_Profile
 		double y = default(double);
 		double x = default(double);
 		Point point2 = default(Point);
-		double trimX = (MoveSTL_Module.FinishLineX > 0.001) ? MoveSTL_Module.FinishLineX : MoveSTL_Module.BackPointX;
-		DentalLogger.Log($"TurningProfile: trimX={trimX:F3} (FinishLineX={MoveSTL_Module.FinishLineX:F3}, BackPointX={MoveSTL_Module.BackPointX:F3})");
+		// Back_Turn OD 프로파일 trim SSOT (2026-08-30, tip-2 2e45c94d 복구):
+		// - 3-stage에서 Middle_Turn/BackT 레거시가 제거된 뒤, Back_Turn 소스는 이 Turning 체인 + ExtendTurning 뿐이다.
+		// - FinishLineX에서 자르면 EndXValue=피니시라인이 되어 ExtendTurning(XML TurningExtend=4.0)이
+		//   피니시라인+4mm에서 끝나 예전 Middle_Turn 수준으로 짧아지고 헥스를 못 넘는다.
+		// - 따라서 trim은 BackPointX(헥스 끝) 기준. Front_Turn은 BuildTurningRangeChain이 tip 구간만 자른다.
+		// - ExtendTurning은 Tech_Default_Path.xml NumData[5](=MainModule.TurningExtend)를 BackPointX 뒤에 direct 적용.
+		// 검색: TurningProfile BackPointX trim, Back_Turn extend, rules.md §4.8
+		double trimX = MoveSTL_Module.BackPointX;
+		string trimGateSource = "BackPointX(Back_Turn past-hex)";
+		DentalLogger.Log($"TurningProfile: trimX={trimX:F3} (FinishLineX={MoveSTL_Module.FinishLineX:F3}, BackPointX={MoveSTL_Module.BackPointX:F3}, gateSource={trimGateSource})");
 		for (i = 1; i <= count; i = checked(i + 1))
 		{
 			GraphicObject graphicObject = (GraphicObject)((IFeatureChain)MainModule.tfc).get_Item(i);

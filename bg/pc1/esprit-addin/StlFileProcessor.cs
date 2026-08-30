@@ -291,6 +291,12 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         }
                         TryApplyCompositeFirstPassPercentEnv(requestMeta.tooth);
                         TryApplyCompositeOrientationVectorEnv(requestMeta);
+                        if (requestMeta.maxDiameter > 0.0)
+                        {
+                            Environment.SetEnvironmentVariable(
+                                "ABUTS_MAX_DIAMETER",
+                                requestMeta.maxDiameter.ToString("0.###", CultureInfo.InvariantCulture));
+                        }
                         AppLogger.Log($"StlFileProcessor: request-meta loaded requestId={requestId}, Clinic={requestMeta.clinicName}, Patient={requestMeta.patientName}, Tooth={requestMeta.tooth}, Implant={requestMeta.implantManufacturer}/{requestMeta.implantBrand}/{requestMeta.implantType}, MaxDia={requestMeta.maxDiameter}, ConnDia={requestMeta.connectionDiameter}, CamDia={requestMeta.camDiameter}, WorkType={requestMeta.workType}, Lot={requestMeta.lotNumber}, SerialCode={(_backendSerialCode ?? "")}, RetentionGroove={(_backendRetentionGroove ?? "<null>")}, ManufacturerHexRotation(mode)={(_backendManufacturerHexRotation ?? "<null>")}, HexAppliedDeg={(_backendHexRotationAppliedDeg.HasValue ? _backendHexRotationAppliedDeg.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}");
                         AppLogger.Log($"StlFileProcessor: finishLine topZ={(finishLineTopZ.HasValue ? finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}, minZ={(finishLineMinZ.HasValue ? finishLineMinZ.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}, espritR={(finishLineEspritR.HasValue ? finishLineEspritR.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}, TwoPhase={twoPhase}");
                         if (!_prcManager.ApplyBackendPrcNames((BackendApiClient.RequestMetaCaseInfos)requestMeta, requestId, _backendImplantLabel))
@@ -561,6 +567,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", null);
             Environment.SetEnvironmentVariable("ABUTS_RETENTION_GROOVE", null);
             Environment.SetEnvironmentVariable("ABUTS_CAM_DIAMETER", null);
+            Environment.SetEnvironmentVariable("ABUTS_MAX_DIAMETER", null);
+            Environment.SetEnvironmentVariable("ABUTS_FRONT_FACE_END_OFFSET_MM", null);
             Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_ORIENTATION_VECTOR", null);
             Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_ORIENTATION_PROFILE_LENGTH_MM", null);
             Environment.SetEnvironmentVariable(CompositeOrientationWAxisDegreesEnv, null);
@@ -1222,7 +1230,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 // [SSOT] STL Z → ESPRIT X (MoveSTL 이전)
                 // EspritHttpServer와 동일: FrontPointX = -FrontPoint.z
                 // 따라서 FinishLineX = -finishLineTopZ
-                // (구식 BackX + Z - stlTopZ 는 tip 쪽으로 수 mm 어긋남)
+                // MoveSTL/Chazhi는 Math.Abs(FinishLineX)>1e-6 일 때 += totalDeltaX (음수 시프트 누락 금지)
+                // 금지: BackX + Z - stlTopZ (메시와 불일치 → Splitline_2가 FL 하방 침범)
                 double finishLineEspritX = -finishLineTopZ.Value;
                 DentalAddinReflectionHelper.SetStaticField(moveModuleType, "FinishLineX", finishLineEspritX);
                 AppLogger.Log($"DentalAddin: FinishLineX 변환 - finishLineTopZ:{finishLineTopZ.Value:F4}, formula:X=-Z, backLimitX:{backLimitX:F4}, stlTopZ:{(stlTopZ.HasValue ? stlTopZ.Value.ToString("F4") : "<null>")}(ignored) → FinishLineX:{finishLineEspritX:F4}");
@@ -1390,7 +1399,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         // [SSOT] SharedFinishSplitX
                         //   Front_Rough끝 = Splitline_2 = Finish_Front끝 = Finish_Back시작
                         //   = finishLineTopX - 1.0 (tip 쪽; Z+1 ≡ X-1)
+                        //   finishLineTopX = backX - finishLineTopZ  (MoveSTL 이후, X=-Z)
                         // MainModuleComposite.SharedFinishSplitOffsetFromFinishLineTopMm 과 동일해야 한다.
+                        // 금지: backX + finishLineTopZ - stlTopZ (FL 하방 침범)
                         const double splitOffsetMm = -1.0;
                         double targetZ = finishLineTopZ.Value + 1.0;
                         double topX = backX - finishLineTopZ.Value;
