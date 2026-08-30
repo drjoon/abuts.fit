@@ -2899,6 +2899,9 @@ namespace DentalAddin
 
         public static void ExtendEnd()
         {
+            // FirstPX=0(기계 원점) 기준 연장 방향. FrontPointX와 무관.
+            // RL=1: X>=0 → hex쪽(+X), X<0 → tip쪽. RL=2: CNC X축 반전 시 반대쪽으로 연장.
+            // 검색: FirstPX, rules.md §7
             Point point = FC1.Extremity(espExtremityType.espExtremityEnd);
             Point v = default(Point);
             if (RL == 1.0)

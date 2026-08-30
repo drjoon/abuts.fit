@@ -37,6 +37,10 @@ namespace DentalAddin
 
         public static double FrontStock;
 
+        // ExtendEnd 연장 방향 판정용 기계 원점 X 기준(기본 0). FrontPointX와 무관.
+        // RL=1: X>=FirstPX(0) → hex쪽(+X) 연장, X<0 → tip쪽. CNC X축이 반대면 RL=2가 부호를 뒤집음.
+        // 2026-08-30 감사에서 FrontPointX 대입을 시도했다가 되돌림 — 원점(0) 공식이 정상 가공 SSOT.
+        // 검색: FirstPX, ExtendEnd, rules.md §7
         public static double FirstPX;
 
         public static double BackPointX;
@@ -465,10 +469,8 @@ namespace DentalAddin
                     FinishLineX += totalDeltaX;
                 }
                 LastAppliedMoveDeltaX = totalDeltaX;
-                // FirstPX(첫 포인트/tip쪽 경계 X) SSOT: post-MoveSTL FrontPointX.
-                // 이전에는 선언만 되고 대입이 없어 항상 0으로 남아 ExtendEnd 등에서 원점 기준으로 잘못 비교됨.
-                FirstPX = FrontPointX;
-                DentalLogger.Log($"MoveSTL - 초기 X이동(SpindleSide) dX:{deltaX:0.###} + shift:{stlShift:0.###} = {totalDeltaX:0.###}, FrontPointX:{FrontPointX:0.###}, BackPointX:{BackPointX:0.###}, FinishLineX:{FinishLineX:0.###}, FinishLineTopZ:{FinishLineTopZ:0.###}, FirstPX:{FirstPX:0.###}");
+                // FirstPX는 기계 원점(0) SSOT — FrontPointX로 덮지 않음(rules.md §7).
+                DentalLogger.Log($"MoveSTL - 초기 X이동(SpindleSide) dX:{deltaX:0.###} + shift:{stlShift:0.###} = {totalDeltaX:0.###}, FrontPointX:{FrontPointX:0.###}, BackPointX:{BackPointX:0.###}, FinishLineX:{FinishLineX:0.###}, FinishLineTopZ:{FinishLineTopZ:0.###}");
             }
             else
             {
@@ -498,9 +500,8 @@ namespace DentalAddin
                     FinishLineX += totalDeltaX;
                 }
                 LastAppliedMoveDeltaX = totalDeltaX;
-                // FirstPX(첫 포인트/tip쪽 경계 X) SSOT: post-MoveSTL FrontPointX. (SpindleSide 분기와 동일 처리)
-                FirstPX = FrontPointX;
-                DentalLogger.Log($"MoveSTL - 초기 X이동 dX:{deltaX:0.###} + shift:{stlShift:0.###} = {totalDeltaX:0.###}, FrontPointX:{FrontPointX:0.###}, BackPointX:{BackPointX:0.###}, FinishLineX:{FinishLineX:0.###}, FinishLineTopZ:{FinishLineTopZ:0.###}, FirstPX:{FirstPX:0.###}");
+                // FirstPX는 기계 원점(0) SSOT — FrontPointX로 덮지 않음(rules.md §7).
+                DentalLogger.Log($"MoveSTL - 초기 X이동 dX:{deltaX:0.###} + shift:{stlShift:0.###} = {totalDeltaX:0.###}, FrontPointX:{FrontPointX:0.###}, BackPointX:{BackPointX:0.###}, FinishLineX:{FinishLineX:0.###}, FinishLineTopZ:{FinishLineTopZ:0.###}");
             }
 
             selectionSet.RemoveAll();

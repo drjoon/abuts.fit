@@ -345,7 +345,6 @@
 ### 유지(적용 유지)
 
 - `MoveSTL_Module.LastAppliedMoveDeltaX`: MoveSTL 총 X 이동량 기록. FaceHole/Connection **탐지 로그**의 후보 shift에만 사용.
-- `MoveSTL_Module.FirstPX`: post-MoveSTL `FrontPointX` 대입(이전엔 선언만·항상 0). 소비자 `ExtendEnd`.
 - `TurningFeature_Profile` trim 게이트: `Math.Abs(FinishLineX) > 0.001` 안전망 유지.
   - 양수 샘플에서는 구 게이트와 결과 동일. 음수 FinishLineX(SpindleSide 등)에서만 차이.
   - 실행 로그: `gate=Abs>0.001`, `gateSource=FinishLineX(Abs+positive|Abs-only; legacy>0.001 would miss|BackPointX-fallback)`.
@@ -364,6 +363,8 @@
   - post-MoveSTL로 맞추면 샘플 `-8.630 → 2.365`로 NC/`ResolveFrontPointForNc`가 크게 바뀌어 현재 정상 가공과 충돌.
 - **Rough PRC `BottomZLimit=-2.2`**: 코드 오버라이드 금지(§4.10 유지). `TryShiftRoughBottomZLimitByMoveDelta` 제거.
   - `LastAppliedMoveDeltaX` 보정 시 샘플 `-2.2 → +8.795`로 크게 바뀌어 정상 가공과 충돌.
+- **`FirstPX`**: 기계 원점 **0** 유지. `FrontPointX`와 무관. `ExtendEnd`에서 `X≥0` → hex쪽 연장, `X<0` → tip쪽(RL=2는 CNC X축 반전용).
+  - 감사에서 `FirstPX = FrontPointX` 대입을 넣었다가 사용자 확인으로 되돌림 — 원점(0) 공식이 정상 가공 SSOT.
 
 ## 성능 측정 (PERF)
 
