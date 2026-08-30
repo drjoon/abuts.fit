@@ -3,6 +3,8 @@
 // - web/backend/controllers/cnc/machiningBridge.js
 // - web/backend/controllers/cnc/production.js
 // change-log:
+// - 2026-08-30: RUNNING 자동중단은 PowerOff/Alarm 만. Stop·통신실패 추정 중단은 오탐 위험으로 제거. 사용자 중단은 AbortForUserStop.
+// - 2026-08-30: RUNNING 중 Hi-Link MachineStatusType(PowerOff/Stop/Alarm)·통신 끊김을 감시해 비상정지 등에서 가공중으로 고착되지 않게 한다.
 // - 2026-08-18: 가공마다 storage/{requestId}_{HHmmss}.nc 로 아카이브하고, CNC 전송은 O4000.nc 임시 파일을 사용한다.
 // - 2026-08-07: 정상 완료 후 로컬 큐가 비면 백엔드 auto-trigger를 재요청한다.
 using System;
@@ -576,6 +578,9 @@ public DateTime LastCompletedAtUtc;
 public string LastCompletedRequestId;
 public string LastCompletedFileKey;
 public DateTime LastCompletedRequestAtUtc;
+// 마지막 관측 MachineStatusType (로그 변화 감지)
+public MachineStatusType LastObservedStatus;
+public bool HasLastObservedStatus;
 }
 private static readonly object StateLock = new object();
 private static readonly Dictionary<string, MachineState> MachineStates
@@ -689,6 +694,56 @@ public static void Stop()
 try { _timer?.Dispose(); } catch { }
 _timer = null;
 }
+
+/// <summary>
+/// UI/제어 API 사용자 정지: RUNNING·AwaitingStart 잡을 즉시 해제하고 자동 다음 건을 막는다.
+/// 물리 정지(C_STOP)는 ControlController 가 전송한다.
+/// </summary>
+public static bool AbortForUserStop(string machineId)
+{
+    var mid = (machineId ?? string.Empty).Trim();
+    if (string.IsNullOrEmpty(mid)) return false;
+
+    CncJobItem abortedJob = null;
+    var aborted = false;
+    lock (StateLock)
+    {
+        if (!MachineStates.TryGetValue(mid, out var state) || state == null) return false;
+        if (!state.IsRunning && !state.AwaitingStart && state.CurrentJob == null) return false;
+
+        abortedJob = state.CurrentJob;
+        aborted = true;
+        state.PendingConsumeJobId = abortedJob?.id;
+        state.ConsumeFailCount = 0;
+        state.NextConsumeAttemptUtc = DateTime.MinValue;
+        state.IsRunning = false;
+        state.AwaitingStart = false;
+        state.CurrentJob = null;
+        state.SawBusy = false;
+        state.MockCompletionDueUtc = DateTime.MinValue;
+        state.AwaitingStartSinceUtc = DateTime.MinValue;
+        state.LastAwaitingStartSignalUtc = DateTime.MinValue;
+        state.HadAlarmSinceIdleUtc = DateTime.UtcNow;
+        state.HasLastObservedStatus = false;
+        state.NeedsPostCompleteAutoTrigger = false;
+    }
+
+    if (!aborted) return false;
+
+    if (abortedJob != null)
+    {
+        _ = CncJobQueue.TryRemove(mid, abortedJob.id);
+    }
+
+    Console.WriteLine(
+        "[CncMachining] user-stop abort machine={0} jobId={1} requestId={2} file={3}",
+        mid,
+        abortedJob?.id,
+        abortedJob?.requestId,
+        abortedJob?.fileName);
+    return true;
+}
+
 public static CncJobItem EnqueueFileJob(string machineId, string fileName, string requestId, string bridgePath = null, string s3Key = null, string s3Bucket = null, bool enqueueFront = false, string originalFileName = null, bool paused = true, bool allowAutoStart = false, string source = null)
 {
 var mid = (machineId ?? string.Empty).Trim();
@@ -868,22 +923,7 @@ if (TryGetMachineAlarms(machineId, out var alarmList, out var alarmErr))
 						var completedAt = DateTime.UtcNow;
 						Console.WriteLine("[CncMachining] material exhausted alarm detected; treat as completed machine={0} jobId={1} alarms={2}", machineId, completedJob?.id, alarmJson);
 						_ = Task.Run(() => NotifyMachiningTick(completedJob, machineId, "ALARM", alarmJson));
-						lock (StateLock)
-						{
-							state.PendingConsumeJobId = completedJob?.id;
-							state.ConsumeFailCount = 0;
-							state.NextConsumeAttemptUtc = DateTime.MinValue;
-							state.IsRunning = false;
-							state.AwaitingStart = false;
-							state.SawBusy = false;
-							state.MockCompletionDueUtc = DateTime.MinValue;
-							state.LastCompletedAtUtc = completedAt;
-							state.LastCompletedRequestId = NormalizeRequestId(completedJob?.requestId, completedJob?.fileName, completedJob?.originalFileName);
-							state.LastCompletedFileKey = BuildJobIdentityKey(completedJob?.fileName, completedJob?.originalFileName, completedJob?.bridgePath);
-							state.LastCompletedRequestAtUtc = completedAt;
-							state.NeedsPostCompleteAutoTrigger = true;
-							state.CurrentJob = null;
-						}
+						MarkJobCompletedLocal(state, completedJob, completedAt);
 						Console.WriteLine("[CncMachining] job completed by material alarm machine={0} jobId={1} completedAt={2:o}",
 							machineId, completedJob?.id, completedAt);
 						_ = Task.Run(() => NotifyMachiningCompleted(completedJob, machineId));
@@ -891,49 +931,25 @@ if (TryGetMachineAlarms(machineId, out var alarmList, out var alarmErr))
 						return;
 					}
 
-					var jobId = state.CurrentJob?.id;
-					var shouldSend = true;
-					lock (StateLock)
-					{
-						if (!string.IsNullOrEmpty(jobId) && string.Equals(state.LastMachiningFailJobId, jobId, StringComparison.OrdinalIgnoreCase))
-						{
-							shouldSend = false;
-						}
-					}
-					if (shouldSend)
-					{
-						lock (StateLock)
-						{
-							state.LastMachiningFailJobId = jobId;
-						}
-						_ = Task.Run(() => NotifyMachiningTick(state.CurrentJob, machineId, "ALARM", alarmJson));
-						_ = Task.Run(() => NotifyMachiningFailed(state.CurrentJob, machineId, "alarm", alarmList, "CNC_ALARM_DETECTED"));
-					}
-					// CNC 알람 코드 참고:
-					// - 알람 501 (type=4, no=501): X축 overflow - 제한 범위를 넘는 X축 공구 이동 좌표
-					//   공구가 X축 제한 범위를 벗어나는 좌표로 이동하려고 할 때 발생
-					//   NC 프로그램의 X축 좌표값 검토 필요
 					Console.WriteLine("[CncMachining] machining failed by alarm machine={0} alarms={1}", machineId, alarmJson);
-					var failedJob = state.CurrentJob;
-					lock (StateLock)
-					{
-						state.PendingConsumeJobId = failedJob?.id;
-						state.ConsumeFailCount = 0;
-						state.NextConsumeAttemptUtc = DateTime.MinValue;
-						state.IsRunning = false;
-						state.AwaitingStart = false;
-						state.CurrentJob = null;
-						state.SawBusy = false;
-						state.MockCompletionDueUtc = DateTime.MinValue;
-						state.HadAlarmSinceIdleUtc = DateTime.UtcNow;
-					}
-					_ = CncJobQueue.TryRemove(machineId, failedJob?.id);
+					FailRunningJob(state, machineId, "alarm", alarmList, "CNC_ALARM_DETECTED", alarmJson);
 					return;
 				}
 }
 else
 {
 Console.WriteLine("[CncMachining] alarm read failed machine={0} err={1}", machineId, alarmErr);
+}
+
+// Hi-Link Mode1 GetMachineStatus: None/PowerOff/Run/Stop/Alarm
+// 비상정지·전원차단·통신끊김은 알람 배열만으로는 놓칠 수 있어 status를 별도 감시한다.
+if (TryDetectRunningAbort(machineId, state, out var abortAlarms, out var abortCode, out var abortReason, out var abortPhase))
+{
+	var abortJson = Newtonsoft.Json.JsonConvert.SerializeObject(abortAlarms);
+	Console.WriteLine("[CncMachining] machining failed by machine status machine={0} code={1} reason={2} detail={3}",
+		machineId, abortCode, abortReason, abortJson);
+	FailRunningJob(state, machineId, abortReason, abortAlarms, abortCode, abortJson, abortPhase);
+	return;
 }
 }
 }
@@ -958,21 +974,7 @@ if (mockDone)
 {
 var completedJob = state.CurrentJob;
 var completedAt = DateTime.UtcNow;
-lock (StateLock)
-{
-state.PendingConsumeJobId = completedJob?.id;
-state.ConsumeFailCount = 0;
-state.NextConsumeAttemptUtc = DateTime.MinValue;
-state.IsRunning = false;
-state.AwaitingStart = false;
-state.SawBusy = false;
-state.MockCompletionDueUtc = DateTime.MinValue;
-state.LastCompletedAtUtc = completedAt;
-state.LastCompletedRequestId = NormalizeRequestId(completedJob?.requestId, completedJob?.fileName, completedJob?.originalFileName);
-state.LastCompletedFileKey = BuildJobIdentityKey(completedJob?.fileName, completedJob?.originalFileName, completedJob?.bridgePath);
-state.LastCompletedRequestAtUtc = completedAt;
-state.NeedsPostCompleteAutoTrigger = true;
-}
+MarkJobCompletedLocal(state, completedJob, completedAt);
 Console.WriteLine("[CncMachining] job completed machine={0} jobId={1} completedAt={2:o} minSettleSec={3} maxSettleSec={4}",
     machineId, completedJob?.id, completedAt, Config.CncPostCompleteMinSettleSeconds, Config.CncPostCompleteMaxSettleSeconds);
 _ = Task.Run(() => NotifyMachiningCompleted(completedJob, machineId));
@@ -1039,6 +1041,7 @@ state.ProductCountBefore = prodCountBefore;
 state.SawBusy = true;  // IO_R_YELLOW=0(절삭 중) 이미 확인됐으므로 SawBusy=True 초기화
 state.AwaitingStartSinceUtc = DateTime.MinValue;
 state.LastAwaitingStartSignalUtc = DateTime.MinValue;
+state.HasLastObservedStatus = false;
 }
 Console.WriteLine("[CncMachining] detected start machine={0} jobId={1} slot=O{2} awaitingElapsedMs={3} lastStartSignalAgoMs={4}", machineId, state.CurrentJob?.id, state.CurrentSlot, awaitingSinceMs, lastStartSignalAgoMs);
 _ = Task.Run(() => NotifyMachiningStarted(state.CurrentJob, machineId));
@@ -1411,6 +1414,7 @@ if (Config.MockCncMachining)
         state.ProductCountBefore = 0;
         state.SawBusy = false;
         state.MockCompletionDueUtc = mockStartUtc + mockDuration;
+        state.HasLastObservedStatus = false;
     }
     // MOCK 모드: STARTED tick은 ProcessMachine의 기존 로직에서 1초 간격으로 전송되므로 여기서는 생략
     // (중복 전송으로 인한 rate limit 방지)
@@ -1731,6 +1735,151 @@ private static bool HasMaterialExhaustedAlarm(List<object> alarms)
     catch { }
     return false;
 }
+
+/// <summary>
+/// RUNNING 중 Hi-Link MachineStatusType 으로만 명확한 실패를 판정.
+/// Spec: None=-1, PowerOff=0, Run=1, Stop=2, Alarm=3
+/// Stop/통신 순간 실패는 가공 중 오탐 위험이 있어 자동 중단하지 않는다.
+/// (사용자 중단은 UI Now Playing X → AbortForUserStop)
+/// </summary>
+private static bool TryDetectRunningAbort(
+    string machineId,
+    MachineState state,
+    out List<object> alarms,
+    out string errorCode,
+    out string reason,
+    out string tickPhase)
+{
+    alarms = new List<object>();
+    errorCode = null;
+    reason = null;
+    tickPhase = "ALARM";
+
+    if (!Mode1Api.TryGetMachineStatus(machineId, out var status, out var statusErr))
+    {
+        // -16 등 일시 통신 실패는 RUNNING 유지. 로그만 남긴다.
+        Console.WriteLine("[CncMachining] running status read failed machine={0} err={1}",
+            machineId, statusErr);
+        return false;
+    }
+
+    lock (StateLock)
+    {
+        if (!state.HasLastObservedStatus || state.LastObservedStatus != status)
+        {
+            Console.WriteLine("[CncMachining] running status machine={0} jobId={1} status={2}",
+                machineId, state.CurrentJob?.id, status);
+            state.LastObservedStatus = status;
+            state.HasLastObservedStatus = true;
+        }
+    }
+
+    if (status == MachineStatusType.PowerOff)
+    {
+        errorCode = "CNC_POWER_OFF";
+        reason = "MachineStatusType.PowerOff";
+        tickPhase = "ERROR";
+        alarms.Add(new
+        {
+            type = (short)(-1),
+            no = (short)(0),
+            headType = (short)1,
+            source = "MachineStatusType.PowerOff",
+            message = "장비가 PowerOff 상태입니다.",
+            displayText = "장비가 PowerOff 상태입니다.",
+        });
+        return true;
+    }
+
+    if (status == MachineStatusType.Alarm)
+    {
+        // TryGetMachineAlarms 가 비어 있거나 실패해도 status=Alarm 이면 중단
+        errorCode = "CNC_ALARM_DETECTED";
+        reason = "MachineStatusType.Alarm";
+        tickPhase = "ALARM";
+        alarms.Add(new
+        {
+            type = (short)(-1),
+            no = (short)(-1),
+            headType = (short)1,
+            source = "MachineStatusType.Alarm",
+            message = "장비 상태가 ALARM 입니다.",
+            displayText = "장비 상태가 ALARM 입니다.",
+        });
+        return true;
+    }
+
+    // Run / Stop / None → 자동 중단하지 않음 (완료는 count+1, 사용자 중단은 AbortForUserStop)
+    return false;
+}
+
+private static void MarkJobCompletedLocal(MachineState state, CncJobItem completedJob, DateTime completedAt)
+{
+    lock (StateLock)
+    {
+        state.PendingConsumeJobId = completedJob?.id;
+        state.ConsumeFailCount = 0;
+        state.NextConsumeAttemptUtc = DateTime.MinValue;
+        state.IsRunning = false;
+        state.AwaitingStart = false;
+        state.SawBusy = false;
+        state.MockCompletionDueUtc = DateTime.MinValue;
+        state.LastCompletedAtUtc = completedAt;
+        state.LastCompletedRequestId = NormalizeRequestId(completedJob?.requestId, completedJob?.fileName, completedJob?.originalFileName);
+        state.LastCompletedFileKey = BuildJobIdentityKey(completedJob?.fileName, completedJob?.originalFileName, completedJob?.bridgePath);
+        state.LastCompletedRequestAtUtc = completedAt;
+        state.NeedsPostCompleteAutoTrigger = true;
+        state.CurrentJob = null;
+        state.HasLastObservedStatus = false;
+    }
+}
+
+private static void FailRunningJob(
+    MachineState state,
+    string machineId,
+    string reason,
+    List<object> alarms,
+    string errorCode,
+    string alarmJson,
+    string tickPhase = "ALARM")
+{
+    var jobId = state.CurrentJob?.id;
+    var shouldSend = true;
+    lock (StateLock)
+    {
+        if (!string.IsNullOrEmpty(jobId) && string.Equals(state.LastMachiningFailJobId, jobId, StringComparison.OrdinalIgnoreCase))
+        {
+            shouldSend = false;
+        }
+    }
+    if (shouldSend)
+    {
+        lock (StateLock)
+        {
+            state.LastMachiningFailJobId = jobId;
+        }
+        var job = state.CurrentJob;
+        _ = Task.Run(() => NotifyMachiningTick(job, machineId, tickPhase ?? "ALARM", alarmJson));
+        _ = Task.Run(() => NotifyMachiningFailed(job, machineId, reason, alarms, errorCode));
+    }
+
+    var failedJob = state.CurrentJob;
+    lock (StateLock)
+    {
+        state.PendingConsumeJobId = failedJob?.id;
+        state.ConsumeFailCount = 0;
+        state.NextConsumeAttemptUtc = DateTime.MinValue;
+        state.IsRunning = false;
+        state.AwaitingStart = false;
+        state.CurrentJob = null;
+        state.SawBusy = false;
+        state.MockCompletionDueUtc = DateTime.MinValue;
+        state.HadAlarmSinceIdleUtc = DateTime.UtcNow;
+        state.HasLastObservedStatus = false;
+    }
+    _ = CncJobQueue.TryRemove(machineId, failedJob?.id);
+}
+
 private static bool TryGetMachineAlarms(string machineId, out List<object> alarms, out string error)
 {
     alarms = new List<object>();
@@ -1767,6 +1916,30 @@ private static bool TryGetMachineAlarms(string machineId, out List<object> alarm
         }
         if (!anySuccess)
         {
+            // 알람 배열 읽기 전부 실패해도 status=Alarm 이면 합성 알람으로 승격
+            // PowerOff/Alarm 은 TryDetectRunningAbort 가 처리 (Stop/통신실패는 자동 중단하지 않음)
+            if (Mode1Api.TryGetMachineStatus(machineId, out var statusWhenAlarmFailed, out var statusWhenAlarmFailedErr))
+            {
+                if (statusWhenAlarmFailed == MachineStatusType.Alarm)
+                {
+                    anySuccess = true;
+                    Console.WriteLine("[CncMachining] alarm read all failed; status fallback machine={0} status={1}", machineId, statusWhenAlarmFailed);
+                    alarms.Add(new
+                    {
+                        type = (short)(-1),
+                        no = (short)(-1),
+                        headType = (short)1,
+                        source = "MachineStatusType.Alarm",
+                        message = "장비 상태가 ALARM 입니다.",
+                        displayText = "장비 상태가 ALARM 입니다.",
+                    });
+                    return true;
+                }
+            }
+            else if (!string.IsNullOrWhiteSpace(statusWhenAlarmFailedErr))
+            {
+                Console.WriteLine("[CncMachining] alarm+status read failed machine={0} alarmErr={1} statusErr={2}", machineId, lastErr, statusWhenAlarmFailedErr);
+            }
             error = lastErr;
             return false;
         }

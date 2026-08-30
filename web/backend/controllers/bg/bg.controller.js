@@ -971,6 +971,11 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
           }
         }
         updateData["productionSchedule.actualCamComplete"] = now;
+        // CAM 재생성 블러(GENERATING) 해제
+        updateData["productionSchedule.ncPreload"] = {
+          status: "NONE",
+          updatedAt: now,
+        };
 
         // 승인(의뢰 -> CAM) 경로에서 생성된 NC일 때만 단계를 CAM으로 승격한다.
         // 의뢰 단계의 "재생성"(강제 재처리)로 생성된 NC는 단계를 자동 전환하지 않는다.
@@ -1086,6 +1091,13 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
       updateData[`caseInfos.reviewByStage.${stageKey}.reason`] =
         String(metadata?.error || "").trim() ||
         `백그라운드 작업 실패 (${sourceStep})`;
+      if (sourceStep === "3-nc") {
+        // CAM 생성 실패 시「CAM 생성 중」블러 해제
+        updateData["productionSchedule.ncPreload"] = {
+          status: "NONE",
+          updatedAt: now,
+        };
+      }
     }
   }
 

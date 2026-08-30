@@ -325,7 +325,10 @@ export async function rebalanceProductionQueuesInternal({
       }
       const update = { $set };
       if (needsEspritRetrigger) {
-        $set["productionSchedule.ncPreload"] = { status: "NONE" };
+        $set["productionSchedule.ncPreload"] = {
+          status: "GENERATING",
+          updatedAt: new Date(),
+        };
         update.$unset = { "caseInfos.ncFile": 1 };
         const key = `${materialDia}|${diameterGroup || ""}`;
         if (!espritRetriggerByDiameter.has(key)) {
@@ -806,7 +809,10 @@ export async function moveProductionQueueRequest(req, res) {
 
     const $set = {
       "productionSchedule.assignedMachine": toMachineId,
-      "productionSchedule.ncPreload": { status: "NONE" },
+      "productionSchedule.ncPreload": {
+        status: "GENERATING",
+        updatedAt: new Date(),
+      },
       // express 「빠른 가공 재배치」뱃지와 분리 (manualMachineMove만 기록)
       "productionSchedule.manualMachineMove": moveMeta,
       assignedMachine: toMachineId,

@@ -61,7 +61,10 @@ export async function clearNcAndForceEspritRetrigger({
     (Number.isFinite(dia) && dia > 0 ? inferDiameterGroupFromValue(dia) : "");
 
   const $set = {
-    "productionSchedule.ncPreload": { status: "NONE" },
+    "productionSchedule.ncPreload": {
+      status: "GENERATING",
+      updatedAt: new Date(),
+    },
   };
   if (Number.isFinite(dia) && dia > 0) {
     $set["productionSchedule.diameter"] = dia;

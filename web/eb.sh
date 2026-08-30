@@ -63,22 +63,52 @@ command -v "$EB_CMD" >/dev/null 2>&1 || error "Elastic Beanstalk CLI(eb)가 설�
 
 detect_eb_environment_name() {
   local env_name=""
+  local verified=""
 
-  # 1) 현재 선택된 EB 환경에서 직접 조회
-  env_name="$( (cd "$WEB_DIR" && "$EB_CMD" status 2>/dev/null) | awk -F': ' '/Environment details for:/{print $2; exit}')"
+  # 1) config.yml의 main branch-defaults (브랜치와 무관한 SSOT)
+  #    형제 키(indent 2)만 main 블록을 종료 — nested environment/group_suffix는 유지
+  env_name="$(awk '
+    /^branch-defaults:/ { in_bd=1; next }
+    /^global:/ { in_bd=0 }
+    in_bd && /^  main:/ { in_main=1; next }
+    in_bd && in_main && /^  [^ ]/ { in_main=0 }
+    in_main && /^[[:space:]]+environment:/ {
+      sub(/^[^:]+:[[:space:]]*/, "")
+      gsub(/[[:space:]]+$/, "")
+      print
+      exit
+    }
+  ' "$WEB_DIR/.elasticbeanstalk/config.yml")"
+
+  # 2) fallback: branch-defaults의 첫 environment
+  if [[ -z "$env_name" ]]; then
+    env_name="$(awk '/^branch-defaults:/, /^global:/' "$WEB_DIR/.elasticbeanstalk/config.yml" | awk -F': ' '/^[[:space:]]+environment:/{print $2; exit}')"
+  fi
+
+  # 3) 환경명이 있으면 명시적으로 status 조회 (현재 git 브랜치에 default 없어도 OK)
   if [[ -n "$env_name" ]]; then
+    verified="$( (cd "$WEB_DIR" && "$EB_CMD" status "$env_name" 2>/dev/null) | awk -F': ' '/Environment details for:/{print $2; exit}')"
+    if [[ -n "$verified" ]]; then
+      printf '%s' "$verified"
+      return 0
+    fi
     printf '%s' "$env_name"
     return 0
   fi
 
-  # 2) fallback: .elasticbeanstalk/config.yml의 branch-defaults에서 추출
-  env_name="$(awk '/^branch-defaults:/, /^global:/' "$WEB_DIR/.elasticbeanstalk/config.yml" | awk -F': ' '/^[[:space:]]+environment:/{print $2; exit}')"
+  # 4) last resort: branch-defaults에 매핑된 브랜치에서만 동작
+  env_name="$( (cd "$WEB_DIR" && "$EB_CMD" status 2>/dev/null) | awk -F': ' '/Environment details for:/{print $2; exit}')"
   printf '%s' "$env_name"
 }
 
 get_remote_setenv_hash() {
+  local env_name="${1:-}"
   local printenv_output=""
-  if ! printenv_output="$(cd "$WEB_DIR" && "$EB_CMD" printenv 2>/dev/null)"; then
+  local printenv_cmd=("$EB_CMD" printenv)
+  if [[ -n "$env_name" ]]; then
+    printenv_cmd+=("$env_name")
+  fi
+  if ! printenv_output="$(cd "$WEB_DIR" && "${printenv_cmd[@]}" 2>/dev/null)"; then
     printf ''
     return 0
   fi
@@ -173,13 +203,11 @@ ensure_immutable_deploy_options() {
 
 EB_ENV_NAME="$(detect_eb_environment_name)"
 if [[ -z "$EB_ENV_NAME" ]]; then
-  warn "EBS 환경명을 자동 감지하지 못했습니다. 해시 파일을 모드 단위로 사용합니다."
-  ENV_HASH_FILE="$PARENT_DIR/.eb_setenv_${ENV_MODE}.sha"
-else
-  info "대상 EBS 환경: $EB_ENV_NAME"
-  ENV_NAME_SLUG="$(printf '%s' "$EB_ENV_NAME" | tr -cs '[:alnum:]._-' '_')"
-  ENV_HASH_FILE="$PARENT_DIR/.eb_setenv_${ENV_MODE}_${ENV_NAME_SLUG}.sha"
+  error "EBS 환경명을 자동 감지하지 못했습니다. .elasticbeanstalk/config.yml의 branch-defaults.main.environment를 확인하세요."
 fi
+info "대상 EBS 환경: $EB_ENV_NAME (git 브랜치와 무관하게 명시 지정)"
+ENV_NAME_SLUG="$(printf '%s' "$EB_ENV_NAME" | tr -cs '[:alnum:]._-' '_')"
+ENV_HASH_FILE="$PARENT_DIR/.eb_setenv_${ENV_MODE}_${ENV_NAME_SLUG}.sha"
 
 restore_backend_node_modules() {
   if [[ -d "$BACKEND_NODE_MODULES_BACKUP_DIR" && ! -d "$BACKEND_NODE_MODULES_DIR" ]]; then
@@ -313,7 +341,7 @@ if [[ -f "$ENV_HASH_FILE" ]]; then
   PREV_ENV_HASH="$(cat "$ENV_HASH_FILE" | tr -d '\n' || true)"
 fi
 
-REMOTE_ENV_HASH="$(get_remote_setenv_hash)"
+REMOTE_ENV_HASH="$(get_remote_setenv_hash "$EB_ENV_NAME")"
 if [[ -n "$REMOTE_ENV_HASH" ]]; then
   info "원격 EBS setenv 해시 확인: ${REMOTE_ENV_HASH:0:12}..."
 else
@@ -332,7 +360,8 @@ if [[ -z "$REMOTE_ENV_HASH" || "$CORE_ENV_HASH" != "$REMOTE_ENV_HASH" ]]; then
 
   # 전체 payload가 4KB 이하일 때 단일 setenv가 안정적이며
   # config deploy/restart 횟수를 줄여 가용성을 높입니다.
-  (cd "$WEB_DIR" && "$EB_CMD" setenv --timeout "$EB_CLI_TIMEOUT_MINUTES" "${ENV_ARGS[@]}") || error "환경변수 설정 실패"
+  # -e 로 환경 명시: feature 브랜치에 branch-defaults가 없어도 동작
+  (cd "$WEB_DIR" && "$EB_CMD" setenv -e "$EB_ENV_NAME" --timeout "$EB_CLI_TIMEOUT_MINUTES" "${ENV_ARGS[@]}") || error "환경변수 설정 실패"
 
   printf '%s' "$CORE_ENV_HASH" > "$ENV_HASH_FILE"
 else
@@ -344,11 +373,9 @@ else
 fi
 
 # 1. 앱 배포 (predeploy 훅에서 npm install 실행됨)
-if [[ -n "$EB_ENV_NAME" ]]; then
-  ensure_immutable_deploy_options "$EB_ENV_NAME"
-fi
+ensure_immutable_deploy_options "$EB_ENV_NAME"
 
-info "EB 배포 (timeout ${EB_CLI_TIMEOUT_MINUTES}m)"
+info "EB 배포 → $EB_ENV_NAME (timeout ${EB_CLI_TIMEOUT_MINUTES}m)"
 if [[ -d "$BACKEND_NODE_MODULES_DIR" ]]; then
   info "EB CLI 패키징 RecursionError 방지를 위해 backend/node_modules 임시 이동"
   rm -rf "$BACKEND_NODE_MODULES_BACKUP_DIR" || true
@@ -360,7 +387,8 @@ if [[ -d "$FRONTEND_NODE_MODULES_DIR" ]]; then
   mv "$FRONTEND_NODE_MODULES_DIR" "$FRONTEND_NODE_MODULES_BACKUP_DIR"
 fi
 
-(cd "$WEB_DIR" && "$EB_CMD" deploy --label "$TIMESTAMP" --message "Deploy $TIMESTAMP ($ENV_MODE)" --timeout "$EB_CLI_TIMEOUT_MINUTES") || error "eb deploy 실패"
+# environment_name 명시: 현재 git 브랜치에 branch-defaults가 없어도 배포 가능
+(cd "$WEB_DIR" && "$EB_CMD" deploy "$EB_ENV_NAME" --label "$TIMESTAMP" --message "Deploy $TIMESTAMP ($ENV_MODE)" --timeout "$EB_CLI_TIMEOUT_MINUTES") || error "eb deploy 실패"
 
 restore_backend_node_modules
 

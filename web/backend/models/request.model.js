@@ -1003,7 +1003,16 @@ const requestSchema = new mongoose.Schema(
       ncPreload: {
         status: {
           type: String,
-          enum: ["NONE", "UPLOADING", "READY", "FAILED"],
+          // GENERATING: Esprit NC 재생성 중(프론트「CAM 생성 중」블러)
+          // CANCELLED: 생성 중단 — NC 없어도 블러 해제
+          enum: [
+            "NONE",
+            "GENERATING",
+            "CANCELLED",
+            "UPLOADING",
+            "READY",
+            "FAILED",
+          ],
           default: "NONE",
         },
         programNo: Number,

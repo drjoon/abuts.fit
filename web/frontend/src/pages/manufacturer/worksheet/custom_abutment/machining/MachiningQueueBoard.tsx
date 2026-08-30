@@ -1,4 +1,10 @@
 // change-log:
+// - 2026-08-30: Now Playing X → 가공 중단(브리지 stop + cancel).
+// - 2026-08-30: 상단 CNC Alert 뱃지 클릭 시 알람 상세 모달 표시.
+// - 2026-08-29: BG 완료 후 열린 프리뷰 — NC/filled만 선택 무효화 후 갱신(STL 불필요 재다운로드 방지).
+// - 2026-08-29: 큐→프리뷰 오픈 시 forceRefresh 제거 — IndexedDB STL/NC 캐시 재사용.
+// - 2026-08-29: 예약 관리·Next Up「생성 중단」— cancel-regeneration API.
+// - 2026-08-29: 예약 관리 목록에서 CAM(NC) 재생성 — NC 제거·「CAM 생성 중」블러.
 // - 2026-08-26: 큐→프리뷰 ncFile에 uploadedAt/fileSize/materialDiameter 전달(버전 캐시·#521 검증용).
 // - 2026-08-24: 장비 상태 갱신 뱃지 — 직경별 건수 옆(leadingAddon)으로 이동.
 // - 2026-08-24: 상단 헤더 — 진행중 의뢰·직경 카드(좌) + 상태·액션 버튼(우) 한 행. REAL 뱃지 제거.
@@ -19,6 +25,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/usePreviewLoader.ts
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers.ts
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/components/ExpressRebalanceAlertModal.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/components/MachiningAlertModal.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/components/MachiningPriorityRulesModal.tsx
 // - web/backend/controllers/requests/expressDeadlineRebalance.utils.js
 // - web/backend/controllers/requests/machiningPriorityRules.js
@@ -65,12 +72,24 @@ import { CncMaterialModal } from "@/pages/manufacturer/equipment/cnc/components/
 import { useManUpload } from "@/pages/manufacturer/equipment/cnc/hooks/useManUpload";
 import { MachiningRequestLabel } from "./components/MachiningRequestLabel";
 import { ExpressRebalanceAlertModal } from "./components/ExpressRebalanceAlertModal";
+import { MachiningAlertModal } from "./components/MachiningAlertModal";
 import { MachiningPriorityRulesModal } from "./components/MachiningPriorityRulesModal";
 import { buildLabelExtraProps } from "./utils/label";
 import { PreviewModal } from "@/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal";
 import { usePreviewLoader } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/usePreviewLoader";
 import { useRequestFileHandlers } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers";
-import type { ManufacturerRequest } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
+import {
+  resolveFilledStlFile,
+  type ManufacturerRequest,
+} from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
+import {
+  markNcRegenerationPending,
+  consumeNcRegenerationPending,
+} from "@/pages/manufacturer/worksheet/custom_abutment/utils/regenerationPending";
+import {
+  deleteCncProgramCache,
+  invalidateRequestPreviewCaches,
+} from "@/shared/files/fileBlobCache";
 import { WorksheetQueueSummary } from "@/shared/ui/dashboard/WorksheetQueueSummary";
 import type { DiameterBucketKey } from "@/shared/ui/dashboard/WorksheetDiameterQueueBar";
 
@@ -199,6 +218,12 @@ export const MachiningQueueBoard = ({
   const [siOpen, setSiOpen] = useState(false);
   const [siFetching, setSiFetching] = useState(false);
   const [anodizingOffTriggering, setAnodizingOffTriggering] = useState(false);
+  const [playlistRegeneratingIds, setPlaylistRegeneratingIds] = useState<
+    Set<string>
+  >(() => new Set());
+  const [playlistCancellingIds, setPlaylistCancellingIds] = useState<
+    Set<string>
+  >(() => new Set());
   const [, setSearchParams] = useSearchParams();
 
   const [camPreviewOpen, setCamPreviewOpen] = useState(false);
@@ -377,6 +402,7 @@ export const MachiningQueueBoard = ({
     handleAddMaterial,
     rollbackRequestInQueue,
     approveMachiningFromRollback,
+    stopNowPlayingMachining,
     machiningAlerts,
     clearMachiningAlerts,
     expressRebalanceAlert,
@@ -385,8 +411,15 @@ export const MachiningQueueBoard = ({
 
   const [expressRebalanceModalOpen, setExpressRebalanceModalOpen] =
     useState(false);
+  const [machiningAlertModalOpen, setMachiningAlertModalOpen] = useState(false);
   const [priorityRulesModalOpen, setPriorityRulesModalOpen] = useState(false);
   const lastAutoOpenedExpressRebalanceIdRef = useRef<string>("");
+
+  useEffect(() => {
+    if (machiningAlerts.length === 0) {
+      setMachiningAlertModalOpen(false);
+    }
+  }, [machiningAlerts.length]);
 
   useEffect(() => {
     const hasAlert =
@@ -415,6 +448,118 @@ export const MachiningQueueBoard = ({
       if (!open) clearExpressRebalanceAlert();
     },
     [clearExpressRebalanceAlert],
+  );
+
+  const cancelCamGeneration = useCallback(
+    async (requestIdRaw: string) => {
+      const requestId = String(requestIdRaw || "").trim();
+      if (!requestId) return;
+      if (!token) {
+        toast({
+          title: "실패",
+          description: "로그인이 필요합니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (playlistCancellingIds.has(requestId)) return;
+
+      setPlaylistCancellingIds((prev) => {
+        const next = new Set(prev);
+        next.add(requestId);
+        return next;
+      });
+
+      try {
+        const controller = new AbortController();
+        const timeoutRef = window.setTimeout(() => controller.abort(), 20000);
+        let res: Response;
+        try {
+          res = await fetch(
+            `/api/requests/by-request/${encodeURIComponent(requestId)}/nc-file/cancel-regeneration`,
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({}),
+              signal: controller.signal,
+            },
+          );
+        } finally {
+          window.clearTimeout(timeoutRef);
+        }
+        const body: any = await res.json().catch(() => ({}));
+        if (!res.ok || body?.success === false) {
+          toast({
+            title: "생성 중단 실패",
+            description:
+              body?.message ||
+              body?.error ||
+              "CAM 생성 중단에 실패했습니다.",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        consumeNcRegenerationPending(requestId);
+        setPlaylistJobs((prev) =>
+          (Array.isArray(prev) ? prev : []).map((j) => {
+            const rid = String(j.requestId || j.id || "").trim();
+            if (rid !== requestId) return j;
+            return {
+              ...j,
+              hasNc: false,
+              s3Key: "",
+              s3Bucket: "",
+              bridgePath: "",
+              ncPreloadStatus: "CANCELLED",
+            };
+          }),
+        );
+        window.dispatchEvent(
+          new CustomEvent("nc-regeneration-cancelled", {
+            detail: {
+              requestId,
+              requestMongoId: String(body?.data?.request?._id || "").trim(),
+              ncCleared: true,
+            },
+          }),
+        );
+        toast({
+          title: "생성 중단",
+          description: "CAM 생성을 중단하고 NC를 삭제했습니다.",
+        });
+        const mid = String(playlistMachineId || "").trim();
+        if (mid) {
+          void loadProductionQueueForMachine(mid);
+        }
+      } catch (err: any) {
+        const isAbort = String(err?.name || "") === "AbortError";
+        toast({
+          title: "생성 중단 실패",
+          description: isAbort
+            ? "중단 요청 시간이 초과되었습니다. 잠시 후 다시 시도해주세요."
+            : err?.message || "CAM 생성 중단에 실패했습니다.",
+          variant: "destructive",
+        });
+      } finally {
+        setPlaylistCancellingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(requestId);
+          return next;
+        });
+      }
+    },
+    [
+      token,
+      toast,
+      playlistCancellingIds,
+      setPlaylistJobs,
+      playlistMachineId,
+      loadProductionQueueForMachine,
+    ],
   );
 
   const decodeNcText = useCallback((buffer: ArrayBuffer) => {
@@ -477,11 +622,29 @@ export const MachiningQueueBoard = ({
       const openReq = camPreviewFiles?.request as ManufacturerRequest | undefined;
       const openRid = String(openReq?.requestId || "").trim();
       if (!requestId || !openRid || requestId !== openRid || !openReq) return;
-      void handleOpenPreview(openReq, {
-        forceRefresh: true,
-        openOnlyIfAlreadyOpen: true,
-        silent: true,
-      });
+      void (async () => {
+        const camS3Key = String(
+          resolveFilledStlFile(openReq?.caseInfos)?.s3Key || "",
+        ).trim();
+        const ncS3Key = String(openReq?.caseInfos?.ncFile?.s3Key || "").trim();
+        if (sourceStep === "2-filled") {
+          await invalidateRequestPreviewCaches({
+            camS3Key: camS3Key || null,
+            ncS3Key: ncS3Key || null,
+            requestMongoId: String(openReq?._id || "").trim(),
+            requestId,
+          });
+        } else {
+          await invalidateRequestPreviewCaches({
+            ncS3Key: ncS3Key || null,
+          });
+        }
+        void handleOpenPreview(openReq, {
+          forceRefresh: true,
+          openOnlyIfAlreadyOpen: true,
+          silent: true,
+        });
+      })();
     });
     return () => {
       if (typeof unsub === "function") unsub();
@@ -702,7 +865,9 @@ export const MachiningQueueBoard = ({
         })(),
       } as unknown as ManufacturerRequest;
 
-      await handleOpenPreview(previewReq, { forceRefresh: true });
+      // forceRefresh 금지: 매번 IndexedDB를 건너뛰고 STL/NC를 재다운로드한다.
+      // 큐 스냅샷 보강은 usePreviewLoader의 full-request enrich가 담당한다.
+      await handleOpenPreview(previewReq);
     },
     [handleOpenPreview, toast],
   );
@@ -1439,22 +1604,23 @@ export const MachiningQueueBoard = ({
             </button>
           ) : null}
           {machiningAlerts.length > 0 ? (
-            <div
-              className="flex items-center gap-1 rounded-lg border border-destructive-muted bg-destructive-soft px-2 py-1 text-[11px] font-semibold text-destructive"
-              title={machiningAlerts
-                .slice(0, 3)
-                .map(
-                  (it: any) =>
-                    `${it.machineId}${it.requestId ? ` / ${it.requestId}` : ""}${it.errorCode ? ` (${it.errorCode})` : ""}`,
-                )
-                .join("\n")}
-            >
-              <AlertTriangle className="h-3.5 w-3.5" />
-              <span>Alert {machiningAlerts.length}</span>
+            <div className="flex items-center gap-1 rounded-lg border border-destructive-muted bg-destructive-soft px-2 py-1 text-[11px] font-semibold text-destructive">
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 hover:underline"
+                onClick={() => setMachiningAlertModalOpen(true)}
+                title="CNC 알람 상세 보기"
+              >
+                <AlertTriangle className="h-3.5 w-3.5" />
+                <span>Alert {machiningAlerts.length}</span>
+              </button>
               <button
                 type="button"
                 className="inline-flex h-4 w-4 items-center justify-center rounded text-destructive hover:bg-destructive-soft"
-                onClick={() => clearMachiningAlerts()}
+                onClick={() => {
+                  clearMachiningAlerts();
+                  setMachiningAlertModalOpen(false);
+                }}
                 title="알람 뱃지 지우기"
               >
                 <X className="h-3 w-3" />
@@ -1656,11 +1822,18 @@ export const MachiningQueueBoard = ({
               onMoveNextUpToMachine={(payload) => {
                 void moveNextUpToMachine(payload);
               }}
+              onCancelCamGeneration={(requestId) => {
+                void cancelCamGeneration(requestId);
+              }}
+              cancellingCamRequestIds={playlistCancellingIds}
               onRollbackCompleted={(requestId, mid) => {
                 void rollbackRequestInQueue(mid, requestId);
               }}
               onApproveFromRollback={(requestMongoId) => {
                 void approveMachiningFromRollback(requestMongoId);
+              }}
+              onStopNowPlaying={(mid) => {
+                void stopNowPlayingMachining(mid);
               }}
               onOpenCompleted={(mid, name) => {
                 setCompletedModalMachineId(String(mid || "").trim());
@@ -1861,8 +2034,149 @@ export const MachiningQueueBoard = ({
         jobs={playlistJobs}
         readOnly={false}
         deleteVariant="worksheet"
+        regeneratingJobIds={playlistRegeneratingIds}
+        cancellingJobIds={playlistCancellingIds}
         onApproveFromRollback={(requestMongoId) => {
           void approveMachiningFromRollback(requestMongoId);
+        }}
+        onCancelCamGeneration={(jobId) => {
+          const job = (Array.isArray(playlistJobs) ? playlistJobs : []).find(
+            (j) => j.id === jobId,
+          );
+          const requestId = String(
+            job?.requestId || job?.id || jobId || "",
+          ).trim();
+          if (!requestId) return;
+          void cancelCamGeneration(requestId);
+        }}
+        onRegenerateCam={(jobId) => {
+          void (async () => {
+            if (!token) {
+              toast({
+                title: "실패",
+                description: "로그인이 필요합니다.",
+                variant: "destructive",
+              });
+              return;
+            }
+            const mid = String(playlistMachineId || "").trim();
+            const job = (Array.isArray(playlistJobs) ? playlistJobs : []).find(
+              (j) => j.id === jobId,
+            );
+            const requestId = String(
+              job?.requestId || job?.id || jobId || "",
+            ).trim();
+            if (!requestId) {
+              toast({
+                title: "실패",
+                description: "requestId가 없어 CAM 재생성을 진행할 수 없습니다.",
+                variant: "destructive",
+              });
+              return;
+            }
+            if (playlistRegeneratingIds.has(requestId)) return;
+
+            setPlaylistRegeneratingIds((prev) => {
+              const next = new Set(prev);
+              next.add(requestId);
+              return next;
+            });
+
+            try {
+              const controller = new AbortController();
+              const timeoutRef = window.setTimeout(
+                () => controller.abort(),
+                20000,
+              );
+              let res: Response;
+              try {
+                res = await fetch(
+                  `/api/requests/by-request/${encodeURIComponent(requestId)}/nc-file/regenerate-2phase`,
+                  {
+                    method: "POST",
+                    headers: {
+                      Authorization: `Bearer ${token}`,
+                      "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({}),
+                    signal: controller.signal,
+                  },
+                );
+              } finally {
+                window.clearTimeout(timeoutRef);
+              }
+              const body: any = await res.json().catch(() => ({}));
+              if (!res.ok || body?.success === false) {
+                toast({
+                  title: "CAM 재생성 실패",
+                  description:
+                    body?.message ||
+                    body?.error ||
+                    body?.detail ||
+                    "CAM 재생성 요청에 실패했습니다.",
+                  variant: "destructive",
+                });
+                return;
+              }
+
+              const s3Key = String(job?.s3Key || "").trim();
+              if (s3Key) {
+                await deleteCncProgramCache(s3Key);
+              }
+              markNcRegenerationPending(requestId);
+              // PreviewModal과 동일: 큐 NC 제거 → Next Up·예약 관리「CAM 생성 중」
+              window.dispatchEvent(
+                new CustomEvent("nc-regeneration-started", {
+                  detail: {
+                    requestId,
+                    requestMongoId: String(job?.requestMongoId || "").trim(),
+                    ncCleared: true,
+                  },
+                }),
+              );
+
+              // 소켓/effect 반영 전에도 예약 목록에서 NC·경로를 즉시 제거
+              setPlaylistJobs((prev) =>
+                (Array.isArray(prev) ? prev : []).map((j) => {
+                  const rid = String(j.requestId || j.id || "").trim();
+                  if (rid !== requestId) return j;
+                  return {
+                    ...j,
+                    hasNc: false,
+                    s3Key: "",
+                    s3Bucket: "",
+                    bridgePath: "",
+                    ncPreloadStatus: "GENERATING",
+                  };
+                }),
+              );
+
+              toast({
+                title: "CAM 재생성 요청",
+                description:
+                  "기존 NC를 삭제하고 Esprit NC 재생성을 시작했습니다.",
+              });
+
+              if (mid) {
+                void loadProductionQueueForMachine(mid);
+              }
+            } catch (err: any) {
+              const isAbort = String(err?.name || "") === "AbortError";
+              toast({
+                title: "CAM 재생성 실패",
+                description: isAbort
+                  ? "재생성 요청 시간이 초과되었습니다. 잠시 후 다시 시도해주세요."
+                  : err?.message || "CAM 재생성 요청에 실패했습니다.",
+                variant: "destructive",
+              });
+            } finally {
+              setPlaylistRegeneratingIds((prev) => {
+                const next = new Set(prev);
+                next.delete(requestId);
+                return next;
+              });
+            }
+          })();
         }}
         onClose={() => {
           setPlaylistOpen(false);
@@ -2262,6 +2576,13 @@ export const MachiningQueueBoard = ({
         open={expressRebalanceModalOpen}
         onOpenChange={handleExpressRebalanceModalOpenChange}
         alert={expressRebalanceAlert as any}
+      />
+
+      <MachiningAlertModal
+        open={machiningAlertModalOpen}
+        onOpenChange={setMachiningAlertModalOpen}
+        alerts={machiningAlerts}
+        onClearAll={clearMachiningAlerts}
       />
 
       <MachiningPriorityRulesModal

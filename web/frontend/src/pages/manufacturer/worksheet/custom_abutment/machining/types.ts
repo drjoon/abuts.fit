@@ -149,6 +149,8 @@ export type MachineQueueCardProps = {
   onRollbackNextUp?: (requestId: string, machineId: string) => void;
   onRollbackCompleted?: (requestId: string, machineId: string) => void;
   onApproveFromRollback?: (requestId: string) => void;
+  /** Now Playing 가공 중단 (브리지 C_STOP + cancel) */
+  onStopNowPlaying?: (machineId: string) => void | Promise<void>;
   /** Next Up 의뢰를 다른 장비로 드래그 이동 */
   onMoveNextUpToMachine?: (params: {
     requestMongoId: string;
@@ -156,6 +158,9 @@ export type MachineQueueCardProps = {
     fromMachineId: string;
     toMachineId: string;
   }) => void | Promise<void>;
+  /** Next Up CAM 생성 중단 */
+  onCancelCamGeneration?: (requestId: string) => void | Promise<void>;
+  cancellingCamRequestIds?: ReadonlySet<string> | string[];
   materialNeedsReplacement?: boolean;
   materialAlertTooltip?: string;
 };

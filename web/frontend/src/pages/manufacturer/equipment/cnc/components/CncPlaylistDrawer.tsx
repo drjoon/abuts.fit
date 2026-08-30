@@ -1,10 +1,14 @@
 // change-log:
+// - 2026-08-29: 「CAM 생성 중」블러 옆 생성 중단 버튼.
+// - 2026-08-29: CAM 재생성 버튼·NC 미수신 시 Next Up과 동일 블러「CAM 생성 중」오버레이.
 // - 2026-08-08: CncModalShell 적용. 예약 관리 톤·compact 라벨로 정리.
 // - 2026-08-07: 재생목록 행에 의뢰자명(businessName) 표시. 구조화 필드 우선.
 // - 2026-08-06: NC 첨부 시 NC 뱃지·최대직경 표시.
 // related files:
 // - web/frontend/src/features/manufacturer/cnc/components/CncModalShell.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/components/MachiningRequestLabel.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/components/MachineQueueCard.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/regenerationPending.ts
 // - web/frontend/src/shared/shipping/ShippingModeBadge.tsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -14,9 +18,11 @@ import {
   Trash,
   ArrowUp,
   ArrowDown,
+  RefreshCw,
 } from "lucide-react";
 import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
 import { CncModalShell } from "@/features/manufacturer/cnc/components/CncModalShell";
+import { isCamGenerationOverlayPending } from "@/pages/manufacturer/worksheet/custom_abutment/utils/regenerationPending";
 
 export interface PlaylistJobItem {
   id: string;
@@ -35,6 +41,8 @@ export interface PlaylistJobItem {
   shippingMode?: "normal" | "express" | null;
   // NC 첨부 여부·최대직경. 워크시트 카드와 동일한 뱃지/치수 표시용.
   hasNc?: boolean;
+  /** productionSchedule.ncPreload.status */
+  ncPreloadStatus?: string | null;
   maxDiameter?: number | null;
   programNo?: number | null;
   source?: string;
@@ -55,10 +63,14 @@ interface CncPlaylistDrawerProps {
   readOnlyMessage?: string;
   headerExtras?: React.ReactNode;
   deleteVariant?: "worksheet" | "cnc";
+  regeneratingJobIds?: ReadonlySet<string> | string[];
+  cancellingJobIds?: ReadonlySet<string> | string[];
   onClose: () => void;
   onOpenCode: (jobId: string) => void;
   onDelete: (jobId: string) => void;
   onApproveFromRollback?: (requestMongoId: string) => void;
+  onRegenerateCam?: (jobId: string) => void;
+  onCancelCamGeneration?: (jobId: string) => void;
   onReorder: (nextOrder: string[]) => void;
   onChangeQty: (jobId: string, qty: number) => void;
 }
@@ -74,10 +86,14 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
   readOnlyMessage,
   headerExtras,
   deleteVariant = "worksheet",
+  regeneratingJobIds,
+  cancellingJobIds,
   onClose,
   onOpenCode,
   onDelete,
   onApproveFromRollback,
+  onRegenerateCam,
+  onCancelCamGeneration,
   onReorder,
   onChangeQty: _onChangeQty,
 }) => {
@@ -87,6 +103,26 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
   useEffect(() => {
     setLocalJobs(jobs);
   }, [jobs]);
+
+  const regeneratingIds = useMemo(() => {
+    if (!regeneratingJobIds) return null;
+    if (regeneratingJobIds instanceof Set) return regeneratingJobIds;
+    return new Set(
+      (Array.isArray(regeneratingJobIds) ? regeneratingJobIds : []).map((id) =>
+        String(id || "").trim(),
+      ),
+    );
+  }, [regeneratingJobIds]);
+
+  const cancellingIds = useMemo(() => {
+    if (!cancellingJobIds) return null;
+    if (cancellingJobIds instanceof Set) return cancellingJobIds;
+    return new Set(
+      (Array.isArray(cancellingJobIds) ? cancellingJobIds : []).map((id) =>
+        String(id || "").trim(),
+      ),
+    );
+  }, [cancellingJobIds]);
 
   const order = useMemo(() => localJobs.map((j) => j.id), [localJobs]);
 
@@ -108,7 +144,7 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
       open={open}
       title="예약 관리"
       subtitle={`${title} · 대기 큐 · 순서 · 되돌리기`}
-      size="lg"
+      size="xl"
       onClose={onClose}
       titleId="cnc-playlist-title"
       headerActions={headerExtras}
@@ -175,22 +211,46 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
               job.hasNc === true ||
               Boolean(String(job.s3Key || "").trim()) ||
               Boolean(String(job.bridgePath || "").trim());
+            // 「CAM 생성 중」블러 SSOT (중단=CANCELLED 시 해제)
+            const camRegenPending = isCamGenerationOverlayPending({
+              requestId: job.requestId || job.id,
+              hasNc,
+              ncPreloadStatus: job.ncPreloadStatus,
+            });
+            const isRegenerating =
+              regeneratingIds?.has(String(job.id || "").trim()) === true ||
+              regeneratingIds?.has(String(job.requestId || "").trim()) === true;
+            const isCancelling =
+              cancellingIds?.has(String(job.id || "").trim()) === true ||
+              cancellingIds?.has(String(job.requestId || "").trim()) === true;
+            const canRegenerateCam =
+              !readOnly &&
+              Boolean(onRegenerateCam) &&
+              !isRegenerating &&
+              !camRegenPending;
+            const canCancelCam =
+              !readOnly &&
+              Boolean(onCancelCamGeneration) &&
+              camRegenPending &&
+              !isCancelling;
 
             return (
               <div
                 key={job.id}
-                className="flex items-start gap-2 rounded-xl border border-slate-200 bg-white px-2.5 py-2"
-                draggable={!readOnly}
+                className={`relative flex items-start gap-2 rounded-xl border border-slate-200 bg-white px-2.5 py-2 ${
+                  camRegenPending ? "overflow-hidden" : ""
+                }`}
+                draggable={!readOnly && !camRegenPending}
                 onDragStart={() => {
-                  if (readOnly) return;
+                  if (readOnly || camRegenPending) return;
                   dragIdRef.current = job.id;
                 }}
                 onDragOver={(e) => {
-                  if (readOnly) return;
+                  if (readOnly || camRegenPending) return;
                   e.preventDefault();
                 }}
                 onDrop={(e) => {
-                  if (readOnly) return;
+                  if (readOnly || camRegenPending) return;
                   e.preventDefault();
                   const dragId = dragIdRef.current;
                   dragIdRef.current = null;
@@ -200,6 +260,47 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
                   move(from, to);
                 }}
               >
+                {camRegenPending ? (
+                  <div
+                    className="absolute inset-0 z-30 flex items-center justify-center gap-2 rounded-[inherit] bg-white/55 backdrop-blur-[6px]"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                    onPointerDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                    role="status"
+                    aria-live="polite"
+                    aria-label="CAM 생성 중"
+                  >
+                    <span className="rounded-full border border-primary-muted bg-primary-soft/90 px-3 py-1.5 text-sm font-extrabold text-primary-strong shadow-sm">
+                      CAM 생성 중
+                    </span>
+                    {onCancelCamGeneration ? (
+                      <button
+                        type="button"
+                        className="rounded-full border border-slate-300 bg-white/95 px-3 py-1.5 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50"
+                        disabled={!canCancelCam}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (!canCancelCam) return;
+                          onCancelCamGeneration(job.id);
+                        }}
+                        onPointerDown={(e) => {
+                          e.stopPropagation();
+                        }}
+                        title="생성 중단"
+                        aria-label="생성 중단"
+                      >
+                        {isCancelling ? "중단 중…" : "생성 중단"}
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+
                 <div className="flex shrink-0 items-center gap-1 pt-0.5 text-slate-400">
                   <span className="w-5 text-center text-[11px] font-semibold text-slate-400">
                     {idx + 1}
@@ -210,8 +311,12 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
                 <button
                   type="button"
                   className="min-w-0 flex-1 text-left"
-                  onClick={() => onOpenCode(job.id)}
-                  title={job.name}
+                  onClick={() => {
+                    if (camRegenPending) return;
+                    onOpenCode(job.id);
+                  }}
+                  disabled={camRegenPending}
+                  title={camRegenPending ? "CAM 생성 중" : job.name}
                 >
                   <div className="flex flex-wrap items-center gap-1.5 text-[13px] font-semibold text-slate-800">
                     {idx === 0 ? (
@@ -265,6 +370,48 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
                 </button>
 
                 <div className="flex shrink-0 items-center gap-1">
+                  {onRegenerateCam && (hasNc || isRegenerating || !camRegenPending) ? (
+                    <button
+                      type="button"
+                      className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border transition disabled:opacity-40 ${
+                        canRegenerateCam
+                          ? "border-primary-muted bg-primary-soft text-primary-strong hover:bg-primary-soft/80"
+                          : "border-slate-200 bg-slate-100 text-slate-400"
+                      }`}
+                      onClick={() => {
+                        if (!canRegenerateCam) return;
+                        onRegenerateCam(job.id);
+                      }}
+                      disabled={!canRegenerateCam}
+                      title={isRegenerating ? "CAM 재생성 요청 중" : "CAM 재생성"}
+                      aria-label="CAM 재생성"
+                    >
+                      <RefreshCw
+                        className={`h-3.5 w-3.5 ${isRegenerating ? "animate-spin" : ""}`}
+                      />
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                    onClick={() => {
+                      if (readOnly || camRegenPending) return;
+                      setLocalJobs((prev) =>
+                        prev.filter((j) => j.id !== job.id),
+                      );
+                      onDelete(job.id);
+                    }}
+                    disabled={!!readOnly || camRegenPending}
+                    title={
+                      deleteVariant === "cnc" ? "삭제" : "준비로 되돌리기"
+                    }
+                  >
+                    {deleteVariant === "cnc" ? (
+                      <Trash className="h-3.5 w-3.5" />
+                    ) : (
+                      <ArrowLeft className="h-3.5 w-3.5" />
+                    )}
+                  </button>
                   {canApproveFromRollback ? (
                     <button
                       type="button"
@@ -281,29 +428,8 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
                   <button
                     type="button"
                     className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40"
-                    onClick={() => {
-                      if (readOnly) return;
-                      setLocalJobs((prev) =>
-                        prev.filter((j) => j.id !== job.id),
-                      );
-                      onDelete(job.id);
-                    }}
-                    disabled={!!readOnly}
-                    title={
-                      deleteVariant === "cnc" ? "삭제" : "준비로 되돌리기"
-                    }
-                  >
-                    {deleteVariant === "cnc" ? (
-                      <Trash className="h-3.5 w-3.5" />
-                    ) : (
-                      <ArrowLeft className="h-3.5 w-3.5" />
-                    )}
-                  </button>
-                  <button
-                    type="button"
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40"
                     onClick={() => move(idx, idx - 1)}
-                    disabled={idx === 0 || !!readOnly}
+                    disabled={idx === 0 || !!readOnly || camRegenPending}
                     title="위로"
                   >
                     <ArrowUp className="h-3.5 w-3.5" />
@@ -312,7 +438,11 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
                     type="button"
                     className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40"
                     onClick={() => move(idx, idx + 1)}
-                    disabled={idx === localJobs.length - 1 || !!readOnly}
+                    disabled={
+                      idx === localJobs.length - 1 ||
+                      !!readOnly ||
+                      camRegenPending
+                    }
                     title="아래로"
                   >
                     <ArrowDown className="h-3.5 w-3.5" />

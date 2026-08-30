@@ -9,6 +9,8 @@
 // - web/backend/services/requestSnapshotTriggers.service.js
 // - web/frontend/src/pages/admin/dashboard/AdminDashboardPage.tsx
 // change-log:
+// - 2026-08-29: CAM 생성 중단(cancel-regeneration) — NC 삭제·Esprit /cancel·블러 해제(ncPreload NONE).
+// - 2026-08-29: NC 재생성 시 ncPreload=GENERATING + ncFile 삭제 + cam-processing-started(ncCleared).
 // - 2026-08-17: NC 롤백(준비) 시 우편함 해제.
 // - 2026-08-16: NC 롤백(준비) 시 PTX abutmentProductionStartedAt 클리어.
 import mongoose, { Types } from "mongoose";
@@ -23,11 +25,39 @@ import {
   ensureReviewByStageDefaults,
 } from "./utils.js";
 import s3Utils, { deleteFileFromS3 } from "../../utils/s3.utils.js";
-import { triggerEspritForNc } from "./common.review.esprit.js";
+import {
+  abortEspritForNc,
+  triggerEspritForNc,
+} from "./common.review.esprit.js";
 import { ensureRequestCreditRollbackDeleteOnRollbackToCam } from "./common.review.helpers.js";
 import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
 import { clearPracticeTransferAbutmentMachiningStarted } from "../../services/practiceTransferProduction.service.js";
 import { resolveFilledStlFile } from "../../utils/filledStlFile.js";
+
+/**
+ * NC 재생성 시작 전 기존 NC 메타를 제거한다.
+ * (Next Up 장비 이동 / 직경 변경 재생성과 동일 SSOT — UI「CAM 생성 중」조건)
+ */
+async function clearNcMetaBeforeRegeneration(request) {
+  if (!request?._id) return;
+  const generating = {
+    status: "GENERATING",
+    updatedAt: new Date(),
+  };
+  await Request.updateOne(
+    { _id: request._id },
+    {
+      $set: { "productionSchedule.ncPreload": generating },
+      $unset: { "caseInfos.ncFile": 1 },
+    },
+  );
+  if (request.caseInfos && typeof request.caseInfos === "object") {
+    request.caseInfos.ncFile = undefined;
+  }
+  if (request.productionSchedule && typeof request.productionSchedule === "object") {
+    request.productionSchedule.ncPreload = generating;
+  }
+}
 
 async function assertAndClaimManufacturerRequestAccess({ req, request }) {
   if (req?.user?.role !== "manufacturer") return;
@@ -378,6 +408,7 @@ export async function regenerateNcByRequestId(req, res) {
         .json({ success: false, message: "의뢰를 찾을 수 없습니다." });
     }
 
+    await clearNcMetaBeforeRegeneration(request);
     await triggerEspritForNc({ request, force: true });
 
     emitAppEventToRoles(
@@ -387,13 +418,14 @@ export async function regenerateNcByRequestId(req, res) {
         source: "nc-regenerate",
         requestId: request?.requestId || null,
         requestMongoId: String(request?._id || "").trim() || null,
+        ncCleared: true,
       },
     );
 
     return res.status(200).json({
       success: true,
       message: "NC 재생성 요청을 전송했습니다.",
-      data: { requestId },
+      data: { requestId, ncCleared: true },
     });
   } catch (error) {
     const status = Number(error?.statusCode || 500);
@@ -445,7 +477,8 @@ export async function regenerateNcByRequestIdTwoPhase(req, res) {
       );
     }
 
-    // trigger Esprit with default Two-Phase (2026-06-08: Two-Phase is default)
+    // 기존 NC 삭제 후 Two-Phase 재생성 (Next Up「CAM 생성 중」표시용)
+    await clearNcMetaBeforeRegeneration(request);
     await triggerEspritForNc({ request, force: true, onePhase: false });
 
     emitAppEventToRoles(
@@ -455,13 +488,14 @@ export async function regenerateNcByRequestIdTwoPhase(req, res) {
         source: "nc-regenerate-2phase",
         requestId: request?.requestId || null,
         requestMongoId: String(request?._id || "").trim() || null,
+        ncCleared: true,
       },
     );
 
     return res.status(200).json({
       success: true,
       message: "NC 재생성 요청을 전송했습니다. (Two-Phase 기본)",
-      data: { requestId },
+      data: { requestId, ncCleared: true },
     });
   } catch (error) {
     const status = Number(error?.statusCode || 500);
@@ -513,7 +547,7 @@ export async function regenerateNcByRequestIdOnePhase(req, res) {
       );
     }
 
-    // trigger Esprit with One-Phase flag (명시적 One-Phase 요청)
+    await clearNcMetaBeforeRegeneration(request);
     await triggerEspritForNc({ request, force: true, onePhase: true });
 
     emitAppEventToRoles(
@@ -523,19 +557,144 @@ export async function regenerateNcByRequestIdOnePhase(req, res) {
         source: "nc-regenerate-onephase",
         requestId: request?.requestId || null,
         requestMongoId: String(request?._id || "").trim() || null,
+        ncCleared: true,
       },
     );
 
     return res.status(200).json({
       success: true,
       message: "NC 재생성 요청을 전송했습니다. (One-Phase)",
-      data: { requestId },
+      data: { requestId, ncCleared: true },
     });
   } catch (error) {
     const status = Number(error?.statusCode || 500);
     return res.status(status).json({
       success: false,
       message: error?.message || "NC 재생성 요청 중 오류가 발생했습니다.",
+    });
+  }
+}
+
+/**
+ * CAM/NC 생성 중단: NC 메타·파일 삭제, Esprit 큐/업로드 중단, 프론트 블러 해제.
+ */
+export async function cancelNcRegenerationByRequestId(req, res) {
+  try {
+    const requestId = String(req.params?.requestId || "").trim();
+    if (!requestId) {
+      return res
+        .status(400)
+        .json({ success: false, message: "requestId is required" });
+    }
+    if (req.user.role !== "manufacturer" && req.user.role !== "admin") {
+      return res
+        .status(403)
+        .json({ success: false, message: "권한이 없습니다." });
+    }
+
+    const request = await Request.findOne({ requestId });
+    if (!request) {
+      return res
+        .status(404)
+        .json({ success: false, message: "의뢰를 찾을 수 없습니다." });
+    }
+
+    await assertAndClaimManufacturerRequestAccess({ req, request });
+
+    const nc = request?.caseInfos?.ncFile || null;
+    const s3Key = String(nc?.s3Key || "").trim();
+    const bridgePath = String(nc?.filePath || "").trim();
+
+    await Request.updateOne(
+      { _id: request._id },
+      {
+        $set: {
+          "productionSchedule.ncPreload": {
+            status: "CANCELLED",
+            updatedAt: new Date(),
+            error: "cam_regeneration_cancelled",
+          },
+        },
+        $unset: { "caseInfos.ncFile": 1 },
+      },
+    );
+
+    if (request.caseInfos && typeof request.caseInfos === "object") {
+      request.caseInfos.ncFile = undefined;
+    }
+    if (
+      request.productionSchedule &&
+      typeof request.productionSchedule === "object"
+    ) {
+      request.productionSchedule.ncPreload = {
+        status: "CANCELLED",
+        updatedAt: new Date(),
+        error: "cam_regeneration_cancelled",
+      };
+    }
+
+    runNcFileCleanupInBackground({
+      requestId,
+      s3Key: s3Key || null,
+      bridgePath: bridgePath || null,
+    });
+
+    let espritAbort = { ok: false, skipped: true };
+    try {
+      espritAbort = await abortEspritForNc({ requestId });
+    } catch (err) {
+      console.warn("[ESPRIT] abort on cancel failed", {
+        requestId,
+        message: err?.message || err,
+      });
+      espritAbort = {
+        ok: false,
+        skipped: false,
+        error: String(err?.message || err || "abort failed"),
+      };
+    }
+
+    const fresh = await Request.findById(request._id).lean();
+    const normalized = fresh
+      ? normalizeRequestForResponse(fresh)
+      : {
+          requestId,
+          _id: String(request._id),
+          caseInfos: { ...(request.caseInfos || {}), ncFile: null },
+          productionSchedule: {
+            ...(request.productionSchedule || {}),
+            ncPreload: { status: "CANCELLED" },
+          },
+        };
+
+    emitAppEventToRoles(
+      ["manufacturer", "admin"],
+      "request:cam-regeneration-cancelled",
+      {
+        source: "nc-cancel-regeneration",
+        requestId,
+        requestMongoId: String(request._id || "").trim() || null,
+        ncCleared: true,
+        request: normalized,
+        espritAbort,
+      },
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "CAM 생성을 중단했습니다.",
+      data: {
+        requestId,
+        ncCleared: true,
+        espritAbort,
+        request: normalized,
+      },
+    });
+  } catch (error) {
+    const status = Number(error?.statusCode || 500);
+    return res.status(status).json({
+      success: false,
+      message: error?.message || "CAM 생성 중단에 실패했습니다.",
     });
   }
 }

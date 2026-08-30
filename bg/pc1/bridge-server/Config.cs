@@ -176,6 +176,8 @@ namespace HiLinkBridgeWebApi48
         }
         public static int CncStartIoUid => 61;
         public static int CncBusyIoUid => 65;
+        // Hi-Link PanelConstants: MACHINE_IO_C_STOP = 62
+        public static int CncStopIoUid => 62;
         public static int CncJobAssumeMinutes => GetInt("CNC_JOB_ASSUME_MINUTES", 0, 1, 24 * 60);
         // 가공 완료 후 다음 건 시작 전 최소 대기 시간 (초)
         // 이 시간 동안은 무조건 대기 (척 오픈 M코드, HOME 복귀 초기 처리)

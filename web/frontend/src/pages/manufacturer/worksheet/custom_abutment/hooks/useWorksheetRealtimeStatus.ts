@@ -12,6 +12,8 @@
 // - web/backend/controllers/bg/bg.controller.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/regenerationPending.ts
 // change-log:
+// - 2026-08-29: NC-only 재생성 시 STL IndexedDB를 지우지 않음. 캐시 무효화 후 열린 프리뷰를 갱신.
+// - 2026-08-29: NC 재생성 시작(cam-processing-started) 시 목록/카드에서 ncFile을 즉시 제거.
 // - 2026-08-29: 재제작(copied_sample) count-update에 R&D 토스트를 띄우지 않음 — rnd_sample/rnd stage만.
 // - 2026-08-21: 헥스 확인용 원본↔샘플 취소 시 워크시트에서 둘 다 즉시 제거
 // - 2026-08-18: Filled STL/NC 재생성 완료 상단 alert 제거. 캐시 삭제·pending consume은 유지.
@@ -134,7 +136,7 @@ export function useWorksheetRealtimeStatus({
   );
 
   const invalidateCachesForProcessedFile = useCallback(
-    (args: {
+    async (args: {
       kind: "filled" | "nc";
       requestId: string;
       requestMongoId?: string;
@@ -149,23 +151,28 @@ export function useWorksheetRealtimeStatus({
       const previousNcS3Key = String(args.previousNcS3Key || "").trim();
       const localCamS3Key = String(args.localCamS3Key || "").trim();
       const localNcS3Key = String(args.localNcS3Key || "").trim();
-      void invalidateRequestPreviewCaches({
-        camS3Key:
-          args.kind === "filled"
-            ? previousS3Key || incomingS3Key || localCamS3Key
-            : localCamS3Key || null,
-        ncS3Key:
-          args.kind === "nc"
-            ? previousS3Key || incomingS3Key || localNcS3Key || previousNcS3Key
-            : previousNcS3Key || localNcS3Key || null,
-        requestMongoId: args.requestMongoId,
-        requestId: args.requestId,
-      });
-      if (args.kind === "filled" && incomingS3Key && incomingS3Key !== previousS3Key) {
-        void invalidateRequestPreviewCaches({ camS3Key: incomingS3Key });
+
+      if (args.kind === "filled") {
+        // filled 재생성은 NC도 다시 만들므로 둘 다 무효화. STL 폴백은 camS3Key로만.
+        await invalidateRequestPreviewCaches({
+          camS3Key: previousS3Key || incomingS3Key || localCamS3Key || null,
+          ncS3Key: previousNcS3Key || localNcS3Key || null,
+          requestMongoId: args.requestMongoId,
+          requestId: args.requestId,
+        });
+        if (incomingS3Key && incomingS3Key !== previousS3Key) {
+          await invalidateRequestPreviewCaches({ camS3Key: incomingS3Key });
+        }
+        return;
       }
-      if (args.kind === "nc" && incomingS3Key && incomingS3Key !== previousS3Key) {
-        void invalidateRequestPreviewCaches({ ncS3Key: incomingS3Key });
+
+      // NC-only: STL 캐시·폴백은 유지
+      await invalidateRequestPreviewCaches({
+        ncS3Key:
+          previousS3Key || incomingS3Key || localNcS3Key || previousNcS3Key || null,
+      });
+      if (incomingS3Key && incomingS3Key !== previousS3Key) {
+        await invalidateRequestPreviewCaches({ ncS3Key: incomingS3Key });
       }
     },
     [],
@@ -304,8 +311,17 @@ export function useWorksheetRealtimeStatus({
             if (String((r as any)?.requestId || "").trim() !== requestId) {
               return r;
             }
+            const prevCaseInfos =
+              (r as any)?.caseInfos && typeof (r as any).caseInfos === "object"
+                ? (r as any).caseInfos
+                : {};
             return {
               ...(r as any),
+              caseInfos: {
+                ...prevCaseInfos,
+                ncFile: null,
+              },
+              ncFile: null,
               realtimeProgress: {
                 badge: "NC 생성중",
                 elapsedSeconds: 0,
@@ -445,9 +461,8 @@ export function useWorksheetRealtimeStatus({
         if (!shouldSkipImmediateRefetch && fetchRequests) {
           void fetchRequests(true);
         }
-        // Rhino filled STL 등 BG 파일 수신: 열린 프리뷰 silent 갱신 (packing 패턴)
+        // Rhino filled STL 등 BG 파일 수신: 바뀐 파일 캐시만 지운 뒤 열린 프리뷰 silent 갱신
         if (source === "bg-file-processed" && requestId) {
-          refreshOpenPreviewIfMatch(requestId, eventRequest || null);
           const regenerationKind = String(payload?.regenerationKind || "").trim();
           const reviewStage = String(payload?.reviewStage || "").trim();
           const kind: "filled" | "nc" | null =
@@ -456,24 +471,27 @@ export function useWorksheetRealtimeStatus({
               : regenerationKind === "nc" || reviewStage === "cam"
                 ? "nc"
                 : null;
-          if (kind) {
-            const camS3Key = String(
-              resolveFilledStlFile((eventRequest as any)?.caseInfos)?.s3Key ||
-                "",
-            ).trim();
-            const ncS3Key = String(
-              (eventRequest as any)?.caseInfos?.ncFile?.s3Key || "",
-            ).trim();
-            invalidateCachesForProcessedFile({
-              kind,
-              requestId,
-              requestMongoId: String((eventRequest as any)?._id || "").trim(),
-              incomingS3Key: kind === "filled" ? camS3Key : ncS3Key,
-              localCamS3Key: camS3Key,
-              localNcS3Key: ncS3Key,
-            });
-            consumeRegenerationPending(kind, requestId);
-          }
+          void (async () => {
+            if (kind) {
+              const camS3Key = String(
+                resolveFilledStlFile((eventRequest as any)?.caseInfos)?.s3Key ||
+                  "",
+              ).trim();
+              const ncS3Key = String(
+                (eventRequest as any)?.caseInfos?.ncFile?.s3Key || "",
+              ).trim();
+              await invalidateCachesForProcessedFile({
+                kind,
+                requestId,
+                requestMongoId: String((eventRequest as any)?._id || "").trim(),
+                incomingS3Key: kind === "filled" ? camS3Key : ncS3Key,
+                localCamS3Key: camS3Key,
+                localNcS3Key: ncS3Key,
+              });
+              consumeRegenerationPending(kind, requestId);
+            }
+            refreshOpenPreviewIfMatch(requestId, eventRequest || null);
+          })();
         }
         return;
       }
@@ -499,20 +517,23 @@ export function useWorksheetRealtimeStatus({
           requestId &&
           (metaSource === "bg-file-processed:2-filled" || hasCam)
         ) {
-          refreshOpenPreviewIfMatch(requestId, eventRequest || null);
-        }
-        if (requestId && metaSource === "bg-file-processed:2-filled") {
-          const camS3Key = String(
-            resolveFilledStlFile((eventRequest as any)?.caseInfos)?.s3Key || "",
-          ).trim();
-          invalidateCachesForProcessedFile({
-            kind: "filled",
-            requestId,
-            requestMongoId: String((eventRequest as any)?._id || "").trim(),
-            incomingS3Key: camS3Key,
-            localCamS3Key: camS3Key,
-          });
-          consumeRegenerationPending("filled", requestId);
+          void (async () => {
+            if (metaSource === "bg-file-processed:2-filled") {
+              const camS3Key = String(
+                resolveFilledStlFile((eventRequest as any)?.caseInfos)?.s3Key ||
+                  "",
+              ).trim();
+              await invalidateCachesForProcessedFile({
+                kind: "filled",
+                requestId,
+                requestMongoId: String((eventRequest as any)?._id || "").trim(),
+                incomingS3Key: camS3Key,
+                localCamS3Key: camS3Key,
+              });
+              consumeRegenerationPending("filled", requestId);
+            }
+            refreshOpenPreviewIfMatch(requestId, eventRequest || null);
+          })();
         }
         return;
       }

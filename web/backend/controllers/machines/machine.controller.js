@@ -860,9 +860,10 @@ async function sendControl(uid, action, res) {
         }
       : null;
 
-    const bridgeUrl = isReset
-      ? `${BRIDGE_BASE}/api/cnc/reset?machines=${encodeURIComponent(uid)}`
-      : `${BRIDGE_BASE}/api/cnc/machines/${encodeURIComponent(uid)}/${action}`;
+    const bridgeUrl =
+      isReset || isStart || isStop
+        ? `${BRIDGE_BASE}/api/cnc/${action}?machines=${encodeURIComponent(uid)}`
+        : `${BRIDGE_BASE}/api/cnc/machines/${encodeURIComponent(uid)}/${action}`;
 
     const response = await fetch(bridgeUrl, {
       method: "POST",

@@ -26,4 +26,6 @@
 - `TryStartSignal()` clears `F_SB` (single block) before sending `C_START`; M5 was starting with `F_SB=1`, which likely caused coolant-only behavior without continuous cutting.
 - Real-mode completion now requires `currentProdCount > ProductCountBefore` after `busy` falls to `0`; all time-based completion fallbacks were removed to avoid premature job switching.
 - `CheckJobCompleted()` now logs the start baseline count and the completion count delta so we can confirm whether the product counter really increments by `+1`.
+- RUNNING abort (Hi-Link Mode1 `GetMachineStatus`): `PowerOff` / `Alarm` only. `Stop` and status-read failures do **not** auto-fail (avoids mid-cut false abort).
+- UI Now Playing X / Stop: `POST /api/cnc/stop` → `CncMachining.AbortForUserStop` (즉시 RUNNING 해제) + OP `C_STOP`(ioUid=62, 실제 panelType).
 - Automatic CNC upload now mirrors the controller upload pipeline: `EnsurePercentAndHeaderSecondLine` + `EnsureProgramEnvelope` + `SanitizeProgramTextForCnc`, then `UploadProgramDataBlocking` with busy/delete retry. This should reduce `upload failed rc=5` during auto-next handoff.

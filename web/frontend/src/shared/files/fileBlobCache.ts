@@ -6,6 +6,7 @@
 // IndexedDB 기반 바이너리 파일 Blob 캐시 유틸리티
 // key: fileId 또는 s3Key
 // change-log:
+// - 2026-08-29: NC만 바뀔 때 stl:{id}:* 폴백을 지우지 않음 — camS3Key 있을 때만 filled STL 폴백 무효화.
 // - 2026-08-18: filled STL/NC 재생성 시 s3Key·버전 키·cnc:s3 접두 캐시를 함께 삭제.
 
 const DB_NAME = "abutsfit-file-blob-cache";
@@ -248,13 +249,16 @@ export async function invalidateRequestPreviewCaches(opts: {
   if (ncS3Key && ncS3Key !== camS3Key) {
     jobs.push(deleteFileBlobsMatchingS3Key(ncS3Key));
   }
-  const ids = [opts.requestMongoId, opts.requestId]
-    .map((value) => String(value || "").trim())
-    .filter(Boolean);
-  const uniqueIds = Array.from(new Set(ids));
-  for (const id of uniqueIds) {
-    jobs.push(deleteFileBlobsMatchingPrefix(`stl:${id}:cam`));
-    jobs.push(deleteFileBlobsMatchingPrefix(`stl:${id}:original`));
+  // stl:{id}:cam 폴백은 filled STL이 바뀔 때만 지운다(NC-only 재생성에서 STL 재다운로드 방지).
+  // 원본 STL은 재생성 대상이 아니므로 여기서 지우지 않는다.
+  if (camS3Key) {
+    const ids = [opts.requestMongoId, opts.requestId]
+      .map((value) => String(value || "").trim())
+      .filter(Boolean);
+    const uniqueIds = Array.from(new Set(ids));
+    for (const id of uniqueIds) {
+      jobs.push(deleteFileBlobsMatchingPrefix(`stl:${id}:cam`));
+    }
   }
   if (!jobs.length) return;
   await Promise.all(jobs);

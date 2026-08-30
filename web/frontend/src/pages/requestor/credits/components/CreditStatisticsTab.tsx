@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-29: 통계 차트 — 충전(녹)·소비(청)·조정(호박) 등 유형별 색 구분.
 // - 2026-08-23: 요약 카드 — 기공, 스토어 라벨.
 // - 2026-08-23: 요약 카드 — 기공료·쇼핑 라벨·안내 문구 정리.
 // - 2026-08-23: 요약 카드 — 내역과 동일 +/− 연산 레이아웃. 기간 충전·소비·의뢰건수 라벨.
@@ -14,6 +15,7 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
   Line,
   LineChart,
   XAxis,
@@ -41,6 +43,8 @@ import {
 import { formatWonWithUnit, roundWon } from "@/shared/settlement/affiliateVat";
 import {
   ChartContainer,
+  ChartLegend,
+  ChartLegendContent,
   ChartTooltip,
   ChartTooltipContent,
   type ChartConfig,
@@ -89,12 +93,30 @@ type DrillDownState = {
   filters: CreditLedgerInitialFilters;
 } | null;
 
+/** 충전·소비·조정 등이 한눈에 구분되도록 유형별 고정 팔레트 */
+const CATEGORY_CHART_COLORS: Record<string, string> = {
+  charge: "hsl(152 55% 42%)",
+  practice_transfer: "hsl(var(--primary))",
+  abutment_production: "hsl(199 72% 45%)",
+  shipping: "hsl(221 62% 52%)",
+  store: "hsl(262 42% 52%)",
+  settlement_earn: "hsl(173 50% 38%)",
+  settlement_payout: "hsl(340 55% 52%)",
+  adjust: "hsl(32 90% 48%)",
+  other: "hsl(215 14% 52%)",
+};
+
+const DEFAULT_CATEGORY_COLOR = "hsl(var(--primary))";
+
+const categoryColor = (key: string) =>
+  CATEGORY_CHART_COLORS[key] || DEFAULT_CATEGORY_COLOR;
+
 const trendChartConfig = {
-  spendSupply: { label: "소비", color: "hsl(var(--primary))" },
-  chargeSupply: { label: "충전", color: "hsl(var(--primary-strong))" },
+  spendSupply: { label: "소비", color: CATEGORY_CHART_COLORS.practice_transfer },
+  chargeSupply: { label: "충전", color: CATEGORY_CHART_COLORS.charge },
   settlementEarnSupply: {
     label: "정산 적립",
-    color: "hsl(var(--primary-muted))",
+    color: CATEGORY_CHART_COLORS.settlement_earn,
   },
 } satisfies ChartConfig;
 
@@ -329,13 +351,18 @@ export function CreditStatisticsTab() {
     [stats?.byCategory],
   );
 
-  const categoryChartConfig = useMemo(
-    () =>
-      ({
-        amountSupply: { label: "공급가", color: "hsl(var(--primary))" },
-      }) satisfies ChartConfig,
-    [],
-  );
+  const categoryChartConfig = useMemo(() => {
+    const config: ChartConfig = {
+      amountSupply: { label: "공급가" },
+    };
+    for (const row of categoryChartData) {
+      config[row.key] = {
+        label: row.label,
+        color: categoryColor(row.key),
+      };
+    }
+    return config;
+  }, [categoryChartData]);
 
   const openDrillDown = (next: DrillDownState) => {
     setDrillDown(next);
@@ -518,6 +545,7 @@ export function CreditStatisticsTab() {
                           />
                         }
                       />
+                      <ChartLegend content={<ChartLegendContent />} />
                       <Line
                         type="monotone"
                         dataKey="spendSupply"
@@ -596,16 +624,21 @@ export function CreditStatisticsTab() {
                         content={
                           <ChartTooltipContent
                             labelKey="label"
-                            formatter={(value) => [
-                              supplyTooltipFormatter(value),
-                              "공급가",
-                            ]}
+                            nameKey="key"
+                            formatter={(value, _name, item) => {
+                              const key = String(
+                                (item?.payload as { key?: string } | undefined)
+                                  ?.key || "",
+                              );
+                              const label =
+                                categoryChartConfig[key]?.label || "공급가";
+                              return [supplyTooltipFormatter(value), label];
+                            }}
                           />
                         }
                       />
                       <Bar
                         dataKey="amountSupply"
-                        fill="hsl(var(--primary))"
                         radius={[6, 6, 0, 0]}
                         className="cursor-pointer"
                         onClick={(barData, _index, event) => {
@@ -620,7 +653,14 @@ export function CreditStatisticsTab() {
                             filters: categoryLedgerFilters(key, filterBase),
                           });
                         }}
-                      />
+                      >
+                        {categoryChartData.map((row) => (
+                          <Cell
+                            key={row.key}
+                            fill={`var(--color-${row.key})`}
+                          />
+                        ))}
+                      </Bar>
                     </BarChart>
                   </ChartContainer>
                 )}

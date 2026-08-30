@@ -366,7 +366,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     프론트가 **레거시** `caseInfos` 미설정 시 사업자 기본값으로 표시할 수 있어야 합니다.
   - 관련: `creation.from-draft.controller.js`, `creation.request.controller.js`, `business.controller.js` request-settings
   - 플러스 모드 SSOT: `STL모델+` modeBase=0.0 / `헥스30+` modeBase=30.0
-    - NC: `addDeg=30+appliedDeg`, T4848=`C(0+addDeg)`, T0909/T0606=`C(modeBase+addDeg)`
+    - NC: T4848 항상 `C0.0`; T0909/T0606=`C(modeBase+addDeg)`, `addDeg=30+appliedDeg`
   - 하위호환 입력: 레거시 `0`/`30`, `헥스40도회전`/`헥스10도회전`/`헥스X도회전` → `STL모델+`
   - 미지원/빈값은 request-meta 응답 및 저장 로직에서 즉시 오류로 처리합니다.
 - `manufacturerStage` request 단계 SSOT는 `준비` 단일값입니다. (`의뢰`, `request` 저장/비교 금지)

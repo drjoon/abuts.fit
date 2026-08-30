@@ -241,3 +241,72 @@ export async function triggerEspritForNc({
     });
   }
 }
+
+/**
+ * Esprit add-in에 CAM 생성 중단을 요청한다.
+ * - 대기 큐에서 제거
+ * - 진행 중이면 완료 후 NC 업로드를 스킵
+ */
+export async function abortEspritForNc({ requestId } = {}) {
+  const rid = String(requestId || "").trim();
+  if (!rid) {
+    return { ok: false, skipped: true, reason: "missing_requestId" };
+  }
+
+  const controller = new AbortController();
+  const configuredTimeoutMs = Number(process.env.BG_TRIGGER_TIMEOUT_MS || 8000);
+  const timeoutMs = Number.isFinite(configuredTimeoutMs)
+    ? Math.min(15000, Math.max(2000, Math.floor(configuredTimeoutMs)))
+    : 8000;
+  const timeoutRef = setTimeout(() => controller.abort(), timeoutMs);
+  const espritUrl = `${ESPRIT_BASE.replace(/\/+$/, "")}/cancel`;
+  try {
+    const headers = withEspritHeaders({ "Content-Type": "application/json" });
+    console.log("[ESPRIT] POST /cancel", { requestId: rid, url: espritUrl });
+    const resp = await fetch(espritUrl, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ RequestId: rid, requestId: rid }),
+      signal: controller.signal,
+    });
+    const text = await resp.text().catch(() => "");
+    if (!resp.ok) {
+      console.warn("[ESPRIT] abort failed", {
+        requestId: rid,
+        status: resp.status,
+        text,
+      });
+      return {
+        ok: false,
+        skipped: false,
+        status: resp.status,
+        body: text,
+      };
+    }
+    console.log("[ESPRIT] abort accepted", {
+      requestId: rid,
+      status: resp.status,
+      text,
+    });
+    return { ok: true, skipped: false, status: resp.status, body: text };
+  } catch (error) {
+    const isAbort =
+      String(error?.name || "").trim() === "AbortError" ||
+      /abort/i.test(String(error?.message || ""));
+    console.warn("[ESPRIT] abort request error", {
+      requestId: rid,
+      isAbort,
+      errorName: error?.name,
+      errorMessage: error?.message,
+    });
+    // Esprit 비가용은 프론트 해제를 막지 않는다 (best-effort).
+    return {
+      ok: false,
+      skipped: false,
+      unreachable: true,
+      error: String(error?.message || error || "esprit unreachable"),
+    };
+  } finally {
+    clearTimeout(timeoutRef);
+  }
+}
