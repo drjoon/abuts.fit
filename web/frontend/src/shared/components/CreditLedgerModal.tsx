@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-31: 유형 라벨 — 치과(구강스캔/어벗디자인)·기공소(치과로부터 수신/어벗츠로 의뢰). 데모 소비 시 금액 아래「데모」.
 // - 2026-08-26: 치과 요약 — 유료/무료 충전·소비는 기간 합계(잔여 버킷 아님). HOLD 소비 반영.
 // - 2026-08-23: 내역 테이블 — scroll-x-bar-top을 flex-1 세로 스크롤과 분리(rotateX로 행이 아래로 붙던 문제).
 // - 2026-08-22: 기공소→치과 배송 무료 — lab_shipping hold 미표시·레거시 baked 제거. 소비총액=기공비+(→어벗츠 박스만).
@@ -158,6 +159,7 @@ import {
   CREDIT_LEDGER_DEMO_BALANCE_HINT,
   CREDIT_LEDGER_DEMO_NOTICE_BODY,
   CREDIT_LEDGER_DEMO_PERIOD_SPEND_HINT,
+  DEMO_MODE_BADGE_LABEL,
 } from "@/shared/demo/demoModeCopy";
 
 type CreditLedgerType =
@@ -431,8 +433,18 @@ type LedgerDisplayRow = {
   item: CreditLedgerItem;
 };
 
+/** 사이드바 SSOT: 치과 구강스캔으로 ↔ 기공소 치과로부터 수신 */
 const PRACTICE_TRANSFER_TYPE_LABEL = "기공의뢰-구강스캔으로";
+const LAB_RECEIVE_TYPE_LABEL = "기공의뢰-치과로부터 수신";
+/** 사이드바 SSOT: 치과 어벗디자인으로 ↔ 기공소 어벗츠로 의뢰 */
 const ABUTMENT_DESIGN_TYPE_LABEL = "기공의뢰-어벗디자인으로";
+const LAB_ABUTS_REQUEST_TYPE_LABEL = "기공의뢰-어벗츠로 의뢰";
+
+const resolvePracticeTransferTypeLabel = (isLabViewer: boolean) =>
+  isLabViewer ? LAB_RECEIVE_TYPE_LABEL : PRACTICE_TRANSFER_TYPE_LABEL;
+
+const resolveAbutmentDesignTypeLabel = (isLabViewer: boolean) =>
+  isLabViewer ? LAB_ABUTS_REQUEST_TYPE_LABEL : ABUTMENT_DESIGN_TYPE_LABEL;
 
 const practiceTransferPayoutStatusLabel = (
   status: PracticeTransferPayoutStatus,
@@ -581,10 +593,13 @@ const resolvePracticeTransferPayoutStatus = (
   return "partial";
 };
 
-const resolvePracticeTransferDisplayLabel = (item: CreditLedgerItem) => {
+const resolvePracticeTransferDisplayLabel = (
+  item: CreditLedgerItem,
+  isLabViewer = false,
+) => {
   if (isStoreOrderLedgerItem(item)) return STORE_ORDER_TYPE_LABEL;
   if (String(item.refType || "") === "PRACTICE_TRANSFER") {
-    return PRACTICE_TRANSFER_TYPE_LABEL;
+    return resolvePracticeTransferTypeLabel(isLabViewer);
   }
   return String(item.displayLabel || "").trim() || typeLabel(item.type);
 };
@@ -1383,7 +1398,7 @@ const groupLedgerItemsForDisplay = (
         spentPaidAmount,
         spentFreeAmount,
         type: latest.type,
-        displayLabel: PRACTICE_TRANSFER_TYPE_LABEL,
+        displayLabel: resolvePracticeTransferTypeLabel(isLabViewer),
         parts,
         practiceTransferPending: pending,
         practiceTransferPayoutStatus: payoutStatus,
@@ -1439,7 +1454,7 @@ const groupLedgerItemsForDisplay = (
         spentPaidAmount,
         spentFreeAmount,
         type: latest.type,
-        displayLabel: ABUTMENT_DESIGN_TYPE_LABEL,
+        displayLabel: resolveAbutmentDesignTypeLabel(isLabViewer),
         parts: members.map(toAbutmentDisplayPart),
         practiceTransferPending: payoutStatus !== "settled",
         practiceTransferPayoutStatus: payoutStatus,
@@ -1462,7 +1477,7 @@ const groupLedgerItemsForDisplay = (
       spentPaidAmount: Number(item.spentPaidAmount || 0),
       spentFreeAmount: Number(item.spentFreeAmount || 0),
       type: item.type,
-      displayLabel: resolvePracticeTransferDisplayLabel(item),
+      displayLabel: resolvePracticeTransferDisplayLabel(item, isLabViewer),
       parts: null,
       practiceTransferPending: resolvePracticeTransferPending(
         item,
@@ -2727,6 +2742,12 @@ export const CreditLedgerModal = ({
                       String(r.type) === "SPEND_FREE_REQUEST" ||
                       String(r.type) === "SPEND_FREE_SHIPPING") &&
                     (spentPaid > 0 || spentFree > 0);
+                  /** 데모 모드에서 무료(=데모) 버킷 소비 시 금액 아래 표시 */
+                  const showDemoSpendHint =
+                    isDemoMode &&
+                    (spentFree > 0 ||
+                      r.type === "SPEND_FREE_REQUEST" ||
+                      r.type === "SPEND_FREE_SHIPPING");
                   const safeRef = r.item.refRequestId
                     ? formatRequestIdSafe(
                         r.item.refRequestId,
@@ -2791,7 +2812,8 @@ export const CreditLedgerModal = ({
                           skipJig: r.item.skipJig !== false,
                           rushProcessing: Boolean(r.item.rushProcessing),
                           title:
-                            r.displayLabel || PRACTICE_TRANSFER_TYPE_LABEL,
+                            r.displayLabel ||
+                            resolvePracticeTransferTypeLabel(isLabViewer),
                           creditLabHoldPending,
                           creditAbutmentHoldPending,
                           patientName:
@@ -2837,38 +2859,45 @@ export const CreditLedgerModal = ({
                               : "text-primary-strong",
                         )}
                       >
-                        {hasParts ? (
-                          r.isAbutmentDesign ? (
-                            <LedgerPartsAmountHover
-                              totalAmount={amount}
-                              parts={r.parts!}
-                            />
-                          ) : (
-                            <PracticeTransferAmountHover
-                              totalAmount={amount}
-                              parts={r.parts!}
-                              feeQuote={parsePracticeTransferFeeQuote(
-                                r.item.feeQuote,
+                        <div className="flex flex-col items-center leading-4">
+                          {hasParts ? (
+                            r.isAbutmentDesign ? (
+                              <LedgerPartsAmountHover
+                                totalAmount={amount}
+                                parts={r.parts!}
+                              />
+                            ) : (
+                              <PracticeTransferAmountHover
+                                totalAmount={amount}
+                                parts={r.parts!}
+                                feeQuote={parsePracticeTransferFeeQuote(
+                                  r.item.feeQuote,
+                                )}
+                              />
+                            )
+                          ) : showSplit ? (
+                            <>
+                              {spentPaid > 0 && (
+                                <div className="text-xs tabular-nums">
+                                  유료 -{spentPaid.toLocaleString()}원
+                                </div>
                               )}
-                            />
-                          )
-                        ) : showSplit ? (
-                          <div className="flex flex-col items-center leading-4">
-                            {spentPaid > 0 && (
-                              <div className="text-xs tabular-nums">
-                                유료 -{spentPaid.toLocaleString()}원
-                              </div>
-                            )}
-                            {spentFree > 0 && (
-                              <div className="text-xs tabular-nums">
-                                {freeSpendLabel} -
-                                {spentFree.toLocaleString()}원
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                          `${amount.toLocaleString()}원`
-                        )}
+                              {spentFree > 0 && (
+                                <div className="text-xs tabular-nums">
+                                  {freeSpendLabel} -
+                                  {spentFree.toLocaleString()}원
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <span>{`${amount.toLocaleString()}원`}</span>
+                          )}
+                          {showDemoSpendHint ? (
+                            <span className="pt-0.5 text-[10px] font-medium text-muted-foreground">
+                              {DEMO_MODE_BADGE_LABEL}
+                            </span>
+                          ) : null}
+                        </div>
                       </TableCell>
                       <TableCell className="whitespace-nowrap text-center align-middle text-xs tabular-nums text-muted-foreground">
                         {r.balanceAfter !== undefined
