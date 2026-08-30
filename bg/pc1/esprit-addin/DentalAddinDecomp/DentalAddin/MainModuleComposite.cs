@@ -942,12 +942,12 @@ namespace DentalAddin
                 opB.PassPosition = espMill5xCompositePassPosition.espMill5xCompositePassPositionStartEndPosition;
             }
             double? firstPassPercentOverride = TryGetCompositeFirstPassPercentOverride();
-            // 요청 반영:
-            // - Finish_Front 시작점: STL 모델 최좌측(xMin) + 0.001mm
+            // Finish_Front 시작점: MoveSTL 이후 tip SSOT(FrontPointX / xMin) + 0.001mm
+            // 구 Math.Min(0,…) 원점 고정은 MoveSTL tip과 어긋나 tip 0.3mm 미삭을 만듦.
             const double finishFrontStartOffsetFromStlMinMm = 0.001;
 
             double splitline1X = MoveSTL_Module.FrontPointX;
-            double stlStartX = Math.Min(0.0, Math.Min(MoveSTL_Module.FrontPointX, MoveSTL_Module.BackPointX));
+            double stlStartX = GetPostMoveTipXMin();
             bool splitlineResolved = TryGetThreeStageSplitConfig(out double resolvedSplitline1, out _, out double resolvedXMin, out _);
             if (splitlineResolved)
             {
@@ -981,8 +981,8 @@ namespace DentalAddin
             double finishOverlapMm = GetFinishAdjacentOverlapMm();
             const double aEndOffsetFromSplitMm = 0.0;
             double bStartOffsetFromSplitMm = -finishOverlapMm;
-            // [중요] Finish_Back 끝 = BackPointX + 0.3mm. 미적용 시 헥스 쪽 홈/미삭 ~0.3mm.
-            const double compositeEndOffsetFromBackPointMm = 0.3;
+            // Finish_Back 끝 = BackPointX (구 +0.3mm 연장 제거: #520 밴드/tip 정합 어긋남).
+            const double compositeEndOffsetFromBackPointMm = 0.0;
 
             double finishFrontEndX = splitX + aEndOffsetFromSplitMm;
             double finishBackStartX = splitX + bStartOffsetFromSplitMm;
@@ -1004,7 +1004,7 @@ namespace DentalAddin
             }
             DentalLogger.Log($"Composite2SplitLine2 - Finish seam 확정: Front.end%={opA.LastPassPercent:F2} (X={finishFrontEndX:F3}), Back.start%={(runB && opB != null ? opB.FirstPassPercent.ToString("F2", CultureInfo.InvariantCulture) : "<skip>")} (X={finishBackStartX:F3}=Splitline_2-{finishOverlapMm:F3}), overlapMm={finishOverlapMm:F3} (1 pitch), guardWarn={startEndBFirstGuardApplied}");
 
-            // 정책: Finish_Back 종료 기준점은 BackPointX + 0.3mm
+            // 정책: Finish_Back 종료 기준점은 BackPointX
             double compositeEndTargetX = MoveSTL_Module.BackPointX + compositeEndOffsetFromBackPointMm;
             double compositeEndPassPercent = XToPassPercentByStartEndScale(compositeEndTargetX, 0.0, 100.0);
             if (runB && opB != null)
@@ -1013,7 +1013,7 @@ namespace DentalAddin
             }
 
             // Finish_Front 시작점 정책:
-            // - 기본값: STL 시작점(xMin) + 0.001mm
+            // - 기본값: MoveSTL tip xMin(FrontPointX) + 0.001mm
             // - env(ABUTS_COMPOSITE_FIRST_PASS_PERCENT_A) 지정 시 env(퍼센트) 우선
             double requestedAFirstPass = baseAFirstPercent;
             opA.FirstPassPercent = Clamp(requestedAFirstPass, 0.0, opA.LastPassPercent);
@@ -1669,9 +1669,20 @@ namespace DentalAddin
         private const double FrontFaceEndOffsetMaxMm = 2.5;
         private const double FrontFaceEndOffsetFallbackMm = 2.0;
 
-        // Front Face tip 시작: 원점(X=0)에서 출발.
-        // FrontPointX는 tip과 어긋날 수 있어 FrontPointX-여유 방식은 공중 진입이 깨질 수 있음.
-        // MoveSTL 후 바 tip/스핀들 쪽은 보통 원점 근처이므로 원점 시작이 안전하다.
+        // Front Face tip 시작 여유(mm): Face.StartX = FrontPointX - 이 값 (MoveSTL 이후 tip SSOT).
+        // EM2.0BALL 반경(1.0) 공중 진입. 구 TopZ=1.0 원점 고정은 MoveSTL tip과 어긋남.
+        private const double FrontFaceTipClearanceMm = 1.0;
+
+        // Front Face tip 시작: MoveSTL 이후 FrontPointX - FrontFaceTipClearanceMm.
+        // 구 원점(X=0)/TopZ=1.0 고정은 MoveSTL tip과 어긋나 tip 미삭을 만듦.
+
+        /// <summary>
+        /// MoveSTL 이후 tip쪽 X 하한(원점 0 강제 없음). Front/Back 중 작은 값.
+        /// </summary>
+        private static double GetPostMoveTipXMin()
+        {
+            return Math.Min(MoveSTL_Module.FrontPointX, MoveSTL_Module.BackPointX);
+        }
 
         /// <summary>
         /// Face 축 끝 오프셋. 우선순위: env 강제값 → maxDiameter/HighY/BarDia로 tip 반경 추정 → fallback.
@@ -1784,13 +1795,33 @@ namespace DentalAddin
         }
 
         /// <summary>
-        /// Face tip 시작 X = 원점(0). FrontPointX tip 어긋남과 무관하게 스핀들/바 tip 쪽에서 진입.
-        /// TopZLimit은 FACE.prc 값 유지(코드에서 덮어쓰지 않음).
+        /// Face tip 시작 X → TopZLimit. BottomZ와 동일 부호 규칙(RL=1: Z=-X, RL=2: Z=+X).
+        /// </summary>
+        private static void SetFaceTopZLimitFromStartX(TechLatheMoldParallelPlanes faceOp, double faceStartX)
+        {
+            if (RL == 1.0)
+            {
+                faceOp.TopZLimit = -faceStartX;
+            }
+            else if (RL == 2.0)
+            {
+                faceOp.TopZLimit = faceStartX;
+            }
+            else
+            {
+                faceOp.TopZLimit = -faceStartX;
+            }
+        }
+
+        /// <summary>
+        /// MoveSTL 이후 Face tip 시작 X.
+        /// - tip SSOT: FrontPointX
+        /// - startX = FrontPointX - FrontFaceTipClearanceMm
         /// </summary>
         private static double ResolveFrontFaceStartX(out double frontX)
         {
             frontX = MoveSTL_Module.FrontPointX;
-            return 0.0;
+            return frontX - FrontFaceTipClearanceMm;
         }
 
         // Front_Rough 우측 종료 오프셋
@@ -1871,11 +1902,11 @@ namespace DentalAddin
 
 
         /// <summary>
-        /// Front Face(ParallelPlanes) 시작/끝점을 적용한다.
-        /// - 시작: Face.StartX = 0 (원점). FrontPointX tip 어긋남과 무관
+        /// Front Face(ParallelPlanes) 시작/끝점을 MoveSTL 이후 FrontPointX 기준으로 적용한다.
+        /// - 시작: Face.StartX = FrontPointX - FrontFaceTipClearanceMm (구 TopZ=1.0 원점 고정 폐기)
         /// - 끝: Face.RightX = FrontPointX + GetFrontFaceEndOffsetFromFrontMm(), 단 Splitline_2 - 0.001 상한
         /// - LastAppliedFrontFaceDepthMm = FrontFaceFixedDepthMm(0.5mm)
-        /// - TopZ: FACE.prc TopZLimit 유지(코드 미개입) / RL=1: BottomZ=-RightX / RL=2: BottomZ=+RightX
+        /// - RL=1: TopZ=-StartX, BottomZ=-RightX / RL=2: TopZ=+StartX, BottomZ=+RightX
         /// 주의: 이후 TryApplyFaceRightEndGuard는 Face가 Front_Rough(=Splitline_2) 끝을 넘지 않게만 막으며,
         ///       Splitline_2 상한을 다시 적용한다. (구 0.3mm 강제 단축 없음)
         /// </summary>
@@ -1888,6 +1919,7 @@ namespace DentalAddin
 
             try
             {
+                double oldTop = faceOp.TopZLimit;
                 double oldBottom = faceOp.BottomZLimit;
 
                 LastAppliedFrontFaceDepthMm = FrontFaceFixedDepthMm;
@@ -1897,10 +1929,10 @@ namespace DentalAddin
                 double requestedFaceRightX = frontX + faceEndOffsetMm;
                 double appliedFaceRightX = ClampFaceRightXBelowSplitline2(requestedFaceRightX, out double splitline2Used, out bool splitline2ClampApplied);
 
-                // 원점 시작이 끝보다 안쪽(또는 동일)이면 끝 바로 앞으로만 당김 (비정상 FrontPointX 가드)
+                // 시작이 끝보다 안쪽이면 tip 여유를 유지한 채 끝 바로 앞으로 당김
                 if (faceStartX >= appliedFaceRightX - 1e-6)
                 {
-                    faceStartX = appliedFaceRightX - 0.001;
+                    faceStartX = appliedFaceRightX - FrontFaceTipClearanceMm;
                     DentalLogger.Log($"FrontFaceDepth[{context}] - StartX를 RightX 미만으로 보정: startX={faceStartX:F3}, rightX={appliedFaceRightX:F3}");
                 }
 
@@ -1909,10 +1941,10 @@ namespace DentalAddin
                 {
                     DentalLogger.Log($"FrontFaceDepth[{context}] - RL 비정상({RL}), RL=1 기준으로 적용");
                 }
-                // TopZLimit: FACE.prc 값 유지 (덮어쓰지 않음)
+                SetFaceTopZLimitFromStartX(faceOp, faceStartX);
                 SetFaceBottomZLimitFromRightX(faceOp, appliedFaceRightX);
 
-                DentalLogger.Log($"FrontFaceDepth[{context}] - FrontPoint 오프셋 적용: frontX={frontX:F3}, startX={faceStartX:F3}(origin), endOffset={faceEndOffsetMm:F3}, requestRightX={requestedFaceRightX:F3}, appliedRightX={appliedFaceRightX:F3}, TopZ(prc)={faceOp.TopZLimit:F3}, BottomZ:{oldBottom:F3}->{oldBottom2:F3}->{faceOp.BottomZLimit:F3}, DepthRef={LastAppliedFrontFaceDepthMm:F3}, Splitline2={splitline2Used:F3}, Splitline2Clamp={splitline2ClampApplied}, Splitline2Margin={FrontFaceSplitline2NoCrossMarginMm:F3}");
+                DentalLogger.Log($"FrontFaceDepth[{context}] - FrontPoint 오프셋 적용: frontX={frontX:F3}, startX={faceStartX:F3}, endOffset={faceEndOffsetMm:F3}, requestRightX={requestedFaceRightX:F3}, appliedRightX={appliedFaceRightX:F3}, TopZ:{oldTop:F3}->{faceOp.TopZLimit:F3}, BottomZ:{oldBottom:F3}->{oldBottom2:F3}->{faceOp.BottomZLimit:F3}, DepthRef={LastAppliedFrontFaceDepthMm:F3}, Splitline2={splitline2Used:F3}, Splitline2Clamp={splitline2ClampApplied}, Splitline2Margin={FrontFaceSplitline2NoCrossMarginMm:F3}");
             }
             catch (Exception ex)
             {
@@ -2629,8 +2661,7 @@ namespace DentalAddin
                 string.Equals(twoPhaseEnabled, "1", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(twoPhaseEnabled, "true", StringComparison.OrdinalIgnoreCase);
 
-            double frontBackMin = Math.Min(MoveSTL_Module.FrontPointX, MoveSTL_Module.BackPointX);
-            double xMin = Math.Min(0.0, frontBackMin);
+            double xMin = GetPostMoveTipXMin();
             double xMax = Math.Max(MoveSTL_Module.FrontPointX, MoveSTL_Module.BackPointX);
 
             // 요청 반영:
@@ -2759,8 +2790,7 @@ namespace DentalAddin
             {
                 double front = MoveSTL_Module.FrontPointX;
                 double back = MoveSTL_Module.BackPointX;
-                double frontBackMin = Math.Min(front, back);
-                xMin = Math.Min(0.0, frontBackMin);
+                xMin = GetPostMoveTipXMin();
                 xMax = Math.Max(front, back);
                 if (xMax - xMin < 1e-6)
                 {
@@ -2815,8 +2845,7 @@ namespace DentalAddin
             {
                 double front = MoveSTL_Module.FrontPointX;
                 double back = MoveSTL_Module.BackPointX;
-                double frontBackMin = Math.Min(front, back);
-                double xMin = Math.Min(0.0, frontBackMin);
+                double xMin = GetPostMoveTipXMin();
                 double xMax = Math.Max(front, back);
 
                 // env는 StlFileProcessor가 동일 SSOT 식으로 주입한다. 값이 있으면 그대로 사용.
@@ -3140,7 +3169,7 @@ namespace DentalAddin
             {
                 double front = MoveSTL_Module.FrontPointX;
                 double back = MoveSTL_Module.BackPointX;
-                double xMin = Math.Min(0.0, Math.Min(front, back));
+                double xMin = GetPostMoveTipXMin();
                 double xMax = Math.Max(front, back);
 
                 // 1) TurningProfile 결과를 최우선 사용

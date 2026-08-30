@@ -1373,7 +1373,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         double candidateBack = currentFinishX + direction * offsetMm;
                         double rawSplitX = useFrontSide ? candidateFront : candidateBack;
 
-                        double xMin = Math.Min(0.0, Math.Min(frontX, backX));
+                        double xMin = Math.Min(frontX, backX);
                         double xMax = Math.Max(frontX, backX);
                         // 경계에 너무 붙으면 SplitPercent가 0%/100%에 붙어 AB 분할이 꺼지므로 0.5mm 안전 마진 사용
                         double splitX = Math.Max(xMin + 0.5, Math.Min(xMax - 0.5, rawSplitX));

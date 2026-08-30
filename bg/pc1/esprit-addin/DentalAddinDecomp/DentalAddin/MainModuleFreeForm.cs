@@ -125,7 +125,7 @@ namespace DentalAddin
                         return false;
                     }
 
-                    // Front Face: 시작=원점(X=0), 끝=FrontPointX+dynamic tip offset (Splitline_2 미만).
+                    // Front Face: MoveSTL 이후 tip SSOT — StartX = FrontPointX - tip clearance.
                     ApplyFrontFaceFixedDepth(faceOp, "TryRunFreeFormMillSafe:FrontFace");
 
                     ZH = Math.Abs(MoveSTL_Module.FrontPointX);
