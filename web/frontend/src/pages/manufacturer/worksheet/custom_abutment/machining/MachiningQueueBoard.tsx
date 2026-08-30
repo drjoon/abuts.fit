@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-30: 상단 CNC Alert 뱃지 클릭 시 알람 상세 모달 표시.
 // - 2026-08-29: BG 완료 후 열린 프리뷰 — NC/filled만 선택 무효화 후 갱신(STL 불필요 재다운로드 방지).
 // - 2026-08-29: 큐→프리뷰 오픈 시 forceRefresh 제거 — IndexedDB STL/NC 캐시 재사용.
 // - 2026-08-29: 예약 관리·Next Up「생성 중단」— cancel-regeneration API.
@@ -23,6 +24,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/usePreviewLoader.ts
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers.ts
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/components/ExpressRebalanceAlertModal.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/components/MachiningAlertModal.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/components/MachiningPriorityRulesModal.tsx
 // - web/backend/controllers/requests/expressDeadlineRebalance.utils.js
 // - web/backend/controllers/requests/machiningPriorityRules.js
@@ -69,6 +71,7 @@ import { CncMaterialModal } from "@/pages/manufacturer/equipment/cnc/components/
 import { useManUpload } from "@/pages/manufacturer/equipment/cnc/hooks/useManUpload";
 import { MachiningRequestLabel } from "./components/MachiningRequestLabel";
 import { ExpressRebalanceAlertModal } from "./components/ExpressRebalanceAlertModal";
+import { MachiningAlertModal } from "./components/MachiningAlertModal";
 import { MachiningPriorityRulesModal } from "./components/MachiningPriorityRulesModal";
 import { buildLabelExtraProps } from "./utils/label";
 import { PreviewModal } from "@/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal";
@@ -406,8 +409,15 @@ export const MachiningQueueBoard = ({
 
   const [expressRebalanceModalOpen, setExpressRebalanceModalOpen] =
     useState(false);
+  const [machiningAlertModalOpen, setMachiningAlertModalOpen] = useState(false);
   const [priorityRulesModalOpen, setPriorityRulesModalOpen] = useState(false);
   const lastAutoOpenedExpressRebalanceIdRef = useRef<string>("");
+
+  useEffect(() => {
+    if (machiningAlerts.length === 0) {
+      setMachiningAlertModalOpen(false);
+    }
+  }, [machiningAlerts.length]);
 
   useEffect(() => {
     const hasAlert =
@@ -1592,22 +1602,23 @@ export const MachiningQueueBoard = ({
             </button>
           ) : null}
           {machiningAlerts.length > 0 ? (
-            <div
-              className="flex items-center gap-1 rounded-lg border border-destructive-muted bg-destructive-soft px-2 py-1 text-[11px] font-semibold text-destructive"
-              title={machiningAlerts
-                .slice(0, 3)
-                .map(
-                  (it: any) =>
-                    `${it.machineId}${it.requestId ? ` / ${it.requestId}` : ""}${it.errorCode ? ` (${it.errorCode})` : ""}`,
-                )
-                .join("\n")}
-            >
-              <AlertTriangle className="h-3.5 w-3.5" />
-              <span>Alert {machiningAlerts.length}</span>
+            <div className="flex items-center gap-1 rounded-lg border border-destructive-muted bg-destructive-soft px-2 py-1 text-[11px] font-semibold text-destructive">
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 hover:underline"
+                onClick={() => setMachiningAlertModalOpen(true)}
+                title="CNC 알람 상세 보기"
+              >
+                <AlertTriangle className="h-3.5 w-3.5" />
+                <span>Alert {machiningAlerts.length}</span>
+              </button>
               <button
                 type="button"
                 className="inline-flex h-4 w-4 items-center justify-center rounded text-destructive hover:bg-destructive-soft"
-                onClick={() => clearMachiningAlerts()}
+                onClick={() => {
+                  clearMachiningAlerts();
+                  setMachiningAlertModalOpen(false);
+                }}
                 title="알람 뱃지 지우기"
               >
                 <X className="h-3 w-3" />
@@ -2560,6 +2571,13 @@ export const MachiningQueueBoard = ({
         open={expressRebalanceModalOpen}
         onOpenChange={handleExpressRebalanceModalOpenChange}
         alert={expressRebalanceAlert as any}
+      />
+
+      <MachiningAlertModal
+        open={machiningAlertModalOpen}
+        onOpenChange={setMachiningAlertModalOpen}
+        alerts={machiningAlerts}
+        onClearAll={clearMachiningAlerts}
       />
 
       <MachiningPriorityRulesModal
