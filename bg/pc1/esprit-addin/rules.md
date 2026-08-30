@@ -111,8 +111,9 @@
   - Finish: `Finish_Front` 끝 = `SharedFinishSplitX`, `Finish_Back` 시작 = `SharedFinishSplitX - GetFinishAdjacentOverlapMm()`
   - `Finish_Back` 끝 = `BackPointX` (`compositeEndOffsetFromBackPointMm=0`)
     - 구 `BackPointX+0.3mm`는 `#520` 밴드/tip 정합 어긋남을 만들어 제거.
-  - tip쪽 X 하한(`xMin`): MoveSTL 이후 `min(FrontPointX, BackPointX)` — **원점 0 강제 금지**
+  - tip쪽 X 하한(`xMin`): **원점 0** (`Math.Min(0, Front/Back)`) — tipMesh+0.3(≈0.35) 밀기 제거
     - `Front_Turn` / `Front_Rough` / `Finish_Front` 시작이 이 `xMin`을 따름
+    - `Splitline_1 = FrontPointX` (Material Diameter)는 끝/스플릿 앵커로만 사용
   - Finish_Front StepIncrement도 동일 groove 매핑으로 COM SetProperty (`TrySetCompositeStepIncrement`)
   - `safeBFirstMax`는 seam을 당기지 않는다(로그만)
   - 금지: `ABUTS_COMPOSITE_STEP_INCREMENT_A` 의존, Finish_Back의 D1.2 반경 앞당김, 고정 0.5mm 겹침, `Middle_Turn`/`Middle_Rough` 재도입
@@ -135,27 +136,27 @@
 - 목적:
   - CAM 직경 8.0 케이스에서 대구경 선행 가공을 제거해 불필요 공정/시간을 줄인다.
 
-### 4.6 Front Face/Back Turn 경계 보정 (2026-07-01, Face offset 동적화 2026-08-29, tip→FrontPointX 2026-08-30)
+### 4.6 Front Face/Back Turn 경계 보정 (2026-07-01, Face offset 동적화 2026-08-29, tip 원점 복구 2026-08-30)
 
 - Front Face 시작/종료점 정책(현행 SSOT):
-  - 시작: `Face.StartX = FrontPointX - FrontFaceTipClearanceMm(1.0)` (MoveSTL 이후 tip SSOT)
-    - RL=1: `TopZ=-StartX`, `BottomZ=-RightX` / RL=2: `TopZ=+StartX`, `BottomZ=+RightX`
-    - 구 원점 `StartX=0` / `TopZ=1.0`(FACE.prc 유지) 는 MoveSTL tip과 어긋나 tip 미삭 → 폐기
-  - 끝: `Face.RightX = FrontPointX + L`, 단 항상 `Face.RightX < Splitline_2` (`Splitline_2 - 0.001mm` 상한 클램프)
+  - 시작: `Face.StartX = 0` (원점). `TopZLimit`은 **FACE.prc 유지**(통상 1.0). 코드가 StartX로 TopZ를 덮지 않음.
+  - 끝: `Face.RightX = FrontPointX + L` (Material Diameter / Splitline_1 앵커), 단 항상 `Face.RightX < Splitline_2` (`Splitline_2 - 0.001mm` 상한 클램프)
+    - RL=1: `BottomZ=-RightX` / RL=2: `BottomZ=+RightX`
+  - Turn/Rough/Finish tip 하한: **원점 0** (구 tipMesh+0.3≈0.35 밀기 폐기)
   - `L` 동적(구 고정 3.0mm 폐기):
     - 강제: env `ABUTS_FRONT_FACE_END_OFFSET_MM` (≥0, 상한 3.0)
     - 기본: tip 반경 추정 `R_tip` → `L = clamp(0.45·R_tip + 0.85, 1.2, 2.5)`
     - `R_tip` 우선순위: `ABUTS_MAX_DIAMETER`×0.20 → `HighY`×0.45 → `BarDiameter`×0.20 (각 [1.2, 3.5])
     - 추정 실패 시 fallback `L=2.0`
   - `LastAppliedFrontFaceDepthMm = 0.5mm` (`FrontFaceFixedDepthMm`)
-  - 구현 위치: `ResolveFrontFaceStartX` / `SetFaceTopZLimitFromStartX` / `GetFrontFaceEndOffsetFromFrontMm` / `ApplyFrontFaceFixedDepth` / `ClampFaceRightXBelowSplitline2` / `GetPostMoveTipXMin`
+  - 구현 위치: `ResolveFrontFaceStartX` / `SetFaceTopZLimitFromStartX`(원점이면 no-op) / `GetFrontFaceEndOffsetFromFrontMm` / `ApplyFrontFaceFixedDepth` / `ClampFaceRightXBelowSplitline2` / `GetPostMoveTipXMin`
   - `ABUTS_MAX_DIAMETER` 주입: `StlFileProcessor` request-meta `maxDiameter`
   - 후속 가드(`TryApplyFaceRightEndGuard`): Front_Rough 끝(=Splitline_2)을 넘지 않게만 보정하고, Splitline_2 상한을 다시 적용한다 (0.3mm 추가 단축 없음).
     - 현행 RoughA.RightX SSOT가 Splitline_2라서 Splitline_2 클램프와 동일 상한이다.
   - `FACE.prc` step SSOT: `StepPercentOfDiameter=2`, `StepOver=0.05`, `StockAllowanceWalls=0.0`
 
 - Back Turn 시작점/퇴출 정책(현행 SSOT):
-  - 시작점은 `FrontPointX` anchor로 통일한다. (`Front_Turn`과 동일 기준 — tip `xMin`도 FrontPointX)
+  - 시작점은 `FrontPointX`(Splitline_1) anchor로 통일한다.
   - 끝점은 `xMax` 고정 클램프를 쓰지 않고, `exitAllowance`를 더해
     수평 extension + 45도 퇴출 형상이 유지되도록 한다.
   - 구현 위치: `MainModuleOperations.TryPrepareTurningRegionRange` (`BACK`),

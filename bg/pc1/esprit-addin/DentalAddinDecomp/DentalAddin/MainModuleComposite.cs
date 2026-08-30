@@ -942,8 +942,7 @@ namespace DentalAddin
                 opB.PassPosition = espMill5xCompositePassPosition.espMill5xCompositePassPositionStartEndPosition;
             }
             double? firstPassPercentOverride = TryGetCompositeFirstPassPercentOverride();
-            // Finish_Front 시작점: MoveSTL 이후 tip SSOT(FrontPointX / xMin) + 0.001mm
-            // 구 Math.Min(0,…) 원점 고정은 MoveSTL tip과 어긋나 tip 0.3mm 미삭을 만듦.
+            // Finish_Front 시작점: 원점 xMin + 0.001mm (tipMesh+0.3≈0.35 밀기 제거).
             const double finishFrontStartOffsetFromStlMinMm = 0.001;
 
             double splitline1X = MoveSTL_Module.FrontPointX;
@@ -952,6 +951,7 @@ namespace DentalAddin
             if (splitlineResolved)
             {
                 splitline1X = resolvedSplitline1;
+                // resolvedXMin도 GetPostMoveTipXMin SSOT (ThreeStageSplit xMin)
                 stlStartX = resolvedXMin;
             }
 
@@ -1013,7 +1013,7 @@ namespace DentalAddin
             }
 
             // Finish_Front 시작점 정책:
-            // - 기본값: MoveSTL tip xMin(FrontPointX) + 0.001mm
+            // - 기본값: 원점 xMin + 0.001mm
             // - env(ABUTS_COMPOSITE_FIRST_PASS_PERCENT_A) 지정 시 env(퍼센트) 우선
             double requestedAFirstPass = baseAFirstPercent;
             opA.FirstPassPercent = Clamp(requestedAFirstPass, 0.0, opA.LastPassPercent);
@@ -1669,19 +1669,23 @@ namespace DentalAddin
         private const double FrontFaceEndOffsetMaxMm = 2.5;
         private const double FrontFaceEndOffsetFallbackMm = 2.0;
 
-        // Front Face tip 시작 여유(mm): Face.StartX = FrontPointX - 이 값 (MoveSTL 이후 tip SSOT).
-        // EM2.0BALL 반경(1.0) 공중 진입. 구 TopZ=1.0 원점 고정은 MoveSTL tip과 어긋남.
+        // Front Face start가 RightX 이상일 때만 쓰는 여유(원점 시작이 정상).
         private const double FrontFaceTipClearanceMm = 1.0;
 
-        // Front Face tip 시작: MoveSTL 이후 FrontPointX - FrontFaceTipClearanceMm.
-        // 구 원점(X=0)/TopZ=1.0 고정은 MoveSTL tip과 어긋나 tip 미삭을 만듦.
-
         /// <summary>
-        /// MoveSTL 이후 tip쪽 X 하한(원점 0 강제 없음). Front/Back 중 작은 값.
+        /// tip 구간 하한 = 원점 0 (레거시). tipMesh+0.3(≈0.35) 밀기 제거.
         /// </summary>
         private static double GetPostMoveTipXMin()
         {
-            return Math.Min(MoveSTL_Module.FrontPointX, MoveSTL_Module.BackPointX);
+            return Math.Min(0.0, Math.Min(MoveSTL_Module.FrontPointX, MoveSTL_Module.BackPointX));
+        }
+
+        /// <summary>
+        /// TurningFeature 등 외부 모듈용 tip 구간 하한.
+        /// </summary>
+        public static double ResolvePostMoveTipRangeMinX()
+        {
+            return GetPostMoveTipXMin();
         }
 
         /// <summary>
@@ -1796,9 +1800,15 @@ namespace DentalAddin
 
         /// <summary>
         /// Face tip 시작 X → TopZLimit. BottomZ와 동일 부호 규칙(RL=1: Z=-X, RL=2: Z=+X).
+        /// 원점 시작(startX=0)일 때는 호출하지 않고 FACE.prc TopZ(1.0)를 유지한다.
         /// </summary>
         private static void SetFaceTopZLimitFromStartX(TechLatheMoldParallelPlanes faceOp, double faceStartX)
         {
+            if (Math.Abs(faceStartX) <= 1e-9)
+            {
+                return;
+            }
+
             if (RL == 1.0)
             {
                 faceOp.TopZLimit = -faceStartX;
@@ -1814,14 +1824,12 @@ namespace DentalAddin
         }
 
         /// <summary>
-        /// MoveSTL 이후 Face tip 시작 X.
-        /// - tip SSOT: FrontPointX
-        /// - startX = FrontPointX - FrontFaceTipClearanceMm
+        /// Front Face tip 시작 X = 원점 0 (레거시). RightX 끝만 FrontPointX(Material Diameter)+L.
         /// </summary>
         private static double ResolveFrontFaceStartX(out double frontX)
         {
             frontX = MoveSTL_Module.FrontPointX;
-            return frontX - FrontFaceTipClearanceMm;
+            return 0.0;
         }
 
         // Front_Rough 우측 종료 오프셋
@@ -1902,11 +1910,11 @@ namespace DentalAddin
 
 
         /// <summary>
-        /// Front Face(ParallelPlanes) 시작/끝점을 MoveSTL 이후 FrontPointX 기준으로 적용한다.
-        /// - 시작: Face.StartX = FrontPointX - FrontFaceTipClearanceMm (구 TopZ=1.0 원점 고정 폐기)
+        /// Front Face(ParallelPlanes): tip 시작 원점 0, 끝은 FrontPointX(Material Diameter)+L.
+        /// - 시작: Face.StartX = 0 (원점). TopZ는 FACE.prc 유지(1.0)
         /// - 끝: Face.RightX = FrontPointX + GetFrontFaceEndOffsetFromFrontMm(), 단 Splitline_2 - 0.001 상한
         /// - LastAppliedFrontFaceDepthMm = FrontFaceFixedDepthMm(0.5mm)
-        /// - RL=1: TopZ=-StartX, BottomZ=-RightX / RL=2: TopZ=+StartX, BottomZ=+RightX
+        /// - RL=1: BottomZ=-RightX / RL=2: BottomZ=+RightX
         /// 주의: 이후 TryApplyFaceRightEndGuard는 Face가 Front_Rough(=Splitline_2) 끝을 넘지 않게만 막으며,
         ///       Splitline_2 상한을 다시 적용한다. (구 0.3mm 강제 단축 없음)
         /// </summary>
@@ -1944,7 +1952,7 @@ namespace DentalAddin
                 SetFaceTopZLimitFromStartX(faceOp, faceStartX);
                 SetFaceBottomZLimitFromRightX(faceOp, appliedFaceRightX);
 
-                DentalLogger.Log($"FrontFaceDepth[{context}] - FrontPoint 오프셋 적용: frontX={frontX:F3}, startX={faceStartX:F3}, endOffset={faceEndOffsetMm:F3}, requestRightX={requestedFaceRightX:F3}, appliedRightX={appliedFaceRightX:F3}, TopZ:{oldTop:F3}->{faceOp.TopZLimit:F3}, BottomZ:{oldBottom:F3}->{oldBottom2:F3}->{faceOp.BottomZLimit:F3}, DepthRef={LastAppliedFrontFaceDepthMm:F3}, Splitline2={splitline2Used:F3}, Splitline2Clamp={splitline2ClampApplied}, Splitline2Margin={FrontFaceSplitline2NoCrossMarginMm:F3}");
+                DentalLogger.Log($"FrontFaceDepth[{context}] - FrontPoint 오프셋 적용: frontX={frontX:F3}, startX={faceStartX:F3}(origin), endOffset={faceEndOffsetMm:F3}, requestRightX={requestedFaceRightX:F3}, appliedRightX={appliedFaceRightX:F3}, TopZ(prc)={faceOp.TopZLimit:F3} (was {oldTop:F3}), BottomZ:{oldBottom:F3}->{oldBottom2:F3}->{faceOp.BottomZLimit:F3}, DepthRef={LastAppliedFrontFaceDepthMm:F3}, Splitline2={splitline2Used:F3}, Splitline2Clamp={splitline2ClampApplied}, Splitline2Margin={FrontFaceSplitline2NoCrossMarginMm:F3}");
             }
             catch (Exception ex)
             {

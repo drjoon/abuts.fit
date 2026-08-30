@@ -150,7 +150,8 @@ internal sealed class TurningFeature_Extension
 				featureChain = null;
 			}
 			Point point;
-			double tipStartX = MoveSTL_Module.FrontPointX;
+			// tip 구간 하한 = 원점 0 (레거시)
+			double tipStartX = MainModule.ResolvePostMoveTipRangeMinX();
 			if (featureChain == null)
 			{
 				point = ((!(MainModule.HighY > MainModule.Document.LatheMachineSetup.BarDiameter / 2.0 - 0.25)) ? MainModule.Document.Points.Add(tipStartX, MainModule.Document.LatheMachineSetup.BarDiameter / 2.0 - 0.25, 0.0) : MainModule.Document.Points.Add(tipStartX, MainModule.HighY + 0.05, 0.0));

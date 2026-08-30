@@ -415,7 +415,7 @@ namespace DentalAddin
                     return;
                 }
 
-                // Front Face: MoveSTL 이후 tip SSOT — StartX = FrontPointX - tip clearance.
+                // Front Face: tip 시작 원점 0, RightX = FrontPointX(Material Diameter)+L. TopZ=FACE.prc 유지.
                 ApplyFrontFaceFixedDepth(techLatheMoldParallelPlanes, "FrontFaceMill");
 
                 ZH = Math.Abs(MoveSTL_Module.FrontPointX);
