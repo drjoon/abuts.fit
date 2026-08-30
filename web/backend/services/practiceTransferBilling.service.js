@@ -798,18 +798,24 @@ export async function assertPracticeTransferPaidCreditSufficient({
     };
   }
 
-  // 제조사→기공소 배송비는 주문 기공소 크레딧.
+  // 제조사→기공소 배송비는 주문 기공소 크레딧(데모 무료의뢰 제외 · 실유료/무료만).
   if (abutsShippingRequired > 0) {
     const labId = String(labAnchorId || "").trim();
     if (labId && Types.ObjectId.isValid(labId)) {
       const labBalance = await computeBusinessCreditBalanceFromLedger({
         businessAnchorId: labId,
       });
+      const {
+        resolveDemoFreeRequestReserveCap,
+        excludeDemoFreeRequestFromBalance,
+      } = await import("../controllers/businesses/business.demoMode.util.js");
+      const demoCap = await resolveDemoFreeRequestReserveCap(labId);
+      const spendable = excludeDemoFreeRequestFromBalance(labBalance, demoCap);
       const labSplit = allocateSpendFromCreditBuckets({
         amount: abutsShippingRequired,
-        paidCredit: Number(labBalance?.paidCredit || 0),
-        freeRequestCredit: Number(labBalance?.freeRequestCredit || 0),
-        freeShippingCredit: Number(labBalance?.freeShippingCredit || 0),
+        paidCredit: Number(spendable?.paidCredit || 0),
+        freeRequestCredit: Number(spendable?.freeRequestCredit || 0),
+        freeShippingCredit: Number(spendable?.freeShippingCredit || 0),
         freeOrder: ["freeShipping", "freeRequest"],
       });
       if (!labSplit.ok) {

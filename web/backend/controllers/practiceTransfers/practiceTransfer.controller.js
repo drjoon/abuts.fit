@@ -237,6 +237,39 @@ const LAB_FEE_UNCONFIGURED_REASON = "lab_fee_unconfigured";
 const LAB_FEE_UNCONFIGURED_ACCEPT_MESSAGE =
   "치과에서 의뢰가 들어왔습니다. 기공비를 정상적으로 받으려면 기공수가를 먼저 설정한 뒤 수락해주세요.";
 
+/** PTX CA(어벗 생산) — 기공소 실크레딧 부족 */
+const PTX_CA_INSUFFICIENT_CREDIT_REASON = "insufficient_credit_for_ptx_ca";
+const PTX_CA_INSUFFICIENT_CREDIT_MESSAGE =
+  "커스텀어벗 생산은 유료/무료 크레딧으로 결제됩니다. 데모 크레딧은 사용할 수 없습니다. 충전 후 다시 시도해 주세요.";
+
+function isPtxCaInsufficientCreditError(err) {
+  const reason = String(err?.payload?.reason || err?.code || "").trim();
+  const status = Number(err?.statusCode || 0);
+  return (
+    status === 402 ||
+    reason === "insufficient_credit_for_hold" ||
+    reason === PTX_CA_INSUFFICIENT_CREDIT_REASON ||
+    reason === "insufficient_lab_credit_for_abuts_shipping"
+  );
+}
+
+function rejectPtxCaInsufficientCredit(res, err) {
+  const status = Number(err?.statusCode || 402);
+  const reason = String(err?.payload?.reason || err?.code || "").trim();
+  const rawMsg = String(err?.message || "").trim();
+  const useCanonical =
+    !rawMsg ||
+    reason === "insufficient_credit_for_hold" ||
+    reason === PTX_CA_INSUFFICIENT_CREDIT_REASON ||
+    rawMsg.includes("크레딧이 부족");
+  return res.status(status >= 400 && status < 600 ? status : 402).json({
+    success: false,
+    message: useCanonical ? PTX_CA_INSUFFICIENT_CREDIT_MESSAGE : rawMsg,
+    reason: PTX_CA_INSUFFICIENT_CREDIT_REASON,
+    ...(err?.payload && typeof err.payload === "object" ? err.payload : {}),
+  });
+}
+
 function rejectLabFeeUnconfigured(res, err) {
   const status = Number(err?.statusCode || 409);
   const missingFeeNames = Array.isArray(err?.missingFeeNames)
@@ -5110,7 +5143,10 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
             transferDoc: doc,
             actorUserId: req.user?._id || null,
           });
-        } catch {
+        } catch (abutErr) {
+          if (isPtxCaInsufficientCreditError(abutErr)) {
+            return rejectPtxCaInsufficientCredit(res, abutErr);
+          }
           // idempotent path — 생성 실패는 다음 진입에서 재시도
         }
         await ensurePracticeTransferChatRoomOnAccept({
@@ -5262,6 +5298,9 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
         }
         clearAutoMatchClaimFields(doc, { bumpRelease: false });
         await doc.save();
+        if (isPtxCaInsufficientCreditError(abutErr)) {
+          return rejectPtxCaInsufficientCredit(res, abutErr);
+        }
         return res.status(409).json({
           success: false,
           message:
@@ -5449,6 +5488,9 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
           actorUserId: req.user?._id || null,
         });
       } catch (abutErr) {
+        if (isPtxCaInsufficientCreditError(abutErr)) {
+          return rejectPtxCaInsufficientCredit(res, abutErr);
+        }
         if (!alreadyAccepted) {
           return res.status(409).json({
             success: false,
@@ -5615,7 +5657,10 @@ export async function markReceivedPracticeTransferComplete(req, res) {
           transferDoc: doc,
           actorUserId: req.user?._id || null,
         });
-      } catch {
+      } catch (abutErr) {
+        if (isPtxCaInsufficientCreditError(abutErr)) {
+          return rejectPtxCaInsufficientCredit(res, abutErr);
+        }
         // complete는 크라운 업로드가 주 목적 — 보정 실패는 디자인 컨펌 경로에서 재시도
       }
     }
@@ -6304,6 +6349,9 @@ export async function confirmPracticeTransferProduction(req, res) {
           actorUserId: doc.autoMatch?.completedBy || null,
         });
       } catch (createErr) {
+        if (isPtxCaInsufficientCreditError(createErr)) {
+          return rejectPtxCaInsufficientCredit(res, createErr);
+        }
         return res.status(409).json({
           success: false,
           message:

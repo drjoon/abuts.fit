@@ -278,7 +278,28 @@ import {
   LAB_FEE_UNCONFIGURED_REASON,
   readLabFeeScheduleConfigured,
 } from "@/features/settings/LabFeeSetupPrompt";
+import {
+  PTX_CA_INSUFFICIENT_CREDIT_CONFIRM_LABEL,
+  PTX_CA_INSUFFICIENT_CREDIT_DESCRIPTION_LINES,
+  PTX_CA_INSUFFICIENT_CREDIT_REASON,
+  PTX_CA_INSUFFICIENT_CREDIT_TITLE,
+} from "@/shared/demo/demoModeCopy";
 import type { ReactNode } from "react";
+
+const CREDITS_CHARGE_HREF = "/dashboard/credits?tab=charge";
+
+function isPtxCaInsufficientCreditBody(body: Record<string, unknown>, status?: number) {
+  const reason = String(body.reason || "").trim();
+  const message = String(body.message || "").trim();
+  return (
+    status === 402 ||
+    reason === PTX_CA_INSUFFICIENT_CREDIT_REASON ||
+    reason === "insufficient_credit_for_hold" ||
+    reason === "insufficient_lab_credit_for_abuts_shipping" ||
+    message.includes("크레딧이 부족") ||
+    message.includes("데모 크레딧은 사용할 수 없습니다")
+  );
+}
 
 type AbutmentPendingMeta = {
   requestId: string;
@@ -670,6 +691,8 @@ export function RequestorPracticeReceivePage({
   const [rejectBusy, setRejectBusy] = useState(false);
   const [rejectConfirmOpen, setRejectConfirmOpen] = useState(false);
   const rejectTargetRef = useRef<ReceivedPracticeTransfer | null>(null);
+  const [ptxCaCreditConfirmOpen, setPtxCaCreditConfirmOpen] = useState(false);
+  const [ptxCaCreditConfirmMessage, setPtxCaCreditConfirmMessage] = useState("");
   const [openSubcontractBusy, setOpenSubcontractBusy] = useState(false);
   const [releaseBusy, setReleaseBusy] = useState(false);
   const [cardActionBusyId, setCardActionBusyId] = useState<string>("");
@@ -2060,6 +2083,11 @@ export function RequestorPracticeReceivePage({
   /** 수락/취소 버튼 UI 전환 최소 딜레이(API는 백그라운드, UI는 이 시간만 대기) */
   const ACTION_UI_MIN_MS = 500;
 
+  const openPtxCaCreditConfirm = useCallback((message?: string) => {
+    setPtxCaCreditConfirmMessage(String(message || "").trim());
+    setPtxCaCreditConfirmOpen(true);
+  }, []);
+
   const markTransferAccepted = useCallback(
     async (transfer: ReceivedPracticeTransfer) => {
       if (!token) return false;
@@ -2197,13 +2225,17 @@ export function RequestorPracticeReceivePage({
                   ? (res.data as Record<string, unknown>)
                   : {};
               applyAcceptedLocalPatch(transfer, rollbackPatch);
-              toast({
-                title: "의뢰수락 실패",
-                description: String(
-                  body.message || "의뢰수락 중 오류가 발생했습니다.",
-                ),
-                variant: "destructive",
-              });
+              if (isPtxCaInsufficientCreditBody(body, res.status)) {
+                openPtxCaCreditConfirm(String(body.message || ""));
+              } else {
+                toast({
+                  title: "의뢰수락 실패",
+                  description: String(
+                    body.message || "의뢰수락 중 오류가 발생했습니다.",
+                  ),
+                  variant: "destructive",
+                });
+              }
               if (String(body.reason || "") === LAB_FEE_UNCONFIGURED_REASON) {
                 const fromApi = Array.isArray(body.missingFeeNames)
                   ? body.missingFeeNames
@@ -2378,6 +2410,7 @@ export function RequestorPracticeReceivePage({
       mergeProductionRelatedRequestIds,
       navigate,
       openDesignSoftwareModal,
+      openPtxCaCreditConfirm,
       pickRelatedRequestIdsFromPayload,
       settingsComplete,
       toast,
@@ -3948,6 +3981,15 @@ export function RequestorPracticeReceivePage({
               applyAcceptedLocalPatch(transfer, { production: productionPatch });
               workingTransfer = { ...transfer, production: productionPatch };
             }
+          } else {
+            const body =
+              refreshRes.data && typeof refreshRes.data === "object"
+                ? (refreshRes.data as Record<string, unknown>)
+                : {};
+            if (isPtxCaInsufficientCreditBody(body, refreshRes.status)) {
+              openPtxCaCreditConfirm(String(body.message || ""));
+              return;
+            }
           }
         } catch {
           // fall through to toast
@@ -4072,6 +4114,7 @@ export function RequestorPracticeReceivePage({
       fetchRequestCaseInfos,
       mergeProductionRelatedRequestIds,
       openAbutmentDesignConfirmQueue,
+      openPtxCaCreditConfirm,
       pickRelatedRequestIdsFromPayload,
       toast,
       token,
@@ -5372,6 +5415,29 @@ export function RequestorPracticeReceivePage({
           setRejectConfirmOpen(false);
           rejectTargetRef.current = null;
         }}
+      />
+      <ConfirmDialog
+        open={ptxCaCreditConfirmOpen}
+        title={PTX_CA_INSUFFICIENT_CREDIT_TITLE}
+        panelClassName="max-w-lg"
+        description={
+          <div className="space-y-1.5 leading-relaxed">
+            {(ptxCaCreditConfirmMessage
+              ? [ptxCaCreditConfirmMessage]
+              : PTX_CA_INSUFFICIENT_CREDIT_DESCRIPTION_LINES
+            ).map((line) => (
+              <p key={line}>{line}</p>
+            ))}
+          </div>
+        }
+        confirmLabel={PTX_CA_INSUFFICIENT_CREDIT_CONFIRM_LABEL}
+        cancelLabel="닫기"
+        confirmTone="primary"
+        onConfirm={() => {
+          setPtxCaCreditConfirmOpen(false);
+          navigate(CREDITS_CHARGE_HREF);
+        }}
+        onCancel={() => setPtxCaCreditConfirmOpen(false)}
       />
       </>
       ) : null}
