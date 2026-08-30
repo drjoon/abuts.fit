@@ -7,6 +7,7 @@
 // - web/frontend/src/pages/manufacturer/equipment/cnc/components/CncPlaylistDrawer.tsx
 // - web/backend/controllers/requests/common.review.controller.js
 // change-log:
+// - 2026-08-30: stopNowPlayingMachining — 브리지 stop + machining/cancel, canceled 소켓 반영.
 // - 2026-08-29: CAM 생성 중단 소켓/커스텀 이벤트 — ncPreload CANCELLED·블러 해제.
 // - 2026-08-29: 예약 관리 열린 동안 큐 NC 메타 변경 시 playlistJobs 동기화.
 // - 2026-08-29: PreviewModal NC 재생성 시 cam-processing-started로 큐 NC 즉시 제거(Next Up「CAM 생성 중」).
@@ -24,6 +25,7 @@ import {
   onCncMachiningAlarm,
   onCncMachiningCompleted,
   onCncMachiningFailed,
+  onCncMachiningCanceled,
   onCncMachiningTick,
   onCncMachiningStarted,
   onCncMachineSettingsChanged,
@@ -1769,6 +1771,13 @@ export const useMachiningBoard = ({
 
       clearMachiningRuntimeState(mid);
 
+      const errorCode = data?.errorCode != null ? String(data.errorCode) : "";
+      if (errorCode === "CNC_USER_STOP") {
+        void refreshProductionQueues();
+        void refreshLastCompletedFromServer();
+        return;
+      }
+
       const alarms = Array.isArray(data?.alarms) ? data.alarms : [];
       const alarmSummary = alarms.length
         ? alarms
@@ -1800,6 +1809,14 @@ export const useMachiningBoard = ({
         variant: "destructive",
       });
 
+      void refreshProductionQueues();
+      void refreshLastCompletedFromServer();
+    });
+
+    const offCanceled = onCncMachiningCanceled((data: any) => {
+      const mid = String(data?.machineId || "").trim();
+      if (!mid) return;
+      clearMachiningRuntimeState(mid);
       void refreshProductionQueues();
       void refreshLastCompletedFromServer();
     });
@@ -1880,6 +1897,7 @@ export const useMachiningBoard = ({
       offTick?.();
       offCompleted?.();
       offFailed?.();
+      offCanceled?.();
       offAlarm?.();
       offSettingsChanged?.();
     };
@@ -2358,6 +2376,66 @@ export const useMachiningBoard = ({
     [queryClient, refreshProductionQueues, toast, token],
   );
 
+  const stopNowPlayingMachining = useCallback(
+    async (machineId: string) => {
+      const mid = String(machineId || "").trim();
+      if (!mid || !token) return false;
+
+      try {
+        const stopRes = await apiFetch({
+          path: `/api/machines/${encodeURIComponent(mid)}/stop`,
+          method: "POST",
+          token,
+          jsonBody: { ioUid: 62, status: 1 },
+        });
+        if (!stopRes.ok) {
+          throw new Error("브리지 정지 명령 실패");
+        }
+
+        try {
+          await apiFetch({
+            path: `/api/cnc-machines/${encodeURIComponent(mid)}/machining/cancel`,
+            method: "POST",
+            token,
+            jsonBody: {},
+          });
+        } catch {
+          // bridge stop already accepted; cancel is bookkeeping
+        }
+
+        setNowPlayingHintMap((prev) => {
+          const next = { ...prev };
+          delete next[mid];
+          return next;
+        });
+        delete machiningElapsedBaseRef.current[mid];
+        setMachiningElapsedSecondsMap((prev) => {
+          const next = { ...prev };
+          delete next[mid];
+          return next;
+        });
+
+        toast({
+          title: "가공 중단",
+          description: `${mid} 정지 명령을 보냈습니다.`,
+          duration: 2500,
+        });
+
+        void refreshProductionQueues();
+        void refreshLastCompletedFromServer();
+        return true;
+      } catch (e: any) {
+        toast({
+          title: "가공 중단 실패",
+          description: e?.message || "잠시 후 다시 시도해주세요.",
+          variant: "destructive",
+        });
+        return false;
+      }
+    },
+    [refreshLastCompletedFromServer, refreshProductionQueues, toast, token],
+  );
+
   const machiningAlerts = useMemo(
     () =>
       Object.values(machiningAlertMap || {}).sort((a, b) =>
@@ -2435,6 +2513,7 @@ export const useMachiningBoard = ({
     refreshCncMachineMeta,
     rollbackRequestInQueue,
     approveMachiningFromRollback,
+    stopNowPlayingMachining,
     machiningAlerts,
     clearMachiningAlerts,
     expressRebalanceAlert,

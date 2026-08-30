@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-30: Now Playing X — 확인 후 브리지 정지(C_STOP) + machining/cancel.
 // - 2026-08-29: Next Up「CAM 생성 중」블러 옆 생성 중단 버튼.
 // - 2026-08-29: Now Playing NC 프리로드 READY(준비됨) 뱃지 숨김 — UPLOADING/FAILED만 표시.
 // - 2026-08-21: Next Up NC 미수신(CAM 재생성) 시 라이노와 동일 블러 오버레이.
@@ -16,7 +17,7 @@
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/cnc/production.js
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight } from "lucide-react";
+import { ArrowLeft, ArrowRight, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -127,6 +128,7 @@ export const MachineQueueCard = ({
   onRollbackNextUp,
   onRollbackCompleted,
   onApproveFromRollback,
+  onStopNowPlaying,
   onMoveNextUpToMachine,
   onCancelCamGeneration,
   cancellingCamRequestIds,
@@ -294,6 +296,8 @@ export const MachineQueueCard = ({
     !isNowPlayingMachining && !!headRequestId && !!onRollbackNowPlaying;
   const canApproveNowPlaying =
     !isNowPlayingMachining && !!headCanApproveWithoutRemachining;
+  const canStopNowPlaying =
+    isNowPlayingMachining && typeof onStopNowPlaying === "function";
 
   const { token } = useAuthStore();
   const { toast } = useToast();
@@ -304,6 +308,8 @@ export const MachineQueueCard = ({
   const [nextUpDropActive, setNextUpDropActive] = useState(false);
   const nextUpDragActiveRef = useRef(false);
   const nextUpMoveInFlightRef = useRef(false);
+  const [stopConfirmOpen, setStopConfirmOpen] = useState(false);
+  const [stopSubmitting, setStopSubmitting] = useState(false);
 
   const nextUpMongoId = String(
     (nextSlot as { requestMongoId?: string } | null)?.requestMongoId || "",
@@ -755,6 +761,28 @@ export const MachineQueueCard = ({
         }}
       />
 
+      <ConfirmDialog
+        open={stopConfirmOpen}
+        title="가공 중단"
+        description={`${String(machineName || machineId)} Now Playing 가공을 중단할까요? 장비에 정지 명령을 보냅니다.`}
+        confirmLabel="중단"
+        cancelLabel="취소"
+        onCancel={() => {
+          if (stopSubmitting) return;
+          setStopConfirmOpen(false);
+        }}
+        onConfirm={async () => {
+          if (stopSubmitting) return;
+          setStopSubmitting(true);
+          try {
+            await onStopNowPlaying?.(machineId);
+            setStopConfirmOpen(false);
+          } finally {
+            setStopSubmitting(false);
+          }
+        }}
+      />
+
       <div className="app-glass-card-content mt-3 flex flex-col gap-1.5 text-sm">
         <div className="grid grid-cols-1 gap-1.5">
           {/* Complete */}
@@ -905,6 +933,19 @@ export const MachineQueueCard = ({
                 ) : null}
               </div>
               <div className="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  className={slotActionBtn(canStopNowPlaying)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (!canStopNowPlaying || stopSubmitting) return;
+                    setStopConfirmOpen(true);
+                  }}
+                  disabled={!canStopNowPlaying || stopSubmitting}
+                  title="가공 중단"
+                >
+                  <X className="h-3 w-3" />
+                </button>
                 <button
                   type="button"
                   className={slotActionBtn(canRollbackNowPlaying)}

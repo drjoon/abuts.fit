@@ -47,6 +47,23 @@
 완료 후   IO_R_YELLOW=1  → isBusy=False → SawBusy && !busy → 생산 카운트 +1 확인 → 완료
 ```
 
+### RUNNING 중 이상 정지 / 에러 감지 (Hi-Link Mode1 Spec)
+
+공식 API는 알람 배열만이 아니라 **`GetMachineStatus` → `MachineStatusType`** 으로 설비 상태를 본다.
+
+| 값 | 의미 | RUNNING 중 처리 |
+| -- | ---- | --------------- |
+| `PowerOff` (0) | 전원 단절 | `CNC_POWER_OFF` 실패 |
+| `Run` (1) | 가동 | 계속 가공 중 |
+| `Stop` (2) | 기계적 정지 | **자동 중단하지 않음** (피드홀드/일시 Stop 오탐 방지). 사용자 중단은 Now Playing X |
+| `Alarm` (3) | 알람 | `GetMachineAlarmInfo` 또는 status fallback → `CNC_ALARM_DETECTED` |
+
+- Mode1 샘플도 `GetMachineStatus` + `GetMachineAlarmInfo` 로 상태를 표시한다.
+- Mode2 샘플은 `status != Alarm` 이면 알람 정보를 비운다 (알람은 Alarm 상태에서만 유효).
+- UI/제어 API `POST /api/cnc/stop`: `CncMachining.AbortForUserStop` 로 RUNNING/AwaitingStart 를 즉시 해제하고, OP `C_STOP`(ioUid=62)를 실제 `panelType` 으로 전송한다.
+- status 읽기 실패(`-16` 등)는 RUNNING 을 유지한다. 통신 복구 후 알람/완료/사용자 중단으로만 종료.
+- 정상 완료는 여전히 **busy 해제 + count+1** 이 우선이다. Stop 만으로 완료·실패 처리하지 않는다.
+
 ### settle-check 로직 (`CncContinuousMachining.cs`)
 
 완료 후 다음 건 시작 전 안전 확인:

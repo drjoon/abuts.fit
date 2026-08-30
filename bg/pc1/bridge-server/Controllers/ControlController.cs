@@ -229,8 +229,7 @@ namespace HiLinkBridgeWebApi48.Controllers
             var machineIds = BridgeShared.ParseMachineIds(machines);
             var results = new List<object>();
 
-            short ioUid = req?.ioUid ?? 62;
-            short panelType = req?.panelType ?? 0;
+            short ioUid = req?.ioUid ?? (short)Config.CncStopIoUid;
             bool status = req?.status == null || req?.status == 1;
 
             foreach (var machineId in machineIds)
@@ -243,7 +242,24 @@ namespace HiLinkBridgeWebApi48.Controllers
                 }
 
                 var jobId = Guid.NewGuid().ToString("N");
-                Console.WriteLine($"[MachineStop] jobId={jobId} accepted. machineId={machineId} ioUid={ioUid}");
+                short panelType = req?.panelType ?? 0;
+                if (Mode1Api.TryGetMachineInfo(machineId, out var machineInfo, out _))
+                {
+                    panelType = machineInfo.panelType;
+                }
+
+                Console.WriteLine($"[MachineStop] jobId={jobId} accepted. machineId={machineId} panelType={panelType} ioUid={ioUid}");
+
+                // 연속가공 상태머신을 먼저 끊고, 이어서 OP C_STOP 을 보낸다.
+                try
+                {
+                    var aborted = CncMachining.AbortForUserStop(machineId);
+                    Console.WriteLine($"[MachineStop] jobId={jobId} abortLocal={aborted} machineId={machineId}");
+                }
+                catch (Exception abortEx)
+                {
+                    Console.WriteLine($"[MachineStop] jobId={jobId} abortLocal exception: {abortEx.Message}");
+                }
 
                 Task.Run(() =>
                 {
@@ -267,7 +283,7 @@ namespace HiLinkBridgeWebApi48.Controllers
                         {
                             JobId = jobId,
                             Status = "COMPLETED",
-                            Result = new { success = true, message = "Stop signal sent", ioUid, status },
+                            Result = new { success = true, message = "Stop signal sent", ioUid, panelType, status },
                             CreatedAtUtc = DateTime.UtcNow
                         };
                     }

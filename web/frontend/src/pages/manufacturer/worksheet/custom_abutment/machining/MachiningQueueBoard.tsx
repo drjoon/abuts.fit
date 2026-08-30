@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-30: Now Playing X → 가공 중단(브리지 stop + cancel).
 // - 2026-08-30: 상단 CNC Alert 뱃지 클릭 시 알람 상세 모달 표시.
 // - 2026-08-29: BG 완료 후 열린 프리뷰 — NC/filled만 선택 무효화 후 갱신(STL 불필요 재다운로드 방지).
 // - 2026-08-29: 큐→프리뷰 오픈 시 forceRefresh 제거 — IndexedDB STL/NC 캐시 재사용.
@@ -401,6 +402,7 @@ export const MachiningQueueBoard = ({
     handleAddMaterial,
     rollbackRequestInQueue,
     approveMachiningFromRollback,
+    stopNowPlayingMachining,
     machiningAlerts,
     clearMachiningAlerts,
     expressRebalanceAlert,
@@ -1829,6 +1831,9 @@ export const MachiningQueueBoard = ({
               }}
               onApproveFromRollback={(requestMongoId) => {
                 void approveMachiningFromRollback(requestMongoId);
+              }}
+              onStopNowPlaying={(mid) => {
+                void stopNowPlayingMachining(mid);
               }}
               onOpenCompleted={(mid, name) => {
                 setCompletedModalMachineId(String(mid || "").trim());
