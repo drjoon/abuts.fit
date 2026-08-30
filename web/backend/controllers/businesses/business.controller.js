@@ -30,6 +30,7 @@ import {
 import {
   exitDemoMode as exitDemoModeUtil,
   enableDemoModeAndGrantCreditIfEligible,
+  maybeAutoExitDemoModeIfExhausted,
 } from "./business.demoMode.util.js";
 import { resolveRequestorPricingBaseDate } from "../requests/utils.js";
 import {
@@ -567,6 +568,19 @@ export async function getMyBusiness(req, res) {
         });
       } catch (e) {
         console.error("[BusinessAnchor] demo credit heal failed", e);
+      }
+      try {
+        const autoExit = await maybeAutoExitDemoModeIfExhausted({
+          businessAnchorId: anchor._id,
+          userId: req.user._id,
+        });
+        if (autoExit && !autoExit.alreadyExited) {
+          invalidateMyBusinessCache(anchor._id);
+          responseData.data.demoMode = false;
+          responseData.data.demoModeExitedAt = new Date();
+        }
+      } catch (e) {
+        console.error("[BusinessAnchor] demo auto-exit failed", e);
       }
     }
 

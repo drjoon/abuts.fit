@@ -112,6 +112,8 @@ export async function generateMonthlyLabToPracticeInvoiceDrafts({
       BusinessAnchor.findById(practiceAnchorId).lean(),
     ]);
     if (!lab || !practice) continue;
+    // 데모 모드 치과는 기공소향 계산서 미발행
+    if (Boolean(practice.demoMode) && !practice.demoModeExitedAt) continue;
 
     const [labContact, practiceContact] = await Promise.all([
       resolveContactUserForAnchor(lab),

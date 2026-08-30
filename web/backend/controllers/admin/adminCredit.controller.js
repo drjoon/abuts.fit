@@ -3595,7 +3595,7 @@ export async function adminGetBusinessCreditDetail(req, res) {
   try {
     const orgId = req.params.id;
     const org = await BusinessAnchor.findById(orgId)
-      .select({ name: 1, metadata: 1 })
+      .select({ name: 1, metadata: 1, demoMode: 1, demoModeExitedAt: 1 })
       .lean();
 
     if (!org) {
@@ -3831,6 +3831,7 @@ export async function adminGetBusinessCreditDetail(req, res) {
       success: true,
       data: {
         business: org,
+        demoMode: Boolean(org?.demoMode) && !org?.demoModeExitedAt,
         balance: Number(balanceSnapshot?.balance || 0),
         paidCredit: Number(balanceSnapshot?.paidCredit || 0),
         freeRequestCredit: Number(balanceSnapshot?.freeRequestCredit || 0),
@@ -4408,6 +4409,51 @@ export async function adminGetAdminLedger(req, res) {
     return res.status(500).json({
       success: false,
       message: "관리자 원장 조회에 실패했습니다.",
+    });
+  }
+}
+
+/**
+ * 관리자 — 의뢰자 데모 모드 실사용 전환(잔여 데모 크레딧 회수).
+ * @route POST /api/admin/credits/businesses/:id/exit-demo
+ */
+export async function adminExitBusinessDemoMode(req, res) {
+  try {
+    const orgId = req.params.id;
+    if (!orgId || !Types.ObjectId.isValid(String(orgId))) {
+      return res.status(400).json({
+        success: false,
+        message: "유효하지 않은 사업자 ID입니다.",
+      });
+    }
+
+    const { exitDemoMode } = await import(
+      "../businesses/business.demoMode.util.js"
+    );
+    const { invalidateMyBusinessCache } = await import(
+      "../businesses/business.controller.js"
+    );
+
+    const result = await exitDemoMode({
+      businessAnchorId: orgId,
+      userId: req.user?._id,
+    });
+    invalidateMyBusinessCache(orgId);
+
+    return res.json({
+      success: true,
+      data: {
+        demoMode: Boolean(result?.demoMode),
+        clawedBack: Number(result?.clawedBack || 0),
+        alreadyExited: Boolean(result?.alreadyExited),
+      },
+    });
+  } catch (error) {
+    const status = Number(error?.statusCode) || 500;
+    console.error("adminExitBusinessDemoMode error:", error);
+    return res.status(status).json({
+      success: false,
+      message: error?.message || "실사용 전환에 실패했습니다.",
     });
   }
 }

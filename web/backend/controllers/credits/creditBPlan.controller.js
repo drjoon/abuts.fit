@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-31: 데모 모드 — 유료 충전(입금) 요청 차단.
 // - 2026-08-12: 입금 계좌를 SystemSettings.bPlanDepositAccount로 이전(EBS 한글 env 깨짐).
 // - 2026-08-11: 충전 단위를 기공소 50만/치과 100만으로 분기. 사업자 requestorKind 기준 검증.
 // related files:
@@ -8,6 +9,7 @@
 // - web/backend/models/systemSettings.model.js
 // - web/backend/utils/creditChargeUnit.js
 // - web/backend/utils/requestorCapabilities.js
+// - web/backend/controllers/businesses/business.demoMode.util.js
 import ChargeOrder from "../../models/chargeOrder.model.js";
 import LedgerJournal from "../../models/ledgerJournal.model.js";
 import TaxInvoiceDraft from "../../models/taxInvoiceDraft.model.js";
@@ -84,6 +86,17 @@ export async function createChargeOrder(req, res) {
     return res.status(403).json({
       success: false,
       message: "기공소 정보가 없습니다.",
+    });
+  }
+
+  const demoAnchor = await BusinessAnchor.findById(businessAnchorId)
+    .select({ demoMode: 1, demoModeExitedAt: 1 })
+    .lean();
+  if (Boolean(demoAnchor?.demoMode) && !demoAnchor?.demoModeExitedAt) {
+    return res.status(400).json({
+      success: false,
+      message:
+        "데모 모드에서는 유료 충전(입금)을 할 수 없습니다. 실사용으로 전환한 뒤 이용해 주세요.",
     });
   }
 

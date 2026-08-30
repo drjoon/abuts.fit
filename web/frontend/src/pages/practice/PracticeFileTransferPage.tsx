@@ -7256,7 +7256,7 @@ export const PracticeFileTransferPage = ({
     </>
   );
 
-  /** 메인 헤더 — 모바일: 의뢰(임시저장 목록)·휴지통. PC: 임시저장·휴지통 */
+  /** 메인 헤더 — 모바일: 의뢰(임시저장 목록)·휴지통·데모. PC: 임시저장·휴지통·데모 */
   const calendarHeaderActions = isMobile ? (
     <div className="flex w-full shrink-0 flex-nowrap items-center justify-center gap-2.5">
       <Button
@@ -7310,6 +7310,7 @@ export const PracticeFileTransferPage = ({
           </Badge>
         ) : null}
       </Button>
+      <DemoModeBadge />
     </div>
   ) : (
     <>
@@ -7346,6 +7347,7 @@ export const PracticeFileTransferPage = ({
           </Badge>
         ) : null}
       </Button>
+      <DemoModeBadge />
     </>
   );
 

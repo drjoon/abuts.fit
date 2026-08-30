@@ -51,6 +51,10 @@ async function createCustomerMonthlyDraft({
 }) {
   const practice = await BusinessAnchor.findById(businessAnchorId).lean();
   if (!practice) return { created: false, skipped: true };
+  // 데모 모드 사업자는 (세금)계산서 미발행
+  if (Boolean(practice.demoMode) && !practice.demoModeExitedAt) {
+    return { created: false, skipped: true };
+  }
 
   const contact = await resolveContactUserForAnchor(practice);
   const buyer = buildPartySnapshotFromAnchor(practice, contact);

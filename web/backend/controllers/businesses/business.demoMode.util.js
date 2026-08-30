@@ -357,3 +357,47 @@ export async function getDemoModeState(businessAnchorId) {
     demoModeStartedAt: anchor?.demoModeStartedAt || null,
   };
 }
+
+/**
+ * 데모 크레딧(무료의뢰 버킷)이 소진되면 자동 실사용 전환.
+ * - freeRequestCredit === 0
+ * - 미전환 HOLD(보류) 저널이 없을 때만 (취소 시 복구 가능하므로)
+ */
+export async function maybeAutoExitDemoModeIfExhausted({
+  businessAnchorId,
+  userId,
+} = {}) {
+  if (!businessAnchorId) return null;
+
+  const state = await getDemoModeState(businessAnchorId);
+  if (!state.demoMode || state.demoModeExitedAt) return null;
+
+  const snapshot = await getBusinessCreditBalanceSnapshot({
+    businessAnchorId,
+  });
+  const freeRequest = Math.max(
+    0,
+    Math.round(Number(snapshot?.freeRequestCredit || 0)),
+  );
+  if (freeRequest > 0) return null;
+
+  const LedgerJournal = (await import("../../models/ledgerJournal.model.js"))
+    .default;
+  const openHold = await LedgerJournal.exists({
+    businessAnchorId,
+    eventType: {
+      $in: [
+        "REQUEST_SPEND_HOLD",
+        "SHIPPING_SPEND_HOLD",
+        "PRACTICE_TRANSFER_SPEND_HOLD",
+      ],
+    },
+    $or: [
+      { "meta.convertedAt": { $exists: false } },
+      { "meta.convertedAt": null },
+    ],
+  });
+  if (openHold) return null;
+
+  return exitDemoMode({ businessAnchorId, userId });
+}

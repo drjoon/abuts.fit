@@ -34,3 +34,7 @@ export const CREDIT_LEDGER_DEMO_BALANCE_HINT =
 export const CREDIT_DEMO_BUCKET_HINT = "데모 체험";
 
 export const CREDIT_DEMO_BUCKET_LABEL = "데모 충전";
+
+/** 정산 충전 탭 — 데모 모드에서 유료 입금 차단 안내. */
+export const CREDIT_DEMO_CHARGE_BLOCKED_BODY =
+  "데모 모드에서는 유료 충전(입금)과 계산서 발행을 하지 않습니다. 데모 크레딧으로 기능을 체험한 뒤, 실사용으로 전환하면 유료 충전을 이용할 수 있습니다.";

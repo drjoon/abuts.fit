@@ -182,6 +182,7 @@ import {
   adminGetSettlementBusinessOverview,
   adminGetAdminCredits,
   adminGetAdminLedger,
+  adminExitBusinessDemoMode,
 } from "../../controllers/admin/adminCredit.controller.js";
 import {
   adminListBusinessRegistrationInquiries,
@@ -363,6 +364,10 @@ router.get("/credits/stats", adminGetCreditStats);
 router.get("/credits/businesses", adminGetBusinessCredits);
 router.get("/credits/businesses/:id", adminGetBusinessCreditDetail);
 router.get("/credits/businesses/:id/ledger", adminGetBusinessLedger);
+router.post(
+  "/credits/businesses/:id/exit-demo",
+  adminExitBusinessDemoMode,
+);
 router.get("/credits/manufacturer/summary", adminGetManufacturerSummary);
 router.get(
   "/credits/settlement-business-overview",
