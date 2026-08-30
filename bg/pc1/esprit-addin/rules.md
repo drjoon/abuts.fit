@@ -175,20 +175,28 @@
 - 실행 초기화 정책:
   - `ResetPerRunState()`에서 `ABUTS_COMPOSITE_ORIENTATION_PROFILE_START_X`를 반드시 clear 한다.
 
-### 4.8 Back_Turn Turning Extend direct 적용 SSOT (2026-07-11)
+### 4.8 Back_Turn Turning Extend direct 적용 SSOT (2026-07-11, trim 개정 2026-08-30)
 
 - 혼동 포인트 정리:
-  - `Turning Extend` 값은 `Tech_Default_Path.xml`(또는 env)에서 주입된 `MainModule.TurningExtend`를 사용한다.
+  - `Turning Extend` 값은 `Tech_Default_Path.xml` `NumData[5]`(또는 env)에서 주입된 `MainModule.TurningExtend`를 사용한다.
   - 코드에서 고정값(예: 6.0)이나 `finishLineMinZ` 계산으로 재override하지 않는다.
+- OD 프로파일 trim (필수 전제):
+  - `TurningFeature_Profile.TurningProfile` trimX = **`BackPointX`(헥스 끝)**.
+  - `FinishLineX`에서 자르면 `EndXValue`가 피니시라인이 되어 `ExtendTurning(4.0)`만으로는
+    예전 Middle_Turn 수준에서 끝나고 헥스 이후까지 못 간다.
+  - Front 구간 제한은 `BuildTurningRangeChain`이 담당한다 (여기서 FinishLineX로 미리 자르지 않음).
 - Back_Turn/ExtendTurning 최종 정책:
   - `BackT`, `ResolveBackTurningExtendForBackTurnRange`, `ExtendTurning` 모두
     `MainModule.TurningExtend` 값을 **direct 적용**한다.
+  - 기대 끝점: `BackPointX + TurningExtend` (+ chamfer rise).
 - 적용 위치(코드 SSOT):
+  - `DentalAddinDecomp/DentalAddin/TurningFeature_Profile.cs` — trimX=`BackPointX`
   - `DentalAddinDecomp/DentalAddin/TurningFeature_Extension.cs`
     - `BackT`, `ExtendTurning`
   - `DentalAddinDecomp/DentalAddin/MainModuleOperations.cs`
     - `ResolveBackTurningExtendForBackTurnRange`
 - 디버깅 기준 로그:
+  - `TurningProfile: trimX=... gateSource=BackPointX(Back_Turn past-hex)`
   - `TurningOp BACK - TurningExtend direct 적용: ... (source=MainModule.TurningExtend)`
   - `BackT: TurningExtend direct 적용 - ... (source=MainModule.TurningExtend)`
   - `ExtendTurning: TurningExtend direct 적용 - ... (source=MainModule.TurningExtend)`
@@ -338,16 +346,17 @@
 
 ## 7. MoveSTL 좌표 이동 감사 후속 (2026-08-30, 되돌림 포함)
 
-검색 키워드: `LastAppliedMoveDeltaX`, `FirstPX`, `CustomCycle`, `CustomCycle2`, `CaptureNcMetadata`, `TurningProfile Abs trim`, `BottomZLimit=-2.2`
+검색 키워드: `LastAppliedMoveDeltaX`, `FirstPX`, `CustomCycle`, `CustomCycle2`, `CaptureNcMetadata`, `TurningProfile BackPointX trim`, `BottomZLimit=-2.2`
 
 샘플 기준(요청 `20260829-ESJPNACP`, MoveSTL `dX:10.945 + shift:0.05 = 10.995`, Front post=`2.365`, Back=`10.995`, FinishLineX=`4.699`):
 
 ### 유지(적용 유지)
 
 - `MoveSTL_Module.LastAppliedMoveDeltaX`: MoveSTL 총 X 이동량 기록. FaceHole/Connection **탐지 로그**의 후보 shift에만 사용.
-- `TurningFeature_Profile` trim 게이트: `Math.Abs(FinishLineX) > 0.001` 안전망 유지.
-  - 양수 샘플에서는 구 게이트와 결과 동일. 음수 FinishLineX(SpindleSide 등)에서만 차이.
-  - 실행 로그: `gate=Abs>0.001`, `gateSource=FinishLineX(Abs+positive|Abs-only; legacy>0.001 would miss|BackPointX-fallback)`.
+- `TurningFeature_Profile` trim: **`BackPointX`(헥스 끝)** 고정 (§4.8).
+  - 2026-08-30 오전에 넣었던 `Math.Abs(FinishLineX) > 0.001` → FinishLineX trim은
+    Back_Turn이 피니시라인+TurningExtend에서 끊기는 회귀를 만들어 **폐기**.
+  - 실행 로그: `gateSource=BackPointX(Back_Turn past-hex)`.
 
 ### FaceHole / Connection ZLimit — 시프트 미적용(탐지 로그만)
 
