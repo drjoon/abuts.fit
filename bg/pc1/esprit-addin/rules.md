@@ -28,11 +28,11 @@
 
 - 공정 직전 피처/오퍼레이션 검증 로그를 남겨 원인 추적이 가능해야 합니다.
 - Roughworkplane에서 STL 모델을 찾지 못하면 즉시 종료하고 로그를 남깁니다.
-- TwoPhase에서 `Rough_A` 이후 `Face(EM2_0BALL)` 끝점은 Front_Rough/Splitline_2를 넘지 않게만 보정합니다.
+- TwoPhase에서 `Rough_A` 이후 `Face(EM2_0BALL)` 끝점은 Front_Rough/Splitline_2보다 **1.0mm 짧게** 보정합니다.
   - Front_Rough 끝 SSOT: `roughAEndX = Splitline_2`
-  - 규칙: `faceRightX > roughAEndX - 0.001` 이면 `faceRightX = roughAEndX - 0.001`
-  - 최종 상한: 항상 `faceRightX < Splitline_2` (`Splitline_2 - 0.001`)
-  - 구 0.3mm 강제 단축은 Front_Rough=Splitline_2 SSOT와 충돌하므로 사용하지 않는다
+  - 규칙: `faceRightX > roughAEndX - 1.0` 이면 `faceRightX = roughAEndX - 1.0`
+  - 최종 상한: 항상 `faceRightX ≤ Splitline_2 - 1.0`
+  - 구 0.001/0.3mm 상한은 폐기
   - 적용 위치: `MainModuleComposite.TryApplyFaceRightEndGuard` (실행 지점: `FrontFaceMill`, `TryRunFreeFormMillSafe`)
 
 ## 3. 이번 세션 리팩터링 기록 (2026-06-20)
@@ -140,7 +140,7 @@
 
 - Front Face 시작/종료점 정책(현행 SSOT):
   - 시작: `Face.StartX = 0` (원점). `TopZLimit`은 **FACE.prc 유지**(통상 1.0). 코드가 StartX로 TopZ를 덮지 않음.
-  - 끝: `Face.RightX = FrontPointX + L` (Material Diameter / Splitline_1 앵커), 단 항상 `Face.RightX < Splitline_2` (`Splitline_2 - 0.001mm` 상한 클램프)
+  - 끝: `Face.RightX = FrontPointX + L` (Material Diameter / Splitline_1 앵커), 단 항상 `Face.RightX ≤ Splitline_2 - 1.0`
     - RL=1: `BottomZ=-RightX` / RL=2: `BottomZ=+RightX`
   - Turn/Rough/Finish tip 하한: **원점 0** (구 tipMesh+0.3≈0.35 밀기 폐기)
   - `L` 동적(구 고정 3.0mm 폐기):
@@ -151,7 +151,7 @@
   - `LastAppliedFrontFaceDepthMm = 0.5mm` (`FrontFaceFixedDepthMm`)
   - 구현 위치: `ResolveFrontFaceStartX` / `SetFaceTopZLimitFromStartX`(원점이면 no-op) / `GetFrontFaceEndOffsetFromFrontMm` / `ApplyFrontFaceFixedDepth` / `ClampFaceRightXBelowSplitline2` / `GetPostMoveTipXMin`
   - `ABUTS_MAX_DIAMETER` 주입: `StlFileProcessor` request-meta `maxDiameter`
-  - 후속 가드(`TryApplyFaceRightEndGuard`): Front_Rough 끝(=Splitline_2)을 넘지 않게만 보정하고, Splitline_2 상한을 다시 적용한다 (0.3mm 추가 단축 없음).
+  - 후속 가드(`TryApplyFaceRightEndGuard`): Front_Rough 끝(=Splitline_2)보다 1.0mm 짧게 보정하고, `Splitline_2 - 1.0` 상한을 다시 적용한다.
     - 현행 RoughA.RightX SSOT가 Splitline_2라서 Splitline_2 클램프와 동일 상한이다.
   - `FACE.prc` step SSOT: `StepPercentOfDiameter=2`, `StepOver=0.05`, `StockAllowanceWalls=0.0`
 

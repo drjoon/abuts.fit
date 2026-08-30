@@ -1755,8 +1755,8 @@ namespace DentalAddin
         // env 강제/레거시 상한(구 고정 3.0). 동적 기본 상한은 FrontFaceEndOffsetMaxMm.
         private const double FrontFaceEndOffsetFromFrontLegacyCapMm = 3.0;
 
-        // Face.RightX는 Splitline_2를 침범하면 안 된다(항상 Splitline_2보다 짧게).
-        private const double FrontFaceSplitline2NoCrossMarginMm = 0.001;
+        // Face.RightX는 Splitline_2보다 최소 1.0mm 짧게 (항상 Face.RightX ≤ Splitline_2 - 1.0).
+        private const double FrontFaceSplitline2NoCrossMarginMm = 1.0;
 
         /// <summary>
         /// Face.RightX 상한: Splitline_2 - margin. Split 계산 실패 시 requested 그대로.
@@ -1912,11 +1912,11 @@ namespace DentalAddin
         /// <summary>
         /// Front Face(ParallelPlanes): tip 시작 원점 0, 끝은 FrontPointX(Material Diameter)+L.
         /// - 시작: Face.StartX = 0 (원점). TopZ는 FACE.prc 유지(1.0)
-        /// - 끝: Face.RightX = FrontPointX + GetFrontFaceEndOffsetFromFrontMm(), 단 Splitline_2 - 0.001 상한
+        /// - 끝: Face.RightX = FrontPointX + GetFrontFaceEndOffsetFromFrontMm(), 단 Splitline_2 - 1.0 상한
         /// - LastAppliedFrontFaceDepthMm = FrontFaceFixedDepthMm(0.5mm)
         /// - RL=1: BottomZ=-RightX / RL=2: BottomZ=+RightX
-        /// 주의: 이후 TryApplyFaceRightEndGuard는 Face가 Front_Rough(=Splitline_2) 끝을 넘지 않게만 막으며,
-        ///       Splitline_2 상한을 다시 적용한다. (구 0.3mm 강제 단축 없음)
+        /// 주의: 이후 TryApplyFaceRightEndGuard는 Face가 Front_Rough(=Splitline_2)보다 1.0mm 짧게 유지하며,
+        ///       Splitline_2 - 1.0 상한을 다시 적용한다. (구 0.3mm 강제 단축 / 0.001 상한 폐기)
         /// </summary>
         private static void ApplyFrontFaceFixedDepth(TechLatheMoldParallelPlanes faceOp, string context)
         {
@@ -1961,10 +1961,9 @@ namespace DentalAddin
         }
 
         /// <summary>
-        /// Face가 Front_Rough 끝(또는 Splitline_2)을 넘지 않도록만 보정한다.
+        /// Face가 Front_Rough 끝(또는 Splitline_2)보다 margin(1.0mm) 짧게 유지한다.
         /// - Face.RightX &gt; Rough.RightX - margin 이면 Rough.RightX - margin 으로 당김
         /// - 최종적으로 항상 Splitline_2 - margin 상한 재적용
-        /// - 구 규칙(Rough보다 0.3mm 짧게 강제)은 Front_Rough=Splitline_2 SSOT와 충돌하므로 제거
         /// </summary>
         private static bool TryApplyFaceRightEndGuard(TechLatheMoldParallelPlanes faceOp, string context)
         {
