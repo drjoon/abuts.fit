@@ -79,6 +79,8 @@
   - Finish: **Front 끝 = `Splitline_2`**, **Back 시작 = `Splitline_2` − 1피치**
     - 피치 SSOT: 백엔드 `retentionGroove` (`none`→`0.12`, `deep`→`0.20`) via `ABUTS_RETENTION_GROOVE`
     - `ABUTS_COMPOSITE_STEP_INCREMENT_A` **미사용**. none/deep 미수신 시 NC 중단 + 프론트 토스트
+  - Turn: **`Front_Turn` 끝 = `Splitline_2` + 2.5mm** (Back 방향 X+)
+    - 구현: `MainModuleOperations.TryPrepareTurningRegionRange` (`FRONT` → `rangeMaxX`)
 - `Middle_Turn` / `Middle_Rough`는 레거시로 **생성하지 않는다** (Front + Back로 커버)
 
 ### 4.3.1 SharedFinishSplit / Splitline_2 SSOT (검색 키워드: `SharedFinishSplitX`, `finishlineTop-1mm`, `X=-Z`, `GetRoughAdjacentOverlapMm`, `GetFinishAdjacentOverlapMm`, `ABUTS_RETENTION_GROOVE`)
@@ -100,6 +102,8 @@
   - MoveSTL/`Chazhi` 시프트: `Math.Abs(FinishLineX) > 1e-6` 일 때 `+= totalDeltaX` (`> 0.001` 금지 — 음수면 시프트 누락)
   - MoveSTL 후: `finishLineTopX = BackPointX - finishLineTopZ` (= 시프트된 `FinishLineX`)
   - 재해석: `finishLineTopX = BackPointX - FinishLineTopZ + DefaultStlShift`
+  - env 클램프 `xMin`: **`min(0, Front, Back)`** — FrontPointX 하한 금지
+    (FL max_z > Front.z 이면 tip쪽 `topX-1`이 Front보다 작아짐; Front 하한으로 끌면 FL 하방 침범)
 - 구현:
   - `TryResolveSharedFinishSplitX` → `TryResolveTwoPhaseSplitLineTargetX`
   - Rough: `frontEnd = splitline2`, `backStart = splitline2 - GetRoughAdjacentOverlapMm()`, Middle skip
