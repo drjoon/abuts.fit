@@ -52,10 +52,10 @@
 
 ### 4.1 공정 구조 SSOT (3-Stage)
 
-- 기존 A/B 2분할 공정을 Front/Back 2-way로 고정한다.
+- 기존 A/B 2분할 공정을 3단계로 고정한다.
   - Front: `Turn -> Rough -> Front Face`
+  - Middle: `Turn -> Rough`
   - Back: `Turn -> Rough`
-  - `Middle_Turn` / `Middle_Rough`는 레거시로 **생성하지 않는다** (Front+Back로 커버)
 - Finish 정책:
   - `retentionGroove=deep` → `Finish_Front`, `Finish_Back`
   - `retentionGroove=none` 및 `ALL_PHASE` → `Finish_All` 단일 패스
@@ -64,8 +64,8 @@
 
 - Turning/Rough/Face 라벨은 아래 이름으로 고정한다.
   - `Front_Turn`, `Front_Rough`, `Front_Face`
+  - `Middle_Turn`, `Middle_Rough`
   - `Back_Turn`, `Back_Rough`
-  - 레거시(미생성): `Middle_Turn`, `Middle_Rough`
 - Finish 라벨은 모드별로 아래 이름만 사용한다.
   - `Finish_All` 또는 `Finish_Front`, `Finish_Back`
 
@@ -73,39 +73,25 @@
 
 - `Splitline_1 = FrontPointX`
 - `Splitline_2 = TwoPhaseSplitLine` (midpoint 사용 금지)
-- 인접 툴패스:
-  - Rough: **선행 끝 = 경계 정확**, **후행 시작 = 경계 tip쪽(그림 왼쪽, X-) 공구 반경**
-    - `GetRoughAdjacentOverlapMm()` = 활성 rough 반경 (D4→`2.0`, `ROUGH_20` D2→`1.0`)
-  - Finish: **Front 끝 = `Splitline_2`**, **Back 시작 = `Splitline_2` − 1피치**
-    - 피치 SSOT: 백엔드 `retentionGroove` (`none`→`0.12`, `deep`→`0.20`) via `ABUTS_RETENTION_GROOVE`
-    - `ABUTS_COMPOSITE_STEP_INCREMENT_A` **미사용**. none/deep 미수신 시 NC 중단 + 프론트 토스트
-- `Middle_Turn` / `Middle_Rough`는 레거시로 **생성하지 않는다** (Front + Back로 커버)
+- Turn/Rough 경계는 rough 공구 반경 + 안전여유(`+0.2mm`) 오버컷을 적용한다.
+  - 기본(D4): `±2.2mm`
+  - `ROUGH_20=1` 실험(D2): `±1.2mm`
 
-### 4.3.1 SharedFinishSplit / Splitline_2 SSOT (검색 키워드: `SharedFinishSplitX`, `finishlineTop-1mm`, `X=-Z`, `GetRoughAdjacentOverlapMm`, `GetFinishAdjacentOverlapMm`, `ABUTS_RETENTION_GROOVE`)
+### 4.3.1 TwoPhaseSplitLine 계산식 SSOT (검색 키워드: `finishlineTopZ-1mm`, `splitOffsetMm=-1.0`)
 
-- 목적: **한 식**으로 아래를 동일 경계 좌표에 둔다.
-  - `Front_Rough` 끝
-  - `Splitline_2` / `TwoPhaseSplitLine`
-  - `Finish_Front` 끝
-- 기준식:
-  - `SharedFinishSplitX = finishLineTopX - 1.0` (tip 쪽 1mm, Z+1 ≡ X-1)
-- 인접 후행 시작:
-  - `Back_Rough` 시작 = `Splitline_2 - roughRadius` (D4→2.0)
-  - `Finish_Back` 시작 = `SharedFinishSplitX - GetFinishAdjacentOverlapMm()`
-    - 피치: `ResolveFinishFrontStepIncrementMmFromRetentionGroove()` (`none`→0.12, `deep`→0.20)
-    - `StlFileProcessor.RequireBackendRetentionGrooveOrThrow` — none/deep만 허용, 미수신 시 예외
-    - 실패 보고: `NotifyBackendFailure` → `/bg/register-file` status=failed → `request:async-action-failed` 토스트
-- 좌표 변환 (`EspritHttpServer`: `FrontPointX = -FrontPoint.z`):
-  - MoveSTL 전: `FinishLineX = -finishLineTopZ`
-  - MoveSTL 후: `finishLineTopX = BackPointX - finishLineTopZ`
-  - 재해석: `finishLineTopX = BackPointX - FinishLineTopZ + DefaultStlShift`
-- 구현:
-  - `TryResolveSharedFinishSplitX` → `TryResolveTwoPhaseSplitLineTargetX`
-  - Rough: `frontEnd = splitline2`, `backStart = splitline2 - GetRoughAdjacentOverlapMm()`, Middle skip
-  - Finish: `Finish_Front` 끝 = `SharedFinishSplitX`, `Finish_Back` 시작 = `SharedFinishSplitX - GetFinishAdjacentOverlapMm()`
-  - Finish_Front StepIncrement도 동일 groove 매핑으로 COM SetProperty (`TrySetCompositeStepIncrement`)
-  - `safeBFirstMax`는 seam을 당기지 않는다(로그만)
-  - 금지: `ABUTS_COMPOSITE_STEP_INCREMENT_A` 의존, Finish_Back의 D1.2 반경 앞당김, 고정 0.5mm 겹침, `Middle_Turn`/`Middle_Rough` 재도입, `Back + Z - stlTopZ` 구식 변환
+- 목적: Finish line 최상단 기준점에서 **좌측(X-방향)으로 1.0mm 이동한 지점**을 TwoPhase 분할선으로 사용한다.
+- 기준식(권장 경로):
+  - `finishLineTopX = BackPointX - FinishLineTopZ + DefaultStlShift`
+  - `TwoPhaseSplitLineX = finishLineTopX - 1.0`
+- fallback 식(TopZ 없을 때):
+  - `TwoPhaseSplitLineX = FinishLineX - 1.0`
+- 구현 SSOT 위치:
+  - `DentalAddinDecomp/DentalAddin/MainModuleComposite.cs`
+    - `TryResolveTwoPhaseSplitLineTargetX` (가이드라인/공정 분기에서 재해석)
+  - `StlFileProcessor.cs`
+    - `TryApplyTwoPhaseSplitByFinishLine` (env 주입 경로)
+- 주의:
+  - 위 두 경로의 오프셋 값은 항상 동일해야 한다. 불일치 시 화면 가이드라인과 실제 공정 경계가 어긋난다.
 
 ### 4.4 Finish none 처리
 
@@ -119,23 +105,21 @@
 - 백엔드가 전달한 CAM 직경(현재 SSOT: `LatheMachineSetup.BarDiameter`)을 기준으로,
   `Turn`/`Rough`에서 **공구 직경이 CAM 직경보다 큰 오퍼레이션(D12, D10 등)** 은 생성하지 않는다.
 - 적용 범위:
-  - 3-stage `TurningOp` (Front/Back; Middle legacy skip)
-  - 3-stage `RoughFreeFromMillSplitAB` (Roughing, ZLevel; Middle legacy skip)
+  - 3-stage `TurningOp` (Front/Middle/Back)
+  - 3-stage `RoughFreeFromMillSplitAB` (Roughing, ZLevel)
 - 목적:
   - CAM 직경 8.0 케이스에서 대구경 선행 가공을 제거해 불필요 공정/시간을 줄인다.
 
 ### 4.6 Front Face/Back Turn 경계 보정 (2026-07-01)
 
 - Front Face 종료점 정책(현행 SSOT):
-  - `Face.RightX = FrontPointX + 3.0mm`
-  - 단, 항상 `Face.RightX < Splitline_2` (`Splitline_2 - 0.001mm` 상한 클램프)
-  - `LastAppliedFrontFaceDepthMm = 0.5mm` (`FrontFaceFixedDepthMm`)
+  - `Face.RightX = FrontPointX + 2.5mm`
   - 상수: `MainModuleComposite.FrontFaceEndOffsetFromFrontMm`
-  - 구현 위치: `MainModuleComposite.ApplyFrontFaceFixedDepth` / `ClampFaceRightXBelowSplitline2`
-  - 후속 안전 가드(`TryApplyFaceRightEndGuard`) 후에도 Splitline_2 상한을 다시 적용한다.
+  - 구현 위치: `MainModuleComposite.ApplyFrontFaceFixedDepth`
+  - 단, 후속 안전 가드(`TryApplyFaceRightEndGuard`) 및 경계 클램프로 추가 보정될 수 있다.
 
 - Back Turn 시작점/퇴출 정책(현행 SSOT):
-  - 시작점은 `FrontPointX` anchor로 통일한다. (`Front_Turn`과 동일 기준)
+  - 시작점은 `FrontPointX` anchor로 통일한다. (`Front_Turn`, `Middle_Turn`과 동일 기준)
   - 끝점은 `xMax` 고정 클램프를 쓰지 않고, `exitAllowance`를 더해
     수평 extension + 45도 퇴출 형상이 유지되도록 한다.
   - 구현 위치: `MainModuleOperations.TryPrepareTurningRegionRange` (`BACK`),
@@ -210,10 +194,10 @@
   - `MillRough_3D_20.prc`의 기술 파라미터(증분 깊이/절삭 속도/공차/코너값 포함)는
     코드에서 오버라이드하지 않고 PRC 값을 그대로 사용한다.
   - 구현: `MainModuleComposite.AddSplitOp`에서 Roughing/ZLevel에 별도 SetProperty 적용 금지
-- Rough 경계(Front/Back) 겹침:
-  - SSOT: `backStart = splitline2 - GetRoughAdjacentOverlapMm()` (D4→2.0)
-  - `Middle_Turn` / `Middle_Rough` 미생성
-  - 구현: `MainModuleComposite.TryRunRoughFreeFromMillSplitAB`
+- Rough 경계(Front/Middle/Back) 오프셋:
+  - 공통식: `roughToolRadius + 0.2`
+  - 기본(D4): `2.2mm`, 실험(D2): `1.2mm`
+  - 구현: `MainModuleComposite.GetRoughBoundaryOffsetMm`
 
 ### 4.11 Finish_Cuff Back_Rough 스타일 SSOT (2026-07-11)
 
@@ -245,48 +229,43 @@
 - `boundaryKey/prc/angle(0,180)`
 - 생성 결과: `BackRoughStyle 종료(created=...)`
 
-### 4.13 제조사 헥스 회전 모드 정책 (2026-08-29 개정)
+### 4.13 제조사 헥스 회전 모드 정책 (2026-07-28 개정)
 
-검색 키워드: `manufacturerHexRotation`, `hexRotation.appliedDeg`, `request-meta`, `STL모델+`, `헥스30+`, `HEX_C_AXIS`, `ApplyManufacturerHexRotationToNc`
+검색 키워드: `manufacturerHexRotation`, `hexRotation.appliedDeg`, `request-meta`, `헥스40도회전`, `minorDeg`, `totalDeg`
 
-- `request-meta.caseInfos.manufacturerHexRotation` canonical은 `STL모델대로` / `헥스30도회전` / `STL모델+` / `헥스30+`.
-  - 플러스 모드(구 헥스40도회전 분기):
-    - `STL모델+` → modeBase **0.0**
-    - `헥스30+` → modeBase **30.0**
-    - 가산량 `addDeg = 30 + hexRotation.appliedDeg` (예: 30+(-29.77)=**0.23**)
-    - T4848 → `C(0.0 + addDeg)` (예: C0.23)
-    - T0909/T0606 → `C(modeBase + addDeg)` (STL모델+: C0.23, 헥스30+: C30.23)
-  - 레거시 `"헥스40도회전"` / `"헥스10도회전"` / 기타 `헥스X도회전` → `STL모델+` 로 정규화.
-  - 레거시 `"0"`/`"30"` 허용. **default fallback 주입 금지**.
+- `request-meta.caseInfos.manufacturerHexRotation` canonical은 `STL모델대로` / `헥스30도회전` / `헥스X도회전(total)`.
+  - 전달 SSOT: `헥스X도회전`의 X는 **totalDeg(=30+minorDeg)**.
+  - 예) 프론트 minor 10도 선택(`헥스10도회전`) → 백엔드/Esprit 전달값 `헥스40도회전`.
+  - 레거시 `"0"`/`"30"`, `헥스10도회전`(minor)은 하위호환으로 정규화 허용.
+  - **default fallback 주입 금지**: 빈값/미지원값은 즉시 예외 처리.
 - 제조사 헥스 기본값(다음 의뢰 시드):
   - 저장: PreviewModal에서 제조사가 mode를 바꾸면 `User.requestSettings.defaultManufacturerHexRotation` 우선, 개인 계정 없으면 `BusinessAnchor.requestSettings.defaultManufacturerHexRotation`.
   - 조회: User → BusinessAnchor → designSoftware(`ExoCAD`=`헥스30도회전`, 그 외=`STL모델대로`).
   - NC는 저장된 `caseInfos.hexRotation.mode`만 따르며 designSoftware를 직접 보지 않는다.
 - STL 회전 SSOT:
-  - `STL모델대로` / `헥스30도회전` / `STL모델+` / `헥스30+` 모두
+  - `STL모델대로` / `헥스30도회전` 모두 동일하게
     `Rotate90Degrees` 후 `+30 + (-hexRotation.appliedDeg)` 적용.
-  - 플러스 모드의 차이는 **NC C축 후처리**뿐 (STL 실회전은 보정=STL모델대로와 동일).
-- NC C축 후처리 SSOT(공구 기반, 검색: `HEX_C_AXIS_MAX_MATCHES`):
-  - 지정 C축 후보(현재 최대 6곳: T4848 1 + T0909/T0606 5). 개수 변경 시 `ApplyManufacturerHexRotationToNc` 상수·화이트리스트만 수정.
-  - `STL모델대로` → 전부 `C0.0` (C30 잔여분 강제)
-  - `헥스30도회전` → T4848=`C0.0`, T0909/T0606=`C30.0`
-  - `STL모델+` / `헥스30+` → 위 플러스 공식 (appliedDeg 필수)
-  - 출력은 반드시 `C##.0` 형태 (`FormatRotationNumber`)
-  - 공구번호 미검출/미지원은 즉시 예외
+- NC C축 후처리 SSOT(공구 기반):
+  - `STL모델대로` → T4848/T0909/T0606 근접 `C0`·`C30` 잔여분을 `C0.0`으로 강제 (ExoCAD designSoftware와 무관, mode SSOT만)
+  - `헥스30도회전` / `헥스X도회전` → PRC `C0`를 T0909/T0606에만 `totalDeg`로 치환
+  - `T4848` → **항상 `C0.0`** (모드/`minorDeg`와 무관. `minorDeg`는 라벨·로그용만)
+  - `T0909`, `T0606` → `totalDeg` 적용
+  - 공구번호 미검출/미지원은 즉시 예외 발생(백엔드 실패 콜백 경유 → 프론트 토스트)
 - 재제작(시작 공정=가공)으로 복사된 NC는 원본 헥스 모드 기준이다. 준비 단계에서 mode를 바꾸면 `updateRndHexRotation`이 `caseInfos.ncFile`을 비워 다음 승인 때 Esprit가 재생성한다.
 - NC 축 워드 소수점 강제 (CNC 인식):
   - 금지: `C30`, `C0`, `X10`, `Z0` 처럼 소수점 없는 정수 워드.
-  - 필수: `C30.0`, `C0.0`, `C0.23`, `X10.0`, `Z0.0`
+  - 필수: `C30.0`, `C0.0`, `X10.0`, `Z0.0` (이미 소수점이 있으면 유지).
+  - `ToString("0.###")` / `"0.###############"` / 정수 단축 / `TrimEnd('0')` 금지. 30.0 이 `"30"` 으로 떨어진다.
   - SSOT: `FormatRotationNumber`, `FormatNcNumber`, `EnsureNcDecimalLiteral`, `EnsureNcCoordinateDecimalsOnFile`.
+  - G/M/T/O/P/N/S/F 정수 코드(G0, M50, T0909, F1000)는 그대로 둔다.
 - 구현 위치:
   - `Helpers/NcFileGenerator.cs`
-    - `TryResolveHexRotationTargets` / `ResolvePlusModeAddDeg`
-    - `FindNearestToolCodeNearLine`
+    - `TryResolveHexRotationTargets` (total→minor 계산)
+    - `FindNearestToolCodeNearLine` (상방 10줄 공구 탐색)
     - `ApplyManufacturerHexRotationToNc` (공구별 C축 치환)
-    - `FormatRotationNumber` / `EnsureNcCoordinateDecimalsOnFile`
+    - `FormatRotationNumber` / `EnsureNcCoordinateDecimalsOnFile` (C30.0 소수점 강제)
   - `StlFileProcessor.Process` (request-meta 전달/에러 전파)
   - `Helpers/BackendApiClient.RequestMetaCaseInfos` (request-meta 바인딩)
-  - PreviewModal Select: `STL모델대로` / `헥스30도회전` / `STL모델+` / `헥스30+`
 
 ## 5. 정리 원칙
 
@@ -297,30 +276,3 @@
 - `rules.md`에 없는 구현/운영 규칙이 나오면 본 파일에 즉시 추가합니다.
 - 헥스 회전 관련 코드에서 `보정`/`무보정` 문자열이 발견되면 즉시 `STL모델대로`/`헥스30도회전`으로 치환하고, 발견 위치를 규칙 문서에 기록합니다.
 - 기존 rules와 충돌 가능성이 있는 요청이 들어오면, 먼저 사용자 확인(컨펌)을 받은 뒤 진행합니다.
-
-## 6. 레거시 비툴패스 피쳐 (2026-08-23)
-
-캡쳐 피쳐 트리에서 **자식 오퍼레이션이 없는** 진단/잔여 FeatureChain은 생성하지 않거나 공정 종료 시 제거한다.
-
-- 생성 스킵(현행 `machinetype=2` 4축):
-  - `Boundry1` / `Boundry2` / `RoughBoundry1..` (`MoveSTL_Module.Boundry`)
-  - `3DMilling_90/180/270Degree` (`WorkPlane`) — 빈 FreeForm
-  - `Splitline_1` / `Splitline_2` / `TwoPhaseSplitLine` 가이드 라인
-- 공정 종료 시 잔여 제거 (`CleanupLegacyNonToolpathFeatures`):
-  - `Turning` / `TurningProfile*` (TurnRgn 생성 원본)
-  - 기본명 `N 연결`
-  - 위 Boundry/Splitline 잔여분
-- **유지(툴패스 입력)**:
-  - `RoughBoundryFront1` / `RoughBoundryBack1` — Rough `BoundaryProfiles`
-  - `CompositeOrientationProfile_*` — Finish OrientationProfile
-  - `TurnRgn*` / `3DMilling_0Degree` / `3DMilling_FrontFace` / `3DRoughMilling_*`
-
-
-## 성능 측정 (PERF)
-
-- 로그 타임스탬프는 `yyyy-MM-dd HH:mm:ss.fff` (ms).
-- `[PERF] name START/END elapsedMs=...` 또는 `DentalLogger.Measure("name")` 구간으로 before/after 비교.
-- 핵심 구간: `StlFileProcessor.Process`, `ResetDocument`, `InvokeDentalAddin`, `OperationSeq.*`, `MainFree`, `Composite2SplitLine2`, `TryAddOperation:*`, `GenerateNc`.
-- 기준 샘플(2026-08-23 KJAWMLCS): 총 ~39s. 병목 = Finish_A Add(~10s), Rough Add, 문서 리셋(~4s), NC(~4s), 중복 MainFree/실패 Composite.
-- 개선: Middle 제거(로컬 반영), MainFree 2회차 스킵, FinishingMethod==1 시 legacy Composite 스킵, B_PHASE A OrientationProfile 스킵.
-- 비교: 로그에서 `[PERF]` / `DentalLogger.Measure` END 줄의 `elapsedMs` 합산. `TryAddOperation:* elapsedMs`가 ESPRIT 툴패스 계산 시간.

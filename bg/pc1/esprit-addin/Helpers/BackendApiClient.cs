@@ -158,10 +158,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 string baseUrl = (AppConfig.GetBackendUrl() ?? "").TrimEnd('/');
                 string url = $"{baseUrl}/bg/register-file";
                 string originalName = string.IsNullOrWhiteSpace(stlPath) ? "" : Path.GetFileName(stlPath);
-                // register-file은 fileName 필수. 실패 시에도 비어 있으면 400이 되므로 placeholder를 둔다.
-                string fileName = string.IsNullOrWhiteSpace(originalName) ? "nc-failed" : originalName;
                 string safeError = (errorMessage ?? "");
-                string json = $"{{\"sourceStep\":\"3-nc\",\"fileName\":\"{EscapeJson(fileName)}\",\"originalFileName\":\"{EscapeJson(originalName)}\",\"requestId\":\"{EscapeJson(requestId)}\",\"status\":\"failed\",\"metadata\":{{\"error\":\"{EscapeJson(safeError)}\",\"action\":\"esprit-nc\"}}}}";
+                string json = $"{{\"sourceStep\":\"3-nc\",\"fileName\":\"\",\"originalFileName\":\"{EscapeJson(originalName)}\",\"requestId\":\"{EscapeJson(requestId)}\",\"status\":\"failed\",\"metadata\":{{\"error\":\"{EscapeJson(safeError)}\"}}}}";
                 using (var req = new HttpRequestMessage(HttpMethod.Post, url))
                 {
                     req.Content = new StringContent(json, Encoding.UTF8, "application/json");
@@ -365,9 +363,10 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             [DataMember] public string faceHolePrcFileName { get; set; }
             [DataMember] public string connectionPrcFileName { get; set; }
             // 제조사 수동 헥스 회전 모드값
-            // - canonical: "STL모델대로" | "헥스30도회전" | "STL모델+" | "헥스30+"
-            // - STL모델+ modeBase=0.0 / 헥스30+ modeBase=30.0 (NC: modeBase + (30+appliedDeg))
-            // - legacy "헥스40도회전"|"헥스10도회전" → STL모델+
+            // - canonical: "STL모델대로" | "헥스30도회전" | "헥스X도회전"
+            // - "헥스X도회전"의 X는 totalDeg(= 30 + minorDeg) 기준으로 전달된다.
+            //   예) minor 10도 선택 시 canonical 라벨: "헥스40도회전"
+            // - legacy 입력("0"|"30")은 add-in에서 canonical로 정규화해 처리
             [DataMember(Name = "manufacturerHexRotation")] public string manufacturerHexRotation { get; set; }
             // 유지홈 옵션 ("none"|"deep", legacy "shallow" 허용) —
             // 5axisComposite_A.prc StepIncrement 오버라이드에 사용.

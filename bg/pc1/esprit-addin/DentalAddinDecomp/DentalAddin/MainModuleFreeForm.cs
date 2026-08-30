@@ -44,10 +44,7 @@ namespace DentalAddin
                     if (safeFinishingMethod == 1)
                     {
                         DentalLogger.Log("FreeFormMill - Safe 경로 후 FinishingMethod==1, Composite2 실행");
-                        using (DentalLogger.Measure("Composite2"))
-                        {
-                            Composite2();
-                        }
+                        Composite2();
                         DentalLogger.Log("FreeFormMill - Safe 경로 후 Composite2 완료");
                     }
                     else
@@ -924,87 +921,67 @@ namespace DentalAddin
 
         public static void MainFree()
         {
-            using (DentalLogger.Measure("MainFree"))
+            DentalLogger.Log("MainFree - 시작");
+
+            try
             {
-                DentalLogger.Log("MainFree - 시작");
-
-                // A_PHASE에서 이미 DriveSurface/Emerge를 끝냈으면 B_PHASE에서 재실행하지 않는다.
-                // (로그상 Graphics 6000+ 순회 + 실패 Composite 재시도가 중복 비용)
-                if (MainFreePrepared)
-                {
-                    DentalLogger.Log("MainFree - 이미 준비됨(MainFreePrepared=true), MoveSurface/Emerge/Composite/Surface숨김 건너뜀");
-                    return;
-                }
-
-                try
-                {
-                    DentalLogger.Log("MainFree - MoveSurface 시작");
-                    MoveSTL_Module.MoveSurface();
-                    DentalLogger.Log($"MainFree - MoveSurface 완료 NeedMove:{MoveSTL_Module.NeedMove}, dY:{MoveSTL_Module.NeedMoveY:0.000}, dZ:{MoveSTL_Module.NeedMoveZ:0.000}");
-                }
-                catch (Exception ex)
-                {
-                    DentalLogger.Log($"MainFree - MoveSurface 실패: {ex.GetType().Name}:{ex.Message}");
-                    throw;
-                }
-
-                try
-                {
-                    DentalLogger.Log("MainFree - Emerge 시작");
-                    Emerge();
-                    DentalLogger.Log("MainFree - Emerge 완료");
-                }
-                catch (Exception ex)
-                {
-                    DentalLogger.Log($"MainFree - Emerge 실패: {ex.GetType().Name}:{ex.Message}");
-                    throw;
-                }
-
-                try
-                {
-                    // FinishingMethod==1 은 Composite2 경로를 쓰므로 legacy Composite는 스킵
-                    if (NumCombobox != null && NumCombobox.Length > 1 && NumCombobox[1] == 1)
-                    {
-                        DentalLogger.Log("MainFree - FinishingMethod==1, legacy Composite 건너뜀 (Composite2에서 처리)");
-                    }
-                    else
-                    {
-                        DentalLogger.Log("MainFree - Composite 시작");
-                        Composite();
-                        DentalLogger.Log("MainFree - Composite 완료");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    DentalLogger.Log($"MainFree - Composite 실패: {ex.GetType().Name}:{ex.Message}");
-                    throw;
-                }
-
-                try
-                {
-                    int count = Document.GraphicsCollection.Count;
-                    int hidden = 0;
-                    DentalLogger.Log($"MainFree - Surface 숨김 시작 Graphics.Count={count}");
-                    for (int i = 1; i <= count; i = checked(i + 1))
-                    {
-                        GraphicObject graphicObject = (GraphicObject)Document.GraphicsCollection[i];
-                        if (graphicObject.GraphicObjectType == espGraphicObjectType.espSurface)
-                        {
-                            graphicObject.Layer.Visible = false;
-                            hidden++;
-                        }
-                    }
-                    DentalLogger.Log($"MainFree - Surface 숨김 완료 hidden={hidden}");
-                }
-                catch (Exception ex)
-                {
-                    DentalLogger.Log($"MainFree - Surface 숨김 실패: {ex.GetType().Name}:{ex.Message}");
-                    throw;
-                }
-
-                MainFreePrepared = true;
-                DentalLogger.Log("MainFree - 종료 (MainFreePrepared=true)");
+                DentalLogger.Log("MainFree - MoveSurface 시작");
+                MoveSTL_Module.MoveSurface();
+                DentalLogger.Log($"MainFree - MoveSurface 완료 NeedMove:{MoveSTL_Module.NeedMove}, dY:{MoveSTL_Module.NeedMoveY:0.000}, dZ:{MoveSTL_Module.NeedMoveZ:0.000}");
             }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"MainFree - MoveSurface 실패: {ex.GetType().Name}:{ex.Message}");
+                throw;
+            }
+
+            try
+            {
+                DentalLogger.Log("MainFree - Emerge 시작");
+                Emerge();
+                DentalLogger.Log("MainFree - Emerge 완료");
+            }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"MainFree - Emerge 실패: {ex.GetType().Name}:{ex.Message}");
+                throw;
+            }
+
+            try
+            {
+                DentalLogger.Log("MainFree - Composite 시작");
+                Composite();
+                DentalLogger.Log("MainFree - Composite 완료");
+            }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"MainFree - Composite 실패: {ex.GetType().Name}:{ex.Message}");
+                throw;
+            }
+
+            try
+            {
+                int count = Document.GraphicsCollection.Count;
+                int hidden = 0;
+                DentalLogger.Log($"MainFree - Surface 숨김 시작 Graphics.Count={count}");
+                for (int i = 1; i <= count; i = checked(i + 1))
+                {
+                    GraphicObject graphicObject = (GraphicObject)Document.GraphicsCollection[i];
+                    if (graphicObject.GraphicObjectType == espGraphicObjectType.espSurface)
+                    {
+                        graphicObject.Layer.Visible = false;
+                        hidden++;
+                    }
+                }
+                DentalLogger.Log($"MainFree - Surface 숨김 완료 hidden={hidden}");
+            }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"MainFree - Surface 숨김 실패: {ex.GetType().Name}:{ex.Message}");
+                throw;
+            }
+
+            DentalLogger.Log("MainFree - 종료");
         }
 
                 public static void RoughFreeFromMill()

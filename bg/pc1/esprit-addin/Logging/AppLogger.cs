@@ -199,7 +199,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Logging
 
             EnsureInitialized();
 
-            var line = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {message}";
+            var line = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}";
 
             Trace.WriteLine(line);
 
@@ -351,7 +351,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Logging
 
 
 
-                var now = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
+                var now = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
 
                 Trace.WriteLine($"[{now}] [Config] BaseDirectory={baseDir}");
 

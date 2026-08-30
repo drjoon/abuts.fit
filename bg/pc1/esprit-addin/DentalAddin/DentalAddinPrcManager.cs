@@ -6,7 +6,6 @@
 using System;
 using System.IO;
 using System.Text;
-using System.Linq;
 using Abuts.EspritAddIns.ESPRIT2025AddinProject.Logging;
 using Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers;
 namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.DentalAddin
@@ -51,186 +50,33 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.DentalAddin
                 AppLogger.Log($"DentalAddinPrcManager.TryResolveBackendPrcPath: PRC 파일명 누락 - subDir={subDir}");
                 return false;
             }
-
-            if (Path.IsPathRooted(fileName))
+            try
             {
-                try
+                string baseDirectory = Path.Combine(AppConfig.AddInRootDirectory, "AcroDent", subDir);
+                if (!Directory.Exists(baseDirectory))
                 {
-                    string rooted = Path.GetFullPath(fileName);
-                    if (File.Exists(rooted))
+                    AppLogger.Log($"DentalAddinPrcManager.TryResolveBackendPrcPath: 디렉터리 없음 - dir={baseDirectory}");
+                    return false;
+                }
+                string targetName = NormalizeFileNameForComparison(Path.GetFileName(fileName));
+                foreach (string candidatePath in Directory.GetFiles(baseDirectory, "*.prc", SearchOption.TopDirectoryOnly))
+                {
+                    string candidateName = NormalizeFileNameForComparison(Path.GetFileName(candidatePath));
+                    if (string.Equals(candidateName, targetName, StringComparison.OrdinalIgnoreCase))
                     {
-                        resolved = rooted;
-                        AppLogger.Log($"DentalAddinPrcManager.TryResolveBackendPrcPath: PRC 확인 완료 - rooted={resolved}");
+                        resolved = candidatePath;
+                        AppLogger.Log($"DentalAddinPrcManager.TryResolveBackendPrcPath: PRC 확인 완료 - subDir={subDir}, requested={fileName}, resolved={resolved}");
                         return true;
                     }
                 }
-                catch (Exception ex)
-                {
-                    AppLogger.Log($"DentalAddinPrcManager.TryResolveBackendPrcPath: rooted 경로 실패 - {ex.GetType().Name}:{ex.Message}");
-                }
-            }
-
-            string leaf = Path.GetFileName(fileName);
-            var attemptedDirs = new System.Collections.Generic.List<string>();
-            foreach (string prcRoot in EnumeratePrcRootCandidates())
-            {
-                string baseDirectory = Path.Combine(prcRoot, subDir);
-                attemptedDirs.Add(baseDirectory);
-                if (TryMatchPrcInDirectory(baseDirectory, leaf, out resolved))
-                {
-                    AppLogger.Log($"DentalAddinPrcManager.TryResolveBackendPrcPath: PRC 확인 완료 - subDir={subDir}, requested={fileName}, resolved={resolved}");
-                    return true;
-                }
-            }
-
-            AppLogger.Log($"DentalAddinPrcManager.TryResolveBackendPrcPath: PRC 파일 없음 - requested={fileName}, dirs={string.Join(" | ", attemptedDirs)}");
-            return false;
-        }
-
-        private static System.Collections.Generic.IEnumerable<string> EnumeratePrcRootCandidates()
-        {
-            var seen = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var ordered = new System.Collections.Generic.List<string>();
-
-            void Consider(string candidate)
-            {
-                if (string.IsNullOrWhiteSpace(candidate))
-                {
-                    return;
-                }
-                try
-                {
-                    string full = Path.GetFullPath(candidate);
-                    if (!Directory.Exists(full))
-                    {
-                        return;
-                    }
-                    if (seen.Add(full))
-                    {
-                        ordered.Add(full);
-                    }
-                }
-                catch
-                {
-                }
-            }
-
-            Consider(ResolvePrcDirectory());
-            Consider(AppConfig.PrcRootDirectory);
-            string bg = AppConfig.BaseDirectory;
-            Consider(Path.Combine(bg, "esprit-addin", "AcroDent"));
-            Consider(Path.Combine(bg, "pc1", "esprit-addin", "AcroDent"));
-            Consider(Path.Combine(AppConfig.AddInRootDirectory, "AcroDent"));
-
-            // Face Hole PRC가 실제로 있는 root를 앞으로
-            ordered.Sort((a, b) => HealthyPrcSubdirScore(b, "1_Face Hole").CompareTo(HealthyPrcSubdirScore(a, "1_Face Hole")));
-            return ordered;
-        }
-
-        private static int HealthyPrcSubdirScore(string prcRoot, string subDir)
-        {
-            try
-            {
-                string dir = Path.Combine(prcRoot, subDir);
-                if (!Directory.Exists(dir))
-                {
-                    return 0;
-                }
-                int count = 0;
-                foreach (string path in Directory.GetFiles(dir))
-                {
-                    if (path.EndsWith(".prc", StringComparison.OrdinalIgnoreCase))
-                    {
-                        count++;
-                    }
-                }
-                return count;
-            }
-            catch
-            {
-                return 0;
-            }
-        }
-
-        private static bool TryMatchPrcInDirectory(string baseDirectory, string leafFileName, out string resolved)
-        {
-            resolved = null;
-            if (string.IsNullOrWhiteSpace(baseDirectory) || !Directory.Exists(baseDirectory))
-            {
+                AppLogger.Log($"DentalAddinPrcManager.TryResolveBackendPrcPath: PRC 파일 없음 - subDir={subDir}, file={fileName}, dir={baseDirectory}");
                 return false;
-            }
-
-            string direct = Path.Combine(baseDirectory, leafFileName);
-            if (File.Exists(direct))
-            {
-                resolved = direct;
-                return true;
-            }
-
-            string[] entries;
-            try
-            {
-                // 확장자 필터 없이 열거 (일부 Windows/.NET 환경에서 *.prc + 한글 파일명 조합이 비는 경우 대비)
-                entries = Directory.GetFiles(baseDirectory);
             }
             catch (Exception ex)
             {
-                AppLogger.Log($"DentalAddinPrcManager.TryMatchPrcInDirectory: 열거 실패 - dir={baseDirectory}, {ex.GetType().Name}:{ex.Message}");
+                AppLogger.Log($"DentalAddinPrcManager.TryResolveBackendPrcPath: 탐색 실패 - {ex.GetType().Name}:{ex.Message}");
                 return false;
             }
-
-            string targetName = NormalizeFileNameForComparison(leafFileName);
-            string asciiSuffix = ExtractAsciiNameSuffix(leafFileName);
-            string suffixMatch = null;
-
-            foreach (string candidatePath in entries)
-            {
-                string candidateLeaf = Path.GetFileName(candidatePath);
-                if (candidateLeaf == null || !candidateLeaf.EndsWith(".prc", StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-                string candidateName = NormalizeFileNameForComparison(candidateLeaf);
-                if (string.Equals(candidateName, targetName, StringComparison.OrdinalIgnoreCase))
-                {
-                    resolved = candidatePath;
-                    return true;
-                }
-                if (suffixMatch == null
-                    && !string.IsNullOrEmpty(asciiSuffix)
-                    && candidateName.EndsWith(asciiSuffix, StringComparison.OrdinalIgnoreCase))
-                {
-                    suffixMatch = candidatePath;
-                }
-            }
-
-            if (suffixMatch != null)
-            {
-                resolved = suffixMatch;
-                AppLogger.Log($"DentalAddinPrcManager.TryMatchPrcInDirectory: ASCII suffix 매칭 - requested={leafFileName}, resolved={resolved}");
-                return true;
-            }
-
-            string sample = string.Join(", ", System.Linq.Enumerable.Take(entries, 8).Select(Path.GetFileName));
-            AppLogger.Log($"DentalAddinPrcManager.TryMatchPrcInDirectory: 미매칭 - dir={baseDirectory}, files={entries.Length}, sample=[{sample}], requested={leafFileName}");
-            return false;
-        }
-
-        private static string ExtractAsciiNameSuffix(string fileName)
-        {
-            if (string.IsNullOrWhiteSpace(fileName))
-            {
-                return string.Empty;
-            }
-            // "덴티움_SuperLine_RH_FaceHole.prc" -> "_SuperLine_RH_FaceHole.prc"
-            for (int i = 0; i < fileName.Length - 1; i++)
-            {
-                if (fileName[i] == '_' && fileName[i + 1] < 128)
-                {
-                    return NormalizeFileNameForComparison(fileName.Substring(i));
-                }
-            }
-            return string.Empty;
         }
         public static double ReadBottomZLimitFromFacePrc()
         {

@@ -32,6 +32,8 @@ namespace DentalAddin
     {
         public static void OperationSeq()
         {
+
+
             // 2026-06-08: Two-Phase를 기본값으로 변경, One-Phase는 명시적 요청 시에만 사용
             bool onePhaseEnabled = IsOnePhaseEnabled();
             bool roughSplitEnabled = IsRoughSplitEnabled();
@@ -69,7 +71,7 @@ namespace DentalAddin
                     RoughFreeFromMill();
                 }
 
-                ValidateBeforeOperation("FreeFormMill", Array.Empty<string>(), RequiredFinishFreeFormFeatures());
+                ValidateBeforeOperation("FreeFormMill", Array.Empty<string>(), new[] { "3DMilling_0Degree", "3DMilling_90Degree", "3DMilling_180Degree", "3DMilling_270Degree" });
                 FreeFormMill();
                 TryNormalizeCompositeFinishOrderAfterFreeForm();
                 if (Mark.MarkSign)
@@ -80,14 +82,13 @@ namespace DentalAddin
 
                 ValidateBeforeOperation("CustomCycle2", Array.Empty<string>(), Array.Empty<string>());
                 CustomCycle2();
-                CleanupLegacyNonToolpathFeatures();
                 return;
             }
 
             // 기본값: 3-Stage Two-Phase 실행 (RoughType 2.0/3.0 또는 roughSplit/PRC 마커 있을 때)
             if (twoPhaseMode)
             {
-                DentalLogger.Log($"OperationSeq - 3-Stage 실행: Front/Back Turn+Rough 후 Finish 실행 (RoughType={RoughType}, RoughSplitEnv={roughSplitEnabled})");
+                DentalLogger.Log($"OperationSeq - 3-Stage 실행: Front/Middle/Back Turn+Rough 후 Finish 실행 (RoughType={RoughType}, RoughSplitEnv={roughSplitEnabled})");
                 ClearOperationsForTwoPhase();
 
                 ValidateBeforeOperation("CustomCycle", Array.Empty<string>(), Array.Empty<string>());
@@ -95,47 +96,35 @@ namespace DentalAddin
 
                 // 3-stage 순서(요청 반영):
                 // Front:  Turn -> Rough -> Front Face
+                // Middle: Turn -> Rough
                 // Back:   Turn -> Rough
-                // Middle_Turn / Middle_Rough는 레거시로 생성하지 않는다 (Front+Back로 커버)
                 // Finish: deep=Front/Back 분할, none=All 단일
-                using (DentalLogger.Measure("OperationSeq.FRONT_TurnRough"))
-                {
-                    ExecuteTwoPhaseTurning("FRONT");
-                    ExecuteTwoPhaseRough("FRONT");
-                }
+                ExecuteTwoPhaseTurning("FRONT");
+                ExecuteTwoPhaseRough("FRONT");
 
-                using (DentalLogger.Measure("OperationSeq.FrontFaceMill"))
-                {
-                    ValidateBeforeOperation("FrontFaceMill", Array.Empty<string>(), new[] { "3DMilling_FrontFace" });
-                    FrontFaceMill();
-                }
+                ValidateBeforeOperation("FrontFaceMill", Array.Empty<string>(), new[] { "3DMilling_FrontFace" });
+                FrontFaceMill();
+
+                ExecuteTwoPhaseTurning("MIDDLE");
+                ExecuteTwoPhaseRough("MIDDLE");
 
                 // 요청 반영:
-                // Finish_Front는 Front Face와 Back_Turn 사이에 생성한다.
+                // Finish_Front는 마지막 Middle_Rough와 Back_Turn 사이에 생성한다.
                 Environment.SetEnvironmentVariable("ABUTS_SKIP_FRONTFACE_IN_FREEFORM", "1");
                 try
                 {
                     Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", "A_PHASE");
-                    using (DentalLogger.Measure("OperationSeq.FINISH_FRONT"))
-                    {
-                        ValidateBeforeOperation("FreeFormMill", Array.Empty<string>(), RequiredFinishFreeFormFeatures());
-                        FreeFormMill();
-                        TryNormalizeCompositeFinishOrderAfterFreeForm();
-                    }
+                    ValidateBeforeOperation("FreeFormMill", Array.Empty<string>(), new[] { "3DMilling_0Degree", "3DMilling_90Degree", "3DMilling_180Degree", "3DMilling_270Degree" });
+                    FreeFormMill();
+                    TryNormalizeCompositeFinishOrderAfterFreeForm();
 
-                    using (DentalLogger.Measure("OperationSeq.BACK_TurnRough"))
-                    {
-                        ExecuteTwoPhaseTurning("BACK");
-                        ExecuteTwoPhaseRough("BACK");
-                    }
+                    ExecuteTwoPhaseTurning("BACK");
+                    ExecuteTwoPhaseRough("BACK");
 
                     Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", "B_PHASE");
-                    using (DentalLogger.Measure("OperationSeq.FINISH_BACK"))
-                    {
-                        ValidateBeforeOperation("FreeFormMill", Array.Empty<string>(), RequiredFinishFreeFormFeatures());
-                        FreeFormMill();
-                        TryNormalizeCompositeFinishOrderAfterFreeForm();
-                    }
+                    ValidateBeforeOperation("FreeFormMill", Array.Empty<string>(), new[] { "3DMilling_0Degree", "3DMilling_90Degree", "3DMilling_180Degree", "3DMilling_270Degree" });
+                    FreeFormMill();
+                    TryNormalizeCompositeFinishOrderAfterFreeForm();
                 }
                 finally
                 {
@@ -151,7 +140,6 @@ namespace DentalAddin
 
                 ValidateBeforeOperation("CustomCycle2", Array.Empty<string>(), Array.Empty<string>());
                 CustomCycle2();
-                CleanupLegacyNonToolpathFeatures();
                 return;
             }
 
@@ -168,7 +156,7 @@ namespace DentalAddin
                 ValidateBeforeOperation("OP36", Array.Empty<string>(), Array.Empty<string>());
                 OP36();
             }
-            ValidateBeforeOperation("FreeFormMill", Array.Empty<string>(), RequiredFinishFreeFormFeatures());
+            ValidateBeforeOperation("FreeFormMill", Array.Empty<string>(), new[] { "3DMilling_0Degree", "3DMilling_90Degree", "3DMilling_180Degree", "3DMilling_270Degree" });
             FreeFormMill();
             TryNormalizeCompositeFinishOrderAfterFreeForm();
             if (Mark.MarkSign)
@@ -178,78 +166,9 @@ namespace DentalAddin
             }
             ValidateBeforeOperation("CustomCycle2", Array.Empty<string>(), Array.Empty<string>());
             CustomCycle2();
-            CleanupLegacyNonToolpathFeatures();
         }
 
-        // 현행 4축 Composite는 0Degree만 사용. 90/180/270은 machinetype==1 레거시.
-        private static string[] RequiredFinishFreeFormFeatures()
-        {
-            if (machinetype == 1)
-            {
-                return new[] { "3DMilling_0Degree", "3DMilling_90Degree", "3DMilling_180Degree", "3DMilling_270Degree" };
-            }
-            return new[] { "3DMilling_0Degree" };
-        }
 
-        // TurnRgn 생성 후 남는 Turning/TurningProfile, 이름 없는 "N 연결", 진단 가이드 등
-        // 툴패스에 더 이상 관여하지 않는 레거시 FeatureChain을 제거한다.
-        // 유지: TurnRgn*, RoughBoundryFront/Back, CompositeOrientationProfile_*
-        private static void CleanupLegacyNonToolpathFeatures()
-        {
-            try
-            {
-                if (Document?.FeatureChains == null)
-                {
-                    return;
-                }
-
-                int removed = 0;
-                for (int i = Document.FeatureChains.Count; i >= 1; i--)
-                {
-                    FeatureChain fc = null;
-                    try { fc = Document.FeatureChains[i]; } catch { }
-                    if (fc == null)
-                    {
-                        continue;
-                    }
-
-                    string name = (fc.Name ?? string.Empty).Trim();
-                    bool isLegacy =
-                        string.Equals(name, "Turning", StringComparison.OrdinalIgnoreCase)
-                        || name.StartsWith("TurningProfile", StringComparison.OrdinalIgnoreCase)
-                        || string.Equals(name, "Boundry1", StringComparison.OrdinalIgnoreCase)
-                        || string.Equals(name, "Boundry2", StringComparison.OrdinalIgnoreCase)
-                        || name.StartsWith("RoughBoundry", StringComparison.OrdinalIgnoreCase)
-                            && !name.StartsWith("RoughBoundryFront", StringComparison.OrdinalIgnoreCase)
-                            && !name.StartsWith("RoughBoundryBack", StringComparison.OrdinalIgnoreCase)
-                        || string.Equals(name, "Splitline_1", StringComparison.OrdinalIgnoreCase)
-                        || string.Equals(name, "Splitline_2", StringComparison.OrdinalIgnoreCase)
-                        || string.Equals(name, "TwoPhaseSplitLine", StringComparison.OrdinalIgnoreCase)
-                        || System.Text.RegularExpressions.Regex.IsMatch(name, @"^\d+\s*연결$");
-
-                    if (!isLegacy)
-                    {
-                        continue;
-                    }
-
-                    try
-                    {
-                        Document.FeatureChains.Remove(i);
-                        removed++;
-                    }
-                    catch
-                    {
-                        try { Document.FeatureChains.Remove(fc.Key); removed++; } catch { }
-                    }
-                }
-
-                DentalLogger.Log($"CleanupLegacyNonToolpathFeatures - removed={removed}");
-            }
-            catch (Exception ex)
-            {
-                DentalLogger.Log($"CleanupLegacyNonToolpathFeatures 실패: {ex.GetType().Name}:{ex.Message}");
-            }
-        }
 
         private static void ClearOperationsForTwoPhase()
         {
@@ -439,12 +358,6 @@ namespace DentalAddin
         // 순서: Turn_A → Rough_A → FrontFace → Turn_B → Rough_B
         private static void ExecuteTwoPhaseTurning(string region)
         {
-            if (string.Equals(region, "MIDDLE", StringComparison.OrdinalIgnoreCase))
-            {
-                DentalLogger.Log("ExecuteTwoPhaseTurning(MIDDLE) - MIDDLE region 요청 무시(Middle_Turn legacy 제거)");
-                return;
-            }
-
             Environment.SetEnvironmentVariable(AppConfig.TwoPhaseTurningRegionEnv, region);
             try
             {
@@ -473,9 +386,10 @@ namespace DentalAddin
                 string[] roughFreeForms = (RoughType == 2.0)
                     ? new[] { "3DRoughMilling_0Degree", "3DRoughMilling_180Degree" }
                     : new[] { "3DRoughMilling_0Degree", "3DRoughMilling_120Degree", "3DRoughMilling_240Degree" };
-                // Legacy RoughBoundry1..는 Boundry()에서 더 이상 만들지 않는다.
-                // SplitAB가 RoughBoundryFront/Back을 생성하므로 사전 FeatureChain 검증은 FreeForm만 한다.
-                ValidateBeforeOperation($"RoughFreeFromMill_{region}", Array.Empty<string>(), roughFreeForms);
+                string[] roughBoundaries = (RoughType == 2.0)
+                    ? new[] { "RoughBoundry1" }
+                    : new[] { "RoughBoundry1", "RoughBoundry2", "RoughBoundry3" };
+                ValidateBeforeOperation($"RoughFreeFromMill_{region}", roughBoundaries, roughFreeForms);
                 RoughFreeFromMill();
                 TagNewOperations(roughStart, $"ROUGH_{region}");
                 DentalLogger.Log($"ExecuteTwoPhaseRough({region}) 완료");
@@ -1547,11 +1461,11 @@ namespace DentalAddin
             return false;
         }
 
-        // 3-stage turning 분할 준비: region(FRONT/BACK)에 맞는 X 구간을 계산한다.
+        // 3-stage turning 분할 준비: region(FRONT/MIDDLE/BACK)에 맞는 X 구간을 계산한다.
         // 기준:
         // - Splitline_1 = FrontPointX
-        // - Splitline_2 = SharedFinishSplitX (midpoint 금지)
-        // - Middle_Turn은 레거시로 생성하지 않는다 (ExecuteTwoPhaseTurning에서 skip)
+        // - Splitline_2 = midpoint(Splitline_1, BackPointX)
+        // - 경계 확장: ±2.2mm
         private static bool TryPrepareTurningRegionRange(string region, out double rangeMinX, out double rangeMaxX)
         {
             rangeMinX = 0.0;
@@ -1566,9 +1480,12 @@ namespace DentalAddin
 
                 const double faceToRoughMm = 2.2;
                 const double roughToTurnMm = 2.2;
+                const double middleRoughOverCutMm = 2.2;
 
-                // Rough 경계(현재 정책): Front Face 끝(FrontPointX+3.0) + faceToRough
-                double frontRoughEnd = Math.Min(xMax, splitline1 + GetFrontFaceEndOffsetFromFrontMm() + faceToRoughMm);
+                // Rough 경계(현재 정책): Front Face 끝(FrontPointX+2.5) + faceToRough
+                double frontRoughEnd = Math.Min(xMax, splitline1 + FrontFaceEndOffsetFromFrontMm + faceToRoughMm);
+                double middleRoughStart = Math.Max(xMin, splitline1 - middleRoughOverCutMm);
+                double middleRoughEnd = Math.Min(xMax, splitline2 + middleRoughOverCutMm);
 
                 string normalized = (region ?? string.Empty).Trim().ToUpperInvariant();
                 switch (normalized)
@@ -1579,14 +1496,15 @@ namespace DentalAddin
                         rangeMaxX = Math.Min(xMax, frontRoughEnd + roughToTurnMm);
                         break;
                     case "MIDDLE":
-                        // Middle_Turn legacy — ExecuteTwoPhaseTurning에서 이미 skip. 방어적으로 거부.
-                        DentalLogger.Log("TurningOp 3-Stage - MIDDLE region 거부(Middle_Turn legacy 제거)");
-                        return false;
+                        // 요청사항: Middle Turn 폭 = Middle Rough 폭 + 2.2mm
+                        rangeMinX = middleRoughStart;
+                        rangeMaxX = Math.Min(xMax, middleRoughEnd + roughToTurnMm);
+                        break;
                     case "BACK":
                         // 요청사항 반영(2026-07-01):
-                        // 1) 시작점은 Front와 동일한 anchor(FrontPointX)로 통일한다.
+                        // 1) 시작점은 Front/Middle과 동일한 anchor(FrontPointX)로 통일한다.
                         //    - 증상: Back_Turn만 과도하게 좌측(-X)에서 시작해 에러/비정상 접근이 발생.
-                        //    - 조치: 시작 하한을 FrontPointX로 고정해 Front/Back 시작 기준을 일치시킨다.
+                        //    - 조치: 시작 하한을 FrontPointX로 고정해 세 구간의 시작 기준을 일치시킨다.
                         // 2) 끝점은 기존 Back_Turn 형상(수평 extension + 45도 퇴출)을 유지한다.
                         //    - 범위를 xMax로 자르면 퇴출부가 클리핑되어 수평+45 형상이 사라질 수 있다.
                         //    - 따라서 xMax + exitAllowance까지 허용해 기존 퇴출 형상을 보존한다.

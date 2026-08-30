@@ -148,7 +148,6 @@
     <Compile Include="DentalAddinDecomp\DentalAddin\Clean_Module.cs" />
     <Compile Include="DentalAddinDecomp\DentalAddin\ConnectionCut.cs" />
     <Compile Include="DentalAddinDecomp\DentalAddin\DentalLogger.cs" />
-    <Compile Include="DentalAddinDecomp\DentalAddin\PerfScope.cs" />
     <Compile Include="DentalAddinDecomp\DentalAddin\Feature36_Module.cs" />
     <Compile Include="DentalAddinDecomp\DentalAddin\Intersection.cs" />
     <Compile Include="DentalAddinDecomp\DentalAddin\Intersection2.cs" />
