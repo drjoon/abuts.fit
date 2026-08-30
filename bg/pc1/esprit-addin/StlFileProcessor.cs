@@ -118,8 +118,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         // 주의: Rhino와 Esprit의 회전 부호 기준이 달라, Esprit 적용 시 부호를 반전해 사용한다.
         // canonical "STL모델대로"/"헥스30도회전" 모두 STL모델대로 기준 회전에 반영한다.
         private double? _backendHexRotationAppliedDeg;
-        // 유지홈(retentionGroove) 옵션 캐시 — request-meta 수신 직후 저장.
-        // 이후 Finish_Front(legacy A env 경로)의 StepIncrement 런타임 오버라이드에 사용.
+        // 유지홈(retentionGroove) — request-meta none/deep 필수. Finish StepIncrement·Back 겹침 SSOT.
         private string _backendRetentionGroove;
         public string FaceHoleProcessFilePath { get; set; }
         public string ConnectionMachiningProcessFilePath { get; set; }
@@ -155,7 +154,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         public void Process(string stlPath, double? frontLimitX = null, double? backLimitX = null, double? materialDiameter = null, bool twoPhase = false, string requestIdHint = null, double? tiltAxisX = null, double? tiltAxisY = null, double? tiltAxisZ = null, double? stlZLengthMm = null, string manufacturerHexRotationHint = null, double? hexRotationAppliedDegHint = null)
         {
             AppLogger.BeginRun();
+            var processSw = System.Diagnostics.Stopwatch.StartNew();
             AppLogger.Log("StlFileProcessor: Process 시작");
+            AppLogger.Log("[PERF] StlFileProcessor.Process START");
             ResetPerRunState();
             if (string.IsNullOrWhiteSpace(manufacturerHexRotationHint))
             {
@@ -180,7 +181,10 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             }
             _documentManager.EnsureCleanDocument(document);
 
+            var resetSw = System.Diagnostics.Stopwatch.StartNew();
             document = _documentManager.ResetDocument(document, materialDiameter);
+            resetSw.Stop();
+            AppLogger.Log($"[PERF] StlFileProcessor.ResetDocument END elapsedMs={resetSw.ElapsedMilliseconds}");
             if (document == null)
             {
                 AppLogger.Log("StlFileProcessor: 템플릿 문서 초기화에 실패했습니다.");
@@ -271,10 +275,10 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         {
                             throw new InvalidOperationException($"request-meta 응답에 lotNumber가 없습니다. requestId={requestId}");
                         }
-                        // 유지홈(retentionGroove) 옵션 캐시 — 이후 Finish_Front(legacy A env 경로) StepIncrement 오버라이드에 사용
-                        _backendRetentionGroove = string.IsNullOrWhiteSpace(requestMeta.retentionGroove)
-                            ? null
-                            : requestMeta.retentionGroove.Trim();
+                        // 유지홈(retentionGroove) SSOT — 백엔드 none/deep만 허용. StepIncrement·Finish_Back 겹침에 사용.
+                        _backendRetentionGroove = RequireBackendRetentionGrooveOrThrow(
+                            requestMeta.retentionGroove,
+                            requestId);
                         // hex mode는 payload SSOT — request-meta에서 덮어쓰지 않는다.
                         // Rhino telemetry(appliedDeg)는 payload에 없을 때만 request-meta에서 보조 로드한다.
                         if (!_backendHexRotationAppliedDeg.HasValue)
@@ -412,9 +416,13 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     document.LatheMachineSetup.BarDiameter = backendCamDiameter.Value;
                     AppLogger.Log($"StlFileProcessor: Invoke 직전 CAM 직경 재적용 - BarDiameter={backendCamDiameter.Value:F3}");
                 }
+                var addinSw = System.Diagnostics.Stopwatch.StartNew();
                 InvokeDentalAddin(document, effectiveFrontLimit, effectiveBackLimit, stlBoundingTopZ, finishLineTopZ, finishLineMinZ, finishLineEspritR, twoPhase);
+                addinSw.Stop();
+                AppLogger.Log($"[PERF] StlFileProcessor.InvokeDentalAddin END elapsedMs={addinSw.ElapsedMilliseconds}");
                 CaptureNcMetadata(document);
                 AppLogger.Log("StlFileProcessor: NC 생성 시작");
+                var ncSw = System.Diagnostics.Stopwatch.StartNew();
                 string ncFilePath = _ncGenerator.GenerateNcFile(
                     document,
                     stlPath,
@@ -425,7 +433,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     _prcManager?.ConnectionMachiningProcessFilePath,
                     _backendManufacturerHexRotation,
                     _backendHexRotationAppliedDeg);
+                ncSw.Stop();
                 AppLogger.Log($"StlFileProcessor: NC 생성 종료 - path={ncFilePath ?? "<null>"}");
+                AppLogger.Log($"[PERF] StlFileProcessor.GenerateNc END elapsedMs={ncSw.ElapsedMilliseconds}");
                 if (!string.IsNullOrWhiteSpace(ncFilePath))
                 {
                     AppLogger.Log($"StlFileProcessor: NC file generated - {ncFilePath}");
@@ -436,11 +446,15 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     AppLogger.Log($"StlFileProcessor: NC file generation failed - ncFilePath is empty");
                 }
 
+                processSw.Stop();
                 AppLogger.Log($"StlFileProcessor: 완료 - {stlPath}");
+                AppLogger.Log($"[PERF] StlFileProcessor.Process END elapsedMs={processSw.ElapsedMilliseconds}");
             }
             catch (Exception ex)
             {
+                processSw.Stop();
                 AppLogger.Log($"StlFileProcessor: 처리 중 오류 - {ex.Message}");
+                AppLogger.Log($"[PERF] StlFileProcessor.Process END(error) elapsedMs={processSw.ElapsedMilliseconds}");
                 try
                 {
                     if (!string.IsNullOrWhiteSpace(requestId))
@@ -973,10 +987,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 TryApplyCompositeSplitByFinishLine(mainModuleType, stlTopZ, finishLineTopZ);
                 TryApplyTwoPhaseSplitByFinishLine(mainModuleType, stlTopZ, finishLineTopZ, twoPhase);
                 TryApplyBackRoughModeByFinishLineMinZ(finishLineMinZ);
-                // 유지홈 옵션을 Finish_Front(legacy A env 경로) StepIncrement에 반영.
-                // PRC 파일은 건드리지 않고, env 변수에 numeric 값만 주입한다.
-                // 실제 적용은 MainModuleComposite.TryRunComposite2SplitLine2 → TrySetCompositeStepIncrement 가
-                // Esprit COM(IDispatch)을 통해 Finish_Front 기술(opA)의 StepIncrement(DispId 217) 에 직접 SetProperty 한다.
+                // 유지홈(none/deep) → ABUTS_RETENTION_GROOVE. StepIncrement는 MainModuleComposite가 groove로 직접 적용.
                 TryApplyRetentionGrooveToStepIncrementEnv();
 
                 AppLogger.Log("DentalAddin: Emerge 실행 시작 - IGS 서피스 Merge 및 Translate");
@@ -1004,6 +1015,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             {
                 Exception root = ex.GetBaseException();
                 AppLogger.Log($"StlFileProcessor: DentalAddin 실행 실패\n{root}");
+                throw;
             }
         }
         private void EnsureCompositeTool(Type mainModuleType, Document document)
@@ -1207,16 +1219,13 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             if (finishLineTopZ.HasValue)
             {
                 DentalAddinReflectionHelper.SetStaticField(moveModuleType, "FinishLineTopZ", finishLineTopZ.Value);
-                // FinishLineX는 pre-rotation ESPRIT X 좌표로 변환해야 함
-                // STL Z좌표 → ESPRIT X: backLimitX가 stlTopZ에 대응하므로
-                // FinishLineX = backLimitX + finishLineTopZ - stlTopZ
-                double finishLineEspritX = finishLineTopZ.Value;
-                if (stlTopZ.HasValue && stlTopZ.Value > 0.001)
-                {
-                    finishLineEspritX = backLimitX + finishLineTopZ.Value - stlTopZ.Value;
-                }
+                // [SSOT] STL Z → ESPRIT X (MoveSTL 이전)
+                // EspritHttpServer와 동일: FrontPointX = -FrontPoint.z
+                // 따라서 FinishLineX = -finishLineTopZ
+                // (구식 BackX + Z - stlTopZ 는 tip 쪽으로 수 mm 어긋남)
+                double finishLineEspritX = -finishLineTopZ.Value;
                 DentalAddinReflectionHelper.SetStaticField(moveModuleType, "FinishLineX", finishLineEspritX);
-                AppLogger.Log($"DentalAddin: FinishLineX 변환 - finishLineTopZ:{finishLineTopZ.Value:F4}, stlTopZ:{(stlTopZ.HasValue ? stlTopZ.Value.ToString("F4") : "<null>")}, backLimitX:{backLimitX:F4} → FinishLineX:{finishLineEspritX:F4}");
+                AppLogger.Log($"DentalAddin: FinishLineX 변환 - finishLineTopZ:{finishLineTopZ.Value:F4}, formula:X=-Z, backLimitX:{backLimitX:F4}, stlTopZ:{(stlTopZ.HasValue ? stlTopZ.Value.ToString("F4") : "<null>")}(ignored) → FinishLineX:{finishLineEspritX:F4}");
             }
             if (finishLineEspritR.HasValue)
             {
@@ -1304,9 +1313,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                             catch { }
                         }
 
-                        // 기준점(권위값): backend finishLineTopZ를 MoveSTL 이후 현재 좌표계 X로 직접 변환
-                        // currentFinishX = backX + finishTopZ - stlTopZ
-                        double currentFinishX = backX + finishLineTopZ.Value - stlTopZ.Value;
+                        // 기준점(권위값): backend finishLineTopZ → MoveSTL 이후 ESPRIT X
+                        // SSOT: X = -Z, 초기 BackX=0 이므로 MoveSTL 후 currentFinishX = backX - finishTopZ
+                        double currentFinishX = backX - finishLineTopZ.Value;
 
                         // 오프셋 방향 정책:
                         // - env ABUTS_FINISHLINE_SPLIT_SIDE=front|back 로 명시 가능
@@ -1378,38 +1387,22 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         double xMin = Math.Min(frontX, backX);
                         double xMax = Math.Max(frontX, backX);
 
-                        // 요청 기준(2026-07-01):
-                        //   split line 기준은 finishLine 최상 Z점(top)에서 X축 -1.0mm 지점이다.
-                        //   (즉, 기존 정확 기준점에서 좌측으로 1.0mm 이동)
-                        // 좌표 변환식:
-                        //   ESPRIT X = BackX + Z - stlTopZ
-                        //   topX     = BackX + finishLineTopZ - stlTopZ
-                        //   splitX   = topX + splitOffsetMm
-                        // 중요:
-                        //   이 오프셋은 MainModuleComposite.TryResolveTwoPhaseSplitLineTargetX와
-                        //   반드시 동일해야 한다. (env 주입/재해석 경로의 SSOT 일치)
+                        // [SSOT] SharedFinishSplitX
+                        //   Front_Rough끝 = Splitline_2 = Finish_Front끝 = Finish_Back시작
+                        //   = finishLineTopX - 1.0 (tip 쪽; Z+1 ≡ X-1)
+                        // MainModuleComposite.SharedFinishSplitOffsetFromFinishLineTopMm 과 동일해야 한다.
                         const double splitOffsetMm = -1.0;
-                        double targetZ = finishLineTopZ.Value;
-                        double topX = backX + targetZ - stlTopZ.Value;
+                        double targetZ = finishLineTopZ.Value + 1.0;
+                        double topX = backX - finishLineTopZ.Value;
                         double rawSplitX = topX + splitOffsetMm;
                         double splitX = Math.Max(xMin + 0.01, Math.Min(xMax - 0.01, rawSplitX));
 
                         Environment.SetEnvironmentVariable(AppConfig.TwoPhaseEnableEnv, "1");
                         Environment.SetEnvironmentVariable(AppConfig.TwoPhaseSplitXEnv, splitX.ToString(CultureInfo.InvariantCulture));
-
-                        // RoughFreeFromMill SplitAB 구현은 기존 env를 사용하므로 같이 설정
                         Environment.SetEnvironmentVariable(AppConfig.RoughfreeformSplitEnableEnv, "1");
                         Environment.SetEnvironmentVariable("ABUTS_ROUGHFREEFORM_SPLIT_X", splitX.ToString(CultureInfo.InvariantCulture));
 
-                        // Front_Rough/Face 안전 간격 계산 근거를 동일 로그에 남긴다.
-                        // Front_Rough 우측 끝 규칙: frontRoughEnd = splitX - 0.5mm
-                        // Face 우측 끝 허용 상한: frontRoughEnd - 0.3mm
-                        const double roughAEndOffsetMm = 0.5;
-                        const double faceMinGapMm = 0.3;
-                        double frontRoughEndX = splitX - roughAEndOffsetMm;
-                        double faceRightMaxX = frontRoughEndX - faceMinGapMm;
-
-                        AppLogger.Log($"DentalAddin: TwoPhase split 적용 - finishLineTopZ:{finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, targetZ(top):{targetZ.ToString("F4", CultureInfo.InvariantCulture)}, stlTopZ:{stlTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, topX:{topX.ToString("F4", CultureInfo.InvariantCulture)}, splitOffsetMm:{splitOffsetMm.ToString("F3", CultureInfo.InvariantCulture)}, rawSplitX(top-1.0):{rawSplitX.ToString("F4", CultureInfo.InvariantCulture)}, splitX(clamped):{splitX.ToString("F4", CultureInfo.InvariantCulture)}, frontRoughEndX(split-0.5):{frontRoughEndX.ToString("F4", CultureInfo.InvariantCulture)}, faceRightMaxX(frontRoughEnd-0.3):{faceRightMaxX.ToString("F4", CultureInfo.InvariantCulture)} (Front:{frontX.ToString("F4", CultureInfo.InvariantCulture)}, Back:{backX.ToString("F4", CultureInfo.InvariantCulture)})");
+                        AppLogger.Log($"DentalAddin: SharedFinishSplit 적용 - finishLineTopZ:{finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, targetZ(top+1):{targetZ.ToString("F4", CultureInfo.InvariantCulture)}, topX:{topX.ToString("F4", CultureInfo.InvariantCulture)}, splitOffsetMm:{splitOffsetMm.ToString("F3", CultureInfo.InvariantCulture)}, sharedSplitX:{splitX.ToString("F4", CultureInfo.InvariantCulture)} (=Front_Rough끝/Splitline_2/Finish seam) (Front:{frontX.ToString("F4", CultureInfo.InvariantCulture)}, Back:{backX.ToString("F4", CultureInfo.InvariantCulture)})");
                             }
                             catch (Exception ex)
                             {
@@ -1888,93 +1881,72 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             }
         }
 
-        // 유지홈(retentionGroove) → Finish_Front StepIncrement 매핑
-        //   none    → 0.1
-        //   shallow → 0.2
-        //   deep    → 0.25
-        // 정책:
-        //   PRC 파일 사본을 만들지 않는다. 환경변수 ABUTS_COMPOSITE_STEP_INCREMENT_A(legacy key) 에
-        //   numeric 값만 주입하고, 실제 StepIncrement 적용은
-        //   MainModuleComposite.TryRunComposite2SplitLine2 → TrySetCompositeStepIncrement 가
-        //   Esprit COM 객체(Finish_Front 기술 opA)에 IDispatch SetProperty 로 수행한다 (PRC DispId 217 동치).
-        //   (Single-A/BC/B-Extension 레거시 모드 플래그는 사용하지 않는다)
+        // 유지홈(retentionGroove) SSOT — 백엔드 none/deep만 허용.
+        // Finish_Front StepIncrement / Finish_Back 1피치 겹침은 ABUTS_RETENTION_GROOVE 를 본다.
+        // ABUTS_COMPOSITE_STEP_INCREMENT_A 는 사용하지 않는다.
+        //   none → 0.12, deep → 0.20
+        // Finish_Back(B) StepIncrement는 PRC 기본(0.08) 유지.
+        private const string RetentionGrooveMissingMessage =
+            "유지홈(retentionGroove)이 백엔드에서 전달되지 않았습니다. none 또는 deep이 필요합니다.";
+
+        private static string RequireBackendRetentionGrooveOrThrow(string raw, string requestId)
+        {
+            string normalized = NormalizeBackendRetentionGrooveOrNull(raw);
+            if (normalized == null)
+            {
+                string shown = string.IsNullOrWhiteSpace(raw) ? "<empty>" : raw.Trim();
+                throw new InvalidOperationException(
+                    $"{RetentionGrooveMissingMessage} (requestId={requestId ?? ""}, received='{shown}')");
+            }
+            return normalized;
+        }
+
+        private static string NormalizeBackendRetentionGrooveOrNull(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return null;
+            }
+            string groove = raw.Trim().ToLowerInvariant();
+            if (groove == "없음") groove = "none";
+            if (groove == "있음") groove = "deep";
+            if (groove == "none" || groove == "deep")
+            {
+                return groove;
+            }
+            return null;
+        }
+
         private void TryApplyRetentionGrooveToStepIncrementEnv()
         {
-            try
+            // request-meta 단계에서 이미 none/deep으로 확정. 여기서는 env 브리지만 수행.
+            string normalizedGroove = RequireBackendRetentionGrooveOrThrow(
+                _backendRetentionGroove,
+                _backendRequestId);
+
+            // legacy numeric env는 더 이상 쓰지 않는다(오용 방지로 항상 해제).
+            Environment.SetEnvironmentVariable(AppConfig.CompositeStepIncrementAEnv, null);
+            Environment.SetEnvironmentVariable(AppConfig.CompositeStepIncrementBEnv, null);
+            Environment.SetEnvironmentVariable("ABUTS_RETENTION_GROOVE", normalizedGroove);
+            Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", null);
+
+            if (normalizedGroove == "none")
             {
-                string groove = _backendRetentionGroove;
-                if (string.IsNullOrWhiteSpace(groove))
-                {
-                    Environment.SetEnvironmentVariable(AppConfig.CompositeStepIncrementAEnv, null);
-                    Environment.SetEnvironmentVariable(AppConfig.CompositeStockAllowanceAEnv, null);
-                    Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_DYNAMIC_DISABLE", null);
-                    Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", null);
-                    Environment.SetEnvironmentVariable("ABUTS_RETENTION_GROOVE", null);
-                    AppLogger.Log("DentalAddin: retentionGroove 미지정 - StepIncrement env 기본값(PRC) 유지");
-                    return;
-                }
-
-                string normalizedGroove = groove.Trim().ToLowerInvariant();
-                if (normalizedGroove == "없음") normalizedGroove = "none";
-                if (normalizedGroove == "있음") normalizedGroove = "deep";
-
-                double? stepIncrement = null;
-                switch (normalizedGroove)
-                {
-                    case "none":  // 유지홈 없음
-                        stepIncrement = 0.08;
-                        // gp.exe 모달 안정화: none/shallow는 Composite 비동적 추가 시도
-                        Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_DYNAMIC_DISABLE", "1");
-                        // 정책 변경: Finish는 항상 2단(Front/Back). ALL_PHASE 강제 금지.
-                        Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", null);
-                        break;
-                    case "shallow":
-                        stepIncrement = 0.15;
-                        Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_DYNAMIC_DISABLE", "1");
-                        Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", null);
-                        break;
-                    case "deep":  // 유지홈 있음
-                        stepIncrement = 0.20;
-                        Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_DYNAMIC_DISABLE", "0");
-                        // deep도 동일하게 Front/Back 2단 기준
-                        Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", null);
-                        break;
-                }
-
-                if (!stepIncrement.HasValue)
-                {
-                    Environment.SetEnvironmentVariable(AppConfig.CompositeStepIncrementAEnv, null);
-                    Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_DYNAMIC_DISABLE", null);
-                    Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", null);
-                    Environment.SetEnvironmentVariable("ABUTS_RETENTION_GROOVE", null);
-                    AppLogger.Log($"DentalAddin: retentionGroove 값 비정상 '{groove}' - StepIncrement env 기본값(PRC) 유지");
-                    return;
-                }
-
-                string envValue = stepIncrement.Value.ToString("0.###", CultureInfo.InvariantCulture);
-                Environment.SetEnvironmentVariable(AppConfig.CompositeStepIncrementAEnv, envValue);
-                Environment.SetEnvironmentVariable("ABUTS_RETENTION_GROOVE", normalizedGroove);
-
-                // deep 선택 시: B의 StepIncrement는 PRC에 정의된 값(예: 0.08)을 유지해야 하므로
-                // B StepIncrement env는 설정하지 않는다. 대신 A의 StockAllowance만 override 한다.
-                if (normalizedGroove == "deep")
-                {
-                    const double stockAllowance = 0.0;
-                    Environment.SetEnvironmentVariable(AppConfig.CompositeStockAllowanceAEnv, stockAllowance.ToString(CultureInfo.InvariantCulture));
-                    AppLogger.Log($"DentalAddin: retentionGroove=deep - A StockAllowance={stockAllowance.ToString(CultureInfo.InvariantCulture)} 적용 (env)");
-                }
-                else
-                {
-                    // deep 외에는 A 오버라이드 해제
-                    Environment.SetEnvironmentVariable(AppConfig.CompositeStockAllowanceAEnv, null);
-                }
-
-                AppLogger.Log($"DentalAddin: retentionGroove 적용 - groove={normalizedGroove}, StepIncrement={envValue} (env={AppConfig.CompositeStepIncrementAEnv}, PRC 파일 무변경)");
+                Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_DYNAMIC_DISABLE", "1");
+                Environment.SetEnvironmentVariable(AppConfig.CompositeStockAllowanceAEnv, null);
             }
-            catch (Exception ex)
+            else // deep
             {
-                AppLogger.Log($"DentalAddin: retentionGroove 적용 실패 - {ex.GetType().Name}:{ex.Message}");
+                Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_DYNAMIC_DISABLE", "0");
+                const double stockAllowance = 0.0;
+                Environment.SetEnvironmentVariable(
+                    AppConfig.CompositeStockAllowanceAEnv,
+                    stockAllowance.ToString(CultureInfo.InvariantCulture));
+                AppLogger.Log($"DentalAddin: retentionGroove=deep - A StockAllowance={stockAllowance.ToString(CultureInfo.InvariantCulture)} 적용 (env)");
             }
+
+            AppLogger.Log(
+                $"DentalAddin: retentionGroove 적용 - groove={normalizedGroove} (ABUTS_RETENTION_GROOVE; STEP_INCREMENT_A 미사용)");
         }
 
         private void TryApplyCompositeFirstPassPercentEnv(string tooth)

@@ -499,7 +499,17 @@ namespace DentalAddin
             try
             {
                 step = "start";
-                DentalLogger.Log($"Boundry 시작 - Document:{(MainModule.Document != null)}, RL:{MainModule.RL}, MTI:{MTI}, FrontPointX:{FrontPointX}, BackPointX:{BackPointX}");
+                DentalLogger.Log($"Boundry 시작 - Document:{(MainModule.Document != null)}, RL:{MainModule.RL}, MTI:{MTI}, FrontPointX:{FrontPointX}, BackPointX:{BackPointX}, machinetype:{MainModule.machinetype}");
+
+                // Legacy: Boundry1/2는 machinetype==1(3축 병렬평면 finish)에서만 BoundaryProfiles로 사용된다.
+                // RoughBoundry1/2/3는 SplitAB 비활성 레거시 RoughFreeFromMill에서만 사용된다.
+                // 현행 강제 4축(machinetype=2) + RoughFreeFromMillSplitAB는 RoughBoundryFront/Back만 생성하므로
+                // 이 Boundry 피쳐들은 툴패스에 관여하지 않는 레거시다.
+                if (MainModule.machinetype != 1)
+                {
+                    DentalLogger.Log($"Boundry - skipped(legacy unused feature: Boundry1/2, RoughBoundry1.. for machinetype={MainModule.machinetype})");
+                    return;
+                }
 
                 step = "validate_document";
                 if (MainModule.Document == null)
