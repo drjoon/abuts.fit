@@ -1561,19 +1561,15 @@ namespace DentalAddin
                     return false;
                 }
 
-                const double faceToRoughMm = 2.2;
-                const double roughToTurnMm = 2.2;
-
-                // Rough 경계: Front Face 끝(FrontPointX+L) + faceToRough
-                double frontRoughEnd = Math.Min(xMax, splitline1 + GetFrontFaceEndOffsetFromFrontMm() + faceToRoughMm);
+                // Front_Turn 끝점 SSOT: Splitline_2 + 2.5mm (Back 방향, X+)
+                const double frontTurnEndPastSplitline2Mm = 2.5;
 
                 string normalized = (region ?? string.Empty).Trim().ToUpperInvariant();
                 switch (normalized)
                 {
                     case "FRONT":
-                        // 요청사항: Front Turn 폭 = Front Rough 폭 + 2.2mm
                         rangeMinX = xMin;
-                        rangeMaxX = Math.Min(xMax, frontRoughEnd + roughToTurnMm);
+                        rangeMaxX = Math.Min(xMax, splitline2 + frontTurnEndPastSplitline2Mm);
                         break;
                     case "MIDDLE":
                         // Middle_Turn legacy — ExecuteTwoPhaseTurning에서 이미 skip. 방어적으로 거부.
@@ -1612,7 +1608,8 @@ namespace DentalAddin
                     return false;
                 }
 
-                DentalLogger.Log($"TurningOp 3-Stage - region={region}, range=[{rangeMinX:0.###},{rangeMaxX:0.###}], split1={splitline1:0.###}, split2={splitline2:0.###}");
+                DentalLogger.Log($"TurningOp 3-Stage - region={region}, range=[{rangeMinX:0.###},{rangeMaxX:0.###}], split1={splitline1:0.###}, split2={splitline2:0.###}" +
+                    (normalized == "FRONT" ? $", Front_Turn끝=Splitline_2+{frontTurnEndPastSplitline2Mm:0.###}" : string.Empty));
                 return true;
             }
             catch (Exception ex)
