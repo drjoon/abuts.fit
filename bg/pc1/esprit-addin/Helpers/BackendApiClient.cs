@@ -381,7 +381,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             [DataMember] public string connectionPrcFileName { get; set; }
             // 제조사 수동 헥스 회전 모드값
             // - canonical: "STL모델대로" | "헥스30도회전" | "STL모델+" | "헥스30+"
-            // - STL모델+ modeBase=0.0 / 헥스30+ modeBase=30.0 (NC: T4848=C0.0 always; T0909/T0606만 addDeg=30+appliedDeg)
+            // - STL모델+ modeBase=0.0 / 헥스30+ modeBase=30.0 (NC: T4848 시작점 C=CAM 원본 유지; T0909/T0606만 addDeg=30+appliedDeg)
             // - legacy "헥스40도회전"|"헥스10도회전" → STL모델+
             [DataMember(Name = "manufacturerHexRotation")] public string manufacturerHexRotation { get; set; }
             // 유지홈 옵션 ("none"|"deep", legacy "shallow" 허용) —

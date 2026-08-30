@@ -101,7 +101,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             UpdateSerialBlocks(executedNcPath, serialForNc, connectionPrcPath);
             // 헥스 C축 후처리 SSOT: ApplyManufacturerHexRotationToNc
             // - STL모델대로 / 헥스30도회전 / STL모델+ / 헥스30+
-            // - T4848 항상 C0.0 / 플러스 모드 addDeg=30+appliedDeg 는 T0909·T0606만
+            // - T4848 시작점 C워드는 CAM 원본 유지 / 플러스 모드 addDeg=30+appliedDeg 는 T0909·T0606만
             ApplyManufacturerHexRotationToNc(executedNcPath, manufacturerHexRotation, hexRotationAppliedDeg);
             StripBlankNcLines(executedNcPath);
             // CNC 컨트롤러는 축 워드 정수(C30, X10, Z0)를 인식하지 못한다.
@@ -560,7 +560,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
         // matchedWithinTarget 상한·공구 화이트리스트만 이 함수에서 함께 고친다.
         //
         // 모드별 목표각:
-        // - T4848: 전 모드 항상 C0.0 (addDeg 미적용)
+        // - T4848: 전 모드 시작점 C워드 CAM 원본 유지 (치환/삭제 없음, addDeg 미적용)
         // - STL모델대로: T0909/T0606 → C0.0 (C30 잔여분도 C0.0 강제)
         // - 헥스30도회전: T0909/T0606 → C30.0
         // - STL모델+ / 헥스30+ (구 헥스40도회전 분기):
@@ -568,7 +568,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
         //     T0909/T0606  → C(modeBase + addDeg)     STL모델+ modeBase=0.0, 헥스30+ modeBase=30.0
         //       → STL모델+: T0909/T0606 = C(30+appliedDeg)
         //       → 헥스30+: T0909/T0606 = C(30+addDeg)=C(60+appliedDeg)
-        // 출력: 소수 3자리 반올림 후 끝 0 제거, 최소 1자리 (C0.231 / C0.23 / C30.0 / C0.0). FormatRotationNumber SSOT.
+        // 출력(T0909/T0606): 소수 3자리 반올림 후 끝 0 제거, 최소 1자리 (C0.231 / C0.23 / C30.0 / C0.0). FormatRotationNumber SSOT.
         private void ApplyManufacturerHexRotationToNc(
             string ncFilePath,
             string manufacturerHexRotation,
@@ -627,14 +627,16 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                             throw new InvalidOperationException($"헥스 회전 NC 후처리 실패: C축 후보 #{ordinal} (line {currentLineIndex + 1}) 상방 10줄 내 공구번호(Txxxx)를 찾지 못했습니다.");
                         }
 
-                        double targetDeg;
                         if (string.Equals(toolCode, "T4848", StringComparison.OrdinalIgnoreCase))
                         {
-                            // T4848: 전 모드 항상 C0.0 (30+appliedDeg 미적용)
-                            targetDeg = 0.0;
+                            // T4848: 전 모드 시작점 C워드 CAM 원본 유지 (치환/삭제 없음, 30+appliedDeg 미적용)
+                            matchedWithinTarget++;
+                            return m.Value;
                         }
-                        else if (string.Equals(toolCode, "T0909", StringComparison.OrdinalIgnoreCase) ||
-                                 string.Equals(toolCode, "T0606", StringComparison.OrdinalIgnoreCase))
+
+                        double targetDeg;
+                        if (string.Equals(toolCode, "T0909", StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(toolCode, "T0606", StringComparison.OrdinalIgnoreCase))
                         {
                             // T0909/T0606: 기본=modeBase(0|30) / 플러스=modeBase+addDeg (addDeg=30+appliedDeg)
                             targetDeg = isPlusMode ? (modeBaseDeg + addDeg) : modeBaseDeg;
@@ -660,7 +662,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 File.WriteAllLines(ncFilePath, lines);
                 AppLogger.Log(
                     $"NcFileGenerator: 헥스 회전 NC 후처리 완료 - mode={modeLabel}, modeBase={FormatRotationNumber(modeBaseDeg)}, addDeg={FormatRotationNumber(addDeg)}, plus={isPlusMode}, " +
-                    $"T4848=C0.0(always), T0909/T0606=C{FormatRotationNumber(isPlusMode ? modeBaseDeg + addDeg : modeBaseDeg)}, replaced={replacedWithinTarget}");
+                    $"T4848=CAM-original, T0909/T0606=C{FormatRotationNumber(isPlusMode ? modeBaseDeg + addDeg : modeBaseDeg)}, replaced={replacedWithinTarget}");
 
                 if (matchedWithinTarget < HexCAxisMaxMatches)
                 {
@@ -711,7 +713,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
         // 헥스 모드 라벨 → NC 치환각 (검색: TryResolveHexRotationTargets, STL모델+, 헥스30+)
         //
         // modeBaseDeg: T0909/T0606 기본각 (STL모델대로·STL모델+=0.0, 헥스30도회전·헥스30+=30.0)
-        // addDeg: 플러스 모드 전용 가산량 = 30 + appliedDeg (T0909/T0606만; T4848은 항상 0). 기본 모드에서는 0.
+        // addDeg: 플러스 모드 전용 가산량 = 30 + appliedDeg (T0909/T0606만; T4848은 CAM 원본 유지). 기본 모드에서는 0.
         // forceZeroCAxis: STL모델대로 — C0/C30 잔여분을 C0.0으로 강제
         // isPlusMode: STL모델+ / 헥스30+ (및 레거시 헥스40도회전→STL모델+)
         //
@@ -798,7 +800,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             return false;
         }
 
-        // 플러스 모드 가산량 SSOT: 30 + hexRotation.appliedDeg (T0909/T0606 전용; T4848은 항상 C0.0)
+        // 플러스 모드 가산량 SSOT: 30 + hexRotation.appliedDeg (T0909/T0606 전용; T4848은 CAM 원본 유지)
         // 예) appliedDeg=-29.76889… → addDeg≈0.231
         //     STL모델+(modeBase=0): T0909/T0606 = C(addDeg)=C(30+appliedDeg)
         //     헥스30+(modeBase=30): T0909/T0606 = C(30+addDeg)=C(60+appliedDeg)

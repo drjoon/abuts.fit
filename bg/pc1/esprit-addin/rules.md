@@ -283,7 +283,7 @@
     - `STL모델+` → modeBase **0.0**
     - `헥스30+` → modeBase **30.0**
     - 가산량 `addDeg = 30 + hexRotation.appliedDeg` (예: 30+(-29.77)=**0.23**) — **T0909/T0606만**
-    - T4848 → 전 모드 **항상 `C0.0`**
+    - T4848 → 전 모드 **시작점 C워드 CAM 원본 유지** (치환/삭제 없음)
     - T0909/T0606 → `C(modeBase + addDeg)`
     - `STL모델+`(modeBase=0): T0909/T0606 = `C(30+appliedDeg)`
     - `헥스30+`(modeBase=30): T0909/T0606 = `C(30+addDeg)`=`C(60+appliedDeg)`
@@ -299,7 +299,7 @@
   - 플러스 모드의 차이는 **NC C축 후처리**뿐 (STL 실회전은 보정=STL모델대로와 동일).
 - NC C축 후처리 SSOT(공구 기반, 검색: `HEX_C_AXIS_MAX_MATCHES`):
   - 지정 C축 후보(현재 최대 6곳: T4848 1 + T0909/T0606 5). 개수 변경 시 `ApplyManufacturerHexRotationToNc` 상수·화이트리스트만 수정.
-  - T4848 → 전 모드 항상 `C0.0`
+  - T4848 → 전 모드 시작점 C워드 CAM 원본 유지 (치환/삭제 없음)
   - `STL모델대로` → T0909/T0606 `C0.0` (C30 잔여분 강제)
   - `헥스30도회전` → T0909/T0606=`C30.0`
   - `STL모델+` / `헥스30+` → T0909/T0606에만 위 플러스 공식 (appliedDeg 필수)
