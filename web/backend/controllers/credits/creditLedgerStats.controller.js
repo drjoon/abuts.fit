@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-31: 요약 — 유료/무료 충전 분리. 기공소 정산 적립(보류 포함) 유지.
 // - 2026-08-31: 기공소 통계 — PTX lab-share 적립 보류를 정산 적립·파트너·보철유형에 포함.
 // - 2026-08-26: 보철유형 — 견적 라인 공급가 그대로(장부 비례배분 제거·의뢰당 1회).
 // - 2026-08-26: 소비 집계에 HOLD(에스크로 REQ_* 차감) 포함.
@@ -449,6 +450,8 @@ export async function getMyCreditLedgerStats(req, res) {
   const requestSpendForProsthesis = new Map();
 
   let totalChargeSupply = 0;
+  let totalPaidChargeSupply = 0;
+  let totalFreeChargeSupply = 0;
   let totalSpendSupply = 0;
   let totalSettlementEarnSupply = 0;
   let totalSettlementPayoutSupply = 0;
@@ -469,6 +472,16 @@ export async function getMyCreditLedgerStats(req, res) {
     );
 
     const chargeSupply = absChargeSupply(amount, eventType);
+    const paidChargeSupply =
+      eventType === "CHARGE_PAID" && amount > 0
+        ? roundSupplyAmount(amount)
+        : 0;
+    const freeChargeSupply =
+      (eventType === "CHARGE_FREE_REQUEST" ||
+        eventType === "CHARGE_FREE_SHIPPING") &&
+      amount > 0
+        ? roundSupplyAmount(amount)
+        : 0;
     const spendSupply =
       SPEND_EVENT_TYPES.has(eventType) && amount < 0 ? Math.abs(amount) : 0;
     const settlementEarnSupply =
@@ -477,6 +490,8 @@ export async function getMyCreditLedgerStats(req, res) {
       category === "settlement_payout" && amount < 0 ? Math.abs(amount) : 0;
 
     totalChargeSupply += chargeSupply;
+    totalPaidChargeSupply += paidChargeSupply;
+    totalFreeChargeSupply += freeChargeSupply;
     totalSpendSupply += spendSupply;
     totalSettlementEarnSupply += settlementEarnSupply;
     totalSettlementPayoutSupply += settlementPayoutSupply;
@@ -646,6 +661,8 @@ export async function getMyCreditLedgerStats(req, res) {
       period: { key: period, fromYmd, toYmd },
       summary: {
         totalChargeSupply: roundSupplyAmount(totalChargeSupply),
+        totalPaidChargeSupply: roundSupplyAmount(totalPaidChargeSupply),
+        totalFreeChargeSupply: roundSupplyAmount(totalFreeChargeSupply),
         totalSpendSupply: roundSupplyAmount(totalSpendSupply),
         totalSettlementEarnSupply: roundSupplyAmount(totalSettlementEarnSupply),
         totalSettlementPayoutSupply: roundSupplyAmount(totalSettlementPayoutSupply),

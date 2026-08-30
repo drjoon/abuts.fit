@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-31: 요약 — 유료/데모(무료) 충전 분리. 기공소 +정산 적립. 파트너=치과별 적립.
 // - 2026-08-29: 통계 차트 — 충전(녹)·소비(청)·조정(호박) 등 유형별 색 구분.
 // - 2026-08-23: 요약 카드 — 기공, 스토어 라벨.
 // - 2026-08-23: 요약 카드 — 기공료·쇼핑 라벨·안내 문구 정리.
@@ -10,6 +11,7 @@
 // - web/frontend/src/pages/requestor/credits/RequestorCreditsPage.tsx
 // - web/frontend/src/shared/components/CreditLedgerModal.tsx
 // - web/backend/controllers/credits/creditLedgerStats.controller.js
+// - web/frontend/src/shared/demo/demoModeCopy.ts
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Bar,
@@ -51,6 +53,13 @@ import {
 } from "@/components/ui/chart";
 import { cn } from "@/shared/ui/cn";
 import { RESPONSIVE } from "@/shared/ui/responsive";
+import {
+  CREDIT_DEMO_BUCKET_LABEL,
+  CREDIT_LEDGER_DEMO_NOTICE_BODY,
+  CREDIT_LEDGER_DEMO_PERIOD_SPEND_HINT,
+} from "@/shared/demo/demoModeCopy";
+import { useDemoMode } from "@/shared/demo/useDemoMode";
+import { useAuthStore } from "@/store/useAuthStore";
 
 type StatsRow = {
   key: string;
@@ -74,6 +83,8 @@ type CreditLedgerStatsResponse = {
     period: { key: string; fromYmd: string; toYmd: string };
     summary: {
       totalChargeSupply: number;
+      totalPaidChargeSupply?: number;
+      totalFreeChargeSupply?: number;
       totalSpendSupply: number;
       totalSettlementEarnSupply: number;
       totalSettlementPayoutSupply: number;
@@ -287,6 +298,8 @@ function HorizontalBarList({
 }
 
 export function CreditStatisticsTab() {
+  const { demoMode } = useDemoMode();
+  const accessKind = useAuthStore((s) => s.user?.requestorKind || null);
   const [period, setPeriod] = useState<PeriodFilterValue>("30d");
   const [customStartDate, setCustomStartDate] = useState("");
   const [customEndDate, setCustomEndDate] = useState("");
@@ -324,12 +337,25 @@ export function CreditStatisticsTab() {
     void loadStats();
   }, [loadStats]);
 
-  const isLab = stats?.requestorKind === "lab";
-  const partnerTitle = isLab ? "치과별" : "기공소별";
+  const isLab =
+    stats?.requestorKind === "lab" ||
+    (!stats && accessKind === "lab");
+  const freeChargeLabel = demoMode ? CREDIT_DEMO_BUCKET_LABEL : "무료 충전";
+  const partnerTitle = isLab ? "치과별 적립" : "기공소별 소비";
   const filterBase = useMemo(
     () => baseFilters(period, customStartDate, customEndDate),
     [period, customStartDate, customEndDate],
   );
+
+  const paidChargeTotal = Number(
+    stats?.summary.totalPaidChargeSupply ??
+      Math.max(
+        0,
+        (stats?.summary.totalChargeSupply || 0) -
+          (stats?.summary.totalFreeChargeSupply || 0),
+      ),
+  );
+  const freeChargeTotal = Number(stats?.summary.totalFreeChargeSupply || 0);
 
   const trendData = useMemo(
     () =>
@@ -368,21 +394,55 @@ export function CreditStatisticsTab() {
     setDrillDown(next);
   };
 
-  const statCardClass = "min-w-[8.5rem] flex-1 sm:min-w-[9.5rem] md:min-w-[10.5rem]";
+  const statCardClass =
+    "min-w-[8.5rem] flex-1 sm:min-w-[9.5rem] md:min-w-[10.5rem]";
+
+  const summaryCardCount = isLab ? 5 : 4;
+
+  const freeChargeTooltip = demoMode
+    ? CREDIT_LEDGER_DEMO_NOTICE_BODY
+    : "선택한 기간에 무료로 충전된 금액 합계입니다.";
+  const spendTooltip = demoMode
+    ? CREDIT_LEDGER_DEMO_PERIOD_SPEND_HINT
+    : isLab
+      ? "선택한 기간에 지출한 어벗 생산·배송·스토어 결제 합계입니다."
+      : "선택한 기간에 지출한 기공료와 스토어 결제 합계입니다.";
 
   const summaryCards = (
     <div className={cn("min-w-0", RESPONSIVE.tableShell, "pb-1")}>
       <div className="flex min-w-max items-stretch gap-0.5 px-1 sm:gap-1">
         <SettlementStatCard
           className={statCardClass}
-          label="기간 충전"
-          value={stats?.summary.totalChargeSupply || 0}
+          label="유료 충전"
+          value={paidChargeTotal}
           hint="안내"
-          hintTooltip="선택한 기간에 충전된 금액 합계입니다."
+          hintTooltip="선택한 기간에 유료(선입금)로 충전된 금액 합계입니다."
           onClick={() =>
             openDrillDown({
-              title: "기간 충전 내역",
-              filters: { ...filterBase, action: "CHARGE" },
+              title: "유료 충전 내역",
+              filters: {
+                ...filterBase,
+                creditKind: "PAID",
+                action: "CHARGE",
+              },
+            })
+          }
+        />
+        <SettlementEquationOperator symbol="+" />
+        <SettlementStatCard
+          className={statCardClass}
+          label={freeChargeLabel}
+          value={freeChargeTotal}
+          hint="안내"
+          hintTooltip={freeChargeTooltip}
+          onClick={() =>
+            openDrillDown({
+              title: demoMode ? "데모 충전 내역" : "무료 충전 내역",
+              filters: {
+                ...filterBase,
+                creditKind: "FREE",
+                action: "CHARGE",
+              },
             })
           }
         />
@@ -394,7 +454,7 @@ export function CreditStatisticsTab() {
               label="정산 적립"
               value={stats?.summary.totalSettlementEarnSupply || 0}
               hint="안내"
-              hintTooltip="선택한 기간에 적립된 기공 정산 금액입니다."
+              hintTooltip="선택한 기간에 적립된 기공 정산(작업완료 전 적립 보류 포함)입니다. 치과 데모 결제는 내역에「데모」로 표시됩니다."
               onClick={() =>
                 openDrillDown({
                   title: "정산 적립 내역",
@@ -414,7 +474,7 @@ export function CreditStatisticsTab() {
           value={stats?.summary.totalSpendSupply || 0}
           tone="primary"
           hint="안내"
-          hintTooltip="선택한 기간에 지출한 기공료와 스토어 결제 합계입니다."
+          hintTooltip={spendTooltip}
           onClick={() =>
             openDrillDown({
               title: "기공, 스토어 내역",
@@ -427,7 +487,11 @@ export function CreditStatisticsTab() {
           label="의뢰건수"
           value={`${(stats?.summary.orderCount || 0).toLocaleString("ko-KR")}건`}
           hint="안내"
-          hintTooltip="기공의뢰·어벗생산·배송 거래 건수입니다."
+          hintTooltip={
+            isLab
+              ? "치과로부터 수신·어벗츠로 의뢰·배송 거래 건수입니다."
+              : "기공의뢰·어벗생산·배송 거래 건수입니다."
+          }
           onClick={() =>
             openDrillDown({
               title: "의뢰 내역",
@@ -449,7 +513,7 @@ export function CreditStatisticsTab() {
           <>
             <div className={cn("min-w-0", RESPONSIVE.tableShell, "pb-1")}>
               <div className="flex min-w-max items-stretch gap-0.5 px-1 sm:gap-1">
-                {Array.from({ length: isLab ? 4 : 3 }).map((_, i) => (
+                {Array.from({ length: summaryCardCount }).map((_, i) => (
                   <div
                     key={i}
                     className="min-h-[7.25rem] min-w-[8.5rem] flex-1 animate-pulse rounded-2xl border border-border/60 bg-muted/30 sm:min-w-[9.5rem] md:min-w-[10.5rem]"
@@ -496,7 +560,9 @@ export function CreditStatisticsTab() {
             <div className="grid min-w-0 gap-3 md:grid-cols-2">
               <StatsPanel
                 title="기간별 추이"
-                subtitle="일별 소비·충전"
+                subtitle={
+                  isLab ? "일별 소비·충전·정산 적립" : "일별 소비·충전"
+                }
                 icon={TrendingUp}
                 onOpenDetail={() =>
                   openDrillDown({
@@ -576,7 +642,11 @@ export function CreditStatisticsTab() {
 
               <StatsPanel
                 title="유형별 금액"
-                subtitle="충전·기공의뢰·배송 등"
+                subtitle={
+                  isLab
+                    ? "충전·정산 적립·어벗생산·배송"
+                    : "충전·기공의뢰·배송 등"
+                }
                 icon={PieChart}
                 onOpenDetail={() =>
                   openDrillDown({
@@ -667,27 +737,43 @@ export function CreditStatisticsTab() {
               </StatsPanel>
 
               <StatsPanel
-                title={`${partnerTitle} 소비`}
-                subtitle="파트너별 공급가 합계"
+                title={partnerTitle}
+                subtitle={
+                  isLab
+                    ? "치과별 정산 적립(보류 포함)"
+                    : "파트너별 공급가 합계"
+                }
                 icon={Wallet}
                 onOpenDetail={() =>
                   openDrillDown({
-                    title: `${partnerTitle} 거래 내역`,
-                    filters: { ...filterBase, action: "SPEND" },
+                    title: `${partnerTitle} 내역`,
+                    filters: isLab
+                      ? { ...filterBase, statsCategory: "settlement_earn" }
+                      : { ...filterBase, action: "SPEND" },
                   })
                 }
               >
                 <HorizontalBarList
                   rows={stats?.byPartner || []}
-                  emptyHint="기공의뢰·소비 내역이 있을 때 파트너별로 표시됩니다."
+                  emptyHint={
+                    isLab
+                      ? "치과로부터 수신·정산 적립이 있을 때 치과별로 표시됩니다."
+                      : "기공의뢰·소비 내역이 있을 때 파트너별로 표시됩니다."
+                  }
                   onRowClick={(row) =>
                     openDrillDown({
                       title: `${row.label} 내역`,
-                      filters: {
-                        ...filterBase,
-                        action: "SPEND",
-                        partnerName: row.label,
-                      },
+                      filters: isLab
+                        ? {
+                            ...filterBase,
+                            statsCategory: "settlement_earn",
+                            partnerName: row.label,
+                          }
+                        : {
+                            ...filterBase,
+                            action: "SPEND",
+                            partnerName: row.label,
+                          },
                     })
                   }
                 />
@@ -695,26 +781,42 @@ export function CreditStatisticsTab() {
 
               <StatsPanel
                 title="보철 유형별"
-                subtitle="견적 라인 기준 공급가"
+                subtitle={
+                  isLab
+                    ? "견적 라인 기준 정산 적립"
+                    : "견적 라인 기준 공급가"
+                }
                 icon={Layers3}
                 onOpenDetail={() =>
                   openDrillDown({
                     title: "보철 유형별 거래 내역",
-                    filters: { ...filterBase, action: "SPEND" },
+                    filters: isLab
+                      ? { ...filterBase, statsCategory: "settlement_earn" }
+                      : { ...filterBase, action: "SPEND" },
                   })
                 }
               >
                 <HorizontalBarList
                   rows={stats?.byProsthesisType || []}
-                  emptyHint="기공의뢰·어벗생산 소비가 있을 때 보철 유형별로 표시됩니다."
+                  emptyHint={
+                    isLab
+                      ? "정산 적립(보류 포함)이 있을 때 보철 유형별로 표시됩니다."
+                      : "기공의뢰·어벗생산 소비가 있을 때 보철 유형별로 표시됩니다."
+                  }
                   onRowClick={(row) =>
                     openDrillDown({
                       title: `${row.label} 내역`,
-                      filters: {
-                        ...filterBase,
-                        action: "SPEND",
-                        prosthesisType: row.label,
-                      },
+                      filters: isLab
+                        ? {
+                            ...filterBase,
+                            statsCategory: "settlement_earn",
+                            prosthesisType: row.label,
+                          }
+                        : {
+                            ...filterBase,
+                            action: "SPEND",
+                            prosthesisType: row.label,
+                          },
                     })
                   }
                 />

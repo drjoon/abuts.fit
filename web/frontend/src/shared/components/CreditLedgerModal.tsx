@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-31: 기공소 내역 요약 — 치과와 동일 +/− 수식(유료·데모/무료·정산 적립·기공/스토어). 기간 필터는 카드만.
 // - 2026-08-31: 기공소 — PTX 적립 보류 라벨·labShareOnly·상대 데모 크레딧 표기.
 // - 2026-08-31: 유형 라벨 — 치과(구강스캔/어벗디자인)·기공소(치과로부터 수신/어벗츠로 의뢰). 데모 소비 시 금액 아래「데모」.
 // - 2026-08-26: 치과 요약 — 유료/무료 충전·소비는 기간 합계(잔여 버킷 아님). HOLD 소비 반영.
@@ -353,6 +354,7 @@ type PeriodSpendSummary = {
   totalPaidChargeSupply?: number;
   totalFreeChargeSupply?: number;
   totalSpendSupply: number;
+  totalSettlementEarnSupply?: number;
 };
 
 type SummaryDrillDownState = {
@@ -1842,12 +1844,13 @@ export const CreditLedgerModal = ({
     currentBalanceSnapshot?.requestorKind,
   ]);
 
-  const practiceLedgerUi =
-    !hideBalanceSummary && !showSettlementCredit && isPracticeViewer;
+  /** 치과·기공소 내역 상단 — 기간 합계 수식 카드(= + −). 테이블은 기간 무관. */
+  const equationLedgerUi =
+    !hideBalanceSummary && (isPracticeViewer || showSettlementCredit);
 
   const summaryFilterBase = useMemo(
     (): CreditLedgerInitialFilters =>
-      practiceLedgerUi
+      equationLedgerUi
         ? {
             period: spendPeriod,
             customStartDate: spendCustomStartDate,
@@ -1859,7 +1862,7 @@ export const CreditLedgerModal = ({
             customEndDate,
           },
     [
-      practiceLedgerUi,
+      equationLedgerUi,
       spendPeriod,
       spendCustomStartDate,
       spendCustomEndDate,
@@ -1896,7 +1899,7 @@ export const CreditLedgerModal = ({
     mode: "ledger" | "spendSummary" = "ledger",
   ) => {
     const params = new URLSearchParams();
-    const applyPeriodBounds = mode === "spendSummary" || !practiceLedgerUi;
+    const applyPeriodBounds = mode === "spendSummary" || !equationLedgerUi;
     if (applyPeriodBounds) {
       if (mode === "spendSummary") {
         appendPeriodQueryParams(params, spendPeriod, {
@@ -1980,7 +1983,7 @@ export const CreditLedgerModal = ({
       const total = Number(data?.total ?? 0);
       if (reset) {
         setCurrentBalanceSnapshot(data?.currentBalanceSnapshot || null);
-        if (!practiceLedgerUi) {
+        if (!equationLedgerUi) {
           setPeriodSpendSummary(data?.periodSpendSummary ?? null);
         }
       }
@@ -2018,7 +2021,7 @@ export const CreditLedgerModal = ({
   };
 
   const loadPeriodSpend = async () => {
-    if (!token || !practiceLedgerUi) return;
+    if (!token || !equationLedgerUi) return;
     try {
       const res = await apiFetch<{
         success: boolean;
@@ -2052,7 +2055,7 @@ export const CreditLedgerModal = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     isOpen,
-    ...(practiceLedgerUi ? [] : [period, customStartDate, customEndDate]),
+    ...(equationLedgerUi ? [] : [period, customStartDate, customEndDate]),
     creditKind,
     action,
     q,
@@ -2063,16 +2066,16 @@ export const CreditLedgerModal = ({
     onYmd,
     businessAnchorId,
     initialFiltersKey,
-    practiceLedgerUi,
+    equationLedgerUi,
   ]);
 
   useEffect(() => {
-    if (!isOpen || !practiceLedgerUi) return;
+    if (!isOpen || !equationLedgerUi) return;
     void loadPeriodSpend();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     isOpen,
-    practiceLedgerUi,
+    equationLedgerUi,
     spendPeriod,
     spendCustomStartDate,
     spendCustomEndDate,
@@ -2394,9 +2397,12 @@ export const CreditLedgerModal = ({
   const periodSpendTotal = Number(
     periodSpendSummary?.totalSpendSupply || 0,
   );
+  const periodSettlementEarnTotal = Number(
+    periodSpendSummary?.totalSettlementEarnSupply || 0,
+  );
 
   const showPeriodSpendCard =
-    Boolean(currentBalanceSnapshot) && practiceLedgerUi;
+    Boolean(currentBalanceSnapshot) && equationLedgerUi;
   const isDemoMode = Boolean(currentBalanceSnapshot?.demoMode);
   const freeBucketLabel = isDemoMode ? CREDIT_DEMO_BUCKET_LABEL : "무료 충전";
   const freeBucketLabelCompact = isDemoMode
@@ -2408,15 +2414,21 @@ export const CreditLedgerModal = ({
     : CREDIT_LEDGER_FREE_NOTICE_BODY;
   const balanceHintTooltip = isDemoMode
     ? CREDIT_LEDGER_DEMO_BALANCE_HINT
-    : "충전금에서 소비액을 뺀 선불금 잔여액입니다.";
+    : showSettlementCredit
+      ? "유료·무료(데모) 충전과 기공 정산 적립에서 기공·스토어 소비를 뺀 잔여액입니다. 적립 보류분은 잔액에 아직 반영되지 않습니다."
+      : "충전금에서 소비액을 뺀 선불금 잔여액입니다.";
   const periodPaidChargeTooltip =
     "선택한 기간에 유료(선입금)로 충전된 금액 합계입니다.";
   const periodFreeChargeTooltip = isDemoMode
     ? CREDIT_LEDGER_DEMO_NOTICE_BODY
     : "선택한 기간에 무료로 충전된 금액 합계입니다.";
+  const periodSettlementEarnTooltip =
+    "선택한 기간에 적립된 기공 정산(작업완료 전 적립 보류 포함) 합계입니다. 치과가 데모 크레딧으로 결제한 건은 내역에「데모」로 표시됩니다.";
   const periodSpendTooltip = isDemoMode
     ? CREDIT_LEDGER_DEMO_PERIOD_SPEND_HINT
-    : "선택한 기간에 지출한 기공료와 스토어 결제 합계입니다.";
+    : showSettlementCredit
+      ? "선택한 기간에 지출한 어벗 생산·배송·스토어 결제 합계입니다."
+      : "선택한 기간에 지출한 기공료와 스토어 결제 합계입니다.";
 
   const body = (
     <div
@@ -2485,6 +2497,27 @@ export const CreditLedgerModal = ({
                       })
                     }
                   />
+                  {showSettlementCredit ? (
+                    <>
+                      <SettlementEquationOperator symbol="+" />
+                      <SettlementStatCard
+                        className="min-w-[9.5rem] flex-1 sm:min-w-[10.5rem]"
+                        label="정산 적립"
+                        value={periodSettlementEarnTotal}
+                        hint="안내"
+                        hintTooltip={periodSettlementEarnTooltip}
+                        onClick={() =>
+                          openSummaryDrillDown({
+                            title: "정산 적립 내역",
+                            filters: {
+                              ...summaryFilterBase,
+                              statsCategory: "settlement_earn",
+                            },
+                          })
+                        }
+                      />
+                    </>
+                  ) : null}
                   <SettlementEquationOperator symbol="−" />
                   <SettlementStatCard
                     className="min-w-[9.5rem] flex-1 sm:min-w-[10.5rem]"
@@ -2632,7 +2665,7 @@ export const CreditLedgerModal = ({
             ) : null}
 
             <div className="ml-auto w-full min-w-0 shrink-0 sm:w-auto">
-              {practiceLedgerUi ? (
+              {equationLedgerUi ? (
                 <PeriodFilter
                   value={spendPeriod}
                   onChange={setSpendPeriod}

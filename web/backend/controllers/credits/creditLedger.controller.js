@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-31: periodSpendSummary — 기공소도 반환(정산 적립·적립 보류 포함). 치과와 동일 수식 카드.
 // - 2026-08-31: 기공소 내역 — 치과 PTX lab-share HOLD를 기공크레딧 적립 보류로 미러.
 // - 2026-08-23: 커스텀어벗 통계 드릴다운 — toothWorks 플래그·어벗생산 REQUEST 포함.
 // - 2026-08-21: PTX abuts_shipping enrich — BA+출고일 박스키(기공소 생산·배송 묶음).
@@ -483,11 +484,12 @@ export async function listMyCreditLedger(req, res) {
   const periodOccurredAt =
     Object.keys(occurredAt).length ? occurredAt : null;
   const periodSummaryPromise =
-    page === 1 && requestorKind === "practice"
+    page === 1 && (requestorKind === "practice" || requestorKind === "lab")
       ? aggregateRequestorPeriodLedgerSummary({
           ownerObjectId: anchorObjectId,
           occurredAt: periodOccurredAt,
           journalCollectionName: LedgerJournal.collection.name,
+          includePendingLabSettlement: requestorKind === "lab",
         })
       : Promise.resolve(null);
 
@@ -923,7 +925,9 @@ export async function listMyCreditLedger(req, res) {
         demoMode,
       ),
       periodSpendSummary:
-        page === 1 && requestorKind === "practice" && periodLedgerSummary
+        page === 1 &&
+        (requestorKind === "practice" || requestorKind === "lab") &&
+        periodLedgerSummary
           ? {
               totalPaidChargeSupply: Number(
                 periodLedgerSummary.totalPaidChargeSupply || 0,
@@ -933,6 +937,9 @@ export async function listMyCreditLedger(req, res) {
               ),
               totalSpendSupply: Number(
                 periodLedgerSummary.totalSpendSupply || 0,
+              ),
+              totalSettlementEarnSupply: Number(
+                periodLedgerSummary.totalSettlementEarnSupply || 0,
               ),
             }
           : null,

@@ -7,6 +7,7 @@
 // - web/backend/models/businessAnchor.model.js
 // - web/backend/services/requestCreditHold.service.js
 // - 2026-08-31: 기공소 장부 — 치과 PTX lab-share HOLD를 기공크레딧 적립 보류 행으로 미러(잔액 미반영).
+// - 2026-08-31: 기간 요약 — 정산 적립(확정+적립 보류) 합계. 치과/기공소 수식 카드용.
 // - 2026-08-21: hold meta.convertedAt 있으면 SPEND_PAID(지급완료)로 표시.
 // - 2026-08-21: PTX CA Request도 abutmentBoxGroupKey(BA+출고일) 유지 — 기공소 배송·생산 박스 묶음.
 // - 2026-08-19: 어벗디자인·어벗생산 박스는 의뢰 사업자+예정출고일. 치과명으로 쪼개지 않음.
@@ -1222,13 +1223,15 @@ export function parseCreditLedgerFacetResult(facetRaw, { pageSize } = {}) {
 }
 
 /**
- * 치과 정산 내역 상단 카드 — 필터 기간 유료/무료 충전·소비 공급가.
- * 소비는 REQ_* 실차감(HOLD 포함). 통계 탭 spend와 동일 이벤트 기준.
+ * 의뢰자 정산 내역 상단 카드 — 필터 기간 유료/무료 충전·소비·(기공소) 정산 적립 공급가.
+ * 소비는 REQ_* 실차감(HOLD 포함). 통계 탭과 동일 이벤트 기준.
+ * includePendingLabSettlement=true 이면 작업완료 전 lab-share HOLD 적립 보류도 합산.
  */
 export async function aggregateRequestorPeriodLedgerSummary({
   ownerObjectId,
   occurredAt,
   journalCollectionName,
+  includePendingLabSettlement = false,
 }) {
   const match = {
     ownerRole: "requestor",
@@ -1254,12 +1257,14 @@ export async function aggregateRequestorPeriodLedgerSummary({
       $addFields: {
         amountBase: { $ifNull: ["$amountExcludingVat", "$amount"] },
         eventType: { $ifNull: ["$journalDoc.eventType", ""] },
+        accountCode: { $ifNull: ["$accountCode", ""] },
       },
     },
     {
       $group: {
         _id: "$journalId",
         eventType: { $first: "$eventType" },
+        accountCode: { $first: "$accountCode" },
         amount: { $sum: "$amountBase" },
       },
     },
@@ -1268,8 +1273,10 @@ export async function aggregateRequestorPeriodLedgerSummary({
   let totalPaidChargeSupply = 0;
   let totalFreeChargeSupply = 0;
   let totalSpendSupply = 0;
+  let totalSettlementEarnSupply = 0;
   for (const row of rows) {
     const eventType = String(row?.eventType || "");
+    const accountCode = String(row?.accountCode || "");
     const amount = Number(row?.amount || 0);
     if (
       CREDIT_LEDGER_STATS_PAID_CHARGE_EVENT_TYPES.includes(eventType) &&
@@ -1282,6 +1289,13 @@ export async function aggregateRequestorPeriodLedgerSummary({
     ) {
       totalFreeChargeSupply += amount;
     } else if (
+      (eventType === "LAB_SETTLEMENT_CHARGE" ||
+        (eventType === "PRACTICE_TRANSFER_SPEND_COMMIT" &&
+          accountCode === "LAB_SETTLEMENT_CREDIT")) &&
+      amount > 0
+    ) {
+      totalSettlementEarnSupply += amount;
+    } else if (
       CREDIT_LEDGER_STATS_SPEND_EVENT_TYPES.includes(eventType) &&
       amount < 0
     ) {
@@ -1289,10 +1303,27 @@ export async function aggregateRequestorPeriodLedgerSummary({
     }
   }
 
+  if (includePendingLabSettlement) {
+    const pendingRows = await listPendingLabSettlementLedgerRows({
+      labAnchorId: ownerObjectId,
+      occurredAt:
+        occurredAt && Object.keys(occurredAt).length ? occurredAt : null,
+      limit: 500,
+    });
+    for (const row of pendingRows) {
+      const amount = Number(row?.amount || 0);
+      if (amount > 0) totalSettlementEarnSupply += amount;
+    }
+  }
+
   return {
     totalPaidChargeSupply: Math.max(0, Math.round(totalPaidChargeSupply)),
     totalFreeChargeSupply: Math.max(0, Math.round(totalFreeChargeSupply)),
     totalSpendSupply: Math.max(0, Math.round(totalSpendSupply)),
+    totalSettlementEarnSupply: Math.max(
+      0,
+      Math.round(totalSettlementEarnSupply),
+    ),
   };
 }
 
