@@ -1784,26 +1784,8 @@ namespace DentalAddin
         }
 
         /// <summary>
-        /// Face tip 시작 X → TopZLimit. BottomZ와 동일 부호 규칙(RL=1: Z=-X, RL=2: Z=+X).
-        /// </summary>
-        private static void SetFaceTopZLimitFromStartX(TechLatheMoldParallelPlanes faceOp, double faceStartX)
-        {
-            if (RL == 1.0)
-            {
-                faceOp.TopZLimit = -faceStartX;
-            }
-            else if (RL == 2.0)
-            {
-                faceOp.TopZLimit = faceStartX;
-            }
-            else
-            {
-                faceOp.TopZLimit = -faceStartX;
-            }
-        }
-
-        /// <summary>
         /// Face tip 시작 X = 원점(0). FrontPointX tip 어긋남과 무관하게 스핀들/바 tip 쪽에서 진입.
+        /// TopZLimit은 FACE.prc 값 유지(코드에서 덮어쓰지 않음).
         /// </summary>
         private static double ResolveFrontFaceStartX(out double frontX)
         {
@@ -1893,7 +1875,7 @@ namespace DentalAddin
         /// - 시작: Face.StartX = 0 (원점). FrontPointX tip 어긋남과 무관
         /// - 끝: Face.RightX = FrontPointX + GetFrontFaceEndOffsetFromFrontMm(), 단 Splitline_2 - 0.001 상한
         /// - LastAppliedFrontFaceDepthMm = FrontFaceFixedDepthMm(0.5mm)
-        /// - RL=1: TopZ=-StartX, BottomZ=-RightX / RL=2: TopZ=+StartX, BottomZ=+RightX
+        /// - TopZ: FACE.prc TopZLimit 유지(코드 미개입) / RL=1: BottomZ=-RightX / RL=2: BottomZ=+RightX
         /// 주의: 이후 TryApplyFaceRightEndGuard는 Face가 Front_Rough(=Splitline_2) 끝을 넘지 않게만 막으며,
         ///       Splitline_2 상한을 다시 적용한다. (구 0.3mm 강제 단축 없음)
         /// </summary>
@@ -1906,7 +1888,6 @@ namespace DentalAddin
 
             try
             {
-                double oldTop = faceOp.TopZLimit;
                 double oldBottom = faceOp.BottomZLimit;
 
                 LastAppliedFrontFaceDepthMm = FrontFaceFixedDepthMm;
@@ -1928,10 +1909,10 @@ namespace DentalAddin
                 {
                     DentalLogger.Log($"FrontFaceDepth[{context}] - RL 비정상({RL}), RL=1 기준으로 적용");
                 }
-                SetFaceTopZLimitFromStartX(faceOp, faceStartX);
+                // TopZLimit: FACE.prc 값 유지 (덮어쓰지 않음)
                 SetFaceBottomZLimitFromRightX(faceOp, appliedFaceRightX);
 
-                DentalLogger.Log($"FrontFaceDepth[{context}] - FrontPoint 오프셋 적용: frontX={frontX:F3}, startX={faceStartX:F3}(origin), endOffset={faceEndOffsetMm:F3}, requestRightX={requestedFaceRightX:F3}, appliedRightX={appliedFaceRightX:F3}, TopZ:{oldTop:F3}->{faceOp.TopZLimit:F3}, BottomZ:{oldBottom:F3}->{oldBottom2:F3}->{faceOp.BottomZLimit:F3}, DepthRef={LastAppliedFrontFaceDepthMm:F3}, Splitline2={splitline2Used:F3}, Splitline2Clamp={splitline2ClampApplied}, Splitline2Margin={FrontFaceSplitline2NoCrossMarginMm:F3}");
+                DentalLogger.Log($"FrontFaceDepth[{context}] - FrontPoint 오프셋 적용: frontX={frontX:F3}, startX={faceStartX:F3}(origin), endOffset={faceEndOffsetMm:F3}, requestRightX={requestedFaceRightX:F3}, appliedRightX={appliedFaceRightX:F3}, TopZ(prc)={faceOp.TopZLimit:F3}, BottomZ:{oldBottom:F3}->{oldBottom2:F3}->{faceOp.BottomZLimit:F3}, DepthRef={LastAppliedFrontFaceDepthMm:F3}, Splitline2={splitline2Used:F3}, Splitline2Clamp={splitline2ClampApplied}, Splitline2Margin={FrontFaceSplitline2NoCrossMarginMm:F3}");
             }
             catch (Exception ex)
             {
