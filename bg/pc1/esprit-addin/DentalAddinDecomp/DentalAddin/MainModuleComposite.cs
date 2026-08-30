@@ -1746,12 +1746,12 @@ namespace DentalAddin
             }
         }
 
-        // Face.RightX ≤ Splitline_2 - 1.0 ≡ FinishLine top 상방(tip) 2mm
-        // (Splitline_2 = finishLineTopX - 1.0 이므로 margin 1.0 → FL top - 2.0)
-        private const double FrontFaceSplitline2NoCrossMarginMm = 1.0;
+        // Face.RightX ≤ Splitline_2 ≡ FinishLine top 상방(tip) 1mm
+        // (Splitline_2 = finishLineTopX - 1.0, margin 0 → FL top - 1.0)
+        private const double FrontFaceSplitline2NoCrossMarginMm = 0.0;
 
         /// <summary>
-        /// Face.RightX 상한: Splitline_2 - margin (= FL top 상방 2mm). Split 실패 시 requested 유지.
+        /// Face.RightX 상한: Splitline_2 (= FL top 상방 1mm). Split 실패 시 requested 유지.
         /// </summary>
         private static double ClampFaceRightXBelowSplitline2(double requestedFaceRightX, out double splitline2Used, out bool clampApplied)
         {
@@ -1903,7 +1903,7 @@ namespace DentalAddin
         /// <summary>
         /// Front Face(ParallelPlanes): tip 시작 원점 0, 끝은 FrontPointX(Material Diameter)+L.
         /// - 시작: Face.StartX = 0 (원점). TopZ는 FACE.prc 유지(1.0)
-        /// - 끝: Face.RightX = FrontPointX + L, 단 Splitline_2 - 1.0 (= FinishLine top 상방 2mm) 상한
+        /// - 끝: Face.RightX = FrontPointX + L, 단 Splitline_2 (= FinishLine top 상방 1mm) 상한
         /// - LastAppliedFrontFaceDepthMm = FrontFaceFixedDepthMm(0.5mm)
         /// </summary>
         private static void ApplyFrontFaceFixedDepth(TechLatheMoldParallelPlanes faceOp, string context)
@@ -1939,7 +1939,7 @@ namespace DentalAddin
                 SetFaceTopZLimitFromStartX(faceOp, faceStartX);
                 SetFaceBottomZLimitFromRightX(faceOp, appliedFaceRightX);
 
-                DentalLogger.Log($"FrontFaceDepth[{context}] - FrontPoint 오프셋 적용: frontX={frontX:F3}, startX={faceStartX:F3}(origin), endOffset={faceEndOffsetMm:F3}, requestRightX={requestedFaceRightX:F3}, appliedRightX={appliedFaceRightX:F3}, TopZ(prc)={faceOp.TopZLimit:F3} (was {oldTop:F3}), BottomZ:{oldBottom:F3}->{oldBottom2:F3}->{faceOp.BottomZLimit:F3}, DepthRef={LastAppliedFrontFaceDepthMm:F3}, Splitline2={splitline2Used:F3}, Splitline2Clamp={splitline2ClampApplied}, Splitline2Margin={FrontFaceSplitline2NoCrossMarginMm:F3} (=FL top 상방 2mm)");
+                DentalLogger.Log($"FrontFaceDepth[{context}] - FrontPoint 오프셋 적용: frontX={frontX:F3}, startX={faceStartX:F3}(origin), endOffset={faceEndOffsetMm:F3}, requestRightX={requestedFaceRightX:F3}, appliedRightX={appliedFaceRightX:F3}, TopZ(prc)={faceOp.TopZLimit:F3} (was {oldTop:F3}), BottomZ:{oldBottom:F3}->{oldBottom2:F3}->{faceOp.BottomZLimit:F3}, DepthRef={LastAppliedFrontFaceDepthMm:F3}, Splitline2={splitline2Used:F3}, Splitline2Clamp={splitline2ClampApplied}, Splitline2Margin={FrontFaceSplitline2NoCrossMarginMm:F3} (=FL top 상방 1mm)");
             }
             catch (Exception ex)
             {
@@ -1948,7 +1948,7 @@ namespace DentalAddin
         }
 
         /// <summary>
-        /// Face가 Front_Rough/Splitline_2보다 margin(1.0mm) 짧게 유지한다 (= FL top 상방 2mm).
+        /// Face가 Front_Rough/Splitline_2를 넘지 않도록 유지한다 (= FL top 상방 1mm).
         /// </summary>
         private static bool TryApplyFaceRightEndGuard(TechLatheMoldParallelPlanes faceOp, string context)
         {

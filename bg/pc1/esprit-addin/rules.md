@@ -134,8 +134,8 @@
 - Front Face 시작/종료점 정책(현행 SSOT):
   - 시작: `Face.StartX = 0` (원점). TopZ는 FACE.prc 유지
   - 끝: `Face.RightX = FrontPointX + L` (소재/팁 직경 기반)
-  - 클램프: 항상 `Face.RightX ≤ Splitline_2 - 1.0` (= **FinishLine top 상방 2mm**)
-    - `Splitline_2 = finishLineTopX - 1.0` 이므로 margin 1.0 → FL top − 2.0
+  - 클램프: 항상 `Face.RightX ≤ Splitline_2` (= **FinishLine top 상방 1mm**)
+    - `Splitline_2 = finishLineTopX - 1.0`, margin 0 → FL top − 1.0
   - `L` 산출 (`GetFrontFaceEndOffsetFromFrontMm`):
     - env `ABUTS_FRONT_FACE_END_OFFSET_MM` 강제값 우선
     - 아니면 `R_tip`: `ABUTS_MAX_DIAMETER`×0.20 → `HighY`×0.45 → `BarDiameter`×0.20 (각 [1.2, 3.5])

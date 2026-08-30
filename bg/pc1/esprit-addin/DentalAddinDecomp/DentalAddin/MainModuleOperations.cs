@@ -405,7 +405,7 @@ namespace DentalAddin
                     return;
                 }
 
-                // Front Face 끝점: RightX = FrontPointX + L (소재/팁 직경), Splitline_2-1.0(=FL 상방 2mm) 클램프.
+                // Front Face 끝점: RightX = FrontPointX + L (소재/팁 직경), Splitline_2(=FL 상방 1mm) 클램프.
                 ApplyFrontFaceFixedDepth(techLatheMoldParallelPlanes, "FrontFaceMill");
 
                 ZH = Math.Abs(MoveSTL_Module.FrontPointX);
