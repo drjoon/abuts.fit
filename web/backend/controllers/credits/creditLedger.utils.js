@@ -6,6 +6,7 @@
 // - web/backend/services/practiceTransferBilling.service.js
 // - web/backend/models/businessAnchor.model.js
 // - web/backend/services/requestCreditHold.service.js
+// - 2026-08-31: 기공소 장부 — 치과 PTX lab-share HOLD를 기공크레딧 적립 보류 행으로 미러(잔액 미반영).
 // - 2026-08-21: hold meta.convertedAt 있으면 SPEND_PAID(지급완료)로 표시.
 // - 2026-08-21: PTX CA Request도 abutmentBoxGroupKey(BA+출고일) 유지 — 기공소 배송·생산 박스 묶음.
 // - 2026-08-19: 어벗디자인·어벗생산 박스는 의뢰 사업자+예정출고일. 치과명으로 쪼개지 않음.
@@ -16,7 +17,9 @@
 // - 2026-08-19: 어벗디자인 원장 — 수신자(박스) 묶음용 mailbox/shippingReceiver 요약. ObjectId 재귀 가드.
 import mongoose from "mongoose";
 import LedgerLine from "../../models/ledgerLine.model.js";
+import LedgerJournal from "../../models/ledgerJournal.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
+import PracticeTransfer from "../../models/practiceTransfer.model.js";
 // - 2026-08-17: PTX 디자인비(+지그) 원장을 기공의뢰(PRACTICE_TRANSFER)로 승격·묶음.
 // - 2026-08-15: 행 시점 잔액 = 유료+무료+기공 합산 러닝(버킷 분리 시 잔액이 리셋되어 보임).
 
@@ -130,6 +133,7 @@ export function buildLedgerItemsWithBucketBalanceAfter({
 
   let skippedSum = Number(skippedSumArg || 0);
   for (const row of list.slice(0, start)) {
+    if (row?.excludeFromBalanceRunning) continue;
     skippedSum += Number(row?.amount || 0);
   }
 
@@ -140,7 +144,10 @@ export function buildLedgerItemsWithBucketBalanceAfter({
   return list.slice(start, end).map((row) => {
     const amount = Number(row?.amount || 0);
     const balanceAfter = runningBalance;
-    runningBalance -= amount;
+    // 적립 보류 미러는 잔액에 아직 안 들어오므로 러닝에서 제외.
+    if (!row?.excludeFromBalanceRunning) {
+      runningBalance -= amount;
+    }
 
     const base = {
       _id: String(row?._id || ""),
@@ -155,6 +162,11 @@ export function buildLedgerItemsWithBucketBalanceAfter({
       includesExpressSurcharge: Boolean(row?.includesExpressSurcharge),
       createdAt: row?.occurredAt || row?.createdAt || new Date(),
       balanceAfter,
+      fundedByDemoCredit: Boolean(row?.fundedByDemoCredit),
+      excludeFromBalanceRunning: Boolean(row?.excludeFromBalanceRunning),
+      practiceTransferPending: row?.practiceTransferPending,
+      practiceTransferLabPending: row?.practiceTransferLabPending,
+      practiceTransferAbutmentPending: row?.practiceTransferAbutmentPending,
     };
     return typeof mapRow === "function" ? mapRow(row, base) : base;
   });
@@ -1288,4 +1300,365 @@ export async function aggregateRequestorPeriodLedgerSummary({
 export async function aggregateRequestorPeriodSpendSupply(args) {
   const summary = await aggregateRequestorPeriodLedgerSummary(args);
   return summary.totalSpendSupply;
+}
+
+function pendingLabSettlementMatchesFilters({
+  filterTypes,
+  searchOrs,
+  refIdIn,
+  row,
+}) {
+  if (Array.isArray(filterTypes)) {
+    if (!filterTypes.includes("LAB_SETTLEMENT_CHARGE")) return false;
+  }
+  if (Array.isArray(refIdIn)) {
+    const ref = String(row?.refId || "");
+    if (!refIdIn.some((id) => String(id) === ref)) return false;
+  }
+  if (Array.isArray(searchOrs) && searchOrs.length > 0) {
+    // 검색은 컨트롤러에서 PTX refId를 searchOrs에 넣거나 uniqueKey/refType으로 매칭.
+    // 미러 행은 refType·uniqueKey·refId만 검사.
+    const hay = [
+      String(row?.uniqueKey || ""),
+      String(row?.refType || ""),
+      String(row?.refId || ""),
+      String(row?.displayLabel || ""),
+    ]
+      .join(" ")
+      .toLowerCase();
+    const ok = searchOrs.some((clause) => {
+      if (!clause || typeof clause !== "object") return false;
+      if (clause.refId && String(clause.refId) === String(row?.refId || "")) {
+        return true;
+      }
+      for (const val of Object.values(clause)) {
+        if (val instanceof RegExp) return val.test(hay);
+        if (typeof val === "string" && val && hay.includes(val.toLowerCase())) {
+          return true;
+        }
+      }
+      return false;
+    });
+    if (!ok) return false;
+  }
+  return true;
+}
+
+/**
+ * 기공소 장부용 — 치과→기공소 lab-share HOLD(미해제)를 기공크레딧 적립 보류 행으로 만든다.
+ * 잔액(LAB_SETTLEMENT_CREDIT)에는 아직 반영되지 않음(excludeFromBalanceRunning).
+ */
+export async function listPendingLabSettlementLedgerRows({
+  labAnchorId,
+  occurredAt = null,
+  filterTypes = null,
+  searchOrs = null,
+  refIdIn = null,
+  limit = 200,
+} = {}) {
+  const labOid = labAnchorId
+    ? new mongoose.Types.ObjectId(String(labAnchorId))
+    : null;
+  if (!labOid) return [];
+
+  const ptxMatch = {
+    $and: [
+      {
+        $or: [
+          { assigneeLabAnchorId: labOid },
+          { targetLabAnchorId: labOid },
+        ],
+      },
+      { "billing.heldAt": { $ne: null } },
+      {
+        $or: [
+          { "billing.labSettledAt": null },
+          { "billing.labSettledAt": { $exists: false } },
+        ],
+      },
+    ],
+  };
+  if (occurredAt && typeof occurredAt === "object") {
+    const heldAt = {};
+    if (occurredAt.$gte) heldAt.$gte = occurredAt.$gte;
+    if (occurredAt.$lte) heldAt.$lte = occurredAt.$lte;
+    if (Object.keys(heldAt).length) ptxMatch.$and.push({ "billing.heldAt": heldAt });
+  }
+  if (Array.isArray(refIdIn) && refIdIn.length) {
+    ptxMatch.$and.push({
+      _id: {
+        $in: refIdIn
+          .map((id) =>
+            mongoose.Types.ObjectId.isValid(String(id))
+              ? new mongoose.Types.ObjectId(String(id))
+              : null,
+          )
+          .filter(Boolean),
+      },
+    });
+  }
+
+  const transfers = await PracticeTransfer.find(ptxMatch)
+    .select({
+      _id: 1,
+      transferId: 1,
+      practiceBusinessAnchorId: 1,
+      billing: 1,
+      createdAt: 1,
+    })
+    .sort({ "billing.heldAt": -1 })
+    .limit(Math.max(1, Math.min(500, Number(limit) || 200)))
+    .lean();
+  if (!transfers.length) return [];
+
+  const transferIds = transfers.map((t) => t._id);
+  const practiceIds = [
+    ...new Set(
+      transfers
+        .map((t) => String(t.practiceBusinessAnchorId || ""))
+        .filter(Boolean),
+    ),
+  ];
+
+  const [holdJournals, practiceAnchors] = await Promise.all([
+    LedgerJournal.find({
+      refType: "PRACTICE_TRANSFER",
+      refId: { $in: transferIds },
+      eventType: {
+        $in: ["PRACTICE_TRANSFER_SPEND_HOLD", "PRACTICE_TRANSFER_HOLD_ADJUST"],
+      },
+      $or: [
+        { "meta.holdShare": "lab" },
+        { idempotencyKey: { $regex: /:hold_lab$/ } },
+        // 레거시 단일 hold(몫 분리 전)
+        {
+          $and: [
+            { "meta.holdShare": { $in: [null, ""] } },
+            { idempotencyKey: { $regex: /:hold$/ } },
+          ],
+        },
+      ],
+    })
+      .select({
+        journalId: 1,
+        refId: 1,
+        eventType: 1,
+        occurredAt: 1,
+        createdAt: 1,
+        meta: 1,
+        idempotencyKey: 1,
+      })
+      .lean(),
+    practiceIds.length
+      ? BusinessAnchor.find({
+          _id: {
+            $in: practiceIds.map((id) => new mongoose.Types.ObjectId(id)),
+          },
+        })
+          .select({ demoMode: 1 })
+          .lean()
+      : Promise.resolve([]),
+  ]);
+
+  const demoByPractice = new Map();
+  for (const a of practiceAnchors || []) {
+    if (!a?._id) continue;
+    demoByPractice.set(String(a._id), Boolean(a.demoMode));
+  }
+
+  const holdMetaByRef = new Map();
+  for (const j of holdJournals || []) {
+    const ref = String(j?.refId || "");
+    if (!ref) continue;
+    const prev = holdMetaByRef.get(ref) || {
+      fromPaid: 0,
+      fromFreeRequest: 0,
+      fromFreeShipping: 0,
+      heldTotal: 0,
+      journalId: null,
+      occurredAt: null,
+    };
+    const isAdjust = String(j?.eventType || "") === "PRACTICE_TRANSFER_HOLD_ADJUST";
+    const metaFromPaid = Math.max(0, Math.round(Number(j?.meta?.fromPaid || 0)));
+    const metaFromFreeReq = Math.max(
+      0,
+      Math.round(Number(j?.meta?.fromFreeRequest || 0)),
+    );
+    const metaFromFreeShip = Math.max(
+      0,
+      Math.round(Number(j?.meta?.fromFreeShipping || 0)),
+    );
+    const metaHeld = Math.max(0, Math.round(Number(j?.meta?.heldTotal || 0)));
+    if (isAdjust) {
+      // adjust 메타는 증감분이 아니라 스냅샷일 수 있어 billing SSOT를 우선. 여기선 최신 hold만 채움.
+      holdMetaByRef.set(ref, {
+        ...prev,
+        journalId: j.journalId || prev.journalId,
+        occurredAt: j.occurredAt || j.createdAt || prev.occurredAt,
+      });
+    } else {
+      holdMetaByRef.set(ref, {
+        fromPaid: metaFromPaid || prev.fromPaid,
+        fromFreeRequest: metaFromFreeReq || prev.fromFreeRequest,
+        fromFreeShipping: metaFromFreeShip || prev.fromFreeShipping,
+        heldTotal: metaHeld || prev.heldTotal,
+        journalId: j.journalId || prev.journalId,
+        occurredAt: j.occurredAt || j.createdAt || prev.occurredAt,
+      });
+    }
+  }
+
+  const rows = [];
+  for (const doc of transfers) {
+    const id = String(doc._id);
+    const billing = doc.billing || {};
+    const heldLabTotal = Math.max(
+      0,
+      Math.round(
+        Number(
+          billing.heldLabTotal ??
+            billing.labSettlementAmount ??
+            billing.labFeeTotal ??
+            0,
+        ),
+      ),
+    );
+    if (heldLabTotal <= 0) continue;
+
+    const holdMeta = holdMetaByRef.get(id) || {};
+    const fromPaid = Math.max(
+      0,
+      Math.round(Number(billing.holdFromPaid ?? holdMeta.fromPaid ?? 0)),
+    );
+    const fromFreeRequest = Math.max(
+      0,
+      Math.round(
+        Number(billing.holdFromFreeRequest ?? holdMeta.fromFreeRequest ?? 0),
+      ),
+    );
+    const fromFreeShipping = Math.max(
+      0,
+      Math.round(
+        Number(billing.holdFromFreeShipping ?? holdMeta.fromFreeShipping ?? 0),
+      ),
+    );
+    const fromFree = fromFreeRequest + fromFreeShipping;
+    const practiceId = String(doc.practiceBusinessAnchorId || "");
+    const fundedByDemoCredit =
+      Boolean(demoByPractice.get(practiceId)) && fromFree > 0;
+
+    const occurredAtVal =
+      billing.heldAt ||
+      holdMeta.occurredAt ||
+      billing.billedAt ||
+      doc.createdAt ||
+      new Date();
+
+    const row = {
+      _id: holdMeta.journalId || `pending_lab_settlement:${id}`,
+      journalId: holdMeta.journalId || `pending_lab_settlement:${id}`,
+      type: "LAB_SETTLEMENT_CHARGE",
+      amount: heldLabTotal,
+      spentPaidAmount: fromPaid,
+      spentFreeAmount: fromFree,
+      refType: "PRACTICE_TRANSFER",
+      refId: doc._id,
+      uniqueKey: `gl:practice_transfer:${id}:pending_lab_settlement`,
+      displayLabel: "기공크레딧 적립",
+      holdShare: "lab",
+      occurredAt: occurredAtVal,
+      createdAt: occurredAtVal,
+      meta: {
+        holdShare: "lab",
+        displayLabel: "기공크레딧 적립",
+        displayKind: "lab_credit_pending",
+        fundedByDemoCredit,
+      },
+      fundedByDemoCredit,
+      excludeFromBalanceRunning: true,
+      practiceTransferPending: true,
+      practiceTransferLabPending: true,
+      practiceTransferAbutmentPending: Boolean(
+        billing.heldAt && !billing.abutmentSettledAt && !billing.settledAt,
+      ),
+    };
+
+    if (
+      !pendingLabSettlementMatchesFilters({
+        filterTypes,
+        searchOrs,
+        refIdIn,
+        row,
+      })
+    ) {
+      continue;
+    }
+    rows.push(row);
+  }
+
+  rows.sort(
+    (a, b) =>
+      new Date(b.occurredAt || 0).getTime() -
+      new Date(a.occurredAt || 0).getTime(),
+  );
+  return rows;
+}
+
+/**
+ * 기공소 소유 원장 행 + 적립 보류 미러를 날짜순으로 합쳐 페이지 슬라이스.
+ * skippedSum 은 잔액 러닝용(보류 미러 제외).
+ */
+export function mergeLabLedgerRowsWithPending({
+  ownedRows,
+  pendingRows,
+  startIdx = 0,
+  pageSize = 10,
+}) {
+  const owned = Array.isArray(ownedRows) ? ownedRows : [];
+  const pending = Array.isArray(pendingRows) ? pendingRows : [];
+  const ownedRefIds = new Set(
+    owned
+      .filter((r) => String(r?.refType || "") === "PRACTICE_TRANSFER")
+      .map((r) => String(r?.refId || ""))
+      .filter(Boolean),
+  );
+  // 이미 실제 적립(ESCROW_RELEASE) 행이 있으면 보류 미러 제외
+  const pendingFresh = pending.filter((r) => {
+    const ref = String(r?.refId || "");
+    if (!ref) return true;
+    return !owned.some(
+      (o) =>
+        String(o?.refId || "") === ref &&
+        String(o?.type || "") === "LAB_SETTLEMENT_CHARGE" &&
+        !o?.excludeFromBalanceRunning,
+    );
+  });
+
+  const merged = [...pendingFresh, ...owned].sort((a, b) => {
+    const at = new Date(a?.occurredAt || a?.createdAt || 0).getTime();
+    const bt = new Date(b?.occurredAt || b?.createdAt || 0).getTime();
+    if (bt !== at) return bt - at;
+    return String(b?._id || "").localeCompare(String(a?._id || ""));
+  });
+
+  const start = Math.max(0, Number(startIdx) || 0);
+  const size = Math.max(1, Number(pageSize) || 10);
+  const slice = merged.slice(start, start + size + 1);
+  const hasMore = slice.length > size;
+  const pageItems = hasMore ? slice.slice(0, size) : slice;
+
+  let skippedSum = 0;
+  for (const row of merged.slice(0, start)) {
+    if (row?.excludeFromBalanceRunning) continue;
+    skippedSum += Number(row?.amount || 0);
+  }
+
+  return {
+    items: pageItems,
+    hasMore,
+    skippedSum,
+    // 디버그/통계용
+    pendingCount: pendingFresh.length,
+    ownedRefIds,
+  };
 }

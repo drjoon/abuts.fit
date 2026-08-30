@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-31: 기공소 내역 — 치과 PTX lab-share HOLD를 기공크레딧 적립 보류로 미러.
 // - 2026-08-23: 커스텀어벗 통계 드릴다운 — toothWorks 플래그·어벗생산 REQUEST 포함.
 // - 2026-08-21: PTX abuts_shipping enrich — BA+출고일 박스키(기공소 생산·배송 묶음).
 // - 2026-08-19: 어벗디자인 박스 키=의뢰 사업자+예정출고일. 수신자는 의뢰 사업자명.
@@ -59,6 +60,8 @@ import {
   resolveLedgerTypesForFilters,
   buildRequestorCreditLedgerPipeline,
   aggregateRequestorPeriodLedgerSummary,
+  listPendingLabSettlementLedgerRows,
+  mergeLabLedgerRowsWithPending,
 } from "./creditLedger.utils.js";
 
 async function resolveRequestorKindForAnchor(businessAnchorId, fallbackKind) {
@@ -447,6 +450,24 @@ export async function listMyCreditLedger(req, res) {
   }
 
   const startIdx = (page - 1) * pageSize;
+  const pendingLabRowsPromise =
+    requestorKind === "lab"
+      ? listPendingLabSettlementLedgerRows({
+          labAnchorId: anchorObjectId,
+          occurredAt: Object.keys(occurredAt).length ? occurredAt : null,
+          filterTypes,
+          searchOrs: searchOrs.length ? searchOrs : null,
+          refIdIn,
+        })
+      : Promise.resolve([]);
+
+  const pendingLabRows = await pendingLabRowsPromise;
+  const ownedPageSize =
+    requestorKind === "lab"
+      ? startIdx + pageSize + Math.max(0, pendingLabRows.length) + 1
+      : pageSize;
+  const ownedStartIdx = requestorKind === "lab" ? 0 : startIdx;
+
   const pipeline = buildRequestorCreditLedgerPipeline({
     ownerId: anchorObjectId,
     journalCollectionName: LedgerJournal.collection.name,
@@ -455,8 +476,8 @@ export async function listMyCreditLedger(req, res) {
     searchOrs,
     refIdIn,
     statsCategories: statsCategories.length ? statsCategories : null,
-    startIdx,
-    pageSize,
+    startIdx: ownedStartIdx,
+    pageSize: ownedPageSize,
   });
 
   const periodOccurredAt =
@@ -481,8 +502,25 @@ export async function listMyCreditLedger(req, res) {
   const currentBalance = Number(balanceSnapshot?.balance || 0);
   const currentSettlementCredit = Number(balanceSnapshot?.settlementCredit || 0);
 
-  const { hasMore, skippedSum, items: pageRows } =
-    parseCreditLedgerFacetResult(facetRaw, { pageSize });
+  const ownedParsed = parseCreditLedgerFacetResult(facetRaw, {
+    pageSize: ownedPageSize,
+  });
+  let pageRows = ownedParsed.items;
+  let hasMore = ownedParsed.hasMore;
+  let skippedSum = ownedParsed.skippedSum;
+
+  if (requestorKind === "lab") {
+    const merged = mergeLabLedgerRowsWithPending({
+      ownedRows: pageRows,
+      pendingRows: pendingLabRows,
+      startIdx,
+      pageSize,
+    });
+    pageRows = merged.items;
+    hasMore = merged.hasMore;
+    skippedSum = merged.skippedSum;
+  }
+
   const allRows = mergeRequestExpressSurchargeIntoMachiningSpend(pageRows);
 
   const items = buildLedgerItemsWithBucketBalanceAfter({
@@ -506,6 +544,19 @@ export async function listMyCreditLedger(req, res) {
         spendKind:
           row?.spendKind || parseSpendKindFromUniqueKey(uniqueKey) || null,
         includesExpressSurcharge: Boolean(row?.includesExpressSurcharge),
+        fundedByDemoCredit: Boolean(
+          row?.fundedByDemoCredit || base.fundedByDemoCredit,
+        ),
+        excludeFromBalanceRunning: Boolean(
+          row?.excludeFromBalanceRunning || base.excludeFromBalanceRunning,
+        ),
+        practiceTransferPending:
+          row?.practiceTransferPending ?? base.practiceTransferPending,
+        practiceTransferLabPending:
+          row?.practiceTransferLabPending ?? base.practiceTransferLabPending,
+        practiceTransferAbutmentPending:
+          row?.practiceTransferAbutmentPending ??
+          base.practiceTransferAbutmentPending,
       };
     },
   });

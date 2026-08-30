@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-31: 기공소 — PTX 적립 보류 라벨·labShareOnly·상대 데모 크레딧 표기.
 // - 2026-08-31: 유형 라벨 — 치과(구강스캔/어벗디자인)·기공소(치과로부터 수신/어벗츠로 의뢰). 데모 소비 시 금액 아래「데모」.
 // - 2026-08-26: 치과 요약 — 유료/무료 충전·소비는 기간 합계(잔여 버킷 아님). HOLD 소비 반영.
 // - 2026-08-23: 내역 테이블 — scroll-x-bar-top을 flex-1 세로 스크롤과 분리(rotateX로 행이 아래로 붙던 문제).
@@ -264,6 +265,10 @@ type CreditLedgerItem = {
   practiceTransferLabPending?: boolean;
   /** 어벗츠몫 미정산(heldAt && !abutmentSettledAt && !settledAt) */
   practiceTransferAbutmentPending?: boolean;
+  /** 치과 데모 크레딧으로 보류된 기공비(기공소 적립 보류 행) */
+  fundedByDemoCredit?: boolean;
+  /** 보류 미러 등 — 잔액 러닝에 아직 미반영 */
+  excludeFromBalanceRunning?: boolean;
   /** 보류/배송 몫: lab | abutment | lab_shipping | abuts_shipping */
   holdShare?: string | null;
   /** 기공의뢰 견적(행 클릭 상세 모달) */
@@ -448,7 +453,13 @@ const resolveAbutmentDesignTypeLabel = (isLabViewer: boolean) =>
 
 const practiceTransferPayoutStatusLabel = (
   status: PracticeTransferPayoutStatus,
+  isLabViewer = false,
 ) => {
+  if (isLabViewer) {
+    if (status === "settled") return "적립 완료";
+    if (status === "partial") return "일부 적립";
+    return "적립 보류";
+  }
   if (status === "settled") return "결제 완료";
   if (status === "partial") return "일부 결제";
   return "결제 보류";
@@ -2122,7 +2133,7 @@ export const CreditLedgerModal = ({
     () =>
       groupLedgerItemsForDisplay(
         Array.isArray(items) ? items : [],
-        false,
+        isLabViewer,
         isLabViewer,
       ),
     [items, isLabViewer],
@@ -2742,12 +2753,13 @@ export const CreditLedgerModal = ({
                       String(r.type) === "SPEND_FREE_REQUEST" ||
                       String(r.type) === "SPEND_FREE_SHIPPING") &&
                     (spentPaid > 0 || spentFree > 0);
-                  /** 데모 모드에서 무료(=데모) 버킷 소비 시 금액 아래 표시 */
+                  /** 데모 모드 본인 소비, 또는 상대(치과) 데모 크레딧으로 적립 보류된 행 */
                   const showDemoSpendHint =
-                    isDemoMode &&
-                    (spentFree > 0 ||
-                      r.type === "SPEND_FREE_REQUEST" ||
-                      r.type === "SPEND_FREE_SHIPPING");
+                    Boolean(r.item.fundedByDemoCredit) ||
+                    (isDemoMode &&
+                      (spentFree > 0 ||
+                        r.type === "SPEND_FREE_REQUEST" ||
+                        r.type === "SPEND_FREE_SHIPPING"));
                   const safeRef = r.item.refRequestId
                     ? formatRequestIdSafe(
                         r.item.refRequestId,
@@ -2843,7 +2855,10 @@ export const CreditLedgerModal = ({
                               practiceTransferPayoutStatusClass(payoutStatus),
                             )}
                           >
-                            {practiceTransferPayoutStatusLabel(payoutStatus)}
+                            {practiceTransferPayoutStatusLabel(
+                              payoutStatus,
+                              isLabViewer,
+                            )}
                           </span>
                         ) : (
                           <span className="text-xs text-muted-foreground">—</span>
