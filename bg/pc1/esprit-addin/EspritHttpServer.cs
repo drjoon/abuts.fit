@@ -15,6 +15,7 @@ using System.Runtime.Serialization.Json;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers;
 using Abuts.EspritAddIns.ESPRIT2025AddinProject.Logging;
 using Esprit;
 namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
@@ -77,6 +78,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 
         private readonly Queue<NcGenerationRequest> _ncQueue = new Queue<NcGenerationRequest>();
         private readonly object _queueLock = new object();
+        private string _currentProcessingRequestId = null;
         private Task _queueProcessorTask;
         private CancellationTokenSource _queueProcessorCts;
         private static void AddRuntimeBridgeSecret(HttpRequestMessage req)
@@ -137,6 +139,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             {
                 return;
             }
+            NcJobCancellation.Clear(req.RequestId);
             lock (_queueLock)
             {
                 _ncQueue.Enqueue(req);
@@ -307,6 +310,82 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     response.StatusCode = (int)HttpStatusCode.MethodNotAllowed;
                     return;
                 }
+
+                // POST /cancel — CAM 생성 중단 (큐 제거 + 진행 중 업로드 스킵)
+                if (path == "/cancel" || path.EndsWith("/cancel"))
+                {
+                    string cancelRequestId = null;
+                    try
+                    {
+                        using (var reader = new StreamReader(request.InputStream, request.ContentEncoding ?? Encoding.UTF8))
+                        {
+                            var body = reader.ReadToEnd() ?? string.Empty;
+                            // DataContractJsonSerializer 또는 단순 파싱
+                            try
+                            {
+                                using (var ms = new MemoryStream(Encoding.UTF8.GetBytes(body)))
+                                {
+                                    var serializer = new DataContractJsonSerializer(typeof(NcGenerationRequest));
+                                    var parsed = serializer.ReadObject(ms) as NcGenerationRequest;
+                                    cancelRequestId = (parsed?.RequestId ?? string.Empty).Trim();
+                                }
+                            }
+                            catch
+                            {
+                                cancelRequestId = string.Empty;
+                            }
+                            if (string.IsNullOrWhiteSpace(cancelRequestId))
+                            {
+                                // {"requestId":"..."} / {"RequestId":"..."}
+                                var m = System.Text.RegularExpressions.Regex.Match(
+                                    body,
+                                    "\"(?:RequestId|requestId)\"\\s*:\\s*\"([^\"]+)\"",
+                                    System.Text.RegularExpressions.RegexOptions.IgnoreCase
+                                );
+                                if (m.Success) cancelRequestId = (m.Groups[1].Value ?? string.Empty).Trim();
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        AppLogger.Log($"[HTTP Server] /cancel parse error: {ex.Message}");
+                    }
+
+                    if (string.IsNullOrWhiteSpace(cancelRequestId))
+                    {
+                        response.StatusCode = (int)HttpStatusCode.BadRequest;
+                        byte[] bad = Encoding.UTF8.GetBytes("{\"ok\": false, \"message\": \"RequestId is required\"}");
+                        response.OutputStream.Write(bad, 0, bad.Length);
+                        return;
+                    }
+
+                    int removed = CancelQueuedRequests(cancelRequestId);
+                    NcJobCancellation.MarkCancelled(cancelRequestId);
+                    bool wasCurrent = string.Equals(
+                        _currentProcessingRequestId,
+                        cancelRequestId,
+                        StringComparison.OrdinalIgnoreCase
+                    );
+                    AppLogger.Log(
+                        $"[HTTP Server] Cancel NC request: {cancelRequestId} removedFromQueue={removed} wasCurrent={wasCurrent}"
+                    );
+                    await NotifyRuntimeStatus(
+                        cancelRequestId,
+                        "cancelled",
+                        "CAM 생성 중단",
+                        "slate",
+                        new { removedFromQueue = removed, wasCurrent },
+                        clear: true
+                    );
+
+                    response.StatusCode = (int)HttpStatusCode.OK;
+                    byte[] okCancel = Encoding.UTF8.GetBytes(
+                        $"{{\"ok\": true, \"message\": \"cancelled\", \"removedFromQueue\": {removed}, \"wasCurrent\": {(wasCurrent ? "true" : "false")}}}"
+                    );
+                    response.OutputStream.Write(okCancel, 0, okCancel.Length);
+                    return;
+                }
+
                 // POST / - NC 생성 요청
                 using (var reader = request.InputStream)
                 {
@@ -320,6 +399,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     response.OutputStream.Write(buffer, 0, buffer.Length);
                     return;
                 }
+                // 새 트리거 시 이전 중단 플래그 해제
+                NcJobCancellation.Clear(req.RequestId);
                 var hexRotationMode = !string.IsNullOrWhiteSpace(req.ManufacturerHexRotation)
                     ? req.ManufacturerHexRotation.Trim()
                     : (req.manufacturerHexRotation ?? string.Empty).Trim();
@@ -382,10 +463,55 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 catch { }
             }
         }
+        private int CancelQueuedRequests(string requestId)
+        {
+            var id = (requestId ?? string.Empty).Trim();
+            if (string.IsNullOrEmpty(id)) return 0;
+            lock (_queueLock)
+            {
+                if (_ncQueue.Count == 0) return 0;
+                var kept = new Queue<NcGenerationRequest>();
+                int removed = 0;
+                while (_ncQueue.Count > 0)
+                {
+                    var item = _ncQueue.Dequeue();
+                    if (item != null &&
+                        string.Equals(
+                            (item.RequestId ?? string.Empty).Trim(),
+                            id,
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        removed += 1;
+                        continue;
+                    }
+                    kept.Enqueue(item);
+                }
+                while (kept.Count > 0)
+                {
+                    _ncQueue.Enqueue(kept.Dequeue());
+                }
+                return removed;
+            }
+        }
         private async Task ProcessNcRequest(NcGenerationRequest req)
         {
             try
             {
+                if (NcJobCancellation.IsCancelled(req?.RequestId))
+                {
+                    AppLogger.Log($"[NC Processing] Skip cancelled request: {req?.RequestId}");
+                    await NotifyRuntimeStatus(
+                        req?.RequestId,
+                        "cancelled",
+                        "CAM 생성 중단",
+                        "slate",
+                        clear: true
+                    );
+                    return;
+                }
+
+                NcJobCancellation.SetCurrent(req?.RequestId);
+
                 // STL 파일 경로 정규화
                 string stlPath = NormalizeFilePath(req.StlPath);
                 AppLogger.Log($"[NC Processing] Resolved STL path: {stlPath}");
@@ -457,6 +583,20 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         return;
                     }
                 }
+
+                if (NcJobCancellation.IsCancelled(req?.RequestId))
+                {
+                    AppLogger.Log($"[NC Processing] Cancelled before CAM: {req?.RequestId}");
+                    await NotifyRuntimeStatus(
+                        req?.RequestId,
+                        "cancelled",
+                        "CAM 생성 중단",
+                        "slate",
+                        clear: true
+                    );
+                    return;
+                }
+
                 if (!EspritUiDispatcher.IsInitialized)
                 {
                     AppLogger.Log("[NC Processing] Dispatcher not initialized. CAM step will run on current thread.");
@@ -466,6 +606,31 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 {
                     await EspritUiDispatcher.RunAsync(() => RunCamProcessing(req, stlPath));
                 }
+
+                if (NcJobCancellation.IsCancelled(req?.RequestId))
+                {
+                    AppLogger.Log($"[NC Processing] Cancelled after CAM (upload skipped): {req?.RequestId}");
+                    await NotifyRuntimeStatus(
+                        req?.RequestId,
+                        "cancelled",
+                        "CAM 생성 중단",
+                        "slate",
+                        clear: true
+                    );
+                    NcJobCancellation.Clear(req?.RequestId);
+                }
+            }
+            catch (OperationCanceledException oce)
+            {
+                AppLogger.Log($"[NC Processing] CAM cancelled: {req?.RequestId} ({oce.Message})");
+                await NotifyRuntimeStatus(
+                    req?.RequestId,
+                    "cancelled",
+                    "CAM 생성 중단",
+                    "slate",
+                    clear: true
+                );
+                NcJobCancellation.Clear(req?.RequestId);
             }
             catch (Exception ex)
             {
@@ -479,9 +644,18 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     new { error = ex.Message }
                 );
             }
+            finally
+            {
+                NcJobCancellation.ClearCurrent();
+            }
         }
         private void RunCamProcessing(NcGenerationRequest req, string stlPath)
         {
+            if (NcJobCancellation.IsCancelled(req?.RequestId))
+            {
+                AppLogger.Log($"[NC Processing] RunCamProcessing skipped (cancelled): {req?.RequestId}");
+                return;
+            }
             try
             {
                 AppLogger.Log($"[NC Processing] TwoPhase flag for request {req.RequestId}: {req.TwoPhase}");
@@ -573,18 +747,44 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     {
                         try
                         {
+                            _currentProcessingRequestId = req.RequestId;
+                            NcJobCancellation.SetCurrent(req.RequestId);
                             AppLogger.Log($"[Queue Processor] Processing: {req.RequestId} (TwoPhase: {req.TwoPhase}) (Remaining in queue: {_ncQueue.Count})");
                             await ProcessNcRequest(req);
                             AppLogger.Log($"[Queue Processor] Completed: {req.RequestId}");
                         }
+                        catch (OperationCanceledException oce)
+                        {
+                            AppLogger.Log($"[Queue Processor] Cancelled: {req.RequestId} ({oce.Message})");
+                            await NotifyRuntimeStatus(
+                                req?.RequestId,
+                                "cancelled",
+                                "CAM 생성 중단",
+                                "slate",
+                                clear: true
+                            );
+                            NcJobCancellation.Clear(req?.RequestId);
+                        }
                         catch (Exception ex)
                         {
                             AppLogger.Log($"[Queue Processor] Error processing {req.RequestId}: {ex.Message}");
+                            await NotifyRuntimeStatus(
+                                req?.RequestId,
+                                "failed",
+                                "CAM 생성 실패",
+                                "rose",
+                                new { error = ex.Message }
+                            );
+                        }
+                        finally
+                        {
+                            NcJobCancellation.ClearCurrent();
+                            _currentProcessingRequestId = null;
                         }
                     }
                     else
                     {
-                        await Task.Delay(500, token);
+                        await Task.Delay(200, token);
                     }
                 }
                 catch (OperationCanceledException)
@@ -593,8 +793,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 }
                 catch (Exception ex)
                 {
-                    AppLogger.Log($"[Queue Processor] Error: {ex.Message}");
-                    await Task.Delay(1000, token);
+                    AppLogger.Log($"[Queue Processor] Loop error: {ex.Message}");
+                    try { await Task.Delay(500, token); } catch (OperationCanceledException) { break; }
                 }
             }
             AppLogger.Log("[Queue Processor] Stopped");

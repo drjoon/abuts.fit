@@ -4,6 +4,7 @@
 // - bg/pc1/esprit-addin/StlFileProcessor.cs
 // - web/backend/controllers/requests/common.review.controller.js
 using Abuts.EspritAddIns.ESPRIT2025AddinProject;
+using Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers;
 using Esprit;
 using EspritConstants;
 using EspritFeatures;
@@ -90,6 +91,7 @@ namespace DentalAddin
                 DentalLogger.Log($"OperationSeq - 3-Stage 실행: Front/Back Turn+Rough 후 Finish 실행 (RoughType={RoughType}, RoughSplitEnv={roughSplitEnabled})");
                 ClearOperationsForTwoPhase();
 
+                NcJobCancellation.ThrowIfCurrentCancelled("OperationSeq.before-CustomCycle");
                 ValidateBeforeOperation("CustomCycle", Array.Empty<string>(), Array.Empty<string>());
                 CustomCycle();
 
@@ -98,12 +100,15 @@ namespace DentalAddin
                 // Back:   Turn -> Rough
                 // Middle_Turn / Middle_Rough는 레거시로 생성하지 않는다 (Front+Back로 커버)
                 // Finish: deep=Front/Back 분할, none=All 단일
+                NcJobCancellation.ThrowIfCurrentCancelled("OperationSeq.before-FRONT");
                 using (DentalLogger.Measure("OperationSeq.FRONT_TurnRough"))
                 {
                     ExecuteTwoPhaseTurning("FRONT");
+                    NcJobCancellation.ThrowIfCurrentCancelled("OperationSeq.after-FRONT_Turn");
                     ExecuteTwoPhaseRough("FRONT");
                 }
 
+                NcJobCancellation.ThrowIfCurrentCancelled("OperationSeq.before-FrontFaceMill");
                 using (DentalLogger.Measure("OperationSeq.FrontFaceMill"))
                 {
                     ValidateBeforeOperation("FrontFaceMill", Array.Empty<string>(), new[] { "3DMilling_FrontFace" });
@@ -115,6 +120,7 @@ namespace DentalAddin
                 Environment.SetEnvironmentVariable("ABUTS_SKIP_FRONTFACE_IN_FREEFORM", "1");
                 try
                 {
+                    NcJobCancellation.ThrowIfCurrentCancelled("OperationSeq.before-FINISH_FRONT");
                     Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", "A_PHASE");
                     using (DentalLogger.Measure("OperationSeq.FINISH_FRONT"))
                     {
@@ -123,12 +129,15 @@ namespace DentalAddin
                         TryNormalizeCompositeFinishOrderAfterFreeForm();
                     }
 
+                    NcJobCancellation.ThrowIfCurrentCancelled("OperationSeq.before-BACK");
                     using (DentalLogger.Measure("OperationSeq.BACK_TurnRough"))
                     {
                         ExecuteTwoPhaseTurning("BACK");
+                        NcJobCancellation.ThrowIfCurrentCancelled("OperationSeq.after-BACK_Turn");
                         ExecuteTwoPhaseRough("BACK");
                     }
 
+                    NcJobCancellation.ThrowIfCurrentCancelled("OperationSeq.before-FINISH_BACK");
                     Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", "B_PHASE");
                     using (DentalLogger.Measure("OperationSeq.FINISH_BACK"))
                     {
@@ -143,6 +152,7 @@ namespace DentalAddin
                     Environment.SetEnvironmentVariable("ABUTS_SKIP_FRONTFACE_IN_FREEFORM", null);
                 }
 
+                NcJobCancellation.ThrowIfCurrentCancelled("OperationSeq.before-CustomCycle2");
                 if (Mark.MarkSign)
                 {
                     ValidateBeforeOperation("MarkText", Array.Empty<string>(), new[] { "3DProject_Mark" });
@@ -436,6 +446,7 @@ namespace DentalAddin
         // 순서: Turn_A → Rough_A → FrontFace → Turn_B → Rough_B
         private static void ExecuteTwoPhaseTurning(string region)
         {
+            NcJobCancellation.ThrowIfCurrentCancelled($"ExecuteTwoPhaseTurning({region})");
             if (string.Equals(region, "MIDDLE", StringComparison.OrdinalIgnoreCase))
             {
                 DentalLogger.Log("ExecuteTwoPhaseTurning(MIDDLE) - MIDDLE region 요청 무시(Middle_Turn legacy 제거)");
@@ -459,6 +470,7 @@ namespace DentalAddin
 
         private static void ExecuteTwoPhaseRough(string region)
         {
+            NcJobCancellation.ThrowIfCurrentCancelled($"ExecuteTwoPhaseRough({region})");
             string prevRoughSplitEnable = Environment.GetEnvironmentVariable("ABUTS_ROUGHFREEFORM_SPLIT_ENABLE");
             Environment.SetEnvironmentVariable(AppConfig.TwoPhaseRoughRegionEnv, region);
             Environment.SetEnvironmentVariable("ABUTS_ROUGHFREEFORM_SPLIT_REGION", region);

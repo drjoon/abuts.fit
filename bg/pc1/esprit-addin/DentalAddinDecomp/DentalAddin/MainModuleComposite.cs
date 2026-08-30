@@ -3,6 +3,7 @@
 // - bg/pc1/esprit-addin/StlFileProcessor.cs
 // - web/backend/controllers/requests/common.review.controller.js
 using Abuts.EspritAddIns.ESPRIT2025AddinProject;
+using Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers;
 using Esprit;
 using EspritConstants;
 using EspritFeatures;
@@ -1469,6 +1470,7 @@ namespace DentalAddin
 
         private static void TryAddOperation(object technology, IGraphicObject graphicObject, string context, object addOption = null)
         {
+            NcJobCancellation.ThrowIfCurrentCancelled($"TryAddOperation:{context}");
             if (Document == null)
             {
                 DentalLogger.Log($"TryAddOperation:{context} - Document is null");
