@@ -100,7 +100,7 @@ export function formatPracticeTransferListPatientWithTeeth(
 }
 
 /**
- * 모바일 콤팩트 카드 하단 행 — 환자명(말줄임) · 치아번호(우선 표시) · 도착(오른쪽 끝).
+ * 모바일 콤팩트 카드 하단 행 — 환자명(잘림 없음) · 치아번호(남는 폭·말줄임) · 도착(오른쪽 끝).
  */
 export function PracticeTransferListPatientArrivalRow({
   patientName,
@@ -124,17 +124,19 @@ export function PracticeTransferListPatientArrivalRow({
         className,
       )}
     >
-      <span className="min-w-0 truncate text-muted-foreground">{patient}</span>
+      <span className="shrink-0 text-muted-foreground">{patient}</span>
       {teeth ? (
         <span
-          className="min-w-0 max-w-[60%] shrink truncate tabular-nums font-medium tracking-tight text-slate-800"
+          className="min-w-0 flex-1 truncate tabular-nums font-medium tracking-tight text-slate-800"
           title={teeth}
         >
           {teeth}
         </span>
-      ) : null}
+      ) : (
+        <span className="min-w-0 flex-1" aria-hidden />
+      )}
       {arrival ? (
-        <span className="ml-auto shrink-0 tabular-nums text-muted-foreground">
+        <span className="shrink-0 tabular-nums text-muted-foreground">
           도착 {arrival}
         </span>
       ) : null}
