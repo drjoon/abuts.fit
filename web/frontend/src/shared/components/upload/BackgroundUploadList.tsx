@@ -158,7 +158,10 @@ function PendingImageUploadTile({
       </div>
 
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
-        <DialogContent className="sm:max-w-4xl">
+        <DialogContent
+          className="z-[320] sm:max-w-4xl"
+          overlayClassName="z-[310]"
+        >
           <DialogHeader>
             <DialogTitle className="truncate pr-8">{item.file.name}</DialogTitle>
           </DialogHeader>
