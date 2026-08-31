@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-08-31: 이미지 줌/팬 — ZoomableImagePreview 공통 컴포넌트 사용(중앙 기준 줌).
+// - 2026-08-31: 이미지 프리뷰 확대/축소(휠·버튼) + 드래그 이동.
 // - 2026-08-28: PLY/OBJ 칼라 텍스처(TextureFile·동반 이미지) 프리뷰 전달.
 // - 2026-08-28: z-[320]/overlay z-[310] — 플로팅 의뢰상세(z-300) 위에 프리뷰.
 // - 2026-08-21: 선택 컨펌 안내·CTA(치과 어벗 디자인 컨펌 등). 이미지도 컨펌 시 푸터 표시.
@@ -8,6 +10,7 @@
 // - 2026-08-16: 이미지 미리보기 + 다운로드 오버레이. 3D는 기존 푸터 다운로드.
 // - 2026-08-16: 기공의뢰 3D 메쉬 미리보기(저장 없이 뷰어 + 다운로드).
 // related files:
+// - web/frontend/src/shared/components/ZoomableImagePreview.tsx
 // - web/frontend/src/features/requests/components/StlPreviewViewer.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // - web/frontend/src/features/chat/components/NewChatWidget.tsx
@@ -15,6 +18,7 @@
 import { useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight, Download } from "lucide-react";
 import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
+import { ZoomableImagePreview } from "@/shared/components/ZoomableImagePreview";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -205,13 +209,7 @@ export function ModelPreviewDialog({
               <>
                 {downloadOverlay}
                 {imageUrl && !loading ? (
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/5 p-3">
-                    <img
-                      src={imageUrl}
-                      alt={title}
-                      className="max-h-full max-w-full object-contain"
-                    />
-                  </div>
+                  <ZoomableImagePreview src={imageUrl} alt={title} fill />
                 ) : !loading ? (
                   <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
                     미리볼 이미지가 없습니다.

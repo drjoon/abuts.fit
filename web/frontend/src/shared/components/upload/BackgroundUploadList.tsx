@@ -1,9 +1,12 @@
+// change-log:
+// - 2026-08-31: 이미지 미리보기 ZoomableImagePreview(중앙 기준 줌·팬).
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/shared/hooks/useBackgroundTempUpload.ts
 // - web/frontend/src/features/chat/components/ChatComposer.tsx
 // - web/frontend/src/features/chat/components/ChatMessageBubble.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
+// - web/frontend/src/shared/components/ZoomableImagePreview.tsx
 import { useEffect, useMemo, useState } from "react";
 import { RotateCcw, X, ZoomIn } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
@@ -16,6 +19,7 @@ import {
 import { cn } from "@/shared/ui/cn";
 import type { BackgroundUploadItem } from "@/shared/hooks/useBackgroundTempUpload";
 import { isChatImageAttachment } from "@/features/chat/components/ChatMessageBubble";
+import { ZoomableImagePreview } from "@/shared/components/ZoomableImagePreview";
 
 type Props = {
   items: BackgroundUploadItem[];
@@ -165,13 +169,11 @@ function PendingImageUploadTile({
           <DialogHeader>
             <DialogTitle className="truncate pr-8">{item.file.name}</DialogTitle>
           </DialogHeader>
-          <div className="flex items-center justify-center rounded-lg bg-muted/40 p-4">
-            <img
-              src={objectUrl}
-              alt={item.file.name}
-              className="max-h-[70vh] max-w-full object-contain"
-            />
-          </div>
+          <ZoomableImagePreview
+            src={objectUrl}
+            alt={item.file.name}
+            className="rounded-lg bg-muted/40"
+          />
           <p className="text-center text-xs text-muted-foreground">
             {formatFileSize(item.file.size)}
           </p>

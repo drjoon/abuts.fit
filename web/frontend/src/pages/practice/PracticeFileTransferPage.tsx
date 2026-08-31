@@ -342,6 +342,7 @@ import {
 } from "@/shared/practice/usePracticeTransferFeeQuote";
 import { kstAddBusinessDays, kstYmdDiffDays } from "@/shared/date/kst";
 import { PracticeRushConfirmDialog } from "@/shared/components/practice/PracticeRushConfirmDialog";
+import { ZoomableImagePreview } from "@/shared/components/ZoomableImagePreview";
 import {
   PRACTICE_WORK_PERIOD_BLOCK_MESSAGE,
   PRACTICE_WORK_PERIOD_LATE_WARNING_MESSAGE,
@@ -7928,12 +7929,13 @@ export const PracticeFileTransferPage = ({
                   첨부한 구강포토를 크게 봅니다.
                 </DialogDescription>
               </DialogHeader>
-              <div className="flex max-h-[min(80vh,820px)] items-center justify-center bg-slate-950/95 p-3">
+              <div className="relative h-[min(80vh,820px)] bg-slate-950/95">
                 {oralPhotoPreview?.url ? (
-                  <img
+                  <ZoomableImagePreview
                     src={oralPhotoPreview.url}
                     alt={oralPhotoPreview.name}
-                    className="max-h-[min(76vh,780px)] max-w-full object-contain"
+                    fill
+                    className="bg-transparent"
                   />
                 ) : null}
               </div>

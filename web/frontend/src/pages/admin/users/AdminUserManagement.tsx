@@ -76,6 +76,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { getAppUserRoleLabel } from "@/shared/types/role";
+import { ZoomableImagePreview } from "@/shared/components/ZoomableImagePreview";
 
 const normalizeRole = (rawRole?: string) => {
   const normalized = String(rawRole || "")
@@ -1418,10 +1419,10 @@ export const AdminUserManagement = () => {
                           {!licenseLoading && licenseUrl && (
                             <>
                               <div className="overflow-hidden rounded-lg border bg-white">
-                                <img
+                                <ZoomableImagePreview
                                   src={licenseUrl}
                                   alt="사업자등록증"
-                                  className="h-[460px] w-full object-contain"
+                                  className="h-[460px] rounded-none bg-white"
                                 />
                               </div>
                               <Button

@@ -1,9 +1,12 @@
+// change-log:
+// - 2026-08-31: 이미지 미리보기 ZoomableImagePreview(중앙 기준 줌·팬).
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/shared/components/ZoomableImagePreview.tsx
 import { useState } from "react";
-import { FileIcon, Download, X, ZoomIn } from "lucide-react";
+import { FileIcon, Download, ZoomIn } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -11,6 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { ZoomableImagePreview } from "@/shared/components/ZoomableImagePreview";
 
 interface Attachment {
   fileName: string;
@@ -91,13 +95,11 @@ export function MessageAttachment({
                 </Button>
               </DialogTitle>
             </DialogHeader>
-            <div className="flex items-center justify-center bg-gray-100 rounded-lg p-4">
-              <img
-                src={attachment.s3Url}
-                alt={attachment.fileName}
-                className="max-w-full max-h-[70vh] object-contain"
-              />
-            </div>
+            <ZoomableImagePreview
+              src={attachment.s3Url}
+              alt={attachment.fileName}
+              className="rounded-lg bg-muted/40"
+            />
           </DialogContent>
         </Dialog>
       </>
