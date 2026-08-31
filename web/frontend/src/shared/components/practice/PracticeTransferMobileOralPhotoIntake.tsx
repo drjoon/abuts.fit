@@ -1,12 +1,9 @@
 import { useRef } from "react";
 import {
-  BookmarkPlus,
   Camera,
   ImagePlus,
-  Trash2,
   X,
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/shared/ui/cn";
 import { useToast } from "@/shared/hooks/use-toast";
@@ -31,6 +28,7 @@ import type { PreUploadFileStatus } from "@/shared/hooks/useFilePreUpload";
 // - 2026-08-28: 모바일 툴바 휴지만. 환자사진-only 안내. 임시/새로작성 제거.
 // - 2026-08-28: 모바일 툴바 pill 버튼·촬영 CTA 카드 스타일.
 // - 2026-08-28: 작성 모달 툴바 — 저장&새로작성·삭제&새로작성.
+// - 2026-08-31: 모바일 — 사진 업로드 전용. 기공소 선택 제거, 저장/취소를 사진 영역 아래로.
 // - 2026-08-20: iPhone HEIC→JPEG 변환 시도, 빈 파일 거부, MIME 보정.
 // - 2026-08-20: 썸네일 클릭 시 원본 미리보기.
 // - 2026-08-27: normalizeOralPhotoFiles namePrefix 옵션(채팅 사진찍기 재사용).
@@ -192,25 +190,20 @@ type PracticeTransferMobileOralPhotoIntakeProps = {
   onRemovePhoto: (key: string) => void;
   onClearPhotos: () => void;
   onPreviewPhoto?: (photo: PracticeTransferMobilePhotoItem) => void;
-  onSaveDraft?: () => void;
-  onDiscard?: () => void;
-  canSaveDraft?: boolean;
-  canDiscard?: boolean;
-  /** true면 상단 퀵메뉴 숨김(DialogHeader 등 바깥에서 렌더) */
-  hideToolbar?: boolean;
+  onSave?: () => void;
+  onCancel?: () => void;
+  canSave?: boolean;
 };
 
 export function PracticeTransferMobileComposeToolbar({
-  onSaveDraft,
-  onDiscard,
-  canSaveDraft = true,
-  canDiscard = false,
+  onSave,
+  onCancel,
+  canSave = true,
   className,
 }: {
-  onSaveDraft: () => void;
-  onDiscard: () => void;
-  canSaveDraft?: boolean;
-  canDiscard?: boolean;
+  onSave: () => void;
+  onCancel: () => void;
+  canSave?: boolean;
   className?: string;
 }) {
   return (
@@ -223,27 +216,24 @@ export function PracticeTransferMobileComposeToolbar({
       <Button
         type="button"
         size="sm"
-        className="h-9 shrink-0 gap-1 rounded-full px-3 shadow-sm"
-        aria-label="저장 후 새로 작성"
-        title="작성 내용을 임시저장한 뒤 새로 작성합니다"
-        disabled={!canSaveDraft}
-        onClick={onSaveDraft}
+        className="h-10 min-w-[5.5rem] flex-1 rounded-full px-4 shadow-sm"
+        aria-label="저장"
+        title="작성 내용을 임시저장합니다"
+        disabled={!canSave}
+        onClick={onSave}
       >
-        <BookmarkPlus className="h-4 w-4 shrink-0" />
-        저장&새로작성
+        저장
       </Button>
       <Button
         type="button"
         variant="outline"
         size="sm"
-        className="h-9 shrink-0 gap-1 rounded-full border-destructive-muted bg-white px-3 text-destructive shadow-sm hover:bg-destructive-soft hover:text-destructive"
-        aria-label="삭제 후 새로 작성"
-        title="작성 중인 내용을 삭제한 뒤 새로 작성합니다"
-        disabled={!canDiscard}
-        onClick={onDiscard}
+        className="h-10 min-w-[5.5rem] flex-1 rounded-full border-slate-200 bg-white px-4 shadow-sm"
+        aria-label="취소"
+        title="닫기"
+        onClick={onCancel}
       >
-        <Trash2 className="h-4 w-4 shrink-0" />
-        삭제&새로작성
+        취소
       </Button>
     </div>
   );
@@ -257,11 +247,9 @@ export function PracticeTransferMobileOralPhotoIntake({
   onRemovePhoto,
   onClearPhotos,
   onPreviewPhoto,
-  onSaveDraft,
-  onDiscard,
-  canSaveDraft = true,
-  canDiscard = false,
-  hideToolbar = false,
+  onSave,
+  onCancel,
+  canSave = true,
 }: PracticeTransferMobileOralPhotoIntakeProps) {
   const { toast } = useToast();
   const albumInputRef = useRef<HTMLInputElement | null>(null);
@@ -293,29 +281,18 @@ export function PracticeTransferMobileOralPhotoIntake({
 
   return (
     <div className="box-border flex w-full min-w-0 flex-col gap-3">
-      {!hideToolbar && onSaveDraft && onDiscard ? (
-        <PracticeTransferMobileComposeToolbar
-          onSaveDraft={onSaveDraft}
-          onDiscard={onDiscard}
-          canSaveDraft={canSaveDraft}
-          canDiscard={canDiscard}
-        />
-      ) : null}
-
-      <div className="rounded-2xl border border-sky-200/80 bg-sky-50/90 px-3.5 py-3 text-[13px] leading-relaxed text-sky-950">
-        <p className="font-semibold tracking-tight">모바일에서는 환자 사진만 업로드할 수 있어요</p>
-        <p className="mt-1 text-sky-900/85">
-          구강스캔 파일 첨부·치아 선택 등은 PC(데스크탑)에서 이어서 작성해 주세요.
-        </p>
-      </div>
+      <p className="px-1 text-center text-[11px] leading-snug text-muted-foreground">
+        신규 의뢰는 PC에서, 모바일에서는 환자 사진만 업로드할 수 있습니다.
+      </p>
 
       <PracticeTransferRequestIntakePanel
         {...requestIntakeProps}
+        showLabField={false}
         showDateFields={false}
         showProsthesisSection={false}
         showMemoSection={false}
         showFeeEstimate={false}
-        className="min-w-0"
+        className="min-w-0 px-3"
       />
 
       <input
@@ -481,6 +458,15 @@ export function PracticeTransferMobileOralPhotoIntake({
             })}
           </div>
         </div>
+      ) : null}
+
+      {onSave && onCancel ? (
+        <PracticeTransferMobileComposeToolbar
+          onSave={onSave}
+          onCancel={onCancel}
+          canSave={canSave}
+          className="pt-1"
+        />
       ) : null}
     </div>
   );

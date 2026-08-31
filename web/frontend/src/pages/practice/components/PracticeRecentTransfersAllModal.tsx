@@ -585,32 +585,25 @@ export function PracticeRecentTransfersAllModal({
       )}
     >
       {isMobile ? (
-        <div className="flex flex-col gap-4">
-          <div className="flex min-w-0 items-center gap-2 pb-0.5">
-            {isPage ? (
-              <h1 className="sr-only">{mobileTitle}</h1>
-            ) : (
-              <DialogTitle className="min-w-0 flex-1 text-base font-semibold tracking-tight">
-                {mobileTitle}
-              </DialogTitle>
-            )}
-            {headerActions ? (
-              <div className="flex w-full shrink-0 flex-nowrap items-center justify-center">
-                {headerActions}
-              </div>
-            ) : null}
-          </div>
-          <div className="flex flex-wrap items-center gap-1.5">
-            {statusBadges}
-            <div className="relative ml-auto min-w-[7.5rem] w-[9.5rem] shrink-0">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={search}
-                onChange={(e) => handleSearchChange(e.target.value)}
-                className="h-8 w-full rounded-full border-slate-200 bg-slate-50 pl-8 text-sm"
-                placeholder="기공소, 환자명"
-              />
+        <div className="flex flex-col gap-3">
+          {isPage ? (
+            <h1 className="sr-only">{mobileTitle}</h1>
+          ) : (
+            <DialogTitle className="sr-only">{mobileTitle}</DialogTitle>
+          )}
+          {headerActions ? (
+            <div className="flex w-full shrink-0 flex-nowrap items-center justify-center">
+              {headerActions}
             </div>
+          ) : null}
+          <div className="relative mx-auto w-full">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(e) => handleSearchChange(e.target.value)}
+              className="h-9 w-full rounded-full border-slate-200 bg-slate-50 pl-9 text-center text-sm"
+              placeholder="기공소, 환자명"
+            />
           </div>
         </div>
       ) : (
@@ -685,14 +678,13 @@ export function PracticeRecentTransfersAllModal({
             </div>
           ) : isMobile ? (
             <>
-              {statusFilterEmptyHint}
               {filteredTransfers.length === 0 ? (
                 <div className="flex flex-1 flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-16 text-center">
                   <p className="text-sm font-medium text-slate-600">전송 내역 없음</p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {statusFilters.size === 0
-                      ? "표시할 상태를 선택하세요."
-                      : "검색어나 상태 필터를 바꿔 보세요."}
+                    {search.trim()
+                      ? "검색어를 바꿔 보세요."
+                      : "진행 중인 의뢰가 없습니다."}
                   </p>
                 </div>
               ) : (

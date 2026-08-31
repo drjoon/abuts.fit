@@ -229,7 +229,6 @@ import { PracticeLabRatingControl } from "@/shared/components/practice/PracticeL
 import { CounterpartyMemoStrip } from "@/shared/components/practice/CounterpartyMemoStrip";
 import { PracticeTransferIntakeSection } from "@/shared/components/practice/PracticeTransferIntakeSection";
 import {
-  PracticeTransferMobileComposeToolbar,
   PracticeTransferMobileOralPhotoIntake,
 } from "@/shared/components/practice/PracticeTransferMobileOralPhotoIntake";
 import { useIsMobile } from "@/shared/hooks/use-mobile";
@@ -6762,12 +6761,12 @@ export const PracticeFileTransferPage = ({
     }
   };
 
-  /** 모바일 작성 — 현재 내용 임시저장 후 빈 폼 */
-  const handleSaveComposeDraftAndStartNew = async () => {
+  /** 모바일 작성 — 임시저장 후 모달 닫기 */
+  const handleMobileComposeSave = async () => {
     if (editingSentTransferRef.current) return;
     if (!hasAutosaveReadyPatientName(normalizedPatientName)) {
       toast({
-        title: "임시저장할 수 없어요",
+        title: "저장할 수 없어요",
         description: "완성형 한글 환자명을 입력한 뒤 다시 시도해 주세요.",
         variant: "destructive",
       });
@@ -6794,55 +6793,10 @@ export const PracticeFileTransferPage = ({
       await waitForComposeFileSyncIdle();
     }
 
-    await handleStartNewTransfer({ openCompose: true, silentToast: true });
-  };
-
-  /** 모바일 작성 — 현재 작성 내용 삭제(임시저장은 휴지통) */
-  const handleDiscardComposeWork = async () => {
-    if (editingSentTransferRef.current) return;
-
-    formAutosaveSeqRef.current += 1;
-    if (formAutosaveTimerRef.current) {
-      window.clearTimeout(formAutosaveTimerRef.current);
-      formAutosaveTimerRef.current = null;
-    }
-    skipFormAutosaveRef.current = true;
-
-    const activeId = String(activeDraftIdRef.current || "").trim();
-    if (activeId) {
-      const draftTarget =
-        draftGroupedTransfers.find((row) => row.id === activeId) ||
-        practiceDraftList.find((row) => row.id === activeId);
-      if (draftTarget) {
-        await handleDeleteDraftTransfer(draftTarget as RecentTransferItem, {
-          silent: true,
-        });
-      } else if (authToken) {
-        try {
-          await apiFetch<unknown>({
-            path: `/api/practice/transfers/draft?draftId=${encodeURIComponent(activeId)}`,
-            method: "DELETE",
-            token: authToken,
-          });
-          invalidateApiGetCache("/api/practice/transfers/drafts");
-          await loadPracticeTransferDraftList();
-        } catch {
-          // 삭제 실패 시에도 폼은 비운다
-        }
-      }
-    }
-
-    await handleStartNewTransfer({ openCompose: true, silentToast: true });
-    skipFormAutosaveRef.current = false;
+    setComposeOpen(false);
   };
 
   const mobileComposeCanSaveDraft = hasSubstantialContentForNewDraft;
-  const mobileComposeCanDiscard =
-    Boolean(activeDraftId) ||
-    files.length > 0 ||
-    draftFiles.length > 0 ||
-    Boolean(normalizedPatientName.trim()) ||
-    Boolean(String(requestMemo || "").trim());
 
   const persistArrivalDefaultDaysFromRange = useCallback(
     (nextOrder: string, nextArrival: string) => {
@@ -7282,7 +7236,7 @@ export const PracticeFileTransferPage = ({
     </>
   );
 
-  /** 메인 헤더 — 모바일: 의뢰(임시저장 목록)·휴지통·데모. PC: 임시저장·휴지통·데모 */
+  /** 메인 헤더 — 모바일: 의뢰(임시저장 목록)·휴지통. PC: 임시저장·휴지통·데모 */
   const calendarHeaderActions = isMobile ? (
     <div className="flex w-full shrink-0 flex-nowrap items-center justify-center gap-2.5">
       <Button
@@ -7336,7 +7290,6 @@ export const PracticeFileTransferPage = ({
           </Badge>
         ) : null}
       </Button>
-      <DemoModeBadge />
     </div>
   ) : (
     <>
@@ -7733,14 +7686,6 @@ export const PracticeFileTransferPage = ({
             >
               {editingSentTransfer ? "의뢰 수정" : "신규 의뢰"}
             </DialogTitle>
-            {isMobile && !editingSentTransfer ? (
-              <PracticeTransferMobileComposeToolbar
-                onSaveDraft={() => void handleSaveComposeDraftAndStartNew()}
-                onDiscard={() => void handleDiscardComposeWork()}
-                canSaveDraft={mobileComposeCanSaveDraft}
-                canDiscard={mobileComposeCanDiscard}
-              />
-            ) : null}
             {isMobile && formSyncStatusLabel ? (
               <p
                 title={formSyncStatusLabel}
@@ -7807,7 +7752,9 @@ export const PracticeFileTransferPage = ({
                       url,
                     });
                   }}
-                  hideToolbar
+                  onSave={() => void handleMobileComposeSave()}
+                  onCancel={() => setComposeOpen(false)}
+                  canSave={mobileComposeCanSaveDraft}
                 />
               ) : showExpressWizard ? (
                 <PracticeTransferExpressWizard
