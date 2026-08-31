@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-31: usageScope(real|demo|all) — 데모/실사용 필터. hasDemoUsage 응답.
 // - 2026-08-31: periodSpendSummary — 기공소도 반환(정산 적립·적립 보류 포함). 치과와 동일 수식 카드.
 // - 2026-08-31: 기공소 내역 — 치과 PTX lab-share HOLD를 기공크레딧 적립 보류로 미러.
 // - 2026-08-23: 커스텀어벗 통계 드릴다운 — toothWorks 플래그·어벗생산 REQUEST 포함.
@@ -63,7 +64,74 @@ import {
   aggregateRequestorPeriodLedgerSummary,
   listPendingLabSettlementLedgerRows,
   mergeLabLedgerRowsWithPending,
+  parseCreditUsageScope,
 } from "./creditLedger.utils.js";
+
+async function detectHasDemoCreditUsage({
+  ownerObjectId,
+  demoMode,
+  isLab,
+  usageScope = "all",
+  pendingLabRows = [],
+}) {
+  if (demoMode) return true;
+  if (
+    Array.isArray(pendingLabRows) &&
+    pendingLabRows.some((row) => Boolean(row?.fundedByDemoCredit))
+  ) {
+    return true;
+  }
+  // pending 조회가 usageScope=real 이면 데모 보류가 빠져 있어 별도 확인.
+  if (isLab && parseCreditUsageScope(usageScope) === "real") {
+    const anyDemoPending = await listPendingLabSettlementLedgerRows({
+      labAnchorId: ownerObjectId,
+      usageScope: "demo",
+      limit: 1,
+    });
+    if (anyDemoPending.length > 0) return true;
+  }
+  const demoHit = await LedgerLine.aggregate([
+    {
+      $match: {
+        ownerRole: "requestor",
+        ownerId: ownerObjectId,
+        accountCode: {
+          $in: [
+            "REQ_PAID_CREDIT",
+            "REQ_FREE_REQUEST_CREDIT",
+            "REQ_FREE_SHIPPING_CREDIT",
+            "LAB_SETTLEMENT_CREDIT",
+          ],
+        },
+      },
+    },
+    {
+      $lookup: {
+        from: LedgerJournal.collection.name,
+        localField: "journalId",
+        foreignField: "journalId",
+        as: "journalDoc",
+      },
+    },
+    { $unwind: { path: "$journalDoc", preserveNullAndEmptyArrays: false } },
+    {
+      $match: {
+        $or: [
+          { "journalDoc.meta.demoCredit": true },
+          {
+            "journalDoc.meta.source": {
+              $in: ["demo_credit", "demo_credit_exit"],
+            },
+          },
+          { "journalDoc.idempotencyKey": { $regex: /demo_credit/i } },
+        ],
+      },
+    },
+    { $limit: 1 },
+    { $project: { _id: 1 } },
+  ]);
+  return demoHit.length > 0;
+}
 
 async function resolveRequestorKindForAnchor(businessAnchorId, fallbackKind) {
   const anchor = await BusinessAnchor.findById(businessAnchorId)
@@ -336,6 +404,7 @@ export async function listMyCreditLedger(req, res) {
   const partnerNameRaw = String(req.query.partnerName || "").trim();
   const prosthesisTypeRaw = String(req.query.prosthesisType || "").trim();
   const onYmdRaw = String(req.query.onYmd || "").trim();
+  const usageScope = parseCreditUsageScope(req.query.usageScope);
   const statsCategories = parseStatsCategoriesQuery(req.query);
 
   const page = Math.max(1, Number(req.query.page || 1) || 1);
@@ -451,6 +520,7 @@ export async function listMyCreditLedger(req, res) {
   }
 
   const startIdx = (page - 1) * pageSize;
+  const practiceDemoMode = requestorKind === "practice" && demoMode;
   const pendingLabRowsPromise =
     requestorKind === "lab"
       ? listPendingLabSettlementLedgerRows({
@@ -459,6 +529,7 @@ export async function listMyCreditLedger(req, res) {
           filterTypes,
           searchOrs: searchOrs.length ? searchOrs : null,
           refIdIn,
+          usageScope,
         })
       : Promise.resolve([]);
 
@@ -479,6 +550,8 @@ export async function listMyCreditLedger(req, res) {
     statsCategories: statsCategories.length ? statsCategories : null,
     startIdx: ownedStartIdx,
     pageSize: ownedPageSize,
+    usageScope,
+    practiceDemoMode,
   });
 
   const periodOccurredAt =
@@ -490,17 +563,32 @@ export async function listMyCreditLedger(req, res) {
           occurredAt: periodOccurredAt,
           journalCollectionName: LedgerJournal.collection.name,
           includePendingLabSettlement: requestorKind === "lab",
+          usageScope,
+          practiceDemoMode,
         })
       : Promise.resolve(null);
 
-  const [balanceSnapshot, facetRaw, periodLedgerSummary] = await Promise.all([
-    getBusinessCreditBalanceSnapshot({
-      businessAnchorId: anchorObjectId,
-      upsertIfMissing: true,
-    }),
-    LedgerLine.aggregate(pipeline),
-    periodSummaryPromise,
-  ]);
+  const hasDemoUsagePromise =
+    page === 1
+      ? detectHasDemoCreditUsage({
+          ownerObjectId: anchorObjectId,
+          demoMode,
+          isLab: requestorKind === "lab",
+          usageScope,
+          pendingLabRows,
+        })
+      : Promise.resolve(false);
+
+  const [balanceSnapshot, facetRaw, periodLedgerSummary, hasDemoUsage] =
+    await Promise.all([
+      getBusinessCreditBalanceSnapshot({
+        businessAnchorId: anchorObjectId,
+        upsertIfMissing: true,
+      }),
+      LedgerLine.aggregate(pipeline),
+      periodSummaryPromise,
+      hasDemoUsagePromise,
+    ]);
   const currentBalance = Number(balanceSnapshot?.balance || 0);
   const currentSettlementCredit = Number(balanceSnapshot?.settlementCredit || 0);
 
@@ -919,6 +1007,8 @@ export async function listMyCreditLedger(req, res) {
       hasMore,
       page,
       pageSize,
+      usageScope,
+      hasDemoUsage: Boolean(hasDemoUsage),
       currentBalanceSnapshot: buildCurrentBalanceSnapshot(
         balanceSnapshot,
         requestorKind,

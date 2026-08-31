@@ -39,6 +39,10 @@ export const CREDIT_DEMO_BUCKET_LABEL = "데모 충전";
 export const CREDIT_LEDGER_DEMO_PERIOD_SPEND_HINT =
   "데모 모드에서 기공의뢰(치과 차감)는 데모 크레딧, 스토어·커스텀어벗 생산은 유료/무료 크레딧으로 차감된 합계입니다.";
 
+/** 정산 내역/통계 — 데모·실사용 구분 필터 안내. */
+export const CREDIT_USAGE_SCOPE_FILTER_HINT =
+  "데모와 실사용(유료·일반 무료)을 구분해 보세요. 실사용만 보면 잔액 수식과 맞습니다.";
+
 /** 기공소 PTX — 어벗 디자인/생산 시 실크레딧 부족 안내. */
 export const PTX_CA_INSUFFICIENT_CREDIT_TITLE = "크레딧이 부족합니다";
 

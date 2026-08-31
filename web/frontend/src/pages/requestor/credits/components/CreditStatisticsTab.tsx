@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-08-31: 요약 소비 카드 라벨「소비」(구「기공, 스토어」). 치과·기공소 공통.
+// - 2026-08-31: 데모/실사용 체크박스 필터(usageScope) + 깜빡임 안내. 요약·차트 공통.
 // - 2026-08-31: 요약 — 유료/데모(무료) 충전 분리. 기공소 +정산 적립. 파트너=치과별 적립.
 // - 2026-08-29: 통계 차트 — 충전(녹)·소비(청)·조정(호박) 등 유형별 색 구분.
 // - 2026-08-23: 요약 카드 — 기공, 스토어 라벨.
@@ -12,6 +14,8 @@
 // - web/frontend/src/shared/components/CreditLedgerModal.tsx
 // - web/backend/controllers/credits/creditLedgerStats.controller.js
 // - web/frontend/src/shared/demo/demoModeCopy.ts
+// - web/frontend/src/shared/demo/CreditUsageScopeFilter.tsx
+// - web/frontend/src/shared/demo/creditUsageScope.ts
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Bar,
@@ -59,6 +63,12 @@ import {
   CREDIT_LEDGER_DEMO_PERIOD_SPEND_HINT,
 } from "@/shared/demo/demoModeCopy";
 import { useDemoMode } from "@/shared/demo/useDemoMode";
+import { CreditUsageScopeFilter } from "@/shared/demo/CreditUsageScopeFilter";
+import {
+  appendCreditUsageScopeParam,
+  readCreditUsageScopeGuideSeen,
+  type CreditUsageScopeSelection,
+} from "@/shared/demo/creditUsageScope";
 import { useAuthStore } from "@/store/useAuthStore";
 
 type StatsRow = {
@@ -80,6 +90,9 @@ type CreditLedgerStatsResponse = {
   success: boolean;
   data?: {
     requestorKind: "practice" | "lab" | string;
+    demoMode?: boolean;
+    usageScope?: string;
+    hasDemoUsage?: boolean;
     period: { key: string; fromYmd: string; toYmd: string };
     summary: {
       totalChargeSupply: number;
@@ -143,11 +156,14 @@ function baseFilters(
   period: PeriodFilterValue,
   customStartDate: string,
   customEndDate: string,
+  usage?: CreditUsageScopeSelection,
 ): CreditLedgerInitialFilters {
   return {
     period,
     customStartDate,
     customEndDate,
+    includeReal: usage?.includeReal ?? true,
+    includeDemo: usage?.includeDemo ?? true,
   };
 }
 
@@ -303,6 +319,13 @@ export function CreditStatisticsTab() {
   const [period, setPeriod] = useState<PeriodFilterValue>("30d");
   const [customStartDate, setCustomStartDate] = useState("");
   const [customEndDate, setCustomEndDate] = useState("");
+  const [usageSelection, setUsageSelection] = useState<CreditUsageScopeSelection>(
+    { includeReal: true, includeDemo: true },
+  );
+  const [hasDemoUsage, setHasDemoUsage] = useState(false);
+  const [usageGuidePulse, setUsageGuidePulse] = useState(
+    () => !readCreditUsageScopeGuideSeen(),
+  );
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<CreditLedgerStatsResponse["data"] | null>(
     null,
@@ -317,6 +340,7 @@ export function CreditStatisticsTab() {
         customStartDate,
         customEndDate,
       });
+      appendCreditUsageScopeParam(params, usageSelection);
 
       const res = await apiFetch<CreditLedgerStatsResponse>({
         path: `/api/credits/ledger/stats?${params.toString()}`,
@@ -325,13 +349,20 @@ export function CreditStatisticsTab() {
         setStats(null);
         return;
       }
-      setStats(res.data.data || null);
+      const next = res.data.data || null;
+      setStats(next);
+      if (typeof next?.hasDemoUsage === "boolean") {
+        setHasDemoUsage(next.hasDemoUsage);
+        if (next.hasDemoUsage && !readCreditUsageScopeGuideSeen()) {
+          setUsageGuidePulse(true);
+        }
+      }
     } catch {
       setStats(null);
     } finally {
       setLoading(false);
     }
-  }, [period, customStartDate, customEndDate]);
+  }, [period, customStartDate, customEndDate, usageSelection]);
 
   useEffect(() => {
     void loadStats();
@@ -343,8 +374,8 @@ export function CreditStatisticsTab() {
   const freeChargeLabel = demoMode ? CREDIT_DEMO_BUCKET_LABEL : "무료 충전";
   const partnerTitle = isLab ? "치과별 적립" : "기공소별 소비";
   const filterBase = useMemo(
-    () => baseFilters(period, customStartDate, customEndDate),
-    [period, customStartDate, customEndDate],
+    () => baseFilters(period, customStartDate, customEndDate, usageSelection),
+    [period, customStartDate, customEndDate, usageSelection],
   );
 
   const paidChargeTotal = Number(
@@ -470,14 +501,14 @@ export function CreditStatisticsTab() {
         <SettlementEquationOperator symbol="−" />
         <SettlementStatCard
           className={statCardClass}
-          label="기공, 스토어"
+          label="소비"
           value={stats?.summary.totalSpendSupply || 0}
           tone="primary"
           hint="안내"
           hintTooltip={spendTooltip}
           onClick={() =>
             openDrillDown({
-              title: "기공, 스토어 내역",
+              title: "소비 내역",
               filters: { ...filterBase, action: "SPEND" },
             })
           }
@@ -539,6 +570,18 @@ export function CreditStatisticsTab() {
             {summaryCards}
 
             <div className="flex flex-wrap items-center gap-2">
+              {(hasDemoUsage ||
+                usageSelection.includeDemo !== true ||
+                usageSelection.includeReal !== true) && (
+                <CreditUsageScopeFilter
+                  value={usageSelection}
+                  onChange={(next) => {
+                    setUsageSelection(next);
+                    setUsageGuidePulse(false);
+                  }}
+                  pulse={usageGuidePulse && hasDemoUsage}
+                />
+              )}
               <PeriodFilter
                 value={period}
                 onChange={setPeriod}

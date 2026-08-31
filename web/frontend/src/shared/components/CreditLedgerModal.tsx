@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-08-31: 요약 소비 카드 라벨「소비」(구「기공, 스토어」). 치과·기공소 공통.
+// - 2026-08-31: 데모/실사용 체크박스 필터(usageScope) + 깜빡임 안내. 요약·테이블 공통.
 // - 2026-08-31: 기공소 내역 요약 — 치과와 동일 +/− 수식(유료·데모/무료·정산 적립·기공/스토어). 기간 필터는 카드만.
 // - 2026-08-31: 기공소 — PTX 적립 보류 라벨·labShareOnly·상대 데모 크레딧 표기.
 // - 2026-08-31: 유형 라벨 — 치과(구강스캔/어벗디자인)·기공소(치과로부터 수신/어벗츠로 의뢰). 데모 소비 시 금액 아래「데모」.
@@ -70,6 +72,9 @@
 // - web/frontend/src/shared/realtime/creditBalanceEvent.ts
 // - web/frontend/src/shared/shipping/ShippingModeBadge.tsx
 // - web/frontend/src/shared/legal/creditPrepaidCopy.ts
+// - web/frontend/src/shared/demo/demoModeCopy.ts
+// - web/frontend/src/shared/demo/CreditUsageScopeFilter.tsx
+// - web/frontend/src/shared/demo/creditUsageScope.ts
 // - web/backend/controllers/credits/creditLedger.controller.js
 // - web/backend/controllers/credits/creditLedger.utils.js
 // - web/backend/controllers/admin/adminCredit.controller.js
@@ -163,6 +168,12 @@ import {
   CREDIT_LEDGER_DEMO_PERIOD_SPEND_HINT,
   DEMO_MODE_BADGE_LABEL,
 } from "@/shared/demo/demoModeCopy";
+import { CreditUsageScopeFilter } from "@/shared/demo/CreditUsageScopeFilter";
+import {
+  appendCreditUsageScopeParam,
+  readCreditUsageScopeGuideSeen,
+  type CreditUsageScopeSelection,
+} from "@/shared/demo/creditUsageScope";
 
 type CreditLedgerType =
   | "CHARGE_PAID"
@@ -203,6 +214,8 @@ export type CreditLedgerInitialFilters = {
   statsCategory?: CreditLedgerStatsCategory;
   statsCategories?: string;
   onYmd?: string;
+  includeReal?: boolean;
+  includeDemo?: boolean;
 };
 
 type ResolvedLedgerFilters = {
@@ -1761,6 +1774,16 @@ export const CreditLedgerModal = ({
   const [onYmd, setOnYmd] = useState(
     () => resolveLedgerFilters(initialFilters).onYmd,
   );
+  const [usageSelection, setUsageSelection] = useState<CreditUsageScopeSelection>(
+    () => ({
+      includeReal: initialFilters?.includeReal ?? true,
+      includeDemo: initialFilters?.includeDemo ?? true,
+    }),
+  );
+  const [hasDemoUsage, setHasDemoUsage] = useState(false);
+  const [usageGuidePulse, setUsageGuidePulse] = useState(
+    () => !readCreditUsageScopeGuideSeen(),
+  );
 
   const initialFiltersKey = useMemo(
     () => JSON.stringify(initialFilters ?? null),
@@ -1784,6 +1807,15 @@ export const CreditLedgerModal = ({
     setStatsCategory(next.statsCategory);
     setStatsCategories(next.statsCategories);
     setOnYmd(next.onYmd);
+    if (
+      typeof initialFilters.includeReal === "boolean" ||
+      typeof initialFilters.includeDemo === "boolean"
+    ) {
+      setUsageSelection({
+        includeReal: initialFilters.includeReal ?? true,
+        includeDemo: initialFilters.includeDemo ?? true,
+      });
+    }
   }, [embedded, initialFilters, initialFiltersKey, isOpen]);
 
   const [loading, setLoading] = useState(Boolean(embedded));
@@ -1855,11 +1887,15 @@ export const CreditLedgerModal = ({
             period: spendPeriod,
             customStartDate: spendCustomStartDate,
             customEndDate: spendCustomEndDate,
+            includeReal: usageSelection.includeReal,
+            includeDemo: usageSelection.includeDemo,
           }
         : {
             period,
             customStartDate,
             customEndDate,
+            includeReal: usageSelection.includeReal,
+            includeDemo: usageSelection.includeDemo,
           },
     [
       equationLedgerUi,
@@ -1869,6 +1905,8 @@ export const CreditLedgerModal = ({
       period,
       customStartDate,
       customEndDate,
+      usageSelection.includeReal,
+      usageSelection.includeDemo,
     ],
   );
 
@@ -1913,7 +1951,7 @@ export const CreditLedgerModal = ({
         });
       }
     }
-    // 기간 요약 집계는 테이블 필터(버킷·동작·검색)와 무관하게 기간만 사용.
+    // 기간 요약은 버킷·동작·검색과 무관. 데모/실사용(usageScope)만 기간 카드와 공유.
     if (mode !== "spendSummary") {
       if (creditKind && creditKind !== "all") {
         params.set("creditKind", creditKind);
@@ -1930,6 +1968,7 @@ export const CreditLedgerModal = ({
       }
       if (onYmd.trim()) params.set("onYmd", onYmd.trim());
     }
+    appendCreditUsageScopeParam(params, usageSelection);
     params.set("page", String(pageNum));
     params.set("pageSize", String(PAGE_SIZE));
 
@@ -1954,6 +1993,7 @@ export const CreditLedgerModal = ({
           page: number;
           pageSize: number;
           hasMore?: boolean;
+          hasDemoUsage?: boolean;
           currentBalanceSnapshot?: CreditBalanceSnapshot;
           periodSpendSummary?: PeriodSpendSummary | null;
         };
@@ -1983,6 +2023,12 @@ export const CreditLedgerModal = ({
       const total = Number(data?.total ?? 0);
       if (reset) {
         setCurrentBalanceSnapshot(data?.currentBalanceSnapshot || null);
+        if (typeof data?.hasDemoUsage === "boolean") {
+          setHasDemoUsage(data.hasDemoUsage);
+          if (data.hasDemoUsage && !readCreditUsageScopeGuideSeen()) {
+            setUsageGuidePulse(true);
+          }
+        }
         if (!equationLedgerUi) {
           setPeriodSpendSummary(data?.periodSpendSummary ?? null);
         }
@@ -2064,6 +2110,8 @@ export const CreditLedgerModal = ({
     statsCategory,
     statsCategories,
     onYmd,
+    usageSelection.includeReal,
+    usageSelection.includeDemo,
     businessAnchorId,
     initialFiltersKey,
     equationLedgerUi,
@@ -2079,6 +2127,8 @@ export const CreditLedgerModal = ({
     spendPeriod,
     spendCustomStartDate,
     spendCustomEndDate,
+    usageSelection.includeReal,
+    usageSelection.includeDemo,
     businessAnchorId,
   ]);
 
@@ -2521,13 +2571,13 @@ export const CreditLedgerModal = ({
                   <SettlementEquationOperator symbol="−" />
                   <SettlementStatCard
                     className="min-w-[9.5rem] flex-1 sm:min-w-[10.5rem]"
-                    label="기공, 스토어"
+                    label="소비"
                     value={periodSpendTotal}
                     hint="안내"
                     hintTooltip={periodSpendTooltip}
                     onClick={() =>
                       openSummaryDrillDown({
-                        title: "기공, 스토어 내역",
+                        title: "소비 내역",
                         filters: {
                           ...summaryFilterBase,
                           action: "SPEND",
@@ -2643,6 +2693,19 @@ export const CreditLedgerModal = ({
                 </SelectContent>
               </Select>
             </div>
+
+            {(hasDemoUsage ||
+              usageSelection.includeDemo !== true ||
+              usageSelection.includeReal !== true) && (
+              <CreditUsageScopeFilter
+                value={usageSelection}
+                onChange={(next) => {
+                  setUsageSelection(next);
+                  setUsageGuidePulse(false);
+                }}
+                pulse={usageGuidePulse && hasDemoUsage}
+              />
+            )}
 
             <Input
               value={q}

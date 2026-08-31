@@ -1,11 +1,14 @@
 // related files:
 // - web/backend/controllers/credits/creditLedger.controller.js
+// - web/backend/controllers/credits/creditLedgerStats.controller.js
 // - web/backend/controllers/admin/adminCredit.controller.js
 // - web/frontend/src/shared/components/CreditLedgerModal.tsx
+// - web/frontend/src/shared/demo/CreditUsageScopeFilter.tsx
 // - web/backend/controllers/requests/common.review.helpers.js
 // - web/backend/services/practiceTransferBilling.service.js
 // - web/backend/models/businessAnchor.model.js
 // - web/backend/services/requestCreditHold.service.js
+// - 2026-08-31: usageScope(real|demo|all) — 데모/실사용 장부·기간요약·적립보류 필터.
 // - 2026-08-31: 기공소 장부 — 치과 PTX lab-share HOLD를 기공크레딧 적립 보류 행으로 미러(잔액 미반영).
 // - 2026-08-31: 기간 요약 — 정산 적립(확정+적립 보류) 합계. 치과/기공소 수식 카드용.
 // - 2026-08-21: hold meta.convertedAt 있으면 SPEND_PAID(지급완료)로 표시.
@@ -31,6 +34,38 @@ const SETTLEMENT_LEDGER_TYPES = new Set([
 
 export function isSettlementLedgerType(type) {
   return SETTLEMENT_LEDGER_TYPES.has(String(type || "").trim().toUpperCase());
+}
+
+/** @typedef {'all' | 'real' | 'demo'} CreditUsageScope */
+
+/**
+ * 정산 내역/통계 — 데모 vs 실사용 필터.
+ * - all: 혼합(기본)
+ * - real: 유료·일반 무료·실결제 적립만(잔액 러닝과 정합)
+ * - demo: 데모 크레딧·(기공소) 치과 데모 결제 적립 보류만
+ */
+export function parseCreditUsageScope(raw) {
+  const v = String(raw || "")
+    .trim()
+    .toLowerCase();
+  if (v === "real" || v === "demo") return v;
+  return "all";
+}
+
+export function matchesCreditUsageScope(isDemoUsage, usageScope) {
+  const scope = parseCreditUsageScope(usageScope);
+  if (scope === "all") return true;
+  const isDemo = Boolean(isDemoUsage);
+  return scope === "demo" ? isDemo : !isDemo;
+}
+
+/** 저널 meta/idempotency 로 데모 크레딧 여부(지급·회수·태그). */
+export function isDemoCreditJournalMeta(meta, { idempotencyKey } = {}) {
+  if (Boolean(meta?.demoCredit)) return true;
+  const source = String(meta?.source || "").trim();
+  if (source === "demo_credit" || source === "demo_credit_exit") return true;
+  const key = String(idempotencyKey || meta?.idempotencyKey || "").toLowerCase();
+  return key.includes("demo_credit");
 }
 
 const CHARGE_TYPES = [
@@ -873,7 +908,55 @@ function creditLedgerRowTypeExpr() {
   };
 }
 
-function journalLookupAndTypeStages(journalCollectionName) {
+function creditLedgerIsDemoUsageExpr({ practiceDemoMode = false } = {}) {
+  const metaDemoOr = [
+    { $eq: [{ $ifNull: ["$journalDoc.meta.demoCredit", false] }, true] },
+    {
+      $in: [
+        { $ifNull: ["$journalDoc.meta.source", ""] },
+        ["demo_credit", "demo_credit_exit"],
+      ],
+    },
+    {
+      $regexMatch: {
+        input: { $ifNull: ["$journalDoc.idempotencyKey", ""] },
+        regex: "demo_credit",
+        options: "i",
+      },
+    },
+  ];
+  if (!practiceDemoMode) {
+    return { $or: metaDemoOr };
+  }
+  return {
+    $or: [
+      ...metaDemoOr,
+      {
+        $in: [
+          "$eventType",
+          ["CHARGE_FREE_REQUEST", "CHARGE_FREE_SHIPPING"],
+        ],
+      },
+      {
+        $in: [
+          "$type",
+          [
+            "CHARGE_FREE_REQUEST",
+            "CHARGE_FREE_SHIPPING",
+            "SPEND_FREE_REQUEST",
+            "SPEND_FREE_SHIPPING",
+          ],
+        ],
+      },
+      { $gt: [{ $ifNull: ["$spentFreeAmount", 0] }, 0] },
+    ],
+  };
+}
+
+function journalLookupAndTypeStages(
+  journalCollectionName,
+  { practiceDemoMode = false } = {},
+) {
   return [
     {
       $lookup: {
@@ -912,6 +995,11 @@ function journalLookupAndTypeStages(journalCollectionName) {
       },
     },
     { $addFields: { type: creditLedgerRowTypeExpr() } },
+    {
+      $addFields: {
+        isDemoUsage: creditLedgerIsDemoUsageExpr({ practiceDemoMode }),
+      },
+    },
     { $project: { journalDoc: 0 } },
   ];
 }
@@ -1122,6 +1210,8 @@ export function buildRequestorCreditLedgerPipeline({
   statsCategories,
   startIdx,
   pageSize,
+  usageScope = "all",
+  practiceDemoMode = false,
 }) {
   const match = {
     ownerRole: "requestor",
@@ -1134,6 +1224,7 @@ export function buildRequestorCreditLedgerPipeline({
 
   const skip = Math.max(0, Number(startIdx) || 0);
   const limit = Math.max(1, Number(pageSize) || 10);
+  const scope = parseCreditUsageScope(usageScope);
   const pipeline = [
     { $match: match },
     {
@@ -1156,9 +1247,24 @@ export function buildRequestorCreditLedgerPipeline({
   const hasRefIdIn = Array.isArray(refIdIn);
   const hasStatsCategories =
     Array.isArray(statsCategories) && statsCategories.length > 0;
-  const lookupStages = journalLookupAndTypeStages(journalCollectionName);
+  const hasUsageScopeFilter = scope !== "all";
+  const lookupStages = journalLookupAndTypeStages(journalCollectionName, {
+    practiceDemoMode: Boolean(practiceDemoMode),
+  });
+  const usageScopeMatch =
+    scope === "demo"
+      ? { isDemoUsage: true }
+      : scope === "real"
+        ? { isDemoUsage: { $ne: true } }
+        : null;
 
-  if (hasTypeFilter || hasSearch || hasRefIdIn || hasStatsCategories) {
+  if (
+    hasTypeFilter ||
+    hasSearch ||
+    hasRefIdIn ||
+    hasStatsCategories ||
+    hasUsageScopeFilter
+  ) {
     pipeline.push(lineGroupStage(), { $sort: { occurredAt: -1, _id: -1 } });
     pipeline.push(...lookupStages);
     if (hasTypeFilter) {
@@ -1180,6 +1286,9 @@ export function buildRequestorCreditLedgerPipeline({
         { $addFields: { statsCategory: creditLedgerStatsCategoryExpr() } },
         { $match: { statsCategory: { $in: statsCategories } } },
       );
+    }
+    if (usageScopeMatch) {
+      pipeline.push({ $match: usageScopeMatch });
     }
     if (hasSearch) {
       pipeline.push({ $match: { $or: searchOrs } });
@@ -1226,13 +1335,17 @@ export function parseCreditLedgerFacetResult(facetRaw, { pageSize } = {}) {
  * 의뢰자 정산 내역 상단 카드 — 필터 기간 유료/무료 충전·소비·(기공소) 정산 적립 공급가.
  * 소비는 REQ_* 실차감(HOLD 포함). 통계 탭과 동일 이벤트 기준.
  * includePendingLabSettlement=true 이면 작업완료 전 lab-share HOLD 적립 보류도 합산.
+ * usageScope=real|demo 이면 데모/실사용만 합산.
  */
 export async function aggregateRequestorPeriodLedgerSummary({
   ownerObjectId,
   occurredAt,
   journalCollectionName,
   includePendingLabSettlement = false,
+  usageScope = "all",
+  practiceDemoMode = false,
 }) {
+  const scope = parseCreditUsageScope(usageScope);
   const match = {
     ownerRole: "requestor",
     ownerId: ownerObjectId,
@@ -1258,6 +1371,32 @@ export async function aggregateRequestorPeriodLedgerSummary({
         amountBase: { $ifNull: ["$amountExcludingVat", "$amount"] },
         eventType: { $ifNull: ["$journalDoc.eventType", ""] },
         accountCode: { $ifNull: ["$accountCode", ""] },
+        spentFreeAmount: {
+          $cond: [
+            {
+              $and: [
+                {
+                  $in: [
+                    "$accountCode",
+                    ["REQ_FREE_REQUEST_CREDIT", "REQ_FREE_SHIPPING_CREDIT"],
+                  ],
+                },
+                { $lt: [{ $ifNull: ["$amountExcludingVat", "$amount"] }, 0] },
+              ],
+            },
+            {
+              $abs: { $ifNull: ["$amountExcludingVat", "$amount"] },
+            },
+            0,
+          ],
+        },
+      },
+    },
+    {
+      $addFields: {
+        isDemoUsage: creditLedgerIsDemoUsageExpr({
+          practiceDemoMode: Boolean(practiceDemoMode),
+        }),
       },
     },
     {
@@ -1266,6 +1405,8 @@ export async function aggregateRequestorPeriodLedgerSummary({
         eventType: { $first: "$eventType" },
         accountCode: { $first: "$accountCode" },
         amount: { $sum: "$amountBase" },
+        spentFreeAmount: { $sum: "$spentFreeAmount" },
+        isDemoUsage: { $max: "$isDemoUsage" },
       },
     },
   ]);
@@ -1275,6 +1416,7 @@ export async function aggregateRequestorPeriodLedgerSummary({
   let totalSpendSupply = 0;
   let totalSettlementEarnSupply = 0;
   for (const row of rows) {
+    if (!matchesCreditUsageScope(Boolean(row?.isDemoUsage), scope)) continue;
     const eventType = String(row?.eventType || "");
     const accountCode = String(row?.accountCode || "");
     const amount = Number(row?.amount || 0);
@@ -1308,6 +1450,7 @@ export async function aggregateRequestorPeriodLedgerSummary({
       labAnchorId: ownerObjectId,
       occurredAt:
         occurredAt && Object.keys(occurredAt).length ? occurredAt : null,
+      usageScope: scope,
       limit: 500,
     });
     for (const row of pendingRows) {
@@ -1385,6 +1528,7 @@ export async function listPendingLabSettlementLedgerRows({
   filterTypes = null,
   searchOrs = null,
   refIdIn = null,
+  usageScope = "all",
   limit = 200,
 } = {}) {
   const labOid = labAnchorId
@@ -1577,6 +1721,10 @@ export async function listPendingLabSettlementLedgerRows({
     const practiceId = String(doc.practiceBusinessAnchorId || "");
     const fundedByDemoCredit =
       Boolean(demoByPractice.get(practiceId)) && fromFree > 0;
+
+    if (!matchesCreditUsageScope(fundedByDemoCredit, usageScope)) {
+      continue;
+    }
 
     const occurredAtVal =
       billing.heldAt ||

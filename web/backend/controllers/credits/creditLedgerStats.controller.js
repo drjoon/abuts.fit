@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-08-31: 기공소 통계 — 치과→기공(정산)·기공→어벗츠(충전/소비) 건수·파트너·보철 분리.
+// - 2026-08-31: usageScope(real|demo|all) — 데모/실사용 통계 필터. hasDemoUsage 응답.
 // - 2026-08-31: 요약 — 유료/무료 충전 분리. 기공소 정산 적립(보류 포함) 유지.
 // - 2026-08-31: 기공소 통계 — PTX lab-share 적립 보류를 정산 적립·파트너·보철유형에 포함.
 // - 2026-08-26: 보철유형 — 견적 라인 공급가 그대로(장부 비례배분 제거·의뢰당 1회).
@@ -21,7 +23,11 @@ import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { normalizeRequestorKind } from "../../utils/requestorCapabilities.js";
 import { buildFeeQuotesForTransferDocs } from "../../services/practiceTransferBilling.service.js";
 import { parseKstQueryBoundDate } from "../../utils/kstQueryBounds.js";
-import { listPendingLabSettlementLedgerRows } from "./creditLedger.utils.js";
+import {
+  listPendingLabSettlementLedgerRows,
+  matchesCreditUsageScope,
+  parseCreditUsageScope,
+} from "./creditLedger.utils.js";
 import {
   isCustomAbutmentLabFeeLineType,
   isCustomAbutmentWork,
@@ -282,15 +288,18 @@ export async function getMyCreditLedgerStats(req, res) {
 
   const anchorObjectId = new mongoose.Types.ObjectId(String(businessAnchorId));
   const { from, to, fromYmd, toYmd, period } = parseStatsPeriod(req.query);
+  const usageScope = parseCreditUsageScope(req.query.usageScope);
 
   const anchor = await BusinessAnchor.findById(anchorObjectId)
-    .select({ requestorKind: 1, name: 1, companyName: 1 })
+    .select({ requestorKind: 1, name: 1, companyName: 1, demoMode: 1 })
     .lean();
   const requestorKind =
     normalizeRequestorKind(anchor?.requestorKind) ||
     normalizeRequestorKind(req.user?.requestorKind) ||
     "practice";
   const isLab = requestorKind === "lab";
+  const demoMode = Boolean(anchor?.demoMode);
+  const practiceDemoMode = requestorKind === "practice" && demoMode;
 
   const journalRows = await LedgerLine.aggregate([
     {
@@ -325,6 +334,34 @@ export async function getMyCreditLedgerStats(req, res) {
             timezone: "Asia/Seoul",
           },
         },
+        spentFreeLine: {
+          $cond: [
+            {
+              $and: [
+                {
+                  $in: [
+                    "$accountCode",
+                    ["REQ_FREE_REQUEST_CREDIT", "REQ_FREE_SHIPPING_CREDIT"],
+                  ],
+                },
+                { $lt: [{ $ifNull: ["$amountExcludingVat", "$amount"] }, 0] },
+              ],
+            },
+            { $abs: { $ifNull: ["$amountExcludingVat", "$amount"] } },
+            0,
+          ],
+        },
+        journalDemoCredit: {
+          $or: [
+            { $eq: [{ $ifNull: ["$journalDoc.meta.demoCredit", false] }, true] },
+            {
+              $in: [
+                { $ifNull: ["$journalDoc.meta.source", ""] },
+                ["demo_credit", "demo_credit_exit"],
+              ],
+            },
+          ],
+        },
       },
     },
     {
@@ -337,14 +374,38 @@ export async function getMyCreditLedgerStats(req, res) {
         refId: { $first: "$refId" },
         accountCode: { $first: "$accountCode" },
         amount: { $sum: "$amountBase" },
+        spentFreeAmount: { $sum: "$spentFreeLine" },
+        journalDemoCredit: { $max: "$journalDemoCredit" },
       },
     },
     { $sort: { occurredAt: 1 } },
   ]);
 
+  const classifyDemoUsage = (row) => {
+    if (Boolean(row?.journalDemoCredit)) return true;
+    if (!practiceDemoMode) return false;
+    const eventType = String(row?.eventType || "");
+    if (
+      eventType === "CHARGE_FREE_REQUEST" ||
+      eventType === "CHARGE_FREE_SHIPPING"
+    ) {
+      return true;
+    }
+    return Number(row?.spentFreeAmount || 0) > 0;
+  };
+
+  const scopedJournalRows = journalRows.filter((row) =>
+    matchesCreditUsageScope(classifyDemoUsage(row), usageScope),
+  );
+
+  let hasDemoUsage = demoMode;
+  if (!hasDemoUsage) {
+    hasDemoUsage = journalRows.some((row) => classifyDemoUsage(row));
+  }
+
   const ptxIds = new Set();
   const requestIds = new Set();
-  for (const row of journalRows) {
+  for (const row of scopedJournalRows) {
     const rt = String(row?.refType || "").trim().toUpperCase();
     const refId = row?.refId ? String(row.refId) : "";
     if (rt === "PRACTICE_TRANSFER" && mongoose.Types.ObjectId.isValid(refId)) {
@@ -355,13 +416,19 @@ export async function getMyCreditLedgerStats(req, res) {
     }
   }
 
-  const pendingLabRows = isLab
+  const pendingLabRowsAll = isLab
     ? await listPendingLabSettlementLedgerRows({
         labAnchorId: anchorObjectId,
         occurredAt: { $gte: from, $lte: to },
         limit: 500,
       })
     : [];
+  if (!hasDemoUsage && pendingLabRowsAll.some((r) => r?.fundedByDemoCredit)) {
+    hasDemoUsage = true;
+  }
+  const pendingLabRows = pendingLabRowsAll.filter((row) =>
+    matchesCreditUsageScope(Boolean(row?.fundedByDemoCredit), usageScope),
+  );
   for (const row of pendingLabRows) {
     const refId = row?.refId ? String(row.refId) : "";
     if (refId && mongoose.Types.ObjectId.isValid(refId)) ptxIds.add(refId);
@@ -457,8 +524,12 @@ export async function getMyCreditLedgerStats(req, res) {
   let totalSettlementPayoutSupply = 0;
   let transactionCount = 0;
   let orderCount = 0;
+  /** 치과→기공소(정산 적립·보류) 의뢰 건수 */
+  let settlementOrderCount = 0;
+  /** 기공소→어벗츠(어벗생산·배송) 의뢰 건수 */
+  let abutsOrderCount = 0;
 
-  for (const row of journalRows) {
+  for (const row of scopedJournalRows) {
     const eventType = String(row?.eventType || "");
     const refType = String(row?.refType || "");
     const accountCode = String(row?.accountCode || "");
@@ -497,11 +568,18 @@ export async function getMyCreditLedgerStats(req, res) {
     totalSettlementPayoutSupply += settlementPayoutSupply;
     transactionCount += 1;
 
-    const isOrder =
+    if (category === "settlement_earn") settlementOrderCount += 1;
+    if (
+      category === "abutment_production" ||
+      category === "shipping"
+    ) {
+      abutsOrderCount += 1;
+    }
+    const isPracticeOrder =
       category === "practice_transfer" ||
       category === "abutment_production" ||
       category === "shipping";
-    if (isOrder) orderCount += 1;
+    if (!isLab && isPracticeOrder) orderCount += 1;
 
     const periodPrev = byPeriodMap.get(ymd) || {
       ymd,
@@ -544,10 +622,9 @@ export async function getMyCreditLedgerStats(req, res) {
           String(ptx?.assigneeLabName || ptx?.targetLabName || "").trim() ||
           "기공소";
       }
-    } else if (rt === "REQUEST" && requestById.has(refId)) {
+    } else if (!isLab && rt === "REQUEST" && requestById.has(refId)) {
       const req = requestById.get(refId);
-      partnerLabel =
-        String(req?.caseInfos?.clinicName || "").trim() || (isLab ? "치과" : "");
+      partnerLabel = String(req?.caseInfos?.clinicName || "").trim();
     }
 
     const rowAmount = roundSupplyAmount(
@@ -558,8 +635,25 @@ export async function getMyCreditLedgerStats(req, res) {
         Math.abs(amount),
     );
 
-    if (partnerLabel) {
+    // 기공소 파트너=치과별 정산 적립만. 어벗츠 소비는 섞지 않음.
+    const includePartner =
+      Boolean(partnerLabel) &&
+      (!isLab || category === "settlement_earn");
+    if (includePartner) {
       bumpMap(byPartnerMap, partnerLabel, { amount: rowAmount, count: 1 });
+    }
+
+    // 기공소 보철유형=정산 적립(PTX)만. 어벗생산 소비는 별도 흐름.
+    if (isLab) {
+      if (settlementEarnSupply > 0 && rt === "PRACTICE_TRANSFER" && ptxById.has(refId)) {
+        ptxSpendForProsthesis.set(
+          refId,
+          roundSupplyAmount(
+            (ptxSpendForProsthesis.get(refId) || 0) + settlementEarnSupply,
+          ),
+        );
+      }
+      continue;
     }
 
     const prosthesisAmount = roundSupplyAmount(spendSupply || settlementEarnSupply);
@@ -596,7 +690,7 @@ export async function getMyCreditLedgerStats(req, res) {
 
     totalSettlementEarnSupply += amount;
     transactionCount += 1;
-    orderCount += 1;
+    settlementOrderCount += 1;
 
     const periodPrev = byPeriodMap.get(ymd) || {
       ymd,
@@ -624,6 +718,10 @@ export async function getMyCreditLedgerStats(req, res) {
         roundSupplyAmount((ptxSpendForProsthesis.get(refId) || 0) + amount),
       );
     }
+  }
+
+  if (isLab) {
+    orderCount = settlementOrderCount + abutsOrderCount;
   }
 
   for (const [refId, fallbackAmount] of ptxSpendForProsthesis) {
@@ -658,6 +756,9 @@ export async function getMyCreditLedgerStats(req, res) {
     success: true,
     data: {
       requestorKind,
+      demoMode,
+      usageScope,
+      hasDemoUsage: Boolean(hasDemoUsage),
       period: { key: period, fromYmd, toYmd },
       summary: {
         totalChargeSupply: roundSupplyAmount(totalChargeSupply),
@@ -668,6 +769,8 @@ export async function getMyCreditLedgerStats(req, res) {
         totalSettlementPayoutSupply: roundSupplyAmount(totalSettlementPayoutSupply),
         transactionCount,
         orderCount,
+        settlementOrderCount,
+        abutsOrderCount,
       },
       byPeriod: Array.from(byPeriodMap.values()).sort((a, b) =>
         a.ymd.localeCompare(b.ymd),
