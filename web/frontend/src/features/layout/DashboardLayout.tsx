@@ -1394,12 +1394,12 @@ export const DashboardLayout = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-dvh overflow-hidden bg-background">
       <LabFeeSetupPrompt
         isLab={requestorKind === "lab" || user.role === "internalLab"}
         ready={!requestorAccessLoading || user.role === "internalLab"}
       />
-      <div className="flex h-screen">
+      <div className="flex h-dvh overflow-hidden">
         <div
           className={cn(
             "fixed inset-0 z-50 bg-black/20 backdrop-blur-sm lg:hidden",
@@ -1553,8 +1553,8 @@ export const DashboardLayout = () => {
           </div>
         </aside>
 
-        <main className="flex-1 flex flex-col lg:ml-0 min-w-0 min-h-0">
-          <div className="lg:hidden flex items-center justify-between p-4 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden lg:ml-0">
+          <div className="lg:hidden flex shrink-0 items-center justify-between border-b border-border bg-background/95 p-4 backdrop-blur supports-[backdrop-filter]:bg-background/60">
             <Button variant="ghost" size="sm" onClick={() => setMobileNavOpen(true)}>
               <div className="flex flex-col space-y-1">
                 <div className="w-4 h-0.5 bg-current"></div>
@@ -1814,8 +1814,13 @@ export const DashboardLayout = () => {
                   >
                     <div
                       className={cn(
-                        "custom-scrollbar h-full min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden",
-                        isFillHeightWorkArea && "flex flex-col",
+                        "custom-scrollbar h-full min-h-0 min-w-0 flex-1 overflow-x-hidden",
+                        // Fill-height routes nest their own scroller (card list /
+                        // calendar). Outer overflow-y-auto lets scrollIntoView and
+                        // iOS bounce hide the mobile chrome (logo · 임시저장 · 검색).
+                        isFillHeightWorkArea
+                          ? "flex flex-col overflow-hidden"
+                          : "overflow-y-auto",
                       )}
                       data-dashboard-scroll="1"
                     >

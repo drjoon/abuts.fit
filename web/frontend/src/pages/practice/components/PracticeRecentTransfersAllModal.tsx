@@ -260,6 +260,16 @@ export function PracticeRecentTransfersAllModal({
     storedHiddenWeekdays,
   ]);
 
+  // Mobile page: keep logo / 임시저장 / 검색 at the top of the viewport.
+  // A leaked ancestor scrollTop (e.g. former calendar scrollIntoView) would
+  // otherwise leave 「기공소에 전송된 의뢰」 as the first visible line.
+  useEffect(() => {
+    if (!isPage || !isMobile || !open) return;
+    window.scrollTo(0, 0);
+    const scroller = document.querySelector('[data-dashboard-scroll="1"]');
+    if (scroller instanceof HTMLElement) scroller.scrollTop = 0;
+  }, [isPage, isMobile, open]);
+
   const handleCalendarDateKeyChange = useCallback(
     (key: PracticeCalendarDateKey) => {
       const next = normalizeLabReceiveCalendarDateKey(key);

@@ -375,7 +375,11 @@ export function PracticeRecentTransfersCalendar({
     const target = weekStart ? weekElsRef.current.get(weekStart) : null;
     if (!target) return;
     skipScrollSyncRef.current = true;
-    target.scrollIntoView({ block: "start", behavior });
+    // scrollIntoView would also scroll dashboard/window ancestors and hide the
+    // mobile header (임시저장·검색). Keep alignment inside this scroller only.
+    const nextTop =
+      el.scrollTop + (target.getBoundingClientRect().top - el.getBoundingClientRect().top);
+    el.scrollTo({ top: Math.max(0, nextTop), behavior });
     window.setTimeout(() => {
       skipScrollSyncRef.current = false;
       setScrollbarW(Math.max(0, el.offsetWidth - el.clientWidth));
