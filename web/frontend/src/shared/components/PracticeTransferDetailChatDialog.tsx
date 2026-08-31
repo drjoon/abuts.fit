@@ -152,6 +152,7 @@ import {
   s3DownloadBusyKey,
 } from "@/shared/files/useS3FileDownload";
 import { fetchS3BlobCached } from "@/shared/files/s3BlobCache";
+import { loadS3ImageThumbUrlsParallel } from "@/shared/files/s3ImageThumb";
 import { useToast } from "@/shared/hooks/use-toast";
 import {
   formatLabFeeMultiplierLabel,
@@ -714,50 +715,27 @@ export function PracticeTransferDetailChatDialog({
     const ac = new AbortController();
     let cancelled = false;
 
-    void (async () => {
-      const addedUrls: Record<string, string> = {};
-      const addedFiles: Record<string, File> = {};
-      for (const file of missing) {
-        if (cancelled || ac.signal.aborted) return;
-        const s3Key = String(file.s3Key || "").trim();
-        const fileName = String(file.fileName || "image").trim() || "image";
-        try {
-          const blob = await fetchS3BlobCached({
-            s3Key,
-            fileName,
-            token: authToken,
-            buildUrl: buildS3ProxyDownloadUrl,
-            signal: ac.signal,
-          });
-          if (cancelled || ac.signal.aborted) return;
-          const typed =
-            blob.type && blob.type !== "application/octet-stream"
-              ? blob
-              : new Blob([blob], { type: mimeTypeForImageFileName(fileName) });
-          addedUrls[s3Key] = URL.createObjectURL(typed);
-          addedFiles[s3Key] = fileFromImageBlob(typed, fileName);
-        } catch {
-          // 썸네일 실패 시 아이콘 placeholder
-        }
-      }
-      if (cancelled || ac.signal.aborted) {
-        for (const url of Object.values(addedUrls)) {
+    void loadS3ImageThumbUrlsParallel({
+      items: missing.map((file) => ({
+        s3Key: String(file.s3Key || "").trim(),
+        fileName: String(file.fileName || "image").trim() || "image",
+      })),
+      token: authToken,
+      signal: ac.signal,
+      existing: fileThumbUrlsRef.current,
+      onReady: (s3Key, url) => {
+        if (cancelled || ac.signal.aborted) {
           try {
             URL.revokeObjectURL(url);
           } catch {
             // ignore
           }
+          return;
         }
-        return;
-      }
-      if (!Object.keys(addedUrls).length) return;
-      const mergedUrls = { ...fileThumbUrlsRef.current, ...addedUrls };
-      const mergedFiles = { ...imageThumbFilesRef.current, ...addedFiles };
-      fileThumbUrlsRef.current = mergedUrls;
-      imageThumbFilesRef.current = mergedFiles;
-      setFileThumbUrls(mergedUrls);
-      setImageThumbFiles(mergedFiles);
-    })();
+        fileThumbUrlsRef.current = { ...fileThumbUrlsRef.current, [s3Key]: url };
+        setFileThumbUrls({ ...fileThumbUrlsRef.current });
+      },
+    });
 
     return () => {
       cancelled = true;
@@ -804,9 +782,8 @@ export function PracticeTransferDetailChatDialog({
     const ac = new AbortController();
     let cancelled = false;
 
-    void (async () => {
-      const added: Record<string, File> = {};
-      for (const file of missing) {
+    void Promise.all(
+      missing.map(async (file) => {
         if (cancelled || ac.signal.aborted) return;
         const s3Key = String(file.s3Key || "").trim();
         const fileName =
@@ -820,17 +797,16 @@ export function PracticeTransferDetailChatDialog({
             signal: ac.signal,
           });
           if (cancelled || ac.signal.aborted) return;
-          added[s3Key] = fileFromModelBlob(blob, fileName);
+          modelThumbFilesRef.current = {
+            ...modelThumbFilesRef.current,
+            [s3Key]: fileFromModelBlob(blob, fileName),
+          };
+          setModelThumbFiles({ ...modelThumbFilesRef.current });
         } catch {
           // 썸네일 실패 시 Box placeholder
         }
-      }
-      if (cancelled || ac.signal.aborted) return;
-      if (!Object.keys(added).length) return;
-      const merged = { ...modelThumbFilesRef.current, ...added };
-      modelThumbFilesRef.current = merged;
-      setModelThumbFiles(merged);
-    })();
+      }),
+    );
 
     return () => {
       cancelled = true;
@@ -840,6 +816,56 @@ export function PracticeTransferDetailChatDialog({
     authToken,
     clearModelThumbs,
     collectModelThumbFiles,
+    fileModelThumbKey,
+    open,
+  ]);
+
+  // 3D 타일 텍스처용 — 모델 파일이 있을 때만 원본 이미지를 백그라운드 로드
+  useEffect(() => {
+    if (!open || !fileModelThumbKey || !fileImageThumbKey || !authToken) return;
+    const imageFiles = collectImageThumbFiles();
+    const missing = imageFiles.filter((file) => {
+      const s3Key = String(file.s3Key || "").trim();
+      return s3Key && !imageThumbFilesRef.current[s3Key];
+    });
+    if (!missing.length) return;
+
+    const ac = new AbortController();
+    let cancelled = false;
+
+    void Promise.all(
+      missing.map(async (file) => {
+        if (cancelled || ac.signal.aborted) return;
+        const s3Key = String(file.s3Key || "").trim();
+        const fileName = String(file.fileName || "image").trim() || "image";
+        try {
+          const blob = await fetchS3BlobCached({
+            s3Key,
+            fileName,
+            token: authToken,
+            buildUrl: buildS3ProxyDownloadUrl,
+            signal: ac.signal,
+          });
+          if (cancelled || ac.signal.aborted) return;
+          imageThumbFilesRef.current = {
+            ...imageThumbFilesRef.current,
+            [s3Key]: fileFromImageBlob(blob, fileName),
+          };
+          setImageThumbFiles({ ...imageThumbFilesRef.current });
+        } catch {
+          // 3D 텍스처 실패 시 무시
+        }
+      }),
+    );
+
+    return () => {
+      cancelled = true;
+      ac.abort();
+    };
+  }, [
+    authToken,
+    collectImageThumbFiles,
+    fileImageThumbKey,
     fileModelThumbKey,
     open,
   ]);
@@ -1224,8 +1250,12 @@ export function PracticeTransferDetailChatDialog({
     !workCanceled &&
     !workCompleted;
   const workFileDropActive = Boolean(
-    workFileDrop && !workFileDrop.disabled && !minimized,
+    workFileDrop &&
+      !workFileDrop.disabled &&
+      !minimized &&
+      panelTab !== "chat",
   );
+  const chatFileDropActive = panelTab === "chat" && !inputDisabled && !minimized;
   const workFileDropGuideText = String(workFileDrop?.guideText || "").trim();
   const workFileDropGuideDetail = String(
     workFileDrop?.guideDetail || "",
@@ -1429,7 +1459,12 @@ export function PracticeTransferDetailChatDialog({
             workFileDrop?.fileInputId || "practice-transfer-detail-noop-drop"
           }
           onFiles={workFileDrop?.onFiles ?? (() => {})}
-          disabled={!workFileDrop || workFileDrop.disabled || minimized}
+          disabled={
+            !workFileDrop ||
+            workFileDrop.disabled ||
+            minimized ||
+            panelTab === "chat"
+          }
           showDefaultUi={false}
           fillHeight
           acceptedHint={workFileDrop?.dropHint || PRACTICE_ACCEPTED_HINT}
@@ -1868,6 +1903,35 @@ export function PracticeTransferDetailChatDialog({
             value="chat"
             className="mt-0 flex min-h-0 flex-1 flex-col overflow-hidden focus-visible:ring-0"
           >
+            <PracticeTransferFileDropTarget
+              fileInputId="practice-transfer-chat-attach-drop"
+              onFiles={onAttachChatFiles}
+              disabled={!chatFileDropActive}
+              showDefaultUi={false}
+              filterFiles={(files) => files}
+              fillHeight
+              className="flex min-h-0 flex-1 flex-col overflow-hidden"
+              activeClassName="ring-2 ring-inset ring-primary bg-primary-soft/25"
+            >
+              {({ isDragActive: chatDragActive }) => (
+                <>
+              {chatDragActive && chatFileDropActive ? (
+                <div
+                  className="pointer-events-none absolute inset-0 z-[305] flex flex-col items-center justify-center gap-2 rounded-lg bg-primary/10 px-6 backdrop-blur-[2px]"
+                  aria-hidden
+                >
+                  <div className="rounded-full bg-primary-soft p-3 text-primary-strong shadow-sm">
+                    <UploadCloud className="h-8 w-8" />
+                  </div>
+                  <p className="text-sm font-semibold text-primary-strong">
+                    사진·파일을 놓아 첨부
+                  </p>
+                  <p className="text-center text-xs text-muted-foreground">
+                    채팅에 보낼 파일을 여기에 놓으세요
+                  </p>
+                </div>
+              ) : null}
+
               {counterpartyMemoStrip}
 
               {onEditRequest || onCancelRequest ? (
@@ -2168,6 +2232,9 @@ export function PracticeTransferDetailChatDialog({
                   />
                 </div>
               </div>
+                </>
+              )}
+            </PracticeTransferFileDropTarget>
           </TabsContent>
           </>
           ) : null}
