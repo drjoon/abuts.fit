@@ -26,6 +26,7 @@
  * - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
  * - web/frontend/src/shared/components/practice/PracticeLabRatingControl.tsx
  * - web/frontend/src/shared/practice/practiceLabRating.ts
+ * - 2026-08-31: 캘린더·날짜선택으로 고른 치과도착일은 기공소 선택·설정 동기화가 덮어쓰지 않음.
  * - 2026-08-28: 구강스캔 캘린더 진입 시 /my?page=1 병렬 조회 제거(캘린더 구간 API만). 상세·휴지통·전송 후 지연 로드.
  * - 2026-08-28: 의뢰 파일 — /my files[] 전부 표시(스캔·이미지). 단건 caseInfos.file 폴백만.
  * - 2026-08-28: 전송 시 draftFilesRef+로컬 잔여를 합치고, promote 동기화 완료를 기다림(파일 일부 누락 방지).
@@ -1277,6 +1278,11 @@ export const PracticeFileTransferPage = ({
   const selectedTransferIdRef = useRef("");
   const localFormUpdatedAtRef = useRef(0);
   const skipNextArrivalAutoSyncRef = useRef(false);
+  /**
+   * 캘린더 클릭·날짜 선택기로 명시한 치과도착일.
+   * true면 기공소 선택/설정 동기화가 arrivalDate를 기본 일수로 덮지 않는다.
+   */
+  const arrivalDatePinnedRef = useRef(false);
   const suppressLocalFormPersistRef = useRef(false);
   const skipFormAutosaveRef = useRef(false);
   const editingSentTransferRef = useRef<EditingSentTransfer | null>(null);
@@ -1415,14 +1421,16 @@ export const PracticeFileTransferPage = ({
         accountArrivalDefaultDaysRef.current,
         labName,
       );
+      // effect auto-sync와 경합하지 않도록 스킵 후 기본 일수만(또는 도착일까지) 맞춘다.
+      skipNextArrivalAutoSyncRef.current = true;
+      arrivalDefaultDaysRef.current = nextDays;
+      setArrivalDefaultDays(nextDays);
+      // 캘린더·날짜선택기로 이미 고른 도착일은 유지(기공소 기본 일수로 되돌리지 않음).
+      if (arrivalDatePinnedRef.current) return;
       const orderYmd = String(orderDateRef.current || todayDateRef.current || "").trim();
       const nextArrival = orderYmd
         ? addDaysToDateInput(orderYmd, nextDays)
         : addDaysToDateInput(todayDateRef.current, nextDays);
-      // effect auto-sync와 경합하지 않도록 스킵 후 도착일을 직접 맞춘다.
-      skipNextArrivalAutoSyncRef.current = true;
-      arrivalDefaultDaysRef.current = nextDays;
-      setArrivalDefaultDays(nextDays);
       if (nextArrival) {
         setArrivalDate(nextArrival);
         setRushProcessing(
@@ -2001,6 +2009,8 @@ export const PracticeFileTransferPage = ({
       nextAccountArrivalDefaultDays,
       selectedLabNameRef.current,
     );
+    // 설정 동기화가 기본 일수만 바꿔도 auto-sync effect가 명시 도착일을 덮지 않게 한다.
+    skipNextArrivalAutoSyncRef.current = true;
     setArrivalDefaultDays(nextActiveArrivalDefaultDays);
     setProsthesisTypeCatalog(nextProsthesisTypes);
     setProsthesisTypeCatalogDraft(nextProsthesisTypes);
@@ -2520,6 +2530,10 @@ export const PracticeFileTransferPage = ({
                     Number(parsed.arrivalDefaultDays ?? arrivalDefaultDays),
                   ),
                 );
+          // draft에 저장된 도착일은 사용자가 고른 값으로 본다.
+          arrivalDatePinnedRef.current = Boolean(
+            restoredArrival && restoredArrival >= todayDate,
+          );
           setArrivalDate(nextArrival);
           setRushProcessing(
             shouldEnablePracticeRushProcessing({
@@ -2834,6 +2848,7 @@ export const PracticeFileTransferPage = ({
           typeof payload.arrivalDefaultDays === "number" ||
           Array.isArray(payload.labArrivalDefaults)
         ) {
+          skipNextArrivalAutoSyncRef.current = true;
           setArrivalDefaultDays(
             resolveLabArrivalDefaultDays(
               selectedLabIdRef.current,
@@ -3579,6 +3594,7 @@ export const PracticeFileTransferPage = ({
     setSelectedLab(null);
     setPatientName("");
     setRequestMemo("");
+    arrivalDatePinnedRef.current = false;
     setOrderDate(todayDate);
     const nextArrivalDate = addDaysToDateInput(todayDate, arrivalDefaultDays);
     setArrivalDate(nextArrivalDate);
@@ -4229,6 +4245,10 @@ export const PracticeFileTransferPage = ({
                   Number(parsed.arrivalDefaultDays ?? arrivalDefaultDays),
                 ),
               );
+        arrivalDatePinnedRef.current = Boolean(
+          restoredArrival &&
+            (options?.keepPastArrival || restoredArrival >= todayDate),
+        );
         setArrivalDate(nextArrival);
         setRushProcessing(
           shouldEnablePracticeRushProcessing({
@@ -6623,11 +6643,13 @@ export const PracticeFileTransferPage = ({
     setArrivalDefaultDays(nextArrivalDefaultDays);
     const nextOrderDate = todayDate;
     const requestedArrival = String(options?.arrivalYmd || "").trim();
-    const nextArrivalDate =
+    const pinnedFromCalendar =
       /^\d{4}-\d{2}-\d{2}$/.test(requestedArrival) &&
-      requestedArrival > todayDate
-        ? requestedArrival
-        : addDaysToDateInput(todayDate, nextArrivalDefaultDays);
+      requestedArrival > todayDate;
+    const nextArrivalDate = pinnedFromCalendar
+      ? requestedArrival
+      : addDaysToDateInput(todayDate, nextArrivalDefaultDays);
+    arrivalDatePinnedRef.current = pinnedFromCalendar;
     skipNextArrivalAutoSyncRef.current = true;
     setOrderDate(nextOrderDate);
     setArrivalDate(nextArrivalDate);
@@ -7419,6 +7441,8 @@ export const PracticeFileTransferPage = ({
                     if (willChangeOrder || willChangeDays) {
                       skipNextArrivalAutoSyncRef.current = true;
                     }
+                    // 사용자가 고른 도착일 — 이후 기공소 선택·설정 동기화가 덮지 않음.
+                    arrivalDatePinnedRef.current = true;
                     setOrderDate(todayDate);
                     const days = getPracticeWorkPeriodDays(todayDate, arrival);
                     if (isPracticeWorkPeriodBlocked(days)) {
@@ -8010,6 +8034,7 @@ export const PracticeFileTransferPage = ({
                 ) ||
                 "";
               skipNextArrivalAutoSyncRef.current = true;
+              arrivalDatePinnedRef.current = true;
               setOrderDate(todayDate);
               if (nextArrival) {
                 setArrivalDate(nextArrival);
