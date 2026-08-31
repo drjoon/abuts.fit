@@ -126,6 +126,7 @@
 // - 2026-08-26: 기공소 수신 상단 — 취소·거부 필터 뱃지 제거(종료 건은 목록에 두지 않음).
 // - 2026-08-31: 모바일(<768) — 캘린더 대신 최소 카드 목록(조회·수락·채팅). 작업 업로드는 PC.
 // - 2026-08-31: 모바일 — ExoCAD·아노·상태 뱃지 숨김(치과 모바일과 동일, 검색만).
+// - 2026-08-31: 수신 검색에 환자명(rawMemo)·치아 포함. 모바일 검색바 포커스 링 여백.
 import {
   useCallback,
   useEffect,
@@ -1718,11 +1719,16 @@ export function RequestorPracticeReceivePage({
         .join(" ")
         .toLowerCase();
       const statusLabel = getTransferDisplayStatus(t);
+      const patientName = resolvePracticeTransferListPatientName(t);
+      const toothNumbers = resolvePracticeTransferListToothNumbers(t);
       const blob = [
         t.transferId,
         t.practice.businessName,
         t.practice.userName,
         t.transferMemo,
+        t.rawTransferMemo,
+        patientName,
+        toothNumbers,
         t.orderDate,
         t.arrivalDate,
         t.prosthesisTypes.join(" "),
@@ -4939,8 +4945,8 @@ export function RequestorPracticeReceivePage({
           ) : null}
           {isMobile ? (
             <>
-              <div className="relative shrink-0">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <div className="relative shrink-0 px-1 py-1">
+                <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
