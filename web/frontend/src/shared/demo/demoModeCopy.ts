@@ -47,9 +47,9 @@ export const CREDIT_USAGE_SCOPE_FILTER_HINT =
 export const PTX_CA_INSUFFICIENT_CREDIT_TITLE = "크레딧이 부족합니다";
 
 export const PTX_CA_INSUFFICIENT_CREDIT_DESCRIPTION_LINES = [
-  "기공의뢰의 커스텀어벗 생산은 유료/무료 크레딧으로 결제됩니다.",
+  "어벗 디자인을 올리고 생산을 시작할 때 유료/무료 크레딧으로 결제됩니다.",
   "데모 크레딧은 사용할 수 없습니다.",
-  "충전 후 다시 시도해 주세요.",
+  "충전 후 다시 업로드해 주세요.",
 ] as const;
 
 export const PTX_CA_INSUFFICIENT_CREDIT_CONFIRM_LABEL = "충전하기";

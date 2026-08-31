@@ -4246,6 +4246,10 @@ export function RequestorPracticeReceivePage({
             res.data && typeof res.data === "object"
               ? (res.data as Record<string, unknown>)
               : {};
+          if (isPtxCaInsufficientCreditBody(body, res.status)) {
+            openPtxCaCreditConfirm(String(body.message || ""));
+            return;
+          }
           throw new Error(
             String(body.message || "어벗디자인 파일 업로드에 실패했습니다."),
           );
@@ -4342,6 +4346,7 @@ export function RequestorPracticeReceivePage({
       designConfirmQueueIndex,
       designConfirmRequestId,
       designConfirmTransfer,
+      openPtxCaCreditConfirm,
       toast,
       token,
       ensureFilesUploaded,

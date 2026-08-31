@@ -5,11 +5,12 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-08-31: PTX CA 생산·배송 크레딧 hold는 수락이 아니라 design-handoff에서 잡음.
 // - 2026-08-28: 심플어벗(치과 재고)은 어벗츠 CA Request 생성 대상에서 제외.
 // - 2026-08-22: 치과 멤버십/일반 청구 이중가 제거. 고시 membership* 단일가. pricingTier 분기 삭제.
 // - 2026-08-22: PTX 작업취소 시 연동 CA Request 크레딧 hold도 즉시 해제(내역·잔액 지연 방지).
 // - 2026-08-22: already_created여도 연동 CA 크레딧 hold를 다시 시도(누락 hold 보정, 기존은 idempotent skip).
-// - 2026-08-21: PTX CA 배송비는 Request 박스 hold(수락 시 holdRequestCreditsOnSubmit).
+// - 2026-08-21: PTX CA 배송비는 Request 박스 hold(디자인 핸드오프 시 holdRequestCreditsOnSubmit).
 // - 2026-08-21: PTX 작업취소 시 연동 CA 취소 후 어벗츠로의뢰 건수·목록 캐시·소켓 갱신.
 // - 2026-08-21: PTX(구강스캔 기공의뢰수신) CA는 헥스 확인 샘플 미생성 — 어벗츠 직접의뢰(어벗디자인)에서만.
 // - 2026-08-21: 헥스 확인 샘플은 relatedRequestIds에 넣지 않음(어벗 개수 오인 방지).
@@ -84,10 +85,7 @@ import {
 } from "../utils/practiceTransferRush.js";
 import { triggerDashboardSummaryRefreshForAnchorId } from "./requestSnapshotTriggers.service.js";
 import { recomputeBulkShippingSnapshotForBusinessAnchorId } from "./bulkShippingSnapshot.service.js";
-import {
-  holdRequestCreditsOnSubmit,
-  releaseRequestCreditHoldsOnCancel,
-} from "./requestCreditHold.service.js";
+import { releaseRequestCreditHoldsOnCancel } from "./requestCreditHold.service.js";
 import { updateReviewStatusByStage } from "../controllers/requests/common.review.controller.js";
 import { prevKoreanBusinessDayYmd } from "../utils/krBusinessDays.js";
 import { isPendingRoundBarAbutment, isSimpleAbutmentModeForFee } from "../utils/labFeeSchedule.js";
@@ -986,34 +984,7 @@ export async function ensureAbutmentRequestsOnAccept({
     await syncRelatedRequestOwnershipToAcceptingLab(transferDoc);
   }
 
-  // 신규 생성·already_created 모두 hold. 이미 잡힌 건은 holdRequestCreditsOnSubmit이 skip.
-  // (예전: already_created면 hold 통째 skip → 형제 CA 일부만 보류되는 구멍)
-  if (requestIds.length > 0) {
-    const relatedDocs = await Request.find({
-      _id: {
-        $in: requestIds
-          .filter((id) => Types.ObjectId.isValid(id))
-          .map((id) => new Types.ObjectId(id)),
-      },
-    });
-    const holdTargets = relatedDocs.filter(
-      (doc) => String(doc?.manufacturerStage || "").trim() !== "취소",
-    );
-    if (holdTargets.length) {
-      try {
-        await holdRequestCreditsOnSubmit({
-          requests: holdTargets,
-          actorUserId,
-        });
-      } catch (err) {
-        console.error(
-          "[PTX_CA] credit hold on accept failed",
-          err?.message || err,
-        );
-        throw err;
-      }
-    }
-  }
+  // 생산·배송 크레딧 hold는 design-handoff에서 잡음(수락 시점 보류 없음).
 
   return {
     created: result.skippedReason !== "already_created" && requestIds.length > 0,

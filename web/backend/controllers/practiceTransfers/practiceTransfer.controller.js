@@ -240,7 +240,7 @@ const LAB_FEE_UNCONFIGURED_ACCEPT_MESSAGE =
 /** PTX CA(어벗 생산) — 기공소 실크레딧 부족 */
 const PTX_CA_INSUFFICIENT_CREDIT_REASON = "insufficient_credit_for_ptx_ca";
 const PTX_CA_INSUFFICIENT_CREDIT_MESSAGE =
-  "커스텀어벗 생산은 유료/무료 크레딧으로 결제됩니다. 데모 크레딧은 사용할 수 없습니다. 충전 후 다시 시도해 주세요.";
+  "커스텀어벗 생산은 유료/무료 크레딧으로 결제됩니다. 데모 크레딧은 사용할 수 없습니다. 충전 후 디자인을 다시 업로드해 주세요.";
 
 function isPtxCaInsufficientCreditError(err) {
   const reason = String(err?.payload?.reason || err?.code || "").trim();

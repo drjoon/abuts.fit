@@ -1,3 +1,4 @@
+// - 2026-08-31: PTX CA 생산·배송 크레딧 hold를 design-handoff로 이동(수락 시 보류 제거). 취소 시 hold 해제.
 // - 2026-08-26: PTX 디자인 핸드오프 → 제조사 준비 진입 시 관리자 의뢰 배지 +1.
 // - 2026-08-22: 구강스캔 없는 PTX — designSourceFiles 없어도 취소·재업로드(어벗 STL 클리어).
 // - 2026-08-22: design_custom_abutment 레거시. 핸드오프는 PTX(labDesigned)·레거시 mode. 취소 복원은 custom_abutment.
@@ -56,12 +57,48 @@ import {
   grantAbutmentDesignLabFee,
   revokeAbutmentDesignLabFee,
 } from "../../services/practiceTransferBilling.service.js";
+import {
+  holdRequestCreditsOnSubmit,
+  releaseRequestCreditHoldsOnCancel,
+} from "../../services/requestCreditHold.service.js";
 import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
 import { emitAppEventToRoles, emitAppEventToUser } from "../../socket.js";
 import { resolvePrcFileNames } from "./prcMapping.utils.js";
 import { triggerRhinoProcessFileForRequest } from "../rhino/rhino.controller.js";
 import { ensureLotNumberOnReadyEnter } from "./utils.js";
 
+/** PTX CA(어벗 생산) — 기공소 실크레딧 부족 (수락→디자인 업로드 시점) */
+const PTX_CA_INSUFFICIENT_CREDIT_REASON = "insufficient_credit_for_ptx_ca";
+const PTX_CA_INSUFFICIENT_CREDIT_MESSAGE =
+  "커스텀어벗 생산은 유료/무료 크레딧으로 결제됩니다. 데모 크레딧은 사용할 수 없습니다. 충전 후 디자인을 다시 업로드해 주세요.";
+
+function isPtxCaInsufficientCreditError(err) {
+  const reason = String(err?.payload?.reason || err?.code || "").trim();
+  const status = Number(err?.statusCode || 0);
+  return (
+    status === 402 ||
+    reason === "insufficient_credit_for_hold" ||
+    reason === PTX_CA_INSUFFICIENT_CREDIT_REASON ||
+    reason === "insufficient_lab_credit_for_abuts_shipping"
+  );
+}
+
+function rejectPtxCaInsufficientCredit(res, err) {
+  const status = Number(err?.statusCode || 402);
+  const reason = String(err?.payload?.reason || err?.code || "").trim();
+  const rawMsg = String(err?.message || "").trim();
+  const useCanonical =
+    !rawMsg ||
+    reason === "insufficient_credit_for_hold" ||
+    reason === PTX_CA_INSUFFICIENT_CREDIT_REASON ||
+    rawMsg.includes("크레딧이 부족");
+  return res.status(status >= 400 && status < 600 ? status : 402).json({
+    success: false,
+    message: useCanonical ? PTX_CA_INSUFFICIENT_CREDIT_MESSAGE : rawMsg,
+    reason: PTX_CA_INSUFFICIENT_CREDIT_REASON,
+    ...(err?.payload && typeof err.payload === "object" ? err.payload : {}),
+  });
+}
 /** 치과 발신 FE — 디자인 미러 후 의뢰상세 작업파일·컨펌 CTA 갱신 */
 const emitAbutmentDesignReadyToPractice = async (transferDoc) => {
   try {
@@ -298,6 +335,7 @@ const markPtxRelatedRequestsCancelled = async (transferId) => {
 
   const requests = await Request.find({ _id: { $in: ids } });
   let modifiedCount = 0;
+  const excludeSiblingIds = ids.map((id) => String(id));
   for (const request of requests) {
     const sourceRows = Array.isArray(request.caseInfos?.designSourceFiles)
       ? request.caseInfos.designSourceFiles.map(toStoredFileMeta).filter(Boolean)
@@ -324,6 +362,20 @@ const markPtxRelatedRequestsCancelled = async (transferId) => {
     request.manufacturerStage = "취소";
     await request.save();
     modifiedCount += 1;
+
+    // 디자인 업로드 시 잡은 생산·배송 hold 해제(재업로드 때 잔액 재검사).
+    try {
+      await releaseRequestCreditHoldsOnCancel({
+        request,
+        excludeSiblingIds,
+      });
+    } catch (holdErr) {
+      console.warn(
+        "[DESIGN_HANDOFF_CANCEL] credit hold release failed",
+        String(request?._id || ""),
+        holdErr?.message || holdErr,
+      );
+    }
   }
   return { modifiedCount };
 };
@@ -602,6 +654,26 @@ export async function handoffDesignToProduction(req, res) {
           transferDoc,
           requestedAt: now,
         });
+      }
+
+      // 생산·배송 보류: 디자인 업로드 시점(수락 시에는 잡지 않음). 이미 hold면 skip.
+      try {
+        await holdRequestCreditsOnSubmit({
+          requests: [request],
+          actorUserId: userId,
+        });
+      } catch (holdErr) {
+        console.error(
+          "[DESIGN_HANDOFF] PTX CA credit hold failed",
+          holdErr?.message || holdErr,
+        );
+        // 아직 save 전 — designCompletedAt 등 in-memory만 되돌림
+        request.designCompletedAt = undefined;
+        request.designCompletedBy = undefined;
+        if (isPtxCaInsufficientCreditError(holdErr)) {
+          return rejectPtxCaInsufficientCredit(res, holdErr);
+        }
+        throw holdErr;
       }
 
       await ensureLotNumberOnReadyEnter(request);
