@@ -748,8 +748,10 @@ export async function assertPracticeTransferPaidCreditSufficient({
         freeCredit: freeRequestCredit + freeShippingCredit,
       };
     } else {
-      // 스냅샷 없으면 GL 집계로 응답을 막지 않음. hold가 확정 검증.
-      // 기공소 abuts 배송비는 아래에서 별도 검사.
+      // 스냅샷 없으면 GL로 검사. 스킵하면 create 후 hold 실패→전송 삭제·draft만 남음.
+      balance = await computeBusinessCreditBalanceFromLedger({
+        businessAnchorId: practiceId,
+      });
     }
   } else if (practiceRequired > 0) {
     balance = await computeBusinessCreditBalanceFromLedger({

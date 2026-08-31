@@ -27,6 +27,7 @@
  * - web/frontend/src/shared/components/practice/PracticeLabRatingControl.tsx
  * - web/frontend/src/shared/practice/practiceLabRating.ts
  * - 2026-08-31: 캘린더·날짜선택으로 고른 치과도착일은 기공소 선택·설정 동기화가 덮어쓰지 않음.
+ * - 2026-08-31: 전송 직후 calendarRefreshNonce로 메인 캘린더 구간 재조회.
  * - 2026-08-28: 구강스캔 캘린더 진입 시 /my?page=1 병렬 조회 제거(캘린더 구간 API만). 상세·휴지통·전송 후 지연 로드.
  * - 2026-08-28: 의뢰 파일 — /my files[] 전부 표시(스캔·이미지). 단건 caseInfos.file 폴백만.
  * - 2026-08-28: 전송 시 draftFilesRef+로컬 잔여를 합치고, promote 동기화 완료를 기다림(파일 일부 누락 방지).
@@ -1227,6 +1228,7 @@ export const PracticeFileTransferPage = ({
   const [trashedDraftList, setTrashedDraftList] = useState<DraftListSummary[]>([]);
   const [activeDraftId, setActiveDraftId] = useState<string | null>(null);
   const [toothChartResetNonce, setToothChartResetNonce] = useState(0);
+  const [calendarRefreshNonce, setCalendarRefreshNonce] = useState(0);
   const [recentRequests, setRecentRequests] = useState<RecentRequestItem[]>([]);
   const [recentRequestsLoading, setRecentRequestsLoading] = useState(false);
   const [recentRequestsError, setRecentRequestsError] = useState("");
@@ -6370,10 +6372,12 @@ export const PracticeFileTransferPage = ({
         setExpressDone(true);
         setExpressStepId("lab");
         void loadRecentRequests({ silent: true });
+        setCalendarRefreshNonce((n) => n + 1);
         setComposeOpen(false);
       } else {
         setComposeOpen(false);
         void loadRecentRequests({ silent: true });
+        setCalendarRefreshNonce((n) => n + 1);
       }
 
       void (async () => {
@@ -7658,6 +7662,7 @@ export const PracticeFileTransferPage = ({
           showCalendarNewRequestHint={!calendarNewRequestHintDismissed}
           onDismissCalendarNewRequestHint={dismissCalendarNewRequestHint}
           onSelectFutureDay={openComposeForArrival}
+          calendarRefreshNonce={calendarRefreshNonce}
           onSelectTransfer={(transfer) => {
             void handleOpenTransferDialog(transfer, {
               returnToAllModal: true,

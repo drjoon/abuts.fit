@@ -163,6 +163,7 @@ import { resolvePracticeTransferSkipJig } from "../../utils/practiceTransferLabS
 // - web/backend/utils/practiceTransferAbutmentPresets.js
 // - web/backend/utils/practiceLabRating.js
 // - web/backend/utils/practiceTransferStage.js
+// - 2026-08-31: createPracticeTransfer — 크레딧 hold 성공 후에만 201. 실패 시 전송 삭제·402(가짜 성공→임시저장만 남는 버그).
 // - 2026-08-28: 캘린더 /my — toCalendarOwnedRequestRows에 files[] 전부(상세 모달 1개→N개 지연 표시 방지).
 // - 2026-08-27: append-arrival — 재주문일(오늘)+재도착일 누적(주문일/도착일 캘린더, 크레딧 미중복).
 // - 2026-08-27: append-arrival — 동일 건 치과도착일 누적(캘린더 다중 표시, 크레딧 미중복).
@@ -2936,6 +2937,91 @@ export async function createPracticeTransfer(req, res) {
       ...toAutoMatchApiFields(transferDoc),
     };
 
+    // hold 성공 전에 201을 주면 FE는 전송 완료로 보고 폼을 비우지만,
+    // hold 실패 시 전송만 삭제되고 draft는 남아 「임시저장만 됨」처럼 보인다.
+    let holdOk = true;
+    try {
+      const holdResult = await holdPracticeTransferCredits({
+        transfer: transferDoc,
+        toothWorks: toothWorksRaw,
+        holdAmount: Number(billingPreview?.total || feeQuote?.fees?.total || 0),
+        holdLabAmount: Number(billingPreview?.labFeeTotal || 0),
+        holdAbutmentAmount: Number(billingPreview?.abutmentRetailTotal || 0),
+        actorUserId: req.user?._id,
+        shipping: createShippingFees,
+        skipExistingHoldCheck: true,
+      });
+      if (holdResult?.held || holdResult?.reason === "already_held") {
+        const heldAt = new Date();
+        const heldBilling = {
+          ...(transferDoc.billing && typeof transferDoc.billing === "object"
+            ? transferDoc.billing.toObject?.() || transferDoc.billing
+            : billingPreview),
+          heldAt,
+          heldTotal: Number(holdResult.heldTotal || billingPreview?.total || 0),
+          heldLabTotal: Number(
+            holdResult.heldLabTotal ?? billingPreview?.labFeeTotal ?? 0,
+          ),
+          heldAbutmentTotal: Number(
+            holdResult.heldAbutmentTotal ??
+              billingPreview?.abutmentRetailTotal ??
+              0,
+          ),
+          heldDesignFeeTotal: Number(holdResult.heldDesignFeeTotal || 0),
+          heldShippingLabTotal: Number(holdResult.heldShippingLabTotal || 0),
+          heldShippingAbutsTotal: Number(
+            holdResult.heldShippingAbutsTotal || 0,
+          ),
+          holdFromPaid: Number(holdResult.fromPaid || 0),
+          holdFromFreeRequest: Number(holdResult.fromFreeRequest || 0),
+          holdFromFreeShipping: Number(holdResult.fromFreeShipping || 0),
+        };
+        await PracticeTransfer.updateOne(
+          { _id: transferDoc._id },
+          { $set: { billing: heldBilling } },
+        );
+        transferDoc.billing = heldBilling;
+        if (Number(holdResult.heldTotal || 0) > 0) {
+          void emitCreditBalanceUpdatedToBusiness({
+            businessAnchorId: practiceAnchorId,
+            balanceDelta: -Number(holdResult.heldTotal || 0),
+            reason: "practice_transfer_hold",
+            refId: transferDoc._id,
+          }).catch(() => null);
+        }
+      } else if (holdResult?.reason && holdResult.reason !== "zero_fee") {
+        holdOk = false;
+      }
+    } catch (holdErr) {
+      holdOk = false;
+      console.warn(
+        "[practiceTransfer] create hold failed",
+        String(transferDoc?._id || ""),
+        holdErr?.message || holdErr,
+      );
+    }
+
+    if (!holdOk) {
+      try {
+        await rollbackPracticeTransferBilling({ transferId: transferDoc._id });
+      } catch {
+        // ignore
+      }
+      try {
+        await PracticeTransfer.deleteOne({ _id: transferDoc._id });
+      } catch {
+        // ignore
+      }
+      // draft는 유지 — 잔액 충전 후 같은 작성 내용으로 재전송 가능
+      return res.status(402).json({
+        success: false,
+        message:
+          "크레딧 보류에 실패해 의뢰를 접수하지 못했습니다. 잔액을 확인한 뒤 다시 전송해 주세요.",
+        reason: "practice_transfer_hold_failed",
+        transferId,
+      });
+    }
+
     res.status(201).json({
       success: true,
       message:
@@ -2954,98 +3040,6 @@ export async function createPracticeTransfer(req, res) {
     });
 
     void (async () => {
-      let holdOk = true;
-      try {
-        const holdResult = await holdPracticeTransferCredits({
-          transfer: transferDoc,
-          toothWorks: toothWorksRaw,
-          holdAmount: Number(billingPreview?.total || feeQuote?.fees?.total || 0),
-          holdLabAmount: Number(billingPreview?.labFeeTotal || 0),
-          holdAbutmentAmount: Number(billingPreview?.abutmentRetailTotal || 0),
-          actorUserId: req.user?._id,
-          shipping: createShippingFees,
-          skipExistingHoldCheck: true,
-        });
-        if (holdResult?.held || holdResult?.reason === "already_held") {
-          const heldAt = new Date();
-          const heldBilling = {
-            ...(transferDoc.billing && typeof transferDoc.billing === "object"
-              ? transferDoc.billing.toObject?.() || transferDoc.billing
-              : billingPreview),
-            heldAt,
-            heldTotal: Number(holdResult.heldTotal || billingPreview?.total || 0),
-            heldLabTotal: Number(
-              holdResult.heldLabTotal ?? billingPreview?.labFeeTotal ?? 0,
-            ),
-            heldAbutmentTotal: Number(
-              holdResult.heldAbutmentTotal ??
-                billingPreview?.abutmentRetailTotal ??
-                0,
-            ),
-            heldDesignFeeTotal: Number(holdResult.heldDesignFeeTotal || 0),
-            heldShippingLabTotal: Number(holdResult.heldShippingLabTotal || 0),
-            heldShippingAbutsTotal: Number(
-              holdResult.heldShippingAbutsTotal || 0,
-            ),
-            holdFromPaid: Number(holdResult.fromPaid || 0),
-            holdFromFreeRequest: Number(holdResult.fromFreeRequest || 0),
-            holdFromFreeShipping: Number(holdResult.fromFreeShipping || 0),
-          };
-          await PracticeTransfer.updateOne(
-            { _id: transferDoc._id },
-            { $set: { billing: heldBilling } },
-          );
-          transferDoc.billing = heldBilling;
-          if (Number(holdResult.heldTotal || 0) > 0) {
-            void emitCreditBalanceUpdatedToBusiness({
-              businessAnchorId: practiceAnchorId,
-              balanceDelta: -Number(holdResult.heldTotal || 0),
-              reason: "practice_transfer_hold",
-              refId: transferDoc._id,
-            }).catch(() => null);
-          }
-        } else if (holdResult?.reason && holdResult.reason !== "zero_fee") {
-          holdOk = false;
-        }
-      } catch (holdErr) {
-        holdOk = false;
-        console.warn(
-          "[practiceTransfer] create hold failed",
-          String(transferDoc?._id || ""),
-          holdErr?.message || holdErr,
-        );
-      }
-
-      if (!holdOk) {
-        try {
-          await rollbackPracticeTransferBilling({ transferId: transferDoc._id });
-        } catch {
-          // ignore
-        }
-        try {
-          await PracticeTransfer.deleteOne({ _id: transferDoc._id });
-        } catch {
-          // ignore
-        }
-        try {
-          await emitPracticeTransferEventToPracticeUsers({
-            practiceBusinessAnchorId: req.user?.businessAnchorId,
-            type: "practice:transfer-updated",
-            payload: {
-              source: "createPracticeTransfer",
-              action: "hold-failed",
-              transferId,
-              transferMongoId: String(transferDoc?._id || ""),
-              status: "deleted",
-            },
-            extraUserIds: [req.user?._id],
-          });
-        } catch {
-          // ignore
-        }
-        return;
-      }
-
       let clearedDraftId = realtimePayload.clearedDraftId;
       try {
         if (clearedDraftId) {

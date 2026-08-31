@@ -33,7 +33,9 @@
  * 2026-08-28: variant page|modal — 구강스캔 메인 캘린더 + 미래일 신규 의뢰.
  * - 2026-08-28: 모바일 — 검색을 상태뱃지(리메이크) 오른쪽 같은 줄로 옮겨 헤더 줄 수 축소.
  * - 2026-08-28: 검색↔신규의뢰 안내 위치 교환 — 안내=헤더, 검색=캘린더 툴바.
- */import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+ * - 2026-08-31: calendarRefreshNonce — 전송 직후 소켓 없이도 캘린더 구간 재조회.
+ */
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronRight, Search, Trash2, X } from "lucide-react";
 
 import {
@@ -153,6 +155,8 @@ type PracticeRecentTransfersAllModalProps = {
   onDismissCalendarNewRequestHint?: () => void;
   /** 오늘 이후 날짜 셀 → 신규 의뢰(도착일) */
   onSelectFutureDay?: (ymd: string) => void;
+  /** 값이 바뀌면 캘린더 구간 API를 다시 친다(전송 직후 등). */
+  calendarRefreshNonce?: number;
   onSelectTransfer: (transfer: PracticeRecentTransferItem) => void;
   onDeleteTransfer: (transfer: PracticeRecentTransferItem) => void;
   onAskRemake?: (transfer: PracticeRecentTransferItem) => void;
@@ -176,6 +180,7 @@ export function PracticeRecentTransfersAllModal({
   showCalendarNewRequestHint = false,
   onDismissCalendarNewRequestHint,
   onSelectFutureDay,
+  calendarRefreshNonce = 0,
   onSelectTransfer,
   onDeleteTransfer,
 }: PracticeRecentTransfersAllModalProps) {
@@ -363,6 +368,16 @@ export function PracticeRecentTransfersAllModal({
     }, delayMs);
     return () => window.clearTimeout(timer);
   }, [fetchCalendarTransfers, open]);
+
+  // 전송·수정 직후: 소켓 지연/미연결과 무관하게 캘린더를 다시 읽는다.
+  const lastCalendarRefreshNonceRef = useRef(calendarRefreshNonce);
+  useEffect(() => {
+    if (!open || !token) return;
+    if (calendarRefreshNonce === lastCalendarRefreshNonceRef.current) return;
+    lastCalendarRefreshNonceRef.current = calendarRefreshNonce;
+    if (!hasLoadedCalendarRef.current) return;
+    void fetchCalendarTransfers({ silent: true });
+  }, [calendarRefreshNonce, fetchCalendarTransfers, open, token]);
 
   const recentRequests = useMemo(() => {
     // 시드(1페이지)에서 휴지통으로 바뀐 transferId는 캘린더 목록에도 반영
