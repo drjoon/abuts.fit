@@ -133,7 +133,9 @@ import {
   ABUTMENT_PRODUCT_MODE,
   normalizeAccountAbutmentProductMode,
   normalizeImplantFavorites,
+  normalizeToothWorksForSync,
   pickToothWorkCustomSpecs,
+  resolvePracticeCaseToothFromToothWorks,
   type AbutmentProductMode,
   type PracticeAbutmentFavorite,
   type PracticeImplantFavorite,
@@ -1924,16 +1926,20 @@ export const PracticeDropzonePage = () => {
         tag: "practice_dropzone",
       };
 
+      const syncToothWorks = normalizeToothWorksForSync(toothWorks);
       const caseInfosPayload =
         files.length > 0
-          ? files.map((file, index) => {
+          ? files.map((_file, index) => {
               const tempFile = uploadedTempFiles[index];
 
               return {
                 clinicName: autoClinicName,
                 patientName: normalizedPatientName,
-                // 치아번호는 파일명 자동인식 대신 toothWorks(수동 치식) SSOT
-                tooth: "",
+                // 치식 SSOT=toothWorks. 파일명 추출 금지. 단치아(또는 파일수=치아수)면 파일 메타에도 반영.
+                tooth: resolvePracticeCaseToothFromToothWorks(syncToothWorks, {
+                  fileIndex: index,
+                  fileCount: files.length,
+                }),
                 workType: "abutment",
                 designSoftware: "3Shape",
                 file: {
@@ -1955,7 +1961,7 @@ export const PracticeDropzonePage = () => {
               {
                 clinicName: autoClinicName,
                 patientName: normalizedPatientName,
-                tooth: "",
+                tooth: resolvePracticeCaseToothFromToothWorks(syncToothWorks),
                 workType: "abutment",
                 designSoftware: "3Shape",
                 newSystemRequest: newSystemRequestBase,
@@ -1976,6 +1982,7 @@ export const PracticeDropzonePage = () => {
           arrivalDefaultDays,
           rushProcessing,
           transferMemo,
+          toothWorks: syncToothWorks,
           caseInfos: caseInfosPayload,
         },
       });

@@ -226,7 +226,10 @@ Notes:
 - 신규의뢰 파일명 자동 인식:
   - 첨부 시 룰/AI(`parseFilenameWithRules`, `/api/ai/parse-filenames`)로 **치과명·환자명만** 자동 채움.
   - **치아번호는 자동 채우지 않음** — 의뢰자가 직접 입력(오인식 방지). 검증은 기존처럼 치아번호 필수.
-  - 구현: `useNewRequestFilesV2.ts`, `useNewRequestLocalFiles.ts`. 기공의뢰 제출 `caseInfos.tooth`도 파일명 파싱 미사용(`toothWorks` 수동 치식 SSOT).
+  - 구현: `useNewRequestFilesV2.ts`, `useNewRequestLocalFiles.ts`.
+  - **기공의뢰(치과→기공소)**: `caseInfos.tooth`도 파일명 추출 금지. 치식 SSOT는 `toothWorks`(수동 치식). 단치아(또는 파일수=치아수)면 `resolvePracticeCaseToothFromToothWorks`로 파일 메타에도 반영 → 수락 시 제조사 CA Request·수신 어벗 업로드 확인 모달에 치식 포함.
+  - **기공의뢰수신 어벗디자인 업로드**: 확인 모달 치식은 PTX `toothWorks`/관련 Request만(파일명 추출값은 다파일 매칭에만 사용).
+  - **어벗디자인으로(기공소→어벗츠)**: STL 파일명에서 치식 자동 추출하지 않음(수동 입력).
 - 신규의뢰 첨부·구강스캔 묶음 (파일 크기 SSOT):
   - 목적: 첨부 시 **자동**으로 커스텀어벗 디자인 STL과 구강 스캔을 섞어 묶지 않는다.
   - 허용 확장자: **`.stl`만** (어벗생산의뢰). PLY/OBJ는 기공의뢰(`/dashboard/practice-transfers`)에서 받음.

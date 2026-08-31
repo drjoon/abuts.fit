@@ -319,6 +319,7 @@ import {
       normalizeAccountAbutmentProductMode,
       normalizeImplantFavorites,
       normalizeAbutmentFavorites,
+      resolvePracticeCaseToothFromToothWorks,
       resolveToothAbutmentProductMode,
       resolvePracticeTransferSkipJig,
       type AbutmentProductMode,
@@ -6280,14 +6281,17 @@ export const PracticeFileTransferPage = ({
       };
       const caseInfosPayload =
         transferFiles.length > 0
-          ? transferFiles.map((tempFile) => {
+          ? transferFiles.map((tempFile, fileIndex) => {
               const originalName = String(tempFile.originalName || "").trim();
 
               return {
                 clinicName,
                 patientName: normalizedPatientName,
-                // 치아번호는 파일명 자동인식 대신 toothWorks(수동 치식) SSOT
-                tooth: "",
+                // 치식 SSOT=toothWorks. 파일명 추출 금지. 단치아(또는 파일수=치아수)면 파일 메타에도 반영.
+                tooth: resolvePracticeCaseToothFromToothWorks(syncToothWorks, {
+                  fileIndex,
+                  fileCount: transferFiles.length,
+                }),
                 workType: "abutment",
                 designSoftware: "3Shape",
                 file: {
@@ -6309,7 +6313,7 @@ export const PracticeFileTransferPage = ({
               {
                 clinicName,
                 patientName: normalizedPatientName,
-                tooth: "",
+                tooth: resolvePracticeCaseToothFromToothWorks(syncToothWorks),
                 workType: "abutment",
                 designSoftware: "3Shape",
                 newSystemRequest: newSystemRequestBase,

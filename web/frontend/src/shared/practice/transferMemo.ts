@@ -5,6 +5,7 @@
 // - web/backend/services/practiceTransferProduction.service.js
 // - web/backend/controllers/practiceTransfers/practiceTransferSettings.controller.js
 // change-log:
+// - 2026-09-01: 기공의뢰 caseInfos.tooth는 toothWorks 치식 SSOT(파일명 추출 금지). 단치아면 파일에도 반영.
 // - 2026-08-25: 커스텀어벗 보철 형태는 심플어벗 불가 — 어벗 쪽 완성=스캔바디만.
 // - 2026-08-25: 심플어벗(심플어벗/심플밀링·직경 6–10·높이 S/M/L) — 스캔바디와 XOR. 완성 시 프리셋 충족.
 // - 2026-08-21: 임플란트 추가 요청 프리셋 type을 옵션명으로 정규화(레거시 헥스 → 선택 가능).
@@ -747,6 +748,44 @@ export const listMissingAbutmentPresetTeeth = (
         /^[1-4][1-8]$/.test(String(row?.toothNumber || "").trim()),
     )
     .map((row) => String(row.toothNumber || "").trim());
+
+const isFdiToothNumber = (value: unknown) =>
+  /^[1-4][1-8]$/.test(String(value || "").trim());
+
+/**
+ * 기공의뢰 제출 `caseInfos.tooth`.
+ * - SSOT는 toothWorks(수동 치식). STL/구강스캔 파일명 추출 금지.
+ * - 치식이 하나면 파일 메타에도 넣는다(제조사·스캔 매칭).
+ * - 다치아는 파일↔치아 1:1이 아니면 빈 값(제조사 Request는 toothWorks 행별 생성).
+ */
+export const resolvePracticeCaseToothFromToothWorks = (
+  toothWorks: readonly Partial<ToothWorkSelection>[] | null | undefined,
+  options?: { fileIndex?: number; fileCount?: number },
+): string => {
+  const rows = Array.isArray(toothWorks) ? toothWorks : [];
+  const caTeeth = rows
+    .filter((row) => Boolean(row?.customAbutment))
+    .map((row) => String(row?.toothNumber || "").trim())
+    .filter(isFdiToothNumber);
+  const allTeeth = rows
+    .map((row) => String(row?.toothNumber || "").trim())
+    .filter(isFdiToothNumber);
+  const teeth = caTeeth.length > 0 ? caTeeth : allTeeth;
+  if (teeth.length === 0) return "";
+  if (teeth.length === 1) return teeth[0];
+
+  const fileCount = Math.max(0, Math.floor(Number(options?.fileCount) || 0));
+  const fileIndex = Math.floor(Number(options?.fileIndex) || 0);
+  if (
+    fileCount > 0 &&
+    fileCount === teeth.length &&
+    fileIndex >= 0 &&
+    fileIndex < teeth.length
+  ) {
+    return teeth[fileIndex];
+  }
+  return "";
+};
 
 export const getAdjacentTeeth = (toothNumber: string) => {
   const raw = String(toothNumber || "").trim();

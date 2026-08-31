@@ -47,6 +47,7 @@
 // - 2026-08-21: 캘린더 전환 후 상세 모달에 어벗·보철 업로드 CTA 복원.
 // - 2026-08-21: 커스텀어벗 배송현황을 상세·캘린더에 표시(치과 발신과 동일).
 // - 2026-08-29: 상세 필드「어벗 진행상황」— 제조 공정(세척·패킹 등) 표시.
+// - 2026-09-01: 어벗 확인 모달 치식은 PTX toothWorks/Request만 — 파일명 추출값을 override로 쓰지 않음.
 // - 2026-08-20: 기공의뢰수신 캘린더 날짜 뱃지 기본=치과도착일. 계정 preferences에 저장.
 // - 2026-08-19: 리메이크는 공정 상태색 + 이중 외곽선.
 // - 2026-08-19: 기공의뢰수신 캘린더 칩·상단 뱃지를 상태색으로 구분.
@@ -3713,7 +3714,7 @@ export function RequestorPracticeReceivePage({
         toothRows.find((row) => Boolean(row.customAbutment)) ||
         toothRows[0];
 
-      // 환자/치과/임플란트: 치과 전송 정보 우선. 구강스캔·어벗 파일명 AI 추정은 쓰지 않는다.
+      // 환자/치과/임플란트/치식: 치과 전송 정보 우선. 구강스캔·어벗 파일명 AI 추정은 쓰지 않는다.
       const practicePatient = resolvePracticeTransferListPatientName({
         rawTransferMemo: transfer.rawTransferMemo,
         transferMemo: transfer.transferMemo,
@@ -3930,10 +3931,11 @@ export function RequestorPracticeReceivePage({
         queue.push({
           file,
           requestId: meta.requestId,
+          // 치식은 PTX(toothWorks/Request)만. 파일명 AI·룰 추출값은 매칭에만 쓰고 기본값에는 넣지 않음.
           caseInfos: buildDesignConfirmDefaults(
             transfer,
             meta.caseInfos,
-            meta.tooth || parsedTooth,
+            meta.tooth,
           ),
         });
       }
