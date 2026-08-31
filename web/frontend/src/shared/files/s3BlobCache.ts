@@ -8,14 +8,20 @@
 import { getFileBlob, setFileBlob } from "@/shared/files/fileBlobCache";
 import { fetchBlobWithProgress } from "@/shared/files/downloadWithProgress";
 
-export function s3FileBlobCacheKey(s3Key: string): string {
-  return `s3:${String(s3Key || "").trim()}`;
+export function s3FileBlobCacheKey(s3Key: string, thumbWidth?: number): string {
+  const key = String(s3Key || "").trim();
+  if (thumbWidth && thumbWidth > 0) {
+    return `s3thumb:${Math.floor(thumbWidth)}:${key}`;
+  }
+  return `s3:${key}`;
 }
 
 export type FetchS3BlobCachedOptions = {
   s3Key: string;
   fileName: string;
   token: string;
+  /** 썸네일 프록시 요청 시 서버 리사이즈 폭(px) */
+  thumbWidth?: number;
   /** 프록시 URL 빌더 (캐시 미스 시에만 호출) */
   buildUrl: (s3Key: string, fileName: string) => string;
   onProgress?: (percent: number) => void;
@@ -34,7 +40,7 @@ export async function fetchS3BlobCached(
   if (!s3Key) throw new Error("파일 키가 없습니다.");
   if (!options.token) throw new Error("로그인이 필요합니다.");
 
-  const cacheKey = s3FileBlobCacheKey(s3Key);
+  const cacheKey = s3FileBlobCacheKey(s3Key, options.thumbWidth);
   const cached = await getFileBlob(cacheKey);
   if (cached) {
     options.onProgress?.(100);

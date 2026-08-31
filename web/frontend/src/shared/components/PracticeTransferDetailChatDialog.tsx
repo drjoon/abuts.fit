@@ -1250,12 +1250,8 @@ export function PracticeTransferDetailChatDialog({
     !workCanceled &&
     !workCompleted;
   const workFileDropActive = Boolean(
-    workFileDrop &&
-      !workFileDrop.disabled &&
-      !minimized &&
-      panelTab !== "chat",
+    workFileDrop && !workFileDrop.disabled && !minimized,
   );
-  const chatFileDropActive = panelTab === "chat" && !inputDisabled && !minimized;
   const workFileDropGuideText = String(workFileDrop?.guideText || "").trim();
   const workFileDropGuideDetail = String(
     workFileDrop?.guideDetail || "",
@@ -1459,12 +1455,7 @@ export function PracticeTransferDetailChatDialog({
             workFileDrop?.fileInputId || "practice-transfer-detail-noop-drop"
           }
           onFiles={workFileDrop?.onFiles ?? (() => {})}
-          disabled={
-            !workFileDrop ||
-            workFileDrop.disabled ||
-            minimized ||
-            panelTab === "chat"
-          }
+          disabled={!workFileDrop || workFileDrop.disabled || minimized}
           showDefaultUi={false}
           fillHeight
           acceptedHint={workFileDrop?.dropHint || PRACTICE_ACCEPTED_HINT}
@@ -1903,35 +1894,6 @@ export function PracticeTransferDetailChatDialog({
             value="chat"
             className="mt-0 flex min-h-0 flex-1 flex-col overflow-hidden focus-visible:ring-0"
           >
-            <PracticeTransferFileDropTarget
-              fileInputId="practice-transfer-chat-attach-drop"
-              onFiles={onAttachChatFiles}
-              disabled={!chatFileDropActive}
-              showDefaultUi={false}
-              filterFiles={(files) => files}
-              fillHeight
-              className="flex min-h-0 flex-1 flex-col overflow-hidden"
-              activeClassName="ring-2 ring-inset ring-primary bg-primary-soft/25"
-            >
-              {({ isDragActive: chatDragActive }) => (
-                <>
-              {chatDragActive && chatFileDropActive ? (
-                <div
-                  className="pointer-events-none absolute inset-0 z-[305] flex flex-col items-center justify-center gap-2 rounded-lg bg-primary/10 px-6 backdrop-blur-[2px]"
-                  aria-hidden
-                >
-                  <div className="rounded-full bg-primary-soft p-3 text-primary-strong shadow-sm">
-                    <UploadCloud className="h-8 w-8" />
-                  </div>
-                  <p className="text-sm font-semibold text-primary-strong">
-                    사진·파일을 놓아 첨부
-                  </p>
-                  <p className="text-center text-xs text-muted-foreground">
-                    채팅에 보낼 파일을 여기에 놓으세요
-                  </p>
-                </div>
-              ) : null}
-
               {counterpartyMemoStrip}
 
               {onEditRequest || onCancelRequest ? (
@@ -2232,9 +2194,6 @@ export function PracticeTransferDetailChatDialog({
                   />
                 </div>
               </div>
-                </>
-              )}
-            </PracticeTransferFileDropTarget>
           </TabsContent>
           </>
           ) : null}

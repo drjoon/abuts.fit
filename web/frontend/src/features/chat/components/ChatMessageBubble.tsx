@@ -32,6 +32,7 @@ import {
   type ModelPreviewKind,
 } from "@/shared/components/ModelPreviewDialog";
 import { fetchS3BlobCached } from "@/shared/files/s3BlobCache";
+import { loadS3ImageThumbUrlsParallel } from "@/shared/files/s3ImageThumb";
 import {
   fileFromImageBlob,
   fileFromModelBlob,
@@ -340,50 +341,27 @@ export function ChatMessageBubble({
         String(file.s3Key || "").trim(),
     );
 
-    void (async () => {
-      const next: Record<string, string> = {};
-      for (const file of files) {
-        if (cancelled || ac.signal.aborted) return;
-        const s3Key = String(file.s3Key || "").trim();
-        const fileName = String(file.fileName || "image").trim() || "image";
-        try {
-          const blob = await fetchS3BlobCached({
-            s3Key,
-            fileName,
-            token,
-            buildUrl: buildS3ProxyDownloadUrl,
-            signal: ac.signal,
-          });
-          if (cancelled || ac.signal.aborted) return;
-          const typed =
-            blob.type && blob.type !== "application/octet-stream"
-              ? blob
-              : new Blob([blob], { type: mimeTypeForImageFileName(fileName) });
-          next[s3Key] = URL.createObjectURL(typed);
-        } catch {
-          // 썸네일 실패 시 placeholder
-        }
-      }
-      if (cancelled || ac.signal.aborted) {
-        for (const url of Object.values(next)) {
+    void loadS3ImageThumbUrlsParallel({
+      items: files.map((file) => ({
+        s3Key: String(file.s3Key || "").trim(),
+        fileName: String(file.fileName || "image").trim() || "image",
+      })),
+      token,
+      signal: ac.signal,
+      existing: thumbUrlsRef.current,
+      onReady: (s3Key, url) => {
+        if (cancelled || ac.signal.aborted) {
           try {
             URL.revokeObjectURL(url);
           } catch {
             // ignore
           }
+          return;
         }
-        return;
-      }
-      for (const url of Object.values(thumbUrlsRef.current)) {
-        try {
-          URL.revokeObjectURL(url);
-        } catch {
-          // ignore
-        }
-      }
-      thumbUrlsRef.current = next;
-      setThumbUrls(next);
-    })();
+        thumbUrlsRef.current = { ...thumbUrlsRef.current, [s3Key]: url };
+        setThumbUrls({ ...thumbUrlsRef.current });
+      },
+    });
 
     return () => {
       cancelled = true;
@@ -409,13 +387,13 @@ export function ChatMessageBubble({
         String(file.s3Key || "").trim(),
     );
 
-    void (async () => {
-      const next: Record<string, File> = {};
-      for (const file of files) {
+    void Promise.all(
+      files.map(async (file) => {
         if (cancelled || ac.signal.aborted) return;
         const s3Key = String(file.s3Key || "").trim();
         const fileName =
           String(file.fileName || "model.stl").trim() || "model.stl";
+        if (modelThumbFilesRef.current[s3Key]) return;
         try {
           const blob = await fetchS3BlobCached({
             s3Key,
@@ -425,15 +403,16 @@ export function ChatMessageBubble({
             signal: ac.signal,
           });
           if (cancelled || ac.signal.aborted) return;
-          next[s3Key] = fileFromModelBlob(blob, fileName);
+          modelThumbFilesRef.current = {
+            ...modelThumbFilesRef.current,
+            [s3Key]: fileFromModelBlob(blob, fileName),
+          };
+          setModelThumbFiles({ ...modelThumbFilesRef.current });
         } catch {
           // 썸네일 실패 시 Box placeholder
         }
-      }
-      if (cancelled || ac.signal.aborted) return;
-      modelThumbFilesRef.current = next;
-      setModelThumbFiles(next);
-    })();
+      }),
+    );
 
     return () => {
       cancelled = true;

@@ -16,6 +16,8 @@
 import mongoose, { Types } from "mongoose";
 import path from "path";
 import fs from "fs/promises";
+import { buffer as streamToBuffer } from "node:stream/consumers";
+import sharp from "sharp";
 import File from "../../models/file.model.js";
 import Request from "../../models/request.model.js";
 import ChatRoom from "../../models/chatRoom.model.js";
@@ -939,10 +941,71 @@ export const downloadS3FileProxy = asyncHandler(async (req, res) => {
   const fallbackName = String(key.split("/").pop() || "download").trim() || "download";
   const targetName = normalizeOriginalName(rawName || fallbackName).replace(/[\\/:*?"<>|]/g, "_");
 
+  const thumbWRaw = parseInt(String(req.query?.thumbW || ""), 10);
+  const thumbW =
+    Number.isFinite(thumbWRaw) && thumbWRaw > 0
+      ? Math.min(800, Math.floor(thumbWRaw))
+      : 0;
+
   const { body, contentType, contentLength, eTag, lastModified } =
     await s3Utils.getObjectStreamFromS3(key);
   if (!body) {
     throw new ApiError(404, "S3 파일을 찾을 수 없습니다.");
+  }
+
+  const mime = String(contentType || "").toLowerCase();
+  const ext = String(targetName.split(".").pop() || "").toLowerCase();
+  const extIsImage = ["jpg", "jpeg", "png", "gif", "webp", "bmp"].includes(ext);
+  const isImage =
+    mime.startsWith("image/") &&
+    !mime.includes("heic") &&
+    !mime.includes("heif") &&
+    !mime.includes("svg") &&
+    (mime !== "application/octet-stream" || extIsImage);
+
+  if (thumbW > 0 && isImage) {
+    const inputBuffer = await streamToBuffer(body);
+    let outBuffer = inputBuffer;
+    let outMime =
+      mime.startsWith("image/") && mime !== "application/octet-stream"
+        ? mime
+        : ext === "png"
+          ? "image/png"
+          : "image/jpeg";
+
+    try {
+      outBuffer = await sharp(inputBuffer, { failOn: "none" })
+        .rotate()
+        .resize(thumbW, null, {
+          fit: "inside",
+          withoutEnlargement: true,
+        })
+        .jpeg({ quality: 80, mozjpeg: true })
+        .toBuffer();
+      outMime = "image/jpeg";
+    } catch (thumbErr) {
+      console.warn("[files] s3 thumb resize failed, using original bytes", {
+        key,
+        thumbW,
+        error: thumbErr?.message || String(thumbErr),
+      });
+    }
+
+    res.setHeader("Content-Type", outMime);
+    res.setHeader("Content-Length", String(outBuffer.length));
+    res.setHeader(
+      "Content-Disposition",
+      `inline; filename*=UTF-8''${encodeURIComponent(targetName)}`,
+    );
+    res.setHeader("Cache-Control", "private, max-age=86400");
+    if (eTag) {
+      res.setHeader("ETag", eTag);
+    }
+    if (lastModified) {
+      res.setHeader("Last-Modified", new Date(lastModified).toUTCString());
+    }
+    res.send(outBuffer);
+    return;
   }
 
   res.setHeader("Content-Type", contentType || "application/octet-stream");

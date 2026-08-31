@@ -28,9 +28,22 @@ export function s3DownloadBusyKey(file: {
   return String(file.s3Key || file.id || file.fileId || "").trim();
 }
 
-export function buildS3ProxyDownloadUrl(s3Key: string, fileName: string): string {
+export function buildS3ProxyDownloadUrl(
+  s3Key: string,
+  fileName: string,
+  opts?: { thumbW?: number },
+): string {
   const name = String(fileName || "download").trim() || "download";
-  return `/api/files/s3/download?key=${encodeURIComponent(s3Key)}&fileName=${encodeURIComponent(name)}&_ts=${Date.now()}`;
+  const params = new URLSearchParams({
+    key: s3Key,
+    fileName: name,
+    _ts: String(Date.now()),
+  });
+  const thumbW = Number(opts?.thumbW);
+  if (Number.isFinite(thumbW) && thumbW > 0) {
+    params.set("thumbW", String(Math.floor(thumbW)));
+  }
+  return `/api/files/s3/download?${params.toString()}`;
 }
 
 export function useS3FileDownload(token?: string | null) {
