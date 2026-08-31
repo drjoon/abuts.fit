@@ -681,11 +681,9 @@ export function PracticeRecentTransfersAllModal({
               {filteredTransfers.length === 0 ? (
                 <div className="flex flex-1 flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-16 text-center">
                   <p className="text-sm font-medium text-slate-600">전송 내역 없음</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {search.trim()
-                      ? "검색어를 바꿔 보세요."
-                      : "진행 중인 의뢰가 없습니다."}
-                  </p>
+                  {search.trim() ? (
+                    <p className="mt-1 text-xs text-muted-foreground">검색어를 바꿔 보세요.</p>
+                  ) : null}
                 </div>
               ) : (
                 <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto overscroll-contain pb-2">

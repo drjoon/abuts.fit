@@ -5,6 +5,7 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { cn } from "@/shared/ui/cn";
 import { useToast } from "@/shared/hooks/use-toast";
 import {
@@ -280,10 +281,21 @@ export function PracticeTransferMobileOralPhotoIntake({
   };
 
   return (
-    <div className="box-border flex w-full min-w-0 flex-col gap-3">
-      <p className="px-1 text-center text-[11px] leading-snug text-muted-foreground">
-        신규 의뢰는 PC에서, 모바일에서는 환자 사진만 업로드할 수 있습니다.
-      </p>
+    <div className="box-border flex w-full min-w-0 flex-col gap-2.5">
+      <div className="grid grid-cols-2 gap-2 px-1">
+        <Badge
+          variant="outline"
+          className="justify-center rounded-lg border-slate-200/90 bg-white px-2 py-1 text-[10px] font-medium leading-snug text-muted-foreground"
+        >
+          모바일: 사진만 업로드
+        </Badge>
+        <Badge
+          variant="outline"
+          className="justify-center rounded-lg border-slate-200/90 bg-white px-2 py-1 text-[10px] font-medium leading-snug text-muted-foreground"
+        >
+          PC: 기공소 의뢰 전송
+        </Badge>
+      </div>
 
       <PracticeTransferRequestIntakePanel
         {...requestIntakeProps}
@@ -317,12 +329,12 @@ export function PracticeTransferMobileOralPhotoIntake({
         onChange={(e) => handleFilesFromInput(e.currentTarget)}
       />
 
-      <div className="flex min-w-0 flex-col gap-2.5">
+      <div className="flex min-w-0 flex-col gap-2">
         <label
           htmlFor={canCapture ? CAMERA_INPUT_ID : undefined}
           aria-disabled={!canCapture || undefined}
           className={cn(
-            "box-border flex min-h-[8rem] w-full min-w-0 flex-col items-center justify-center gap-2.5 rounded-2xl border border-dashed px-4 py-5 text-center transition-[transform,colors,box-shadow] active:scale-[0.99]",
+            "box-border flex min-h-[5.5rem] w-full min-w-0 flex-col items-center justify-center gap-1.5 rounded-2xl border border-dashed px-4 py-3 text-center transition-[transform,colors,box-shadow] active:scale-[0.99]",
             canCapture
               ? "cursor-pointer border-primary/30 bg-white text-primary-strong shadow-[0_1px_2px_rgba(15,23,42,0.04)] hover:border-primary/45 hover:shadow-sm"
               : "cursor-not-allowed border-slate-200 bg-slate-50 text-muted-foreground",
@@ -330,21 +342,21 @@ export function PracticeTransferMobileOralPhotoIntake({
         >
           <span
             className={cn(
-              "inline-flex h-12 w-12 items-center justify-center rounded-full",
+              "inline-flex h-9 w-9 items-center justify-center rounded-full",
               canCapture
                 ? "bg-primary-soft text-primary-strong"
                 : "bg-white text-slate-400",
             )}
           >
-            <Camera className="h-5 w-5" />
+            <Camera className="h-4 w-4" />
           </span>
-          <span className="text-[15px] font-semibold tracking-tight">구강포토 촬영</span>
+          <span className="text-sm font-semibold tracking-tight">구강포토 촬영</span>
         </label>
 
         <Button
           type="button"
           variant="outline"
-          className="h-11 w-full min-w-0 rounded-xl border-slate-200 bg-white text-sm font-medium shadow-sm"
+          className="h-10 w-full min-w-0 rounded-xl border-slate-200 bg-white text-sm font-medium shadow-sm"
           disabled={!canCapture}
           onClick={() => albumInputRef.current?.click()}
         >
@@ -354,7 +366,7 @@ export function PracticeTransferMobileOralPhotoIntake({
       </div>
 
       {photos.length > 0 ? (
-        <div className="flex min-w-0 flex-col gap-2.5 rounded-2xl border border-slate-200/80 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+        <div className="flex min-w-0 flex-col gap-2 rounded-2xl border border-slate-200/80 bg-white p-2.5 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
           <div className="flex items-center justify-between gap-2">
             <p className="text-xs font-medium text-muted-foreground">
               {photos.length}장
@@ -363,13 +375,13 @@ export function PracticeTransferMobileOralPhotoIntake({
               type="button"
               variant="ghost"
               size="sm"
-              className="h-8 px-2 text-xs text-destructive hover:bg-destructive-soft hover:text-destructive"
+              className="h-7 px-2 text-xs text-destructive hover:bg-destructive-soft hover:text-destructive"
               onClick={onClearPhotos}
             >
               전체삭제
             </Button>
           </div>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-4 gap-1.5">
             {photos.map((photo) => {
               const pct = Math.max(
                 0,
@@ -405,7 +417,7 @@ export function PracticeTransferMobileOralPhotoIntake({
                       <img
                         src={photo.previewUrl}
                         alt={photo.name}
-                        className="aspect-square w-full object-cover"
+                        className="aspect-[5/4] w-full object-cover"
                         onError={(event) => {
                           event.currentTarget.style.display = "none";
                           const fallback = event.currentTarget.nextElementSibling;
@@ -417,15 +429,15 @@ export function PracticeTransferMobileOralPhotoIntake({
                     ) : null}
                     <div
                       className={cn(
-                        "aspect-square w-full items-center justify-center text-slate-400",
+                        "aspect-[5/4] w-full items-center justify-center text-slate-400",
                         photo.previewUrl ? "hidden" : "flex",
                       )}
                     >
-                      <ImagePlus className="h-6 w-6" />
+                      <ImagePlus className="h-5 w-5" />
                     </div>
                     <p
                       className={cn(
-                        "truncate px-1.5 py-1 text-center text-[10px] font-medium",
+                        "truncate px-1 py-0.5 text-center text-[9px] font-medium leading-tight",
                         photo.uploadStatus === "error"
                           ? "text-destructive"
                           : "text-muted-foreground",
@@ -435,7 +447,7 @@ export function PracticeTransferMobileOralPhotoIntake({
                     </p>
                   </button>
                   {photo.uploadStatus === "uploading" ? (
-                    <div className="pointer-events-none absolute inset-x-0 bottom-6 h-1 bg-slate-200/90">
+                    <div className="pointer-events-none absolute inset-x-0 bottom-5 h-1 bg-slate-200/90">
                       <div
                         className="h-full bg-primary-strong transition-[width]"
                         style={{ width: `${pct}%` }}
@@ -444,14 +456,14 @@ export function PracticeTransferMobileOralPhotoIntake({
                   ) : null}
                   <button
                     type="button"
-                    className="absolute right-1 top-1 inline-flex h-10 w-10 items-center justify-center rounded-full bg-black/55 text-white active:bg-black/70"
+                    className="absolute right-0.5 top-0.5 inline-flex h-8 w-8 items-center justify-center rounded-full bg-black/55 text-white active:bg-black/70"
                     aria-label={`${photo.name} 삭제`}
                     onClick={(event) => {
                       event.stopPropagation();
                       onRemovePhoto(photo.key);
                     }}
                   >
-                    <X className="h-4 w-4" />
+                    <X className="h-3.5 w-3.5" />
                   </button>
                 </div>
               );

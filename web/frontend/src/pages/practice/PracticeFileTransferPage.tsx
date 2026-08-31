@@ -7674,7 +7674,7 @@ export const PracticeFileTransferPage = ({
             className={cn(
               "shrink-0 border-b text-left",
               isMobile
-                ? "space-y-3 border-slate-100 bg-white px-4 pb-4 pt-4 pr-14"
+                ? "flex flex-row items-center gap-2 space-y-0 border-slate-100 bg-white px-4 pb-4 pt-4 pr-14"
                 : "flex flex-row items-center gap-3 space-y-0 border-border bg-white/95 px-6 py-2.5 pr-[4.25rem] backdrop-blur supports-[backdrop-filter]:bg-white/80",
             )}
           >
@@ -7690,7 +7690,7 @@ export const PracticeFileTransferPage = ({
               <p
                 title={formSyncStatusLabel}
                 className={cn(
-                  "text-center text-xs font-normal leading-snug",
+                  "min-w-0 flex-1 truncate pr-2 text-right text-xs font-normal leading-snug",
                   formSyncStatus === "error"
                     ? "text-destructive"
                     : "text-muted-foreground",
