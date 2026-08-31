@@ -1,6 +1,7 @@
 // related files:
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // - 2026-08-28: 플로팅 패널 — 드래그·리사이즈·엣지 스냅·최소/최대화.
+// - 2026-08-31: 헤더 — 신호등 제거 후에도 탭·닫기 여유 폭 유지(MIN_W 400).
 // - 2026-08-28: MIN_W — 신호등·탭(의뢰상세/채팅)·별점이 겹치지 않게 400.
 // - 2026-08-28: 리사이즈 — 좌·상·모서리(n/w/nw/ne/sw) 지원, 고정 변 기준 min clamp.
 // - 2026-08-28: 좌·우 엣지 스냅 — 가로 절반이 아니라 MIN_W 유지(세로만 full).
@@ -17,7 +18,7 @@ export type PracticeTransferPanelLayout = {
 /** v3 — 항상 browse-behind */
 const STORAGE_KEY = "abuts.practiceTransferPanel.layout.v3";
 const MARGIN = 8;
-/** 신호등 + TabsList(의뢰 상세/채팅) + 별점 액션이 한 줄에 겹치지 않는 최소 폭 */
+/** TabsList(의뢰 상세/채팅) + 닫기·액션이 한 줄에 겹치지 않는 최소 폭 */
 const MIN_W = 400;
 const MIN_H = 360;
 const MINIMIZED_H = 48;

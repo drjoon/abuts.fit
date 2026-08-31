@@ -18,6 +18,7 @@
 // - 2026-08-28: 기공소 의뢰상세 — A5 프린트(기본정보·치식·메모).
 // - 2026-08-28: 기공소 수락 후 상세 모달 — 채팅 영역 점선 드롭존·빈 상태 안내.
 // - 2026-08-28: 플로팅 z-300 — 견적 등 툴팁은 ui/tooltip z-400(가림 방지).
+// - 2026-08-31: 치과·기공소 공통 — 신호등 제거, 우측 상단 닫기(X)만(다른 모달과 동일).
 // - 2026-08-28: 모바일 채팅 — 신호등 제거·오른쪽 큰 닫기(X).
 // - 2026-08-28: 맥/카톡 스타일 신호등(닫기·최소화·최대화) 헤더(PC).
 // - 2026-08-28: 플로팅 — 항상 논모달(페이드 없음)·헤더 threshold 드래그·큰 닫기.
@@ -1511,10 +1512,7 @@ export function PracticeTransferDetailChatDialog({
         >
           <div
             className={cn(
-              "grid shrink-0 cursor-grab items-center gap-2 border-b px-3 active:cursor-grabbing",
-              isMobile
-                ? "grid-cols-[1fr_auto]"
-                : "grid-cols-[auto_1fr_auto]",
+              "grid shrink-0 cursor-grab grid-cols-[1fr_auto] items-center gap-2 border-b px-3 active:cursor-grabbing",
               minimized ? "h-12 py-0" : "py-3.5",
             )}
             onPointerDown={handleChromePointerDown}
@@ -1525,31 +1523,6 @@ export function PracticeTransferDetailChatDialog({
               toggleMaximize();
             }}
           >
-            {!isMobile ? (
-              <div className="flex items-center gap-1.5 pl-0.5" data-no-drag>
-                <button
-                  type="button"
-                  className="h-3 w-3 shrink-0 rounded-full bg-[#ff5f57] shadow-sm ring-1 ring-black/10 transition hover:brightness-95"
-                  aria-label="닫기"
-                  title="닫기"
-                  onClick={() => onOpenChange(false)}
-                />
-                <button
-                  type="button"
-                  className="h-3 w-3 shrink-0 rounded-full bg-[#febc2e] shadow-sm ring-1 ring-black/10 transition hover:brightness-95"
-                  aria-label={minimized ? "창 복원" : "최소화"}
-                  title={minimized ? "창 복원" : "최소화"}
-                  onClick={() => minimize()}
-                />
-                <button
-                  type="button"
-                  className="h-3 w-3 shrink-0 rounded-full bg-[#28c840] shadow-sm ring-1 ring-black/10 transition hover:brightness-95"
-                  aria-label={maximized ? "창 복원" : "최대화"}
-                  title={maximized ? "창 복원" : "최대화"}
-                  onClick={() => toggleMaximize()}
-                />
-              </div>
-            ) : null}
             {minimized ? (
               <button
                 type="button"
@@ -1560,12 +1533,7 @@ export function PracticeTransferDetailChatDialog({
                 {title}
               </button>
             ) : (
-              <TabsList
-                className={cn(
-                  "h-11 w-auto shrink-0 p-1",
-                  isMobile ? "justify-self-start" : "mx-auto justify-self-center",
-                )}
-              >
+              <TabsList className="h-11 w-auto shrink-0 justify-self-start p-1">
                 <TabsTrigger
                   value="detail"
                   className="gap-1.5 px-4 py-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
@@ -1587,17 +1555,16 @@ export function PracticeTransferDetailChatDialog({
               data-no-drag
             >
               {!minimized ? chatHeaderAction : null}
-              {isMobile ? (
-                <button
-                  type="button"
-                  className="inline-flex h-11 w-11 items-center justify-center rounded-md opacity-70 ring-offset-background transition-opacity hover:bg-slate-100 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-                  aria-label="닫기"
-                  title="닫기"
-                  onClick={() => onOpenChange(false)}
-                >
-                  <X className="h-6 w-6" strokeWidth={2.25} />
-                </button>
-              ) : null}
+              <button
+                type="button"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                aria-label="닫기"
+                title="닫기"
+                onClick={() => onOpenChange(false)}
+              >
+                <X className="h-4 w-4" />
+                <span className="sr-only">Close</span>
+              </button>
             </div>
           </div>
 
