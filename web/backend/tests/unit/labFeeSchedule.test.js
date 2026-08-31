@@ -40,6 +40,9 @@ import {
   mergeEnabledCatalogItemsIntoLabFeeItems,
   resolveLabFeeCatalogNeedSetupNames,
   resolveLabFeeScheduleSourceForPractice,
+  resolveLabFeeScheduleSourceForPracticeTransfer,
+  captureLabPracticeSpecialSupplySnapshot,
+  resolveLabPracticeSpecialSupplyRowAsOf,
 } from "../../utils/labFeeSchedule.js";
 
 describe("labFeeSchedule", () => {
@@ -1672,5 +1675,118 @@ describe("labPracticeSpecialSupplyPrices", () => {
     expect(crown.remake).toBe(7000);
     expect(bridge.price).toBe(60000);
     expect(bridge.remake).toBe(12000);
+  });
+
+  test("의뢰 이후 설정된 특별공급가는 as-of로 소급하지 않는다", () => {
+    const practiceId = "64b000000000000000000099";
+    const orderAt = new Date("2026-08-30T00:00:00+09:00");
+    const supplyAt = new Date("2026-08-31T12:00:00+09:00");
+    const schedule = {
+      active: true,
+      items: [
+        {
+          id: "crown",
+          name: "크라운",
+          unit: "perTooth",
+          enabled: true,
+          price: 60000,
+          remake: 0,
+          tiers: [],
+        },
+      ],
+    };
+    const lab = {
+      labFeeSchedule: schedule,
+      labPracticeSpecialSupplyPrices: [
+        {
+          practiceAnchorId: practiceId,
+          mode: "rate",
+          discountRate: 10,
+          items: [],
+          updatedAt: supplyAt,
+        },
+      ],
+    };
+    expect(
+      resolveLabPracticeSpecialSupplyRowAsOf(lab, practiceId, orderAt),
+    ).toBeNull();
+    const asOfSchedule = resolveLabFeeScheduleSourceForPracticeTransfer({
+      labDoc: lab,
+      practiceAnchorId: practiceId,
+      createdAt: orderAt,
+    });
+    expect(asOfSchedule.items.find((item) => item.id === "crown").price).toBe(
+      60000,
+    );
+    const live = resolveLabFeeScheduleSourceForPractice(lab, practiceId);
+    expect(live.items.find((item) => item.id === "crown").price).toBe(54000);
+  });
+
+  test("billing 스냅샷이 있으면 live 특별공급가 변경을 무시한다", () => {
+    const practiceId = "64b000000000000000000099";
+    const schedule = {
+      active: true,
+      items: [
+        {
+          id: "crown",
+          name: "크라운",
+          unit: "perTooth",
+          enabled: true,
+          price: 60000,
+          remake: 0,
+          tiers: [],
+        },
+      ],
+    };
+    const labAtOrder = {
+      labFeeSchedule: schedule,
+      labPracticeSpecialSupplyPrices: [],
+    };
+    const snapshot = captureLabPracticeSpecialSupplySnapshot(
+      labAtOrder,
+      practiceId,
+      { at: new Date("2026-08-30T00:00:00+09:00") },
+    );
+    const labAfter = {
+      labFeeSchedule: schedule,
+      labPracticeSpecialSupplyPrices: [
+        {
+          practiceAnchorId: practiceId,
+          mode: "rate",
+          discountRate: 10,
+          items: [],
+          updatedAt: new Date("2026-08-31T12:00:00+09:00"),
+        },
+      ],
+    };
+    const frozen = resolveLabFeeScheduleSourceForPracticeTransfer({
+      labDoc: labAfter,
+      practiceAnchorId: practiceId,
+      createdAt: new Date("2026-08-30T00:00:00+09:00"),
+      specialSupplySnapshot: snapshot,
+    });
+    expect(frozen.items.find((item) => item.id === "crown").price).toBe(60000);
+
+    const snapWithRate = captureLabPracticeSpecialSupplySnapshot(
+      labAfter,
+      practiceId,
+    );
+    const kept = resolveLabFeeScheduleSourceForPracticeTransfer({
+      labDoc: {
+        ...labAfter,
+        labPracticeSpecialSupplyPrices: [
+          {
+            practiceAnchorId: practiceId,
+            mode: "rate",
+            discountRate: 20,
+            items: [],
+            updatedAt: new Date("2026-09-01T00:00:00+09:00"),
+          },
+        ],
+      },
+      practiceAnchorId: practiceId,
+      specialSupplySnapshot: snapWithRate,
+    });
+    expect(kept.items.find((item) => item.id === "crown").price).toBe(54000);
   });
 });

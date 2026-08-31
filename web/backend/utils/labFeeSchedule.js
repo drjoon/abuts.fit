@@ -37,6 +37,7 @@
 // - 2026-08-15: 할증 history — 배수 변경·해제(1x)도 기존 의뢰는 당시 배수 유지(다음 건부터).
 // - 2026-08-19: 수락·견적 readyToCharge — 마스터 On만으로는 부족, 제공 항목 수가 필요.
 // - 2026-08-29: 치과별 특별공급가(labPracticeSpecialSupplyPrices) — 할인율 또는 항목별 할인금액.
+// - 2026-08-31: 특별공급가 — 의뢰 billing 스냅샷·updatedAt as-of(소급 금지). 신규 견적은 live.
 import { applyRushFeeMultiplierToFees } from "./practiceTransferRush.js";
 import {
   IMPLANT_ADD_REQUEST_OPTION,
@@ -625,15 +626,10 @@ function applyDiscountToUnit(base, { rate = 0, amount = 0 } = {}) {
 }
 
 /**
- * 치과별 특별공급(할인율·할인금액)을 수가표 items에 반영.
+ * 특별공급 행 1건을 수가표 items에 반영.
  * rate: 전 항목 동일 %. amount: feeItemId/name 매칭 항목만 차감.
  */
-export function applyLabPracticeSpecialSupplyToSchedule(
-  schedule,
-  labDoc,
-  practiceAnchorId,
-) {
-  const row = resolveLabPracticeSpecialSupplyRow(labDoc, practiceAnchorId);
+export function applyLabPracticeSpecialSupplyRowToSchedule(schedule, row) {
   if (!row || !specialSupplyRowHasEffect(row)) return schedule;
 
   const baseItems = normalizeLabFeeItems(schedule);
@@ -712,14 +708,145 @@ export function applyLabPracticeSpecialSupplyToSchedule(
   };
 }
 
-/** 청구·견적용. 마스터 Off면 0원, On이면 치과 특별공급가 반영. */
-export function resolveLabFeeScheduleSourceForPractice(labDoc, practiceAnchorId) {
+/**
+ * 치과별 특별공급(할인율·할인금액)을 수가표 items에 반영(live).
+ * rate: 전 항목 동일 %. amount: feeItemId/name 매칭 항목만 차감.
+ */
+export function applyLabPracticeSpecialSupplyToSchedule(
+  schedule,
+  labDoc,
+  practiceAnchorId,
+) {
+  return applyLabPracticeSpecialSupplyRowToSchedule(
+    schedule,
+    resolveLabPracticeSpecialSupplyRow(labDoc, practiceAnchorId),
+  );
+}
+
+/**
+ * 의뢰 생성 시점 특별공급 스냅샷.
+ * capturedAt 있음 = 캡처됨(할인 0도 포함 — 이후 live 변경 소급 금지).
+ */
+export function captureLabPracticeSpecialSupplySnapshot(
+  labDoc,
+  practiceAnchorId,
+  { at = new Date() } = {},
+) {
+  const row = resolveLabPracticeSpecialSupplyRow(labDoc, practiceAnchorId);
+  const capturedAt =
+    at instanceof Date
+      ? at
+      : Number.isFinite(toTimeMs(at))
+        ? new Date(toTimeMs(at))
+        : new Date();
+  if (!row || !specialSupplyRowHasEffect(row)) {
+    return {
+      capturedAt,
+      mode: "amount",
+      discountRate: 0,
+      items: [],
+    };
+  }
+  return {
+    capturedAt,
+    mode: row.mode,
+    discountRate: row.mode === "rate" ? row.discountRate : 0,
+    items: row.mode === "amount" ? row.items.map((item) => ({ ...item })) : [],
+  };
+}
+
+export function isLabPracticeSpecialSupplySnapshotCaptured(snapshot) {
+  if (!snapshot || typeof snapshot !== "object") return false;
+  return Number.isFinite(toTimeMs(snapshot.capturedAt));
+}
+
+/** billing 스냅샷 → 적용용 행(효과 없으면 null). */
+export function specialSupplyRowFromSnapshot(snapshot) {
+  if (!isLabPracticeSpecialSupplySnapshotCaptured(snapshot)) return null;
+  const mode = normalizeLabPracticeSpecialSupplyMode(snapshot.mode);
+  const row = {
+    practiceAnchorId: "",
+    mode,
+    discountRate:
+      mode === "rate"
+        ? normalizeLabPracticeSpecialSupplyDiscountRate(snapshot.discountRate)
+        : 0,
+    items:
+      mode === "amount"
+        ? normalizeLabPracticeSpecialSupplyItems(snapshot.items)
+        : [],
+    updatedAt: null,
+  };
+  return specialSupplyRowHasEffect(row) ? row : null;
+}
+
+/**
+ * 의뢰 시점 기준 특별공급.
+ * history 없음: updatedAt > asOf 이면 미적용(의뢰 이후 설정·변경 소급 금지).
+ */
+export function resolveLabPracticeSpecialSupplyRowAsOf(
+  labDoc,
+  practiceAnchorId,
+  asOf,
+) {
+  const row = resolveLabPracticeSpecialSupplyRow(labDoc, practiceAnchorId);
+  if (!row) return null;
+  const asOfMs = toTimeMs(asOf);
+  const appliedMs = toTimeMs(row.updatedAt);
+  if (
+    Number.isFinite(asOfMs) &&
+    Number.isFinite(appliedMs) &&
+    appliedMs > asOfMs
+  ) {
+    return null;
+  }
+  return row;
+}
+
+/**
+ * 기존 의뢰 견적·청구용 수가표.
+ * - liveSpecialSupply: 신규 견적·리메이크 미리보기
+ * - billing 스냅샷 있으면 스냅샷
+ * - 레거시(미캡처): createdAt 기준 as-of(updatedAt)
+ */
+export function resolveLabFeeScheduleSourceForPracticeTransfer({
+  labDoc,
+  practiceAnchorId,
+  createdAt = null,
+  specialSupplySnapshot = null,
+  liveSpecialSupply = false,
+} = {}) {
   const base = resolveLabFeeScheduleSource(labDoc?.labFeeSchedule);
-  return applyLabPracticeSpecialSupplyToSchedule(
+  if (liveSpecialSupply) {
+    return applyLabPracticeSpecialSupplyToSchedule(
+      base,
+      labDoc,
+      practiceAnchorId,
+    );
+  }
+  if (isLabPracticeSpecialSupplySnapshotCaptured(specialSupplySnapshot)) {
+    return applyLabPracticeSpecialSupplyRowToSchedule(
+      base,
+      specialSupplyRowFromSnapshot(specialSupplySnapshot),
+    );
+  }
+  return applyLabPracticeSpecialSupplyRowToSchedule(
     base,
+    resolveLabPracticeSpecialSupplyRowAsOf(
+      labDoc,
+      practiceAnchorId,
+      createdAt,
+    ),
+  );
+}
+
+/** 청구·견적용(신규/live). 마스터 Off면 0원, On이면 치과 특별공급가 반영. */
+export function resolveLabFeeScheduleSourceForPractice(labDoc, practiceAnchorId) {
+  return resolveLabFeeScheduleSourceForPracticeTransfer({
     labDoc,
     practiceAnchorId,
-  );
+    liveSpecialSupply: true,
+  });
 }
 
 export const LAB_TRADING_PARTNER_WINDOW_DAYS = 60;

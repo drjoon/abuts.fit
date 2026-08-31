@@ -35,6 +35,7 @@
 // - 2026-08-14: 환봉 요청중 판별용 치과 implantFavorites를 견적·청구 계산에 전달.
 // - 2026-08-14: 치과별 기공수가 할증(labPracticeFeeMultipliers → labFeeMultiplier).
 // - 2026-08-29: 치과별 특별공급가(labPracticeSpecialSupplyPrices) 견적·청구 반영.
+// - 2026-08-31: 특별공급가 billing 스냅샷·as-of(기존 의뢰 소급 금지). 신규 견적·리메이크는 live.
 // - 2026-08-14: 지정 기공소: 생성 시 billing.labFeeMultiplier 스냅샷(할증 소급 금지).
 // - 2026-08-14: 자동매칭: 치과별 할증 사용. 할증 updatedAt > 의뢰 createdAt 이면 해당 건 미적용.
 // - 2026-08-14: 자동매칭 수락 예산 검증은 공개 수가(할증 제외). 할증은 청구에만.
@@ -112,7 +113,10 @@ import {
   normalizeLabFeeSchedule,
   resolveLabFeeScheduleSource,
   resolveLabFeeScheduleSourceForPractice,
+  resolveLabFeeScheduleSourceForPracticeTransfer,
   applyLabPracticeSpecialSupplyToSchedule,
+  captureLabPracticeSpecialSupplySnapshot,
+  isLabPracticeSpecialSupplySnapshotCaptured,
   resolveLabPracticeFeeMultiplier,
   resolveLabPracticeFeeMultiplierAsOf,
   splitPracticeTransferSettlement,
@@ -938,10 +942,17 @@ export async function commitPracticeTransferBilling({
     {
       toothWorks,
       implantFavorites: implantFavoritesFromPractice(practice),
-      labFeeSchedule: resolveLabFeeScheduleSourceForPractice(
-        feeScheduleLab,
+      labFeeSchedule: resolveLabFeeScheduleSourceForPracticeTransfer({
+        labDoc: feeScheduleLab,
         practiceAnchorId,
-      ),
+        createdAt: transfer?.createdAt,
+        specialSupplySnapshot: transfer?.billing?.labPracticeSpecialSupply,
+        liveSpecialSupply:
+          isAutoMatch &&
+          !isLabPracticeSpecialSupplySnapshotCaptured(
+            transfer?.billing?.labPracticeSpecialSupply,
+          ),
+      }),
       abutmentPricingTier,
       abutmentPrices,
       remake,
@@ -2190,10 +2201,18 @@ async function computeAcceptedPracticeTransferFees({
     {
       toothWorks,
       implantFavorites: implantFavoritesFromPractice(practice),
-      labFeeSchedule: resolveLabFeeScheduleSourceForPractice(
-        feeScheduleLab,
+      labFeeSchedule: resolveLabFeeScheduleSourceForPracticeTransfer({
+        labDoc: feeScheduleLab,
         practiceAnchorId,
-      ),
+        createdAt: transfer?.createdAt,
+        specialSupplySnapshot: transfer?.billing?.labPracticeSpecialSupply,
+        // 자동매칭 수락 직전(미캡처)은 live. 이후 billed 금액 고정.
+        liveSpecialSupply:
+          isAutoMatch &&
+          !isLabPracticeSpecialSupplySnapshotCaptured(
+            transfer?.billing?.labPracticeSpecialSupply,
+          ),
+      }),
       abutmentPricingTier,
       abutmentPrices,
       remake,
@@ -3700,6 +3719,11 @@ export function toFeeQuoteApi(quote) {
 
 export function toBillingPreviewFields(quote) {
   const api = toFeeQuoteApi(quote);
+  const specialSupply = isLabPracticeSpecialSupplySnapshotCaptured(
+    quote?.labPracticeSpecialSupply,
+  )
+    ? quote.labPracticeSpecialSupply
+    : undefined;
   return {
     labFeeTotal: api.labFeeTotal,
     labAbutmentTotal: api.labAbutmentTotal,
@@ -3712,6 +3736,7 @@ export function toBillingPreviewFields(quote) {
     relationshipKind: api.relationshipKind,
     feeRateApplied: api.feeRateApplied,
     labFeeMultiplier: api.labFeeMultiplier,
+    ...(specialSupply ? { labPracticeSpecialSupply: specialSupply } : {}),
     rushFeeMultiplier: api.rushFeeMultiplier,
     labTradingPartnerId: api.labTradingPartnerId,
     labSettlementAmount: api.labSettlementAmount,
@@ -3892,6 +3917,10 @@ export async function buildPracticeTransferQuote({
   const labFeeMultiplier = usedDefaultSchedule
     ? 1
     : resolveLabPracticeFeeMultiplier(lab, practiceId);
+  // 지정 기공소: 생성 시 스냅샷. 자동매칭(기공소 미정): 수락 시 live 후 billed 고정.
+  const labPracticeSpecialSupply = usedDefaultSchedule
+    ? null
+    : captureLabPracticeSpecialSupplySnapshot(lab, practiceId);
   const rushFeeMultiplier = normalizeRushFeeMultiplier(rushFeeMultiplierInput);
   const fees = computePracticeTransferRetailFeesWithLabShipping(
     {
@@ -3968,6 +3997,7 @@ export async function buildPracticeTransferQuote({
     relationshipKind: kind === "active" || kind === "referred" ? kind : "none",
     feeRateApplied,
     labFeeMultiplier,
+    labPracticeSpecialSupply,
     rushFeeMultiplier,
     labSettlementAmount,
     abutsRevenueAmount,
@@ -4051,6 +4081,7 @@ export async function loadPracticeTransferQuoteContext({
 /**
  * 목록/상세용 견적. 과금 완료 건은 스냅샷 금액 유지.
  * 미청구·지정·수락된 자동매칭: billing.labFeeMultiplier 스냅샷(할증 소급 금지).
+ * 미청구: billing.labPracticeSpecialSupply 스냅샷(없으면 createdAt as-of).
  * 미청구·자동매칭 공개풀: 의뢰 createdAt 기준 as-of(history).
  * 하청 후 원청(어벗츠 기공사업부) 화면은 전액 수주(수수료 0). 하청은 subcontractFeeRate.
  */
@@ -4196,6 +4227,15 @@ export async function buildFeeQuotesForTransferDocs({
     const remakeLabFeeMultiplier = liveLabFeeMultiplier;
     const feeSchedule = noLab
       ? LAB_FEE_SCHEDULE_ZEROS
+      : resolveLabFeeScheduleSourceForPracticeTransfer({
+          labDoc: labDocById.get(quoteLabId) || { labFeeSchedule: schedule },
+          practiceAnchorId: practiceId,
+          createdAt: doc?.createdAt,
+          specialSupplySnapshot: billing?.labPracticeSpecialSupply,
+          liveSpecialSupply: false,
+        });
+    const remakeFeeSchedule = noLab
+      ? LAB_FEE_SCHEDULE_ZEROS
       : resolveLabFeeScheduleSourceForPractice(
           labDocById.get(quoteLabId) || { labFeeSchedule: schedule },
           practiceId,
@@ -4203,7 +4243,7 @@ export async function buildFeeQuotesForTransferDocs({
     const remakeFees = computePracticeTransferRetailFees({
       toothWorks,
       implantFavorites,
-      labFeeSchedule: feeSchedule,
+      labFeeSchedule: remakeFeeSchedule,
       abutmentPricingTier,
       abutmentPrices,
       remake: true,

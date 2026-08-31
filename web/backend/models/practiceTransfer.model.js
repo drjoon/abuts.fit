@@ -238,6 +238,12 @@ const practiceTransferSchema = new mongoose.Schema(
       feeRateApplied: { type: Number, default: 0 },
       // 기공수가 할증 배수(1=없음). 생성·수락 시점 스냅샷.
       labFeeMultiplier: { type: Number, default: 1, min: 1, max: 5 },
+      // 치과별 특별공급가 생성 시점 스냅샷(capturedAt). 이후 설정 변경 소급 금지.
+      // related: captureLabPracticeSpecialSupplySnapshot (labFeeSchedule.js)
+      labPracticeSpecialSupply: {
+        type: mongoose.Schema.Types.Mixed,
+        default: undefined,
+      },
       // 신속처리 할증(1 | 1.5). 기공비·어벗츠 모두. 생성 스냅샷.
       rushFeeMultiplier: { type: Number, default: 1, min: 1, max: 2 },
       labTradingPartnerId: {

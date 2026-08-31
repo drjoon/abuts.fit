@@ -509,6 +509,10 @@ const clearAutoMatchClaimFields = (doc, { bumpRelease = true } = {}) => {
     feeRateApplied: 0,
     // 생성 시 할증 스냅샷 유지(클레임 해제 후에도 소급 적용 금지).
     labFeeMultiplier: Number(prevBilling.labFeeMultiplier || 1),
+    ...(prevBilling.labPracticeSpecialSupply &&
+    typeof prevBilling.labPracticeSpecialSupply === "object"
+      ? { labPracticeSpecialSupply: prevBilling.labPracticeSpecialSupply }
+      : {}),
     labTradingPartnerId: null,
     labSettlementAmount: 0,
     abutsRevenueAmount: 0,
@@ -1010,16 +1014,27 @@ const toCalendarOwnedRequestRows = (transferDoc) => {
   const teeth = [];
   const seenPatient = new Set();
   const seenTooth = new Set();
+  const pushTooth = (raw) => {
+    const parts = String(raw || "")
+      .split(/[,/\s]+/)
+      .map((part) => String(part || "").trim())
+      .filter((n) => /^[1-4][1-8]$/.test(n));
+    for (const tooth of parts) {
+      if (seenTooth.has(tooth)) continue;
+      seenTooth.add(tooth);
+      teeth.push(tooth);
+    }
+  };
   for (const row of rows) {
     const patient = String(row?.caseInfos?.patientName || "").trim();
     if (patient && patient !== "-" && !seenPatient.has(patient)) {
       seenPatient.add(patient);
       patients.push(patient);
     }
-    const tooth = String(row?.caseInfos?.tooth || "").trim();
-    if (tooth && !seenTooth.has(tooth)) {
-      seenTooth.add(tooth);
-      teeth.push(tooth);
+    pushTooth(row?.caseInfos?.tooth);
+    const toothWorks = Array.isArray(row?.toothWorks) ? row.toothWorks : [];
+    for (const work of toothWorks) {
+      pushTooth(work?.toothNumber);
     }
   }
   return [
@@ -6604,6 +6619,10 @@ export async function markReceivedPracticeTransferRelease(req, res) {
         relationshipKind: "none",
         feeRateApplied: 0,
         labFeeMultiplier: Number(prevBilling.labFeeMultiplier || 1),
+        ...(prevBilling.labPracticeSpecialSupply &&
+        typeof prevBilling.labPracticeSpecialSupply === "object"
+          ? { labPracticeSpecialSupply: prevBilling.labPracticeSpecialSupply }
+          : {}),
         labTradingPartnerId: null,
         labSettlementAmount: 0,
         abutsRevenueAmount: 0,
@@ -7114,6 +7133,10 @@ export async function markReceivedPracticeTransferReject(req, res) {
       relationshipKind: "none",
       feeRateApplied: 0,
       labFeeMultiplier: Number(prevBilling.labFeeMultiplier || 1),
+      ...(prevBilling.labPracticeSpecialSupply &&
+      typeof prevBilling.labPracticeSpecialSupply === "object"
+        ? { labPracticeSpecialSupply: prevBilling.labPracticeSpecialSupply }
+        : {}),
       labTradingPartnerId: null,
       labSettlementAmount: 0,
       abutsRevenueAmount: 0,
