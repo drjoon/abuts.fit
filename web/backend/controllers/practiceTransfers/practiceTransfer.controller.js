@@ -6465,11 +6465,25 @@ export async function markReceivedPracticeTransferRelease(req, res) {
     }
 
     const isAutoEarly = isAutoMatchMode(doc);
-    // 이미 수락 해제된 재요청(더블클릭·지연 응답) — 409 대신 멱등 성공으로 UI를 맞춘다.
+    // 이미 수락 해제된 재요청(더블클릭·지연 응답) — 409 대신 멱등 성공.
+    // 저널이 남아 있으면 롤백을 한 번 더 시도(과거 fail-open 잔여분 보정).
     if (!doc.requestorDownloadedAt) {
       const alreadyOpenPool = isAutoEarly && isAutoMatchOpenPool(doc);
       const alreadyWorkCanceled = Boolean(doc.workCanceledAt);
       if (alreadyOpenPool || alreadyWorkCanceled) {
+        try {
+          await rollbackPracticeTransferBilling({
+            transferId: doc._id,
+            emitRealtime: true,
+            syncBalanceCache: true,
+          });
+        } catch (rollbackErr) {
+          console.warn(
+            "[practiceTransfer] work-cancel idempotent billing rollback failed",
+            String(doc?._id || ""),
+            rollbackErr?.message || rollbackErr,
+          );
+        }
         return res.status(200).json({
           success: true,
           data: {
@@ -6520,32 +6534,42 @@ export async function markReceivedPracticeTransferRelease(req, res) {
       didRollback: false,
       balanceRestoreByAnchor: {},
     };
-    const [rollbackSettled, clearResult] = await Promise.all([
-      rollbackPracticeTransferBilling({
+    let clearResult = { cleared: false, blockedPastReady: false };
+    try {
+      // 과금 롤백이 끝난 뒤에만 billing/수락 상태를 비운다.
+      // (예전: rollback 실패를 swallow → heldAt만 지워져 장부에 「적립/결제 완료」로 보임)
+      rollbackResult = await rollbackPracticeTransferBilling({
         transferId: doc._id,
         emitRealtime: false,
         syncBalanceCache: false,
-      }).catch((rollbackErr) => {
-        console.warn(
-          "[practiceTransfer] work-cancel billing rollback failed",
-          String(doc?._id || ""),
-          rollbackErr?.message || rollbackErr,
-        );
-        return { didRollback: false, balanceRestoreByAnchor: {} };
-      }),
-      clearRelatedAbutmentProductionOnRelease(doc, {
+      });
+    } catch (rollbackErr) {
+      console.error(
+        "[practiceTransfer] work-cancel billing rollback failed",
+        String(doc?._id || ""),
+        rollbackErr?.message || rollbackErr,
+      );
+      return res.status(rollbackErr?.statusCode || 500).json({
+        success: false,
+        message:
+          rollbackErr?.message ||
+          "정산 보류 해제에 실패했습니다. 잠시 후 다시 시도해 주세요.",
+        reason: "billing_rollback_failed",
+      });
+    }
+    try {
+      clearResult = await clearRelatedAbutmentProductionOnRelease(doc, {
         linkedRequestIds,
         skipPastReadyCheck: true,
-      }).catch((clearErr) => {
-        console.warn(
-          "[practiceTransfer] work-cancel abutment production clear failed",
-          String(doc?._id || ""),
-          clearErr?.message || clearErr,
-        );
-        return { cleared: false, blockedPastReady: false };
-      }),
-    ]);
-    rollbackResult = rollbackSettled || rollbackResult;
+      });
+    } catch (clearErr) {
+      console.warn(
+        "[practiceTransfer] work-cancel abutment production clear failed",
+        String(doc?._id || ""),
+        clearErr?.message || clearErr,
+      );
+      clearResult = { cleared: false, blockedPastReady: false };
+    }
     if (clearResult?.blockedPastReady) {
       return res.status(409).json({
         success: false,

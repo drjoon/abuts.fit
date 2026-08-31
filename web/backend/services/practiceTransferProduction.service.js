@@ -6,6 +6,7 @@
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
 // - 2026-08-31: PTX CA 생산·배송 크레딧 hold는 수락이 아니라 design-handoff에서 잡음.
+// - 2026-08-31: 수락 취소 시 어벗디자인비도 revoke(design-handoff cancel과 동일).
 // - 2026-08-28: 심플어벗(치과 재고)은 어벗츠 CA Request 생성 대상에서 제외.
 // - 2026-08-22: 치과 멤버십/일반 청구 이중가 제거. 고시 membership* 단일가. pricingTier 분기 삭제.
 // - 2026-08-22: PTX 작업취소 시 연동 CA Request 크레딧 hold도 즉시 해제(내역·잔액 지연 방지).
@@ -1295,6 +1296,22 @@ export async function clearRelatedAbutmentProductionOnRelease(
       // (예전: manufacturerStage만 취소 → hold 저널이 남아 크레딧 내역/잔액이 늦게 맞거나 어긋남)
       const excludeSiblingIds = objectIds.map((id) => String(id));
       const holdReleaseRows = await Request.find({ _id: { $in: objectIds } });
+      const transferIdStr = String(transferDoc._id || "").trim();
+      const labAnchorForFee =
+        labAnchorId ||
+        String(holdReleaseRows[0]?.businessAnchorId || "").trim() ||
+        "";
+      let revokeAbutmentDesignLabFee = null;
+      try {
+        ({ revokeAbutmentDesignLabFee } = await import(
+          "./practiceTransferBilling.service.js"
+        ));
+      } catch (importErr) {
+        console.warn(
+          "[clearRelatedAbutmentProductionOnRelease] design fee revoke import failed",
+          importErr?.message || importErr,
+        );
+      }
       for (const requestDoc of holdReleaseRows) {
         if (String(requestDoc?.manufacturerStage || "").trim() !== "취소") continue;
         try {
@@ -1308,6 +1325,22 @@ export async function clearRelatedAbutmentProductionOnRelease(
             String(requestDoc?._id || ""),
             holdErr?.message || holdErr,
           );
+        }
+        if (typeof revokeAbutmentDesignLabFee === "function" && transferIdStr) {
+          try {
+            await revokeAbutmentDesignLabFee({
+              requestDoc,
+              transferId: transferIdStr,
+              labAnchorId: labAnchorForFee,
+              actorUserId: null,
+            });
+          } catch (feeErr) {
+            console.warn(
+              "[clearRelatedAbutmentProductionOnRelease] design fee revoke failed",
+              String(requestDoc?._id || ""),
+              feeErr?.message || feeErr,
+            );
+          }
         }
       }
 
