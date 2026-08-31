@@ -678,12 +678,19 @@ export function PracticeRecentTransfersAllModal({
             </div>
           ) : isMobile ? (
             <>
+              <p className="mb-2 px-0.5 text-xs font-medium text-slate-500">
+                기공소에 전송된 의뢰
+              </p>
               {filteredTransfers.length === 0 ? (
                 <div className="flex flex-1 flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-16 text-center">
-                  <p className="text-sm font-medium text-slate-600">전송 내역 없음</p>
+                  <p className="text-sm font-medium text-slate-600">전송된 의뢰 없음</p>
                   {search.trim() ? (
                     <p className="mt-1 text-xs text-muted-foreground">검색어를 바꿔 보세요.</p>
-                  ) : null}
+                  ) : (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      작성 중·저장만 한 의뢰는 위 「임시저장」에서 확인하세요.
+                    </p>
+                  )}
                 </div>
               ) : (
                 <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto overscroll-contain pb-2">

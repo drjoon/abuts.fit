@@ -6793,6 +6793,10 @@ export const PracticeFileTransferPage = ({
       await waitForComposeFileSyncIdle();
     }
 
+    toast({
+      title: "임시저장됨",
+      description: "PC에서 이어서 작성한 뒤 기공소로 전송하세요.",
+    });
     setComposeOpen(false);
   };
 
@@ -7236,7 +7240,7 @@ export const PracticeFileTransferPage = ({
     </>
   );
 
-  /** 메인 헤더 — 모바일: 의뢰(임시저장 목록)·휴지통. PC: 임시저장·휴지통·데모 */
+  /** 메인 헤더 — 모바일/PC: 임시저장·휴지통(+PC 데모). 아래 목록은 기공소 전송 완료건만. */
   const calendarHeaderActions = isMobile ? (
     <div className="flex w-full shrink-0 flex-nowrap items-center justify-center gap-2.5">
       <Button
@@ -7246,14 +7250,14 @@ export const PracticeFileTransferPage = ({
         className="h-9 shrink-0 gap-1 rounded-full border-slate-200 bg-white px-3 shadow-sm"
         aria-label={
           draftGroupedTransfers.length > 0
-            ? `의뢰 ${draftGroupedTransfers.length}건`
-            : "의뢰"
+            ? `임시저장 ${draftGroupedTransfers.length}건`
+            : "임시저장"
         }
-        title="의뢰 현황"
+        title="임시저장 — 기공소 전송 전 작성 중 의뢰"
         onClick={() => setDraftsOpen(true)}
       >
         <BookmarkPlus className="h-4 w-4 shrink-0" />
-        의뢰
+        임시저장
         {draftGroupedTransfers.length > 0 ? (
           <Badge
             variant="secondary"
@@ -8032,7 +8036,7 @@ export const PracticeFileTransferPage = ({
                   )}
                 >
                   <BookmarkPlus className="h-5 w-5 shrink-0 text-primary-strong" />
-                  {isMobile ? "의뢰 현황" : "임시저장"}
+                  임시저장
                   {draftGroupedTransfers.length > 0 ? (
                     <Badge
                       variant="secondary"
@@ -8142,24 +8146,18 @@ export const PracticeFileTransferPage = ({
                       >
                         <div className="flex min-w-0 items-center gap-2">
                           <div className="min-w-0 flex-1">
-                            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                              <Badge
-                                variant="outline"
-                                className="h-6 shrink-0 px-2 text-[11px] font-semibold leading-none"
-                              >
-                                임시저장
-                              </Badge>
-                              <Badge
-                                variant="outline"
-                                className="h-6 px-1.5 text-[10px]"
-                              >
-                                {ownerLabel}
-                              </Badge>
+                            <div className="flex min-w-0 flex-nowrap items-center gap-1.5">
                               {isActive ? (
-                                <Badge className="h-6 rounded-md border-0 bg-primary-strong px-1.5 text-[10px] font-medium text-white hover:bg-primary-strong">
+                                <Badge className="h-6 shrink-0 rounded-md border-0 bg-primary-strong px-1.5 text-[10px] font-medium text-white hover:bg-primary-strong">
                                   작성 중
                                 </Badge>
                               ) : null}
+                              <Badge
+                                variant="outline"
+                                className="h-6 shrink-0 px-1.5 text-[10px]"
+                              >
+                                {ownerLabel}
+                              </Badge>
                               <span className="ml-auto shrink-0 text-[11px] tabular-nums text-muted-foreground">
                                 {transfer.createdAt}
                               </span>
