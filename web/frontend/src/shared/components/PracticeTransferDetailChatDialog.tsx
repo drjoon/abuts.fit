@@ -162,6 +162,7 @@ import {
 import { LabPendingAbutmentGuide } from "@/shared/components/practice/LabPendingAbutmentGuide";
 import {
   getPracticeTransferFileExtension,
+  partitionLabChatDropFiles,
   PRACTICE_ACCEPTED_HINT,
   PRACTICE_TRANSFER_IMAGE_EXTENSIONS,
 } from "@/shared/practice/practiceTransferAccept";
@@ -1250,12 +1251,22 @@ export function PracticeTransferDetailChatDialog({
     !workCanceled &&
     !workCompleted;
   const workFileDropActive = Boolean(
-    workFileDrop &&
-      !workFileDrop.disabled &&
-      !minimized &&
-      panelTab !== "chat",
+    workFileDrop && !workFileDrop.disabled && !minimized,
   );
   const chatFileDropActive = panelTab === "chat" && !inputDisabled && !minimized;
+  const handleChatTabDropFiles = useCallback(
+    (files: File[]) => {
+      if (!files.length) return;
+      if (workFileDropActive) {
+        const { stlFiles, chatFiles } = partitionLabChatDropFiles(files);
+        if (stlFiles.length) workFileDrop!.onFiles(stlFiles);
+        if (chatFiles.length) onAttachChatFiles(chatFiles);
+        return;
+      }
+      onAttachChatFiles(files);
+    },
+    [onAttachChatFiles, workFileDrop, workFileDropActive],
+  );
   const workFileDropGuideText = String(workFileDrop?.guideText || "").trim();
   const workFileDropGuideDetail = String(
     workFileDrop?.guideDetail || "",
@@ -1905,7 +1916,7 @@ export function PracticeTransferDetailChatDialog({
           >
             <PracticeTransferFileDropTarget
               fileInputId="practice-transfer-chat-attach-drop"
-              onFiles={onAttachChatFiles}
+              onFiles={handleChatTabDropFiles}
               disabled={!chatFileDropActive}
               showDefaultUi={false}
               filterFiles={(files) => files}
@@ -1924,10 +1935,14 @@ export function PracticeTransferDetailChatDialog({
                     <UploadCloud className="h-8 w-8" />
                   </div>
                   <p className="text-sm font-semibold text-primary-strong">
-                    사진·파일을 놓아 첨부
+                    {workFileDropActive
+                      ? "파일을 놓아 업로드"
+                      : "사진·파일을 놓아 첨부"}
                   </p>
                   <p className="text-center text-xs text-muted-foreground">
-                    채팅에 보낼 파일을 여기에 놓으세요
+                    {workFileDropActive
+                      ? "STL → 작업 파일 · 그 외 → 채팅"
+                      : "채팅에 보낼 파일을 여기에 놓으세요"}
                   </p>
                 </div>
               ) : null}

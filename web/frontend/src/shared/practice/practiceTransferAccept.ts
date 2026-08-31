@@ -49,3 +49,17 @@ export const isPracticeTransferAcceptedFile = (file: File) => {
 
 export const filterPracticeTransferFiles = (files: File[]) =>
   files.filter((file) => isPracticeTransferAcceptedFile(file));
+
+export const isPracticeTransferStlFile = (file: File) =>
+  getPracticeTransferFileExtension(file.name) === ".stl";
+
+/** 기공소 채팅 탭 드롭 — STL은 작업 파일, 그 외는 채팅 첨부 */
+export const partitionLabChatDropFiles = (files: File[]) => {
+  const stlFiles: File[] = [];
+  const chatFiles: File[] = [];
+  for (const file of files) {
+    if (isPracticeTransferStlFile(file)) stlFiles.push(file);
+    else chatFiles.push(file);
+  }
+  return { stlFiles, chatFiles };
+};
