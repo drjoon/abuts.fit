@@ -27,6 +27,7 @@ import {
   listPendingLabSettlementLedgerRows,
   matchesCreditUsageScope,
   parseCreditUsageScope,
+  resolvePracticeTransferDemoFundingByIds,
 } from "./creditLedger.utils.js";
 import {
   isCustomAbutmentLabFeeLineType,
@@ -381,10 +382,25 @@ export async function getMyCreditLedgerStats(req, res) {
     { $sort: { occurredAt: 1 } },
   ]);
 
-  const classifyDemoUsage = (row) => {
+  const classifyDemoUsage = (row, demoFundingByPtx = null) => {
     if (Boolean(row?.journalDemoCredit)) return true;
-    if (!practiceDemoMode) return false;
     const eventType = String(row?.eventType || "");
+    const accountCode = String(row?.accountCode || "");
+    const isSettlementEarn =
+      eventType === "LAB_SETTLEMENT_CHARGE" ||
+      (eventType === "PRACTICE_TRANSFER_SPEND_COMMIT" &&
+        accountCode === "LAB_SETTLEMENT_CREDIT") ||
+      resolveStatsCategory(
+        eventType,
+        row?.refType,
+        accountCode,
+        Number(row?.amount || 0),
+      ) === "settlement_earn";
+    if (isSettlementEarn && demoFundingByPtx) {
+      const refId = row?.refId ? String(row.refId) : "";
+      if (refId && demoFundingByPtx.get(refId)) return true;
+    }
+    if (!practiceDemoMode) return false;
     if (
       eventType === "CHARGE_FREE_REQUEST" ||
       eventType === "CHARGE_FREE_SHIPPING"
@@ -394,13 +410,38 @@ export async function getMyCreditLedgerStats(req, res) {
     return Number(row?.spentFreeAmount || 0) > 0;
   };
 
+  const settlementPtxIdsForDemo = [];
+  for (const row of journalRows) {
+    const eventType = String(row?.eventType || "");
+    const accountCode = String(row?.accountCode || "");
+    const category = resolveStatsCategory(
+      eventType,
+      row?.refType,
+      accountCode,
+      Number(row?.amount || 0),
+    );
+    if (category !== "settlement_earn") continue;
+    const refId = row?.refId ? String(row.refId) : "";
+    if (refId && mongoose.Types.ObjectId.isValid(refId)) {
+      settlementPtxIdsForDemo.push(refId);
+    }
+  }
+  const demoFundingByPtx = isLab
+    ? await resolvePracticeTransferDemoFundingByIds(settlementPtxIdsForDemo)
+    : new Map();
+
   const scopedJournalRows = journalRows.filter((row) =>
-    matchesCreditUsageScope(classifyDemoUsage(row), usageScope),
+    matchesCreditUsageScope(
+      classifyDemoUsage(row, demoFundingByPtx),
+      usageScope,
+    ),
   );
 
   let hasDemoUsage = demoMode;
   if (!hasDemoUsage) {
-    hasDemoUsage = journalRows.some((row) => classifyDemoUsage(row));
+    hasDemoUsage = journalRows.some((row) =>
+      classifyDemoUsage(row, demoFundingByPtx),
+    );
   }
 
   const ptxIds = new Set();
@@ -541,7 +582,7 @@ export async function getMyCreditLedgerStats(req, res) {
     bucket[field] = roundSupplyAmount(bucket[field] + amount);
   };
   for (const row of journalRows) {
-    const isDemo = classifyDemoUsage(row);
+    const isDemo = classifyDemoUsage(row, demoFundingByPtx);
     const bucket = isDemo ? usageDemo : usageReal;
     const eventType = String(row?.eventType || "");
     const amount = Number(row?.amount || 0);

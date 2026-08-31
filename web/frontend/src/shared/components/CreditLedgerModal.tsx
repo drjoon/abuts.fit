@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-08-31: 상단 요약 카드 전체(유료·무료·정산·소비) 실사용/데모 2줄.
+// - 2026-08-31: 현재 잔액·테이블 잔액 — 실사용/데모 2줄 표시.
 // - 2026-08-31: 요약 소비 카드 라벨「소비」(구「기공, 스토어」). 치과·기공소 공통.
 // - 2026-08-31: 데모/실사용 체크박스 필터(usageScope) + 깜빡임 안내. 요약·테이블 공통.
 // - 2026-08-31: 기공소 내역 요약 — 치과와 동일 +/− 수식(유료·데모/무료·정산 적립·기공/스토어). 기간 필터는 카드만.
@@ -169,9 +171,11 @@ import {
   DEMO_MODE_BADGE_LABEL,
 } from "@/shared/demo/demoModeCopy";
 import { CreditUsageScopeFilter } from "@/shared/demo/CreditUsageScopeFilter";
+import { CreditUsageSplitAmount } from "@/shared/demo/CreditUsageSplitAmount";
 import {
   appendCreditUsageScopeParam,
   readCreditUsageScopeGuideSeen,
+  type CreditUsageAmountBucket,
   type CreditUsageScopeSelection,
 } from "@/shared/demo/creditUsageScope";
 
@@ -266,6 +270,8 @@ type CreditLedgerItem = {
   includesExpressSurcharge?: boolean;
   createdAt: string;
   balanceAfter?: number;
+  balanceAfterReal?: number;
+  balanceAfterDemo?: number;
   patientName?: string;
   labName?: string;
   /** 기공의뢰 원본 메모(메타 포함) — 상세 모달 주문일·도착일·메모 파싱용 */
@@ -281,6 +287,8 @@ type CreditLedgerItem = {
   practiceTransferAbutmentPending?: boolean;
   /** 치과 데모 크레딧으로 보류된 기공비(기공소 적립 보류 행) */
   fundedByDemoCredit?: boolean;
+  /** 데모 크레딧 거래(본인 데모 또는 상대 데모 적립 보류) */
+  isDemoUsage?: boolean;
   /** 보류 미러 등 — 잔액 러닝에 아직 미반영 */
   excludeFromBalanceRunning?: boolean;
   /** 보류/배송 몫: lab | abutment | lab_shipping | abuts_shipping */
@@ -357,6 +365,8 @@ type CreditBalanceSnapshot = {
   freeShippingCredit?: number;
   freeCredit?: number;
   settlementCredit?: number;
+  realBalance?: number;
+  demoBalance?: number;
   requestorKind?: "practice" | "lab" | null;
   showSettlementCredit?: boolean;
   demoMode?: boolean;
@@ -368,6 +378,10 @@ type PeriodSpendSummary = {
   totalFreeChargeSupply?: number;
   totalSpendSupply: number;
   totalSettlementEarnSupply?: number;
+  byUsage?: {
+    real?: CreditUsageAmountBucket;
+    demo?: CreditUsageAmountBucket;
+  } | null;
 };
 
 type SummaryDrillDownState = {
@@ -437,6 +451,8 @@ type LedgerDisplayRow = {
   createdAt: string;
   amount: number;
   balanceAfter?: number;
+  balanceAfterReal?: number;
+  balanceAfterDemo?: number;
   spentPaidAmount: number;
   spentFreeAmount: number;
   type: CreditLedgerType;
@@ -1421,6 +1437,8 @@ const groupLedgerItemsForDisplay = (
         createdAt: String(latest.createdAt || ""),
         amount,
         balanceAfter: latest.balanceAfter,
+        balanceAfterReal: latest.balanceAfterReal ?? latest.balanceAfter,
+        balanceAfterDemo: latest.balanceAfterDemo,
         spentPaidAmount,
         spentFreeAmount,
         type: latest.type,
@@ -1477,6 +1495,8 @@ const groupLedgerItemsForDisplay = (
         createdAt: String(latest.createdAt || ""),
         amount,
         balanceAfter: latest.balanceAfter,
+        balanceAfterReal: latest.balanceAfterReal ?? latest.balanceAfter,
+        balanceAfterDemo: latest.balanceAfterDemo,
         spentPaidAmount,
         spentFreeAmount,
         type: latest.type,
@@ -1500,6 +1520,8 @@ const groupLedgerItemsForDisplay = (
       createdAt: String(item.createdAt || ""),
       amount: Number(item.amount || 0),
       balanceAfter: item.balanceAfter,
+      balanceAfterReal: item.balanceAfterReal ?? item.balanceAfter,
+      balanceAfterDemo: item.balanceAfterDemo,
       spentPaidAmount: Number(item.spentPaidAmount || 0),
       spentFreeAmount: Number(item.spentFreeAmount || 0),
       type: item.type,
@@ -2432,11 +2454,28 @@ export const CreditLedgerModal = ({
   const settlementCreditTotal = currentBalanceSnapshot
     ? Number(currentBalanceSnapshot.settlementCredit ?? 0)
     : 0;
-  const currentBalanceTotal = currentBalanceSnapshot
-    ? Number(currentBalanceSnapshot.paidCredit || 0) +
-      freeCreditTotal +
-      (showSettlementCredit ? settlementCreditTotal : 0)
+  const demoBalanceTotal = currentBalanceSnapshot
+    ? Math.max(0, Number(currentBalanceSnapshot.demoBalance ?? 0))
     : 0;
+  const realBalanceTotal = currentBalanceSnapshot
+    ? Math.max(
+        0,
+        Number(
+          currentBalanceSnapshot.realBalance ??
+            Number(currentBalanceSnapshot.paidCredit || 0) +
+              freeCreditTotal +
+              (showSettlementCredit ? settlementCreditTotal : 0) -
+              demoBalanceTotal,
+        ),
+      )
+    : 0;
+  const currentBalanceTotal = currentBalanceSnapshot
+    ? realBalanceTotal + demoBalanceTotal
+    : 0;
+  const isDemoMode = Boolean(currentBalanceSnapshot?.demoMode);
+  const showSplitBalance =
+    Boolean(currentBalanceSnapshot) &&
+    (demoBalanceTotal > 0 || hasDemoUsage || isDemoMode);
 
   const periodPaidChargeTotal = Number(
     periodSpendSummary?.totalPaidChargeSupply || 0,
@@ -2450,10 +2489,38 @@ export const CreditLedgerModal = ({
   const periodSettlementEarnTotal = Number(
     periodSpendSummary?.totalSettlementEarnSupply || 0,
   );
+  const periodReal = periodSpendSummary?.byUsage?.real;
+  const periodDemo = periodSpendSummary?.byUsage?.demo;
+  const periodFreeSplit = {
+    real: Number(periodReal?.totalFreeChargeSupply || 0),
+    demo: Number(periodDemo?.totalFreeChargeSupply || 0),
+  };
+  const periodSpendSplit = {
+    real: Number(periodReal?.totalSpendSupply || 0),
+    demo: Number(periodDemo?.totalSpendSupply || 0),
+  };
+  const periodSettlementSplit = {
+    real: Number(periodReal?.totalSettlementEarnSupply || 0),
+    demo: Number(periodDemo?.totalSettlementEarnSupply || 0),
+  };
+
+  const splitBalanceValue = (
+    <CreditUsageSplitAmount real={realBalanceTotal} demo={demoBalanceTotal} />
+  );
+  const hasPeriodUsageSplit = Boolean(periodReal || periodDemo);
+  /** 데모가 섞일 수 있는 카드만 2줄(무료·정산 적립·소비). 유료는 항상 실사용. */
+  const cardValueUsage = (
+    total: number,
+    split: { real: number; demo: number },
+  ) =>
+    showSplitBalance && hasPeriodUsageSplit ? (
+      <CreditUsageSplitAmount real={split.real} demo={split.demo} />
+    ) : (
+      total
+    );
 
   const showPeriodSpendCard =
     Boolean(currentBalanceSnapshot) && equationLedgerUi;
-  const isDemoMode = Boolean(currentBalanceSnapshot?.demoMode);
   const freeBucketLabel = isDemoMode ? CREDIT_DEMO_BUCKET_LABEL : "무료 충전";
   const freeBucketLabelCompact = isDemoMode
     ? CREDIT_DEMO_BUCKET_LABEL
@@ -2498,7 +2565,9 @@ export const CreditLedgerModal = ({
                   <SettlementStatCard
                     className="min-w-[9.5rem] flex-1 sm:min-w-[10.5rem]"
                     label="현재 잔액"
-                    value={currentBalanceTotal}
+                    value={
+                      showSplitBalance ? splitBalanceValue : currentBalanceTotal
+                    }
                     tone="primary"
                     hint="안내"
                     hintTooltip={balanceHintTooltip}
@@ -2530,8 +2599,8 @@ export const CreditLedgerModal = ({
                   <SettlementEquationOperator symbol="+" />
                   <SettlementStatCard
                     className="min-w-[9.5rem] flex-1 sm:min-w-[10.5rem]"
-                    label={freeBucketLabel}
-                    value={periodFreeChargeTotal}
+                    label={showSplitBalance ? "무료 충전" : freeBucketLabel}
+                    value={cardValueUsage(periodFreeChargeTotal, periodFreeSplit)}
                     hint="안내"
                     hintTooltip={periodFreeChargeTooltip}
                     onClick={() =>
@@ -2553,7 +2622,10 @@ export const CreditLedgerModal = ({
                       <SettlementStatCard
                         className="min-w-[9.5rem] flex-1 sm:min-w-[10.5rem]"
                         label="정산 적립"
-                        value={periodSettlementEarnTotal}
+                        value={cardValueUsage(
+                          periodSettlementEarnTotal,
+                          periodSettlementSplit,
+                        )}
                         hint="안내"
                         hintTooltip={periodSettlementEarnTooltip}
                         onClick={() =>
@@ -2572,7 +2644,7 @@ export const CreditLedgerModal = ({
                   <SettlementStatCard
                     className="min-w-[9.5rem] flex-1 sm:min-w-[10.5rem]"
                     label="소비"
-                    value={periodSpendTotal}
+                    value={cardValueUsage(periodSpendTotal, periodSpendSplit)}
                     hint="안내"
                     hintTooltip={periodSpendTooltip}
                     onClick={() =>
@@ -2591,7 +2663,9 @@ export const CreditLedgerModal = ({
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <SettlementStatCard
                   label="현재 잔액"
-                  value={currentBalanceTotal}
+                  value={
+                    showSplitBalance ? splitBalanceValue : currentBalanceTotal
+                  }
                   tone="primary"
                   hint="안내"
                   hintTooltip={balanceHintTooltip}
@@ -3011,9 +3085,37 @@ export const CreditLedgerModal = ({
                         </div>
                       </TableCell>
                       <TableCell className="whitespace-nowrap text-center align-middle text-xs tabular-nums text-muted-foreground">
-                        {r.balanceAfter !== undefined
-                          ? `${Number(r.balanceAfter).toLocaleString()}원`
-                          : "-"}
+                        {showSplitBalance ? (
+                          <div className="flex flex-col items-center gap-0.5 leading-tight">
+                            <div className="flex items-baseline gap-1">
+                              <span className="text-[10px] text-slate-400">
+                                실
+                              </span>
+                              <span>
+                                {r.balanceAfterReal !== undefined ||
+                                r.balanceAfter !== undefined
+                                  ? `${Number(
+                                      r.balanceAfterReal ?? r.balanceAfter,
+                                    ).toLocaleString()}원`
+                                  : "-"}
+                              </span>
+                            </div>
+                            <div className="flex items-baseline gap-1">
+                              <span className="text-[10px] text-slate-400">
+                                데모
+                              </span>
+                              <span>
+                                {r.balanceAfterDemo !== undefined
+                                  ? `${Number(r.balanceAfterDemo).toLocaleString()}원`
+                                  : "-"}
+                              </span>
+                            </div>
+                          </div>
+                        ) : r.balanceAfter !== undefined ? (
+                          `${Number(r.balanceAfter).toLocaleString()}원`
+                        ) : (
+                          "-"
+                        )}
                       </TableCell>
                       <TableCell
                         className="text-center align-middle text-xs"

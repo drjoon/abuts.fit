@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-08-31: 수락 취소(workCanceledAt)·미정산 PTX는 장부 enrich에서 숨김(「적립/결제 완료」 오인 방지).
+// - 2026-08-31: currentBalanceSnapshot — realBalance/demoBalance 분리. 장부 잔액 러닝도 이원.
 // - 2026-08-31: usageScope(real|demo|all) — 데모/실사용 필터. hasDemoUsage 응답.
 // - 2026-08-31: periodSpendSummary — 기공소도 반환(정산 적립·적립 보류 포함). 치과와 동일 수식 카드.
 // - 2026-08-31: 기공소 내역 — 치과 PTX lab-share HOLD를 기공크레딧 적립 보류로 미러.
@@ -43,6 +45,7 @@ import { scheduleHealMissingExpressSurchargesForBusiness } from "../requests/com
 import { normalizeRequestorKind } from "../../utils/requestorCapabilities.js";
 import { isCustomAbutmentLabFeeLineType } from "../../utils/labFeeSchedule.js";
 import { buildOccurredAtFromPeriodQuery } from "../../utils/kstQueryBounds.js";
+import { resolveDemoFreeRequestReserveCap } from "../businesses/business.demoMode.util.js";
 import {
   attachCreditLedgerRequestFields,
   buildAbutmentBoxGroupKey,
@@ -65,6 +68,7 @@ import {
   listPendingLabSettlementLedgerRows,
   mergeLabLedgerRowsWithPending,
   parseCreditUsageScope,
+  resolvePracticeTransferDemoFundingByIds,
 } from "./creditLedger.utils.js";
 
 async function detectHasDemoCreditUsage({
@@ -144,7 +148,12 @@ async function resolveRequestorKindForAnchor(businessAnchorId, fallbackKind) {
   );
 }
 
-function buildCurrentBalanceSnapshot(balanceSnapshot, requestorKind, demoMode = false) {
+function buildCurrentBalanceSnapshot(
+  balanceSnapshot,
+  requestorKind,
+  demoMode = false,
+  { demoBalance = 0, realBalance = null } = {},
+) {
   const kind = normalizeRequestorKind(requestorKind) || null;
   const isLab = kind === "lab";
   const freeRequestCredit = Number(balanceSnapshot?.freeRequestCredit || 0);
@@ -152,19 +161,29 @@ function buildCurrentBalanceSnapshot(balanceSnapshot, requestorKind, demoMode = 
   const freeCredit = Number(
     balanceSnapshot?.freeCredit ?? freeRequestCredit + freeShippingCredit,
   );
+  const paidCredit = Number(balanceSnapshot?.paidCredit || 0);
+  const settlementCredit = Number(balanceSnapshot?.settlementCredit || 0);
+  const combined =
+    paidCredit + freeCredit + (isLab ? settlementCredit : 0);
+  const resolvedDemo = Math.max(0, Math.round(Number(demoBalance || 0)));
+  const resolvedReal =
+    realBalance == null
+      ? Math.max(0, combined - resolvedDemo)
+      : Math.max(0, Math.round(Number(realBalance || 0)));
   return {
-    paidCredit: Number(balanceSnapshot?.paidCredit || 0),
+    paidCredit,
     freeRequestCredit,
     freeShippingCredit,
     freeCredit,
     // 기공정산크레딧은 기공소 전용 버킷. 치과 응답에도 숫자는 포함하되 UI는 requestorKind로 숨긴다.
-    settlementCredit: Number(balanceSnapshot?.settlementCredit || 0),
+    settlementCredit,
     balance: Number(balanceSnapshot?.balance || 0),
     spendableBalance: Number(
       balanceSnapshot?.spendableBalance ??
-        Number(balanceSnapshot?.balance || 0) +
-          Number(balanceSnapshot?.settlementCredit || 0),
+        Number(balanceSnapshot?.balance || 0) + settlementCredit,
     ),
+    realBalance: resolvedReal,
+    demoBalance: resolvedDemo,
     requestorKind: kind,
     showSettlementCredit: isLab,
     demoMode: Boolean(demoMode),
@@ -598,6 +617,7 @@ export async function listMyCreditLedger(req, res) {
   let pageRows = ownedParsed.items;
   let hasMore = ownedParsed.hasMore;
   let skippedSum = ownedParsed.skippedSum;
+  let skippedDemoSum = 0;
 
   if (requestorKind === "lab") {
     const merged = mergeLabLedgerRowsWithPending({
@@ -609,17 +629,75 @@ export async function listMyCreditLedger(req, res) {
     pageRows = merged.items;
     hasMore = merged.hasMore;
     skippedSum = merged.skippedSum;
+    skippedDemoSum = Number(merged.skippedDemoSum || 0);
   }
 
   const allRows = mergeRequestExpressSurchargeIntoMachiningSpend(pageRows);
+
+  if (requestorKind === "lab") {
+    const settlementRefIds = allRows
+      .filter((row) => {
+        const type = String(row?.type || "");
+        return (
+          type === "LAB_SETTLEMENT_CHARGE" &&
+          String(row?.refType || "") === "PRACTICE_TRANSFER" &&
+          row?.refId &&
+          !row?.fundedByDemoCredit
+        );
+      })
+      .map((row) => String(row.refId));
+    const demoFundingByPtx =
+      await resolvePracticeTransferDemoFundingByIds(settlementRefIds);
+    for (const row of allRows) {
+      if (String(row?.type || "") !== "LAB_SETTLEMENT_CHARGE") continue;
+      const refId = row?.refId ? String(row.refId) : "";
+      if (refId && demoFundingByPtx.get(refId)) {
+        row.fundedByDemoCredit = true;
+        row.isDemoUsage = true;
+      }
+    }
+  }
+
+  const paidCredit = Number(balanceSnapshot?.paidCredit || 0);
+  const freeRequestCredit = Number(balanceSnapshot?.freeRequestCredit || 0);
+  const freeShippingCredit = Number(balanceSnapshot?.freeShippingCredit || 0);
+
+  let demoBalance = 0;
+  let realSpendable = currentBalance;
+  let realSettlement = currentSettlementCredit;
+
+  if (practiceDemoMode) {
+    const demoCap = await resolveDemoFreeRequestReserveCap(anchorObjectId);
+    demoBalance = Math.min(freeRequestCredit, Math.max(0, demoCap));
+    realSpendable =
+      paidCredit +
+      freeShippingCredit +
+      Math.max(0, freeRequestCredit - demoBalance);
+    realSettlement = 0;
+  } else if (requestorKind === "lab") {
+    const demoPendingRows =
+      usageScope === "real"
+        ? await listPendingLabSettlementLedgerRows({
+            labAnchorId: anchorObjectId,
+            usageScope: "demo",
+            limit: 500,
+          })
+        : pendingLabRows.filter((row) => Boolean(row?.fundedByDemoCredit));
+    demoBalance = demoPendingRows.reduce(
+      (sum, row) => sum + Math.max(0, Number(row?.amount || 0)),
+      0,
+    );
+  }
 
   const items = buildLedgerItemsWithBucketBalanceAfter({
     rows: allRows,
     startIdx: 0,
     endIdx: allRows.length,
-    spendableBalance: currentBalance,
-    settlementBalance: currentSettlementCredit,
+    spendableBalance: realSpendable,
+    settlementBalance: realSettlement,
     skippedSum,
+    demoBalance,
+    skippedDemoSum,
     mapRow: (row, base) => {
       const uniqueKey = String(row?.uniqueKey || base.uniqueKey || "");
       return {
@@ -634,6 +712,12 @@ export async function listMyCreditLedger(req, res) {
         spendKind:
           row?.spendKind || parseSpendKindFromUniqueKey(uniqueKey) || null,
         includesExpressSurcharge: Boolean(row?.includesExpressSurcharge),
+        isDemoUsage: Boolean(
+          row?.isDemoUsage ||
+            row?.fundedByDemoCredit ||
+            base.isDemoUsage ||
+            base.fundedByDemoCredit,
+        ),
         fundedByDemoCredit: Boolean(
           row?.fundedByDemoCredit || base.fundedByDemoCredit,
         ),
@@ -650,6 +734,17 @@ export async function listMyCreditLedger(req, res) {
       };
     },
   });
+
+  const balanceSnapshotForClient = buildCurrentBalanceSnapshot(
+    balanceSnapshot,
+    requestorKind,
+    demoMode,
+    {
+      demoBalance,
+      realBalance:
+        realSpendable + (requestorKind === "lab" ? realSettlement : 0),
+    },
+  );
 
   const requestRefIds = Array.from(
     new Set(
@@ -723,6 +818,7 @@ export async function listMyCreditLedger(req, res) {
               files: 1,
               toothWorks: 1,
               billing: 1,
+              workCanceledAt: 1,
               "production.skipJig": 1,
               "production.rushProcessing": 1,
               autoMatch: 1,
@@ -864,6 +960,10 @@ export async function listMyCreditLedger(req, res) {
     const labSettledAt = doc?.billing?.labSettledAt || null;
     const abutmentSettledAt = doc?.billing?.abutmentSettledAt || null;
     const fullySettled = Boolean(settledAt);
+    const workCanceledAt = doc?.workCanceledAt || null;
+    // 수락 취소·미정산: 잔여 HOLD 저널이 있어도 「완료」로 보이면 안 됨 → 장부에서 숨김
+    const practiceTransferCanceled =
+      Boolean(workCanceledAt) && !fullySettled && !labSettledAt;
     const skipJigRaw = doc?.production?.skipJig;
     const labBa =
       String(doc.assigneeLabAnchorId || doc.targetLabAnchorId || "").trim() ||
@@ -875,12 +975,20 @@ export async function listMyCreditLedger(req, res) {
       patientName: memoPatient || filePatient,
       labName: String(doc.targetLabName || "").trim(),
       transferMemo: memo,
-      practiceTransferPending: Boolean(heldAt) && !fullySettled,
+      practiceTransferCanceled,
+      practiceTransferPending:
+        !practiceTransferCanceled && Boolean(heldAt) && !fullySettled,
       practiceTransferLabPending:
-        Boolean(heldAt) && !fullySettled && !labSettledAt,
+        !practiceTransferCanceled &&
+        Boolean(heldAt) &&
+        !fullySettled &&
+        !labSettledAt,
       practiceTransferAbutmentPending:
-        Boolean(heldAt) && !fullySettled && !abutmentSettledAt,
-      feeQuote: quotesById.get(id) || null,
+        !practiceTransferCanceled &&
+        Boolean(heldAt) &&
+        !fullySettled &&
+        !abutmentSettledAt,
+      feeQuote: practiceTransferCanceled ? null : quotesById.get(id) || null,
       skipJig: !(
         skipJigRaw === false ||
         skipJigRaw === "false" ||
@@ -905,7 +1013,8 @@ export async function listMyCreditLedger(req, res) {
     freeReasonByGrantId.set(String(grant._id), buildFreeCreditGrantReason(grant));
   }
 
-  const enrichedItems = items.map((it) => {
+  const enrichedItems = items
+    .map((it) => {
     const relatedPtxId = String(it?.relatedPracticeTransferId || "").trim();
     const asPtxDesignFee =
       isAbutmentDesignLabFeeLedgerRow(it) &&
@@ -920,6 +1029,10 @@ export async function listMyCreditLedger(req, res) {
 
     if (ptxLookupId && mongoose.Types.ObjectId.isValid(ptxLookupId)) {
       const meta = practiceTransferMetaById.get(ptxLookupId) || null;
+      // 수락 취소·미정산 PTX: 잔여 HOLD/디자인비 행을 「적립/결제 완료」로 오인하지 않도록 숨김
+      if (meta?.practiceTransferCanceled) {
+        return null;
+      }
       const base = asPtxDesignFee
         ? promoteAbutmentDesignFeeToPracticeTransfer(it, ptxLookupId)
         : it;
@@ -997,7 +1110,8 @@ export async function listMyCreditLedger(req, res) {
     }
 
     return it;
-  });
+  })
+    .filter(Boolean);
 
   return res.json({
     success: true,
@@ -1009,11 +1123,7 @@ export async function listMyCreditLedger(req, res) {
       pageSize,
       usageScope,
       hasDemoUsage: Boolean(hasDemoUsage),
-      currentBalanceSnapshot: buildCurrentBalanceSnapshot(
-        balanceSnapshot,
-        requestorKind,
-        demoMode,
-      ),
+      currentBalanceSnapshot: balanceSnapshotForClient,
       periodSpendSummary:
         page === 1 &&
         (requestorKind === "practice" || requestorKind === "lab") &&
@@ -1031,6 +1141,44 @@ export async function listMyCreditLedger(req, res) {
               totalSettlementEarnSupply: Number(
                 periodLedgerSummary.totalSettlementEarnSupply || 0,
               ),
+              byUsage: periodLedgerSummary.byUsage
+                ? {
+                    real: {
+                      totalPaidChargeSupply: Number(
+                        periodLedgerSummary.byUsage.real
+                          ?.totalPaidChargeSupply || 0,
+                      ),
+                      totalFreeChargeSupply: Number(
+                        periodLedgerSummary.byUsage.real
+                          ?.totalFreeChargeSupply || 0,
+                      ),
+                      totalSpendSupply: Number(
+                        periodLedgerSummary.byUsage.real?.totalSpendSupply || 0,
+                      ),
+                      totalSettlementEarnSupply: Number(
+                        periodLedgerSummary.byUsage.real
+                          ?.totalSettlementEarnSupply || 0,
+                      ),
+                    },
+                    demo: {
+                      totalPaidChargeSupply: Number(
+                        periodLedgerSummary.byUsage.demo
+                          ?.totalPaidChargeSupply || 0,
+                      ),
+                      totalFreeChargeSupply: Number(
+                        periodLedgerSummary.byUsage.demo
+                          ?.totalFreeChargeSupply || 0,
+                      ),
+                      totalSpendSupply: Number(
+                        periodLedgerSummary.byUsage.demo?.totalSpendSupply || 0,
+                      ),
+                      totalSettlementEarnSupply: Number(
+                        periodLedgerSummary.byUsage.demo
+                          ?.totalSettlementEarnSupply || 0,
+                      ),
+                    },
+                  }
+                : null,
             }
           : null,
     },

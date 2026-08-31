@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-31: 상단 요약 카드(유료·무료·정산·소비) 실사용/데모 2줄.
 // - 2026-08-31: 기공소 통계 구역 — 기공/어벗 액센트 셸·좌측 레일로 클러스터 구분 강화.
 // - 2026-08-31: 기공소 통계 — 치과로부터 수신(정산) / 어벗츠로 의뢰(충전·소비) 구역 분리.
 // - 2026-08-31: 데모/실사용 체크박스 필터(usageScope) + 깜빡임 안내. 요약·차트 공통.
@@ -71,9 +72,11 @@ import {
 } from "@/shared/demo/demoModeCopy";
 import { useDemoMode } from "@/shared/demo/useDemoMode";
 import { CreditUsageScopeFilter } from "@/shared/demo/CreditUsageScopeFilter";
+import { CreditUsageSplitAmount } from "@/shared/demo/CreditUsageSplitAmount";
 import {
   appendCreditUsageScopeParam,
   readCreditUsageScopeGuideSeen,
+  type CreditUsageAmountBucket,
   type CreditUsageScopeSelection,
 } from "@/shared/demo/creditUsageScope";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -113,6 +116,10 @@ type CreditLedgerStatsResponse = {
       orderCount: number;
       settlementOrderCount?: number;
       abutsOrderCount?: number;
+      byUsage?: {
+        real?: CreditUsageAmountBucket;
+        demo?: CreditUsageAmountBucket;
+      };
     };
     byPeriod: PeriodRow[];
     byCategory: StatsRow[];
@@ -674,6 +681,39 @@ export function CreditStatisticsTab() {
       ),
   );
   const freeChargeTotal = Number(stats?.summary.totalFreeChargeSupply || 0);
+  const spendTotal = Number(stats?.summary.totalSpendSupply || 0);
+  const settlementEarnTotal = Number(
+    stats?.summary.totalSettlementEarnSupply || 0,
+  );
+  const usageReal = stats?.summary.byUsage?.real;
+  const usageDemo = stats?.summary.byUsage?.demo;
+  const showSplitBalance =
+    hasDemoUsage ||
+    demoMode ||
+    Number(usageDemo?.totalFreeChargeSupply || 0) > 0 ||
+    Number(usageDemo?.totalSpendSupply || 0) > 0 ||
+    Number(usageDemo?.totalSettlementEarnSupply || 0) > 0;
+  const cardValueUsage = (
+    total: number,
+    split: { real: number; demo: number },
+  ) =>
+    showSplitBalance && (usageReal || usageDemo) ? (
+      <CreditUsageSplitAmount real={split.real} demo={split.demo} />
+    ) : (
+      total
+    );
+  const freeSplit = {
+    real: Number(usageReal?.totalFreeChargeSupply || 0),
+    demo: Number(usageDemo?.totalFreeChargeSupply || 0),
+  };
+  const spendSplit = {
+    real: Number(usageReal?.totalSpendSupply || 0),
+    demo: Number(usageDemo?.totalSpendSupply || 0),
+  };
+  const settlementSplit = {
+    real: Number(usageReal?.totalSettlementEarnSupply || 0),
+    demo: Number(usageDemo?.totalSettlementEarnSupply || 0),
+  };
 
   const trendData = useMemo(
     () =>
@@ -797,8 +837,8 @@ export function CreditStatisticsTab() {
       <SettlementEquationOperator symbol="+" />
       <SettlementStatCard
         className={statCardClass}
-        label={freeChargeLabel}
-        value={freeChargeTotal}
+        label={showSplitBalance ? "무료 충전" : freeChargeLabel}
+        value={cardValueUsage(freeChargeTotal, freeSplit)}
         hint="안내"
         hintTooltip={freeChargeTooltip}
         onClick={() =>
@@ -816,7 +856,7 @@ export function CreditStatisticsTab() {
       <SettlementStatCard
         className={statCardClass}
         label={spendLabel}
-        value={stats?.summary.totalSpendSupply || 0}
+        value={cardValueUsage(spendTotal, spendSplit)}
         tone="primary"
         hint="안내"
         hintTooltip={spendTooltip}
@@ -851,7 +891,7 @@ export function CreditStatisticsTab() {
       <SettlementStatCard
         className={statCardClass}
         label="정산 적립"
-        value={stats?.summary.totalSettlementEarnSupply || 0}
+        value={cardValueUsage(settlementEarnTotal, settlementSplit)}
         hint="안내"
         hintTooltip="선택한 기간에 적립된 기공 정산(작업완료 전 적립 보류 포함)입니다. 치과 데모 결제는 내역에「데모」로 표시됩니다."
         onClick={() =>

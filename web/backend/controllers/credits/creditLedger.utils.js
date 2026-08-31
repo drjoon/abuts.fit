@@ -8,6 +8,8 @@
 // - web/backend/services/practiceTransferBilling.service.js
 // - web/backend/models/businessAnchor.model.js
 // - web/backend/services/requestCreditHold.service.js
+// - 2026-08-31: 적립 보류 미러 — workCanceledAt 수락 취소 건 제외.
+// - 2026-08-31: 정산 적립(확정·보류) PTX 데모 결제 여부 반영. 유료는 단수, 무료·정산·소비·잔액만 2줄.
 // - 2026-08-31: usageScope(real|demo|all) — 데모/실사용 장부·기간요약·적립보류 필터.
 // - 2026-08-31: 기공소 장부 — 치과 PTX lab-share HOLD를 기공크레딧 적립 보류 행으로 미러(잔액 미반영).
 // - 2026-08-31: 기간 요약 — 정산 적립(확정+적립 보류) 합계. 치과/기공소 수식 카드용.
@@ -66,6 +68,68 @@ export function isDemoCreditJournalMeta(meta, { idempotencyKey } = {}) {
   if (source === "demo_credit" || source === "demo_credit_exit") return true;
   const key = String(idempotencyKey || meta?.idempotencyKey || "").toLowerCase();
   return key.includes("demo_credit");
+}
+
+/**
+ * 기공의뢰(PTX)가 치과 데모 크레딧으로 결제(보류)됐는지.
+ * holdFromFree* > 0 이고 치과가 데모 모드일 때 true.
+ * @returns {Promise<Map<string, boolean>>} transferId → fundedByDemoCredit
+ */
+export async function resolvePracticeTransferDemoFundingByIds(transferIds) {
+  const ids = [
+    ...new Set(
+      (Array.isArray(transferIds) ? transferIds : [])
+        .map((id) => String(id || "").trim())
+        .filter((id) => mongoose.Types.ObjectId.isValid(id)),
+    ),
+  ];
+  const out = new Map();
+  if (!ids.length) return out;
+
+  const transfers = await PracticeTransfer.find({
+    _id: { $in: ids.map((id) => new mongoose.Types.ObjectId(id)) },
+  })
+    .select({
+      _id: 1,
+      practiceBusinessAnchorId: 1,
+      billing: 1,
+    })
+    .lean();
+  if (!transfers.length) return out;
+
+  const practiceIds = [
+    ...new Set(
+      transfers
+        .map((t) => String(t.practiceBusinessAnchorId || ""))
+        .filter(Boolean),
+    ),
+  ];
+  const practiceAnchors = practiceIds.length
+    ? await BusinessAnchor.find({
+        _id: practiceIds.map((id) => new mongoose.Types.ObjectId(id)),
+      })
+        .select({ demoMode: 1 })
+        .lean()
+    : [];
+  const demoByPractice = new Map();
+  for (const a of practiceAnchors || []) {
+    if (!a?._id) continue;
+    demoByPractice.set(String(a._id), Boolean(a.demoMode));
+  }
+
+  for (const doc of transfers) {
+    const id = String(doc._id);
+    const billing = doc.billing || {};
+    const fromFree =
+      Math.max(0, Math.round(Number(billing.holdFromFreeRequest || 0))) +
+      Math.max(0, Math.round(Number(billing.holdFromFreeShipping || 0)));
+    const practiceId = String(doc.practiceBusinessAnchorId || "");
+    out.set(
+      id,
+      Boolean(demoByPractice.get(practiceId)) && fromFree > 0,
+    );
+  }
+  return out;
 }
 
 const CHARGE_TYPES = [
@@ -153,7 +217,12 @@ export function resolveLedgerTypesForFilters({
  * - 치과: settlement=0 → paid+free와 동일
  * - newest-first: 현재 총잔액에서 페이지 스킵·각 행 amount를 역산
  * - API의 spendableBalance(주문 가능액)와 표시 총잔액 기준을 맞춘다.
+ * - demoBalance>0 이면 실사용/데모 러닝을 분리(balanceAfterReal / balanceAfterDemo).
  */
+export function ledgerRowIsDemoUsage(row) {
+  return Boolean(row?.fundedByDemoCredit || row?.isDemoUsage);
+}
+
 export function buildLedgerItemsWithBucketBalanceAfter({
   rows,
   startIdx,
@@ -161,28 +230,45 @@ export function buildLedgerItemsWithBucketBalanceAfter({
   spendableBalance = 0,
   settlementBalance = 0,
   skippedSum: skippedSumArg = 0,
+  demoBalance = 0,
+  skippedDemoSum: skippedDemoSumArg = 0,
   mapRow,
 }) {
   const list = Array.isArray(rows) ? rows : [];
   const start = Math.max(0, Number(startIdx) || 0);
   const end = Math.max(start, Number(endIdx) || start);
+  const splitDemo = Number(demoBalance || 0) > 0;
 
   let skippedSum = Number(skippedSumArg || 0);
+  let skippedDemoSum = Number(skippedDemoSumArg || 0);
   for (const row of list.slice(0, start)) {
+    const amount = Number(row?.amount || 0);
+    if (splitDemo && ledgerRowIsDemoUsage(row)) {
+      // 데모 적립 보류·데모 차감 모두 데모 러닝에 반영.
+      skippedDemoSum += amount;
+      continue;
+    }
     if (row?.excludeFromBalanceRunning) continue;
-    skippedSum += Number(row?.amount || 0);
+    skippedSum += amount;
   }
 
-  const totalBalance =
-    Number(spendableBalance || 0) + Number(settlementBalance || 0);
-  let runningBalance = totalBalance - skippedSum;
+  const totalRealBalance = splitDemo
+    ? Number(spendableBalance || 0) + Number(settlementBalance || 0)
+    : Number(spendableBalance || 0) + Number(settlementBalance || 0);
+  let runningReal = totalRealBalance - skippedSum;
+  let runningDemo = Number(demoBalance || 0) - skippedDemoSum;
 
   return list.slice(start, end).map((row) => {
     const amount = Number(row?.amount || 0);
-    const balanceAfter = runningBalance;
-    // 적립 보류 미러는 잔액에 아직 안 들어오므로 러닝에서 제외.
-    if (!row?.excludeFromBalanceRunning) {
-      runningBalance -= amount;
+    const isDemo = splitDemo && ledgerRowIsDemoUsage(row);
+    const balanceAfterReal = runningReal;
+    const balanceAfterDemo = splitDemo ? runningDemo : undefined;
+    const balanceAfter = isDemo ? runningReal : runningReal;
+
+    if (isDemo) {
+      runningDemo -= amount;
+    } else if (!row?.excludeFromBalanceRunning) {
+      runningReal -= amount;
     }
 
     const base = {
@@ -198,6 +284,9 @@ export function buildLedgerItemsWithBucketBalanceAfter({
       includesExpressSurcharge: Boolean(row?.includesExpressSurcharge),
       createdAt: row?.occurredAt || row?.createdAt || new Date(),
       balanceAfter,
+      balanceAfterReal,
+      balanceAfterDemo,
+      isDemoUsage: Boolean(row?.isDemoUsage || row?.fundedByDemoCredit),
       fundedByDemoCredit: Boolean(row?.fundedByDemoCredit),
       excludeFromBalanceRunning: Boolean(row?.excludeFromBalanceRunning),
       practiceTransferPending: row?.practiceTransferPending,
@@ -1335,7 +1424,7 @@ export function parseCreditLedgerFacetResult(facetRaw, { pageSize } = {}) {
  * 의뢰자 정산 내역 상단 카드 — 필터 기간 유료/무료 충전·소비·(기공소) 정산 적립 공급가.
  * 소비는 REQ_* 실차감(HOLD 포함). 통계 탭과 동일 이벤트 기준.
  * includePendingLabSettlement=true 이면 작업완료 전 lab-share HOLD 적립 보류도 합산.
- * usageScope=real|demo 이면 데모/실사용만 합산.
+ * usageScope=real|demo 이면 합계(total*)만 해당 범위. byUsage 는 항상 실사용/데모 분리.
  */
 export async function aggregateRequestorPeriodLedgerSummary({
   ownerObjectId,
@@ -1354,6 +1443,45 @@ export async function aggregateRequestorPeriodLedgerSummary({
   if (occurredAt && Object.keys(occurredAt).length) {
     match.occurredAt = occurredAt;
   }
+
+  const emptyBucket = () => ({
+    totalPaidChargeSupply: 0,
+    totalFreeChargeSupply: 0,
+    totalSpendSupply: 0,
+    totalSettlementEarnSupply: 0,
+  });
+  const real = emptyBucket();
+  const demo = emptyBucket();
+
+  const bump = (bucket, field, amount) => {
+    bucket[field] += amount;
+  };
+
+  const applyRow = (bucket, eventType, accountCode, amount) => {
+    if (
+      CREDIT_LEDGER_STATS_PAID_CHARGE_EVENT_TYPES.includes(eventType) &&
+      amount > 0
+    ) {
+      bump(bucket, "totalPaidChargeSupply", amount);
+    } else if (
+      CREDIT_LEDGER_STATS_FREE_CHARGE_EVENT_TYPES.includes(eventType) &&
+      amount > 0
+    ) {
+      bump(bucket, "totalFreeChargeSupply", amount);
+    } else if (
+      (eventType === "LAB_SETTLEMENT_CHARGE" ||
+        (eventType === "PRACTICE_TRANSFER_SPEND_COMMIT" &&
+          accountCode === "LAB_SETTLEMENT_CREDIT")) &&
+      amount > 0
+    ) {
+      bump(bucket, "totalSettlementEarnSupply", amount);
+    } else if (
+      CREDIT_LEDGER_STATS_SPEND_EVENT_TYPES.includes(eventType) &&
+      amount < 0
+    ) {
+      bump(bucket, "totalSpendSupply", Math.abs(amount));
+    }
+  };
 
   const rows = await LedgerLine.aggregate([
     { $match: match },
@@ -1404,6 +1532,12 @@ export async function aggregateRequestorPeriodLedgerSummary({
         _id: "$journalId",
         eventType: { $first: "$eventType" },
         accountCode: { $first: "$accountCode" },
+        refType: {
+          $first: { $ifNull: ["$refType", "$journalDoc.refType"] },
+        },
+        refId: {
+          $first: { $ifNull: ["$refId", "$journalDoc.refId"] },
+        },
         amount: { $sum: "$amountBase" },
         spentFreeAmount: { $sum: "$spentFreeAmount" },
         isDemoUsage: { $max: "$isDemoUsage" },
@@ -1411,38 +1545,36 @@ export async function aggregateRequestorPeriodLedgerSummary({
     },
   ]);
 
-  let totalPaidChargeSupply = 0;
-  let totalFreeChargeSupply = 0;
-  let totalSpendSupply = 0;
-  let totalSettlementEarnSupply = 0;
+  const settlementPtxIds = [];
   for (const row of rows) {
-    if (!matchesCreditUsageScope(Boolean(row?.isDemoUsage), scope)) continue;
+    const eventType = String(row?.eventType || "");
+    const accountCode = String(row?.accountCode || "");
+    const isSettlementEarn =
+      eventType === "LAB_SETTLEMENT_CHARGE" ||
+      (eventType === "PRACTICE_TRANSFER_SPEND_COMMIT" &&
+        accountCode === "LAB_SETTLEMENT_CREDIT");
+    if (!isSettlementEarn) continue;
+    const refId = row?.refId ? String(row.refId) : "";
+    if (refId && mongoose.Types.ObjectId.isValid(refId)) {
+      settlementPtxIds.push(refId);
+    }
+  }
+  const demoFundingByPtx =
+    await resolvePracticeTransferDemoFundingByIds(settlementPtxIds);
+
+  for (const row of rows) {
     const eventType = String(row?.eventType || "");
     const accountCode = String(row?.accountCode || "");
     const amount = Number(row?.amount || 0);
-    if (
-      CREDIT_LEDGER_STATS_PAID_CHARGE_EVENT_TYPES.includes(eventType) &&
-      amount > 0
-    ) {
-      totalPaidChargeSupply += amount;
-    } else if (
-      CREDIT_LEDGER_STATS_FREE_CHARGE_EVENT_TYPES.includes(eventType) &&
-      amount > 0
-    ) {
-      totalFreeChargeSupply += amount;
-    } else if (
-      (eventType === "LAB_SETTLEMENT_CHARGE" ||
-        (eventType === "PRACTICE_TRANSFER_SPEND_COMMIT" &&
-          accountCode === "LAB_SETTLEMENT_CREDIT")) &&
-      amount > 0
-    ) {
-      totalSettlementEarnSupply += amount;
-    } else if (
-      CREDIT_LEDGER_STATS_SPEND_EVENT_TYPES.includes(eventType) &&
-      amount < 0
-    ) {
-      totalSpendSupply += Math.abs(amount);
-    }
+    const refId = row?.refId ? String(row.refId) : "";
+    const isSettlementEarn =
+      eventType === "LAB_SETTLEMENT_CHARGE" ||
+      (eventType === "PRACTICE_TRANSFER_SPEND_COMMIT" &&
+        accountCode === "LAB_SETTLEMENT_CREDIT");
+    const isDemo =
+      Boolean(row?.isDemoUsage) ||
+      (isSettlementEarn && Boolean(demoFundingByPtx.get(refId)));
+    applyRow(isDemo ? demo : real, eventType, accountCode, amount);
   }
 
   if (includePendingLabSettlement) {
@@ -1450,23 +1582,59 @@ export async function aggregateRequestorPeriodLedgerSummary({
       labAnchorId: ownerObjectId,
       occurredAt:
         occurredAt && Object.keys(occurredAt).length ? occurredAt : null,
-      usageScope: scope,
+      usageScope: "all",
       limit: 500,
     });
     for (const row of pendingRows) {
       const amount = Number(row?.amount || 0);
-      if (amount > 0) totalSettlementEarnSupply += amount;
+      if (amount <= 0) continue;
+      if (Boolean(row?.fundedByDemoCredit)) {
+        bump(demo, "totalSettlementEarnSupply", amount);
+      } else {
+        bump(real, "totalSettlementEarnSupply", amount);
+      }
     }
   }
 
-  return {
-    totalPaidChargeSupply: Math.max(0, Math.round(totalPaidChargeSupply)),
-    totalFreeChargeSupply: Math.max(0, Math.round(totalFreeChargeSupply)),
-    totalSpendSupply: Math.max(0, Math.round(totalSpendSupply)),
+  const roundBucket = (bucket) => ({
+    totalPaidChargeSupply: Math.max(
+      0,
+      Math.round(bucket.totalPaidChargeSupply),
+    ),
+    totalFreeChargeSupply: Math.max(
+      0,
+      Math.round(bucket.totalFreeChargeSupply),
+    ),
+    totalSpendSupply: Math.max(0, Math.round(bucket.totalSpendSupply)),
     totalSettlementEarnSupply: Math.max(
       0,
-      Math.round(totalSettlementEarnSupply),
+      Math.round(bucket.totalSettlementEarnSupply),
     ),
+  });
+
+  const realRounded = roundBucket(real);
+  const demoRounded = roundBucket(demo);
+  const mergeTotals = (a, b) => ({
+    totalPaidChargeSupply: a.totalPaidChargeSupply + b.totalPaidChargeSupply,
+    totalFreeChargeSupply: a.totalFreeChargeSupply + b.totalFreeChargeSupply,
+    totalSpendSupply: a.totalSpendSupply + b.totalSpendSupply,
+    totalSettlementEarnSupply:
+      a.totalSettlementEarnSupply + b.totalSettlementEarnSupply,
+  });
+
+  const totals =
+    scope === "real"
+      ? realRounded
+      : scope === "demo"
+        ? demoRounded
+        : mergeTotals(realRounded, demoRounded);
+
+  return {
+    ...totals,
+    byUsage: {
+      real: realRounded,
+      demo: demoRounded,
+    },
   };
 }
 
@@ -1549,6 +1717,13 @@ export async function listPendingLabSettlementLedgerRows({
         $or: [
           { "billing.labSettledAt": null },
           { "billing.labSettledAt": { $exists: false } },
+        ],
+      },
+      // 수락 취소된 건은 적립 보류 미러에서 제외(heldAt 잔여·레이스 방어)
+      {
+        $or: [
+          { workCanceledAt: null },
+          { workCanceledAt: { $exists: false } },
         ],
       },
     ],
@@ -1754,6 +1929,7 @@ export async function listPendingLabSettlementLedgerRows({
         fundedByDemoCredit,
       },
       fundedByDemoCredit,
+      isDemoUsage: fundedByDemoCredit,
       excludeFromBalanceRunning: true,
       practiceTransferPending: true,
       practiceTransferLabPending: true,
@@ -1827,15 +2003,22 @@ export function mergeLabLedgerRowsWithPending({
   const pageItems = hasMore ? slice.slice(0, size) : slice;
 
   let skippedSum = 0;
+  let skippedDemoSum = 0;
   for (const row of merged.slice(0, start)) {
+    const amount = Number(row?.amount || 0);
+    if (ledgerRowIsDemoUsage(row)) {
+      skippedDemoSum += amount;
+      continue;
+    }
     if (row?.excludeFromBalanceRunning) continue;
-    skippedSum += Number(row?.amount || 0);
+    skippedSum += amount;
   }
 
   return {
     items: pageItems,
     hasMore,
     skippedSum,
+    skippedDemoSum,
     // 디버그/통계용
     pendingCount: pendingFresh.length,
     ownedRefIds,

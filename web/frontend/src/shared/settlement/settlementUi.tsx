@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-31: SettlementStatCard value — ReactNode(실사용/데모 2줄 잔액).
 // - 2026-08-26: SettlementEquationOperator — = 색이 slate에 덮이지 않게 primary-strong 유지.
 // - 2026-08-23: SettlementPolicyDialog — flex 스크롤 + 하단 여백(pb-8).
 // - 2026-08-23: SettlementEquationOperator — 정산 요약 카드 사이 = + − 부호.
@@ -82,7 +83,7 @@ export function SettlementStatCard({
   className: classNameProp,
 }: {
   label: string;
-  value: number | string;
+  value: number | string | ReactNode;
   hint?: ReactNode;
   hintTooltip?: string;
   footer?: ReactNode;
@@ -161,7 +162,11 @@ export function SettlementStatCard({
           highlight ? "text-primary-strong" : "text-slate-900",
         )}
       >
-        {typeof value === "number" ? formatWon(value) : value}
+        {typeof value === "number"
+          ? formatWon(value)
+          : typeof value === "string"
+            ? value
+            : value}
       </div>
       {hintNode || footer ? (
         <div

@@ -11,6 +11,13 @@ export type CreditUsageScopeSelection = {
   includeDemo: boolean;
 };
 
+export type CreditUsageAmountBucket = {
+  totalPaidChargeSupply?: number;
+  totalFreeChargeSupply?: number;
+  totalSpendSupply?: number;
+  totalSettlementEarnSupply?: number;
+};
+
 export const CREDIT_USAGE_SCOPE_GUIDE_STORAGE_KEY =
   "abuts.creditUsageScopeGuideSeen.v1";
 

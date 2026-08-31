@@ -46,7 +46,7 @@ Notes:
   - 내역: `현재 잔액 = 유료 충전 + 데모/무료 [+ 정산 적립] − 소비`.
   - 통계(치과): `유료 + 데모/무료 − 소비 | 의뢰건수`.
   - 통계(기공소): `치과로부터 수신`=`정산 적립 | 의뢰건수`, `어벗츠로 의뢰`=`유료 + 데모/무료 − 소비 | 의뢰건수`.
-  - **데모/실사용 구분**: 내역·통계 공통 체크박스(`CreditUsageScopeFilter`, query `usageScope=real|demo|all`). 데모 내역이 있으면 첫 방문 시 깜빡임 안내(localStorage). 실사용만 보면 잔액 수식과 맞음(기공소 데모 적립 보류는 잔액 미반영). 현재 잔액·테이블 잔액은 실사용/데모 2줄.
+  - **데모/실사용 구분**: 내역·통계 공통 체크박스(`CreditUsageScopeFilter`, query `usageScope=real|demo|all`). 데모 내역이 있으면 첫 방문 시 깜빡임 안내(localStorage). 실사용만 보면 잔액 수식과 맞음(기공소 데모 적립 보류는 잔액 미반영). **2줄 표시**(실사용/데모): 현재 잔액·무료 충전·정산 적립·소비·테이블 잔액. 유료 충전·의뢰건수는 단수. 정산 적립(확정)은 PTX 데모 결제(`holdFromFree*`+치과 demoMode)로 분류.
   - SSOT: `src/shared/components/CreditLedgerModal.tsx`, `CreditStatisticsTab.tsx`,
     `src/shared/demo/CreditUsageScopeFilter.tsx`, `.cursor/rules/ui-summary-cards.mdc`.
 - Requestor dashboard: 상단 카드 '의뢰/취소' -> '준비'로 변경. 취소 항목은 카드에서 제거(내부 DB는 유지). 상세 정책/모달의 '의뢰' 문구는 '준비'로 변경함.
