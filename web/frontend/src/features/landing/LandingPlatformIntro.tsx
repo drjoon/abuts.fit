@@ -46,7 +46,7 @@ export const LandingPlatformIntro = () => {
             className="text-3xl font-semibold leading-tight text-white md:text-4xl animate-slide-up"
             style={{ animationDelay: "0.1s" }}
           >
-            <span className="block text-white/90">abuts.fit</span>
+            <span className="notranslate block text-white/90">abuts.fit</span>
             <span className={`mt-2 block ${landingTheme.headlineGradient}`}>
               {landingIdentity.oneLiner}
             </span>

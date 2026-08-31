@@ -44,12 +44,47 @@ export const Navigation = () => {
     setIsOpen(false);
   };
 
+  const mobileAuthButtons = isAuthenticated ? (
+    <>
+      <div className="mb-2 text-center text-sm text-white/80">
+        안녕하세요, {user?.name}님
+      </div>
+      <Button
+        className="h-11 w-full bg-white/10 text-white hover:bg-white/15"
+        onClick={handleLoginClick}
+      >
+        대시보드
+      </Button>
+      <Button
+        className="h-11 w-full bg-gradient-to-r from-[#FF9D62] via-[#FF814A] to-[#FF6B4A] text-white shadow-[0_10px_30px_rgba(255,132,74,0.35)] hover:opacity-90"
+        onClick={handleLogout}
+      >
+        로그아웃
+      </Button>
+    </>
+  ) : (
+    <>
+      <Button
+        className="h-11 w-full bg-white/10 text-white hover:bg-white/15"
+        onClick={handleLoginClick}
+      >
+        로그인
+      </Button>
+      <Button
+        className="h-11 w-full bg-white text-slate-900 hover:bg-white/90"
+        onClick={handleSignupClick}
+      >
+        회원가입
+      </Button>
+    </>
+  );
+
   return (
     <nav className="fixed top-0 w-full z-50">
-      <div className="absolute inset-0 bg-[#02040c]/85 backdrop-blur-3xl border-b border-white/10" />
+      <div className="absolute inset-0 border-b border-white/10 bg-[#02040c]/95 md:backdrop-blur-3xl" />
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_22%_-15%,rgba(59,130,246,0.25),transparent_58%),radial-gradient(circle_at_78%_-20%,rgba(147,51,234,0.22),transparent_60%),radial-gradient(circle_at_50%_25%,rgba(6,78,59,0.18),transparent_72%)] opacity-70" />
-      <div className="container mx-auto px-4 sm:px-6">
-        <div className="relative flex items-center justify-between h-14 sm:h-16">
+      <div className="relative z-10 container mx-auto px-4 sm:px-6">
+        <div className="relative flex h-14 items-center justify-between sm:h-16">
           <button
             className="flex min-w-0 items-center gap-2 sm:gap-3 text-white transition hover:opacity-90"
             onClick={() => navigate("/")}
@@ -60,7 +95,7 @@ export const Navigation = () => {
               className="h-10 w-10 shrink-0 object-contain sm:h-12 sm:w-12"
               style={{ backgroundColor: "transparent" }}
             />
-            <span className="truncate text-lg font-semibold sm:text-2xl bg-gradient-to-r from-[#6E8BFF] via-[#A278FF] to-[#FF9D62] bg-clip-text text-transparent">
+            <span className="notranslate truncate text-lg font-semibold sm:text-2xl bg-gradient-to-r from-[#6E8BFF] via-[#A278FF] to-[#FF9D62] bg-clip-text text-transparent">
               abuts.fit
             </span>
           </button>
@@ -127,54 +162,17 @@ export const Navigation = () => {
         </div>
 
         {isOpen && (
-          <div className="md:hidden border-t border-white/10 pb-6 pt-4 space-y-4">
+          <div className="relative z-10 space-y-4 border-t border-white/10 bg-[#02040c] pb-6 pt-4 md:hidden">
             {menuItems.map((item) => (
               <button
                 key={item.label}
                 onClick={() => handleMenuClick(item.href)}
-                className="block min-h-11 w-full rounded-lg px-2 py-2.5 text-left text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
+                className="block min-h-11 w-full rounded-lg px-2 py-2.5 text-left text-white/80 transition-colors hover:bg-white/5 hover:text-white"
               >
                 {item.label}
               </button>
             ))}
-            <div className="space-y-2 border-t border-white/10 pt-4">
-              {isAuthenticated ? (
-                <>
-                  <div className="text-sm text-white/80 text-center mb-2">
-                    안녕하세요, {user?.name}님
-                  </div>
-                  <Button
-                    variant="ghost"
-                    className="h-11 w-full text-white"
-                    onClick={handleLoginClick}
-                  >
-                    대시보드
-                  </Button>
-                  <Button
-                    className="h-11 w-full bg-gradient-to-r from-[#FF9D62] via-[#FF814A] to-[#FF6B4A] text-white shadow-[0_10px_30px_rgba(255,132,74,0.35)] hover:opacity-90"
-                    onClick={handleLogout}
-                  >
-                    로그아웃
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <Button
-                    variant="ghost"
-                    className="h-11 w-full text-white"
-                    onClick={handleLoginClick}
-                  >
-                    로그인
-                  </Button>
-                  <Button
-                    className="h-11 w-full bg-white text-slate-900 hover:bg-white/90"
-                    onClick={handleSignupClick}
-                  >
-                    회원가입
-                  </Button>
-                </>
-              )}
-            </div>
+            <div className="space-y-2">{mobileAuthButtons}</div>
           </div>
         )}
       </div>
