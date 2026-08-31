@@ -39,7 +39,16 @@ export const formatBusinessSelectLabel = (business: BusinessCredit) => {
   return `${business.name} (${businessNumber} / anchor ${businessAnchorId})`;
 };
 
-export const creditTypeLabel = (t: AdminCreditLedgerType) => {
+export const creditTypeLabel = (
+  t: AdminCreditLedgerType,
+  refType?: string,
+) => {
+  if (
+    t === "CHARGE_FREE_REQUEST" &&
+    String(refType || "").trim().toUpperCase() === "DEMO_CREDIT"
+  ) {
+    return "무료충전(데모)";
+  }
   if (t === "CHARGE_PAID") return "유료충전";
   if (t === "CHARGE_FREE_REQUEST") return "무료충전(의뢰)";
   if (t === "CHARGE_FREE_SHIPPING") return "무료충전(배송)";
@@ -55,6 +64,8 @@ export const refTypeLabel = (refType?: string) => {
   if (!t) return "-";
   if (t === "SHIPPING_FEE") return "배송비 (발송 1회)";
   if (t === "REQUEST") return "의뢰";
+  if (t === "DEMO_CREDIT") return "데모 크레딧";
+  if (t === "DEMO_CREDIT_EXIT") return "데모 크레딧 회수";
   if (t === "FREE_REQUEST_CREDIT" || t === "REQUEST_FREE_CREDIT" || t === "WELCOME_BONUS") {
     return "환영 무료크레딧";
   }

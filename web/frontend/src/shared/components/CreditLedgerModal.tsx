@@ -643,6 +643,10 @@ const resolvePracticeTransferDisplayLabel = (
   if (String(item.refType || "") === "PRACTICE_TRANSFER") {
     return resolvePracticeTransferTypeLabel(isLabViewer);
   }
+  // DEMO_CREDIT도 GL eventType은 CHARGE_FREE_REQUEST — 유형 배지만 데모로 구분
+  if (String(item.refType || "").trim().toUpperCase() === "DEMO_CREDIT") {
+    return "무료충전(데모)";
+  }
   return String(item.displayLabel || "").trim() || typeLabel(item.type);
 };
 type PracticeTransferFeeKind =
