@@ -11,6 +11,7 @@
 // - 2026-08-29: 할인율 UI −/+·5% 단위.
 // - 2026-08-29: 할인금액 모드는 할인가(최종가) 입력·1천원 스피너. 저장은 기본가−할인가.
 // - 2026-08-29: localStorage 캐시 제거 — 서버 GET/PUT만 사용(레이스 제거).
+// - 2026-08-31: 저장 후 클라이언트 quote-context 캐시 무효화(데모 계정 전환 잔존 할인 방지).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Card,
@@ -50,6 +51,7 @@ import {
 import { useToast } from "@/shared/hooks/use-toast";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
+import { invalidatePracticeTransferQuoteContextCache } from "@/shared/practice/usePracticeTransferFeeQuote";
 import { cn } from "@/shared/ui/cn";
 import type { LabFeeItem } from "@/shared/practice/labFeeSchedule";
 
@@ -464,7 +466,7 @@ export function LabPracticeSpecialSupplySection({
   feeItems,
 }: LabPracticeSpecialSupplySectionProps) {
   const { toast } = useToast();
-  const { token } = useAuthStore();
+  const { token, businessAnchorId } = useAuthStore();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [rows, setRows] = useState<LabPracticeSpecialSupplyRow[]>([]);
@@ -619,6 +621,7 @@ export function LabPracticeSpecialSupplySection({
         const merged = [...mergedSaved, ...drafts];
         setRows(merged);
         savedSnapshotRef.current = snapshotRows(saved);
+        invalidatePracticeTransferQuoteContextCache(businessAnchorId || null);
         return true;
       } catch {
         toast({
@@ -629,7 +632,7 @@ export function LabPracticeSpecialSupplySection({
         return false;
       }
     },
-    [token, toast, feeNameById],
+    [token, toast, feeNameById, businessAnchorId],
   );
 
   useEffect(() => {

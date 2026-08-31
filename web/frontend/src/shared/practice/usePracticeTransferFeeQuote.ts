@@ -7,6 +7,7 @@
 // - 2026-08-14: quote-context 인 inflight 합류 — intake/치아차트 중복 GET 방지.
 // - 2026-08-14: 환봉 요청중 판별용 implantFavorites를 견적 계산에 전달.
 // - 2026-08-14: practice:lab-fee-multiplier-updated 수신 시 quote-context 재조회.
+// - 2026-08-31: practice:lab-special-supply-updated 도 quote-context 재조회(특별공급가 삭제 즉시 반영).
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
@@ -32,6 +33,14 @@ import { useAuthStore } from "@/store/useAuthStore";
 const CONTEXT_CACHE_TTL_MS = 60_000;
 export const LAB_FEE_MULTIPLIER_UPDATED_EVENT =
   "practice:lab-fee-multiplier-updated";
+export const LAB_SPECIAL_SUPPLY_UPDATED_EVENT =
+  "practice:lab-special-supply-updated";
+
+/** quote-context를 다시 받아야 하는 기공소 수가·특별공급가 변경 이벤트 */
+export const LAB_FEE_QUOTE_CONTEXT_INVALIDATION_EVENTS = [
+  LAB_FEE_MULTIPLIER_UPDATED_EVENT,
+  LAB_SPECIAL_SUPPLY_UPDATED_EVENT,
+] as const;
 
 const contextCache = new Map<
   string,
@@ -154,7 +163,7 @@ export const usePracticeTransferFeeQuote = (params: {
 
   useAppEventListener({
     enabled: enabled && Boolean(token) && Boolean(labAnchorId),
-    eventTypes: [LAB_FEE_MULTIPLIER_UPDATED_EVENT],
+    eventTypes: [...LAB_FEE_QUOTE_CONTEXT_INVALIDATION_EVENTS],
     deferWhenEditing: false,
     shouldHandle: (evt) => {
       const data =

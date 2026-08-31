@@ -75,6 +75,7 @@
  * - 2026-08-14: 기공의뢰 상단 「임시 저장」버튼 제거. 목록 반영은 자동 동기화만.
  * - 2026-08-14: 임시저장 디바운스·한글 IME 게이트. stale 저장 응답에서도 draftId 회수.
  * - 2026-08-14: 기공수가 할증 변경(practice:lab-fee-multiplier-updated) 시 견적·리메이크 미리보기 갱신.
+ * - 2026-08-31: 특별공급가 변경(practice:lab-special-supply-updated) 시에도 quote-context 갱신.
  * - 2026-08-14: 기공소 수락 시 웹소켓 feeQuote로 치과「확정 기공비」즉시 반영.
  * - 2026-08-15: 치과 기공의뢰 카드 상단에 익스프레스/엑스퍼트 모드 전환.
  * - 2026-08-15: 기공소 전송은 작성 중 draft만. 전송/빈 폼 후 최신 임시저장을 폼에 자동 주입하지 않음.
@@ -337,7 +338,7 @@ import {
   type RoundBarRequestUpdatedPayload,
 } from "@/shared/practice/roundBarAbutment";
 import {
-  LAB_FEE_MULTIPLIER_UPDATED_EVENT,
+  LAB_FEE_QUOTE_CONTEXT_INVALIDATION_EVENTS,
   invalidatePracticeTransferQuoteContextCache,
 } from "@/shared/practice/usePracticeTransferFeeQuote";
 import { kstAddBusinessDays, kstYmdDiffDays } from "@/shared/date/kst";
@@ -5786,7 +5787,7 @@ export const PracticeFileTransferPage = ({
 
   useAppEventDebouncedReload({
     enabled: Boolean(authToken),
-    eventTypes: [LAB_FEE_MULTIPLIER_UPDATED_EVENT],
+    eventTypes: [...LAB_FEE_QUOTE_CONTEXT_INVALIDATION_EVENTS],
     delayMs: 120,
     deferWhenEditing: false,
     shouldHandle: (evt) => {

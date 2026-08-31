@@ -14,6 +14,7 @@
 // - 2026-08-15: internalLab 기공비 API 허용. 미저장 시 관리자 어벗츠 수가 카탈로그 복사.
 // - 2026-08-20: 치과별 기공수가 할증도 internalLab 허용(라우트 authorize).
 // - 2026-08-29: 치과별 특별공급가 GET/PUT (labPracticeSpecialSupplyPrices).
+// - 2026-08-31: 특별공급가 저장 시 대상 치과에 app-event → quote-context 즉시 갱신.
 import { Types } from "mongoose";
 import LabTradingPartner from "../../models/labTradingPartner.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
@@ -228,6 +229,28 @@ function buildInvitePath(token) {
   return `/signup?labPartner=${encodeURIComponent(token)}`;
 }
 
+/** 치과 사업자(practice/requestor)에게 app-event. */
+async function emitAppEventToPracticeUsers({
+  practiceAnchorId,
+  eventType,
+  payload,
+}) {
+  const practiceId = String(practiceAnchorId || "").trim();
+  if (!practiceId || !Types.ObjectId.isValid(practiceId)) return;
+  const users = await User.find({
+    businessAnchorId: new Types.ObjectId(practiceId),
+    role: { $in: ["practice", "requestor"] },
+    active: true,
+  })
+    .select({ _id: 1 })
+    .lean();
+  for (const user of users) {
+    const userId = String(user?._id || "").trim();
+    if (!userId) continue;
+    emitAppEventToUser(userId, eventType, payload);
+  }
+}
+
 /** 치과별 할증 변경 → 해당 치과(practice/requestor) 사용자 app-event. */
 async function emitLabFeeMultiplierUpdatedToPractice({
   practiceAnchorId,
@@ -239,26 +262,50 @@ async function emitLabFeeMultiplierUpdatedToPractice({
     const labId = String(labAnchorId || "").trim();
     if (!practiceId || !Types.ObjectId.isValid(practiceId)) return;
 
-    const users = await User.find({
-      businessAnchorId: new Types.ObjectId(practiceId),
-      role: { $in: ["practice", "requestor"] },
-      active: true,
-    })
-      .select({ _id: 1 })
-      .lean();
-
-    const payload = {
-      labAnchorId: labId || null,
+    await emitAppEventToPracticeUsers({
       practiceAnchorId: practiceId,
-      labFeeMultiplier: normalizeLabFeeMultiplier(labFeeMultiplier),
-      emittedAt: new Date().toISOString(),
-    };
+      eventType: "practice:lab-fee-multiplier-updated",
+      payload: {
+        labAnchorId: labId || null,
+        practiceAnchorId: practiceId,
+        labFeeMultiplier: normalizeLabFeeMultiplier(labFeeMultiplier),
+        emittedAt: new Date().toISOString(),
+      },
+    });
+  } catch {
+    // 실시간 이벤트 실패가 본 API 성공/실패를 좌우하지 않도록 무시
+  }
+}
 
-    for (const user of users) {
-      const userId = String(user?._id || "").trim();
-      if (!userId) continue;
-      emitAppEventToUser(userId, "practice:lab-fee-multiplier-updated", payload);
-    }
+/** 특별공급가 변경·삭제 → 영향 치과 quote-context 갱신. */
+async function emitLabSpecialSupplyUpdatedToPractices({
+  labAnchorId,
+  practiceAnchorIds,
+}) {
+  try {
+    const labId = String(labAnchorId || "").trim();
+    const ids = [
+      ...new Set(
+        (Array.isArray(practiceAnchorIds) ? practiceAnchorIds : [])
+          .map((id) => String(id || "").trim())
+          .filter((id) => id && Types.ObjectId.isValid(id)),
+      ),
+    ];
+    if (!labId || ids.length === 0) return;
+    const emittedAt = new Date().toISOString();
+    await Promise.all(
+      ids.map((practiceId) =>
+        emitAppEventToPracticeUsers({
+          practiceAnchorId: practiceId,
+          eventType: "practice:lab-special-supply-updated",
+          payload: {
+            labAnchorId: labId,
+            practiceAnchorId: practiceId,
+            emittedAt,
+          },
+        }),
+      ),
+    );
   } catch {
     // 실시간 이벤트 실패가 본 API 성공/실패를 좌우하지 않도록 무시
   }
@@ -1058,8 +1105,11 @@ export async function updateLabPracticeSpecialSupplyPrices(req, res) {
     );
 
     const lab = await BusinessAnchor.findById(labAnchorId)
-      .select({ labFeeSchedule: 1 })
+      .select({ labFeeSchedule: 1, labPracticeSpecialSupplyPrices: 1 })
       .lean();
+    const prevPracticeIds = normalizeLabPracticeSpecialSupplyList(
+      lab?.labPracticeSpecialSupplyPrices,
+    ).map((row) => row.practiceAnchorId);
     const feeItems = normalizeLabFeeItems(lab?.labFeeSchedule);
     const feeById = new Map(feeItems.map((item) => [String(item.id), item]));
 
@@ -1102,6 +1152,17 @@ export async function updateLabPracticeSpecialSupplyPrices(req, res) {
     invalidatePracticeTransferQuoteCaches(labAnchorId);
 
     const normalized = normalizeLabPracticeSpecialSupplyList(nextList);
+    const affectedPracticeIds = [
+      ...new Set([
+        ...prevPracticeIds,
+        ...normalized.map((row) => row.practiceAnchorId),
+      ]),
+    ];
+    void emitLabSpecialSupplyUpdatedToPractices({
+      labAnchorId,
+      practiceAnchorIds: affectedPracticeIds,
+    });
+
     return res.json({
       success: true,
       data: {
