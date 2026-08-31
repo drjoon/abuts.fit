@@ -28,6 +28,7 @@ import { periodToRange } from "@/store/usePeriodStore";
 import { toKstYmd, toKstYmdLoose } from "@/shared/date/kst";
 import {
   extractTransferMemoFromMessage as extractTransferMemoFromMessageShared,
+  formatToothNumbersForCard,
   parsePracticeTransferMemoMeta as parsePracticeTransferMemoMetaShared,
   stripPracticeTransferMessageEnvelope,
 } from "@/shared/practice/transferMemo";
@@ -175,6 +176,8 @@ export type PracticeRecentTransferItem = {
   labDesignConfirmedAt?: string | null;
   transferMemo: string;
   rawTransferMemo?: string;
+  /** 목록 카드·검색용 FDI 치아번호(예: ["11","21"]) */
+  toothNumbers?: string[];
   unreadCount: number;
   searchBlob: string;
   targetLabAnchorId?: string;
@@ -632,11 +635,19 @@ export const mapMyPracticeTransferApiRows = (
         targetLab: targetLabRaw,
         handledByCertifiedPartner,
       });
-      const toothRaw = String(ci.tooth || "").trim();
       const createdAtRaw = String(r.createdAt || "");
       const strippedTransferMemo = stripPracticeTransferMessageEnvelope(message);
       const parsedMemo = parsePracticeTransferMemoMetaShared(strippedTransferMemo);
       const transferMemo = extractTransferMemoFromMessage(message);
+      const toothWorksFromApi = Array.isArray(r.toothWorks) ? r.toothWorks : [];
+      const toothNumbersLabel = formatToothNumbersForCard([
+        ...toothWorksFromApi,
+        ...(Array.isArray(parsedMemo.toothWorks) ? parsedMemo.toothWorks : []),
+        String(ci.tooth || "").trim(),
+      ]);
+      const toothNumbers = toothNumbersLabel
+        ? toothNumbersLabel.split(",").filter(Boolean)
+        : [];
       const orderDate = String(r.orderDate || parsedMemo.orderDate || "").trim();
       const arrivalDate = String(r.arrivalDate || parsedMemo.arrivalDate || "").trim();
       const orderDatesRaw = Array.isArray(r.orderDates)
@@ -702,7 +713,7 @@ export const mapMyPracticeTransferApiRows = (
         requestDate: toDayLabel(createdAtRaw),
         patientName,
         patientKey: normalizePatientNameKey(patientName),
-        toothNumbers: toothRaw ? [toothRaw] : [],
+        toothNumbers,
         targetLab,
         targetLabAnchorId: matchingMode === "auto" ? "" : targetLabAnchorId,
         matchingMode,
@@ -978,11 +989,27 @@ export const groupPracticeRecentRequests = (
     PracticeRecentTransferItem & {
       _statuses: Set<string>;
       _patients: Set<string>;
+      _toothNumbers: Set<string>;
       _requestIds: Set<string>;
       _transferMongoIds: Set<string>;
       _files: Map<string, PracticeRecentTransferFileItem>;
     }
   >();
+
+  const mergeToothNumbers = (
+    into: Set<string>,
+    numbers: string[] | undefined,
+  ) => {
+    for (const n of numbers || []) {
+      const tooth = String(n || "").trim();
+      if (/^[1-4][1-8]$/.test(tooth)) into.add(tooth);
+    }
+  };
+
+  const toothNumbersFromSet = (set: Set<string>) => {
+    const label = formatToothNumbersForCard(Array.from(set));
+    return label ? label.split(",").filter(Boolean) : [];
+  };
 
   for (const req of requests) {
     const minuteBucket = Math.floor(Number(req.createdAtTs || 0) / (60 * 1000));
@@ -1004,6 +1031,8 @@ export const groupPracticeRecentRequests = (
       }
       const unreadCount = Number(unreadByTransferId.get(req.transferId) || 0);
       const fileList = Array.from(files.values());
+      const toothNumberSet = new Set<string>();
+      mergeToothNumbers(toothNumberSet, req.toothNumbers);
       byKey.set(key, {
         id: req.id,
         transferId: req.transferId || "-",
@@ -1039,6 +1068,7 @@ export const groupPracticeRecentRequests = (
         labDesignConfirmedAt: req.labDesignConfirmedAt || null,
         transferMemo: req.transferMemo,
         rawTransferMemo: req.rawTransferMemo,
+        toothNumbers: toothNumbersFromSet(toothNumberSet),
         targetLabAnchorId: req.targetLabAnchorId,
         matchingMode: req.matchingMode,
         feeQuote: req.feeQuote || null,
@@ -1068,6 +1098,7 @@ export const groupPracticeRecentRequests = (
           .toLowerCase(),
         _statuses: new Set([req.status]),
         _patients: initialPatients,
+        _toothNumbers: toothNumberSet,
         _requestIds: requestIds,
         _transferMongoIds: transferMongoIds,
         _files: files,
@@ -1085,6 +1116,8 @@ export const groupPracticeRecentRequests = (
       existing._patients.add(patientKey);
     }
     existing.patientCount = Math.max(1, existing._patients.size);
+    mergeToothNumbers(existing._toothNumbers, req.toothNumbers);
+    existing.toothNumbers = toothNumbersFromSet(existing._toothNumbers);
     existing._requestIds.add(req.id);
     existing.requestIds = Array.from(existing._requestIds);
     if (req.requestMongoId) {
@@ -1227,7 +1260,16 @@ export const groupPracticeRecentRequests = (
   }
 
   return [...byKey.values()]
-    .map(({ _statuses: _s, _patients: _p, _requestIds: _r, _transferMongoIds: _tm, _files: _f, ...row }) => ({
+    .map(
+      ({
+        _statuses: _s,
+        _patients: _p,
+        _toothNumbers: _tn,
+        _requestIds: _r,
+        _transferMongoIds: _tm,
+        _files: _f,
+        ...row
+      }) => ({
       ...row,
       files: Array.isArray(row.files) ? row.files : [],
       fileNames: Array.isArray(row.fileNames) ? row.fileNames : [],

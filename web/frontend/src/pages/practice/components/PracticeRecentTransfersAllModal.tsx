@@ -100,6 +100,8 @@ import {
   type PracticeStatusFilterBadgeItem,
 } from "@/pages/practice/components/PracticeStatusFilterBadges";
 import {
+  PracticeTransferListPatientArrivalRow,
+  formatPracticeTransferListPatientWithTeeth,
   practiceTransferStatusBadgeClass,
   resolvePracticeTransferListPatientName,
   resolvePracticeTransferListToothNumbers,
@@ -461,6 +463,8 @@ export function PracticeRecentTransfersAllModal({
           .trim() || "-";
       const patient = resolvePracticeTransferListPatientName(transfer);
       const teeth = resolvePracticeTransferListToothNumbers(transfer);
+      const patientLine =
+        formatPracticeTransferListPatientWithTeeth(patient, teeth) || "—";
       const deliveryLabel = getPracticeAbutmentDeliveryChipLabel({
         hasCustomAbutment: Boolean(transfer.hasCustomAbutment),
         abutmentDeliveryInfo: transfer.abutmentDeliveryInfo || null,
@@ -487,9 +491,7 @@ export function PracticeRecentTransfersAllModal({
         statusTone: resolvePracticeCalendarStatusTone(transfer.status),
         isRemake: Boolean(transfer.isRemake),
         sortLabel: lab,
-        line: [lab, patient || "—", teeth || "—", deliveryLabel]
-          .filter(Boolean)
-          .join(" / "),
+        line: [lab, patientLine, deliveryLabel].filter(Boolean).join(" / "),
         unreadCount: Math.max(0, Number(transfer.unreadCount || 0)),
         canDelete: canDeletePracticeTransferByStatus(transfer.status),
       };
@@ -699,8 +701,9 @@ export function PracticeRecentTransfersAllModal({
                     String(transfer.targetLab || "-")
                       .replace(/\s*→.*$/g, "")
                       .trim() || "-";
-                  const patient =
-                    resolvePracticeTransferListPatientName(transfer) || "—";
+                  const patientName = resolvePracticeTransferListPatientName(transfer);
+                  const toothNumbers =
+                    resolvePracticeTransferListToothNumbers(transfer);
                   const statusLabel = toStatusBadgeLabel(transfer.status);
                   const canDelete = canDeletePracticeTransferByStatus(transfer.status);
                   const unread = Math.max(0, Number(transfer.unreadCount || 0));
@@ -724,77 +727,69 @@ export function PracticeRecentTransfersAllModal({
                         }
                       }}
                     >
-                      <div className="flex min-w-0 items-center gap-3">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                            <Badge
-                              variant="outline"
-                              className={cn(
-                                "h-6 shrink-0 px-2 text-[11px] font-semibold leading-none",
-                                practiceTransferStatusBadgeClass(statusLabel),
-                              )}
-                            >
-                              {statusLabel}
-                            </Badge>
-                            {deliveryLabel ? (
-                              <span
-                                className={practiceAbutmentProgressBadgeClassName(
-                                  deliveryLabel,
-                                )}
-                                title={`${PRACTICE_ABUTMENT_PROGRESS_FIELD_LABEL}: ${deliveryLabel}`}
-                              >
-                                {deliveryLabel}
-                              </span>
-                            ) : null}
-                            {transfer.isRemake ? (
-                              <Badge
-                                variant="outline"
-                                className="h-6 border-[2px] border-double border-slate-400 bg-white px-1.5 text-[10px]"
-                              >
-                                리메이크
-                              </Badge>
-                            ) : null}
-                            {unread > 0 ? (
-                              <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[10px] font-semibold text-white">
-                                {unread > 99 ? "99+" : unread}
-                              </span>
-                            ) : null}
-                            <span className="ml-auto shrink-0 text-[11px] tabular-nums text-muted-foreground">
-                              {transfer.createdAt}
-                            </span>
-                          </div>
-                          <p className="mt-2 truncate text-[15px] font-semibold leading-snug text-slate-900">
-                            {lab}
-                          </p>
-                          <div className="mt-1 flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
-                            <span className="truncate">{patient}</span>
-                            {arrival ? (
-                              <>
-                                <span className="shrink-0 text-slate-300">·</span>
-                                <span className="shrink-0 tabular-nums">도착 {arrival}</span>
-                              </>
-                            ) : null}
-                          </div>
-                        </div>
-                        <div className="flex shrink-0 items-center gap-0.5">
-                          {canDelete ? (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-10 w-10 text-muted-foreground hover:bg-destructive-soft hover:text-destructive"
-                              aria-label="의뢰 취소"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onDeleteTransfer(transfer);
-                              }}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          ) : null}
-                          <ChevronRight className="h-4 w-4 text-slate-300 group-active:text-slate-400" />
-                        </div>
+                      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            "h-6 shrink-0 px-2 text-[11px] font-semibold leading-none",
+                            practiceTransferStatusBadgeClass(statusLabel),
+                          )}
+                        >
+                          {statusLabel}
+                        </Badge>
+                        {deliveryLabel ? (
+                          <span
+                            className={practiceAbutmentProgressBadgeClassName(
+                              deliveryLabel,
+                            )}
+                            title={`${PRACTICE_ABUTMENT_PROGRESS_FIELD_LABEL}: ${deliveryLabel}`}
+                          >
+                            {deliveryLabel}
+                          </span>
+                        ) : null}
+                        {transfer.isRemake ? (
+                          <Badge
+                            variant="outline"
+                            className="h-6 border-[2px] border-double border-slate-400 bg-white px-1.5 text-[10px]"
+                          >
+                            리메이크
+                          </Badge>
+                        ) : null}
+                        {unread > 0 ? (
+                          <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[10px] font-semibold text-white">
+                            {unread > 99 ? "99+" : unread}
+                          </span>
+                        ) : null}
+                        <span className="ml-auto shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                          {transfer.createdAt}
+                        </span>
                       </div>
+                      <div className="mt-2 flex min-w-0 items-center gap-1">
+                        <p className="min-w-0 flex-1 truncate text-[15px] font-semibold leading-snug text-slate-900">
+                          {lab}
+                        </p>
+                        {canDelete ? (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-9 w-9 shrink-0 text-muted-foreground hover:bg-destructive-soft hover:text-destructive"
+                            aria-label="의뢰 취소"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onDeleteTransfer(transfer);
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        ) : null}
+                        <ChevronRight className="h-4 w-4 shrink-0 text-slate-300 group-active:text-slate-400" />
+                      </div>
+                      <PracticeTransferListPatientArrivalRow
+                        patientName={patientName}
+                        toothNumbers={toothNumbers}
+                        arrivalDate={arrival}
+                      />
                     </div>
                   );
                 })}

@@ -7,6 +7,7 @@
  * 2026-08-16: 기공소 수신 카드와 동일 레이아웃(counterpart 라벨로 분기).
  * 2026-08-16: 카드에 치아번호(11,21)만 — 보철 형태 등은 상세 모달.
  * 2026-08-16: 상태 뱃지를 시각과 같은 줄에 배치(행 높이 절약).
+ * 2026-08-31: 환자명 옆에 치아번호(김덕수 11,21) — 별도 치아번호 행 제거.
  */
 import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
@@ -87,6 +88,60 @@ export function resolvePracticeTransferListToothNumbers(transfer: {
   return "";
 }
 
+/** 목록 한 줄 — 환자명 + 치아번호 (예: 김덕수 11,21). */
+export function formatPracticeTransferListPatientWithTeeth(
+  patientName?: string | null,
+  toothNumbers?: string | null,
+): string {
+  const patient = String(patientName || "").trim();
+  const teeth = String(toothNumbers || "").trim();
+  if (patient && teeth) return `${patient} ${teeth}`;
+  return patient || teeth || "";
+}
+
+/**
+ * 모바일 콤팩트 카드 하단 행 — 환자명(말줄임) · 치아번호(우선 표시) · 도착(오른쪽 끝).
+ */
+export function PracticeTransferListPatientArrivalRow({
+  patientName,
+  toothNumbers,
+  arrivalDate,
+  className,
+}: {
+  patientName?: string | null;
+  toothNumbers?: string | null;
+  arrivalDate?: string | null;
+  className?: string;
+}) {
+  const patient = String(patientName || "").trim() || "—";
+  const teeth = String(toothNumbers || "").trim();
+  const arrival = String(arrivalDate || "").trim();
+
+  return (
+    <div
+      className={cn(
+        "mt-1 flex min-w-0 items-center gap-2 text-sm",
+        className,
+      )}
+    >
+      <span className="min-w-0 truncate text-muted-foreground">{patient}</span>
+      {teeth ? (
+        <span
+          className="min-w-0 max-w-[60%] shrink truncate tabular-nums font-medium tracking-tight text-slate-800"
+          title={teeth}
+        >
+          {teeth}
+        </span>
+      ) : null}
+      {arrival ? (
+        <span className="ml-auto shrink-0 tabular-nums text-muted-foreground">
+          도착 {arrival}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 /** 목록 뱃지 라벨(의뢰·수락…) 또는 원 상태(발송완료…) → semantic class */
 export function practiceTransferStatusBadgeClass(statusOrLabel: string) {
   const label = toStatusBadgeLabel(statusOrLabel);
@@ -135,7 +190,7 @@ export type PracticeTransferRequestCardMetaProps = {
   orderDate?: string;
   arrivalDate?: string;
   patientName?: string;
-  /** 예: 11,21 — 보철 형태 등 세부는 상세 모달 */
+  /** 예: 11,21 — 보철 형태 등 세부는 상세 모달. 환자명 옆에 붙임 */
   toothNumbers?: string;
   layout?: "compact" | "comfortable";
   /** 기공비 등 필수 부가 행 */
@@ -160,8 +215,10 @@ export function PracticeTransferRequestCardMeta({
   const order = String(orderDate || "").trim();
   const arrival = String(arrivalDate || "").trim();
   const counterpart = String(counterpartValue || "").trim() || "-";
-  const patient = String(patientName || "").trim();
-  const teeth = String(toothNumbers || "").trim();
+  const patientLine = formatPracticeTransferListPatientWithTeeth(
+    patientName,
+    toothNumbers,
+  );
   const comfortable = layout === "comfortable";
   const hasDates = Boolean(order || arrival);
 
@@ -210,8 +267,13 @@ export function PracticeTransferRequestCardMeta({
           </>
         ) : null}
         <MetaField label={counterpartLabel} value={counterpart} />
-        {patient ? <MetaField label="환자명" value={patient} /> : null}
-        {teeth ? <MetaField label="치아번호" value={teeth} tabular /> : null}
+        {patientLine ? (
+          <MetaField
+            label="환자명"
+            value={patientLine}
+            tabular={Boolean(String(toothNumbers || "").trim())}
+          />
+        ) : null}
       </div>
 
       {afterMeta}

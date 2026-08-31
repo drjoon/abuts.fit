@@ -1024,12 +1024,18 @@ export const formatToothNumbersForCard = (
 ): string => {
   const numbers = [
     ...new Set(
-      (rows || [])
-        .map((row) => {
-          if (typeof row === "string") return String(row || "").trim();
-          return String(row?.toothNumber || "").trim();
-        })
-        .filter((n) => /^[1-4][1-8]$/.test(n)),
+      (rows || []).flatMap((row) => {
+        const raw =
+          typeof row === "string"
+            ? String(row || "").trim()
+            : String(row?.toothNumber || "").trim();
+        if (!raw) return [];
+        // "11,21"·공백 구분도 FDI 단위로 쪼갠다(캘린더 caseInfos.tooth 합침값 포함).
+        return raw
+          .split(/[,/\s]+/)
+          .map((part) => String(part || "").trim())
+          .filter((n) => /^[1-4][1-8]$/.test(n));
+      }),
     ),
   ].sort((a, b) => toToothMemoSortNumber(a) - toToothMemoSortNumber(b));
   return numbers.join(",");

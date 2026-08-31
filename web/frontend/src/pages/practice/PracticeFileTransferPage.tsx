@@ -361,6 +361,7 @@ import {
 // - 2026-08-25: labArrivalDefaults — 기공소별 주문→치과도착 기본 일수.
 import {
   PracticeTransferRequestCardMeta,
+  PracticeTransferListPatientArrivalRow,
   practiceTransferStatusBadgeClass,
   resolvePracticeTransferListPatientName,
   resolvePracticeTransferListToothNumbers,
@@ -3898,6 +3899,7 @@ export const PracticeFileTransferPage = ({
           files: requestFiles,
           transferMemo: req.transferMemo,
           rawTransferMemo: req.rawTransferMemo,
+          toothNumbers: Array.isArray(req.toothNumbers) ? [...req.toothNumbers] : [],
           unreadCount: 0,
           searchBlob: "",
         });
@@ -3920,6 +3922,15 @@ export const PracticeFileTransferPage = ({
       }
       if (!existing.rawTransferMemo && req.rawTransferMemo) {
         existing.rawTransferMemo = req.rawTransferMemo;
+      }
+      if (Array.isArray(req.toothNumbers) && req.toothNumbers.length > 0) {
+        const merged = new Set([
+          ...(existing.toothNumbers || []),
+          ...req.toothNumbers,
+        ]);
+        existing.toothNumbers = Array.from(merged).filter((n) =>
+          /^[1-4][1-8]$/.test(String(n || "").trim()),
+        );
       }
       if (req.createdAtTs > existing.createdAtTs) {
         existing.createdAtTs = req.createdAtTs;
@@ -8119,13 +8130,10 @@ export const PracticeFileTransferPage = ({
                       String(transfer.targetLab || "-")
                         .replace(/\s*→.*$/g, "")
                         .trim() || "-";
-                    const patient =
-                      resolvePracticeTransferListPatientName(transfer) || "—";
                     const ownerLabel = transfer.isMineDraft
                       ? "나"
                       : transfer.practiceUserLabel || "동료";
                     const isActive = transfer.id === activeDraftId;
-                    const arrival = String(transfer.arrivalDate || "").trim();
 
                     return (
                       <div
@@ -8146,44 +8154,31 @@ export const PracticeFileTransferPage = ({
                           }
                         }}
                       >
-                        <div className="flex min-w-0 items-center gap-2">
-                          <div className="min-w-0 flex-1">
-                            <div className="flex min-w-0 flex-nowrap items-center gap-1.5">
-                              {isActive ? (
-                                <Badge className="h-6 shrink-0 rounded-md border-0 bg-primary-strong px-1.5 text-[10px] font-medium text-white hover:bg-primary-strong">
-                                  작성 중
-                                </Badge>
-                              ) : null}
-                              <Badge
-                                variant="outline"
-                                className="h-6 shrink-0 px-1.5 text-[10px]"
-                              >
-                                {ownerLabel}
-                              </Badge>
-                              <span className="ml-auto shrink-0 text-[11px] tabular-nums text-muted-foreground">
-                                {transfer.createdAt}
-                              </span>
-                            </div>
-                            <p className="mt-2 truncate text-[15px] font-semibold leading-snug text-slate-900">
-                              {targetLabText}
-                            </p>
-                            <div className="mt-1 flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
-                              <span className="truncate">{patient}</span>
-                              {arrival ? (
-                                <>
-                                  <span className="shrink-0 text-slate-300">·</span>
-                                  <span className="shrink-0 tabular-nums">
-                                    도착 {arrival}
-                                  </span>
-                                </>
-                              ) : null}
-                            </div>
-                          </div>
+                        <div className="flex min-w-0 flex-nowrap items-center gap-1.5">
+                          {isActive ? (
+                            <Badge className="h-6 shrink-0 rounded-md border-0 bg-primary-strong px-1.5 text-[10px] font-medium text-white hover:bg-primary-strong">
+                              작성 중
+                            </Badge>
+                          ) : null}
+                          <Badge
+                            variant="outline"
+                            className="h-6 shrink-0 px-1.5 text-[10px]"
+                          >
+                            {ownerLabel}
+                          </Badge>
+                          <span className="ml-auto shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                            {transfer.createdAt}
+                          </span>
+                        </div>
+                        <div className="mt-2 flex min-w-0 items-center gap-1">
+                          <p className="min-w-0 flex-1 truncate text-[15px] font-semibold leading-snug text-slate-900">
+                            {targetLabText}
+                          </p>
                           <Button
                             type="button"
                             variant="ghost"
                             size="icon"
-                            className="h-10 w-10 shrink-0 text-muted-foreground hover:bg-destructive-soft hover:text-destructive"
+                            className="h-9 w-9 shrink-0 text-muted-foreground hover:bg-destructive-soft hover:text-destructive"
                             onClick={(e) => {
                               e.stopPropagation();
                               void handleAskDeleteTransfer(transfer);
@@ -8193,6 +8188,15 @@ export const PracticeFileTransferPage = ({
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>
+                        <PracticeTransferListPatientArrivalRow
+                          patientName={resolvePracticeTransferListPatientName(
+                            transfer,
+                          )}
+                          toothNumbers={resolvePracticeTransferListToothNumbers(
+                            transfer,
+                          )}
+                          arrivalDate={transfer.arrivalDate}
+                        />
                       </div>
                     );
                   })}
@@ -8394,15 +8398,12 @@ export const PracticeFileTransferPage = ({
                       String(transfer.targetLab || "-")
                         .replace(/\s*→.*$/g, "")
                         .trim() || "-";
-                    const patient =
-                      resolvePracticeTransferListPatientName(transfer) || "—";
                     const isDraftTrash =
                       transfer.status === "임시저장" ||
                       transfer.transferId === PRACTICE_DRAFT_TRANSFER_ID;
                     const statusLabel = isDraftTrash
                       ? "임시저장"
                       : toStatusBadgeLabel(transfer.status);
-                    const arrival = String(transfer.arrivalDate || "").trim();
 
                     return (
                       <div
@@ -8418,50 +8419,37 @@ export const PracticeFileTransferPage = ({
                           }
                         }}
                       >
-                        <div className="flex min-w-0 items-center gap-2">
-                          <div className="min-w-0 flex-1">
-                            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                              <Badge
-                                variant="outline"
-                                className={cn(
-                                  "h-6 shrink-0 px-2 text-[11px] font-semibold leading-none",
-                                  practiceTransferStatusBadgeClass(statusLabel),
-                                )}
-                              >
-                                {statusLabel}
-                              </Badge>
-                              {isDraftTrash && transfer.practiceUserLabel ? (
-                                <Badge
-                                  variant="outline"
-                                  className="h-6 px-1.5 text-[10px]"
-                                >
-                                  {transfer.practiceUserLabel}
-                                </Badge>
-                              ) : null}
-                              <span className="ml-auto shrink-0 text-[11px] tabular-nums text-muted-foreground">
-                                {transfer.createdAt}
-                              </span>
-                            </div>
-                            <p className="mt-2 truncate text-[15px] font-semibold leading-snug text-slate-900">
-                              {targetLabText}
-                            </p>
-                            <div className="mt-1 flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
-                              <span className="truncate">{patient}</span>
-                              {arrival ? (
-                                <>
-                                  <span className="shrink-0 text-slate-300">·</span>
-                                  <span className="shrink-0 tabular-nums">
-                                    도착 {arrival}
-                                  </span>
-                                </>
-                              ) : null}
-                            </div>
-                          </div>
+                        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                          <Badge
+                            variant="outline"
+                            className={cn(
+                              "h-6 shrink-0 px-2 text-[11px] font-semibold leading-none",
+                              practiceTransferStatusBadgeClass(statusLabel),
+                            )}
+                          >
+                            {statusLabel}
+                          </Badge>
+                          {isDraftTrash && transfer.practiceUserLabel ? (
+                            <Badge
+                              variant="outline"
+                              className="h-6 px-1.5 text-[10px]"
+                            >
+                              {transfer.practiceUserLabel}
+                            </Badge>
+                          ) : null}
+                          <span className="ml-auto shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                            {transfer.createdAt}
+                          </span>
+                        </div>
+                        <div className="mt-2 flex min-w-0 items-center gap-1">
+                          <p className="min-w-0 flex-1 truncate text-[15px] font-semibold leading-snug text-slate-900">
+                            {targetLabText}
+                          </p>
                           <Button
                             type="button"
                             variant="ghost"
                             size="icon"
-                            className="h-10 w-10 shrink-0 text-slate-500 hover:bg-primary-soft hover:text-primary-strong"
+                            className="h-9 w-9 shrink-0 text-slate-500 hover:bg-primary-soft hover:text-primary-strong"
                             onClick={(e) => {
                               e.stopPropagation();
                               handleAskRestoreTransfer(transfer);
@@ -8471,6 +8459,15 @@ export const PracticeFileTransferPage = ({
                             <RotateCcw className="h-4 w-4" />
                           </Button>
                         </div>
+                        <PracticeTransferListPatientArrivalRow
+                          patientName={resolvePracticeTransferListPatientName(
+                            transfer,
+                          )}
+                          toothNumbers={resolvePracticeTransferListToothNumbers(
+                            transfer,
+                          )}
+                          arrivalDate={transfer.arrivalDate}
+                        />
                       </div>
                     );
                   })}
