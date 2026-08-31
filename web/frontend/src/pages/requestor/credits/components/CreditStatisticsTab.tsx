@@ -1,5 +1,6 @@
 // change-log:
-// - 2026-08-31: 요약 소비 카드 라벨「소비」(구「기공, 스토어」). 치과·기공소 공통.
+// - 2026-08-31: 기공소 통계 구역 — 기공/어벗 액센트 셸·좌측 레일로 클러스터 구분 강화.
+// - 2026-08-31: 기공소 통계 — 치과로부터 수신(정산) / 어벗츠로 의뢰(충전·소비) 구역 분리.
 // - 2026-08-31: 데모/실사용 체크박스 필터(usageScope) + 깜빡임 안내. 요약·차트 공통.
 // - 2026-08-31: 요약 — 유료/데모(무료) 충전 분리. 기공소 +정산 적립. 파트너=치과별 적립.
 // - 2026-08-29: 통계 차트 — 충전(녹)·소비(청)·조정(호박) 등 유형별 색 구분.
@@ -16,6 +17,9 @@
 // - web/frontend/src/shared/demo/demoModeCopy.ts
 // - web/frontend/src/shared/demo/CreditUsageScopeFilter.tsx
 // - web/frontend/src/shared/demo/creditUsageScope.ts
+// - web/frontend/src/shared/ui/gigongAbutAccent.ts
+// - web/frontend/src/features/layout/DashboardLayout.tsx
+// - .cursor/rules/ui-summary-cards.mdc
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Bar,
@@ -28,11 +32,14 @@ import {
   YAxis,
 } from "recharts";
 import {
+  Building2,
   ChevronRight,
+  FileText,
   Layers3,
   PieChart,
   TrendingUp,
   Wallet,
+  type LucideIcon,
 } from "lucide-react";
 import { apiFetch } from "@/shared/api/apiClient";
 import {
@@ -70,6 +77,7 @@ import {
   type CreditUsageScopeSelection,
 } from "@/shared/demo/creditUsageScope";
 import { useAuthStore } from "@/store/useAuthStore";
+import { type GigongAbutAccentKey } from "@/shared/ui/gigongAbutAccent";
 
 type StatsRow = {
   key: string;
@@ -103,6 +111,8 @@ type CreditLedgerStatsResponse = {
       totalSettlementPayoutSupply: number;
       transactionCount: number;
       orderCount: number;
+      settlementOrderCount?: number;
+      abutsOrderCount?: number;
     };
     byPeriod: PeriodRow[];
     byCategory: StatsRow[];
@@ -135,9 +145,31 @@ const DEFAULT_CATEGORY_COLOR = "hsl(var(--primary))";
 const categoryColor = (key: string) =>
   CATEGORY_CHART_COLORS[key] || DEFAULT_CATEGORY_COLOR;
 
-const trendChartConfig = {
+const SETTLEMENT_CATEGORY_KEYS = new Set([
+  "settlement_earn",
+  "settlement_payout",
+]);
+
+const ABUTS_CATEGORY_KEYS = new Set([
+  "charge",
+  "abutment_production",
+  "shipping",
+  "store",
+  "adjust",
+  "other",
+]);
+
+const PRACTICE_ORDER_STATS_CATEGORIES =
+  "practice_transfer,abutment_production,shipping" as const;
+const ABUTS_ORDER_STATS_CATEGORIES =
+  "abutment_production,shipping" as const;
+
+const spendTrendChartConfig = {
   spendSupply: { label: "소비", color: CATEGORY_CHART_COLORS.practice_transfer },
   chargeSupply: { label: "충전", color: CATEGORY_CHART_COLORS.charge },
+} satisfies ChartConfig;
+
+const settlementTrendChartConfig = {
   settlementEarnSupply: {
     label: "정산 적립",
     color: CATEGORY_CHART_COLORS.settlement_earn,
@@ -148,9 +180,6 @@ const supplyTooltipFormatter = (value: number | string) =>
   formatWonWithUnit(roundWon(Number(value || 0)));
 
 const PANEL_MIN_H = "min-h-[17rem]";
-
-const ORDER_STATS_CATEGORIES =
-  "practice_transfer,abutment_production,shipping" as const;
 
 function baseFilters(
   period: PeriodFilterValue,
@@ -184,6 +213,70 @@ function categoryLedgerFilters(
     action: "SPEND",
     statsCategory: categoryKey as CreditLedgerStatsCategory,
   };
+}
+
+function StatsFlowSection({
+  title,
+  subtitle,
+  accent,
+  icon: Icon,
+  children,
+}: {
+  title: string;
+  subtitle: string;
+  accent: GigongAbutAccentKey;
+  icon: LucideIcon;
+  children: React.ReactNode;
+}) {
+  const isGigong = accent === "기공";
+  return (
+    <section
+      className={cn(
+        "relative flex min-w-0 flex-col overflow-hidden rounded-2xl border",
+        isGigong
+          ? "border-service-gigong-muted/80 bg-service-gigong-soft/55 shadow-[0_10px_28px_-18px_hsl(var(--service-gigong)/0.55)]"
+          : "border-service-abut-muted/80 bg-service-abut-soft/55 shadow-[0_10px_28px_-18px_hsl(var(--service-abut)/0.5)]",
+      )}
+    >
+      <div
+        aria-hidden
+        className={cn(
+          "absolute inset-y-0 left-0 w-1.5",
+          isGigong ? "bg-service-gigong" : "bg-service-abut",
+        )}
+      />
+      <header
+        className={cn(
+          "flex items-start gap-3 border-b px-4 py-3 pl-5 sm:px-5 sm:pl-6",
+          isGigong
+            ? "border-service-gigong-muted/60 bg-gradient-to-r from-service-gigong-soft via-white/80 to-transparent"
+            : "border-service-abut-muted/60 bg-gradient-to-r from-service-abut-soft via-white/80 to-transparent",
+        )}
+      >
+        <div
+          className={cn(
+            "mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ring-1",
+            isGigong
+              ? "bg-service-gigong text-service-gigong-foreground ring-service-gigong-muted/70"
+              : "bg-service-abut text-service-abut-foreground ring-service-abut-muted/70",
+          )}
+        >
+          <Icon className="h-4 w-4" />
+        </div>
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold tracking-tight text-foreground sm:text-[15px]">
+            {title}
+          </h3>
+          <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground sm:text-xs">
+            {subtitle}
+          </p>
+        </div>
+      </header>
+      <div className="flex min-w-0 flex-col gap-3 p-3 pl-4 sm:p-4 sm:pl-5">
+        {children}
+      </div>
+    </section>
+  );
 }
 
 function StatsPanel({
@@ -313,6 +406,201 @@ function HorizontalBarList({
   );
 }
 
+function SummaryCardsRow({
+  children,
+  cardCount,
+}: {
+  children: React.ReactNode;
+  cardCount: number;
+}) {
+  return (
+    <div className={cn("min-w-0", RESPONSIVE.tableShell, "pb-1")}>
+      <div className="flex min-w-max items-stretch gap-0.5 px-1 sm:gap-1">
+        {children}
+      </div>
+      <span className="sr-only">{cardCount}개 요약</span>
+    </div>
+  );
+}
+
+function SummarySkeleton({ cardCount }: { cardCount: number }) {
+  return (
+    <div className={cn("min-w-0", RESPONSIVE.tableShell, "pb-1")}>
+      <div className="flex min-w-max items-stretch gap-0.5 px-1 sm:gap-1">
+        {Array.from({ length: cardCount }).map((_, i) => (
+          <div
+            key={i}
+            className="min-h-[7.25rem] min-w-[8.5rem] flex-1 animate-pulse rounded-2xl border border-border/60 bg-muted/30 sm:min-w-[9.5rem] md:min-w-[10.5rem]"
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TrendLineChart({
+  data,
+  config,
+  keys,
+}: {
+  data: Array<PeriodRow & { label: string }>;
+  config: ChartConfig;
+  keys: Array<keyof typeof spendTrendChartConfig | "settlementEarnSupply">;
+}) {
+  if (data.length === 0) {
+    return (
+      <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+        선택한 기간에 데이터가 없습니다.
+      </div>
+    );
+  }
+
+  return (
+    <ChartContainer config={config} className="aspect-[16/10] w-full flex-1">
+      <LineChart data={data} margin={{ left: 4, right: 8, top: 4 }}>
+        <CartesianGrid vertical={false} strokeDasharray="3 3" />
+        <XAxis
+          dataKey="label"
+          tickLine={false}
+          axisLine={false}
+          minTickGap={20}
+          tick={{ fontSize: 11 }}
+        />
+        <YAxis
+          tickLine={false}
+          axisLine={false}
+          width={48}
+          tick={{ fontSize: 11 }}
+          tickFormatter={(v) =>
+            Number(v) >= 10000
+              ? `${Math.round(Number(v) / 10000)}만`
+              : String(v)
+          }
+        />
+        <ChartTooltip
+          content={
+            <ChartTooltipContent
+              formatter={(value, name) => [
+                supplyTooltipFormatter(value),
+                config[String(name)]?.label || String(name),
+              ]}
+            />
+          }
+        />
+        <ChartLegend content={<ChartLegendContent />} />
+        {keys.map((key) => (
+          <Line
+            key={key}
+            type="monotone"
+            dataKey={key}
+            stroke={`var(--color-${key})`}
+            strokeWidth={key === "spendSupply" ? 2.5 : 2}
+            dot={false}
+          />
+        ))}
+      </LineChart>
+    </ChartContainer>
+  );
+}
+
+function CategoryBarChart({
+  rows,
+  filterBase,
+  onOpenDrillDown,
+}: {
+  rows: StatsRow[];
+  filterBase: CreditLedgerInitialFilters;
+  onOpenDrillDown: (next: DrillDownState) => void;
+}) {
+  const categoryChartConfig = useMemo(() => {
+    const config: ChartConfig = {
+      amountSupply: { label: "공급가" },
+    };
+    for (const row of rows) {
+      config[row.key] = {
+        label: row.label,
+        color: categoryColor(row.key),
+      };
+    }
+    return config;
+  }, [rows]);
+
+  if (rows.length === 0) {
+    return (
+      <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+        유형별 집계 데이터가 없습니다.
+      </div>
+    );
+  }
+
+  return (
+    <ChartContainer
+      config={categoryChartConfig}
+      className="aspect-[16/10] w-full flex-1"
+    >
+      <BarChart data={rows} margin={{ left: 4, right: 8, top: 4, bottom: 0 }}>
+        <CartesianGrid vertical={false} strokeDasharray="3 3" />
+        <XAxis
+          dataKey="label"
+          tickLine={false}
+          axisLine={false}
+          interval={0}
+          angle={-18}
+          textAnchor="end"
+          height={52}
+          tick={{ fontSize: 10 }}
+        />
+        <YAxis
+          tickLine={false}
+          axisLine={false}
+          width={48}
+          tick={{ fontSize: 11 }}
+          tickFormatter={(v) =>
+            Number(v) >= 10000
+              ? `${Math.round(Number(v) / 10000)}만`
+              : String(v)
+          }
+        />
+        <ChartTooltip
+          content={
+            <ChartTooltipContent
+              labelKey="label"
+              nameKey="key"
+              formatter={(value, _name, item) => {
+                const key = String(
+                  (item?.payload as { key?: string } | undefined)?.key || "",
+                );
+                const label = categoryChartConfig[key]?.label || "공급가";
+                return [supplyTooltipFormatter(value), label];
+              }}
+            />
+          }
+        />
+        <Bar
+          dataKey="amountSupply"
+          radius={[6, 6, 0, 0]}
+          className="cursor-pointer"
+          onClick={(barData, _index, event) => {
+            event?.stopPropagation?.();
+            const key = String(
+              (barData as { payload?: { key?: string } })?.payload?.key || "",
+            );
+            if (!key) return;
+            onOpenDrillDown({
+              title: `${String((barData as { payload?: { label?: string } })?.payload?.label || "유형")} 내역`,
+              filters: categoryLedgerFilters(key, filterBase),
+            });
+          }}
+        >
+          {rows.map((row) => (
+            <Cell key={row.key} fill={`var(--color-${row.key})`} />
+          ))}
+        </Bar>
+      </BarChart>
+    </ChartContainer>
+  );
+}
+
 export function CreditStatisticsTab() {
   const { demoMode } = useDemoMode();
   const accessKind = useAuthStore((s) => s.user?.requestorKind || null);
@@ -372,7 +660,6 @@ export function CreditStatisticsTab() {
     stats?.requestorKind === "lab" ||
     (!stats && accessKind === "lab");
   const freeChargeLabel = demoMode ? CREDIT_DEMO_BUCKET_LABEL : "무료 충전";
-  const partnerTitle = isLab ? "치과별 적립" : "기공소별 소비";
   const filterBase = useMemo(
     () => baseFilters(period, customStartDate, customEndDate, usageSelection),
     [period, customStartDate, customEndDate, usageSelection],
@@ -397,29 +684,29 @@ export function CreditStatisticsTab() {
     [stats?.byPeriod],
   );
 
-  const categoryChartData = useMemo(
+  const settlementCategoryRows = useMemo(
     () =>
-      (stats?.byCategory || []).map((row) => ({
-        key: row.key,
-        label: row.label,
-        amountSupply: row.amountSupply,
-        count: row.count,
-      })),
+      (stats?.byCategory || []).filter((row) =>
+        SETTLEMENT_CATEGORY_KEYS.has(row.key),
+      ),
     [stats?.byCategory],
   );
 
-  const categoryChartConfig = useMemo(() => {
-    const config: ChartConfig = {
-      amountSupply: { label: "공급가" },
-    };
-    for (const row of categoryChartData) {
-      config[row.key] = {
-        label: row.label,
-        color: categoryColor(row.key),
-      };
-    }
-    return config;
-  }, [categoryChartData]);
+  const abutsCategoryRows = useMemo(
+    () =>
+      (stats?.byCategory || []).filter((row) =>
+        ABUTS_CATEGORY_KEYS.has(row.key),
+      ),
+    [stats?.byCategory],
+  );
+
+  const practiceCategoryRows = useMemo(
+    () =>
+      (stats?.byCategory || []).filter(
+        (row) => !SETTLEMENT_CATEGORY_KEYS.has(row.key),
+      ),
+    [stats?.byCategory],
+  );
 
   const openDrillDown = (next: DrillDownState) => {
     setDrillDown(next);
@@ -428,113 +715,450 @@ export function CreditStatisticsTab() {
   const statCardClass =
     "min-w-[8.5rem] flex-1 sm:min-w-[9.5rem] md:min-w-[10.5rem]";
 
-  const summaryCardCount = isLab ? 5 : 4;
-
   const freeChargeTooltip = demoMode
     ? CREDIT_LEDGER_DEMO_NOTICE_BODY
     : "선택한 기간에 무료로 충전된 금액 합계입니다.";
-  const spendTooltip = demoMode
+  const abutsSpendTooltip = demoMode
     ? CREDIT_LEDGER_DEMO_PERIOD_SPEND_HINT
-    : isLab
-      ? "선택한 기간에 지출한 어벗 생산·배송·스토어 결제 합계입니다."
-      : "선택한 기간에 지출한 기공료와 스토어 결제 합계입니다.";
+    : "선택한 기간에 지출한 어벗 생산·배송·스토어 결제 합계입니다.";
+  const practiceSpendTooltip = demoMode
+    ? CREDIT_LEDGER_DEMO_PERIOD_SPEND_HINT
+    : "선택한 기간에 지출한 기공료와 스토어 결제 합계입니다.";
 
-  const summaryCards = (
-    <div className={cn("min-w-0", RESPONSIVE.tableShell, "pb-1")}>
-      <div className="flex min-w-max items-stretch gap-0.5 px-1 sm:gap-1">
-        <SettlementStatCard
-          className={statCardClass}
-          label="유료 충전"
-          value={paidChargeTotal}
-          hint="안내"
-          hintTooltip="선택한 기간에 유료(선입금)로 충전된 금액 합계입니다."
-          onClick={() =>
-            openDrillDown({
-              title: "유료 충전 내역",
-              filters: {
-                ...filterBase,
-                creditKind: "PAID",
-                action: "CHARGE",
-              },
-            })
-          }
+  const settlementOrderCount = Number(
+    stats?.summary.settlementOrderCount ?? stats?.summary.orderCount ?? 0,
+  );
+  const abutsOrderCount = Number(stats?.summary.abutsOrderCount ?? 0);
+
+  const filterBar = (
+    <div className="flex flex-wrap items-center gap-2">
+      {(hasDemoUsage ||
+        usageSelection.includeDemo !== true ||
+        usageSelection.includeReal !== true) && (
+        <CreditUsageScopeFilter
+          value={usageSelection}
+          onChange={(next) => {
+            setUsageSelection(next);
+            setUsageGuidePulse(false);
+          }}
+          pulse={usageGuidePulse && hasDemoUsage}
         />
-        <SettlementEquationOperator symbol="+" />
-        <SettlementStatCard
-          className={statCardClass}
-          label={freeChargeLabel}
-          value={freeChargeTotal}
-          hint="안내"
-          hintTooltip={freeChargeTooltip}
-          onClick={() =>
-            openDrillDown({
-              title: demoMode ? "데모 충전 내역" : "무료 충전 내역",
-              filters: {
-                ...filterBase,
-                creditKind: "FREE",
-                action: "CHARGE",
-              },
-            })
-          }
-        />
-        {isLab ? (
-          <>
-            <SettlementEquationOperator symbol="+" />
-            <SettlementStatCard
-              className={statCardClass}
-              label="정산 적립"
-              value={stats?.summary.totalSettlementEarnSupply || 0}
-              hint="안내"
-              hintTooltip="선택한 기간에 적립된 기공 정산(작업완료 전 적립 보류 포함)입니다. 치과 데모 결제는 내역에「데모」로 표시됩니다."
-              onClick={() =>
+      )}
+      <PeriodFilter
+        value={period}
+        onChange={setPeriod}
+        customStartDate={customStartDate}
+        customEndDate={customEndDate}
+        onCustomRangeChange={({ startDate, endDate }) => {
+          setCustomStartDate(startDate);
+          setCustomEndDate(endDate);
+        }}
+        onClearCustomRange={() => {
+          setCustomStartDate("");
+          setCustomEndDate("");
+        }}
+        useStoreCustomRange={false}
+        presets={["30d", "90d", "thisMonth"]}
+      />
+    </div>
+  );
+
+  const chargeSpendCards = ({
+    spendTooltip,
+    orderCount,
+    orderHint,
+    orderCategories,
+    spendLabel = "소비",
+  }: {
+    spendTooltip: string;
+    orderCount: number;
+    orderHint: string;
+    orderCategories: string;
+    spendLabel?: string;
+  }) => (
+    <SummaryCardsRow cardCount={4}>
+      <SettlementStatCard
+        className={statCardClass}
+        label="유료 충전"
+        value={paidChargeTotal}
+        hint="안내"
+        hintTooltip="선택한 기간에 유료(선입금)로 충전된 금액 합계입니다."
+        onClick={() =>
+          openDrillDown({
+            title: "유료 충전 내역",
+            filters: {
+              ...filterBase,
+              creditKind: "PAID",
+              action: "CHARGE",
+            },
+          })
+        }
+      />
+      <SettlementEquationOperator symbol="+" />
+      <SettlementStatCard
+        className={statCardClass}
+        label={freeChargeLabel}
+        value={freeChargeTotal}
+        hint="안내"
+        hintTooltip={freeChargeTooltip}
+        onClick={() =>
+          openDrillDown({
+            title: demoMode ? "데모 충전 내역" : "무료 충전 내역",
+            filters: {
+              ...filterBase,
+              creditKind: "FREE",
+              action: "CHARGE",
+            },
+          })
+        }
+      />
+      <SettlementEquationOperator symbol="−" />
+      <SettlementStatCard
+        className={statCardClass}
+        label={spendLabel}
+        value={stats?.summary.totalSpendSupply || 0}
+        tone="primary"
+        hint="안내"
+        hintTooltip={spendTooltip}
+        onClick={() =>
+          openDrillDown({
+            title: `${spendLabel} 내역`,
+            filters: { ...filterBase, action: "SPEND" },
+          })
+        }
+      />
+      <SettlementStatCard
+        className={statCardClass}
+        label="의뢰건수"
+        value={`${orderCount.toLocaleString("ko-KR")}건`}
+        hint="안내"
+        hintTooltip={orderHint}
+        onClick={() =>
+          openDrillDown({
+            title: "의뢰 내역",
+            filters: {
+              ...filterBase,
+              statsCategories: orderCategories,
+            },
+          })
+        }
+      />
+    </SummaryCardsRow>
+  );
+
+  const settlementCards = (
+    <SummaryCardsRow cardCount={2}>
+      <SettlementStatCard
+        className={statCardClass}
+        label="정산 적립"
+        value={stats?.summary.totalSettlementEarnSupply || 0}
+        hint="안내"
+        hintTooltip="선택한 기간에 적립된 기공 정산(작업완료 전 적립 보류 포함)입니다. 치과 데모 결제는 내역에「데모」로 표시됩니다."
+        onClick={() =>
+          openDrillDown({
+            title: "정산 적립 내역",
+            filters: {
+              ...filterBase,
+              statsCategory: "settlement_earn",
+            },
+          })
+        }
+      />
+      <SettlementStatCard
+        className={statCardClass}
+        label="의뢰건수"
+        value={`${settlementOrderCount.toLocaleString("ko-KR")}건`}
+        hint="안내"
+        hintTooltip="치과로부터 수신한 기공의뢰(정산 적립·보류) 건수입니다."
+        onClick={() =>
+          openDrillDown({
+            title: "치과로부터 수신 내역",
+            filters: {
+              ...filterBase,
+              statsCategory: "settlement_earn",
+            },
+          })
+        }
+      />
+    </SummaryCardsRow>
+  );
+
+  const labContent = (
+    <div className="flex min-w-0 flex-col gap-6">
+      {filterBar}
+
+      <StatsFlowSection
+        title="치과로부터 수신"
+        subtitle="치과 → 기공소 · 정산 적립"
+        accent="기공"
+        icon={Building2}
+      >
+        {settlementCards}
+        <div className="grid min-w-0 gap-3 md:grid-cols-2">
+          <StatsPanel
+            title="기간별 추이"
+            subtitle="일별 정산 적립"
+            icon={TrendingUp}
+            onOpenDetail={() =>
+              openDrillDown({
+                title: "정산 적립 내역",
+                filters: {
+                  ...filterBase,
+                  statsCategory: "settlement_earn",
+                },
+              })
+            }
+          >
+            <TrendLineChart
+              data={trendData}
+              config={settlementTrendChartConfig}
+              keys={["settlementEarnSupply"]}
+            />
+          </StatsPanel>
+
+          <StatsPanel
+            title="유형별 금액"
+            subtitle="정산 적립·지급"
+            icon={PieChart}
+            onOpenDetail={() =>
+              openDrillDown({
+                title: "정산 적립 내역",
+                filters: {
+                  ...filterBase,
+                  statsCategory: "settlement_earn",
+                },
+              })
+            }
+          >
+            <CategoryBarChart
+              rows={settlementCategoryRows}
+              filterBase={filterBase}
+              onOpenDrillDown={openDrillDown}
+            />
+          </StatsPanel>
+
+          <StatsPanel
+            title="치과별 적립"
+            subtitle="치과별 정산 적립(보류 포함)"
+            icon={Wallet}
+            onOpenDetail={() =>
+              openDrillDown({
+                title: "치과별 적립 내역",
+                filters: {
+                  ...filterBase,
+                  statsCategory: "settlement_earn",
+                },
+              })
+            }
+          >
+            <HorizontalBarList
+              rows={stats?.byPartner || []}
+              emptyHint="치과로부터 수신·정산 적립이 있을 때 치과별로 표시됩니다."
+              onRowClick={(row) =>
                 openDrillDown({
-                  title: "정산 적립 내역",
+                  title: `${row.label} 내역`,
                   filters: {
                     ...filterBase,
                     statsCategory: "settlement_earn",
+                    partnerName: row.label,
                   },
                 })
               }
             />
-          </>
-        ) : null}
-        <SettlementEquationOperator symbol="−" />
-        <SettlementStatCard
-          className={statCardClass}
-          label="소비"
-          value={stats?.summary.totalSpendSupply || 0}
-          tone="primary"
-          hint="안내"
-          hintTooltip={spendTooltip}
-          onClick={() =>
+          </StatsPanel>
+
+          <StatsPanel
+            title="보철 유형별"
+            subtitle="견적 라인 기준 정산 적립"
+            icon={Layers3}
+            onOpenDetail={() =>
+              openDrillDown({
+                title: "보철 유형별 거래 내역",
+                filters: {
+                  ...filterBase,
+                  statsCategory: "settlement_earn",
+                },
+              })
+            }
+          >
+            <HorizontalBarList
+              rows={stats?.byProsthesisType || []}
+              emptyHint="정산 적립(보류 포함)이 있을 때 보철 유형별로 표시됩니다."
+              onRowClick={(row) =>
+                openDrillDown({
+                  title: `${row.label} 내역`,
+                  filters: {
+                    ...filterBase,
+                    statsCategory: "settlement_earn",
+                    prosthesisType: row.label,
+                  },
+                })
+              }
+            />
+          </StatsPanel>
+        </div>
+      </StatsFlowSection>
+
+      <StatsFlowSection
+        title="어벗츠로 의뢰"
+        subtitle="기공소 → 어벗츠 · 충전·소비"
+        accent="어벗"
+        icon={FileText}
+      >
+        {chargeSpendCards({
+          spendTooltip: abutsSpendTooltip,
+          orderCount: abutsOrderCount,
+          orderHint: "어벗츠로 의뢰한 어벗생산·배송 거래 건수입니다.",
+          orderCategories: ABUTS_ORDER_STATS_CATEGORIES,
+        })}
+        <div className="grid min-w-0 gap-3 md:grid-cols-2">
+          <StatsPanel
+            title="기간별 추이"
+            subtitle="일별 소비·충전"
+            icon={TrendingUp}
+            onOpenDetail={() =>
+              openDrillDown({
+                title: "어벗츠 거래 내역",
+                filters: {
+                  ...filterBase,
+                  statsCategories: "charge,abutment_production,shipping,store",
+                },
+              })
+            }
+          >
+            <TrendLineChart
+              data={trendData}
+              config={spendTrendChartConfig}
+              keys={["spendSupply", "chargeSupply"]}
+            />
+          </StatsPanel>
+
+          <StatsPanel
+            title="유형별 금액"
+            subtitle="충전·어벗생산·배송·스토어"
+            icon={PieChart}
+            onOpenDetail={() =>
+              openDrillDown({
+                title: "어벗츠 유형별 내역",
+                filters: {
+                  ...filterBase,
+                  statsCategories: "charge,abutment_production,shipping,store",
+                },
+              })
+            }
+          >
+            <CategoryBarChart
+              rows={abutsCategoryRows}
+              filterBase={filterBase}
+              onOpenDrillDown={openDrillDown}
+            />
+          </StatsPanel>
+        </div>
+      </StatsFlowSection>
+    </div>
+  );
+
+  const practiceContent = (
+    <>
+      {chargeSpendCards({
+        spendTooltip: practiceSpendTooltip,
+        orderCount: Number(stats?.summary.orderCount || 0),
+        orderHint: "기공의뢰·어벗생산·배송 거래 건수입니다.",
+        orderCategories: PRACTICE_ORDER_STATS_CATEGORIES,
+      })}
+      {filterBar}
+      <div className="grid min-w-0 gap-3 md:grid-cols-2">
+        <StatsPanel
+          title="기간별 추이"
+          subtitle="일별 소비·충전"
+          icon={TrendingUp}
+          onOpenDetail={() =>
             openDrillDown({
-              title: "소비 내역",
+              title: "기간별 거래 내역",
+              filters: filterBase,
+            })
+          }
+        >
+          <TrendLineChart
+            data={trendData}
+            config={spendTrendChartConfig}
+            keys={["spendSupply", "chargeSupply"]}
+          />
+        </StatsPanel>
+
+        <StatsPanel
+          title="유형별 금액"
+          subtitle="충전·기공의뢰·배송 등"
+          icon={PieChart}
+          onOpenDetail={() =>
+            openDrillDown({
+              title: "유형별 거래 내역",
+              filters: filterBase,
+            })
+          }
+        >
+          <CategoryBarChart
+            rows={practiceCategoryRows}
+            filterBase={filterBase}
+            onOpenDrillDown={openDrillDown}
+          />
+        </StatsPanel>
+
+        <StatsPanel
+          title="기공소별 소비"
+          subtitle="파트너별 공급가 합계"
+          icon={Wallet}
+          onOpenDetail={() =>
+            openDrillDown({
+              title: "기공소별 소비 내역",
               filters: { ...filterBase, action: "SPEND" },
             })
           }
-        />
-        <SettlementStatCard
-          className={statCardClass}
-          label="의뢰건수"
-          value={`${(stats?.summary.orderCount || 0).toLocaleString("ko-KR")}건`}
-          hint="안내"
-          hintTooltip={
-            isLab
-              ? "치과로부터 수신·어벗츠로 의뢰·배송 거래 건수입니다."
-              : "기공의뢰·어벗생산·배송 거래 건수입니다."
-          }
-          onClick={() =>
+        >
+          <HorizontalBarList
+            rows={stats?.byPartner || []}
+            emptyHint="기공의뢰·소비 내역이 있을 때 파트너별로 표시됩니다."
+            onRowClick={(row) =>
+              openDrillDown({
+                title: `${row.label} 내역`,
+                filters: {
+                  ...filterBase,
+                  action: "SPEND",
+                  partnerName: row.label,
+                },
+              })
+            }
+          />
+        </StatsPanel>
+
+        <StatsPanel
+          title="보철 유형별"
+          subtitle="견적 라인 기준 공급가"
+          icon={Layers3}
+          onOpenDetail={() =>
             openDrillDown({
-              title: "의뢰 내역",
-              filters: {
-                ...filterBase,
-                statsCategories: ORDER_STATS_CATEGORIES,
-              },
+              title: "보철 유형별 거래 내역",
+              filters: { ...filterBase, action: "SPEND" },
             })
           }
-        />
+        >
+          <HorizontalBarList
+            rows={stats?.byProsthesisType || []}
+            emptyHint="기공의뢰·어벗생산 소비가 있을 때 보철 유형별로 표시됩니다."
+            onRowClick={(row) =>
+              openDrillDown({
+                title: `${row.label} 내역`,
+                filters: {
+                  ...filterBase,
+                  action: "SPEND",
+                  prosthesisType: row.label,
+                },
+              })
+            }
+          />
+        </StatsPanel>
       </div>
-    </div>
+    </>
   );
 
   return (
@@ -542,330 +1166,47 @@ export function CreditStatisticsTab() {
       <div className="flex min-w-0 flex-col gap-4 pb-2 pt-1">
         {loading ? (
           <>
-            <div className={cn("min-w-0", RESPONSIVE.tableShell, "pb-1")}>
-              <div className="flex min-w-max items-stretch gap-0.5 px-1 sm:gap-1">
-                {Array.from({ length: summaryCardCount }).map((_, i) => (
-                  <div
-                    key={i}
-                    className="min-h-[7.25rem] min-w-[8.5rem] flex-1 animate-pulse rounded-2xl border border-border/60 bg-muted/30 sm:min-w-[9.5rem] md:min-w-[10.5rem]"
-                  />
-                ))}
-              </div>
-            </div>
-            <div className="h-9 w-48 animate-pulse rounded-xl border border-border/60 bg-muted/30" />
-            <div className="grid min-w-0 gap-3 md:grid-cols-2">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <div
-                  key={i}
-                  className={cn(
-                    "animate-pulse rounded-2xl border border-border/60 bg-muted/30",
-                    PANEL_MIN_H,
-                  )}
-                />
-              ))}
-            </div>
+            {isLab ? (
+              <>
+                <div className="h-9 w-48 animate-pulse rounded-xl border border-border/60 bg-muted/30" />
+                <div className="h-9 w-40 animate-pulse rounded-xl border border-border/60 bg-muted/30" />
+                <SummarySkeleton cardCount={2} />
+                <div className="grid min-w-0 gap-3 md:grid-cols-2">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <div
+                      key={i}
+                      className={cn(
+                        "animate-pulse rounded-2xl border border-border/60 bg-muted/30",
+                        PANEL_MIN_H,
+                      )}
+                    />
+                  ))}
+                </div>
+                <div className="h-9 w-36 animate-pulse rounded-xl border border-border/60 bg-muted/30" />
+                <SummarySkeleton cardCount={4} />
+              </>
+            ) : (
+              <>
+                <SummarySkeleton cardCount={4} />
+                <div className="h-9 w-48 animate-pulse rounded-xl border border-border/60 bg-muted/30" />
+                <div className="grid min-w-0 gap-3 md:grid-cols-2">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <div
+                      key={i}
+                      className={cn(
+                        "animate-pulse rounded-2xl border border-border/60 bg-muted/30",
+                        PANEL_MIN_H,
+                      )}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
           </>
+        ) : isLab ? (
+          labContent
         ) : (
-          <>
-            {summaryCards}
-
-            <div className="flex flex-wrap items-center gap-2">
-              {(hasDemoUsage ||
-                usageSelection.includeDemo !== true ||
-                usageSelection.includeReal !== true) && (
-                <CreditUsageScopeFilter
-                  value={usageSelection}
-                  onChange={(next) => {
-                    setUsageSelection(next);
-                    setUsageGuidePulse(false);
-                  }}
-                  pulse={usageGuidePulse && hasDemoUsage}
-                />
-              )}
-              <PeriodFilter
-                value={period}
-                onChange={setPeriod}
-                customStartDate={customStartDate}
-                customEndDate={customEndDate}
-                onCustomRangeChange={({ startDate, endDate }) => {
-                  setCustomStartDate(startDate);
-                  setCustomEndDate(endDate);
-                }}
-                onClearCustomRange={() => {
-                  setCustomStartDate("");
-                  setCustomEndDate("");
-                }}
-                useStoreCustomRange={false}
-                presets={["30d", "90d", "thisMonth"]}
-              />
-            </div>
-
-            <div className="grid min-w-0 gap-3 md:grid-cols-2">
-              <StatsPanel
-                title="기간별 추이"
-                subtitle={
-                  isLab ? "일별 소비·충전·정산 적립" : "일별 소비·충전"
-                }
-                icon={TrendingUp}
-                onOpenDetail={() =>
-                  openDrillDown({
-                    title: "기간별 거래 내역",
-                    filters: filterBase,
-                  })
-                }
-              >
-                {trendData.length === 0 ? (
-                  <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-                    선택한 기간에 데이터가 없습니다.
-                  </div>
-                ) : (
-                  <ChartContainer
-                    config={trendChartConfig}
-                    className="aspect-[16/10] w-full flex-1"
-                  >
-                    <LineChart data={trendData} margin={{ left: 4, right: 8, top: 4 }}>
-                      <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                      <XAxis
-                        dataKey="label"
-                        tickLine={false}
-                        axisLine={false}
-                        minTickGap={20}
-                        tick={{ fontSize: 11 }}
-                      />
-                      <YAxis
-                        tickLine={false}
-                        axisLine={false}
-                        width={48}
-                        tick={{ fontSize: 11 }}
-                        tickFormatter={(v) =>
-                          Number(v) >= 10000
-                            ? `${Math.round(Number(v) / 10000)}만`
-                            : String(v)
-                        }
-                      />
-                      <ChartTooltip
-                        content={
-                          <ChartTooltipContent
-                            formatter={(value, name) => [
-                              supplyTooltipFormatter(value),
-                              trendChartConfig[name as keyof typeof trendChartConfig]
-                                ?.label || String(name),
-                            ]}
-                          />
-                        }
-                      />
-                      <ChartLegend content={<ChartLegendContent />} />
-                      <Line
-                        type="monotone"
-                        dataKey="spendSupply"
-                        stroke="var(--color-spendSupply)"
-                        strokeWidth={2.5}
-                        dot={false}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="chargeSupply"
-                        stroke="var(--color-chargeSupply)"
-                        strokeWidth={2}
-                        dot={false}
-                      />
-                      {isLab ? (
-                        <Line
-                          type="monotone"
-                          dataKey="settlementEarnSupply"
-                          stroke="var(--color-settlementEarnSupply)"
-                          strokeWidth={2}
-                          dot={false}
-                        />
-                      ) : null}
-                    </LineChart>
-                  </ChartContainer>
-                )}
-              </StatsPanel>
-
-              <StatsPanel
-                title="유형별 금액"
-                subtitle={
-                  isLab
-                    ? "충전·정산 적립·어벗생산·배송"
-                    : "충전·기공의뢰·배송 등"
-                }
-                icon={PieChart}
-                onOpenDetail={() =>
-                  openDrillDown({
-                    title: "유형별 거래 내역",
-                    filters: filterBase,
-                  })
-                }
-              >
-                {categoryChartData.length === 0 ? (
-                  <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-                    유형별 집계 데이터가 없습니다.
-                  </div>
-                ) : (
-                  <ChartContainer
-                    config={categoryChartConfig}
-                    className="aspect-[16/10] w-full flex-1"
-                  >
-                    <BarChart
-                      data={categoryChartData}
-                      margin={{ left: 4, right: 8, top: 4, bottom: 0 }}
-                    >
-                      <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                      <XAxis
-                        dataKey="label"
-                        tickLine={false}
-                        axisLine={false}
-                        interval={0}
-                        angle={-18}
-                        textAnchor="end"
-                        height={52}
-                        tick={{ fontSize: 10 }}
-                      />
-                      <YAxis
-                        tickLine={false}
-                        axisLine={false}
-                        width={48}
-                        tick={{ fontSize: 11 }}
-                        tickFormatter={(v) =>
-                          Number(v) >= 10000
-                            ? `${Math.round(Number(v) / 10000)}만`
-                            : String(v)
-                        }
-                      />
-                      <ChartTooltip
-                        content={
-                          <ChartTooltipContent
-                            labelKey="label"
-                            nameKey="key"
-                            formatter={(value, _name, item) => {
-                              const key = String(
-                                (item?.payload as { key?: string } | undefined)
-                                  ?.key || "",
-                              );
-                              const label =
-                                categoryChartConfig[key]?.label || "공급가";
-                              return [supplyTooltipFormatter(value), label];
-                            }}
-                          />
-                        }
-                      />
-                      <Bar
-                        dataKey="amountSupply"
-                        radius={[6, 6, 0, 0]}
-                        className="cursor-pointer"
-                        onClick={(barData, _index, event) => {
-                          event?.stopPropagation?.();
-                          const key = String(
-                            (barData as { payload?: { key?: string } })?.payload
-                              ?.key || "",
-                          );
-                          if (!key) return;
-                          openDrillDown({
-                            title: `${String((barData as { payload?: { label?: string } })?.payload?.label || "유형")} 내역`,
-                            filters: categoryLedgerFilters(key, filterBase),
-                          });
-                        }}
-                      >
-                        {categoryChartData.map((row) => (
-                          <Cell
-                            key={row.key}
-                            fill={`var(--color-${row.key})`}
-                          />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ChartContainer>
-                )}
-              </StatsPanel>
-
-              <StatsPanel
-                title={partnerTitle}
-                subtitle={
-                  isLab
-                    ? "치과별 정산 적립(보류 포함)"
-                    : "파트너별 공급가 합계"
-                }
-                icon={Wallet}
-                onOpenDetail={() =>
-                  openDrillDown({
-                    title: `${partnerTitle} 내역`,
-                    filters: isLab
-                      ? { ...filterBase, statsCategory: "settlement_earn" }
-                      : { ...filterBase, action: "SPEND" },
-                  })
-                }
-              >
-                <HorizontalBarList
-                  rows={stats?.byPartner || []}
-                  emptyHint={
-                    isLab
-                      ? "치과로부터 수신·정산 적립이 있을 때 치과별로 표시됩니다."
-                      : "기공의뢰·소비 내역이 있을 때 파트너별로 표시됩니다."
-                  }
-                  onRowClick={(row) =>
-                    openDrillDown({
-                      title: `${row.label} 내역`,
-                      filters: isLab
-                        ? {
-                            ...filterBase,
-                            statsCategory: "settlement_earn",
-                            partnerName: row.label,
-                          }
-                        : {
-                            ...filterBase,
-                            action: "SPEND",
-                            partnerName: row.label,
-                          },
-                    })
-                  }
-                />
-              </StatsPanel>
-
-              <StatsPanel
-                title="보철 유형별"
-                subtitle={
-                  isLab
-                    ? "견적 라인 기준 정산 적립"
-                    : "견적 라인 기준 공급가"
-                }
-                icon={Layers3}
-                onOpenDetail={() =>
-                  openDrillDown({
-                    title: "보철 유형별 거래 내역",
-                    filters: isLab
-                      ? { ...filterBase, statsCategory: "settlement_earn" }
-                      : { ...filterBase, action: "SPEND" },
-                  })
-                }
-              >
-                <HorizontalBarList
-                  rows={stats?.byProsthesisType || []}
-                  emptyHint={
-                    isLab
-                      ? "정산 적립(보류 포함)이 있을 때 보철 유형별로 표시됩니다."
-                      : "기공의뢰·어벗생산 소비가 있을 때 보철 유형별로 표시됩니다."
-                  }
-                  onRowClick={(row) =>
-                    openDrillDown({
-                      title: `${row.label} 내역`,
-                      filters: isLab
-                        ? {
-                            ...filterBase,
-                            statsCategory: "settlement_earn",
-                            prosthesisType: row.label,
-                          }
-                        : {
-                            ...filterBase,
-                            action: "SPEND",
-                            prosthesisType: row.label,
-                          },
-                    })
-                  }
-                />
-              </StatsPanel>
-            </div>
-          </>
+          practiceContent
         )}
       </div>
 
