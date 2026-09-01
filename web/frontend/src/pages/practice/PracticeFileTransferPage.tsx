@@ -7188,19 +7188,34 @@ export const PracticeFileTransferPage = ({
   const mobileComposeCanSaveDraft = hasSubstantialContentForNewDraft;
 
   const persistArrivalDefaultDaysFromRange = useCallback(
-    (nextOrder: string, nextArrival: string) => {
+    (
+      nextOrder: string,
+      nextArrival: string,
+      labOverride?: { labAnchorId?: string | null; labName?: string | null },
+    ) => {
       const diff = kstYmdDiffDays(nextOrder, nextArrival);
       if (diff == null) return;
       const nextDays = normalizeArrivalDefaultDays(diff);
-      if (nextDays === arrivalDefaultDays) return;
+
+      const labId = String(
+        labOverride?.labAnchorId ?? selectedLab?._id ?? "",
+      ).trim();
+      const labName = String(labOverride?.labName ?? selectedLab?.name ?? "").trim();
+      const isLabScoped = isMongoObjectIdString(labId);
+      const currentDays = isLabScoped
+        ? resolveLabArrivalDefaultDays(
+            labId,
+            labArrivalDefaults,
+            accountArrivalDefaultDays,
+            labName,
+          )
+        : accountArrivalDefaultDays;
+      if (nextDays === currentDays) return;
 
       // orderDate effect가 도착일을 덮어쓰지 않도록 한 틱 스킵
       skipNextArrivalAutoSyncRef.current = true;
       setArrivalDefaultDays(nextDays);
 
-      const labId = String(selectedLab?._id || "").trim();
-      const labName = String(selectedLab?.name || "").trim();
-      const isLabScoped = isMongoObjectIdString(labId);
       let nextLabArrivalDefaults = labArrivalDefaults;
       if (isLabScoped) {
         nextLabArrivalDefaults = upsertLabArrivalDefault(labArrivalDefaults, {
@@ -7257,7 +7272,6 @@ export const PracticeFileTransferPage = ({
     [
       abutmentFavorites,
       accountArrivalDefaultDays,
-      arrivalDefaultDays,
       implantFavorites,
       labArrivalDefaults,
       memoSnippets,
@@ -9203,6 +9217,12 @@ export const PracticeFileTransferPage = ({
               ? updateProsthesisFollowUpBusy
               : appendProsthesisBusy
           }
+          onArrivalReschedule={({ orderYmd, arrivalYmd }) => {
+            persistArrivalDefaultDaysFromRange(orderYmd, arrivalYmd, {
+              labAnchorId: followUpDialogSchedule.labAnchorId,
+              labName: followUpDialogSchedule.labName,
+            });
+          }}
           onConfirm={handleFollowUpDialogConfirm}
         />
 

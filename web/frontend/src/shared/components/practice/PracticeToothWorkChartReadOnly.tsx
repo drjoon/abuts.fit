@@ -4,11 +4,13 @@
 // - web/frontend/src/shared/practice/transferMemo.ts
 // - 2026-08-19: 수가 Off면 live quote-context로 기공비 미설정·어벗 단가 표시.
 // - 2026-08-19: 치아 옆 스크롤·R/M/L 제거. 견적 바에 << < > >>(1칸·5칸).
-// - 2026-09-01: 크게 보기 — 신규 의뢰와 같이 상·하악 16칸 전체 펼침(미치료 칸 포함).
+// - 2026-09-01: 후속 제작 모달 — 보철물 카드에서 크라운·브리지 단위 선택.
+// - 2026-09-01: 컨테이너 폭에 따라 inline 칸 수 4~8, 카드 폭 5rem 고정.
 // - 2026-08-25: 구강스캔(기공의뢰)은 디자인+생산 고정 — 치식 카드 모드 라벨 제거(작성 UI와 동일).
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -45,13 +47,15 @@ import type {
   PracticeTransferFeeQuoteViewer,
 } from "@/shared/practice/practiceTransferFeeQuote";
 
-const TOOTH_CHART_VISIBLE = 6;
-/** embedded(채팅·후속 보철 모달) — 좁은 영역 미리보기 칸 수 */
-const EMBEDDED_TOOTH_CHART_VISIBLE = 4;
+const TOOTH_CHART_MIN_VISIBLE = 4;
+const TOOTH_CHART_MAX_VISIBLE = 8;
+/** inline 카드 1칸 고정 폭 (80px) + 간격 — ResizeObserver로 visible 칸 수만 조절 */
+const TOOTH_CARD_WIDTH_CLASS = "w-[5rem] max-w-[5rem] shrink-0";
+const TOOTH_CHART_SLOT_WIDTH_PX = 90;
 const TOOTH_CHART_SCROLL_STEP = 1;
 const TOOTH_CHART_SCROLL_JUMP = 5;
 const TOOTH_CARD_HEIGHT_CLASS = "h-[12rem]";
-const TOOTH_SLOT_CLASS = "min-w-[3.5rem] flex-1";
+const TOOTH_SLOT_CLASS = TOOTH_CARD_WIDTH_CLASS;
 /** full(16칸) — 전폭 균등 분할 */
 const TOOTH_SLOT_FULL_CLASS = "min-w-0 flex-1 basis-0";
 const BRIDGE_GAP_MIDLINE_CLASS = "w-2.5 shrink-0";
@@ -96,6 +100,17 @@ const initialToothChartOffsets = (
   return next;
 };
 
+const toothChartVisibleCountFromWidth = (widthPx: number) => {
+  if (!Number.isFinite(widthPx) || widthPx <= 0) {
+    return TOOTH_CHART_MIN_VISIBLE;
+  }
+  const raw = Math.floor(widthPx / TOOTH_CHART_SLOT_WIDTH_PX);
+  return Math.min(
+    TOOTH_CHART_MAX_VISIBLE,
+    Math.max(TOOTH_CHART_MIN_VISIBLE, raw),
+  );
+};
+
 type PracticeToothWorkChartReadOnlyProps = {
   toothWorks: ToothWorkSelection[];
   className?: string;
@@ -114,6 +129,14 @@ type PracticeToothWorkChartReadOnlyProps = {
   enlargeDialogClassName?: string;
   /** 기공소 뷰 — 자동매칭 기공비 별점 확정가 */
   labEffectiveStars?: number | null;
+  /** 크라운·브리지 단위 선택 (후속 제작 모달) */
+  selectable?: boolean;
+  selectedSpanKeys?: ReadonlySet<string>;
+  onToggleSpanKey?: (spanKey: string, selected: boolean) => void;
+  spanKeyOf?: (row: ToothWorkSelection) => string;
+  /** 선택 모드 — 견적·헤더 개수용 (미전달 시 선택된 스팬만 toothWorks에서 유도) */
+  feeToothWorks?: ToothWorkSelection[];
+  selectionDisabled?: boolean;
 };
 
 export const PracticeToothWorkChartReadOnly = ({
@@ -129,7 +152,51 @@ export const PracticeToothWorkChartReadOnly = ({
   enlargeOverlayClassName,
   enlargeDialogClassName,
   labEffectiveStars = null,
+  selectable = false,
+  selectedSpanKeys,
+  onToggleSpanKey,
+  spanKeyOf,
+  feeToothWorks,
+  selectionDisabled = false,
 }: PracticeToothWorkChartReadOnlyProps) => {
+  const chartMeasureRef = useRef<HTMLDivElement>(null);
+  const [chartWidth, setChartWidth] = useState(0);
+
+  useEffect(() => {
+    const el = chartMeasureRef.current;
+    if (!el) return;
+
+    const applyWidth = (width: number) => {
+      const next = Math.max(0, Math.round(width));
+      setChartWidth((prev) => (prev === next ? prev : next));
+    };
+
+    applyWidth(el.getBoundingClientRect().width);
+    const ro = new ResizeObserver((entries) => {
+      applyWidth(entries[0]?.contentRect.width ?? 0);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const inlineVisibleCount = useMemo(
+    () => toothChartVisibleCountFromWidth(chartWidth),
+    [chartWidth],
+  );
+
+  const resolveSpanKey = (row: ToothWorkSelection) =>
+    spanKeyOf?.(row) || String(row.toothNumber || "").trim();
+
+  const isSpanSelected = (row: ToothWorkSelection) => {
+    if (!selectable) return true;
+    return selectedSpanKeys?.has(resolveSpanKey(row)) ?? false;
+  };
+
+  const quoteToothWorks = useMemo(() => {
+    if (feeToothWorks) return feeToothWorks;
+    if (!selectable) return toothWorks;
+    return toothWorks.filter((row) => isSpanSelected(row));
+  }, [feeToothWorks, selectable, toothWorks, selectedSpanKeys, spanKeyOf]);
   const byTooth = useMemo(() => {
     const map = new Map<string, ToothWorkSelection>();
     for (const row of toothWorks) {
@@ -147,7 +214,18 @@ export const PracticeToothWorkChartReadOnly = ({
     return map;
   }, [toothWorks]);
 
-  const selectedTeeth = useMemo(() => new Set(byTooth.keys()), [byTooth]);
+  const allDisplayTeeth = useMemo(() => new Set(byTooth.keys()), [byTooth]);
+
+  const selectedTeeth = useMemo(() => {
+    if (!selectable) return allDisplayTeeth;
+    const next = new Set<string>();
+    for (const [tooth, row] of byTooth.entries()) {
+      if (isSpanSelected(row)) next.add(tooth);
+    }
+    return next;
+  }, [allDisplayTeeth, byTooth, selectable, selectedSpanKeys, spanKeyOf]);
+
+  const chartTeeth = selectable ? allDisplayTeeth : selectedTeeth;
   /** 크게 보기 — 상·하악 16칸 전체 */
   const fullChartRows = useMemo(
     () =>
@@ -167,17 +245,17 @@ export const PracticeToothWorkChartReadOnly = ({
         label: decade.label,
         /** 전체 치식(브리지 인접 판별용) */
         chartTeeth: decade.teeth,
-        teeth: treatedTeethInRow(decade.teeth, selectedTeeth),
+        teeth: treatedTeethInRow(decade.teeth, chartTeeth),
       })).filter((row) => row.teeth.length > 0),
-    [selectedTeeth],
+    [chartTeeth],
   );
-  /** compact(6칸) 영역을 넘는 악궁이 있으면 크게보기·스크롤 노출(의뢰상세) */
+  /** 치아 수가 inline 칸 수를 넘으면 크게보기·스크롤 노출 */
   const needsOverflowControls = treatedChartRows.some(
-    (row) => row.teeth.length > TOOTH_CHART_VISIBLE,
+    (row) => row.teeth.length > inlineVisibleCount,
   );
   /** embedded — 좁은 영역이라 치아 수와 무관하게 크게 보기 제공 */
   const showEnlargeButton = embedded
-    ? selectedTeeth.size > 0
+    ? allDisplayTeeth.size > 0
     : needsOverflowControls;
   const enlargeButtonLabel = embedded ? "보철물 크게 보기" : "크게 보기";
 
@@ -187,7 +265,7 @@ export const PracticeToothWorkChartReadOnly = ({
       storedFeeQuote.labFeeConfigured === false ||
       storedFeeQuote.total <= 0,
     labAnchorId,
-    toothWorks,
+    toothWorks: quoteToothWorks,
     storedQuote: storedFeeQuote,
     skipAbutmentFees,
   });
@@ -198,13 +276,28 @@ export const PracticeToothWorkChartReadOnly = ({
     ),
   );
   const [toothChartEnlargeOpen, setToothChartEnlargeOpen] = useState(false);
-  const inlineVisibleCount = embedded ? EMBEDDED_TOOTH_CHART_VISIBLE : TOOTH_CHART_VISIBLE;
+
+  useEffect(() => {
+    setToothChartOffsets((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      for (const decade of treatedChartRows) {
+        const maxOffset = Math.max(0, decade.teeth.length - inlineVisibleCount);
+        const cur = next[decade.key] ?? 0;
+        const value = Math.min(maxOffset, cur);
+        if (value !== cur) changed = true;
+        next[decade.key] = value;
+      }
+      return changed ? next : prev;
+    });
+  }, [inlineVisibleCount, treatedChartRows]);
+
   const enlargeOverlayClass =
     enlargeOverlayClassName || (embedded ? "z-[350]" : "z-[110]");
   const enlargeDialogClass =
     enlargeDialogClassName || (embedded ? "z-[360]" : "z-[110]");
 
-  if (selectedTeeth.size === 0) {
+  if (allDisplayTeeth.size === 0) {
     return (
       <div className={cn("rounded-lg border border-dashed border-slate-200 px-3 py-4", className)}>
         <p className="text-center text-sm text-slate-400">선택된 보철물이 없습니다</p>
@@ -285,20 +378,9 @@ export const PracticeToothWorkChartReadOnly = ({
         >
           <div
             className={cn(
-              "flex min-w-0 items-stretch",
-              fullLayout ? "w-full gap-0.5" : "flex-1",
+              "flex items-stretch",
+              fullLayout ? "w-full min-w-0 gap-0.5" : "gap-0.5",
             )}
-            style={
-              fullLayout
-                ? undefined
-                : {
-                    width:
-                      visible.length >= visibleCount
-                        ? "100%"
-                        : `calc(${(visible.length / visibleCount) * 100}%)`,
-                    maxWidth: "100%",
-                  }
-            }
           >
             {visible.map((toothNumber, visibleIndex) => {
               const row = byTooth.get(toothNumber);
@@ -364,6 +446,17 @@ export const PracticeToothWorkChartReadOnly = ({
               const showBridgeConnector = adjacentVisible && bridgeLinked;
 
               const isMissingTooth = isMissingToothProsthesisType(row.prosthesisType);
+              const spanKey = resolveSpanKey(row);
+              const spanSelected = isSpanSelected(row);
+              const isAnchorTooth =
+                String(row.toothNumber || "").trim() === toothNumber;
+              const canToggleSpan =
+                selectable && Boolean(onToggleSpanKey) && !selectionDisabled;
+
+              const toggleSpanSelection = () => {
+                if (!canToggleSpan) return;
+                onToggleSpanKey?.(spanKey, !spanSelected);
+              };
               const canShowCustom =
                 !isMissingTooth &&
                 isCustomAbutmentSupportedProsthesisType(row.prosthesisType) &&
@@ -390,23 +483,57 @@ export const PracticeToothWorkChartReadOnly = ({
                     ) : null}
 
                     <div
+                      role={canToggleSpan ? "button" : undefined}
+                      tabIndex={canToggleSpan ? 0 : undefined}
+                      onClick={canToggleSpan ? toggleSpanSelection : undefined}
+                      onKeyDown={
+                        canToggleSpan
+                          ? (event) => {
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                toggleSpanSelection();
+                              }
+                            }
+                          : undefined
+                      }
                       className={cn(
                         cardShellClass,
+                        canToggleSpan && "cursor-pointer",
+                        !spanSelected && selectable && "opacity-55 saturate-50",
                         isMissingTooth
                           ? isLinked
                             ? "border-primary bg-slate-50"
                             : "rounded-xl border-slate-300 bg-slate-50"
-                          : isLinked
-                            ? "border-primary bg-gradient-to-b from-primary-soft via-primary-soft/95 to-white ring-1 ring-primary/40"
-                            : "rounded-xl border-primary/90 bg-gradient-to-b from-primary-soft via-white to-primary-soft/40 ring-1 ring-primary-muted/40",
-                        isLinked && !linkedChartPrev && !linkedChartNext && "rounded-xl",
-                        isLinked && linkedChartPrev && linkedChartNext && "rounded-none",
-                        isLinked && linkedChartPrev && !linkedChartNext && "rounded-r-xl rounded-l-none",
-                        isLinked && !linkedChartPrev && linkedChartNext && "rounded-l-xl rounded-r-none",
-                        linkedChartPrev && "border-l-0",
-                        linkedChartNext && "border-r-0",
+                          : spanSelected
+                            ? isLinked
+                              ? "border-primary bg-gradient-to-b from-primary-soft via-primary-soft/95 to-white ring-1 ring-primary/40"
+                              : "rounded-xl border-primary/90 bg-gradient-to-b from-primary-soft via-white to-primary-soft/40 ring-1 ring-primary-muted/40"
+                            : isLinked
+                              ? "border-slate-300 bg-slate-50"
+                              : "rounded-xl border-slate-300 bg-slate-50",
+                        isLinked && spanSelected && !linkedChartPrev && !linkedChartNext && "rounded-xl",
+                        isLinked && spanSelected && linkedChartPrev && linkedChartNext && "rounded-none",
+                        isLinked && spanSelected && linkedChartPrev && !linkedChartNext && "rounded-r-xl rounded-l-none",
+                        isLinked && spanSelected && !linkedChartPrev && linkedChartNext && "rounded-l-xl rounded-r-none",
+                        isLinked && spanSelected && linkedChartPrev && "border-l-0",
+                        isLinked && spanSelected && linkedChartNext && "border-r-0",
                       )}
                     >
+                      {selectable && isAnchorTooth ? (
+                        <div
+                          className="absolute left-1 top-1 z-30"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          <Checkbox
+                            checked={spanSelected}
+                            disabled={selectionDisabled}
+                            onCheckedChange={(checked) =>
+                              onToggleSpanKey?.(spanKey, checked === true)
+                            }
+                            aria-label={`${row.prosthesisType || "보철"} ${spanKey} 선택`}
+                          />
+                        </div>
+                      ) : null}
                       {isMissingTooth ? (
                         <svg
                           aria-hidden
@@ -690,14 +817,16 @@ export const PracticeToothWorkChartReadOnly = ({
   ) : null;
 
   return (
-    <div className={cn("space-y-2", className)}>
+    <div ref={chartMeasureRef} className={cn("space-y-2", className)}>
       {!toothChartEnlargeOpen ? (
         <>
           {showHeader ? (
             <div className="relative flex min-h-8 items-center">
               <p className="text-sm font-medium text-slate-700">
                 보철물{" "}
-                <span className="font-normal text-muted-foreground">({selectedTeeth.size}개)</span>
+                <span className="font-normal text-muted-foreground">
+                  ({selectable ? selectedTeeth.size : allDisplayTeeth.size}개)
+                </span>
               </p>
               {enlargeButton ? <div className="absolute right-0">{enlargeButton}</div> : null}
             </div>
@@ -719,7 +848,9 @@ export const PracticeToothWorkChartReadOnly = ({
           <DialogHeader className="pr-8 text-left">
             <DialogTitle className="text-base">
               보철물{" "}
-              <span className="font-normal text-muted-foreground">({selectedTeeth.size}개)</span>
+              <span className="font-normal text-muted-foreground">
+                ({selectable ? selectedTeeth.size : allDisplayTeeth.size}개)
+              </span>
             </DialogTitle>
             <DialogDescription className="sr-only">
               보철물 치식 차트를 가로로 크게 봅니다.
