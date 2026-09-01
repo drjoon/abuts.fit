@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-01: fillHeight 작업영역 — workspace-nested-scroll로 카드 오른쪽 끝 수직 스크롤.
 // - 2026-08-20: 제조사 지급은 유료/무료 구분 없이 약정 단가 전액(말일 일괄, 미정산 적립).
 // - 2026-08-19: 치과 월 구독료 사업 축 제거(멤버십 폐지).
 // - 2026-08-23: 제조사=일반과세 — 과세 대상(세금계산서).
@@ -781,6 +782,7 @@ export default function AdminPaymentsPage() {
   if (!user || user.role !== "admin") return null;
 
   return (
+    <div className="custom-scrollbar workspace-nested-scroll h-full min-h-0 overflow-auto">
     <DashboardShell
       title="정산"
       subtitle="어벗츠 3사업 · 기간 집계"
@@ -1202,5 +1204,6 @@ export default function AdminPaymentsPage() {
       }
       mainRight={null}
     />
+    </div>
   );
 }

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-01: fillHeight 작업영역 — workspace-nested-scroll로 카드 오른쪽 끝 수직 스크롤.
 // - 2026-08-14: 의뢰자 탭 라벨을 「치과 · 기공소」로 표기.
 // - 2026-08-13: 무료 일반/배송 통합에 맞춰 페이지 props·탭 스타일 정리.
 // related files:
@@ -83,7 +84,8 @@ export default function AdminCreditPage() {
   }, [state.salesmen, normalizedSearch]);
 
   return (
-    <div className="min-h-0 space-y-5 p-2 sm:p-4">
+    <div className="custom-scrollbar workspace-nested-scroll h-full min-h-0 overflow-auto">
+      <div className="space-y-5">
       <Tabs
         value={state.creditTab}
         onValueChange={(v) => state.setCreditTab(v as "requestor" | "salesman")}
@@ -257,6 +259,7 @@ export default function AdminCreditPage() {
         onApprove={state.handleApprove}
         onReject={state.handleReject}
       />
+      </div>
     </div>
   );
 }
