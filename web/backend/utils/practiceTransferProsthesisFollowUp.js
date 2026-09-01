@@ -54,6 +54,9 @@ const linkedTeethOf = (row) => {
 
 const spanKey = (teeth) => teeth.join("-");
 
+/** 후속 보철 1단위(크라운·브리지 스팬) 식별 키 */
+export const followUpRowSpanKey = (row) => spanKey(linkedTeethOf(row));
+
 /** 임시치아 치아가 이미 후속 크라운/브리지로 추가됐는지 */
 export const hasFollowUpProsthesisForTooth = (toothWorks, toothNumber) => {
   const tooth = String(toothNumber || "").trim();
@@ -171,7 +174,8 @@ export const isPendingProsthesisFollowUpRecord = (
   if (!record.labAcceptedAt) return true;
   const mainAcceptedAt = requestorDownloadedAt || null;
   const appendedAt = record.appendedAt;
-  if (!mainAcceptedAt || !appendedAt) return false;
+  if (!appendedAt) return false;
+  if (!mainAcceptedAt) return true;
   const mainMs = new Date(mainAcceptedAt).getTime();
   const appendMs = new Date(appendedAt).getTime();
   if (!Number.isFinite(mainMs) || !Number.isFinite(appendMs)) return false;
@@ -290,25 +294,33 @@ export const validateFollowUpToothWorksAgainstSource = (
   followUpRows,
 ) => {
   const pending = listPendingFollowUpTempSpans(sourceToothWorks);
-  const pendingTeeth = new Set(pending.flatMap((span) => span.teeth));
+  const pendingSpanKeys = new Set(pending.map(({ teeth }) => spanKey(teeth)));
   const rows = normalizeFollowUpToothWorksInput(followUpRows);
   if (rows.length === 0) {
     return {
       ok: false,
-      message: "추가할 크라운/브리지 치식을 선택해주세요.",
+      message: "제작할 최종 보철 단위를 선택해주세요.",
     };
   }
 
+  const seenKeys = new Set();
   for (const row of rows) {
     const linked = linkedTeethOf(row);
-    for (const tooth of linked) {
-      if (!pendingTeeth.has(tooth)) {
-        return {
-          ok: false,
-          message: `치아 ${tooth}은(는) 후속 보철 추가 대상이 아닙니다.`,
-        };
-      }
+    const key = spanKey(linked);
+    if (!pendingSpanKeys.has(key)) {
+      const label = linked.join(", ");
+      return {
+        ok: false,
+        message: `${label}은(는) 후속 보철 추가 대상이 아닙니다.`,
+      };
     }
+    if (seenKeys.has(key)) {
+      return {
+        ok: false,
+        message: "같은 보철 단위가 중복 선택되었습니다.",
+      };
+    }
+    seenKeys.add(key);
   }
   return { ok: true, rows };
 };

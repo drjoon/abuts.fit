@@ -4,7 +4,7 @@
 // - web/frontend/src/shared/practice/transferMemo.ts
 // - 2026-08-19: 수가 Off면 live quote-context로 기공비 미설정·어벗 단가 표시.
 // - 2026-08-19: 치아 옆 스크롤·R/M/L 제거. 견적 바에 << < > >>(1칸·5칸).
-// - 2026-08-24: 의뢰상세 — 치료할 치아만 표시. 상·하 각 6개 이하면 크게보기·스크롤 숨김.
+// - 2026-09-01: 크게 보기 — 신규 의뢰와 같이 상·하악 16칸 전체 펼침(미치료 칸 포함).
 // - 2026-08-25: 구강스캔(기공의뢰)은 디자인+생산 고정 — 치식 카드 모드 라벨 제거(작성 UI와 동일).
 import { useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
@@ -46,10 +46,15 @@ import type {
 } from "@/shared/practice/practiceTransferFeeQuote";
 
 const TOOTH_CHART_VISIBLE = 6;
+/** embedded(채팅·후속 보철 모달) — 좁은 영역 미리보기 칸 수 */
+const EMBEDDED_TOOTH_CHART_VISIBLE = 4;
 const TOOTH_CHART_SCROLL_STEP = 1;
 const TOOTH_CHART_SCROLL_JUMP = 5;
 const TOOTH_CARD_HEIGHT_CLASS = "h-[12rem]";
 const TOOTH_SLOT_CLASS = "min-w-[3.5rem] flex-1";
+/** full(16칸) — 전폭 균등 분할 */
+const TOOTH_SLOT_FULL_CLASS = "min-w-0 flex-1 basis-0";
+const BRIDGE_GAP_MIDLINE_CLASS = "w-2.5 shrink-0";
 
 const TOOTH_CHART_ROWS: ReadonlyArray<{
   key: string;
@@ -104,6 +109,9 @@ type PracticeToothWorkChartReadOnlyProps = {
   showHeader?: boolean;
   /** 모달 등 좁은 영역 — 카드 클립·이중 테두리 완화 */
   embedded?: boolean;
+  /** embedded 안의 크게 보기 — 부모 Dialog 위 z-index */
+  enlargeOverlayClassName?: string;
+  enlargeDialogClassName?: string;
   /** 기공소 뷰 — 자동매칭 기공비 별점 확정가 */
   labEffectiveStars?: number | null;
 };
@@ -118,6 +126,8 @@ export const PracticeToothWorkChartReadOnly = ({
   skipAbutmentFees = false,
   showHeader = true,
   embedded = false,
+  enlargeOverlayClassName,
+  enlargeDialogClassName,
   labEffectiveStars = null,
 }: PracticeToothWorkChartReadOnlyProps) => {
   const byTooth = useMemo(() => {
@@ -138,6 +148,17 @@ export const PracticeToothWorkChartReadOnly = ({
   }, [toothWorks]);
 
   const selectedTeeth = useMemo(() => new Set(byTooth.keys()), [byTooth]);
+  /** 크게 보기 — 상·하악 16칸 전체 */
+  const fullChartRows = useMemo(
+    () =>
+      TOOTH_CHART_ROWS.map((decade) => ({
+        key: decade.key,
+        label: decade.label,
+        chartTeeth: decade.teeth,
+        teeth: [...decade.teeth],
+      })),
+    [],
+  );
   /** 상·하악별로 FDI 순 치료할 치아만 (빈 칸 제외) */
   const treatedChartRows = useMemo(
     () =>
@@ -150,10 +171,15 @@ export const PracticeToothWorkChartReadOnly = ({
       })).filter((row) => row.teeth.length > 0),
     [selectedTeeth],
   );
-  /** compact(6칸) 영역을 넘는 악궁이 있으면 크게보기·스크롤 노출 */
+  /** compact(6칸) 영역을 넘는 악궁이 있으면 크게보기·스크롤 노출(의뢰상세) */
   const needsOverflowControls = treatedChartRows.some(
     (row) => row.teeth.length > TOOTH_CHART_VISIBLE,
   );
+  /** embedded — 좁은 영역이라 치아 수와 무관하게 크게 보기 제공 */
+  const showEnlargeButton = embedded
+    ? selectedTeeth.size > 0
+    : needsOverflowControls;
+  const enlargeButtonLabel = embedded ? "보철물 크게 보기" : "크게 보기";
 
   const { quote: feeQuote } = usePracticeTransferFeeQuote({
     enabled:
@@ -172,14 +198,11 @@ export const PracticeToothWorkChartReadOnly = ({
     ),
   );
   const [toothChartEnlargeOpen, setToothChartEnlargeOpen] = useState(false);
-  const embeddedMaxTeeth = embedded
-    ? Math.max(0, ...treatedChartRows.map((row) => row.teeth.length))
-    : 0;
-  const toothChartVisibleCount = toothChartEnlargeOpen
-    ? 16
-    : embedded && embeddedMaxTeeth > 0
-      ? Math.max(embeddedMaxTeeth, TOOTH_CHART_VISIBLE)
-      : TOOTH_CHART_VISIBLE;
+  const inlineVisibleCount = embedded ? EMBEDDED_TOOTH_CHART_VISIBLE : TOOTH_CHART_VISIBLE;
+  const enlargeOverlayClass =
+    enlargeOverlayClassName || (embedded ? "z-[350]" : "z-[110]");
+  const enlargeDialogClass =
+    enlargeDialogClassName || (embedded ? "z-[360]" : "z-[110]");
 
   if (selectedTeeth.size === 0) {
     return (
@@ -195,237 +218,320 @@ export const PracticeToothWorkChartReadOnly = ({
         "relative flex w-full min-w-0 flex-col items-center justify-start overflow-hidden border px-0.5 pb-1 pt-1.5 shadow-sm",
         TOOTH_CARD_HEIGHT_CLASS,
       );
+  const fullToothCardShellClass = cn(
+    "relative flex w-full min-w-0 flex-col items-center justify-start overflow-hidden border px-0.5 pb-1 pt-1.5 shadow-sm",
+    TOOTH_CARD_HEIGHT_CLASS,
+  );
 
-  const chartRows = treatedChartRows.map((decade) => {
-    const maxOffset = Math.max(0, decade.teeth.length - toothChartVisibleCount);
-    const offset = Math.min(maxOffset, toothChartOffsets[decade.key] ?? 0);
-    const visible = decade.teeth.slice(offset, offset + toothChartVisibleCount);
-
-    return (
-      <div key={`ro-decade-${decade.key}`} className="flex items-stretch gap-0.5">
-        <div
-          className="flex min-w-0 items-stretch"
-          style={{
-            width:
-              visible.length >= toothChartVisibleCount
-                ? "100%"
-                : `calc(${(visible.length / toothChartVisibleCount) * 100}%)`,
-            maxWidth: "100%",
-          }}
-        >
-          {visible.map((toothNumber, visibleIndex) => {
-            const row = byTooth.get(toothNumber);
-            if (!row) return null;
-
-            const chartIdx = decade.chartTeeth.indexOf(toothNumber);
-            const chartNext =
-              chartIdx >= 0 && chartIdx < decade.chartTeeth.length - 1
-                ? decade.chartTeeth[chartIdx + 1]
-                : null;
-            const chartPrev = chartIdx > 0 ? decade.chartTeeth[chartIdx - 1] : null;
-            const nextVisible = visible[visibleIndex + 1];
-            const adjacentVisible =
-              Boolean(chartNext) && nextVisible === chartNext;
-
-            const nextRow = chartNext ? byTooth.get(chartNext) : undefined;
-            const prevRow = chartPrev ? byTooth.get(chartPrev) : undefined;
-            const linkedTeeth = (
-              Array.isArray(row.bridgeLinkedTeeth) ? row.bridgeLinkedTeeth : []
-            ).filter((t) => getAdjacentTeeth(row.toothNumber).includes(t));
-            const linkedChartNext = Boolean(
-              chartNext &&
-                (linkedTeeth.includes(chartNext) ||
-                  (nextRow &&
-                    Array.isArray(nextRow.bridgeLinkedTeeth) &&
-                    nextRow.bridgeLinkedTeeth.includes(toothNumber))),
-            );
-            const linkedChartPrev = Boolean(
-              chartPrev &&
-                (linkedTeeth.includes(chartPrev) ||
-                  (prevRow &&
-                    Array.isArray(prevRow.bridgeLinkedTeeth) &&
-                    prevRow.bridgeLinkedTeeth.includes(toothNumber))),
-            );
-            const isLinked = linkedTeeth.length > 0 || linkedChartPrev || linkedChartNext;
-            const bridgeLinked = linkedChartNext;
-            // Read-only: no + control — only show connector when actually bridged.
-            const showBridgeConnector = adjacentVisible && bridgeLinked;
-
-            const bridgeSlot = showBridgeConnector ? (
-              <div
-                className="relative z-20 flex w-1.5 shrink-0 items-center justify-center self-stretch border-y border-primary bg-gradient-to-b from-primary-soft via-primary-soft to-white"
-              >
-                <span
-                  aria-hidden
-                  className="pointer-events-none absolute inset-y-3 left-1/2 w-[3px] -translate-x-1/2 rounded-full bg-primary/70"
-                />
-                <span
-                  className="relative z-10 flex h-5 w-5 items-center justify-center rounded-full border border-primary bg-primary text-white ring-2 ring-primary-soft"
-                  title={`${toothNumber}–${chartNext} 연결`}
-                >
-                  <span className="h-0.5 w-2.5 rounded-full bg-white" />
-                </span>
-              </div>
-            ) : visibleIndex < visible.length - 1 ? (
-              <div className="w-2 shrink-0" aria-hidden />
-            ) : null;
-
-            const isMissingTooth = isMissingToothProsthesisType(row.prosthesisType);
-            const canShowCustom =
-              !isMissingTooth &&
-              isCustomAbutmentSupportedProsthesisType(row.prosthesisType) &&
-              Boolean(row.customAbutment);
-            const implantSummary = formatImplantSummary(row);
-            const abutmentSummary = formatAbutmentSummary(row);
-            const implantCompact = formatImplantCompact(row);
-            const abutmentCompact = formatAbutmentCompact(row);
-
-            return (
-              <div key={`ro-tooth-slot-${toothNumber}`} className="contents">
-                <div className={cn("relative", TOOTH_SLOT_CLASS)}>
-                  {linkedChartNext && !showBridgeConnector ? (
-                    <span
-                      aria-hidden
-                      className="pointer-events-none absolute right-0 top-1/2 z-20 h-8 w-1.5 -translate-y-1/2 rounded-l-full bg-primary/80"
-                    />
-                  ) : null}
-                  {linkedChartPrev && visible[visibleIndex - 1] !== chartPrev ? (
-                    <span
-                      aria-hidden
-                      className="pointer-events-none absolute left-0 top-1/2 z-20 h-8 w-1.5 -translate-y-1/2 rounded-r-full bg-primary/80"
-                    />
-                  ) : null}
-
-                  <div
-                    className={cn(
-                      toothCardShellClass,
-                      isMissingTooth
-                        ? isLinked
-                          ? "border-primary bg-slate-50"
-                          : "rounded-xl border-slate-300 bg-slate-50"
-                        : isLinked
-                        ? "border-primary bg-gradient-to-b from-primary-soft via-primary-soft/95 to-white ring-1 ring-primary/40"
-                        : "rounded-xl border-primary/90 bg-gradient-to-b from-primary-soft via-white to-primary-soft/40 ring-1 ring-primary-muted/40",
-                      isLinked && !linkedChartPrev && !linkedChartNext && "rounded-xl",
-                      isLinked && linkedChartPrev && linkedChartNext && "rounded-none",
-                      isLinked && linkedChartPrev && !linkedChartNext && "rounded-r-xl rounded-l-none",
-                      isLinked && !linkedChartPrev && linkedChartNext && "rounded-l-xl rounded-r-none",
-                      linkedChartPrev && "border-l-0",
-                      linkedChartNext && "border-r-0",
-                    )}
-                  >
-                    {isMissingTooth ? (
-                      <svg
-                        aria-hidden
-                        viewBox="0 0 100 100"
-                        preserveAspectRatio="none"
-                        className="pointer-events-none absolute inset-x-2 top-9 bottom-3 z-[5] text-slate-300/40"
-                      >
-                        <line
-                          x1="8"
-                          y1="8"
-                          x2="92"
-                          y2="92"
-                          stroke="currentColor"
-                          strokeWidth="10"
-                          strokeLinecap="round"
-                        />
-                        <line
-                          x1="92"
-                          y1="8"
-                          x2="8"
-                          y2="92"
-                          stroke="currentColor"
-                          strokeWidth="10"
-                          strokeLinecap="round"
-                        />
-                      </svg>
-                    ) : null}
-
-                    <span className="relative z-[1] flex h-10 items-center text-xl font-bold tabular-nums tracking-tight text-slate-800">
-                      {row.toothNumber}
-                    </span>
-
-                    {isMissingTooth ? (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <div
-                            className="relative z-20 mt-1.5 flex h-7 w-full min-w-0 max-w-full items-center justify-center self-stretch rounded-md bg-transparent px-0.5 text-center text-[11px] text-slate-500"
-                          >
-                            <span className="block w-full truncate px-0.5">
-                              {NO_WORK_PROSTHESIS_TYPE}
-                            </span>
-                          </div>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom" className="max-w-xs text-xs leading-relaxed">
-                          {NO_WORK_PROSTHESIS_TOOLTIP}
-                        </TooltipContent>
-                      </Tooltip>
-                    ) : (
-                      <div
-                        className="relative z-[1] mt-1.5 flex h-7 w-full min-w-0 max-w-full items-center justify-center self-stretch rounded-md border border-primary-muted/80 bg-white/80 px-0.5 text-center text-[11px] text-slate-600"
-                      >
-                        <span className="block w-full truncate px-0.5">
-                          {row.prosthesisType || "-"}
-                        </span>
-                      </div>
-                    )}
-
-                    {canShowCustom ? (
-                      <div className="mt-2 flex w-full flex-col items-center gap-0.5 leading-none">
-                        <span className="inline-flex h-5 items-center text-[11px] leading-none text-primary-strong">
-                          {row.prosthesisType === "크라운" ||
-                          row.prosthesisType === "브리지" ||
-                          isTemporaryToothProsthesisType(row.prosthesisType)
-                            ? "어벗"
-                            : "커스텀"}
-                        </span>
-                        {embedded ? (
-                          <div className="flex w-full flex-col items-stretch gap-0.5 px-0.5">
-                            <span className="h-5 w-full truncate px-0.5 text-center text-[10px] leading-none text-primary-strong">
-                              {implantCompact || "임플란트"}
-                            </span>
-                            <span className="h-5 w-full truncate px-0.5 text-center text-[10px] leading-none text-service-abut">
-                              {abutmentCompact || "스캔바디"}
-                            </span>
-                          </div>
-                        ) : (
-                          <TooltipProvider>
-                            <div className="flex w-full flex-col items-stretch gap-0.5 px-0.5">
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <span className="h-5 w-full truncate px-0.5 text-center text-[10px] leading-none text-primary-strong">
-                                    {implantCompact || "임플란트"}
-                                  </span>
-                                </TooltipTrigger>
-                                <TooltipContent side="bottom" className="max-w-[16rem] text-xs">
-                                  {implantSummary || "임플란트"}
-                                </TooltipContent>
-                              </Tooltip>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <span className="h-5 w-full truncate px-0.5 text-center text-[10px] leading-none text-service-abut">
-                                    {abutmentCompact || "스캔바디"}
-                                  </span>
-                                </TooltipTrigger>
-                                <TooltipContent side="bottom" className="max-w-[16rem] text-xs">
-                                  {abutmentSummary || "스캔바디"}
-                                </TooltipContent>
-                              </Tooltip>
-                            </div>
-                          </TooltipProvider>
-                        )}
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-                {bridgeSlot}
-              </div>
-            );
-          })}
+  const renderBridgeGap = (
+    toothNumber: string,
+    chartNext: string | null,
+    bridgeLinked: boolean,
+    adjacentVisible: boolean,
+    fullLayout: boolean,
+    hasNextInRow: boolean,
+  ) => {
+    if (bridgeLinked && adjacentVisible) {
+      return (
+        <div className="relative z-20 flex w-1.5 shrink-0 items-center justify-center self-stretch border-y border-primary bg-gradient-to-b from-primary-soft via-primary-soft to-white">
+          <span
+            aria-hidden
+            className="pointer-events-none absolute inset-y-3 left-1/2 w-[3px] -translate-x-1/2 rounded-full bg-primary/70"
+          />
+          <span
+            className="relative z-10 flex h-5 w-5 items-center justify-center rounded-full border border-primary bg-primary text-white ring-2 ring-primary-soft"
+            title={`${toothNumber}–${chartNext} 연결`}
+          >
+            <span className="h-0.5 w-2.5 rounded-full bg-white" />
+          </span>
         </div>
-      </div>
-    );
+      );
+    }
+    if (!hasNextInRow) return null;
+    const isMidlinePair =
+      (toothNumber === "11" && chartNext === "21") ||
+      (toothNumber === "41" && chartNext === "31");
+    if (fullLayout) {
+      return (
+        <div
+          className={cn(
+            "shrink-0 self-stretch",
+            isMidlinePair ? BRIDGE_GAP_MIDLINE_CLASS : "w-1.5",
+          )}
+          aria-hidden
+        />
+      );
+    }
+    return <div className="w-2 shrink-0" aria-hidden />;
+  };
+
+  const buildChartRows = (
+    decades: typeof treatedChartRows,
+    options: { fullLayout: boolean; visibleCount: number },
+  ) => {
+    const { fullLayout, visibleCount } = options;
+    const slotClass = fullLayout ? TOOTH_SLOT_FULL_CLASS : TOOTH_SLOT_CLASS;
+    const cardShellClass = fullLayout ? fullToothCardShellClass : toothCardShellClass;
+
+    return decades.map((decade) => {
+      const maxOffset = Math.max(0, decade.teeth.length - visibleCount);
+      const offset = Math.min(maxOffset, toothChartOffsets[decade.key] ?? 0);
+      const visible = decade.teeth.slice(offset, offset + visibleCount);
+
+      return (
+        <div
+          key={`ro-decade-${decade.key}-${fullLayout ? "full" : "compact"}`}
+          className={cn("flex items-stretch", fullLayout ? "w-full gap-0.5" : "gap-0.5")}
+        >
+          <div
+            className={cn(
+              "flex min-w-0 items-stretch",
+              fullLayout ? "w-full gap-0.5" : "flex-1",
+            )}
+            style={
+              fullLayout
+                ? undefined
+                : {
+                    width:
+                      visible.length >= visibleCount
+                        ? "100%"
+                        : `calc(${(visible.length / visibleCount) * 100}%)`,
+                    maxWidth: "100%",
+                  }
+            }
+          >
+            {visible.map((toothNumber, visibleIndex) => {
+              const row = byTooth.get(toothNumber);
+              if (!row && !fullLayout) return null;
+
+              const chartIdx = decade.chartTeeth.indexOf(toothNumber);
+              const chartNext =
+                chartIdx >= 0 && chartIdx < decade.chartTeeth.length - 1
+                  ? decade.chartTeeth[chartIdx + 1]
+                  : null;
+              const chartPrev = chartIdx > 0 ? decade.chartTeeth[chartIdx - 1] : null;
+              const nextVisible = visible[visibleIndex + 1];
+              const adjacentVisible = Boolean(chartNext) && nextVisible === chartNext;
+
+              if (!row) {
+                return (
+                  <div key={`ro-tooth-slot-${toothNumber}`} className="contents">
+                    <div className={cn("relative", slotClass)}>
+                      <div
+                        className={cn(
+                          cardShellClass,
+                          "rounded-xl border-slate-200/90 bg-gradient-to-b from-white to-slate-50/80",
+                        )}
+                      >
+                        <span className="flex h-10 items-center text-xl font-bold tabular-nums tracking-tight text-slate-300">
+                          {toothNumber}
+                        </span>
+                      </div>
+                    </div>
+                    {renderBridgeGap(
+                      toothNumber,
+                      chartNext,
+                      false,
+                      adjacentVisible,
+                      fullLayout,
+                      visibleIndex < visible.length - 1,
+                    )}
+                  </div>
+                );
+              }
+
+              const nextRow = chartNext ? byTooth.get(chartNext) : undefined;
+              const prevRow = chartPrev ? byTooth.get(chartPrev) : undefined;
+              const linkedTeeth = (
+                Array.isArray(row.bridgeLinkedTeeth) ? row.bridgeLinkedTeeth : []
+              ).filter((t) => getAdjacentTeeth(row.toothNumber).includes(t));
+              const linkedChartNext = Boolean(
+                chartNext &&
+                  (linkedTeeth.includes(chartNext) ||
+                    (nextRow &&
+                      Array.isArray(nextRow.bridgeLinkedTeeth) &&
+                      nextRow.bridgeLinkedTeeth.includes(toothNumber))),
+              );
+              const linkedChartPrev = Boolean(
+                chartPrev &&
+                  (linkedTeeth.includes(chartPrev) ||
+                    (prevRow &&
+                      Array.isArray(prevRow.bridgeLinkedTeeth) &&
+                      prevRow.bridgeLinkedTeeth.includes(toothNumber))),
+              );
+              const isLinked = linkedTeeth.length > 0 || linkedChartPrev || linkedChartNext;
+              const bridgeLinked = linkedChartNext;
+              const showBridgeConnector = adjacentVisible && bridgeLinked;
+
+              const isMissingTooth = isMissingToothProsthesisType(row.prosthesisType);
+              const canShowCustom =
+                !isMissingTooth &&
+                isCustomAbutmentSupportedProsthesisType(row.prosthesisType) &&
+                Boolean(row.customAbutment);
+              const implantSummary = formatImplantSummary(row);
+              const abutmentSummary = formatAbutmentSummary(row);
+              const implantCompact = formatImplantCompact(row);
+              const abutmentCompact = formatAbutmentCompact(row);
+
+              return (
+                <div key={`ro-tooth-slot-${toothNumber}`} className="contents">
+                  <div className={cn("relative", slotClass)}>
+                    {linkedChartNext && !showBridgeConnector ? (
+                      <span
+                        aria-hidden
+                        className="pointer-events-none absolute right-0 top-1/2 z-20 h-8 w-1.5 -translate-y-1/2 rounded-l-full bg-primary/80"
+                      />
+                    ) : null}
+                    {linkedChartPrev && visible[visibleIndex - 1] !== chartPrev ? (
+                      <span
+                        aria-hidden
+                        className="pointer-events-none absolute left-0 top-1/2 z-20 h-8 w-1.5 -translate-y-1/2 rounded-r-full bg-primary/80"
+                      />
+                    ) : null}
+
+                    <div
+                      className={cn(
+                        cardShellClass,
+                        isMissingTooth
+                          ? isLinked
+                            ? "border-primary bg-slate-50"
+                            : "rounded-xl border-slate-300 bg-slate-50"
+                          : isLinked
+                            ? "border-primary bg-gradient-to-b from-primary-soft via-primary-soft/95 to-white ring-1 ring-primary/40"
+                            : "rounded-xl border-primary/90 bg-gradient-to-b from-primary-soft via-white to-primary-soft/40 ring-1 ring-primary-muted/40",
+                        isLinked && !linkedChartPrev && !linkedChartNext && "rounded-xl",
+                        isLinked && linkedChartPrev && linkedChartNext && "rounded-none",
+                        isLinked && linkedChartPrev && !linkedChartNext && "rounded-r-xl rounded-l-none",
+                        isLinked && !linkedChartPrev && linkedChartNext && "rounded-l-xl rounded-r-none",
+                        linkedChartPrev && "border-l-0",
+                        linkedChartNext && "border-r-0",
+                      )}
+                    >
+                      {isMissingTooth ? (
+                        <svg
+                          aria-hidden
+                          viewBox="0 0 100 100"
+                          preserveAspectRatio="none"
+                          className="pointer-events-none absolute inset-x-2 top-9 bottom-3 z-[5] text-slate-300/40"
+                        >
+                          <line
+                            x1="8"
+                            y1="8"
+                            x2="92"
+                            y2="92"
+                            stroke="currentColor"
+                            strokeWidth="10"
+                            strokeLinecap="round"
+                          />
+                          <line
+                            x1="92"
+                            y1="8"
+                            x2="8"
+                            y2="92"
+                            stroke="currentColor"
+                            strokeWidth="10"
+                            strokeLinecap="round"
+                          />
+                        </svg>
+                      ) : null}
+
+                      <span className="relative z-[1] flex h-10 items-center text-xl font-bold tabular-nums tracking-tight text-slate-800">
+                        {toothNumber}
+                      </span>
+
+                      {isMissingTooth ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div className="relative z-20 mt-1.5 flex h-7 w-full min-w-0 max-w-full items-center justify-center self-stretch rounded-md bg-transparent px-0.5 text-center text-[11px] text-slate-500">
+                              <span className="block w-full truncate px-0.5">
+                                {NO_WORK_PROSTHESIS_TYPE}
+                              </span>
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom" className="max-w-xs text-xs leading-relaxed">
+                            {NO_WORK_PROSTHESIS_TOOLTIP}
+                          </TooltipContent>
+                        </Tooltip>
+                      ) : (
+                        <div className="relative z-[1] mt-1.5 flex h-7 w-full min-w-0 max-w-full items-center justify-center self-stretch rounded-md border border-primary-muted/80 bg-white/80 px-0.5 text-center text-[11px] text-slate-600">
+                          <span className="block w-full truncate px-0.5">
+                            {row.prosthesisType || "-"}
+                          </span>
+                        </div>
+                      )}
+
+                      {canShowCustom ? (
+                        <div className="mt-2 flex w-full flex-col items-center gap-0.5 leading-none">
+                          <span className="inline-flex h-5 items-center text-[11px] leading-none text-primary-strong">
+                            {row.prosthesisType === "크라운" ||
+                            row.prosthesisType === "브리지" ||
+                            isTemporaryToothProsthesisType(row.prosthesisType)
+                              ? "어벗"
+                              : "커스텀"}
+                          </span>
+                          {embedded && !fullLayout ? (
+                            <div className="flex w-full flex-col items-stretch gap-0.5 px-0.5">
+                              <span className="h-5 w-full truncate px-0.5 text-center text-[10px] leading-none text-primary-strong">
+                                {implantCompact || "임플란트"}
+                              </span>
+                              <span className="h-5 w-full truncate px-0.5 text-center text-[10px] leading-none text-service-abut">
+                                {abutmentCompact || "스캔바디"}
+                              </span>
+                            </div>
+                          ) : (
+                            <TooltipProvider>
+                              <div className="flex w-full flex-col items-stretch gap-0.5 px-0.5">
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="h-5 w-full truncate px-0.5 text-center text-[10px] leading-none text-primary-strong">
+                                      {implantCompact || "임플란트"}
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="bottom" className="max-w-[16rem] text-xs">
+                                    {implantSummary || "임플란트"}
+                                  </TooltipContent>
+                                </Tooltip>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="h-5 w-full truncate px-0.5 text-center text-[10px] leading-none text-service-abut">
+                                      {abutmentCompact || "스캔바디"}
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="bottom" className="max-w-[16rem] text-xs">
+                                    {abutmentSummary || "스캔바디"}
+                                  </TooltipContent>
+                                </Tooltip>
+                              </div>
+                            </TooltipProvider>
+                          )}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                  {renderBridgeGap(
+                    toothNumber,
+                    chartNext,
+                    showBridgeConnector,
+                    adjacentVisible,
+                    fullLayout,
+                    visibleIndex < visible.length - 1,
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      );
+    });
+  };
+
+  const inlineChartRows = buildChartRows(treatedChartRows, {
+    fullLayout: false,
+    visibleCount: inlineVisibleCount,
+  });
+  const enlargeChartRows = buildChartRows(fullChartRows, {
+    fullLayout: true,
+    visibleCount: 16,
   });
 
   const shiftAllDecades = (delta: number) => {
@@ -433,7 +539,7 @@ export const PracticeToothWorkChartReadOnly = ({
       const next = { ...prev };
       let changed = false;
       for (const decade of treatedChartRows) {
-        const maxOffset = Math.max(0, decade.teeth.length - toothChartVisibleCount);
+        const maxOffset = Math.max(0, decade.teeth.length - inlineVisibleCount);
         const cur = next[decade.key] ?? 0;
         const value = Math.min(maxOffset, Math.max(0, cur + delta));
         if (value !== cur) changed = true;
@@ -444,25 +550,33 @@ export const PracticeToothWorkChartReadOnly = ({
   };
 
   const canScrollLeft = treatedChartRows.some((decade) => {
-    const maxOffset = Math.max(0, decade.teeth.length - toothChartVisibleCount);
+    const maxOffset = Math.max(0, decade.teeth.length - inlineVisibleCount);
     const offset = Math.min(maxOffset, toothChartOffsets[decade.key] ?? 0);
     return offset > 0;
   });
   const canScrollRight = treatedChartRows.some((decade) => {
-    const maxOffset = Math.max(0, decade.teeth.length - toothChartVisibleCount);
+    const maxOffset = Math.max(0, decade.teeth.length - inlineVisibleCount);
     const offset = Math.min(maxOffset, toothChartOffsets[decade.key] ?? 0);
     return offset < maxOffset;
   });
-  /** 현재 표시 칸 수를 넘는 악궁이 있을 때만 스크롤 */
+  /** inline 미리보기 — 칸 수를 넘는 악궁만 스크롤 */
   const showChartScroll = treatedChartRows.some(
-    (decade) => decade.teeth.length > toothChartVisibleCount,
+    (decade) => decade.teeth.length > inlineVisibleCount,
   );
 
   const scrollBtnClass =
     "h-7 w-7 shrink-0 rounded-md text-slate-500 hover:bg-white/80 hover:text-primary-strong disabled:opacity-30";
 
-  const upperChartRow = chartRows.find((_, i) => treatedChartRows[i]?.key === "upper") ?? null;
-  const lowerChartRow = chartRows.find((_, i) => treatedChartRows[i]?.key === "lower") ?? null;
+  const upperInlineRow = (() => {
+    const idx = treatedChartRows.findIndex((row) => row.key === "upper");
+    return idx >= 0 ? inlineChartRows[idx] : null;
+  })();
+  const lowerInlineRow = (() => {
+    const idx = treatedChartRows.findIndex((row) => row.key === "lower");
+    return idx >= 0 ? inlineChartRows[idx] : null;
+  })();
+  const upperEnlargeRow = enlargeChartRows[0] ?? null;
+  const lowerEnlargeRow = enlargeChartRows[1] ?? null;
 
   const feeEstimate = (
     <PracticeTransferFeeEstimate
@@ -536,13 +650,44 @@ export const PracticeToothWorkChartReadOnly = ({
     />
   );
 
-  const chartBody = (
+  const inlineChartBody = (
     <div className="space-y-2">
-      {upperChartRow}
+      {upperInlineRow}
       {feeEstimate}
-      {lowerChartRow}
+      {lowerInlineRow}
     </div>
   );
+
+  const enlargeChartBody = (
+    <div className="space-y-2">
+      {upperEnlargeRow}
+      <PracticeTransferFeeEstimate
+        quote={feeQuote}
+        viewer={feeViewer}
+        skipJig={skipJig}
+        labEffectiveStars={labEffectiveStars}
+        className={embedded ? "border-0 bg-transparent px-0 py-1 shadow-none" : undefined}
+      />
+      {lowerEnlargeRow}
+    </div>
+  );
+
+  const openEnlargeDialog = () => {
+    setToothChartOffsets(initialToothChartOffsets(fullChartRows));
+    setToothChartEnlargeOpen(true);
+  };
+
+  const enlargeButton = showEnlargeButton ? (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      className="h-8 px-2.5 text-xs"
+      onClick={openEnlargeDialog}
+    >
+      {enlargeButtonLabel}
+    </Button>
+  ) : null;
 
   return (
     <div className={cn("space-y-2", className)}>
@@ -554,58 +699,20 @@ export const PracticeToothWorkChartReadOnly = ({
                 보철물{" "}
                 <span className="font-normal text-muted-foreground">({selectedTeeth.size}개)</span>
               </p>
-              {needsOverflowControls ? (
-                <div className="absolute right-0">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-8 px-2.5 text-xs"
-                    onClick={() => {
-                      setToothChartOffsets(
-                        initialToothChartOffsets(
-                          treatedChartRows.map((row) => ({ key: row.key, teeth: row.teeth })),
-                        ),
-                      );
-                      setToothChartEnlargeOpen(true);
-                    }}
-                  >
-                    크게 보기
-                  </Button>
-                </div>
-              ) : null}
+              {enlargeButton ? <div className="absolute right-0">{enlargeButton}</div> : null}
             </div>
-          ) : needsOverflowControls ? (
-            <div className="flex justify-end">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-8 px-2.5 text-xs"
-                onClick={() => {
-                  setToothChartOffsets(
-                    initialToothChartOffsets(
-                      treatedChartRows.map((row) => ({ key: row.key, teeth: row.teeth })),
-                    ),
-                  );
-                  setToothChartEnlargeOpen(true);
-                }}
-              >
-                크게 보기
-              </Button>
-            </div>
+          ) : enlargeButton ? (
+            <div className="flex justify-end">{enlargeButton}</div>
           ) : null}
-          {chartBody}
+          {inlineChartBody}
         </>
       ) : null}
 
       <Dialog open={toothChartEnlargeOpen} onOpenChange={setToothChartEnlargeOpen}>
         <DialogContent
-          overlayClassName={embedded ? "z-[330]" : "z-[110]"}
+          overlayClassName={enlargeOverlayClass}
           className={cn(
-            embedded
-              ? "z-[330]"
-              : "z-[110]",
+            enlargeDialogClass,
             "w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] gap-3 p-4 sm:max-w-[calc(100vw-1rem)] sm:p-5",
           )}
         >
@@ -618,7 +725,7 @@ export const PracticeToothWorkChartReadOnly = ({
               보철물 치식 차트를 가로로 크게 봅니다.
             </DialogDescription>
           </DialogHeader>
-          {toothChartEnlargeOpen ? chartBody : null}
+          {toothChartEnlargeOpen ? enlargeChartBody : null}
         </DialogContent>
       </Dialog>
     </div>

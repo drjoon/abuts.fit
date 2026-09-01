@@ -1462,6 +1462,7 @@ export const computePracticeTransferRetailFees = (params: {
   let abutmentRetailTotal = 0;
   let abutmentQuotePending = false;
   let abutmentQty = 0;
+  const bridgeTeethBilled = new Set<string>();
 
   const abutmentSplitForRow = (row: (typeof rows)[number]) => {
     if (
@@ -1527,6 +1528,26 @@ export const computePracticeTransferRetailFees = (params: {
     if (isMissingToothProsthesisType(prosthesisType)) continue;
     if (absorbedNonTemp.has(toothNumber)) continue;
 
+    if (isFollowUpProsthesisPhase(row) && isFinalProsthesisType(prosthesisType)) {
+      const item = findLabFeeItemForProsthesisType(items, prosthesisType);
+      if (!item) continue;
+      const unitLabFee = resolveFollowUpPerToothLabFee(item, useRemake);
+      for (const tooth of followUpFinalProsthesisTeeth(row)) {
+        if (bridgeTeethBilled.has(tooth)) continue;
+        bridgeTeethBilled.add(tooth);
+        labFeeTotal += unitLabFee;
+        lines.push({
+          toothNumber: tooth,
+          prosthesisType,
+          labFee: unitLabFee,
+          labAbutmentFee: 0,
+          labAbutmentPending: false,
+          abutmentRetail: 0,
+        });
+      }
+      continue;
+    }
+
     if (isCustomAbutmentProsthesisType(prosthesisType)) {
       if (useRemake) {
         if (isSimpleAbutmentModeForFee(row)) continue;
@@ -1572,18 +1593,55 @@ export const computePracticeTransferRetailFees = (params: {
     const item = findLabFeeItemForProsthesisType(items, prosthesisType);
     if (!item) continue;
     if (item.unit === "perTooth") {
-      const labFee = Math.max(
+      const unitLabFee = Math.max(
         0,
         Math.round(Number(useRemake ? item.remake : item.price) || 0),
       );
+
+      if (prosthesisType === "브리지") {
+        for (const tooth of followUpFinalProsthesisTeeth(row)) {
+          if (bridgeTeethBilled.has(tooth)) continue;
+          bridgeTeethBilled.add(tooth);
+          const toothRow = { ...row, toothNumber: tooth };
+          const split = abutmentSplitForRow(toothRow);
+          labFeeTotal += unitLabFee;
+          addAbutment(split);
+          lines.push({
+            toothNumber: tooth,
+            prosthesisType: "브리지",
+            labFee: unitLabFee,
+            labAbutmentFee: 0,
+            labAbutmentPending: false,
+            abutmentRetail: 0,
+          });
+          if (
+            split.abuts > 0 ||
+            split.lab > 0 ||
+            split.pending ||
+            split.quote
+          ) {
+            lines.push({
+              toothNumber: tooth,
+              prosthesisType: abutmentLineType(split),
+              labFee: 0,
+              labAbutmentFee: split.lab,
+              labAbutmentPending: split.pending,
+              abutmentRetail: split.abuts,
+              abutmentRetailNote: retailNote(split),
+            });
+          }
+        }
+        continue;
+      }
+
       const split = abutmentSplitForRow(row);
-      labFeeTotal += labFee;
+      labFeeTotal += unitLabFee;
       addAbutment(split);
       // 수가표와 같이 보철기공비·커스텀어벗을 별도 줄로 표기
       lines.push({
-        toothNumber: feeLineToothLabel(row),
+        toothNumber,
         prosthesisType,
-        labFee,
+        labFee: unitLabFee,
         labAbutmentFee: 0,
         labAbutmentPending: false,
         abutmentRetail: 0,
@@ -1595,7 +1653,7 @@ export const computePracticeTransferRetailFees = (params: {
         split.quote
       ) {
         lines.push({
-          toothNumber: feeLineToothLabel(row),
+          toothNumber,
           prosthesisType: abutmentLineType(split),
           labFee: 0,
           labAbutmentFee: split.lab,
@@ -1708,6 +1766,7 @@ type FeeToothRow = {
   tooth?: string;
   prosthesisType?: string;
   type?: string;
+  prosthesisPhase?: string;
   bridgeLinkedTeeth?: string[];
 };
 
@@ -1717,6 +1776,36 @@ function feeRowTooth(row?: FeeToothRow | null) {
 
 function feeRowType(row?: FeeToothRow | null) {
   return String(row?.prosthesisType || row?.type || "").trim();
+}
+
+/** 후속 최종 보철(크라운/브리지/인레이) — 스팬 중복 없이 치아 목록 */
+function followUpFinalProsthesisTeeth(row: FeeToothRow) {
+  const tooth = feeRowTooth(row);
+  const linked = Array.isArray(row?.bridgeLinkedTeeth)
+    ? row.bridgeLinkedTeeth
+        .map((value) => String(value || "").trim())
+        .filter((value) => /^[1-4][1-8]$/.test(value))
+    : [];
+  return sortToothNumbersForFee(
+    Array.from(new Set([tooth, ...linked].filter((value) => /^[1-4][1-8]$/.test(value)))),
+  );
+}
+
+/** 후속 보철은 크라운과 같이 1치=1기공비(perTooth 단가) */
+function resolveFollowUpPerToothLabFee(item: LabFeeItem, useRemake: boolean) {
+  if (item.unit === "perTooth") {
+    return Math.max(
+      0,
+      Math.round(Number(useRemake ? item.remake : item.price) || 0),
+    );
+  }
+  if (item.unit === "perNTeeth" && Array.isArray(item.tiers) && item.tiers.length > 0) {
+    return nTeethFeeForCount(1, item.tiers, useRemake);
+  }
+  return Math.max(
+    0,
+    Math.round(Number(useRemake ? item.remake : item.price) || 0),
+  );
 }
 
 function isPonticProsthesisType(prosthesisType: string) {

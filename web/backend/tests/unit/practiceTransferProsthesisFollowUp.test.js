@@ -7,6 +7,7 @@ import {
   isPendingProsthesisFollowUpRecord,
   listPendingFollowUpTempSpans,
   stripFollowUpToothWorksForRecord,
+  validateFollowUpToothWorksAgainstSource,
 } from "../../utils/practiceTransferProsthesisFollowUp.js";
 
 describe("practiceTransferProsthesisFollowUp", () => {
@@ -132,5 +133,50 @@ describe("practiceTransferProsthesisFollowUp", () => {
         requestorDownloadedAt,
       ),
     ).toBe(false);
+  });
+
+  test("validateFollowUpToothWorksAgainstSource allows partial span selection", () => {
+    const source = [
+      {
+        toothNumber: "34",
+        prosthesisType: "임시치아",
+        bridgeLinkedTeeth: ["34", "33"],
+      },
+      {
+        toothNumber: "33",
+        prosthesisType: "임시치아",
+        bridgeLinkedTeeth: ["34", "33"],
+      },
+      {
+        toothNumber: "46",
+        prosthesisType: "임시치아",
+        bridgeLinkedTeeth: ["46", "45", "44"],
+      },
+      {
+        toothNumber: "45",
+        prosthesisType: "임시치아",
+        bridgeLinkedTeeth: ["46", "45", "44"],
+      },
+      {
+        toothNumber: "44",
+        prosthesisType: "임시치아",
+        bridgeLinkedTeeth: ["46", "45", "44"],
+      },
+    ];
+    const draft = buildFollowUpToothWorksDraft(source);
+    expect(draft).toHaveLength(2);
+    const leftOnly = validateFollowUpToothWorksAgainstSource(source, [draft[0]]);
+    expect(leftOnly.ok).toBe(true);
+    expect(leftOnly.rows).toHaveLength(1);
+    expect(leftOnly.rows[0].prosthesisType).toBe("브리지");
+    const partialTooth = validateFollowUpToothWorksAgainstSource(source, [
+      {
+        toothNumber: "33",
+        prosthesisType: "크라운",
+        prosthesisPhase: "followUp",
+        bridgeLinkedTeeth: ["33"],
+      },
+    ]);
+    expect(partialTooth.ok).toBe(false);
   });
 });

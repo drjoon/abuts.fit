@@ -411,11 +411,122 @@ describe("labFeeSchedule", () => {
     expect(
       fees.lines.some(
         (line) =>
-          line.toothNumber === "34,33" &&
+          line.toothNumber === "33" &&
           line.prosthesisType === "브리지" &&
           line.labFee === 60000,
       ),
     ).toBe(true);
+  });
+
+  test("최종 보철 후속(followUp) 브리지는 치아당 1기공비·1치 단위 표시", () => {
+    const fees = computePracticeTransferRetailFees({
+      toothWorks: [
+        {
+          toothNumber: "33",
+          prosthesisType: "브리지",
+          prosthesisPhase: "followUp",
+          bridgeLinkedTeeth: ["33", "34"],
+        },
+        {
+          toothNumber: "44",
+          prosthesisType: "브리지",
+          prosthesisPhase: "followUp",
+          bridgeLinkedTeeth: ["44", "45"],
+        },
+        {
+          toothNumber: "45",
+          prosthesisType: "브리지",
+          prosthesisPhase: "followUp",
+          bridgeLinkedTeeth: ["44", "45", "46"],
+        },
+        {
+          toothNumber: "46",
+          prosthesisType: "브리지",
+          prosthesisPhase: "followUp",
+          bridgeLinkedTeeth: ["45", "46"],
+        },
+      ],
+      labFeeSchedule: LAB_FEE_SCHEDULE_SAMPLE,
+      skipAbutmentFees: true,
+    });
+    expect(fees.labFeeTotal).toBe(300000);
+    const bridgeLines = fees.lines.filter((line) => line.prosthesisType === "브리지");
+    expect(bridgeLines).toHaveLength(5);
+    expect(bridgeLines.map((line) => line.toothNumber).sort()).toEqual([
+      "33",
+      "34",
+      "44",
+      "45",
+      "46",
+    ]);
+    expect(bridgeLines.every((line) => line.labFee === 60000)).toBe(true);
+  });
+
+  test("임시치아+어벗 후속 브리지는 스팬 흡수 치아도 치아당 기공비를 청구한다", () => {
+    const fees = computePracticeTransferRetailFees({
+      toothWorks: [
+        {
+          toothNumber: "34",
+          prosthesisType: "임시치아",
+          customAbutment: true,
+          abutmentProductMode: "design_custom_abutment",
+          bridgeLinkedTeeth: ["34", "33"],
+        },
+        {
+          toothNumber: "33",
+          prosthesisType: "임시치아",
+          customAbutment: true,
+          abutmentProductMode: "design_custom_abutment",
+          bridgeLinkedTeeth: ["34", "33"],
+        },
+        {
+          toothNumber: "44",
+          prosthesisType: "임시치아",
+          customAbutment: true,
+          abutmentProductMode: "design_custom_abutment",
+          bridgeLinkedTeeth: ["44", "45", "46"],
+        },
+        {
+          toothNumber: "45",
+          prosthesisType: "임시치아",
+          customAbutment: true,
+          abutmentProductMode: "design_custom_abutment",
+          bridgeLinkedTeeth: ["44", "45", "46"],
+        },
+        {
+          toothNumber: "46",
+          prosthesisType: "임시치아",
+          customAbutment: true,
+          abutmentProductMode: "design_custom_abutment",
+          bridgeLinkedTeeth: ["44", "45", "46"],
+        },
+        {
+          toothNumber: "33",
+          prosthesisType: "브리지",
+          prosthesisPhase: "followUp",
+          bridgeLinkedTeeth: ["33", "34"],
+        },
+        {
+          toothNumber: "44",
+          prosthesisType: "브리지",
+          prosthesisPhase: "followUp",
+          bridgeLinkedTeeth: ["44", "45", "46"],
+        },
+      ],
+      labFeeSchedule: LAB_FEE_SCHEDULE_SAMPLE,
+      abutmentPricingTier: "membership",
+    });
+    const bridgeLines = fees.lines.filter((line) => line.prosthesisType === "브리지");
+    expect(bridgeLines).toHaveLength(5);
+    expect(bridgeLines.map((line) => line.toothNumber).sort()).toEqual([
+      "33",
+      "34",
+      "44",
+      "45",
+      "46",
+    ]);
+    expect(bridgeLines.every((line) => line.labFee === 60000)).toBe(true);
+    expect(fees.labFeeTotal).toBe(560000);
   });
 
   test("커스텀어벗(지그포함)이 perSet로 저장돼도 치아당 단가로 과금한다", () => {

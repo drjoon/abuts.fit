@@ -227,7 +227,7 @@ import {
   PracticeTransferDetailChatDialog,
 } from "@/shared/components/PracticeTransferDetailChatDialog";
 import { PracticeProsthesisFollowUpDialog } from "@/shared/components/practice/PracticeProsthesisFollowUpDialog";
-import { canAppendProsthesisFollowUp, canManagePendingProsthesisFollowUp, getLatestPendingProsthesisFollowUp } from "@/shared/practice/prosthesisFollowUp";
+import { canAppendProsthesisFollowUp, canManagePendingProsthesisFollowUp, getLatestPendingProsthesisFollowUp, isFinalProsthesisType, isFollowUpProsthesisPhase } from "@/shared/practice/prosthesisFollowUp";
 import { PracticeLabRatingControl } from "@/shared/components/practice/PracticeLabRatingControl";
 import { CounterpartyMemoStrip } from "@/shared/components/practice/CounterpartyMemoStrip";
 import { PracticeTransferIntakeSection } from "@/shared/components/practice/PracticeTransferIntakeSection";
@@ -4335,7 +4335,8 @@ export const PracticeFileTransferPage = ({
         setFollowUpDialogMode("create");
         toast({
           title: "제작 변경",
-          description: res.data?.message || "치과도착일을 변경했습니다.",
+          description:
+            res.data?.message || "최종 보철 제작 도착일을 변경했습니다.",
         });
         setSelectedTransfer((prev) => {
           if (!prev) return prev;
@@ -4479,6 +4480,20 @@ export const PracticeFileTransferPage = ({
     selectedTransfer?.requestorDownloadedAt,
     selectedTransfer?.requestorAcceptedAt,
     selectedTransfer?.status,
+  ]);
+
+  const showProsthesisFollowUpManage = useMemo(() => {
+    if (prosthesisFollowUpManage.ok) return true;
+    if (prosthesisFollowUpEligibility.reason !== "already_appended") return false;
+    return (selectedTransferDetailModel?.toothWorks || []).some(
+      (row) =>
+        isFollowUpProsthesisPhase(row) &&
+        isFinalProsthesisType(String(row.prosthesisType || "")),
+    );
+  }, [
+    prosthesisFollowUpEligibility.reason,
+    prosthesisFollowUpManage.ok,
+    selectedTransferDetailModel?.toothWorks,
   ]);
 
   const pendingProsthesisFollowUp = useMemo(
@@ -8970,9 +8985,9 @@ export const PracticeFileTransferPage = ({
               ? null
               : prosthesisFollowUpEligibility.message || null
           }
-          prosthesisFollowUpPending={prosthesisFollowUpManage.ok}
+          prosthesisFollowUpPending={showProsthesisFollowUpManage}
           onModifyProsthesisFollowUp={
-            prosthesisFollowUpManage.ok
+            showProsthesisFollowUpManage
               ? () => {
                   setFollowUpDialogMode("edit");
                   setFollowUpDialogOpen(true);
@@ -8980,7 +8995,7 @@ export const PracticeFileTransferPage = ({
               : undefined
           }
           onCancelProsthesisFollowUp={
-            prosthesisFollowUpManage.ok
+            showProsthesisFollowUpManage
               ? () => void handleCancelProsthesisFollowUp()
               : undefined
           }

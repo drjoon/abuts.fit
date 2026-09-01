@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/practice/PracticeToothWorkChartReadOnly.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // - 2026-09-01: 임시치아 → 최종 보철 후속 제작 확인 다이얼로그.
+// - 2026-09-01: 크라운·브리지 단위 선택(부분 제작) — 내용 변경 없이 포함 여부만.
 import { useEffect, useMemo, useState } from "react";
 import { CalendarClock } from "lucide-react";
 import {
@@ -13,6 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Calendar } from "@/components/ui/calendar";
 import {
   Popover,
@@ -20,8 +22,13 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { PracticeToothWorkChartReadOnly } from "@/shared/components/practice/PracticeToothWorkChartReadOnly";
-import { buildFollowUpToothWorksDraft } from "@/shared/practice/prosthesisFollowUp";
+import {
+  buildFollowUpToothWorksDraft,
+  followUpRowSpanKey,
+  formatFollowUpRowLabel,
+} from "@/shared/practice/prosthesisFollowUp";
 import { toKstYmd, ymdToKstDate } from "@/shared/date/kst";
+import { cn } from "@/shared/ui/cn";
 import type { ToothWorkSelection } from "@/shared/practice/transferMemo";
 
 type FollowUpRow = ToothWorkSelection & { prosthesisPhase: string };
@@ -49,13 +56,13 @@ export function PracticeProsthesisFollowUpDialog({
   toothWorks,
   orderDate,
   defaultArrivalYmd,
-  arrivalDefaultDays,
+  arrivalDefaultDays: _arrivalDefaultDays,
   labAnchorId = null,
   busy = false,
   onConfirm,
 }: Props) {
   const isEdit = mode === "edit";
-  const draftRows = useMemo(
+  const availableRows = useMemo(
     () =>
       isEdit
         ? (Array.isArray(toothWorks) ? toothWorks : []).filter((row) =>
@@ -65,6 +72,9 @@ export function PracticeProsthesisFollowUpDialog({
         : buildFollowUpToothWorksDraft(Array.isArray(toothWorks) ? toothWorks : []),
     [isEdit, toothWorks],
   );
+  const [selectedSpanKeys, setSelectedSpanKeys] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [arrivalDate, setArrivalDate] = useState(String(defaultArrivalYmd || "").trim());
   const [arrivalPickerOpen, setArrivalPickerOpen] = useState(false);
   const [arrivalDraft, setArrivalDraft] = useState<Date | undefined>(undefined);
@@ -72,11 +82,30 @@ export function PracticeProsthesisFollowUpDialog({
   const todayYmd = useMemo(() => toKstYmd(new Date()) || "", []);
   const orderYmd = String(orderDate || "").trim() || todayYmd;
 
+  const selectedRows = useMemo(
+    () =>
+      isEdit
+        ? availableRows
+        : availableRows.filter((row) =>
+            selectedSpanKeys.has(followUpRowSpanKey(row)),
+          ),
+    [availableRows, isEdit, selectedSpanKeys],
+  );
+
+  const allSpansSelected =
+    availableRows.length > 0 &&
+    availableRows.every((row) => selectedSpanKeys.has(followUpRowSpanKey(row)));
+
   useEffect(() => {
     if (!open) return;
     setArrivalDate(String(defaultArrivalYmd || "").trim());
     setArrivalPickerOpen(false);
-  }, [open, defaultArrivalYmd]);
+    if (!isEdit) {
+      setSelectedSpanKeys(
+        new Set(availableRows.map((row) => followUpRowSpanKey(row))),
+      );
+    }
+  }, [open, defaultArrivalYmd, isEdit, availableRows]);
 
   useEffect(() => {
     if (!arrivalPickerOpen) return;
@@ -96,9 +125,28 @@ export function PracticeProsthesisFollowUpDialog({
     setArrivalPickerOpen(false);
   };
 
+  const toggleSpanKey = (key: string, next: boolean) => {
+    setSelectedSpanKeys((prev) => {
+      const copy = new Set(prev);
+      if (next) copy.add(key);
+      else copy.delete(key);
+      return copy;
+    });
+  };
+
+  const toggleAllSpans = () => {
+    if (allSpansSelected) {
+      setSelectedSpanKeys(new Set());
+      return;
+    }
+    setSelectedSpanKeys(
+      new Set(availableRows.map((row) => followUpRowSpanKey(row))),
+    );
+  };
+
   const canSubmit =
     !busy &&
-    draftRows.length > 0 &&
+    selectedRows.length > 0 &&
     /^\d{4}-\d{2}-\d{2}$/.test(String(arrivalDate || "").trim());
 
   return (
@@ -196,17 +244,75 @@ export function PracticeProsthesisFollowUpDialog({
               </dl>
             </section>
 
+            {!isEdit && availableRows.length > 0 ? (
+              <section className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[13px] font-semibold text-foreground">제작 선택</p>
+                  {availableRows.length > 1 ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      disabled={busy}
+                      onClick={toggleAllSpans}
+                    >
+                      {allSpansSelected ? "전체 해제" : "전체 선택"}
+                    </Button>
+                  ) : null}
+                </div>
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  크라운·브리지 단위로 선택하세요. 선택하지 않은 임시치아는 이후에도
+                  제작 의뢰할 수 있습니다.
+                </p>
+                <div className="flex flex-col gap-2">
+                  {availableRows.map((row) => {
+                    const key = followUpRowSpanKey(row);
+                    const selected = selectedSpanKeys.has(key);
+                    return (
+                      <label
+                        key={key}
+                        className={cn(
+                          "flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors",
+                          selected
+                            ? "border-primary bg-primary-soft/40"
+                            : "border-border bg-muted/20 opacity-75",
+                          busy && "pointer-events-none opacity-60",
+                        )}
+                      >
+                        <Checkbox
+                          checked={selected}
+                          disabled={busy}
+                          onCheckedChange={(checked) =>
+                            toggleSpanKey(key, checked === true)
+                          }
+                        />
+                        <span className="text-sm font-medium leading-snug">
+                          {formatFollowUpRowLabel(row)}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </section>
+            ) : null}
+
             <div className="space-y-2 overflow-visible pb-1">
-              {draftRows.length > 0 ? (
-                <>
-                  <PracticeToothWorkChartReadOnly
-                    toothWorks={draftRows}
-                    labAnchorId={labAnchorId}
-                    feeViewer="practice"
-                    skipAbutmentFees
-                    embedded
-                  />
-                </>
+              {selectedRows.length > 0 ? (
+                <PracticeToothWorkChartReadOnly
+                  toothWorks={selectedRows}
+                  labAnchorId={labAnchorId}
+                  feeViewer="practice"
+                  skipAbutmentFees
+                  embedded
+                  showHeader
+                  enlargeOverlayClassName="z-[350]"
+                  enlargeDialogClassName="z-[360]"
+                />
+              ) : availableRows.length > 0 ? (
+                <p className="rounded-lg border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
+                  제작할 보철 단위를 선택해주세요.
+                </p>
               ) : (
                 <p className="rounded-lg border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
                   제작할 보철 치식이 없습니다.
@@ -231,7 +337,7 @@ export function PracticeProsthesisFollowUpDialog({
             onClick={() =>
               void onConfirm({
                 arrivalYmd: String(arrivalDate || "").trim(),
-                toothWorks: draftRows,
+                toothWorks: selectedRows as FollowUpRow[],
               })
             }
           >

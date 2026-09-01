@@ -55,6 +55,18 @@ const linkedTeethOf = (row: Partial<ToothWorkSelection>) => {
   return sortTeethFdi(Array.from(new Set([self, ...linked])));
 };
 
+/** 후속 보철 1단위(크라운·브리지 스팬) 식별 키 */
+export const followUpRowSpanKey = (row: Partial<ToothWorkSelection>) =>
+  linkedTeethOf(row).join("-");
+
+/** 선택 UI 라벨 — 예: "34, 33 브리지" */
+export const formatFollowUpRowLabel = (row: Partial<ToothWorkSelection>) => {
+  const teeth = linkedTeethOf(row);
+  const type = String(row?.prosthesisType || "").trim();
+  if (teeth.length === 0) return type || "보철";
+  return `${teeth.join(", ")} ${type}`;
+};
+
 export const hasFollowUpProsthesisForTooth = (
   toothWorks: Partial<ToothWorkSelection>[],
   toothNumber: string,
@@ -251,7 +263,11 @@ export const isPendingProsthesisFollowUpRecord = (
   if (!record.labAcceptedAt) return true;
   const mainAcceptedAt = String(requestorDownloadedAt || "").trim();
   const appendedAt = record.appendedAt;
-  if (!mainAcceptedAt || !appendedAt) return false;
+  if (!appendedAt) return false;
+  if (!mainAcceptedAt) {
+    // 수락 시각 미동기화 — labAcceptedAt만 있으면 재수락 오염 가능성, pending 유지
+    return true;
+  }
   const mainMs = new Date(mainAcceptedAt).getTime();
   const appendMs = new Date(appendedAt).getTime();
   if (!Number.isFinite(mainMs) || !Number.isFinite(appendMs)) return false;

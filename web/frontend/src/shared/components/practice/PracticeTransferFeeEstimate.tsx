@@ -77,6 +77,7 @@ import {
   isCustomAbutmentLabFeeLineType,
   normalizeLabFeeMultiplier,
   normalizeRushFeeMultiplier,
+  toToothDecadeSortNumber,
 } from "@/shared/practice/labFeeSchedule";
 
 export type PracticeTransferSettlementShippingLine = {
@@ -194,58 +195,161 @@ const formatLabAbutmentCell = (line: FeeBreakdownLine) => {
   return formatManWon(line.labAbutmentFee);
 };
 
-/** 같은 치아번호·동일 구역(임시/최종/어벗) 라인만 한 줄로 합친다. */
-const feeBreakdownLineCategory = (line: FeeBreakdownLine) => {
-  const type = String(line.prosthesisType || "");
-  if (/임시치아/.test(type)) return "temp";
-  if (isCustomAbutmentLabFeeLineType(type)) return "ca";
-  return "final";
+const parseBridgeDisplayTeeth = (toothNumber: string) =>
+  String(toothNumber || "")
+    .split(/[,，]/)
+    .map((token) => token.trim())
+    .filter((token) => /^[1-4][1-8]$/.test(token));
+
+const sortBridgeDisplayTeeth = (teeth: string[]) =>
+  [...teeth].sort(
+    (a, b) => toToothDecadeSortNumber(a) - toToothDecadeSortNumber(b),
+  );
+
+const isBridgeProsthesisLine = (line: FeeBreakdownLine) => {
+  const type = String(line.prosthesisType || "").trim();
+  return type === "브리지" || type.startsWith("브리지");
 };
 
+const isTempProsthesisLine = (line: FeeBreakdownLine) =>
+  /임시치아/.test(String(line.prosthesisType || ""));
+
+/** 레거시 스팬 라벨(34,33)을 치아별 브리지 행으로 펼친다. 1치=1브리지=전액. */
+const expandBridgeFeeBreakdownLines = (
+  lines: FeeBreakdownLine[],
+): FeeBreakdownLine[] => {
+  const out: FeeBreakdownLine[] = [];
+  for (const line of lines) {
+    if (!isBridgeProsthesisLine(line)) {
+      out.push(line);
+      continue;
+    }
+    const teeth = sortBridgeDisplayTeeth(parseBridgeDisplayTeeth(line.toothNumber));
+    if (teeth.length < 2) {
+      out.push({
+        ...line,
+        toothNumber: teeth[0] || line.toothNumber,
+        prosthesisType: "브리지",
+      });
+      continue;
+    }
+    for (const tooth of teeth) {
+      out.push({
+        ...line,
+        toothNumber: tooth,
+        prosthesisType: "브리지",
+        labFee: line.labFee,
+        labFeeMin:
+          line.labFeeMin != null && Number.isFinite(line.labFeeMin)
+            ? line.labFeeMin
+            : undefined,
+        labAbutmentFee: line.labAbutmentFee,
+        labAbutmentPending: line.labAbutmentPending,
+        abutmentRetail: line.abutmentRetail,
+        abutmentRetailNote: line.abutmentRetailNote,
+      });
+    }
+  }
+  return out;
+};
+
+const mergeWorkFeeBreakdownLine = (
+  existing: FeeBreakdownLine,
+  line: FeeBreakdownLine,
+) => {
+  const existingIsCa = isCustomAbutmentLabFeeLineType(existing.prosthesisType);
+  const lineIsCa = isCustomAbutmentLabFeeLineType(line.prosthesisType);
+  const preferType = !existingIsCa
+    ? existing.prosthesisType
+    : !lineIsCa
+      ? line.prosthesisType
+      : existing.prosthesisType || line.prosthesisType;
+  const labFeeMin =
+    existing.labFeeMin != null || line.labFeeMin != null
+      ? (existing.labFeeMin != null && Number.isFinite(existing.labFeeMin)
+          ? existing.labFeeMin
+          : existing.labFee) +
+        (line.labFeeMin != null && Number.isFinite(line.labFeeMin)
+          ? line.labFeeMin
+          : line.labFee)
+      : undefined;
+  return {
+    toothNumber: existing.toothNumber || line.toothNumber,
+    prosthesisType: preferType || "보철",
+    labFee: existing.labFee + line.labFee,
+    ...(labFeeMin != null ? { labFeeMin } : {}),
+    labAbutmentFee: existing.labAbutmentFee + line.labAbutmentFee,
+    labAbutmentPending: Boolean(
+      existing.labAbutmentPending || line.labAbutmentPending,
+    ),
+    abutmentRetail: existing.abutmentRetail + line.abutmentRetail,
+    abutmentRetailNote: existing.abutmentRetailNote || line.abutmentRetailNote,
+  };
+};
+
+/** 임시치아는 위·최종 보철+커스텀어벗은 치아별 한 줄(크라운과 동일). */
 const mergeFeeBreakdownLinesByTooth = (
   lines: FeeBreakdownLine[],
 ): FeeBreakdownLine[] => {
+  const expanded = expandBridgeFeeBreakdownLines(lines);
   const order: string[] = [];
   const byKey = new Map<string, FeeBreakdownLine>();
   let anon = 0;
-  for (const line of lines) {
+
+  for (const line of expanded) {
     const tooth = String(line.toothNumber || "").trim();
-    const key = `${feeBreakdownLineCategory(line)}:${tooth || `\0anon-${anon++}`}`;
-    const existing = byKey.get(key);
-    if (!existing) {
-      order.push(key);
-      byKey.set(key, { ...line });
+    if (isTempProsthesisLine(line)) {
+      const key = `temp:${tooth || `\0anon-${anon++}`}`;
+      const existing = byKey.get(key);
+      if (!existing) {
+        order.push(key);
+        byKey.set(key, { ...line });
+        continue;
+      }
+      byKey.set(key, mergeWorkFeeBreakdownLine(existing, line));
       continue;
     }
-    const preferType = !isCustomAbutmentLabFeeLineType(existing.prosthesisType)
-      ? existing.prosthesisType
-      : !isCustomAbutmentLabFeeLineType(line.prosthesisType)
-        ? line.prosthesisType
-        : existing.prosthesisType || line.prosthesisType;
-    const labFeeMin =
-      existing.labFeeMin != null || line.labFeeMin != null
-        ? (existing.labFeeMin != null && Number.isFinite(existing.labFeeMin)
-            ? existing.labFeeMin
-            : existing.labFee) +
-          (line.labFeeMin != null && Number.isFinite(line.labFeeMin)
-            ? line.labFeeMin
-            : line.labFee)
-        : undefined;
-    byKey.set(key, {
-      toothNumber: existing.toothNumber || line.toothNumber,
-      prosthesisType: preferType || "보철",
-      labFee: existing.labFee + line.labFee,
-      ...(labFeeMin != null ? { labFeeMin } : {}),
-      labAbutmentFee: existing.labAbutmentFee + line.labAbutmentFee,
-      labAbutmentPending: Boolean(
-        existing.labAbutmentPending || line.labAbutmentPending,
-      ),
-      abutmentRetail: existing.abutmentRetail + line.abutmentRetail,
-      abutmentRetailNote:
-        existing.abutmentRetailNote || line.abutmentRetailNote,
-    });
+
+    const lineIsCa = isCustomAbutmentLabFeeLineType(line.prosthesisType);
+    const workKey = `work:${tooth || `\0anon-${anon++}`}`;
+    const existing = byKey.get(workKey);
+
+    if (!existing) {
+      order.push(workKey);
+      byKey.set(workKey, { ...line });
+      continue;
+    }
+
+    const existingIsCa = isCustomAbutmentLabFeeLineType(existing.prosthesisType);
+    if (lineIsCa !== existingIsCa) {
+      byKey.set(workKey, mergeWorkFeeBreakdownLine(existing, line));
+      continue;
+    }
+
+    if (
+      !lineIsCa &&
+      isBridgeProsthesisLine(existing) &&
+      isBridgeProsthesisLine(line) &&
+      existing.labFee > 0 &&
+      line.labFee > 0
+    ) {
+      byKey.set(workKey, {
+        ...existing,
+        labAbutmentFee: existing.labAbutmentFee + line.labAbutmentFee,
+        labAbutmentPending: Boolean(
+          existing.labAbutmentPending || line.labAbutmentPending,
+        ),
+        abutmentRetail: existing.abutmentRetail + line.abutmentRetail,
+        abutmentRetailNote:
+          existing.abutmentRetailNote || line.abutmentRetailNote,
+      });
+      continue;
+    }
+
+    byKey.set(workKey, mergeWorkFeeBreakdownLine(existing, line));
   }
-  return order.map((key) => byKey.get(key)!);
+
+  return sortPracticeTransferFeeLines(order.map((key) => byKey.get(key)!));
 };
 
 function FeeBreakdownTable({

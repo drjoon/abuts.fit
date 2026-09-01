@@ -4347,7 +4347,7 @@ export async function appendPracticeTransferProsthesis(req, res) {
 
     return res.status(200).json({
       success: true,
-      message: "후속 크라운/브리지 의뢰가 추가되었습니다.",
+      message: "후속 최종 보철 의뢰가 추가되었습니다.",
       data: {
         _id: String(updated._id || ""),
         transferId: String(updated.transferId || "").trim(),
@@ -4514,7 +4514,7 @@ export async function cancelPracticeTransferProsthesisFollowUp(req, res) {
       await postPracticeTransferSystemChatMessage({
         transferMongoId: String(updated._id),
         senderUserId: req.user?._id,
-        content: "후속 크라운/브리지 제작 의뢰가 취소되었습니다.",
+        content: "후속 최종 보철 제작 의뢰가 취소되었습니다.",
         systemEvent: "practice_transfer_prosthesis_follow_up_cancel",
       });
     } catch {
@@ -4560,7 +4560,7 @@ export async function cancelPracticeTransferProsthesisFollowUp(req, res) {
 
     return res.status(200).json({
       success: true,
-      message: "크라운/브리지 제작 의뢰를 취소했습니다.",
+      message: "최종 보철 제작 의뢰를 취소했습니다.",
       data: {
         toothWorks,
         prosthesisFollowUps: serializeProsthesisFollowUpsForApi(
@@ -4703,7 +4703,7 @@ export async function updatePracticeTransferProsthesisFollowUp(req, res) {
       await postPracticeTransferSystemChatMessage({
         transferMongoId: String(updated._id),
         senderUserId: req.user?._id,
-        content: `후속 크라운/브리지 제작 치과도착일 변경: ${rawYmd}`,
+        content: `후속 최종 보철 제작 치과도착일 변경: ${rawYmd}`,
         systemEvent: "practice_transfer_prosthesis_follow_up_update",
       });
     } catch {
@@ -4744,7 +4744,7 @@ export async function updatePracticeTransferProsthesisFollowUp(req, res) {
 
     return res.status(200).json({
       success: true,
-      message: "크라운/브리지 제작 도착일을 변경했습니다.",
+      message: "최종 보철 제작 도착일을 변경했습니다.",
       data: {
         prosthesisFollowUps: serializeProsthesisFollowUpsForApi(
           updated.prosthesisFollowUps,
