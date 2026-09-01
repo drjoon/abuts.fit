@@ -435,7 +435,7 @@ export function normalizeRequestStage(requestLike) {
   if (["shipping", "포장.발송"].includes(stage)) {
     return "shipping";
   }
-  if (["packing", "세척.패킹"].includes(stage)) {
+  if (["세척.패킹"].includes(stage)) {
     return "packing";
   }
   if (["machining", "가공"].includes(stage)) {

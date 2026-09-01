@@ -242,7 +242,7 @@ export const RequestorDashboardPage = () => {
     // display-level label '준비' maps legacy raw values '의뢰' / 'request' for normalization
     "준비": ["의뢰", "request"],
     가공: ["cam", "CAM", "가공", "생산", "production", "machining"],
-    "세척.패킹": ["세척.패킹", "세척.포장", "cleaning", "packing"],
+    "세척.패킹": ["세척.패킹"],
     "포장.발송": ["포장.발송", "발송", "delivery", "shipping"],
     추적관리: ["추적관리", "tracking"],
   }), []);
@@ -257,7 +257,6 @@ export const RequestorDashboardPage = () => {
       const raw = String(requestLike?.manufacturerStage || "").trim();
       // legacy stage 보정: 상단 요약 카드와 세부 모달의 stage 매칭 불일치 방지
       if (["production", "생산"].includes(raw)) return "machining";
-      if (["cleaning", "세척.포장"].includes(raw)) return "packing";
       if (["delivery", "발송"].includes(raw)) return "shipping";
       return null;
     }

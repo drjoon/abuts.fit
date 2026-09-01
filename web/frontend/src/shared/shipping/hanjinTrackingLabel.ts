@@ -106,7 +106,6 @@ const STAGE_PRIORITY = [
   "포장.발송",
   "발송",
   "세척.패킹",
-  "세척.포장",
   "생산",
   "CAM",
   "가공",
@@ -120,12 +119,7 @@ const manufacturerStageToProgressLabel = (stage: string): string | null => {
   if (!s) return null;
   if (s === "추적관리" || s === "tracking") return "추적관리";
   if (s === "포장.발송" || s === "발송" || s === "shipping") return "포장·발송";
-  if (
-    s === "세척.패킹" ||
-    s === "세척.포장" ||
-    s === "packing" ||
-    s === "cleaning"
-  ) {
+  if (s === "세척.패킹") {
     return "세척·패킹";
   }
   if (s === "생산" || s === "CAM" || s === "가공" || s === "machining") {

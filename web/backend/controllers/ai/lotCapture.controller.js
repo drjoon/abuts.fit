@@ -114,7 +114,7 @@ async function findPackingRequestBySuffix(recognizedSuffix) {
 
   const candidates = await Request.find({
     status: { $ne: "취소" },
-    manufacturerStage: { $in: ["세척.패킹", "세척.포장"] },
+    manufacturerStage: { $in: ["세척.패킹"] },
   })
     .populate("businessAnchorId", "name metadata")
     .populate("requestor", "businessAnchorId")

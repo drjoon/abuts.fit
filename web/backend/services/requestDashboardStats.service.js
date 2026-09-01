@@ -6,6 +6,7 @@
 // change-log:
 // - 2026-08-27: 진행(inProgress*) — 준비 배지와 동일하게 PTX 디자인 미완료·레거시 design mode 제외.
 // - 2026-08-25: 준비(requestCount) — PTX 디자인 미완료도 제외(가공작업 카드 productModeNe SSOT와 일치).
+// - 2026-09-02: packing manufacturerStage SSOT는 세척.패킹만(레거시 세척.포장/packing/cleaning 제거).
 // - 2026-08-20: 포장.발송 카운트는 우편함/박스 배정 건만 집계(그리드 SSOT).
 // - 2026-08-04: 진행 중 묶음배송/신속배송 건수 집계 추가.
 // - 2026-08-04: admin dashboard byStatus first-stage key SSOT를 '준비'로 통일 (구 '의뢰' 제거).
@@ -137,7 +138,7 @@ export function buildDashboardNormalizedStageExpr() {
             },
             {
               case: {
-                $in: ["$$stage", ["packing", "세척.패킹"]],
+                $eq: ["$$stage", "세척.패킹"],
               },
               then: "packing",
             },

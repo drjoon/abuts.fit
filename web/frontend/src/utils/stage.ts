@@ -1,5 +1,5 @@
 // change-log:
-// - 2026-08-09: 빈값·레거시(의뢰/세척.포장 등) stage 정규화 보강. 모니터링용 getMonitoringStageLabel 추가.
+// - 2026-09-02: packing manufacturerStage SSOT는 세척.패킹만(레거시 세척.포장/packing/cleaning 제거).
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
@@ -28,11 +28,7 @@ export const normalizeStageValue = (manufacturerStage?: string): string => {
   ) {
     return "shipping";
   }
-  if (
-    ["packing", "세척.패킹", "세척.포장", "cleaning"].includes(stage) ||
-    lower === "packing" ||
-    lower === "cleaning"
-  ) {
+  if (stage === "세척.패킹") {
     return "packing";
   }
   if (["machining", "가공"].includes(stage) || lower === "machining") {

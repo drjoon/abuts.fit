@@ -15,6 +15,7 @@ import {
 } from "@/shared/layout/sidebarOpen";
 import { cn } from "@/shared/ui/cn";
 
+// - 2026-09-02: 추적관리 워크시트는 fillHeight로 뷰포트 고정(중첩 스크롤·무한 로드).
 // - 2026-08-28: 사이드바 토글 UI를 로컬 오버라이드로 유지(/me 레이스·스토어 덮어쓰기 방지). 접기 버튼 z-index.
 // - 2026-08-27: 데스크톱 사이드바 펼침을 계정 preferences.sidebarOpen으로 서버 저장·복원(기본 open). 모바일 드로어는 분리.
 // - 2026-08-25: 기공의뢰수신(lab) 캘린더는 fillHeight 복구. 사이드 aside에 shrink-0·min-w로 펼침 폭 고정.
@@ -1277,26 +1278,30 @@ export const DashboardLayout = () => {
   const isPracticeOralScanWorkArea =
     location.pathname.startsWith("/dashboard/practice-transfers") &&
     requestorKind === "practice";
-  // 충전·정산·기공의뢰수신·치과 구강스캔 캘린더 — 래퍼를 뷰포트 높이에 고정(중첩 스크롤).
-  // 그 외(설정 등)는 문서 흐름으로 키워 하단 pb가 스크롤 끝에 보이게 함.
-  const isFillHeightWorkArea =
-    location.pathname.startsWith("/dashboard/credits") ||
-    location.pathname.startsWith("/dashboard/payments") ||
-    isLabReceiveWorkArea ||
-    isPracticeOralScanWorkArea;
   const worksheetParams = new URLSearchParams(location.search);
   const worksheetType = worksheetParams.get("type") || "cnc";
   const worksheetStageRaw = worksheetParams.get("stage") || "request";
   // 작업 공정 변경: CAM 탭은 노출하지 않고 legacy URL(stage=cam)은 가공 탭으로 매핑한다.
   const worksheetStage = worksheetStageRaw === "cam" ? "machining" : worksheetStageRaw;
+  const isWorksheetTrackingStage =
+    isWorksheetRoute && worksheetStage === "tracking";
+  // 충전·정산·기공의뢰수신·치과 구강스캔 캘린더·추적관리 — 래퍼를 뷰포트 높이에 고정(중첩 스크롤).
+  // 그 외(설정 등)는 문서 흐름으로 키워 하단 pb가 스크롤 끝에 보이게 함.
+  const isFillHeightWorkArea =
+    location.pathname.startsWith("/dashboard/credits") ||
+    location.pathname.startsWith("/dashboard/payments") ||
+    isLabReceiveWorkArea ||
+    isPracticeOralScanWorkArea ||
+    isWorksheetTrackingStage;
 
-  // Worksheet summary data for header bar
+  // Worksheet summary data for header bar.
+  // Stage tab counts are current queue sizes (same as each tab list) — not period-filtered.
   const { data: worksheetSummaryResponse, refetch: refetchWorksheetSummary } = useQuery({
-    queryKey: ["worksheet-assigned-summary", period],
+    queryKey: ["worksheet-assigned-summary"],
     enabled: Boolean(token) && isManufacturer && isWorksheetRoute,
     queryFn: async () => {
       const res = await apiFetch<WorksheetSummaryResponse>({
-        path: `/api/requests/assigned/dashboard-summary?period=${period}`,
+        path: `/api/requests/assigned/dashboard-summary?period=all`,
         method: "GET",
         token,
       });

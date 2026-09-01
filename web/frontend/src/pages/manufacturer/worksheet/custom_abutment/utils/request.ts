@@ -439,9 +439,8 @@ export const deriveStageForFilter = (req: ManufacturerRequest) => {
     return "가공";
   }
 
-  // 세척/패킹 계열
-  if (saved === "세척.패킹" || saved === "세척.포장" || lower === "packing") {
-    // 레거시/신 명칭 모두 필터용 라벨은 "세척.패킹"으로 통일
+  // 세척/패킹
+  if (saved === "세척.패킹") {
     return "세척.패킹";
   }
 
@@ -505,7 +504,7 @@ const WORKSHEET_STAGE_QUERY_ALIASES: Record<
 > = {
   request: ["준비"],
   machining: ["가공"],
-  packing: ["세척.패킹", "세척.포장", "packing", "cleaning"],
+  packing: ["세척.패킹"],
   shipping: [
     "포장.발송",
     "발송",

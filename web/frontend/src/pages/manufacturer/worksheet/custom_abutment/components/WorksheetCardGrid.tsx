@@ -505,7 +505,7 @@ export const WorksheetCardGrid = ({
           if (s === "가공") {
             return `${base} bg-primary-soft text-primary-strong border-primary-muted`;
           }
-          if (s === "세척.포장" || s === "세척.패킹") {
+          if (s === "세척.패킹") {
             return `${base} bg-primary-soft text-primary-strong border-primary-muted`;
           }
           if (s === "발송" || s === "포장.발송") {
@@ -527,7 +527,7 @@ export const WorksheetCardGrid = ({
           if (s === "가공") {
             return `${base} bg-primary-soft text-primary-strong border-primary-muted`;
           }
-          if (s === "세척.포장" || s === "세척.패킹") {
+          if (s === "세척.패킹") {
             return `${base} bg-primary-soft text-primary-strong border-primary-muted`;
           }
           if (s === "발송" || s === "포장.발송") {
@@ -540,7 +540,7 @@ export const WorksheetCardGrid = ({
         })();
         const stageBadgeLabel = (() => {
           const s = String(stageForRollback || "").trim();
-          if (s === "세척.포장" || s === "세척.패킹") return "세척·패킹";
+          if (s === "세척.패킹") return "세척·패킹";
           if (s === "발송" || s === "포장.발송") return "포장·발송";
           return s || "준비";
         })();

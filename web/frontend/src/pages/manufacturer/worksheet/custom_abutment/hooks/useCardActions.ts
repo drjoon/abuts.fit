@@ -130,7 +130,7 @@ export const useCardActions = (
           navigate: false,
         });
       }
-      if (stage === "세척.포장" || stage === "세척.패킹") {
+      if (stage === "세척.패킹") {
         return handleDeleteStageFile({
           req,
           stage: "packing",

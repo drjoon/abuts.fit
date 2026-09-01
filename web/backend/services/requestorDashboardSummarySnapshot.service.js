@@ -180,7 +180,7 @@ const recomputeSingleRequestorDashboardSummarySnapshot = async ({
                       },
                       {
                         case: {
-                          $in: ["$$stage", ["packing", "세척.패킹"]],
+                          $eq: ["$$stage", "세척.패킹"],
                         },
                         then: "packing",
                       },

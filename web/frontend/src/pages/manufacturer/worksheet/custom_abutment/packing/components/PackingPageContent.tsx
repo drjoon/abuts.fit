@@ -331,7 +331,7 @@ export const PackingPageContent = ({
         });
         return;
       }
-      if (stage === "세척.포장" || stage === "세척.패킹") {
+      if (stage === "세척.패킹") {
         void handleDeleteStageFile({
           req,
           stage: "packing",

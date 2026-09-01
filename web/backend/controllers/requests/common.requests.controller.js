@@ -572,11 +572,9 @@ async function ensureRequestCancelRollbackDelete({
     currentStage === "포장.발송" ||
     currentStage === "추적관리" ||
     currentStage === "생산" ||
-    currentStage === "세척.포장" ||
     currentStage === "발송" ||
     currentStageLower === "machining" ||
     currentStageLower === "production" ||
-    currentStageLower === "packing" ||
     currentStageLower === "shipping" ||
     currentStageLower === "tracking";
 
@@ -2617,11 +2615,9 @@ export const updateRndUnmachinableStatus = asyncHandler(async (req, res) => {
         currentStage === "포장.발송" ||
         currentStage === "추적관리" ||
         currentStage === "생산" ||
-        currentStage === "세척.포장" ||
         currentStage === "발송" ||
         currentStageLower === "machining" ||
         currentStageLower === "production" ||
-        currentStageLower === "packing" ||
         currentStageLower === "shipping" ||
         currentStageLower === "tracking";
 
@@ -4449,7 +4445,7 @@ export async function cloneAsSample(req, res) {
       const di = request.deliveryInfoRef || {};
       const isDelivered = !!di.deliveredAt;
       const isTrackingStage = stage === "추적관리";
-      const isPackingStage = stage === "세척.패킹" || stage === "세척.포장";
+      const isPackingStage = stage === "세척.패킹";
       const isRequestStage = stage === "준비";
       const isCamStage = stage === "CAM" || stage.toLowerCase() === "cam";
 

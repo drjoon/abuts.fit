@@ -110,14 +110,12 @@ export const usePackingWorksheetData = ({
         const stageFilterForTab = showCompleted
           ? [
               "세척.패킹",
-              "세척.포장",
-              "packing",
               "포장.발송",
               "shipping",
               "추적관리",
               "tracking",
             ]
-          : ["세척.패킹", "세척.포장", "packing"];
+          : ["세척.패킹"];
         const url = new URL(basePath, window.location.origin);
         if (userRole === "manufacturer" || userRole === "admin") {
           url.searchParams.set("page", String(pageRef.current));
@@ -249,14 +247,12 @@ export const usePackingWorksheetData = ({
         const stageFilterForTab = showCompleted
           ? [
               "세척.패킹",
-              "세척.포장",
-              "packing",
               "포장.발송",
               "shipping",
               "추적관리",
               "tracking",
             ]
-          : ["세척.패킹", "세척.포장", "packing"];
+          : ["세척.패킹"];
 
         // 중요: 현재 로컬 목록(requestsRef.current)을 시드로 쓰면
         // 방금 롤백/이동으로 제거된 카드가 레이스로 다시 합쳐질 수 있다.
