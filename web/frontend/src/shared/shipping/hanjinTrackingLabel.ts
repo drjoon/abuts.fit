@@ -6,6 +6,7 @@
 // change-log:
 // - 2026-08-29: 기공의뢰 CA — 제목「어벗 진행상황」, 제조 공정(준비·가공·세척·패킹 등) 그대로 표시(생산 중 합침 제거).
 // - 2026-08-21: 한진 운송중 뱃지 라벨(예: 여수 SUB 도착) SSOT. 기공의뢰 CA 배송 단계 문구 포함.
+// - 2026-09-01: 캘린더 칩용 getPracticeAbutmentDeliveryChipLabel 제거 — 칩은 기공소/환자·치식만.
 
 import type { DeliveryInfoSummary } from "@/types/request";
 
@@ -212,14 +213,4 @@ export const practiceAbutmentProgressBadgeClassName = (
   if (tone === "done") return `${base} bg-emerald-100 text-emerald-800`;
   if (tone === "pending") return `${base} bg-slate-100 text-slate-700`;
   return `${base} bg-amber-100 text-amber-800`;
-};
-
-/** 캘린더 칩 등 — 실제 운송/배송완료만 (생산 전·준비 문구는 제외) */
-export const getPracticeAbutmentDeliveryChipLabel = (input: {
-  hasCustomAbutment?: boolean;
-  abutmentDeliveryInfo?: PracticeAbutmentDeliveryInfo | null;
-}): string | null => {
-  if (!input.hasCustomAbutment) return null;
-  const di = input.abutmentDeliveryInfo || null;
-  return getHanjinDeliveryStatusLabel(di);
 };

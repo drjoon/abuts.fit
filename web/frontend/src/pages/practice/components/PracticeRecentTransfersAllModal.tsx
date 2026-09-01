@@ -18,7 +18,7 @@
  * 2026-08-20: 캘린더 칩에 채팅 안읽음 배지.
  * 2026-08-20: 날짜 뱃지 기본=치과도착일. 계정 preferences에 저장.
  * 2026-08-20: 모바일은 달력 대신 기공소·환자명·상태 카드 목록.
- * 2026-08-21: 커스텀어벗 한진 배송현황을 캘린더 칩·모바일 카드에 표시.
+ * 2026-08-21: 커스텀어벗 한진 배송현황을 캘린더 칩·모바일 카드에 표시.(칩 표시는 2026-09-01 제거)
  * 2026-08-21: 휴지통 취소·거부를 목록·취소 뱃지에 포함. 상단 뱃지별 unread.
  * 2026-08-21: 상단 상태 뱃지 다중 표시 on/off(표시 라벨·기본 리셋·ON/OFF 대비).
  * 2026-08-22: 숨길 요일을 계정 preferences에 저장.
@@ -27,6 +27,7 @@
  * 2026-08-25: 캘린더 칩에서 휴지통(취소·거부) 제외 — 삭제 즉시 달력에서 사라짐.
  * 2026-08-25: 휴지통 건은 상단 뱃지 카운트·목록에서도 제외(취소=작업취소만, 휴지통 서랍과 정합).
  * 2026-08-25: 캘린더 칩에서 「생산 전」등 생산단계 문구 제거(운송·배송완료만).
+ * 2026-09-01: 캘린더 칩에서 어벗 배송상태(배송완료 등)도 제거 — 기공소/환자·치식만.
  * 2026-08-27: 검색어 localStorage 유지 — 의뢰상세 후 전체보기 복귀 시 직전 검색 복원.
  * 2026-08-28: 의뢰상세 플로팅과 동시 오픈 — modal 해제·outside 무시로 독립 입력.
  * 2026-08-28: 항상 non-modal·outside 무시·애니메이션 제거 — 상세 열고 닫을 때 플리커 방지.
@@ -50,7 +51,6 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   PRACTICE_ABUTMENT_PROGRESS_FIELD_LABEL,
-  getPracticeAbutmentDeliveryChipLabel,
   getPracticeAbutmentDeliveryLabel,
   practiceAbutmentProgressBadgeClassName,
 } from "@/shared/shipping/hanjinTrackingLabel";
@@ -475,10 +475,6 @@ export function PracticeRecentTransfersAllModal({
       const teeth = resolvePracticeTransferListToothNumbers(transfer);
       const patientLine =
         formatPracticeTransferListPatientWithTeeth(patient, teeth) || "—";
-      const deliveryLabel = getPracticeAbutmentDeliveryChipLabel({
-        hasCustomAbutment: Boolean(transfer.hasCustomAbutment),
-        abutmentDeliveryInfo: transfer.abutmentDeliveryInfo || null,
-      });
       const linkedArrivalDates =
         Array.isArray(transfer.arrivalDates) && transfer.arrivalDates.length > 0
           ? transfer.arrivalDates
@@ -501,7 +497,7 @@ export function PracticeRecentTransfersAllModal({
         statusTone: resolvePracticeCalendarStatusTone(transfer.status),
         isRemake: Boolean(transfer.isRemake),
         sortLabel: lab,
-        line: [lab, patientLine, deliveryLabel].filter(Boolean).join(" / "),
+        line: [lab, patientLine].filter(Boolean).join(" / "),
         unreadCount: Math.max(0, Number(transfer.unreadCount || 0)),
         canDelete: canDeletePracticeTransferByStatus(transfer.status),
       };

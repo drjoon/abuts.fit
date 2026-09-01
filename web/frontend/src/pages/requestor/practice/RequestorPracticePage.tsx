@@ -267,7 +267,6 @@ import {
 } from "@/shared/practice/labReceiveCalendarYmdRange";
 import {
   PRACTICE_ABUTMENT_PROGRESS_FIELD_LABEL,
-  getPracticeAbutmentDeliveryChipLabel,
   getPracticeAbutmentDeliveryLabel,
   practiceAbutmentProgressBadgeClassName,
   practiceAbutmentProgressValueClassName,
@@ -1874,10 +1873,6 @@ export function RequestorPracticeReceivePage({
         surchargeMultiplier > 1
           ? formatLabFeeMultiplierLabel(surchargeMultiplier)
           : "";
-      const deliveryLabel = getPracticeAbutmentDeliveryChipLabel({
-        hasCustomAbutment: Boolean(transfer.hasCustomAbutment),
-        abutmentDeliveryInfo: transfer.abutmentDeliveryInfo || null,
-      });
       const transferId = String(transfer.transferId || transfer._id || "").trim();
       const linkedArrivalDates =
         Array.isArray(transfer.arrivalDates) && transfer.arrivalDates.length > 0
@@ -1905,9 +1900,7 @@ export function RequestorPracticeReceivePage({
         ),
         isRemake: Boolean(transfer.isRemake),
         sortLabel: clinic,
-        line: [clinic, patientLine, surchargeLabel, deliveryLabel]
-          .filter(Boolean)
-          .join(" / "),
+        line: [clinic, patientLine, surchargeLabel].filter(Boolean).join(" / "),
         unreadCount: transferUnreadBadgeCount(transfer),
       };
     });
