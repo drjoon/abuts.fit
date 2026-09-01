@@ -388,8 +388,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             // 유지홈 옵션 ("none"|"deep", legacy "shallow" 허용) —
             // 5axisComposite_A.prc StepIncrement 오버라이드에 사용.
             [DataMember] public string retentionGroove { get; set; }
-            // Splitline_2>5mm Front/Middle 분할. 기본 true.
-            [DataMember] public bool wideSplitEnabled { get; set; } = true;
+            // Splitline_2>5mm Front/Middle 분할. 미수신(null) 시 기본 ON.
+            [DataMember(EmitDefaultValue = false)] public bool? wideSplitEnabled { get; set; }
 
             // Composite 경사축 벡터(백엔드 필드명 변형 대응)
             // 우선순위는 StlFileProcessor.TryApplyCompositeOrientationVectorEnv 참고.

@@ -279,9 +279,10 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         _backendRetentionGroove = RequireBackendRetentionGrooveOrThrow(
                             requestMeta.retentionGroove,
                             requestId);
+                        bool wideSplitEnabled = ResolveWideSplitEnabledFromRequestMeta(requestMeta);
                         Environment.SetEnvironmentVariable(
                             "ABUTS_WIDE_SPLIT_ENABLE",
-                            requestMeta.wideSplitEnabled ? "1" : "0");
+                            wideSplitEnabled ? "1" : "0");
                         // hex mode는 payload SSOT — request-meta에서 덮어쓰지 않는다.
                         // Rhino telemetry(appliedDeg)는 payload에 없을 때만 request-meta에서 보조 로드한다.
                         if (!_backendHexRotationAppliedDeg.HasValue)
@@ -300,7 +301,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                                 "ABUTS_MAX_DIAMETER",
                                 requestMeta.maxDiameter.ToString("0.###", CultureInfo.InvariantCulture));
                         }
-                        AppLogger.Log($"StlFileProcessor: request-meta loaded requestId={requestId}, Clinic={requestMeta.clinicName}, Patient={requestMeta.patientName}, Tooth={requestMeta.tooth}, Implant={requestMeta.implantManufacturer}/{requestMeta.implantBrand}/{requestMeta.implantType}, MaxDia={requestMeta.maxDiameter}, ConnDia={requestMeta.connectionDiameter}, CamDia={requestMeta.camDiameter}, WorkType={requestMeta.workType}, Lot={requestMeta.lotNumber}, SerialCode={(_backendSerialCode ?? "")}, RetentionGroove={(_backendRetentionGroove ?? "<null>")}, WideSplit={(requestMeta.wideSplitEnabled ? "1" : "0")}, ManufacturerHexRotation(mode)={(_backendManufacturerHexRotation ?? "<null>")}, HexAppliedDeg={(_backendHexRotationAppliedDeg.HasValue ? _backendHexRotationAppliedDeg.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}");
+                        AppLogger.Log($"StlFileProcessor: request-meta loaded requestId={requestId}, Clinic={requestMeta.clinicName}, Patient={requestMeta.patientName}, Tooth={requestMeta.tooth}, Implant={requestMeta.implantManufacturer}/{requestMeta.implantBrand}/{requestMeta.implantType}, MaxDia={requestMeta.maxDiameter}, ConnDia={requestMeta.connectionDiameter}, CamDia={requestMeta.camDiameter}, WorkType={requestMeta.workType}, Lot={requestMeta.lotNumber}, SerialCode={(_backendSerialCode ?? "")}, RetentionGroove={(_backendRetentionGroove ?? "<null>")}, WideSplit={(wideSplitEnabled ? "1" : "0")}(raw={(requestMeta.wideSplitEnabled.HasValue ? requestMeta.wideSplitEnabled.Value.ToString() : "null")}), ManufacturerHexRotation(mode)={(_backendManufacturerHexRotation ?? "<null>")}, HexAppliedDeg={(_backendHexRotationAppliedDeg.HasValue ? _backendHexRotationAppliedDeg.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}");
                         AppLogger.Log($"StlFileProcessor: finishLine topZ={(finishLineTopZ.HasValue ? finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}, minZ={(finishLineMinZ.HasValue ? finishLineMinZ.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}, espritR={(finishLineEspritR.HasValue ? finishLineEspritR.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}, TwoPhase={twoPhase}");
                         if (!_prcManager.ApplyBackendPrcNames((BackendApiClient.RequestMetaCaseInfos)requestMeta, requestId, _backendImplantLabel))
                         {
@@ -1919,6 +1920,12 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         // Finish_Back(B) StepIncrement는 PRC 기본(0.08) 유지.
         private const string RetentionGrooveMissingMessage =
             "유지홈(retentionGroove)이 백엔드에서 전달되지 않았습니다. none 또는 deep이 필요합니다.";
+
+        private static bool ResolveWideSplitEnabledFromRequestMeta(BackendApiClient.RequestMetaCaseInfos meta)
+        {
+            // DataContractJsonSerializer는 누락 bool을 false로 채우므로 nullable로 받고 미수신=null→ON.
+            return meta?.wideSplitEnabled ?? true;
+        }
 
         private static string RequireBackendRetentionGrooveOrThrow(string raw, string requestId)
         {

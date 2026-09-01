@@ -88,7 +88,7 @@
     - `Splitline_2 <= 5mm`: `Splitline_2 + 2.5mm` (Back 방향 X+)
     - `Splitline_2 > 5mm`: `Front_Face` end + 2.5mm
     - 구현: `MainModuleOperations.TryPrepareTurningRegionRange` (`FRONT` → `rangeMaxX`)
-  - **`Splitline_2 > 5mm` wide split** (`ABUTS_WIDE_SPLIT_ENABLE`, request-meta `caseInfos.wideSplitEnabled`, 기본 ON)
+  - **`Splitline_2 > 5mm` wide split** (`ABUTS_WIDE_SPLIT_ENABLE`, request-meta `caseInfos.wideSplitEnabled`, 미수신/null→기본 ON)
     - `Front_Rough` 끝 = `Front_Face` end
     - `Middle_Turn`: `Front_Face` end ~ `Splitline_2 + 2.5mm`
     - `Middle_Rough`: `Front_Face` end ~ `Splitline_2` (인접 겹침: 시작 = Face end − roughRadius)
