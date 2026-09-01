@@ -10,6 +10,7 @@ import { Types } from "mongoose";
 import Chat from "../models/chat.model.js";
 import ChatRoom from "../models/chatRoom.model.js";
 import { emitAppEventToUser, emitToUser } from "../socket.js";
+import { resolveChatEventRecipientUserIds } from "../utils/chatRealtimeRecipients.js";
 
 const CHAT_MESSAGE_LIST_SELECT = {
   _id: 1,
@@ -162,9 +163,13 @@ export async function postPracticeTransferSystemChatMessage({
     const participantIds = Array.isArray(room.participants)
       ? room.participants.map((id) => String(id || "").trim()).filter(Boolean)
       : [];
+    const recipientIds = await resolveChatEventRecipientUserIds({
+      participantIds,
+      relatedPracticeTransferId: room.relatedPracticeTransferId,
+    });
 
     emitChatMessageCreated({
-      participantIds,
+      participantIds: recipientIds,
       senderId,
       roomId,
       message: populatedMessage,

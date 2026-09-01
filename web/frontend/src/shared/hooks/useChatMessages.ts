@@ -378,6 +378,7 @@ export const useChatMessages = (options: UseChatMessagesOptions = {}) => {
     enabled: Boolean(roomId),
     eventTypes: ["chat:message-created", "chat:reaction-updated"],
     deferWhenEditing: false,
+    requireVisible: false,
     onMatch: (evt) => {
       const type = String(evt?.type || "").trim();
       const payload =

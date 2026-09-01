@@ -327,6 +327,7 @@ export const useChatRooms = () => {
     ],
     // 채팅은 입력 중에도 즉시 unread/lastMessage를 반영해도 폼 상태를 깨지 않으므로 defer를 비활성화한다.
     deferWhenEditing: false,
+    requireVisible: false,
     onMatch: (evt) => {
       const type = String(evt?.type || "").trim();
       const payload =

@@ -36,6 +36,7 @@ import {
   shouldListPracticeTransferChatRoomForUser,
 } from "../../utils/practiceTransferChatAccess.js";
 import { isPracticeTransferDeletedStatus } from "../../utils/practiceTransferStage.js";
+import { resolveChatEventRecipientUserIds } from "../../utils/chatRealtimeRecipients.js";
 import { emitAppEventToUser, emitToUser } from "../../socket.js";
 
 const __chatPerfCache = new Map();
@@ -1665,15 +1666,19 @@ export async function getChatMessages(req, res) {
         const participantIds = Array.isArray(room.participants)
           ? room.participants.map((p) => String(p || "").trim()).filter(Boolean)
           : [];
+        const recipientIds = await resolveChatEventRecipientUserIds({
+          participantIds,
+          relatedPracticeTransferId: room.relatedPracticeTransferId,
+        });
 
-        invalidateChatPerfForUsers(participantIds);
+        invalidateChatPerfForUsers(recipientIds);
 
         const modifiedCount = Number(
           updated?.modifiedCount ?? updated?.nModified ?? 0,
         );
         if (modifiedCount > 0) {
           emitChatRoomRead({
-            participantIds,
+            participantIds: recipientIds,
             roomId,
             readerUserId: userId,
             readAt: readAt.toISOString(),
@@ -1833,12 +1838,16 @@ export async function sendChatMessage(req, res) {
     const participantIds = Array.isArray(room.participants)
       ? room.participants.map((id) => String(id || "").trim()).filter(Boolean)
       : [];
+    const recipientIds = await resolveChatEventRecipientUserIds({
+      participantIds,
+      relatedPracticeTransferId: room.relatedPracticeTransferId,
+    });
 
-    invalidateChatPerfForUsers(participantIds);
+    invalidateChatPerfForUsers(recipientIds);
     invalidateChatPerfCacheByPrefix(`room-messages:${String(roomId)}:`);
 
     emitChatMessageCreated({
-      participantIds,
+      participantIds: recipientIds,
       senderId: userId,
       roomId,
       message: populatedMessage,
@@ -1953,11 +1962,16 @@ export async function toggleChatMessageReaction(req, res) {
         : participantIds;
     }
 
-    invalidateChatPerfForUsers(participantIds);
+    const recipientIds = await resolveChatEventRecipientUserIds({
+      participantIds,
+      relatedPracticeTransferId: room.relatedPracticeTransferId,
+    });
+
+    invalidateChatPerfForUsers(recipientIds);
     invalidateChatPerfCacheByPrefix(`room-messages:${String(roomId)}:`);
 
     emitChatReactionUpdated({
-      participantIds,
+      participantIds: recipientIds,
       roomId,
       messageId,
       reactions,
