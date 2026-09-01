@@ -262,6 +262,9 @@ import {
   isPracticeTransferTrashStatus,
   mapMyPracticeTransferApiRows,
   mergeOpenPracticeTransferFromRequestRows,
+  patchPracticeRecentRequestProsthesisFollowUp,
+  prosthesisFollowUpPatchFromRealtimePayload,
+  type ProsthesisFollowUpRecentRequestPatch,
   collectPracticeRequestFiles,
   type PracticeRecentRequestItem,
   type PracticeRecentTransferFileItem,
@@ -4117,6 +4120,18 @@ export const PracticeFileTransferPage = ({
     }
   }, [authToken, loadRecentRequests, selectedTransfer, toast]);
 
+  const applyProsthesisFollowUpToRecentRequests = useCallback(
+    (patch: ProsthesisFollowUpRecentRequestPatch) => {
+      const transferId = String(patch.transferId || "").trim();
+      if (!transferId) return;
+      setRecentRequests((prev) =>
+        prev.map((row) => patchPracticeRecentRequestProsthesisFollowUp(row, patch)),
+      );
+      setCalendarRefreshNonce((n) => n + 1);
+    },
+    [],
+  );
+
   const handleAppendProsthesis = useCallback(
     async (payload: {
       arrivalYmd: string;
@@ -4206,7 +4221,24 @@ export const PracticeFileTransferPage = ({
               : prev.feeQuote,
           };
         });
-        void loadRecentRequests({ silent: true });
+        applyProsthesisFollowUpToRecentRequests({
+          transferId,
+          toothWorks: Array.isArray(data.toothWorks)
+            ? (data.toothWorks as PracticeRecentRequestItem["toothWorks"])
+            : undefined,
+          prosthesisFollowUps: Array.isArray(data.prosthesisFollowUps)
+            ? data.prosthesisFollowUps
+            : undefined,
+          arrivalDate: String(data.arrivalDate || "").trim() || undefined,
+          arrivalDates: Array.isArray(data.arrivalDates)
+            ? data.arrivalDates.map((d) => String(d || "").trim()).filter(Boolean)
+            : undefined,
+          orderDate: String(data.orderDate || "").trim() || undefined,
+          orderDates: Array.isArray(data.orderDates)
+            ? data.orderDates.map((d) => String(d || "").trim()).filter(Boolean)
+            : undefined,
+          billingDelta: data.billingDelta,
+        });
       } catch (error) {
         toast({
           title: "최종 보철 제작 실패",
@@ -4217,7 +4249,7 @@ export const PracticeFileTransferPage = ({
         setAppendProsthesisBusy(false);
       }
     },
-    [authToken, loadRecentRequests, selectedTransfer, toast],
+    [authToken, applyProsthesisFollowUpToRecentRequests, selectedTransfer, toast],
   );
 
   const handleCancelProsthesisFollowUp = useCallback(async () => {
@@ -4285,7 +4317,24 @@ export const PracticeFileTransferPage = ({
             : prev.feeQuote,
         };
       });
-      void loadRecentRequests({ silent: true });
+      applyProsthesisFollowUpToRecentRequests({
+        transferId,
+        toothWorks: Array.isArray(data.toothWorks)
+          ? (data.toothWorks as PracticeRecentRequestItem["toothWorks"])
+          : undefined,
+        prosthesisFollowUps: Array.isArray(data.prosthesisFollowUps)
+          ? data.prosthesisFollowUps
+          : undefined,
+        arrivalDate: String(data.arrivalDate || "").trim() || undefined,
+        arrivalDates: Array.isArray(data.arrivalDates)
+          ? data.arrivalDates.map((d) => String(d || "").trim()).filter(Boolean)
+          : undefined,
+        orderDate: String(data.orderDate || "").trim() || undefined,
+        orderDates: Array.isArray(data.orderDates)
+          ? data.orderDates.map((d) => String(d || "").trim()).filter(Boolean)
+          : undefined,
+        billing: data.billing,
+      });
     } catch (error) {
       toast({
         title: "제작 취소 실패",
@@ -4295,7 +4344,7 @@ export const PracticeFileTransferPage = ({
     } finally {
       setCancelProsthesisFollowUpBusy(false);
     }
-  }, [authToken, loadRecentRequests, selectedTransfer, toast]);
+  }, [authToken, applyProsthesisFollowUpToRecentRequests, selectedTransfer, toast]);
 
   const handleUpdateProsthesisFollowUp = useCallback(
     async (payload: { arrivalYmd: string }) => {
@@ -4355,7 +4404,20 @@ export const PracticeFileTransferPage = ({
               : prev.orderDates,
           };
         });
-        void loadRecentRequests({ silent: true });
+        applyProsthesisFollowUpToRecentRequests({
+          transferId,
+          prosthesisFollowUps: Array.isArray(data.prosthesisFollowUps)
+            ? data.prosthesisFollowUps
+            : undefined,
+          arrivalDate: String(data.arrivalDate || "").trim() || undefined,
+          arrivalDates: Array.isArray(data.arrivalDates)
+            ? data.arrivalDates.map((d) => String(d || "").trim()).filter(Boolean)
+            : undefined,
+          orderDate: String(data.orderDate || "").trim() || undefined,
+          orderDates: Array.isArray(data.orderDates)
+            ? data.orderDates.map((d) => String(d || "").trim()).filter(Boolean)
+            : undefined,
+        });
       } catch (error) {
         toast({
           title: "제작 변경 실패",
@@ -4366,7 +4428,7 @@ export const PracticeFileTransferPage = ({
         setUpdateProsthesisFollowUpBusy(false);
       }
     },
-    [authToken, loadRecentRequests, selectedTransfer, toast],
+    [authToken, applyProsthesisFollowUpToRecentRequests, selectedTransfer, toast],
   );
 
   const handleFollowUpDialogConfirm = useCallback(
@@ -6372,6 +6434,39 @@ export const PracticeFileTransferPage = ({
           void loadPracticeTransferDraft({
             draftId: eventDraftId || activeId,
             forceResync: true,
+          });
+        }
+        return;
+      }
+
+      const prosthesisPatch = prosthesisFollowUpPatchFromRealtimePayload(payload);
+      if (prosthesisPatch) {
+        applyProsthesisFollowUpToRecentRequests(prosthesisPatch);
+        const eventTransferId = String(prosthesisPatch.transferId || "").trim();
+        if (
+          transferDialogOpenRef.current &&
+          eventTransferId &&
+          eventTransferId === selectedTransferIdRef.current
+        ) {
+          setSelectedTransfer((prev) => {
+            if (!prev || String(prev.transferId || "").trim() !== eventTransferId) {
+              return prev;
+            }
+            const patched = patchPracticeRecentRequestProsthesisFollowUp(
+              prev as PracticeRecentRequestItem,
+              prosthesisPatch,
+            );
+            return {
+              ...prev,
+              toothWorks: patched.toothWorks ?? prev.toothWorks,
+              prosthesisFollowUps:
+                patched.prosthesisFollowUps ?? prev.prosthesisFollowUps,
+              arrivalDate: patched.arrivalDate || prev.arrivalDate,
+              arrivalDates: patched.arrivalDates ?? prev.arrivalDates,
+              orderDate: patched.orderDate || prev.orderDate,
+              orderDates: patched.orderDates ?? prev.orderDates,
+              feeQuote: patched.feeQuote ?? prev.feeQuote,
+            };
           });
         }
         return;

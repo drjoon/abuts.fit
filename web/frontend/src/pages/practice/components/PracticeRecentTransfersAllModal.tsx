@@ -84,6 +84,8 @@ import {
   isPracticeRecentStatusFilterDefault,
   isPracticeTransferTrashStatus,
   mapMyPracticeTransferApiRows,
+  patchPracticeRecentRequestProsthesisFollowUp,
+  prosthesisFollowUpPatchFromRealtimePayload,
   togglePracticeRecentStatusFilter,
   toStatusBadgeLabel,
 } from "@/shared/practice/practiceRecentTransferList";
@@ -421,7 +423,20 @@ export function PracticeRecentTransfersAllModal({
   useAppEventDebouncedReload({
     enabled: open && Boolean(token),
     eventTypes: ["practice:transfer-created", "practice:transfer-updated"],
-    onMatch: () => {
+    onMatch: (evt) => {
+      const payload =
+        evt?.data && typeof evt.data === "object"
+          ? (evt.data as Record<string, unknown>)
+          : {};
+      const prosthesisPatch = prosthesisFollowUpPatchFromRealtimePayload(payload);
+      if (prosthesisPatch) {
+        setCalendarRequests((prev) =>
+          prev.map((row) =>
+            patchPracticeRecentRequestProsthesisFollowUp(row, prosthesisPatch),
+          ),
+        );
+        return;
+      }
       void fetchCalendarTransfers();
     },
     delayMs: 140,

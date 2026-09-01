@@ -1808,6 +1808,81 @@ const emitPracticeTransferEventToPracticeUsers = async ({
   }
 };
 
+/** 후속 보철 append/cancel/update — 채팅·크레딧·소켓은 응답 후 fire-and-forget */
+const runProsthesisFollowUpSideEffectsInBackground = ({
+  practiceBusinessAnchorId,
+  practiceUserId = null,
+  targetLabAnchorIdText = "",
+  transferMongoId = "",
+  chat = null,
+  realtimePayload = null,
+  emitCreditBalance = false,
+  fetchUnreadCount = false,
+}) => {
+  void (async () => {
+    if (emitCreditBalance && practiceBusinessAnchorId) {
+      try {
+        await emitCreditBalanceUpdatedToBusiness(practiceBusinessAnchorId);
+      } catch {
+        // best-effort
+      }
+    }
+
+    if (chat?.content && transferMongoId) {
+      try {
+        await postPracticeTransferSystemChatMessage({
+          transferMongoId: String(transferMongoId),
+          senderUserId: chat.senderUserId || null,
+          content: chat.content,
+          systemEvent: chat.systemEvent || null,
+          systemPayload: chat.systemPayload || null,
+        });
+      } catch {
+        // best-effort
+      }
+    }
+
+    if (!realtimePayload || typeof realtimePayload !== "object") return;
+
+    const labId = String(targetLabAnchorIdText || "").trim();
+    if (labId) invalidateUnreadCountCache(labId);
+
+    let payload = { ...realtimePayload };
+    if (fetchUnreadCount && labId) {
+      try {
+        payload = {
+          ...payload,
+          unreadCount: await PracticeTransfer.countDocuments({
+            targetLabAnchorId: new Types.ObjectId(labId),
+            status: { $nin: ["deleted", "canceled"] },
+            requestorReadAt: null,
+          }),
+        };
+      } catch {
+        // best-effort
+      }
+    }
+
+    try {
+      await emitPracticeTransferEventToPracticeUsers({
+        practiceBusinessAnchorId,
+        type: "practice:transfer-updated",
+        payload,
+        extraUserIds: practiceUserId ? [practiceUserId] : [],
+      });
+      if (labId) {
+        await emitPracticeTransferEventToRequestorUsers({
+          targetLabAnchorId: labId,
+          type: "practice:transfer-updated",
+          payload,
+        });
+      }
+    } catch {
+      // best-effort
+    }
+  })();
+};
+
 /**
  * 디자인 컨펌 게이트 충족 후 CA 가공 진입. 응답을 막지 않도록 fire-and-forget.
  */
@@ -1927,6 +2002,7 @@ export async function listPracticeTransferDrafts(req, res) {
     const trashedOnly = trashedRaw === "1" || trashedRaw === "true";
 
     const { scope } = await buildPracticeOwnedScope(req);
+
     const docs = await PracticeTransferDraft.find({
       ...scope,
       ...(includeBoth
@@ -4062,11 +4138,7 @@ export async function appendPracticeTransferProsthesis(req, res) {
       });
     }
 
-    const deliveryMap = await mapAbutmentDeliveryByTransferDocs([doc]);
-    const abutmentDeliveryInfo =
-      deliveryMap.get(String(doc._id || "")) || null;
-
-    const gate = canAppendProsthesisFollowUp(doc, { abutmentDeliveryInfo });
+    const gate = canAppendProsthesisFollowUp(doc);
     if (!gate.ok) {
       return res.status(409).json({
         success: false,
@@ -4268,15 +4340,16 @@ export async function appendPracticeTransferProsthesis(req, res) {
       });
     }
 
-    try {
-      await emitCreditBalanceUpdatedToBusiness(practiceAnchorId);
-    } catch {
-      // best-effort
-    }
+    const targetLabAnchorIdText = String(updated.targetLabAnchorId || "").trim();
 
-    try {
-      await postPracticeTransferSystemChatMessage({
-        transferMongoId: String(updated._id),
+    runProsthesisFollowUpSideEffectsInBackground({
+      practiceBusinessAnchorId: req.user?.businessAnchorId,
+      practiceUserId: req.user?._id,
+      targetLabAnchorIdText,
+      transferMongoId: String(updated._id),
+      emitCreditBalance: true,
+      fetchUnreadCount: Boolean(targetLabAnchorIdText),
+      chat: {
         senderUserId: req.user?._id,
         content: `후속 보철 추가\n치과도착일 ${rawYmd}`,
         systemEvent: "practice_transfer_prosthesis_follow_up",
@@ -4293,57 +4366,24 @@ export async function appendPracticeTransferProsthesis(req, res) {
             prosthesisPhase: "followUp",
           })),
         },
-      });
-    } catch {
-      // 채팅 실패는 반영을 막지 않음
-    }
-
-    const targetLabAnchorIdText = String(updated.targetLabAnchorId || "").trim();
-    if (targetLabAnchorIdText) {
-      invalidateUnreadCountCache(targetLabAnchorIdText);
-    }
-    const unreadCountForRequestor = targetLabAnchorIdText
-      ? await PracticeTransfer.countDocuments({
-          targetLabAnchorId: new Types.ObjectId(targetLabAnchorIdText),
-          status: { $nin: ["deleted", "canceled"] },
-          requestorReadAt: null,
-        })
-      : 0;
-
-    const realtimePayload = {
-      source: "appendPracticeTransferProsthesis",
-      action: "prosthesis-follow-up",
-      transferId: String(updated.transferId || "").trim(),
-      transferMongoId: String(updated._id || ""),
-      targetLabAnchorId: targetLabAnchorIdText || null,
-      practiceUserId: String(req.user?._id || ""),
-      toothWorks: mergedToothWorks,
-      prosthesisFollowUps: updated.prosthesisFollowUps || [],
-      arrivalDates: appended.arrivalDates,
-      arrivalDate: appended.nextYmd,
-      orderDates: appended.orderDates,
-      orderDate: appended.nextOrderYmd,
-      billing: nextBilling,
-      requestorReadAt: null,
-      unreadCount: unreadCountForRequestor,
-    };
-    try {
-      await emitPracticeTransferEventToPracticeUsers({
-        practiceBusinessAnchorId: req.user?.businessAnchorId,
-        type: "practice:transfer-updated",
-        payload: realtimePayload,
-        extraUserIds: [req.user?._id],
-      });
-      if (targetLabAnchorIdText) {
-        await emitPracticeTransferEventToRequestorUsers({
-          targetLabAnchorId: targetLabAnchorIdText,
-          type: "practice:transfer-updated",
-          payload: realtimePayload,
-        });
-      }
-    } catch {
-      // realtime best-effort
-    }
+      },
+      realtimePayload: {
+        source: "appendPracticeTransferProsthesis",
+        action: "prosthesis-follow-up",
+        transferId: String(updated.transferId || "").trim(),
+        transferMongoId: String(updated._id || ""),
+        targetLabAnchorId: targetLabAnchorIdText || null,
+        practiceUserId: String(req.user?._id || ""),
+        toothWorks: mergedToothWorks,
+        prosthesisFollowUps: updated.prosthesisFollowUps || [],
+        arrivalDates: appended.arrivalDates,
+        arrivalDate: appended.nextYmd,
+        orderDates: appended.orderDates,
+        orderDate: appended.nextOrderYmd,
+        billing: nextBilling,
+        requestorReadAt: null,
+      },
+    });
 
     return res.status(200).json({
       success: true,
@@ -4504,59 +4544,36 @@ export async function cancelPracticeTransferProsthesisFollowUp(req, res) {
       });
     }
 
-    try {
-      await emitCreditBalanceUpdatedToBusiness(doc.practiceBusinessAnchorId);
-    } catch {
-      // best-effort
-    }
+    const targetLabAnchorIdText = String(updated.targetLabAnchorId || "").trim();
 
-    try {
-      await postPracticeTransferSystemChatMessage({
-        transferMongoId: String(updated._id),
+    runProsthesisFollowUpSideEffectsInBackground({
+      practiceBusinessAnchorId: doc.practiceBusinessAnchorId,
+      practiceUserId: req.user?._id,
+      targetLabAnchorIdText,
+      transferMongoId: String(updated._id),
+      emitCreditBalance: true,
+      chat: {
         senderUserId: req.user?._id,
         content: "후속 최종 보철 제작 의뢰가 취소되었습니다.",
         systemEvent: "practice_transfer_prosthesis_follow_up_cancel",
-      });
-    } catch {
-      // best-effort
-    }
-
-    const targetLabAnchorIdText = String(updated.targetLabAnchorId || "").trim();
-    if (targetLabAnchorIdText) invalidateUnreadCountCache(targetLabAnchorIdText);
-
-    const realtimePayload = {
-      source: "cancelPracticeTransferProsthesisFollowUp",
-      action: "prosthesis-follow-up-cancel",
-      transferId: String(updated.transferId || "").trim(),
-      transferMongoId: String(updated._id || ""),
-      targetLabAnchorId: targetLabAnchorIdText || null,
-      practiceUserId: String(req.user?._id || ""),
-      toothWorks,
-      prosthesisFollowUps: updated.prosthesisFollowUps || [],
-      arrivalDates,
-      arrivalDate: resolveCurrentArrivalYmd(arrivalDates),
-      orderDates,
-      orderDate: resolveCurrentOrderYmd(orderDates),
-      billing: nextBilling,
-      requestorReadAt: null,
-    };
-    try {
-      await emitPracticeTransferEventToPracticeUsers({
-        practiceBusinessAnchorId: req.user?.businessAnchorId,
-        type: "practice:transfer-updated",
-        payload: realtimePayload,
-        extraUserIds: [req.user?._id],
-      });
-      if (targetLabAnchorIdText) {
-        await emitPracticeTransferEventToRequestorUsers({
-          targetLabAnchorId: targetLabAnchorIdText,
-          type: "practice:transfer-updated",
-          payload: realtimePayload,
-        });
-      }
-    } catch {
-      // best-effort
-    }
+      },
+      realtimePayload: {
+        source: "cancelPracticeTransferProsthesisFollowUp",
+        action: "prosthesis-follow-up-cancel",
+        transferId: String(updated.transferId || "").trim(),
+        transferMongoId: String(updated._id || ""),
+        targetLabAnchorId: targetLabAnchorIdText || null,
+        practiceUserId: String(req.user?._id || ""),
+        toothWorks,
+        prosthesisFollowUps: updated.prosthesisFollowUps || [],
+        arrivalDates,
+        arrivalDate: resolveCurrentArrivalYmd(arrivalDates),
+        orderDates,
+        orderDate: resolveCurrentOrderYmd(orderDates),
+        billing: nextBilling,
+        requestorReadAt: null,
+      },
+    });
 
     return res.status(200).json({
       success: true,
@@ -4697,50 +4714,32 @@ export async function updatePracticeTransferProsthesisFollowUp(req, res) {
     }
 
     const targetLabAnchorIdText = String(updated.targetLabAnchorId || "").trim();
-    if (targetLabAnchorIdText) invalidateUnreadCountCache(targetLabAnchorIdText);
 
-    try {
-      await postPracticeTransferSystemChatMessage({
-        transferMongoId: String(updated._id),
+    runProsthesisFollowUpSideEffectsInBackground({
+      practiceBusinessAnchorId: req.user?.businessAnchorId,
+      practiceUserId: req.user?._id,
+      targetLabAnchorIdText,
+      transferMongoId: String(updated._id),
+      chat: {
         senderUserId: req.user?._id,
         content: `후속 최종 보철 제작 치과도착일 변경: ${rawYmd}`,
         systemEvent: "practice_transfer_prosthesis_follow_up_update",
-      });
-    } catch {
-      // best-effort
-    }
-
-    const realtimePayload = {
-      source: "updatePracticeTransferProsthesisFollowUp",
-      action: "prosthesis-follow-up-update",
-      transferId: String(updated.transferId || "").trim(),
-      transferMongoId: String(updated._id || ""),
-      targetLabAnchorId: targetLabAnchorIdText || null,
-      practiceUserId: String(req.user?._id || ""),
-      prosthesisFollowUps: updated.prosthesisFollowUps || [],
-      arrivalDates: appended.arrivalDates,
-      arrivalDate: appended.nextYmd,
-      orderDates: appended.orderDates,
-      orderDate: resolveCurrentOrderYmd(appended.orderDates),
-      requestorReadAt: null,
-    };
-    try {
-      await emitPracticeTransferEventToPracticeUsers({
-        practiceBusinessAnchorId: req.user?.businessAnchorId,
-        type: "practice:transfer-updated",
-        payload: realtimePayload,
-        extraUserIds: [req.user?._id],
-      });
-      if (targetLabAnchorIdText) {
-        await emitPracticeTransferEventToRequestorUsers({
-          targetLabAnchorId: targetLabAnchorIdText,
-          type: "practice:transfer-updated",
-          payload: realtimePayload,
-        });
-      }
-    } catch {
-      // best-effort
-    }
+      },
+      realtimePayload: {
+        source: "updatePracticeTransferProsthesisFollowUp",
+        action: "prosthesis-follow-up-update",
+        transferId: String(updated.transferId || "").trim(),
+        transferMongoId: String(updated._id || ""),
+        targetLabAnchorId: targetLabAnchorIdText || null,
+        practiceUserId: String(req.user?._id || ""),
+        prosthesisFollowUps: updated.prosthesisFollowUps || [],
+        arrivalDates: appended.arrivalDates,
+        arrivalDate: appended.nextYmd,
+        orderDates: appended.orderDates,
+        orderDate: resolveCurrentOrderYmd(appended.orderDates),
+        requestorReadAt: null,
+      },
+    });
 
     return res.status(200).json({
       success: true,

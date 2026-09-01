@@ -825,6 +825,115 @@ export const mapMyPracticeTransferApiRows = (
     .filter((item) => Boolean(item.id))
     .sort((a, b) => (b.createdAtTs || 0) - (a.createdAtTs || 0));
 
+export type ProsthesisFollowUpRecentRequestPatch = {
+  transferId: string;
+  toothWorks?: PracticeRecentRequestItem["toothWorks"];
+  prosthesisFollowUps?: PracticeRecentRequestItem["prosthesisFollowUps"];
+  arrivalDate?: string;
+  arrivalDates?: string[];
+  orderDate?: string;
+  orderDates?: string[];
+  billing?: { total?: number; labFeeTotal?: number };
+  billingDelta?: { total?: number; labFeeTotal?: number };
+};
+
+export const isProsthesisFollowUpRealtimeAction = (action: unknown): boolean => {
+  const normalized = String(action || "").trim().toLowerCase();
+  return (
+    normalized === "prosthesis-follow-up" ||
+    normalized === "prosthesis-follow-up-cancel" ||
+    normalized === "prosthesis-follow-up-update"
+  );
+};
+
+export const prosthesisFollowUpPatchFromRealtimePayload = (
+  payload: Record<string, unknown>,
+): ProsthesisFollowUpRecentRequestPatch | null => {
+  const transferId = String(payload.transferId || "").trim();
+  if (!transferId || !isProsthesisFollowUpRealtimeAction(payload.action)) {
+    return null;
+  }
+  const billingRaw =
+    payload.billing && typeof payload.billing === "object"
+      ? (payload.billing as { total?: unknown; labFeeTotal?: unknown })
+      : null;
+  return {
+    transferId,
+    toothWorks: Array.isArray(payload.toothWorks)
+      ? (payload.toothWorks as PracticeRecentRequestItem["toothWorks"])
+      : undefined,
+    prosthesisFollowUps: Array.isArray(payload.prosthesisFollowUps)
+      ? (payload.prosthesisFollowUps as PracticeRecentRequestItem["prosthesisFollowUps"])
+      : undefined,
+    arrivalDate: payload.arrivalDate != null ? String(payload.arrivalDate).trim() : undefined,
+    arrivalDates: Array.isArray(payload.arrivalDates)
+      ? payload.arrivalDates.map((d) => String(d || "").trim()).filter(Boolean)
+      : undefined,
+    orderDate: payload.orderDate != null ? String(payload.orderDate).trim() : undefined,
+    orderDates: Array.isArray(payload.orderDates)
+      ? payload.orderDates.map((d) => String(d || "").trim()).filter(Boolean)
+      : undefined,
+    billing: billingRaw
+      ? {
+          total: Number(billingRaw.total || 0),
+          labFeeTotal: Number(billingRaw.labFeeTotal || 0),
+        }
+      : undefined,
+  };
+};
+
+export const patchPracticeRecentRequestProsthesisFollowUp = (
+  row: PracticeRecentRequestItem,
+  patch: ProsthesisFollowUpRecentRequestPatch,
+): PracticeRecentRequestItem => {
+  const transferId = String(patch.transferId || "").trim();
+  if (!transferId || String(row.transferId || "").trim() !== transferId) {
+    return row;
+  }
+
+  const next: PracticeRecentRequestItem = { ...row };
+  if (Array.isArray(patch.toothWorks)) next.toothWorks = patch.toothWorks;
+  if (Array.isArray(patch.prosthesisFollowUps)) {
+    next.prosthesisFollowUps = patch.prosthesisFollowUps;
+  }
+  if (Array.isArray(patch.arrivalDates) && patch.arrivalDates.length > 0) {
+    next.arrivalDates = [...patch.arrivalDates];
+    next.arrivalDate =
+      patch.arrivalDate ||
+      patch.arrivalDates[patch.arrivalDates.length - 1] ||
+      next.arrivalDate;
+  } else if (patch.arrivalDate) {
+    next.arrivalDate = patch.arrivalDate;
+  }
+  if (Array.isArray(patch.orderDates) && patch.orderDates.length > 0) {
+    next.orderDates = [...patch.orderDates];
+    next.orderDate =
+      patch.orderDate || patch.orderDates[patch.orderDates.length - 1] || next.orderDate;
+  } else if (patch.orderDate) {
+    next.orderDate = patch.orderDate;
+  }
+
+  if (patch.billing && next.feeQuote) {
+    next.feeQuote = {
+      ...next.feeQuote,
+      labFeeTotal: Math.max(0, Number(patch.billing.labFeeTotal || 0)),
+      total: Math.max(0, Number(patch.billing.total || 0)),
+    };
+  } else if (patch.billingDelta && next.feeQuote) {
+    next.feeQuote = {
+      ...next.feeQuote,
+      labFeeTotal:
+        Math.max(0, Number(next.feeQuote.labFeeTotal || 0)) +
+        Math.max(0, Number(patch.billingDelta.labFeeTotal || 0)),
+      total:
+        Math.max(0, Number(next.feeQuote.total || 0)) +
+        Math.max(0, Number(patch.billingDelta.total || 0)),
+    };
+  }
+
+  return next;
+};
+
 /** 열린 의뢰상세에 목록 재조회 row를 병합(의뢰·작업 파일·생산 메타·견적). */
 export const mergeOpenPracticeTransferFromRequestRows = (
   prev: PracticeRecentTransferItem,
