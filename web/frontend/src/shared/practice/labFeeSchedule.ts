@@ -42,7 +42,7 @@ import {
   IMPLANT_ADD_REQUEST_OPTION,
   MANUFACTURER_ADD_REQUEST_BRAND,
 } from "@/shared/practice/roundBarAbutment";
-import { isFollowUpProsthesisPhase } from "@/shared/practice/prosthesisFollowUp";
+import { isFollowUpProsthesisPhase, isFinalProsthesisType } from "@/shared/practice/prosthesisFollowUp";
 
 /** 기공수가 할증 배수. 1=없음, 최대 5, 소수 둘째 자리. */
 export const normalizeLabFeeMultiplier = (value: unknown): number => {
@@ -605,10 +605,22 @@ export const toToothDecadeSortNumber = (toothNumber: string) => {
   );
 };
 
-export const sortPracticeTransferFeeLines = <T extends { toothNumber?: string }>(
+export const practiceTransferFeeLineSortRank = (line: {
+  prosthesisType?: string;
+}) => {
+  const type = String(line?.prosthesisType || "");
+  if (/임시치아/.test(type)) return 0;
+  if (isCustomAbutmentLabFeeLineType(type)) return 2;
+  return 1;
+};
+
+export const sortPracticeTransferFeeLines = <T extends { toothNumber?: string; prosthesisType?: string }>(
   lines: ReadonlyArray<T>,
 ): T[] =>
   lines.slice().sort((a, b) => {
+    const cat =
+      practiceTransferFeeLineSortRank(a) - practiceTransferFeeLineSortRank(b);
+    if (cat !== 0) return cat;
     const diff =
       toToothDecadeSortNumber(String(a.toothNumber || "")) -
       toToothDecadeSortNumber(String(b.toothNumber || ""));
@@ -1569,7 +1581,7 @@ export const computePracticeTransferRetailFees = (params: {
       addAbutment(split);
       // 수가표와 같이 보철기공비·커스텀어벗을 별도 줄로 표기
       lines.push({
-        toothNumber,
+        toothNumber: feeLineToothLabel(row),
         prosthesisType,
         labFee,
         labAbutmentFee: 0,
@@ -1583,7 +1595,7 @@ export const computePracticeTransferRetailFees = (params: {
         split.quote
       ) {
         lines.push({
-          toothNumber,
+          toothNumber: feeLineToothLabel(row),
           prosthesisType: abutmentLineType(split),
           labFee: 0,
           labAbutmentFee: split.lab,
@@ -1787,21 +1799,46 @@ function listTempBridgeFeeGroups(allRows: ReadonlyArray<FeeToothRow | null | und
   return groups;
 }
 
+function feeLineToothLabel(row: FeeToothRow) {
+  const tooth = feeRowTooth(row);
+  const type = feeRowType(row);
+  if (type === "브리지") {
+    const teeth = sortToothNumbersForFee(
+      Array.from(
+        new Set([
+          tooth,
+          ...(Array.isArray(row?.bridgeLinkedTeeth)
+            ? row.bridgeLinkedTeeth.map((value) => String(value || "").trim())
+            : []),
+        ].filter((value) => /^[1-4][1-8]$/.test(value))),
+      ),
+    );
+    if (teeth.length >= 2) return teeth.join(",");
+  }
+  return tooth;
+}
+
+function rowCoversToothForFee(row: FeeToothRow, tooth: string) {
+  const self = feeRowTooth(row);
+  if (self === tooth) return true;
+  const linked = Array.isArray(row?.bridgeLinkedTeeth) ? row.bridgeLinkedTeeth : [];
+  return linked.some((value) => String(value || "").trim() === tooth);
+}
+
 function absorbedNonTempTeethInTempSpans(
   allRows: ReadonlyArray<FeeToothRow | null | undefined>,
 ) {
-  const byTooth = new Map<string, FeeToothRow>();
-  for (const row of Array.isArray(allRows) ? allRows : []) {
-    if (!row) continue;
-    const tooth = feeRowTooth(row);
-    if (/^[1-4][1-8]$/.test(tooth) && !byTooth.has(tooth)) byTooth.set(tooth, row);
-  }
+  const rows = Array.isArray(allRows) ? allRows.filter(Boolean) as FeeToothRow[] : [];
+  const finalRows = rows.filter((row) => isFinalProsthesisType(feeRowType(row)));
   const absorbed = new Set<string>();
-  for (const group of listTempBridgeFeeGroups(allRows)) {
+  for (const group of listTempBridgeFeeGroups(rows)) {
     for (const tooth of group.teeth) {
-      if (!isRemovableTempProsthesisType(feeRowType(byTooth.get(tooth)))) {
-        absorbed.add(tooth);
-      }
+      const hasPrimaryFinal = finalRows.some((row) => feeRowTooth(row) === tooth);
+      if (hasPrimaryFinal) continue;
+      const coveredElsewhere = finalRows.some(
+        (row) => feeRowTooth(row) !== tooth && rowCoversToothForFee(row, tooth),
+      );
+      if (coveredElsewhere) absorbed.add(tooth);
     }
   }
   return absorbed;

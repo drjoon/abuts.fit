@@ -96,6 +96,7 @@ import {
   canAppendProsthesisFollowUp,
   canManagePendingProsthesisFollowUp,
   getPendingProsthesisFollowUps,
+  isPendingProsthesisFollowUpRecord,
   markPendingProsthesisFollowUpsAccepted,
   mergeFollowUpToothWorks,
   stripFollowUpToothWorksForRecord,
@@ -992,6 +993,8 @@ const toVirtualRequestRows = (transferDoc) => {
     prosthesisFollowUps: serializeProsthesisFollowUpsForApi(
       transferDoc?.prosthesisFollowUps,
     ),
+    requestorDownloadedAt: transferDoc?.requestorDownloadedAt || null,
+    requestorAcceptedAt: transferDoc?.requestorDownloadedAt || null,
     arrivalDates,
     arrivalDate: currentArrivalYmd || null,
     orderDates,
@@ -4279,6 +4282,7 @@ export async function appendPracticeTransferProsthesis(req, res) {
         systemEvent: "practice_transfer_prosthesis_follow_up",
         systemPayload: {
           arrivalYmd: rawYmd,
+          billingDelta: followUpRecord.billingDelta || null,
           toothWorks: followUpRows.map((row) => ({
             toothNumber: String(row?.toothNumber || "").trim(),
             prosthesisType: String(row?.prosthesisType || "").trim(),
@@ -4466,8 +4470,7 @@ export async function cancelPracticeTransferProsthesisFollowUp(req, res) {
       const idx = followUps.findIndex(
         (row) =>
           Number(row?.followUpIndex || 0) === followUpIndex &&
-          !row?.canceledAt &&
-          !row?.labAcceptedAt,
+          isPendingProsthesisFollowUpRecord(row, doc.requestorDownloadedAt),
       );
       if (idx >= 0) {
         followUps[idx] = {
@@ -4663,8 +4666,7 @@ export async function updatePracticeTransferProsthesisFollowUp(req, res) {
     const idx = followUps.findIndex(
       (row) =>
         Number(row?.followUpIndex || 0) === followUpIndex &&
-        !row?.canceledAt &&
-        !row?.labAcceptedAt,
+        isPendingProsthesisFollowUpRecord(row, doc.requestorDownloadedAt),
     );
     if (idx >= 0) {
       followUps[idx] = {
@@ -6268,17 +6270,24 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
       await PracticeTransfer.updateOne({ _id: doc._id }, { $set: acceptSet });
     }
 
-    const pendingFollowUps = getPendingProsthesisFollowUps(doc.prosthesisFollowUps);
-    if (pendingFollowUps.length > 0) {
-      const acceptedFollowUps = markPendingProsthesisFollowUpsAccepted(
+    // 최초 수락 시점에만 pending 후속 제작을 함께 수락 처리한다.
+    // 이미 수락된 건에 후속 추가된 뒤 재다운로드·재수락 시 pending을 지우지 않는다.
+    if (!alreadyAccepted) {
+      const pendingFollowUps = getPendingProsthesisFollowUps(
         doc.prosthesisFollowUps,
-        now,
+        doc.requestorDownloadedAt,
       );
-      await PracticeTransfer.updateOne(
-        { _id: doc._id },
-        { $set: { prosthesisFollowUps: acceptedFollowUps } },
-      );
-      doc.prosthesisFollowUps = acceptedFollowUps;
+      if (pendingFollowUps.length > 0) {
+        const acceptedFollowUps = markPendingProsthesisFollowUpsAccepted(
+          doc.prosthesisFollowUps,
+          now,
+        );
+        await PracticeTransfer.updateOne(
+          { _id: doc._id },
+          { $set: { prosthesisFollowUps: acceptedFollowUps } },
+        );
+        doc.prosthesisFollowUps = acceptedFollowUps;
+      }
     }
 
     let abutmentEnsure = { requestIds: [] };

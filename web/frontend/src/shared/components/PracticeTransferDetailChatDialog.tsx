@@ -388,6 +388,7 @@ type PracticeTransferDetailChatDialogProps = {
   prosthesisFollowUpPending?: boolean;
   cancelProsthesisFollowUpBusy?: boolean;
   modifyProsthesisFollowUpBusy?: boolean;
+  prosthesisFollowUps?: import("@/shared/practice/prosthesisFollowUp").ProsthesisFollowUpRecord[] | null;
   /** 치과: 수락 전·작업취소 건을 휴지통으로 */
   onCancelRequest?: () => void;
   cancelRequestDisabled?: boolean;
@@ -487,6 +488,7 @@ export function PracticeTransferDetailChatDialog({
   prosthesisFollowUpPending = false,
   cancelProsthesisFollowUpBusy = false,
   modifyProsthesisFollowUpBusy = false,
+  prosthesisFollowUps = null,
   onCancelRequest,
   cancelRequestDisabled = false,
 }: PracticeTransferDetailChatDialogProps) {
@@ -2198,6 +2200,8 @@ export function PracticeTransferDetailChatDialog({
                             formatFileSize={formatFileSize}
                             showSenderName
                             compact
+                            practiceTransferLabAnchorId={labAnchorId}
+                            practiceTransferProsthesisFollowUps={prosthesisFollowUps}
                             downloadingFileKeys={downloadingFileKeys}
                             downloadProgressByKey={downloadProgressByKey}
                             onReply={onReplyToMessage}

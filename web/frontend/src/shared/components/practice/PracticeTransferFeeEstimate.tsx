@@ -194,7 +194,14 @@ const formatLabAbutmentCell = (line: FeeBreakdownLine) => {
   return formatManWon(line.labAbutmentFee);
 };
 
-/** 같은 치아번호 라인을 한 줄로 합친다. 라벨은 보철 형태 우선(커스텀어벗만이면 그대로). */
+/** 같은 치아번호·동일 구역(임시/최종/어벗) 라인만 한 줄로 합친다. */
+const feeBreakdownLineCategory = (line: FeeBreakdownLine) => {
+  const type = String(line.prosthesisType || "");
+  if (/임시치아/.test(type)) return "temp";
+  if (isCustomAbutmentLabFeeLineType(type)) return "ca";
+  return "final";
+};
+
 const mergeFeeBreakdownLinesByTooth = (
   lines: FeeBreakdownLine[],
 ): FeeBreakdownLine[] => {
@@ -203,7 +210,7 @@ const mergeFeeBreakdownLinesByTooth = (
   let anon = 0;
   for (const line of lines) {
     const tooth = String(line.toothNumber || "").trim();
-    const key = tooth || `\0anon-${anon++}`;
+    const key = `${feeBreakdownLineCategory(line)}:${tooth || `\0anon-${anon++}`}`;
     const existing = byKey.get(key);
     if (!existing) {
       order.push(key);

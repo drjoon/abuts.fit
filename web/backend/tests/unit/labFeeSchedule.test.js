@@ -411,11 +411,11 @@ describe("labFeeSchedule", () => {
     expect(
       fees.lines.some(
         (line) =>
-          line.toothNumber === "33" &&
+          line.toothNumber === "34,33" &&
           line.prosthesisType === "브리지" &&
-          line.labAbutmentFee > 0,
+          line.labFee === 60000,
       ),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   test("커스텀어벗(지그포함)이 perSet로 저장돼도 치아당 단가로 과금한다", () => {

@@ -11,6 +11,20 @@ const FOLLOW_UP_PHASE = "followUp";
 
 const normalizeCompact = (value) => String(value || "").trim().replace(/\s+/g, "");
 
+/** FDI 표시 순(18..11 → 21..28 …). labFeeSchedule.toToothDecadeSortNumber과 동일. */
+const toToothDecadeSortNumber = (toothNumber) => {
+  const raw = String(toothNumber || "").trim();
+  if (!/^[1-4][1-8]$/.test(raw)) return Number.MAX_SAFE_INTEGER;
+  const tens = Number(raw[0]);
+  const ones = Number(raw[1]);
+  const decadeBase = (tens - 1) * 10;
+  if (tens === 1 || tens === 3) return decadeBase + (8 - ones);
+  return decadeBase + (ones - 1);
+};
+
+const sortTeethFdi = (teeth) =>
+  [...teeth].sort((a, b) => toToothDecadeSortNumber(a) - toToothDecadeSortNumber(b));
+
 export const isTemporaryToothProsthesisType = (prosthesisType) => {
   const compact = normalizeCompact(prosthesisType);
   return TEMP_TYPES.has(compact);
@@ -35,7 +49,7 @@ const linkedTeethOf = (row) => {
     ? row.bridgeLinkedTeeth.map((t) => String(t || "").trim()).filter(Boolean)
     : [];
   if (!self) return linked;
-  return Array.from(new Set([self, ...linked])).sort();
+  return sortTeethFdi(Array.from(new Set([self, ...linked])));
 };
 
 const spanKey = (teeth) => teeth.join("-");
@@ -76,11 +90,14 @@ export const listPendingFollowUpTempSpans = (toothWorks) => {
 };
 
 const cloneRowForFollowUp = (sourceRow, prosthesisType, bridgeLinkedTeeth) => {
+  const sorted = sortTeethFdi(
+    bridgeLinkedTeeth.map((t) => String(t || "").trim()).filter(Boolean),
+  );
   const next = {
-    toothNumber: String(sourceRow?.toothNumber || bridgeLinkedTeeth[0] || "").trim(),
+    toothNumber: sorted[0] || String(sourceRow?.toothNumber || "").trim(),
     prosthesisType,
     customAbutment: Boolean(sourceRow?.customAbutment),
-    bridgeLinkedTeeth: [...bridgeLinkedTeeth],
+    bridgeLinkedTeeth: sorted,
     prosthesisPhase: FOLLOW_UP_PHASE,
   };
   const copyKeys = [
@@ -145,16 +162,32 @@ export const mergeFollowUpToothWorks = (existing, followUpRows) => {
   return [...base, ...add];
 };
 
-export const isPendingProsthesisFollowUpRecord = (record) => {
+export const isPendingProsthesisFollowUpRecord = (
+  record,
+  requestorDownloadedAt = null,
+) => {
   if (!record || typeof record !== "object") return false;
   if (record.canceledAt) return false;
-  return !record.labAcceptedAt;
+  if (!record.labAcceptedAt) return true;
+  const mainAcceptedAt = requestorDownloadedAt || null;
+  const appendedAt = record.appendedAt;
+  if (!mainAcceptedAt || !appendedAt) return false;
+  const mainMs = new Date(mainAcceptedAt).getTime();
+  const appendMs = new Date(appendedAt).getTime();
+  if (!Number.isFinite(mainMs) || !Number.isFinite(appendMs)) return false;
+  // 최초 기공소 수락 이후 추가된 후속 제작은 별도 수락 전까지 pending
+  return appendMs >= mainMs;
 };
 
 /** 기공소 수락 전(pending) 후속 제작 이력 */
-export const getPendingProsthesisFollowUps = (followUps) => {
+export const getPendingProsthesisFollowUps = (
+  followUps,
+  requestorDownloadedAt = null,
+) => {
   const list = Array.isArray(followUps) ? followUps : [];
-  return list.filter(isPendingProsthesisFollowUpRecord);
+  return list.filter((row) =>
+    isPendingProsthesisFollowUpRecord(row, requestorDownloadedAt),
+  );
 };
 
 export const stripFollowUpToothWorksForRecord = (toothWorks, followUpRecord) => {
@@ -192,7 +225,10 @@ export const canManagePendingProsthesisFollowUp = (transferDoc) => {
   if (isPracticeTransferDeletedStatus(transferDoc.status)) {
     return { ok: false, reason: "deleted", message: "삭제된 의뢰입니다." };
   }
-  const pending = getPendingProsthesisFollowUps(transferDoc.prosthesisFollowUps);
+  const pending = getPendingProsthesisFollowUps(
+    transferDoc.prosthesisFollowUps,
+    transferDoc.requestorDownloadedAt,
+  );
   if (pending.length === 0) {
     return {
       ok: false,

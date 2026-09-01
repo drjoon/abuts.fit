@@ -122,6 +122,8 @@ export type PracticeRecentRequestItem = {
   /** API toothWorks 스냅샷(후속 보철 append 등 memo보다 우선) */
   toothWorks?: Array<Record<string, unknown>>;
   prosthesisFollowUps?: import("@/shared/practice/prosthesisFollowUp").ProsthesisFollowUpRecord[];
+  requestorDownloadedAt?: string | null;
+  requestorAcceptedAt?: string | null;
 };
 
 export type PracticeRecentTransferItem = {
@@ -200,6 +202,8 @@ export type PracticeRecentTransferItem = {
   draftPatientName?: string;
   prosthesisFollowUps?: import("@/shared/practice/prosthesisFollowUp").ProsthesisFollowUpRecord[];
   toothWorks?: Array<Record<string, unknown>>;
+  requestorDownloadedAt?: string | null;
+  requestorAcceptedAt?: string | null;
 };
 
 export type PracticeRecentStatusFilter =
@@ -806,6 +810,16 @@ export const mapMyPracticeTransferApiRows = (
         prosthesisFollowUps: Array.isArray(r.prosthesisFollowUps)
           ? (r.prosthesisFollowUps as PracticeRecentRequestItem["prosthesisFollowUps"])
           : [],
+        requestorDownloadedAt: r.requestorDownloadedAt
+          ? String(r.requestorDownloadedAt)
+          : r.requestorAcceptedAt
+            ? String(r.requestorAcceptedAt)
+            : null,
+        requestorAcceptedAt: r.requestorAcceptedAt
+          ? String(r.requestorAcceptedAt)
+          : r.requestorDownloadedAt
+            ? String(r.requestorDownloadedAt)
+            : null,
       };
     })
     .filter((item) => Boolean(item.id))
@@ -903,6 +917,20 @@ export const mergeOpenPracticeTransferFromRequestRows = (
       )?.prosthesisFollowUps ||
       prev.prosthesisFollowUps ||
       [],
+    requestorDownloadedAt:
+      openRows.find((r) => String(r.requestorDownloadedAt || r.requestorAcceptedAt || "").trim())
+        ?.requestorDownloadedAt ||
+      openRows.find((r) => String(r.requestorAcceptedAt || "").trim())?.requestorAcceptedAt ||
+      prev.requestorDownloadedAt ||
+      prev.requestorAcceptedAt ||
+      null,
+    requestorAcceptedAt:
+      openRows.find((r) => String(r.requestorAcceptedAt || r.requestorDownloadedAt || "").trim())
+        ?.requestorAcceptedAt ||
+      openRows.find((r) => String(r.requestorDownloadedAt || "").trim())?.requestorDownloadedAt ||
+      prev.requestorAcceptedAt ||
+      prev.requestorDownloadedAt ||
+      null,
     matchingMode: openRow.matchingMode || prev.matchingMode,
     ...(keepBilled ? {} : nextFee ? { feeQuote: nextFee } : {}),
     ...(openRow.remakeFeeQuote ? { remakeFeeQuote: openRow.remakeFeeQuote } : {}),
@@ -1100,6 +1128,15 @@ export const groupPracticeRecentRequests = (
         performingLabAnchorId: req.performingLabAnchorId || null,
         handledByCertifiedPartner: Boolean(req.handledByCertifiedPartner),
         toothWorks: Array.isArray(req.toothWorks) ? [...req.toothWorks] : [],
+        prosthesisFollowUps: Array.isArray(req.prosthesisFollowUps)
+          ? [...req.prosthesisFollowUps]
+          : [],
+        requestorDownloadedAt: String(
+          req.requestorDownloadedAt || req.requestorAcceptedAt || "",
+        ).trim() || null,
+        requestorAcceptedAt: String(
+          req.requestorAcceptedAt || req.requestorDownloadedAt || "",
+        ).trim() || null,
         unreadCount,
         searchBlob: [
           req.id,
@@ -1180,6 +1217,16 @@ export const groupPracticeRecentRequests = (
     }
     if (Array.isArray(req.toothWorks) && req.toothWorks.length > 0) {
       existing.toothWorks = [...req.toothWorks];
+    }
+    if (Array.isArray(req.prosthesisFollowUps) && req.prosthesisFollowUps.length > 0) {
+      existing.prosthesisFollowUps = [...req.prosthesisFollowUps];
+    }
+    const reqAcceptedAt = String(
+      req.requestorDownloadedAt || req.requestorAcceptedAt || "",
+    ).trim();
+    if (reqAcceptedAt) {
+      existing.requestorDownloadedAt = reqAcceptedAt;
+      existing.requestorAcceptedAt = reqAcceptedAt;
     }
     if (req.skipDesignConfirm === false) existing.skipDesignConfirm = false;
     if (req.skipJig === false) existing.skipJig = false;

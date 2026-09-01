@@ -39,7 +39,7 @@
 // - 2026-08-29: 치과별 특별공급가(labPracticeSpecialSupplyPrices) — 할인율 또는 항목별 할인금액.
 // - 2026-08-31: 특별공급가 — 의뢰 billing 스냅샷·updatedAt as-of(소급 금지). 신규 견적은 live.
 import { applyRushFeeMultiplierToFees } from "./practiceTransferRush.js";
-import { isFollowUpProsthesisPhase } from "./practiceTransferProsthesisFollowUp.js";
+import { isFollowUpProsthesisPhase, isFinalProsthesisType } from "./practiceTransferProsthesisFollowUp.js";
 import {
   IMPLANT_ADD_REQUEST_OPTION,
   MANUFACTURER_ADD_REQUEST_BRAND,
@@ -1150,8 +1150,18 @@ export function toToothDecadeSortNumber(toothNumber) {
   );
 }
 
+export function practiceTransferFeeLineSortRank(line) {
+  const type = String(line?.prosthesisType || "");
+  if (/임시치아/.test(type)) return 0;
+  if (isCustomAbutmentLabFeeLineType(type)) return 2;
+  return 1;
+}
+
 export function sortPracticeTransferFeeLines(lines) {
   return (Array.isArray(lines) ? lines : []).slice().sort((a, b) => {
+    const cat =
+      practiceTransferFeeLineSortRank(a) - practiceTransferFeeLineSortRank(b);
+    if (cat !== 0) return cat;
     const diff =
       toToothDecadeSortNumber(a?.toothNumber) -
       toToothDecadeSortNumber(b?.toothNumber);
@@ -2078,7 +2088,7 @@ export function computePracticeTransferRetailFees({
       addAbutment(split);
       // 수가표와 같이 보철기공비·커스텀어벗을 별도 줄로 표기
       lines.push({
-        toothNumber,
+        toothNumber: feeLineToothLabel(row),
         prosthesisType,
         labFee,
         labAbutmentFee: 0,
@@ -2092,7 +2102,7 @@ export function computePracticeTransferRetailFees({
         split.quote
       ) {
         lines.push({
-          toothNumber,
+          toothNumber: feeLineToothLabel(row),
           prosthesisType: abutmentLineType(split),
           labFee: 0,
           labAbutmentFee: split.lab,
@@ -2301,20 +2311,44 @@ function listTempBridgeFeeGroups(allRows) {
   return groups;
 }
 
-function absorbedNonTempTeethInTempSpans(allRows) {
-  const byTooth = new Map();
-  for (const row of Array.isArray(allRows) ? allRows : []) {
-    const tooth = feeRowTooth(row);
-    if (/^[1-4][1-8]$/.test(tooth) && !byTooth.has(tooth)) {
-      byTooth.set(tooth, row);
-    }
+function feeLineToothLabel(row) {
+  const tooth = feeRowTooth(row);
+  const type = feeRowType(row);
+  if (type === "브리지") {
+    const teeth = sortToothNumbersForFee(
+      Array.from(
+        new Set([
+          tooth,
+          ...(Array.isArray(row?.bridgeLinkedTeeth)
+            ? row.bridgeLinkedTeeth.map((value) => String(value || "").trim())
+            : []),
+        ].filter((value) => /^[1-4][1-8]$/.test(value))),
+      ),
+    );
+    if (teeth.length >= 2) return teeth.join(",");
   }
+  return tooth;
+}
+
+function rowCoversToothForFee(row, tooth) {
+  const self = feeRowTooth(row);
+  if (self === tooth) return true;
+  const linked = Array.isArray(row?.bridgeLinkedTeeth) ? row.bridgeLinkedTeeth : [];
+  return linked.some((value) => String(value || "").trim() === tooth);
+}
+
+function absorbedNonTempTeethInTempSpans(allRows) {
+  const rows = Array.isArray(allRows) ? allRows : [];
+  const finalRows = rows.filter((row) => isFinalProsthesisType(feeRowType(row)));
   const absorbed = new Set();
-  for (const group of listTempBridgeFeeGroups(allRows)) {
+  for (const group of listTempBridgeFeeGroups(rows)) {
     for (const tooth of group.teeth) {
-      if (!isRemovableTempProsthesisType(feeRowType(byTooth.get(tooth)))) {
-        absorbed.add(tooth);
-      }
+      const hasPrimaryFinal = finalRows.some((row) => feeRowTooth(row) === tooth);
+      if (hasPrimaryFinal) continue;
+      const coveredElsewhere = finalRows.some(
+        (row) => feeRowTooth(row) !== tooth && rowCoversToothForFee(row, tooth),
+      );
+      if (coveredElsewhere) absorbed.add(tooth);
     }
   }
   return absorbed;

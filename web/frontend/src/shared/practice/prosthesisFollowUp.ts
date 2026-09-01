@@ -33,13 +33,26 @@ export const isFinalProsthesisType = (prosthesisType: string) => {
   return type === "크라운" || type === "브리지" || type === "인레이";
 };
 
+const toToothDecadeSortNumber = (toothNumber: string) => {
+  const raw = String(toothNumber || "").trim();
+  if (!/^[1-4][1-8]$/.test(raw)) return Number.MAX_SAFE_INTEGER;
+  const tens = Number(raw[0]);
+  const ones = Number(raw[1]);
+  const decadeBase = (tens - 1) * 10;
+  if (tens === 1 || tens === 3) return decadeBase + (8 - ones);
+  return decadeBase + (ones - 1);
+};
+
+const sortTeethFdi = (teeth: string[]) =>
+  [...teeth].sort((a, b) => toToothDecadeSortNumber(a) - toToothDecadeSortNumber(b));
+
 const linkedTeethOf = (row: Partial<ToothWorkSelection>) => {
   const self = String(row?.toothNumber || "").trim();
   const linked = Array.isArray(row?.bridgeLinkedTeeth)
     ? row.bridgeLinkedTeeth.map((t) => String(t || "").trim()).filter(Boolean)
     : [];
-  if (!self) return linked;
-  return Array.from(new Set([self, ...linked])).sort();
+  if (!self) return sortTeethFdi(linked);
+  return sortTeethFdi(Array.from(new Set([self, ...linked])));
 };
 
 export const hasFollowUpProsthesisForTooth = (
@@ -83,24 +96,27 @@ const cloneRowForFollowUp = (
   sourceRow: Partial<ToothWorkSelection>,
   prosthesisType: string,
   bridgeLinkedTeeth: string[],
-): ToothWorkSelection & { prosthesisPhase: string } => ({
-  toothNumber: String(
-    sourceRow?.toothNumber || bridgeLinkedTeeth[0] || "",
-  ).trim(),
-  prosthesisType,
-  customAbutment: Boolean(sourceRow?.customAbutment),
-  bridgeLinkedTeeth: [...bridgeLinkedTeeth],
-  prosthesisPhase: FOLLOW_UP_PHASE,
-  abutmentProductMode: sourceRow?.abutmentProductMode,
-  implantManufacturer: sourceRow?.implantManufacturer,
-  implantBrand: sourceRow?.implantBrand,
-  implantFamily: sourceRow?.implantFamily,
-  implantType: sourceRow?.implantType,
-  implantAddRequest: sourceRow?.implantAddRequest,
-  abutmentManufacturer: sourceRow?.abutmentManufacturer,
-  abutmentDiameter: sourceRow?.abutmentDiameter,
-  abutmentHeight: sourceRow?.abutmentHeight,
-});
+): ToothWorkSelection & { prosthesisPhase: string } => {
+  const sorted = sortTeethFdi(
+    bridgeLinkedTeeth.map((t) => String(t || "").trim()).filter(Boolean),
+  );
+  return {
+    toothNumber: sorted[0] || String(sourceRow?.toothNumber || "").trim(),
+    prosthesisType,
+    customAbutment: Boolean(sourceRow?.customAbutment),
+    bridgeLinkedTeeth: sorted,
+    prosthesisPhase: FOLLOW_UP_PHASE,
+    abutmentProductMode: sourceRow?.abutmentProductMode,
+    implantManufacturer: sourceRow?.implantManufacturer,
+    implantBrand: sourceRow?.implantBrand,
+    implantFamily: sourceRow?.implantFamily,
+    implantType: sourceRow?.implantType,
+    implantAddRequest: sourceRow?.implantAddRequest,
+    abutmentManufacturer: sourceRow?.abutmentManufacturer,
+    abutmentDiameter: sourceRow?.abutmentDiameter,
+    abutmentHeight: sourceRow?.abutmentHeight,
+  };
+};
 
 /** 임시치아 → 후속 크라운/브리지 초안 */
 export const buildFollowUpToothWorksDraft = (
@@ -228,22 +244,41 @@ export type ProsthesisFollowUpRecord = {
 
 export const isPendingProsthesisFollowUpRecord = (
   record?: ProsthesisFollowUpRecord | null,
-) => Boolean(record && !record.canceledAt && !record.labAcceptedAt);
+  requestorDownloadedAt?: string | null,
+) => {
+  if (!record) return false;
+  if (record.canceledAt) return false;
+  if (!record.labAcceptedAt) return true;
+  const mainAcceptedAt = String(requestorDownloadedAt || "").trim();
+  const appendedAt = record.appendedAt;
+  if (!mainAcceptedAt || !appendedAt) return false;
+  const mainMs = new Date(mainAcceptedAt).getTime();
+  const appendMs = new Date(appendedAt).getTime();
+  if (!Number.isFinite(mainMs) || !Number.isFinite(appendMs)) return false;
+  return appendMs >= mainMs;
+};
 
 export const getPendingProsthesisFollowUps = (
   followUps?: ProsthesisFollowUpRecord[] | null,
+  requestorDownloadedAt?: string | null,
 ) =>
-  (Array.isArray(followUps) ? followUps : []).filter(isPendingProsthesisFollowUpRecord);
+  (Array.isArray(followUps) ? followUps : []).filter((row) =>
+    isPendingProsthesisFollowUpRecord(row, requestorDownloadedAt),
+  );
 
 export const canManagePendingProsthesisFollowUp = (input: {
   prosthesisFollowUps?: ProsthesisFollowUpRecord[] | null;
   status?: string | null;
+  requestorDownloadedAt?: string | null;
 }) => {
   const status = String(input.status || "").trim();
   if (status === "취소" || status === "작업취소") {
     return { ok: false as const, reason: "canceled", message: "취소된 의뢰입니다." };
   }
-  const pending = getPendingProsthesisFollowUps(input.prosthesisFollowUps);
+  const pending = getPendingProsthesisFollowUps(
+    input.prosthesisFollowUps,
+    input.requestorDownloadedAt,
+  );
   if (pending.length === 0) {
     return {
       ok: false as const,
@@ -256,8 +291,12 @@ export const canManagePendingProsthesisFollowUp = (input: {
 
 export const getLatestPendingProsthesisFollowUp = (
   followUps?: ProsthesisFollowUpRecord[] | null,
+  requestorDownloadedAt?: string | null,
 ) => {
-  const pending = getPendingProsthesisFollowUps(followUps);
+  const pending = getPendingProsthesisFollowUps(
+    followUps,
+    requestorDownloadedAt,
+  );
   if (pending.length === 0) return null;
   return [...pending].sort(
     (a, b) => Number(b.followUpIndex || 0) - Number(a.followUpIndex || 0),

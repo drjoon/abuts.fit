@@ -72,6 +72,9 @@ type ChatMessageBubbleProps = {
   formatFileSize?: (size: number) => string;
   downloadingFileKeys?: string[];
   downloadProgressByKey?: Record<string, number>;
+  /** 후속 보철 채팅 카드 견적용 */
+  practiceTransferLabAnchorId?: string | null;
+  practiceTransferProsthesisFollowUps?: import("@/shared/practice/prosthesisFollowUp").ProsthesisFollowUpRecord[] | null;
 };
 
 export function chatAttachmentBusyKey(file: {
@@ -234,6 +237,8 @@ export function ChatMessageBubble({
   formatFileSize,
   downloadingFileKeys = [],
   downloadProgressByKey = {},
+  practiceTransferLabAnchorId = null,
+  practiceTransferProsthesisFollowUps = null,
 }: ChatMessageBubbleProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const senderName = String(message.sender?.name || "알 수 없음").trim();
@@ -588,6 +593,8 @@ export function ChatMessageBubble({
       compact,
       formatTime,
       messageDomId: chatMessageDomId(String(message._id || "")),
+      labAnchorId: practiceTransferLabAnchorId,
+      prosthesisFollowUps: practiceTransferProsthesisFollowUps,
     });
     if (customBody) return customBody;
 

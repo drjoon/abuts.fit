@@ -4469,12 +4469,31 @@ export const PracticeFileTransferPage = ({
     return canManagePendingProsthesisFollowUp({
       prosthesisFollowUps: selectedTransfer?.prosthesisFollowUps,
       status: selectedTransfer?.status,
+      requestorDownloadedAt:
+        selectedTransfer?.requestorDownloadedAt ||
+        selectedTransfer?.requestorAcceptedAt ||
+        null,
     });
-  }, [selectedTransfer?.prosthesisFollowUps, selectedTransfer?.status]);
+  }, [
+    selectedTransfer?.prosthesisFollowUps,
+    selectedTransfer?.requestorDownloadedAt,
+    selectedTransfer?.requestorAcceptedAt,
+    selectedTransfer?.status,
+  ]);
 
   const pendingProsthesisFollowUp = useMemo(
-    () => getLatestPendingProsthesisFollowUp(selectedTransfer?.prosthesisFollowUps),
-    [selectedTransfer?.prosthesisFollowUps],
+    () =>
+      getLatestPendingProsthesisFollowUp(
+        selectedTransfer?.prosthesisFollowUps,
+        selectedTransfer?.requestorDownloadedAt ||
+          selectedTransfer?.requestorAcceptedAt ||
+          null,
+      ),
+    [
+      selectedTransfer?.prosthesisFollowUps,
+      selectedTransfer?.requestorDownloadedAt,
+      selectedTransfer?.requestorAcceptedAt,
+    ],
   );
 
   const followUpDialogSchedule = useMemo(() => {
@@ -8967,6 +8986,7 @@ export const PracticeFileTransferPage = ({
           }
           cancelProsthesisFollowUpBusy={cancelProsthesisFollowUpBusy}
           modifyProsthesisFollowUpBusy={updateProsthesisFollowUpBusy}
+          prosthesisFollowUps={selectedTransfer?.prosthesisFollowUps}
           orderDate={selectedTransfer?.orderDate || null}
           arrivalDate={selectedTransfer?.arrivalDate || null}
           orderedAt={

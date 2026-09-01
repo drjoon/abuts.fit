@@ -5,6 +5,8 @@
 import { cn } from "@/shared/ui/cn";
 import { PracticeToothWorkChartReadOnly } from "@/shared/components/practice/PracticeToothWorkChartReadOnly";
 import type { ChatMessage } from "@/shared/hooks/useChatRooms";
+import type { PracticeTransferFeeQuote } from "@/shared/practice/practiceTransferFeeQuote";
+import type { ProsthesisFollowUpRecord } from "@/shared/practice/prosthesisFollowUp";
 import {
   emptyToothWorkCustomSpecs,
   type ToothWorkSelection,
@@ -13,6 +15,36 @@ import {
 export type ProsthesisFollowUpChatPayload = {
   arrivalYmd: string;
   toothWorks: ToothWorkSelection[];
+  billingDelta?: { labFeeTotal?: number; total?: number } | null;
+};
+
+const buildFollowUpChatFeeQuote = (
+  billingDelta: unknown,
+): PracticeTransferFeeQuote | null => {
+  const delta =
+    billingDelta && typeof billingDelta === "object"
+      ? (billingDelta as { labFeeTotal?: number; total?: number })
+      : null;
+  const labFeeTotal = Math.max(0, Math.round(Number(delta?.labFeeTotal || 0)));
+  const total = Math.max(0, Math.round(Number(delta?.total || 0)));
+  const amount = total > 0 ? total : labFeeTotal;
+  if (amount <= 0) return null;
+  return {
+    labFeeTotal: labFeeTotal || amount,
+    labAbutmentTotal: 0,
+    labAbutmentPending: false,
+    abutmentRetailTotal: 0,
+    abutmentQuotePending: false,
+    abutmentQty: 0,
+    total: amount,
+    lines: [],
+    relationshipKind: "none",
+    feeRateApplied: 0,
+    labSettlementAmount: 0,
+    abutsRevenueAmount: 0,
+    labFeeConfigured: true,
+    billed: true,
+  };
 };
 
 const normalizeToothWorkRow = (
@@ -89,7 +121,31 @@ export const resolveProsthesisFollowUpChatPayload = (
         : [];
 
   if (!arrivalYmd && toothWorks.length === 0) return null;
-  return { arrivalYmd, toothWorks };
+  const billingDelta =
+    payload?.billingDelta && typeof payload.billingDelta === "object"
+      ? (payload.billingDelta as { labFeeTotal?: number; total?: number })
+      : null;
+  return { arrivalYmd, toothWorks, billingDelta };
+};
+
+const resolveFollowUpBillingDelta = (
+  payload: ProsthesisFollowUpChatPayload,
+  prosthesisFollowUps?: ProsthesisFollowUpRecord[] | null,
+) => {
+  const fromPayload = payload.billingDelta;
+  if (
+    fromPayload &&
+    (Math.max(0, Number(fromPayload.total || 0)) > 0 ||
+      Math.max(0, Number(fromPayload.labFeeTotal || 0)) > 0)
+  ) {
+    return fromPayload;
+  }
+  const arrivalYmd = String(payload.arrivalYmd || "").trim();
+  if (!arrivalYmd) return null;
+  const matched = (Array.isArray(prosthesisFollowUps) ? prosthesisFollowUps : []).find(
+    (row) => String(row?.arrivalYmd || "").trim() === arrivalYmd && !row?.canceledAt,
+  );
+  return matched?.billingDelta || null;
 };
 
 /** 레거시 한 줄 재도착 텍스트 → 줄바꿈 본문 */
@@ -115,6 +171,8 @@ type PracticeTransferSystemChatBodyProps = {
   compact?: boolean;
   formatTime: (createdAt: string) => string;
   messageDomId: string;
+  labAnchorId?: string | null;
+  prosthesisFollowUps?: ProsthesisFollowUpRecord[] | null;
 };
 
 export function PracticeTransferSystemChatBody({
@@ -122,6 +180,8 @@ export function PracticeTransferSystemChatBody({
   compact = false,
   formatTime,
   messageDomId,
+  labAnchorId = null,
+  prosthesisFollowUps = null,
 }: PracticeTransferSystemChatBodyProps): JSX.Element | null {
   const systemEvent = String(message.systemEvent || "").trim();
   const followUpPayload =
@@ -131,6 +191,9 @@ export function PracticeTransferSystemChatBody({
 
   if (followUpPayload) {
     const { arrivalYmd, toothWorks } = followUpPayload;
+    const storedFeeQuote = buildFollowUpChatFeeQuote(
+      resolveFollowUpBillingDelta(followUpPayload, prosthesisFollowUps),
+    );
     return (
       <div
         id={messageDomId}
@@ -155,6 +218,8 @@ export function PracticeTransferSystemChatBody({
                 embedded
                 showHeader={false}
                 skipAbutmentFees
+                labAnchorId={labAnchorId}
+                feeQuote={storedFeeQuote}
                 className="border-0 bg-transparent p-0 shadow-none"
               />
             </div>

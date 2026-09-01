@@ -4,6 +4,7 @@ import {
   buildFollowUpToothWorksDraft,
   canAppendProsthesisFollowUp,
   canManagePendingProsthesisFollowUp,
+  isPendingProsthesisFollowUpRecord,
   listPendingFollowUpTempSpans,
   stripFollowUpToothWorksForRecord,
 } from "../../utils/practiceTransferProsthesisFollowUp.js";
@@ -98,6 +99,38 @@ describe("practiceTransferProsthesisFollowUp", () => {
       canManagePendingProsthesisFollowUp({
         prosthesisFollowUps: [{ arrivalYmd: "2026-09-11", labAcceptedAt: new Date() }],
       }).ok,
+    ).toBe(false);
+  });
+
+  test("follow-up appended after main accept stays pending even with labAcceptedAt", () => {
+    const requestorDownloadedAt = new Date("2026-09-01T10:00:00+09:00");
+    const appendedAt = new Date("2026-09-01T12:00:00+09:00");
+    const labAcceptedAt = new Date("2026-09-01T12:05:00+09:00");
+    expect(
+      isPendingProsthesisFollowUpRecord(
+        { arrivalYmd: "2026-09-11", labAcceptedAt, appendedAt },
+        requestorDownloadedAt,
+      ),
+    ).toBe(true);
+    expect(
+      canManagePendingProsthesisFollowUp({
+        prosthesisFollowUps: [
+          { arrivalYmd: "2026-09-11", labAcceptedAt, appendedAt },
+        ],
+        requestorDownloadedAt,
+      }).ok,
+    ).toBe(true);
+  });
+
+  test("follow-up appended before main accept is not pending once labAcceptedAt set", () => {
+    const requestorDownloadedAt = new Date("2026-09-01T12:00:00+09:00");
+    const appendedAt = new Date("2026-09-01T10:00:00+09:00");
+    const labAcceptedAt = new Date("2026-09-01T12:00:00+09:00");
+    expect(
+      isPendingProsthesisFollowUpRecord(
+        { arrivalYmd: "2026-09-11", labAcceptedAt, appendedAt },
+        requestorDownloadedAt,
+      ),
     ).toBe(false);
   });
 });
