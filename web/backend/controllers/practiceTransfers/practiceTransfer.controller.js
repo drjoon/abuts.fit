@@ -1,6 +1,7 @@
 import { Types } from "mongoose";
 import PracticeTransfer from "../../models/practiceTransfer.model.js";
 import PracticeTransferDraft from "../../models/practiceTransferDraft.model.js";
+import { purgeStalePracticeTransferDrafts } from "../../utils/practiceTransferDraft.util.js";
 import File from "../../models/file.model.js";
 import User from "../../models/user.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
@@ -2002,6 +2003,27 @@ export async function listPracticeTransferDrafts(req, res) {
     const trashedOnly = trashedRaw === "1" || trashedRaw === "true";
 
     const { scope } = await buildPracticeOwnedScope(req);
+
+    const stalePurge = await purgeStalePracticeTransferDrafts({
+      scope,
+      PracticeTransferDraft,
+    });
+    if (stalePurge.purgedCount > 0) {
+      await emitPracticeTransferEventToPracticeUsers({
+        practiceBusinessAnchorId: req.user?.businessAnchorId,
+        type: "practice:transfer-updated",
+        payload: {
+          source: "listPracticeTransferDrafts",
+          action: "drafts-stale-purged",
+          draftIds: stalePurge.purgedIds,
+          draftClearedCount: stalePurge.purgedCount,
+          practiceBusinessAnchorId:
+            String(req.user?.businessAnchorId || "").trim() || null,
+          updatedAt: stalePurge.purgedAt,
+        },
+        extraUserIds: [req.user?._id],
+      });
+    }
 
     const docs = await PracticeTransferDraft.find({
       ...scope,

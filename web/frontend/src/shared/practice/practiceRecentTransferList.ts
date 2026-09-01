@@ -200,6 +200,10 @@ export type PracticeRecentTransferItem = {
   practiceUserLabel?: string;
   isMineDraft?: boolean;
   draftPatientName?: string;
+  /** 임시저장 — 기공소·첨부 없음 */
+  draftIncomplete?: boolean;
+  /** 임시저장 — KST 1일+ 미갱신(깜빡임) */
+  draftStaleHighlight?: boolean;
   prosthesisFollowUps?: import("@/shared/practice/prosthesisFollowUp").ProsthesisFollowUpRecord[];
   toothWorks?: Array<Record<string, unknown>>;
   requestorDownloadedAt?: string | null;

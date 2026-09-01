@@ -398,6 +398,25 @@ All colors MUST be HSL.
   animation: practice-transfer-attention-pulse 1.5s ease-in-out infinite;
 }
 
+/* Practice: 1일+ 미갱신 임시저장 */
+@keyframes practice-draft-stale-pulse {
+  0%,
+  100% {
+    border-color: rgb(251 191 36 / 0.75);
+    background-color: rgb(255 251 235);
+    box-shadow: 0 0 0 0 rgb(245 158 11 / 0.22);
+  }
+  50% {
+    border-color: rgb(245 158 11);
+    background-color: rgb(254 243 199);
+    box-shadow: 0 0 0 4px rgb(245 158 11 / 0.14);
+  }
+}
+
+.practice-draft-stale-attention {
+  animation: practice-draft-stale-pulse 1.5s ease-in-out infinite;
+}
+
 /* Practice: 보철물 치식 체험형 가이드투어 하이라이트 (accent) */
 @keyframes practice-tooth-guide-pulse {
   0%,

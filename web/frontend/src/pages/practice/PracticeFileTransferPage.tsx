@@ -365,6 +365,12 @@ import {
   upsertLabArrivalDefault,
   type PracticeLabArrivalDefault,
 } from "@/shared/practice/labArrivalDefaults";
+import {
+  isPracticeTransferDraftIncomplete,
+  isPracticeTransferDraftStaleHighlight,
+  practiceTransferDraftCountBadgeClassName,
+  practiceTransferDraftStaleAttentionClassName,
+} from "@/shared/practice/practiceTransferDraft";
 // - 2026-08-25: labArrivalDefaults — 기공소별 주문→치과도착 기본 일수.
 import {
   PracticeTransferRequestCardMeta,
@@ -1309,6 +1315,9 @@ export const PracticeFileTransferPage = ({
   const formAutosaveTimerRef = useRef<number | null>(null);
   const draftListSeqRef = useRef(0);
   const draftListLoadedRef = useRef(false);
+  const practiceDraftListRef = useRef<DraftListSummary[]>([]);
+  /** draftId별 최초 자동저장 토스트 1회 */
+  const draftFirstSaveToastShownRef = useRef(new Set<string>());
   /** 목록에 실제로 등장했던 activeDraftId. 저장 직후 목록 레이스로 폼을 비우지 않기 위함. */
   const activeDraftSeenInListRef = useRef<string | null>(null);
   const pendingLocalFilesRef = useRef<File[]>([]);
@@ -2325,6 +2334,23 @@ export const PracticeFileTransferPage = ({
       // ignore
     }
   }, [authToken, myUserId]);
+
+  useEffect(() => {
+    practiceDraftListRef.current = practiceDraftList;
+  }, [practiceDraftList]);
+
+  const notifyDraftFirstAutosave = useCallback(
+    (draftId: string, patientLabel: string) => {
+      const id = String(draftId || "").trim();
+      if (!id || draftFirstSaveToastShownRef.current.has(id)) return;
+      draftFirstSaveToastShownRef.current.add(id);
+      toast({
+        title: "임시저장됨",
+        description: `${patientLabel} 환자 의뢰가 임시저장되었습니다. 상단 「임시저장」에서 이어서 작성할 수 있습니다.`,
+      });
+    },
+    [toast],
+  );
 
   const applyPracticeDraftPayload = useCallback(
     (
@@ -3400,6 +3426,12 @@ export const PracticeFileTransferPage = ({
 
         // seq가 바뀌어도 draftId 없는 POST가 만든 id는 회수한다(미회수 시 r/rh/완성명이 각각 새 draft).
         const returnedDraftId = String(payload?._id || "").trim();
+        const isNewDraft =
+          Boolean(returnedDraftId) &&
+          !practiceDraftListRef.current.some((row) => row.id === returnedDraftId);
+        if (isNewDraft && returnedDraftId) {
+          notifyDraftFirstAutosave(returnedDraftId, normalizedPatientName);
+        }
         if (returnedDraftId && !activeDraftIdRef.current) {
           setActiveDraftId(returnedDraftId);
           activeDraftIdRef.current = returnedDraftId;
@@ -3507,6 +3539,7 @@ export const PracticeFileTransferPage = ({
       selectedLab?.name,
       skipDesignConfirm,
       effectiveSkipJig,
+      notifyDraftFirstAutosave,
     ],
   );
 
@@ -3838,6 +3871,14 @@ export const PracticeFileTransferPage = ({
           size: Number(file.size || 0),
         }));
         const ownerLabel = draft.isMine ? "나" : draft.practiceUserLabel || "동료";
+        const draftIncomplete = isPracticeTransferDraftIncomplete({
+          targetLabName: draft.targetLabName,
+          targetLabAnchorId: draft.targetLabAnchorId,
+          fileCount: draft.fileCount,
+        });
+        const draftStaleHighlight = isPracticeTransferDraftStaleHighlight(
+          draft.updatedAt || draft.createdAt,
+        );
 
         return {
           id: draft.id,
@@ -3863,6 +3904,8 @@ export const PracticeFileTransferPage = ({
           practiceUserLabel: ownerLabel,
           isMineDraft: draft.isMine,
           draftPatientName: draft.patientName,
+          draftIncomplete,
+          draftStaleHighlight,
           searchBlob: [
             "임시저장",
             PRACTICE_DRAFT_TRANSFER_ID,
@@ -3870,6 +3913,7 @@ export const PracticeFileTransferPage = ({
             draft.patientName,
             targetLab,
             displayMemo,
+            ...(draftIncomplete ? ["미완성"] : []),
             ...files.map((file) => file.fileName),
           ]
             .join(" ")
@@ -3877,6 +3921,15 @@ export const PracticeFileTransferPage = ({
         };
       });
   }, [practiceDraftList]);
+
+  const draftCountBadgeClass = practiceTransferDraftCountBadgeClassName();
+  const hasStaleDrafts = useMemo(
+    () =>
+      practiceDraftList.some((row) =>
+        isPracticeTransferDraftStaleHighlight(row.updatedAt || row.createdAt),
+      ),
+    [practiceDraftList],
+  );
 
   const trashGroupedTransfers = useMemo(() => {
     const byKey = new Map<string, RecentTransferItem>();
@@ -6274,7 +6327,7 @@ export const PracticeFileTransferPage = ({
         return;
       }
 
-      if (action === "drafts-cleared") {
+      if (action === "drafts-cleared" || action === "drafts-stale-purged") {
         const ids = (Array.isArray(payload.draftIds) ? payload.draftIds : [])
           .map((id) => String(id || "").trim())
           .filter(Boolean);
@@ -7672,13 +7725,17 @@ export const PracticeFileTransferPage = ({
             type="button"
             variant="outline"
             size="sm"
-            className="h-9 gap-1.5 px-3"
+            className={cn(
+              "h-9 gap-1.5 px-3",
+              draftGroupedTransfers.length > 0 && "border-amber-300 bg-amber-50/80",
+              practiceTransferDraftStaleAttentionClassName(hasStaleDrafts),
+            )}
             onClick={() => setDraftsOpen(true)}
           >
             <BookmarkPlus className="h-4 w-4 shrink-0" />
             임시저장
             {draftGroupedTransfers.length > 0 ? (
-              <Badge variant="secondary" className="ml-0.5">
+              <Badge variant="outline" className={draftCountBadgeClass}>
                 {draftGroupedTransfers.length}
               </Badge>
             ) : null}
@@ -7741,7 +7798,11 @@ export const PracticeFileTransferPage = ({
         type="button"
         variant="outline"
         size="sm"
-        className="h-9 shrink-0 gap-1 rounded-full border-slate-200 bg-white px-3 shadow-sm"
+        className={cn(
+          "h-9 shrink-0 gap-1 rounded-full border-slate-200 bg-white px-3 shadow-sm",
+          draftGroupedTransfers.length > 0 && "border-amber-300 bg-amber-50/90",
+          practiceTransferDraftStaleAttentionClassName(hasStaleDrafts),
+        )}
         aria-label={
           draftGroupedTransfers.length > 0
             ? `임시저장 ${draftGroupedTransfers.length}건`
@@ -7754,8 +7815,11 @@ export const PracticeFileTransferPage = ({
         임시저장
         {draftGroupedTransfers.length > 0 ? (
           <Badge
-            variant="secondary"
-            className="h-4 min-w-4 justify-center rounded-full px-1 text-[10px] leading-none"
+            variant="outline"
+            className={cn(
+              draftCountBadgeClass,
+              "h-4 min-w-4 justify-center rounded-full px-1 text-[10px] leading-none",
+            )}
           >
             {draftGroupedTransfers.length}
           </Badge>
@@ -7795,13 +7859,17 @@ export const PracticeFileTransferPage = ({
         type="button"
         variant="outline"
         size="sm"
-        className="h-9 gap-1.5 px-3"
+        className={cn(
+          "h-9 gap-1.5 px-3",
+          draftGroupedTransfers.length > 0 && "border-amber-300 bg-amber-50/80",
+          practiceTransferDraftStaleAttentionClassName(hasStaleDrafts),
+        )}
         onClick={() => setDraftsOpen(true)}
       >
         <BookmarkPlus className="h-4 w-4 shrink-0" />
         임시저장
         {draftGroupedTransfers.length > 0 ? (
-          <Badge variant="secondary" className="ml-0.5">
+          <Badge variant="outline" className={draftCountBadgeClass}>
             {draftGroupedTransfers.length}
           </Badge>
         ) : null}
@@ -8534,8 +8602,11 @@ export const PracticeFileTransferPage = ({
                   임시저장
                   {draftGroupedTransfers.length > 0 ? (
                     <Badge
-                      variant="secondary"
-                      className="rounded-md px-1.5 py-0 text-[11px] font-medium tabular-nums"
+                      variant="outline"
+                      className={cn(
+                        draftCountBadgeClass,
+                        "rounded-md px-1.5 py-0 text-[11px] font-medium tabular-nums",
+                      )}
                     >
                       {draftGroupedTransfers.length}
                     </Badge>
@@ -8627,6 +8698,9 @@ export const PracticeFileTransferPage = ({
                           isActive
                             ? "border-primary/50 bg-primary-soft/50 ring-1 ring-primary/20"
                             : "border-slate-200/80",
+                          practiceTransferDraftStaleAttentionClassName(
+                            transfer.draftStaleHighlight,
+                          ),
                         )}
                         onClick={() => handleAdoptDraftTransfer(transfer)}
                         onKeyDown={(e) => {
@@ -8648,6 +8722,14 @@ export const PracticeFileTransferPage = ({
                           >
                             {ownerLabel}
                           </Badge>
+                          {transfer.draftIncomplete ? (
+                            <Badge
+                              variant="outline"
+                              className="h-6 shrink-0 border-amber-200 bg-amber-50 px-1.5 text-[10px] text-amber-900"
+                            >
+                              미완성
+                            </Badge>
+                          ) : null}
                           <span className="ml-auto shrink-0 text-[11px] tabular-nums text-muted-foreground">
                             {transfer.createdAt}
                           </span>
@@ -8688,7 +8770,8 @@ export const PracticeFileTransferPage = ({
                   <BookmarkPlus className="h-9 w-9 text-slate-300" />
                   <p className="text-sm font-medium text-slate-600">임시저장 없음</p>
                   <p className="max-w-sm text-xs leading-relaxed text-muted-foreground">
-                    기공소와 완성형 한글 환자명을 입력하면 자동으로 저장됩니다.
+                    완성형 한글 환자명을 입력하면 자동으로 저장됩니다. 7일간
+                    수정이 없으면 휴지통으로 옮겨집니다.
                   </p>
                 </div>
               ) : (
@@ -8713,6 +8796,9 @@ export const PracticeFileTransferPage = ({
                           isActive
                             ? "border-primary/50 bg-primary-soft/70 shadow-sm ring-1 ring-primary/20"
                             : "border-slate-200/90 hover:border-slate-300 hover:bg-slate-50/80",
+                          practiceTransferDraftStaleAttentionClassName(
+                            transfer.draftStaleHighlight,
+                          ),
                         )}
                         onClick={() => handleAdoptDraftTransfer(transfer)}
                         onKeyDown={(e) => {
@@ -8731,6 +8817,14 @@ export const PracticeFileTransferPage = ({
                               <Badge variant="outline" className="whitespace-nowrap">
                                 {ownerLabel}
                               </Badge>
+                              {transfer.draftIncomplete ? (
+                                <Badge
+                                  variant="outline"
+                                  className="whitespace-nowrap border-amber-200 bg-amber-50 text-amber-900"
+                                >
+                                  미완성
+                                </Badge>
+                              ) : null}
                               {isActive ? (
                                 <Badge className="h-5 whitespace-nowrap rounded-md border-0 bg-primary-strong px-1.5 text-[10px] font-medium text-white hover:bg-primary-strong">
                                   작성 중
