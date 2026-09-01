@@ -97,8 +97,8 @@ namespace DentalAddin
 
                 // 3-stage 순서(요청 반영):
                 // Front:  Turn -> Rough -> Front Face
+                // Middle (Splitline_2>5mm): Turn -> Rough
                 // Back:   Turn -> Rough
-                // Middle_Turn / Middle_Rough는 레거시로 생성하지 않는다 (Front+Back로 커버)
                 // Finish: deep=Front/Back 분할, none=All 단일
                 NcJobCancellation.ThrowIfCurrentCancelled("OperationSeq.before-FRONT");
                 using (DentalLogger.Measure("OperationSeq.FRONT_TurnRough"))
@@ -113,6 +113,18 @@ namespace DentalAddin
                 {
                     ValidateBeforeOperation("FrontFaceMill", Array.Empty<string>(), new[] { "3DMilling_FrontFace" });
                     FrontFaceMill();
+                }
+
+                if (TryGetThreeStageSplitConfig(out _, out double splitline2ForMiddle, out _, out _)
+                    && IsWideSplitline2(splitline2ForMiddle))
+                {
+                    NcJobCancellation.ThrowIfCurrentCancelled("OperationSeq.before-MIDDLE");
+                    using (DentalLogger.Measure("OperationSeq.MIDDLE_TurnRough"))
+                    {
+                        ExecuteTwoPhaseTurning("MIDDLE");
+                        NcJobCancellation.ThrowIfCurrentCancelled("OperationSeq.after-MIDDLE_Turn");
+                        ExecuteTwoPhaseRough("MIDDLE");
+                    }
                 }
 
                 // 요청 반영:
@@ -449,8 +461,11 @@ namespace DentalAddin
             NcJobCancellation.ThrowIfCurrentCancelled($"ExecuteTwoPhaseTurning({region})");
             if (string.Equals(region, "MIDDLE", StringComparison.OrdinalIgnoreCase))
             {
-                DentalLogger.Log("ExecuteTwoPhaseTurning(MIDDLE) - MIDDLE region 요청 무시(Middle_Turn legacy 제거)");
-                return;
+                if (!TryGetThreeStageSplitConfig(out _, out double splitline2, out _, out _) || !IsWideSplitline2(splitline2))
+                {
+                    DentalLogger.Log("ExecuteTwoPhaseTurning(MIDDLE) - MIDDLE region 요청 무시(splitline_2<=5mm)");
+                    return;
+                }
             }
 
             Environment.SetEnvironmentVariable(AppConfig.TwoPhaseTurningRegionEnv, region);
@@ -1556,11 +1571,11 @@ namespace DentalAddin
             return false;
         }
 
-        // 3-stage turning 분할 준비: region(FRONT/BACK)에 맞는 X 구간을 계산한다.
+        // 3-stage turning 분할 준비: region(FRONT/MIDDLE/BACK)에 맞는 X 구간을 계산한다.
         // 기준:
         // - Splitline_1 = FrontPointX
         // - Splitline_2 = SharedFinishSplitX (midpoint 금지)
-        // - Middle_Turn은 레거시로 생성하지 않는다 (ExecuteTwoPhaseTurning에서 skip)
+        // - Splitline_2>5mm: Front(Turn/Rough/Face) + Middle(Turn/Rough), Front 끝=Front_Face end
         private static bool TryPrepareTurningRegionRange(string region, out double rangeMinX, out double rangeMaxX)
         {
             rangeMinX = 0.0;
@@ -1573,20 +1588,30 @@ namespace DentalAddin
                     return false;
                 }
 
-                // Front_Turn 끝점 SSOT: Splitline_2 + 2.5mm (Back 방향, X+)
-                const double frontTurnEndPastSplitline2Mm = 2.5;
-
+                bool wideSplit = IsWideSplitline2(splitline2);
                 string normalized = (region ?? string.Empty).Trim().ToUpperInvariant();
                 switch (normalized)
                 {
                     case "FRONT":
                         rangeMinX = xMin;
-                        rangeMaxX = Math.Min(xMax, splitline2 + frontTurnEndPastSplitline2Mm);
+                        if (wideSplit && TryResolveFrontFaceEndX(out double frontFaceEndX))
+                        {
+                            rangeMaxX = Math.Min(xMax, frontFaceEndX + FrontTurnEndPastBoundaryMm);
+                        }
+                        else
+                        {
+                            rangeMaxX = Math.Min(xMax, splitline2 + FrontTurnEndPastBoundaryMm);
+                        }
                         break;
                     case "MIDDLE":
-                        // Middle_Turn legacy — ExecuteTwoPhaseTurning에서 이미 skip. 방어적으로 거부.
-                        DentalLogger.Log("TurningOp 3-Stage - MIDDLE region 거부(Middle_Turn legacy 제거)");
-                        return false;
+                        if (!wideSplit || !TryResolveFrontFaceEndX(out double middleStartX))
+                        {
+                            DentalLogger.Log("TurningOp 3-Stage - MIDDLE region 거부(splitline_2<=5mm 또는 Front_Face end 계산 실패)");
+                            return false;
+                        }
+                        rangeMinX = Clamp(middleStartX, xMin + 1e-6, xMax - 1e-6);
+                        rangeMaxX = Math.Min(xMax, splitline2 + FrontTurnEndPastBoundaryMm);
+                        break;
                     case "BACK":
                         // 요청사항 반영(2026-07-01):
                         // 1) 시작점은 Front와 동일한 anchor(FrontPointX)로 통일한다.
@@ -1620,8 +1645,12 @@ namespace DentalAddin
                     return false;
                 }
 
-                DentalLogger.Log($"TurningOp 3-Stage - region={region}, range=[{rangeMinX:0.###},{rangeMaxX:0.###}], split1={splitline1:0.###}, split2={splitline2:0.###}" +
-                    (normalized == "FRONT" ? $", Front_Turn끝=Splitline_2+{frontTurnEndPastSplitline2Mm:0.###}" : string.Empty));
+                DentalLogger.Log($"TurningOp 3-Stage - region={region}, range=[{rangeMinX:0.###},{rangeMaxX:0.###}], split1={splitline1:0.###}, split2={splitline2:0.###}, wide={wideSplit}" +
+                    (normalized == "FRONT"
+                        ? $", Front_Turn끝={(wideSplit ? "Front_Face end" : "Splitline_2")}+{FrontTurnEndPastBoundaryMm:0.###}"
+                        : normalized == "MIDDLE"
+                            ? $", Middle_Turn:[Front_Face end~Splitline_2+{FrontTurnEndPastBoundaryMm:0.###}]"
+                            : string.Empty));
                 return true;
             }
             catch (Exception ex)

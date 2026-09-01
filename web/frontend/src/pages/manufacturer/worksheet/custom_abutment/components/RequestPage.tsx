@@ -1662,6 +1662,9 @@ export const RequestPage = ({
   const [anodizingSavingMap, setAnodizingSavingMap] = useState<
     Record<string, boolean>
   >({});
+  const [wideSplitSavingMap, setWideSplitSavingMap] = useState<
+    Record<string, boolean>
+  >({});
   const [bulkCamRegenerating, setBulkCamRegenerating] = useState(false);
 
   // related files (manufacturer hex rotation label/canonical mapping):
@@ -1944,6 +1947,106 @@ export const RequestPage = ({
       }
     },
     [anodizingSavingMap, pageState, toast, token],
+  );
+
+  const handleSaveWideSplitEnabledOverride = useCallback(
+    async (req: ManufacturerRequest, nextValue: boolean) => {
+      if (!req?._id) return;
+      const requestMongoId = String(req._id || "").trim();
+      if (!requestMongoId) return;
+
+      const stageLabel = String(req.manufacturerStage || "").trim();
+      if (!["준비", "의뢰", "CAM", "request", "cam"].includes(stageLabel)) {
+        toast({
+          title: "변경 불가",
+          description: "Wide Split 설정은 준비 단계에서만 변경할 수 있습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (wideSplitSavingMap[requestMongoId]) return;
+
+      const prevValue =
+        typeof req.caseInfos?.wideSplitEnabled === "boolean"
+          ? req.caseInfos.wideSplitEnabled
+          : null;
+
+      setWideSplitSavingMap((prev) => ({ ...prev, [requestMongoId]: true }));
+      pageState.setRequests((prev) =>
+        prev.map((item) => {
+          if (String(item?._id || "").trim() !== requestMongoId) return item;
+          return {
+            ...item,
+            caseInfos: {
+              ...(item.caseInfos || {}),
+              wideSplitEnabled: nextValue,
+            },
+          };
+        }),
+      );
+
+      try {
+        const res = await fetch(
+          `/api/requests/${req._id}/wide-split-override`,
+          {
+            method: "PATCH",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ wideSplitEnabled: nextValue }),
+          },
+        );
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data?.success === false) {
+          throw new Error(data?.message || "Wide Split 설정 저장에 실패했습니다.");
+        }
+
+        const savedValue =
+          typeof data?.data?.wideSplitEnabled === "boolean"
+            ? Boolean(data.data.wideSplitEnabled)
+            : nextValue;
+
+        pageState.setRequests((prev) =>
+          prev.map((item) => {
+            if (String(item?._id || "").trim() !== requestMongoId) return item;
+            return {
+              ...item,
+              caseInfos: {
+                ...(item.caseInfos || {}),
+                wideSplitEnabled: savedValue,
+              },
+            };
+          }),
+        );
+      } catch (e: any) {
+        pageState.setRequests((prev) =>
+          prev.map((item) => {
+            if (String(item?._id || "").trim() !== requestMongoId) return item;
+            const nextCaseInfos = { ...(item.caseInfos || {}) };
+            if (typeof prevValue === "boolean") {
+              nextCaseInfos.wideSplitEnabled = prevValue;
+            } else {
+              delete nextCaseInfos.wideSplitEnabled;
+            }
+            return {
+              ...item,
+              caseInfos: nextCaseInfos,
+            };
+          }),
+        );
+        toast({
+          title: "Wide Split 저장 실패",
+          description: e?.message || "네트워크 오류",
+          variant: "destructive",
+        });
+        throw e;
+      } finally {
+        setWideSplitSavingMap((prev) => ({ ...prev, [requestMongoId]: false }));
+      }
+    },
+    [pageState, toast, token, wideSplitSavingMap],
   );
 
   const { handleCardRollback, handleCardApprove } = useCardActions(
@@ -2870,6 +2973,7 @@ export const RequestPage = ({
           onRestoreUnmachinable={handleRestoreUnmachinable}
           onSaveManufacturerHexRotation={handleSaveManufacturerHexRotation}
           onSaveAnodizingEnabledOverride={handleSaveAnodizingEnabledOverride}
+          onSaveWideSplitEnabledOverride={handleSaveWideSplitEnabledOverride}
           onOpenNextRequest={handleOpenNextRequest}
           setSearchParams={setSearchParams}
         />

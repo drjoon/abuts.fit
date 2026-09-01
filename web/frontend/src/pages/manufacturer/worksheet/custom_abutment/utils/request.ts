@@ -44,6 +44,7 @@ export type ManufacturerRequest = RequestBase & {
       hexVerificationSample?: boolean | null;
       hexVerificationResultHex?: "STL모델대로" | "헥스30도회전" | null;
       anodizingEnabled?: boolean | null;
+      wideSplitEnabled?: boolean | null;
     } | null;
   } | null;
   deliveryInfoRef?: unknown;

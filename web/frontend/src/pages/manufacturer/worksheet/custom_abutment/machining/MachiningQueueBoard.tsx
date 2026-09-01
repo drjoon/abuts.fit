@@ -1063,6 +1063,122 @@ export const MachiningQueueBoard = ({
     [token, camPreviewFiles],
   );
 
+  const handleSaveWideSplitEnabledOverrideFromCamPreview = useCallback(
+    async (req: ManufacturerRequest, nextValue: boolean) => {
+      if (!token) return;
+
+      let requestMongoId = String(req?._id || "").trim();
+      const requestId = String(req?.requestId || "").trim();
+
+      if (!requestMongoId && requestId) {
+        const summaryRes = await fetch(
+          `/api/requests/by-request/${encodeURIComponent(requestId)}/summary`,
+          {
+            method: "GET",
+            headers: { Authorization: `Bearer ${token}` },
+          },
+        );
+        const summaryBody = await summaryRes.json().catch(() => ({}));
+        requestMongoId = String(summaryBody?.data?._id || "").trim();
+      }
+
+      if (!requestMongoId) {
+        throw new Error("의뢰 식별값이 없어 Wide Split을 저장할 수 없습니다.");
+      }
+
+      const prevValue =
+        typeof (camPreviewFiles?.request as any)?.caseInfos?.wideSplitEnabled ===
+        "boolean"
+          ? Boolean((camPreviewFiles.request as any).caseInfos.wideSplitEnabled)
+          : null;
+
+      setCamPreviewFiles((prev) => {
+        const currentReq = prev?.request || null;
+        if (!currentReq) return prev;
+        return {
+          ...prev,
+          request: {
+            ...currentReq,
+            _id: requestMongoId,
+            caseInfos: {
+              ...(currentReq.caseInfos || {}),
+              wideSplitEnabled: nextValue,
+            },
+          },
+        };
+      });
+
+      try {
+        const res = await fetch(
+          `/api/requests/${encodeURIComponent(requestMongoId)}/wide-split-override`,
+          {
+            method: "PATCH",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ wideSplitEnabled: nextValue }),
+          },
+        );
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok || (body as { success?: boolean })?.success === false) {
+          throw new Error(
+            (body as { message?: string })?.message ||
+              "Wide Split 설정 저장에 실패했습니다.",
+          );
+        }
+
+        const savedValue =
+          typeof (body as { data?: { wideSplitEnabled?: unknown } })?.data
+            ?.wideSplitEnabled === "boolean"
+            ? Boolean(
+                (body as { data?: { wideSplitEnabled?: boolean } }).data
+                  ?.wideSplitEnabled,
+              )
+            : nextValue;
+
+        setCamPreviewFiles((prev) => {
+          const currentReq = prev?.request || null;
+          if (!currentReq) return prev;
+          return {
+            ...prev,
+            request: {
+              ...currentReq,
+              _id: requestMongoId,
+              caseInfos: {
+                ...(currentReq.caseInfos || {}),
+                wideSplitEnabled: savedValue,
+              },
+            },
+          };
+        });
+      } catch (error) {
+        setCamPreviewFiles((prev) => {
+          const currentReq = prev?.request || null;
+          if (!currentReq) return prev;
+          const nextCaseInfos = { ...(currentReq.caseInfos || {}) } as Record<
+            string,
+            unknown
+          >;
+          if (typeof prevValue === "boolean") {
+            nextCaseInfos.wideSplitEnabled = prevValue;
+          } else {
+            delete nextCaseInfos.wideSplitEnabled;
+          }
+          return {
+            ...prev,
+            request: {
+              ...currentReq,
+              caseInfos: nextCaseInfos as any,
+            },
+          };
+        });
+        throw error;
+      }
+    },
+    [token, camPreviewFiles],
+  );
+
   const isCamPreviewMachiningInProgress = useMemo(() => {
     const requestId = String(
       (camPreviewFiles?.request as ManufacturerRequest | null | undefined)
@@ -2401,6 +2517,9 @@ export const MachiningQueueBoard = ({
         onOpenCodeEditor={handleOpenCodeEditorFromCamPreview}
         onSaveAnodizingEnabledOverride={
           handleSaveAnodizingEnabledOverrideFromCamPreview
+        }
+        onSaveWideSplitEnabledOverride={
+          handleSaveWideSplitEnabledOverrideFromCamPreview
         }
         onUpdateReviewStatus={handleUpdateReviewStatus}
         onDeleteCam={handleDeleteCam}

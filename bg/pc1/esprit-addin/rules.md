@@ -57,7 +57,10 @@
 - 기존 A/B 2분할 공정을 Front/Back 2-way로 고정한다.
   - Front: `Turn -> Rough -> Front Face`
   - Back: `Turn -> Rough`
-  - `Middle_Turn` / `Middle_Rough`는 레거시로 **생성하지 않는다** (Front+Back로 커버)
+  - **`Splitline_2 > 5mm`일 때만** Middle: `Turn -> Rough` 추가
+    - Front: `Front_Face` end 기준 (Turn/Rough/Face 구간)
+    - Middle: `Front_Face` end ~ 기존 Front 끝(`Splitline_2`, Turn은 `+2.5mm`)
+  - `Splitline_2 <= 5mm`이면 Middle 미생성 (Front+Back로 커버)
 - Finish 정책:
   - `retentionGroove=deep` → `Finish_Front`, `Finish_Back`
   - `retentionGroove=none` 및 `ALL_PHASE` → `Finish_All` 단일 패스
@@ -67,7 +70,7 @@
 - Turning/Rough/Face 라벨은 아래 이름으로 고정한다.
   - `Front_Turn`, `Front_Rough`, `Front_Face`
   - `Back_Turn`, `Back_Rough`
-  - 레거시(미생성): `Middle_Turn`, `Middle_Rough`
+  - `Splitline_2 > 5mm`일 때: `Middle_Turn`, `Middle_Rough`
 - Finish 라벨은 모드별로 아래 이름만 사용한다.
   - `Finish_All` 또는 `Finish_Front`, `Finish_Back`
 
@@ -81,9 +84,15 @@
   - Finish: **Front 끝 = `Splitline_2`**, **Back 시작 = `Splitline_2` − 1피치**
     - 피치 SSOT: 백엔드 `retentionGroove` (`none`→`0.12`, `deep`→`0.20`) via `ABUTS_RETENTION_GROOVE`
     - `ABUTS_COMPOSITE_STEP_INCREMENT_A` **미사용**. none/deep 미수신 시 NC 중단 + 프론트 토스트
-  - Turn: **`Front_Turn` 끝 = `Splitline_2` + 2.5mm** (Back 방향 X+)
+  - Turn: **`Front_Turn` 끝**
+    - `Splitline_2 <= 5mm`: `Splitline_2 + 2.5mm` (Back 방향 X+)
+    - `Splitline_2 > 5mm`: `Front_Face` end + 2.5mm
     - 구현: `MainModuleOperations.TryPrepareTurningRegionRange` (`FRONT` → `rangeMaxX`)
-- `Middle_Turn` / `Middle_Rough`는 레거시로 **생성하지 않는다** (Front + Back로 커버)
+  - **`Splitline_2 > 5mm` wide split** (`ABUTS_WIDE_SPLIT_ENABLE`, request-meta `caseInfos.wideSplitEnabled`, 기본 ON)
+    - `Front_Rough` 끝 = `Front_Face` end
+    - `Middle_Turn`: `Front_Face` end ~ `Splitline_2 + 2.5mm`
+    - `Middle_Rough`: `Front_Face` end ~ `Splitline_2` (인접 겹침: 시작 = Face end − roughRadius)
+- `Splitline_2 <= 5mm`이면 Middle 미생성
 
 ### 4.3.1 SharedFinishSplit / Splitline_2 SSOT (검색 키워드: `SharedFinishSplitX`, `finishlineTop-1mm`, `X=-Z`, `GetRoughAdjacentOverlapMm`, `GetFinishAdjacentOverlapMm`, `ABUTS_RETENTION_GROOVE`)
 
@@ -108,11 +117,11 @@
     (FL max_z > Front.z 이면 tip쪽 `topX-1`이 Front보다 작아짐; Front 하한으로 끌면 FL 하방 침범)
 - 구현:
   - `TryResolveSharedFinishSplitX` → `TryResolveTwoPhaseSplitLineTargetX`
-  - Rough: `frontEnd = splitline2`, `backStart = splitline2 - GetRoughAdjacentOverlapMm()`, Middle skip
+  - Rough: `frontEnd = splitline2`(기본) / wide 시 `Front_Face` end, `backStart = splitline2 - GetRoughAdjacentOverlapMm()`, Middle은 wide 시만
   - Finish: `Finish_Front` 끝 = `SharedFinishSplitX`, `Finish_Back` 시작 = `SharedFinishSplitX - GetFinishAdjacentOverlapMm()`
   - Finish_Front StepIncrement도 동일 groove 매핑으로 COM SetProperty (`TrySetCompositeStepIncrement`)
   - `safeBFirstMax`는 seam을 당기지 않는다(로그만)
-  - 금지: `ABUTS_COMPOSITE_STEP_INCREMENT_A` 의존, Finish_Back의 D1.2 반경 앞당김, 고정 0.5mm 겹침, `Middle_Turn`/`Middle_Rough` 재도입, `Back + Z - stlTopZ` 구식 변환 (FL 하방 침범)
+  - 금지: `ABUTS_COMPOSITE_STEP_INCREMENT_A` 의존, Finish_Back의 D1.2 반경 앞당김, 고정 0.5mm 겹침, `Splitline_2<=5mm`에서 `Middle_Turn`/`Middle_Rough` 생성, `Back + Z - stlTopZ` 구식 변환 (FL 하방 침범)
 
 ### 4.4 Finish none 처리
 
@@ -126,8 +135,8 @@
 - 백엔드가 전달한 CAM 직경(현재 SSOT: `LatheMachineSetup.BarDiameter`)을 기준으로,
   `Turn`/`Rough`에서 **공구 직경이 CAM 직경보다 큰 오퍼레이션(D12, D10 등)** 은 생성하지 않는다.
 - 적용 범위:
-  - 3-stage `TurningOp` (Front/Back; Middle legacy skip)
-  - 3-stage `RoughFreeFromMillSplitAB` (Roughing, ZLevel; Middle legacy skip)
+  - 3-stage `TurningOp` (Front/Back; Middle은 `Splitline_2>5mm`일 때만)
+  - 3-stage `RoughFreeFromMillSplitAB` (Roughing, ZLevel; Middle은 `Splitline_2>5mm`일 때만)
 - 목적:
   - CAM 직경 8.0 케이스에서 대구경 선행 가공을 제거해 불필요 공정/시간을 줄인다.
 
@@ -230,9 +239,9 @@
   - `MillRough_3D_20.prc`의 기술 파라미터(증분 깊이/절삭 속도/공차/코너값 포함)는
     코드에서 오버라이드하지 않고 PRC 값을 그대로 사용한다.
   - 구현: `MainModuleComposite.AddSplitOp`에서 Roughing/ZLevel에 별도 SetProperty 적용 금지
-- Rough 경계(Front/Back) 겹침:
+- Rough 경계(Front/Back/Middle):
   - SSOT: `backStart = splitline2 - GetRoughAdjacentOverlapMm()` (D4→2.0)
-  - `Middle_Turn` / `Middle_Rough` 미생성
+  - `Splitline_2 > 5mm`일 때만 `Middle_Turn` / `Middle_Rough` 생성
   - 구현: `MainModuleComposite.TryRunRoughFreeFromMillSplitAB`
 
 ### 4.11 Finish_Cuff Back_Rough 스타일 SSOT (2026-07-11)

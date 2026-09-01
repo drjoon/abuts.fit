@@ -79,6 +79,7 @@ export interface RequestCaseInfos {
   connectionDiameter?: number;
   workType?: string;
   anodizingEnabled?: boolean;
+  wideSplitEnabled?: boolean;
   requestorHexRotation?: "STL모델대로" | "헥스30도회전";
   finalHexRotation?: "STL모델대로" | "헥스30도회전";
   finishLine?: {

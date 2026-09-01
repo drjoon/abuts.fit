@@ -191,6 +191,11 @@ const requestSchema = new mongoose.Schema(
         type: Boolean,
         default: true,
       },
+      // Splitline_2>5mm Front/Middle 분할(wide split). 기본 ON. 준비 단계에서만 변경.
+      wideSplitEnabled: {
+        type: Boolean,
+        default: true,
+      },
       // 유지홈(retentionGroove) 옵션 — 현재 UI 정책은 없음/있음(2단계).
       // legacy shallow 데이터는 none으로 정규화해 사용한다.
       // esprit-addin StepIncrement 매핑의 SSOT 필드.

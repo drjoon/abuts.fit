@@ -1729,6 +1729,8 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
           // 유지홈 옵션(2단계: 없음/있음). Esprit는 none/deep만 허용 — 미설정 시 null → NC 중단+토스트.
           // esprit-addin이 Finish_Front StepIncrement·Finish_Back 1피치 겹침에 사용.
           retentionGroove: normalizeRetentionGrooveOrNull(ci.retentionGroove),
+          wideSplitEnabled:
+            typeof ci.wideSplitEnabled === "boolean" ? ci.wideSplitEnabled : true,
           lotNumber: lotValue,
           // esprit-addin에서 공정 PRC를 선택하기 위한 의뢰별 설정
           // PRC 파일명이 DB에 저장된 경우 그대로 사용, 없으면 임플란트 정보로 동적 계산.

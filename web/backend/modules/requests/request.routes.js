@@ -534,6 +534,13 @@ router.patch(
 );
 
 router.patch(
+  "/:id/wide-split-override",
+  authenticate,
+  authorizeManufacturerOrDesignPartner(),
+  requestController.updateRequestWideSplitOverride,
+);
+
+router.patch(
   "/:id/rnd-memo",
   authenticate,
   authorizeManufacturerOrDesignPartner(),

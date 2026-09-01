@@ -488,6 +488,10 @@ type PreviewModalProps = {
     req: ManufacturerRequest,
     value: boolean,
   ) => Promise<void>;
+  onSaveWideSplitEnabledOverride?: (
+    req: ManufacturerRequest,
+    value: boolean,
+  ) => Promise<void>;
   onOpenNextRequest?: (currentRequestId: string) => Promise<boolean>;
   setSearchParams: (
     nextInit: ((prev: URLSearchParams) => URLSearchParams) | URLSearchParams,
@@ -527,6 +531,7 @@ export const PreviewModal = ({
   onRestoreUnmachinable,
   onSaveManufacturerHexRotation,
   onSaveAnodizingEnabledOverride,
+  onSaveWideSplitEnabledOverride,
   onOpenNextRequest,
   setSearchParams,
 }: PreviewModalProps) => {
@@ -577,6 +582,8 @@ export const PreviewModal = ({
   const [manufacturerHexRotationDraft, setManufacturerHexRotationDraft] =
     useState<ManufacturerHexRotationDraftMode>("");
   const [anodizingEnabledDraft, setAnodizingEnabledDraft] = useState<boolean>(true);
+  const [wideSplitEnabledDraft, setWideSplitEnabledDraft] = useState<boolean>(true);
+  const [wideSplitSaving, setWideSplitSaving] = useState(false);
   const req = previewFiles.request as ManufacturerRequest | null;
   const lastStableReqRef = useRef<ManufacturerRequest | null>(null);
   const openRef = useRef<boolean>(open);
@@ -833,6 +840,13 @@ export const PreviewModal = ({
       setAnodizingEnabledDraft(businessDefaultAnodizing);
     } else {
       setAnodizingEnabledDraft(true);
+    }
+
+    const caseWideSplit = (req as any)?.caseInfos?.wideSplitEnabled;
+    if (typeof caseWideSplit === "boolean") {
+      setWideSplitEnabledDraft(caseWideSplit);
+    } else {
+      setWideSplitEnabledDraft(true);
     }
 
     // 헥스 회전 SSOT: caseInfos.hexRotation.mode
@@ -2058,6 +2072,39 @@ export const PreviewModal = ({
     }
   };
 
+  const handleToggleWideSplitEnabled = async (checked: boolean) => {
+    const prepStages = new Set(["준비", "의뢰", "CAM", "request", "cam"]);
+    const mfgStage = String(activeReq?.manufacturerStage || "").trim();
+    if (
+      !onSaveWideSplitEnabledOverride ||
+      wideSplitSaving ||
+      approveBusy ||
+      !(currentReviewStageKey === "request" || currentReviewStageKey === "cam") ||
+      !prepStages.has(mfgStage)
+    ) {
+      return;
+    }
+
+    const prev = wideSplitEnabledDraft;
+    setWideSplitEnabledDraft(checked);
+    setWideSplitSaving(true);
+    try {
+      await onSaveWideSplitEnabledOverride(activeReq, checked);
+    } catch (error) {
+      setWideSplitEnabledDraft(prev);
+      toast({
+        title: "Wide Split 저장 실패",
+        description:
+          error instanceof Error
+            ? error.message
+            : "잠시 후 다시 시도해주세요.",
+        variant: "destructive",
+      });
+    } finally {
+      setWideSplitSaving(false);
+    }
+  };
+
   const handleToggleAnodizingEnabled = async (checked: boolean) => {
     if (
       !onSaveAnodizingEnabledOverride ||
@@ -2126,8 +2173,18 @@ export const PreviewModal = ({
   const isAnodizingFromBusinessDefault =
     typeof currentCaseAnodizing !== "boolean" &&
     typeof currentBusinessDefaultAnodizing === "boolean";
+  const prepManufacturerStages = new Set([
+    "준비",
+    "의뢰",
+    "CAM",
+    "request",
+    "cam",
+  ]);
+  const manufacturerStageLabel = String(activeReq?.manufacturerStage || "").trim();
   const canOverrideAnodizing =
     currentReviewStageKey === "request" || currentReviewStageKey === "cam";
+  const canOverrideWideSplit =
+    canOverrideAnodizing && prepManufacturerStages.has(manufacturerStageLabel);
 
   const overlayCaseInfos = (activeReq?.caseInfos || {}) as Record<string, any>;
   const overlayFlat = (activeReq || {}) as Record<string, any>;
@@ -2331,6 +2388,33 @@ export const PreviewModal = ({
             </div>
 
             <div className="flex w-full shrink-0 flex-wrap items-center gap-2 md:w-auto md:flex-nowrap">
+              <label
+                className={`inline-flex items-center gap-1.5 rounded-md border px-1.5 py-1 text-[11px] font-semibold ${
+                  canOverrideWideSplit && !approveBusy && !wideSplitSaving
+                    ? "border-slate-200 bg-white text-slate-700"
+                    : "border-slate-200 bg-slate-100 text-slate-400"
+                }`}
+                title="Splitline_2>5mm일 때 Front/Middle 분할 가공. 준비 단계에서만 변경 가능."
+              >
+                <input
+                  type="checkbox"
+                  className="h-3.5 w-3.5 rounded border-slate-300"
+                  checked={Boolean(wideSplitEnabledDraft)}
+                  disabled={
+                    !canOverrideWideSplit ||
+                    approveBusy ||
+                    wideSplitSaving ||
+                    !onSaveWideSplitEnabledOverride
+                  }
+                  onChange={(e) => {
+                    void handleToggleWideSplitEnabled(Boolean(e.target.checked));
+                  }}
+                />
+                <span className="whitespace-nowrap">Wide Split</span>
+                <span className="text-[10px] font-semibold text-slate-500">
+                  {wideSplitEnabledDraft ? "O" : "X"}
+                </span>
+              </label>
               <label
                 className={`inline-flex items-center gap-1.5 rounded-md border px-1.5 py-1 text-[11px] font-semibold ${
                   canOverrideAnodizing && !approveBusy && !anodizingSaving
@@ -2572,6 +2656,7 @@ export const PreviewModal = ({
                           hexDraft: manufacturerHexRotationDraft,
                           saveHex: onSaveManufacturerHexRotation,
                           saveAnodizing: onSaveAnodizingEnabledOverride,
+                          saveWideSplit: onSaveWideSplitEnabledOverride,
                         });
                         if (!persisted.ok) {
                           toast({
