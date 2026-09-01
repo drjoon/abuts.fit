@@ -226,6 +226,8 @@ import {
 import {
   PracticeTransferDetailChatDialog,
 } from "@/shared/components/PracticeTransferDetailChatDialog";
+import { PracticeProsthesisFollowUpDialog } from "@/shared/components/practice/PracticeProsthesisFollowUpDialog";
+import { canAppendProsthesisFollowUp, canManagePendingProsthesisFollowUp, getLatestPendingProsthesisFollowUp } from "@/shared/practice/prosthesisFollowUp";
 import { PracticeLabRatingControl } from "@/shared/components/practice/PracticeLabRatingControl";
 import { CounterpartyMemoStrip } from "@/shared/components/practice/CounterpartyMemoStrip";
 import { PracticeTransferIntakeSection } from "@/shared/components/practice/PracticeTransferIntakeSection";
@@ -1266,6 +1268,11 @@ export const PracticeFileTransferPage = ({
   const [deleteTargetTransfer, setDeleteTargetTransfer] = useState<RecentTransferItem | null>(null);
   const [deletingTransfer, setDeletingTransfer] = useState(false);
   const [appendArrivalBusy, setAppendArrivalBusy] = useState(false);
+  const [followUpDialogOpen, setFollowUpDialogOpen] = useState(false);
+  const [followUpDialogMode, setFollowUpDialogMode] = useState<"create" | "edit">("create");
+  const [appendProsthesisBusy, setAppendProsthesisBusy] = useState(false);
+  const [cancelProsthesisFollowUpBusy, setCancelProsthesisFollowUpBusy] = useState(false);
+  const [updateProsthesisFollowUpBusy, setUpdateProsthesisFollowUpBusy] = useState(false);
   const [restoreConfirmOpen, setRestoreConfirmOpen] = useState(false);
   const [restoreTargetTransfer, setRestoreTargetTransfer] = useState<RecentTransferItem | null>(null);
   const [restoringTransfer, setRestoringTransfer] = useState(false);
@@ -4110,6 +4117,268 @@ export const PracticeFileTransferPage = ({
     }
   }, [authToken, loadRecentRequests, selectedTransfer, toast]);
 
+  const handleAppendProsthesis = useCallback(
+    async (payload: {
+      arrivalYmd: string;
+      toothWorks: ToothWorkSelection[];
+    }) => {
+      if (!authToken || !selectedTransfer) return;
+      const transferId = String(selectedTransfer.transferId || "").trim();
+      if (!transferId || transferId === "-") {
+        toast({
+          title: "최종 보철 제작 실패",
+          description: "전송ID를 확인할 수 없습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+      setAppendProsthesisBusy(true);
+      try {
+        const res = await apiFetch<{
+          message?: string;
+          data?: {
+            toothWorks?: ToothWorkSelection[];
+            arrivalDate?: string;
+            arrivalDates?: string[];
+            orderDate?: string;
+            orderDates?: string[];
+            prosthesisFollowUps?: RecentTransferItem["prosthesisFollowUps"];
+            billing?: { total?: number; labFeeTotal?: number };
+            billingDelta?: { total?: number; labFeeTotal?: number };
+          };
+        }>({
+          path: `/api/practice/transfers/${encodeURIComponent(transferId)}/append-prosthesis`,
+          method: "POST",
+          token: authToken,
+          jsonBody: {
+            arrivalYmd: payload.arrivalYmd,
+            toothWorks: payload.toothWorks,
+          },
+        });
+        if (!res.ok) {
+          const body = res.data && typeof res.data === "object" ? res.data : {};
+          toast({
+            title: "최종 보철 제작 실패",
+            description:
+              String((body as { message?: string }).message || "").trim() ||
+              "다시 시도해주세요.",
+            variant: "destructive",
+          });
+          return;
+        }
+        const data = res.data?.data || {};
+        setFollowUpDialogOpen(false);
+        setFollowUpDialogMode("create");
+        toast({
+          title: "최종 보철 제작",
+          description:
+            res.data?.message ||
+            "같은 의뢰 건에 최종 보철 제작을 의뢰했습니다.",
+        });
+        setSelectedTransfer((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            toothWorks: Array.isArray(data.toothWorks)
+              ? (data.toothWorks as ToothWorkSelection[])
+              : prev.toothWorks,
+            prosthesisFollowUps: Array.isArray(data.prosthesisFollowUps)
+              ? data.prosthesisFollowUps
+              : prev.prosthesisFollowUps,
+            arrivalDate: String(data.arrivalDate || prev.arrivalDate || ""),
+            arrivalDates: Array.isArray(data.arrivalDates)
+              ? data.arrivalDates.map((d) => String(d || "").trim()).filter(Boolean)
+              : prev.arrivalDates,
+            orderDate: String(data.orderDate || prev.orderDate || ""),
+            orderDates: Array.isArray(data.orderDates)
+              ? data.orderDates.map((d) => String(d || "").trim()).filter(Boolean)
+              : prev.orderDates,
+            feeQuote: prev.feeQuote
+              ? {
+                  ...prev.feeQuote,
+                  labFeeTotal:
+                    Math.max(0, Number(prev.feeQuote.labFeeTotal || 0)) +
+                    Math.max(0, Number(data.billingDelta?.labFeeTotal || 0)),
+                  total:
+                    Math.max(0, Number(prev.feeQuote.total || 0)) +
+                    Math.max(0, Number(data.billingDelta?.total || 0)),
+                }
+              : prev.feeQuote,
+          };
+        });
+        void loadRecentRequests({ silent: true });
+      } catch (error) {
+        toast({
+          title: "최종 보철 제작 실패",
+          description: error instanceof Error ? error.message : "네트워크 오류",
+          variant: "destructive",
+        });
+      } finally {
+        setAppendProsthesisBusy(false);
+      }
+    },
+    [authToken, loadRecentRequests, selectedTransfer, toast],
+  );
+
+  const handleCancelProsthesisFollowUp = useCallback(async () => {
+    if (!authToken || !selectedTransfer) return;
+    const transferId = String(selectedTransfer.transferId || "").trim();
+    if (!transferId || transferId === "-") return;
+    setCancelProsthesisFollowUpBusy(true);
+    try {
+      const res = await apiFetch<{
+        message?: string;
+        data?: {
+          toothWorks?: ToothWorkSelection[];
+          prosthesisFollowUps?: RecentTransferItem["prosthesisFollowUps"];
+          arrivalDate?: string;
+          arrivalDates?: string[];
+          orderDate?: string;
+          orderDates?: string[];
+          billing?: { total?: number; labFeeTotal?: number };
+        };
+      }>({
+        path: `/api/practice/transfers/${encodeURIComponent(transferId)}/cancel-prosthesis-follow-up`,
+        method: "POST",
+        token: authToken,
+      });
+      if (!res.ok) {
+        const body = res.data && typeof res.data === "object" ? res.data : {};
+        toast({
+          title: "제작 취소 실패",
+          description:
+            String((body as { message?: string }).message || "").trim() ||
+            "다시 시도해주세요.",
+          variant: "destructive",
+        });
+        return;
+      }
+      const data = res.data?.data || {};
+      toast({
+        title: "제작 취소",
+        description: res.data?.message || "최종 보철 제작 의뢰를 취소했습니다.",
+      });
+      setSelectedTransfer((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          toothWorks: Array.isArray(data.toothWorks)
+            ? (data.toothWorks as ToothWorkSelection[])
+            : prev.toothWorks,
+          prosthesisFollowUps: Array.isArray(data.prosthesisFollowUps)
+            ? data.prosthesisFollowUps
+            : prev.prosthesisFollowUps,
+          arrivalDate: String(data.arrivalDate || prev.arrivalDate || ""),
+          arrivalDates: Array.isArray(data.arrivalDates)
+            ? data.arrivalDates.map((d) => String(d || "").trim()).filter(Boolean)
+            : prev.arrivalDates,
+          orderDate: String(data.orderDate || prev.orderDate || ""),
+          orderDates: Array.isArray(data.orderDates)
+            ? data.orderDates.map((d) => String(d || "").trim()).filter(Boolean)
+            : prev.orderDates,
+          feeQuote: data.billing && prev.feeQuote
+            ? {
+                ...prev.feeQuote,
+                labFeeTotal: Math.max(0, Number(data.billing.labFeeTotal || 0)),
+                total: Math.max(0, Number(data.billing.total || 0)),
+              }
+            : prev.feeQuote,
+        };
+      });
+      void loadRecentRequests({ silent: true });
+    } catch (error) {
+      toast({
+        title: "제작 취소 실패",
+        description: error instanceof Error ? error.message : "네트워크 오류",
+        variant: "destructive",
+      });
+    } finally {
+      setCancelProsthesisFollowUpBusy(false);
+    }
+  }, [authToken, loadRecentRequests, selectedTransfer, toast]);
+
+  const handleUpdateProsthesisFollowUp = useCallback(
+    async (payload: { arrivalYmd: string }) => {
+      if (!authToken || !selectedTransfer) return;
+      const transferId = String(selectedTransfer.transferId || "").trim();
+      if (!transferId || transferId === "-") return;
+      setUpdateProsthesisFollowUpBusy(true);
+      try {
+        const res = await apiFetch<{
+          message?: string;
+          data?: {
+            prosthesisFollowUps?: RecentTransferItem["prosthesisFollowUps"];
+            arrivalDate?: string;
+            arrivalDates?: string[];
+            orderDate?: string;
+            orderDates?: string[];
+          };
+        }>({
+          path: `/api/practice/transfers/${encodeURIComponent(transferId)}/update-prosthesis-follow-up`,
+          method: "POST",
+          token: authToken,
+          jsonBody: { arrivalYmd: payload.arrivalYmd },
+        });
+        if (!res.ok) {
+          const body = res.data && typeof res.data === "object" ? res.data : {};
+          toast({
+            title: "제작 변경 실패",
+            description:
+              String((body as { message?: string }).message || "").trim() ||
+              "다시 시도해주세요.",
+            variant: "destructive",
+          });
+          return;
+        }
+        const data = res.data?.data || {};
+        setFollowUpDialogOpen(false);
+        setFollowUpDialogMode("create");
+        toast({
+          title: "제작 변경",
+          description: res.data?.message || "치과도착일을 변경했습니다.",
+        });
+        setSelectedTransfer((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            prosthesisFollowUps: Array.isArray(data.prosthesisFollowUps)
+              ? data.prosthesisFollowUps
+              : prev.prosthesisFollowUps,
+            arrivalDate: String(data.arrivalDate || prev.arrivalDate || ""),
+            arrivalDates: Array.isArray(data.arrivalDates)
+              ? data.arrivalDates.map((d) => String(d || "").trim()).filter(Boolean)
+              : prev.arrivalDates,
+            orderDate: String(data.orderDate || prev.orderDate || ""),
+            orderDates: Array.isArray(data.orderDates)
+              ? data.orderDates.map((d) => String(d || "").trim()).filter(Boolean)
+              : prev.orderDates,
+          };
+        });
+        void loadRecentRequests({ silent: true });
+      } catch (error) {
+        toast({
+          title: "제작 변경 실패",
+          description: error instanceof Error ? error.message : "네트워크 오류",
+          variant: "destructive",
+        });
+      } finally {
+        setUpdateProsthesisFollowUpBusy(false);
+      }
+    },
+    [authToken, loadRecentRequests, selectedTransfer, toast],
+  );
+
+  const handleFollowUpDialogConfirm = useCallback(
+    async (payload: { arrivalYmd: string; toothWorks: ToothWorkSelection[] }) => {
+      if (followUpDialogMode === "edit") {
+        await handleUpdateProsthesisFollowUp({ arrivalYmd: payload.arrivalYmd });
+        return;
+      }
+      await handleAppendProsthesis(payload);
+    },
+    [followUpDialogMode, handleAppendProsthesis, handleUpdateProsthesisFollowUp],
+  );
+
   const handleConfirmRemake = useCallback(async () => {
     if (!authToken || remakeSelectedTransfers.length === 0) return;
     setRemakeBusy(true);
@@ -4181,6 +4450,71 @@ export const PracticeFileTransferPage = ({
     () => buildPracticeSenderTransferDetailModel(selectedTransfer),
     [selectedTransfer],
   );
+
+  const prosthesisFollowUpEligibility = useMemo(() => {
+    if (!selectedTransfer) {
+      return { ok: false as const, reason: "none", message: "" };
+    }
+    return canAppendProsthesisFollowUp({
+      toothWorks: selectedTransferDetailModel?.toothWorks || [],
+      status: selectedTransfer.status,
+      resultFiles: selectedTransfer.resultFiles,
+      resultFileCount: selectedTransfer.resultFiles?.length || 0,
+      abutmentDeliveryInfo: selectedTransfer.abutmentDeliveryInfo,
+      hasCustomAbutment: selectedTransfer.hasCustomAbutment,
+    });
+  }, [selectedTransfer, selectedTransferDetailModel?.toothWorks]);
+
+  const prosthesisFollowUpManage = useMemo(() => {
+    return canManagePendingProsthesisFollowUp({
+      prosthesisFollowUps: selectedTransfer?.prosthesisFollowUps,
+      status: selectedTransfer?.status,
+    });
+  }, [selectedTransfer?.prosthesisFollowUps, selectedTransfer?.status]);
+
+  const pendingProsthesisFollowUp = useMemo(
+    () => getLatestPendingProsthesisFollowUp(selectedTransfer?.prosthesisFollowUps),
+    [selectedTransfer?.prosthesisFollowUps],
+  );
+
+  const followUpDialogSchedule = useMemo(() => {
+    const orderYmd = String(todayDate || "").trim();
+    const labAnchorId = String(selectedTransfer?.targetLabAnchorId || "").trim();
+    const labName = String(selectedTransfer?.targetLab || "").trim();
+    const offsetDays = resolveLabArrivalDefaultDays(
+      labAnchorId || null,
+      labArrivalDefaults,
+      accountArrivalDefaultDays,
+      labName || null,
+    );
+    const pendingArrival = String(pendingProsthesisFollowUp?.arrivalYmd || "").trim();
+    const pendingOrder = String(pendingProsthesisFollowUp?.orderYmd || "").trim();
+    const arrivalYmd =
+      followUpDialogMode === "edit" && pendingArrival
+        ? pendingArrival
+        : orderYmd
+          ? addDaysToDateInput(orderYmd, offsetDays)
+          : addDaysToDateInput(todayDate, offsetDays);
+    return {
+      orderDate:
+        followUpDialogMode === "edit" && pendingOrder
+          ? pendingOrder
+          : orderYmd,
+      defaultArrivalYmd: arrivalYmd,
+      arrivalDefaultDays: offsetDays,
+      labAnchorId: labAnchorId || null,
+      labName: labName || null,
+    };
+  }, [
+    accountArrivalDefaultDays,
+    followUpDialogMode,
+    labArrivalDefaults,
+    pendingProsthesisFollowUp?.arrivalYmd,
+    pendingProsthesisFollowUp?.orderYmd,
+    selectedTransfer?.targetLab,
+    selectedTransfer?.targetLabAnchorId,
+    todayDate,
+  ]);
 
   const applyDraftSummaryToForm = useCallback(
     (
@@ -8586,6 +8920,53 @@ export const PracticeFileTransferPage = ({
               : undefined
           }
           appendArrivalBusy={appendArrivalBusy}
+          onAppendProsthesis={
+            selectedTransfer &&
+            selectedTransfer.transferId &&
+            selectedTransfer.transferId !== "-" &&
+            selectedTransfer.status !== "취소" &&
+            selectedTransfer.status !== "작업취소" &&
+            (selectedTransferDetailModel?.toothWorks || []).some((row) =>
+              String(row.prosthesisType || "").includes("임시"),
+            )
+              ? () => {
+                  if (!prosthesisFollowUpEligibility.ok) {
+                    toast({
+                      title: "아직 제작 의뢰할 수 없습니다",
+                      description:
+                        prosthesisFollowUpEligibility.message ||
+                        "다시 시도해주세요.",
+                    });
+                    return;
+                  }
+                  setFollowUpDialogMode("create");
+                  setFollowUpDialogOpen(true);
+                }
+              : undefined
+          }
+          appendProsthesisDisabled={!prosthesisFollowUpEligibility.ok}
+          appendProsthesisBusy={appendProsthesisBusy}
+          appendProsthesisHint={
+            prosthesisFollowUpEligibility.ok
+              ? null
+              : prosthesisFollowUpEligibility.message || null
+          }
+          prosthesisFollowUpPending={prosthesisFollowUpManage.ok}
+          onModifyProsthesisFollowUp={
+            prosthesisFollowUpManage.ok
+              ? () => {
+                  setFollowUpDialogMode("edit");
+                  setFollowUpDialogOpen(true);
+                }
+              : undefined
+          }
+          onCancelProsthesisFollowUp={
+            prosthesisFollowUpManage.ok
+              ? () => void handleCancelProsthesisFollowUp()
+              : undefined
+          }
+          cancelProsthesisFollowUpBusy={cancelProsthesisFollowUpBusy}
+          modifyProsthesisFollowUpBusy={updateProsthesisFollowUpBusy}
           orderDate={selectedTransfer?.orderDate || null}
           arrivalDate={selectedTransfer?.arrivalDate || null}
           orderedAt={
@@ -8768,6 +9149,26 @@ export const PracticeFileTransferPage = ({
           composerPlaceholder="문의 내용을 입력하세요"
           inputDisabled={chatLoading || chatMessagesLoading || chatSending || !activeChatRoom?._id}
           sendDisabled={chatSending}
+        />
+
+        <PracticeProsthesisFollowUpDialog
+          open={followUpDialogOpen}
+          onOpenChange={(open) => {
+            if (!open) setFollowUpDialogMode("create");
+            setFollowUpDialogOpen(open);
+          }}
+          mode={followUpDialogMode}
+          toothWorks={selectedTransferDetailModel?.toothWorks || []}
+          orderDate={followUpDialogSchedule.orderDate}
+          defaultArrivalYmd={followUpDialogSchedule.defaultArrivalYmd}
+          arrivalDefaultDays={followUpDialogSchedule.arrivalDefaultDays}
+          labAnchorId={followUpDialogSchedule.labAnchorId}
+          busy={
+            followUpDialogMode === "edit"
+              ? updateProsthesisFollowUpBusy
+              : appendProsthesisBusy
+          }
+          onConfirm={handleFollowUpDialogConfirm}
         />
 
         <Dialog

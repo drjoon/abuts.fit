@@ -39,6 +39,7 @@
 // - 2026-08-29: 치과별 특별공급가(labPracticeSpecialSupplyPrices) — 할인율 또는 항목별 할인금액.
 // - 2026-08-31: 특별공급가 — 의뢰 billing 스냅샷·updatedAt as-of(소급 금지). 신규 견적은 live.
 import { applyRushFeeMultiplierToFees } from "./practiceTransferRush.js";
+import { isFollowUpProsthesisPhase } from "./practiceTransferProsthesisFollowUp.js";
 import {
   IMPLANT_ADD_REQUEST_OPTION,
   MANUFACTURER_ADD_REQUEST_BRAND,
@@ -1967,6 +1968,7 @@ export function computePracticeTransferRetailFees({
   const abutmentSplitForRow = (row) => {
     if (
       waiveAbutment ||
+      isFollowUpProsthesisPhase(row) ||
       !isCustomAbutmentWork(row) ||
       isSimpleAbutmentModeForFee(row)
     ) {

@@ -309,6 +309,70 @@ export function appendPracticeArrivalDate({
 }
 
 /**
+ * 후속 보철 취소 등 — append로 추가한 도착·주문일 1쌍 되돌림.
+ */
+export function revertPracticeArrivalAppend({
+  transferMemo,
+  arrivalDates,
+  orderDates,
+  appendedArrivalYmd,
+  appendedOrderYmd,
+  previousArrivalYmd,
+  previousOrderYmd,
+} = {}) {
+  const memo = String(transferMemo || "");
+  let nextArrivals = resolvePracticeArrivalDates({
+    arrivalDates,
+    transferMemo: memo,
+  });
+  let nextOrders = resolvePracticeOrderDates({
+    orderDates,
+    transferMemo: memo,
+  });
+
+  const appendedArrival = String(appendedArrivalYmd || "").trim();
+  const prevArrival = String(previousArrivalYmd || "").trim();
+  if (
+    appendedArrival &&
+    nextArrivals.length > 0 &&
+    nextArrivals[nextArrivals.length - 1] === appendedArrival
+  ) {
+    nextArrivals = nextArrivals.slice(0, -1);
+    if (prevArrival) {
+      nextArrivals = [...nextArrivals.filter((d) => d !== prevArrival), prevArrival].sort();
+    }
+  }
+
+  const appendedOrder = String(appendedOrderYmd || "").trim();
+  const prevOrder = String(previousOrderYmd || "").trim();
+  if (
+    appendedOrder &&
+    nextOrders.length > 0 &&
+    nextOrders[nextOrders.length - 1] === appendedOrder
+  ) {
+    nextOrders = nextOrders.slice(0, -1);
+    if (prevOrder) {
+      nextOrders = [...nextOrders.filter((d) => d !== prevOrder), prevOrder].sort();
+    }
+  }
+
+  const finalArrival =
+    resolveCurrentArrivalYmd(nextArrivals) || prevArrival || "";
+  const finalOrder = resolveCurrentOrderYmd(nextOrders) || prevOrder || "";
+  let nextMemo = memo;
+  if (finalArrival) nextMemo = upsertMemoArrivalYmd(nextMemo, finalArrival);
+  if (finalOrder) nextMemo = upsertMemoOrderYmd(nextMemo, finalOrder);
+
+  return {
+    arrivalDates: nextArrivals,
+    orderDates: nextOrders,
+    transferMemo: nextMemo,
+    arrivalDate: finalArrival,
+    orderDate: finalOrder,
+  };
+}
+
+/**
  * 오늘(KST) 이후 날짜가 여러 개면 최종(배열 끝)만 남기고 정리.
  * @param {unknown} arrivalDates
  * @param {Date} [now]

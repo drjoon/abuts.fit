@@ -18,6 +18,7 @@ const CHAT_MESSAGE_LIST_SELECT = {
   sender: 1,
   messageKind: 1,
   systemEvent: 1,
+  systemPayload: 1,
   content: 1,
   attachments: 1,
   replyTo: 1,
@@ -114,6 +115,7 @@ export async function postPracticeTransferSystemChatMessage({
   senderUserId,
   content,
   systemEvent,
+  systemPayload = null,
 }) {
   try {
     const transferId = String(transferMongoId || "").trim();
@@ -145,6 +147,8 @@ export async function postPracticeTransferSystemChatMessage({
       sender: new Types.ObjectId(senderId),
       messageKind: "system",
       systemEvent: eventKey,
+      systemPayload:
+        systemPayload && typeof systemPayload === "object" ? systemPayload : null,
       content: text,
       attachments: [],
       replyTo: null,

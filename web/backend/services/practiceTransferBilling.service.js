@@ -1362,6 +1362,12 @@ function practiceTransferHoldAbutsShippingKey(transferId) {
 function practiceTransferHoldAdjustKey(transferId) {
   return `practice_transfer:${String(transferId)}:hold_adjust`;
 }
+function practiceTransferFollowUpHoldKey(transferId, followUpIndex) {
+  return `practice_transfer:${String(transferId)}:follow_up_hold:${Math.max(
+    0,
+    Math.floor(Number(followUpIndex) || 0),
+  )}`;
+}
 function practiceTransferEscrowReleaseKey(transferId) {
   return `practice_transfer:${String(transferId)}:escrow_release`;
 }
@@ -3831,6 +3837,7 @@ export async function buildPracticeTransferQuote({
   relationshipKind = undefined,
   labTradingPartnerId = undefined,
   remake = false,
+  skipAbutmentFees: skipAbutmentFeesInput = undefined,
   matchingMode = undefined,
   autoMatchBudget = undefined,
   catalog: catalogInput = undefined,
@@ -3913,6 +3920,8 @@ export async function buildPracticeTransferQuote({
   }
 
   const useRemake = Boolean(remake);
+  const skipAbutmentFees =
+    skipAbutmentFeesInput != null ? Boolean(skipAbutmentFeesInput) : useRemake;
   // 기공소 없음(자동매칭 작성): 할증 없음. 기공소 지정·수신: 치과별 할증.
   const labFeeMultiplier = usedDefaultSchedule
     ? 1
@@ -3930,7 +3939,7 @@ export async function buildPracticeTransferQuote({
       abutmentPricingTier,
       abutmentPrices,
       remake: useRemake,
-      skipAbutmentFees: useRemake,
+      skipAbutmentFees,
       labFeeMultiplier,
       rushFeeMultiplier,
     },
@@ -4034,6 +4043,221 @@ export async function quotePracticeTransferFees({
     labAnchorId,
     practiceAnchorId,
     toothWorks,
+  });
+}
+
+/**
+ * 임시치아 후속 크라운/브리지 — 어벗 비용 제외, 증분 lab hold.
+ */
+export async function holdPracticeTransferProsthesisFollowUpCredits({
+  transfer,
+  followUpIndex = 0,
+  deltaFees,
+  actorUserId = null,
+  session: outerSession = null,
+}) {
+  const transferId = transfer?._id;
+  const practiceAnchorId = transfer?.practiceBusinessAnchorId;
+  if (!transferId || !practiceAnchorId) {
+    return { held: false, reason: "missing_anchors" };
+  }
+
+  const holdLabAmount = Math.max(
+    0,
+    Math.round(Number(deltaFees?.labFeeTotal ?? deltaFees?.total ?? 0) || 0),
+  );
+  if (holdLabAmount <= 0) {
+    return {
+      held: false,
+      reason: "zero_fee",
+      heldTotal: 0,
+      heldLabTotal: 0,
+      heldAbutmentTotal: 0,
+    };
+  }
+
+  const idempotencyKey = practiceTransferFollowUpHoldKey(transferId, followUpIndex);
+  const existing = await getJournalByIdempotencyKey({
+    idempotencyKey,
+    session: outerSession,
+  });
+  if (existing?.journalId) {
+    return {
+      held: false,
+      reason: "already_held",
+      journalId: existing.journalId,
+      heldTotal: holdLabAmount,
+      heldLabTotal: holdLabAmount,
+      heldAbutmentTotal: 0,
+    };
+  }
+
+  const ownSession = !outerSession;
+  const session = outerSession || (await mongoose.startSession());
+  if (ownSession) session.startTransaction();
+
+  try {
+    await lockGuard(practiceAnchorId, session);
+    const devopsAnchorId = await resolveDevopsEscrowOwnerId(session);
+    if (!devopsAnchorId) {
+      const err = new Error("에스크로(devops) 사업자를 찾을 수 없습니다.");
+      err.statusCode = 500;
+      throw err;
+    }
+
+    const balance = await computeBusinessCreditBalanceFromLedger({
+      businessAnchorId: practiceAnchorId,
+      session,
+    });
+    const prepared = prepareHoldSliceEntry({
+      transferId,
+      practiceAnchorId,
+      devopsAnchorId,
+      amount: holdLabAmount,
+      shareKind: "lab",
+      displayLabel: "후속 보철 추가",
+      actorUserId,
+      split: {
+        remainingPaid: Number(balance?.paidCredit || 0),
+        remainingFreeRequest: Number(balance?.freeRequestCredit || 0),
+        remainingFreeShipping: Number(balance?.freeShippingCredit || 0),
+      },
+    });
+    if (!prepared.prepared) {
+      const err = new Error("크레딧이 부족합니다.");
+      err.statusCode = 402;
+      throw err;
+    }
+
+    const journal = await postGeneralLedgerJournal({
+      ...prepared.entry,
+      idempotencyKey,
+      session,
+      skipIdempotencyLookup: true,
+      meta: {
+        ...(prepared.entry.meta || {}),
+        followUpIndex,
+        displayLabel: "후속 보철 추가",
+      },
+    });
+
+    if (ownSession) await session.commitTransaction();
+
+    return {
+      held: true,
+      journalId: journal?.journalId || null,
+      heldTotal: holdLabAmount,
+      heldLabTotal: holdLabAmount,
+      heldAbutmentTotal: 0,
+      fromPaid: prepared.fromPaid,
+      fromFreeRequest: prepared.fromFreeRequest,
+      fromFreeShipping: prepared.fromFreeShipping,
+      idempotencyKey,
+    };
+  } catch (error) {
+    if (ownSession) {
+      try {
+        await session.abortTransaction();
+      } catch {
+        // ignore
+      }
+    }
+    throw error;
+  } finally {
+    if (ownSession) session.endSession();
+  }
+}
+
+/** 후속 보철 취소 — 해당 followUpIndex hold 저널 삭제·잔액 복원 */
+export async function releasePracticeTransferProsthesisFollowUpCredits({
+  transfer,
+  followUpIndex = 0,
+  session: outerSession = null,
+}) {
+  const transferId = transfer?._id;
+  const practiceAnchorId = transfer?.practiceBusinessAnchorId;
+  if (!transferId || !practiceAnchorId) {
+    return { released: false, reason: "missing_anchors" };
+  }
+
+  const idempotencyKey = practiceTransferFollowUpHoldKey(transferId, followUpIndex);
+  const existing = await getJournalByIdempotencyKey({
+    idempotencyKey,
+    session: outerSession,
+  });
+  if (!existing?.journalId) {
+    return { released: false, reason: "no_hold" };
+  }
+
+  const lines = await LedgerLine.find({ journalId: existing.journalId })
+    .select({ accountCode: 1, ownerId: 1, amount: 1 })
+    .session(outerSession || null)
+    .lean();
+
+  const deleteResult = await deleteGeneralLedgerCommitJournal({
+    journalId: existing.journalId,
+    expectedEventTypes: ["PRACTICE_TRANSFER_SPEND_HOLD"],
+    session: outerSession,
+  });
+  if (!deleteResult?.deleted) {
+    return {
+      released: false,
+      reason: deleteResult?.reason || "delete_failed",
+    };
+  }
+
+  const balanceRestoreByAnchor = {};
+  for (const line of lines || []) {
+    const code = String(line?.accountCode || "").trim();
+    if (!PRACTICE_TRANSFER_BALANCE_ACCOUNT_CODES.has(code)) continue;
+    const ownerId = String(line?.ownerId || "").trim();
+    if (!ownerId || !Types.ObjectId.isValid(ownerId)) continue;
+    const amount = Number(line?.amount || 0);
+    if (!Number.isFinite(amount) || amount === 0) continue;
+    balanceRestoreByAnchor[ownerId] =
+      Number(balanceRestoreByAnchor[ownerId] || 0) - amount;
+  }
+
+  try {
+    await upsertBusinessCreditBalanceFromLedger({
+      businessAnchorId: practiceAnchorId,
+      session: outerSession,
+    });
+    const { emitCreditBalanceUpdatedToBusiness } = await import(
+      "../utils/creditRealtime.js"
+    );
+    await emitCreditBalanceUpdatedToBusiness({
+      businessAnchorId: practiceAnchorId,
+      balanceDelta: Number(balanceRestoreByAnchor[String(practiceAnchorId)] || 0),
+      reason: "practice_transfer_prosthesis_follow_up_cancel",
+      refId: transferId,
+      forceEmit: true,
+    });
+  } catch {
+    // best-effort
+  }
+
+  return {
+    released: true,
+    journalId: existing.journalId,
+    balanceRestoreByAnchor,
+  };
+}
+
+export async function quoteProsthesisFollowUpFees({
+  practiceAnchorId,
+  labAnchorId,
+  toothWorks,
+  transferDoc = null,
+}) {
+  return buildPracticeTransferQuote({
+    practiceAnchorId,
+    labAnchorId,
+    toothWorks,
+    skipAbutmentFees: true,
+    remake: false,
+    matchingMode: "direct",
+    rushFeeMultiplier: rushFeeMultiplierFromTransfer(transferDoc),
   });
 }
 

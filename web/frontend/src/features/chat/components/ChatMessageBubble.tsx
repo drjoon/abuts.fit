@@ -46,6 +46,7 @@ import {
   getPracticeTransferFileExtension,
   PRACTICE_TRANSFER_IMAGE_EXTENSIONS,
 } from "@/shared/practice/practiceTransferAccept";
+import { PracticeTransferSystemChatBody } from "@/shared/practice/practiceTransferSystemChatMessage";
 
 export type ChatBubbleAttachment = {
   fileId?: string;
@@ -582,6 +583,14 @@ export function ChatMessageBubble({
   const hasTextContent = Boolean(String(message.content || "").trim());
 
   if (isSystem) {
+    const customBody = PracticeTransferSystemChatBody({
+      message,
+      compact,
+      formatTime,
+      messageDomId: chatMessageDomId(String(message._id || "")),
+    });
+    if (customBody) return customBody;
+
     return (
       <div
         id={chatMessageDomId(String(message._id || ""))}

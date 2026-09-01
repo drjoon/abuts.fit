@@ -119,6 +119,9 @@ export type PracticeRecentRequestItem = {
   labRating?: PracticeLabRatingPublic | null;
   performingLabAnchorId?: string | null;
   handledByCertifiedPartner?: boolean;
+  /** API toothWorks 스냅샷(후속 보철 append 등 memo보다 우선) */
+  toothWorks?: Array<Record<string, unknown>>;
+  prosthesisFollowUps?: import("@/shared/practice/prosthesisFollowUp").ProsthesisFollowUpRecord[];
 };
 
 export type PracticeRecentTransferItem = {
@@ -195,6 +198,8 @@ export type PracticeRecentTransferItem = {
   practiceUserLabel?: string;
   isMineDraft?: boolean;
   draftPatientName?: string;
+  prosthesisFollowUps?: import("@/shared/practice/prosthesisFollowUp").ProsthesisFollowUpRecord[];
+  toothWorks?: Array<Record<string, unknown>>;
 };
 
 export type PracticeRecentStatusFilter =
@@ -797,6 +802,10 @@ export const mapMyPracticeTransferApiRows = (
         performingLabAnchorId:
           String(r.performingLabAnchorId || "").trim() || null,
         handledByCertifiedPartner,
+        toothWorks: toothWorksFromApi,
+        prosthesisFollowUps: Array.isArray(r.prosthesisFollowUps)
+          ? (r.prosthesisFollowUps as PracticeRecentRequestItem["prosthesisFollowUps"])
+          : [],
       };
     })
     .filter((item) => Boolean(item.id))
@@ -883,6 +892,17 @@ export const mergeOpenPracticeTransferFromRequestRows = (
     handledByCertifiedPartner:
       Boolean(prev.handledByCertifiedPartner) ||
       openRows.some((r) => Boolean(r.handledByCertifiedPartner)),
+    toothWorks:
+      openRows.find((r) => Array.isArray(r.toothWorks) && r.toothWorks.length > 0)
+        ?.toothWorks ||
+      prev.toothWorks ||
+      [],
+    prosthesisFollowUps:
+      openRows.find(
+        (r) => Array.isArray(r.prosthesisFollowUps) && r.prosthesisFollowUps.length > 0,
+      )?.prosthesisFollowUps ||
+      prev.prosthesisFollowUps ||
+      [],
     matchingMode: openRow.matchingMode || prev.matchingMode,
     ...(keepBilled ? {} : nextFee ? { feeQuote: nextFee } : {}),
     ...(openRow.remakeFeeQuote ? { remakeFeeQuote: openRow.remakeFeeQuote } : {}),
@@ -1079,6 +1099,7 @@ export const groupPracticeRecentRequests = (
         labRating: req.labRating || null,
         performingLabAnchorId: req.performingLabAnchorId || null,
         handledByCertifiedPartner: Boolean(req.handledByCertifiedPartner),
+        toothWorks: Array.isArray(req.toothWorks) ? [...req.toothWorks] : [],
         unreadCount,
         searchBlob: [
           req.id,
@@ -1156,6 +1177,9 @@ export const groupPracticeRecentRequests = (
     if (req.hasCustomAbutment) existing.hasCustomAbutment = true;
     if (req.abutmentDeliveryInfo) {
       existing.abutmentDeliveryInfo = req.abutmentDeliveryInfo;
+    }
+    if (Array.isArray(req.toothWorks) && req.toothWorks.length > 0) {
+      existing.toothWorks = [...req.toothWorks];
     }
     if (req.skipDesignConfirm === false) existing.skipDesignConfirm = false;
     if (req.skipJig === false) existing.skipJig = false;

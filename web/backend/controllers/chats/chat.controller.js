@@ -156,6 +156,7 @@ const CHAT_MESSAGE_LIST_SELECT = {
   sender: 1,
   messageKind: 1,
   systemEvent: 1,
+  systemPayload: 1,
   content: 1,
   attachments: 1,
   replyTo: 1,

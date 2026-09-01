@@ -251,7 +251,10 @@ export function buildPracticeSenderTransferDetailModel(
         : []),
     ],
     memo: displayMemo,
-    toothWorks: parsed.toothWorks || [],
+    toothWorks:
+      (Array.isArray(transfer.toothWorks) && transfer.toothWorks.length > 0
+        ? (transfer.toothWorks as ToothWorkSelection[])
+        : parsed.toothWorks) || [],
     toothWorksKey: transferKey,
     files: toDialogFiles(transfer.files, "request"),
     designFiles: toDialogFiles(transfer.designFiles, "design"),

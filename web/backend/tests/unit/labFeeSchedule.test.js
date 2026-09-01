@@ -371,6 +371,53 @@ describe("labFeeSchedule", () => {
     );
   });
 
+  test("최종 보철 후속(followUp)은 커스텀어벗 수가를 다시 청구하지 않는다", () => {
+    const fees = computePracticeTransferRetailFees({
+      toothWorks: [
+        {
+          toothNumber: "34",
+          prosthesisType: "임시치아",
+          customAbutment: true,
+          abutmentProductMode: "design_custom_abutment",
+          bridgeLinkedTeeth: ["34", "33"],
+        },
+        {
+          toothNumber: "33",
+          prosthesisType: "임시치아",
+          customAbutment: true,
+          abutmentProductMode: "design_custom_abutment",
+          bridgeLinkedTeeth: ["34", "33"],
+        },
+        {
+          toothNumber: "34",
+          prosthesisType: "커스텀어벗",
+          customAbutment: true,
+          abutmentProductMode: "design_custom_abutment",
+        },
+        {
+          toothNumber: "33",
+          prosthesisType: "브리지",
+          customAbutment: true,
+          abutmentProductMode: "design_custom_abutment",
+          bridgeLinkedTeeth: ["33"],
+          prosthesisPhase: "followUp",
+        },
+      ],
+      labFeeSchedule: LAB_FEE_SCHEDULE_SAMPLE,
+      abutmentPricingTier: "membership",
+    });
+    expect(fees.labAbutmentTotal).toBe(40000);
+    expect(fees.total).toBe(90000);
+    expect(
+      fees.lines.some(
+        (line) =>
+          line.toothNumber === "33" &&
+          line.prosthesisType === "브리지" &&
+          line.labAbutmentFee > 0,
+      ),
+    ).toBe(false);
+  });
+
   test("커스텀어벗(지그포함)이 perSet로 저장돼도 치아당 단가로 과금한다", () => {
     const fees = computePracticeTransferRetailFees({
       toothWorks: [

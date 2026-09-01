@@ -31,6 +31,11 @@ const chatSchema = new mongoose.Schema(
       trim: true,
       maxlength: 64,
     },
+    // system 전용 구조화 payload (후속 보철 toothWorks 등)
+    systemPayload: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null,
+    },
     content: {
       type: String,
       required: true,

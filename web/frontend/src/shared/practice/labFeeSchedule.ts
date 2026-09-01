@@ -42,6 +42,7 @@ import {
   IMPLANT_ADD_REQUEST_OPTION,
   MANUFACTURER_ADD_REQUEST_BRAND,
 } from "@/shared/practice/roundBarAbutment";
+import { isFollowUpProsthesisPhase } from "@/shared/practice/prosthesisFollowUp";
 
 /** 기공수가 할증 배수. 1=없음, 최대 5, 소수 둘째 자리. */
 export const normalizeLabFeeMultiplier = (value: unknown): number => {
@@ -1451,7 +1452,12 @@ export const computePracticeTransferRetailFees = (params: {
   let abutmentQty = 0;
 
   const abutmentSplitForRow = (row: (typeof rows)[number]) => {
-    if (waiveAbutment || !isCustomAbutmentWork(row) || isSimpleAbutmentModeForFee(row)) {
+    if (
+      waiveAbutment ||
+      isFollowUpProsthesisPhase(row) ||
+      !isCustomAbutmentWork(row) ||
+      isSimpleAbutmentModeForFee(row)
+    ) {
       return { abuts: 0, lab: 0, pending: false, quote: false, feeName: "" };
     }
     const feeName = labAbutmentFeeNameForRow(row);

@@ -19,7 +19,10 @@ import {
   buildPracticeTransferQuote,
   feeQuoteFromBillingDoc,
   holdPracticeTransferCredits,
+  holdPracticeTransferProsthesisFollowUpCredits,
+  releasePracticeTransferProsthesisFollowUpCredits,
   loadPracticeTransferQuoteContext,
+  quoteProsthesisFollowUpFees,
   releasePracticeTransferLabShare,
   releasePracticeTransferAbutmentShare,
   chargePracticeTransferLabShipping,
@@ -80,6 +83,7 @@ import {
 import {
   appendPracticeArrivalDate,
   PRACTICE_ARRIVAL_SHADE_EXTEND_CIVIL_DAYS,
+  revertPracticeArrivalAppend,
   resolveCurrentArrivalYmd,
   resolveCurrentOrderYmd,
   resolvePracticeArrivalDates,
@@ -87,6 +91,16 @@ import {
   syncArrivalDatesWithMemoYmd,
   syncOrderDatesWithMemoYmd,
 } from "../../utils/practiceTransferArrivalDates.js";
+import {
+  buildFollowUpToothWorksDraft,
+  canAppendProsthesisFollowUp,
+  canManagePendingProsthesisFollowUp,
+  getPendingProsthesisFollowUps,
+  markPendingProsthesisFollowUpsAccepted,
+  mergeFollowUpToothWorks,
+  stripFollowUpToothWorksForRecord,
+  validateFollowUpToothWorksAgainstSource,
+} from "../../utils/practiceTransferProsthesisFollowUp.js";
 import {
   buildPracticeTransferCalendarDateRangeFilter,
   filterTransferDocsToCalendarRange,
@@ -901,6 +915,23 @@ const canCancelPracticeTransferByManufacturerStage = (stage) => {
   );
 };
 
+const serializeProsthesisFollowUpsForApi = (followUps) =>
+  (Array.isArray(followUps) ? followUps : []).map((row) => ({
+    appendedAt: row?.appendedAt || null,
+    arrivalYmd: String(row?.arrivalYmd || "").trim(),
+    orderYmd: String(row?.orderYmd || "").trim(),
+    toothNumbers: Array.isArray(row?.toothNumbers)
+      ? row.toothNumbers.map((t) => String(t || "").trim()).filter(Boolean)
+      : [],
+    billingDelta: row?.billingDelta || null,
+    followUpIndex:
+      row?.followUpIndex != null ? Math.max(0, Math.floor(Number(row.followUpIndex))) : 0,
+    previousArrivalYmd: String(row?.previousArrivalYmd || "").trim(),
+    previousOrderYmd: String(row?.previousOrderYmd || "").trim(),
+    labAcceptedAt: row?.labAcceptedAt || null,
+    canceledAt: row?.canceledAt || null,
+  }));
+
 const toVirtualRequestRows = (transferDoc) => {
   const transferId = String(transferDoc?.transferId || "").trim();
   const matchingMode = isAutoMatchMode(transferDoc) ? "auto" : "direct";
@@ -958,6 +989,9 @@ const toVirtualRequestRows = (transferDoc) => {
     autoMatch: autoFields.autoMatch,
     toothWorks,
     hasCustomAbutment: hasCustomAbutmentToothWorks(toothWorks),
+    prosthesisFollowUps: serializeProsthesisFollowUpsForApi(
+      transferDoc?.prosthesisFollowUps,
+    ),
     arrivalDates,
     arrivalDate: currentArrivalYmd || null,
     orderDates,
@@ -3897,8 +3931,8 @@ export async function appendPracticeTransferArrival(req, res) {
         transferMongoId: String(updated._id),
         senderUserId: req.user?._id,
         content: orderChanged
-          ? `재도착 반영: 주문일 ${prevOrderLabel} → ${nextOrderLabel}, 치과도착일 ${prevLabel} → ${nextLabel}.`
-          : `치과도착일이 ${prevLabel} → ${nextLabel}(으)로 변경되었습니다.`,
+          ? `재도착 반영\n주문일 ${prevOrderLabel} → ${nextOrderLabel}\n치과도착일 ${prevLabel} → ${nextLabel}`
+          : `치과도착일 변경\n${prevLabel} → ${nextLabel}`,
         systemEvent: "practice_transfer_arrival_appended",
       });
     } catch {
@@ -3981,6 +4015,751 @@ export async function appendPracticeTransferArrival(req, res) {
       success: false,
       message: "치과도착일 반영 중 오류가 발생했습니다.",
       error: error?.message,
+    });
+  }
+}
+
+/**
+ * 임시치아 배송 후 동일 건에 크라운/브리지 후속 추가.
+ * 어벗 재청구 없음 — 크라운/브리지 기공비만 증분 hold.
+ */
+export async function appendPracticeTransferProsthesis(req, res) {
+  try {
+    const role = String(req.user?.role || "").trim();
+    if (!isPracticeTransferSenderRole(role)) {
+      return res.status(403).json({ success: false, message: "권한이 없습니다." });
+    }
+
+    const transferIdFilter = buildTransferIdFilter(req.params?.transferId);
+    if (!transferIdFilter) {
+      return res.status(400).json({
+        success: false,
+        message: "transferId가 필요합니다.",
+      });
+    }
+
+    const practiceAnchorId = req.user?.businessAnchorId || null;
+    if (!practiceAnchorId) {
+      return res.status(400).json({
+        success: false,
+        message: "치과 사업자 정보가 필요합니다. 사업자 등록 후 다시 시도해주세요.",
+      });
+    }
+
+    const { scope } = await buildPracticeOwnedScope(req);
+    const doc = await PracticeTransfer.findOne({
+      ...scope,
+      ...transferIdFilter,
+      ...practiceTransferNotDeletedMongoFilter(),
+    });
+    if (!doc) {
+      return res.status(404).json({
+        success: false,
+        message: "전송 내역을 찾을 수 없습니다.",
+      });
+    }
+
+    const deliveryMap = await mapAbutmentDeliveryByTransferDocs([doc]);
+    const abutmentDeliveryInfo =
+      deliveryMap.get(String(doc._id || "")) || null;
+
+    const gate = canAppendProsthesisFollowUp(doc, { abutmentDeliveryInfo });
+    if (!gate.ok) {
+      return res.status(409).json({
+        success: false,
+        message: gate.message || "후속 보철을 추가할 수 없습니다.",
+        reason: gate.reason,
+      });
+    }
+
+    const rawYmd = String(req.body?.arrivalYmd || req.body?.arrivalDate || "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(rawYmd)) {
+      return res.status(400).json({
+        success: false,
+        message: "치과도착일을 선택해주세요.",
+        reason: "invalid_arrival_ymd",
+      });
+    }
+
+    const sourceToothWorks = Array.isArray(doc.toothWorks) ? doc.toothWorks : [];
+    const requestedRows =
+      Array.isArray(req.body?.toothWorks) && req.body.toothWorks.length > 0
+        ? req.body.toothWorks
+        : buildFollowUpToothWorksDraft(sourceToothWorks);
+
+    const validated = validateFollowUpToothWorksAgainstSource(
+      sourceToothWorks,
+      requestedRows,
+    );
+    if (!validated.ok) {
+      return res.status(400).json({
+        success: false,
+        message: validated.message || "후속 치식이 올바르지 않습니다.",
+      });
+    }
+
+    const followUpRows = validated.rows;
+    try {
+      assertAbutmentPresetsComplete(followUpRows);
+    } catch (presetErr) {
+      return res.status(400).json({
+        success: false,
+        message:
+          presetErr?.message ||
+          "어벗 프리셋(임플란트·스캔바디/심플어벗)을 선택해주세요.",
+      });
+    }
+
+    const targetLabAnchorId = doc.targetLabAnchorId || null;
+    if (!targetLabAnchorId) {
+      return res.status(400).json({
+        success: false,
+        message: "기공소가 지정되지 않은 의뢰입니다.",
+      });
+    }
+
+    const feeQuote = await quoteProsthesisFollowUpFees({
+      practiceAnchorId,
+      labAnchorId: targetLabAnchorId,
+      toothWorks: followUpRows,
+      transferDoc: doc,
+    });
+    const deltaFees = feeQuote?.fees || {};
+    const deltaTotal = Math.max(0, Math.round(Number(deltaFees.total || 0)));
+    const deltaLabFee = Math.max(
+      0,
+      Math.round(Number(deltaFees.labFeeTotal || 0)),
+    );
+
+    if (deltaTotal <= 0) {
+      return res.status(409).json({
+        success: false,
+        message: "기공소 수가가 설정되지 않아 후속 보철을 추가할 수 없습니다.",
+        reason: "lab_fee_unconfigured",
+        missingFeeNames: feeQuote?.missingFeeNames || [],
+      });
+    }
+
+    try {
+      await assertPracticeTransferPaidCreditSufficient({
+        practiceAnchorId,
+        labAnchorId: targetLabAnchorId,
+        toothWorks: followUpRows,
+        skipAbutmentFees: true,
+        fees: deltaFees,
+      });
+    } catch (creditErr) {
+      const status = Number(creditErr?.statusCode || 500);
+      return res.status(status >= 400 && status < 600 ? status : 500).json({
+        success: false,
+        message:
+          creditErr?.message || "후속 보철 추가 전 유료크레딧 확인에 실패했습니다.",
+        ...(creditErr?.payload || {}),
+      });
+    }
+
+    const followUps = Array.isArray(doc.prosthesisFollowUps)
+      ? doc.prosthesisFollowUps
+      : [];
+    const followUpIndex = followUps.length;
+
+    const holdResult = await holdPracticeTransferProsthesisFollowUpCredits({
+      transfer: doc,
+      followUpIndex,
+      deltaFees,
+      actorUserId: req.user?._id,
+    });
+    if (!holdResult.held && holdResult.reason !== "already_held") {
+      return res.status(402).json({
+        success: false,
+        message: "크레딧 보류에 실패했습니다.",
+        reason: holdResult.reason || "hold_failed",
+      });
+    }
+
+    const appended = appendPracticeArrivalDate({
+      transferMemo: doc.transferMemo,
+      arrivalDates: doc.arrivalDates,
+      orderDates: doc.orderDates,
+      nextYmd: rawYmd,
+      alsoAppendOrderToday: true,
+    });
+    if (!appended.ok) {
+      return res.status(appended.statusCode || 400).json({
+        success: false,
+        message: appended.message,
+        reason: appended.reason,
+      });
+    }
+
+    const mergedToothWorks = mergeFollowUpToothWorks(sourceToothWorks, followUpRows);
+    const prevBilling =
+      doc.billing && typeof doc.billing === "object" ? doc.billing : {};
+    const toothNumbers = followUpRows.flatMap((row) => {
+      const linked = Array.isArray(row?.bridgeLinkedTeeth)
+        ? row.bridgeLinkedTeeth
+        : [row?.toothNumber];
+      return linked.map((t) => String(t || "").trim()).filter(Boolean);
+    });
+
+    const followUpRecord = {
+      appendedAt: new Date(),
+      appendedBy: req.user?._id || null,
+      arrivalYmd: rawYmd,
+      orderYmd: String(appended.nextOrderYmd || "").trim(),
+      toothNumbers: Array.from(new Set(toothNumbers)),
+      billingDelta: {
+        labFeeTotal: deltaLabFee,
+        total: deltaTotal,
+      },
+      followUpIndex,
+      previousArrivalYmd: String(appended.previousYmd || "").trim(),
+      previousOrderYmd: String(appended.previousOrderYmd || "").trim(),
+      labAcceptedAt: null,
+      canceledAt: null,
+      canceledBy: null,
+    };
+
+    const nextBilling = {
+      ...prevBilling,
+      labFeeTotal:
+        Math.max(0, Math.round(Number(prevBilling.labFeeTotal || 0))) + deltaLabFee,
+      total: Math.max(0, Math.round(Number(prevBilling.total || 0))) + deltaTotal,
+      heldTotal:
+        Math.max(0, Math.round(Number(prevBilling.heldTotal || 0))) +
+        Math.max(0, Math.round(Number(holdResult.heldTotal || deltaTotal))),
+      heldLabTotal:
+        Math.max(0, Math.round(Number(prevBilling.heldLabTotal || 0))) +
+        Math.max(0, Math.round(Number(holdResult.heldLabTotal || deltaLabFee))),
+      holdFromPaid:
+        Math.max(0, Math.round(Number(prevBilling.holdFromPaid || 0))) +
+        Math.max(0, Math.round(Number(holdResult.fromPaid || 0))),
+      holdFromFreeRequest:
+        Math.max(0, Math.round(Number(prevBilling.holdFromFreeRequest || 0))) +
+        Math.max(0, Math.round(Number(holdResult.fromFreeRequest || 0))),
+      holdFromFreeShipping:
+        Math.max(0, Math.round(Number(prevBilling.holdFromFreeShipping || 0))) +
+        Math.max(0, Math.round(Number(holdResult.fromFreeShipping || 0))),
+    };
+
+    const updated = await PracticeTransfer.findOneAndUpdate(
+      { _id: doc._id, ...practiceTransferNotDeletedMongoFilter() },
+      {
+        $set: {
+          toothWorks: mergedToothWorks,
+          transferMemo: appended.transferMemo,
+          arrivalDates: appended.arrivalDates,
+          orderDates: appended.orderDates,
+          billing: nextBilling,
+          requestorReadAt: null,
+          requestorReadBy: null,
+        },
+        $push: { prosthesisFollowUps: followUpRecord },
+      },
+      { new: true },
+    );
+    if (!updated) {
+      return res.status(409).json({
+        success: false,
+        message: "후속 보철을 반영하지 못했습니다.",
+      });
+    }
+
+    try {
+      await emitCreditBalanceUpdatedToBusiness(practiceAnchorId);
+    } catch {
+      // best-effort
+    }
+
+    try {
+      await postPracticeTransferSystemChatMessage({
+        transferMongoId: String(updated._id),
+        senderUserId: req.user?._id,
+        content: `후속 보철 추가\n치과도착일 ${rawYmd}`,
+        systemEvent: "practice_transfer_prosthesis_follow_up",
+        systemPayload: {
+          arrivalYmd: rawYmd,
+          toothWorks: followUpRows.map((row) => ({
+            toothNumber: String(row?.toothNumber || "").trim(),
+            prosthesisType: String(row?.prosthesisType || "").trim(),
+            bridgeLinkedTeeth: Array.isArray(row?.bridgeLinkedTeeth)
+              ? row.bridgeLinkedTeeth.map((t) => String(t || "").trim()).filter(Boolean)
+              : [],
+            customAbutment: Boolean(row?.customAbutment),
+            prosthesisPhase: "followUp",
+          })),
+        },
+      });
+    } catch {
+      // 채팅 실패는 반영을 막지 않음
+    }
+
+    const targetLabAnchorIdText = String(updated.targetLabAnchorId || "").trim();
+    if (targetLabAnchorIdText) {
+      invalidateUnreadCountCache(targetLabAnchorIdText);
+    }
+    const unreadCountForRequestor = targetLabAnchorIdText
+      ? await PracticeTransfer.countDocuments({
+          targetLabAnchorId: new Types.ObjectId(targetLabAnchorIdText),
+          status: { $nin: ["deleted", "canceled"] },
+          requestorReadAt: null,
+        })
+      : 0;
+
+    const realtimePayload = {
+      source: "appendPracticeTransferProsthesis",
+      action: "prosthesis-follow-up",
+      transferId: String(updated.transferId || "").trim(),
+      transferMongoId: String(updated._id || ""),
+      targetLabAnchorId: targetLabAnchorIdText || null,
+      practiceUserId: String(req.user?._id || ""),
+      toothWorks: mergedToothWorks,
+      prosthesisFollowUps: updated.prosthesisFollowUps || [],
+      arrivalDates: appended.arrivalDates,
+      arrivalDate: appended.nextYmd,
+      orderDates: appended.orderDates,
+      orderDate: appended.nextOrderYmd,
+      billing: nextBilling,
+      requestorReadAt: null,
+      unreadCount: unreadCountForRequestor,
+    };
+    try {
+      await emitPracticeTransferEventToPracticeUsers({
+        practiceBusinessAnchorId: req.user?.businessAnchorId,
+        type: "practice:transfer-updated",
+        payload: realtimePayload,
+        extraUserIds: [req.user?._id],
+      });
+      if (targetLabAnchorIdText) {
+        await emitPracticeTransferEventToRequestorUsers({
+          targetLabAnchorId: targetLabAnchorIdText,
+          type: "practice:transfer-updated",
+          payload: realtimePayload,
+        });
+      }
+    } catch {
+      // realtime best-effort
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "후속 크라운/브리지 의뢰가 추가되었습니다.",
+      data: {
+        _id: String(updated._id || ""),
+        transferId: String(updated.transferId || "").trim(),
+        toothWorks: mergedToothWorks,
+        prosthesisFollowUps: updated.prosthesisFollowUps || [],
+        arrivalDates: appended.arrivalDates,
+        arrivalDate: appended.nextYmd,
+        orderDates: appended.orderDates,
+        orderDate: appended.nextOrderYmd,
+        billing: nextBilling,
+        billingDelta: followUpRecord.billingDelta,
+        requestorReadAt: null,
+      },
+    });
+  } catch (error) {
+    const status = Number(error?.statusCode || 500);
+    return res.status(status >= 400 && status < 600 ? status : 500).json({
+      success: false,
+      message: error?.message || "후속 보철 추가 중 오류가 발생했습니다.",
+      ...(error?.payload || {}),
+    });
+  }
+}
+
+/** 기공소 수락 전 후속 크라운/브리지 제작 취소 */
+export async function cancelPracticeTransferProsthesisFollowUp(req, res) {
+  try {
+    const role = String(req.user?.role || "").trim();
+    if (!isPracticeTransferSenderRole(role)) {
+      return res.status(403).json({ success: false, message: "권한이 없습니다." });
+    }
+
+    const transferIdFilter = buildTransferIdFilter(req.params?.transferId);
+    if (!transferIdFilter) {
+      return res.status(400).json({
+        success: false,
+        message: "transferId가 필요합니다.",
+      });
+    }
+
+    const { scope } = await buildPracticeOwnedScope(req);
+    const doc = await PracticeTransfer.findOne({
+      ...scope,
+      ...transferIdFilter,
+      ...practiceTransferNotDeletedMongoFilter(),
+    });
+    if (!doc) {
+      return res.status(404).json({
+        success: false,
+        message: "전송 내역을 찾을 수 없습니다.",
+      });
+    }
+
+    const gate = canManagePendingProsthesisFollowUp(doc);
+    if (!gate.ok) {
+      return res.status(409).json({
+        success: false,
+        message: gate.message || "후속 제작을 취소할 수 없습니다.",
+        reason: gate.reason,
+      });
+    }
+
+    const pending = [...gate.pending].sort(
+      (a, b) => Number(b?.followUpIndex || 0) - Number(a?.followUpIndex || 0),
+    );
+    let toothWorks = Array.isArray(doc.toothWorks) ? [...doc.toothWorks] : [];
+    let arrivalDates = doc.arrivalDates;
+    let orderDates = doc.orderDates;
+    let transferMemo = String(doc.transferMemo || "");
+    const prevBilling =
+      doc.billing && typeof doc.billing === "object" ? { ...doc.billing } : {};
+    let nextBilling = { ...prevBilling };
+    const now = new Date();
+    const followUps = Array.isArray(doc.prosthesisFollowUps)
+      ? doc.prosthesisFollowUps.map((row) =>
+          row && typeof row.toObject === "function" ? row.toObject() : { ...row },
+        )
+      : [];
+
+    for (const record of pending) {
+      const followUpIndex = Math.max(0, Math.floor(Number(record?.followUpIndex || 0)));
+      await releasePracticeTransferProsthesisFollowUpCredits({
+        transfer: doc,
+        followUpIndex,
+      });
+
+      toothWorks = stripFollowUpToothWorksForRecord(toothWorks, record);
+      const reverted = revertPracticeArrivalAppend({
+        transferMemo,
+        arrivalDates,
+        orderDates,
+        appendedArrivalYmd: record?.arrivalYmd,
+        appendedOrderYmd: record?.orderYmd,
+        previousArrivalYmd: record?.previousArrivalYmd,
+        previousOrderYmd: record?.previousOrderYmd,
+      });
+      arrivalDates = reverted.arrivalDates;
+      orderDates = reverted.orderDates;
+      transferMemo = reverted.transferMemo;
+
+      const deltaLab = Math.max(
+        0,
+        Math.round(Number(record?.billingDelta?.labFeeTotal || 0)),
+      );
+      const deltaTotal = Math.max(
+        0,
+        Math.round(Number(record?.billingDelta?.total || deltaLab)),
+      );
+      nextBilling = {
+        ...nextBilling,
+        labFeeTotal: Math.max(0, Math.round(Number(nextBilling.labFeeTotal || 0)) - deltaLab),
+        total: Math.max(0, Math.round(Number(nextBilling.total || 0)) - deltaTotal),
+        heldTotal: Math.max(0, Math.round(Number(nextBilling.heldTotal || 0)) - deltaTotal),
+        heldLabTotal: Math.max(
+          0,
+          Math.round(Number(nextBilling.heldLabTotal || 0)) - deltaLab,
+        ),
+      };
+
+      const idx = followUps.findIndex(
+        (row) =>
+          Number(row?.followUpIndex || 0) === followUpIndex &&
+          !row?.canceledAt &&
+          !row?.labAcceptedAt,
+      );
+      if (idx >= 0) {
+        followUps[idx] = {
+          ...followUps[idx],
+          canceledAt: now,
+          canceledBy: req.user?._id || null,
+        };
+      }
+    }
+
+    const updated = await PracticeTransfer.findOneAndUpdate(
+      { _id: doc._id, ...practiceTransferNotDeletedMongoFilter() },
+      {
+        $set: {
+          toothWorks,
+          arrivalDates,
+          orderDates,
+          transferMemo,
+          billing: nextBilling,
+          prosthesisFollowUps: followUps,
+          requestorReadAt: null,
+          requestorReadBy: null,
+        },
+      },
+      { new: true },
+    );
+    if (!updated) {
+      return res.status(409).json({
+        success: false,
+        message: "후속 제작 취소를 반영하지 못했습니다.",
+      });
+    }
+
+    try {
+      await emitCreditBalanceUpdatedToBusiness(doc.practiceBusinessAnchorId);
+    } catch {
+      // best-effort
+    }
+
+    try {
+      await postPracticeTransferSystemChatMessage({
+        transferMongoId: String(updated._id),
+        senderUserId: req.user?._id,
+        content: "후속 크라운/브리지 제작 의뢰가 취소되었습니다.",
+        systemEvent: "practice_transfer_prosthesis_follow_up_cancel",
+      });
+    } catch {
+      // best-effort
+    }
+
+    const targetLabAnchorIdText = String(updated.targetLabAnchorId || "").trim();
+    if (targetLabAnchorIdText) invalidateUnreadCountCache(targetLabAnchorIdText);
+
+    const realtimePayload = {
+      source: "cancelPracticeTransferProsthesisFollowUp",
+      action: "prosthesis-follow-up-cancel",
+      transferId: String(updated.transferId || "").trim(),
+      transferMongoId: String(updated._id || ""),
+      targetLabAnchorId: targetLabAnchorIdText || null,
+      practiceUserId: String(req.user?._id || ""),
+      toothWorks,
+      prosthesisFollowUps: updated.prosthesisFollowUps || [],
+      arrivalDates,
+      arrivalDate: resolveCurrentArrivalYmd(arrivalDates),
+      orderDates,
+      orderDate: resolveCurrentOrderYmd(orderDates),
+      billing: nextBilling,
+      requestorReadAt: null,
+    };
+    try {
+      await emitPracticeTransferEventToPracticeUsers({
+        practiceBusinessAnchorId: req.user?.businessAnchorId,
+        type: "practice:transfer-updated",
+        payload: realtimePayload,
+        extraUserIds: [req.user?._id],
+      });
+      if (targetLabAnchorIdText) {
+        await emitPracticeTransferEventToRequestorUsers({
+          targetLabAnchorId: targetLabAnchorIdText,
+          type: "practice:transfer-updated",
+          payload: realtimePayload,
+        });
+      }
+    } catch {
+      // best-effort
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "크라운/브리지 제작 의뢰를 취소했습니다.",
+      data: {
+        toothWorks,
+        prosthesisFollowUps: serializeProsthesisFollowUpsForApi(
+          updated.prosthesisFollowUps,
+        ),
+        arrivalDates,
+        arrivalDate: resolveCurrentArrivalYmd(arrivalDates),
+        orderDates,
+        orderDate: resolveCurrentOrderYmd(orderDates),
+        billing: nextBilling,
+        requestorReadAt: null,
+      },
+    });
+  } catch (error) {
+    const status = Number(error?.statusCode || 500);
+    return res.status(status >= 400 && status < 600 ? status : 500).json({
+      success: false,
+      message: error?.message || "후속 제작 취소 중 오류가 발생했습니다.",
+      ...(error?.payload || {}),
+    });
+  }
+}
+
+/** 기공소 수락 전 후속 크라운/브리지 — 치과도착일 변경 */
+export async function updatePracticeTransferProsthesisFollowUp(req, res) {
+  try {
+    const role = String(req.user?.role || "").trim();
+    if (!isPracticeTransferSenderRole(role)) {
+      return res.status(403).json({ success: false, message: "권한이 없습니다." });
+    }
+
+    const transferIdFilter = buildTransferIdFilter(req.params?.transferId);
+    if (!transferIdFilter) {
+      return res.status(400).json({
+        success: false,
+        message: "transferId가 필요합니다.",
+      });
+    }
+
+    const rawYmd = String(req.body?.arrivalYmd || req.body?.arrivalDate || "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(rawYmd)) {
+      return res.status(400).json({
+        success: false,
+        message: "치과도착일을 선택해주세요.",
+        reason: "invalid_arrival_ymd",
+      });
+    }
+
+    const { scope } = await buildPracticeOwnedScope(req);
+    const doc = await PracticeTransfer.findOne({
+      ...scope,
+      ...transferIdFilter,
+      ...practiceTransferNotDeletedMongoFilter(),
+    });
+    if (!doc) {
+      return res.status(404).json({
+        success: false,
+        message: "전송 내역을 찾을 수 없습니다.",
+      });
+    }
+
+    const gate = canManagePendingProsthesisFollowUp(doc);
+    if (!gate.ok) {
+      return res.status(409).json({
+        success: false,
+        message: gate.message || "후속 제작을 변경할 수 없습니다.",
+        reason: gate.reason,
+      });
+    }
+
+    const pending = [...gate.pending].sort(
+      (a, b) => Number(b?.followUpIndex || 0) - Number(a?.followUpIndex || 0),
+    );
+    const target = pending[0];
+    if (!target) {
+      return res.status(409).json({
+        success: false,
+        message: "변경할 후속 제작을 찾을 수 없습니다.",
+      });
+    }
+
+    const appended = appendPracticeArrivalDate({
+      transferMemo: doc.transferMemo,
+      arrivalDates: doc.arrivalDates,
+      orderDates: doc.orderDates,
+      nextYmd: rawYmd,
+      alsoAppendOrderToday: false,
+    });
+    if (!appended.ok) {
+      return res.status(appended.statusCode || 400).json({
+        success: false,
+        message: appended.message,
+        reason: appended.reason,
+      });
+    }
+
+    const followUpIndex = Math.max(0, Math.floor(Number(target?.followUpIndex || 0)));
+    const followUps = Array.isArray(doc.prosthesisFollowUps)
+      ? doc.prosthesisFollowUps.map((row) =>
+          row && typeof row.toObject === "function" ? row.toObject() : { ...row },
+        )
+      : [];
+    const idx = followUps.findIndex(
+      (row) =>
+        Number(row?.followUpIndex || 0) === followUpIndex &&
+        !row?.canceledAt &&
+        !row?.labAcceptedAt,
+    );
+    if (idx >= 0) {
+      followUps[idx] = {
+        ...followUps[idx],
+        arrivalYmd: rawYmd,
+      };
+    }
+
+    const updated = await PracticeTransfer.findOneAndUpdate(
+      { _id: doc._id, ...practiceTransferNotDeletedMongoFilter() },
+      {
+        $set: {
+          transferMemo: appended.transferMemo,
+          arrivalDates: appended.arrivalDates,
+          orderDates: appended.orderDates,
+          prosthesisFollowUps: followUps,
+          requestorReadAt: null,
+          requestorReadBy: null,
+        },
+      },
+      { new: true },
+    );
+    if (!updated) {
+      return res.status(409).json({
+        success: false,
+        message: "후속 제작 변경을 반영하지 못했습니다.",
+      });
+    }
+
+    const targetLabAnchorIdText = String(updated.targetLabAnchorId || "").trim();
+    if (targetLabAnchorIdText) invalidateUnreadCountCache(targetLabAnchorIdText);
+
+    try {
+      await postPracticeTransferSystemChatMessage({
+        transferMongoId: String(updated._id),
+        senderUserId: req.user?._id,
+        content: `후속 크라운/브리지 제작 치과도착일 변경: ${rawYmd}`,
+        systemEvent: "practice_transfer_prosthesis_follow_up_update",
+      });
+    } catch {
+      // best-effort
+    }
+
+    const realtimePayload = {
+      source: "updatePracticeTransferProsthesisFollowUp",
+      action: "prosthesis-follow-up-update",
+      transferId: String(updated.transferId || "").trim(),
+      transferMongoId: String(updated._id || ""),
+      targetLabAnchorId: targetLabAnchorIdText || null,
+      practiceUserId: String(req.user?._id || ""),
+      prosthesisFollowUps: updated.prosthesisFollowUps || [],
+      arrivalDates: appended.arrivalDates,
+      arrivalDate: appended.nextYmd,
+      orderDates: appended.orderDates,
+      orderDate: resolveCurrentOrderYmd(appended.orderDates),
+      requestorReadAt: null,
+    };
+    try {
+      await emitPracticeTransferEventToPracticeUsers({
+        practiceBusinessAnchorId: req.user?.businessAnchorId,
+        type: "practice:transfer-updated",
+        payload: realtimePayload,
+        extraUserIds: [req.user?._id],
+      });
+      if (targetLabAnchorIdText) {
+        await emitPracticeTransferEventToRequestorUsers({
+          targetLabAnchorId: targetLabAnchorIdText,
+          type: "practice:transfer-updated",
+          payload: realtimePayload,
+        });
+      }
+    } catch {
+      // best-effort
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "크라운/브리지 제작 도착일을 변경했습니다.",
+      data: {
+        prosthesisFollowUps: serializeProsthesisFollowUpsForApi(
+          updated.prosthesisFollowUps,
+        ),
+        arrivalDates: appended.arrivalDates,
+        arrivalDate: appended.nextYmd,
+        orderDates: appended.orderDates,
+        orderDate: resolveCurrentOrderYmd(appended.orderDates),
+        requestorReadAt: null,
+      },
+    });
+  } catch (error) {
+    const status = Number(error?.statusCode || 500);
+    return res.status(status >= 400 && status < 600 ? status : 500).json({
+      success: false,
+      message: error?.message || "후속 제작 변경 중 오류가 발생했습니다.",
+      ...(error?.payload || {}),
     });
   }
 }
@@ -5487,6 +6266,19 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
     }
     if (Object.keys(acceptSet).length > 0) {
       await PracticeTransfer.updateOne({ _id: doc._id }, { $set: acceptSet });
+    }
+
+    const pendingFollowUps = getPendingProsthesisFollowUps(doc.prosthesisFollowUps);
+    if (pendingFollowUps.length > 0) {
+      const acceptedFollowUps = markPendingProsthesisFollowUpsAccepted(
+        doc.prosthesisFollowUps,
+        now,
+      );
+      await PracticeTransfer.updateOne(
+        { _id: doc._id },
+        { $set: { prosthesisFollowUps: acceptedFollowUps } },
+      );
+      doc.prosthesisFollowUps = acceptedFollowUps;
     }
 
     let abutmentEnsure = { requestIds: [] };

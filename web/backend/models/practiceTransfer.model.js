@@ -287,6 +287,40 @@ const practiceTransferSchema = new mongoose.Schema(
         default: null,
       },
     },
+    /**
+     * 임시치아 배송 후 동일 건에 크라운/브리지 후속 추가 이력.
+     * toothWorks에 prosthesisPhase=followUp 항목이 append되며, 어벗 재청구 없음.
+     */
+    prosthesisFollowUps: {
+      type: [
+        {
+          appendedAt: { type: Date, default: null },
+          appendedBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "User",
+            default: null,
+          },
+          arrivalYmd: { type: String, default: "", trim: true },
+          orderYmd: { type: String, default: "", trim: true },
+          toothNumbers: { type: [String], default: [] },
+          billingDelta: {
+            labFeeTotal: { type: Number, default: 0 },
+            total: { type: Number, default: 0 },
+          },
+          followUpIndex: { type: Number, default: 0 },
+          previousArrivalYmd: { type: String, default: "", trim: true },
+          previousOrderYmd: { type: String, default: "", trim: true },
+          labAcceptedAt: { type: Date, default: null },
+          canceledAt: { type: Date, default: null },
+          canceledBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "User",
+            default: null,
+          },
+        },
+      ],
+      default: undefined,
+    },
     // requestor(수신 기공소) 확인 상태 SSOT
     requestorReadAt: {
       type: Date,

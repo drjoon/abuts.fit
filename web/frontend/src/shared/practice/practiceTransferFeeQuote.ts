@@ -297,6 +297,7 @@ export const buildFeeQuoteFromContext = (params: {
   context?: PracticeTransferQuoteContext | null;
   autoMatchBudget?: PracticeTransferAutoMatchBudget | null;
   rushFeeMultiplier?: number;
+  skipAbutmentFees?: boolean;
 }): PracticeTransferFeeQuote => {
   const context = params.context || DEFAULT_QUOTE_CONTEXT;
   const zeroed = Boolean(context.usedDefaultSchedule);
@@ -315,6 +316,7 @@ export const buildFeeQuoteFromContext = (params: {
     abutmentPrices: context.abutmentPrices,
     labFeeMultiplier: zeroed ? 1 : labFeeMultiplier,
     rushFeeMultiplier,
+    skipAbutmentFees: Boolean(params.skipAbutmentFees),
   });
   const feeRateApplied = Number(context.feeRateApplied || 0);
   const settlement = splitPracticeTransferSettlement({

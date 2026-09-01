@@ -98,6 +98,12 @@ type PracticeToothWorkChartReadOnlyProps = {
   feeViewer?: PracticeTransferFeeQuoteViewer;
   labAnchorId?: string | null;
   skipJig?: boolean;
+  /** 후속 제작 등 — 어벗·디자인비 견적 제외 */
+  skipAbutmentFees?: boolean;
+  /** 상단「보철물 (N개)」헤더 */
+  showHeader?: boolean;
+  /** 모달 등 좁은 영역 — 카드 클립·이중 테두리 완화 */
+  embedded?: boolean;
   /** 기공소 뷰 — 자동매칭 기공비 별점 확정가 */
   labEffectiveStars?: number | null;
 };
@@ -109,14 +115,24 @@ export const PracticeToothWorkChartReadOnly = ({
   feeViewer = "practice",
   labAnchorId = null,
   skipJig = false,
+  skipAbutmentFees = false,
+  showHeader = true,
+  embedded = false,
   labEffectiveStars = null,
 }: PracticeToothWorkChartReadOnlyProps) => {
   const byTooth = useMemo(() => {
     const map = new Map<string, ToothWorkSelection>();
     for (const row of toothWorks) {
-      const tooth = String(row.toothNumber || "").trim();
-      if (!/^[1-4][1-8]$/.test(tooth)) continue;
-      if (!map.has(tooth)) map.set(tooth, row);
+      const anchor = String(row.toothNumber || "").trim();
+      const linked = Array.isArray(row.bridgeLinkedTeeth)
+        ? row.bridgeLinkedTeeth.map((t) => String(t || "").trim()).filter(Boolean)
+        : [];
+      const teeth = Array.from(
+        new Set([anchor, ...linked].filter((t) => /^[1-4][1-8]$/.test(t))),
+      );
+      for (const tooth of teeth) {
+        if (!map.has(tooth)) map.set(tooth, row);
+      }
     }
     return map;
   }, [toothWorks]);
@@ -147,6 +163,7 @@ export const PracticeToothWorkChartReadOnly = ({
     labAnchorId,
     toothWorks,
     storedQuote: storedFeeQuote,
+    skipAbutmentFees,
   });
 
   const [toothChartOffsets, setToothChartOffsets] = useState<Record<string, number>>(() =>
@@ -155,7 +172,14 @@ export const PracticeToothWorkChartReadOnly = ({
     ),
   );
   const [toothChartEnlargeOpen, setToothChartEnlargeOpen] = useState(false);
-  const toothChartVisibleCount = toothChartEnlargeOpen ? 16 : TOOTH_CHART_VISIBLE;
+  const embeddedMaxTeeth = embedded
+    ? Math.max(0, ...treatedChartRows.map((row) => row.teeth.length))
+    : 0;
+  const toothChartVisibleCount = toothChartEnlargeOpen
+    ? 16
+    : embedded && embeddedMaxTeeth > 0
+      ? Math.max(embeddedMaxTeeth, TOOTH_CHART_VISIBLE)
+      : TOOTH_CHART_VISIBLE;
 
   if (selectedTeeth.size === 0) {
     return (
@@ -164,6 +188,13 @@ export const PracticeToothWorkChartReadOnly = ({
       </div>
     );
   }
+
+  const toothCardShellClass = embedded
+    ? "relative flex w-full min-w-0 flex-col items-center justify-start overflow-visible border px-0.5 pb-2 pt-1.5 min-h-[12rem]"
+    : cn(
+        "relative flex w-full min-w-0 flex-col items-center justify-start overflow-hidden border px-0.5 pb-1 pt-1.5 shadow-sm",
+        TOOTH_CARD_HEIGHT_CLASS,
+      );
 
   const chartRows = treatedChartRows.map((decade) => {
     const maxOffset = Math.max(0, decade.teeth.length - toothChartVisibleCount);
@@ -267,8 +298,7 @@ export const PracticeToothWorkChartReadOnly = ({
 
                   <div
                     className={cn(
-                      "relative flex w-full min-w-0 flex-col items-center justify-start overflow-hidden border px-0.5 pb-1 pt-1.5 shadow-sm",
-                      TOOTH_CARD_HEIGHT_CLASS,
+                      toothCardShellClass,
                       isMissingTooth
                         ? isLinked
                           ? "border-primary bg-slate-50"
@@ -350,30 +380,41 @@ export const PracticeToothWorkChartReadOnly = ({
                             ? "어벗"
                             : "커스텀"}
                         </span>
-                        <TooltipProvider>
+                        {embedded ? (
                           <div className="flex w-full flex-col items-stretch gap-0.5 px-0.5">
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span className="h-5 w-full truncate px-0.5 text-center text-[10px] leading-none text-primary-strong">
-                                  {implantCompact || "임플란트"}
-                                </span>
-                              </TooltipTrigger>
-                              <TooltipContent side="bottom" className="max-w-[16rem] text-xs">
-                                {implantSummary || "임플란트"}
-                              </TooltipContent>
-                            </Tooltip>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span className="h-5 w-full truncate px-0.5 text-center text-[10px] leading-none text-service-abut">
-                                  {abutmentCompact || "스캔바디"}
-                                </span>
-                              </TooltipTrigger>
-                              <TooltipContent side="bottom" className="max-w-[16rem] text-xs">
-                                {abutmentSummary || "스캔바디"}
-                              </TooltipContent>
-                            </Tooltip>
+                            <span className="h-5 w-full truncate px-0.5 text-center text-[10px] leading-none text-primary-strong">
+                              {implantCompact || "임플란트"}
+                            </span>
+                            <span className="h-5 w-full truncate px-0.5 text-center text-[10px] leading-none text-service-abut">
+                              {abutmentCompact || "스캔바디"}
+                            </span>
                           </div>
-                        </TooltipProvider>
+                        ) : (
+                          <TooltipProvider>
+                            <div className="flex w-full flex-col items-stretch gap-0.5 px-0.5">
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="h-5 w-full truncate px-0.5 text-center text-[10px] leading-none text-primary-strong">
+                                    {implantCompact || "임플란트"}
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent side="bottom" className="max-w-[16rem] text-xs">
+                                  {implantSummary || "임플란트"}
+                                </TooltipContent>
+                              </Tooltip>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="h-5 w-full truncate px-0.5 text-center text-[10px] leading-none text-service-abut">
+                                    {abutmentCompact || "스캔바디"}
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent side="bottom" className="max-w-[16rem] text-xs">
+                                  {abutmentSummary || "스캔바디"}
+                                </TooltipContent>
+                              </Tooltip>
+                            </div>
+                          </TooltipProvider>
+                        )}
                       </div>
                     ) : null}
                   </div>
@@ -429,6 +470,9 @@ export const PracticeToothWorkChartReadOnly = ({
       viewer={feeViewer}
       skipJig={skipJig}
       labEffectiveStars={labEffectiveStars}
+      className={
+        embedded ? "border-0 bg-transparent px-0 py-1 shadow-none" : undefined
+      }
       leadingAction={
         showChartScroll ? (
           <>
@@ -504,41 +548,66 @@ export const PracticeToothWorkChartReadOnly = ({
     <div className={cn("space-y-2", className)}>
       {!toothChartEnlargeOpen ? (
         <>
-          <div className="relative flex min-h-8 items-center">
-            <p className="text-sm font-medium text-slate-700">
-              보철물{" "}
-              <span className="font-normal text-muted-foreground">({selectedTeeth.size}개)</span>
-            </p>
-            {needsOverflowControls ? (
-              <div className="absolute right-0">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-8 px-2.5 text-xs"
-                  onClick={() => {
-                    setToothChartOffsets(
-                      initialToothChartOffsets(
-                        treatedChartRows.map((row) => ({ key: row.key, teeth: row.teeth })),
-                      ),
-                    );
-                    setToothChartEnlargeOpen(true);
-                  }}
-                >
-                  크게 보기
-                </Button>
-              </div>
-            ) : null}
-          </div>
+          {showHeader ? (
+            <div className="relative flex min-h-8 items-center">
+              <p className="text-sm font-medium text-slate-700">
+                보철물{" "}
+                <span className="font-normal text-muted-foreground">({selectedTeeth.size}개)</span>
+              </p>
+              {needsOverflowControls ? (
+                <div className="absolute right-0">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 px-2.5 text-xs"
+                    onClick={() => {
+                      setToothChartOffsets(
+                        initialToothChartOffsets(
+                          treatedChartRows.map((row) => ({ key: row.key, teeth: row.teeth })),
+                        ),
+                      );
+                      setToothChartEnlargeOpen(true);
+                    }}
+                  >
+                    크게 보기
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+          ) : needsOverflowControls ? (
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 px-2.5 text-xs"
+                onClick={() => {
+                  setToothChartOffsets(
+                    initialToothChartOffsets(
+                      treatedChartRows.map((row) => ({ key: row.key, teeth: row.teeth })),
+                    ),
+                  );
+                  setToothChartEnlargeOpen(true);
+                }}
+              >
+                크게 보기
+              </Button>
+            </div>
+          ) : null}
           {chartBody}
         </>
       ) : null}
 
       <Dialog open={toothChartEnlargeOpen} onOpenChange={setToothChartEnlargeOpen}>
-        {/* Above parent 의뢰 상세 dialog (z-[100]); z-[60] hid the chart behind it. */}
         <DialogContent
-          overlayClassName="z-[110]"
-          className="z-[110] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] gap-3 p-4 sm:max-w-[calc(100vw-1rem)] sm:p-5"
+          overlayClassName={embedded ? "z-[330]" : "z-[110]"}
+          className={cn(
+            embedded
+              ? "z-[330]"
+              : "z-[110]",
+            "w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] gap-3 p-4 sm:max-w-[calc(100vw-1rem)] sm:p-5",
+          )}
         >
           <DialogHeader className="pr-8 text-left">
             <DialogTitle className="text-base">

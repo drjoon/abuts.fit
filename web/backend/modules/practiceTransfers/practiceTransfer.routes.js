@@ -41,6 +41,9 @@ import {
   upsertPracticeTransferLabRating,
   updatePracticeTransferContent,
   appendPracticeTransferArrival,
+  appendPracticeTransferProsthesis,
+  cancelPracticeTransferProsthesisFollowUp,
+  updatePracticeTransferProsthesisFollowUp,
 } from "../../controllers/practiceTransfers/practiceTransfer.controller.js";
 import {
   getPracticeTransferSettings,
@@ -133,6 +136,27 @@ router.post(
   authenticate,
   sendAuth,
   appendPracticeTransferArrival,
+);
+
+router.post(
+  "/:transferId/append-prosthesis",
+  authenticate,
+  sendAuth,
+  appendPracticeTransferProsthesis,
+);
+
+router.post(
+  "/:transferId/cancel-prosthesis-follow-up",
+  authenticate,
+  sendAuth,
+  cancelPracticeTransferProsthesisFollowUp,
+);
+
+router.post(
+  "/:transferId/update-prosthesis-follow-up",
+  authenticate,
+  sendAuth,
+  updatePracticeTransferProsthesisFollowUp,
 );
 
 router.get("/received", authenticate, receiveAuth, getReceivedPracticeTransfers);

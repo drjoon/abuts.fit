@@ -91,6 +91,10 @@ export type PracticeOrderArrivalDateRangeFieldProps = {
   lockedHint?: string;
   /** 팝오버 열림/닫힘 (가이드투어 등) */
   onOpenChange?: (open: boolean) => void;
+  /** 후속 제작 등 — CA 직납 안내 숨김 */
+  hideCaDirectShipNote?: boolean;
+  /** 도움말(?) 툴팁 숨김 */
+  hideHelpTooltip?: boolean;
 };
 
 export function PracticeOrderArrivalDateRangeField({
@@ -103,6 +107,8 @@ export function PracticeOrderArrivalDateRangeField({
   locked = false,
   lockedHint,
   onOpenChange,
+  hideCaDirectShipNote = false,
+  hideHelpTooltip = false,
 }: PracticeOrderArrivalDateRangeFieldProps) {
   const [open, setOpen] = useState(false);
 
@@ -166,6 +172,7 @@ export function PracticeOrderArrivalDateRangeField({
       <div className="flex h-7 items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-1">
           <Label className="text-sm leading-none">{PRACTICE_ORDER_ARRIVAL_PERIOD_LABEL}</Label>
+          {hideHelpTooltip ? null : (
           <Tooltip>
             <TooltipTrigger asChild>
               <button
@@ -182,11 +189,12 @@ export function PracticeOrderArrivalDateRangeField({
             >
               <p>{PRACTICE_ORDER_DAY_CUTOFF_NOTE}</p>
               <p>주문일은 오늘 고정. 치과도착일만 선택하면 됩니다.</p>
-              <p>{PRACTICE_CA_DIRECT_SHIP_NOTE}</p>
+              {hideCaDirectShipNote ? null : <p>{PRACTICE_CA_DIRECT_SHIP_NOTE}</p>}
               <p>3영업일 이하는 도착이 늦을 수 있습니다.</p>
               <p>{PRACTICE_WORK_PERIOD_RECOMMEND_NOTE}</p>
             </TooltipContent>
           </Tooltip>
+          )}
         </div>
         {leadDays != null && leadDays >= 0 ? (
           <PracticeWorkPeriodText

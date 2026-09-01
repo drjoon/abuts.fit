@@ -377,6 +377,17 @@ type PracticeTransferDetailChatDialogProps = {
   onAppendArrival?: (arrivalYmd: string) => void;
   appendArrivalDisabled?: boolean;
   appendArrivalBusy?: boolean;
+  /** 치과: 임시치아 배송 후 최종 보철 후속 제작 */
+  onAppendProsthesis?: () => void;
+  appendProsthesisDisabled?: boolean;
+  appendProsthesisBusy?: boolean;
+  appendProsthesisHint?: string | null;
+  /** 기공소 수락 전 pending 후속 제작 */
+  onCancelProsthesisFollowUp?: () => void;
+  onModifyProsthesisFollowUp?: () => void;
+  prosthesisFollowUpPending?: boolean;
+  cancelProsthesisFollowUpBusy?: boolean;
+  modifyProsthesisFollowUpBusy?: boolean;
   /** 치과: 수락 전·작업취소 건을 휴지통으로 */
   onCancelRequest?: () => void;
   cancelRequestDisabled?: boolean;
@@ -467,6 +478,15 @@ export function PracticeTransferDetailChatDialog({
   onAppendArrival,
   appendArrivalDisabled = false,
   appendArrivalBusy = false,
+  onAppendProsthesis,
+  appendProsthesisDisabled = false,
+  appendProsthesisBusy = false,
+  appendProsthesisHint = null,
+  onCancelProsthesisFollowUp,
+  onModifyProsthesisFollowUp,
+  prosthesisFollowUpPending = false,
+  cancelProsthesisFollowUpBusy = false,
+  modifyProsthesisFollowUpBusy = false,
   onCancelRequest,
   cancelRequestDisabled = false,
 }: PracticeTransferDetailChatDialogProps) {
@@ -1660,9 +1680,6 @@ export function PracticeTransferDetailChatDialog({
                             >
                               <div className="border-b px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
                                 선택일=재도착일, 오늘=재주문일로 반영됩니다.
-                                오늘 이후 재도착일은 1개만 유지되며, 다시
-                                고르면 수정되고 크레딧은 추가 차감되지
-                                않습니다.
                               </div>
                               <Calendar
                                 mode="single"
@@ -2197,6 +2214,73 @@ export function PracticeTransferDetailChatDialog({
                           />
                         );
                       })}
+
+                      {prosthesisFollowUpPending &&
+                      (onCancelProsthesisFollowUp || onModifyProsthesisFollowUp) &&
+                      !chatLoading &&
+                      !visibleChatError ? (
+                        <div className="relative z-[2] mt-2 flex shrink-0 flex-wrap items-center justify-center gap-2 px-1">
+                          {onModifyProsthesisFollowUp ? (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-9 bg-background px-4"
+                              disabled={
+                                modifyProsthesisFollowUpBusy ||
+                                cancelProsthesisFollowUpBusy
+                              }
+                              onClick={() => onModifyProsthesisFollowUp()}
+                            >
+                              {modifyProsthesisFollowUpBusy ? "변경 중…" : "제작 변경"}
+                            </Button>
+                          ) : null}
+                          {onCancelProsthesisFollowUp ? (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-9 border-destructive/40 px-4 text-destructive hover:bg-destructive/5"
+                              disabled={
+                                cancelProsthesisFollowUpBusy ||
+                                modifyProsthesisFollowUpBusy
+                              }
+                              onClick={() => onCancelProsthesisFollowUp()}
+                            >
+                              {cancelProsthesisFollowUpBusy ? "취소 중…" : "제작 취소"}
+                            </Button>
+                          ) : null}
+                        </div>
+                      ) : null}
+
+                      {onAppendProsthesis &&
+                      !prosthesisFollowUpPending &&
+                      !chatLoading &&
+                      !visibleChatError ? (
+                        <div className="relative z-[2] mt-2 flex shrink-0 flex-col items-center gap-1.5 px-1">
+                          <Button
+                            type="button"
+                            size="sm"
+                            className={cn(
+                              "h-9 px-5",
+                              appendProsthesisDisabled || appendProsthesisBusy
+                                ? "cursor-not-allowed opacity-70"
+                                : "",
+                            )}
+                            disabled={appendProsthesisBusy || appendProsthesisDisabled}
+                            title={appendProsthesisHint || undefined}
+                            onClick={() => onAppendProsthesis()}
+                          >
+                            {appendProsthesisBusy ? "처리 중…" : "최종 보철 제작"}
+                          </Button>
+                          {appendProsthesisHint && appendProsthesisDisabled ? (
+                            <p className="max-w-full text-center text-xs leading-snug text-muted-foreground">
+                              {appendProsthesisHint}
+                            </p>
+                          ) : null}
+                        </div>
+                      ) : null}
+
                       <div ref={chatBottomRef} />
                     </div>
                   </div>
