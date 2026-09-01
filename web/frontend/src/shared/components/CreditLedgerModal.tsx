@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-01: PTX 결제보류 — hold/adjust가 여러 저널로 흩어져도 목록·호버 금액을 견적(heldTotal)과 맞춤.
 // - 2026-08-31: 상단 요약 카드 전체(유료·무료·정산·소비) 실사용/데모 2줄.
 // - 2026-08-31: 현재 잔액·테이블 잔액 — 실사용/데모 2줄 표시.
 // - 2026-08-31: 요약 소비 카드 라벨「소비」(구「기공, 스토어」). 치과·기공소 공통.
@@ -811,6 +812,41 @@ const resolvePracticeTransferShippingAmounts = (
   };
 };
 
+/**
+ * PTX 묶음 행 표시 금액.
+ * - 레거시: 기공비 hold에 배송이 합쳐져 장부 합 > 견적 → 견적 작업액으로 내림.
+ * - 보류 중: hold/adjust가 여러 저널·페이지에 흩어지면 합 < 견적 → 견적(heldTotal)으로 올림.
+ */
+const resolveGroupedPracticeTransferDisplayAmount = ({
+  rawAmount,
+  workAmount,
+  quote,
+  pending,
+  isLabViewer,
+}: {
+  rawAmount: number;
+  workAmount: number;
+  quote: PracticeTransferFeeQuote | null | undefined;
+  pending: boolean;
+  isLabViewer: boolean;
+}) => {
+  if (isLabViewer || !quote) return rawAmount;
+  const quoteWork = quoteWorkTotalExcludingShipping(quote);
+  if (quoteWork <= 0 || workAmount === 0) return rawAmount;
+
+  const absRaw = Math.abs(rawAmount);
+  const absWork = Math.abs(workAmount);
+
+  if (absRaw > absWork) return workAmount;
+
+  if (pending && absRaw < quoteWork) {
+    const sign = rawAmount < 0 ? -1 : rawAmount > 0 ? 1 : workAmount < 0 ? -1 : 1;
+    return sign * quoteWork;
+  }
+
+  return rawAmount;
+};
+
 /** 기공의뢰 정산 배송 줄 — 치과→기공소·기공소→어벗츠 제외. */
 const toSettlementShippingLines = (
   parts: LedgerDisplayPart[] | null | undefined,
@@ -920,13 +956,26 @@ const buildPracticeTransferFeeLeaves = (
   parts: LedgerDisplayPart[],
   quote?: PracticeTransferFeeQuote | null,
   labShareOnly = false,
+  displayTotalAmount?: number | null,
 ): PracticeTransferTreeLeaf[] => {
   const byKind = new Map<PracticeTransferFeeKind, number>();
   const {
     explicitShippingAmount,
     bakedLabShippingAmount,
-    workAmount,
+    workAmount: partsWorkAmount,
   } = resolvePracticeTransferShippingAmounts(parts, quote);
+  let workAmount = partsWorkAmount;
+  if (quote && displayTotalAmount != null) {
+    const quoteWork = quoteWorkTotalExcludingShipping(quote);
+    if (
+      quoteWork > 0 &&
+      Math.abs(displayTotalAmount) >= quoteWork &&
+      Math.abs(workAmount) < quoteWork
+    ) {
+      workAmount =
+        displayTotalAmount < 0 ? -quoteWork : quoteWork;
+    }
+  }
   // 치과→기공소 배송은 무료 — baked 합산분은 작업액에서만 제거하고 배송 줄로 올리지 않음.
   void bakedLabShippingAmount;
   const shippingAmount = explicitShippingAmount;
@@ -1005,8 +1054,14 @@ function PracticeTransferAmountHover({
   labShareOnly?: boolean;
 }) {
   const leaves = useMemo(
-    () => buildPracticeTransferFeeLeaves(parts, feeQuote, labShareOnly),
-    [parts, feeQuote, labShareOnly],
+    () =>
+      buildPracticeTransferFeeLeaves(
+        parts,
+        feeQuote,
+        labShareOnly,
+        totalAmount,
+      ),
+    [parts, feeQuote, labShareOnly, totalAmount],
   );
   const detailLines =
     leaves.length > 0
@@ -1418,10 +1473,14 @@ const groupLedgerItemsForDisplay = (
         (sum, m) => sum + Number(m.amount || 0),
         0,
       );
-      const amount =
-        !isLabViewer && quote && workAmount !== 0 && Math.abs(rawAmount) > Math.abs(workAmount)
-          ? workAmount
-          : rawAmount;
+      const pending = resolvePracticeTransferPending(latest, "other", members);
+      const amount = resolveGroupedPracticeTransferDisplayAmount({
+        rawAmount,
+        workAmount,
+        quote,
+        pending,
+        isLabViewer,
+      });
       const spentPaidAmount = members.reduce(
         (sum, m) => sum + Number(m.spentPaidAmount || 0),
         0,
@@ -1430,7 +1489,6 @@ const groupLedgerItemsForDisplay = (
         (sum, m) => sum + Number(m.spentFreeAmount || 0),
         0,
       );
-      const pending = resolvePracticeTransferPending(latest, "other", members);
       const payoutStatus = resolvePracticeTransferPayoutStatus(
         representative,
         members,
