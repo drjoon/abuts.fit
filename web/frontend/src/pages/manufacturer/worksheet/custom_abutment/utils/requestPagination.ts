@@ -71,6 +71,7 @@ export function useInfiniteScroll(
   fetchNextPage: () => Promise<void>,
   setVisibleCount: React.Dispatch<React.SetStateAction<number>>,
   userScrolledRef: React.RefObject<boolean>,
+  visibleIncrement = 9,
 ) {
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -80,7 +81,7 @@ export function useInfiniteScroll(
           if (userScrolledRef.current) void fetchNextPage();
         }
         if (visibleCount < filteredLength) {
-          setVisibleCount((prev) => prev + 9);
+          setVisibleCount((prev) => prev + visibleIncrement);
         }
       },
       { threshold: 0.2 },
@@ -105,5 +106,6 @@ export function useInfiniteScroll(
     hasMore,
     setVisibleCount,
     userScrolledRef,
+    visibleIncrement,
   ]);
 }

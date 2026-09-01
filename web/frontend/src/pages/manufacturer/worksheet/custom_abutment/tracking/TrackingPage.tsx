@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-09-02: 택배/배송 컬럼별 스크롤·페이지네이션, 기간 필터 SSOT(periodToRange) 적용.
+// - 2026-09-02: 추적관리 스크롤·무한 로드 — 공용 스크롤 컨테이너·sentinel·fillHeight 복구.
 // - 2026-08-29: 재제작(count-update) 시 전체 목록 리셋 금지 — 펼침/페이지 유지, 관련 stage만 soft refresh.
 // - 2026-08-21: 한진 운송중 뱃지를 shared 라벨 SSOT로 통일(위치 포함). API events populate 의존.
 // - 2026-08-21: 집하완료·한진 미배송 뱃지를 최신 위치·상태(예: 여수 SUB 도착)로 표시
@@ -33,7 +35,7 @@ import { Button } from "@/components/ui/button";
 import { FlaskConical, Trash2 } from "lucide-react";
 import type { DeliveryInfoSummary } from "@/types/request";
 import { toKstYmd, formatKstDateTimeToKo } from "@/shared/date/kst";
-import { usePeriodStore } from "@/store/usePeriodStore";
+import { usePeriodStore, periodToRange } from "@/store/usePeriodStore";
 import {
   deriveStageForFilter,
   type ManufacturerRequest,
@@ -51,6 +53,7 @@ import {
   type RemakeQuickStartStage,
 } from "../components/RemakeStartQuickModal";
 import { getHanjinInTransitBadgeLabel as formatHanjinInTransitBadge } from "@/shared/shipping/hanjinTrackingLabel";
+import { useInfiniteScroll } from "../utils/requestPagination";
 
 type InquiryTab = "process" | "shipping" | "udi";
 
@@ -222,7 +225,7 @@ const getHanjinInTransitBadgeLabel = (
 
 export const TrackingInquiryPage = () => {
   const { token } = useAuthStore();
-  const { period } = usePeriodStore();
+  const { period, customStartDate, customEndDate } = usePeriodStore();
   const { toast } = useToast();
   const [, setSearchParams] = useSearchParams();
   const { worksheetSearch, showCompleted } = useOutletContext<{
@@ -236,7 +239,7 @@ export const TrackingInquiryPage = () => {
   const totalCountRef = useRef(0);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const onScrollRef = useRef<(() => void) | null>(null);
-  const onWheelRef = useRef<(() => void) | null>(null);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
   const [loading, setLoading] = useState(false);
   const [requests, setRequests] = useState<ManufacturerRequest[]>([]);
   const [expandedBoxes, setExpandedBoxes] = useState<Set<string>>(new Set());
@@ -408,6 +411,15 @@ export const TrackingInquiryPage = () => {
     [fetchTrackingPage, getStableRequestKey, token, toast],
   );
 
+  const fetchNextPage = useCallback(async () => {
+    if (isFetchingPageRef.current || !hasMoreRef.current) return;
+    const now = Date.now();
+    if (now - lastFetchTimeRef.current < 500) return;
+    lastFetchTimeRef.current = now;
+    pageRef.current += 1;
+    await runTrackingFetch({ silent: true, append: true });
+  }, [runTrackingFetch]);
+
   const decodeNcText = useCallback((buffer: ArrayBuffer) => {
     const utf8Decoder = new TextDecoder("utf-8", { fatal: false });
     const utf8Text = utf8Decoder.decode(buffer);
@@ -578,19 +590,6 @@ export const TrackingInquiryPage = () => {
     hasMoreRef.current = true;
     lastFetchTimeRef.current = 0;
     void runTrackingFetch({ silent: false, append: false });
-
-    (window as any).__trackingFetchNext = async () => {
-      if (isFetchingPageRef.current || !hasMoreRef.current) return;
-      const now = Date.now();
-      if (now - lastFetchTimeRef.current < 500) return;
-      lastFetchTimeRef.current = now;
-      pageRef.current += 1;
-      await runTrackingFetch({ silent: true, append: true });
-    };
-
-    return () => {
-      delete (window as any).__trackingFetchNext;
-    };
   }, [runTrackingFetch, token]);
 
   useAppEventDebouncedReload({
@@ -652,44 +651,15 @@ export const TrackingInquiryPage = () => {
   );
 
   const { fromDate, toDate } = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const startOfDay = (d: Date) => {
-      const c = new Date(d);
-      c.setHours(0, 0, 0, 0);
-      return c;
+    const range = periodToRange(period, { customStartDate, customEndDate });
+    if (!range) {
+      return { fromDate: null as Date | null, toDate: null as Date | null };
+    }
+    return {
+      fromDate: new Date(range.startDate),
+      toDate: new Date(range.endDate),
     };
-    const endOfDay = (d: Date) => {
-      const c = new Date(d);
-      c.setHours(23, 59, 59, 999);
-      return c;
-    };
-
-    if (period === "30d") {
-      const from = new Date(today);
-      from.setDate(from.getDate() - 29);
-      return { fromDate: startOfDay(from), toDate: endOfDay(today) };
-    }
-    if (period === "90d") {
-      const from = new Date(today);
-      from.setDate(from.getDate() - 89);
-      return { fromDate: startOfDay(from), toDate: endOfDay(today) };
-    }
-    if (period === "lastMonth") {
-      const year = today.getFullYear();
-      const month = today.getMonth();
-      const from = new Date(year, month - 1, 1);
-      const to = new Date(year, month, 0);
-      return { fromDate: startOfDay(from), toDate: endOfDay(to) };
-    }
-
-    const year = today.getFullYear();
-    const month = today.getMonth();
-    const from = new Date(year, month, 1);
-    const to = new Date(year, month + 1, 0);
-    return { fromDate: startOfDay(from), toDate: endOfDay(to) };
-  }, [period]);
+  }, [period, customStartDate, customEndDate]);
 
   const requestSearchTextMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -1321,7 +1291,7 @@ export const TrackingInquiryPage = () => {
     });
   }, [baseFiltered]);
 
-  const shippingColumns = useMemo(() => {
+  const shippingColumnGroups = useMemo(() => {
     type ShippingColumnItem = {
       box: any;
       summaryDate: string;
@@ -1336,7 +1306,7 @@ export const TrackingInquiryPage = () => {
       delivered: [],
     };
 
-    for (const box of shippingRows.slice(0, visibleCount) as any[]) {
+    for (const box of shippingRows as any[]) {
       const di = normalizeDeliveryInfo(box.deliveryInfoRef);
       const shippedAt = String(di?.shippedAt || "").trim();
       const pickedUpAt = String(di?.pickedUpAt || "").trim();
@@ -1375,12 +1345,43 @@ export const TrackingInquiryPage = () => {
       });
     }
 
-    return [
-      { key: "accepted", title: "발송접수", items: grouped.accepted },
-      { key: "pickedUp", title: "집하완료", items: grouped.pickedUp },
-      { key: "delivered", title: "배송완료", items: grouped.delivered },
-    ];
-  }, [shippingRows, visibleCount]);
+    return grouped;
+  }, [shippingRows]);
+
+  const shippingMaxColumnLength = useMemo(
+    () =>
+      Math.max(
+        shippingColumnGroups.accepted.length,
+        shippingColumnGroups.pickedUp.length,
+        shippingColumnGroups.delivered.length,
+        0,
+      ),
+    [shippingColumnGroups],
+  );
+
+  const shippingColumns = useMemo(
+    () => [
+      {
+        key: "accepted" as const,
+        title: "발송접수",
+        items: shippingColumnGroups.accepted.slice(0, visibleCount),
+        total: shippingColumnGroups.accepted.length,
+      },
+      {
+        key: "pickedUp" as const,
+        title: "집하완료",
+        items: shippingColumnGroups.pickedUp.slice(0, visibleCount),
+        total: shippingColumnGroups.pickedUp.length,
+      },
+      {
+        key: "delivered" as const,
+        title: "배송완료",
+        items: shippingColumnGroups.delivered.slice(0, visibleCount),
+        total: shippingColumnGroups.delivered.length,
+      },
+    ],
+    [shippingColumnGroups, visibleCount],
+  );
 
   const recallSelectableRequests = useMemo(() => {
     const map = new Map<string, ManufacturerRequest>();
@@ -1549,7 +1550,33 @@ export const TrackingInquiryPage = () => {
       : tab === "shipping"
         ? shippingRows
         : udiRows;
-  totalCountRef.current = currentRows.length;
+  const listLengthForPagination =
+    tab === "shipping" ? shippingMaxColumnLength : currentRows.length;
+  totalCountRef.current = listLengthForPagination;
+
+  const maybeLoadMoreShipping = useCallback(() => {
+    if (shippingMaxColumnLength > visibleCount) {
+      setVisibleCount((prev) => prev + 12);
+      return;
+    }
+    if (hasMoreRef.current) {
+      void fetchNextPage();
+    }
+  }, [fetchNextPage, shippingMaxColumnLength, visibleCount]);
+
+  const handleShippingColumnScroll = useCallback(
+    (event: React.UIEvent<HTMLDivElement>) => {
+      userScrolledRef.current = true;
+      const node = event.currentTarget;
+      if (
+        node.scrollTop + node.clientHeight >=
+        node.scrollHeight - 120
+      ) {
+        maybeLoadMoreShipping();
+      }
+    },
+    [maybeLoadMoreShipping],
+  );
 
   useEffect(() => {
     visibleCountRef.current = 12;
@@ -1563,7 +1590,7 @@ export const TrackingInquiryPage = () => {
     if (tab !== "shipping") {
       setRecallMode(false);
     }
-  }, [tab, period, worksheetSearch, showCompleted]);
+  }, [tab, period, worksheetSearch, showCompleted, customStartDate, customEndDate]);
 
   // 목표 표시 건수(visibleCount)를 채울 때까지 페이지를 추가 로드한다.
   // - 초기 로드: 12건 채울 때까지
@@ -1571,79 +1598,82 @@ export const TrackingInquiryPage = () => {
   useEffect(() => {
     if (!token) return;
     if (loading) return;
-    if (currentRows.length >= visibleCount) return;
+
+    if (tab === "shipping") {
+      if (shippingMaxColumnLength >= visibleCount) {
+        if (shippingRows.length >= visibleCount) return;
+      }
+    } else if (currentRows.length >= visibleCount) {
+      return;
+    }
+
     if (!hasMoreRef.current || isFetchingPageRef.current) return;
 
-    void (window as any).__trackingFetchNext?.();
+    void fetchNextPage();
   }, [
     token,
     loading,
     currentRows.length,
+    shippingRows.length,
+    shippingMaxColumnLength,
     visibleCount,
     tab,
     period,
     worksheetSearch,
     showCompleted,
+    customStartDate,
+    customEndDate,
+    fetchNextPage,
   ]);
+
+  useInfiniteScroll(
+    sentinelRef,
+    visibleCount,
+    listLengthForPagination,
+    hasMoreRef.current,
+    fetchNextPage,
+    setVisibleCount,
+    userScrolledRef,
+    12,
+  );
 
   const setScrollContainer = useCallback((node: HTMLDivElement | null) => {
     if (scrollRef.current && onScrollRef.current) {
       scrollRef.current.removeEventListener("scroll", onScrollRef.current);
       onScrollRef.current = null;
     }
-    if (scrollRef.current && onWheelRef.current) {
-      scrollRef.current.removeEventListener("wheel", onWheelRef.current);
-      onWheelRef.current = null;
-    }
     scrollRef.current = node;
     if (!node) return;
 
-    const maybeLoadMore = () => {
-      const nearBottom =
-        node.scrollTop + node.clientHeight >= node.scrollHeight - 200;
-      // Only after explicit user scroll
-      if (!nearBottom || !userScrolledRef.current) return;
-
-      // 이미 가진 데이터 범위 내에서만 표시 건수 증가 (불필요한 re-render 방지)
-      if (visibleCountRef.current < totalCountRef.current) {
-        visibleCountRef.current = Math.min(
-          visibleCountRef.current + 12,
-          totalCountRef.current,
-        );
-        setVisibleCount(visibleCountRef.current);
-      }
-
-      // 현재 보유 데이터가 부족하면 다음 페이지 로드
-      if (
-        visibleCountRef.current >= totalCountRef.current - 3 &&
-        hasMoreRef.current
-      ) {
-        void (window as any).__trackingFetchNext?.();
-      }
-    };
-
     const onScroll = () => {
       userScrolledRef.current = true;
-      maybeLoadMore();
-    };
-    const onWheel = () => {
-      userScrolledRef.current = true;
-      maybeLoadMore();
     };
     onScrollRef.current = onScroll;
-    onWheelRef.current = onWheel;
     node.addEventListener("scroll", onScroll, { passive: true });
-    node.addEventListener("wheel", onWheel, { passive: true });
   }, []);
 
-  useEffect(() => {
-    // when filter/tab changes, reset visible rows count
-    // Do not auto trigger load-more; wait for explicit user scroll
-  }, [currentRows.length]);
-
   return (
-    <div className="relative flex h-full min-h-0 w-full flex-col items-stretch text-gray-800">
-      <div className="flex min-h-0 flex-1 flex-col">
+    <div
+      className="relative flex h-full min-h-0 w-full flex-col items-stretch text-gray-800"
+      onWheelCapture={() => {
+        userScrolledRef.current = true;
+        if (tab === "shipping") {
+          maybeLoadMoreShipping();
+          return;
+        }
+        const node = scrollRef.current;
+        if (
+          node &&
+          node.scrollHeight <= node.clientHeight + 20 &&
+          hasMoreRef.current
+        ) {
+          void fetchNextPage();
+        }
+      }}
+      onScrollCapture={() => {
+        userScrolledRef.current = true;
+      }}
+    >
         <Tabs
           value={tab}
           onValueChange={(v) => setTab(v as InquiryTab)}
@@ -1716,14 +1746,18 @@ export const TrackingInquiryPage = () => {
             </div>
           </div>
 
+          <div
+            ref={setScrollContainer}
+            className={`custom-scrollbar workspace-nested-scroll min-h-0 flex-1 overflow-y-auto${
+              tab === "shipping" ? " hidden" : ""
+            }`}
+            data-worksheet-scroll="1"
+          >
           <TabsContent
             value="process"
-            className="mt-0 flex min-h-0 flex-1 flex-col space-y-2 overflow-hidden data-[state=inactive]:hidden"
+            className="mt-0 space-y-2 data-[state=inactive]:hidden"
           >
-            <div
-              ref={setScrollContainer}
-              className="rounded-md border bg-background overflow-auto flex-1 min-h-0"
-            >
+            <div className="rounded-md border bg-background">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -1892,12 +1926,9 @@ export const TrackingInquiryPage = () => {
 
           <TabsContent
             value="udi"
-            className="mt-0 flex min-h-0 flex-1 flex-col space-y-2 overflow-hidden data-[state=inactive]:hidden"
+            className="mt-0 space-y-2 data-[state=inactive]:hidden"
           >
-            <div
-              ref={setScrollContainer}
-              className="rounded-md border bg-background overflow-auto flex-1 min-h-0"
-            >
+            <div className="rounded-md border bg-background">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -1956,16 +1987,14 @@ export const TrackingInquiryPage = () => {
               </Table>
             </div>
           </TabsContent>
+            <div ref={sentinelRef} className="h-1 shrink-0" aria-hidden />
+          </div>
 
           <TabsContent
             value="shipping"
-            className="mt-0 flex min-h-0 flex-1 flex-col space-y-2 overflow-hidden data-[state=inactive]:hidden"
+            className="mt-0 flex min-h-0 flex-1 flex-col space-y-2 data-[state=inactive]:hidden"
           >
-            <div
-              ref={setScrollContainer}
-              className="space-y-3 overflow-auto flex-1 min-h-0"
-            >
-              {recallMode && (
+            {recallMode && (
                 <div className="rounded-lg border bg-accent-soft p-3 space-y-3">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-sm font-semibold">
@@ -2075,22 +2104,27 @@ export const TrackingInquiryPage = () => {
                 </div>
               )}
 
-              <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
+              <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 xl:grid-cols-3">
                 {shippingColumns.map((column) => (
                   <div
                     key={column.key}
-                    className="rounded-lg border bg-slate-50/60 p-3 space-y-2"
+                    className="flex min-h-0 flex-col rounded-lg border bg-slate-50/60 p-3"
                   >
-                    <div className="flex items-center justify-between px-1">
+                    <div className="mb-2 flex shrink-0 items-center justify-between px-1">
                       <h4 className="text-sm font-semibold text-gray-700">
                         {column.title}
                       </h4>
                       <span className="text-xs text-gray-500">
-                        {column.items.length}건
+                        {column.items.length < column.total
+                          ? `${column.items.length} / ${column.total}건`
+                          : `${column.total}건`}
                       </span>
                     </div>
 
-                    <div className="space-y-2">
+                    <div
+                      className="custom-scrollbar min-h-0 flex-1 space-y-2 overflow-y-auto pr-0.5"
+                      onScroll={handleShippingColumnScroll}
+                    >
                       {column.items.map(({ box, summaryDate }) => {
                         const di = normalizeDeliveryInfo(box.deliveryInfoRef);
                         const shippedAt = di.shippedAt
@@ -2484,14 +2518,12 @@ export const TrackingInquiryPage = () => {
               </div>
 
               {!loading && shippingRows.length === 0 && (
-                <div className="text-center py-8 text-muted-foreground">
+                <div className="shrink-0 text-center py-8 text-muted-foreground">
                   조회 결과가 없습니다.
                 </div>
               )}
-            </div>
           </TabsContent>
         </Tabs>
-      </div>
 
       <PreviewModal
         open={previewOpen}
