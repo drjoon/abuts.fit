@@ -3209,7 +3209,7 @@ export const PracticeTransferRequestIntakePanel = ({
                               )}
                             </button>
                           </div>
-                        ) : visibleIndex < visible.length - 1 ? (
+                        ) : visibleIndex < decade.teeth.length - 1 ? (
                           <div
                             className={cn(
                               "shrink-0",
@@ -3343,7 +3343,7 @@ export const PracticeTransferRequestIntakePanel = ({
                             )}
                           </button>
                         </div>
-                      ) : visibleIndex < visible.length - 1 ? (
+                      ) : visibleIndex < decade.teeth.length - 1 ? (
                         <div
                           className={cn(
                             "shrink-0",
