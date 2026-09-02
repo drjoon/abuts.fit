@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/practice/practiceTransferLabReceive.ts
 // change-log:
+// - 2026-09-02: 미제공 안내에 어벗츠 생산의뢰 완료 여부 전달.
 // - 2026-09-02: 작업 완료 취소 표시 중에도 미제공 CA 자체 처리 안내 유지.
 // - 2026-09-02: 어벗(STL) 업로드 CTA 제거 — 진행상황 드롭존 클릭/드래그가 SSOT.
 // - 2026-09-02: 파일 없는「작업 완료」CTA 제거(도착일 경과 자동 완료).
@@ -71,6 +72,7 @@ export function PracticeLabReceiveWorkActionsBar({
     <LabPendingAbutmentGuide
       toothWorks={listPracticeTransferCustomAbutmentToothWorks(transfer)}
       mixedWithAbuts={state.hasAbutsCa}
+      abutsProductionOrdered={state.showAbutmentProductionCancel}
     />
   ) : null;
 

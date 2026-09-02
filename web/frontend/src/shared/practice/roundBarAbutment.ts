@@ -11,6 +11,9 @@
 // - 2026-08-26: brand/family/type OR(` | `) 파싱·조인 헬퍼. 요청중/도입중/도입 상태.
 // - 2026-08-26: 관리자 추가·isPublic·명시 저장(입력값 그대로).
 // - 2026-08-24: 관리자 어벗 추가 요청 삭제 API 클라이언트.
+// - 2026-09-02: 미제공 안내 라벨 — 기공소 자체 처리 / 어벗츠 생산의뢰(완료)·호버 툴팁.
+// - 2026-09-02: 미제공 안내 라벨 — 자체 처리 / 어벗츠 생산의뢰(완료).
+// - 2026-09-02: 미제공 안내 라벨 — 자체 처리 / 어벗츠 생산의뢰.
 // - 2026-08-23: 미제공 안내 `{치아} : 어벗츠 미제공 커스텀어벗은…`.
 // - 2026-08-21: 미제공 CA 안내 INTRO/OUTRO 단문화.
 // - 2026-08-21: 미제공 CA 안내 INTRO/OUTRO·혼재 문구. 치아 상세는 LabPendingAbutmentGuide.
@@ -232,14 +235,28 @@ export const ROUND_BAR_GUIDE_LINES = [
 ] as const;
 /**
  * 기공소 수신: 임플란트 추가 요청(요청중) — 어벗츠 CNC 미제공.
- * 표시: `{치아 상세} : {GUIDE_BODY}`
+ * 표시: `{라벨} — {치아 상세}` (LabPendingAbutmentGuide)
  */
+export const LAB_PENDING_ABUTMENT_SELF_PROCESS_LABEL = "기공소 자체 처리";
+export const LAB_PENDING_ABUTMENT_ABUTS_ORDER_LABEL = "어벗츠 생산의뢰";
+/** STL 업로드 후 — 이미 제조사 큐에 등록됨 */
+export const LAB_PENDING_ABUTMENT_ABUTS_ORDERED_LABEL = "어벗츠 생산의뢰 완료";
+/** 호버 툴팁 — 미제공만 */
+export const LAB_PENDING_ABUTMENT_TOOLTIP_SELF_ONLY =
+  "어벗츠에서 아직 CNC를 제공하지 않는 임플란트입니다. 해당 커스텀어벗은 기공소에서 자체 제작하세요.";
+/** 호버 툴팁 — 미제공 + 어벗츠 대상(업로드 전) */
+export const LAB_PENDING_ABUTMENT_TOOLTIP_MIXED =
+  "어벗츠 미제공 치아는 기공소에서 자체 제작하고, 어벗츠 대상만 STL을 올려 생산 의뢰하세요.";
+/** 호버 툴팁 — 미제공 + 어벗츠 생산의뢰 완료 */
+export const LAB_PENDING_ABUTMENT_TOOLTIP_MIXED_ORDERED =
+  "어벗츠 미제공 치아는 기공소에서 자체 제작하세요. 어벗츠 대상은 이미 생산 의뢰되었고, 준비 단계에서는 취소·재업로드할 수 있습니다.";
+/** @deprecated 라벨 SSOT — SELF_PROCESS_LABEL 사용 */
 export const LAB_PENDING_ABUTMENT_GUIDE_BODY =
-  "어벗츠 미제공 커스텀어벗은 기공소에서 자체 처리하세요.";
-/** 일부만 미제공(어벗츠 CNC 대상과 혼재) */
+  LAB_PENDING_ABUTMENT_SELF_PROCESS_LABEL;
+/** @deprecated 혼재 시 두 줄(자체 처리 + 어벗츠 생산의뢰) 표시 */
 export const LAB_PENDING_ABUTMENT_MIXED_GUIDE_BODY =
-  "어벗츠 미제공. 해당 치아는 자체 처리하고, 어벗츠 대상만 생산의뢰하세요.";
-/** @deprecated 치아 상세 + GUIDE_BODY 한 줄 렌더 사용 */
+  LAB_PENDING_ABUTMENT_ABUTS_ORDER_LABEL;
+/** @deprecated */
 export const LAB_PENDING_ABUTMENT_GUIDE_INTRO = LAB_PENDING_ABUTMENT_GUIDE_BODY;
 export const LAB_PENDING_ABUTMENT_GUIDE_OUTRO = LAB_PENDING_ABUTMENT_GUIDE_BODY;
 export const LAB_PENDING_ABUTMENT_MIXED_GUIDE_INTRO =
@@ -247,7 +264,9 @@ export const LAB_PENDING_ABUTMENT_MIXED_GUIDE_INTRO =
 export const LAB_PENDING_ABUTMENT_MIXED_GUIDE_OUTRO =
   LAB_PENDING_ABUTMENT_MIXED_GUIDE_BODY;
 export const LAB_PENDING_ABUTMENT_GUIDE_LINES = [
-  LAB_PENDING_ABUTMENT_GUIDE_BODY,
+  LAB_PENDING_ABUTMENT_SELF_PROCESS_LABEL,
+  LAB_PENDING_ABUTMENT_ABUTS_ORDER_LABEL,
+  LAB_PENDING_ABUTMENT_ABUTS_ORDERED_LABEL,
 ] as const;
 
 export type RoundBarAbutmentRequest = {
