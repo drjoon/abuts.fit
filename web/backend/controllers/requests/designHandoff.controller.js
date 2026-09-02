@@ -1,3 +1,4 @@
+// - 2026-09-02: PTX handoff — Rhino 필드·재견적을 병렬(응답 전 대기 단축). S3 재업로드 없음.
 // - 2026-09-02: handoff/cancel — Transfer 1회 조회·형제 취소 병렬·디자인비 grant/revoke 응답 후 처리.
 // - 2026-08-31: PTX CA 생산·배송 크레딧 hold를 design-handoff로 이동(수락 시 보류 제거). 취소 시 hold 해제.
 // - 2026-08-26: PTX 디자인 핸드오프 → 제조사 준비 진입 시 관리자 의뢰 배지 +1.
@@ -670,15 +671,17 @@ export async function handoffDesignToProduction(req, res) {
       // (WorksheetPage productModeNe=design_custom_abutment / 디자인 파트너 큐는 PTX 제외)
       if (!request.caseInfos) request.caseInfos = {};
       request.caseInfos.productMode = PRODUCT_MODE_PRODUCTION;
-      const rhinoFileName = await ensurePtxProductionRhinoReadyFields(request);
-
-      if (transferDoc && isAcceptingLab) {
-        await repriceAndReschedulePtxAbutmentRequest({
-          requestDoc: request,
-          transferDoc,
-          requestedAt: now,
-        });
-      }
+      // Rhino 시드와 재견적은 서로 무관 — 병렬로 응답 전 대기만 줄인다.
+      const [rhinoFileName] = await Promise.all([
+        ensurePtxProductionRhinoReadyFields(request),
+        transferDoc && isAcceptingLab
+          ? repriceAndReschedulePtxAbutmentRequest({
+              requestDoc: request,
+              transferDoc,
+              requestedAt: now,
+            })
+          : Promise.resolve(null),
+      ]);
 
       // 생산·배송 보류: 디자인 업로드 시점(수락 시에는 잡지 않음). 이미 hold면 skip.
       try {

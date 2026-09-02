@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-02: lab-handoff 기본 확인 라벨「확인」(S3는 모달 중 사전 업로드). confirmDisabled.
 // - 2026-08-28: 확인 중 버튼「처리 중…」(백그라운드 S3 완료 후 API 저장과 구분).
 // - 2026-08-28: lab-handoff — 현재 파일 S3 업로드 프로그레스바.
 // - 2026-08-28: z-[320]/overlay z-[310] — 플로팅 의뢰상세(z-300) 위에 3D 확인 모달.
@@ -56,7 +57,7 @@ type Option = { id: string; label: string };
 export type AbutmentModelConfirmDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** new-request: 삭제/확인&다음/건너뛰기. lab-handoff: 취소/확인&업로드 */
+  /** new-request: 삭제/확인&다음/건너뛰기. lab-handoff: 취소/확인 */
   variant?: AbutmentModelConfirmVariant;
   detailIndex: number | null;
   selectedPreviewIndex: number | null;
@@ -116,7 +117,9 @@ export type AbutmentModelConfirmDialogProps = {
   onSelectPreviewIndex?: (index: number) => void;
   /** lab-handoff 업로드 중 닫기 방지 */
   confirming?: boolean;
-  /** lab-handoff 확인 버튼 문구(미지정 시「확인 & 업로드」) */
+  /** lab-handoff 확인 버튼 추가 비활성(예: S3 사전업로드 미완료) */
+  confirmDisabled?: boolean;
+  /** lab-handoff 확인 버튼 문구(미지정 시「확인」) */
   confirmLabel?: string;
   /** 다파일 큐 진행 표시 (예: 1/3) */
   progressLabel?: string;
@@ -169,14 +172,16 @@ export function AbutmentModelConfirmDialog({
   previewFileIndices,
   onSelectPreviewIndex,
   confirming = false,
+  confirmDisabled = false,
   confirmLabel,
   progressLabel,
   fileUploadPercent = null,
   fileUploadLabel = null,
 }: AbutmentModelConfirmDialogProps) {
   const isLabHandoff = variant === "lab-handoff";
-  const labConfirmLabel = String(confirmLabel || "").trim() || "확인 & 업로드";
+  const labConfirmLabel = String(confirmLabel || "").trim() || "확인";
   const labProgressLabel = String(progressLabel || "").trim();
+  const labConfirmBlocked = confirming || confirmDisabled;
   const uploadPercent =
     typeof fileUploadPercent === "number" && Number.isFinite(fileUploadPercent)
       ? Math.max(0, Math.min(100, Math.round(fileUploadPercent)))
@@ -292,7 +297,7 @@ export function AbutmentModelConfirmDialog({
             </DialogTitle>
             <DialogDescription className="sr-only">
               {isLabHandoff
-                ? "3D 모델을 확인하고 환자/임플란트 정보를 입력한 뒤 업로드합니다."
+                ? "3D 모델을 확인하고 환자/임플란트 정보를 입력한 뒤 확인합니다. 파일은 모달이 열린 동안 미리 업로드됩니다."
                 : "3D 모델을 확인하고 환자/임플란트 정보를 입력한 뒤 다음 케이스로 이동합니다."}
             </DialogDescription>
           </DialogHeader>
@@ -518,7 +523,7 @@ export function AbutmentModelConfirmDialog({
                               void onVerifyAndNext(detailIndex);
                             }
                           }}
-                          disabled={!detailFile || confirming}
+                          disabled={!detailFile || labConfirmBlocked}
                         >
                           {confirming ? "처리 중…" : labConfirmLabel}
                         </Button>

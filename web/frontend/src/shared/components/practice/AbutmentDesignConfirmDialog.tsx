@@ -4,6 +4,7 @@
 // - web/frontend/src/shared/components/practice/RetentionGrooveField.tsx
 // - web/backend/controllers/requests/designHandoff.controller.js
 // change-log:
+// - 2026-09-02: 확인 라벨「확인」/「다음」(사전 S3 업로드 완료 전제). 업로드 중 확인 버튼 비활성.
 // - 2026-08-28: 현재 파일 S3 업로드 프로그레스를 확인 모달에 전달.
 // - 2026-08-16: teethOptions — 남은 CA 치아를 확인 모달에서 직접 선택(지정 다이얼로그 생략).
 // - 2026-08-16: 다파일 큐 progress·확인 버튼 라벨 전달.
@@ -213,14 +214,23 @@ export function AbutmentDesignConfirmDialog({
     const total = Number(queueTotal || 0);
     const current = Number(queueCurrent || 0);
     if (!(total > 1) || !(current >= 1)) {
-      return { progressLabel: "", confirmLabel: "확인 & 업로드" };
+      return { progressLabel: "", confirmLabel: "확인" };
     }
     const isLast = current >= total;
     return {
       progressLabel: `${current}/${total}`,
-      confirmLabel: isLast ? "확인 & 업로드" : "확인 & 다음",
+      confirmLabel: isLast ? "확인" : "다음",
     };
   }, [queueCurrent, queueTotal]);
+
+  /** 모달 오픈 중 사전 업로드 진행 중이면 확인 클릭 금지(완료 후 handoff만) */
+  const s3UploadBlocking = useMemo(() => {
+    if (typeof fileUploadPercent !== "number") return false;
+    const label = String(fileUploadLabel || "").trim();
+    // 실패 시에는 확인으로 ensure 재시도 허용
+    if (label === "업로드 실패") return false;
+    return true;
+  }, [fileUploadPercent, fileUploadLabel]);
 
   const handleOpenChange = useCallback(
     (next: boolean) => {
@@ -305,6 +315,7 @@ export function AbutmentDesignConfirmDialog({
       toast={toast}
       lockProductionProductMode
       confirming={confirming}
+      confirmDisabled={s3UploadBlocking}
       confirmLabel={queueProgress.confirmLabel}
       progressLabel={queueProgress.progressLabel}
       fileUploadPercent={fileUploadPercent}

@@ -26,6 +26,7 @@
 // - web/frontend/src/shared/practice/labReceiveCalendarHiddenWeekdays.ts
 // - web/backend/utils/labReceiveCalendarHiddenWeekdays.util.js
 // - web/backend/controllers/users/user.controller.js
+// - 2026-09-02: 어벗 확인 — 사전 S3 캐시만 handoff에 사용·버튼「확인」(업로드 중 비활성).
 // - 2026-09-02: 어벗 STL — 비STL 드롭 거부 토스트. 카드/상세 accept=STL.
 // - 2026-09-02: 어벗 STL — 업로드 버튼 제거, 진행상황 드롭존 클릭/드래그만.
 // - 2026-09-02: 상세 workFileDrop — 수락(showWorkActions) 후에만 어벗 STL 드롭.
@@ -613,6 +614,7 @@ export function RequestorPracticeReceivePage({
   const { rooms } = useChatRooms();
   const {
     ensureFilesUploaded,
+    peekCachedUploadedFiles,
     preUploadFiles,
     uploadProgress,
   } = useFilePreUpload({ token });
@@ -4201,7 +4203,12 @@ export function RequestorPracticeReceivePage({
       setDesignConfirmBusy(true);
       setCardActionBusyId(String(transfer.transferId || transfer._id || ""));
       try {
-        const uploaded = await ensureFilesUploaded([file]);
+        // 모달 오픈 중 preUpload 완료분 재사용. 실패·누락일 때만 ensure가 이어 올린다(중복 PUT 없음).
+        const cached = peekCachedUploadedFiles([file]);
+        const uploaded =
+          cached && cached.length === 1
+            ? cached
+            : await ensureFilesUploaded([file]);
         const temp = uploaded?.[0];
         const s3Key = String(temp?.key || "").trim();
         if (!s3Key) {
@@ -4355,6 +4362,7 @@ export function RequestorPracticeReceivePage({
       toast,
       token,
       ensureFilesUploaded,
+      peekCachedUploadedFiles,
     ],
   );
 

@@ -717,6 +717,7 @@ Notes:
 - Mutation UX latency(강제) — 기공의뢰수신 업로드·어벗 취소·작업 완료 취소 등:
   - 「처리 중…」은 API critical path만. 성공 후 `received`/캘린더 전체 refetch로 busy를 늘리지 않는다(로컬 패치 우선).
   - 확인 모달 오픈 중 사전 업로드(`preUploadFiles`)로 S3를 끝내고, 확인 클릭은 handoff만 기다린다.
+    업로드 중에는 확인 버튼 비활성·라벨은「확인」(다파일 중간은「다음」). 캐시 hit면 S3 PUT 재시도 없음.
   - SSOT: `.cursor/rules/mutation-ux-latency.mdc` · 루트 `rules.md` §3.
 
 - practice 최근 전송 기공소(기공소 선택 드롭다운) SSOT:
