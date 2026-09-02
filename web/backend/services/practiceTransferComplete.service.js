@@ -3,7 +3,7 @@
 // - web/backend/jobs/practiceTransferArrivalAutoCompleteWorker.js
 // - web/backend/utils/practiceTransferArrivalDates.js
 // change-log:
-// - 2026-09-02: 작업완료 수동 CTA 폐지. 치과도착일 경과(당일 제외) 시 자동 완료.
+// - 2026-09-02: 작업완료 수동 CTA 폐지. 치과도착일 경과(당일 제외) 시 자동 완료. CA 미업로드는 기한만료.
 import { Types } from "mongoose";
 import PracticeTransfer from "../models/practiceTransfer.model.js";
 import User from "../models/user.model.js";
@@ -16,6 +16,7 @@ import {
   ensureAbutmentRequestsOnAccept,
   hasCustomAbutmentToothWorks,
   normalizeResultFiles,
+  practiceTransferNeedsMoreAbutmentDesigns,
 } from "./practiceTransferProduction.service.js";
 import { postPracticeTransferSystemChatMessage } from "./chatSystemMessage.service.js";
 import { emitCreditBalanceUpdatedToBusiness } from "../utils/creditRealtime.js";
@@ -30,7 +31,9 @@ import {
 } from "../utils/practiceTransferStage.js";
 import {
   isPracticeTransferDueForArrivalAutoComplete,
+  isPracticeTransferDueForArrivalDeadlineExpire,
 } from "../utils/practiceTransferArrivalAutoComplete.js";
+import { expirePracticeTransfersPastArrivalDeadline } from "./practiceTransferArrivalExpire.service.js";
 import { getTodayYmdInKst } from "../utils/krBusinessDays.js";
 
 export {
@@ -148,6 +151,21 @@ export async function completePracticeTransferWork({
       ok: false,
       statusCode: 409,
       message: "의뢰수락된 건만 작업 완료할 수 있습니다.",
+    };
+  }
+
+  const todayYmd = getTodayYmdInKst(now);
+  if (
+    todayYmd &&
+    practiceTransferNeedsMoreAbutmentDesigns(doc) &&
+    isPracticeTransferDueForArrivalDeadlineExpire(doc, todayYmd)
+  ) {
+    return {
+      ok: false,
+      statusCode: 409,
+      message:
+        "치과도착일이 지났으나 어벗 디자인 STL이 업로드되지 않아 작업 완료할 수 없습니다.",
+      code: "arrival_deadline_expired",
     };
   }
 
@@ -393,21 +411,35 @@ export async function completePracticeTransferWork({
 }
 
 /**
- * 치과도착일이 지난 수락·미완료 건을 작업완료 처리.
+ * 치과도착일이 지난 수락·미완료 건 처리.
+ * - CA 어벗 STL 미업로드 → 기한만료
+ * - 그 외 → 작업완료
  * 당일·그 전에 도착일을 재지정하면 대상에서 빠져 기한이 연장된다.
  */
 export async function autoCompletePracticeTransfersPastArrival({
   now = new Date(),
   limit = 200,
 } = {}) {
+  const expireResult = await expirePracticeTransfersPastArrivalDeadline({
+    now,
+    limit,
+  });
+
   const todayYmd = getTodayYmdInKst(now);
   if (!todayYmd) {
-    return { scanned: 0, completed: 0, failed: 0, todayYmd: null };
+    return {
+      scanned: expireResult.scanned,
+      completed: 0,
+      failed: expireResult.failed,
+      expired: expireResult.expired,
+      todayYmd: null,
+    };
   }
 
   const candidates = await PracticeTransfer.find({
     ...practiceTransferNotDeletedMongoFilter(),
     requestorDownloadedAt: { $ne: null },
+    arrivalDeadlineExpiredAt: null,
     $and: [
       {
         $or: [
@@ -486,5 +518,11 @@ export async function autoCompletePracticeTransfersPastArrival({
     }
   }
 
-  return { scanned, completed, failed, todayYmd };
+  return {
+    scanned: scanned + expireResult.scanned,
+    completed,
+    failed: failed + expireResult.failed,
+    expired: expireResult.expired,
+    todayYmd,
+  };
 }

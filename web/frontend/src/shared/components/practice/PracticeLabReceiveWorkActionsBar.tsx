@@ -11,6 +11,7 @@
 // - 2026-09-02: 어벗(STL) 업로드 CTA 제거 — 진행상황 드롭존 클릭/드래그가 SSOT.
 // - 2026-09-02: 파일 없는「작업 완료」CTA 제거(도착일 경과 자동 완료).
 // - 2026-09-02: 보철/dual 제거. CA 어벗 업로드 + 파일 없는 작업 완료 CTA.
+// - 2026-09-02: 수락 후 24h/48h 어벗 STL 미업로드 경고 배너.
 import type { MouseEvent, ReactNode } from "react";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -19,10 +20,12 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { PracticeAbutmentUploadOverdueAlert } from "@/shared/components/practice/PracticeAbutmentUploadOverdueAlert";
 import { LabPendingAbutmentGuide } from "@/shared/components/practice/LabPendingAbutmentGuide";
 import {
   listPracticeTransferCustomAbutmentToothWorks,
   resolvePracticeLabReceiveWorkActionState,
+  resolvePracticeTransferAbutmentUploadOverdue,
   type PracticeTransferLabReceiveItem,
 } from "@/shared/practice/practiceTransferLabReceive";
 import type { RoundBarCatalogRow } from "@/shared/practice/roundBarAbutment";
@@ -66,16 +69,25 @@ export function PracticeLabReceiveWorkActionsBar({
 }: PracticeLabReceiveWorkActionsBarProps) {
   const catalog = Array.isArray(implantCatalog) ? implantCatalog : [];
   const state = resolvePracticeLabReceiveWorkActionState(transfer, catalog);
+  const uploadOverdue = resolvePracticeTransferAbutmentUploadOverdue(
+    transfer,
+    catalog,
+  );
   const hasTrailing = Boolean(trailingActions);
   const hasAbutmentGuide = state.hasPendingLabCa || state.hasAbutsCa;
   if (
     !state.showWorkActions &&
     !state.showCompletedStageHeaderCancel &&
     !hasTrailing &&
-    !hasAbutmentGuide
+    !hasAbutmentGuide &&
+    !uploadOverdue
   ) {
     return null;
   }
+
+  const uploadOverdueAlert = uploadOverdue ? (
+    <PracticeAbutmentUploadOverdueAlert level={uploadOverdue} />
+  ) : null;
 
   const pendingLabGuide = hasAbutmentGuide ? (
     <LabPendingAbutmentGuide
@@ -149,6 +161,7 @@ export function PracticeLabReceiveWorkActionsBar({
   if (state.showWorkActions || designConfirmButton) {
     return (
       <div className={cn("w-full min-w-0 space-y-1.5", className)}>
+        {uploadOverdueAlert}
         {pendingLabGuide}
         {renderActionRow(designConfirmButton)}
       </div>
@@ -158,6 +171,7 @@ export function PracticeLabReceiveWorkActionsBar({
   if (state.showCompletedStageHeaderCancel) {
     return (
       <div className={cn("w-full min-w-0 space-y-1.5", className)}>
+        {uploadOverdueAlert}
         {pendingLabGuide}
         {renderActionRow(null)}
       </div>
@@ -166,6 +180,7 @@ export function PracticeLabReceiveWorkActionsBar({
 
   return (
     <div className={cn("w-full min-w-0 space-y-1.5", className)}>
+      {uploadOverdueAlert}
       {pendingLabGuide}
       {cancelCluster ?? (
         <div className="flex flex-wrap items-center gap-1.5">{trailingActions}</div>

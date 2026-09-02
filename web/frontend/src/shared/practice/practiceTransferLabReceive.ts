@@ -8,7 +8,7 @@
 // - 2026-09-02: toothWorks 구조 배열 우선(요청중 implantAddRequest — 요약 문자열 왕복 손실 방지).
 // - 2026-09-02: 다치아 어벗 — 일부 STL만 올려도 showWorkActions·드롭존 유지(남은 개수 업로드).
 // - 2026-09-02: 기공소 수신 상단 — 취소 뱃지 제외·거부·작업취소 목록 숨김 복구(치과만 취소 필터).
-// - 2026-09-02: 수동「작업 완료」CTA 폐지(showMarkCompleteWithoutFiles=false). 도착일 경과 자동 완료.
+// - 2026-09-02: 수동「작업 완료」CTA 폐지. CA 미업로드+도착일 경과 → 기한만료(자동완료 제외).
 // - 2026-09-02: designStlUploadMode — 수락(showWorkActions) 후에만 abutment. 수락 전 드롭 방지.
 // - 2026-09-02: designStlUploadMode — 어벗/보철 CTA 통합 분기(abutment|prosthetic|dual|none).
 // - 2026-08-29: 보철 디자인 업로드=작업완료(디자인). skip 자동 confirmedAt은 출고로 올리지 않음.
@@ -60,6 +60,7 @@ import type {
   StarDowngradeInfo,
 } from "@/shared/practice/practiceLabRating";
 import type { PracticeAbutmentDeliveryInfo } from "@/shared/shipping/hanjinTrackingLabel";
+import { resolvePracticeAbutmentUploadOverdueLevel } from "@/shared/practice/practiceAbutmentUploadOverdue";
 
 export type PracticeTransferLabReceiveFile = {
   id: string;
@@ -98,6 +99,8 @@ export type PracticeTransferLabReceiveItem = {
   requestorDownloadedAt: string | null;
   requestorAcceptedAt: string | null;
   workCanceledAt?: string | null;
+  /** 치과도착일 경과 + CA 어벗 STL 미업로드 */
+  arrivalDeadlineExpiredAt?: string | null;
   labRejected?: boolean;
   labRejectedAt?: string | null;
   matchingMode?: "direct" | "auto";
@@ -163,6 +166,7 @@ export type PracticeTransferLabReceiveDisplayStatus =
   | "거부"
   | "생산진행"
   | "작업완료"
+  | "기한만료"
   | "취소"
   | "자동매칭"
   | "의뢰수락"
@@ -189,7 +193,7 @@ export function practiceTransferLabReceiveUnreadBadgeCount(
   return unreadTransfer + Math.max(0, Number(chatUnreadCount) || 0);
 }
 
-/** 기공소 수신 캘린더·목록에서 숨기는 종료 상태(거부·작업취소). */
+/** 기공소 수신 캘린더·목록에서 숨기는 종료 상태(거부·작업취소). 기한만료는 강조 표시. */
 export function isLabReceiveHiddenTerminalStatus(
   status: PracticeTransferLabReceiveDisplayStatus,
 ): boolean {
@@ -226,6 +230,12 @@ export function getPracticeTransferLabReceiveDisplayStatus(
     transfer.autoMatch?.declinedByMe
   ) {
     return "거부";
+  }
+  if (
+    Boolean(String(transfer.arrivalDeadlineExpiredAt || "").trim()) ||
+    transfer.manufacturerStage === "기한만료"
+  ) {
+    return "기한만료";
   }
   // 보철 디자인 파일 업로드(완료) → 작업완료(UI「디자인」).
   // skipDesignConfirm 자동 confirmedAt은 출고로 올리지 않음 — backend stage SSOT와 동일.
@@ -839,6 +849,7 @@ export function resolvePracticeLabReceiveWorkActionState(
       displayStatus === "작업완료");
   const showWorkActions =
     displayStatus === "의뢰수락" ||
+    displayStatus === "기한만료" ||
     (isLabAccepted &&
       !productionStarted &&
       designFileCount === 0 &&
@@ -886,4 +897,23 @@ export function resolvePracticeLabReceiveWorkActionState(
     showDesignConfirm,
     showMarkCompleteWithoutFiles,
   };
+}
+
+/** 수락 후 어벗 STL 미업로드 24h/48h 경고 */
+export function resolvePracticeTransferAbutmentUploadOverdue(
+  transfer: PracticeTransferLabReceiveItem | null | undefined,
+  catalog: RoundBarCatalogRow[] = [],
+  now?: Date,
+) {
+  if (!transfer) return null;
+  const displayStatus = getPracticeTransferLabReceiveDisplayStatus(transfer);
+  const needsUpload = practiceTransferNeedsMoreAbutmentDesigns(transfer, catalog);
+  return resolvePracticeAbutmentUploadOverdueLevel({
+    status: displayStatus,
+    requestorDownloadedAt: transfer.requestorDownloadedAt,
+    requestorAcceptedAt: transfer.requestorAcceptedAt,
+    arrivalDeadlineExpiredAt: transfer.arrivalDeadlineExpiredAt,
+    needsAbutmentUpload: needsUpload,
+    now,
+  });
 }

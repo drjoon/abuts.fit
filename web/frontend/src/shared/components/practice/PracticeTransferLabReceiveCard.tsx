@@ -61,8 +61,10 @@ import {
 import {
   practiceTransferLabReceiveUnreadBadgeCount,
   resolvePracticeLabReceiveWorkActionState,
+  resolvePracticeTransferAbutmentUploadOverdue,
   type PracticeTransferLabReceiveItem,
 } from "@/shared/practice/practiceTransferLabReceive";
+import { PracticeAbutmentUploadOverdueAlert } from "@/shared/components/practice/PracticeAbutmentUploadOverdueAlert";
 
 const formatDateTime = (value: unknown) => {
   const d = new Date(String(value || ""));
@@ -139,6 +141,7 @@ export function PracticeTransferLabReceiveCard({
     orderDate: transfer.orderDate,
     createdAt: transfer.createdAt,
   });
+  const uploadOverdue = resolvePracticeTransferAbutmentUploadOverdue(transfer);
 
   const onCardKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Enter" || event.key === " ") {
@@ -251,6 +254,12 @@ export function PracticeTransferLabReceiveCard({
           ) : null
         }
       />
+
+      {uploadOverdue ? (
+        <div className="mt-3">
+          <PracticeAbutmentUploadOverdueAlert level={uploadOverdue} />
+        </div>
+      ) : null}
 
       {showWorkActions || showCompletedStageHeaderCancel ? (
         <div className="mt-3 border-t border-slate-100 pt-3">

@@ -256,6 +256,7 @@ import {
   practiceTransferHasPendingLabCustomAbutment,
   practiceTransferLabReceiveUnreadBadgeCount,
   resolvePracticeLabReceiveWorkActionState,
+  resolvePracticeTransferAbutmentUploadOverdue,
   resolvePracticeTransferToothWorks,
   type PracticeTransferLabReceiveFile as ReceivedPracticeFile,
   type PracticeTransferLabReceiveItem as ReceivedPracticeTransfer,
@@ -1097,6 +1098,9 @@ export function RequestorPracticeReceivePage({
           requestorDownloadedAt,
           requestorAcceptedAt: requestorDownloadedAt,
           workCanceledAt: r.workCanceledAt ? String(r.workCanceledAt) : null,
+          arrivalDeadlineExpiredAt: r.arrivalDeadlineExpiredAt
+            ? String(r.arrivalDeadlineExpiredAt)
+            : null,
           labRejected:
             Boolean(r.labRejected) ||
             Boolean(autoMatch?.declinedByMe) ||
@@ -1435,6 +1439,7 @@ export function RequestorPracticeReceivePage({
       const requestorDownloadedAt = payload.requestorDownloadedAt
         ? String(payload.requestorDownloadedAt)
         : null;
+      const manufacturerStage = String(payload.manufacturerStage || "").trim();
 
       // 치과 의뢰 삭제(deleted) fan-out는 transferId 없이 affectedTransfers만 올 수 있다.
       if (type === "practice:transfer-updated" && isRemovedEvent && removedTransferIdSet.size > 0) {
@@ -1537,6 +1542,34 @@ export function RequestorPracticeReceivePage({
           }
           return;
         }
+        if (action === "arrival-deadline-expired") {
+          const expiredAt =
+            payload.arrivalDeadlineExpiredAt != null
+              ? String(payload.arrivalDeadlineExpiredAt)
+              : new Date().toISOString();
+          const patchExpired = (
+            row: ReceivedPracticeTransfer,
+          ): ReceivedPracticeTransfer => ({
+            ...row,
+            arrivalDeadlineExpiredAt: expiredAt,
+            manufacturerStage:
+              String(payload.manufacturerStage || "기한만료").trim() ||
+              "기한만료",
+          });
+          setTransfers((prev) =>
+            prev.map((row) =>
+              row.transferId === transferId ? patchExpired(row) : row,
+            ),
+          );
+          setSelectedTransfer((prev) =>
+            prev && prev.transferId === transferId ? patchExpired(prev) : prev,
+          );
+          void loadCalendarTransfers({ silent: true });
+          if (hasUnreadCount) {
+            emitUnreadBadgeRefresh(unreadCount);
+          }
+          return;
+        }
         if (action === "lab-rejected") {
           const transferMongoId = String(payload.transferMongoId || "").trim();
           removeLabReceiveTransferFromList({
@@ -1600,6 +1633,7 @@ export function RequestorPracticeReceivePage({
               return {
                 ...row,
                 status: status || row.status,
+                ...(manufacturerStage ? { manufacturerStage } : {}),
                 isRead:
                   action === "read" || action === "downloaded" || action === "accepted"
                     ? true
@@ -1642,6 +1676,7 @@ export function RequestorPracticeReceivePage({
             return {
               ...prev,
               status: status || prev.status,
+              ...(manufacturerStage ? { manufacturerStage } : {}),
               isRead: action === "read" || action === "downloaded" || action === "accepted" ? true : prev.isRead,
               requestorReadAt:
                 action === "read" || action === "downloaded" || action === "accepted"
@@ -1878,13 +1913,17 @@ export function RequestorPracticeReceivePage({
             designReadyAt: transfer.production?.designReadyAt,
           },
         ),
+        abutmentUploadOverdue: resolvePracticeTransferAbutmentUploadOverdue(
+          transfer,
+          implantCatalog,
+        ),
         sortLabel: clinic,
         line: [clinic, patientLine, surchargeLabel].filter(Boolean).join(" / "),
         unreadCount: transferUnreadBadgeCount(transfer),
       };
     });
     return expandPracticeCalendarChipsByArrivalDates(base, dateKey);
-  }, [dateKey, sortedFilteredTransfers, transferUnreadBadgeCount]);
+  }, [dateKey, implantCatalog, sortedFilteredTransfers, transferUnreadBadgeCount]);
 
   const calendarTransferById = useMemo(() => {
     const map = new Map<string, ReceivedPracticeTransfer>();

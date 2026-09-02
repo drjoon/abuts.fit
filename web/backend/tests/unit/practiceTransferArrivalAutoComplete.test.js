@@ -3,6 +3,7 @@ import { describe, expect, it } from "@jest/globals";
 import {
   isPracticeArrivalDatePast,
   isPracticeTransferDueForArrivalAutoComplete,
+  isPracticeTransferDueForArrivalDeadlineExpire,
   resolvePracticeTransferCurrentArrivalYmd,
 } from "../../utils/practiceTransferArrivalAutoComplete.js";
 
@@ -78,6 +79,65 @@ describe("practiceTransfer arrival auto-complete eligibility", () => {
         },
         "2026-09-03",
       ),
+    ).toBe(false);
+  });
+
+  it("does not auto-complete when CA abutment STL is still needed", () => {
+    const caPending = {
+      status: "active",
+      requestorDownloadedAt: new Date("2026-08-28T01:00:00.000Z"),
+      arrivalDates: ["2026-09-01"],
+      autoMatch: { completedAt: null },
+      toothWorks: [
+        {
+          toothNumber: "13",
+          customAbutment: true,
+          implantManufacturer: "Megagen",
+        },
+      ],
+      production: { designFiles: [] },
+    };
+    expect(
+      isPracticeTransferDueForArrivalAutoComplete(caPending, "2026-09-03"),
+    ).toBe(false);
+    expect(
+      isPracticeTransferDueForArrivalDeadlineExpire(caPending, "2026-09-03"),
+    ).toBe(true);
+  });
+
+  it("auto-completes when CA designs are fully uploaded", () => {
+    const caDone = {
+      status: "active",
+      requestorDownloadedAt: new Date("2026-08-28T01:00:00.000Z"),
+      arrivalDates: ["2026-09-01"],
+      autoMatch: { completedAt: null },
+      toothWorks: [
+        {
+          toothNumber: "13",
+          customAbutment: true,
+          implantManufacturer: "Megagen",
+        },
+      ],
+      production: {
+        designFiles: [
+          {
+            patientName: "환자",
+            tooth: "13",
+            file: {
+              originalName: "13.stl",
+              mimetype: "model/stl",
+              size: 1,
+              s3Key: "k",
+            },
+          },
+        ],
+      },
+    };
+    expect(
+      isPracticeTransferDueForArrivalAutoComplete(caDone, "2026-09-03"),
+    ).toBe(true);
+    expect(
+      isPracticeTransferDueForArrivalDeadlineExpire(caDone, "2026-09-03"),
     ).toBe(false);
   });
 });

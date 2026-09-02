@@ -152,4 +152,17 @@ describe("practiceTransferStage pending-accept edit", () => {
       }),
     ).toBe("생산진행");
   });
+
+  test("arrivalDeadlineExpiredAt on direct transfer is 기한만료", () => {
+    const doc = {
+      status: "active",
+      matchingMode: "direct",
+      targetLabAnchorId: "64a000000000000000000002",
+      requestorDownloadedAt: new Date("2026-08-18T02:00:00.000Z"),
+      arrivalDeadlineExpiredAt: new Date("2026-09-03T01:00:00.000Z"),
+      toothWorks: [{ toothNumber: "13", customAbutment: true }],
+      production: { designFiles: [] },
+    };
+    expect(resolvePracticeTransferManufacturerStage(doc)).toBe("기한만료");
+  });
 });

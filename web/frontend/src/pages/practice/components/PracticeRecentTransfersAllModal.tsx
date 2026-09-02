@@ -90,6 +90,7 @@ import {
   togglePracticeRecentStatusFilter,
   toStatusBadgeLabel,
 } from "@/shared/practice/practiceRecentTransferList";
+import { resolvePracticeRecentTransferAbutmentUploadOverdue } from "@/shared/practice/practiceAbutmentUploadOverdue";
 import {
   PracticeRecentTransfersCalendar,
   expandPracticeCalendarChipsByArrivalDates,
@@ -515,6 +516,16 @@ export function PracticeRecentTransfersAllModal({
           designFileCount: transfer.designFileCount,
           designFiles: transfer.designFiles,
           designReadyAt: transfer.designReadyAt,
+        }),
+        abutmentUploadOverdue: resolvePracticeRecentTransferAbutmentUploadOverdue({
+          status: transfer.status,
+          hasCustomAbutment: transfer.hasCustomAbutment,
+          designFileCount: transfer.designFileCount,
+          designFiles: transfer.designFiles,
+          designReadyAt: transfer.designReadyAt,
+          requestorDownloadedAt: transfer.requestorDownloadedAt,
+          requestorAcceptedAt: transfer.requestorAcceptedAt,
+          arrivalDeadlineExpiredAt: transfer.arrivalDeadlineExpiredAt,
         }),
         sortLabel: lab,
         line: [lab, patientLine].filter(Boolean).join(" / "),

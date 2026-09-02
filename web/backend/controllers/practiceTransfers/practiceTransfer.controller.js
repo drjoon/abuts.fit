@@ -1000,6 +1000,7 @@ const toVirtualRequestRows = (transferDoc) => {
     ),
     requestorDownloadedAt: transferDoc?.requestorDownloadedAt || null,
     requestorAcceptedAt: transferDoc?.requestorDownloadedAt || null,
+    arrivalDeadlineExpiredAt: transferDoc?.arrivalDeadlineExpiredAt || null,
     arrivalDates,
     arrivalDate: currentArrivalYmd || null,
     orderDates,
@@ -5680,6 +5681,7 @@ export async function getReceivedPracticeTransfers(req, res) {
         requestorDownloadedAt: openPool ? null : doc?.requestorDownloadedAt || null,
         requestorAcceptedAt: openPool ? null : doc?.requestorDownloadedAt || null,
         workCanceledAt: doc?.workCanceledAt || null,
+        arrivalDeadlineExpiredAt: doc?.arrivalDeadlineExpiredAt || null,
         matchingMode: autoFields.matchingMode,
         autoMatch: autoFields.autoMatch,
         toothWorks,
@@ -6112,6 +6114,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
             requestorDownloadedBy: req.user?._id || null,
             workCanceledAt: null,
             workCanceledBy: null,
+            arrivalDeadlineExpiredAt: null,
             "autoMatch.claimedAt": now,
             "autoMatch.subcontractPoolOpen": false,
             // 3시간 강제 클레임 만료 폐기 — 작업완료/취소까지 유지
@@ -6346,10 +6349,12 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
       doc.requestorDownloadedBy = req.user?._id || null;
       doc.workCanceledAt = null;
       doc.workCanceledBy = null;
+      doc.arrivalDeadlineExpiredAt = null;
       acceptSet.requestorDownloadedAt = now;
       acceptSet.requestorDownloadedBy = req.user?._id || null;
       acceptSet.workCanceledAt = null;
       acceptSet.workCanceledBy = null;
+      acceptSet.arrivalDeadlineExpiredAt = null;
       if (isSubcontractPoolOpen(doc)) {
         acceptSet["autoMatch.subcontractPoolOpen"] = false;
         acceptSet["autoMatch.claimedAt"] = now;

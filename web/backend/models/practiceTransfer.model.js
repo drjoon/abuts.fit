@@ -355,6 +355,12 @@ const practiceTransferSchema = new mongoose.Schema(
       ref: "User",
       default: null,
     },
+    /** 치과도착일 경과 + CA 어벗 STL 미업로드 시 기한만료(수락·업로드 유지). */
+    arrivalDeadlineExpiredAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
     // 기공소 수락 전 「거부」(지정 기공소). 자동매칭 거부는 autoMatch.declinedLabAnchorIds.
     labRejectedAt: {
       type: Date,

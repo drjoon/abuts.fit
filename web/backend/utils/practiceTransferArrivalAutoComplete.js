@@ -2,9 +2,10 @@
 // - web/backend/services/practiceTransferComplete.service.js
 // - web/backend/utils/practiceTransferArrivalDates.js
 // change-log:
-// - 2026-09-02: 치과도착일 경과 자동 작업완료 대상 판정(순수).
+// - 2026-09-02: 치과도착일 경과 — CA 어벗 미업로드는 자동완료 제외·기한만료 대상.
 import { isAutoMatchCompleted } from "./practiceTransferAutoMatchCore.js";
 import { isPracticeTransferDeletedStatus } from "./practiceTransferStage.js";
+import { practiceTransferNeedsMoreAbutmentDesigns } from "../services/practiceTransferProduction.service.js";
 import {
   resolveCurrentArrivalYmd,
   resolvePracticeArrivalDates,
@@ -33,6 +34,7 @@ export function isPracticeArrivalDatePast(arrivalYmd, todayYmd) {
 
 /**
  * 수락·미완료·도착일 경과 → 자동 작업완료 대상.
+ * 커스텀어벗 STL이 더 필요하면 제외(기한만료 경로).
  * @param {object|null|undefined} doc
  * @param {string} todayYmd
  */
@@ -41,6 +43,24 @@ export function isPracticeTransferDueForArrivalAutoComplete(doc, todayYmd) {
   if (isPracticeTransferDeletedStatus(doc.status)) return false;
   if (!doc.requestorDownloadedAt) return false;
   if (isAutoMatchCompleted(doc)) return false;
+  if (doc.arrivalDeadlineExpiredAt) return false;
+  if (practiceTransferNeedsMoreAbutmentDesigns(doc)) return false;
+  const arrivalYmd = resolvePracticeTransferCurrentArrivalYmd(doc);
+  return isPracticeArrivalDatePast(arrivalYmd, todayYmd);
+}
+
+/**
+ * 수락·미완료·도착일 경과·어벗 디자인 STL 미완 → 기한만료 대상.
+ * @param {object|null|undefined} doc
+ * @param {string} todayYmd
+ */
+export function isPracticeTransferDueForArrivalDeadlineExpire(doc, todayYmd) {
+  if (!doc) return false;
+  if (isPracticeTransferDeletedStatus(doc.status)) return false;
+  if (!doc.requestorDownloadedAt) return false;
+  if (isAutoMatchCompleted(doc)) return false;
+  if (doc.arrivalDeadlineExpiredAt) return false;
+  if (!practiceTransferNeedsMoreAbutmentDesigns(doc)) return false;
   const arrivalYmd = resolvePracticeTransferCurrentArrivalYmd(doc);
   return isPracticeArrivalDatePast(arrivalYmd, todayYmd);
 }

@@ -25,7 +25,7 @@
  * - 2026-08-20: 치과 전체보기 칩도 상단 뱃지 상태색(그룹색 대신).
  * - 2026-08-20: 안읽음(수신 미확인·채팅) 빨간 배지를 칩에 표시.
  * - 2026-08-21: 상단 필터 뱃지 ON=진한 상태색 / OFF=흐린 무채색(표시 on/off 대비).
- * - 2026-09-02: 어벗(작업완료) 필터 뱃지=completed 녹색(캘린더 칩과 동일). 칩용 resolve는 디자인 없으면 accepted.
+ * - 2026-09-02: 완료 뱃지=finished(청록). 어벗=completed(녹색). 칩도 동일 분리.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Search, Trash2 } from "lucide-react";
@@ -49,12 +49,14 @@ import {
   LAB_RECEIVE_CALENDAR_WEEK_STARTS_ON,
 } from "@/shared/practice/labReceiveCalendarWeekGrid";
 import { buildLabReceiveCalendarWeeks } from "@/shared/practice/labReceiveCalendarYmdRange";
+import { getPracticeAbutmentUploadOverdueTooltip } from "@/shared/practice/practiceAbutmentUploadOverdue";
 
 export type PracticeCalendarDateKey = "orderDate" | "arrivalDate";
 
 export type PracticeCalendarStatusTone =
   | "sent"
   | "accepted"
+  | "finished"
   | "completed"
   | "canceled"
   | "unread";
@@ -79,6 +81,8 @@ export type PracticeCalendarChipItem = {
   line: string;
   /** 사이드바와 동일 합산(수신 미확인 + 채팅). 있으면 칩에 빨간 숫자 */
   unreadCount?: number;
+  /** 수락 후 어벗 STL 미업로드 24h/48h 경고 */
+  abutmentUploadOverdue?: "yellow" | "red" | "deadline" | null;
   /** 치과 발신: 수락 전·작업취소·기공소 거절(거부) 건 휴지통 이동 */
   canDelete?: boolean;
 };
@@ -173,13 +177,14 @@ export const calendarGroupChipStyle = (
   };
 };
 
-/** 상단 뱃지(의뢰·취소·수락·어벗)와 같은 칩 색. */
+/** 상단 뱃지(의뢰·취소·수락·완료·어벗)와 같은 칩 색. */
 export const PRACTICE_CALENDAR_STATUS_CHIP_STYLE: Record<
   PracticeCalendarStatusTone,
   { backgroundColor: string; color: string }
 > = {
   sent: { backgroundColor: "hsl(210 10% 90%)", color: "hsl(210 12% 32%)" },
   accepted: { backgroundColor: "hsl(208 55% 88%)", color: "hsl(208 52% 28%)" },
+  finished: { backgroundColor: "hsl(195 45% 88%)", color: "hsl(195 50% 26%)" },
   completed: { backgroundColor: "hsl(168 40% 86%)", color: "hsl(168 48% 24%)" },
   canceled: { backgroundColor: "hsl(0 55% 90%)", color: "hsl(0 48% 34%)" },
   unread: { backgroundColor: "#ffffff", color: "hsl(0 48% 34%)" },
@@ -197,6 +202,11 @@ export const PRACTICE_STATUS_FILTER_BADGE_CLASS: Record<
   accepted: {
     idle: "border-slate-200 bg-slate-50/60 text-slate-400 opacity-40 hover:opacity-60 hover:bg-slate-50",
     active: "border-sky-500/90 bg-sky-200 text-sky-950 shadow-sm",
+  },
+  finished: {
+    idle: "border-slate-200 bg-slate-50/60 text-slate-400 opacity-40 hover:opacity-60 hover:bg-slate-50",
+    active:
+      "border-[hsl(195_50%_42%)] bg-[hsl(195_45%_88%)] text-[hsl(195_50%_26%)] shadow-sm",
   },
   completed: {
     idle: "border-slate-200 bg-slate-50/60 text-slate-400 opacity-40 hover:opacity-60 hover:bg-slate-50",
@@ -225,6 +235,7 @@ export const resolvePracticeCalendarStatusTone = (
 ): Exclude<PracticeCalendarStatusTone, "unread"> => {
   const s = String(status || "").trim();
   if (s === "거부" || s === "취소" || s === "작업취소") return "canceled";
+  if (s === "기한만료") return "accepted";
   if (s === "생산진행" || s === "포장.발송") return "completed";
   if (s === "작업완료") {
     const designN = Math.max(
@@ -232,7 +243,7 @@ export const resolvePracticeCalendarStatusTone = (
       Array.isArray(opts?.designFiles) ? opts.designFiles.length : 0,
     );
     if (designN > 0 || Boolean(opts?.designReadyAt)) return "completed";
-    return "accepted";
+    return "finished";
   }
   if (s === "의뢰수락" || s === "다운로드완료") return "accepted";
   return "sent";
@@ -240,13 +251,13 @@ export const resolvePracticeCalendarStatusTone = (
 
 /**
  * 상단 상태 필터 뱃지 색 — 필터 키 의미 고정.
- * 「작업완료」=어벗 버킷이므로 항상 completed(녹색).
- * (칩용 resolvePracticeCalendarStatusTone은 디자인 없는 작업완료→accepted)
+ * 「도착완료」=finished(청록), 「작업완료」=completed(녹색·어벗).
  */
 export const resolvePracticeStatusFilterBadgeTone = (
   filter: unknown,
 ): Exclude<PracticeCalendarStatusTone, "unread"> => {
   const s = String(filter || "").trim();
+  if (s === "도착완료") return "finished";
   if (s === "작업완료") return "completed";
   return resolvePracticeCalendarStatusTone(s);
 };
@@ -659,6 +670,7 @@ export function PracticeRecentTransfersCalendar({
                           const showDelete = Boolean(item.canDelete && onDeleteItem);
                           const chipStyle = calendarChipStyleForItem(item);
                           const unreadCount = Math.max(0, Number(item.unreadCount || 0));
+                          const uploadOverdue = item.abutmentUploadOverdue;
                           const unreadLabel =
                             unreadCount > 99 ? "99+" : String(unreadCount);
                           const hasLinkedChain =
@@ -672,13 +684,23 @@ export function PracticeRecentTransfersCalendar({
                             : hasLinkedChain
                               ? "↙ "
                               : "";
+                          const overdueTooltip = uploadOverdue
+                            ? getPracticeAbutmentUploadOverdueTooltip(uploadOverdue)
+                            : "";
                           return (
                             <div
                               key={`${item.id}:${day.ymd}`}
                               className={cn(
                                 "flex items-start gap-0.5 rounded pr-0.5 hover:brightness-95",
                                 item.isPriorArrival && "opacity-55",
-                                Number(item.unreadCount || 0) > 0 &&
+                                uploadOverdue === "deadline" &&
+                                  "border-[3px] border-double border-red-700 ring-2 ring-red-400/70",
+                                uploadOverdue === "red" &&
+                                  "border-[3px] border-double border-red-600",
+                                uploadOverdue === "yellow" &&
+                                  "border-[3px] border-double border-amber-500",
+                                !uploadOverdue &&
+                                  Number(item.unreadCount || 0) > 0 &&
                                   "border-[3px] border-double border-red-600",
                               )}
                               style={chipStyle}
@@ -689,7 +711,8 @@ export function PracticeRecentTransfersCalendar({
                                 type="button"
                                 className="flex min-w-0 flex-1 items-start gap-0.5 px-1 py-0.5 text-left text-[10px] leading-snug"
                                 title={
-                                  item.linkedOrderDates &&
+                                  overdueTooltip ||
+                                  (item.linkedOrderDates &&
                                   item.linkedOrderDates.length > 1
                                     ? `${item.line} · 연결 주문일 ${item.linkedOrderDates.join(" → ")}${
                                         item.isPriorArrival ? " (이전·보냄)" : " (최종·받음)"
@@ -703,7 +726,7 @@ export function PracticeRecentTransfersCalendar({
                                         }`
                                       : unreadCount > 0
                                         ? `${item.line} · 안읽음 ${unreadLabel}`
-                                        : item.line
+                                        : item.line)
                                 }
                                 onClick={(e) => {
                                   e.stopPropagation();

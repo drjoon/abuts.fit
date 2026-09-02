@@ -8,6 +8,7 @@
 // - 2026-08-16: 공개풀 decline의 labRejectedAt은 미배정 취소 시 「취소」(거부 아님).
 // - 2026-08-16: 자동매칭 재공개(openPool)는 작업취소보다 우선 → 「자동매칭」.
 // - 2026-08-18: 수락 전(의뢰) 내용 수정 게이트 canEditPracticeTransferContent.
+// - 2026-09-02: 기한만료 — arrivalDeadlineExpiredAt(수락·업로드 유지).
 // - 2026-08-29: 보철 디자인 업로드(완료)=작업완료. skip 자동 confirmedAt은 출고로 올리지 않음.
 // - 2026-08-29: 출고=연동 CA 포장.발송·택배. 디자인=어벗 designFiles 또는 보철 resultFiles.
 import {
@@ -121,6 +122,8 @@ export const resolvePracticeTransferManufacturerStage = (
 
   if (declinedByViewer || rejectedByViewer) return "거부";
 
+  if (transferDoc?.arrivalDeadlineExpiredAt) return "기한만료";
+
   const status = String(transferDoc?.status || "").trim();
   // 치과 삭제(휴지통). 지정/배정 거부 흔적(labRejectedAt)이 있으면 발신 치과 「거부」.
   // 공개 풀 decline도 labRejectedAt을 남기므로, 미배정 자동매칭 삭제는 휴지통「취소」로 본다.
@@ -214,6 +217,7 @@ export const toPracticeTransferDashboardBucket = (manufacturerStage) => {
   if (stage === "의뢰수락" || stage === "다운로드완료") return "accepted";
   if (stage === "거부") return "rejected";
   if (stage === "작업완료") return "completed";
+  if (stage === "기한만료") return "accepted";
   if (stage === "작업취소" || stage === "취소") return "canceled";
   if (stage === "생산진행" || stage === "포장.발송") return "shipping";
   if (stage === "추적관리") return "tracking";

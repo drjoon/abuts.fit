@@ -2,7 +2,7 @@
 // - web/backend/services/practiceTransferComplete.service.js
 // - web/backend/server.js
 // change-log:
-// - 2026-09-02: 치과도착일 경과 수락건 자동 작업완료.
+// - 2026-09-02: 치과도착일 경과 — CA 미업로드 기한만료 + 그 외 자동 작업완료.
 /**
  * 주기적으로 치과도착일이 지난 기공의뢰를 작업완료 처리한다.
  * 도착일 당일·그 전에 도착일을 재지정하면 대상에서 제외되어 기한이 연장된다.
@@ -23,7 +23,7 @@ async function tick() {
       process.env.PRACTICE_TRANSFER_ARRIVAL_AUTO_COMPLETE_BATCH || 200,
     ),
   });
-  if (result.completed || result.failed) {
+  if (result.completed || result.failed || result.expired) {
     console.log("[practiceTransferArrivalAutoComplete] done", result);
   }
 }

@@ -150,6 +150,9 @@ export function practiceTransferStatusBadgeClass(statusOrLabel: string) {
   if (label === "취소" || label === "거절" || label === "거부") {
     return SEMANTIC_BADGE.dangerSoft;
   }
+  if (label === "기한만료") {
+    return SEMANTIC_BADGE.dangerSoft;
+  }
   if (label === "수락" || label === "어벗" || label === "디자인" || label === "출고") {
     return SEMANTIC_BADGE.primarySoft;
   }

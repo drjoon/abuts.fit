@@ -1703,12 +1703,45 @@ export async function mirrorDesignFileToPracticeTransfer({
   return doc;
 }
 
+const countPracticeTransferDesignFiles = (doc) => {
+  const designFiles = Array.isArray(doc?.production?.designFiles)
+    ? doc.production.designFiles
+    : [];
+  return Math.max(
+    designFiles.length,
+    Number(doc?.production?.designFileCount || 0) || 0,
+  );
+};
+
+const countExpectedAbutmentDesigns = (doc) => {
+  const toothWorks = Array.isArray(doc?.toothWorks) ? doc.toothWorks : [];
+  const caTeeth = listCustomAbutmentToothWorks(toothWorks).length;
+  if (caTeeth > 0) return caTeeth;
+  const related = Array.isArray(doc?.production?.relatedRequestIds)
+    ? doc.production.relatedRequestIds.filter((id) =>
+        Boolean(String(id || "").trim()),
+      ).length
+    : 0;
+  return Math.max(related, 0);
+};
+
+/** 어벗츠 CNC 대상 CA가 있고 치아별 어벗 디자인 STL이 아직 부족한지 */
+function practiceTransferNeedsMoreAbutmentDesigns(doc) {
+  const toothWorks = Array.isArray(doc?.toothWorks) ? doc.toothWorks : [];
+  if (listCustomAbutmentToothWorks(toothWorks).length === 0) return false;
+  const designCount = countPracticeTransferDesignFiles(doc);
+  const expected = countExpectedAbutmentDesigns(doc);
+  if (expected <= 0) return designCount === 0;
+  return designCount < expected;
+}
+
 export {
   hasCustomAbutmentToothWorks,
   listCustomAbutmentToothWorks,
   normalizeResultFiles,
   parseArrivalYmdFromMemo,
   pickFileForTooth,
+  practiceTransferNeedsMoreAbutmentDesigns,
 };
 
 /**
