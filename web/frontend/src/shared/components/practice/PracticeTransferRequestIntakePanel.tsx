@@ -13,10 +13,6 @@ import {
 import { createPortal } from "react-dom";
 import {
   Check,
-  ChevronLeft,
-  ChevronRight,
-  ChevronsLeft,
-  ChevronsRight,
   ChevronsUpDown,
   Minus,
   Pin,
@@ -208,7 +204,7 @@ import {
 // - 2026-08-17: 복사 뱃지 — 괄호 제거, 11px·primary soft pill.
 // - 2026-08-18: full 치식 카드 min-w·브리지 + 를 이음새에 겹쳐 어벗 라벨이 잘리지 않게.
 // - 2026-08-18: full 치식에서는 R/M/L 스크롤 버튼을 숨긴다.
-// - 2026-08-19: 치아 옆 스크롤·R/M/L 제거. 견적 바에 << < > >>(1칸·5칸).
+// - 2026-08-19: 치아 옆 스크롤·R/M/L 제거. compact는 overflow-x 가로 스크롤(<< < > >> 제거).
 // - 2026-08-20: Expert — 헤더 다음 메모|드롭존 2열, 보철물은 그 아래.
 // - 2026-08-20: 메모 라벨·?툴팁 제거. 메모|드롭존 높이 stretch 맞춤.
 // - 2026-08-25: 보철물 가이드투어 — 선택·해제·브리지·형태·복사·어벗·프리셋·견적 체험.
@@ -222,15 +218,14 @@ const PRACTICE_MEMO_SNIPPETS_LOCAL_KEY = "practice_transfer_memo_snippets_v1";
 const MAX_MEMO_SNIPPETS = 40;
 const MAX_MEMO_SUGGESTIONS = 8;
 const MEMO_SUGGEST_MIN_CHARS = 1;
-const TOOTH_CHART_VISIBLE = 6;
-const TOOTH_CHART_SCROLL_STEP = 1;
-const TOOTH_CHART_SCROLL_JUMP = 5;
+const TOOTH_CHART_HORIZONTAL_SCROLL_CLASS =
+  "custom-scrollbar flex w-full items-stretch overflow-x-auto overscroll-x-contain snap-x snap-mandatory [-webkit-overflow-scrolling:touch]";
 /** 카드 높이: 번호+형태+어벗+임플란트/스캔바디 2줄+복사 기준(이보다 짧으면 형태 버튼이 flex-shrink로 가려짐) */
 const TOOTH_CARD_HEIGHT_CLASS = "h-[12rem]";
 /** full(16칸) — compact와 동일. 9rem은 어벗 상세 시 유형 스위치가 찌그러짐 */
 const TOOTH_CARD_HEIGHT_FULL_CLASS = "h-[12rem]";
-/** compact(6칸) — 남는 폭을 나눠 가짐 */
-const TOOTH_SLOT_COMPACT_CLASS = "min-w-[3.5rem] flex-1";
+/** compact — 치아당 5rem 고정, 가로 스크롤 */
+const TOOTH_SLOT_COMPACT_CLASS = "relative w-[5rem] max-w-[5rem] shrink-0 snap-start";
 /** full(16칸) — 전폭을 균등 분할(가로 스크롤·프로그레스 겹침 방지) */
 const TOOTH_SLOT_FULL_CLASS = "min-w-0 flex-1 basis-0";
 const BRIDGE_GAP_LINKED_CLASS =
@@ -566,26 +561,6 @@ const isToothMarqueeBlockedTarget = (target: EventTarget | null) => {
   if (target.closest("[data-bridge-link]")) return false;
   if (target.closest("button, input, textarea, select, a, [role='combobox']")) return true;
   return false;
-};
-
-/** R=우측(10/40), M=전치부, L=좌측(20/30) — 상·하악 공통 스크롤 오프셋 */
-const toothChartOffsetForRegion = (
-  region: "R" | "M" | "L",
-  teethLength: number,
-  visibleCount: number = TOOTH_CHART_VISIBLE,
-) => {
-  const maxOffset = Math.max(0, teethLength - visibleCount);
-  if (region === "R") return 0;
-  if (region === "L") return maxOffset;
-  return Math.min(maxOffset, Math.max(0, Math.round(maxOffset / 2)));
-};
-
-const initialToothChartOffsets = (): Record<string, number> => {
-  const next: Record<string, number> = {};
-  for (const decade of TOOTH_CHART_ROWS) {
-    next[decade.key] = toothChartOffsetForRegion("M", decade.teeth.length);
-  }
-  return next;
 };
 
 /** 체험형 가이드투어 — 스텝별 변화 감지용 스냅샷 */
@@ -1010,9 +985,6 @@ export const PracticeTransferRequestIntakePanel = ({
     row: ToothWorkSelection;
     accountMode: AbutmentProductMode;
   } | null>(null);
-  const [toothChartOffsets, setToothChartOffsets] = useState<Record<string, number>>(
-    initialToothChartOffsets,
-  );
   const [toothChartEnlargeOpen, setToothChartEnlargeOpen] = useState(false);
   /** null = 투어 종료. 0..N-1 체험, N 완료 — 상위 제어 시 guideTourStep 사용 */
   const [toothWorkGuideTourStepUncontrolled, setToothWorkGuideTourStepUncontrolled] =
@@ -1041,7 +1013,6 @@ export const PracticeTransferRequestIntakePanel = ({
     toothWorkGuideTourStep,
   );
   const showFullToothChart = toothChartDisplayMode === "full" || toothChartEnlargeOpen;
-  const toothChartVisibleCount = showFullToothChart ? 16 : TOOTH_CHART_VISIBLE;
   const showInlineToothChartHeader = !toothChartEnlargeOpen || toothChartDisplayMode === "full";
   const toothChartResetNonceRef = useRef(toothChartResetNonce);
   /** 파인더식 마키·Shift 범위 선택 / 해제 + 브리지 + 히트 */
@@ -1629,7 +1600,6 @@ export const PracticeTransferRequestIntakePanel = ({
     if (toothChartResetNonceRef.current === toothChartResetNonce) return;
     toothChartResetNonceRef.current = toothChartResetNonce;
     linkedSpanTypeSnapshotRef.current = {};
-    setToothChartOffsets(initialToothChartOffsets());
   }, [toothChartResetNonce]);
 
   useEffect(() => {
@@ -1669,7 +1639,6 @@ export const PracticeTransferRequestIntakePanel = ({
 
   const startToothWorkGuideTour = () => {
     setToothChartEnlargeOpen(false);
-    setToothChartOffsets(initialToothChartOffsets());
     toothWorkGuideTourStepBaselineRef.current = null;
     toothWorkGuideTourBaselineReadyStepRef.current = null;
     setToothWorkGuideTourStep(0);
@@ -3027,7 +2996,6 @@ export const PracticeTransferRequestIntakePanel = ({
                   size="sm"
                   className="h-8 px-2.5 text-xs"
                   onClick={() => {
-                    setToothChartOffsets(initialToothChartOffsets());
                     setToothChartEnlargeOpen(true);
                   }}
                 >
@@ -3087,38 +3055,6 @@ export const PracticeTransferRequestIntakePanel = ({
                   toothCopyDrag.sourceTooth !== toothNumber,
               );
 
-            const shiftAllDecades = (delta: number) => {
-              setToothChartOffsets((prev) => {
-                const next = { ...prev };
-                let changed = false;
-                for (const decade of TOOTH_CHART_ROWS) {
-                  const maxOffset = Math.max(0, decade.teeth.length - toothChartVisibleCount);
-                  const cur = next[decade.key] ?? 0;
-                  const value = Math.min(maxOffset, Math.max(0, cur + delta));
-                  if (value !== cur) changed = true;
-                  next[decade.key] = value;
-                }
-                return changed ? next : prev;
-              });
-            };
-            const canScrollLeft = TOOTH_CHART_ROWS.some((decade) => {
-              const maxOffset = Math.max(0, decade.teeth.length - toothChartVisibleCount);
-              const offset = Math.min(maxOffset, toothChartOffsets[decade.key] ?? 0);
-              return offset > 0;
-            });
-            const canScrollRight = TOOTH_CHART_ROWS.some((decade) => {
-              const maxOffset = Math.max(0, decade.teeth.length - toothChartVisibleCount);
-              const offset = Math.min(maxOffset, toothChartOffsets[decade.key] ?? 0);
-              return offset < maxOffset;
-            });
-            const showChartScroll =
-              !showFullToothChart &&
-              TOOTH_CHART_ROWS.some(
-                (decade) => decade.teeth.length > toothChartVisibleCount,
-              );
-            const scrollBtnClass =
-              "h-7 w-7 shrink-0 rounded-md text-slate-500 hover:bg-white/80 hover:text-primary-strong disabled:opacity-30";
-
             const toothSlotClass = showFullToothChart
               ? TOOTH_SLOT_FULL_CLASS
               : TOOTH_SLOT_COMPACT_CLASS;
@@ -3127,32 +3063,21 @@ export const PracticeTransferRequestIntakePanel = ({
               : TOOTH_CARD_HEIGHT_CLASS;
 
             const chartRows = TOOTH_CHART_ROWS.map((decade) => {
-              const maxOffset = Math.max(0, decade.teeth.length - toothChartVisibleCount);
-              const offset = Math.min(maxOffset, toothChartOffsets[decade.key] ?? 0);
-              const visible = decade.teeth.slice(offset, offset + toothChartVisibleCount);
-
-              return (
+              const rowTrack = (
                 <div
-                  key={`decade-${decade.key}`}
                   className={cn(
-                    "flex w-full items-stretch",
-                    showFullToothChart ? "gap-0" : "gap-0.5",
+                    "flex items-stretch",
+                    showFullToothChart ? "w-full min-w-0 gap-0.5" : "gap-0.5",
                   )}
                 >
-                  <div
-                    className={cn(
-                      "flex w-full min-w-0 items-stretch",
-                      showFullToothChart ? "gap-0.5" : "flex-1",
-                    )}
-                  >
-                    {visible.map((toothNumber, visibleIndex) => {
+                  {decade.teeth.map((toothNumber, visibleIndex) => {
                       const configured = byTooth.get(toothNumber);
                       const chartIdx = decade.teeth.indexOf(toothNumber);
                       const chartNext =
                         chartIdx >= 0 && chartIdx < decade.teeth.length - 1
                           ? decade.teeth[chartIdx + 1]
                           : null;
-                      const nextVisible = visible[visibleIndex + 1];
+                      const nextVisible = decade.teeth[visibleIndex + 1];
                       const showBridgeControl =
                         Boolean(chartNext) && nextVisible === chartNext;
                       const isMidlinePair =
@@ -3433,7 +3358,7 @@ export const PracticeTransferRequestIntakePanel = ({
                               className="pointer-events-none absolute right-0 top-1/2 z-20 h-8 w-1.5 -translate-y-1/2 rounded-l-full bg-primary/80"
                             />
                           ) : null}
-                          {linkedChartPrev && visible[visibleIndex - 1] !== chartPrev ? (
+                          {linkedChartPrev && decade.teeth[visibleIndex - 1] !== chartPrev ? (
                             <span
                               aria-hidden
                               className="pointer-events-none absolute left-0 top-1/2 z-20 h-8 w-1.5 -translate-y-1/2 rounded-r-full bg-primary/80"
@@ -3749,7 +3674,21 @@ export const PracticeTransferRequestIntakePanel = ({
                         </div>
                       );
                     })}
-                  </div>
+                </div>
+              );
+
+              return (
+                <div key={`decade-${decade.key}`} className="w-full">
+                  {showFullToothChart ? (
+                    rowTrack
+                  ) : (
+                    <div
+                      className={TOOTH_CHART_HORIZONTAL_SCROLL_CLASS}
+                      aria-label={`${decade.label} 치식 가로 스크롤`}
+                    >
+                      {rowTrack}
+                    </div>
+                  )}
                 </div>
               );
             });
@@ -3818,127 +3757,8 @@ export const PracticeTransferRequestIntakePanel = ({
                         !/^[a-fA-F0-9]{24}$/.test(String(selectedLab._id || ""))
                       }
                       rushProcessing={rushProcessing}
-                      leadingAction={
-                        showChartScroll ? (
-                          <>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              data-no-tooth-marquee=""
-                              title="5칸 왼쪽"
-                              className={scrollBtnClass}
-                              disabled={!canScrollLeft}
-                              onClick={() => shiftAllDecades(-TOOTH_CHART_SCROLL_JUMP)}
-                              aria-label="치식 5칸 이전"
-                            >
-                              <ChevronsLeft className="h-5 w-5" strokeWidth={2.25} />
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              data-no-tooth-marquee=""
-                              title="1칸 왼쪽"
-                              className={scrollBtnClass}
-                              disabled={!canScrollLeft}
-                              onClick={() => shiftAllDecades(-TOOTH_CHART_SCROLL_STEP)}
-                              aria-label="치식 1칸 이전"
-                            >
-                              <ChevronLeft className="h-5 w-5" strokeWidth={2.25} />
-                            </Button>
-                          </>
-                        ) : null
-                      }
-                      trailingAction={
-                        showChartScroll ? (
-                          <>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              data-no-tooth-marquee=""
-                              title="1칸 오른쪽"
-                              className={scrollBtnClass}
-                              disabled={!canScrollRight}
-                              onClick={() => shiftAllDecades(TOOTH_CHART_SCROLL_STEP)}
-                              aria-label="치식 1칸 다음"
-                            >
-                              <ChevronRight className="h-5 w-5" strokeWidth={2.25} />
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              data-no-tooth-marquee=""
-                              title="5칸 오른쪽"
-                              className={scrollBtnClass}
-                              disabled={!canScrollRight}
-                              onClick={() => shiftAllDecades(TOOTH_CHART_SCROLL_JUMP)}
-                              aria-label="치식 5칸 다음"
-                            >
-                              <ChevronsRight className="h-5 w-5" strokeWidth={2.25} />
-                            </Button>
-                          </>
-                        ) : null
-                      }
                     />
                     {/* 레거시(2026-08-22): skipJig「지그 필요없음」체크 UI 삭제 */}
-                  </div>
-                ) : showChartScroll ? (
-                  <div className="flex items-center justify-center gap-1 rounded-lg border border-primary-muted/50 bg-primary-soft/40 px-2 py-1">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      data-no-tooth-marquee=""
-                      title="5칸 왼쪽"
-                      className={scrollBtnClass}
-                      disabled={!canScrollLeft}
-                      onClick={() => shiftAllDecades(-TOOTH_CHART_SCROLL_JUMP)}
-                      aria-label="치식 5칸 이전"
-                    >
-                      <ChevronsLeft className="h-5 w-5" strokeWidth={2.25} />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      data-no-tooth-marquee=""
-                      title="1칸 왼쪽"
-                      className={scrollBtnClass}
-                      disabled={!canScrollLeft}
-                      onClick={() => shiftAllDecades(-TOOTH_CHART_SCROLL_STEP)}
-                      aria-label="치식 1칸 이전"
-                    >
-                      <ChevronLeft className="h-5 w-5" strokeWidth={2.25} />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      data-no-tooth-marquee=""
-                      title="1칸 오른쪽"
-                      className={scrollBtnClass}
-                      disabled={!canScrollRight}
-                      onClick={() => shiftAllDecades(TOOTH_CHART_SCROLL_STEP)}
-                      aria-label="치식 1칸 다음"
-                    >
-                      <ChevronRight className="h-5 w-5" strokeWidth={2.25} />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      data-no-tooth-marquee=""
-                      title="5칸 오른쪽"
-                      className={scrollBtnClass}
-                      disabled={!canScrollRight}
-                      onClick={() => shiftAllDecades(TOOTH_CHART_SCROLL_JUMP)}
-                      aria-label="치식 5칸 다음"
-                    >
-                      <ChevronsRight className="h-5 w-5" strokeWidth={2.25} />
-                    </Button>
                   </div>
                 ) : null}
                 {chartRows[1]}

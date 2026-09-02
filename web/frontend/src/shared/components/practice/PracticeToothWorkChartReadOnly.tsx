@@ -4,13 +4,13 @@
 // - web/frontend/src/shared/practice/transferMemo.ts
 // - 2026-08-19: 수가 Off면 live quote-context로 기공비 미설정·어벗 단가 표시.
 // - 2026-08-19: 치아 옆 스크롤·R/M/L 제거. 견적 바에 << < > >>(1칸·5칸).
+// - 2026-09-02: 가로폭 부족 시 overflow-x 스크롤(<< < > >> 버튼 제거).
 // - 2026-09-01: 후속 제작 모달 — 보철물 카드에서 크라운·브리지 단위 선택.
-// - 2026-09-01: 컨테이너 폭에 따라 inline 칸 수 4~8, 카드 폭 5rem 고정.
+// - 2026-09-01: 컨테이너 폭에 따라 inline 칸 수 4~8, 카드 폭 5rem 고정(→ 2026-09-02 overflow-x 스크롤).
 // - 2026-09-02: 모바일 — 스팬 단위 세로 목록(전폭 균등 분할), 크게 보기 생략.
 // - 2026-09-02: 모바일 5연결+ 브리지 — 치아당 5rem 고정폭 + 가로 스와이프.
 // - 2026-08-25: 구강스캔(기공의뢰)은 디자인+생산 고정 — 치식 카드 모드 라벨 제거(작성 UI와 동일).
-import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -51,16 +51,10 @@ import type {
   PracticeTransferFeeQuoteViewer,
 } from "@/shared/practice/practiceTransferFeeQuote";
 
-const TOOTH_CHART_MIN_VISIBLE = 4;
-const TOOTH_CHART_MAX_VISIBLE = 8;
-/** inline 카드 1칸 고정 폭 (80px) + 간격 — ResizeObserver로 visible 칸 수만 조절 */
 const TOOTH_CARD_WIDTH_CLASS = "w-[5rem] max-w-[5rem] shrink-0";
-const TOOTH_CHART_SLOT_WIDTH_PX = 90;
-const TOOTH_CHART_SCROLL_STEP = 1;
-const TOOTH_CHART_SCROLL_JUMP = 5;
-/** 모바일 스팬 — 이 치아 수 이상이면 전폭 균등 대신 가로 스와이프 */
-const MOBILE_SPAN_SCROLL_MIN_TEETH = 5;
-const MOBILE_SCROLL_TOOTH_SLOT_CLASS = "relative w-[5rem] max-w-[5rem] shrink-0 snap-start";
+const SCROLL_TOOTH_SLOT_CLASS = "relative w-[5rem] max-w-[5rem] shrink-0 snap-start";
+const CHART_ROW_HORIZONTAL_SCROLL_CLASS =
+  "custom-scrollbar flex w-full items-stretch overflow-x-auto overscroll-x-contain snap-x snap-mandatory [-webkit-overflow-scrolling:touch]";
 const TOOTH_CARD_HEIGHT_CLASS = "h-[12rem]";
 const TOOTH_SLOT_CLASS = TOOTH_CARD_WIDTH_CLASS;
 /** full(16칸) — 전폭 균등 분할 */
@@ -170,28 +164,6 @@ const treatedTeethInRow = (
   selected: ReadonlySet<string>,
 ): string[] => teeth.filter((tooth) => selected.has(tooth));
 
-const initialToothChartOffsets = (
-  rows: ReadonlyArray<{ key: string; teeth: readonly string[] }>,
-) => {
-  const next: Record<string, number> = {};
-  for (const row of rows) {
-    // 치료할 치아만 나열하므로 시작은 항상 왼쪽(0).
-    next[row.key] = 0;
-  }
-  return next;
-};
-
-const toothChartVisibleCountFromWidth = (widthPx: number) => {
-  if (!Number.isFinite(widthPx) || widthPx <= 0) {
-    return TOOTH_CHART_MIN_VISIBLE;
-  }
-  const raw = Math.floor(widthPx / TOOTH_CHART_SLOT_WIDTH_PX);
-  return Math.min(
-    TOOTH_CHART_MAX_VISIBLE,
-    Math.max(TOOTH_CHART_MIN_VISIBLE, raw),
-  );
-};
-
 type PracticeToothWorkChartReadOnlyProps = {
   toothWorks: ToothWorkSelection[];
   className?: string;
@@ -241,30 +213,7 @@ export const PracticeToothWorkChartReadOnly = ({
   selectionDisabled = false,
 }: PracticeToothWorkChartReadOnlyProps) => {
   const isMobile = useIsMobile();
-  const chartMeasureRef = useRef<HTMLDivElement>(null);
-  const [chartWidth, setChartWidth] = useState(0);
-
-  useEffect(() => {
-    const el = chartMeasureRef.current;
-    if (!el) return;
-
-    const applyWidth = (width: number) => {
-      const next = Math.max(0, Math.round(width));
-      setChartWidth((prev) => (prev === next ? prev : next));
-    };
-
-    applyWidth(el.getBoundingClientRect().width);
-    const ro = new ResizeObserver((entries) => {
-      applyWidth(entries[0]?.contentRect.width ?? 0);
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-
-  const inlineVisibleCount = useMemo(
-    () => toothChartVisibleCountFromWidth(chartWidth),
-    [chartWidth],
-  );
+  const [toothChartEnlargeOpen, setToothChartEnlargeOpen] = useState(false);
 
   const resolveSpanKey = (row: ToothWorkSelection) =>
     spanKeyOf?.(row) || String(row.toothNumber || "").trim();
@@ -361,16 +310,12 @@ export const PracticeToothWorkChartReadOnly = ({
       })).filter((row) => row.teeth.length > 0),
     [chartTeeth],
   );
-  /** 치아 수가 inline 칸 수를 넘으면 크게보기·스크롤 노출 */
-  const needsOverflowControls = treatedChartRows.some(
-    (row) => row.teeth.length > inlineVisibleCount,
-  );
   /** embedded — 좁은 영역이라 치아 수와 무관하게 크게 보기 제공 (모바일은 전폭 스팬 목록으로 생략) */
   const showEnlargeButton = isMobile
     ? false
     : embedded
       ? allDisplayTeeth.size > 0
-      : needsOverflowControls;
+      : treatedChartRows.some((row) => row.teeth.length > 6);
   const enlargeButtonLabel = embedded ? "보철물 크게 보기" : "크게 보기";
 
   const { quote: feeQuote } = usePracticeTransferFeeQuote({
@@ -383,28 +328,6 @@ export const PracticeToothWorkChartReadOnly = ({
     storedQuote: storedFeeQuote,
     skipAbutmentFees,
   });
-
-  const [toothChartOffsets, setToothChartOffsets] = useState<Record<string, number>>(() =>
-    initialToothChartOffsets(
-      treatedChartRows.map((row) => ({ key: row.key, teeth: row.teeth })),
-    ),
-  );
-  const [toothChartEnlargeOpen, setToothChartEnlargeOpen] = useState(false);
-
-  useEffect(() => {
-    setToothChartOffsets((prev) => {
-      const next = { ...prev };
-      let changed = false;
-      for (const decade of treatedChartRows) {
-        const maxOffset = Math.max(0, decade.teeth.length - inlineVisibleCount);
-        const cur = next[decade.key] ?? 0;
-        const value = Math.min(maxOffset, cur);
-        if (value !== cur) changed = true;
-        next[decade.key] = value;
-      }
-      return changed ? next : prev;
-    });
-  }, [inlineVisibleCount, treatedChartRows]);
 
   const enlargeOverlayClass =
     enlargeOverlayClassName || (embedded ? "z-[350]" : "z-[110]");
@@ -496,7 +419,6 @@ export const PracticeToothWorkChartReadOnly = ({
     toothNumber: string,
     spanIndex: number,
     spanLength: number,
-    scrollMode: boolean,
   ) => {
     const isMissingTooth = isMissingToothProsthesisType(row.prosthesisType);
     const spanKey = resolveSpanKey(row);
@@ -513,12 +435,7 @@ export const PracticeToothWorkChartReadOnly = ({
     const abutmentCompact = formatAbutmentCompact(row);
 
     return (
-      <div
-        key={`mobile-tooth-${spanKey}-${toothNumber}`}
-        className={cn(
-          scrollMode ? MOBILE_SCROLL_TOOTH_SLOT_CLASS : "relative min-w-0 flex-1 basis-0",
-        )}
-      >
+      <div key={`mobile-tooth-${spanKey}-${toothNumber}`} className={SCROLL_TOOTH_SLOT_CLASS}>
         <div
           className={cn(
             mobileToothCardShellClass,
@@ -622,21 +539,13 @@ export const PracticeToothWorkChartReadOnly = ({
   const renderMobileSpanRow = (entry: MobileSpanEntry) => {
     const { teeth, row, spanKey } = entry;
     if (teeth.length === 0) return null;
-    const scrollMode = teeth.length >= MOBILE_SPAN_SCROLL_MIN_TEETH;
     const spanSelected = selectable ? (selectedSpanKeys?.has(spanKey) ?? false) : true;
-    const canToggleSpan =
-      selectable && Boolean(onToggleSpanKey) && !selectionDisabled && !scrollMode;
-
-    const toggleSpanSelection = () => {
-      if (!canToggleSpan) return;
-      onToggleSpanKey?.(spanKey, !spanSelected);
-    };
 
     const spanTrack = (
       <>
         {teeth.map((toothNumber, index) => (
           <div key={`mobile-span-tooth-${spanKey}-${toothNumber}`} className="contents">
-            {renderMobileToothCard(row, toothNumber, index, teeth.length, scrollMode)}
+            {renderMobileToothCard(row, toothNumber, index, teeth.length)}
             {index < teeth.length - 1 ? renderMobileSpanBridgeGap() : null}
           </div>
         ))}
@@ -660,38 +569,14 @@ export const PracticeToothWorkChartReadOnly = ({
             />
           </div>
         ) : null}
-        {scrollMode ? (
-          <div className="relative min-w-0 flex-1">
-            <div
-              className="custom-scrollbar flex items-stretch overflow-x-auto overscroll-x-contain snap-x snap-mandatory [-webkit-overflow-scrolling:touch]"
-              aria-label={`${spanKey} 브리지 — 가로로 스와이프`}
-            >
-              <div className="flex w-max min-w-full items-stretch">{spanTrack}</div>
-            </div>
-          </div>
-        ) : (
+        <div className="relative min-w-0 flex-1">
           <div
-            role={canToggleSpan ? "button" : undefined}
-            tabIndex={canToggleSpan ? 0 : undefined}
-            onClick={canToggleSpan ? toggleSpanSelection : undefined}
-            onKeyDown={
-              canToggleSpan
-                ? (event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      toggleSpanSelection();
-                    }
-                  }
-                : undefined
-            }
-            className={cn(
-              "flex min-w-0 flex-1 items-stretch",
-              canToggleSpan && "cursor-pointer",
-            )}
+            className={CHART_ROW_HORIZONTAL_SCROLL_CLASS}
+            aria-label={`${spanKey} 브리지 — 가로로 스크롤`}
           >
-            {spanTrack}
+            <div className="flex w-max min-w-full items-stretch">{spanTrack}</div>
           </div>
-        )}
+        </div>
       </div>
     );
   };
@@ -713,29 +598,18 @@ export const PracticeToothWorkChartReadOnly = ({
 
   const buildChartRows = (
     decades: typeof treatedChartRows,
-    options: { fullLayout: boolean; visibleCount: number },
+    options: { fullLayout: boolean },
   ) => {
-    const { fullLayout, visibleCount } = options;
+    const { fullLayout } = options;
     const slotClass = fullLayout ? TOOTH_SLOT_FULL_CLASS : TOOTH_SLOT_CLASS;
     const cardShellClass = fullLayout ? fullToothCardShellClass : toothCardShellClass;
 
     return decades.map((decade) => {
-      const maxOffset = Math.max(0, decade.teeth.length - visibleCount);
-      const offset = Math.min(maxOffset, toothChartOffsets[decade.key] ?? 0);
-      const visible = decade.teeth.slice(offset, offset + visibleCount);
+      const visible = decade.teeth;
 
-      return (
-        <div
-          key={`ro-decade-${decade.key}-${fullLayout ? "full" : "compact"}`}
-          className={cn("flex items-stretch", fullLayout ? "w-full gap-0.5" : "gap-0.5")}
-        >
-          <div
-            className={cn(
-              "flex items-stretch",
-              fullLayout ? "w-full min-w-0 gap-0.5" : "gap-0.5",
-            )}
-          >
-            {visible.map((toothNumber, visibleIndex) => {
+      const rowTrack = (
+        <div className={cn("flex items-stretch", fullLayout ? "w-full min-w-0 gap-0.5" : "gap-0.5")}>
+          {visible.map((toothNumber, visibleIndex) => {
               const row = byTooth.get(toothNumber);
               if (!row && !fullLayout) return null;
 
@@ -999,7 +873,24 @@ export const PracticeToothWorkChartReadOnly = ({
                 </div>
               );
             })}
-          </div>
+        </div>
+      );
+
+      return (
+        <div
+          key={`ro-decade-${decade.key}-${fullLayout ? "full" : "compact"}`}
+          className="w-full"
+        >
+          {fullLayout ? (
+            rowTrack
+          ) : (
+            <div
+              className={CHART_ROW_HORIZONTAL_SCROLL_CLASS}
+              aria-label={`${decade.label} 치식 가로 스크롤`}
+            >
+              {rowTrack}
+            </div>
+          )}
         </div>
       );
     });
@@ -1007,45 +898,10 @@ export const PracticeToothWorkChartReadOnly = ({
 
   const inlineChartRows = buildChartRows(treatedChartRows, {
     fullLayout: false,
-    visibleCount: inlineVisibleCount,
   });
   const enlargeChartRows = buildChartRows(fullChartRows, {
     fullLayout: true,
-    visibleCount: 16,
   });
-
-  const shiftAllDecades = (delta: number) => {
-    setToothChartOffsets((prev) => {
-      const next = { ...prev };
-      let changed = false;
-      for (const decade of treatedChartRows) {
-        const maxOffset = Math.max(0, decade.teeth.length - inlineVisibleCount);
-        const cur = next[decade.key] ?? 0;
-        const value = Math.min(maxOffset, Math.max(0, cur + delta));
-        if (value !== cur) changed = true;
-        next[decade.key] = value;
-      }
-      return changed ? next : prev;
-    });
-  };
-
-  const canScrollLeft = treatedChartRows.some((decade) => {
-    const maxOffset = Math.max(0, decade.teeth.length - inlineVisibleCount);
-    const offset = Math.min(maxOffset, toothChartOffsets[decade.key] ?? 0);
-    return offset > 0;
-  });
-  const canScrollRight = treatedChartRows.some((decade) => {
-    const maxOffset = Math.max(0, decade.teeth.length - inlineVisibleCount);
-    const offset = Math.min(maxOffset, toothChartOffsets[decade.key] ?? 0);
-    return offset < maxOffset;
-  });
-  /** inline 미리보기 — 칸 수를 넘는 악궁만 스크롤 */
-  const showChartScroll = treatedChartRows.some(
-    (decade) => decade.teeth.length > inlineVisibleCount,
-  );
-
-  const scrollBtnClass =
-    "h-7 w-7 shrink-0 rounded-md text-slate-500 hover:bg-white/80 hover:text-primary-strong disabled:opacity-30";
 
   const upperInlineRow = (() => {
     const idx = treatedChartRows.findIndex((row) => row.key === "upper");
@@ -1066,66 +922,6 @@ export const PracticeToothWorkChartReadOnly = ({
       labEffectiveStars={labEffectiveStars}
       className={
         embedded ? "border-0 bg-transparent px-0 py-1 shadow-none" : undefined
-      }
-      leadingAction={
-        showChartScroll ? (
-          <>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              title="5칸 왼쪽"
-              className={scrollBtnClass}
-              disabled={!canScrollLeft}
-              onClick={() => shiftAllDecades(-TOOTH_CHART_SCROLL_JUMP)}
-              aria-label="치식 5칸 이전"
-            >
-              <ChevronsLeft className="h-5 w-5" strokeWidth={2.25} />
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              title="1칸 왼쪽"
-              className={scrollBtnClass}
-              disabled={!canScrollLeft}
-              onClick={() => shiftAllDecades(-TOOTH_CHART_SCROLL_STEP)}
-              aria-label="치식 1칸 이전"
-            >
-              <ChevronLeft className="h-5 w-5" strokeWidth={2.25} />
-            </Button>
-          </>
-        ) : null
-      }
-      trailingAction={
-        showChartScroll ? (
-          <>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              title="1칸 오른쪽"
-              className={scrollBtnClass}
-              disabled={!canScrollRight}
-              onClick={() => shiftAllDecades(TOOTH_CHART_SCROLL_STEP)}
-              aria-label="치식 1칸 다음"
-            >
-              <ChevronRight className="h-5 w-5" strokeWidth={2.25} />
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              title="5칸 오른쪽"
-              className={scrollBtnClass}
-              disabled={!canScrollRight}
-              onClick={() => shiftAllDecades(TOOTH_CHART_SCROLL_JUMP)}
-              aria-label="치식 5칸 다음"
-            >
-              <ChevronsRight className="h-5 w-5" strokeWidth={2.25} />
-            </Button>
-          </>
-        ) : null
       }
     />
   );
@@ -1169,7 +965,6 @@ export const PracticeToothWorkChartReadOnly = ({
   );
 
   const openEnlargeDialog = () => {
-    setToothChartOffsets(initialToothChartOffsets(fullChartRows));
     setToothChartEnlargeOpen(true);
   };
 
@@ -1186,7 +981,7 @@ export const PracticeToothWorkChartReadOnly = ({
   ) : null;
 
   return (
-    <div ref={chartMeasureRef} className={cn("space-y-2", className)}>
+    <div className={cn("space-y-2", className)}>
       {!toothChartEnlargeOpen ? (
         <>
           {showHeader ? (
