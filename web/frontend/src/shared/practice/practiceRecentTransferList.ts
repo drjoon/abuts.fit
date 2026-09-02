@@ -7,6 +7,7 @@
  * 기공소 수신은 거절·작업취소가 목록에서 빠져 취소/거절 뱃지 불필요 → 치과만 취소 포함 4뱃지.
  * 2026-09-02: 거절 뱃지 제거·기공소 거절은 취소 집계. 어벗=CA designFiles.
  * 2026-09-02: 기공소 수신 상단은 의뢰·수락·어벗 3뱃지(취소 제외).
+ * 2026-09-02: 기공소 거절(`거부`)도 치과 휴지통 이동(canDelete) 허용.
  * related files:
  * - web/frontend/src/pages/practice/components/PracticeRecentTransfersAllModal.tsx
  * - web/frontend/src/pages/practice/components/PracticeRecentTransfersCalendar.tsx
@@ -542,6 +543,7 @@ export const toStatusBadgeLabel = (
   return s;
 };
 
+/** 수락 전·기공소 작업취소/거절(거부) — 치과 휴지통(의뢰 취소) 이동 가능 */
 export const canDeletePracticeTransferByStatus = (status: unknown) => {
   const s = String(status || "").trim();
   if (s === "임시저장") return true;
@@ -550,7 +552,8 @@ export const canDeletePracticeTransferByStatus = (status: unknown) => {
     s === "수신완료" ||
     s === "자동매칭" ||
     s === "하청대기" ||
-    s === "작업취소"
+    s === "작업취소" ||
+    s === "거부"
   );
 };
 

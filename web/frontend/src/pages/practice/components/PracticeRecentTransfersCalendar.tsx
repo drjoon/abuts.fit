@@ -78,7 +78,7 @@ export type PracticeCalendarChipItem = {
   line: string;
   /** 사이드바와 동일 합산(수신 미확인 + 채팅). 있으면 칩에 빨간 숫자 */
   unreadCount?: number;
-  /** 치과 발신: 수락 전·작업취소 건 휴지통 이동 */
+  /** 치과 발신: 수락 전·작업취소·기공소 거절(거부) 건 휴지통 이동 */
   canDelete?: boolean;
 };
 

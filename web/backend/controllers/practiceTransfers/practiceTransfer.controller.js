@@ -907,7 +907,7 @@ const parseRushProcessingInput = (body, practiceRouting) => {
   return false;
 };
 
-/** 의뢰수락 이전 공정만 치과 cancel-batch(휴지통) 허용 */
+/** 의뢰수락 이전·기공소 작업취소/거절(거부)만 치과 cancel-batch(휴지통) 허용 */
 const canCancelPracticeTransferByManufacturerStage = (stage) => {
   const s = String(stage || "").trim();
   return (
@@ -915,7 +915,8 @@ const canCancelPracticeTransferByManufacturerStage = (stage) => {
     s === "수신완료" ||
     s === "자동매칭" ||
     s === "하청대기" ||
-    s === "작업취소"
+    s === "작업취소" ||
+    s === "거부"
   );
 };
 
