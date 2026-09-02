@@ -6,6 +6,8 @@
 // - 2026-08-19: 치아 옆 스크롤·R/M/L 제거. 견적 바에 << < > >>(1칸·5칸).
 // - 2026-09-01: 후속 제작 모달 — 보철물 카드에서 크라운·브리지 단위 선택.
 // - 2026-09-01: 컨테이너 폭에 따라 inline 칸 수 4~8, 카드 폭 5rem 고정.
+// - 2026-09-02: 모바일 — 스팬 단위 세로 목록(전폭 균등 분할), 크게 보기 생략.
+// - 2026-09-02: 모바일 5연결+ 브리지 — 치아당 5rem 고정폭 + 가로 스와이프.
 // - 2026-08-25: 구강스캔(기공의뢰)은 디자인+생산 고정 — 치식 카드 모드 라벨 제거(작성 UI와 동일).
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
@@ -33,6 +35,7 @@ import {
   type ToothWorkSelection,
 } from "@/shared/practice/transferMemo";
 import {
+  collectAdjacentBridgeLinks,
   getAdjacentTeeth,
   isCustomAbutmentSupportedProsthesisType,
   isMissingToothProsthesisType,
@@ -41,6 +44,7 @@ import {
   NO_WORK_PROSTHESIS_TOOLTIP,
 } from "@/shared/practice/usePracticeToothWorkEditor";
 import { PracticeTransferFeeEstimate } from "@/shared/components/practice/PracticeTransferFeeEstimate";
+import { useIsMobile } from "@/shared/hooks/use-mobile";
 import { usePracticeTransferFeeQuote } from "@/shared/practice/usePracticeTransferFeeQuote";
 import type {
   PracticeTransferFeeQuote,
@@ -54,11 +58,88 @@ const TOOTH_CARD_WIDTH_CLASS = "w-[5rem] max-w-[5rem] shrink-0";
 const TOOTH_CHART_SLOT_WIDTH_PX = 90;
 const TOOTH_CHART_SCROLL_STEP = 1;
 const TOOTH_CHART_SCROLL_JUMP = 5;
+/** 모바일 스팬 — 이 치아 수 이상이면 전폭 균등 대신 가로 스와이프 */
+const MOBILE_SPAN_SCROLL_MIN_TEETH = 5;
+const MOBILE_SCROLL_TOOTH_SLOT_CLASS = "relative w-[5rem] max-w-[5rem] shrink-0 snap-start";
 const TOOTH_CARD_HEIGHT_CLASS = "h-[12rem]";
 const TOOTH_SLOT_CLASS = TOOTH_CARD_WIDTH_CLASS;
 /** full(16칸) — 전폭 균등 분할 */
 const TOOTH_SLOT_FULL_CLASS = "min-w-0 flex-1 basis-0";
 const BRIDGE_GAP_MIDLINE_CLASS = "w-2.5 shrink-0";
+
+const toToothDecadeSortNumber = (toothNumber: string) => {
+  const raw = String(toothNumber || "").trim();
+  if (!/^[1-4][1-8]$/.test(raw)) return Number.MAX_SAFE_INTEGER;
+  const tens = Number(raw[0]);
+  const ones = Number(raw[1]);
+  const decadeBase = (tens - 1) * 10;
+  if (tens === 1 || tens === 3) return decadeBase + (8 - ones);
+  return decadeBase + (ones - 1);
+};
+
+const isUpperArchTooth = (toothNumber: string) =>
+  /^[12]/.test(String(toothNumber || "").trim());
+
+/** 인접 브리지 연결을 묶어 스팬 단위 치아 목록으로 합친다 (44-45 / 44-45-46 중복 방지). */
+const buildBridgeSpanTeethList = (rows: ToothWorkSelection[]): string[][] => {
+  const allTeeth = new Set<string>();
+  for (const row of rows) {
+    const anchor = String(row.toothNumber || "").trim();
+    if (/^[1-4][1-8]$/.test(anchor)) allTeeth.add(anchor);
+    for (const linked of Array.isArray(row.bridgeLinkedTeeth) ? row.bridgeLinkedTeeth : []) {
+      const tooth = String(linked || "").trim();
+      if (/^[1-4][1-8]$/.test(tooth)) allTeeth.add(tooth);
+    }
+  }
+
+  const adjacency = new Map<string, Set<string>>();
+  const linkTeeth = (a: string, b: string) => {
+    if (!adjacency.has(a)) adjacency.set(a, new Set());
+    if (!adjacency.has(b)) adjacency.set(b, new Set());
+    adjacency.get(a)!.add(b);
+    adjacency.get(b)!.add(a);
+  };
+
+  for (const tooth of allTeeth) {
+    for (const linked of collectAdjacentBridgeLinks(rows, tooth)) {
+      linkTeeth(tooth, linked);
+    }
+  }
+
+  const visited = new Set<string>();
+  const spans: string[][] = [];
+  const sortedTeeth = [...allTeeth].sort(
+    (a, b) => toToothDecadeSortNumber(a) - toToothDecadeSortNumber(b),
+  );
+
+  for (const tooth of sortedTeeth) {
+    if (visited.has(tooth)) continue;
+    const component: string[] = [];
+    const queue = [tooth];
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      if (visited.has(current)) continue;
+      visited.add(current);
+      component.push(current);
+      for (const neighbor of adjacency.get(current) || []) {
+        if (!visited.has(neighbor)) queue.push(neighbor);
+      }
+    }
+    spans.push(
+      component.sort((a, b) => toToothDecadeSortNumber(a) - toToothDecadeSortNumber(b)),
+    );
+  }
+
+  return spans.sort(
+    (a, b) => toToothDecadeSortNumber(a[0] || "") - toToothDecadeSortNumber(b[0] || ""),
+  );
+};
+
+type MobileSpanEntry = {
+  teeth: string[];
+  row: ToothWorkSelection;
+  spanKey: string;
+};
 
 const TOOTH_CHART_ROWS: ReadonlyArray<{
   key: string;
@@ -159,6 +240,7 @@ export const PracticeToothWorkChartReadOnly = ({
   feeToothWorks,
   selectionDisabled = false,
 }: PracticeToothWorkChartReadOnlyProps) => {
+  const isMobile = useIsMobile();
   const chartMeasureRef = useRef<HTMLDivElement>(null);
   const [chartWidth, setChartWidth] = useState(0);
 
@@ -226,6 +308,36 @@ export const PracticeToothWorkChartReadOnly = ({
   }, [allDisplayTeeth, byTooth, selectable, selectedSpanKeys, spanKeyOf]);
 
   const chartTeeth = selectable ? allDisplayTeeth : selectedTeeth;
+
+  const mobileSpanEntries = useMemo((): MobileSpanEntry[] => {
+    const spans = buildBridgeSpanTeethList(toothWorks);
+    const entries: MobileSpanEntry[] = [];
+    for (const teeth of spans) {
+      const anchor = teeth[0] || "";
+      if (!anchor) continue;
+      const row =
+        byTooth.get(anchor) ||
+        toothWorks.find((candidate) => String(candidate.toothNumber || "").trim() === anchor);
+      if (!row) continue;
+      const spanKey =
+        spanKeyOf?.({
+          ...row,
+          toothNumber: anchor,
+          bridgeLinkedTeeth: teeth.slice(1),
+        }) || teeth.join("-");
+      entries.push({ teeth, row, spanKey });
+    }
+    return entries;
+  }, [toothWorks, byTooth, spanKeyOf]);
+
+  const upperSpanEntries = useMemo(
+    () => mobileSpanEntries.filter((entry) => isUpperArchTooth(entry.teeth[0] || "")),
+    [mobileSpanEntries],
+  );
+  const lowerSpanEntries = useMemo(
+    () => mobileSpanEntries.filter((entry) => !isUpperArchTooth(entry.teeth[0] || "")),
+    [mobileSpanEntries],
+  );
   /** 크게 보기 — 상·하악 16칸 전체 */
   const fullChartRows = useMemo(
     () =>
@@ -253,10 +365,12 @@ export const PracticeToothWorkChartReadOnly = ({
   const needsOverflowControls = treatedChartRows.some(
     (row) => row.teeth.length > inlineVisibleCount,
   );
-  /** embedded — 좁은 영역이라 치아 수와 무관하게 크게 보기 제공 */
-  const showEnlargeButton = embedded
-    ? allDisplayTeeth.size > 0
-    : needsOverflowControls;
+  /** embedded — 좁은 영역이라 치아 수와 무관하게 크게 보기 제공 (모바일은 전폭 스팬 목록으로 생략) */
+  const showEnlargeButton = isMobile
+    ? false
+    : embedded
+      ? allDisplayTeeth.size > 0
+      : needsOverflowControls;
   const enlargeButtonLabel = embedded ? "보철물 크게 보기" : "크게 보기";
 
   const { quote: feeQuote } = usePracticeTransferFeeQuote({
@@ -356,6 +470,245 @@ export const PracticeToothWorkChartReadOnly = ({
       );
     }
     return <div className="w-2 shrink-0" aria-hidden />;
+  };
+
+  const mobileToothCardShellClass =
+    "relative flex w-full min-w-0 flex-1 basis-0 flex-col items-center justify-start overflow-hidden border px-1 pb-2 pt-1.5 shadow-sm min-h-[10rem]";
+
+  const renderMobileSpanBridgeGap = () => (
+    <div
+      className="relative z-20 flex w-3 shrink-0 items-center justify-center self-stretch border-y border-primary bg-gradient-to-b from-primary-soft via-primary-soft to-white"
+      aria-hidden
+    >
+      <span
+        className="pointer-events-none absolute inset-y-3 left-1/2 w-[3px] -translate-x-1/2 rounded-full bg-primary/70"
+      />
+      <span
+        className="relative z-10 flex h-5 w-5 items-center justify-center rounded-full border border-primary bg-primary text-white ring-2 ring-primary-soft"
+      >
+        <span className="h-0.5 w-2.5 rounded-full bg-white" />
+      </span>
+    </div>
+  );
+
+  const renderMobileToothCard = (
+    row: ToothWorkSelection,
+    toothNumber: string,
+    spanIndex: number,
+    spanLength: number,
+    scrollMode: boolean,
+  ) => {
+    const isMissingTooth = isMissingToothProsthesisType(row.prosthesisType);
+    const spanKey = resolveSpanKey(row);
+    const spanSelected = isSpanSelected(row);
+    const isFirst = spanIndex === 0;
+    const isLast = spanIndex === spanLength - 1;
+    const isLinked = spanLength > 1;
+
+    const canShowCustom =
+      !isMissingTooth &&
+      isCustomAbutmentSupportedProsthesisType(row.prosthesisType) &&
+      Boolean(row.customAbutment);
+    const implantCompact = formatImplantCompact(row);
+    const abutmentCompact = formatAbutmentCompact(row);
+
+    return (
+      <div
+        key={`mobile-tooth-${spanKey}-${toothNumber}`}
+        className={cn(
+          scrollMode ? MOBILE_SCROLL_TOOTH_SLOT_CLASS : "relative min-w-0 flex-1 basis-0",
+        )}
+      >
+        <div
+          className={cn(
+            mobileToothCardShellClass,
+            !spanSelected && selectable && "opacity-55 saturate-50",
+            isMissingTooth
+              ? isLinked
+                ? "border-primary bg-slate-50"
+                : "rounded-xl border-slate-300 bg-slate-50"
+              : spanSelected
+                ? isLinked
+                  ? "border-primary bg-gradient-to-b from-primary-soft via-primary-soft/95 to-white ring-1 ring-primary/40"
+                  : "rounded-xl border-primary/90 bg-gradient-to-b from-primary-soft via-white to-primary-soft/40 ring-1 ring-primary-muted/40"
+                : isLinked
+                  ? "border-slate-300 bg-slate-50"
+                  : "rounded-xl border-slate-300 bg-slate-50",
+            isLinked && spanSelected && isFirst && isLast && "rounded-xl",
+            isLinked && spanSelected && isFirst && !isLast && "rounded-l-xl rounded-r-none",
+            isLinked && spanSelected && !isFirst && isLast && "rounded-r-xl rounded-l-none",
+            isLinked && spanSelected && !isFirst && !isLast && "rounded-none",
+            isLinked && spanSelected && !isFirst && "border-l-0",
+            isLinked && spanSelected && !isLast && "border-r-0",
+          )}
+        >
+          {isMissingTooth ? (
+            <svg
+              aria-hidden
+              viewBox="0 0 100 100"
+              preserveAspectRatio="none"
+              className="pointer-events-none absolute inset-x-2 top-9 bottom-3 z-[5] text-slate-300/40"
+            >
+              <line
+                x1="8"
+                y1="8"
+                x2="92"
+                y2="92"
+                stroke="currentColor"
+                strokeWidth="10"
+                strokeLinecap="round"
+              />
+              <line
+                x1="92"
+                y1="8"
+                x2="8"
+                y2="92"
+                stroke="currentColor"
+                strokeWidth="10"
+                strokeLinecap="round"
+              />
+            </svg>
+          ) : null}
+
+          <span className="relative z-[1] flex h-10 items-center text-xl font-bold tabular-nums tracking-tight text-slate-800">
+            {toothNumber}
+          </span>
+
+          {isMissingTooth ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="relative z-20 mt-1.5 flex h-7 w-full min-w-0 items-center justify-center self-stretch rounded-md bg-transparent px-0.5 text-center text-[11px] text-slate-500">
+                  <span className="block w-full truncate px-0.5">
+                    {NO_WORK_PROSTHESIS_TYPE}
+                  </span>
+                </div>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-xs text-xs leading-relaxed">
+                {NO_WORK_PROSTHESIS_TOOLTIP}
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            <div className="relative z-[1] mt-1.5 flex h-7 w-full min-w-0 items-center justify-center self-stretch rounded-md border border-primary-muted/80 bg-white/80 px-0.5 text-center text-[11px] text-slate-600">
+              <span className="block w-full truncate px-0.5">
+                {row.prosthesisType || "-"}
+              </span>
+            </div>
+          )}
+
+          {canShowCustom ? (
+            <div className="mt-2 flex w-full flex-col items-center gap-0.5 leading-none">
+              <span className="inline-flex h-5 items-center text-[11px] leading-none text-primary-strong">
+                {row.prosthesisType === "크라운" ||
+                row.prosthesisType === "브리지" ||
+                isTemporaryToothProsthesisType(row.prosthesisType)
+                  ? "어벗"
+                  : "커스텀"}
+              </span>
+              <div className="flex w-full flex-col items-stretch gap-0.5 px-0.5">
+                <span className="min-h-5 w-full px-0.5 text-center text-[10px] leading-snug text-primary-strong [overflow-wrap:anywhere]">
+                  {implantCompact || "임플란트"}
+                </span>
+                <span className="min-h-5 w-full px-0.5 text-center text-[10px] leading-snug text-service-abut [overflow-wrap:anywhere]">
+                  {abutmentCompact || "스캔바디"}
+                </span>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    );
+  };
+
+  const renderMobileSpanRow = (entry: MobileSpanEntry) => {
+    const { teeth, row, spanKey } = entry;
+    if (teeth.length === 0) return null;
+    const scrollMode = teeth.length >= MOBILE_SPAN_SCROLL_MIN_TEETH;
+    const spanSelected = selectable ? (selectedSpanKeys?.has(spanKey) ?? false) : true;
+    const canToggleSpan =
+      selectable && Boolean(onToggleSpanKey) && !selectionDisabled && !scrollMode;
+
+    const toggleSpanSelection = () => {
+      if (!canToggleSpan) return;
+      onToggleSpanKey?.(spanKey, !spanSelected);
+    };
+
+    const spanTrack = (
+      <>
+        {teeth.map((toothNumber, index) => (
+          <div key={`mobile-span-tooth-${spanKey}-${toothNumber}`} className="contents">
+            {renderMobileToothCard(row, toothNumber, index, teeth.length, scrollMode)}
+            {index < teeth.length - 1 ? renderMobileSpanBridgeGap() : null}
+          </div>
+        ))}
+      </>
+    );
+
+    return (
+      <div key={`mobile-span-${spanKey}`} className="flex items-stretch gap-2">
+        {selectable ? (
+          <div
+            className="flex shrink-0 items-start pt-2"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <Checkbox
+              checked={spanSelected}
+              disabled={selectionDisabled}
+              onCheckedChange={(checked) =>
+                onToggleSpanKey?.(spanKey, checked === true)
+              }
+              aria-label={`${row.prosthesisType || "보철"} ${spanKey} 선택`}
+            />
+          </div>
+        ) : null}
+        {scrollMode ? (
+          <div className="relative min-w-0 flex-1">
+            <div
+              className="custom-scrollbar flex items-stretch overflow-x-auto overscroll-x-contain snap-x snap-mandatory [-webkit-overflow-scrolling:touch]"
+              aria-label={`${spanKey} 브리지 — 가로로 스와이프`}
+            >
+              <div className="flex w-max min-w-full items-stretch">{spanTrack}</div>
+            </div>
+          </div>
+        ) : (
+          <div
+            role={canToggleSpan ? "button" : undefined}
+            tabIndex={canToggleSpan ? 0 : undefined}
+            onClick={canToggleSpan ? toggleSpanSelection : undefined}
+            onKeyDown={
+              canToggleSpan
+                ? (event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      toggleSpanSelection();
+                    }
+                  }
+                : undefined
+            }
+            className={cn(
+              "flex min-w-0 flex-1 items-stretch",
+              canToggleSpan && "cursor-pointer",
+            )}
+          >
+            {spanTrack}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderMobileArchSection = (
+    label: string,
+    entries: MobileSpanEntry[],
+  ) => {
+    if (entries.length === 0) return null;
+    return (
+      <div className="space-y-2">
+        {upperSpanEntries.length > 0 && lowerSpanEntries.length > 0 ? (
+          <p className="text-[11px] font-medium text-muted-foreground">{label}</p>
+        ) : null}
+        {entries.map((entry) => renderMobileSpanRow(entry))}
+      </div>
+    );
   };
 
   const buildChartRows = (
@@ -777,7 +1130,21 @@ export const PracticeToothWorkChartReadOnly = ({
     />
   );
 
-  const inlineChartBody = (
+  const inlineChartBody = isMobile ? (
+    <div className="space-y-3">
+      {renderMobileArchSection("상악", upperSpanEntries)}
+      <PracticeTransferFeeEstimate
+        quote={feeQuote}
+        viewer={feeViewer}
+        skipJig={skipJig}
+        labEffectiveStars={labEffectiveStars}
+        className={
+          embedded ? "border-0 bg-transparent px-0 py-1 shadow-none" : undefined
+        }
+      />
+      {renderMobileArchSection("하악", lowerSpanEntries)}
+    </div>
+  ) : (
     <div className="space-y-2">
       {upperInlineRow}
       {feeEstimate}
@@ -785,7 +1152,9 @@ export const PracticeToothWorkChartReadOnly = ({
     </div>
   );
 
-  const enlargeChartBody = (
+  const enlargeChartBody = isMobile ? (
+    inlineChartBody
+  ) : (
     <div className="space-y-2">
       {upperEnlargeRow}
       <PracticeTransferFeeEstimate
