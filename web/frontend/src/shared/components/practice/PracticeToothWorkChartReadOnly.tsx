@@ -4,7 +4,7 @@
 // - web/frontend/src/shared/practice/transferMemo.ts
 // - 2026-08-19: 수가 Off면 live quote-context로 기공비 미설정·어벗 단가 표시.
 // - 2026-08-19: 치아 옆 스크롤·R/M/L 제거. 견적 바에 << < > >>(1칸·5칸).
-// - 2026-09-02: 가로폭 부족 시 overflow-x 스크롤(<< < > >> 버튼 제거).
+// - 2026-09-02: 가로폭 부족 시 overflow-x 스크롤(<< < > >> 버튼 제거) + custom-scrollbar-x.
 // - 2026-09-01: 후속 제작 모달 — 보철물 카드에서 크라운·브리지 단위 선택.
 // - 2026-09-01: 컨테이너 폭에 따라 inline 칸 수 4~8, 카드 폭 5rem 고정(→ 2026-09-02 overflow-x 스크롤).
 // - 2026-09-02: 모바일 — 스팬 단위 세로 목록(전폭 균등 분할), 크게 보기 생략.
@@ -44,6 +44,7 @@ import {
   NO_WORK_PROSTHESIS_TOOLTIP,
 } from "@/shared/practice/usePracticeToothWorkEditor";
 import { PracticeTransferFeeEstimate } from "@/shared/components/practice/PracticeTransferFeeEstimate";
+import { PracticeToothChartHorizontalScroll } from "@/shared/components/practice/PracticeToothChartHorizontalScroll";
 import { useIsMobile } from "@/shared/hooks/use-mobile";
 import { usePracticeTransferFeeQuote } from "@/shared/practice/usePracticeTransferFeeQuote";
 import type {
@@ -53,8 +54,6 @@ import type {
 
 const TOOTH_CARD_WIDTH_CLASS = "w-[5rem] max-w-[5rem] shrink-0";
 const SCROLL_TOOTH_SLOT_CLASS = "relative w-[5rem] max-w-[5rem] shrink-0 snap-start";
-const CHART_ROW_HORIZONTAL_SCROLL_CLASS =
-  "custom-scrollbar flex w-full items-stretch overflow-x-auto overscroll-x-contain snap-x snap-mandatory [-webkit-overflow-scrolling:touch]";
 const TOOTH_CARD_HEIGHT_CLASS = "h-[12rem]";
 const TOOTH_SLOT_CLASS = TOOTH_CARD_WIDTH_CLASS;
 /** full(16칸) — 전폭 균등 분할 */
@@ -541,17 +540,6 @@ export const PracticeToothWorkChartReadOnly = ({
     if (teeth.length === 0) return null;
     const spanSelected = selectable ? (selectedSpanKeys?.has(spanKey) ?? false) : true;
 
-    const spanTrack = (
-      <>
-        {teeth.map((toothNumber, index) => (
-          <div key={`mobile-span-tooth-${spanKey}-${toothNumber}`} className="contents">
-            {renderMobileToothCard(row, toothNumber, index, teeth.length)}
-            {index < teeth.length - 1 ? renderMobileSpanBridgeGap() : null}
-          </div>
-        ))}
-      </>
-    );
-
     return (
       <div key={`mobile-span-${spanKey}`} className="flex items-stretch gap-2">
         {selectable ? (
@@ -569,14 +557,22 @@ export const PracticeToothWorkChartReadOnly = ({
             />
           </div>
         ) : null}
-        <div className="relative min-w-0 flex-1">
-          <div
-            className={CHART_ROW_HORIZONTAL_SCROLL_CLASS}
-            aria-label={`${spanKey} 브리지 — 가로로 스크롤`}
-          >
-            <div className="flex w-max min-w-full items-stretch">{spanTrack}</div>
+        <PracticeToothChartHorizontalScroll
+          className="min-w-0 w-full max-w-full flex-1"
+          ariaLabel={`${spanKey} 브리지 — 가로로 스크롤`}
+        >
+          <div className="inline-flex w-max items-stretch">
+            {teeth.map((toothNumber, index) => (
+              <div
+                key={`mobile-span-tooth-${spanKey}-${toothNumber}`}
+                className="flex shrink-0 items-stretch"
+              >
+                {renderMobileToothCard(row, toothNumber, index, teeth.length)}
+                {index < teeth.length - 1 ? renderMobileSpanBridgeGap() : null}
+              </div>
+            ))}
           </div>
-        </div>
+        </PracticeToothChartHorizontalScroll>
       </div>
     );
   };
@@ -608,7 +604,12 @@ export const PracticeToothWorkChartReadOnly = ({
       const visible = decade.teeth;
 
       const rowTrack = (
-        <div className={cn("flex items-stretch", fullLayout ? "w-full min-w-0 gap-0.5" : "gap-0.5")}>
+        <div
+          className={cn(
+            "items-stretch gap-0.5",
+            fullLayout ? "flex w-full min-w-0" : "inline-flex w-max",
+          )}
+        >
           {visible.map((toothNumber, visibleIndex) => {
               const row = byTooth.get(toothNumber);
               if (!row && !fullLayout) return null;
@@ -624,7 +625,10 @@ export const PracticeToothWorkChartReadOnly = ({
 
               if (!row) {
                 return (
-                  <div key={`ro-tooth-slot-${toothNumber}`} className="contents">
+                  <div
+                    key={`ro-tooth-slot-${toothNumber}`}
+                    className="flex shrink-0 items-stretch"
+                  >
                     <div className={cn("relative", slotClass)}>
                       <div
                         className={cn(
@@ -694,7 +698,10 @@ export const PracticeToothWorkChartReadOnly = ({
               const abutmentCompact = formatAbutmentCompact(row);
 
               return (
-                <div key={`ro-tooth-slot-${toothNumber}`} className="contents">
+                <div
+                  key={`ro-tooth-slot-${toothNumber}`}
+                  className="flex shrink-0 items-stretch"
+                >
                   <div className={cn("relative", slotClass)}>
                     {linkedChartNext && !showBridgeConnector ? (
                       <span
@@ -879,17 +886,16 @@ export const PracticeToothWorkChartReadOnly = ({
       return (
         <div
           key={`ro-decade-${decade.key}-${fullLayout ? "full" : "compact"}`}
-          className="w-full"
+          className="w-full min-w-0 max-w-full"
         >
           {fullLayout ? (
             rowTrack
           ) : (
-            <div
-              className={CHART_ROW_HORIZONTAL_SCROLL_CLASS}
-              aria-label={`${decade.label} 치식 가로 스크롤`}
+            <PracticeToothChartHorizontalScroll
+              ariaLabel={`${decade.label} 치식 가로 스크롤`}
             >
               {rowTrack}
-            </div>
+            </PracticeToothChartHorizontalScroll>
           )}
         </div>
       );
@@ -981,7 +987,7 @@ export const PracticeToothWorkChartReadOnly = ({
   ) : null;
 
   return (
-    <div className={cn("space-y-2", className)}>
+    <div className={cn("min-w-0 max-w-full space-y-2", className)}>
       {!toothChartEnlargeOpen ? (
         <>
           {showHeader ? (

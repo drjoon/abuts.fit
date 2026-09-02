@@ -1,7 +1,7 @@
 // related files:
 // - web/frontend/src/features/chat/components/ChatMessageBubble.tsx
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
-// - 2026-09-01: 재도착·후속 보철 시스템 채팅 전용 렌더.
+// - 2026-09-02: 후속 보철 차트 — 버블 밖 전폭(의뢰상세와 동일 레이아웃), embedded 제거.
 import { cn } from "@/shared/ui/cn";
 import { PracticeToothWorkChartReadOnly } from "@/shared/components/practice/PracticeToothWorkChartReadOnly";
 import type { ChatMessage } from "@/shared/hooks/useChatRooms";
@@ -197,42 +197,43 @@ export function PracticeTransferSystemChatBody({
     return (
       <div
         id={messageDomId}
-        className="flex w-full justify-center scroll-mt-4 py-1.5"
+        className="flex w-full min-w-0 max-w-full flex-col overflow-x-hidden scroll-mt-4 py-1.5"
       >
-        <div
-          className={cn(
-            "w-full max-w-[min(96%,34rem)] rounded-md bg-muted/70 px-3 py-2 text-muted-foreground",
-            compact ? "text-[11px] sm:text-xs" : "text-xs sm:text-sm",
-          )}
-        >
-          <p className="text-center font-medium leading-snug">후속 보철 추가</p>
-          {arrivalYmd ? (
-            <p className="mt-1 text-center leading-snug">
-              치과도착일 {arrivalYmd}
-            </p>
-          ) : null}
-          {toothWorks.length > 0 ? (
-            <div className="mt-2 text-left text-foreground">
-              <PracticeToothWorkChartReadOnly
-                toothWorks={toothWorks}
-                embedded
-                showHeader={false}
-                skipAbutmentFees
-                labAnchorId={labAnchorId}
-                feeQuote={storedFeeQuote}
-                className="border-0 bg-transparent p-0 shadow-none"
-              />
-            </div>
-          ) : null}
-          <p
+        <div className="flex w-full justify-center">
+          <div
             className={cn(
-              "mt-1.5 text-center opacity-70",
-              compact ? "text-[10px]" : "text-[11px]",
+              "mx-auto w-full min-w-0 max-w-[min(100%,28rem)] rounded-md bg-muted/70 px-4 py-2 text-center text-muted-foreground",
+              compact ? "text-[11px] sm:text-xs" : "text-xs sm:text-sm",
             )}
           >
-            {formatTime(message.createdAt)}
-          </p>
+            <p className="font-medium leading-snug">후속 보철 추가</p>
+            {arrivalYmd ? (
+              <p className="mt-1 leading-snug">치과도착일 {arrivalYmd}</p>
+            ) : null}
+          </div>
         </div>
+        {toothWorks.length > 0 ? (
+          <div className="mt-2 w-full min-w-0 max-w-full text-left text-foreground">
+            <PracticeToothWorkChartReadOnly
+              toothWorks={toothWorks}
+              showHeader={false}
+              skipAbutmentFees
+              labAnchorId={labAnchorId}
+              feeQuote={storedFeeQuote}
+              enlargeOverlayClassName="z-[350]"
+              enlargeDialogClassName="z-[360]"
+              className="border-0 bg-transparent p-0 shadow-none"
+            />
+          </div>
+        ) : null}
+        <p
+          className={cn(
+            "mt-1.5 text-center opacity-70 text-muted-foreground",
+            compact ? "text-[10px]" : "text-[11px]",
+          )}
+        >
+          {formatTime(message.createdAt)}
+        </p>
       </div>
     );
   }

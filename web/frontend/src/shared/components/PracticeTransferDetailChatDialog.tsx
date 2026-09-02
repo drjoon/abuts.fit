@@ -1949,7 +1949,7 @@ export function PracticeTransferDetailChatDialog({
               {counterpartyMemoStrip}
 
               {onEditRequest || onCancelRequest ? (
-                <div className="flex shrink-0 flex-wrap justify-end gap-2 border-b bg-muted/40 px-3 py-2">
+                <div className="flex shrink-0 flex-wrap justify-end gap-2 border-b bg-muted/40 px-5 py-2">
                   {onCancelRequest ? (
                     <Button
                       type="button"
@@ -1980,7 +1980,7 @@ export function PracticeTransferDetailChatDialog({
               ) : null}
 
               {showAcceptBar ? (
-                <div className="shrink-0 border-b bg-muted/40 px-3 py-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="shrink-0 border-b bg-muted/40 px-5 py-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   {hasPendingLabCustomAbutment ||
                   oralScanAttachMode === "practice_required" ? (
                     <div className="space-y-1">
@@ -2061,7 +2061,7 @@ export function PracticeTransferDetailChatDialog({
               ) : null}
 
               {showReacceptBar ? (
-                <div className="shrink-0 border-b bg-muted/40 px-3 py-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="shrink-0 border-b bg-muted/40 px-5 py-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <p className="text-xs text-muted-foreground">
                     작업이 취소된 상태입니다. 채팅은 이어갈 수 있고, 다시 수락하면 작업을
                     진행할 수 있습니다.
@@ -2080,7 +2080,7 @@ export function PracticeTransferDetailChatDialog({
               ) : null}
 
               {showReleaseBar ? (
-                <div className="shrink-0 border-b bg-muted/40 px-3 py-2 flex flex-col gap-1.5">
+                <div className="shrink-0 border-b bg-muted/40 px-5 py-2 flex flex-col gap-1.5">
                   {typeof acceptedWorkActions === "function" ? (
                     resolvedAcceptedWorkActions
                   ) : resolvedAcceptedWorkActions ? (
@@ -2109,22 +2109,22 @@ export function PracticeTransferDetailChatDialog({
               accepted &&
               !workCanceled &&
               resolvedAcceptedWorkActions ? (
-                <div className="shrink-0 border-b bg-muted/40 px-3 py-2">
+                <div className="shrink-0 border-b bg-muted/40 px-5 py-2">
                   {resolvedAcceptedWorkActions}
                 </div>
               ) : null}
 
-              <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_auto] overflow-hidden">
+              <div className="grid min-h-0 min-w-0 flex-1 grid-rows-[minmax(0,1fr)_auto] overflow-hidden">
                 <div
                   className={cn(
-                    "relative flex min-h-0 flex-col",
+                    "relative flex min-h-0 min-w-0 flex-col",
                     workFileDropActive &&
                       "m-2 rounded-md border-2 border-dashed border-primary/45 bg-primary/[0.03]",
                   )}
                 >
                   {workFileDropUploading ? (
                     <div
-                      className="pointer-events-none z-[2] shrink-0 border-b border-primary/25 bg-primary px-3 py-2.5 text-primary-foreground"
+                      className="pointer-events-none z-[2] shrink-0 border-b border-primary/25 bg-primary px-5 py-2.5 text-primary-foreground"
                       role="status"
                       aria-live="polite"
                     >
@@ -2147,7 +2147,7 @@ export function PracticeTransferDetailChatDialog({
                     !chatLoading &&
                     !visibleChatError ? (
                     <div
-                      className="pointer-events-none z-[2] shrink-0 bg-primary px-3 py-2.5 text-center text-primary-foreground"
+                      className="pointer-events-none z-[2] shrink-0 bg-primary px-5 py-2.5 text-center text-primary-foreground"
                       aria-hidden
                     >
                       <p className="text-sm font-semibold leading-snug">
@@ -2163,13 +2163,13 @@ export function PracticeTransferDetailChatDialog({
 
                   <div
                     className={cn(
-                      "custom-scrollbar relative z-[1] min-h-0 flex-1 overflow-y-auto overscroll-contain transition-opacity",
+                      "custom-scrollbar relative z-[1] min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain transition-opacity",
                       workFileDropActive &&
                         !workFileDropUploading &&
                         "opacity-45",
                     )}
                   >
-                    <div className="w-full min-w-0 max-w-full space-y-2 px-3 py-1.5 sm:px-4 sm:py-2">
+                    <div className="w-full min-w-0 max-w-full space-y-2 px-5 py-2">
                       {chatLoading ? (
                         <div className="py-4 text-center text-xs text-muted-foreground">
                           채팅을 불러오는 중입니다...

@@ -141,7 +141,7 @@ export const ChatComposer = (props: Props) => {
         "shrink-0 border-t space-y-2",
         isMobile
           ? "px-3 pt-2.5 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
-            : compact
+          : compact
             ? "px-3 pt-1.5 pb-1.5 sm:px-4"
             : "px-3 pt-3 pb-4 sm:px-4 sm:pt-4 sm:pb-6",
         className,
@@ -167,7 +167,7 @@ export const ChatComposer = (props: Props) => {
         className={cn(
           "resize-none",
           compact &&
-            "min-h-0 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0",
+            "min-h-0 border-0 bg-transparent px-1 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0",
           isMobile && "min-h-[4.5rem] text-base",
         )}
         rows={isMobile ? 2 : compact ? 2 : 3}

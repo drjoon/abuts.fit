@@ -128,6 +128,7 @@ import {
   type LinkedSpanProsthesisSnapshot,
   type ToothWorkSelection,
 } from "@/shared/practice/usePracticeToothWorkEditor";
+import { PracticeToothChartHorizontalScroll } from "@/shared/components/practice/PracticeToothChartHorizontalScroll";
 import { PracticeTransferFeeEstimate } from "@/shared/components/practice/PracticeTransferFeeEstimate";
 import { usePracticeTransferFeeQuote } from "@/shared/practice/usePracticeTransferFeeQuote";
 import {
@@ -204,7 +205,7 @@ import {
 // - 2026-08-17: 복사 뱃지 — 괄호 제거, 11px·primary soft pill.
 // - 2026-08-18: full 치식 카드 min-w·브리지 + 를 이음새에 겹쳐 어벗 라벨이 잘리지 않게.
 // - 2026-08-18: full 치식에서는 R/M/L 스크롤 버튼을 숨긴다.
-// - 2026-08-19: 치아 옆 스크롤·R/M/L 제거. compact는 overflow-x 가로 스크롤(<< < > >> 제거).
+// - 2026-08-19: 치아 옆 스크롤·R/M/L 제거. compact는 overflow-x + custom-scrollbar-x.
 // - 2026-08-20: Expert — 헤더 다음 메모|드롭존 2열, 보철물은 그 아래.
 // - 2026-08-20: 메모 라벨·?툴팁 제거. 메모|드롭존 높이 stretch 맞춤.
 // - 2026-08-25: 보철물 가이드투어 — 선택·해제·브리지·형태·복사·어벗·프리셋·견적 체험.
@@ -218,8 +219,6 @@ const PRACTICE_MEMO_SNIPPETS_LOCAL_KEY = "practice_transfer_memo_snippets_v1";
 const MAX_MEMO_SNIPPETS = 40;
 const MAX_MEMO_SUGGESTIONS = 8;
 const MEMO_SUGGEST_MIN_CHARS = 1;
-const TOOTH_CHART_HORIZONTAL_SCROLL_CLASS =
-  "custom-scrollbar flex w-full items-stretch overflow-x-auto overscroll-x-contain snap-x snap-mandatory [-webkit-overflow-scrolling:touch]";
 /** 카드 높이: 번호+형태+어벗+임플란트/스캔바디 2줄+복사 기준(이보다 짧으면 형태 버튼이 flex-shrink로 가려짐) */
 const TOOTH_CARD_HEIGHT_CLASS = "h-[12rem]";
 /** full(16칸) — compact와 동일. 9rem은 어벗 상세 시 유형 스위치가 찌그러짐 */
@@ -3066,8 +3065,10 @@ export const PracticeTransferRequestIntakePanel = ({
               const rowTrack = (
                 <div
                   className={cn(
-                    "flex items-stretch",
-                    showFullToothChart ? "w-full min-w-0 gap-0.5" : "gap-0.5",
+                    "items-stretch gap-0.5",
+                    showFullToothChart
+                      ? "flex w-full min-w-0"
+                      : "inline-flex w-max",
                   )}
                 >
                   {decade.teeth.map((toothNumber, visibleIndex) => {
@@ -3219,7 +3220,10 @@ export const PracticeTransferRequestIntakePanel = ({
                         ) : null;
 
                         return (
-                          <div key={`tooth-slot-${toothNumber}`} className="contents">
+                          <div
+                            key={`tooth-slot-${toothNumber}`}
+                            className="flex shrink-0 items-stretch"
+                          >
                             <div className={toothSlotClass}>{card}</div>
                             {emptyBridgeControl}
                           </div>
@@ -3350,7 +3354,10 @@ export const PracticeTransferRequestIntakePanel = ({
                       ) : null;
 
                       return (
-                          <div key={`tooth-slot-${toothNumber}`} className="contents">
+                          <div
+                            key={`tooth-slot-${toothNumber}`}
+                            className="flex shrink-0 items-stretch"
+                          >
                           <div className={cn("relative", toothSlotClass)}>
                           {linkedChartNext && !showBridgeControl ? (
                             <span
@@ -3682,12 +3689,11 @@ export const PracticeTransferRequestIntakePanel = ({
                   {showFullToothChart ? (
                     rowTrack
                   ) : (
-                    <div
-                      className={TOOTH_CHART_HORIZONTAL_SCROLL_CLASS}
-                      aria-label={`${decade.label} 치식 가로 스크롤`}
+                    <PracticeToothChartHorizontalScroll
+                      ariaLabel={`${decade.label} 치식 가로 스크롤`}
                     >
                       {rowTrack}
-                    </div>
+                    </PracticeToothChartHorizontalScroll>
                   )}
                 </div>
               );

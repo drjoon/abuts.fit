@@ -251,6 +251,32 @@ All colors MUST be HSL.
   scrollbar-color: hsl(var(--primary) / 0.5) transparent;
 }
 
+/* Horizontal overflow — height/thumb track so PC users see swipe affordance */
+.custom-scrollbar-x {
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--primary) / 0.55) hsl(var(--muted) / 0.45);
+}
+
+.custom-scrollbar-x::-webkit-scrollbar {
+  height: 8px;
+}
+
+.custom-scrollbar-x::-webkit-scrollbar-track {
+  margin-inline: 2px;
+  background: hsl(var(--muted) / 0.4);
+  border-radius: 9999px;
+}
+
+.custom-scrollbar-x::-webkit-scrollbar-thumb {
+  background: hsl(var(--primary) / 0.55);
+  border-radius: 9999px;
+}
+
+.custom-scrollbar-x::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--primary) / 0.8);
+}
+
 /*
  * DashboardLayout 작업영역 콘텐츠 패딩(p-3 / sm:p-6)을 뚫고
  * 중첩 스크롤바를 흰 카드 오른쪽 끝에 붙인다. 안쪽 패딩은 상·하·좌와 동일.

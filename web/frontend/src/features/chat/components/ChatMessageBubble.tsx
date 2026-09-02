@@ -623,7 +623,7 @@ export function ChatMessageBubble({
       >
         <div
           className={cn(
-            "max-w-[min(92%,28rem)] rounded-md bg-muted/70 px-3 py-1.5 text-center text-muted-foreground",
+            "max-w-[min(92%,28rem)] rounded-md bg-muted/70 px-4 py-1.5 text-center text-muted-foreground",
             compact ? "text-[11px] sm:text-xs" : "text-xs sm:text-sm",
           )}
         >
