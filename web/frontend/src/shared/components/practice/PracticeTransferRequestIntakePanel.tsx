@@ -214,6 +214,7 @@ import {
 // - 2026-08-25: full 치식 — 카드가 전폭을 나눠 갖고 스크롤 없이 16칸 표시. 위·아래 여백으로 경계 보존.
 // - 2026-08-25: preferGuideTourAside(위저드 레일)일 때 패널 쪽 투어 레일 중복 렌더 방지.
 // - 2026-08-25: full 치식 카드 높이 12rem 복구·형태 버튼 shrink-0 — 어벗 상세 시 유형 스위치 가림 방지.
+// - 2026-09-02: full 치식 슬롯 래퍼 contents 복구 — shrink-0 래퍼가 flex-1 전폭 분할을 막아 카드가 좁아지던 문제.
 
 const PRACTICE_MEMO_SNIPPETS_LOCAL_KEY = "practice_transfer_memo_snippets_v1";
 const MAX_MEMO_SNIPPETS = 40;
@@ -3222,7 +3223,11 @@ export const PracticeTransferRequestIntakePanel = ({
                         return (
                           <div
                             key={`tooth-slot-${toothNumber}`}
-                            className="flex shrink-0 items-stretch"
+                            className={
+                              showFullToothChart
+                                ? "contents"
+                                : "flex shrink-0 items-stretch"
+                            }
                           >
                             <div className={toothSlotClass}>{card}</div>
                             {emptyBridgeControl}
@@ -3356,7 +3361,11 @@ export const PracticeTransferRequestIntakePanel = ({
                       return (
                           <div
                             key={`tooth-slot-${toothNumber}`}
-                            className="flex shrink-0 items-stretch"
+                            className={
+                              showFullToothChart
+                                ? "contents"
+                                : "flex shrink-0 items-stretch"
+                            }
                           >
                           <div className={cn("relative", toothSlotClass)}>
                           {linkedChartNext && !showBridgeControl ? (

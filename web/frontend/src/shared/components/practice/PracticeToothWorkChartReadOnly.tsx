@@ -10,6 +10,7 @@
 // - 2026-09-02: 모바일 — 스팬 단위 세로 목록(전폭 균등 분할), 크게 보기 생략.
 // - 2026-09-02: 모바일 5연결+ 브리지 — 치아당 5rem 고정폭 + 가로 스와이프.
 // - 2026-08-25: 구강스캔(기공의뢰)은 디자인+생산 고정 — 치식 카드 모드 라벨 제거(작성 UI와 동일).
+// - 2026-09-02: full 치식 슬롯 래퍼 contents 복구 — shrink-0이 flex-1 전폭 분할을 막던 문제.
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -627,7 +628,9 @@ export const PracticeToothWorkChartReadOnly = ({
                 return (
                   <div
                     key={`ro-tooth-slot-${toothNumber}`}
-                    className="flex shrink-0 items-stretch"
+                    className={
+                      fullLayout ? "contents" : "flex shrink-0 items-stretch"
+                    }
                   >
                     <div className={cn("relative", slotClass)}>
                       <div
@@ -700,7 +703,9 @@ export const PracticeToothWorkChartReadOnly = ({
               return (
                 <div
                   key={`ro-tooth-slot-${toothNumber}`}
-                  className="flex shrink-0 items-stretch"
+                  className={
+                    fullLayout ? "contents" : "flex shrink-0 items-stretch"
+                  }
                 >
                   <div className={cn("relative", slotClass)}>
                     {linkedChartNext && !showBridgeConnector ? (
