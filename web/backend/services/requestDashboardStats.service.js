@@ -4,6 +4,7 @@
 // - web/backend/server.js
 // - web/backend/controllers/requests/common.requests.controller.js
 // change-log:
+// - 2026-09-02: 추적관리 워크시트 헤더 카운트 — TrackingPage 노출/기간 SSOT(trackingWorksheet*).
 // - 2026-08-27: 진행(inProgress*) — 준비 배지와 동일하게 PTX 디자인 미완료·레거시 design mode 제외.
 // - 2026-08-25: 준비(requestCount) — PTX 디자인 미완료도 제외(가공작업 카드 productModeNe SSOT와 일치).
 // - 2026-09-02: packing manufacturerStage SSOT는 세척.패킹만(레거시 세척.포장/packing/cleaning 제거).
@@ -12,6 +13,7 @@
 // - 2026-08-04: admin dashboard byStatus first-stage key SSOT를 '준비'로 통일 (구 '의뢰' 제거).
 import Request from "../models/request.model.js";
 import ShippingPackage from "../models/shippingPackage.model.js";
+import { getTodayYmdInKst } from "../utils/krBusinessDays.js";
 
 function buildHasMeaningfulValueExpr(fieldPath) {
   return {
@@ -168,6 +170,249 @@ export function buildDashboardNormalizedStageExpr() {
   };
 }
 
+const TRACKING_WORKSHEET_ELIGIBLE_WORKFLOW_CODES = [
+  "accepted",
+  "picked_up",
+  "completed",
+];
+
+function makeUtcFromKst(year, month, day, hour = 0, minute = 0, second = 0, ms = 0) {
+  return new Date(Date.UTC(year, month - 1, day, hour - 9, minute, second, ms));
+}
+
+/** TrackingPage periodToRange SSOT (KST). */
+export function buildTrackingWorksheetPeriodRange({
+  period = "30d",
+  customStartDate = "",
+  customEndDate = "",
+} = {}) {
+  const customStart = String(customStartDate || "").trim();
+  const customEnd = String(customEndDate || "").trim();
+  if (customStart && customEnd) {
+    const startDate = new Date(`${customStart}T00:00:00+09:00`);
+    const endDate = new Date(`${customEnd}T23:59:59.999+09:00`);
+    if (!Number.isNaN(startDate.getTime()) && !Number.isNaN(endDate.getTime())) {
+      return { startDate, endDate };
+    }
+  }
+
+  const todayYmd = getTodayYmdInKst();
+  const [year, month, day] = todayYmd.split("-").map(Number);
+
+  if (
+    period === "7d" ||
+    period === "30d" ||
+    period === "90d" ||
+    period === "180d"
+  ) {
+    const days =
+      period === "7d" ? 7 : period === "30d" ? 30 : period === "90d" ? 90 : 180;
+    const todayStart = makeUtcFromKst(year, month, day, 0, 0, 0, 0);
+    const todayEnd = makeUtcFromKst(year, month, day, 23, 59, 59, 999);
+    const startDate = new Date(
+      todayStart.getTime() - (days - 1) * 24 * 60 * 60 * 1000,
+    );
+    return { startDate, endDate: todayEnd };
+  }
+
+  const thisMonthStart = makeUtcFromKst(year, month, 1, 0, 0, 0, 0);
+  const todayEnd = makeUtcFromKst(year, month, day, 23, 59, 59, 999);
+
+  if (period === "thisMonth") {
+    return { startDate: thisMonthStart, endDate: todayEnd };
+  }
+
+  if (period === "lastMonth") {
+    const lastMonthStart =
+      month === 1
+        ? makeUtcFromKst(year - 1, 12, 1, 0, 0, 0, 0)
+        : makeUtcFromKst(year, month - 1, 1, 0, 0, 0, 0);
+    return {
+      startDate: lastMonthStart,
+      endDate: new Date(thisMonthStart.getTime() - 1),
+    };
+  }
+
+  const fallbackStart = makeUtcFromKst(year, month, day, 0, 0, 0, 0);
+  const fallbackEnd = makeUtcFromKst(year, month, day, 23, 59, 59, 999);
+  return {
+    startDate: new Date(fallbackStart.getTime() - 29 * 24 * 60 * 60 * 1000),
+    endDate: fallbackEnd,
+  };
+}
+
+/** 추적관리 워크시트 탭 카운트 — TrackingPage baseFiltered SSOT. */
+export async function getTrackingWorksheetDashboardCounts({
+  baseFilter = {},
+  trackingWorksheetPeriod = "30d",
+  trackingWorksheetCustomStart = "",
+  trackingWorksheetCustomEnd = "",
+} = {}) {
+  const range = buildTrackingWorksheetPeriodRange({
+    period: trackingWorksheetPeriod,
+    customStartDate: trackingWorksheetCustomStart,
+    customEndDate: trackingWorksheetCustomEnd,
+  });
+
+  const pipeline = [
+    {
+      $match: {
+        ...baseFilter,
+        manufacturerStage: {
+          $in: ["추적관리", "tracking", "포장.발송", "shipping"],
+        },
+        requestCategory: { $ne: "rnd_sample" },
+        $or: [
+          { source: { $ne: "manufacturer_sample" } },
+          { "rnd.doneAt": null },
+        ],
+        "rnd.unmachinableAt": { $in: [null, ""] },
+      },
+    },
+    {
+      $lookup: {
+        from: "deliveryinfos",
+        localField: "deliveryInfoRef",
+        foreignField: "_id",
+        as: "deliveryDoc",
+      },
+    },
+    {
+      $addFields: {
+        delivery: { $arrayElemAt: ["$deliveryDoc", 0] },
+      },
+    },
+    {
+      $addFields: {
+        stageTrim: {
+          $trim: { input: { $ifNull: ["$manufacturerStage", ""] } },
+        },
+        workflowCode: {
+          $trim: { input: { $ifNull: ["$shippingWorkflow.code", ""] } },
+        },
+        trackingBaseDate: {
+          $ifNull: [
+            "$delivery.deliveredAt",
+            { $ifNull: ["$delivery.shippedAt", "$createdAt"] },
+          ],
+        },
+        trackingNumber: {
+          $trim: { input: { $ifNull: ["$delivery.trackingNumber", ""] } },
+        },
+        shippingPackageIdStr: {
+          $trim: {
+            input: { $toString: { $ifNull: ["$shippingPackageId", ""] } },
+          },
+        },
+      },
+    },
+    {
+      $match: {
+        $expr: {
+          $or: [
+            { $in: ["$stageTrim", ["추적관리", "tracking"]] },
+            {
+              $in: [
+                "$workflowCode",
+                TRACKING_WORKSHEET_ELIGIBLE_WORKFLOW_CODES,
+              ],
+            },
+            { $gt: [{ $ifNull: ["$delivery.deliveredAt", null] }, null] },
+            { $gt: [{ $ifNull: ["$delivery.pickedUpAt", null] }, null] },
+          ],
+        },
+      },
+    },
+    {
+      $match: {
+        $expr: {
+          $or: [
+            { $in: ["$stageTrim", ["추적관리", "tracking"]] },
+            {
+              $and: [
+                {
+                  $not: {
+                    $gt: [{ $ifNull: ["$delivery.deliveredAt", null] }, null],
+                  },
+                },
+                {
+                  $not: {
+                    $gt: [{ $ifNull: ["$delivery.pickedUpAt", null] }, null],
+                  },
+                },
+                {
+                  $ne: [
+                    { $ifNull: ["$delivery.tracking.lastStatusCode", ""] },
+                    "11",
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      },
+    },
+  ];
+
+  if (range?.startDate && range?.endDate) {
+    pipeline.push({
+      $match: {
+        trackingBaseDate: { $gte: range.startDate, $lte: range.endDate },
+      },
+    });
+  }
+
+  pipeline.push(
+    {
+      $addFields: {
+        trackingBoxKey: {
+          $cond: [
+            { $ne: ["$trackingNumber", ""] },
+            { $concat: ["tn:", "$trackingNumber"] },
+            {
+              $cond: [
+                { $ne: ["$shippingPackageIdStr", ""] },
+                { $concat: ["pkg:", "$shippingPackageIdStr"] },
+                null,
+              ],
+            },
+          ],
+        },
+      },
+    },
+    {
+      $group: {
+        _id: null,
+        trackingWorksheetCount: { $sum: 1 },
+        trackingBoxKeys: { $addToSet: "$trackingBoxKey" },
+      },
+    },
+    {
+      $project: {
+        trackingWorksheetCount: 1,
+        trackingWorksheetBoxes: {
+          $size: {
+            $filter: {
+              input: "$trackingBoxKeys",
+              as: "key",
+              cond: {
+                $and: [{ $ne: ["$$key", null] }, { $ne: ["$$key", ""] }],
+              },
+            },
+          },
+        },
+      },
+    },
+  );
+
+  const rows = await Request.aggregate(pipeline);
+  const row = rows?.[0] || {};
+  return {
+    trackingWorksheetCount: Number(row.trackingWorksheetCount ?? 0) || 0,
+    trackingWorksheetBoxes: Number(row.trackingWorksheetBoxes ?? 0) || 0,
+  };
+}
+
 function buildDashboardShippingBoxKeyExpr() {
   return {
     $let: {
@@ -204,14 +449,22 @@ export async function getAssignedLikeDashboardSummary({
   baseFilter = {},
   dateFilter = {},
   rndCountFilter = {},
+  trackingWorksheetPeriod = "30d",
+  trackingWorksheetCustomStart = "",
+  trackingWorksheetCustomEnd = "",
 } = {}) {
   const match = {
     ...baseFilter,
     ...dateFilter,
   };
 
-  const [statsAgg, shippingBoxesAgg, trackingBoxesAgg, rndCountAgg] =
-    await Promise.all([
+  const [
+    statsAgg,
+    shippingBoxesAgg,
+    trackingBoxesAgg,
+    rndCountAgg,
+    trackingWorksheetCounts,
+  ] = await Promise.all([
       Request.aggregate([
         { $match: match },
         {
@@ -460,7 +713,13 @@ export async function getAssignedLikeDashboardSummary({
           $count: "count",
         },
       ]),
-    ]);
+    getTrackingWorksheetDashboardCounts({
+      baseFilter,
+      trackingWorksheetPeriod,
+      trackingWorksheetCustomStart,
+      trackingWorksheetCustomEnd,
+    }),
+  ]);
 
   const statsResult = statsAgg?.[0];
 
@@ -470,6 +729,10 @@ export async function getAssignedLikeDashboardSummary({
     trackingCount: Number(statsResult?.trackingCount ?? 0) || 0,
     trackingPaidCount: Number(statsResult?.trackingPaidCount ?? 0) || 0,
     trackingBoxes: Number(trackingBoxesAgg?.[0]?.count ?? 0) || 0,
+    trackingWorksheetCount:
+      Number(trackingWorksheetCounts?.trackingWorksheetCount ?? 0) || 0,
+    trackingWorksheetBoxes:
+      Number(trackingWorksheetCounts?.trackingWorksheetBoxes ?? 0) || 0,
     unmachinableCount: Number(statsResult?.unmachinableCount ?? 0) || 0,
     unmachinablePotentialCount:
       Number(statsResult?.unmachinablePotentialCount ?? 0) || 0,

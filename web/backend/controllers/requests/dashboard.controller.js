@@ -234,6 +234,15 @@ const buildDateFilter = (period) => {
 export async function getAssignedDashboardSummary(req, res) {
   try {
     const { period = "30d" } = req.query;
+    const trackingWorksheetPeriod = String(
+      req.query.trackingPeriod || req.query.trackingWorksheetPeriod || period,
+    ).trim();
+    const trackingWorksheetCustomStart = String(
+      req.query.trackingCustomStart || req.query.trackingFrom || "",
+    ).trim();
+    const trackingWorksheetCustomEnd = String(
+      req.query.trackingCustomEnd || req.query.trackingTo || "",
+    ).trim();
     const role = String(req.user?.role || "").trim();
     if (role !== "manufacturer" && role !== "admin") {
       return res.status(403).json({
@@ -262,7 +271,7 @@ export async function getAssignedDashboardSummary(req, res) {
       role === "manufacturer"
         ? String(req.user?.businessAnchorId || req.user?._id || "").trim()
         : "admin";
-    const cacheKey = `assigned-dashboard-summary:v2:${cacheScope}:${String(period)}`;
+    const cacheKey = `assigned-dashboard-summary:v3:${cacheScope}:${String(period)}:${trackingWorksheetPeriod}:${trackingWorksheetCustomStart}:${trackingWorksheetCustomEnd}`;
     const cached = getRequestPerfCacheValue(cacheKey);
     if (cached) {
       return res.status(200).json({
@@ -276,6 +285,9 @@ export async function getAssignedDashboardSummary(req, res) {
         baseFilter,
         dateFilter,
         rndCountFilter: orgScopeFilter,
+        trackingWorksheetPeriod,
+        trackingWorksheetCustomStart,
+        trackingWorksheetCustomEnd,
       });
       setRequestPerfCacheValue(cacheKey, data, 15 * 1000);
       return data;

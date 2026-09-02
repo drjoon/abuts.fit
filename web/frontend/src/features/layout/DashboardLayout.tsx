@@ -397,6 +397,8 @@ type WorksheetSummaryResponse = {
     shippingBoxes?: number;
     trackingCount?: number;
     trackingBoxes?: number;
+    trackingWorksheetCount?: number;
+    trackingWorksheetBoxes?: number;
     rndCount?: number;
     unmachinableCount?: number;
   };
@@ -1295,13 +1297,22 @@ export const DashboardLayout = () => {
     isWorksheetTrackingStage;
 
   // Worksheet summary data for header bar.
-  // Stage tab counts are current queue sizes (same as each tab list) — not period-filtered.
+  // Stage tab counts are current queue sizes — 추적관리만 PeriodFilter 기간 SSOT(TrackingPage와 동일).
   const { data: worksheetSummaryResponse, refetch: refetchWorksheetSummary } = useQuery({
-    queryKey: ["worksheet-assigned-summary"],
+    queryKey: [
+      "worksheet-assigned-summary",
+      period,
+      customStartDate,
+      customEndDate,
+    ],
     enabled: Boolean(token) && isManufacturer && isWorksheetRoute,
     queryFn: async () => {
+      const params = new URLSearchParams({ period: "all" });
+      params.set("trackingPeriod", period);
+      if (customStartDate) params.set("trackingCustomStart", customStartDate);
+      if (customEndDate) params.set("trackingCustomEnd", customEndDate);
       const res = await apiFetch<WorksheetSummaryResponse>({
-        path: `/api/requests/assigned/dashboard-summary?period=all`,
+        path: `/api/requests/assigned/dashboard-summary?${params.toString()}`,
         method: "GET",
         token,
       });
@@ -1726,8 +1737,13 @@ export const DashboardLayout = () => {
                               >
                                 <span>추적관리</span>
                                 <span className="tabular-nums opacity-70">
-                                  {wsSummary.trackingCount ?? 0} /
-                                  {wsSummary.trackingBoxes ?? 0}
+                                  {wsSummary.trackingWorksheetCount ??
+                                    wsSummary.trackingCount ??
+                                    0}{" "}
+                                  /{" "}
+                                  {wsSummary.trackingWorksheetBoxes ??
+                                    wsSummary.trackingBoxes ??
+                                    0}
                                 </span>
                               </Button>
                               <Button
