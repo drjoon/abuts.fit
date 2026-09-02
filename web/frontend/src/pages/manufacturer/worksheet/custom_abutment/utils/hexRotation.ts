@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-03: 제조사별 verifiedHex만 확정. 레거시 계정 확정 번짐 제거(초기값 30°·미정).
 // - 2026-09-03: ExoCAD 3.0 이하 × 임플란트 제조사별 verifiedHex/applyHex30 해석·잠금.
 // - 2026-08-29: 헥스40도회전 → STL모델+(base=0) / 헥스30+(base=30) 분기. NC: T4848=C0.0(always), T0909/T0606만 addDeg=30+appliedDeg.
 // - 2026-08-25: 관리자 헥스 확정 시 제조사 persist/승인 경로에서 저장 API 호출 스킵.
@@ -153,7 +154,7 @@ export const findHexByImplantManufacturerEntry = (
   );
 };
 
-/** User → (legacy BA) 임플란트 제조사별 관리자 확정 헥스 */
+/** User → BA 임플란트 제조사별 관리자 확정 헥스. 없으면 null(미정). */
 export const resolveAdminVerifiedHexFromRequest = (
   req?: HexRequestLike | null,
   implantManufacturerRaw?: unknown,
@@ -168,12 +169,12 @@ export const resolveAdminVerifiedHexFromRequest = (
       findHexByImplantManufacturerEntry(userRs, implantM)?.verifiedHex,
     );
     if (fromUser) return fromUser;
-    const fromBa = normalizeHexVerificationResultHex(
+    return normalizeHexVerificationResultHex(
       findHexByImplantManufacturerEntry(baRs, implantM)?.verifiedHex,
     );
-    if (fromBa) return fromBa;
   }
 
+  // implantManufacturer 없을 때만 레거시 계정 단일 확정
   return (
     normalizeHexVerificationResultHex(userRs?.hexVerificationResultHex) ||
     normalizeHexVerificationResultHex(baRs?.hexVerificationResultHex)

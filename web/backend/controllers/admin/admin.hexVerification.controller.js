@@ -4,6 +4,7 @@
 // - web/backend/modules/admin/admin.routes.js
 // - web/frontend/src/pages/admin/dashboard/AdminDashboardPage.tsx
 // change-log:
+// - 2026-09-03: 제조사 초기값=30°·미정. 레거시 계정 확정을 전 제조사 확정으로 번지지 않음.
 // - 2026-09-03: ExoCAD 3.0 이하 User를 BA 카드로 그룹. 임플란트 제조사별 applyHex30/확정 API.
 // - 2026-08-25: 관리자 확정 → 미확인(pending) 되돌리기 API
 // - 2026-08-23: ExoCAD 확정 계정도 목록에 포함(보기/수정). pendingCount·confirmedCount 분리.
@@ -46,13 +47,11 @@ const pickBusinessName = (anchor) => {
 };
 
 const buildManufacturerStatusRows = (userRs, sampleByManufacturer) => {
-  const legacyVerified = normalizeHexVerificationResultHex(
-    userRs?.hexVerificationResultHex,
-  );
+  // 초기값: applyHex30=true(30°) · verifiedHex 없음(미정).
+  // 레거시 계정 hexVerificationResultHex는 전 제조사 확정으로 번지지 않음.
   return CNC_HEX_IMPLANT_MANUFACTURERS.map((manufacturer) => {
     const entry = findHexByImplantManufacturerEntry(userRs, manufacturer);
-    const verifiedHex =
-      normalizeHexVerificationResultHex(entry?.verifiedHex) || legacyVerified;
+    const verifiedHex = normalizeHexVerificationResultHex(entry?.verifiedHex);
     const applyHex30 =
       entry && typeof entry.applyHex30 === "boolean" ? entry.applyHex30 : true;
     const sample = sampleByManufacturer.get(manufacturer) || null;

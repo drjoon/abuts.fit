@@ -3,6 +3,7 @@
 // - web/backend/models/user.model.js
 // - web/backend/controllers/admin/admin.hexVerification.controller.js
 // change-log:
+// - 2026-09-03: 시드는 applyHex30만(초기값 30°·미정). verifiedHex는 관리자 제조사별 확정.
 // - 2026-09-03: 계정 단일 hexVerificationResultHex → 임플란트 제조사별 hexByImplantManufacturer 시드
 //
 // Usage:
@@ -18,13 +19,14 @@ import {
   normalizeHexVerificationResultHex,
 } from "../../utils/designSoftwareHex.js";
 
-const buildRowsFromLegacy = (verifiedHex, verifiedAt, verifiedBy) =>
+const buildRowsFromLegacy = (verifiedHex) =>
+  // 초기값 정책: applyHex30만 시드, verifiedHex는 미정(관리자가 제조사별로 확정).
   CNC_HEX_IMPLANT_MANUFACTURERS.map((manufacturer) => ({
     manufacturer,
-    applyHex30: verifiedHex === "헥스30도회전",
-    verifiedHex,
-    verifiedAt: verifiedAt || null,
-    verifiedBy: verifiedBy || null,
+    applyHex30: verifiedHex !== "STL모델대로",
+    verifiedHex: null,
+    verifiedAt: null,
+    verifiedBy: null,
   }));
 
 async function migrateCollection(Model, label) {
@@ -68,11 +70,7 @@ async function migrateCollection(Model, label) {
       continue;
     }
 
-    const rows = buildRowsFromLegacy(
-      verifiedHex,
-      rs.hexVerificationCompletedAt,
-      rs.hexVerificationCompletedBy,
-    );
+    const rows = buildRowsFromLegacy(verifiedHex);
 
     await Model.updateOne(
       { _id: doc._id },

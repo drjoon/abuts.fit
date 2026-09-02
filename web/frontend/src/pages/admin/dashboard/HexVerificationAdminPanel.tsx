@@ -1,10 +1,13 @@
 // related: AdminDashboardPage.tsx, admin.hexVerification.controller.js
 // change-log:
+// - 2026-09-03: 0°/30°·확정 스위치 가로 배치
+// - 2026-09-03: 제조사 카드 = 0°/30°·확정 스위치만 (STL/수정/되돌리기 제거)
+// - 2026-09-03: 확정 후에도 applyHex30 스위치 변경 가능
+// - 2026-09-03: 기공소BA 하위 임직원 들여쓰기 · 제조사 카드 3열
 // - 2026-09-03: BA 카드 + 직원 collapse + 임플란트 제조사별 applyHex30/확정 UI
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";
@@ -65,7 +68,6 @@ export function HexVerificationAdminPanel({ token, enabled = true }: Props) {
   const queryClient = useQueryClient();
   const [expandedBa, setExpandedBa] = useState<Record<string, boolean>>({});
   const [expandedUser, setExpandedUser] = useState<Record<string, boolean>>({});
-  const [hexChoice, setHexChoice] = useState<Record<string, string>>({});
   const [busyKey, setBusyKey] = useState<Record<string, boolean>>({});
 
   const { data, isFetching, refetch } = useQuery({
@@ -122,14 +124,39 @@ export function HexVerificationAdminPanel({ token, enabled = true }: Props) {
     }
   };
 
-  const toggleApplyHex30 = (
+  const hexFromApply = (applyHex30: boolean) =>
+    applyHex30 ? "헥스30도회전" : "STL모델대로";
+
+  /** 미확정: applyHex30만. 확정 후: complete로 verifiedHex까지 동기화. */
+  const setApplyHex30 = (
     userId: string,
     manufacturer: string,
     applyHex30: boolean,
+    confirmed: boolean,
   ) => {
-    const key = `apply:${choiceKey(userId, manufacturer)}`;
+    const ck = choiceKey(userId, manufacturer);
+    const hexRotation = hexFromApply(applyHex30);
+    if (confirmed) {
+      void runAction(
+        `complete:${ck}`,
+        async () => {
+          const res = await apiFetch<ApiEnvelope<unknown>>({
+            path: `/api/admin/hex-verification/users/${encodeURIComponent(userId)}/manufacturers/${encodeURIComponent(manufacturer)}/complete`,
+            method: "POST",
+            token: token || undefined,
+            jsonBody: { hexRotation },
+          });
+          if (!res.ok || !res.data?.success) {
+            throw new Error(res.data?.message || "저장 실패");
+          }
+        },
+        `${manufacturer} · ${hexRotation}`,
+        "헥스 각도 저장 실패",
+      );
+      return;
+    }
     void runAction(
-      key,
+      `apply:${ck}`,
       async () => {
         const res = await apiFetch<ApiEnvelope<unknown>>({
           path: `/api/admin/hex-verification/users/${encodeURIComponent(userId)}/manufacturers/${encodeURIComponent(manufacturer)}/apply-hex30`,
@@ -141,40 +168,40 @@ export function HexVerificationAdminPanel({ token, enabled = true }: Props) {
           throw new Error(res.data?.message || "저장 실패");
         }
       },
-      "헥스 30° 적용 설정 저장",
+      `${manufacturer} · ${hexRotation}`,
       "적용 설정 저장 실패",
     );
   };
 
-  const completeManufacturer = (
+  const setConfirmed = (
     userId: string,
     manufacturer: string,
-    fallback: string,
+    confirmed: boolean,
+    applyHex30: boolean,
   ) => {
-    const key = choiceKey(userId, manufacturer);
-    const hexRotation = hexChoice[key] || fallback || "헥스30도회전";
+    const ck = choiceKey(userId, manufacturer);
+    if (confirmed) {
+      const hexRotation = hexFromApply(applyHex30);
+      void runAction(
+        `complete:${ck}`,
+        async () => {
+          const res = await apiFetch<ApiEnvelope<unknown>>({
+            path: `/api/admin/hex-verification/users/${encodeURIComponent(userId)}/manufacturers/${encodeURIComponent(manufacturer)}/complete`,
+            method: "POST",
+            token: token || undefined,
+            jsonBody: { hexRotation },
+          });
+          if (!res.ok || !res.data?.success) {
+            throw new Error(res.data?.message || "확정 실패");
+          }
+        },
+        `확정 · ${manufacturer} → ${hexRotation}`,
+        "헥스 확정 실패",
+      );
+      return;
+    }
     void runAction(
-      `complete:${key}`,
-      async () => {
-        const res = await apiFetch<ApiEnvelope<unknown>>({
-          path: `/api/admin/hex-verification/users/${encodeURIComponent(userId)}/manufacturers/${encodeURIComponent(manufacturer)}/complete`,
-          method: "POST",
-          token: token || undefined,
-          jsonBody: { hexRotation },
-        });
-        if (!res.ok || !res.data?.success) {
-          throw new Error(res.data?.message || "확정 실패");
-        }
-      },
-      `확정 · ${manufacturer} → ${hexRotation}`,
-      "헥스 확정 실패",
-    );
-  };
-
-  const revertManufacturer = (userId: string, manufacturer: string) => {
-    const key = choiceKey(userId, manufacturer);
-    void runAction(
-      `revert:${key}`,
+      `revert:${ck}`,
       async () => {
         const res = await apiFetch<ApiEnvelope<unknown>>({
           path: `/api/admin/hex-verification/users/${encodeURIComponent(userId)}/manufacturers/${encodeURIComponent(manufacturer)}/revert`,
@@ -185,7 +212,7 @@ export function HexVerificationAdminPanel({ token, enabled = true }: Props) {
           throw new Error(res.data?.message || "되돌리기 실패");
         }
       },
-      `미확인으로 되돌림 · ${manufacturer}`,
+      `미확인 · ${manufacturer}`,
       "헥스 되돌리기 실패",
     );
   };
@@ -194,9 +221,9 @@ export function HexVerificationAdminPanel({ token, enabled = true }: Props) {
     <div className="space-y-3 text-sm text-gray-700">
       <div className="text-xs text-muted-foreground">
         ExoCAD 3.0 이하 사용자 · 미확정 제조사 {pendingCount.toLocaleString()}건
-        · 확정 {confirmedCount.toLocaleString()}건. 제조사별 30° 패치 on/off와
-        샘플 확인 후 확정하면 해당 임플란트 제조사 의뢰의 제조사 PreviewModal이
-        잠깁니다.
+        · 확정 {confirmedCount.toLocaleString()}건. 제조사별 0°/30°·확정
+        스위치로 관리합니다. 확정하면 해당 임플란트 제조사 의뢰의 제조사
+        PreviewModal이 잠깁니다.
       </div>
       <div className="max-h-[60vh] overflow-auto pr-1 space-y-3">
         {items.length === 0 ? (
@@ -248,7 +275,7 @@ export function HexVerificationAdminPanel({ token, enabled = true }: Props) {
                   </Badge>
                 </button>
                 {baOpen ? (
-                  <div className="border-t divide-y">
+                  <div className="border-t divide-y pl-5">
                     {(ba.employees || []).map((emp) => {
                       const uKey = emp.userId;
                       const uOpen =
@@ -284,14 +311,13 @@ export function HexVerificationAdminPanel({ token, enabled = true }: Props) {
                             </div>
                           </button>
                           {uOpen ? (
-                            <div className="px-3 pb-2 space-y-1.5">
+                            <div className="pl-5 pr-3 pb-2 grid grid-cols-3 gap-1.5">
                               {(emp.manufacturers || []).map((mfr) => {
-                                const ck = choiceKey(emp.userId, mfr.manufacturer);
-                                const selected =
-                                  hexChoice[ck] ||
-                                  mfr.verifiedHex ||
-                                  mfr.seedHex ||
-                                  "헥스30도회전";
+                                const ck = choiceKey(
+                                  emp.userId,
+                                  mfr.manufacturer,
+                                );
+                                const confirmed = mfr.status === "confirmed";
                                 const busy =
                                   busyKey[`apply:${ck}`] ||
                                   busyKey[`complete:${ck}`] ||
@@ -301,140 +327,47 @@ export function HexVerificationAdminPanel({ token, enabled = true }: Props) {
                                     key={mfr.manufacturer}
                                     className="rounded border bg-white px-2.5 py-2 space-y-1.5"
                                   >
-                                    <div className="flex items-center justify-between gap-2">
-                                      <div className="min-w-0">
-                                        <div className="text-xs font-semibold">
-                                          {mfr.manufacturer}
-                                        </div>
-                                        <div className="text-[10px] text-muted-foreground">
-                                          {mfr.status === "confirmed"
-                                            ? `확정: ${mfr.verifiedHex}`
-                                            : mfr.samplePending
-                                              ? `샘플 ${mfr.sampleRequestId || "생성됨"}`
-                                              : "샘플 대기 · 시드 " +
-                                                (mfr.seedHex || "")}
-                                        </div>
-                                      </div>
-                                      <div className="flex items-center gap-1.5 shrink-0">
-                                        <span className="text-[10px] text-muted-foreground">
-                                          30°
+                                    <div className="text-xs font-semibold truncate">
+                                      {mfr.manufacturer}
+                                    </div>
+                                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="text-[10px] text-muted-foreground w-5 shrink-0">
+                                          0°
                                         </span>
                                         <Switch
                                           checked={Boolean(mfr.applyHex30)}
-                                          disabled={
-                                            busy || mfr.status === "confirmed"
-                                          }
+                                          disabled={busy}
                                           onCheckedChange={(checked) =>
-                                            toggleApplyHex30(
+                                            setApplyHex30(
                                               emp.userId,
                                               mfr.manufacturer,
                                               Boolean(checked),
+                                              confirmed,
                                             )
                                           }
                                         />
-                                        <Badge
-                                          variant="outline"
-                                          className={
-                                            mfr.status === "pending"
-                                              ? "text-[9px] border-amber-200 bg-amber-50 text-amber-700"
-                                              : "text-[9px] border-emerald-200 bg-emerald-50 text-emerald-700"
-                                          }
-                                        >
-                                          {mfr.status === "pending"
-                                            ? "미정"
-                                            : "확정"}
-                                        </Badge>
+                                        <span className="text-[10px] text-muted-foreground shrink-0">
+                                          30°
+                                        </span>
                                       </div>
-                                    </div>
-                                    <div className="flex flex-wrap items-center gap-1.5">
-                                      <Button
-                                        type="button"
-                                        size="sm"
-                                        variant={
-                                          selected === "STL모델대로"
-                                            ? "default"
-                                            : "outline"
-                                        }
-                                        className="h-6 text-[10px] px-2"
-                                        disabled={busy}
-                                        onClick={() =>
-                                          setHexChoice((prev) => ({
-                                            ...prev,
-                                            [ck]: "STL모델대로",
-                                          }))
-                                        }
-                                      >
-                                        STL
-                                      </Button>
-                                      <Button
-                                        type="button"
-                                        size="sm"
-                                        variant={
-                                          selected === "헥스30도회전"
-                                            ? "default"
-                                            : "outline"
-                                        }
-                                        className="h-6 text-[10px] px-2"
-                                        disabled={busy}
-                                        onClick={() =>
-                                          setHexChoice((prev) => ({
-                                            ...prev,
-                                            [ck]: "헥스30도회전",
-                                          }))
-                                        }
-                                      >
-                                        30°
-                                      </Button>
-                                      {mfr.status === "pending" ? (
-                                        <Button
-                                          type="button"
-                                          size="sm"
-                                          className="h-6 text-[10px] px-2 ml-auto"
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="text-[10px] text-muted-foreground shrink-0">
+                                          확정
+                                        </span>
+                                        <Switch
+                                          checked={confirmed}
                                           disabled={busy}
-                                          onClick={() =>
-                                            completeManufacturer(
+                                          onCheckedChange={(checked) =>
+                                            setConfirmed(
                                               emp.userId,
                                               mfr.manufacturer,
-                                              selected,
+                                              Boolean(checked),
+                                              Boolean(mfr.applyHex30),
                                             )
                                           }
-                                        >
-                                          {busy ? "…" : "완료"}
-                                        </Button>
-                                      ) : (
-                                        <>
-                                          <Button
-                                            type="button"
-                                            size="sm"
-                                            className="h-6 text-[10px] px-2 ml-auto"
-                                            disabled={busy}
-                                            onClick={() =>
-                                              completeManufacturer(
-                                                emp.userId,
-                                                mfr.manufacturer,
-                                                selected,
-                                              )
-                                            }
-                                          >
-                                            {busy ? "…" : "수정"}
-                                          </Button>
-                                          <Button
-                                            type="button"
-                                            size="sm"
-                                            variant="outline"
-                                            className="h-6 text-[10px] px-2"
-                                            disabled={busy}
-                                            onClick={() =>
-                                              revertManufacturer(
-                                                emp.userId,
-                                                mfr.manufacturer,
-                                              )
-                                            }
-                                          >
-                                            되돌리기
-                                          </Button>
-                                        </>
-                                      )}
+                                        />
+                                      </div>
                                     </div>
                                   </div>
                                 );
