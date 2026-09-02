@@ -378,6 +378,8 @@ import {
   resolvePracticeTransferListPatientName,
   resolvePracticeTransferListToothNumbers,
 } from "@/shared/components/practice/PracticeRecentTransferListCardDetail";
+import { resolvePracticeRecentTransferAbutmentUploadOverdue } from "@/shared/practice/practiceAbutmentUploadOverdue";
+import { PracticeAbutmentUploadOverdueAlert } from "@/shared/components/practice/PracticeAbutmentUploadOverdueAlert";
 
 type RecentRequestItem = PracticeRecentRequestItem;
 type TransferFileItem = PracticeRecentTransferFileItem;
@@ -1121,6 +1123,7 @@ const toStatusBadgeLabel = (
     return "의뢰";
   }
   if (s === "거부" || s === "작업취소" || s === "취소") return "취소";
+  if (s === "기한만료") return "기한만료";
   const designN = Math.max(
     Number(opts?.designFileCount || 0) || 0,
     Array.isArray(opts?.designFiles) ? opts.designFiles.length : 0,
@@ -4517,6 +4520,20 @@ export const PracticeFileTransferPage = ({
     () => buildPracticeSenderTransferDetailModel(selectedTransfer),
     [selectedTransfer],
   );
+
+  const selectedTransferUploadOverdue = useMemo(() => {
+    if (!selectedTransfer) return null;
+    return resolvePracticeRecentTransferAbutmentUploadOverdue({
+      status: selectedTransfer.status,
+      hasCustomAbutment: selectedTransfer.hasCustomAbutment,
+      designFileCount: selectedTransfer.designFileCount,
+      designFiles: selectedTransfer.designFiles,
+      designReadyAt: selectedTransfer.designReadyAt,
+      requestorDownloadedAt: selectedTransfer.requestorDownloadedAt,
+      requestorAcceptedAt: selectedTransfer.requestorAcceptedAt,
+      arrivalDeadlineExpiredAt: selectedTransfer.arrivalDeadlineExpiredAt,
+    });
+  }, [selectedTransfer]);
 
   const prosthesisFollowUpEligibility = useMemo(() => {
     if (!selectedTransfer) {
@@ -9267,6 +9284,13 @@ export const PracticeFileTransferPage = ({
             ) : null
           }
           summaryItems={selectedTransferDetailModel?.summaryItems || []}
+          summaryBanner={
+            selectedTransferUploadOverdue ? (
+              <PracticeAbutmentUploadOverdueAlert
+                level={selectedTransferUploadOverdue}
+              />
+            ) : null
+          }
           memo={selectedTransferDetailModel?.memo || "-"}
           toothWorks={selectedTransferDetailModel?.toothWorks || []}
           toothWorksKey={

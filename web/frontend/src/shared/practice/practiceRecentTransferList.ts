@@ -117,6 +117,7 @@ export type PracticeRecentRequestItem = {
   prosthesisFollowUps?: import("@/shared/practice/prosthesisFollowUp").ProsthesisFollowUpRecord[];
   requestorDownloadedAt?: string | null;
   requestorAcceptedAt?: string | null;
+  arrivalDeadlineExpiredAt?: string | null;
 };
 
 export type PracticeRecentTransferItem = {
@@ -201,6 +202,7 @@ export type PracticeRecentTransferItem = {
   toothWorks?: Array<Record<string, unknown>>;
   requestorDownloadedAt?: string | null;
   requestorAcceptedAt?: string | null;
+  arrivalDeadlineExpiredAt?: string | null;
 };
 
 export type PracticeRecentStatusFilter =
@@ -1126,6 +1128,11 @@ export const mergeOpenPracticeTransferFromRequestRows = (
       prev.requestorAcceptedAt ||
       prev.requestorDownloadedAt ||
       null,
+    arrivalDeadlineExpiredAt:
+      openRows.find((r) => String(r.arrivalDeadlineExpiredAt || "").trim())
+        ?.arrivalDeadlineExpiredAt ||
+      prev.arrivalDeadlineExpiredAt ||
+      null,
     matchingMode: openRow.matchingMode || prev.matchingMode,
     ...(keepBilled ? {} : nextFee ? { feeQuote: nextFee } : {}),
     ...(openRow.remakeFeeQuote ? { remakeFeeQuote: openRow.remakeFeeQuote } : {}),
@@ -1332,6 +1339,7 @@ export const groupPracticeRecentRequests = (
         requestorAcceptedAt: String(
           req.requestorAcceptedAt || req.requestorDownloadedAt || "",
         ).trim() || null,
+        arrivalDeadlineExpiredAt: String(req.arrivalDeadlineExpiredAt || "").trim() || null,
         unreadCount,
         searchBlob: [
           req.id,

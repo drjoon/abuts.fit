@@ -1700,6 +1700,16 @@ export async function mirrorDesignFileToPracticeTransfer({
     },
     { new: true },
   );
+  if (
+    doc?.arrivalDeadlineExpiredAt &&
+    !practiceTransferNeedsMoreAbutmentDesigns(doc)
+  ) {
+    await PracticeTransfer.updateOne(
+      { _id: doc._id },
+      { $unset: { arrivalDeadlineExpiredAt: "" } },
+    );
+    doc.arrivalDeadlineExpiredAt = undefined;
+  }
   return doc;
 }
 

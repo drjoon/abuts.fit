@@ -91,6 +91,7 @@ import {
   toStatusBadgeLabel,
 } from "@/shared/practice/practiceRecentTransferList";
 import { resolvePracticeRecentTransferAbutmentUploadOverdue } from "@/shared/practice/practiceAbutmentUploadOverdue";
+import { PracticeAbutmentUploadOverdueAlert } from "@/shared/components/practice/PracticeAbutmentUploadOverdueAlert";
 import {
   PracticeRecentTransfersCalendar,
   expandPracticeCalendarChipsByArrivalDates,
@@ -747,6 +748,16 @@ export function PracticeRecentTransfersAllModal({
                     hasCustomAbutment: Boolean(transfer.hasCustomAbutment),
                     abutmentDeliveryInfo: transfer.abutmentDeliveryInfo || null,
                   });
+                  const uploadOverdue = resolvePracticeRecentTransferAbutmentUploadOverdue({
+                    status: transfer.status,
+                    hasCustomAbutment: transfer.hasCustomAbutment,
+                    designFileCount: transfer.designFileCount,
+                    designFiles: transfer.designFiles,
+                    designReadyAt: transfer.designReadyAt,
+                    requestorDownloadedAt: transfer.requestorDownloadedAt,
+                    requestorAcceptedAt: transfer.requestorAcceptedAt,
+                    arrivalDeadlineExpiredAt: transfer.arrivalDeadlineExpiredAt,
+                  });
 
                   return (
                     <div
@@ -791,6 +802,14 @@ export function PracticeRecentTransfersAllModal({
                           {transfer.createdAt}
                         </span>
                       </div>
+                      {uploadOverdue ? (
+                        <div className="mt-2">
+                          <PracticeAbutmentUploadOverdueAlert
+                            level={uploadOverdue}
+                            compact
+                          />
+                        </div>
+                      ) : null}
                       <div className="mt-2 flex min-w-0 items-center gap-1">
                         <p className="min-w-0 flex-1 truncate text-[15px] font-semibold leading-snug text-slate-900">
                           {lab}
