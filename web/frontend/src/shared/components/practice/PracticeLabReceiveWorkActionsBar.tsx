@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/practice/practiceTransferLabReceive.ts
 // change-log:
+// - 2026-09-02: 공개 카탈로그로 도입중 CA 안내 보강(플래그 저장 누락 보정).
 // - 2026-09-02: 미제공 안내에 어벗츠 생산의뢰 완료 여부 전달.
 // - 2026-09-02: 작업 완료 취소 표시 중에도 미제공 CA 자체 처리 안내 유지.
 // - 2026-09-02: 어벗(STL) 업로드 CTA 제거 — 진행상황 드롭존 클릭/드래그가 SSOT.
@@ -23,10 +24,13 @@ import {
   resolvePracticeLabReceiveWorkActionState,
   type PracticeTransferLabReceiveItem,
 } from "@/shared/practice/practiceTransferLabReceive";
+import type { RoundBarCatalogRow } from "@/shared/practice/roundBarAbutment";
 import { cn } from "@/shared/ui/cn";
 
 export type PracticeLabReceiveWorkActionsBarProps = {
   transfer: PracticeTransferLabReceiveItem;
+  /** 공개·도입중 카탈로그 — 저장 누락된 implantAddRequest 보강 */
+  implantCatalog?: RoundBarCatalogRow[] | null;
   busy?: boolean;
   designConfirmBusy?: boolean;
   /** 수락 중「어벗 생산 취소」노출(상세는 true, 카드는 헤더와 역할 분담 시 true) */
@@ -50,6 +54,7 @@ export const LAB_RECEIVE_ABUTMENT_UPLOAD_HINT =
  */
 export function PracticeLabReceiveWorkActionsBar({
   transfer,
+  implantCatalog = null,
   busy = false,
   designConfirmBusy = false,
   showProductionCancelInBar = true,
@@ -58,19 +63,24 @@ export function PracticeLabReceiveWorkActionsBar({
   trailingActions = null,
   className,
 }: PracticeLabReceiveWorkActionsBarProps) {
-  const state = resolvePracticeLabReceiveWorkActionState(transfer);
+  const catalog = Array.isArray(implantCatalog) ? implantCatalog : [];
+  const state = resolvePracticeLabReceiveWorkActionState(transfer, catalog);
   const hasTrailing = Boolean(trailingActions);
   if (
     !state.showWorkActions &&
     !state.showCompletedStageHeaderCancel &&
-    !hasTrailing
+    !hasTrailing &&
+    !state.hasPendingLabCa
   ) {
     return null;
   }
 
   const pendingLabGuide = state.hasPendingLabCa ? (
     <LabPendingAbutmentGuide
-      toothWorks={listPracticeTransferCustomAbutmentToothWorks(transfer)}
+      toothWorks={listPracticeTransferCustomAbutmentToothWorks(
+        transfer,
+        catalog,
+      )}
       mixedWithAbuts={state.hasAbutsCa}
       abutsProductionOrdered={state.showAbutmentProductionCancel}
     />
@@ -154,6 +164,7 @@ export function PracticeLabReceiveWorkActionsBar({
 
   return (
     <div className={cn("w-full min-w-0 space-y-1.5", className)}>
+      {pendingLabGuide}
       {cancelCluster ?? (
         <div className="flex flex-wrap items-center gap-1.5">{trailingActions}</div>
       )}

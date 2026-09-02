@@ -11,6 +11,8 @@
 // - 2026-08-26: brand/family/type OR(` | `) 파싱·조인 헬퍼. 요청중/도입중/도입 상태.
 // - 2026-08-26: 관리자 추가·isPublic·명시 저장(입력값 그대로).
 // - 2026-08-24: 관리자 어벗 추가 요청 삭제 API 클라이언트.
+// - 2026-09-02: 공개 카탈로그 미매칭 치식도 도입중 플래그 보강(안내·어벗츠 제외).
+// - 2026-09-02: matchesRoundBarCatalogSpec — brand/family/type OR(` | `) 토큰 교집합.
 // - 2026-09-02: 미제공 안내 라벨 — 기공소 자체 처리 / 어벗츠 생산의뢰(완료)·호버 툴팁.
 // - 2026-09-02: 미제공 안내 라벨 — 자체 처리 / 어벗츠 생산의뢰(완료).
 // - 2026-09-02: 미제공 안내 라벨 — 자체 처리 / 어벗츠 생산의뢰.
@@ -404,24 +406,36 @@ const sameSpecManufacturer = (a: string, b: string) => {
   return Boolean(left) && left === right;
 };
 
-/** fav·카탈로그 행 스펙 일치(대소문자 무시, family/type 빈 값은 와일드카드). */
+/** OR(` | `) 토큰 교집합. 한쪽이 비면 와일드카드. */
+const orSpecTokensOverlap = (a: string, b: string) => {
+  const left = splitOrValues(a).map(normalizeSpecToken).filter(Boolean);
+  const right = splitOrValues(b).map(normalizeSpecToken).filter(Boolean);
+  if (left.length === 0 || right.length === 0) return true;
+  return left.some((token) => right.includes(token));
+};
+
+/** fav·카탈로그 행 스펙 일치(대소문자 무시, family/type 빈 값·OR 토큰 와일드카드). */
 export const matchesRoundBarCatalogSpec = (
   row: { manufacturer?: string; brand?: string; family?: string; type?: string },
   catalogRow: RoundBarCatalogRow,
 ) => {
-  const manufacturer = normalizeSpecToken(row.manufacturer);
-  const brand = normalizeSpecToken(row.brand);
-  const family = normalizeSpecToken(row.family);
-  const type = normalizeSpecToken(row.type);
-  const catalogManufacturer = normalizeSpecToken(catalogRow.manufacturer);
-  const catalogBrand = normalizeSpecToken(catalogRow.brand);
-  const catalogFamily = normalizeSpecToken(catalogRow.family);
-  const catalogType = normalizeSpecToken(catalogRow.type);
+  const manufacturer = String(row.manufacturer || "").trim();
+  const brand = String(row.brand || "").trim();
+  const family = String(row.family || "").trim();
+  const type = String(row.type || "").trim();
+  const catalogManufacturer = String(catalogRow.manufacturer || "").trim();
+  const catalogBrand = String(catalogRow.brand || "").trim();
+  const catalogFamily = String(catalogRow.family || "").trim();
+  const catalogType = String(catalogRow.type || "").trim();
   if (!manufacturer || !brand || !catalogManufacturer || !catalogBrand) return false;
   if (!sameSpecManufacturer(manufacturer, catalogManufacturer)) return false;
-  if (brand !== catalogBrand) return false;
-  if (family && catalogFamily && family !== catalogFamily) return false;
-  if (type && catalogType && type !== catalogType) return false;
+  if (!orSpecTokensOverlap(brand, catalogBrand)) return false;
+  if (family && catalogFamily && !orSpecTokensOverlap(family, catalogFamily)) {
+    return false;
+  }
+  if (type && catalogType && !orSpecTokensOverlap(type, catalogType)) {
+    return false;
+  }
   return true;
 };
 
@@ -430,10 +444,55 @@ export const findRoundBarCatalogMatch = (
   row: { manufacturer?: string; brand?: string; family?: string; type?: string },
 ): RoundBarCatalogRow | null => {
   for (const entry of catalog) {
-    if (!entry.roundBar) continue;
+    if (!entry.roundBar && !entry.isPublic) continue;
     if (matchesRoundBarCatalogSpec(row, entry)) return entry;
   }
   return null;
+};
+
+/**
+ * 치식에 도입중/요청중 플래그가 없어도 공개·미도입 카탈로그와 일치하면
+ * implantAddRequest·roundBar를 보강(기공소 자체 처리 안내·어벗츠 CNC 제외).
+ */
+export const enrichToothWorksPendingFromCatalog = <
+  T extends {
+    customAbutment?: boolean;
+    implantManufacturer?: string;
+    implantBrand?: string;
+    implantFamily?: string;
+    implantType?: string;
+    implantAddRequest?: boolean;
+    roundBar?: boolean;
+    isPublic?: boolean;
+    adopted?: boolean;
+    roundBarAdopted?: boolean;
+    roundBarRequestId?: string;
+  },
+>(
+  rows: T[] | null | undefined,
+  catalog: RoundBarCatalogRow[] = [],
+): T[] => {
+  const list = Array.isArray(rows) ? rows : [];
+  if (list.length === 0) return list;
+  if (!Array.isArray(catalog) || catalog.length === 0) return list;
+  return list.map((row) => {
+    if (!row?.customAbutment) return row;
+    if (row.roundBarAdopted === true || row.adopted === true) return row;
+    if (isPendingAbutmentAdoption(row)) return row;
+    const match = findRoundBarCatalogMatch(catalog, {
+      manufacturer: row.implantManufacturer,
+      brand: row.implantBrand,
+      family: row.implantFamily,
+      type: row.implantType,
+    });
+    if (!match || match.adopted) return row;
+    return {
+      ...row,
+      implantAddRequest: true,
+      roundBar: true,
+      isPublic: Boolean(match.isPublic) || undefined,
+    };
+  });
 };
 
 /** 프리셋 자체 플래그가 없어도 공개 카탈로그와 일치하면 도입중/요청중 판별. */
