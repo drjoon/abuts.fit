@@ -806,6 +806,7 @@ export function PracticeRecentTransfersAllModal({
                         <div className="mt-2">
                           <PracticeAbutmentUploadOverdueAlert
                             level={uploadOverdue}
+                            viewer="practice"
                             compact
                           />
                         </div>
@@ -866,6 +867,7 @@ export function PracticeRecentTransfersAllModal({
                 hiddenWeekdays={hiddenWeekdays}
                 onHiddenWeekdaysChange={handleHiddenWeekdaysChange}
                 alignEpoch={alignEpoch}
+                abutmentUploadOverdueViewer="practice"
               />
             </>
           )}

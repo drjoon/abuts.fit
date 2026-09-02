@@ -49,7 +49,10 @@ import {
   LAB_RECEIVE_CALENDAR_WEEK_STARTS_ON,
 } from "@/shared/practice/labReceiveCalendarWeekGrid";
 import { buildLabReceiveCalendarWeeks } from "@/shared/practice/labReceiveCalendarYmdRange";
-import { getPracticeAbutmentUploadOverdueTooltip } from "@/shared/practice/practiceAbutmentUploadOverdue";
+import {
+  getPracticeAbutmentUploadOverdueTooltip,
+  type PracticeAbutmentUploadOverdueViewer,
+} from "@/shared/practice/practiceAbutmentUploadOverdue";
 
 export type PracticeCalendarDateKey = "orderDate" | "arrivalDate";
 
@@ -303,6 +306,8 @@ type PracticeRecentTransfersCalendarProps = {
   hiddenWeekdays: number[];
   onHiddenWeekdaysChange: (next: number[]) => void;
   alignEpoch?: number;
+  /** 어벗 업로드 지연 칩 툴팁 — 치과=대기/문의 · 기공소(기본)=업로드 독촉 */
+  abutmentUploadOverdueViewer?: PracticeAbutmentUploadOverdueViewer;
 };
 
 export function PracticeRecentTransfersCalendar({
@@ -320,6 +325,7 @@ export function PracticeRecentTransfersCalendar({
   hiddenWeekdays,
   onHiddenWeekdaysChange,
   alignEpoch = 0,
+  abutmentUploadOverdueViewer = "lab",
 }: PracticeRecentTransfersCalendarProps) {
   const todayYmd = toKstYmd(new Date()) || "";
   const originYmd = todayYmd || cursorYmd;
@@ -685,7 +691,10 @@ export function PracticeRecentTransfersCalendar({
                               ? "↙ "
                               : "";
                           const overdueTooltip = uploadOverdue
-                            ? getPracticeAbutmentUploadOverdueTooltip(uploadOverdue)
+                            ? getPracticeAbutmentUploadOverdueTooltip(
+                                uploadOverdue,
+                                abutmentUploadOverdueViewer,
+                              )
                             : "";
                           return (
                             <div

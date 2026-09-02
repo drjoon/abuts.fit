@@ -9288,6 +9288,7 @@ export const PracticeFileTransferPage = ({
             selectedTransferUploadOverdue ? (
               <PracticeAbutmentUploadOverdueAlert
                 level={selectedTransferUploadOverdue}
+                viewer="practice"
               />
             ) : null
           }

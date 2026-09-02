@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/practice/practiceAbutmentUploadOverdue.ts
 // - web/frontend/src/shared/components/practice/PracticeLabReceiveWorkActionsBar.tsx
 // - 2026-09-02: 수락 후 어벗 STL 미업로드 24h/48h 경고 배너.
+// - 2026-09-02: viewer=practice|lab — 치과는 대기/문의, 기공소는 업로드 독촉.
 
 import { AlertTriangle } from "lucide-react";
 import {
@@ -10,14 +11,18 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
+  getPracticeAbutmentUploadOverdueDetail,
   getPracticeAbutmentUploadOverdueLabel,
   getPracticeAbutmentUploadOverdueTooltip,
   type PracticeAbutmentUploadOverdueLevel,
+  type PracticeAbutmentUploadOverdueViewer,
 } from "@/shared/practice/practiceAbutmentUploadOverdue";
 import { cn } from "@/shared/ui/cn";
 
 type PracticeAbutmentUploadOverdueAlertProps = {
   level: PracticeAbutmentUploadOverdueLevel;
+  /** 치과=기공소 대기 문구 · 기공소(기본)=업로드 요청 */
+  viewer?: PracticeAbutmentUploadOverdueViewer;
   className?: string;
   compact?: boolean;
 };
@@ -32,11 +37,13 @@ const LEVEL_CLASS: Record<PracticeAbutmentUploadOverdueLevel, string> = {
 
 export function PracticeAbutmentUploadOverdueAlert({
   level,
+  viewer = "lab",
   className,
   compact = false,
 }: PracticeAbutmentUploadOverdueAlertProps) {
   const label = getPracticeAbutmentUploadOverdueLabel(level);
-  const tooltip = getPracticeAbutmentUploadOverdueTooltip(level);
+  const tooltip = getPracticeAbutmentUploadOverdueTooltip(level, viewer);
+  const detail = getPracticeAbutmentUploadOverdueDetail(viewer);
 
   return (
     <Tooltip>
@@ -62,9 +69,7 @@ export function PracticeAbutmentUploadOverdueAlert({
           />
           <span className="font-medium">{label}</span>
           {!compact ? (
-            <span className="text-[11px] opacity-90">
-              — 커스텀 어벗 STL을 업로드해 주세요.
-            </span>
+            <span className="text-[11px] opacity-90">— {detail}</span>
           ) : null}
         </div>
       </TooltipTrigger>
