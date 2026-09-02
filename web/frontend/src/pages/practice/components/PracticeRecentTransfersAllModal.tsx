@@ -35,6 +35,7 @@
  * - 2026-08-28: 모바일 — 검색을 상태뱃지(리메이크) 오른쪽 같은 줄로 옮겨 헤더 줄 수 축소.
  * - 2026-08-28: 검색↔신규의뢰 안내 위치 교환 — 안내=헤더, 검색=캘린더 툴바.
  * - 2026-08-31: calendarRefreshNonce — 전송 직후 소켓 없이도 캘린더 구간 재조회.
+ * - 2026-09-02: 휴지통 `거부`(삭제+labRejected)도 달력·상단뱃지에서 제외 — 삭제 후 재등장 방지.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronRight, Search, Trash2, X } from "lucide-react";
@@ -455,13 +456,13 @@ export function PracticeRecentTransfersAllModal({
     [searchedRequests, chatRooms],
   );
 
-  // 휴지통 치과 취소(`취소`)만 메인에서 제외. 기공소 거절(`거부`)·작업취소는 상단 취소 뱃지·달력에 포함.
+  // 휴지통(취소·거부)만 메인에서 제외. 기공소 작업취소는 상단 취소 뱃지·달력에 유지.
+  // 삭제+labRejectedAt 건은 stage=거부인데, 예전엔 취소만 숨겨 달력에 되살아남.
   const visibleGroupedTransfers = useMemo(
     () =>
-      groupedTransfers.filter((transfer) => {
-        const s = String(transfer.status || "").trim();
-        return s !== "취소";
-      }),
+      groupedTransfers.filter(
+        (transfer) => !isPracticeTransferTrashStatus(transfer.status),
+      ),
     [groupedTransfers],
   );
 
