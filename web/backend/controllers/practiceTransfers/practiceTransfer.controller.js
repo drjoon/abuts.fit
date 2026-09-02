@@ -3041,7 +3041,7 @@ export async function createPracticeTransfer(req, res) {
 
     let createShippingFees = null;
     try {
-      // 전송 버튼 해제용 빠른 잔액 게이트(snapshot). 확정 보류는 응답 후 hold(ledger/snapshot).
+      // 전송 버튼 해제용 빠른 잔액 게이트(snapshot). 확정 보류는 201 직전 hold.
       const creditCheck = await assertPracticeTransferPaidCreditSufficient({
         practiceAnchorId,
         labAnchorId: targetLabAnchorId,
@@ -3143,7 +3143,7 @@ export async function createPracticeTransfer(req, res) {
     });
     __mark("create+respond", __t);
 
-    // draft 삭제·hold·socket·unread는 응답 후. 기공소 알림은 hold 성공 뒤에만.
+    // draft 삭제·socket·unread는 응답 후. 기공소 알림은 hold 성공(201) 뒤에만.
     const rawDraftId = String(req.body?.draftId || "").trim();
     const targetLabAnchorIdText = String(targetLabAnchorId || "").trim();
     if (targetLabAnchorIdText) {
@@ -3771,6 +3771,20 @@ export async function updatePracticeTransferContent(req, res) {
     );
 
     if (!updated) {
+      if (billingInputsChanged) {
+        try {
+          await holdPracticeTransferCredits({
+            transfer: doc,
+            toothWorks: previousToothWorks,
+            holdAmount: Number(previousBilling?.total || 0),
+            holdLabAmount: Number(previousBilling?.labFeeTotal || 0),
+            holdAbutmentAmount: Number(previousBilling?.abutmentRetailTotal || 0),
+            actorUserId: req.user?._id,
+          });
+        } catch {
+          // ignore
+        }
+      }
       return res.status(409).json({
         success: false,
         message:
@@ -3781,6 +3795,108 @@ export async function updatePracticeTransferContent(req, res) {
 
     if (billingInputsChanged) {
       updated.billing = billingPreview;
+      try {
+        const holdResult = await holdPracticeTransferCredits({
+          transfer: updated,
+          toothWorks: toothWorksRaw,
+          holdAmount: Number(billingPreview?.total || feeQuote?.fees?.total || 0),
+          holdLabAmount: Number(billingPreview?.labFeeTotal || 0),
+          holdAbutmentAmount: Number(billingPreview?.abutmentRetailTotal || 0),
+          actorUserId: req.user?._id,
+        });
+        if (holdResult?.held || holdResult?.reason === "already_held") {
+          const heldBilling = {
+            ...(updated.billing && typeof updated.billing === "object"
+              ? updated.billing
+              : billingPreview),
+            heldAt: now,
+            heldTotal: Number(holdResult.heldTotal || billingPreview?.total || 0),
+            heldLabTotal: Number(
+              holdResult.heldLabTotal ?? billingPreview?.labFeeTotal ?? 0,
+            ),
+            heldAbutmentTotal: Number(
+              holdResult.heldAbutmentTotal ??
+                billingPreview?.abutmentRetailTotal ??
+                0,
+            ),
+            heldDesignFeeTotal: Number(holdResult.heldDesignFeeTotal || 0),
+            heldShippingLabTotal: Number(holdResult.heldShippingLabTotal || 0),
+            heldShippingAbutsTotal: Number(
+              holdResult.heldShippingAbutsTotal || 0,
+            ),
+            holdFromPaid: Number(holdResult.fromPaid || 0),
+            holdFromFreeRequest: Number(holdResult.fromFreeRequest || 0),
+            holdFromFreeShipping: Number(holdResult.fromFreeShipping || 0),
+          };
+          updated.billing = heldBilling;
+          await PracticeTransfer.updateOne(
+            { _id: updated._id },
+            { $set: { billing: heldBilling } },
+          );
+          if (Number(holdResult.heldTotal || 0) > 0) {
+            await emitCreditBalanceUpdatedToBusiness({
+              businessAnchorId: practiceAnchorId,
+              balanceDelta: -Number(holdResult.heldTotal || 0),
+              reason: "practice_transfer_update_hold",
+              refId: updated._id,
+            });
+          }
+        } else if (holdResult?.reason && holdResult.reason !== "zero_fee") {
+          await PracticeTransfer.updateOne(
+            { _id: updated._id },
+            {
+              $set: {
+                targetLabAnchorId: previousLabAnchorId
+                  ? new Types.ObjectId(previousLabAnchorId)
+                  : null,
+                targetLabName: previousTargetLabName,
+                matchingMode: previousMatchingMode,
+                autoMatch: previousAutoMatch,
+                transferMemo: previousMemo,
+                files: previousFiles,
+                toothWorks: previousToothWorks,
+                billing: previousBilling,
+                production: previousProduction,
+              },
+            },
+          );
+          return res.status(500).json({
+            success: false,
+            message: "기공의뢰 수정 크레딧 보류에 실패했습니다.",
+            reason: holdResult.reason,
+          });
+        }
+      } catch (holdErr) {
+        try {
+          await PracticeTransfer.updateOne(
+            { _id: updated._id },
+            {
+              $set: {
+                targetLabAnchorId: previousLabAnchorId
+                  ? new Types.ObjectId(previousLabAnchorId)
+                  : null,
+                targetLabName: previousTargetLabName,
+                matchingMode: previousMatchingMode,
+                autoMatch: previousAutoMatch,
+                transferMemo: previousMemo,
+                files: previousFiles,
+                toothWorks: previousToothWorks,
+                billing: previousBilling,
+                production: previousProduction,
+              },
+            },
+          );
+        } catch {
+          // ignore
+        }
+        const status = Number(holdErr?.statusCode || 500);
+        return res.status(status >= 400 && status < 600 ? status : 500).json({
+          success: false,
+          message:
+            holdErr?.message || "기공의뢰 수정 크레딧 보류에 실패했습니다.",
+          ...(holdErr?.payload || {}),
+        });
+      }
     }
 
     if (previousLabAnchorId) invalidateUnreadCountCache(previousLabAnchorId);
