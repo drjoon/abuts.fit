@@ -601,16 +601,11 @@ export function RequestorPracticeReceivePage({
     retentionGrooveDefault,
     saveRetentionGroove,
     modalOpen: requestSettingsModalOpen,
-    designSoftwareMode,
-    setDesignSoftwareMode,
-    customDesignSoftware,
-    setCustomDesignSoftware,
     exoCadVersion,
     setExoCadVersion,
     modalAnodizingEnabled,
     setModalAnodizingEnabled,
     forceRequired: requestSettingsForceRequired,
-    dialogDescription: requestSettingsDialogDescription,
     openDesignSoftwareModal,
     handleSaveDesignSoftware,
     handleToggleAnodizing,
@@ -5128,10 +5123,6 @@ export function RequestorPracticeReceivePage({
       <DesignSoftwareSettingsDialog
         open={requestSettingsModalOpen}
         onOpenChange={handleRequestSettingsModalOpenChange}
-        mode={designSoftwareMode}
-        onModeChange={setDesignSoftwareMode}
-        customValue={customDesignSoftware}
-        onCustomValueChange={setCustomDesignSoftware}
         exoCadVersion={exoCadVersion}
         onExoCadVersionChange={setExoCadVersion}
         saving={designSoftwareSaving}
@@ -5139,7 +5130,6 @@ export function RequestorPracticeReceivePage({
           void handleSaveDesignSoftware();
         }}
         forceRequired={requestSettingsForceRequired}
-        description={requestSettingsDialogDescription}
         showAnodizing
         anodizingEnabled={modalAnodizingEnabled}
         onAnodizingChange={setModalAnodizingEnabled}

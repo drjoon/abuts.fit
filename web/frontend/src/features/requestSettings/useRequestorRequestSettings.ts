@@ -5,6 +5,7 @@
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // change-log:
+// - 2026-09-03: 설정 모달 ExoCAD 전용 — SW 선택 제거, 저장 시 ExoCAD 고정.
 // - 2026-09-03: requestor·internalLab 모두 개인(User) SSOT. BA는 owner 템플릿·가입 시드만.
 // - 2026-08-21: 설정 GET과 아노 토글 race — 사용자 변경 후 stale 로드가 ON→OFF로 덮지 않음.
 // - 2026-08-16: 미설정 게이트 모달 — 당장은 X/취소로 닫기 가능. 재진입·새로고침 시 재노출.
@@ -14,7 +15,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useAuthStore } from "@/store/useAuthStore";
-import type { DesignSoftwareMode, ExoCadVersion } from "./DesignSoftwareSettingsDialog";
+import type { ExoCadVersion } from "./DesignSoftwareSettingsDialog";
 
 export type RequestSettingsDefaults = {
   designSoftware: string;
@@ -67,20 +68,6 @@ const normalizeExoCadVersion = (value: unknown): ExoCadVersion | null => {
   return null;
 };
 
-const resolveModeFromValue = (value: string): {
-  mode: DesignSoftwareMode;
-  custom: string;
-} => {
-  const current = String(value || "").trim();
-  if (current === "3Shape" || current === "ExoCAD") {
-    return { mode: current, custom: "" };
-  }
-  if (current) {
-    return { mode: "custom", custom: current };
-  }
-  return { mode: "3Shape", custom: "" };
-};
-
 const normalizeRetentionGrooveChoice = (
   value: unknown,
 ): "none" | "deep" => {
@@ -127,9 +114,6 @@ export function useRequestorRequestSettings(
     useState(false);
 
   const [modalOpen, setModalOpen] = useState(false);
-  const [designSoftwareMode, setDesignSoftwareMode] =
-    useState<DesignSoftwareMode>("3Shape");
-  const [customDesignSoftware, setCustomDesignSoftware] = useState("");
   const [modalAnodizingEnabled, setModalAnodizingEnabled] = useState(true);
   const [designSoftwareSaving, setDesignSoftwareSaving] = useState(false);
   const [anodizingSaving, setAnodizingSaving] = useState(false);
@@ -173,27 +157,22 @@ export function useRequestorRequestSettings(
   }, [draftRetentionGroove]);
 
   const isIncomplete = useCallback(
-    (designSoftware: string, version: ExoCadVersion | null = null) => {
-      const sw = String(designSoftware || "").trim();
-      if (!sw) return true;
-      if (sw === "ExoCAD" && !version) return true;
-      return false;
+    (_designSoftware: string, version: ExoCadVersion | null = null) => {
+      // 모달이 ExoCAD 전용 — 버전 미선택이면 미완료
+      return !version;
     },
     [],
   );
 
   const openModalForValue = useCallback(
     (
-      value: string,
+      _value: string,
       opts?: {
         force?: boolean;
         showCurrentAnodizing?: boolean;
         exoCadVersion?: ExoCadVersion | null;
       },
     ) => {
-      const resolved = resolveModeFromValue(value);
-      setDesignSoftwareMode(resolved.mode);
-      setCustomDesignSoftware(resolved.custom);
       setExoCadVersion(
         opts?.exoCadVersion !== undefined
           ? opts.exoCadVersion
@@ -476,21 +455,7 @@ export function useRequestorRequestSettings(
   );
 
   const handleSaveDesignSoftware = useCallback(async () => {
-    const designSoftware =
-      designSoftwareMode === "custom"
-        ? String(customDesignSoftware || "").trim()
-        : designSoftwareMode;
-
-    if (!designSoftware) {
-      toast({
-        title: "입력값이 필요합니다",
-        description: "직접 입력을 선택한 경우 소프트웨어 이름을 입력해주세요.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (designSoftware === "ExoCAD" && !exoCadVersion) {
+    if (!exoCadVersion) {
       toast({
         title: "ExoCAD 버전이 필요합니다",
         description: "3.0 이하 여부를 선택해주세요.",
@@ -502,25 +467,25 @@ export function useRequestorRequestSettings(
     if (!token) {
       toast({
         title: "로그인이 필요합니다",
-        description: "디자인 소프트웨어 설정을 저장하려면 로그인해주세요.",
+        description: "의뢰 설정을 저장하려면 로그인해주세요.",
         variant: "destructive",
       });
       return;
     }
+
+    const designSoftware = "ExoCAD";
 
     setDesignSoftwareSaving(true);
     try {
       // 개인 User SSOT. 대표자만 BA 템플릿(신규 가입 시드)도 갱신.
       const savePayload: Record<string, string | boolean | null> = {
         requestorDesignSoftware: designSoftware,
-        requestorExoCadVersion:
-          designSoftware === "ExoCAD" ? exoCadVersion : null,
+        requestorExoCadVersion: exoCadVersion,
         requestorAnodizingEnabled: modalAnodizingEnabled,
       };
       if (canEditBusinessDesignSoftware) {
         savePayload.designSoftware = designSoftware;
-        savePayload.exoCadVersion =
-          designSoftware === "ExoCAD" ? exoCadVersion : null;
+        savePayload.exoCadVersion = exoCadVersion;
       }
       if (canEditBusinessAnodizing) {
         savePayload.anodizingEnabled = modalAnodizingEnabled;
@@ -541,17 +506,15 @@ export function useRequestorRequestSettings(
         toast({
           title: "저장 실패",
           description: String(
-            body?.message || "디자인 소프트웨어 설정 저장에 실패했습니다.",
+            body?.message || "의뢰 설정 저장에 실패했습니다.",
           ),
           variant: "destructive",
         });
         return;
       }
 
-      const savedExo =
-        designSoftware === "ExoCAD" ? exoCadVersion : null;
       setDesignSoftwareValue(designSoftware);
-      setExoCadVersion(savedExo);
+      setExoCadVersion(exoCadVersion);
       setAnodizingEnabled(modalAnodizingEnabled);
       anodizingTouchedRef.current = true;
       anodizingEnabledRef.current = modalAnodizingEnabled;
@@ -562,7 +525,7 @@ export function useRequestorRequestSettings(
       setModalOpen(false);
       onDefaultsChangeRef.current?.({
         designSoftware,
-        exoCadVersion: savedExo,
+        exoCadVersion,
         anodizingEnabled: modalAnodizingEnabled,
       });
 
@@ -575,8 +538,8 @@ export function useRequestorRequestSettings(
       toast({
         title: "저장 완료",
         description: isPersonalRequestor
-          ? "의뢰 기본 디자인 소프트웨어·아노다이징이 저장되었습니다."
-          : "기공소 기본 디자인 소프트웨어·아노다이징이 저장되었습니다.",
+          ? "ExoCAD 버전·아노다이징이 저장되었습니다."
+          : "기공소 ExoCAD 버전·아노다이징이 저장되었습니다.",
       });
     } finally {
       setDesignSoftwareSaving(false);
@@ -585,14 +548,9 @@ export function useRequestorRequestSettings(
     canEditBusinessAnodizing,
     canEditBusinessDesignSoftware,
     clearGatePending,
-    customDesignSoftware,
-    designSoftwareMode,
-    designSoftwareValue,
     exoCadVersion,
     isPersonalRequestor,
     modalAnodizingEnabled,
-    needsBusinessAnodizingBootstrap,
-    needsBusinessDesignSoftwareBootstrap,
     toast,
     token,
   ]);
@@ -608,8 +566,8 @@ export function useRequestorRequestSettings(
     }
     if (anodizingSaving) return;
 
-    // 미설정이면 토글 대신 설정 모달 강제(아노다이징도 함께 확정)
-    if (!String(designSoftwareValue || "").trim()) {
+    // ExoCAD 버전 미설정이면 토글 대신 설정 모달 강제
+    if (!exoCadVersion) {
       openDesignSoftwareModal();
       return;
     }
@@ -695,7 +653,7 @@ export function useRequestorRequestSettings(
     anodizingEnabled,
     anodizingSaving,
     canEditBusinessAnodizing,
-    designSoftwareValue,
+    exoCadVersion,
     isPersonalRequestor,
     openDesignSoftwareModal,
     toast,
@@ -714,19 +672,7 @@ export function useRequestorRequestSettings(
     [clearGatePending],
   );
 
-  const settingsComplete = Boolean(
-    String(designSoftwareValue || "").trim() &&
-      (String(designSoftwareValue || "").trim() !== "ExoCAD" || exoCadVersion),
-  );
-
-  const dialogDescription =
-    gatePendingFiles.length > 0
-      ? "파일 첨부 전에 디자인 소프트웨어와 아노다이징을 먼저 설정해주세요."
-      : forceRequired
-        ? "진행 전에 사용 중인 디자인 소프트웨어와 아노다이징을 먼저 설정해주세요."
-        : isPersonalRequestor
-          ? "의뢰 기본 디자인 소프트웨어를 설정합니다."
-          : "기공소 기본 디자인 소프트웨어를 설정합니다.";
+  const settingsComplete = Boolean(exoCadVersion);
 
   return {
     loaded,
@@ -743,15 +689,10 @@ export function useRequestorRequestSettings(
     hasAnodizingSetting,
     settingsComplete,
     modalOpen,
-    designSoftwareMode,
-    setDesignSoftwareMode,
-    customDesignSoftware,
-    setCustomDesignSoftware,
     modalAnodizingEnabled,
     setModalAnodizingEnabled,
     forceRequired,
     gatePendingFiles,
-    dialogDescription,
     openDesignSoftwareModal,
     openGateModal,
     clearGatePending,

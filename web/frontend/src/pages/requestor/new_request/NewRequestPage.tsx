@@ -283,17 +283,12 @@ const NewRequestPageContent = () => {
     designSoftwareSaving,
     settingsComplete,
     modalOpen: designSoftwareModalOpen,
-    designSoftwareMode,
-    setDesignSoftwareMode,
-    customDesignSoftware,
-    setCustomDesignSoftware,
     exoCadVersion,
     setExoCadVersion,
     modalAnodizingEnabled,
     setModalAnodizingEnabled,
     forceRequired: designSoftwareForceRequired,
     gatePendingFiles: designSoftwareGatePendingFiles,
-    dialogDescription: designSoftwareDialogDescription,
     openDesignSoftwareModal: handleOpenDesignSoftwareModal,
     openGateModal: openDesignSoftwareGateModal,
     handleSaveDesignSoftware,
@@ -398,16 +393,6 @@ const NewRequestPageContent = () => {
     if (preservedDesignSoftware) {
       updateCaseInfos("__default__", { designSoftware: preservedDesignSoftware });
       setDesignSoftwareValue(preservedDesignSoftware);
-      if (
-        preservedDesignSoftware === "3Shape" ||
-        preservedDesignSoftware === "ExoCAD"
-      ) {
-        setDesignSoftwareMode(preservedDesignSoftware);
-        setCustomDesignSoftware("");
-      } else {
-        setDesignSoftwareMode("custom");
-        setCustomDesignSoftware(preservedDesignSoftware);
-      }
     }
 
     setAnodizingEnabled(preservedAnodizing);
@@ -1751,10 +1736,6 @@ const NewRequestPageContent = () => {
         <DesignSoftwareSettingsDialog
           open={designSoftwareModalOpen}
           onOpenChange={handleDesignSoftwareModalOpenChange}
-          mode={designSoftwareMode}
-          onModeChange={setDesignSoftwareMode}
-          customValue={customDesignSoftware}
-          onCustomValueChange={setCustomDesignSoftware}
           exoCadVersion={exoCadVersion}
           onExoCadVersionChange={setExoCadVersion}
           saving={designSoftwareSaving}
@@ -1765,11 +1746,10 @@ const NewRequestPageContent = () => {
             designSoftwareForceRequired &&
             designSoftwareGatePendingFiles.length === 0
           }
-          description={designSoftwareDialogDescription}
           showAnodizing
           anodizingEnabled={modalAnodizingEnabled}
           onAnodizingChange={setModalAnodizingEnabled}
-          contentClassName="new-request-page sm:max-w-2xl"
+          contentClassName="new-request-page sm:max-w-sm"
         />
 
         <div className="grid grid-cols-1 xl:grid-cols-[minmax(34rem,1.2fr)_minmax(0,1fr)] gap-3 items-stretch flex-1 min-h-0 h-full">
