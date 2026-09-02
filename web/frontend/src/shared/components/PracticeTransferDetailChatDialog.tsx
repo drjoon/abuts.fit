@@ -111,6 +111,7 @@ import { toKstYmd, ymdToKstDate } from "@/shared/date/kst";
 import { type ChatMessage } from "@/shared/hooks/useChatRooms";
 import { ChatComposer } from "@/features/chat/components/ChatComposer";
 import { ChatMessageBubble } from "@/features/chat/components/ChatMessageBubble";
+import { buildChatReactionUserNameById } from "@/features/chat/components/chatReactions";
 import { type ReplyToMessage } from "@/features/chat/components/MessageReply";
 import { PracticeToothWorkChartReadOnly } from "@/shared/components/practice/PracticeToothWorkChartReadOnly";
 import { usePracticeTransferPanelLayout } from "@/shared/components/practice/usePracticeTransferPanelLayout";
@@ -542,6 +543,12 @@ export function PracticeTransferDetailChatDialog({
     });
     return () => cancelAnimationFrame(id);
   }, [open, panelTab, chatBottomRef, chatMessages.length]);
+
+  const reactionUserNameById = useMemo(
+    () => buildChatReactionUserNameById({ messages: chatMessages }),
+    [chatMessages],
+  );
+
   const todayYmd = useMemo(() => toKstYmd(new Date()) || "", []);
   const currentArrivalYmd = useMemo(
     () => String(arrivalDate || "").trim(),
@@ -2200,6 +2207,7 @@ export function PracticeTransferDetailChatDialog({
                             formatFileSize={formatFileSize}
                             showSenderName
                             compact
+                            reactionUserNameById={reactionUserNameById}
                             practiceTransferLabAnchorId={labAnchorId}
                             practiceTransferProsthesisFollowUps={prosthesisFollowUps}
                             downloadingFileKeys={downloadingFileKeys}

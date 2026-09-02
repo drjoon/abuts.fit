@@ -22,10 +22,18 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/shared/ui/cn";
 import type { ChatMessage, ChatMessageReaction } from "@/shared/hooks/useChatRooms";
 import { MessageReply } from "@/features/chat/components/MessageReply";
-import { CHAT_REACTION_EMOJIS } from "@/features/chat/components/chatReactions";
+import {
+  CHAT_REACTION_EMOJIS,
+  formatReactionUserNames,
+} from "@/features/chat/components/chatReactions";
 import { StlPreviewThumbnail } from "@/features/requests/components/StlPreviewThumbnail";
 import {
   ModelPreviewDialog,
@@ -68,6 +76,8 @@ type ChatMessageBubbleProps = {
   authToken?: string | null;
   onReply?: (message: ChatMessage) => void;
   onToggleReaction?: (messageId: string, emoji: string) => void | Promise<void>;
+  /** 리액션 툴팁용 userId → 표시 이름 */
+  reactionUserNameById?: Record<string, string>;
   onOpenAttachment?: (file: ChatBubbleAttachment) => void | Promise<void>;
   formatFileSize?: (size: number) => string;
   downloadingFileKeys?: string[];
@@ -149,6 +159,7 @@ type ReactionGroup = {
   emoji: string;
   count: number;
   reactedByMe: boolean;
+  userIds: string[];
 };
 
 export const chatMessageDomId = (messageId: string) =>
@@ -213,8 +224,14 @@ const groupReactions = (
     const emoji = String(row?.emoji || "").trim();
     if (!emoji) continue;
     const uid = String(row?.userId || "").trim();
-    const prev = map.get(emoji) || { emoji, count: 0, reactedByMe: false };
+    const prev = map.get(emoji) || {
+      emoji,
+      count: 0,
+      reactedByMe: false,
+      userIds: [],
+    };
     prev.count += 1;
+    if (uid) prev.userIds.push(uid);
     if (currentUserId && uid === currentUserId) prev.reactedByMe = true;
     map.set(emoji, prev);
   }
@@ -233,6 +250,7 @@ export function ChatMessageBubble({
   authToken,
   onReply,
   onToggleReaction,
+  reactionUserNameById = {},
   onOpenAttachment,
   formatFileSize,
   downloadingFileKeys = [],
@@ -875,25 +893,42 @@ export function ChatMessageBubble({
                 isMine ? "justify-end" : "justify-start",
               )}
             >
-              {reactionGroups.map((group) => (
-                <button
-                  key={`${message._id}:rx:${group.emoji}`}
-                  type="button"
-                  disabled={!onToggleReaction}
-                  onClick={() => handleToggle(group.emoji)}
-                  className={cn(
-                    "inline-flex items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-xs bg-background shadow-sm transition-colors",
-                    group.reactedByMe
-                      ? "border-primary/70 bg-primary-soft text-primary-strong"
-                      : "border-border text-foreground hover:bg-muted",
-                    !onToggleReaction && "cursor-default",
-                  )}
-                  aria-label={`${group.emoji} 리액션 ${group.count}개`}
-                >
-                  <span>{group.emoji}</span>
-                  <span className="tabular-nums text-[10px]">{group.count}</span>
-                </button>
-              ))}
+              {reactionGroups.map((group) => {
+                const reactorNames = formatReactionUserNames(
+                  group.userIds,
+                  reactionUserNameById,
+                  myId,
+                );
+                return (
+                  <Tooltip key={`${message._id}:rx:${group.emoji}`}>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        disabled={!onToggleReaction}
+                        onClick={() => handleToggle(group.emoji)}
+                        className={cn(
+                          "inline-flex items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-xs bg-background shadow-sm transition-colors",
+                          group.reactedByMe
+                            ? "border-primary/70 bg-primary-soft text-primary-strong"
+                            : "border-border text-foreground hover:bg-muted",
+                          !onToggleReaction && "cursor-default",
+                        )}
+                        aria-label={`${group.emoji} 리액션 ${group.count}개${reactorNames ? ` · ${reactorNames}` : ""}`}
+                      >
+                        <span>{group.emoji}</span>
+                        <span className="tabular-nums text-[10px]">
+                          {group.count}
+                        </span>
+                      </button>
+                    </TooltipTrigger>
+                    {reactorNames ? (
+                      <TooltipContent side="top" className="text-xs">
+                        {reactorNames}
+                      </TooltipContent>
+                    ) : null}
+                  </Tooltip>
+                );
+              })}
             </div>
           ) : null}
 

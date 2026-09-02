@@ -44,6 +44,7 @@ import {
   ChatMessageBubble,
   type ChatBubbleAttachment,
 } from "@/features/chat/components/ChatMessageBubble";
+import { buildChatReactionUserNameById } from "@/features/chat/components/chatReactions";
 import { useS3FileDownload } from "@/shared/files/useS3FileDownload";
 
 const getStatusBadge = (status: string) => {
@@ -214,6 +215,15 @@ export const AdminChatManagement = () => {
   const activeChat = selectedChatId
     ? rooms.find((chat) => chat._id === selectedChatId) || null
     : null;
+
+  const reactionUserNameById = useMemo(
+    () =>
+      buildChatReactionUserNameById({
+        participants: activeChat?.participants,
+        messages: activeMessages,
+      }),
+    [activeChat?.participants, activeMessages],
+  );
 
   useEffect(() => {
     if (!activeChat) return;
@@ -638,6 +648,7 @@ export const AdminChatManagement = () => {
                               currentUserId={String(user?.id || "").trim()}
                               authToken={token}
                               formatTime={formatTime}
+                              reactionUserNameById={reactionUserNameById}
                               onReply={(message) => {
                                 setReplyTo({
                                   _id: String(message._id),

@@ -29,6 +29,7 @@ import {
   ChatMessageBubble,
   type ChatBubbleAttachment,
 } from "@/features/chat/components/ChatMessageBubble";
+import { buildChatReactionUserNameById } from "@/features/chat/components/chatReactions";
 import { useS3FileDownload } from "@/shared/files/useS3FileDownload";
 
 type ViewMode = "chats";
@@ -158,6 +159,15 @@ export const NewChatWidget = () => {
       .filter(Boolean);
     return new Set(ids);
   }, [(user as any)?.mockUserId, user?.id]);
+
+  const reactionUserNameById = useMemo(
+    () =>
+      buildChatReactionUserNameById({
+        participants: room?.participants,
+        messages,
+      }),
+    [room?.participants, messages],
+  );
 
   useEffect(() => {
     if (isOpen) return;
@@ -419,6 +429,7 @@ export const NewChatWidget = () => {
                               formatTime={formatChatTs}
                               showSenderName={false}
                               compact
+                              reactionUserNameById={reactionUserNameById}
                               onReply={(message) => {
                                 setReplyTo({
                                   _id: String(message._id),
