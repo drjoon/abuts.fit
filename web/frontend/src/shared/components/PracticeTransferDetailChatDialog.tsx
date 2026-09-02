@@ -14,6 +14,7 @@
 // - web/frontend/src/shared/files/downloadWithProgress.ts
 // - web/frontend/src/shared/files/s3BlobCache.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-09-02: summaryBanner(어벗 업로드 지연 등) — 의뢰상세 + 진행 상황 탭 상단.
 // - 2026-09-02: 어벗 작업 드롭 — STL만 허용(비STL 거부 토스트). 진행상황 accept=STL.
 // - 2026-09-02: 어벗 STL 안내 배너 — 클릭 시 STL 전용 OS 파일창(진행 상황 탭 input disabled 우회).
 // - 2026-09-02: 어벗 STL 안내 배너 — label/htmlFor로 클릭 파일창(업로드 CTA 대체).
@@ -259,7 +260,7 @@ type PracticeTransferDetailChatDialogProps = {
   chatHeaderAction?: ReactNode;
   /** 채팅 헤더 바로 아래 — 상대방 내부 메모 */
   counterpartyMemoStrip?: ReactNode;
-  /** 요약 그리드 아래 — 예: 미가입 치과 초대 CTA */
+  /** 의뢰상세 요약 아래 + 진행 상황 탭 상단 — 예: 어벗 업로드 지연, 미가입 초대 */
   summaryBanner?: ReactNode;
   summaryItems: PracticeTransferDialogSummaryItem[];
   memo: string;
@@ -1982,6 +1983,10 @@ export function PracticeTransferDetailChatDialog({
               ) : null}
 
               {counterpartyMemoStrip}
+
+              {summaryBanner ? (
+                <div className="shrink-0 border-b px-5 py-2">{summaryBanner}</div>
+              ) : null}
 
               {onEditRequest || onCancelRequest ? (
                 <div className="flex shrink-0 flex-wrap justify-end gap-2 border-b bg-muted/40 px-5 py-2">
