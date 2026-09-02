@@ -1,17 +1,20 @@
 // related: AdminDashboardPage.tsx, admin.hexVerification.controller.js
 // change-log:
+// - 2026-09-03: BA/직원 collapse `??`/`||` 우선순위 수정 — pending 카드도 접힘
+// - 2026-09-03: 안내 문구 축약 · 사업자/이름/이메일/제조사 검색
+// - 2026-09-03: 스위치 낙관적 반영 + 디바운스 저장 (토글마다 POST/목록 refetch 제거)
 // - 2026-09-03: 0°/30°·확정 스위치 가로 배치
 // - 2026-09-03: 제조사 카드 = 0°/30°·확정 스위치만 (STL/수정/되돌리기 제거)
 // - 2026-09-03: 확정 후에도 applyHex30 스위치 변경 가능
 // - 2026-09-03: 기공소BA 하위 임직원 들여쓰기 · 제조사 카드 3열
 // - 2026-09-03: BA 카드 + 직원 collapse + 임플란트 제조사별 applyHex30/확정 UI
-import { useMemo, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, Search } from "lucide-react";
 
 type ApiEnvelope<T> = {
   success?: boolean;
@@ -55,23 +58,144 @@ type HexVerificationInProgressData = {
   items?: HexBusinessGroup[];
 };
 
+type SwitchDraft = {
+  applyHex30: boolean;
+  confirmed: boolean;
+};
+
 type Props = {
   token: string | null | undefined;
   enabled?: boolean;
 };
 
+const HEX_SWITCH_DEBOUNCE_MS = 500;
+const HEX_QUERY_KEY = ["admin-hex-verification-in-progress"] as const;
+
 const choiceKey = (userId: string, manufacturer: string) =>
   `${userId}|${manufacturer}`;
+
+const hexFromApply = (applyHex30: boolean) =>
+  applyHex30 ? "헥스30도회전" : "STL모델대로";
+
+const sameDraft = (a: SwitchDraft, b: SwitchDraft) =>
+  a.applyHex30 === b.applyHex30 && a.confirmed === b.confirmed;
+
+const draftFromRow = (row: HexManufacturerRow): SwitchDraft => ({
+  applyHex30: Boolean(row.applyHex30),
+  confirmed: row.status === "confirmed",
+});
+
+const hay = (value?: string | null) => String(value || "").toLowerCase();
+
+const filterHexGroups = (
+  groups: HexBusinessGroup[],
+  rawQ: string,
+): HexBusinessGroup[] => {
+  const q = rawQ.trim().toLowerCase();
+  if (!q) return groups;
+  const hit = (value?: string | null) => hay(value).includes(q);
+  return groups.flatMap((ba) => {
+    const baHit = hit(ba.businessName);
+    const employees = (ba.employees || []).flatMap((emp) => {
+      const empHit = hit(emp.name) || hit(emp.email);
+      if (baHit || empHit) return [emp];
+      const manufacturers = (emp.manufacturers || []).filter((mfr) =>
+        hit(mfr.manufacturer),
+      );
+      return manufacturers.length > 0 ? [{ ...emp, manufacturers }] : [];
+    });
+    return employees.length > 0 ? [{ ...ba, employees }] : [];
+  });
+};
+
+const patchHexQueryData = (
+  queryClient: QueryClient,
+  userId: string,
+  manufacturer: string,
+  draft: SwitchDraft,
+) => {
+  queryClient.setQueryData(
+    HEX_QUERY_KEY,
+    (prev: ApiEnvelope<HexVerificationInProgressData> | undefined) => {
+      if (!prev?.data) return prev;
+      const items = (prev.data.items || []).map((ba) => {
+        const employees = (ba.employees || []).map((emp) => {
+          if (emp.userId !== userId) return emp;
+          const manufacturers = (emp.manufacturers || []).map((mfr) => {
+            if (mfr.manufacturer !== manufacturer) return mfr;
+            return {
+              ...mfr,
+              applyHex30: draft.applyHex30,
+              status: draft.confirmed ? ("confirmed" as const) : ("pending" as const),
+              verifiedHex: draft.confirmed ? hexFromApply(draft.applyHex30) : null,
+              seedHex: hexFromApply(draft.applyHex30),
+            };
+          });
+          const pendingManufacturerCount = manufacturers.filter(
+            (m) => m.status === "pending",
+          ).length;
+          return {
+            ...emp,
+            manufacturers,
+            pendingManufacturerCount,
+            status:
+              pendingManufacturerCount > 0
+                ? ("pending" as const)
+                : ("confirmed" as const),
+          };
+        });
+        const pendingUserCount = employees.filter(
+          (e) => e.status === "pending",
+        ).length;
+        return {
+          ...ba,
+          employees,
+          pendingUserCount,
+          status:
+            pendingUserCount > 0 ? ("pending" as const) : ("confirmed" as const),
+        };
+      });
+      let pendingCount = 0;
+      let confirmedCount = 0;
+      for (const ba of items) {
+        for (const emp of ba.employees || []) {
+          for (const mfr of emp.manufacturers || []) {
+            if (mfr.status === "pending") pendingCount += 1;
+            else confirmedCount += 1;
+          }
+        }
+      }
+      return {
+        ...prev,
+        data: {
+          ...prev.data,
+          items,
+          pendingCount,
+          confirmedCount,
+        },
+      };
+    },
+  );
+};
 
 export function HexVerificationAdminPanel({ token, enabled = true }: Props) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [expandedBa, setExpandedBa] = useState<Record<string, boolean>>({});
   const [expandedUser, setExpandedUser] = useState<Record<string, boolean>>({});
-  const [busyKey, setBusyKey] = useState<Record<string, boolean>>({});
+  const [search, setSearch] = useState("");
 
-  const { data, isFetching, refetch } = useQuery({
-    queryKey: ["admin-hex-verification-in-progress"],
+  const timersRef = useRef<Record<string, ReturnType<typeof setTimeout> | null>>(
+    {},
+  );
+  const baselineRef = useRef<Record<string, SwitchDraft>>({});
+  const latestRef = useRef<Record<string, SwitchDraft>>({});
+  const metaRef = useRef<Record<string, { userId: string; manufacturer: string }>>(
+    {},
+  );
+
+  const { data, isFetching } = useQuery({
+    queryKey: HEX_QUERY_KEY,
     enabled: Boolean(token) && enabled,
     queryFn: async () => {
       const res = await apiFetch<ApiEnvelope<HexVerificationInProgressData>>({
@@ -92,138 +216,152 @@ export function HexVerificationAdminPanel({ token, enabled = true }: Props) {
     () => (Array.isArray(data?.data?.items) ? data.data.items : []),
     [data],
   );
+  const searching = Boolean(search.trim());
+  const visibleItems = useMemo(
+    () => filterHexGroups(items, search),
+    [items, search],
+  );
   const pendingCount = Number(data?.data?.pendingCount || 0);
   const confirmedCount = Number(data?.data?.confirmedCount || 0);
 
-  const runAction = async (
-    key: string,
-    fn: () => Promise<void>,
-    okTitle: string,
-    failTitle: string,
-  ) => {
-    setBusyKey((prev) => ({ ...prev, [key]: true }));
-    try {
-      await fn();
-      toast({ title: okTitle });
-      await refetch();
-      queryClient.invalidateQueries({
-        queryKey: ["admin-hex-verification-in-progress"],
-      });
-    } catch (e: unknown) {
-      toast({
-        title: failTitle,
-        description: e instanceof Error ? e.message : "다시 시도해주세요.",
-        variant: "destructive",
-      });
-    } finally {
-      setBusyKey((prev) => {
-        const next = { ...prev };
-        delete next[key];
-        return next;
-      });
-    }
-  };
-
-  const hexFromApply = (applyHex30: boolean) =>
-    applyHex30 ? "헥스30도회전" : "STL모델대로";
-
-  /** 미확정: applyHex30만. 확정 후: complete로 verifiedHex까지 동기화. */
-  const setApplyHex30 = (
-    userId: string,
-    manufacturer: string,
-    applyHex30: boolean,
-    confirmed: boolean,
-  ) => {
-    const ck = choiceKey(userId, manufacturer);
-    const hexRotation = hexFromApply(applyHex30);
-    if (confirmed) {
-      void runAction(
-        `complete:${ck}`,
-        async () => {
+  const persistDraft = useCallback(
+    async (
+      userId: string,
+      manufacturer: string,
+      draft: SwitchDraft,
+      baseline: SwitchDraft,
+    ) => {
+      const ck = choiceKey(userId, manufacturer);
+      const hexRotation = hexFromApply(draft.applyHex30);
+      const fail = (message?: string) => {
+        throw new Error(message || "저장 실패");
+      };
+      try {
+        if (draft.confirmed) {
           const res = await apiFetch<ApiEnvelope<unknown>>({
             path: `/api/admin/hex-verification/users/${encodeURIComponent(userId)}/manufacturers/${encodeURIComponent(manufacturer)}/complete`,
             method: "POST",
             token: token || undefined,
             jsonBody: { hexRotation },
           });
-          if (!res.ok || !res.data?.success) {
-            throw new Error(res.data?.message || "저장 실패");
-          }
-        },
-        `${manufacturer} · ${hexRotation}`,
-        "헥스 각도 저장 실패",
-      );
-      return;
-    }
-    void runAction(
-      `apply:${ck}`,
-      async () => {
-        const res = await apiFetch<ApiEnvelope<unknown>>({
-          path: `/api/admin/hex-verification/users/${encodeURIComponent(userId)}/manufacturers/${encodeURIComponent(manufacturer)}/apply-hex30`,
-          method: "POST",
-          token: token || undefined,
-          jsonBody: { applyHex30 },
-        });
-        if (!res.ok || !res.data?.success) {
-          throw new Error(res.data?.message || "저장 실패");
+          if (!res.ok || !res.data?.success) fail(res.data?.message);
+          return;
         }
-      },
-      `${manufacturer} · ${hexRotation}`,
-      "적용 설정 저장 실패",
-    );
-  };
-
-  const setConfirmed = (
-    userId: string,
-    manufacturer: string,
-    confirmed: boolean,
-    applyHex30: boolean,
-  ) => {
-    const ck = choiceKey(userId, manufacturer);
-    if (confirmed) {
-      const hexRotation = hexFromApply(applyHex30);
-      void runAction(
-        `complete:${ck}`,
-        async () => {
+        if (baseline.confirmed) {
           const res = await apiFetch<ApiEnvelope<unknown>>({
-            path: `/api/admin/hex-verification/users/${encodeURIComponent(userId)}/manufacturers/${encodeURIComponent(manufacturer)}/complete`,
+            path: `/api/admin/hex-verification/users/${encodeURIComponent(userId)}/manufacturers/${encodeURIComponent(manufacturer)}/revert`,
             method: "POST",
             token: token || undefined,
-            jsonBody: { hexRotation },
           });
-          if (!res.ok || !res.data?.success) {
-            throw new Error(res.data?.message || "확정 실패");
-          }
-        },
-        `확정 · ${manufacturer} → ${hexRotation}`,
-        "헥스 확정 실패",
-      );
-      return;
-    }
-    void runAction(
-      `revert:${ck}`,
-      async () => {
-        const res = await apiFetch<ApiEnvelope<unknown>>({
-          path: `/api/admin/hex-verification/users/${encodeURIComponent(userId)}/manufacturers/${encodeURIComponent(manufacturer)}/revert`,
-          method: "POST",
-          token: token || undefined,
-        });
-        if (!res.ok || !res.data?.success) {
-          throw new Error(res.data?.message || "되돌리기 실패");
+          if (!res.ok || !res.data?.success) fail(res.data?.message);
         }
-      },
-      `미확인 · ${manufacturer}`,
-      "헥스 되돌리기 실패",
+        if (draft.applyHex30 !== baseline.applyHex30) {
+          const res = await apiFetch<ApiEnvelope<unknown>>({
+            path: `/api/admin/hex-verification/users/${encodeURIComponent(userId)}/manufacturers/${encodeURIComponent(manufacturer)}/apply-hex30`,
+            method: "POST",
+            token: token || undefined,
+            jsonBody: { applyHex30: draft.applyHex30 },
+          });
+          if (!res.ok || !res.data?.success) fail(res.data?.message);
+        }
+      } catch (e: unknown) {
+        if (!latestRef.current[ck]) {
+          void queryClient.invalidateQueries({ queryKey: HEX_QUERY_KEY });
+        }
+        toast({
+          title: "헥스 설정 저장 실패",
+          description: e instanceof Error ? e.message : "다시 시도해주세요.",
+          variant: "destructive",
+        });
+      }
+    },
+    [queryClient, toast, token],
+  );
+
+  const persistDraftRef = useRef(persistDraft);
+  persistDraftRef.current = persistDraft;
+
+  const flushKey = useCallback((key: string) => {
+    const timer = timersRef.current[key];
+    if (timer) clearTimeout(timer);
+    timersRef.current[key] = null;
+    const latest = latestRef.current[key];
+    const baseline = baselineRef.current[key];
+    const meta = metaRef.current[key];
+    delete latestRef.current[key];
+    delete baselineRef.current[key];
+    delete metaRef.current[key];
+    if (!latest || !baseline || !meta) return;
+    if (sameDraft(latest, baseline)) return;
+    void persistDraftRef.current(
+      meta.userId,
+      meta.manufacturer,
+      latest,
+      baseline,
     );
-  };
+  }, []);
+
+  const flushAll = useCallback(() => {
+    for (const key of Object.keys(timersRef.current)) {
+      if (timersRef.current[key] != null) flushKey(key);
+    }
+  }, [flushKey]);
+
+  const scheduleSave = useCallback(
+    (
+      userId: string,
+      manufacturer: string,
+      displayed: SwitchDraft,
+      next: Partial<SwitchDraft>,
+    ) => {
+      const key = choiceKey(userId, manufacturer);
+      const draft: SwitchDraft = {
+        ...(latestRef.current[key] ?? displayed),
+        ...next,
+      };
+      latestRef.current[key] = draft;
+      metaRef.current[key] = { userId, manufacturer };
+      if (baselineRef.current[key] == null) {
+        baselineRef.current[key] = displayed;
+      }
+      patchHexQueryData(queryClient, userId, manufacturer, draft);
+
+      const existing = timersRef.current[key];
+      if (existing) clearTimeout(existing);
+      timersRef.current[key] = setTimeout(() => {
+        flushKey(key);
+      }, HEX_SWITCH_DEBOUNCE_MS);
+    },
+    [flushKey, queryClient],
+  );
+
+  useEffect(() => {
+    if (enabled) return;
+    flushAll();
+    setSearch("");
+  }, [enabled, flushAll]);
+
+  useEffect(() => {
+    return () => {
+      flushAll();
+    };
+  }, [flushAll]);
 
   return (
     <div className="space-y-3 text-sm text-gray-700">
       <div className="text-xs text-muted-foreground">
         ExoCAD 3.0 이하 사용자 · 미확정 제조사 {pendingCount.toLocaleString()}건
-        · 확정 {confirmedCount.toLocaleString()}건. 제조사별 0°/30°·확정
-        스위치로 관리합니다. 확정하면 해당 임플란트 제조사 의뢰의 제조사
-        PreviewModal이 잠깁니다.
+        · 확정 {confirmedCount.toLocaleString()}건
+      </div>
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+        <input
+          type="search"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="사업자·이름·이메일·제조사 검색"
+          className="h-8 w-full rounded-md border border-slate-300 bg-white pl-8 pr-2.5 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-muted"
+        />
       </div>
       <div className="max-h-[60vh] overflow-auto pr-1 space-y-3">
         {items.length === 0 ? (
@@ -232,11 +370,17 @@ export function HexVerificationAdminPanel({ token, enabled = true }: Props) {
               ? "불러오는 중…"
               : "ExoCAD 3.0 이하로 등록된 사용자가 없습니다."}
           </div>
+        ) : visibleItems.length === 0 ? (
+          <div className="text-xs text-muted-foreground py-8 text-center border border-dashed rounded-md">
+            검색 결과가 없습니다.
+          </div>
         ) : (
-          items.map((ba) => {
+          visibleItems.map((ba) => {
             const baKey = String(ba.businessAnchorId || ba.businessName || "none");
             const many = (ba.employees?.length || 0) > 2;
-            const baOpen = expandedBa[baKey] ?? !many || ba.status === "pending";
+            const baOpen =
+              expandedBa[baKey] ??
+              (searching || !many || ba.status === "pending");
             return (
               <div
                 key={baKey}
@@ -279,7 +423,8 @@ export function HexVerificationAdminPanel({ token, enabled = true }: Props) {
                     {(ba.employees || []).map((emp) => {
                       const uKey = emp.userId;
                       const uOpen =
-                        expandedUser[uKey] ?? emp.status === "pending";
+                        expandedUser[uKey] ??
+                        (searching || emp.status === "pending");
                       return (
                         <div key={uKey} className="bg-slate-50/40">
                           <button
@@ -313,15 +458,7 @@ export function HexVerificationAdminPanel({ token, enabled = true }: Props) {
                           {uOpen ? (
                             <div className="pl-5 pr-3 pb-2 grid grid-cols-3 gap-1.5">
                               {(emp.manufacturers || []).map((mfr) => {
-                                const ck = choiceKey(
-                                  emp.userId,
-                                  mfr.manufacturer,
-                                );
-                                const confirmed = mfr.status === "confirmed";
-                                const busy =
-                                  busyKey[`apply:${ck}`] ||
-                                  busyKey[`complete:${ck}`] ||
-                                  busyKey[`revert:${ck}`];
+                                const displayed = draftFromRow(mfr);
                                 return (
                                   <div
                                     key={mfr.manufacturer}
@@ -336,14 +473,13 @@ export function HexVerificationAdminPanel({ token, enabled = true }: Props) {
                                           0°
                                         </span>
                                         <Switch
-                                          checked={Boolean(mfr.applyHex30)}
-                                          disabled={busy}
+                                          checked={displayed.applyHex30}
                                           onCheckedChange={(checked) =>
-                                            setApplyHex30(
+                                            scheduleSave(
                                               emp.userId,
                                               mfr.manufacturer,
-                                              Boolean(checked),
-                                              confirmed,
+                                              displayed,
+                                              { applyHex30: Boolean(checked) },
                                             )
                                           }
                                         />
@@ -356,14 +492,13 @@ export function HexVerificationAdminPanel({ token, enabled = true }: Props) {
                                           확정
                                         </span>
                                         <Switch
-                                          checked={confirmed}
-                                          disabled={busy}
+                                          checked={displayed.confirmed}
                                           onCheckedChange={(checked) =>
-                                            setConfirmed(
+                                            scheduleSave(
                                               emp.userId,
                                               mfr.manufacturer,
-                                              Boolean(checked),
-                                              Boolean(mfr.applyHex30),
+                                              displayed,
+                                              { confirmed: Boolean(checked) },
                                             )
                                           }
                                         />
@@ -393,7 +528,7 @@ export function useHexVerificationSummary(
   enabled = true,
 ) {
   const { data, isFetching, refetch } = useQuery({
-    queryKey: ["admin-hex-verification-in-progress"],
+    queryKey: HEX_QUERY_KEY,
     enabled: Boolean(token) && enabled,
     queryFn: async () => {
       const res = await apiFetch<ApiEnvelope<HexVerificationInProgressData>>({
