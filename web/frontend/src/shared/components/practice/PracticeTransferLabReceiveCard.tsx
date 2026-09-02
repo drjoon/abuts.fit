@@ -5,6 +5,7 @@
 // - web/frontend/src/shared/components/practice/PracticeLabReceiveWorkActionsBar.tsx
 // - web/frontend/src/shared/components/practice/PracticeRecentTransferListCardDetail.tsx
 // change-log:
+// - 2026-09-02: 어벗·보철 CTA → 디자인(STL) 업로드 통합.
 // - 2026-08-21: 의뢰 수락/작업 완료 취소 — 가공 중이어도 클릭·API 판정·토스트(고정 비활성 제거).
 // - 2026-08-21: 업로드 CTA → PracticeLabReceiveWorkActionsBar(상세 모달과 공유).
 // - 2026-08-17: 미확인 의뢰(!isRead)도 채팅 unread와 합산해 헤더 빨간 배지 표시(사이드바 배지와 정합).
@@ -87,9 +88,8 @@ export type PracticeTransferLabReceiveCardProps = {
   designSoftwareLabel?: string | null;
   anodizingEnabled?: boolean | null;
   onOpen: () => void;
-  onDesignUpload: (event: MouseEvent) => void;
+  onDesignStlUpload: (event: MouseEvent) => void;
   onAbutmentProductionCancel: (event: MouseEvent) => void;
-  onComplete: (event: MouseEvent) => void;
   onRelease: (event: MouseEvent) => void;
   onOpenSubcontract?: (event: MouseEvent) => void;
   onDesignConfirm: () => void;
@@ -106,9 +106,8 @@ export function PracticeTransferLabReceiveCard({
   designConfirmBusy = false,
   dimRejected = false,
   onOpen,
-  onDesignUpload,
+  onDesignStlUpload,
   onAbutmentProductionCancel,
-  onComplete,
   onRelease,
   onOpenSubcontract,
   onDesignConfirm,
@@ -265,9 +264,8 @@ export function PracticeTransferLabReceiveCard({
             showProductionCancelInBar={
               Boolean(showAbutmentProductionCancel && showWorkActions)
             }
-            onDesignUpload={onDesignUpload}
+            onDesignStlUpload={onDesignStlUpload}
             onAbutmentProductionCancel={onAbutmentProductionCancel}
-            onComplete={onComplete}
             onDesignConfirm={onDesignConfirm}
           />
         </div>

@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/components/practice/LabReceiveWorkUploadDialog.tsx
 // change-log:
+// - 2026-09-02: designStlUploadMode — 어벗/보철 CTA 통합 분기(abutment|prosthetic|dual|none).
 // - 2026-08-29: 보철 디자인 업로드=작업완료(디자인). skip 자동 confirmedAt은 출고로 올리지 않음.
 // - 2026-08-28: 심플어벗(치과 재고)은 어벗츠 CNC·디자인 업로드 기대 개수에서 제외.
 // - 2026-08-21: expectedAbutmentDesigns — 치식 CA 개수 우선(헥스 샘플 related 과다 방지).
@@ -673,6 +674,13 @@ export function formatPracticeTransferProstheticSlotLabels(
   return slots.map((slot) => slot.label).join(", ");
 }
 
+/** 통합「디자인(STL) 업로드」분기 — 카드·상세·드롭 공통 */
+export type PracticeLabReceiveDesignStlUploadMode =
+  | "none"
+  | "abutment"
+  | "prosthetic"
+  | "dual";
+
 /** 수락 후 어벗·보철 업로드 CTA 노출 판정(카드·상세 모달 공통) */
 export type PracticeLabReceiveWorkActionState = {
   displayStatus: PracticeTransferLabReceiveDisplayStatus;
@@ -684,6 +692,14 @@ export type PracticeLabReceiveWorkActionState = {
   /** 임플란트 추가 요청(요청중) CA — 기공소 CNC 직접 */
   hasPendingLabCa: boolean;
   needsMoreAbutmentDesigns: boolean;
+  /** 어벗 디자인 STL이 더 필요한지(통합 CTA용 alias) */
+  needsAbutmentDesigns: boolean;
+  /** 남은 어벗 디자인 개수(기대 − 업로드) */
+  pendingAbutmentCount: number;
+  /** 보철 결과 STL 슬롯이 남아 있는지 */
+  needsProstheticUploads: boolean;
+  /** 통합 디자인(STL) 업로드 모드 */
+  designStlUploadMode: PracticeLabReceiveDesignStlUploadMode;
   hasPartialProsthetic: boolean;
   pendingProstheticCount: number;
   prostheticSlotLabels: string;
@@ -708,6 +724,10 @@ export function resolvePracticeLabReceiveWorkActionState(
     hasAbutsCa: false,
     hasPendingLabCa: false,
     needsMoreAbutmentDesigns: false,
+    needsAbutmentDesigns: false,
+    pendingAbutmentCount: 0,
+    needsProstheticUploads: false,
+    designStlUploadMode: "none",
     hasPartialProsthetic: false,
     pendingProstheticCount: 0,
     prostheticSlotLabels: "",
@@ -733,6 +753,22 @@ export function resolvePracticeLabReceiveWorkActionState(
     practiceTransferHasPartialProstheticUploads(transfer);
   const pendingProstheticCount =
     countPracticeTransferPendingProstheticFiles(transfer);
+  const expectedAbutment =
+    countPracticeTransferExpectedAbutmentDesigns(transfer);
+  const pendingAbutmentCount = needsMoreAbutmentDesigns
+    ? Math.max(0, expectedAbutment - designFileCount) ||
+      (designFileCount === 0 && expectedAbutment <= 0 ? 1 : 0)
+    : 0;
+  const needsAbutmentDesigns = needsMoreAbutmentDesigns;
+  const needsProstheticUploads = pendingProstheticCount > 0;
+  const designStlUploadMode: PracticeLabReceiveDesignStlUploadMode =
+    needsAbutmentDesigns && needsProstheticUploads
+      ? "dual"
+      : needsAbutmentDesigns
+        ? "abutment"
+        : needsProstheticUploads
+          ? "prosthetic"
+          : "none";
   const prostheticSlotLabels = formatPracticeTransferProstheticSlotLabels(
     transfer,
     { pendingOnly: hasPartialProsthetic },
@@ -779,6 +815,10 @@ export function resolvePracticeLabReceiveWorkActionState(
     hasAbutsCa,
     hasPendingLabCa,
     needsMoreAbutmentDesigns,
+    needsAbutmentDesigns,
+    pendingAbutmentCount,
+    needsProstheticUploads,
+    designStlUploadMode,
     hasPartialProsthetic,
     pendingProstheticCount,
     prostheticSlotLabels,
