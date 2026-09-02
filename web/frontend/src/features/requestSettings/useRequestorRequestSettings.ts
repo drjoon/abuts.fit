@@ -5,6 +5,7 @@
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // change-log:
+// - 2026-09-03: requestor·internalLab 모두 개인(User) SSOT. BA는 owner 템플릿·가입 시드만.
 // - 2026-08-21: 설정 GET과 아노 토글 race — 사용자 변경 후 stale 로드가 ON→OFF로 덮지 않음.
 // - 2026-08-16: 미설정 게이트 모달 — 당장은 X/취소로 닫기 가능. 재진입·새로고침 시 재노출.
 // - 2026-08-16: internalLab(어벗츠기공소)도 사업체 기본값으로 로드·저장. 개인(requestor*) 필드 미전송.
@@ -106,8 +107,9 @@ export function useRequestorRequestSettings(
   const { toast } = useToast();
   const token = useAuthStore((s) => s.token);
   const userRole = useAuthStore((s) => s.user?.role);
-  const isPersonalRequestor = userRole === "requestor";
-  const canUseRequestSettings = isRequestSettingsRole(userRole);
+  // requestor·internalLab 모두 개인 User.requestSettings SSOT
+  const isPersonalRequestor = isRequestSettingsRole(userRole);
+  const canUseRequestSettings = isPersonalRequestor;
 
   const [designSoftwareValue, setDesignSoftwareValue] = useState("");
   const [exoCadVersion, setExoCadVersion] = useState<ExoCadVersion | null>(null);
@@ -295,10 +297,8 @@ export function useRequestorRequestSettings(
 
         const hasRequestorAno = Boolean(data?.hasRequestorAnodizingSetting);
         const hasBusinessAno = Boolean(data?.hasBusinessAnodizingSetting);
-        // 의뢰자: 개인/사업체 중 하나. 기공소(internalLab): 사업체만.
-        const anodizingConfigured = isPersonalRequestor
-          ? hasRequestorAno || hasBusinessAno
-          : hasBusinessAno;
+        // 개인 우선, 없으면 BA 폴백(가입 시드·레거시)
+        const anodizingConfigured = hasRequestorAno || hasBusinessAno;
 
         const requestorAnodizing =
           typeof data?.requestorAnodizingEnabled === "boolean"
@@ -312,7 +312,7 @@ export function useRequestorRequestSettings(
         const resolvedAnodizing =
           typeof draftAno === "boolean"
             ? draftAno
-            : isPersonalRequestor && typeof requestorAnodizing === "boolean"
+            : typeof requestorAnodizing === "boolean"
               ? requestorAnodizing
               : businessAnodizing;
 
@@ -325,7 +325,7 @@ export function useRequestorRequestSettings(
 
         const resolvedRetention = normalizeRetentionGrooveChoice(
           draftRetention ||
-            (isPersonalRequestor ? data?.requestorRetentionGroove : null) ||
+            data?.requestorRetentionGroove ||
             data?.retentionGroove ||
             "none",
         );
@@ -336,58 +336,37 @@ export function useRequestorRequestSettings(
         );
         setNeedsBusinessAnodizingBootstrap(!hasBusinessAno && canEditBusinessAno);
 
-        // 의뢰자만 개인↔사업체 어긋남 동기화 (internalLab은 사업체 SSOT)
-        if (
-          isPersonalRequestor &&
-          (draftDefault || requestorDefault || businessDefault) &&
-          (
-            !requestorDefault ||
-            !businessDefault ||
-            (canEditBusinessDesign &&
-              Boolean(requestorDefault) &&
-              Boolean(businessDefault) &&
-              requestorDefault !== businessDefault)
-          )
-        ) {
-          const bootstrapDefault =
-            draftDefault || requestorDefault || businessDefault;
-          const syncPayload: Record<string, string> = {};
-          if (!requestorDefault) {
-            syncPayload.requestorDesignSoftware = bootstrapDefault;
+        // 빈 개인값만 BA에서 1회 승격(로드 시 재동기화·BA 덮어쓰기 없음)
+        if (!requestorDefault && (draftDefault || businessDefault)) {
+          const bootstrapDefault = draftDefault || businessDefault;
+          const syncPayload: Record<string, string | null> = {
+            requestorDesignSoftware: bootstrapDefault,
+          };
+          if (bootstrapDefault === "ExoCAD") {
+            syncPayload.requestorExoCadVersion =
+              requestorExo || businessExo || null;
           }
-          if (
-            canEditBusinessDesign &&
-            (!businessDefault || businessDefault !== bootstrapDefault)
-          ) {
-            syncPayload.designSoftware = bootstrapDefault;
-          }
-          if (Object.keys(syncPayload).length > 0) {
-            const syncRes = await apiFetch<{ data?: RequestSettingsApiData }>({
-              path: "/api/businesses/me/request-settings",
-              method: "PUT",
-              token,
-              jsonBody: syncPayload,
-            });
-            if (syncRes.ok) {
-              if (!requestorDefault) requestorDefault = bootstrapDefault;
-              if (canEditBusinessDesign) {
-                businessDefault = bootstrapDefault;
-                setNeedsBusinessDesignSoftwareBootstrap(false);
-              }
+          const syncRes = await apiFetch<{ data?: RequestSettingsApiData }>({
+            path: "/api/businesses/me/request-settings",
+            method: "PUT",
+            token,
+            jsonBody: syncPayload,
+          });
+          if (syncRes.ok) {
+            requestorDefault = bootstrapDefault;
+            if (bootstrapDefault === "ExoCAD" && !requestorExo) {
+              requestorExo = businessExo;
             }
           }
         }
 
         if (cancelled) return;
 
-        const effectiveDesign = isPersonalRequestor
-          ? draftDefault || requestorDefault || businessDefault
-          : draftDefault || businessDefault;
+        const effectiveDesign =
+          draftDefault || requestorDefault || businessDefault;
         const effectiveExo =
           effectiveDesign === "ExoCAD"
-            ? isPersonalRequestor
-              ? requestorExo || businessExo
-              : businessExo || requestorExo
+            ? requestorExo || businessExo
             : null;
 
         const defaultsPatch: Partial<RequestSettingsDefaults> = {
@@ -514,7 +493,7 @@ export function useRequestorRequestSettings(
     if (designSoftware === "ExoCAD" && !exoCadVersion) {
       toast({
         title: "ExoCAD 버전이 필요합니다",
-        description: "3.0 이하 또는 3.2 이상을 선택해주세요.",
+        description: "3.0 이하 여부를 선택해주세요.",
         variant: "destructive",
       });
       return;
@@ -531,34 +510,19 @@ export function useRequestorRequestSettings(
 
     setDesignSoftwareSaving(true);
     try {
-      const savePayload: Record<string, string | boolean | null> = {};
-
-      if (isPersonalRequestor) {
-        // 의뢰자: 개인 기본값 + (가능하면) 사업체 기본값
-        savePayload.requestorDesignSoftware = designSoftware;
-        savePayload.requestorExoCadVersion =
-          designSoftware === "ExoCAD" ? exoCadVersion : null;
-        savePayload.requestorAnodizingEnabled = modalAnodizingEnabled;
-        if (
-          (needsBusinessDesignSoftwareBootstrap || !designSoftwareValue) &&
-          canEditBusinessDesignSoftware
-        ) {
-          savePayload.designSoftware = designSoftware;
-          savePayload.exoCadVersion =
-            designSoftware === "ExoCAD" ? exoCadVersion : null;
-        } else if (canEditBusinessDesignSoftware) {
-          savePayload.designSoftware = designSoftware;
-          savePayload.exoCadVersion =
-            designSoftware === "ExoCAD" ? exoCadVersion : null;
-        }
-        if (canEditBusinessAnodizing || needsBusinessAnodizingBootstrap) {
-          savePayload.anodizingEnabled = modalAnodizingEnabled;
-        }
-      } else {
-        // internalLab 등: 사업체 기본값만 (개인 requestor* 필드는 403)
+      // 개인 User SSOT. 대표자만 BA 템플릿(신규 가입 시드)도 갱신.
+      const savePayload: Record<string, string | boolean | null> = {
+        requestorDesignSoftware: designSoftware,
+        requestorExoCadVersion:
+          designSoftware === "ExoCAD" ? exoCadVersion : null,
+        requestorAnodizingEnabled: modalAnodizingEnabled,
+      };
+      if (canEditBusinessDesignSoftware) {
         savePayload.designSoftware = designSoftware;
         savePayload.exoCadVersion =
           designSoftware === "ExoCAD" ? exoCadVersion : null;
+      }
+      if (canEditBusinessAnodizing) {
         savePayload.anodizingEnabled = modalAnodizingEnabled;
       }
 

@@ -379,38 +379,29 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 관련 파일: `controllers/requests/common.requests.controller.js`,
     `controllers/requests/creation.from-draft.controller.js`,
     `controllers/requests/creation.request.controller.js`
-- 의뢰 제출(`POST /api/requests/from-draft`)의 `caseInfos.requestorHexRotation`은
-  케이스별 `caseInfos.designSoftware`(+ExoCAD면 `exoCadVersion`)를 기준으로 계산합니다.
+- 의뢰 제출(`POST /api/requests/from-draft`)의 헥스 시드는
+  케이스별 `caseInfos.designSoftware`(+ExoCAD면 `exoCadVersion`)와
+  `caseInfos.implantManufacturer`를 기준으로 계산합니다.
   - 케이스 디자인 소프트웨어가 비어 있으면 요청을 실패(400) 처리합니다.
-  - `ExoCAD` + `exoCadVersion=le_3_0`(3.0 이하, 또는 버전 미지정 레거시) => `헥스30도회전`
-  - `ExoCAD` + `exoCadVersion=ge_3_2`(3.2 이상) => `STL모델대로`
-  - `3Shape` 및 기타(custom 포함) => `STL모델대로`
-  - ExoCAD를 **처음** 설정하면 `requestSettings.hexVerificationSamplePending=true`(User 우선, BA 차선).
-    첫 제조 의뢰 생성 시 반대 헥스 복사샘플(`source=manufacturer_sample`, `requestCategory=copied_sample`,
-    `caseInfos.hexVerificationSample=true`, 라벨 **헥스 확인용 무료 샘플**)을 1건 추가하고 pending을 소진한다.
-    - 3.2+: 원본=STL모델대로, 복사=헥스30도회전
-    - 3.0 이하: 원본=헥스30도회전, 복사=STL모델대로
-  - 라이노(2-filled)는 원본만 실행하고 샘플에 `stlFile`(legacy `camFile` 미러)을 복사. Esprit NC(`ncFile`)는 샘플의 반대 헥스로 별도 생성.
-  - 의뢰자(기공소/치과) 취소·삭제 시 원본↔헥스 확인 샘플을 **함께** `취소` 처리한다
-    (`findHexVerificationCancelSiblings` → `updateRequestStatus` / batch / `deleteRequest`).
-  - 관리자 헥스 확인 완료: `requestSettings.hexVerificationCompletedAt/By` + `hexVerificationResultHex`
-    (`STL모델대로`|`헥스30도회전`). 대시보드 카드·`GET/POST /api/admin/hex-verification/*`.
-    - `GET .../in-progress`는 ExoCAD 전체(진행중+확정)를 반환한다. `pendingCount`/`confirmedCount`/`status`.
-    - `POST .../complete`는 최초 확정뿐 아니라 확정값 수정도 허용한다.
-    - `POST .../revert`는 확정값을 unset해 미확인(pending)으로 되돌린다.
-  - 의뢰 단건(`GET /api/requests/:id` → `normalizeRequestForResponse`)의 `business.requestSettings`에도
-    `hexVerificationResultHex`를 포함해 제조사 PreviewModal 확정/미정 뱃지에 쓴다.
-  - ExoCAD 제조사 헥스 해석 SSOT(`resolveExoCadManufacturerHexRotation`):
-    1) 첫의뢰 pending → designSoftware(+exoCadVersion) **시드만** 강제
-       (3.2+ 시드=STL이어도 샘플 결과에 따라 헥스30도회전일 수 있음.
-        제조사는 준비 단계에서 의뢰 단위로 변경 가능)
-    2) 관리자 `hexVerificationResultHex`(User→BA) — **샘플 테스트 후 확정, 최종 SSOT**
-       (확정 후 제조사 `updateRndHexRotation` 변경 불가)
-    3) 제조사 `defaultManufacturerHexRotation`(User→BA)
-    4) designSoftware(+exoCadVersion)
-    - `POST .../complete`는 확정값과 함께 `defaultManufacturerHexRotation`도 동일 값으로 맞춘다.
+  - `ExoCAD` + `exoCadVersion=ge_3_2` / 비-ExoCAD => `STL모델대로` (제조사별 맵·샘플·잠금 해당 없음)
+  - `ExoCAD` + `exoCadVersion=le_3_0`(또는 버전 미지정 레거시):
+    1) `User.requestSettings.hexByImplantManufacturer[M].verifiedHex` 있으면 확정값(잠금)
+    2) 없으면 `applyHex30`(기본 true) → 시드 (`true`=헥스30도회전 / `false`=STL모델대로)
+  - ExoCAD 3.0 이하 + 해당 임플란트 제조사 미확정 시, **(사용자 × 임플란트 제조사)** 첫 의뢰에
+    반대 헥스 복사샘플(`caseInfos.hexVerificationSample=true`,
+    `hexVerificationSampleManufacturer`, 라벨 **헥스 확인용 무료 샘플**)을 생성한다.
+  - 라이노(2-filled)는 원본만 실행하고 샘플에 `stlFile`을 복사. Esprit NC는 샘플의 반대 헥스로 별도 생성.
+  - 의뢰자 취소·삭제 시 원본↔헥스 확인 샘플을 **함께** `취소` 처리한다.
+  - 관리자: `GET /api/admin/hex-verification/in-progress`는 ExoCAD 3.0 이하 User를 BA 카드로 그룹.
+    `POST .../users/:userId/manufacturers/:manufacturer/{apply-hex30|complete|revert}`.
+    BA 단위 complete/revert는 410(폐기).
+  - 의뢰 단건 `business/requestor.requestSettings`에 `hexByImplantManufacturer`를 포함해
+    PreviewModal 확정/미정 뱃지·잠금에 쓴다.
+  - 설정 소유: requestor·internalLab 모두 `User.requestSettings` SSOT. BA는 신규 가입 시드·대표자 템플릿만.
+  - 마이그레이션: `scripts/db/migrate-hex-verification-to-implant-manufacturers.js`
   - 관련: `utils/designSoftwareHex.js`, `services/hexVerificationSample.service.js`,
-    `controllers/admin/admin.hexVerification.controller.js`
+    `controllers/admin/admin.hexVerification.controller.js`,
+    `pages/admin/dashboard/HexVerificationAdminPanel.tsx`
 - 워크시트 응답(`GET /api/requests/all?view=worksheet`)의 `item.business`에는
   `requestSettings.designSoftware`를 포함할 수 있으나, 제조사/의뢰자 UI의 실제 표시는 `caseInfos.designSoftware`를 SSOT로 사용합니다.
   - 관련 파일:

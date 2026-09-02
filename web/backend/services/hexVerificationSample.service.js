@@ -23,7 +23,7 @@ import {
   HEX_VERIFICATION_SAMPLE_LABEL,
   isHexVerificationPending,
   normalizeExoCadVersion,
-  resolveAdminVerifiedHexFromSettings,
+  normalizeImplantManufacturerKey,
   resolveOppositeHexRotation,
 } from "../utils/designSoftwareHex.js";
 import {
@@ -107,7 +107,7 @@ const resolveOwnerIds = ({ userId, businessAnchorId }) => ({
   bid: String(businessAnchorId || "").trim(),
 });
 
-const buildActiveHexSampleFilter = ({ uid, bid }) => {
+const buildActiveHexSampleFilter = ({ uid, bid, implantManufacturer }) => {
   const filter = {
     "caseInfos.hexVerificationSample": true,
     manufacturerStage: { $nin: ["취소"] },
@@ -119,12 +119,36 @@ const buildActiveHexSampleFilter = ({ uid, bid }) => {
   if (bid && Types.ObjectId.isValid(bid)) {
     filter.$or.push({ businessAnchorId: bid });
   }
-  return filter.$or.length ? filter : null;
+  if (!filter.$or.length) return null;
+
+  const mfr = normalizeImplantManufacturerKey(implantManufacturer);
+  if (mfr) {
+    filter.$and = [
+      {
+        $or: [
+          { "caseInfos.hexVerificationSampleManufacturer": mfr },
+          { "caseInfos.implantManufacturer": mfr },
+          // 한글/별칭 원문도 허용
+          {
+            "caseInfos.hexVerificationSampleManufacturer": String(
+              implantManufacturer || "",
+            ).trim(),
+          },
+          {
+            "caseInfos.implantManufacturer": String(
+              implantManufacturer || "",
+            ).trim(),
+          },
+        ],
+      },
+    ];
+  }
+  return filter;
 };
 
 /**
  * 확인용 샘플 생성 자격.
- * SSOT: ExoCAD + 관리자 hexVerificationResultHex 미확정 + 활성(미취소) 샘플 없음.
+ * SSOT: ExoCAD 3.0 이하 + 해당 임플란트 제조사 verifiedHex 미확정 + 활성 샘플 없음.
  * @returns {Promise<boolean>}
  */
 export async function isHexVerificationSamplePendingEligible({
@@ -132,16 +156,22 @@ export async function isHexVerificationSamplePendingEligible({
   businessAnchorId,
   session = null,
   designSoftware = null,
+  exoCadVersion = null,
+  implantManufacturer = null,
 }) {
   const { uid, bid } = resolveOwnerIds({ userId, businessAnchorId });
   const swHint = String(designSoftware || "").trim();
+  const mfr = String(implantManufacturer || "").trim();
+  if (!mfr) return false;
 
   let userRs = null;
   if (uid && Types.ObjectId.isValid(uid)) {
     const user = await User.findById(uid)
       .select({
         "requestSettings.designSoftware": 1,
+        "requestSettings.exoCadVersion": 1,
         "requestSettings.hexVerificationResultHex": 1,
+        "requestSettings.hexByImplantManufacturer": 1,
       })
       .session(session)
       .lean();
@@ -153,7 +183,9 @@ export async function isHexVerificationSamplePendingEligible({
     const anchor = await BusinessAnchor.findById(bid)
       .select({
         "requestSettings.designSoftware": 1,
+        "requestSettings.exoCadVersion": 1,
         "requestSettings.hexVerificationResultHex": 1,
+        "requestSettings.hexByImplantManufacturer": 1,
       })
       .session(session)
       .lean();
@@ -164,21 +196,28 @@ export async function isHexVerificationSamplePendingEligible({
     swHint ||
     String(userRs?.designSoftware || "").trim() ||
     String(anchorRs?.designSoftware || "").trim();
-  const adminVerifiedHex = resolveAdminVerifiedHexFromSettings(
-    userRs,
-    anchorRs,
-  );
+  const effectiveExo =
+    normalizeExoCadVersion(exoCadVersion) ||
+    normalizeExoCadVersion(userRs?.exoCadVersion) ||
+    normalizeExoCadVersion(anchorRs?.exoCadVersion);
 
   if (
     !isHexVerificationPending({
       designSoftware: effectiveDesign,
-      adminVerifiedHex,
+      exoCadVersion: effectiveExo,
+      implantManufacturer: mfr,
+      userRequestSettings: userRs,
+      anchorRequestSettings: anchorRs,
     })
   ) {
     return false;
   }
 
-  const activeFilter = buildActiveHexSampleFilter({ uid, bid });
+  const activeFilter = buildActiveHexSampleFilter({
+    uid,
+    bid,
+    implantManufacturer: mfr,
+  });
   if (!activeFilter) return false;
   const activeSample = await Request.exists(activeFilter).session(
     session || undefined,
@@ -244,6 +283,12 @@ export async function createHexVerificationSampleClone({
     ...sourceCaseInfos,
     exoCadVersion: exoCadVersion || undefined,
     hexVerificationSample: true,
+    hexVerificationSampleManufacturer:
+      normalizeImplantManufacturerKey(
+        sourceRequest?.caseInfos?.implantManufacturer,
+      ) ||
+      String(sourceRequest?.caseInfos?.implantManufacturer || "").trim() ||
+      undefined,
     requestorHexRotation: oppositeHex,
     finalHexRotation: oppositeHex,
     manufacturerHexRotation: oppositeHex,
@@ -420,12 +465,18 @@ export async function maybeCreateHexVerificationSampleForFirstOrder({
   const designSoftware = String(
     list[0]?.caseInfos?.designSoftware || "",
   ).trim();
+  const exoCadVersion = list[0]?.caseInfos?.exoCadVersion || null;
+  const implantManufacturer = String(
+    list[0]?.caseInfos?.implantManufacturer || "",
+  ).trim();
 
   const pending = await isHexVerificationSamplePendingEligible({
     userId,
     businessAnchorId,
     session,
     designSoftware,
+    exoCadVersion,
+    implantManufacturer,
   });
   if (!pending) return null;
 

@@ -1768,7 +1768,7 @@ export async function getAllRequests(req, res) {
             ? "name business businessAnchorId"
             : isMonitoringView
               ? "name business"
-              : "name business businessAnchorId requestSettings.hexVerificationResultHex requestSettings.designSoftware requestSettings.exoCadVersion";
+              : "name business businessAnchorId requestSettings.hexVerificationResultHex requestSettings.hexByImplantManufacturer requestSettings.designSoftware requestSettings.exoCadVersion";
 
       query = query
         .select(selectedProjection)
@@ -2274,7 +2274,7 @@ export async function getRequestById(req, res) {
       .select("-messages")
       .populate(
         "requestor",
-        "name email phoneNumber business businessAnchorId role requestSettings.hexVerificationResultHex requestSettings.designSoftware requestSettings.exoCadVersion",
+        "name email phoneNumber business businessAnchorId role requestSettings.hexVerificationResultHex requestSettings.hexByImplantManufacturer requestSettings.designSoftware requestSettings.exoCadVersion",
       );
 
     if (!request) {
@@ -3348,24 +3348,36 @@ export const updateRndHexRotation = asyncHandler(async (req, res) => {
   const [requestorUser, requestorAnchor] = await Promise.all([
     Types.ObjectId.isValid(requestorUserId)
       ? User.findById(requestorUserId)
-          .select({ "requestSettings.hexVerificationResultHex": 1 })
+          .select({
+            "requestSettings.hexVerificationResultHex": 1,
+            "requestSettings.hexByImplantManufacturer": 1,
+            "requestSettings.designSoftware": 1,
+            "requestSettings.exoCadVersion": 1,
+          })
           .lean()
       : null,
     Types.ObjectId.isValid(requestorBusinessAnchorId)
       ? BusinessAnchor.findById(requestorBusinessAnchorId)
-          .select({ "requestSettings.hexVerificationResultHex": 1 })
+          .select({
+            "requestSettings.hexVerificationResultHex": 1,
+            "requestSettings.hexByImplantManufacturer": 1,
+          })
           .lean()
       : null,
   ]);
+  const implantManufacturer = String(
+    request?.caseInfos?.implantManufacturer || "",
+  ).trim();
   const adminVerifiedHex = resolveAdminVerifiedHexFromSettings(
     requestorUser?.requestSettings,
     requestorAnchor?.requestSettings,
+    implantManufacturer,
   );
   if (adminVerifiedHex && manufacturerHexRotation !== adminVerifiedHex) {
     return res.status(409).json({
       success: false,
       message:
-        "관리자가 헥스 회전을 확정한 계정입니다. 제조사가 변경할 수 없습니다.",
+        "관리자가 해당 임플란트 제조사의 헥스 회전을 확정했습니다. 제조사가 변경할 수 없습니다.",
     });
   }
 

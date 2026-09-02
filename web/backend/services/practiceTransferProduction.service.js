@@ -52,13 +52,11 @@ import BusinessAnchor from "../models/businessAnchor.model.js";
 import User from "../models/user.model.js";
 import {
   normalizeExoCadVersion,
-  normalizeHexVerificationResultHex,
   isHexVerificationPending,
-  resolveAdminVerifiedHexFromSettings,
   resolveExoCadManufacturerHexRotation,
   resolveHexRotationByDesignSoftware,
+  isHexVerificationSampleCase,
 } from "../utils/designSoftwareHex.js";
-import { isHexVerificationSampleCase } from "../utils/designSoftwareHex.js";
 import {
   normalizeCaseInfosImplantFields,
   addKoreanBusinessDays,
@@ -263,7 +261,10 @@ export function pickLabManufacturerHexRotation(
   labOrg,
   designSoftware,
   exoCadVersion = null,
-  { hexVerificationPending = false } = {},
+  {
+    hexVerificationPending = false,
+    implantManufacturer = null,
+  } = {},
 ) {
   const manufacturerDefault =
     normalizeManufacturerHexRotationOrNull(
@@ -272,19 +273,14 @@ export function pickLabManufacturerHexRotation(
     normalizeManufacturerHexRotationOrNull(
       labOrg?.requestSettings?.defaultManufacturerHexRotation,
     );
-  const adminVerifiedHex =
-    normalizeHexVerificationResultHex(
-      labUser?.requestSettings?.hexVerificationResultHex,
-    ) ||
-    normalizeHexVerificationResultHex(
-      labOrg?.requestSettings?.hexVerificationResultHex,
-    );
 
   return resolveExoCadManufacturerHexRotation({
     designSoftware,
     exoCadVersion,
+    implantManufacturer,
+    userRequestSettings: labUser?.requestSettings,
+    anchorRequestSettings: labOrg?.requestSettings,
     manufacturerDefault,
-    adminVerifiedHex,
     hexVerificationPending,
   });
 }
@@ -317,13 +313,20 @@ export function pickLabExoCadVersion(labUser, labOrg) {
   );
 }
 
-export function pickLabHexVerificationPending(labUser, labOrg) {
+export function pickLabHexVerificationPending(
+  labUser,
+  labOrg,
+  implantManufacturer = null,
+) {
   const designSoftware = pickLabDesignSoftware(labUser, labOrg);
-  const adminVerifiedHex = resolveAdminVerifiedHexFromSettings(
-    labUser?.requestSettings,
-    labOrg?.requestSettings,
-  );
-  return isHexVerificationPending({ designSoftware, adminVerifiedHex });
+  const exoCadVersion = pickLabExoCadVersion(labUser, labOrg);
+  return isHexVerificationPending({
+    designSoftware,
+    exoCadVersion,
+    implantManufacturer,
+    userRequestSettings: labUser?.requestSettings,
+    anchorRequestSettings: labOrg?.requestSettings,
+  });
 }
 
 export function pickLabAnodizingEnabled(labUser, labOrg) {
@@ -361,6 +364,7 @@ export async function loadLabRequestMetaForProduction({
             "requestSettings.designSoftware": 1,
             "requestSettings.exoCadVersion": 1,
             "requestSettings.hexVerificationResultHex": 1,
+            "requestSettings.hexByImplantManufacturer": 1,
             "requestSettings.anodizingEnabled": 1,
             "requestSettings.retentionGroove": 1,
             "requestSettings.defaultManufacturerHexRotation": 1,
@@ -373,6 +377,7 @@ export async function loadLabRequestMetaForProduction({
             "requestSettings.designSoftware": 1,
             "requestSettings.exoCadVersion": 1,
             "requestSettings.hexVerificationResultHex": 1,
+            "requestSettings.hexByImplantManufacturer": 1,
             "requestSettings.anodizingEnabled": 1,
             "requestSettings.retentionGroove": 1,
             "requestSettings.defaultManufacturerHexRotation": 1,

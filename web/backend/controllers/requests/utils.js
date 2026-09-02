@@ -17,7 +17,10 @@ import Request from "../../models/request.model.js";
 import User from "../../models/user.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import SystemSettings from "../../models/systemSettings.model.js";
-import { resolveAdminVerifiedHexFromSettings } from "../../utils/designSoftwareHex.js";
+import {
+  normalizeHexVerificationResultHex,
+  resolveAdminVerifiedHexFromSettings,
+} from "../../utils/designSoftwareHex.js";
 import LotCounter from "../../models/lotCounter.model.js";
 import Connection from "../../models/connection.model.js";
 import {
@@ -769,6 +772,7 @@ export async function normalizeRequestForResponse(requestDoc) {
         "requestSettings.exoCadVersion": 1,
         "requestSettings.anodizingEnabled": 1,
         "requestSettings.hexVerificationResultHex": 1,
+        "requestSettings.hexByImplantManufacturer": 1,
       })
       .lean();
     if (requestorOrgDoc) {
@@ -799,6 +803,7 @@ export async function normalizeRequestForResponse(requestDoc) {
       const adminVerifiedHex = resolveAdminVerifiedHexFromSettings(
         requestorSettingsRaw,
         requestSettingsRaw,
+        obj?.caseInfos?.implantManufacturer,
       );
       // SSOT: metadata 사용 (extracted 레거시 제거)
       obj.business = {
@@ -823,8 +828,32 @@ export async function normalizeRequestForResponse(requestDoc) {
               ? requestSettingsRaw.anodizingEnabled
               : null,
           hexVerificationResultHex: adminVerifiedHex,
+          hexByImplantManufacturer: Array.isArray(
+            requestorSettingsRaw?.hexByImplantManufacturer,
+          )
+            ? requestorSettingsRaw.hexByImplantManufacturer
+            : Array.isArray(requestSettingsRaw?.hexByImplantManufacturer)
+              ? requestSettingsRaw.hexByImplantManufacturer
+              : [],
         },
       };
+      if (obj.requestor && typeof obj.requestor === "object") {
+        obj.requestor.requestSettings = {
+          ...(obj.requestor.requestSettings || {}),
+          designSoftware:
+            String(requestorSettingsRaw?.designSoftware || "").trim() || null,
+          exoCadVersion:
+            String(requestorSettingsRaw?.exoCadVersion || "").trim() || null,
+          hexVerificationResultHex: normalizeHexVerificationResultHex(
+            requestorSettingsRaw?.hexVerificationResultHex,
+          ),
+          hexByImplantManufacturer: Array.isArray(
+            requestorSettingsRaw?.hexByImplantManufacturer,
+          )
+            ? requestorSettingsRaw.hexByImplantManufacturer
+            : [],
+        };
+      }
       obj.requestorBusinessAnchor = obj.business;
     }
   }

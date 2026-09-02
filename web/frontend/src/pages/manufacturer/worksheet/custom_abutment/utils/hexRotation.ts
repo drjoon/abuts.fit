@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-03: ExoCAD 3.0 이하 × 임플란트 제조사별 verifiedHex/applyHex30 해석·잠금.
 // - 2026-08-29: 헥스40도회전 → STL모델+(base=0) / 헥스30+(base=30) 분기. NC: T4848=C0.0(always), T0909/T0606만 addDeg=30+appliedDeg.
 // - 2026-08-25: 관리자 헥스 확정 시 제조사 persist/승인 경로에서 저장 API 호출 스킵.
 // - 2026-08-22: ExoCAD 관리자 헥스 확인 뱃지(확정/미정) SSOT helper.
@@ -11,6 +12,49 @@ export type ManufacturerHexRotationMode =
   | ManufacturerHexRotationCanonicalMode
   | ManufacturerHexRotationPlusMode;
 export type ManufacturerHexRotationDraftMode = ManufacturerHexRotationMode | "";
+
+export type HexByImplantManufacturerRow = {
+  manufacturer?: string | null;
+  applyHex30?: boolean | null;
+  verifiedHex?: string | null;
+  verifiedAt?: string | Date | null;
+  verifiedBy?: string | null;
+};
+
+export const CNC_HEX_IMPLANT_MANUFACTURERS = [
+  "OSSTEM",
+  "DENTIUM",
+  "NEOBIOTECH",
+  "DIO",
+  "MEGAGEN",
+  "DENTIS",
+] as const;
+
+const MANUFACTURER_ALIASES: Record<string, string[]> = {
+  OSSTEM: ["OSSTEM", "오스템"],
+  DENTIUM: ["DENTIUM", "덴티움"],
+  NEOBIOTECH: ["NEOBIOTECH", "NEO", "네오", "네오바이오텍"],
+  DIO: ["DIO", "디오"],
+  MEGAGEN: ["MEGAGEN", "메가젠"],
+  DENTIS: ["DENTIS", "덴티스"],
+};
+
+export const normalizeImplantManufacturerKey = (value: unknown): string => {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const upper = raw.toUpperCase().replace(/\s+/g, "");
+  for (const [canonical, aliases] of Object.entries(MANUFACTURER_ALIASES)) {
+    for (const alias of aliases) {
+      const a = String(alias || "")
+        .trim()
+        .toUpperCase()
+        .replace(/\s+/g, "");
+      if (a && (upper === a || raw === alias)) return canonical;
+    }
+    if (aliases.includes(raw)) return canonical;
+  }
+  return upper;
+};
 
 export const normalizeManufacturerHexRotationMode = (
   value: unknown,
@@ -54,12 +98,6 @@ export const resolveRequestorHexRotationByDesignSoftware = (
 ): ManufacturerHexRotationCanonicalMode | null => {
   const designSoftware = String(designSoftwareRaw || "").trim();
   if (!designSoftware) return null;
-  // 정책 SSOT (제조사 기본값이 아직 없을 때만 사용):
-  // - ExoCAD 3.0 이하(또는 버전 미지정 레거시) => 헥스30도회전
-  // - ExoCAD 3.2 이상 => STL모델대로
-  // - 3Shape 및 기타(custom 포함) => STL모델대로
-  // 제조사가 PreviewModal에서 한 번 바꾸면 User(개인)→BusinessAnchor 기본값이
-  // 우선하고, 이후 신규 의뢰는 그 값을 hexRotation.mode로 시드한다.
   if (designSoftware !== "ExoCAD") return "STL모델대로";
   const version = String(exoCadVersionRaw || "").trim();
   if (version === "ge_3_2" || version === "3.2" || version === ">=3.2") {
@@ -76,6 +114,7 @@ type HexRequestSettingsLike = {
   designSoftware?: unknown;
   exoCadVersion?: unknown;
   hexVerificationResultHex?: unknown;
+  hexByImplantManufacturer?: HexByImplantManufacturerRow[] | null;
 } | null | undefined;
 
 type HexRequestLike = {
@@ -98,27 +137,87 @@ export const normalizeHexVerificationResultHex = (
   return null;
 };
 
-/** User → BusinessAnchor (관리자 헥스 확인 확정값) */
+export const findHexByImplantManufacturerEntry = (
+  settings: HexRequestSettingsLike,
+  implantManufacturerRaw: unknown,
+): HexByImplantManufacturerRow | null => {
+  const key = normalizeImplantManufacturerKey(implantManufacturerRaw);
+  if (!key) return null;
+  const rows = Array.isArray(settings?.hexByImplantManufacturer)
+    ? settings.hexByImplantManufacturer
+    : [];
+  return (
+    rows.find(
+      (row) => normalizeImplantManufacturerKey(row?.manufacturer) === key,
+    ) || null
+  );
+};
+
+/** User → (legacy BA) 임플란트 제조사별 관리자 확정 헥스 */
 export const resolveAdminVerifiedHexFromRequest = (
   req?: HexRequestLike | null,
-): ManufacturerHexRotationCanonicalMode | null =>
-  normalizeHexVerificationResultHex(
-    req?.requestor?.requestSettings?.hexVerificationResultHex,
-  ) ||
-  normalizeHexVerificationResultHex(
-    req?.business?.requestSettings?.hexVerificationResultHex,
-  );
+  implantManufacturerRaw?: unknown,
+): ManufacturerHexRotationCanonicalMode | null => {
+  const implantM =
+    implantManufacturerRaw ?? req?.caseInfos?.implantManufacturer ?? null;
+  const userRs = req?.requestor?.requestSettings;
+  const baRs = req?.business?.requestSettings;
 
-/** ExoCAD만 헥스 확인 뱃지. 그 외 null. */
+  if (implantM != null && String(implantM).trim()) {
+    const fromUser = normalizeHexVerificationResultHex(
+      findHexByImplantManufacturerEntry(userRs, implantM)?.verifiedHex,
+    );
+    if (fromUser) return fromUser;
+    const fromBa = normalizeHexVerificationResultHex(
+      findHexByImplantManufacturerEntry(baRs, implantM)?.verifiedHex,
+    );
+    if (fromBa) return fromBa;
+  }
+
+  return (
+    normalizeHexVerificationResultHex(userRs?.hexVerificationResultHex) ||
+    normalizeHexVerificationResultHex(baRs?.hexVerificationResultHex)
+  );
+};
+
+export const resolveApplyHex30FromRequest = (
+  req?: HexRequestLike | null,
+  implantManufacturerRaw?: unknown,
+): boolean => {
+  const implantM =
+    implantManufacturerRaw ?? req?.caseInfos?.implantManufacturer ?? null;
+  const entry = findHexByImplantManufacturerEntry(
+    req?.requestor?.requestSettings,
+    implantM,
+  );
+  if (entry && typeof entry.applyHex30 === "boolean") return entry.applyHex30;
+  return true;
+};
+
+/** ExoCAD 3.0 이하만 헥스 확인 뱃지. 그 외 null. */
 export const resolveHexVerificationBadgeLabel = (
   req?: HexRequestLike | null,
 ): HexVerificationBadgeLabel | null => {
   const designSoftware = String(
     req?.caseInfos?.designSoftware ||
+      req?.requestor?.requestSettings?.designSoftware ||
       req?.business?.requestSettings?.designSoftware ||
       "",
   ).trim();
   if (designSoftware !== "ExoCAD") return null;
+  const exoCadVersion = String(
+    req?.caseInfos?.exoCadVersion ||
+      req?.requestor?.requestSettings?.exoCadVersion ||
+      req?.business?.requestSettings?.exoCadVersion ||
+      "",
+  ).trim();
+  if (
+    exoCadVersion === "ge_3_2" ||
+    exoCadVersion === "3.2" ||
+    exoCadVersion === ">=3.2"
+  ) {
+    return null;
+  }
   return resolveAdminVerifiedHexFromRequest(req) ? "확정" : "미정";
 };
 
@@ -129,7 +228,9 @@ type HexCaseInfos = {
   finalHexRotation?: unknown;
   designSoftware?: unknown;
   exoCadVersion?: unknown;
+  implantManufacturer?: unknown;
   hexVerificationSample?: boolean | null;
+  hexVerificationSampleManufacturer?: unknown;
   anodizingEnabled?: boolean | null;
   wideSplitEnabled?: boolean | null;
 } | null | undefined;
@@ -148,7 +249,9 @@ type HexCancelCompanionLike = {
 /**
  * 헥스 확인용 원본↔샘플 중 하나가 취소되면 목록에서 짝도 함께 제거한다.
  */
-export const filterOutHexVerificationCancelCompanions = <T extends HexCancelCompanionLike>(
+export const filterOutHexVerificationCancelCompanions = <
+  T extends HexCancelCompanionLike,
+>(
   list: T[],
   canceled: HexCancelCompanionLike,
 ): T[] => {
@@ -196,6 +299,20 @@ export const resolveDefaultPrepHexRotationMode = (
 
   if (savedManufacturerHexMode) return savedManufacturerHexMode;
 
+  const verified = resolveAdminVerifiedHexFromRequest(req);
+  if (verified) return toManufacturerHexRotationLabel(verified);
+
+  const designSoftware = String(req?.caseInfos?.designSoftware || "").trim();
+  const exoCadVersion = req?.caseInfos?.exoCadVersion;
+  if (
+    designSoftware === "ExoCAD" &&
+    String(exoCadVersion || "").trim() !== "ge_3_2" &&
+    req?.caseInfos?.implantManufacturer
+  ) {
+    const applyHex30 = resolveApplyHex30FromRequest(req);
+    return applyHex30 === false ? "STL모델대로" : "헥스30도회전";
+  }
+
   const byDesignSoftware = resolveRequestorHexRotationByDesignSoftware(
     req?.caseInfos?.designSoftware,
     req?.caseInfos?.exoCadVersion,
@@ -213,8 +330,11 @@ export const resolveDefaultPrepHexRotationMode = (
 export const resolvePrepHexModeToPersist = (
   req: HexRequestLike,
   hexDraft?: unknown,
-): { persist: false } | { persist: true; mode: ManufacturerHexRotationMode } | { persist: false; missing: true } => {
-  // 관리자 확정 계정: 제조사 저장 API 호출 금지(확정값으로 이미 시드됨).
+):
+  | { persist: false }
+  | { persist: true; mode: ManufacturerHexRotationMode }
+  | { persist: false; missing: true } => {
+  // 해당 임플란트 제조사 관리자 확정: 제조사 저장 API 호출 금지.
   if (resolveAdminVerifiedHexFromRequest(req)) {
     return { persist: false };
   }

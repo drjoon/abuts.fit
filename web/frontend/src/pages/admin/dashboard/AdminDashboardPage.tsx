@@ -53,6 +53,13 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { MachiningStatisticsModal } from "@/pages/manufacturer/worksheet/custom_abutment/machining/components/MachiningStatisticsModal";
+import {
+  HexVerificationAdminPanel,
+  useHexVerificationSummary,
+} from "@/pages/admin/dashboard/HexVerificationAdminPanel";
+
+// change-log add:
+// - 2026-09-03: ExoCAD 3.0 이하 BA 카드·제조사별 헥스 관리 패널
 
 type PricingSummary = {
   totalOrders?: number;
@@ -519,15 +526,6 @@ export const AdminDashboardPage = () => {
   const [riskSummaryDialogOpen, setRiskSummaryDialogOpen] = useState(false);
   const [hexVerificationDialogOpen, setHexVerificationDialogOpen] =
     useState(false);
-  const [hexChoiceByAnchor, setHexChoiceByAnchor] = useState<
-    Record<string, "STL모델대로" | "헥스30도회전">
-  >({});
-  const [completingHexByAnchor, setCompletingHexByAnchor] = useState<
-    Record<string, boolean>
-  >({});
-  const [revertingHexByAnchor, setRevertingHexByAnchor] = useState<
-    Record<string, boolean>
-  >({});
   const [happyCallDialogTab, setHappyCallDialogTab] = useState<"targets" | "completed">("targets");
   const [happyCallReasonFilter, setHappyCallReasonFilter] = useState<string>("all");
   const [phoneConfirm, setPhoneConfirm] = useState<{
@@ -712,161 +710,14 @@ export const AdminDashboardPage = () => {
   });
 
   const {
-    data: hexVerificationResponse,
-    isFetching: loadingHexVerification,
-    refetch: refetchHexVerification,
-  } = useQuery({
-    queryKey: ["admin-hex-verification-in-progress"],
-    enabled: Boolean(token) && user?.role === "admin",
-    staleTime: 60 * 1000,
-    queryFn: async () => {
-      const res = await apiFetch<ApiEnvelope<HexVerificationInProgressData>>({
-        path: "/api/admin/hex-verification/in-progress",
-        method: "GET",
-        token,
-      });
-      if (!res.ok || !res.data?.success) {
-        throw new Error(
-          res.data?.message || "헥스 확인 진행중 목록 조회에 실패했습니다.",
-        );
-      }
-      return res.data;
-    },
-    retry: false,
-  });
-
-  const hexVerificationItems = useMemo(() => {
-    const rows = hexVerificationResponse?.data?.items;
-    return Array.isArray(rows) ? rows : [];
-  }, [hexVerificationResponse]);
-
-  const pendingHexVerificationItems = useMemo(
-    () =>
-      hexVerificationItems.filter(
-        (row) =>
-          row.status === "pending" ||
-          (row.status == null && Boolean(row.hexVerificationSamplePending)),
-      ),
-    [hexVerificationItems],
+    pendingCount: hexVerificationCount,
+    confirmedCount: confirmedHexVerificationCount,
+    pendingBusinesses: pendingHexVerificationItems,
+    loading: loadingHexVerification,
+  } = useHexVerificationSummary(
+    token,
+    Boolean(token) && user?.role === "admin",
   );
-
-  const confirmedHexVerificationItems = useMemo(
-    () =>
-      hexVerificationItems.filter(
-        (row) =>
-          row.status === "confirmed" ||
-          (row.status == null &&
-            !row.hexVerificationSamplePending &&
-            Boolean(row.adminVerifiedHex)),
-      ),
-    [hexVerificationItems],
-  );
-
-  const hexVerificationCount = Number(
-    hexVerificationResponse?.data?.pendingCount ??
-      hexVerificationResponse?.data?.count ??
-      pendingHexVerificationItems.length,
-  );
-
-  const confirmedHexVerificationCount = Number(
-    hexVerificationResponse?.data?.confirmedCount ??
-      confirmedHexVerificationItems.length,
-  );
-
-  const completeHexVerificationForAnchor = async (
-    item: HexVerificationInProgressItem,
-  ) => {
-    const anchorId = String(item.businessAnchorId || "").trim();
-    if (!anchorId || !token) return;
-    const isEdit = item.status === "confirmed" || Boolean(item.adminVerifiedHex);
-    const hexRotation =
-      hexChoiceByAnchor[anchorId] ||
-      item.adminVerifiedHex ||
-      (item.exoCadVersion === "ge_3_2" ? "STL모델대로" : "헥스30도회전");
-
-    setCompletingHexByAnchor((prev) => ({ ...prev, [anchorId]: true }));
-    try {
-      const res = await apiFetch<ApiEnvelope<{ hexRotation?: string }>>({
-        path: `/api/admin/hex-verification/${encodeURIComponent(anchorId)}/complete`,
-        method: "POST",
-        token,
-        headers: {
-          "Content-Type": "application/json",
-        },
-        jsonBody: { hexRotation },
-      });
-      if (!res.ok || !res.data?.success) {
-        throw new Error(res.data?.message || "헥스 확인 저장에 실패했습니다.");
-      }
-      toast({
-        title: isEdit ? "헥스 확인 수정" : "헥스 확인 완료",
-        description: `${item.businessName || "사업자"} → ${hexRotation}`,
-      });
-      await refetchHexVerification();
-      queryClient.invalidateQueries({
-        queryKey: ["admin-hex-verification-in-progress"],
-      });
-    } catch (e: unknown) {
-      toast({
-        title: isEdit ? "헥스 확인 수정 실패" : "헥스 확인 완료 실패",
-        description: e instanceof Error ? e.message : "다시 시도해주세요.",
-        variant: "destructive",
-      });
-    } finally {
-      setCompletingHexByAnchor((prev) => {
-        const next = { ...prev };
-        delete next[anchorId];
-        return next;
-      });
-    }
-  };
-
-  const revertHexVerificationForAnchor = async (
-    item: HexVerificationInProgressItem,
-  ) => {
-    const anchorId = String(item.businessAnchorId || "").trim();
-    if (!anchorId || !token) return;
-
-    setRevertingHexByAnchor((prev) => ({ ...prev, [anchorId]: true }));
-    try {
-      const res = await apiFetch<ApiEnvelope<{ status?: string }>>({
-        path: `/api/admin/hex-verification/${encodeURIComponent(anchorId)}/revert`,
-        method: "POST",
-        token,
-      });
-      if (!res.ok || !res.data?.success) {
-        throw new Error(
-          res.data?.message || "헥스 확인 되돌리기에 실패했습니다.",
-        );
-      }
-      setHexChoiceByAnchor((prev) => {
-        if (!(anchorId in prev)) return prev;
-        const next = { ...prev };
-        delete next[anchorId];
-        return next;
-      });
-      toast({
-        title: "헥스 확인 미확인으로 되돌림",
-        description: `${item.businessName || "사업자"} → 진행중(미확인)`,
-      });
-      await refetchHexVerification();
-      queryClient.invalidateQueries({
-        queryKey: ["admin-hex-verification-in-progress"],
-      });
-    } catch (e: unknown) {
-      toast({
-        title: "헥스 확인 되돌리기 실패",
-        description: e instanceof Error ? e.message : "다시 시도해주세요.",
-        variant: "destructive",
-      });
-    } finally {
-      setRevertingHexByAnchor((prev) => {
-        const next = { ...prev };
-        delete next[anchorId];
-        return next;
-      });
-    }
-  };
 
   const {
     data: happyCallCompletionsResponse,
@@ -1970,13 +1821,13 @@ export const AdminDashboardPage = () => {
                     <div className="mt-2 space-y-1">
                       {pendingHexVerificationItems.slice(0, 3).map((row) => (
                         <div
-                          key={row.businessAnchorId}
+                          key={String(row.businessAnchorId || row.businessName)}
                           className="truncate text-[11px] text-muted-foreground"
                         >
-                          {row.businessName || row.ownerName || row.businessAnchorId}
-                          {row.sampleRequestId
-                            ? ` · ${row.sampleRequestId}`
-                            : " · 샘플대기"}
+                          {row.businessName || row.businessAnchorId || "-"}
+                          {row.pendingUserCount
+                            ? ` · 미확정 ${row.pendingUserCount}명`
+                            : ""}
                         </div>
                       ))}
                       {pendingHexVerificationItems.length === 0 ? (
@@ -1984,8 +1835,8 @@ export const AdminDashboardPage = () => {
                           {loadingHexVerification
                             ? "불러오는 중…"
                             : confirmedHexVerificationCount > 0
-                              ? `확정 ${confirmedHexVerificationCount.toLocaleString()}건 · 클릭하여 보기/수정`
-                              : "진행중인 ExoCAD 계정이 없습니다."}
+                              ? `확정 제조사 ${confirmedHexVerificationCount.toLocaleString()}건 · 클릭하여 보기/수정`
+                              : "ExoCAD 3.0 이하 계정이 없습니다."}
                         </div>
                       ) : null}
                       {pendingHexVerificationItems.length > 3 ? (
@@ -3286,242 +3137,10 @@ export const AdminDashboardPage = () => {
         panelClassName="!w-[min(900px,calc(100vw-2rem))] !max-w-[calc(100vw-2rem)]"
         descriptionScrollable={false}
         description={
-          <div className="space-y-3 text-sm text-gray-700">
-            <div className="text-xs text-muted-foreground">
-              진행중 {hexVerificationCount.toLocaleString()}건 · 확정{" "}
-              {confirmedHexVerificationCount.toLocaleString()}건 · 샘플 테스트 후
-              관리자가 확정하면 이후 신규 의뢰에 그 값을 씁니다.
-              ExoCAD 버전 시드(3.2+→STL 등)와 다를 수 있으며, 확정 전에는
-              제조사가 준비 단계에서 의뢰 단위로 변경할 수 있고, 확정 후에는
-              제조사 변경이 잠깁니다. 확정 항목은 미확인으로 되돌릴 수 있습니다.
-            </div>
-            <div className="max-h-[60vh] overflow-auto pr-1 space-y-4">
-              <div className="space-y-2">
-                <div className="text-[11px] font-semibold text-slate-600">
-                  진행중 ({hexVerificationCount.toLocaleString()})
-                </div>
-                {pendingHexVerificationItems.length > 0 ? (
-                  pendingHexVerificationItems.map((item) => {
-                    const anchorId = item.businessAnchorId;
-                    const selected =
-                      hexChoiceByAnchor[anchorId] ||
-                      (item.exoCadVersion === "ge_3_2"
-                        ? "STL모델대로"
-                        : "헥스30도회전");
-                    const busy = Boolean(completingHexByAnchor[anchorId]);
-                    const softwareLabel = formatHexVerificationSoftwareLabel(item);
-                    return (
-                      <div
-                        key={anchorId}
-                        className="rounded-md border px-3 py-2 bg-white space-y-2"
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <div className="text-sm font-semibold truncate">
-                              {item.businessName || "사업자명 미확인"}
-                            </div>
-                            <div className="mt-0.5 text-[11px] text-muted-foreground truncate">
-                              {item.ownerName || "-"}
-                              {item.ownerEmail ? ` · ${item.ownerEmail}` : ""}
-                              {softwareLabel ? ` · ${softwareLabel}` : ""}
-                            </div>
-                            <div className="mt-0.5 text-[11px] text-muted-foreground truncate">
-                              {item.sampleRequestId
-                                ? "샘플 생성됨"
-                                : "샘플 대기"}
-                              {item.sampleRequestId
-                                ? ` · ${item.sampleRequestId}`
-                                : ""}
-                              {item.manufacturerDefaultHex
-                                ? ` · 제조사:${item.manufacturerDefaultHex}`
-                                : ""}
-                            </div>
-                          </div>
-                          <Badge
-                            variant="outline"
-                            className="text-[10px] shrink-0 border-amber-200 bg-amber-50 text-amber-700"
-                          >
-                            미정
-                          </Badge>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant={
-                              selected === "STL모델대로" ? "default" : "outline"
-                            }
-                            className="h-7 text-[11px]"
-                            onClick={() =>
-                              setHexChoiceByAnchor((prev) => ({
-                                ...prev,
-                                [anchorId]: "STL모델대로",
-                              }))
-                            }
-                            disabled={busy}
-                          >
-                            STL모델대로
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant={
-                              selected === "헥스30도회전" ? "default" : "outline"
-                            }
-                            className="h-7 text-[11px]"
-                            onClick={() =>
-                              setHexChoiceByAnchor((prev) => ({
-                                ...prev,
-                                [anchorId]: "헥스30도회전",
-                              }))
-                            }
-                            disabled={busy}
-                          >
-                            헥스30도회전
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            className="h-7 text-[11px] ml-auto"
-                            onClick={() => completeHexVerificationForAnchor(item)}
-                            disabled={busy}
-                          >
-                            {busy ? "저장 중…" : "완료"}
-                          </Button>
-                        </div>
-                      </div>
-                    );
-                  })
-                ) : (
-                  <div className="text-xs text-muted-foreground py-6 text-center border border-dashed rounded-md">
-                    {loadingHexVerification
-                      ? "불러오는 중…"
-                      : "진행중인 ExoCAD 헥스 확인 계정이 없습니다."}
-                  </div>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <div className="text-[11px] font-semibold text-slate-600">
-                  확정 ({confirmedHexVerificationCount.toLocaleString()})
-                </div>
-                {confirmedHexVerificationItems.length > 0 ? (
-                  confirmedHexVerificationItems.map((item) => {
-                    const anchorId = item.businessAnchorId;
-                    const selected =
-                      hexChoiceByAnchor[anchorId] ||
-                      item.adminVerifiedHex ||
-                      (item.exoCadVersion === "ge_3_2"
-                        ? "STL모델대로"
-                        : "헥스30도회전");
-                    const completing = Boolean(completingHexByAnchor[anchorId]);
-                    const reverting = Boolean(revertingHexByAnchor[anchorId]);
-                    const busy = completing || reverting;
-                    const dirty =
-                      Boolean(hexChoiceByAnchor[anchorId]) &&
-                      hexChoiceByAnchor[anchorId] !== item.adminVerifiedHex;
-                    const softwareLabel = formatHexVerificationSoftwareLabel(item);
-                    return (
-                      <div
-                        key={anchorId}
-                        className="rounded-md border border-emerald-100 px-3 py-2 bg-emerald-50/30 space-y-2"
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <div className="text-sm font-semibold truncate">
-                              {item.businessName || "사업자명 미확인"}
-                            </div>
-                            <div className="mt-0.5 text-[11px] text-muted-foreground truncate">
-                              {item.ownerName || "-"}
-                              {item.ownerEmail ? ` · ${item.ownerEmail}` : ""}
-                              {softwareLabel ? ` · ${softwareLabel}` : ""}
-                            </div>
-                            <div className="mt-0.5 text-[11px] text-muted-foreground truncate">
-                              확정: {item.adminVerifiedHex || "-"}
-                              {item.manufacturerDefaultHex
-                                ? ` · 제조사:${item.manufacturerDefaultHex}`
-                                : ""}
-                              {item.sampleRequestId
-                                ? ` · 샘플 ${item.sampleRequestId}`
-                                : ""}
-                            </div>
-                          </div>
-                          <Badge
-                            variant="outline"
-                            className="text-[10px] shrink-0 border-emerald-200 bg-emerald-50 text-emerald-700"
-                          >
-                            확정
-                          </Badge>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant={
-                              selected === "STL모델대로" ? "default" : "outline"
-                            }
-                            className="h-7 text-[11px]"
-                            onClick={() =>
-                              setHexChoiceByAnchor((prev) => ({
-                                ...prev,
-                                [anchorId]: "STL모델대로",
-                              }))
-                            }
-                            disabled={busy}
-                          >
-                            STL모델대로
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant={
-                              selected === "헥스30도회전" ? "default" : "outline"
-                            }
-                            className="h-7 text-[11px]"
-                            onClick={() =>
-                              setHexChoiceByAnchor((prev) => ({
-                                ...prev,
-                                [anchorId]: "헥스30도회전",
-                              }))
-                            }
-                            disabled={busy}
-                          >
-                            헥스30도회전
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            className="h-7 text-[11px] ml-auto text-amber-700 border-amber-200 hover:bg-amber-50"
-                            onClick={() => revertHexVerificationForAnchor(item)}
-                            disabled={busy}
-                          >
-                            {reverting ? "처리 중…" : "미확인으로"}
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant={dirty ? "default" : "outline"}
-                            className="h-7 text-[11px]"
-                            onClick={() => completeHexVerificationForAnchor(item)}
-                            disabled={busy || !dirty}
-                          >
-                            {completing ? "저장 중…" : "수정"}
-                          </Button>
-                        </div>
-                      </div>
-                    );
-                  })
-                ) : (
-                  <div className="text-xs text-muted-foreground py-6 text-center border border-dashed rounded-md">
-                    {loadingHexVerification
-                      ? "불러오는 중…"
-                      : "확정된 ExoCAD 계정이 없습니다."}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
+          <HexVerificationAdminPanel
+            token={token}
+            enabled={hexVerificationDialogOpen}
+          />
         }
         actions={[
           {

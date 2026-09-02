@@ -1,10 +1,9 @@
-import { useEffect, useState } from "react";
-
 // related files:
 // - web/backend/controllers/businesses/business.controller.js
-// - web/backend/models/businessAnchor.model.js
-// - web/backend/models/user.model.js
-// - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
+// - web/frontend/src/features/requestSettings/DesignSoftwareSettingsDialog.tsx
+// change-log:
+// - 2026-09-03: 개인 User SSOT + ExoCAD 3.0 이하 Yes/No. BA는 대표자 템플릿만.
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -15,62 +14,30 @@ import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { FileText } from "lucide-react";
 
+type ExoCadVersion = "le_3_0" | "ge_3_2";
+
 type RequestSettingsResponse = {
   success?: boolean;
   message?: string;
   data?: {
-    scope?: "business";
-    membership?: "owner" | "member" | "pending" | "none";
     canEdit?: boolean;
     canEditDesignSoftware?: boolean;
     anodizingEnabled?: boolean;
-    // business 공통 기본값
+    requestorAnodizingEnabled?: boolean;
+    hasRequestorAnodizingSetting?: boolean;
     designSoftware?: string | null;
-    // requestor 계정별 값(신규 의뢰 기본값)
     requestorDesignSoftware?: string | null;
-    updatedAt?: string | null;
+    exoCadVersion?: string | null;
+    requestorExoCadVersion?: string | null;
     propagatedRequestorDesignSoftwareCount?: number;
   };
 };
 
-const readAnodizing = (payload: unknown): boolean | null => {
-  if (!payload || typeof payload !== "object") return null;
-
-  const typed = payload as RequestSettingsResponse;
-  if (typeof typed.data?.anodizingEnabled === "boolean") {
-    return typed.data.anodizingEnabled;
-  }
-
+const normalizeExo = (value: unknown): ExoCadVersion | null => {
+  const raw = String(value || "").trim();
+  if (raw === "le_3_0" || raw === "3.0" || raw === "<=3.0") return "le_3_0";
+  if (raw === "ge_3_2" || raw === "3.2" || raw === ">=3.2") return "ge_3_2";
   return null;
-};
-
-const readCanEdit = (payload: unknown): boolean | null => {
-  if (!payload || typeof payload !== "object") return null;
-  const typed = payload as RequestSettingsResponse;
-  if (typeof typed.data?.canEdit === "boolean") return typed.data.canEdit;
-  return null;
-};
-
-const readCanEditDesignSoftware = (payload: unknown): boolean | null => {
-  if (!payload || typeof payload !== "object") return null;
-  const typed = payload as RequestSettingsResponse;
-  if (typeof typed.data?.canEditDesignSoftware === "boolean") {
-    return typed.data.canEditDesignSoftware;
-  }
-  return null;
-};
-
-const readDesignSoftware = (payload: unknown): string | null => {
-  if (!payload || typeof payload !== "object") return null;
-  const typed = payload as RequestSettingsResponse;
-  const value = String(typed.data?.designSoftware || "").trim();
-  return value || null;
-};
-
-const readMessage = (payload: unknown): string | null => {
-  if (!payload || typeof payload !== "object") return null;
-  const typed = payload as RequestSettingsResponse;
-  return typeof typed.message === "string" ? typed.message : null;
 };
 
 export const RequestTab = () => {
@@ -78,18 +45,17 @@ export const RequestTab = () => {
   const { toast } = useToast();
 
   const [anodizingEnabled, setAnodizingEnabled] = useState(true);
-  const [canEdit, setCanEdit] = useState(false);
-  const [canEditDesignSoftware, setCanEditDesignSoftware] = useState(false);
+  const [canEditBaTemplate, setCanEditBaTemplate] = useState(false);
   const [designMode, setDesignMode] = useState<"3Shape" | "ExoCAD" | "custom">(
-    "custom",
+    "3Shape",
   );
   const [customDesignSoftware, setCustomDesignSoftware] = useState("");
+  const [exoCadVersion, setExoCadVersion] = useState<ExoCadVersion | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     const load = async () => {
       if (!token) return;
-
       setIsLoading(true);
       try {
         const res = await request<RequestSettingsResponse>({
@@ -97,47 +63,41 @@ export const RequestTab = () => {
           method: "GET",
           token,
         });
-
         if (!res.ok) return;
+        const data = res.data?.data;
+        setCanEditBaTemplate(Boolean(data?.canEditDesignSoftware));
 
-        const next = readAnodizing(res.data);
-        if (typeof next === "boolean") {
-          setAnodizingEnabled(next);
-        }
-
-        const editable = readCanEdit(res.data);
-        if (typeof editable === "boolean") {
-          setCanEdit(editable);
-        }
-
-        const designEditable = readCanEditDesignSoftware(res.data);
-        if (typeof designEditable === "boolean") {
-          setCanEditDesignSoftware(designEditable);
-        }
-
-        const designSoftware = readDesignSoftware(res.data);
+        const personal = String(data?.requestorDesignSoftware || "").trim();
+        const business = String(data?.designSoftware || "").trim();
+        const designSoftware = personal || business;
         if (designSoftware === "3Shape" || designSoftware === "ExoCAD") {
           setDesignMode(designSoftware);
           setCustomDesignSoftware("");
         } else if (designSoftware) {
           setDesignMode("custom");
           setCustomDesignSoftware(designSoftware);
-        } else {
-          setDesignMode("custom");
-          setCustomDesignSoftware("");
         }
+
+        setExoCadVersion(
+          normalizeExo(data?.requestorExoCadVersion) ||
+            normalizeExo(data?.exoCadVersion),
+        );
+
+        const ano =
+          typeof data?.requestorAnodizingEnabled === "boolean"
+            ? data.requestorAnodizingEnabled
+            : typeof data?.anodizingEnabled === "boolean"
+              ? data.anodizingEnabled
+              : true;
+        setAnodizingEnabled(ano);
       } finally {
         setIsLoading(false);
       }
     };
-
     void load();
   }, [token]);
 
-  const saveRequestSettings = async (payload: {
-    anodizingEnabled?: boolean;
-    designSoftware?: string;
-  }): Promise<RequestSettingsResponse["data"] | null> => {
+  const saveRequestSettings = async (payload: Record<string, unknown>) => {
     if (!token) {
       toast({
         title: "로그인이 필요합니다",
@@ -146,7 +106,6 @@ export const RequestTab = () => {
       });
       return null;
     }
-
     setIsLoading(true);
     try {
       const res = await request<RequestSettingsResponse>({
@@ -155,113 +114,116 @@ export const RequestTab = () => {
         token,
         jsonBody: payload,
       });
-
       if (!res.ok) {
         toast({
           title: "저장에 실패했습니다",
           description:
-            readMessage(res.data) || "의뢰 설정 저장 중 오류가 발생했습니다.",
+            res.data?.message || "의뢰 설정 저장 중 오류가 발생했습니다.",
           variant: "destructive",
         });
         return null;
       }
-
       return res.data?.data || null;
     } finally {
       setIsLoading(false);
     }
   };
 
-  const toggleAnodizing = (checked: boolean) => {
-    if (!canEdit) {
-      toast({
-        title: "권한이 없습니다",
-        description: "대표자 계정만 기공소 의뢰 설정을 변경할 수 있습니다.",
-        variant: "destructive",
-      });
-      return;
+  const buildDesignPayload = (
+    designSoftware: string,
+    exo: ExoCadVersion | null,
+  ) => {
+    const payload: Record<string, unknown> = {
+      requestorDesignSoftware: designSoftware,
+      requestorExoCadVersion: designSoftware === "ExoCAD" ? exo : null,
+    };
+    if (canEditBaTemplate) {
+      payload.designSoftware = designSoftware;
+      payload.exoCadVersion = designSoftware === "ExoCAD" ? exo : null;
     }
+    return payload;
+  };
 
+  const toggleAnodizing = (checked: boolean) => {
     const prev = anodizingEnabled;
     setAnodizingEnabled(checked);
-
-    void saveRequestSettings({ anodizingEnabled: checked }).then((result) => {
+    const payload: Record<string, unknown> = {
+      requestorAnodizingEnabled: checked,
+    };
+    if (canEditBaTemplate) payload.anodizingEnabled = checked;
+    void saveRequestSettings(payload).then((result) => {
       if (!result) setAnodizingEnabled(prev);
     });
   };
 
-  const persistDesignSoftware = async (value: string) => {
-    const normalized = String(value || "").trim();
-    if (!normalized) {
+  const persistDesign = async (
+    designSoftware: string,
+    exo: ExoCadVersion | null,
+  ) => {
+    if (designSoftware === "ExoCAD" && !exo) {
       toast({
-        title: "입력값이 필요합니다",
-        description: "직접 입력을 선택한 경우 소프트웨어 이름을 입력해주세요.",
+        title: "ExoCAD 버전이 필요합니다",
+        description: "3.0 이하 여부를 선택해주세요.",
         variant: "destructive",
       });
       return null;
     }
-    return saveRequestSettings({ designSoftware: normalized });
+    return saveRequestSettings(buildDesignPayload(designSoftware, exo));
   };
 
   const handleDesignModeChange = (next: "3Shape" | "ExoCAD" | "custom") => {
-    if (!canEditDesignSoftware) {
-      toast({
-        title: "권한이 없습니다",
-        description: "대표/직원 계정만 기공소 디자인 소프트웨어를 변경할 수 있습니다.",
-        variant: "destructive",
-      });
-      return;
-    }
-
     const prevMode = designMode;
     const prevCustom = customDesignSoftware;
+    const prevExo = exoCadVersion;
     setDesignMode(next);
-
     if (next === "custom") return;
+    if (next !== "ExoCAD") setExoCadVersion(null);
 
-    void saveRequestSettings({ designSoftware: next }).then((result) => {
-      if (!result) {
-        setDesignMode(prevMode);
-        setCustomDesignSoftware(prevCustom);
-        return;
+    void persistDesign(next, next === "ExoCAD" ? exoCadVersion : null).then(
+      (result) => {
+        if (!result) {
+          setDesignMode(prevMode);
+          setCustomDesignSoftware(prevCustom);
+          setExoCadVersion(prevExo);
+          return;
+        }
+        toast({
+          title: "저장 완료",
+          description: "디자인 소프트웨어 설정이 저장되었습니다.",
+        });
+      },
+    );
+  };
+
+  const handleExoVersionChange = (next: ExoCadVersion) => {
+    const prev = exoCadVersion;
+    setExoCadVersion(next);
+    void persistDesign("ExoCAD", next).then((result) => {
+      if (!result) setExoCadVersion(prev);
+      else {
+        toast({
+          title: "저장 완료",
+          description: "ExoCAD 버전 설정이 저장되었습니다.",
+        });
       }
-
-      const propagatedCount = Number(
-        result?.propagatedRequestorDesignSoftwareCount || 0,
-      );
-      toast({
-        title: "저장 완료",
-        description:
-          propagatedCount > 0
-            ? `비어 있는 의뢰자 계정 ${propagatedCount}개에 기본값이 자동 주입되었습니다.`
-            : "디자인 소프트웨어 기본값이 저장되었습니다.",
-      });
     });
   };
 
   const handleCustomDesignSoftwareBlur = () => {
-    if (!canEditDesignSoftware || designMode !== "custom") return;
+    if (designMode !== "custom") return;
     const next = String(customDesignSoftware || "").trim();
     if (!next) return;
-
     const prevMode = designMode;
     const prevCustom = customDesignSoftware;
-    void persistDesignSoftware(next).then((result) => {
+    void persistDesign(next, null).then((result) => {
       if (!result) {
         setDesignMode(prevMode);
         setCustomDesignSoftware(prevCustom);
         return;
       }
-
-      const propagatedCount = Number(
-        result?.propagatedRequestorDesignSoftwareCount || 0,
-      );
       toast({
         title: "저장 완료",
-        description:
-          propagatedCount > 0
-            ? `비어 있는 의뢰자 계정 ${propagatedCount}개에 기본값이 자동 주입되었습니다.`
-            : "디자인 소프트웨어 기본값이 저장되었습니다.",
+        description: "디자인 소프트웨어 설정이 저장되었습니다.",
       });
     });
   };
@@ -283,23 +245,19 @@ export const RequestTab = () => {
                 아노다이징 처리
               </Label>
               <p className="text-sm text-muted-foreground">
-                기공소 설정으로 관리되며, 해당 기공소의 전체 의뢰 기본값에
-                적용됩니다.
+                내 계정 기본값으로 저장됩니다.
+                {canEditBaTemplate
+                  ? " 대표자인 경우 사업자 신규 가입 시드에도 반영됩니다."
+                  : ""}
               </p>
               <p className="text-xs font-medium text-muted-foreground/90">
                 현재 상태: {anodizingEnabled ? "ON (O)" : "OFF (X)"}
               </p>
-              {!canEdit ? (
-                <p className="text-xs text-muted-foreground">
-                  대표자 계정에서만 변경할 수 있습니다.
-                </p>
-              ) : null}
             </div>
-
             <Switch
               id="anodizing"
               checked={anodizingEnabled}
-              disabled={isLoading || !canEdit}
+              disabled={isLoading}
               onCheckedChange={toggleAnodizing}
             />
           </div>
@@ -309,14 +267,11 @@ export const RequestTab = () => {
           <div className="space-y-1">
             <Label className="text-base font-medium">디자인 소프트웨어</Label>
             <p className="text-sm text-muted-foreground">
-              사업체 공통 기본값입니다. 각 의뢰자 계정의 개인 설정이 비어 있을 때만
-              이 값이 기본으로 적용됩니다.
+              내 계정에 저장됩니다.
+              {canEditBaTemplate
+                ? " 대표자인 경우 사업자 신규 가입 기본값에도 함께 저장됩니다."
+                : ""}
             </p>
-            {!canEditDesignSoftware ? (
-              <p className="text-xs text-muted-foreground">
-                대표/직원 계정에서만 변경할 수 있습니다.
-              </p>
-            ) : null}
           </div>
 
           <RadioGroup
@@ -347,12 +302,46 @@ export const RequestTab = () => {
                   onChange={(e) => setCustomDesignSoftware(e.target.value)}
                   onBlur={handleCustomDesignSoftwareBlur}
                   placeholder="사용 중인 디자인 소프트웨어를 입력해주세요"
-                  disabled={isLoading || !canEditDesignSoftware}
+                  disabled={isLoading}
                   maxLength={120}
                 />
               ) : null}
             </div>
           </RadioGroup>
+
+          {designMode === "ExoCAD" ? (
+            <div className="space-y-2 rounded-md border bg-muted/40 px-3 py-3">
+              <Label className="text-sm font-medium">
+                ExoCAD 3.0(Galway) 이하인가요?
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                3.0 이하는 헥스 30° 보정이 필요할 수 있어 관리 대상입니다. 3.2
+                이상으로 업그레이드를 권장합니다.
+              </p>
+              <RadioGroup
+                value={exoCadVersion || ""}
+                onValueChange={(value) => {
+                  if (value === "le_3_0" || value === "ge_3_2") {
+                    handleExoVersionChange(value);
+                  }
+                }}
+                className="space-y-2"
+              >
+                <div className="flex items-center gap-2">
+                  <RadioGroupItem value="le_3_0" id="settings-exocad-le30" />
+                  <Label htmlFor="settings-exocad-le30" className="font-normal">
+                    예 (3.0 이하)
+                  </Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <RadioGroupItem value="ge_3_2" id="settings-exocad-ge32" />
+                  <Label htmlFor="settings-exocad-ge32" className="font-normal">
+                    아니오 (3.2 이상)
+                  </Label>
+                </div>
+              </RadioGroup>
+            </div>
+          ) : null}
         </div>
       </CardContent>
     </Card>

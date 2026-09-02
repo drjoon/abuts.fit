@@ -51,6 +51,9 @@ import {
   listHexVerificationInProgress,
   completeHexVerification,
   revertHexVerification,
+  updateHexApplyHex30,
+  completeHexVerificationForManufacturer,
+  revertHexVerificationForManufacturer,
 } from "../../controllers/admin/admin.hexVerification.controller.js";
 import {
   getSystemLogs,
@@ -299,8 +302,21 @@ router.post(
   addHappyCallCompletionMemo,
 );
 
-// ExoCAD 헥스 확인 (관리자)
+// ExoCAD 헥스 확인 (관리자) — User × 임플란트 제조사
 router.get("/hex-verification/in-progress", listHexVerificationInProgress);
+router.post(
+  "/hex-verification/users/:userId/manufacturers/:manufacturer/apply-hex30",
+  updateHexApplyHex30,
+);
+router.post(
+  "/hex-verification/users/:userId/manufacturers/:manufacturer/complete",
+  completeHexVerificationForManufacturer,
+);
+router.post(
+  "/hex-verification/users/:userId/manufacturers/:manufacturer/revert",
+  revertHexVerificationForManufacturer,
+);
+// deprecated BA-level (410)
 router.post(
   "/hex-verification/:businessAnchorId/complete",
   completeHexVerification,

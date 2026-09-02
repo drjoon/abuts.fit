@@ -8,6 +8,7 @@ import { Types } from "mongoose";
 import {
   resolveOwnedBusiness,
   resolvePrimaryOwnedBusiness,
+  seedUserRequestSettingsFromAnchor,
 } from "./business.utils.js";
 import { assertBusinessRole } from "./businessRole.util.js";
 import {
@@ -239,6 +240,7 @@ export async function addOwner(req, res) {
         business: anchor.name,
       },
     });
+    await seedUserRequestSettingsFromAnchor(targetId, anchor);
 
     return res.status(201).json({ success: true, data: { added: true } });
   } catch (error) {
@@ -516,6 +518,7 @@ export async function approveJoinRequest(req, res) {
     await User.findByIdAndUpdate(userId, {
       $set: userUpdate,
     });
+    await seedUserRequestSettingsFromAnchor(userId, anchor);
 
     return res.json({
       success: true,

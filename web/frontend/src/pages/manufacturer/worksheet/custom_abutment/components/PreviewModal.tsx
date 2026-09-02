@@ -93,9 +93,8 @@ import { resolveShippingMode } from "@/shared/shipping/shippingMode";
 import {
   normalizeManufacturerHexRotationMode,
   persistPrepApprovalSettings,
+  resolveDefaultPrepHexRotationMode,
   resolveHexVerificationBadgeLabel,
-  resolveRequestorHexRotationByDesignSoftware,
-  toManufacturerHexRotationLabel,
   type ManufacturerHexRotationDraftMode,
   type ManufacturerHexRotationMode,
 } from "@/pages/manufacturer/worksheet/custom_abutment/utils/hexRotation";
@@ -879,17 +878,8 @@ export const PreviewModal = ({
     if (savedManufacturerHexMode) {
       nextHexRotationDraft = savedManufacturerHexMode;
     } else if (isPrepStage) {
-      const byDesignSoftware = resolveRequestorHexRotationByDesignSoftware(
-        (req as any)?.caseInfos?.designSoftware,
-      );
-      if (byDesignSoftware) {
-        nextHexRotationDraft = toManufacturerHexRotationLabel(byDesignSoftware);
-      } else {
-        nextHexRotationDraft =
-          normalizeManufacturerHexRotationMode(
-            (req as any)?.caseInfos?.requestorHexRotation,
-          ) || "";
-      }
+      nextHexRotationDraft =
+        resolveDefaultPrepHexRotationMode(req as any) || "";
     } else {
       nextHexRotationDraft =
         normalizeManufacturerHexRotationMode(
@@ -898,14 +888,8 @@ export const PreviewModal = ({
         normalizeManufacturerHexRotationMode(
           (req as any)?.caseInfos?.requestorHexRotation,
         ) ||
-        (() => {
-          const byDesignSoftware = resolveRequestorHexRotationByDesignSoftware(
-            (req as any)?.caseInfos?.designSoftware,
-          );
-          return byDesignSoftware
-            ? toManufacturerHexRotationLabel(byDesignSoftware)
-            : "";
-        })();
+        resolveDefaultPrepHexRotationMode(req as any) ||
+        "";
     }
 
     setManufacturerHexRotationDraft(nextHexRotationDraft);

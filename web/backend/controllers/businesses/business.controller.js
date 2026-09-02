@@ -1134,10 +1134,12 @@ export async function getMyRequestSettings(req, res) {
           requestorExoCadVersion,
           hexVerificationSamplePending: isHexVerificationPending({
             designSoftware: requestorDesignSoftware,
+            exoCadVersion: requestorExoCadVersion,
             adminVerifiedHex: resolveAdminVerifiedHexFromSettings(
               freshUser?.requestSettings,
               null,
             ),
+            userRequestSettings: freshUser?.requestSettings,
           }),
           retentionGroove: "none",
           requestorRetentionGroove: requestorRetentionGroove || "none",
@@ -1172,8 +1174,7 @@ export async function getMyRequestSettings(req, res) {
     const businessRetentionGroove = normalizeRetentionGroove(
       anchor?.requestSettings?.retentionGroove,
     );
-    const canEditBusinessSettings =
-      membership === "owner" || membership === "member";
+    const canEditBusinessSettings = membership === "owner";
     const hasBusinessAnodizingSetting =
       typeof anchor?.requestSettings?.anodizingEnabled === "boolean";
     const hasRequestorAnodizingSetting =
@@ -1186,7 +1187,7 @@ export async function getMyRequestSettings(req, res) {
         membership,
         canEdit: membership === "owner",
         canEditDesignSoftware: canEditBusinessSettings,
-        // 디자인 SW와 동일: 대표/직원이 기공소 아노다이징 기본값을 설정할 수 있다.
+        // 사업자 템플릿(신규 가입 시드)은 대표자만. 개인 설정은 requestor* 로 저장.
         canEditAnodizing: canEditBusinessSettings,
         anodizingEnabled: hasBusinessAnodizingSetting
           ? anchor.requestSettings.anodizingEnabled
@@ -1205,10 +1206,13 @@ export async function getMyRequestSettings(req, res) {
         requestorExoCadVersion,
         hexVerificationSamplePending: isHexVerificationPending({
           designSoftware: requestorDesignSoftware || businessDesignSoftware,
+          exoCadVersion: requestorExoCadVersion || businessExoCadVersion,
           adminVerifiedHex: resolveAdminVerifiedHexFromSettings(
             freshUser?.requestSettings,
             anchor?.requestSettings,
           ),
+          userRequestSettings: freshUser?.requestSettings,
+          anchorRequestSettings: anchor?.requestSettings,
         }),
         retentionGroove: businessRetentionGroove || "none",
         requestorRetentionGroove:
@@ -1302,12 +1306,16 @@ export async function updateMyRequestSettings(req, res) {
       });
     }
 
+    const canSavePersonalRequestSettings = (role) =>
+      role === "requestor" || role === "internalLab";
+
     let requestorAnodizingEnabled;
     if (hasRequestorAnodizingEnabled) {
-      if (String(req.user?.role || "") !== "requestor") {
+      if (!canSavePersonalRequestSettings(String(req.user?.role || ""))) {
         return res.status(403).json({
           success: false,
-          message: "의뢰자 계정만 개인 아노다이징 기본값을 저장할 수 있습니다.",
+          message:
+            "의뢰자·기공소 계정만 개인 아노다이징 기본값을 저장할 수 있습니다.",
         });
       }
       if (typeof req.body?.requestorAnodizingEnabled !== "boolean") {
@@ -1355,10 +1363,11 @@ export async function updateMyRequestSettings(req, res) {
 
     let requestorDesignSoftware;
     if (hasRequestorDesignSoftware) {
-      if (String(req.user?.role || "") !== "requestor") {
+      if (!canSavePersonalRequestSettings(String(req.user?.role || ""))) {
         return res.status(403).json({
           success: false,
-          message: "의뢰자 계정만 개인 디자인 소프트웨어를 저장할 수 있습니다.",
+          message:
+            "의뢰자·기공소 계정만 개인 디자인 소프트웨어를 저장할 수 있습니다.",
         });
       }
 
@@ -1400,10 +1409,10 @@ export async function updateMyRequestSettings(req, res) {
 
     let requestorExoCadVersion;
     if (hasRequestorExoCadVersion) {
-      if (String(req.user?.role || "") !== "requestor") {
+      if (!canSavePersonalRequestSettings(String(req.user?.role || ""))) {
         return res.status(403).json({
           success: false,
-          message: "의뢰자 계정만 개인 ExoCAD 버전을 저장할 수 있습니다.",
+          message: "의뢰자·기공소 계정만 개인 ExoCAD 버전을 저장할 수 있습니다.",
         });
       }
       const raw = req.body?.requestorExoCadVersion;
@@ -1436,10 +1445,10 @@ export async function updateMyRequestSettings(req, res) {
 
     let requestorRetentionGroove;
     if (hasRequestorRetentionGroove) {
-      if (String(req.user?.role || "") !== "requestor") {
+      if (!canSavePersonalRequestSettings(String(req.user?.role || ""))) {
         return res.status(403).json({
           success: false,
-          message: "의뢰자 계정만 개인 유지홈 기본값을 저장할 수 있습니다.",
+          message: "의뢰자·기공소 계정만 개인 유지홈 기본값을 저장할 수 있습니다.",
         });
       }
       requestorRetentionGroove = normalizeRetentionGroove(
@@ -1468,13 +1477,14 @@ export async function updateMyRequestSettings(req, res) {
     const businessAnchorId =
       freshUser?.businessAnchorId || req.user.businessAnchorId || null;
 
-    // 헥스 기본값만 대표자 전용. 디자인SW·아노다이징·유지홈은 대표/직원 공통.
-    const needsOwnerPermission = hasDefaultRequestorHexRotation;
-    const needsBusinessSettingsPermission =
+    // BA 템플릿(신규 가입 시드)은 대표자만. 개인 설정은 User SSOT.
+    const needsOwnerPermission =
+      hasDefaultRequestorHexRotation ||
       hasAnodizingEnabled ||
       hasDesignSoftware ||
       hasExoCadVersion ||
       hasRetentionGroove;
+    const needsBusinessSettingsPermission = needsOwnerPermission;
 
     let anchor = null;
     let membership = "none";
@@ -1512,22 +1522,19 @@ export async function updateMyRequestSettings(req, res) {
       });
     }
 
-    if (
-      needsBusinessSettingsPermission &&
-      membership !== "owner" &&
-      membership !== "member"
-    ) {
+    // BA 템플릿은 대표자만 (기존 멤버 User 값은 절대 덮지 않음).
+    if (needsBusinessSettingsPermission && membership !== "owner") {
       return res.status(403).json({
         success: false,
         message:
-          "사업자 구성원(대표/직원)만 기공소 디자인 소프트웨어·아노다이징·유지홈을 변경할 수 있습니다.",
+          "대표자 계정만 사업자 기본값(신규 가입 시드)을 변경할 수 있습니다.",
       });
     }
 
     const now = new Date();
     let updatedAnchor = null;
-    let propagatedRequestorDesignSoftwareCount = 0;
-    if (needsOwnerPermission || needsBusinessSettingsPermission) {
+    const propagatedRequestorDesignSoftwareCount = 0;
+    if (needsOwnerPermission && membership === "owner") {
       const setPayload = {
         "requestSettings.updatedAt": now,
       };
@@ -1580,42 +1587,7 @@ export async function updateMyRequestSettings(req, res) {
         },
       ).select({ requestSettings: 1 });
 
-      // BusinessAnchor 공통 기본값 변경 시, 개인 설정이 비어 있는 의뢰자 계정에만 기본값 주입
-      if (hasDesignSoftware && designSoftware) {
-        const propagateSet = {
-          "requestSettings.designSoftware": designSoftware,
-          "requestSettings.updatedAt": now,
-        };
-        if (designSoftware === "ExoCAD") {
-          const v =
-            setPayload["requestSettings.exoCadVersion"] ||
-            normalizeExoCadVersionOrNull(
-              updatedAnchor?.requestSettings?.exoCadVersion,
-            );
-          if (v) {
-            propagateSet["requestSettings.exoCadVersion"] = v;
-          }
-        } else {
-          propagateSet["requestSettings.exoCadVersion"] = null;
-        }
-        const propagateResult = await User.updateMany(
-          {
-            businessAnchorId,
-            role: "requestor",
-            $or: [
-              { "requestSettings.designSoftware": { $exists: false } },
-              { "requestSettings.designSoftware": null },
-              { "requestSettings.designSoftware": "" },
-            ],
-          },
-          {
-            $set: propagateSet,
-          },
-        );
-        propagatedRequestorDesignSoftwareCount = Number(
-          propagateResult?.modifiedCount || 0,
-        );
-      }
+      // 기존 사용자 값은 변경하지 않음. BA는 신규 가입 시드 전용.
 
       invalidateMyBusinessCache(businessAnchorId);
     }
@@ -1757,10 +1729,14 @@ export async function updateMyRequestSettings(req, res) {
         hexVerificationSamplePending: isHexVerificationPending({
           designSoftware:
             updatedRequestorDesignSoftware || businessDesignSoftware,
+          exoCadVersion:
+            updatedRequestorExoCadVersion || businessExoCadVersion,
           adminVerifiedHex: resolveAdminVerifiedHexFromSettings(
             updatedUserRequestSettings,
             requestSettingsSource,
           ),
+          userRequestSettings: updatedUserRequestSettings,
+          anchorRequestSettings: requestSettingsSource,
         }),
         retentionGroove: businessRetentionGroove || "none",
         requestorRetentionGroove:

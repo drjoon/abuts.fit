@@ -2,6 +2,7 @@
 // - web/frontend/src/features/requestSettings/useRequestorRequestSettings.ts
 // - web/frontend/src/features/requestSettings/RequestSettingsToolbar.tsx
 // change-log:
+// - 2026-09-03: ExoCAD 3.0 이하 Yes/No + 3.2 업그레이드 권고. 긴 버전별 보정 설명 제거.
 // - 2026-08-21: ExoCAD 버전(3.0 이하/3.2 이상) 선택 + 헥스 30도 안내 요약
 // - 2026-08-16: 미설정 게이트도 X/취소로 닫기 허용(재진입·새로고침 시 다시 노출).
 import { Button } from "@/components/ui/button";
@@ -104,13 +105,14 @@ export function DesignSoftwareSettingsDialog({
 
           {mode === "ExoCAD" ? (
             <div className="space-y-3 rounded-md border bg-muted/40 px-3 py-3">
-              <p className="text-xs leading-relaxed text-muted-foreground">
-                ExoCAD 3.0(Galway) 이하에서는 STL 내보내기 시 임플란트 헥스가
-                약 30° 틀어질 수 있습니다. 3.2(Elefsina) 이상에서는 수정되었습니다.
-                사용 중인 버전에 맞는 헥스 보정으로 첫 의뢰를 확인합니다.
-              </p>
               <div className="space-y-1.5">
-                <Label className="text-sm font-medium">ExoCAD 버전</Label>
+                <Label className="text-sm font-medium">
+                  ExoCAD 3.0(Galway) 이하인가요?
+                </Label>
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  3.0 이하에서는 STL 내보내기 시 임플란트 헥스가 약 30° 틀어질 수
+                  있습니다. 3.2(Elefsina) 이상으로 업그레이드를 권장합니다.
+                </p>
                 <RadioGroup
                   value={exoCadVersion || ""}
                   onValueChange={(value) => {
@@ -118,43 +120,42 @@ export function DesignSoftwareSettingsDialog({
                       onExoCadVersionChange?.(value);
                     }
                   }}
-                  className="space-y-2"
+                  className="space-y-2 pt-1"
                 >
-                  <div className="flex items-start space-x-2">
+                  <div className="flex items-center space-x-2">
                     <RadioGroupItem
                       value="le_3_0"
                       id="req-settings-exocad-le30"
-                      className="mt-0.5"
                     />
                     <Label
                       htmlFor="req-settings-exocad-le30"
-                      className="font-normal leading-snug"
+                      className="font-normal"
                     >
-                      <span className="font-medium">3.0 이하</span>
-                      <span className="mt-0.5 block text-xs text-muted-foreground">
-                        헥스 30° 회전 오류 발생 → 보정본을 원본으로하고, 무보정
-                        샘플을 함께 제공
-                      </span>
+                      예 (3.0 이하)
                     </Label>
                   </div>
-                  <div className="flex items-start space-x-2">
+                  <div className="flex items-center space-x-2">
                     <RadioGroupItem
                       value="ge_3_2"
                       id="req-settings-exocad-ge32"
-                      className="mt-0.5"
                     />
                     <Label
                       htmlFor="req-settings-exocad-ge32"
-                      className="font-normal leading-snug"
+                      className="font-normal"
                     >
-                      <span className="font-medium">3.2 이상</span>
-                      <span className="mt-0.5 block text-xs text-muted-foreground">
-                        STL 그대로가 원본 → 30° 확인용 샘플을 함께 가공
-                      </span>
+                      아니오 (3.2 이상)
                     </Label>
                   </div>
                 </RadioGroup>
               </div>
+              {exoCadVersion === "le_3_0" ? (
+                <p className="rounded-md border border-amber-200/80 bg-amber-50/80 px-2.5 py-2 text-xs leading-relaxed text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-100">
+                  헥스 30° 보정이 필요할 수 있어 관리 대상으로 등록됩니다.
+                  가능하면 ExoCAD 3.2 이상으로 업그레이드해 주세요. 스캔바디
+                  라이브러리별로 패치 여부가 다를 수 있어, 임플란트 제조사별
+                  설정은 관리자가 확인합니다.
+                </p>
+              ) : null}
             </div>
           ) : null}
 

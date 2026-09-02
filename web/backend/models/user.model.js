@@ -221,13 +221,13 @@ const userSchema = new mongoose.Schema(
           message: "exoCadVersion은 le_3_0 | ge_3_2 이어야 합니다.",
         },
       },
-      // deprecated: 헥스 확인 pending SSOT는 hexVerificationResultHex 미확정.
+      // deprecated: 헥스 확인 pending SSOT는 제조사별 verifiedHex 미확정.
       // 읽기/쓰기에 쓰지 말 것. related: designSoftwareHex.js isHexVerificationPending
       hexVerificationSamplePending: {
         type: Boolean,
         default: false,
       },
-      // 관리자 헥스 확인 테스트 완료 시각. related: designSoftwareHex.js resolveExoCadManufacturerHexRotation
+      // deprecated(레거시 계정 단일 확정). 신규 SSOT: hexByImplantManufacturer[].verified*
       hexVerificationCompletedAt: {
         type: Date,
         default: null,
@@ -237,13 +237,54 @@ const userSchema = new mongoose.Schema(
         ref: "User",
         default: null,
       },
-      // 관리자 확정 헥스(ExoCAD). 헥스 확인 pending SSOT(값 없으면 pending).
-      // - "STL모델대로" | "헥스30도회전"
+      // deprecated(레거시). 해석 fallback만. related: designSoftwareHex.js
       hexVerificationResultHex: {
         type: String,
         default: null,
         trim: true,
       },
+      // ExoCAD 3.0 이하: 임플란트 제조사별 헥스 30° 패치·관리자 확정 SSOT
+      // related: web/backend/utils/designSoftwareHex.js, admin.hexVerification.controller.js
+      hexByImplantManufacturer: [
+        {
+          _id: false,
+          manufacturer: {
+            type: String,
+            required: true,
+            trim: true,
+            uppercase: true,
+          },
+          // true → 시드 헥스30도회전, false → STL모델대로 (라이브러리 패치됨)
+          applyHex30: {
+            type: Boolean,
+            default: true,
+          },
+          // 관리자 확정값. 있으면 제조사 PreviewModal 잠금.
+          verifiedHex: {
+            type: String,
+            default: null,
+            trim: true,
+            validate: {
+              validator: (v) =>
+                v == null ||
+                v === "" ||
+                v === "STL모델대로" ||
+                v === "헥스30도회전",
+              message:
+                "verifiedHex는 'STL모델대로' | '헥스30도회전' 이어야 합니다.",
+            },
+          },
+          verifiedAt: {
+            type: Date,
+            default: null,
+          },
+          verifiedBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "User",
+            default: null,
+          },
+        },
+      ],
       // 의뢰자(계정) 단위 아노다이징 기본값. 신규 업로드 시드 → caseInfos.anodizingEnabled
       anodizingEnabled: {
         type: Boolean,

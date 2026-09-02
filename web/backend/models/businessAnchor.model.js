@@ -340,13 +340,12 @@ const businessAnchorSchema = new mongoose.Schema(
           message: "exoCadVersion은 le_3_0 | ge_3_2 이어야 합니다.",
         },
       },
-      // deprecated: 헥스 확인 pending SSOT는 hexVerificationResultHex 미확정.
-      // 읽기/쓰기에 쓰지 말 것. related: designSoftwareHex.js isHexVerificationPending
+      // deprecated: pending SSOT는 User.hexByImplantManufacturer[].verifiedHex
       hexVerificationSamplePending: {
         type: Boolean,
         default: false,
       },
-      // 관리자 헥스 확인 테스트 완료 시각. related: designSoftwareHex.js resolveExoCadManufacturerHexRotation
+      // deprecated(레거시 계정 단일 확정). 신규 가입 시드용으로만 유지.
       hexVerificationCompletedAt: {
         type: Date,
         default: null,
@@ -356,7 +355,7 @@ const businessAnchorSchema = new mongoose.Schema(
         ref: "User",
         default: null,
       },
-      // 관리자 확정 헥스(ExoCAD). 헥스 확인 pending SSOT(값 없으면 pending).
+      // deprecated(레거시). 해석 fallback / 신규 가입 시드.
       hexVerificationResultHex: {
         type: String,
         validate: {
@@ -368,6 +367,36 @@ const businessAnchorSchema = new mongoose.Schema(
         default: null,
         trim: true,
       },
+      // 신규 가입 시드용(확정/샘플 SSOT는 User). related: designSoftwareHex.js
+      hexByImplantManufacturer: [
+        {
+          _id: false,
+          manufacturer: {
+            type: String,
+            required: true,
+            trim: true,
+            uppercase: true,
+          },
+          applyHex30: {
+            type: Boolean,
+            default: true,
+          },
+          verifiedHex: {
+            type: String,
+            default: null,
+            trim: true,
+          },
+          verifiedAt: {
+            type: Date,
+            default: null,
+          },
+          verifiedBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "User",
+            default: null,
+          },
+        },
+      ],
       // 의뢰자(사업체) 단위 기본 헥스 회전값 (신규 의뢰 기본값)
       defaultRequestorHexRotation: {
         type: String,

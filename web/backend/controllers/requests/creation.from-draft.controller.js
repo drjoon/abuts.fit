@@ -328,6 +328,7 @@ export async function createRequestsFromDraft(req, res) {
                 "requestSettings.designSoftware": 1,
                 "requestSettings.exoCadVersion": 1,
                 "requestSettings.hexVerificationResultHex": 1,
+                "requestSettings.hexByImplantManufacturer": 1,
                 requestorKind: 1,
                 "verification.verifiedAt": 1,
                 createdAt: 1,
@@ -346,6 +347,7 @@ export async function createRequestsFromDraft(req, res) {
                 "requestSettings.designSoftware": 1,
                 "requestSettings.exoCadVersion": 1,
                 "requestSettings.hexVerificationResultHex": 1,
+                "requestSettings.hexByImplantManufacturer": 1,
               })
               .lean()
           : Promise.resolve(null),
@@ -1504,27 +1506,43 @@ export async function createRequestsFromDraft(req, res) {
               ? requestorExoCadVersion
               : null);
 
-          const resolvedRequestorHexRotation =
-            resolveHexRotationByDesignSoftware(
-              resolvedDesignSoftware,
-              resolvedExoCadVersion,
-            );
+          const implantManufacturer = String(
+            item.caseInfosWithFile?.implantManufacturer ||
+              item.caseInfos?.implantManufacturer ||
+              "",
+          ).trim();
 
-          // 관리자 hexVerificationResultHex 미확정이면 버전 기반 원본 헥스 강제.
+          const userRs = requestorSettingsDoc?.requestSettings || null;
+          const anchorRs = shippingOrg?.requestSettings || null;
+
+          // 임플란트 제조사별 확정/applyHex30 시드 (ExoCAD 3.0 이하)
           const hexVerificationPending = isHexVerificationPending({
             designSoftware: resolvedDesignSoftware,
+            exoCadVersion: resolvedExoCadVersion,
+            implantManufacturer,
+            userRequestSettings: userRs,
+            anchorRequestSettings: anchorRs,
             adminVerifiedHex: requestorAdminVerifiedHex,
           });
 
-          // ExoCAD: 확정 후 관리자 > 제조사 > 디자인SW. pending이면 디자인SW 강제.
           const resolvedManufacturerHexRotation =
             resolveExoCadManufacturerHexRotation({
               designSoftware: resolvedDesignSoftware,
               exoCadVersion: resolvedExoCadVersion,
+              implantManufacturer,
+              userRequestSettings: userRs,
+              anchorRequestSettings: anchorRs,
               manufacturerDefault: requestorDefaultManufacturerHexRotation,
               adminVerifiedHex: requestorAdminVerifiedHex,
               hexVerificationPending,
             });
+
+          const resolvedRequestorHexRotation =
+            resolvedManufacturerHexRotation ||
+            resolveHexRotationByDesignSoftware(
+              resolvedDesignSoftware,
+              resolvedExoCadVersion,
+            );
 
           const resolvedFinalHexRotation = resolveFinalHexRotationValue({
             manufacturerHexRotation: resolvedManufacturerHexRotation,
