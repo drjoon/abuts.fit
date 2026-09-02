@@ -162,6 +162,7 @@ import { useToast } from "@/shared/hooks/use-toast";
 import {
   formatLabFeeMultiplierLabel,
   isPendingRoundBarAbutment,
+  isSimpleAbutmentModeForFee,
   normalizeLabFeeMultiplier,
 } from "@/shared/practice/labFeeSchedule";
 import { LabPendingAbutmentGuide } from "@/shared/components/practice/LabPendingAbutmentGuide";
@@ -1268,12 +1269,18 @@ export function PracticeTransferDetailChatDialog({
   }, [title, summaryItems, toothWorks, memo]);
   const hasPendingLabCustomAbutment = Boolean(
     toothWorks?.some(
-      (work) => Boolean(work.customAbutment) && isPendingRoundBarAbutment(work),
+      (work) =>
+        Boolean(work.customAbutment) &&
+        !isSimpleAbutmentModeForFee(work) &&
+        isPendingRoundBarAbutment(work),
     ),
   );
   const hasAbutsCustomAbutment = Boolean(
     toothWorks?.some(
-      (work) => Boolean(work.customAbutment) && !isPendingRoundBarAbutment(work),
+      (work) =>
+        Boolean(work.customAbutment) &&
+        !isSimpleAbutmentModeForFee(work) &&
+        !isPendingRoundBarAbutment(work),
     ),
   );
   /** 최초 미수락: 채팅은 유지하고 상단에 수락 CTA */
@@ -2010,9 +2017,11 @@ export function PracticeTransferDetailChatDialog({
               {showAcceptBar ? (
                 <div className="shrink-0 border-b bg-muted/40 px-5 py-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   {hasPendingLabCustomAbutment ||
+                  hasAbutsCustomAbutment ||
                   oralScanAttachMode === "practice_required" ? (
                     <div className="space-y-1">
-                      {hasPendingLabCustomAbutment ? (
+                      {hasPendingLabCustomAbutment ||
+                      hasAbutsCustomAbutment ? (
                         <LabPendingAbutmentGuide
                           toothWorks={toothWorks}
                           mixedWithAbuts={hasAbutsCustomAbutment}

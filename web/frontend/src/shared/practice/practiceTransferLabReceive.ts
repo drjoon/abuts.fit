@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/components/practice/LabReceiveWorkUploadDialog.tsx
 // change-log:
+// - 2026-09-02: 미제공 안내 한 줄 — 제조사만이 아니라 formatImplantSummary 전체 스펙.
 // - 2026-09-02: toothWorks 구조 배열 우선(요청중 implantAddRequest — 요약 문자열 왕복 손실 방지).
 // - 2026-09-02: 다치아 어벗 — 일부 STL만 올려도 showWorkActions·드롭존 유지(남은 개수 업로드).
 // - 2026-09-02: 기공소 수신 상단 — 취소 뱃지 제외·거부·작업취소 목록 숨김 복구(치과만 취소 필터).
@@ -14,7 +15,6 @@
 // - 2026-08-28: 심플어벗(치과 재고)은 어벗츠 CNC·디자인 업로드 기대 개수에서 제외.
 // - 2026-08-21: expectedAbutmentDesigns — 치식 CA 개수 우선(헥스 샘플 related 과다 방지).
 // - 2026-09-02: 미제공 안내 — 공개 카탈로그로 도입중 플래그 보강(저장 누락 보정).
-// - 2026-09-02: 미제공 안내 한 줄 — 치아·제조사만(스펙 생략).
 // - 2026-08-21: 미제공 CA 목록·상세 한 줄(formatPendingLabAbutmentDetailLine).
 // - 2026-08-21: 요청중(헥스 사이즈 미정) CA는 어벗츠 생산 CTA·기대 디자인 수에서 제외.
 // - 2026-08-25: unread — 치과 삭제(deleted|레거시 canceled)는 채팅 unread만.
@@ -36,6 +36,7 @@
 // - 2026-08-21: abutmentDeliveryInfo — 연동 CA 한진 배송 요약(치과 발신과 동일).
 // - 2026-08-20: 수신 미확인+채팅 unread 합산(사이드바·캘린더 칩 공통).
 import {
+  formatImplantSummary,
   isBridgeLikeProsthesisType,
   isMissingToothProsthesisType,
   isTemporaryToothProsthesisType,
@@ -417,18 +418,23 @@ export function listPracticeTransferPendingLabCustomAbutmentToothWorks(
     );
 }
 
-/** 미제공 안내용 한 줄: `22번 · 오스템` (제조사만) */
+/** 미제공 안내용 한 줄: `22번 · Osstem / US / REGULAR / HEX` (치식 원본 스펙 유지) */
 export function formatPendingLabAbutmentDetailLine(
   row: Pick<
     ToothWorkSelection,
-    "toothNumber" | "implantManufacturer"
+    | "toothNumber"
+    | "implantManufacturer"
+    | "implantBrand"
+    | "implantFamily"
+    | "implantType"
+    | "implantAddRequest"
   > | null | undefined,
 ) {
   const tooth = String(row?.toothNumber || "").trim();
-  const manufacturer = String(row?.implantManufacturer || "").trim();
-  if (tooth && manufacturer) return `${tooth}번 · ${manufacturer}`;
+  const implant = formatImplantSummary(row);
+  if (tooth && implant) return `${tooth}번 · ${implant}`;
   if (tooth) return `${tooth}번`;
-  return manufacturer || "임플란트 미정";
+  return implant || "임플란트 미정";
 }
 
 export function practiceTransferAbutmentMachiningStarted(

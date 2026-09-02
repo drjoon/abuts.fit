@@ -11,7 +11,8 @@
 // - 2026-08-26: brand/family/type OR(` | `) 파싱·조인 헬퍼. 요청중/도입중/도입 상태.
 // - 2026-08-26: 관리자 추가·isPublic·명시 저장(입력값 그대로).
 // - 2026-08-24: 관리자 어벗 추가 요청 삭제 API 클라이언트.
-// - 2026-09-02: 공개 카탈로그 미매칭 치식도 도입중 플래그 보강(안내·어벗츠 제외).
+// - 2026-09-02: 공개 카탈로그 미매칭 치식도 도입중 플래그 보강(안내·어벗츠 제외). 심플어벗은 보강 제외.
+// - 2026-09-02: 어벗츠 제공만·완료 호버 툴팁 상수.
 // - 2026-09-02: matchesRoundBarCatalogSpec — brand/family/type OR(` | `) 토큰 교집합.
 // - 2026-09-02: 미제공 안내 라벨 — 기공소 자체 처리 / 어벗츠 생산의뢰(완료)·호버 툴팁.
 // - 2026-09-02: 미제공 안내 라벨 — 자체 처리 / 어벗츠 생산의뢰(완료).
@@ -246,6 +247,12 @@ export const LAB_PENDING_ABUTMENT_ABUTS_ORDERED_LABEL = "어벗츠 생산의뢰 
 /** 호버 툴팁 — 미제공만 */
 export const LAB_PENDING_ABUTMENT_TOOLTIP_SELF_ONLY =
   "어벗츠에서 아직 CNC를 제공하지 않는 임플란트입니다. 해당 커스텀어벗은 기공소에서 자체 제작하세요.";
+/** 호버 툴팁 — 어벗츠 제공만(업로드 전) */
+export const LAB_PENDING_ABUTMENT_TOOLTIP_ABUTS_ONLY =
+  "어벗츠에서 CNC를 제공하는 커스텀어벗입니다. STL을 올려 생산 의뢰하세요.";
+/** 호버 툴팁 — 어벗츠 제공만(생산의뢰 완료) */
+export const LAB_PENDING_ABUTMENT_TOOLTIP_ABUTS_ORDERED =
+  "어벗츠 대상은 이미 생산 의뢰되었습니다. 준비 단계에서는 취소·재업로드할 수 있습니다.";
 /** 호버 툴팁 — 미제공 + 어벗츠 대상(업로드 전) */
 export const LAB_PENDING_ABUTMENT_TOOLTIP_MIXED =
   "어벗츠 미제공 치아는 기공소에서 자체 제작하고, 어벗츠 대상만 STL을 올려 생산 의뢰하세요.";
@@ -477,6 +484,13 @@ export const enrichToothWorksPendingFromCatalog = <
   if (!Array.isArray(catalog) || catalog.length === 0) return list;
   return list.map((row) => {
     if (!row?.customAbutment) return row;
+    // 심플어벗(치과 재고)은 기공소 자체 처리 대상이 아님 — labFeeSchedule과 순환 import 방지용 인라인.
+    const abutmentManufacturer = String(
+      (row as { abutmentManufacturer?: string }).abutmentManufacturer || "",
+    ).trim();
+    if (abutmentManufacturer === "심플어벗" || abutmentManufacturer === "심플밀링") {
+      return row;
+    }
     if (row.roundBarAdopted === true || row.adopted === true) return row;
     if (isPendingAbutmentAdoption(row)) return row;
     const match = findRoundBarCatalogMatch(catalog, {

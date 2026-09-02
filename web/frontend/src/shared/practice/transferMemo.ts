@@ -5,6 +5,7 @@
 // - web/backend/services/practiceTransferProduction.service.js
 // - web/backend/controllers/practiceTransfers/practiceTransferSettings.controller.js
 // change-log:
+// - 2026-09-02: formatImplantSummary — 도입중(implantAddRequest)이어도 실제 brand/family/type 표시(자리표시만 축약).
 // - 2026-09-02: 치식 직렬화 `{…/…/+add}` — implantAddRequest 왕복(요청중 CA가 어벗츠 업로드로 오인되지 않게).
 // - 2026-09-01: 기공의뢰 caseInfos.tooth는 toothWorks 치식 SSOT(파일명 추출 금지). 단치아면 파일에도 반영.
 // - 2026-08-25: 커스텀어벗 보철 형태는 심플어벗 불가 — 어벗 쪽 완성=스캔바디만.
@@ -289,18 +290,18 @@ export const formatImplantSummary = (
 ) => {
   const manufacturer = String(row?.implantManufacturer || "").trim();
   const brand = String(row?.implantBrand || "").trim();
-  // 임플란트 추가 요청(메모만) — brand/type 옵션 자리표시는 숨김
-  if (
-    Boolean(row?.implantAddRequest) ||
+  const family = String(row?.implantFamily || "").trim();
+  const type = String(row?.implantType || "").trim();
+  // 메모만 추가요청(자리표시 brand/type)만 제조사로 축약.
+  // 도입중·카탈로그 보강으로 implantAddRequest=true여도 실제 스펙(US/REGULAR 등)은 그대로 표시.
+  const placeholderOnly =
     brand === MANUFACTURER_ADD_REQUEST_BRAND ||
-    String(row?.implantType || "").trim() === IMPLANT_ADD_REQUEST_OPTION
-  ) {
+    type === IMPLANT_ADD_REQUEST_OPTION ||
+    (Boolean(row?.implantAddRequest) && !brand && !family && !type);
+  if (placeholderOnly) {
     return manufacturer || IMPLANT_ADD_REQUEST_OPTION;
   }
-  return [manufacturer, brand, row?.implantFamily, row?.implantType]
-    .map((v) => String(v || "").trim())
-    .filter(Boolean)
-    .join(" / ");
+  return [manufacturer, brand, family, type].filter(Boolean).join(" / ");
 };
 
 /** 카드용 짧은 표시: 제조사 앞 3글자 / 패밀리 첫 글자 */

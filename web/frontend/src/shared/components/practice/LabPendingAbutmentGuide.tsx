@@ -4,6 +4,8 @@
 // - web/frontend/src/shared/components/practice/PracticeLabReceiveWorkActionsBar.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // change-log:
+// - 2026-09-02: 어벗츠 제공 CA만 있어도 안내 표시. 심플어벗은 항상 제외.
+// - 2026-09-02: 미제공 안내 — 심플어벗(치과 재고)은 자체 처리 목록에서 제외.
 // - 2026-09-02: 라벨「기공소 자체 처리」·호버 상세 툴팁.
 // - 2026-09-02: 어벗츠 생산의뢰 완료(업로드 후) 라벨 표시.
 // - 2026-09-02: 자체 처리·어벗츠 생산의뢰 치아를 각각 표시. 문구 단문화.
@@ -23,6 +25,8 @@ import {
   LAB_PENDING_ABUTMENT_ABUTS_ORDER_LABEL,
   LAB_PENDING_ABUTMENT_ABUTS_ORDERED_LABEL,
   LAB_PENDING_ABUTMENT_SELF_PROCESS_LABEL,
+  LAB_PENDING_ABUTMENT_TOOLTIP_ABUTS_ONLY,
+  LAB_PENDING_ABUTMENT_TOOLTIP_ABUTS_ORDERED,
   LAB_PENDING_ABUTMENT_TOOLTIP_MIXED,
   LAB_PENDING_ABUTMENT_TOOLTIP_MIXED_ORDERED,
   LAB_PENDING_ABUTMENT_TOOLTIP_SELF_ONLY,
@@ -54,11 +58,16 @@ function sortByTooth(rows: ToothWorkSelection[]) {
   );
 }
 
+/** 커스텀어벗만 — 심플어벗(치과 재고)은 항상 제외 */
+function isCustomAbutmentGuideRow(row: ToothWorkSelection) {
+  return Boolean(row.customAbutment) && !isSimpleAbutmentModeForFee(row);
+}
+
 function listPendingRows(toothWorks: ToothWorkSelection[] | null | undefined) {
   if (!Array.isArray(toothWorks) || toothWorks.length === 0) return [];
   return sortByTooth(
     toothWorks.filter(
-      (row) => Boolean(row.customAbutment) && isPendingRoundBarAbutment(row),
+      (row) => isCustomAbutmentGuideRow(row) && isPendingRoundBarAbutment(row),
     ),
   );
 }
@@ -69,10 +78,7 @@ function listAbutsOrderRows(
   if (!Array.isArray(toothWorks) || toothWorks.length === 0) return [];
   return sortByTooth(
     toothWorks.filter(
-      (row) =>
-        Boolean(row.customAbutment) &&
-        !isSimpleAbutmentModeForFee(row) &&
-        !isPendingRoundBarAbutment(row),
+      (row) => isCustomAbutmentGuideRow(row) && !isPendingRoundBarAbutment(row),
     ),
   );
 }
@@ -97,16 +103,26 @@ function GuideLine({
   );
 }
 
-function resolveTooltipBody(hasAbuts: boolean, ordered: boolean) {
-  if (!hasAbuts) return LAB_PENDING_ABUTMENT_TOOLTIP_SELF_ONLY;
-  if (ordered) return LAB_PENDING_ABUTMENT_TOOLTIP_MIXED_ORDERED;
-  return LAB_PENDING_ABUTMENT_TOOLTIP_MIXED;
+function resolveTooltipBody(
+  hasPending: boolean,
+  hasAbuts: boolean,
+  ordered: boolean,
+) {
+  if (hasPending && hasAbuts) {
+    return ordered
+      ? LAB_PENDING_ABUTMENT_TOOLTIP_MIXED_ORDERED
+      : LAB_PENDING_ABUTMENT_TOOLTIP_MIXED;
+  }
+  if (hasPending) return LAB_PENDING_ABUTMENT_TOOLTIP_SELF_ONLY;
+  return ordered
+    ? LAB_PENDING_ABUTMENT_TOOLTIP_ABUTS_ORDERED
+    : LAB_PENDING_ABUTMENT_TOOLTIP_ABUTS_ONLY;
 }
 
 /**
- * 기공소 수신: 어벗츠 미제공(요청중) CA + 어벗츠 생산의뢰 대상 안내.
+ * 기공소 수신: 미제공(요청중·도입중) CA · 어벗츠 제공 CA 안내.
  * `기공소 자체 처리 — {치아}` / `어벗츠 생산의뢰[ 완료] — {치아}`
- * 호버 시 상세 툴팁(앱 기본 600ms).
+ * 심플어벗은 제외. 호버 시 상세 툴팁(앱 기본 600ms).
  */
 export function LabPendingAbutmentGuide({
   toothWorks,
@@ -114,13 +130,14 @@ export function LabPendingAbutmentGuide({
   className,
 }: LabPendingAbutmentGuideProps) {
   const pendingRows = listPendingRows(toothWorks);
-  if (pendingRows.length === 0) return null;
-
   const abutsRows = listAbutsOrderRows(toothWorks);
+  if (pendingRows.length === 0 && abutsRows.length === 0) return null;
+
   const abutsLabel = abutsProductionOrdered
     ? LAB_PENDING_ABUTMENT_ABUTS_ORDERED_LABEL
     : LAB_PENDING_ABUTMENT_ABUTS_ORDER_LABEL;
   const tooltipBody = resolveTooltipBody(
+    pendingRows.length > 0,
     abutsRows.length > 0,
     abutsProductionOrdered,
   );
@@ -134,10 +151,12 @@ export function LabPendingAbutmentGuide({
             className,
           )}
         >
-          <GuideLine
-            label={LAB_PENDING_ABUTMENT_SELF_PROCESS_LABEL}
-            detail={formatDetailList(pendingRows)}
-          />
+          {pendingRows.length > 0 ? (
+            <GuideLine
+              label={LAB_PENDING_ABUTMENT_SELF_PROCESS_LABEL}
+              detail={formatDetailList(pendingRows)}
+            />
+          ) : null}
           {abutsRows.length > 0 ? (
             <GuideLine
               label={abutsLabel}

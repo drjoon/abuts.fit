@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/practice/practiceTransferLabReceive.ts
 // change-log:
+// - 2026-09-02: 어벗츠 제공 CA만 있어도 안내 표시(심플어벗 제외).
 // - 2026-09-02: 공개 카탈로그로 도입중 CA 안내 보강(플래그 저장 누락 보정).
 // - 2026-09-02: 미제공 안내에 어벗츠 생산의뢰 완료 여부 전달.
 // - 2026-09-02: 작업 완료 취소 표시 중에도 미제공 CA 자체 처리 안내 유지.
@@ -66,16 +67,17 @@ export function PracticeLabReceiveWorkActionsBar({
   const catalog = Array.isArray(implantCatalog) ? implantCatalog : [];
   const state = resolvePracticeLabReceiveWorkActionState(transfer, catalog);
   const hasTrailing = Boolean(trailingActions);
+  const hasAbutmentGuide = state.hasPendingLabCa || state.hasAbutsCa;
   if (
     !state.showWorkActions &&
     !state.showCompletedStageHeaderCancel &&
     !hasTrailing &&
-    !state.hasPendingLabCa
+    !hasAbutmentGuide
   ) {
     return null;
   }
 
-  const pendingLabGuide = state.hasPendingLabCa ? (
+  const pendingLabGuide = hasAbutmentGuide ? (
     <LabPendingAbutmentGuide
       toothWorks={listPracticeTransferCustomAbutmentToothWorks(
         transfer,

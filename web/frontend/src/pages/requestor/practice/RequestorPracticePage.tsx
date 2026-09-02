@@ -26,6 +26,8 @@
 // - web/frontend/src/shared/practice/labReceiveCalendarHiddenWeekdays.ts
 // - web/backend/utils/labReceiveCalendarHiddenWeekdays.util.js
 // - web/backend/controllers/users/user.controller.js
+// - 2026-09-02: 어벗츠 제공 CA만 있어도 안내 표시. 심플어벗은 항상 제외.
+// - 2026-09-02: 도입중 CA 안내 — 공개 카탈로그로 플래그 보강(Osstem US 등 저장 누락 보정).
 // - 2026-09-02: 요청중 CA — implantAddRequest 보존·어벗츠 업로드 CTA 오인 방지.
 // - 2026-09-02: 어벗 확인 — 사전 S3 캐시만 handoff에 사용·버튼「확인」(업로드 중 비활성).
 // - 2026-09-02: 어벗 STL — 비STL 드롭 거부 토스트. 카드/상세 accept=STL.
@@ -160,7 +162,7 @@ import {
   type LabReceiveUploadSlotOption,
   type LabReceiveWorkUploadAssignment,
 } from "@/shared/components/practice/LabReceiveWorkUploadDialog";
-import { useNewRequestImplant } from "@/pages/requestor/new_request/hooks/useNewRequestImplant";
+import { useImplantConnectionCatalog } from "@/shared/practice/useImplantConnectionCatalog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -784,7 +786,7 @@ export function RequestorPracticeReceivePage({
   const [workUploadTrackedFiles, setWorkUploadTrackedFiles] = useState<File[]>(
     [],
   );
-  const { connections } = useNewRequestImplant({ token });
+  const { connections: implantCatalog } = useImplantConnectionCatalog(token);
   const [activeChatRoom, setActiveChatRoom] = useState<ChatRoom | null>(null);
   const [chatError, setChatError] = useState("");
   const [chatDraft, setChatDraft] = useState("");
@@ -1957,8 +1959,8 @@ export function RequestorPracticeReceivePage({
   );
 
   const selectedTransferToothWorks = useMemo(
-    () => resolvePracticeTransferToothWorks(selectedTransfer),
-    [selectedTransfer],
+    () => resolvePracticeTransferToothWorks(selectedTransfer, implantCatalog),
+    [selectedTransfer, implantCatalog],
   );
   const markTransferRead = useCallback(
     async (transfer: ReceivedPracticeTransfer) => {
@@ -4454,7 +4456,10 @@ export function RequestorPracticeReceivePage({
       const id = String(transfer.transferId || transfer._id || "").trim();
       if (!id || cardActionBusyId || designConfirmBusy || workUploadBusy) return;
 
-      const workState = resolvePracticeLabReceiveWorkActionState(transfer);
+      const workState = resolvePracticeLabReceiveWorkActionState(
+        transfer,
+        implantCatalog,
+      );
       if (!workState.showWorkActions || workState.designStlUploadMode !== "abutment") {
         toast({
           title: workState.showWorkActions
@@ -4479,6 +4484,7 @@ export function RequestorPracticeReceivePage({
       beginDesignUploadWithFiles,
       cardActionBusyId,
       designConfirmBusy,
+      implantCatalog,
       pickDesignAbutmentFiles,
       toast,
       workUploadBusy,
@@ -4588,7 +4594,10 @@ export function RequestorPracticeReceivePage({
 
   const dialogWorkFileDrop = useMemo(() => {
     if (!selectedTransfer) return null;
-    const workState = resolvePracticeLabReceiveWorkActionState(selectedTransfer);
+    const workState = resolvePracticeLabReceiveWorkActionState(
+      selectedTransfer,
+      implantCatalog,
+    );
     // 카드 드롭과 동일 — 수락 전(거부/수락 버튼 단계)에는 어벗 STL 드롭 비활성
     if (!workState.showWorkActions || workState.designStlUploadMode !== "abutment") {
       return null;
@@ -4618,6 +4627,7 @@ export function RequestorPracticeReceivePage({
     };
   }, [
     selectedTransfer,
+    implantCatalog,
     cardActionBusyId,
     workUploadBusy,
     workUploadProgressSummary,
@@ -5108,7 +5118,7 @@ export function RequestorPracticeReceivePage({
         initialCaseInfos={designConfirmCaseInfos}
         defaultRetentionGroove={retentionGrooveDefault}
         onRetentionGrooveAccountSave={saveRetentionGroove}
-        connections={connections}
+        connections={implantCatalog}
         confirming={designConfirmBusy}
         teethOptions={designConfirmTeethOptions}
         queueCurrent={
@@ -5471,11 +5481,15 @@ export function RequestorPracticeReceivePage({
         workFileDrop={dialogWorkFileDrop}
         acceptedWorkActions={({ releaseAction }) => {
           if (!selectedTransfer) return releaseAction;
-          const workState =
-            resolvePracticeLabReceiveWorkActionState(selectedTransfer);
+          const workState = resolvePracticeLabReceiveWorkActionState(
+            selectedTransfer,
+            implantCatalog,
+          );
           if (
             !workState.showWorkActions &&
-            !workState.showCompletedStageHeaderCancel
+            !workState.showCompletedStageHeaderCancel &&
+            !workState.hasPendingLabCa &&
+            !workState.hasAbutsCa
           ) {
             return releaseAction;
           }
@@ -5505,6 +5519,7 @@ export function RequestorPracticeReceivePage({
           return (
             <PracticeLabReceiveWorkActionsBar
               transfer={selectedTransfer}
+              implantCatalog={implantCatalog}
               busy={rowBusy}
               designConfirmBusy={designConfirmBusyId === transferKey}
               showProductionCancelInBar
