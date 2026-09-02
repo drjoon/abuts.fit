@@ -180,6 +180,7 @@ import { completePracticeTransferWork } from "../../services/practiceTransferCom
 // - web/backend/utils/practiceTransferAbutmentPresets.js
 // - web/backend/utils/practiceLabRating.js
 // - web/backend/utils/practiceTransferStage.js
+// - 2026-09-02: cancel-batch — 저널 rollback 후 billing.heldAt/held* 도 초기화(기공소 적립 보류 미러 잔존 방지).
 // - 2026-08-31: createPracticeTransfer — 크레딧 hold 성공 후에만 201. 실패 시 전송 삭제·402(가짜 성공→임시저장만 남는 버그).
 // - 2026-08-28: 캘린더 /my — toCalendarOwnedRequestRows에 files[] 전부(상세 모달 1개→N개 지연 표시 방지).
 // - 2026-08-27: append-arrival — 재주문일(오늘)+재도착일 누적(주문일/도착일 캘린더, 크레딧 미중복).
@@ -8584,6 +8585,37 @@ export async function cancelPracticeTransfersBatch(req, res) {
             rollbackErr?.message || rollbackErr,
           );
         }
+        // 저널 삭제만으로는 기공소「적립 보류」미러(heldAt 기준)가 남는다 → hold 필드도 비운다.
+        const prevBilling =
+          doc.billing && typeof doc.billing === "object" ? doc.billing : {};
+        doc.billing = {
+          labFeeTotal: 0,
+          abutmentRetailTotal: 0,
+          abutmentQty: 0,
+          total: 0,
+          isTradingPartner: false,
+          relationshipKind: "none",
+          feeRateApplied: 0,
+          labFeeMultiplier: Number(prevBilling.labFeeMultiplier || 1),
+          ...(prevBilling.labPracticeSpecialSupply &&
+          typeof prevBilling.labPracticeSpecialSupply === "object"
+            ? { labPracticeSpecialSupply: prevBilling.labPracticeSpecialSupply }
+            : {}),
+          labTradingPartnerId: null,
+          labSettlementAmount: 0,
+          abutsRevenueAmount: 0,
+          billedAt: null,
+          heldAt: null,
+          heldTotal: 0,
+          heldLabTotal: 0,
+          heldAbutmentTotal: 0,
+          holdFromPaid: 0,
+          holdFromFreeRequest: 0,
+          holdFromFreeShipping: 0,
+          settledAt: null,
+          labSettledAt: null,
+          abutmentSettledAt: null,
+        };
         doc.status = "deleted";
         doc.canceledAt = new Date();
         doc.canceledBy = req.user?._id || null;

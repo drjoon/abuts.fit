@@ -8,6 +8,7 @@
 // - web/backend/services/practiceTransferBilling.service.js
 // - web/backend/models/businessAnchor.model.js
 // - web/backend/services/requestCreditHold.service.js
+// - 2026-09-02: 적립 보류 미러 — deleted/canceled 제외 + HOLD 저널 없으면 스킵(치과 취소 후 heldAt 잔여 방어).
 // - 2026-08-31: 적립 보류 미러 — workCanceledAt 수락 취소 건 제외.
 // - 2026-08-31: 정산 적립(확정·보류) PTX 데모 결제 여부 반영. 유료는 단수, 무료·정산·소비·잔액만 2줄.
 // - 2026-08-31: usageScope(real|demo|all) — 데모/실사용 장부·기간요약·적립보류 필터.
@@ -26,6 +27,7 @@ import LedgerLine from "../../models/ledgerLine.model.js";
 import LedgerJournal from "../../models/ledgerJournal.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import PracticeTransfer from "../../models/practiceTransfer.model.js";
+import { practiceTransferNotDeletedMongoFilter } from "../../utils/practiceTransferStage.js";
 // - 2026-08-17: PTX 디자인비(+지그) 원장을 기공의뢰(PRACTICE_TRANSFER)로 승격·묶음.
 // - 2026-08-15: 행 시점 잔액 = 유료+무료+기공 합산 러닝(버킷 분리 시 잔액이 리셋되어 보임).
 
@@ -1712,6 +1714,8 @@ export async function listPendingLabSettlementLedgerRows({
           { targetLabAnchorId: labOid },
         ],
       },
+      // 치과 휴지통(deleted|canceled)은 적립 보류에서 제외
+      practiceTransferNotDeletedMongoFilter(),
       { "billing.heldAt": { $ne: null } },
       {
         $or: [
@@ -1875,7 +1879,10 @@ export async function listPendingLabSettlementLedgerRows({
     );
     if (heldLabTotal <= 0) continue;
 
+    // heldAt만 있고 HOLD 저널이 없으면(치과 취소 rollback 잔여 등) 미러하지 않음
     const holdMeta = holdMetaByRef.get(id) || {};
+    if (!holdMeta.journalId) continue;
+
     const fromPaid = Math.max(
       0,
       Math.round(Number(billing.holdFromPaid ?? holdMeta.fromPaid ?? 0)),

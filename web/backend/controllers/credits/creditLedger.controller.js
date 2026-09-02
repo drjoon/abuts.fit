@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-02: 치과 휴지통(deleted|canceled) PTX도 장부 enrich에서 숨김(적립/결제 오인 방지).
 // - 2026-08-31: 수락 취소(workCanceledAt)·미정산 PTX는 장부 enrich에서 숨김(「적립/결제 완료」 오인 방지).
 // - 2026-08-31: currentBalanceSnapshot — realBalance/demoBalance 분리. 장부 잔액 러닝도 이원.
 // - 2026-08-31: usageScope(real|demo|all) — 데모/실사용 필터. hasDemoUsage 응답.
@@ -45,6 +46,7 @@ import { scheduleHealMissingExpressSurchargesForBusiness } from "../requests/com
 import { normalizeRequestorKind } from "../../utils/requestorCapabilities.js";
 import { isCustomAbutmentLabFeeLineType } from "../../utils/labFeeSchedule.js";
 import { buildOccurredAtFromPeriodQuery } from "../../utils/kstQueryBounds.js";
+import { isPracticeTransferDeletedStatus } from "../../utils/practiceTransferStage.js";
 import { resolveDemoFreeRequestReserveCap } from "../businesses/business.demoMode.util.js";
 import {
   attachCreditLedgerRequestFields,
@@ -961,9 +963,12 @@ export async function listMyCreditLedger(req, res) {
     const abutmentSettledAt = doc?.billing?.abutmentSettledAt || null;
     const fullySettled = Boolean(settledAt);
     const workCanceledAt = doc?.workCanceledAt || null;
-    // 수락 취소·미정산: 잔여 HOLD 저널이 있어도 「완료」로 보이면 안 됨 → 장부에서 숨김
+    // 수락 취소·치과 휴지통·미정산: 잔여 HOLD/heldAt이 있어도 「완료/보류」로 보이면 안 됨
     const practiceTransferCanceled =
-      Boolean(workCanceledAt) && !fullySettled && !labSettledAt;
+      (Boolean(workCanceledAt) ||
+        isPracticeTransferDeletedStatus(doc?.status)) &&
+      !fullySettled &&
+      !labSettledAt;
     const skipJigRaw = doc?.production?.skipJig;
     const labBa =
       String(doc.assigneeLabAnchorId || doc.targetLabAnchorId || "").trim() ||
