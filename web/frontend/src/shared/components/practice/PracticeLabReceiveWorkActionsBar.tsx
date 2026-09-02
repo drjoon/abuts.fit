@@ -4,9 +4,10 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/practice/practiceTransferLabReceive.ts
 // change-log:
+// - 2026-09-02: 파일 없는「작업 완료」CTA 제거(도착일 경과 자동 완료).
 // - 2026-09-02: 보철/dual 제거. CA 어벗 업로드 + 파일 없는 작업 완료 CTA.
 import type { MouseEvent, ReactNode } from "react";
-import { Check, UploadCloud, X } from "lucide-react";
+import { UploadCloud, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -30,7 +31,6 @@ export type PracticeLabReceiveWorkActionsBarProps = {
   /** false면 어벗 업로드 CTA 숨김(카드 등 — 진행상황 모달에서만 업로드) */
   showDesignUpload?: boolean;
   onDesignStlUpload?: (event: MouseEvent) => void;
-  onMarkCompleteWithoutFiles?: (event: MouseEvent) => void;
   onAbutmentProductionCancel?: (event: MouseEvent) => void;
   onDesignConfirm?: () => void;
   trailingActions?: ReactNode;
@@ -45,7 +45,7 @@ export const LAB_RECEIVE_ABUTMENT_UPLOAD_HINT =
   "어벗츠에서 커스텀 어벗 생산이 시작됩니다.";
 
 /**
- * 기공의뢰수신 — 수락 후 어벗 업로드·작업완료 CTA(카드·상세 모달 공통).
+ * 기공의뢰수신 — 수락 후 어벗 업로드 CTA(카드·상세 모달 공통).
  */
 export function PracticeLabReceiveWorkActionsBar({
   transfer,
@@ -54,7 +54,6 @@ export function PracticeLabReceiveWorkActionsBar({
   showProductionCancelInBar = true,
   showDesignUpload = true,
   onDesignStlUpload,
-  onMarkCompleteWithoutFiles,
   onAbutmentProductionCancel,
   onDesignConfirm,
   trailingActions = null,
@@ -65,7 +64,6 @@ export function PracticeLabReceiveWorkActionsBar({
   if (
     !state.showWorkActions &&
     !state.showCompletedStageHeaderCancel &&
-    !state.showMarkCompleteWithoutFiles &&
     !hasTrailing
   ) {
     return null;
@@ -81,7 +79,7 @@ export function PracticeLabReceiveWorkActionsBar({
   const productionCancelButton =
     showProductionCancelInBar &&
     state.showAbutmentProductionCancel &&
-    (state.showWorkActions || state.showMarkCompleteWithoutFiles) ? (
+    state.showWorkActions ? (
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
@@ -166,33 +164,7 @@ export function PracticeLabReceiveWorkActionsBar({
       </Tooltip>
     ) : null;
 
-  const markCompleteButton =
-    state.showMarkCompleteWithoutFiles && onMarkCompleteWithoutFiles ? (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            type="button"
-            size="sm"
-            variant="secondary"
-            disabled={busy}
-            className={ctaButtonClass}
-            onClick={(event) => void onMarkCompleteWithoutFiles(event)}
-          >
-            <Check className="h-3.5 w-3.5" />
-            {busy ? "처리 중..." : "작업 완료"}
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="top" className="max-w-xs text-xs">
-          파일 없이 작업을 완료합니다. 크레딧은 수락 시 이미 결제되었습니다.
-        </TooltipContent>
-      </Tooltip>
-    ) : null;
-
-  if (
-    state.showWorkActions ||
-    state.showMarkCompleteWithoutFiles ||
-    designConfirmButton
-  ) {
+  if (state.showWorkActions || designConfirmButton) {
     return (
       <div className={cn("w-full min-w-0 space-y-1.5", className)}>
         {pendingLabGuide}
@@ -200,7 +172,6 @@ export function PracticeLabReceiveWorkActionsBar({
           <>
             {designConfirmButton}
             {designUploadButton}
-            {markCompleteButton}
           </>,
         )}
       </div>

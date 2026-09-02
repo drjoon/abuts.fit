@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/components/practice/LabReceiveWorkUploadDialog.tsx
 // change-log:
+// - 2026-09-02: 수동「작업 완료」CTA 폐지(showMarkCompleteWithoutFiles=false). 도착일 경과 자동 완료.
 // - 2026-09-02: designStlUploadMode — 수락(showWorkActions) 후에만 abutment. 수락 전 드롭 방지.
 // - 2026-09-02: designStlUploadMode — 어벗/보철 CTA 통합 분기(abutment|prosthetic|dual|none).
 // - 2026-08-29: 보철 디자인 업로드=작업완료(디자인). skip 자동 confirmedAt은 출고로 올리지 않음.
@@ -712,7 +713,7 @@ export type PracticeLabReceiveWorkActionState = {
   showCompletedStageHeaderCancel: boolean;
   /** 레거시: 디자인 업로드 후 기공소 확인 CTA */
   showDesignConfirm: boolean;
-  /** 파일 없이 작업 완료 가능(비CA 또는 어벗 업로드 완료 후) */
+  /** @deprecated 수동 작업완료 CTA 폐지 — 항상 false(도착일 경과 자동 완료) */
   showMarkCompleteWithoutFiles: boolean;
 };
 
@@ -796,15 +797,8 @@ export function resolvePracticeLabReceiveWorkActionState(
     hasAbutsCa &&
     designFileCount > 0 &&
     !transfer.production?.labDesignConfirmedAt;
-  const alreadyCompleted =
-    displayStatus === "작업완료" ||
-    displayStatus === "생산진행" ||
-    Boolean(transfer.autoMatch?.completed);
-  const showMarkCompleteWithoutFiles =
-    isLabAccepted &&
-    !alreadyCompleted &&
-    !needsAbutmentDesigns &&
-    !productionStarted;
+  // 수동「작업 완료」폐지 — 치과도착일 경과 시 백엔드 자동 완료.
+  const showMarkCompleteWithoutFiles = false;
 
   return {
     displayStatus,

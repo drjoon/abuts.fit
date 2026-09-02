@@ -1696,7 +1696,7 @@ export function RequestorPracticeReceivePage({
   }, [dialogOpen, messages]);
 
   const baseFilteredTransfers = useMemo(() => {
-    // 치과 삭제만 수신·캘린더에서 제외. 거절·작업취소는 상단 뱃지 집계에 포함.
+    // 치과 삭제만 수신·캘린더에서 제외. 작업취소는 상단 취소 뱃지 집계에 포함(거절 건은 API에서 제외).
     const visible = transfers.filter((t) => {
       const raw = String(t.status || "").trim().toLowerCase();
       if (raw === "deleted" || raw === "canceled" || raw === "cancelled") {
@@ -4461,30 +4461,6 @@ export function RequestorPracticeReceivePage({
     ],
   );
 
-  const handleMarkCompleteWithoutFiles = useCallback(
-    async (transfer: ReceivedPracticeTransfer, event: MouseEvent) => {
-      event.preventDefault();
-      event.stopPropagation();
-      const id = String(transfer.transferId || transfer._id || "").trim();
-      if (!id || cardActionBusyIdRef.current) return;
-      cardActionBusyIdRef.current = id;
-      setCardActionBusyId(id);
-      try {
-        const ok = await markTransferComplete(transfer, { assignments: [] });
-        if (ok) {
-          toast({
-            title: "작업 완료",
-            description: "파일 없이 작업을 완료했습니다.",
-          });
-        }
-      } finally {
-        cardActionBusyIdRef.current = "";
-        setCardActionBusyId("");
-      }
-    },
-    [markTransferComplete, toast],
-  );
-
   const handleCardDesignStlUpload = useCallback(
     async (transfer: ReceivedPracticeTransfer, event: MouseEvent) => {
       event.preventDefault();
@@ -5517,9 +5493,6 @@ export function RequestorPracticeReceivePage({
               trailingActions={completedCancelAction || releaseAction}
               onDesignStlUpload={(event) =>
                 void handleCardDesignStlUpload(selectedTransfer, event)
-              }
-              onMarkCompleteWithoutFiles={(event) =>
-                void handleMarkCompleteWithoutFiles(selectedTransfer, event)
               }
               onAbutmentProductionCancel={(event) =>
                 void handleCardAbutmentProductionCancel(

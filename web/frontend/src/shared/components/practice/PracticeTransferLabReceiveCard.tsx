@@ -5,6 +5,7 @@
 // - web/frontend/src/shared/components/practice/PracticeLabReceiveWorkActionsBar.tsx
 // - web/frontend/src/shared/components/practice/PracticeRecentTransferListCardDetail.tsx
 // change-log:
+// - 2026-09-02: 수동「작업 완료」CTA 제거(도착일 자동 완료).
 // - 2026-09-02: 어벗·보철 CTA → 디자인(STL) 업로드 통합.
 // - 2026-08-21: 의뢰 수락/작업 완료 취소 — 가공 중이어도 클릭·API 판정·토스트(고정 비활성 제거).
 // - 2026-08-21: 업로드 CTA → PracticeLabReceiveWorkActionsBar(상세 모달과 공유).
@@ -86,7 +87,6 @@ export type PracticeTransferLabReceiveCardProps = {
   anodizingEnabled?: boolean | null;
   onOpen: () => void;
   onDesignStlUpload?: (event: MouseEvent) => void;
-  onMarkCompleteWithoutFiles?: (event: MouseEvent) => void;
   onAbutmentProductionCancel: (event: MouseEvent) => void;
   onRelease: (event: MouseEvent) => void;
   onOpenSubcontract?: (event: MouseEvent) => void;
@@ -105,7 +105,6 @@ export function PracticeTransferLabReceiveCard({
   dimRejected = false,
   onOpen,
   onDesignStlUpload,
-  onMarkCompleteWithoutFiles,
   onAbutmentProductionCancel,
   onRelease,
   onOpenSubcontract,
@@ -127,7 +126,6 @@ export function PracticeTransferLabReceiveCard({
     showWorkActions,
     showAbutmentProductionCancel,
     showCompletedStageHeaderCancel,
-    showMarkCompleteWithoutFiles,
     designStlUploadMode,
   } = workState;
   const completeInputId = `practice-complete-${cardId}`;
@@ -251,9 +249,7 @@ export function PracticeTransferLabReceiveCard({
         }
       />
 
-      {showWorkActions ||
-      showCompletedStageHeaderCancel ||
-      showMarkCompleteWithoutFiles ? (
+      {showWorkActions || showCompletedStageHeaderCancel ? (
         <div className="mt-3 border-t border-slate-100 pt-3">
           <PracticeLabReceiveWorkActionsBar
             transfer={transfer}
@@ -264,7 +260,6 @@ export function PracticeTransferLabReceiveCard({
             }
             showDesignUpload={false}
             onDesignStlUpload={onDesignStlUpload}
-            onMarkCompleteWithoutFiles={onMarkCompleteWithoutFiles}
             onAbutmentProductionCancel={onAbutmentProductionCancel}
             onDesignConfirm={onDesignConfirm}
           />
