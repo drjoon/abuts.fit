@@ -4,8 +4,9 @@
  * 취소=작업취소+기공소 거절(거부)+휴지통(취소). 어벗=CA 디자인 업로드(+제조 출고 단계).
  * 수락=의뢰수락 + 파일 없는 작업완료(비CA). 채팅 unread는 상태 뱃지별 합산.
  * 자동매칭(공개 풀)은 공정상 의뢰 — 뱃지 집계·「의뢰」필터에 포함.
- * 기공소 수신은 거절 건이 목록에서 빠져 거절 뱃지가 불필요 → 치과도 동일 4뱃지.
+ * 기공소 수신은 거절·작업취소가 목록에서 빠져 취소/거절 뱃지 불필요 → 치과만 취소 포함 4뱃지.
  * 2026-09-02: 거절 뱃지 제거·기공소 거절은 취소 집계. 어벗=CA designFiles.
+ * 2026-09-02: 기공소 수신 상단은 의뢰·수락·어벗 3뱃지(취소 제외).
  * related files:
  * - web/frontend/src/pages/practice/components/PracticeRecentTransfersAllModal.tsx
  * - web/frontend/src/pages/practice/components/PracticeRecentTransfersCalendar.tsx
@@ -401,6 +402,37 @@ export const PRACTICE_RECENT_STATUS_BADGES = [
   countKey: keyof PracticeRecentStatusCounts;
   tooltip: string;
 }>;
+
+/** 기공소 수신 상단 3뱃지 — 취소 제외(거절·작업취소는 목록에서 제거되어 필터 불필요). */
+export const LAB_RECEIVE_STATUS_BADGES = [
+  {
+    filter: "발송완료",
+    label: "의뢰",
+    countKey: "sent",
+    tooltip: "치과에서 기공의뢰서 전송 후(자동매칭 공개 풀 포함)",
+  },
+  {
+    filter: "의뢰수락",
+    label: "수락",
+    countKey: "accepted",
+    tooltip: "기공소 수락 후(파일 없는 작업완료 포함)",
+  },
+  {
+    filter: "작업완료",
+    label: "어벗",
+    countKey: "abutment",
+    tooltip: "커스텀 어벗 디자인 업로드 후(제조 출고 단계 포함)",
+  },
+] as const satisfies ReadonlyArray<{
+  filter: Exclude<PracticeRecentStatusFilter, "all" | "취소">;
+  label: string;
+  countKey: keyof PracticeRecentStatusCounts;
+  tooltip: string;
+}>;
+
+/** 기공소 수신 기본 ON — 취소 제외 3상태. 「기본」 리셋도 이 집합. */
+export const LAB_RECEIVE_DEFAULT_ON_STATUS_FILTERS: readonly PracticeRecentStatusFilterKey[] =
+  ["발송완료", "의뢰수락", "작업완료"];
 
 /** 취소 뱃지·필터 — 작업취소 + 기공소 거절(거부) + 휴지통(취소). */
 export const isPracticeRecentCancelBadgeStatus = (status: unknown) => {

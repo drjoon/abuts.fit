@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/components/practice/LabReceiveWorkUploadDialog.tsx
 // change-log:
+// - 2026-09-02: 기공소 수신 상단 — 취소 뱃지 제외·거부·작업취소 목록 숨김 복구(치과만 취소 필터).
 // - 2026-09-02: 수동「작업 완료」CTA 폐지(showMarkCompleteWithoutFiles=false). 도착일 경과 자동 완료.
 // - 2026-09-02: designStlUploadMode — 수락(showWorkActions) 후에만 abutment. 수락 전 드롭 방지.
 // - 2026-09-02: designStlUploadMode — 어벗/보철 CTA 통합 분기(abutment|prosthetic|dual|none).

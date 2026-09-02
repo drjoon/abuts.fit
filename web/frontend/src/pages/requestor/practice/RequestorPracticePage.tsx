@@ -129,6 +129,7 @@
 // - 2026-08-26: 거부 ConfirmDialog — 포털 클릭 시 상세 모달이 닫히지 않게 하고 대상 ref 보관.
 // - 2026-08-26: 지정 거부 후 기공소 목록·캘린더에서 즉시 제거.
 // - 2026-08-26: 기공소 수신 상단 — 취소·거부 필터 뱃지 제거(종료 건은 목록에 두지 않음).
+// - 2026-09-02: 기공소 수신 상단 — 취소 뱃지 재제외(거절·작업취소는 목록에서 제거, 치과만 취소 유지).
 // - 2026-08-31: 모바일(<768) — 캘린더 대신 최소 카드 목록(조회·수락·채팅). 작업 업로드는 PC.
 // - 2026-08-31: 모바일 — ExoCAD·아노·상태 뱃지 숨김(치과 모바일과 동일, 검색만).
 // - 2026-08-31: 수신 검색에 환자명(rawMemo)·치아 포함. 모바일 검색바 포커스 링 여백.
@@ -191,12 +192,11 @@ import {
 import { useS3FileDownload } from "@/shared/files/useS3FileDownload";
 import { cn } from "@/shared/ui/cn";
 import {
-  PRACTICE_RECENT_DEFAULT_ON_STATUS_FILTERS,
-  PRACTICE_RECENT_STATUS_BADGES,
+  LAB_RECEIVE_DEFAULT_ON_STATUS_FILTERS,
+  LAB_RECEIVE_STATUS_BADGES,
   computeGroupedStatusCounts,
   computeGroupedStatusUnreadCounts,
   createPracticeRecentStatusFilterSet,
-  isPracticeRecentStatusFilterDefault,
   practiceTransferMatchesStatusFilters,
   togglePracticeRecentStatusFilter,
   toStatusBadgeLabel,
@@ -242,6 +242,7 @@ import {
 import {
   formatPracticeTransferProstheticSlotLabels,
   getPracticeTransferLabReceiveDisplayStatus,
+  isLabReceiveHiddenTerminalStatus,
   listPracticeTransferAbutsCustomAbutmentToothWorks,
   listPracticeTransferPendingProstheticSlots,
   practiceTransferAbutmentMachiningStarted,
@@ -418,10 +419,6 @@ const formatLabReceiveMobileCreatedAt = (value: unknown) => {
 
 type LabReceiveStatusFilterKey = PracticeRecentStatusFilterKey;
 
-/** 기본 ON — 상태 전부. 「기본」 리셋도 이 집합. */
-const LAB_RECEIVE_DEFAULT_ON_STATUS_FILTERS =
-  PRACTICE_RECENT_DEFAULT_ON_STATUS_FILTERS;
-
 const createLabReceiveStatusFilterSet = (
   keys: readonly LabReceiveStatusFilterKey[] = LAB_RECEIVE_DEFAULT_ON_STATUS_FILTERS,
 ) => createPracticeRecentStatusFilterSet(keys);
@@ -434,7 +431,10 @@ const toggleLabReceiveStatusFilter = (
 
 const isLabReceiveStatusFilterDefault = (
   selected: ReadonlySet<LabReceiveStatusFilterKey>,
-) => isPracticeRecentStatusFilterDefault(selected);
+) => {
+  if (selected.size !== LAB_RECEIVE_DEFAULT_ON_STATUS_FILTERS.length) return false;
+  return LAB_RECEIVE_DEFAULT_ON_STATUS_FILTERS.every((k) => selected.has(k));
+};
 
 const labTransferMatchesStatusFilters = (
   transfer: ReceivedPracticeTransfer,
@@ -1697,13 +1697,13 @@ export function RequestorPracticeReceivePage({
   }, [dialogOpen, messages]);
 
   const baseFilteredTransfers = useMemo(() => {
-    // 치과 삭제만 수신·캘린더에서 제외. 작업취소는 상단 취소 뱃지 집계에 포함(거절 건은 API에서 제외).
+    // 치과 삭제 + 기공소 거절·작업취소(취소)는 수신·캘린더에서 제외.
     const visible = transfers.filter((t) => {
       const raw = String(t.status || "").trim().toLowerCase();
       if (raw === "deleted" || raw === "canceled" || raw === "cancelled") {
         return false;
       }
-      return true;
+      return !isLabReceiveHiddenTerminalStatus(getTransferDisplayStatus(t));
     });
     const query = search.trim().toLowerCase();
     if (!query) return visible;
@@ -4758,7 +4758,7 @@ export function RequestorPracticeReceivePage({
   ]);
 
   const labStatusFilterBadgeItems = useMemo((): PracticeStatusFilterBadgeItem[] => {
-    return PRACTICE_RECENT_STATUS_BADGES.map((item) => ({
+    return LAB_RECEIVE_STATUS_BADGES.map((item) => ({
       key: item.filter,
       label: item.label,
       tone: resolvePracticeCalendarStatusTone(item.filter),
