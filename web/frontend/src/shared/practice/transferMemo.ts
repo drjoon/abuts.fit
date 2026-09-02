@@ -5,6 +5,7 @@
 // - web/backend/services/practiceTransferProduction.service.js
 // - web/backend/controllers/practiceTransfers/practiceTransferSettings.controller.js
 // change-log:
+// - 2026-09-02: 치식 직렬화 `{…/…/+add}` — implantAddRequest 왕복(요청중 CA가 어벗츠 업로드로 오인되지 않게).
 // - 2026-09-01: 기공의뢰 caseInfos.tooth는 toothWorks 치식 SSOT(파일명 추출 금지). 단치아면 파일에도 반영.
 // - 2026-08-25: 커스텀어벗 보철 형태는 심플어벗 불가 — 어벗 쪽 완성=스캔바디만.
 // - 2026-08-25: 심플어벗(심플어벗/심플밀링·직경 6–10·높이 S/M/L) — 스캔바디와 XOR. 완성 시 프리셋 충족.
@@ -340,13 +341,25 @@ export const formatAbutmentCompact = (
   if (diameter && height) return `${diameter}×${height}`;
   return diameter || height || "";
 };
+/** 치식 메모 `{mfr/brand/family/type/+add}` — 요청중(implantAddRequest) 마커 */
+const IMPLANT_ADD_REQUEST_SERIAL_MARK = "+add";
+
 const serializeImplantSuffix = (row: ToothWorkSelection) => {
   const manufacturer = String(row.implantManufacturer || "").trim();
   const brand = String(row.implantBrand || "").trim();
   const family = String(row.implantFamily || "").trim();
   const type = String(row.implantType || "").trim();
-  if (!manufacturer && !brand && !family && !type) return "";
-  return `{${manufacturer}/${brand}/${family}/${type}}`;
+  const implantAddRequest =
+    Boolean(row.implantAddRequest) ||
+    brand === MANUFACTURER_ADD_REQUEST_BRAND ||
+    type === IMPLANT_ADD_REQUEST_OPTION;
+  if (!manufacturer && !brand && !family && !type && !implantAddRequest) {
+    return "";
+  }
+  const base = `${manufacturer}/${brand}/${family}/${type}`;
+  return implantAddRequest
+    ? `{${base}/${IMPLANT_ADD_REQUEST_SERIAL_MARK}}`
+    : `{${base}}`;
 };
 
 const serializeAbutmentSuffix = (row: ToothWorkSelection) => {
@@ -415,6 +428,7 @@ const parseCustomSpecsSuffix = (value: string) => {
   let implantBrand = "";
   let implantFamily = "";
   let implantType = "";
+  let implantAddRequest = false;
 
   const abutMatch = source.match(/\[([^\]]*)\]\s*$/);
   if (abutMatch) {
@@ -427,7 +441,16 @@ const parseCustomSpecsSuffix = (value: string) => {
 
   const implantMatch = source.match(/\{([^}]*)\}\s*$/);
   if (implantMatch) {
-    const parts = String(implantMatch[1] || "").split("/");
+    const parts = String(implantMatch[1] || "")
+      .split("/")
+      .map((part) => String(part || "").trim());
+    if (
+      parts.length > 0 &&
+      parts[parts.length - 1] === IMPLANT_ADD_REQUEST_SERIAL_MARK
+    ) {
+      implantAddRequest = true;
+      parts.pop();
+    }
     implantManufacturer = String(parts[0] || "").trim();
     implantBrand = String(parts[1] || "").trim();
     implantFamily = String(parts[2] || "").trim();
@@ -441,6 +464,7 @@ const parseCustomSpecsSuffix = (value: string) => {
     implantBrand,
     implantFamily,
     implantType,
+    implantAddRequest,
     abutmentManufacturer,
     abutmentDiameter,
     abutmentHeight,

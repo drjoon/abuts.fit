@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/components/practice/LabReceiveWorkUploadDialog.tsx
 // change-log:
+// - 2026-09-02: toothWorks 구조 배열 우선(요청중 implantAddRequest — 요약 문자열 왕복 손실 방지).
 // - 2026-09-02: 다치아 어벗 — 일부 STL만 올려도 showWorkActions·드롭존 유지(남은 개수 업로드).
 // - 2026-09-02: 기공소 수신 상단 — 취소 뱃지 제외·거부·작업취소 목록 숨김 복구(치과만 취소 필터).
 // - 2026-09-02: 수동「작업 완료」CTA 폐지(showMarkCompleteWithoutFiles=false). 도착일 경과 자동 완료.
@@ -37,6 +38,7 @@ import {
   isBridgeLikeProsthesisType,
   isMissingToothProsthesisType,
   isTemporaryToothProsthesisType,
+  normalizeToothWorks,
   parseToothWorks,
   toothWorkHasLabProsthesis,
   toToothMemoSortNumber,
@@ -77,6 +79,8 @@ export type PracticeTransferLabReceiveItem = {
   arrivalDates?: string[];
   prosthesisTypes: string[];
   toothWorksSummary: string;
+  /** API toothWorks — implantAddRequest 등 요약 문자열보다 우선 */
+  toothWorks?: ToothWorkSelection[];
   status: string;
   manufacturerStage?: string;
   createdAt: string;
@@ -326,6 +330,19 @@ export function practiceTransferHasCustomAbutment(
 }
 
 /**
+ * 치식 행 SSOT — 구조 배열 우선(요청중 플래그 보존), 없으면 요약 문자열 파싱.
+ */
+export function resolvePracticeTransferToothWorks(
+  transfer: PracticeTransferLabReceiveItem | null | undefined,
+): ToothWorkSelection[] {
+  if (!transfer) return [];
+  if (Array.isArray(transfer.toothWorks) && transfer.toothWorks.length > 0) {
+    return normalizeToothWorks(transfer.toothWorks);
+  }
+  return parseToothWorks(transfer.toothWorksSummary);
+}
+
+/**
  * 치식 요약의 커스텀어벗 행 (스캔바디 CNC·요청중 포함).
  * 심플어벗(치과 재고)은 제외 — STL 업로드·어벗츠 Request 대상 아님.
  */
@@ -333,7 +350,7 @@ export function listPracticeTransferCustomAbutmentToothWorks(
   transfer: PracticeTransferLabReceiveItem | null | undefined,
 ) {
   if (!transfer) return [] as ToothWorkSelection[];
-  return parseToothWorks(transfer.toothWorksSummary).filter(
+  return resolvePracticeTransferToothWorks(transfer).filter(
     (row) =>
       Boolean(row.customAbutment) && !isSimpleAbutmentModeForFee(row),
   );
@@ -511,7 +528,7 @@ export function listPracticeTransferProstheticUploadSlots(
   transfer: PracticeTransferLabReceiveItem | null | undefined,
 ): PracticeTransferProstheticUploadSlot[] {
   if (!transfer) return [];
-  const rows = parseToothWorks(transfer.toothWorksSummary).filter((row) =>
+  const rows = resolvePracticeTransferToothWorks(transfer).filter((row) =>
     toothWorkHasLabProsthesis(row),
   );
   if (rows.length === 0) return [];

@@ -26,6 +26,7 @@
 // - web/frontend/src/shared/practice/labReceiveCalendarHiddenWeekdays.ts
 // - web/backend/utils/labReceiveCalendarHiddenWeekdays.util.js
 // - web/backend/controllers/users/user.controller.js
+// - 2026-09-02: 요청중 CA — implantAddRequest 보존·어벗츠 업로드 CTA 오인 방지.
 // - 2026-09-02: 어벗 확인 — 사전 S3 캐시만 handoff에 사용·버튼「확인」(업로드 중 비활성).
 // - 2026-09-02: 어벗 STL — 비STL 드롭 거부 토스트. 카드/상세 accept=STL.
 // - 2026-09-02: 어벗 STL — 업로드 버튼 제거, 진행상황 드롭존 클릭/드래그만.
@@ -230,6 +231,7 @@ import { RequestorPracticePageSkeleton } from "@/shared/ui/skeletons/RequestorPr
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  normalizeToothWorks,
   parsePracticeTransferMemoMeta as parsePracticeTransferMemoMetaShared,
   parseToothWorks,
   serializeToothWorks,
@@ -249,8 +251,10 @@ import {
   listPracticeTransferPendingProstheticSlots,
   practiceTransferAbutmentMachiningStarted,
   practiceTransferHasCustomAbutment,
+  practiceTransferHasPendingLabCustomAbutment,
   practiceTransferLabReceiveUnreadBadgeCount,
   resolvePracticeLabReceiveWorkActionState,
+  resolvePracticeTransferToothWorks,
   type PracticeTransferLabReceiveFile as ReceivedPracticeFile,
   type PracticeTransferLabReceiveItem as ReceivedPracticeTransfer,
 } from "@/shared/practice/practiceTransferLabReceive";
@@ -1010,19 +1014,13 @@ export function RequestorPracticeReceivePage({
             }
           : null;
         const toothWorksFromApi = Array.isArray(r.toothWorks)
-          ? (r.toothWorks as ToothWorkSelection[])
-          : null;
+          ? normalizeToothWorks(r.toothWorks as ToothWorkSelection[])
+          : [];
         const hasCustomAbutment =
           typeof r.hasCustomAbutment === "boolean"
             ? r.hasCustomAbutment
-            : toothWorksFromApi
-              ? toothWorksFromApi.some((row) =>
-                  Boolean(
-                    row &&
-                      typeof row === "object" &&
-                      (row as { customAbutment?: boolean }).customAbutment,
-                  ),
-                )
+            : toothWorksFromApi.length > 0
+              ? toothWorksFromApi.some((row) => Boolean(row.customAbutment))
               : parseToothWorks(parsedMemo.toothWorksSummary).some((row) =>
                   Boolean(row.customAbutment),
                 );
@@ -1068,7 +1066,8 @@ export function RequestorPracticeReceivePage({
             return current ? [current] : [];
           })(),
           prosthesisTypes: parsedMemo.prosthesisTypes,
-          toothWorksSummary: toothWorksFromApi?.length
+          toothWorks: toothWorksFromApi.length > 0 ? toothWorksFromApi : undefined,
+          toothWorksSummary: toothWorksFromApi.length > 0
             ? serializeToothWorks(toothWorksFromApi)
             : parsedMemo.toothWorksSummary,
           status: String(r.status || "active").trim(),
@@ -1958,10 +1957,8 @@ export function RequestorPracticeReceivePage({
   );
 
   const selectedTransferToothWorks = useMemo(
-    () =>
-      parsePracticeTransferMemoMetaShared(String(selectedTransfer?.rawTransferMemo || ""))
-        .toothWorks,
-    [selectedTransfer?.rawTransferMemo],
+    () => resolvePracticeTransferToothWorks(selectedTransfer),
+    [selectedTransfer],
   );
   const markTransferRead = useCallback(
     async (transfer: ReceivedPracticeTransfer) => {
@@ -4016,6 +4013,15 @@ export function RequestorPracticeReceivePage({
       }
 
       if (relatedIds.length === 0) {
+        if (practiceTransferHasPendingLabCustomAbutment(workingTransfer)) {
+          toast({
+            title: "어벗츠 미제공 임플란트",
+            description:
+              "요청중 커스텀어벗은 어벗츠 생산 의뢰 대상이 아닙니다. 기공소에서 직접 제작해주세요.",
+            variant: "destructive",
+          });
+          return "error";
+        }
         toast({
           title: "생산 의뢰 준비 실패",
           description:
