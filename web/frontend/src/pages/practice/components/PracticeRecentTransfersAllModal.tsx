@@ -163,7 +163,6 @@ type PracticeRecentTransfersAllModalProps = {
   calendarRefreshNonce?: number;
   onSelectTransfer: (transfer: PracticeRecentTransferItem) => void;
   onDeleteTransfer: (transfer: PracticeRecentTransferItem) => void;
-  onAskRemake?: (transfer: PracticeRecentTransferItem) => void;
   onEditTransfer?: (transfer: PracticeRecentTransferItem) => void;
 };
 
@@ -456,12 +455,13 @@ export function PracticeRecentTransfersAllModal({
     [searchedRequests, chatRooms],
   );
 
-  // 휴지통(취소·거부)은 메인 휴지통 서랍으로 — 전체보기 뱃지·달력·목록에서 제외
+  // 휴지통 치과 취소(`취소`)만 메인에서 제외. 거절(`거부`)·작업취소는 상단 뱃지·달력에 포함.
   const visibleGroupedTransfers = useMemo(
     () =>
-      groupedTransfers.filter(
-        (transfer) => !isPracticeTransferTrashStatus(transfer.status),
-      ),
+      groupedTransfers.filter((transfer) => {
+        const s = String(transfer.status || "").trim();
+        return s !== "취소";
+      }),
     [groupedTransfers],
   );
 
@@ -509,8 +509,11 @@ export function PracticeRecentTransfersAllModal({
         linkedArrivalDates,
         linkedOrderDates,
         colorKey: String(transfer.targetLabAnchorId || "").trim() || lab,
-        statusTone: resolvePracticeCalendarStatusTone(transfer.status),
-        isRemake: Boolean(transfer.isRemake),
+        statusTone: resolvePracticeCalendarStatusTone(transfer.status, {
+          designFileCount: transfer.designFileCount,
+          designFiles: transfer.designFiles,
+          designReadyAt: transfer.designReadyAt,
+        }),
         sortLabel: lab,
         line: [lab, patientLine].filter(Boolean).join(" / "),
         unreadCount: Math.max(0, Number(transfer.unreadCount || 0)),
@@ -551,16 +554,10 @@ export function PracticeRecentTransfersAllModal({
     return PRACTICE_RECENT_STATUS_BADGES.map((item) => ({
       key: item.filter,
       label: item.label,
-      tone:
-        item.filter === "리메이크"
-          ? "remake"
-          : resolvePracticeCalendarStatusTone(item.filter),
+      tone: resolvePracticeCalendarStatusTone(item.filter),
       count: statusCounts[item.countKey],
       unreadCount: statusUnreadCounts[item.countKey],
-      tooltip:
-        item.filter === "취소"
-          ? "기공소 작업취소·지정 거부 건(휴지통으로 옮긴 건은 휴지통에서 확인)"
-          : item.tooltip,
+      tooltip: item.tooltip,
     }));
   }, [statusCounts, statusUnreadCounts]);
 
@@ -725,7 +722,11 @@ export function PracticeRecentTransfersAllModal({
                   const patientName = resolvePracticeTransferListPatientName(transfer);
                   const toothNumbers =
                     resolvePracticeTransferListToothNumbers(transfer);
-                  const statusLabel = toStatusBadgeLabel(transfer.status);
+                  const statusLabel = toStatusBadgeLabel(transfer.status, {
+                    designFileCount: transfer.designFileCount,
+                    designFiles: transfer.designFiles,
+                    designReadyAt: transfer.designReadyAt,
+                  });
                   const canDelete = canDeletePracticeTransferByStatus(transfer.status);
                   const unread = Math.max(0, Number(transfer.unreadCount || 0));
                   const arrival = String(transfer.arrivalDate || "").trim();
@@ -767,14 +768,6 @@ export function PracticeRecentTransfersAllModal({
                           >
                             {deliveryLabel}
                           </span>
-                        ) : null}
-                        {transfer.isRemake ? (
-                          <Badge
-                            variant="outline"
-                            className="h-6 border-[2px] border-double border-slate-400 bg-white px-1.5 text-[10px]"
-                          >
-                            리메이크
-                          </Badge>
                         ) : null}
                         {unread > 0 ? (
                           <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[10px] font-semibold text-white">

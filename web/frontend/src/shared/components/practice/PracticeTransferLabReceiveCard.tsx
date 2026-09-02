@@ -38,10 +38,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/shared/ui/cn";
-import {
-  PRACTICE_REMAKE_BADGE_CLASS,
-  toStatusBadgeLabel,
-} from "@/shared/practice/practiceRecentTransferList";
+import { toStatusBadgeLabel } from "@/shared/practice/practiceRecentTransferList";
 import { isPracticeTransferAcceptOverdue } from "@/shared/practice/practiceAcceptOverdue";
 import { PRACTICE_ACCEPTED_HINT } from "@/shared/practice/practiceTransferAccept";
 import { PracticeAcceptOverdueBadge } from "@/shared/components/practice/PracticeAcceptOverdueBadge";
@@ -88,12 +85,13 @@ export type PracticeTransferLabReceiveCardProps = {
   designSoftwareLabel?: string | null;
   anodizingEnabled?: boolean | null;
   onOpen: () => void;
-  onDesignStlUpload: (event: MouseEvent) => void;
+  onDesignStlUpload?: (event: MouseEvent) => void;
+  onMarkCompleteWithoutFiles?: (event: MouseEvent) => void;
   onAbutmentProductionCancel: (event: MouseEvent) => void;
   onRelease: (event: MouseEvent) => void;
   onOpenSubcontract?: (event: MouseEvent) => void;
   onDesignConfirm: () => void;
-  onDropFiles: (files: File[]) => void;
+  onDropFiles?: (files: File[]) => void;
 };
 
 /**
@@ -107,6 +105,7 @@ export function PracticeTransferLabReceiveCard({
   dimRejected = false,
   onOpen,
   onDesignStlUpload,
+  onMarkCompleteWithoutFiles,
   onAbutmentProductionCancel,
   onRelease,
   onOpenSubcontract,
@@ -114,7 +113,11 @@ export function PracticeTransferLabReceiveCard({
   onDropFiles,
 }: PracticeTransferLabReceiveCardProps) {
   const workState = resolvePracticeLabReceiveWorkActionState(transfer);
-  const statusLabel = toStatusBadgeLabel(workState.displayStatus);
+  const statusLabel = toStatusBadgeLabel(workState.displayStatus, {
+    designFileCount: transfer.production?.designFileCount,
+    designFiles: transfer.production?.designFiles,
+    designReadyAt: transfer.production?.designReadyAt,
+  });
   const cardId = String(transfer.transferId || transfer._id || "").trim();
   const unreadBadgeCount = practiceTransferLabReceiveUnreadBadgeCount(
     transfer,
@@ -124,8 +127,12 @@ export function PracticeTransferLabReceiveCard({
     showWorkActions,
     showAbutmentProductionCancel,
     showCompletedStageHeaderCancel,
+    showMarkCompleteWithoutFiles,
+    designStlUploadMode,
   } = workState;
   const completeInputId = `practice-complete-${cardId}`;
+  const allowCardDrop =
+    Boolean(onDropFiles) && designStlUploadMode === "abutment";
   const acceptOverdue = isPracticeTransferAcceptOverdue({
     status: workState.displayStatus,
     orderDate: transfer.orderDate,
@@ -204,17 +211,6 @@ export function PracticeTransferLabReceiveCard({
         extraBadges={
           <>
             {acceptOverdue ? <PracticeAcceptOverdueBadge viewer="lab" /> : null}
-            {transfer.isRemake ? (
-              <Badge
-                variant="outline"
-                className={cn(
-                  "h-5 shrink-0 px-1.5 text-[11px] leading-none",
-                  PRACTICE_REMAKE_BADGE_CLASS,
-                )}
-              >
-                리메이크
-              </Badge>
-            ) : null}
             {transfer.production?.rushProcessing ? (
               <Badge
                 variant="outline"
@@ -255,7 +251,9 @@ export function PracticeTransferLabReceiveCard({
         }
       />
 
-      {showWorkActions || showCompletedStageHeaderCancel ? (
+      {showWorkActions ||
+      showCompletedStageHeaderCancel ||
+      showMarkCompleteWithoutFiles ? (
         <div className="mt-3 border-t border-slate-100 pt-3">
           <PracticeLabReceiveWorkActionsBar
             transfer={transfer}
@@ -264,7 +262,9 @@ export function PracticeTransferLabReceiveCard({
             showProductionCancelInBar={
               Boolean(showAbutmentProductionCancel && showWorkActions)
             }
+            showDesignUpload={false}
             onDesignStlUpload={onDesignStlUpload}
+            onMarkCompleteWithoutFiles={onMarkCompleteWithoutFiles}
             onAbutmentProductionCancel={onAbutmentProductionCancel}
             onDesignConfirm={onDesignConfirm}
           />
@@ -273,7 +273,7 @@ export function PracticeTransferLabReceiveCard({
     </>
   );
 
-  if (showWorkActions) {
+  if (allowCardDrop && showWorkActions) {
     return (
       <PracticeTransferFileDropTarget
         fileInputId={completeInputId}
@@ -287,7 +287,7 @@ export function PracticeTransferLabReceiveCard({
           dimRejected && "opacity-40 hover:opacity-55",
         )}
         activeClassName="border-primary bg-primary-soft/45"
-        onFiles={onDropFiles}
+        onFiles={onDropFiles!}
       >
         <div
           role="button"

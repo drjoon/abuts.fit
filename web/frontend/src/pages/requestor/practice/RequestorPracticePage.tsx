@@ -154,10 +154,6 @@ import {
   type LabReceiveUploadSlotOption,
   type LabReceiveWorkUploadAssignment,
 } from "@/shared/components/practice/LabReceiveWorkUploadDialog";
-import {
-  LabReceiveDualRoleAssignDialog,
-  type LabReceiveDualRoleAssignResult,
-} from "@/shared/components/practice/LabReceiveDualRoleAssignDialog";
 import { useNewRequestImplant } from "@/pages/requestor/new_request/hooks/useNewRequestImplant";
 import {
   AlertDialog,
@@ -192,7 +188,19 @@ import {
 } from "@/shared/hooks/useBackgroundTempUpload";
 import { useS3FileDownload } from "@/shared/files/useS3FileDownload";
 import { cn } from "@/shared/ui/cn";
-import { toStatusBadgeLabel } from "@/shared/practice/practiceRecentTransferList";
+import {
+  PRACTICE_RECENT_DEFAULT_ON_STATUS_FILTERS,
+  PRACTICE_RECENT_STATUS_BADGES,
+  computeGroupedStatusCounts,
+  computeGroupedStatusUnreadCounts,
+  createPracticeRecentStatusFilterSet,
+  isPracticeRecentStatusFilterDefault,
+  practiceTransferMatchesStatusFilters,
+  togglePracticeRecentStatusFilter,
+  toStatusBadgeLabel,
+  type PracticeRecentStatusFilterKey,
+  type PracticeRecentTransferItem,
+} from "@/shared/practice/practiceRecentTransferList";
 import {
   PracticeTransferDetailChatDialog,
   type PracticeTransferDialogFileItem,
@@ -232,7 +240,6 @@ import {
 import {
   formatPracticeTransferProstheticSlotLabels,
   getPracticeTransferLabReceiveDisplayStatus,
-  isLabReceiveHiddenTerminalStatus,
   listPracticeTransferAbutsCustomAbutmentToothWorks,
   listPracticeTransferPendingProstheticSlots,
   practiceTransferAbutmentMachiningStarted,
@@ -250,8 +257,6 @@ import {
 } from "@/shared/practice/practiceTransferAccept";
 import {
   LAB_RECEIVE_ABUTMENT_UPLOAD_HINT,
-  LAB_RECEIVE_DUAL_DESIGN_UPLOAD_HINT,
-  LAB_RECEIVE_PROSTHETIC_UPLOAD_HINT,
   PracticeLabReceiveWorkActionsBar,
 } from "@/shared/components/practice/PracticeLabReceiveWorkActionsBar";
 import {
@@ -345,13 +350,6 @@ type LabReceiveWorkUploadState = {
   abutmentPending?: AbutmentPendingMeta[];
 };
 
-type LabReceiveDualRoleAssignState = {
-  transfer: ReceivedPracticeTransfer;
-  files: File[];
-  abutmentCapacity: number;
-  prostheticCapacity: number;
-};
-
 type DesignUploadStartResult = "opened" | "split" | "skipped" | "error";
 
 type ReceivedTransfersResponse = {
@@ -416,43 +414,25 @@ const formatLabReceiveMobileCreatedAt = (value: unknown) => {
   });
 };
 
-type LabReceiveStatusFilterKey =
-  | "발송완료"
-  | "의뢰수락"
-  | "작업완료"
-  | "포장.발송"
-  | "리메이크";
+type LabReceiveStatusFilterKey = PracticeRecentStatusFilterKey;
 
 /** 기본 ON — 상태 전부. 「기본」 리셋도 이 집합. */
-const LAB_RECEIVE_DEFAULT_ON_STATUS_FILTERS: readonly LabReceiveStatusFilterKey[] = [
-  "발송완료",
-  "의뢰수락",
-  "작업완료",
-  "포장.발송",
-  "리메이크",
-];
+const LAB_RECEIVE_DEFAULT_ON_STATUS_FILTERS =
+  PRACTICE_RECENT_DEFAULT_ON_STATUS_FILTERS;
 
 const createLabReceiveStatusFilterSet = (
   keys: readonly LabReceiveStatusFilterKey[] = LAB_RECEIVE_DEFAULT_ON_STATUS_FILTERS,
-) => new Set<LabReceiveStatusFilterKey>(keys);
+) => createPracticeRecentStatusFilterSet(keys);
 
 /** 독립 다중 on/off: 키를 Set에 추가/제거. 전부 off(빈 Set) 허용. */
 const toggleLabReceiveStatusFilter = (
   prev: ReadonlySet<LabReceiveStatusFilterKey>,
   key: LabReceiveStatusFilterKey,
-) => {
-  const next = new Set<LabReceiveStatusFilterKey>(prev);
-  if (next.has(key)) next.delete(key);
-  else next.add(key);
-  return next;
-};
+) => togglePracticeRecentStatusFilter(prev, key);
 
 const isLabReceiveStatusFilterDefault = (
   selected: ReadonlySet<LabReceiveStatusFilterKey>,
-) => {
-  if (selected.size !== LAB_RECEIVE_DEFAULT_ON_STATUS_FILTERS.length) return false;
-  return LAB_RECEIVE_DEFAULT_ON_STATUS_FILTERS.every((k) => selected.has(k));
-};
+) => isPracticeRecentStatusFilterDefault(selected);
 
 const labTransferMatchesStatusFilters = (
   transfer: ReceivedPracticeTransfer,
@@ -462,22 +442,16 @@ const labTransferMatchesStatusFilters = (
   // 미확인은 상태 필터 on/off·전부 off와 무관하게 항상 캘린더 표시.
   if (Math.max(0, Number(unreadCount || 0)) > 0) return true;
 
-  if (selected.size === 0) return false;
   const status = getTransferDisplayStatus(transfer);
-  if (selected.has("리메이크") && transfer.isRemake) return true;
-  if (selected.has("의뢰수락") && status === "의뢰수락") return true;
-  if (selected.has("작업완료") && status === "작업완료") return true;
-  if (selected.has("포장.발송") && status === "생산진행") return true;
-  if (
-    selected.has("발송완료") &&
-    (status === "발송완료" ||
-      status === "수신완료" ||
-      status === "자동매칭" ||
-      status === "하청대기")
-  ) {
-    return true;
-  }
-  return false;
+  return practiceTransferMatchesStatusFilters(
+    {
+      status,
+      designFileCount: transfer.production?.designFileCount,
+      designFiles: transfer.production?.designFiles,
+      designReadyAt: transfer.production?.designReadyAt,
+    },
+    selected,
+  );
 };
 
 export default function RequestorPracticePage() {
@@ -791,8 +765,6 @@ export function RequestorPracticeReceivePage({
   const [workUploadState, setWorkUploadState] =
     useState<LabReceiveWorkUploadState | null>(null);
   const [workUploadBusy, setWorkUploadBusy] = useState(false);
-  const [dualRoleAssignState, setDualRoleAssignState] =
-    useState<LabReceiveDualRoleAssignState | null>(null);
   /** dual 배정 후 어벗 큐가 끝나면 이어서 올릴 보철 파일 */
   const pendingProstheticAfterAbutmentRef = useRef<{
     transferId: string;
@@ -1723,13 +1695,13 @@ export function RequestorPracticeReceivePage({
   }, [dialogOpen, messages]);
 
   const baseFilteredTransfers = useMemo(() => {
-    // 치과 삭제 + 기공소 거부·작업취소(취소)는 수신·캘린더에서 제외.
+    // 치과 삭제만 수신·캘린더에서 제외. 거절·작업취소는 상단 뱃지 집계에 포함.
     const visible = transfers.filter((t) => {
       const raw = String(t.status || "").trim().toLowerCase();
       if (raw === "deleted" || raw === "canceled" || raw === "cancelled") {
         return false;
       }
-      return !isLabReceiveHiddenTerminalStatus(getTransferDisplayStatus(t));
+      return true;
     });
     const query = search.trim().toLowerCase();
     if (!query) return visible;
@@ -1787,60 +1759,35 @@ export function RequestorPracticeReceivePage({
   );
 
   const statusCounts = useMemo(() => {
-    const counts = baseFilteredTransfers.reduce(
-      (acc, transfer) => {
-        const status = getTransferDisplayStatus(transfer);
-        if (status === "작업완료") acc.completed += 1;
-        else if (status === "생산진행") acc.shipping += 1;
-        else if (status === "의뢰수락") acc.accepted += 1;
-        else if (
-          status === "발송완료" ||
-          status === "수신완료" ||
-          status === "자동매칭" ||
-          status === "하청대기"
-        ) {
-          acc.sent += 1;
-        }
-        if (transfer.isRemake) acc.remake += 1;
-        return acc;
-      },
-      {
-        sent: 0,
-        accepted: 0,
-        completed: 0,
-        shipping: 0,
-        remake: 0,
-      },
+    const asItems = baseFilteredTransfers.map(
+      (transfer): Pick<
+        PracticeRecentTransferItem,
+        "status" | "designFileCount" | "designFiles" | "designReadyAt" | "unreadCount"
+      > => ({
+        status: getTransferDisplayStatus(transfer),
+        designFileCount: transfer.production?.designFileCount,
+        designFiles: transfer.production?.designFiles as PracticeRecentTransferItem["designFiles"],
+        designReadyAt: transfer.production?.designReadyAt,
+        unreadCount: 0,
+      }),
     );
-    return counts;
+    return computeGroupedStatusCounts(asItems as PracticeRecentTransferItem[]);
   }, [baseFilteredTransfers]);
 
   const statusUnreadCounts = useMemo(() => {
-    const counts = {
-      sent: 0,
-      accepted: 0,
-      completed: 0,
-      shipping: 0,
-      remake: 0,
-    };
-    for (const transfer of baseFilteredTransfers) {
-      const unread = transferUnreadBadgeCount(transfer);
-      if (unread <= 0) continue;
-      const status = getTransferDisplayStatus(transfer);
-      if (status === "작업완료") counts.completed += unread;
-      else if (status === "생산진행") counts.shipping += unread;
-      else if (status === "의뢰수락") counts.accepted += unread;
-      else if (
-        status === "발송완료" ||
-        status === "수신완료" ||
-        status === "자동매칭" ||
-        status === "하청대기"
-      ) {
-        counts.sent += unread;
-      }
-      if (transfer.isRemake) counts.remake += unread;
-    }
-    return counts;
+    const asItems = baseFilteredTransfers.map(
+      (transfer): Pick<
+        PracticeRecentTransferItem,
+        "status" | "designFileCount" | "designFiles" | "designReadyAt" | "unreadCount"
+      > => ({
+        status: getTransferDisplayStatus(transfer),
+        designFileCount: transfer.production?.designFileCount,
+        designFiles: transfer.production?.designFiles as PracticeRecentTransferItem["designFiles"],
+        designReadyAt: transfer.production?.designReadyAt,
+        unreadCount: transferUnreadBadgeCount(transfer),
+      }),
+    );
+    return computeGroupedStatusUnreadCounts(asItems as PracticeRecentTransferItem[]);
   }, [baseFilteredTransfers, transferUnreadBadgeCount]);
 
   const filteredTransfers = useMemo(
@@ -1918,8 +1865,12 @@ export function RequestorPracticeReceivePage({
           String(transfer.practiceBusinessAnchorId || "").trim() || clinic,
         statusTone: resolvePracticeCalendarStatusTone(
           getTransferDisplayStatus(transfer),
+          {
+            designFileCount: transfer.production?.designFileCount,
+            designFiles: transfer.production?.designFiles,
+            designReadyAt: transfer.production?.designReadyAt,
+          },
         ),
-        isRemake: Boolean(transfer.isRemake),
         sortLabel: clinic,
         line: [clinic, patientLine, surchargeLabel].filter(Boolean).join(" / "),
         unreadCount: transferUnreadBadgeCount(transfer),
@@ -2545,18 +2496,14 @@ export function RequestorPracticeReceivePage({
       const assignments = Array.isArray(options.assignments)
         ? options.assignments
         : [];
-      if (assignments.length === 0) {
-        toast({
-          title: "결과 파일 필요",
-          description: "작업 완료하려면 보철 결과 파일을 선택해주세요.",
-          variant: "destructive",
-        });
-        return false;
-      }
+      // 파일 없는 작업 완료 허용(수락 시 이미 정산).
 
       try {
-        const incoming = await buildResultFilePayloadFromAssignments(assignments);
-        if (incoming.length === 0) {
+        const incoming =
+          assignments.length > 0
+            ? await buildResultFilePayloadFromAssignments(assignments)
+            : [];
+        if (assignments.length > 0 && incoming.length === 0) {
           toast({
             title: "업로드 실패",
             description: "결과 파일 업로드에 실패했습니다.",
@@ -4483,113 +4430,54 @@ export function RequestorPracticeReceivePage({
       if (!id || cardActionBusyId || designConfirmBusy || workUploadBusy) return;
 
       const workState = resolvePracticeLabReceiveWorkActionState(transfer);
-      const mode = workState.designStlUploadMode;
-      if (mode === "none") {
+      if (workState.designStlUploadMode !== "abutment") {
         toast({
-          title: "업로드할 디자인 없음",
-          description: "남은 어벗·보철 디자인 파일이 없습니다.",
+          title: "업로드할 어벗 없음",
+          description: "커스텀 어벗 디자인이 더 필요하지 않습니다.",
         });
         return;
       }
 
       let nextFiles = Array.from(files || []).filter(Boolean);
       if (!nextFiles.length) {
-        if (mode === "prosthetic") {
-          nextFiles = await pickProstheticResultFiles();
-        } else {
-          nextFiles = await pickDesignAbutmentFiles();
-        }
+        nextFiles = await pickDesignAbutmentFiles();
       }
       if (!nextFiles.length) return;
 
-      if (mode === "dual") {
-        const stlFiles = nextFiles.filter(
-          (file) => getPracticeTransferFileExtension(file.name) === ".stl",
-        );
-        if (!stlFiles.length) {
-          toast({
-            title: "STL 필요",
-            description: "디자인 파일은 STL만 업로드할 수 있습니다.",
-            variant: "destructive",
-          });
-          return;
-        }
-        const abutmentCapacity = Math.max(1, workState.pendingAbutmentCount);
-        const prostheticCapacity = Math.max(1, workState.pendingProstheticCount);
-        setDualRoleAssignState({
-          transfer,
-          files: stlFiles,
-          abutmentCapacity,
-          prostheticCapacity,
-        });
-        beginWorkFilePreUpload(stlFiles);
-        return;
-      }
-
-      if (mode === "abutment") {
-        await beginDesignUploadWithFiles(transfer, nextFiles);
-        return;
-      }
-
-      beginCompleteWithFiles(transfer, nextFiles);
+      await beginDesignUploadWithFiles(transfer, nextFiles);
     },
     [
-      beginCompleteWithFiles,
       beginDesignUploadWithFiles,
-      beginWorkFilePreUpload,
       cardActionBusyId,
       designConfirmBusy,
       pickDesignAbutmentFiles,
-      pickProstheticResultFiles,
       toast,
       workUploadBusy,
     ],
   );
 
-  const handleDualRoleAssignConfirm = useCallback(
-    async (result: LabReceiveDualRoleAssignResult) => {
-      const state = dualRoleAssignState;
-      if (!state) return;
-      const { abutmentFiles, prostheticFiles } = result;
-      setDualRoleAssignState(null);
-
-      const transferId = String(
-        state.transfer.transferId || state.transfer._id || "",
-      ).trim();
-
-      if (abutmentFiles.length > 0) {
-        if (prostheticFiles.length > 0) {
-          pendingProstheticAfterAbutmentRef.current = {
-            transferId,
-            files: prostheticFiles,
-          };
-        } else {
-          clearPendingProstheticAfterAbutment();
+  const handleMarkCompleteWithoutFiles = useCallback(
+    async (transfer: ReceivedPracticeTransfer, event: MouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const id = String(transfer.transferId || transfer._id || "").trim();
+      if (!id || cardActionBusyIdRef.current) return;
+      cardActionBusyIdRef.current = id;
+      setCardActionBusyId(id);
+      try {
+        const ok = await markTransferComplete(transfer, { assignments: [] });
+        if (ok) {
+          toast({
+            title: "작업 완료",
+            description: "파일 없이 작업을 완료했습니다.",
+          });
         }
-        const start = await beginDesignUploadWithFiles(
-          state.transfer,
-          abutmentFiles,
-        );
-        if (start === "opened" || start === "split") return;
-        const pending = pendingProstheticAfterAbutmentRef.current;
-        pendingProstheticAfterAbutmentRef.current = null;
-        if (pending?.files?.length) {
-          beginCompleteWithFiles(state.transfer, pending.files);
-        }
-        return;
-      }
-
-      clearPendingProstheticAfterAbutment();
-      if (prostheticFiles.length > 0) {
-        beginCompleteWithFiles(state.transfer, prostheticFiles);
+      } finally {
+        cardActionBusyIdRef.current = "";
+        setCardActionBusyId("");
       }
     },
-    [
-      beginCompleteWithFiles,
-      beginDesignUploadWithFiles,
-      clearPendingProstheticAfterAbutment,
-      dualRoleAssignState,
-    ],
+    [markTransferComplete, toast],
   );
 
   const handleCardDesignStlUpload = useCallback(
@@ -4705,31 +4593,19 @@ export function RequestorPracticeReceivePage({
   const dialogWorkFileDrop = useMemo(() => {
     if (!selectedTransfer) return null;
     const workState = resolvePracticeLabReceiveWorkActionState(selectedTransfer);
-    if (!workState.showWorkActions) return null;
-    if (workState.designStlUploadMode === "none") return null;
+    if (workState.designStlUploadMode !== "abutment") return null;
     const transferKey = String(
       selectedTransfer.transferId || selectedTransfer._id || "",
     ).trim();
     if (!transferKey) return null;
     const rowBusy = cardActionBusyId === transferKey || workUploadBusy;
-    const mode = workState.designStlUploadMode;
     return {
       fileInputId: `practice-modal-work-drop-${transferKey}`,
       disabled: rowBusy,
       onFiles: (files: File[]) => handleCardDropFiles(selectedTransfer, files),
-      guideText: "디자인 STL을 여기에 드래그하세요",
-      guideDetail:
-        mode === "dual"
-          ? LAB_RECEIVE_DUAL_DESIGN_UPLOAD_HINT
-          : mode === "abutment"
-            ? LAB_RECEIVE_ABUTMENT_UPLOAD_HINT
-            : LAB_RECEIVE_PROSTHETIC_UPLOAD_HINT,
-      dropHint:
-        mode === "dual"
-          ? "어벗·보철 STL"
-          : mode === "abutment"
-            ? "어벗 STL"
-            : undefined,
+      guideText: "어벗 STL을 여기에 드래그하세요",
+      guideDetail: LAB_RECEIVE_ABUTMENT_UPLOAD_HINT,
+      dropHint: "어벗 STL",
       uploadProgressPercent: workUploadProgressSummary?.active
         ? workUploadProgressSummary.percent
         : null,
@@ -4902,48 +4778,14 @@ export function RequestorPracticeReceivePage({
   ]);
 
   const labStatusFilterBadgeItems = useMemo((): PracticeStatusFilterBadgeItem[] => {
-    return [
-      {
-        key: "발송완료",
-        label: "의뢰",
-        tone: "sent",
-        count: statusCounts.sent,
-        unreadCount: statusUnreadCounts.sent,
-        tooltip: "치과에서 기공의뢰서를 보낸 후",
-      },
-      {
-        key: "의뢰수락",
-        label: "수락",
-        tone: "accepted",
-        count: statusCounts.accepted,
-        unreadCount: statusUnreadCounts.accepted,
-        tooltip: "기공소에서 작업을 수락한 후",
-      },
-      {
-        key: "작업완료",
-        label: "디자인",
-        tone: "completed",
-        count: statusCounts.completed,
-        unreadCount: statusUnreadCounts.completed,
-        tooltip: "어벗·보철 디자인 파일 업로드 후(치과·기공소 공통)",
-      },
-      {
-        key: "포장.발송",
-        label: "출고",
-        tone: "shipping",
-        count: statusCounts.shipping,
-        unreadCount: statusUnreadCounts.shipping,
-        tooltip: "연동 커스텀어벗 제조사 포장.발송·택배 진행 후",
-      },
-      {
-        key: "리메이크",
-        label: "리메이크",
-        tone: "remake",
-        count: statusCounts.remake,
-        unreadCount: statusUnreadCounts.remake,
-        tooltip: "출고·디자인 완료 건 리메이크 의뢰",
-      },
-    ];
+    return PRACTICE_RECENT_STATUS_BADGES.map((item) => ({
+      key: item.filter,
+      label: item.label,
+      tone: resolvePracticeCalendarStatusTone(item.filter),
+      count: statusCounts[item.countKey],
+      unreadCount: statusUnreadCounts[item.countKey],
+      tooltip: item.tooltip,
+    }));
   }, [statusCounts, statusUnreadCounts]);
 
   const loadedUnreadNoticeTotal = useMemo(() => {
@@ -5031,7 +4873,6 @@ export function RequestorPracticeReceivePage({
         onResetToDefault={resetLabStatusFiltersToDefault}
         isDefault={isLabReceiveStatusFilterDefault(statusFilters)}
         countSuffix="건"
-        gapBeforeKeys={["리메이크"]}
       />
     </div>
   );
@@ -5127,6 +4968,11 @@ export function RequestorPracticeReceivePage({
                       resolvePracticeTransferListToothNumbers(transfer);
                     const statusLabel = toStatusBadgeLabel(
                       getTransferDisplayStatus(transfer),
+                      {
+                        designFileCount: transfer.production?.designFileCount,
+                        designFiles: transfer.production?.designFiles,
+                        designReadyAt: transfer.production?.designReadyAt,
+                      },
                     );
                     const unread = transferUnreadBadgeCount(transfer);
                     const arrival = String(transfer.arrivalDate || "").trim();
@@ -5173,14 +5019,6 @@ export function RequestorPracticeReceivePage({
                                 >
                                   {deliveryLabel}
                                 </span>
-                              ) : null}
-                              {transfer.isRemake ? (
-                                <Badge
-                                  variant="outline"
-                                  className="h-6 border-[2px] border-double border-slate-400 bg-white px-1.5 text-[10px]"
-                                >
-                                  리메이크
-                                </Badge>
                               ) : null}
                               {unread > 0 ? (
                                 <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[10px] font-semibold text-white">
@@ -5283,20 +5121,6 @@ export function RequestorPracticeReceivePage({
           clearPendingProstheticAfterAbutment();
           clearDesignConfirmState();
         }}
-      />
-      <LabReceiveDualRoleAssignDialog
-        open={Boolean(dualRoleAssignState)}
-        onOpenChange={(open) => {
-          if (!open) {
-            setDualRoleAssignState(null);
-            clearPendingProstheticAfterAbutment();
-          }
-        }}
-        files={dualRoleAssignState?.files || []}
-        abutmentCapacity={dualRoleAssignState?.abutmentCapacity || 0}
-        prostheticCapacity={dualRoleAssignState?.prostheticCapacity || 0}
-        submitting={workUploadBusy || designConfirmBusy}
-        onConfirm={handleDualRoleAssignConfirm}
       />
       <LabReceiveWorkUploadDialog
         open={Boolean(workUploadState)}
@@ -5681,9 +5505,13 @@ export function RequestorPracticeReceivePage({
               busy={rowBusy}
               designConfirmBusy={designConfirmBusyId === transferKey}
               showProductionCancelInBar
+              showDesignUpload
               trailingActions={completedCancelAction || releaseAction}
               onDesignStlUpload={(event) =>
                 void handleCardDesignStlUpload(selectedTransfer, event)
+              }
+              onMarkCompleteWithoutFiles={(event) =>
+                void handleMarkCompleteWithoutFiles(selectedTransfer, event)
               }
               onAbutmentProductionCancel={(event) =>
                 void handleCardAbutmentProductionCancel(

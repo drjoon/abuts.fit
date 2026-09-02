@@ -3,21 +3,10 @@
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/practice/practiceTransferLabReceive.ts
-// - web/frontend/src/shared/practice/roundBarAbutment.ts
 // change-log:
-// - 2026-09-02: 어벗·보철 CTA →「디자인(STL) 업로드」통합(dual/단일 분기).
-// - 2026-08-28: 어벗·보철·취소 — 가능하면 1줄, 아니면 어벗·보철 / 취소 2줄.
-// - 2026-08-28: CTA「어벗/보철 업로드」단축·툴팁(생산 시작·작업 완료) 공유 문구.
-// - 2026-08-28: 업로드 CTA 2열 + 취소 행 — 좁은 채팅에서 버튼이 3줄로 떨어지지 않게.
-// - 2026-08-23: 미제공 CA 안내를 한 줄로 압축(LabPendingAbutmentGuide).
-// - 2026-08-21: 작업취소(수락 해제)를 업로드 CTA와 같은 버튼 행에 둔다.
-// - 2026-08-21: 미제공 CA 안내 — 치아·임플란트 상세 + 자체 처리 문구(LabPendingAbutmentGuide).
-// - 2026-08-21: 요청중 CA — 어벗 업로드 CTA 숨김 + 기공소 CNC 직접 의뢰 안내.
-// - 2026-08-21: 어벗 생산 취소 — 가공 중이어도 클릭 가능. API 판정·토스트(준비 복귀 대비).
-// - 2026-08-21: 어벗 CTA「어벗 업로드 & 생산의뢰」·툴팁 단문화.
-// - 2026-08-21: 카드→캘린더 전환 후 상세 모달에서도 어벗·보철 업로드 CTA 공유.
+// - 2026-09-02: 보철/dual 제거. CA 어벗 업로드 + 파일 없는 작업 완료 CTA.
 import type { MouseEvent, ReactNode } from "react";
-import { UploadCloud, X } from "lucide-react";
+import { Check, UploadCloud, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -38,10 +27,12 @@ export type PracticeLabReceiveWorkActionsBarProps = {
   designConfirmBusy?: boolean;
   /** 수락 중「어벗 생산 취소」노출(상세는 true, 카드는 헤더와 역할 분담 시 true) */
   showProductionCancelInBar?: boolean;
-  onDesignStlUpload: (event: MouseEvent) => void;
+  /** false면 어벗 업로드 CTA 숨김(카드 등 — 진행상황 모달에서만 업로드) */
+  showDesignUpload?: boolean;
+  onDesignStlUpload?: (event: MouseEvent) => void;
+  onMarkCompleteWithoutFiles?: (event: MouseEvent) => void;
   onAbutmentProductionCancel?: (event: MouseEvent) => void;
   onDesignConfirm?: () => void;
-  /** 버튼 행 끝(보철 업로드 옆). 상세 모달 작업취소 등 */
   trailingActions?: ReactNode;
   className?: string;
 };
@@ -49,28 +40,21 @@ export type PracticeLabReceiveWorkActionsBarProps = {
 const ctaButtonClass =
   "h-8 shrink-0 px-2.5 text-xs focus-visible:ring-0 focus-visible:ring-offset-0";
 
-/** 어벗만 — 채팅 드롭존 안내 SSOT */
+/** 어벗 — 채팅 드롭존 안내 SSOT */
 export const LAB_RECEIVE_ABUTMENT_UPLOAD_HINT =
   "어벗츠에서 커스텀 어벗 생산이 시작됩니다.";
-/** 보철만 — 채팅 드롭존 안내 SSOT */
-export const LAB_RECEIVE_PROSTHETIC_UPLOAD_HINT =
-  "업로드하면 작업이 완료됩니다.";
-/** 어벗·보철 동시 — 채팅 드롭존 안내 SSOT */
-export const LAB_RECEIVE_DUAL_DESIGN_UPLOAD_HINT =
-  "어벗·보철 STL을 함께 올리고 왼쪽(어벗)·오른쪽(보철)에 지정합니다.";
-/** 통합 CTA·드롭존 공통 힌트 */
-export const LAB_RECEIVE_DESIGN_STL_UPLOAD_HINT =
-  "디자인 STL을 업로드합니다.";
 
 /**
- * 기공의뢰수신 — 수락 후 디자인(STL) 업로드 CTA(카드·상세 모달 공통).
+ * 기공의뢰수신 — 수락 후 어벗 업로드·작업완료 CTA(카드·상세 모달 공통).
  */
 export function PracticeLabReceiveWorkActionsBar({
   transfer,
   busy = false,
   designConfirmBusy = false,
   showProductionCancelInBar = true,
+  showDesignUpload = true,
   onDesignStlUpload,
+  onMarkCompleteWithoutFiles,
   onAbutmentProductionCancel,
   onDesignConfirm,
   trailingActions = null,
@@ -81,6 +65,7 @@ export function PracticeLabReceiveWorkActionsBar({
   if (
     !state.showWorkActions &&
     !state.showCompletedStageHeaderCancel &&
+    !state.showMarkCompleteWithoutFiles &&
     !hasTrailing
   ) {
     return null;
@@ -96,7 +81,7 @@ export function PracticeLabReceiveWorkActionsBar({
   const productionCancelButton =
     showProductionCancelInBar &&
     state.showAbutmentProductionCancel &&
-    state.showWorkActions ? (
+    (state.showWorkActions || state.showMarkCompleteWithoutFiles) ? (
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
@@ -134,73 +119,80 @@ export function PracticeLabReceiveWorkActionsBar({
     </div>
   );
 
-  const pendingTotal =
-    state.pendingAbutmentCount + state.pendingProstheticCount;
-  const showPendingCount =
-    state.hasPartialProsthetic ||
-    (state.needsAbutmentDesigns && state.designFileCount > 0) ||
-    (state.designStlUploadMode === "dual" &&
-      (state.hasPartialProsthetic || state.designFileCount > 0));
-  const designUploadLabel = showPendingCount
-    ? `디자인(STL) 업로드 (${pendingTotal})`
-    : "디자인(STL) 업로드";
+  const designUploadLabel =
+    state.needsAbutmentDesigns && state.designFileCount > 0
+      ? `어벗(STL) 업로드 (${state.pendingAbutmentCount})`
+      : "어벗(STL) 업로드";
 
-  const designUploadTooltip = (() => {
-    if (state.designStlUploadMode === "dual") {
-      return LAB_RECEIVE_DUAL_DESIGN_UPLOAD_HINT;
-    }
-    if (state.designStlUploadMode === "abutment") {
-      return state.designFileCount > 0
-        ? "남은 어벗 STL을 이어서 올립니다."
-        : LAB_RECEIVE_ABUTMENT_UPLOAD_HINT;
-    }
-    if (state.designStlUploadMode === "prosthetic") {
-      return state.hasPartialProsthetic
-        ? "남은 보철을 이어서 올립니다."
-        : LAB_RECEIVE_PROSTHETIC_UPLOAD_HINT;
-    }
-    return LAB_RECEIVE_DESIGN_STL_UPLOAD_HINT;
-  })();
+  const designConfirmButton =
+    state.showDesignConfirm && onDesignConfirm ? (
+      <Button
+        type="button"
+        size="sm"
+        variant="secondary"
+        disabled={designConfirmBusy}
+        className={ctaButtonClass}
+        onClick={(event) => {
+          event.stopPropagation();
+          onDesignConfirm();
+        }}
+      >
+        {designConfirmBusy ? "확인 중..." : "어벗 디자인 확인"}
+      </Button>
+    ) : null;
 
-  if (state.showWorkActions) {
-    const designConfirmButton =
-      state.showDesignConfirm && onDesignConfirm ? (
-        <Button
-          type="button"
-          size="sm"
-          variant="secondary"
-          disabled={designConfirmBusy}
-          className={ctaButtonClass}
-          onClick={(event) => {
-            event.stopPropagation();
-            onDesignConfirm();
-          }}
-        >
-          {designConfirmBusy ? "확인 중..." : "어벗 디자인 확인"}
-        </Button>
-      ) : null;
+  const designUploadButton =
+    showDesignUpload &&
+    state.designStlUploadMode === "abutment" &&
+    onDesignStlUpload ? (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            size="sm"
+            disabled={busy}
+            className={ctaButtonClass}
+            onClick={(event) => void onDesignStlUpload(event)}
+          >
+            <UploadCloud className="h-3.5 w-3.5" />
+            {busy ? "처리 중..." : designUploadLabel}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-xs text-xs">
+          {state.designFileCount > 0
+            ? "남은 어벗 STL을 이어서 올립니다."
+            : LAB_RECEIVE_ABUTMENT_UPLOAD_HINT}
+        </TooltipContent>
+      </Tooltip>
+    ) : null;
 
-    const designUploadButton =
-      state.designStlUploadMode !== "none" ? (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              size="sm"
-              disabled={busy}
-              className={ctaButtonClass}
-              onClick={(event) => void onDesignStlUpload(event)}
-            >
-              <UploadCloud className="h-3.5 w-3.5" />
-              {busy ? "처리 중..." : designUploadLabel}
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="top" className="max-w-xs text-xs">
-            {designUploadTooltip}
-          </TooltipContent>
-        </Tooltip>
-      ) : null;
+  const markCompleteButton =
+    state.showMarkCompleteWithoutFiles && onMarkCompleteWithoutFiles ? (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            disabled={busy}
+            className={ctaButtonClass}
+            onClick={(event) => void onMarkCompleteWithoutFiles(event)}
+          >
+            <Check className="h-3.5 w-3.5" />
+            {busy ? "처리 중..." : "작업 완료"}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-xs text-xs">
+          파일 없이 작업을 완료합니다. 크레딧은 수락 시 이미 결제되었습니다.
+        </TooltipContent>
+      </Tooltip>
+    ) : null;
 
+  if (
+    state.showWorkActions ||
+    state.showMarkCompleteWithoutFiles ||
+    designConfirmButton
+  ) {
     return (
       <div className={cn("w-full min-w-0 space-y-1.5", className)}>
         {pendingLabGuide}
@@ -208,6 +200,7 @@ export function PracticeLabReceiveWorkActionsBar({
           <>
             {designConfirmButton}
             {designUploadButton}
+            {markCompleteButton}
           </>,
         )}
       </div>
@@ -217,17 +210,7 @@ export function PracticeLabReceiveWorkActionsBar({
   if (state.showCompletedStageHeaderCancel) {
     return (
       <div className={cn("w-full min-w-0 space-y-1.5", className)}>
-        {renderActionRow(
-          <Button
-            type="button"
-            size="sm"
-            disabled
-            className={ctaButtonClass}
-          >
-            <UploadCloud className="h-3.5 w-3.5" />
-            디자인(STL) 업로드
-          </Button>,
-        )}
+        {renderActionRow(null)}
       </div>
     );
   }

@@ -57,8 +57,6 @@ export type PracticeCalendarStatusTone =
   | "completed"
   | "canceled"
   | "rejected"
-  | "shipping"
-  | "remake"
   | "unread";
 
 export type PracticeCalendarChipItem = {
@@ -66,10 +64,8 @@ export type PracticeCalendarChipItem = {
   orderDate?: string | null;
   arrivalDate?: string | null;
   colorKey: string;
-  /** 있으면 그룹색 대신 뱃지 상태색(의뢰~발송). 리메이크는 isRemake */
+  /** 있으면 그룹색 대신 뱃지 상태색(의뢰~어벗) */
   statusTone?: PracticeCalendarStatusTone;
-  /** 리메이크: 공정 색 유지 + 이중 외곽선 */
-  isRemake?: boolean;
   /**
    * 누적 도착일/주문일 중 이전 날짜 칩(최종이 아님).
    * 동일 transfer 연결 표시용 — 클릭은 같은 의뢰상세.
@@ -177,7 +173,7 @@ export const calendarGroupChipStyle = (
   };
 };
 
-/** 상단 뱃지(의뢰·수락·완료·취소·거부·발송·리메이크)와 같은 칩 색. */
+/** 상단 뱃지(의뢰·취소·수락·거절·어벗)와 같은 칩 색. */
 export const PRACTICE_CALENDAR_STATUS_CHIP_STYLE: Record<
   PracticeCalendarStatusTone,
   { backgroundColor: string; color: string }
@@ -185,10 +181,8 @@ export const PRACTICE_CALENDAR_STATUS_CHIP_STYLE: Record<
   sent: { backgroundColor: "hsl(210 10% 90%)", color: "hsl(210 12% 32%)" },
   accepted: { backgroundColor: "hsl(208 55% 88%)", color: "hsl(208 52% 28%)" },
   completed: { backgroundColor: "hsl(168 40% 86%)", color: "hsl(168 48% 24%)" },
-  shipping: { backgroundColor: "hsl(250 38% 90%)", color: "hsl(250 40% 32%)" },
   canceled: { backgroundColor: "hsl(0 55% 90%)", color: "hsl(0 48% 34%)" },
   rejected: { backgroundColor: "hsl(24 72% 88%)", color: "hsl(24 55% 30%)" },
-  remake: { backgroundColor: "#ffffff", color: "hsl(210 12% 28%)" },
   unread: { backgroundColor: "#ffffff", color: "hsl(0 48% 34%)" },
 };
 
@@ -209,10 +203,6 @@ export const PRACTICE_STATUS_FILTER_BADGE_CLASS: Record<
     idle: "border-slate-200 bg-slate-50/60 text-slate-400 opacity-40 hover:opacity-60 hover:bg-slate-50",
     active: "border-teal-500/90 bg-teal-200 text-teal-950 shadow-sm",
   },
-  shipping: {
-    idle: "border-slate-200 bg-slate-50/60 text-slate-400 opacity-40 hover:opacity-60 hover:bg-slate-50",
-    active: "border-violet-500/90 bg-violet-200 text-violet-950 shadow-sm",
-  },
   canceled: {
     idle: "border-slate-200 bg-slate-50/60 text-slate-400 opacity-40 hover:opacity-60 hover:bg-slate-50",
     active: "border-rose-500/90 bg-rose-200 text-rose-950 shadow-sm",
@@ -220,11 +210,6 @@ export const PRACTICE_STATUS_FILTER_BADGE_CLASS: Record<
   rejected: {
     idle: "border-slate-200 bg-slate-50/60 text-slate-400 opacity-40 hover:opacity-60 hover:bg-slate-50",
     active: "border-orange-500/90 bg-orange-200 text-orange-950 shadow-sm",
-  },
-  remake: {
-    idle: "border-[3px] border-double border-slate-200 bg-white text-slate-400 opacity-40 hover:opacity-60",
-    active:
-      "border-[3px] border-double border-slate-700 bg-white text-slate-900 shadow-sm",
   },
   unread: {
     idle: "border-[3px] border-double border-red-200 bg-white text-red-300 opacity-40 hover:opacity-60",
@@ -235,21 +220,31 @@ export const PRACTICE_STATUS_FILTER_BADGE_CLASS: Record<
 
 export const resolvePracticeCalendarStatusTone = (
   status: unknown,
-): Exclude<PracticeCalendarStatusTone, "remake" | "unread"> => {
+  opts?: {
+    designFileCount?: unknown;
+    designFiles?: unknown;
+    designReadyAt?: unknown;
+  },
+): Exclude<PracticeCalendarStatusTone, "unread"> => {
   const s = String(status || "").trim();
   if (s === "거부") return "rejected";
-  if (s === "작업완료") return "completed";
-  if (s === "생산진행" || s === "포장.발송") return "shipping";
-  if (s === "의뢰수락" || s === "다운로드완료") return "accepted";
   if (s === "취소" || s === "작업취소") return "canceled";
+  if (s === "생산진행" || s === "포장.발송") return "completed";
+  if (s === "작업완료") {
+    const designN = Math.max(
+      Number(opts?.designFileCount || 0) || 0,
+      Array.isArray(opts?.designFiles) ? opts.designFiles.length : 0,
+    );
+    if (designN > 0 || Boolean(opts?.designReadyAt)) return "completed";
+    return "accepted";
+  }
+  if (s === "의뢰수락" || s === "다운로드완료") return "accepted";
   return "sent";
 };
 
 export const calendarChipStyleForItem = (item: PracticeCalendarChipItem) => {
   const tone =
-    item.statusTone && item.statusTone !== "remake" && item.statusTone !== "unread"
-      ? item.statusTone
-      : null;
+    item.statusTone && item.statusTone !== "unread" ? item.statusTone : null;
   return tone
     ? PRACTICE_CALENDAR_STATUS_CHIP_STYLE[tone]
     : calendarGroupChipStyle(item.colorKey);
@@ -674,10 +669,8 @@ export function PracticeRecentTransfersCalendar({
                               className={cn(
                                 "flex items-start gap-0.5 rounded pr-0.5 hover:brightness-95",
                                 item.isPriorArrival && "opacity-55",
-                                Number(item.unreadCount || 0) > 0
-                                  ? "border-[3px] border-double border-red-600"
-                                  : item.isRemake &&
-                                    "border-[3px] border-double border-slate-700",
+                                Number(item.unreadCount || 0) > 0 &&
+                                  "border-[3px] border-double border-red-600",
                               )}
                               style={chipStyle}
                               onClick={(e) => e.stopPropagation()}

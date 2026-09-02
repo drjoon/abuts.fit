@@ -254,7 +254,6 @@ import { PracticeRecentTransfersAllModal } from "@/pages/practice/components/Pra
 import {
   PRACTICE_MY_TRANSFERS_PAGE_SIZE,
   canDeletePracticeTransferByStatus,
-  canRemakePracticeTransferByStatus,
   canEditPracticeTransferByStatus,
   filterRequestsByPeriodAndSearch,
   groupPracticeRecentRequests,
@@ -1107,16 +1106,35 @@ const toStatusLabel = (manufacturerStage: unknown) => {
   return "발송완료";
 };
 
-/** 목록/카드 뱃지 라벨 — 상단 필터(의뢰·수락·디자인·취소·출고)와 동일 문구 */
-const toStatusBadgeLabel = (status: unknown) => {
+/** 목록/카드 뱃지 라벨 — 상단 필터(의뢰·취소·수락·거절·어벗)와 동일 문구 */
+const toStatusBadgeLabel = (
+  status: unknown,
+  opts?: {
+    designFileCount?: unknown;
+    designFiles?: unknown;
+    designReadyAt?: unknown;
+  },
+) => {
   const s = String(status || "").trim();
   if (!s) return "-";
-  if (s === "발송완료" || s === "수신완료" || s === "자동매칭" || s === "하청대기") return "의뢰";
-  if (s === "의뢰수락" || s === "다운로드완료") return "수락";
-  if (s === "작업완료") return "디자인";
+  if (s === "발송완료" || s === "수신완료" || s === "자동매칭" || s === "하청대기") {
+    return "의뢰";
+  }
+  if (s === "거부") return "거절";
   if (s === "작업취소" || s === "취소") return "취소";
-  if (s === "거부") return "거부";
-  if (s === "생산진행" || s === "포장.발송") return "출고";
+  const designN = Math.max(
+    Number(opts?.designFileCount || 0) || 0,
+    Array.isArray(opts?.designFiles) ? opts.designFiles.length : 0,
+  );
+  if (
+    s === "생산진행" ||
+    s === "포장.발송" ||
+    ((s === "작업완료" || s === "의뢰수락") &&
+      (designN > 0 || Boolean(opts?.designReadyAt)))
+  ) {
+    return "어벗";
+  }
+  if (s === "의뢰수락" || s === "다운로드완료" || s === "작업완료") return "수락";
   return s;
 };
 
@@ -1192,9 +1210,6 @@ export const PracticeFileTransferPage = ({
   /** 익스프레스 모드·전환 UI 제거 — 엑스퍼트(전폭 작성)만 */
   const isExpressMode = false;
   const workspaceMode = "expert" as const;
-  const [remakeSelectedIds, setRemakeSelectedIds] = useState<string[]>([]);
-  const [remakeConfirmOpen, setRemakeConfirmOpen] = useState(false);
-  const [remakeBusy, setRemakeBusy] = useState(false);
   const [requestSubmitting, setRequestSubmitting] = useState(false);
   const requestSubmittingRef = useRef(false);
   const [skipDesignConfirm, setSkipDesignConfirm] = useState(true);
@@ -4052,21 +4067,6 @@ export const PracticeFileTransferPage = ({
     );
   }, [trashRecentRequests, trashedDraftList]);
 
-  const remakeSelectedTransfers = useMemo(() => {
-    const selected = new Set(remakeSelectedIds);
-    return groupedTransfers.filter((transfer) => {
-      const key = String(transfer.transferMongoIds?.[0] || transfer.id || "").trim();
-      return key && selected.has(key) && canRemakePracticeTransferByStatus(transfer.status);
-    });
-  }, [groupedTransfers, remakeSelectedIds]);
-
-  const askRemakeForTransfer = useCallback((transfer: RecentTransferItem) => {
-    const key = String(transfer.transferMongoIds?.[0] || transfer.id || "").trim();
-    if (!key || !canRemakePracticeTransferByStatus(transfer.status)) return;
-    setRemakeSelectedIds([key]);
-    setRemakeConfirmOpen(true);
-  }, []);
-
   const handleAppendArrival = useCallback(async (arrivalYmdRaw?: string) => {
     if (!authToken || !selectedTransfer) return;
     const transferId = String(selectedTransfer.transferId || "").trim();
@@ -4494,54 +4494,6 @@ export const PracticeFileTransferPage = ({
     },
     [followUpDialogMode, handleAppendProsthesis, handleUpdateProsthesisFollowUp],
   );
-
-  const handleConfirmRemake = useCallback(async () => {
-    if (!authToken || remakeSelectedTransfers.length === 0) return;
-    setRemakeBusy(true);
-    try {
-      const res = await apiFetch<{
-        message?: string;
-        data?: { created?: unknown[]; failed?: Array<{ message?: string }> };
-      }>({
-        path: "/api/practice/transfers/remake",
-        method: "POST",
-        token: authToken,
-        jsonBody: {
-          transferMongoIds: remakeSelectedTransfers.map((transfer) =>
-            String(transfer.transferMongoIds?.[0] || transfer.id || "").trim(),
-          ),
-        },
-      });
-      if (!res.ok) {
-        const body = res.data && typeof res.data === "object" ? res.data : {};
-        toast({
-          title: "리메이크 의뢰 실패",
-          description: String(body.message || "다시 시도해주세요."),
-          variant: "destructive",
-        });
-        return;
-      }
-      const createdCount = Array.isArray(res.data?.data?.created)
-        ? res.data.data.created.length
-        : remakeSelectedTransfers.length;
-      toast({
-        title: "리메이크 의뢰를 전송했습니다",
-        description: createdCount > 1 ? `${createdCount}건` : undefined,
-      });
-      setRemakeSelectedIds([]);
-      setRemakeConfirmOpen(false);
-      await loadRecentRequests({ silent: true });
-    } catch (error) {
-      toast({
-        title: "리메이크 의뢰 실패",
-        description:
-          error instanceof Error ? error.message : "다시 시도해주세요.",
-        variant: "destructive",
-      });
-    } finally {
-      setRemakeBusy(false);
-    }
-  }, [authToken, loadRecentRequests, remakeSelectedTransfers, toast]);
 
   const extractDataFromResponse = <T,>(raw: unknown): T | null => {
     if (!raw || typeof raw !== "object") return null;
@@ -8190,7 +8142,6 @@ export const PracticeFileTransferPage = ({
           onDeleteTransfer={(transfer) => {
             handleAskDeleteTransfer(transfer, { returnToAllModal: true });
           }}
-          onAskRemake={(transfer) => askRemakeForTransfer(transfer)}
           onEditTransfer={(transfer) => {
             handleBeginEditSentTransfer(transfer);
           }}
@@ -9713,28 +9664,6 @@ export const PracticeFileTransferPage = ({
           onCancel={handleCancelRestoreTransfer}
         />
 
-        <ConfirmDialog
-          open={remakeConfirmOpen}
-          title="출고·디자인 건을 리메이크 의뢰할까요?"
-          description={
-            <div className="space-y-1">
-              <div className="text-sm text-muted-foreground">
-                리메이크비 무료 · 배송비는 차감됩니다
-              </div>
-              <div className="text-sm text-muted-foreground">
-                의뢰부터 출고까지 다시 진행됩니다.
-              </div>
-            </div>
-          }
-          confirmLabel={remakeBusy ? "전송 중..." : "리메이크 의뢰"}
-          cancelLabel="취소"
-          onConfirm={() => void handleConfirmRemake()}
-          onCancel={() => {
-            if (remakeBusy) return;
-            setRemakeConfirmOpen(false);
-            setRemakeSelectedIds([]);
-          }}
-        />
 
         <ConfirmDialog
           open={emptyTrashConfirmOpen}

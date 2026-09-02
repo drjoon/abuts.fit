@@ -1254,6 +1254,83 @@ const buildAcceptedFeeQuotePayload = (billingResult, doc) => {
   return null;
 };
 
+
+/** 수락 시 보류 확정 직후 기공소몫 에스크로 해제(치과→기공소 결제). 이미 정산이면 no-op. */
+const settleLabShareOnAccept = async (doc, actorUserId) => {
+  if (doc?.billing?.labSettledAt) {
+    return { released: false, reason: "already_settled" };
+  }
+  const releaseResult = await releasePracticeTransferLabShare({
+    transfer: doc,
+    toothWorks: Array.isArray(doc.toothWorks) ? doc.toothWorks : [],
+    actorUserId,
+  });
+  if (
+    releaseResult?.released ||
+    releaseResult?.reason === "already_released" ||
+    releaseResult?.reason === "zero_lab_fee" ||
+    releaseResult?.reason === "legacy_already_settled"
+  ) {
+    const labSettledAt = new Date();
+    const heldAbutment = Math.max(
+      0,
+      Math.round(
+        Number(
+          releaseResult.fees?.abutmentRetailTotal ??
+            doc.billing?.heldAbutmentTotal ??
+            doc.billing?.abutmentRetailTotal ??
+            0,
+        ),
+      ),
+    );
+    const abutmentAlreadySettled = Boolean(
+      doc.billing?.abutmentSettledAt || heldAbutment <= 0,
+    );
+    const nextBilling = {
+      ...(doc.billing && typeof doc.billing === "object" ? doc.billing : {}),
+      labFeeTotal:
+        releaseResult.fees?.labFeeTotal ??
+        releaseResult.labFeeTotal ??
+        Number(doc.billing?.labFeeTotal || 0),
+      abutmentRetailTotal:
+        releaseResult.fees?.abutmentRetailTotal ??
+        Number(doc.billing?.abutmentRetailTotal || 0),
+      abutmentQty:
+        releaseResult.fees?.abutmentQty ?? Number(doc.billing?.abutmentQty || 0),
+      total: releaseResult.fees?.total ?? Number(doc.billing?.total || 0),
+      labSettlementAmount:
+        releaseResult.labSettlementAmount ??
+        Number(doc.billing?.labSettlementAmount || 0),
+      abutsRevenueAmount:
+        releaseResult.abutsRevenueAmount ??
+        Number(doc.billing?.abutsRevenueAmount || 0),
+      labSettledAt,
+      ...(abutmentAlreadySettled
+        ? {
+            abutmentSettledAt:
+              doc.billing?.abutmentSettledAt || labSettledAt,
+            settledAt: labSettledAt,
+          }
+        : {}),
+    };
+    await PracticeTransfer.updateOne(
+      { _id: doc._id },
+      { $set: { billing: nextBilling } },
+    );
+    doc.billing = nextBilling;
+  } else if (
+    releaseResult?.reason === "no_hold" &&
+    Number(doc.billing?.heldLabTotal || doc.billing?.heldTotal || 0) > 0
+  ) {
+    const err = new Error(
+      "에스크로 보류 내역이 없어 기공크레딧을 지급할 수 없습니다.",
+    );
+    err.statusCode = 409;
+    throw err;
+  }
+  return releaseResult;
+};
+
 const scheduleAcceptSideEffects = ({
   doc,
   labAnchorId,
@@ -3087,91 +3164,7 @@ export async function createPracticeTransfer(req, res) {
       ...toAutoMatchApiFields(transferDoc),
     };
 
-    // hold 성공 전에 201을 주면 FE는 전송 완료로 보고 폼을 비우지만,
-    // hold 실패 시 전송만 삭제되고 draft는 남아 「임시저장만 됨」처럼 보인다.
-    let holdOk = true;
-    try {
-      const holdResult = await holdPracticeTransferCredits({
-        transfer: transferDoc,
-        toothWorks: toothWorksRaw,
-        holdAmount: Number(billingPreview?.total || feeQuote?.fees?.total || 0),
-        holdLabAmount: Number(billingPreview?.labFeeTotal || 0),
-        holdAbutmentAmount: Number(billingPreview?.abutmentRetailTotal || 0),
-        actorUserId: req.user?._id,
-        shipping: createShippingFees,
-        skipExistingHoldCheck: true,
-      });
-      if (holdResult?.held || holdResult?.reason === "already_held") {
-        const heldAt = new Date();
-        const heldBilling = {
-          ...(transferDoc.billing && typeof transferDoc.billing === "object"
-            ? transferDoc.billing.toObject?.() || transferDoc.billing
-            : billingPreview),
-          heldAt,
-          heldTotal: Number(holdResult.heldTotal || billingPreview?.total || 0),
-          heldLabTotal: Number(
-            holdResult.heldLabTotal ?? billingPreview?.labFeeTotal ?? 0,
-          ),
-          heldAbutmentTotal: Number(
-            holdResult.heldAbutmentTotal ??
-              billingPreview?.abutmentRetailTotal ??
-              0,
-          ),
-          heldDesignFeeTotal: Number(holdResult.heldDesignFeeTotal || 0),
-          heldShippingLabTotal: Number(holdResult.heldShippingLabTotal || 0),
-          heldShippingAbutsTotal: Number(
-            holdResult.heldShippingAbutsTotal || 0,
-          ),
-          holdFromPaid: Number(holdResult.fromPaid || 0),
-          holdFromFreeRequest: Number(holdResult.fromFreeRequest || 0),
-          holdFromFreeShipping: Number(holdResult.fromFreeShipping || 0),
-        };
-        await PracticeTransfer.updateOne(
-          { _id: transferDoc._id },
-          { $set: { billing: heldBilling } },
-        );
-        transferDoc.billing = heldBilling;
-        if (Number(holdResult.heldTotal || 0) > 0) {
-          void emitCreditBalanceUpdatedToBusiness({
-            businessAnchorId: practiceAnchorId,
-            balanceDelta: -Number(holdResult.heldTotal || 0),
-            reason: "practice_transfer_hold",
-            refId: transferDoc._id,
-          }).catch(() => null);
-        }
-      } else if (holdResult?.reason && holdResult.reason !== "zero_fee") {
-        holdOk = false;
-      }
-    } catch (holdErr) {
-      holdOk = false;
-      console.warn(
-        "[practiceTransfer] create hold failed",
-        String(transferDoc?._id || ""),
-        holdErr?.message || holdErr,
-      );
-    }
-
-    if (!holdOk) {
-      try {
-        await rollbackPracticeTransferBilling({ transferId: transferDoc._id });
-      } catch {
-        // ignore
-      }
-      try {
-        await PracticeTransfer.deleteOne({ _id: transferDoc._id });
-      } catch {
-        // ignore
-      }
-      // draft는 유지 — 잔액 충전 후 같은 작성 내용으로 재전송 가능
-      return res.status(402).json({
-        success: false,
-        message:
-          "크레딧 보류에 실패해 의뢰를 접수하지 못했습니다. 잔액을 확인한 뒤 다시 전송해 주세요.",
-        reason: "practice_transfer_hold_failed",
-        transferId,
-      });
-    }
-
+    // 2026-09-02: 생성 시 잔액 검사만. 크레딧 보류·기공소 정산은 수락(mark-accepted)에서.
     res.status(201).json({
       success: true,
       message:
@@ -3551,18 +3544,7 @@ export async function updatePracticeTransferContent(req, res) {
           skipJig,
         });
       } catch (creditErr) {
-        try {
-          await holdPracticeTransferCredits({
-            transfer: doc,
-            toothWorks: previousToothWorks,
-            holdAmount: Number(previousBilling?.total || 0),
-            holdLabAmount: Number(previousBilling?.labFeeTotal || 0),
-            holdAbutmentAmount: Number(previousBilling?.abutmentRetailTotal || 0),
-            actorUserId: req.user?._id,
-          });
-        } catch {
-          // ignore restore failure
-        }
+        // 수락 전 수정: 생성 시 hold 없음 — restore hold 불필요
         const status = Number(creditErr?.statusCode || 500);
         return res.status(status >= 400 && status < 600 ? status : 500).json({
           success: false,
@@ -3691,20 +3673,6 @@ export async function updatePracticeTransferContent(req, res) {
     );
 
     if (!updated) {
-      if (billingInputsChanged) {
-        try {
-          await holdPracticeTransferCredits({
-            transfer: doc,
-            toothWorks: previousToothWorks,
-            holdAmount: Number(previousBilling?.total || 0),
-            holdLabAmount: Number(previousBilling?.labFeeTotal || 0),
-            holdAbutmentAmount: Number(previousBilling?.abutmentRetailTotal || 0),
-            actorUserId: req.user?._id,
-          });
-        } catch {
-          // ignore
-        }
-      }
       return res.status(409).json({
         success: false,
         message:
@@ -3715,105 +3683,6 @@ export async function updatePracticeTransferContent(req, res) {
 
     if (billingInputsChanged) {
       updated.billing = billingPreview;
-    try {
-      const holdResult = await holdPracticeTransferCredits({
-        transfer: updated,
-        toothWorks: toothWorksRaw,
-        holdAmount: Number(billingPreview?.total || feeQuote?.fees?.total || 0),
-        holdLabAmount: Number(billingPreview?.labFeeTotal || 0),
-        holdAbutmentAmount: Number(billingPreview?.abutmentRetailTotal || 0),
-        actorUserId: req.user?._id,
-      });
-      if (holdResult?.held || holdResult?.reason === "already_held") {
-        const heldBilling = {
-          ...(updated.billing && typeof updated.billing === "object"
-            ? updated.billing
-            : billingPreview),
-          heldAt: now,
-          heldTotal: Number(holdResult.heldTotal || billingPreview?.total || 0),
-          heldLabTotal: Number(
-            holdResult.heldLabTotal ?? billingPreview?.labFeeTotal ?? 0,
-          ),
-          heldAbutmentTotal: Number(
-            holdResult.heldAbutmentTotal ??
-              billingPreview?.abutmentRetailTotal ??
-              0,
-          ),
-          heldDesignFeeTotal: Number(holdResult.heldDesignFeeTotal || 0),
-          heldShippingLabTotal: Number(holdResult.heldShippingLabTotal || 0),
-          heldShippingAbutsTotal: Number(holdResult.heldShippingAbutsTotal || 0),
-          holdFromPaid: Number(holdResult.fromPaid || 0),
-          holdFromFreeRequest: Number(holdResult.fromFreeRequest || 0),
-          holdFromFreeShipping: Number(holdResult.fromFreeShipping || 0),
-        };
-        updated.billing = heldBilling;
-        await PracticeTransfer.updateOne(
-          { _id: updated._id },
-          { $set: { billing: heldBilling } },
-        );
-        if (Number(holdResult.heldTotal || 0) > 0) {
-          await emitCreditBalanceUpdatedToBusiness({
-            businessAnchorId: practiceAnchorId,
-            balanceDelta: -Number(holdResult.heldTotal || 0),
-            reason: "practice_transfer_update_hold",
-            refId: updated._id,
-          });
-        }
-      } else if (holdResult?.reason && holdResult.reason !== "zero_fee") {
-        await PracticeTransfer.updateOne(
-          { _id: updated._id },
-          {
-            $set: {
-              targetLabAnchorId: previousLabAnchorId
-                ? new Types.ObjectId(previousLabAnchorId)
-                : null,
-              targetLabName: previousTargetLabName,
-              matchingMode: previousMatchingMode,
-              autoMatch: previousAutoMatch,
-              transferMemo: previousMemo,
-              files: previousFiles,
-              toothWorks: previousToothWorks,
-              billing: previousBilling,
-              production: previousProduction,
-            },
-          },
-        );
-        return res.status(500).json({
-          success: false,
-          message: "기공의뢰 수정 크레딧 보류에 실패했습니다.",
-          reason: holdResult.reason,
-        });
-      }
-    } catch (holdErr) {
-      try {
-        await PracticeTransfer.updateOne(
-          { _id: updated._id },
-          {
-            $set: {
-              targetLabAnchorId: previousLabAnchorId
-                ? new Types.ObjectId(previousLabAnchorId)
-                : null,
-              targetLabName: previousTargetLabName,
-              matchingMode: previousMatchingMode,
-              autoMatch: previousAutoMatch,
-              transferMemo: previousMemo,
-              files: previousFiles,
-              toothWorks: previousToothWorks,
-              billing: previousBilling,
-              production: previousProduction,
-            },
-          },
-        );
-      } catch {
-        // ignore
-      }
-      const status = Number(holdErr?.statusCode || 500);
-      return res.status(status >= 400 && status < 600 ? status : 500).json({
-        success: false,
-        message: holdErr?.message || "기공의뢰 수정 크레딧 보류에 실패했습니다.",
-        ...(holdErr?.payload || {}),
-      });
-    }
     }
 
     if (previousLabAnchorId) invalidateUnreadCountCache(previousLabAnchorId);
@@ -6078,6 +5947,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
         } else {
           await persistAcceptedBillingFields(doc, billingResult);
         }
+        await settleLabShareOnAccept(doc, req.user?._id);
       } catch (billingErr) {
         // 과금 실패 시 claim 해제 (다른 기공소가 재시도 가능)
         try {
@@ -6291,6 +6161,25 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
       await PracticeTransfer.updateOne({ _id: doc._id }, { $set: acceptSet });
     }
 
+    if (!alreadyAccepted) {
+      try {
+        await settleLabShareOnAccept(doc, req.user?._id);
+      } catch (settleErr) {
+        try {
+          await rollbackPracticeTransferBilling({ transferId: doc._id });
+        } catch {
+          // ignore
+        }
+        const status = Number(settleErr?.statusCode || 500);
+        return res.status(status >= 400 && status < 600 ? status : 500).json({
+          success: false,
+          message:
+            settleErr?.message || "기공의뢰 수락 정산에 실패했습니다.",
+          ...(settleErr?.payload || {}),
+        });
+      }
+    }
+
     // 최초 수락 시점에만 pending 후속 제작을 함께 수락 처리한다.
     // 이미 수락된 건에 후속 추가된 뒤 재다운로드·재수락 시 pending을 지우지 않는다.
     if (!alreadyAccepted) {
@@ -6470,12 +6359,7 @@ export async function markReceivedPracticeTransferComplete(req, res) {
     }
 
     const resultFiles = normalizeResultFiles(req.body?.resultFiles);
-    if (resultFiles.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "작업 완료하려면 결과 파일을 1개 이상 업로드해주세요.",
-      });
-    }
+    // 2026-09-02: 보철 파일 없이 작업 완료 허용. 기공소 정산은 수락 시점에 이미 처리.
 
     const hasCustomAbutment = hasCustomAbutmentToothWorks(doc.toothWorks);
     const existingRelated = Array.isArray(doc.production?.relatedRequestIds)
@@ -6500,6 +6384,9 @@ export async function markReceivedPracticeTransferComplete(req, res) {
     const skipDesignConfirm = doc.production?.skipDesignConfirm !== false;
 
     let releaseResult = null;
+    if (doc.billing?.labSettledAt) {
+      releaseResult = { released: false, reason: "already_settled" };
+    } else {
     try {
       releaseResult = await releasePracticeTransferLabShare({
         transfer: doc,
@@ -6536,6 +6423,7 @@ export async function markReceivedPracticeTransferComplete(req, res) {
           releaseErr?.message || "작업완료 기공크레딧 지급에 실패했습니다.",
         ...(releaseErr?.payload || {}),
       });
+    }
     }
 
     try {

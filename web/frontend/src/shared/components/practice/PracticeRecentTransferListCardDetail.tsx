@@ -147,8 +147,10 @@ export function PracticeTransferListPatientArrivalRow({
 /** 목록 뱃지 라벨(의뢰·수락…) 또는 원 상태(발송완료…) → semantic class */
 export function practiceTransferStatusBadgeClass(statusOrLabel: string) {
   const label = toStatusBadgeLabel(statusOrLabel);
-  if (label === "취소" || label === "거부") return SEMANTIC_BADGE.dangerSoft;
-  if (label === "수락" || label === "디자인" || label === "출고") {
+  if (label === "취소" || label === "거절" || label === "거부") {
+    return SEMANTIC_BADGE.dangerSoft;
+  }
+  if (label === "수락" || label === "어벗" || label === "디자인" || label === "출고") {
     return SEMANTIC_BADGE.primarySoft;
   }
   if (label === "의뢰" || label === "임시저장") return SEMANTIC_BADGE.neutral;
