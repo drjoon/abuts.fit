@@ -14,6 +14,7 @@
 // - web/frontend/src/shared/files/downloadWithProgress.ts
 // - web/frontend/src/shared/files/s3BlobCache.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-09-02: 어벗 STL 안내 배너 — label/htmlFor로 클릭 파일창(업로드 CTA 대체).
 // - 2026-08-28: 썸네일 — 파일 목록 증분 로드·키 정렬. cleanup에서 전체 revoke 금지(플리커 방지).
 // - 2026-08-28: 기공소 의뢰상세 — A5 프린트(기본정보·치식·메모).
 // - 2026-08-28: 기공소 수락 후 상세 모달 — 채팅 영역 점선 드롭존·빈 상태 안내.
@@ -228,7 +229,7 @@ export type PracticeTransferWorkFileDropConfig = {
   fileInputId: string;
   onFiles: (files: File[]) => void;
   disabled?: boolean;
-  /** 채팅 드롭존 중앙 안내(메시지 유무와 무관) */
+  /** 채팅 드롭존 상단 안내 — 클릭(파일창)·드래그 공통 */
   guideText: string;
   /** guideText 아래 한 줄(업로드 결과 안내 등) */
   guideDetail?: string;
@@ -332,14 +333,14 @@ type PracticeTransferDetailChatDialogProps = {
   releaseBusy?: boolean;
   onRelease?: () => void | Promise<void>;
   /**
-   * 기공의뢰수신: 수락 후 어벗·보철 업로드 CTA.
-   * 캘린더 전환으로 카드 actionBar가 없어져 상세 모달 상단에 둔다.
+   * 기공의뢰수신: 수락 후 작업 취소·디자인 확인 등.
+   * 어벗 STL 업로드는 workFileDrop 안내 배너(클릭/드래그).
    * 함수면 `releaseAction`(작업취소)을 버튼 행 trailing에 넣을 수 있다.
    */
   acceptedWorkActions?:
     | ReactNode
     | ((slots: { releaseAction: ReactNode | null }) => ReactNode);
-  /** 수락 후 창 전체 드롭존(기공의뢰수신). 미전달 시 버튼 파일창만 */
+  /** 수락 후 창 전체 드롭존(기공의뢰수신). 안내 배너 클릭·드래그로 파일창 */
   workFileDrop?: PracticeTransferWorkFileDropConfig | null;
   chatLoading: boolean;
   chatError: string;
@@ -2146,9 +2147,23 @@ export function PracticeTransferDetailChatDialog({
                   ) : workFileDropGuideText &&
                     !chatLoading &&
                     !visibleChatError ? (
-                    <div
-                      className="pointer-events-none z-[2] shrink-0 bg-primary px-5 py-2.5 text-center text-primary-foreground"
-                      aria-hidden
+                    <label
+                      htmlFor={
+                        workFileDropActive && !workFileDrop?.disabled
+                          ? workFileDrop?.fileInputId
+                          : undefined
+                      }
+                      aria-disabled={
+                        !workFileDropActive || workFileDrop?.disabled
+                          ? true
+                          : undefined
+                      }
+                      className={cn(
+                        "z-[2] shrink-0 bg-primary px-5 py-2.5 text-center text-primary-foreground transition-opacity",
+                        workFileDropActive && !workFileDrop?.disabled
+                          ? "cursor-pointer hover:opacity-95"
+                          : "pointer-events-none",
+                      )}
                     >
                       <p className="text-sm font-semibold leading-snug">
                         {workFileDropGuideText}
@@ -2158,7 +2173,7 @@ export function PracticeTransferDetailChatDialog({
                           {workFileDropGuideDetail}
                         </p>
                       ) : null}
-                    </div>
+                    </label>
                   ) : null}
 
                   <div

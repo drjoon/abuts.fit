@@ -5,6 +5,7 @@
 // - web/frontend/src/shared/components/practice/PracticeLabReceiveWorkActionsBar.tsx
 // - web/frontend/src/shared/components/practice/PracticeRecentTransferListCardDetail.tsx
 // change-log:
+// - 2026-09-02: 어벗 STL 업로드 CTA 제거(상세 드롭존만).
 // - 2026-09-02: 수동「작업 완료」CTA 제거(도착일 자동 완료).
 // - 2026-09-02: 어벗·보철 CTA → 디자인(STL) 업로드 통합.
 // - 2026-08-21: 의뢰 수락/작업 완료 취소 — 가공 중이어도 클릭·API 판정·토스트(고정 비활성 제거).
@@ -86,7 +87,6 @@ export type PracticeTransferLabReceiveCardProps = {
   designSoftwareLabel?: string | null;
   anodizingEnabled?: boolean | null;
   onOpen: () => void;
-  onDesignStlUpload?: (event: MouseEvent) => void;
   onAbutmentProductionCancel: (event: MouseEvent) => void;
   onRelease: (event: MouseEvent) => void;
   onOpenSubcontract?: (event: MouseEvent) => void;
@@ -104,7 +104,6 @@ export function PracticeTransferLabReceiveCard({
   designConfirmBusy = false,
   dimRejected = false,
   onOpen,
-  onDesignStlUpload,
   onAbutmentProductionCancel,
   onRelease,
   onOpenSubcontract,
@@ -258,8 +257,6 @@ export function PracticeTransferLabReceiveCard({
             showProductionCancelInBar={
               Boolean(showAbutmentProductionCancel && showWorkActions)
             }
-            showDesignUpload={false}
-            onDesignStlUpload={onDesignStlUpload}
             onAbutmentProductionCancel={onAbutmentProductionCancel}
             onDesignConfirm={onDesignConfirm}
           />

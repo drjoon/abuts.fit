@@ -26,6 +26,7 @@
 // - web/frontend/src/shared/practice/labReceiveCalendarHiddenWeekdays.ts
 // - web/backend/utils/labReceiveCalendarHiddenWeekdays.util.js
 // - web/backend/controllers/users/user.controller.js
+// - 2026-09-02: 어벗 STL — 업로드 버튼 제거, 진행상황 드롭존 클릭/드래그만.
 // - 2026-09-02: 상세 workFileDrop — 수락(showWorkActions) 후에만 어벗 STL 드롭.
 // - 2026-09-02: 어벗·보철 CTA → 디자인(STL) 업로드 통합 + dual 좌우 배정.
 // - 2026-08-28: 어벗 확인 모달 열면 드롭존 바 숨김·확인 버튼「처리 중」(S3 1회만).
@@ -4461,15 +4462,6 @@ export function RequestorPracticeReceivePage({
     ],
   );
 
-  const handleCardDesignStlUpload = useCallback(
-    async (transfer: ReceivedPracticeTransfer, event: MouseEvent) => {
-      event.preventDefault();
-      event.stopPropagation();
-      await beginDesignStlUpload(transfer);
-    },
-    [beginDesignStlUpload],
-  );
-
   const handleCardAbutmentProductionCancel = useCallback(
     async (transfer: ReceivedPracticeTransfer, event: MouseEvent) => {
       event.preventDefault();
@@ -4583,11 +4575,15 @@ export function RequestorPracticeReceivePage({
     ).trim();
     if (!transferKey) return null;
     const rowBusy = cardActionBusyId === transferKey || workUploadBusy;
+    const pendingSuffix =
+      workState.needsAbutmentDesigns && workState.designFileCount > 0
+        ? ` (${workState.pendingAbutmentCount})`
+        : "";
     return {
       fileInputId: `practice-modal-work-drop-${transferKey}`,
       disabled: rowBusy,
       onFiles: (files: File[]) => handleCardDropFiles(selectedTransfer, files),
-      guideText: "어벗 STL을 여기에 드래그하세요",
+      guideText: `어벗 STL을 클릭하거나 드래그하세요${pendingSuffix}`,
       guideDetail: LAB_RECEIVE_ABUTMENT_UPLOAD_HINT,
       dropHint: "어벗 STL",
       uploadProgressPercent: workUploadProgressSummary?.active
@@ -5489,11 +5485,7 @@ export function RequestorPracticeReceivePage({
               busy={rowBusy}
               designConfirmBusy={designConfirmBusyId === transferKey}
               showProductionCancelInBar
-              showDesignUpload
               trailingActions={completedCancelAction || releaseAction}
-              onDesignStlUpload={(event) =>
-                void handleCardDesignStlUpload(selectedTransfer, event)
-              }
               onAbutmentProductionCancel={(event) =>
                 void handleCardAbutmentProductionCancel(
                   selectedTransfer,
