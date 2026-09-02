@@ -11,6 +11,7 @@
 // - 2026-09-02: 모바일 5연결+ 브리지 — 치아당 5rem 고정폭 + 가로 스와이프.
 // - 2026-08-25: 구강스캔(기공의뢰)은 디자인+생산 고정 — 치식 카드 모드 라벨 제거(작성 UI와 동일).
 // - 2026-09-02: full 치식 슬롯 래퍼 contents 복구 — shrink-0이 flex-1 전폭 분할을 막던 문제.
+// - 2026-09-02: byTooth가 연결치에 첫 행을 덮어 13-12-11 브리지에서 11 연결·스펙이 끊기던 버그 수정.
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -37,7 +38,6 @@ import {
 } from "@/shared/practice/transferMemo";
 import {
   collectAdjacentBridgeLinks,
-  getAdjacentTeeth,
   isCustomAbutmentSupportedProsthesisType,
   isMissingToothProsthesisType,
   isTemporaryToothProsthesisType,
@@ -230,16 +230,18 @@ export const PracticeToothWorkChartReadOnly = ({
   }, [feeToothWorks, selectable, toothWorks, selectedSpanKeys, spanKeyOf]);
   const byTooth = useMemo(() => {
     const map = new Map<string, ToothWorkSelection>();
+    // 1) 각 치아 번호의 본인 행이 우선 (연결치에 첫 행을 덮어쓰면 13-12-11에서 12·11 스펙·연결이 깨짐)
     for (const row of toothWorks) {
       const anchor = String(row.toothNumber || "").trim();
+      if (/^[1-4][1-8]$/.test(anchor)) map.set(anchor, row);
+    }
+    // 2) 본인 행이 없는 연결치만 표시용으로 스팬 행을 빌려 씀
+    for (const row of toothWorks) {
       const linked = Array.isArray(row.bridgeLinkedTeeth)
         ? row.bridgeLinkedTeeth.map((t) => String(t || "").trim()).filter(Boolean)
         : [];
-      const teeth = Array.from(
-        new Set([anchor, ...linked].filter((t) => /^[1-4][1-8]$/.test(t))),
-      );
-      for (const tooth of teeth) {
-        if (!map.has(tooth)) map.set(tooth, row);
+      for (const tooth of linked) {
+        if (/^[1-4][1-8]$/.test(tooth) && !map.has(tooth)) map.set(tooth, row);
       }
     }
     return map;
@@ -656,26 +658,14 @@ export const PracticeToothWorkChartReadOnly = ({
                 );
               }
 
-              const nextRow = chartNext ? byTooth.get(chartNext) : undefined;
-              const prevRow = chartPrev ? byTooth.get(chartPrev) : undefined;
-              const linkedTeeth = (
-                Array.isArray(row.bridgeLinkedTeeth) ? row.bridgeLinkedTeeth : []
-              ).filter((t) => getAdjacentTeeth(row.toothNumber).includes(t));
+              const adjacentLinks = collectAdjacentBridgeLinks(toothWorks, toothNumber);
               const linkedChartNext = Boolean(
-                chartNext &&
-                  (linkedTeeth.includes(chartNext) ||
-                    (nextRow &&
-                      Array.isArray(nextRow.bridgeLinkedTeeth) &&
-                      nextRow.bridgeLinkedTeeth.includes(toothNumber))),
+                chartNext && adjacentLinks.includes(chartNext),
               );
               const linkedChartPrev = Boolean(
-                chartPrev &&
-                  (linkedTeeth.includes(chartPrev) ||
-                    (prevRow &&
-                      Array.isArray(prevRow.bridgeLinkedTeeth) &&
-                      prevRow.bridgeLinkedTeeth.includes(toothNumber))),
+                chartPrev && adjacentLinks.includes(chartPrev),
               );
-              const isLinked = linkedTeeth.length > 0 || linkedChartPrev || linkedChartNext;
+              const isLinked = adjacentLinks.length > 0;
               const bridgeLinked = linkedChartNext;
               const showBridgeConnector = adjacentVisible && bridgeLinked;
 
