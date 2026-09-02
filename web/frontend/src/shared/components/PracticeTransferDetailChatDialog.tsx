@@ -14,6 +14,7 @@
 // - web/frontend/src/shared/files/downloadWithProgress.ts
 // - web/frontend/src/shared/files/s3BlobCache.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-09-02: 어벗 STL 안내 배너 — 클릭 시 STL 전용 OS 파일창(진행 상황 탭 input disabled 우회).
 // - 2026-09-02: 어벗 STL 안내 배너 — label/htmlFor로 클릭 파일창(업로드 CTA 대체).
 // - 2026-08-28: 썸네일 — 파일 목록 증분 로드·키 정렬. cleanup에서 전체 revoke 금지(플리커 방지).
 // - 2026-08-28: 기공소 의뢰상세 — A5 프린트(기본정보·치식·메모).
@@ -168,8 +169,12 @@ import {
   partitionLabChatDropFiles,
   PRACTICE_ACCEPTED_HINT,
   PRACTICE_TRANSFER_IMAGE_EXTENSIONS,
+  PRACTICE_TRANSFER_STL_ACCEPT,
 } from "@/shared/practice/practiceTransferAccept";
-import { PracticeTransferFileDropTarget } from "@/shared/components/practice/PracticeTransferFileDropTarget";
+import {
+  pickPracticeTransferFilesViaInput,
+  PracticeTransferFileDropTarget,
+} from "@/shared/components/practice/PracticeTransferFileDropTarget";
 import { printPracticeTransferDetail } from "@/shared/practice/practiceTransferDetailPrint";
 
 function isImagePreviewExt(ext: string): boolean {
@@ -2147,22 +2152,32 @@ export function PracticeTransferDetailChatDialog({
                   ) : workFileDropGuideText &&
                     !chatLoading &&
                     !visibleChatError ? (
-                    <label
-                      htmlFor={
-                        workFileDropActive && !workFileDrop?.disabled
-                          ? workFileDrop?.fileInputId
-                          : undefined
+                    <button
+                      type="button"
+                      disabled={
+                        !workFileDropActive || Boolean(workFileDrop?.disabled)
                       }
-                      aria-disabled={
-                        !workFileDropActive || workFileDrop?.disabled
-                          ? true
-                          : undefined
-                      }
+                      onClick={() => {
+                        if (
+                          !workFileDropActive ||
+                          workFileDrop?.disabled ||
+                          !workFileDrop
+                        ) {
+                          return;
+                        }
+                        void (async () => {
+                          const files = await pickPracticeTransferFilesViaInput({
+                            accept: PRACTICE_TRANSFER_STL_ACCEPT,
+                            multiple: true,
+                          });
+                          if (files.length) workFileDrop.onFiles(files);
+                        })();
+                      }}
                       className={cn(
-                        "z-[2] shrink-0 bg-primary px-5 py-2.5 text-center text-primary-foreground transition-opacity",
+                        "z-[2] w-full shrink-0 bg-primary px-5 py-2.5 text-center text-primary-foreground transition-opacity",
                         workFileDropActive && !workFileDrop?.disabled
                           ? "cursor-pointer hover:opacity-95"
-                          : "pointer-events-none",
+                          : "pointer-events-none opacity-80",
                       )}
                     >
                       <p className="text-sm font-semibold leading-snug">
@@ -2173,7 +2188,7 @@ export function PracticeTransferDetailChatDialog({
                           {workFileDropGuideDetail}
                         </p>
                       ) : null}
-                    </label>
+                    </button>
                   ) : null}
 
                   <div

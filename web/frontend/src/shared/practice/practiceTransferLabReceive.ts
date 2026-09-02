@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/components/practice/LabReceiveWorkUploadDialog.tsx
 // change-log:
+// - 2026-09-02: 다치아 어벗 — 일부 STL만 올려도 showWorkActions·드롭존 유지(남은 개수 업로드).
 // - 2026-09-02: 기공소 수신 상단 — 취소 뱃지 제외·거부·작업취소 목록 숨김 복구(치과만 취소 필터).
 // - 2026-09-02: 수동「작업 완료」CTA 폐지(showMarkCompleteWithoutFiles=false). 도착일 경과 자동 완료.
 // - 2026-09-02: designStlUploadMode — 수락(showWorkActions) 후에만 abutment. 수락 전 드롭 방지.
@@ -783,7 +784,9 @@ export function resolvePracticeLabReceiveWorkActionState(
       designFileCount === 0 &&
       resultCount === 0 &&
       !transfer.production?.confirmedAt &&
-      !transfer.autoMatch?.completed);
+      !transfer.autoMatch?.completed) ||
+    // 다치아: 일부만 올려도(표시 상태는 작업완료/어벗) 남은 STL 업로드·드롭존 유지
+    (isLabAccepted && !productionStarted && needsMoreAbutmentDesigns);
   // 보철 업로드 폐지 — CA 어벗만. 카드 드롭과 같이 수락 후에만 활성.
   const designStlUploadMode: PracticeLabReceiveDesignStlUploadMode =
     needsAbutmentDesigns && showWorkActions ? "abutment" : "none";
@@ -792,6 +795,7 @@ export function resolvePracticeLabReceiveWorkActionState(
     (designFileCount > 0 || needsStageReopen) &&
     Array.isArray(transfer.production?.relatedRequestIds) &&
     transfer.production.relatedRequestIds.length > 0;
+  // 전부 업로드 중(남은 어벗 있음)에는 작업완료 취소 대신 업로드·어벗 취소 바 유지
   const showCompletedStageHeaderCancel =
     !showWorkActions && showAbutmentProductionCancel;
   const showDesignConfirm =

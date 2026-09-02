@@ -4583,7 +4583,7 @@ export function RequestorPracticeReceivePage({
       fileInputId: `practice-modal-work-drop-${transferKey}`,
       disabled: rowBusy,
       onFiles: (files: File[]) => handleCardDropFiles(selectedTransfer, files),
-      guideText: `어벗 STL을 클릭하거나 드래그하세요${pendingSuffix}`,
+      guideText: `어벗 STL 파일을 올리세요. (클릭 혹은 파일 드롭)${pendingSuffix}`,
       guideDetail: LAB_RECEIVE_ABUTMENT_UPLOAD_HINT,
       dropHint: "어벗 STL",
       uploadProgressPercent: workUploadProgressSummary?.active

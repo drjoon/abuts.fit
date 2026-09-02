@@ -40,7 +40,7 @@ const ctaButtonClass =
 
 /** 어벗 — 채팅 드롭존 안내 SSOT */
 export const LAB_RECEIVE_ABUTMENT_UPLOAD_HINT =
-  "어벗츠에서 커스텀 어벗 생산이 시작됩니다.";
+  "커스텀 어벗 생산을 어벗츠에 자동 주문합니다.";
 
 /**
  * 기공의뢰수신 — 수락 후 작업 취소·디자인 확인(카드·상세 모달 공통).
