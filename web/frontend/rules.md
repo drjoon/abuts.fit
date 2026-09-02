@@ -714,6 +714,11 @@ Notes:
   - 다운로드 프록시는 gzip 객체를 풀어 원본 바이트로 응답 (`getObjectStreamFromS3` / `getObjectBufferFromS3`).
   - 하위 호환: `usePracticeFilePreUpload`는 `useFilePreUpload` re-export.
 
+- Mutation UX latency(강제) — 기공의뢰수신 업로드·어벗 취소·작업 완료 취소 등:
+  - 「처리 중…」은 API critical path만. 성공 후 `received`/캘린더 전체 refetch로 busy를 늘리지 않는다(로컬 패치 우선).
+  - 확인 모달 오픈 중 사전 업로드(`preUploadFiles`)로 S3를 끝내고, 확인 클릭은 handoff만 기다린다.
+  - SSOT: `.cursor/rules/mutation-ux-latency.mdc` · 루트 `rules.md` §3.
+
 - practice 최근 전송 기공소(기공소 선택 드롭다운) SSOT:
   - 서버: `GET /api/practice/transfers/my` 응답의 `caseInfos.practiceRouting.targetLabAnchorId/targetLabName`(최신순)이 권위 소스.
   - 로컬 캐시: `localStorage.practice_recent_labs_v3` (최대 8개). 전송 성공 시 `rememberLab`, 목록 로드 시 `syncRecentLabsFromTransfers`로 merge.

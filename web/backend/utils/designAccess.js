@@ -6,6 +6,7 @@
 // - web/backend/controllers/requests/designClaim.controller.js
 // - web/backend/controllers/requests/designHandoff.controller.js
 // change-log:
+// - 2026-09-02: canClaimOrHandoffDesignRequest — 호출측이 넘긴 transferTargetLabAnchorId면 재조회 생략.
 // - 2026-08-15: PTX 수락 판정 — Request.businessAnchorId 또는 transfer.targetLabAnchorId.
 // - 2026-08-15: 기공의뢰(PTX) 연동 디자인+생산은 수락 기공소만 claim/handoff.
 import BusinessAnchor from "../models/businessAnchor.model.js";
@@ -90,13 +91,30 @@ export const isAcceptingLabForPtxDesignRequest = (
  * claim/handoff 권한.
  * - PTX 연동: 수락 기공소만 (디자인 파트너 제외)
  * - 비PTX(어벗생산의뢰): 기존 designAccessEnabled / admin·internalLab
+ * - options.transferTargetLabAnchorId 가 있으면(호출측이 이미 Transfer를 읽음) 재조회 생략
  */
-export const canClaimOrHandoffDesignRequest = async (user, request) => {
+export const canClaimOrHandoffDesignRequest = async (
+  user,
+  request,
+  options = {},
+) => {
   if (!user || !request) return false;
   const role = String(user.role || "").trim();
   if (role === "admin") return true;
 
   if (isPtxLinkedDesignRequest(request)) {
+    const knownTransferLab =
+      options &&
+      Object.prototype.hasOwnProperty.call(options, "transferTargetLabAnchorId")
+        ? String(options.transferTargetLabAnchorId || "").trim()
+        : null;
+    if (knownTransferLab !== null) {
+      return isAcceptingLabForPtxDesignRequest(
+        user,
+        request,
+        knownTransferLab,
+      );
+    }
     if (isAcceptingLabForPtxDesignRequest(user, request)) return true;
     const transferId = request?.partnerBilling?.relatedPracticeTransferId
       ? String(request.partnerBilling.relatedPracticeTransferId).trim()

@@ -5,6 +5,7 @@
 // - web/frontend/src/shared/components/practice/PracticeLabReceiveWorkActionsBar.tsx
 // - web/frontend/src/shared/components/practice/PracticeRecentTransferListCardDetail.tsx
 // change-log:
+// - 2026-09-02: 카드 드롭 — STL만 accept/filter(다른 확장자 거부).
 // - 2026-09-02: 어벗 STL 업로드 CTA 제거(상세 드롭존만).
 // - 2026-09-02: 수동「작업 완료」CTA 제거(도착일 자동 완료).
 // - 2026-09-02: 어벗·보철 CTA → 디자인(STL) 업로드 통합.
@@ -42,7 +43,10 @@ import {
 import { cn } from "@/shared/ui/cn";
 import { toStatusBadgeLabel } from "@/shared/practice/practiceRecentTransferList";
 import { isPracticeTransferAcceptOverdue } from "@/shared/practice/practiceAcceptOverdue";
-import { PRACTICE_ACCEPTED_HINT } from "@/shared/practice/practiceTransferAccept";
+import {
+  PRACTICE_TRANSFER_STL_ACCEPT,
+  isPracticeTransferStlFile,
+} from "@/shared/practice/practiceTransferAccept";
 import { PracticeAcceptOverdueBadge } from "@/shared/components/practice/PracticeAcceptOverdueBadge";
 import { PracticeLabReceiveWorkActionsBar } from "@/shared/components/practice/PracticeLabReceiveWorkActionsBar";
 import { PracticeTransferFeeEstimate } from "@/shared/components/practice/PracticeTransferFeeEstimate";
@@ -270,7 +274,9 @@ export function PracticeTransferLabReceiveCard({
       <PracticeTransferFileDropTarget
         fileInputId={completeInputId}
         disabled={cardBusy}
-        acceptedHint={PRACTICE_ACCEPTED_HINT}
+        accept={PRACTICE_TRANSFER_STL_ACCEPT}
+        acceptedHint="STL"
+        filterFiles={(files) => files.filter(isPracticeTransferStlFile)}
         showDefaultUi={false}
         className={cn(
           CARD_SHELL,

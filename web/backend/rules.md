@@ -745,6 +745,12 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
       (예: `businessAnchorId`, `requestId`, `requestMongoId`, `transferId`, `roomId`)
     - 수신측이 전체 재조회 없이 대상 엔티티 1건을 갱신할 수 있는 API/키를 함께 보장합니다.
     - fan-out emit 자체는 유지하되, 수신 화면이 payload 조건으로 이벤트를 좁혀 처리할 수 있어야 합니다.
+  - Mutation UX latency(강제) — 업로드·취소·수락·완료·핸드오프:
+    - 「처리 중…」 응답 전에는 권한·잔액 가드·상태 저장만 await.
+    - 디자인비 grant/revoke·대시보드 스냅샷·채팅 시스템 메시지·Rhino·worksheet emit는 응답 후(`void`).
+    - 동일 Transfer/Request 재조회·이미 저장한 primary 재save 금지. 독립 작업은 `Promise.all`.
+    - FE는 낙관적/로컬 패치; 성공 후 캘린더·`received` 전체 refetch로 busy를 늘리지 않음.
+    - SSOT: `.cursor/rules/mutation-ux-latency.mdc`, 예: `controllers/requests/designHandoff.controller.js`.
   - 대시보드 성능 표준 패턴(강제) — `HEAVY/LIGHT SUMMARY SPLIT`:
     - 무거운 대시보드는 `heavy summary`와 `cards summary` 경량 API를 분리합니다.
     - 이벤트 직후 화면 반응용 데이터는 경량 API에서 빠르게 반환되도록 스냅샷/최소 집계를 우선 사용합니다.

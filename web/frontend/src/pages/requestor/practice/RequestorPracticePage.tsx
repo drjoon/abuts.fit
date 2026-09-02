@@ -26,6 +26,7 @@
 // - web/frontend/src/shared/practice/labReceiveCalendarHiddenWeekdays.ts
 // - web/backend/utils/labReceiveCalendarHiddenWeekdays.util.js
 // - web/backend/controllers/users/user.controller.js
+// - 2026-09-02: 어벗 STL — 비STL 드롭 거부 토스트. 카드/상세 accept=STL.
 // - 2026-09-02: 어벗 STL — 업로드 버튼 제거, 진행상황 드롭존 클릭/드래그만.
 // - 2026-09-02: 상세 workFileDrop — 수락(showWorkActions) 후에만 어벗 STL 드롭.
 // - 2026-09-02: 어벗·보철 CTA → 디자인(STL) 업로드 통합 + dual 좌우 배정.
@@ -3941,7 +3942,8 @@ export function RequestorPracticeReceivePage({
         return "error";
       }
 
-      const stlFiles = Array.from(files || []).filter(
+      const allFiles = Array.from(files || []).filter(Boolean);
+      const stlFiles = allFiles.filter(
         (file) => getPracticeTransferFileExtension(file.name) === ".stl",
       );
       if (!stlFiles.length) {
@@ -3951,6 +3953,12 @@ export function RequestorPracticeReceivePage({
           variant: "destructive",
         });
         return "error";
+      }
+      if (stlFiles.length < allFiles.length) {
+        toast({
+          title: "STL만 업로드",
+          description: "어벗디자인은 STL만 받을 수 있습니다. 다른 파일은 무시했습니다.",
+        });
       }
 
       let relatedIds = (transfer.production?.relatedRequestIds || [])

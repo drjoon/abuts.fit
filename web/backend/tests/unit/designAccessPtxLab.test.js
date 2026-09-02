@@ -68,5 +68,15 @@ describe("designAccess PTX lab designer helpers", () => {
         ptxRequest,
       ),
     ).toBe(true);
+    expect(
+      await canClaimOrHandoffDesignRequest(otherLab, ptxRequest, {
+        transferTargetLabAnchorId: otherLab.businessAnchorId,
+      }),
+    ).toBe(true);
+    expect(
+      await canClaimOrHandoffDesignRequest(otherLab, ptxRequest, {
+        transferTargetLabAnchorId: labUser.businessAnchorId,
+      }),
+    ).toBe(false);
   });
 });

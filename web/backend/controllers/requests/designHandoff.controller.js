@@ -1,3 +1,4 @@
+// - 2026-09-02: handoff/cancel — Transfer 1회 조회·형제 취소 병렬·디자인비 grant/revoke 응답 후 처리.
 // - 2026-08-31: PTX CA 생산·배송 크레딧 hold를 design-handoff로 이동(수락 시 보류 제거). 취소 시 hold 해제.
 // - 2026-08-26: PTX 디자인 핸드오프 → 제조사 준비 진입 시 관리자 의뢰 배지 +1.
 // - 2026-08-22: 구강스캔 없는 PTX — designSourceFiles 없어도 취소·재업로드(어벗 STL 클리어).
@@ -243,22 +244,6 @@ const ensurePtxProductionRhinoReadyFields = async (request) => {
   return standardName;
 };
 
-const resolvePtxAcceptingLabContext = async (request) => {
-  const relatedTransferId = request?.partnerBilling?.relatedPracticeTransferId
-    ? String(request.partnerBilling.relatedPracticeTransferId).trim()
-    : "";
-  if (!relatedTransferId || !Types.ObjectId.isValid(relatedTransferId)) {
-    return { relatedTransferId: "", transferTargetLabAnchorId: "" };
-  }
-  const transfer = await PracticeTransfer.findById(relatedTransferId)
-    .select({ targetLabAnchorId: 1 })
-    .lean();
-  return {
-    relatedTransferId,
-    transferTargetLabAnchorId: String(transfer?.targetLabAnchorId || "").trim(),
-  };
-};
-
 const healRequestOwnershipToAcceptingLab = (request, transferTargetLabAnchorId) => {
   const transferLab = String(transferTargetLabAnchorId || "").trim();
   if (!transferLab || !Types.ObjectId.isValid(transferLab)) return false;
@@ -316,68 +301,92 @@ const clearPtxDesignMirror = async (transferId) => {
 /**
  * PTX 생산 취소: 연동 CA Request들을 관리자·제조사 큐에서 「취소」로 내린다.
  * 다치아: 각 Request의 구강스캔(designSourceFiles)도 복원해 재업로드 가능하게 한다.
+ * @param {object} [options]
+ * @param {string[]} [options.relatedRequestIds] — 이미 조회한 id(재조회 생략)
+ * @param {Set<string>|string[]} [options.skipRequestIds] — 이미 처리한 Request(중복 save 방지)
  */
-const markPtxRelatedRequestsCancelled = async (transferId) => {
+const applyPtxDesignCancelFields = (request) => {
+  const sourceRows = Array.isArray(request.caseInfos?.designSourceFiles)
+    ? request.caseInfos.designSourceFiles.map(toStoredFileMeta).filter(Boolean)
+    : [];
+  const restorePrimary = sourceRows[0] || null;
+  if (!request.caseInfos) request.caseInfos = {};
+  if (restorePrimary?.s3Key) {
+    request.caseInfos.file = restorePrimary;
+    request.caseInfos.files = sourceRows.slice(1);
+    request.caseInfos.designSourceFiles = [];
+    clearFilledStlFileOnCaseInfos(request.caseInfos); // stlFile + legacy camFile
+    request.caseInfos.ncFile = undefined;
+  } else if (request.designCompletedAt) {
+    // 구강스캔 없이 디자인만 올린 CA — primary(어벗 STL) 클리어 후 재업로드
+    request.caseInfos.file = undefined;
+    request.caseInfos.files = [];
+    request.caseInfos.designSourceFiles = [];
+    clearFilledStlFileOnCaseInfos(request.caseInfos);
+    request.caseInfos.ncFile = undefined;
+  }
+  request.caseInfos.productMode = PRODUCT_MODE_PRODUCTION;
+  request.designCompletedAt = undefined;
+  request.designCompletedBy = undefined;
+  request.manufacturerStage = "취소";
+};
+
+const markPtxRelatedRequestsCancelled = async (transferId, options = {}) => {
   if (!transferId || !Types.ObjectId.isValid(String(transferId))) {
     return { modifiedCount: 0 };
   }
-  const transferDoc = await PracticeTransfer.findById(transferId)
-    .select({ "production.relatedRequestIds": 1 })
-    .lean();
-  const ids = (Array.isArray(transferDoc?.production?.relatedRequestIds)
-    ? transferDoc.production.relatedRequestIds
-    : []
-  )
-    .map((id) => String(id || "").trim())
-    .filter((id) => Types.ObjectId.isValid(id))
+  const skipSet = new Set(
+    (Array.isArray(options.skipRequestIds)
+      ? options.skipRequestIds
+      : options.skipRequestIds
+        ? Array.from(options.skipRequestIds)
+        : []
+    )
+      .map((id) => String(id || "").trim())
+      .filter(Boolean),
+  );
+  let idStrings = Array.isArray(options.relatedRequestIds)
+    ? options.relatedRequestIds
+        .map((id) => String(id || "").trim())
+        .filter((id) => Types.ObjectId.isValid(id))
+    : null;
+  if (!idStrings) {
+    const transferDoc = await PracticeTransfer.findById(transferId)
+      .select({ "production.relatedRequestIds": 1 })
+      .lean();
+    idStrings = (
+      Array.isArray(transferDoc?.production?.relatedRequestIds)
+        ? transferDoc.production.relatedRequestIds
+        : []
+    )
+      .map((id) => String(id || "").trim())
+      .filter((id) => Types.ObjectId.isValid(id));
+  }
+  const ids = idStrings
+    .filter((id) => !skipSet.has(id))
     .map((id) => new Types.ObjectId(id));
   if (!ids.length) return { modifiedCount: 0 };
 
   const requests = await Request.find({ _id: { $in: ids } });
-  let modifiedCount = 0;
-  const excludeSiblingIds = ids.map((id) => String(id));
-  for (const request of requests) {
-    const sourceRows = Array.isArray(request.caseInfos?.designSourceFiles)
-      ? request.caseInfos.designSourceFiles.map(toStoredFileMeta).filter(Boolean)
-      : [];
-    const restorePrimary = sourceRows[0] || null;
-    if (!request.caseInfos) request.caseInfos = {};
-    if (restorePrimary?.s3Key) {
-      request.caseInfos.file = restorePrimary;
-      request.caseInfos.files = sourceRows.slice(1);
-      request.caseInfos.designSourceFiles = [];
-      clearFilledStlFileOnCaseInfos(request.caseInfos); // stlFile + legacy camFile
-      request.caseInfos.ncFile = undefined;
-    } else if (request.designCompletedAt) {
-      // 구강스캔 없이 디자인만 올린 CA — primary(어벗 STL) 클리어 후 재업로드
-      request.caseInfos.file = undefined;
-      request.caseInfos.files = [];
-      request.caseInfos.designSourceFiles = [];
-      clearFilledStlFileOnCaseInfos(request.caseInfos);
-      request.caseInfos.ncFile = undefined;
-    }
-    request.caseInfos.productMode = PRODUCT_MODE_PRODUCTION;
-    request.designCompletedAt = undefined;
-    request.designCompletedBy = undefined;
-    request.manufacturerStage = "취소";
-    await request.save();
-    modifiedCount += 1;
-
-    // 디자인 업로드 시 잡은 생산·배송 hold 해제(재업로드 때 잔액 재검사).
-    try {
-      await releaseRequestCreditHoldsOnCancel({
+  const excludeSiblingIds = idStrings;
+  await Promise.all(
+    requests.map(async (request) => {
+      applyPtxDesignCancelFields(request);
+      await request.save();
+      // hold 해제는 UI 응답을 막지 않음
+      void releaseRequestCreditHoldsOnCancel({
         request,
         excludeSiblingIds,
+      }).catch((holdErr) => {
+        console.warn(
+          "[DESIGN_HANDOFF_CANCEL] credit hold release failed",
+          String(request?._id || ""),
+          holdErr?.message || holdErr,
+        );
       });
-    } catch (holdErr) {
-      console.warn(
-        "[DESIGN_HANDOFF_CANCEL] credit hold release failed",
-        String(request?._id || ""),
-        holdErr?.message || holdErr,
-      );
-    }
-  }
-  return { modifiedCount };
+    }),
+  );
+  return { modifiedCount: requests.length };
 };
 
 /**
@@ -436,7 +445,28 @@ export async function handoffDesignToProduction(req, res) {
         .json({ success: false, message: "의뢰를 찾을 수 없습니다." });
     }
 
-    const allowed = await canClaimOrHandoffDesignRequest(req.user, request);
+    const relatedTransferIdEarly = request?.partnerBilling?.relatedPracticeTransferId
+      ? String(request.partnerBilling.relatedPracticeTransferId).trim()
+      : "";
+    let transferDocEarly = null;
+    let transferTargetLabAnchorId = "";
+    if (
+      relatedTransferIdEarly &&
+      Types.ObjectId.isValid(relatedTransferIdEarly)
+    ) {
+      transferDocEarly = await PracticeTransfer.findById(relatedTransferIdEarly);
+      transferTargetLabAnchorId = String(
+        transferDocEarly?.targetLabAnchorId || "",
+      ).trim();
+    }
+
+    const allowed = await canClaimOrHandoffDesignRequest(
+      req.user,
+      request,
+      relatedTransferIdEarly && Types.ObjectId.isValid(relatedTransferIdEarly)
+        ? { transferTargetLabAnchorId }
+        : {},
+    );
     if (!allowed) {
       return res.status(403).json({
         success: false,
@@ -445,9 +475,6 @@ export async function handoffDesignToProduction(req, res) {
           : "디자인 큐 접근 권한이 없습니다.",
       });
     }
-
-    const { transferTargetLabAnchorId } =
-      await resolvePtxAcceptingLabContext(request);
 
     const productMode = String(request?.caseInfos?.productMode || "").trim();
     if (!canDesignHandoffRequest(request)) {
@@ -626,20 +653,17 @@ export async function handoffDesignToProduction(req, res) {
     request.designCompletedBy = new Types.ObjectId(userId);
     request.designCompletedAt = new Date();
 
-    const relatedTransferId = request?.partnerBilling?.relatedPracticeTransferId
-      ? String(request.partnerBilling.relatedPracticeTransferId)
-      : "";
+    const relatedTransferId = relatedTransferIdEarly;
 
     // PTX: Request(designCompletedAt) 먼저 저장 → Transfer 미러.
     // 미러를 먼저 쓰면 save 실패 시 UI만 디자인 있음·취소는 없음으로 갈라진다.
     if (relatedTransferId && Types.ObjectId.isValid(relatedTransferId)) {
-      let transferDoc = await PracticeTransfer.findById(relatedTransferId);
+      let transferDoc = transferDocEarly;
       const isAcceptingLab = isAcceptingLabForPtxDesignRequest(
         req.user,
         request,
-        transferDoc?.targetLabAnchorId,
+        transferDoc?.targetLabAnchorId || transferTargetLabAnchorId,
       );
-      let designFeeGrant = null;
       const now = new Date();
 
       // 수락 기공소가 완성 STL을 올리면 디자인 큐가 아니라 제조사 CNC 준비 큐로 간다.
@@ -730,20 +754,19 @@ export async function handoffDesignToProduction(req, res) {
             },
           );
 
-          try {
-            designFeeGrant = await grantAbutmentDesignLabFee({
-              requestDoc: request,
-              transferId: relatedTransferId,
-              labAnchorId:
-                labAnchorId || String(transferDoc.targetLabAnchorId || "").trim(),
-              actorUserId: userId,
-            });
-          } catch (grantErr) {
+          // 디자인비 지급은 UI 응답을 막지 않음(실패는 로그만)
+          void grantAbutmentDesignLabFee({
+            requestDoc: request,
+            transferId: relatedTransferId,
+            labAnchorId:
+              labAnchorId || String(transferDoc.targetLabAnchorId || "").trim(),
+            actorUserId: userId,
+          }).catch((grantErr) => {
             console.error(
               "[DESIGN_HANDOFF] abutment design fee grant failed",
               grantErr,
             );
-          }
+          });
         }
 
         // 디자인컨펌생략 OFF + 첫 디자인 미러 성공 → 치과 「어벗 디자인 컨펌」 채팅·목록 갱신
@@ -823,15 +846,7 @@ export async function handoffDesignToProduction(req, res) {
           productMode: PRODUCT_MODE_PRODUCTION,
           shippingMode: request.shippingMode || null,
           price: request.price || null,
-          abutmentDesignFee: designFeeGrant
-            ? {
-                granted: Boolean(designFeeGrant.granted),
-                amount: designFeeGrant.amount ?? 0,
-                unitFee: designFeeGrant.unitFee ?? 0,
-                qty: designFeeGrant.qty ?? 0,
-                reason: designFeeGrant.reason || null,
-              }
-            : null,
+          abutmentDesignFee: null,
         },
       });
     }
@@ -904,8 +919,29 @@ export async function cancelDesignHandoff(req, res) {
       });
     }
 
-    const { transferTargetLabAnchorId } =
-      await resolvePtxAcceptingLabContext(request);
+    // Transfer 1회 조회(수락 lab · 미러 · relatedRequestIds)
+    const transferDoc = await PracticeTransfer.findById(relatedTransferId)
+      .select({
+        targetLabAnchorId: 1,
+        "production.designFiles": 1,
+        "production.designReadyAt": 1,
+        "production.confirmedAt": 1,
+        "production.relatedRequestIds": 1,
+        "autoMatch.completedAt": 1,
+        resultFiles: 1,
+      })
+      .lean();
+    const transferTargetLabAnchorId = String(
+      transferDoc?.targetLabAnchorId || "",
+    ).trim();
+    const relatedRequestIds = (
+      Array.isArray(transferDoc?.production?.relatedRequestIds)
+        ? transferDoc.production.relatedRequestIds
+        : []
+    )
+      .map((raw) => String(raw || "").trim())
+      .filter((raw) => Types.ObjectId.isValid(raw));
+
     if (
       !isAcceptingLabForPtxDesignRequest(
         req.user,
@@ -930,15 +966,6 @@ export async function cancelDesignHandoff(req, res) {
       });
     }
 
-    const transferDoc = await PracticeTransfer.findById(relatedTransferId)
-      .select({
-        "production.designFiles": 1,
-        "production.designReadyAt": 1,
-        "production.confirmedAt": 1,
-        "autoMatch.completedAt": 1,
-        resultFiles: 1,
-      })
-      .lean();
     const mirroredDesignCount = Array.isArray(transferDoc?.production?.designFiles)
       ? transferDoc.production.designFiles.length
       : 0;
@@ -951,6 +978,81 @@ export async function cancelDesignHandoff(req, res) {
       (Array.isArray(transferDoc?.resultFiles) && transferDoc.resultFiles.length > 0);
 
     const now = new Date();
+    const primaryRequestId = String(request._id);
+    const labAnchorForRevoke = String(
+      req.user?.businessAnchorId || request.businessAnchorId || "",
+    ).trim();
+
+    const finishCancelResponse = ({
+      message,
+      extraData = {},
+      feeRevokePending = false,
+    }) => {
+      try {
+        emitAppEventToRoles(["manufacturer", "admin"], "worksheet:count-update", {
+          reason: String(extraData.cancelReason || "ptx-design-handoff-cancel"),
+          requestId: primaryRequestId,
+        });
+      } catch {
+        // best-effort
+      }
+      refreshLabDashboardAfterPtxDesignChange(
+        req.user?.businessAnchorId ||
+          request.businessAnchorId ||
+          transferTargetLabAnchorId,
+        String(extraData.cancelReason || "ptx-design-handoff-cancel"),
+      );
+
+      if (feeRevokePending) {
+        const uniqueRevokeIds = Array.from(
+          new Set([primaryRequestId, ...relatedRequestIds]),
+        );
+        void (async () => {
+          try {
+            await Promise.all(
+              uniqueRevokeIds.map(async (revokeId) => {
+                const revokeDoc =
+                  String(revokeId) === primaryRequestId
+                    ? request
+                    : await Request.findById(revokeId);
+                if (!revokeDoc) return;
+                await revokeAbutmentDesignLabFee({
+                  requestDoc: revokeDoc,
+                  transferId: relatedTransferId,
+                  labAnchorId: labAnchorForRevoke,
+                  actorUserId: userId,
+                });
+              }),
+            );
+          } catch (revokeErr) {
+            console.error("[DESIGN_HANDOFF_CANCEL] fee revoke failed", revokeErr);
+          }
+        })();
+      }
+
+      const { cancelReason: _omit, ...restExtra } = extraData;
+      return res.status(200).json({
+        success: true,
+        message,
+        data: {
+          requestId: primaryRequestId,
+          relatedPracticeTransferId: relatedTransferId,
+          manufacturerStage: "취소",
+          revokedAt: now.toISOString(),
+          ...restExtra,
+        },
+      });
+    };
+
+    const clearMirrorAndCancelRelated = async (skipPrimary = false) => {
+      await Promise.all([
+        clearPtxDesignMirror(relatedTransferId),
+        markPtxRelatedRequestsCancelled(relatedTransferId, {
+          relatedRequestIds,
+          skipRequestIds: skipPrimary ? [primaryRequestId] : [],
+        }),
+      ]);
+    };
 
     // 디자인 이미 비었는데 작업완료/생산진행 플래그만 남은 경우 → 스테이지만 재오픈
     if (!hasRequestDesign && !hasMirroredDesign) {
@@ -960,32 +1062,14 @@ export async function cancelDesignHandoff(req, res) {
           message: "업로드된 어벗디자인이 없습니다.",
         });
       }
-      await clearPtxDesignMirror(relatedTransferId);
-      await markPtxRelatedRequestsCancelled(relatedTransferId);
-      try {
-        emitAppEventToRoles(["manufacturer", "admin"], "worksheet:count-update", {
-          reason: "ptx-design-handoff-cancel-reopen",
-          requestId: String(request._id),
-        });
-      } catch {
-        // best-effort
-      }
-      refreshLabDashboardAfterPtxDesignChange(
-        req.user?.businessAnchorId ||
-          request.businessAnchorId ||
-          transferTargetLabAnchorId,
-        "ptx-design-handoff-cancel-reopen",
-      );
-      return res.status(200).json({
-        success: true,
-        message: "생산 단계를 다시 열었습니다. 어벗디자인·보철을 다시 업로드할 수 있습니다.",
-        data: {
-          requestId: String(request._id),
-          relatedPracticeTransferId: relatedTransferId,
-          manufacturerStage: "취소",
+      await clearMirrorAndCancelRelated(false);
+      return finishCancelResponse({
+        message:
+          "생산 단계를 다시 열었습니다. 어벗디자인·보철을 다시 업로드할 수 있습니다.",
+        extraData: {
+          cancelReason: "ptx-design-handoff-cancel-reopen",
           abutmentDesignFeeRevoked: false,
           stageReopened: true,
-          revokedAt: now.toISOString(),
         },
       });
     }
@@ -993,128 +1077,51 @@ export async function cancelDesignHandoff(req, res) {
     // Request에 designCompletedAt이 없고 Transfer에만 미러가 남은 orphan:
     // 구강스캔은 이미 primary — 미러만 비우면 재업로드 가능.
     if (!hasRequestDesign && hasMirroredDesign) {
-      await clearPtxDesignMirror(relatedTransferId);
-      await markPtxRelatedRequestsCancelled(relatedTransferId);
-      try {
-        emitAppEventToRoles(["manufacturer", "admin"], "worksheet:count-update", {
-          reason: "ptx-design-handoff-cancel-orphan",
-          requestId: String(request._id),
-        });
-      } catch {
-        // best-effort
-      }
-      refreshLabDashboardAfterPtxDesignChange(
-        req.user?.businessAnchorId ||
-          request.businessAnchorId ||
-          transferTargetLabAnchorId,
-        "ptx-design-handoff-cancel-orphan",
-      );
-      return res.status(200).json({
-        success: true,
+      await clearMirrorAndCancelRelated(false);
+      return finishCancelResponse({
         message:
           "어벗디자인 업로드가 취소되었습니다. 다시 업로드할 수 있습니다.",
-        data: {
-          requestId: String(request._id),
-          relatedPracticeTransferId: relatedTransferId,
-          manufacturerStage: "취소",
+        extraData: {
+          cancelReason: "ptx-design-handoff-cancel-orphan",
           abutmentDesignFeeRevoked: false,
           orphanMirrorCleared: true,
-          revokedAt: now.toISOString(),
         },
       });
     }
 
-    const sourceRows = Array.isArray(request.caseInfos?.designSourceFiles)
-      ? request.caseInfos.designSourceFiles.map(toStoredFileMeta).filter(Boolean)
-      : [];
-    const restorePrimary = sourceRows[0] || null;
+    applyPtxDesignCancelFields(request);
+    // primary save + 미러 클리어 + sibling 취소(primary skip) 병렬 — hold/디자인비는 응답 후
+    const excludeSiblingIds = relatedRequestIds.length
+      ? relatedRequestIds
+      : [primaryRequestId];
+    await Promise.all([
+      request.save(),
+      clearPtxDesignMirror(relatedTransferId),
+      markPtxRelatedRequestsCancelled(relatedTransferId, {
+        relatedRequestIds,
+        skipRequestIds: [primaryRequestId],
+      }),
+    ]);
 
-    if (!request.caseInfos) request.caseInfos = {};
-    if (restorePrimary?.s3Key) {
-      request.caseInfos.file = restorePrimary;
-      request.caseInfos.files = sourceRows.slice(1);
-    } else {
-      // 구강스캔 없이 디자인만 올린 PTX — primary(어벗 STL) 클리어 후 재업로드
-      request.caseInfos.file = undefined;
-      request.caseInfos.files = [];
-    }
-    request.caseInfos.designSourceFiles = [];
-    clearFilledStlFileOnCaseInfos(request.caseInfos); // stlFile + legacy camFile
-    request.caseInfos.ncFile = undefined;
-    // 재업로드(핸드오프) 가능: 생산 mode 유지 + designCompletedAt 클리어(제조 큐 제외)
-    request.caseInfos.productMode = PRODUCT_MODE_PRODUCTION;
-    request.designCompletedAt = undefined;
-    request.designCompletedBy = undefined;
-    request.manufacturerStage = "취소";
-
-    await request.save();
-    await clearPtxDesignMirror(relatedTransferId);
-    await markPtxRelatedRequestsCancelled(relatedTransferId);
-
-    try {
-      emitAppEventToRoles(["manufacturer", "admin"], "worksheet:count-update", {
-        reason: "ptx-design-handoff-cancel",
-        requestId: String(request._id),
-      });
-    } catch (emitErr) {
-      console.error("[DESIGN_HANDOFF_CANCEL] worksheet count emit failed", emitErr);
-    }
-
-    refreshLabDashboardAfterPtxDesignChange(
-      req.user?.businessAnchorId ||
-        request.businessAnchorId ||
-        transferTargetLabAnchorId,
-      "ptx-design-handoff-cancel",
-    );
-
-    let feeRevoke = null;
-    try {
-      const transferForRevoke = await PracticeTransfer.findById(relatedTransferId)
-        .select({ "production.relatedRequestIds": 1 })
-        .lean();
-      const relatedForRevoke = (
-        Array.isArray(transferForRevoke?.production?.relatedRequestIds)
-          ? transferForRevoke.production.relatedRequestIds
-          : []
-      )
-        .map((id) => String(id || "").trim())
-        .filter((id) => Types.ObjectId.isValid(id));
-      const uniqueRevokeIds = Array.from(
-        new Set([String(request._id), ...relatedForRevoke]),
+    void releaseRequestCreditHoldsOnCancel({
+      request,
+      excludeSiblingIds,
+    }).catch((holdErr) => {
+      console.warn(
+        "[DESIGN_HANDOFF_CANCEL] credit hold release failed",
+        primaryRequestId,
+        holdErr?.message || holdErr,
       );
-      let revokedAny = false;
-      for (const revokeId of uniqueRevokeIds) {
-        const revokeDoc =
-          String(revokeId) === String(request._id)
-            ? request
-            : await Request.findById(revokeId);
-        if (!revokeDoc) continue;
-        const row = await revokeAbutmentDesignLabFee({
-          requestDoc: revokeDoc,
-          transferId: relatedTransferId,
-          labAnchorId: String(
-            req.user?.businessAnchorId || request.businessAnchorId || "",
-          ).trim(),
-          actorUserId: userId,
-        });
-        if (row?.revoked) revokedAny = true;
-        if (String(revokeId) === String(request._id)) feeRevoke = row;
-      }
-      if (!feeRevoke) feeRevoke = { revoked: revokedAny };
-    } catch (revokeErr) {
-      console.error("[DESIGN_HANDOFF_CANCEL] fee revoke failed", revokeErr);
-    }
+    });
 
-    return res.status(200).json({
-      success: true,
+    return finishCancelResponse({
       message: "어벗디자인 업로드가 취소되었습니다. 다시 업로드할 수 있습니다.",
-      data: {
-        requestId: String(request._id),
-        relatedPracticeTransferId: relatedTransferId,
-        manufacturerStage: "취소",
-        abutmentDesignFeeRevoked: Boolean(feeRevoke?.revoked),
-        revokedAt: now.toISOString(),
+      extraData: {
+        cancelReason: "ptx-design-handoff-cancel",
+        // 응답 후 비동기 revoke — UI는 즉시 복귀
+        abutmentDesignFeeRevoked: true,
       },
+      feeRevokePending: true,
     });
   } catch (error) {
     console.error("[DESIGN_HANDOFF_CANCEL_ERROR]", error);
