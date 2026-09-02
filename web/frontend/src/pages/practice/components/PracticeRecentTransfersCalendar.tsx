@@ -56,7 +56,6 @@ export type PracticeCalendarStatusTone =
   | "accepted"
   | "completed"
   | "canceled"
-  | "rejected"
   | "unread";
 
 export type PracticeCalendarChipItem = {
@@ -173,7 +172,7 @@ export const calendarGroupChipStyle = (
   };
 };
 
-/** 상단 뱃지(의뢰·취소·수락·거절·어벗)와 같은 칩 색. */
+/** 상단 뱃지(의뢰·취소·수락·어벗)와 같은 칩 색. */
 export const PRACTICE_CALENDAR_STATUS_CHIP_STYLE: Record<
   PracticeCalendarStatusTone,
   { backgroundColor: string; color: string }
@@ -182,7 +181,6 @@ export const PRACTICE_CALENDAR_STATUS_CHIP_STYLE: Record<
   accepted: { backgroundColor: "hsl(208 55% 88%)", color: "hsl(208 52% 28%)" },
   completed: { backgroundColor: "hsl(168 40% 86%)", color: "hsl(168 48% 24%)" },
   canceled: { backgroundColor: "hsl(0 55% 90%)", color: "hsl(0 48% 34%)" },
-  rejected: { backgroundColor: "hsl(24 72% 88%)", color: "hsl(24 55% 30%)" },
   unread: { backgroundColor: "#ffffff", color: "hsl(0 48% 34%)" },
 };
 
@@ -207,10 +205,6 @@ export const PRACTICE_STATUS_FILTER_BADGE_CLASS: Record<
     idle: "border-slate-200 bg-slate-50/60 text-slate-400 opacity-40 hover:opacity-60 hover:bg-slate-50",
     active: "border-rose-500/90 bg-rose-200 text-rose-950 shadow-sm",
   },
-  rejected: {
-    idle: "border-slate-200 bg-slate-50/60 text-slate-400 opacity-40 hover:opacity-60 hover:bg-slate-50",
-    active: "border-orange-500/90 bg-orange-200 text-orange-950 shadow-sm",
-  },
   unread: {
     idle: "border-[3px] border-double border-red-200 bg-white text-red-300 opacity-40 hover:opacity-60",
     active:
@@ -227,8 +221,7 @@ export const resolvePracticeCalendarStatusTone = (
   },
 ): Exclude<PracticeCalendarStatusTone, "unread"> => {
   const s = String(status || "").trim();
-  if (s === "거부") return "rejected";
-  if (s === "취소" || s === "작업취소") return "canceled";
+  if (s === "거부" || s === "취소" || s === "작업취소") return "canceled";
   if (s === "생산진행" || s === "포장.발송") return "completed";
   if (s === "작업완료") {
     const designN = Math.max(

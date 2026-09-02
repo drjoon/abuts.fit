@@ -1106,7 +1106,7 @@ const toStatusLabel = (manufacturerStage: unknown) => {
   return "발송완료";
 };
 
-/** 목록/카드 뱃지 라벨 — 상단 필터(의뢰·취소·수락·거절·어벗)와 동일 문구 */
+/** 목록/카드 뱃지 라벨 — 상단 필터(의뢰·취소·수락·어벗)와 동일 문구 */
 const toStatusBadgeLabel = (
   status: unknown,
   opts?: {
@@ -1120,8 +1120,7 @@ const toStatusBadgeLabel = (
   if (s === "발송완료" || s === "수신완료" || s === "자동매칭" || s === "하청대기") {
     return "의뢰";
   }
-  if (s === "거부") return "거절";
-  if (s === "작업취소" || s === "취소") return "취소";
+  if (s === "거부" || s === "작업취소" || s === "취소") return "취소";
   const designN = Math.max(
     Number(opts?.designFileCount || 0) || 0,
     Array.isArray(opts?.designFiles) ? opts.designFiles.length : 0,

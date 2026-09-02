@@ -1,11 +1,11 @@
 /**
  * 치과 기공의뢰 — 최근 전송 목록 매핑·그룹·필터 SSOT.
- * 상단 5뱃지: 의뢰 / 취소 / 수락 / 거절 / 어벗 (출고·리메이크 삭제).
- * 취소=작업취소+휴지통(취소). 거절=기공소 지정 거부. 어벗=CA 디자인 업로드(+제조 출고 단계).
+ * 상단 4뱃지: 의뢰 / 취소 / 수락 / 어벗 (출고·리메이크·거절 뱃지 삭제).
+ * 취소=작업취소+기공소 거절(거부)+휴지통(취소). 어벗=CA 디자인 업로드(+제조 출고 단계).
  * 수락=의뢰수락 + 파일 없는 작업완료(비CA). 채팅 unread는 상태 뱃지별 합산.
  * 자동매칭(공개 풀)은 공정상 의뢰 — 뱃지 집계·「의뢰」필터에 포함.
- * 2026-09-02: 5뱃지 재구성·거절 분리·어벗=CA designFiles.
- *
+ * 기공소 수신은 거절 건이 목록에서 빠져 거절 뱃지가 불필요 → 치과도 동일 4뱃지.
+ * 2026-09-02: 거절 뱃지 제거·기공소 거절은 취소 집계. 어벗=CA designFiles.
  * related files:
  * - web/frontend/src/pages/practice/components/PracticeRecentTransfersAllModal.tsx
  * - web/frontend/src/pages/practice/components/PracticeRecentTransfersCalendar.tsx
@@ -205,7 +205,6 @@ export type PracticeRecentStatusFilter =
   | "발송완료"
   | "취소"
   | "의뢰수락"
-  | "거부"
   | "작업완료";
 
 export type PracticeRecentStatusFilterKey = Exclude<PracticeRecentStatusFilter, "all">;
@@ -214,14 +213,13 @@ export type PracticeRecentStatusCounts = {
   sent: number;
   canceled: number;
   accepted: number;
-  rejected: number;
   /** CA 어벗 디자인 업로드(+제조 출고 단계) */
   abutment: number;
 };
 
-/** 전체보기 기본 ON — 5상태 전부. 「기본」 리셋도 이 집합. */
+/** 전체보기 기본 ON — 4상태 전부. 「기본」 리셋도 이 집합. */
 export const PRACTICE_RECENT_DEFAULT_ON_STATUS_FILTERS: readonly PracticeRecentStatusFilterKey[] =
-  ["발송완료", "취소", "의뢰수락", "거부", "작업완료"];
+  ["발송완료", "취소", "의뢰수락", "작업완료"];
 
 export const createPracticeRecentStatusFilterSet = (
   keys: readonly PracticeRecentStatusFilterKey[] = PRACTICE_RECENT_DEFAULT_ON_STATUS_FILTERS,
@@ -278,7 +276,6 @@ export const practiceTransferMatchesStatusFilters = (
   const status = String(transfer.status || "").trim();
   const isAbutment = isPracticeRecentAbutmentBadgeStatus(transfer);
 
-  if (selected.has("거부") && isPracticeRecentRejectBadgeStatus(status)) return true;
   if (selected.has("취소") && isPracticeRecentCancelBadgeStatus(status)) return true;
   if (selected.has("작업완료") && isAbutment) return true;
   if (
@@ -372,7 +369,7 @@ export const resolvePracticeRecentDisplayStatus = (row: {
   return apiStage;
 };
 
-/** 최근전송 상단 5뱃지 — 라벨·집계키·빠른툴팁 SSOT. */
+/** 최근전송 상단 4뱃지 — 라벨·집계키·빠른툴팁 SSOT. */
 export const PRACTICE_RECENT_STATUS_BADGES = [
   {
     filter: "발송완료",
@@ -384,19 +381,13 @@ export const PRACTICE_RECENT_STATUS_BADGES = [
     filter: "취소",
     label: "취소",
     countKey: "canceled",
-    tooltip: "기공소 작업취소, 또는 휴지통으로 옮긴 취소 건",
+    tooltip: "기공소 작업취소·거절, 또는 휴지통으로 옮긴 취소 건",
   },
   {
     filter: "의뢰수락",
     label: "수락",
     countKey: "accepted",
     tooltip: "기공소 수락 후(파일 없는 작업완료 포함)",
-  },
-  {
-    filter: "거부",
-    label: "거절",
-    countKey: "rejected",
-    tooltip: "기공소에서 지정 의뢰를 거절한 후",
   },
   {
     filter: "작업완료",
@@ -411,16 +402,10 @@ export const PRACTICE_RECENT_STATUS_BADGES = [
   tooltip: string;
 }>;
 
-/** 취소 뱃지·필터 — 작업취소 + 휴지통(취소). 거절(거부)은 별도. */
+/** 취소 뱃지·필터 — 작업취소 + 기공소 거절(거부) + 휴지통(취소). */
 export const isPracticeRecentCancelBadgeStatus = (status: unknown) => {
   const s = String(status || "").trim();
-  return s === "작업취소" || s === "취소";
-};
-
-/** 거절 뱃지·필터 — 기공소 지정 거부 */
-export const isPracticeRecentRejectBadgeStatus = (status: unknown) => {
-  const s = String(status || "").trim();
-  return s === "거부";
+  return s === "작업취소" || s === "취소" || s === "거부";
 };
 
 const extractLabNameFromMessage = (message: string) => {
@@ -496,7 +481,7 @@ export const toStatusLabel = (manufacturerStage: unknown) => {
   return "발송완료";
 };
 
-/** 목록/카드 뱃지 라벨 — 상단 필터(의뢰·취소·수락·거절·어벗)와 동일 문구 */
+/** 목록/카드 뱃지 라벨 — 상단 필터(의뢰·취소·수락·어벗)와 동일 문구 */
 export const toStatusBadgeLabel = (
   status: unknown,
   opts?: {
@@ -510,8 +495,7 @@ export const toStatusBadgeLabel = (
   if (s === "발송완료" || s === "수신완료" || s === "자동매칭" || s === "하청대기") {
     return "의뢰";
   }
-  if (s === "거부") return "거절";
-  if (s === "작업취소" || s === "취소") return "취소";
+  if (s === "거부" || s === "작업취소" || s === "취소") return "취소";
   if (
     isPracticeRecentAbutmentBadgeStatus({
       status: s,
@@ -1492,7 +1476,6 @@ const emptyPracticeRecentStatusCounts = (): PracticeRecentStatusCounts => ({
   sent: 0,
   canceled: 0,
   accepted: 0,
-  rejected: 0,
   abutment: 0,
 });
 
@@ -1508,10 +1491,6 @@ const bumpPracticeRecentStatusCount = (
 ) => {
   if (delta <= 0) return;
   const status = String(transfer.status || "").trim();
-  if (isPracticeRecentRejectBadgeStatus(status)) {
-    acc.rejected += delta;
-    return;
-  }
   if (isPracticeRecentCancelBadgeStatus(status)) {
     acc.canceled += delta;
     return;

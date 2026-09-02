@@ -1356,7 +1356,7 @@ export function PracticeTransferDetailChatDialog({
     typeof acceptedWorkActions === "function"
       ? acceptedWorkActions({ releaseAction })
       : acceptedWorkActions;
-  const rejectButtonLabel = rejectBusy ? "거부 중..." : "거부";
+  const rejectButtonLabel = rejectBusy ? "거절 중..." : "거절";
   const workPeriodDays = getPracticeWorkPeriodDays(orderDate, arrivalDate, orderedAt);
   const showShortWorkPeriod = isPracticeWorkPeriodShort(workPeriodDays);
   const acceptDisabled = acceptBusy || rejectBusy || oralScanBlocksAccept;

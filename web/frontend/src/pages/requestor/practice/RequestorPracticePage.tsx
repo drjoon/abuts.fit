@@ -3340,8 +3340,8 @@ export function RequestorPracticeReceivePage({
         (transfer.isAccepted || transfer.isDownloaded || transfer.requestorDownloadedAt)
       ) {
         toast({
-          title: "거부 불가",
-          description: "이미 수락한 의뢰는 거부할 수 없습니다. 작업취소를 이용해주세요.",
+          title: "거절 불가",
+          description: "이미 수락한 의뢰는 거절할 수 없습니다. 작업취소를 이용해주세요.",
           variant: "destructive",
         });
         return false;
@@ -3365,8 +3365,8 @@ export function RequestorPracticeReceivePage({
               ? (res.data as Record<string, unknown>)
               : {};
           toast({
-            title: "거부 실패",
-            description: String(body.message || "의뢰 거부 중 오류가 발생했습니다."),
+            title: "거절 실패",
+            description: String(body.message || "의뢰 거절 중 오류가 발생했습니다."),
             variant: "destructive",
           });
           return false;
@@ -3386,16 +3386,16 @@ export function RequestorPracticeReceivePage({
         resetDownloads();
 
         toast({
-          title: "의뢰 거부",
+          title: "의뢰 거절",
           description: isOpenPool
-            ? "의뢰를 거부했습니다. 다른 기공소에 계속 공개됩니다."
-            : "의뢰를 거부했습니다. 치과에 취소 상태로 전달됩니다.",
+            ? "의뢰를 거절했습니다. 다른 기공소에 계속 공개됩니다."
+            : "의뢰를 거절했습니다. 치과에 취소 상태로 전달됩니다.",
         });
         return true;
       } catch {
         toast({
-          title: "거부 실패",
-          description: "의뢰 거부 요청 중 오류가 발생했습니다.",
+          title: "거절 실패",
+          description: "의뢰 거절 요청 중 오류가 발생했습니다.",
           variant: "destructive",
         });
         return false;
@@ -5541,7 +5541,7 @@ export function RequestorPracticeReceivePage({
       />
       <ConfirmDialog
         open={rejectConfirmOpen}
-        title="이 의뢰를 거부할까요?"
+        title="이 의뢰를 거절할까요?"
         description={
           <div className="space-y-1">
             {selectedTransfer?.transferId ? (
@@ -5552,12 +5552,12 @@ export function RequestorPracticeReceivePage({
             <div className="text-sm text-muted-foreground">
               {selectedTransfer?.matchingMode === "auto" &&
               selectedTransfer.autoMatch?.openPool
-                ? "거부하면 다른 기공소에 계속 공개됩니다."
-                : "거부하면 치과에 취소 상태로 전달됩니다."}
+                ? "거절하면 다른 기공소에 계속 공개됩니다."
+                : "거절하면 치과에 취소 상태로 전달됩니다."}
             </div>
           </div>
         }
-        confirmLabel="거부"
+        confirmLabel="거절"
         cancelLabel="취소"
         busy={rejectBusy}
         onConfirm={() => void handleConfirmRejectTransfer()}
