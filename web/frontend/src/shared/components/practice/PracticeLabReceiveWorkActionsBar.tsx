@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/practice/practiceTransferLabReceive.ts
 // change-log:
+// - 2026-09-02: 작업 완료 취소 표시 중에도 미제공 CA 자체 처리 안내 유지.
 // - 2026-09-02: 어벗(STL) 업로드 CTA 제거 — 진행상황 드롭존 클릭/드래그가 SSOT.
 // - 2026-09-02: 파일 없는「작업 완료」CTA 제거(도착일 경과 자동 완료).
 // - 2026-09-02: 보철/dual 제거. CA 어벗 업로드 + 파일 없는 작업 완료 CTA.
@@ -143,6 +144,7 @@ export function PracticeLabReceiveWorkActionsBar({
   if (state.showCompletedStageHeaderCancel) {
     return (
       <div className={cn("w-full min-w-0 space-y-1.5", className)}>
+        {pendingLabGuide}
         {renderActionRow(null)}
       </div>
     );
