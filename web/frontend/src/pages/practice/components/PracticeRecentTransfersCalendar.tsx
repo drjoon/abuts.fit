@@ -25,6 +25,7 @@
  * - 2026-08-20: 치과 전체보기 칩도 상단 뱃지 상태색(그룹색 대신).
  * - 2026-08-20: 안읽음(수신 미확인·채팅) 빨간 배지를 칩에 표시.
  * - 2026-08-21: 상단 필터 뱃지 ON=진한 상태색 / OFF=흐린 무채색(표시 on/off 대비).
+ * - 2026-09-02: 어벗(작업완료) 필터 뱃지=completed 녹색(캘린더 칩과 동일). 칩용 resolve는 디자인 없으면 accepted.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Search, Trash2 } from "lucide-react";
@@ -199,7 +200,9 @@ export const PRACTICE_STATUS_FILTER_BADGE_CLASS: Record<
   },
   completed: {
     idle: "border-slate-200 bg-slate-50/60 text-slate-400 opacity-40 hover:opacity-60 hover:bg-slate-50",
-    active: "border-teal-500/90 bg-teal-200 text-teal-950 shadow-sm",
+    // 캘린더 칩 completed(hsl 168)와 같은 민트 그린
+    active:
+      "border-[hsl(168_48%_42%)] bg-[hsl(168_40%_86%)] text-[hsl(168_48%_24%)] shadow-sm",
   },
   canceled: {
     idle: "border-slate-200 bg-slate-50/60 text-slate-400 opacity-40 hover:opacity-60 hover:bg-slate-50",
@@ -233,6 +236,19 @@ export const resolvePracticeCalendarStatusTone = (
   }
   if (s === "의뢰수락" || s === "다운로드완료") return "accepted";
   return "sent";
+};
+
+/**
+ * 상단 상태 필터 뱃지 색 — 필터 키 의미 고정.
+ * 「작업완료」=어벗 버킷이므로 항상 completed(녹색).
+ * (칩용 resolvePracticeCalendarStatusTone은 디자인 없는 작업완료→accepted)
+ */
+export const resolvePracticeStatusFilterBadgeTone = (
+  filter: unknown,
+): Exclude<PracticeCalendarStatusTone, "unread"> => {
+  const s = String(filter || "").trim();
+  if (s === "작업완료") return "completed";
+  return resolvePracticeCalendarStatusTone(s);
 };
 
 export const calendarChipStyleForItem = (item: PracticeCalendarChipItem) => {

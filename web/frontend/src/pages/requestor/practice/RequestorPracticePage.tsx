@@ -292,6 +292,7 @@ import {
   PracticeRecentTransfersCalendar,
   expandPracticeCalendarChipsByArrivalDates,
   resolvePracticeCalendarStatusTone,
+  resolvePracticeStatusFilterBadgeTone,
   type PracticeCalendarChipItem,
   type PracticeCalendarDateKey,
 } from "@/pages/practice/components/PracticeRecentTransfersCalendar";
@@ -4777,7 +4778,7 @@ export function RequestorPracticeReceivePage({
     return LAB_RECEIVE_STATUS_BADGES.map((item) => ({
       key: item.filter,
       label: item.label,
-      tone: resolvePracticeCalendarStatusTone(item.filter),
+      tone: resolvePracticeStatusFilterBadgeTone(item.filter),
       count: statusCounts[item.countKey],
       unreadCount: statusUnreadCounts[item.countKey],
       tooltip: item.tooltip,
