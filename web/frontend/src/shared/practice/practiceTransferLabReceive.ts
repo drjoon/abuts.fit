@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/components/practice/LabReceiveWorkUploadDialog.tsx
 // change-log:
+// - 2026-09-02: designStlUploadMode — 수락(showWorkActions) 후에만 abutment. 수락 전 드롭 방지.
 // - 2026-09-02: designStlUploadMode — 어벗/보철 CTA 통합 분기(abutment|prosthetic|dual|none).
 // - 2026-08-29: 보철 디자인 업로드=작업완료(디자인). skip 자동 confirmedAt은 출고로 올리지 않음.
 // - 2026-08-28: 심플어벗(치과 재고)은 어벗츠 CNC·디자인 업로드 기대 개수에서 제외.
@@ -758,9 +759,6 @@ export function resolvePracticeLabReceiveWorkActionState(
       (designFileCount === 0 && expectedAbutment <= 0 ? 1 : 0)
     : 0;
   const needsAbutmentDesigns = needsMoreAbutmentDesigns;
-  // 보철 업로드 폐지 — CA 어벗만
-  const designStlUploadMode: PracticeLabReceiveDesignStlUploadMode =
-    needsAbutmentDesigns ? "abutment" : "none";
   const isLabAccepted =
     Boolean(transfer.isAccepted) ||
     Boolean(transfer.isDownloaded) ||
@@ -784,6 +782,9 @@ export function resolvePracticeLabReceiveWorkActionState(
       resultCount === 0 &&
       !transfer.production?.confirmedAt &&
       !transfer.autoMatch?.completed);
+  // 보철 업로드 폐지 — CA 어벗만. 카드 드롭과 같이 수락 후에만 활성.
+  const designStlUploadMode: PracticeLabReceiveDesignStlUploadMode =
+    needsAbutmentDesigns && showWorkActions ? "abutment" : "none";
   const showAbutmentProductionCancel =
     hasAbutsCa &&
     (designFileCount > 0 || needsStageReopen) &&

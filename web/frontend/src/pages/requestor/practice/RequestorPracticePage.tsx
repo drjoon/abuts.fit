@@ -26,6 +26,7 @@
 // - web/frontend/src/shared/practice/labReceiveCalendarHiddenWeekdays.ts
 // - web/backend/utils/labReceiveCalendarHiddenWeekdays.util.js
 // - web/backend/controllers/users/user.controller.js
+// - 2026-09-02: 상세 workFileDrop — 수락(showWorkActions) 후에만 어벗 STL 드롭.
 // - 2026-09-02: 어벗·보철 CTA → 디자인(STL) 업로드 통합 + dual 좌우 배정.
 // - 2026-08-28: 어벗 확인 모달 열면 드롭존 바 숨김·확인 버튼「처리 중」(S3 1회만).
 // - 2026-08-28: 분할 확인 전 S3 프리업로드·API 처리 중 드롭존 바 재표시 제거(한 번만 업로드).
@@ -4430,10 +4431,14 @@ export function RequestorPracticeReceivePage({
       if (!id || cardActionBusyId || designConfirmBusy || workUploadBusy) return;
 
       const workState = resolvePracticeLabReceiveWorkActionState(transfer);
-      if (workState.designStlUploadMode !== "abutment") {
+      if (!workState.showWorkActions || workState.designStlUploadMode !== "abutment") {
         toast({
-          title: "업로드할 어벗 없음",
-          description: "커스텀 어벗 디자인이 더 필요하지 않습니다.",
+          title: workState.showWorkActions
+            ? "업로드할 어벗 없음"
+            : "의뢰 수락 후 업로드",
+          description: workState.showWorkActions
+            ? "커스텀 어벗 디자인이 더 필요하지 않습니다."
+            : "의뢰를 수락한 뒤에 어벗 STL을 올릴 수 있습니다.",
         });
         return;
       }
@@ -4593,7 +4598,10 @@ export function RequestorPracticeReceivePage({
   const dialogWorkFileDrop = useMemo(() => {
     if (!selectedTransfer) return null;
     const workState = resolvePracticeLabReceiveWorkActionState(selectedTransfer);
-    if (workState.designStlUploadMode !== "abutment") return null;
+    // 카드 드롭과 동일 — 수락 전(거부/수락 버튼 단계)에는 어벗 STL 드롭 비활성
+    if (!workState.showWorkActions || workState.designStlUploadMode !== "abutment") {
+      return null;
+    }
     const transferKey = String(
       selectedTransfer.transferId || selectedTransfer._id || "",
     ).trim();
