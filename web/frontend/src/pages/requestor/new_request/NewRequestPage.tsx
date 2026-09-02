@@ -285,8 +285,6 @@ const NewRequestPageContent = () => {
     modalOpen: designSoftwareModalOpen,
     exoCadVersion,
     setExoCadVersion,
-    modalAnodizingEnabled,
-    setModalAnodizingEnabled,
     forceRequired: designSoftwareForceRequired,
     gatePendingFiles: designSoftwareGatePendingFiles,
     openDesignSoftwareModal: handleOpenDesignSoftwareModal,
@@ -1746,9 +1744,6 @@ const NewRequestPageContent = () => {
             designSoftwareForceRequired &&
             designSoftwareGatePendingFiles.length === 0
           }
-          showAnodizing
-          anodizingEnabled={modalAnodizingEnabled}
-          onAnodizingChange={setModalAnodizingEnabled}
           contentClassName="new-request-page sm:max-w-sm"
         />
 

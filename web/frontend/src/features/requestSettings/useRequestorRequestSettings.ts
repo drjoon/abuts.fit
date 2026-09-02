@@ -5,6 +5,7 @@
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // change-log:
+// - 2026-09-03: ExoCAD 모달에서 아노다이징 분리(툴바 토글 전용).
 // - 2026-09-03: 설정 모달 ExoCAD 전용 — SW 선택 제거, 저장 시 ExoCAD 고정.
 // - 2026-09-03: requestor·internalLab 모두 개인(User) SSOT. BA는 owner 템플릿·가입 시드만.
 // - 2026-08-21: 설정 GET과 아노 토글 race — 사용자 변경 후 stale 로드가 ON→OFF로 덮지 않음.
@@ -114,7 +115,6 @@ export function useRequestorRequestSettings(
     useState(false);
 
   const [modalOpen, setModalOpen] = useState(false);
-  const [modalAnodizingEnabled, setModalAnodizingEnabled] = useState(true);
   const [designSoftwareSaving, setDesignSoftwareSaving] = useState(false);
   const [anodizingSaving, setAnodizingSaving] = useState(false);
   const [forceRequired, setForceRequired] = useState(false);
@@ -169,7 +169,6 @@ export function useRequestorRequestSettings(
       _value: string,
       opts?: {
         force?: boolean;
-        showCurrentAnodizing?: boolean;
         exoCadVersion?: ExoCadVersion | null;
       },
     ) => {
@@ -178,15 +177,10 @@ export function useRequestorRequestSettings(
           ? opts.exoCadVersion
           : exoCadVersion,
       );
-      setModalAnodizingEnabled(
-        typeof opts?.showCurrentAnodizing === "boolean"
-          ? opts.showCurrentAnodizing
-          : anodizingEnabled,
-      );
       setForceRequired(Boolean(opts?.force));
       setModalOpen(true);
     },
-    [anodizingEnabled, exoCadVersion],
+    [exoCadVersion],
   );
 
   const openModalForValueRef = useRef(openModalForValue);
@@ -206,11 +200,9 @@ export function useRequestorRequestSettings(
     const incomplete = isIncomplete(current, exoCadVersion);
     openModalForValue(current, {
       force: incomplete,
-      showCurrentAnodizing: anodizingEnabled,
       exoCadVersion,
     });
   }, [
-    anodizingEnabled,
     designSoftwareValue,
     draftDesignSoftware,
     exoCadVersion,
@@ -225,12 +217,9 @@ export function useRequestorRequestSettings(
         gatePendingRef.current = next;
         setGatePendingFiles(next);
       }
-      openModalForValue("", {
-        force: true,
-        showCurrentAnodizing: anodizingEnabled,
-      });
+      openModalForValue("", { force: true });
     },
-    [anodizingEnabled, openModalForValue],
+    [openModalForValue],
   );
 
   // 서버 설정 로드 + 미설정 시 진입 강제
@@ -378,9 +367,6 @@ export function useRequestorRequestSettings(
           entryForcedRef.current = true;
           openModalForValueRef.current(effectiveDesign, {
             force: true,
-            showCurrentAnodizing: skipAnodizingFromLoad
-              ? anodizingEnabledRef.current
-              : resolvedAnodizing,
             exoCadVersion: effectiveExo,
           });
         }
@@ -478,17 +464,14 @@ export function useRequestorRequestSettings(
     setDesignSoftwareSaving(true);
     try {
       // 개인 User SSOT. 대표자만 BA 템플릿(신규 가입 시드)도 갱신.
-      const savePayload: Record<string, string | boolean | null> = {
+      // 아노다이징은 툴바 토글에서 별도 저장.
+      const savePayload: Record<string, string | null> = {
         requestorDesignSoftware: designSoftware,
         requestorExoCadVersion: exoCadVersion,
-        requestorAnodizingEnabled: modalAnodizingEnabled,
       };
       if (canEditBusinessDesignSoftware) {
         savePayload.designSoftware = designSoftware;
         savePayload.exoCadVersion = exoCadVersion;
-      }
-      if (canEditBusinessAnodizing) {
-        savePayload.anodizingEnabled = modalAnodizingEnabled;
       }
 
       const res = await apiFetch<{
@@ -506,7 +489,7 @@ export function useRequestorRequestSettings(
         toast({
           title: "저장 실패",
           description: String(
-            body?.message || "의뢰 설정 저장에 실패했습니다.",
+            body?.message || "ExoCAD 버전 저장에 실패했습니다.",
           ),
           variant: "destructive",
         });
@@ -515,18 +498,12 @@ export function useRequestorRequestSettings(
 
       setDesignSoftwareValue(designSoftware);
       setExoCadVersion(exoCadVersion);
-      setAnodizingEnabled(modalAnodizingEnabled);
-      anodizingTouchedRef.current = true;
-      anodizingEnabledRef.current = modalAnodizingEnabled;
-      setHasAnodizingSetting(true);
       setNeedsBusinessDesignSoftwareBootstrap(false);
-      setNeedsBusinessAnodizingBootstrap(false);
       setForceRequired(false);
       setModalOpen(false);
       onDefaultsChangeRef.current?.({
         designSoftware,
         exoCadVersion,
-        anodizingEnabled: modalAnodizingEnabled,
       });
 
       const pending = gatePendingRef.current;
@@ -537,20 +514,15 @@ export function useRequestorRequestSettings(
 
       toast({
         title: "저장 완료",
-        description: isPersonalRequestor
-          ? "ExoCAD 버전·아노다이징이 저장되었습니다."
-          : "기공소 ExoCAD 버전·아노다이징이 저장되었습니다.",
+        description: "ExoCAD 버전이 저장되었습니다.",
       });
     } finally {
       setDesignSoftwareSaving(false);
     }
   }, [
-    canEditBusinessAnodizing,
     canEditBusinessDesignSoftware,
     clearGatePending,
     exoCadVersion,
-    isPersonalRequestor,
-    modalAnodizingEnabled,
     toast,
     token,
   ]);
@@ -565,12 +537,6 @@ export function useRequestorRequestSettings(
       return;
     }
     if (anodizingSaving) return;
-
-    // ExoCAD 버전 미설정이면 토글 대신 설정 모달 강제
-    if (!exoCadVersion) {
-      openDesignSoftwareModal();
-      return;
-    }
 
     const next = !anodizingEnabled;
     const prev = anodizingEnabled;
@@ -653,9 +619,7 @@ export function useRequestorRequestSettings(
     anodizingEnabled,
     anodizingSaving,
     canEditBusinessAnodizing,
-    exoCadVersion,
     isPersonalRequestor,
-    openDesignSoftwareModal,
     toast,
     token,
   ]);
@@ -689,8 +653,6 @@ export function useRequestorRequestSettings(
     hasAnodizingSetting,
     settingsComplete,
     modalOpen,
-    modalAnodizingEnabled,
-    setModalAnodizingEnabled,
     forceRequired,
     gatePendingFiles,
     openDesignSoftwareModal,

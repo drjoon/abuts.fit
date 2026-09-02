@@ -603,8 +603,6 @@ export function RequestorPracticeReceivePage({
     modalOpen: requestSettingsModalOpen,
     exoCadVersion,
     setExoCadVersion,
-    modalAnodizingEnabled,
-    setModalAnodizingEnabled,
     forceRequired: requestSettingsForceRequired,
     openDesignSoftwareModal,
     handleSaveDesignSoftware,
@@ -5130,9 +5128,6 @@ export function RequestorPracticeReceivePage({
           void handleSaveDesignSoftware();
         }}
         forceRequired={requestSettingsForceRequired}
-        showAnodizing
-        anodizingEnabled={modalAnodizingEnabled}
-        onAnodizingChange={setModalAnodizingEnabled}
       />
       <AbutmentDesignConfirmDialog
         key={`${designConfirmRequestId}:${designConfirmQueueIndex}`}
