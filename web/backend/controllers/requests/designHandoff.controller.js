@@ -1,3 +1,4 @@
+// - 2026-09-03: PTX 핸드오프 헥스 스탬프 — case implantManufacturer로 기공소 hexByImplantManufacturer 시드(from-draft 동일).
 // - 2026-09-02: PTX handoff — Rhino 필드·재견적을 병렬(응답 전 대기 단축). S3 재업로드 없음.
 // - 2026-09-02: handoff/cancel — Transfer 1회 조회·형제 취소 병렬·디자인비 grant/revoke 응답 후 처리.
 // - 2026-08-31: PTX CA 생산·배송 크레딧 hold를 design-handoff로 이동(수락 시 보류 제거). 취소 시 hold 해제.
@@ -52,6 +53,7 @@ import {
   mirrorDesignFileToPracticeTransfer,
   repriceAndReschedulePtxAbutmentRequest,
   resolveHexRotationByDesignSoftware,
+  resolveLabManufacturerHexForImplant,
 } from "../../services/practiceTransferProduction.service.js";
 import { isPtxLabDesignedAbutmentRequest } from "./common.review.helpers.js";
 import { postPracticeTransferSystemChatMessage } from "../../services/chatSystemMessage.service.js";
@@ -200,6 +202,14 @@ const ensurePtxProductionRhinoReadyFields = async (request) => {
   if (!request.caseInfos) request.caseInfos = {};
   if (!request.rnd) request.rnd = {};
 
+  // 이미 case별 시드된 헥스를 우선. designSoftware 폴백으로 덮어쓰지 않음.
+  const existingHex =
+    String(request.caseInfos?.hexRotation?.mode || "").trim() ||
+    String(request.rnd.manufacturerHexRotation || "").trim() ||
+    String(request.caseInfos.manufacturerHexRotation || "").trim() ||
+    String(request.caseInfos.finalHexRotation || "").trim() ||
+    String(request.caseInfos.requestorHexRotation || "").trim();
+
   const designSoftware = String(request.caseInfos.designSoftware || "").trim();
   const designSoftwareHex = designSoftware
     ? resolveHexRotationByDesignSoftware(
@@ -209,14 +219,20 @@ const ensurePtxProductionRhinoReadyFields = async (request) => {
     : "";
 
   const hex =
-    designSoftwareHex ||
-    String(request.rnd.manufacturerHexRotation || "").trim() ||
-    String(request.caseInfos.finalHexRotation || "").trim() ||
-    String(request.caseInfos.requestorHexRotation || "").trim() ||
-    DEFAULT_HEX_ROTATION;
+    existingHex || designSoftwareHex || DEFAULT_HEX_ROTATION;
   request.rnd.manufacturerHexRotation = hex;
+  request.caseInfos.manufacturerHexRotation = hex;
   request.caseInfos.finalHexRotation = hex;
   request.caseInfos.requestorHexRotation = hex;
+  const prevHexRotation =
+    request.caseInfos.hexRotation &&
+    typeof request.caseInfos.hexRotation === "object"
+      ? request.caseInfos.hexRotation
+      : {};
+  request.caseInfos.hexRotation = {
+    ...prevHexRotation,
+    mode: hex,
+  };
 
   if (
     !String(request.caseInfos.faceHolePrcFileName || "").trim() ||
@@ -593,6 +609,7 @@ export async function handoffDesignToProduction(req, res) {
 
     // PTX 수락 기공소 핸드오프: 화면의 디자인SW·아노다이징·헥스를 제조사 Request에 확정.
     // (수락 직후 생성분이 예전 코드/동기화되지 않은 사업체 설정이어도 업로드 시점에 맞춘다.)
+    // 헥스는 from-draft와 동일 — case implantManufacturer로 기공소 hexByImplantManufacturer 시드.
     if (acceptingLabPtx) {
       const stampLabAnchorId =
         String(transferTargetLabAnchorId || "").trim() ||
@@ -603,12 +620,31 @@ export async function handoffDesignToProduction(req, res) {
           labUserId: userId,
         });
         if (labMeta.designSoftware) {
+          const implantManufacturerForHex = String(
+            request.caseInfos?.implantManufacturer || "",
+          ).trim();
+          const manufacturerHexRotation = resolveLabManufacturerHexForImplant(
+            labMeta,
+            implantManufacturerForHex || null,
+          );
           request.caseInfos.designSoftware = labMeta.designSoftware;
-          request.caseInfos.requestorHexRotation =
-            labMeta.manufacturerHexRotation;
-          request.caseInfos.finalHexRotation = labMeta.manufacturerHexRotation;
+          if (labMeta.exoCadVersion) {
+            request.caseInfos.exoCadVersion = labMeta.exoCadVersion;
+          }
+          request.caseInfos.requestorHexRotation = manufacturerHexRotation;
+          request.caseInfos.manufacturerHexRotation = manufacturerHexRotation;
+          request.caseInfos.finalHexRotation = manufacturerHexRotation;
+          const prevHexRotation =
+            request.caseInfos.hexRotation &&
+            typeof request.caseInfos.hexRotation === "object"
+              ? request.caseInfos.hexRotation
+              : {};
+          request.caseInfos.hexRotation = {
+            ...prevHexRotation,
+            mode: manufacturerHexRotation,
+          };
           if (!request.rnd) request.rnd = {};
-          request.rnd.manufacturerHexRotation = labMeta.manufacturerHexRotation;
+          request.rnd.manufacturerHexRotation = manufacturerHexRotation;
         }
         if (typeof labMeta.anodizingEnabled === "boolean") {
           request.caseInfos.anodizingEnabled = labMeta.anodizingEnabled;

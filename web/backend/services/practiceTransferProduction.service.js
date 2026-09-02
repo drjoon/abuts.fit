@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-09-03: PTX 헥스 시드도 from-draft와 동일 — case별 implantManufacturer로 hexByImplantManufacturer 해석.
 // - 2026-08-31: PTX CA 생산·배송 크레딧 hold는 수락이 아니라 design-handoff에서 잡음.
 // - 2026-08-31: 수락 취소 시 어벗디자인비도 revoke(design-handoff cancel과 동일).
 // - 2026-08-28: 심플어벗(치과 재고)은 어벗츠 CA Request 생성 대상에서 제외.
@@ -252,9 +253,8 @@ const normalizeManufacturerHexRotationOrNull = (value) => {
 
 /**
  * 제조사 헥스 기본값 SSOT (ExoCAD):
- * 확정 후 관리자 hexVerificationResultHex → 제조사 default → designSoftware(+exoCadVersion).
- * pending은 loadLabRequestMetaForProduction에서 resolveExoCadManufacturerHexRotation으로 처리.
- * related: common.requests.controller.js updateRndHexRotation
+ * case별 implantManufacturer → verifiedHex / applyHex30 → manufacturerDefault → designSoftware.
+ * related: creation.from-draft.controller.js, common.requests.controller.js updateRndHexRotation
  */
 export function pickLabManufacturerHexRotation(
   labUser,
@@ -262,7 +262,7 @@ export function pickLabManufacturerHexRotation(
   designSoftware,
   exoCadVersion = null,
   {
-    hexVerificationPending = false,
+    hexVerificationPending = null,
     implantManufacturer = null,
   } = {},
 ) {
@@ -274,6 +274,11 @@ export function pickLabManufacturerHexRotation(
       labOrg?.requestSettings?.defaultManufacturerHexRotation,
     );
 
+  const pending =
+    hexVerificationPending == null
+      ? pickLabHexVerificationPending(labUser, labOrg, implantManufacturer)
+      : Boolean(hexVerificationPending);
+
   return resolveExoCadManufacturerHexRotation({
     designSoftware,
     exoCadVersion,
@@ -281,8 +286,25 @@ export function pickLabManufacturerHexRotation(
     userRequestSettings: labUser?.requestSettings,
     anchorRequestSettings: labOrg?.requestSettings,
     manufacturerDefault,
-    hexVerificationPending,
+    hexVerificationPending: pending,
   });
+}
+
+/**
+ * loadLabRequestMetaForProduction 결과 + case implantManufacturer → 헥스 시드.
+ * from-draft resolveExoCadManufacturerHexRotation 과 동일 우선순위.
+ */
+export function resolveLabManufacturerHexForImplant(
+  labMeta,
+  implantManufacturer = null,
+) {
+  return pickLabManufacturerHexRotation(
+    labMeta?.labUser,
+    labMeta?.labOrg,
+    labMeta?.designSoftware,
+    labMeta?.exoCadVersion || null,
+    { implantManufacturer },
+  );
 }
 
 const normalizeRetentionGrooveValue = (value, fallback = "none") => {
@@ -388,22 +410,18 @@ export async function loadLabRequestMetaForProduction({
 
   const designSoftware = pickLabDesignSoftware(labUser, labOrg);
   const exoCadVersion = pickLabExoCadVersion(labUser, labOrg);
+  // implant 미지정 fallback(레거시). case별 시드는 resolveLabManufacturerHexForImplant 사용.
   const hexVerificationSamplePending = pickLabHexVerificationPending(
     labUser,
     labOrg,
   );
   const anodizingEnabled = pickLabAnodizingEnabled(labUser, labOrg);
   const retentionGroove = pickLabRetentionGroove(labUser, labOrg);
-  const designSoftwareHex = resolveHexRotationByDesignSoftware(
-    designSoftware,
-    exoCadVersion,
-  );
   const manufacturerHexRotation = pickLabManufacturerHexRotation(
     labUser,
     labOrg,
     designSoftware,
     exoCadVersion,
-    { hexVerificationPending: hexVerificationSamplePending },
   );
 
   return {
@@ -635,7 +653,6 @@ export async function createAbutmentRequestsFromPracticeTransfer({
     );
   }
   const exoCadVersion = labMeta.exoCadVersion || null;
-  const manufacturerHexRotation = labMeta.manufacturerHexRotation;
   const anodizingEnabled = labMeta.anodizingEnabled;
   const retentionGroove = labMeta.retentionGroove;
 
@@ -846,6 +863,14 @@ export async function createAbutmentRequestsFromPracticeTransfer({
       // best-effort — request-meta에서도 동적 계산
     }
 
+    // from-draft와 동일: 기공소 requestSettings + case implantManufacturer로 헥스 시드.
+    const manufacturerHexRotation = resolveLabManufacturerHexForImplant(
+      labMeta,
+      implantManufacturer ||
+        normalizedCaseInfos?.implantManufacturer ||
+        null,
+    );
+
     const newRequest = new Request({
       caseInfos: {
         ...normalizedCaseInfos,
@@ -855,6 +880,7 @@ export async function createAbutmentRequestsFromPracticeTransfer({
         anodizingEnabled,
         retentionGroove,
         requestorHexRotation: manufacturerHexRotation,
+        manufacturerHexRotation,
         finalHexRotation: manufacturerHexRotation,
         hexRotation: {
           mode: manufacturerHexRotation,
