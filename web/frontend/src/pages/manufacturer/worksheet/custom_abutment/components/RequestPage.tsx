@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-03: 준비 탭「라이노 작업중」중단 — 샘플 삭제 / 일반 의뢰 stl cancel-regeneration.
 // - 2026-08-23: 워크시트 스크롤바 — 작업영역 카드 오른쪽 끝에 붙이도록 nested scroll breakout.
 // - 2026-08-18: Filled STL/NC 재생성 완료 상단 alert 제거.
 // - 2026-08-11: 디자인 어벗 파일 선택은 STL만 허용.
@@ -1342,6 +1343,145 @@ export const RequestPage = ({
     ],
   );
 
+  const [rhinoCancellingIds, setRhinoCancellingIds] = useState<
+    Record<string, boolean>
+  >({});
+
+  const handleCancelRhinoWork = useCallback(
+    async (req: ManufacturerRequest) => {
+      if (!req?._id && !req?.requestId) return;
+
+      // 샘플 고스트: 삭제(블러 뒤 X와 동일). 일반 의뢰: Filled STL 생성만 중단.
+      if (isAnySampleRequest(req)) {
+        await handleCardDelete(req);
+        return;
+      }
+
+      const requestId = String(req.requestId || "").trim();
+      const cancelKey = String(req._id || requestId || "").trim();
+      if (!requestId || !cancelKey || !token) {
+        toast({
+          title: "중단 실패",
+          description: !token
+            ? "로그인이 필요합니다."
+            : "의뢰 식별자가 없습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (rhinoCancellingIds[cancelKey]) return;
+
+      setRhinoCancellingIds((prev) => ({ ...prev, [cancelKey]: true }));
+
+      // 낙관적 패치 — 응답 전 블러 해제
+      pageState.setRequests((prev) =>
+        prev.map((item) => {
+          const itemMongoId = String(item?._id || "").trim();
+          const itemRequestId = String(item?.requestId || "").trim();
+          if (
+            (cancelKey && itemMongoId === cancelKey) ||
+            (requestId && itemRequestId === requestId)
+          ) {
+            return {
+              ...item,
+              productionSchedule: {
+                ...(item.productionSchedule || {}),
+                stlPreload: {
+                  status: "CANCELLED",
+                  updatedAt: new Date().toISOString(),
+                  error: "filled_stl_regeneration_cancelled",
+                },
+              },
+            };
+          }
+          return item;
+        }),
+      );
+
+      try {
+        const controller = new AbortController();
+        const timeoutRef = window.setTimeout(() => controller.abort(), 20000);
+        let res: Response;
+        try {
+          res = await fetch(
+            `/api/requests/by-request/${encodeURIComponent(requestId)}/stl-file/cancel-regeneration`,
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({}),
+              signal: controller.signal,
+            },
+          );
+        } finally {
+          window.clearTimeout(timeoutRef);
+        }
+        const body: any = await res.json().catch(() => ({}));
+        if (!res.ok || body?.success === false) {
+          throw new Error(
+            body?.message || body?.error || "라이노 작업 중단에 실패했습니다.",
+          );
+        }
+
+        const patched = body?.data?.request;
+        if (patched && typeof patched === "object") {
+          pageState.setRequests((prev) =>
+            prev.map((item) => {
+              const itemMongoId = String(item?._id || "").trim();
+              const itemRequestId = String(item?.requestId || "").trim();
+              if (
+                (cancelKey && itemMongoId === cancelKey) ||
+                (requestId && itemRequestId === requestId)
+              ) {
+                return { ...item, ...patched };
+              }
+              return item;
+            }),
+          );
+        }
+
+        toast({
+          title: "생성 중단",
+          description: "라이노 작업을 중단했습니다. Filled STL 재생성으로 다시 시작할 수 있습니다.",
+        });
+      } catch (e: any) {
+        // 롤백: CANCELLED 제거 → 블러 복원
+        pageState.setRequests((prev) =>
+          prev.map((item) => {
+            const itemMongoId = String(item?._id || "").trim();
+            const itemRequestId = String(item?.requestId || "").trim();
+            if (
+              (cancelKey && itemMongoId === cancelKey) ||
+              (requestId && itemRequestId === requestId)
+            ) {
+              const nextSchedule = { ...(item.productionSchedule || {}) };
+              delete (nextSchedule as any).stlPreload;
+              return { ...item, productionSchedule: nextSchedule };
+            }
+            return item;
+          }),
+        );
+        toast({
+          title: "중단 실패",
+          description:
+            e?.name === "AbortError"
+              ? "중단 요청 시간이 초과되었습니다. 잠시 후 다시 시도해주세요."
+              : e?.message || "라이노 작업 중단에 실패했습니다.",
+          variant: "destructive",
+        });
+      } finally {
+        setRhinoCancellingIds((prev) => {
+          const next = { ...prev };
+          delete next[cancelKey];
+          return next;
+        });
+      }
+    },
+    [handleCardDelete, pageState, rhinoCancellingIds, toast, token],
+  );
+
   const handleCardDone = useCallback(
     async (req: ManufacturerRequest) => {
       if (!req?._id) return;
@@ -2450,6 +2590,24 @@ export const RequestPage = ({
           }
           if (tabStage === "request") {
             markFilledStlRegenerationPending(requestId);
+            // CANCELLED 후 재생성 — 블러 재개
+            pageState.setRequests((prev) =>
+              prev.map((item) => {
+                if (String(item?.requestId || "").trim() !== requestId) {
+                  return item;
+                }
+                return {
+                  ...item,
+                  productionSchedule: {
+                    ...(item.productionSchedule || {}),
+                    stlPreload: {
+                      status: "GENERATING",
+                      updatedAt: new Date().toISOString(),
+                    },
+                  },
+                };
+              }),
+            );
           } else {
             markNcRegenerationPending(requestId);
           }
@@ -2846,6 +3004,8 @@ export const RequestPage = ({
                       enableDesignClaim={enableDesignClaim}
                       designClaimBusyIds={designClaimBusyIds}
                       onDelete={handleCardDelete}
+                      onCancelRhinoWork={handleCancelRhinoWork}
+                      rhinoCancellingIds={rhinoCancellingIds}
                       onDone={handleCardDone}
                       onRestoreUnmachinable={handleRestoreUnmachinable}
                       onUploadNc={handleUploadNc}

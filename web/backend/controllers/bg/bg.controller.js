@@ -1773,6 +1773,10 @@ export const listPendingStl = asyncHandler(async (req, res) => {
     // 승인/명령되지 않은 건이 섞이면 안 된다.
     "caseInfos.reviewByStage.request.status": "APPROVED",
     "caseInfos.file.filePath": { $exists: true, $ne: null },
+    // 준비 탭「중단」— CANCELLED/FAILED 건은 재기동 복구 큐에서 제외
+    "productionSchedule.stlPreload.status": {
+      $nin: ["CANCELLED", "FAILED"],
+    },
     ...mongoMissingFilledStlFileClause(),
   })
     .select({

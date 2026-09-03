@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-03: Filled STL 생성 중단(cancel-regeneration) — stlPreload CANCELLED·준비 탭 블러 해제.
 // - 2026-08-18: CAM 파일 삭제 롤백 시 로트번호(value)는 유지(준비 단계 발급 SSOT).
 // - 2026-08-17: CAM 롤백(준비) 시 우편함 해제.
 // - 2026-08-16: CAM 롤백(준비) 시 PTX abutmentProductionStartedAt 클리어.
@@ -427,6 +428,91 @@ export async function deleteCamFileAndRollback(req, res) {
       success: false,
       message: "CAM 파일 삭제 중 오류가 발생했습니다.",
       error: error.message,
+    });
+  }
+}
+
+/**
+ * Rhino Filled STL 생성 중단: stlPreload=CANCELLED → 준비 탭「라이노 작업중」블러 해제.
+ * (진행 중 Rhino 작업은 best-effort — 완료되면 filled STL이 붙고 블러는 이미 해제된 상태)
+ */
+export async function cancelFilledStlRegenerationByRequestId(req, res) {
+  try {
+    const requestId = String(req.params?.requestId || "").trim();
+    if (!requestId) {
+      return res
+        .status(400)
+        .json({ success: false, message: "requestId is required" });
+    }
+    if (req.user.role !== "manufacturer" && req.user.role !== "admin") {
+      return res
+        .status(403)
+        .json({ success: false, message: "권한이 없습니다." });
+    }
+
+    const request = await Request.findOne({ requestId });
+    if (!request) {
+      return res
+        .status(404)
+        .json({ success: false, message: "의뢰를 찾을 수 없습니다." });
+    }
+
+    const cancelled = {
+      status: "CANCELLED",
+      updatedAt: new Date(),
+      error: "filled_stl_regeneration_cancelled",
+    };
+
+    await Request.updateOne(
+      { _id: request._id },
+      { $set: { "productionSchedule.stlPreload": cancelled } },
+    );
+
+    if (
+      request.productionSchedule &&
+      typeof request.productionSchedule === "object"
+    ) {
+      request.productionSchedule.stlPreload = cancelled;
+    } else {
+      request.productionSchedule = { stlPreload: cancelled };
+    }
+
+    const fresh = await Request.findById(request._id).lean();
+    const normalized = fresh
+      ? await normalizeRequestForResponse(fresh)
+      : {
+          requestId,
+          _id: String(request._id),
+          productionSchedule: {
+            ...(request.productionSchedule || {}),
+            stlPreload: { status: "CANCELLED" },
+          },
+        };
+
+    emitAppEventToRoles(
+      ["manufacturer", "admin"],
+      "request:filled-stl-regeneration-cancelled",
+      {
+        source: "stl-cancel-regeneration",
+        requestId,
+        requestMongoId: String(request._id || "").trim() || null,
+        request: normalized,
+      },
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "라이노 작업을 중단했습니다.",
+      data: {
+        requestId,
+        request: normalized,
+      },
+    });
+  } catch (error) {
+    const status = Number(error?.statusCode || 500);
+    return res.status(status).json({
+      success: false,
+      message: error?.message || "라이노 작업 중단에 실패했습니다.",
     });
   }
 }

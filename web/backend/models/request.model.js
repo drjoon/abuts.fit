@@ -1032,6 +1032,24 @@ const requestSchema = new mongoose.Schema(
         updatedAt: Date,
         error: String,
       },
+
+      // Rhino Filled STL 생성 상태 (준비 탭「라이노 작업중」블러)
+      // CANCELLED: 생성 중단 — filled STL 없어도 블러 해제
+      stlPreload: {
+        status: {
+          type: String,
+          enum: [
+            "NONE",
+            "GENERATING",
+            "CANCELLED",
+            "READY",
+            "FAILED",
+          ],
+          default: "NONE",
+        },
+        updatedAt: Date,
+        error: String,
+      },
     },
 
     price: {

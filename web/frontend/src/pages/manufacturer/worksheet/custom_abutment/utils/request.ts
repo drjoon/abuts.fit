@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-03: isRhinoWorkPending — stlPreload CANCELLED/FAILED면 블러 해제.
 // - 2026-08-22: isAnySampleRequest는 UI/크레딧 표시용 — 직경 요약·공정 탭 차단에 쓰지 않음.
 // - 2026-08-17: PTX 직납 치과 연락처 resolve (스냅샷 우선, 없으면 practice BA live).
 // - 2026-08-21: Rhino filled STL SSOT — `caseInfos.stlFile`(legacy `camFile` 폴백). NC는 `ncFile`.
@@ -285,11 +286,20 @@ export const patchFilledStlFile = (
 /**
  * 제조사 생산 준비 카드: filled STL 수신 전.
  * 디자인+생산 큐는 DesignRequestTransferView를 쓰므로 WorksheetCardGrid 준비 탭에서만 판정한다.
+ * CANCELLED/FAILED(생성 중단)면 블러를 띄우지 않는다.
  */
 export const isRhinoWorkPending = (
   req?: ManufacturerRequest | null,
   tabStage?: string,
-) => String(tabStage || "").trim() === "request" && !hasFilledStl(req);
+) => {
+  if (String(tabStage || "").trim() !== "request") return false;
+  if (hasFilledStl(req)) return false;
+  const status = String(req?.productionSchedule?.stlPreload?.status || "")
+    .trim()
+    .toUpperCase();
+  if (status === "CANCELLED" || status === "FAILED") return false;
+  return true;
+};
 
 // change-log (getDeadlineInfo):
 // - 2026-08-10: 마감 경과 문구 "출고일 지남" → "출고시간 지남".

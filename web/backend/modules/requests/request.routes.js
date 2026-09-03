@@ -686,6 +686,13 @@ router.post(
   authorizeManufacturerOrDesignPartner(),
   requestController.cancelNcRegenerationByRequestId,
 );
+// 제조사/관리자: Rhino Filled STL 생성 중단 (준비 탭「라이노 작업중」블러 해제)
+router.post(
+  "/by-request/:requestId/stl-file/cancel-regeneration",
+  authenticate,
+  authorizeManufacturerOrDesignPartner(),
+  requestController.cancelFilledStlRegenerationByRequestId,
+);
 router.get(
   "/:id/nc-file-url",
   authenticate,

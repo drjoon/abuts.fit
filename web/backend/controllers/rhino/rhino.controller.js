@@ -113,7 +113,7 @@ export const processFileByName = asyncHandler(async (req, res) => {
   const requestId = req.body?.requestId || null;
   const force = Boolean(req.body?.force);
 
-  // requestId가 있으면 Request 조회하여 requestMongoId 확보
+  // requestId가 있으면 Request 조회하여 requestMongoId 확보 + 재생성 시 stlPreload 재개
   let requestMongoId = null;
   if (requestId) {
     try {
@@ -122,6 +122,23 @@ export const processFileByName = asyncHandler(async (req, res) => {
         .lean();
       if (request) {
         requestMongoId = String(request._id);
+        // CANCELLED 후 재생성 시 준비 탭「라이노 작업중」블러를 다시 켠다
+        void Request.updateOne(
+          { _id: request._id },
+          {
+            $set: {
+              "productionSchedule.stlPreload": {
+                status: "GENERATING",
+                updatedAt: new Date(),
+              },
+            },
+          },
+        ).catch((err) => {
+          console.warn(
+            `[rhino-process-file] stlPreload GENERATING update failed requestId=${requestId}:`,
+            err?.message || err,
+          );
+        });
       }
     } catch {
       // ignore

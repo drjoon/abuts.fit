@@ -283,6 +283,19 @@ export interface RequestBase {
     actualCamStart?: string | Date;
     actualCamComplete?: string | Date;
     actualMachiningComplete?: string | Date;
+    ncPreload?: {
+      status?: string;
+      programNo?: number;
+      machineId?: string;
+      bridgePath?: string;
+      updatedAt?: string | Date;
+      error?: string;
+    };
+    stlPreload?: {
+      status?: string;
+      updatedAt?: string | Date;
+      error?: string;
+    };
   };
 
   shippingPriority?: {

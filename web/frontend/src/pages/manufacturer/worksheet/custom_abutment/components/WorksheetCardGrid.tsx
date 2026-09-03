@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-03: 준비 탭「라이노 작업중」오버레이에 중단 버튼(뱃지 아래).
 // - 2026-09-03: 세척.패킹 → 승인은 각인 이미지가 있을 때만 가능(AI 인식 실패 시 카드/프리뷰 수동 승인).
 // - 2026-08-29: 세척.패킹「출력 완료」뱃지를 하단 → 오른쪽 로트/스크류 스택 아래로 이동.
 // - 2026-08-29: 의뢰카드 RequestInfoSummary에 출고예정일·실제 출고일시(shippedAt) 전달.
@@ -84,6 +85,8 @@ type WorksheetCardGridProps = {
   enableDesignClaim?: boolean;
   designClaimBusyIds?: Record<string, boolean>;
   onDelete?: (req: ManufacturerRequest) => void;
+  onCancelRhinoWork?: (req: ManufacturerRequest) => void;
+  rhinoCancellingIds?: Record<string, boolean>;
   onDone?: (req: ManufacturerRequest) => void;
   onRestoreUnmachinable?: (req: ManufacturerRequest) => void;
   onSaveRndMemo?: (
@@ -126,6 +129,8 @@ export const WorksheetCardGrid = ({
   enableDesignClaim = false,
   designClaimBusyIds = {},
   onDelete,
+  onCancelRhinoWork,
+  rhinoCancellingIds = {},
   onDone,
   onRestoreUnmachinable,
   onSaveRndMemo,
@@ -744,7 +749,7 @@ export const WorksheetCardGrid = ({
           >
             {rhinoWorkPending ? (
               <div
-                className="absolute inset-0 z-30 flex items-center justify-center rounded-[inherit] bg-white/55 backdrop-blur-[6px] cursor-not-allowed"
+                className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-2 rounded-[inherit] bg-white/55 backdrop-blur-[6px] cursor-not-allowed"
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -760,6 +765,36 @@ export const WorksheetCardGrid = ({
                 <span className="rounded-full border border-primary-muted bg-primary-soft/90 px-3 py-1.5 text-sm font-extrabold text-primary-strong shadow-sm">
                   라이노 작업중
                 </span>
+                {onCancelRhinoWork ? (
+                  <button
+                    type="button"
+                    className="rounded-full border border-slate-300 bg-white/95 px-3 py-1.5 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50 cursor-pointer"
+                    disabled={!!rhinoCancellingIds[String(request._id || request.requestId || "")]}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (
+                        rhinoCancellingIds[
+                          String(request._id || request.requestId || "")
+                        ]
+                      ) {
+                        return;
+                      }
+                      onCancelRhinoWork(request);
+                    }}
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                    }}
+                    title="라이노 작업 중단"
+                    aria-label="라이노 작업 중단"
+                  >
+                    {rhinoCancellingIds[
+                      String(request._id || request.requestId || "")
+                    ]
+                      ? "중단 중…"
+                      : "중단"}
+                  </button>
+                ) : null}
               </div>
             ) : null}
             <div className="absolute left-2 top-2 z-20 flex items-center gap-1">
