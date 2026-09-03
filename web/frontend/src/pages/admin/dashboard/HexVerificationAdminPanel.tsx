@@ -1,5 +1,6 @@
 // related: AdminDashboardPage.tsx, admin.hexVerification.controller.js
 // change-log:
+// - 2026-09-03: 저장 성공/실패 후 목록 invalidate — 낙관적 확정이 DB와 어긋나지 않게.
 // - 2026-09-03: BA/직원 collapse `??`/`||` 우선순위 수정 — pending 카드도 접힘
 // - 2026-09-03: 스위치 옆 라벨을 확정/미정으로 동적 표시
 // - 2026-09-03: 안내 문구 축약 · 사업자/이름/이메일/제조사 검색
@@ -232,7 +233,6 @@ export function HexVerificationAdminPanel({ token, enabled = true }: Props) {
       draft: SwitchDraft,
       baseline: SwitchDraft,
     ) => {
-      const ck = choiceKey(userId, manufacturer);
       const hexRotation = hexFromApply(draft.applyHex30);
       const fail = (message?: string) => {
         throw new Error(message || "저장 실패");
@@ -246,6 +246,7 @@ export function HexVerificationAdminPanel({ token, enabled = true }: Props) {
             jsonBody: { hexRotation },
           });
           if (!res.ok || !res.data?.success) fail(res.data?.message);
+          void queryClient.invalidateQueries({ queryKey: HEX_QUERY_KEY });
           return;
         }
         if (baseline.confirmed) {
@@ -265,10 +266,9 @@ export function HexVerificationAdminPanel({ token, enabled = true }: Props) {
           });
           if (!res.ok || !res.data?.success) fail(res.data?.message);
         }
+        void queryClient.invalidateQueries({ queryKey: HEX_QUERY_KEY });
       } catch (e: unknown) {
-        if (!latestRef.current[ck]) {
-          void queryClient.invalidateQueries({ queryKey: HEX_QUERY_KEY });
-        }
+        void queryClient.invalidateQueries({ queryKey: HEX_QUERY_KEY });
         toast({
           title: "헥스 설정 저장 실패",
           description: e instanceof Error ? e.message : "다시 시도해주세요.",

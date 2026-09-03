@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-03: 맵 행 없을 때 business.hexVerificationResultHex(case별 enrichment) 폴백.
 // - 2026-09-03: 제조사별 verifiedHex만 확정. 레거시 계정 확정 번짐 제거(초기값 30°·미정). 맵 행이 있으면 BA 레거시로 폴백하지 않음.
 // - 2026-09-03: ExoCAD 3.0 이하 × 임플란트 제조사별 verifiedHex/applyHex30 해석·잠금.
 // - 2026-08-29: 헥스40도회전 → STL모델+(base=0) / 헥스30+(base=30) 분기. NC: T4848=C0.0(always), T0909/T0606만 addDeg=30+appliedDeg.
@@ -170,8 +171,14 @@ export const resolveAdminVerifiedHexFromRequest = (
     if (userEntry) {
       return normalizeHexVerificationResultHex(userEntry.verifiedHex);
     }
-    return normalizeHexVerificationResultHex(
-      findHexByImplantManufacturerEntry(baRs, implantM)?.verifiedHex,
+    const baEntry = findHexByImplantManufacturerEntry(baRs, implantM);
+    if (baEntry) {
+      return normalizeHexVerificationResultHex(baEntry.verifiedHex);
+    }
+    // 맵 행이 없을 때만 — 워크시트 enrichment가 case별 해석값을 hexVerificationResultHex에 실음.
+    return (
+      normalizeHexVerificationResultHex(baRs?.hexVerificationResultHex) ||
+      normalizeHexVerificationResultHex(userRs?.hexVerificationResultHex)
     );
   }
 

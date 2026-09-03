@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-03: 준비(request) 단계에서도 헥스 확정 미해석 시 full request 보강(cam/가공만 보강하던 회귀 수정).
 // - 2026-09-03: requestSettings merge 시 빈 hexByImplantManufacturer로 덮지 않음(헥스 확정/미정 뱃지).
 // - 2026-08-29: forceRefresh가 STL/NC 캐시를 통째로 건너뛰지 않음 — 버전 키·선택 무효화로 바뀐 파일만 재다운로드.
 // - 2026-08-29: 프리뷰 오픈 시 IndexedDB 히트 복구 — 다운로드 blob은 항상 캐시 저장, 가공 큐는 filled STL 없으면 full request 보강.
@@ -296,16 +297,16 @@ export function usePreviewLoader({
           (isCamStage || isMachiningStage) &&
           Boolean(requestMongoIdForEnrich) &&
           !String(resolveFilledStlFile(req?.caseInfos)?.s3Key || "").trim();
+        // 준비 단계 lean 목록에 requestor hex 맵이 빠지면 뱃지가 미정으로 굳음 → full request 보강.
         const shouldEnrichFromFullRequest =
           forceRefresh ||
           tabStage === "tracking" ||
           ncMetaNeedsEnrich ||
           missingFilledStlForCamPreview ||
+          (Boolean(requestMongoIdForEnrich) && needsAdminHexVerification) ||
           ((isCamStage || isMachiningStage) &&
-            requestMongoIdForEnrich &&
-            (!hasDesignSoftware ||
-              !hasHexRotation ||
-              needsAdminHexVerification));
+            Boolean(requestMongoIdForEnrich) &&
+            (!hasDesignSoftware || !hasHexRotation));
 
         if (token && shouldEnrichFromFullRequest && requestMongoIdForEnrich) {
           try {

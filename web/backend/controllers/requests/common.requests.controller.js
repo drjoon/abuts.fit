@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-03: 워크시트 requestor.requestSettings도 getById와 동일하게 정규화(프리뷰 헥스 뱃지).
 // - 2026-09-03: 워크시트 business 헥스 — case implantManufacturer로 해석 + hexByImplantManufacturer 포함(BA 레거시 전건 확정 번짐 제거).
 // - 2026-08-26: 관리자 모니터링(view=monitoring) — 제조사 준비 큐(productModeNe)와 동일 제외(PTX 디자인 미완료·레거시 디자인 mode).
 // - 2026-08-26: 샘플 하드삭제 시 MachiningRecord.requestDeletedAt 마킹(완료 목록 라벨 유지).
@@ -90,7 +91,7 @@ import {
 } from "./common.review.helpers.js";
 import { releaseRequestCreditHoldsOnCancel } from "../../services/requestCreditHold.service.js";
 import { pickFilledStlFileForClone } from "../../utils/filledStlFile.js";
-import { resolveAdminVerifiedHexFromSettings } from "../../utils/designSoftwareHex.js";
+import { resolveAdminVerifiedHexFromSettings, normalizeHexVerificationResultHex } from "../../utils/designSoftwareHex.js";
 import {
   findHexVerificationCancelSiblings,
   backfillMissingFilledStlOnHexSamplesInList,
@@ -2051,6 +2052,24 @@ export async function getAllRequests(req, res) {
           },
         };
         item.requestorBusinessAnchor = item.business;
+        // PreviewModal 뱃지 SSOT는 requestor.requestSettings 우선 — populate 누락 시 보강.
+        if (item.requestor && typeof item.requestor === "object") {
+          item.requestor.requestSettings = {
+            ...(item.requestor.requestSettings || {}),
+            designSoftware:
+              String(requestorSettingsRaw?.designSoftware || "").trim() || null,
+            exoCadVersion:
+              String(requestorSettingsRaw?.exoCadVersion || "").trim() || null,
+            hexVerificationResultHex: normalizeHexVerificationResultHex(
+              requestorSettingsRaw?.hexVerificationResultHex,
+            ),
+            hexByImplantManufacturer: Array.isArray(
+              requestorSettingsRaw?.hexByImplantManufacturer,
+            )
+              ? requestorSettingsRaw.hexByImplantManufacturer
+              : [],
+          };
+        }
       }
     }
 
