@@ -4,6 +4,8 @@
 // - web/backend/models/ledgerLine.model.js
 // - web/backend/services/requestCreditHold.service.js
 // change-log:
+// - 2026-09-03: postGeneralLedgerJournals — 같은 ClientSession에서 insertMany 병렬 금지
+//   (NoSuchTransaction/txn number mismatch). journal→line 순차 + TransientTransaction 1회 재시도.
 // - 2026-08-21: postGeneralLedgerJournals — journal/line insertMany 병렬.
 // - 2026-08-19: 배송비 보류 형제 조회는 getJournalsByIdempotencyKeys로 1회.
 // - 2026-08-19: 신규 의뢰 제출 보류는 postGeneralLedgerJournals로 저널·라인을 insertMany 1회.
@@ -267,8 +269,11 @@ export async function postGeneralLedgerJournal({
 }
 
 /**
- * 같은 트랜잭션에서 여러 저널을 insertMany 1회로 기록한다.
+ * 같은 트랜잭션에서 여러 저널을 insertMany로 기록한다.
  * 신규 의뢰 제출 보류처럼 방금 만든 ref에 대해 선행 idempotency 조회를 생략한다.
+ *
+ * NOTE: Mongo ClientSession은 동시 사용 불가 — journal/line insertMany를
+ * Promise.all로 돌리면 txn number mismatch(NoSuchTransaction)가 난다.
  */
 export async function postGeneralLedgerJournals({
   entries = [],
@@ -287,39 +292,59 @@ export async function postGeneralLedgerJournals({
     lineDocs.push(...buildLineDocs({ lines: entry.lines, journalDoc }));
   }
 
-  const ownSession = !session;
-  const txSession = session || (await mongoose.startSession());
+  const runOnce = async () => {
+    const ownSession = !session;
+    const txSession = session || (await mongoose.startSession());
+
+    try {
+      if (ownSession) txSession.startTransaction();
+
+      // 같은 session에서는 반드시 순차 (병렬 시 TransientTransactionError)
+      await LedgerJournal.insertMany(journalDocs, {
+        session: txSession,
+        ordered: true,
+      });
+      await LedgerLine.insertMany(lineDocs, {
+        session: txSession,
+        ordered: true,
+      });
+
+      if (ownSession) await txSession.commitTransaction();
+
+      return journalDocs.map((journalDoc) => ({
+        posted: true,
+        idempotent: false,
+        journalId: journalDoc.journalId,
+      }));
+    } catch (error) {
+      if (ownSession) {
+        await txSession.abortTransaction().catch(() => null);
+      }
+      throw error;
+    } finally {
+      if (ownSession) {
+        await txSession.endSession().catch(() => null);
+      }
+    }
+  };
 
   try {
-    if (ownSession) txSession.startTransaction();
-
-    await Promise.all([
-      LedgerJournal.insertMany(journalDocs, {
-        session: txSession,
-        ordered: true,
-      }),
-      LedgerLine.insertMany(lineDocs, {
-        session: txSession,
-        ordered: true,
-      }),
-    ]);
-
-    if (ownSession) await txSession.commitTransaction();
-
-    return journalDocs.map((journalDoc) => ({
-      posted: true,
-      idempotent: false,
-      journalId: journalDoc.journalId,
-    }));
+    return await runOnce();
   } catch (error) {
-    if (ownSession) {
-      await txSession.abortTransaction().catch(() => null);
+    const labels = error?.errorLabelSet;
+    const isTransient =
+      (labels && typeof labels.has === "function" && labels.has("TransientTransactionError")) ||
+      Number(error?.code || 0) === 251 ||
+      String(error?.codeName || "") === "NoSuchTransaction";
+    // 호출측이 session을 넘긴 경우 재시도하면 바깥 txn과 꼬이므로 ownSession 경로만.
+    if (!session && isTransient) {
+      console.warn(
+        "[postGeneralLedgerJournals] TransientTransactionError — retry once",
+        error?.message || error,
+      );
+      return await runOnce();
     }
     throw error;
-  } finally {
-    if (ownSession) {
-      await txSession.endSession().catch(() => null);
-    }
   }
 }
 

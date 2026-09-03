@@ -48,8 +48,9 @@ if (!mongoUri) {
 
 // 로컬 nodemon 재시작이 잦아 Atlas 연결이 쌓이지 않도록 dev 풀을 작게 유지한다.
 const isProd = process.env.NODE_ENV === "production";
+// 로컬 기본 5는 worksheet 폴링·hold 트랜잭션이 동시에 붙으면 대기열·TransientTransaction 유발.
 const mongoPoolSize = Number(
-  process.env.MONGO_MAX_POOL_SIZE || (isProd ? 50 : 5),
+  process.env.MONGO_MAX_POOL_SIZE || (isProd ? 50 : 20),
 );
 const mongoMaxIdleMs = Number(
   process.env.MONGO_MAX_IDLE_MS || (isProd ? 60_000 : 10_000),

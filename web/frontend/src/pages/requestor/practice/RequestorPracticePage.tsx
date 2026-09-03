@@ -27,6 +27,7 @@
 // - web/backend/utils/labReceiveCalendarHiddenWeekdays.util.js
 // - web/backend/controllers/users/user.controller.js
 // - 2026-09-02: 어벗츠 제공 CA만 있어도 안내 표시. 심플어벗은 항상 제외.
+// - 2026-09-03: 어벗 handoff — S3 후 낙관 패치·busy 해제, API는 백그라운드(실패 시 롤백).
 // - 2026-09-02: 도입중 CA 안내 — 공개 카탈로그로 플래그 보강(Osstem US 등 저장 누락 보정).
 // - 2026-09-02: 요청중 CA — implantAddRequest 보존·어벗츠 업로드 CTA 오인 방지.
 // - 2026-09-02: 어벗 확인 — 사전 S3 캐시만 handoff에 사용·버튼「확인」(업로드 중 비활성).
@@ -721,6 +722,8 @@ export function RequestorPracticeReceivePage({
   const [designConfirmBusyId, setDesignConfirmBusyId] = useState<string>("");
   const [designConfirmOpen, setDesignConfirmOpen] = useState(false);
   const [designConfirmBusy, setDesignConfirmBusy] = useState(false);
+  /** handoff API in-flight — 「처리 중」표시 없이 중복 확인 클릭만 막음 */
+  const designHandoffInFlightRef = useRef(false);
   const [designConfirmQueue, setDesignConfirmQueue] = useState<
     Array<{
       file: File;
@@ -4185,6 +4188,7 @@ export function RequestorPracticeReceivePage({
   const handleDesignConfirmSubmit = useCallback(
     async (caseInfos: AbutmentDesignConfirmCaseInfos) => {
       if (!token || !designConfirmFile || !designConfirmTransfer) return;
+      if (designHandoffInFlightRef.current) return;
       const transfer = designConfirmTransfer;
       const file = designConfirmFile;
       const queueTotal = designConfirmQueue.length;
@@ -4241,10 +4245,10 @@ export function RequestorPracticeReceivePage({
         );
       }
 
+      designHandoffInFlightRef.current = true;
+      // S3만 잠깐 busy — handoff API는 「처리 중」에 묶지 않음
       setDesignConfirmBusy(true);
-      setCardActionBusyId(String(transfer.transferId || transfer._id || ""));
       try {
-        // 모달 오픈 중 preUpload 완료분 재사용. 실패·누락일 때만 ensure가 이어 올린다(중복 PUT 없음).
         const cached = peekCachedUploadedFiles([file]);
         const uploaded =
           cached && cached.length === 1
@@ -4254,52 +4258,6 @@ export function RequestorPracticeReceivePage({
         const s3Key = String(temp?.key || "").trim();
         if (!s3Key) {
           throw new Error("파일 업로드에 실패했습니다.");
-        }
-
-        const res = await apiFetch<{
-          success?: boolean;
-          message?: string;
-          data?: {
-            productionStarted?: boolean;
-            message?: string;
-          };
-        }>({
-          path: `/api/requests/${encodeURIComponent(requestId)}/design-handoff`,
-          method: "POST",
-          token,
-          jsonBody: {
-            file: {
-              originalName: temp?.originalName || file.name,
-              size: temp?.size ?? file.size,
-              mimetype: temp?.mimetype || file.type || "application/octet-stream",
-              s3Key,
-              s3Url: temp?.location || "",
-            },
-            retentionGroove: caseInfos.retentionGroove,
-            caseInfos: {
-              clinicName: caseInfos.clinicName,
-              patientName: caseInfos.patientName,
-              tooth: caseInfos.tooth,
-              implantManufacturer: caseInfos.implantManufacturer,
-              implantBrand: caseInfos.implantBrand,
-              implantFamily: caseInfos.implantFamily,
-              implantType: caseInfos.implantType,
-              retentionGroove: caseInfos.retentionGroove,
-            },
-          },
-        });
-        if (!res.ok) {
-          const body =
-            res.data && typeof res.data === "object"
-              ? (res.data as Record<string, unknown>)
-              : {};
-          if (isPtxCaInsufficientCreditBody(body, res.status)) {
-            openPtxCaCreditConfirm(String(body.message || ""));
-            return;
-          }
-          throw new Error(
-            String(body.message || "어벗디자인 파일 업로드에 실패했습니다."),
-          );
         }
 
         const nowIso = new Date().toISOString();
@@ -4328,7 +4286,6 @@ export function RequestorPracticeReceivePage({
           designReadyAt: transfer.production?.designReadyAt || nowIso,
           labDesignConfirmedAt:
             transfer.production?.labDesignConfirmedAt || nowIso,
-          // 구강스캔으로: 치과 skipDesignConfirm 유지(업로드로 강제 생략하지 않음)
           abutmentProductionStartedAt: null,
           abutmentPastReady: false,
         };
@@ -4350,32 +4307,123 @@ export function RequestorPracticeReceivePage({
             ? patchedTransfer
             : prev,
         );
-        setDesignConfirmTransfer(patchedTransfer);
 
         const nextIndex = queueIndex + 1;
-        if (nextIndex < queueTotal) {
+        const isLast = nextIndex >= queueTotal;
+        if (isLast) {
+          clearDesignConfirmState();
+          toast({
+            title: "어벗디자인 업로드",
+            description:
+              queueTotal > 1
+                ? `${queueTotal}개 완성 어벗 STL이 업로드되어 제조사 준비 큐에 등록되었습니다. 준비 단계에서는 취소·재업로드할 수 있습니다.`
+                : "완성 어벗 STL이 업로드되어 제조사 준비 큐에 등록되었습니다. 준비 단계에서는 취소·재업로드할 수 있습니다.",
+          });
+        } else {
+          setDesignConfirmTransfer(patchedTransfer);
           setDesignConfirmQueueIndex(nextIndex);
           toast({
             title: `어벗디자인 업로드 (${nextIndex}/${queueTotal})`,
             description: "다음 파일을 확인해주세요.",
           });
-          return;
         }
 
-        clearDesignConfirmState();
-        toast({
-          title: "어벗디자인 업로드",
-          description:
-            queueTotal > 1
-              ? `${queueTotal}개 완성 어벗 STL이 업로드되어 제조사 준비 큐에 등록되었습니다. 준비 단계에서는 취소·재업로드할 수 있습니다.`
-              : "완성 어벗 STL이 업로드되어 제조사 준비 큐에 등록되었습니다. 준비 단계에서는 취소·재업로드할 수 있습니다.",
-        });
-        const pendingProsthetic = pendingProstheticAfterAbutmentRef.current;
-        pendingProstheticAfterAbutmentRef.current = null;
-        if (pendingProsthetic?.files?.length) {
-          beginCompleteWithFiles(patchedTransfer, pendingProsthetic.files);
-        }
+        // S3·낙관 패치 끝 — 「처리 중」해제. handoff API는 백그라운드.
+        designHandoffInFlightRef.current = false;
+        setDesignConfirmBusy(false);
+        setCardActionBusyId("");
+
+        void (async () => {
+          try {
+            const res = await apiFetch<{
+              success?: boolean;
+              message?: string;
+              data?: {
+                productionStarted?: boolean;
+                message?: string;
+              };
+            }>({
+              path: `/api/requests/${encodeURIComponent(requestId)}/design-handoff`,
+              method: "POST",
+              token,
+              jsonBody: {
+                file: {
+                  originalName: temp?.originalName || file.name,
+                  size: temp?.size ?? file.size,
+                  mimetype:
+                    temp?.mimetype || file.type || "application/octet-stream",
+                  s3Key,
+                  s3Url: temp?.location || "",
+                },
+                retentionGroove: caseInfos.retentionGroove,
+                caseInfos: {
+                  clinicName: caseInfos.clinicName,
+                  patientName: caseInfos.patientName,
+                  tooth: caseInfos.tooth,
+                  implantManufacturer: caseInfos.implantManufacturer,
+                  implantBrand: caseInfos.implantBrand,
+                  implantFamily: caseInfos.implantFamily,
+                  implantType: caseInfos.implantType,
+                  retentionGroove: caseInfos.retentionGroove,
+                },
+              },
+            });
+            if (!res.ok) {
+              const body =
+                res.data && typeof res.data === "object"
+                  ? (res.data as Record<string, unknown>)
+                  : {};
+              setTransfers((prev) =>
+                prev.map((row) =>
+                  row._id === transfer._id ||
+                  row.transferId === transfer.transferId
+                    ? transfer
+                    : row,
+                ),
+              );
+              setSelectedTransfer((prev) =>
+                prev &&
+                (prev._id === transfer._id ||
+                  prev.transferId === transfer.transferId)
+                  ? transfer
+                  : prev,
+              );
+              if (isPtxCaInsufficientCreditBody(body, res.status)) {
+                openPtxCaCreditConfirm(String(body.message || ""));
+                return;
+              }
+              throw new Error(
+                String(
+                  body.message || "어벗디자인 파일 업로드에 실패했습니다.",
+                ),
+              );
+            }
+            if (isLast) {
+              const pendingProsthetic =
+                pendingProstheticAfterAbutmentRef.current;
+              pendingProstheticAfterAbutmentRef.current = null;
+              if (pendingProsthetic?.files?.length) {
+                beginCompleteWithFiles(
+                  patchedTransfer,
+                  pendingProsthetic.files,
+                );
+              }
+            }
+          } catch (error) {
+            toast({
+              title: "업로드 실패",
+              description:
+                error instanceof Error
+                  ? error.message
+                  : "어벗디자인 파일 업로드 중 오류가 발생했습니다.",
+              variant: "destructive",
+            });
+          }
+        })();
       } catch (error) {
+        designHandoffInFlightRef.current = false;
+        setDesignConfirmBusy(false);
+        setCardActionBusyId("");
         toast({
           title: "업로드 실패",
           description:
@@ -4384,9 +4432,6 @@ export function RequestorPracticeReceivePage({
               : "어벗디자인 파일 업로드 중 오류가 발생했습니다.",
           variant: "destructive",
         });
-      } finally {
-        setDesignConfirmBusy(false);
-        setCardActionBusyId("");
       }
     },
     [

@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-09-03: reprice scheduleMode=holdFast — 리드타임 스케줄 생략(핸드오프 critical path).
 // - 2026-09-03: reprice — 호출측 labOrg 재사용·creditSettings에 requestorAnchor 전달(BA 재조회 제거).
 //   mirror — labDesignConfirm를 같은 update에 합쳐 Transfer 왕복 1회 절약.
 // - 2026-09-03: PTX 준비 등록 시에도 헥스 미확정 제조사면 확인용 복사샘플 생성(relatedRequestIds 제외).
@@ -1831,14 +1832,20 @@ export {
  * 생산만/치과도착일−2영업일(직납) 기준으로 재계산.
  * 제조 단계는 준비로 유지(취소·재업로드 가능).
  * @param {object} [options.labOrg] — loadLabRequestMetaForProduction 결과 재사용(BA 재조회 생략)
+ * @param {"full"|"holdFast"} [options.scheduleMode="full"]
+ *   holdFast: 크레딧 hold에 필요한 price·shippingMode·estimatedShipYmd만.
+ *   calculateInitialProductionSchedule(리드타임 DB)은 생략 — 응답 후 full로 채움.
  */
 export async function repriceAndReschedulePtxAbutmentRequest({
   requestDoc,
   transferDoc,
   requestedAt = new Date(),
   labOrg: labOrgArg = null,
+  scheduleMode = "full",
 }) {
   if (!requestDoc || !transferDoc) return requestDoc;
+
+  const holdFast = scheduleMode === "holdFast";
 
   const labAnchorId = String(
     requestDoc.businessAnchorId || transferDoc.targetLabAnchorId || "",
@@ -1846,7 +1853,7 @@ export async function repriceAndReschedulePtxAbutmentRequest({
   const labOrg =
     labOrgArg && typeof labOrgArg === "object"
       ? labOrgArg
-      : labAnchorId && Types.ObjectId.isValid(labAnchorId)
+      : !holdFast && labAnchorId && Types.ObjectId.isValid(labAnchorId)
         ? await BusinessAnchor.findById(labAnchorId)
             .select({
               "shippingPolicy.weeklyBatchDays": 1,
@@ -1865,7 +1872,7 @@ export async function repriceAndReschedulePtxAbutmentRequest({
   try {
     creditSettingsForQuote = await loadCreditSettingsDefaults({
       requestorOrgId: labAnchorId || null,
-      requestorAnchor: labOrg || null,
+      requestorAnchor: labOrg || { requestorKind: "lab" },
       applyLabSupplyPrices: false,
     });
     expressFeePerRequest = Math.max(
@@ -1885,6 +1892,7 @@ export async function repriceAndReschedulePtxAbutmentRequest({
       ? requestDoc.caseInfos.maxDiameter
       : 8;
 
+  // PTX CA는 항상 묶음(normal) — resolveShippingMode…는 sync return.
   const shippingMode = await resolveShippingModeForPracticeTransferArrival({
     transferDoc,
     weeklyBatchDays,
@@ -1916,44 +1924,58 @@ export async function repriceAndReschedulePtxAbutmentRequest({
   }
 
   const arrivalYmd = parseArrivalYmdFromMemo(transferDoc?.transferMemo);
-  // 항상 도착−2 출고 목표(묶음). 지정 도착일 1영업일 전 배송.
   const targetShipYmd = arrivalYmd
     ? await resolveManufacturerTargetShipYmd(arrivalYmd)
     : null;
 
-  // 핸드오프 시점 = 디자인 완료 → 생산 리드타임(custom_abutment). 디자인+1영업일 제외.
   if (!requestDoc.caseInfos || typeof requestDoc.caseInfos !== "object") {
     requestDoc.caseInfos = {};
   }
   requestDoc.caseInfos.productMode = "custom_abutment";
   requestDoc.caseInfos.shippingMode = shippingMode;
 
-  let productionSchedule = await calculateInitialProductionSchedule({
-    shippingMode,
-    maxDiameter,
-    requestedAt: scheduleRequestedAt,
-    weeklyBatchDays,
-    productMode: "custom_abutment",
-  });
-  productionSchedule = await clampScheduleToTarget(
-    productionSchedule,
-    targetShipYmd,
-  );
+  let productionSchedule = requestDoc.productionSchedule || null;
+  let estimatedShipYmd = null;
 
-  const pickupYmd = productionSchedule?.scheduledShipPickup
-    ? toKstYmd(productionSchedule.scheduledShipPickup)
-    : null;
-  let estimatedShipYmdRaw = pickupYmd || targetShipYmd || arrivalYmd;
-  if (targetShipYmd) {
-    const targetMs = ymdToUtcNoonMs(targetShipYmd);
-    const estMs = ymdToUtcNoonMs(estimatedShipYmdRaw);
-    if (targetMs != null && estMs != null && estMs > targetMs) {
-      estimatedShipYmdRaw = targetShipYmd;
+  if (holdFast) {
+    // hold 박스 키용 출고일만 — 도착−2 또는 기존 timeline. 무거운 리드타임 스케줄은 생략.
+    const existingYmd = String(
+      requestDoc?.timeline?.estimatedShipYmd ||
+        requestDoc?.timeline?.nextEstimatedShipYmd ||
+        "",
+    ).trim();
+    const raw = targetShipYmd || existingYmd || arrivalYmd || null;
+    estimatedShipYmd = raw
+      ? await normalizeKoreanBusinessDay({ ymd: raw })
+      : null;
+  } else {
+    productionSchedule = await calculateInitialProductionSchedule({
+      shippingMode,
+      maxDiameter,
+      requestedAt: scheduleRequestedAt,
+      weeklyBatchDays,
+      productMode: "custom_abutment",
+    });
+    productionSchedule = await clampScheduleToTarget(
+      productionSchedule,
+      targetShipYmd,
+    );
+
+    const pickupYmd = productionSchedule?.scheduledShipPickup
+      ? toKstYmd(productionSchedule.scheduledShipPickup)
+      : null;
+    let estimatedShipYmdRaw = pickupYmd || targetShipYmd || arrivalYmd;
+    if (targetShipYmd) {
+      const targetMs = ymdToUtcNoonMs(targetShipYmd);
+      const estMs = ymdToUtcNoonMs(estimatedShipYmdRaw);
+      if (targetMs != null && estMs != null && estMs > targetMs) {
+        estimatedShipYmdRaw = targetShipYmd;
+      }
     }
+    estimatedShipYmd = estimatedShipYmdRaw
+      ? await normalizeKoreanBusinessDay({ ymd: estimatedShipYmdRaw })
+      : null;
   }
-  const estimatedShipYmd = estimatedShipYmdRaw
-    ? await normalizeKoreanBusinessDay({ ymd: estimatedShipYmdRaw })
-    : null;
 
   requestDoc.price = quotedPrice;
   requestDoc.shippingMode = shippingMode;
@@ -1968,7 +1990,9 @@ export async function repriceAndReschedulePtxAbutmentRequest({
     mode: shippingMode,
     updatedAt: requestedAt,
   };
-  requestDoc.productionSchedule = productionSchedule;
+  if (productionSchedule) {
+    requestDoc.productionSchedule = productionSchedule;
+  }
   if (!requestDoc.partnerBilling || typeof requestDoc.partnerBilling !== "object") {
     requestDoc.partnerBilling = {};
   }

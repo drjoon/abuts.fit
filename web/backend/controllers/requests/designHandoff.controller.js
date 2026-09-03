@@ -1,3 +1,4 @@
+// - 2026-09-03: PTX handoff critical path — holdFast 재견적(리드타임 스케줄 생략) + labMeta/풀스케줄/미러는 응답 후.
 // - 2026-09-03: PTX handoff — hold+lot+save만 응답 전. Transfer 미러·lab confirm·Rhino·emit은 응답 후.
 //   labMeta.labOrg를 reprice에 재사용. phase timing 로그.
 // - 2026-09-03: PTX 핸드오프 헥스 스탬프 — case implantManufacturer로 기공소 hexByImplantManufacturer 시드(from-draft 동일).
@@ -643,66 +644,12 @@ export async function handoffDesignToProduction(req, res) {
       request.caseInfos.retentionGroove = retentionGroove;
     }
 
-    // PTX 수락 기공소 핸드오프: 화면의 디자인SW·아노다이징·헥스를 제조사 Request에 확정.
-    // (수락 직후 생성분이 예전 코드/동기화되지 않은 사업체 설정이어도 업로드 시점에 맞춘다.)
-    // 헥스는 from-draft와 동일 — case implantManufacturer로 기공소 hexByImplantManufacturer 시드.
-    let stampedLabOrg = null;
-    let labMetaMs = 0;
-    if (acceptingLabPtx) {
-      const stampLabAnchorId =
-        String(transferTargetLabAnchorId || "").trim() ||
-        String(request.businessAnchorId || "").trim();
-      const labMetaT0 = Date.now();
-      try {
-        const labMeta = await loadLabRequestMetaForProduction({
-          labAnchorId: stampLabAnchorId,
-          labUserId: userId,
-        });
-        stampedLabOrg = labMeta.labOrg || null;
-        if (labMeta.designSoftware) {
-          const implantManufacturerForHex = String(
-            request.caseInfos?.implantManufacturer || "",
-          ).trim();
-          const manufacturerHexRotation = resolveLabManufacturerHexForImplant(
-            labMeta,
-            implantManufacturerForHex || null,
-          );
-          request.caseInfos.designSoftware = labMeta.designSoftware;
-          if (labMeta.exoCadVersion) {
-            request.caseInfos.exoCadVersion = labMeta.exoCadVersion;
-          }
-          request.caseInfos.requestorHexRotation = manufacturerHexRotation;
-          request.caseInfos.manufacturerHexRotation = manufacturerHexRotation;
-          request.caseInfos.finalHexRotation = manufacturerHexRotation;
-          const prevHexRotation =
-            request.caseInfos.hexRotation &&
-            typeof request.caseInfos.hexRotation === "object"
-              ? request.caseInfos.hexRotation
-              : {};
-          request.caseInfos.hexRotation = {
-            ...prevHexRotation,
-            mode: manufacturerHexRotation,
-          };
-          if (!request.rnd) request.rnd = {};
-          request.rnd.manufacturerHexRotation = manufacturerHexRotation;
-        }
-        if (typeof labMeta.anodizingEnabled === "boolean") {
-          request.caseInfos.anodizingEnabled = labMeta.anodizingEnabled;
-        }
-        if (
-          !normalizeRetentionGrooveOrNull(request.caseInfos.retentionGroove) &&
-          labMeta.retentionGroove
-        ) {
-          request.caseInfos.retentionGroove = labMeta.retentionGroove;
-        }
-      } catch (metaErr) {
-        console.warn(
-          "[DESIGN_HANDOFF] lab request meta stamp skipped:",
-          metaErr?.message || metaErr,
-        );
-      }
-      labMetaMs = Date.now() - labMetaT0;
-    }
+    // 헥스·디자인SW 스탬프는 hold에 불필요 — 응답 후 labMeta로 처리(critical path ~1s 절감).
+    const stampLabAnchorIdForLater =
+      acceptingLabPtx
+        ? String(transferTargetLabAnchorId || "").trim() ||
+          String(request.businessAnchorId || "").trim()
+        : "";
 
     const prevPrimary = toStoredFileMeta(request.caseInfos.file);
     const prevExtras = Array.isArray(request.caseInfos.files)
@@ -738,7 +685,7 @@ export async function handoffDesignToProduction(req, res) {
     if (relatedTransferId && Types.ObjectId.isValid(relatedTransferId)) {
       const handoffT0 = Date.now();
       const handoffTiming = {
-        labMetaMs,
+        labMetaMs: 0,
         rhinoRepriceMs: 0,
         holdMs: 0,
         lotSaveMs: 0,
@@ -756,7 +703,7 @@ export async function handoffDesignToProduction(req, res) {
       // (WorksheetPage productModeNe=design_custom_abutment / 디자인 파트너 큐는 PTX 제외)
       if (!request.caseInfos) request.caseInfos = {};
       request.caseInfos.productMode = PRODUCT_MODE_PRODUCTION;
-      // 헥스/파일명 시드(동기) + 재견적. PRC DB 조회는 응답 후(Rhino 직전).
+      // 헥스/파일명 시드(동기) + hold용 빠른 재견적(리드타임 스케줄 생략).
       const rhinoRepriceT0 = Date.now();
       const [rhinoFileName] = await Promise.all([
         ensurePtxProductionRhinoReadyFields(request, { resolvePrc: false }),
@@ -765,7 +712,7 @@ export async function handoffDesignToProduction(req, res) {
               requestDoc: request,
               transferDoc,
               requestedAt: now,
-              labOrg: stampedLabOrg,
+              scheduleMode: "holdFast",
             })
           : Promise.resolve(null),
       ]);
@@ -838,9 +785,97 @@ export async function handoffDesignToProduction(req, res) {
                 null,
             }
           : null;
+      // hold 박스 키와 맞추기 위해 estimatedShipYmd는 holdFast 값을 유지
+      const heldEstimatedShipYmd = String(
+        request?.timeline?.estimatedShipYmd || "",
+      ).trim();
 
       void (async () => {
         try {
+          // 헥스/디자인SW 스탬프 + 풀 생산 스케줄(리드타임) — hold 이후 보정
+          if (stampLabAnchorIdForLater) {
+            try {
+              const labMeta = await loadLabRequestMetaForProduction({
+                labAnchorId: stampLabAnchorIdForLater,
+                labUserId: userId,
+              });
+              const $set = {};
+              if (labMeta.designSoftware) {
+                const implantManufacturerForHex = String(
+                  request.caseInfos?.implantManufacturer || "",
+                ).trim();
+                const manufacturerHexRotation = resolveLabManufacturerHexForImplant(
+                  labMeta,
+                  implantManufacturerForHex || null,
+                );
+                $set["caseInfos.designSoftware"] = labMeta.designSoftware;
+                if (labMeta.exoCadVersion) {
+                  $set["caseInfos.exoCadVersion"] = labMeta.exoCadVersion;
+                }
+                $set["caseInfos.requestorHexRotation"] = manufacturerHexRotation;
+                $set["caseInfos.manufacturerHexRotation"] = manufacturerHexRotation;
+                $set["caseInfos.finalHexRotation"] = manufacturerHexRotation;
+                $set["caseInfos.hexRotation.mode"] = manufacturerHexRotation;
+                $set["rnd.manufacturerHexRotation"] = manufacturerHexRotation;
+                request.caseInfos.designSoftware = labMeta.designSoftware;
+                if (labMeta.exoCadVersion) {
+                  request.caseInfos.exoCadVersion = labMeta.exoCadVersion;
+                }
+                request.caseInfos.requestorHexRotation = manufacturerHexRotation;
+                request.caseInfos.manufacturerHexRotation = manufacturerHexRotation;
+                request.caseInfos.finalHexRotation = manufacturerHexRotation;
+                if (!request.rnd) request.rnd = {};
+                request.rnd.manufacturerHexRotation = manufacturerHexRotation;
+              }
+              if (typeof labMeta.anodizingEnabled === "boolean") {
+                $set["caseInfos.anodizingEnabled"] = labMeta.anodizingEnabled;
+                request.caseInfos.anodizingEnabled = labMeta.anodizingEnabled;
+              }
+              if (
+                !normalizeRetentionGrooveOrNull(request.caseInfos.retentionGroove) &&
+                labMeta.retentionGroove
+              ) {
+                $set["caseInfos.retentionGroove"] = labMeta.retentionGroove;
+                request.caseInfos.retentionGroove = labMeta.retentionGroove;
+              }
+
+              if (transferDoc && isAcceptingLab) {
+                await repriceAndReschedulePtxAbutmentRequest({
+                  requestDoc: request,
+                  transferDoc,
+                  requestedAt: now,
+                  labOrg: labMeta.labOrg,
+                  scheduleMode: "full",
+                });
+                // hold에 쓴 출고일을 덮어쓰지 않음(배송 hold 박스 키 정합)
+                if (heldEstimatedShipYmd) {
+                  if (!request.timeline) request.timeline = {};
+                  request.timeline.estimatedShipYmd = heldEstimatedShipYmd;
+                  request.timeline.nextEstimatedShipYmd = heldEstimatedShipYmd;
+                }
+                if (request.productionSchedule) {
+                  $set.productionSchedule = request.productionSchedule;
+                }
+                if (request.price) $set.price = request.price;
+                if (request.shippingMode) $set.shippingMode = request.shippingMode;
+                if (request.originalShipping) {
+                  $set.originalShipping = request.originalShipping;
+                }
+                if (request.finalShipping) $set.finalShipping = request.finalShipping;
+                if (request.timeline) $set.timeline = request.timeline;
+              }
+
+              if (Object.keys($set).length) {
+                await Request.updateOne({ _id: request._id }, { $set });
+              }
+            } catch (metaErr) {
+              console.warn(
+                "[DESIGN_HANDOFF] post labMeta/schedule failed",
+                metaErr?.message || metaErr,
+              );
+            }
+          }
+
           const mirroredDoc = await mirrorDesignFileToPracticeTransfer({
             transferId: relatedTransferId,
             file: {
