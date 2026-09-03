@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-03: toManufacturerHexRotationLabel import 누락으로 PreviewModal 크래시 수정.
 // - 2026-08-29: NC 재생성 성공 시 큐 NC 즉시 제거 이벤트 발행(Next Up「CAM 생성 중」).
 // - 2026-08-29: 프리뷰 요약에 실제 출고일시(shippedAt) 전달(있으면 출고예정일보다 우선).
 // - 2026-08-25: 추적관리 프리뷰 오른쪽을 NC코드/각인이미지 탭 뷰어로 변경(앞에서 생성한 파일 확인).
@@ -95,6 +96,7 @@ import {
   persistPrepApprovalSettings,
   resolveDefaultPrepHexRotationMode,
   resolveHexVerificationBadgeLabel,
+  toManufacturerHexRotationLabel,
   type ManufacturerHexRotationDraftMode,
   type ManufacturerHexRotationMode,
 } from "@/pages/manufacturer/worksheet/custom_abutment/utils/hexRotation";
