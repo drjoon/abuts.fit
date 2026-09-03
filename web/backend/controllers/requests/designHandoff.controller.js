@@ -1,3 +1,4 @@
+// - 2026-09-03: PTX abutment-design-handoff — 수락이 아니라 STL 업로드 시 CA Request 생성.
 // - 2026-09-03: handoff — 기존 designSourceFiles(구강스캔) 보존·비STL 거부. 완료 후 헥스 샘플 생성.
 // - 2026-09-03: handoff/cancel — relatedRequestIds에 없는 헥스 확인용 복사샘플도 원본과 함께 취소.
 // - 2026-09-03: PTX handoff critical path — holdFast 재견적(리드타임 스케줄 생략) + labMeta/풀스케줄/미러는 응답 후.
@@ -53,13 +54,23 @@ import {
 import { isDesignClaimActive } from "../../utils/designClaim.js";
 import { updateReviewStatusByStage } from "./common.review.controller.js";
 import {
+  ensureAbutmentRequestsForHandoff,
+  findRelatedAbutmentRequestIdForTooth,
+  hasCustomAbutmentToothWorks,
   isAbutmentRequestPastReadyForCancel,
   loadLabRequestMetaForProduction,
   mirrorDesignFileToPracticeTransfer,
+  normalizeResultFiles,
   repriceAndReschedulePtxAbutmentRequest,
   resolveHexRotationByDesignSoftware,
   resolveLabManufacturerHexForImplant,
 } from "../../services/practiceTransferProduction.service.js";
+import {
+  getAssigneeLabAnchorId,
+  isAutoMatchClaimActive,
+  isAutoMatchMode,
+  resolvePerformingLabAnchorId,
+} from "../../utils/practiceTransferAutoMatch.js";
 import {
   findActiveHexVerificationSampleObjectIdsForSources,
   maybeCreateHexVerificationSampleForFirstOrder,
@@ -1333,6 +1344,192 @@ export async function cancelDesignHandoff(req, res) {
     return res.status(error?.statusCode || 500).json({
       success: false,
       message: error?.message || "디자인 취소 중 오류가 발생했습니다.",
+    });
+  }
+}
+
+/**
+ * POST /api/practice/transfers/:transferId/abutment-design-handoff
+ * 기공소가 어벗 STL을 올릴 때 CA Request를 만들고(없으면) 치아별 handoff.
+ * 수락 시점에는 Request를 만들지 않는다.
+ */
+export async function handoffPracticeTransferAbutmentDesign(req, res) {
+  try {
+    const role = String(req.user?.role || "").trim();
+    if (role !== "requestor" && role !== "admin" && role !== "internalLab") {
+      return res.status(403).json({
+        success: false,
+        message: "디자인 핸드오프는 지정 디자이너만 할 수 있습니다.",
+      });
+    }
+
+    const userId = req.user?._id ? String(req.user._id) : "";
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "인증이 필요합니다." });
+    }
+
+    const rawTransferId = String(req.params?.transferId || "").trim();
+    if (!rawTransferId) {
+      return res.status(400).json({
+        success: false,
+        message: "transferId가 필요합니다.",
+      });
+    }
+
+    const transferFilter = Types.ObjectId.isValid(rawTransferId)
+      ? {
+          $or: [
+            { transferId: rawTransferId },
+            { _id: new Types.ObjectId(rawTransferId) },
+          ],
+        }
+      : { transferId: rawTransferId };
+
+    const transferDoc = await PracticeTransfer.findOne(transferFilter);
+    if (!transferDoc) {
+      return res.status(404).json({
+        success: false,
+        message: "전송 내역을 찾을 수 없습니다.",
+      });
+    }
+
+    const labAnchorId = String(req.user?.businessAnchorId || "").trim();
+    const targetLab = String(transferDoc.targetLabAnchorId || "").trim();
+    const assigneeLab = getAssigneeLabAnchorId(transferDoc);
+    const performingLab = resolvePerformingLabAnchorId(transferDoc);
+    const isAcceptingLab =
+      role === "admin" ||
+      (labAnchorId &&
+        (labAnchorId === targetLab ||
+          labAnchorId === assigneeLab ||
+          labAnchorId === performingLab));
+    if (!isAcceptingLab) {
+      return res.status(403).json({
+        success: false,
+        message: "수락한 기공소만 어벗 디자인을 업로드할 수 있습니다.",
+      });
+    }
+
+    const accepted =
+      Boolean(transferDoc.requestorDownloadedAt) ||
+      (isAutoMatchMode(transferDoc) &&
+        isAutoMatchClaimActive(transferDoc, Date.now()));
+    if (!accepted) {
+      return res.status(409).json({
+        success: false,
+        message: "의뢰를 수락한 뒤에 어벗 디자인을 업로드할 수 있습니다.",
+      });
+    }
+
+    if (!hasCustomAbutmentToothWorks(transferDoc.toothWorks)) {
+      return res.status(409).json({
+        success: false,
+        message: "커스텀어벗(치식) 정보가 없어 제조사 의뢰를 만들 수 없습니다.",
+      });
+    }
+
+    const scanFiles = normalizeResultFiles(transferDoc.files);
+    if (scanFiles.length === 0) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "구강스캔 파일이 없어 제조사 의뢰를 만들 수 없습니다. 치과 전송 파일을 확인해주세요.",
+      });
+    }
+
+    const tooth = String(
+      req.body?.tooth ||
+        req.body?.caseInfos?.tooth ||
+        "",
+    ).trim();
+    if (!tooth) {
+      return res.status(400).json({
+        success: false,
+        message: "치아번호가 필요합니다.",
+      });
+    }
+
+    let ensure;
+    try {
+      ensure = await ensureAbutmentRequestsForHandoff({
+        transferDoc,
+        actorUserId: userId,
+      });
+    } catch (createErr) {
+      return res.status(409).json({
+        success: false,
+        message:
+          String(createErr?.message || "").trim() ||
+          "커스텀어벗 어벗츠 의뢰 생성에 실패했습니다.",
+      });
+    }
+
+    const relatedIds = Array.isArray(ensure?.requestIds) ? ensure.requestIds : [];
+    if (relatedIds.length === 0) {
+      return res.status(409).json({
+        success: false,
+        message: "어벗츠 생산 의뢰를 준비하지 못했습니다.",
+      });
+    }
+
+    // ensure 후 in-memory related 반영
+    transferDoc.production = {
+      ...(transferDoc.production && typeof transferDoc.production === "object"
+        ? transferDoc.production
+        : {}),
+      relatedRequestIds: relatedIds
+        .filter((id) => Types.ObjectId.isValid(id))
+        .map((id) => new Types.ObjectId(id)),
+    };
+
+    const requestId = await findRelatedAbutmentRequestIdForTooth({
+      relatedRequestIds: relatedIds,
+      tooth,
+    });
+    if (!requestId) {
+      return res.status(404).json({
+        success: false,
+        message: `치아 #${tooth}에 해당하는 어벗츠 의뢰를 찾지 못했습니다.`,
+      });
+    }
+
+    // caseInfos.tooth를 body에 고정해 handoff 패치·매칭이 일치하게
+    if (!req.body || typeof req.body !== "object") {
+      req.body = {};
+    }
+    if (!req.body.caseInfos || typeof req.body.caseInfos !== "object") {
+      req.body.caseInfos = {};
+    }
+    req.body.caseInfos.tooth = tooth;
+    req.body.tooth = tooth;
+
+    const relatedIdStrings = relatedIds.map((id) => String(id));
+    const originalJson = res.json.bind(res);
+    res.json = (payload) => {
+      if (payload && typeof payload === "object") {
+        const data =
+          payload.data && typeof payload.data === "object" ? payload.data : {};
+        return originalJson({
+          ...payload,
+          data: {
+            ...data,
+            requestId: data.requestId || requestId,
+            relatedRequestIds: relatedIdStrings,
+            relatedPracticeTransferId: String(transferDoc._id),
+            transferId: String(transferDoc.transferId || "").trim(),
+          },
+        });
+      }
+      return originalJson(payload);
+    };
+
+    req.params = { ...(req.params || {}), id: requestId };
+    return handoffDesignToProduction(req, res);
+  } catch (error) {
+    console.error("[PTX_ABUTMENT_DESIGN_HANDOFF_ERROR]", error);
+    return res.status(error?.statusCode || 500).json({
+      success: false,
+      message: error?.message || "어벗 디자인 핸드오프 중 오류가 발생했습니다.",
     });
   }
 }

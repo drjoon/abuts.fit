@@ -13,7 +13,6 @@ import {
   chargePracticeTransferLabShipping,
 } from "./practiceTransferBilling.service.js";
 import {
-  ensureAbutmentRequestsOnAccept,
   hasCustomAbutmentToothWorks,
   normalizeResultFiles,
   practiceTransferNeedsMoreAbutmentDesigns,
@@ -174,20 +173,7 @@ export async function completePracticeTransferWork({
       ? normalizeResultFiles(doc.resultFiles)
       : normalizeResultFiles(rawResultFiles);
 
-  const hasCustomAbutment = hasCustomAbutmentToothWorks(doc.toothWorks);
-  const existingRelated = Array.isArray(doc.production?.relatedRequestIds)
-    ? doc.production.relatedRequestIds
-    : [];
-  if (hasCustomAbutment && existingRelated.length === 0) {
-    try {
-      await ensureAbutmentRequestsOnAccept({
-        transferDoc: doc,
-        actorUserId,
-      });
-    } catch {
-      // complete는 주 목적 — 보정 실패는 디자인 컨펌 경로에서 재시도
-    }
-  }
+  // CA Request는 어벗 STL handoff에서만 생성(complete에서 빈 준비 건 보정 금지).
 
   const skipDesignConfirm = doc.production?.skipDesignConfirm !== false;
   let releaseResult = null;

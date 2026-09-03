@@ -47,6 +47,7 @@
 // - 2026-08-28: 검색 입력 — 캘린더 주문일·도착일 뱃지 왼쪽(치과 기공의뢰와 동일).
 // - 2026-08-28: 치과 메모 [작성] 왼쪽·[평가] 오른쪽. 헤더 할증라벨 제거·설정 시 배수만.
 // - 2026-08-27: 미확인은 3주 창 밖이어도 목록·안내 바에 포함(사이드바 배지와 맞춤). 클릭 시 해당일로 점프.
+// - 2026-09-03: 어벗 STL — 수락 시 related 없이 toothWorks로 큐. transfer abutment-design-handoff.
 // - 2026-08-27: 미확인 상단 안내 바 복구(버튼·뱃지 없음). 미확인 건은 캘린더에 항상 표시.
 // - 2026-08-22: 기공의뢰수신 캘린더 숨길 요일 계정 preferences에 저장.
 // - 2026-08-21: 작업취소 후 어벗츠로의뢰 진행중/출고예정 건수 쿼리 무효화.
@@ -347,11 +348,18 @@ function isPtxCaInsufficientCreditBody(body: Record<string, unknown>, status?: n
 }
 
 type AbutmentPendingMeta = {
+  /** 실 Request _id 또는 수락 직후 provisional `tooth:14` */
   requestId: string;
   tooth: string;
   caseInfos: Record<string, unknown> | null;
   designCompletedAt: string;
 };
+
+const provisionalAbutmentRequestId = (tooth: string) =>
+  `tooth:${String(tooth || "").trim()}`;
+
+const isProvisionalAbutmentRequestId = (requestId: string) =>
+  String(requestId || "").trim().startsWith("tooth:");
 
 type LabReceiveSplitAskState = {
   mode: "abutment" | "prosthetic";
@@ -4125,75 +4133,10 @@ export function RequestorPracticeReceivePage({
         return "gated";
       }
 
-      let relatedIds = (transfer.production?.relatedRequestIds || [])
+      const relatedIds = (transfer.production?.relatedRequestIds || [])
         .map((raw) => String(raw || "").trim())
         .filter(Boolean);
-      let workingTransfer = transfer;
-
-      // 낙관적 수락 직후: API가 relatedRequestIds를 아직 로컬에 안 심었을 수 있음 → idempotent 재조회
-      if (relatedIds.length === 0) {
-        try {
-          const refreshRes = await apiFetch<unknown>({
-            path: `/api/practice/transfers/${encodeURIComponent(id)}/mark-accepted`,
-            method: "POST",
-            token,
-          });
-          if (refreshRes.ok) {
-            const body =
-              refreshRes.data && typeof refreshRes.data === "object"
-                ? (refreshRes.data as Record<string, unknown>)
-                : {};
-            const data =
-              body.data && typeof body.data === "object"
-                ? (body.data as Record<string, unknown>)
-                : body;
-            relatedIds = pickRelatedRequestIdsFromPayload(data);
-            if (relatedIds.length > 0) {
-              const productionRaw =
-                data.production && typeof data.production === "object"
-                  ? (data.production as Record<string, unknown>)
-                  : null;
-              const productionPatch = mergeProductionRelatedRequestIds(
-                transfer.production,
-                relatedIds,
-                productionRaw,
-              );
-              applyAcceptedLocalPatch(transfer, { production: productionPatch });
-              workingTransfer = { ...transfer, production: productionPatch };
-            }
-          } else {
-            const body =
-              refreshRes.data && typeof refreshRes.data === "object"
-                ? (refreshRes.data as Record<string, unknown>)
-                : {};
-            if (isPtxCaInsufficientCreditBody(body, refreshRes.status)) {
-              openPtxCaCreditConfirm(String(body.message || ""));
-              return "error";
-            }
-          }
-        } catch {
-          // fall through to toast
-        }
-      }
-
-      if (relatedIds.length === 0) {
-        if (practiceTransferHasPendingLabCustomAbutment(workingTransfer)) {
-          toast({
-            title: "어벗츠 미제공 임플란트",
-            description:
-              "요청중 커스텀어벗은 어벗츠 생산 의뢰 대상이 아닙니다. 기공소에서 직접 제작해주세요.",
-            variant: "destructive",
-          });
-          return "error";
-        }
-        toast({
-          title: "생산 의뢰 준비 실패",
-          description:
-            "어벗츠 생산 의뢰를 준비하지 못했습니다. 잠시 후 다시 시도해주세요.",
-          variant: "destructive",
-        });
-        return "error";
-      }
+      const workingTransfer = transfer;
 
       const existingTeeth = new Set(
         (workingTransfer.production?.designFiles || [])
@@ -4205,54 +4148,100 @@ export function RequestorPracticeReceivePage({
           workingTransfer.production?.designFiles?.length ||
           0,
       );
-      const caTeethOrdered = listPracticeTransferAbutsCustomAbutmentToothWorks(
+      const caTeethRows = listPracticeTransferAbutsCustomAbutmentToothWorks(
         workingTransfer,
-      )
+      );
+      const caTeethOrdered = caTeethRows
         .map((row) => String(row.toothNumber || "").trim())
         .filter(Boolean);
       const caToothSet = new Set(caTeethOrdered);
 
-      const requestMetas = (
-        await Promise.all(
-          relatedIds.map(async (requestId, idx) => {
-            const meta = await fetchRequestCaseInfos(requestId);
-            if (meta.caseInfos?.hexVerificationSample === true) return null;
-            const fromRequest = String(meta.caseInfos?.tooth || "").trim();
-            const tooth = fromRequest || caTeethOrdered[idx] || "";
-            return {
-              requestId,
-              tooth,
-              caseInfos: meta.caseInfos,
-              designCompletedAt: meta.designCompletedAt,
-            };
-          }),
-        )
-      ).filter((row): row is AbutmentPendingMeta => Boolean(row));
-
-      // 치아 중복 보강: Request에 tooth가 비어 있으면 치식 CA 순서로 채움(이미 쓴 치아 제외)
-      const usedEnrichTeeth = new Set(
-        requestMetas.map((row) => String(row.tooth || "").trim()).filter(Boolean),
-      );
-      const enrichedMetas = requestMetas.map((meta, idx) => {
-        if (String(meta.tooth || "").trim()) return meta;
-        const fallback =
-          caTeethOrdered.find((tooth) => !usedEnrichTeeth.has(tooth)) ||
-          caTeethOrdered[idx] ||
-          "";
-        if (fallback) usedEnrichTeeth.add(fallback);
-        return { ...meta, tooth: fallback };
-      });
-
-      // 심플어벗·치식 외 relatedRequestIds(레거시 혼입)는 업로드 대상에서 제외
-      let pendingMetas = enrichedMetas.filter((meta) => {
-        if (meta.designCompletedAt) return false;
-        const tooth = String(meta.tooth || "").trim();
-        if (tooth && existingTeeth.has(tooth)) return false;
-        if (caToothSet.size > 0) {
-          if (!tooth || !caToothSet.has(tooth)) return false;
+      if (caTeethOrdered.length === 0) {
+        if (practiceTransferHasPendingLabCustomAbutment(workingTransfer)) {
+          toast({
+            title: "어벗츠 미제공 임플란트",
+            description:
+              "요청중 커스텀어벗은 어벗츠 생산 의뢰 대상이 아닙니다. 기공소에서 직접 제작해주세요.",
+            variant: "destructive",
+          });
+          return "error";
         }
-        return true;
-      });
+        toast({
+          title: "커스텀어벗 없음",
+          description: "어벗츠 생산 대상 커스텀어벗 치식이 없습니다.",
+          variant: "destructive",
+        });
+        return "error";
+      }
+
+      let pendingMetas: AbutmentPendingMeta[] = [];
+
+      if (relatedIds.length > 0) {
+        const requestMetas = (
+          await Promise.all(
+            relatedIds.map(async (requestId, idx) => {
+              const meta = await fetchRequestCaseInfos(requestId);
+              if (meta.caseInfos?.hexVerificationSample === true) return null;
+              const fromRequest = String(meta.caseInfos?.tooth || "").trim();
+              const tooth = fromRequest || caTeethOrdered[idx] || "";
+              return {
+                requestId,
+                tooth,
+                caseInfos: meta.caseInfos,
+                designCompletedAt: meta.designCompletedAt,
+              };
+            }),
+          )
+        ).filter((row): row is AbutmentPendingMeta => Boolean(row));
+
+        const usedEnrichTeeth = new Set(
+          requestMetas
+            .map((row) => String(row.tooth || "").trim())
+            .filter(Boolean),
+        );
+        const enrichedMetas = requestMetas.map((meta, idx) => {
+          if (String(meta.tooth || "").trim()) return meta;
+          const fallback =
+            caTeethOrdered.find((tooth) => !usedEnrichTeeth.has(tooth)) ||
+            caTeethOrdered[idx] ||
+            "";
+          if (fallback) usedEnrichTeeth.add(fallback);
+          return { ...meta, tooth: fallback };
+        });
+
+        pendingMetas = enrichedMetas.filter((meta) => {
+          if (meta.designCompletedAt) return false;
+          const tooth = String(meta.tooth || "").trim();
+          if (tooth && existingTeeth.has(tooth)) return false;
+          if (caToothSet.size > 0) {
+            if (!tooth || !caToothSet.has(tooth)) return false;
+          }
+          return true;
+        });
+      } else {
+        // 수락만 된 상태 — Request는 STL handoff에서 생성. 치식으로 큐잉.
+        pendingMetas = caTeethOrdered
+          .filter((tooth) => !existingTeeth.has(tooth))
+          .map((tooth) => {
+            const row = caTeethRows.find(
+              (item) => String(item.toothNumber || "").trim() === tooth,
+            );
+            return {
+              requestId: provisionalAbutmentRequestId(tooth),
+              tooth,
+              caseInfos: row
+                ? {
+                    tooth,
+                    implantManufacturer: row.implantManufacturer,
+                    implantBrand: row.implantBrand,
+                    implantFamily: row.implantFamily,
+                    implantType: row.implantType,
+                  }
+                : { tooth },
+              designCompletedAt: "",
+            };
+          });
+      }
 
       // designFiles에 치아가 비어 있는 경우: 개수만큼 앞에서 제외
       const assignedDesignCount = existingTeeth.size;
@@ -4298,14 +4287,10 @@ export function RequestorPracticeReceivePage({
       return "opened";
     },
     [
-      applyAcceptedLocalPatch,
       cardActionBusyId,
       designConfirmBusy,
       fetchRequestCaseInfos,
-      mergeProductionRelatedRequestIds,
       openAbutmentDesignConfirmQueue,
-      openPtxCaCreditConfirm,
-      pickRelatedRequestIdsFromPayload,
       toast,
       token,
       workUploadBusy,
@@ -4385,7 +4370,9 @@ export function RequestorPracticeReceivePage({
       const requestId = String(
         matchedMeta?.requestId || designConfirmRequestId || "",
       ).trim();
-      if (!requestId) return;
+      const toothForHandoff =
+        selectedTooth || String(matchedMeta?.tooth || "").trim();
+      if (!toothForHandoff) return;
 
       // 사용자가 치아를 바꿨으면 큐 항목도 맞춘다
       if (
@@ -4498,6 +4485,9 @@ export function RequestorPracticeReceivePage({
         setDesignConfirmBusy(false);
         setCardActionBusyId("");
 
+        const transferKey = String(
+          transfer.transferId || transfer._id || "",
+        ).trim();
         void (async () => {
           try {
             const res = await apiFetch<{
@@ -4506,12 +4496,15 @@ export function RequestorPracticeReceivePage({
               data?: {
                 productionStarted?: boolean;
                 message?: string;
+                requestId?: string;
+                relatedRequestIds?: string[];
               };
             }>({
-              path: `/api/requests/${encodeURIComponent(requestId)}/design-handoff`,
+              path: `/api/practice/transfers/${encodeURIComponent(transferKey)}/abutment-design-handoff`,
               method: "POST",
               token,
               jsonBody: {
+                tooth: toothForHandoff,
                 file: {
                   originalName: temp?.originalName || file.name,
                   size: temp?.size ?? file.size,
@@ -4524,7 +4517,7 @@ export function RequestorPracticeReceivePage({
                 caseInfos: {
                   clinicName: caseInfos.clinicName,
                   patientName: caseInfos.patientName,
-                  tooth: caseInfos.tooth,
+                  tooth: toothForHandoff || caseInfos.tooth,
                   implantManufacturer: caseInfos.implantManufacturer,
                   implantBrand: caseInfos.implantBrand,
                   implantFamily: caseInfos.implantFamily,
@@ -4563,13 +4556,93 @@ export function RequestorPracticeReceivePage({
                 ),
               );
             }
+
+            const body =
+              res.data && typeof res.data === "object"
+                ? (res.data as Record<string, unknown>)
+                : {};
+            const data =
+              body.data && typeof body.data === "object"
+                ? (body.data as Record<string, unknown>)
+                : body;
+            const relatedFromRes = Array.isArray(data.relatedRequestIds)
+              ? data.relatedRequestIds
+                  .map((id) => String(id || "").trim())
+                  .filter(Boolean)
+              : [];
+            const createdRequestId = String(data.requestId || "").trim();
+            if (relatedFromRes.length > 0 || createdRequestId) {
+              const nextRelated =
+                relatedFromRes.length > 0
+                  ? relatedFromRes
+                  : [
+                      ...new Set(
+                        [
+                          ...(patchedTransfer.production?.relatedRequestIds ||
+                            []),
+                          createdRequestId,
+                        ].filter(Boolean),
+                      ),
+                    ];
+              const relatedPatch = {
+                ...patchedTransfer.production,
+                relatedRequestIds: nextRelated,
+              };
+              setTransfers((prev) =>
+                prev.map((row) =>
+                  row._id === transfer._id ||
+                  row.transferId === transfer.transferId
+                    ? { ...row, production: relatedPatch }
+                    : row,
+                ),
+              );
+              setSelectedTransfer((prev) =>
+                prev &&
+                (prev._id === transfer._id ||
+                  prev.transferId === transfer.transferId)
+                  ? { ...prev, production: relatedPatch }
+                  : prev,
+              );
+              if (
+                createdRequestId &&
+                isProvisionalAbutmentRequestId(requestId)
+              ) {
+                setDesignConfirmPendingMetas((prev) =>
+                  prev.map((meta) =>
+                    meta.requestId === requestId ||
+                    meta.tooth === toothForHandoff
+                      ? { ...meta, requestId: createdRequestId }
+                      : meta,
+                  ),
+                );
+                setDesignConfirmQueue((prev) =>
+                  prev.map((row) =>
+                    row.requestId === requestId ||
+                    String(row.caseInfos?.tooth || "").trim() ===
+                      toothForHandoff
+                      ? { ...row, requestId: createdRequestId }
+                      : row,
+                  ),
+                );
+              }
+            }
+
             if (isLast) {
               const pendingProsthetic =
                 pendingProstheticAfterAbutmentRef.current;
               pendingProstheticAfterAbutmentRef.current = null;
               if (pendingProsthetic?.files?.length) {
                 beginCompleteWithFiles(
-                  patchedTransfer,
+                  {
+                    ...patchedTransfer,
+                    production: {
+                      ...patchedTransfer.production,
+                      relatedRequestIds:
+                        relatedFromRes.length > 0
+                          ? relatedFromRes
+                          : patchedTransfer.production?.relatedRequestIds,
+                    },
+                  },
                   pendingProsthetic.files,
                 );
               }

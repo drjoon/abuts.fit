@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-09-03: ensureAbutmentRequestsForHandoff — 수락이 아니라 STL handoff 직전 생성.
 // - 2026-09-03: 구강스캔은 designSourceFiles만 — caseInfos.file에 넣지 않음(제조사·헥스 고스트 방지).
 // - 2026-09-03: tryStartAbutmentProduction는 designCompletedAt만 인정(스캔 s3Key로 생산 시작 금지).
 // - 2026-09-03: 기공소 작업취소 시 헥스 확인용 복사샘플도 referenceIds로 함께 취소.
@@ -1080,11 +1081,11 @@ export async function createAbutmentRequestsFromPracticeTransfer({
 
 /**
  * CA 포함이면 Request 생성(이미 있으면 no-op) 후 production.relatedRequestIds·shippingMode 갱신.
+ * 어벗 STL design-handoff 직전에만 호출한다(수락 시 빈 준비 건 금지).
  * 이미 생성된 Request는 현재 수락 기공소(targetLabAnchorId)로 소유를 맞춘다.
  * relatedRequestIds에는 헥스 확인 샘플을 넣지 않는다(레거시 혼입분도 정리).
- * 헥스 미확정 제조사는 확인용 복사샘플을 별도 Request로 생성한다(relatedRequestIds 제외).
  */
-export async function ensureAbutmentRequestsOnAccept({
+export async function ensureAbutmentRequestsForHandoff({
   transferDoc,
   actorUserId = null,
 }) {
@@ -1144,7 +1145,7 @@ export async function ensureAbutmentRequestsOnAccept({
     await syncRelatedRequestOwnershipToAcceptingLab(transferDoc);
   }
 
-  // 생산·배송 크레딧 hold는 design-handoff에서 잡음(수락 시점 보류 없음).
+  // 생산·배송 크레딧 hold는 design-handoff에서 잡음.
 
   return {
     created: result.skippedReason !== "already_created" && requestIds.length > 0,
@@ -1152,6 +1153,42 @@ export async function ensureAbutmentRequestsOnAccept({
     requestIds,
     shippingMode,
   };
+}
+
+/** @deprecated use ensureAbutmentRequestsForHandoff — accept-time create removed */
+export const ensureAbutmentRequestsOnAccept = ensureAbutmentRequestsForHandoff;
+
+/**
+ * relatedRequestIds 중 tooth와 일치하는 CA Request를 찾는다.
+ */
+export async function findRelatedAbutmentRequestIdForTooth({
+  relatedRequestIds = [],
+  tooth = "",
+}) {
+  const toothKey = String(tooth || "").trim();
+  const ids = (Array.isArray(relatedRequestIds) ? relatedRequestIds : [])
+    .map((id) => String(id || "").trim())
+    .filter((id) => Types.ObjectId.isValid(id));
+  if (!ids.length) return null;
+
+  const docs = await Request.find({
+    _id: { $in: ids.map((id) => new Types.ObjectId(id)) },
+    "caseInfos.hexVerificationSample": { $ne: true },
+  })
+    .select({ "caseInfos.tooth": 1, designCompletedAt: 1 })
+    .lean();
+
+  if (toothKey) {
+    const exact = docs.find(
+      (doc) => String(doc?.caseInfos?.tooth || "").trim() === toothKey,
+    );
+    if (exact) return String(exact._id);
+  }
+
+  // tooth 미지정·미매칭: 아직 디자인 미완료인 첫 Request
+  const pending = docs.find((doc) => !doc?.designCompletedAt);
+  if (pending) return String(pending._id);
+  return docs[0] ? String(docs[0]._id) : null;
 }
 
 /**
