@@ -27,6 +27,7 @@
 // - web/backend/utils/labReceiveCalendarHiddenWeekdays.util.js
 // - web/backend/controllers/users/user.controller.js
 // - 2026-09-02: 어벗츠 제공 CA만 있어도 안내 표시. 심플어벗은 항상 제외.
+// - 2026-09-03: 어벗 STL ≥3MB — 어벗생산의뢰와 동일하게 구강스캔 의심 ConfirmDialog.
 // - 2026-09-03: 어벗 handoff — S3 후 낙관 패치·busy 해제, API는 백그라운드(실패 시 롤백).
 // - 2026-09-02: 도입중 CA 안내 — 공개 카탈로그로 플래그 보강(Osstem US 등 저장 누락 보정).
 // - 2026-09-02: 요청중 CA — implantAddRequest 보존·어벗츠 업로드 CTA 오인 방지.
@@ -149,6 +150,7 @@ import {
 } from "react";
 import { ChevronRight, Search } from "lucide-react";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
+import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
 import { DesignSoftwareSettingsDialog } from "@/features/requestSettings/DesignSoftwareSettingsDialog";
 import { RequestSettingsToolbar } from "@/features/requestSettings/RequestSettingsToolbar";
 import { useRequestorRequestSettings } from "@/features/requestSettings/useRequestorRequestSettings";
@@ -156,6 +158,7 @@ import {
   AbutmentDesignConfirmDialog,
   type AbutmentDesignConfirmCaseInfos,
 } from "@/shared/components/practice/AbutmentDesignConfirmDialog";
+import { isLikelyOralScanSize } from "@/pages/requestor/new_request/utils/patientGroups";
 import {
   LabReceiveWorkUploadDialog,
   toLabReceiveSlotOptionsFromProsthetic,
@@ -364,7 +367,12 @@ type LabReceiveWorkUploadState = {
   abutmentPending?: AbutmentPendingMeta[];
 };
 
-type DesignUploadStartResult = "opened" | "split" | "skipped" | "error";
+type DesignUploadStartResult =
+  | "opened"
+  | "split"
+  | "skipped"
+  | "error"
+  | "oversized-pending";
 
 type ReceivedTransfersResponse = {
   transfers: unknown[];
@@ -773,6 +781,13 @@ export function RequestorPracticeReceivePage({
   const [workUploadState, setWorkUploadState] =
     useState<LabReceiveWorkUploadState | null>(null);
   const [workUploadBusy, setWorkUploadBusy] = useState(false);
+  /** ≥3MB STL — 구강스캔 의심. 확인 후 beginDesignUploadWithFiles 재진입 */
+  const [oversizedDesignPending, setOversizedDesignPending] = useState<{
+    transfer: ReceivedPracticeTransfer;
+    files: File[];
+  } | null>(null);
+  const [oversizedDesignPreviewIndex, setOversizedDesignPreviewIndex] =
+    useState(0);
   /** dual 배정 후 어벗 큐가 끝나면 이어서 올릴 보철 파일 */
   const pendingProstheticAfterAbutmentRef = useRef<{
     transferId: string;
@@ -3971,6 +3986,7 @@ export function RequestorPracticeReceivePage({
     async (
       transfer: ReceivedPracticeTransfer,
       files: File[],
+      options?: { skipOversizedGuard?: boolean },
     ): Promise<DesignUploadStartResult> => {
       if (!token) return "error";
       const id = String(transfer.transferId || transfer._id || "").trim();
@@ -3995,6 +4011,18 @@ export function RequestorPracticeReceivePage({
           title: "STL만 업로드",
           description: "어벗디자인은 STL만 받을 수 있습니다. 다른 파일은 무시했습니다.",
         });
+      }
+
+      // 어벗생산의뢰와 동일: ≥3MB는 구강스캔 후보 → 확인 후에만 진행
+      if (!options?.skipOversizedGuard) {
+        const oversized = stlFiles.filter((file) =>
+          isLikelyOralScanSize(file.size),
+        );
+        if (oversized.length > 0) {
+          setOversizedDesignPending({ transfer, files: stlFiles });
+          setOversizedDesignPreviewIndex(0);
+          return "oversized-pending";
+        }
       }
 
       let relatedIds = (transfer.production?.relatedRequestIds || [])
@@ -4183,6 +4211,30 @@ export function RequestorPracticeReceivePage({
       workUploadBusy,
     ],
   );
+
+  const clearOversizedDesignPending = useCallback(() => {
+    setOversizedDesignPending(null);
+    setOversizedDesignPreviewIndex(0);
+  }, []);
+
+  const confirmOversizedDesignPending = useCallback(() => {
+    const pending = oversizedDesignPending;
+    clearOversizedDesignPending();
+    if (!pending?.files?.length) return;
+    void beginDesignUploadWithFiles(pending.transfer, pending.files, {
+      skipOversizedGuard: true,
+    });
+  }, [beginDesignUploadWithFiles, clearOversizedDesignPending, oversizedDesignPending]);
+
+  const oversizedDesignPreviewFile =
+    oversizedDesignPending?.files[
+      Math.min(
+        oversizedDesignPreviewIndex,
+        Math.max(0, (oversizedDesignPending?.files.length || 1) - 1),
+      )
+    ] ?? null;
+  const formatOversizedDesignMb = (bytes: number) =>
+    `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
 
   const handleDesignConfirmSubmit = useCallback(
     async (caseInfos: AbutmentDesignConfirmCaseInfos) => {
@@ -5201,6 +5253,67 @@ export function RequestorPracticeReceivePage({
           clearPendingProstheticAfterAbutment();
           clearDesignConfirmState();
         }}
+      />
+      <ConfirmDialog
+        open={Boolean(oversizedDesignPending)}
+        panelClassName="max-w-xl"
+        confirmTone="primary"
+        title="커스텀 어벗 STL이 맞나요?"
+        confirmLabel="이대로 진행"
+        cancelLabel="취소"
+        onConfirm={confirmOversizedDesignPending}
+        onCancel={clearOversizedDesignPending}
+        description={
+          <div className="space-y-3">
+            <p>
+              어벗 디자인 업로드는{" "}
+              <span className="font-semibold">커스텀 어벗 STL</span>만
+              받습니다.
+            </p>
+            <p>
+              파일 크기가 3MB 이상이라 구강 스캔일 수 있습니다. 구강 스캔이면
+              취소하고 올바른 어벗 디자인을 올려주세요.
+            </p>
+            {(oversizedDesignPending?.files.length || 0) > 1 ? (
+              <ul className="max-h-28 space-y-1 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-2 text-xs">
+                {oversizedDesignPending?.files.map((file, index) => (
+                  <li key={`${file.name}:${file.size}:${file.lastModified}`}>
+                    <button
+                      type="button"
+                      className={
+                        index === oversizedDesignPreviewIndex
+                          ? "w-full rounded px-2 py-1 text-left font-medium text-primary-strong bg-primary-soft"
+                          : "w-full rounded px-2 py-1 text-left text-slate-700 hover:bg-white"
+                      }
+                      onClick={() => setOversizedDesignPreviewIndex(index)}
+                    >
+                      {file.name}{" "}
+                      <span className="text-slate-500">
+                        ({formatOversizedDesignMb(file.size)})
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : oversizedDesignPreviewFile ? (
+              <p className="truncate text-xs text-slate-600">
+                {oversizedDesignPreviewFile.name} (
+                {formatOversizedDesignMb(oversizedDesignPreviewFile.size)})
+              </p>
+            ) : null}
+            {oversizedDesignPreviewFile ? (
+              <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
+                <StlPreviewViewer
+                  file={oversizedDesignPreviewFile}
+                  showOverlay={false}
+                  showGrid={false}
+                  className="h-56 min-h-[14rem]"
+                />
+              </div>
+            ) : null}
+            <p>그래도 어벗 디자인으로 올릴까요?</p>
+          </div>
+        }
       />
       <LabReceiveWorkUploadDialog
         open={Boolean(workUploadState)}
