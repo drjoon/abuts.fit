@@ -2,6 +2,8 @@
 // - web/backend/rules.md
 // - web/backend/app.js
 // - web/backend/server.js
+// change-log:
+// - 2026-09-03: 진행중 건수 스냅샷에서 manufacturer_sample 제외(GET /my·모달과 동일).
 import { Types } from "mongoose";
 import Request from "../models/request.model.js";
 import RequestorDashboardSummarySnapshot from "../models/requestorDashboardSummarySnapshot.model.js";
@@ -15,6 +17,27 @@ import { resolveLeadDaysWithSameDayCutoff } from "../controllers/requests/produc
 import { resolveEffectiveShippingMode } from "../controllers/requests/shippingPriority.utils.js";
 import { resolveQuotedPriceWithExtras } from "../controllers/requests/designPrice.utils.js";
 import { loadCreditSettingsDefaults } from "../utils/creditSettingsDefaults.js";
+
+/**
+ * GET /api/requests/my 의 buildNonSampleRequestGuard 와 동일.
+ * 헥스 확인 샘플만 포함, 그 외 manufacturer_sample / rnd·copied sample 제외.
+ */
+const buildNonSampleRequestGuard = () => ({
+  $or: [
+    { "caseInfos.hexVerificationSample": true },
+    {
+      $and: [
+        { source: { $ne: "manufacturer_sample" } },
+        { "price.rule": { $ne: "manufacturer_sample" } },
+        {
+          requestCategory: {
+            $nin: ["rnd_sample", "copied_sample"],
+          },
+        },
+      ],
+    },
+  ],
+});
 
 const buildEstimatedShipFallbackSeed = ({ createdAt, createdYmd }) => {
   const normalizedCreatedYmd =
@@ -136,6 +159,7 @@ const recomputeSingleRequestorDashboardSummarySnapshot = async ({
     businessAnchorId: new Types.ObjectId(anchorId),
   };
   const dateFilter = buildDateFilter(normalizedPeriodKey);
+  const nonSampleGuard = buildNonSampleRequestGuard();
 
   const [statsResult, shippingPackageRows, recentRequestsResult] =
     await Promise.all([
@@ -144,6 +168,7 @@ const recomputeSingleRequestorDashboardSummarySnapshot = async ({
           $match: {
             ...requestFilter,
             ...dateFilter,
+            ...nonSampleGuard,
           },
         },
         {
@@ -290,6 +315,7 @@ const recomputeSingleRequestorDashboardSummarySnapshot = async ({
             ...requestFilter,
             ...dateFilter,
             manufacturerStage: { $ne: "취소" },
+            ...nonSampleGuard,
           },
         },
         {
@@ -350,10 +376,7 @@ const recomputeSingleRequestorDashboardSummarySnapshot = async ({
       Request.find({
         ...requestFilter,
         manufacturerStage: { $ne: "취소" },
-        $and: [
-          { source: { $ne: "manufacturer_sample" } },
-          { "price.rule": { $ne: "manufacturer_sample" } },
-        ],
+        ...nonSampleGuard,
       })
         .select({
           _id: 1,

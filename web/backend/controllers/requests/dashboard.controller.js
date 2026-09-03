@@ -6,6 +6,7 @@
 // - web/backend/utils/practiceTransferStage.js
 // - web/backend/utils/creditSettingsDefaults.js
 // change-log:
+// - 2026-09-03: cards-summary 진행중 단계 건수는 GET /my와 동일 가드로 실시간 보정(스냅샷 stale 3≠2 방지).
 // - 2026-08-21: cards/summary GET은 in-flight 대시보드 refresh를 기다리지 않음.
 // - 2026-08-19: 적용 단가=플랫폼 설정. 90일 1만원·주문량할인 폐지.
 import Request from "../../models/request.model.js";
@@ -225,6 +226,112 @@ const buildDateFilter = (period) => {
   fromDate.setDate(fromDate.getDate() - days);
   const from = new Date(`${toKstYmd(fromDate)}T00:00:00+09:00`);
   return { createdAt: { $gte: from } };
+};
+
+/** GET /api/requests/my 와 동일 — 헥스 확인 샘플만 포함 */
+const buildRequestorVisibleRequestGuard = () => ({
+  $or: [
+    { "caseInfos.hexVerificationSample": true },
+    {
+      $and: [
+        { source: { $ne: "manufacturer_sample" } },
+        { "price.rule": { $ne: "manufacturer_sample" } },
+        {
+          requestCategory: {
+            $nin: ["rnd_sample", "copied_sample"],
+          },
+        },
+      ],
+    },
+  ],
+});
+
+/**
+ * 진행중 뱃지(준비~포장.발송) — 스냅샷 stale 대비 실시간 집계.
+ * FE inProgressCount = totalRequests + inCam + inProduction + inPacking + inShipping
+ */
+const loadLiveRequestorInProgressStageCounts = async ({
+  businessAnchorId,
+  period,
+}) => {
+  const anchorId = String(businessAnchorId || "").trim();
+  if (!Types.ObjectId.isValid(anchorId)) {
+    return {
+      totalRequests: 0,
+      inCam: 0,
+      inProduction: 0,
+      inPacking: 0,
+      inShipping: 0,
+    };
+  }
+
+  const rows = await Request.aggregate([
+    {
+      $match: {
+        businessAnchorId: new Types.ObjectId(anchorId),
+        ...buildDateFilter(period),
+        ...buildRequestorVisibleRequestGuard(),
+        manufacturerStage: {
+          $in: [
+            "준비",
+            "의뢰",
+            "CAM",
+            "cam",
+            "가공",
+            "machining",
+            "세척.패킹",
+            "포장.발송",
+            "shipping",
+          ],
+        },
+        "rnd.unmachinableAt": null,
+      },
+    },
+    {
+      $group: {
+        _id: {
+          $switch: {
+            branches: [
+              {
+                case: { $in: ["$manufacturerStage", ["cam", "CAM"]] },
+                then: "cam",
+              },
+              {
+                case: {
+                  $in: ["$manufacturerStage", ["machining", "가공"]],
+                },
+                then: "machining",
+              },
+              {
+                case: { $eq: ["$manufacturerStage", "세척.패킹"] },
+                then: "packing",
+              },
+              {
+                case: {
+                  $in: ["$manufacturerStage", ["shipping", "포장.발송"]],
+                },
+                then: "shipping",
+              },
+            ],
+            default: "request",
+          },
+        },
+        n: { $sum: 1 },
+      },
+    },
+  ]);
+
+  const byKey = Object.fromEntries(
+    (rows || []).map((row) => [String(row?._id || ""), Number(row?.n || 0)]),
+  );
+
+  return {
+    totalRequests: Number(byKey.request || 0),
+    inCam: Number(byKey.cam || 0),
+    inProduction: Number(byKey.machining || 0),
+    inPacking: Number(byKey.packing || 0),
+    inShipping: Number(byKey.shipping || 0),
+  };
 };
 
 /**
@@ -814,15 +921,50 @@ export async function getMyDashboardCardsSummary(req, res) {
         return emptyPracticeTransferDashboardStats();
       });
 
+    const loadLiveInProgressCounts = () =>
+      loadLiveRequestorInProgressStageCounts({
+        businessAnchorId,
+        period,
+      }).catch((err) => {
+        console.warn(
+          "[getMyDashboardCardsSummary] live in-progress counts failed",
+          err?.message || err,
+        );
+        return null;
+      });
+
+    const applyLiveInProgressCounts = (stats, liveCounts) => {
+      if (!stats || !liveCounts) return stats;
+      return {
+        ...stats,
+        totalRequests: liveCounts.totalRequests,
+        inCam: liveCounts.inCam,
+        inProduction: liveCounts.inProduction,
+        inPacking: liveCounts.inPacking,
+        inShipping: liveCounts.inShipping,
+        inProgress:
+          Number(liveCounts.inCam || 0) +
+          Number(liveCounts.inProduction || 0) +
+          Number(liveCounts.inPacking || 0),
+      };
+    };
+
     if (!debug) {
       const cached = getRequestPerfCacheValue(cardsCacheKey);
       if (cached) {
-        // 기공 집계는 스냅샷과 별도 — 캐시 hit여도 짧게 재조회해 신선도 유지
-        const practiceTransferStats = await loadPracticeTransferStats();
+        // 기공 집계·진행중 건수는 스냅샷과 별도 — 캐시 hit여도 짧게 재조회해 신선도 유지
+        const [practiceTransferStats, liveInProgressCounts] = await Promise.all([
+          loadPracticeTransferStats(),
+          loadLiveInProgressCounts(),
+        ]);
         return res.status(200).json({
           success: true,
           data: {
             ...cached,
+            stats: applyLiveInProgressCounts(
+              cached?.stats || null,
+              liveInProgressCounts,
+            ),
             practiceTransferStats,
           },
           cached: true,
@@ -832,45 +974,51 @@ export async function getMyDashboardCardsSummary(req, res) {
 
     const responseData = await withRequestPerfInFlight(cardsInFlightKey, async () => {
       const snapshotStats = summarySnapshot?.stats || null;
-      const practiceTransferStats = await loadPracticeTransferStats();
+      const [practiceTransferStats, liveInProgressCounts] = await Promise.all([
+        loadPracticeTransferStats(),
+        loadLiveInProgressCounts(),
+      ]);
 
       const data = {
-        stats: {
-          ...(snapshotStats || {
-            totalRequests: 0,
-            totalRequestsChange: "+0%",
-            inProgress: 0,
-            inProgressChange: "+0%",
-            inCam: 0,
-            inCamChange: "+0%",
-            inProduction: 0,
-            inProductionChange: "+0%",
-            inPacking: 0,
-            inPackingChange: "+0%",
-            inShipping: 0,
-            inShippingBoxes: 0,
-            inShippingChange: "+0%",
-            inTracking: 0,
-            inTrackingBoxes: 0,
-            inTrackingChange: "+0%",
-            canceled: 0,
-            canceledChange: "+0%",
-            tracking: 0,
-            doneOrCanceled: 0,
-            doneOrCanceledChange: "+0%",
-            unmachinableCount: 0,
-            unmachinablePendingConfirmCount: 0,
-            unmachinableConfirmedCount: 0,
-            unmachinableJudgedTotalCount: 0,
-          }),
-        },
+        stats: applyLiveInProgressCounts(
+          {
+            ...(snapshotStats || {
+              totalRequests: 0,
+              totalRequestsChange: "+0%",
+              inProgress: 0,
+              inProgressChange: "+0%",
+              inCam: 0,
+              inCamChange: "+0%",
+              inProduction: 0,
+              inProductionChange: "+0%",
+              inPacking: 0,
+              inPackingChange: "+0%",
+              inShipping: 0,
+              inShippingBoxes: 0,
+              inShippingChange: "+0%",
+              inTracking: 0,
+              inTrackingBoxes: 0,
+              inTrackingChange: "+0%",
+              canceled: 0,
+              canceledChange: "+0%",
+              tracking: 0,
+              doneOrCanceled: 0,
+              doneOrCanceledChange: "+0%",
+              unmachinableCount: 0,
+              unmachinablePendingConfirmCount: 0,
+              unmachinableConfirmedCount: 0,
+              unmachinableJudgedTotalCount: 0,
+            }),
+          },
+          liveInProgressCounts,
+        ),
         practiceTransferStats,
       };
 
       if (!debug) {
         // 스냅샷 computedAt 기반 버전드 캐시이므로 TTL을 늘려도 stale 위험이 낮다.
-        // practiceTransferStats는 응답 시 재조회하므로 캐시 본문에서 제외해도 되지만
-        // miss 경로 응답 형태를 맞추기 위해 함께 저장한다.
+        // practiceTransferStats·진행중 live 건수는 응답 시 재조회하므로 캐시 본문에 넣어도
+        // hit 경로에서 덮어쓴다.
         setRequestPerfCacheValue(cardsCacheKey, data, 30 * 1000);
       }
 
