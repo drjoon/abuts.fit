@@ -7,6 +7,8 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // change-log:
+// - 2026-09-03: description="" — 안내 문구 숨김(진행중 등).
+// - 2026-09-03: scroll-x-bar-top을 flex-1 세로 스크롤과 분리(rotateX로 표가 아래로 붙던 문제).
 // - 2026-08-21: 기공의뢰(PTX) 연동 CA는 어벗츠로의뢰에서 취소 불가·수신 작업취소 안내.
 // - 2026-08-21: 기공의뢰(PTX) 연동 CA에 «기공의뢰» 뱃지.
 // - 2026-08-21: 헥스 확인용 원본↔샘플 취소 시 목록에서 둘 다 즉시 제거
@@ -588,10 +590,16 @@ export const PastRequestsModal = ({
           <DialogTitle className="text-xl font-semibold tracking-tight text-slate-900">
             {title || "완료 내역"}
           </DialogTitle>
-          <DialogDescription className="text-sm text-slate-500">
-            {description ||
-              "추적관리 단계의 완료 내역을 기간별로 확인하고 상세를 엽니다."}
-          </DialogDescription>
+          {description !== "" ? (
+            <DialogDescription className="text-sm text-slate-500">
+              {description ||
+                "추적관리 단계의 완료 내역을 기간별로 확인하고 상세를 엽니다."}
+            </DialogDescription>
+          ) : (
+            <DialogDescription className="sr-only">
+              {title || "완료 내역"}
+            </DialogDescription>
+          )}
         </DialogHeader>
 
         <div className="flex min-h-0 flex-1 flex-col gap-3 px-4 py-4 sm:px-6 sm:py-5">
@@ -657,11 +665,9 @@ export const PastRequestsModal = ({
 
           <div
             ref={scrollRef}
-            className={cn(
-              "min-h-0 flex-1 overflow-y-auto rounded-2xl border border-slate-200/80 bg-white/70 shadow-sm",
-              RESPONSIVE.tableShell,
-            )}
+            className="min-h-0 flex-1 overflow-y-auto rounded-2xl border border-slate-200/80 bg-white/70 shadow-sm"
           >
+            <div className={RESPONSIVE.tableShell}>
             <Table className={RESPONSIVE.tableMinExtraWide}>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
@@ -849,6 +855,7 @@ export const PastRequestsModal = ({
                 )}
               </TableBody>
             </Table>
+            </div>
 
             {hasMore && !loading && (
               <div ref={sentinelRef} className="h-8" aria-hidden="true" />

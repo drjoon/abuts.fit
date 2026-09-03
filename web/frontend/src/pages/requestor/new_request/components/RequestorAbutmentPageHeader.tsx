@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-09-03: 진행중 모달 안내 문구 제거.
+// - 2026-09-03: variant=policyInProgress — 기공의뢰수신 헤더용 정책·진행중만(기간필터·출고·완료·불완전 제외).
 // - 2026-08-21: 기공의뢰(PTX) CA는 어벗츠로의뢰 상세에서 취소 안내만.
 // - 2026-08-21: 기공의뢰 취소 후 헤더 건수 재조회. 마운트 시 summary refetch.
 // - 2026-08-21: 헥스 확인용 원본↔샘플 취소 시 목록·건수에서 함께 제거
@@ -14,6 +16,8 @@
 // - 2026-08-18: 치과 어벗디자인 상단 — 기간필터·정책안내·출고예정·지난의뢰·불완전가공.
 // related files:
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
+// - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
+// - web/frontend/src/pages/practice/components/PracticeStatusFilterBadges.tsx
 // - web/frontend/src/shared/components/RequestorWorkspaceHeader.tsx
 // - web/frontend/src/pages/requestor/dashboard/components/RequestorPolicyRemakeHeader.tsx
 // - web/frontend/src/pages/requestor/dashboard/components/RequestorBulkShippingBannerCard.tsx
@@ -57,7 +61,20 @@ const IN_PROGRESS_MANUFACTURER_STAGES = [
 const isPrepCancelableRequest = (request: unknown) =>
   getNormalizedStageLabelSafe(request) === "준비";
 
-export const RequestorAbutmentPageHeader = () => {
+export type RequestorAbutmentPageHeaderVariant = "full" | "policyInProgress";
+
+type RequestorAbutmentPageHeaderProps = {
+  /**
+   * full — 어벗츠로의뢰 상단(기간필터+정책·진행중·출고·완료·불완전).
+   * policyInProgress — 기공의뢰수신 등: 정책 안내 + 진행중만.
+   */
+  variant?: RequestorAbutmentPageHeaderVariant;
+};
+
+export const RequestorAbutmentPageHeader = ({
+  variant = "full",
+}: RequestorAbutmentPageHeaderProps = {}) => {
+  const isPolicyInProgressOnly = variant === "policyInProgress";
   const { user, token } = useAuthStore();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -126,7 +143,7 @@ export const RequestorAbutmentPageHeader = () => {
     refetchOnMount: false,
     refetchOnReconnect: true,
     refetchOnWindowFocus: false,
-    enabled: !!token,
+    enabled: !!token && !isPolicyInProgressOnly,
     placeholderData: (previous) => previous,
   });
 
@@ -161,7 +178,9 @@ export const RequestorAbutmentPageHeader = () => {
     },
     onMatch: () => {
       void queryClient.invalidateQueries({ queryKey: cardsSummaryQueryKey });
-      void queryClient.invalidateQueries({ queryKey: ["requestor-bulk-shipping"] });
+      if (!isPolicyInProgressOnly) {
+        void queryClient.invalidateQueries({ queryKey: ["requestor-bulk-shipping"] });
+      }
     },
   });
 
@@ -204,7 +223,9 @@ export const RequestorAbutmentPageHeader = () => {
   const refreshHeaderCounts = () => {
     window.setTimeout(() => {
       void queryClient.invalidateQueries({ queryKey: cardsSummaryQueryKey });
-      void queryClient.invalidateQueries({ queryKey: ["requestor-bulk-shipping"] });
+      if (!isPolicyInProgressOnly) {
+        void queryClient.invalidateQueries({ queryKey: ["requestor-bulk-shipping"] });
+      }
     }, 2000);
   };
 
@@ -228,6 +249,7 @@ export const RequestorAbutmentPageHeader = () => {
   };
 
   const removeFromBulkShippingOptimistic = (mongoIds: string | string[]) => {
+    if (isPolicyInProgressOnly) return;
     const idSet = new Set(
       (Array.isArray(mongoIds) ? mongoIds : [mongoIds])
         .map((id) => String(id || "").trim())
@@ -387,72 +409,44 @@ export const RequestorAbutmentPageHeader = () => {
     }
   };
 
-  return (
+  const policyAndInProgressActions = (
     <>
-      <RequestorWorkspaceHeader period={period} onPeriodChange={setPeriod}>
-        <RequestorPolicyRemakeHeader />
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-8 px-3 text-xs"
-          onClick={() => setInProgressOpen(true)}
-        >
-          진행중 {inProgressCount.toLocaleString()}건
-        </Button>
-        <RequestorBulkShippingBannerCard
-          variant="headerButton"
-          bulkData={bulkData}
-          period={period}
-          onRefresh={() => {
-            void refetchBulk();
-          }}
-          onOpenBulkModal={() => {}}
-        />
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-8 px-3 text-xs"
-          onClick={() => setPastOpen(true)}
-        >
-          완료 내역 {pastCount.toLocaleString()}건
-        </Button>
-        <RequestorUnmachinableHost period={period} count={unmachinableCount} />
-      </RequestorWorkspaceHeader>
+      <RequestorPolicyRemakeHeader />
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="h-8 px-3 text-xs"
+        onClick={() => setInProgressOpen(true)}
+      >
+        진행중 {inProgressCount.toLocaleString()}건
+      </Button>
+    </>
+  );
 
-      <PastRequestsModal
-        open={inProgressOpen}
-        onOpenChange={setInProgressOpen}
-        title="진행중"
-        description="준비·가공·세척.패킹·포장.발송 단계의 의뢰를 확인하고 상세를 엽니다. 준비 단계는 건별 또는 선택 후 한꺼번에 취소할 수 있습니다."
-        manufacturerStageIn={IN_PROGRESS_MANUFACTURER_STAGES}
-        initialPeriod={period}
-        allowCancel
-        suspend={listSource === "inProgress" && Boolean(selectedPastRequest)}
-        removeMongoId={canceledMongoIds}
-        onCanceled={refreshHeaderCounts}
-        onCancelRequest={cancelRequestByMongoId}
-        onCancelRequests={cancelRequestsByMongoIds}
-        onSelectRequest={(request) => {
-          setListSource("inProgress");
-          setSelectedPastRequest(request);
-        }}
-      />
+  const inProgressModal = (
+    <PastRequestsModal
+      open={inProgressOpen}
+      onOpenChange={setInProgressOpen}
+      title="진행중"
+      description=""
+      manufacturerStageIn={IN_PROGRESS_MANUFACTURER_STAGES}
+      initialPeriod={period}
+      allowCancel
+      suspend={listSource === "inProgress" && Boolean(selectedPastRequest)}
+      removeMongoId={canceledMongoIds}
+      onCanceled={refreshHeaderCounts}
+      onCancelRequest={cancelRequestByMongoId}
+      onCancelRequests={cancelRequestsByMongoIds}
+      onSelectRequest={(request) => {
+        setListSource("inProgress");
+        setSelectedPastRequest(request);
+      }}
+    />
+  );
 
-      <PastRequestsModal
-        open={pastOpen}
-        onOpenChange={setPastOpen}
-        title="완료 내역"
-        manufacturerStageIn={["추적관리"]}
-        initialPeriod={period}
-        suspend={listSource === "past" && Boolean(selectedPastRequest)}
-        onSelectRequest={(request) => {
-          setListSource("past");
-          setSelectedPastRequest(request);
-        }}
-      />
-
+  const detailAndCancelDialogs = (
+    <>
       <RequestDetailDialog
         open={Boolean(selectedPastRequest)}
         dismissLocked={cancelConfirmOpen || canceling}
@@ -505,6 +499,61 @@ export const RequestorAbutmentPageHeader = () => {
           setCancelConfirmOpen(false);
         }}
       />
+    </>
+  );
+
+  if (isPolicyInProgressOnly) {
+    // contents: 뱃지 flex 행에 버튼만 참여, 모달은 레이아웃에 영향 없음
+    return (
+      <span className="contents">
+        {policyAndInProgressActions}
+        {inProgressModal}
+        {detailAndCancelDialogs}
+      </span>
+    );
+  }
+
+  return (
+    <>
+      <RequestorWorkspaceHeader period={period} onPeriodChange={setPeriod}>
+        {policyAndInProgressActions}
+        <RequestorBulkShippingBannerCard
+          variant="headerButton"
+          bulkData={bulkData}
+          period={period}
+          onRefresh={() => {
+            void refetchBulk();
+          }}
+          onOpenBulkModal={() => {}}
+        />
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-8 px-3 text-xs"
+          onClick={() => setPastOpen(true)}
+        >
+          완료 내역 {pastCount.toLocaleString()}건
+        </Button>
+        <RequestorUnmachinableHost period={period} count={unmachinableCount} />
+      </RequestorWorkspaceHeader>
+
+      {inProgressModal}
+
+      <PastRequestsModal
+        open={pastOpen}
+        onOpenChange={setPastOpen}
+        title="완료 내역"
+        manufacturerStageIn={["추적관리"]}
+        initialPeriod={period}
+        suspend={listSource === "past" && Boolean(selectedPastRequest)}
+        onSelectRequest={(request) => {
+          setListSource("past");
+          setSelectedPastRequest(request);
+        }}
+      />
+
+      {detailAndCancelDialogs}
     </>
   );
 };

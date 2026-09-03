@@ -1,6 +1,7 @@
 import { type ReactNode } from "react";
 
 // change-log:
+// - 2026-09-03: stackAboveFloating — 기공의뢰수신 플로팅(z-300) 위에 의뢰 상세.
 // - 2026-08-21: 기공의뢰(PTX) 연동 CA에 «기공의뢰» 뱃지.
 // - 2026-08-21: 의뢰 상세에 아노다이징(ON/OFF) 행 표시(caseInfos.anodizingEnabled).
 // - 2026-08-20: 주문 상세에서 배송비 행 제거. 배송비는 묶음 발송·크레딧 장부만.
@@ -147,6 +148,8 @@ type RequestDetailDialogProps = {
   footer?: ReactNode;
   /** 확인 모달이 위에 열린 동안 바깥 클릭·ESC로 닫지 않음 */
   dismissLocked?: boolean;
+  /** 기공의뢰수신 플로팅 패널(z-300)보다 위에 표시 */
+  stackAboveFloating?: boolean;
 };
 
 const formatTimestamp = (value?: string) => {
@@ -268,7 +271,9 @@ export const RequestDetailDialog = ({
   extraBadge,
   footer,
   dismissLocked = false,
+  stackAboveFloating = false,
 }: RequestDetailDialogProps) => {
+  const stackZ = stackAboveFloating ? "z-[320]" : "z-[110]";
   const { data: systemSettings } = useSystemSettings();
   const requestMongoId = String(request?._id || request?.id || "").trim();
   const canLoadPreview = /^[a-fA-F0-9]{24}$/.test(requestMongoId);
@@ -384,9 +389,10 @@ export const RequestDetailDialog = ({
       }}
     >
       <DialogContent
-        overlayClassName="z-[110]"
+        overlayClassName={stackZ}
         className={cn(
-          "z-[110] flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:rounded-2xl",
+          stackZ,
+          "flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:rounded-2xl",
           RESPONSIVE.dialogContentFull,
           "sm:max-w-[min(96vw,880px)]",
           isUnmachinable && "border-accent-muted",

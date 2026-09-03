@@ -1,3 +1,4 @@
+// - 2026-09-03: 기공소 정책 안내 부제(기공의뢰수신·어벗생산의뢰…) 제거.
 // - 2026-08-23: 정책 안내 모달 flex 스크롤 + 하단 여백(pb-8).
 // - 2026-08-23: 의뢰자 변형에 부가세 없음(면세) 안내. devops 레거시 65% 문구 제거.
 // - 2026-08-22: design_custom_abutment 청구 폐기. 생산 단가·신속·배송만 안내.
@@ -265,7 +266,7 @@ export const PricingPolicyDialog = ({
       : variant === 'salesman'
         ? '소개 수수료 지급 기준과 정산 주기를 확인하세요.'
         : isLab
-          ? '기공의뢰수신 · 어벗생산의뢰 단가와 출고 기준을 확인하세요.'
+          ? ''
           : '구강스캔 · 어벗디자인 단가와 출고 기준을 확인하세요.';
 
   return (
@@ -275,9 +276,13 @@ export const PricingPolicyDialog = ({
           <DialogTitle className='text-xl font-semibold tracking-tight text-slate-900'>
             {title}
           </DialogTitle>
-          <DialogDescription className='text-sm text-slate-500'>
-            {subtitle}
-          </DialogDescription>
+          {subtitle ? (
+            <DialogDescription className='text-sm text-slate-500'>
+              {subtitle}
+            </DialogDescription>
+          ) : (
+            <DialogDescription className='sr-only'>{title}</DialogDescription>
+          )}
         </DialogHeader>
 
         <div className='min-h-0 flex-1 overflow-y-auto px-6 pt-5 pb-8'>

@@ -1,6 +1,7 @@
 /**
  * 치과 전체보기·기공의뢰수신 공통 — 상단 상태 표시 on/off 뱃지 행.
  * 뱃지 + 기본값과 다를 때 「기본」 리셋.
+ * 2026-09-03: trailing — 어벗 뱃지 옆 정책·진행중 등(리셋 버튼 앞).
  * 2026-08-21: 배타 필터 → 다중 표시 on/off. ON/OFF 대비·기본 리셋.
  * 2026-08-21: 「표시」 라벨 제거.
  * 2026-08-27: 발송 뒤 리메이크·미확인 간격. 미확인 전용 뱃지용 nested unread 숨김.
@@ -9,7 +10,9 @@
  * - web/frontend/src/pages/practice/components/PracticeRecentTransfersAllModal.tsx
  * - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
  * - web/frontend/src/pages/practice/components/PracticeRecentTransfersCalendar.tsx
+ * - web/frontend/src/pages/requestor/new_request/components/RequestorAbutmentPageHeader.tsx
  */
+import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -41,8 +44,10 @@ type PracticeStatusFilterBadgesProps = {
   isDefault: boolean;
   /** 건수 뒤 접미사. 치과 모달="", 기공의뢰수신="건" */
   countSuffix?: string;
-  /** 이 키들 앞에 간격(발송 | 리메이크·미확인) */
+  /** 이 키들 앞에 간격(발송 | 리메이크·미확인 / 완료 | 어벗) */
   gapBeforeKeys?: readonly string[];
+  /** 뱃지 행 끝·「기본」 앞에 붙는 액션(정책 안내·진행중 등) */
+  trailing?: ReactNode;
   /** true면 뱃지 안 빨간 unread 점 숨김(전용 미확인 뱃지 쓸 때) */
   hideNestedUnread?: boolean;
   compact?: boolean;
@@ -57,6 +62,7 @@ export function PracticeStatusFilterBadges({
   isDefault,
   countSuffix = "",
   gapBeforeKeys,
+  trailing,
   hideNestedUnread = false,
   compact = false,
   className,
@@ -132,6 +138,7 @@ export function PracticeStatusFilterBadges({
           </Tooltip>
         );
       })}
+      {trailing}
       {!isDefault ? (
         <Button
           type="button"
