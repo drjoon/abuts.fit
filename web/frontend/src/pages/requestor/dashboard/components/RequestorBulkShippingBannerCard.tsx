@@ -170,8 +170,8 @@ type ManufacturerLeadTimeData = {
 const DEFAULT_MANUFACTURER_LEAD_TIMES: Record<DiameterKey, LeadTimeEntry> = {
   d6: { minBusinessDays: 1, maxBusinessDays: 2 },
   d8: { minBusinessDays: 1, maxBusinessDays: 2 },
-  d10: { minBusinessDays: 4, maxBusinessDays: 7 },
-  d12: { minBusinessDays: 4, maxBusinessDays: 7 },
+  d10: { minBusinessDays: 1, maxBusinessDays: 2 },
+  d12: { minBusinessDays: 1, maxBusinessDays: 2 },
 };
 
 const DIAMETER_LABELS: Record<DiameterKey, string> = {

@@ -56,8 +56,8 @@ export {
 export const DEFAULT_DELIVERY_ETA_LEAD_DAYS = {
   d6: 1,
   d8: 1,
-  d10: 4,
-  d12: 4,
+  d10: 1,
+  d12: 1,
 };
 
 export const SHIPPING_WORKFLOW_CODES = {

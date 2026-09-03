@@ -55,7 +55,7 @@ import { resolveEffectiveShippingMode } from "./shippingPriority.utils.js";
  * CNC 장비별 소재 세팅:
  * - M3: 6mm 전용
  * - M4: 8mm 전용
- * - 10mm, 12mm: 일주일에 1~2회 M3 또는 M4 소재 교체하여 생산
+ * - 10mm, 12mm: 6/8mm와 동일 1박2일 리드 (소재 교체 대기 없음)
  *
  * 장비별 생산 큐:
  * - 각 장비마다 독립적인 큐 관리
@@ -267,11 +267,9 @@ function getDiameterGroupAndMachine(maxDiameter) {
  * 묶음배송 대기 시간 계산 (직경별)
  */
 function getBulkWaitHours(diameterGroup) {
-  // 6mm, 8mm: 즉시 생산 가능 (전용 장비 있음)
-  if (diameterGroup === "6" || diameterGroup === "8") return 0;
-
-  // 10mm, 12mm: 일주일에 1~2회 소재 교체 (평균 3일 대기)
-  return 72; // 3일(72시간) 대기
+  // 전 직경(6/8/10/12mm) 1박2일 고정 — 소재 교체 대기 없음
+  void diameterGroup;
+  return 0;
 }
 
 /**

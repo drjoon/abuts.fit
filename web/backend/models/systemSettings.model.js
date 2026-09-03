@@ -19,8 +19,8 @@ const systemSettingsSchema = new mongoose.Schema(
     deliveryEtaLeadDays: {
       d6: { type: Number, default: 1 },
       d8: { type: Number, default: 1 },
-      d10: { type: Number, default: 4 },
-      d12: { type: Number, default: 4 },
+      d10: { type: Number, default: 1 },
+      d12: { type: Number, default: 1 },
     },
     creditSettings: {
       minCreditForRequest: { type: Number, default: 15000 },

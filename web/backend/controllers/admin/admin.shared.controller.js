@@ -22,10 +22,10 @@ const DISCOUNT_PER_ORDER = 10;
 const MAX_DISCOUNT_PER_UNIT = 5000;
 
 export const DEFAULT_DELIVERY_ETA_LEAD_DAYS = {
-  d6: 2,
-  d8: 2,
-  d10: 4,
-  d12: 7,
+  d6: 1,
+  d8: 1,
+  d10: 1,
+  d12: 1,
 };
 
 export function computeVolumeEffectiveUnitPrice(groupTotalOrders) {

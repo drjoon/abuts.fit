@@ -8,8 +8,8 @@ import BusinessAnchor from "../../models/businessAnchor.model.js";
 const DEFAULT_LEAD_TIMES = {
   d6: { minBusinessDays: 1, maxBusinessDays: 2 },
   d8: { minBusinessDays: 1, maxBusinessDays: 2 },
-  d10: { minBusinessDays: 4, maxBusinessDays: 7 },
-  d12: { minBusinessDays: 4, maxBusinessDays: 7 },
+  d10: { minBusinessDays: 1, maxBusinessDays: 2 },
+  d12: { minBusinessDays: 1, maxBusinessDays: 2 },
 };
 
 const LEAD_TIMES_CACHE_TTL_MS = 60 * 1000;

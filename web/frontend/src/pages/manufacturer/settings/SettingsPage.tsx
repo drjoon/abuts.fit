@@ -12,17 +12,15 @@ import {
 import { AccountTab } from "@/features/settings/tabs/AccountTab";
 import { StaffTab } from "@/features/settings/tabs/StaffTab";
 import { NotificationsTab } from "@/features/settings/tabs/NotificationsTab";
-import { User, Users, Bell, Shield, Truck, Building2 } from "lucide-react";
+import { User, Users, Bell, Shield, Building2 } from "lucide-react";
 import { ManufacturerSecurity } from "./Security";
 import { BusinessTab } from "./components/BusinessTab";
-import { ManufacturerShippingTab } from "./components/ShippingTab";
 
 type TabKey =
   | "account"
   | "business"
   | "staff"
   | "notifications"
-  | "shipping"
   | "security";
 
 export const ManufacturerSettingsPage = () => {
@@ -48,12 +46,6 @@ export const ManufacturerSettingsPage = () => {
         label: "임직원",
         icon: Users,
         content: <StaffTab userData={user} />,
-      },
-      {
-        key: "shipping",
-        label: "배송",
-        icon: Truck,
-        content: <ManufacturerShippingTab userData={user} />,
       },
       {
         key: "notifications",
