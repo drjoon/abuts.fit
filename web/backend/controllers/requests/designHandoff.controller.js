@@ -1,3 +1,4 @@
+// - 2026-09-03: handoff/cancel — relatedRequestIds에 없는 헥스 확인용 복사샘플도 원본과 함께 취소.
 // - 2026-09-03: PTX handoff critical path — holdFast 재견적(리드타임 스케줄 생략) + labMeta/풀스케줄/미러는 응답 후.
 // - 2026-09-03: PTX handoff — hold+lot+save만 응답 전. Transfer 미러·lab confirm·Rhino·emit은 응답 후.
 //   labMeta.labOrg를 reprice에 재사용. phase timing 로그.
@@ -58,6 +59,7 @@ import {
   resolveHexRotationByDesignSoftware,
   resolveLabManufacturerHexForImplant,
 } from "../../services/practiceTransferProduction.service.js";
+import { findActiveHexVerificationSampleObjectIdsForSources } from "../../services/hexVerificationSample.service.js";
 import { isPtxLabDesignedAbutmentRequest } from "./common.review.helpers.js";
 import { postPracticeTransferSystemChatMessage } from "../../services/chatSystemMessage.service.js";
 import {
@@ -355,6 +357,7 @@ const clearPtxDesignMirror = async (transferId) => {
 /**
  * PTX 생산 취소: 연동 CA Request들을 관리자·제조사 큐에서 「취소」로 내린다.
  * 다치아: 각 Request의 구강스캔(designSourceFiles)도 복원해 재업로드 가능하게 한다.
+ * 헥스 확인용 복사샘플은 relatedRequestIds에 없으므로 referenceIds로 별도 수집해 함께 취소한다.
  * @param {object} [options]
  * @param {string[]} [options.relatedRequestIds] — 이미 조회한 id(재조회 생략)
  * @param {Set<string>|string[]} [options.skipRequestIds] — 이미 처리한 Request(중복 save 방지)
@@ -416,13 +419,40 @@ const markPtxRelatedRequestsCancelled = async (transferId, options = {}) => {
       .map((id) => String(id || "").trim())
       .filter((id) => Types.ObjectId.isValid(id));
   }
-  const ids = idStrings
-    .filter((id) => !skipSet.has(id))
-    .map((id) => new Types.ObjectId(id));
+
+  // 헥스 샘플은 relatedRequestIds에 없음 → 원본(+이미 취소한 primary) requestId로 조회.
+  const sourceIdsForHex = [
+    ...new Set([...idStrings, ...skipSet].filter((id) => Types.ObjectId.isValid(id))),
+  ];
+  let hexSampleIdStrings = [];
+  if (sourceIdsForHex.length > 0) {
+    try {
+      const sampleOids =
+        await findActiveHexVerificationSampleObjectIdsForSources(sourceIdsForHex);
+      hexSampleIdStrings = (sampleOids || [])
+        .map((id) => String(id || "").trim())
+        .filter((id) => Types.ObjectId.isValid(id) && !skipSet.has(id));
+    } catch (sampleLookupErr) {
+      console.warn(
+        "[DESIGN_HANDOFF_CANCEL] hex sample lookup failed",
+        sampleLookupErr?.message || sampleLookupErr,
+      );
+    }
+  }
+
+  const cancelIdStrings = [
+    ...new Set([
+      ...idStrings.filter((id) => !skipSet.has(id)),
+      ...hexSampleIdStrings,
+    ]),
+  ];
+  const ids = cancelIdStrings.map((id) => new Types.ObjectId(id));
   if (!ids.length) return { modifiedCount: 0 };
 
   const requests = await Request.find({ _id: { $in: ids } });
-  const excludeSiblingIds = idStrings;
+  const excludeSiblingIds = [
+    ...new Set([...idStrings, ...skipSet, ...hexSampleIdStrings]),
+  ];
   await Promise.all(
     requests.map(async (request) => {
       applyPtxDesignCancelFields(request);
