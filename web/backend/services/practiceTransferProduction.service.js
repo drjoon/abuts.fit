@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-09-03: PTX 준비 등록 시에도 헥스 미확정 제조사면 확인용 복사샘플 생성(relatedRequestIds 제외).
 // - 2026-09-03: PTX 헥스 시드도 from-draft와 동일 — case별 implantManufacturer로 hexByImplantManufacturer 해석.
 // - 2026-08-31: PTX CA 생산·배송 크레딧 hold는 수락이 아니라 design-handoff에서 잡음.
 // - 2026-08-31: 수락 취소 시 어벗디자인비도 revoke(design-handoff cancel과 동일).
@@ -14,7 +15,6 @@
 // - 2026-08-22: already_created여도 연동 CA 크레딧 hold를 다시 시도(누락 hold 보정, 기존은 idempotent skip).
 // - 2026-08-21: PTX CA 배송비는 Request 박스 hold(디자인 핸드오프 시 holdRequestCreditsOnSubmit).
 // - 2026-08-21: PTX 작업취소 시 연동 CA 취소 후 어벗츠로의뢰 건수·목록 캐시·소켓 갱신.
-// - 2026-08-21: PTX(구강스캔 기공의뢰수신) CA는 헥스 확인 샘플 미생성 — 어벗츠 직접의뢰(어벗디자인)에서만.
 // - 2026-08-21: 헥스 확인 샘플은 relatedRequestIds에 넣지 않음(어벗 개수 오인 방지).
 // - 2026-08-21: tryStartAbutmentProduction — Request 가공 진입을 병렬(다치아 confirm 지연 완화).
 // - 2026-08-21: CA Request — 구강스캔 없이 수락·생성(어벗 STL 업로드 가능).
@@ -58,6 +58,7 @@ import {
   resolveHexRotationByDesignSoftware,
   isHexVerificationSampleCase,
 } from "../utils/designSoftwareHex.js";
+import { maybeCreateHexVerificationSampleForFirstOrder } from "./hexVerificationSample.service.js";
 import {
   normalizeCaseInfosImplantFields,
   addKoreanBusinessDays,
@@ -928,8 +929,33 @@ export async function createAbutmentRequestsFromPracticeTransfer({
     created.push(newRequest);
   }
 
-  // PTX(구강스캔 기공의뢰수신)는 헥스 확인 샘플을 만들지 않는다.
-  // 첫 ExoCAD 확인용 샘플은 기공소→어벗츠 어벗디자인 직접의뢰(from-draft)에서만 생성.
+  // 헥스 미확정 제조사 → 확인용 복사샘플(제조사당 1건). relatedRequestIds에는 넣지 않음.
+  // 수락 critical path를 막지 않도록 fire-and-forget.
+  if (created.length > 0) {
+    void maybeCreateHexVerificationSampleForFirstOrder({
+      sourceRequests: created,
+      userId: labUserId,
+      businessAnchorId: labAnchorId,
+      actorUserId: actorUserId || labUserId,
+    })
+      .then((samples) => {
+        if (!Array.isArray(samples) || samples.length === 0) return;
+        console.log(
+          "[createAbutmentRequestsFromPracticeTransfer] hex verification sample created",
+          {
+            transferId: String(transferDoc?.transferId || transferDoc?._id || ""),
+            count: samples.length,
+            sampleRequestIds: samples.map((s) => String(s?.requestId || "")),
+          },
+        );
+      })
+      .catch((hexSampleErr) => {
+        console.warn(
+          "[createAbutmentRequestsFromPracticeTransfer] hex verification sample failed",
+          hexSampleErr?.message || hexSampleErr,
+        );
+      });
+  }
 
   try {
     await triggerDashboardSummaryRefreshForAnchorId(labAnchorId);
@@ -954,7 +980,7 @@ export async function createAbutmentRequestsFromPracticeTransfer({
  * CA 포함이면 Request 생성(이미 있으면 no-op) 후 production.relatedRequestIds·shippingMode 갱신.
  * 이미 생성된 Request는 현재 수락 기공소(targetLabAnchorId)로 소유를 맞춘다.
  * relatedRequestIds에는 헥스 확인 샘플을 넣지 않는다(레거시 혼입분도 정리).
- * PTX CA는 헥스 확인 샘플을 생성하지 않는다(어벗디자인 직접의뢰만).
+ * 헥스 미확정 제조사는 확인용 복사샘플을 별도 Request로 생성한다(relatedRequestIds 제외).
  */
 export async function ensureAbutmentRequestsOnAccept({
   transferDoc,

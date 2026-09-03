@@ -1,6 +1,7 @@
 // related: AdminDashboardPage.tsx, admin.hexVerification.controller.js
 // change-log:
 // - 2026-09-03: BA/직원 collapse `??`/`||` 우선순위 수정 — pending 카드도 접힘
+// - 2026-09-03: 스위치 옆 라벨을 확정/미정으로 동적 표시
 // - 2026-09-03: 안내 문구 축약 · 사업자/이름/이메일/제조사 검색
 // - 2026-09-03: 스위치 낙관적 반영 + 디바운스 저장 (토글마다 POST/목록 refetch 제거)
 // - 2026-09-03: 0°/30°·확정 스위치 가로 배치
@@ -488,8 +489,14 @@ export function HexVerificationAdminPanel({ token, enabled = true }: Props) {
                                         </span>
                                       </div>
                                       <div className="flex items-center gap-1.5">
-                                        <span className="text-[10px] text-muted-foreground shrink-0">
-                                          확정
+                                        <span
+                                          className={
+                                            displayed.confirmed
+                                              ? "text-[10px] font-semibold text-emerald-700 shrink-0"
+                                              : "text-[10px] font-semibold text-amber-700 shrink-0"
+                                          }
+                                        >
+                                          {displayed.confirmed ? "확정" : "미정"}
                                         </span>
                                         <Switch
                                           checked={displayed.confirmed}

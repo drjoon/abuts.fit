@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-03: 워크시트 business 헥스 — case implantManufacturer로 해석 + hexByImplantManufacturer 포함(BA 레거시 전건 확정 번짐 제거).
 // - 2026-08-26: 관리자 모니터링(view=monitoring) — 제조사 준비 큐(productModeNe)와 동일 제외(PTX 디자인 미완료·레거시 디자인 mode).
 // - 2026-08-26: 샘플 하드삭제 시 MachiningRecord.requestDeletedAt 마킹(완료 목록 라벨 유지).
 // - 2026-08-25: 관리자 헥스 확정 시 updateRndHexRotation 제조사 변경 차단.
@@ -1932,6 +1933,7 @@ export async function getAllRequests(req, res) {
             "requestSettings.anodizingEnabled": 1,
             "requestSettings.exoCadVersion": 1,
             "requestSettings.hexVerificationResultHex": 1,
+            "requestSettings.hexByImplantManufacturer": 1,
           })
           .lean();
         for (const row of businesses) {
@@ -1997,10 +1999,21 @@ export async function getAllRequests(req, res) {
           typeof item.requestor.requestSettings === "object"
             ? item.requestor.requestSettings
             : undefined;
+        const implantManufacturerForHex =
+          item?.caseInfos?.implantManufacturer ?? null;
+        // 임플란트 제조사별 verifiedHex만. 제조사 없이 호출하면 BA 레거시 확정이 전 건에 번짐.
         const adminVerifiedHex = resolveAdminVerifiedHexFromSettings(
           requestorSettingsRaw,
           requestSettingsRaw,
+          implantManufacturerForHex,
         );
+        const hexByImplantManufacturer = Array.isArray(
+          requestorSettingsRaw?.hexByImplantManufacturer,
+        )
+          ? requestorSettingsRaw.hexByImplantManufacturer
+          : Array.isArray(requestSettingsRaw?.hexByImplantManufacturer)
+            ? requestSettingsRaw.hexByImplantManufacturer
+            : [];
         const weeklyBatchDaysRaw = Array.isArray(
           shippingPolicyRaw?.weeklyBatchDays,
         )
@@ -2034,6 +2047,7 @@ export async function getAllRequests(req, res) {
                 ? requestSettingsRaw.anodizingEnabled
                 : null,
             hexVerificationResultHex: adminVerifiedHex,
+            hexByImplantManufacturer,
           },
         };
         item.requestorBusinessAnchor = item.business;

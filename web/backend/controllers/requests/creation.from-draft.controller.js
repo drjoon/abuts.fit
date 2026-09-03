@@ -2050,20 +2050,23 @@ export async function createRequestsFromDraft(req, res) {
           // hold 실패로 취소했으면 헥스 샘플·대시보드만 갱신(샘플은 스킵)
           if (holdOk && hexCtx?.sourceRequests?.length) {
             try {
-              const verificationClone =
+              const verificationClones =
                 await maybeCreateHexVerificationSampleForFirstOrder(hexCtx);
-              if (verificationClone) {
+              for (const verificationClone of verificationClones || []) {
                 const sampleRequestId = String(
-                  verificationClone.requestId || "",
+                  verificationClone?.requestId || "",
                 ).trim();
                 if (sampleRequestId) requestIdsForRefresh.push(sampleRequestId);
                 console.log(
                   "[createRequestsFromDraft] hex verification sample created",
                   {
-                    sourceRequestId: String(
-                      hexCtx.sourceRequests[0]?.requestId || "",
-                    ),
                     sampleRequestId,
+                    manufacturer:
+                      verificationClone?.caseInfos
+                        ?.hexVerificationSampleManufacturer ||
+                      verificationClone?.caseInfos?.implantManufacturer ||
+                      null,
+                    referenceIds: verificationClone?.referenceIds || [],
                   },
                 );
               }

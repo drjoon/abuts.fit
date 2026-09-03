@@ -4,6 +4,7 @@
 // - web/backend/modules/admin/admin.routes.js
 // - web/frontend/src/pages/admin/dashboard/AdminDashboardPage.tsx
 // change-log:
+// - 2026-09-03: 제조사별 확정/되돌리기 시 BA·User 레거시 hexVerificationResultHex 제거(전 제조사 확정 번짐 방지).
 // - 2026-09-03: 제조사 초기값=30°·미정. 레거시 계정 확정을 전 제조사 확정으로 번지지 않음.
 // - 2026-09-03: ExoCAD 3.0 이하 User를 BA 카드로 그룹. 임플란트 제조사별 applyHex30/확정 API.
 // - 2026-08-25: 관리자 확정 → 미확인(pending) 되돌리기 API
@@ -31,6 +32,45 @@ import {
 } from "../../utils/designSoftwareHex.js";
 
 const REQUESTOR_ROLES = ["requestor", "internalLab"];
+
+/** 제조사별 SSOT 사용 시 계정·BA 레거시 단일 확정 필드 제거. */
+const clearLegacyAccountHexVerification = (requestSettings) => {
+  if (!requestSettings || typeof requestSettings !== "object") return false;
+  let changed = false;
+  if (requestSettings.hexVerificationResultHex) {
+    requestSettings.hexVerificationResultHex = null;
+    changed = true;
+  }
+  if (requestSettings.hexVerificationCompletedAt) {
+    requestSettings.hexVerificationCompletedAt = null;
+    changed = true;
+  }
+  if (requestSettings.hexVerificationCompletedBy) {
+    requestSettings.hexVerificationCompletedBy = null;
+    changed = true;
+  }
+  return changed;
+};
+
+const clearLegacyHexOnUserAndAnchor = async (user) => {
+  if (!user) return;
+  user.requestSettings = user.requestSettings || {};
+  if (clearLegacyAccountHexVerification(user.requestSettings)) {
+    user.markModified("requestSettings");
+  }
+  const anchorId = user.businessAnchorId;
+  if (!anchorId || !Types.ObjectId.isValid(String(anchorId))) return;
+  const anchor = await BusinessAnchor.findById(anchorId).select({
+    requestSettings: 1,
+  });
+  if (!anchor) return;
+  anchor.requestSettings = anchor.requestSettings || {};
+  if (clearLegacyAccountHexVerification(anchor.requestSettings)) {
+    anchor.requestSettings.updatedAt = new Date();
+    anchor.markModified("requestSettings");
+    await anchor.save();
+  }
+};
 
 const pickBusinessName = (anchor) => {
   const meta =
@@ -328,6 +368,7 @@ export const completeHexVerificationForManufacturer = asyncHandler(
     const user = await User.findById(userId).select({
       role: 1,
       name: 1,
+      businessAnchorId: 1,
       requestSettings: 1,
     });
     if (!user) throw new ApiError(404, "사용자를 찾을 수 없습니다.");
@@ -351,6 +392,7 @@ export const completeHexVerificationForManufacturer = asyncHandler(
     user.requestSettings = user.requestSettings || {};
     user.requestSettings.hexByImplantManufacturer = rows;
     user.requestSettings.updatedAt = now;
+    await clearLegacyHexOnUserAndAnchor(user);
     user.markModified("requestSettings");
     await user.save();
 
@@ -389,6 +431,7 @@ export const revertHexVerificationForManufacturer = asyncHandler(
 
     const user = await User.findById(userId).select({
       role: 1,
+      businessAnchorId: 1,
       requestSettings: 1,
     });
     if (!user) throw new ApiError(404, "사용자를 찾을 수 없습니다.");
@@ -408,13 +451,8 @@ export const revertHexVerificationForManufacturer = asyncHandler(
     );
     user.requestSettings = user.requestSettings || {};
     user.requestSettings.hexByImplantManufacturer = rows;
-    // 레거시 계정 단일 확정이 있으면 제조사별 미확정이 가려지므로 제거
-    if (user.requestSettings.hexVerificationResultHex) {
-      user.requestSettings.hexVerificationResultHex = null;
-      user.requestSettings.hexVerificationCompletedAt = null;
-      user.requestSettings.hexVerificationCompletedBy = null;
-    }
     user.requestSettings.updatedAt = now;
+    await clearLegacyHexOnUserAndAnchor(user);
     user.markModified("requestSettings");
     await user.save();
 

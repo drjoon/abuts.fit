@@ -5,7 +5,7 @@
 // - web/frontend/src/features/requestSettings/DesignSoftwareSettingsDialog.tsx
 // - web/backend/controllers/admin/admin.hexVerification.controller.js
 // change-log:
-// - 2026-09-03: 제조사별 확정 SSOT만 사용(레거시 계정 확정으로 전 제조사 확정 번짐 제거). 초기값 30°·미정.
+// - 2026-09-03: 제조사별 확정 SSOT만 사용(레거시 계정 확정으로 전 제조사 확정 번짐 제거). User 맵 행(미정 포함)이 있으면 BA로 번지지 않음. 초기값 30°·미정.
 // - 2026-09-03: ExoCAD 3.0 이하 × 임플란트 제조사별 헥스 맵(applyHex30/verifiedHex). 계정 단일 확정은 레거시 fallback.
 // - 2026-08-25: 확정 후 우선순위 관리자 > 제조사. pending은 디자인SW 강제(제조사는 의뢰 단위 변경 가능).
 // - 2026-08-21: 헥스 확인 pending SSOT = ExoCAD && 관리자 hexVerificationResultHex 없음
@@ -136,6 +136,7 @@ export const isExoCadLe30 = (designSoftwareRaw, exoCadVersionRaw = null) => {
 /**
  * 임플란트 제조사별 관리자 확정 헥스.
  * SSOT: User/BA.hexByImplantManufacturer[M].verifiedHex 만.
+ * User에 해당 제조사 행이 있으면(verifiedHex null=미정 포함) BA로 번지지 않음.
  * 없으면 null(미정). 레거시 계정 hexVerificationResultHex로 번지지 않음.
  */
 export const resolveVerifiedHexForImplantManufacturer = (
@@ -143,13 +144,13 @@ export const resolveVerifiedHexForImplantManufacturer = (
   implantManufacturerRaw = null,
   anchorRequestSettings = null,
 ) => {
-  const fromUser = normalizeHexVerificationResultHex(
-    findHexByImplantManufacturerEntry(
-      userRequestSettings,
-      implantManufacturerRaw,
-    )?.verifiedHex,
+  const userEntry = findHexByImplantManufacturerEntry(
+    userRequestSettings,
+    implantManufacturerRaw,
   );
-  if (fromUser) return fromUser;
+  if (userEntry) {
+    return normalizeHexVerificationResultHex(userEntry.verifiedHex);
+  }
   return normalizeHexVerificationResultHex(
     findHexByImplantManufacturerEntry(
       anchorRequestSettings,

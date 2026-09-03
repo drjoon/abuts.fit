@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-03: requestSettings merge 시 빈 hexByImplantManufacturer로 덮지 않음(헥스 확정/미정 뱃지).
 // - 2026-08-29: forceRefresh가 STL/NC 캐시를 통째로 건너뛰지 않음 — 버전 키·선택 무효화로 바뀐 파일만 재다운로드.
 // - 2026-08-29: 프리뷰 오픈 시 IndexedDB 히트 복구 — 다운로드 blob은 항상 캐시 저장, 가공 큐는 filled STL 없으면 full request 보강.
 // - 2026-08-26: NC 프리뷰 — uploadedAt/fileSize 없는 버전리스 IndexedDB 캐시 금지, full request 보강, #521↔소재직경 불일치 시 재다운로드.
@@ -319,6 +320,28 @@ export function usePreviewLoader({
             const fullBody: any = await fullRes.json().catch(() => ({}));
             const fullReq = fullBody?.data?.request || fullBody?.data || null;
             if (fullRes.ok && fullBody?.success !== false && fullReq) {
+              const mergeRequestSettings = (
+                prevRs: Record<string, unknown> | undefined,
+                nextRs: Record<string, unknown> | undefined,
+              ) => {
+                const prevRows = Array.isArray(prevRs?.hexByImplantManufacturer)
+                  ? prevRs.hexByImplantManufacturer
+                  : null;
+                const nextRows = Array.isArray(nextRs?.hexByImplantManufacturer)
+                  ? nextRs.hexByImplantManufacturer
+                  : null;
+                const hexByImplantManufacturer =
+                  nextRows && nextRows.length > 0
+                    ? nextRows
+                    : prevRows && prevRows.length > 0
+                      ? prevRows
+                      : nextRows || prevRows || [];
+                return {
+                  ...(prevRs || {}),
+                  ...(nextRs || {}),
+                  hexByImplantManufacturer,
+                };
+              };
               targetReq = {
                 ...req,
                 ...fullReq,
@@ -338,18 +361,18 @@ export function usePreviewLoader({
                 requestor: {
                   ...(req?.requestor || {}),
                   ...(fullReq?.requestor || {}),
-                  requestSettings: {
-                    ...((req?.requestor as any)?.requestSettings || {}),
-                    ...((fullReq?.requestor as any)?.requestSettings || {}),
-                  },
+                  requestSettings: mergeRequestSettings(
+                    (req?.requestor as any)?.requestSettings,
+                    (fullReq?.requestor as any)?.requestSettings,
+                  ),
                 },
                 business: {
                   ...((req as any)?.business || {}),
                   ...(fullReq?.business || {}),
-                  requestSettings: {
-                    ...((req as any)?.business?.requestSettings || {}),
-                    ...(fullReq?.business?.requestSettings || {}),
-                  },
+                  requestSettings: mergeRequestSettings(
+                    (req as any)?.business?.requestSettings,
+                    fullReq?.business?.requestSettings,
+                  ),
                 },
                 lotNumber: {
                   ...(req?.lotNumber || {}),

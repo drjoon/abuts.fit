@@ -2,10 +2,10 @@
 // - web/backend/utils/designSoftwareHex.js
 // - web/backend/controllers/requests/creation.from-draft.controller.js
 // - web/backend/controllers/requests/common.requests.controller.js
-// - web/backend/services/practiceTransferProduction.service.js (PTX는 샘플 미생성)
+// - web/backend/services/practiceTransferProduction.service.js (PTX 준비 등록 시에도 미확정 제조사 샘플 생성)
 // - web/backend/controllers/requests/common.review.controller.js
 // change-log:
-// - 2026-08-21: PTX(구강스캔 기공의뢰수신)는 샘플 미생성 — from-draft(어벗디자인)만.
+// - 2026-09-03: 임플란트 제조사별 미확정이면 배치 내 제조사당 샘플 1건. PTX 준비 등록도 동일.
 // - 2026-08-21: 워크시트 준비 목록에서 헥스 샘플 filled STL 누락을 원본에서 보정.
 // - 2026-08-21: 클론 저장 후 빈 stlFile/camFile 스텁 $unset. 생성 직후 원본 filled 있으면 즉시 복사.
 // - 2026-08-21: pending SSOT = 관리자 hexVerificationResultHex 없음(+활성 샘플 없으면 생성)
@@ -444,9 +444,9 @@ export async function createHexVerificationSampleClone({
 }
 
 /**
- * ExoCAD 첫 확인용 샘플이 필요하면 첫 원본에 대해 복사샘플 1건 생성.
- * 다중 케이스 첫 주문이면 첫 번째 원본만 복제한다.
- * 자격 SSOT: 관리자 hexVerificationResultHex 미확정 + 활성 샘플 없음.
+ * ExoCAD 헥스 미확정 제조사마다 확인용 복사샘플 1건 생성.
+ * 배치에 제조사가 여러 개면 제조사당 첫 원본만 복제. 이미 활성 샘플이 있으면 스킵.
+ * @returns {Promise<object[]>} 생성된 샘플 Request 목록
  */
 export async function maybeCreateHexVerificationSampleForFirstOrder({
   sourceRequests,
@@ -460,54 +460,74 @@ export async function maybeCreateHexVerificationSampleForFirstOrder({
     : sourceRequests
       ? [sourceRequests]
       : [];
-  if (list.length === 0) return null;
+  if (list.length === 0) return [];
 
-  const designSoftware = String(
-    list[0]?.caseInfos?.designSoftware || "",
-  ).trim();
-  const exoCadVersion = list[0]?.caseInfos?.exoCadVersion || null;
-  const implantManufacturer = String(
-    list[0]?.caseInfos?.implantManufacturer || "",
-  ).trim();
-
-  const pending = await isHexVerificationSamplePendingEligible({
-    userId,
-    businessAnchorId,
-    session,
-    designSoftware,
-    exoCadVersion,
-    implantManufacturer,
-  });
-  if (!pending) return null;
-
-  const created = await createHexVerificationSampleClone({
-    sourceRequest: list[0],
-    actorUserId: actorUserId || userId,
-    session,
-  });
-  if (!created) return null;
-
-  // 원본 Rhino가 샘플보다 먼저 끝났으면 생성 직후 filled STL을 바로 복사한다.
-  try {
-    const sourceId = list[0]?._id || list[0]?.id;
-    const freshSource = sourceId
-      ? await Request.findById(sourceId).session(session || null)
-      : null;
-    if (freshSource) {
-      await copyFilledStlToHexVerificationSamples(freshSource);
-      const refreshed = await Request.findById(created._id).session(
-        session || null,
-      );
-      if (refreshed) return refreshed;
-    }
-  } catch (copyErr) {
-    console.warn(
-      "[maybeCreateHexVerificationSampleForFirstOrder] copy filled STL failed",
-      copyErr?.message || copyErr,
+  /** @type {Map<string, object>} */
+  const firstByManufacturer = new Map();
+  for (const req of list) {
+    if (req?.caseInfos?.hexVerificationSample === true) continue;
+    const mfrKey = normalizeImplantManufacturerKey(
+      req?.caseInfos?.implantManufacturer,
     );
+    if (!mfrKey || firstByManufacturer.has(mfrKey)) continue;
+    firstByManufacturer.set(mfrKey, req);
+  }
+  if (firstByManufacturer.size === 0) return [];
+
+  const createdSamples = [];
+  for (const [mfrKey, sourceReq] of firstByManufacturer) {
+    const designSoftware = String(
+      sourceReq?.caseInfos?.designSoftware || "",
+    ).trim();
+    const exoCadVersion = sourceReq?.caseInfos?.exoCadVersion || null;
+    const implantManufacturer = String(
+      sourceReq?.caseInfos?.implantManufacturer || mfrKey,
+    ).trim();
+
+    const pending = await isHexVerificationSamplePendingEligible({
+      userId,
+      businessAnchorId,
+      session,
+      designSoftware,
+      exoCadVersion,
+      implantManufacturer,
+    });
+    if (!pending) continue;
+
+    const created = await createHexVerificationSampleClone({
+      sourceRequest: sourceReq,
+      actorUserId: actorUserId || userId,
+      session,
+    });
+    if (!created) continue;
+
+    // 원본 Rhino가 샘플보다 먼저 끝났으면 생성 직후 filled STL을 바로 복사한다.
+    try {
+      const sourceId = sourceReq?._id || sourceReq?.id;
+      const freshSource = sourceId
+        ? await Request.findById(sourceId).session(session || null)
+        : null;
+      if (freshSource) {
+        await copyFilledStlToHexVerificationSamples(freshSource);
+        const refreshed = await Request.findById(created._id).session(
+          session || null,
+        );
+        createdSamples.push(refreshed || created);
+        continue;
+      }
+    } catch (copyErr) {
+      console.warn(
+        "[maybeCreateHexVerificationSampleForFirstOrder] copy filled STL failed",
+        {
+          manufacturer: mfrKey,
+          message: copyErr?.message || copyErr,
+        },
+      );
+    }
+    createdSamples.push(created);
   }
 
-  return created;
+  return createdSamples;
 }
 
 const cloneJson = (value) => {
