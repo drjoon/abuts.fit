@@ -1,6 +1,7 @@
 // related files:
 // - web/backend/services/practiceTransferProduction.service.js
 // change-log:
+// - 2026-09-03: handoff 게이트 — CA toothWorks만 필수. 구강스캔(files)은 선택.
 // - 2026-09-03: CA Request는 STL handoff 직전 생성 — accept는 related 비움.
 
 import {
@@ -15,7 +16,7 @@ describe("practiceTransfer abutment handoff deferral helpers", () => {
     expect(ensureAbutmentRequestsOnAccept).toBe(ensureAbutmentRequestsForHandoff);
   });
 
-  test("handoff gates: CA toothWorks + oral scan files with s3Key", () => {
+  test("handoff gates: CA toothWorks required; oral scan files optional", () => {
     expect(hasCustomAbutmentToothWorks([])).toBe(false);
     expect(
       hasCustomAbutmentToothWorks([
@@ -27,13 +28,13 @@ describe("practiceTransfer abutment handoff deferral helpers", () => {
       ]),
     ).toBe(true);
 
-    // 스캔 없음 → transfer handoff 거절 조건
+    // 스캔 없음·s3Key 없음 → 정규화 결과 비어도 handoff는 허용(어벗 STL만)
     expect(normalizeResultFiles([])).toEqual([]);
     expect(
       normalizeResultFiles([{ file: { originalName: "no-key.ply" } }]),
     ).toHaveLength(0);
 
-    // 스캔 있음 → handoff에서 ensure 허용
+    // 스캔 있으면 designSourceFiles로 보존(선택)
     expect(
       normalizeResultFiles([
         {

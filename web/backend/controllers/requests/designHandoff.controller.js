@@ -1,3 +1,4 @@
+// - 2026-09-03: PTX abutment-design-handoff — 구강스캔(files) 없어도 어벗 STL만으로 CA Request 생성.
 // - 2026-09-03: PTX abutment-design-handoff — 수락이 아니라 STL 업로드 시 CA Request 생성.
 // - 2026-09-03: handoff — 기존 designSourceFiles(구강스캔) 보존·비STL 거부. 완료 후 헥스 샘플 생성.
 // - 2026-09-03: handoff/cancel — relatedRequestIds에 없는 헥스 확인용 복사샘플도 원본과 함께 취소.
@@ -60,7 +61,6 @@ import {
   isAbutmentRequestPastReadyForCancel,
   loadLabRequestMetaForProduction,
   mirrorDesignFileToPracticeTransfer,
-  normalizeResultFiles,
   repriceAndReschedulePtxAbutmentRequest,
   resolveHexRotationByDesignSoftware,
   resolveLabManufacturerHexForImplant,
@@ -1428,15 +1428,7 @@ export async function handoffPracticeTransferAbutmentDesign(req, res) {
       });
     }
 
-    const scanFiles = normalizeResultFiles(transferDoc.files);
-    if (scanFiles.length === 0) {
-      return res.status(409).json({
-        success: false,
-        message:
-          "구강스캔 파일이 없어 제조사 의뢰를 만들 수 없습니다. 치과 전송 파일을 확인해주세요.",
-      });
-    }
-
+    // 구강스캔(transfer.files)은 선택 — 어벗 디자인 STL만 있으면 제조사 의뢰 생성.
     const tooth = String(
       req.body?.tooth ||
         req.body?.caseInfos?.tooth ||

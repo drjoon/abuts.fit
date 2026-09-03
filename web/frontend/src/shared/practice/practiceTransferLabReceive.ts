@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/components/practice/LabReceiveWorkUploadDialog.tsx
 // change-log:
+// - 2026-09-03: listPracticeTransferUploadedAbutmentTeeth — STL 업로드된 치아(취소줄 표시용).
 // - 2026-09-03: 모달 안내는 LabPendingAbutmentGuide에서 치아번호만 — formatPendingLabAbutmentDetailLine 제거.
 // - 2026-09-02: 미제공 안내 한 줄 — 제조사만이 아니라 formatImplantSummary 전체 스펙.
 // - 2026-09-02: toothWorks 구조 배열 우선(요청중 implantAddRequest — 요약 문자열 왕복 손실 방지).
@@ -491,6 +492,47 @@ export function practiceTransferNeedsMoreAbutmentDesigns(
   );
   if (expected <= 0) return designCount === 0;
   return designCount < expected;
+}
+
+/**
+ * 어벗 디자인 STL이 올라간 치아번호 집합(안내 줄 취소선용).
+ * tooth가 비어 있는 designFiles는 어벗츠 CA 치식 순으로 앞에서부터 배정.
+ */
+export function listPracticeTransferUploadedAbutmentTeeth(
+  transfer: PracticeTransferLabReceiveItem | null | undefined,
+  catalog: RoundBarCatalogRow[] = [],
+): Set<string> {
+  const uploaded = new Set<string>();
+  if (!transfer) return uploaded;
+
+  const files = Array.isArray(transfer.production?.designFiles)
+    ? transfer.production.designFiles
+    : [];
+  let orphanCount = 0;
+  for (const row of files) {
+    const tooth = String(row?.tooth || "").trim();
+    if (tooth) uploaded.add(tooth);
+    else orphanCount += 1;
+  }
+  if (orphanCount <= 0) return uploaded;
+
+  const abutsTeeth = listPracticeTransferAbutsCustomAbutmentToothWorks(
+    transfer,
+    catalog,
+  )
+    .map((row) => String(row.toothNumber || "").trim())
+    .filter(Boolean)
+    .sort(
+      (a, b) => toToothMemoSortNumber(a) - toToothMemoSortNumber(b),
+    );
+  let remaining = orphanCount;
+  for (const tooth of abutsTeeth) {
+    if (remaining <= 0) break;
+    if (uploaded.has(tooth)) continue;
+    uploaded.add(tooth);
+    remaining -= 1;
+  }
+  return uploaded;
 }
 
 /** 보철 업로드 슬롯 — 브리지(연결) 1파일, 크라운·인레이 등 치아당 1파일 */

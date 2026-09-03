@@ -3,6 +3,8 @@
 // - web/frontend/src/shared/components/practice/PracticeLabReceiveWorkActionsBar.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // change-log:
+// - 2026-09-03: 업로드 치아 — 에메랄드 + 굵은 취소선(decoration-2.5px).
+// - 2026-09-03: 어벗 STL 업로드된 치아는 번호에 취소줄(line-through).
 // - 2026-09-03: 모달 안내 상세는 치아번호만(`11, 21`). 임플란트 스펙은 의뢰 상세 등 다른 UI 유지.
 // - 2026-09-02: 어벗츠 제공 CA만 있어도 안내 표시. 심플어벗은 항상 제외.
 // - 2026-09-02: 미제공 안내 — 심플어벗(치과 재고)은 자체 처리 목록에서 제외.
@@ -13,6 +15,7 @@
 // - 2026-08-23: 채팅 높이 확보 — 치아 상세를 한 줄(인라인)로 압축.
 // - 2026-08-21: 미제공 CA 안내 문구 단문화(INTRO/OUTRO).
 // - 2026-08-21: 미제공 CA 안내 — 치아·임플란트 상세 + 기공소 자체 처리 문구.
+import { Fragment, type ReactNode } from "react";
 import {
   Tooltip,
   TooltipContent,
@@ -44,6 +47,8 @@ export type LabPendingAbutmentGuideProps = {
   mixedWithAbuts?: boolean;
   /** STL 업로드·제조사 큐 등록 후 — 「어벗츠 생산의뢰 완료」 */
   abutsProductionOrdered?: boolean;
+  /** 어벗 디자인 STL이 올라간 치아 — 해당 번호에 취소줄 */
+  uploadedAbutmentTeeth?: Iterable<string> | null;
   className?: string;
 };
 
@@ -80,12 +85,52 @@ function listAbutsOrderRows(
   );
 }
 
-/** 모달 안내 전용 — `11, 21` (임플란트 스펙 생략) */
-function formatToothNumberList(rows: ToothWorkSelection[]) {
-  return rows
+function toUploadedToothSet(
+  uploadedAbutmentTeeth: Iterable<string> | null | undefined,
+) {
+  const set = new Set<string>();
+  if (!uploadedAbutmentTeeth) return set;
+  for (const raw of uploadedAbutmentTeeth) {
+    const tooth = String(raw || "").trim();
+    if (tooth) set.add(tooth);
+  }
+  return set;
+}
+
+/** 모달 안내 전용 — `11, 21` (업로드된 번호은 굵은 취소선 + 완료 색) */
+function ToothNumberDetail({
+  rows,
+  struckTeeth,
+}: {
+  rows: ToothWorkSelection[];
+  struckTeeth?: Set<string>;
+}) {
+  const parts = rows
     .map((row) => String(row.toothNumber || "").trim())
-    .filter(Boolean)
-    .join(", ");
+    .filter(Boolean);
+  if (parts.length === 0) return null;
+  return (
+    <span className="font-medium">
+      {parts.map((tooth, index) => {
+        const uploaded = Boolean(struckTeeth?.has(tooth));
+        return (
+          <Fragment key={`${tooth}-${index}`}>
+            {index > 0 ? ", " : null}
+            <span
+              title={uploaded ? "어벗 디자인 업로드 완료" : undefined}
+              className={
+                uploaded
+                  ? "text-emerald-700 line-through decoration-emerald-700 decoration-[2.5px] dark:text-emerald-300 dark:decoration-emerald-300"
+                  : undefined
+              }
+            >
+              {tooth}
+            </span>
+          </Fragment>
+        );
+      })}
+    </span>
+  );
 }
 
 function GuideLine({
@@ -93,13 +138,17 @@ function GuideLine({
   detail,
 }: {
   label: string;
-  detail: string;
+  detail: ReactNode;
 }) {
   return (
     <p className="text-xs leading-snug text-amber-800 dark:text-amber-200">
       <span className="font-medium">{label}</span>
       {" — "}
-      <span className="font-medium">{detail}</span>
+      {typeof detail === "string" ? (
+        <span className="font-medium">{detail}</span>
+      ) : (
+        detail
+      )}
     </p>
   );
 }
@@ -128,19 +177,27 @@ function resolveTooltipBody(
 export function LabPendingAbutmentGuide({
   toothWorks,
   abutsProductionOrdered = false,
+  uploadedAbutmentTeeth = null,
   className,
 }: LabPendingAbutmentGuideProps) {
   const pendingRows = listPendingRows(toothWorks);
   const abutsRows = listAbutsOrderRows(toothWorks);
   if (pendingRows.length === 0 && abutsRows.length === 0) return null;
 
-  const abutsLabel = abutsProductionOrdered
+  const struckTeeth = toUploadedToothSet(uploadedAbutmentTeeth);
+  const allAbutsUploaded =
+    abutsRows.length > 0 &&
+    abutsRows.every((row) =>
+      struckTeeth.has(String(row.toothNumber || "").trim()),
+    );
+  const ordered = abutsProductionOrdered || allAbutsUploaded;
+  const abutsLabel = ordered
     ? LAB_PENDING_ABUTMENT_ABUTS_ORDERED_LABEL
     : LAB_PENDING_ABUTMENT_ABUTS_ORDER_LABEL;
   const tooltipBody = resolveTooltipBody(
     pendingRows.length > 0,
     abutsRows.length > 0,
-    abutsProductionOrdered,
+    ordered,
   );
 
   return (
@@ -155,13 +212,20 @@ export function LabPendingAbutmentGuide({
           {pendingRows.length > 0 ? (
             <GuideLine
               label={LAB_PENDING_ABUTMENT_SELF_PROCESS_LABEL}
-              detail={formatToothNumberList(pendingRows)}
+              detail={
+                <ToothNumberDetail rows={pendingRows} />
+              }
             />
           ) : null}
           {abutsRows.length > 0 ? (
             <GuideLine
               label={abutsLabel}
-              detail={formatToothNumberList(abutsRows)}
+              detail={
+                <ToothNumberDetail
+                  rows={abutsRows}
+                  struckTeeth={struckTeeth}
+                />
+              }
             />
           ) : null}
         </div>

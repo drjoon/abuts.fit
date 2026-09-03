@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/practice/practiceTransferLabReceive.ts
 // change-log:
+// - 2026-09-03: 어벗츠 안내 — 업로드된 치아 번호 취소줄(designFiles).
 // - 2026-09-02: 어벗츠 제공 CA만 있어도 안내 표시(심플어벗 제외).
 // - 2026-09-02: 공개 카탈로그로 도입중 CA 안내 보강(플래그 저장 누락 보정).
 // - 2026-09-02: 미제공 안내에 어벗츠 생산의뢰 완료 여부 전달.
@@ -24,6 +25,7 @@ import { PracticeAbutmentUploadOverdueAlert } from "@/shared/components/practice
 import { LabPendingAbutmentGuide } from "@/shared/components/practice/LabPendingAbutmentGuide";
 import {
   listPracticeTransferCustomAbutmentToothWorks,
+  listPracticeTransferUploadedAbutmentTeeth,
   resolvePracticeLabReceiveWorkActionState,
   resolvePracticeTransferAbutmentUploadOverdue,
   type PracticeTransferLabReceiveItem,
@@ -96,7 +98,13 @@ export function PracticeLabReceiveWorkActionsBar({
         catalog,
       )}
       mixedWithAbuts={state.hasAbutsCa}
-      abutsProductionOrdered={state.showAbutmentProductionCancel}
+      abutsProductionOrdered={
+        state.showAbutmentProductionCancel && !state.needsMoreAbutmentDesigns
+      }
+      uploadedAbutmentTeeth={listPracticeTransferUploadedAbutmentTeeth(
+        transfer,
+        catalog,
+      )}
     />
   ) : null;
 
