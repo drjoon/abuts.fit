@@ -7,6 +7,8 @@
 // - web/backend/controllers/requests/common.review.helpers.js
 // - web/backend/controllers/requests/mailbox.utils.js
 // change-log:
+// - 2026-09-03: hold 시작 시 devops·배송단가·기존 hold키 병렬 조회. 배송단가 60s 캐시.
+//   레거시 PTX 배송 hold 해제는 세션 없을 때 응답 후(void) — UI 「처리 중」 단축.
 // - 2026-08-22: PTX CA hold — price.designFee 없으면 디자인비 0(기본 5천 재가산 금지 → 생산 1.5만).
 // - 2026-08-22: 제출/수락 재진입 시 이미 있는 machining·express·shipping hold 키는 queue 전 skip(insertMany 중복 방지).
 // - 2026-08-21: PTX CA도 기공소 부담 의뢰비는 Request hold. 롤백 시 hold 복원·전환 플래그.
@@ -171,6 +173,9 @@ async function lockCreditBalanceGuardByAnchor({ businessAnchorId, session }) {
 }
 
 let cachedDevopsAnchorId = "";
+let cachedShippingFeeAt = 0;
+let cachedShippingFeeValue = null;
+const SHIPPING_FEE_CACHE_TTL_MS = 60 * 1000;
 
 export async function resolveDevopsEscrowOwnerId(session = null) {
   if (cachedDevopsAnchorId) return cachedDevopsAnchorId;
@@ -185,13 +190,23 @@ export async function resolveDevopsEscrowOwnerId(session = null) {
 }
 
 async function resolveShippingFeePerBox() {
+  const now = Date.now();
+  if (
+    cachedShippingFeeValue != null &&
+    now - cachedShippingFeeAt < SHIPPING_FEE_CACHE_TTL_MS
+  ) {
+    return cachedShippingFeeValue;
+  }
   try {
     const creditSettings = await loadCreditSettingsDefaults();
     const fee = Math.max(
       0,
       Math.round(Number(creditSettings?.shippingFee ?? SHIPPING_FEE_FALLBACK) || 0),
     );
-    return fee > 0 ? fee : SHIPPING_FEE_FALLBACK;
+    const resolved = fee > 0 ? fee : SHIPPING_FEE_FALLBACK;
+    cachedShippingFeeAt = now;
+    cachedShippingFeeValue = resolved;
+    return resolved;
   } catch {
     return SHIPPING_FEE_FALLBACK;
   }
@@ -741,27 +756,50 @@ export async function holdRequestCreditsOnSubmit({
 
   const holdT0 = Date.now();
   const timing = {
+    setupMs: 0,
     lockMs: 0,
+    balanceMs: 0,
     shipBoxLoadMs: 0,
     postJournalsMs: 0,
     reconcileMs: 0,
     reconcileSkipped: 0,
   };
 
-  const devopsAnchorId =
-    String(devopsAnchorIdArg || "").trim() ||
-    (await resolveDevopsEscrowOwnerId(session));
+  const shippingFeeFromArg = Math.round(Number(shippingFeeArg));
+  const shippingFeeFromArgOk =
+    Number.isFinite(shippingFeeFromArg) && shippingFeeFromArg > 0;
+  const devopsFromArg = String(devopsAnchorIdArg || "").trim();
+  const holdIdempotencyKeys = list.flatMap((request) => {
+    if (!request?._id) return [];
+    return [
+      requestMachiningHoldKey(request._id),
+      requestExpressHoldKey(request._id),
+      requestShippingHoldKey(request._id),
+    ];
+  });
+
+  // devops·배송단가·기존 hold 키는 서로 독립 — 병렬로 왕복 1회분 절약
+  const setupT0 = Date.now();
+  const [devopsAnchorId, shippingFee, existingHoldKeys] = await Promise.all([
+    devopsFromArg
+      ? Promise.resolve(devopsFromArg)
+      : resolveDevopsEscrowOwnerId(session),
+    shippingFeeFromArgOk
+      ? Promise.resolve(shippingFeeFromArg)
+      : resolveShippingFeePerBox(),
+    getJournalsByIdempotencyKeys({
+      idempotencyKeys: holdIdempotencyKeys,
+      session,
+    }),
+  ]);
+  timing.setupMs = Date.now() - setupT0;
+
   if (!devopsAnchorId) {
     const err = new Error("에스크로(devops) 사업자를 찾을 수 없습니다.");
     err.statusCode = 500;
     throw err;
   }
 
-  const shippingFeeFromArg = Math.round(Number(shippingFeeArg));
-  const shippingFee =
-    Number.isFinite(shippingFeeFromArg) && shippingFeeFromArg > 0
-      ? shippingFeeFromArg
-      : await resolveShippingFeePerBox();
   const shippingGroupHeld = new Set();
   const shipBoxRequests = [];
   const shipBoxStateByKey = new Map();
@@ -799,10 +837,12 @@ export async function holdRequestCreditsOnSubmit({
       balanceByAnchor.set(requestorAnchorId, seeded);
       return seeded;
     }
+    const balT0 = Date.now();
     const computed = await computeBusinessCreditBalanceFromLedger({
       businessAnchorId: requestorAnchorId,
       session,
     });
+    timing.balanceMs += Date.now() - balT0;
     balanceByAnchor.set(requestorAnchorId, computed);
     return computed;
   };
@@ -816,17 +856,6 @@ export async function holdRequestCreditsOnSubmit({
   const pendingJournals = [];
   // 재진입(already_created 수락 등) 시 이미 POSTED된 hold는 queue하지 않는다.
   // postGeneralLedgerJournals는 insertMany라 중복 idempotencyKey면 배치 전체가 실패한다.
-  const existingHoldKeys = await getJournalsByIdempotencyKeys({
-    idempotencyKeys: list.flatMap((request) => {
-      if (!request?._id) return [];
-      return [
-        requestMachiningHoldKey(request._id),
-        requestExpressHoldKey(request._id),
-        requestShippingHoldKey(request._id),
-      ];
-    }),
-    session,
-  });
   const hasExistingHold = (idempotencyKey) =>
     Boolean(existingHoldKeys.get(String(idempotencyKey || "").trim())?.journalId);
 
@@ -1019,10 +1048,23 @@ export async function holdRequestCreditsOnSubmit({
   }
 
   // Request 박스 hold가 SSOT — 레거시 PTX 건당 기공소→어벗츠 배송 hold는 해제.
-  await releaseLegacyPtxAbutsShippingHoldsForRequests({
-    requests: list,
-    session,
-  });
+  // 트랜잭션(session) 안에서는 await. 그 외는 잔액 가드 이후 부수 효과 → 응답을 막지 않음.
+  if (session) {
+    await releaseLegacyPtxAbutsShippingHoldsForRequests({
+      requests: list,
+      session,
+    });
+  } else {
+    void releaseLegacyPtxAbutsShippingHoldsForRequests({
+      requests: list,
+      session: null,
+    }).catch((legacyErr) => {
+      console.warn(
+        "[holdRequestCreditsOnSubmit] legacy PTX shipping release failed",
+        legacyErr?.message || legacyErr,
+      );
+    });
+  }
 
   if (process.env.NODE_ENV !== "production") {
     console.log("[holdRequestCreditsOnSubmit] timing", {

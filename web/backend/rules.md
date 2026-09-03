@@ -738,7 +738,9 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - fan-out emit 자체는 유지하되, 수신 화면이 payload 조건으로 이벤트를 좁혀 처리할 수 있어야 합니다.
   - Mutation UX latency(강제) — 업로드·취소·수락·완료·핸드오프:
     - 「처리 중…」 응답 전에는 권한·잔액 가드·상태 저장만 await.
-    - 디자인비 grant/revoke·대시보드 스냅샷·채팅 시스템 메시지·Rhino·worksheet emit는 응답 후(`void`).
+    - 디자인비 grant/revoke·대시보드 스냅샷·채팅 시스템 메시지·Rhino·worksheet emit·
+      PTX Transfer 디자인 미러(lab confirm 포함)·레거시 PTX 배송 hold 해제는 응답 후(`void`).
+    - `holdRequestCreditsOnSubmit`: devops·배송단가·기존 hold 키는 병렬 조회. 배송단가 60s 캐시.
     - 동일 Transfer/Request 재조회·이미 저장한 primary 재save 금지. 독립 작업은 `Promise.all`.
     - FE는 낙관적/로컬 패치; 성공 후 캘린더·`received` 전체 refetch로 busy를 늘리지 않음.
     - SSOT: `.cursor/rules/mutation-ux-latency.mdc`, 예: `controllers/requests/designHandoff.controller.js`.

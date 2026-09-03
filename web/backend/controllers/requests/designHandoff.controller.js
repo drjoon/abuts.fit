@@ -1,3 +1,5 @@
+// - 2026-09-03: PTX handoff — hold+lot+save만 응답 전. Transfer 미러·lab confirm·Rhino·emit은 응답 후.
+//   labMeta.labOrg를 reprice에 재사용. phase timing 로그.
 // - 2026-09-03: PTX 핸드오프 헥스 스탬프 — case implantManufacturer로 기공소 hexByImplantManufacturer 시드(from-draft 동일).
 // - 2026-09-02: PTX handoff — Rhino 필드·재견적을 병렬(응답 전 대기 단축). S3 재업로드 없음.
 // - 2026-09-02: handoff/cancel — Transfer 1회 조회·형제 취소 병렬·디자인비 grant/revoke 응답 후 처리.
@@ -198,7 +200,10 @@ const buildRhinoInputFileName = (request) => {
   return `${requestId}-${String(ci.clinicName || "").trim()}-${String(ci.patientName || "").trim()}-${String(ci.tooth || "").trim()}${ext}`;
 };
 
-const ensurePtxProductionRhinoReadyFields = async (request) => {
+const ensurePtxProductionRhinoReadyFields = async (
+  request,
+  { resolvePrc = true } = {},
+) => {
   if (!request.caseInfos) request.caseInfos = {};
   if (!request.rnd) request.rnd = {};
 
@@ -235,8 +240,9 @@ const ensurePtxProductionRhinoReadyFields = async (request) => {
   };
 
   if (
-    !String(request.caseInfos.faceHolePrcFileName || "").trim() ||
-    !String(request.caseInfos.connectionPrcFileName || "").trim()
+    resolvePrc &&
+    (!String(request.caseInfos.faceHolePrcFileName || "").trim() ||
+      !String(request.caseInfos.connectionPrcFileName || "").trim())
   ) {
     try {
       const prc = await resolvePrcFileNames(request.caseInfos);
@@ -259,6 +265,36 @@ const ensurePtxProductionRhinoReadyFields = async (request) => {
     request.caseInfos.file.filePath = standardName;
   }
   return standardName;
+};
+
+/** 응답 후 PRC 시드 + Request patch (제조사/Rhino용). */
+const seedPrcFieldsAfterHandoff = async (request) => {
+  if (!request?.caseInfos) return false;
+  if (
+    String(request.caseInfos.faceHolePrcFileName || "").trim() &&
+    String(request.caseInfos.connectionPrcFileName || "").trim()
+  ) {
+    return false;
+  }
+  try {
+    const prc = await resolvePrcFileNames(request.caseInfos);
+    const $set = {};
+    if (prc.faceHolePrcFileName) {
+      request.caseInfos.faceHolePrcFileName = prc.faceHolePrcFileName;
+      $set["caseInfos.faceHolePrcFileName"] = prc.faceHolePrcFileName;
+    }
+    if (prc.connectionPrcFileName) {
+      request.caseInfos.connectionPrcFileName = prc.connectionPrcFileName;
+      $set["caseInfos.connectionPrcFileName"] = prc.connectionPrcFileName;
+    }
+    if (Object.keys($set).length && request._id) {
+      await Request.updateOne({ _id: request._id }, { $set });
+      return true;
+    }
+  } catch (e) {
+    console.warn("[DESIGN_HANDOFF] PRC resolve(after) failed", e?.message || e);
+  }
+  return false;
 };
 
 const healRequestOwnershipToAcceptingLab = (request, transferTargetLabAnchorId) => {
@@ -610,15 +646,19 @@ export async function handoffDesignToProduction(req, res) {
     // PTX 수락 기공소 핸드오프: 화면의 디자인SW·아노다이징·헥스를 제조사 Request에 확정.
     // (수락 직후 생성분이 예전 코드/동기화되지 않은 사업체 설정이어도 업로드 시점에 맞춘다.)
     // 헥스는 from-draft와 동일 — case implantManufacturer로 기공소 hexByImplantManufacturer 시드.
+    let stampedLabOrg = null;
+    let labMetaMs = 0;
     if (acceptingLabPtx) {
       const stampLabAnchorId =
         String(transferTargetLabAnchorId || "").trim() ||
         String(request.businessAnchorId || "").trim();
+      const labMetaT0 = Date.now();
       try {
         const labMeta = await loadLabRequestMetaForProduction({
           labAnchorId: stampLabAnchorId,
           labUserId: userId,
         });
+        stampedLabOrg = labMeta.labOrg || null;
         if (labMeta.designSoftware) {
           const implantManufacturerForHex = String(
             request.caseInfos?.implantManufacturer || "",
@@ -661,6 +701,7 @@ export async function handoffDesignToProduction(req, res) {
           metaErr?.message || metaErr,
         );
       }
+      labMetaMs = Date.now() - labMetaT0;
     }
 
     const prevPrimary = toStoredFileMeta(request.caseInfos.file);
@@ -692,9 +733,17 @@ export async function handoffDesignToProduction(req, res) {
 
     const relatedTransferId = relatedTransferIdEarly;
 
-    // PTX: Request(designCompletedAt) 먼저 저장 → Transfer 미러.
+    // PTX: Request(designCompletedAt) 먼저 저장 → Transfer 미러는 응답 후.
     // 미러를 먼저 쓰면 save 실패 시 UI만 디자인 있음·취소는 없음으로 갈라진다.
     if (relatedTransferId && Types.ObjectId.isValid(relatedTransferId)) {
+      const handoffT0 = Date.now();
+      const handoffTiming = {
+        labMetaMs,
+        rhinoRepriceMs: 0,
+        holdMs: 0,
+        lotSaveMs: 0,
+      };
+
       let transferDoc = transferDocEarly;
       const isAcceptingLab = isAcceptingLabForPtxDesignRequest(
         req.user,
@@ -707,19 +756,23 @@ export async function handoffDesignToProduction(req, res) {
       // (WorksheetPage productModeNe=design_custom_abutment / 디자인 파트너 큐는 PTX 제외)
       if (!request.caseInfos) request.caseInfos = {};
       request.caseInfos.productMode = PRODUCT_MODE_PRODUCTION;
-      // Rhino 시드와 재견적은 서로 무관 — 병렬로 응답 전 대기만 줄인다.
+      // 헥스/파일명 시드(동기) + 재견적. PRC DB 조회는 응답 후(Rhino 직전).
+      const rhinoRepriceT0 = Date.now();
       const [rhinoFileName] = await Promise.all([
-        ensurePtxProductionRhinoReadyFields(request),
+        ensurePtxProductionRhinoReadyFields(request, { resolvePrc: false }),
         transferDoc && isAcceptingLab
           ? repriceAndReschedulePtxAbutmentRequest({
               requestDoc: request,
               transferDoc,
               requestedAt: now,
+              labOrg: stampedLabOrg,
             })
           : Promise.resolve(null),
       ]);
+      handoffTiming.rhinoRepriceMs = Date.now() - rhinoRepriceT0;
 
       // 생산·배송 보류: 디자인 업로드 시점(수락 시에는 잡지 않음). 이미 hold면 skip.
+      const holdT0 = Date.now();
       try {
         await holdRequestCreditsOnSubmit({
           requests: [request],
@@ -738,140 +791,23 @@ export async function handoffDesignToProduction(req, res) {
         }
         throw holdErr;
       }
+      handoffTiming.holdMs = Date.now() - holdT0;
 
+      const lotSaveT0 = Date.now();
       await ensureLotNumberOnReadyEnter(request);
       await request.save();
+      handoffTiming.lotSaveMs = Date.now() - lotSaveT0;
 
-      try {
-        const priorDesignCount = Array.isArray(transferDoc?.production?.designFiles)
-          ? transferDoc.production.designFiles.length
-          : 0;
-        const mirroredDoc = await mirrorDesignFileToPracticeTransfer({
-          transferId: relatedTransferId,
-          file: {
-            originalName: nextPrimary.originalName,
-            mimetype: nextPrimary.fileType,
-            size: nextPrimary.fileSize,
-            s3Key: nextPrimary.s3Key,
-          },
-          tooth: String(request?.caseInfos?.tooth || "").trim(),
-          patientName: String(request?.caseInfos?.patientName || "").trim(),
-        });
-        const mirroredDesignCount = Array.isArray(
-          mirroredDoc?.production?.designFiles,
-        )
-          ? mirroredDoc.production.designFiles.length
-          : 0;
-        if (!mirroredDoc || mirroredDesignCount <= priorDesignCount) {
-          throw new Error(
-            "PracticeTransfer design mirror failed (designFiles not updated).",
-          );
-        }
-
-        if (transferDoc && isAcceptingLab) {
-          // 구강스캔으로(기공의뢰) — 수락 lab이 디자인해 올려도 치과 skipDesignConfirm을 존중.
-          // (어벗생산의뢰 단독 Request는 relatedPracticeTransferId가 없어 이 분기를 타지 않음)
-          const productionPatch = {
-            ...(transferDoc.production && typeof transferDoc.production === "object"
-              ? transferDoc.production
-              : {}),
-            labDesignConfirmedAt:
-              transferDoc.production?.labDesignConfirmedAt || now,
-            labDesignConfirmedBy:
-              transferDoc.production?.labDesignConfirmedBy || req.user?._id || null,
-          };
-          transferDoc.production = productionPatch;
-          await PracticeTransfer.updateOne(
-            { _id: transferDoc._id },
-            {
-              $set: {
-                "production.labDesignConfirmedAt":
-                  productionPatch.labDesignConfirmedAt,
-                "production.labDesignConfirmedBy":
-                  productionPatch.labDesignConfirmedBy,
-              },
-            },
-          );
-
-          // 디자인비 지급은 UI 응답을 막지 않음(실패는 로그만)
-          void grantAbutmentDesignLabFee({
-            requestDoc: request,
-            transferId: relatedTransferId,
-            labAnchorId:
-              labAnchorId || String(transferDoc.targetLabAnchorId || "").trim(),
-            actorUserId: userId,
-          }).catch((grantErr) => {
-            console.error(
-              "[DESIGN_HANDOFF] abutment design fee grant failed",
-              grantErr,
-            );
-          });
-        }
-
-        // 디자인컨펌생략 OFF + 첫 디자인 미러 성공 → 치과 「어벗 디자인 컨펌」 채팅·목록 갱신
-        if (
-          transferDoc &&
-          priorDesignCount === 0 &&
-          transferDoc.production?.skipDesignConfirm === false &&
-          !transferDoc.production?.practiceDesignConfirmedAt
-        ) {
-          void postPracticeTransferSystemChatMessage({
-            transferMongoId: transferDoc._id,
-            senderUserId: userId,
-            content:
-              "어벗 디자인이 준비되었습니다. 확인한 뒤 「어벗 디자인 컨펌」해 주세요.",
-            systemEvent: "awaiting_design_confirm",
-          });
-          void emitAbutmentDesignReadyToPractice(transferDoc);
-        }
-      } catch (mirrorErr) {
-        console.error("[DESIGN_HANDOFF] PTX mirror failed after request save", mirrorErr);
-        try {
-          await clearPtxDesignMirror(relatedTransferId);
-        } catch (rollbackErr) {
-          console.error("[DESIGN_HANDOFF] PTX mirror rollback failed", rollbackErr);
-        }
-        throw mirrorErr;
-      }
-
-      // 디자인 STL → filled STL (제조사 준비 큐). fire-and-forget.
-      try {
-        if (rhinoFileName) {
-          triggerRhinoProcessFileForRequest({
-            requestId: request.requestId,
-            filePath: rhinoFileName,
-            fileName: rhinoFileName,
-          });
-        }
-      } catch (rhinoErr) {
-        console.warn(
-          "[DESIGN_HANDOFF] rhino trigger failed",
-          rhinoErr?.message || rhinoErr,
-        );
-      }
-
-      try {
-        emitAppEventToRoles(["manufacturer", "admin"], "worksheet:count-update", {
-          reason: "ptx-design-handoff",
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[DESIGN_HANDOFF] timing", {
+          dt: Date.now() - handoffT0,
           requestId: String(request._id),
+          ...handoffTiming,
         });
-        emitAppEventToRoles(["admin"], "comm:badge-update", {
-          key: "request",
-          delta: 1,
-        });
-      } catch (emitErr) {
-        console.error("[DESIGN_HANDOFF] worksheet count emit failed", emitErr);
       }
 
-      refreshLabDashboardAfterPtxDesignChange(
-        labAnchorId ||
-          transferTargetLabAnchorId ||
-          request.businessAnchorId ||
-          req.user?.businessAnchorId,
-        "ptx-design-handoff",
-      );
-
-      return res.status(200).json({
+      // Critical path 끝 — FE 「처리 중」 해제. 미러·디자인비·Rhino·emit은 응답 후.
+      res.status(200).json({
         success: true,
         message:
           "디자인 파일이 저장되었습니다. 제조사 준비 큐에 등록되었습니다.",
@@ -888,6 +824,131 @@ export async function handoffDesignToProduction(req, res) {
           abutmentDesignFee: null,
         },
       });
+
+      const priorDesignCount = Array.isArray(transferDoc?.production?.designFiles)
+        ? transferDoc.production.designFiles.length
+        : 0;
+      const labConfirmPayload =
+        transferDoc && isAcceptingLab
+          ? {
+              at: transferDoc.production?.labDesignConfirmedAt || now,
+              by:
+                transferDoc.production?.labDesignConfirmedBy ||
+                req.user?._id ||
+                null,
+            }
+          : null;
+
+      void (async () => {
+        try {
+          const mirroredDoc = await mirrorDesignFileToPracticeTransfer({
+            transferId: relatedTransferId,
+            file: {
+              originalName: nextPrimary.originalName,
+              mimetype: nextPrimary.fileType,
+              size: nextPrimary.fileSize,
+              s3Key: nextPrimary.s3Key,
+            },
+            tooth: String(request?.caseInfos?.tooth || "").trim(),
+            patientName: String(request?.caseInfos?.patientName || "").trim(),
+            labDesignConfirm: labConfirmPayload,
+          });
+          const mirroredDesignCount = Array.isArray(
+            mirroredDoc?.production?.designFiles,
+          )
+            ? mirroredDoc.production.designFiles.length
+            : 0;
+          if (!mirroredDoc || mirroredDesignCount <= priorDesignCount) {
+            throw new Error(
+              "PracticeTransfer design mirror failed (designFiles not updated).",
+            );
+          }
+
+          if (transferDoc && isAcceptingLab) {
+            void grantAbutmentDesignLabFee({
+              requestDoc: request,
+              transferId: relatedTransferId,
+              labAnchorId:
+                labAnchorId || String(transferDoc.targetLabAnchorId || "").trim(),
+              actorUserId: userId,
+            }).catch((grantErr) => {
+              console.error(
+                "[DESIGN_HANDOFF] abutment design fee grant failed",
+                grantErr,
+              );
+            });
+          }
+
+          // 디자인컨펌생략 OFF + 첫 디자인 미러 성공 → 치과 「어벗 디자인 컨펌」 채팅·목록 갱신
+          if (
+            transferDoc &&
+            priorDesignCount === 0 &&
+            transferDoc.production?.skipDesignConfirm === false &&
+            !transferDoc.production?.practiceDesignConfirmedAt
+          ) {
+            void postPracticeTransferSystemChatMessage({
+              transferMongoId: transferDoc._id,
+              senderUserId: userId,
+              content:
+                "어벗 디자인이 준비되었습니다. 확인한 뒤 「어벗 디자인 컨펌」해 주세요.",
+              systemEvent: "awaiting_design_confirm",
+            });
+            void emitAbutmentDesignReadyToPractice(transferDoc);
+          }
+        } catch (mirrorErr) {
+          console.error(
+            "[DESIGN_HANDOFF] PTX mirror failed after request save",
+            mirrorErr,
+          );
+          try {
+            await clearPtxDesignMirror(relatedTransferId);
+          } catch (rollbackErr) {
+            console.error(
+              "[DESIGN_HANDOFF] PTX mirror rollback failed",
+              rollbackErr,
+            );
+          }
+        }
+
+        try {
+          if (rhinoFileName) {
+            await seedPrcFieldsAfterHandoff(request);
+            triggerRhinoProcessFileForRequest({
+              requestId: request.requestId,
+              filePath: rhinoFileName,
+              fileName: rhinoFileName,
+            });
+          }
+        } catch (rhinoErr) {
+          console.warn(
+            "[DESIGN_HANDOFF] rhino trigger failed",
+            rhinoErr?.message || rhinoErr,
+          );
+        }
+
+        try {
+          emitAppEventToRoles(["manufacturer", "admin"], "worksheet:count-update", {
+            reason: "ptx-design-handoff",
+            requestId: String(request._id),
+          });
+          emitAppEventToRoles(["admin"], "comm:badge-update", {
+            key: "request",
+            delta: 1,
+          });
+        } catch (emitErr) {
+          console.error("[DESIGN_HANDOFF] worksheet count emit failed", emitErr);
+        }
+
+        refreshLabDashboardAfterPtxDesignChange(
+          labAnchorId ||
+            transferTargetLabAnchorId ||
+            request.businessAnchorId ||
+            req.user?.businessAnchorId,
+          "ptx-design-handoff",
+        );
+      })();
+
+      return;
     }
 
     await request.save();

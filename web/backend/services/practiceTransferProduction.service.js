@@ -5,6 +5,8 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-09-03: reprice — 호출측 labOrg 재사용·creditSettings에 requestorAnchor 전달(BA 재조회 제거).
+//   mirror — labDesignConfirm를 같은 update에 합쳐 Transfer 왕복 1회 절약.
 // - 2026-09-03: PTX 준비 등록 시에도 헥스 미확정 제조사면 확인용 복사샘플 생성(relatedRequestIds 제외).
 // - 2026-09-03: PTX 헥스 시드도 from-draft와 동일 — case별 implantManufacturer로 hexByImplantManufacturer 해석.
 // - 2026-08-31: PTX CA 생산·배송 크레딧 hold는 수락이 아니라 design-handoff에서 잡음.
@@ -391,6 +393,8 @@ export async function loadLabRequestMetaForProduction({
             "requestSettings.anodizingEnabled": 1,
             "requestSettings.retentionGroove": 1,
             "requestSettings.defaultManufacturerHexRotation": 1,
+            "shippingPolicy.weeklyBatchDays": 1,
+            requestorKind: 1,
           })
           .lean()
       : null,
@@ -1725,12 +1729,14 @@ export async function tryStartAbutmentProduction({
 
 /**
  * design-handoff 후 PTX에 디자인 파일 미러 (가공 진입은 컨펌 후).
+ * @param {object} [options.labDesignConfirm] — 수락 lab 자동 confirm 시 같은 update에 합침
  */
 export async function mirrorDesignFileToPracticeTransfer({
   transferId,
   file,
   tooth = "",
   patientName = "",
+  labDesignConfirm = null,
 }) {
   if (!transferId || !Types.ObjectId.isValid(String(transferId))) {
     return null;
@@ -1745,12 +1751,21 @@ export async function mirrorDesignFileToPracticeTransfer({
   if (normalized.length === 0) return null;
 
   const now = new Date();
+  const $set = {
+    "production.designReadyAt": now,
+  };
+  if (labDesignConfirm && typeof labDesignConfirm === "object") {
+    if (labDesignConfirm.at) {
+      $set["production.labDesignConfirmedAt"] = labDesignConfirm.at;
+    }
+    if (labDesignConfirm.by != null) {
+      $set["production.labDesignConfirmedBy"] = labDesignConfirm.by;
+    }
+  }
   const doc = await PracticeTransfer.findByIdAndUpdate(
     transferId,
     {
-      $set: {
-        "production.designReadyAt": now,
-      },
+      $set,
       $push: {
         "production.designFiles": { $each: normalized },
       },
@@ -1815,22 +1830,30 @@ export {
  * 디자인 핸드오프 시 PTX CA Request 가격·출고모드·스케줄을
  * 생산만/치과도착일−2영업일(직납) 기준으로 재계산.
  * 제조 단계는 준비로 유지(취소·재업로드 가능).
+ * @param {object} [options.labOrg] — loadLabRequestMetaForProduction 결과 재사용(BA 재조회 생략)
  */
 export async function repriceAndReschedulePtxAbutmentRequest({
   requestDoc,
   transferDoc,
   requestedAt = new Date(),
+  labOrg: labOrgArg = null,
 }) {
   if (!requestDoc || !transferDoc) return requestDoc;
 
   const labAnchorId = String(
     requestDoc.businessAnchorId || transferDoc.targetLabAnchorId || "",
   ).trim();
-  const labOrg = labAnchorId && Types.ObjectId.isValid(labAnchorId)
-    ? await BusinessAnchor.findById(labAnchorId)
-        .select({ "shippingPolicy.weeklyBatchDays": 1 })
-        .lean()
-    : null;
+  const labOrg =
+    labOrgArg && typeof labOrgArg === "object"
+      ? labOrgArg
+      : labAnchorId && Types.ObjectId.isValid(labAnchorId)
+        ? await BusinessAnchor.findById(labAnchorId)
+            .select({
+              "shippingPolicy.weeklyBatchDays": 1,
+              requestorKind: 1,
+            })
+            .lean()
+        : null;
   const weeklyBatchDays = Array.isArray(labOrg?.shippingPolicy?.weeklyBatchDays)
     ? labOrg.shippingPolicy.weeklyBatchDays
         .map((value) => String(value || "").trim())
@@ -1842,6 +1865,7 @@ export async function repriceAndReschedulePtxAbutmentRequest({
   try {
     creditSettingsForQuote = await loadCreditSettingsDefaults({
       requestorOrgId: labAnchorId || null,
+      requestorAnchor: labOrg || null,
       applyLabSupplyPrices: false,
     });
     expressFeePerRequest = Math.max(
