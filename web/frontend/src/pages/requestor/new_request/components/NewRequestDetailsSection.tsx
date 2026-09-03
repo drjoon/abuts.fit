@@ -89,7 +89,6 @@ type Props = {
   uploadProgress?: Record<string, PreUploadFileProgress>;
   weeklyBatchDays?: string[];
   onCancelAll: () => void;
-  designSoftwareLabel?: string;
   onOpenDesignSoftwareModal?: () => void;
   anodizingEnabled?: boolean;
   anodizingSaving?: boolean;
@@ -161,7 +160,6 @@ export function NewRequestDetailsSection({
   uploadProgress = {},
   weeklyBatchDays = [],
   onCancelAll,
-  designSoftwareLabel,
   onOpenDesignSoftwareModal,
   anodizingEnabled,
   anodizingSaving,
@@ -697,7 +695,6 @@ export function NewRequestDetailsSection({
             handleRemoveFile={handleRemoveFile}
             openDetailModal={openDetailModal}
             handleClearAll={handleClearAll}
-            designSoftwareLabel={designSoftwareLabel}
             onOpenDesignSoftwareModal={onOpenDesignSoftwareModal}
             anodizingEnabled={anodizingEnabled}
             anodizingSaving={anodizingSaving}

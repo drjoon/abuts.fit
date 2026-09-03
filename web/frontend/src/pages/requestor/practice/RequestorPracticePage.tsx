@@ -594,7 +594,6 @@ export function RequestorPracticeReceivePage({
   const { period, setPeriod } = usePeriodStore();
   const { toast } = useToast();
   const {
-    designSoftwareValue,
     anodizingEnabled,
     anodizingSaving,
     designSoftwareSaving,
@@ -4944,7 +4943,6 @@ export function RequestorPracticeReceivePage({
     <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         <RequestSettingsToolbar
-          designSoftwareLabel={String(designSoftwareValue || "").trim()}
           onOpenDesignSoftwareModal={openDesignSoftwareModal}
           anodizingEnabled={anodizingEnabled}
           anodizingSaving={anodizingSaving}
@@ -5251,7 +5249,6 @@ export function RequestorPracticeReceivePage({
                 className="shrink-0"
               />
               <RequestSettingsToolbar
-                designSoftwareLabel={String(designSoftwareValue || "").trim()}
                 onOpenDesignSoftwareModal={openDesignSoftwareModal}
                 anodizingEnabled={anodizingEnabled}
                 anodizingSaving={anodizingSaving}

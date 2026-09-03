@@ -1809,7 +1809,6 @@ const NewRequestPageContent = () => {
               onFilesSelected={handleIncomingDroppedFiles}
               weeklyBatchDays={weeklyBatchDays}
               onCancelAll={handleCancelAll}
-              designSoftwareLabel={String(designSoftwareValue || "").trim()}
               onOpenDesignSoftwareModal={handleOpenDesignSoftwareModal}
               anodizingEnabled={anodizingEnabled}
               anodizingSaving={anodizingSaving}
