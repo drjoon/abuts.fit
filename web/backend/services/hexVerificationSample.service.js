@@ -5,6 +5,7 @@
 // - web/backend/services/practiceTransferProduction.service.js (PTX 준비 등록 시에도 미확정 제조사 샘플 생성)
 // - web/backend/controllers/requests/common.review.controller.js
 // change-log:
+// - 2026-09-03: 헥스 샘플에 designCompletedAt을 두어 PTX 디자인대기 가드에 가려지지 않게 함.
 // - 2026-09-03: PTX/배치 취소용 원본→활성 헥스 샘플 ObjectId 조회 헬퍼.
 // - 2026-09-03: 제조사별 샘플 생성 실패가 다른 제조사 생성을 막지 않게 try/catch. 준비 목록 누락분 백필.
 // - 2026-09-03: PTX 원본 클론은 designCompletedAt 전이라도 ensureLotNumberForMachining으로 로트 강제 발급(null unique 충돌 방지).
@@ -429,6 +430,13 @@ export async function createHexVerificationSampleClone({
     partnerBilling: sourceRequest.partnerBilling
       ? JSON.parse(JSON.stringify(sourceRequest.partnerBilling))
       : undefined,
+    // PTX 원본을 복제해도 디자인 핸드오프 대기가 아니다. 준비 큐 가드가 가리지 않도록 즉시 완료 시각을 둔다.
+    designCompletedAt:
+      sourceRequest.designCompletedAt instanceof Date
+        ? sourceRequest.designCompletedAt
+        : sourceRequest.designCompletedAt
+          ? new Date(sourceRequest.designCompletedAt)
+          : now,
     lotNumber: {
       material: String(sourceRequest?.lotNumber?.material || "").trim() || null,
       // value는 ensureLotNumberForMachining에서 발급. null을 넣으면 sparse unique에 걸려 저장 실패한다.
