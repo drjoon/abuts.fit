@@ -8,6 +8,7 @@
 // - 2026-09-03: reprice scheduleMode=holdFast — 리드타임 스케줄 생략(핸드오프 critical path).
 // - 2026-09-03: reprice — 호출측 labOrg 재사용·creditSettings에 requestorAnchor 전달(BA 재조회 제거).
 //   mirror — labDesignConfirm를 같은 update에 합쳐 Transfer 왕복 1회 절약.
+// - 2026-09-03: 헥스 확인 샘플 생성 후 worksheet/stage 소켓 emit(준비 목록 즉시 반영).
 // - 2026-09-03: PTX 준비 등록 시에도 헥스 미확정 제조사면 확인용 복사샘플 생성(relatedRequestIds 제외).
 // - 2026-09-03: PTX 헥스 시드도 from-draft와 동일 — case별 implantManufacturer로 hexByImplantManufacturer 해석.
 // - 2026-08-31: PTX CA 생산·배송 크레딧 hold는 수락이 아니라 design-handoff에서 잡음.
@@ -945,12 +946,36 @@ export async function createAbutmentRequestsFromPracticeTransfer({
     })
       .then((samples) => {
         if (!Array.isArray(samples) || samples.length === 0) return;
+        const sampleRequestIds = samples
+          .map((s) => String(s?.requestId || "").trim())
+          .filter(Boolean);
         console.log(
           "[createAbutmentRequestsFromPracticeTransfer] hex verification sample created",
           {
             transferId: String(transferDoc?.transferId || transferDoc?._id || ""),
             count: samples.length,
-            sampleRequestIds: samples.map((s) => String(s?.requestId || "")),
+            sampleRequestIds,
+          },
+        );
+        // 워크시트 준비 목록에 샘플 카드가 바로 뜨도록 알림
+        emitAppEventToRoles(["manufacturer", "admin"], "worksheet:count-update", {
+          source: "ptx-hex-verification-sample",
+          businessAnchorId: String(labAnchorId || "").trim() || null,
+          requestIds: sampleRequestIds,
+          count: sampleRequestIds.length,
+        });
+        emitAppEventToRoles(
+          ["requestor", "manufacturer", "admin"],
+          "request:stage-changed",
+          {
+            source: "ptx-hex-verification-sample",
+            action: "hex-verification-sample-created",
+            fromStage: "",
+            toStage: "준비",
+            businessAnchorId: String(labAnchorId || "").trim() || null,
+            requestorBusinessAnchorId: String(labAnchorId || "").trim() || null,
+            requestIds: sampleRequestIds,
+            count: sampleRequestIds.length,
           },
         );
       })

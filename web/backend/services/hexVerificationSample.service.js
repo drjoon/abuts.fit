@@ -5,6 +5,7 @@
 // - web/backend/services/practiceTransferProduction.service.js (PTX 준비 등록 시에도 미확정 제조사 샘플 생성)
 // - web/backend/controllers/requests/common.review.controller.js
 // change-log:
+// - 2026-09-03: PTX 원본 클론은 designCompletedAt 전이라도 ensureLotNumberForMachining으로 로트 강제 발급(null unique 충돌 방지).
 // - 2026-09-03: 임플란트 제조사별 미확정이면 배치 내 제조사당 샘플 1건. PTX 준비 등록도 동일.
 // - 2026-08-21: 워크시트 준비 목록에서 헥스 샘플 filled STL 누락을 원본에서 보정.
 // - 2026-08-21: 클론 저장 후 빈 stlFile/camFile 스텁 $unset. 생성 직후 원본 filled 있으면 즉시 복사.
@@ -31,7 +32,7 @@ import {
   pickFilledStlFileForClone,
   resolveFilledStlFile,
 } from "../utils/filledStlFile.js";
-import { ensureLotNumbersOnReadyEnter } from "../controllers/requests/utils.js";
+import { ensureLotNumberForMachining } from "../controllers/requests/utils.js";
 
 export const isHexVerificationSampleRequest = (request) =>
   request?.caseInfos?.hexVerificationSample === true;
@@ -387,7 +388,7 @@ export async function createHexVerificationSampleClone({
       : undefined,
     lotNumber: {
       material: String(sourceRequest?.lotNumber?.material || "").trim() || null,
-      value: null,
+      // value는 ensureLotNumberForMachining에서 발급. null을 넣으면 sparse unique에 걸려 저장 실패한다.
     },
     assignedMachine: null,
     rnd: {
@@ -421,8 +422,8 @@ export async function createHexVerificationSampleClone({
   });
 
   ensureReviewByStageDefaults(clonedRequest);
-  // 트랜잭션 밖 호출 전제. LotCounter는 세션 없이 발급.
-  await ensureLotNumbersOnReadyEnter([clonedRequest], null);
+  // 수동 샘플 복사와 동일: PTX 디자인 대기(shouldAssignLotNumberOnReady=false)여도 로트를 즉시 발급한다.
+  await ensureLotNumberForMachining(clonedRequest);
   await clonedRequest.save(session ? { session } : undefined);
 
   // mongoose subdoc default/스프레드로 `{ uploadedAt }`만 남으면

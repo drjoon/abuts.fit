@@ -229,6 +229,12 @@ const requestSchema = new mongoose.Schema(
         type: Boolean,
         default: false,
       },
+      // 확인용 샘플이 커버하는 임플란트 제조사(canonical). 제조사당 활성 샘플 1건 판정용.
+      hexVerificationSampleManufacturer: {
+        type: String,
+        trim: true,
+        default: null,
+      },
       // 제조사 오버라이드 헥스 회전(canonical)
       // - "STL모델대로" | "헥스30도회전" | "STL모델+" | "헥스30+"
       manufacturerHexRotation: {
