@@ -5460,36 +5460,16 @@ export function RequestorPracticeReceivePage({
         description={
           <div className="space-y-3">
             {designUploadGate?.kind === "wrong-type" ? (
-              <>
-                <p>
-                  어벗 디자인은{" "}
-                  <span className="font-semibold">STL</span>만 받습니다.
-                </p>
-                <p>
-                  PLY·OBJ 등은 구강 스캔용입니다. 커스텀 어벗 STL을 다시
-                  올려주세요.
-                </p>
-              </>
+              <p>
+                <span className="font-semibold">STL</span>만 받습니다.
+              </p>
             ) : (
-              <>
-                <p>
-                  파일 크기가 3MB 이상이면 보통{" "}
-                  <span className="font-semibold">구강 스캔</span>입니다.
-                </p>
-                <p>
-                  커스텀 어벗 STL(보통 3MB 미만)을 다시 올려주세요.
-                </p>
-              </>
+              <p>
+                커스텀 어벗{" "}
+                <span className="font-semibold">STL(3MB 미만)</span>을
+                올려주세요.
+              </p>
             )}
-            {(designUploadGate?.rejectedNames.length || 0) > 0 ? (
-              <ul className="max-h-28 space-y-1 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-2 text-xs text-slate-700">
-                {designUploadGate?.rejectedNames.map((name) => (
-                  <li key={name} className="truncate">
-                    {name}
-                  </li>
-                ))}
-              </ul>
-            ) : null}
             {(designUploadGate?.previewFiles.length || 0) > 1 ? (
               <ul className="max-h-28 space-y-1 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-2 text-xs">
                 {designUploadGate?.previewFiles.map((file, index) => (
@@ -5516,6 +5496,14 @@ export function RequestorPracticeReceivePage({
                 {designUploadGatePreviewFile.name} (
                 {formatDesignUploadMb(designUploadGatePreviewFile.size)})
               </p>
+            ) : (designUploadGate?.rejectedNames.length || 0) > 0 ? (
+              <ul className="max-h-28 space-y-1 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-2 text-xs text-slate-700">
+                {designUploadGate?.rejectedNames.map((name) => (
+                  <li key={name} className="truncate">
+                    {name}
+                  </li>
+                ))}
+              </ul>
             ) : null}
             {designUploadGatePreviewFile ? (
               <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
@@ -5529,7 +5517,7 @@ export function RequestorPracticeReceivePage({
             ) : null}
             {designUploadGate?.kind === "oversized" ? (
               <p className="text-xs text-slate-500">
-                정말 커스텀 어벗 STL이면{" "}
+                어벗이면{" "}
                 <button
                   type="button"
                   className="font-semibold text-primary-strong underline underline-offset-2"
@@ -5537,7 +5525,6 @@ export function RequestorPracticeReceivePage({
                 >
                   이대로 진행
                 </button>
-                할 수 있습니다.
               </p>
             ) : null}
           </div>
