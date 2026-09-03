@@ -5,6 +5,7 @@
 // - web/backend/services/practiceTransferProduction.service.js (PTX 준비 등록 시에도 미확정 제조사 샘플 생성)
 // - web/backend/controllers/requests/common.review.controller.js
 // change-log:
+// - 2026-09-03: PTX 원본은 designCompletedAt(어벗 STL 핸드오프) 이후에만 헥스 샘플 생성.
 // - 2026-09-03: 헥스 샘플에 designCompletedAt을 두어 PTX 디자인대기 가드에 가려지지 않게 함.
 // - 2026-09-03: PTX/배치 취소용 원본→활성 헥스 샘플 ObjectId 조회 헬퍼.
 // - 2026-09-03: 제조사별 샘플 생성 실패가 다른 제조사 생성을 막지 않게 try/catch. 준비 목록 누락분 백필.
@@ -519,6 +520,8 @@ export async function maybeCreateHexVerificationSampleForFirstOrder({
   for (const req of list) {
     if (req?.caseInfos?.hexVerificationSample === true) continue;
     if (String(req?.manufacturerStage || "").trim() === "취소") continue;
+    // PTX 구강스캔만 있는 준비 건으로는 샘플을 만들지 않는다(어벗 STL 핸드오프 후).
+    if (!req?.designCompletedAt) continue;
     const mfrKey = normalizeImplantManufacturerKey(
       req?.caseInfos?.implantManufacturer,
     );
@@ -616,6 +619,7 @@ export async function ensureMissingHexVerificationSamplesInReadyList(
     if (String(req?.caseInfos?.designSoftware || "").trim() !== "ExoCAD") {
       continue;
     }
+    if (!req?.designCompletedAt) continue;
     const mfr = normalizeImplantManufacturerKey(
       req?.caseInfos?.implantManufacturer,
     );

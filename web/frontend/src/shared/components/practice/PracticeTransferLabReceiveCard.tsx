@@ -5,6 +5,7 @@
 // - web/frontend/src/shared/components/practice/PracticeLabReceiveWorkActionsBar.tsx
 // - web/frontend/src/shared/components/practice/PracticeRecentTransferListCardDetail.tsx
 // change-log:
+// - 2026-09-03: 카드 드롭 — 비STL도 전달(부모에서 가드·다시 올리기 안내). STL accept는 파일창 힌트용.
 // - 2026-09-02: 카드 드롭 — STL만 accept/filter(다른 확장자 거부).
 // - 2026-09-02: 어벗 STL 업로드 CTA 제거(상세 드롭존만).
 // - 2026-09-02: 수동「작업 완료」CTA 제거(도착일 자동 완료).
@@ -45,7 +46,6 @@ import { toStatusBadgeLabel } from "@/shared/practice/practiceRecentTransferList
 import { isPracticeTransferAcceptOverdue } from "@/shared/practice/practiceAcceptOverdue";
 import {
   PRACTICE_TRANSFER_STL_ACCEPT,
-  isPracticeTransferStlFile,
 } from "@/shared/practice/practiceTransferAccept";
 import { PracticeAcceptOverdueBadge } from "@/shared/components/practice/PracticeAcceptOverdueBadge";
 import { PracticeLabReceiveWorkActionsBar } from "@/shared/components/practice/PracticeLabReceiveWorkActionsBar";
@@ -284,8 +284,8 @@ export function PracticeTransferLabReceiveCard({
         fileInputId={completeInputId}
         disabled={cardBusy}
         accept={PRACTICE_TRANSFER_STL_ACCEPT}
-        acceptedHint="STL"
-        filterFiles={(files) => files.filter(isPracticeTransferStlFile)}
+        acceptedHint="어벗 STL"
+        filterFiles={(files) => files}
         showDefaultUi={false}
         className={cn(
           CARD_SHELL,

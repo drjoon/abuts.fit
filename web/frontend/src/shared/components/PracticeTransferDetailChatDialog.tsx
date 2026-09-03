@@ -14,7 +14,9 @@
 // - web/frontend/src/shared/files/downloadWithProgress.ts
 // - web/frontend/src/shared/files/s3BlobCache.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-09-03: 요약 행 action — 어벗 진행상황 옆 의뢰 상세 버튼 등.
 // - 2026-09-02: summaryBanner(어벗 업로드 지연 등) — 의뢰상세 + 진행 상황 탭 상단.
+// - 2026-09-03: 어벗 작업 드롭 — 비STL도 부모로 전달(가드·다시 올리기). 조용한 필터 제거.
 // - 2026-09-02: 어벗 작업 드롭 — STL만 허용(비STL 거부 토스트). 진행상황 accept=STL.
 // - 2026-09-02: 어벗 STL 안내 배너 — 클릭 시 STL 전용 OS 파일창(진행 상황 탭 input disabled 우회).
 // - 2026-09-02: 어벗 STL 안내 배너 — label/htmlFor로 클릭 파일창(업로드 CTA 대체).
@@ -169,7 +171,6 @@ import {
 import { LabPendingAbutmentGuide } from "@/shared/components/practice/LabPendingAbutmentGuide";
 import {
   getPracticeTransferFileExtension,
-  partitionLabChatDropFiles,
   PRACTICE_ACCEPTED_HINT,
   PRACTICE_TRANSFER_IMAGE_EXTENSIONS,
   PRACTICE_TRANSFER_STL_ACCEPT,
@@ -223,6 +224,8 @@ export type PracticeTransferDialogSummaryItem = {
   value: string;
   valueClassName?: string;
   tooltip?: string;
+  /** 값 옆 액션(예: 어벗 진행상황 → 의뢰 상세) */
+  action?: ReactNode;
 };
 
 export type PracticeTransferDialogFileItem = {
@@ -1303,29 +1306,13 @@ export function PracticeTransferDetailChatDialog({
     (files: File[]) => {
       if (!files.length) return;
       if (workFileDropActive) {
-        const { stlFiles, chatFiles } = partitionLabChatDropFiles(files);
-        if (stlFiles.length) {
-          workFileDrop!.onFiles(stlFiles);
-          if (chatFiles.length) {
-            toast({
-              title: "STL만 업로드",
-              description: "어벗 작업 파일은 STL만 받을 수 있습니다. 다른 파일은 무시했습니다.",
-            });
-          }
-          return;
-        }
-        if (chatFiles.length) {
-          toast({
-            title: "STL 필요",
-            description: "어벗 작업 파일은 STL만 업로드할 수 있습니다.",
-            variant: "destructive",
-          });
-        }
+        // 비STL·큰 STL 가드/다시 올리기는 부모 beginDesignUploadWithFiles SSOT
+        workFileDrop!.onFiles(files);
         return;
       }
       onAttachChatFiles(files);
     },
-    [onAttachChatFiles, toast, workFileDrop, workFileDropActive],
+    [onAttachChatFiles, workFileDrop, workFileDropActive],
   );
   const workFileDropGuideText = String(workFileDrop?.guideText || "").trim();
   const workFileDropGuideDetail = String(
@@ -1539,12 +1526,8 @@ export function PracticeTransferDetailChatDialog({
           showDefaultUi={false}
           fillHeight
           accept={PRACTICE_TRANSFER_STL_ACCEPT}
-          acceptedHint={workFileDrop?.dropHint || "STL"}
-          filterFiles={(files) =>
-            files.filter(
-              (file) => getPracticeTransferFileExtension(file.name) === ".stl",
-            )
-          }
+          acceptedHint={workFileDrop?.dropHint || "어벗 STL"}
+          filterFiles={(files) => files}
           className="flex min-h-0 flex-1 flex-col"
           activeClassName="ring-2 ring-inset ring-primary bg-primary-soft/25"
         >
@@ -1799,7 +1782,16 @@ export function PracticeTransferDetailChatDialog({
                         <dt className="pt-0.5 text-[13px] leading-snug text-muted-foreground">
                           {row.label}
                         </dt>
-                        <dd className="min-w-0">{valueWithAction}</dd>
+                        <dd className="min-w-0">
+                          {row.action ? (
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              {valueWithAction}
+                              {row.action}
+                            </div>
+                          ) : (
+                            valueWithAction
+                          )}
+                        </dd>
                       </div>
                     );
                   })}

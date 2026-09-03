@@ -5,6 +5,8 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-09-03: 구강스캔은 designSourceFiles만 — caseInfos.file에 넣지 않음(제조사·헥스 고스트 방지).
+// - 2026-09-03: tryStartAbutmentProduction는 designCompletedAt만 인정(스캔 s3Key로 생산 시작 금지).
 // - 2026-09-03: 기공소 작업취소 시 헥스 확인용 복사샘플도 referenceIds로 함께 취소.
 // - 2026-09-03: already_created PTX도 미확정 제조사 헥스 샘플 누락분을 fire-and-forget 보정.
 // - 2026-09-03: reprice scheduleMode=holdFast — 리드타임 스케줄 생략(핸드오프 critical path).
@@ -880,14 +882,18 @@ export async function createAbutmentRequestsFromPracticeTransfer({
       designSoftware,
       anodizingEnabled,
       retentionGroove,
+      // 구강스캔은 어벗 디자인이 아님 — primary file에 넣지 않는다.
+      // 취소 시 복원용으로 designSourceFiles에만 보관. 실제 STL은 design-handoff.
       ...(scanFile?.file?.s3Key
         ? {
-            file: {
-              originalName: scanFile.file.originalName,
-              mimetype: scanFile.file.mimetype,
-              size: scanFile.file.size,
-              s3Key: scanFile.file.s3Key,
-            },
+            designSourceFiles: [
+              {
+                originalName: scanFile.file.originalName,
+                mimetype: scanFile.file.mimetype,
+                size: scanFile.file.size,
+                s3Key: scanFile.file.s3Key,
+              },
+            ],
           }
         : {}),
       toothWorks: [row],
@@ -1794,7 +1800,8 @@ export async function tryStartAbutmentProduction({
       startedIds.push(requestId);
       continue;
     }
-    if (!reqDoc.designCompletedAt && !reqDoc.caseInfos?.file?.s3Key) {
+    // 구강스캔 s3Key만 있는 건 디자인 미완료 — handoff의 designCompletedAt만 인정
+    if (!reqDoc.designCompletedAt) {
       continue;
     }
     toApprove.push(requestId);

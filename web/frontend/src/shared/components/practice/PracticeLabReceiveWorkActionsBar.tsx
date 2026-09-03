@@ -50,7 +50,7 @@ const ctaButtonClass =
 
 /** 어벗 — 채팅 드롭존 안내 SSOT */
 export const LAB_RECEIVE_ABUTMENT_UPLOAD_HINT =
-  "어벗츠에서 바로 생산 시작합니다.";
+  "커스텀 어벗 STL만. 구강 스캔(PLY·큰 파일)은 안 됩니다.";
 
 /**
  * 기공의뢰수신 — 수락 후 작업 취소·디자인 확인(카드·상세 모달 공통).

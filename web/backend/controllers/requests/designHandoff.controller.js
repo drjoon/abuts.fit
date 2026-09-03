@@ -1,3 +1,4 @@
+// - 2026-09-03: handoff — 기존 designSourceFiles(구강스캔) 보존·비STL 거부. 완료 후 헥스 샘플 생성.
 // - 2026-09-03: handoff/cancel — relatedRequestIds에 없는 헥스 확인용 복사샘플도 원본과 함께 취소.
 // - 2026-09-03: PTX handoff critical path — holdFast 재견적(리드타임 스케줄 생략) + labMeta/풀스케줄/미러는 응답 후.
 // - 2026-09-03: PTX handoff — hold+lot+save만 응답 전. Transfer 미러·lab confirm·Rhino·emit은 응답 후.
@@ -59,7 +60,10 @@ import {
   resolveHexRotationByDesignSoftware,
   resolveLabManufacturerHexForImplant,
 } from "../../services/practiceTransferProduction.service.js";
-import { findActiveHexVerificationSampleObjectIdsForSources } from "../../services/hexVerificationSample.service.js";
+import {
+  findActiveHexVerificationSampleObjectIdsForSources,
+  maybeCreateHexVerificationSampleForFirstOrder,
+} from "../../services/hexVerificationSample.service.js";
 import { isPtxLabDesignedAbutmentRequest } from "./common.review.helpers.js";
 import { postPracticeTransferSystemChatMessage } from "../../services/chatSystemMessage.service.js";
 import {
@@ -513,6 +517,18 @@ export async function handoffDesignToProduction(req, res) {
         message: "완성 어벗 STL 파일(s3Key)이 필요합니다.",
       });
     }
+    const nextNameLower = String(nextPrimary.originalName || "")
+      .trim()
+      .toLowerCase();
+    const nextDot = nextNameLower.lastIndexOf(".");
+    const nextExt = nextDot >= 0 ? nextNameLower.slice(nextDot) : "";
+    if (nextExt !== ".stl") {
+      return res.status(400).json({
+        success: false,
+        message:
+          "어벗 디자인은 STL만 올릴 수 있습니다. PLY·OBJ 등 구강 스캔은 사용할 수 없습니다.",
+      });
+    }
 
     const caseInfosPatchRaw =
       req.body?.caseInfos && typeof req.body.caseInfos === "object"
@@ -686,9 +702,16 @@ export async function handoffDesignToProduction(req, res) {
     const prevExtras = Array.isArray(request.caseInfos.files)
       ? request.caseInfos.files
       : [];
+    const existingSources = Array.isArray(request.caseInfos.designSourceFiles)
+      ? request.caseInfos.designSourceFiles
+      : [];
     const sourceRows = [];
     const seen = new Set();
-    for (const row of [prevPrimary, ...prevExtras.map(toStoredFileMeta)]) {
+    for (const row of [
+      ...existingSources.map(toStoredFileMeta),
+      prevPrimary,
+      ...prevExtras.map(toStoredFileMeta),
+    ]) {
       if (!row?.s3Key || seen.has(row.s3Key)) continue;
       if (row.s3Key === nextPrimary.s3Key) continue;
       seen.add(row.s3Key);
@@ -801,6 +824,22 @@ export async function handoffDesignToProduction(req, res) {
           price: request.price || null,
           abutmentDesignFee: null,
         },
+      });
+
+      // 어벗 STL 핸드오프 후에만 헥스 확인 샘플 생성(구강스캔 준비 건으로는 만들지 않음)
+      void maybeCreateHexVerificationSampleForFirstOrder({
+        sourceRequests: [request],
+        userId:
+          String(request.requestor || req.user?._id || "").trim() || userId,
+        businessAnchorId: String(
+          request.businessAnchorId || stampLabAnchorIdForLater || "",
+        ).trim(),
+        actorUserId: userId,
+      }).catch((hexErr) => {
+        console.warn(
+          "[DESIGN_HANDOFF] hex verification sample ensure failed",
+          hexErr?.message || hexErr,
+        );
       });
 
       const priorDesignCount = Array.isArray(transferDoc?.production?.designFiles)
