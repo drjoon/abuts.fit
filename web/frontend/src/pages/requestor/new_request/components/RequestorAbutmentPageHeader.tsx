@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-09-03: 기공의뢰수신 — 어벗츠 생산중 라벨. 정책은 사이드바. 어벗 뱃지 왼쪽 간격 없음.
+// - 2026-09-03: 기공소 정책 안내는 사이드바(LabPricingPolicyBanner). 헤더는 치과만.
 // - 2026-09-03: 진행중 모달 안내 문구 제거.
 // - 2026-09-03: variant=policyInProgress — 기공의뢰수신 헤더용 정책·진행중만(기간필터·출고·완료·불완전 제외).
 // - 2026-08-21: 기공의뢰(PTX) CA는 어벗츠로의뢰 상세에서 취소 안내만.
@@ -20,6 +22,7 @@
 // - web/frontend/src/pages/practice/components/PracticeStatusFilterBadges.tsx
 // - web/frontend/src/shared/components/RequestorWorkspaceHeader.tsx
 // - web/frontend/src/pages/requestor/dashboard/components/RequestorPolicyRemakeHeader.tsx
+// - web/frontend/src/features/lab/LabPricingPolicyBanner.tsx
 // - web/frontend/src/pages/requestor/dashboard/components/RequestorBulkShippingBannerCard.tsx
 // - web/frontend/src/pages/requestor/dashboard/components/RequestorUnmachinableHost.tsx
 // - web/frontend/src/shared/components/PastRequestsModal.tsx
@@ -31,6 +34,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
+import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 import { isCreditEventForBusiness } from "@/shared/realtime/creditBalanceEvent";
@@ -66,7 +70,7 @@ export type RequestorAbutmentPageHeaderVariant = "full" | "policyInProgress";
 type RequestorAbutmentPageHeaderProps = {
   /**
    * full — 어벗츠로의뢰 상단(기간필터+정책·진행중·출고·완료·불완전).
-   * policyInProgress — 기공의뢰수신 등: 정책 안내 + 진행중만.
+   * policyInProgress — 기공의뢰수신 등: 어벗츠 생산중만(정책은 사이드바).
    */
   variant?: RequestorAbutmentPageHeaderVariant;
 };
@@ -76,6 +80,13 @@ export const RequestorAbutmentPageHeader = ({
 }: RequestorAbutmentPageHeaderProps = {}) => {
   const isPolicyInProgressOnly = variant === "policyInProgress";
   const { user, token } = useAuthStore();
+  const { kind: requestorKind } = useRequestorBusinessAccess();
+  /** 기공소·어벗츠기공소 — 정책 안내는 사이드바. 치과 헤더만 유지. */
+  const showPolicyInHeader =
+    requestorKind !== "lab" && user?.role !== "internalLab";
+  const inProgressLabel = isPolicyInProgressOnly
+    ? "어벗츠 생산중"
+    : "진행중";
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [period, setPeriod] = useState<PeriodFilterValue>("30d");
@@ -411,7 +422,7 @@ export const RequestorAbutmentPageHeader = ({
 
   const policyAndInProgressActions = (
     <>
-      <RequestorPolicyRemakeHeader />
+      {showPolicyInHeader ? <RequestorPolicyRemakeHeader /> : null}
       <Button
         type="button"
         variant="outline"
@@ -419,7 +430,7 @@ export const RequestorAbutmentPageHeader = ({
         className="h-8 px-3 text-xs"
         onClick={() => setInProgressOpen(true)}
       >
-        진행중 {inProgressCount.toLocaleString()}건
+        {inProgressLabel} {inProgressCount.toLocaleString()}건
       </Button>
     </>
   );
@@ -428,7 +439,7 @@ export const RequestorAbutmentPageHeader = ({
     <PastRequestsModal
       open={inProgressOpen}
       onOpenChange={setInProgressOpen}
-      title="진행중"
+      title={inProgressLabel}
       description=""
       manufacturerStageIn={IN_PROGRESS_MANUFACTURER_STAGES}
       initialPeriod={period}

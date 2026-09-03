@@ -1,3 +1,4 @@
+// - 2026-09-03: 기공소 정책 — 단가 라벨·안내 문장 단축. 출고 리드타임(직경) 섹션 제거.
 // - 2026-09-03: 기공소 정책 안내 부제(기공의뢰수신·어벗생산의뢰…) 제거.
 // - 2026-08-23: 정책 안내 모달 flex 스크롤 + 하단 여백(pb-8).
 // - 2026-08-23: 의뢰자 변형에 부가세 없음(면세) 안내. devops 레거시 65% 문구 제거.
@@ -37,7 +38,7 @@
 // - web/backend/controllers/requests/common.requests.controller.js
 // - web/backend/utils/creditSettingsDefaults.js
 // - web/frontend/src/shared/pricing/abutsAbutmentService.ts
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -45,8 +46,6 @@ import {
   DialogTitle,
   DialogDescription
 } from '@/components/ui/dialog';
-import { request } from '@/shared/api/apiClient';
-import { useAuthStore } from '@/store/useAuthStore';
 import { useRequestorBusinessAccess } from '@/shared/business/useRequestorBusinessAccess';
 import {
   CREDIT_SETTINGS_DEFAULTS,
@@ -62,16 +61,6 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   variant?: 'default' | 'devops' | 'salesman';
-};
-
-type LeadTimeRange = { minBusinessDays: number; maxBusinessDays: number };
-type DiameterKey = 'd6' | 'd8' | 'd10' | 'd12';
-
-const DEFAULT_LEAD_TIMES: Record<DiameterKey, LeadTimeRange> = {
-  d6: { minBusinessDays: 1, maxBusinessDays: 2 },
-  d8: { minBusinessDays: 1, maxBusinessDays: 2 },
-  d10: { minBusinessDays: 4, maxBusinessDays: 7 },
-  d12: { minBusinessDays: 4, maxBusinessDays: 7 }
 };
 
 function PolicySection({
@@ -168,11 +157,9 @@ export const PricingPolicyDialog = ({
   onOpenChange,
   variant = 'default'
 }: Props) => {
-  const { token } = useAuthStore();
   const { kind } = useRequestorBusinessAccess();
   const isLab = kind === 'lab';
   const showWelcomeCredit = isLab;
-  const [leadTimes, setLeadTimes] = useState(DEFAULT_LEAD_TIMES);
   const { data: systemSettings, refetch: refetchSystemSettings } =
     useSystemSettings();
   const welcomeRequestCredit = Math.max(
@@ -207,51 +194,7 @@ export const PricingPolicyDialog = ({
   useEffect(() => {
     if (!open) return;
     void refetchSystemSettings();
-    if (!token) {
-      setLeadTimes(DEFAULT_LEAD_TIMES);
-      return;
-    }
-    const load = async () => {
-      try {
-        const res = await request<any>({
-          path: `/api/businesses/manufacturer-lead-times`,
-          method: 'GET',
-          token
-        });
-        if (!res.ok) return;
-        const data = res.data?.data || res.data || {};
-        const serverLeadTimes = data?.leadTimes;
-        const normalized: Record<DiameterKey, LeadTimeRange> = {
-          ...DEFAULT_LEAD_TIMES
-        };
-        (Object.keys(normalized) as DiameterKey[]).forEach((key) => {
-          const entry = serverLeadTimes?.[key];
-          if (!entry) return;
-          const min = Number.isFinite(entry.minBusinessDays)
-            ? Math.max(0, Math.floor(entry.minBusinessDays))
-            : normalized[key].minBusinessDays;
-          const max = Number.isFinite(entry.maxBusinessDays)
-            ? Math.max(0, Math.floor(entry.maxBusinessDays))
-            : normalized[key].maxBusinessDays;
-          normalized[key] = {
-            minBusinessDays: Math.min(min, max),
-            maxBusinessDays: Math.max(min, max)
-          };
-        });
-        setLeadTimes(normalized);
-      } catch (err) {
-        console.error('[PricingPolicyDialog] load leadTimes failed', err);
-      }
-    };
-    void load();
-  }, [open, token, refetchSystemSettings]);
-
-  const diameterRows: { label: string; key: DiameterKey }[] = [
-    { label: '6mm', key: 'd6' },
-    { label: '8mm', key: 'd8' },
-    { label: '10mm', key: 'd10' },
-    { label: '12mm', key: 'd12' }
-  ];
+  }, [open, refetchSystemSettings]);
 
   const title =
     variant === 'devops'
@@ -356,11 +299,11 @@ export const PricingPolicyDialog = ({
                   <PriceRow
                     label={
                       isLab
-                        ? '어벗생산의뢰 · 어벗 생산'
+                        ? '어벗 생산'
                         : '어벗디자인으로 · 어벗 생산'
                     }
                     value={formatAbutsManwon(productionPrice)}
-                    unitLabel='1개당 · 구강지그 제외'
+                    unitLabel='1개당'
                   />
                   <div className='h-px bg-slate-100' />
                   <PriceRow
@@ -378,13 +321,7 @@ export const PricingPolicyDialog = ({
               </section>
 
               <p className='text-xs leading-relaxed text-slate-500 px-1'>
-                기공의뢰(구강스캔) 커스텀어벗 디자인은 수주 기공소가 담당하며,
-                기공소 커스텀어벗 수가에 포함됩니다. 기공소→어벗츠 생산비는 위
-                생산 단가입니다. 커스텀어벗·배송은{' '}
-                <span className='font-medium text-slate-700'>
-                  부가세 없음 · 면세
-                </span>
-                입니다.
+                기공소→어벗츠 생산비는 위 생산 단가입니다.
               </p>
 
               <div className='grid gap-3 sm:grid-cols-2'>
@@ -411,46 +348,6 @@ export const PricingPolicyDialog = ({
                   </p>
                 </PolicySection>
               ) : null}
-
-              <PolicySection title='출고 리드타임 (최대 직경 기준)'>
-                <BulletList
-                  items={[
-                    <>
-                      <span className='font-medium text-slate-800'>묶음</span>
-                      : 0시까지 접수 → 익영업일부터 리드타임 (
-                      <span className='font-medium text-slate-800'>
-                        +1영업일 = 다음 영업일 16:00 출고
-                      </span>
-                      )
-                    </>,
-                    <>
-                      <span className='font-medium text-slate-800'>신속</span>
-                      : 낮 12시 컷오프 (당일 / 익영업일)
-                    </>
-                  ]}
-                />
-                <div className='grid grid-cols-2 gap-2 sm:grid-cols-4'>
-                  {diameterRows.map(({ label, key }) => {
-                    const min = leadTimes[key]?.minBusinessDays;
-                    const max = leadTimes[key]?.maxBusinessDays;
-                    const minText = Number.isFinite(min) ? min : '-';
-                    const maxText = Number.isFinite(max) ? max : '-';
-                    return (
-                      <div
-                        key={key}
-                        className='rounded-lg border border-slate-200/80 bg-white px-3 py-2.5'
-                      >
-                        <div className='text-xs font-medium text-slate-500'>
-                          {label}
-                        </div>
-                        <div className='mt-1 text-sm font-semibold tabular-nums text-slate-900'>
-                          +{minText}~{maxText}영업일
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </PolicySection>
 
               <PolicySection title='출고 방식'>
                 <div className='space-y-2.5'>

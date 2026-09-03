@@ -28,7 +28,7 @@
 // - web/backend/utils/labReceiveCalendarHiddenWeekdays.util.js
 // - web/backend/controllers/users/user.controller.js
 // - 2026-09-02: 어벗츠 제공 CA만 있어도 안내 표시. 심플어벗은 항상 제외.
-// - 2026-09-03: 수신 헤더 — 어벗 뱃지 왼쪽 간격 + 오른쪽 정책 안내·진행중(어벗츠로의뢰와 동일).
+// - 2026-09-03: 수신 헤더 — 어벗 뱃지 왼쪽 간격 없음. 진행중→어벗츠 생산중(정책은 사이드바).
 // - 2026-09-03: 어벗 진행상황 옆「상세」— 연동 CA 의뢰 상세(RequestDetailDialog).
 // - 2026-09-03: 어벗 STL — 비STL·≥3MB 구강스캔 가드 ConfirmDialog + 다시 올리기.
 // - 2026-09-03: 어벗 handoff — S3 후 낙관 패치·busy 해제, API는 백그라운드(실패 시 롤백).
@@ -5127,7 +5127,6 @@ export function RequestorPracticeReceivePage({
         onResetToDefault={resetLabStatusFiltersToDefault}
         isDefault={isLabReceiveStatusFilterDefault(statusFilters)}
         countSuffix="건"
-        gapBeforeKeys={["작업완료"]}
         trailing={
           <RequestorAbutmentPageHeader variant="policyInProgress" />
         }

@@ -15,6 +15,7 @@ import {
 } from "@/shared/layout/sidebarOpen";
 import { cn } from "@/shared/ui/cn";
 
+// - 2026-09-03: 기공소 사이드 — 정책 안내(기공의뢰 공용) + 가입 이유 배너.
 // - 2026-09-02: 추적관리 워크시트는 fillHeight로 뷰포트 고정(중첩 스크롤·무한 로드).
 // - 2026-08-28: 사이드바 토글 UI를 로컬 오버라이드로 유지(/me 레이스·스토어 덮어쓰기 방지). 접기 버튼 z-index.
 // - 2026-08-27: 데스크톱 사이드바 펼침을 계정 preferences.sidebarOpen으로 서버 저장·복원(기본 open). 모바일 드로어는 분리.

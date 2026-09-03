@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-03: 기공소 [정책 안내]는 사이드바. 이 헤더는 치과 어벗디자인 등만.
 // - 2026-08-18: 치과 헤더 [구독] 제거. 정책 안내는 서비스 3종 단일가 모달만.
 // - 2026-08-15: [구독] 라벨. 미구독 시 빨간 하이라이트 → 설정 `?tab=subscription`.
 // - 2026-08-13: 치과 [멤버십] → 가입 모달. [가입 이유] 제거.
@@ -10,6 +11,8 @@
 // - 2026-08-11: [정책]과 무료 재제작 잔여 사이 여백 확보.
 // - 2026-08-11: 오늘의 가격 카드에서 [정책]·무료 재제작 잔여를 대시보드 헤더로 이전.
 // related files:
+// - web/frontend/src/features/lab/LabDashboardTopBanners.tsx
+// - web/frontend/src/features/lab/LabPricingPolicyBanner.tsx
 // - web/frontend/src/pages/requestor/new_request/components/RequestorAbutmentPageHeader.tsx
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
 // - web/frontend/src/shared/components/RequestorWorkspaceHeader.tsx
