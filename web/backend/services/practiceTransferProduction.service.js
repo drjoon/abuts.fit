@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-09-03: 기공소 작업취소 시 헥스 확인용 복사샘플도 referenceIds로 함께 취소.
 // - 2026-09-03: already_created PTX도 미확정 제조사 헥스 샘플 누락분을 fire-and-forget 보정.
 // - 2026-09-03: reprice scheduleMode=holdFast — 리드타임 스케줄 생략(핸드오프 critical path).
 // - 2026-09-03: reprice — 호출측 labOrg 재사용·creditSettings에 requestorAnchor 전달(BA 재조회 제거).
@@ -63,7 +64,10 @@ import {
   resolveHexRotationByDesignSoftware,
   isHexVerificationSampleCase,
 } from "../utils/designSoftwareHex.js";
-import { maybeCreateHexVerificationSampleForFirstOrder } from "./hexVerificationSample.service.js";
+import {
+  maybeCreateHexVerificationSampleForFirstOrder,
+  findActiveHexVerificationSampleObjectIdsForSources,
+} from "./hexVerificationSample.service.js";
 import {
   normalizeCaseInfosImplantFields,
   addKoreanBusinessDays,
@@ -1387,10 +1391,32 @@ export async function clearRelatedAbutmentProductionOnRelease(
     : null;
   const skipPastReadyCheck = Boolean(options.skipPastReadyCheck);
 
-  const objectIds =
-    linkedRequestIds != null
+  let objectIds = [
+    ...(linkedRequestIds != null
       ? linkedRequestIds
-      : await collectLinkedAbutmentRequestObjectIds(transferDoc);
+      : await collectLinkedAbutmentRequestObjectIds(transferDoc)),
+  ];
+
+  // 헥스 확인용 샘플은 relatedRequestIds에 넣지 않으므로 referenceIds로 별도 수집.
+  // partnerBilling.relatedPracticeTransferId가 비어 있어도 원본 취소와 함께 제거한다.
+  if (objectIds.length > 0) {
+    try {
+      const sampleIds =
+        await findActiveHexVerificationSampleObjectIdsForSources(objectIds);
+      if (sampleIds.length > 0) {
+        const merged = new Map(objectIds.map((id) => [String(id), id]));
+        for (const sid of sampleIds) {
+          merged.set(String(sid), sid);
+        }
+        objectIds = [...merged.values()];
+      }
+    } catch (sampleLookupErr) {
+      console.warn(
+        "[clearRelatedAbutmentProductionOnRelease] hex sample lookup failed",
+        sampleLookupErr?.message || sampleLookupErr,
+      );
+    }
+  }
 
   let canceledRequestCount = 0;
   if (objectIds.length > 0) {

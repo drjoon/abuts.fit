@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-03: 배치 취소 시 헥스 샘플 쌍은 원본 권한만으로 포함(제조사 isRequestor 가드로 누락 방지).
 // - 2026-09-03: 워크시트 준비 조회 시 미확정 제조사 헥스 확인 샘플 누락분을 fire-and-forget 보정.
 // - 2026-09-03: 워크시트 requestor.requestSettings도 getById와 동일하게 정규화(프리뷰 헥스 뱃지).
 // - 2026-09-03: 워크시트 business 헥스 — case implantManufacturer로 해석 + hexByImplantManufacturer 포함(BA 레거시 전건 확정 번짐 제거).
@@ -4126,6 +4127,8 @@ export async function updateRequestStatusBatch(req, res) {
     }
 
     // ExoCAD 헥스 확인용 샘플↔원본: 한쪽만 골라도 쌍을 함께 취소 대상에 넣는다.
+    // 원본이 이미 권한·단계 검증을 통과했으면 샘플도 같이 넣는다.
+    // (제조사는 isRequestor가 아니라서 샘플만 빠지던 버그 방지)
     const eligibleById = new Map(
       eligible.map((row) => [String(row._id), row]),
     );
@@ -4136,9 +4139,6 @@ export async function updateRequestStatusBatch(req, res) {
         if (eligibleById.has(siblingId)) continue;
         if (String(sibling.manufacturerStage || "").trim() === "취소") continue;
         if (!isCancelableManufacturerStage(sibling)) continue;
-        const isRequestor = await canAccessRequestAsRequestor(req, sibling);
-        const isAdmin = req.user?.role === "admin";
-        if (!isRequestor && !isAdmin) continue;
         eligibleById.set(siblingId, sibling);
         eligible.push(sibling);
       }

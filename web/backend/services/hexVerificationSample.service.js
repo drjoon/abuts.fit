@@ -5,6 +5,7 @@
 // - web/backend/services/practiceTransferProduction.service.js (PTX 준비 등록 시에도 미확정 제조사 샘플 생성)
 // - web/backend/controllers/requests/common.review.controller.js
 // change-log:
+// - 2026-09-03: PTX/배치 취소용 원본→활성 헥스 샘플 ObjectId 조회 헬퍼.
 // - 2026-09-03: 제조사별 샘플 생성 실패가 다른 제조사 생성을 막지 않게 try/catch. 준비 목록 누락분 백필.
 // - 2026-09-03: PTX 원본 클론은 designCompletedAt 전이라도 ensureLotNumberForMachining으로 로트 강제 발급(null unique 충돌 방지).
 // - 2026-09-03: 임플란트 제조사별 미확정이면 배치 내 제조사당 샘플 1건. PTX 준비 등록도 동일.
@@ -77,6 +78,47 @@ export async function findHexVerificationCancelSiblings(request) {
   return (siblings || []).filter(
     (doc) => String(doc?._id || "").trim() !== selfMongoId,
   );
+}
+
+/**
+ * 원본 Request _id 목록 → 참조하는 활성 헥스 확인용 샘플 _id.
+ * PTX 작업취소 시 relatedRequestIds에 없는 샘플도 함께 취소하기 위함.
+ * @param {import("mongoose").Types.ObjectId[]|string[]} sourceObjectIds
+ * @returns {Promise<import("mongoose").Types.ObjectId[]>}
+ */
+export async function findActiveHexVerificationSampleObjectIdsForSources(
+  sourceObjectIds,
+) {
+  const oids = (Array.isArray(sourceObjectIds) ? sourceObjectIds : [])
+    .map((id) => String(id || "").trim())
+    .filter((id) => Types.ObjectId.isValid(id))
+    .map((id) => new Types.ObjectId(id));
+  if (!oids.length) return [];
+
+  const sources = await Request.find({ _id: { $in: oids } })
+    .select({ requestId: 1 })
+    .lean();
+  const requestIds = [
+    ...new Set(
+      sources
+        .map((row) => String(row?.requestId || "").trim())
+        .filter(Boolean),
+    ),
+  ];
+  if (!requestIds.length) return [];
+
+  const samples = await Request.find({
+    "caseInfos.hexVerificationSample": true,
+    referenceIds: { $in: requestIds },
+    manufacturerStage: { $nin: ["취소"] },
+  })
+    .select({ _id: 1 })
+    .lean();
+
+  return (samples || [])
+    .map((row) => String(row?._id || "").trim())
+    .filter((id) => Types.ObjectId.isValid(id))
+    .map((id) => new Types.ObjectId(id));
 }
 
 const ensureReviewByStageDefaults = (request) => {
@@ -468,6 +510,7 @@ export async function maybeCreateHexVerificationSampleForFirstOrder({
   const firstByManufacturer = new Map();
   for (const req of list) {
     if (req?.caseInfos?.hexVerificationSample === true) continue;
+    if (String(req?.manufacturerStage || "").trim() === "취소") continue;
     const mfrKey = normalizeImplantManufacturerKey(
       req?.caseInfos?.implantManufacturer,
     );
