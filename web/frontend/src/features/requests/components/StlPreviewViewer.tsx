@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-09-04: Lot 각인 — CNC X 직경→반경, 글자 축소·뒤집힘 교정, non-filled 센터 보정.
+// - 2026-09-04: Lot 각인 — StlFileProcessor 역산(Rotate90+W)으로 CNC→STL 매핑.
 // - 2026-08-28: 좌우 드래그=화면 Y축(카메라 local up) 회전 — 월드 Z 턴테이블 제거(스캔 수평 유지).
 // - 2026-08-28: PLY TextureFile·버텍스 컬러 칼라 표시 (parseModelPreview). 스캔 칼라는 언릿+노출↑.
 // - 2026-08-28: 패닝(중클릭·우클릭·Shift+좌클릭) — ScreenSpaceOrbitControls. 우드래그 후 수동픽 undo 스킵.
@@ -20,6 +22,7 @@
 // - 2026-08-09: STL 프리뷰 카메라를 FOV 기준으로 맞춰 모델이 화면에 거의 꽉 차게 표시.
 // related files:
 // - web/frontend/rules.md
+// - web/frontend/src/features/requests/utils/lotEngraving.ts
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/shared/files/modelPreviewFile.ts
@@ -37,6 +40,11 @@ import {
   parseModelPreview,
 } from "@/shared/files/modelPreviewFile";
 import { useStlMetadata, type StlMetadata } from "../hooks/useStlMetadata";
+import {
+  buildLotEngravingStlPolylines,
+  normalizeLotSerialCode,
+  resolveLotEngravingNcParams,
+} from "../utils/lotEngraving";
 
 type Props = {
   file: File;
@@ -66,6 +74,14 @@ type Props = {
   metadata?: StlMetadata | null;
   /** true면 파일명과 무관하게 filled 가이드/오버레이(FL·축·프론트포인트)를 켠다. */
   forceFilled?: boolean;
+  /** 헥스 면 로트 각인(3글자) 오버레이. 기본 off. */
+  showLotEngraving?: boolean;
+  /** 각인 시리얼 3글자. 없으면 표시 안 함. */
+  lotSerialCode?: string | null;
+  /** NC 텍스트가 있으면 Serial 시작 좌표(Y/Z/C/V)를 파싱해 위치를 맞춘다. */
+  lotEngravingNcText?: string | null;
+  /** caseInfos.hexRotation.mode — Serial T0909 C축 해석용. */
+  lotEngravingHexMode?: string | null;
 };
 
 export function StlPreviewViewer({
@@ -84,6 +100,10 @@ export function StlPreviewViewer({
   className,
   metadata,
   forceFilled = false,
+  showLotEngraving = false,
+  lotSerialCode = null,
+  lotEngravingNcText = null,
+  lotEngravingHexMode = null,
 }: Props) {
   const { metadata: fetchedMetadata, loading: fetchedMetadataLoading } =
     useStlMetadata(metadata ? undefined : requestId);
@@ -98,6 +118,8 @@ export function StlPreviewViewer({
   const onManualUndoRef = useRef(onManualUndo);
   const enableManualPickRef = useRef(enableManualPick);
   const manualPickMarkersRef = useRef<THREE.Mesh[]>([]);
+  const lotEngravingGroupRef = useRef<THREE.Group | null>(null);
+  const lotEngravingLineMatsRef = useRef<LineMaterial[]>([]);
   const modelDiagRef = useRef<number>(0);
   const centerRef = useRef<THREE.Vector3 | null>(null);
   const centeredBoundsRef = useRef<{
@@ -1936,6 +1958,9 @@ export function StlPreviewViewer({
       renderer.domElement.style.height = "100%";
       renderer.domElement.style.display = "block";
       lineMaterials.forEach((mat) => mat.resolution.set(newWidth, newHeight));
+      lotEngravingLineMatsRef.current.forEach((mat) =>
+        mat.resolution.set(newWidth, newHeight),
+      );
     };
 
     // 컨테이너의 폭·높이 변화에 반응 (모달 애니메이션 후 포함)
@@ -2093,6 +2118,7 @@ export function StlPreviewViewer({
       renderer.dispose();
       sceneRef.current = null;
       modelPivotRef.current = null;
+      lotEngravingGroupRef.current = null;
       centerRef.current = null;
       centeredBoundsRef.current = null;
       maxDiameterRef.current = 0;
@@ -2161,6 +2187,112 @@ export function StlPreviewViewer({
       manualPickMarkersRef.current.push(marker);
     }
   }, [manualPickPoints, stableFileKey]);
+
+  useEffect(() => {
+    const modelPivot = modelPivotRef.current;
+    const prev = lotEngravingGroupRef.current;
+    if (prev) {
+      if (modelPivot) modelPivot.remove(prev);
+      prev.traverse((obj) => {
+        const mesh = obj as THREE.Mesh | Line2;
+        if ((mesh as THREE.Mesh).geometry) {
+          (mesh as THREE.Mesh).geometry.dispose();
+        }
+        const mat = (mesh as THREE.Mesh).material as
+          | THREE.Material
+          | THREE.Material[]
+          | undefined;
+        if (Array.isArray(mat)) {
+          mat.forEach((m) => {
+            const map = (m as THREE.MeshBasicMaterial).map;
+            map?.dispose?.();
+            m.dispose();
+          });
+        } else if (mat) {
+          const map = (mat as THREE.MeshBasicMaterial).map;
+          map?.dispose?.();
+          mat.dispose();
+        }
+      });
+      lotEngravingGroupRef.current = null;
+    }
+    lotEngravingLineMatsRef.current = [];
+
+    if (!modelPivot || !showLotEngraving) return;
+
+    const serial = normalizeLotSerialCode(lotSerialCode);
+    if (!serial) return;
+
+    const hexApplied = Number(resolvedMetadata?.hexRotation?.appliedDeg);
+    const ncParams = resolveLotEngravingNcParams({
+      ncText: lotEngravingNcText,
+      manufacturerHexRotationMode: lotEngravingHexMode,
+      hexAppliedDeg: Number.isFinite(hexApplied) ? hexApplied : null,
+    });
+    const polylines = buildLotEngravingStlPolylines({
+      serialCode: serial,
+      ncParams,
+      hexAppliedDeg: Number.isFinite(hexApplied) ? hexApplied : null,
+    });
+    if (polylines.length === 0) return;
+
+    // non-filled 메쉬는 bbox 중심으로 이동. 각인(절대 STL 좌표)도 동일 보정.
+    const center =
+      !isFilledFile && centerRef.current
+        ? centerRef.current.clone()
+        : null;
+
+    const group = new THREE.Group();
+    group.name = "lotEngraving";
+    const lotMats: LineMaterial[] = [];
+
+    const lineColor = 0xfacc15;
+    const resolution = new THREE.Vector2(
+      Math.max(containerRef.current?.clientWidth || 1, 1),
+      Math.max(containerRef.current?.clientHeight || 1, 1),
+    );
+
+    for (const poly of polylines) {
+      if (poly.length < 2) continue;
+      const positions: number[] = [];
+      for (const p of poly) {
+        if (center) {
+          positions.push(p.x - center.x, p.y - center.y, p.z - center.z);
+        } else {
+          positions.push(p.x, p.y, p.z);
+        }
+      }
+      const geo = new LineGeometry();
+      geo.setPositions(positions);
+      const mat = new LineMaterial({
+        color: lineColor,
+        linewidth: 2.4,
+        resolution,
+        transparent: true,
+        opacity: 0.98,
+        depthTest: false,
+        depthWrite: false,
+      });
+      const line = new Line2(geo, mat);
+      line.computeLineDistances();
+      line.renderOrder = 40;
+      group.add(line);
+      lotMats.push(mat);
+    }
+
+    modelPivot.add(group);
+    lotEngravingGroupRef.current = group;
+    lotEngravingLineMatsRef.current = lotMats;
+  }, [
+    showLotEngraving,
+    lotSerialCode,
+    lotEngravingNcText,
+    lotEngravingHexMode,
+    resolvedMetadata?.hexRotation?.appliedDeg,
+    stableFileKey,
+    frontPointRenderRevision,
+    isFilledFile,
+  ]);
 
   return (
     <div

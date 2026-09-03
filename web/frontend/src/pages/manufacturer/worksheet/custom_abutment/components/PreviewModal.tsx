@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-04: Wide Split 왼쪽 Lot 체크박스(기본 off) — on 시 STL 헥스 면 각인 3글자 오버레이.
 // - 2026-09-03: 세척.패킹 → 승인은 각인 이미지가 있을 때만 가능. 프리뷰 업로드 후 승인 실패 시 토스트.
 // - 2026-09-03: toManufacturerHexRotationLabel import 누락으로 PreviewModal 크래시 수정.
 // - 2026-08-29: NC 재생성 성공 시 큐 NC 즉시 제거 이벤트 발행(Next Up「CAM 생성 중」).
@@ -32,6 +33,8 @@
 // - 2026-08-03: PreviewModal: 공정 표시 정규화 영향 반영(의뢰 -> 준비 표시). 주로 프리뷰/승인 버튼의 stage label 참조에 영향.
 // - 2026-08-03: 작업 공정 변경 반영: 화살표 승인/롤백 기준을 준비 ↔ 가공 흐름으로 정렬(중간 단계 건너뛰기).
 // related files:
+// - web/frontend/src/features/requests/components/StlPreviewViewer.tsx
+// - web/frontend/src/features/requests/utils/lotEngraving.ts
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestInfoSummary.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
@@ -70,6 +73,7 @@ import {
 } from "@/components/ui/tooltip";
 import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
 import { useStlMetadata } from "@/features/requests/hooks/useStlMetadata";
+import { lotSerialFromLotNumberValue } from "@/features/requests/utils/lotEngraving";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useAuthStore } from "@/store/useAuthStore";
 import { generateModelNumber } from "@/utils/modelNumber";
@@ -586,6 +590,7 @@ export const PreviewModal = ({
   const [anodizingEnabledDraft, setAnodizingEnabledDraft] = useState<boolean>(true);
   const [wideSplitEnabledDraft, setWideSplitEnabledDraft] = useState<boolean>(true);
   const [wideSplitSaving, setWideSplitSaving] = useState(false);
+  const [showLotEngraving, setShowLotEngraving] = useState(false);
   const req = previewFiles.request as ManufacturerRequest | null;
   const lastStableReqRef = useRef<ManufacturerRequest | null>(null);
   const openRef = useRef<boolean>(open);
@@ -850,6 +855,7 @@ export const PreviewModal = ({
     } else {
       setWideSplitEnabledDraft(true);
     }
+    setShowLotEngraving(false);
 
     // 헥스 회전 SSOT: caseInfos.hexRotation.mode
     // 1) 저장된 mode
@@ -2147,6 +2153,7 @@ export const PreviewModal = ({
     activeReq?.realtimeProgress?.tone,
   );
   const fullLotLabel = String(activeReq?.lotNumber?.value || "").trim();
+  const lotSerialCode = lotSerialFromLotNumberValue(fullLotLabel);
   const hasNcMetadata = Boolean(activeReq?.caseInfos?.ncFile?.s3Key);
   const previewShippingMode = resolveShippingMode(activeReq as any);
 
@@ -2390,6 +2397,32 @@ export const PreviewModal = ({
             </div>
 
             <div className="flex w-full shrink-0 flex-wrap items-center gap-2 md:w-auto md:flex-nowrap">
+              <label
+                className={`inline-flex items-center gap-1.5 rounded-md border px-1.5 py-1 text-[11px] font-semibold ${
+                  lotSerialCode && !approveBusy
+                    ? "border-slate-200 bg-white text-slate-700"
+                    : "border-slate-200 bg-slate-100 text-slate-400"
+                }`}
+                title={
+                  lotSerialCode
+                    ? `헥스 면에 각인코드 ${lotSerialCode} 미리보기`
+                    : "로트번호(각인 3글자)가 없습니다"
+                }
+              >
+                <input
+                  type="checkbox"
+                  className="h-3.5 w-3.5 rounded border-slate-300"
+                  checked={Boolean(showLotEngraving)}
+                  disabled={!lotSerialCode || approveBusy}
+                  onChange={(e) => {
+                    setShowLotEngraving(Boolean(e.target.checked));
+                  }}
+                />
+                <span className="whitespace-nowrap">Lot</span>
+                <span className="text-[10px] font-semibold text-slate-500">
+                  {showLotEngraving ? "O" : "X"}
+                </span>
+              </label>
               <label
                 className={`inline-flex items-center gap-1.5 rounded-md border px-1.5 py-1 text-[11px] font-semibold ${
                   canOverrideWideSplit && !approveBusy && !wideSplitSaving
@@ -3170,6 +3203,10 @@ export const PreviewModal = ({
                       metadata={viewerStlMetadata}
                       showOverlay={true}
                       forceFilled
+                      showLotEngraving={showLotEngraving}
+                      lotSerialCode={lotSerialCode}
+                      lotEngravingNcText={previewNcText}
+                      lotEngravingHexMode={manufacturerHexRotationDraft}
                       finishLinePoints={finishLinePoints}
                       enableManualPick={
                         (canGuideFinishLine && guidedFinishLineMode) ||
@@ -3201,6 +3238,10 @@ export const PreviewModal = ({
                       requestId={requestId}
                       metadata={stlMetadata}
                       showOverlay={true}
+                      showLotEngraving={showLotEngraving}
+                      lotSerialCode={lotSerialCode}
+                      lotEngravingNcText={previewNcText}
+                      lotEngravingHexMode={manufacturerHexRotationDraft}
                       finishLinePoints={finishLinePoints}
                     />
                   </div>
@@ -3653,6 +3694,10 @@ export const PreviewModal = ({
                       metadata={viewerStlMetadata}
                       showOverlay={true}
                       forceFilled
+                      showLotEngraving={showLotEngraving}
+                      lotSerialCode={lotSerialCode}
+                      lotEngravingNcText={previewNcText}
+                      lotEngravingHexMode={manufacturerHexRotationDraft}
                       finishLinePoints={finishLinePoints}
                       enableManualPick={
                         (canGuideFinishLine && guidedFinishLineMode) ||
