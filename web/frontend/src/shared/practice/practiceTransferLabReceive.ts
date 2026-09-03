@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/components/practice/LabReceiveWorkUploadDialog.tsx
 // change-log:
+// - 2026-09-03: 모달 안내는 LabPendingAbutmentGuide에서 치아번호만 — formatPendingLabAbutmentDetailLine 제거.
 // - 2026-09-02: 미제공 안내 한 줄 — 제조사만이 아니라 formatImplantSummary 전체 스펙.
 // - 2026-09-02: toothWorks 구조 배열 우선(요청중 implantAddRequest — 요약 문자열 왕복 손실 방지).
 // - 2026-09-02: 다치아 어벗 — 일부 STL만 올려도 showWorkActions·드롭존 유지(남은 개수 업로드).
@@ -36,7 +37,6 @@
 // - 2026-08-21: abutmentDeliveryInfo — 연동 CA 한진 배송 요약(치과 발신과 동일).
 // - 2026-08-20: 수신 미확인+채팅 unread 합산(사이드바·캘린더 칩 공통).
 import {
-  formatImplantSummary,
   isBridgeLikeProsthesisType,
   isMissingToothProsthesisType,
   isTemporaryToothProsthesisType,
@@ -426,25 +426,6 @@ export function listPracticeTransferPendingLabCustomAbutmentToothWorks(
         toToothMemoSortNumber(a.toothNumber) -
         toToothMemoSortNumber(b.toothNumber),
     );
-}
-
-/** 미제공 안내용 한 줄: `22번 · Osstem / US / REGULAR / HEX` (치식 원본 스펙 유지) */
-export function formatPendingLabAbutmentDetailLine(
-  row: Pick<
-    ToothWorkSelection,
-    | "toothNumber"
-    | "implantManufacturer"
-    | "implantBrand"
-    | "implantFamily"
-    | "implantType"
-    | "implantAddRequest"
-  > | null | undefined,
-) {
-  const tooth = String(row?.toothNumber || "").trim();
-  const implant = formatImplantSummary(row);
-  if (tooth && implant) return `${tooth}번 · ${implant}`;
-  if (tooth) return `${tooth}번`;
-  return implant || "임플란트 미정";
 }
 
 export function practiceTransferAbutmentMachiningStarted(

@@ -6,6 +6,7 @@
 // - web/frontend/src/pages/admin/system/AdminRoundBarAbutmentTab.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // change-log:
+// - 2026-09-03: LabPendingAbutmentGuide 표시는 `{라벨} — {치아번호}` (스펙 생략).
 // - 2026-08-26: OR(` | `) 스펙 전개 헬퍼(드롭다운 개별 옵션).
 // - 2026-08-26: 카탈로그 매칭으로 프리셋 도입중/요청중 뱃지·플래그 보강.
 // - 2026-08-26: brand/family/type OR(` | `) 파싱·조인 헬퍼. 요청중/도입중/도입 상태.
@@ -238,7 +239,7 @@ export const ROUND_BAR_GUIDE_LINES = [
 ] as const;
 /**
  * 기공소 수신: 임플란트 추가 요청(요청중) — 어벗츠 CNC 미제공.
- * 표시: `{라벨} — {치아 상세}` (LabPendingAbutmentGuide)
+ * 표시: `{라벨} — {치아번호}` (LabPendingAbutmentGuide, 예: `11, 21`)
  */
 export const LAB_PENDING_ABUTMENT_SELF_PROCESS_LABEL = "기공소 자체 처리";
 export const LAB_PENDING_ABUTMENT_ABUTS_ORDER_LABEL = "어벗츠 생산의뢰";

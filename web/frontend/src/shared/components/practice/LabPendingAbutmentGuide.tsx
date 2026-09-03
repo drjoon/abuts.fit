@@ -1,9 +1,9 @@
 // related files:
 // - web/frontend/src/shared/practice/roundBarAbutment.ts
-// - web/frontend/src/shared/practice/practiceTransferLabReceive.ts
 // - web/frontend/src/shared/components/practice/PracticeLabReceiveWorkActionsBar.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // change-log:
+// - 2026-09-03: 모달 안내 상세는 치아번호만(`11, 21`). 임플란트 스펙은 의뢰 상세 등 다른 UI 유지.
 // - 2026-09-02: 어벗츠 제공 CA만 있어도 안내 표시. 심플어벗은 항상 제외.
 // - 2026-09-02: 미제공 안내 — 심플어벗(치과 재고)은 자체 처리 목록에서 제외.
 // - 2026-09-02: 라벨「기공소 자체 처리」·호버 상세 툴팁.
@@ -18,9 +18,6 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import {
-  formatPendingLabAbutmentDetailLine,
-} from "@/shared/practice/practiceTransferLabReceive";
 import {
   LAB_PENDING_ABUTMENT_ABUTS_ORDER_LABEL,
   LAB_PENDING_ABUTMENT_ABUTS_ORDERED_LABEL,
@@ -83,8 +80,12 @@ function listAbutsOrderRows(
   );
 }
 
-function formatDetailList(rows: ToothWorkSelection[]) {
-  return rows.map((row) => formatPendingLabAbutmentDetailLine(row)).join(", ");
+/** 모달 안내 전용 — `11, 21` (임플란트 스펙 생략) */
+function formatToothNumberList(rows: ToothWorkSelection[]) {
+  return rows
+    .map((row) => String(row.toothNumber || "").trim())
+    .filter(Boolean)
+    .join(", ");
 }
 
 function GuideLine({
@@ -154,13 +155,13 @@ export function LabPendingAbutmentGuide({
           {pendingRows.length > 0 ? (
             <GuideLine
               label={LAB_PENDING_ABUTMENT_SELF_PROCESS_LABEL}
-              detail={formatDetailList(pendingRows)}
+              detail={formatToothNumberList(pendingRows)}
             />
           ) : null}
           {abutsRows.length > 0 ? (
             <GuideLine
               label={abutsLabel}
-              detail={formatDetailList(abutsRows)}
+              detail={formatToothNumberList(abutsRows)}
             />
           ) : null}
         </div>
