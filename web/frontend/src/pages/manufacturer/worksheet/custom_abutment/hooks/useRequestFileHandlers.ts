@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-03: 세척.패킹 각인 이미지 업로드 직후 프리뷰 URL을 즉시 반영(→ 승인 가능 상태).
 // - 2026-08-17: 세척.패킹→가공 롤백 시 우편함 유지, 가공→준비 롤백 시 해제.
 // - 2026-08-03: 가공/롤백/승인 로컬 패치에서 의뢰 단계 명칭을 '준비'로 사용하도록 조정 (UI 표시용).
 // - note: 서버 승인/롤백 계약은 변경하지 않음(백엔드 이벤트는 기존 manufacturerStage 값을 사용함).
@@ -777,7 +778,9 @@ export const useRequestFileHandlers = ({
                     : camRunTriggerErrorMessage
                       ? `가공 Next Up으로 이동했지만 CAM 실행 요청에 실패했습니다: ${camRunTriggerErrorMessage}`
                       : "작업 명령이 접수되었습니다. 처리 완료 후 상태가 자동으로 업데이트됩니다."
-                  : "승인되었습니다."
+                  : stageKey === "packing"
+                    ? "포장.발송으로 이동했습니다."
+                    : "승인되었습니다."
               : params.status === "REJECTED"
                 ? "반려되었습니다."
                 : stageKey === "packing"
@@ -1483,7 +1486,7 @@ export const useRequestFileHandlers = ({
           await fetchRequests();
         }
 
-        if (params.stage === "machining") {
+        if (params.stage === "machining" || params.stage === "packing") {
           try {
             setPreviewStageUrl(URL.createObjectURL(params.file));
             setPreviewStageName(params.file.name);

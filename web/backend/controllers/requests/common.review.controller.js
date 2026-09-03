@@ -10,6 +10,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers.ts
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
+// - 2026-09-03: 세척.패킹 승인 시 각인 이미지(stageFiles.packing) 필수(카드/프리뷰 → 수동 이동).
 // - 2026-08-22: 작업용 샘플도 우편함·포장.발송·추적관리 동일(크레딧만 isManufacturerSampleRequest skip).
 // - 2026-08-20: 샘플도 패킹 승인 후 포장.발송·우편함 유지(일반 의뢰와 동일).
 // - 2026-08-17: 배송비는 집하 시 차감. 포장.발송 진입은 우편함만 확인.
@@ -1311,6 +1312,24 @@ export async function updateReviewStatusByStage(req, res) {
       }
 
       ensureReviewByStageDefaults(request);
+
+      // 세척.패킹 → 포장.발송: 각인 이미지(stageFiles.packing)가 있어야 승인 가능.
+      // (AI 각인 인식 매칭과 무관 — 카드/프리뷰 → 수동 승인 경로)
+      if (status === "APPROVED" && effectiveStage === "packing") {
+        const packingFile = request?.caseInfos?.stageFiles?.packing || null;
+        const hasPackingEngravingImage = Boolean(
+          String(packingFile?.s3Key || "").trim() ||
+            String(packingFile?.s3Url || "").trim() ||
+            String(packingFile?.filePath || "").trim(),
+        );
+        if (!hasPackingEngravingImage) {
+          const err = new Error(
+            "각인 이미지를 업로드한 뒤 포장.발송으로 이동할 수 있습니다.",
+          );
+          err.statusCode = 400;
+          throw err;
+        }
+      }
 
       // 준비→가공 진입은 request 승인을 기록하고, machining review는
       // 세척.패킹 진입 승인까지 PENDING으로 둔다. (레거시 cam 키도 동일)

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-03: 세척.패킹 → 승인은 각인 이미지가 있을 때만 가능. 프리뷰 업로드 후 승인 실패 시 토스트.
 // - 2026-09-03: toManufacturerHexRotationLabel import 누락으로 PreviewModal 크래시 수정.
 // - 2026-08-29: NC 재생성 성공 시 큐 NC 즉시 제거 이벤트 발행(Next Up「CAM 생성 중」).
 // - 2026-08-29: 프리뷰 요약에 실제 출고일시(shippedAt) 전달(있으면 출고예정일보다 우선).
@@ -1204,9 +1205,18 @@ export const PreviewModal = ({
         | "packing"
         | "shipping"
         | "tracking";
-      // 가공/세척.패킹: 롤백·각인 파일 유무와 무관하게 승인 가능
-      if (key === "machining" || key === "packing") {
+      // 가공: 파일 유무와 무관하게 승인 가능
+      if (key === "machining") {
         return true;
+      }
+      // 세척.패킹: 각인 이미지가 있으면 → 로 포장.발송 이동(AI 인식과 무관)
+      if (key === "packing") {
+        return (
+          !!activeReq?.caseInfos?.stageFiles?.packing?.s3Key ||
+          !!activeReq?.caseInfos?.stageFiles?.packing?.s3Url ||
+          !!activeReq?.caseInfos?.stageFiles?.packing?.filePath ||
+          !!previewStageUrl
+        );
       }
       return (
         !!activeReq?.caseInfos?.stageFiles?.[key]?.s3Key || !!previewStageUrl
@@ -1319,8 +1329,14 @@ export const PreviewModal = ({
               return next;
             });
             onOpenChange(false);
-          } catch {
-            // ignore
+          } catch (err: any) {
+            toast({
+              title: "포장.발송 이동 실패",
+              description:
+                err?.message ||
+                "각인 이미지는 저장되었습니다. → 로 다시 승인해 주세요.",
+              variant: "destructive",
+            });
           }
         }
       })();
@@ -2733,7 +2749,15 @@ export const PreviewModal = ({
                   }
                 }}
                 aria-label="다음 공정"
-                title="다음 공정"
+                title={
+                  isNcGenerating
+                    ? "NC 재생성 완료를 기다리는 중입니다"
+                    : currentReviewStageKey === "packing" && !canApprove
+                      ? "각인 이미지를 업로드한 뒤 포장.발송으로 이동할 수 있습니다"
+                      : currentReviewStageKey === "packing"
+                        ? "포장.발송으로 이동"
+                        : "다음 공정"
+                }
               >
                 →
               </button>

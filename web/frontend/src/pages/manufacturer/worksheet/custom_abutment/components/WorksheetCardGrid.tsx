@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-03: 세척.패킹 → 승인은 각인 이미지가 있을 때만 가능(AI 인식 실패 시 카드/프리뷰 수동 승인).
 // - 2026-08-29: 세척.패킹「출력 완료」뱃지를 하단 → 오른쪽 로트/스크류 스택 아래로 이동.
 // - 2026-08-29: 의뢰카드 RequestInfoSummary에 출고예정일·실제 출고일시(shippedAt) 전달.
 // - 2026-08-18: 준비 탭 의뢰카드에 로트번호 3글자 뱃지 표시.
@@ -435,8 +436,13 @@ export const WorksheetCardGrid = ({
               ? Number((caseInfos as any)?.connectionDiameter)
               : null;
 
-        // 준비/가공/세척.패킹: 롤백 카운터·각인 이미지 유무와 무관하게 → 승인 가능.
-        // (디자인 클레임 peer busy 등 권한 조건만 유지)
+        // 세척.패킹: 각인 이미지가 있으면 → 로 포장.발송 이동(AI 각인 인식과 무관).
+        // 준비/가공: 롤백 카운터·파일 유무와 무관하게 승인 가능(디자인 클레임만 유지).
+        const hasPackingEngravingImage = Boolean(
+          caseInfos.stageFiles?.packing?.s3Key ||
+            caseInfos.stageFiles?.packing?.s3Url ||
+            caseInfos.stageFiles?.packing?.filePath,
+        );
         const canApprove = (() => {
           if (enableDesignClaim) {
             const peerBusy = Boolean(
@@ -446,6 +452,9 @@ export const WorksheetCardGrid = ({
               request.designClaimMine ?? request.designClaimMeta?.mine,
             );
             if (peerBusy || !mine) return false;
+          }
+          if (reviewStageKey === "packing") {
+            return hasPackingEngravingImage;
           }
           if (
             reviewStageKey === "shipping" ||
@@ -1002,13 +1011,17 @@ export const WorksheetCardGrid = ({
                   title={
                     isNcGenerating
                       ? "NC 재생성 완료를 기다리는 중입니다"
-                      : (reviewStageKey === "cam" ||
-                            reviewStageKey === "request") &&
-                          !hasNcFile
-                        ? "가공 이동을 위해 NC 재생성 명령을 먼저 실행합니다"
-                        : canApprove
-                          ? "승인"
-                          : "다음 공정으로 넘길 파일/데이터가 필요합니다"
+                      : reviewStageKey === "packing" && !hasPackingEngravingImage
+                        ? "각인 이미지를 업로드한 뒤 포장.발송으로 이동할 수 있습니다"
+                        : (reviewStageKey === "cam" ||
+                              reviewStageKey === "request") &&
+                            !hasNcFile
+                          ? "가공 이동을 위해 NC 재생성 명령을 먼저 실행합니다"
+                          : canApprove
+                            ? reviewStageKey === "packing"
+                              ? "포장.발송으로 이동"
+                              : "승인"
+                            : "다음 공정으로 넘길 파일/데이터가 필요합니다"
                   }
                   disabled={!canApprove || isNcGenerating}
                 >
