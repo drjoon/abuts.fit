@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-04: 세척.패킹 카드에 각인 이미지(또는 pending) 드롭 매칭 지원.
 // - 2026-09-03: 준비 탭「라이노 작업중」오버레이에 중단 버튼(뱃지 아래).
 // - 2026-09-03: 세척.패킹 → 승인은 각인 이미지가 있을 때만 가능(AI 인식 실패 시 카드/프리뷰 수동 승인).
 // - 2026-08-29: 세척.패킹「출력 완료」뱃지를 하단 → 오른쪽 로트/스크류 스택 아래로 이동.
@@ -21,6 +22,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestInfoSummary.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/hooks/usePackingCapture.ts
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/request.ts
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useWorksheetRealtimeStatus.ts
 // - web/frontend/src/shared/shipping/shippingMode.ts
@@ -61,6 +63,7 @@ import {
 import { RequestInfoSummary } from "./RequestInfoSummary";
 import { resolveShippingMode } from "@/shared/shipping/shippingMode";
 import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
+import { PACKING_PENDING_DRAG_MIME } from "../packing/hooks/usePackingCapture";
 
 // related files (screw lot tracking):
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx
@@ -99,6 +102,13 @@ type WorksheetCardGridProps = {
     memoUpdatedByName?: string | null;
   } | void>;
   onUploadNc?: (req: ManufacturerRequest, files: File[]) => Promise<void>;
+  /** 세척.패킹: 각인 이미지를 카드에 드롭해 수동 매칭 */
+  onPackingImageDrop?: (
+    req: ManufacturerRequest,
+    imageFiles: File[],
+  ) => void | Promise<void>;
+  packingDropEnabled?: boolean;
+  packingMatchHintIds?: Set<string>;
   uploadProgress: Record<string, number>;
   rndMemoSaving?: Record<string, boolean>;
   isCamStage: boolean;
@@ -135,6 +145,9 @@ export const WorksheetCardGrid = ({
   onRestoreUnmachinable,
   onSaveRndMemo,
   onUploadNc,
+  onPackingImageDrop,
+  packingDropEnabled = false,
+  packingMatchHintIds,
   uploadProgress,
   uploading,
   downloading,
@@ -654,9 +667,37 @@ export const WorksheetCardGrid = ({
 
         // 신속/묶음배송 뱃지를 하단에 항상 표시
         const hasBottomFloatingBadges = true;
+        const isPackingDropTarget =
+          tabStage === "packing" &&
+          packingDropEnabled &&
+          typeof onPackingImageDrop === "function" &&
+          !rhinoWorkPending;
+        const isPackingMatchHint = Boolean(
+          packingMatchHintIds?.has(String(request._id || "")),
+        );
+
         const handleDrop = async (e: React.DragEvent) => {
           e.preventDefault();
           e.stopPropagation();
+
+          if (isPackingDropTarget && onPackingImageDrop) {
+            const hasPendingDrag = Array.from(e.dataTransfer.types || []).includes(
+              PACKING_PENDING_DRAG_MIME,
+            );
+            const files = Array.from(e.dataTransfer.files || []);
+            const imageFiles = files.filter((file) => {
+              const name = file.name.toLowerCase();
+              return (
+                name.endsWith(".jpg") ||
+                name.endsWith(".jpeg") ||
+                name.endsWith(".png")
+              );
+            });
+            if (hasPendingDrag || imageFiles.length > 0) {
+              await onPackingImageDrop(request, imageFiles);
+              return;
+            }
+          }
 
           if (!isCamStage || !onUploadNc) return;
 
@@ -691,6 +732,9 @@ export const WorksheetCardGrid = ({
         const handleDragOver = (e: React.DragEvent) => {
           e.preventDefault();
           e.stopPropagation();
+          if (isPackingDropTarget) {
+            e.dataTransfer.dropEffect = "copy";
+          }
         };
 
         const handleToggleSelected = (e: React.MouseEvent) => {
@@ -717,10 +761,22 @@ export const WorksheetCardGrid = ({
                   ? handleToggleSelected
                   : undefined
             }
+            onDrop={
+              isPackingDropTarget || (isCamStage && onUploadNc)
+                ? handleDrop
+                : undefined
+            }
+            onDragOver={
+              isPackingDropTarget || (isCamStage && onUploadNc)
+                ? handleDragOver
+                : undefined
+            }
             className={`relative h-full border ${rhinoWorkPending ? "overflow-hidden" : ""} ${
               isSelected
                 ? "border-primary bg-primary-soft/40"
-                : isSampleRequest
+                : isPackingMatchHint
+                  ? "border-primary border-2 bg-primary-soft/50 ring-2 ring-primary/30"
+                  : isSampleRequest
                   ? isRndVisualSample
                     ? "border-primary/70 bg-primary-soft/40"
                     : "border-primary/70 bg-primary-soft/40"
@@ -741,7 +797,9 @@ export const WorksheetCardGrid = ({
               isFinishLineMinZRisky || isUnmachinableSample
                 ? "border-accent-muted ring-2 ring-accent-muted/80"
                 : ""
-            } ${onToggleSelected && !rhinoWorkPending ? "cursor-pointer" : ""}`}
+            } ${onToggleSelected && !rhinoWorkPending ? "cursor-pointer" : ""} ${
+              isPackingDropTarget ? "transition-shadow hover:shadow-md" : ""
+            }`}
             role={onToggleSelected && !rhinoWorkPending ? "button" : undefined}
             aria-pressed={
               onToggleSelected && !rhinoWorkPending ? isSelected : undefined

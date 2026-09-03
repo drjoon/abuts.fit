@@ -5,10 +5,11 @@
 // - bg/pc2/lot-server/src/index.js
 // - web/backend/controllers/requests/mailbox.utils.js
 // change-log:
+// - 2026-09-04: 미매칭 시 packing:capture-unmatched 발행 + previewUrl. requestMongoId 수동 바인딩.
 // - 2026-08-20: 샘플도 각인 후 포장.발송·우편함 유지(일반 의뢰와 동일).
 // - 2026-08-17: 포장.발송 진입 시 세척.패킹 우편함을 유지(없으면 1회 보정).
 import Request from "../../models/request.model.js";
-import s3Utils, { getObjectBufferFromS3 } from "../../utils/s3.utils.js";
+import s3Utils, { getObjectBufferFromS3, getSignedUrl } from "../../utils/s3.utils.js";
 import { shouldBlockExternalCall } from "../../utils/rateGuard.js";
 import { asyncHandler } from "../../utils/asyncHandler.js";
 import { ApiResponse } from "../../utils/ApiResponse.js";
@@ -25,6 +26,7 @@ import {
 } from "../requests/mailbox.utils.js";
 import { enterManufacturerShippingStage } from "../requests/common.review.helpers.js";
 import sharp from "sharp";
+import mongoose from "mongoose";
 
 let _apiKey = null;
 let _genAI = null;
@@ -279,6 +281,44 @@ async function recognizeLotNumberFromS3({ s3Key, originalName }) {
   };
 }
 
+async function resolvePackingPreviewUrl({ s3Key, s3Url }) {
+  const fallback = String(s3Url || "").trim();
+  try {
+    const signed = await getSignedUrl(s3Key, 60 * 30);
+    return String(signed || "").trim() || fallback;
+  } catch (err) {
+    console.warn("[lot-capture] preview signed URL failed", {
+      s3Key,
+      error: err?.message || String(err),
+    });
+    return fallback;
+  }
+}
+
+async function findPackingRequestForManualBind({
+  requestMongoId,
+  requestId,
+}) {
+  const mongoId = String(requestMongoId || "").trim();
+  const businessId = String(requestId || "").trim();
+  if (!mongoId && !businessId) return null;
+
+  const query = {
+    status: { $ne: "취소" },
+    manufacturerStage: "세척.패킹",
+  };
+  if (mongoId) {
+    if (!mongoose.Types.ObjectId.isValid(mongoId)) return null;
+    query._id = mongoId;
+  } else {
+    query.requestId = businessId;
+  }
+
+  return Request.findOne(query)
+    .populate("businessAnchorId", "name metadata")
+    .populate("requestor", "businessAnchorId");
+}
+
 export const handlePackingCapture = asyncHandler(async (req, res) => {
   const {
     s3Key,
@@ -288,6 +328,8 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
     recognizedSuffix,
     lotNumber,
     source,
+    requestMongoId,
+    requestId: bodyRequestId,
   } = req.body || {};
 
   const key = String(s3Key || "").trim();
@@ -296,6 +338,9 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
   }
 
   const name = String(originalName || "").trim() || "capture.jpg";
+  const manualRequestMongoId = String(requestMongoId || "").trim();
+  const manualRequestId = String(bodyRequestId || "").trim();
+  const isManualBind = Boolean(manualRequestMongoId || manualRequestId);
 
   const providedLotNumber = String(lotNumber || "").trim();
   const providedSuffix = extractLotSuffix3(
@@ -304,11 +349,15 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
   let recognized = {
     lotNumber: providedLotNumber || providedSuffix,
     confidence: providedSuffix ? "provided" : "missing",
-    provider: providedSuffix ? "lot-server" : "none",
+    provider: providedSuffix
+      ? isManualBind
+        ? "manual"
+        : "lot-server"
+      : "none",
   };
 
   const packAiRecogEnabled = toBool(process.env.PACK_AI_RECOG);
-  if (!providedSuffix && packAiRecogEnabled) {
+  if (!isManualBind && !providedSuffix && packAiRecogEnabled) {
     recognized = await recognizeLotNumberFromS3({
       s3Key: key,
       originalName: name,
@@ -326,12 +375,34 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
     confidence: String(recognized?.confidence || "").trim() || "unknown",
     provider: String(recognized?.provider || "").trim() || "unknown",
     packAiRecogEnabled,
+    manualBind: isManualBind,
   });
 
   let request = null;
   let reason = "";
+  let matchedSuffix = finalRecognizedSuffix;
 
-  if (finalRecognizedSuffix) {
+  if (isManualBind) {
+    request = await findPackingRequestForManualBind({
+      requestMongoId: manualRequestMongoId,
+      requestId: manualRequestId,
+    });
+    if (!request) {
+      reason = "manual_request_not_found";
+    } else {
+      const requestSuffix = extractLotSuffix3(
+        String(request?.lotNumber?.value || ""),
+      );
+      if (!matchedSuffix && requestSuffix) {
+        matchedSuffix = requestSuffix;
+        recognized = {
+          lotNumber: requestSuffix,
+          confidence: "manual",
+          provider: "manual",
+        };
+      }
+    }
+  } else if (finalRecognizedSuffix) {
     request = await findPackingRequestBySuffix(finalRecognizedSuffix);
     if (!request) {
       reason = "no_suffix_match";
@@ -358,23 +429,44 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
 
   if (!request) {
     console.warn("[lot-capture] no matching request found", {
-      recognizedSuffix: finalRecognizedSuffix || null,
+      recognizedSuffix: matchedSuffix || null,
       originalName: name,
       s3Key: key,
       temporaryFallback: !packAiRecogEnabled,
       reason,
+      manualBind: isManualBind,
     });
+
+    const previewUrl = await resolvePackingPreviewUrl({
+      s3Key: key,
+      s3Url,
+    });
+    const unmatchedPayload = {
+      ok: true,
+      recognized: recognized || null,
+      matched: false,
+      suffix: matchedSuffix || null,
+      reason: reason || "no_packing_request",
+      s3Key: key,
+      s3Url: String(s3Url || "").trim() || "",
+      previewUrl,
+      originalName: name,
+      fileSize: Number.isFinite(Number(fileSize)) ? Number(fileSize) : null,
+      source: String(source || "").trim() || "worker",
+    };
+
+    emitAppEventGlobal("packing:capture-unmatched", {
+      source: "bg-lot-capture",
+      capturedBy:
+        String(source || "").trim() === "manual" ? "frontend" : "worker",
+      ...unmatchedPayload,
+    });
+
     return res.status(200).json(
       new ApiResponse(
         200,
-        {
-          ok: true,
-          recognized: recognized || null,
-          matched: false,
-          suffix: finalRecognizedSuffix || null,
-          reason: reason || "no_packing_request",
-        },
-        "일치하는 세척.패킹 의뢰를 찾지 못했습니다.",
+        unmatchedPayload,
+        "일치하는 세척.패킹 의뢰를 찾지 못했습니다. 화면에서 수동 매칭하세요.",
       ),
     );
   }
@@ -406,12 +498,13 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
   };
 
   console.log("[lot-capture] applying packing capture to request", {
-    recognizedSuffix: finalRecognizedSuffix || null,
+    recognizedSuffix: matchedSuffix || null,
     requestId: request.requestId,
     requestMongoId: String(request._id || ""),
     lotPart: String(request?.lotNumber?.value || "").trim() || null,
     stage: String(request?.manufacturerStage || "").trim() || null,
     imageName: name,
+    manualBind: isManualBind,
   });
 
   await ensureFinishedLotNumberForPacking(request);
@@ -479,8 +572,9 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
     tone: "slate",
     clear: true,
     metadata: {
-      recognizedSuffix: finalRecognizedSuffix || null,
-      temporaryFallback: !packAiRecogEnabled && !finalRecognizedSuffix,
+      recognizedSuffix: matchedSuffix || null,
+      temporaryFallback: !packAiRecogEnabled && !matchedSuffix,
+      manualBind: isManualBind,
     },
   });
 
@@ -491,7 +585,7 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
     capturedBy: capturedByFrontend ? "frontend" : "worker",
     requestId: request.requestId,
     requestMongoId: String(request._id || ""),
-    recognizedSuffix: finalRecognizedSuffix || null,
+    recognizedSuffix: matchedSuffix || null,
     recognized: recognized || null,
     movedToStage,
     request: normalizedRequest,
@@ -529,10 +623,12 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
         ok: true,
         matched: true,
         requestId: request.requestId,
-        suffix: finalRecognizedSuffix || null,
+        requestMongoId: String(request._id || ""),
+        suffix: matchedSuffix || null,
         recognized: recognized || null,
+        manualBind: isManualBind,
       },
-      "포장 캡쳐 처리 완료",
+      isManualBind ? "수동 매칭 포장 캡쳐 처리 완료" : "포장 캡쳐 처리 완료",
     ),
   );
 });

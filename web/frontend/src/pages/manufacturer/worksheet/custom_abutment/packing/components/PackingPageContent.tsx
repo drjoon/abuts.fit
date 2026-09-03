@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-04: AI 미매칭 시 각인 이미지 수동 매칭(3글자 필터·카드 드롭) 패널.
 // - 2026-08-04: 컨텐츠 영역 검색 바 제거. 헤더 worksheetSearch만 사용(중복 제거).
 // - 2026-08-03: packing page: 공정 '의뢰' 표시를 '준비'로 정규화한 영향으로 일부 시작/복사 로직의 라벨 표기를 조정했습니다 (표시 레벨).
 import {
@@ -35,6 +36,8 @@ import { usePackingPrintSettings } from "../hooks/usePackingPrintSettings";
 import { usePackingWorksheetData } from "../hooks/usePackingWorksheetData";
 import {
   usePackingCapture,
+  extractLotSuffix3,
+  PACKING_PENDING_DRAG_MIME,
   type CaptureResult,
 } from "../hooks/usePackingCapture";
 import {
@@ -49,10 +52,13 @@ import { resolveImplantConnectionSpec } from "@/utils/implantConnectionSpec";
 // related files:
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/hooks/usePackingCapture.ts
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/tracking/TrackingPage.tsx
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
-import { Plus, Settings, Trash2 } from "lucide-react";
+// - web/backend/controllers/ai/lotCapture.controller.js
+import { Plus, Settings, Trash2, X } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -1183,6 +1189,16 @@ export const PackingPageContent = ({
     handlePageDrop,
     handlePageDragOver,
     handlePageDragLeave,
+    handlePackingImageDropOnRequest,
+    pendingMatches,
+    activePending,
+    setActivePendingId,
+    manualSuffixQuery,
+    setManualSuffixQuery,
+    clearPendingMatch,
+    clearAllPendingMatches,
+    matchPendingToRequest,
+    matchingBusy,
   } = usePackingCapture({
     token,
     requests,
@@ -1193,6 +1209,67 @@ export const PackingPageContent = ({
     handleOpenPreview,
     onCaptureResult: handleCaptureResult,
   });
+
+  const normalizedManualSuffix = useMemo(
+    () =>
+      String(manualSuffixQuery || "")
+        .toUpperCase()
+        .replace(/[^A-Z]/g, "")
+        .slice(0, 3),
+    [manualSuffixQuery],
+  );
+
+  const displayRequests = useMemo(() => {
+    if (!normalizedManualSuffix) return paginatedRequests;
+    return filteredAndSorted.filter((req) => {
+      const suffix = extractLotSuffix3(req.lotNumber?.value);
+      return suffix.startsWith(normalizedManualSuffix);
+    });
+  }, [filteredAndSorted, normalizedManualSuffix, paginatedRequests]);
+
+  const packingMatchHintIds = useMemo(() => {
+    if (!normalizedManualSuffix || !pendingMatches.length) return undefined;
+    return new Set(
+      displayRequests
+        .filter((req) => {
+          const suffix = extractLotSuffix3(req.lotNumber?.value);
+          return (
+            suffix.startsWith(normalizedManualSuffix) &&
+            (normalizedManualSuffix.length < 3 ||
+              suffix === normalizedManualSuffix)
+          );
+        })
+        .map((req) => String(req._id || ""))
+        .filter(Boolean),
+    );
+  }, [displayRequests, normalizedManualSuffix, pendingMatches.length]);
+
+  const exactManualMatchRequest = useMemo(() => {
+    if (normalizedManualSuffix.length !== 3) return null;
+    const matches = filteredAndSorted.filter(
+      (req) =>
+        extractLotSuffix3(req.lotNumber?.value) === normalizedManualSuffix,
+    );
+    return matches.length === 1 ? matches[0] : null;
+  }, [filteredAndSorted, normalizedManualSuffix]);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Enter") return;
+      if (!activePending || !exactManualMatchRequest || matchingBusy) return;
+      const tag = String((e.target as HTMLElement | null)?.tagName || "").toLowerCase();
+      if (tag === "textarea") return;
+      e.preventDefault();
+      void matchPendingToRequest(exactManualMatchRequest);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [
+    activePending,
+    exactManualMatchRequest,
+    matchPendingToRequest,
+    matchingBusy,
+  ]);
 
   const handlePrintPackingLabels = useCallback(async () => {
     const selectedRequests = paginatedRequests.filter((req) =>
@@ -1293,13 +1370,14 @@ export const PackingPageContent = ({
     handlePrintSinglePackingLabel,
   ]);
 
-  const isEmpty = !isLoading && paginatedRequests.length === 0;
+  const isEmpty = !isLoading && displayRequests.length === 0;
   const overlayText = useMemo(() => {
-    if (!ocrProcessing) return "세척.패킹 이미지를 드롭하세요";
+    if (!ocrProcessing && !matchingBusy) return "세척.패킹 이미지를 드롭하세요";
     if (ocrStage === "upload") return "이미지 업로드 중...";
     if (ocrStage === "recognize") return "LOT 인식 중...";
+    if (matchingBusy) return "수동 매칭 중...";
     return "처리 중...";
-  }, [ocrProcessing, ocrStage]);
+  }, [matchingBusy, ocrProcessing, ocrStage]);
 
   return (
     <div
@@ -1418,6 +1496,134 @@ export const PackingPageContent = ({
 
         {isLoading && <WorksheetLoading />}
 
+        {pendingMatches.length > 0 && (
+          <div className="w-full px-4 pt-2 pb-1">
+            <div className="rounded-xl border border-accent-muted bg-accent-soft/40 p-3 shadow-sm">
+              <div className="mb-2 flex items-center justify-between gap-2 px-0.5">
+                <div>
+                  <div className="text-xs font-semibold text-accent-strong">
+                    수동 매칭 — 각인 이미지
+                  </div>
+                  <div className="text-[11px] text-slate-600">
+                    이미지를 보고 3글자를 입력하거나, 이미지를 카드에 드롭하세요.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => clearAllPendingMatches()}
+                  className="text-xs text-slate-500 hover:text-slate-700"
+                >
+                  전체 지우기
+                </button>
+              </div>
+
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-stretch">
+                <div className="flex gap-2 overflow-x-auto pb-1">
+                  {pendingMatches.map((item) => {
+                    const selected = item.id === activePending?.id;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => setActivePendingId(item.id)}
+                        draggable={selected}
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData(
+                            PACKING_PENDING_DRAG_MIME,
+                            item.id,
+                          );
+                          e.dataTransfer.effectAllowed = "copy";
+                          setActivePendingId(item.id);
+                        }}
+                        className={`relative shrink-0 overflow-hidden rounded-lg border bg-white text-left ${
+                          selected
+                            ? "border-primary ring-2 ring-primary/40"
+                            : "border-slate-200 opacity-80 hover:opacity-100"
+                        }`}
+                        title="드래그하여 의뢰 카드에 드롭"
+                      >
+                        <img
+                          src={item.previewUrl}
+                          alt={item.originalName}
+                          className="h-28 w-40 object-cover"
+                          draggable={false}
+                        />
+                        <div className="absolute inset-x-0 bottom-0 bg-black/55 px-1.5 py-0.5 text-[10px] font-semibold tracking-widest text-white">
+                          {item.aiSuffix || "—"}
+                        </div>
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          className="absolute right-1 top-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-white/90 text-slate-600 hover:bg-white"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            clearPendingMatch(item.id);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              clearPendingMatch(item.id);
+                            }
+                          }}
+                          aria-label="이 이미지 대기 목록에서 제거"
+                        >
+                          <X className="h-3 w-3" />
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="flex min-w-[220px] flex-1 flex-col justify-center gap-2">
+                  <label className="text-[11px] font-semibold text-slate-600">
+                    각인 코드 (A–Z 3자리)
+                  </label>
+                  <Input
+                    value={manualSuffixQuery}
+                    onChange={(e) => {
+                      const next = String(e.target.value || "")
+                        .toUpperCase()
+                        .replace(/[^A-Z]/g, "")
+                        .slice(0, 3);
+                      setManualSuffixQuery(next);
+                    }}
+                    placeholder="예: QJK"
+                    maxLength={3}
+                    autoComplete="off"
+                    spellCheck={false}
+                    className="h-11 max-w-[160px] font-mono text-lg tracking-[0.35em] uppercase"
+                    aria-label="각인 코드 검색"
+                  />
+                  <div className="text-[11px] text-slate-500">
+                    {normalizedManualSuffix
+                      ? `필터: ${displayRequests.length}건`
+                      : "한 글자씩 입력하면 카드가 필터됩니다."}
+                    {exactManualMatchRequest
+                      ? " · Enter로 매칭"
+                      : ""}
+                  </div>
+                  {exactManualMatchRequest && activePending ? (
+                    <button
+                      type="button"
+                      disabled={matchingBusy}
+                      onClick={() =>
+                        void matchPendingToRequest(exactManualMatchRequest)
+                      }
+                      className="inline-flex w-fit items-center rounded-lg border border-primary bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary/90 disabled:opacity-60"
+                    >
+                      {matchingBusy
+                        ? "매칭 중…"
+                        : `${extractLotSuffix3(exactManualMatchRequest.lotNumber?.value)} 카드에 매칭`}
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {captureHistory.length > 0 && (
           <div className="w-full px-4 pt-2 pb-1">
             <div className="flex items-center justify-between mb-1.5 px-1">
@@ -1475,12 +1681,16 @@ export const PackingPageContent = ({
 
         {isEmpty ? (
           <div className="flex justify-center py-8">
-            <div className="text-gray-500">의뢰가 없습니다.</div>
+            <div className="text-gray-500">
+              {normalizedManualSuffix
+                ? `각인 코드 "${normalizedManualSuffix}"에 맞는 의뢰가 없습니다.`
+                : "의뢰가 없습니다."}
+            </div>
           </div>
         ) : !isLoading ? (
           <>
             <WorksheetCardGrid
-              requests={paginatedRequests}
+              requests={displayRequests}
               selectedRequestIds={Array.from(
                 new Set(
                   selectedPackingRequestIds.filter((id) =>
@@ -1501,6 +1711,9 @@ export const PackingPageContent = ({
               onDelete={handleCardDelete}
               onDone={handleCardDone}
               onUploadNc={handleUploadByStage}
+              onPackingImageDrop={handlePackingImageDropOnRequest}
+              packingDropEnabled
+              packingMatchHintIds={packingMatchHintIds}
               uploadProgress={uploadProgress}
               isCamStage={false}
               isMachiningStage={false}
@@ -1512,9 +1725,11 @@ export const PackingPageContent = ({
               tabStage="packing"
             />
             <div ref={sentinelRef} className="py-4 text-center text-gray-500">
-              {visibleCount >= filteredAndSorted.length
-                ? "모든 의뢰를 표시했습니다."
-                : "스크롤하여 더보기"}
+              {normalizedManualSuffix
+                ? `필터 결과 ${displayRequests.length}건`
+                : visibleCount >= filteredAndSorted.length
+                  ? "모든 의뢰를 표시했습니다."
+                  : "스크롤하여 더보기"}
             </div>
           </>
         ) : null}
