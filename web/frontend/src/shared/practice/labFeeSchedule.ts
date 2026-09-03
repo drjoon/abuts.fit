@@ -27,6 +27,7 @@
 // - 2026-08-19: 임시치아+어벗은 임시치아 수가와 기공소 어벗 수가를 함께 합산.
 // - 2026-08-19: 임시치아 어벗은 묶음 줄과 분리해 치아별 커스텀어벗 단가 줄로 표시.
 // - 2026-08-21: 크라운·브리지·인레이+어벗도 보철 줄과 커스텀어벗 줄을 분리(수가표와 동일).
+// - 2026-09-03: 브리지 스팬 펼침 시 커스텀어벗은 해당 치아 toothWorks 행만 과금(연결치에 플래그 전파 금지).
 // - 2026-08-14: 환봉 프리셋 타입 변경 후에도 제조사·브랜드·패밀리로 매칭.
 // - 2026-08-14: 환봉 단가 0원은 별도 고지(abutmentRetailNote=quote). 견적에서 열이 사라지지 않게.
 // - 2026-08-14: 환봉 요청중·도입·CNC PTX CA 모두 기공소 어벗 수가.
@@ -1602,7 +1603,26 @@ export const computePracticeTransferRetailFees = (params: {
         for (const tooth of followUpFinalProsthesisTeeth(row)) {
           if (bridgeTeethBilled.has(tooth)) continue;
           bridgeTeethBilled.add(tooth);
-          const toothRow = { ...row, toothNumber: tooth };
+          // 연결치에 펼칠 때 customAbutment는 그 치아 행만 본다(원본 행 플래그 전파 금지).
+          const sourceRow =
+            rows.find((candidate) => {
+              const candidateTooth = String(
+                candidate?.toothNumber || candidate?.tooth || "",
+              ).trim();
+              if (candidateTooth !== tooth) return false;
+              return (
+                String(candidate?.prosthesisType || candidate?.type || "").trim() ===
+                "브리지"
+              );
+            }) ||
+            rows.find(
+              (candidate) =>
+                String(candidate?.toothNumber || candidate?.tooth || "").trim() ===
+                tooth,
+            );
+          const toothRow = sourceRow
+            ? { ...sourceRow, toothNumber: tooth }
+            : { ...row, toothNumber: tooth };
           const split = abutmentSplitForRow(toothRow);
           labFeeTotal += unitLabFee;
           addAbutment(split);

@@ -13,6 +13,7 @@
 // - 2026-08-19: 임시치아+어벗은 임시치아 수가와 기공소 어벗 수가를 함께 합산.
 // - 2026-08-19: 임시치아 어벗은 치아별 커스텀어벗 단가 줄로 분리.
 // - 2026-08-21: 크라운·브리지·인레이+어벗도 보철 줄과 커스텀어벗 줄을 분리.
+// - 2026-09-03: 브리지 연결 스팬에서 커스텀어벗은 해당 치아만(이웃치 플래그 전파 금지).
 // - 2026-08-19: 같은 악궁 임시치아도 연결이 끊기면 스팬별 구간 수가.
 // - 2026-08-20: Pontic 수가 제거. 레거시 Pontic 치아는 브리지. 임시치아 스팬의 구 Pontic은 세트에 포함.
 import {
@@ -369,6 +370,75 @@ describe("labFeeSchedule", () => {
         }),
       ]),
     );
+  });
+
+  test("브리지 연결 스팬에서도 커스텀어벗은 해당 치아(33·43)에만 붙는다", () => {
+    // 43이 먼저 펼쳐져도 이웃 42에 CA를 전파하지 않고, 이미 청구된 33의 CA도 유지.
+    const fees = computePracticeTransferRetailFees({
+      toothWorks: [
+        {
+          toothNumber: "43",
+          prosthesisType: "브리지",
+          customAbutment: true,
+          abutmentProductMode: "design_custom_abutment",
+          bridgeLinkedTeeth: ["42"],
+        },
+        {
+          toothNumber: "42",
+          prosthesisType: "브리지",
+          customAbutment: false,
+          bridgeLinkedTeeth: ["43", "41"],
+        },
+        {
+          toothNumber: "41",
+          prosthesisType: "브리지",
+          customAbutment: false,
+          bridgeLinkedTeeth: ["42", "31"],
+        },
+        {
+          toothNumber: "31",
+          prosthesisType: "브리지",
+          customAbutment: false,
+          bridgeLinkedTeeth: ["41", "32"],
+        },
+        {
+          toothNumber: "32",
+          prosthesisType: "브리지",
+          customAbutment: false,
+          bridgeLinkedTeeth: ["31", "33"],
+        },
+        {
+          toothNumber: "33",
+          prosthesisType: "브리지",
+          customAbutment: true,
+          abutmentProductMode: "design_custom_abutment",
+          bridgeLinkedTeeth: ["32"],
+        },
+      ],
+      labFeeSchedule: LAB_FEE_SCHEDULE_SAMPLE,
+      abutmentPricingTier: "regular",
+    });
+    expect(fees.labFeeTotal).toBe(440000);
+    expect(fees.labAbutmentTotal).toBe(80000);
+    const abutmentLines = fees.lines.filter(
+      (line) => line.prosthesisType === LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME,
+    );
+    expect(abutmentLines).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          toothNumber: "33",
+          labAbutmentFee: 40000,
+        }),
+        expect.objectContaining({
+          toothNumber: "43",
+          labAbutmentFee: 40000,
+        }),
+      ]),
+    );
+    expect(abutmentLines).toHaveLength(2);
+    expect(
+      abutmentLines.some((line) => line.toothNumber === "42"),
+    ).toBe(false);
   });
 
   test("최종 보철 후속(followUp)은 커스텀어벗 수가를 다시 청구하지 않는다", () => {
