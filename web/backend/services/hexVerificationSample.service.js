@@ -5,6 +5,7 @@
 // - web/backend/services/practiceTransferProduction.service.js (PTX 준비 등록 시에도 미확정 제조사 샘플 생성)
 // - web/backend/controllers/requests/common.review.controller.js
 // change-log:
+// - 2026-09-03: 제조사별 샘플 생성 실패가 다른 제조사 생성을 막지 않게 try/catch. 준비 목록 누락분 백필.
 // - 2026-09-03: PTX 원본 클론은 designCompletedAt 전이라도 ensureLotNumberForMachining으로 로트 강제 발급(null unique 충돌 방지).
 // - 2026-09-03: 임플란트 제조사별 미확정이면 배치 내 제조사당 샘플 1건. PTX 준비 등록도 동일.
 // - 2026-08-21: 워크시트 준비 목록에서 헥스 샘플 filled STL 누락을 원본에서 보정.
@@ -477,58 +478,143 @@ export async function maybeCreateHexVerificationSampleForFirstOrder({
 
   const createdSamples = [];
   for (const [mfrKey, sourceReq] of firstByManufacturer) {
-    const designSoftware = String(
-      sourceReq?.caseInfos?.designSoftware || "",
-    ).trim();
-    const exoCadVersion = sourceReq?.caseInfos?.exoCadVersion || null;
-    const implantManufacturer = String(
-      sourceReq?.caseInfos?.implantManufacturer || mfrKey,
-    ).trim();
-
-    const pending = await isHexVerificationSamplePendingEligible({
-      userId,
-      businessAnchorId,
-      session,
-      designSoftware,
-      exoCadVersion,
-      implantManufacturer,
-    });
-    if (!pending) continue;
-
-    const created = await createHexVerificationSampleClone({
-      sourceRequest: sourceReq,
-      actorUserId: actorUserId || userId,
-      session,
-    });
-    if (!created) continue;
-
-    // 원본 Rhino가 샘플보다 먼저 끝났으면 생성 직후 filled STL을 바로 복사한다.
     try {
-      const sourceId = sourceReq?._id || sourceReq?.id;
-      const freshSource = sourceId
-        ? await Request.findById(sourceId).session(session || null)
-        : null;
-      if (freshSource) {
-        await copyFilledStlToHexVerificationSamples(freshSource);
-        const refreshed = await Request.findById(created._id).session(
-          session || null,
+      const designSoftware = String(
+        sourceReq?.caseInfos?.designSoftware || "",
+      ).trim();
+      const exoCadVersion = sourceReq?.caseInfos?.exoCadVersion || null;
+      const implantManufacturer = String(
+        sourceReq?.caseInfos?.implantManufacturer || mfrKey,
+      ).trim();
+
+      const pending = await isHexVerificationSamplePendingEligible({
+        userId,
+        businessAnchorId,
+        session,
+        designSoftware,
+        exoCadVersion,
+        implantManufacturer,
+      });
+      if (!pending) continue;
+
+      const created = await createHexVerificationSampleClone({
+        sourceRequest: sourceReq,
+        actorUserId: actorUserId || userId,
+        session,
+      });
+      if (!created) continue;
+
+      // 원본 Rhino가 샘플보다 먼저 끝났으면 생성 직후 filled STL을 바로 복사한다.
+      try {
+        const sourceId = sourceReq?._id || sourceReq?.id;
+        const freshSource = sourceId
+          ? await Request.findById(sourceId).session(session || null)
+          : null;
+        if (freshSource) {
+          await copyFilledStlToHexVerificationSamples(freshSource);
+          const refreshed = await Request.findById(created._id).session(
+            session || null,
+          );
+          createdSamples.push(refreshed || created);
+          continue;
+        }
+      } catch (copyErr) {
+        console.warn(
+          "[maybeCreateHexVerificationSampleForFirstOrder] copy filled STL failed",
+          {
+            manufacturer: mfrKey,
+            message: copyErr?.message || copyErr,
+          },
         );
-        createdSamples.push(refreshed || created);
-        continue;
       }
-    } catch (copyErr) {
+      createdSamples.push(created);
+    } catch (createErr) {
+      // 한 제조사 실패(로트 unique 등)가 배치 내 다른 미확정 제조사 생성을 막지 않게 한다.
       console.warn(
-        "[maybeCreateHexVerificationSampleForFirstOrder] copy filled STL failed",
+        "[maybeCreateHexVerificationSampleForFirstOrder] create failed",
         {
           manufacturer: mfrKey,
-          message: copyErr?.message || copyErr,
+          sourceRequestId: sourceReq?.requestId || null,
+          message: createErr?.message || createErr,
         },
       );
     }
-    createdSamples.push(created);
   }
 
   return createdSamples;
+}
+
+/**
+ * 준비 목록용: 미확정 제조사인데 확인용 샘플이 없으면 생성한다.
+ * (PTX lot 버그·이미 생성된 relatedRequestIds 등으로 누락된 건 보정)
+ * 호출측은 fire-and-forget + 소켓 갱신을 권장(목록 응답을 막지 않음).
+ * @param {object[]} requests lean request list (준비 단계)
+ * @returns {Promise<object[]>} 새로 생성된 샘플
+ */
+export async function ensureMissingHexVerificationSamplesInReadyList(
+  requests,
+) {
+  if (!Array.isArray(requests) || requests.length === 0) return [];
+
+  /** @type {Map<string, { userId: string, businessAnchorId: string, sources: object[] }>} */
+  const byOwner = new Map();
+  for (const req of requests) {
+    if (!req) continue;
+    if (req?.caseInfos?.hexVerificationSample === true) continue;
+    if (String(req?.manufacturerStage || "").trim() === "취소") continue;
+    if (String(req?.caseInfos?.designSoftware || "").trim() !== "ExoCAD") {
+      continue;
+    }
+    const mfr = normalizeImplantManufacturerKey(
+      req?.caseInfos?.implantManufacturer,
+    );
+    if (!mfr) continue;
+
+    const uid = String(
+      req?.requestor?._id || req?.requestor || "",
+    ).trim();
+    const bid = String(
+      req?.businessAnchorId?._id ||
+        req?.businessAnchorId ||
+        req?.requestor?.businessAnchorId ||
+        "",
+    ).trim();
+    const ownerKey = `${uid}|${bid}`;
+    if (!byOwner.has(ownerKey)) {
+      byOwner.set(ownerKey, {
+        userId: uid,
+        businessAnchorId: bid,
+        sources: [],
+      });
+    }
+    byOwner.get(ownerKey).sources.push(req);
+  }
+  if (byOwner.size === 0) return [];
+
+  const createdAll = [];
+  for (const group of byOwner.values()) {
+    try {
+      const created = await maybeCreateHexVerificationSampleForFirstOrder({
+        sourceRequests: group.sources,
+        userId: group.userId || null,
+        businessAnchorId: group.businessAnchorId || null,
+        actorUserId: group.userId || null,
+      });
+      if (Array.isArray(created) && created.length > 0) {
+        createdAll.push(...created);
+      }
+    } catch (err) {
+      console.warn(
+        "[ensureMissingHexVerificationSamplesInReadyList] failed",
+        {
+          userId: group.userId || null,
+          businessAnchorId: group.businessAnchorId || null,
+          message: err?.message || String(err || ""),
+        },
+      );
+    }
+  }
+  return createdAll;
 }
 
 const cloneJson = (value) => {

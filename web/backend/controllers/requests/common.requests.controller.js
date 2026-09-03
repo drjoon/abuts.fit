@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-03: 워크시트 준비 조회 시 미확정 제조사 헥스 확인 샘플 누락분을 fire-and-forget 보정.
 // - 2026-09-03: 워크시트 requestor.requestSettings도 getById와 동일하게 정규화(프리뷰 헥스 뱃지).
 // - 2026-09-03: 워크시트 business 헥스 — case implantManufacturer로 해석 + hexByImplantManufacturer 포함(BA 레거시 전건 확정 번짐 제거).
 // - 2026-08-26: 관리자 모니터링(view=monitoring) — 제조사 준비 큐(productModeNe)와 동일 제외(PTX 디자인 미완료·레거시 디자인 mode).
@@ -95,6 +96,7 @@ import { resolveAdminVerifiedHexFromSettings, normalizeHexVerificationResultHex 
 import {
   findHexVerificationCancelSiblings,
   backfillMissingFilledStlOnHexSamplesInList,
+  ensureMissingHexVerificationSamplesInReadyList,
 } from "../../services/hexVerificationSample.service.js";
 import { buildWorksheetReadyQueueGuard } from "../../services/worksheetReadyQueue.guard.js";
 
@@ -1846,6 +1848,7 @@ export async function getAllRequests(req, res) {
 
     // Rhino 콜백이 다른 백엔드로 가면 헥스 샘플 filled 복사가 누락될 수 있다.
     // 준비 워크시트 조회 시 원본 camFile/stlFile로 보정한다.
+    // 미확정 제조사 확인용 샘플 누락(PTX lot 버그 등)도 fire-and-forget으로 보정한다.
     let worksheetRequests = rawRequests;
     if (isWorksheetView) {
       const stageHint = String(
@@ -1865,6 +1868,59 @@ export async function getAllRequests(req, res) {
             backfillErr?.message || backfillErr,
           );
         }
+        // 목록 응답은 막지 않음. 생성 후 소켓으로 준비 카드 갱신.
+        void ensureMissingHexVerificationSamplesInReadyList(rawRequests)
+          .then((createdSamples) => {
+            if (!Array.isArray(createdSamples) || createdSamples.length === 0) {
+              return;
+            }
+            const sampleRequestIds = createdSamples
+              .map((s) => String(s?.requestId || "").trim())
+              .filter(Boolean);
+            const businessAnchorId =
+              String(
+                createdSamples[0]?.businessAnchorId ||
+                  rawRequests?.[0]?.businessAnchorId ||
+                  "",
+              ).trim() || null;
+            console.log(
+              "[getAllRequests] hex verification sample backfilled",
+              {
+                count: sampleRequestIds.length,
+                sampleRequestIds,
+              },
+            );
+            emitAppEventToRoles(
+              ["manufacturer", "admin"],
+              "worksheet:count-update",
+              {
+                source: "worksheet-hex-verification-sample-backfill",
+                businessAnchorId,
+                requestIds: sampleRequestIds,
+                count: sampleRequestIds.length,
+              },
+            );
+            emitAppEventToRoles(
+              ["requestor", "manufacturer", "admin"],
+              "request:stage-changed",
+              {
+                source: "worksheet-hex-verification-sample-backfill",
+                action: "hex-verification-sample-created",
+                fromStage: "",
+                toStage: "준비",
+                businessAnchorId,
+                requestorBusinessAnchorId: businessAnchorId,
+                requestIds: sampleRequestIds,
+                count: sampleRequestIds.length,
+              },
+            );
+          })
+          .catch((ensureErr) => {
+            console.warn(
+              "[getAllRequests] hex verification sample ensure failed",
+              ensureErr?.message || ensureErr,
+            );
+          });
       }
     }
 
