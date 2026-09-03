@@ -44,7 +44,7 @@ import { Types } from "mongoose";
 import Request from "../../models/request.model.js";
 import PracticeTransfer from "../../models/practiceTransfer.model.js";
 import User from "../../models/user.model.js";
-import { clearFilledStlFileOnCaseInfos } from "../../utils/filledStlFile.js";
+import { clearFilledStlFileOnCaseInfos, applyStlPreloadCancelledOnRequest } from "../../utils/filledStlFile.js";
 import {
   canClaimOrHandoffDesignRequest,
   isAcceptingLabForPtxDesignRequest,
@@ -386,6 +386,7 @@ const applyPtxDesignCancelFields = (request) => {
   request.designCompletedAt = undefined;
   request.designCompletedBy = undefined;
   request.manufacturerStage = "취소";
+  applyStlPreloadCancelledOnRequest(request, "request_cancelled");
 };
 
 const markPtxRelatedRequestsCancelled = async (transferId, options = {}) => {

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-03: 라이노 중단 시 취소/원본STL 없는 고스트 카드 목록 제거.
 // - 2026-09-03: 준비 탭「라이노 작업중」중단 — 샘플 삭제 / 일반 의뢰 stl cancel-regeneration.
 // - 2026-08-23: 워크시트 스크롤바 — 작업영역 카드 오른쪽 끝에 붙이도록 nested scroll breakout.
 // - 2026-08-18: Filled STL/NC 재생성 완료 상단 alert 제거.
@@ -1426,21 +1427,43 @@ export const RequestPage = ({
         }
 
         const patched = body?.data?.request;
-        if (patched && typeof patched === "object") {
-          pageState.setRequests((prev) =>
-            prev.map((item) => {
+        pageState.setRequests((prev) => {
+          const next = prev
+            .map((item) => {
               const itemMongoId = String(item?._id || "").trim();
               const itemRequestId = String(item?.requestId || "").trim();
-              if (
+              const isTarget =
                 (cancelKey && itemMongoId === cancelKey) ||
-                (requestId && itemRequestId === requestId)
-              ) {
+                (requestId && itemRequestId === requestId);
+              if (!isTarget) return item;
+              if (patched && typeof patched === "object") {
                 return { ...item, ...patched };
               }
               return item;
-            }),
-          );
-        }
+            })
+            .filter((item) => {
+              const itemMongoId = String(item?._id || "").trim();
+              const itemRequestId = String(item?.requestId || "").trim();
+              const isTarget =
+                (cancelKey && itemMongoId === cancelKey) ||
+                (requestId && itemRequestId === requestId);
+              if (!isTarget) return true;
+              // 취소·원본 STL 없는 고스트는 준비 목록에서 제거
+              if (String(item?.manufacturerStage || "").trim() === "취소") {
+                return false;
+              }
+              const file = item?.caseInfos?.file;
+              const hasOriginalStl = Boolean(
+                String(file?.s3Key || "").trim() ||
+                  String(file?.filePath || "").trim() ||
+                  String(file?.fileName || "").trim() ||
+                  String((file as { originalName?: string } | undefined)
+                    ?.originalName || "").trim(),
+              );
+              return hasOriginalStl;
+            });
+          return next;
+        });
 
         toast({
           title: "생성 중단",

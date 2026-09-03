@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-03: 2-filled 성공 시 stlPreload NONE, 실패 시 FAILED. 취소 의뢰 콜백 ignore.
 // - 2026-08-18: 2-filled 재생성 성공 시 기존 NC 메타 $unset. regenerated/ncCleared를 웹소켓에 포함.
 // - 2026-08-16: request-meta — manufacturerHexRotation 누락 시 caseInfos/STL모델대로 폴백(500 제거).
 // related files:
@@ -695,6 +696,30 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
       );
   }
 
+  // 취소된 의뢰의 2-filled 콜백은 DB/UI를 다시 깨우지 않는다.
+  // (Rhino는 완료 로그를 남기지만, 준비 탭 고스트「라이노 작업중」재발 방지)
+  if (
+    String(sourceStep || "").trim() === "2-filled" &&
+    String(request?.manufacturerStage || "").trim() === "취소"
+  ) {
+    console.warn("[BG-Callback] Ignored 2-filled for cancelled request", {
+      requestId: request?.requestId || null,
+      fileName,
+    });
+    return res.status(200).json(
+      new ApiResponse(
+        200,
+        {
+          found: true,
+          ignored: true,
+          reason: "cancelled",
+          requestId: request?.requestId || null,
+        },
+        "취소된 의뢰의 Filled STL 콜백은 무시했습니다.",
+      ),
+    );
+  }
+
   // 재발 방지: R&D 보관 원본(doneAt!=null)은 완료 샘플 보관본이며 작업 대상이 아니다.
   // BG 콜백이 잘못 매칭되더라도 원본을 변경하지 않도록 즉시 무시한다.
   if (isRndArchivedSampleRequest(request)) {
@@ -928,6 +953,11 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
             uploadedAt: now,
           });
         Object.assign(updateData, mongoSetFilledStlFile(filledMeta));
+        // 준비 탭「라이노 작업중」— 생성 완료 시 GENERATING 해제
+        updateData["productionSchedule.stlPreload"] = {
+          status: "NONE",
+          updatedAt: now,
+        };
         break;
       }
 
@@ -1096,6 +1126,16 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
         updateData["productionSchedule.ncPreload"] = {
           status: "NONE",
           updatedAt: now,
+        };
+      }
+      if (sourceStep === "2-filled") {
+        // Filled STL 실패 시「라이노 작업중」블러 해제
+        updateData["productionSchedule.stlPreload"] = {
+          status: "FAILED",
+          updatedAt: now,
+          error:
+            String(metadata?.error || "").trim() ||
+            `Filled STL 생성 실패 (${sourceStep})`,
         };
       }
     }

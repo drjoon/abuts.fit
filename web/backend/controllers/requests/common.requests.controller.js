@@ -92,7 +92,7 @@ import {
   isPtxLabDesignedAbutmentRequest,
 } from "./common.review.helpers.js";
 import { releaseRequestCreditHoldsOnCancel } from "../../services/requestCreditHold.service.js";
-import { pickFilledStlFileForClone } from "../../utils/filledStlFile.js";
+import { pickFilledStlFileForClone, mongoSetStlPreloadCancelled, applyStlPreloadCancelledOnRequest } from "../../utils/filledStlFile.js";
 import { resolveAdminVerifiedHexFromSettings, normalizeHexVerificationResultHex } from "../../utils/designSoftwareHex.js";
 import {
   findHexVerificationCancelSiblings,
@@ -3926,9 +3926,15 @@ export async function updateRequestStatus(req, res) {
           excludeSiblingIds: cancelingIds,
         });
         applyStatusMapping(target, manufacturerStage);
+        applyStlPreloadCancelledOnRequest(target, "request_cancelled");
         await Request.updateOne(
           { _id: target._id },
-          { $set: { manufacturerStage: target.manufacturerStage } },
+          {
+            $set: {
+              manufacturerStage: target.manufacturerStage,
+              ...mongoSetStlPreloadCancelled("request_cancelled"),
+            },
+          },
         );
         sideEffects.push({
           request: target,
@@ -4162,6 +4168,7 @@ export async function updateRequestStatusBatch(req, res) {
           excludeSiblingIds: cancelingIds,
         });
         applyStatusMapping(request, "취소");
+        applyStlPreloadCancelledOnRequest(request, "request_cancelled");
         canceled.push({
           _id: request._id,
           requestId: request.requestId,
@@ -4184,7 +4191,12 @@ export async function updateRequestStatusBatch(req, res) {
     if (canceledIds.length) {
       await Request.updateMany(
         { _id: { $in: canceledIds } },
-        { $set: { manufacturerStage: "취소" } },
+        {
+          $set: {
+            manufacturerStage: "취소",
+            ...mongoSetStlPreloadCancelled("request_cancelled"),
+          },
+        },
       );
       clearMyRequestsCache();
     }
@@ -4373,6 +4385,7 @@ export async function deleteRequest(req, res) {
             excludeSiblingIds: cancelingIds,
           });
           applyStatusMapping(target, "취소");
+          applyStlPreloadCancelledOnRequest(target, "request_cancelled");
           await target.save({ session });
         }
       });

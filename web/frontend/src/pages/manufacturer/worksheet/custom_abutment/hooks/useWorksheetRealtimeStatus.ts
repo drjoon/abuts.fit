@@ -12,6 +12,7 @@
 // - web/backend/controllers/bg/bg.controller.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/regenerationPending.ts
 // change-log:
+// - 2026-09-03: 취소 시 목록에서 본건 강제 제거 + manufacturerStage 보정(라이노 고스트 방지).
 // - 2026-08-29: NC-only 재생성 시 STL IndexedDB를 지우지 않음. 캐시 무효화 후 열린 프리뷰를 갱신.
 // - 2026-08-29: NC 재생성 시작(cam-processing-started) 시 목록/카드에서 ncFile을 즉시 제거.
 // - 2026-08-29: 재제작(copied_sample) count-update에 R&D 토스트를 띄우지 않음 — rnd_sample/rnd stage만.
@@ -393,13 +394,36 @@ export function useWorksheetRealtimeStatus({
           String(payload?.toStage || "").trim() ||
           String((eventRequest as any)?.manufacturerStage || "").trim();
         if (eventRequest) {
+          // 취소 이벤트에 manufacturerStage가 빠져도 준비 탭에 남지 않게 보정
+          const requestForPatch =
+            toStage === "취소"
+              ? ({
+                  ...eventRequest,
+                  manufacturerStage:
+                    String(
+                      (eventRequest as any)?.manufacturerStage || "",
+                    ).trim() || "취소",
+                } as ManufacturerRequest)
+              : eventRequest;
           setRequests((prev) => {
-            let patched = applyRequestPatch(prev, eventRequest);
+            let patched = applyRequestPatch(prev, requestForPatch);
 
             if (toStage === "취소") {
+              const canceledRid = String(
+                requestForPatch?.requestId || "",
+              ).trim();
+              const canceledMid = String(requestForPatch?._id || "").trim();
+              // matchesCurrentPage 누락·소켓 페이로드 불완전 시에도 본건을 목록에서 제거
+              patched = patched.filter((item) => {
+                const itemRid = String(item?.requestId || "").trim();
+                const itemMid = String(item?._id || "").trim();
+                if (canceledRid && itemRid === canceledRid) return false;
+                if (canceledMid && itemMid === canceledMid) return false;
+                return true;
+              });
               patched = filterOutHexVerificationCancelCompanions(
                 patched,
-                eventRequest,
+                requestForPatch,
               );
             }
 

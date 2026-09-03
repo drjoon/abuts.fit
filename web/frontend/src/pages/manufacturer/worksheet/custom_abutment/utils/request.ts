@@ -1,5 +1,5 @@
 // change-log:
-// - 2026-09-03: isRhinoWorkPending — stlPreload CANCELLED/FAILED면 블러 해제.
+// - 2026-09-03: isRhinoWorkPending — 취소·원본 STL 없음 고스트 블러 방지. CANCELLED/FAILED면 해제.
 // - 2026-08-22: isAnySampleRequest는 UI/크레딧 표시용 — 직경 요약·공정 탭 차단에 쓰지 않음.
 // - 2026-08-17: PTX 직납 치과 연락처 resolve (스냅샷 우선, 없으면 practice BA live).
 // - 2026-08-21: Rhino filled STL SSOT — `caseInfos.stlFile`(legacy `camFile` 폴백). NC는 `ncFile`.
@@ -286,18 +286,28 @@ export const patchFilledStlFile = (
 /**
  * 제조사 생산 준비 카드: filled STL 수신 전.
  * 디자인+생산 큐는 DesignRequestTransferView를 쓰므로 WorksheetCardGrid 준비 탭에서만 판정한다.
- * CANCELLED/FAILED(생성 중단)면 블러를 띄우지 않는다.
+ * CANCELLED/FAILED(생성 중단)·취소 단계·원본 STL 없음(고스트)이면 블러를 띄우지 않는다.
  */
 export const isRhinoWorkPending = (
   req?: ManufacturerRequest | null,
   tabStage?: string,
 ) => {
   if (String(tabStage || "").trim() !== "request") return false;
+  if (String(req?.manufacturerStage || "").trim() === "취소") return false;
   if (hasFilledStl(req)) return false;
   const status = String(req?.productionSchedule?.stlPreload?.status || "")
     .trim()
     .toUpperCase();
   if (status === "CANCELLED" || status === "FAILED") return false;
+  // 원본 STL이 없으면 Rhino 대기 대상이 아님(취소 후 파일 클리어·FE 잔상 고스트 방지)
+  const file = req?.caseInfos?.file;
+  const hasOriginalStl = Boolean(
+    String(file?.s3Key || "").trim() ||
+      String(file?.filePath || "").trim() ||
+      String(file?.fileName || "").trim() ||
+      String(file?.originalName || "").trim(),
+  );
+  if (!hasOriginalStl) return false;
   return true;
 };
 

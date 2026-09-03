@@ -2,6 +2,8 @@
 // - web/backend/rules.md
 // - web/backend/app.js
 // - web/backend/server.js
+// change-log:
+// - 2026-09-03: 취소된 의뢰 process-file 거부(409) — GENERATING 고스트 방지.
 import axios from "axios";
 import { asyncHandler } from "../../utils/asyncHandler.js";
 import { ApiError } from "../../utils/ApiError.js";
@@ -118,10 +120,16 @@ export const processFileByName = asyncHandler(async (req, res) => {
   if (requestId) {
     try {
       const request = await Request.findOne({ requestId })
-        .select({ _id: 1 })
+        .select({ _id: 1, manufacturerStage: 1 })
         .lean();
       if (request) {
         requestMongoId = String(request._id);
+        if (String(request.manufacturerStage || "").trim() === "취소") {
+          throw new ApiError(
+            409,
+            "취소된 의뢰는 Filled STL을 생성할 수 없습니다.",
+          );
+        }
         // CANCELLED 후 재생성 시 준비 탭「라이노 작업중」블러를 다시 켠다
         void Request.updateOne(
           { _id: request._id },
@@ -140,8 +148,9 @@ export const processFileByName = asyncHandler(async (req, res) => {
           );
         });
       }
-    } catch {
-      // ignore
+    } catch (err) {
+      if (err instanceof ApiError) throw err;
+      // ignore lookup errors; Rhino enqueue may still proceed without preload flag
     }
   }
 

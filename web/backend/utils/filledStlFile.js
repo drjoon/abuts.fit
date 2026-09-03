@@ -3,6 +3,7 @@
 // - web/backend/controllers/bg/bg.controller.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/request.ts
 // change-log:
+// - 2026-09-03: buildStlPreloadCancelled / mongoSet / apply — 취소 시 라이노 블러 해제 SSOT.
 // - 2026-08-21: resolveFilledStlFile — s3Key 있는 camFile을 uploadedAt 스텁 stlFile보다 우선.
 // - 2026-08-21: pickFilledStlFileForClone — 없을 때 null 키를 넣지 않음(빈 uploadedAt 스텁 방지).
 // - 2026-08-21: Rhino filled STL SSOT를 caseInfos.stlFile로 개명. camFile은 레거시 미러/폴백.
@@ -79,6 +80,38 @@ export function clearFilledStlFileOnCaseInfos(caseInfos) {
   caseInfos.stlFile = undefined;
   caseInfos.camFile = undefined;
   return caseInfos;
+}
+
+/**
+ * 의뢰 취소/Filled STL 생성 중단 시 준비 탭「라이노 작업중」블러 해제용.
+ * @param {string} [error]
+ */
+export function buildStlPreloadCancelled(error = "request_cancelled") {
+  return {
+    status: "CANCELLED",
+    updatedAt: new Date(),
+    error: String(error || "request_cancelled").trim() || "request_cancelled",
+  };
+}
+
+/** Mongo $set용 stlPreload CANCELLED */
+export function mongoSetStlPreloadCancelled(error) {
+  return {
+    "productionSchedule.stlPreload": buildStlPreloadCancelled(error),
+  };
+}
+
+/** Request 문서에 stlPreload CANCELLED 반영(save 전) */
+export function applyStlPreloadCancelledOnRequest(request, error) {
+  if (!request || typeof request !== "object") return request;
+  if (
+    !request.productionSchedule ||
+    typeof request.productionSchedule !== "object"
+  ) {
+    request.productionSchedule = {};
+  }
+  request.productionSchedule.stlPreload = buildStlPreloadCancelled(error);
+  return request;
 }
 
 /**
