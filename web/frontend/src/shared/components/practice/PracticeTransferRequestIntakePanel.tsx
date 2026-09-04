@@ -154,8 +154,8 @@ import {
 // - web/frontend/src/shared/components/practice/PracticeCustomSpecsPresetEditDialog.tsx
 // - web/frontend/src/shared/pricing/abutsAbutmentService.ts
 // - 2026-08-25: 기공소·환자·날짜 투어 카드 — 헤더 버튼~입력 행 세로 맞춤, 폭=주문-치과도착 열.
-// - 2026-08-25: 가이드투어 스텝 상위로 제어 가능(모드 전환 유지). 익스프레스 숨김 필드는 자동 스킵 안 함.
-// - 2026-08-25: 기공소·환자·날짜 투어 배너 → 상단 오른쪽(CardHeader 슬롯). aside는 익스프레스 단계 표시용.
+// - 2026-08-25: 가이드투어 스텝 상위로 제어 가능.
+// - 2026-08-25: 기공소·환자·날짜 투어 배너 → 상단 오른쪽(CardHeader 슬롯).
 // - 2026-08-25: 가이드투어 견적·완료 중 어벗 모달 재오픈 허용 — 스텝 진입 시에만 닫고, 열기 직후 effect로 닫지 않음.
 // - 2026-08-28: 커스텀어벗 설정 모달 — 상하 여백과 같은 좌우 여백(max-w=calc).
 // - 2026-08-28: reserveGuideTourAside — 작성 툴바가 DialogHeader로 올라가도 오른쪽 투어 레일 예약.
@@ -163,7 +163,7 @@ import {
 // - 2026-08-27: 커스텀어벗 설정 — 임플란트·스캔바디 프리셋 2열·호버 액션. 모달 max-w-[90rem].
 // - 2026-08-25: 기공소 픽커 보조줄 — 대표·주소만(사업자번호 표시 제거, 검색은 유지).
 // - 2026-08-25: 헤더(기공소·환자·기간) — PC 툴바 있으면 오른쪽 레일 항상 예약(투어 카드 on/off 폭 점프 방지).
-// - 2026-08-25: 헤더(기공소·환자·기간) — 투어 시 날짜 열 폭만큼 오른쪽 카드, 아니면 익스프레스 aside만.
+// - 2026-08-25: 헤더(기공소·환자·기간) — 투어 시 날짜 열 폭만큼 오른쪽 카드.
 // - 2026-08-25: 커스텀어벗 보철 형태 — 어벗 모달에서 심플어벗 비활성(스캔바디만).
 // - 2026-08-25: 커스텀어벗 설정 — 임플란트(primary)·어벗(service-abut) 색 구분. + 확대·임플란트 열 축소.
 // - 2026-08-25: 가이드투어 어벗 — 스캔바디 커스텀 vs 심플어벗(꽂고 바로 스캔) 두 방식.
@@ -182,7 +182,7 @@ import {
 // - 2026-08-11: 기공의뢰 카드 내 행(섹션) 수직 간격 gap-10.
 // - 2026-08-13: 커스텀어벗 설정 모달에 생산만/디자인+생산 배타 선택 + 가격 툴팁.
 // - 2026-08-13: 상·하악 사이 견적(크레딧 소비액) + 빠른툴팁 세부내역.
-// - 2026-08-15: showLabField/showPatientField/showDateFields — 익스프레스 위저드용 개별 표시.
+// - 2026-08-15: showLabField/showPatientField/showDateFields — 헤더 필드 개별 표시.
 // - 2026-08-14: 기공소 미선택 시 견적 계산 없이 안내만.
 // - 2026-08-14: 생산만/디자인+생산 툴팁을「커스텀어벗 - 어벗츠 자체 제공」(+생산만은 어벗생산의뢰 안내)로 통일.
 // - 2026-08-14: 커스텀어벗 설정 모달 가로폭을 프리셋 편집과 같이 max-w-5xl로 맞춘다.
@@ -220,7 +220,6 @@ import {
 // - 2026-08-25: 전체 가이드투어 — 기공소·환자·날짜 선행 후 보철물. 상단 버튼으로 시작.
 // - 2026-08-25: 환자명 투어 — 이미 채워진 이름이면 변경 전 자동 진행 안 함(2→3 점프 방지).
 // - 2026-08-25: full 치식 — 카드가 전폭을 나눠 갖고 스크롤 없이 16칸 표시. 위·아래 여백으로 경계 보존.
-// - 2026-08-25: preferGuideTourAside(위저드 레일)일 때 패널 쪽 투어 레일 중복 렌더 방지.
 // - 2026-08-25: full 치식 카드 높이 12rem 복구·형태 버튼 shrink-0 — 어벗 상세 시 유형 스위치 가림 방지.
 // - 2026-09-02: full 치식 슬롯 래퍼 contents 복구 — shrink-0 래퍼가 flex-1 전폭 분할을 막아 카드가 좁아지던 문제.
 
@@ -680,7 +679,7 @@ const persistLocalMemoSnippets = (items: string[]) => {
 export type PracticeTransferRequestIntakePanelProps = {
   /** false면 기공소·환자명·날짜를 숨기고 보철물·메모만 렌더 (기본 true) */
   showHeaderFields?: boolean;
-  /** 헤더 필드 개별 표시. 미지정 시 showHeaderFields 따름 (익스프레스 위저드용) */
+  /** 헤더 필드 개별 표시. 미지정 시 showHeaderFields 따름 */
   showLabField?: boolean;
   showPatientField?: boolean;
   showDateFields?: boolean;
@@ -806,21 +805,6 @@ export type PracticeTransferRequestIntakePanelProps = {
   guideTourStep?: PracticeToothWorkGuideTourStep | null;
   onGuideTourStepChange?: (step: PracticeToothWorkGuideTourStep | null) => void;
   /**
-   * true면 숨겨진 기공소·환자·날짜 필드로 투어를 자동 스킵하지 않음
-   * (익스프레스가 단계 동기화로 필드를 보여줄 때).
-   */
-  guideTourHoldForHiddenHeaderFields?: boolean;
-  /**
-   * true면 모든 투어 스텝을 오른쪽 레일(aside)에 두고 중앙 배너는 쓰지 않음.
-   * 익스프레스 1~6 단계 UI 통일용.
-   */
-  preferGuideTourAside?: boolean;
-  /**
-   * 헤더 필드 오른쪽 슬롯(익스프레스 단계 표시 등).
-   * 기공소·환자·날짜 투어 배너는 headerToolbar와 함께 세로로 맞추거나 guideTourHeaderSlotEl로 올린다.
-   */
-  headerAsideContent?: ReactNode;
-  /**
    * PC — 기공소·환자·날짜 위 툴바(모드·새로작성·투어 등).
    * 있으면 투어 카드가 툴바 윗단~입력 아랫단을 한 그리드로 맞춘다.
    */
@@ -830,7 +814,7 @@ export type PracticeTransferRequestIntakePanelProps = {
    * 작성 툴바가 DialogHeader로 올라도 기공소·환자·날짜 폭이 투어 on/off에 점프하지 않게.
    */
   reserveGuideTourAside?: boolean;
-  /** 툴바 아래·헤더 필드 위(익스프레스 단계 제목 등) */
+  /** 툴바 아래·헤더 필드 위 소개 슬롯 */
   headerIntro?: ReactNode;
   /** 상단 CardHeader 오른쪽 — 기공소·환자·날짜 투어 배너 포털 대상(툴바 미사용 시) */
   guideTourHeaderSlotEl?: HTMLElement | null;
@@ -915,9 +899,6 @@ export const PracticeTransferRequestIntakePanel = ({
   onGuideTourActiveChange,
   guideTourStep: guideTourStepProp,
   onGuideTourStepChange,
-  guideTourHoldForHiddenHeaderFields = false,
-  preferGuideTourAside = false,
-  headerAsideContent = null,
   headerToolbar = null,
   reserveGuideTourAside = false,
   headerIntro = null,
@@ -1816,8 +1797,6 @@ export const PracticeTransferRequestIntakePanel = ({
   // 기공소 · 환자명 · 날짜 선택 후 보철물 단계로
   useEffect(() => {
     if (toothWorkGuideTourStep == null) return;
-    // 익스프레스는 단계 동기화로 필드를 보여 주므로 숨김만으로 스킵하지 않음
-    if (guideTourHoldForHiddenHeaderFields) return;
     if (toothWorkGuideTourStepId === "lab" && !showLabField) {
       goToothWorkGuideTourStep(toothWorkGuideTourStep + 1);
       return;
@@ -1835,7 +1814,6 @@ export const PracticeTransferRequestIntakePanel = ({
     showLabField,
     showPatientField,
     showDateFields,
-    guideTourHoldForHiddenHeaderFields,
   ]);
 
   /**
@@ -2323,12 +2301,12 @@ export const PracticeTransferRequestIntakePanel = ({
     (toothWorkGuideTourStepId === "lab" ||
       toothWorkGuideTourStepId === "patient" ||
       toothWorkGuideTourStepId === "dates");
-  /** 익스프레스: 모든 투어를 오른쪽 레일. 엑스퍼트: 기공소·환자·날짜만 aside */
+  /** 기공소·환자·날짜 투어는 오른쪽 레일 */
   const reserveAsideChrome = Boolean(headerToolbar) || reserveGuideTourAside;
   const useAsideTourRail =
     reserveAsideChrome &&
     toothWorkGuideTourStep != null &&
-    (preferGuideTourAside || isHeaderTourStep);
+    isHeaderTourStep;
   const asideTourBanner = useAsideTourRail ? (
     <PracticeToothWorkGuideTourBanner
       placement="aside"
@@ -2341,7 +2319,6 @@ export const PracticeTransferRequestIntakePanel = ({
     />
   ) : null;
   const portaledHeaderTour =
-    !preferGuideTourAside &&
     isHeaderTourStep &&
     !useAsideTourRail &&
     guideTourHeaderSlotEl ? (
@@ -2363,7 +2340,7 @@ export const PracticeTransferRequestIntakePanel = ({
    * 카드가 없어도 기공소·환자명·주문-치과도착 폭/위치가 투어 on과 같게 유지된다.
    */
   const showRightRail = Boolean(
-    reserveAsideChrome || headerAsideContent || asideTourBanner,
+    reserveAsideChrome || asideTourBanner,
   );
 
   return (
@@ -2804,7 +2781,6 @@ export const PracticeTransferRequestIntakePanel = ({
             {showRightRail ? (
               <div className="flex w-full min-w-0 flex-col gap-3 self-start lg:max-w-[22rem]">
                 {asideTourBanner}
-                {headerAsideContent}
               </div>
             ) : null}
           </div>
@@ -3087,7 +3063,6 @@ export const PracticeTransferRequestIntakePanel = ({
         ) : null}
 
         {toothWorkGuideTourStep != null &&
-        !preferGuideTourAside &&
         !useAsideTourRail &&
         customSpecsModalTarget === null &&
         toothWorkGuideTourStepId !== "lab" &&

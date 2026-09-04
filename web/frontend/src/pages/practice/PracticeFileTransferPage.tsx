@@ -37,10 +37,6 @@
  * - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
  * - web/frontend/src/shared/practice/usePracticeToothWorkEditor.ts
  * - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
- * - web/frontend/src/features/layout/WorkspaceModeSwitch.tsx
- * - web/frontend/src/shared/workspace/workspaceMode.ts
- * - web/frontend/src/shared/components/practice/PracticeTransferExpressWizard.tsx
- * - 2026-08-15: 익스프레스 모드 위저드(한 화면 한 질문). 최근의뢰는 전송 후 표시.
  * - 2026-08-24: 기공의뢰 작업영역 하단 여백 — h-full 제거해 스크롤 끝 pb가 전송 버튼 아래에 붙게 함.
  * - 2026-08-21: [기공소로 전송] API 성공 직후 버튼 해제·네비. 폼 리셋은 백그라운드.
  * - 2026-08-21: 의뢰상세 열 때 목록 silent 재조회로 어벗 디자인·컨펌 CTA 동기화.
@@ -77,18 +73,14 @@
  * - 2026-08-14: 기공수가 할증 변경(practice:lab-fee-multiplier-updated) 시 견적·리메이크 미리보기 갱신.
  * - 2026-08-31: 특별공급가 변경(practice:lab-special-supply-updated) 시에도 quote-context 갱신.
  * - 2026-08-14: 기공소 수락 시 웹소켓 feeQuote로 치과「확정 기공비」즉시 반영.
- * - 2026-08-15: 치과 기공의뢰 카드 상단에 익스프레스/엑스퍼트 모드 전환.
  * - 2026-08-15: 기공소 전송은 작성 중 draft만. 전송/빈 폼 후 최신 임시저장을 폼에 자동 주입하지 않음.
- * - 2026-08-15: Express/Expert 공통 툴바 최근의뢰/임시저장/휴지통(다이얼로그).
- * - 2026-08-18: Expert 상단에도 새로 작성·최근 의뢰·임시저장·휴지통 버튼.
+ * - 2026-08-15: 상단 툴바 최근의뢰/임시저장/휴지통(다이얼로그).
  * - 2026-08-26: 휴지통 이동 시 공유 chat-rooms refresh + 휴지통 unread 합산 제외(새로고침 없이 배지 감소).
  * - 2026-08-26: 휴지통 이동 시 채팅 rooms 재조회 — 최근의뢰·사이드 unread 즉시 감소.
  * - 2026-08-21: 「최근 의뢰」배지=사이드바와 동일 채팅 unread(작업취소 카운트 아님).
  * - 2026-08-21: 휴지통 취소 건도 기존 채팅방 열어 미확인 읽기 가능.
- * - 2026-08-18: Expert는 우측 목록을 빼고 작성 폼 전폭. 치식은 full 차트.
+ * - 2026-08-18: 우측 목록 없이 작성 폼 전폭. 치식은 full 차트.
  * - 2026-08-15: 「새로 작성」을 기공의뢰 카드 위 툴바로 이동.
- * - 2026-08-15: 「새로 작성」을 모드 전환 바로 오른쪽으로. 익스프레스 진행률·스텝 한 줄.
- * - 2026-08-15: 익스프레스 스텝·진행률을 기공의뢰 제목과 같은 헤더 행(좌·우)에 둔다.
  * - 2026-08-15: 주문 후 1영업일 미수락 「수락대기」뱃지(최근의뢰·전체보기).
  * - 2026-08-16: 전체보기에서 휴지통 확인 후 최근의뢰 모달로 복귀(중첩 Confirm에 닫히지 않음).
  * - 2026-08-16: 기공소 거부·이미 취소 건이 「의뢰」로 남는 휴지통 이동 실패 수정.
@@ -103,8 +95,8 @@
  * - 2026-08-18: 수락 전(의뢰) 전송건을 폼에 불러와 수정. 삭제 후 재작성 대체.
  * - 2026-08-18: 의뢰 수정 저장 후 임시저장 목록 재조회를 기다리지 않음.
  * - 2026-08-18: 상세 「의뢰 수정」은 좌측 의뢰정보 상단. 목록 카드 메타는 1행 1항목.
- * - 2026-08-18: 기공의뢰 카드 외곽선 제거. 상단 5버튼을 동기화 상태 행으로 이동(Express/Expert).
- * - 2026-08-18: Express 보철물도 Expert와 같이 full 치식(16칸).
+ * - 2026-08-18: 기공의뢰 카드 외곽선 제거. 상단 버튼을 동기화 상태 행으로 이동.
+ * - 2026-08-18: 보철물 full 치식(16칸).
  * - 2026-08-19: 어벗츠기공소도 지정과 같이 첨부 없이 전송 가능.
  * - 2026-08-19: 전송 내역 캘린더·기공소 거부 모달에서 의뢰 취소(휴지통).
  * - 2026-08-20: 임시저장 미충족 시 상단 「동기화됨」자리에 완성형 한글 안내.
@@ -112,9 +104,7 @@
  * - 2026-08-20: 모바일 구강스캔 — 환자명 후 구강포토 촬영·업로드·임시저장(기공소는 전송 시).
  * - 2026-08-20: 모바일 임시저장=최근과 같은 카드 시트. PC 드롭존에 모바일 쉐이드 안내.
  * - 2026-08-20: 구강포토 썸네일 — private S3 location 대신 blob/proxy 미리보기.
- * - 2026-08-25: 익스프레스에도 엑스퍼트와 같은 가이드투어 카드 배치. 투어 중 모드 전환·단계 동기화.
- * - 2026-08-25: 엑스퍼트 가이드투어 카드 — 헤더 버튼~기공소·환자·날짜 행 세로 맞춤(폭=주문-치과도착).
- * - 2026-08-25: 익스프레스 단계 표시 ↔ 가이드투어(기공소·환자·날짜) 위치 교체 — 투어는 상단 오른쪽, 단계는 헤더 필드 옆.
+ * - 2026-08-25: 가이드투어 카드 — 헤더 버튼~기공소·환자·날짜 행 세로 맞춤(폭=주문-치과도착).
  * - 2026-08-25: 상단 가이드투어 — 기공소·환자·날짜·보철물 전체 투어(툴바 오른쪽 위).
  * - 2026-08-25: 상단 가이드투어 — 기공소·환자·날짜·보철물 전체 투어(휴지통 오른쪽).
  * - 2026-08-20: PC 첨부 목록에도 이미지 썸네일(모바일 동기화 포함).
@@ -132,7 +122,7 @@
  * - 2026-08-28: 모바일 헤더 액션 — 신규·임시·휴지 아이콘 버튼(한 줄).
  * - 2026-08-28: 모바일 목록 헤더에 신규의뢰 CTA(PC는 캘린더 날짜 클릭).
  * - 2026-08-28: 신규 의뢰 모달 — 새로작성·임시저장·휴지통·가이드투어를 DialogHeader로.
- * - 2026-08-28: 모드 전환(익스프레스) 제거·엑스퍼트 고정. 최근의뢰 좌·작성액션 우 묶음.
+ * - 2026-08-28: 레거시 Express(단계 위저드) 모드 제거. 전폭 작성 UI만.
  * - 2026-08-28: 메인=전송 캘린더, 미래일 클릭·신규 의뢰=전체화면 작성 모달(도착일 지정).
  * - 2026-08-28: 캘린더 「신규 의뢰」버튼 → 도착일 클릭 안내(닫으면 계정 설정에 저장).
  */
@@ -235,21 +225,9 @@ import {
   PracticeTransferMobileOralPhotoIntake,
 } from "@/shared/components/practice/PracticeTransferMobileOralPhotoIntake";
 import { useIsMobile } from "@/shared/hooks/use-mobile";
-import {
-  PracticeTransferExpressDonePanel,
-  PracticeTransferExpressStepProgress,
-  PracticeTransferExpressWizard,
-  normalizeExpressStepId,
-  resolveExpressLabLabel,
-  type PracticeTransferExpressStepId,
-} from "@/shared/components/practice/PracticeTransferExpressWizard";
 import type { PracticeTransferFilePaneProps } from "@/shared/components/practice/PracticeTransferFilePane";
 import type { PracticeTransferRequestIntakePanelProps } from "@/shared/components/practice/PracticeTransferRequestIntakePanel";
-import {
-  getExpressStepIdForGuideTourStep,
-  getGuideTourStepForExpressStepId,
-  type PracticeToothWorkGuideTourStep,
-} from "@/shared/components/practice/PracticeToothWorkGuideTourBanner";
+import type { PracticeToothWorkGuideTourStep } from "@/shared/components/practice/PracticeToothWorkGuideTourBanner";
 import { PracticeRecentTransfersAllModal } from "@/pages/practice/components/PracticeRecentTransfersAllModal";
 import {
   PRACTICE_MY_TRANSFERS_PAGE_SIZE,
@@ -1209,9 +1187,6 @@ export const PracticeFileTransferPage = ({
   const { toast } = useToast();
   const authToken = useAuthStore((s) => s.token);
   const authUser = useAuthStore((s) => s.user);
-  /** 익스프레스 모드·전환 UI 제거 — 엑스퍼트(전폭 작성)만 */
-  const isExpressMode = false;
-  const workspaceMode = "expert" as const;
   const [requestSubmitting, setRequestSubmitting] = useState(false);
   const requestSubmittingRef = useRef(false);
   const [skipDesignConfirm, setSkipDesignConfirm] = useState(true);
@@ -1223,13 +1198,6 @@ export const PracticeFileTransferPage = ({
   const [rushProcessing, setRushProcessing] = useState(false);
   const [rushConfirmOpen, setRushConfirmOpen] = useState(false);
   const [pendingRushArrivalYmd, setPendingRushArrivalYmd] = useState("");
-  const [expressStepId, setExpressStepId] =
-    useState<PracticeTransferExpressStepId>("lab");
-  const [expressDone, setExpressDone] = useState(false);
-  /** 새로 작성 시 위저드 방문 단계(체크) 초기화용 */
-  const [expressWizardEpoch, setExpressWizardEpoch] = useState(0);
-  const expressStepRestoredRef = useRef(false);
-  const prevWorkspaceModeRef = useRef<"express" | "expert" | null>(null);
   const [autoMatchBudget, setAutoMatchBudget] =
     useState<PracticeTransferAutoMatchBudget | null>(null);
   const [autoMatchMinLabRating, setAutoMatchMinLabRating] = useState(
@@ -3256,12 +3224,6 @@ export const PracticeFileTransferPage = ({
           setToothWorks(restoredRows);
         }
       }
-
-      const restoredExpressStep = normalizeExpressStepId(parsed.expressStepId);
-      if (restoredExpressStep) {
-        setExpressStepId(restoredExpressStep);
-        expressStepRestoredRef.current = true;
-      }
     } catch {
       // ignore
     } finally {
@@ -3297,7 +3259,6 @@ export const PracticeFileTransferPage = ({
           }
         : null,
       toothWorks,
-      expressStepId,
       rushProcessing,
       activeDraftId: String(activeDraftId || "").trim() || null,
       updatedAt,
@@ -3321,7 +3282,6 @@ export const PracticeFileTransferPage = ({
           arrivalDefaultDays,
           prosthesisTypes: normalizedProsthesisTypes,
           toothWorksCount: toothWorks.length,
-          expressStepId,
           firstToothWork: toothWorks[0]
             ? {
                 toothNumber: String(toothWorks[0].toothNumber || ""),
@@ -3338,7 +3298,6 @@ export const PracticeFileTransferPage = ({
     arrivalDate,
     arrivalDefaultDays,
     currentFormFingerprint,
-    expressStepId,
     localFormHydrated,
     normalizedProsthesisTypes,
     orderDate,
@@ -4767,8 +4726,6 @@ export const PracticeFileTransferPage = ({
         setDraftSummary(draft);
         setActiveDraftId(draft.id);
       }
-      setExpressDone(false);
-      setExpressStepId("confirm");
 
       const fingerprint = buildPracticeTransferFormFingerprint({
         targetLabAnchorId: labId,
@@ -6868,17 +6825,9 @@ export const PracticeFileTransferPage = ({
             : "기공소로 정상 전송되었습니다.",
       });
 
-      if (isExpressMode) {
-        setExpressDone(true);
-        setExpressStepId("lab");
-        void loadRecentRequests({ silent: true });
-        setCalendarRefreshNonce((n) => n + 1);
-        setComposeOpen(false);
-      } else {
-        setComposeOpen(false);
-        void loadRecentRequests({ silent: true });
-        setCalendarRefreshNonce((n) => n + 1);
-      }
+      setComposeOpen(false);
+      void loadRecentRequests({ silent: true });
+      setCalendarRefreshNonce((n) => n + 1);
 
       void (async () => {
         try {
@@ -6948,127 +6897,6 @@ export const PracticeFileTransferPage = ({
   ]);
 
   const hasRequiredSubmitFields = missingRequiredFields.length === 0;
-
-  const showExpressWizard = isExpressMode && !expressDone;
-
-  const expressStepGate = useMemo(() => {
-    const hasLab = Boolean(String(selectedLab?._id || "").trim());
-    const hasPatient = Boolean(normalizedPatientName);
-    const hasSchedule = Boolean(orderDate && arrivalDate && arrivalDate >= orderDate);
-    const hasProsthesis = normalizedToothWorks.length > 0;
-    const hasBridgeLinkIssue = normalizedToothWorks.some(
-      (row) =>
-        isBridgeLikeProsthesisType(row.prosthesisType) &&
-        row.bridgeLinkedTeeth.length === 0,
-    );
-    const hasAbutmentPresetIssue = missingAbutmentPresetTeeth.length > 0;
-
-    const byStep: Record<
-      PracticeTransferExpressStepId,
-      { ok: boolean; reason: string }
-    > = {
-      lab: {
-        ok: hasLab,
-        reason: "기공소를 선택해 주세요.",
-      },
-      patient: {
-        ok: hasPatient,
-        reason: "환자명을 입력해 주세요.",
-      },
-      schedule: {
-        ok: hasSchedule,
-        reason: "치과 도착일을 확인해 주세요.",
-      },
-      prosthesis: {
-        ok: hasProsthesis && !hasBridgeLinkIssue && !hasAbutmentPresetIssue,
-        reason: !hasProsthesis
-          ? "보철할 치아를 선택해 주세요."
-          : hasBridgeLinkIssue
-            ? "브리지 등은 인접 치아를 연결해 주세요."
-            : hasAbutmentPresetIssue
-              ? `어벗 프리셋을 설정해 주세요 (#${missingAbutmentPresetTeeth.join(", #")}).`
-              : "",
-      },
-      files: {
-        ok: true,
-        reason: "",
-      },
-      confirm: {
-        ok: hasRequiredSubmitFields,
-        reason:
-          missingRequiredFields.length > 0
-            ? `미입력: ${missingRequiredFields.join(", ")}`
-            : "",
-      },
-    };
-    return byStep;
-  }, [
-    selectedLab,
-    normalizedPatientName,
-    orderDate,
-    arrivalDate,
-    normalizedToothWorks,
-    missingAbutmentPresetTeeth,
-    hasRequiredSubmitFields,
-    missingRequiredFields,
-  ]);
-
-  useEffect(() => {
-    if (!isExpressMode) {
-      prevWorkspaceModeRef.current = workspaceMode;
-      return;
-    }
-    const order: PracticeTransferExpressStepId[] = [
-      "lab",
-      "patient",
-      "schedule",
-      "prosthesis",
-      "files",
-      "confirm",
-    ];
-    const tourMapped = getExpressStepIdForGuideTourStep(guideTourStep);
-    const firstIncomplete =
-      order.find((id) => !expressStepGate[id]?.ok) || "confirm";
-    const prev = prevWorkspaceModeRef.current;
-    if (prev === null) {
-      if (!localFormHydrated) return;
-      prevWorkspaceModeRef.current = workspaceMode;
-      if (expressStepRestoredRef.current) return;
-      expressStepRestoredRef.current = true;
-      setExpressStepId(tourMapped ?? firstIncomplete);
-      return;
-    }
-    prevWorkspaceModeRef.current = workspaceMode;
-    if (prev === "express") return;
-    setExpressDone(false);
-    expressStepRestoredRef.current = true;
-    // 투어 중 익스프레스 진입 시 투어 스텝에 맞는 위저드 단계로
-    setExpressStepId(tourMapped ?? firstIncomplete);
-  }, [
-    expressStepGate,
-    guideTourStep,
-    isExpressMode,
-    localFormHydrated,
-    workspaceMode,
-  ]);
-
-  // 투어가 앞으로 진행될 때만 익스프레스 단계를 맞춤.
-  // (1·2 클릭으로 투어를 뒤로 보낼 때는 onStepIdChange가 express를 직접 설정)
-  const prevGuideTourStepRef = useRef<PracticeToothWorkGuideTourStep | null>(null);
-  useEffect(() => {
-    const prevTour = prevGuideTourStepRef.current;
-    prevGuideTourStepRef.current = guideTourStep;
-    if (!isExpressMode || !showExpressWizard) return;
-    if (guideTourStep == null) return;
-    if (prevTour != null && guideTourStep < prevTour) return;
-    const mapped = getExpressStepIdForGuideTourStep(guideTourStep);
-    if (!mapped) return;
-    setExpressStepId((prev) => {
-      // 파일·확인은 사용자가 고른 자리 유지(투어 보철 스텝이 끌어오지 않음)
-      if (prev === "files" || prev === "confirm") return prev;
-      return prev === mapped ? prev : mapped;
-    });
-  }, [guideTourStep, isExpressMode, showExpressWizard]);
 
   useEffect(() => {
     if (!orderDate) return;
@@ -7194,10 +7022,6 @@ export const PracticeFileTransferPage = ({
     setEditingSentTransfer(null);
     editingSentTransferRef.current = null;
     setToothChartResetNonce((n) => n + 1);
-    setExpressDone(false);
-    setExpressStepId("lab");
-    setExpressWizardEpoch((n) => n + 1);
-    expressStepRestoredRef.current = true;
     setGuideTourStep(null);
     setGuideTourActive(false);
     setGuideTourExitSignal((n) => n + 1);
@@ -7233,9 +7057,7 @@ export const PracticeFileTransferPage = ({
         title: options?.arrivalYmd ? "신규 의뢰" : "새로 작성",
         description: options?.arrivalYmd
           ? `치과도착일 ${options.arrivalYmd}. 기공소·환자·보철물을 입력해 전송하세요.`
-          : isExpressMode
-            ? "작성 화면을 비웠습니다. 전송 후에는 캘린더에서 다시 확인할 수 있습니다."
-            : "작성 화면을 비웠습니다. 임시저장은 임시저장 목록에 남아 다시 불러올 수 있습니다.",
+          : "작성 화면을 비웠습니다. 임시저장은 임시저장 목록에 남아 다시 불러올 수 있습니다.",
       });
     }
   };
@@ -7639,33 +7461,6 @@ export const PracticeFileTransferPage = ({
                     },
   };
 
-  /** 익스프레스 1~6 — 오른쪽 레일에 프로그레스(투어 카드 아래) */
-  const expressStepProgressNode = showExpressWizard ? (
-    <PracticeTransferExpressStepProgress
-      key={expressWizardEpoch}
-      className="w-full flex-col items-stretch gap-2 sm:flex-col"
-      stepId={expressStepId}
-      onStepIdChange={(next) => {
-        setExpressStepId(next);
-        if (guideTourStep == null) return;
-        const jumped = getGuideTourStepForExpressStepId(next, guideTourStep);
-        if (jumped != null && jumped !== guideTourStep) {
-          setGuideTourStep(jumped);
-        }
-      }}
-      stepOkById={{
-        lab: expressStepGate.lab.ok,
-        patient: expressStepGate.patient.ok,
-        // 일정은 항상 기본값이 있어 게이트 ok여도 체크하지 않는다
-        schedule: false,
-        prosthesis: expressStepGate.prosthesis.ok,
-        // 파일은 실제 첨부가 있을 때만 체크(선택 첨부의 빈 상태 제외)
-        files: files.length + draftFiles.length > 0,
-        confirm: expressStepGate.confirm.ok,
-      }}
-    />
-  ) : null;
-
   /** PC — 툴바는 작성 DialogHeader. intake는 투어 레일만 예약 */
   const showComposeHeaderToolbar = !isMobile;
 
@@ -7952,6 +7747,14 @@ export const PracticeFileTransferPage = ({
                   normalizedProsthesisTypes,
                   setProsthesisTypeCatalogDraft,
                   setProsthesisTypeSettingsDialogOpen,
+                  onEnsureProsthesisTypesInCatalog: (types) => {
+                    const merged = ensurePresetProsthesisTypes([
+                      ...prosthesisTypeCatalog,
+                      ...types,
+                    ]);
+                    setProsthesisTypeCatalog(merged);
+                    setProsthesisTypeCatalogDraft(merged);
+                  },
                   toothWorks,
                   setToothWorks,
                   requestMemo,
@@ -8115,11 +7918,6 @@ export const PracticeFileTransferPage = ({
                   onGuideTourActiveChange: setGuideTourActive,
                   guideTourStep,
                   onGuideTourStepChange: setGuideTourStep,
-                  guideTourHoldForHiddenHeaderFields: isExpressMode,
-                  preferGuideTourAside: isExpressMode && showExpressWizard,
-                  headerAsideContent: showExpressWizard
-                    ? expressStepProgressNode
-                    : null,
                   headerToolbar: null,
                   reserveGuideTourAside: showComposeHeaderToolbar,
                   guideTourHeaderSlotEl: null,
@@ -8289,43 +8087,6 @@ export const PracticeFileTransferPage = ({
                   onCancel={() => setComposeOpen(false)}
                   canSave={mobileComposeCanSaveDraft}
                 />
-              ) : showExpressWizard ? (
-                <PracticeTransferExpressWizard
-                  key={expressWizardEpoch}
-                  stepId={expressStepId}
-                  onStepIdChange={setExpressStepId}
-                  filePaneProps={practiceTransferFilePaneProps}
-                  requestIntakeProps={practiceTransferRequestIntakeProps}
-                  summary={{
-                    labLabel: resolveExpressLabLabel(selectedLab),
-                    patientName: normalizedPatientName,
-                    orderDate,
-                    arrivalDate,
-                    toothCount: normalizedToothWorks.length,
-                    fileCount: files.length + draftFiles.length,
-                  }}
-                  canProceed={expressStepGate[expressStepId]?.ok ?? false}
-                  proceedBlockedReason={expressStepGate[expressStepId]?.reason}
-                  oralScanRequired={false}
-                  skipDesignConfirm={skipDesignConfirm}
-                  onSkipDesignConfirmChange={persistSkipDesignConfirmSetting}
-                  onOpenSkipDesignConfirmUncheck={() =>
-                    setSkipDesignConfirmUncheckOpen(true)
-                  }
-                  onSubmit={() => void handleSubmitPracticeRequest()}
-                  submitting={requestSubmitting}
-                  canSubmit={hasRequiredSubmitFields}
-                  missingRequiredFields={missingRequiredFields}
-                  submitLabel={editingSentTransfer ? "수정 저장" : "기공소로 전송"}
-                  submittingLabel={
-                    editingSentTransfer ? "수정 저장 중…" : "전송 중…"
-                  }
-                />
-              ) : isExpressMode && expressDone ? (
-                <PracticeTransferExpressDonePanel
-                  onStartNew={() => void handleStartNewTransfer({ openCompose: true, silentToast: true })}
-                  onViewRecent={() => setComposeOpen(false)}
-                />
               ) : (
                 <PracticeTransferIntakeSection
                   filePaneProps={practiceTransferFilePaneProps}
@@ -8335,7 +8096,7 @@ export const PracticeFileTransferPage = ({
             </CardContent>
           </Card>
 
-          {!isExpressMode && !isMobile ? (
+          {!isMobile ? (
           <div className="flex items-center justify-end gap-4">
             <Tooltip>
               <TooltipTrigger asChild>

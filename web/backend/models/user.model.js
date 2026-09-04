@@ -346,12 +346,6 @@ const userSchema = new mongoose.Schema(
         default: null,
         maxlength: 300,
       },
-      /** 계정(개인) 단위 UI 모드. 기본 익스프레스(첫 가입) */
-      workspaceMode: {
-        type: String,
-        enum: ["express", "expert"],
-        default: "express",
-      },
       /** 데스크톱 사이드바 펼침. 기본 open(첫 가입·미설정) */
       sidebarOpen: {
         type: Boolean,

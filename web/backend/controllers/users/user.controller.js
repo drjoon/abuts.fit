@@ -16,7 +16,6 @@ import { toKstYmd } from "../../utils/krBusinessDays.js";
 import { ensureRequestorOrgAnchor } from "../businesses/requestorOrgAnchor.util.js";
 import { resolvePlatformFeeRate } from "../../services/creditRevenuePolicy.service.js";
 import { normalizeLastDashboardPath } from "../../utils/lastDashboardPath.util.js";
-import { normalizeWorkspaceMode } from "../../utils/workspaceMode.util.js";
 import { normalizeSidebarOpen } from "../../utils/sidebarOpen.util.js";
 import { normalizeLabReceiveCalendarDateKey } from "../../utils/labReceiveCalendarDateKey.util.js";
 import { normalizeLabReceiveCalendarHiddenWeekdays } from "../../utils/labReceiveCalendarHiddenWeekdays.util.js";
@@ -897,82 +896,6 @@ async function updateLastDashboardPath(req, res) {
 }
 
 /**
- * 계정(개인) 워크스페이스 모드 조회
- * @route GET /api/users/workspace-mode
- */
-async function getWorkspaceMode(req, res) {
-  try {
-    const user = await User.findById(req.user._id)
-      .select("preferences.workspaceMode")
-      .lean();
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "사용자를 찾을 수 없습니다.",
-      });
-    }
-    return res.status(200).json({
-      success: true,
-      data: {
-        mode: normalizeWorkspaceMode(user?.preferences?.workspaceMode),
-      },
-    });
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: "모드 조회 중 오류가 발생했습니다.",
-      error: error.message,
-    });
-  }
-}
-
-/**
- * 계정(개인) 워크스페이스 모드 저장
- * @route PUT /api/users/workspace-mode
- */
-async function updateWorkspaceMode(req, res) {
-  try {
-    const raw = req.body?.mode;
-    const value = String(raw || "")
-      .trim()
-      .toLowerCase();
-    if (value !== "express" && value !== "expert") {
-      return res.status(400).json({
-        success: false,
-        message: "유효하지 않은 모드입니다.",
-      });
-    }
-    const mode = normalizeWorkspaceMode(value);
-
-    const updatedUser = await User.findByIdAndUpdate(
-      req.user._id,
-      { $set: { "preferences.workspaceMode": mode } },
-      { new: true, runValidators: true },
-    ).select("preferences.workspaceMode");
-
-    if (!updatedUser) {
-      return res.status(404).json({
-        success: false,
-        message: "사용자를 찾을 수 없습니다.",
-      });
-    }
-
-    return res.status(200).json({
-      success: true,
-      data: {
-        mode: normalizeWorkspaceMode(updatedUser.preferences?.workspaceMode),
-      },
-    });
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: "모드 저장 중 오류가 발생했습니다.",
-      error: error.message,
-    });
-  }
-}
-
-/**
  * 데스크톱 사이드바 펼침 조회
  * @route GET /api/users/sidebar-open
  */
@@ -1221,8 +1144,6 @@ export {
   updateNotificationSettings,
   getLastDashboardPath,
   updateLastDashboardPath,
-  getWorkspaceMode,
-  updateWorkspaceMode,
   getSidebarOpen,
   updateSidebarOpen,
   getLabReceiveCalendarDateKey,

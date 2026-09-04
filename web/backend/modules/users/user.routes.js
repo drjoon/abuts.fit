@@ -35,10 +35,6 @@ router.put("/notification-settings", userController.updateNotificationSettings);
 router.get("/last-dashboard-path", userController.getLastDashboardPath);
 router.put("/last-dashboard-path", userController.updateLastDashboardPath);
 
-// 계정(개인) 워크스페이스 모드
-router.get("/workspace-mode", userController.getWorkspaceMode);
-router.put("/workspace-mode", userController.updateWorkspaceMode);
-
 // 계정(개인) 데스크톱 사이드바 펼침
 router.get("/sidebar-open", userController.getSidebarOpen);
 router.put("/sidebar-open", userController.updateSidebarOpen);

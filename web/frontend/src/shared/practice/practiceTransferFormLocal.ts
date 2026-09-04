@@ -3,7 +3,6 @@
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/rules.md
 // - 2026-08-17: rushProcessing — 신속처리 확인 플래그 새로고침 복원.
-// - 2026-08-15: expressStepId — 익스프레스 위저드 단계 새로고침 복원.
 /**
  * practice 의뢰 폼 localStorage SSOT.
  * 드롭존(`/practice/dropzone`)과 대시보드(`/practice/dashboard`)가
@@ -37,8 +36,6 @@ export type PracticeTransferFormLocalDraft = {
   toothWorks?: ToothWorkSelection[];
   /** 의뢰건별 「디자인 컨펌 생략」. 계정 세팅이 아님 */
   skipDesignConfirm?: boolean;
-  /** 익스프레스 위저드 최근 단계(새로고침 복원) */
-  expressStepId?: string;
   /** 신속처리 확인(새로고침 복원). 납기가 신속 구간이면 hydrate 시 재유도 */
   rushProcessing?: boolean;
   /** 전송/삭제된 draft가 localStorage로 다시 복원되지 않도록 추적 */
@@ -149,7 +146,6 @@ export const syncIntakeFieldsToTransferFormLocal = (fields: {
       fields.skipDesignConfirm !== undefined
         ? fields.skipDesignConfirm !== false
         : existing?.skipDesignConfirm !== false,
-    expressStepId: existing?.expressStepId,
     rushProcessing:
       fields.rushProcessing !== undefined
         ? Boolean(fields.rushProcessing)
@@ -188,7 +184,6 @@ export const adoptDropzoneDraftIntoTransferFormIfNeeded =
         selectedLab: parsed.selectedLab || null,
         toothWorks: Array.isArray(parsed.toothWorks) ? parsed.toothWorks : [],
         skipDesignConfirm: existing?.skipDesignConfirm !== false,
-        expressStepId: existing?.expressStepId,
         rushProcessing:
           parsed.rushProcessing === true || existing?.rushProcessing === true,
         activeDraftId: existing?.activeDraftId ?? null,

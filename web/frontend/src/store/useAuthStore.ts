@@ -4,7 +4,6 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/features/layout/AccountSwitcher.tsx
-// - web/frontend/src/features/layout/WorkspaceModeSwitch.tsx
 // - web/frontend/src/shared/practice/labReceiveCalendarDateKey.ts
 // - web/backend/utils/labReceiveCalendarDateKey.util.js
 // - web/frontend/src/shared/practice/labReceiveCalendarHiddenWeekdays.ts
@@ -18,7 +17,6 @@
 // - 2026-08-27: 계정 preferences.sidebarOpen (데스크톱 사이드바 펼침, 기본 open)
 // - 2026-08-22: 계정 preferences.labReceiveCalendarHiddenWeekdays (캘린더 숨길 요일, 기본 일·토)
 // - 2026-08-20: 계정 preferences.labReceiveCalendarDateKey (기공의뢰 캘린더, 기본 도착일)
-// - 2026-08-15: 계정(개인) preferences.workspaceMode 로그인·전환에 반영 (기본 express)
 // - 2026-08-15: 탭 간 localStorage 인증 SSOT — stale 탭이 다른 계정 세션을 덮어쓰지 않게 가드
 import { create } from "zustand";
 import { request } from "@/shared/api/apiClient";
@@ -31,10 +29,6 @@ import {
   type RequestorKind,
   type RequestorServices,
 } from "@/shared/business/requestorCapabilities";
-import {
-  normalizeWorkspaceMode,
-  type WorkspaceMode,
-} from "@/shared/workspace/workspaceMode";
 import {
   DEFAULT_SIDEBAR_OPEN,
   normalizeSidebarOpen,
@@ -95,8 +89,6 @@ export interface User {
   };
   /** 계정별 최근 대시보드 경로 (pathname+search) */
   lastDashboardPath?: string | null;
-  /** 계정(개인) 단위 UI 모드. 기본 엑스퍼트 */
-  workspaceMode?: WorkspaceMode;
   /** 데스크톱 사이드바 펼침. 기본 open */
   sidebarOpen?: boolean;
   /** 기공의뢰·기공의뢰수신 캘린더 날짜 뱃지. 기본 치과도착일 */
@@ -201,15 +193,6 @@ const normalizeApiUser = (u: unknown): User | null => {
       const raw = prefs?.lastDashboardPath;
       return typeof raw === "string" && raw.trim() ? String(raw).trim() : null;
     })(),
-    workspaceMode: (() => {
-      const prefs =
-        row.preferences && typeof row.preferences === "object"
-          ? (row.preferences as Record<string, unknown>)
-          : null;
-      return normalizeWorkspaceMode(
-        prefs?.workspaceMode ?? row.workspaceMode,
-      );
-    })(),
     sidebarOpen: (() => {
       const prefs =
         row.preferences && typeof row.preferences === "object"
@@ -270,7 +253,6 @@ interface AuthState {
   ) => Promise<LoginWithTokenResult>;
   setUser: (user: User | null) => void;
   setLastDashboardPath: (path: string | null) => void;
-  setWorkspaceMode: (mode: WorkspaceMode) => void;
   setSidebarOpen: (open: boolean) => void;
   setLabReceiveCalendarDateKey: (dateKey: LabReceiveCalendarDateKey) => void;
   setLabReceiveCalendarHiddenWeekdays: (hiddenWeekdays: number[]) => void;
@@ -639,21 +621,6 @@ export const useAuthStore = create<AuthState>((set, get) => {
       const current = get().user;
       if (!current) return;
       const next = { ...current, lastDashboardPath: path };
-      try {
-        localStorage.setItem(AUTH_USER_KEY, JSON.stringify(next));
-      } catch {
-        // ignore
-      }
-      set({ user: next });
-    },
-    setWorkspaceMode: (mode: WorkspaceMode) => {
-      if (isMemoryAuthStale(get().token)) return;
-      const current = get().user;
-      if (!current) return;
-      const next = {
-        ...current,
-        workspaceMode: normalizeWorkspaceMode(mode),
-      };
       try {
         localStorage.setItem(AUTH_USER_KEY, JSON.stringify(next));
       } catch {
