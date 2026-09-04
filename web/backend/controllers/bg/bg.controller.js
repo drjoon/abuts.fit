@@ -1804,6 +1804,9 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
             ci?.lotEngravingSite && typeof ci.lotEngravingSite === "object"
               ? ci.lotEngravingSite
               : null,
+          // 헥스면(기본) | 포스트 측면. Esprit Serial 분기 SSOT.
+          lotEngravingTarget:
+            ci?.lotEngravingTarget === "post" ? "post" : "hex",
         },
       },
       "Request meta",

@@ -541,6 +541,13 @@ router.patch(
 );
 
 router.patch(
+  "/:id/lot-engraving-target-override",
+  authenticate,
+  authorizeManufacturerOrDesignPartner(),
+  requestController.updateRequestLotEngravingTargetOverride,
+);
+
+router.patch(
   "/:id/rnd-memo",
   authenticate,
   authorizeManufacturerOrDesignPartner(),

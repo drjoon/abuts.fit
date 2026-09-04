@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-09-04: 포스트면 체크 — 미리보기는 항상 토글, 저장만 준비 단계.
+// - 2026-09-04: 포스트면 각인 옵트인 체크(준비만). 기본 헥스면. Lot=오버레이 표시.
 // - 2026-09-04: Wide Split 왼쪽 Lot 체크박스(기본 off) — on 시 STL 헥스 면 각인 3글자 오버레이.
 // - 2026-09-03: 세척.패킹 → 승인은 각인 이미지가 있을 때만 가능. 프리뷰 업로드 후 승인 실패 시 토스트.
 // - 2026-09-03: toManufacturerHexRotationLabel import 누락으로 PreviewModal 크래시 수정.
@@ -498,6 +500,10 @@ type PreviewModalProps = {
     req: ManufacturerRequest,
     value: boolean,
   ) => Promise<void>;
+  onSaveLotEngravingTargetOverride?: (
+    req: ManufacturerRequest,
+    value: "hex" | "post",
+  ) => Promise<void>;
   onOpenNextRequest?: (currentRequestId: string) => Promise<boolean>;
   setSearchParams: (
     nextInit: ((prev: URLSearchParams) => URLSearchParams) | URLSearchParams,
@@ -538,6 +544,7 @@ export const PreviewModal = ({
   onSaveManufacturerHexRotation,
   onSaveAnodizingEnabledOverride,
   onSaveWideSplitEnabledOverride,
+  onSaveLotEngravingTargetOverride,
   onOpenNextRequest,
   setSearchParams,
 }: PreviewModalProps) => {
@@ -590,6 +597,11 @@ export const PreviewModal = ({
   const [anodizingEnabledDraft, setAnodizingEnabledDraft] = useState<boolean>(true);
   const [wideSplitEnabledDraft, setWideSplitEnabledDraft] = useState<boolean>(true);
   const [wideSplitSaving, setWideSplitSaving] = useState(false);
+  const [lotEngravingTargetDraft, setLotEngravingTargetDraft] = useState<
+    "hex" | "post"
+  >("hex");
+  const [lotEngravingTargetSaving, setLotEngravingTargetSaving] =
+    useState(false);
   const [showLotEngraving, setShowLotEngraving] = useState(true);
   const req = previewFiles.request as ManufacturerRequest | null;
   const lastStableReqRef = useRef<ManufacturerRequest | null>(null);
@@ -855,6 +867,9 @@ export const PreviewModal = ({
     } else {
       setWideSplitEnabledDraft(true);
     }
+
+    const caseLotTarget = (req as any)?.caseInfos?.lotEngravingTarget;
+    setLotEngravingTargetDraft(caseLotTarget === "post" ? "post" : "hex");
     setShowLotEngraving(false);
 
     // 헥스 회전 SSOT: caseInfos.hexRotation.mode
@@ -2113,6 +2128,41 @@ export const PreviewModal = ({
     }
   };
 
+  const handleToggleLotEngravingOnPost = async (checked: boolean) => {
+    if (lotEngravingTargetSaving || approveBusy) return;
+
+    const next: "hex" | "post" = checked ? "post" : "hex";
+    const prev = lotEngravingTargetDraft;
+    // STL 미리보기는 단계와 무관하게 즉시 반영
+    setLotEngravingTargetDraft(next);
+
+    const prepStages = new Set(["준비", "의뢰", "CAM", "request", "cam"]);
+    const mfgStage = String(activeReq?.manufacturerStage || "").trim();
+    const canPersist =
+      Boolean(onSaveLotEngravingTargetOverride) &&
+      (currentReviewStageKey === "request" ||
+        currentReviewStageKey === "cam") &&
+      prepStages.has(mfgStage);
+    if (!canPersist || !onSaveLotEngravingTargetOverride) return;
+
+    setLotEngravingTargetSaving(true);
+    try {
+      await onSaveLotEngravingTargetOverride(activeReq, next);
+    } catch (error) {
+      setLotEngravingTargetDraft(prev);
+      toast({
+        title: "각인 위치 저장 실패",
+        description:
+          error instanceof Error
+            ? error.message
+            : "잠시 후 다시 시도해주세요.",
+        variant: "destructive",
+      });
+    } finally {
+      setLotEngravingTargetSaving(false);
+    }
+  };
+
   const handleToggleAnodizingEnabled = async (checked: boolean) => {
     if (
       !onSaveAnodizingEnabledOverride ||
@@ -2194,6 +2244,10 @@ export const PreviewModal = ({
     currentReviewStageKey === "request" || currentReviewStageKey === "cam";
   const canOverrideWideSplit =
     canOverrideAnodizing && prepManufacturerStages.has(manufacturerStageLabel);
+  const canPersistLotEngravingTarget = canOverrideWideSplit;
+  // STL 미리보기용 포스트면 토글은 단계와 무관 (저장만 준비 단계)
+  const canToggleLotEngravingTarget =
+    Boolean(lotSerialCode) && !approveBusy && !lotEngravingTargetSaving;
 
   const overlayCaseInfos = (activeReq?.caseInfos || {}) as Record<string, any>;
   const overlayFlat = (activeReq || {}) as Record<string, any>;
@@ -2405,7 +2459,9 @@ export const PreviewModal = ({
                 }`}
                 title={
                   lotSerialCode
-                    ? `포스트 측면에 각인코드 ${lotSerialCode} 미리보기 (FL+1mm · C축)`
+                    ? lotEngravingTargetDraft === "post"
+                      ? `포스트 측면에 각인코드 ${lotSerialCode} 미리보기 (FL+1mm · C축)`
+                      : `헥스면에 각인코드 ${lotSerialCode} 미리보기`
                     : "로트번호(각인 3글자)가 없습니다"
                 }
               >
@@ -2421,6 +2477,34 @@ export const PreviewModal = ({
                 <span className="whitespace-nowrap">Lot</span>
                 <span className="text-[10px] font-semibold text-slate-500">
                   {showLotEngraving ? "O" : "X"}
+                </span>
+              </label>
+              <label
+                className={`inline-flex items-center gap-1.5 rounded-md border px-1.5 py-1 text-[11px] font-semibold ${
+                  canToggleLotEngravingTarget
+                    ? "border-slate-200 bg-white text-slate-700"
+                    : "border-slate-200 bg-slate-100 text-slate-400"
+                }`}
+                title={
+                  canPersistLotEngravingTarget
+                    ? "기본=헥스면. 체크 시 포스트 측면(FL+1mm·C축). 둘 중 하나만 가공."
+                    : "미리보기만 전환됩니다. 저장(가공 반영)은 준비 단계에서만 가능합니다."
+                }
+              >
+                <input
+                  type="checkbox"
+                  className="h-3.5 w-3.5 rounded border-slate-300"
+                  checked={lotEngravingTargetDraft === "post"}
+                  disabled={!canToggleLotEngravingTarget}
+                  onChange={(e) => {
+                    void handleToggleLotEngravingOnPost(
+                      Boolean(e.target.checked),
+                    );
+                  }}
+                />
+                <span className="whitespace-nowrap">포스트면</span>
+                <span className="text-[10px] font-semibold text-slate-500">
+                  {lotEngravingTargetDraft === "post" ? "O" : "X"}
                 </span>
               </label>
               <label
@@ -3207,6 +3291,7 @@ export const PreviewModal = ({
                       lotSerialCode={lotSerialCode}
                       lotEngravingNcText={previewNcText}
                       lotEngravingHexMode={manufacturerHexRotationDraft}
+                      lotEngravingTarget={lotEngravingTargetDraft}
                       finishLinePoints={finishLinePoints}
                       enableManualPick={
                         (canGuideFinishLine && guidedFinishLineMode) ||
@@ -3242,6 +3327,7 @@ export const PreviewModal = ({
                       lotSerialCode={lotSerialCode}
                       lotEngravingNcText={previewNcText}
                       lotEngravingHexMode={manufacturerHexRotationDraft}
+                      lotEngravingTarget={lotEngravingTargetDraft}
                       finishLinePoints={finishLinePoints}
                     />
                   </div>
@@ -3698,6 +3784,7 @@ export const PreviewModal = ({
                       lotSerialCode={lotSerialCode}
                       lotEngravingNcText={previewNcText}
                       lotEngravingHexMode={manufacturerHexRotationDraft}
+                      lotEngravingTarget={lotEngravingTargetDraft}
                       finishLinePoints={finishLinePoints}
                       enableManualPick={
                         (canGuideFinishLine && guidedFinishLineMode) ||

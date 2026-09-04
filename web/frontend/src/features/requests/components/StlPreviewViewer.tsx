@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-09-04: Lot 포스트 — 글자별 C(θ) 수직평면(CNC 동일). 곡면 점별 래핑 제거.
+// - 2026-09-04: Lot 각인 — hex|post target 분기 (기본 헥스면, 포스트면 옵트인).
 // - 2026-09-04: Lot — 메시 레이캐스트 표면 히트에 각인 (바운딩/회귀선 반경 폐기).
 // - 2026-09-04: Lot — Z축 방위 원통 배치, 시안 가이드 제거, depthTest로 표면 정합.
 // - 2026-09-04: Lot 각인 — 포스트 측면(FL+1mm·C축), 핫핑크+시안 사이트 마커.
@@ -80,7 +82,7 @@ type Props = {
   metadata?: StlMetadata | null;
   /** true면 파일명과 무관하게 filled 가이드/오버레이(FL·축·프론트포인트)를 켠다. */
   forceFilled?: boolean;
-  /** 포스트 측면 로트 각인(3글자) 오버레이. 기본 off. */
+  /** 로트 각인(3글자) 오버레이. 기본 off. */
   showLotEngraving?: boolean;
   /** 각인 시리얼 3글자. 없으면 표시 안 함. */
   lotSerialCode?: string | null;
@@ -88,6 +90,8 @@ type Props = {
   lotEngravingNcText?: string | null;
   /** caseInfos.hexRotation.mode — 레거시 폴백용. */
   lotEngravingHexMode?: string | null;
+  /** 헥스면(기본) | 포스트 측면. caseInfos.lotEngravingTarget. */
+  lotEngravingTarget?: "hex" | "post" | null;
 };
 
 export function StlPreviewViewer({
@@ -110,6 +114,7 @@ export function StlPreviewViewer({
   lotSerialCode = null,
   lotEngravingNcText = null,
   lotEngravingHexMode = null,
+  lotEngravingTarget = "hex",
 }: Props) {
   const { metadata: fetchedMetadata, loading: fetchedMetadataLoading } =
     useStlMetadata(metadata ? undefined : requestId);
@@ -2247,119 +2252,116 @@ export function StlPreviewViewer({
     const serial = normalizeLotSerialCode(lotSerialCode);
     if (!serial) return;
 
+    const target = lotEngravingTarget === "post" ? "post" : "hex";
     const hexApplied = Number(resolvedMetadata?.hexRotation?.appliedDeg);
-    const metaGuides = (
-      resolvedMetadata as {
-        taperGuide?: { multiDirectionGuides?: TaperDirectionGuide[] };
-      } | null
-    )?.taperGuide?.multiDirectionGuides;
-    const guidesRaw =
-      (Array.isArray(localTaperGuidesRef.current) &&
-      localTaperGuidesRef.current.length > 0
-        ? localTaperGuidesRef.current
-        : null) ||
-      (Array.isArray(metaGuides) ? metaGuides : null);
-
-    const maxDia = Number(
-      maxDiameterState ??
-        resolvedMetadata?.maxDiameter ??
-        maxDiameterRef.current,
-    );
     const meshCenter = centerRef.current;
     const axisCenter = {
       x: meshCenter ? meshCenter.x : 0,
       y: meshCenter ? meshCenter.y : 0,
     };
-    const flMinZ = Number(
-      finishLineMinZ ?? resolvedMetadata?.finishLine?.min_z,
-    );
 
-    const site = pickPostSideLotEngravingSite({
-      guides: guidesRaw,
-      hexAppliedDeg: Number.isFinite(hexApplied) ? hexApplied : null,
-      centerRadiusFallback:
-        Number.isFinite(maxDia) && maxDia > 0 ? maxDia * 0.35 : 2.0,
-      finishLinePoints: Array.isArray(finishLinePoints) ? finishLinePoints : null,
-      finishLineMinZ: Number.isFinite(flMinZ) ? flMinZ : null,
-      center: axisCenter,
-    });
+    let site: ReturnType<typeof pickPostSideLotEngravingSite> = null;
+    let resolveSurfacePoint:
+      | ((
+          thetaDeg: number,
+          z: number,
+        ) => { x: number; y: number; z: number } | null)
+      | undefined;
 
-    // 사이트 없으면 레거시 CNC 폴백 금지 — FL 기반만 (평면/헥스 오표시 방지)
-    if (!site) return;
+    if (target === "post") {
+      const metaGuides = (
+        resolvedMetadata as {
+          taperGuide?: { multiDirectionGuides?: TaperDirectionGuide[] };
+        } | null
+      )?.taperGuide?.multiDirectionGuides;
+      const guidesRaw =
+        (Array.isArray(localTaperGuidesRef.current) &&
+        localTaperGuidesRef.current.length > 0
+          ? localTaperGuidesRef.current
+          : null) ||
+        (Array.isArray(metaGuides) ? metaGuides : null);
 
-    const mesh = meshRef.current;
-    const raycaster = new THREE.Raycaster();
-    const hitCache = new Map<string, { x: number; y: number; z: number } | null>();
-    const far = Math.max(
-      (Number.isFinite(maxDia) && maxDia > 0 ? maxDia : 10) * 2,
-      20,
-    );
-
-    /** 축→바깥 수평 레이: 해당 Z에서 메시 외면 히트 */
-    const resolveSurfacePoint = (
-      thetaDeg: number,
-      z: number,
-    ): { x: number; y: number; z: number } | null => {
-      if (!mesh) return null;
-      const key = `${thetaDeg.toFixed(2)}_${z.toFixed(3)}`;
-      if (hitCache.has(key)) return hitCache.get(key) ?? null;
-
-      const rad = (thetaDeg * Math.PI) / 180;
-      const dx = Math.cos(rad);
-      const dy = Math.sin(rad);
-      // 메시 local: filled는 원점, non-filled는 mesh.position만큼 이동됨
-      // 레이는 modelPivot 공간(= lot polyline 공간, centerShift 전)에서 쏨
-      const origin = new THREE.Vector3(
-        axisCenter.x + dx * far,
-        axisCenter.y + dy * far,
-        z,
+      const maxDia = Number(
+        maxDiameterState ??
+          resolvedMetadata?.maxDiameter ??
+          maxDiameterRef.current,
       );
-      const direction = new THREE.Vector3(-dx, -dy, 0).normalize();
-      raycaster.set(origin, direction);
-      raycaster.near = 0;
-      raycaster.far = far * 1.5;
-      mesh.updateMatrixWorld(true);
-      const hits = raycaster.intersectObject(mesh, false);
-      let chosen: THREE.Intersection | null = null;
-      for (const h of hits) {
-        // 수평 레이라 z는 거의 동일. 바깥면 = 첫 히트
-        if (!chosen) chosen = h;
-        break;
-      }
-      if (!chosen?.point) {
-        hitCache.set(key, null);
-        return null;
-      }
-      // hit.point 는 월드. mesh/modelPivot이 동일 계층이면 pivot local ≈ world (카메라 부모 제외)
-      // modelPivot은 scene 자식이라 world = pivot local (pivot at origin)
-      const p = chosen.point.clone();
-      // non-filled: mesh는 -center 이동. hit는 이미 이동된 공간.
-      // lot polyline은 absolute STL 후 toLocal에서 centerShift — filled면 shift 없음.
-      // 히트는 mesh local(=pivot, non-filled에서 이미 -center)이므로
-      // absolute로 쓰려면 non-filled에서 +center 필요.
-      if (!isFilledFile && centerRef.current) {
-        p.add(centerRef.current);
-      }
-      const out = { x: p.x, y: p.y, z: p.z };
-      hitCache.set(key, out);
-      return out;
-    };
-
-    // 사이트 반경을 실제 메시 히트로 교정 (NC cut X / 피치에도 반영)
-    const siteHit = resolveSurfacePoint(site.angleDeg, site.engraveZ);
-    if (siteHit) {
-      const meshR = Math.hypot(
-        siteHit.x - axisCenter.x,
-        siteHit.y - axisCenter.y,
+      const flMinZ = Number(
+        finishLineMinZ ?? resolvedMetadata?.finishLine?.min_z,
       );
-      if (Number.isFinite(meshR) && meshR > 0.3) {
-        site.radius = meshR;
-        site.charPitchCDeg =
-          (LOT_ENGRAVING_DEFAULTS.charPitchArcMm / meshR) * (180 / Math.PI);
-        site.cutDiameterX = Math.max(
-          2 * (meshR - LOT_ENGRAVING_DEFAULTS.engraveDepthMm),
-          1.0,
+
+      site = pickPostSideLotEngravingSite({
+        guides: guidesRaw,
+        hexAppliedDeg: Number.isFinite(hexApplied) ? hexApplied : null,
+        centerRadiusFallback:
+          Number.isFinite(maxDia) && maxDia > 0 ? maxDia * 0.35 : 2.0,
+        finishLinePoints: Array.isArray(finishLinePoints)
+          ? finishLinePoints
+          : null,
+        finishLineMinZ: Number.isFinite(flMinZ) ? flMinZ : null,
+        center: axisCenter,
+      });
+      if (!site) return;
+
+      const mesh = meshRef.current;
+      const raycaster = new THREE.Raycaster();
+      const hitCache = new Map<
+        string,
+        { x: number; y: number; z: number } | null
+      >();
+      const far = Math.max(
+        (Number.isFinite(maxDia) && maxDia > 0 ? maxDia : 10) * 2,
+        20,
+      );
+
+      resolveSurfacePoint = (thetaDeg, z) => {
+        if (!mesh) return null;
+        const key = `${thetaDeg.toFixed(2)}_${z.toFixed(3)}`;
+        if (hitCache.has(key)) return hitCache.get(key) ?? null;
+
+        const rad = (thetaDeg * Math.PI) / 180;
+        const dx = Math.cos(rad);
+        const dy = Math.sin(rad);
+        const origin = new THREE.Vector3(
+          axisCenter.x + dx * far,
+          axisCenter.y + dy * far,
+          z,
         );
+        const direction = new THREE.Vector3(-dx, -dy, 0).normalize();
+        raycaster.set(origin, direction);
+        raycaster.near = 0;
+        raycaster.far = far * 1.5;
+        mesh.updateMatrixWorld(true);
+        const hits = raycaster.intersectObject(mesh, false);
+        const chosen = hits[0] ?? null;
+        if (!chosen?.point) {
+          hitCache.set(key, null);
+          return null;
+        }
+        const p = chosen.point.clone();
+        if (!isFilledFile && centerRef.current) {
+          p.add(centerRef.current);
+        }
+        const out = { x: p.x, y: p.y, z: p.z };
+        hitCache.set(key, out);
+        return out;
+      };
+
+      const siteHit = resolveSurfacePoint(site.angleDeg, site.engraveZ);
+      if (siteHit) {
+        const meshR = Math.hypot(
+          siteHit.x - axisCenter.x,
+          siteHit.y - axisCenter.y,
+        );
+        if (Number.isFinite(meshR) && meshR > 0.3) {
+          site.radius = meshR;
+          site.charPitchCDeg =
+            (LOT_ENGRAVING_DEFAULTS.charPitchArcMm / meshR) * (180 / Math.PI);
+          site.cutDiameterX = Math.max(
+            2 * (meshR - LOT_ENGRAVING_DEFAULTS.engraveDepthMm),
+            1.0,
+          );
+        }
       }
     }
 
@@ -2367,15 +2369,17 @@ export function StlPreviewViewer({
       ncText: lotEngravingNcText,
       manufacturerHexRotationMode: lotEngravingHexMode,
       hexAppliedDeg: Number.isFinite(hexApplied) ? hexApplied : null,
-      site,
+      site: target === "post" ? site : null,
     });
     const polylines = buildLotEngravingStlPolylines({
       serialCode: serial,
       ncParams,
       hexAppliedDeg: Number.isFinite(hexApplied) ? hexApplied : null,
-      site,
+      target,
+      site: target === "post" ? site : null,
       center: axisCenter,
-      resolveSurfacePoint: mesh ? resolveSurfacePoint : undefined,
+      resolveSurfacePoint:
+        target === "post" && meshRef.current ? resolveSurfacePoint : undefined,
     });
     if (polylines.length === 0) return;
 
@@ -2440,6 +2444,7 @@ export function StlPreviewViewer({
     lotSerialCode,
     lotEngravingNcText,
     lotEngravingHexMode,
+    lotEngravingTarget,
     resolvedMetadata?.hexRotation?.appliedDeg,
     resolvedMetadata?.taperGuide,
     resolvedMetadata?.maxDiameter,

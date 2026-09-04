@@ -80,6 +80,8 @@ export interface RequestCaseInfos {
   workType?: string;
   anodizingEnabled?: boolean;
   wideSplitEnabled?: boolean;
+  /** 로트 각인 위치: hex(기본) | post(포스트 측면). 준비 단계에서만 변경. */
+  lotEngravingTarget?: "hex" | "post";
   requestorHexRotation?: "STL모델대로" | "헥스30도회전";
   finalHexRotation?: "STL모델대로" | "헥스30도회전";
   finishLine?: {

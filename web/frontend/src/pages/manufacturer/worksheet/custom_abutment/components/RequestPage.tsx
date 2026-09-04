@@ -1828,6 +1828,8 @@ export const RequestPage = ({
   const [wideSplitSavingMap, setWideSplitSavingMap] = useState<
     Record<string, boolean>
   >({});
+  const [lotEngravingTargetSavingMap, setLotEngravingTargetSavingMap] =
+    useState<Record<string, boolean>>({});
   const [bulkCamRegenerating, setBulkCamRegenerating] = useState(false);
 
   // related files (manufacturer hex rotation label/canonical mapping):
@@ -2210,6 +2212,116 @@ export const RequestPage = ({
       }
     },
     [pageState, toast, token, wideSplitSavingMap],
+  );
+
+  const handleSaveLotEngravingTargetOverride = useCallback(
+    async (req: ManufacturerRequest, nextValue: "hex" | "post") => {
+      if (!req?._id) return;
+      const requestMongoId = String(req._id || "").trim();
+      if (!requestMongoId) return;
+
+      const stageLabel = String(req.manufacturerStage || "").trim();
+      if (!["준비", "의뢰", "CAM", "request", "cam"].includes(stageLabel)) {
+        toast({
+          title: "변경 불가",
+          description: "각인 위치 설정은 준비 단계에서만 변경할 수 있습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (lotEngravingTargetSavingMap[requestMongoId]) return;
+
+      const prevValue =
+        req.caseInfos?.lotEngravingTarget === "post" ||
+        req.caseInfos?.lotEngravingTarget === "hex"
+          ? req.caseInfos.lotEngravingTarget
+          : null;
+
+      setLotEngravingTargetSavingMap((prev) => ({
+        ...prev,
+        [requestMongoId]: true,
+      }));
+      pageState.setRequests((prev) =>
+        prev.map((item) => {
+          if (String(item?._id || "").trim() !== requestMongoId) return item;
+          return {
+            ...item,
+            caseInfos: {
+              ...(item.caseInfos || {}),
+              lotEngravingTarget: nextValue,
+            },
+          };
+        }),
+      );
+
+      try {
+        const res = await fetch(
+          `/api/requests/${req._id}/lot-engraving-target-override`,
+          {
+            method: "PATCH",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ lotEngravingTarget: nextValue }),
+          },
+        );
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data?.success === false) {
+          throw new Error(
+            data?.message || "각인 위치 설정 저장에 실패했습니다.",
+          );
+        }
+
+        const savedValue =
+          data?.data?.lotEngravingTarget === "post" ||
+          data?.data?.lotEngravingTarget === "hex"
+            ? data.data.lotEngravingTarget
+            : nextValue;
+
+        pageState.setRequests((prev) =>
+          prev.map((item) => {
+            if (String(item?._id || "").trim() !== requestMongoId) return item;
+            return {
+              ...item,
+              caseInfos: {
+                ...(item.caseInfos || {}),
+                lotEngravingTarget: savedValue,
+              },
+            };
+          }),
+        );
+      } catch (e: any) {
+        pageState.setRequests((prev) =>
+          prev.map((item) => {
+            if (String(item?._id || "").trim() !== requestMongoId) return item;
+            const nextCaseInfos = { ...(item.caseInfos || {}) };
+            if (prevValue === "hex" || prevValue === "post") {
+              nextCaseInfos.lotEngravingTarget = prevValue;
+            } else {
+              delete nextCaseInfos.lotEngravingTarget;
+            }
+            return {
+              ...item,
+              caseInfos: nextCaseInfos,
+            };
+          }),
+        );
+        toast({
+          title: "각인 위치 저장 실패",
+          description: e?.message || "네트워크 오류",
+          variant: "destructive",
+        });
+        throw e;
+      } finally {
+        setLotEngravingTargetSavingMap((prev) => ({
+          ...prev,
+          [requestMongoId]: false,
+        }));
+      }
+    },
+    [lotEngravingTargetSavingMap, pageState, toast, token],
   );
 
   const { handleCardRollback, handleCardApprove } = useCardActions(
@@ -3157,6 +3269,9 @@ export const RequestPage = ({
           onSaveManufacturerHexRotation={handleSaveManufacturerHexRotation}
           onSaveAnodizingEnabledOverride={handleSaveAnodizingEnabledOverride}
           onSaveWideSplitEnabledOverride={handleSaveWideSplitEnabledOverride}
+          onSaveLotEngravingTargetOverride={
+            handleSaveLotEngravingTargetOverride
+          }
           onOpenNextRequest={handleOpenNextRequest}
           setSearchParams={setSearchParams}
         />

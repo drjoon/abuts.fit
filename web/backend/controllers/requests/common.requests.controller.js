@@ -3372,6 +3372,125 @@ export const updateRequestWideSplitOverride = asyncHandler(async (req, res) => {
   });
 });
 
+export const updateRequestLotEngravingTargetOverride = asyncHandler(
+  async (req, res) => {
+    const { id } = req.params;
+    const hasTarget = Object.prototype.hasOwnProperty.call(
+      req.body || {},
+      "lotEngravingTarget",
+    );
+    const rawTarget = req.body?.lotEngravingTarget;
+    const lotEngravingTarget =
+      rawTarget === "post" || rawTarget === "hex" ? rawTarget : null;
+
+    if (!hasTarget || !lotEngravingTarget) {
+      return res.status(400).json({
+        success: false,
+        message: "lotEngravingTarget('hex'|'post') 값이 필요합니다.",
+      });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "유효하지 않은 의뢰 ID입니다.",
+      });
+    }
+
+    const request = await Request.findById(id);
+    if (!request) {
+      return res.status(404).json({
+        success: false,
+        message: "의뢰를 찾을 수 없습니다.",
+      });
+    }
+
+    if (req.user.role === "manufacturer") {
+      const orgScope = await buildManufacturerOrgScopeFilter(req);
+      const allowed = await Request.exists({
+        _id: request._id,
+        ...orgScope,
+      });
+      if (!allowed) {
+        return res.status(403).json({
+          success: false,
+          message: "이 의뢰를 변경할 권한이 없습니다.",
+        });
+      }
+    }
+
+    // 정책: 각인 위치 override는 준비 단계(준비/CAM)에서만 허용한다.
+    const currentManufacturerStage = String(
+      request?.manufacturerStage || "",
+    ).trim();
+    const editableStages = new Set([
+      "준비",
+      "의뢰",
+      "CAM",
+      "request",
+      "cam",
+    ]);
+    if (!editableStages.has(currentManufacturerStage)) {
+      return res.status(409).json({
+        success: false,
+        message: "각인 위치 설정은 준비 단계에서만 변경할 수 있습니다.",
+      });
+    }
+
+    request.set("caseInfos.lotEngravingTarget", lotEngravingTarget);
+    await request.save();
+
+    const requestorBusinessAnchorId = String(
+      request.businessAnchorId || "",
+    ).trim();
+    if (requestorBusinessAnchorId) {
+      void triggerDashboardSummaryRefreshForAnchorId(
+        requestorBusinessAnchorId,
+        "request-lot-engraving-target-updated",
+      ).catch((refreshError) => {
+        console.warn(
+          "[request-lot-engraving-target] dashboard refresh trigger failed",
+          {
+            requestId: request.requestId,
+            error: refreshError?.message,
+          },
+        );
+      });
+    }
+
+    emitAppEventToRoles(
+      REQUEST_HEX_ROTATION_EVENT_ROLES,
+      "request:lot-engraving-target-updated",
+      {
+        requestId: request.requestId,
+        requestMongoId: String(request._id || "").trim() || null,
+        requestorBusinessAnchorId: requestorBusinessAnchorId || null,
+        lotEngravingTarget,
+        request: {
+          _id: request._id,
+          requestId: request.requestId,
+          manufacturerStage: request.manufacturerStage,
+          businessAnchorId: request.businessAnchorId,
+          requestorBusinessAnchorId: requestorBusinessAnchorId || null,
+          caseInfos: {
+            ...(request.caseInfos || {}),
+            lotEngravingTarget,
+          },
+        },
+      },
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        requestId: request.requestId,
+        manufacturerStage: request.manufacturerStage,
+        lotEngravingTarget,
+      },
+    });
+  },
+);
+
 export const updateRndHexRotation = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const manufacturerHexRotationInput = req.body?.manufacturerHexRotation;

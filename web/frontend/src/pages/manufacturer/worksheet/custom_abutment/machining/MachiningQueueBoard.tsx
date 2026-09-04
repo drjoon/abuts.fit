@@ -1179,6 +1179,117 @@ export const MachiningQueueBoard = ({
     [token, camPreviewFiles],
   );
 
+  const handleSaveLotEngravingTargetOverrideFromCamPreview = useCallback(
+    async (req: ManufacturerRequest, nextValue: "hex" | "post") => {
+      if (!token) return;
+
+      let requestMongoId = String(req?._id || "").trim();
+      const requestId = String(req?.requestId || "").trim();
+
+      if (!requestMongoId && requestId) {
+        const summaryRes = await fetch(
+          `/api/requests/by-request/${encodeURIComponent(requestId)}/summary`,
+          {
+            method: "GET",
+            headers: { Authorization: `Bearer ${token}` },
+          },
+        );
+        const summaryBody = await summaryRes.json().catch(() => ({}));
+        requestMongoId = String(summaryBody?.data?._id || "").trim();
+      }
+
+      if (!requestMongoId) {
+        throw new Error("의뢰 식별값이 없어 각인 위치를 저장할 수 없습니다.");
+      }
+
+      const prevRaw = (camPreviewFiles?.request as any)?.caseInfos
+        ?.lotEngravingTarget;
+      const prevValue =
+        prevRaw === "post" || prevRaw === "hex" ? prevRaw : null;
+
+      setCamPreviewFiles((prev) => {
+        const currentReq = prev?.request || null;
+        if (!currentReq) return prev;
+        return {
+          ...prev,
+          request: {
+            ...currentReq,
+            _id: requestMongoId,
+            caseInfos: {
+              ...(currentReq.caseInfos || {}),
+              lotEngravingTarget: nextValue,
+            },
+          },
+        };
+      });
+
+      try {
+        const res = await fetch(
+          `/api/requests/${encodeURIComponent(requestMongoId)}/lot-engraving-target-override`,
+          {
+            method: "PATCH",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ lotEngravingTarget: nextValue }),
+          },
+        );
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok || (body as { success?: boolean })?.success === false) {
+          throw new Error(
+            (body as { message?: string })?.message ||
+              "각인 위치 설정 저장에 실패했습니다.",
+          );
+        }
+
+        const savedRaw = (body as { data?: { lotEngravingTarget?: unknown } })
+          ?.data?.lotEngravingTarget;
+        const savedValue =
+          savedRaw === "post" || savedRaw === "hex" ? savedRaw : nextValue;
+
+        setCamPreviewFiles((prev) => {
+          const currentReq = prev?.request || null;
+          if (!currentReq) return prev;
+          return {
+            ...prev,
+            request: {
+              ...currentReq,
+              _id: requestMongoId,
+              caseInfos: {
+                ...(currentReq.caseInfos || {}),
+                lotEngravingTarget: savedValue,
+              },
+            },
+          };
+        });
+      } catch (error) {
+        setCamPreviewFiles((prev) => {
+          const currentReq = prev?.request || null;
+          if (!currentReq) return prev;
+          const nextCaseInfos = { ...(currentReq.caseInfos || {}) } as Record<
+            string,
+            unknown
+          >;
+          if (prevValue === "hex" || prevValue === "post") {
+            nextCaseInfos.lotEngravingTarget = prevValue;
+          } else {
+            delete nextCaseInfos.lotEngravingTarget;
+          }
+          return {
+            ...prev,
+            request: {
+              ...currentReq,
+              caseInfos: nextCaseInfos as any,
+            },
+          };
+        });
+        throw error;
+      }
+    },
+    [token, camPreviewFiles],
+  );
+
   const isCamPreviewMachiningInProgress = useMemo(() => {
     const requestId = String(
       (camPreviewFiles?.request as ManufacturerRequest | null | undefined)
@@ -2520,6 +2631,9 @@ export const MachiningQueueBoard = ({
         }
         onSaveWideSplitEnabledOverride={
           handleSaveWideSplitEnabledOverrideFromCamPreview
+        }
+        onSaveLotEngravingTargetOverride={
+          handleSaveLotEngravingTargetOverrideFromCamPreview
         }
         onUpdateReviewStatus={handleUpdateReviewStatus}
         onDeleteCam={handleDeleteCam}

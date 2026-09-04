@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-09-04: 포스트 측면 — 글자마다 C(θ) 고정 수직평면. 곡면 래핑(점별 레이캐스트) 폐기.
+// - 2026-09-04: 각인 target hex|post 이중 경로. 기본 헥스면, 포스트면은 옵트인.
 // - 2026-09-04: 프리뷰=Z축 방위 원통 배치(한글자 θ). 시안 가이드 제거. 표면 r(θ,z).
 // - 2026-09-04: 헥스면 → 포스트 측면. 하위 10% 경사각·FL minZ 사이트, FL+1mm, C축 한글자.
 // - 2026-09-04: 글자 위=STL +Z, 좌우 LTR 비미러 한 번에 고정. CNC X 직경/2 SSOT 유지.
@@ -37,8 +39,9 @@ export function cncDiameterXToRadius(diameterX: number): number {
 
 /** PRC Serial / NC 헤더 기본값. */
 export const LOT_ENGRAVING_DEFAULTS = {
-  startY: 0,
-  /** 레거시 헥스면 V피치 — 포스트 측면은 C축(호 길이)으로 대체. */
+  /** 헥스면 첫 글자 CNC Y (우하단 원점). 포스트 측면은 Y0. */
+  startY: 0.525,
+  /** 헥스면 V피치 — 포스트 측면은 C축(호 길이)으로 대체. */
   charPitchY: -0.35,
   zOffset: 1.6,
   cutDiameterX: 3.43,
@@ -850,19 +853,72 @@ export function resolveLotEngravingNcParams(opts: {
 }
 
 /**
+ * 헥스면 각인 스트로크 (source STL 좌표).
+ *
+ * Depth: 헥스 면 → hexDiameterX/2 (cncDiameterXToRadius).
+ * 면 위 방향 (바깥에서 면 볼 때, 글자 위 = STL +Z):
+ * - 글자 높이 v: tip/크라운 = STL +Z ← CNC zOff 감소
+ * - 글자 폭 u·pitch: CNC Y. startY + charPitchY * i
+ */
+export function buildHexFaceLotEngravingStlPolylines(opts: {
+  serialCode: string;
+  ncParams: LotEngravingNcParams;
+  hexAppliedDeg?: number | null;
+}): Array<Array<{ x: number; y: number; z: number }>> {
+  const serial = normalizeLotSerialCode(opts.serialCode);
+  if (!serial) return [];
+
+  const { ncParams } = opts;
+  const radius = Math.max(cncDiameterXToRadius(ncParams.hexDiameterX), 0.4);
+  const charW = LOT_ENGRAVING_DEFAULTS.charWidth;
+  const charH = LOT_ENGRAVING_DEFAULTS.charHeight;
+  // 글자 하단 기준 CNC Z. 위로(+Z) 갈수록 zOff 감소
+  const zBottom = ncParams.hexZOffset;
+  const out: Array<Array<{ x: number; y: number; z: number }>> = [];
+
+  for (let i = 0; i < serial.length; i += 1) {
+    const ch = serial[i];
+    // CNC 절대 Y = 이 글자 박스 우측 (우하단 원점의 Y)
+    const originY = ncParams.startY + ncParams.charPitchY * i;
+    const strokes = getLotLetterStrokes(ch);
+    for (const stroke of strokes) {
+      if (stroke.length < 2) continue;
+      const poly: Array<{ x: number; y: number; z: number }> = [];
+      for (const [u, v] of stroke) {
+        // 가로: 미러 해제 — u=0 좌(획 시작)가 화면 왼쪽. originY=글자 우측
+        const yCnc = originY - u * charW;
+        // 세로: v=1 상 = STL +Z (zOff↓)
+        const zOff = zBottom - v * charH;
+        poly.push(
+          cncSerialToStl({
+            radius,
+            yCnc,
+            zOffset: zOff,
+            cAxisDeg: ncParams.cAxisDeg,
+            hexAppliedDeg: opts.hexAppliedDeg,
+          }),
+        );
+      }
+      out.push(poly);
+    }
+  }
+  return out;
+}
+
+/**
  * 포스트 측면 각인 스트로크 (source STL 좌표).
  *
- * CNC C축 ≡ 프리뷰 Z축 중심 방위 회전.
- * - 글자마다 θ 변경
- * - resolveSurfacePoint 있으면 메시 레이캐스트 히트 사용 (바운딩/회귀선 금지)
- * - 글자 하단 = FL + 1mm
+ * CNC와 동일: 글자마다 C(θ) 고정 → 수직 평면 위 Y/Z 절삭 (곡면 래핑 없음).
+ * - 글자 i: θ_i = site.angleDeg + (i−mid)·pitch (CNC H 증분과 동일)
+ * - 글자 중앙 높이에서 면 점 1회 → 그 θ의 수직평면(법선=수평 방사)에 스트로크
+ * - 폭 u: θ 증가(CCW 접선), 높이 v: STL +Z, 하단 = FL+1mm
  */
 export function buildPostSideLotEngravingStlPolylines(opts: {
   serialCode: string;
   site: PostLotEngravingSite;
   center?: { x: number; y: number } | null;
   /**
-   * (θ°, z) → 메시 표면점. 레이캐스트 결과.
+   * (θ°, z) → 메시 표면점. 글자당 1회(중앙 높이)만 호출.
    * null이면 site.radius 원통 폴백.
    */
   resolveSurfacePoint?: (
@@ -885,7 +941,6 @@ export function buildPostSideLotEngravingStlPolylines(opts: {
     site.charPitchCDeg,
     (charW / fallbackR) * (180 / Math.PI),
   );
-  const charWidthDeg = (charW / fallbackR) * (180 / Math.PI);
   const n = serial.length;
   const zBottom = site.engraveZ;
   const out: Array<Array<{ x: number; y: number; z: number }>> = [];
@@ -893,33 +948,44 @@ export function buildPostSideLotEngravingStlPolylines(opts: {
   for (let i = 0; i < n; i += 1) {
     const ch = serial[i];
     const charCenterDeg = site.angleDeg + (i - (n - 1) / 2) * pitchDeg;
+    const theta = (charCenterDeg * Math.PI) / 180;
+    const cosT = Math.cos(theta);
+    const sinT = Math.sin(theta);
+    // CNC: 고정 C에서 수직면. 글자 중앙 높이 면점으로 반경(깊이)만 맞춤.
+    const zMid = zBottom + charH * 0.5;
+    const hit = opts.resolveSurfacePoint?.(charCenterDeg, zMid) ?? null;
+
+    let ox: number;
+    let oy: number;
+    let oz: number;
+    if (hit) {
+      const hx = hit.x - cx;
+      const hy = hit.y - cy;
+      const hr = Math.hypot(hx, hy) || 1;
+      ox = hit.x + (hx / hr) * lift;
+      oy = hit.y + (hy / hr) * lift;
+      oz = hit.z;
+    } else {
+      const r = fallbackR + lift;
+      ox = cx + r * cosT;
+      oy = cy + r * sinT;
+      oz = zMid;
+    }
+
+    // 폭: θ↑ = CCW 접선 (−sin, cos). 높이: +Z. 원점 = 글자 박스 중심(u=v=0.5).
+    const tx = -sinT;
+    const ty = cosT;
+
     const strokes = getLotLetterStrokes(ch);
     for (const stroke of strokes) {
       if (stroke.length < 2) continue;
       const poly: Array<{ x: number; y: number; z: number }> = [];
       for (const [u, v] of stroke) {
-        const thetaDeg = charCenterDeg + (u - 0.5) * charWidthDeg;
-        const z = zBottom + v * charH;
-        const hit = opts.resolveSurfacePoint?.(thetaDeg, z) ?? null;
-        if (hit) {
-          // 히트에서 바깥 법선(수평 방사)으로 lift
-          const hx = hit.x - cx;
-          const hy = hit.y - cy;
-          const hr = Math.hypot(hx, hy) || 1;
-          poly.push({
-            x: hit.x + (hx / hr) * lift,
-            y: hit.y + (hy / hr) * lift,
-            z: hit.z,
-          });
-        } else {
-          const theta = (thetaDeg * Math.PI) / 180;
-          const r = fallbackR + lift;
-          poly.push({
-            x: cx + r * Math.cos(theta),
-            y: cy + r * Math.sin(theta),
-            z,
-          });
-        }
+        poly.push({
+          x: ox + (u - 0.5) * charW * tx,
+          y: oy + (u - 0.5) * charW * ty,
+          z: oz + (v - 0.5) * charH,
+        });
       }
       out.push(poly);
     }
@@ -927,13 +993,17 @@ export function buildPostSideLotEngravingStlPolylines(opts: {
   return out;
 }
 
+export type LotEngravingTarget = "hex" | "post";
+
 /**
- * 각인 미리뷰 polyline. 사이트가 있으면 포스트 측면, 없으면 NC/레거시 CNC→STL.
+ * 각인 미리뷰 polyline. target으로 헥스면 | 포스트 측면 분기 (동시 표시 금지).
  */
 export function buildLotEngravingStlPolylines(opts: {
   serialCode: string;
   ncParams: LotEngravingNcParams;
   hexAppliedDeg?: number | null;
+  /** 기본 hex. post면 site 필수. */
+  target?: LotEngravingTarget | null;
   site?: PostLotEngravingSite | null;
   center?: { x: number; y: number } | null;
   resolveSurfacePoint?: (
@@ -941,7 +1011,11 @@ export function buildLotEngravingStlPolylines(opts: {
     z: number,
   ) => { x: number; y: number; z: number } | null;
 }): Array<Array<{ x: number; y: number; z: number }>> {
-  if (opts.site) {
+  const target: LotEngravingTarget =
+    opts.target === "post" ? "post" : "hex";
+
+  if (target === "post") {
+    if (!opts.site) return [];
     return buildPostSideLotEngravingStlPolylines({
       serialCode: opts.serialCode,
       site: opts.site,
@@ -950,52 +1024,9 @@ export function buildLotEngravingStlPolylines(opts: {
     });
   }
 
-  // 폴백: NC 파싱 좌표를 CNC→STL로 (구 헥스/중간 상태)
-  const serial = normalizeLotSerialCode(opts.serialCode);
-  if (!serial) return [];
-
-  const { ncParams } = opts;
-  const radius = Math.max(
-    ncParams.radius ?? cncDiameterXToRadius(ncParams.cutDiameterX),
-    0.4,
-  );
-  const charW = LOT_ENGRAVING_DEFAULTS.charWidth;
-  const charH = LOT_ENGRAVING_DEFAULTS.charHeight;
-  const zCenter = ncParams.zOffset;
-  const pitchC =
-    ncParams.charPitchCDeg != null && Number.isFinite(ncParams.charPitchCDeg)
-      ? ncParams.charPitchCDeg
-      : null;
-  const out: Array<Array<{ x: number; y: number; z: number }>> = [];
-  const n = serial.length;
-
-  for (let i = 0; i < n; i += 1) {
-    const ch = serial[i];
-    const cDeg = pitchC
-      ? ncParams.cAxisDeg + (i - (n - 1) / 2) * pitchC
-      : ncParams.cAxisDeg;
-    const originY = pitchC
-      ? ncParams.startY
-      : ncParams.startY + ncParams.charPitchY * i;
-    const strokes = getLotLetterStrokes(ch);
-    for (const stroke of strokes) {
-      if (stroke.length < 2) continue;
-      const poly: Array<{ x: number; y: number; z: number }> = [];
-      for (const [u, v] of stroke) {
-        const yCnc = originY - (u - 0.5) * charW;
-        const zOff = zCenter - (v - 0.5) * charH;
-        poly.push(
-          cncSerialToStl({
-            radius,
-            yCnc,
-            zOffset: zOff,
-            cAxisDeg: cDeg,
-            hexAppliedDeg: opts.hexAppliedDeg,
-          }),
-        );
-      }
-      out.push(poly);
-    }
-  }
-  return out;
+  return buildHexFaceLotEngravingStlPolylines({
+    serialCode: opts.serialCode,
+    ncParams: opts.ncParams,
+    hexAppliedDeg: opts.hexAppliedDeg,
+  });
 }
