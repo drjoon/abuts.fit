@@ -278,10 +278,9 @@
 
 검색 키워드: `manufacturerHexRotation`, `hexRotation.appliedDeg`, `request-meta`, `헥스40도회전`, `minorDeg`, `totalDeg`
 
-- `request-meta.caseInfos.manufacturerHexRotation` canonical은 `STL모델대로` / `헥스30도회전` / `헥스X도회전(total)`.
-  - 전달 SSOT: `헥스X도회전`의 X는 **totalDeg(=30+minorDeg)**.
-  - 예) 프론트 minor 10도 선택(`헥스10도회전`) → 백엔드/Esprit 전달값 `헥스40도회전`.
-  - 레거시 `"0"`/`"30"`, `헥스10도회전`(minor)은 하위호환으로 정규화 허용.
+- `request-meta.caseInfos.manufacturerHexRotation` canonical은 `STL모델대로` / `헥스30도회전` / `STL모델+` / `헥스30+`.
+  - 플러스 모드: `STL모델+`(modeBase=0) / `헥스30+`(modeBase=30). STL 실회전은 `STL모델대로`와 동일.
+  - 레거시 `"0"`/`"30"`, `헥스40도회전`/`헥스10도회전`/`헥스X도회전` → `STL모델+`(또는 헥스30).
   - **default fallback 주입 금지**: 빈값/미지원값은 즉시 예외 처리.
 - 제조사 헥스 기본값(다음 의뢰 시드):
   - 저장: PreviewModal에서 제조사가 mode를 바꾸면 `User.requestSettings.defaultManufacturerHexRotation` 우선, 개인 계정 없으면 `BusinessAnchor.requestSettings.defaultManufacturerHexRotation`.
@@ -292,9 +291,17 @@
     `Rotate90Degrees` 후 `+30 + (-hexRotation.appliedDeg)` 적용.
 - NC C축 후처리 SSOT(공구 기반):
   - `STL모델대로` → T4848/T0909/T0606 근접 `C0`·`C30` 잔여분을 `C0.0`으로 강제 (ExoCAD designSoftware와 무관, mode SSOT만)
-  - `헥스30도회전` / `헥스X도회전` → PRC `C0`를 T0909/T0606에만 `totalDeg`로 치환
-  - `T4848` → **항상 `C0.0`** (모드/`minorDeg`와 무관. `minorDeg`는 라벨·로그용만)
-  - `T0909`, `T0606` → `totalDeg` 적용
+  - `헥스30도회전` → PRC `C0`를 T0909/T0606에 `C30.0`으로 치환
+  - `STL모델+` / `헥스30+`: `addDeg = 30 + hexRotation.appliedDeg`
+    - 예) appliedDeg=-27.61 → addDeg=2.39 → STL모델+ 시 T0606/T0909=`C2.39`
+    - `T0909`/`T0606` → `C(modeBase + addDeg)` (`STL모델+` modeBase=0 / `헥스30+` modeBase=30)
+    - `appliedDeg` 없으면 플러스 모드 NC 후처리 예외
+  - `T4848` → **항상 `C0.0`** (모드/`addDeg`와 무관)
+  - Connection PRC 기준 T0606×3 + T0909×2 = 5곳 (+ T4848 1 = 최대 6)
+  - Serial C = 사이트방위(`90+W−θ`) + **동일 헥스모드 C** (`ResolveHexToolCAxisDeg`)
+    - 헥스가 `addDeg`만큼 돌아가면 각인도 같이 돌아가 면에 수직 유지
+    - 예) STL모델+·appliedDeg=-27.61 → Connection/Serial 모두 hexC=`C2.39` 가산
+  - 헥스 C 치환은 Serial 블록 치환보다 먼저 실행 (Serial이 최종 C를 사이트+헥스모드로 기록)
   - 공구번호 미검출/미지원은 즉시 예외 발생(백엔드 실패 콜백 경유 → 프론트 토스트)
 - 재제작(시작 공정=가공)으로 복사된 NC는 원본 헥스 모드 기준이다. 준비 단계에서 mode를 바꾸면 `updateRndHexRotation`이 `caseInfos.ncFile`을 비워 다음 승인 때 Esprit가 재생성한다.
 - NC 축 워드 소수점 강제 (CNC 인식):
@@ -305,9 +312,10 @@
   - G/M/T/O/P/N/S/F 정수 코드(G0, M50, T0909, F1000)는 그대로 둔다.
 - 구현 위치:
   - `Helpers/NcFileGenerator.cs`
-    - `TryResolveHexRotationTargets` (total→minor 계산)
+    - `TryResolveHexRotationTargets` / `ResolvePlusModeAddDeg` / `ResolveHexToolCAxisDeg` (modeBase·addDeg·Serial 동반)
     - `FindNearestToolCodeNearLine` (상방 10줄 공구 탐색)
     - `ApplyManufacturerHexRotationToNc` (공구별 C축 치환)
+    - `BuildSerialBlock` (사이트 C + 헥스모드 C)
     - `FormatRotationNumber` / `EnsureNcCoordinateDecimalsOnFile` (C30.0 소수점 강제)
   - `StlFileProcessor.Process` (request-meta 전달/에러 전파)
   - `Helpers/BackendApiClient.RequestMetaCaseInfos` (request-meta 바인딩)

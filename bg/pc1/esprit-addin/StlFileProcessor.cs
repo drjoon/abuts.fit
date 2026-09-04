@@ -36,12 +36,15 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         private const string StlImportLayerName = "AbutsStlImport";
         private const double DefaultWAxisRotationDegrees = 30.0;
         // 제조사 수동 헥스 회전 canonical 모드값
-        // - "STL모델대로" / "헥스30도회전" 모두 STL 실회전은 동일하게 적용한다.
+        // - "STL모델대로" / "헥스30도회전" / "STL모델+" / "헥스30+" 모두 STL 실회전은 동일하게 적용한다.
         //   => totalW = 30 + (-appliedDeg)
-        // - 두 모드(및 헥스X 확장)의 차이는 NC C축 후처리에서 분기한다.
+        // - 두 모드(및 플러스/헥스X 확장)의 차이는 NC C축 후처리에서 분기한다.
         // 하위호환: 백엔드가 레거시 "0"/"30"을 보내도 내부에서 canonical 모드로 정규화한다.
         private const string ManufacturerHexModeCorrected = "STL모델대로";
         private const string ManufacturerHexModeUncorrected = "헥스30도회전";
+        // 헥스40 계열(NC C축 가산): STL모델+(base=0) / 헥스30+(base=30). STL 실회전은 보정(STL모델대로)와 동일.
+        private const string ManufacturerHexModeStlPlus = "STL모델+";
+        private const string ManufacturerHexModeHex30Plus = "헥스30+";
 
 
         private const double CompositeFinishToleranceThresholdZMm = 15.0;
@@ -990,12 +993,22 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             {
                 return ManufacturerHexModeUncorrected;
             }
+            // 플러스 모드: STL 실회전은 STL모델대로(보정)와 동일. NC C축만 modeBase+addDeg.
+            // 검색: STL모델+, 헥스30+, ApplyManufacturerHexRotationToNc
+            if (string.Equals(mode, ManufacturerHexModeStlPlus, StringComparison.Ordinal) ||
+                string.Equals(mode, "헥스40도회전", StringComparison.Ordinal) ||
+                string.Equals(mode, "헥스10도회전", StringComparison.Ordinal))
+            {
+                return ManufacturerHexModeCorrected;
+            }
+            if (string.Equals(mode, ManufacturerHexModeHex30Plus, StringComparison.Ordinal))
+            {
+                return ManufacturerHexModeCorrected;
+            }
             if (Regex.IsMatch(mode, @"^\s*헥스\s*[+-]?\d+(?:\.\d+)?\s*도회전\s*$", RegexOptions.CultureInvariant))
             {
-                // 확장 모드: "헥스X도회전" 라벨(X=totalDeg)은 STL 회전 기준을 "STL모델대로(보정)"와 동일하게 따르고,
-                // NC 후처리에서 공구번호 기준으로 C축을 치환한다.
-                // - T4848: minorDeg = totalDeg - 30
-                // - T0909/T0606: totalDeg
+                // 확장 모드: "헥스X도회전" 라벨은 STL 회전 기준을 "STL모델대로(보정)"와 동일하게 따르고,
+                // NC 후처리에서 공구번호 기준으로 C축을 치환한다 (원본 라벨은 GenerateNcFile에 전달).
                 return ManufacturerHexModeCorrected;
             }
 
@@ -1011,7 +1024,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 
             if (string.IsNullOrWhiteSpace(mode))
             {
-                throw new InvalidOperationException("manufacturerHexRotation 값이 비어 있습니다. request-meta.caseInfos.manufacturerHexRotation은 'STL모델대로' 또는 '헥스30도회전'이어야 합니다.");
+                throw new InvalidOperationException("manufacturerHexRotation 값이 비어 있습니다. request-meta.caseInfos.manufacturerHexRotation은 'STL모델대로' | '헥스30도회전' | 'STL모델+' | '헥스30+' 이어야 합니다.");
             }
 
             throw new InvalidOperationException($"지원하지 않는 manufacturerHexRotation 값입니다. value='{mode}'");
