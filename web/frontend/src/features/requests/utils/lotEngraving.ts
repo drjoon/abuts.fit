@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-04: 포스트 측면 — 법선(engraveZ·θ)이 글자 중앙을 지나게 (하단/시작 앵커 폐기).
 // - 2026-09-04: 포스트 측면 — 글자마다 C(θ) 고정 수직평면. 곡면 래핑(점별 레이캐스트) 폐기.
 // - 2026-09-04: 각인 target hex|post 이중 경로. 기본 헥스면, 포스트면은 옵트인.
 // - 2026-09-04: 프리뷰=Z축 방위 원통 배치(한글자 θ). 시안 가이드 제거. 표면 r(θ,z).
@@ -55,7 +56,7 @@ export const LOT_ENGRAVING_DEFAULTS = {
   charWidth: 0.28,
   /** 표면 바깥으로 아주 살짝 — 가시성. 가공 깊이 계산과 별개. */
   surfaceLift: 0.04,
-  /** 피니시라인 직상방 각인 높이(mm). 글자 하단 기준. */
+  /** 피니시라인 직상방 각인 기준 높이(mm). CNC Z=글자 하단 / 프리뷰=글자 중앙. */
   aboveFinishLineMm: 1,
   /** 글자 간 원주 호 길이(mm). CNC H = arc/r (프리뷰 Z축 방위). */
   charPitchArcMm: 0.45,
@@ -908,17 +909,17 @@ export function buildHexFaceLotEngravingStlPolylines(opts: {
 /**
  * 포스트 측면 각인 스트로크 (source STL 좌표).
  *
- * CNC와 동일: 글자마다 C(θ) 고정 → 수직 평면 위 Y/Z 절삭 (곡면 래핑 없음).
- * - 글자 i: θ_i = site.angleDeg + (i−mid)·pitch (CNC H 증분과 동일)
- * - 글자 중앙 높이에서 면 점 1회 → 그 θ의 수직평면(법선=수평 방사)에 스트로크
- * - 폭 u: θ 증가(CCW 접선), 높이 v: STL +Z, 하단 = FL+1mm
+ * CNC C축 ≡ 프리뷰 Z축 방위. 글자마다 θ 고정 수직평면 (곡면 래핑 없음).
+ * - 글자 i: θ_i = site.angleDeg + (i−mid)·pitch
+ * - 면 히트·법선은 글자 박스 중앙(u=v=0.5) — engraveZ·θ_i 가 중앙을 지남
+ * - 폭 u: θ 증가(CCW 접선), 높이 v: STL +Z
  */
 export function buildPostSideLotEngravingStlPolylines(opts: {
   serialCode: string;
   site: PostLotEngravingSite;
   center?: { x: number; y: number } | null;
   /**
-   * (θ°, z) → 메시 표면점. 글자당 1회(중앙 높이)만 호출.
+   * (θ°, z) → 메시 표면점. 글자당 1회(중앙)만 호출.
    * null이면 site.radius 원통 폴백.
    */
   resolveSurfacePoint?: (
@@ -942,7 +943,8 @@ export function buildPostSideLotEngravingStlPolylines(opts: {
     (charW / fallbackR) * (180 / Math.PI),
   );
   const n = serial.length;
-  const zBottom = site.engraveZ;
+  // engraveZ = 글자 중앙 높이 (법선이 중앙을 지남). 하단은 −charH/2.
+  const zCenter = site.engraveZ;
   const out: Array<Array<{ x: number; y: number; z: number }>> = [];
 
   for (let i = 0; i < n; i += 1) {
@@ -951,9 +953,8 @@ export function buildPostSideLotEngravingStlPolylines(opts: {
     const theta = (charCenterDeg * Math.PI) / 180;
     const cosT = Math.cos(theta);
     const sinT = Math.sin(theta);
-    // CNC: 고정 C에서 수직면. 글자 중앙 높이 면점으로 반경(깊이)만 맞춤.
-    const zMid = zBottom + charH * 0.5;
-    const hit = opts.resolveSurfacePoint?.(charCenterDeg, zMid) ?? null;
+    // 글자 중앙에서 면 점 1회 → 그 점이 박스 중심(법선 통과)
+    const hit = opts.resolveSurfacePoint?.(charCenterDeg, zCenter) ?? null;
 
     let ox: number;
     let oy: number;
@@ -969,10 +970,10 @@ export function buildPostSideLotEngravingStlPolylines(opts: {
       const r = fallbackR + lift;
       ox = cx + r * cosT;
       oy = cy + r * sinT;
-      oz = zMid;
+      oz = zCenter;
     }
 
-    // 폭: θ↑ = CCW 접선 (−sin, cos). 높이: +Z. 원점 = 글자 박스 중심(u=v=0.5).
+    // 폭: θ↑ = CCW 접선. 높이: +Z. (u,v)=(0.5,0.5) → 법선 위 중앙점.
     const tx = -sinT;
     const ty = cosT;
 
