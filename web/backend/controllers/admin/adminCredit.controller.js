@@ -1,6 +1,7 @@
 // related files:
 // - web/backend/rules.md
 // - web/backend/modules/admin/admin.routes.js
+// - 2026-09-05: 관리자 원장 — PRACTICE_TRANSFER_ESCROW_RELEASE → LAB_SETTLEMENT_CHARGE 표시.
 // - 2026-08-20: 제조사 정산 잔액은 유료/무료 구분 없이 REV 전액(말일 일괄 지급).
 // - 2026-08-19: 어벗디자인 박스 키=의뢰 사업자+예정출고일. 수신자는 의뢰 사업자명.
 // - 2026-08-19: 어벗디자인 원장 — 수신자/박스 묶음용 mailbox·shippingPackage 메타.
@@ -822,7 +823,15 @@ export async function adminGetBusinessLedger(req, res) {
                 {
                   case: {
                     $and: [
-                      { $eq: ["$eventType", "PRACTICE_TRANSFER_SPEND_COMMIT"] },
+                      {
+                        $in: [
+                          "$eventType",
+                          [
+                            "PRACTICE_TRANSFER_SPEND_COMMIT",
+                            "PRACTICE_TRANSFER_ESCROW_RELEASE",
+                          ],
+                        ],
+                      },
                       { $gt: ["$amount", 0] },
                     ],
                   },

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-05: 기공소 현재 잔액 — spendableBalance(정산 적립 포함). balance(유료+무료)만 쓰던 버그 수정.
 // - 2026-09-05: 데모/실사용 집계 필터·2줄 잔액·행「데모」뱃지 제거. 잔액 음수 표시 허용.
 // - 2026-09-01: PTX 결제보류 — hold/adjust가 여러 저널로 흩어져도 목록·호버 금액을 견적(heldTotal)과 맞춤.
 // - 2026-08-31: 요약 소비 카드 라벨「소비」(구「기공, 스토어」). 치과·기공소 공통.
@@ -344,6 +345,8 @@ type CreditBalanceSnapshot = {
   freeShippingCredit?: number;
   freeCredit?: number;
   settlementCredit?: number;
+  spendableBalance?: number;
+  realBalance?: number;
   requestorKind?: "practice" | "lab" | null;
   showSettlementCredit?: boolean;
   demoMode?: boolean;
@@ -2444,12 +2447,18 @@ export const CreditLedgerModal = ({
     ? Number(currentBalanceSnapshot.settlementCredit ?? 0)
     : 0;
   const currentBalanceTotal = currentBalanceSnapshot
-    ? Number(
-        currentBalanceSnapshot.balance ??
-          Number(currentBalanceSnapshot.paidCredit || 0) +
-            freeCreditTotal +
-            (showSettlementCredit ? settlementCreditTotal : 0),
-      )
+    ? showSettlementCredit
+      ? Number(
+          currentBalanceSnapshot.spendableBalance ??
+            currentBalanceSnapshot.realBalance ??
+            Number(currentBalanceSnapshot.paidCredit || 0) +
+              freeCreditTotal +
+              settlementCreditTotal,
+        )
+      : Number(
+          currentBalanceSnapshot.balance ??
+            Number(currentBalanceSnapshot.paidCredit || 0) + freeCreditTotal,
+        )
     : 0;
   const isDemoMode = Boolean(currentBalanceSnapshot?.demoMode);
 

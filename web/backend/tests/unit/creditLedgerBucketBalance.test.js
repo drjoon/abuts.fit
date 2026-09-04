@@ -7,6 +7,7 @@ import {
   buildLedgerItemsWithBucketBalanceAfter,
   collectPracticeTransferLookupIds,
   isAbutmentDesignLabFeeLedgerRow,
+  isLabSettlementEarnEvent,
   isSettlementLedgerType,
   parseSpendKindFromUniqueKey,
   promoteAbutmentDesignFeeToPracticeTransfer,
@@ -19,6 +20,60 @@ describe("isSettlementLedgerType", () => {
     expect(isSettlementLedgerType("LAB_SETTLEMENT_PAYOUT")).toBe(true);
     expect(isSettlementLedgerType("CHARGE_FREE_REQUEST")).toBe(false);
     expect(isSettlementLedgerType("SPEND_HOLD")).toBe(false);
+  });
+});
+
+describe("isLabSettlementEarnEvent", () => {
+  test("ESCROW_RELEASE·레거시 COMMIT·LAB_SETTLEMENT_CHARGE를 정산 적립으로 인식", () => {
+    expect(
+      isLabSettlementEarnEvent({
+        eventType: "PRACTICE_TRANSFER_ESCROW_RELEASE",
+        accountCode: "LAB_SETTLEMENT_CREDIT",
+        amount: 120000,
+      }),
+    ).toBe(true);
+    expect(
+      isLabSettlementEarnEvent({
+        eventType: "PRACTICE_TRANSFER_ESCROW_RELEASE",
+        amount: 100000,
+      }),
+    ).toBe(true);
+    expect(
+      isLabSettlementEarnEvent({
+        eventType: "PRACTICE_TRANSFER_SPEND_COMMIT",
+        accountCode: "LAB_SETTLEMENT_CREDIT",
+        amount: 50000,
+      }),
+    ).toBe(true);
+    expect(
+      isLabSettlementEarnEvent({
+        eventType: "LAB_SETTLEMENT_CHARGE",
+        amount: 10000,
+      }),
+    ).toBe(true);
+  });
+
+  test("소비·음수·치과 차감은 정산 적립이 아님", () => {
+    expect(
+      isLabSettlementEarnEvent({
+        eventType: "PRACTICE_TRANSFER_ESCROW_RELEASE",
+        amount: 0,
+      }),
+    ).toBe(false);
+    expect(
+      isLabSettlementEarnEvent({
+        eventType: "PRACTICE_TRANSFER_SPEND_COMMIT",
+        accountCode: "REQ_PAID_CREDIT",
+        amount: -120000,
+      }),
+    ).toBe(false);
+    expect(
+      isLabSettlementEarnEvent({
+        eventType: "PRACTICE_TRANSFER_SPEND_HOLD",
+        accountCode: "LAB_SETTLEMENT_CREDIT",
+        amount: 120000,
+      }),
+    ).toBe(false);
   });
 });
 

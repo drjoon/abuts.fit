@@ -8,6 +8,7 @@
 // - web/backend/services/practiceTransferBilling.service.js
 // - web/backend/models/businessAnchor.model.js
 // - web/backend/services/requestCreditHold.service.js
+// - 2026-09-05: 정산 적립 집계 — PRACTICE_TRANSFER_ESCROW_RELEASE(+LAB_SETTLEMENT_CREDIT) 포함. 내역 행 타입과 동일.
 // - 2026-09-02: 적립 보류 미러 — deleted/canceled 제외 + HOLD 저널 없으면 스킵(치과 취소 후 heldAt 잔여 방어).
 // - 2026-08-31: 적립 보류 미러 — workCanceledAt 수락 취소 건 제외.
 // - 2026-08-31: 정산 적립(확정·보류) PTX 데모 결제 여부 반영. 유료는 단수, 무료·정산·소비·잔액만 2줄.
@@ -38,6 +39,51 @@ const SETTLEMENT_LEDGER_TYPES = new Set([
 
 export function isSettlementLedgerType(type) {
   return SETTLEMENT_LEDGER_TYPES.has(String(type || "").trim().toUpperCase());
+}
+
+/**
+ * 기공소 정산 적립(확정) 이벤트 — 내역 행 타입(LAB_SETTLEMENT_CHARGE)과 동일 기준.
+ * - LAB_SETTLEMENT_CHARGE (레거시/표시 alias)
+ * - PRACTICE_TRANSFER_ESCROW_RELEASE (현재 SSOT: 작업완료 시 lab-share 적립)
+ * - PRACTICE_TRANSFER_SPEND_COMMIT + LAB_SETTLEMENT_CREDIT (레거시 확정)
+ */
+export function isLabSettlementEarnEvent({
+  eventType,
+  accountCode,
+  amount,
+} = {}) {
+  const et = String(eventType || "").trim();
+  const ac = String(accountCode || "").trim();
+  const amt = Number(amount || 0);
+  if (!(amt > 0)) return false;
+  if (et === "LAB_SETTLEMENT_CHARGE") return true;
+  if (et === "PRACTICE_TRANSFER_ESCROW_RELEASE") return true;
+  if (et === "PRACTICE_TRANSFER_SPEND_COMMIT" && ac === "LAB_SETTLEMENT_CREDIT") {
+    return true;
+  }
+  return false;
+}
+
+/** Mongo $expr — creditLedgerStatsCategoryExpr / 드릴다운과 공유 */
+export function labSettlementEarnMongoCase() {
+  return {
+    $or: [
+      { $eq: ["$eventType", "LAB_SETTLEMENT_CHARGE"] },
+      {
+        $and: [
+          { $eq: ["$eventType", "PRACTICE_TRANSFER_ESCROW_RELEASE"] },
+          { $gt: ["$amount", 0] },
+        ],
+      },
+      {
+        $and: [
+          { $eq: ["$eventType", "PRACTICE_TRANSFER_SPEND_COMMIT"] },
+          { $eq: ["$accountCode", "LAB_SETTLEMENT_CREDIT"] },
+          { $gt: ["$amount", 0] },
+        ],
+      },
+    ],
+  };
 }
 
 /** @typedef {'all' | 'real' | 'demo'} CreditUsageScope */
@@ -1158,18 +1204,7 @@ export function creditLedgerStatsCategoryExpr() {
         { case: { $eq: ["$eventType", "ADJUST"] }, then: "adjust" },
         { case: { $eq: ["$eventType", "SETTLEMENT_PAYOUT"] }, then: "settlement_payout" },
         {
-          case: {
-            $or: [
-              { $eq: ["$eventType", "LAB_SETTLEMENT_CHARGE"] },
-              {
-                $and: [
-                  { $eq: ["$eventType", "PRACTICE_TRANSFER_SPEND_COMMIT"] },
-                  { $eq: ["$accountCode", "LAB_SETTLEMENT_CREDIT"] },
-                  { $gt: ["$amount", 0] },
-                ],
-              },
-            ],
-          },
+          case: labSettlementEarnMongoCase(),
           then: "settlement_earn",
         },
         {
@@ -1412,10 +1447,7 @@ export async function aggregateRequestorPeriodLedgerSummary({
     ) {
       bump(bucket, "totalFreeChargeSupply", amount);
     } else if (
-      (eventType === "LAB_SETTLEMENT_CHARGE" ||
-        (eventType === "PRACTICE_TRANSFER_SPEND_COMMIT" &&
-          accountCode === "LAB_SETTLEMENT_CREDIT")) &&
-      amount > 0
+      isLabSettlementEarnEvent({ eventType, accountCode, amount })
     ) {
       bump(bucket, "totalSettlementEarnSupply", amount);
     } else if (
@@ -1492,11 +1524,8 @@ export async function aggregateRequestorPeriodLedgerSummary({
   for (const row of rows) {
     const eventType = String(row?.eventType || "");
     const accountCode = String(row?.accountCode || "");
-    const isSettlementEarn =
-      eventType === "LAB_SETTLEMENT_CHARGE" ||
-      (eventType === "PRACTICE_TRANSFER_SPEND_COMMIT" &&
-        accountCode === "LAB_SETTLEMENT_CREDIT");
-    if (!isSettlementEarn) continue;
+    const amount = Number(row?.amount || 0);
+    if (!isLabSettlementEarnEvent({ eventType, accountCode, amount })) continue;
     const refId = row?.refId ? String(row.refId) : "";
     if (refId && mongoose.Types.ObjectId.isValid(refId)) {
       settlementPtxIds.push(refId);
@@ -1510,10 +1539,11 @@ export async function aggregateRequestorPeriodLedgerSummary({
     const accountCode = String(row?.accountCode || "");
     const amount = Number(row?.amount || 0);
     const refId = row?.refId ? String(row.refId) : "";
-    const isSettlementEarn =
-      eventType === "LAB_SETTLEMENT_CHARGE" ||
-      (eventType === "PRACTICE_TRANSFER_SPEND_COMMIT" &&
-        accountCode === "LAB_SETTLEMENT_CREDIT");
+    const isSettlementEarn = isLabSettlementEarnEvent({
+      eventType,
+      accountCode,
+      amount,
+    });
     const isDemo =
       Boolean(row?.isDemoUsage) ||
       (isSettlementEarn && Boolean(demoFundingByPtx.get(refId)));

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-05: 정산 적립 분류 — PRACTICE_TRANSFER_ESCROW_RELEASE 포함(기간 요약·내역과 동일).
 // - 2026-08-31: 기공소 통계 — 치과→기공(정산)·기공→어벗츠(충전/소비) 건수·파트너·보철 분리.
 // - 2026-08-31: usageScope(real|demo|all) — 데모/실사용 통계 필터. hasDemoUsage 응답.
 // - 2026-08-31: 요약 — 유료/무료 충전 분리. 기공소 정산 적립(보류 포함) 유지.
@@ -24,6 +25,7 @@ import { normalizeRequestorKind } from "../../utils/requestorCapabilities.js";
 import { buildFeeQuotesForTransferDocs } from "../../services/practiceTransferBilling.service.js";
 import { parseKstQueryBoundDate } from "../../utils/kstQueryBounds.js";
 import {
+  isLabSettlementEarnEvent,
   listPendingLabSettlementLedgerRows,
   matchesCreditUsageScope,
   parseCreditUsageScope,
@@ -137,12 +139,7 @@ function resolveStatsCategory(eventType, refType, accountCode, amount) {
   if (CHARGE_EVENT_TYPES.has(et)) return "charge";
   if (et === "ADJUST") return "adjust";
   if (et === "SETTLEMENT_PAYOUT") return "settlement_payout";
-  if (
-    et === "LAB_SETTLEMENT_CHARGE" ||
-    (et === "PRACTICE_TRANSFER_SPEND_COMMIT" &&
-      ac === "LAB_SETTLEMENT_CREDIT" &&
-      amt > 0)
-  ) {
+  if (isLabSettlementEarnEvent({ eventType: et, accountCode: ac, amount: amt })) {
     return "settlement_earn";
   }
   if (et.includes("PRACTICE_TRANSFER") || rt === "PRACTICE_TRANSFER") {
@@ -386,15 +383,14 @@ export async function getMyCreditLedgerStats(req, res) {
     if (Boolean(row?.journalDemoCredit)) return true;
     const eventType = String(row?.eventType || "");
     const accountCode = String(row?.accountCode || "");
+    const amount = Number(row?.amount || 0);
     const isSettlementEarn =
-      eventType === "LAB_SETTLEMENT_CHARGE" ||
-      (eventType === "PRACTICE_TRANSFER_SPEND_COMMIT" &&
-        accountCode === "LAB_SETTLEMENT_CREDIT") ||
+      isLabSettlementEarnEvent({ eventType, accountCode, amount }) ||
       resolveStatsCategory(
         eventType,
         row?.refType,
         accountCode,
-        Number(row?.amount || 0),
+        amount,
       ) === "settlement_earn";
     if (isSettlementEarn && demoFundingByPtx) {
       const refId = row?.refId ? String(row.refId) : "";
