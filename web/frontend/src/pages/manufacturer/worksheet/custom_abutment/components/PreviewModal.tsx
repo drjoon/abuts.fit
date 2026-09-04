@@ -590,7 +590,7 @@ export const PreviewModal = ({
   const [anodizingEnabledDraft, setAnodizingEnabledDraft] = useState<boolean>(true);
   const [wideSplitEnabledDraft, setWideSplitEnabledDraft] = useState<boolean>(true);
   const [wideSplitSaving, setWideSplitSaving] = useState(false);
-  const [showLotEngraving, setShowLotEngraving] = useState(false);
+  const [showLotEngraving, setShowLotEngraving] = useState(true);
   const req = previewFiles.request as ManufacturerRequest | null;
   const lastStableReqRef = useRef<ManufacturerRequest | null>(null);
   const openRef = useRef<boolean>(open);
@@ -2405,7 +2405,7 @@ export const PreviewModal = ({
                 }`}
                 title={
                   lotSerialCode
-                    ? `헥스 면에 각인코드 ${lotSerialCode} 미리보기`
+                    ? `포스트 측면에 각인코드 ${lotSerialCode} 미리보기 (FL+1mm · C축)`
                     : "로트번호(각인 3글자)가 없습니다"
                 }
               >

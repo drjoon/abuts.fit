@@ -1,4 +1,7 @@
 // change-log:
+// - 2026-09-04: Lot — 메시 레이캐스트 표면 히트에 각인 (바운딩/회귀선 반경 폐기).
+// - 2026-09-04: Lot — Z축 방위 원통 배치, 시안 가이드 제거, depthTest로 표면 정합.
+// - 2026-09-04: Lot 각인 — 포스트 측면(FL+1mm·C축), 핫핑크+시안 사이트 마커.
 // - 2026-09-04: Lot 각인 — CNC X 직경→반경, 글자 축소·뒤집힘 교정, non-filled 센터 보정.
 // - 2026-09-04: Lot 각인 — StlFileProcessor 역산(Rotate90+W)으로 CNC→STL 매핑.
 // - 2026-08-28: 좌우 드래그=화면 Y축(카메라 local up) 회전 — 월드 Z 턴테이블 제거(스캔 수평 유지).
@@ -42,8 +45,11 @@ import {
 import { useStlMetadata, type StlMetadata } from "../hooks/useStlMetadata";
 import {
   buildLotEngravingStlPolylines,
+  LOT_ENGRAVING_DEFAULTS,
   normalizeLotSerialCode,
+  pickPostSideLotEngravingSite,
   resolveLotEngravingNcParams,
+  type TaperDirectionGuide,
 } from "../utils/lotEngraving";
 
 type Props = {
@@ -74,13 +80,13 @@ type Props = {
   metadata?: StlMetadata | null;
   /** true면 파일명과 무관하게 filled 가이드/오버레이(FL·축·프론트포인트)를 켠다. */
   forceFilled?: boolean;
-  /** 헥스 면 로트 각인(3글자) 오버레이. 기본 off. */
+  /** 포스트 측면 로트 각인(3글자) 오버레이. 기본 off. */
   showLotEngraving?: boolean;
   /** 각인 시리얼 3글자. 없으면 표시 안 함. */
   lotSerialCode?: string | null;
-  /** NC 텍스트가 있으면 Serial 시작 좌표(Y/Z/C/V)를 파싱해 위치를 맞춘다. */
+  /** NC 텍스트가 있으면 Serial Z/C/H 를 파싱해 위치를 맞춘다. */
   lotEngravingNcText?: string | null;
-  /** caseInfos.hexRotation.mode — Serial T0909 C축 해석용. */
+  /** caseInfos.hexRotation.mode — 레거시 폴백용. */
   lotEngravingHexMode?: string | null;
 };
 
@@ -120,6 +126,8 @@ export function StlPreviewViewer({
   const manualPickMarkersRef = useRef<THREE.Mesh[]>([]);
   const lotEngravingGroupRef = useRef<THREE.Group | null>(null);
   const lotEngravingLineMatsRef = useRef<LineMaterial[]>([]);
+  /** 메시 로드 시 계산된 taper 가이드 — lot 사이트 선정용 (metadata보다 최신일 수 있음). */
+  const localTaperGuidesRef = useRef<TaperDirectionGuide[] | null>(null);
   const modelDiagRef = useRef<number>(0);
   const centerRef = useRef<THREE.Vector3 | null>(null);
   const centeredBoundsRef = useRef<{
@@ -849,6 +857,13 @@ export function StlPreviewViewer({
                 : 0,
               multiDirectionGuides: parsedGuides,
             };
+            localTaperGuidesRef.current = parsedGuides.map((g) => ({
+              angle: g.angle,
+              taperAngle: g.taperAngle,
+              dirFinishLineZ: g.dirFinishLineZ,
+              slope: g.slope,
+              intercept: g.intercept,
+            }));
           }
         }
         const finishLineZs = Array.isArray(finishLinePoints)
@@ -1214,6 +1229,15 @@ export function StlPreviewViewer({
 
                   // 180도 반대편 각도 쌍의 진짜 기울기 계산 (6그룹)
                   if (multiDirectionGuides.length >= 6) {
+                    localTaperGuidesRef.current = multiDirectionGuides.map(
+                      (g) => ({
+                        angle: g.angle,
+                        taperAngle: g.taperAngle,
+                        dirFinishLineZ: g.dirFinishLineZ,
+                        slope: g.slope,
+                        intercept: g.intercept,
+                      }),
+                    );
                     const pairedAverages: number[] = [];
 
                     // 0-150도 범위의 6개 각도에 대해 180도 반대편과 쌍을 만듦
@@ -2224,20 +2248,139 @@ export function StlPreviewViewer({
     if (!serial) return;
 
     const hexApplied = Number(resolvedMetadata?.hexRotation?.appliedDeg);
+    const metaGuides = (
+      resolvedMetadata as {
+        taperGuide?: { multiDirectionGuides?: TaperDirectionGuide[] };
+      } | null
+    )?.taperGuide?.multiDirectionGuides;
+    const guidesRaw =
+      (Array.isArray(localTaperGuidesRef.current) &&
+      localTaperGuidesRef.current.length > 0
+        ? localTaperGuidesRef.current
+        : null) ||
+      (Array.isArray(metaGuides) ? metaGuides : null);
+
+    const maxDia = Number(
+      maxDiameterState ??
+        resolvedMetadata?.maxDiameter ??
+        maxDiameterRef.current,
+    );
+    const meshCenter = centerRef.current;
+    const axisCenter = {
+      x: meshCenter ? meshCenter.x : 0,
+      y: meshCenter ? meshCenter.y : 0,
+    };
+    const flMinZ = Number(
+      finishLineMinZ ?? resolvedMetadata?.finishLine?.min_z,
+    );
+
+    const site = pickPostSideLotEngravingSite({
+      guides: guidesRaw,
+      hexAppliedDeg: Number.isFinite(hexApplied) ? hexApplied : null,
+      centerRadiusFallback:
+        Number.isFinite(maxDia) && maxDia > 0 ? maxDia * 0.35 : 2.0,
+      finishLinePoints: Array.isArray(finishLinePoints) ? finishLinePoints : null,
+      finishLineMinZ: Number.isFinite(flMinZ) ? flMinZ : null,
+      center: axisCenter,
+    });
+
+    // 사이트 없으면 레거시 CNC 폴백 금지 — FL 기반만 (평면/헥스 오표시 방지)
+    if (!site) return;
+
+    const mesh = meshRef.current;
+    const raycaster = new THREE.Raycaster();
+    const hitCache = new Map<string, { x: number; y: number; z: number } | null>();
+    const far = Math.max(
+      (Number.isFinite(maxDia) && maxDia > 0 ? maxDia : 10) * 2,
+      20,
+    );
+
+    /** 축→바깥 수평 레이: 해당 Z에서 메시 외면 히트 */
+    const resolveSurfacePoint = (
+      thetaDeg: number,
+      z: number,
+    ): { x: number; y: number; z: number } | null => {
+      if (!mesh) return null;
+      const key = `${thetaDeg.toFixed(2)}_${z.toFixed(3)}`;
+      if (hitCache.has(key)) return hitCache.get(key) ?? null;
+
+      const rad = (thetaDeg * Math.PI) / 180;
+      const dx = Math.cos(rad);
+      const dy = Math.sin(rad);
+      // 메시 local: filled는 원점, non-filled는 mesh.position만큼 이동됨
+      // 레이는 modelPivot 공간(= lot polyline 공간, centerShift 전)에서 쏨
+      const origin = new THREE.Vector3(
+        axisCenter.x + dx * far,
+        axisCenter.y + dy * far,
+        z,
+      );
+      const direction = new THREE.Vector3(-dx, -dy, 0).normalize();
+      raycaster.set(origin, direction);
+      raycaster.near = 0;
+      raycaster.far = far * 1.5;
+      mesh.updateMatrixWorld(true);
+      const hits = raycaster.intersectObject(mesh, false);
+      let chosen: THREE.Intersection | null = null;
+      for (const h of hits) {
+        // 수평 레이라 z는 거의 동일. 바깥면 = 첫 히트
+        if (!chosen) chosen = h;
+        break;
+      }
+      if (!chosen?.point) {
+        hitCache.set(key, null);
+        return null;
+      }
+      // hit.point 는 월드. mesh/modelPivot이 동일 계층이면 pivot local ≈ world (카메라 부모 제외)
+      // modelPivot은 scene 자식이라 world = pivot local (pivot at origin)
+      const p = chosen.point.clone();
+      // non-filled: mesh는 -center 이동. hit는 이미 이동된 공간.
+      // lot polyline은 absolute STL 후 toLocal에서 centerShift — filled면 shift 없음.
+      // 히트는 mesh local(=pivot, non-filled에서 이미 -center)이므로
+      // absolute로 쓰려면 non-filled에서 +center 필요.
+      if (!isFilledFile && centerRef.current) {
+        p.add(centerRef.current);
+      }
+      const out = { x: p.x, y: p.y, z: p.z };
+      hitCache.set(key, out);
+      return out;
+    };
+
+    // 사이트 반경을 실제 메시 히트로 교정 (NC cut X / 피치에도 반영)
+    const siteHit = resolveSurfacePoint(site.angleDeg, site.engraveZ);
+    if (siteHit) {
+      const meshR = Math.hypot(
+        siteHit.x - axisCenter.x,
+        siteHit.y - axisCenter.y,
+      );
+      if (Number.isFinite(meshR) && meshR > 0.3) {
+        site.radius = meshR;
+        site.charPitchCDeg =
+          (LOT_ENGRAVING_DEFAULTS.charPitchArcMm / meshR) * (180 / Math.PI);
+        site.cutDiameterX = Math.max(
+          2 * (meshR - LOT_ENGRAVING_DEFAULTS.engraveDepthMm),
+          1.0,
+        );
+      }
+    }
+
     const ncParams = resolveLotEngravingNcParams({
       ncText: lotEngravingNcText,
       manufacturerHexRotationMode: lotEngravingHexMode,
       hexAppliedDeg: Number.isFinite(hexApplied) ? hexApplied : null,
+      site,
     });
     const polylines = buildLotEngravingStlPolylines({
       serialCode: serial,
       ncParams,
       hexAppliedDeg: Number.isFinite(hexApplied) ? hexApplied : null,
+      site,
+      center: axisCenter,
+      resolveSurfacePoint: mesh ? resolveSurfacePoint : undefined,
     });
     if (polylines.length === 0) return;
 
     // non-filled 메쉬는 bbox 중심으로 이동. 각인(절대 STL 좌표)도 동일 보정.
-    const center =
+    const centerShift =
       !isFilledFile && centerRef.current
         ? centerRef.current.clone()
         : null;
@@ -2246,36 +2389,45 @@ export function StlPreviewViewer({
     group.name = "lotEngraving";
     const lotMats: LineMaterial[] = [];
 
-    const lineColor = 0xfacc15;
+    const lineColor = 0xff2d55;
     const resolution = new THREE.Vector2(
       Math.max(containerRef.current?.clientWidth || 1, 1),
       Math.max(containerRef.current?.clientHeight || 1, 1),
     );
 
+    const toLocal = (p: { x: number; y: number; z: number }) => {
+      if (centerShift) {
+        return {
+          x: p.x - centerShift.x,
+          y: p.y - centerShift.y,
+          z: p.z - centerShift.z,
+        };
+      }
+      return p;
+    };
+
     for (const poly of polylines) {
       if (poly.length < 2) continue;
       const positions: number[] = [];
       for (const p of poly) {
-        if (center) {
-          positions.push(p.x - center.x, p.y - center.y, p.z - center.z);
-        } else {
-          positions.push(p.x, p.y, p.z);
-        }
+        const q = toLocal(p);
+        positions.push(q.x, q.y, q.z);
       }
       const geo = new LineGeometry();
       geo.setPositions(positions);
       const mat = new LineMaterial({
         color: lineColor,
-        linewidth: 2.4,
+        linewidth: 3.4,
         resolution,
         transparent: true,
-        opacity: 0.98,
+        opacity: 1,
+        // 표면 좌표는 정확 — 가시성은 depthTest off (메시 안에 묻히지 않게)
         depthTest: false,
         depthWrite: false,
       });
       const line = new Line2(geo, mat);
       line.computeLineDistances();
-      line.renderOrder = 40;
+      line.renderOrder = 45;
       group.add(line);
       lotMats.push(mat);
     }
@@ -2289,6 +2441,12 @@ export function StlPreviewViewer({
     lotEngravingNcText,
     lotEngravingHexMode,
     resolvedMetadata?.hexRotation?.appliedDeg,
+    resolvedMetadata?.taperGuide,
+    resolvedMetadata?.maxDiameter,
+    resolvedMetadata?.finishLine?.min_z,
+    finishLinePoints,
+    finishLineMinZ,
+    maxDiameterState,
     stableFileKey,
     frontPointRenderRevision,
     isFilledFile,

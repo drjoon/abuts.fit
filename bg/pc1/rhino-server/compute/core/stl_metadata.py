@@ -233,6 +233,7 @@ def _register_metadata_to_backend(
             "tiltAxisVector": metadata.get("tiltAxisVector"),
             "frontPoint": metadata.get("frontPoint"),
             "taperGuide": metadata.get("taperGuide"),
+            "lotEngravingSite": metadata.get("lotEngravingSite"),
             "hexRotation": metadata.get("hexRotation"),
             "coordinateError": coord_validation.get("error")
             if not coord_validation.get("valid")

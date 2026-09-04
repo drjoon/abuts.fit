@@ -409,6 +409,42 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             [DataMember(Name = "hexRotation")] public RequestMetaHexRotation hexRotation { get; set; }
 
             [DataMember] public RequestMetaFinishLine finishLine { get; set; }
+
+            // 포스트 측면 로트 각인 사이트 (FL+1mm, C축 한글자)
+            [DataMember(Name = "lotEngravingSite")] public RequestMetaLotEngravingSite lotEngravingSite { get; set; }
+
+            // 경사 가이드 (사이트 폴백 계산용)
+            [DataMember(Name = "taperGuide")] public RequestMetaTaperGuide taperGuide { get; set; }
+        }
+
+        [DataContract]
+        public class RequestMetaLotEngravingSite
+        {
+            [DataMember(Name = "angleDeg")] public double angleDeg { get; set; }
+            [DataMember(Name = "finishLineZ")] public double finishLineZ { get; set; }
+            [DataMember(Name = "engraveZ")] public double engraveZ { get; set; }
+            [DataMember(Name = "radius")] public double radius { get; set; }
+            [DataMember(Name = "taperAbs")] public double taperAbs { get; set; }
+            [DataMember(Name = "charPitchCDeg")] public double charPitchCDeg { get; set; }
+            [DataMember(Name = "cutDiameterX")] public double cutDiameterX { get; set; }
+        }
+
+        [DataContract]
+        public class RequestMetaTaperGuide
+        {
+            [DataMember(Name = "zStart")] public double zStart { get; set; }
+            [DataMember(Name = "zEnd")] public double zEnd { get; set; }
+            [DataMember(Name = "multiDirectionGuides")] public RequestMetaTaperDirectionGuide[] multiDirectionGuides { get; set; }
+        }
+
+        [DataContract]
+        public class RequestMetaTaperDirectionGuide
+        {
+            [DataMember(Name = "angle")] public double angle { get; set; }
+            [DataMember(Name = "taperAngle")] public double taperAngle { get; set; }
+            [DataMember(Name = "dirFinishLineZ")] public double dirFinishLineZ { get; set; }
+            [DataMember(Name = "slope")] public double slope { get; set; }
+            [DataMember(Name = "intercept")] public double intercept { get; set; }
         }
 
         [DataContract]

@@ -224,6 +224,7 @@ async function calculateStlMetadata(filePath, finishLinePoints) {
   let tiltAxisVector = null;
   let frontPoint = null;
   let taperGuide = null;
+  let lotEngravingSite = null;
 
   if (finishLinePoints && finishLinePoints.length >= 3) {
     const result = calculateTaperWithFinishLine(
@@ -238,6 +239,7 @@ async function calculateStlMetadata(filePath, finishLinePoints) {
       tiltAxisVector = result.tiltAxisVector;
       frontPoint = result.frontPoint;
       taperGuide = result.taperGuide;
+      lotEngravingSite = result.lotEngravingSite || null;
     }
   }
 
@@ -250,6 +252,7 @@ async function calculateStlMetadata(filePath, finishLinePoints) {
     tiltAxisVector,
     frontPoint,
     taperGuide,
+    lotEngravingSite,
     bbox: {
       min: { x: bbox.min.x, y: bbox.min.y, z: bbox.min.z },
       max: { x: bbox.max.x, y: bbox.max.y, z: bbox.max.z },
@@ -802,6 +805,65 @@ function calculateTaperWithFinishLine(position, index, finishLinePoints, bbox) {
       zEnd: bbox.max.z,
       multiDirectionGuides: directions,
     },
+    lotEngravingSite: pickLotEngravingSiteFromGuides(directions, {
+      radiusFallback: Math.max(1.0, maxDiameter * 0.35),
+    }),
+  };
+}
+
+/**
+ * 포스트 측면 로트 각인 위치.
+ * |taperAngle| 하위 10% 중 dirFinishLineZ 최소 방향 → FL+1mm.
+ * (FE lotEngraving.pickPostSideLotEngravingSite 와 동일 규칙)
+ */
+function pickLotEngravingSiteFromGuides(directions, opts = {}) {
+  const guides = Array.isArray(directions) ? directions : [];
+  const scored = [];
+  for (const g of guides) {
+    const angle = Number(g.angle);
+    const taperAbs = Math.abs(Number(g.taperAngle));
+    const flZ = Number(g.dirFinishLineZ);
+    const slope = Number(g.slope);
+    const intercept = Number(g.intercept);
+    if (!Number.isFinite(angle) || !Number.isFinite(taperAbs)) continue;
+    if (!Number.isFinite(flZ)) continue;
+    scored.push({ angle, taperAbs, flZ, slope, intercept });
+  }
+  if (scored.length === 0) return null;
+
+  scored.sort((a, b) => a.taperAbs - b.taperAbs);
+  const keep = Math.max(1, Math.ceil(scored.length * 0.1));
+  const bottom = scored.slice(0, keep);
+  bottom.sort((a, b) => {
+    if (a.flZ !== b.flZ) return a.flZ - b.flZ;
+    return a.taperAbs - b.taperAbs;
+  });
+  const best = bottom[0];
+  if (!best) return null;
+
+  const aboveMm = 1;
+  const engraveZ = best.flZ + aboveMm;
+  let radius = Number.NaN;
+  if (Number.isFinite(best.slope) && Number.isFinite(best.intercept)) {
+    radius = best.slope * engraveZ + best.intercept;
+  }
+  const fallback = Number(opts.radiusFallback);
+  if (!Number.isFinite(radius) || radius < 0.4) {
+    radius = Number.isFinite(fallback) && fallback > 0.4 ? fallback : 2.0;
+  }
+  const pitchArcMm = 0.35;
+  const charPitchCDeg = (pitchArcMm / radius) * (180 / Math.PI);
+  const depthMm = 0.12;
+  const cutDiameterX = Math.max(2 * (radius - depthMm), 1.0);
+
+  return {
+    angleDeg: Math.round(best.angle * 1000) / 1000,
+    finishLineZ: Math.round(best.flZ * 1000) / 1000,
+    engraveZ: Math.round(engraveZ * 1000) / 1000,
+    radius: Math.round(radius * 1000) / 1000,
+    taperAbs: Math.round(best.taperAbs * 1000) / 1000,
+    charPitchCDeg: Math.round(charPitchCDeg * 10000) / 10000,
+    cutDiameterX: Math.round(cutDiameterX * 1000) / 1000,
   };
 }
 

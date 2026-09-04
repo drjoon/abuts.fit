@@ -1438,6 +1438,7 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
               tiltAxisVector: caseInfos?.tiltAxisVector ?? null,
               frontPoint: caseInfos?.frontPoint ?? null,
               taperGuide: caseInfos?.taperGuide ?? null,
+              lotEngravingSite: caseInfos?.lotEngravingSite ?? null,
               hexRotation: caseInfos?.hexRotation ?? null,
               finishLine: caseInfos?.finishLine ?? null,
             },
@@ -1795,6 +1796,14 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
                 min_z_point: normalizedFinishLine?.min_z_point,
               }
             : null,
+          taperGuide:
+            ci?.taperGuide && typeof ci.taperGuide === "object"
+              ? ci.taperGuide
+              : null,
+          lotEngravingSite:
+            ci?.lotEngravingSite && typeof ci.lotEngravingSite === "object"
+              ? ci.lotEngravingSite
+              : null,
         },
       },
       "Request meta",
@@ -2257,6 +2266,7 @@ export const registerStlMetadata = asyncHandler(async (req, res) => {
     tiltAxisVector,
     frontPoint,
     taperGuide,
+    lotEngravingSite,
     hexRotation,
     coordinateError,
   } = req.body;
@@ -2312,6 +2322,9 @@ export const registerStlMetadata = asyncHandler(async (req, res) => {
   if (taperGuide) {
     metadataSetPayload["caseInfos.taperGuide"] = taperGuide;
   }
+  if (lotEngravingSite && typeof lotEngravingSite === "object") {
+    metadataSetPayload["caseInfos.lotEngravingSite"] = lotEngravingSite;
+  }
 
   // related files:
   // - web/backend/controllers/requests/common.requests.controller.js
@@ -2343,6 +2356,7 @@ export const registerStlMetadata = asyncHandler(async (req, res) => {
     tiltAxisVector,
     frontPoint,
     taperGuide: updatedRequest?.caseInfos?.taperGuide,
+    lotEngravingSite: updatedRequest?.caseInfos?.lotEngravingSite,
     hexRotation: updatedRequest?.caseInfos?.hexRotation,
     // finishline 높이 메타데이터는 max_z/min_z SSOT로만 전달
     finishLine: updatedRequest?.caseInfos?.finishLine || null,

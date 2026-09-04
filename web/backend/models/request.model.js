@@ -131,6 +131,8 @@ const requestSchema = new mongoose.Schema(
         message: String,
       },
       taperGuide: mongoose.Schema.Types.Mixed,
+      // 포스트 측면 로트 각인 사이트 (FL+1mm · C축). stl-metadata 산출.
+      lotEngravingSite: mongoose.Schema.Types.Mixed,
       newSystemRequest: {
         requested: { type: Boolean, default: false },
         manufacturer: String,

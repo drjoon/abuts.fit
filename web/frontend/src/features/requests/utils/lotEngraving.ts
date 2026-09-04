@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-09-04: 프리뷰=Z축 방위 원통 배치(한글자 θ). 시안 가이드 제거. 표면 r(θ,z).
+// - 2026-09-04: 헥스면 → 포스트 측면. 하위 10% 경사각·FL minZ 사이트, FL+1mm, C축 한글자.
 // - 2026-09-04: 글자 위=STL +Z, 좌우 LTR 비미러 한 번에 고정. CNC X 직경/2 SSOT 유지.
 // - 2026-09-04: 좌우만 재교정(BFX LTR·비미러). 상하·HEX depth·X직경/2 SSOT 유지.
 // - 2026-09-04: 글자 면내 180° 교정(뒤집힘). CNC X 직경→반경(/2) SSOT 주석·헬퍼.
@@ -12,6 +14,7 @@
 // - bg/pc1/esprit-addin/Helpers/NcFileGenerator.cs (M98P0001=A … M98P0026=Z, Serial C, #521 STOCK DIA)
 // - bg/pc1/esprit-addin/AcroDent/2_Connection/*.prc (Serial / HEX2.485 블록)
 // - bg/pc1/esprit-addin/Config.cs (#523 DefaultStlShift)
+// - bg/pc1/rhino-server/stl-metadata/index.js (multiDirectionGuides)
 // - web/frontend/src/features/requests/components/StlPreviewViewer.tsx
 
 /**
@@ -34,42 +37,69 @@ export function cncDiameterXToRadius(diameterX: number): number {
 
 /** PRC Serial / NC 헤더 기본값. */
 export const LOT_ENGRAVING_DEFAULTS = {
-  startY: 0.525,
+  startY: 0,
+  /** 레거시 헥스면 V피치 — 포스트 측면은 C축(호 길이)으로 대체. */
   charPitchY: -0.35,
   zOffset: 1.6,
-  /**
-   * Serial G1 X…F500 — 툴 팁 절삭 깊이(직경).
-   * 반경 = cncDiameterXToRadius(3.43)≈1.715 (HEX 면 r≈1.242보다 바깥/얕음).
-   */
   cutDiameterX: 3.43,
-  /**
-   * (HEX2.485) 헥스 플랫 직경. 면 위 미리뷰 depth = cncDiameterXToRadius(hexDiameterX).
-   */
   hexDiameterX: 2.485,
-  /** HEX Z[#520+#523+…] — 헥스 면 축 위치. */
   hexZOffset: 2.1,
   /** #523 — Config.DefaultStlShift */
   stlShift: 0.05,
   /** StlFileProcessor.DefaultWAxisRotationDegrees */
   wAxisBaseDeg: 30,
-  /** 글자 박스(mm). pitch 0.35 · 헥스 면폭에 맞춤. */
-  charHeight: 0.36,
-  charWidth: 0.22,
-  surfaceLift: 0,
+  charHeight: 0.42,
+  charWidth: 0.28,
+  /** 표면 바깥으로 아주 살짝 — 가시성. 가공 깊이 계산과 별개. */
+  surfaceLift: 0.04,
+  /** 피니시라인 직상방 각인 높이(mm). 글자 하단 기준. */
+  aboveFinishLineMm: 1,
+  /** 글자 간 원주 호 길이(mm). CNC H = arc/r (프리뷰 Z축 방위). */
+  charPitchArcMm: 0.45,
+  /** 각인 깊이(반경 방향, mm). cutDiameterX = 2*(radius - depth). */
+  engraveDepthMm: 0.12,
+  /** 경사각 |taper| 하위 비율(가장 완만한 쪽). */
+  taperBottomFraction: 0.1,
 } as const;
 
 export type LotEngravingNcParams = {
   startY: number;
   charPitchY: number;
-  /** Serial 블록 Z offset (폴백). */
+  /** Serial 블록 Z offset = 피니시라인Z+1 (포스트 측면). */
   zOffset: number;
-  /** 헥스 면 각인에 쓰는 Z offset (HEX 블록 우선). */
+  /** @deprecated 헥스면 폴백용 */
   hexZOffset: number;
-  /** Serial 블록 C축(도). */
+  /** 첫 글자 C축(도). 이후 글자는 H(증분 C)로 진행. */
   cAxisDeg: number;
   cutDiameterX: number;
-  /** 헥스 플랫 직경 (depth = /2). */
   hexDiameterX: number;
+  /** 글자 간 C축 증분(도). + = CCW. */
+  charPitchCDeg?: number;
+  /** 선택 방위( STL XY, deg ). */
+  siteAngleDeg?: number;
+  finishLineZ?: number;
+  radius?: number;
+};
+
+export type TaperDirectionGuide = {
+  angle: number;
+  taperAngle: number;
+  dirFinishLineZ?: number;
+  slope?: number;
+  intercept?: number;
+};
+
+export type PostLotEngravingSite = {
+  angleDeg: number;
+  finishLineZ: number;
+  engraveZ: number;
+  radius: number;
+  taperAbs: number;
+  /** 첫 글자 CNC C (W축 보정 포함). */
+  cAxisDeg: number;
+  /** 글자 간 C 증분(도). */
+  charPitchCDeg: number;
+  cutDiameterX: number;
 };
 
 type Stroke = Array<[number, number]>;
@@ -488,37 +518,242 @@ export function cncSerialToStl(
   return espritPreMoveToStl(esprit.x, esprit.y, esprit.z, wAxisDeg);
 }
 
+export function normalizeAngleDeg(deg: number): number {
+  let a = deg % 360;
+  if (a < 0) a += 360;
+  return a;
+}
+
 /**
- * Serial T0909 C축 목표각.
- * NcFileGenerator: STL모델대로 → 0 / 헥스30·헥스X → totalDeg(=30+minor).
+ * STL XY 방위角 → CNC C.
+ * C=0,y=0,W → STL azimuth ≈ 90+W (cncSerialToStl 역산).
+ * ⇒ C = 90 + W − θ
+ */
+export function stlAzimuthToCncCDeg(opts: {
+  angleDeg: number;
+  hexAppliedDeg?: number | null;
+  wAxisBaseDeg?: number;
+}): number {
+  const applied = Number(opts.hexAppliedDeg);
+  const hexTelemetry = Number.isFinite(applied) ? -applied : 0;
+  const wAxisDeg =
+    (opts.wAxisBaseDeg ?? LOT_ENGRAVING_DEFAULTS.wAxisBaseDeg) + hexTelemetry;
+  return normalizeAngleDeg(90 + wAxisDeg - Number(opts.angleDeg));
+}
+
+/**
+ * 포스트 측면 각인 위치.
+ * 경사각 |taper| 하위 10% 후보 중, 직하방 피니시라인 Z가 가장 작은 방향.
+ * dirFinishLineZ 없으면 finishLinePoints/minZ 로 폴백.
+ */
+export function pickPostSideLotEngravingSite(opts: {
+  guides: TaperDirectionGuide[] | null | undefined;
+  hexAppliedDeg?: number | null;
+  wAxisBaseDeg?: number;
+  centerRadiusFallback?: number;
+  finishLinePoints?: number[][] | null;
+  finishLineMinZ?: number | null;
+  center?: { x: number; y: number } | null;
+}): PostLotEngravingSite | null {
+  const guides = Array.isArray(opts.guides) ? opts.guides : [];
+  const cx = Number(opts.center?.x) || 0;
+  const cy = Number(opts.center?.y) || 0;
+  const flPoints = Array.isArray(opts.finishLinePoints)
+    ? opts.finishLinePoints
+    : [];
+  const globalFlMin = Number(opts.finishLineMinZ);
+
+  const flZAtAngle = (angleDeg: number): number | null => {
+    if (flPoints.length === 0) {
+      return Number.isFinite(globalFlMin) ? globalFlMin : null;
+    }
+    let bestZ: number | null = null;
+    let bestDiff = Infinity;
+    for (const p of flPoints) {
+      if (!Array.isArray(p) || p.length < 3) continue;
+      const x = Number(p[0]);
+      const y = Number(p[1]);
+      const z = Number(p[2]);
+      if (![x, y, z].every(Number.isFinite)) continue;
+      let ptDeg = (Math.atan2(y - cy, x - cx) * 180) / Math.PI;
+      if (ptDeg < 0) ptDeg += 360;
+      let diff = Math.abs(ptDeg - angleDeg);
+      if (diff > 180) diff = 360 - diff;
+      if (diff < bestDiff) {
+        bestDiff = diff;
+        bestZ = z;
+      }
+    }
+    if (bestZ != null) return bestZ;
+    return Number.isFinite(globalFlMin) ? globalFlMin : null;
+  };
+
+  const scored = guides
+    .map((g) => {
+      const angle = Number(g.angle);
+      const taperAbs = Math.abs(Number(g.taperAngle));
+      let flZ = Number(g.dirFinishLineZ);
+      if (!Number.isFinite(flZ)) {
+        const fb = flZAtAngle(angle);
+        flZ = fb == null ? Number.NaN : fb;
+      }
+      const slope = Number(g.slope);
+      const intercept = Number(g.intercept);
+      if (!Number.isFinite(angle) || !Number.isFinite(taperAbs)) return null;
+      if (!Number.isFinite(flZ)) return null;
+      return { angle, taperAbs, flZ, slope, intercept };
+    })
+    .filter(Boolean) as Array<{
+    angle: number;
+    taperAbs: number;
+    flZ: number;
+    slope: number;
+    intercept: number;
+  }>;
+
+  // 가이드 없으면 FL min 방위로 폴백
+  if (scored.length === 0) {
+    let minPt: { x: number; y: number; z: number } | null = null;
+    for (const p of flPoints) {
+      if (!Array.isArray(p) || p.length < 3) continue;
+      const x = Number(p[0]);
+      const y = Number(p[1]);
+      const z = Number(p[2]);
+      if (![x, y, z].every(Number.isFinite)) continue;
+      if (!minPt || z < minPt.z) minPt = { x, y, z };
+    }
+    if (!minPt && Number.isFinite(globalFlMin)) {
+      minPt = { x: cx + 2, y: cy, z: globalFlMin };
+    }
+    if (!minPt) return null;
+    let angle = (Math.atan2(minPt.y - cy, minPt.x - cx) * 180) / Math.PI;
+    if (angle < 0) angle += 360;
+    const flZ = minPt.z;
+    const engraveZ = flZ + LOT_ENGRAVING_DEFAULTS.aboveFinishLineMm;
+    const flR = Math.hypot(minPt.x - cx, minPt.y - cy);
+    const fallback = Number(opts.centerRadiusFallback);
+    const radius =
+      flR > 0.4
+        ? flR
+        : Number.isFinite(fallback) && fallback > 0.4
+          ? fallback
+          : 2.0;
+    const pitchArc = LOT_ENGRAVING_DEFAULTS.charPitchArcMm;
+    const charPitchCDeg = (pitchArc / radius) * (180 / Math.PI);
+    return {
+      angleDeg: angle,
+      finishLineZ: flZ,
+      engraveZ,
+      radius,
+      taperAbs: 0,
+      cAxisDeg: stlAzimuthToCncCDeg({
+        angleDeg: angle,
+        hexAppliedDeg: opts.hexAppliedDeg,
+        wAxisBaseDeg: opts.wAxisBaseDeg,
+      }),
+      charPitchCDeg,
+      cutDiameterX: Math.max(
+        2 * (radius - LOT_ENGRAVING_DEFAULTS.engraveDepthMm),
+        1.0,
+      ),
+    };
+  }
+
+  const sortedByTilt = [...scored].sort((a, b) => a.taperAbs - b.taperAbs);
+  const keep = Math.max(
+    1,
+    Math.ceil(sortedByTilt.length * LOT_ENGRAVING_DEFAULTS.taperBottomFraction),
+  );
+  const bottom = sortedByTilt.slice(0, keep);
+  bottom.sort((a, b) => {
+    if (a.flZ !== b.flZ) return a.flZ - b.flZ;
+    return a.taperAbs - b.taperAbs;
+  });
+  const best = bottom[0];
+  if (!best) return null;
+
+  const engraveZ = best.flZ + LOT_ENGRAVING_DEFAULTS.aboveFinishLineMm;
+  let radius = Number.NaN;
+  if (Number.isFinite(best.slope) && Number.isFinite(best.intercept)) {
+    radius = best.slope * engraveZ + best.intercept;
+  }
+  // FL 링 반경으로 가드 (회귀 외삽이 빗나가면 FL 반경 사용)
+  const flRingR = (() => {
+    const zTarget = best.flZ;
+    let bestR = -Infinity;
+    for (const p of flPoints) {
+      if (!Array.isArray(p) || p.length < 3) continue;
+      const x = Number(p[0]);
+      const y = Number(p[1]);
+      const z = Number(p[2]);
+      if (![x, y, z].every(Number.isFinite)) continue;
+      if (Math.abs(z - zTarget) > 0.35) continue;
+      let ptDeg = (Math.atan2(y - cy, x - cx) * 180) / Math.PI;
+      if (ptDeg < 0) ptDeg += 360;
+      let diff = Math.abs(ptDeg - best.angle);
+      if (diff > 180) diff = 360 - diff;
+      if (diff > 25) continue;
+      const rr = Math.hypot(x - cx, y - cy);
+      if (rr > bestR) bestR = rr;
+    }
+    return bestR;
+  })();
+  if (!Number.isFinite(radius) || radius < 0.4) {
+    const fallback = Number(opts.centerRadiusFallback);
+    radius =
+      flRingR > 0.4
+        ? flRingR
+        : Number.isFinite(fallback) && fallback > 0.4
+          ? fallback
+          : 2.0;
+  } else if (flRingR > 0.4 && Math.abs(radius - flRingR) > 1.5) {
+    // 외삽이 FL 링과 크게 어긋나면 FL 링 우선 (포스트 하단 OD)
+    radius = flRingR;
+  }
+
+  const pitchArc = LOT_ENGRAVING_DEFAULTS.charPitchArcMm;
+  const charPitchCDeg = (pitchArc / radius) * (180 / Math.PI);
+  const cAxisDeg = stlAzimuthToCncCDeg({
+    angleDeg: best.angle,
+    hexAppliedDeg: opts.hexAppliedDeg,
+    wAxisBaseDeg: opts.wAxisBaseDeg,
+  });
+  const depth = LOT_ENGRAVING_DEFAULTS.engraveDepthMm;
+  const cutDiameterX = Math.max(2 * (radius - depth), 1.0);
+
+  return {
+    angleDeg: best.angle,
+    finishLineZ: best.flZ,
+    engraveZ,
+    radius,
+    taperAbs: best.taperAbs,
+    cAxisDeg,
+    charPitchCDeg,
+    cutDiameterX,
+  };
+}
+
+/**
+ * Serial 첫 글자 C — 포스트 측면 사이트 우선, NC 파싱 폴백.
+ * (헥스모드 totalDeg는 T0606 전용. T0909 Serial은 사이트 방위를 쓴다.)
  */
 export function resolveSerialCAxisDeg(opts: {
   manufacturerHexRotationMode?: string | null;
   hexAppliedDeg?: number | null;
   ncParsedCDeg?: number | null;
+  siteCAxisDeg?: number | null;
 }): number {
-  const mode = String(opts.manufacturerHexRotationMode || "").trim();
-  // STL모델대로: NC에 예전 헥스모드 C30이 남아 있어도 C0 (W축만으로 면 정렬)
-  if (!mode || mode === "STL모델대로" || mode === "STL모델+") {
-    return 0;
+  if (
+    opts.siteCAxisDeg != null &&
+    Number.isFinite(opts.siteCAxisDeg)
+  ) {
+    return normalizeAngleDeg(Number(opts.siteCAxisDeg));
   }
-  // 헥스30 / 헥스X: NC 후처리 C를 우선, 없으면 모드·applied로 계산
   if (
     opts.ncParsedCDeg != null &&
-    Number.isFinite(opts.ncParsedCDeg) &&
-    Math.abs(opts.ncParsedCDeg) > 0.0001
+    Number.isFinite(opts.ncParsedCDeg)
   ) {
-    return opts.ncParsedCDeg;
-  }
-  const applied = Number(opts.hexAppliedDeg);
-  const minor = Number.isFinite(applied) ? applied : 0;
-  if (mode === "헥스30도회전" || mode === "헥스30+") {
-    return 30 + minor;
-  }
-  const m = mode.match(/^헥스\s*([+-]?\d+(?:\.\d+)?)\s*도회전$/);
-  if (m) {
-    const total = Number(m[1]);
-    if (Number.isFinite(total)) return total;
+    return normalizeAngleDeg(Number(opts.ncParsedCDeg));
   }
   return 0;
 }
@@ -529,19 +764,13 @@ export function parseLotEngravingFromNc(ncText: unknown): LotEngravingNcParams |
 
   const serialIdx = text.search(/\(Serial\)/i);
   if (serialIdx < 0) return null;
-  const block = text.slice(serialIdx, serialIdx + 800);
+  const block = text.slice(serialIdx, serialIdx + 900);
 
-  const startLine =
-    block.match(
-      /G98\s*G0\s+[^\n]*Y\s*([+-]?\d+(?:\.\d+)?)[^\n]*C\s*([+-]?\d+(?:\.\d+)?)/i,
-    ) ||
-    block.match(
-      /G0\s+[^\n]*Y\s*([+-]?\d+(?:\.\d+)?)[^\n]*C\s*([+-]?\d+(?:\.\d+)?)/i,
-    );
-  if (!startLine) return null;
-
-  const startY = Number(startLine[1]);
-  const cAxisDeg = Number(startLine[2]);
+  const startYMatch = block.match(/Y\s*([+-]?\d+(?:\.\d+)?)/i);
+  const startCMatch = block.match(/C\s*([+-]?\d+(?:\.\d+)?)/i);
+  if (!startYMatch || !startCMatch) return null;
+  const startY = Number(startYMatch[1]);
+  const cAxisDeg = Number(startCMatch[1]);
   if (!Number.isFinite(startY) || !Number.isFinite(cAxisDeg)) return null;
 
   const zExpr = block.match(
@@ -556,47 +785,31 @@ export function parseLotEngravingFromNc(ncText: unknown): LotEngravingNcParams |
     ? Number(cutMatches[cutMatches.length - 1][1])
     : LOT_ENGRAVING_DEFAULTS.cutDiameterX;
 
-  const pitchMatch = block.match(/G1\s*V\s*([+-]?\d+(?:\.\d+)?)/i);
-  const pitchRaw = pitchMatch
-    ? Number(pitchMatch[1])
+  const pitchCMatch =
+    block.match(/G0\s*H\s*([+-]?\d+(?:\.\d+)?)/i) ||
+    block.match(/G1\s*H\s*([+-]?\d+(?:\.\d+)?)/i);
+  const pitchYMatch = block.match(/G1\s*V\s*([+-]?\d+(?:\.\d+)?)/i);
+  const pitchCRaw = pitchCMatch ? Number(pitchCMatch[1]) : null;
+  const pitchYRaw = pitchYMatch
+    ? Number(pitchYMatch[1])
     : LOT_ENGRAVING_DEFAULTS.charPitchY;
-
-  // 헥스 면 depth/축: (HEX2.485) 또는 HEX 블록 G1 X… F3000 / Z[+n]
-  const hexLabel = text.match(/\(HEX\s*([+-]?\d+(?:\.\d+)?)/i);
-  const hexBlockIdx = text.search(/\(HEX/i);
-  const hexBlock =
-    hexBlockIdx >= 0 ? text.slice(hexBlockIdx, hexBlockIdx + 600) : "";
-  const hexCut =
-    hexBlock.match(/G98\s*G1\s*X\s*([+-]?\d+(?:\.\d+)?)/i) ||
-    hexBlock.match(/G1\s*X\s*([+-]?\d+(?:\.\d+)?)\s*F\s*3000/i);
-  const hexZ = hexBlock.match(
-    /Z\s*\[\s*#520\s*\+\s*#523\s*\+\s*([+-]?\d+(?:\.\d+)?)\s*\]/i,
-  );
-  const hexDiaRaw = hexLabel
-    ? Number(hexLabel[1])
-    : hexCut
-      ? Number(hexCut[1])
-      : LOT_ENGRAVING_DEFAULTS.hexDiameterX;
-  const hexZRaw = hexZ ? Number(hexZ[1]) : LOT_ENGRAVING_DEFAULTS.hexZOffset;
 
   return {
     startY,
-    charPitchY: Number.isFinite(pitchRaw)
-      ? pitchRaw
+    charPitchY: Number.isFinite(pitchYRaw)
+      ? pitchYRaw
       : LOT_ENGRAVING_DEFAULTS.charPitchY,
     zOffset: Number.isFinite(zOffsetRaw)
       ? zOffsetRaw
       : LOT_ENGRAVING_DEFAULTS.zOffset,
-    hexZOffset: Number.isFinite(hexZRaw)
-      ? hexZRaw
-      : LOT_ENGRAVING_DEFAULTS.hexZOffset,
+    hexZOffset: LOT_ENGRAVING_DEFAULTS.hexZOffset,
     cAxisDeg,
     cutDiameterX: Number.isFinite(cutRaw)
       ? cutRaw
       : LOT_ENGRAVING_DEFAULTS.cutDiameterX,
-    hexDiameterX: Number.isFinite(hexDiaRaw)
-      ? hexDiaRaw
-      : LOT_ENGRAVING_DEFAULTS.hexDiameterX,
+    hexDiameterX: LOT_ENGRAVING_DEFAULTS.hexDiameterX,
+    charPitchCDeg:
+      pitchCRaw != null && Number.isFinite(pitchCRaw) ? pitchCRaw : undefined,
   };
 }
 
@@ -604,70 +817,179 @@ export function resolveLotEngravingNcParams(opts: {
   ncText?: string | null;
   manufacturerHexRotationMode?: string | null;
   hexAppliedDeg?: number | null;
+  site?: PostLotEngravingSite | null;
 }): LotEngravingNcParams {
   const parsed = parseLotEngravingFromNc(opts.ncText);
+  const site = opts.site || null;
   const cAxisDeg = resolveSerialCAxisDeg({
     manufacturerHexRotationMode: opts.manufacturerHexRotationMode,
     hexAppliedDeg: opts.hexAppliedDeg,
     ncParsedCDeg: parsed?.cAxisDeg ?? null,
+    siteCAxisDeg: site?.cAxisDeg ?? null,
   });
   return {
     startY: parsed?.startY ?? LOT_ENGRAVING_DEFAULTS.startY,
     charPitchY: parsed?.charPitchY ?? LOT_ENGRAVING_DEFAULTS.charPitchY,
-    zOffset: parsed?.zOffset ?? LOT_ENGRAVING_DEFAULTS.zOffset,
+    zOffset:
+      site?.engraveZ ??
+      parsed?.zOffset ??
+      LOT_ENGRAVING_DEFAULTS.zOffset,
     hexZOffset: parsed?.hexZOffset ?? LOT_ENGRAVING_DEFAULTS.hexZOffset,
     cAxisDeg,
-    cutDiameterX: parsed?.cutDiameterX ?? LOT_ENGRAVING_DEFAULTS.cutDiameterX,
+    cutDiameterX:
+      site?.cutDiameterX ??
+      parsed?.cutDiameterX ??
+      LOT_ENGRAVING_DEFAULTS.cutDiameterX,
     hexDiameterX: parsed?.hexDiameterX ?? LOT_ENGRAVING_DEFAULTS.hexDiameterX,
+    charPitchCDeg:
+      site?.charPitchCDeg ?? parsed?.charPitchCDeg ?? undefined,
+    siteAngleDeg: site?.angleDeg,
+    finishLineZ: site?.finishLineZ,
+    radius: site?.radius,
   };
 }
 
 /**
- * 각인 3글자 스트로크를 source STL 좌표 polyline으로 변환.
+ * 포스트 측면 각인 스트로크 (source STL 좌표).
  *
- * Depth: 헥스 면 → hexDiameterX/2 (cncDiameterXToRadius).
- *   Serial cutDiameterX/2는 툴 팁 깊이(HEX보다 얕음) — OD·타 부위 각인 시 사용.
- *
- * 면 위 방향 (바깥에서 면 볼 때, 글자 위 = STL +Z):
- * - 글자 높이 v: tip/크라운 = STL +Z ← CNC zOff 감소 (sz = -ex)
- * - 글자 폭 u·pitch: CNC Y. 첫 글자 @ Y0.525, V-0.35
- * - 우하단 원점, 왼쪽(−Y)·위(+Z)로 박스 → 바깥 LTR 비미러 BFX
+ * CNC C축 ≡ 프리뷰 Z축 중심 방위 회전.
+ * - 글자마다 θ 변경
+ * - resolveSurfacePoint 있으면 메시 레이캐스트 히트 사용 (바운딩/회귀선 금지)
+ * - 글자 하단 = FL + 1mm
  */
-export function buildLotEngravingStlPolylines(opts: {
+export function buildPostSideLotEngravingStlPolylines(opts: {
   serialCode: string;
-  ncParams: LotEngravingNcParams;
-  hexAppliedDeg?: number | null;
+  site: PostLotEngravingSite;
+  center?: { x: number; y: number } | null;
+  /**
+   * (θ°, z) → 메시 표면점. 레이캐스트 결과.
+   * null이면 site.radius 원통 폴백.
+   */
+  resolveSurfacePoint?: (
+    thetaDeg: number,
+    z: number,
+  ) => { x: number; y: number; z: number } | null;
 }): Array<Array<{ x: number; y: number; z: number }>> {
   const serial = normalizeLotSerialCode(opts.serialCode);
   if (!serial) return [];
 
-  const { ncParams } = opts;
-  const radius = Math.max(cncDiameterXToRadius(ncParams.hexDiameterX), 0.4);
+  const { site } = opts;
+  const cx = Number(opts.center?.x) || 0;
+  const cy = Number(opts.center?.y) || 0;
   const charW = LOT_ENGRAVING_DEFAULTS.charWidth;
   const charH = LOT_ENGRAVING_DEFAULTS.charHeight;
-  // 글자 하단 기준 CNC Z. 위로(+Z) 갈수록 zOff 감소
-  const zBottom = ncParams.hexZOffset;
+  const lift = LOT_ENGRAVING_DEFAULTS.surfaceLift;
+  const fallbackR = Math.max(site.radius, 0.4);
+  // 피치는 표면 반경 기준 (사이트 반경 우선, 레이캐스트로 갱신됐을 수 있음)
+  const pitchDeg = Math.max(
+    site.charPitchCDeg,
+    (charW / fallbackR) * (180 / Math.PI),
+  );
+  const charWidthDeg = (charW / fallbackR) * (180 / Math.PI);
+  const n = serial.length;
+  const zBottom = site.engraveZ;
   const out: Array<Array<{ x: number; y: number; z: number }>> = [];
 
-  for (let i = 0; i < serial.length; i += 1) {
+  for (let i = 0; i < n; i += 1) {
     const ch = serial[i];
-    // CNC 절대 Y = 이 글자 박스 우측 (우하단 원점의 Y)
-    const originY = ncParams.startY + ncParams.charPitchY * i;
+    const charCenterDeg = site.angleDeg + (i - (n - 1) / 2) * pitchDeg;
     const strokes = getLotLetterStrokes(ch);
     for (const stroke of strokes) {
       if (stroke.length < 2) continue;
       const poly: Array<{ x: number; y: number; z: number }> = [];
       for (const [u, v] of stroke) {
-        // 가로: 미러 해제 — u=0 좌(획 시작)가 화면 왼쪽. originY=글자 우측
-        const yCnc = originY - u * charW;
-        // 세로: v=1 상 = STL +Z (zOff↓)
-        const zOff = zBottom - v * charH;
+        const thetaDeg = charCenterDeg + (u - 0.5) * charWidthDeg;
+        const z = zBottom + v * charH;
+        const hit = opts.resolveSurfacePoint?.(thetaDeg, z) ?? null;
+        if (hit) {
+          // 히트에서 바깥 법선(수평 방사)으로 lift
+          const hx = hit.x - cx;
+          const hy = hit.y - cy;
+          const hr = Math.hypot(hx, hy) || 1;
+          poly.push({
+            x: hit.x + (hx / hr) * lift,
+            y: hit.y + (hy / hr) * lift,
+            z: hit.z,
+          });
+        } else {
+          const theta = (thetaDeg * Math.PI) / 180;
+          const r = fallbackR + lift;
+          poly.push({
+            x: cx + r * Math.cos(theta),
+            y: cy + r * Math.sin(theta),
+            z,
+          });
+        }
+      }
+      out.push(poly);
+    }
+  }
+  return out;
+}
+
+/**
+ * 각인 미리뷰 polyline. 사이트가 있으면 포스트 측면, 없으면 NC/레거시 CNC→STL.
+ */
+export function buildLotEngravingStlPolylines(opts: {
+  serialCode: string;
+  ncParams: LotEngravingNcParams;
+  hexAppliedDeg?: number | null;
+  site?: PostLotEngravingSite | null;
+  center?: { x: number; y: number } | null;
+  resolveSurfacePoint?: (
+    thetaDeg: number,
+    z: number,
+  ) => { x: number; y: number; z: number } | null;
+}): Array<Array<{ x: number; y: number; z: number }>> {
+  if (opts.site) {
+    return buildPostSideLotEngravingStlPolylines({
+      serialCode: opts.serialCode,
+      site: opts.site,
+      center: opts.center,
+      resolveSurfacePoint: opts.resolveSurfacePoint,
+    });
+  }
+
+  // 폴백: NC 파싱 좌표를 CNC→STL로 (구 헥스/중간 상태)
+  const serial = normalizeLotSerialCode(opts.serialCode);
+  if (!serial) return [];
+
+  const { ncParams } = opts;
+  const radius = Math.max(
+    ncParams.radius ?? cncDiameterXToRadius(ncParams.cutDiameterX),
+    0.4,
+  );
+  const charW = LOT_ENGRAVING_DEFAULTS.charWidth;
+  const charH = LOT_ENGRAVING_DEFAULTS.charHeight;
+  const zCenter = ncParams.zOffset;
+  const pitchC =
+    ncParams.charPitchCDeg != null && Number.isFinite(ncParams.charPitchCDeg)
+      ? ncParams.charPitchCDeg
+      : null;
+  const out: Array<Array<{ x: number; y: number; z: number }>> = [];
+  const n = serial.length;
+
+  for (let i = 0; i < n; i += 1) {
+    const ch = serial[i];
+    const cDeg = pitchC
+      ? ncParams.cAxisDeg + (i - (n - 1) / 2) * pitchC
+      : ncParams.cAxisDeg;
+    const originY = pitchC
+      ? ncParams.startY
+      : ncParams.startY + ncParams.charPitchY * i;
+    const strokes = getLotLetterStrokes(ch);
+    for (const stroke of strokes) {
+      if (stroke.length < 2) continue;
+      const poly: Array<{ x: number; y: number; z: number }> = [];
+      for (const [u, v] of stroke) {
+        const yCnc = originY - (u - 0.5) * charW;
+        const zOff = zCenter - (v - 0.5) * charH;
         poly.push(
           cncSerialToStl({
             radius,
             yCnc,
             zOffset: zOff,
-            cAxisDeg: ncParams.cAxisDeg,
+            cAxisDeg: cDeg,
             hexAppliedDeg: opts.hexAppliedDeg,
           }),
         );

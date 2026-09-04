@@ -106,6 +106,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         private double? _capturedStockDiameter;
         private string _backendLotNumber;
         private string _backendSerialCode;
+        private BackendApiClient.RequestMetaLotEngravingSite _backendLotEngravingSite;
         private string _backendRequestId;
         private string _backendImplantLabel;
         private double[][] _backendFinishLinePoints;
@@ -207,6 +208,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             double? finishLineEspritR = null;
             _backendLotNumber = null;
             _backendSerialCode = null;
+            _backendLotEngravingSite = null;
             _backendRequestId = null;
             _backendImplantLabel = null;
             _backendFinishLinePoints = null;
@@ -262,6 +264,23 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         }
                     }
                     _backendSerialCode = requestMetaResponse?.data?.serialCode;
+                    _backendLotEngravingSite = requestMeta?.lotEngravingSite;
+                    if (_backendLotEngravingSite == null &&
+                        requestMeta?.taperGuide?.multiDirectionGuides != null &&
+                        requestMeta.taperGuide.multiDirectionGuides.Length > 0)
+                    {
+                        _backendLotEngravingSite = TryPickLotEngravingSiteFromGuides(
+                            requestMeta.taperGuide.multiDirectionGuides,
+                            requestMeta.maxDiameter);
+                    }
+                    if (_backendLotEngravingSite != null)
+                    {
+                        AppLogger.Log($"StlFileProcessor: lotEngravingSite angle={_backendLotEngravingSite.angleDeg:F2} flZ={_backendLotEngravingSite.finishLineZ:F3} engraveZ={_backendLotEngravingSite.engraveZ:F3} r={_backendLotEngravingSite.radius:F3}");
+                    }
+                    else
+                    {
+                        AppLogger.Log("StlFileProcessor: ⚠️ lotEngravingSite 없음 — Serial은 폴백 좌표");
+                    }
                     _backendRequestId = requestId;
                     if (requestMeta != null)
                     {
@@ -445,7 +464,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     stlBoundingTopZ,
                     _prcManager?.ConnectionMachiningProcessFilePath,
                     _backendManufacturerHexRotation,
-                    _backendHexRotationAppliedDeg);
+                    _backendHexRotationAppliedDeg,
+                    _backendLotEngravingSite);
                 ncSw.Stop();
                 AppLogger.Log($"StlFileProcessor: NC 생성 종료 - path={ncFilePath ?? "<null>"}");
                 AppLogger.Log($"[PERF] StlFileProcessor.GenerateNc END elapsedMs={ncSw.ElapsedMilliseconds}");
@@ -565,6 +585,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             _capturedStockDiameter = null;
             _backendLotNumber = null;
             _backendSerialCode = null;
+            _backendLotEngravingSite = null;
             _backendRequestId = null;
             _backendImplantLabel = null;
             _backendFinishLinePoints = null;
@@ -686,6 +707,59 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             {
                 return null;
             }
+        }
+
+        /// <summary>
+        /// |taper| 하위 10% 중 FL Z 최소 방향 → FL+1mm 사이트.
+        /// FE/stl-metadata pickPostSideLotEngravingSite 와 동일.
+        /// </summary>
+        private static BackendApiClient.RequestMetaLotEngravingSite TryPickLotEngravingSiteFromGuides(
+            BackendApiClient.RequestMetaTaperDirectionGuide[] guides,
+            double maxDiameter)
+        {
+            if (guides == null || guides.Length == 0) return null;
+            var scored = new List<(double angle, double taperAbs, double flZ, double slope, double intercept)>();
+            foreach (var g in guides)
+            {
+                if (g == null) continue;
+                double angle = g.angle;
+                double taperAbs = Math.Abs(g.taperAngle);
+                double flZ = g.dirFinishLineZ;
+                if (double.IsNaN(angle) || double.IsInfinity(angle)) continue;
+                if (double.IsNaN(taperAbs) || double.IsInfinity(taperAbs)) continue;
+                if (double.IsNaN(flZ) || double.IsInfinity(flZ)) continue;
+                scored.Add((angle, taperAbs, flZ, g.slope, g.intercept));
+            }
+            if (scored.Count == 0) return null;
+
+            scored.Sort((a, b) => a.taperAbs.CompareTo(b.taperAbs));
+            int keep = Math.Max(1, (int)Math.Ceiling(scored.Count * 0.1));
+            var bottom = scored.GetRange(0, keep);
+            bottom.Sort((a, b) =>
+            {
+                int c = a.flZ.CompareTo(b.flZ);
+                return c != 0 ? c : a.taperAbs.CompareTo(b.taperAbs);
+            });
+            var best = bottom[0];
+            double engraveZ = best.flZ + 1.0;
+            double radius = best.slope * engraveZ + best.intercept;
+            double fallback = maxDiameter > 0 ? Math.Max(1.0, maxDiameter * 0.35) : 2.0;
+            if (double.IsNaN(radius) || double.IsInfinity(radius) || radius < 0.4)
+            {
+                radius = fallback;
+            }
+            double pitchC = (0.35 / radius) * (180.0 / Math.PI);
+            double cutX = Math.Max(2.0 * (radius - 0.12), 1.0);
+            return new BackendApiClient.RequestMetaLotEngravingSite
+            {
+                angleDeg = best.angle,
+                finishLineZ = best.flZ,
+                engraveZ = engraveZ,
+                radius = radius,
+                taperAbs = best.taperAbs,
+                charPitchCDeg = pitchC,
+                cutDiameterX = cutX,
+            };
         }
         private static double? TryComputeStlBoundingTopZ(Document document)
         {
