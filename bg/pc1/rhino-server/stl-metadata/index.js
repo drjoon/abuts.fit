@@ -813,7 +813,7 @@ function calculateTaperWithFinishLine(position, index, finishLinePoints, bbox) {
 
 /**
  * 포스트 측면 로트 각인 위치.
- * |taperAngle| 하위 10% 중 dirFinishLineZ 최소 방향 → FL+2mm.
+ * |taperAngle| 하위 10% 중 dirFinishLineZ 최소 방향 → FL+1.5mm.
  * (FE lotEngraving.pickPostSideLotEngravingSite 와 동일 규칙)
  */
 function pickLotEngravingSiteFromGuides(directions, opts = {}) {
@@ -841,7 +841,7 @@ function pickLotEngravingSiteFromGuides(directions, opts = {}) {
   const best = bottom[0];
   if (!best) return null;
 
-  const aboveMm = 2;
+  const aboveMm = 1.5;
   const engraveZ = best.flZ + aboveMm;
   let radius = Number.NaN;
   if (Number.isFinite(best.slope) && Number.isFinite(best.intercept)) {

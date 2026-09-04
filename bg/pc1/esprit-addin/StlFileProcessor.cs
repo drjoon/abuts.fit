@@ -273,13 +273,13 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                             requestMeta.taperGuide.multiDirectionGuides,
                             requestMeta.maxDiameter);
                     }
-                    // 구메타(FL+1) → SSOT FL+2 정규화
+                    // 구메타 → SSOT FL+1.5 정규화
                     if (_backendLotEngravingSite != null &&
                         !double.IsNaN(_backendLotEngravingSite.finishLineZ) &&
                         !double.IsInfinity(_backendLotEngravingSite.finishLineZ))
                     {
                         _backendLotEngravingSite.engraveZ =
-                            _backendLotEngravingSite.finishLineZ + 2.0;
+                            _backendLotEngravingSite.finishLineZ + 1.5;
                     }
                     if (_backendLotEngravingSite != null)
                     {
@@ -718,7 +718,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         }
 
         /// <summary>
-        /// |taper| 하위 10% 중 FL Z 최소 방향 → FL+2mm 사이트.
+        /// |taper| 하위 10% 중 FL Z 최소 방향 → FL+1.5mm 사이트.
         /// FE/stl-metadata pickPostSideLotEngravingSite 와 동일.
         /// </summary>
         private static BackendApiClient.RequestMetaLotEngravingSite TryPickLotEngravingSiteFromGuides(
@@ -749,7 +749,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 return c != 0 ? c : a.taperAbs.CompareTo(b.taperAbs);
             });
             var best = bottom[0];
-            double engraveZ = best.flZ + 2.0;
+            double engraveZ = best.flZ + 1.5;
             double radius = best.slope * engraveZ + best.intercept;
             double fallback = maxDiameter > 0 ? Math.Max(1.0, maxDiameter * 0.35) : 2.0;
             if (double.IsNaN(radius) || double.IsInfinity(radius) || radius < 0.4)
