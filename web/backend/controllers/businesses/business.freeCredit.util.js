@@ -163,77 +163,13 @@ async function ensureFreeCreditGrant({
   return grant;
 }
 
-/** 기공소 가입 환영 무료크레딧 1회 지급. 금액 SSOT: defaultRequestFreeCredit. */
-export async function grantWelcomeFreeCreditIfEligible({
-  businessAnchorId,
-  userId,
-  userRole,
-}) {
-  if (!businessAnchorId) return null;
-  if (userRole !== "requestor") return null;
-  const businessAnchor = await BusinessAnchor.findById(businessAnchorId)
-    .select({
-      businessType: 1,
-      requestorKind: 1,
-      requestorCapabilities: 1,
-      metadata: 1,
-    })
-    .lean();
-  if (!businessAnchor) return null;
-  if (!isWelcomeFreeCreditEligibleLabAnchor(businessAnchor)) return null;
-
-  const normalizedBusinessNumber = formatBusinessNumber(
-    businessAnchor?.metadata?.businessNumber,
-  );
-  if (!normalizedBusinessNumber) return null;
-
-  const defaults = await loadCreditSettingsDefaults();
-  const amount =
-    Number(defaults.defaultRequestFreeCredit ?? 0) ||
-    CREDIT_SETTINGS_SCHEMA_DEFAULTS.defaultRequestFreeCredit;
-  if (!(amount > 0)) return null;
-
-  const grant = await ensureFreeCreditGrant({
-    businessAnchorId,
-    userId,
-    type: "REQUEST_FREE_CREDIT",
-    businessNumber: normalizedBusinessNumber,
-    amount,
-  });
-
-  if (!grant?._id) return null;
-
-  // 레거시 배송 환영만 있고 REQUEST 건이 없으면 grant 문서가 이미 있어
-  // 신규 저널을 건너뛸 수 있다. grantJournalId가 있으면 기지급으로 본다.
-  if (grant.grantJournalId) return null;
-
-  const postResult = await upsertFreeCreditLedger({
-    businessAnchorId,
-    userId,
-    amount,
-    refType: "FREE_REQUEST_CREDIT",
-    refId: grant._id,
-    memo: "환영 무료크레딧",
-  });
-  if (!postResult?.ok) return null;
-
-  if (!grant.grantJournalId && postResult.journalId) {
-    await FreeCreditGrant.updateOne(
-      { _id: grant._id },
-      { $set: { grantJournalId: String(postResult.journalId) } },
-    );
-  }
-
-  if (postResult.posted) {
-    await emitCreditBalanceUpdatedToBusiness({
-      businessAnchorId,
-      balanceDelta: amount,
-      reason: "welcome_free_credit",
-      refId: postResult.journalId || grant._id,
-    });
-  }
-
-  return amount;
+/**
+ * 기공소 가입 환영 무료크레딧 — 폐지.
+ * 대체: 가입 후 첫 2건 `signup_free_test_2`(크레딧·제조사·배송 0원).
+ * 관리자 수동 무료크레딧 override는 adminFreeCreditGrant 경로 유지.
+ */
+export async function grantWelcomeFreeCreditIfEligible() {
+  return null;
 }
 
 /** @deprecated use grantWelcomeFreeCreditIfEligible */

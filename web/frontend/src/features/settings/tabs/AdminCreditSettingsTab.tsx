@@ -1516,13 +1516,13 @@ export const AdminCreditSettingsTab = ({
               <CardContent className="space-y-5 p-5 sm:p-6">
                 <SectionHeader
                   icon={Gift}
-                  title="환영 무료 크레딧"
-                  description="기공소(의뢰 수신자) 신규 가입 시 무료크레딧으로 1회 지급합니다. 치과에는 지급하지 않습니다."
+                  title="가입 무료 테스트 (기공소)"
+                  description="기공소 신규 가입 시 환영 크레딧 자동 지급은 폐지되었습니다. 대신 가입 후 첫 2건은 무료 테스트(의뢰·배송·제조사 0원)로 진행합니다. 아래 금액은 관리자 수동 무료크레딧 지급 기본값으로만 쓰입니다."
                 />
                 <div className="grid gap-3 sm:grid-cols-2">
                   <AmountField
                     id="defaultRequestFreeCredit"
-                    label="무료 크레딧"
+                    label="수동 지급 기본액"
                     icon={Gift}
                     value={settings.defaultRequestFreeCredit}
                     onChange={(next) =>
@@ -1533,7 +1533,7 @@ export const AdminCreditSettingsTab = ({
                       })
                     }
                     disabled={loading}
-                    help="가입 시 무료크레딧 잔액으로 1회 충전됩니다. 기공의뢰·어벗 생산·배송 등에 사용됩니다."
+                    help="자동 가입 지급은 하지 않습니다. 관리자가 수동으로 무료크레딧을 줄 때 기본 금액으로만 사용합니다."
                   />
                 </div>
               </CardContent>

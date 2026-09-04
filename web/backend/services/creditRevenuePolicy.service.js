@@ -277,6 +277,7 @@ export function resolveManufacturerUnitApply({
   abutmentRetailTotal = 0,
   isShippingSpend = false,
   isRemake = false,
+  isSignupFreeTest = false,
 } = {}) {
   const usage = String(usageKind || "").trim();
   const src = String(source || "").trim();
@@ -284,12 +285,15 @@ export function resolveManufacturerUnitApply({
   if (usage === "express_surcharge") return false;
   if (usage === "practice_transfer_lab_shipping") return false;
   if (kind === "platform_fee" || src === "lab_platform_fee") return false;
-  // 리메이크 생산은 제조사 무료(배송 단가는 유지).
+  // 리메이크·가입 무료 테스트 생산은 제조사 무료. 가입 테스트는 배송 단가도 0.
   if (
-    isRemake &&
+    (isRemake || isSignupFreeTest) &&
     !isShippingSpend &&
     usage !== "practice_transfer_abuts_shipping"
   ) {
+    return false;
+  }
+  if (isSignupFreeTest && isShippingSpend) {
     return false;
   }
   if (isShippingSpend || usage === "practice_transfer_abuts_shipping") {

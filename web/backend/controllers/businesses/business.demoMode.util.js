@@ -149,6 +149,7 @@ async function postDemoCreditCharge({
 
 /**
  * 의뢰자 사업자 신규 생성 시 데모 모드 시작 + 100만 원 데모 크레딧 1회 지급.
+ * 치과(practice)만. 기공소(lab)는 데모 크레딧 없음(가입 무료 테스트 2건으로 대체).
  * 이미 실사용 전환(demoModeExitedAt)한 사업자는 재진입하지 않는다.
  */
 export async function enableDemoModeAndGrantCreditIfEligible({
@@ -165,11 +166,24 @@ export async function enableDemoModeAndGrantCreditIfEligible({
       demoMode: 1,
       demoModeExitedAt: 1,
       demoModeStartedAt: 1,
+      requestorKind: 1,
+      requestorCapabilities: 1,
     })
     .lean();
   if (!anchor) return null;
   if (String(anchor.businessType || "") !== "requestor") return null;
   if (anchor.demoModeExitedAt) return null;
+
+  const { normalizeRequestorKind, normalizeRequestorCapabilities } =
+    await import("../../utils/requestorCapabilities.js");
+  const kind = normalizeRequestorKind(anchor.requestorKind);
+  if (kind === "lab") return null;
+  if (kind !== "practice") {
+    const caps = normalizeRequestorCapabilities(anchor.requestorCapabilities);
+    // lab-only 레거시: 데모 미지급. practice 포함 또는 kind 미기입+practice만 허용.
+    if (caps.lab && !caps.practice) return null;
+    if (!caps.practice) return null;
+  }
 
   const businessNumber = resolveDemoGrantBusinessNumber(anchor);
   if (!businessNumber) return null;

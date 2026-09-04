@@ -159,16 +159,9 @@ export const PricingPolicyDialog = ({
 }: Props) => {
   const { kind } = useRequestorBusinessAccess();
   const isLab = kind === 'lab';
-  const showWelcomeCredit = isLab;
+  const showSignupFreeTest = isLab;
   const { data: systemSettings, refetch: refetchSystemSettings } =
     useSystemSettings();
-  const welcomeRequestCredit = Math.max(
-    0,
-    Number(
-      systemSettings?.creditSettings?.defaultRequestFreeCredit ??
-        CREDIT_SETTINGS_DEFAULTS.defaultRequestFreeCredit
-    ) || CREDIT_SETTINGS_DEFAULTS.defaultRequestFreeCredit
-  );
   const productionPrice = Math.max(
     0,
     Number(
@@ -338,13 +331,16 @@ export const PricingPolicyDialog = ({
                   <p>동일 치과·환자·치식, 최근 90일 조건 충족 건에 한함.</p>
                 </PolicySection>
               </div>
-              {showWelcomeCredit ? (
-                <PolicySection title='가입 환영 무료 크레딧'>
+              {showSignupFreeTest ? (
+                <PolicySection title='가입 무료 테스트'>
                   <p className='text-2xl font-semibold tracking-tight text-slate-900'>
-                    {welcomeRequestCredit.toLocaleString('ko-KR')}원
+                    첫 2건 0원
                   </p>
                   <p className='text-xs text-slate-500'>
-                    신규 가입 기공소에 무료크레딧으로 1회 지급
+                    가입 후 처음 2건은 크레딧 없이 의뢰·배송·제조가 무료로
+                    진행됩니다. 장부에는 가입 테스트(0원)로 기록됩니다. 준비
+                    단계에서는 기존과 같이 취소할 수 있으며, 취소하면 무료
+                    테스트 횟수가 돌아옵니다.
                   </p>
                 </PolicySection>
               ) : null}

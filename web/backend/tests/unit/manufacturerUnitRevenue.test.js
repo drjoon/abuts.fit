@@ -250,6 +250,22 @@ describe("manufacturer fixed unit + residual allocation", () => {
     ).toBe(true);
   });
 
+  test("signup free test: manufacturer production and shipping unit not applied", () => {
+    expect(
+      resolveManufacturerUnitApply({
+        source: "abutment_retail",
+        abutmentQty: 1,
+        isSignupFreeTest: true,
+      }),
+    ).toBe(false);
+    expect(
+      resolveManufacturerUnitApply({
+        isShippingSpend: true,
+        isSignupFreeTest: true,
+      }),
+    ).toBe(false);
+  });
+
   test("free credit spend: manufacturer still gets full unit", () => {
     const alloc = resolveRevenueOwnerBaseAllocation({
       spendAmount: 20000,

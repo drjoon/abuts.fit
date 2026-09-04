@@ -113,8 +113,8 @@ const systemSettingsSchema = new mongoose.Schema(
       abutmentRetailPrice: { type: Number, default: 40000 },
       // 레거시. 치과 멤버십 월 구독 폐지. 신규 과금에 쓰지 않음.
       practiceMembershipMonthlyFee: { type: Number, default: 50000 },
-      // 기공소 가입 환영 무료크레딧(단일). 레거시 defaultShippingFreeCredit는 0 고정.
-      defaultRequestFreeCredit: { type: Number, default: 30000 },
+      // 기공소 가입 환영 무료크레딧 기본값: 0(자동 지급 폐지). 가입 무료 테스트 2건으로 대체.
+      defaultRequestFreeCredit: { type: Number, default: 0 },
       defaultShippingFreeCredit: { type: Number, default: 0 },
     },
     // 어벗츠 기공수가 카탈로그(항목 On/Off·이름). price는 관리자 입력.

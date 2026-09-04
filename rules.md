@@ -223,13 +223,17 @@
 - 잔액 조회 SSOT:
   - `GET /api/credits/balance` 및 잔액 파생 조회는 `LedgerLine` 직접 집계값을 사용
   - `BusinessCreditBalance`는 레거시 스냅샷으로 취급하며 런타임 잔액 판정/표시에 사용하지 않음
-- 가입 환영 무료 크레딧(강제):
-  - 의뢰자·기공소(`requestorKind=lab`) `BusinessAnchor` **신규 생성(실 사업자등록번호)** 또는 **synthetic(`practice-*`)→실BN 검증 승격** 시에 `defaultRequestFreeCredit`(기본 30,000원)을 사업자번호당 **무료크레딧 1회** 지급
-  - 의뢰자·치과(`requestorKind=practice`)는 지급 대상에서 제외
-  - 구현: `business.update.controller.js` 생성 분기·synthetic 승격 분기 → `business.freeCredit.util.js` (`grantWelcomeFreeCreditIfEligible`)
-  - 무BN synthetic 앵커 생성만으로는 지급하지 않음. 일반 사업자 정보 수정·재로그인·설정 저장 경로에서는 지급 호출 금지
-  - 사업자등록번호당 `FreeCreditGrant`(`REQUEST_FREE_CREDIT`, legacy `WELCOME_BONUS`/`SHIPPING_FREE_CREDIT`/`FREE_SHIPPING_CREDIT` 포함)로 중복 지급 차단. GL은 `CHARGE_FREE_REQUEST`로만 기록
-  - 레거시 `defaultShippingFreeCredit` 설정 필드는 0 고정(분리 환영 지급 폐기). 관리자 수동 배송 무료크레딧 override 경로는 별도 유지 가능
+- 가입 환영 무료 크레딧(강제) — **폐지**:
+  - 기공소 가입 시 `defaultRequestFreeCredit`(구 30,000) / 배송 7,000 자동 지급 **중단**
+  - `grantWelcomeFreeCreditIfEligible`는 no-op. 관리자 수동 무료크레딧 override만 유지
+  - 데모 크레딧은 **치과(practice)만**. 기공소(lab)는 데모 미지급(유지)
+- 기공소 가입 무료 테스트(강제):
+  - 의뢰자·기공소(`requestorKind=lab`) `BusinessAnchor` 기준, **비취소 의뢰 첫 2건**
+  - **준비 단계 취소는 현행과 동일하게 가능**. 취소(`manufacturerStage=취소`)된 건은 쿼터에서 제외되어 슬롯이 환원된다
+  - 가격 규칙 `signup_free_test_2`: 의뢰비·신속·배송 0원(크레딧 hold/차감 없음)
+  - 제조사 생산·배송 하청 단가 0원. 장부는 `REQUEST_SPEND_COMMIT`/`SHIPPING_SPEND_COMMIT`에 **가입 테스트** 라벨로 0원 기록
+  - 구현: `signupFreeTest.utils.js`, `computePriceForRequest`, `requestCreditHold.service.js`, `common.review.helpers.js`
+  - 배치 제출은 `applySignupFreeTestPricingToBatch`로 쿼터 직렬 배정
 - 실시간 이벤트 발행 SSOT: 송신측은 대상 role 전체에 fan-out emit 한다.
 - 수신측 SSOT: 로그인한 role 클라이언트는 이벤트를 수신하되, 현재 열려 있는 페이지(활성 화면)만 즉시 갱신한다.
 - 비활성 페이지 데이터는 즉시 갱신하지 않고, 페이지 진입 시 재조회(또는 캐시 무효화)로 동기화한다.

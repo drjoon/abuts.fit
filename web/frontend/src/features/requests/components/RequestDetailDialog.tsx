@@ -319,6 +319,7 @@ export const RequestDetailDialog = ({
   const priceRule = request?.price?.rule;
   const isRemakeFixed = priceRule === "remake_fixed_10000";
   const isRemakeMonthlyFree = priceRule === "remake_monthly_free_3";
+  const isSignupFreeTest = priceRule === "signup_free_test_2";
 
   const designFeeTotal = Math.max(0, Number(request?.price?.designFee) || 0);
   const expressFeeStatus = String(request?.price?.expressFeeStatus || "").trim();
@@ -515,6 +516,11 @@ export const RequestDetailDialog = ({
                         {isRemakeMonthlyFree && (
                           <Badge variant="secondary" className="text-[11px]">
                             리메이크 무료(월 3건)
+                          </Badge>
+                        )}
+                        {isSignupFreeTest && (
+                          <Badge variant="secondary" className="text-[11px]">
+                            가입 테스트
                           </Badge>
                         )}
                       </div>

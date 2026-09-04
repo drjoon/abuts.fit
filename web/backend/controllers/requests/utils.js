@@ -40,6 +40,10 @@ import {
   loadCreditSettingsDefaults,
   resolveCustomAbutmentRequestUnitPrice,
 } from "../../utils/creditSettingsDefaults.js";
+import {
+  buildSignupFreeTestPrice,
+  getSignupFreeTestQuota,
+} from "./signupFreeTest.utils.js";
 
 export {
   addKoreanBusinessDays,
@@ -1244,6 +1248,10 @@ export async function computePriceForRequest({
   creditSettings: creditSettingsOverride = null,
   pricingBaseDate: pricingBaseDateOverride = undefined,
   skipExistingLookup = false,
+  /** false면 가입 무료 테스트 미적용(배치에서 직렬 배정). */
+  applySignupFreeTest = true,
+  /** 같은 제출에서 이미 배정한 가입 무료 슬롯 수. */
+  signupFreeReserveOffset = 0,
 }) {
   const now = new Date();
 
@@ -1289,6 +1297,29 @@ export async function computePriceForRequest({
   // special.amount / productionPrice = CNC 생산만. 디자인+생산은 designFee로 가산.
   // SSOT: 관리자 플랫폼 설정 단가(+신속 expressFee). 90일 1만원·주문량할인 없음.
   const BASE_UNIT_PRICE = resolveCustomAbutmentRequestUnitPrice(creditSettings);
+
+  // 기공소 가입 후 첫 2건: 무료 테스트(환영 크레딧 대체). 리메이크 판정에 우선.
+  // 배치 제출은 applySignupFreeTest=false 후 applySignupFreeTestPricingToBatch로 직렬 배정.
+  if (applySignupFreeTest && requestorOrgId) {
+    const signupQuota = await getSignupFreeTestQuota({
+      requestorOrgId,
+      excludeRequestId: currentRequestId,
+    });
+    const remaining = Math.max(
+      0,
+      signupQuota.remaining - Math.max(0, Math.round(Number(signupFreeReserveOffset) || 0)),
+    );
+    if (signupQuota.eligible && remaining > 0) {
+      return buildSignupFreeTestPrice({
+        baseUnitPrice: BASE_UNIT_PRICE,
+        used:
+          signupQuota.used +
+          Math.max(0, Math.round(Number(signupFreeReserveOffset) || 0)),
+        remaining,
+        quotedAt: now,
+      });
+    }
+  }
 
   let isRemake = false;
   let monthlyRemakeUsed = 0;

@@ -819,6 +819,8 @@ export const RequestorRecentRequestsCard = ({
             const isRemakeFixed = item.price?.rule === "remake_fixed_10000";
             const isRemakeMonthlyFree =
               item.price?.rule === "remake_monthly_free_3";
+            const isSignupFreeTest =
+              item.price?.rule === "signup_free_test_2";
             const delayBadgeLabel = resolveDelayBadgeLabel(item);
 
             const isUnmachinable = isUnmachinableRequest(item);
@@ -916,6 +918,11 @@ export const RequestorRecentRequestsCard = ({
                     {isRemakeMonthlyFree && (
                       <Badge variant="secondary" className="text-[10px]">
                         리메이크 무료(월 3건)
+                      </Badge>
+                    )}
+                    {isSignupFreeTest && (
+                      <Badge variant="secondary" className="text-[10px]">
+                        가입 테스트
                       </Badge>
                     )}
                   </div>

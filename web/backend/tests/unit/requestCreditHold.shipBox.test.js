@@ -82,4 +82,14 @@ describe("PTX CA hold policy", () => {
     };
     expect(shouldSkipMachiningHold(trading)).toBe(false);
   });
+
+  test("가입 무료 테스트는 가공·배송 hold 모두 skip", () => {
+    const signupTest = {
+      businessAnchorId: "bbbbbbbbbbbbbbbbbbbbbbbb",
+      price: { rule: "signup_free_test_2", amount: 0 },
+      timeline: { estimatedShipYmd: "2026-08-21" },
+    };
+    expect(shouldSkipMachiningHold(signupTest)).toBe(true);
+    expect(shouldSkipShippingHold(signupTest)).toBe(true);
+  });
 });

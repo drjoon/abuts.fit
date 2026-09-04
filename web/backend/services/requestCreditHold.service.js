@@ -51,6 +51,7 @@ import {
   countDesignAbutmentQty,
   resolveMachiningHoldAmountFromPrice,
 } from "../controllers/requests/designPrice.utils.js";
+import { isSignupFreeTestRequest } from "../controllers/requests/signupFreeTest.utils.js";
 import { loadCreditSettingsDefaults } from "../utils/creditSettingsDefaults.js";
 import { emitCreditBalanceUpdatedToBusiness } from "../utils/creditRealtime.js";
 
@@ -141,6 +142,8 @@ export function shouldSkipMachiningHold(request) {
   if (isManufacturerSampleRequest(request)) return true;
   // 비거래처 선불: 치과 PTX 어벗 보류만. 기공소 Request 의뢰비 hold/차감 없음.
   if (isPracticePrepaidNonPartner(request)) return true;
+  // 가입 무료 테스트: 견적 0원이라 hold 금액도 0. 명시 skip으로 배송 형제 판정과 맞춤.
+  if (isSignupFreeTestRequest(request)) return true;
   // PTX CA라도 기공소가 생산비를 내는 경우(거래처·lab-designed)는 Request hold 필요.
   // 제출/수락 시 보류 → 가공 진입 시 에스크로 전환 → 준비 롤백 시 보류 유지.
   return false;
@@ -149,9 +152,11 @@ export function shouldSkipMachiningHold(request) {
 /**
  * 배송비는 (의뢰 BA + 예정 출고일) 박스당 1회.
  * PTX CA도 Request 경로로 보류(구: PTX 건당 hold — 폐지).
+ * 가입 무료 테스트는 배송비 0원(박스에 유료 형제가 있으면 그 형제가 hold).
  */
 export function shouldSkipShippingHold(request) {
   if (isManufacturerSampleRequest(request)) return true;
+  if (isSignupFreeTestRequest(request)) return true;
   return false;
 }
 

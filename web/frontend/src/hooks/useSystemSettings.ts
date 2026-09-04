@@ -71,7 +71,7 @@ export const CREDIT_SETTINGS_DEFAULTS: CreditSettings = {
   abutmentDesignLabFee: 10000,
   abutmentRetailPrice: 40000,
   practiceMembershipMonthlyFee: ABUTS_PRACTICE_MEMBERSHIP_MONTHLY_FEE_DEFAULT,
-  defaultRequestFreeCredit: 30000,
+  defaultRequestFreeCredit: 0,
   defaultShippingFreeCredit: 0,
   membershipProductionPrice: ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
   regularProductionPrice: ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE,

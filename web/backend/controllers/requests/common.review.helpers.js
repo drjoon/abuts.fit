@@ -94,6 +94,11 @@ import {
   SHIPPING_LEDGER_LABELS,
   resolveCustomerShippingLabel,
 } from "../../utils/shippingLedgerLabels.js";
+import {
+  isSignupFreeTestRequest,
+  SIGNUP_FREE_TEST_LEDGER_LABEL,
+  SIGNUP_FREE_TEST_PRICE_RULE,
+} from "./signupFreeTest.utils.js";
 import { retainMailboxOnShippingEnter } from "./mailbox.utils.js";
 import { applyPracticeShippingReceiverSnapshotToRequest } from "../../utils/shippingReceiver.utils.js";
 
@@ -273,7 +278,13 @@ async function postSpendCommitGeneralLedger({
   escrowDevopsAnchorId = null,
 }) {
   const spendAmount = Math.max(0, Math.round(Number(amount || 0)));
-  if (spendAmount <= 0) return { posted: false, reason: "zero_amount" };
+  const priceRuleEarly = String(request?.price?.rule || "").trim();
+  const isSignupFreeTest =
+    priceRuleEarly === SIGNUP_FREE_TEST_PRICE_RULE ||
+    isSignupFreeTestRequest(request);
+  if (spendAmount <= 0 && !isSignupFreeTest) {
+    return { posted: false, reason: "zero_amount" };
+  }
 
   const paidAmount = Math.max(0, Math.round(Number(fromPaid || 0)));
   const settlementAmount = Math.max(0, Math.round(Number(fromSettlement || 0)));
@@ -291,7 +302,12 @@ async function postSpendCommitGeneralLedger({
     }
   }
   const freeAmount = freeRequestAmount + freeShippingAmount;
-  if (paidAmount <= 0 && freeAmount <= 0 && settlementAmount <= 0) {
+  if (
+    paidAmount <= 0 &&
+    freeAmount <= 0 &&
+    settlementAmount <= 0 &&
+    !isSignupFreeTest
+  ) {
     return { posted: false, reason: "zero_split" };
   }
 
@@ -309,7 +325,7 @@ async function postSpendCommitGeneralLedger({
     String(usageKind || "") === "shipping" ||
     String(usageKind || "") === "practice_transfer_abuts_shipping";
   const abutmentQty = countDesignAbutmentQty(request?.caseInfos);
-  const priceRule = String(request?.price?.rule || "").trim();
+  const priceRule = priceRuleEarly;
   const isRemakeRequest =
     priceRule === "remake_monthly_free_3" ||
     priceRule === "remake_general_pricing" ||
@@ -321,6 +337,7 @@ async function postSpendCommitGeneralLedger({
     isShippingSpend: isShippingCommit,
     abutmentQty,
     isRemake: isRemakeRequest,
+    isSignupFreeTest,
   });
   const manufacturerQty = resolveManufacturerUnitQty({
     abutmentQty,
@@ -333,14 +350,23 @@ async function postSpendCommitGeneralLedger({
         requestorKind: owners.requestorKind,
       })
     : "";
+  const signupTestLabel = isSignupFreeTest
+    ? isShippingCommit
+      ? `${SIGNUP_FREE_TEST_LEDGER_LABEL}(배송)`
+      : SIGNUP_FREE_TEST_LEDGER_LABEL
+    : null;
   const label =
-    String(displayLabel || "").trim() || customerShippingLabel || null;
+    String(displayLabel || "").trim() ||
+    signupTestLabel ||
+    customerShippingLabel ||
+    null;
   const kind =
     String(displayKind || "").trim() || (isShippingCommit ? "shipping" : null);
   const spendMeta = {
     spendUniqueKey,
     ...(usageKind ? { usageKind: String(usageKind) } : {}),
     ...(settlementAmount > 0 ? { settlementOffset: true } : {}),
+    ...(isSignupFreeTest ? { signupFreeTest: true } : {}),
     ...(label ? { displayLabel: label } : {}),
     ...(kind ? { displayKind: kind } : {}),
     ...(!isShippingCommit && manufacturerQty > 0
@@ -350,16 +376,75 @@ async function postSpendCommitGeneralLedger({
   const manufacturerMeta = isShippingCommit
     ? {
         ...spendMeta,
-        displayLabel: SHIPPING_LEDGER_LABELS.abutsToManufacturer,
+        displayLabel: isSignupFreeTest
+          ? signupTestLabel
+          : SHIPPING_LEDGER_LABELS.abutsToManufacturer,
         displayKind: "shipping",
       }
     : {
         ...spendMeta,
-        displayLabel: MANUFACTURER_PRODUCTION_LEDGER_LABEL,
+        displayLabel: isSignupFreeTest
+          ? signupTestLabel
+          : MANUFACTURER_PRODUCTION_LEDGER_LABEL,
         displayKind: "abutment_production",
       };
 
   const lines = [];
+
+  // 가입 무료 테스트: 크레딧 차감 없이 0원 테스트 항목으로 장부 기록.
+  if (isSignupFreeTest && spendAmount <= 0) {
+    const creditKind = isShippingCommit ? "FREE_SHIPPING" : "FREE_REQUEST";
+    const requestorAccount = isShippingCommit
+      ? "REQ_FREE_SHIPPING_CREDIT"
+      : "REQ_FREE_REQUEST_CREDIT";
+    lines.push({
+      accountCode: requestorAccount,
+      ownerRole: "requestor",
+      ownerId: owners.requestorAnchorId,
+      amount: 0,
+      amountExcludingVat: 0,
+      vatAmount: 0,
+      amountIncludingVat: 0,
+      creditKind,
+      refType,
+      refId,
+      meta: spendMeta,
+    });
+    if (owners.manufacturerAnchorId) {
+      lines.push({
+        accountCode: "REV_MANUFACTURER",
+        ownerRole: "manufacturer",
+        ownerId: owners.manufacturerAnchorId,
+        amount: 0,
+        amountExcludingVat: 0,
+        vatAmount: 0,
+        amountIncludingVat: 0,
+        creditKind,
+        refType,
+        refId,
+        meta: manufacturerMeta,
+      });
+    }
+    return postGeneralLedgerJournal({
+      idempotencyKey: `gl:${String(spendUniqueKey || "").trim()}`,
+      eventType,
+      businessAnchorId,
+      refType,
+      refId,
+      stageFrom,
+      stageTo,
+      occurredAt,
+      createdBy: actorUserId || null,
+      meta: {
+        spendUniqueKey,
+        requestId: request?.requestId || null,
+        signupFreeTest: true,
+        displayLabel: label,
+      },
+      lines,
+      session,
+    });
+  }
 
   const useEscrowHold =
     Boolean(fromEscrowHold) &&
@@ -1054,6 +1139,34 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
     console.log("[CREDIT_SPEND] machining hold converted", {
       requestId: request?.requestId,
       amount: spentAmount,
+    });
+  } else if (isSignupFreeTestRequest(request)) {
+    const glPostResult = await postSpendCommitGeneralLedger({
+      eventType: "REQUEST_SPEND_COMMIT",
+      spendUniqueKey: `request:${String(request._id)}:machining_spend`,
+      request,
+      businessAnchorId: spendAnchorId,
+      actorUserId,
+      amount: 0,
+      fromPaid: 0,
+      fromFreeRequest: 0,
+      fromFreeShipping: 0,
+      fromSettlement: 0,
+      freeAccountCode: "REQ_FREE_REQUEST_CREDIT",
+      refType: "REQUEST",
+      refId: request._id,
+      stageFrom: "CAM",
+      stageTo: "가공",
+      session,
+      usageKind: "abutment_production",
+      displayLabel: SIGNUP_FREE_TEST_LEDGER_LABEL,
+    });
+    if (!glPostResult?.posted && !glPostResult?.idempotent) {
+      throw new Error("REQUEST_SPEND_COMMIT signup free test ledger posting failed");
+    }
+    console.log("[CREDIT_SPEND] signup free test machining recorded", {
+      requestId: request?.requestId,
+      amount: 0,
     });
   } else {
   spendResult = await spendRequestCreditAtomic({
@@ -1915,6 +2028,51 @@ export async function commitShippingFeeForPackage({
         shippingPackageId: String(pkg._id),
       };
     }
+  }
+
+  const onlySignupFreeTest =
+    chargeable.length > 0 &&
+    chargeable.every((row) => isSignupFreeTestRequest(row));
+  if (onlySignupFreeTest) {
+    const glPostResult = await postSpendCommitGeneralLedger({
+      eventType: "SHIPPING_SPEND_COMMIT",
+      spendUniqueKey,
+      request: representative,
+      businessAnchorId: payerAnchorId,
+      actorUserId,
+      amount: 0,
+      fromPaid: 0,
+      fromFreeRequest: 0,
+      fromFreeShipping: 0,
+      fromSettlement: 0,
+      freeAccountCode: "REQ_FREE_SHIPPING_CREDIT",
+      refType: "SHIPPING_PACKAGE",
+      refId: pkg._id,
+      stageFrom: "세척.패킹",
+      stageTo: "포장.발송",
+      occurredAt,
+      session,
+      usageKind: isPtxAbutsShipping
+        ? "practice_transfer_abuts_shipping"
+        : "shipping",
+      displayLabel: `${SIGNUP_FREE_TEST_LEDGER_LABEL}(배송)`,
+      displayKind: "shipping",
+    });
+    if (!glPostResult?.posted && !glPostResult?.idempotent) {
+      throw new Error("SHIPPING_SPEND_COMMIT signup free test ledger posting failed");
+    }
+    console.log("[SHIPPING_FEE] signup free test shipping recorded", {
+      mailboxAddress: mailbox,
+      shippingPackageId: String(pkg._id),
+      amount: 0,
+    });
+    return {
+      didSpend: true,
+      reason: "signup_free_test",
+      amount: 0,
+      uniqueKey: spendUniqueKey,
+      shippingPackageId: String(pkg._id),
+    };
   }
 
   let spendResult;

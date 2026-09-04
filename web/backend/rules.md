@@ -715,18 +715,17 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - 소비: `SPEND_PAID` / `SPEND_FREE_REQUEST` / `SPEND_FREE_SHIPPING`
   - `GET /api/credits/balance`는 `LedgerLine` 직접 집계(GL SSOT)만 사용합니다.
     - 프로세스 메모리 캐시를 사용하지 않아 승인/롤백 직후 잔액을 즉시 반영해야 합니다.
-  - 가입 환영 무료 크레딧(강제, 1회):
-    - 대상: 의뢰자·기공소(`requestorKind=lab`)만. 의뢰자·치과(`practice`) 제외
-    - 금액 SSOT: `creditSettings.defaultRequestFreeCredit`(기본 30,000). 무료크레딧 단일 버킷으로 지급
-    - 호출 허용: `business.update.controller.js`에서 **BusinessAnchor를 새로 생성한 분기**
-      및 synthetic→실BN 검증 승격 분기 (`grantWelcomeFreeCreditIfEligible`)
-    - 금지: 기존 사업자 정보 업데이트 분기, 기존 앵커 연결(attach), 로그인/설정 저장 등 기타 경로
-    - 멱등: `FreeCreditGrant`(물리 컬렉션 `bonusgrants`)를 사업자등록번호당 1건으로 유지.
-      legacy type(`WELCOME_BONUS`, `SHIPPING_FREE_CREDIT`, `FREE_SHIPPING_CREDIT`)도 기지급으로 간주
-    - GL 기록: `CHARGE_FREE_REQUEST`만, meta.source=`business_auto_free_credit`
-    - 레거시 `defaultShippingFreeCredit`는 0 고정(자동 환영 배송 분리 지급 폐기)
-    - 관련 파일: `controllers/businesses/business.freeCredit.util.js`,
-      `models/freeCreditGrant.model.js`
+  - 가입 환영 무료 크레딧(강제, 자동 지급) — **폐지**:
+    - `grantWelcomeFreeCreditIfEligible` no-op. `defaultRequestFreeCredit` 스키마 기본 0
+    - 관리자 수동 무료크레딧 override만 유지
+  - 기공소 가입 무료 테스트(강제, 첫 2건):
+    - 대상: `requestorKind=lab`만. 치과·데모 크레딧 경로와 분리
+    - 쿼터: `manufacturerStage≠취소`인 의뢰만 카운트. **준비 단계 취소는 현행과 동일**하며, 취소 시 슬롯 환원
+    - 가격 규칙: `signup_free_test_2` (의뢰·배송 0원, hold skip)
+    - 제조사 생산·배송 하청 0원. GL은 0원 `REQUEST_SPEND_COMMIT`/`SHIPPING_SPEND_COMMIT` + meta.displayLabel=`가입 테스트`
+    - SSOT: `controllers/requests/signupFreeTest.utils.js`
+    - 관련: `computePriceForRequest`, `requestCreditHold.service.js`, `common.review.helpers.js`,
+      `creditRevenuePolicy.service.js`
 ### 웹소켓 업데이트 표준 (무플리커 + 부하완화)
 
   - 웹소켓 실시간 업데이트 발행/수신 SSOT:

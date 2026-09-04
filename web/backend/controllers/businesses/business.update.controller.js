@@ -981,7 +981,8 @@ export async function updateMyBusiness(req, res) {
           "business-anchor-linked",
         );
 
-        // 환영 무료 크레딧: 의뢰자·기공소(lab) BusinessAnchor 신규 생성 시에만 1회 지급
+        // 가입 환영 무료크레딧 자동 지급 폐지(grantWelcomeFreeCreditIfEligible no-op).
+        // 대체: 기공소 가입 후 첫 2건 signup_free_test_2.
         const welcomeFreeCreditAmount =
           await grantWelcomeFreeCreditIfEligible({
             businessAnchorId: created._id,

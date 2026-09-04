@@ -69,6 +69,11 @@ import {
   resolveMachiningSpendAmount,
   resolveQuotedPriceWithExtras,
 } from "./designPrice.utils.js";
+import {
+  applySignupFreeTestPricingToBatch,
+  getSignupFreeTestQuota,
+  isSignupFreeTestPriceRule,
+} from "./signupFreeTest.utils.js";
 import { resolveSelectableShippingMode } from "./expressSelectable.utils.js";
 import { checkCreditLock } from "../../utils/creditLock.util.js";
 import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
@@ -556,6 +561,7 @@ export async function createRequestsFromDraft(req, res) {
           creditSettings,
           pricingBaseDate,
           skipExistingLookup: true,
+          applySignupFreeTest: false,
         });
         let computedPrice = computedPriceBase;
         console.log("[createRequestsFromDraft] compute price", {
@@ -1078,6 +1084,7 @@ export async function createRequestsFromDraft(req, res) {
               forceNewOrderPricing: true,
               creditSettings,
               pricingBaseDate,
+              applySignupFreeTest: false,
             });
           }),
         );
@@ -1118,9 +1125,33 @@ export async function createRequestsFromDraft(req, res) {
             tooth: item.tooth,
             creditSettings,
             pricingBaseDate,
+            applySignupFreeTest: false,
           });
         }),
       );
+    }
+
+    // 기공소 가입 무료 테스트(첫 2건): 배치 형제는 DB에 없어 쿼터를 직렬 배정.
+    {
+      const signupQuota = await getSignupFreeTestQuota({
+        requestorOrgId: req.user?.businessAnchorId,
+      });
+      if (signupQuota.eligible && signupQuota.remaining > 0) {
+        applySignupFreeTestPricingToBatch(preparedCasesForCreate, {
+          remaining: signupQuota.remaining,
+          used: signupQuota.used,
+          baseUnitPrice: Math.max(
+            0,
+            Math.round(
+              Number(
+                preparedCasesForCreate.find(
+                  (row) => Number(row?.computedPrice?.baseAmount) > 0,
+                )?.computedPrice?.baseAmount,
+              ) || 0,
+            ),
+          ),
+        });
+      }
     }
 
     // shippingOrg / creditSettings / manufacturerLeadTimes는 draft 로드와 병렬 prefetch
@@ -1180,6 +1211,7 @@ export async function createRequestsFromDraft(req, res) {
     const totalExpressFee = isPracticeRoutingSubmission
       ? 0
       : preparedCasesForCreate.reduce((acc, item) => {
+          if (isSignupFreeTestPriceRule(item?.computedPrice?.rule)) return acc;
           if ((item.shippingMode || "normal") !== "express") return acc;
           const ci = item?.caseInfosWithFile || item?.caseInfos || {};
           const mode = String(ci?.productMode || "").trim();
@@ -1190,7 +1222,9 @@ export async function createRequestsFromDraft(req, res) {
           return acc + qty * expressFeePerRequest;
         }, 0);
     const expressCount = preparedCasesForCreate.filter(
-      (item) => (item.shippingMode || "normal") === "express",
+      (item) =>
+        (item.shippingMode || "normal") === "express" &&
+        !isSignupFreeTestPriceRule(item?.computedPrice?.rule),
     ).length;
     const requiredMachiningFee = totalSpendSupply + totalExpressFee;
     const requestorAnodizingEnabled =
@@ -1227,9 +1261,15 @@ export async function createRequestsFromDraft(req, res) {
       normalizeExoCadVersion(shippingOrg?.requestSettings?.exoCadVersion);
     const shipDate = createdYmd;
     const boxCount = 1;
-    const totalShippingFee = isPracticeRoutingSubmission
-      ? 0
-      : boxCount * shippingFeePerBox;
+    const allSignupFreeTest =
+      preparedCasesForCreate.length > 0 &&
+      preparedCasesForCreate.every((item) =>
+        isSignupFreeTestPriceRule(item?.computedPrice?.rule),
+      );
+    const totalShippingFee =
+      isPracticeRoutingSubmission || allSignupFreeTest
+        ? 0
+        : boxCount * shippingFeePerBox;
     console.log("[createRequestsFromDraft] pre-fetch done", {
       t: Date.now() - startTime,
       shippingFeePerBox,
