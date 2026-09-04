@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-04: 포스트면 각인 Z — FL+2mm 라벨 (기존 FL+1에서 +1mm).
 // - 2026-09-04: 포스트면 체크 — 미리보기는 항상 토글, 저장만 준비 단계.
 // - 2026-09-04: 포스트면 각인 옵트인 체크(준비만). 기본 헥스면. Lot=오버레이 표시.
 // - 2026-09-04: Wide Split 왼쪽 Lot 체크박스(기본 off) — on 시 STL 헥스 면 각인 3글자 오버레이.
@@ -2460,7 +2461,7 @@ export const PreviewModal = ({
                 title={
                   lotSerialCode
                     ? lotEngravingTargetDraft === "post"
-                      ? `포스트 측면에 각인코드 ${lotSerialCode} 미리보기 (FL+1mm · C축)`
+                      ? `포스트 측면에 각인코드 ${lotSerialCode} 미리보기 (FL+2mm · C축)`
                       : `헥스면에 각인코드 ${lotSerialCode} 미리보기`
                     : "로트번호(각인 3글자)가 없습니다"
                 }
@@ -2487,7 +2488,7 @@ export const PreviewModal = ({
                 }`}
                 title={
                   canPersistLotEngravingTarget
-                    ? "기본=헥스면. 체크 시 포스트 측면(FL+1mm·C축). 둘 중 하나만 가공."
+                    ? "기본=헥스면. 체크 시 포스트 측면(FL+2mm·C축). 둘 중 하나만 가공."
                     : "미리보기만 전환됩니다. 저장(가공 반영)은 준비 단계에서만 가능합니다."
                 }
               >

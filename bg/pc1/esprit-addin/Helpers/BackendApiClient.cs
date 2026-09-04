@@ -410,7 +410,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
 
             [DataMember] public RequestMetaFinishLine finishLine { get; set; }
 
-            // 포스트 측면 로트 각인 사이트 (FL+1mm, C축 한글자)
+            // 포스트 측면 로트 각인 사이트 (FL+2mm, C축 한글자)
             [DataMember(Name = "lotEngravingSite")] public RequestMetaLotEngravingSite lotEngravingSite { get; set; }
 
             // 경사 가이드 (사이트 폴백 계산용)

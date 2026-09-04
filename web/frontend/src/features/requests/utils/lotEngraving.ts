@@ -3,7 +3,8 @@
 // - 2026-09-04: 포스트 측면 — 글자마다 C(θ) 고정 수직평면. 곡면 래핑(점별 레이캐스트) 폐기.
 // - 2026-09-04: 각인 target hex|post 이중 경로. 기본 헥스면, 포스트면은 옵트인.
 // - 2026-09-04: 프리뷰=Z축 방위 원통 배치(한글자 θ). 시안 가이드 제거. 표면 r(θ,z).
-// - 2026-09-04: 헥스면 → 포스트 측면. 하위 10% 경사각·FL minZ 사이트, FL+1mm, C축 한글자.
+// - 2026-09-04: 포스트면 각인 Z — FL+2mm (기존 FL+1에서 +1mm).
+// - 2026-09-04: 헥스면 → 포스트 측면. 하위 10% 경사각·FL minZ 사이트, FL+2mm, C축 한글자.
 // - 2026-09-04: 글자 위=STL +Z, 좌우 LTR 비미러 한 번에 고정. CNC X 직경/2 SSOT 유지.
 // - 2026-09-04: 좌우만 재교정(BFX LTR·비미러). 상하·HEX depth·X직경/2 SSOT 유지.
 // - 2026-09-04: 글자 면내 180° 교정(뒤집힘). CNC X 직경→반경(/2) SSOT 주석·헬퍼.
@@ -57,7 +58,7 @@ export const LOT_ENGRAVING_DEFAULTS = {
   /** 표면 바깥으로 아주 살짝 — 가시성. 가공 깊이 계산과 별개. */
   surfaceLift: 0.04,
   /** 피니시라인 직상방 각인 기준 높이(mm). CNC Z=글자 하단 / 프리뷰=글자 중앙. */
-  aboveFinishLineMm: 1,
+  aboveFinishLineMm: 2,
   /** 글자 간 원주 호 길이(mm). CNC H = arc/r (프리뷰 Z축 방위). */
   charPitchArcMm: 0.45,
   /** 각인 깊이(반경 방향, mm). cutDiameterX = 2*(radius - depth). */
@@ -69,7 +70,7 @@ export const LOT_ENGRAVING_DEFAULTS = {
 export type LotEngravingNcParams = {
   startY: number;
   charPitchY: number;
-  /** Serial 블록 Z offset = 피니시라인Z+1 (포스트 측면). */
+  /** Serial 블록 Z offset = 피니시라인Z+2 (포스트 측면). */
   zOffset: number;
   /** @deprecated 헥스면 폴백용 */
   hexZOffset: number;
