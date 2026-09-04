@@ -110,6 +110,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         private string _backendLotNumber;
         private string _backendSerialCode;
         private BackendApiClient.RequestMetaLotEngravingSite _backendLotEngravingSite;
+        // request-meta caseInfos.lotEngravingTarget — "hex"(기본) | "post"
+        private string _backendLotEngravingTarget;
         private string _backendRequestId;
         private string _backendImplantLabel;
         private double[][] _backendFinishLinePoints;
@@ -212,6 +214,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             _backendLotNumber = null;
             _backendSerialCode = null;
             _backendLotEngravingSite = null;
+            _backendLotEngravingTarget = null;
             _backendRequestId = null;
             _backendImplantLabel = null;
             _backendFinishLinePoints = null;
@@ -268,6 +271,10 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     }
                     _backendSerialCode = requestMetaResponse?.data?.serialCode;
                     _backendLotEngravingSite = requestMeta?.lotEngravingSite;
+                    _backendLotEngravingTarget =
+                        string.Equals(requestMeta?.lotEngravingTarget, "post", StringComparison.OrdinalIgnoreCase)
+                            ? "post"
+                            : "hex";
                     if (_backendLotEngravingSite == null &&
                         requestMeta?.taperGuide?.multiDirectionGuides != null &&
                         requestMeta.taperGuide.multiDirectionGuides.Length > 0)
@@ -292,6 +299,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     {
                         AppLogger.Log("StlFileProcessor: ⚠️ lotEngravingSite 없음 — Serial은 폴백 좌표");
                     }
+                    AppLogger.Log($"StlFileProcessor: lotEngravingTarget={_backendLotEngravingTarget}");
                     _backendRequestId = requestId;
                     if (requestMeta != null)
                     {
@@ -476,7 +484,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     _prcManager?.ConnectionMachiningProcessFilePath,
                     _backendManufacturerHexRotation,
                     _backendHexRotationAppliedDeg,
-                    _backendLotEngravingSite);
+                    _backendLotEngravingSite,
+                    _backendLotEngravingTarget);
                 ncSw.Stop();
                 AppLogger.Log($"StlFileProcessor: NC 생성 종료 - path={ncFilePath ?? "<null>"}");
                 AppLogger.Log($"[PERF] StlFileProcessor.GenerateNc END elapsedMs={ncSw.ElapsedMilliseconds}");
@@ -597,6 +606,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             _backendLotNumber = null;
             _backendSerialCode = null;
             _backendLotEngravingSite = null;
+            _backendLotEngravingTarget = null;
             _backendRequestId = null;
             _backendImplantLabel = null;
             _backendFinishLinePoints = null;

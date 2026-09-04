@@ -3437,7 +3437,26 @@ export const updateRequestLotEngravingTargetOverride = asyncHandler(
       });
     }
 
+    const prevTarget =
+      request.caseInfos?.lotEngravingTarget === "post" ||
+      request.caseInfos?.lotEngravingTarget === "hex"
+        ? request.caseInfos.lotEngravingTarget
+        : "hex";
+    const targetChanged = prevTarget !== lotEngravingTarget;
+
     request.set("caseInfos.lotEngravingTarget", lotEngravingTarget);
+    // 각인 면이 바뀌면 기존 NC는 무효 — 다음 승인 때 Esprit가 재생성
+    if (targetChanged && request?.caseInfos?.ncFile) {
+      request.set("caseInfos.ncFile", undefined);
+      console.info(
+        "[request-lot-engraving-target] cleared stale ncFile after target change",
+        {
+          requestId: request.requestId,
+          from: prevTarget,
+          to: lotEngravingTarget,
+        },
+      );
+    }
     await request.save();
 
     const requestorBusinessAnchorId = String(
@@ -3475,6 +3494,7 @@ export const updateRequestLotEngravingTargetOverride = asyncHandler(
           caseInfos: {
             ...(request.caseInfos || {}),
             lotEngravingTarget,
+            ...(targetChanged ? { ncFile: null } : {}),
           },
         },
       },
@@ -3486,6 +3506,7 @@ export const updateRequestLotEngravingTargetOverride = asyncHandler(
         requestId: request.requestId,
         manufacturerStage: request.manufacturerStage,
         lotEngravingTarget,
+        ...(targetChanged ? { ncFile: null } : {}),
       },
     });
   },

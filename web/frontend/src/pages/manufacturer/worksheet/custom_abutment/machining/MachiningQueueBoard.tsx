@@ -1243,23 +1243,29 @@ export const MachiningQueueBoard = ({
           );
         }
 
-        const savedRaw = (body as { data?: { lotEngravingTarget?: unknown } })
+        const savedRaw = (body as { data?: { lotEngravingTarget?: unknown; ncFile?: unknown } })
           ?.data?.lotEngravingTarget;
         const savedValue =
           savedRaw === "post" || savedRaw === "hex" ? savedRaw : nextValue;
+        const clearNc =
+          (body as { data?: { ncFile?: unknown } })?.data?.ncFile === null;
 
         setCamPreviewFiles((prev) => {
           const currentReq = prev?.request || null;
           if (!currentReq) return prev;
+          const nextCaseInfos = {
+            ...(currentReq.caseInfos || {}),
+            lotEngravingTarget: savedValue,
+          } as Record<string, unknown>;
+          if (clearNc) {
+            nextCaseInfos.ncFile = null;
+          }
           return {
             ...prev,
             request: {
               ...currentReq,
               _id: requestMongoId,
-              caseInfos: {
-                ...(currentReq.caseInfos || {}),
-                lotEngravingTarget: savedValue,
-              },
+              caseInfos: nextCaseInfos,
             },
           };
         });

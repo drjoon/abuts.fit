@@ -2279,16 +2279,21 @@ export const RequestPage = ({
           data?.data?.lotEngravingTarget === "hex"
             ? data.data.lotEngravingTarget
             : nextValue;
+        const clearNc = data?.data?.ncFile === null;
 
         pageState.setRequests((prev) =>
           prev.map((item) => {
             if (String(item?._id || "").trim() !== requestMongoId) return item;
+            const nextCaseInfos = {
+              ...(item.caseInfos || {}),
+              lotEngravingTarget: savedValue,
+            };
+            if (clearNc) {
+              nextCaseInfos.ncFile = null;
+            }
             return {
               ...item,
-              caseInfos: {
-                ...(item.caseInfos || {}),
-                lotEngravingTarget: savedValue,
-              },
+              caseInfos: nextCaseInfos,
             };
           }),
         );

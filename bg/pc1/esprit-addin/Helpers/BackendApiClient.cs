@@ -413,6 +413,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             // 포스트 측면 로트 각인 사이트 (FL+1.5mm, C축 한글자)
             [DataMember(Name = "lotEngravingSite")] public RequestMetaLotEngravingSite lotEngravingSite { get; set; }
 
+            // 헥스면(기본) | 포스트 측면. Esprit Serial NC 분기 SSOT.
+            [DataMember(Name = "lotEngravingTarget")] public string lotEngravingTarget { get; set; }
+
             // 경사 가이드 (사이트 폴백 계산용)
             [DataMember(Name = "taperGuide")] public RequestMetaTaperGuide taperGuide { get; set; }
         }

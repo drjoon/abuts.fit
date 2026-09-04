@@ -290,35 +290,36 @@
   - `STL모델대로` / `헥스30도회전` 모두 동일하게
     `Rotate90Degrees` 후 `+30 + (-hexRotation.appliedDeg)` 적용.
 - NC C축 후처리 SSOT(공구 기반):
-  - `STL모델대로` → T4848/T0909/T0606 근접 `C0`·`C30` 잔여분을 `C0.0`으로 강제 (ExoCAD designSoftware와 무관, mode SSOT만)
-  - `헥스30도회전` → PRC `C0`를 T0909/T0606에 `C30.0`으로 치환
+  - `STL모델대로` → T4848/T0909/T0606 근접 `C0`·`C30` 잔여분을 `C0.000`으로 강제 (ExoCAD designSoftware와 무관, mode SSOT만)
+  - `헥스30도회전` → PRC `C0`를 T0909/T0606에 `C30.000`으로 치환
   - `STL모델+` / `헥스30+`: `addDeg = 30 + hexRotation.appliedDeg`
-    - 예) appliedDeg=-27.61 → addDeg=2.39 → STL모델+ 시 T0606/T0909=`C2.39`
+    - 예) appliedDeg=-27.61 → addDeg=2.39 → STL모델+ 시 T0606/T0909=`C2.390`
     - `T0909`/`T0606` → `C(modeBase + addDeg)` (`STL모델+` modeBase=0 / `헥스30+` modeBase=30)
     - `appliedDeg` 없으면 플러스 모드 NC 후처리 예외
-  - `T4848` → **항상 `C0.0`** (모드/`addDeg`와 무관)
+  - `T4848` → **항상 `C0.000`** (모드/`addDeg`와 무관)
   - Connection PRC 기준 T0606×3 + T0909×2 = 5곳 (+ T4848 1 = 최대 6)
-  - Serial C = 사이트방위(`90+W−θ`) + **동일 헥스모드 C** (`ResolveHexToolCAxisDeg`)
-    - 헥스가 `addDeg`만큼 돌아가면 각인도 같이 돌아가 면에 수직 유지
-    - 예) STL모델+·appliedDeg=-27.61 → Connection/Serial 모두 hexC=`C2.39` 가산
-  - 헥스 C 치환은 Serial 블록 치환보다 먼저 실행 (Serial이 최종 C를 사이트+헥스모드로 기록)
+  - Serial `lotEngravingTarget` (PreviewModal 포스트면 → request-meta → Esprit):
+    - **hex(기본)**: 기존 PRC Serial 그대로 (`C0.0` + `G1 V-0.35`). 이후 `ApplyManufacturerHexRotationToNc`가 T0606·T0909 C를 같은 헥스모드로 치환 → 헥스면 수직 유지.
+    - **post**: Serial이 사이트 C + `H=-pitchC`로 재작성. Apply는 `C0`/`C30`만 치환하므로 포스트 C는 유지되고 T0606만 헥스모드.
+  - 처리 순서: `UpdateSerialBlocks` → `ApplyManufacturerHexRotationToNc` (헥스면 C 동반 회전 SSOT)
   - 공구번호 미검출/미지원은 즉시 예외 발생(백엔드 실패 콜백 경유 → 프론트 토스트)
 - 재제작(시작 공정=가공)으로 복사된 NC는 원본 헥스 모드 기준이다. 준비 단계에서 mode를 바꾸면 `updateRndHexRotation`이 `caseInfos.ncFile`을 비워 다음 승인 때 Esprit가 재생성한다.
 - NC 축 워드 소수점 강제 (CNC 인식):
   - 금지: `C30`, `C0`, `X10`, `Z0` 처럼 소수점 없는 정수 워드.
-  - 필수: `C30.0`, `C0.0`, `X10.0`, `Z0.0` (이미 소수점이 있으면 유지).
+  - 필수: `C30.000`, `C0.000`, `X10.0`, `Z0.0` (헥스 C축은 소수 세자리 고정; 그 외 축은 소수점 유지).
   - `ToString("0.###")` / `"0.###############"` / 정수 단축 / `TrimEnd('0')` 금지. 30.0 이 `"30"` 으로 떨어진다.
+  - 헥스 C SSOT: `FormatRotationNumber` → `"0.000"`.
   - SSOT: `FormatRotationNumber`, `FormatNcNumber`, `EnsureNcDecimalLiteral`, `EnsureNcCoordinateDecimalsOnFile`.
   - G/M/T/O/P/N/S/F 정수 코드(G0, M50, T0909, F1000)는 그대로 둔다.
 - 구현 위치:
   - `Helpers/NcFileGenerator.cs`
-    - `TryResolveHexRotationTargets` / `ResolvePlusModeAddDeg` / `ResolveHexToolCAxisDeg` (modeBase·addDeg·Serial 동반)
+    - `TryResolveHexRotationTargets` / `ResolvePlusModeAddDeg` / `ResolveHexToolCAxisDeg` (modeBase·addDeg)
     - `FindNearestToolCodeNearLine` (상방 10줄 공구 탐색)
     - `ApplyManufacturerHexRotationToNc` (공구별 C축 치환)
-    - `BuildSerialBlock` (사이트 C + 헥스모드 C)
-    - `FormatRotationNumber` / `EnsureNcCoordinateDecimalsOnFile` (C30.0 소수점 강제)
-  - `StlFileProcessor.Process` (request-meta 전달/에러 전파)
-  - `Helpers/BackendApiClient.RequestMetaCaseInfos` (request-meta 바인딩)
+    - `BuildSerialBlock` (hex=PRC 원본 / post=사이트C+H) / `RewriteSerialMotionLineForPostSide`
+    - `FormatRotationNumber` / `EnsureNcCoordinateDecimalsOnFile` (C30.000 소수점 강제)
+  - `StlFileProcessor.Process` (request-meta `lotEngravingTarget` 전달)
+  - PreviewModal `포스트면` 체크 → `caseInfos.lotEngravingTarget` → request-meta → Esprit
 
 ## 5. 정리 원칙
 
