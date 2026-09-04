@@ -3,6 +3,7 @@
 // - web/backend/app.js
 // - web/backend/server.js
 // change-log:
+// - 2026-09-04: triggerRhino — stlPreload GENERATING 선반영 + BRIDGE_SHARED_SECRET 폴백.
 // - 2026-09-03: 취소된 의뢰 process-file 거부(409) — GENERATING 고스트 방지.
 import axios from "axios";
 import { asyncHandler } from "../../utils/asyncHandler.js";
@@ -18,7 +19,9 @@ const RHINO_COMPUTE_BASE_URL = String(
 ).replace(/\/+$/, "");
 
 const RHINO_SHARED_SECRET = String(
-  process.env.RHINO_SHARED_SECRET || "",
+  process.env.RHINO_SHARED_SECRET ||
+    process.env.BRIDGE_SHARED_SECRET ||
+    "",
 ).trim();
 
 const rhinoAuthHeaders = () => {
@@ -445,6 +448,31 @@ export const triggerRhinoProcessFileForRequest = ({
 }) => {
   const targetName = String(filePath || fileName || "").trim();
   if (!targetName) return;
+  const rid = String(requestId || "").trim() || null;
+
+  // 준비 탭「라이노 작업중」+ pending-stl 복구가 잡도록 enqueue 전에 GENERATING 표시
+  if (rid) {
+    void Request.updateOne(
+      {
+        requestId: rid,
+        manufacturerStage: { $ne: "취소" },
+      },
+      {
+        $set: {
+          "productionSchedule.stlPreload": {
+            status: "GENERATING",
+            updatedAt: new Date(),
+          },
+        },
+      },
+    ).catch((err) => {
+      console.warn(
+        `[rhino-trigger] stlPreload GENERATING update failed requestId=${rid}:`,
+        err?.message || err,
+      );
+    });
+  }
+
   const url = `${RHINO_COMPUTE_BASE_URL}/api/rhino/process-file`;
   axios
     .post(
@@ -452,7 +480,7 @@ export const triggerRhinoProcessFileForRequest = ({
       {
         filePath: targetName,
         fileName: targetName,
-        requestId: requestId || null,
+        requestId: rid,
         force: false,
       },
       {
@@ -463,12 +491,12 @@ export const triggerRhinoProcessFileForRequest = ({
     .then((resp) => {
       const status = resp?.data?.data?.status || resp?.data?.status || "ok";
       console.log(
-        `[rhino-trigger] requestId=${requestId || "-"} file=${targetName} status=${status}`,
+        `[rhino-trigger] requestId=${rid || "-"} file=${targetName} status=${status}`,
       );
     })
     .catch((err) => {
       console.warn(
-        `[rhino-trigger] failed requestId=${requestId || "-"} file=${targetName}: ${
+        `[rhino-trigger] failed requestId=${rid || "-"} file=${targetName}: ${
           err?.response?.status || ""
         } ${err?.message || err}`,
       );

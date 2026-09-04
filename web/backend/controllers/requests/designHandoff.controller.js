@@ -1,3 +1,4 @@
+// - 2026-09-04: PTX handoff — Rhino trigger를 응답 후 최우선. save 시 stlPreload GENERATING.
 // - 2026-09-03: PTX abutment-design-handoff — 구강스캔(files) 없어도 어벗 STL만으로 CA Request 생성.
 // - 2026-09-03: PTX abutment-design-handoff — 수락이 아니라 STL 업로드 시 CA Request 생성.
 // - 2026-09-03: handoff — 기존 designSourceFiles(구강스캔) 보존·비STL 거부. 완료 후 헥스 샘플 생성.
@@ -807,6 +808,14 @@ export async function handoffDesignToProduction(req, res) {
 
       const lotSaveT0 = Date.now();
       await ensureLotNumberOnReadyEnter(request);
+      // Rhino enqueue 전에 GENERATING을 남겨 준비 탭·pending-stl이 즉시 잡게 한다.
+      if (rhinoFileName) {
+        if (!request.productionSchedule) request.productionSchedule = {};
+        request.productionSchedule.stlPreload = {
+          status: "GENERATING",
+          updatedAt: now,
+        };
+      }
       await request.save();
       handoffTiming.lotSaveMs = Date.now() - lotSaveT0;
 
@@ -872,6 +881,23 @@ export async function handoffDesignToProduction(req, res) {
       ).trim();
 
       void (async () => {
+        // 미러/labMeta보다 Rhino를 먼저 — enqueue 누락·고스트「라이노 작업중」방지
+        try {
+          if (rhinoFileName) {
+            await seedPrcFieldsAfterHandoff(request);
+            triggerRhinoProcessFileForRequest({
+              requestId: request.requestId,
+              filePath: rhinoFileName,
+              fileName: rhinoFileName,
+            });
+          }
+        } catch (rhinoErr) {
+          console.warn(
+            "[DESIGN_HANDOFF] rhino trigger failed",
+            rhinoErr?.message || rhinoErr,
+          );
+        }
+
         try {
           // 헥스/디자인SW 스탬프 + 풀 생산 스케줄(리드타임) — hold 이후 보정
           if (stampLabAnchorIdForLater) {
@@ -1024,22 +1050,6 @@ export async function handoffDesignToProduction(req, res) {
               rollbackErr,
             );
           }
-        }
-
-        try {
-          if (rhinoFileName) {
-            await seedPrcFieldsAfterHandoff(request);
-            triggerRhinoProcessFileForRequest({
-              requestId: request.requestId,
-              filePath: rhinoFileName,
-              fileName: rhinoFileName,
-            });
-          }
-        } catch (rhinoErr) {
-          console.warn(
-            "[DESIGN_HANDOFF] rhino trigger failed",
-            rhinoErr?.message || rhinoErr,
-          );
         }
 
         try {

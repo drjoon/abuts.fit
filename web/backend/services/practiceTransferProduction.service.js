@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-09-04: 헥스 샘플은 design-handoff/워크시트 백필만(ensure 시점 designCompletedAt 전 생성 금지).
 // - 2026-09-03: ensureAbutmentRequestsForHandoff — 수락이 아니라 STL handoff 직전 생성.
 // - 2026-09-03: 구강스캔은 designSourceFiles만 — caseInfos.file에 넣지 않음(제조사·헥스 고스트 방지).
 // - 2026-09-03: tryStartAbutmentProduction는 designCompletedAt만 인정(스캔 s3Key로 생산 시작 금지).
@@ -68,7 +69,6 @@ import {
   isHexVerificationSampleCase,
 } from "../utils/designSoftwareHex.js";
 import {
-  maybeCreateHexVerificationSampleForFirstOrder,
   findActiveHexVerificationSampleObjectIdsForSources,
 } from "./hexVerificationSample.service.js";
 import {
@@ -585,74 +585,7 @@ const clampScheduleToTarget = async (productionSchedule, targetYmd) => {
 };
 
 /**
- * PTX CA 준비 등록 후 헥스 미확정 제조사 확인용 샘플 생성(fire-and-forget).
- * relatedRequestIds에는 넣지 않음.
- */
-function schedulePtxHexVerificationSamples({
-  sourceRequests,
-  labUserId,
-  labAnchorId,
-  actorUserId = null,
-  transferDoc = null,
-  logTag = "create",
-}) {
-  const list = Array.isArray(sourceRequests)
-    ? sourceRequests.filter(Boolean)
-    : [];
-  if (list.length === 0) return;
-
-  void maybeCreateHexVerificationSampleForFirstOrder({
-    sourceRequests: list,
-    userId: labUserId,
-    businessAnchorId: labAnchorId,
-    actorUserId: actorUserId || labUserId,
-  })
-    .then((samples) => {
-      if (!Array.isArray(samples) || samples.length === 0) return;
-      const sampleRequestIds = samples
-        .map((s) => String(s?.requestId || "").trim())
-        .filter(Boolean);
-      console.log(
-        `[createAbutmentRequestsFromPracticeTransfer] hex verification sample created (${logTag})`,
-        {
-          transferId: String(
-            transferDoc?.transferId || transferDoc?._id || "",
-          ),
-          count: samples.length,
-          sampleRequestIds,
-        },
-      );
-      emitAppEventToRoles(["manufacturer", "admin"], "worksheet:count-update", {
-        source: "ptx-hex-verification-sample",
-        businessAnchorId: String(labAnchorId || "").trim() || null,
-        requestIds: sampleRequestIds,
-        count: sampleRequestIds.length,
-      });
-      emitAppEventToRoles(
-        ["requestor", "manufacturer", "admin"],
-        "request:stage-changed",
-        {
-          source: "ptx-hex-verification-sample",
-          action: "hex-verification-sample-created",
-          fromStage: "",
-          toStage: "준비",
-          businessAnchorId: String(labAnchorId || "").trim() || null,
-          requestorBusinessAnchorId: String(labAnchorId || "").trim() || null,
-          requestIds: sampleRequestIds,
-          count: sampleRequestIds.length,
-        },
-      );
-    })
-    .catch((hexSampleErr) => {
-      console.warn(
-        `[createAbutmentRequestsFromPracticeTransfer] hex verification sample failed (${logTag})`,
-        hexSampleErr?.message || hexSampleErr,
-      );
-    });
-}
-
-/**
- * 기공소 수락 시 커스텀어벗 → 어벗츠 생산 의뢰 생성.
+ * 커스텀어벗 → 어벗츠 생산 의뢰 생성(어벗 STL handoff 직전).
  * 소스 파일 = PTX 구강스캔(files, 선택). productMode 고정 custom_abutment(생산만).
  */
 export async function createAbutmentRequestsFromPracticeTransfer({
@@ -676,39 +609,8 @@ export async function createAbutmentRequestsFromPracticeTransfer({
         .filter((id) => Types.ObjectId.isValid(id))
     : [];
   if (existingIds.length > 0) {
-    // 신규 생성은 스킵하되, 과거 lot 버그 등으로 빠진 헥스 확인 샘플은 보정한다.
-    void (async () => {
-      try {
-        const existingDocs = await Request.find({
-          _id: {
-            $in: existingIds.map((id) => new Types.ObjectId(id)),
-          },
-          manufacturerStage: { $nin: ["취소"] },
-          "caseInfos.hexVerificationSample": { $ne: true },
-        });
-        if (!existingDocs.length) return;
-
-        const labAnchorId = String(transferDoc?.targetLabAnchorId || "").trim();
-        const labUserId = await resolveLabRequestorUserId({
-          transferDoc,
-          fallbackUserId: actorUserId,
-        });
-        schedulePtxHexVerificationSamples({
-          sourceRequests: existingDocs,
-          labUserId,
-          labAnchorId,
-          actorUserId,
-          transferDoc,
-          logTag: "already_created",
-        });
-      } catch (backfillErr) {
-        console.warn(
-          "[createAbutmentRequestsFromPracticeTransfer] hex sample backfill failed",
-          backfillErr?.message || backfillErr,
-        );
-      }
-    })();
-
+    // 신규 생성은 스킵. 헥스 확인 샘플은 designCompletedAt(어벗 STL handoff) 이후
+    // designHandoff / worksheet backfill에서만 만든다.
     return {
       created: [],
       skippedReason: "already_created",
@@ -1047,18 +949,8 @@ export async function createAbutmentRequestsFromPracticeTransfer({
     created.push(newRequest);
   }
 
-  // 헥스 미확정 제조사 → 확인용 복사샘플(제조사당 1건). relatedRequestIds에는 넣지 않음.
-  // 수락 critical path를 막지 않도록 fire-and-forget.
-  if (created.length > 0) {
-    schedulePtxHexVerificationSamples({
-      sourceRequests: created,
-      labUserId,
-      labAnchorId,
-      actorUserId,
-      transferDoc,
-      logTag: "create",
-    });
-  }
+  // 헥스 확인 샘플은 어벗 STL handoff(designCompletedAt) 이후에만 생성.
+  // (이 시점의 신규 Request는 아직 designCompletedAt이 없어 schedule해도 no-op)
 
   try {
     await triggerDashboardSummaryRefreshForAnchorId(labAnchorId);

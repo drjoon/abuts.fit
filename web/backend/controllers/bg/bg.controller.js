@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-04: pending-stl — APPROVED 전제 제거. 제조 준비 가드+어벗 .stl만(핸드오프 PENDING도 복구).
 // - 2026-09-03: 2-filled 성공 시 stlPreload NONE, 실패 시 FAILED. 취소 의뢰 콜백 ignore.
 // - 2026-08-18: 2-filled 재생성 성공 시 기존 NC 메타 $unset. regenerated/ncCleared를 웹소켓에 포함.
 // - 2026-08-16: request-meta — manufacturerHexRotation 누락 시 caseInfos/STL모델대로 폴백(500 제거).
@@ -50,6 +51,7 @@ import {
   resolveConnectionTargetDiameter,
 } from "../requests/prcMapping.utils.js";
 import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
+import { buildWorksheetReadyQueueGuard } from "../../services/worksheetReadyQueue.guard.js";
 
 const BG_STORAGE_BASE =
   process.env.BG_STORAGE_PATH ||
@@ -1816,20 +1818,27 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
 
 // Rhino 서버 재기동 시 backend pending-stl SSOT를 기준으로 입력 STL 캐시를 복구하기 위한 API
 // GET /api/bg/pending-stl
-// 조건: 요청이 취소가 아니고, caseInfos.file은 있으나 filled STL(stlFile/legacy camFile)이 없는 건
+// 조건: 취소 아님 + 제조 준비 큐 대상 + 어벗 .stl 원본 있음 + filled STL 없음
+// (PTX 핸드오프 직후는 review=PENDING — APPROVED만 보면 복구 누락 → 고스트「라이노 작업중」)
 export const listPendingStl = asyncHandler(async (req, res) => {
+  const readyGuard = buildWorksheetReadyQueueGuard();
   const requests = await Request.find({
     manufacturerStage: { $ne: "취소" },
-    // "승인한 것만" BG가 처리하도록 제한
-    // rhino-server는 startup 시 이 목록만 읽어 로컬 입력 캐시를 복구하므로,
-    // 승인/명령되지 않은 건이 섞이면 안 된다.
-    "caseInfos.reviewByStage.request.status": "APPROVED",
     "caseInfos.file.filePath": { $exists: true, $ne: null },
     // 준비 탭「중단」— CANCELLED/FAILED 건은 재기동 복구 큐에서 제외
     "productionSchedule.stlPreload.status": {
       $nin: ["CANCELLED", "FAILED"],
     },
     ...mongoMissingFilledStlFileClause(),
+    $and: [
+      readyGuard,
+      {
+        $or: [
+          { "caseInfos.file.filePath": { $regex: /\.stl$/i } },
+          { "caseInfos.file.originalName": { $regex: /\.stl$/i } },
+        ],
+      },
+    ],
   })
     .select({
       requestId: 1,
