@@ -154,6 +154,12 @@ export const getProsthesisTypesForLinkState = (isLinked: boolean, catalog: strin
   const allowed = new Set<string>(
     isLinked ? LINKED_PROSTHESIS_TYPES : STANDALONE_PROSTHESIS_TYPES,
   );
+  const linkedSet = new Set<string>(LINKED_PROSTHESIS_TYPES);
+  const standaloneOnly = new Set<string>([
+    "인레이",
+    "크라운",
+    CUSTOM_ABUTMENT_PROSTHESIS_TYPE,
+  ]);
   const next = catalog
     .map((type) =>
       type === "가철성 임시치아" || type.replace(/\s+/g, "") === "가철성임시치아"
@@ -164,6 +170,19 @@ export const getProsthesisTypesForLinkState = (isLinked: boolean, catalog: strin
       if (allowed.has(type)) return true;
       if (!isLinked && isCustomAbutmentProsthesisType(type)) return true;
       if (!isLinked && isTemporaryToothProsthesisType(type)) return true;
+      // 전체틀니·부분틀니·랩어라운드·커스텀 등 카탈로그 단독 형태
+      if (!isLinked && type && !linkedSet.has(type) && !isMissingToothProsthesisType(type)) {
+        return true;
+      }
+      // 연결(+) 상태에서도 틀니·커스텀 형태 유지
+      if (
+        isLinked &&
+        type &&
+        !standaloneOnly.has(type) &&
+        !isCustomAbutmentProsthesisType(type)
+      ) {
+        return true;
+      }
       if (isLinked && isMissingToothProsthesisType(type)) return true;
       if (isLinked && isRetainerProsthesisType(type)) return true;
       if (isLinked && isTemporaryToothProsthesisType(type)) return true;

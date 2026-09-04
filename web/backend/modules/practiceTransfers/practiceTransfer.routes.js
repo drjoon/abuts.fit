@@ -51,6 +51,7 @@ import {
   upsertPracticeTransferSettings,
 } from "../../controllers/practiceTransfers/practiceTransferSettings.controller.js";
 import { createRoundBarAbutmentRequest } from "../../controllers/practiceTransfers/roundBarAbutmentRequest.controller.js";
+import { createProsthesisFeeItemRequest } from "../../controllers/practiceTransfers/prosthesisFeeItemRequest.controller.js";
 
 const router = express.Router();
 
@@ -97,6 +98,13 @@ router.post(
   authenticate,
   authorize(["practice", "requestor", "admin"]),
   createRoundBarAbutmentRequest,
+);
+
+router.post(
+  "/prosthesis-fee-item-requests",
+  authenticate,
+  authorize(["practice", "requestor", "admin"]),
+  createProsthesisFeeItemRequest,
 );
 
 router.get("/draft", authenticate, sendAuth, getMyPracticeTransferDraft);

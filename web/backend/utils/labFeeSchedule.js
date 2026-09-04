@@ -23,6 +23,7 @@
 // - 2026-08-20: Pontic 수가 항목 제거. 레거시 Pontic 치아는 브리지 수가. 임시치아 스팬의 구 Pontic은 세트에 포함.
 // - 2026-08-13: 견적 라인은 치아번호 10→20→30→40번대 순.
 // - 2026-08-17: 번대 안은 정중선 가운데(18→11, 21→28, 38→31, 41→48).
+// - 2026-09-05: 미설정·필요 수가 항목명은 상악→하악(치아 번대) 순.
 // - 2026-08-13: 유지장치에 남은 커스텀 플래그는 어벗 과금하지 않는다.
 // - 2026-08-19: 임시치아+어벗은 임시치아 수가와 기공소 어벗 수가를 함께 합산.
 // - 2026-08-19: 임시치아 어벗은 묶음 줄과 분리해 치아별 커스텀어벗 단가 줄로 표시.
@@ -374,10 +375,16 @@ export function labFeeItemNameForProsthesisType(prosthesisType) {
 
 export function labFeeItemNamesNeededForToothWorks(toothWorks) {
   const rows = Array.isArray(toothWorks) ? toothWorks : [];
+  // 상악(1·2번대) → 하악(3·4번대) 순으로 항목명 수집(견적 툴팁·미설정 안내)
+  const orderedRows = rows.slice().sort((a, b) => {
+    const toothA = String(a?.toothNumber || a?.tooth || "").trim();
+    const toothB = String(b?.toothNumber || b?.tooth || "").trim();
+    return toToothDecadeSortNumber(toothA) - toToothDecadeSortNumber(toothB);
+  });
   const absorbed = absorbedNonTempTeethInTempSpans(rows);
   const names = [];
   const seen = new Set();
-  for (const row of rows) {
+  for (const row of orderedRows) {
     const toothNumber = String(row?.toothNumber || row?.tooth || "").trim();
     if (toothNumber && !/^[1-4][1-8]$/.test(toothNumber)) continue;
     if (absorbed.has(toothNumber)) continue;
@@ -445,7 +452,7 @@ export function isCustomAbutmentWithoutJigFeeName(name) {
   );
 }
 
-function labFeeItemHasChargePrice(item) {
+export function labFeeItemHasChargePrice(item) {
   if (!item || item.enabled === false) return false;
   const tierPrices = Array.isArray(item.tiers)
     ? item.tiers.map((tier) => Math.round(Number(tier?.price || 0)))

@@ -20,6 +20,9 @@
 // - web/frontend/src/shared/shipping/ShippingModeBadge.tsx
 // - web/backend/controllers/requests/common.nc.controller.js
 // - web/backend/rules.md
+// - web/backend/services/prosthesisFeeItemRequestDashboardStats.service.js
+// - 2026-09-05: 신규 보철물(기공수가) 요청 카드.
+// - 2026-09-05: 추가요청 승인(지정 기공소/전체) · 반려.
 import { useEffect, useMemo, useState } from "react";
 import { getNormalizedStageLabelSafe } from "@/utils/stage";
 import { useNavigate } from "react-router-dom";
@@ -32,6 +35,13 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { MultiActionDialog } from "@/features/support/components/MultiActionDialog";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { apiFetch } from "@/shared/api/apiClient";
+import {
+  approveProsthesisFeeItemRequest,
+  dismissProsthesisFeeItemRequest,
+  renameProsthesisFeeItemRequest,
+  revertProsthesisFeeItemRequest,
+} from "@/shared/practice/prosthesisFeeItemRequest";
+import { Input } from "@/components/ui/input";
 import { useAuthStore } from "@/store/useAuthStore";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
@@ -50,6 +60,7 @@ import {
   Puzzle,
   RotateCw,
   BarChart3,
+  Layers,
   type LucideIcon,
 } from "lucide-react";
 import { MachiningStatisticsModal } from "@/pages/manufacturer/worksheet/custom_abutment/machining/components/MachiningStatisticsModal";
@@ -155,6 +166,7 @@ type AdminDashboardResponseData = {
   systemAlerts?: DashboardData["systemAlerts"];
   practiceTransferStats?: PracticeTransferStats;
   unsupportedAbutmentStats?: UnsupportedAbutmentStats;
+  prosthesisFeeItemRequestStats?: ProsthesisFeeItemRequestStats;
 };
 
 type DashboardData = {
@@ -376,6 +388,38 @@ type UnsupportedAbutmentStats = {
   items?: UnsupportedAbutmentItem[];
 };
 
+type ProsthesisFeeItemRequestStatus =
+  | "pending"
+  | "approved"
+  | "adopted"
+  | "dismissed";
+
+type ProsthesisFeeItemRequestItem = {
+  id?: string;
+  practiceAnchorId?: string | null;
+  practiceName?: string;
+  labAnchorId?: string | null;
+  labName?: string;
+  labTargets?: Array<{ labAnchorId?: string; labName?: string }>;
+  name?: string;
+  nameKey?: string;
+  status?: ProsthesisFeeItemRequestStatus;
+  source?: string;
+  applyScope?: "lab" | "all_labs" | null;
+  createdAt?: string | null;
+  approvedAt?: string | null;
+  adoptedAt?: string | null;
+};
+
+type ProsthesisFeeItemRequestStats = {
+  pending?: number;
+  approved?: number;
+  adopted?: number;
+  dismissed?: number;
+  total?: number;
+  items?: ProsthesisFeeItemRequestItem[];
+};
+
 type UnmachinableDetailCode = "potential" | "judged" | "confirmed" | "none";
 
 type UnmachinableSummaryItem = {
@@ -584,6 +628,14 @@ export const AdminDashboardPage = () => {
     useState(false);
   const [unsupportedAbutmentDetailItem, setUnsupportedAbutmentDetailItem] =
     useState<UnsupportedAbutmentItem | null>(null);
+  const [prosthesisFeeItemRequestDialogOpen, setProsthesisFeeItemRequestDialogOpen] =
+    useState(false);
+  const [prosthesisFeeItemRequestFilter, setProsthesisFeeItemRequestFilter] =
+    useState<"all" | ProsthesisFeeItemRequestStatus>("all");
+  const [prosthesisFeeItemRequestActingId, setProsthesisFeeItemRequestActingId] =
+    useState<string | null>(null);
+  const [prosthesisFeeItemRequestNameDrafts, setProsthesisFeeItemRequestNameDrafts] =
+    useState<Record<string, string>>({});
   const [practiceTransferStatsDialogOpen, setPracticeTransferStatsDialogOpen] =
     useState(false);
   const [restoreTransferTarget, setRestoreTransferTarget] = useState<{
@@ -764,6 +816,7 @@ export const AdminDashboardPage = () => {
       "request:delivery-updated-batch",
       "credit:balance-updated",
       "worksheet:count-update",
+      "prosthesis-fee-item:request",
     ],
     delayMs: 120,
     deferWhenEditing: false,
@@ -1189,6 +1242,104 @@ export const AdminDashboardPage = () => {
     unsupportedAbutmentAdoptedRoundBar,
   );
 
+  const prosthesisFeeItemRequestStats =
+    ((adminDashboardResponse?.data as
+      | { prosthesisFeeItemRequestStats?: ProsthesisFeeItemRequestStats }
+      | undefined)?.prosthesisFeeItemRequestStats as
+      | ProsthesisFeeItemRequestStats
+      | undefined) || {};
+  const prosthesisFeeItemRequestItems = Array.isArray(
+    prosthesisFeeItemRequestStats.items,
+  )
+    ? prosthesisFeeItemRequestStats.items
+    : [];
+  const prosthesisFeeItemRequestPending = Number(
+    prosthesisFeeItemRequestStats.pending || 0,
+  );
+  const prosthesisFeeItemRequestApproved = Number(
+    prosthesisFeeItemRequestStats.approved || 0,
+  );
+  const prosthesisFeeItemRequestAdopted = Number(
+    prosthesisFeeItemRequestStats.adopted || 0,
+  );
+  const prosthesisFeeItemRequestDismissed = Number(
+    prosthesisFeeItemRequestStats.dismissed || 0,
+  );
+  const prosthesisFeeItemRequestTotal =
+    Number(prosthesisFeeItemRequestStats.total || 0) ||
+    prosthesisFeeItemRequestPending +
+      prosthesisFeeItemRequestApproved +
+      prosthesisFeeItemRequestAdopted +
+      prosthesisFeeItemRequestDismissed;
+  const prosthesisFeeItemRequestStatRows = [
+    {
+      key: "pending" as const,
+      label: "대기",
+      count: prosthesisFeeItemRequestPending,
+    },
+    {
+      key: "approved" as const,
+      label: "승인(Off 시드)",
+      count: prosthesisFeeItemRequestApproved,
+    },
+    {
+      key: "adopted" as const,
+      label: "수가 On",
+      count: prosthesisFeeItemRequestAdopted,
+    },
+    {
+      key: "dismissed" as const,
+      label: "반려",
+      count: prosthesisFeeItemRequestDismissed,
+    },
+  ];
+  const prosthesisFeeItemRequestMaxCount = Math.max(
+    1,
+    prosthesisFeeItemRequestPending,
+    prosthesisFeeItemRequestApproved,
+    prosthesisFeeItemRequestAdopted,
+    prosthesisFeeItemRequestDismissed,
+  );
+  const filteredProsthesisFeeItemRequestItems =
+    prosthesisFeeItemRequestItems.filter((item) => {
+      if (prosthesisFeeItemRequestFilter === "all") return true;
+      return item.status === prosthesisFeeItemRequestFilter;
+    });
+  const formatProsthesisFeeItemRequestStatus = (
+    status: ProsthesisFeeItemRequestStatus | string | undefined,
+  ) => {
+    if (status === "approved") return "승인(Off 시드)";
+    if (status === "adopted") return "수가 On";
+    if (status === "dismissed") return "반려";
+    return "대기";
+  };
+
+  const formatProsthesisFeeItemRequestLabs = (
+    item: ProsthesisFeeItemRequestItem,
+  ) => {
+    const targets = Array.isArray(item.labTargets)
+      ? item.labTargets
+          .map((row) => String(row?.labName || "").trim())
+          .filter(Boolean)
+      : [];
+    if (targets.length > 0) {
+      if (targets.length <= 2) return targets.join(", ");
+      return `${targets.slice(0, 2).join(", ")} 외 ${targets.length - 2}곳`;
+    }
+    return String(item.labName || "").trim();
+  };
+
+  const hasProsthesisFeeItemRequestLabs = (
+    item: ProsthesisFeeItemRequestItem,
+  ) => {
+    if (Array.isArray(item.labTargets) && item.labTargets.length > 0) {
+      return item.labTargets.some((row) =>
+        Boolean(String(row?.labAnchorId || "").trim()),
+      );
+    }
+    return Boolean(String(item.labAnchorId || "").trim());
+  };
+
   const filteredUnsupportedAbutmentItems = unsupportedAbutmentItems.filter(
     (item) => {
       if (unsupportedAbutmentStatsFilter === "all") return true;
@@ -1321,6 +1472,208 @@ export const AdminDashboardPage = () => {
     } catch {
       void refetchAdminDashboard();
     }
+  };
+
+  const resolveProsthesisFeeItemRequestName = (
+    item: ProsthesisFeeItemRequestItem,
+  ) => {
+    const id = String(item.id || "").trim();
+    if (id && Object.prototype.hasOwnProperty.call(prosthesisFeeItemRequestNameDrafts, id)) {
+      return String(prosthesisFeeItemRequestNameDrafts[id] ?? "");
+    }
+    return String(item.name || "");
+  };
+
+  const patchProsthesisFeeItemRequestNameInCache = (
+    requestId: string,
+    name: string,
+  ) => {
+    const id = String(requestId || "").trim();
+    const nextName = String(name || "").trim();
+    if (!id || !nextName) return;
+    queryClient.setQueryData(
+      ["admin-dashboard-page", period],
+      (prev: ApiEnvelope<AdminDashboardResponseData> | undefined) => {
+        if (!prev?.data) return prev;
+        const stats = (
+          prev.data as { prosthesisFeeItemRequestStats?: ProsthesisFeeItemRequestStats }
+        )?.prosthesisFeeItemRequestStats;
+        if (!stats || !Array.isArray(stats.items)) return prev;
+        let changed = false;
+        const items = stats.items.map((row) => {
+          if (String(row?.id || "").trim() !== id) return row;
+          if (String(row?.name || "").trim() === nextName) return row;
+          changed = true;
+          return { ...row, name: nextName };
+        });
+        if (!changed) return prev;
+        return {
+          ...prev,
+          data: {
+            ...prev.data,
+            prosthesisFeeItemRequestStats: {
+              ...stats,
+              items,
+            },
+          },
+        };
+      },
+    );
+  };
+
+  const handleRenameProsthesisFeeItemRequest = async (
+    item: ProsthesisFeeItemRequestItem,
+  ) => {
+    const requestId = String(item.id || "").trim();
+    if (!requestId || prosthesisFeeItemRequestActingId) return;
+    const nextName = String(resolveProsthesisFeeItemRequestName(item) || "").trim();
+    const prevName = String(item.name || "").trim();
+    if (!nextName) {
+      toast({
+        title: "이름 필요",
+        description: "보철물 이름을 입력해주세요.",
+        variant: "destructive",
+      });
+      setProsthesisFeeItemRequestNameDrafts((prev) => ({
+        ...prev,
+        [requestId]: prevName,
+      }));
+      return;
+    }
+    if (nextName === prevName) return;
+    setProsthesisFeeItemRequestActingId(requestId);
+    const ok = await renameProsthesisFeeItemRequest({
+      requestId,
+      name: nextName,
+    });
+    setProsthesisFeeItemRequestActingId(null);
+    if (!ok) {
+      toast({
+        title: "이름 변경 실패",
+        description: "잠시 후 다시 시도해주세요.",
+        variant: "destructive",
+      });
+      setProsthesisFeeItemRequestNameDrafts((prev) => ({
+        ...prev,
+        [requestId]: prevName,
+      }));
+      return;
+    }
+    patchProsthesisFeeItemRequestNameInCache(requestId, nextName);
+    setProsthesisFeeItemRequestNameDrafts((prev) => {
+      const next = { ...prev };
+      delete next[requestId];
+      return next;
+    });
+  };
+
+  const handleApproveProsthesisFeeItemRequest = async (
+    item: ProsthesisFeeItemRequestItem,
+    applyScope: "lab" | "all_labs",
+  ) => {
+    const requestId = String(item.id || "").trim();
+    if (!requestId || prosthesisFeeItemRequestActingId) return;
+    if (applyScope === "lab" && !hasProsthesisFeeItemRequestLabs(item)) {
+      toast({
+        title: "지정 기공소 필요",
+        description: "대상 기공소가 없는 요청은 모든 기공소로만 승인할 수 있습니다.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const draftName = String(resolveProsthesisFeeItemRequestName(item) || "").trim();
+    if (!draftName) {
+      toast({
+        title: "이름 필요",
+        description: "보철물 이름을 입력해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setProsthesisFeeItemRequestActingId(requestId);
+    const ok = await approveProsthesisFeeItemRequest({
+      requestId,
+      applyScope,
+      name: draftName,
+      labAnchorId: item.labAnchorId,
+      labName: item.labName,
+      labs: Array.isArray(item.labTargets)
+        ? item.labTargets
+            .map((row) => ({
+              labAnchorId: String(row?.labAnchorId || "").trim(),
+              labName: String(row?.labName || "").trim(),
+            }))
+            .filter((row) => Boolean(row.labAnchorId))
+        : undefined,
+    });
+    setProsthesisFeeItemRequestActingId(null);
+    if (!ok) {
+      toast({
+        title: "승인 실패",
+        description: "잠시 후 다시 시도해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+    toast({
+      title: "승인 완료",
+      description:
+        applyScope === "all_labs"
+          ? "모든 기공소 기공비에 Off 항목을 시드합니다. 설정·기공비에서 수가·On을 지정하세요."
+          : "선택한 지정 기공소 기공비에만 Off 항목을 시드합니다. 설정·기공비에서 수가·On을 지정하세요.",
+    });
+    setProsthesisFeeItemRequestNameDrafts((prev) => {
+      const next = { ...prev };
+      delete next[requestId];
+      return next;
+    });
+    void refetchAdminDashboardFresh();
+  };
+
+  const handleDismissProsthesisFeeItemRequest = async (
+    item: ProsthesisFeeItemRequestItem,
+  ) => {
+    const requestId = String(item.id || "").trim();
+    if (!requestId || prosthesisFeeItemRequestActingId) return;
+    setProsthesisFeeItemRequestActingId(requestId);
+    const ok = await dismissProsthesisFeeItemRequest(requestId);
+    setProsthesisFeeItemRequestActingId(null);
+    if (!ok) {
+      toast({
+        title: "반려 실패",
+        description: "잠시 후 다시 시도해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+    toast({ title: "반려 완료" });
+    void refetchAdminDashboardFresh();
+  };
+
+  const handleRevertProsthesisFeeItemRequest = async (
+    item: ProsthesisFeeItemRequestItem,
+  ) => {
+    const requestId = String(item.id || "").trim();
+    if (!requestId || prosthesisFeeItemRequestActingId) return;
+    setProsthesisFeeItemRequestActingId(requestId);
+    const ok = await revertProsthesisFeeItemRequest(requestId);
+    setProsthesisFeeItemRequestActingId(null);
+    if (!ok) {
+      toast({
+        title: "되돌리기 실패",
+        description: "잠시 후 다시 시도해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+    toast({
+      title: "대기로 되돌림",
+      description:
+        item.status === "approved" || item.status === "adopted"
+          ? "요청을 대기로 되돌렸습니다. Off·0원으로만 시드된 항목은 제거됩니다."
+          : "요청을 대기로 되돌렸습니다.",
+    });
+    void refetchAdminDashboardFresh();
   };
 
   const handleRestorePracticeTransfer = async () => {
@@ -1987,6 +2340,98 @@ export const AdminDashboardPage = () => {
                 </CardContent>
               </Card>
 
+              {/* 카드5-3b: 신규 보철물(기공수가) 요청 */}
+              <Card className="app-glass-card app-glass-card--lg h-full">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">
+                    신규 보철물 요청
+                  </CardTitle>
+                  <Layers className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <button
+                    type="button"
+                    className="w-full px-1 py-1 text-left hover:bg-slate-50/70 transition rounded-sm"
+                    onClick={() => {
+                      setProsthesisFeeItemRequestFilter("all");
+                      setProsthesisFeeItemRequestDialogOpen(true);
+                    }}
+                  >
+                    <div className="space-y-2">
+                      {prosthesisFeeItemRequestStatRows.map((row) => {
+                        const ratio = Math.max(
+                          0,
+                          Math.min(
+                            1,
+                            row.count / prosthesisFeeItemRequestMaxCount,
+                          ),
+                        );
+                        const isPending = row.key === "pending";
+                        const isApproved = row.key === "approved";
+                        return (
+                          <div key={row.key} className="space-y-1 py-0.5">
+                            <div className="flex items-center justify-between text-[11px]">
+                              <span className="text-muted-foreground">{row.label}</span>
+                              <span
+                                className={`font-semibold ${
+                                  isPending
+                                    ? "text-amber-800"
+                                    : isApproved
+                                      ? "text-sky-800"
+                                      : "text-primary-strong"
+                                }`}
+                              >
+                                {row.count.toLocaleString()}건
+                              </span>
+                            </div>
+                            <div className="h-2 w-full rounded bg-slate-100 overflow-hidden">
+                              <div
+                                className={`h-full rounded ${
+                                  isPending
+                                    ? "bg-amber-500"
+                                    : isApproved
+                                      ? "bg-sky-500"
+                                      : "bg-primary"
+                                }`}
+                                style={{ width: `${ratio * 100}%` }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="mt-2 space-y-1">
+                      {prosthesisFeeItemRequestItems
+                        .filter((item) => item.status === "pending")
+                        .slice(0, 3)
+                        .map((item) => (
+                          <div
+                            key={String(item.id || `${item.nameKey}-${item.createdAt}`)}
+                            className="truncate text-[11px] text-slate-700"
+                          >
+                            {String(item.name || "-")}
+                            <span className="text-muted-foreground">
+                              {" "}
+                              · {String(item.practiceName || "-")}
+                              {formatProsthesisFeeItemRequestLabs(item)
+                                ? ` → ${formatProsthesisFeeItemRequestLabs(item)}`
+                                : ""}
+                            </span>
+                          </div>
+                        ))}
+                      {prosthesisFeeItemRequestPending === 0 ? (
+                        <div className="text-[11px] text-muted-foreground">
+                          대기 중인 요청이 없습니다.
+                        </div>
+                      ) : null}
+                    </div>
+                    <div className="mt-2 text-[11px] text-muted-foreground">
+                      총 {prosthesisFeeItemRequestTotal.toLocaleString()}건 · 클릭 시 목록
+                    </div>
+                  </button>
+                </CardContent>
+              </Card>
+
               {/* 카드5-4: 가공 통계 */}
               <Card className="app-glass-card app-glass-card--lg h-full">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -2465,6 +2910,238 @@ export const AdminDashboardPage = () => {
             onClick: () => {
               setUnsupportedAbutmentStatsDialogOpen(false);
               setUnsupportedAbutmentStatsFilter("all");
+            },
+          },
+        ]}
+      />
+
+      <MultiActionDialog
+        open={prosthesisFeeItemRequestDialogOpen}
+        onClose={() => {
+          setProsthesisFeeItemRequestDialogOpen(false);
+          setProsthesisFeeItemRequestFilter("all");
+          setProsthesisFeeItemRequestNameDrafts({});
+        }}
+        title="신규 보철물 요청"
+        panelClassName="!w-[min(900px,calc(100vw-2rem))] !max-w-[calc(100vw-2rem)]"
+        description={
+          <div className="space-y-3 text-sm text-gray-700">
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setProsthesisFeeItemRequestFilter("all")}
+                className={`inline-flex items-center rounded-md border px-2.5 py-1 text-xs font-semibold transition ${
+                  prosthesisFeeItemRequestFilter === "all"
+                    ? "border-slate-500 bg-white text-slate-800 ring-1 ring-slate-400"
+                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                전체 ({prosthesisFeeItemRequestItems.length.toLocaleString()})
+              </button>
+              {prosthesisFeeItemRequestStatRows.map((row) => {
+                const isActive = prosthesisFeeItemRequestFilter === row.key;
+                return (
+                  <button
+                    key={row.key}
+                    type="button"
+                    onClick={() => setProsthesisFeeItemRequestFilter(row.key)}
+                    className={`inline-flex items-center rounded-md border px-2.5 py-1 text-xs font-semibold transition ${
+                      isActive
+                        ? row.key === "pending"
+                          ? "border-amber-500 bg-amber-100 text-amber-950 ring-1 ring-amber-400/40"
+                          : row.key === "approved"
+                            ? "border-sky-500 bg-sky-100 text-sky-950 ring-1 ring-sky-400/40"
+                            : row.key === "dismissed"
+                              ? "border-slate-500 bg-slate-100 text-slate-900 ring-1 ring-slate-400/40"
+                              : "border-primary/70 bg-primary-soft text-primary-strong ring-1 ring-primary/30"
+                        : row.key === "pending"
+                          ? "border-amber-200 bg-amber-50 text-amber-900 hover:bg-amber-100"
+                          : row.key === "approved"
+                            ? "border-sky-200 bg-sky-50 text-sky-900 hover:bg-sky-100"
+                            : row.key === "dismissed"
+                              ? "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100"
+                              : "border-primary-muted bg-primary-soft/70 text-primary-strong hover:bg-primary-soft"
+                    }`}
+                  >
+                    {row.label} ({row.count.toLocaleString()})
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="max-h-[min(60vh,28rem)] space-y-2 overflow-y-auto pr-1">
+              {filteredProsthesisFeeItemRequestItems.length === 0 ? (
+                <div className="rounded-md border border-dashed px-3 py-6 text-center text-sm text-muted-foreground">
+                  조건에 맞는 요청이 없습니다.
+                </div>
+              ) : (
+                filteredProsthesisFeeItemRequestItems.map((item) => (
+                  <div
+                    key={String(item.id || `${item.nameKey}-${item.createdAt}`)}
+                    className="rounded-md border px-3 py-2.5"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      {item.status === "pending" ? (
+                        <Input
+                          value={resolveProsthesisFeeItemRequestName(item)}
+                          onChange={(e) => {
+                            const id = String(item.id || "").trim();
+                            if (!id) return;
+                            setProsthesisFeeItemRequestNameDrafts((prev) => ({
+                              ...prev,
+                              [id]: e.target.value,
+                            }));
+                          }}
+                          onBlur={() => {
+                            void handleRenameProsthesisFeeItemRequest(item);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key !== "Enter") return;
+                            e.preventDefault();
+                            (e.currentTarget as HTMLInputElement).blur();
+                          }}
+                          disabled={
+                            prosthesisFeeItemRequestActingId ===
+                            String(item.id || "")
+                          }
+                          className="h-8 min-w-[8rem] flex-1 rounded-md text-sm font-medium"
+                          aria-label="보철물 이름"
+                        />
+                      ) : (
+                        <div className="font-medium text-slate-900">
+                          {String(item.name || "-")}
+                        </div>
+                      )}
+                      <Badge variant="outline" className="text-[10px]">
+                        {formatProsthesisFeeItemRequestStatus(item.status)}
+                      </Badge>
+                    </div>
+                    <div className="mt-1 text-[11px] text-muted-foreground">
+                      {String(item.practiceName || "-")}
+                      {formatProsthesisFeeItemRequestLabs(item)
+                        ? ` → ${formatProsthesisFeeItemRequestLabs(item)}`
+                        : " · 기공소 미지정"}
+                      {" · "}
+                      {formatUnsupportedAbutmentDate(item.createdAt)}
+                      {item.applyScope === "all_labs"
+                        ? " · 적용: 모든 기공소"
+                        : item.applyScope === "lab"
+                          ? " · 적용: 지정 기공소"
+                          : ""}
+                    </div>
+                    {item.status === "pending" ? (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-7 px-2 text-[11px]"
+                          disabled={
+                            prosthesisFeeItemRequestActingId ===
+                              String(item.id || "") ||
+                            !hasProsthesisFeeItemRequestLabs(item)
+                          }
+                          title={
+                            hasProsthesisFeeItemRequestLabs(item)
+                              ? "요청에 지정된 기공소만 Off 시드"
+                              : "대상 기공소가 없어 지정 승인 불가"
+                          }
+                          onClick={() =>
+                            void handleApproveProsthesisFeeItemRequest(
+                              item,
+                              "lab",
+                            )
+                          }
+                        >
+                          지정 기공소만
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-7 px-2 text-[11px]"
+                          disabled={
+                            prosthesisFeeItemRequestActingId ===
+                            String(item.id || "")
+                          }
+                          title="모든 기공소 기공비에 Off 시드"
+                          onClick={() =>
+                            void handleApproveProsthesisFeeItemRequest(
+                              item,
+                              "all_labs",
+                            )
+                          }
+                        >
+                          모든 기공소
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-2 text-[11px] text-slate-600"
+                          disabled={
+                            prosthesisFeeItemRequestActingId ===
+                            String(item.id || "")
+                          }
+                          onClick={() =>
+                            void handleDismissProsthesisFeeItemRequest(item)
+                          }
+                        >
+                          반려
+                        </Button>
+                      </div>
+                    ) : item.status === "approved" ||
+                      item.status === "dismissed" ||
+                      item.status === "adopted" ? (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-7 px-2 text-[11px]"
+                          disabled={
+                            prosthesisFeeItemRequestActingId ===
+                            String(item.id || "")
+                          }
+                          title="대기로 되돌리기"
+                          onClick={() =>
+                            void handleRevertProsthesisFeeItemRequest(item)
+                          }
+                        >
+                          되돌리기
+                        </Button>
+                        {item.status === "approved" ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-2 text-[11px] text-slate-600"
+                            disabled={
+                              prosthesisFeeItemRequestActingId ===
+                              String(item.id || "")
+                            }
+                            onClick={() =>
+                              void handleDismissProsthesisFeeItemRequest(item)
+                            }
+                          >
+                            반려
+                          </Button>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        }
+        actions={[
+          {
+            label: "닫기",
+            variant: "secondary",
+            onClick: () => {
+              setProsthesisFeeItemRequestDialogOpen(false);
+              setProsthesisFeeItemRequestFilter("all");
+              setProsthesisFeeItemRequestNameDrafts({});
             },
           },
         ]}

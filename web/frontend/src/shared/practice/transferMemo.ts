@@ -665,10 +665,32 @@ export const isBridgeLikeProsthesisType = (prosthesisType: string) =>
   isRetainerProsthesisType(prosthesisType) ||
   isMissingToothProsthesisType(prosthesisType);
 
-/** 연결(+)을 유지할 수 있는 형태. 브리지 계열은 2치 이상 필수, 임시치아는 1치부터 가능 */
-export const isLinkableProsthesisType = (prosthesisType: string) =>
-  isBridgeLikeProsthesisType(prosthesisType) ||
-  isTemporaryToothProsthesisType(prosthesisType);
+/** 연결(+)을 유지할 수 있는 형태. 브리지 계열은 2치 이상 필수, 임시치아는 1치부터 가능.
+ * 전체틀니·부분틀니·랩어라운드 등 악궁 일괄 형태도 연결 표시 가능. */
+export const isLinkableProsthesisType = (prosthesisType: string) => {
+  const raw = String(prosthesisType || "").trim();
+  if (!raw) return false;
+  if (
+    isBridgeLikeProsthesisType(raw) ||
+    isTemporaryToothProsthesisType(raw)
+  ) {
+    return true;
+  }
+  if (raw === "전체틀니" || raw === "부분틀니" || raw === "랩어라운드") {
+    return true;
+  }
+  // 인레이·크라운·커스텀어벗·결손치는 단독 계열 — 연결 불가
+  if (
+    raw === "인레이" ||
+    raw === "크라운" ||
+    isCustomAbutmentProsthesisType(raw) ||
+    isMissingToothProsthesisType(raw)
+  ) {
+    return false;
+  }
+  // 그 외 커스텀 보철명은 연결 허용(전체 선택 추가 항목)
+  return true;
+};
 
 export const isAbutmentDesignProsthesisType = (prosthesisType: string) =>
   isCustomAbutmentProsthesisType(prosthesisType);

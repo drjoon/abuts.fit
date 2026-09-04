@@ -76,6 +76,12 @@ import {
 // - web/backend/controllers/admin/admin.abutsLabFeeSchedule.controller.js
 import { listLabFeeSchedules } from "../../controllers/admin/admin.labFeeSchedules.controller.js";
 import {
+  approveProsthesisFeeItemRequest,
+  dismissProsthesisFeeItemRequest,
+  renameProsthesisFeeItemRequest,
+  revertProsthesisFeeItemRequest,
+} from "../../controllers/practiceTransfers/prosthesisFeeItemRequest.controller.js";
+import {
   getAbutsLabFeeSchedule,
   updateAbutsLabFeeSchedule,
 } from "../../controllers/admin/admin.abutsLabFeeSchedule.controller.js";
@@ -347,6 +353,23 @@ router.get("/round-bar-requests", adminListRoundBarAbutmentRequests);
 router.post("/round-bar-requests", adminCreateRoundBarAbutmentRequest);
 router.patch("/round-bar-requests/:id", adminUpdateRoundBarAbutmentRequest);
 router.delete("/round-bar-requests/:id", adminDeleteRoundBarAbutmentRequest);
+
+router.post(
+  "/prosthesis-fee-item-requests/:id/approve",
+  approveProsthesisFeeItemRequest,
+);
+router.post(
+  "/prosthesis-fee-item-requests/:id/dismiss",
+  dismissProsthesisFeeItemRequest,
+);
+router.post(
+  "/prosthesis-fee-item-requests/:id/revert",
+  revertProsthesisFeeItemRequest,
+);
+router.patch(
+  "/prosthesis-fee-item-requests/:id",
+  renameProsthesisFeeItemRequest,
+);
 
 // 사업자 관리
 router.get(

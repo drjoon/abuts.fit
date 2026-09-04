@@ -32,6 +32,7 @@ import {
 } from "../../services/requestDashboardCache.service.js";
 import { collectHappyCallReasonCodes } from "./happyCallReasons.js";
 import { buildUnsupportedAbutmentDashboardStats } from "../../services/unsupportedAbutmentDashboardStats.service.js";
+import { buildProsthesisFeeItemRequestDashboardStats } from "../../services/prosthesisFeeItemRequestDashboardStats.service.js";
 
 const HAPPY_CALL_REASON_META = {
   first_completion_this_week: {
@@ -336,6 +337,7 @@ async function buildAdminDashboardPayload(req) {
       practiceTransferTopLabsRaw,
       practiceTransferRecentRaw,
       unsupportedAbutmentStats,
+      prosthesisFeeItemRequestStats,
     ] = await Promise.all([
       User.aggregate([{ $group: { _id: "$role", count: { $sum: 1 } } }]),
       User.countDocuments({ role: "requestor" }),
@@ -673,6 +675,7 @@ async function buildAdminDashboardPayload(req) {
         },
       ]),
       buildUnsupportedAbutmentDashboardStats(),
+      buildProsthesisFeeItemRequestDashboardStats(),
     ]);
 
     const userStatsByRole = {};
@@ -1232,6 +1235,14 @@ async function buildAdminDashboardPayload(req) {
           pending: 0,
           adoptedCnc: 0,
           adoptedRoundBar: 0,
+          total: 0,
+          items: [],
+        },
+        prosthesisFeeItemRequestStats: prosthesisFeeItemRequestStats || {
+          pending: 0,
+          approved: 0,
+          adopted: 0,
+          dismissed: 0,
           total: 0,
           items: [],
         },

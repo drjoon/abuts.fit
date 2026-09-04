@@ -64,6 +64,7 @@ import {
   upsertLabPracticePartnerMemoList,
 } from "../../utils/labPracticePartnerMemo.js";
 import { emitAppEventToRoles, emitAppEventToUser } from "../../socket.js";
+import { adoptProsthesisFeeItemRequestsForLabItems } from "../practiceTransfers/prosthesisFeeItemRequest.controller.js";
 
 /**
  * 설정 UI용 수가. 저장된 항목이 없으면 관리자 기본 기공수가(카탈로그)를 복사.
@@ -785,6 +786,17 @@ export async function updateLabFeeSchedule(req, res) {
         syncError,
       );
     }
+
+    void adoptProsthesisFeeItemRequestsForLabItems({
+      labAnchorId: String(labAnchorId),
+      items,
+      adoptedBy: req.user?._id || null,
+    }).catch((adoptError) => {
+      console.error(
+        "[labTradingPartners] adopt prosthesis fee item requests failed",
+        adoptError,
+      );
+    });
 
     return res.json({
       success: true,

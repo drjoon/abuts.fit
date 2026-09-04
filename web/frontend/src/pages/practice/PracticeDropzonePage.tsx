@@ -1292,7 +1292,8 @@ export const PracticeDropzonePage = () => {
 
   const handleSaveProsthesisTypeSettings = () => {
     const nextTypes = normalizeProsthesisTypes(prosthesisTypeCatalogDraft);
-    setProsthesisTypes(nextTypes.length > 0 ? nextTypes : [...PRESET_PROSTHESIS_TYPES]);
+    const resolved = nextTypes.length > 0 ? nextTypes : [...PRESET_PROSTHESIS_TYPES];
+    setProsthesisTypes(resolved);
     setProsthesisTypeSettingsDialogOpen(false);
   };
 
@@ -2800,6 +2801,15 @@ export const PracticeDropzonePage = () => {
                     normalizedProsthesisTypes,
                     setProsthesisTypeCatalogDraft,
                     setProsthesisTypeSettingsDialogOpen,
+                    onEnsureProsthesisTypesInCatalog: (types) => {
+                      const merged = normalizeProsthesisTypes([
+                        ...PRESET_PROSTHESIS_TYPES,
+                        ...prosthesisTypes,
+                        ...types,
+                      ]);
+                      setProsthesisTypes(merged);
+                      setProsthesisTypeCatalogDraft(merged);
+                    },
                     toothWorks,
                     setToothWorks,
                     requestMemo,
