@@ -2013,8 +2013,8 @@ export const AdminDashboardPage = () => {
                 </CardContent>
               </Card>
 
-              {/* 카드6: 불완전가공 의뢰 현황 */}
-              <Card className="app-glass-card app-glass-card--lg h-full flex flex-col">
+              {/* 카드6: 불완전가공 의뢰 현황 — 다음 카드들과 같은 그리드에서 옆·아래를 채움 */}
+              <Card className="app-glass-card app-glass-card--lg h-full flex flex-col lg:row-span-2">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium">불완전가공 의뢰 현황</CardTitle>
                 </CardHeader>
@@ -2109,9 +2109,7 @@ export const AdminDashboardPage = () => {
                   </div>
                 </CardContent>
               </Card>
-            </div>
 
-            <div className="grid grid-cols-1 gap-3 lg:grid-cols-4 items-stretch">
               {/* 치과 의뢰(파일) 전송 통계 */}
               <Card className="app-glass-card app-glass-card--lg h-full">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -2210,8 +2208,8 @@ export const AdminDashboardPage = () => {
                 </CardContent>
               </Card>
 
-              {/* 카드9: 시스템 알림 */}
-              <Card className="app-glass-card app-glass-card--lg h-full">
+              {/* 카드9: 시스템 알림 — 불완전가공 옆 남은 3칸을 채움 */}
+              <Card className="app-glass-card app-glass-card--lg h-full lg:col-span-3">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">시스템 알림</CardTitle>
                   <AlertCircle className="h-4 w-4 text-muted-foreground" />
