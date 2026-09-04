@@ -27,5 +27,5 @@ export const buildLabIntroMessage = (link: string) => {
   const url = String(link || "").trim();
   if (!url) return "";
 
-  return `안녕하세요 🙂 어벗츠에 기공소로 가입하시면 의뢰·정산·커스텀어벗 생산까지 한곳에서 관리하실 수 있어요.\n아래 링크로 가입해 주세요.\n${url}`;
+  return `안녕하세요 🙂 어벗츠에 기공소로 가입하시면 의뢰·정산·커스텀어벗 생산까지 한곳에서 관리하실 수 있어요.\n가입 후 첫 2건은 무료 테스트로 체험할 수 있습니다.\n아래 링크로 가입해 주세요.\n${url}`;
 };

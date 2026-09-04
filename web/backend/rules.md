@@ -464,7 +464,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 공개 가입: `POST /api/auth/register`. 발신 프로필: `practiceProfile` → `ensureRequestorOrgAnchor`.
   - 백필: `scripts/db/backfill-requestor-capabilities.js` (`--apply`)
   - 크레딧/정산: 유료(paid+verified)만. synthetic BN 환영 크레딧 없음.
-    환영 무료 크레딧은 `requestorKind=lab`만(치과 practice 제외).
+    기공소 가입 환영 무료크레딧 자동 지급은 **폐지**. 대신 가입 후 첫 2건 무료 테스트(`signup_free_test_2`).
 
 - 드롭존 가입(치과 전용, requestor+practice):
   - `POST /api/auth/practice/register`는 **practice role을 만들지 않는다**.

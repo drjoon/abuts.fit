@@ -27,7 +27,7 @@ export const CREDIT_LEDGER_PREPAID_NOTICE_BODY =
 
 /** 내역 탭 — 무료 카드 툴팁. */
 export const CREDIT_LEDGER_FREE_NOTICE_BODY =
-  "환영·이벤트 등으로 지급된 무료 크레딧입니다. 기공의뢰·어벗 생산·배송 등에 다른 크레딧보다 먼저 사용되며, 환불 대상이 아닙니다.";
+  "이벤트·관리자 지급 등으로 적립된 무료 크레딧입니다. 기공의뢰·어벗 생산·배송 등에 다른 크레딧보다 먼저 사용되며, 환불 대상이 아닙니다. 기공소 가입 환영 크레딧 자동 지급은 없으며, 가입 후 첫 2건은 무료 테스트(0원)로 진행됩니다.";
 
 /** 내역 탭 — 데모 모드 안내는 shared/demo/demoModeCopy.ts (CREDIT_LEDGER_DEMO_*). */
 
@@ -38,12 +38,16 @@ export const CREDIT_LEDGER_SETTLEMENT_NOTICE_BODY =
 export const CREDIT_PREPAID_BALANCE_LABEL = "보유 크레딧(거래 선수금)";
 
 export const CREDIT_PAID_BUCKET_HINT = "거래 선수금";
-export const CREDIT_FREE_BUCKET_HINT = "이벤트·환영";
+export const CREDIT_FREE_BUCKET_HINT = "이벤트·지급";
 export const CREDIT_SETTLEMENT_BUCKET_HINT = "정산·주문 상계";
 
 export type CreditPrepaidFaq = { q: string; a: string };
 
 export const CREDIT_PREPAID_FAQS: CreditPrepaidFaq[] = [
+  {
+    q: "기공소 가입 시 무료 크레딧이 지급되나요?",
+    a: "아니요. 가입 환영 무료크레딧 자동 지급은 없습니다. 대신 가입 후 비취소 의뢰 첫 2건이 무료 테스트로 진행되며(준비 단계 취소 시 횟수 환원), 장부에는 가입 테스트(0원)로 기록됩니다.",
+  },
   {
     q: "어벗츠 크레딧은 네이버페이나 카카오페이 같은 선불 충전금인가요?",
     a: "아닙니다. 어벗츠 크레딧은 플랫폼 내 계약 물품·용역 대금용 B2B 거래 선수금(예치금)입니다. 금융 유통 마진이나 환전의 개념이 아니며, 기공·커스텀어벗(면세)과 스토어 기성품(과세) 대금으로만 차감됩니다.",

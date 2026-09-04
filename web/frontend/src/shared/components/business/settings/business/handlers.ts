@@ -421,7 +421,17 @@ export const handleSave = async (
       );
       toast({
         title: "신규 사업자 등록 완료",
-        description: `환영 무료크레딧 ${formatted}원이 자동 적립되었어요.`,
+        description: `무료크레딧 ${formatted}원이 적립되었어요.`,
+      });
+    } else if (
+      Boolean(data?.created) &&
+      (requestorKind === "lab" ||
+        (requestorCapabilities?.lab && !requestorCapabilities?.practice))
+    ) {
+      toast({
+        title: "신규 사업자 등록 완료",
+        description:
+          "가입 후 첫 2건은 무료 테스트(의뢰·배송·제조 0원)로 진행할 수 있어요.",
       });
     }
 
