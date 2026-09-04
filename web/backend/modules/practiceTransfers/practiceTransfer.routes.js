@@ -45,7 +45,7 @@ import {
   cancelPracticeTransferProsthesisFollowUp,
   updatePracticeTransferProsthesisFollowUp,
 } from "../../controllers/practiceTransfers/practiceTransfer.controller.js";
-import { handoffPracticeTransferAbutmentDesign } from "../../controllers/requests/designHandoff.controller.js";
+import { handoffPracticeTransferAbutmentDesign, reportImplantCatalogMismatch } from "../../controllers/requests/designHandoff.controller.js";
 import {
   getPracticeTransferSettings,
   upsertPracticeTransferSettings,
@@ -210,6 +210,13 @@ router.post(
   authenticate,
   receiveAuth,
   confirmPracticeTransferAbutmentDesign,
+);
+
+router.post(
+  "/implant-catalog-mismatch",
+  authenticate,
+  receiveAuth,
+  reportImplantCatalogMismatch,
 );
 
 router.post(

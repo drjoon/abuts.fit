@@ -4,19 +4,24 @@
 // - web/frontend/src/shared/components/practice/RetentionGrooveField.tsx
 // - web/backend/controllers/requests/designHandoff.controller.js
 // change-log:
+// - 2026-09-04: 카탈로그 불일치 시 폴백 금지·확인 차단·관리자 alert. CNC 표 병합·미도입 환봉 제외.
+// - 2026-09-04: 핸드오프 카탈로그에 CNC 표 병합·미도입 환봉 제외. 임플란트 선택 오염(TS3→US) 방지.
 // - 2026-09-02: 확인 라벨「확인」/「다음」(사전 S3 업로드 완료 전제). 업로드 중 확인 버튼 비활성.
 // - 2026-08-28: 현재 파일 S3 업로드 프로그레스를 확인 모달에 전달.
 // - 2026-08-16: teethOptions — 남은 CA 치아를 확인 모달에서 직접 선택(지정 다이얼로그 생략).
 // - 2026-08-16: 다파일 큐 progress·확인 버튼 라벨 전달.
 // - 2026-08-16: AbutmentModelConfirmDialog(lab-handoff) 어댑터로 통합.
 // - 2026-08-16: 유지홈 공통 필드·안내 모달. 계정 기본값(없음) 적용.
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "@/shared/hooks/use-toast";
 import type { CaseInfos, Connection } from "@/pages/requestor/new_request/hooks/newRequestTypes";
 import {
   AbutmentModelConfirmDialog,
 } from "@/shared/components/practice/AbutmentModelConfirmDialog";
 import type { RetentionGrooveChoice } from "@/shared/components/practice/RetentionGrooveField";
+import { mergeCncImplantSpecs } from "@/shared/practice/cncImplantCatalog";
+import { apiFetch } from "@/shared/api/apiClient";
+import { useAuthStore } from "@/store/useAuthStore";
 
 export type AbutmentDesignConfirmCaseInfos = {
   clinicName?: string;
@@ -50,6 +55,10 @@ type Props = {
   fileUploadLabel?: string | null;
   onConfirm: (caseInfos: AbutmentDesignConfirmCaseInfos) => void | Promise<void>;
   onCancel?: () => void;
+  /** 관리자 alert용 컨텍스트 */
+  reportTransferId?: string | null;
+  reportRequestId?: string | null;
+  reportLabName?: string | null;
 };
 
 const noopPreset = (_label: string) => {};
@@ -95,8 +104,12 @@ export function AbutmentDesignConfirmDialog({
   fileUploadLabel = null,
   onConfirm,
   onCancel,
+  reportTransferId = null,
+  reportRequestId = null,
+  reportLabName = null,
 }: Props) {
   const { toast } = useToast();
+  const token = useAuthStore((s) => s.token);
   const [detailCaseInfos, setDetailCaseInfosState] = useState<CaseInfos>(() =>
     emptyCaseInfos(defaultRetentionGroove),
   );
@@ -104,6 +117,54 @@ export function AbutmentDesignConfirmDialog({
   const [implantBrand, setImplantBrandState] = useState("");
   const [implantFamily, setImplantFamilyState] = useState("");
   const [implantType, setImplantTypeState] = useState("");
+  const [catalogIssue, setCatalogIssue] = useState<{
+    manufacturer: string;
+    brand: string;
+    family: string;
+    type: string;
+    reason: "brand_not_in_catalog";
+  } | null>(null);
+  const reportedIssueKeyRef = useRef("");
+
+  /** CNC 표 + API. 미도입(도입중) 환봉/공개 스펙은 제외 — 핸드오프에서 TS3→US 오염 방지. */
+  const handoffConnections = useMemo((): Connection[] => {
+    const cncActive = mergeCncImplantSpecs(connections).map((row) => ({
+      manufacturer: row.manufacturer,
+      brand: row.brand,
+      family: row.family,
+      type: row.type,
+      displayManufacturer: row.displayManufacturer,
+      displayBrand: row.displayBrand,
+      displayFamily: row.displayFamily,
+      displayType: row.type,
+    }));
+    const fromApi = connections.filter((row) => {
+      const pendingPublic =
+        (Boolean(row.roundBar) || Boolean(row.isPublic)) &&
+        row.adopted !== true;
+      return !pendingPublic;
+    });
+    const seen = new Set<string>();
+    const out: Connection[] = [];
+    for (const row of [...cncActive, ...fromApi]) {
+      const manufacturer = String(row.manufacturer || "").trim();
+      const brand = String(row.brand || "").trim();
+      const family = String(row.family || "").trim();
+      const type = String(row.type || "Hex").trim() || "Hex";
+      if (!manufacturer || !brand) continue;
+      const key = `${manufacturer}|${brand}|${family}|${type}`.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({
+        ...row,
+        manufacturer,
+        brand,
+        family,
+        type,
+      });
+    }
+    return out;
+  }, [connections]);
 
   useEffect(() => {
     if (!open) return;
@@ -127,7 +188,69 @@ export function AbutmentDesignConfirmDialog({
     setImplantBrandState(String(next.implantBrand || ""));
     setImplantFamilyState(String(next.implantFamily || ""));
     setImplantTypeState(String(next.implantType || ""));
+    setCatalogIssue(null);
+    reportedIssueKeyRef.current = "";
   }, [open, initialCaseInfos, file, defaultRetentionGroove]);
+
+  const handleImplantCatalogIssue = useCallback(
+    (
+      issue: {
+        manufacturer: string;
+        brand: string;
+        family: string;
+        type: string;
+        reason: "brand_not_in_catalog";
+      } | null,
+    ) => {
+      setCatalogIssue(issue);
+      if (!issue) {
+        reportedIssueKeyRef.current = "";
+        return;
+      }
+      const key = [
+        issue.manufacturer,
+        issue.brand,
+        issue.family,
+        issue.type,
+        reportTransferId || "",
+        reportRequestId || "",
+      ].join("|");
+      if (reportedIssueKeyRef.current === key) return;
+      reportedIssueKeyRef.current = key;
+      void apiFetch({
+        path: "/api/practice/transfers/implant-catalog-mismatch",
+        method: "POST",
+        token,
+        jsonBody: {
+          reason: issue.reason,
+          source: "fe.AbutmentDesignConfirmDialog",
+          transferId: reportTransferId,
+          requestId: reportRequestId,
+          tooth: detailCaseInfos.tooth,
+          patientName: detailCaseInfos.patientName,
+          clinicName: detailCaseInfos.clinicName,
+          labName: reportLabName,
+          implantManufacturer: issue.manufacturer,
+          implantBrand: issue.brand,
+          implantFamily: issue.family,
+          implantType: issue.type,
+          message:
+            "핸드오프 확인 모달: 임플란트 brand가 CNC 카탈로그에 없어 폴백 없이 의뢰를 차단했습니다.",
+        },
+      }).catch(() => {
+        // best-effort admin alert
+      });
+    },
+    [
+      token,
+      reportTransferId,
+      reportRequestId,
+      reportLabName,
+      detailCaseInfos.tooth,
+      detailCaseInfos.patientName,
+      detailCaseInfos.clinicName,
+    ],
+  );
 
   const setDetailCaseInfos = useCallback((updates: Partial<CaseInfos>) => {
     setDetailCaseInfosState((prev) => {
@@ -169,27 +292,37 @@ export function AbutmentDesignConfirmDialog({
   }, []);
 
   const familyOptions = useMemo(() => {
-    return connections
+    return handoffConnections
       .filter(
         (c) =>
-          (!implantManufacturer || c.manufacturer === implantManufacturer) &&
-          (!implantBrand || c.brand === implantBrand),
+          (!implantManufacturer ||
+            c.manufacturer.toLowerCase() ===
+              implantManufacturer.toLowerCase()) &&
+          (!implantBrand ||
+            String(c.brand || "").toLowerCase() ===
+              implantBrand.toLowerCase()),
       )
       .map((c) => c.family as string)
       .filter((v, idx, arr) => Boolean(v) && arr.indexOf(v) === idx);
-  }, [connections, implantBrand, implantManufacturer]);
+  }, [handoffConnections, implantBrand, implantManufacturer]);
 
   const typeOptions = useMemo(() => {
-    return connections
+    return handoffConnections
       .filter(
         (c) =>
-          (!implantManufacturer || c.manufacturer === implantManufacturer) &&
-          (!implantBrand || c.brand === implantBrand) &&
-          (!implantFamily || c.family === implantFamily),
+          (!implantManufacturer ||
+            c.manufacturer.toLowerCase() ===
+              implantManufacturer.toLowerCase()) &&
+          (!implantBrand ||
+            String(c.brand || "").toLowerCase() ===
+              implantBrand.toLowerCase()) &&
+          (!implantFamily ||
+            String(c.family || "").toLowerCase() ===
+              implantFamily.toLowerCase()),
       )
       .map((c) => c.type as string)
       .filter((v, idx, arr) => Boolean(v) && arr.indexOf(v) === idx);
-  }, [connections, implantBrand, implantFamily, implantManufacturer]);
+  }, [handoffConnections, implantBrand, implantFamily, implantManufacturer]);
 
   const syncSelectedConnection = useCallback(
     (manufacturer: string, brand: string, family: string, type: string) => {
@@ -242,6 +375,15 @@ export function AbutmentDesignConfirmDialog({
   );
 
   const handleVerifyAndNext = useCallback(async () => {
+    if (catalogIssue) {
+      toast({
+        title: "의뢰 처리 중 오류",
+        description:
+          "불편을 끼쳐드려 죄송합니다만 의뢰건 처리 중 에러가 발생했습니다. 플랫폼 개발팀에게 관련 내용 전달하였고, 빠른 시간 내에 조치하겠습니다.",
+        variant: "destructive",
+      });
+      return;
+    }
     const missing: string[] = [];
     if (!String(detailCaseInfos.clinicName || "").trim()) missing.push("치과명");
     if (!String(detailCaseInfos.patientName || "").trim()) missing.push("환자명");
@@ -272,7 +414,7 @@ export function AbutmentDesignConfirmDialog({
       implantType: String(detailCaseInfos.implantType || "").trim(),
       retentionGroove: rg === "deep" ? "deep" : "none",
     });
-  }, [detailCaseInfos, onConfirm, toast]);
+  }, [catalogIssue, detailCaseInfos, onConfirm, toast]);
 
   return (
     <AbutmentModelConfirmDialog
@@ -286,7 +428,7 @@ export function AbutmentDesignConfirmDialog({
       detailCaseInfos={detailCaseInfos}
       setDetailCaseInfos={setDetailCaseInfos}
       handleDiameterComputed={() => {}}
-      connections={connections}
+      connections={handoffConnections}
       familyOptions={familyOptions}
       typeOptions={typeOptions}
       implantManufacturer={implantManufacturer}
@@ -308,6 +450,7 @@ export function AbutmentDesignConfirmDialog({
       addTeethPreset={noopPreset}
       clearAllTeethPresets={clearNoop}
       handleAddOrSelectClinic={noopPreset}
+      onImplantCatalogIssue={handleImplantCatalogIssue}
       highlightUnverifiedArrows={false}
       handleRemoveFile={() => {}}
       onVerifyAndNext={handleVerifyAndNext}
@@ -315,7 +458,7 @@ export function AbutmentDesignConfirmDialog({
       toast={toast}
       lockProductionProductMode
       confirming={confirming}
-      confirmDisabled={s3UploadBlocking}
+      confirmDisabled={s3UploadBlocking || Boolean(catalogIssue)}
       confirmLabel={queueProgress.confirmLabel}
       progressLabel={queueProgress.progressLabel}
       fileUploadPercent={fileUploadPercent}

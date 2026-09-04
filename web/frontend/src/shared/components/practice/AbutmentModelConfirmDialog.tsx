@@ -101,6 +101,15 @@ export type AbutmentModelConfirmDialogProps = {
   addTeethPreset: (label: string) => void;
   clearAllTeethPresets: () => void;
   handleAddOrSelectClinic: (label: string) => void;
+  onImplantCatalogIssue?: (
+    issue: {
+      manufacturer: string;
+      brand: string;
+      family: string;
+      type: string;
+      reason: "brand_not_in_catalog";
+    } | null,
+  ) => void;
   highlightUnverifiedArrows: boolean;
   handleRemoveFile: (index: number) => void;
   onVerifyAndNext: (index: number) => Promise<void>;
@@ -161,6 +170,7 @@ export function AbutmentModelConfirmDialog({
   addTeethPreset,
   clearAllTeethPresets,
   handleAddOrSelectClinic,
+  onImplantCatalogIssue,
   highlightUnverifiedArrows,
   handleRemoveFile,
   onVerifyAndNext,
@@ -423,6 +433,7 @@ export function AbutmentModelConfirmDialog({
                         addTeethPreset={addTeethPreset}
                         clearAllTeethPresets={clearAllTeethPresets}
                         handleAddOrSelectClinic={handleAddOrSelectClinic}
+                        onImplantCatalogIssue={onImplantCatalogIssue}
                       />
 
                       <RetentionGrooveField

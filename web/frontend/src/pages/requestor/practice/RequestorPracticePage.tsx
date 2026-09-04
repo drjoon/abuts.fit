@@ -5430,6 +5430,11 @@ export function RequestorPracticeReceivePage({
         connections={implantCatalog}
         confirming={designConfirmBusy}
         teethOptions={designConfirmTeethOptions}
+        reportTransferId={
+          designConfirmTransfer?.transferId || designConfirmTransfer?._id || null
+        }
+        reportRequestId={designConfirmRequestId || null}
+        reportLabName={designConfirmTransfer?.targetLabName || null}
         queueCurrent={
           designConfirmQueue.length > 0 ? designConfirmQueueIndex + 1 : undefined
         }

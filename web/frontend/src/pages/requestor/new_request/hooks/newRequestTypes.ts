@@ -48,6 +48,10 @@ export type Connection = {
   connectionDiameter?: number | null;
   hexSize?: number | null;
   screwType?: string | null;
+  /** 어벗 추가 요청/공개 카탈로그(도입중). 핸드오프 CNC 선택에서 제외 가능 */
+  roundBar?: boolean;
+  isPublic?: boolean;
+  adopted?: boolean;
 };
 
 export type CaseInfos = {

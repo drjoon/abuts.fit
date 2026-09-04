@@ -1,3 +1,4 @@
+// - 2026-09-04: PTX handoff — 치식(toothWorks) 임플란트 스펙을 SSOT로 유지(FE 확인 모달 TS3→US 오염 방지).
 // - 2026-09-04: PTX handoff — Rhino trigger를 응답 후 최우선. save 시 stlPreload GENERATING.
 // - 2026-09-03: PTX abutment-design-handoff — 구강스캔(files) 없어도 어벗 STL만으로 CA Request 생성.
 // - 2026-09-03: PTX abutment-design-handoff — 수락이 아니라 STL 업로드 시 CA Request 생성.
@@ -90,7 +91,9 @@ import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/reques
 import { emitAppEventToRoles, emitAppEventToUser } from "../../socket.js";
 import { resolvePrcFileNames } from "./prcMapping.utils.js";
 import { triggerRhinoProcessFileForRequest } from "../rhino/rhino.controller.js";
-import { ensureLotNumberOnReadyEnter } from "./utils.js";
+import { ensureLotNumberOnReadyEnter, assertOrderableImplantPresetOrThrow } from "./utils.js";
+import { normalizeImplantFields } from "../../utils/implantCanonical.js";
+import { alertAdminImplantCatalogMismatch } from "../../utils/implantCatalogMismatchAlert.js";
 
 /** PTX CA(어벗 생산) — 기공소 실크레딧 부족 (수락→디자인 업로드 시점) */
 const PTX_CA_INSUFFICIENT_CREDIT_REASON = "insufficient_credit_for_ptx_ca";
@@ -204,6 +207,40 @@ const pickTrimmed = (value, maxLen = 120) => {
   const v = String(value || "").trim();
   if (!v) return "";
   return v.slice(0, maxLen);
+};
+
+/**
+ * PTX 치식 행의 임플란트 스펙. 기공소 3D 확인 모달이 카탈로그 폴백으로
+ * brand를 바꿔도(예: TS3→US) 치과 주문 스펙을 유지한다.
+ */
+const pickImplantFromToothWorks = (toothWorks, tooth) => {
+  const toothKey = String(tooth || "").trim();
+  if (!toothKey) return null;
+  const rows = Array.isArray(toothWorks) ? toothWorks : [];
+  const matchTooth = (row) =>
+    String(row?.toothNumber || row?.tooth || "").trim() === toothKey;
+  const row =
+    rows.find(
+      (candidate) =>
+        matchTooth(candidate) &&
+        (candidate?.customAbutment || candidate?.hasCustomAbutment),
+    ) || rows.find((candidate) => matchTooth(candidate));
+  if (!row) return null;
+  const implantManufacturer = pickTrimmed(
+    row.implantManufacturer || row.manufacturer,
+  );
+  const implantBrand = pickTrimmed(row.implantBrand || row.brand);
+  const implantFamily = pickTrimmed(row.implantFamily || row.family);
+  const implantType = pickTrimmed(row.implantType || row.type);
+  if (!implantManufacturer || !implantBrand || !implantFamily || !implantType) {
+    return null;
+  }
+  return normalizeImplantFields({
+    implantManufacturer,
+    implantBrand,
+    implantFamily,
+    implantType,
+  });
 };
 
 const buildRhinoInputFileName = (request) => {
@@ -654,19 +691,79 @@ export async function handoffDesignToProduction(req, res) {
         caseInfosPatchRaw?.tooth ?? request.caseInfos.tooth,
         16,
       );
-      const implantManufacturer = pickTrimmed(
+      let implantManufacturer = pickTrimmed(
         caseInfosPatchRaw?.implantManufacturer ??
           request.caseInfos.implantManufacturer,
       );
-      const implantBrand = pickTrimmed(
+      let implantBrand = pickTrimmed(
         caseInfosPatchRaw?.implantBrand ?? request.caseInfos.implantBrand,
       );
-      const implantFamily = pickTrimmed(
+      let implantFamily = pickTrimmed(
         caseInfosPatchRaw?.implantFamily ?? request.caseInfos.implantFamily,
       );
-      const implantType = pickTrimmed(
+      let implantType = pickTrimmed(
         caseInfosPatchRaw?.implantType ?? request.caseInfos.implantType,
       );
+      // PTX: 치과 치식 임플란트가 SSOT. FE 확인 모달 폴백(도입중 US 등)으로 덮지 않는다.
+      const fromToothWorks = transferDocEarly
+        ? pickImplantFromToothWorks(transferDocEarly.toothWorks, tooth)
+        : null;
+      if (fromToothWorks) {
+        implantManufacturer = fromToothWorks.implantManufacturer;
+        implantBrand = fromToothWorks.implantBrand;
+        implantFamily = fromToothWorks.implantFamily;
+        implantType = fromToothWorks.implantType;
+      } else {
+        const normalized = normalizeImplantFields({
+          implantManufacturer,
+          implantBrand,
+          implantFamily,
+          implantType,
+        });
+        implantManufacturer = normalized.implantManufacturer;
+        implantBrand = normalized.implantBrand;
+        implantFamily = normalized.implantFamily;
+        implantType = normalized.implantType;
+      }
+      // 미도입/비활성 스펙은 제조사로 보내지 않는다. 폴백 금지 — 실패 시 관리자 alert.
+      try {
+        await assertOrderableImplantPresetOrThrow({
+          implantManufacturer,
+          implantBrand,
+          implantFamily,
+          implantType,
+        });
+      } catch (presetErr) {
+        alertAdminImplantCatalogMismatch({
+          reason: "handoff_non_orderable_implant",
+          source: "designHandoff.handoffDesignToProduction",
+          transferId: relatedTransferIdEarly || "",
+          requestId: String(request.requestId || "").trim(),
+          tooth,
+          patientName,
+          clinicName,
+          implantManufacturer,
+          implantBrand,
+          implantFamily,
+          implantType,
+          attempted: caseInfosPatchRaw
+            ? {
+                implantManufacturer: caseInfosPatchRaw.implantManufacturer,
+                implantBrand: caseInfosPatchRaw.implantBrand,
+                implantFamily: caseInfosPatchRaw.implantFamily,
+                implantType: caseInfosPatchRaw.implantType,
+              }
+            : null,
+          message: String(presetErr?.message || "").trim(),
+          actorUserId: userId,
+        });
+        return res.status(409).json({
+          success: false,
+          code: "implant_catalog_mismatch",
+          message:
+            "불편을 끼쳐드려 죄송합니다만 의뢰건 처리 중 에러가 발생했습니다. 플랫폼 개발팀에게 관련 내용 전달하였고, 빠른 시간 내에 조치하겠습니다.",
+        });
+      }
       const retentionGroove =
         retentionGrooveFromBody ||
         normalizeRetentionGrooveOrNull(request.caseInfos.retentionGroove);
@@ -1458,6 +1555,29 @@ export async function handoffPracticeTransferAbutmentDesign(req, res) {
         actorUserId: userId,
       });
     } catch (createErr) {
+      if (
+        String(createErr?.code || "").trim() === "implant_catalog_mismatch" ||
+        String(createErr?.message || "").includes("비활성화된 임플란트")
+      ) {
+        alertAdminImplantCatalogMismatch({
+          reason: "ptx_create_non_orderable_implant",
+          source: "designHandoff.handoffPracticeTransferAbutmentDesign",
+          transferId: String(transferDoc.transferId || "").trim(),
+          tooth,
+          implantManufacturer: createErr?.implant?.implantManufacturer,
+          implantBrand: createErr?.implant?.implantBrand,
+          implantFamily: createErr?.implant?.implantFamily,
+          implantType: createErr?.implant?.implantType,
+          message: String(createErr?.message || "").trim(),
+          actorUserId: userId,
+        });
+        return res.status(409).json({
+          success: false,
+          code: "implant_catalog_mismatch",
+          message:
+            "불편을 끼쳐드려 죄송합니다만 의뢰건 처리 중 에러가 발생했습니다. 플랫폼 개발팀에게 관련 내용 전달하였고, 빠른 시간 내에 조치하겠습니다.",
+        });
+      }
       return res.status(409).json({
         success: false,
         message:
@@ -1532,6 +1652,40 @@ export async function handoffPracticeTransferAbutmentDesign(req, res) {
     return res.status(error?.statusCode || 500).json({
       success: false,
       message: error?.message || "어벗 디자인 핸드오프 중 오류가 발생했습니다.",
+    });
+  }
+}
+
+/**
+ * POST /api/practice/transfers/implant-catalog-mismatch
+ * FE 확인 모달에서 카탈로그 불일치(폴백 금지)를 감지했을 때 관리자 alert.
+ */
+export async function reportImplantCatalogMismatch(req, res) {
+  try {
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const payload = alertAdminImplantCatalogMismatch({
+      reason: body.reason || "fe_catalog_mismatch_no_fallback",
+      source: body.source || "fe.AbutmentDesignConfirmDialog",
+      transferId: body.transferId,
+      requestId: body.requestId,
+      tooth: body.tooth,
+      patientName: body.patientName,
+      clinicName: body.clinicName,
+      labName: body.labName,
+      implantManufacturer: body.implantManufacturer,
+      implantBrand: body.implantBrand,
+      implantFamily: body.implantFamily,
+      implantType: body.implantType,
+      attempted: body.attempted,
+      message: body.message,
+      actorUserId: req.user?._id ? String(req.user._id) : "",
+    });
+    return res.status(202).json({ success: true, data: payload });
+  } catch (error) {
+    console.error("[REPORT_IMPLANT_CATALOG_MISMATCH]", error);
+    return res.status(500).json({
+      success: false,
+      message: "관리자 알림 전송에 실패했습니다.",
     });
   }
 }

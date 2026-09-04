@@ -4,6 +4,10 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/backend/controllers/requests/creation.from-draft.controller.js
+// change-log:
+// - 2026-09-04: 카탈로그 불일치 시 brand 폴백 금지 — 에러 콜백(의뢰 차단)·관리자 alert용.
+// - 2026-09-04: 카탈로그 불일치 시 brand를 제조사 첫 항목으로 덮어쓰지 않음(TS3→US 회귀).
+//   제조사/브랜드 대소문자·TS↔TS3 별칭 매칭. Select value를 카탈로그 토큰으로 정렬.
 import { useCallback, useEffect, useMemo } from "react";
 import {
   Select,
@@ -16,6 +20,51 @@ import LabeledAutocompleteField from "@/shared/ui/forms/LabeledAutocompleteField
 import type { CaseInfos, Connection } from "../hooks/newRequestTypes";
 
 type Option = { id: string; label: string };
+
+const fieldKey = (value: string) => String(value || "").trim().toLowerCase();
+const brandToken = (value: string) =>
+  fieldKey(value).replace(/[^a-z0-9]/g, "");
+
+const sameManufacturer = (a: string, b: string) => {
+  const left = fieldKey(a);
+  const right = fieldKey(b);
+  return Boolean(left) && left === right;
+};
+
+const sameBrand = (a: string, b: string) => {
+  const left = fieldKey(a);
+  const right = fieldKey(b);
+  if (left && left === right) return true;
+  const leftTok = brandToken(a);
+  const rightTok = brandToken(b);
+  if (!leftTok || !rightTok) return false;
+  if (leftTok === rightTok) return true;
+  // Osstem: TS ↔ TS3 (PRC 토큰 vs 카탈로그 버전 표기)
+  if (leftTok.startsWith("ts") && rightTok.startsWith("ts")) return true;
+  return false;
+};
+
+const sameFamily = (a: string, b: string) => {
+  const left = fieldKey(a);
+  const right = fieldKey(b);
+  return Boolean(left) && left === right;
+};
+
+const resolveSelectValue = (current: string, options: string[]) => {
+  const raw = String(current || "").trim();
+  if (!raw) return undefined;
+  const exact = options.find((option) => option === raw);
+  if (exact) return exact;
+  return options.find((option) => sameManufacturer(option, raw)) || raw;
+};
+
+const resolveBrandSelectValue = (current: string, options: string[]) => {
+  const raw = String(current || "").trim();
+  if (!raw) return undefined;
+  const exact = options.find((option) => option === raw);
+  if (exact) return exact;
+  return options.find((option) => sameBrand(option, raw)) || raw;
+};
 
 type Props = {
   caseInfos?: CaseInfos;
@@ -50,6 +99,19 @@ type Props = {
   addTeethPreset: (label: string) => void;
   clearAllTeethPresets: () => void;
   handleAddOrSelectClinic: (label: string) => void;
+  /**
+   * brand가 있는데 CNC/핸드오프 카탈로그에 없을 때(폴백 금지).
+   * null이면 해소. 호출측에서 확인 차단·관리자 alert.
+   */
+  onImplantCatalogIssue?: (
+    issue: {
+      manufacturer: string;
+      brand: string;
+      family: string;
+      type: string;
+      reason: "brand_not_in_catalog";
+    } | null,
+  ) => void;
 };
 
 export function NewRequestPatientImplantFields({
@@ -80,6 +142,7 @@ export function NewRequestPatientImplantFields({
   addTeethPreset,
   clearAllTeethPresets,
   handleAddOrSelectClinic,
+  onImplantCatalogIssue,
 }: Props) {
   const caseInfos = rawCaseInfos;
   const setCaseInfos = useCallback(
@@ -108,8 +171,6 @@ export function NewRequestPatientImplantFields({
       ? caseInfos?.implantType || ""
       : implantType;
 
-  const currentTypeOptions = useMemo(() => typeOptions || [], [typeOptions]);
-
   const connectionOptions = useMemo(() => {
     return connections
       .filter(
@@ -129,35 +190,95 @@ export function NewRequestPatientImplantFields({
       });
   }, [connections]);
 
+  const currentTypeOptions = useMemo(() => {
+    const fromProp = Array.isArray(typeOptions) ? typeOptions : [];
+    const fromCatalog = connectionOptions
+      .filter(
+        (c) =>
+          sameManufacturer(c.manufacturer, currentManufacturer) &&
+          sameBrand(String(c.brand || ""), currentBrand) &&
+          sameFamily(String(c.family || ""), currentFamily),
+      )
+      .map((c) => String(c.type || "").trim())
+      .filter(Boolean);
+    const merged = [...new Set([...fromCatalog, ...fromProp])];
+    const current = String(currentType || "").trim();
+    if (
+      current &&
+      !merged.some((type) => fieldKey(type) === fieldKey(current))
+    ) {
+      return [current, ...merged];
+    }
+    return merged;
+  }, [
+    typeOptions,
+    connectionOptions,
+    currentManufacturer,
+    currentBrand,
+    currentFamily,
+    currentType,
+  ]);
+
   const manufacturerOptions = useMemo(() => {
-    return [...new Set(connectionOptions.map((c) => c.manufacturer))];
-  }, [connectionOptions]);
+    const fromCatalog = [
+      ...new Set(connectionOptions.map((c) => c.manufacturer)),
+    ];
+    const current = String(currentManufacturer || "").trim();
+    if (
+      current &&
+      !fromCatalog.some((manufacturer) =>
+        sameManufacturer(manufacturer, current),
+      )
+    ) {
+      return [current, ...fromCatalog];
+    }
+    return fromCatalog;
+  }, [connectionOptions, currentManufacturer]);
 
   const brandOptions = useMemo(() => {
-    return [
+    const fromCatalog = [
       ...new Set(
         connectionOptions
-          .filter((c) => c.manufacturer === currentManufacturer)
-          .map((c) => c.brand),
+          .filter((c) => sameManufacturer(c.manufacturer, currentManufacturer))
+          .map((c) => c.brand)
+          .filter((brand): brand is string => Boolean(brand)),
       ),
     ];
-  }, [connectionOptions, currentManufacturer]);
+    const current = String(currentBrand || "").trim();
+    if (current && !fromCatalog.some((brand) => sameBrand(brand, current))) {
+      return [current, ...fromCatalog];
+    }
+    return fromCatalog;
+  }, [connectionOptions, currentManufacturer, currentBrand]);
 
   const currentFamilyOptions = useMemo(() => {
     const base = connectionOptions
       .filter(
         (c) =>
-          c.manufacturer === currentManufacturer && c.brand === currentBrand,
+          sameManufacturer(c.manufacturer, currentManufacturer) &&
+          sameBrand(String(c.brand || ""), currentBrand),
       )
-      .map((c) => c.family);
-    return [...new Set(base.length ? base : familyOptions)];
-  }, [connectionOptions, currentManufacturer, currentBrand, familyOptions]);
+      .map((c) => c.family)
+      .filter((family): family is string => Boolean(family));
+    const merged = [...new Set(base.length ? base : familyOptions)];
+    const current = String(currentFamily || "").trim();
+    if (current && !merged.some((family) => sameFamily(family, current))) {
+      return [current, ...merged];
+    }
+    return merged;
+  }, [
+    connectionOptions,
+    currentManufacturer,
+    currentBrand,
+    currentFamily,
+    familyOptions,
+  ]);
 
   const manufacturerLabelMap = useMemo(() => {
     return new Map(
       manufacturerOptions.map((manufacturer) => {
-        const sample = connectionOptions.find(
-          (c) => c.manufacturer === manufacturer,
+        const sample = connectionOptions.find((c) =>
+          sameManufacturer(c.manufacturer, manufacturer),
         );
         return [manufacturer, sample?.displayManufacturer || manufacturer];
       }),
@@ -168,7 +289,9 @@ export function NewRequestPatientImplantFields({
     return new Map(
       brandOptions.map((brand) => {
         const sample = connectionOptions.find(
-          (c) => c.manufacturer === currentManufacturer && c.brand === brand,
+          (c) =>
+            sameManufacturer(c.manufacturer, currentManufacturer) &&
+            sameBrand(String(c.brand || ""), brand),
         );
         return [brand, sample?.displayBrand || brand];
       }),
@@ -180,9 +303,9 @@ export function NewRequestPatientImplantFields({
       currentFamilyOptions.map((family) => {
         const sample = connectionOptions.find(
           (c) =>
-            c.manufacturer === currentManufacturer &&
-            c.brand === currentBrand &&
-            c.family === family,
+            sameManufacturer(c.manufacturer, currentManufacturer) &&
+            sameBrand(String(c.brand || ""), currentBrand) &&
+            sameFamily(String(c.family || ""), family),
         );
         return [family, sample?.displayFamily || family];
       }),
@@ -199,10 +322,10 @@ export function NewRequestPatientImplantFields({
       currentTypeOptions.map((type) => {
         const sample = connectionOptions.find(
           (c) =>
-            c.manufacturer === currentManufacturer &&
-            c.brand === currentBrand &&
-            c.family === currentFamily &&
-            c.type === type,
+            sameManufacturer(c.manufacturer, currentManufacturer) &&
+            sameBrand(String(c.brand || ""), currentBrand) &&
+            sameFamily(String(c.family || ""), currentFamily) &&
+            fieldKey(String(c.type || "")) === fieldKey(type),
         );
         const base = sample?.displayType || type;
         const screw = String((sample as any)?.screwType || "").trim();
@@ -232,19 +355,31 @@ export function NewRequestPatientImplantFields({
     return regular || pickFirst(families);
   };
 
-  const getBrands = (manufacturer: string): string[] => [
-    ...new Set(
-      connectionOptions
-        .filter((c) => c.manufacturer === manufacturer)
-        .map((c) => (typeof c.brand === "string" ? c.brand.trim() : ""))
-        .filter(Boolean),
-    ),
-  ];
+  const getBrands = (manufacturer: string): string[] => {
+    const rows = connectionOptions.filter((c) =>
+      sameManufacturer(c.manufacturer, manufacturer),
+    );
+    const cncFirst = [
+      ...rows.filter((c) => !c.roundBar && !c.isPublic),
+      ...rows.filter((c) => c.roundBar || c.isPublic),
+    ];
+    return [
+      ...new Set(
+        cncFirst
+          .map((c) => (typeof c.brand === "string" ? c.brand.trim() : ""))
+          .filter(Boolean),
+      ),
+    ];
+  };
 
   const getFamilies = (manufacturer: string, brand: string): string[] => [
     ...new Set(
       connectionOptions
-        .filter((c) => c.manufacturer === manufacturer && c.brand === brand)
+        .filter(
+          (c) =>
+            sameManufacturer(c.manufacturer, manufacturer) &&
+            sameBrand(String(c.brand || ""), brand),
+        )
         .map((c) => (typeof c.family === "string" ? c.family.trim() : ""))
         .filter(Boolean),
     ),
@@ -259,9 +394,9 @@ export function NewRequestPatientImplantFields({
       connectionOptions
         .filter(
           (c) =>
-            c.manufacturer === manufacturer &&
-            c.brand === brand &&
-            c.family === family,
+            sameManufacturer(c.manufacturer, manufacturer) &&
+            sameBrand(String(c.brand || ""), brand) &&
+            sameFamily(String(c.family || ""), family),
         )
         .map((c) => (typeof c.type === "string" ? c.type.trim() : ""))
         .filter(Boolean),
@@ -279,45 +414,96 @@ export function NewRequestPatientImplantFields({
   const displayedPatientName = caseInfos?.patientName || "";
 
   useEffect(() => {
-    const manufacturer = caseInfos?.implantManufacturer;
-    if (!manufacturer) return;
+    const manufacturer = String(caseInfos?.implantManufacturer || "").trim();
+    if (!manufacturer) {
+      onImplantCatalogIssue?.(null);
+      return;
+    }
 
-    const manufacturerConnections = connectionOptions.filter(
-      (c) => c.manufacturer === manufacturer,
-    );
-    if (!manufacturerConnections.length) return;
-
-    const brandFromCase = caseInfos?.implantBrand || "";
-    const familyFromCase = caseInfos?.implantFamily || "";
-    const typeFromCase = caseInfos?.implantType || "";
-
-    const isValidBrand = manufacturerConnections.some(
-      (c) => c.brand === brandFromCase,
+    const manufacturerConnections = connectionOptions.filter((c) =>
+      sameManufacturer(c.manufacturer, manufacturer),
     );
 
-    // Brand가 유효하면 현재 값 사용, 아니면 fallback
+    const brandFromCase = String(caseInfos?.implantBrand || "").trim();
+    const familyFromCase = String(caseInfos?.implantFamily || "").trim();
+    const typeFromCase = String(caseInfos?.implantType || "").trim();
+
+    // brand가 비어 있으면 폴백으로 채우지 않는다 — 확인 단계에서 필수값 검증.
+    if (!brandFromCase) {
+      onImplantCatalogIssue?.(null);
+      setImplantManufacturer(manufacturer);
+      setImplantBrand("");
+      setImplantFamily(familyFromCase);
+      setImplantType(typeFromCase);
+      return;
+    }
+
+    if (!manufacturerConnections.length) {
+      onImplantCatalogIssue?.({
+        manufacturer,
+        brand: brandFromCase,
+        family: familyFromCase,
+        type: typeFromCase,
+        reason: "brand_not_in_catalog",
+      });
+      setImplantManufacturer(manufacturer);
+      setImplantBrand(brandFromCase);
+      setImplantFamily(familyFromCase);
+      setImplantType(typeFromCase);
+      return;
+    }
+
+    const matchedBrandRow = manufacturerConnections.find((c) =>
+      sameBrand(String(c.brand || ""), brandFromCase),
+    );
+
+    // 카탈로그에 없으면 다른 brand로 폴백하지 않고 에러(의뢰 차단).
+    if (!matchedBrandRow) {
+      onImplantCatalogIssue?.({
+        manufacturer,
+        brand: brandFromCase,
+        family: familyFromCase,
+        type: typeFromCase,
+        reason: "brand_not_in_catalog",
+      });
+      setImplantManufacturer(manufacturer);
+      setImplantBrand(brandFromCase);
+      setImplantFamily(familyFromCase);
+      setImplantType(typeFromCase);
+      return;
+    }
+
+    onImplantCatalogIssue?.(null);
+
+    let finalManufacturer = manufacturer;
     let finalBrand = brandFromCase;
-    let finalFamily = familyFromCase;
-    let finalType = typeFromCase;
+    let shouldWriteCase = false;
 
-    if (!isValidBrand) {
-      finalBrand = manufacturerConnections[0].brand || "";
-      if (!finalBrand) return;
-      finalFamily = manufacturerConnections[0].family;
-      finalType = manufacturerConnections[0].type || "Hex";
+    const catalogManufacturer = String(matchedBrandRow.manufacturer || "").trim();
+    const catalogBrand = String(matchedBrandRow.brand || "").trim();
+    // 동일 스펙 별칭만 카탈로그 토큰으로 정렬(TS→TS3). 다른 타입으로 바꾸지 않음.
+    if (catalogManufacturer && catalogManufacturer !== manufacturer) {
+      finalManufacturer = catalogManufacturer;
+      shouldWriteCase = true;
+    }
+    if (catalogBrand && catalogBrand !== brandFromCase) {
+      finalBrand = catalogBrand;
+      shouldWriteCase = true;
+    }
 
+    if (shouldWriteCase) {
       setCaseInfos({
+        ...(finalManufacturer !== manufacturer
+          ? { implantManufacturer: finalManufacturer }
+          : {}),
         implantBrand: finalBrand,
-        implantFamily: finalFamily,
-        implantType: finalType,
       });
     }
 
-    // UI 업데이트를 위해 hook 상태 항상 업데이트
-    setImplantManufacturer(manufacturer);
+    setImplantManufacturer(finalManufacturer);
     setImplantBrand(finalBrand);
-    setImplantFamily(finalFamily);
-    setImplantType(finalType);
+    setImplantFamily(familyFromCase);
+    setImplantType(typeFromCase);
   }, [
     caseInfos?.implantManufacturer,
     caseInfos?.implantBrand,
@@ -325,6 +511,7 @@ export function NewRequestPatientImplantFields({
     caseInfos?.implantType,
     connectionOptions,
     implantSelectSource,
+    onImplantCatalogIssue,
     setCaseInfos,
     setImplantManufacturer,
     setImplantFamily,
@@ -468,7 +655,10 @@ export function NewRequestPatientImplantFields({
         <div className="grid grid-cols-1 gap-2 text-[10px] md:text-[11px] sm:grid-cols-4">
               <div className="min-w-0 space-y-1">
                 <Select
-                  value={currentManufacturer}
+                  value={resolveSelectValue(
+                    currentManufacturer,
+                    manufacturerOptions,
+                  )}
                   onValueChange={(value) => {
                     if (implantDisabled) return;
 
@@ -519,8 +709,12 @@ export function NewRequestPatientImplantFields({
                   <SelectTrigger disabled={implantDisabled}>
                     <SelectValue placeholder="Manufacturer">
                       {currentManufacturer
-                        ? manufacturerLabelMap.get(currentManufacturer) ||
-                          currentManufacturer
+                        ? manufacturerLabelMap.get(
+                            resolveSelectValue(
+                              currentManufacturer,
+                              manufacturerOptions,
+                            ) || currentManufacturer,
+                          ) || currentManufacturer
                         : undefined}
                     </SelectValue>
                   </SelectTrigger>
@@ -536,17 +730,22 @@ export function NewRequestPatientImplantFields({
 
               <div className="min-w-0 space-y-1">
                 <Select
-                  value={currentBrand}
+                  value={resolveBrandSelectValue(currentBrand, brandOptions)}
                   onValueChange={(value) => {
                     if (implantDisabled) return;
 
                     // 시스템 변경 시: 규격1/규격2를 해당 시스템의 첫 유효 조합으로 연쇄 초기화
                     const nextBrand = value;
+                    const manufacturerForBrand =
+                      resolveSelectValue(
+                        currentManufacturer,
+                        manufacturerOptions,
+                      ) || currentManufacturer;
                     const nextFamily = pickPreferredFamily(
-                      getFamilies(currentManufacturer, nextBrand),
+                      getFamilies(manufacturerForBrand, nextBrand),
                     );
                     const nextType = pickFirst(
-                      getTypes(currentManufacturer, nextBrand, nextFamily),
+                      getTypes(manufacturerForBrand, nextBrand, nextFamily),
                     );
 
                     if (implantSelectSource === "caseInfos") {
@@ -556,7 +755,7 @@ export function NewRequestPatientImplantFields({
                         implantType: nextType,
                       });
                       syncSelectedConnection(
-                        currentManufacturer,
+                        manufacturerForBrand,
                         nextBrand,
                         nextFamily,
                         nextType,
@@ -568,7 +767,7 @@ export function NewRequestPatientImplantFields({
                     setImplantFamily(nextFamily);
                     setImplantType(nextType);
                     syncSelectedConnection(
-                      currentManufacturer,
+                      manufacturerForBrand,
                       nextBrand,
                       nextFamily,
                       nextType,
@@ -586,7 +785,12 @@ export function NewRequestPatientImplantFields({
                   >
                     <SelectValue placeholder="Brand">
                       {currentBrand
-                        ? brandLabelMap.get(currentBrand) || currentBrand
+                        ? brandLabelMap.get(
+                            resolveBrandSelectValue(
+                              currentBrand,
+                              brandOptions,
+                            ) || currentBrand,
+                          ) || currentBrand
                         : undefined}
                     </SelectValue>
                   </SelectTrigger>
@@ -602,14 +806,26 @@ export function NewRequestPatientImplantFields({
 
               <div className="min-w-0 space-y-1">
                 <Select
-                  value={currentFamily}
+                  value={resolveSelectValue(currentFamily, currentFamilyOptions)}
                   onValueChange={(value) => {
                     if (implantDisabled) return;
 
                     // 규격1 변경 시: 규격2를 해당 규격1의 첫 유효 값으로 연쇄 초기화
                     const nextFamily = value;
+                    const manufacturerForFamily =
+                      resolveSelectValue(
+                        currentManufacturer,
+                        manufacturerOptions,
+                      ) || currentManufacturer;
+                    const brandForFamily =
+                      resolveBrandSelectValue(currentBrand, brandOptions) ||
+                      currentBrand;
                     const nextType = pickFirst(
-                      getTypes(currentManufacturer, currentBrand, nextFamily),
+                      getTypes(
+                        manufacturerForFamily,
+                        brandForFamily,
+                        nextFamily,
+                      ),
                     );
 
                     if (implantSelectSource === "caseInfos") {
@@ -618,8 +834,8 @@ export function NewRequestPatientImplantFields({
                         implantType: nextType,
                       });
                       syncSelectedConnection(
-                        currentManufacturer,
-                        currentBrand,
+                        manufacturerForFamily,
+                        brandForFamily,
                         nextFamily,
                         nextType,
                       );
@@ -629,8 +845,8 @@ export function NewRequestPatientImplantFields({
                     setImplantFamily(nextFamily);
                     setImplantType(nextType);
                     syncSelectedConnection(
-                      currentManufacturer,
-                      currentBrand,
+                      manufacturerForFamily,
+                      brandForFamily,
                       nextFamily,
                       nextType,
                     );
@@ -644,7 +860,12 @@ export function NewRequestPatientImplantFields({
                   <SelectTrigger disabled={implantDisabled || !currentBrand}>
                     <SelectValue placeholder="Family">
                       {currentFamily
-                        ? familyLabelMap.get(currentFamily) || currentFamily
+                        ? familyLabelMap.get(
+                            resolveSelectValue(
+                              currentFamily,
+                              currentFamilyOptions,
+                            ) || currentFamily,
+                          ) || currentFamily
                         : undefined}
                     </SelectValue>
                   </SelectTrigger>
@@ -660,24 +881,37 @@ export function NewRequestPatientImplantFields({
 
               <div className="min-w-0 space-y-1">
                 <Select
-                  value={currentType}
+                  value={resolveSelectValue(currentType, currentTypeOptions)}
                   onValueChange={(value) => {
                     if (implantDisabled) return;
+                    const manufacturerForType =
+                      resolveSelectValue(
+                        currentManufacturer,
+                        manufacturerOptions,
+                      ) || currentManufacturer;
+                    const brandForType =
+                      resolveBrandSelectValue(currentBrand, brandOptions) ||
+                      currentBrand;
+                    const familyForType =
+                      resolveSelectValue(
+                        currentFamily,
+                        currentFamilyOptions,
+                      ) || currentFamily;
                     if (implantSelectSource === "caseInfos") {
                       setCaseInfos({ implantType: value });
                       syncSelectedConnection(
-                        currentManufacturer,
-                        currentBrand,
-                        currentFamily,
+                        manufacturerForType,
+                        brandForType,
+                        familyForType,
                         value,
                       );
                       return;
                     }
                     setImplantType(value);
                     syncSelectedConnection(
-                      currentManufacturer,
-                      currentBrand,
-                      currentFamily,
+                      manufacturerForType,
+                      brandForType,
+                      familyForType,
                       value,
                     );
                     setCaseInfos({ implantType: value });
@@ -687,7 +921,12 @@ export function NewRequestPatientImplantFields({
                   <SelectTrigger disabled={implantDisabled || !currentFamily}>
                     <SelectValue placeholder="Type">
                       {currentType
-                        ? typeLabelMap.get(currentType) || currentType
+                        ? typeLabelMap.get(
+                            resolveSelectValue(
+                              currentType,
+                              currentTypeOptions,
+                            ) || currentType,
+                          ) || currentType
                         : undefined}
                     </SelectValue>
                   </SelectTrigger>

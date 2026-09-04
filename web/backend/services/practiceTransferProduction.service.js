@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-09-04: Request 생성 전 CNC 주문가능 스펙 검증(미도입 US 등 폴백·유입 금지).
 // - 2026-09-04: 헥스 샘플은 design-handoff/워크시트 백필만(ensure 시점 designCompletedAt 전 생성 금지).
 // - 2026-09-03: ensureAbutmentRequestsForHandoff — 수락이 아니라 STL handoff 직전 생성.
 // - 2026-09-03: 구강스캔은 designSourceFiles만 — caseInfos.file에 넣지 않음(제조사·헥스 고스트 방지).
@@ -73,6 +74,7 @@ import {
 } from "./hexVerificationSample.service.js";
 import {
   normalizeCaseInfosImplantFields,
+  assertOrderableImplantPresetOrThrow,
   addKoreanBusinessDays,
   getTodayYmdInKst,
   toKstYmd,
@@ -756,6 +758,31 @@ export async function createAbutmentRequestsFromPracticeTransfer({
       throw new Error(
         `치아 #${tooth} 임플란트 규격(Manufacturer/Brand/Family/Type)이 부족합니다.`,
       );
+    }
+
+    // 미도입/비활성 스펙은 Request 생성 금지(폴백으로 다른 brand 넣지 않음).
+    try {
+      await assertOrderableImplantPresetOrThrow({
+        implantManufacturer,
+        implantBrand,
+        implantFamily,
+        implantType,
+      });
+    } catch (presetErr) {
+      const err = new Error(
+        String(presetErr?.message || "").trim() ||
+          `치아 #${tooth} 임플란트 스펙을 제조 카탈로그에서 확인할 수 없습니다.`,
+      );
+      err.statusCode = 409;
+      err.code = "implant_catalog_mismatch";
+      err.implant = {
+        implantManufacturer,
+        implantBrand,
+        implantFamily,
+        implantType,
+        tooth,
+      };
+      throw err;
     }
 
     // Abuts-first: Request는 생산만(custom_abutment). 디자인은 수주 기공소·labFeeSchedule.

@@ -1162,6 +1162,53 @@ export const DashboardLayout = () => {
 
   useAppEventListener({
     enabled: user.role === "admin",
+    eventTypes: ["admin:implant-catalog-mismatch"],
+    deferWhenEditing: false,
+    requireVisible: true,
+    onMatch: (evt) => {
+      const data =
+        evt?.data && typeof evt.data === "object"
+          ? (evt.data as Record<string, unknown>)
+          : {};
+      const implant =
+        data.implant && typeof data.implant === "object"
+          ? (data.implant as Record<string, unknown>)
+          : {};
+      const lines = [
+        "[임플란트 카탈로그 불일치 — 의뢰 차단]",
+        `reason: ${String(data.reason || "")}`,
+        `source: ${String(data.source || "")}`,
+        `transferId: ${String(data.transferId || "-")}`,
+        `requestId: ${String(data.requestId || "-")}`,
+        `tooth: ${String(data.tooth || "-")}`,
+        `patient: ${String(data.patientName || "-")}`,
+        `clinic: ${String(data.clinicName || "-")}`,
+        `lab: ${String(data.labName || "-")}`,
+        `implant: ${[
+          implant.manufacturer,
+          implant.brand,
+          implant.family,
+          implant.type,
+        ]
+          .map((v) => String(v || "").trim())
+          .filter(Boolean)
+          .join(" / ") || "-"}`,
+        `message: ${String(data.message || "")}`,
+        "",
+        "폴백으로 다른 타입을 넣지 않았습니다. 관련 카탈로그/매칭 코드를 확인하세요.",
+      ];
+      // 관리자 즉시 인지용. toast만으로는 상세가 잘림.
+      window.alert(lines.join("\n"));
+      toast({
+        title: "임플란트 카탈로그 불일치",
+        description: "의뢰가 차단되었습니다. 상세는 alert를 확인하세요.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  useAppEventListener({
+    enabled: user.role === "admin",
     eventTypes: ["abuts-lab-fee:pending-items"],
     deferWhenEditing: false,
     onMatch: (evt) => {
