@@ -667,7 +667,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                         else if (string.Equals(toolCode, "T0909", StringComparison.OrdinalIgnoreCase) ||
                                  string.Equals(toolCode, "T0606", StringComparison.OrdinalIgnoreCase))
                         {
-                            // Connection PRC T0606×3 + T0909×2. Serial 블록 C는 이후 UpdateSerialBlocks가 덮는다.
+                            // T0606 HEX + T0909 Serial(헥스면 C0.0). 포스트면 Serial은 이미 사이트 C라 C0/C30 패턴에 안 걸림.
                             targetDeg = tool0906TargetDeg;
                         }
                         else
