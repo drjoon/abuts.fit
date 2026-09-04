@@ -14,6 +14,8 @@ import { createPortal } from "react-dom";
 import {
   Check,
   ChevronsUpDown,
+  Link2,
+  Loader2,
   Minus,
   Pin,
   Plus,
@@ -105,6 +107,12 @@ import {
   type PracticeAbutmentFavorite,
   type PracticeImplantFavorite,
 } from "@/shared/practice/transferMemo";
+import {
+  buildLabIntroMessage,
+  buildReferralSignupLink,
+} from "@/shared/platform/referralShareMessages";
+import { useAuthStore } from "@/store/useAuthStore";
+import { useToast } from "@/shared/hooks/use-toast";
 import {
   applyCycledLinkedSpanProsthesisType,
   applyProsthesisTypeToRow,
@@ -915,6 +923,9 @@ export const PracticeTransferRequestIntakePanel = ({
   headerIntro = null,
   guideTourHeaderSlotEl = null,
 }: PracticeTransferRequestIntakePanelProps) => {
+  const { toast } = useToast();
+  const authUser = useAuthStore((s) => s.user);
+  const [labInviteCopyBusy, setLabInviteCopyBusy] = useState(false);
   const showLabField = showLabFieldProp ?? showHeaderFields;
   const showPatientField = showPatientFieldProp ?? showHeaderFields;
   const showDateFields = showDateFieldsProp ?? showHeaderFields;
@@ -947,6 +958,50 @@ export const PracticeTransferRequestIntakePanel = ({
   const defaultProsthesisType = normalizedProsthesisTypes.includes("크라운")
     ? "크라운"
     : normalizedProsthesisTypes[0] || "크라운";
+
+  const handleCopyLabInviteLink = async () => {
+    if (labInviteCopyBusy) return;
+    const referralCode = String(authUser?.referralCode || "")
+      .trim()
+      .toUpperCase();
+    if (!referralCode) {
+      toast({
+        title: "복사 실패",
+        description: "소개 코드를 확인할 수 없습니다.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setLabInviteCopyBusy(true);
+    try {
+      const link = buildReferralSignupLink(referralCode);
+      if (!link) {
+        throw new Error("소개 링크를 만들 수 없습니다.");
+      }
+      const message = buildLabIntroMessage(link);
+      if (!message) {
+        throw new Error("안내 문구를 만들 수 없습니다.");
+      }
+      await navigator.clipboard.writeText(message);
+      toast({
+        title: "복사 완료",
+        description: "거래 기공소에 보낼 안내 문구와 링크를 복사했습니다.",
+        duration: 2000,
+      });
+      setLabOpen(false);
+    } catch (error) {
+      toast({
+        title: "복사 실패",
+        description:
+          error instanceof Error ? error.message : "잠시 후 다시 시도해주세요.",
+        variant: "destructive",
+      });
+    } finally {
+      setLabInviteCopyBusy(false);
+    }
+  };
+
   const { quote: feeQuote } = usePracticeTransferFeeQuote({
     enabled: showFeeEstimate && Boolean(selectedLab),
     labAnchorId: selectedLab?._id,
@@ -2670,6 +2725,31 @@ export const PracticeTransferRequestIntakePanel = ({
                     )}
                   </CommandGroup>
                 </CommandList>
+                <div className="border-t border-primary-muted/60 bg-primary-soft/50 p-2">
+                  <button
+                    type="button"
+                    className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary-strong disabled:pointer-events-none disabled:opacity-60"
+                    disabled={labInviteCopyBusy}
+                    onPointerDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      void handleCopyLabInviteLink();
+                    }}
+                  >
+                    {labInviteCopyBusy ? (
+                      <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                    ) : (
+                      <Link2 className="h-4 w-4 shrink-0" />
+                    )}
+                    <span className="min-w-0 truncate">
+                      거래 기공소에 링크 보내기
+                    </span>
+                  </button>
+                </div>
               </Command>
             </PopoverContent>
           </Popover>

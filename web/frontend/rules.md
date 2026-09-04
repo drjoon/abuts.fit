@@ -725,6 +725,7 @@ Notes:
   - 서버: `GET /api/practice/transfers/my` 응답의 `caseInfos.practiceRouting.targetLabAnchorId/targetLabName`(최신순)이 권위 소스.
   - 로컬 캐시: `localStorage.practice_recent_labs_v3` (최대 8개). 전송 성공 시 `rememberLab`, 목록 로드 시 `syncRecentLabsFromTransfers`로 merge.
   - 사용자 고정: `localStorage.practice_pinned_labs_v1` (최대 5개, 어벗츠 제외). 드롭다운 「고정」= 어벗츠기공소(항상) + 사용자 pin. 「최근」= 지정/최근 기공소(pin·어벗츠 제외). `togglePinLab`로 토글(어벗츠 해제 불가). 치과 픽커에서 「자동 매칭」항목은 제거. 레거시 자동매칭 draft는 어벗츠기공소로 복원.
+  - 드롭다운 하단 「거래 기공소에 링크 보내기」: 내 소개 코드로 기공소 가입 안내+링크를 클립보드에 복사(`buildLabIntroMessage` / `PlatformBenefitsShareButtons`와 동일 SSOT).
   - 「새로 작성」은 의뢰 폼/임시저장 캐시만 비우고, 최근 기공소 목록은 드롭다운 후보로만 유지한다. 기공소 선택은 비워 다시 고르게 한다. 보철물 차트는 M(전치부) 위치로 되돌린다.
   - 기공의뢰 상단에는 수동 「임시 저장」버튼이 없다. 목록 반영은 환자명 입력 후 자동 동기화만 수행한다(기공소는 전송 시 필수).
   - 기공의뢰 상단 툴바(Express/Expert 공통): 「새로 작성」·「최근 의뢰」·「임시저장」·「휴지통」. 최근 의뢰=전체보기 모달(`PracticeRecentTransfersAllModal`: 헤더에 상태 6뱃지+검색, 3주 세로 스크롤 캘린더, 년/월 오른쪽 요일 숨김, 칸 날짜=월/일, 기공소 정렬·색). 임시저장/휴지통=다이얼로그. Expert는 우측 목록 없이 작성 폼 전폭(치식 full 차트, 카드 min-w로 어벗 라벨 표시). Expert 본문 순서: 기공소·환자·일정 → **메모|드롭존 2열** → 보철물.

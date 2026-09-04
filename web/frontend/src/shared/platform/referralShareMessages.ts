@@ -1,5 +1,6 @@
 // related files:
 // - web/frontend/src/features/platform/PlatformBenefitsShareButtons.tsx
+// - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - 2026-08-12: 소개 안내 문구·링크 SSOT.
 
