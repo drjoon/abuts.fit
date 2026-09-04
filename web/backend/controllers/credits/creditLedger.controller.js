@@ -47,7 +47,6 @@ import { normalizeRequestorKind } from "../../utils/requestorCapabilities.js";
 import { isCustomAbutmentLabFeeLineType } from "../../utils/labFeeSchedule.js";
 import { buildOccurredAtFromPeriodQuery } from "../../utils/kstQueryBounds.js";
 import { isPracticeTransferDeletedStatus } from "../../utils/practiceTransferStage.js";
-import { resolveDemoFreeRequestReserveCap } from "../businesses/business.demoMode.util.js";
 import {
   attachCreditLedgerRequestFields,
   buildAbutmentBoxGroupKey,
@@ -70,74 +69,8 @@ import {
   listPendingLabSettlementLedgerRows,
   mergeLabLedgerRowsWithPending,
   parseCreditUsageScope,
-  resolvePracticeTransferDemoFundingByIds,
 } from "./creditLedger.utils.js";
 
-async function detectHasDemoCreditUsage({
-  ownerObjectId,
-  demoMode,
-  isLab,
-  usageScope = "all",
-  pendingLabRows = [],
-}) {
-  if (demoMode) return true;
-  if (
-    Array.isArray(pendingLabRows) &&
-    pendingLabRows.some((row) => Boolean(row?.fundedByDemoCredit))
-  ) {
-    return true;
-  }
-  // pending 조회가 usageScope=real 이면 데모 보류가 빠져 있어 별도 확인.
-  if (isLab && parseCreditUsageScope(usageScope) === "real") {
-    const anyDemoPending = await listPendingLabSettlementLedgerRows({
-      labAnchorId: ownerObjectId,
-      usageScope: "demo",
-      limit: 1,
-    });
-    if (anyDemoPending.length > 0) return true;
-  }
-  const demoHit = await LedgerLine.aggregate([
-    {
-      $match: {
-        ownerRole: "requestor",
-        ownerId: ownerObjectId,
-        accountCode: {
-          $in: [
-            "REQ_PAID_CREDIT",
-            "REQ_FREE_REQUEST_CREDIT",
-            "REQ_FREE_SHIPPING_CREDIT",
-            "LAB_SETTLEMENT_CREDIT",
-          ],
-        },
-      },
-    },
-    {
-      $lookup: {
-        from: LedgerJournal.collection.name,
-        localField: "journalId",
-        foreignField: "journalId",
-        as: "journalDoc",
-      },
-    },
-    { $unwind: { path: "$journalDoc", preserveNullAndEmptyArrays: false } },
-    {
-      $match: {
-        $or: [
-          { "journalDoc.meta.demoCredit": true },
-          {
-            "journalDoc.meta.source": {
-              $in: ["demo_credit", "demo_credit_exit"],
-            },
-          },
-          { "journalDoc.idempotencyKey": { $regex: /demo_credit/i } },
-        ],
-      },
-    },
-    { $limit: 1 },
-    { $project: { _id: 1 } },
-  ]);
-  return demoHit.length > 0;
-}
 
 async function resolveRequestorKindForAnchor(businessAnchorId, fallbackKind) {
   const anchor = await BusinessAnchor.findById(businessAnchorId)
@@ -154,7 +87,6 @@ function buildCurrentBalanceSnapshot(
   balanceSnapshot,
   requestorKind,
   demoMode = false,
-  { demoBalance = 0, realBalance = null } = {},
 ) {
   const kind = normalizeRequestorKind(requestorKind) || null;
   const isLab = kind === "lab";
@@ -167,11 +99,6 @@ function buildCurrentBalanceSnapshot(
   const settlementCredit = Number(balanceSnapshot?.settlementCredit || 0);
   const combined =
     paidCredit + freeCredit + (isLab ? settlementCredit : 0);
-  const resolvedDemo = Math.max(0, Math.round(Number(demoBalance || 0)));
-  const resolvedReal =
-    realBalance == null
-      ? Math.max(0, combined - resolvedDemo)
-      : Math.max(0, Math.round(Number(realBalance || 0)));
   return {
     paidCredit,
     freeRequestCredit,
@@ -184,8 +111,8 @@ function buildCurrentBalanceSnapshot(
       balanceSnapshot?.spendableBalance ??
         Number(balanceSnapshot?.balance || 0) + settlementCredit,
     ),
-    realBalance: resolvedReal,
-    demoBalance: resolvedDemo,
+    realBalance: combined,
+    demoBalance: 0,
     requestorKind: kind,
     showSettlementCredit: isLab,
     demoMode: Boolean(demoMode),
@@ -589,27 +516,14 @@ export async function listMyCreditLedger(req, res) {
         })
       : Promise.resolve(null);
 
-  const hasDemoUsagePromise =
-    page === 1
-      ? detectHasDemoCreditUsage({
-          ownerObjectId: anchorObjectId,
-          demoMode,
-          isLab: requestorKind === "lab",
-          usageScope,
-          pendingLabRows,
-        })
-      : Promise.resolve(false);
-
-  const [balanceSnapshot, facetRaw, periodLedgerSummary, hasDemoUsage] =
-    await Promise.all([
-      getBusinessCreditBalanceSnapshot({
-        businessAnchorId: anchorObjectId,
-        upsertIfMissing: true,
-      }),
-      LedgerLine.aggregate(pipeline),
-      periodSummaryPromise,
-      hasDemoUsagePromise,
-    ]);
+  const [balanceSnapshot, facetRaw, periodLedgerSummary] = await Promise.all([
+    getBusinessCreditBalanceSnapshot({
+      businessAnchorId: anchorObjectId,
+      upsertIfMissing: true,
+    }),
+    LedgerLine.aggregate(pipeline),
+    periodSummaryPromise,
+  ]);
   const currentBalance = Number(balanceSnapshot?.balance || 0);
   const currentSettlementCredit = Number(balanceSnapshot?.settlementCredit || 0);
 
@@ -636,69 +550,14 @@ export async function listMyCreditLedger(req, res) {
 
   const allRows = mergeRequestExpressSurchargeIntoMachiningSpend(pageRows);
 
-  if (requestorKind === "lab") {
-    const settlementRefIds = allRows
-      .filter((row) => {
-        const type = String(row?.type || "");
-        return (
-          type === "LAB_SETTLEMENT_CHARGE" &&
-          String(row?.refType || "") === "PRACTICE_TRANSFER" &&
-          row?.refId &&
-          !row?.fundedByDemoCredit
-        );
-      })
-      .map((row) => String(row.refId));
-    const demoFundingByPtx =
-      await resolvePracticeTransferDemoFundingByIds(settlementRefIds);
-    for (const row of allRows) {
-      if (String(row?.type || "") !== "LAB_SETTLEMENT_CHARGE") continue;
-      const refId = row?.refId ? String(row.refId) : "";
-      if (refId && demoFundingByPtx.get(refId)) {
-        row.fundedByDemoCredit = true;
-        row.isDemoUsage = true;
-      }
-    }
-  }
-
-  const paidCredit = Number(balanceSnapshot?.paidCredit || 0);
-  const freeRequestCredit = Number(balanceSnapshot?.freeRequestCredit || 0);
-  const freeShippingCredit = Number(balanceSnapshot?.freeShippingCredit || 0);
-
-  let demoBalance = 0;
-  let realSpendable = currentBalance;
-  let realSettlement = currentSettlementCredit;
-
-  if (practiceDemoMode) {
-    const demoCap = await resolveDemoFreeRequestReserveCap(anchorObjectId);
-    demoBalance = Math.min(freeRequestCredit, Math.max(0, demoCap));
-    realSpendable =
-      paidCredit +
-      freeShippingCredit +
-      Math.max(0, freeRequestCredit - demoBalance);
-    realSettlement = 0;
-  } else if (requestorKind === "lab") {
-    const demoPendingRows =
-      usageScope === "real"
-        ? await listPendingLabSettlementLedgerRows({
-            labAnchorId: anchorObjectId,
-            usageScope: "demo",
-            limit: 500,
-          })
-        : pendingLabRows.filter((row) => Boolean(row?.fundedByDemoCredit));
-    demoBalance = demoPendingRows.reduce(
-      (sum, row) => sum + Math.max(0, Number(row?.amount || 0)),
-      0,
-    );
-  }
-
   const items = buildLedgerItemsWithBucketBalanceAfter({
     rows: allRows,
     startIdx: 0,
     endIdx: allRows.length,
-    spendableBalance: realSpendable,
-    settlementBalance: realSettlement,
+    spendableBalance: currentBalance,
+    settlementBalance: currentSettlementCredit,
     skippedSum,
-    demoBalance,
+    demoBalance: 0,
     skippedDemoSum,
     mapRow: (row, base) => {
       const uniqueKey = String(row?.uniqueKey || base.uniqueKey || "");
@@ -714,15 +573,8 @@ export async function listMyCreditLedger(req, res) {
         spendKind:
           row?.spendKind || parseSpendKindFromUniqueKey(uniqueKey) || null,
         includesExpressSurcharge: Boolean(row?.includesExpressSurcharge),
-        isDemoUsage: Boolean(
-          row?.isDemoUsage ||
-            row?.fundedByDemoCredit ||
-            base.isDemoUsage ||
-            base.fundedByDemoCredit,
-        ),
-        fundedByDemoCredit: Boolean(
-          row?.fundedByDemoCredit || base.fundedByDemoCredit,
-        ),
+        isDemoUsage: false,
+        fundedByDemoCredit: false,
         excludeFromBalanceRunning: Boolean(
           row?.excludeFromBalanceRunning || base.excludeFromBalanceRunning,
         ),
@@ -741,11 +593,6 @@ export async function listMyCreditLedger(req, res) {
     balanceSnapshot,
     requestorKind,
     demoMode,
-    {
-      demoBalance,
-      realBalance:
-        realSpendable + (requestorKind === "lab" ? realSettlement : 0),
-    },
   );
 
   const requestRefIds = Array.from(
@@ -1126,8 +973,8 @@ export async function listMyCreditLedger(req, res) {
       hasMore,
       page,
       pageSize,
-      usageScope,
-      hasDemoUsage: Boolean(hasDemoUsage),
+      usageScope: "all",
+      hasDemoUsage: false,
       currentBalanceSnapshot: balanceSnapshotForClient,
       periodSpendSummary:
         page === 1 &&
@@ -1146,44 +993,6 @@ export async function listMyCreditLedger(req, res) {
               totalSettlementEarnSupply: Number(
                 periodLedgerSummary.totalSettlementEarnSupply || 0,
               ),
-              byUsage: periodLedgerSummary.byUsage
-                ? {
-                    real: {
-                      totalPaidChargeSupply: Number(
-                        periodLedgerSummary.byUsage.real
-                          ?.totalPaidChargeSupply || 0,
-                      ),
-                      totalFreeChargeSupply: Number(
-                        periodLedgerSummary.byUsage.real
-                          ?.totalFreeChargeSupply || 0,
-                      ),
-                      totalSpendSupply: Number(
-                        periodLedgerSummary.byUsage.real?.totalSpendSupply || 0,
-                      ),
-                      totalSettlementEarnSupply: Number(
-                        periodLedgerSummary.byUsage.real
-                          ?.totalSettlementEarnSupply || 0,
-                      ),
-                    },
-                    demo: {
-                      totalPaidChargeSupply: Number(
-                        periodLedgerSummary.byUsage.demo
-                          ?.totalPaidChargeSupply || 0,
-                      ),
-                      totalFreeChargeSupply: Number(
-                        periodLedgerSummary.byUsage.demo
-                          ?.totalFreeChargeSupply || 0,
-                      ),
-                      totalSpendSupply: Number(
-                        periodLedgerSummary.byUsage.demo?.totalSpendSupply || 0,
-                      ),
-                      totalSettlementEarnSupply: Number(
-                        periodLedgerSummary.byUsage.demo
-                          ?.totalSettlementEarnSupply || 0,
-                      ),
-                    },
-                  }
-                : null,
             }
           : null,
     },

@@ -98,7 +98,7 @@ import { alertAdminImplantCatalogMismatch } from "../../utils/implantCatalogMism
 /** PTX CA(어벗 생산) — 기공소 실크레딧 부족 (수락→디자인 업로드 시점) */
 const PTX_CA_INSUFFICIENT_CREDIT_REASON = "insufficient_credit_for_ptx_ca";
 const PTX_CA_INSUFFICIENT_CREDIT_MESSAGE =
-  "커스텀어벗 생산은 유료/무료 크레딧으로 결제됩니다. 데모 크레딧은 사용할 수 없습니다. 충전 후 디자인을 다시 업로드해 주세요.";
+  "커스텀어벗 생산은 유료/무료 크레딧으로 결제됩니다. 데모 모드 마이너스는 기공의뢰 보철 기공비에만 적용됩니다. 충전 후 디자인을 다시 업로드해 주세요.";
 
 function isPtxCaInsufficientCreditError(err) {
   const reason = String(err?.payload?.reason || err?.code || "").trim();

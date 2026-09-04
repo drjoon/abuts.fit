@@ -74,7 +74,7 @@ async function main() {
     },
   );
 
-  // Reset prior DEMO_CREDIT grant so charge can post again
+  // Cancel prior DEMO_CREDIT grant if any (no re-grant — 0원 시작)
   const FreeCreditGrant = (await import("../../models/freeCreditGrant.model.js"))
     .default;
   const anchor = await BusinessAnchor.findById(user.businessAnchorId)
@@ -88,7 +88,15 @@ async function main() {
       .trim()
       .toLowerCase();
   if (bn) {
-    await FreeCreditGrant.deleteMany({ type: "DEMO_CREDIT", businessNumber: bn });
+    await FreeCreditGrant.updateMany(
+      { type: "DEMO_CREDIT", businessNumber: bn, canceledAt: null },
+      {
+        $set: {
+          canceledAt: new Date(),
+          cancelReason: "local demo re-enable (no grant)",
+        },
+      },
+    );
   }
 
   const result = await enableDemoModeAndGrantCreditIfEligible({
@@ -101,7 +109,12 @@ async function main() {
   const after = await BusinessAnchor.findById(user.businessAnchorId)
     .select({ demoMode: 1, demoModeExitedAt: 1 })
     .lean();
-  console.log("enabled", { result, after, freeRequestCredit: bal.freeRequestCredit, balance: bal.balance });
+  console.log("enabled", {
+    result,
+    after,
+    freeRequestCredit: bal.freeRequestCredit,
+    balance: bal.balance,
+  });
   await mongoose.disconnect();
 }
 

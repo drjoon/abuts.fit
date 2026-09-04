@@ -10,9 +10,11 @@ import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.js";
 import { postGeneralLedgerJournal } from "../../services/generalLedger.service.js";
 import { getBusinessCreditBalanceSnapshot } from "../../services/creditBalance.service.js";
-import { isDuplicateKeyError } from "./business.validation.util.js";
 
-/** 데모 크레딧 초기 충전액(원). 치과↔기공소 기공의뢰(PTX) 차감 전용. */
+/**
+ * 레거시 데모 크레딧 초기 충전액(원). 신규 가입은 미지급(0원 시작).
+ * 기존 grant 회수·마이그레이션 상한에만 사용.
+ */
 export const DEMO_CREDIT_AMOUNT = 1_000_000;
 
 /** 데모 모드 유효기간(일). startedAt 기준 경과 시 자동 실사용 전환. */
@@ -48,121 +50,21 @@ function resolveDemoGrantBusinessNumber(anchor) {
     .toLowerCase();
 }
 
-async function ensureDemoCreditGrant({
-  businessAnchorId,
-  userId,
-  businessNumber,
-  amount,
-}) {
-  let grant = await FreeCreditGrant.findOne({
-    type: DEMO_GRANT_TYPE,
-    businessNumber,
-    isOverride: false,
-  })
-    .select({ _id: 1, grantJournalId: 1, amount: 1, canceledAt: 1 })
-    .lean();
-
-  if (!grant) {
-    try {
-      const created = await FreeCreditGrant.create({
-        type: DEMO_GRANT_TYPE,
-        businessNumber,
-        amount,
-        businessAnchorId,
-        userId: userId || null,
-        isOverride: false,
-        source: "auto",
-        grantedByUserId: null,
-      });
-      grant = {
-        _id: created._id,
-        grantJournalId: created.grantJournalId || null,
-        amount,
-        canceledAt: null,
-      };
-    } catch (e) {
-      if (isDuplicateKeyError(e)) {
-        grant = await FreeCreditGrant.findOne({
-          type: DEMO_GRANT_TYPE,
-          businessNumber,
-          isOverride: false,
-        })
-          .select({ _id: 1, grantJournalId: 1, amount: 1, canceledAt: 1 })
-          .lean();
-      } else {
-        throw e;
-      }
-    }
-  }
-
-  return grant;
-}
-
-async function postDemoCreditCharge({
-  businessAnchorId,
-  userId,
-  amount,
-  grantId,
-}) {
-  const normalizedAmount = Math.max(0, Math.round(Number(amount || 0)));
-  if (!normalizedAmount) {
-    return { ok: false, posted: false, journalId: null };
-  }
-
-  const idempotencyKey = `gl:demo_credit_grant:${String(grantId)}`;
-  const glResult = await postGeneralLedgerJournal({
-    idempotencyKey,
-    eventType: "CHARGE_FREE_REQUEST",
-    businessAnchorId,
-    refType: "DEMO_CREDIT",
-    refId: grantId,
-    createdBy: userId || null,
-    meta: {
-      memo: "데모 크레딧 충전",
-      freeCreditGrantId: String(grantId || "").trim() || null,
-      source: "demo_credit",
-      demoCredit: true,
-    },
-    lines: [
-      {
-        accountCode: "REQ_FREE_REQUEST_CREDIT",
-        ownerRole: "requestor",
-        ownerId: businessAnchorId,
-        amount: normalizedAmount,
-        amountExcludingVat: normalizedAmount,
-        vatAmount: 0,
-        amountIncludingVat: normalizedAmount,
-        creditKind: "FREE_REQUEST",
-        refType: "DEMO_CREDIT",
-        refId: grantId,
-        meta: { source: "demo_credit", demoCredit: true },
-      },
-    ],
-  });
-
-  return {
-    ok: true,
-    posted: Boolean(glResult?.posted),
-    journalId: glResult?.journalId || null,
-  };
-}
-
 /**
- * 의뢰자 사업자 신규 생성 시 데모 모드 시작 + 100만 원 데모 크레딧 1회 지급.
- * 치과(practice)만. 기공소(lab)는 데모 크레딧 없음(가입 무료 테스트 2건으로 대체).
+ * 의뢰자 사업자 신규 생성 시 데모 모드만 시작(크레딧 미지급, 0원).
+ * 치과(practice)만. 기공소(lab)는 데모 없음(가입 무료 테스트 2건으로 대체).
  * 이미 실사용 전환(demoModeExitedAt)한 사업자는 재진입하지 않는다.
  */
 export async function enableDemoModeAndGrantCreditIfEligible({
   businessAnchorId,
   userId,
 } = {}) {
+  void userId;
   if (!businessAnchorId) return null;
 
   const anchor = await BusinessAnchor.findById(businessAnchorId)
     .select({
       businessType: 1,
-      businessNumberNormalized: 1,
-      metadata: 1,
       demoMode: 1,
       demoModeExitedAt: 1,
       demoModeStartedAt: 1,
@@ -180,13 +82,10 @@ export async function enableDemoModeAndGrantCreditIfEligible({
   if (kind === "lab") return null;
   if (kind !== "practice") {
     const caps = normalizeRequestorCapabilities(anchor.requestorCapabilities);
-    // lab-only 레거시: 데모 미지급. practice 포함 또는 kind 미기입+practice만 허용.
+    // lab-only 레거시: 데모 미적용. practice 포함 또는 kind 미기입+practice만 허용.
     if (caps.lab && !caps.practice) return null;
     if (!caps.practice) return null;
   }
-
-  const businessNumber = resolveDemoGrantBusinessNumber(anchor);
-  if (!businessNumber) return null;
 
   const now = new Date();
   if (!anchor.demoMode) {
@@ -201,93 +100,38 @@ export async function enableDemoModeAndGrantCreditIfEligible({
     );
   }
 
-  const grant = await ensureDemoCreditGrant({
-    businessAnchorId,
-    userId,
-    businessNumber,
-    amount: DEMO_CREDIT_AMOUNT,
-  });
-  if (!grant?._id || grant.canceledAt) return null;
-  if (grant.grantJournalId) {
-    return { amount: 0, alreadyGranted: true, demoMode: true };
-  }
-
-  const postResult = await postDemoCreditCharge({
-    businessAnchorId,
-    userId,
-    amount: DEMO_CREDIT_AMOUNT,
-    grantId: grant._id,
-  });
-  if (!postResult?.ok) return null;
-
-  if (postResult.journalId) {
-    await FreeCreditGrant.updateOne(
-      { _id: grant._id },
-      { $set: { grantJournalId: String(postResult.journalId) } },
-    );
-  }
-
-  if (postResult.posted) {
-    await emitCreditBalanceUpdatedToBusiness({
-      businessAnchorId,
-      balanceDelta: DEMO_CREDIT_AMOUNT,
-      reason: "demo_credit_grant",
-      refId: postResult.journalId || grant._id,
-    });
-  }
-
   return {
-    amount: postResult.posted ? DEMO_CREDIT_AMOUNT : 0,
-    alreadyGranted: !postResult.posted,
+    amount: 0,
+    alreadyGranted: true,
     demoMode: true,
   };
 }
 
 /**
- * 실사용 전환: 데모 모드 OFF + 잔여 데모 크레딧(무료의뢰 버킷) 회수.
- * 데모 지급액 한도 내에서 현재 freeRequestCredit만 차감한다.
- * @param {{ businessAnchorId: any, userId?: any, reason?: string }} args
- *   reason: 사용자 요청·소진·기간 만료 구분 (기본 "실사용 전환")
+ * 레거시 DEMO_CREDIT grant 잔여(양수 freeRequest ∩ grant) 회수.
+ * exit / 마이그레이션 공용. demoMode 플래그는 건드리지 않는다.
+ * @returns {Promise<{ clawedBack: number, clawJournalId: string|null, grant: object|null }>}
  */
-export async function exitDemoMode({
+export async function clawBackLegacyDemoCreditGrant({
   businessAnchorId,
   userId,
   reason,
+  freeRequestCredit,
 } = {}) {
   if (!businessAnchorId) {
-    const err = new Error("사업자 정보가 없습니다.");
-    err.statusCode = 400;
-    throw err;
+    return { clawedBack: 0, clawJournalId: null, grant: null };
   }
 
-  const exitReason = String(reason || "").trim() || "실사용 전환";
-
+  const exitReason = String(reason || "").trim() || "데모 크레딧 회수";
   const anchor = await BusinessAnchor.findById(businessAnchorId)
     .select({
       businessType: 1,
       businessNumberNormalized: 1,
       metadata: 1,
-      demoMode: 1,
-      demoModeExitedAt: 1,
     })
     .lean();
-  if (!anchor) {
-    const err = new Error("사업자를 찾을 수 없습니다.");
-    err.statusCode = 404;
-    throw err;
-  }
-  if (String(anchor.businessType || "") !== "requestor") {
-    const err = new Error("의뢰자 사업자만 실사용 전환할 수 있습니다.");
-    err.statusCode = 400;
-    throw err;
-  }
-  if (!anchor.demoMode || anchor.demoModeExitedAt) {
-    return {
-      demoMode: false,
-      clawedBack: 0,
-      alreadyExited: true,
-      reason: exitReason,
-    };
+  if (!anchor || String(anchor.businessType || "") !== "requestor") {
+    return { clawedBack: 0, clawJournalId: null, grant: null };
   }
 
   const businessNumber = resolveDemoGrantBusinessNumber(anchor);
@@ -301,18 +145,23 @@ export async function exitDemoMode({
         .lean()
     : null;
 
-  const snapshot = await getBusinessCreditBalanceSnapshot({
-    businessAnchorId,
-  });
-  const freeRequest = Math.max(
-    0,
-    Math.round(Number(snapshot?.freeRequestCredit || 0)),
-  );
+  let freeRequest = Number(freeRequestCredit);
+  if (!Number.isFinite(freeRequest)) {
+    const snapshot = await getBusinessCreditBalanceSnapshot({
+      businessAnchorId,
+    });
+    freeRequest = Math.round(Number(snapshot?.freeRequestCredit || 0));
+  } else {
+    freeRequest = Math.round(freeRequest);
+  }
+
   const demoCap = Math.max(
     0,
     Math.round(Number(grant?.amount || DEMO_CREDIT_AMOUNT)),
   );
-  const clawBack = Math.min(freeRequest, demoCap);
+  const positiveFree = Math.max(0, freeRequest);
+  const clawBack =
+    grant && !grant.canceledAt ? Math.min(positiveFree, demoCap) : 0;
 
   let clawJournalId = null;
   if (clawBack > 0 && grant?._id) {
@@ -357,6 +206,157 @@ export async function exitDemoMode({
     }
   }
 
+  return { clawedBack: clawBack, clawJournalId, grant };
+}
+
+/**
+ * 데모 부채(음수 freeRequest)를 0으로 리셋.
+ * @returns {Promise<{ resetAmount: number, journalId: string|null }>}
+ */
+export async function resetDemoFreeRequestDebtToZero({
+  businessAnchorId,
+  userId,
+  reason,
+  freeRequestCredit,
+  idempotencySuffix,
+} = {}) {
+  if (!businessAnchorId) {
+    return { resetAmount: 0, journalId: null };
+  }
+
+  let freeRequest = Number(freeRequestCredit);
+  if (!Number.isFinite(freeRequest)) {
+    const snapshot = await getBusinessCreditBalanceSnapshot({
+      businessAnchorId,
+    });
+    freeRequest = Math.round(Number(snapshot?.freeRequestCredit || 0));
+  } else {
+    freeRequest = Math.round(freeRequest);
+  }
+
+  if (!(freeRequest < 0)) {
+    return { resetAmount: 0, journalId: null };
+  }
+
+  const resetAmount = -freeRequest;
+  const exitReason = String(reason || "").trim() || "데모 부채 리셋";
+  const suffix = String(idempotencySuffix || businessAnchorId).trim();
+  const glResult = await postGeneralLedgerJournal({
+    idempotencyKey: `gl:demo_debt_reset:${suffix}`,
+    eventType: "ADJUST",
+    businessAnchorId,
+    refType: "DEMO_DEBT_RESET",
+    refId: businessAnchorId,
+    createdBy: userId || null,
+    meta: {
+      memo: `${exitReason} — 데모 부채 리셋`,
+      source: "demo_debt_reset",
+      demoCredit: true,
+      resetAmount,
+      exitReason,
+    },
+    lines: [
+      {
+        accountCode: "REQ_FREE_REQUEST_CREDIT",
+        ownerRole: "requestor",
+        ownerId: businessAnchorId,
+        amount: resetAmount,
+        amountExcludingVat: resetAmount,
+        vatAmount: 0,
+        amountIncludingVat: resetAmount,
+        creditKind: "FREE_REQUEST",
+        refType: "DEMO_DEBT_RESET",
+        refId: businessAnchorId,
+        meta: { source: "demo_debt_reset", demoCredit: true, exitReason },
+      },
+    ],
+  });
+
+  const journalId = glResult?.journalId || null;
+  if (glResult?.posted) {
+    await emitCreditBalanceUpdatedToBusiness({
+      businessAnchorId,
+      balanceDelta: resetAmount,
+      reason: "demo_debt_reset",
+      refId: journalId || businessAnchorId,
+    });
+  }
+
+  return { resetAmount, journalId };
+}
+
+/**
+ * 실사용 전환: 데모 모드 OFF + 레거시 잔여 회수 + 마이너스 부채 0 리셋.
+ * @param {{ businessAnchorId: any, userId?: any, reason?: string }} args
+ *   reason: 사용자 요청·기간 만료 구분 (기본 "실사용 전환")
+ */
+export async function exitDemoMode({
+  businessAnchorId,
+  userId,
+  reason,
+} = {}) {
+  if (!businessAnchorId) {
+    const err = new Error("사업자 정보가 없습니다.");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const exitReason = String(reason || "").trim() || "실사용 전환";
+
+  const anchor = await BusinessAnchor.findById(businessAnchorId)
+    .select({
+      businessType: 1,
+      businessNumberNormalized: 1,
+      metadata: 1,
+      demoMode: 1,
+      demoModeExitedAt: 1,
+    })
+    .lean();
+  if (!anchor) {
+    const err = new Error("사업자를 찾을 수 없습니다.");
+    err.statusCode = 404;
+    throw err;
+  }
+  if (String(anchor.businessType || "") !== "requestor") {
+    const err = new Error("의뢰자 사업자만 실사용 전환할 수 있습니다.");
+    err.statusCode = 400;
+    throw err;
+  }
+  if (!anchor.demoMode || anchor.demoModeExitedAt) {
+    return {
+      demoMode: false,
+      clawedBack: 0,
+      debtReset: 0,
+      alreadyExited: true,
+      reason: exitReason,
+    };
+  }
+
+  const snapshot = await getBusinessCreditBalanceSnapshot({
+    businessAnchorId,
+  });
+  const freeRequestBefore = Math.round(
+    Number(snapshot?.freeRequestCredit || 0),
+  );
+
+  const { clawedBack, clawJournalId, grant } =
+    await clawBackLegacyDemoCreditGrant({
+      businessAnchorId,
+      userId,
+      reason: exitReason,
+      freeRequestCredit: freeRequestBefore,
+    });
+
+  const freeRequestAfterClaw = freeRequestBefore - clawedBack;
+  const { resetAmount: debtReset, journalId: debtJournalId } =
+    await resetDemoFreeRequestDebtToZero({
+      businessAnchorId,
+      userId,
+      reason: exitReason,
+      freeRequestCredit: freeRequestAfterClaw,
+      idempotencySuffix: `${String(grant?._id || businessAnchorId)}:exit`,
+    });
+
   const now = new Date();
   await BusinessAnchor.updateOne(
     { _id: businessAnchorId },
@@ -376,7 +376,11 @@ export async function exitDemoMode({
           canceledAt: now,
           canceledByUserId: userId || null,
           cancelReason: exitReason,
-          cancelJournalId: clawJournalId ? String(clawJournalId) : null,
+          cancelJournalId: clawJournalId
+            ? String(clawJournalId)
+            : debtJournalId
+              ? String(debtJournalId)
+              : null,
         },
       },
     );
@@ -384,7 +388,8 @@ export async function exitDemoMode({
 
   return {
     demoMode: false,
-    clawedBack: clawBack,
+    clawedBack,
+    debtReset,
     alreadyExited: false,
     reason: exitReason,
   };
@@ -406,7 +411,7 @@ export async function getDemoModeState(businessAnchorId) {
 
 /**
  * 데모 모드에서 무료의뢰 버킷 중 "데모 예약분" 상한(원).
- * 치과↔기공소 기공의뢰(PTX)만 이 예약을 쓰고, 스토어·커스텀어벗 등은 제외한다.
+ * 신규는 데모 크레딧 미지급이라 보통 0. 레거시 grant가 남아 있으면 그 amount.
  * 유효기간이 지났으면 즉시 실사용 전환 후 0.
  */
 export async function resolveDemoFreeRequestReserveCap(businessAnchorId) {
@@ -434,7 +439,7 @@ export async function resolveDemoFreeRequestReserveCap(businessAnchorId) {
     .select({ businessNumberNormalized: 1, metadata: 1 })
     .lean();
   const businessNumber = resolveDemoGrantBusinessNumber(anchor || {});
-  if (!businessNumber) return DEMO_CREDIT_AMOUNT;
+  if (!businessNumber) return 0;
 
   const grant = await FreeCreditGrant.findOne({
     type: DEMO_GRANT_TYPE,
@@ -449,27 +454,25 @@ export async function resolveDemoFreeRequestReserveCap(businessAnchorId) {
 
 /**
  * 잔액 스냅샷에서 데모 예약 무료의뢰분을 제외(스토어·커스텀어벗 등 실사용 차감용).
+ * 음수 freeRequest는 이미 spendable 0으로 취급한다.
  */
 export function excludeDemoFreeRequestFromBalance(balance, demoReserveCap) {
   const cap = Math.max(0, Math.round(Number(demoReserveCap || 0)));
   if (!cap || !balance) return balance;
-  const freeRequest = Math.max(
-    0,
-    Math.round(Number(balance.freeRequestCredit || 0)),
-  );
-  const reserved = Math.min(freeRequest, cap);
+  const freeRequest = Math.round(Number(balance.freeRequestCredit || 0));
+  const positiveFree = Math.max(0, freeRequest);
+  const reserved = Math.min(positiveFree, cap);
   if (reserved <= 0) return balance;
   return {
     ...balance,
-    freeRequestCredit: Math.max(0, freeRequest - reserved),
+    freeRequestCredit: Math.max(0, positiveFree - reserved),
   };
 }
 
 /**
- * 데모 모드 자동 종료(실사용 전환 + 잔여 데모 크레딧 회수).
- * 1) 유효기간(DEMO_MODE_DURATION_DAYS) 경과
- * 2) 데모 크레딧(무료의뢰 버킷) 소진 — freeRequestCredit === 0 이고
- *    미전환 HOLD가 없을 때(취소 시 복구 가능하므로)
+ * 데모 모드 자동 종료(실사용 전환).
+ * 유효기간(DEMO_MODE_DURATION_DAYS) 경과만 — 잔고 0 소진 종료는 하지 않는다
+ * (0원 시작·마이너스 허용과 충돌).
  */
 export async function maybeAutoExitDemoModeIfExhausted({
   businessAnchorId,
@@ -488,38 +491,7 @@ export async function maybeAutoExitDemoModeIfExhausted({
     });
   }
 
-  const snapshot = await getBusinessCreditBalanceSnapshot({
-    businessAnchorId,
-  });
-  const freeRequest = Math.max(
-    0,
-    Math.round(Number(snapshot?.freeRequestCredit || 0)),
-  );
-  if (freeRequest > 0) return null;
-
-  const LedgerJournal = (await import("../../models/ledgerJournal.model.js"))
-    .default;
-  const openHold = await LedgerJournal.exists({
-    businessAnchorId,
-    eventType: {
-      $in: [
-        "REQUEST_SPEND_HOLD",
-        "SHIPPING_SPEND_HOLD",
-        "PRACTICE_TRANSFER_SPEND_HOLD",
-      ],
-    },
-    $or: [
-      { "meta.convertedAt": { $exists: false } },
-      { "meta.convertedAt": null },
-    ],
-  });
-  if (openHold) return null;
-
-  return exitDemoMode({
-    businessAnchorId,
-    userId,
-    reason: "데모 크레딧 소진",
-  });
+  return null;
 }
 
 /**

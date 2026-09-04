@@ -81,6 +81,7 @@ import {
   spendShippingCreditAtomic,
   upsertBusinessCreditBalanceFromLedger,
 } from "./creditBalance.service.js";
+import { getDemoModeState } from "../controllers/businesses/business.demoMode.util.js";
 import {
   postGeneralLedgerJournal,
   postGeneralLedgerJournals,
@@ -304,6 +305,29 @@ async function lockGuard(businessAnchorId, session) {
     },
     { upsert: true, session },
   );
+}
+
+/** 치과 데모 모드면 PTX 기공비 freeRequest 마이너스 허용 */
+async function practiceAllowsFreeRequestOverdraft(practiceAnchorId) {
+  if (!practiceAnchorId) return false;
+  const state = await getDemoModeState(practiceAnchorId);
+  return Boolean(state?.demoMode) && !state?.demoModeExitedAt;
+}
+
+/** 스냅샷/GL 잔액 — freeRequest는 부호 유지(데모 부채) */
+function normalizePracticeBalanceBuckets(raw) {
+  const paidCredit = Math.max(0, Math.round(Number(raw?.paidCredit || 0)));
+  const freeRequestCredit = Math.round(Number(raw?.freeRequestCredit || 0));
+  const freeShippingCredit = Math.max(
+    0,
+    Math.round(Number(raw?.freeShippingCredit || 0)),
+  );
+  return {
+    paidCredit,
+    freeRequestCredit,
+    freeShippingCredit,
+    freeCredit: freeRequestCredit + freeShippingCredit,
+  };
 }
 
 export function isPracticeTransferRemake(doc) {
@@ -736,21 +760,7 @@ export async function assertPracticeTransferPaidCreditSufficient({
       })
       .lean();
     if (snap) {
-      const paidCredit = Math.max(0, Math.round(Number(snap.paidCredit || 0)));
-      const freeRequestCredit = Math.max(
-        0,
-        Math.round(Number(snap.freeRequestCredit || 0)),
-      );
-      const freeShippingCredit = Math.max(
-        0,
-        Math.round(Number(snap.freeShippingCredit || 0)),
-      );
-      balance = {
-        paidCredit,
-        freeRequestCredit,
-        freeShippingCredit,
-        freeCredit: freeRequestCredit + freeShippingCredit,
-      };
+      balance = normalizePracticeBalanceBuckets(snap);
     } else {
       // 스냅샷 없으면 GL로 검사. 스킵하면 create 후 hold 실패→전송 삭제·draft만 남음.
       balance = await computeBusinessCreditBalanceFromLedger({
@@ -764,12 +774,15 @@ export async function assertPracticeTransferPaidCreditSufficient({
   }
 
   if (practiceRequired > 0 && balance) {
+    const allowOverdraft =
+      await practiceAllowsFreeRequestOverdraft(practiceId);
     const split = allocateSpendFromCreditBuckets({
       amount: practiceRequired,
       paidCredit: Number(balance?.paidCredit || 0),
       freeRequestCredit: Number(balance?.freeRequestCredit || 0),
       freeShippingCredit: Number(balance?.freeShippingCredit || 0),
       freeOrder: ["freeRequest", "freeShipping"],
+      allowFreeRequestOverdraft: allowOverdraft,
     });
     if (!split.ok) {
       const err = new Error(
@@ -996,12 +1009,15 @@ export async function commitPracticeTransferBilling({
       businessAnchorId: practiceAnchorId,
       session,
     });
+    const allowOverdraft =
+      await practiceAllowsFreeRequestOverdraft(practiceAnchorId);
     const split = allocateSpendFromCreditBuckets({
       amount: fees.total,
       paidCredit: Number(balance?.paidCredit || 0),
       freeRequestCredit: Number(balance?.freeRequestCredit || 0),
       freeShippingCredit: Number(balance?.freeShippingCredit || 0),
       freeOrder: ["freeRequest", "freeShipping"],
+      allowFreeRequestOverdraft: allowOverdraft,
     });
     if (!split.ok) {
       const err = new Error("치과 크레딧이 부족합니다.");
@@ -1559,6 +1575,7 @@ function prepareHoldSliceEntry({
   split,
   actorUserId,
   freeOrder = ["freeRequest", "freeShipping"],
+  allowFreeRequestOverdraft = false,
 }) {
   const amt = Math.max(0, Math.round(Number(amount) || 0));
   if (amt <= 0) {
@@ -1588,6 +1605,7 @@ function prepareHoldSliceEntry({
       split.remainingFreeShipping ?? split.freeShippingCredit ?? 0,
     ),
     freeOrder,
+    allowFreeRequestOverdraft,
   });
   if (!sliceSplit.ok) {
     const payerLabel =
@@ -1628,6 +1646,10 @@ function prepareHoldSliceEntry({
         : shareKind === "abuts_shipping"
           ? practiceTransferHoldAbutsShippingKey(transferId)
           : practiceTransferHoldLabKey(transferId);
+
+  const nextFreeRequest =
+    Number(split.remainingFreeRequest ?? split.freeRequestCredit ?? 0) -
+    sliceSplit.fromFreeRequest;
 
   return {
     prepared: true,
@@ -1677,11 +1699,9 @@ function prepareHoldSliceEntry({
       0,
       Number(split.remainingPaid ?? split.paidCredit ?? 0) - sliceSplit.fromPaid,
     ),
-    remainingFreeRequest: Math.max(
-      0,
-      Number(split.remainingFreeRequest ?? split.freeRequestCredit ?? 0) -
-        sliceSplit.fromFreeRequest,
-    ),
+    remainingFreeRequest: allowFreeRequestOverdraft
+      ? nextFreeRequest
+      : Math.max(0, nextFreeRequest),
     remainingFreeShipping: Math.max(
       0,
       Number(split.remainingFreeShipping ?? split.freeShippingCredit ?? 0) -
@@ -1880,21 +1900,7 @@ export async function holdPracticeTransferCredits({
       .lean();
     let balance;
     if (snap) {
-      const paidCredit = Math.max(0, Math.round(Number(snap.paidCredit || 0)));
-      const freeRequestCredit = Math.max(
-        0,
-        Math.round(Number(snap.freeRequestCredit || 0)),
-      );
-      const freeShippingCredit = Math.max(
-        0,
-        Math.round(Number(snap.freeShippingCredit || 0)),
-      );
-      balance = {
-        paidCredit,
-        freeRequestCredit,
-        freeShippingCredit,
-        freeCredit: freeRequestCredit + freeShippingCredit,
-      };
+      balance = normalizePracticeBalanceBuckets(snap);
     } else {
       balance = await computeBusinessCreditBalanceFromLedger({
         businessAnchorId: practiceAnchorId,
@@ -1902,12 +1908,15 @@ export async function holdPracticeTransferCredits({
       });
     }
 
+    const allowOverdraft =
+      await practiceAllowsFreeRequestOverdraft(practiceAnchorId);
     const totalSplit = allocateSpendFromCreditBuckets({
       amount: required,
       paidCredit: Number(balance?.paidCredit || 0),
       freeRequestCredit: Number(balance?.freeRequestCredit || 0),
       freeShippingCredit: Number(balance?.freeShippingCredit || 0),
       freeOrder: ["freeRequest", "freeShipping"],
+      allowFreeRequestOverdraft: allowOverdraft,
     });
     if (!totalSplit.ok) {
       const err = new Error(
@@ -1961,6 +1970,7 @@ export async function holdPracticeTransferCredits({
         split: bucket,
         actorUserId,
         freeOrder: spec.freeOrder || ["freeRequest", "freeShipping"],
+        allowFreeRequestOverdraft: allowOverdraft,
       });
       if (!prepared.prepared) continue;
       pendingEntries.push(prepared.entry);
@@ -2108,10 +2118,9 @@ export async function holdPracticeTransferCredits({
                 0,
                 Number(balance?.paidCredit || 0) - fromPaid,
               ),
-              freeRequestCredit: Math.max(
-                0,
+              // 데모 overdraft 시 음수 허용
+              freeRequestCredit:
                 Number(balance?.freeRequestCredit || 0) - fromFreeRequest,
-              ),
               freeShippingCredit: Math.max(
                 0,
                 Number(balance?.freeShippingCredit || 0) - fromFreeShipping,
@@ -2590,12 +2599,15 @@ export async function adjustPracticeTransferHold({
         businessAnchorId: practiceAnchorId,
         session,
       });
+      const allowOverdraft =
+        await practiceAllowsFreeRequestOverdraft(practiceAnchorId);
       const split = allocateSpendFromCreditBuckets({
         amount: absDelta,
         paidCredit: Number(balance?.paidCredit || 0),
         freeRequestCredit: Number(balance?.freeRequestCredit || 0),
         freeShippingCredit: Number(balance?.freeShippingCredit || 0),
         freeOrder: ["freeRequest", "freeShipping"],
+        allowFreeRequestOverdraft: allowOverdraft,
       });
       if (!split.ok) {
         const err = new Error("치과 크레딧이 부족합니다.");
@@ -4109,6 +4121,8 @@ export async function holdPracticeTransferProsthesisFollowUpCredits({
       businessAnchorId: practiceAnchorId,
       session,
     });
+    const allowOverdraft =
+      await practiceAllowsFreeRequestOverdraft(practiceAnchorId);
     const prepared = prepareHoldSliceEntry({
       transferId,
       practiceAnchorId,
@@ -4122,6 +4136,7 @@ export async function holdPracticeTransferProsthesisFollowUpCredits({
         remainingFreeRequest: Number(balance?.freeRequestCredit || 0),
         remainingFreeShipping: Number(balance?.freeShippingCredit || 0),
       },
+      allowFreeRequestOverdraft: allowOverdraft,
     });
     if (!prepared.prepared) {
       const err = new Error("크레딧이 부족합니다.");

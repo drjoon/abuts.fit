@@ -43,24 +43,18 @@ export function isSettlementLedgerType(type) {
 /** @typedef {'all' | 'real' | 'demo'} CreditUsageScope */
 
 /**
- * 정산 내역/통계 — 데모 vs 실사용 필터.
- * - all: 혼합(기본)
- * - real: 유료·일반 무료·실결제 적립만(잔액 러닝과 정합)
- * - demo: 데모 크레딧·(기공소) 치과 데모 결제 적립 보류만
+ * 정산 내역/통계 — 데모/실사용 필터는 더 이상 쓰지 않는다(항상 all).
+ * 쿼리 호환을 위해 함수는 유지한다.
  */
-export function parseCreditUsageScope(raw) {
-  const v = String(raw || "")
-    .trim()
-    .toLowerCase();
-  if (v === "real" || v === "demo") return v;
+export function parseCreditUsageScope(_raw) {
+  void _raw;
   return "all";
 }
 
-export function matchesCreditUsageScope(isDemoUsage, usageScope) {
-  const scope = parseCreditUsageScope(usageScope);
-  if (scope === "all") return true;
-  const isDemo = Boolean(isDemoUsage);
-  return scope === "demo" ? isDemo : !isDemo;
+export function matchesCreditUsageScope(_isDemoUsage, _usageScope) {
+  void _isDemoUsage;
+  void _usageScope;
+  return true;
 }
 
 /** 저널 meta/idempotency 로 데모 크레딧 여부(지급·회수·태그). */
@@ -73,65 +67,12 @@ export function isDemoCreditJournalMeta(meta, { idempotencyKey } = {}) {
 }
 
 /**
- * 기공의뢰(PTX)가 치과 데모 크레딧으로 결제(보류)됐는지.
- * holdFromFree* > 0 이고 치과가 데모 모드일 때 true.
- * @returns {Promise<Map<string, boolean>>} transferId → fundedByDemoCredit
+ * @deprecated 데모 크레딧 집계 제거 — 항상 빈 Map. 호출부 호환용.
+ * @returns {Promise<Map<string, boolean>>}
  */
 export async function resolvePracticeTransferDemoFundingByIds(transferIds) {
-  const ids = [
-    ...new Set(
-      (Array.isArray(transferIds) ? transferIds : [])
-        .map((id) => String(id || "").trim())
-        .filter((id) => mongoose.Types.ObjectId.isValid(id)),
-    ),
-  ];
-  const out = new Map();
-  if (!ids.length) return out;
-
-  const transfers = await PracticeTransfer.find({
-    _id: { $in: ids.map((id) => new mongoose.Types.ObjectId(id)) },
-  })
-    .select({
-      _id: 1,
-      practiceBusinessAnchorId: 1,
-      billing: 1,
-    })
-    .lean();
-  if (!transfers.length) return out;
-
-  const practiceIds = [
-    ...new Set(
-      transfers
-        .map((t) => String(t.practiceBusinessAnchorId || ""))
-        .filter(Boolean),
-    ),
-  ];
-  const practiceAnchors = practiceIds.length
-    ? await BusinessAnchor.find({
-        _id: practiceIds.map((id) => new mongoose.Types.ObjectId(id)),
-      })
-        .select({ demoMode: 1 })
-        .lean()
-    : [];
-  const demoByPractice = new Map();
-  for (const a of practiceAnchors || []) {
-    if (!a?._id) continue;
-    demoByPractice.set(String(a._id), Boolean(a.demoMode));
-  }
-
-  for (const doc of transfers) {
-    const id = String(doc._id);
-    const billing = doc.billing || {};
-    const fromFree =
-      Math.max(0, Math.round(Number(billing.holdFromFreeRequest || 0))) +
-      Math.max(0, Math.round(Number(billing.holdFromFreeShipping || 0)));
-    const practiceId = String(doc.practiceBusinessAnchorId || "");
-    out.set(
-      id,
-      Boolean(demoByPractice.get(practiceId)) && fromFree > 0,
-    );
-  }
-  return out;
+  void transferIds;
+  return new Map();
 }
 
 const CHARGE_TYPES = [

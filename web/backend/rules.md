@@ -233,7 +233,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 멀티 인스턴스 백엔드에서는 워커 중복 실행 방지를 위해 Mongo 기반 분산락 SSOT를 사용합니다.
     - 공통 락 유틸: `utils/distributedJobLock.js`
     - 적용 워커: `services/reviewApprovalQueue.service.js`, `controllers/requests/shipping.TrackingPoller.js`, `jobs/dummyCncWorker.js`, `jobs/dailyReferralSnapshotWorker.js`
-  - 의뢰자(치과) 데모 모드: 가입 시 `DEMO_CREDIT_AMOUNT`(100만 원) 지급·`demoModeStartedAt` 기록. 소진(`/me` 자동)·30일 만료(`/me`·hold 경로·`jobs/demoModeExpiryWorker.js`)·사용자/관리자 전환 시 `exitDemoMode`로 잔여 회수. SSOT: `controllers/businesses/business.demoMode.util.js`.
+  - 의뢰자(치과) 데모 모드: 가입 시 `demoMode`만 ON·크레딧 **0원**(데모 크레딧 미지급). PTX 기공비는 `allowFreeRequestOverdraft`로 마이너스 허용. 스토어·CA는 불가. 30일 만료(`/me`·`jobs/demoModeExpiryWorker.js`)·사용자/관리자 전환 시 `exitDemoMode`로 레거시 잔여 회수+부채 0 리셋. 잔고 0 소진 자동종료 없음. SSOT: `controllers/businesses/business.demoMode.util.js`. 기존 grant 회수: `scripts/db/clawback-legacy-demo-credit.js`.
 
 - 가격/리퍼럴 rolling 스냅샷:
   - 일일 재계산 워커: `jobs/dailyReferralSnapshotWorker.js`
@@ -281,7 +281,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - 걷힌 수수료 금액의 잔여 분배: 제조사는 하청 고정단가 경로와 분리. 수수료 잔액은 딜러사·개발운영사·어벗츠 상대비율로 재분배(루트 `rules.md` §2.3).
     - 자동 매칭 식별 정보: 레거시 `matchingMode=auto` 건만 마스킹 유지. **신규 의뢰는 지정 기공소(어벗츠기공소 포함) 수가 + `labFeeMultiplier` 할증.** 치과 평가=별점만(기공비 할인/할증 없음, 수행 기공소·하청 포함). 하한·상한 설정으로 지정·하청 수신 게이트. 기공소「치과 평가」=할증. 자동매칭 신규 작성·별점 기공비 배수는 쓰지 않음.
   - `isTradingPartner`(boolean)는 `active` 관계에서만 true. 거래처(`active`)만 커스텀어벗 생산의뢰 시 기공소 **유료/무료크레딧**에서 생산단가 강제 차감(치과 재차감 금지); `referred`/그 외는 기존처럼 청구 총액에 생산원가가 포함된 것으로 보고 별도 차감 없음.
-  - eventType: `PRACTICE_TRANSFER_SPEND_HOLD` / `PRACTICE_TRANSFER_HOLD_ADJUST` / `PRACTICE_TRANSFER_ESCROW_RELEASE`(레거시 `PRACTICE_TRANSFER_SPEND_COMMIT` 유지); accountCode: `PLATFORM_ESCROW`, `LAB_SETTLEMENT_CREDIT`; creditKind: `SETTLEMENT`. 치과 장부: `기공비 보류` / 기공소: `기공크레딧` 적립(완료 시). **기공소 내역·통계**: 작업완료 전 lab-share HOLD는 잔액에 넣지 않고 「적립 보류」행으로 미러(`listPendingLabSettlementLedgerRows`, 치과 데모 크레딧이면 `fundedByDemoCredit`). **기간 요약**(`periodSpendSummary` / `ledger/stats`): 유료·무료 충전·소비 + (기공소) 정산 적립(보류 포함). 기공소 통계는 `settlementOrderCount`(치과→기공)·`abutsOrderCount`(기공→어벗츠)로 의뢰건수 분리, 파트너·보철유형은 정산 적립만. **데모/실사용** query `usageScope=real|demo|all` — 내역·통계·기간요약 공통(`parseCreditUsageScope`). UI 수식 카드 SSOT는 frontend `CreditLedgerModal`·`CreditStatisticsTab`·`CreditUsageScopeFilter`.
+  - eventType: `PRACTICE_TRANSFER_SPEND_HOLD` / `PRACTICE_TRANSFER_HOLD_ADJUST` / `PRACTICE_TRANSFER_ESCROW_RELEASE`(레거시 `PRACTICE_TRANSFER_SPEND_COMMIT` 유지); accountCode: `PLATFORM_ESCROW`, `LAB_SETTLEMENT_CREDIT`; creditKind: `SETTLEMENT`. 치과 장부: `기공비 보류` / 기공소: `기공크레딧` 적립(완료 시). **기공소 내역·통계**: 작업완료 전 lab-share HOLD는 잔액에 넣지 않고 「적립 보류」행으로 미러(`listPendingLabSettlementLedgerRows`). **기간 요약**(`periodSpendSummary` / `ledger/stats`): 유료·무료 충전·소비 + (기공소) 정산 적립(보류 포함). 기공소 통계는 `settlementOrderCount`(치과→기공)·`abutsOrderCount`(기공→어벗츠)로 의뢰건수 분리, 파트너·보철유형은 정산 적립만. 데모/실사용 `usageScope`·`byUsage` 집계는 제거(단일 장부). UI 수식 카드 SSOT는 frontend `CreditLedgerModal`·`CreditStatisticsTab`.
   - 월 정산: 기공소 `SETTLEMENT_PAYOUT`으로 기공정산크레딧 → 계좌 이체. 크레딧 페이지 탭은 내역·충전만(기공크레딧 정산 탭 없음; 내역 필터로 기공 버킷 조회).
   - 장부「잔액」(`balanceAfter`): 유료+무료+기공 합산 러닝(현재 잔액과 동일 기준). 버킷별 분리 표시 금지(기공 적립 시 잔액이 리셋되어 보임).
   - 어벗의뢰(직접 커스텀 어벗 생산 의뢰, `practicePrepaid=false`)는 의뢰자가 설정된 비용을 전액 부담한다. 제조사 하청은 어벗 1개당 고정단가이며, 잔여 분배(딜러사·개발운영사·어벗츠)는 별도 확정 전까지 기존 잔여 비율을 유지한다(`controllers/requests/common.review.helpers.js`).

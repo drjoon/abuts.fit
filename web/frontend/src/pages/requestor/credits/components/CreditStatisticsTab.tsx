@@ -1,9 +1,8 @@
 // change-log:
-// - 2026-08-31: 상단 요약 카드(유료·무료·정산·소비) 실사용/데모 2줄.
+// - 2026-09-05: 데모/실사용 집계 필터·2줄 카드 값 제거. 무료 충전 단일 라벨.
 // - 2026-08-31: 기공소 통계 구역 — 기공/어벗 액센트 셸·좌측 레일로 클러스터 구분 강화.
 // - 2026-08-31: 기공소 통계 — 치과로부터 수신(정산) / 어벗츠로 의뢰(충전·소비) 구역 분리.
-// - 2026-08-31: 데모/실사용 체크박스 필터(usageScope) + 깜빡임 안내. 요약·차트 공통.
-// - 2026-08-31: 요약 — 유료/데모(무료) 충전 분리. 기공소 +정산 적립. 파트너=치과별 적립.
+// - 2026-08-31: 요약 — 유료/무료 충전 분리. 기공소 +정산 적립. 파트너=치과별 적립.
 // - 2026-08-29: 통계 차트 — 충전(녹)·소비(청)·조정(호박) 등 유형별 색 구분.
 // - 2026-08-23: 요약 카드 — 기공, 스토어 라벨.
 // - 2026-08-23: 요약 카드 — 기공료·쇼핑 라벨·안내 문구 정리.
@@ -16,8 +15,6 @@
 // - web/frontend/src/shared/components/CreditLedgerModal.tsx
 // - web/backend/controllers/credits/creditLedgerStats.controller.js
 // - web/frontend/src/shared/demo/demoModeCopy.ts
-// - web/frontend/src/shared/demo/CreditUsageScopeFilter.tsx
-// - web/frontend/src/shared/demo/creditUsageScope.ts
 // - web/frontend/src/shared/ui/gigongAbutAccent.ts
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - .cursor/rules/ui-summary-cards.mdc
@@ -66,19 +63,10 @@ import {
 import { cn } from "@/shared/ui/cn";
 import { RESPONSIVE } from "@/shared/ui/responsive";
 import {
-  CREDIT_DEMO_BUCKET_LABEL,
   CREDIT_LEDGER_DEMO_NOTICE_BODY,
   CREDIT_LEDGER_DEMO_PERIOD_SPEND_HINT,
 } from "@/shared/demo/demoModeCopy";
 import { useDemoMode } from "@/shared/demo/useDemoMode";
-import { CreditUsageScopeFilter } from "@/shared/demo/CreditUsageScopeFilter";
-import { CreditUsageSplitAmount } from "@/shared/demo/CreditUsageSplitAmount";
-import {
-  appendCreditUsageScopeParam,
-  readCreditUsageScopeGuideSeen,
-  type CreditUsageAmountBucket,
-  type CreditUsageScopeSelection,
-} from "@/shared/demo/creditUsageScope";
 import { useAuthStore } from "@/store/useAuthStore";
 import { type GigongAbutAccentKey } from "@/shared/ui/gigongAbutAccent";
 
@@ -102,8 +90,6 @@ type CreditLedgerStatsResponse = {
   data?: {
     requestorKind: "practice" | "lab" | string;
     demoMode?: boolean;
-    usageScope?: string;
-    hasDemoUsage?: boolean;
     period: { key: string; fromYmd: string; toYmd: string };
     summary: {
       totalChargeSupply: number;
@@ -116,10 +102,6 @@ type CreditLedgerStatsResponse = {
       orderCount: number;
       settlementOrderCount?: number;
       abutsOrderCount?: number;
-      byUsage?: {
-        real?: CreditUsageAmountBucket;
-        demo?: CreditUsageAmountBucket;
-      };
     };
     byPeriod: PeriodRow[];
     byCategory: StatsRow[];
@@ -192,14 +174,11 @@ function baseFilters(
   period: PeriodFilterValue,
   customStartDate: string,
   customEndDate: string,
-  usage?: CreditUsageScopeSelection,
 ): CreditLedgerInitialFilters {
   return {
     period,
     customStartDate,
     customEndDate,
-    includeReal: usage?.includeReal ?? true,
-    includeDemo: usage?.includeDemo ?? true,
   };
 }
 
@@ -614,13 +593,6 @@ export function CreditStatisticsTab() {
   const [period, setPeriod] = useState<PeriodFilterValue>("30d");
   const [customStartDate, setCustomStartDate] = useState("");
   const [customEndDate, setCustomEndDate] = useState("");
-  const [usageSelection, setUsageSelection] = useState<CreditUsageScopeSelection>(
-    { includeReal: true, includeDemo: true },
-  );
-  const [hasDemoUsage, setHasDemoUsage] = useState(false);
-  const [usageGuidePulse, setUsageGuidePulse] = useState(
-    () => !readCreditUsageScopeGuideSeen(),
-  );
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<CreditLedgerStatsResponse["data"] | null>(
     null,
@@ -635,7 +607,6 @@ export function CreditStatisticsTab() {
         customStartDate,
         customEndDate,
       });
-      appendCreditUsageScopeParam(params, usageSelection);
 
       const res = await apiFetch<CreditLedgerStatsResponse>({
         path: `/api/credits/ledger/stats?${params.toString()}`,
@@ -646,18 +617,12 @@ export function CreditStatisticsTab() {
       }
       const next = res.data.data || null;
       setStats(next);
-      if (typeof next?.hasDemoUsage === "boolean") {
-        setHasDemoUsage(next.hasDemoUsage);
-        if (next.hasDemoUsage && !readCreditUsageScopeGuideSeen()) {
-          setUsageGuidePulse(true);
-        }
-      }
     } catch {
       setStats(null);
     } finally {
       setLoading(false);
     }
-  }, [period, customStartDate, customEndDate, usageSelection]);
+  }, [period, customStartDate, customEndDate]);
 
   useEffect(() => {
     void loadStats();
@@ -666,10 +631,10 @@ export function CreditStatisticsTab() {
   const isLab =
     stats?.requestorKind === "lab" ||
     (!stats && accessKind === "lab");
-  const freeChargeLabel = demoMode ? CREDIT_DEMO_BUCKET_LABEL : "무료 충전";
+  const freeChargeLabel = "무료 충전";
   const filterBase = useMemo(
-    () => baseFilters(period, customStartDate, customEndDate, usageSelection),
-    [period, customStartDate, customEndDate, usageSelection],
+    () => baseFilters(period, customStartDate, customEndDate),
+    [period, customStartDate, customEndDate],
   );
 
   const paidChargeTotal = Number(
@@ -685,35 +650,6 @@ export function CreditStatisticsTab() {
   const settlementEarnTotal = Number(
     stats?.summary.totalSettlementEarnSupply || 0,
   );
-  const usageReal = stats?.summary.byUsage?.real;
-  const usageDemo = stats?.summary.byUsage?.demo;
-  const showSplitBalance =
-    hasDemoUsage ||
-    demoMode ||
-    Number(usageDemo?.totalFreeChargeSupply || 0) > 0 ||
-    Number(usageDemo?.totalSpendSupply || 0) > 0 ||
-    Number(usageDemo?.totalSettlementEarnSupply || 0) > 0;
-  const cardValueUsage = (
-    total: number,
-    split: { real: number; demo: number },
-  ) =>
-    showSplitBalance && (usageReal || usageDemo) ? (
-      <CreditUsageSplitAmount real={split.real} demo={split.demo} />
-    ) : (
-      total
-    );
-  const freeSplit = {
-    real: Number(usageReal?.totalFreeChargeSupply || 0),
-    demo: Number(usageDemo?.totalFreeChargeSupply || 0),
-  };
-  const spendSplit = {
-    real: Number(usageReal?.totalSpendSupply || 0),
-    demo: Number(usageDemo?.totalSpendSupply || 0),
-  };
-  const settlementSplit = {
-    real: Number(usageReal?.totalSettlementEarnSupply || 0),
-    demo: Number(usageDemo?.totalSettlementEarnSupply || 0),
-  };
 
   const trendData = useMemo(
     () =>
@@ -772,18 +708,6 @@ export function CreditStatisticsTab() {
 
   const filterBar = (
     <div className="flex flex-wrap items-center gap-2">
-      {(hasDemoUsage ||
-        usageSelection.includeDemo !== true ||
-        usageSelection.includeReal !== true) && (
-        <CreditUsageScopeFilter
-          value={usageSelection}
-          onChange={(next) => {
-            setUsageSelection(next);
-            setUsageGuidePulse(false);
-          }}
-          pulse={usageGuidePulse && hasDemoUsage}
-        />
-      )}
       <PeriodFilter
         value={period}
         onChange={setPeriod}
@@ -837,13 +761,13 @@ export function CreditStatisticsTab() {
       <SettlementEquationOperator symbol="+" />
       <SettlementStatCard
         className={statCardClass}
-        label={showSplitBalance ? "무료 충전" : freeChargeLabel}
-        value={cardValueUsage(freeChargeTotal, freeSplit)}
+        label={freeChargeLabel}
+        value={freeChargeTotal}
         hint="안내"
         hintTooltip={freeChargeTooltip}
         onClick={() =>
           openDrillDown({
-            title: demoMode ? "데모 충전 내역" : "무료 충전 내역",
+            title: "무료 충전 내역",
             filters: {
               ...filterBase,
               creditKind: "FREE",
@@ -856,7 +780,7 @@ export function CreditStatisticsTab() {
       <SettlementStatCard
         className={statCardClass}
         label={spendLabel}
-        value={cardValueUsage(spendTotal, spendSplit)}
+        value={spendTotal}
         tone="primary"
         hint="안내"
         hintTooltip={spendTooltip}
@@ -891,9 +815,9 @@ export function CreditStatisticsTab() {
       <SettlementStatCard
         className={statCardClass}
         label="정산 적립"
-        value={cardValueUsage(settlementEarnTotal, settlementSplit)}
+        value={settlementEarnTotal}
         hint="안내"
-        hintTooltip="선택한 기간에 적립된 기공 정산(작업완료 전 적립 보류 포함)입니다. 치과 데모 결제는 내역에「데모」로 표시됩니다."
+        hintTooltip="선택한 기간에 적립된 기공 정산(작업완료 전 적립 보류 포함)입니다."
         onClick={() =>
           openDrillDown({
             title: "정산 적립 내역",

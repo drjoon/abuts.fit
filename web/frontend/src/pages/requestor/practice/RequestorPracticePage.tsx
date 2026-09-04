@@ -343,7 +343,7 @@ function isPtxCaInsufficientCreditBody(body: Record<string, unknown>, status?: n
     reason === "insufficient_credit_for_hold" ||
     reason === "insufficient_lab_credit_for_abuts_shipping" ||
     message.includes("크레딧이 부족") ||
-    message.includes("데모 크레딧은 사용할 수 없습니다")
+    message.includes("데모 모드 마이너스는")
   );
 }
 

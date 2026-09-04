@@ -36,10 +36,14 @@ export function allocateSpendFromCreditBuckets({
   freeShippingCredit = 0,
   settlementCredit = 0,
   freeOrder = ["freeRequest", "freeShipping"],
+  /** 데모 PTX 전용: 부족분을 freeRequest 마이너스로 허용 */
+  allowFreeRequestOverdraft = false,
 } = {}) {
   const required = Math.max(0, Math.round(Number(amount || 0)));
   const paid = Math.max(0, Math.round(Number(paidCredit || 0)));
-  const freeRequest = Math.max(0, Math.round(Number(freeRequestCredit || 0)));
+  // 음수 freeRequest(데모 부채)는 가용 0으로 취급. overdraft 시 shortfall만 추가 차감.
+  const freeRequestRaw = Math.round(Number(freeRequestCredit || 0));
+  const freeRequest = Math.max(0, freeRequestRaw);
   const freeShipping = Math.max(0, Math.round(Number(freeShippingCredit || 0)));
   const settlement = Math.max(0, Math.round(Number(settlementCredit || 0)));
   const freeCredit = freeRequest + freeShipping;
@@ -70,6 +74,11 @@ export function allocateSpendFromCreditBuckets({
   const fromPaid = Math.min(paid, remaining);
   remaining -= fromPaid;
 
+  if (allowFreeRequestOverdraft && remaining > 0) {
+    fromFreeRequest += remaining;
+    remaining = 0;
+  }
+
   return {
     required,
     paidCredit: paid,
@@ -85,6 +94,7 @@ export function allocateSpendFromCreditBuckets({
     fromFree: fromFreeRequest + fromFreeShipping,
     shortfall: Math.max(0, remaining),
     ok: remaining <= 0,
+    allowFreeRequestOverdraft: Boolean(allowFreeRequestOverdraft),
   };
 }
 
@@ -166,7 +176,8 @@ export async function computeBusinessCreditBalanceFromLedger({
   }
 
   const paidCredit = Math.max(0, Math.round(paid));
-  const freeRequestCredit = Math.max(0, Math.round(freeRequest));
+  // 데모 PTX overdraft로 음수 가능 — clamp하지 않는다.
+  const freeRequestCredit = Math.round(freeRequest);
   const freeShippingCredit = Math.max(0, Math.round(freeShipping));
   const freeCredit = freeRequestCredit + freeShippingCredit;
   const settlementCredit = Math.max(0, Math.round(settlement));

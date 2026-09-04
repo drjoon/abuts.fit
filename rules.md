@@ -226,7 +226,7 @@
 - 가입 환영 무료 크레딧(강제) — **폐지**:
   - 기공소 가입 시 `defaultRequestFreeCredit`(구 30,000) / 배송 7,000 자동 지급 **중단**
   - `grantWelcomeFreeCreditIfEligible`는 no-op. 관리자 수동 무료크레딧 override만 유지
-  - 데모 크레딧은 **치과(practice)만**. 기공소(lab)는 데모 미지급(유지)
+  - 데모 모드(치과 practice만): 가입 시 0원 시작·PTX 마이너스 허용. 기공소(lab)는 데모 미적용(가입 무료 테스트 유지)
 - 기공소 가입 무료 테스트(강제):
   - 의뢰자·기공소(`requestorKind=lab`) `BusinessAnchor` 기준, **비취소 의뢰 첫 2건**
   - **준비 단계 취소는 현행과 동일하게 가능**. 취소(`manufacturerStage=취소`)된 건은 쿼터에서 제외되어 슬롯이 환원된다

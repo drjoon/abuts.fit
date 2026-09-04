@@ -1,12 +1,10 @@
 // change-log:
+// - 2026-09-05: 데모/실사용 집계 필터·2줄 잔액·행「데모」뱃지 제거. 잔액 음수 표시 허용.
 // - 2026-09-01: PTX 결제보류 — hold/adjust가 여러 저널로 흩어져도 목록·호버 금액을 견적(heldTotal)과 맞춤.
-// - 2026-08-31: 상단 요약 카드 전체(유료·무료·정산·소비) 실사용/데모 2줄.
-// - 2026-08-31: 현재 잔액·테이블 잔액 — 실사용/데모 2줄 표시.
 // - 2026-08-31: 요약 소비 카드 라벨「소비」(구「기공, 스토어」). 치과·기공소 공통.
-// - 2026-08-31: 데모/실사용 체크박스 필터(usageScope) + 깜빡임 안내. 요약·테이블 공통.
-// - 2026-08-31: 기공소 내역 요약 — 치과와 동일 +/− 수식(유료·데모/무료·정산 적립·기공/스토어). 기간 필터는 카드만.
-// - 2026-08-31: 기공소 — PTX 적립 보류 라벨·labShareOnly·상대 데모 크레딧 표기.
-// - 2026-08-31: 유형 라벨 — 치과(구강스캔/어벗디자인)·기공소(치과로부터 수신/어벗츠로 의뢰). 데모 소비 시 금액 아래「데모」.
+// - 2026-08-31: 기공소 내역 요약 — 치과와 동일 +/− 수식(유료·무료·정산 적립·기공/스토어). 기간 필터는 카드만.
+// - 2026-08-31: 기공소 — PTX 적립 보류 라벨·labShareOnly.
+// - 2026-08-31: 유형 라벨 — 치과(구강스캔/어벗디자인)·기공소(치과로부터 수신/어벗츠로 의뢰).
 // - 2026-08-26: 치과 요약 — 유료/무료 충전·소비는 기간 합계(잔여 버킷 아님). HOLD 소비 반영.
 // - 2026-08-23: 내역 테이블 — scroll-x-bar-top을 flex-1 세로 스크롤과 분리(rotateX로 행이 아래로 붙던 문제).
 // - 2026-08-22: 기공소→치과 배송 무료 — lab_shipping hold 미표시·레거시 baked 제거. 소비총액=기공비+(→어벗츠 박스만).
@@ -76,8 +74,6 @@
 // - web/frontend/src/shared/shipping/ShippingModeBadge.tsx
 // - web/frontend/src/shared/legal/creditPrepaidCopy.ts
 // - web/frontend/src/shared/demo/demoModeCopy.ts
-// - web/frontend/src/shared/demo/CreditUsageScopeFilter.tsx
-// - web/frontend/src/shared/demo/creditUsageScope.ts
 // - web/backend/controllers/credits/creditLedger.controller.js
 // - web/backend/controllers/credits/creditLedger.utils.js
 // - web/backend/controllers/admin/adminCredit.controller.js
@@ -165,20 +161,10 @@ import {
   CREDIT_SETTLEMENT_BUCKET_HINT,
 } from "@/shared/legal/creditPrepaidCopy";
 import {
-  CREDIT_DEMO_BUCKET_LABEL,
   CREDIT_LEDGER_DEMO_BALANCE_HINT,
   CREDIT_LEDGER_DEMO_NOTICE_BODY,
   CREDIT_LEDGER_DEMO_PERIOD_SPEND_HINT,
-  DEMO_MODE_BADGE_LABEL,
 } from "@/shared/demo/demoModeCopy";
-import { CreditUsageScopeFilter } from "@/shared/demo/CreditUsageScopeFilter";
-import { CreditUsageSplitAmount } from "@/shared/demo/CreditUsageSplitAmount";
-import {
-  appendCreditUsageScopeParam,
-  readCreditUsageScopeGuideSeen,
-  type CreditUsageAmountBucket,
-  type CreditUsageScopeSelection,
-} from "@/shared/demo/creditUsageScope";
 
 type CreditLedgerType =
   | "CHARGE_PAID"
@@ -219,8 +205,6 @@ export type CreditLedgerInitialFilters = {
   statsCategory?: CreditLedgerStatsCategory;
   statsCategories?: string;
   onYmd?: string;
-  includeReal?: boolean;
-  includeDemo?: boolean;
 };
 
 type ResolvedLedgerFilters = {
@@ -271,8 +255,6 @@ type CreditLedgerItem = {
   includesExpressSurcharge?: boolean;
   createdAt: string;
   balanceAfter?: number;
-  balanceAfterReal?: number;
-  balanceAfterDemo?: number;
   patientName?: string;
   labName?: string;
   /** 기공의뢰 원본 메모(메타 포함) — 상세 모달 주문일·도착일·메모 파싱용 */
@@ -286,10 +268,6 @@ type CreditLedgerItem = {
   practiceTransferLabPending?: boolean;
   /** 어벗츠몫 미정산(heldAt && !abutmentSettledAt && !settledAt) */
   practiceTransferAbutmentPending?: boolean;
-  /** 치과 데모 크레딧으로 보류된 기공비(기공소 적립 보류 행) */
-  fundedByDemoCredit?: boolean;
-  /** 데모 크레딧 거래(본인 데모 또는 상대 데모 적립 보류) */
-  isDemoUsage?: boolean;
   /** 보류 미러 등 — 잔액 러닝에 아직 미반영 */
   excludeFromBalanceRunning?: boolean;
   /** 보류/배송 몫: lab | abutment | lab_shipping | abuts_shipping */
@@ -366,8 +344,6 @@ type CreditBalanceSnapshot = {
   freeShippingCredit?: number;
   freeCredit?: number;
   settlementCredit?: number;
-  realBalance?: number;
-  demoBalance?: number;
   requestorKind?: "practice" | "lab" | null;
   showSettlementCredit?: boolean;
   demoMode?: boolean;
@@ -379,10 +355,6 @@ type PeriodSpendSummary = {
   totalFreeChargeSupply?: number;
   totalSpendSupply: number;
   totalSettlementEarnSupply?: number;
-  byUsage?: {
-    real?: CreditUsageAmountBucket;
-    demo?: CreditUsageAmountBucket;
-  } | null;
 };
 
 type SummaryDrillDownState = {
@@ -452,8 +424,6 @@ type LedgerDisplayRow = {
   createdAt: string;
   amount: number;
   balanceAfter?: number;
-  balanceAfterReal?: number;
-  balanceAfterDemo?: number;
   spentPaidAmount: number;
   spentFreeAmount: number;
   type: CreditLedgerType;
@@ -1499,8 +1469,6 @@ const groupLedgerItemsForDisplay = (
         createdAt: String(latest.createdAt || ""),
         amount,
         balanceAfter: latest.balanceAfter,
-        balanceAfterReal: latest.balanceAfterReal ?? latest.balanceAfter,
-        balanceAfterDemo: latest.balanceAfterDemo,
         spentPaidAmount,
         spentFreeAmount,
         type: latest.type,
@@ -1557,8 +1525,6 @@ const groupLedgerItemsForDisplay = (
         createdAt: String(latest.createdAt || ""),
         amount,
         balanceAfter: latest.balanceAfter,
-        balanceAfterReal: latest.balanceAfterReal ?? latest.balanceAfter,
-        balanceAfterDemo: latest.balanceAfterDemo,
         spentPaidAmount,
         spentFreeAmount,
         type: latest.type,
@@ -1582,8 +1548,6 @@ const groupLedgerItemsForDisplay = (
       createdAt: String(item.createdAt || ""),
       amount: Number(item.amount || 0),
       balanceAfter: item.balanceAfter,
-      balanceAfterReal: item.balanceAfterReal ?? item.balanceAfter,
-      balanceAfterDemo: item.balanceAfterDemo,
       spentPaidAmount: Number(item.spentPaidAmount || 0),
       spentFreeAmount: Number(item.spentFreeAmount || 0),
       type: item.type,
@@ -1858,16 +1822,6 @@ export const CreditLedgerModal = ({
   const [onYmd, setOnYmd] = useState(
     () => resolveLedgerFilters(initialFilters).onYmd,
   );
-  const [usageSelection, setUsageSelection] = useState<CreditUsageScopeSelection>(
-    () => ({
-      includeReal: initialFilters?.includeReal ?? true,
-      includeDemo: initialFilters?.includeDemo ?? true,
-    }),
-  );
-  const [hasDemoUsage, setHasDemoUsage] = useState(false);
-  const [usageGuidePulse, setUsageGuidePulse] = useState(
-    () => !readCreditUsageScopeGuideSeen(),
-  );
 
   const initialFiltersKey = useMemo(
     () => JSON.stringify(initialFilters ?? null),
@@ -1891,15 +1845,6 @@ export const CreditLedgerModal = ({
     setStatsCategory(next.statsCategory);
     setStatsCategories(next.statsCategories);
     setOnYmd(next.onYmd);
-    if (
-      typeof initialFilters.includeReal === "boolean" ||
-      typeof initialFilters.includeDemo === "boolean"
-    ) {
-      setUsageSelection({
-        includeReal: initialFilters.includeReal ?? true,
-        includeDemo: initialFilters.includeDemo ?? true,
-      });
-    }
   }, [embedded, initialFilters, initialFiltersKey, isOpen]);
 
   const [loading, setLoading] = useState(Boolean(embedded));
@@ -1971,15 +1916,11 @@ export const CreditLedgerModal = ({
             period: spendPeriod,
             customStartDate: spendCustomStartDate,
             customEndDate: spendCustomEndDate,
-            includeReal: usageSelection.includeReal,
-            includeDemo: usageSelection.includeDemo,
           }
         : {
             period,
             customStartDate,
             customEndDate,
-            includeReal: usageSelection.includeReal,
-            includeDemo: usageSelection.includeDemo,
           },
     [
       equationLedgerUi,
@@ -1989,8 +1930,6 @@ export const CreditLedgerModal = ({
       period,
       customStartDate,
       customEndDate,
-      usageSelection.includeReal,
-      usageSelection.includeDemo,
     ],
   );
 
@@ -2035,7 +1974,7 @@ export const CreditLedgerModal = ({
         });
       }
     }
-    // 기간 요약은 버킷·동작·검색과 무관. 데모/실사용(usageScope)만 기간 카드와 공유.
+    // 기간 요약은 버킷·동작·검색과 무관.
     if (mode !== "spendSummary") {
       if (creditKind && creditKind !== "all") {
         params.set("creditKind", creditKind);
@@ -2052,7 +1991,6 @@ export const CreditLedgerModal = ({
       }
       if (onYmd.trim()) params.set("onYmd", onYmd.trim());
     }
-    appendCreditUsageScopeParam(params, usageSelection);
     params.set("page", String(pageNum));
     params.set("pageSize", String(PAGE_SIZE));
 
@@ -2077,7 +2015,6 @@ export const CreditLedgerModal = ({
           page: number;
           pageSize: number;
           hasMore?: boolean;
-          hasDemoUsage?: boolean;
           currentBalanceSnapshot?: CreditBalanceSnapshot;
           periodSpendSummary?: PeriodSpendSummary | null;
         };
@@ -2107,12 +2044,6 @@ export const CreditLedgerModal = ({
       const total = Number(data?.total ?? 0);
       if (reset) {
         setCurrentBalanceSnapshot(data?.currentBalanceSnapshot || null);
-        if (typeof data?.hasDemoUsage === "boolean") {
-          setHasDemoUsage(data.hasDemoUsage);
-          if (data.hasDemoUsage && !readCreditUsageScopeGuideSeen()) {
-            setUsageGuidePulse(true);
-          }
-        }
         if (!equationLedgerUi) {
           setPeriodSpendSummary(data?.periodSpendSummary ?? null);
         }
@@ -2194,8 +2125,6 @@ export const CreditLedgerModal = ({
     statsCategory,
     statsCategories,
     onYmd,
-    usageSelection.includeReal,
-    usageSelection.includeDemo,
     businessAnchorId,
     initialFiltersKey,
     equationLedgerUi,
@@ -2211,8 +2140,6 @@ export const CreditLedgerModal = ({
     spendPeriod,
     spendCustomStartDate,
     spendCustomEndDate,
-    usageSelection.includeReal,
-    usageSelection.includeDemo,
     businessAnchorId,
   ]);
 
@@ -2516,28 +2443,15 @@ export const CreditLedgerModal = ({
   const settlementCreditTotal = currentBalanceSnapshot
     ? Number(currentBalanceSnapshot.settlementCredit ?? 0)
     : 0;
-  const demoBalanceTotal = currentBalanceSnapshot
-    ? Math.max(0, Number(currentBalanceSnapshot.demoBalance ?? 0))
-    : 0;
-  const realBalanceTotal = currentBalanceSnapshot
-    ? Math.max(
-        0,
-        Number(
-          currentBalanceSnapshot.realBalance ??
-            Number(currentBalanceSnapshot.paidCredit || 0) +
-              freeCreditTotal +
-              (showSettlementCredit ? settlementCreditTotal : 0) -
-              demoBalanceTotal,
-        ),
+  const currentBalanceTotal = currentBalanceSnapshot
+    ? Number(
+        currentBalanceSnapshot.balance ??
+          Number(currentBalanceSnapshot.paidCredit || 0) +
+            freeCreditTotal +
+            (showSettlementCredit ? settlementCreditTotal : 0),
       )
     : 0;
-  const currentBalanceTotal = currentBalanceSnapshot
-    ? realBalanceTotal + demoBalanceTotal
-    : 0;
   const isDemoMode = Boolean(currentBalanceSnapshot?.demoMode);
-  const showSplitBalance =
-    Boolean(currentBalanceSnapshot) &&
-    (demoBalanceTotal > 0 || hasDemoUsage || isDemoMode);
 
   const periodPaidChargeTotal = Number(
     periodSpendSummary?.totalPaidChargeSupply || 0,
@@ -2551,42 +2465,11 @@ export const CreditLedgerModal = ({
   const periodSettlementEarnTotal = Number(
     periodSpendSummary?.totalSettlementEarnSupply || 0,
   );
-  const periodReal = periodSpendSummary?.byUsage?.real;
-  const periodDemo = periodSpendSummary?.byUsage?.demo;
-  const periodFreeSplit = {
-    real: Number(periodReal?.totalFreeChargeSupply || 0),
-    demo: Number(periodDemo?.totalFreeChargeSupply || 0),
-  };
-  const periodSpendSplit = {
-    real: Number(periodReal?.totalSpendSupply || 0),
-    demo: Number(periodDemo?.totalSpendSupply || 0),
-  };
-  const periodSettlementSplit = {
-    real: Number(periodReal?.totalSettlementEarnSupply || 0),
-    demo: Number(periodDemo?.totalSettlementEarnSupply || 0),
-  };
-
-  const splitBalanceValue = (
-    <CreditUsageSplitAmount real={realBalanceTotal} demo={demoBalanceTotal} />
-  );
-  const hasPeriodUsageSplit = Boolean(periodReal || periodDemo);
-  /** 데모가 섞일 수 있는 카드만 2줄(무료·정산 적립·소비). 유료는 항상 실사용. */
-  const cardValueUsage = (
-    total: number,
-    split: { real: number; demo: number },
-  ) =>
-    showSplitBalance && hasPeriodUsageSplit ? (
-      <CreditUsageSplitAmount real={split.real} demo={split.demo} />
-    ) : (
-      total
-    );
 
   const showPeriodSpendCard =
     Boolean(currentBalanceSnapshot) && equationLedgerUi;
-  const freeBucketLabel = isDemoMode ? CREDIT_DEMO_BUCKET_LABEL : "무료 충전";
-  const freeBucketLabelCompact = isDemoMode
-    ? CREDIT_DEMO_BUCKET_LABEL
-    : "무료크레딧";
+  const freeBucketLabel = "무료 충전";
+  const freeBucketLabelCompact = "무료크레딧";
   const freeBucketHint = isDemoMode ? "데모 체험" : CREDIT_FREE_BUCKET_HINT;
   const freeBucketTooltip = isDemoMode
     ? CREDIT_LEDGER_DEMO_NOTICE_BODY
@@ -2594,7 +2477,7 @@ export const CreditLedgerModal = ({
   const balanceHintTooltip = isDemoMode
     ? CREDIT_LEDGER_DEMO_BALANCE_HINT
     : showSettlementCredit
-      ? "유료·무료(데모) 충전과 기공 정산 적립에서 기공·스토어 소비를 뺀 잔여액입니다. 적립 보류분은 잔액에 아직 반영되지 않습니다."
+      ? "유료·무료 충전과 기공 정산 적립에서 기공·스토어 소비를 뺀 잔여액입니다. 적립 보류분은 잔액에 아직 반영되지 않습니다."
       : "충전금에서 소비액을 뺀 선불금 잔여액입니다.";
   const periodPaidChargeTooltip =
     "선택한 기간에 유료(선입금)로 충전된 금액 합계입니다.";
@@ -2602,7 +2485,7 @@ export const CreditLedgerModal = ({
     ? CREDIT_LEDGER_DEMO_NOTICE_BODY
     : "선택한 기간에 무료로 충전된 금액 합계입니다.";
   const periodSettlementEarnTooltip =
-    "선택한 기간에 적립된 기공 정산(작업완료 전 적립 보류 포함) 합계입니다. 치과가 데모 크레딧으로 결제한 건은 내역에「데모」로 표시됩니다.";
+    "선택한 기간에 적립된 기공 정산(작업완료 전 적립 보류 포함) 합계입니다.";
   const periodSpendTooltip = isDemoMode
     ? CREDIT_LEDGER_DEMO_PERIOD_SPEND_HINT
     : showSettlementCredit
@@ -2627,9 +2510,7 @@ export const CreditLedgerModal = ({
                   <SettlementStatCard
                     className="min-w-[9.5rem] flex-1 sm:min-w-[10.5rem]"
                     label="현재 잔액"
-                    value={
-                      showSplitBalance ? splitBalanceValue : currentBalanceTotal
-                    }
+                    value={currentBalanceTotal}
                     tone="primary"
                     hint="안내"
                     hintTooltip={balanceHintTooltip}
@@ -2661,15 +2542,13 @@ export const CreditLedgerModal = ({
                   <SettlementEquationOperator symbol="+" />
                   <SettlementStatCard
                     className="min-w-[9.5rem] flex-1 sm:min-w-[10.5rem]"
-                    label={showSplitBalance ? "무료 충전" : freeBucketLabel}
-                    value={cardValueUsage(periodFreeChargeTotal, periodFreeSplit)}
+                    label={freeBucketLabel}
+                    value={periodFreeChargeTotal}
                     hint="안내"
                     hintTooltip={periodFreeChargeTooltip}
                     onClick={() =>
                       openSummaryDrillDown({
-                        title: isDemoMode
-                          ? "데모 충전 내역"
-                          : "무료 충전 내역",
+                        title: "무료 충전 내역",
                         filters: {
                           ...summaryFilterBase,
                           creditKind: "FREE",
@@ -2684,10 +2563,7 @@ export const CreditLedgerModal = ({
                       <SettlementStatCard
                         className="min-w-[9.5rem] flex-1 sm:min-w-[10.5rem]"
                         label="정산 적립"
-                        value={cardValueUsage(
-                          periodSettlementEarnTotal,
-                          periodSettlementSplit,
-                        )}
+                        value={periodSettlementEarnTotal}
                         hint="안내"
                         hintTooltip={periodSettlementEarnTooltip}
                         onClick={() =>
@@ -2706,7 +2582,7 @@ export const CreditLedgerModal = ({
                   <SettlementStatCard
                     className="min-w-[9.5rem] flex-1 sm:min-w-[10.5rem]"
                     label="소비"
-                    value={cardValueUsage(periodSpendTotal, periodSpendSplit)}
+                    value={periodSpendTotal}
                     hint="안내"
                     hintTooltip={periodSpendTooltip}
                     onClick={() =>
@@ -2725,9 +2601,7 @@ export const CreditLedgerModal = ({
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <SettlementStatCard
                   label="현재 잔액"
-                  value={
-                    showSplitBalance ? splitBalanceValue : currentBalanceTotal
-                  }
+                  value={currentBalanceTotal}
                   tone="primary"
                   hint="안내"
                   hintTooltip={balanceHintTooltip}
@@ -2760,9 +2634,7 @@ export const CreditLedgerModal = ({
                   hintTooltip={freeBucketTooltip}
                   onClick={() =>
                     openSummaryDrillDown({
-                      title: isDemoMode
-                        ? "데모 크레딧 내역"
-                        : "무료 크레딧 내역",
+                      title: "무료 크레딧 내역",
                       filters: {
                         ...summaryFilterBase,
                         creditKind: "FREE",
@@ -2829,19 +2701,6 @@ export const CreditLedgerModal = ({
                 </SelectContent>
               </Select>
             </div>
-
-            {(hasDemoUsage ||
-              usageSelection.includeDemo !== true ||
-              usageSelection.includeReal !== true) && (
-              <CreditUsageScopeFilter
-                value={usageSelection}
-                onChange={(next) => {
-                  setUsageSelection(next);
-                  setUsageGuidePulse(false);
-                }}
-                pulse={usageGuidePulse && hasDemoUsage}
-              />
-            )}
 
             <Input
               value={q}
@@ -2985,13 +2844,6 @@ export const CreditLedgerModal = ({
                       String(r.type) === "SPEND_FREE_REQUEST" ||
                       String(r.type) === "SPEND_FREE_SHIPPING") &&
                     (spentPaid > 0 || spentFree > 0);
-                  /** 데모 모드 본인 소비, 또는 상대(치과) 데모 크레딧으로 적립 보류된 행 */
-                  const showDemoSpendHint =
-                    Boolean(r.item.fundedByDemoCredit) ||
-                    (isDemoMode &&
-                      (spentFree > 0 ||
-                        r.type === "SPEND_FREE_REQUEST" ||
-                        r.type === "SPEND_FREE_SHIPPING"));
                   const safeRef = r.item.refRequestId
                     ? formatRequestIdSafe(
                         r.item.refRequestId,
@@ -3139,45 +2991,12 @@ export const CreditLedgerModal = ({
                           ) : (
                             <span>{`${amount.toLocaleString()}원`}</span>
                           )}
-                          {showDemoSpendHint ? (
-                            <span className="pt-0.5 text-[10px] font-medium text-muted-foreground">
-                              {DEMO_MODE_BADGE_LABEL}
-                            </span>
-                          ) : null}
                         </div>
                       </TableCell>
                       <TableCell className="whitespace-nowrap text-center align-middle text-xs tabular-nums text-muted-foreground">
-                        {showSplitBalance ? (
-                          <div className="flex flex-col items-center gap-0.5 leading-tight">
-                            <div className="flex items-baseline gap-1">
-                              <span className="text-[10px] text-slate-400">
-                                실
-                              </span>
-                              <span>
-                                {r.balanceAfterReal !== undefined ||
-                                r.balanceAfter !== undefined
-                                  ? `${Number(
-                                      r.balanceAfterReal ?? r.balanceAfter,
-                                    ).toLocaleString()}원`
-                                  : "-"}
-                              </span>
-                            </div>
-                            <div className="flex items-baseline gap-1">
-                              <span className="text-[10px] text-slate-400">
-                                데모
-                              </span>
-                              <span>
-                                {r.balanceAfterDemo !== undefined
-                                  ? `${Number(r.balanceAfterDemo).toLocaleString()}원`
-                                  : "-"}
-                              </span>
-                            </div>
-                          </div>
-                        ) : r.balanceAfter !== undefined ? (
-                          `${Number(r.balanceAfter).toLocaleString()}원`
-                        ) : (
-                          "-"
-                        )}
+                        {r.balanceAfter !== undefined
+                          ? `${Number(r.balanceAfter).toLocaleString()}원`
+                          : "-"}
                       </TableCell>
                       <TableCell
                         className="text-center align-middle text-xs"

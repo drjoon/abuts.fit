@@ -65,4 +65,32 @@ describe("allocateSpendFromCreditBuckets", () => {
     expect(split.fromSettlement).toBe(2000);
     expect(split.fromPaid).toBe(1000);
   });
+
+  test("allowFreeRequestOverdraft면 shortfall을 freeRequest에 얹는다", () => {
+    const split = allocateSpendFromCreditBuckets({
+      amount: 10000,
+      paidCredit: 0,
+      freeRequestCredit: 0,
+      freeShippingCredit: 0,
+      allowFreeRequestOverdraft: true,
+    });
+
+    expect(split.ok).toBe(true);
+    expect(split.fromFreeRequest).toBe(10000);
+    expect(split.shortfall).toBe(0);
+  });
+
+  test("음수 freeRequest + overdraft면 추가 차감만 freeRequest로", () => {
+    const split = allocateSpendFromCreditBuckets({
+      amount: 3000,
+      paidCredit: 0,
+      freeRequestCredit: -5000,
+      freeShippingCredit: 0,
+      allowFreeRequestOverdraft: true,
+    });
+
+    expect(split.ok).toBe(true);
+    expect(split.fromFreeRequest).toBe(3000);
+    expect(split.available).toBe(0);
+  });
 });

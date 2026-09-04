@@ -437,13 +437,6 @@ export async function getMyCreditLedgerStats(req, res) {
     ),
   );
 
-  let hasDemoUsage = demoMode;
-  if (!hasDemoUsage) {
-    hasDemoUsage = journalRows.some((row) =>
-      classifyDemoUsage(row, demoFundingByPtx),
-    );
-  }
-
   const ptxIds = new Set();
   const requestIds = new Set();
   for (const row of scopedJournalRows) {
@@ -464,12 +457,7 @@ export async function getMyCreditLedgerStats(req, res) {
         limit: 500,
       })
     : [];
-  if (!hasDemoUsage && pendingLabRowsAll.some((r) => r?.fundedByDemoCredit)) {
-    hasDemoUsage = true;
-  }
-  const pendingLabRows = pendingLabRowsAll.filter((row) =>
-    matchesCreditUsageScope(Boolean(row?.fundedByDemoCredit), usageScope),
-  );
+  const pendingLabRows = pendingLabRowsAll;
   for (const row of pendingLabRows) {
     const refId = row?.refId ? String(row.refId) : "";
     if (refId && mongoose.Types.ObjectId.isValid(refId)) ptxIds.add(refId);
@@ -569,51 +557,6 @@ export async function getMyCreditLedgerStats(req, res) {
   let settlementOrderCount = 0;
   /** 기공소→어벗츠(어벗생산·배송) 의뢰 건수 */
   let abutsOrderCount = 0;
-
-  const usageBucket = () => ({
-    totalPaidChargeSupply: 0,
-    totalFreeChargeSupply: 0,
-    totalSpendSupply: 0,
-    totalSettlementEarnSupply: 0,
-  });
-  const usageReal = usageBucket();
-  const usageDemo = usageBucket();
-  const bumpUsage = (bucket, field, amount) => {
-    bucket[field] = roundSupplyAmount(bucket[field] + amount);
-  };
-  for (const row of journalRows) {
-    const isDemo = classifyDemoUsage(row, demoFundingByPtx);
-    const bucket = isDemo ? usageDemo : usageReal;
-    const eventType = String(row?.eventType || "");
-    const amount = Number(row?.amount || 0);
-    if (eventType === "CHARGE_PAID" && amount > 0) {
-      bumpUsage(bucket, "totalPaidChargeSupply", amount);
-    } else if (
-      (eventType === "CHARGE_FREE_REQUEST" ||
-        eventType === "CHARGE_FREE_SHIPPING") &&
-      amount > 0
-    ) {
-      bumpUsage(bucket, "totalFreeChargeSupply", amount);
-    } else if (SPEND_EVENT_TYPES.has(eventType) && amount < 0) {
-      bumpUsage(bucket, "totalSpendSupply", Math.abs(amount));
-    } else {
-      const category = resolveStatsCategory(
-        eventType,
-        row?.refType,
-        row?.accountCode,
-        amount,
-      );
-      if (category === "settlement_earn" && amount > 0) {
-        bumpUsage(bucket, "totalSettlementEarnSupply", amount);
-      }
-    }
-  }
-  for (const row of pendingLabRowsAll) {
-    const amount = roundSupplyAmount(row?.amount || 0);
-    if (amount <= 0) continue;
-    const bucket = Boolean(row?.fundedByDemoCredit) ? usageDemo : usageReal;
-    bumpUsage(bucket, "totalSettlementEarnSupply", amount);
-  }
 
   for (const row of scopedJournalRows) {
     const eventType = String(row?.eventType || "");
@@ -843,8 +786,8 @@ export async function getMyCreditLedgerStats(req, res) {
     data: {
       requestorKind,
       demoMode,
-      usageScope,
-      hasDemoUsage: Boolean(hasDemoUsage),
+      usageScope: "all",
+      hasDemoUsage: false,
       period: { key: period, fromYmd, toYmd },
       summary: {
         totalChargeSupply: roundSupplyAmount(totalChargeSupply),
@@ -857,10 +800,6 @@ export async function getMyCreditLedgerStats(req, res) {
         orderCount,
         settlementOrderCount,
         abutsOrderCount,
-        byUsage: {
-          real: usageReal,
-          demo: usageDemo,
-        },
       },
       byPeriod: Array.from(byPeriodMap.values()).sort((a, b) =>
         a.ymd.localeCompare(b.ymd),

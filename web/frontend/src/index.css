@@ -461,23 +461,6 @@ All colors MUST be HSL.
   z-index: 25;
 }
 
-/* 정산 — 데모/실사용 구분 체크박스 첫 안내 */
-@keyframes credit-usage-scope-guide-pulse {
-  0%,
-  100% {
-    border-color: hsl(var(--accent-muted));
-    box-shadow: 0 0 0 0 hsl(var(--accent) / 0.35);
-  }
-  50% {
-    border-color: hsl(var(--accent));
-    box-shadow: 0 0 0 4px hsl(var(--accent) / 0.18);
-  }
-}
-
-.credit-usage-scope-guide-pulse {
-  animation: credit-usage-scope-guide-pulse 1.5s ease-in-out infinite;
-}
-
 /* Responsive layout helpers (mobile-first) */
 .responsive-table-shell {
   width: 100%;

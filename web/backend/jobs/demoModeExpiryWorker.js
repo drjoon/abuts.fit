@@ -3,7 +3,7 @@
 // - web/backend/server.js
 /**
  * 데모 모드 30일 만료 일괄 실사용 전환 워커.
- * - demoModeStartedAt + DEMO_MODE_DURATION_DAYS 경과 시 exitDemoMode(잔여 데모 크레딧 회수)
+ * - demoModeStartedAt + DEMO_MODE_DURATION_DAYS 경과 시 exitDemoMode(부채 리셋·레거시 잔여 회수)
  * - /me 미방문 사업자도 만료 처리
  */
 import { exitExpiredDemoModesBatch } from "../controllers/businesses/business.demoMode.util.js";
