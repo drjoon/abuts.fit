@@ -1,5 +1,6 @@
 // change-log:
-// - 2026-09-03: 맵 행 없을 때 business.hexVerificationResultHex(case별 enrichment) 폴백.
+// - 2026-09-04: 레거시 hexVerificationResultHex·requestorHexRotation 폴백 전면 제거. 없으면 PreviewModal 에러 토스트.
+// - 2026-09-04: implantManufacturer 있을 때 맵 행 없음=미정. 레거시 hexVerificationResultHex 폴백 제거(Zahn-Art OSSTEM 확정 오표시).
 // - 2026-09-03: 제조사별 verifiedHex만 확정. 레거시 계정 확정 번짐 제거(초기값 30°·미정). 맵 행이 있으면 BA 레거시로 폴백하지 않음.
 // - 2026-09-03: ExoCAD 3.0 이하 × 임플란트 제조사별 verifiedHex/applyHex30 해석·잠금.
 // - 2026-08-29: 헥스40도회전 → STL모델+(base=0) / 헥스30+(base=30) 분기. NC: T4848=C0.0(always), T0909/T0606만 addDeg=30+appliedDeg.
@@ -155,38 +156,61 @@ export const findHexByImplantManufacturerEntry = (
   );
 };
 
-/** User → BA 임플란트 제조사별 관리자 확정 헥스. 없으면 null(미정). */
+export const HEX_VERIFICATION_MISSING_IMPLANT_MANUFACTURER =
+  "임플란트 제조사 정보가 없어 헥스 확인 상태(확정/미정)를 판정할 수 없습니다.";
+
+/** ExoCAD 3.0 이하(헥스 확인 뱃지 대상)인지. */
+export const isExoCadLe30HexVerificationContext = (
+  req?: HexRequestLike | null,
+): boolean => {
+  const designSoftware = String(
+    req?.caseInfos?.designSoftware ||
+      req?.requestor?.requestSettings?.designSoftware ||
+      req?.business?.requestSettings?.designSoftware ||
+      "",
+  ).trim();
+  if (designSoftware !== "ExoCAD") return false;
+  const exoCadVersion = String(
+    req?.caseInfos?.exoCadVersion ||
+      req?.requestor?.requestSettings?.exoCadVersion ||
+      req?.business?.requestSettings?.exoCadVersion ||
+      "",
+  ).trim();
+  return !(
+    exoCadVersion === "ge_3_2" ||
+    exoCadVersion === "3.2" ||
+    exoCadVersion === ">=3.2"
+  );
+};
+
+/**
+ * User → BA 임플란트 제조사별 관리자 확정 헥스. 없으면 null(미정).
+ * SSOT: designSoftwareHex.resolveVerifiedHexForImplantManufacturer 와 동일.
+ * 맵 행 없음=미정. 레거시 계정 hexVerificationResultHex는 사용하지 않음.
+ * implantManufacturer 없으면 null(호출측에서 에러 토스트).
+ */
 export const resolveAdminVerifiedHexFromRequest = (
   req?: HexRequestLike | null,
   implantManufacturerRaw?: unknown,
 ): ManufacturerHexRotationCanonicalMode | null => {
   const implantM =
     implantManufacturerRaw ?? req?.caseInfos?.implantManufacturer ?? null;
+  if (implantM == null || !String(implantM).trim()) return null;
+
   const userRs = req?.requestor?.requestSettings;
   const baRs = req?.business?.requestSettings;
 
-  if (implantM != null && String(implantM).trim()) {
-    const userEntry = findHexByImplantManufacturerEntry(userRs, implantM);
-    // User 맵에 해당 제조사 행이 있으면(verifiedHex null=미정 포함) BA/레거시로 번지지 않음.
-    if (userEntry) {
-      return normalizeHexVerificationResultHex(userEntry.verifiedHex);
-    }
-    const baEntry = findHexByImplantManufacturerEntry(baRs, implantM);
-    if (baEntry) {
-      return normalizeHexVerificationResultHex(baEntry.verifiedHex);
-    }
-    // 맵 행이 없을 때만 — 워크시트 enrichment가 case별 해석값을 hexVerificationResultHex에 실음.
-    return (
-      normalizeHexVerificationResultHex(baRs?.hexVerificationResultHex) ||
-      normalizeHexVerificationResultHex(userRs?.hexVerificationResultHex)
-    );
+  const userEntry = findHexByImplantManufacturerEntry(userRs, implantM);
+  // User 맵에 해당 제조사 행이 있으면(verifiedHex null=미정 포함) BA로 번지지 않음.
+  if (userEntry) {
+    return normalizeHexVerificationResultHex(userEntry.verifiedHex);
   }
-
-  // implantManufacturer 없을 때만 레거시 계정 단일 확정
-  return (
-    normalizeHexVerificationResultHex(userRs?.hexVerificationResultHex) ||
-    normalizeHexVerificationResultHex(baRs?.hexVerificationResultHex)
-  );
+  const baEntry = findHexByImplantManufacturerEntry(baRs, implantM);
+  if (baEntry) {
+    return normalizeHexVerificationResultHex(baEntry.verifiedHex);
+  }
+  // 맵 행 없음 = 미정(관리자 패널과 동일).
+  return null;
 };
 
 export const resolveApplyHex30FromRequest = (
@@ -203,31 +227,28 @@ export const resolveApplyHex30FromRequest = (
   return true;
 };
 
-/** ExoCAD 3.0 이하만 헥스 확인 뱃지. 그 외 null. */
+/** ExoCAD 3.0 이하만 헥스 확인 뱃지. 그 외·implantManufacturer 없음은 null. */
 export const resolveHexVerificationBadgeLabel = (
   req?: HexRequestLike | null,
 ): HexVerificationBadgeLabel | null => {
-  const designSoftware = String(
-    req?.caseInfos?.designSoftware ||
-      req?.requestor?.requestSettings?.designSoftware ||
-      req?.business?.requestSettings?.designSoftware ||
-      "",
-  ).trim();
-  if (designSoftware !== "ExoCAD") return null;
-  const exoCadVersion = String(
-    req?.caseInfos?.exoCadVersion ||
-      req?.requestor?.requestSettings?.exoCadVersion ||
-      req?.business?.requestSettings?.exoCadVersion ||
-      "",
-  ).trim();
-  if (
-    exoCadVersion === "ge_3_2" ||
-    exoCadVersion === "3.2" ||
-    exoCadVersion === ">=3.2"
-  ) {
-    return null;
-  }
+  if (!isExoCadLe30HexVerificationContext(req)) return null;
+  const implantM = String(req?.caseInfos?.implantManufacturer || "").trim();
+  if (!implantM) return null;
   return resolveAdminVerifiedHexFromRequest(req) ? "확정" : "미정";
+};
+
+/**
+ * ExoCAD≤3.0인데 implantManufacturer가 없어 뱃지 판정 불가.
+ * requestSettings가 실린 뒤(풀 보강 후)에만 true — 큐 lean 스냅샷 오탐 방지.
+ */
+export const shouldToastHexVerificationMissingImplantManufacturer = (
+  req?: HexRequestLike | null,
+): boolean => {
+  if (!isExoCadLe30HexVerificationContext(req)) return false;
+  if (String(req?.caseInfos?.implantManufacturer || "").trim()) return false;
+  return Boolean(
+    req?.requestor?.requestSettings || req?.business?.requestSettings,
+  );
 };
 
 type HexCaseInfos = {
@@ -330,10 +351,8 @@ export const resolveDefaultPrepHexRotationMode = (
     return toManufacturerHexRotationLabel(byDesignSoftware);
   }
 
-  return (
-    normalizeManufacturerHexRotationMode(req?.caseInfos?.requestorHexRotation) ||
-    null
-  );
+  // requestorHexRotation 레거시 폴백 없음 — 호출측에서 에러 토스트.
+  return null;
 };
 
 export const resolvePrepHexModeToPersist = (
@@ -381,6 +400,8 @@ export const PREP_HEX_SAVE_MISSING_HANDLER =
   "헥스 회전 저장 핸들러가 없어 승인할 수 없습니다.";
 export const PREP_HEX_MISSING_MODE =
   "헥스 회전값이 비어 있습니다. 'STL모델대로', '헥스30도회전', 'STL모델+', '헥스30+' 중 하나를 선택해 주세요.";
+export const HEX_ROTATION_MISSING_MODE_TOAST =
+  "헥스 회전값이 없습니다. 저장값·디자인 SW 정책으로도 해석되지 않았습니다.";
 
 export async function persistPrepApprovalSettings(opts: {
   req: HexRequestLike;

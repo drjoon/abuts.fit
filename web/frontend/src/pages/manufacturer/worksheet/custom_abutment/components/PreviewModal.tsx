@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-09-04: 헥스 draft — requestorHexRotation/finalHexRotation 레거시 폴백 제거. 없으면 에러 토스트.
+// - 2026-09-04: ExoCAD≤3.0 · implantManufacturer 없으면 헥스 확인 에러 토스트.
 // - 2026-09-04: 포스트면 각인 Z — FL+1.5mm 라벨.
 // - 2026-09-04: 포스트면 체크 — 미리보기는 항상 토글, 저장만 준비 단계.
 // - 2026-09-04: 포스트면 각인 옵트인 체크(준비만). 기본 헥스면. Lot=오버레이 표시.
@@ -100,10 +102,13 @@ import { RequestInfoSummary } from "./RequestInfoSummary";
 import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
 import { resolveShippingMode } from "@/shared/shipping/shippingMode";
 import {
+  HEX_ROTATION_MISSING_MODE_TOAST,
+  HEX_VERIFICATION_MISSING_IMPLANT_MANUFACTURER,
   normalizeManufacturerHexRotationMode,
   persistPrepApprovalSettings,
   resolveDefaultPrepHexRotationMode,
   resolveHexVerificationBadgeLabel,
+  shouldToastHexVerificationMissingImplantManufacturer,
   toManufacturerHexRotationLabel,
   type ManufacturerHexRotationDraftMode,
   type ManufacturerHexRotationMode,
@@ -608,6 +613,7 @@ export const PreviewModal = ({
   const lastStableReqRef = useRef<ManufacturerRequest | null>(null);
   const openRef = useRef<boolean>(open);
   const suppressRealtimePreviewRefreshUntilRef = useRef<number>(0);
+  const hexMissingToastKeyRef = useRef<string>("");
 
   const currentRequestMongoId = normalizeEventId(req?._id || (req as any)?.id);
   const currentRequestId = normalizeEventId(req?.requestId);
@@ -750,6 +756,7 @@ export const PreviewModal = ({
       setApproving(false);
       setDeleteConfirmKind(null);
       setNcRegenConfirmOpen(false);
+      hexMissingToastKeyRef.current = "";
     }
   }, [open]);
 
@@ -874,9 +881,9 @@ export const PreviewModal = ({
     setShowLotEngraving(false);
 
     // 헥스 회전 SSOT: caseInfos.hexRotation.mode
-    // 1) 저장된 mode
-    // 2) 준비·CAM 단계(미저장): designSoftware 정책 > requestorHexRotation
-    // 3) 가공 이후(미저장 스냅샷): legacy finalHexRotation/requestorHexRotation
+    // 1) 저장된 mode / manufacturerHexRotation
+    // 2) 미저장: resolveDefaultPrepHexRotationMode(관리자 확정 → applyHex30 → designSoftware)
+    // requestorHexRotation/finalHexRotation 레거시 폴백 없음 — 없으면 에러 토스트.
     const savedHexRotationMode = normalizeManufacturerHexRotationMode(
       (req as any)?.caseInfos?.hexRotation?.mode,
     );
@@ -890,34 +897,42 @@ export const PreviewModal = ({
         (req as any)?.caseInfos?.manufacturerHexRotation,
       );
 
-    const reviewStageKey = getReviewStageKeyByTab({
-      stage,
-      isCamStage,
-      isMachiningStage,
-    });
-    const isPrepStage =
-      reviewStageKey === "request" || reviewStageKey === "cam";
-
-    let nextHexRotationDraft: ManufacturerHexRotationDraftMode = "";
-
-    if (savedManufacturerHexMode) {
-      nextHexRotationDraft = savedManufacturerHexMode;
-    } else if (isPrepStage) {
-      nextHexRotationDraft =
-        resolveDefaultPrepHexRotationMode(req as any) || "";
-    } else {
-      nextHexRotationDraft =
-        normalizeManufacturerHexRotationMode(
-          (req as any)?.caseInfos?.finalHexRotation,
-        ) ||
-        normalizeManufacturerHexRotationMode(
-          (req as any)?.caseInfos?.requestorHexRotation,
-        ) ||
-        resolveDefaultPrepHexRotationMode(req as any) ||
-        "";
-    }
+    const nextHexRotationDraft: ManufacturerHexRotationDraftMode =
+      savedManufacturerHexMode ||
+      resolveDefaultPrepHexRotationMode(req as any) ||
+      "";
 
     setManufacturerHexRotationDraft(nextHexRotationDraft);
+
+    const hexSettingsLoaded = Boolean(
+      (req as any)?.requestor?.requestSettings ||
+        (req as any)?.business?.requestSettings,
+    );
+    // 큐 lean 스냅샷(설정 미보강)에서는 토스트하지 않음. 동일 의뢰 중복 토스트 방지.
+    const missingMode = !nextHexRotationDraft && hexSettingsLoaded;
+    const missingImplant =
+      shouldToastHexVerificationMissingImplantManufacturer(req as any);
+    const toastKey = `${String((req as any)?._id || req?.requestId || "").trim()}|mode:${missingMode ? 1 : 0}|implant:${missingImplant ? 1 : 0}`;
+    if (
+      (missingMode || missingImplant) &&
+      hexMissingToastKeyRef.current !== toastKey
+    ) {
+      hexMissingToastKeyRef.current = toastKey;
+      if (missingMode) {
+        toast({
+          title: "헥스 회전 없음",
+          description: HEX_ROTATION_MISSING_MODE_TOAST,
+          variant: "destructive",
+        });
+      }
+      if (missingImplant) {
+        toast({
+          title: "헥스 확인 정보 부족",
+          description: HEX_VERIFICATION_MISSING_IMPLANT_MANUFACTURER,
+          variant: "destructive",
+        });
+      }
+    }
 
     if (tokens.length) {
       setReasonLibraryWithSync((prev) => {
@@ -928,7 +943,7 @@ export const PreviewModal = ({
         return next;
       });
     }
-  }, [req, setReasonLibraryWithSync, stage, isCamStage, isMachiningStage]);
+  }, [req, setReasonLibraryWithSync, toast]);
 
   useEffect(() => {
     if (!open || (!guidedFinishLineMode && !guidedFrontPointMode)) return;
