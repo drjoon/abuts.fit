@@ -339,7 +339,7 @@ Notes:
   - 전역 설정 버튼/모달: `src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx`
   - 카드 표시 정책: `src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx`
   - 상세 표시 정책: `src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`
-  - **각인 이미지 수동 매칭**(AI 미매칭 시 재촬영 금지): `usePackingCapture` pending 패널 + 3글자(A–Z) 실시간 카드 필터 + 이미지→카드 드롭. BE `POST /api/bg/lot-capture/packing`는 `requestMongoId` 수동 바인딩·`packing:capture-unmatched` 이벤트.
+  - **각인 이미지 매칭**: 업로드 시 AI 인식은 제안만(즉시 포장.발송 금지). **인식 성공 건은 다음 촬영이 오면 자동 확정**. 틀리면 3글자 수정·카드 드롭으로 정정. BE `packing:capture-needs-confirm` / `requestMongoId` 확정.
 
 - 제조사 워크시트 의뢰 정보 표시 SSOT (`RequestInfoSummary`):
   - 카드/프리뷰 본문의 환자·임플란트·생산 정보는 개별 JSX로 흩뿌리지 말고

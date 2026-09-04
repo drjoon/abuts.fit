@@ -690,7 +690,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - `REQUEST_SPEND_COMMIT`: **가공 진입 승인(준비→가공)** 시 보류→매출(레거시 무보류만 실차감)
   - `SHIPPING_SPEND_COMMIT`: **포장.발송 진입(세척.패킹 승인)** 시 배송 보류→매출. 집하는 패키지 연결만 보강(`ensureShippingFeeSpendOnMailboxPickup`).
   - **포장.발송 진입 SSOT**: `enterManufacturerShippingStage()` (`controllers/requests/common.review.helpers.js`) — 우편함 유지·수취인 스냅샷·배송비 commit·단계 매핑. 세척.패킹 승인·lot-capture·stageProgressionWorker 등 **모든** 진입 경로는 이 함수만 호출. 새 경로 추가 시에도 동일(백필·단위 테스트 제외).
-  - **lot-capture 수동 매칭**: `POST /api/bg/lot-capture/packing`에 `requestMongoId`(또는 `requestId`)가 있으면 AI/suffix 매칭을 건너뛰고 해당 세척.패킹 의뢰에 바인딩. 미매칭 시 `packing:capture-unmatched`(+ previewUrl)를 발행해 FE 수동 매칭 패널에 올린다.
+  - **lot-capture 작업자 확인**: `POST /api/bg/lot-capture/packing`는 `requestMongoId`(또는 `requestId`)가 있을 때만 저장·포장.발송. 없으면 인식·후보만 반환하고 `packing:capture-needs-confirm`(+ previewUrl) 발행.
   - 우편함 합류: 합류 의뢰의 중복 `SHIPPING_SPEND_HOLD` 해제. 칸당 보류 1개 불변.
   - 준비 단계 **취소**: 미전환 HOLD 전부 물리 삭제(잔액 복원)
   - `REQUEST` 차감 삭제: **가공→준비 롤백** 시 대응 커밋 이벤트/라인 **물리 삭제**

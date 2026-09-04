@@ -7,6 +7,8 @@
 // - web/frontend/src/shared/realtime/useAppEventListener.ts
 // - web/backend/controllers/ai/lotCapture.controller.js
 // change-log:
+// - 2026-09-04: 인식 성공 건은 다음 촬영 시 자동 확정. 수동 입력/드롭은 인식값 정정용.
+// - 2026-09-04: 자동 인식은 제안만 — 작업자가 이미지·인식값 확인 후 수동 확정.
 // - 2026-09-04: AI 미매칭 시 재촬영 대신 pending 수동 매칭(3글자 필터·카드 드롭).
 import {
   useCallback,
@@ -37,6 +39,11 @@ export type PendingPackingMatch = {
   fileSize: number;
   aiSuffix: string;
   reason: string;
+  candidateMatched: boolean;
+  suggestedRequestMongoId: string;
+  suggestedRequestId: string;
+  suggestedLotValue: string;
+  confidence: string;
   createdAt: Date;
   /** object URL이면 clear 시 revoke */
   revokePreviewOnClear?: boolean;
@@ -51,6 +58,49 @@ export const extractLotSuffix3 = (value: string | null | undefined) => {
   const s = String(value || "").toUpperCase();
   const match = s.match(/[A-Z]{3}(?!.*[A-Z])/);
   return match ? match[0] : "";
+};
+
+const pendingFromCapturePayload = (
+  payload: Record<string, unknown>,
+  extras?: Partial<PendingPackingMatch>,
+): Omit<PendingPackingMatch, "id" | "createdAt"> | null => {
+  const s3Key = String(payload.s3Key || extras?.s3Key || "").trim();
+  if (!s3Key) return null;
+  const recognized =
+    payload.recognized && typeof payload.recognized === "object"
+      ? (payload.recognized as Record<string, unknown>)
+      : {};
+  return {
+    s3Key,
+    s3Url: String(payload.s3Url || extras?.s3Url || "").trim(),
+    previewUrl: String(
+      payload.previewUrl || payload.s3Url || extras?.previewUrl || "",
+    ).trim(),
+    originalName: String(
+      payload.originalName || extras?.originalName || "capture.jpg",
+    ).trim(),
+    fileSize: Number(payload.fileSize ?? extras?.fileSize) || 0,
+    aiSuffix: extractLotSuffix3(
+      String(payload.suffix || recognized.lotNumber || extras?.aiSuffix || ""),
+    ),
+    reason: String(payload.reason || extras?.reason || "").trim(),
+    candidateMatched: Boolean(
+      payload.candidateMatched ?? extras?.candidateMatched,
+    ),
+    suggestedRequestMongoId: String(
+      payload.suggestedRequestMongoId || extras?.suggestedRequestMongoId || "",
+    ).trim(),
+    suggestedRequestId: String(
+      payload.suggestedRequestId || extras?.suggestedRequestId || "",
+    ).trim(),
+    suggestedLotValue: String(
+      payload.suggestedLotValue || extras?.suggestedLotValue || "",
+    ).trim(),
+    confidence: String(
+      recognized.confidence || extras?.confidence || "",
+    ).trim(),
+    revokePreviewOnClear: extras?.revokePreviewOnClear,
+  };
 };
 
 export const usePackingCapture = ({
@@ -148,6 +198,13 @@ export const usePackingCapture = ({
           fileSize: Number(row.fileSize) || 0,
           aiSuffix: extractLotSuffix3(row.aiSuffix),
           reason: String(row.reason || "").trim(),
+          candidateMatched: Boolean(row.candidateMatched),
+          suggestedRequestMongoId: String(
+            row.suggestedRequestMongoId || "",
+          ).trim(),
+          suggestedRequestId: String(row.suggestedRequestId || "").trim(),
+          suggestedLotValue: String(row.suggestedLotValue || "").trim(),
+          confidence: String(row.confidence || "").trim(),
           createdAt: new Date(),
           revokePreviewOnClear: !!row.revokePreviewOnClear,
         };
@@ -239,10 +296,13 @@ export const usePackingCapture = ({
       fileSize?: number;
       recognizedSuffix?: string;
       pendingId?: string | null;
+      /** auto: 다음 촬영으로 이전 성공건 확정. manual: 작업자 정정/확정 */
+      mode?: "auto" | "manual";
     }) => {
       if (!token) return false;
       const requestMongoId = String(params.request._id || "").trim();
       if (!requestMongoId || !params.s3Key) return false;
+      const mode = params.mode || "manual";
       setMatchingBusy(true);
       try {
         const captureRes = await fetch("/api/bg/lot-capture/packing", {
@@ -264,7 +324,7 @@ export const usePackingCapture = ({
         const captureData = await captureRes.json().catch(() => ({}));
         if (!captureRes.ok || captureData?.success === false) {
           throw new Error(
-            captureData?.message || "수동 매칭 처리에 실패했습니다.",
+            captureData?.message || "매칭 처리에 실패했습니다.",
           );
         }
         if (!captureData?.data?.matched) {
@@ -275,13 +335,13 @@ export const usePackingCapture = ({
         }
         if (params.pendingId) clearPendingMatch(params.pendingId);
         toast({
-          title: "수동 매칭 완료",
+          title: mode === "auto" ? "인식 확정" : "매칭 완료",
           description: `${params.request.requestId || requestMongoId} → 포장.발송`,
         });
         return true;
       } catch (error) {
         toast({
-          title: "수동 매칭 실패",
+          title: mode === "auto" ? "자동 확정 실패" : "매칭 실패",
           description:
             (error as Error)?.message ||
             "이미지를 의뢰에 연결하는 중 오류가 발생했습니다.",
@@ -293,6 +353,71 @@ export const usePackingCapture = ({
       }
     },
     [clearPendingMatch, toast, token],
+  );
+
+  const findSuggestedRequest = useCallback((pending: PendingPackingMatch) => {
+    const suggestedMongoId = String(pending.suggestedRequestMongoId || "").trim();
+    const suggestedBusinessId = String(pending.suggestedRequestId || "").trim();
+    if (!suggestedMongoId && !suggestedBusinessId) return null;
+    return (
+      requestsRef.current.find((req) => {
+        const mongoId = String(req._id || "").trim();
+        const businessId = String(req.requestId || "").trim();
+        return (
+          (!!suggestedMongoId && mongoId === suggestedMongoId) ||
+          (!!suggestedBusinessId && businessId === suggestedBusinessId)
+        );
+      }) || null
+    );
+  }, []);
+
+  /** 인식 성공(후보 있음) 대기건 — 다음 촬영이 오면 AI 제안대로 확정 */
+  const autoConfirmSuccessfulPendings = useCallback(
+    async (exceptS3Key?: string) => {
+      const skipKey = String(exceptS3Key || "").trim();
+      const toConfirm = pendingMatchesRef.current
+        .filter(
+          (row) =>
+            row.candidateMatched &&
+            (row.suggestedRequestMongoId || row.suggestedRequestId) &&
+            row.s3Key !== skipKey,
+        )
+        // newest-first 배열이므로 오래된 것부터 확정
+        .slice()
+        .reverse();
+      for (const pending of toConfirm) {
+        const request = findSuggestedRequest(pending);
+        if (!request) continue;
+        await bindCaptureToRequest({
+          request,
+          s3Key: pending.s3Key,
+          s3Url: pending.s3Url,
+          originalName: pending.originalName,
+          fileSize: pending.fileSize,
+          recognizedSuffix: pending.aiSuffix,
+          pendingId: pending.id,
+          mode: "auto",
+        });
+      }
+    },
+    [bindCaptureToRequest, findSuggestedRequest],
+  );
+
+  const enqueuePendingMatch = useCallback(
+    async (
+      row: Omit<PendingPackingMatch, "id" | "createdAt"> & { id?: string },
+    ) => {
+      const s3Key = String(row.s3Key || "").trim();
+      if (!s3Key) return;
+      const isUpdate = pendingMatchesRef.current.some(
+        (item) => item.s3Key === s3Key,
+      );
+      if (!isUpdate) {
+        await autoConfirmSuccessfulPendings(s3Key);
+      }
+      pushPendingMatch(row);
+    },
+    [autoConfirmSuccessfulPendings, pushPendingMatch],
   );
 
   const matchPendingToRequest = useCallback(
@@ -309,17 +434,51 @@ export const usePackingCapture = ({
         });
         return false;
       }
+      // 수동 입력값이 있으면 그걸로 정정, 없으면 AI 인식값
+      const corrected = extractLotSuffix3(manualSuffixQuery);
       return bindCaptureToRequest({
         request,
         s3Key: pending.s3Key,
         s3Url: pending.s3Url,
         originalName: pending.originalName,
         fileSize: pending.fileSize,
-        recognizedSuffix: extractLotSuffix3(manualSuffixQuery) || pending.aiSuffix,
+        recognizedSuffix: corrected || pending.aiSuffix,
         pendingId: pending.id,
+        mode: "manual",
       });
     },
     [activePendingId, bindCaptureToRequest, manualSuffixQuery, toast],
+  );
+
+  const confirmSuggestedMatch = useCallback(
+    async (pendingId?: string | null) => {
+      const pending =
+        pendingMatchesRef.current.find(
+          (row) => row.id === (pendingId || activePendingId),
+        ) || pendingMatchesRef.current[0];
+      if (!pending) return false;
+      const suggested = findSuggestedRequest(pending);
+      if (!suggested) {
+        toast({
+          title: "제안 의뢰를 찾을 수 없습니다",
+          description:
+            "카드 목록에서 직접 고르거나, 각인 3글자를 수정해 매칭하세요.",
+          variant: "destructive",
+        });
+        return false;
+      }
+      return bindCaptureToRequest({
+        request: suggested,
+        s3Key: pending.s3Key,
+        s3Url: pending.s3Url,
+        originalName: pending.originalName,
+        fileSize: pending.fileSize,
+        recognizedSuffix: pending.aiSuffix,
+        pendingId: pending.id,
+        mode: "manual",
+      });
+    },
+    [activePendingId, bindCaptureToRequest, findSuggestedRequest, toast],
   );
 
   const handlePackingImageDropOnRequest = useCallback(
@@ -421,62 +580,53 @@ export const usePackingCapture = ({
               );
             }
 
-            if (!captureData?.data?.matched) {
-              const reason = String(captureData?.data?.reason || "").trim();
-              const recognizedSuffix = extractLotSuffix3(
-                String(captureData?.data?.suffix || ""),
-              );
-              let previewUrl = String(
-                captureData?.data?.previewUrl ||
-                  captureData?.data?.s3Url ||
-                  "",
-              ).trim();
-              let revokePreviewOnClear = false;
-              if (!previewUrl && sourceFile) {
-                try {
-                  previewUrl = URL.createObjectURL(sourceFile);
-                  revokePreviewOnClear = true;
-                } catch {
-                  previewUrl = "";
-                }
+            const data =
+              captureData?.data && typeof captureData.data === "object"
+                ? (captureData.data as Record<string, unknown>)
+                : {};
+            // 자동 인식은 항상 작업자 확인 대기(needsConfirm). 즉시 확정하지 않는다.
+            let previewUrl = String(
+              data.previewUrl || data.s3Url || "",
+            ).trim();
+            let revokePreviewOnClear = false;
+            if (!previewUrl && sourceFile) {
+              try {
+                previewUrl = URL.createObjectURL(sourceFile);
+                revokePreviewOnClear = true;
+              } catch {
+                previewUrl = "";
               }
-              pushPendingMatch({
-                s3Key: uploaded.key,
-                s3Url: String(
-                  captureData?.data?.s3Url ||
-                    uploadedMeta.url ||
-                    uploadedMeta.s3Url ||
-                    "",
-                ).trim(),
-                previewUrl,
-                originalName:
-                  uploaded.originalName || sourceFile?.name || "capture.jpg",
-                fileSize:
-                  Number(captureData?.data?.fileSize) ||
-                  uploadedMeta.fileSize ||
-                  sourceFile?.size ||
-                  0,
-                aiSuffix: recognizedSuffix,
-                reason,
-                revokePreviewOnClear,
-              });
-              toast({
-                title: "자동 매칭 실패 — 수동 매칭",
-                description: recognizedSuffix
-                  ? `인식값 ${recognizedSuffix}. 이미지를 확인한 뒤 3글자를 입력하거나 카드에 드롭하세요.`
-                  : "이미지를 확인한 뒤 각인 3글자를 입력하거나 카드에 드롭하세요.",
-              });
-              continue;
             }
-
+            const pendingRow = pendingFromCapturePayload(data, {
+              s3Key: uploaded.key,
+              s3Url: String(
+                data.s3Url || uploadedMeta.url || uploadedMeta.s3Url || "",
+              ).trim(),
+              previewUrl,
+              originalName:
+                uploaded.originalName || sourceFile?.name || "capture.jpg",
+              fileSize:
+                Number(data.fileSize) ||
+                uploadedMeta.fileSize ||
+                sourceFile?.size ||
+                0,
+              revokePreviewOnClear,
+            });
+            if (pendingRow) {
+              await enqueuePendingMatch(pendingRow);
+            }
             const recognizedSuffix = extractLotSuffix3(
-              String(captureData?.data?.suffix || ""),
+              String(data.suffix || ""),
             );
             toast({
-              title: "세척·포장 처리 완료",
-              description: recognizedSuffix
-                ? `LOT 코드 ${recognizedSuffix} 의뢰를 발송 단계로 이동했습니다.`
-                : "세척·포장 처리 결과를 반영했습니다.",
+              title: pendingRow?.candidateMatched
+                ? `인식: ${recognizedSuffix || "확인"}`
+                : "인식 실패 — 정정 필요",
+              description: pendingRow?.candidateMatched
+                ? "맞으면 다음 촬영으로 확정. 틀리면 3글자 수정 또는 카드에 드롭."
+                : recognizedSuffix
+                  ? `인식값 ${recognizedSuffix}. 수동 입력 또는 카드에 드롭하세요.`
+                  : "이미지를 보고 각인 3글자를 입력하거나 카드에 드롭하세요.",
             });
           } catch (error) {
             toast({
@@ -501,7 +651,7 @@ export const usePackingCapture = ({
         setOcrStage("idle");
       }
     },
-    [pushPendingMatch, toast, token, uploadToS3, resizeImageFile],
+    [enqueuePendingMatch, toast, token, uploadToS3, resizeImageFile],
   );
 
   const handlePageDrop = useCallback(
@@ -552,33 +702,36 @@ export const usePackingCapture = ({
 
   useAppEventListener({
     enabled: Boolean(token),
-    eventTypes: ["packing:capture-processed", "packing:capture-unmatched"],
+    eventTypes: [
+      "packing:capture-processed",
+      "packing:capture-needs-confirm",
+      "packing:capture-unmatched",
+    ],
     onMatch: (evt) => {
       const payload =
         evt?.data && typeof evt.data === "object"
           ? (evt.data as Record<string, unknown>)
           : {};
+      const eventType = String(evt?.type || "").trim();
 
-      if (evt?.type === "packing:capture-unmatched") {
+      if (
+        eventType === "packing:capture-needs-confirm" ||
+        eventType === "packing:capture-unmatched"
+      ) {
         // frontend drop 경로는 HTTP 응답에서 이미 pending에 넣는다.
         if (String(payload.capturedBy || "") === "frontend") return;
-        const s3Key = String(payload.s3Key || "").trim();
-        if (!s3Key) return;
-        pushPendingMatch({
-          s3Key,
-          s3Url: String(payload.s3Url || "").trim(),
-          previewUrl: String(
-            payload.previewUrl || payload.s3Url || "",
-          ).trim(),
-          originalName: String(payload.originalName || "capture.jpg").trim(),
-          fileSize: Number(payload.fileSize) || 0,
-          aiSuffix: extractLotSuffix3(String(payload.suffix || "")),
-          reason: String(payload.reason || "").trim(),
-        });
-        toast({
-          title: "자동 매칭 실패 — 수동 매칭",
-          description:
-            "현미경 이미지를 확인한 뒤 각인 3글자를 입력하거나 카드에 드롭하세요.",
+        const pendingRow = pendingFromCapturePayload(payload);
+        if (!pendingRow) return;
+        void enqueuePendingMatch(pendingRow).then(() => {
+          const suffix = pendingRow.aiSuffix;
+          toast({
+            title: pendingRow.candidateMatched
+              ? `인식: ${suffix || "확인"}`
+              : "인식 실패 — 정정 필요",
+            description: pendingRow.candidateMatched
+              ? "맞으면 다음 촬영으로 확정. 틀리면 3글자 수정 또는 카드에 드롭."
+              : "이미지를 보고 각인 3글자를 입력하거나 카드에 드롭하세요.",
+          });
         });
         return;
       }
@@ -698,12 +851,14 @@ export const usePackingCapture = ({
           });
         }
       })();
-      toast({
-        title: `각인 인식: ${suffix || "인식됨"}`,
-        description: requestId
-          ? `${requestId} → 포장.발송으로 이동`
-          : "세척.패킹 처리 결과가 반영되었습니다.",
-      });
+      if (String(payload.capturedBy || "") !== "frontend") {
+        toast({
+          title: `각인 매칭 완료: ${suffix || "확정"}`,
+          description: requestId
+            ? `${requestId} → 포장.발송으로 이동`
+            : "세척.패킹 처리 결과가 반영되었습니다.",
+        });
+      }
     },
   });
 
@@ -725,6 +880,7 @@ export const usePackingCapture = ({
     clearPendingMatch,
     clearAllPendingMatches,
     matchPendingToRequest,
+    confirmSuggestedMatch,
     matchingBusy,
   };
 };

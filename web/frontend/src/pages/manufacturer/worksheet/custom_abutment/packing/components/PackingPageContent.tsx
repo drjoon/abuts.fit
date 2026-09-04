@@ -1,5 +1,5 @@
 // change-log:
-// - 2026-09-04: AI 미매칭 시 각인 이미지 수동 매칭(3글자 필터·카드 드롭) 패널.
+// - 2026-09-04: AI 미매칭 시 각인 이미지 수동 매칭(3글자 필터·카드 드롭) 패널. 자동 인식은 확인 후 확정.
 // - 2026-08-04: 컨텐츠 영역 검색 바 제거. 헤더 worksheetSearch만 사용(중복 제거).
 // - 2026-08-03: packing page: 공정 '의뢰' 표시를 '준비'로 정규화한 영향으로 일부 시작/복사 로직의 라벨 표기를 조정했습니다 (표시 레벨).
 import {
@@ -1198,6 +1198,7 @@ export const PackingPageContent = ({
     clearPendingMatch,
     clearAllPendingMatches,
     matchPendingToRequest,
+    confirmSuggestedMatch,
     matchingBusy,
   } = usePackingCapture({
     token,
@@ -1256,19 +1257,34 @@ export const PackingPageContent = ({
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== "Enter") return;
-      if (!activePending || !exactManualMatchRequest || matchingBusy) return;
-      const tag = String((e.target as HTMLElement | null)?.tagName || "").toLowerCase();
+      if (!activePending || matchingBusy) return;
+      const tag = String(
+        (e.target as HTMLElement | null)?.tagName || "",
+      ).toLowerCase();
       if (tag === "textarea") return;
       e.preventDefault();
-      void matchPendingToRequest(exactManualMatchRequest);
+      if (exactManualMatchRequest) {
+        void matchPendingToRequest(exactManualMatchRequest);
+        return;
+      }
+      if (
+        activePending.candidateMatched &&
+        activePending.suggestedRequestMongoId &&
+        (!normalizedManualSuffix ||
+          normalizedManualSuffix === activePending.aiSuffix)
+      ) {
+        void confirmSuggestedMatch(activePending.id);
+      }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [
     activePending,
+    confirmSuggestedMatch,
     exactManualMatchRequest,
     matchPendingToRequest,
     matchingBusy,
+    normalizedManualSuffix,
   ]);
 
   const handlePrintPackingLabels = useCallback(async () => {
@@ -1502,10 +1518,11 @@ export const PackingPageContent = ({
               <div className="mb-2 flex items-center justify-between gap-2 px-0.5">
                 <div>
                   <div className="text-xs font-semibold text-accent-strong">
-                    수동 매칭 — 각인 이미지
+                    각인 인식 확인
                   </div>
                   <div className="text-[11px] text-slate-600">
-                    이미지를 보고 3글자를 입력하거나, 이미지를 카드에 드롭하세요.
+                    인식이 맞으면 다음 촬영으로 확정됩니다. 틀리면 3글자를 수정하거나
+                    이미지를 카드에 드롭해 정정하세요.
                   </div>
                 </div>
                 <button
@@ -1525,7 +1542,12 @@ export const PackingPageContent = ({
                       <button
                         key={item.id}
                         type="button"
-                        onClick={() => setActivePendingId(item.id)}
+                        onClick={() => {
+                          setActivePendingId(item.id);
+                          if (item.aiSuffix) {
+                            setManualSuffixQuery(item.aiSuffix);
+                          }
+                        }}
                         draggable={selected}
                         onDragStart={(e) => {
                           e.dataTransfer.setData(
@@ -1549,7 +1571,10 @@ export const PackingPageContent = ({
                           draggable={false}
                         />
                         <div className="absolute inset-x-0 bottom-0 bg-black/55 px-1.5 py-0.5 text-[10px] font-semibold tracking-widest text-white">
-                          {item.aiSuffix || "—"}
+                          {item.aiSuffix
+                            ? `AI ${item.aiSuffix}`
+                            : "인식 실패"}
+                          {item.candidateMatched ? " · 후보" : ""}
                         </div>
                         <span
                           role="button"
@@ -1577,8 +1602,28 @@ export const PackingPageContent = ({
                 </div>
 
                 <div className="flex min-w-[220px] flex-1 flex-col justify-center gap-2">
+                  {activePending ? (
+                    <div className="rounded-md border border-slate-200 bg-white/80 px-2.5 py-2 text-[11px] text-slate-600">
+                      <div>
+                        AI 인식:{" "}
+                        <span className="font-mono text-sm font-bold tracking-widest text-slate-900">
+                          {activePending.aiSuffix || "—"}
+                        </span>
+                        {activePending.confidence
+                          ? ` · ${activePending.confidence}`
+                          : ""}
+                      </div>
+                      <div className="mt-0.5 truncate">
+                        {activePending.candidateMatched
+                          ? `제안 의뢰: ${activePending.suggestedRequestId || activePending.suggestedLotValue || "—"}`
+                          : activePending.reason === "no_suffix_match"
+                            ? "인식값은 있으나 세척.패킹 후보 없음"
+                            : "자동 후보 없음 — 수동 입력/드롭"}
+                      </div>
+                    </div>
+                  ) : null}
                   <label className="text-[11px] font-semibold text-slate-600">
-                    각인 코드 (A–Z 3자리)
+                    각인 코드 정정 (A–Z 3자리)
                   </label>
                   <Input
                     value={manualSuffixQuery}
@@ -1600,24 +1645,42 @@ export const PackingPageContent = ({
                     {normalizedManualSuffix
                       ? `필터: ${displayRequests.length}건`
                       : "한 글자씩 입력하면 카드가 필터됩니다."}
-                    {exactManualMatchRequest
-                      ? " · Enter로 매칭"
+                    {exactManualMatchRequest ||
+                    (activePending?.candidateMatched &&
+                      (!normalizedManualSuffix ||
+                        normalizedManualSuffix === activePending.aiSuffix))
+                      ? " · Enter로 확정"
                       : ""}
                   </div>
-                  {exactManualMatchRequest && activePending ? (
-                    <button
-                      type="button"
-                      disabled={matchingBusy}
-                      onClick={() =>
-                        void matchPendingToRequest(exactManualMatchRequest)
-                      }
-                      className="inline-flex w-fit items-center rounded-lg border border-primary bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary/90 disabled:opacity-60"
-                    >
-                      {matchingBusy
-                        ? "매칭 중…"
-                        : `${extractLotSuffix3(exactManualMatchRequest.lotNumber?.value)} 카드에 매칭`}
-                    </button>
-                  ) : null}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {exactManualMatchRequest && activePending ? (
+                      <button
+                        type="button"
+                        disabled={matchingBusy}
+                        onClick={() =>
+                          void matchPendingToRequest(exactManualMatchRequest)
+                        }
+                        className="inline-flex w-fit items-center rounded-lg border border-primary bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary/90 disabled:opacity-60"
+                      >
+                        {matchingBusy
+                          ? "매칭 중…"
+                          : `정정 매칭: ${extractLotSuffix3(exactManualMatchRequest.lotNumber?.value)}`}
+                      </button>
+                    ) : activePending?.candidateMatched ? (
+                      <button
+                        type="button"
+                        disabled={matchingBusy}
+                        onClick={() =>
+                          void confirmSuggestedMatch(activePending.id)
+                        }
+                        className="inline-flex w-fit items-center rounded-lg border border-primary bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary/90 disabled:opacity-60"
+                      >
+                        {matchingBusy
+                          ? "매칭 중…"
+                          : `지금 확정 (${activePending.aiSuffix || ""})`}
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
               </div>
             </div>

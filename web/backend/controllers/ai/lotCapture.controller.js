@@ -5,6 +5,7 @@
 // - bg/pc2/lot-server/src/index.js
 // - web/backend/controllers/requests/mailbox.utils.js
 // change-log:
+// - 2026-09-04: 자동 인식은 제안만 — requestMongoId 수동 확정 시에만 포장.발송 적용.
 // - 2026-09-04: 미매칭 시 packing:capture-unmatched 발행 + previewUrl. requestMongoId 수동 바인딩.
 // - 2026-08-20: 샘플도 각인 후 포장.발송·우편함 유지(일반 의뢰와 동일).
 // - 2026-08-17: 포장.발송 진입 시 세척.패킹 우편함을 유지(없으면 1회 보정).
@@ -407,24 +408,70 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
     if (!request) {
       reason = "no_suffix_match";
     }
-  } else if (!packAiRecogEnabled) {
-    request = await Request.findOne({
-      status: { $ne: "취소" },
-      manufacturerStage: "세척.패킹",
-    })
-      .populate("businessAnchorId", "name metadata")
-      .sort({ createdAt: 1 });
-    reason = request ? "" : "no_packing_request";
-
-    console.warn("[lot-capture] temporary fallback applied", {
-      recognizedSuffix: finalRecognizedSuffix || null,
-      matched: !!request,
-      matchedRequestId: request?.requestId || null,
-      matchedMongoId: request?._id ? String(request._id) : null,
-      matchedLotPart: String(request?.lotNumber?.value || "").trim() || null,
-    });
   } else {
+    // 자동 경로는 인식 제안만 하고 저장하지 않는다. (확정은 requestMongoId 수동 바인딩)
     reason = "no_recognized_suffix";
+  }
+
+  // 자동 인식(현미경/드롭)은 작업자 확인 전 확정하지 않는다.
+  if (!isManualBind) {
+    const previewUrl = await resolvePackingPreviewUrl({
+      s3Key: key,
+      s3Url,
+    });
+    const confirmPayload = {
+      ok: true,
+      matched: false,
+      needsConfirm: true,
+      candidateMatched: Boolean(request),
+      recognized: recognized || null,
+      suffix: matchedSuffix || null,
+      reason: request ? "" : reason || "no_packing_request",
+      suggestedRequestId: request?.requestId || null,
+      suggestedRequestMongoId: request?._id ? String(request._id) : null,
+      suggestedLotValue: String(request?.lotNumber?.value || "").trim() || null,
+      s3Key: key,
+      s3Url: String(s3Url || "").trim() || "",
+      previewUrl,
+      originalName: name,
+      fileSize: Number.isFinite(Number(fileSize)) ? Number(fileSize) : null,
+      source: String(source || "").trim() || "worker",
+    };
+
+    console.log("[lot-capture] needs worker confirm", {
+      recognizedSuffix: matchedSuffix || null,
+      candidateMatched: confirmPayload.candidateMatched,
+      suggestedRequestId: confirmPayload.suggestedRequestId,
+      reason: confirmPayload.reason || null,
+      s3Key: key,
+    });
+
+    emitAppEventGlobal("packing:capture-needs-confirm", {
+      source: "bg-lot-capture",
+      capturedBy:
+        String(source || "").trim() === "manual" ? "frontend" : "worker",
+      ...confirmPayload,
+    });
+
+    // 구 FE 호환: 후보 없을 때만 unmatched도 발행
+    if (!request) {
+      emitAppEventGlobal("packing:capture-unmatched", {
+        source: "bg-lot-capture",
+        capturedBy:
+          String(source || "").trim() === "manual" ? "frontend" : "worker",
+        ...confirmPayload,
+      });
+    }
+
+    return res.status(200).json(
+      new ApiResponse(
+        200,
+        confirmPayload,
+        request
+          ? "각인 인식 후보가 있습니다. 화면에서 확인 후 매칭하세요."
+          : "일치하는 세척.패킹 의뢰를 찾지 못했습니다. 화면에서 수동 매칭하세요.",
+      ),
+    );
   }
 
   if (!request) {
@@ -432,7 +479,6 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
       recognizedSuffix: matchedSuffix || null,
       originalName: name,
       s3Key: key,
-      temporaryFallback: !packAiRecogEnabled,
       reason,
       manualBind: isManualBind,
     });
@@ -445,8 +491,13 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
       ok: true,
       recognized: recognized || null,
       matched: false,
+      needsConfirm: true,
+      candidateMatched: false,
       suffix: matchedSuffix || null,
       reason: reason || "no_packing_request",
+      suggestedRequestId: null,
+      suggestedRequestMongoId: null,
+      suggestedLotValue: null,
       s3Key: key,
       s3Url: String(s3Url || "").trim() || "",
       previewUrl,
