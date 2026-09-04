@@ -233,6 +233,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 멀티 인스턴스 백엔드에서는 워커 중복 실행 방지를 위해 Mongo 기반 분산락 SSOT를 사용합니다.
     - 공통 락 유틸: `utils/distributedJobLock.js`
     - 적용 워커: `services/reviewApprovalQueue.service.js`, `controllers/requests/shipping.TrackingPoller.js`, `jobs/dummyCncWorker.js`, `jobs/dailyReferralSnapshotWorker.js`
+  - 의뢰자(치과) 데모 모드: 가입 시 `DEMO_CREDIT_AMOUNT`(100만 원) 지급·`demoModeStartedAt` 기록. 소진(`/me` 자동)·30일 만료(`/me`·hold 경로·`jobs/demoModeExpiryWorker.js`)·사용자/관리자 전환 시 `exitDemoMode`로 잔여 회수. SSOT: `controllers/businesses/business.demoMode.util.js`.
 
 - 가격/리퍼럴 rolling 스냅샷:
   - 일일 재계산 워커: `jobs/dailyReferralSnapshotWorker.js`

@@ -100,8 +100,8 @@ const businessAnchorSchema = new mongoose.Schema(
       lab: { type: Boolean, default: false },
     },
     /**
-     * 데모 모드(의뢰자). 신규 가입 사업자는 true.
-     * 실사용 전환 시 false + demoModeExitedAt. 기존 사업자는 false 유지.
+     * 데모 모드(의뢰자). 신규 가입 시 true + 데모 크레딧(100만 원, 30일).
+     * 소진·기간 만료·사용자/관리자 실사용 전환 시 false + demoModeExitedAt(+잔여 회수).
      * related: web/backend/controllers/businesses/business.demoMode.util.js
      */
     demoMode: {

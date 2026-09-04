@@ -13,9 +13,30 @@ import { getBusinessCreditBalanceSnapshot } from "../../services/creditBalance.s
 import { isDuplicateKeyError } from "./business.validation.util.js";
 
 /** 데모 크레딧 초기 충전액(원). 치과↔기공소 기공의뢰(PTX) 차감 전용. */
-export const DEMO_CREDIT_AMOUNT = 10_000_000;
+export const DEMO_CREDIT_AMOUNT = 1_000_000;
+
+/** 데모 모드 유효기간(일). startedAt 기준 경과 시 자동 실사용 전환. */
+export const DEMO_MODE_DURATION_DAYS = 30;
 
 const DEMO_GRANT_TYPE = "DEMO_CREDIT";
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/** @param {Date|string|null|undefined} startedAt */
+export function isDemoModeExpired(startedAt, now = new Date()) {
+  if (!startedAt) return false;
+  const startedMs = new Date(startedAt).getTime();
+  if (!Number.isFinite(startedMs)) return false;
+  const nowMs = now instanceof Date ? now.getTime() : new Date(now).getTime();
+  if (!Number.isFinite(nowMs)) return false;
+  return nowMs >= startedMs + DEMO_MODE_DURATION_DAYS * MS_PER_DAY;
+}
+
+export function resolveDemoModeExpiresAt(startedAt) {
+  if (!startedAt) return null;
+  const startedMs = new Date(startedAt).getTime();
+  if (!Number.isFinite(startedMs)) return null;
+  return new Date(startedMs + DEMO_MODE_DURATION_DAYS * MS_PER_DAY);
+}
 
 function resolveDemoGrantBusinessNumber(anchor) {
   const fromMeta = String(anchor?.metadata?.businessNumber || "")
@@ -127,7 +148,7 @@ async function postDemoCreditCharge({
 }
 
 /**
- * 의뢰자 사업자 신규 생성 시 데모 모드 시작 + 1천만 원 데모 크레딧 1회 지급.
+ * 의뢰자 사업자 신규 생성 시 데모 모드 시작 + 100만 원 데모 크레딧 1회 지급.
  * 이미 실사용 전환(demoModeExitedAt)한 사업자는 재진입하지 않는다.
  */
 export async function enableDemoModeAndGrantCreditIfEligible({
@@ -211,13 +232,21 @@ export async function enableDemoModeAndGrantCreditIfEligible({
 /**
  * 실사용 전환: 데모 모드 OFF + 잔여 데모 크레딧(무료의뢰 버킷) 회수.
  * 데모 지급액 한도 내에서 현재 freeRequestCredit만 차감한다.
+ * @param {{ businessAnchorId: any, userId?: any, reason?: string }} args
+ *   reason: 사용자 요청·소진·기간 만료 구분 (기본 "실사용 전환")
  */
-export async function exitDemoMode({ businessAnchorId, userId } = {}) {
+export async function exitDemoMode({
+  businessAnchorId,
+  userId,
+  reason,
+} = {}) {
   if (!businessAnchorId) {
     const err = new Error("사업자 정보가 없습니다.");
     err.statusCode = 400;
     throw err;
   }
+
+  const exitReason = String(reason || "").trim() || "실사용 전환";
 
   const anchor = await BusinessAnchor.findById(businessAnchorId)
     .select({
@@ -243,6 +272,7 @@ export async function exitDemoMode({ businessAnchorId, userId } = {}) {
       demoMode: false,
       clawedBack: 0,
       alreadyExited: true,
+      reason: exitReason,
     };
   }
 
@@ -280,10 +310,11 @@ export async function exitDemoMode({ businessAnchorId, userId } = {}) {
       refId: grant._id,
       createdBy: userId || null,
       meta: {
-        memo: "실사용 전환 — 데모 크레딧 회수",
+        memo: `${exitReason} — 데모 크레딧 회수`,
         source: "demo_credit_exit",
         demoCredit: true,
         clawBack,
+        exitReason,
       },
       lines: [
         {
@@ -297,7 +328,7 @@ export async function exitDemoMode({ businessAnchorId, userId } = {}) {
           creditKind: "FREE_REQUEST",
           refType: "DEMO_CREDIT_EXIT",
           refId: grant._id,
-          meta: { source: "demo_credit_exit", demoCredit: true },
+          meta: { source: "demo_credit_exit", demoCredit: true, exitReason },
         },
       ],
     });
@@ -330,7 +361,7 @@ export async function exitDemoMode({ businessAnchorId, userId } = {}) {
         $set: {
           canceledAt: now,
           canceledByUserId: userId || null,
-          cancelReason: "실사용 전환",
+          cancelReason: exitReason,
           cancelJournalId: clawJournalId ? String(clawJournalId) : null,
         },
       },
@@ -341,6 +372,7 @@ export async function exitDemoMode({ businessAnchorId, userId } = {}) {
     demoMode: false,
     clawedBack: clawBack,
     alreadyExited: false,
+    reason: exitReason,
   };
 }
 
@@ -361,11 +393,28 @@ export async function getDemoModeState(businessAnchorId) {
 /**
  * 데모 모드에서 무료의뢰 버킷 중 "데모 예약분" 상한(원).
  * 치과↔기공소 기공의뢰(PTX)만 이 예약을 쓰고, 스토어·커스텀어벗 등은 제외한다.
+ * 유효기간이 지났으면 즉시 실사용 전환 후 0.
  */
 export async function resolveDemoFreeRequestReserveCap(businessAnchorId) {
   if (!businessAnchorId) return 0;
   const state = await getDemoModeState(businessAnchorId);
   if (!state.demoMode || state.demoModeExitedAt) return 0;
+
+  if (isDemoModeExpired(state.demoModeStartedAt)) {
+    try {
+      await exitDemoMode({
+        businessAnchorId,
+        reason: "데모 기간 만료",
+      });
+    } catch (e) {
+      console.error(
+        "[demoMode] expiry exit in reserveCap failed",
+        String(businessAnchorId),
+        e?.message || e,
+      );
+    }
+    return 0;
+  }
 
   const anchor = await BusinessAnchor.findById(businessAnchorId)
     .select({ businessNumberNormalized: 1, metadata: 1 })
@@ -403,9 +452,10 @@ export function excludeDemoFreeRequestFromBalance(balance, demoReserveCap) {
 }
 
 /**
- * 데모 크레딧(무료의뢰 버킷)이 소진되면 자동 실사용 전환.
- * - freeRequestCredit === 0
- * - 미전환 HOLD(보류) 저널이 없을 때만 (취소 시 복구 가능하므로)
+ * 데모 모드 자동 종료(실사용 전환 + 잔여 데모 크레딧 회수).
+ * 1) 유효기간(DEMO_MODE_DURATION_DAYS) 경과
+ * 2) 데모 크레딧(무료의뢰 버킷) 소진 — freeRequestCredit === 0 이고
+ *    미전환 HOLD가 없을 때(취소 시 복구 가능하므로)
  */
 export async function maybeAutoExitDemoModeIfExhausted({
   businessAnchorId,
@@ -415,6 +465,14 @@ export async function maybeAutoExitDemoModeIfExhausted({
 
   const state = await getDemoModeState(businessAnchorId);
   if (!state.demoMode || state.demoModeExitedAt) return null;
+
+  if (isDemoModeExpired(state.demoModeStartedAt)) {
+    return exitDemoMode({
+      businessAnchorId,
+      userId,
+      reason: "데모 기간 만료",
+    });
+  }
 
   const snapshot = await getBusinessCreditBalanceSnapshot({
     businessAnchorId,
@@ -443,5 +501,49 @@ export async function maybeAutoExitDemoModeIfExhausted({
   });
   if (openHold) return null;
 
-  return exitDemoMode({ businessAnchorId, userId });
+  return exitDemoMode({
+    businessAnchorId,
+    userId,
+    reason: "데모 크레딧 소진",
+  });
+}
+
+/**
+ * 만료된 데모 모드 사업자를 일괄 실사용 전환(워커용).
+ * @returns {Promise<{ scanned: number, exited: number, errors: number }>}
+ */
+export async function exitExpiredDemoModesBatch({ limit = 200 } = {}) {
+  const cutoff = new Date(
+    Date.now() - DEMO_MODE_DURATION_DAYS * MS_PER_DAY,
+  );
+  const batchLimit = Math.max(1, Math.min(1000, Math.round(Number(limit) || 200)));
+  const anchors = await BusinessAnchor.find({
+    businessType: "requestor",
+    demoMode: true,
+    demoModeExitedAt: null,
+    demoModeStartedAt: { $ne: null, $lte: cutoff },
+  })
+    .select({ _id: 1 })
+    .limit(batchLimit)
+    .lean();
+
+  let exited = 0;
+  let errors = 0;
+  for (const row of anchors) {
+    try {
+      const result = await exitDemoMode({
+        businessAnchorId: row._id,
+        reason: "데모 기간 만료",
+      });
+      if (result && !result.alreadyExited) exited += 1;
+    } catch (e) {
+      errors += 1;
+      console.error(
+        "[demoMode] expiry exit failed",
+        String(row?._id || ""),
+        e?.message || e,
+      );
+    }
+  }
+  return { scanned: anchors.length, exited, errors };
 }
