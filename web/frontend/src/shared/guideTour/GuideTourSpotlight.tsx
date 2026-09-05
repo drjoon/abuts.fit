@@ -6,6 +6,7 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // change-log:
 // - 2026-09-05: 코치카드 — guide-tour-root(z-420) 밖 별도 레이어(z-440). 루트 안 z-440은 중첩 모달(z-425)에 가려짐.
+// - 2026-09-05: oral_send — 작성 패널 스크롤 후 하이라이트(견적→전송).
 // - 2026-09-05: oral_memo·oral_files — 작성 패널 스크롤 후 하이라이트.
 // - 2026-09-05: 치식 홀이 커스텀어벗 모달 위에 남는 문제 — 타깃 변경 시 rect 즉시 클리어·모달 우선 측정.
 // - 2026-09-05: 코치카드 z-440 — 투어 중 중첩 모달(z-425) 위에 유지.

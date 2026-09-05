@@ -69,7 +69,7 @@ export const PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS = [
   {
     id: "estimate",
     title: "견적 확인",
-    hint: "아래 깜빡이는 견적에 마우스를 올려 툴팁으로 기공비를 확인하세요. 심플어벗은 어벗 기공비가 없습니다.",
+    hint: "견적 금액에 마우스를 올려 툴팁으로 기공비를 확인하세요.",
   },
 ] as const;
 

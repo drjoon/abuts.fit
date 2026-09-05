@@ -126,7 +126,7 @@ export const PRACTICE_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   {
     id: "oral_phone",
     title: "휴대폰 구강포토",
-    hint: "휴대폰에서도 환자 사진을 찍어 올릴 수 있습니다. (투어용으로 폰 화면을 잠시 보여 드립니다.)",
+    hint: "(투어용으로 폰 화면을 잠시 보여 드립니다.)\n휴대폰에서도 환자 사진을 찍어 올릴 수 있습니다.\n투어에서는 누르지 말고 「다음」으로 이어 가세요.",
     path: PRACTICE_ORAL_PATH,
     target: "oral_phone",
     advance: "next",

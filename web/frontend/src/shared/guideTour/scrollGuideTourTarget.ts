@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // change-log:
+// - 2026-09-05: oral_send — 견적 다음 스텝에서 전송 버튼까지 자동 스크롤.
 // - 2026-09-05: scrollComposeGuideTargetIntoView — 메모·파일 등 작성 패널 타깃.
 // - 2026-09-05: 치식 가이드투어 — 작성 패널 data-guide-tour-scroll만 스크롤(조상 window 금지).
 
@@ -22,10 +23,11 @@ export const TOOTH_CHART_GUIDE_TARGETS = new Set(
   TOOTH_CHART_GUIDE_STEP_IDS.map((id) => `oral_${id}`),
 );
 
-/** 메모·파일 — 작성 스크롤 영역에서 가운데 근처로 */
+/** 메모·파일·전송 — 작성 스크롤 영역에서 타깃이 보이게 */
 export const COMPOSE_SCROLL_GUIDE_TARGETS = new Set([
   "oral_memo",
   "oral_files",
+  "oral_send",
 ]);
 
 function findGuideTourScroller(el: HTMLElement): HTMLElement | null {
