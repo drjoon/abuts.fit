@@ -175,7 +175,9 @@ export async function computeBusinessCreditBalanceFromLedger({
     else if (code === "LAB_SETTLEMENT_CREDIT") settlement += total;
   }
 
-  const paidCredit = Math.max(0, Math.round(paid));
+  // 유료도 원장 합이 음수면 그대로 노출(충전 삭제·홀드만 남은 상태 / 마이너스 잔고 체제).
+  // allocateSpend 쪽은 별도로 Math.max(0, paid)로 가용액만 잡는다.
+  const paidCredit = Math.round(paid);
   // 데모 PTX overdraft로 음수 가능 — clamp하지 않는다.
   const freeRequestCredit = Math.round(freeRequest);
   const freeShippingCredit = Math.max(0, Math.round(freeShipping));

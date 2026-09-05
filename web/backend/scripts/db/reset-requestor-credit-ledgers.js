@@ -4,12 +4,14 @@
 // - web/backend/scripts/db/_mongo.js
 // - web/backend/services/creditBalance.service.js
 /**
+ * ⚠️ 원장 전량 삭제용. 일반적으로 쓰지 말 것.
+ * 내역 유지 + 마이너스 잔고 체제만 적용할 때는
+ * `restore-credit-ledgers-from-critical-backup.js` 로 복구한 뒤 demoMode/overdraft를 쓴다.
+ *
  * 의뢰자(치과+기공소) 크레딧 원장 전량 리셋.
  * - 유료/무료/데모 충전·회수·소비·홀드·정산적립 저널을 통째로 삭제(에스크로·수익 상대계정 포함)
  * - FreeCreditGrant 취소, PTX billing hold/settle 필드 초기화
  * - 치과: demoMode ON + 잔고 0 / 기공소: 잔고 0 (데모 미적용)
- *
- * 배경: 충전 저널만 지우면 소비만 남아 「0 = 0+0−소비」로 수식이 깨짐.
  *
  * Usage:
  *   cd web/backend && \
