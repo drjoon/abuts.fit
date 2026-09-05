@@ -309,7 +309,7 @@ export const LAB_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   {
     id: "abutment_order",
     title: "커스텀어벗 CNC",
-    hint: '어벗츠 플랫폼 미가입 치과에서 전송한 의뢰건은 "어벗츠로 의뢰" 메뉴에서 생산의뢰합니다.',
+    hint: '어벗츠 플랫폼 미가입 치과에서 보내온 의뢰건의 CNC 커스텀 어벗 생산은 "어벗츠로 의뢰" 메뉴에서 진행합니다.',
     path: NEW_REQUEST_PATH,
     target: "new_request_workspace",
     advance: "next",
