@@ -16,7 +16,7 @@ import {
 import { cn } from "@/shared/ui/cn";
 
 // - 2026-09-05: 데모 모드면 잔액≤0「크레딧 부족」destructive 토스트 생략.
-// - 2026-09-05: 어벗디자인으로·기공의뢰 부모 guideTourSatellite(복수 키)·어벗츠로 의뢰.
+// - 2026-09-05: 스토어·어벗디자인·기공의뢰 부모 guideTourSatellite(복수 키)·어벗츠로 의뢰.
 // - 2026-09-05: 정산 guideTourSatellite=credits_workspace — 사이드바·작업영역 별도 홀.
 // - 2026-09-05: 구강스캔으로 guideTourSatellite=oral_calendar — 기공의뢰+구강스캔 사이드 홀·캘린더 별도.
 // - 2026-09-03: 기공소 사이드 — 정책 안내(기공의뢰 공용) + 가입 이유 배너.
@@ -280,7 +280,7 @@ const buildRequestorSidebarItems = (
         },
       ],
     },
-    { icon: Store, label: "스토어", href: STORE_HREF },
+    { icon: Store, label: "스토어", href: STORE_HREF, guideTourSatellite: "store_workspace" },
     {
       icon: Wallet,
       label: "정산",

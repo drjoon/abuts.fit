@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/practice/PracticeToothWorkGuideTourBanner.tsx
 // - web/frontend/src/shared/guideTour/GuideTourProvider.tsx
 // change-log:
+// - 2026-09-05: store — 사이드바 홀·힌트 단축.
 // - 2026-09-05: abutment — 사이드바「어벗디자인으로」홀·힌트 단축·건너뛰기 제거.
 // - 2026-09-05: 정산 코치마크 3단 — 내역·통계·충전 각 페이지 문구·탭 강조.
 // - 2026-09-05: credits_ledger — 힌트 문구·사이드바 정산 홀·코치마크 하단(탭·요약카드 노출).
@@ -186,7 +187,7 @@ export const PRACTICE_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   {
     id: "store",
     title: "스토어",
-    hint: "어벗·힐링·키트 등을 장바구니에 담아 주문합니다. 커스텀어벗·선수금과 별도입니다. 투어를 마치면 사이드바의 가이드투어 버튼이 사라집니다.",
+    hint: "스토어에서 심플웨이 제품을 구매할 수 있습니다.",
     path: STORE_PATH,
     target: "store_workspace",
     advance: "next",

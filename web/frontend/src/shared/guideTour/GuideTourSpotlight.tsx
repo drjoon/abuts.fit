@@ -5,6 +5,7 @@
 // - web/frontend/src/shared/components/practice/PracticeOrderArrivalDateRangeField.tsx
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // change-log:
+// - 2026-09-05: store_workspace — 사이드바「스토어」별도 홀.
 // - 2026-09-05: new_request_workspace — 사이드바「기공의뢰+어벗디자인으로」별도 홀(복수 satellite 키).
 // - 2026-09-05: credits_* — 사이드바 위성 별칭·코치마크 중하단(탭·요약카드 노출).
 // - 2026-09-05: credits_workspace — 사이드바 별도 홀·코치마크를 작업영역 중하단(탭·요약카드 노출).
@@ -57,7 +58,7 @@ const REMEASURE_AFTER_MS = [0, 50, 120, 220, 360, 520] as const;
 const DROPDOWN_BELOW_TARGETS = new Set(["oral_header", "oral_memo_files"]);
 /** 커스텀어벗 설정 모달 — 큰 타깃, 코치마크는 위쪽 */
 const PRESET_MODAL_TARGETS = CUSTOM_ABUT_GUIDE_TARGETS;
-/** 위성은 union하지 않고 별도 홀(사이드바 메뉴 + 캘린더 · 폰 미리보기 + 안내 문구 · 정산 · 어벗 CNC) */
+/** 위성은 union하지 않고 별도 홀(사이드바 메뉴 + 캘린더 · 폰 미리보기 + 안내 문구 · 정산 · 어벗 CNC · 스토어) */
 const SEPARATE_SATELLITE_TARGETS = new Set([
   "oral_calendar",
   "oral_phone",
@@ -66,6 +67,7 @@ const SEPARATE_SATELLITE_TARGETS = new Set([
   "credits_stats",
   "credits_charge",
   "new_request_workspace",
+  "store_workspace",
 ]);
 /** 코치마크를 타깃 위에 고정 */
 const PREFER_ABOVE_TARGETS = new Set([
