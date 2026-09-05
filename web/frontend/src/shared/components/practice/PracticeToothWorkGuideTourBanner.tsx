@@ -3,16 +3,19 @@
 // - web/frontend/src/shared/guideTour/GuideTourProvider.tsx
 // - web/frontend/src/shared/guideTour/guideTourSteps.ts
 // change-log:
+// - 2026-09-05: prosthesis 제거·card_ops로 통합(직접 체험). 안내 문구 2줄.
+// - 2026-09-05: custom_abut → 임시 프리셋 3장 체험(임플란트·스캔바디·심플). 포커스 교차·「둘 중 하나」.
 // - 2026-09-05: card_ops 힌트 — 조작 나열 → 직접 조작 안내.
 // - 2026-09-05: prosthesis 힌트 — 프리필 나열 → 보철물 카드 선택 안내.
+// - 2026-09-05: phone 힌트 — PC·모바일 동기화 안내.
 // - 2026-09-05: phone을 memo_files 다음(4/15)으로 — 모바일 안내·폰 미리보기.
-// - 2026-09-05: 구강 챕터 9장 영화형 — 이전/다음만(card_ops·custom_abut만 체험). 세분 스텝·프리셋 카피 override 제거.
+// - 2026-09-05: 구강 챕터 영화형 — 이전/다음만(card_ops만 체험). 세분 스텝·프리셋 카피 override 제거.
 // - 2026-09-05: 임플란트·어벗 프리셋 미설정 시 「+ 추가」저장 안내. resolve 함수 export(플랫폼 Spotlight).
 // - 2026-09-05: 건너뛰기 제거. 종료 → 일시 중단(플랫폼 투어).
 import { Button } from "@/components/ui/button";
 import { cn } from "@/shared/ui/cn";
 
-/** 기공의뢰 작성 가이드투어 — 구강 챕터 9장 (플랫폼 oral_* 와 id 정렬) */
+/** 기공의뢰 작성 가이드투어 — 구강 챕터 (플랫폼 oral_* 와 id 정렬) */
 export const PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS = [
   {
     id: "header",
@@ -27,22 +30,27 @@ export const PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS = [
   {
     id: "phone",
     title: "휴대폰 구강포토",
-    hint: "모바일에서 간단히 환자 사진을 찍어 첨부할 수 있습니다.",
-  },
-  {
-    id: "prosthesis",
-    title: "보철물",
-    hint: "기공 의뢰 내용을 보철물 카드에서 간편하게 선택할 수 있습니다.",
+    hint: "모바일과 PC는 동기화되어 있어요.",
   },
   {
     id: "card_ops",
-    title: "보철물 카드 조작",
-    hint: "보철물 카드를 직접 조작해 보세요.",
+    title: "보철물",
+    hint: "기공 의뢰 내용을 보철물 카드에서 간편하게 선택할 수 있습니다.\n직접 체험해보세요.",
   },
   {
-    id: "custom_abut",
+    id: "custom_abut_implant",
     title: "커스텀어벗 설정",
-    hint: "이 부분도 화면에서 체험해 보세요. 임플란트·어벗 규격을 고른 뒤 「다음」으로 이어 가세요.",
+    hint: "임시 프리셋(오스템 TS3 · 덴티움 Superline)을 눌러 체험해 보세요. 끝나면 「다음」으로 이어 가세요.",
+  },
+  {
+    id: "custom_abut_scanbody",
+    title: "커스텀어벗 설정",
+    hint: "둘 중 하나를 선택하세요.",
+  },
+  {
+    id: "custom_abut_simple",
+    title: "커스텀어벗 설정",
+    hint: "둘 중 하나를 선택하세요.",
   },
   {
     id: "estimate",
@@ -63,6 +71,24 @@ export const PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS = [
 
 export type PracticeToothWorkGuideTourStepId =
   (typeof PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS)[number]["id"];
+
+/** 커스텀어벗 설정 체험 3장(임시 프리셋) */
+export const CUSTOM_ABUT_GUIDE_TOUR_STEP_IDS = [
+  "custom_abut_implant",
+  "custom_abut_scanbody",
+  "custom_abut_simple",
+] as const;
+
+export type CustomAbutGuideTourStepId =
+  (typeof CUSTOM_ABUT_GUIDE_TOUR_STEP_IDS)[number];
+
+export const isCustomAbutGuideTourStepId = (
+  stepId: string | null | undefined,
+): stepId is CustomAbutGuideTourStepId =>
+  Boolean(
+    stepId &&
+      (CUSTOM_ABUT_GUIDE_TOUR_STEP_IDS as readonly string[]).includes(stepId),
+  );
 
 /** 0..N-1 = 체험 스텝, N = 완료 */
 export type PracticeToothWorkGuideTourStep = number;
@@ -136,7 +162,7 @@ export function PracticeToothWorkGuideTourBanner({
           </p>
           <p
             className={cn(
-              "text-xs text-slate-600",
+              "whitespace-pre-line text-xs text-slate-600",
               aside ? "leading-snug" : undefined,
             )}
           >

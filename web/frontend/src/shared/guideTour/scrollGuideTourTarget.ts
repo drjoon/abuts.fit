@@ -11,14 +11,13 @@
 /** 치식 위 코치마크 자리 */
 export const TOOTH_CHART_COACH_RESERVE_PX = 168;
 
-export const TOOTH_CHART_GUIDE_STEP_IDS = [
-  "prosthesis",
-  "card_ops",
-] as const;
+export const TOOTH_CHART_GUIDE_STEP_IDS = ["card_ops"] as const;
 
-export const TOOTH_CHART_GUIDE_TARGETS = new Set(
-  TOOTH_CHART_GUIDE_STEP_IDS.map((id) => `oral_${id}`),
-);
+export const TOOTH_CHART_GUIDE_TARGETS = new Set([
+  "oral_card_ops",
+  // 레거시
+  "oral_prosthesis",
+]);
 
 /** 메모·파일·견적·전송 — 작성 스크롤 영역에서 타깃이 보이게 */
 export const COMPOSE_SCROLL_GUIDE_TARGETS = new Set([
@@ -29,8 +28,14 @@ export const COMPOSE_SCROLL_GUIDE_TARGETS = new Set([
   "oral_header",
 ]);
 
-/** 커스텀어벗 모달 타깃 */
-export const CUSTOM_ABUT_GUIDE_TARGETS = new Set(["oral_custom_abut"]);
+/** 커스텀어벗 설정 모달 타깃(시네마 3장) */
+export const CUSTOM_ABUT_GUIDE_TARGETS = new Set([
+  "oral_custom_abut_implant",
+  "oral_custom_abut_scanbody",
+  "oral_custom_abut_simple",
+  // 레거시
+  "oral_custom_abut",
+]);
 
 function findGuideTourScroller(el: HTMLElement): HTMLElement | null {
   const marked = el.closest(

@@ -3,17 +3,22 @@
 // - web/frontend/src/shared/components/practice/PracticeToothWorkGuideTourBanner.tsx
 // - web/frontend/src/shared/guideTour/GuideTourProvider.tsx
 // change-log:
+// - 2026-09-05: custom_abut 임시 프리셋 3장 체험(implant·scanbody·simple). card_ops·custom_abut 조작 허용.
+// - 2026-09-05: oral_prosthesis 제거·card_ops로 통합(직접 체험).
 // - 2026-09-05: oral_calendar — 사이드바·캘린더 별도 구역. 전체 프로세스 N/15 카운터. 도착일 문구.
 // - 2026-09-05: intro 다음 oral_calendar — 사이드바「구강스캔으로」+ 캘린더 작업영역(작성 패널 전).
 // - 2026-09-05: 시작(intro) 힌트 — 강제 줄바꿈 제거(코치마크 1줄 폭).
-// - 2026-09-05: 구강 챕터 9장 영화형(이전/다음). calendar·세분 스텝 제거. 4·5번만 조작 허용.
+// - 2026-09-05: 구강 챕터 영화형(이전/다음). calendar·세분 스텝 제거. card_ops만 조작 허용.
 // - 2026-09-05: oral_phone — memo 다음(4/15). forceMobile 제거, 안내 문구+폰 미리보기.
 // - 2026-09-05: oral_memo_files — 필요 시만 메모·스캔 업로드 안내.
 // - 2026-09-05: oral_memo·oral_files — 날짜 다음·치식 전, 설명만(「다음」, 입력·업로드 불필요).
 // - 2026-09-05: 치과 투어 4챕터. 챕터 카운터 1/4·치식/어벗 체험 유지·전송·폰모드·임시저장.
 // - 2026-09-05: 시작(intro) 스텝 분리 — 챕터 번호 없이「계속」.
 
-import { PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS } from "@/shared/components/practice/PracticeToothWorkGuideTourBanner";
+import {
+  isCustomAbutGuideTourStepId,
+  PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS,
+} from "@/shared/components/practice/PracticeToothWorkGuideTourBanner";
 
 export type GuideTourKind = "practice" | "lab";
 
@@ -54,14 +59,15 @@ const STORE_PATH = "/dashboard/store";
 
 export const PRACTICE_GUIDE_TOUR_CHAPTER_TOTAL = 4;
 
-/** 구강 챕터 9장 — Spotlight 하위(영화형) id · PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS 와 동일 순서 */
+/** 구강 챕터 — Spotlight 하위(영화형) id · PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS 와 동일 순서 */
 export const PRACTICE_ORAL_GUIDE_TOUR_STEP_IDS = [
   "oral_header",
   "oral_memo_files",
   "oral_phone",
-  "oral_prosthesis",
   "oral_card_ops",
-  "oral_custom_abut",
+  "oral_custom_abut_implant",
+  "oral_custom_abut_scanbody",
+  "oral_custom_abut_simple",
   "oral_estimate",
   "oral_send",
   "oral_drafts",
@@ -70,11 +76,21 @@ export const PRACTICE_ORAL_GUIDE_TOUR_STEP_IDS = [
 export const PRACTICE_ORAL_GUIDE_TOUR_STEP_TOTAL =
   PRACTICE_ORAL_GUIDE_TOUR_STEP_IDS.length;
 
+/** 레거시 스텝 id → 현재 id */
+export const normalizePracticeGuideTourStepId = (
+  stepId: string | null | undefined,
+): string | null => {
+  if (!stepId) return null;
+  if (stepId === "oral_custom_abut") return "oral_custom_abut_implant";
+  if (stepId === "oral_prosthesis") return "oral_card_ops";
+  return stepId;
+};
+
 const practiceOralMovieSteps: GuideTourStepDef[] =
   PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS.map((s) => {
     const id = `oral_${s.id}` as (typeof PRACTICE_ORAL_GUIDE_TOUR_STEP_IDS)[number];
     const allowTargetInteraction =
-      s.id === "card_ops" || s.id === "custom_abut";
+      s.id === "card_ops" || isCustomAbutGuideTourStepId(s.id);
     const openCompose = s.id !== "drafts";
     return {
       id,
@@ -112,7 +128,7 @@ export const PRACTICE_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
     chapter: 1,
     // 작성 패널(compose)은 열지 않음 — 다음 oral_* 영화형에서 openCompose
   },
-  // —— 챕터1: 구강스캔 기공의뢰 (9장 영화형) ——
+  // —— 챕터1: 구강스캔 기공의뢰 (영화형) ——
   ...practiceOralMovieSteps,
   // —— 챕터2: 정산 ——
   {
@@ -168,7 +184,7 @@ export const PRACTICE_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   },
 ] as const;
 
-/** 치과 Spotlight 분모 — intro 제외(chapter 있는 스텝). oral_calendar+구강9+정산3+어벗+스토어 */
+/** 치과 Spotlight 분모 — intro 제외(chapter 있는 스텝). oral_calendar+구강+정산3+어벗+스토어 */
 export const PRACTICE_GUIDE_TOUR_PROCESS_TOTAL = PRACTICE_GUIDE_TOUR_STEPS.filter(
   (s) => s.chapter != null,
 ).length;
@@ -225,8 +241,9 @@ export const getGuideTourStepIndex = (
   stepId: string | null | undefined,
 ): number => {
   if (!stepId) return 0;
+  const normalized = normalizePracticeGuideTourStepId(stepId) ?? stepId;
   const steps = getGuideTourSteps(kind);
-  const idx = steps.findIndex((s) => s.id === stepId);
+  const idx = steps.findIndex((s) => s.id === normalized);
   return idx >= 0 ? idx : 0;
 };
 
@@ -243,6 +260,7 @@ export const isPracticeToothWorkOralStepId = (
 ): boolean => {
   if (!stepId || !stepId.startsWith("oral_")) return false;
   const sub = stepId.slice("oral_".length);
+  if (sub === "custom_abut" || sub === "prosthesis") return true; // 레거시 resume
   return PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS.some((s) => s.id === sub);
 };
 
@@ -250,20 +268,22 @@ export const getPracticeOralGuideTourProgress = (
   stepId: string | null | undefined,
 ): { index: number; total: number } | null => {
   if (!stepId) return null;
+  const normalized = normalizePracticeGuideTourStepId(stepId) ?? stepId;
   const idx = (PRACTICE_ORAL_GUIDE_TOUR_STEP_IDS as readonly string[]).indexOf(
-    stepId,
+    normalized,
   );
   if (idx < 0) return null;
   return { index: idx, total: PRACTICE_ORAL_GUIDE_TOUR_STEP_TOTAL };
 };
 
-/** 치과 전체 프로세스 진행(intro 제외). Spotlight N/15 */
+/** 치과 전체 프로세스 진행(intro 제외). Spotlight N/… */
 export const getPracticeGuideTourProcessProgress = (
   stepId: string | null | undefined,
 ): { index: number; total: number } | null => {
   if (!stepId) return null;
+  const normalized = normalizePracticeGuideTourStepId(stepId) ?? stepId;
   const processSteps = PRACTICE_GUIDE_TOUR_STEPS.filter((s) => s.chapter != null);
-  const idx = processSteps.findIndex((s) => s.id === stepId);
+  const idx = processSteps.findIndex((s) => s.id === normalized);
   if (idx < 0) return null;
   return { index: idx, total: processSteps.length };
 };
@@ -271,3 +291,12 @@ export const getPracticeGuideTourProcessProgress = (
 export const isGuideTourAllowTargetInteraction = (
   step: GuideTourStepDef | null | undefined,
 ): boolean => Boolean(step?.allowTargetInteraction);
+
+export const isCustomAbutOralGuideTourStepId = (
+  stepId: string | null | undefined,
+): boolean => {
+  if (!stepId) return false;
+  if (stepId === "oral_custom_abut") return true;
+  if (!stepId.startsWith("oral_")) return false;
+  return isCustomAbutGuideTourStepId(stepId.slice("oral_".length));
+};

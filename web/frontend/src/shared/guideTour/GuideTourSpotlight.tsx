@@ -5,6 +5,7 @@
 // - web/frontend/src/shared/components/practice/PracticeOrderArrivalDateRangeField.tsx
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // change-log:
+// - 2026-09-05: card_ops·estimate 코치 — 오른쪽(견적 툴팁 중앙 가림 방지). 큰 치식 타깃도 동일.
 // - 2026-09-05: oral_phone — 코치마크를 안내 문구 아래 가운데 정렬.
 // - 2026-09-05: oral_phone — 코치마크 뷰포트 오른쪽 반쪽. 안내·폰 별도 홀.
 // - 2026-09-05: oral_phone — below 우선·타깃 오른쪽 하단. 안내·폰 별도 홀.
@@ -12,7 +13,7 @@
 // - 2026-09-05: 작성 Dialog(z-410) 블러 아래 유지 — outside dismiss 시 홀 소실 방지와 맞춤.
 // - 2026-09-05: 멀티 홀 — 뷰포트−홀 블러 패널(홀 위 backdrop 없음). mask/blend 폐기.
 // - 2026-09-05: oral_calendar — 사이드바·캘린더 별도 홀(위성 union 대신). 카드는 캘린더 위.
-// - 2026-09-05: 영화형 — blur·홀 클릭 차단. allowTargetInteraction만 홀 통과(4·5번).
+// - 2026-09-05: 영화형 — blur·홀 클릭 차단. allowTargetInteraction만 홀 통과(card_ops·custom_abut).
 // - 2026-09-05: 코치카드 — guide-tour-root(z-420) 밖 별도 레이어(z-440). 루트 안 z-440은 중첩 모달(z-425)에 가려짐.
 // - 2026-09-05: oral_send — 작성 패널 스크롤 후 하이라이트(견적→전송).
 // - 2026-09-05: 치식 홀이 커스텀어벗 모달 위에 남는 문제 — 타깃 변경 시 rect 즉시 클리어·모달 우선 측정.
@@ -57,15 +58,15 @@ const SEPARATE_SATELLITE_TARGETS = new Set(["oral_calendar", "oral_phone"]);
 /** 코치마크를 타깃 위에 고정 */
 const PREFER_ABOVE_TARGETS = new Set([
   "oral_calendar",
-  "oral_prosthesis",
-  "oral_card_ops",
-  "oral_estimate",
   "oral_send",
 ]);
 /** 코치마크를 타깃 아래·오른쪽에 고정 */
 const PREFER_BELOW_TARGETS = new Set<string>([]);
-/** 코치마크를 뷰포트 오른쪽 반쪽에 고정 */
-const PREFER_RIGHT_HALF_TARGETS = new Set<string>([]);
+/** 코치마크를 뷰포트 오른쪽(견적 중앙 툴팁과 겹침 회피: card_ops·estimate) */
+const PREFER_RIGHT_HALF_TARGETS = new Set([
+  "oral_card_ops",
+  "oral_estimate",
+]);
 /** 코치마크를 primary 타깃 아래 가운데 정렬 */
 const PREFER_BELOW_CENTER_TARGETS = new Set(["oral_phone"]);
 
@@ -290,8 +291,19 @@ function placeCardNearTarget(
   );
   const centerLeft = Math.max(VIEW_PAD, (vw - cardW) / 2);
 
-  // 큰 모달: 옆·아래 공간이 거의 없음 → 모달 위 또는 뷰포트 상단
+  // 큰 모달/치식: 옆·아래 공간이 거의 없음 → prefer에 따라 상단·오른쪽
   if (rect.height >= vh * 0.42) {
+    if (prefer === "rightHalf") {
+      const rightLeft = Math.max(VIEW_PAD, vw - VIEW_PAD - cardW);
+      const topRight = tryPlace(VIEW_PAD, rightLeft);
+      if (topRight) return topRight;
+      const midRight = tryPlace(
+        Math.max(VIEW_PAD, Math.min(vh - VIEW_PAD - cardH, (vh - cardH) / 3)),
+        rightLeft,
+      );
+      if (midRight) return midRight;
+      return { mode: "anchored", top: VIEW_PAD, left: rightLeft };
+    }
     const aboveCentered = tryPlace(aboveTop, centerLeft);
     if (aboveCentered) return aboveCentered;
     const aboveLeft = tryPlace(aboveTop, Math.max(VIEW_PAD, rect.left));
@@ -302,7 +314,7 @@ function placeCardNearTarget(
   const candidates: Array<{ top: number; left: number }> = [];
 
   if (prefer === "rightHalf") {
-    // 뷰포트 오른쪽 반쪽 중앙(타깃과 겹치면 아래로 살짝)
+    // 뷰포트 오른쪽 상단·중앙(견적 바·툴팁이 가운데에 있어 중앙 코치를 피함)
     const halfLeft = vw * 0.5;
     const regionW = vw * 0.5;
     const left = Math.max(
@@ -312,6 +324,8 @@ function placeCardNearTarget(
         halfLeft + (regionW - cardW) / 2,
       ),
     );
+    const rightEdge = Math.max(VIEW_PAD, vw - VIEW_PAD - cardW);
+    const upper = Math.max(VIEW_PAD, Math.min(vh - VIEW_PAD - cardH, vh * 0.12));
     const mid = Math.max(
       VIEW_PAD,
       Math.min(vh - VIEW_PAD - cardH, (vh - cardH) / 2),
@@ -321,10 +335,12 @@ function placeCardNearTarget(
       Math.min(vh - VIEW_PAD - cardH, vh * 0.55),
     );
     candidates.push(
+      { top: upper, left: rightEdge },
+      { top: upper, left },
+      { top: mid, left: rightEdge },
       { top: mid, left },
-      { top: lower, left },
-      { top: mid, left: halfLeft + VIEW_PAD },
-      { top: belowTop, left },
+      { top: lower, left: rightEdge },
+      { top: belowTop, left: rightEdge },
     );
   } else if (prefer === "right") {
     candidates.push(

@@ -5,8 +5,9 @@
 // - web/backend/controllers/users/user.controller.js
 // - web/frontend/src/shared/components/practice/PracticeToothWorkGuideTourBanner.tsx
 // change-log:
-// - 2026-09-05: 치과 Spotlight — 전체 프로세스 N/15(챕터 1/4·구강 1/9 대체).
-// - 2026-09-05: 구강 9장 — Spotlight 1/9 progress · allowTargetInteraction(4·5).
+// - 2026-09-05: custom_abut 시네마 3장. 레거시 oral_custom_abut resume 정규화.
+// - 2026-09-05: 치과 Spotlight — 전체 프로세스 N/…(챕터·구강 카운터).
+// - 2026-09-05: 구강 영화형 — Spotlight progress · allowTargetInteraction(card_ops).
 // - 2026-09-05: oral 프리셋 스텝 — IntakePanel이 Spotlight 문구 override(미설정 「+ 추가」안내).
 // - 2026-09-05: oral action 스텝도「다음」상시 표시.
 // - 2026-09-05: 챕터 카운터·건너뛰기·forceMobile. oral 치식 체험 유지.
@@ -30,6 +31,7 @@ import {
   getPracticeGuideTourProcessProgress,
   isGuideTourAllowTargetInteraction,
   isPracticeToothWorkOralStepId,
+  normalizePracticeGuideTourStepId,
   PRACTICE_GUIDE_TOUR_CHAPTER_TOTAL,
   type GuideTourKind,
   type GuideTourStepDef,
@@ -230,7 +232,11 @@ export function GuideTourProvider({ kind, children }: ProviderProps) {
 
   const startOrResume = useCallback(() => {
     if (!kind || completed) return;
-    const id = resumeStepId || steps[0]?.id;
+    const raw = resumeStepId || steps[0]?.id;
+    const id =
+      kind === "practice"
+        ? normalizePracticeGuideTourStepId(raw) ?? raw
+        : raw;
     if (!id) return;
     goToStep(id);
   }, [kind, completed, resumeStepId, steps, goToStep]);

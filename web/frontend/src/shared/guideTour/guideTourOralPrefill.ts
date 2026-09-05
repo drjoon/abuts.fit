@@ -3,10 +3,15 @@
 // - web/frontend/src/shared/guideTour/guideTourSteps.ts
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-09-05: 커스텀어벗 시네마용 임플란트·스캔바디 데모 프리셋.
 // - 2026-09-05: 표시 용량 10·10·4MB. draft 파일명 식별(promote 누수 정리용).
 // - 2026-09-05: 구강 챕터 영화형 — 환자·메모·치식·표시용 PLY 프리필(실업로드 스킵).
 
-import type { ToothWorkSelection } from "@/shared/practice/transferMemo";
+import type {
+  PracticeAbutmentFavorite,
+  PracticeImplantFavorite,
+  ToothWorkSelection,
+} from "@/shared/practice/transferMemo";
 
 export const GUIDE_TOUR_DEMO_PATIENT_NAME = "테스트환자";
 export const GUIDE_TOUR_DEMO_MEMO = "쉐이드 포토 첨부";
@@ -34,6 +39,50 @@ const simpleAbut = {
   abutmentHeight: "M",
 };
 
+/** 커스텀어벗 체험 — 임플란트 임시 프리셋(오스템 TS3 · 덴티움 Superline) */
+export const GUIDE_TOUR_DEMO_IMPLANT_FAVORITES: PracticeImplantFavorite[] = [
+  {
+    id: "guide-tour-implant-osstem-ts3",
+    manufacturer: "오스템",
+    brand: "TS3",
+    family: "Regular",
+    type: "Hex",
+    adopted: true,
+    adoptedKind: "cnc",
+  },
+  {
+    id: "guide-tour-implant-dentium-superline",
+    manufacturer: "덴티움",
+    brand: "Superline",
+    family: "Regular",
+    type: "Hex",
+    adopted: true,
+    adoptedKind: "cnc",
+  },
+];
+
+/** 커스텀어벗 체험 — 스캔바디 임시 프리셋(지오메디 4.5 × 5·7·9) */
+export const GUIDE_TOUR_DEMO_ABUTMENT_FAVORITES: PracticeAbutmentFavorite[] = [
+  {
+    id: "guide-tour-sb-geomedi-5",
+    manufacturer: "지오메디",
+    diameter: "4.5",
+    height: "5",
+  },
+  {
+    id: "guide-tour-sb-geomedi-7",
+    manufacturer: "지오메디",
+    diameter: "4.5",
+    height: "7",
+  },
+  {
+    id: "guide-tour-sb-geomedi-9",
+    manufacturer: "지오메디",
+    diameter: "4.5",
+    height: "9",
+  },
+];
+
 /** 16–14 브리지+심플어벗, 13 크라운+CA, 12–22 임시치아 */
 export const buildGuideTourDemoToothWorks = (): ToothWorkSelection[] => {
   const bridgeTeeth = ["16", "15", "14"] as const;
@@ -60,7 +109,7 @@ export const buildGuideTourDemoToothWorks = (): ToothWorkSelection[] => {
     prosthesisType: "크라운",
     customAbutment: true,
     bridgeLinkedTeeth: [],
-    // CA — 규격은 커스텀어벗 스텝에서 체험
+    // CA — 규격은 커스텀어벗 스텝에서 임시 프리셋으로 체험
     abutmentManufacturer: "",
     abutmentDiameter: "",
     abutmentHeight: "",
