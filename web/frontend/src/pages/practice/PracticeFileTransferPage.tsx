@@ -107,6 +107,7 @@
  * - 2026-09-05: 임플란트/스캔바디 프리셋 — 로컬 삭제 후 서버 GET/POST·환봉 이벤트가 목록을 되살리던 문제 수정.
  * - 2026-09-05: 부분 설정 저장 응답이 전체 apply로 덮어써 임플란트 프리셋 삭제가 복원되던 레이스 수정.
  * - 2026-09-05: 가이드투어 작성 패널 첫 오픈 시「새로 작성」으로 빈 폼.
+ * - 2026-09-05: 기공소 미선택 시 테스트기공소를 자동 선택(견적·투어).
  * - 2026-08-25: 가이드투어 카드 — 헤더 버튼~기공소·환자·날짜 행 세로 맞춤(폭=주문-치과도착).
  * - 2026-08-25: 상단 가이드투어 — 기공소·환자·날짜·보철물 전체 투어(툴바 오른쪽 위).
  * - 2026-08-25: 상단 가이드투어 — 기공소·환자·날짜·보철물 전체 투어(휴지통 오른쪽).
@@ -192,7 +193,9 @@ import {
   isAutoMatchLab,
   isPinnedAbutsRecentLab,
   preferCachedAbutsLab,
+  resolveTestLabByName,
   ABUTS_PINNED_LAB_SEED,
+  TEST_LAB_NAME,
   type SearchBusinessResult,
 } from "@/pages/practice/hooks/usePracticeTransferStep1";
 import {
@@ -1470,6 +1473,41 @@ export const PracticeFileTransferPage = ({
     [applyArrivalDefaultForLabId, setSelectedLab],
   );
   applyArrivalDefaultForLabIdRef.current = applyArrivalDefaultForLabId;
+
+  /** 필터로 해제된 테스트기공소 재선택 루프 방지. 새로 작성/리셋 시 비움. */
+  const lastAutoSelectedTestLabIdRef = useRef("");
+
+  // 기공소 미선택이면 테스트기공소 자동 선택(견적·가이드투어·새로 작성).
+  useEffect(() => {
+    if (!localFormHydrated) return;
+    if (editingSentTransfer) return;
+    if (selectedLab) return;
+
+    let cancelled = false;
+    void (async () => {
+      const cached = findCachedLab("", TEST_LAB_NAME);
+      const cachedId = String(cached?._id || "").trim();
+      const fromCache =
+        cached && /^[a-fA-F0-9]{24}$/.test(cachedId) ? cached : null;
+      const lab = fromCache || (await resolveTestLabByName());
+      if (cancelled || !lab) return;
+      if (selectedLabIdRef.current) return;
+      const labId = String(lab._id || "").trim();
+      if (labId && lastAutoSelectedTestLabIdRef.current === labId) return;
+      lastAutoSelectedTestLabIdRef.current = labId;
+      selectLabForIntake(lab);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    editingSentTransfer,
+    findCachedLab,
+    localFormHydrated,
+    selectLabForIntake,
+    selectedLab,
+  ]);
 
   const [prosthesisTypeSettingsDialogOpen, setProsthesisTypeSettingsDialogOpen] = useState(false);
   const [prosthesisTypeInput, setProsthesisTypeInput] = useState("");
@@ -3737,6 +3775,7 @@ export const PracticeFileTransferPage = ({
 
     setLabOpen(false);
     setLabSearch("");
+    lastAutoSelectedTestLabIdRef.current = "";
     setSelectedLab(null);
     setPatientName("");
     setRequestMemo("");
@@ -7089,7 +7128,8 @@ export const PracticeFileTransferPage = ({
 
     setLabOpen(false);
     setLabSearch("");
-    // 최근 기공소(localStorage + 서버 전송내역)는 드롭다운 후보로만 유지. 선택은 비워 다시 고르게 한다.
+    // 최근 기공소는 드롭다운 후보로 유지. 선택은 비운 뒤 테스트기공소 자동 선택이 채운다.
+    lastAutoSelectedTestLabIdRef.current = "";
     setSelectedLab(null);
     setPatientName("");
     setRequestMemo("");

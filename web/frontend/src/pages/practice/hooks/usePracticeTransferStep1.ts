@@ -16,6 +16,7 @@ import {
 // - web/frontend/rules.md (practice 최근 전송 기공소 SSOT)
 // - 2026-08-18: 치과 픽커 「자동 매칭」제거. 고정=어벗츠기공소, 최근=지정 기공소.
 // - 2026-08-20: 모바일 구강포토 동기화 후 로컬 파일만 키로 제거(removeFilesByKeys).
+// - 2026-09-05: 기공소 미선택 시 테스트기공소 자동 선택(resolveTestLabByName).
 import {
   PRACTICE_ACCEPTED_HINT,
   PRACTICE_TRANSFER_IMAGE_EXTENSIONS,
@@ -46,6 +47,9 @@ export const ABUTS_PINNED_LAB_SEED: SearchBusinessResult = {
   businessType: "requestor",
   requestorKind: "lab",
 };
+
+/** 로컬/테스트 DB 기본 지정 기공소. 미선택 시 자동 선택. */
+export const TEST_LAB_NAME = "테스트기공소";
 
 export const isPinnedAbutsRecentLab = (
   lab?: { name?: string | null } | null,
@@ -507,6 +511,30 @@ const enrichRecentLabsMissingDetails = async (
     }),
   );
   return results.filter((row): row is SearchBusinessResult => Boolean(row));
+};
+
+/** 공개 검색으로 테스트기공소(실 ObjectId)를 찾는다. 없으면 null. */
+export const resolveTestLabByName = async (): Promise<SearchBusinessResult | null> => {
+  try {
+    const res = await apiFetch<unknown>({
+      path: `/api/businesses/search-public?q=${encodeURIComponent(TEST_LAB_NAME)}&businessType=${encodeURIComponent("requestor")}&requestorKind=${encodeURIComponent("lab")}`,
+      method: "GET",
+    });
+    if (!res.ok) return null;
+    const exact = parseSearchBusinessResults(res.data).find(
+      (row) => String(row.name || "").trim() === TEST_LAB_NAME,
+    );
+    if (!exact) return null;
+    const id = String(exact._id || "").trim();
+    if (!OBJECT_ID_RE.test(id)) return null;
+    return normalizeRecentLab({
+      ...exact,
+      businessType: "requestor",
+      requestorKind: "lab",
+    });
+  } catch {
+    return null;
+  }
 };
 
 /** 공개 검색으로 어벗츠기공소 앵커를 찾아 최근 고정용으로 정규화. */
