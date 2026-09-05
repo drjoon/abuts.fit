@@ -3,15 +3,43 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/practice/practiceTransferLabReceive.ts
 // change-log:
+// - 2026-09-05: 투어 pause·수료 시 FE 주입 중단(RequestorPracticePage에서 상세도 삭제).
+// - 2026-09-05: 샘플=16 크라운+CA(네오 IS2 Regular Hex · 지오메디 4.5×7), 환자=테스트환자, 도착=+7일.
 // - 2026-09-05: 기공소 수신 가이드투어용 데모 PTX(FE 주입·실 API 차단).
 
 import type { ChatMessage } from "@/shared/hooks/useChatRooms";
 import type { PracticeTransferLabReceiveItem } from "@/shared/practice/practiceTransferLabReceive";
-import { GUIDE_TOUR_DEMO_PATIENT_NAME } from "@/shared/guideTour/guideTourOralPrefill";
-import { kstAddBusinessDays, toKstYmd } from "@/shared/date/kst";
+import type { ToothWorkSelection } from "@/shared/practice/transferMemo";
+import {
+  buildPracticeTransferMemo,
+  serializeToothWorks,
+} from "@/shared/practice/transferMemo";
+import {
+  GUIDE_TOUR_DEMO_ARRIVAL_OFFSET_DAYS,
+  GUIDE_TOUR_DEMO_MEMO,
+  GUIDE_TOUR_DEMO_PATIENT_NAME,
+} from "@/shared/guideTour/guideTourOralPrefill";
+import { kstAddCivilDays, toKstYmd } from "@/shared/date/kst";
 
 export const GUIDE_TOUR_DEMO_TRANSFER_ID = "GUIDE-TOUR-DEMO-PTX";
 export const GUIDE_TOUR_DEMO_TRANSFER_OID = "guide-tour-demo-ptx-oid";
+
+/** 기공소 투어 샘플 — 16 크라운+커스텀어벗(네오 IS2 Regular Hex · 지오메디 4.5×7) */
+export const GUIDE_TOUR_DEMO_LAB_RECEIVE_TOOTH_WORKS: ToothWorkSelection[] = [
+  {
+    toothNumber: "16",
+    prosthesisType: "크라운",
+    customAbutment: true,
+    bridgeLinkedTeeth: [],
+    implantManufacturer: "NEOBIOTECH",
+    implantBrand: "IS2",
+    implantFamily: "Regular",
+    implantType: "Hex",
+    abutmentManufacturer: "지오메디",
+    abutmentDiameter: "4.5",
+    abutmentHeight: "7",
+  },
+];
 
 export const isGuideTourDemoTransferId = (
   transferId: string | null | undefined,
@@ -32,32 +60,35 @@ export const buildGuideTourDemoReceiveTransfer = (opts?: {
 }): PracticeTransferLabReceiveItem => {
   const accepted = Boolean(opts?.accepted);
   const today = toKstYmd(new Date()) || "2026-09-05";
-  const arrival = kstAddBusinessDays(today, 5) || today;
+  const arrival =
+    kstAddCivilDays(today, GUIDE_TOUR_DEMO_ARRIVAL_OFFSET_DAYS) || today;
   const nowIso = new Date().toISOString();
+  const toothWorks = GUIDE_TOUR_DEMO_LAB_RECEIVE_TOOTH_WORKS;
+  const toothWorksSummary = serializeToothWorks(toothWorks);
+  const rawMemo = buildPracticeTransferMemo({
+    memo: GUIDE_TOUR_DEMO_MEMO,
+    orderDate: today,
+    arrivalDate: arrival,
+    arrivalDefaultDays: GUIDE_TOUR_DEMO_ARRIVAL_OFFSET_DAYS,
+    prosthesisTypes: ["크라운"],
+    toothWorks,
+    patientName: GUIDE_TOUR_DEMO_PATIENT_NAME,
+    skipDesignConfirm: true,
+  });
 
   return {
     _id: GUIDE_TOUR_DEMO_TRANSFER_OID,
     transferId: GUIDE_TOUR_DEMO_TRANSFER_ID,
     targetLabName: "테스트기공소",
-    transferMemo: "가이드투어 데모 의뢰입니다. 「다음」으로 진행하세요.",
-    rawTransferMemo: "가이드투어 데모 의뢰입니다. 「다음」으로 진행하세요.",
+    transferMemo: rawMemo,
+    rawTransferMemo: rawMemo,
     orderDate: today,
     arrivalDate: arrival,
     orderDates: [today],
     arrivalDates: [arrival],
     prosthesisTypes: ["크라운"],
-    toothWorksSummary: "16 크라운+커스텀어벗",
-    toothWorks: [
-      {
-        toothNumber: "16",
-        prosthesisType: "크라운",
-        customAbutment: true,
-        abutmentManufacturer: "오스템",
-        abutmentDiameter: "4.5",
-        abutmentHeight: "M",
-        bridgeLinkedTeeth: [],
-      },
-    ],
+    toothWorksSummary,
+    toothWorks,
     status: accepted ? "의뢰수락" : "발송완료",
     manufacturerStage: accepted ? "의뢰수락" : "발송완료",
     createdAt: nowIso,

@@ -27,6 +27,7 @@
 // - web/frontend/src/shared/practice/labReceiveCalendarHiddenWeekdays.ts
 // - web/backend/utils/labReceiveCalendarHiddenWeekdays.util.js
 // - web/backend/controllers/users/user.controller.js
+// - 2026-09-05: 가이드투어 — pause·수료 시 데모 PTX·상세 삭제(치과 oral 정리와 동일).
 // - 2026-09-05: 가이드투어 — 수신 영화형(데모 PTX·상세 오픈·변이 가드).
 // - 2026-09-02: 어벗츠 제공 CA만 있어도 안내 표시. 심플어벗은 항상 제외.
 // - 2026-09-03: 수신 헤더 — 어벗 뱃지 왼쪽 간격 없음. 진행중→어벗츠 생산중(정책은 사이드바).
@@ -1843,13 +1844,31 @@ export function RequestorPracticeReceivePage({
     platformGuideTour.active &&
     shouldOpenReceiveDetailForGuideTourStep(platformGuideTour.step);
 
+  /** 데모 PTX 상세·채팅 잔류 제거(목록 주입은 active=false면 baseFiltered에서 제외) */
+  const clearGuideTourDemoSelection = useCallback(() => {
+    setSelectedTransfer((prev) => {
+      if (!isGuideTourDemoTransfer(prev)) return prev;
+      setDialogOpen(false);
+      setActiveChatRoom(null);
+      setChatMessages([]);
+      setChatError("");
+      return null;
+    });
+  }, [setChatMessages]);
+
+  /** 다음에 하기(pause)·수료 후 — 데모 의뢰 삭제. 수신 챕터 이탈 시에도 상세 닫기 */
   const guideTourLabWasActiveRef = useRef(false);
   useEffect(() => {
-    const wasLabTour =
-      guideTourLabWasActiveRef.current;
+    const wasLabTour = guideTourLabWasActiveRef.current;
     const isLabTour =
       platformGuideTour.kind === "lab" && platformGuideTour.active;
     guideTourLabWasActiveRef.current = isLabTour;
+
+    // pause·수료 — 캘린더/목록 주입 중단 + 열린 데모 상세 삭제
+    if (wasLabTour && !isLabTour) {
+      clearGuideTourDemoSelection();
+      return;
+    }
 
     if (guideTourWantsReceiveDetail) {
       const demo = buildGuideTourDemoReceiveTransfer({
@@ -1867,22 +1886,15 @@ export function RequestorPracticeReceivePage({
     }
 
     const leaveDetail =
-      (wasLabTour && !isLabTour) ||
       (isLabTour && platformGuideTour.stepId === "lab_calendar") ||
       (isLabTour &&
         platformGuideTour.stepId != null &&
         !isLabReceiveGuideTourStepId(platformGuideTour.stepId));
 
     if (!leaveDetail) return;
-    setSelectedTransfer((prev) => {
-      if (!isGuideTourDemoTransfer(prev)) return prev;
-      setDialogOpen(false);
-      setActiveChatRoom(null);
-      setChatMessages([]);
-      setChatError("");
-      return null;
-    });
+    clearGuideTourDemoSelection();
   }, [
+    clearGuideTourDemoSelection,
     guideTourWantsReceiveDetail,
     platformGuideTour.kind,
     platformGuideTour.active,
