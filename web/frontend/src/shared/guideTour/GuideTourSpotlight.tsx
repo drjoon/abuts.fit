@@ -5,6 +5,7 @@
 // - web/frontend/src/shared/components/practice/PracticeOrderArrivalDateRangeField.tsx
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // change-log:
+// - 2026-09-05: oral_calendar — 사이드바·캘린더 별도 홀(위성 union 대신). 카드는 캘린더 위.
 // - 2026-09-05: 영화형 — blur·홀 클릭 차단. allowTargetInteraction만 홀 통과(4·5번).
 // - 2026-09-05: 코치카드 — guide-tour-root(z-420) 밖 별도 레이어(z-440). 루트 안 z-440은 중첩 모달(z-425)에 가려짐.
 // - 2026-09-05: oral_send — 작성 패널 스크롤 후 하이라이트(견적→전송).
@@ -18,7 +19,7 @@
 // - 2026-09-05: 코치마크 가로폭 — 메시지 max-content(가급적 1줄), 뷰포트만 상한.
 // - 2026-09-05: oral_lab — 코치마크를 필드 오른쪽 고정. 타깃과 절대 겹치지 않게 배치.
 // - 2026-09-05: 건너뛰기 버튼(챕터3).
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import {
@@ -45,6 +46,10 @@ const REMEASURE_AFTER_MS = [0, 50, 120, 220, 360, 520] as const;
 const DROPDOWN_BELOW_TARGETS = new Set(["oral_header"]);
 /** 커스텀어벗 설정 모달 — 큰 타깃, 코치마크는 위쪽 */
 const PRESET_MODAL_TARGETS = CUSTOM_ABUT_GUIDE_TARGETS;
+/** 위성은 union하지 않고 별도 홀(사이드바 메뉴 + 캘린더) */
+const SEPARATE_SATELLITE_TARGETS = new Set(["oral_calendar"]);
+/** 코치마크를 타깃 위에 고정 */
+const PREFER_ABOVE_TARGETS = new Set(["oral_calendar"]);
 
 function readElRect(el: Element | null): Rect | null {
   if (!el || !(el instanceof HTMLElement)) return null;
@@ -79,36 +84,82 @@ function readNestedGuideDialogRect(): Rect | null {
   return readElRect(el);
 }
 
-/** 타깃 + 위성(열린 캘린더·검색 드롭다운 등)을 하나의 홀 영역으로 */
-function readSpotlightRect(target: string | null | undefined): Rect | null {
-  if (!target) return null;
+function readSatelliteRects(target: string): Rect[] {
+  const out: Rect[] = [];
+  document
+    .querySelectorAll(`[data-guide-tour-satellite="${CSS.escape(target)}"]`)
+    .forEach((el) => {
+      const sat = readElRect(el);
+      if (sat) out.push(sat);
+    });
+  return out;
+}
+
+/**
+ * 타깃(+위성) 홀 목록.
+ * oral_calendar 등 SEPARATE_SATELLITE — 위성 별도 홀.
+ * 그 외 — 위성은 union으로 하나의 홀.
+ */
+function readSpotlightRects(target: string | null | undefined): Rect[] {
+  if (!target) return [];
 
   // 보철물(치식) 타깃인데 커스텀어벗 모달이 열려 있으면 모달 크기로 맞춤.
-  // (치식 홀이 모달 위에 고정되어 하단이 잘리던 문제)
   if (TOOTH_CHART_GUIDE_TARGETS.has(target)) {
     const nested = readNestedGuideDialogRect();
-    if (nested) return nested;
+    if (nested) return [nested];
   }
 
   const primary = document.querySelector(
     `[data-guide-tour="${CSS.escape(target)}"]`,
   );
-  let hole = readElRect(primary);
-  if (!hole) {
-    // 커스텀어벗 스텝: 모달이 아직 마운트 전이면 중첩 다이얼로그 클래스로 재시도
+  const primaryRect = readElRect(primary);
+  if (!primaryRect) {
     if (CUSTOM_ABUT_GUIDE_TARGETS.has(target)) {
-      return readNestedGuideDialogRect();
+      const nested = readNestedGuideDialogRect();
+      return nested ? [nested] : [];
     }
-    return null;
+    return [];
   }
-  const satellites = document.querySelectorAll(
-    `[data-guide-tour-satellite="${CSS.escape(target)}"]`,
-  );
-  satellites.forEach((el) => {
-    const sat = readElRect(el);
-    if (sat) hole = unionRect(hole!, sat);
-  });
-  return hole;
+
+  const satellites = readSatelliteRects(target);
+  if (satellites.length === 0) return [primaryRect];
+
+  if (SEPARATE_SATELLITE_TARGETS.has(target)) {
+    // 사이드바 메뉴를 앞에, 캘린더(primary)를 앵커로 뒤에
+    return [...satellites, primaryRect];
+  }
+
+  let hole = primaryRect;
+  for (const sat of satellites) {
+    hole = unionRect(hole, sat);
+  }
+  return [hole];
+}
+
+function buildHoleMaskImage(rects: Rect[], vw: number, vh: number): string {
+  const holes = rects
+    .map(
+      (r) =>
+        `<rect x="${r.left}" y="${r.top}" width="${r.width}" height="${r.height}" rx="8" fill="black"/>`,
+    )
+    .join("");
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${vw}" height="${vh}"><rect width="100%" height="100%" fill="white"/>${holes}</svg>`;
+  return `url("data:image/svg+xml;utf8,${encodeURIComponent(svg)}")`;
+}
+
+/** evenodd 경로 — 홀 밖만 클릭 캡처 */
+function buildEvenOddHitPath(rects: Rect[], vw: number, vh: number): string {
+  const outer = `M0,0H${vw}V${vh}H0Z`;
+  const holes = rects
+    .map((r) => {
+      const x = r.left;
+      const y = r.top;
+      const w = r.width;
+      const h = r.height;
+      return `M${x},${y}h${w}v${h}h${-w}Z`;
+    })
+    .join("");
+  return `${outer}${holes}`;
 }
 
 type CardPlacement =
@@ -117,30 +168,34 @@ type CardPlacement =
 
 type PlacePrefer = "auto" | "above" | "below" | "right";
 
-function overlapsTarget(
+function overlapsAnyTarget(
   top: number,
   left: number,
   cardW: number,
   cardH: number,
-  rect: Rect,
+  rects: Rect[],
 ): boolean {
   const cardRight = left + cardW;
   const cardBottom = top + cardH;
-  const targetRight = rect.left + rect.width;
-  const targetBottom = rect.top + rect.height;
-  return !(
-    cardRight <= rect.left ||
-    left >= targetRight ||
-    cardBottom <= rect.top ||
-    top >= targetBottom
-  );
+  return rects.some((rect) => {
+    const targetRight = rect.left + rect.width;
+    const targetBottom = rect.top + rect.height;
+    return !(
+      cardRight <= rect.left ||
+      left >= targetRight ||
+      cardBottom <= rect.top ||
+      top >= targetBottom
+    );
+  });
 }
 
 function placeCardNearTarget(
-  rect: Rect | null,
+  rects: Rect[],
   cardSize: { width: number; height: number },
   prefer: PlacePrefer = "auto",
 ): CardPlacement {
+  // 앵커는 primary(마지막 — separate 시 캘린더) 또는 단일 홀
+  const rect = rects.length > 0 ? rects[rects.length - 1]! : null;
   if (!rect) return { mode: "center" };
   const vw = window.innerWidth;
   const vh = window.innerHeight;
@@ -158,7 +213,7 @@ function placeCardNearTarget(
 
   const tryPlace = (top: number, left: number): CardPlacement | null => {
     if (!fitsViewport(top, left)) return null;
-    if (overlapsTarget(top, left, cardW, cardH, rect)) return null;
+    if (overlapsAnyTarget(top, left, cardW, cardH, rects)) return null;
     return { mode: "anchored", top, left };
   };
 
@@ -268,14 +323,18 @@ export function GuideTourSpotlight({
   onPause,
   className,
 }: GuideTourSpotlightProps) {
-  const [rect, setRect] = useState<Rect | null>(() => readSpotlightRect(target));
+  const [rects, setRects] = useState<Rect[]>(() => readSpotlightRects(target));
   const cardRef = useRef<HTMLDivElement | null>(null);
   const [cardSize, setCardSize] = useState({ width: 0, height: 0 });
   const [placement, setPlacement] = useState<CardPlacement>({ mode: "center" });
+  const [viewport, setViewport] = useState(() => ({
+    w: typeof window !== "undefined" ? window.innerWidth : 0,
+    h: typeof window !== "undefined" ? window.innerHeight : 0,
+  }));
 
   useEffect(() => {
     // 이전 스텝(치식) 홀이 한 프레임이라도 남지 않게 즉시 비움
-    setRect(null);
+    setRects([]);
 
     let observed: HTMLElement | null = null;
     const satelliteObserved = new Set<Element>();
@@ -284,11 +343,14 @@ export function GuideTourSpotlight({
     const ro =
       typeof ResizeObserver !== "undefined"
         ? new ResizeObserver(() => {
-            setRect(readSpotlightRect(target));
+            setRects(readSpotlightRects(target));
           })
         : null;
 
-    const measure = () => setRect(readSpotlightRect(target));
+    const measure = () => {
+      setViewport({ w: window.innerWidth, h: window.innerHeight });
+      setRects(readSpotlightRects(target));
+    };
 
     const scheduleRemeasure = () => {
       remasureGeneration += 1;
@@ -421,24 +483,33 @@ export function GuideTourSpotlight({
   }, [stepIndex, title, hint, showBack, showNext, showSkip]);
 
   useLayoutEffect(() => {
-    if (!rect) {
+    if (rects.length === 0) {
       setPlacement({ mode: "center" });
       return;
     }
     // 실측 전 fallback으로 한 번 튀지 않게 — 측정 후에만 고정 배치
     if (cardSize.width <= 0 || cardSize.height <= 0) return;
-    // 기공소·날짜: 드롭다운은 아래·코치마크는 오른쪽 — 겹침 방지
-    // 치식·프리셋 모달: 코치마크를 타깃 위에
     const prefer: PlacePrefer =
       target && DROPDOWN_BELOW_TARGETS.has(target)
         ? "right"
         : target &&
             (TOOTH_CHART_GUIDE_TARGETS.has(target) ||
-              PRESET_MODAL_TARGETS.has(target))
+              PRESET_MODAL_TARGETS.has(target) ||
+              PREFER_ABOVE_TARGETS.has(target))
           ? "above"
           : "auto";
-    setPlacement(placeCardNearTarget(rect, cardSize, prefer));
-  }, [rect, cardSize, target]);
+    setPlacement(placeCardNearTarget(rects, cardSize, prefer));
+  }, [rects, cardSize, target]);
+
+  const maskImage = useMemo(() => {
+    if (rects.length === 0 || viewport.w <= 0 || viewport.h <= 0) return null;
+    return buildHoleMaskImage(rects, viewport.w, viewport.h);
+  }, [rects, viewport.h, viewport.w]);
+
+  const hitPath = useMemo(() => {
+    if (rects.length === 0 || viewport.w <= 0 || viewport.h <= 0) return null;
+    return buildEvenOddHitPath(rects, viewport.w, viewport.h);
+  }, [rects, viewport.h, viewport.w]);
 
   const card = (
     <div
@@ -506,60 +577,58 @@ export function GuideTourSpotlight({
   // z-420 blur(클릭 차단) · z-425 nested dialog · z-430 popper · z-440 card(루트 밖)
   const blurLayer = (
     <div className="guide-tour-root pointer-events-none fixed inset-0 z-[420]">
-      {rect ? (
+      {rects.length > 0 && maskImage && hitPath ? (
         <>
           <div
-            className="guide-tour-blur pointer-events-auto absolute left-0 right-0 top-0"
-            style={{ height: rect.top }}
-            aria-hidden
-          />
-          <div
-            className="guide-tour-blur pointer-events-auto absolute bottom-0 left-0 right-0"
-            style={{ top: rect.top + rect.height }}
-            aria-hidden
-          />
-          <div
-            className="guide-tour-blur pointer-events-auto absolute left-0"
+            className="guide-tour-blur pointer-events-none absolute inset-0"
             style={{
-              top: rect.top,
-              height: rect.height,
-              width: rect.left,
+              WebkitMaskImage: maskImage,
+              maskImage,
             }}
             aria-hidden
           />
-          <div
-            className="guide-tour-blur pointer-events-auto absolute right-0"
-            style={{
-              top: rect.top,
-              height: rect.height,
-              left: rect.left + rect.width,
-            }}
+          {/* 마스크는 페인팅만 — 홀 밖 클릭은 evenodd SVG로 차단 */}
+          <svg
+            className="absolute inset-0 h-full w-full"
+            width={viewport.w}
+            height={viewport.h}
             aria-hidden
-          />
-          {/* 영화형: 홀도 클릭 차단. 4·5번만 통과 */}
-          {!allowTargetInteraction ? (
-            <div
-              className="pointer-events-auto absolute rounded-lg"
-              style={{
-                top: rect.top,
-                left: rect.left,
-                width: rect.width,
-                height: rect.height,
-              }}
-              aria-hidden
+          >
+            <path
+              d={hitPath}
+              fill="black"
+              fillOpacity={0}
+              fillRule="evenodd"
+              pointerEvents="fill"
+              className="pointer-events-auto"
             />
-          ) : null}
-          <div
-            // border는 box 안쪽 → 대상보다 작아 보임. outline은 바깥으로 그려 홀·대상과 맞춤.
-            className="pointer-events-none absolute rounded-lg outline outline-2 outline-accent outline-offset-2"
-            style={{
-              top: rect.top,
-              left: rect.left,
-              width: rect.width,
-              height: rect.height,
-            }}
-            aria-hidden
-          />
+          </svg>
+          {rects.map((rect, i) => (
+            <div key={`hole-${i}`}>
+              {!allowTargetInteraction ? (
+                <div
+                  className="pointer-events-auto absolute rounded-lg"
+                  style={{
+                    top: rect.top,
+                    left: rect.left,
+                    width: rect.width,
+                    height: rect.height,
+                  }}
+                  aria-hidden
+                />
+              ) : null}
+              <div
+                className="pointer-events-none absolute rounded-lg outline outline-2 outline-accent outline-offset-2"
+                style={{
+                  top: rect.top,
+                  left: rect.left,
+                  width: rect.width,
+                  height: rect.height,
+                }}
+                aria-hidden
+              />
+            </div>
+          ))}
         </>
       ) : (
         <div

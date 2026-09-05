@@ -5,6 +5,7 @@
 // - web/backend/controllers/users/user.controller.js
 // - web/frontend/src/shared/components/practice/PracticeToothWorkGuideTourBanner.tsx
 // change-log:
+// - 2026-09-05: 치과 Spotlight — 전체 프로세스 N/15(챕터 1/4·구강 1/9 대체).
 // - 2026-09-05: 구강 9장 — Spotlight 1/9 progress · allowTargetInteraction(4·5).
 // - 2026-09-05: oral 프리셋 스텝 — IntakePanel이 Spotlight 문구 override(미설정 「+ 추가」안내).
 // - 2026-09-05: oral action 스텝도「다음」상시 표시.
@@ -26,7 +27,7 @@ import { PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS } from "@/shared/components/practi
 import {
   getGuideTourStepIndex,
   getGuideTourSteps,
-  getPracticeOralGuideTourProgress,
+  getPracticeGuideTourProcessProgress,
   isGuideTourAllowTargetInteraction,
   isPracticeToothWorkOralStepId,
   PRACTICE_GUIDE_TOUR_CHAPTER_TOTAL,
@@ -322,15 +323,15 @@ export function GuideTourProvider({ kind, children }: ProviderProps) {
   const isLastStep = stepIndex >= stepTotal - 1;
   const spotlightTitle = spotlightCopyOverride?.title ?? step?.title ?? "";
   const spotlightHint = spotlightCopyOverride?.hint ?? step?.hint ?? "";
-  const oralProgress =
-    kind === "practice" ? getPracticeOralGuideTourProgress(stepId) : null;
-  const spotlightStepIndex = oralProgress
-    ? oralProgress.index
+  const processProgress =
+    kind === "practice" ? getPracticeGuideTourProcessProgress(stepId) : null;
+  const spotlightStepIndex = processProgress
+    ? processProgress.index
     : showChapterProgress
       ? chapterDisplay - 1
       : 0;
-  const spotlightStepTotal = oralProgress
-    ? oralProgress.total
+  const spotlightStepTotal = processProgress
+    ? processProgress.total
     : showChapterProgress
       ? chapterTotal
       : 0;

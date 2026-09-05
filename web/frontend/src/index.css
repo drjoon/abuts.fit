@@ -467,7 +467,8 @@ All colors MUST be HSL.
  * - nested dialog during tour: z-425 / overlay z-424 (블러 홀에 잘리지 않게)
  * - popover/select/tooltip/menu during tour: z-430
  * - coach card: z-440 (커스텀어벗 모달·셀렉트보다 위; root 밖 fixed)
- * Spotlight hole clears blur over target + data-guide-tour-satellite.
+ * Spotlight hole clears blur over target; satellites either union or separate
+ * holes (oral_calendar: sidebar menu + calendar).
  */
 .guide-tour-blur {
   backdrop-filter: blur(3px);

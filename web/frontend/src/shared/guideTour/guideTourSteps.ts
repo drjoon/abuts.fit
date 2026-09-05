@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/practice/PracticeToothWorkGuideTourBanner.tsx
 // - web/frontend/src/shared/guideTour/GuideTourProvider.tsx
 // change-log:
+// - 2026-09-05: oral_calendar — 사이드바·캘린더 별도 구역. 전체 프로세스 N/15 카운터. 도착일 문구.
 // - 2026-09-05: intro 다음 oral_calendar — 사이드바「구강스캔으로」+ 캘린더 작업영역(작성 패널 전).
 // - 2026-09-05: 시작(intro) 힌트 — 강제 줄바꿈 제거(코치마크 1줄 폭).
 // - 2026-09-05: 구강 챕터 9장 영화형(이전/다음). calendar·세분 스텝 제거. 4·5번만 조작 허용.
@@ -51,7 +52,7 @@ const STORE_PATH = "/dashboard/store";
 
 export const PRACTICE_GUIDE_TOUR_CHAPTER_TOTAL = 4;
 
-/** 구강 챕터 9장 — Spotlight 1/9…9/9 */
+/** 구강 챕터 9장 — Spotlight 하위(영화형) id */
 export const PRACTICE_ORAL_GUIDE_TOUR_STEP_IDS = [
   "oral_header",
   "oral_memo_files",
@@ -103,7 +104,7 @@ export const PRACTICE_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   {
     id: "oral_calendar",
     title: "기공의뢰 · 구강스캔",
-    hint: "왼쪽 「기공의뢰 → 구강스캔으로」가 이 화면입니다. 캘린더에서 의뢰 현황을 보고, 미래 날짜를 누르면 신규 의뢰를 작성합니다.",
+    hint: "「기공의뢰 → 구강스캔으로」 페이지의 캘린더에서 기공물 도착 날짜를 눌러 신규 의뢰서를 작성합니다",
     path: PRACTICE_ORAL_PATH,
     target: "oral_calendar",
     advance: "next",
@@ -165,6 +166,11 @@ export const PRACTICE_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
     chapter: 4,
   },
 ] as const;
+
+/** 치과 Spotlight 분모 — intro 제외(chapter 있는 스텝). oral_calendar+구강9+정산3+어벗+스토어 */
+export const PRACTICE_GUIDE_TOUR_PROCESS_TOTAL = PRACTICE_GUIDE_TOUR_STEPS.filter(
+  (s) => s.chapter != null,
+).length;
 
 /** 기공소 — 플랫폼 장점(왜 가입할까요?) 페이지 투어 */
 export const LAB_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
@@ -248,6 +254,17 @@ export const getPracticeOralGuideTourProgress = (
   );
   if (idx < 0) return null;
   return { index: idx, total: PRACTICE_ORAL_GUIDE_TOUR_STEP_TOTAL };
+};
+
+/** 치과 전체 프로세스 진행(intro 제외). Spotlight N/15 */
+export const getPracticeGuideTourProcessProgress = (
+  stepId: string | null | undefined,
+): { index: number; total: number } | null => {
+  if (!stepId) return null;
+  const processSteps = PRACTICE_GUIDE_TOUR_STEPS.filter((s) => s.chapter != null);
+  const idx = processSteps.findIndex((s) => s.id === stepId);
+  if (idx < 0) return null;
+  return { index: idx, total: processSteps.length };
 };
 
 export const isGuideTourAllowTargetInteraction = (
