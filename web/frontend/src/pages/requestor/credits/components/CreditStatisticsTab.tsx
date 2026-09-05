@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-05: 요약 충전 카드 라벨「충전」(치과·기공소 공통, 유료 접두 제거).
 // - 2026-09-05: 데모 모드 충전 카드 라벨「충전」(유료/선수금 아님).
 // - 2026-09-05: 요약 수식에서 무료 충전 카드 제거(유료 [+정산] − 소비).
 // - 2026-09-05: 데모/실사용 집계 필터·2줄 카드 값 제거. 무료 충전 단일 라벨.
@@ -65,9 +66,9 @@ import {
 import { cn } from "@/shared/ui/cn";
 import { RESPONSIVE } from "@/shared/ui/responsive";
 import {
-  CREDIT_LEDGER_DEMO_CHARGE_DETAIL_TITLE,
+  CREDIT_LEDGER_CHARGE_DETAIL_TITLE,
+  CREDIT_LEDGER_CHARGE_LABEL,
   CREDIT_LEDGER_DEMO_CHARGE_HINT,
-  CREDIT_LEDGER_DEMO_CHARGE_LABEL,
   CREDIT_LEDGER_DEMO_PERIOD_SPEND_HINT,
 } from "@/shared/demo/demoModeCopy";
 import { useDemoMode } from "@/shared/demo/useDemoMode";
@@ -699,15 +700,11 @@ export function CreditStatisticsTab() {
   const practiceSpendTooltip = demoMode
     ? CREDIT_LEDGER_DEMO_PERIOD_SPEND_HINT
     : "선택한 기간에 지출한 기공료와 스토어 결제 합계입니다.";
-  const chargeLabel = demoMode
-    ? CREDIT_LEDGER_DEMO_CHARGE_LABEL
-    : "유료 충전";
-  const chargeDetailTitle = demoMode
-    ? CREDIT_LEDGER_DEMO_CHARGE_DETAIL_TITLE
-    : "유료 충전 내역";
+  const chargeLabel = CREDIT_LEDGER_CHARGE_LABEL;
+  const chargeDetailTitle = CREDIT_LEDGER_CHARGE_DETAIL_TITLE;
   const chargeTooltip = demoMode
     ? CREDIT_LEDGER_DEMO_CHARGE_HINT
-    : "선택한 기간에 유료(선입금)로 충전된 금액 합계입니다.";
+    : "선택한 기간에 충전된 금액 합계입니다.";
 
   const settlementOrderCount = Number(
     stats?.summary.settlementOrderCount ?? stats?.summary.orderCount ?? 0,

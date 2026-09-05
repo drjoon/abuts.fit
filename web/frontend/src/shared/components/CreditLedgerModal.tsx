@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-05: 요약 충전 카드 라벨「충전」(치과·기공소 공통, 유료 접두 제거)·안내 툴팁 정리.
 // - 2026-09-05: 데모 모드 충전 카드 라벨「충전」(유료/선수금 아님)·가상 잔고 안내.
 // - 2026-09-05: 요약 수식에서 무료 충전 카드 제거(유료 [+정산] − 소비). 잔여 무료 버킷은 compact만.
 // - 2026-09-05: 기공소 현재 잔액 — spendableBalance(정산 적립 포함). balance(유료+무료)만 쓰던 버그 수정.
@@ -164,10 +165,10 @@ import {
   CREDIT_SETTLEMENT_BUCKET_HINT,
 } from "@/shared/legal/creditPrepaidCopy";
 import {
+  CREDIT_LEDGER_CHARGE_DETAIL_TITLE,
+  CREDIT_LEDGER_CHARGE_LABEL,
   CREDIT_LEDGER_DEMO_BALANCE_HINT,
-  CREDIT_LEDGER_DEMO_CHARGE_DETAIL_TITLE,
   CREDIT_LEDGER_DEMO_CHARGE_HINT,
-  CREDIT_LEDGER_DEMO_CHARGE_LABEL,
   CREDIT_LEDGER_DEMO_NOTICE_BODY,
   CREDIT_LEDGER_DEMO_PERIOD_SPEND_HINT,
 } from "@/shared/demo/demoModeCopy";
@@ -2488,17 +2489,13 @@ export const CreditLedgerModal = ({
   const balanceHintTooltip = isDemoMode
     ? CREDIT_LEDGER_DEMO_BALANCE_HINT
     : showSettlementCredit
-      ? "유료 충전과 기공 정산 적립에서 기공·스토어 소비를 뺀 잔여액입니다. 적립 보류분은 잔액에 아직 반영되지 않습니다."
-      : "유료 충전에서 소비액을 뺀 선불금 잔여액입니다.";
-  const periodChargeLabel = isDemoMode
-    ? CREDIT_LEDGER_DEMO_CHARGE_LABEL
-    : "유료 충전";
-  const periodChargeDetailTitle = isDemoMode
-    ? CREDIT_LEDGER_DEMO_CHARGE_DETAIL_TITLE
-    : "유료 충전 내역";
+      ? "충전과 기공 정산 적립에서 기공·스토어 소비를 뺀 잔여액입니다. 적립 보류분은 잔액에 아직 반영되지 않습니다."
+      : "충전에서 소비액을 뺀 선불금 잔여액입니다.";
+  const periodChargeLabel = CREDIT_LEDGER_CHARGE_LABEL;
+  const periodChargeDetailTitle = CREDIT_LEDGER_CHARGE_DETAIL_TITLE;
   const periodPaidChargeTooltip = isDemoMode
     ? CREDIT_LEDGER_DEMO_CHARGE_HINT
-    : "선택한 기간에 유료(선입금)로 충전된 금액 합계입니다.";
+    : "선택한 기간에 충전된 금액 합계입니다.";
   const periodSettlementEarnTooltip =
     "선택한 기간에 적립된 기공 정산(작업완료 전 적립 보류 포함) 합계입니다.";
   const periodSpendTooltip = isDemoMode

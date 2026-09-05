@@ -102,13 +102,21 @@ export const CREDIT_DEMO_BUCKET_LABEL = "무료 충전";
 export const CREDIT_LEDGER_DEMO_PERIOD_SPEND_HINT =
   "데모 모드에서 기공의뢰·커스텀어벗·스토어 등 기간 지출 합계입니다(가상 잔고).";
 
-/** 정산 충전 카드 — 데모 모드 라벨·툴팁(유료/선수금 아님). */
-export const CREDIT_LEDGER_DEMO_CHARGE_LABEL = "충전";
+/** 정산 충전 카드 — 요약 UI 공통 라벨(치과·기공소). */
+export const CREDIT_LEDGER_CHARGE_LABEL = "충전";
 
+export const CREDIT_LEDGER_CHARGE_DETAIL_TITLE = "충전 내역";
+
+/** 정산 충전 카드 — 데모 모드 툴팁(유료/선수금 아님). */
 export const CREDIT_LEDGER_DEMO_CHARGE_HINT =
   "데모 모드의 가상 잔고 충전 합계입니다. 어벗츠 선수금(유료 크레딧) 입금이 확인되면 자동으로 실사용 전환됩니다.";
 
-export const CREDIT_LEDGER_DEMO_CHARGE_DETAIL_TITLE = "충전 내역";
+/** @deprecated Prefer CREDIT_LEDGER_CHARGE_LABEL. */
+export const CREDIT_LEDGER_DEMO_CHARGE_LABEL = CREDIT_LEDGER_CHARGE_LABEL;
+
+/** @deprecated Prefer CREDIT_LEDGER_CHARGE_DETAIL_TITLE. */
+export const CREDIT_LEDGER_DEMO_CHARGE_DETAIL_TITLE =
+  CREDIT_LEDGER_CHARGE_DETAIL_TITLE;
 
 /** 기공소 PTX — 어벗 디자인/생산 시 실크레딧 부족 안내. */
 export const PTX_CA_INSUFFICIENT_CREDIT_TITLE = "크레딧이 부족합니다";
