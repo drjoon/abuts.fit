@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/guideTour/guideTourSteps.ts
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-09-05: 표시 용량 10·10·4MB. draft 파일명 식별(promote 누수 정리용).
 // - 2026-09-05: 구강 챕터 영화형 — 환자·메모·치식·표시용 PLY 프리필(실업로드 스킵).
 
 import type { ToothWorkSelection } from "@/shared/practice/transferMemo";
@@ -21,8 +22,8 @@ export type GuideTourDemoFileSpec = {
 };
 
 export const GUIDE_TOUR_DEMO_FILE_SPECS: readonly GuideTourDemoFileSpec[] = [
-  { name: "UpperJaw.ply", displaySize: 20 * 1024 * 1024 },
-  { name: "LowerJaw.ply", displaySize: 20 * 1024 * 1024 },
+  { name: "UpperJaw.ply", displaySize: 10 * 1024 * 1024 },
+  { name: "LowerJaw.ply", displaySize: 10 * 1024 * 1024 },
   { name: "Bitescan.ply", displaySize: 4 * 1024 * 1024 },
 ] as const;
 
@@ -79,10 +80,23 @@ export const buildGuideTourDemoToothWorks = (): ToothWorkSelection[] => {
   return [...bridgeRows, crown13, ...tempRows];
 };
 
+export const isGuideTourDemoFileName = (name: string | null | undefined): boolean => {
+  const trimmed = String(name || "").trim();
+  if (!trimmed) return false;
+  return GUIDE_TOUR_DEMO_FILE_SPECS.some((spec) => spec.name === trimmed);
+};
+
+/** promote 누수로 draft에 남은 1B 플레이스홀더 */
+export const isLeakedGuideTourDemoDraft = (row: {
+  originalName?: string | null;
+  size?: number | null;
+}): boolean =>
+  isGuideTourDemoFileName(row.originalName) && Number(row.size || 0) <= 1;
+
 export const isGuideTourDemoFile = (file: File | null | undefined): boolean => {
   if (!file) return false;
   if (file.lastModified === GUIDE_TOUR_DEMO_FILE_LAST_MODIFIED) return true;
-  return GUIDE_TOUR_DEMO_FILE_SPECS.some((spec) => spec.name === file.name);
+  return isGuideTourDemoFileName(file.name);
 };
 
 export const guideTourDemoDisplaySize = (file: File): number => {

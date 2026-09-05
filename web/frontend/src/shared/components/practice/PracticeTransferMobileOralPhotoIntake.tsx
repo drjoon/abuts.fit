@@ -19,6 +19,7 @@ import type { PreUploadFileStatus } from "@/shared/hooks/useFilePreUpload";
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/practice/practiceTransferAccept.ts
+// - 2026-09-05: demoPreview — 가이드투어 폰 프레임용(입력·조작 비활성).
 // - 2026-08-20: 모바일 구강스캔 — 환자명 후 구강포토 촬영·업로드·임시저장(기공소는 전송 시).
 // - 2026-08-20: 상단 새로/최근/임시 1줄, 제목·안내 제거, 여백 보정.
 // - 2026-08-20: 세그먼트 툴바·큰 촬영 CTA·터치 친화 카드.
@@ -194,6 +195,8 @@ type PracticeTransferMobileOralPhotoIntakeProps = {
   onSave?: () => void;
   onCancel?: () => void;
   canSave?: boolean;
+  /** 가이드투어 폰 미리보기 — 실조작·file input 없음 */
+  demoPreview?: boolean;
 };
 
 export function PracticeTransferMobileComposeToolbar({
@@ -251,11 +254,18 @@ export function PracticeTransferMobileOralPhotoIntake({
   onSave,
   onCancel,
   canSave = true,
+  demoPreview = false,
 }: PracticeTransferMobileOralPhotoIntakeProps) {
   const { toast } = useToast();
   const albumInputRef = useRef<HTMLInputElement | null>(null);
+  const cameraInputId = demoPreview
+    ? `${CAMERA_INPUT_ID}-demo`
+    : CAMERA_INPUT_ID;
+  const albumInputId = demoPreview ? `${ALBUM_INPUT_ID}-demo` : ALBUM_INPUT_ID;
+  const captureEnabled = canCapture && !demoPreview;
 
   const handleFilesFromInput = (input: HTMLInputElement | null) => {
+    if (demoPreview) return;
     const next = Array.from(input?.files || []);
     if (input) input.value = "";
     if (!next.length) return;
@@ -281,7 +291,12 @@ export function PracticeTransferMobileOralPhotoIntake({
   };
 
   return (
-    <div className="box-border flex w-full min-w-0 flex-col gap-2.5">
+    <div
+      className={cn(
+        "box-border flex w-full min-w-0 flex-col gap-2.5",
+        demoPreview && "pointer-events-none",
+      )}
+    >
       <div className="grid grid-cols-2 gap-2 px-1">
         <Badge
           variant="outline"
@@ -307,37 +322,42 @@ export function PracticeTransferMobileOralPhotoIntake({
         className="min-w-0 px-3"
       />
 
-      <input
-        id={CAMERA_INPUT_ID}
-        type="file"
-        accept="image/*"
-        capture="environment"
-        disabled={!canCapture}
-        className="sr-only"
-        tabIndex={-1}
-        onChange={(e) => handleFilesFromInput(e.currentTarget)}
-      />
-      <input
-        ref={albumInputRef}
-        id={ALBUM_INPUT_ID}
-        type="file"
-        accept={ORAL_PHOTO_ACCEPT}
-        multiple
-        disabled={!canCapture}
-        className="sr-only"
-        tabIndex={-1}
-        onChange={(e) => handleFilesFromInput(e.currentTarget)}
-      />
+      {demoPreview ? null : (
+        <>
+          <input
+            id={cameraInputId}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            disabled={!captureEnabled}
+            className="sr-only"
+            tabIndex={-1}
+            onChange={(e) => handleFilesFromInput(e.currentTarget)}
+          />
+          <input
+            ref={albumInputRef}
+            id={albumInputId}
+            type="file"
+            accept={ORAL_PHOTO_ACCEPT}
+            multiple
+            disabled={!captureEnabled}
+            className="sr-only"
+            tabIndex={-1}
+            onChange={(e) => handleFilesFromInput(e.currentTarget)}
+          />
+        </>
+      )}
 
       <div className="flex min-w-0 flex-col gap-2">
         <label
-          htmlFor={canCapture ? CAMERA_INPUT_ID : undefined}
-          aria-disabled={!canCapture || undefined}
+          htmlFor={captureEnabled ? cameraInputId : undefined}
+          aria-disabled={!captureEnabled || undefined}
           className={cn(
             "box-border flex min-h-[5.5rem] w-full min-w-0 flex-col items-center justify-center gap-1.5 rounded-2xl border border-dashed px-4 py-3 text-center transition-[transform,colors,box-shadow] active:scale-[0.99]",
             canCapture
               ? "cursor-pointer border-primary/30 bg-white text-primary-strong shadow-[0_1px_2px_rgba(15,23,42,0.04)] hover:border-primary/45 hover:shadow-sm"
               : "cursor-not-allowed border-slate-200 bg-slate-50 text-muted-foreground",
+            demoPreview && "cursor-default",
           )}
         >
           <span
@@ -357,7 +377,7 @@ export function PracticeTransferMobileOralPhotoIntake({
           type="button"
           variant="outline"
           className="h-10 w-full min-w-0 rounded-xl border-slate-200 bg-white text-sm font-medium shadow-sm"
-          disabled={!canCapture}
+          disabled={!captureEnabled}
           onClick={() => albumInputRef.current?.click()}
         >
           <ImagePlus className="mr-2 h-4 w-4 shrink-0" />

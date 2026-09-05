@@ -7,6 +7,8 @@
 // - 2026-09-05: intro 다음 oral_calendar — 사이드바「구강스캔으로」+ 캘린더 작업영역(작성 패널 전).
 // - 2026-09-05: 시작(intro) 힌트 — 강제 줄바꿈 제거(코치마크 1줄 폭).
 // - 2026-09-05: 구강 챕터 9장 영화형(이전/다음). calendar·세분 스텝 제거. 4·5번만 조작 허용.
+// - 2026-09-05: oral_phone — memo 다음(4/15). forceMobile 제거, 안내 문구+폰 미리보기.
+// - 2026-09-05: oral_memo_files — 필요 시만 메모·스캔 업로드 안내.
 // - 2026-09-05: oral_memo·oral_files — 날짜 다음·치식 전, 설명만(「다음」, 입력·업로드 불필요).
 // - 2026-09-05: 치과 투어 4챕터. 챕터 카운터 1/4·치식/어벗 체험 유지·전송·폰모드·임시저장.
 // - 2026-09-05: 시작(intro) 스텝 분리 — 챕터 번호 없이「계속」.
@@ -52,16 +54,16 @@ const STORE_PATH = "/dashboard/store";
 
 export const PRACTICE_GUIDE_TOUR_CHAPTER_TOTAL = 4;
 
-/** 구강 챕터 9장 — Spotlight 하위(영화형) id */
+/** 구강 챕터 9장 — Spotlight 하위(영화형) id · PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS 와 동일 순서 */
 export const PRACTICE_ORAL_GUIDE_TOUR_STEP_IDS = [
   "oral_header",
   "oral_memo_files",
+  "oral_phone",
   "oral_prosthesis",
   "oral_card_ops",
   "oral_custom_abut",
   "oral_estimate",
   "oral_send",
-  "oral_phone",
   "oral_drafts",
 ] as const;
 
@@ -74,7 +76,6 @@ const practiceOralMovieSteps: GuideTourStepDef[] =
     const allowTargetInteraction =
       s.id === "card_ops" || s.id === "custom_abut";
     const openCompose = s.id !== "drafts";
-    const forceMobile = s.id === "phone";
     return {
       id,
       title: s.title,
@@ -84,7 +85,7 @@ const practiceOralMovieSteps: GuideTourStepDef[] =
       advance: "next" as const,
       chapter: 1,
       openCompose,
-      forceMobile: forceMobile || undefined,
+      // oral_phone — PC에서도 작성 레이아웃 유지, 메모 위 폰 미리보기·안내 문구 하이라이트
       allowTargetInteraction: allowTargetInteraction || undefined,
       oralSubStepId: s.id,
     };

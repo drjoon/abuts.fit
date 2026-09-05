@@ -5,6 +5,10 @@
 // - web/frontend/src/shared/components/practice/PracticeOrderArrivalDateRangeField.tsx
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // change-log:
+// - 2026-09-05: oral_phone — 코치마크를 안내 문구 아래 가운데 정렬.
+// - 2026-09-05: oral_phone — 코치마크 뷰포트 오른쪽 반쪽. 안내·폰 별도 홀.
+// - 2026-09-05: oral_phone — below 우선·타깃 오른쪽 하단. 안내·폰 별도 홀.
+// - 2026-09-05: oral_phone — 안내 문구·폰 미리보기 별도 홀(SEPARATE_SATELLITE).
 // - 2026-09-05: 작성 Dialog(z-410) 블러 아래 유지 — outside dismiss 시 홀 소실 방지와 맞춤.
 // - 2026-09-05: 멀티 홀 — 뷰포트−홀 블러 패널(홀 위 backdrop 없음). mask/blend 폐기.
 // - 2026-09-05: oral_calendar — 사이드바·캘린더 별도 홀(위성 union 대신). 카드는 캘린더 위.
@@ -48,8 +52,8 @@ const REMEASURE_AFTER_MS = [0, 50, 120, 220, 360, 520] as const;
 const DROPDOWN_BELOW_TARGETS = new Set(["oral_header", "oral_memo_files"]);
 /** 커스텀어벗 설정 모달 — 큰 타깃, 코치마크는 위쪽 */
 const PRESET_MODAL_TARGETS = CUSTOM_ABUT_GUIDE_TARGETS;
-/** 위성은 union하지 않고 별도 홀(사이드바 메뉴 + 캘린더) */
-const SEPARATE_SATELLITE_TARGETS = new Set(["oral_calendar"]);
+/** 위성은 union하지 않고 별도 홀(사이드바 메뉴 + 캘린더 · 폰 미리보기 + 안내 문구) */
+const SEPARATE_SATELLITE_TARGETS = new Set(["oral_calendar", "oral_phone"]);
 /** 코치마크를 타깃 위에 고정 */
 const PREFER_ABOVE_TARGETS = new Set([
   "oral_calendar",
@@ -58,6 +62,12 @@ const PREFER_ABOVE_TARGETS = new Set([
   "oral_estimate",
   "oral_send",
 ]);
+/** 코치마크를 타깃 아래·오른쪽에 고정 */
+const PREFER_BELOW_TARGETS = new Set<string>([]);
+/** 코치마크를 뷰포트 오른쪽 반쪽에 고정 */
+const PREFER_RIGHT_HALF_TARGETS = new Set<string>([]);
+/** 코치마크를 primary 타깃 아래 가운데 정렬 */
+const PREFER_BELOW_CENTER_TARGETS = new Set(["oral_phone"]);
 
 function readElRect(el: Element | null): Rect | null {
   if (!el || !(el instanceof HTMLElement)) return null;
@@ -219,7 +229,7 @@ type CardPlacement =
   | { mode: "center" }
   | { mode: "anchored"; top: number; left: number };
 
-type PlacePrefer = "auto" | "above" | "below" | "right";
+type PlacePrefer = "auto" | "above" | "below" | "belowCenter" | "right" | "rightHalf";
 
 function overlapsAnyTarget(
   top: number,
@@ -291,7 +301,32 @@ function placeCardNearTarget(
 
   const candidates: Array<{ top: number; left: number }> = [];
 
-  if (prefer === "right") {
+  if (prefer === "rightHalf") {
+    // 뷰포트 오른쪽 반쪽 중앙(타깃과 겹치면 아래로 살짝)
+    const halfLeft = vw * 0.5;
+    const regionW = vw * 0.5;
+    const left = Math.max(
+      VIEW_PAD,
+      Math.min(
+        vw - VIEW_PAD - cardW,
+        halfLeft + (regionW - cardW) / 2,
+      ),
+    );
+    const mid = Math.max(
+      VIEW_PAD,
+      Math.min(vh - VIEW_PAD - cardH, (vh - cardH) / 2),
+    );
+    const lower = Math.max(
+      VIEW_PAD,
+      Math.min(vh - VIEW_PAD - cardH, vh * 0.55),
+    );
+    candidates.push(
+      { top: mid, left },
+      { top: lower, left },
+      { top: mid, left: halfLeft + VIEW_PAD },
+      { top: belowTop, left },
+    );
+  } else if (prefer === "right") {
     candidates.push(
       { top: midTop, left: rightLeft },
       { top: rect.top, left: rightLeft },
@@ -308,10 +343,32 @@ function placeCardNearTarget(
       { top: midTop, left: rightLeft },
       { top: midTop, left: leftLeft },
     );
-  } else if (prefer === "below") {
+  } else if (prefer === "belowCenter") {
+    // primary(안내 문구) 바로 아래 · 가로 가운데
+    const belowCenterLeft = Math.max(
+      VIEW_PAD,
+      Math.min(
+        vw - VIEW_PAD - cardW,
+        rect.left + (rect.width - cardW) / 2,
+      ),
+    );
     candidates.push(
+      { top: belowTop, left: belowCenterLeft },
+      { top: belowTop, left: Math.max(VIEW_PAD, rect.left) },
+      { top: belowTop, left: centerLeft },
+      { top: aboveTop, left: belowCenterLeft },
+    );
+  } else if (prefer === "below") {
+    // 타깃 오른쪽 아래(파일 열 하단) 우선
+    const belowRightLeft = Math.max(
+      VIEW_PAD,
+      Math.min(vw - VIEW_PAD - cardW, rect.left + rect.width - cardW),
+    );
+    candidates.push(
+      { top: belowTop, left: belowRightLeft },
       { top: belowTop, left: rect.left },
-      { top: aboveTop, left: rect.left },
+      { top: belowTop, left: centerLeft },
+      { top: aboveTop, left: belowRightLeft },
       { top: midTop, left: rightLeft },
       { top: midTop, left: leftLeft },
     );
@@ -545,12 +602,18 @@ export function GuideTourSpotlight({
     const prefer: PlacePrefer =
       target && DROPDOWN_BELOW_TARGETS.has(target)
         ? "right"
-        : target &&
-            (TOOTH_CHART_GUIDE_TARGETS.has(target) ||
-              PRESET_MODAL_TARGETS.has(target) ||
-              PREFER_ABOVE_TARGETS.has(target))
-          ? "above"
-          : "auto";
+        : target && PREFER_BELOW_CENTER_TARGETS.has(target)
+          ? "belowCenter"
+          : target && PREFER_RIGHT_HALF_TARGETS.has(target)
+            ? "rightHalf"
+            : target && PREFER_BELOW_TARGETS.has(target)
+              ? "below"
+              : target &&
+                  (TOOTH_CHART_GUIDE_TARGETS.has(target) ||
+                    PRESET_MODAL_TARGETS.has(target) ||
+                    PREFER_ABOVE_TARGETS.has(target))
+                ? "above"
+                : "auto";
     setPlacement(placeCardNearTarget(rects, cardSize, prefer));
   }, [rects, cardSize, target]);
 

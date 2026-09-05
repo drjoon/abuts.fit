@@ -173,6 +173,7 @@ import {
 // - web/frontend/src/shared/components/practice/PracticeToothSimpleAbutmentFields.tsx
 // - web/frontend/src/shared/components/practice/PracticeCustomSpecsPresetEditDialog.tsx
 // - web/frontend/src/shared/pricing/abutsAbutmentService.ts
+// - 2026-09-05: 메모|파일 2열 — 메모 카드 높이를 파일 패널에 ResizeObserver로 맞춤(stretch 과대 확장 방지).
 // - 2026-09-05: 플랫폼 Spotlight — stepId로 data-guide-tour 직접 마킹(로컬 스텝 sync 전에도 홀).
 // - 2026-09-05: 견적→뒤로 프리셋 — Spotlight 클릭 outside dismiss로 모달 즉시 닫힘 방지·다음 틱 재오픈.
 // - 2026-09-05: 견적 투어 — 하이라이트에 금액이 보이게 blur 해제(툴팁 체험은 유지).
@@ -978,6 +979,27 @@ export const PracticeTransferRequestIntakePanel = ({
     platformGuideTour.oralSubStepIndex != null &&
     isPracticeToothWorkOralStepId(platformGuideTour.stepId);
   const [labInviteCopyBusy, setLabInviteCopyBusy] = useState(false);
+  /** 메모|파일 2열 — 오른쪽 파일 패널 높이에 메모 카드 맞춤 */
+  const besideMemoPaneRef = useRef<HTMLDivElement | null>(null);
+  const [memoMatchBesideHeightPx, setMemoMatchBesideHeightPx] = useState<
+    number | null
+  >(null);
+  useLayoutEffect(() => {
+    if (!showMemoSection || !besideMemoContent) {
+      setMemoMatchBesideHeightPx(null);
+      return;
+    }
+    const el = besideMemoPaneRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const apply = () => {
+      const next = Math.round(el.getBoundingClientRect().height);
+      setMemoMatchBesideHeightPx((prev) => (prev === next ? prev : next));
+    };
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [showMemoSection, besideMemoContent]);
   const showLabField = showLabFieldProp ?? showHeaderFields;
   const showPatientField = showPatientFieldProp ?? showHeaderFields;
   const showDateFields = showDateFieldsProp ?? showHeaderFields;
@@ -3173,7 +3195,7 @@ export const PracticeTransferRequestIntakePanel = ({
       <div
         className={cn(
           showMemoSection && besideMemoContent
-            ? "grid grid-cols-1 gap-6 lg:grid-cols-2 lg:items-stretch"
+            ? "grid grid-cols-1 gap-6 lg:grid-cols-2 lg:items-start"
             : "contents",
         )}
         data-guide-tour={
@@ -3188,7 +3210,6 @@ export const PracticeTransferRequestIntakePanel = ({
       <div
         className={cn(
           "flex min-h-0 flex-col",
-          besideMemoContent && "h-full",
           memoOnly && "flex-1",
         )}
       >
@@ -3204,9 +3225,14 @@ export const PracticeTransferRequestIntakePanel = ({
           className={cn(
             "flex flex-col gap-1.5 rounded-lg border border-slate-200 bg-white p-2.5",
             besideMemoContent
-              ? "min-h-[9rem] flex-1 overflow-y-auto"
+              ? "overflow-y-auto"
               : (memoBoxClassName ?? "min-h-[9rem]"),
           )}
+          style={
+            besideMemoContent && memoMatchBesideHeightPx != null
+              ? { height: memoMatchBesideHeightPx }
+              : undefined
+          }
         >
           {memoLines.map((line, index) => {
             const lineSuggestions =
@@ -3381,7 +3407,10 @@ export const PracticeTransferRequestIntakePanel = ({
       </div>
       ) : null}
       {besideMemoContent ? (
-        <div className="flex min-h-0 min-w-0 h-full flex-col">
+        <div
+          ref={besideMemoPaneRef}
+          className="flex min-h-0 min-w-0 flex-col"
+        >
           {besideMemoContent}
         </div>
       ) : null}

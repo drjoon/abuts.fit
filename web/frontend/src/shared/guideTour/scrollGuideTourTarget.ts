@@ -23,6 +23,7 @@ export const TOOTH_CHART_GUIDE_TARGETS = new Set(
 /** 메모·파일·견적·전송 — 작성 스크롤 영역에서 타깃이 보이게 */
 export const COMPOSE_SCROLL_GUIDE_TARGETS = new Set([
   "oral_memo_files",
+  "oral_phone",
   "oral_estimate",
   "oral_send",
   "oral_header",

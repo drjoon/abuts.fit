@@ -14,6 +14,7 @@ import {
 // - web/frontend/src/shared/components/practice/PracticeTransferMiddleGrid.tsx
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
 // - 2026-08-20: Expert — 헤더 → 메모|드롭존 2열 → 보철물. 높이 맞춤.
+// - 2026-09-05: 파일 패널 고유 높이 → 메모 카드가 맞춤(fillHeight stretch 제거).
 
 type PracticeTransferIntakeSectionProps = {
   filePaneProps: PracticeTransferFilePaneProps;
@@ -31,9 +32,7 @@ export const PracticeTransferIntakeSection = ({
       <PracticeTransferRequestIntakePanel
         {...requestIntakeProps}
         showFeeEstimate
-        besideMemoContent={
-          <PracticeTransferFilePane {...filePaneProps} fillHeight />
-        }
+        besideMemoContent={<PracticeTransferFilePane {...filePaneProps} />}
       />
     </PracticeTransferMiddleGrid>
   );

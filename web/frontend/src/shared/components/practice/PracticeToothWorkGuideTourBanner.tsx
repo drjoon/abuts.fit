@@ -3,7 +3,8 @@
 // - web/frontend/src/shared/guideTour/GuideTourProvider.tsx
 // - web/frontend/src/shared/guideTour/guideTourSteps.ts
 // change-log:
-// - 2026-09-05: 구강 챕터 9장 영화형 — 이전/다음만(4·5번만 체험). 세분 스텝·프리셋 카피 override 제거.
+// - 2026-09-05: phone을 memo_files 다음(4/15)으로 — 모바일 안내·폰 미리보기.
+// - 2026-09-05: 구강 챕터 9장 영화형 — 이전/다음만(card_ops·custom_abut만 체험). 세분 스텝·프리셋 카피 override 제거.
 // - 2026-09-05: 임플란트·어벗 프리셋 미설정 시 「+ 추가」저장 안내. resolve 함수 export(플랫폼 Spotlight).
 // - 2026-09-05: 건너뛰기 제거. 종료 → 일시 중단(플랫폼 투어).
 import { Button } from "@/components/ui/button";
@@ -14,12 +15,17 @@ export const PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS = [
   {
     id: "header",
     title: "기공소 · 환자 · 날짜",
-    hint: "기공소·환자명·도착일이 미리 채워져 있습니다. 「다음」으로 설명을 이어 가세요.",
+    hint: "기공소·환자명·도착일을 선택하거나 입력합니다.",
   },
   {
     id: "memo_files",
     title: "메모 · 파일",
-    hint: "메모와 스캔 파일이 미리 첨부되어 있습니다. 「다음」으로 이어 가세요.",
+    hint: "메모 입력과 구강 스캔 파일 업로드는 필요한 경우만 하세요.",
+  },
+  {
+    id: "phone",
+    title: "휴대폰 구강포토",
+    hint: "모바일에서 간단히 환자 사진을 찍어 첨부할 수 있습니다.",
   },
   {
     id: "prosthesis",
@@ -45,11 +51,6 @@ export const PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS = [
     id: "send",
     title: "기공소로 전송",
     hint: "작성이 끝나면 「기공소로 전송」으로 보냅니다. 투어에서는 누르지 말고 「다음」으로 이어 가세요.",
-  },
-  {
-    id: "phone",
-    title: "휴대폰 구강포토",
-    hint: "(투어용으로 폰 화면을 잠시 보여 드립니다.)\n휴대폰에서도 환자 사진을 찍어 올릴 수 있습니다.\n투어에서는 누르지 말고 「다음」으로 이어 가세요.",
   },
   {
     id: "drafts",

@@ -9,6 +9,7 @@ import {
   PracticeTransferFileDropTarget,
 } from "@/shared/components/practice/PracticeTransferFileDropTarget";
 import { PRACTICE_ACCEPTED_HINT } from "@/shared/practice/practiceTransferAccept";
+import { useGuideTour } from "@/shared/guideTour/GuideTourProvider";
 import { cn } from "@/shared/ui/cn";
 import type { PreUploadFileStatus } from "@/shared/hooks/useFilePreUpload";
 
@@ -32,6 +33,8 @@ import type { PreUploadFileStatus } from "@/shared/hooks/useFilePreUpload";
 // - 2026-08-26: requirementNoteExtra — TRIOS Communicate 한 줄.
 // - 2026-09-05: oral_memo_files primary는 Intake 메모|파일 그리드 — 파일 단독 satellite 제거.
 // - 2026-09-05: data-guide-tour=oral_files — 가이드투어 파일드롭 하이라이트.
+// - 2026-09-05: oral_phone — 모바일 환자사진 안내 문구에 data-guide-tour.
+// - 2026-09-05: 첨부 목록 뷰포트 — 고정 높이 제거, 내용·최대 3행.
 
 export type PracticeTransferFileDisplayItem = {
   key: string;
@@ -44,9 +47,9 @@ export type PracticeTransferFileDisplayItem = {
   previewUrl?: string | null;
 };
 
-/** 3열 카드 · 행높이 3.5rem × 3행 + gap 1.5 × 2 ≈ 11.25rem */
+/** 첨부 목록: 최대 3행 · 내용은  Intrinsic 높이 */
 export const PRACTICE_FILE_LIST_VIEWPORT_CLASS =
-  "h-[11.25rem] max-h-[11.25rem] min-h-[11.25rem]";
+  "max-h-[11.25rem] min-h-0";
 
 export type PracticeTransferFilePaneProps = {
   acceptedHint?: string;
@@ -124,6 +127,9 @@ export const PracticeTransferFilePane = ({
   fillHeight = false,
 }: PracticeTransferFilePaneProps) => {
   const hasFiles = files.length > 0;
+  const platformGuideTour = useGuideTour();
+  const highlightMobilePhotoTip =
+    platformGuideTour.active && platformGuideTour.stepId === "oral_phone";
 
   return (
     <div
@@ -146,7 +152,12 @@ export const PracticeTransferFilePane = ({
       {requirementNote || requirementNoteExtra ? (
         <div className="flex flex-col items-center gap-1 px-1 text-center">
           {requirementNote ? (
-            <div className="flex items-center justify-center gap-1.5">
+            <div
+              data-guide-tour={
+                highlightMobilePhotoTip ? "oral_phone" : undefined
+              }
+              className="flex items-center justify-center gap-1.5 rounded-md px-1.5 py-0.5"
+            >
               <Camera
                 className="h-3.5 w-3.5 shrink-0 text-primary-strong/80"
                 aria-hidden

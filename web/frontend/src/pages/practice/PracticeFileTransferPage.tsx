@@ -235,6 +235,7 @@ import { useIsMobile } from "@/shared/hooks/use-mobile";
 import type { PracticeTransferFilePaneProps } from "@/shared/components/practice/PracticeTransferFilePane";
 import type { PracticeTransferRequestIntakePanelProps } from "@/shared/components/practice/PracticeTransferRequestIntakePanel";
 import { useGuideTour } from "@/shared/guideTour/GuideTourProvider";
+import { GuideTourMobileOralPhotoPreview } from "@/shared/guideTour/GuideTourMobileOralPhotoPreview";
 import {
   isOralGuideTourStepId,
   shouldOpenComposeForGuideTourStep,
@@ -247,6 +248,7 @@ import {
   createGuideTourDemoFiles,
   guideTourDemoDisplaySize,
   isGuideTourDemoFile,
+  isLeakedGuideTourDemoDraft,
 } from "@/shared/guideTour/guideTourOralPrefill";
 import { PracticeRecentTransfersAllModal } from "@/pages/practice/components/PracticeRecentTransfersAllModal";
 import {
@@ -1826,7 +1828,10 @@ export const PracticeFileTransferPage = ({
         : Number(file.size || 0);
       return sum + size;
     }, 0);
-    const draftBytes = draftFiles.reduce((sum, file) => sum + Number(file.size || 0), 0);
+    const draftBytes = draftFiles.reduce((sum, file) => {
+      if (isLeakedGuideTourDemoDraft(file)) return sum;
+      return sum + Number(file.size || 0);
+    }, 0);
     return ((localBytes + draftBytes) / (1024 * 1024)).toFixed(1);
   }, [files, draftFiles]);
 
@@ -1841,13 +1846,16 @@ export const PracticeFileTransferPage = ({
           : Number(file.size || 0),
         localIndex: index,
       })),
-      ...draftFiles.map((file, index) => ({
-        kind: "draft" as const,
-        key: `${file.fileId}:${file.s3Key}:${index}`,
-        name: String(file.originalName || "").trim(),
-        size: Number(file.size || 0),
-        draftIndex: index,
-      })),
+      ...draftFiles
+        .map((file, index) => ({ file, index }))
+        .filter(({ file }) => !isLeakedGuideTourDemoDraft(file))
+        .map(({ file, index }) => ({
+          kind: "draft" as const,
+          key: `${file.fileId}:${file.s3Key}:${index}`,
+          name: String(file.originalName || "").trim(),
+          size: Number(file.size || 0),
+          draftIndex: index,
+        })),
     ],
     [files, draftFiles],
   );
@@ -5516,9 +5524,11 @@ export const PracticeFileTransferPage = ({
     if (!authToken) return;
     if (editingSentTransferRef.current) return;
     if (!hasSubstantialContentForNewDraft) return;
-    if (files.length === 0) return;
+    // 가이드 데모 PLY는 표시 전용 — promote/S3 업로드 금지(1B·중복 세트 방지)
+    const promoteFiles = files.filter((file) => !isGuideTourDemoFile(file));
+    if (promoteFiles.length === 0) return;
 
-    const snapshotFiles = [...files];
+    const snapshotFiles = [...promoteFiles];
     const snapshotKeys = snapshotFiles.map((file) => toTempUploadFileKey(file));
     const seq = ++mobileFilePromoteSeqRef.current;
     fileSyncInFlightRef.current = true;
@@ -6854,7 +6864,9 @@ export const PracticeFileTransferPage = ({
         }))
         .filter((row) => row.originalName && row.s3Key);
 
-      const draftSnapshot = draftFilesRef.current;
+      const draftSnapshot = draftFilesRef.current.filter(
+        (row) => !isLeakedGuideTourDemoDraft(row),
+      );
       const seenS3 = new Set(
         draftSnapshot
           .map((row) => String(row.s3Key || "").trim())
@@ -7265,7 +7277,10 @@ export const PracticeFileTransferPage = ({
   /** 구강 챕터 진입 시 데모 값 1회 프리필(영화형) */
   const guideTourOralPrefillAppliedRef = useRef(false);
   useEffect(() => {
-    if (!platformGuideTour.active) return;
+    if (!platformGuideTour.active) {
+      guideTourOralPrefillAppliedRef.current = false;
+      return;
+    }
     if (!isOralGuideTourStepId(platformGuideTour.stepId)) return;
     if (!shouldOpenComposeForGuideTourStep(platformGuideTour.step)) return;
     if (guideTourOralPrefillAppliedRef.current) return;
@@ -7282,6 +7297,19 @@ export const PracticeFileTransferPage = ({
     setArrivalDate(nextArrival);
     arrivalDatePinnedRef.current = true;
     setToothWorks(buildGuideTourDemoToothWorks());
+    // promote 누수로 draft에 쌓인 데모 PLY 제거 → 로컬 표시용 1세트만
+    const cleanedDraftFiles = draftFilesRef.current.filter(
+      (row) => !isLeakedGuideTourDemoDraft(row),
+    );
+    if (cleanedDraftFiles.length !== draftFilesRef.current.length) {
+      draftFilesRef.current = cleanedDraftFiles;
+      setDraftFiles(cleanedDraftFiles);
+      if (String(activeDraftIdRef.current || "").trim()) {
+        void syncDraftFilesToServer(cleanedDraftFiles, { mode: "replace" }).catch(
+          () => {},
+        );
+      }
+    }
     setFiles((prev) => {
       const withoutDemo = prev.filter((file) => !isGuideTourDemoFile(file));
       return [...withoutDemo, ...createGuideTourDemoFiles()];
@@ -8170,10 +8198,21 @@ export const PracticeFileTransferPage = ({
                   headerToolbar: null,
                   reserveGuideTourAside: showComposeHeaderToolbar,
                   guideTourHeaderSlotEl: null,
+                  aboveMemoContent: null,
   };
+
+  const showGuideTourPhonePreview =
+    platformGuideTour.active &&
+    platformGuideTour.stepId === "oral_phone" &&
+    !isMobileViewport;
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      {showGuideTourPhonePreview ? (
+        <GuideTourMobileOralPhotoPreview
+          requestIntakeProps={practiceTransferRequestIntakeProps}
+        />
+      ) : null}
       <div
         className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden"
         data-guide-tour={
