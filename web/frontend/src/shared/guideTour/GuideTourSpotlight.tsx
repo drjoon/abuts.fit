@@ -1,13 +1,21 @@
 // related files:
 // - web/frontend/src/shared/guideTour/GuideTourProvider.tsx
+// - web/frontend/src/shared/guideTour/scrollGuideTourTarget.ts
 // - web/frontend/src/index.css
 // change-log:
+// - 2026-09-05: outline 버튼 hover 글자 — accent-foreground(흰) 덮어써 안 보이던 문제 수정.
+// - 2026-09-05: 치식 타깃 스크롤 — data-guide-tour-scroll + 지연 재시도(타깃 DOM 동기화 대기).
+// - 2026-09-05: 버튼 순서 — 다음에 하기 · (뒤로·건너뛰기·다음 오른쪽).
 // - 2026-09-05: 코치마크 가로폭 32rem(기존 26→42는 과대).
 // - 2026-09-05: oral_lab — 코치마크를 필드 오른쪽 고정. 타깃과 절대 겹치지 않게 배치.
 // - 2026-09-05: 건너뛰기 버튼(챕터3).
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
+import {
+  scrollToothChartGuideTargetIntoView,
+  TOOTH_CHART_GUIDE_TARGETS,
+} from "@/shared/guideTour/scrollGuideTourTarget";
 import { cn } from "@/shared/ui/cn";
 
 type Rect = { top: number; left: number; width: number; height: number };
@@ -152,7 +160,7 @@ type GuideTourSpotlightProps = {
   className?: string;
 };
 
-/** 대상만 선명, 나머지는 블러·딤. 코치마크(뒤로·다음에 하기·건너뛰기·다음). action 스텝도「다음」표시. */
+/** 대상만 선명, 나머지는 블러·딤. 코치마크(다음에 하기 · 뒤로·건너뛰기·다음). action 스텝도「다음」표시. */
 export function GuideTourSpotlight({
   stepIndex,
   stepTotal,
@@ -175,25 +183,44 @@ export function GuideTourSpotlight({
   const [placement, setPlacement] = useState<CardPlacement>({ mode: "center" });
 
   useEffect(() => {
-    const update = () => setRect(readTargetRect(target));
-    update();
-    const t1 = window.setTimeout(update, 80);
-    const t2 = window.setTimeout(update, 320);
-    window.addEventListener("resize", update);
-    window.addEventListener("scroll", update, true);
+    let observed: HTMLElement | null = null;
     const ro =
-      typeof ResizeObserver !== "undefined" ? new ResizeObserver(update) : null;
-    const el = target
-      ? (document.querySelector(
-          `[data-guide-tour="${CSS.escape(target)}"]`,
-        ) as HTMLElement | null)
-      : null;
-    if (el && ro) ro.observe(el);
+      typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(() => {
+            setRect(readTargetRect(target));
+          })
+        : null;
+
+    const measure = () => setRect(readTargetRect(target));
+
+    const syncScrollAndMeasure = () => {
+      const el = target
+        ? (document.querySelector(
+            `[data-guide-tour="${CSS.escape(target)}"]`,
+          ) as HTMLElement | null)
+        : null;
+      if (el && target && TOOTH_CHART_GUIDE_TARGETS.has(target)) {
+        scrollToothChartGuideTargetIntoView(el);
+      }
+      measure();
+      if (el && ro && observed !== el) {
+        if (observed) ro.unobserve(observed);
+        ro.observe(el);
+        observed = el;
+      }
+    };
+
+    // 타깃 data-guide-tour는 패널 oral 스텝 동기화 후에 붙음 — 즉시+지연 재시도
+    syncScrollAndMeasure();
+    const timers = [50, 150, 320, 600].map((ms) =>
+      window.setTimeout(syncScrollAndMeasure, ms),
+    );
+    window.addEventListener("resize", measure);
+    window.addEventListener("scroll", measure, true);
     return () => {
-      window.clearTimeout(t1);
-      window.clearTimeout(t2);
-      window.removeEventListener("resize", update);
-      window.removeEventListener("scroll", update, true);
+      for (const id of timers) window.clearTimeout(id);
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("scroll", measure, true);
       ro?.disconnect();
     };
   }, [target, stepIndex]);
@@ -222,8 +249,13 @@ export function GuideTourSpotlight({
     // 실측 전 fallback으로 한 번 튀지 않게 — 측정 후에만 고정 배치
     if (cardSize.width <= 0 || cardSize.height <= 0) return;
     // 기공소: 드롭다운은 아래·코치마크는 오른쪽 — 겹침·위치 튐 방지
+    // 치식: 스크롤로 위 여유를 만든 뒤 코치마크를 타깃 위에
     const prefer: PlacePrefer =
-      target === "oral_lab" ? "right" : "auto";
+      target === "oral_lab"
+        ? "right"
+        : target && TOOTH_CHART_GUIDE_TARGETS.has(target)
+          ? "above"
+          : "auto";
     setPlacement(placeCardNearTarget(rect, cardSize, prefer));
   }, [rect, cardSize, target]);
 
@@ -242,53 +274,51 @@ export function GuideTourSpotlight({
       <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-slate-600">
         {hint}
       </p>
-      <div className="mt-5 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          {showBack ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-8 border-accent-muted px-3 text-sm text-accent-strong hover:bg-white/70"
-              onClick={onBack}
-            >
-              뒤로
-            </Button>
-          ) : null}
-        </div>
-        <div className="flex items-center gap-2">
+      <div className="mt-5 flex items-center gap-2">
           <Button
             type="button"
             variant="outline"
             size="sm"
-            className="h-8 border-accent-muted px-3 text-sm text-accent-strong hover:bg-white/70"
+            className="h-8 border-accent-muted bg-white/80 px-3 text-sm text-accent-strong hover:bg-white hover:text-accent-strong"
             onClick={onPause}
           >
             다음에 하기
           </Button>
-          {showSkip && onSkip ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-8 border-accent-muted px-3 text-sm text-accent-strong hover:bg-white/70"
-              onClick={onSkip}
-            >
-              건너뛰기
-            </Button>
-          ) : null}
-          {showNext ? (
-            <Button
-              type="button"
-              size="sm"
-              className="h-8 bg-accent px-4 text-sm text-accent-foreground hover:bg-accent-strong"
-              onClick={onNext}
-            >
-              {nextLabel}
-            </Button>
-          ) : null}
+          <div className="ml-auto flex items-center gap-2">
+            {showBack ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 border-accent-muted bg-white/80 px-3 text-sm text-accent-strong hover:bg-white hover:text-accent-strong"
+                onClick={onBack}
+              >
+                뒤로
+              </Button>
+            ) : null}
+            {showSkip && onSkip ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 border-accent-muted bg-white/80 px-3 text-sm text-accent-strong hover:bg-white hover:text-accent-strong"
+                onClick={onSkip}
+              >
+                건너뛰기
+              </Button>
+            ) : null}
+            {showNext ? (
+              <Button
+                type="button"
+                size="sm"
+                className="h-8 bg-accent px-4 text-sm text-accent-foreground hover:bg-accent-strong hover:text-accent-foreground"
+                onClick={onNext}
+              >
+                {nextLabel}
+              </Button>
+            ) : null}
+          </div>
         </div>
-      </div>
     </div>
   );
 

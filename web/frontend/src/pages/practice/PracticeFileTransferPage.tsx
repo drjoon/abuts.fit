@@ -8063,6 +8063,7 @@ export const PracticeFileTransferPage = ({
           <PageFileDropZone
             onFiles={handleIncomingFiles}
             activeClassName="ring-2 ring-primary/30"
+            guideTourScroll
             className={cn(
               "min-h-0 flex-1 overflow-y-auto overscroll-contain",
               isMobile ? "bg-slate-50/80" : "bg-gradient-subtle",

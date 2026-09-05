@@ -20,6 +20,8 @@ type PageFileDropZoneProps = {
   disabled?: boolean;
   className?: string;
   activeClassName?: string;
+  /** 가이드투어 치식 스크롤 조상 식별 */
+  guideTourScroll?: boolean;
   children: PageFileDropZoneChildren;
 };
 
@@ -32,6 +34,7 @@ export function PageFileDropZone({
   disabled,
   className,
   activeClassName,
+  guideTourScroll = false,
   children,
 }: PageFileDropZoneProps) {
   const [isDragActive, setIsDragActive] = useState(false);
@@ -112,6 +115,7 @@ export function PageFileDropZone({
         className,
         isDragActive ? activeClassName : undefined,
       )}
+      {...(guideTourScroll ? { "data-guide-tour-scroll": "" } : {})}
     >
       {content}
     </div>

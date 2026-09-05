@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -28,6 +29,10 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ImeSafeInput } from "@/shared/components/practice/ImeSafeInput";
 import { Label } from "@/components/ui/label";
+import {
+  scrollToothChartGuideTargetIntoView,
+  TOOTH_CHART_GUIDE_STEP_IDS,
+} from "@/shared/guideTour/scrollGuideTourTarget";
 import type {
   AbutsLabFeeCatalogItem,
   PracticeTransferAutoMatchBudget,
@@ -166,6 +171,7 @@ import {
 // - web/frontend/src/shared/components/practice/PracticeToothSimpleAbutmentFields.tsx
 // - web/frontend/src/shared/components/practice/PracticeCustomSpecsPresetEditDialog.tsx
 // - web/frontend/src/shared/pricing/abutsAbutmentService.ts
+// - 2026-09-05: 가이드투어 치식 스텝 — 작성 패널 자동 스크롤(data-guide-tour-scroll).
 // - 2026-09-05: 가이드투어 환자명 — 글자마다 즉시 진행 금지. 입력 멈춤(idle)·Enter만.
 // - 2026-09-05: 기공소 드롭다운 폭=트리거와 동일(min-w 제거).
 // - 2026-09-05: 플랫폼 투어 — 기공소 팝오버 강제오픈 안 함(위치 고정). 수동 오픈 시 z-430.
@@ -1939,6 +1945,25 @@ export const PracticeTransferRequestIntakePanel = ({
     platformGuideTour.oralSubStepIndex,
     platformGuideTour.stepId,
   ]);
+
+  // 치식 투어 스텝 — 작성 패널을 내려 상·하악이 보이게(Spotlight보다 패널 ref가 확실)
+  useLayoutEffect(() => {
+    if (
+      !toothWorkGuideTourStepId ||
+      !(TOOTH_CHART_GUIDE_STEP_IDS as readonly string[]).includes(
+        toothWorkGuideTourStepId,
+      )
+    ) {
+      return;
+    }
+    const run = () =>
+      scrollToothChartGuideTargetIntoView(toothChartRef.current);
+    run();
+    const timers = [40, 160, 360].map((ms) => window.setTimeout(run, ms));
+    return () => {
+      for (const id of timers) window.clearTimeout(id);
+    };
+  }, [toothWorkGuideTourStepId]);
 
   useEffect(() => {
     onGuideTourActiveChange?.(toothWorkGuideTourStep != null);
