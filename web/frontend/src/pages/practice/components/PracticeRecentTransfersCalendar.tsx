@@ -25,7 +25,8 @@
  * - 2026-08-20: 치과 전체보기 칩도 상단 뱃지 상태색(그룹색 대신).
  * - 2026-08-20: 안읽음(수신 미확인·채팅) 빨간 배지를 칩에 표시.
  * - 2026-08-21: 상단 필터 뱃지 ON=진한 상태색 / OFF=흐린 무채색(표시 on/off 대비).
- * - 2026-09-02: 완료 뱃지=finished(청록). 어벗=completed(녹색). 칩도 동일 분리.
+ * - 2026-09-05: 완료=amber·어벗=emerald — 수락(sky)과 청록 계열이 겹치지 않게.
+ * - 2026-09-02: 완료 뱃지=finished. 어벗=completed(녹색). 칩도 동일 분리.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Search, Trash2 } from "lucide-react";
@@ -180,15 +181,18 @@ export const calendarGroupChipStyle = (
   };
 };
 
-/** 상단 뱃지(의뢰·취소·수락·완료·어벗)와 같은 칩 색. */
+/**
+ * 상단 뱃지(의뢰·취소·수락·완료·어벗)와 같은 칩 색.
+ * 수락=sky · 완료=amber · 어벗=emerald — 한눈에 구분.
+ */
 export const PRACTICE_CALENDAR_STATUS_CHIP_STYLE: Record<
   PracticeCalendarStatusTone,
   { backgroundColor: string; color: string }
 > = {
   sent: { backgroundColor: "hsl(210 10% 90%)", color: "hsl(210 12% 32%)" },
   accepted: { backgroundColor: "hsl(208 55% 88%)", color: "hsl(208 52% 28%)" },
-  finished: { backgroundColor: "hsl(195 45% 88%)", color: "hsl(195 50% 26%)" },
-  completed: { backgroundColor: "hsl(168 40% 86%)", color: "hsl(168 48% 24%)" },
+  finished: { backgroundColor: "hsl(40 90% 88%)", color: "hsl(32 65% 28%)" },
+  completed: { backgroundColor: "hsl(152 48% 86%)", color: "hsl(152 55% 22%)" },
   canceled: { backgroundColor: "hsl(0 55% 90%)", color: "hsl(0 48% 34%)" },
   unread: { backgroundColor: "#ffffff", color: "hsl(0 48% 34%)" },
 };
@@ -208,14 +212,11 @@ export const PRACTICE_STATUS_FILTER_BADGE_CLASS: Record<
   },
   finished: {
     idle: "border-slate-200 bg-slate-50/60 text-slate-400 opacity-40 hover:opacity-60 hover:bg-slate-50",
-    active:
-      "border-[hsl(195_50%_42%)] bg-[hsl(195_45%_88%)] text-[hsl(195_50%_26%)] shadow-sm",
+    active: "border-amber-500/90 bg-amber-200 text-amber-950 shadow-sm",
   },
   completed: {
     idle: "border-slate-200 bg-slate-50/60 text-slate-400 opacity-40 hover:opacity-60 hover:bg-slate-50",
-    // 캘린더 칩 completed(hsl 168)와 같은 민트 그린
-    active:
-      "border-[hsl(168_48%_42%)] bg-[hsl(168_40%_86%)] text-[hsl(168_48%_24%)] shadow-sm",
+    active: "border-emerald-500/90 bg-emerald-200 text-emerald-950 shadow-sm",
   },
   canceled: {
     idle: "border-slate-200 bg-slate-50/60 text-slate-400 opacity-40 hover:opacity-60 hover:bg-slate-50",
@@ -254,7 +255,7 @@ export const resolvePracticeCalendarStatusTone = (
 
 /**
  * 상단 상태 필터 뱃지 색 — 필터 키 의미 고정.
- * 「도착완료」=finished(청록), 「작업완료」=completed(녹색·어벗).
+ * 「도착완료」=finished(amber·완료), 「작업완료」=completed(emerald·어벗).
  */
 export const resolvePracticeStatusFilterBadgeTone = (
   filter: unknown,
