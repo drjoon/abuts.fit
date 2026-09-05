@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // change-log:
+// - 2026-09-05: 구강 9장 — 치식 prosthesis/card_ops, compose memo_files·estimate·send.
 // - 2026-09-05: oral_send — 견적 다음 스텝에서 전송 버튼까지 자동 스크롤.
 // - 2026-09-05: scrollComposeGuideTargetIntoView — 메모·파일 등 작성 패널 타깃.
 // - 2026-09-05: 치식 가이드투어 — 작성 패널 data-guide-tour-scroll만 스크롤(조상 window 금지).
@@ -11,24 +12,24 @@
 export const TOOTH_CHART_COACH_RESERVE_PX = 168;
 
 export const TOOTH_CHART_GUIDE_STEP_IDS = [
-  "select",
-  "deselect",
-  "bridge",
-  "type",
-  "copy",
-  "abutment",
+  "prosthesis",
+  "card_ops",
 ] as const;
 
 export const TOOTH_CHART_GUIDE_TARGETS = new Set(
   TOOTH_CHART_GUIDE_STEP_IDS.map((id) => `oral_${id}`),
 );
 
-/** 메모·파일·전송 — 작성 스크롤 영역에서 타깃이 보이게 */
+/** 메모·파일·견적·전송 — 작성 스크롤 영역에서 타깃이 보이게 */
 export const COMPOSE_SCROLL_GUIDE_TARGETS = new Set([
-  "oral_memo",
-  "oral_files",
+  "oral_memo_files",
+  "oral_estimate",
   "oral_send",
+  "oral_header",
 ]);
+
+/** 커스텀어벗 모달 타깃 */
+export const CUSTOM_ABUT_GUIDE_TARGETS = new Set(["oral_custom_abut"]);
 
 function findGuideTourScroller(el: HTMLElement): HTMLElement | null {
   const marked = el.closest(

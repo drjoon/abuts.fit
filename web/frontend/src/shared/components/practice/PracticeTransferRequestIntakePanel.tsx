@@ -85,7 +85,6 @@ import {
   getPracticeToothWorkGuideTourStepId,
   PracticeToothWorkGuideTourBanner,
   PRACTICE_TOOTH_WORK_GUIDE_TOUR_DONE_STEP,
-  resolvePracticeToothWorkGuideTourCopy,
   type PracticeToothWorkGuideTourStep,
 } from "@/shared/components/practice/PracticeToothWorkGuideTourBanner";
 import { useGuideTour } from "@/shared/guideTour/GuideTourProvider";
@@ -973,7 +972,6 @@ export const PracticeTransferRequestIntakePanel = ({
   const { toast } = useToast();
   const authUser = useAuthStore((s) => s.user);
   const platformGuideTour = useGuideTour();
-  const setSpotlightCopyOverride = platformGuideTour.setSpotlightCopyOverride;
   const platformOralActive =
     platformGuideTour.active &&
     platformGuideTour.oralSubStepIndex != null &&
@@ -1838,7 +1836,7 @@ export const PracticeTransferRequestIntakePanel = ({
             ? "cursor-grab border border-primary-muted/80 bg-primary-soft text-primary-strong shadow-sm hover:border-primary/70 hover:bg-primary/15 hover:text-primary-strong active:cursor-grabbing"
             : "cursor-default border border-transparent bg-slate-100/70 text-slate-400",
           isSource && "opacity-40",
-          toothWorkGuideTourStepId === "copy" && canDrag && "practice-tooth-guide-pulse",
+          toothWorkGuideTourStepId === "card_ops" && canDrag && "practice-tooth-guide-pulse",
         )}
         title={canDrag ? "드래그해서 다른 치아에 복사" : undefined}
         onPointerDown={
@@ -2025,7 +2023,9 @@ export const PracticeTransferRequestIntakePanel = ({
   }, [toothWorkGuideTourStep, toothWorks]);
 
   // 체험형 투어: 선택·해제·브리지·복사·어벗·프리셋은 치식 상태 변화로 진행
+  // 플랫폼 영화형 투어는 이전/다음만 — 자동 advance 끔
   useEffect(() => {
+    if (platformOralActive) return;
     if (toothWorkGuideTourStep == null) return;
     if (toothWorkGuideTourBaselineReadyStepRef.current !== toothWorkGuideTourStep) return;
     const stepId = getPracticeToothWorkGuideTourStepId(toothWorkGuideTourStep);
@@ -2034,78 +2034,24 @@ export const PracticeTransferRequestIntakePanel = ({
     if (!baseline) return;
     const current = captureToothWorkGuideTourSnapshot(toothWorks);
 
-    if (stepId === "select") {
-      if ([...current.teeth].some((tooth) => !baseline.teeth.has(tooth))) {
-        goToothWorkGuideTourStep(toothWorkGuideTourStep + 1);
-      }
-      return;
-    }
-
-    if (stepId === "deselect") {
-      if ([...baseline.teeth].some((tooth) => !current.teeth.has(tooth))) {
-        goToothWorkGuideTourStep(toothWorkGuideTourStep + 1);
-      }
-      return;
-    }
-
-    if (stepId === "bridge") {
-      if ([...current.bridges].some((key) => !baseline.bridges.has(key))) {
-        goToothWorkGuideTourStep(toothWorkGuideTourStep + 1);
-      }
-      return;
-    }
-
-    if (stepId === "type") {
-      if (current.contentKey !== baseline.contentKey) {
-        goToothWorkGuideTourStep(toothWorkGuideTourStep + 1);
-      }
-      return;
-    }
-
-    if (stepId === "copy") {
-      const gainedTooth = [...current.teeth].some((tooth) => !baseline.teeth.has(tooth));
-      if (gainedTooth || current.contentKey !== baseline.contentKey) {
-        goToothWorkGuideTourStep(toothWorkGuideTourStep + 1);
-      }
-      return;
-    }
-
-    if (stepId === "abutment") {
-      if (current.abutmentKey !== baseline.abutmentKey) {
-        goToothWorkGuideTourStep(toothWorkGuideTourStep + 1);
-      }
-      return;
-    }
-
-    if (stepId === "implant_preset") {
-      if (current.implantKey !== baseline.implantKey) {
-        goToothWorkGuideTourStep(toothWorkGuideTourStep + 1);
-      }
-      return;
-    }
-
-    if (stepId === "abutment_side") {
-      const abutmentSideReady = toothWorks.some((row) =>
-        hasToothWorkAbutmentSidePreset(row),
-      );
-      if (abutmentSideReady && current.scanbodyKey !== baseline.scanbodyKey) {
+    if (stepId === "card_ops") {
+      if (
+        current.contentKey !== baseline.contentKey ||
+        [...current.teeth].some((tooth) => !baseline.teeth.has(tooth)) ||
+        [...baseline.teeth].some((tooth) => !current.teeth.has(tooth)) ||
+        [...current.bridges].some((key) => !baseline.bridges.has(key))
+      ) {
+        // 로컬 폴백만 — 플랫폼은 Spotlight「다음」
         goToothWorkGuideTourStep(toothWorkGuideTourStep + 1);
       }
     }
-  }, [toothWorkGuideTourStep, toothWorks]);
+  }, [toothWorkGuideTourStep, toothWorks, platformOralActive]);
 
-  // 기공소 · 환자명 · 날짜 선택 후 보철물 단계로
+  // 기공소 · 환자명 · 날짜 — 플랫폼 영화형에서는 스킵(프리필+다음)
   useEffect(() => {
+    if (platformOralActive) return;
     if (toothWorkGuideTourStep == null) return;
-    if (toothWorkGuideTourStepId === "lab" && !showLabField) {
-      goToothWorkGuideTourStep(toothWorkGuideTourStep + 1);
-      return;
-    }
-    if (toothWorkGuideTourStepId === "patient" && !showPatientField) {
-      goToothWorkGuideTourStep(toothWorkGuideTourStep + 1);
-      return;
-    }
-    if (toothWorkGuideTourStepId === "dates" && !showDateFields) {
+    if (toothWorkGuideTourStepId === "header" && !showLabField && !showPatientField && !showDateFields) {
       goToothWorkGuideTourStep(toothWorkGuideTourStep + 1);
     }
   }, [
@@ -2114,12 +2060,12 @@ export const PracticeTransferRequestIntakePanel = ({
     showLabField,
     showPatientField,
     showDateFields,
+    platformOralActive,
   ]);
 
   /**
    * 기공소·환자 투어 — 이미 유효한 값이 있으면「값 변경」후에만 진행.
-   * (1→2 클릭 시 환자명이 채워져 있으면 바로 3(날짜)로 튕기던 플리커 방지.
-   *  뒤로가기뿐 아니라 프로그레스로 앞으로 점프할 때도 동일.)
+   * 플랫폼 영화형에서는 사용하지 않음.
    */
   const [guideTourLabArmed, setGuideTourLabArmed] = useState(false);
   const guideTourLabRequireSelectRef = useRef(false);
@@ -2131,6 +2077,7 @@ export const PracticeTransferRequestIntakePanel = ({
   const guideTourPrevStepRef = useRef<PracticeToothWorkGuideTourStep | null>(null);
 
   useEffect(() => {
+    if (platformOralActive) return;
     const prev = guideTourPrevStepRef.current;
     guideTourPrevStepRef.current = toothWorkGuideTourStep;
     const wentBack =
@@ -2138,47 +2085,36 @@ export const PracticeTransferRequestIntakePanel = ({
       toothWorkGuideTourStep != null &&
       toothWorkGuideTourStep < prev;
 
-    if (toothWorkGuideTourStepId === "lab" && toothWorkGuideTourStep != null) {
+    if (toothWorkGuideTourStepId === "header" && toothWorkGuideTourStep != null) {
       const hadLab = Boolean(String(selectedLab?._id || "").trim());
       guideTourLabConfirmedRef.current = false;
-      // 이미 선택·뒤로 진입: 목록에서 다시 골라야 진행(바깥 클릭만으로 3 튕김 방지)
       guideTourLabRequireSelectRef.current = wentBack || hadLab;
       guideTourLabSkipForceOpenRef.current = wentBack && hadLab;
+      const name = String(patientName || "").trim();
+      guideTourPatientBaselineRef.current = name;
+      guideTourPatientRequireChangeRef.current = wentBack || /[가-힣]/.test(name);
     } else {
       guideTourLabRequireSelectRef.current = false;
       guideTourLabConfirmedRef.current = false;
       guideTourLabSkipForceOpenRef.current = false;
-    }
-
-    if (toothWorkGuideTourStepId === "patient" && toothWorkGuideTourStep != null) {
-      const name = String(patientName || "").trim();
-      guideTourPatientBaselineRef.current = name;
-      // 이미 완성형 한글이면 변경(또는 건너뛰기) 전에는 날짜로 넘기지 않음
-      guideTourPatientRequireChangeRef.current = wentBack || /[가-힣]/.test(name);
-    } else {
       guideTourPatientBaselineRef.current = null;
       guideTourPatientRequireChangeRef.current = false;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 스텝 전환 시 스냅샷만
-  }, [toothWorkGuideTourStep, toothWorkGuideTourStepId]);
+  }, [toothWorkGuideTourStep, toothWorkGuideTourStepId, platformOralActive]);
 
   useEffect(() => {
-    if (toothWorkGuideTourStepId !== "lab") {
+    if (platformOralActive) return;
+    if (toothWorkGuideTourStepId !== "header") {
       setGuideTourLabArmed(false);
       return;
     }
     if (toothWorkGuideTourStep == null) return;
     if (!showLabField) return;
     setGuideTourLabArmed(false);
-    // 플랫폼 Spotlight와 드롭다운·코치마크가 겹쳐 위치가 튀지 않도록
-    // 플랫폼 투어에서는 강제 오픈하지 않음(클릭으로 열거나「다음」).
-    if (
-      platformOralActive ||
-      guideTourLabSkipForceOpenRef.current
-    ) {
+    if (guideTourLabSkipForceOpenRef.current) {
       setLabOpen(false);
     } else {
-      // 로컬 투어: 미선택·이미 선택(첫 진입) 모두 열어 검색·재선택을 보이게 함
       setLabOpen(true);
     }
     const t = window.setTimeout(() => {
@@ -2199,7 +2135,8 @@ export const PracticeTransferRequestIntakePanel = ({
   ]);
 
   useEffect(() => {
-    if (toothWorkGuideTourStepId !== "lab") return;
+    if (platformOralActive) return;
+    if (toothWorkGuideTourStepId !== "header") return;
     if (toothWorkGuideTourStep == null) return;
     if (!guideTourLabArmed) return;
     if (labOpen) return;
@@ -2223,26 +2160,25 @@ export const PracticeTransferRequestIntakePanel = ({
     selectedLab,
     labOpen,
     guideTourLabArmed,
+    platformOralActive,
   ]);
 
   const selectLabFromPicker = (b: SearchBusinessResult) => {
     setSelectedLab(b);
-    if (toothWorkGuideTourStepId === "lab") {
+    if (toothWorkGuideTourStepId === "header") {
       guideTourLabConfirmedRef.current = true;
     }
     setLabOpen(false);
   };
 
   /**
-   * 환자명 투어 — 음절 확정마다 바로 넘기지 않음.
-   * (한글은 compositionend마다 부모가 갱신되어, 한 글자만 쳐도 다음 단계로 튕김)
-   * 입력이 멈춘 뒤(idle) 또는 Enter로만 진행. 「다음」은 Spotlight가 담당.
-   * blur는 코치마크「다음」클릭과 겹쳐 두 칸 건너뛸 수 있어 쓰지 않음.
+   * 환자명 투어 — 플랫폼 영화형에서는 Spotlight「다음」만.
    */
   const GUIDE_TOUR_PATIENT_IDLE_MS = 2000;
 
   const tryCompletePatientGuideTourStep = () => {
-    if (toothWorkGuideTourStepId !== "patient") return;
+    if (platformOralActive) return;
+    if (toothWorkGuideTourStepId !== "header") return;
     if (toothWorkGuideTourStep == null) return;
     const name = String(patientName || "").trim();
     if (!/[가-힣]/.test(name)) return;
@@ -2255,7 +2191,8 @@ export const PracticeTransferRequestIntakePanel = ({
   };
 
   useEffect(() => {
-    if (toothWorkGuideTourStepId !== "patient") return;
+    if (platformOralActive) return;
+    if (toothWorkGuideTourStepId !== "header") return;
     if (toothWorkGuideTourStep == null) return;
     const name = String(patientName || "").trim();
     if (!/[가-힣]/.test(name)) return;
@@ -2267,10 +2204,11 @@ export const PracticeTransferRequestIntakePanel = ({
     }, GUIDE_TOUR_PATIENT_IDLE_MS);
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- patientName 변경 시 idle 재시작
-  }, [toothWorkGuideTourStep, toothWorkGuideTourStepId, patientName]);
+  }, [toothWorkGuideTourStep, toothWorkGuideTourStepId, patientName, platformOralActive]);
 
   const completeDatesGuideTourStep = () => {
-    if (toothWorkGuideTourStepId !== "dates") return;
+    if (platformOralActive) return;
+    if (toothWorkGuideTourStepId !== "header") return;
     if (toothWorkGuideTourStep == null) return;
     goToothWorkGuideTourStep(toothWorkGuideTourStep + 1);
   };
@@ -2374,8 +2312,8 @@ export const PracticeTransferRequestIntakePanel = ({
     customSpecsPresetEditOpenRef.current = false;
     customSpecsPickSessionRef.current = { implant: false, scanbody: false };
     setCustomSpecsPresetEditOpen(false);
-    setCustomSpecsWizardStep(
-      toothWorkGuideTourStepId === "abutment_side" ? "abutment" : "implant",
+      setCustomSpecsWizardStep(
+      toothWorkGuideTourStepId === "custom_abut" ? "implant" : "implant",
     );
     setToothWorks((prev) => {
       const row = prev[index];
@@ -2445,9 +2383,7 @@ export const PracticeTransferRequestIntakePanel = ({
     closeCustomSpecsModal();
   };
 
-  const isPresetGuideTourStep =
-    toothWorkGuideTourStepId === "implant_preset" ||
-    toothWorkGuideTourStepId === "abutment_side";
+  const isPresetGuideTourStep = toothWorkGuideTourStepId === "custom_abut";
 
   // 치식·헤더 투어 스텝에서는 커스텀어벗 모달을 강제 닫기(보철물 선택 홀이 모달을 가로지르는 문제)
   const blockCustomSpecsModalForTour =
@@ -2457,9 +2393,9 @@ export const PracticeTransferRequestIntakePanel = ({
         ((TOOTH_CHART_GUIDE_STEP_IDS as readonly string[]).includes(
           toothWorkGuideTourStepId,
         ) ||
-          toothWorkGuideTourStepId === "lab" ||
-          toothWorkGuideTourStepId === "patient" ||
-          toothWorkGuideTourStepId === "dates"),
+          toothWorkGuideTourStepId === "header" ||
+          toothWorkGuideTourStepId === "memo_files" ||
+          toothWorkGuideTourStepId === "prosthesis"),
     );
 
   useLayoutEffect(() => {
@@ -2470,7 +2406,6 @@ export const PracticeTransferRequestIntakePanel = ({
   }, [blockCustomSpecsModalForTour, customSpecsModalTarget]);
 
   // 견적 스텝으로 들어올 때만 모달 닫기(하이라이트가 모달에 가려지지 않게).
-  // customSpecsModalTarget를 deps에 넣으면 견적 중 어벗 체크→모달 오픈 직후 바로 닫힌다.
   useEffect(() => {
     if (toothWorkGuideTourStepId !== "estimate") return;
     if (customSpecsModalTarget === null) return;
@@ -2478,8 +2413,7 @@ export const PracticeTransferRequestIntakePanel = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 견적 스텝 진입만
   }, [toothWorkGuideTourStepId]);
 
-  // 프리셋 체험 중 설정 모달이 닫혀 있으면 열어 모달 안에서 이어간다.
-  // Spotlight「뒤로/다음」클릭과 같은 포인터가 outside dismiss로 이어지지 않게 다음 틱에 연다.
+  // 커스텀어벗 체험 중 설정 모달이 닫혀 있으면 열어 모달 안에서 이어간다.
   useEffect(() => {
     if (!isPresetGuideTourStep) return;
     if (customSpecsModalTarget !== null) return;
@@ -2507,47 +2441,13 @@ export const PracticeTransferRequestIntakePanel = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- openCustomSpecsModal은 스텝·치식 스냅샷에 묶음
   }, [isPresetGuideTourStep, customSpecsModalTarget, toothWorks]);
 
-  // 가이드투어 프리셋 스텝 ↔ 위저드 스텝 동기화
+  // 가이드투어 커스텀어벗 스텝 — 위저드 시작은 임플란트
   useEffect(() => {
     if (customSpecsModalTarget === null) return;
-    if (toothWorkGuideTourStepId === "implant_preset") {
+    if (toothWorkGuideTourStepId === "custom_abut") {
       setCustomSpecsWizardStep("implant");
-    } else if (toothWorkGuideTourStepId === "abutment_side") {
-      setCustomSpecsWizardStep("abutment");
     }
   }, [toothWorkGuideTourStepId, customSpecsModalTarget]);
-
-  // 플랫폼 Spotlight — 빈 임플란트·스캔바디 프리셋일 때 「+ 추가」안내
-  useEffect(() => {
-    if (!platformOralActive) {
-      setSpotlightCopyOverride(null);
-      return;
-    }
-    if (
-      toothWorkGuideTourStep == null ||
-      (toothWorkGuideTourStepId !== "implant_preset" &&
-        toothWorkGuideTourStepId !== "abutment_side")
-    ) {
-      setSpotlightCopyOverride(null);
-      return;
-    }
-    const copy = resolvePracticeToothWorkGuideTourCopy(
-      toothWorkGuideTourStep,
-      implantFavorites.length,
-      abutmentFavorites.length,
-    );
-    setSpotlightCopyOverride({
-      title: copy.title,
-      hint: copy.hint,
-    });
-  }, [
-    platformOralActive,
-    toothWorkGuideTourStep,
-    toothWorkGuideTourStepId,
-    implantFavorites.length,
-    abutmentFavorites.length,
-    setSpotlightCopyOverride,
-  ]);
 
   const tryConfirmCustomSpecsModalAfterPicks = () => {
     if (customSpecsPresetEditOpenRef.current) return;
@@ -2752,10 +2652,7 @@ export const PracticeTransferRequestIntakePanel = ({
         : "grid grid-cols-1 items-end gap-3 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,0.7fr)_minmax(0,0.95fr)]";
 
   const isHeaderTourStep =
-    toothWorkGuideTourStep != null &&
-    (toothWorkGuideTourStepId === "lab" ||
-      toothWorkGuideTourStepId === "patient" ||
-      toothWorkGuideTourStepId === "dates");
+    toothWorkGuideTourStep != null && toothWorkGuideTourStepId === "header";
   /** 기공소·환자·날짜 투어는 오른쪽 레일 */
   const reserveAsideChrome = Boolean(headerToolbar) || reserveGuideTourAside;
   const useAsideTourRail =
@@ -2769,8 +2666,6 @@ export const PracticeTransferRequestIntakePanel = ({
       step={toothWorkGuideTourStep}
       onExit={exitToothWorkGuideTour}
       onFinish={exitToothWorkGuideTour}
-      implantFavoriteCount={implantFavorites.length}
-      scanbodyFavoriteCount={abutmentFavorites.length}
     />
   ) : null;
   const portaledHeaderTour =
@@ -2784,8 +2679,6 @@ export const PracticeTransferRequestIntakePanel = ({
           step={toothWorkGuideTourStep!}
           onExit={exitToothWorkGuideTour}
           onFinish={exitToothWorkGuideTour}
-          implantFavoriteCount={implantFavorites.length}
-          scanbodyFavoriteCount={abutmentFavorites.length}
         />,
         guideTourHeaderSlotEl,
       )
@@ -2843,7 +2736,12 @@ export const PracticeTransferRequestIntakePanel = ({
             <div className="flex min-w-0 flex-col gap-y-7">
               {headerIntro ? headerIntro : null}
               {showAnyHeaderFields ? (
-      <div className={headerGridClassName}>
+      <div
+        className={headerGridClassName}
+        data-guide-tour={
+          toothWorkGuideTourStepId === "header" ? "oral_header" : undefined
+        }
+      >
         {showLabField ? (
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -2874,9 +2772,8 @@ export const PracticeTransferRequestIntakePanel = ({
                 aria-expanded={labOpen}
                 className={cn(
                   "h-11 w-full justify-between text-base",
-                  toothWorkGuideTourStepId === "lab" && "practice-tooth-guide-pulse",
+                  toothWorkGuideTourStepId === "header" && "practice-tooth-guide-pulse",
                 )}
-                data-guide-tour="oral_lab"
               >
                 <span className="truncate">
                   {selectedLab
@@ -2894,11 +2791,11 @@ export const PracticeTransferRequestIntakePanel = ({
                 // Spotlight(z-420)보다 위 — 투어 중 검색 드롭다운이 블러에 가리지 않게
                 // (index.css body:has(.guide-tour-root) wrapper z-430과 병행)
                 platformOralActive &&
-                  toothWorkGuideTourStepId === "lab" &&
+                  toothWorkGuideTourStepId === "header" &&
                   "z-[430]",
               )}
-              {...(platformOralActive && toothWorkGuideTourStepId === "lab"
-                ? { "data-guide-tour-satellite": "oral_lab" }
+              {...(platformOralActive && toothWorkGuideTourStepId === "header"
+                ? { "data-guide-tour-satellite": "oral_header" }
                 : {})}
               align="start"
               onWheel={(e) => e.stopPropagation()}
@@ -3219,9 +3116,8 @@ export const PracticeTransferRequestIntakePanel = ({
             placeholder="환자명"
             className={cn(
               "h-11 text-base",
-              toothWorkGuideTourStepId === "patient" && "practice-tooth-guide-pulse",
+              toothWorkGuideTourStepId === "header" && "practice-tooth-guide-pulse",
             )}
-            data-guide-tour="oral_patient"
           />
         </div>
         ) : null}
@@ -3232,11 +3128,13 @@ export const PracticeTransferRequestIntakePanel = ({
           arrivalDate={arrivalDate}
           arrivalDefaultDays={arrivalDefaultDays}
           triggerClassName={
-            toothWorkGuideTourStepId === "dates"
+            toothWorkGuideTourStepId === "header"
               ? "practice-tooth-guide-pulse"
               : undefined
           }
-          triggerDataGuideTour="oral_dates"
+          triggerDataGuideTour={
+            toothWorkGuideTourStepId === "header" ? "oral_header" : undefined
+          }
           onOpenChange={(open) => {
             if (!open) completeDatesGuideTourStep();
           }}
@@ -3282,7 +3180,9 @@ export const PracticeTransferRequestIntakePanel = ({
         <div
           id={memoInputId}
           aria-label="메모"
-          data-guide-tour="oral_memo"
+          data-guide-tour={
+            toothWorkGuideTourStepId === "memo_files" ? "oral_memo_files" : undefined
+          }
           className={cn(
             "flex flex-col gap-1.5 rounded-lg border border-slate-200 bg-white p-2.5",
             besideMemoContent
@@ -3560,15 +3460,11 @@ export const PracticeTransferRequestIntakePanel = ({
         !platformOralActive &&
         !useAsideTourRail &&
         customSpecsModalTarget === null &&
-        toothWorkGuideTourStepId !== "lab" &&
-        toothWorkGuideTourStepId !== "patient" &&
-        toothWorkGuideTourStepId !== "dates" ? (
+        toothWorkGuideTourStepId !== "header" ? (
           <PracticeToothWorkGuideTourBanner
             step={toothWorkGuideTourStep}
             onExit={exitToothWorkGuideTour}
             onFinish={exitToothWorkGuideTour}
-            implantFavoriteCount={implantFavorites.length}
-            scanbodyFavoriteCount={abutmentFavorites.length}
           />
         ) : null}
 
@@ -4178,8 +4074,7 @@ export const PracticeTransferRequestIntakePanel = ({
                                 className={cn(
                                   "flex w-full shrink-0 flex-col items-center gap-0.5 leading-none",
                                   showAbutmentCheckbox ? "mt-0.5" : "mt-2",
-                                  toothWorkGuideTourStepId === "implant_preset" ||
-                                    toothWorkGuideTourStepId === "abutment_side"
+                                  toothWorkGuideTourStepId === "custom_abut"
                                     ? "practice-tooth-guide-pulse rounded-md"
                                     : null,
                                 )}
@@ -4284,13 +4179,8 @@ export const PracticeTransferRequestIntakePanel = ({
                 ref={toothChartRef}
                 data-tooth-chart
                 data-guide-tour={
-                  toothWorkGuideTourStepId &&
-                  toothWorkGuideTourStepId !== "lab" &&
-                  toothWorkGuideTourStepId !== "patient" &&
-                  toothWorkGuideTourStepId !== "dates" &&
-                  toothWorkGuideTourStepId !== "estimate" &&
-                  toothWorkGuideTourStepId !== "implant_preset" &&
-                  toothWorkGuideTourStepId !== "abutment_side"
+                  toothWorkGuideTourStepId === "prosthesis" ||
+                  toothWorkGuideTourStepId === "card_ops"
                     ? `oral_${toothWorkGuideTourStepId}`
                     : undefined
                 }
@@ -4324,7 +4214,8 @@ export const PracticeTransferRequestIntakePanel = ({
                       // 투어 견적 스텝 — 홀 안 금액이 blur로 「내용 없음」처럼 보이지 않게
                       revealAmounts={toothWorkGuideTourStepId === "estimate"}
                       onBreakdownTooltipOpenChange={
-                        toothWorkGuideTourStepId === "estimate"
+                        toothWorkGuideTourStepId === "estimate" &&
+                        !platformOralActive
                           ? (open) => {
                               if (
                                 toothWorkGuideTourEstimateHoverTimerRef.current !=
@@ -4337,8 +4228,6 @@ export const PracticeTransferRequestIntakePanel = ({
                                   null;
                               }
                               if (!open) return;
-                              // 툴팁이 실제로 열린 뒤 잠시 보여 준 다음 진행
-                              // (바깥 hover 650ms는 트리거 진입보다 먼저 끝나 레이스남)
                               toothWorkGuideTourEstimateHoverTimerRef.current =
                                 window.setTimeout(() => {
                                   toothWorkGuideTourEstimateHoverTimerRef.current =
@@ -4946,11 +4835,9 @@ export const PracticeTransferRequestIntakePanel = ({
                 }
               : undefined
           }
-          {...(toothWorkGuideTourStepId === "implant_preset"
-            ? { "data-guide-tour": "oral_implant_preset" }
-            : toothWorkGuideTourStepId === "abutment_side"
-              ? { "data-guide-tour": "oral_abutment_side" }
-              : {})}
+          {...(toothWorkGuideTourStepId === "custom_abut"
+            ? { "data-guide-tour": "oral_custom_abut" }
+            : {})}
         >
           {typeof customSpecsModalTarget === "number" && toothWorks[customSpecsModalTarget] ? (
             (() => {
@@ -5010,12 +4897,7 @@ export const PracticeTransferRequestIntakePanel = ({
                     modalSpecs.abutmentHeight,
                 );
               const implantReady = hasToothWorkImplantPreset(modalSpecs);
-              const wizardStep =
-                toothWorkGuideTourStepId === "implant_preset"
-                  ? "implant"
-                  : toothWorkGuideTourStepId === "abutment_side"
-                    ? "abutment"
-                    : customSpecsWizardStep;
+              const wizardStep = customSpecsWizardStep;
               return (
                 <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
                   <DialogHeader className="shrink-0 space-y-1 text-left">
@@ -5049,15 +4931,12 @@ export const PracticeTransferRequestIntakePanel = ({
 
                   {toothWorkGuideTourStep != null &&
                   !platformOralActive &&
-                  (toothWorkGuideTourStepId === "implant_preset" ||
-                    toothWorkGuideTourStepId === "abutment_side") ? (
+                  toothWorkGuideTourStepId === "custom_abut" ? (
                     <PracticeToothWorkGuideTourBanner
                       step={toothWorkGuideTourStep}
                       onExit={exitToothWorkGuideTour}
                       onFinish={exitToothWorkGuideTour}
                       className="shrink-0"
-                      implantFavoriteCount={implantFavorites.length}
-                      scanbodyFavoriteCount={abutmentFavorites.length}
                     />
                   ) : null}
 
@@ -5067,7 +4946,7 @@ export const PracticeTransferRequestIntakePanel = ({
                         <div
                           className={cn(
                             "flex min-h-0 min-w-0 flex-1 flex-col gap-1.5",
-                            toothWorkGuideTourStepId === "implant_preset" &&
+                            toothWorkGuideTourStepId === "custom_abut" &&
                               "practice-tooth-guide-pulse rounded-xl",
                           )}
                         >
@@ -5076,10 +4955,7 @@ export const PracticeTransferRequestIntakePanel = ({
                             allowPresetEdit
                             heading="임플란트"
                             className="min-h-0 flex-1 border-primary/50 bg-primary-soft/60"
-                            guideOpenAdd={
-                              toothWorkGuideTourStepId === "implant_preset" &&
-                              implantFavorites.length === 0
-                            }
+                            guideOpenAdd={false}
                             value={modalSpecs}
                             onChange={(nextImplant) => {
                               patchCustomSpecsOnTooth(
@@ -5096,7 +4972,7 @@ export const PracticeTransferRequestIntakePanel = ({
                         <div
                           className={cn(
                             "grid min-h-0 min-w-0 flex-1 grid-cols-1 items-stretch gap-2.5 sm:grid-cols-2",
-                            toothWorkGuideTourStepId === "abutment_side" &&
+                            toothWorkGuideTourStepId === "custom_abut" &&
                               "practice-tooth-guide-pulse rounded-xl",
                           )}
                         >
@@ -5106,10 +4982,7 @@ export const PracticeTransferRequestIntakePanel = ({
                             heading="스캔바디"
                             dimmed={simpleMode}
                             className="min-h-0 border-service-abut-muted/90 bg-service-abut-soft/40"
-                            guideOpenAdd={
-                              toothWorkGuideTourStepId === "abutment_side" &&
-                              abutmentFavorites.length === 0
-                            }
+                            guideOpenAdd={false}
                             value={modalSpecs}
                             onChange={(nextAbutment) => {
                               patchCustomSpecsOnTooth(
@@ -5166,7 +5039,6 @@ export const PracticeTransferRequestIntakePanel = ({
                           variant="outline"
                           className="h-10 min-w-[5.5rem]"
                           onClick={() => setCustomSpecsWizardStep("implant")}
-                          disabled={toothWorkGuideTourStepId === "abutment_side"}
                         >
                           <ChevronLeft className="mr-1 h-4 w-4" />
                           이전

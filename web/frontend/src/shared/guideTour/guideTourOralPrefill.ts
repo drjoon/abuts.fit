@@ -1,0 +1,101 @@
+// related files:
+// - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
+// - web/frontend/src/shared/guideTour/guideTourSteps.ts
+// - web/frontend/src/shared/practice/transferMemo.ts
+// change-log:
+// - 2026-09-05: 구강 챕터 영화형 — 환자·메모·치식·표시용 PLY 프리필(실업로드 스킵).
+
+import type { ToothWorkSelection } from "@/shared/practice/transferMemo";
+
+export const GUIDE_TOUR_DEMO_PATIENT_NAME = "테스트환자";
+export const GUIDE_TOUR_DEMO_MEMO = "쉐이드 포토 첨부";
+export const GUIDE_TOUR_DEMO_ARRIVAL_OFFSET_DAYS = 7;
+
+/** File.lastModified 마커 — preUpload·실전송에서 가이드 데모로 식별 */
+export const GUIDE_TOUR_DEMO_FILE_LAST_MODIFIED = 1_700_000_000_000;
+
+export type GuideTourDemoFileSpec = {
+  name: string;
+  /** UI 표시용 바이트(실제 Blob은 1바이트) */
+  displaySize: number;
+};
+
+export const GUIDE_TOUR_DEMO_FILE_SPECS: readonly GuideTourDemoFileSpec[] = [
+  { name: "UpperJaw.ply", displaySize: 20 * 1024 * 1024 },
+  { name: "LowerJaw.ply", displaySize: 20 * 1024 * 1024 },
+  { name: "Bitescan.ply", displaySize: 4 * 1024 * 1024 },
+] as const;
+
+const simpleAbut = {
+  customAbutment: true as const,
+  abutmentManufacturer: "심플어벗",
+  abutmentDiameter: "8",
+  abutmentHeight: "M",
+};
+
+/** 16–14 브리지+심플어벗, 13 크라운+CA, 12–22 임시치아 */
+export const buildGuideTourDemoToothWorks = (): ToothWorkSelection[] => {
+  const bridgeTeeth = ["16", "15", "14"] as const;
+  const bridgeRows: ToothWorkSelection[] = bridgeTeeth.map((tooth) => {
+    const others = bridgeTeeth.filter((t) => t !== tooth);
+    const isAbut = tooth === "16" || tooth === "14";
+    return {
+      toothNumber: tooth,
+      prosthesisType: "브리지",
+      bridgeLinkedTeeth: [...others],
+      ...(isAbut
+        ? { ...simpleAbut }
+        : {
+            customAbutment: false,
+            abutmentManufacturer: "",
+            abutmentDiameter: "",
+            abutmentHeight: "",
+          }),
+    };
+  });
+
+  const crown13: ToothWorkSelection = {
+    toothNumber: "13",
+    prosthesisType: "크라운",
+    customAbutment: true,
+    bridgeLinkedTeeth: [],
+    // CA — 규격은 커스텀어벗 스텝에서 체험
+    abutmentManufacturer: "",
+    abutmentDiameter: "",
+    abutmentHeight: "",
+  };
+
+  const tempTeeth = ["12", "11", "21", "22"] as const;
+  const tempRows: ToothWorkSelection[] = tempTeeth.map((tooth) => {
+    const others = tempTeeth.filter((t) => t !== tooth);
+    return {
+      toothNumber: tooth,
+      prosthesisType: "임시치아",
+      customAbutment: false,
+      bridgeLinkedTeeth: [...others],
+    };
+  });
+
+  return [...bridgeRows, crown13, ...tempRows];
+};
+
+export const isGuideTourDemoFile = (file: File | null | undefined): boolean => {
+  if (!file) return false;
+  if (file.lastModified === GUIDE_TOUR_DEMO_FILE_LAST_MODIFIED) return true;
+  return GUIDE_TOUR_DEMO_FILE_SPECS.some((spec) => spec.name === file.name);
+};
+
+export const guideTourDemoDisplaySize = (file: File): number => {
+  const spec = GUIDE_TOUR_DEMO_FILE_SPECS.find((row) => row.name === file.name);
+  return spec?.displaySize ?? Number(file.size || 0);
+};
+
+/** 표시용 1바이트 placeholder — 사이즈는 UI에서 displaySize로 덮어씀 */
+export const createGuideTourDemoFiles = (): File[] =>
+  GUIDE_TOUR_DEMO_FILE_SPECS.map(
+    (spec) =>
+      new File([new Uint8Array([0])], spec.name, {
+        type: "application/octet-stream",
+        lastModified: GUIDE_TOUR_DEMO_FILE_LAST_MODIFIED,
+      }),
+  );

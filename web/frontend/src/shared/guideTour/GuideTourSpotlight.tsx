@@ -5,11 +5,10 @@
 // - web/frontend/src/shared/components/practice/PracticeOrderArrivalDateRangeField.tsx
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // change-log:
+// - 2026-09-05: 영화형 — blur·홀 클릭 차단. allowTargetInteraction만 홀 통과(4·5번).
 // - 2026-09-05: 코치카드 — guide-tour-root(z-420) 밖 별도 레이어(z-440). 루트 안 z-440은 중첩 모달(z-425)에 가려짐.
 // - 2026-09-05: oral_send — 작성 패널 스크롤 후 하이라이트(견적→전송).
-// - 2026-09-05: oral_memo·oral_files — 작성 패널 스크롤 후 하이라이트.
 // - 2026-09-05: 치식 홀이 커스텀어벗 모달 위에 남는 문제 — 타깃 변경 시 rect 즉시 클리어·모달 우선 측정.
-// - 2026-09-05: 코치카드 z-440 — 투어 중 중첩 모달(z-425) 위에 유지.
 // - 2026-09-05: 큰 모달 타깃(임플란트·어벗 프리셋) — 코치마크를 뷰포트/모달 위에 두어 잘림 방지.
 // - 2026-09-05: 하이라이트 — 팝오버 zoom 애니메이션 후 재측정·PAD 확대·링 inset 제거.
 // - 2026-09-05: 위성(data-guide-tour-satellite) 홀 확장·카드 회피. 드롭다운 타깃은 코치마크 오른쪽.
@@ -24,6 +23,7 @@ import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import {
   COMPOSE_SCROLL_GUIDE_TARGETS,
+  CUSTOM_ABUT_GUIDE_TARGETS,
   scrollComposeGuideTargetIntoView,
   scrollToothChartGuideTargetIntoView,
   TOOTH_CHART_GUIDE_TARGETS,
@@ -42,12 +42,9 @@ const CARD_W_FALLBACK = 32 * 16;
 const REMEASURE_AFTER_MS = [0, 50, 120, 220, 360, 520] as const;
 
 /** 아래로 열리는 팝오버/드롭다운 — 코치마크는 옆(오른쪽)에 두어 설명 대상을 가리지 않음 */
-const DROPDOWN_BELOW_TARGETS = new Set(["oral_lab", "oral_dates"]);
+const DROPDOWN_BELOW_TARGETS = new Set(["oral_header"]);
 /** 커스텀어벗 설정 모달 — 큰 타깃, 코치마크는 위쪽 */
-const PRESET_MODAL_TARGETS = new Set([
-  "oral_implant_preset",
-  "oral_abutment_side",
-]);
+const PRESET_MODAL_TARGETS = CUSTOM_ABUT_GUIDE_TARGETS;
 
 function readElRect(el: Element | null): Rect | null {
   if (!el || !(el instanceof HTMLElement)) return null;
@@ -98,11 +95,8 @@ function readSpotlightRect(target: string | null | undefined): Rect | null {
   );
   let hole = readElRect(primary);
   if (!hole) {
-    // 프리셋 스텝: 모달이 아직 마운트 전이면 중첩 다이얼로그 클래스로 재시도
-    if (
-      target === "oral_implant_preset" ||
-      target === "oral_abutment_side"
-    ) {
+    // 커스텀어벗 스텝: 모달이 아직 마운트 전이면 중첩 다이얼로그 클래스로 재시도
+    if (CUSTOM_ABUT_GUIDE_TARGETS.has(target)) {
       return readNestedGuideDialogRect();
     }
     return null;
@@ -247,6 +241,8 @@ type GuideTourSpotlightProps = {
   showNext: boolean;
   showSkip?: boolean;
   nextLabel?: string;
+  /** true면 하이라이트 홀 클릭 통과(보철물 카드·커스텀어벗 체험) */
+  allowTargetInteraction?: boolean;
   onBack: () => void;
   onNext: () => void;
   onSkip?: () => void;
@@ -254,7 +250,7 @@ type GuideTourSpotlightProps = {
   className?: string;
 };
 
-/** 대상만 선명, 나머지는 블러·딤. 코치마크(다음에 하기 · 뒤로·건너뛰기·다음). action 스텝도「다음」표시. */
+/** 대상만 선명, 나머지는 블러·딤. 코치마크(다음에 하기 · 뒤로·건너뛰기·다음). 기본은 홀 포함 클릭 차단. */
 export function GuideTourSpotlight({
   stepIndex,
   stepTotal,
@@ -265,6 +261,7 @@ export function GuideTourSpotlight({
   showNext,
   showSkip = false,
   nextLabel = "다음",
+  allowTargetInteraction = false,
   onBack,
   onNext,
   onSkip,
@@ -314,8 +311,7 @@ export function GuideTourSpotlight({
       ) as HTMLElement | null;
       if (primary) return primary;
       if (
-        target === "oral_implant_preset" ||
-        target === "oral_abutment_side" ||
+        (target && CUSTOM_ABUT_GUIDE_TARGETS.has(target)) ||
         (target && TOOTH_CHART_GUIDE_TARGETS.has(target))
       ) {
         return document.querySelector(
@@ -507,23 +503,23 @@ export function GuideTourSpotlight({
     </div>
   );
 
-  // z-420 blur · z-425 nested dialog · z-430 popper · z-440 card(루트 밖 — 스택 컨텍스트 분리)
+  // z-420 blur(클릭 차단) · z-425 nested dialog · z-430 popper · z-440 card(루트 밖)
   const blurLayer = (
     <div className="guide-tour-root pointer-events-none fixed inset-0 z-[420]">
       {rect ? (
         <>
           <div
-            className="guide-tour-blur absolute left-0 right-0 top-0"
+            className="guide-tour-blur pointer-events-auto absolute left-0 right-0 top-0"
             style={{ height: rect.top }}
             aria-hidden
           />
           <div
-            className="guide-tour-blur absolute bottom-0 left-0 right-0"
+            className="guide-tour-blur pointer-events-auto absolute bottom-0 left-0 right-0"
             style={{ top: rect.top + rect.height }}
             aria-hidden
           />
           <div
-            className="guide-tour-blur absolute left-0"
+            className="guide-tour-blur pointer-events-auto absolute left-0"
             style={{
               top: rect.top,
               height: rect.height,
@@ -532,7 +528,7 @@ export function GuideTourSpotlight({
             aria-hidden
           />
           <div
-            className="guide-tour-blur absolute right-0"
+            className="guide-tour-blur pointer-events-auto absolute right-0"
             style={{
               top: rect.top,
               height: rect.height,
@@ -540,6 +536,19 @@ export function GuideTourSpotlight({
             }}
             aria-hidden
           />
+          {/* 영화형: 홀도 클릭 차단. 4·5번만 통과 */}
+          {!allowTargetInteraction ? (
+            <div
+              className="pointer-events-auto absolute rounded-lg"
+              style={{
+                top: rect.top,
+                left: rect.left,
+                width: rect.width,
+                height: rect.height,
+              }}
+              aria-hidden
+            />
+          ) : null}
           <div
             // border는 box 안쪽 → 대상보다 작아 보임. outline은 바깥으로 그려 홀·대상과 맞춤.
             className="pointer-events-none absolute rounded-lg outline outline-2 outline-accent outline-offset-2"
@@ -553,7 +562,10 @@ export function GuideTourSpotlight({
           />
         </>
       ) : (
-        <div className="guide-tour-blur absolute inset-0" aria-hidden />
+        <div
+          className="guide-tour-blur pointer-events-auto absolute inset-0"
+          aria-hidden
+        />
       )}
     </div>
   );

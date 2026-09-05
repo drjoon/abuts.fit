@@ -238,6 +238,15 @@ import {
   isOralGuideTourStepId,
   shouldOpenComposeForGuideTourStep,
 } from "@/shared/guideTour/guideTourSteps";
+import {
+  GUIDE_TOUR_DEMO_ARRIVAL_OFFSET_DAYS,
+  GUIDE_TOUR_DEMO_MEMO,
+  GUIDE_TOUR_DEMO_PATIENT_NAME,
+  buildGuideTourDemoToothWorks,
+  createGuideTourDemoFiles,
+  guideTourDemoDisplaySize,
+  isGuideTourDemoFile,
+} from "@/shared/guideTour/guideTourOralPrefill";
 import { PracticeRecentTransfersAllModal } from "@/pages/practice/components/PracticeRecentTransfersAllModal";
 import {
   PRACTICE_MY_TRANSFERS_PAGE_SIZE,
@@ -1344,6 +1353,7 @@ export const PracticeFileTransferPage = ({
   >(null);
   const {
     files,
+    setFiles,
     selectedLab,
     setSelectedLab,
     requestMemo,
@@ -1763,7 +1773,9 @@ export const PracticeFileTransferPage = ({
 
   useEffect(() => {
     if (!authToken || files.length === 0) return;
-    preUploadFiles(files);
+    const uploadable = files.filter((file) => !isGuideTourDemoFile(file));
+    if (uploadable.length === 0) return;
+    preUploadFiles(uploadable);
   }, [authToken, files, preUploadFiles]);
 
   const clearLocalFilesWithCache = useCallback(async () => {
@@ -1807,7 +1819,12 @@ export const PracticeFileTransferPage = ({
   ]);
 
   const combinedFilesSizeMb = useMemo(() => {
-    const localBytes = files.reduce((sum, file) => sum + Number(file.size || 0), 0);
+    const localBytes = files.reduce((sum, file) => {
+      const size = isGuideTourDemoFile(file)
+        ? guideTourDemoDisplaySize(file)
+        : Number(file.size || 0);
+      return sum + size;
+    }, 0);
     const draftBytes = draftFiles.reduce((sum, file) => sum + Number(file.size || 0), 0);
     return ((localBytes + draftBytes) / (1024 * 1024)).toFixed(1);
   }, [files, draftFiles]);
@@ -1818,7 +1835,9 @@ export const PracticeFileTransferPage = ({
         kind: "local" as const,
         key: `${file.name}:${file.size}:${file.lastModified}:${index}`,
         name: String(file.name || "").trim(),
-        size: Number(file.size || 0),
+        size: isGuideTourDemoFile(file)
+          ? guideTourDemoDisplaySize(file)
+          : Number(file.size || 0),
         localIndex: index,
       })),
       ...draftFiles.map((file, index) => ({
@@ -6817,7 +6836,9 @@ export const PracticeFileTransferPage = ({
       }
       await waitForComposeFileSyncIdle(60_000);
 
-      const localFilesForSubmit = pendingLocalFilesRef.current;
+      const localFilesForSubmit = pendingLocalFilesRef.current.filter(
+        (file) => !isGuideTourDemoFile(file),
+      );
       const uploadedTempFiles: TempUploadedFile[] =
         await resolveUploadedTempFiles(localFilesForSubmit);
 
@@ -7233,19 +7254,45 @@ export const PracticeFileTransferPage = ({
     platformGuideTour.step,
   ]);
 
+  /** 구강 챕터 진입 시 데모 값 1회 프리필(영화형) */
+  const guideTourOralPrefillAppliedRef = useRef(false);
+  useEffect(() => {
+    if (!platformGuideTour.active) return;
+    if (!isOralGuideTourStepId(platformGuideTour.stepId)) return;
+    if (!shouldOpenComposeForGuideTourStep(platformGuideTour.step)) return;
+    if (guideTourOralPrefillAppliedRef.current) return;
+    if (editingSentTransferRef.current) return;
+    guideTourOralPrefillAppliedRef.current = true;
+
+    setPatientName(GUIDE_TOUR_DEMO_PATIENT_NAME);
+    setRequestMemo(GUIDE_TOUR_DEMO_MEMO);
+    setOrderDate(todayDate);
+    const nextArrival = addDaysToDateInput(
+      todayDate,
+      GUIDE_TOUR_DEMO_ARRIVAL_OFFSET_DAYS,
+    );
+    setArrivalDate(nextArrival);
+    arrivalDatePinnedRef.current = true;
+    setToothWorks(buildGuideTourDemoToothWorks());
+    setFiles((prev) => {
+      const withoutDemo = prev.filter((file) => !isGuideTourDemoFile(file));
+      return [...withoutDemo, ...createGuideTourDemoFiles()];
+    });
+  }, [
+    platformGuideTour.active,
+    platformGuideTour.stepId,
+    platformGuideTour.step,
+    setRequestMemo,
+    setFiles,
+    todayDate,
+  ]);
+
   const openComposeForArrival = (ymd: string) => {
-    // 가이드투어 oral_calendar: 도착일 클릭이 곧「신규 의뢰 시작」—
-    // 작성 패널만 열고 스텝을 안 넘기면 캘린더 안내가 작성 화면 위에 남는다.
-    const advanceFromCalendar =
-      platformGuideTour.active && platformGuideTour.stepId === "oral_calendar";
     void handleStartNewTransfer({
       arrivalYmd: ymd,
       openCompose: true,
       silentToast: true,
     });
-    if (advanceFromCalendar) {
-      platformGuideTour.advance();
-    }
   };
 
   const openNewComposeFromDrafts = () => {

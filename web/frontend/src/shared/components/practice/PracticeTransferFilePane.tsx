@@ -126,7 +126,7 @@ export const PracticeTransferFilePane = ({
 
   return (
     <div
-      data-guide-tour="oral_files"
+      data-guide-tour-satellite="oral_memo_files"
       className={cn(
         "flex min-h-0 flex-col gap-2.5",
         fillHeight ? "h-full" : "shrink-0",

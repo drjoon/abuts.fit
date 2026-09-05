@@ -5,6 +5,7 @@
 // - web/backend/controllers/users/user.controller.js
 // - web/frontend/src/shared/components/practice/PracticeToothWorkGuideTourBanner.tsx
 // change-log:
+// - 2026-09-05: 구강 9장 — Spotlight 1/9 progress · allowTargetInteraction(4·5).
 // - 2026-09-05: oral 프리셋 스텝 — IntakePanel이 Spotlight 문구 override(미설정 「+ 추가」안내).
 // - 2026-09-05: oral action 스텝도「다음」상시 표시.
 // - 2026-09-05: 챕터 카운터·건너뛰기·forceMobile. oral 치식 체험 유지.
@@ -25,6 +26,8 @@ import { PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS } from "@/shared/components/practi
 import {
   getGuideTourStepIndex,
   getGuideTourSteps,
+  getPracticeOralGuideTourProgress,
+  isGuideTourAllowTargetInteraction,
   isPracticeToothWorkOralStepId,
   PRACTICE_GUIDE_TOUR_CHAPTER_TOTAL,
   type GuideTourKind,
@@ -319,20 +322,33 @@ export function GuideTourProvider({ kind, children }: ProviderProps) {
   const isLastStep = stepIndex >= stepTotal - 1;
   const spotlightTitle = spotlightCopyOverride?.title ?? step?.title ?? "";
   const spotlightHint = spotlightCopyOverride?.hint ?? step?.hint ?? "";
+  const oralProgress =
+    kind === "practice" ? getPracticeOralGuideTourProgress(stepId) : null;
+  const spotlightStepIndex = oralProgress
+    ? oralProgress.index
+    : showChapterProgress
+      ? chapterDisplay - 1
+      : 0;
+  const spotlightStepTotal = oralProgress
+    ? oralProgress.total
+    : showChapterProgress
+      ? chapterTotal
+      : 0;
 
   return (
     <GuideTourContext.Provider value={value}>
       {children}
       {showCoach ? (
         <GuideTourSpotlight
-          stepIndex={showChapterProgress ? chapterDisplay - 1 : 0}
-          stepTotal={showChapterProgress ? chapterTotal : 0}
+          stepIndex={spotlightStepIndex}
+          stepTotal={spotlightStepTotal}
           title={spotlightTitle}
           hint={spotlightHint}
           target={step.target}
           showBack={stepIndex > 0}
           showNext
           showSkip={Boolean(step.skippable)}
+          allowTargetInteraction={isGuideTourAllowTargetInteraction(step)}
           nextLabel={
             step.id === "intro" ? "계속" : isLastStep ? "완료" : "다음"
           }

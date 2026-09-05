@@ -1,75 +1,60 @@
 // related files:
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/guideTour/GuideTourProvider.tsx
+// - web/frontend/src/shared/guideTour/guideTourSteps.ts
 // change-log:
+// - 2026-09-05: 구강 챕터 9장 영화형 — 이전/다음만(4·5번만 체험). 세분 스텝·프리셋 카피 override 제거.
 // - 2026-09-05: 임플란트·어벗 프리셋 미설정 시 「+ 추가」저장 안내. resolve 함수 export(플랫폼 Spotlight).
 // - 2026-09-05: 건너뛰기 제거. 종료 → 일시 중단(플랫폼 투어).
-// - 2026-08-25: aside — 헤더 버튼~입력 행을 세로로 채우도록 h-full·space-between.
-// - 2026-08-25: 어벗 투어 — 스캔바디 커스텀어벗 vs 심플어벗(꽂고 바로 스캔) 두 방식 안내.
 import { Button } from "@/components/ui/button";
 import { cn } from "@/shared/ui/cn";
 
-/** 기공의뢰 작성 전체 체험형 가이드투어 (기공소·환자·날짜 → 보철물) */
+/** 기공의뢰 작성 가이드투어 — 구강 챕터 9장 (플랫폼 oral_* 와 id 정렬) */
 export const PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS = [
   {
-    id: "lab",
-    title: "기공소 선택",
-    hint: "기공소를 입력 혹은 선택하세요.",
+    id: "header",
+    title: "기공소 · 환자 · 날짜",
+    hint: "기공소·환자명·도착일이 미리 채워져 있습니다. 「다음」으로 설명을 이어 가세요.",
   },
   {
-    id: "patient",
-    title: "환자명",
-    hint: "완성형 한글 환자명을 입력하세요.",
+    id: "memo_files",
+    title: "메모 · 파일",
+    hint: "메모와 스캔 파일이 미리 첨부되어 있습니다. 「다음」으로 이어 가세요.",
   },
   {
-    id: "dates",
-    title: "날짜 확인",
-    hint: "주문·도착일 버튼을 눌러 날짜를 확인하세요.",
+    id: "prosthesis",
+    title: "보철물",
+    hint: "16–14 브리지(심플어벗), 13 크라운+커스텀어벗, 12–22 임시치아가 미리 잡혀 있습니다.",
   },
   {
-    id: "select",
-    title: "치아 선택",
-    hint: "빈 칸을 클릭하거나 드래그해 보철물을 선택하세요.",
+    id: "card_ops",
+    title: "보철물 카드 조작",
+    hint: "이 부분은 화면에서 체험해 보세요. 선택·해제·브리지·형태·복사 등을 눌러 본 뒤 「다음」으로 넘어가세요.",
   },
   {
-    id: "deselect",
-    title: "치아 해제",
-    hint: "선택된 치아 칸을 다시 클릭하면 해제됩니다.",
-  },
-  {
-    id: "bridge",
-    title: "브리지 연결",
-    hint: "치아 사이 + 를 눌러 브리지를 연결하세요.",
-  },
-  {
-    id: "type",
-    title: "형태 변경",
-    hint: "형태 글자(크라운 등)를 클릭해 종류를 바꾸세요.",
-  },
-  {
-    id: "copy",
-    title: "복사",
-    hint: "「복사」를 다른 치아로 드래그해 형태·어벗을 복사하세요.",
-  },
-  {
-    id: "abutment",
-    title: "어벗 선택",
-    hint: "「어벗」을 켜세요. 스캔바디 커스텀어벗과 심플어벗(꽂고 바로 스캔) 두 방식이 있습니다.",
-  },
-  {
-    id: "implant_preset",
-    title: "임플란트",
-    hint: "임플란트 프리셋을 고르세요. 없으면 「+ 추가」로 제조사·브랜드·패밀리·타입을 저장한 뒤 선택합니다.",
-  },
-  {
-    id: "abutment_side",
-    title: "어벗 방식",
-    hint: "스캔바디 또는 심플어벗·심플밀링을 고르세요. 스캔바디가 없으면 「+ 추가」하거나 오른쪽 심플 규격을 선택합니다.",
+    id: "custom_abut",
+    title: "커스텀어벗 설정",
+    hint: "이 부분도 화면에서 체험해 보세요. 임플란트·어벗 규격을 고른 뒤 「다음」으로 이어 가세요.",
   },
   {
     id: "estimate",
     title: "견적 확인",
-    hint: "견적 금액에 마우스를 올려 툴팁으로 기공비를 확인하세요.",
+    hint: "견적 금액을 확인합니다. 투어에서는 「다음」으로 이어 가세요.",
+  },
+  {
+    id: "send",
+    title: "기공소로 전송",
+    hint: "작성이 끝나면 「기공소로 전송」으로 보냅니다. 투어에서는 누르지 말고 「다음」으로 이어 가세요.",
+  },
+  {
+    id: "phone",
+    title: "휴대폰 구강포토",
+    hint: "(투어용으로 폰 화면을 잠시 보여 드립니다.)\n휴대폰에서도 환자 사진을 찍어 올릴 수 있습니다.\n투어에서는 누르지 말고 「다음」으로 이어 가세요.",
+  },
+  {
+    id: "drafts",
+    title: "임시저장 · 휴지통",
+    hint: "임시저장은 전송 전 이어서 작성할 때, 휴지통은 취소·삭제한 의뢰를 볼 때 씁니다.",
   },
 ] as const;
 
@@ -98,47 +83,6 @@ type PracticeToothWorkGuideTourBannerProps = {
   className?: string;
   /** center: 치식 위 중앙 / aside: 헤더 버튼~기공소·환자·날짜 행 오른쪽 세로 맞춤 */
   placement?: "center" | "aside";
-  /** 임플란트 프리셋 개수 — 0이면 추가 유도 문구 */
-  implantFavoriteCount?: number;
-  /** 스캔바디 프리셋 개수 — 0이면 스캔바디 추가·심플 선택 유도 */
-  scanbodyFavoriteCount?: number;
-};
-
-/** 플랫폼 Spotlight·로컬 배너 공통 — 프리셋 0개면 추가 저장 절차를 자세히 안내 */
-export const resolvePracticeToothWorkGuideTourCopy = (
-  step: PracticeToothWorkGuideTourStep,
-  implantFavoriteCount: number,
-  scanbodyFavoriteCount: number,
-) => {
-  const base =
-    PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS[step] ?? PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS[0];
-  if (base.id === "implant_preset" && implantFavoriteCount <= 0) {
-    return {
-      ...base,
-      title: "임플란트 프리셋 설정",
-      hint: "처음에는 프리셋이 없습니다. 왼쪽 「+ 추가」에서 제조사·브랜드·패밀리·타입을 고른 뒤 「저장」하세요. 저장한 카드를 클릭하면 선택됩니다.",
-    };
-  }
-  if (base.id === "abutment_side" && scanbodyFavoriteCount <= 0) {
-    return {
-      ...base,
-      title: "어벗 프리셋 설정",
-      hint: "스캔바디 프리셋이 없으면 가운데 「+ 추가」로 제조사·직경·높이를 저장하세요. 또는 오른쪽에서 심플어벗/심플밀링과 직경·높이를 고릅니다. 스캔바디와 심플은 함께 쓸 수 없습니다.",
-    };
-  }
-  if (base.id === "implant_preset") {
-    return {
-      ...base,
-      hint: "왼쪽에서 임플란트 프리셋을 클릭해 고르세요. 새 스펙은 「+ 추가」로 저장할 수 있습니다.",
-    };
-  }
-  if (base.id === "abutment_side") {
-    return {
-      ...base,
-      hint: "스캔바디 혹은 심플어벗(밀링) 중 하나를 선택하세요.",
-    };
-  }
-  return base;
 };
 
 /** 기공의뢰 작성 체험형 가이드투어 안내 바 (로컬·비플랫폼 폴백) */
@@ -148,8 +92,6 @@ export function PracticeToothWorkGuideTourBanner({
   onFinish,
   className,
   placement = "center",
-  implantFavoriteCount = 0,
-  scanbodyFavoriteCount = 0,
 }: PracticeToothWorkGuideTourBannerProps) {
   const isDone = step >= PRACTICE_TOOTH_WORK_GUIDE_TOUR_DONE_STEP;
   const current = isDone
@@ -157,11 +99,8 @@ export function PracticeToothWorkGuideTourBanner({
         title: "완료",
         hint: "투어를 마쳤습니다. 기공소·환자·날짜·보철물을 이어서 작성해 주세요.",
       }
-      : resolvePracticeToothWorkGuideTourCopy(
-          step,
-          implantFavoriteCount,
-          scanbodyFavoriteCount,
-        );
+    : PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS[step] ??
+      PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS[0];
   const total = PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS.length;
   const aside = placement === "aside";
 
