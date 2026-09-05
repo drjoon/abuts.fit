@@ -53,7 +53,8 @@ function resolveDemoGrantBusinessNumber(anchor) {
 /**
  * 의뢰자 사업자 신규 생성 시 데모 모드만 시작(크레딧 미지급, 0원).
  * 치과(practice)만. 기공소(lab)는 데모 없음(CA 가입 무료 테스트 2건으로 대체).
- * 치과 CA(어벗디자인)도 가입 무료 테스트 2건 적용. PTX(구강스캔)만 데모 마이너스.
+ * 데모 중 장부는 가상 잔고: 구강스캔·커스텀어벗 기공비 마이너스 허용.
+ * 실거래는 치과→기공소 직접 입금. 실사용 전환 후 어벗츠 선수금·월말 정산.
  * 이미 실사용 전환(demoModeExitedAt)한 사업자는 재진입하지 않는다.
  */
 export async function enableDemoModeAndGrantCreditIfEligible({
@@ -396,6 +397,61 @@ export async function exitDemoMode({
   };
 }
 
+/**
+ * 유료 크레딧(CHARGE_PAID) 지급 직후 호출.
+ * 데모 중이면 실사용 전환(부채 리셋·레거시 잔여 회수). 이미 실사용이면 no-op.
+ * 충전 트랜잭션 커밋 뒤에 호출할 것(선수금은 유지, freeRequest 부채만 정리).
+ */
+export async function exitDemoModeAfterPaidCreditGrant({
+  businessAnchorId,
+  userId,
+  reason = "유료 크레딧 입금",
+} = {}) {
+  if (!businessAnchorId) return null;
+  try {
+    const state = await getDemoModeState(businessAnchorId);
+    if (!state.demoMode || state.demoModeExitedAt) return null;
+    const result = await exitDemoMode({
+      businessAnchorId,
+      userId,
+      reason,
+    });
+    try {
+      const { invalidateMyBusinessCache } = await import(
+        "./business.controller.js"
+      );
+      invalidateMyBusinessCache(businessAnchorId);
+    } catch (cacheErr) {
+      console.warn(
+        "[demoMode] invalidate cache after paid charge failed",
+        String(businessAnchorId),
+        cacheErr?.message || cacheErr,
+      );
+    }
+    // 뱃지·정산 UI가 데모 OFF를 즉시 반영하도록 강제 emit
+    void emitCreditBalanceUpdatedToBusiness({
+      businessAnchorId,
+      balanceDelta: 0,
+      reason: "demo_exit_on_paid_charge",
+      refId: businessAnchorId,
+      forceEmit: true,
+    }).catch((e) => {
+      console.warn(
+        "[demoMode] emit after paid-charge exit failed",
+        e?.message || e,
+      );
+    });
+    return result;
+  } catch (e) {
+    console.error(
+      "[demoMode] exit on paid credit grant failed",
+      String(businessAnchorId),
+      e?.message || e,
+    );
+    return null;
+  }
+}
+
 export async function getDemoModeState(businessAnchorId) {
   if (!businessAnchorId) {
     return { demoMode: false, demoModeExitedAt: null };
@@ -410,10 +466,17 @@ export async function getDemoModeState(businessAnchorId) {
   };
 }
 
+/** 데모 중 가상 잔고: freeRequest 마이너스(구강스캔·커스텀어벗 기공비) 허용 */
+export async function allowsDemoFreeRequestOverdraft(businessAnchorId) {
+  const state = await getDemoModeState(businessAnchorId);
+  return Boolean(state?.demoMode) && !state?.demoModeExitedAt;
+}
+
 /**
  * 데모 모드에서 무료의뢰 버킷 중 "데모 예약분" 상한(원).
  * 신규는 데모 크레딧 미지급이라 보통 0. 레거시 grant가 남아 있으면 그 amount.
  * 유효기간이 지났으면 즉시 실사용 전환 후 0.
+ * 데모 overdraft 경로에서는 예약분 제외를 건너뛴다(가상 잔고 SSOT).
  */
 export async function resolveDemoFreeRequestReserveCap(businessAnchorId) {
   if (!businessAnchorId) return 0;
@@ -454,7 +517,8 @@ export async function resolveDemoFreeRequestReserveCap(businessAnchorId) {
 }
 
 /**
- * 잔액 스냅샷에서 데모 예약 무료의뢰분을 제외(스토어·커스텀어벗 등 실사용 차감용).
+ * 잔액 스냅샷에서 데모 예약 무료의뢰분을 제외(스토어 등 실사용 차감용).
+ * 데모 overdraft(가상 잔고) 경로에서는 호출하지 않는다.
  * 음수 freeRequest는 이미 spendable 0으로 취급한다.
  */
 export function excludeDemoFreeRequestFromBalance(balance, demoReserveCap) {

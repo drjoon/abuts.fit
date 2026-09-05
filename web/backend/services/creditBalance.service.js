@@ -36,7 +36,7 @@ export function allocateSpendFromCreditBuckets({
   freeShippingCredit = 0,
   settlementCredit = 0,
   freeOrder = ["freeRequest", "freeShipping"],
-  /** 데모 PTX 전용: 부족분을 freeRequest 마이너스로 허용 */
+  /** 데모 가상 잔고: 부족분을 freeRequest 마이너스로 허용(기공의뢰·CA) */
   allowFreeRequestOverdraft = false,
 } = {}) {
   const required = Math.max(0, Math.round(Number(amount || 0)));
@@ -415,11 +415,19 @@ export async function spendRequestCreditAtomic({
     session,
   });
 
-  // 데모 무료의뢰는 PTX 전용. 커스텀어벗 가공 차감은 실크레딧만.
-  const { resolveDemoFreeRequestReserveCap, excludeDemoFreeRequestFromBalance } =
-    await import("../controllers/businesses/business.demoMode.util.js");
-  const demoCap = await resolveDemoFreeRequestReserveCap(anchorObjectId);
-  const spendable = excludeDemoFreeRequestFromBalance(glBalance, demoCap);
+  // 데모 가상 잔고: CA 가공 차감도 freeRequest 마이너스 허용. 스토어는 별도 경로.
+  const {
+    allowsDemoFreeRequestOverdraft,
+    resolveDemoFreeRequestReserveCap,
+    excludeDemoFreeRequestFromBalance,
+  } = await import("../controllers/businesses/business.demoMode.util.js");
+  const allowOverdraft = await allowsDemoFreeRequestOverdraft(anchorObjectId);
+  const demoCap = allowOverdraft
+    ? 0
+    : await resolveDemoFreeRequestReserveCap(anchorObjectId);
+  const spendable = allowOverdraft
+    ? glBalance
+    : excludeDemoFreeRequestFromBalance(glBalance, demoCap);
 
   const split = allocateSpendFromCreditBuckets({
     amount: resolvedAmount,
@@ -428,6 +436,7 @@ export async function spendRequestCreditAtomic({
     freeShippingCredit: Number(spendable?.freeShippingCredit || 0),
     settlementCredit: Number(spendable?.settlementCredit || 0),
     freeOrder: ["freeRequest", "freeShipping"],
+    allowFreeRequestOverdraft: allowOverdraft,
   });
 
   if (!split.ok) {
@@ -519,11 +528,19 @@ export async function spendShippingCreditAtomic({
     session,
   });
 
-  // 데모 무료의뢰는 PTX 전용. 어벗 배송비 차감은 실크레딧만.
-  const { resolveDemoFreeRequestReserveCap, excludeDemoFreeRequestFromBalance } =
-    await import("../controllers/businesses/business.demoMode.util.js");
-  const demoCap = await resolveDemoFreeRequestReserveCap(anchorObjectId);
-  const spendable = excludeDemoFreeRequestFromBalance(glBalance, demoCap);
+  // 데모 가상 잔고: 어벗 배송비 차감도 freeRequest 마이너스 허용.
+  const {
+    allowsDemoFreeRequestOverdraft,
+    resolveDemoFreeRequestReserveCap,
+    excludeDemoFreeRequestFromBalance,
+  } = await import("../controllers/businesses/business.demoMode.util.js");
+  const allowOverdraft = await allowsDemoFreeRequestOverdraft(anchorObjectId);
+  const demoCap = allowOverdraft
+    ? 0
+    : await resolveDemoFreeRequestReserveCap(anchorObjectId);
+  const spendable = allowOverdraft
+    ? glBalance
+    : excludeDemoFreeRequestFromBalance(glBalance, demoCap);
 
   const split = allocateSpendFromCreditBuckets({
     amount,
@@ -532,6 +549,7 @@ export async function spendShippingCreditAtomic({
     freeShippingCredit: Number(spendable?.freeShippingCredit || 0),
     settlementCredit: Number(spendable?.settlementCredit || 0),
     freeOrder: ["freeShipping", "freeRequest"],
+    allowFreeRequestOverdraft: allowOverdraft,
   });
 
   if (!split.ok) {

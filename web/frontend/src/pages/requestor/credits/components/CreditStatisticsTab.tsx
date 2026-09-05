@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-05: 데모 모드 충전 카드 라벨「충전」(유료/선수금 아님).
 // - 2026-09-05: 요약 수식에서 무료 충전 카드 제거(유료 [+정산] − 소비).
 // - 2026-09-05: 데모/실사용 집계 필터·2줄 카드 값 제거. 무료 충전 단일 라벨.
 // - 2026-08-31: 기공소 통계 구역 — 기공/어벗 액센트 셸·좌측 레일로 클러스터 구분 강화.
@@ -64,6 +65,9 @@ import {
 import { cn } from "@/shared/ui/cn";
 import { RESPONSIVE } from "@/shared/ui/responsive";
 import {
+  CREDIT_LEDGER_DEMO_CHARGE_DETAIL_TITLE,
+  CREDIT_LEDGER_DEMO_CHARGE_HINT,
+  CREDIT_LEDGER_DEMO_CHARGE_LABEL,
   CREDIT_LEDGER_DEMO_PERIOD_SPEND_HINT,
 } from "@/shared/demo/demoModeCopy";
 import { useDemoMode } from "@/shared/demo/useDemoMode";
@@ -695,6 +699,15 @@ export function CreditStatisticsTab() {
   const practiceSpendTooltip = demoMode
     ? CREDIT_LEDGER_DEMO_PERIOD_SPEND_HINT
     : "선택한 기간에 지출한 기공료와 스토어 결제 합계입니다.";
+  const chargeLabel = demoMode
+    ? CREDIT_LEDGER_DEMO_CHARGE_LABEL
+    : "유료 충전";
+  const chargeDetailTitle = demoMode
+    ? CREDIT_LEDGER_DEMO_CHARGE_DETAIL_TITLE
+    : "유료 충전 내역";
+  const chargeTooltip = demoMode
+    ? CREDIT_LEDGER_DEMO_CHARGE_HINT
+    : "선택한 기간에 유료(선입금)로 충전된 금액 합계입니다.";
 
   const settlementOrderCount = Number(
     stats?.summary.settlementOrderCount ?? stats?.summary.orderCount ?? 0,
@@ -738,13 +751,13 @@ export function CreditStatisticsTab() {
     <SummaryCardsRow cardCount={3}>
       <SettlementStatCard
         className={statCardClass}
-        label="유료 충전"
+        label={chargeLabel}
         value={paidChargeTotal}
         hint="안내"
-        hintTooltip="선택한 기간에 유료(선입금)로 충전된 금액 합계입니다."
+        hintTooltip={chargeTooltip}
         onClick={() =>
           openDrillDown({
-            title: "유료 충전 내역",
+            title: chargeDetailTitle,
             filters: {
               ...filterBase,
               creditKind: "PAID",

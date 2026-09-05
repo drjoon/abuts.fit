@@ -396,6 +396,17 @@ async function approveChargeOrder(req, res, { mock = false } = {}) {
     forceEmit: true,
   });
 
+  if (glResult?.posted || glResult?.idempotent) {
+    const { exitDemoModeAfterPaidCreditGrant } = await import(
+      "../businesses/business.demoMode.util.js"
+    );
+    await exitDemoModeAfterPaidCreditGrant({
+      businessAnchorId: order.businessAnchorId,
+      userId: order.userId || actorUserId,
+      reason: "유료 크레딧 입금",
+    });
+  }
+
   const updated = await ChargeOrder.findById(order._id)
     .populate("adminApprovalBy", "name email")
     .lean();
@@ -845,6 +856,15 @@ export async function adminManualMatch(req, res) {
       tx: { tranAmt: txAmount, depositCode: txCode },
       order: { amountTotal: orderAmountTotal, depositCode: orderCode },
     },
+  });
+
+  const { exitDemoModeAfterPaidCreditGrant } = await import(
+    "../businesses/business.demoMode.util.js"
+  );
+  await exitDemoModeAfterPaidCreditGrant({
+    businessAnchorId: order.businessAnchorId,
+    userId: order.userId || req.user?._id || null,
+    reason: "유료 크레딧 입금",
   });
 
   notifyChargePrepaidApplied({

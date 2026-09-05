@@ -7,6 +7,7 @@
 // - web/backend/controllers/requests/common.review.helpers.js
 // - web/backend/controllers/requests/mailbox.utils.js
 // change-log:
+// - 2026-09-05: 데모 가상 잔고 — CA(가공·배송 hold)도 freeRequest 마이너스 허용.
 // - 2026-09-03: hold 시작 시 devops·배송단가·기존 hold키 병렬 조회. 배송단가 60s 캐시.
 //   레거시 PTX 배송 hold 해제는 세션 없을 때 응답 후(void) — UI 「처리 중」 단축.
 // - 2026-08-22: PTX CA hold — price.designFee 없으면 디자인비 0(기본 5천 재가산 금지 → 생산 1.5만).
@@ -30,6 +31,7 @@ import {
   computeBusinessCreditBalanceFromLedger,
 } from "./creditBalance.service.js";
 import {
+  allowsDemoFreeRequestOverdraft,
   excludeDemoFreeRequestFromBalance,
   resolveDemoFreeRequestReserveCap,
 } from "../controllers/businesses/business.demoMode.util.js";
@@ -310,10 +312,8 @@ async function computeHoldRestoreDeltaByJournalId({ journalId, session }) {
 
 function normalizeHoldBalanceBuckets(balance) {
   const paidCredit = Math.max(0, Math.round(Number(balance?.paidCredit || 0)));
-  const freeRequestCredit = Math.max(
-    0,
-    Math.round(Number(balance?.freeRequestCredit || 0)),
-  );
+  // 데모 부채(음수 freeRequest) 부호 유지 — clamp하지 않는다.
+  const freeRequestCredit = Math.round(Number(balance?.freeRequestCredit || 0));
   const freeShippingCredit = Math.max(
     0,
     Math.round(Number(balance?.freeShippingCredit || 0)),
@@ -359,8 +359,10 @@ function prepareOneRequestHold({
   freeOrder = ["freeRequest", "freeShipping"],
   actorUserId = null,
   cachedBalance = null,
-  /** 데모 무료의뢰 예약분 — 커스텀어벗 등 실사용 차감 시 제외 */
+  /** 데모 무료의뢰 예약분 — 스토어 등 실사용 차감 시 제외(overdraft 시 무시) */
   demoFreeRequestReserveCap = 0,
+  /** 데모 가상 잔고: CA·배송 hold도 freeRequest 마이너스 허용 */
+  allowFreeRequestOverdraft = false,
 }) {
   const amt = Math.max(0, Math.round(Number(amount || 0)));
   const requestId = request?._id;
@@ -369,10 +371,9 @@ function prepareOneRequestHold({
   }
 
   const balance = normalizeHoldBalanceBuckets(cachedBalance);
-  const spendable = excludeDemoFreeRequestFromBalance(
-    balance,
-    demoFreeRequestReserveCap,
-  );
+  const spendable = allowFreeRequestOverdraft
+    ? balance
+    : excludeDemoFreeRequestFromBalance(balance, demoFreeRequestReserveCap);
   const split = allocateSpendFromCreditBuckets({
     amount: amt,
     paidCredit: Number(spendable?.paidCredit || 0),
@@ -380,6 +381,7 @@ function prepareOneRequestHold({
     freeShippingCredit: Number(spendable?.freeShippingCredit || 0),
     settlementCredit: Number(spendable?.settlementCredit || 0),
     freeOrder,
+    allowFreeRequestOverdraft,
   });
 
   if (!split.ok) {
@@ -529,6 +531,8 @@ async function postOneRequestHold({
 
   const demoFreeRequestReserveCap =
     await resolveDemoFreeRequestReserveCap(requestorAnchorId);
+  const allowFreeRequestOverdraft =
+    await allowsDemoFreeRequestOverdraft(requestorAnchorId);
 
   const prepared = prepareOneRequestHold({
     request,
@@ -542,6 +546,7 @@ async function postOneRequestHold({
     actorUserId,
     cachedBalance: balance,
     demoFreeRequestReserveCap,
+    allowFreeRequestOverdraft,
   });
   if (!prepared?.held || !prepared.journal) {
     return prepared;
@@ -813,6 +818,7 @@ export async function holdRequestCreditsOnSubmit({
   const lockedAnchors = new Set();
   const balanceByAnchor = new Map();
   const demoReserveCapByAnchor = new Map();
+  const demoOverdraftByAnchor = new Map();
   let totalHeld = 0;
   const results = [];
 
@@ -823,6 +829,15 @@ export async function holdRequestCreditsOnSubmit({
     const cap = await resolveDemoFreeRequestReserveCap(requestorAnchorId);
     demoReserveCapByAnchor.set(requestorAnchorId, cap);
     return cap;
+  };
+
+  const resolveDemoOverdraft = async (requestorAnchorId) => {
+    if (demoOverdraftByAnchor.has(requestorAnchorId)) {
+      return demoOverdraftByAnchor.get(requestorAnchorId);
+    }
+    const allow = await allowsDemoFreeRequestOverdraft(requestorAnchorId);
+    demoOverdraftByAnchor.set(requestorAnchorId, allow);
+    return allow;
   };
 
   const takeCachedBalance = async (requestorAnchorId) => {
@@ -897,6 +912,7 @@ export async function holdRequestCreditsOnSubmit({
       actorUserId,
       cachedBalance: await takeCachedBalance(requestorAnchorId),
       demoFreeRequestReserveCap: await resolveDemoCap(requestorAnchorId),
+      allowFreeRequestOverdraft: await resolveDemoOverdraft(requestorAnchorId),
     });
     if (!prepared?.held || !prepared.journal) {
       results.push({ kind: holdKind, ...prepared });

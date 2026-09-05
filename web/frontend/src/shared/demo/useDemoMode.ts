@@ -4,11 +4,14 @@
 // - web/backend/modules/businesses/business.routes.js
 // - web/backend/controllers/businesses/business.demoMode.util.js
 // change-log:
+// - 2026-09-05: 유료 크레딧(CHARGE_PAID) 지급 시 데모→실사용 자동 전환.
 // - 2026-09-05: demoModeStartedAt/ExpiresAt → 남은 일수(데모 N일 남음).
 // - 2026-08-26: apiFetch 응답 언랩 수정 — res.data.data.demoMode (뱃지 미표시 원인).
 import { useCallback, useEffect, useState } from "react";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
+import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
+import { isCreditEventForBusiness } from "@/shared/realtime/creditBalanceEvent";
 import {
   DEMO_MODE_DURATION_DAYS,
   resolveDemoModeDaysRemaining,
@@ -141,6 +144,16 @@ export function useDemoMode(): DemoModeState {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // 유료 입금 등으로 서버가 데모 종료하면 잔액 이벤트로 뱃지·라벨을 즉시 갱신
+  useAppEventListener({
+    eventTypes: ["credit:balance-updated"],
+    enabled: Boolean(businessAnchorId) && demoMode,
+    onMatch: (evt) => {
+      if (!isCreditEventForBusiness(evt, businessAnchorId)) return;
+      void refresh();
+    },
+  });
 
   const exitDemoMode = useCallback(async () => {
     setExiting(true);

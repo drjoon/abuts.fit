@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-05: 데모 중 충전하기 — 실사용 전환 ConfirmDialog.
 // - 2026-08-12: 충전 화면 제목·안내문에 기공료 선입금(선납) 명시. 선불페이와 구분.
 // - 2026-08-11: compact — 크레딧 충전 탭용. 잔액/충전내역 숨기고 입금 패널만 표시(스크롤·중앙 배치).
 // - 2026-08-11: 외곽 glass 카드 제거. 입금정보/입금금액 패널만 남기고 수직 중앙 배치.
@@ -35,6 +36,13 @@ import {
   CREDIT_CHARGE_NOTICE_TITLE,
   CREDIT_PREPAID_BALANCE_LABEL,
 } from "@/shared/legal/creditPrepaidCopy";
+import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
+import {
+  DEMO_MODE_CHARGE_EXIT_CONFIRM_LABEL,
+  DEMO_MODE_CHARGE_EXIT_DESCRIPTION_LINES,
+  DEMO_MODE_CHARGE_EXIT_TITLE,
+} from "@/shared/demo/demoModeCopy";
+import { useDemoMode } from "@/shared/demo/useDemoMode";
 
 type Props = {
   userData: {
@@ -183,6 +191,8 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
   const { toast } = useToast();
   const { token, user } = useAuthStore();
   const { kind: accessKind } = useRequestorBusinessAccess();
+  const { demoMode } = useDemoMode();
+  const [demoChargeConfirmOpen, setDemoChargeConfirmOpen] = useState(false);
 
   const requestorKind =
     accessKind ||
@@ -565,14 +575,14 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
     recommendedUnits,
   ]);
 
-  const handleCharge = async () => {
+  const handleCharge = async (): Promise<boolean> => {
     if (!token) {
       toast({
         title: "로그인이 필요합니다",
         description: "크레딧 충전은 로그인 후 이용할 수 있습니다.",
         variant: "destructive",
       });
-      return;
+      return false;
     }
 
     if (!(user as any)?.businessAnchorId) {
@@ -581,7 +591,7 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
         description: "사업자 탭에서 사업자 정보를 먼저 등록해주세요.",
         variant: "destructive",
       });
-      return;
+      return false;
     }
 
     if (!user?.name) {
@@ -590,7 +600,7 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
         description: "계정 탭에서 이름을 등록한 뒤 다시 시도해주세요.",
         variant: "destructive",
       });
-      return;
+      return false;
     }
 
     const validationError = validateSupplyAmount(supplyAmount, chargeUnit);
@@ -600,7 +610,7 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
         description: validationError,
         variant: "destructive",
       });
-      return;
+      return false;
     }
 
     setCreatingOrder(true);
@@ -634,17 +644,29 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
       await reloadOrders();
       toast({
         title: "거래 선수금 충전 요청이 생성되었습니다",
-        description: "입금 완료 후 거래 선수금(크레딧)이 자동 반영됩니다.",
+        description: demoMode
+          ? "입금이 반영되면 데모가 종료되고 유료 크레딧이 충전됩니다."
+          : "입금 완료 후 거래 선수금(크레딧)이 자동 반영됩니다.",
       });
+      return true;
     } catch (e: any) {
       toast({
         title: "충전 요청 실패",
         description: String(e?.message || "충전 요청에 실패했습니다."),
         variant: "destructive",
       });
+      return false;
     } finally {
       setCreatingOrder(false);
     }
+  };
+
+  const requestCharge = () => {
+    if (demoMode) {
+      setDemoChargeConfirmOpen(true);
+      return;
+    }
+    void handleCharge();
   };
 
   const cancelOrder = async (chargeOrderId: string) => {
@@ -967,7 +989,7 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
                 <Button
                   type="button"
                   className="h-11 w-full text-base"
-                  onClick={handleCharge}
+                  onClick={requestCharge}
                   disabled={creatingOrder || Boolean(pendingOrder)}
                 >
                   {pendingOrder
@@ -980,6 +1002,30 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
             </div>
           </div>
         </div>
+
+      <ConfirmDialog
+        open={demoChargeConfirmOpen}
+        title={DEMO_MODE_CHARGE_EXIT_TITLE}
+        panelClassName="max-w-xl"
+        description={
+          <div className="space-y-1.5 leading-relaxed">
+            {DEMO_MODE_CHARGE_EXIT_DESCRIPTION_LINES.map((line) => (
+              <p key={line}>{line}</p>
+            ))}
+          </div>
+        }
+        confirmLabel={DEMO_MODE_CHARGE_EXIT_CONFIRM_LABEL}
+        cancelLabel="취소"
+        confirmTone="primary"
+        busy={creatingOrder}
+        onCancel={() => {
+          if (!creatingOrder) setDemoChargeConfirmOpen(false);
+        }}
+        onConfirm={async () => {
+          const ok = await handleCharge();
+          if (ok) setDemoChargeConfirmOpen(false);
+        }}
+      />
 
       {/* 충전 내역 */}
       {!compact && !isFirstCharge && (

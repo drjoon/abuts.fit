@@ -81,7 +81,7 @@ import {
   spendShippingCreditAtomic,
   upsertBusinessCreditBalanceFromLedger,
 } from "./creditBalance.service.js";
-import { getDemoModeState } from "../controllers/businesses/business.demoMode.util.js";
+import { allowsDemoFreeRequestOverdraft } from "../controllers/businesses/business.demoMode.util.js";
 import {
   postGeneralLedgerJournal,
   postGeneralLedgerJournals,
@@ -307,11 +307,10 @@ async function lockGuard(businessAnchorId, session) {
   );
 }
 
-/** 치과 데모 모드면 PTX 기공비 freeRequest 마이너스 허용 */
+/** 치과 데모 모드면 가상 잔고 freeRequest 마이너스 허용(구강스캔·CA) */
 async function practiceAllowsFreeRequestOverdraft(practiceAnchorId) {
   if (!practiceAnchorId) return false;
-  const state = await getDemoModeState(practiceAnchorId);
-  return Boolean(state?.demoMode) && !state?.demoModeExitedAt;
+  return allowsDemoFreeRequestOverdraft(practiceAnchorId);
 }
 
 /** 스냅샷/GL 잔액 — freeRequest는 부호 유지(데모 부채) */

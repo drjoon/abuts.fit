@@ -233,7 +233,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 멀티 인스턴스 백엔드에서는 워커 중복 실행 방지를 위해 Mongo 기반 분산락 SSOT를 사용합니다.
     - 공통 락 유틸: `utils/distributedJobLock.js`
     - 적용 워커: `services/reviewApprovalQueue.service.js`, `controllers/requests/shipping.TrackingPoller.js`, `jobs/dummyCncWorker.js`, `jobs/dailyReferralSnapshotWorker.js`
-  - 의뢰자(치과) 데모 모드: 가입 시 `demoMode`만 ON·크레딧 **0원**(데모 크레딧 미지급). PTX 기공비는 `allowFreeRequestOverdraft`로 마이너스 허용. 스토어·CA는 불가. 30일 만료(`/me`·`jobs/demoModeExpiryWorker.js`)·사용자/관리자 전환 시 `exitDemoMode`로 레거시 잔여 회수+부채 0 리셋. 잔고 0 소진 자동종료 없음. SSOT: `controllers/businesses/business.demoMode.util.js`. 기존 grant 회수: `scripts/db/clawback-legacy-demo-credit.js`.
+  - 의뢰자(치과) 데모 모드: 가입 시 `demoMode`만 ON·크레딧 **0원**(데모 크레딧 미지급). **가상 잔고** — 구강스캔·커스텀어벗 기공비는 `allowFreeRequestOverdraft`로 마이너스 허용. 실거래는 치과→기공소 직접 입금. **`CHARGE_PAID` 지급 직후 `exitDemoModeAfterPaidCreditGrant`**로 자동 실사용 전환(승인·자동매칭·수동매칭). 스토어는 유료 크레딧(전환 후). 30일 만료(`/me`·`jobs/demoModeExpiryWorker.js`)·사용자/관리자 전환 시 `exitDemoMode`로 레거시 잔여 회수+부채 0 리셋. 잔고 0 소진 자동종료 없음. SSOT: `controllers/businesses/business.demoMode.util.js`. 기존 grant 회수: `scripts/db/clawback-legacy-demo-credit.js`.
 
 - 가격/리퍼럴 rolling 스냅샷:
   - 일일 재계산 워커: `jobs/dailyReferralSnapshotWorker.js`
