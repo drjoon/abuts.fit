@@ -145,6 +145,18 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    /** 치과·기공소 플랫폼 가이드투어 (1회 수료) */
+    guideTour: {
+      completed: {
+        type: Boolean,
+        default: false,
+      },
+      /** 일시 중단·진행 중 재개 스텝 ID. 미시작이면 null */
+      resumeStepId: {
+        type: String,
+        default: null,
+      },
+    },
     /** 드롭존 최소 가입 등 채널 구분 (`practice_dropzone`) */
     signupChannel: {
       type: String,

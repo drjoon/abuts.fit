@@ -80,6 +80,8 @@ import {
   PRACTICE_TOOTH_WORK_GUIDE_TOUR_DONE_STEP,
   type PracticeToothWorkGuideTourStep,
 } from "@/shared/components/practice/PracticeToothWorkGuideTourBanner";
+import { useGuideTour } from "@/shared/guideTour/GuideTourProvider";
+import { isOralGuideTourStepId } from "@/shared/guideTour/guideTourSteps";
 import { AutoMatchMinLabRatingStars } from "@/shared/components/practice/AutoMatchMinLabRatingStars";
 import {
   DEFAULT_AUTO_MATCH_MAX_LAB_RATING,
@@ -935,7 +937,7 @@ export const PracticeTransferRequestIntakePanel = ({
   onAutoMatchMinLabRatingChange,
   autoMatchMaxLabRating = DEFAULT_AUTO_MATCH_MAX_LAB_RATING,
   onAutoMatchMaxLabRatingChange,
-  showInlineGuideTourButton = true,
+  showInlineGuideTourButton = false,
   guideTourStartSignal = 0,
   guideTourExitSignal = 0,
   onGuideTourActiveChange,
@@ -948,6 +950,11 @@ export const PracticeTransferRequestIntakePanel = ({
 }: PracticeTransferRequestIntakePanelProps) => {
   const { toast } = useToast();
   const authUser = useAuthStore((s) => s.user);
+  const platformGuideTour = useGuideTour();
+  const platformOralActive =
+    platformGuideTour.active &&
+    platformGuideTour.oralSubStepIndex != null &&
+    isOralGuideTourStepId(platformGuideTour.stepId);
   const [labInviteCopyBusy, setLabInviteCopyBusy] = useState(false);
   const showLabField = showLabFieldProp ?? showHeaderFields;
   const showPatientField = showPatientFieldProp ?? showHeaderFields;
@@ -1873,6 +1880,10 @@ export const PracticeTransferRequestIntakePanel = ({
     }
     toothWorkGuideTourStepBaselineRef.current = null;
     toothWorkGuideTourBaselineReadyStepRef.current = null;
+    if (platformGuideTour.active && isOralGuideTourStepId(platformGuideTour.stepId)) {
+      platformGuideTour.pause();
+      return;
+    }
     setToothWorkGuideTourStep(null);
   };
 
@@ -1882,6 +1893,21 @@ export const PracticeTransferRequestIntakePanel = ({
       toothWorkGuideTourEstimateHoverTimerRef.current = null;
     }
     toothWorkGuideTourBaselineReadyStepRef.current = null;
+    if (
+      platformOralActive &&
+      toothWorkGuideTourStep != null &&
+      next === toothWorkGuideTourStep + 1
+    ) {
+      platformGuideTour.advance();
+      return;
+    }
+    if (
+      platformOralActive &&
+      next >= PRACTICE_TOOTH_WORK_GUIDE_TOUR_DONE_STEP
+    ) {
+      platformGuideTour.advance();
+      return;
+    }
     setToothWorkGuideTourStep(next);
   };
 
@@ -1891,6 +1917,24 @@ export const PracticeTransferRequestIntakePanel = ({
     toothWorkGuideTourBaselineReadyStepRef.current = null;
     setToothWorkGuideTourStep(0);
   };
+
+  // 플랫폼 가이드투어 oral 챕터 → 패널 스텝 동기화
+  useEffect(() => {
+    if (platformOralActive && platformGuideTour.oralSubStepIndex != null) {
+      setToothChartEnlargeOpen(false);
+      toothWorkGuideTourStepBaselineRef.current = null;
+      toothWorkGuideTourBaselineReadyStepRef.current = null;
+      setToothWorkGuideTourStep(platformGuideTour.oralSubStepIndex);
+      return;
+    }
+    if (!isOralGuideTourStepId(platformGuideTour.stepId)) {
+      setToothWorkGuideTourStep(null);
+    }
+  }, [
+    platformOralActive,
+    platformGuideTour.oralSubStepIndex,
+    platformGuideTour.stepId,
+  ]);
 
   useEffect(() => {
     onGuideTourActiveChange?.(toothWorkGuideTourStep != null);
@@ -1912,15 +1956,13 @@ export const PracticeTransferRequestIntakePanel = ({
     exitToothWorkGuideTour();
   }, [guideTourExitSignal]);
 
-  const skipToothWorkGuideTourStep = () => {
-    if (toothWorkGuideTourStep == null) return;
-    if (toothWorkGuideTourStep >= PRACTICE_TOOTH_WORK_GUIDE_TOUR_DONE_STEP) return;
-    goToothWorkGuideTourStep(toothWorkGuideTourStep + 1);
-  };
-
   const completeToothWorkGuideTourAction = () => {
     if (toothWorkGuideTourStep == null) return;
     if (toothWorkGuideTourStep >= PRACTICE_TOOTH_WORK_GUIDE_TOUR_DONE_STEP) return;
+    if (platformOralActive) {
+      platformGuideTour.advance();
+      return;
+    }
     goToothWorkGuideTourStep(toothWorkGuideTourStep + 1);
   };
 
@@ -2519,11 +2561,11 @@ export const PracticeTransferRequestIntakePanel = ({
     reserveAsideChrome &&
     toothWorkGuideTourStep != null &&
     isHeaderTourStep;
-  const asideTourBanner = useAsideTourRail ? (
+  const asideTourBanner =
+    useAsideTourRail && !platformOralActive ? (
     <PracticeToothWorkGuideTourBanner
       placement="aside"
       step={toothWorkGuideTourStep}
-      onSkip={skipToothWorkGuideTourStep}
       onExit={exitToothWorkGuideTour}
       onFinish={exitToothWorkGuideTour}
       implantFavoriteCount={implantFavorites.length}
@@ -2533,12 +2575,12 @@ export const PracticeTransferRequestIntakePanel = ({
   const portaledHeaderTour =
     isHeaderTourStep &&
     !useAsideTourRail &&
+    !platformOralActive &&
     guideTourHeaderSlotEl ? (
       createPortal(
         <PracticeToothWorkGuideTourBanner
           placement="aside"
           step={toothWorkGuideTourStep!}
-          onSkip={skipToothWorkGuideTourStep}
           onExit={exitToothWorkGuideTour}
           onFinish={exitToothWorkGuideTour}
           implantFavoriteCount={implantFavorites.length}
@@ -2633,6 +2675,7 @@ export const PracticeTransferRequestIntakePanel = ({
                   "h-11 w-full justify-between text-base",
                   toothWorkGuideTourStepId === "lab" && "practice-tooth-guide-pulse",
                 )}
+                data-guide-tour="oral_lab"
               >
                 <span className="truncate">
                   {selectedLab
@@ -2960,6 +3003,7 @@ export const PracticeTransferRequestIntakePanel = ({
               "h-11 text-base",
               toothWorkGuideTourStepId === "patient" && "practice-tooth-guide-pulse",
             )}
+            data-guide-tour="oral_patient"
           />
         </div>
         ) : null}
@@ -2974,6 +3018,7 @@ export const PracticeTransferRequestIntakePanel = ({
               ? "practice-tooth-guide-pulse"
               : undefined
           }
+          triggerDataGuideTour="oral_dates"
           onOpenChange={(open) => {
             if (!open) completeDatesGuideTourStep();
           }}
@@ -3215,7 +3260,7 @@ export const PracticeTransferRequestIntakePanel = ({
               <span className="font-normal text-muted-foreground">({requestedToothCount}개)</span>{" "}
               <span className="text-destructive">*</span>
             </Label>
-            {showInlineGuideTourButton ? (
+            {showInlineGuideTourButton && !platformOralActive ? (
               <Button
                 type="button"
                 size="sm"
@@ -3293,6 +3338,7 @@ export const PracticeTransferRequestIntakePanel = ({
         ) : null}
 
         {toothWorkGuideTourStep != null &&
+        !platformOralActive &&
         !useAsideTourRail &&
         customSpecsModalTarget === null &&
         toothWorkGuideTourStepId !== "lab" &&
@@ -3300,7 +3346,6 @@ export const PracticeTransferRequestIntakePanel = ({
         toothWorkGuideTourStepId !== "dates" ? (
           <PracticeToothWorkGuideTourBanner
             step={toothWorkGuideTourStep}
-            onSkip={skipToothWorkGuideTourStep}
             onExit={exitToothWorkGuideTour}
             onFinish={exitToothWorkGuideTour}
             implantFavoriteCount={implantFavorites.length}
@@ -3997,6 +4042,17 @@ export const PracticeTransferRequestIntakePanel = ({
               <div
                 ref={toothChartRef}
                 data-tooth-chart
+                data-guide-tour={
+                  toothWorkGuideTourStepId &&
+                  toothWorkGuideTourStepId !== "lab" &&
+                  toothWorkGuideTourStepId !== "patient" &&
+                  toothWorkGuideTourStepId !== "dates" &&
+                  toothWorkGuideTourStepId !== "estimate" &&
+                  toothWorkGuideTourStepId !== "implant_preset" &&
+                  toothWorkGuideTourStepId !== "abutment_side"
+                    ? `oral_${toothWorkGuideTourStepId}`
+                    : undefined
+                }
                 className={cn(
                   "relative select-none px-1",
                   showFullToothChart ? "space-y-3 py-2.5" : "space-y-2 py-1",
@@ -4013,6 +4069,7 @@ export const PracticeTransferRequestIntakePanel = ({
                       toothWorkGuideTourStepId === "estimate" &&
                         "practice-tooth-guide-pulse rounded-lg",
                     )}
+                    data-guide-tour="oral_estimate"
                     onPointerEnter={
                       toothWorkGuideTourStepId === "estimate"
                         ? (event) => {
@@ -4698,11 +4755,11 @@ export const PracticeTransferRequestIntakePanel = ({
                   </DialogHeader>
 
                   {toothWorkGuideTourStep != null &&
+                  !platformOralActive &&
                   (toothWorkGuideTourStepId === "implant_preset" ||
                     toothWorkGuideTourStepId === "abutment_side") ? (
                     <PracticeToothWorkGuideTourBanner
                       step={toothWorkGuideTourStep}
-                      onSkip={skipToothWorkGuideTourStep}
                       onExit={exitToothWorkGuideTour}
                       onFinish={exitToothWorkGuideTour}
                       className="shrink-0"
@@ -4735,6 +4792,7 @@ export const PracticeTransferRequestIntakePanel = ({
                           toothWorkGuideTourStepId === "implant_preset" &&
                             "practice-tooth-guide-pulse rounded-xl",
                         )}
+                        data-guide-tour="oral_implant_preset"
                       >
                         <PracticeToothImplantFields
                           mode="presets"
@@ -4768,6 +4826,7 @@ export const PracticeTransferRequestIntakePanel = ({
                           toothWorkGuideTourStepId === "abutment_side" &&
                             "practice-tooth-guide-pulse rounded-xl",
                         )}
+                        data-guide-tour="oral_abutment_side"
                       >
                         <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1 items-stretch gap-2.5 sm:grid-cols-2 sm:gap-2.5">
                           <PracticeToothAbutmentFields

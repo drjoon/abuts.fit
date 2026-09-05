@@ -59,6 +59,9 @@ router.put(
   userController.updateLabReceiveCalendarHiddenWeekdays,
 );
 
+// 플랫폼 가이드투어 (치과·기공소 1회)
+router.put("/guide-tour", userController.updateGuideTour);
+
 // 내 보안 로그 (로그인 기록 등)
 router.get("/security-logs", userController.getMySecurityLogs);
 

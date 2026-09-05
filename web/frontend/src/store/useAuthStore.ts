@@ -65,6 +65,11 @@ export interface User {
   internalDepartmentId?: string | null;
   businessVerified?: boolean;
   onboardingWizardCompleted?: boolean;
+  /** 치과·기공소 플랫폼 가이드투어 */
+  guideTour?: {
+    completed: boolean;
+    resumeStepId: string | null;
+  };
   signupChannel?: string | null;
   requestorKind?: RequestorKind | null;
   requestorServices?: RequestorServices | null;
@@ -133,6 +138,20 @@ const normalizeApiUser = (u: unknown): User | null => {
       : null,
     businessVerified: Boolean(row.businessVerified),
     onboardingWizardCompleted: Boolean(row.onboardingWizardCompleted),
+    guideTour: (() => {
+      const raw =
+        row.guideTour && typeof row.guideTour === "object"
+          ? (row.guideTour as Record<string, unknown>)
+          : {};
+      const resume =
+        typeof raw.resumeStepId === "string" && raw.resumeStepId.trim()
+          ? raw.resumeStepId.trim()
+          : null;
+      return {
+        completed: Boolean(raw.completed),
+        resumeStepId: resume,
+      };
+    })(),
     signupChannel: row.signupChannel ? String(row.signupChannel) : null,
     requestorKind: normalizeRequestorKind(
       typeof row.requestorKind === "string" ? row.requestorKind : null,
@@ -254,6 +273,10 @@ interface AuthState {
   setUser: (user: User | null) => void;
   setLastDashboardPath: (path: string | null) => void;
   setSidebarOpen: (open: boolean) => void;
+  setGuideTour: (guideTour: {
+    completed: boolean;
+    resumeStepId: string | null;
+  }) => void;
   setLabReceiveCalendarDateKey: (dateKey: LabReceiveCalendarDateKey) => void;
   setLabReceiveCalendarHiddenWeekdays: (hiddenWeekdays: number[]) => void;
   logout: () => void;
@@ -636,6 +659,31 @@ export const useAuthStore = create<AuthState>((set, get) => {
       const next = {
         ...current,
         sidebarOpen: normalizeSidebarOpen(open),
+      };
+      try {
+        localStorage.setItem(AUTH_USER_KEY, JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      set({ user: next });
+    },
+    setGuideTour: (guideTour: {
+      completed: boolean;
+      resumeStepId: string | null;
+    }) => {
+      if (isMemoryAuthStale(get().token)) return;
+      const current = get().user;
+      if (!current) return;
+      const next = {
+        ...current,
+        guideTour: {
+          completed: Boolean(guideTour.completed),
+          resumeStepId:
+            typeof guideTour.resumeStepId === "string" &&
+            guideTour.resumeStepId.trim()
+              ? guideTour.resumeStepId.trim()
+              : null,
+        },
       };
       try {
         localStorage.setItem(AUTH_USER_KEY, JSON.stringify(next));

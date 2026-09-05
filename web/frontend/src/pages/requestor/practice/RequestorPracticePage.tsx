@@ -5402,7 +5402,10 @@ export function RequestorPracticeReceivePage({
   );
 
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden px-3 sm:px-4">
+    <div
+      className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden px-3 sm:px-4"
+      data-guide-tour="lab_receive_workspace"
+    >
       <DesignSoftwareSettingsDialog
         open={requestSettingsModalOpen}
         onOpenChange={handleRequestSettingsModalOpenChange}

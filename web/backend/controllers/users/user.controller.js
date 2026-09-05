@@ -19,6 +19,7 @@ import { normalizeLastDashboardPath } from "../../utils/lastDashboardPath.util.j
 import { normalizeSidebarOpen } from "../../utils/sidebarOpen.util.js";
 import { normalizeLabReceiveCalendarDateKey } from "../../utils/labReceiveCalendarDateKey.util.js";
 import { normalizeLabReceiveCalendarHiddenWeekdays } from "../../utils/labReceiveCalendarHiddenWeekdays.util.js";
+import { normalizeGuideTour } from "../../utils/guideTour.util.js";
 
 /**
  * 사용자 프로필 조회
@@ -1135,6 +1136,83 @@ async function updateLabReceiveCalendarHiddenWeekdays(req, res) {
   }
 }
 
+/**
+ * 플랫폼 가이드투어 상태 저장
+ * @route PUT /api/users/guide-tour
+ * body: { completed?: boolean, resumeStepId?: string | null }
+ */
+async function updateGuideTour(req, res) {
+  try {
+    const body =
+      req.body && typeof req.body === "object" && !Array.isArray(req.body)
+        ? req.body
+        : {};
+    const $set = {};
+
+    if (Object.prototype.hasOwnProperty.call(body, "completed")) {
+      if (body.completed !== true && body.completed !== false) {
+        return res.status(400).json({
+          success: false,
+          message: "유효하지 않은 completed 값입니다.",
+        });
+      }
+      $set["guideTour.completed"] = body.completed;
+      if (body.completed === true) {
+        $set["guideTour.resumeStepId"] = null;
+      }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, "resumeStepId")) {
+      const raw = body.resumeStepId;
+      if (raw !== null && typeof raw !== "string") {
+        return res.status(400).json({
+          success: false,
+          message: "유효하지 않은 resumeStepId 값입니다.",
+        });
+      }
+      const next =
+        typeof raw === "string" && raw.trim() ? raw.trim() : null;
+      // completed=true로 함께 오면 resume은 위에서 null로 고정
+      if ($set["guideTour.completed"] !== true) {
+        $set["guideTour.resumeStepId"] = next;
+      }
+    }
+
+    if (Object.keys($set).length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "변경할 가이드투어 필드가 없습니다.",
+      });
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+      req.user._id,
+      { $set },
+      { new: true, runValidators: true },
+    ).select("guideTour");
+
+    if (!updatedUser) {
+      return res.status(404).json({
+        success: false,
+        message: "사용자를 찾을 수 없습니다.",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        guideTour: normalizeGuideTour(updatedUser.guideTour),
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "가이드투어 상태 저장 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
 export {
   getProfile,
   updateProfile,
@@ -1150,6 +1228,7 @@ export {
   updateLabReceiveCalendarDateKey,
   getLabReceiveCalendarHiddenWeekdays,
   updateLabReceiveCalendarHiddenWeekdays,
+  updateGuideTour,
   getMySecurityLogs,
 };
 

@@ -106,7 +106,7 @@ export default function RequestorCreditsPage() {
   );
 
   return (
-    <div className="h-full min-h-0">
+    <div className="h-full min-h-0" data-guide-tour="credits_workspace">
       <SettingsScaffold
         tabs={tabs}
         activeTab={activeTab}

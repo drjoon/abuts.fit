@@ -1,6 +1,7 @@
 // related files:
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // change-log:
+// - 2026-09-05: 건너뛰기 제거. 종료 → 일시 중단(플랫폼 투어).
 // - 2026-08-25: aside — 헤더 버튼~입력 행을 세로로 채우도록 h-full·space-between.
 // - 2026-08-25: 어벗 투어 — 스캔바디 커스텀어벗 vs 심플어벗(꽂고 바로 스캔) 두 방식 안내.
 import { Button } from "@/components/ui/button";
@@ -90,7 +91,6 @@ export const getPracticeToothWorkGuideTourStepId = (
 
 type PracticeToothWorkGuideTourBannerProps = {
   step: PracticeToothWorkGuideTourStep;
-  onSkip: () => void;
   onExit: () => void;
   onFinish: () => void;
   className?: string;
@@ -124,10 +124,9 @@ const resolveTourCopy = (
   return base;
 };
 
-/** 기공의뢰 작성 전체 체험형 가이드투어 안내 바 */
+/** 기공의뢰 작성 체험형 가이드투어 안내 바 (로컬·비플랫폼 폴백) */
 export function PracticeToothWorkGuideTourBanner({
   step,
-  onSkip,
   onExit,
   onFinish,
   className,
@@ -192,26 +191,15 @@ export function PracticeToothWorkGuideTourBanner({
               확인
             </Button>
           ) : (
-            <>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-7 px-2 text-xs text-slate-500 hover:bg-accent-soft hover:text-accent-strong"
-                onClick={onSkip}
-              >
-                건너뛰기
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-7 border-accent-muted px-2 text-xs text-accent-strong hover:bg-accent-soft"
-                onClick={onExit}
-              >
-                종료
-              </Button>
-            </>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 border-accent-muted px-2 text-xs text-accent-strong hover:bg-accent-soft"
+              onClick={onExit}
+            >
+              일시 중단
+            </Button>
           )}
         </div>
       </div>

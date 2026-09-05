@@ -227,7 +227,8 @@ import {
 import { useIsMobile } from "@/shared/hooks/use-mobile";
 import type { PracticeTransferFilePaneProps } from "@/shared/components/practice/PracticeTransferFilePane";
 import type { PracticeTransferRequestIntakePanelProps } from "@/shared/components/practice/PracticeTransferRequestIntakePanel";
-import type { PracticeToothWorkGuideTourStep } from "@/shared/components/practice/PracticeToothWorkGuideTourBanner";
+import { useGuideTour } from "@/shared/guideTour/GuideTourProvider";
+import { isOralGuideTourStepId } from "@/shared/guideTour/guideTourSteps";
 import { PracticeRecentTransfersAllModal } from "@/pages/practice/components/PracticeRecentTransfersAllModal";
 import {
   PRACTICE_MY_TRANSFERS_PAGE_SIZE,
@@ -1477,17 +1478,22 @@ export const PracticeFileTransferPage = ({
   const [composeOpen, setComposeOpen] = useState(false);
   const [draftsOpen, setDraftsOpen] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false);
-  const [guideTourActive, setGuideTourActive] = useState(false);
-  const [guideTourStartSignal, setGuideTourStartSignal] = useState(0);
-  const [guideTourExitSignal, setGuideTourExitSignal] = useState(0);
-  /** 패널 unmount(모드 전환) 후에도 투어 스텝 유지 */
-  const [guideTourStep, setGuideTourStep] =
-    useState<PracticeToothWorkGuideTourStep | null>(null);
   const [oralPhotoPreview, setOralPhotoPreview] = useState<{
     name: string;
     url: string;
   } | null>(null);
   const { connections: implantConnections } = useImplantConnectionCatalog(authToken);
+  const platformGuideTour = useGuideTour();
+
+  // 플랫폼 가이드투어 oral 챕터면 신규 의뢰 작성 패널을 연다
+  useEffect(() => {
+    if (
+      platformGuideTour.active &&
+      isOralGuideTourStepId(platformGuideTour.stepId)
+    ) {
+      setComposeOpen(true);
+    }
+  }, [platformGuideTour.active, platformGuideTour.stepId]);
 
   const [toothWorks, setToothWorks] = useState<ToothWorkSelection[]>([]);
   const [patientName, setPatientName] = useState("");
@@ -7022,9 +7028,6 @@ export const PracticeFileTransferPage = ({
     setEditingSentTransfer(null);
     editingSentTransferRef.current = null;
     setToothChartResetNonce((n) => n + 1);
-    setGuideTourStep(null);
-    setGuideTourActive(false);
-    setGuideTourExitSignal((n) => n + 1);
 
     // 빈 폼 baseline — 이후 의뢰서 항목을 바꾸거나 파일을 업로드하면 그때 동기화된다.
     const baselineFingerprint = buildPracticeTransferFormFingerprint({
@@ -7535,20 +7538,6 @@ export const PracticeFileTransferPage = ({
             {formSyncStatusLabel}
           </span>
         ) : null}
-        <Button
-          type="button"
-          size="sm"
-          className="h-9 px-3"
-          onClick={() => {
-            if (guideTourActive) {
-              setGuideTourExitSignal((n) => n + 1);
-              return;
-            }
-            setGuideTourStartSignal((n) => n + 1);
-          }}
-        >
-          {guideTourActive ? "투어 종료" : "가이드투어"}
-        </Button>
         <DemoModeBadge />
       </div>
     </>
@@ -7912,12 +7901,7 @@ export const PracticeFileTransferPage = ({
                   skipJig,
                   onSkipJigChange: persistSkipJigSetting,
                   rushProcessing,
-                  showInlineGuideTourButton: isMobile,
-                  guideTourStartSignal,
-                  guideTourExitSignal,
-                  onGuideTourActiveChange: setGuideTourActive,
-                  guideTourStep,
-                  onGuideTourStepChange: setGuideTourStep,
+                  showInlineGuideTourButton: false,
                   headerToolbar: null,
                   reserveGuideTourAside: showComposeHeaderToolbar,
                   guideTourHeaderSlotEl: null,

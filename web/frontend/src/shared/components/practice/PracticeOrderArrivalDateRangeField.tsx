@@ -86,6 +86,8 @@ export type PracticeOrderArrivalDateRangeFieldProps = {
   onChange: (next: { orderDate: string; arrivalDate: string }) => void;
   className?: string;
   triggerClassName?: string;
+  /** 플랫폼 가이드투어 spotlight 타깃 */
+  triggerDataGuideTour?: string;
   /** 신속처리: 날짜 선택 잠금 */
   locked?: boolean;
   lockedHint?: string;
@@ -104,6 +106,7 @@ export function PracticeOrderArrivalDateRangeField({
   onChange,
   className,
   triggerClassName,
+  triggerDataGuideTour,
   locked = false,
   lockedHint,
   onOpenChange,
@@ -219,6 +222,7 @@ export function PracticeOrderArrivalDateRangeField({
               "h-11 w-full justify-between gap-2 px-3 text-left text-base font-normal",
               triggerClassName,
             )}
+            data-guide-tour={triggerDataGuideTour}
           >
             <span className="inline-flex min-w-0 items-center gap-2 truncate">
               <CalendarIcon className="h-4 w-4 shrink-0 text-slate-500" />

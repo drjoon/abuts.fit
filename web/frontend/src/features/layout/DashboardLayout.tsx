@@ -109,6 +109,8 @@ import { cn } from "@/shared/ui/cn";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import { LabFeeSetupPrompt } from "@/features/settings/LabFeeSetupPrompt";
 import { LabDashboardTopBanners } from "@/features/lab/LabDashboardTopBanners";
+import { GuideTourProvider } from "@/shared/guideTour/GuideTourProvider";
+import { GuideTourSidebarButton } from "@/shared/guideTour/GuideTourSidebarButton";
 import { getRequestorRoleBadgeLabel } from "@/shared/business/requestorCapabilities";
 import { getAppUserRoleLabel } from "@/shared/types/role";
 import { ToastAction } from "@/components/ui/toast";
@@ -1463,6 +1465,14 @@ export const DashboardLayout = () => {
   }
 
   return (
+    <GuideTourProvider
+      kind={
+        user.role === "requestor" &&
+        (requestorKind === "practice" || requestorKind === "lab")
+          ? requestorKind
+          : null
+      }
+    >
     <div className="min-h-dvh overflow-hidden bg-background">
       <LabFeeSetupPrompt
         isLab={requestorKind === "lab" || user.role === "internalLab"}
@@ -1526,6 +1536,7 @@ export const DashboardLayout = () => {
           </nav>
 
           <div className="p-3 lg:p-4 space-y-2">
+            <GuideTourSidebarButton collapsed={sidebarCollapsed} />
             <LabDashboardTopBanners collapsed={sidebarCollapsed} />
             <DropdownMenu open={accountMenuOpen} onOpenChange={setAccountMenuOpen}>
               <DropdownMenuTrigger asChild>
@@ -1935,5 +1946,6 @@ export const DashboardLayout = () => {
         </main>
       </div>
     </div>
+    </GuideTourProvider>
   );
 };

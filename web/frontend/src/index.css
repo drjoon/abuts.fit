@@ -461,6 +461,19 @@ All colors MUST be HSL.
   z-index: 25;
 }
 
+/* Platform guide tour — blur everything except spotlight hole */
+.guide-tour-blur {
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  background: rgba(15, 23, 42, 0.28);
+}
+
+.guide-tour-hole {
+  /* clear the blur over the target via mix; hole sits above blur */
+  box-shadow: 0 0 0 9999px rgba(15, 23, 42, 0.45);
+  background: transparent;
+}
+
 /* Responsive layout helpers (mobile-first) */
 .responsive-table-shell {
   width: 100%;
