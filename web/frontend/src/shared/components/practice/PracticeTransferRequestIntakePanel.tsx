@@ -174,6 +174,8 @@ import {
 // - web/frontend/src/shared/components/practice/PracticeToothSimpleAbutmentFields.tsx
 // - web/frontend/src/shared/components/practice/PracticeCustomSpecsPresetEditDialog.tsx
 // - web/frontend/src/shared/pricing/abutsAbutmentService.ts
+// - 2026-09-05: 견적→뒤로 프리셋 — Spotlight 클릭 outside dismiss로 모달 즉시 닫힘 방지·다음 틱 재오픈.
+// - 2026-09-05: 견적 투어 — 하이라이트에 금액이 보이게 blur 해제(툴팁 체험은 유지).
 // - 2026-09-05: 가이드투어 견적 — pointerenter 650ms 대신 툴팁 실오픈 후 진행(레이스 방지).
 // - 2026-09-05: 커스텀어벗 설정 — 임플란트→스캔바디/심플어벗 2단 위저드. 이전·다음·좁은 폭. 화면 중앙. 제목 단축. 2단 좌우. STL 버튼 가운데.
 // - 2026-09-05: 커스텀어벗 모달 — 치식 투어 중 강제 닫기·DialogContent에 data-guide-tour(홀=모달 전체).
@@ -2443,6 +2445,10 @@ export const PracticeTransferRequestIntakePanel = ({
     closeCustomSpecsModal();
   };
 
+  const isPresetGuideTourStep =
+    toothWorkGuideTourStepId === "implant_preset" ||
+    toothWorkGuideTourStepId === "abutment_side";
+
   // 치식·헤더 투어 스텝에서는 커스텀어벗 모달을 강제 닫기(보철물 선택 홀이 모달을 가로지르는 문제)
   const blockCustomSpecsModalForTour =
     toothWorkGuideTourStep != null &&
@@ -2463,27 +2469,43 @@ export const PracticeTransferRequestIntakePanel = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 모달 오픈 직후 프리셋 스텝은 유지
   }, [blockCustomSpecsModalForTour, customSpecsModalTarget]);
 
-  // 프리셋 체험 중 설정 모달이 닫혀 있으면 열어 모달 안에서 이어간다
+  // 견적 스텝으로 들어올 때만 모달 닫기(하이라이트가 모달에 가려지지 않게).
+  // customSpecsModalTarget를 deps에 넣으면 견적 중 어벗 체크→모달 오픈 직후 바로 닫힌다.
   useEffect(() => {
-    if (
-      toothWorkGuideTourStepId !== "implant_preset" &&
-      toothWorkGuideTourStepId !== "abutment_side"
-    ) {
-      return;
-    }
+    if (toothWorkGuideTourStepId !== "estimate") return;
+    if (customSpecsModalTarget === null) return;
+    confirmCustomSpecsModal();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 견적 스텝 진입만
+  }, [toothWorkGuideTourStepId]);
+
+  // 프리셋 체험 중 설정 모달이 닫혀 있으면 열어 모달 안에서 이어간다.
+  // Spotlight「뒤로/다음」클릭과 같은 포인터가 outside dismiss로 이어지지 않게 다음 틱에 연다.
+  useEffect(() => {
+    if (!isPresetGuideTourStep) return;
     if (customSpecsModalTarget !== null) return;
-    const index = toothWorks.findIndex((row) => {
-      const tooth = String(row.toothNumber || "").trim();
-      if (!/^[1-4][1-8]$/.test(tooth)) return false;
-      return (
-        row.customAbutment ||
-        isCustomAbutmentProsthesisType(row.prosthesisType) ||
-        isCustomAbutmentSupportedProsthesisType(row.prosthesisType)
+    const findPresetTourToothIndex = () => {
+      const eligible = toothWorks.findIndex((row) => {
+        const tooth = String(row.toothNumber || "").trim();
+        if (!/^[1-4][1-8]$/.test(tooth)) return false;
+        return (
+          row.customAbutment ||
+          isCustomAbutmentProsthesisType(row.prosthesisType) ||
+          isCustomAbutmentSupportedProsthesisType(row.prosthesisType)
+        );
+      });
+      if (eligible >= 0) return eligible;
+      return toothWorks.findIndex((row) =>
+        /^[1-4][1-8]$/.test(String(row.toothNumber || "").trim()),
       );
-    });
+    };
+    const index = findPresetTourToothIndex();
     if (index < 0) return;
-    openCustomSpecsModal(index);
-  }, [toothWorkGuideTourStepId, customSpecsModalTarget, toothWorks]);
+    const timer = window.setTimeout(() => {
+      openCustomSpecsModal(index);
+    }, 0);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- openCustomSpecsModal은 스텝·치식 스냅샷에 묶음
+  }, [isPresetGuideTourStep, customSpecsModalTarget, toothWorks]);
 
   // 가이드투어 프리셋 스텝 ↔ 위저드 스텝 동기화
   useEffect(() => {
@@ -4299,6 +4321,8 @@ export const PracticeTransferRequestIntakePanel = ({
                         !/^[a-fA-F0-9]{24}$/.test(String(selectedLab._id || ""))
                       }
                       rushProcessing={rushProcessing}
+                      // 투어 견적 스텝 — 홀 안 금액이 blur로 「내용 없음」처럼 보이지 않게
+                      revealAmounts={toothWorkGuideTourStepId === "estimate"}
                       onBreakdownTooltipOpenChange={
                         toothWorkGuideTourStepId === "estimate"
                           ? (open) => {
@@ -4892,8 +4916,7 @@ export const PracticeTransferRequestIntakePanel = ({
             // 화면 중앙. 2단(스캔바디|심플어벗 좌우) 기준 폭. max-h로 뷰포트 넘침만 방지
             "guide-tour-nested-dialog flex max-h-[calc(100dvh-2rem)] w-[min(48rem,calc(100vw-1.5rem))] flex-col gap-3 overflow-hidden p-4 sm:max-w-[min(48rem,calc(100vw-1.5rem))] sm:p-5",
             // 프리셋 투어: 코치마크 자리 확보(상단 여백)
-            (toothWorkGuideTourStepId === "implant_preset" ||
-              toothWorkGuideTourStepId === "abutment_side") &&
+            isPresetGuideTourStep &&
               "!top-[10.5rem] !translate-y-0 max-h-[calc(100dvh-11.5rem)]",
             nestedDialogClassName,
           )}
@@ -4901,6 +4924,28 @@ export const PracticeTransferRequestIntakePanel = ({
             "guide-tour-nested-dialog-overlay",
             nestedDialogOverlayClassName,
           )}
+          // 투어 코치「뒤로/다음」클릭이 모달 outside로 잡혀 즉시 닫히는 것 방지
+          onPointerDownOutside={
+            isPresetGuideTourStep
+              ? (event) => {
+                  event.preventDefault();
+                }
+              : undefined
+          }
+          onInteractOutside={
+            isPresetGuideTourStep
+              ? (event) => {
+                  event.preventDefault();
+                }
+              : undefined
+          }
+          onFocusOutside={
+            isPresetGuideTourStep
+              ? (event) => {
+                  event.preventDefault();
+                }
+              : undefined
+          }
           {...(toothWorkGuideTourStepId === "implant_preset"
             ? { "data-guide-tour": "oral_implant_preset" }
             : toothWorkGuideTourStepId === "abutment_side"

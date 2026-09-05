@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/practice/practiceTransferFeeQuote.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/components/practice/PracticeToothWorkChartReadOnly.tsx
+// - 2026-09-05: revealAmounts — 가이드투어 견적 홀에서 hover 전 blur 숨김 해제.
 // - 2026-09-05: onBreakdownTooltipOpenChange — 가이드투어 견적 스텝이 툴팁 실오픈 기준으로 진행.
 // - 2026-08-27: 확정 기공비도 툴팁 라인 합 우선(레거시 abutmentRetail 스냅샷 불일치 방지).
 // - 2026-08-22: 기공소→치과 배송 무료. skipJig 옵션/안내 삭제. 정산 상세는 →어벗츠(박스)만.
@@ -115,6 +116,8 @@ type PracticeTransferFeeEstimateProps = {
   settlementShippingLines?: PracticeTransferSettlementShippingLine[] | null;
   /** 견적 상세 툴팁 open/close (가이드투어 등) */
   onBreakdownTooltipOpenChange?: (open: boolean) => void;
+  /** true면 금액 blur-until-hover 해제(가이드투어 견적 하이라이트 등) */
+  revealAmounts?: boolean;
 };
 
 const formatCell = (value: number) => (value > 0 ? formatManWon(value) : "—");
@@ -603,6 +606,7 @@ export function PracticeTransferFeeEstimate({
   creditAbutmentHoldPending = null,
   settlementShippingLines = null,
   onBreakdownTooltipOpenChange,
+  revealAmounts = false,
 }: PracticeTransferFeeEstimateProps) {
   const isLab = viewer === "lab";
   const isDetail = density === "detail";
@@ -1024,7 +1028,7 @@ export function PracticeTransferFeeEstimate({
         )}
         role="note"
         title={
-          !isLab && !labFeeUnset && !hasMissingFees
+          !isLab && !labFeeUnset && !hasMissingFees && !revealAmounts
             ? "마우스를 올리면 금액이 보입니다"
             : undefined
         }
@@ -1058,6 +1062,7 @@ export function PracticeTransferFeeEstimate({
                   !isLab &&
                     !labFeeUnset &&
                     !hasMissingFees &&
+                    !revealAmounts &&
                     "select-none blur-[8px] transition-[filter] duration-150 group-hover:select-text group-hover:blur-none group-focus-within:select-text group-focus-within:blur-none",
                 )}
               >
