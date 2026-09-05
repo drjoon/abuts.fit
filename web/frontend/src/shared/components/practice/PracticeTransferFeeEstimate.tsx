@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/practice/practiceTransferFeeQuote.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/components/practice/PracticeToothWorkChartReadOnly.tsx
+// - 2026-09-05: onBreakdownTooltipOpenChange — 가이드투어 견적 스텝이 툴팁 실오픈 기준으로 진행.
 // - 2026-08-27: 확정 기공비도 툴팁 라인 합 우선(레거시 abutmentRetail 스냅샷 불일치 방지).
 // - 2026-08-22: 기공소→치과 배송 무료. skipJig 옵션/안내 삭제. 정산 상세는 →어벗츠(박스)만.
 // - 2026-08-21: 기공의뢰 정산에서 기공소→어벗츠 배송 제외(기공소 박스 과금).
@@ -112,6 +113,8 @@ type PracticeTransferFeeEstimateProps = {
   creditAbutmentHoldPending?: boolean | null;
   /** 크레딧 정산 상세 전용. 장부에 잡힌 배송비(견적 툴팁에는 전달하지 않음) */
   settlementShippingLines?: PracticeTransferSettlementShippingLine[] | null;
+  /** 견적 상세 툴팁 open/close (가이드투어 등) */
+  onBreakdownTooltipOpenChange?: (open: boolean) => void;
 };
 
 const formatCell = (value: number) => (value > 0 ? formatManWon(value) : "—");
@@ -599,6 +602,7 @@ export function PracticeTransferFeeEstimate({
   creditLabHoldPending = null,
   creditAbutmentHoldPending = null,
   settlementShippingLines = null,
+  onBreakdownTooltipOpenChange,
 }: PracticeTransferFeeEstimateProps) {
   const isLab = viewer === "lab";
   const isDetail = density === "detail";
@@ -1043,7 +1047,7 @@ export function PracticeTransferFeeEstimate({
             hasChartSideActions && "flex-1 justify-center",
           )}
         >
-          <Tooltip>
+          <Tooltip onOpenChange={onBreakdownTooltipOpenChange}>
             <TooltipTrigger asChild>
               <div
                 className={cn(

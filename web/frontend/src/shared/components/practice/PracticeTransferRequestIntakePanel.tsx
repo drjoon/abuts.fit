@@ -174,6 +174,7 @@ import {
 // - web/frontend/src/shared/components/practice/PracticeToothSimpleAbutmentFields.tsx
 // - web/frontend/src/shared/components/practice/PracticeCustomSpecsPresetEditDialog.tsx
 // - web/frontend/src/shared/pricing/abutsAbutmentService.ts
+// - 2026-09-05: 가이드투어 견적 — pointerenter 650ms 대신 툴팁 실오픈 후 진행(레이스 방지).
 // - 2026-09-05: 커스텀어벗 설정 — 임플란트→스캔바디/심플어벗 2단 위저드. 이전·다음·좁은 폭. 화면 중앙. 제목 단축. 2단 좌우. STL 버튼 가운데.
 // - 2026-09-05: 커스텀어벗 모달 — 치식 투어 중 강제 닫기·DialogContent에 data-guide-tour(홀=모달 전체).
 // - 2026-09-05: 커스텀어벗 모달 — 상단 고정·dvh 높이·투어 z 상승·치식 스텝에서 오픈 차단(하단 잘림).
@@ -4288,40 +4289,6 @@ export const PracticeTransferRequestIntakePanel = ({
                         "practice-tooth-guide-pulse rounded-lg",
                     )}
                     data-guide-tour="oral_estimate"
-                    onPointerEnter={
-                      toothWorkGuideTourStepId === "estimate"
-                        ? (event) => {
-                            if (
-                              event.target instanceof Element &&
-                              event.target.closest("button")
-                            ) {
-                              return;
-                            }
-                            if (toothWorkGuideTourEstimateHoverTimerRef.current != null) {
-                              return;
-                            }
-                            // 툴팁(600ms)이 뜬 뒤 다음 단계로
-                            toothWorkGuideTourEstimateHoverTimerRef.current =
-                              window.setTimeout(() => {
-                                toothWorkGuideTourEstimateHoverTimerRef.current = null;
-                                completeToothWorkGuideTourAction();
-                              }, 650);
-                          }
-                        : undefined
-                    }
-                    onPointerLeave={
-                      toothWorkGuideTourStepId === "estimate"
-                        ? () => {
-                            if (toothWorkGuideTourEstimateHoverTimerRef.current == null) {
-                              return;
-                            }
-                            window.clearTimeout(
-                              toothWorkGuideTourEstimateHoverTimerRef.current,
-                            );
-                            toothWorkGuideTourEstimateHoverTimerRef.current = null;
-                          }
-                        : undefined
-                    }
                   >
                     <PracticeTransferFeeEstimate
                       className="min-w-0 flex-1"
@@ -4332,6 +4299,31 @@ export const PracticeTransferRequestIntakePanel = ({
                         !/^[a-fA-F0-9]{24}$/.test(String(selectedLab._id || ""))
                       }
                       rushProcessing={rushProcessing}
+                      onBreakdownTooltipOpenChange={
+                        toothWorkGuideTourStepId === "estimate"
+                          ? (open) => {
+                              if (
+                                toothWorkGuideTourEstimateHoverTimerRef.current !=
+                                null
+                              ) {
+                                window.clearTimeout(
+                                  toothWorkGuideTourEstimateHoverTimerRef.current,
+                                );
+                                toothWorkGuideTourEstimateHoverTimerRef.current =
+                                  null;
+                              }
+                              if (!open) return;
+                              // 툴팁이 실제로 열린 뒤 잠시 보여 준 다음 진행
+                              // (바깥 hover 650ms는 트리거 진입보다 먼저 끝나 레이스남)
+                              toothWorkGuideTourEstimateHoverTimerRef.current =
+                                window.setTimeout(() => {
+                                  toothWorkGuideTourEstimateHoverTimerRef.current =
+                                    null;
+                                  completeToothWorkGuideTourAction();
+                                }, 1200);
+                            }
+                          : undefined
+                      }
                     />
                     {/* 레거시(2026-08-22): skipJig「지그 필요없음」체크 UI 삭제 */}
                   </div>
