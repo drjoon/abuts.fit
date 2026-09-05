@@ -4,6 +4,7 @@
 // - web/frontend/src/shared/guideTour/GuideTourProvider.tsx
 // change-log:
 // - 2026-09-05: 치과 투어 4챕터. 챕터 카운터 1/4·치식/어벗 체험 유지·전송·폰모드·임시저장.
+// - 2026-09-05: 시작(intro) 스텝 분리 — 챕터 번호 없이「계속」.
 
 import { PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS } from "@/shared/components/practice/PracticeToothWorkGuideTourBanner";
 
@@ -57,8 +58,16 @@ const practiceOralActionSteps: GuideTourStepDef[] =
     oralSubStepId: s.id,
   }));
 
-/** 치과 — 첨1~4 페이지 기준 4챕터 */
+/** 치과 — 시작 + 첨1~4 페이지 기준 4챕터 */
 export const PRACTICE_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
+  {
+    id: "intro",
+    title: "가이드투어",
+    hint: "어벗츠 가이드투어를 시작합니다.\n직접 눌러 보며 익혀 보세요.",
+    path: PRACTICE_ORAL_PATH,
+    target: null,
+    advance: "next",
+  },
   // —— 챕터1: 구강스캔 기공의뢰 ——
   {
     id: "oral_calendar",

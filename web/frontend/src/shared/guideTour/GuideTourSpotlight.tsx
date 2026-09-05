@@ -160,7 +160,7 @@ export function GuideTourSpotlight({
       )}
     >
       <p className="text-sm font-semibold text-accent-strong">
-        {title} · {stepIndex + 1}/{stepTotal}
+        {stepTotal > 0 ? `${title} · ${stepIndex + 1}/${stepTotal}` : title}
       </p>
       <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-slate-600">
         {hint}

@@ -175,6 +175,9 @@ export function GuideTourProvider({ kind, children }: ProviderProps) {
     kind === "practice"
       ? PRACTICE_GUIDE_TOUR_CHAPTER_TOTAL
       : Math.max(stepTotal, 1);
+  /** 치과 intro 등 — 챕터 번호 없이 제목만 */
+  const showChapterProgress =
+    kind !== "practice" || step?.chapter != null;
   const forceMobile = Boolean(active && step?.forceMobile);
 
   const applyLocalGuideTour = useCallback(
@@ -305,15 +308,17 @@ export function GuideTourProvider({ kind, children }: ProviderProps) {
       {children}
       {showCoach ? (
         <GuideTourSpotlight
-          stepIndex={chapterDisplay - 1}
-          stepTotal={chapterTotal}
+          stepIndex={showChapterProgress ? chapterDisplay - 1 : 0}
+          stepTotal={showChapterProgress ? chapterTotal : 0}
           title={step.title}
           hint={step.hint}
           target={step.target}
           showBack={stepIndex > 0}
           showNext={step.advance === "next"}
           showSkip={Boolean(step.skippable)}
-          nextLabel={isLastStep ? "완료" : "다음"}
+          nextLabel={
+            step.id === "intro" ? "계속" : isLastStep ? "완료" : "다음"
+          }
           onBack={retreat}
           onNext={advance}
           onSkip={advance}
