@@ -5,6 +5,7 @@
 // - web/frontend/src/shared/components/practice/PracticeOrderArrivalDateRangeField.tsx
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // change-log:
+// - 2026-09-05: 작성 Dialog(z-410) 블러 아래 유지 — outside dismiss 시 홀 소실 방지와 맞춤.
 // - 2026-09-05: 멀티 홀 — 뷰포트−홀 블러 패널(홀 위 backdrop 없음). mask/blend 폐기.
 // - 2026-09-05: oral_calendar — 사이드바·캘린더 별도 홀(위성 union 대신). 카드는 캘린더 위.
 // - 2026-09-05: 영화형 — blur·홀 클릭 차단. allowTargetInteraction만 홀 통과(4·5번).
@@ -44,13 +45,19 @@ const CARD_W_FALLBACK = 20 * 16;
 const REMEASURE_AFTER_MS = [0, 50, 120, 220, 360, 520] as const;
 
 /** 아래로 열리는 팝오버/드롭다운 — 코치마크는 옆(오른쪽)에 두어 설명 대상을 가리지 않음 */
-const DROPDOWN_BELOW_TARGETS = new Set(["oral_header"]);
+const DROPDOWN_BELOW_TARGETS = new Set(["oral_header", "oral_memo_files"]);
 /** 커스텀어벗 설정 모달 — 큰 타깃, 코치마크는 위쪽 */
 const PRESET_MODAL_TARGETS = CUSTOM_ABUT_GUIDE_TARGETS;
 /** 위성은 union하지 않고 별도 홀(사이드바 메뉴 + 캘린더) */
 const SEPARATE_SATELLITE_TARGETS = new Set(["oral_calendar"]);
 /** 코치마크를 타깃 위에 고정 */
-const PREFER_ABOVE_TARGETS = new Set(["oral_calendar"]);
+const PREFER_ABOVE_TARGETS = new Set([
+  "oral_calendar",
+  "oral_prosthesis",
+  "oral_card_ops",
+  "oral_estimate",
+  "oral_send",
+]);
 
 function readElRect(el: Element | null): Rect | null {
   if (!el || !(el instanceof HTMLElement)) return null;

@@ -173,6 +173,7 @@ import {
 // - web/frontend/src/shared/components/practice/PracticeToothSimpleAbutmentFields.tsx
 // - web/frontend/src/shared/components/practice/PracticeCustomSpecsPresetEditDialog.tsx
 // - web/frontend/src/shared/pricing/abutsAbutmentService.ts
+// - 2026-09-05: 플랫폼 Spotlight — stepId로 data-guide-tour 직접 마킹(로컬 스텝 sync 전에도 홀).
 // - 2026-09-05: 견적→뒤로 프리셋 — Spotlight 클릭 outside dismiss로 모달 즉시 닫힘 방지·다음 틱 재오픈.
 // - 2026-09-05: 견적 투어 — 하이라이트에 금액이 보이게 blur 해제(툴팁 체험은 유지).
 // - 2026-09-05: 가이드투어 견적 — pointerenter 650ms 대신 툴팁 실오픈 후 진행(레이스 방지).
@@ -1292,6 +1293,13 @@ export const PracticeTransferRequestIntakePanel = ({
   const toothWorkGuideTourStepId = getPracticeToothWorkGuideTourStepId(
     toothWorkGuideTourStep,
   );
+  /** Spotlight 홀 타깃 — 플랫폼 stepId 우선(작성 패널 마운트·sync 전에도 측정 가능) */
+  const oralSpotlightTargetId: string | null = platformOralActive
+    ? platformGuideTour.stepId
+    : toothWorkGuideTourStepId
+      ? `oral_${toothWorkGuideTourStepId}`
+      : null;
+  const isOralSpotlight = (id: string) => oralSpotlightTargetId === id;
   const showFullToothChart = toothChartDisplayMode === "full" || toothChartEnlargeOpen;
   const showInlineToothChartHeader = !toothChartEnlargeOpen || toothChartDisplayMode === "full";
   const toothChartResetNonceRef = useRef(toothChartResetNonce);
@@ -2739,7 +2747,7 @@ export const PracticeTransferRequestIntakePanel = ({
       <div
         className={headerGridClassName}
         data-guide-tour={
-          toothWorkGuideTourStepId === "header" ? "oral_header" : undefined
+          isOralSpotlight("oral_header") ? "oral_header" : undefined
         }
       >
         {showLabField ? (
@@ -2772,7 +2780,7 @@ export const PracticeTransferRequestIntakePanel = ({
                 aria-expanded={labOpen}
                 className={cn(
                   "h-11 w-full justify-between text-base",
-                  toothWorkGuideTourStepId === "header" && "practice-tooth-guide-pulse",
+                  isOralSpotlight("oral_header") && "practice-tooth-guide-pulse",
                 )}
               >
                 <span className="truncate">
@@ -2791,10 +2799,10 @@ export const PracticeTransferRequestIntakePanel = ({
                 // Spotlight(z-420)보다 위 — 투어 중 검색 드롭다운이 블러에 가리지 않게
                 // (index.css body:has(.guide-tour-root) wrapper z-430과 병행)
                 platformOralActive &&
-                  toothWorkGuideTourStepId === "header" &&
+                  isOralSpotlight("oral_header") &&
                   "z-[430]",
               )}
-              {...(platformOralActive && toothWorkGuideTourStepId === "header"
+              {...(platformOralActive && isOralSpotlight("oral_header")
                 ? { "data-guide-tour-satellite": "oral_header" }
                 : {})}
               align="start"
@@ -3116,7 +3124,7 @@ export const PracticeTransferRequestIntakePanel = ({
             placeholder="환자명"
             className={cn(
               "h-11 text-base",
-              toothWorkGuideTourStepId === "header" && "practice-tooth-guide-pulse",
+              isOralSpotlight("oral_header") && "practice-tooth-guide-pulse",
             )}
           />
         </div>
@@ -3128,12 +3136,13 @@ export const PracticeTransferRequestIntakePanel = ({
           arrivalDate={arrivalDate}
           arrivalDefaultDays={arrivalDefaultDays}
           triggerClassName={
-            toothWorkGuideTourStepId === "header"
+            isOralSpotlight("oral_header")
               ? "practice-tooth-guide-pulse"
               : undefined
           }
           triggerDataGuideTour={
-            toothWorkGuideTourStepId === "header" ? "oral_header" : undefined
+            // 그리드가 primary; 트리거에도 동일 키 → 열린 캘린더는 satellite
+            isOralSpotlight("oral_header") ? "oral_header" : undefined
           }
           onOpenChange={(open) => {
             if (!open) completeDatesGuideTourStep();
@@ -3167,6 +3176,13 @@ export const PracticeTransferRequestIntakePanel = ({
             ? "grid grid-cols-1 gap-6 lg:grid-cols-2 lg:items-stretch"
             : "contents",
         )}
+        data-guide-tour={
+          isOralSpotlight("oral_memo_files") &&
+          showMemoSection &&
+          besideMemoContent
+            ? "oral_memo_files"
+            : undefined
+        }
       >
       {showMemoSection ? (
       <div
@@ -3181,7 +3197,9 @@ export const PracticeTransferRequestIntakePanel = ({
           id={memoInputId}
           aria-label="메모"
           data-guide-tour={
-            toothWorkGuideTourStepId === "memo_files" ? "oral_memo_files" : undefined
+            isOralSpotlight("oral_memo_files") && !besideMemoContent
+              ? "oral_memo_files"
+              : undefined
           }
           className={cn(
             "flex flex-col gap-1.5 rounded-lg border border-slate-200 bg-white p-2.5",
@@ -4179,9 +4197,9 @@ export const PracticeTransferRequestIntakePanel = ({
                 ref={toothChartRef}
                 data-tooth-chart
                 data-guide-tour={
-                  toothWorkGuideTourStepId === "prosthesis" ||
-                  toothWorkGuideTourStepId === "card_ops"
-                    ? `oral_${toothWorkGuideTourStepId}`
+                  isOralSpotlight("oral_prosthesis") ||
+                  isOralSpotlight("oral_card_ops")
+                    ? oralSpotlightTargetId!
                     : undefined
                 }
                 className={cn(
@@ -4197,10 +4215,14 @@ export const PracticeTransferRequestIntakePanel = ({
                   <div
                     className={cn(
                       "flex items-center justify-center gap-3 px-1",
-                      toothWorkGuideTourStepId === "estimate" &&
+                      isOralSpotlight("oral_estimate") &&
                         "practice-tooth-guide-pulse rounded-lg",
                     )}
-                    data-guide-tour="oral_estimate"
+                    data-guide-tour={
+                      isOralSpotlight("oral_estimate")
+                        ? "oral_estimate"
+                        : undefined
+                    }
                   >
                     <PracticeTransferFeeEstimate
                       className="min-w-0 flex-1"
@@ -4835,7 +4857,7 @@ export const PracticeTransferRequestIntakePanel = ({
                 }
               : undefined
           }
-          {...(toothWorkGuideTourStepId === "custom_abut"
+          {...(isOralSpotlight("oral_custom_abut")
             ? { "data-guide-tour": "oral_custom_abut" }
             : {})}
         >

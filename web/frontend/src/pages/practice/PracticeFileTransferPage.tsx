@@ -106,6 +106,7 @@
  * - 2026-08-20: 구강포토 썸네일 — private S3 location 대신 blob/proxy 미리보기.
  * - 2026-09-05: 임플란트/스캔바디 프리셋 — 로컬 삭제 후 서버 GET/POST·환봉 이벤트가 목록을 되살리던 문제 수정.
  * - 2026-09-05: 부분 설정 저장 응답이 전체 apply로 덮어써 임플란트 프리셋 삭제가 복원되던 레이스 수정.
+ * - 2026-09-05: 가이드투어 작성 패널 — 투어 블러 outside dismiss 방지·z-410(블러 아래)·스텝별 data-guide-tour.
  * - 2026-09-05: 가이드투어 작성 패널 — 기존 작성 내용 유지(새로 작성으로 비우지 않음).
  * - 2026-09-05: 기공소 미선택 시 테스트기공소를 자동 선택(견적·투어).
  * - 2026-08-25: 가이드투어 카드 — 헤더 버튼~기공소·환자·날짜 행 세로 맞춤(폭=주문-치과도착).
@@ -7243,15 +7244,22 @@ export const PracticeFileTransferPage = ({
   };
 
   // 플랫폼 가이드투어 챕터1 — oral 스텝에 맞춰 작성 패널만 열고 닫음(폼은 유지)
+  // 블러(z-420)가 Dialog(z-100) 위에 있어 outside-interact로 닫히지 않게 투어 중엔 강제 유지
+  const guideTourWantsComposeOpen =
+    platformGuideTour.active &&
+    shouldOpenComposeForGuideTourStep(platformGuideTour.step);
   useEffect(() => {
     if (!platformGuideTour.active) return;
-    if (!isOralGuideTourStepId(platformGuideTour.stepId)) return;
-    const wantOpen = shouldOpenComposeForGuideTourStep(platformGuideTour.step);
-    setComposeOpen(wantOpen);
+    if (!isOralGuideTourStepId(platformGuideTour.stepId)) {
+      // 정산·스토어 등으로 나가면 작성 패널 닫기
+      setComposeOpen(false);
+      return;
+    }
+    setComposeOpen(guideTourWantsComposeOpen);
   }, [
     platformGuideTour.active,
     platformGuideTour.stepId,
-    platformGuideTour.step,
+    guideTourWantsComposeOpen,
   ]);
 
   /** 구강 챕터 진입 시 데모 값 1회 프리필(영화형) */
@@ -7769,7 +7777,11 @@ export const PracticeFileTransferPage = ({
   const calendarHeaderActions = (
     <div
       className="flex flex-wrap items-center gap-2"
-      data-guide-tour="oral_drafts"
+      data-guide-tour={
+        platformGuideTour.active && platformGuideTour.stepId === "oral_drafts"
+          ? "oral_drafts"
+          : undefined
+      }
     >
       {isMobile ? (
         <div className="flex w-full shrink-0 flex-nowrap items-center justify-center gap-2.5">
@@ -8164,7 +8176,12 @@ export const PracticeFileTransferPage = ({
     <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       <div
         className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden"
-        data-guide-tour="oral_calendar"
+        data-guide-tour={
+          platformGuideTour.active &&
+          platformGuideTour.stepId === "oral_calendar"
+            ? "oral_calendar"
+            : undefined
+        }
       >
         {roleSwitcher ? (
           <div className="flex shrink-0 flex-wrap items-center gap-2 px-3 pt-2 sm:px-4">
@@ -8205,13 +8222,26 @@ export const PracticeFileTransferPage = ({
       <Dialog
         open={composeOpen}
         onOpenChange={(open) => {
+          // 투어 블러·코치마크가 Dialog 밖(higher z)이라 outside 클릭으로 닫힘 → 하이라이트 타깃 소실
+          if (!open && guideTourWantsComposeOpen) return;
           setComposeOpen(open);
         }}
       >
         <DialogContent
           hideClose
+          onPointerDownOutside={(e) => {
+            if (guideTourWantsComposeOpen) e.preventDefault();
+          }}
+          onInteractOutside={(e) => {
+            if (guideTourWantsComposeOpen) e.preventDefault();
+          }}
+          onEscapeKeyDown={(e) => {
+            if (guideTourWantsComposeOpen) e.preventDefault();
+          }}
           className={cn(
             "flex flex-col gap-0 overflow-hidden p-0 duration-200",
+            // 투어 중: 페이지(캘린더) 위·블러(z-420) 아래 — 홀이 작성 화면을 뚫어 보이게
+            guideTourWantsComposeOpen && "z-[410]",
             isMobile
               ? cn(
                   "left-3 right-3 top-[max(0.75rem,env(safe-area-inset-top))] bottom-[max(0.75rem,env(safe-area-inset-bottom))]",
@@ -8228,6 +8258,9 @@ export const PracticeFileTransferPage = ({
                   "duration-0 data-[state=open]:animate-none data-[state=closed]:animate-none",
                 ),
           )}
+          overlayClassName={
+            guideTourWantsComposeOpen ? "z-[409] bg-transparent" : undefined
+          }
         >
           <DialogClose
             className={cn(
@@ -8299,7 +8332,14 @@ export const PracticeFileTransferPage = ({
             ) : null}
             <CardContent className="min-w-0 px-0 pt-0">
               {isMobile ? (
-                <div data-guide-tour="oral_phone">
+                <div
+                  data-guide-tour={
+                    platformGuideTour.active &&
+                    platformGuideTour.stepId === "oral_phone"
+                      ? "oral_phone"
+                      : undefined
+                  }
+                >
                   <PracticeTransferMobileOralPhotoIntake
                   requestIntakeProps={practiceTransferRequestIntakeProps}
                   canCapture={hasSubstantialContentForNewDraft}
@@ -8373,7 +8413,15 @@ export const PracticeFileTransferPage = ({
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
-                <span className="inline-flex" data-guide-tour="oral_send">
+                <span
+                  className="inline-flex"
+                  data-guide-tour={
+                    platformGuideTour.active &&
+                    platformGuideTour.stepId === "oral_send"
+                      ? "oral_send"
+                      : undefined
+                  }
+                >
                   <Button
                     type="button"
                     className="bg-primary-strong text-white hover:bg-primary-strong disabled:pointer-events-none disabled:opacity-40"
