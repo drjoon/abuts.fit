@@ -4,6 +4,7 @@
 // - web/frontend/src/shared/guideTour/guideTourSteps.ts
 // - web/frontend/src/shared/guideTour/GuideTourSpotlight.tsx
 // change-log:
+// - 2026-09-05: oral_phone — 폰을 왼쪽 반쪽 오른쪽(코치 마크)에 가깝게.
 // - 2026-09-05: oral_phone — 아이폰 스킨 + 신규 의뢰 모달 크롬. 환자명 세로깨짐(aside 레일 해제).
 // - 2026-09-05: oral_phone — 뷰포트 왼쪽 반쪽 오버레이(메모 칸 아님)·여백·세로 폰.
 // - 2026-09-05: oral_phone — 실제 MobileOralPhotoIntake를 폰 프레임에 넣어 미리보기.
@@ -42,9 +43,9 @@ export function GuideTourMobileOralPhotoPreview({
   return createPortal(
     <div
       className={cn(
-        // blur(z-420) 아래 — 홀을 통해 보임. 왼쪽 반쪽 + 여백
-        "pointer-events-none fixed inset-y-0 left-0 z-[415] flex w-1/2 select-none items-center justify-center",
-        "px-6 py-8 sm:px-10 sm:py-10",
+        // blur(z-420) 아래 — 홀을 통해 보임. 왼쪽 반쪽·오른쪽(코치)에 가깝게
+        "pointer-events-none fixed inset-y-0 left-0 z-[415] flex w-1/2 select-none items-center justify-end",
+        "py-8 pl-4 pr-1 sm:py-10 sm:pl-6 sm:pr-2",
         className,
       )}
       aria-hidden
