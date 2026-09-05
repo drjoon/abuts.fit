@@ -16,6 +16,7 @@ import {
 import { cn } from "@/shared/ui/cn";
 
 // - 2026-09-05: 데모 모드면 잔액≤0「크레딧 부족」destructive 토스트 생략.
+// - 2026-09-05: 정산 guideTourSatellite=credits_workspace — 사이드바·작업영역 별도 홀.
 // - 2026-09-05: 구강스캔으로 guideTourSatellite=oral_calendar — 기공의뢰+구강스캔 사이드 홀·캘린더 별도.
 // - 2026-09-03: 기공소 사이드 — 정책 안내(기공의뢰 공용) + 가입 이유 배너.
 // - 2026-09-02: 추적관리 워크시트는 fillHeight로 뷰포트 고정(중첩 스크롤·무한 로드).
@@ -240,7 +241,12 @@ const buildRequestorSidebarItems = (
   if (kind === "lab") {
     return [
       buildLabGigongRequestSidebarGroup(LAB_RECEIVE_HREF),
-      { icon: Wallet, label: "정산", href: CREDITS_HREF },
+      {
+        icon: Wallet,
+        label: "정산",
+        href: CREDITS_HREF,
+        guideTourSatellite: "credits_workspace",
+      },
       ...requestorSidebarCommonTail,
     ];
   }
@@ -271,7 +277,12 @@ const buildRequestorSidebarItems = (
       ],
     },
     { icon: Store, label: "스토어", href: STORE_HREF },
-    { icon: Wallet, label: "정산", href: CREDITS_HREF },
+    {
+      icon: Wallet,
+      label: "정산",
+      href: CREDITS_HREF,
+      guideTourSatellite: "credits_workspace",
+    },
     ...requestorSidebarCommonTail,
   ];
 };

@@ -5,6 +5,8 @@
 // - web/frontend/src/shared/components/practice/PracticeOrderArrivalDateRangeField.tsx
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // change-log:
+// - 2026-09-05: credits_* — 사이드바 위성 별칭·코치마크 중하단(탭·요약카드 노출).
+// - 2026-09-05: credits_workspace — 사이드바 별도 홀·코치마크를 작업영역 중하단(탭·요약카드 노출).
 // - 2026-09-05: oral_estimate — allowTargetInteraction으로 견적 호버·툴팁 가능.
 // - 2026-09-05: card_ops·estimate 코치 — 오른쪽(견적 툴팁 중앙 가림 방지). 큰 치식 타깃도 동일.
 // - 2026-09-05: oral_phone — 코치마크를 안내 문구 아래 가운데 정렬.
@@ -54,8 +56,15 @@ const REMEASURE_AFTER_MS = [0, 50, 120, 220, 360, 520] as const;
 const DROPDOWN_BELOW_TARGETS = new Set(["oral_header", "oral_memo_files"]);
 /** 커스텀어벗 설정 모달 — 큰 타깃, 코치마크는 위쪽 */
 const PRESET_MODAL_TARGETS = CUSTOM_ABUT_GUIDE_TARGETS;
-/** 위성은 union하지 않고 별도 홀(사이드바 메뉴 + 캘린더 · 폰 미리보기 + 안내 문구) */
-const SEPARATE_SATELLITE_TARGETS = new Set(["oral_calendar", "oral_phone"]);
+/** 위성은 union하지 않고 별도 홀(사이드바 메뉴 + 캘린더 · 폰 미리보기 + 안내 문구 · 정산) */
+const SEPARATE_SATELLITE_TARGETS = new Set([
+  "oral_calendar",
+  "oral_phone",
+  "credits_workspace",
+  "credits_ledger",
+  "credits_stats",
+  "credits_charge",
+]);
 /** 코치마크를 타깃 위에 고정 */
 const PREFER_ABOVE_TARGETS = new Set([
   "oral_calendar",
@@ -63,6 +72,19 @@ const PREFER_ABOVE_TARGETS = new Set([
 ]);
 /** 코치마크를 타깃 아래·오른쪽에 고정 */
 const PREFER_BELOW_TARGETS = new Set<string>([]);
+/** 큰 작업영역 — 코치마크를 홀 중하단에 두어 상단 탭·요약카드를 가리지 않음 */
+const PREFER_LOWER_IN_HOLE_TARGETS = new Set([
+  "credits_workspace",
+  "credits_ledger",
+  "credits_stats",
+  "credits_charge",
+]);
+/** 사이드바 위성 id가 스텝 target과 다를 때(정산 3탭) */
+const SATELLITE_ALIAS: Record<string, string[]> = {
+  credits_ledger: ["credits_workspace"],
+  credits_stats: ["credits_workspace"],
+  credits_charge: ["credits_workspace"],
+};
 /** 코치마크를 뷰포트 오른쪽(견적 중앙 툴팁과 겹침 회피: card_ops·estimate) */
 const PREFER_RIGHT_HALF_TARGETS = new Set([
   "oral_card_ops",
@@ -106,12 +128,15 @@ function readNestedGuideDialogRect(): Rect | null {
 
 function readSatelliteRects(target: string): Rect[] {
   const out: Rect[] = [];
-  document
-    .querySelectorAll(`[data-guide-tour-satellite="${CSS.escape(target)}"]`)
-    .forEach((el) => {
-      const sat = readElRect(el);
-      if (sat) out.push(sat);
-    });
+  const keys = [target, ...(SATELLITE_ALIAS[target] ?? [])];
+  for (const key of keys) {
+    document
+      .querySelectorAll(`[data-guide-tour-satellite="${CSS.escape(key)}"]`)
+      .forEach((el) => {
+        const sat = readElRect(el);
+        if (sat) out.push(sat);
+      });
+  }
   return out;
 }
 
@@ -231,7 +256,14 @@ type CardPlacement =
   | { mode: "center" }
   | { mode: "anchored"; top: number; left: number };
 
-type PlacePrefer = "auto" | "above" | "below" | "belowCenter" | "right" | "rightHalf";
+type PlacePrefer =
+  | "auto"
+  | "above"
+  | "below"
+  | "belowCenter"
+  | "right"
+  | "rightHalf"
+  | "lowerInHole";
 
 function overlapsAnyTarget(
   top: number,
@@ -292,8 +324,19 @@ function placeCardNearTarget(
   );
   const centerLeft = Math.max(VIEW_PAD, (vw - cardW) / 2);
 
-  // 큰 모달/치식: 옆·아래 공간이 거의 없음 → prefer에 따라 상단·오른쪽
+  // 큰 모달/치식: 옆·아래 공간이 거의 없음 → prefer에 따라 상단·오른쪽·홀 중하단
   if (rect.height >= vh * 0.42) {
+    if (prefer === "lowerInHole") {
+      // 탭·요약카드 위쪽을 비우고 필터/테이블 쪽에 겹쳐 둠(홀 밖 공간이 없음)
+      const lowerTop = Math.max(
+        VIEW_PAD,
+        Math.min(
+          vh - VIEW_PAD - cardH,
+          rect.top + Math.max(cardH + CARD_GAP, rect.height * 0.32),
+        ),
+      );
+      return { mode: "anchored", top: lowerTop, left: centerLeft };
+    }
     if (prefer === "rightHalf") {
       const rightLeft = Math.max(VIEW_PAD, vw - VIEW_PAD - cardW);
       const topRight = tryPlace(VIEW_PAD, rightLeft);
@@ -389,6 +432,19 @@ function placeCardNearTarget(
       { top: midTop, left: rightLeft },
       { top: midTop, left: leftLeft },
     );
+  } else if (prefer === "lowerInHole") {
+    const lowerTop = Math.max(
+      VIEW_PAD,
+      Math.min(
+        vh - VIEW_PAD - cardH,
+        rect.top + Math.max(cardH + CARD_GAP, rect.height * 0.32),
+      ),
+    );
+    candidates.push(
+      { top: lowerTop, left: centerLeft },
+      { top: midTop, left: centerLeft },
+      { top: belowTop, left: centerLeft },
+    );
   } else {
     // auto: 옆 → 위 → 아래 (아래로 열리는 UI와 겹침 최소화)
     candidates.push(
@@ -404,6 +460,17 @@ function placeCardNearTarget(
   for (const c of candidates) {
     const placed = tryPlace(c.top, c.left);
     if (placed) return placed;
+  }
+
+  if (prefer === "lowerInHole") {
+    const lowerTop = Math.max(
+      VIEW_PAD,
+      Math.min(
+        vh - VIEW_PAD - cardH,
+        rect.top + Math.max(cardH + CARD_GAP, rect.height * 0.32),
+      ),
+    );
+    return { mode: "anchored", top: lowerTop, left: centerLeft };
   }
 
   const bottomCenterTop = vh - VIEW_PAD - cardH;
@@ -623,14 +690,16 @@ export function GuideTourSpotlight({
           ? "belowCenter"
           : target && PREFER_RIGHT_HALF_TARGETS.has(target)
             ? "rightHalf"
-            : target && PREFER_BELOW_TARGETS.has(target)
-              ? "below"
-              : target &&
-                  (TOOTH_CHART_GUIDE_TARGETS.has(target) ||
-                    PRESET_MODAL_TARGETS.has(target) ||
-                    PREFER_ABOVE_TARGETS.has(target))
-                ? "above"
-                : "auto";
+            : target && PREFER_LOWER_IN_HOLE_TARGETS.has(target)
+              ? "lowerInHole"
+              : target && PREFER_BELOW_TARGETS.has(target)
+                ? "below"
+                : target &&
+                    (TOOTH_CHART_GUIDE_TARGETS.has(target) ||
+                      PRESET_MODAL_TARGETS.has(target) ||
+                      PREFER_ABOVE_TARGETS.has(target))
+                  ? "above"
+                  : "auto";
     setPlacement(placeCardNearTarget(rects, cardSize, prefer));
   }, [rects, cardSize, target]);
 

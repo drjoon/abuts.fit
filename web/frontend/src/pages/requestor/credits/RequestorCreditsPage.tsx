@@ -1,8 +1,9 @@
 // change-log:
+// - 2026-09-05: 가이드투어 — 정산 3탭(내역·통계·충전)별 data-guide-tour·활성 탭 강조.
 // - 2026-08-26: 데모 뱃지 — 탭 바 max-w-4xl 유지, 뱃지만 max-w-6xl 우측 끝.
 // - 2026-08-26: 데모 모드 뱃지(탭 바 우측). 실사용 전환 확인.
 // - 2026-08-22: 정산 페이지 탭 순서 — 내역·통계·충전. 사이드바 라벨 정산.
-// - 2026-08-19: 크레딧 페이지 진입 시 사업자 me를 기다리지 않음. 충전 탭은 열 때만 마운트.
+// - 2026-08-19: 크레딧 페이지 진입 시 요청자 me를 기다리지 않음. 충전 탭은 열 때만 마운트.
 // - 2026-08-14: 기공크레딧(정산) 탭 제거. 내역·충전만. ?tab=settlement → ledger.
 // - 2026-08-14: 내역 탭 UI를 기공크레딧 탭과 동일 최신 스타일로 정리(CreditLedgerModal).
 // - 2026-08-13: 기공소 정산 탭 라벨을 「기공크레딧」으로 통일.
@@ -29,6 +30,8 @@
 // - web/frontend/src/shared/components/RequestorWorkspaceHeader.tsx
 // - web/frontend/src/shared/ui/skeletons/RequestorCreditsPageSkeleton.tsx
 // - web/frontend/src/shared/demo/DemoModeBadge.tsx
+// - web/frontend/src/shared/guideTour/guideTourSteps.ts
+// - web/frontend/src/shared/guideTour/GuideTourProvider.tsx
 import { useCallback, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { CreditCard, BarChart3, Wallet } from "lucide-react";
@@ -39,14 +42,23 @@ import {
 import { PaymentTab } from "@/features/settings/tabs/CreditPaymentTab";
 import { CreditLedgerModal } from "@/shared/components/CreditLedgerModal";
 import { DemoModeBadge } from "@/shared/demo/DemoModeBadge";
+import { useGuideTour } from "@/shared/guideTour/GuideTourProvider";
 import { useAuthStore } from "@/store/useAuthStore";
 
 import { CreditStatisticsTab } from "@/pages/requestor/credits/components/CreditStatisticsTab";
 
 type TabKey = "ledger" | "stats" | "charge";
 
+const CREDITS_GUIDE_TOUR_TARGETS = new Set([
+  "credits_ledger",
+  "credits_stats",
+  "credits_charge",
+  "credits_workspace",
+]);
+
 export default function RequestorCreditsPage() {
   const { user } = useAuthStore();
+  const guideTour = useGuideTour();
   const [searchParams, setSearchParams] = useSearchParams();
   const [ledgerKey, setLedgerKey] = useState(0);
   const tabFromUrl = (searchParams.get("tab") as TabKey | null) || "ledger";
@@ -56,6 +68,13 @@ export default function RequestorCreditsPage() {
       : tabFromUrl === "stats"
         ? "stats"
         : "ledger";
+
+  const guideTourTarget =
+    guideTour.active &&
+    guideTour.step?.target &&
+    CREDITS_GUIDE_TOUR_TARGETS.has(guideTour.step.target)
+      ? guideTour.step.target
+      : undefined;
 
   const handleDemoExited = useCallback(() => {
     setLedgerKey((n) => n + 1);
@@ -106,10 +125,16 @@ export default function RequestorCreditsPage() {
   );
 
   return (
-    <div className="h-full min-h-0" data-guide-tour="credits_workspace">
+    <div
+      className="h-full min-h-0"
+      {...(guideTourTarget
+        ? { "data-guide-tour": guideTourTarget }
+        : {})}
+    >
       <SettingsScaffold
         tabs={tabs}
         activeTab={activeTab}
+        highlightTabKey={guideTourTarget ? activeTab : undefined}
         tabsMaxClassName="max-w-4xl"
         contentMaxClassName="max-w-6xl"
         fillHeight

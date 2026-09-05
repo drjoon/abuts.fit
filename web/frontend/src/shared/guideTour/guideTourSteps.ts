@@ -3,6 +3,8 @@
 // - web/frontend/src/shared/components/practice/PracticeToothWorkGuideTourBanner.tsx
 // - web/frontend/src/shared/guideTour/GuideTourProvider.tsx
 // change-log:
+// - 2026-09-05: 정산 코치마크 3단 — 내역·통계·충전 각 페이지 문구·탭 강조.
+// - 2026-09-05: credits_ledger — 힌트 문구·사이드바 정산 홀·코치마크 하단(탭·요약카드 노출).
 // - 2026-09-05: oral_estimate — allowTargetInteraction(견적 호버·툴팁).
 // - 2026-09-05: custom_abut_scanbody·simple 삭제. 커스텀어벗 1장(oral_custom_abut). 레거시 id 정규화.
 // - 2026-09-05: custom_abut 임시 프리셋 3장 체험(implant·scanbody·simple). card_ops·custom_abut 조작 허용.
@@ -138,13 +140,13 @@ export const PRACTICE_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   },
   // —— 챕터1: 구강스캔 기공의뢰 (영화형) ——
   ...practiceOralMovieSteps,
-  // —— 챕터2: 정산 ——
+  // —— 챕터2: 정산 (내역 → 통계 → 충전) ——
   {
     id: "credits_ledger",
     title: "정산 · 내역",
-    hint: "잔액·충전·소비와 거래 내역을 확인합니다. 카드·필터로 상세를 볼 수 있습니다.",
+    hint: "거래 내역을 확인합니다.",
     path: `${CREDITS_PATH}?tab=ledger`,
-    target: "credits_workspace",
+    target: "credits_ledger",
     advance: "next",
     chapter: 2,
     creditsTab: "ledger",
@@ -152,9 +154,9 @@ export const PRACTICE_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   {
     id: "credits_stats",
     title: "정산 · 통계",
-    hint: "기간별 충전·소비·의뢰 건수를 한눈에 봅니다.",
+    hint: "통계를 확인합니다.",
     path: `${CREDITS_PATH}?tab=stats`,
-    target: "credits_workspace",
+    target: "credits_stats",
     advance: "next",
     chapter: 2,
     creditsTab: "stats",
@@ -162,9 +164,9 @@ export const PRACTICE_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   {
     id: "credits_charge",
     title: "정산 · 충전",
-    hint: "유료 크레딧을 충전하는 화면입니다. 기공비·스토어 결제에 사용합니다.",
+    hint: "크레딧(선수금)을 충전합니다.",
     path: `${CREDITS_PATH}?tab=charge`,
-    target: "credits_workspace",
+    target: "credits_charge",
     advance: "next",
     chapter: 2,
     creditsTab: "charge",
