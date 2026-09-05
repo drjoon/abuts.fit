@@ -52,7 +52,8 @@ function resolveDemoGrantBusinessNumber(anchor) {
 
 /**
  * 의뢰자 사업자 신규 생성 시 데모 모드만 시작(크레딧 미지급, 0원).
- * 치과(practice)만. 기공소(lab)는 데모 없음(가입 무료 테스트 2건으로 대체).
+ * 치과(practice)만. 기공소(lab)는 데모 없음(CA 가입 무료 테스트 2건으로 대체).
+ * 치과 CA(어벗디자인)도 가입 무료 테스트 2건 적용. PTX(구강스캔)만 데모 마이너스.
  * 이미 실사용 전환(demoModeExitedAt)한 사업자는 재진입하지 않는다.
  */
 export async function enableDemoModeAndGrantCreditIfEligible({

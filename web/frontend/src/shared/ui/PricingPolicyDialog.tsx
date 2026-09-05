@@ -160,7 +160,9 @@ export const PricingPolicyDialog = ({
 }: Props) => {
   const { kind } = useRequestorBusinessAccess();
   const isLab = kind === 'lab';
-  const showSignupFreeTest = isLab;
+  const isPractice = kind === 'practice';
+  /** 치과·기공소 CA(어벗디자인) 가입 무료 테스트. */
+  const showSignupFreeTest = isLab || isPractice;
   const { data: systemSettings, refetch: refetchSystemSettings } =
     useSystemSettings();
   const productionPrice = Math.max(
@@ -338,8 +340,8 @@ export const PricingPolicyDialog = ({
                     첫 2건 0원
                   </p>
                   <p className='text-xs text-slate-500'>
-                    가입 후 처음 2건은 테스트를 위해 무료로 진행됩니다. 장부에는
-                    가입 테스트(0원)로 기록됩니다.
+                    커스텀어벗(어벗디자인) 가입 후 처음 2건은 테스트를 위해
+                    무료로 진행됩니다. 장부에는 가입 테스트(0원)로 기록됩니다.
                   </p>
                 </PolicySection>
               ) : null}

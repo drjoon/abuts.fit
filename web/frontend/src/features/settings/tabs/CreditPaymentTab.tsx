@@ -699,7 +699,7 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
           <div className="text-sm text-muted-foreground mb-3">
             {CREDIT_PREPAID_BALANCE_LABEL}
           </div>
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             <div>
               <div className="text-xs text-muted-foreground">
                 총 보유(공급가)
@@ -714,14 +714,18 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
                 {loadingBalance ? "..." : `${paidBalance.toLocaleString()}원`}
               </div>
             </div>
-            <div>
-              <div className="text-xs text-muted-foreground">무료 크레딧</div>
-              <div className="text-lg font-semibold">
-                {loadingBalance
-                  ? "..."
-                  : `${freeBalance.toLocaleString()}원`}
+            {freeBalance > 0 ? (
+              <div>
+                <div className="text-xs text-muted-foreground">
+                  잔여 무료 크레딧
+                </div>
+                <div className="text-lg font-semibold">
+                  {loadingBalance
+                    ? "..."
+                    : `${freeBalance.toLocaleString()}원`}
+                </div>
               </div>
-            </div>
+            ) : null}
           </div>
         </div>
       )}

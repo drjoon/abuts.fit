@@ -1298,8 +1298,9 @@ export async function computePriceForRequest({
   // SSOT: 관리자 플랫폼 설정 단가(+신속 expressFee). 90일 1만원·주문량할인 없음.
   const BASE_UNIT_PRICE = resolveCustomAbutmentRequestUnitPrice(creditSettings);
 
-  // 기공소 가입 후 첫 2건: 무료 테스트(환영 크레딧 대체). 리메이크 판정에 우선.
+  // 의뢰자(치과·기공소) CA 가입 후 첫 2건: 무료 테스트(환영 크레딧 대체). 리메이크 판정에 우선.
   // 배치 제출은 applySignupFreeTest=false 후 applySignupFreeTestPricingToBatch로 직렬 배정.
+  // PTX(구강스캔)는 Request가 아니며 이 경로를 타지 않는다.
   if (applySignupFreeTest && requestorOrgId) {
     const signupQuota = await getSignupFreeTestQuota({
       requestorOrgId,

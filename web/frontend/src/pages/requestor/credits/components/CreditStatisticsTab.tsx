@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-05: 요약 수식에서 무료 충전 카드 제거(유료 [+정산] − 소비).
 // - 2026-09-05: 데모/실사용 집계 필터·2줄 카드 값 제거. 무료 충전 단일 라벨.
 // - 2026-08-31: 기공소 통계 구역 — 기공/어벗 액센트 셸·좌측 레일로 클러스터 구분 강화.
 // - 2026-08-31: 기공소 통계 — 치과로부터 수신(정산) / 어벗츠로 의뢰(충전·소비) 구역 분리.
@@ -63,7 +64,6 @@ import {
 import { cn } from "@/shared/ui/cn";
 import { RESPONSIVE } from "@/shared/ui/responsive";
 import {
-  CREDIT_LEDGER_DEMO_NOTICE_BODY,
   CREDIT_LEDGER_DEMO_PERIOD_SPEND_HINT,
 } from "@/shared/demo/demoModeCopy";
 import { useDemoMode } from "@/shared/demo/useDemoMode";
@@ -631,7 +631,6 @@ export function CreditStatisticsTab() {
   const isLab =
     stats?.requestorKind === "lab" ||
     (!stats && accessKind === "lab");
-  const freeChargeLabel = "무료 충전";
   const filterBase = useMemo(
     () => baseFilters(period, customStartDate, customEndDate),
     [period, customStartDate, customEndDate],
@@ -645,7 +644,6 @@ export function CreditStatisticsTab() {
           (stats?.summary.totalFreeChargeSupply || 0),
       ),
   );
-  const freeChargeTotal = Number(stats?.summary.totalFreeChargeSupply || 0);
   const spendTotal = Number(stats?.summary.totalSpendSupply || 0);
   const settlementEarnTotal = Number(
     stats?.summary.totalSettlementEarnSupply || 0,
@@ -691,9 +689,6 @@ export function CreditStatisticsTab() {
   const statCardClass =
     "min-w-[8.5rem] flex-1 sm:min-w-[9.5rem] md:min-w-[10.5rem]";
 
-  const freeChargeTooltip = demoMode
-    ? CREDIT_LEDGER_DEMO_NOTICE_BODY
-    : "선택한 기간에 무료로 충전된 금액 합계입니다.";
   const abutsSpendTooltip = demoMode
     ? CREDIT_LEDGER_DEMO_PERIOD_SPEND_HINT
     : "선택한 기간에 지출한 어벗 생산·배송·스토어 결제 합계입니다.";
@@ -740,7 +735,7 @@ export function CreditStatisticsTab() {
     orderCategories: string;
     spendLabel?: string;
   }) => (
-    <SummaryCardsRow cardCount={4}>
+    <SummaryCardsRow cardCount={3}>
       <SettlementStatCard
         className={statCardClass}
         label="유료 충전"
@@ -753,24 +748,6 @@ export function CreditStatisticsTab() {
             filters: {
               ...filterBase,
               creditKind: "PAID",
-              action: "CHARGE",
-            },
-          })
-        }
-      />
-      <SettlementEquationOperator symbol="+" />
-      <SettlementStatCard
-        className={statCardClass}
-        label={freeChargeLabel}
-        value={freeChargeTotal}
-        hint="안내"
-        hintTooltip={freeChargeTooltip}
-        onClick={() =>
-          openDrillDown({
-            title: "무료 충전 내역",
-            filters: {
-              ...filterBase,
-              creditKind: "FREE",
               action: "CHARGE",
             },
           })

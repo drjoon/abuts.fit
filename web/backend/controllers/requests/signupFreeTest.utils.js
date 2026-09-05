@@ -7,12 +7,8 @@
 import { Types } from "mongoose";
 import Request from "../../models/request.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
-import {
-  normalizeRequestorCapabilities,
-  normalizeRequestorKind,
-} from "../../utils/requestorCapabilities.js";
 
-/** 기공소 가입 후 첫 N건 무료 테스트(크레딧·제조사·배송 0원). */
+/** 의뢰자(치과·기공소) 가입 후 첫 N건 CA 무료 테스트(크레딧·제조사·배송 0원). PTX는 미적용. */
 export const SIGNUP_FREE_TEST_LIMIT = 2;
 export const SIGNUP_FREE_TEST_PRICE_RULE = "signup_free_test_2";
 export const SIGNUP_FREE_TEST_LEDGER_LABEL = "가입 테스트";
@@ -25,31 +21,33 @@ export function isSignupFreeTestRequest(request) {
   return isSignupFreeTestPriceRule(request?.price?.rule);
 }
 
-function isLabRequestorKind(kind, caps) {
-  const normalized = normalizeRequestorKind(kind);
-  if (normalized === "lab") return true;
-  if (normalized === "practice") return false;
-  const c = normalizeRequestorCapabilities(caps);
-  return Boolean(c.lab && !c.practice);
-}
-
+/** @deprecated Prefer resolveIsSignupFreeTestEligibleAnchor — kept for call-site compat. */
 export async function resolveIsLabRequestorAnchor(requestorOrgId) {
-  const raw = String(requestorOrgId || "").trim();
-  if (!raw || !Types.ObjectId.isValid(raw)) return false;
-  const anchor = await BusinessAnchor.findById(raw)
-    .select({ businessType: 1, requestorKind: 1, requestorCapabilities: 1 })
-    .lean();
-  if (!anchor || String(anchor.businessType || "") !== "requestor") return false;
-  return isLabRequestorKind(
-    anchor.requestorKind,
-    anchor.requestorCapabilities,
-  );
+  return resolveIsSignupFreeTestEligibleAnchor(requestorOrgId);
 }
 
 /**
- * 가입 후 비취소 의뢰 건수(무료 테스트 쿼터 SSOT).
+ * 가입 무료 테스트 대상: businessType=requestor(치과·기공소).
+ * PTX(구강스캔)는 Request가 아니므로 쿼터에 포함되지 않는다.
+ */
+export function isSignupFreeTestEligibleBusinessType(businessType) {
+  return String(businessType || "").trim() === "requestor";
+}
+
+export async function resolveIsSignupFreeTestEligibleAnchor(requestorOrgId) {
+  const raw = String(requestorOrgId || "").trim();
+  if (!raw || !Types.ObjectId.isValid(raw)) return false;
+  const anchor = await BusinessAnchor.findById(raw)
+    .select({ businessType: 1 })
+    .lean();
+  return isSignupFreeTestEligibleBusinessType(anchor?.businessType);
+}
+
+/**
+ * 가입 후 비취소 CA 의뢰(Request) 건수(무료 테스트 쿼터 SSOT).
  * 준비 단계 취소(`manufacturerStage=취소`)는 현행과 동일하게 가능하며, 취소 건은 카운트에서 제외되어 슬롯이 환원된다.
  * 샘플·신규임플란트 무상 태그는 별도 제외하지 않음 — "첫 2건"은 실제 비취소 의뢰 문서 기준.
+ * PracticeTransfer(구강스캔)는 카운트하지 않는다.
  */
 export async function countSignupFreeTestUsed({
   requestorOrgId,
@@ -74,16 +72,15 @@ export async function getSignupFreeTestQuota({
   requestorKind = null,
   requestorCapabilities = null,
   excludeRequestId = null,
+  /** @deprecated Ignored — practice·lab requestor 모두 eligible. */
   isLab = null,
 } = {}) {
-  const lab =
-    typeof isLab === "boolean"
-      ? isLab
-      : requestorKind != null || requestorCapabilities != null
-        ? isLabRequestorKind(requestorKind, requestorCapabilities)
-        : await resolveIsLabRequestorAnchor(requestorOrgId);
+  void requestorKind;
+  void requestorCapabilities;
+  void isLab;
 
-  if (!lab) {
+  const eligible = await resolveIsSignupFreeTestEligibleAnchor(requestorOrgId);
+  if (!eligible) {
     return {
       eligible: false,
       limit: SIGNUP_FREE_TEST_LIMIT,

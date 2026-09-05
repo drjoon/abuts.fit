@@ -20,6 +20,7 @@ import { Types } from "mongoose";
 import Request from "../../models/request.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import User from "../../models/user.model.js";
+import { resolveDemoModeExpiresAt } from "../businesses/business.demoMode.util.js";
 import {
   normalizeRequestorKind,
   resolveRequestorProfile,
@@ -226,7 +227,7 @@ export async function getMyCreditBalance(req, res) {
   const balanceData = await getBalanceBreakdown(scope, req.user?.requestorKind);
 
   const anchor = await BusinessAnchor.findById(scope.businessAnchorId)
-    .select({ demoMode: 1, demoModeExitedAt: 1 })
+    .select({ demoMode: 1, demoModeExitedAt: 1, demoModeStartedAt: 1 })
     .lean();
 
   return res.json({
@@ -234,6 +235,9 @@ export async function getMyCreditBalance(req, res) {
     data: {
       ...balanceData,
       demoMode: Boolean(anchor?.demoMode),
+      demoModeStartedAt: anchor?.demoModeStartedAt || null,
+      demoModeExpiresAt:
+        resolveDemoModeExpiresAt(anchor?.demoModeStartedAt) || null,
       demoModeExitedAt: anchor?.demoModeExitedAt || null,
     },
   });

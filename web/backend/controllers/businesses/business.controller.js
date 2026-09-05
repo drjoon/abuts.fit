@@ -31,6 +31,7 @@ import {
   exitDemoMode as exitDemoModeUtil,
   enableDemoModeAndGrantCreditIfEligible,
   maybeAutoExitDemoModeIfExhausted,
+  resolveDemoModeExpiresAt,
 } from "./business.demoMode.util.js";
 import { resolveRequestorPricingBaseDate } from "../requests/utils.js";
 import {
@@ -540,6 +541,14 @@ export async function getMyBusiness(req, res) {
             : false,
         demoMode:
           businessType === "requestor" ? Boolean(anchor?.demoMode) : false,
+        demoModeStartedAt:
+          businessType === "requestor"
+            ? anchor?.demoModeStartedAt || null
+            : null,
+        demoModeExpiresAt:
+          businessType === "requestor"
+            ? resolveDemoModeExpiresAt(anchor?.demoModeStartedAt) || null
+            : null,
         demoModeExitedAt:
           businessType === "requestor" ? anchor?.demoModeExitedAt || null : null,
         requestSettings: {

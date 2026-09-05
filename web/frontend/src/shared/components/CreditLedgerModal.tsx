@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-05: 요약 수식에서 무료 충전 카드 제거(유료 [+정산] − 소비). 잔여 무료 버킷은 compact만.
 // - 2026-09-05: 기공소 현재 잔액 — spendableBalance(정산 적립 포함). balance(유료+무료)만 쓰던 버그 수정.
 // - 2026-09-05: 데모/실사용 집계 필터·2줄 잔액·행「데모」뱃지 제거. 잔액 음수 표시 허용.
 // - 2026-09-01: PTX 결제보류 — hold/adjust가 여러 저널로 흩어져도 목록·호버 금액을 견적(heldTotal)과 맞춤.
@@ -2465,9 +2466,6 @@ export const CreditLedgerModal = ({
   const periodPaidChargeTotal = Number(
     periodSpendSummary?.totalPaidChargeSupply || 0,
   );
-  const periodFreeChargeTotal = Number(
-    periodSpendSummary?.totalFreeChargeSupply || 0,
-  );
   const periodSpendTotal = Number(
     periodSpendSummary?.totalSpendSupply || 0,
   );
@@ -2477,22 +2475,19 @@ export const CreditLedgerModal = ({
 
   const showPeriodSpendCard =
     Boolean(currentBalanceSnapshot) && equationLedgerUi;
-  const freeBucketLabel = "무료 충전";
   const freeBucketLabelCompact = "무료크레딧";
   const freeBucketHint = isDemoMode ? "데모 체험" : CREDIT_FREE_BUCKET_HINT;
   const freeBucketTooltip = isDemoMode
     ? CREDIT_LEDGER_DEMO_NOTICE_BODY
     : CREDIT_LEDGER_FREE_NOTICE_BODY;
+  const showResidualFreeBucket = freeCreditTotal > 0;
   const balanceHintTooltip = isDemoMode
     ? CREDIT_LEDGER_DEMO_BALANCE_HINT
     : showSettlementCredit
-      ? "유료·무료 충전과 기공 정산 적립에서 기공·스토어 소비를 뺀 잔여액입니다. 적립 보류분은 잔액에 아직 반영되지 않습니다."
-      : "충전금에서 소비액을 뺀 선불금 잔여액입니다.";
+      ? "유료 충전과 기공 정산 적립에서 기공·스토어 소비를 뺀 잔여액입니다. 적립 보류분은 잔액에 아직 반영되지 않습니다."
+      : "유료 충전에서 소비액을 뺀 선불금 잔여액입니다.";
   const periodPaidChargeTooltip =
     "선택한 기간에 유료(선입금)로 충전된 금액 합계입니다.";
-  const periodFreeChargeTooltip = isDemoMode
-    ? CREDIT_LEDGER_DEMO_NOTICE_BODY
-    : "선택한 기간에 무료로 충전된 금액 합계입니다.";
   const periodSettlementEarnTooltip =
     "선택한 기간에 적립된 기공 정산(작업완료 전 적립 보류 포함) 합계입니다.";
   const periodSpendTooltip = isDemoMode
@@ -2543,24 +2538,6 @@ export const CreditLedgerModal = ({
                         filters: {
                           ...summaryFilterBase,
                           creditKind: "PAID",
-                          action: "CHARGE",
-                        },
-                      })
-                    }
-                  />
-                  <SettlementEquationOperator symbol="+" />
-                  <SettlementStatCard
-                    className="min-w-[9.5rem] flex-1 sm:min-w-[10.5rem]"
-                    label={freeBucketLabel}
-                    value={periodFreeChargeTotal}
-                    hint="안내"
-                    hintTooltip={periodFreeChargeTooltip}
-                    onClick={() =>
-                      openSummaryDrillDown({
-                        title: "무료 충전 내역",
-                        filters: {
-                          ...summaryFilterBase,
-                          creditKind: "FREE",
                           action: "CHARGE",
                         },
                       })
@@ -2636,21 +2613,23 @@ export const CreditLedgerModal = ({
                     })
                   }
                 />
-                <SettlementStatCard
-                  label={freeBucketLabelCompact}
-                  value={freeCreditTotal}
-                  hint={freeBucketHint}
-                  hintTooltip={freeBucketTooltip}
-                  onClick={() =>
-                    openSummaryDrillDown({
-                      title: "무료 크레딧 내역",
-                      filters: {
-                        ...summaryFilterBase,
-                        creditKind: "FREE",
-                      },
-                    })
-                  }
-                />
+                {showResidualFreeBucket ? (
+                  <SettlementStatCard
+                    label={freeBucketLabelCompact}
+                    value={freeCreditTotal}
+                    hint={freeBucketHint}
+                    hintTooltip={freeBucketTooltip}
+                    onClick={() =>
+                      openSummaryDrillDown({
+                        title: "무료 크레딧 내역",
+                        filters: {
+                          ...summaryFilterBase,
+                          creditKind: "FREE",
+                        },
+                      })
+                    }
+                  />
+                ) : null}
                 {showSettlementCredit ? (
                   <SettlementStatCard
                     label="기공크레딧"

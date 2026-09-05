@@ -1131,7 +1131,7 @@ export async function createRequestsFromDraft(req, res) {
       );
     }
 
-    // 기공소 가입 무료 테스트(첫 2건): 배치 형제는 DB에 없어 쿼터를 직렬 배정.
+    // 의뢰자 CA 가입 무료 테스트(첫 2건): 배치 형제는 DB에 없어 쿼터를 직렬 배정.
     {
       const signupQuota = await getSignupFreeTestQuota({
         requestorOrgId: req.user?.businessAnchorId,

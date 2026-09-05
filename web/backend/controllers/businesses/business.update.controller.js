@@ -982,7 +982,7 @@ export async function updateMyBusiness(req, res) {
         );
 
         // 가입 환영 무료크레딧 자동 지급 폐지(grantWelcomeFreeCreditIfEligible no-op).
-        // 대체: 기공소 가입 후 첫 2건 signup_free_test_2.
+      // 대체: 의뢰자(치과·기공소) CA 가입 후 첫 2건 signup_free_test_2.
         const welcomeFreeCreditAmount =
           await grantWelcomeFreeCreditIfEligible({
             businessAnchorId: created._id,
@@ -1161,7 +1161,7 @@ export async function updateMyBusiness(req, res) {
     }
 
     // 가입 환영 무료크레딧 자동 지급 폐지(grantWelcomeFreeCreditIfEligible no-op).
-    // 대체: 기공소 가입 후 첫 2건 signup_free_test_2.
+    // 대체: 의뢰자(치과·기공소) CA 가입 후 첫 2건 signup_free_test_2.
     let welcomeFreeCreditGranted = false;
     let welcomeFreeCreditAmount = 0;
     if (

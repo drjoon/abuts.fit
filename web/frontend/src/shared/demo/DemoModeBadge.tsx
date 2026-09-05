@@ -16,10 +16,10 @@ import { cn } from "@/shared/ui/cn";
 import { toast } from "sonner";
 import {
   CREDIT_LEDGER_DEMO_NOTICE_BODY,
-  DEMO_MODE_BADGE_LABEL,
   DEMO_MODE_EXIT_CONFIRM_LABEL,
   DEMO_MODE_EXIT_DESCRIPTION_LINES,
   DEMO_MODE_EXIT_TITLE,
+  formatDemoModeBadgeLabel,
 } from "./demoModeCopy";
 import { useDemoMode } from "./useDemoMode";
 
@@ -30,10 +30,13 @@ type Props = {
 };
 
 export function DemoModeBadge({ className, onExited }: Props) {
-  const { demoMode, loading, exiting, exitDemoMode } = useDemoMode();
+  const { demoMode, daysRemaining, loading, exiting, exitDemoMode } =
+    useDemoMode();
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   if (loading || !demoMode) return null;
+
+  const badgeLabel = formatDemoModeBadgeLabel(daysRemaining);
 
   return (
     <>
@@ -46,13 +49,13 @@ export function DemoModeBadge({ className, onExited }: Props) {
               className,
             )}
             onClick={() => setConfirmOpen(true)}
-            aria-label="데모 모드 — 클릭하여 실사용 전환"
+            aria-label={`${badgeLabel} — 클릭하여 실사용 전환`}
           >
             <Badge
               variant="outline"
               className="cursor-pointer border-amber-500/70 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-100"
             >
-              {DEMO_MODE_BADGE_LABEL}
+              {badgeLabel}
             </Badge>
           </button>
         </TooltipTrigger>

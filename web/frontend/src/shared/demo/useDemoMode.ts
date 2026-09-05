@@ -4,13 +4,25 @@
 // - web/backend/modules/businesses/business.routes.js
 // - web/backend/controllers/businesses/business.demoMode.util.js
 // change-log:
+// - 2026-09-05: demoModeStartedAt/ExpiresAt → 남은 일수(데모 N일 남음).
 // - 2026-08-26: apiFetch 응답 언랩 수정 — res.data.data.demoMode (뱃지 미표시 원인).
 import { useCallback, useEffect, useState } from "react";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
+import {
+  DEMO_MODE_DURATION_DAYS,
+  resolveDemoModeDaysRemaining,
+} from "./demoModeCopy";
+
+type DemoModePayload = {
+  demoMode?: boolean;
+  demoModeStartedAt?: string | null;
+  demoModeExpiresAt?: string | null;
+};
 
 type DemoModeState = {
   demoMode: boolean;
+  daysRemaining: number | null;
   loading: boolean;
   exiting: boolean;
   refresh: () => Promise<void>;
@@ -18,7 +30,25 @@ type DemoModeState = {
 };
 
 let cachedDemoMode: boolean | null = null;
+let cachedDaysRemaining: number | null = null;
 let cachedAnchorId: string | null = null;
+
+function readDemoPayload(body: {
+  data?: DemoModePayload;
+  demoMode?: boolean;
+  demoModeStartedAt?: string | null;
+  demoModeExpiresAt?: string | null;
+}): { demoMode: boolean; daysRemaining: number | null } {
+  const payload = body.data || body;
+  const demoMode = Boolean(payload?.demoMode);
+  if (!demoMode) return { demoMode: false, daysRemaining: null };
+  const daysRemaining = resolveDemoModeDaysRemaining({
+    startedAt: payload?.demoModeStartedAt,
+    expiresAt: payload?.demoModeExpiresAt,
+    durationDays: DEMO_MODE_DURATION_DAYS,
+  });
+  return { demoMode, daysRemaining };
+}
 
 export function useDemoMode(): DemoModeState {
   const businessAnchorId = useAuthStore((s) => s.user?.businessAnchorId);
@@ -33,61 +63,80 @@ export function useDemoMode(): DemoModeState {
     }
     return false;
   });
+  const [daysRemaining, setDaysRemaining] = useState<number | null>(() => {
+    if (
+      businessAnchorId &&
+      cachedAnchorId === String(businessAnchorId) &&
+      cachedDemoMode
+    ) {
+      return cachedDaysRemaining;
+    }
+    return null;
+  });
   const [loading, setLoading] = useState(true);
   const [exiting, setExiting] = useState(false);
+
+  const applyPayload = useCallback(
+    (body: {
+      data?: DemoModePayload;
+      demoMode?: boolean;
+      demoModeStartedAt?: string | null;
+      demoModeExpiresAt?: string | null;
+    }) => {
+      const next = readDemoPayload(body);
+      setDemoMode(next.demoMode);
+      setDaysRemaining(next.daysRemaining);
+      cachedDemoMode = next.demoMode;
+      cachedDaysRemaining = next.daysRemaining;
+      cachedAnchorId = businessAnchorId ? String(businessAnchorId) : null;
+    },
+    [businessAnchorId],
+  );
 
   const refresh = useCallback(async () => {
     if (!businessAnchorId) {
       setDemoMode(false);
+      setDaysRemaining(null);
       setLoading(false);
       cachedDemoMode = false;
+      cachedDaysRemaining = null;
       cachedAnchorId = null;
       return;
     }
     if (role !== "requestor" && role !== "practice") {
       setDemoMode(false);
+      setDaysRemaining(null);
       setLoading(false);
       return;
     }
     setLoading(true);
     try {
-      // apiFetch: res.data = 서버 JSON 전체 → demoMode 는 res.data.data.*
       const res = await request<{
         success?: boolean;
-        data?: { demoMode?: boolean };
+        data?: DemoModePayload;
       }>({
         path: "/api/businesses/me?businessType=requestor",
         method: "GET",
       });
-      const body = res.data || {};
-      const payload = body.data || (body as { demoMode?: boolean });
-      const next = Boolean(payload?.demoMode);
-      setDemoMode(next);
-      cachedDemoMode = next;
-      cachedAnchorId = String(businessAnchorId);
+      applyPayload(res.data || {});
     } catch {
-      // balance API 폴백
       try {
         const bal = await request<{
           success?: boolean;
-          data?: { demoMode?: boolean };
+          data?: DemoModePayload;
         }>({
           path: "/api/credits/balance",
           method: "GET",
         });
-        const body = bal.data || {};
-        const payload = body.data || (body as { demoMode?: boolean });
-        const next = Boolean(payload?.demoMode);
-        setDemoMode(next);
-        cachedDemoMode = next;
-        cachedAnchorId = String(businessAnchorId);
+        applyPayload(bal.data || {});
       } catch {
         setDemoMode(false);
+        setDaysRemaining(null);
       }
     } finally {
       setLoading(false);
     }
-  }, [businessAnchorId, role]);
+  }, [applyPayload, businessAnchorId, role]);
 
   useEffect(() => {
     void refresh();
@@ -105,7 +154,9 @@ export function useDemoMode(): DemoModeState {
       });
       if (!res.ok || !res.data?.success) return false;
       setDemoMode(false);
+      setDaysRemaining(null);
       cachedDemoMode = false;
+      cachedDaysRemaining = null;
       cachedAnchorId = businessAnchorId ? String(businessAnchorId) : null;
       return true;
     } catch {
@@ -115,5 +166,5 @@ export function useDemoMode(): DemoModeState {
     }
   }, [businessAnchorId]);
 
-  return { demoMode, loading, exiting, refresh, exitDemoMode };
+  return { demoMode, daysRemaining, loading, exiting, refresh, exitDemoMode };
 }
