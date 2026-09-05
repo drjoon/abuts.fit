@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/practice/PracticeToothWorkGuideTourBanner.tsx
 // - web/frontend/src/shared/guideTour/GuideTourProvider.tsx
 // change-log:
+// - 2026-09-05: intro 다음 oral_calendar — 사이드바「구강스캔으로」+ 캘린더 작업영역(작성 패널 전).
 // - 2026-09-05: 시작(intro) 힌트 — 강제 줄바꿈 제거(코치마크 1줄 폭).
 // - 2026-09-05: 구강 챕터 9장 영화형(이전/다음). calendar·세분 스텝 제거. 4·5번만 조작 허용.
 // - 2026-09-05: oral_memo·oral_files — 날짜 다음·치식 전, 설명만(「다음」, 입력·업로드 불필요).
@@ -97,6 +98,17 @@ export const PRACTICE_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
     path: PRACTICE_ORAL_PATH,
     target: null,
     advance: "next",
+  },
+  // —— 챕터1: 사이드바·캘린더(작성 패널 열기 전) ——
+  {
+    id: "oral_calendar",
+    title: "기공의뢰 · 구강스캔",
+    hint: "왼쪽 「기공의뢰 → 구강스캔으로」가 이 화면입니다. 캘린더에서 의뢰 현황을 보고, 미래 날짜를 누르면 신규 의뢰를 작성합니다.",
+    path: PRACTICE_ORAL_PATH,
+    target: "oral_calendar",
+    advance: "next",
+    chapter: 1,
+    // 작성 패널(compose)은 열지 않음 — 다음 oral_* 영화형에서 openCompose
   },
   // —— 챕터1: 구강스캔 기공의뢰 (9장 영화형) ——
   ...practiceOralMovieSteps,

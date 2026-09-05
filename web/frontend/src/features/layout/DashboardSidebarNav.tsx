@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-05: guideTourSatellite — 가이드투어 홀에 사이드 메뉴 포함(구강스캔으로).
 // - 2026-08-20: 관리자 섹션 포함 전 롤이 같은 사이드 렌더러. 접히면 라벨 툴팁.
 // - 2026-08-20: 하위 메뉴는 점 대신 아이콘. 접힌 레일에도 하위 아이콘을 두고 클릭 가능.
 // - 2026-08-19: 펼친 사이드 메인 메뉴는 아이콘 왼쪽·라벨 가운데. 배지는 우측 고정. 라벨은 줄이지 않음.
@@ -9,6 +10,7 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/shared/ui/gigongAbutAccent.ts
 // - web/frontend/src/shared/business/requestorCapabilities.ts
+// - web/frontend/src/shared/guideTour/guideTourSteps.ts
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -34,6 +36,8 @@ export type DashboardSidebarItem = {
   href: string;
   tooltip?: string;
   accent?: GigongAbutAccentKey;
+  /** 가이드투어 Spotlight 위성(data-guide-tour-satellite) — 홀에 메뉴 행 포함 */
+  guideTourSatellite?: string;
   children?: DashboardSidebarItem[];
 };
 
@@ -138,6 +142,9 @@ const SidebarNavButton = ({
             ? item.label
             : undefined
       }
+      {...(item.guideTourSatellite
+        ? { "data-guide-tour-satellite": item.guideTourSatellite }
+        : {})}
     >
       <item.icon
         className={`${compactNested ? "h-3.5 w-3.5" : "h-4 w-4"} flex-shrink-0 ${
