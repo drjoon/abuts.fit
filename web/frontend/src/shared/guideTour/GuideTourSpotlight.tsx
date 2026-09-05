@@ -15,7 +15,7 @@
 // - 2026-09-05: outline 버튼 hover 글자 — accent-foreground(흰) 덮어써 안 보이던 문제 수정.
 // - 2026-09-05: 치식 타깃 스크롤 — data-guide-tour-scroll + 지연 재시도(타깃 DOM 동기화 대기).
 // - 2026-09-05: 버튼 순서 — 다음에 하기 · (뒤로·건너뛰기·다음 오른쪽).
-// - 2026-09-05: 코치마크 가로폭 32rem(기존 26→42는 과대).
+// - 2026-09-05: 코치마크 가로폭 — 메시지 max-content(가급적 1줄), 뷰포트만 상한.
 // - 2026-09-05: oral_lab — 코치마크를 필드 오른쪽 고정. 타깃과 절대 겹치지 않게 배치.
 // - 2026-09-05: 건너뛰기 버튼(챕터3).
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -37,7 +37,7 @@ const PAD = 12;
 const CARD_GAP = 16;
 const VIEW_PAD = 16;
 const CARD_H_FALLBACK = 160;
-const CARD_W_FALLBACK = 32 * 16;
+const CARD_W_FALLBACK = 20 * 16;
 /** 팝오버 zoom-in 등 transform 종료 후 재측정 */
 const REMEASURE_AFTER_MS = [0, 50, 120, 220, 360, 520] as const;
 
@@ -445,7 +445,7 @@ export function GuideTourSpotlight({
       ref={cardRef}
       role="status"
       className={cn(
-        "pointer-events-auto w-[min(100%,32rem)] max-w-lg rounded-xl border border-accent-muted bg-accent-soft px-6 py-5 shadow-lg shadow-accent/20",
+        "pointer-events-auto inline-flex w-max max-w-[calc(100vw-2rem)] flex-col rounded-xl border border-accent-muted bg-accent-soft px-6 py-5 shadow-lg shadow-accent/20",
         className,
       )}
     >
