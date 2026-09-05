@@ -5,6 +5,7 @@
 // - web/frontend/src/shared/components/practice/PracticeOrderArrivalDateRangeField.tsx
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // change-log:
+// - 2026-09-05: 코치카드 — guide-tour-root(z-420) 밖 별도 레이어(z-440). 루트 안 z-440은 중첩 모달(z-425)에 가려짐.
 // - 2026-09-05: oral_memo·oral_files — 작성 패널 스크롤 후 하이라이트.
 // - 2026-09-05: 치식 홀이 커스텀어벗 모달 위에 남는 문제 — 타깃 변경 시 rect 즉시 클리어·모달 우선 측정.
 // - 2026-09-05: 코치카드 z-440 — 투어 중 중첩 모달(z-425) 위에 유지.
@@ -447,7 +448,7 @@ export function GuideTourSpotlight({
       ref={cardRef}
       role="status"
       className={cn(
-        "pointer-events-auto relative z-[440] w-[min(100%,32rem)] max-w-lg rounded-xl border border-accent-muted bg-accent-soft px-6 py-5 shadow-lg shadow-accent/20",
+        "pointer-events-auto w-[min(100%,32rem)] max-w-lg rounded-xl border border-accent-muted bg-accent-soft px-6 py-5 shadow-lg shadow-accent/20",
         className,
       )}
     >
@@ -505,8 +506,8 @@ export function GuideTourSpotlight({
     </div>
   );
 
-  // z-420 blur · z-425 nested dialog · z-430 popper · z-440 card
-  return createPortal(
+  // z-420 blur · z-425 nested dialog · z-430 popper · z-440 card(루트 밖 — 스택 컨텍스트 분리)
+  const blurLayer = (
     <div className="guide-tour-root pointer-events-none fixed inset-0 z-[420]">
       {rect ? (
         <>
@@ -553,19 +554,28 @@ export function GuideTourSpotlight({
       ) : (
         <div className="guide-tour-blur absolute inset-0" aria-hidden />
       )}
-      {placement.mode === "anchored" ? (
-        <div
-          className="pointer-events-none absolute px-0"
-          style={{ top: placement.top, left: placement.left }}
-        >
-          {card}
-        </div>
-      ) : (
-        <div className="pointer-events-none absolute inset-x-0 top-1/2 flex -translate-y-1/2 justify-center px-4">
-          {card}
-        </div>
-      )}
-    </div>,
+    </div>
+  );
+
+  const cardLayer =
+    placement.mode === "anchored" ? (
+      <div
+        className="pointer-events-none fixed z-[440]"
+        style={{ top: placement.top, left: placement.left }}
+      >
+        {card}
+      </div>
+    ) : (
+      <div className="pointer-events-none fixed inset-x-0 top-1/2 z-[440] flex -translate-y-1/2 justify-center px-4">
+        {card}
+      </div>
+    );
+
+  return createPortal(
+    <>
+      {blurLayer}
+      {cardLayer}
+    </>,
     document.body,
   );
 }
