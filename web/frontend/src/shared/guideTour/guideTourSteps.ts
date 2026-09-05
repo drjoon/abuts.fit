@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/practice/PracticeToothWorkGuideTourBanner.tsx
 // - web/frontend/src/shared/guideTour/GuideTourProvider.tsx
 // change-log:
+// - 2026-09-05: oral_memo·oral_files — 날짜 다음·치식 전, 설명만(「다음」, 입력·업로드 불필요).
 // - 2026-09-05: oral 임플란트·어벗 프리셋 기본 힌트 — 「+ 추가」저장 안내(상세는 resolve override).
 // - 2026-09-05: oral_calendar — 도착일 클릭(action)으로 다음 스텝. 「다음」도 가능.
 // - 2026-09-05: 치과 투어 4챕터. 챕터 카운터 1/4·치식/어벗 체험 유지·전송·폰모드·임시저장.
@@ -60,6 +61,15 @@ const practiceOralActionSteps: GuideTourStepDef[] =
     oralSubStepId: s.id,
   }));
 
+/** 기공소·환자·날짜 — 메모|파일 안내 앞 */
+const ORAL_HEADER_SUB_STEP_IDS = new Set(["lab", "patient", "dates"]);
+const practiceOralHeaderSteps = practiceOralActionSteps.filter((s) =>
+  ORAL_HEADER_SUB_STEP_IDS.has(String(s.oralSubStepId || "")),
+);
+const practiceOralToothSteps = practiceOralActionSteps.filter(
+  (s) => !ORAL_HEADER_SUB_STEP_IDS.has(String(s.oralSubStepId || "")),
+);
+
 /** 치과 — 시작 + 첨1~4 페이지 기준 4챕터 */
 export const PRACTICE_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   {
@@ -81,7 +91,28 @@ export const PRACTICE_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
     chapter: 1,
     openCompose: false,
   },
-  ...practiceOralActionSteps,
+  ...practiceOralHeaderSteps,
+  {
+    id: "oral_memo",
+    title: "메모",
+    hint: "기공소에 전달할 메모를 여기에 적습니다. 투어에서는 입력하지 말고 「다음」으로 넘어가세요.",
+    path: PRACTICE_ORAL_PATH,
+    target: "oral_memo",
+    advance: "next",
+    chapter: 1,
+    openCompose: true,
+  },
+  {
+    id: "oral_files",
+    title: "파일 첨부",
+    hint: "STL·PLY 등 스캔·이미지 파일을 클릭하거나 드래그해 첨부합니다. 투어에서는 올리지 말고 「다음」으로 이어 가세요.",
+    path: PRACTICE_ORAL_PATH,
+    target: "oral_files",
+    advance: "next",
+    chapter: 1,
+    openCompose: true,
+  },
+  ...practiceOralToothSteps,
   {
     id: "oral_send",
     title: "기공소로 전송",

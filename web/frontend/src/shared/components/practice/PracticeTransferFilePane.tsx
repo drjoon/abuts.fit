@@ -30,6 +30,7 @@ import type { PreUploadFileStatus } from "@/shared/hooks/useFilePreUpload";
 // - 2026-08-20: 썸네일 클릭 시 크게 보기. 파일명도 같은 미리보기.
 // - 2026-08-20: fillHeight — 메모 옆 열에서 빈 드롭존 높이 맞춤.
 // - 2026-08-26: requirementNoteExtra — TRIOS Communicate 한 줄.
+// - 2026-09-05: data-guide-tour=oral_files — 가이드투어 파일드롭 하이라이트.
 
 export type PracticeTransferFileDisplayItem = {
   key: string;
@@ -125,6 +126,7 @@ export const PracticeTransferFilePane = ({
 
   return (
     <div
+      data-guide-tour="oral_files"
       className={cn(
         "flex min-h-0 flex-col gap-2.5",
         fillHeight ? "h-full" : "shrink-0",

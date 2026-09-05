@@ -106,7 +106,7 @@
  * - 2026-08-20: 구강포토 썸네일 — private S3 location 대신 blob/proxy 미리보기.
  * - 2026-09-05: 임플란트/스캔바디 프리셋 — 로컬 삭제 후 서버 GET/POST·환봉 이벤트가 목록을 되살리던 문제 수정.
  * - 2026-09-05: 부분 설정 저장 응답이 전체 apply로 덮어써 임플란트 프리셋 삭제가 복원되던 레이스 수정.
- * - 2026-09-05: 가이드투어 작성 패널 첫 오픈 시「새로 작성」으로 빈 폼.
+ * - 2026-09-05: 가이드투어 작성 패널 — 기존 작성 내용 유지(새로 작성으로 비우지 않음).
  * - 2026-09-05: 기공소 미선택 시 테스트기공소를 자동 선택(견적·투어).
  * - 2026-08-25: 가이드투어 카드 — 헤더 버튼~기공소·환자·날짜 행 세로 맞춤(폭=주문-치과도착).
  * - 2026-08-25: 상단 가이드투어 — 기공소·환자·날짜·보철물 전체 투어(툴바 오른쪽 위).
@@ -7221,26 +7221,12 @@ export const PracticeFileTransferPage = ({
     }
   };
 
-  // 플랫폼 가이드투어 챕터1 — 작성 패널 오픈 시「새로 작성」1회, 이후 세부만 동기화
-  // oral_calendar에서 도착일 클릭으로 이미 작성·advance 한 경우 freshComposeRef로 폼 유지
-  const guideTourFreshComposeRef = useRef(false);
+  // 플랫폼 가이드투어 챕터1 — oral 스텝에 맞춰 작성 패널만 열고 닫음(폼은 유지)
   useEffect(() => {
-    if (!platformGuideTour.active) {
-      guideTourFreshComposeRef.current = false;
-      return;
-    }
+    if (!platformGuideTour.active) return;
     if (!isOralGuideTourStepId(platformGuideTour.stepId)) return;
     const wantOpen = shouldOpenComposeForGuideTourStep(platformGuideTour.step);
-    if (!wantOpen) {
-      setComposeOpen(false);
-      return;
-    }
-    if (!guideTourFreshComposeRef.current) {
-      guideTourFreshComposeRef.current = true;
-      void handleStartNewTransfer({ openCompose: true, silentToast: true });
-      return;
-    }
-    setComposeOpen(true);
+    setComposeOpen(wantOpen);
   }, [
     platformGuideTour.active,
     platformGuideTour.stepId,
@@ -7252,10 +7238,6 @@ export const PracticeFileTransferPage = ({
     // 작성 패널만 열고 스텝을 안 넘기면 캘린더 안내가 작성 화면 위에 남는다.
     const advanceFromCalendar =
       platformGuideTour.active && platformGuideTour.stepId === "oral_calendar";
-    if (advanceFromCalendar) {
-      // 다음 oral_* 스텝의「새로 작성」이 방금 넣은 도착일을 덮어쓰지 않게
-      guideTourFreshComposeRef.current = true;
-    }
     void handleStartNewTransfer({
       arrivalYmd: ymd,
       openCompose: true,

@@ -179,6 +179,7 @@ import {
 // - 2026-09-05: 커스텀어벗 모달 — 상단 고정·dvh 높이·투어 z 상승·치식 스텝에서 오픈 차단(하단 잘림).
 // - 2026-09-05: 프리셋 투어 — 모달 전체 하이라이트·빈 프리셋 「+ 추가」안내·치식 스텝 시 모달 닫기.
 // - 2026-09-05: 가이드투어 치식 스텝 — 작성 패널 자동 스크롤(data-guide-tour-scroll).
+// - 2026-09-05: data-guide-tour=oral_memo — 가이드투어 메모 하이라이트.
 // - 2026-09-05: 가이드투어 — lab 검색 드롭다운 satellite(홀 확장) + z-430.
 // - 2026-09-05: 가이드투어 환자명 — 글자마다 즉시 진행 금지. 입력 멈춤(idle)·Enter만.
 // - 2026-09-05: 기공소 드롭다운 폭=트리거와 동일(min-w 제거).
@@ -3258,6 +3259,7 @@ export const PracticeTransferRequestIntakePanel = ({
         <div
           id={memoInputId}
           aria-label="메모"
+          data-guide-tour="oral_memo"
           className={cn(
             "flex flex-col gap-1.5 rounded-lg border border-slate-200 bg-white p-2.5",
             besideMemoContent

@@ -5,6 +5,7 @@
 // - web/frontend/src/shared/components/practice/PracticeOrderArrivalDateRangeField.tsx
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // change-log:
+// - 2026-09-05: oral_memo·oral_files — 작성 패널 스크롤 후 하이라이트.
 // - 2026-09-05: 치식 홀이 커스텀어벗 모달 위에 남는 문제 — 타깃 변경 시 rect 즉시 클리어·모달 우선 측정.
 // - 2026-09-05: 코치카드 z-440 — 투어 중 중첩 모달(z-425) 위에 유지.
 // - 2026-09-05: 큰 모달 타깃(임플란트·어벗 프리셋) — 코치마크를 뷰포트/모달 위에 두어 잘림 방지.
@@ -20,6 +21,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import {
+  COMPOSE_SCROLL_GUIDE_TARGETS,
+  scrollComposeGuideTargetIntoView,
   scrollToothChartGuideTargetIntoView,
   TOOTH_CHART_GUIDE_TARGETS,
 } from "@/shared/guideTour/scrollGuideTourTarget";
@@ -353,6 +356,8 @@ export function GuideTourSpotlight({
         el.hasAttribute("data-tooth-chart")
       ) {
         scrollToothChartGuideTargetIntoView(el);
+      } else if (el && target && COMPOSE_SCROLL_GUIDE_TARGETS.has(target)) {
+        scrollComposeGuideTargetIntoView(el);
       }
       measure();
       syncObservers({ onNewSatellite: false });
