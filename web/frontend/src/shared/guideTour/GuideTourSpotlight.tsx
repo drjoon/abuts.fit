@@ -5,6 +5,8 @@
 // - web/frontend/src/shared/components/practice/PracticeOrderArrivalDateRangeField.tsx
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // change-log:
+// - 2026-09-05: 치식 홀이 커스텀어벗 모달 위에 남는 문제 — 타깃 변경 시 rect 즉시 클리어·모달 우선 측정.
+// - 2026-09-05: 코치카드 z-440 — 투어 중 중첩 모달(z-425) 위에 유지.
 // - 2026-09-05: 큰 모달 타깃(임플란트·어벗 프리셋) — 코치마크를 뷰포트/모달 위에 두어 잘림 방지.
 // - 2026-09-05: 하이라이트 — 팝오버 zoom 애니메이션 후 재측정·PAD 확대·링 inset 제거.
 // - 2026-09-05: 위성(data-guide-tour-satellite) 홀 확장·카드 회피. 드롭다운 타깃은 코치마크 오른쪽.
@@ -67,14 +69,39 @@ function unionRect(a: Rect, b: Rect): Rect {
   return { top, left, width: right - left, height: bottom - top };
 }
 
+/** 커스텀어벗 설정 등 투어 중 중첩 모달 — 치식 홀보다 우선 */
+const NESTED_GUIDE_DIALOG_SELECTOR = ".guide-tour-nested-dialog";
+
+function readNestedGuideDialogRect(): Rect | null {
+  const el = document.querySelector(NESTED_GUIDE_DIALOG_SELECTOR);
+  return readElRect(el);
+}
+
 /** 타깃 + 위성(열린 캘린더·검색 드롭다운 등)을 하나의 홀 영역으로 */
 function readSpotlightRect(target: string | null | undefined): Rect | null {
   if (!target) return null;
+
+  // 보철물(치식) 타깃인데 커스텀어벗 모달이 열려 있으면 모달 크기로 맞춤.
+  // (치식 홀이 모달 위에 고정되어 하단이 잘리던 문제)
+  if (TOOTH_CHART_GUIDE_TARGETS.has(target)) {
+    const nested = readNestedGuideDialogRect();
+    if (nested) return nested;
+  }
+
   const primary = document.querySelector(
     `[data-guide-tour="${CSS.escape(target)}"]`,
   );
   let hole = readElRect(primary);
-  if (!hole) return null;
+  if (!hole) {
+    // 프리셋 스텝: 모달이 아직 마운트 전이면 중첩 다이얼로그 클래스로 재시도
+    if (
+      target === "oral_implant_preset" ||
+      target === "oral_abutment_side"
+    ) {
+      return readNestedGuideDialogRect();
+    }
+    return null;
+  }
   const satellites = document.querySelectorAll(
     `[data-guide-tour-satellite="${CSS.escape(target)}"]`,
   );
@@ -245,6 +272,9 @@ export function GuideTourSpotlight({
   const [placement, setPlacement] = useState<CardPlacement>({ mode: "center" });
 
   useEffect(() => {
+    // 이전 스텝(치식) 홀이 한 프레임이라도 남지 않게 즉시 비움
+    setRect(null);
+
     let observed: HTMLElement | null = null;
     const satelliteObserved = new Set<Element>();
     const pendingTimers: number[] = [];
@@ -272,12 +302,26 @@ export function GuideTourSpotlight({
       }
     };
 
+    const resolveTargetEl = (): HTMLElement | null => {
+      if (!target) return null;
+      const primary = document.querySelector(
+        `[data-guide-tour="${CSS.escape(target)}"]`,
+      ) as HTMLElement | null;
+      if (primary) return primary;
+      if (
+        target === "oral_implant_preset" ||
+        target === "oral_abutment_side" ||
+        (target && TOOTH_CHART_GUIDE_TARGETS.has(target))
+      ) {
+        return document.querySelector(
+          NESTED_GUIDE_DIALOG_SELECTOR,
+        ) as HTMLElement | null;
+      }
+      return null;
+    };
+
     const syncObservers = (opts?: { onNewSatellite?: boolean }) => {
-      const el = target
-        ? (document.querySelector(
-            `[data-guide-tour="${CSS.escape(target)}"]`,
-          ) as HTMLElement | null)
-        : null;
+      const el = resolveTargetEl();
       if (el && ro && observed !== el) {
         if (observed) ro.unobserve(observed);
         ro.observe(el);
@@ -295,29 +339,28 @@ export function GuideTourSpotlight({
           if (satelliteObserved.has(wrap)) return;
           ro.observe(wrap);
           satelliteObserved.add(wrap);
-          // 새 위성 — zoom-in 중 작게 잡힌 홀을 애니메이션 후 다시 맞춤
           if (opts?.onNewSatellite !== false) scheduleRemeasure();
         });
       }
     };
 
     const syncScrollAndMeasure = () => {
-      const el = target
-        ? (document.querySelector(
-            `[data-guide-tour="${CSS.escape(target)}"]`,
-          ) as HTMLElement | null)
-        : null;
-      if (el && target && TOOTH_CHART_GUIDE_TARGETS.has(target)) {
+      const el = resolveTargetEl();
+      if (
+        el &&
+        target &&
+        TOOTH_CHART_GUIDE_TARGETS.has(target) &&
+        el.hasAttribute("data-tooth-chart")
+      ) {
         scrollToothChartGuideTargetIntoView(el);
       }
       measure();
       syncObservers({ onNewSatellite: false });
     };
 
-    // 타깃·위성(팝오버) DOM 동기화 대기 — 즉시+지연 재시도
     syncScrollAndMeasure();
     scheduleRemeasure();
-    for (const ms of [50, 150, 320, 600] as const) {
+    for (const ms of [50, 150, 320, 600, 900] as const) {
       pendingTimers.push(window.setTimeout(syncScrollAndMeasure, ms));
     }
     window.addEventListener("resize", measure);
@@ -327,12 +370,20 @@ export function GuideTourSpotlight({
       typeof MutationObserver !== "undefined"
         ? new MutationObserver(() => {
             const before = satelliteObserved.size;
+            const prevObserved = observed;
             syncObservers({ onNewSatellite: false });
-            if (satelliteObserved.size !== before) scheduleRemeasure();
-            else measure();
+            // 중첩 모달 등장·data-guide-tour 이동 시 강제 재측정
+            if (
+              satelliteObserved.size !== before ||
+              observed !== prevObserved ||
+              Boolean(document.querySelector(NESTED_GUIDE_DIALOG_SELECTOR))
+            ) {
+              scheduleRemeasure();
+            } else {
+              measure();
+            }
           })
         : null;
-    // 팝오버 포털 등장/위성 마킹만 — style/class 전수 감시는 과함
     mo?.observe(document.body, {
       childList: true,
       subtree: true,
@@ -391,7 +442,7 @@ export function GuideTourSpotlight({
       ref={cardRef}
       role="status"
       className={cn(
-        "pointer-events-auto relative z-[421] w-[min(100%,32rem)] max-w-lg rounded-xl border border-accent-muted bg-accent-soft px-6 py-5 shadow-lg shadow-accent/20",
+        "pointer-events-auto relative z-[440] w-[min(100%,32rem)] max-w-lg rounded-xl border border-accent-muted bg-accent-soft px-6 py-5 shadow-lg shadow-accent/20",
         className,
       )}
     >
@@ -449,8 +500,8 @@ export function GuideTourSpotlight({
     </div>
   );
 
+  // z-420 blur · z-425 nested dialog · z-430 popper · z-440 card
   return createPortal(
-    // z-420 blur/root · z-421 card · 투어 중 팝오버/툴팁은 index.css에서 z-430
     <div className="guide-tour-root pointer-events-none fixed inset-0 z-[420]">
       {rect ? (
         <>

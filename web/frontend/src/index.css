@@ -463,8 +463,10 @@ All colors MUST be HSL.
 
 /*
  * Platform guide tour stacking:
- * - root/blur: z-420 · coach card: z-421
- * - popover/select/tooltip/menu during tour: z-430 (above blur)
+ * - root/blur: z-420
+ * - coach card: z-440 (커스텀어벗 모달·셀렉트보다 위)
+ * - nested dialog during tour: z-425 / overlay z-424 (블러 홀에 잘리지 않게)
+ * - popover/select/tooltip/menu during tour: z-430
  * Spotlight hole clears blur over target + data-guide-tour-satellite.
  */
 .guide-tour-blur {
@@ -483,6 +485,14 @@ All colors MUST be HSL.
 body:has(.guide-tour-root) [data-radix-popper-content-wrapper],
 body:has(.guide-tour-root) [data-guide-tour-satellite] {
   z-index: 430 !important;
+}
+
+/* 투어 중 중첩 모달(커스텀어벗 설정 등) — 블러/홀(z-420) 위에 올려 하단 잘림 방지 */
+body:has(.guide-tour-root) .guide-tour-nested-dialog {
+  z-index: 425 !important;
+}
+body:has(.guide-tour-root) .guide-tour-nested-dialog-overlay {
+  z-index: 424 !important;
 }
 
 /* Responsive layout helpers (mobile-first) */

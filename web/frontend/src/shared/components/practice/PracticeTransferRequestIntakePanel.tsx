@@ -172,6 +172,8 @@ import {
 // - web/frontend/src/shared/components/practice/PracticeToothSimpleAbutmentFields.tsx
 // - web/frontend/src/shared/components/practice/PracticeCustomSpecsPresetEditDialog.tsx
 // - web/frontend/src/shared/pricing/abutsAbutmentService.ts
+// - 2026-09-05: 커스텀어벗 모달 — 치식 투어 중 강제 닫기·DialogContent에 data-guide-tour(홀=모달 전체).
+// - 2026-09-05: 커스텀어벗 모달 — 상단 고정·dvh 높이·투어 z 상승·치식 스텝에서 오픈 차단(하단 잘림).
 // - 2026-09-05: 프리셋 투어 — 모달 전체 하이라이트·빈 프리셋 「+ 추가」안내·치식 스텝 시 모달 닫기.
 // - 2026-09-05: 가이드투어 치식 스텝 — 작성 패널 자동 스크롤(data-guide-tour-scroll).
 // - 2026-09-05: 가이드투어 — lab 검색 드롭다운 satellite(홀 확장) + z-430.
@@ -2334,6 +2336,16 @@ export const PracticeTransferRequestIntakePanel = ({
   };
 
   const openCustomSpecsModal = (index: number) => {
+    // 치식 투어 중에는 모달을 열지 않음 — 투어 홀(치식)이 모달 하단을 가로지르는 잘림 방지
+    if (
+      toothWorkGuideTourStep != null &&
+      toothWorkGuideTourStepId &&
+      (TOOTH_CHART_GUIDE_STEP_IDS as readonly string[]).includes(
+        toothWorkGuideTourStepId,
+      )
+    ) {
+      return;
+    }
     const current = toothWorks[index];
     if (current) {
       const snapshotRow = clearSimpleAbutmentIfCustomProsthesis({
@@ -2418,6 +2430,26 @@ export const PracticeTransferRequestIntakePanel = ({
     closeCustomSpecsModal();
   };
 
+  // 치식·헤더 투어 스텝에서는 커스텀어벗 모달을 강제 닫기(보철물 선택 홀이 모달을 가로지르는 문제)
+  const blockCustomSpecsModalForTour =
+    toothWorkGuideTourStep != null &&
+    Boolean(
+      toothWorkGuideTourStepId &&
+        ((TOOTH_CHART_GUIDE_STEP_IDS as readonly string[]).includes(
+          toothWorkGuideTourStepId,
+        ) ||
+          toothWorkGuideTourStepId === "lab" ||
+          toothWorkGuideTourStepId === "patient" ||
+          toothWorkGuideTourStepId === "dates"),
+    );
+
+  useLayoutEffect(() => {
+    if (!blockCustomSpecsModalForTour) return;
+    if (customSpecsModalTarget === null) return;
+    confirmCustomSpecsModal();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 모달 오픈 직후 프리셋 스텝은 유지
+  }, [blockCustomSpecsModalForTour, customSpecsModalTarget]);
+
   // 프리셋 체험 중 설정 모달이 닫혀 있으면 열어 모달 안에서 이어간다
   useEffect(() => {
     if (
@@ -2439,19 +2471,6 @@ export const PracticeTransferRequestIntakePanel = ({
     if (index < 0) return;
     openCustomSpecsModal(index);
   }, [toothWorkGuideTourStepId, customSpecsModalTarget, toothWorks]);
-
-  // 프리셋 스텝이 아니면 모달 닫기(뒤로가기 시 치식 위 모달·홀 잘림 방지).
-  // customSpecsModalTarget를 deps에 넣으면 어벗 체크→모달 오픈 직후 바로 닫힌다.
-  useEffect(() => {
-    if (customSpecsModalTarget === null) return;
-    if (toothWorkGuideTourStep == null) return;
-    const onPresetTourStep =
-      toothWorkGuideTourStepId === "implant_preset" ||
-      toothWorkGuideTourStepId === "abutment_side";
-    if (onPresetTourStep) return;
-    confirmCustomSpecsModal();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 투어 스텝 전환만; 모달 오픈은 유지
-  }, [toothWorkGuideTourStepId, toothWorkGuideTourStep]);
 
   // 플랫폼 Spotlight — 빈 임플란트·스캔바디 프리셋일 때 「+ 추가」안내
   useEffect(() => {
@@ -4851,11 +4870,23 @@ export const PracticeTransferRequestIntakePanel = ({
       >
         <DialogContent
           className={cn(
-            // 코치마크 자리(상단 ~10rem) 확보. 가로는 3열이 잘리지 않게.
-            "flex h-[min(calc(100vh-10rem),42rem)] max-h-[min(calc(100vh-10rem),42rem)] w-[min(90rem,calc(100vw-1.5rem))] flex-col gap-3 overflow-hidden sm:max-w-[min(90rem,calc(100vw-1.5rem))]",
+            // 상단 고정 + dvh — 중앙 정렬 시 뷰포트 아래로 푸터가 잘리는 문제 방지
+            "guide-tour-nested-dialog flex !top-4 !translate-y-0 max-h-[calc(100dvh-2rem)] w-[min(90rem,calc(100vw-1.5rem))] flex-col gap-3 overflow-hidden p-4 sm:max-w-[min(90rem,calc(100vw-1.5rem))] sm:p-5",
+            // 프리셋 투어: 코치마크 자리 확보
+            (toothWorkGuideTourStepId === "implant_preset" ||
+              toothWorkGuideTourStepId === "abutment_side") &&
+              "!top-[10.5rem] max-h-[calc(100dvh-11.5rem)]",
             nestedDialogClassName,
           )}
-          overlayClassName={nestedDialogOverlayClassName}
+          overlayClassName={cn(
+            "guide-tour-nested-dialog-overlay",
+            nestedDialogOverlayClassName,
+          )}
+          {...(toothWorkGuideTourStepId === "implant_preset"
+            ? { "data-guide-tour": "oral_implant_preset" }
+            : toothWorkGuideTourStepId === "abutment_side"
+              ? { "data-guide-tour": "oral_abutment_side" }
+              : {})}
         >
           {typeof customSpecsModalTarget === "number" && toothWorks[customSpecsModalTarget] ? (
             (() => {
@@ -4900,18 +4931,9 @@ export const PracticeTransferRequestIntakePanel = ({
                   void onDefaultAbutmentProductModeChange?.(alternateMode);
                 }
               };
-              const presetTourTarget =
-                toothWorkGuideTourStepId === "implant_preset"
-                  ? "oral_implant_preset"
-                  : toothWorkGuideTourStepId === "abutment_side"
-                    ? "oral_abutment_side"
-                    : undefined;
               return (
-                <div
-                  data-guide-tour={presetTourTarget}
-                  className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden"
-                >
-                  <DialogHeader className="space-y-1.5 text-left">
+                <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
+                  <DialogHeader className="shrink-0 space-y-1.5 text-left">
                     <DialogTitle className="text-lg">
                       {`커스텀어벗 설정${toothLabel} : ${ABUTMENT_PRODUCT_MODE_LABEL[modalMode]}`}
                     </DialogTitle>
@@ -5063,7 +5085,7 @@ export const PracticeTransferRequestIntakePanel = ({
                     />
                   </div>
 
-                  <DialogFooter className="flex flex-row flex-wrap items-center justify-end gap-2 sm:justify-end sm:space-x-0">
+                  <DialogFooter className="flex shrink-0 flex-row flex-wrap items-center justify-end gap-2 sm:justify-end sm:space-x-0">
                     <Button
                       type="button"
                       className={
