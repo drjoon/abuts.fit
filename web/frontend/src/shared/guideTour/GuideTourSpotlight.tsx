@@ -14,6 +14,7 @@
 // - 2026-09-05: oral_phone — 코치마크를 안내 문구 아래 가운데 정렬.
 // - 2026-09-05: oral_phone — 코치마크 뷰포트 오른쪽 반쪽. 안내·폰 별도 홀.
 // - 2026-09-05: oral_phone — below 우선·타깃 오른쪽 하단. 안내·폰 별도 홀.
+// - 2026-09-05: lab_calendar — 사이드바·캘린더 별도 홀(oral_calendar와 동일).
 // - 2026-09-05: oral_phone — 안내 문구·폰 미리보기 별도 홀(SEPARATE_SATELLITE).
 // - 2026-09-05: 작성 Dialog(z-410) 블러 아래 유지 — outside dismiss 시 홀 소실 방지와 맞춤.
 // - 2026-09-05: 멀티 홀 — 뷰포트−홀 블러 패널(홀 위 backdrop 없음). mask/blend 폐기.
@@ -61,6 +62,7 @@ const PRESET_MODAL_TARGETS = CUSTOM_ABUT_GUIDE_TARGETS;
 /** 위성은 union하지 않고 별도 홀(사이드바 메뉴 + 캘린더 · 폰 미리보기 + 안내 문구 · 정산 · 어벗 CNC · 스토어) */
 const SEPARATE_SATELLITE_TARGETS = new Set([
   "oral_calendar",
+  "lab_calendar",
   "oral_phone",
   "credits_workspace",
   "credits_ledger",
@@ -72,6 +74,7 @@ const SEPARATE_SATELLITE_TARGETS = new Set([
 /** 코치마크를 타깃 위에 고정 */
 const PREFER_ABOVE_TARGETS = new Set([
   "oral_calendar",
+  "lab_calendar",
   "oral_send",
 ]);
 /** 코치마크를 타깃 아래·오른쪽에 고정 */

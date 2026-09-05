@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/practice/PracticeToothWorkGuideTourBanner.tsx
 // - web/frontend/src/shared/guideTour/GuideTourProvider.tsx
 // change-log:
+// - 2026-09-05: lab — 3챕터(수신 영화형·정산3·어벗)·complete·레거시 normalize.
 // - 2026-09-05: complete — 수료 안내(intro형)·확인 시 구강스캔 포워딩.
 // - 2026-09-05: store — 사이드바 홀·힌트 단축.
 // - 2026-09-05: abutment — 사이드바「어벗디자인으로」홀·힌트 단축·건너뛰기 제거.
@@ -54,18 +55,22 @@ export type GuideTourStepDef = {
   oralSubStepId?: (typeof PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS)[number]["id"];
   /** 작성 패널(compose) 오픈 */
   openCompose?: boolean;
+  /** 기공소 수신 — 상세 다이얼로그 오픈 */
+  openReceiveDetail?: boolean;
   /** 하이라이트 홀 안 포인터 허용(보철물·커스텀어벗·견적 호버) */
   allowTargetInteraction?: boolean;
 };
 
 /** 치과 투어 시작·수료 후 랜딩 */
 export const PRACTICE_ORAL_PATH = "/dashboard/practice-transfers?mode=send";
-const LAB_RECEIVE_PATH = "/dashboard/practice-transfers?mode=receive";
+/** 기공소 투어 시작·수료 후 랜딩 */
+export const LAB_RECEIVE_PATH = "/dashboard/practice-transfers?mode=receive";
 const CREDITS_PATH = "/dashboard/credits";
 const NEW_REQUEST_PATH = "/dashboard/new-request";
 const STORE_PATH = "/dashboard/store";
 
 export const PRACTICE_GUIDE_TOUR_CHAPTER_TOTAL = 4;
+export const LAB_GUIDE_TOUR_CHAPTER_TOTAL = 3;
 
 /** 구강 챕터 — Spotlight 하위(영화형) id · PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS 와 동일 순서 */
 export const PRACTICE_ORAL_GUIDE_TOUR_STEP_IDS = [
@@ -210,47 +215,133 @@ export const PRACTICE_GUIDE_TOUR_PROCESS_TOTAL = PRACTICE_GUIDE_TOUR_STEPS.filte
   (s) => s.chapter != null,
 ).length;
 
-/** 기공소 — 플랫폼 장점(왜 가입할까요?) 페이지 투어 */
+/** 기공소 — 시작 + 첨1~3 (수신·정산·어벗). 스토어 없음 */
 export const LAB_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   {
     id: "intro",
     title: "가이드투어",
-    hint: "이메일·정산·커스텀어벗 생산까지, 기공소 업무를 한곳에서 이어줍니다. 관련 화면을 하나씩 살펴봅니다.",
+    hint: "어벗츠의 편리함을 경험해보세요. 가이드투어를 시작합니다.",
+    path: LAB_RECEIVE_PATH,
     target: null,
     advance: "next",
   },
+  // —— 챕터1: 수신 캘린더(상세 전) ——
   {
-    id: "receive",
-    title: "이제 이메일 쓰지 마세요",
-    hint: "치과로부터 기공의뢰·구강스캔을 받고, 지난 내역과 건별 채팅을 한곳에서 관리합니다.",
+    id: "lab_calendar",
+    title: "기공의뢰 · 치과로부터 수신",
+    hint: "캘린더에서 치과 의뢰를 눌러 상세·수락·채팅을 이어갑니다.",
     path: LAB_RECEIVE_PATH,
-    target: "lab_receive_workspace",
+    target: "lab_calendar",
     advance: "next",
+    chapter: 1,
+  },
+  // —— 챕터1: 수신 영화형 ——
+  {
+    id: "lab_detail",
+    title: "의뢰 상세",
+    hint: "환자·치식·첨부 파일과 기공비를 한눈에 확인합니다.",
+    path: LAB_RECEIVE_PATH,
+    target: "lab_detail",
+    advance: "next",
+    chapter: 1,
+    openReceiveDetail: true,
   },
   {
-    id: "credits",
-    title: "정산·계산서는 맡기세요",
-    hint: "입출금·크레딧·소비 내역을 플랫폼이 관리하고, 매달 정산과 계산서 발행까지 처리합니다.",
-    path: CREDITS_PATH,
-    target: "credits_workspace",
+    id: "lab_accept",
+    title: "의뢰 수락",
+    hint: "수락하면 치과와 채팅·디자인 업로드가 열립니다. 거절도 여기서 합니다.",
+    path: LAB_RECEIVE_PATH,
+    target: "lab_accept",
     advance: "next",
+    chapter: 1,
+    openReceiveDetail: true,
   },
+  {
+    id: "lab_chat",
+    title: "건별 채팅",
+    hint: "의뢰건별로 치과와 바로 소통합니다. 이메일 대신 여기서 이어가세요.",
+    path: LAB_RECEIVE_PATH,
+    target: "lab_chat",
+    advance: "next",
+    chapter: 1,
+    openReceiveDetail: true,
+  },
+  {
+    id: "lab_design",
+    title: "어벗 디자인 업로드",
+    hint: "수락 후 STL을 올리면 디자인 확인·생산으로 이어집니다.",
+    path: LAB_RECEIVE_PATH,
+    target: "lab_design",
+    advance: "next",
+    chapter: 1,
+    openReceiveDetail: true,
+  },
+  // —— 챕터2: 정산 (내역 → 통계 → 충전) ——
+  {
+    id: "credits_ledger",
+    title: "정산 · 내역",
+    hint: "입출금·크레딧·소비 내역을 확인합니다.",
+    path: `${CREDITS_PATH}?tab=ledger`,
+    target: "credits_ledger",
+    advance: "next",
+    chapter: 2,
+    creditsTab: "ledger",
+  },
+  {
+    id: "credits_stats",
+    title: "정산 · 통계",
+    hint: "치과 수신·어벗츠 의뢰 통계를 확인합니다.",
+    path: `${CREDITS_PATH}?tab=stats`,
+    target: "credits_stats",
+    advance: "next",
+    chapter: 2,
+    creditsTab: "stats",
+  },
+  {
+    id: "credits_charge",
+    title: "정산 · 충전",
+    hint: "크레딧(선수금)을 충전합니다.",
+    path: `${CREDITS_PATH}?tab=charge`,
+    target: "credits_charge",
+    advance: "next",
+    chapter: 2,
+    creditsTab: "charge",
+  },
+  // —— 챕터3: 커스텀어벗 CNC ——
   {
     id: "abutment_order",
-    title: "커스텀어벗 생산도 맡겨주세요",
+    title: "커스텀어벗 CNC",
     hint: "어벗츠로 CNC 커스텀어벗을 의뢰할 수 있습니다. 가입 후 첫 2건은 무료 테스트입니다.",
     path: NEW_REQUEST_PATH,
     target: "new_request_workspace",
     advance: "next",
+    chapter: 3,
   },
+  // —— 수료 ——
   {
-    id: "wrap",
-    title: "계속 업데이트합니다",
-    hint: "문의·채팅으로 기공소 의견을 듣습니다. 투어를 마치면 사이드바의 가이드투어 버튼이 사라집니다.",
+    id: "complete",
+    title: "가이드투어 완료",
+    hint: "투어를 모두 마쳤습니다. 확인하면 치과로부터 수신으로 이동합니다.",
     target: null,
     advance: "next",
   },
 ] as const;
+
+/** 기공소 Spotlight 분모 — intro 제외(chapter 있는 스텝) */
+export const LAB_GUIDE_TOUR_PROCESS_TOTAL = LAB_GUIDE_TOUR_STEPS.filter(
+  (s) => s.chapter != null,
+).length;
+
+/** 레거시 기공소 스텝 id → 현재 id */
+export const normalizeLabGuideTourStepId = (
+  stepId: string | null | undefined,
+): string | null => {
+  if (!stepId) return null;
+  if (stepId === "receive") return "lab_calendar";
+  if (stepId === "credits") return "credits_ledger";
+  if (stepId === "wrap") return "complete";
+  return stepId;
+};
 
 export const getGuideTourSteps = (
   kind: GuideTourKind,
@@ -262,7 +353,10 @@ export const getGuideTourStepIndex = (
   stepId: string | null | undefined,
 ): number => {
   if (!stepId) return 0;
-  const normalized = normalizePracticeGuideTourStepId(stepId) ?? stepId;
+  const normalized =
+    kind === "lab"
+      ? normalizeLabGuideTourStepId(stepId) ?? stepId
+      : normalizePracticeGuideTourStepId(stepId) ?? stepId;
   const steps = getGuideTourSteps(kind);
   const idx = steps.findIndex((s) => s.id === normalized);
   return idx >= 0 ? idx : 0;
@@ -308,6 +402,37 @@ export const getPracticeGuideTourProcessProgress = (
   const idx = processSteps.findIndex((s) => s.id === normalized);
   if (idx < 0) return null;
   return { index: idx, total: processSteps.length };
+};
+
+/** 기공소 전체 프로세스 진행(intro 제외). Spotlight N/… */
+export const getLabGuideTourProcessProgress = (
+  stepId: string | null | undefined,
+): { index: number; total: number } | null => {
+  if (!stepId) return null;
+  const normalized = normalizeLabGuideTourStepId(stepId) ?? stepId;
+  const processSteps = LAB_GUIDE_TOUR_STEPS.filter((s) => s.chapter != null);
+  const idx = processSteps.findIndex((s) => s.id === normalized);
+  if (idx < 0) return null;
+  return { index: idx, total: processSteps.length };
+};
+
+/** 챕터1에서 수신 상세 다이얼로그를 열어야 하는 세부 */
+export const shouldOpenReceiveDetailForGuideTourStep = (
+  step: GuideTourStepDef | null | undefined,
+): boolean => Boolean(step?.openReceiveDetail);
+
+export const isLabReceiveGuideTourStepId = (
+  stepId: string | null | undefined,
+): boolean => {
+  if (!stepId) return false;
+  const normalized = normalizeLabGuideTourStepId(stepId) ?? stepId;
+  return (
+    normalized === "lab_calendar" ||
+    normalized === "lab_detail" ||
+    normalized === "lab_accept" ||
+    normalized === "lab_chat" ||
+    normalized === "lab_design"
+  );
 };
 
 export const isGuideTourAllowTargetInteraction = (

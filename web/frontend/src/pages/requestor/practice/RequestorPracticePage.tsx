@@ -27,6 +27,7 @@
 // - web/frontend/src/shared/practice/labReceiveCalendarHiddenWeekdays.ts
 // - web/backend/utils/labReceiveCalendarHiddenWeekdays.util.js
 // - web/backend/controllers/users/user.controller.js
+// - 2026-09-05: 가이드투어 — 수신 영화형(데모 PTX·상세 오픈·변이 가드).
 // - 2026-09-02: 어벗츠 제공 CA만 있어도 안내 표시. 심플어벗은 항상 제외.
 // - 2026-09-03: 수신 헤더 — 어벗 뱃지 왼쪽 간격 없음. 진행중→어벗츠 생산중(정책은 사이드바).
 // - 2026-09-03: 어벗 진행상황 옆「상세」— 연동 CA 의뢰 상세(RequestDetailDialog).
@@ -241,6 +242,16 @@ import { DesignQueueSection } from "@/pages/requestor/design/DesignQueueSection"
 import { RequestorPracticePageSkeleton } from "@/shared/ui/skeletons/RequestorPracticePageSkeleton";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
+import { useGuideTour } from "@/shared/guideTour/GuideTourProvider";
+import {
+  isLabReceiveGuideTourStepId,
+  shouldOpenReceiveDetailForGuideTourStep,
+} from "@/shared/guideTour/guideTourSteps";
+import {
+  buildGuideTourDemoChatMessages,
+  buildGuideTourDemoReceiveTransfer,
+  isGuideTourDemoTransfer,
+} from "@/shared/guideTour/guideTourLabReceiveDemo";
 import {
   normalizeToothWorks,
   parsePracticeTransferMemoMeta as parsePracticeTransferMemoMetaShared,
@@ -597,6 +608,7 @@ export function RequestorPracticeReceivePage({
 }) {
   const token = useAuthStore((s) => s.token);
   const user = useAuthStore((s) => s.user);
+  const platformGuideTour = useGuideTour();
   const queryClient = useQueryClient();
   const storedCalendarDateKey = useAuthStore(
     (s) => s.user?.labReceiveCalendarDateKey,
@@ -845,6 +857,9 @@ export function RequestorPracticeReceivePage({
   });
 
   const displayChatMessages = useMemo(() => {
+    if (isGuideTourDemoTransfer(selectedTransfer)) {
+      return buildGuideTourDemoChatMessages();
+    }
     const currentUserId = String(user?.id || "");
     const viewerIsInternalLab = String(user?.role || "").trim() === "internalLab";
     return messages.map((message) => {
@@ -866,10 +881,7 @@ export function RequestorPracticeReceivePage({
     });
   }, [
     messages,
-    selectedTransfer?.matchingMode,
-    selectedTransfer?.autoMatch?.openPool,
-    selectedTransfer?.autoMatch?.subcontracted,
-    selectedTransfer?.practice?.businessName,
+    selectedTransfer,
     user?.id,
     user?.role,
   ]);
@@ -1768,8 +1780,20 @@ export function RequestorPracticeReceivePage({
   }, [dialogOpen, messages]);
 
   const baseFilteredTransfers = useMemo(() => {
+    const guideTourLabReceiveActive =
+      platformGuideTour.kind === "lab" &&
+      platformGuideTour.active &&
+      isLabReceiveGuideTourStepId(platformGuideTour.stepId);
+    const sourceTransfers = (() => {
+      const withoutDemo = transfers.filter((t) => !isGuideTourDemoTransfer(t));
+      if (!guideTourLabReceiveActive) return withoutDemo;
+      const demo = buildGuideTourDemoReceiveTransfer({
+        accepted: platformGuideTour.stepId === "lab_design",
+      });
+      return [demo, ...withoutDemo];
+    })();
     // 치과 삭제 + 기공소 거절·작업취소(취소)는 수신·캘린더에서 제외.
-    const visible = transfers.filter((t) => {
+    const visible = sourceTransfers.filter((t) => {
       const raw = String(t.status || "").trim().toLowerCase();
       if (raw === "deleted" || raw === "canceled" || raw === "cancelled") {
         return false;
@@ -1806,7 +1830,65 @@ export function RequestorPracticeReceivePage({
         .toLowerCase();
       return blob.includes(query);
     });
-  }, [search, transfers]);
+  }, [
+    search,
+    transfers,
+    platformGuideTour.kind,
+    platformGuideTour.active,
+    platformGuideTour.stepId,
+  ]);
+
+  const guideTourWantsReceiveDetail =
+    platformGuideTour.kind === "lab" &&
+    platformGuideTour.active &&
+    shouldOpenReceiveDetailForGuideTourStep(platformGuideTour.step);
+
+  const guideTourLabWasActiveRef = useRef(false);
+  useEffect(() => {
+    const wasLabTour =
+      guideTourLabWasActiveRef.current;
+    const isLabTour =
+      platformGuideTour.kind === "lab" && platformGuideTour.active;
+    guideTourLabWasActiveRef.current = isLabTour;
+
+    if (guideTourWantsReceiveDetail) {
+      const demo = buildGuideTourDemoReceiveTransfer({
+        accepted: platformGuideTour.stepId === "lab_design",
+      });
+      setDialogInitialPanelTab(
+        platformGuideTour.stepId === "lab_detail" ? "detail" : "chat",
+      );
+      setSelectedTransfer(demo);
+      setDialogOpen(true);
+      setActiveChatRoom(null);
+      setChatError("");
+      setChatMessages([]);
+      return;
+    }
+
+    const leaveDetail =
+      (wasLabTour && !isLabTour) ||
+      (isLabTour && platformGuideTour.stepId === "lab_calendar") ||
+      (isLabTour &&
+        platformGuideTour.stepId != null &&
+        !isLabReceiveGuideTourStepId(platformGuideTour.stepId));
+
+    if (!leaveDetail) return;
+    setSelectedTransfer((prev) => {
+      if (!isGuideTourDemoTransfer(prev)) return prev;
+      setDialogOpen(false);
+      setActiveChatRoom(null);
+      setChatMessages([]);
+      setChatError("");
+      return null;
+    });
+  }, [
+    guideTourWantsReceiveDetail,
+    platformGuideTour.kind,
+    platformGuideTour.active,
+    platformGuideTour.stepId,
+    setChatMessages,
+  ]);
 
   const chatUnreadByTransferId = useMemo(() => {
     const map = new Map<string, number>();
@@ -3677,6 +3759,13 @@ export function RequestorPracticeReceivePage({
 
   const handleAcceptTransfer = useCallback(async () => {
     if (!selectedTransfer || acceptBusy || releaseBusy || rejectBusy) return;
+    if (isGuideTourDemoTransfer(selectedTransfer)) {
+      toast({
+        title: "가이드투어",
+        description: "데모 의뢰입니다. 「다음」으로 진행하세요.",
+      });
+      return;
+    }
     setAcceptBusy(true);
     try {
       const ok = await markTransferAccepted(selectedTransfer);
@@ -3696,11 +3785,19 @@ export function RequestorPracticeReceivePage({
     releaseBusy,
     resolveTransferChatRoom,
     selectedTransfer,
+    toast,
   ]);
 
   const handleRejectTransfer = useCallback(() => {
     if (!selectedTransfer || rejectBusy || acceptBusy || releaseBusy || openSubcontractBusy)
       return;
+    if (isGuideTourDemoTransfer(selectedTransfer)) {
+      toast({
+        title: "가이드투어",
+        description: "데모 의뢰입니다. 「다음」으로 진행하세요.",
+      });
+      return;
+    }
     rejectTargetRef.current = selectedTransfer;
     setRejectConfirmOpen(true);
   }, [
@@ -3709,6 +3806,7 @@ export function RequestorPracticeReceivePage({
     rejectBusy,
     releaseBusy,
     selectedTransfer,
+    toast,
   ]);
 
   const handleConfirmRejectTransfer = useCallback(async () => {
@@ -4069,6 +4167,13 @@ export function RequestorPracticeReceivePage({
       options?: { skipOversizedGuard?: boolean },
     ): Promise<DesignUploadStartResult> => {
       if (!token) return "error";
+      if (isGuideTourDemoTransfer(transfer)) {
+        toast({
+          title: "가이드투어",
+          description: "데모 의뢰입니다. 「다음」으로 진행하세요.",
+        });
+        return "error";
+      }
       const id = String(transfer.transferId || transfer._id || "").trim();
       if (!id || cardActionBusyId || designConfirmBusy || workUploadBusy) {
         return "error";
@@ -4987,8 +5092,19 @@ export function RequestorPracticeReceivePage({
 
   const openTransferDialog = useCallback(
     async (transfer: ReceivedPracticeTransfer) => {
-      if (!token) return;
+      if (!token && !isGuideTourDemoTransfer(transfer)) return;
       const resolveSeq = ++chatRoomResolveSeqRef.current;
+
+      if (isGuideTourDemoTransfer(transfer)) {
+        setDialogInitialPanelTab("detail");
+        setSelectedTransfer(transfer);
+        setDialogOpen(true);
+        setChatError("");
+        chatUploads.clear();
+        setActiveChatRoom(null);
+        setChatMessages([]);
+        return;
+      }
 
       // 미읽음(첫 확인) → 의뢰 상세, 이미 읽음(진행중) → 진행 상황
       setDialogInitialPanelTab(transfer.isRead ? "chat" : "detail");
@@ -5253,7 +5369,10 @@ export function RequestorPracticeReceivePage({
             />
           ) : null}
           {isMobile ? (
-            <>
+            <div
+              className="flex min-h-0 flex-1 flex-col"
+              data-guide-tour="lab_calendar"
+            >
               <div className="relative shrink-0 px-1 py-1">
                 <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
@@ -5377,7 +5496,7 @@ export function RequestorPracticeReceivePage({
                   })}
                 </div>
               )}
-            </>
+            </div>
           ) : (
             <PracticeRecentTransfersCalendar
               items={calendarItems}
@@ -5394,6 +5513,7 @@ export function RequestorPracticeReceivePage({
               searchPlaceholder="전송ID, 치과명, 환자명 검색"
               hiddenWeekdays={hiddenWeekdays}
               onHiddenWeekdaysChange={handleHiddenWeekdaysChange}
+              guideTourTarget="lab_calendar"
             />
           )}
         </>
@@ -5629,6 +5749,7 @@ export function RequestorPracticeReceivePage({
       <PracticeTransferDetailChatDialog
         open={dialogOpen}
         onOpenChange={(open) => {
+          if (!open && guideTourWantsReceiveDetail) return;
           if (!open && rejectConfirmOpen) return;
           setDialogOpen(open);
           if (!open) {
@@ -5649,6 +5770,7 @@ export function RequestorPracticeReceivePage({
         conversationTitle="치과와의 소통"
         authToken={token}
         initialPanelTab={dialogInitialPanelTab}
+        guideTourElevate={guideTourWantsReceiveDetail}
         chatHeaderAction={null}
         counterpartyMemoStrip={
           selectedTransfer?.practiceBusinessAnchorId ? (

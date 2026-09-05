@@ -5,6 +5,7 @@
 // - web/backend/controllers/users/user.controller.js
 // - web/frontend/src/shared/components/practice/PracticeToothWorkGuideTourBanner.tsx
 // change-log:
+// - 2026-09-05: lab — 챕터 progress·pause/수료 수신 랜딩·레거시 normalize.
 // - 2026-09-05: pause(다음에 하기) — 치과는 구강스캔 빈 캘린더로 이동(중단 화면 잔류 방지).
 // - 2026-09-05: 수료(complete) — intro형 안내·확인 시 구강스캔 포워딩.
 // - 2026-09-05: custom_abut 시네마 3장 → 1장. 레거시 implant/scanbody/simple resume → oral_custom_abut.
@@ -32,9 +33,13 @@ import { PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS } from "@/shared/components/practi
 import {
   getGuideTourStepIndex,
   getGuideTourSteps,
+  getLabGuideTourProcessProgress,
   getPracticeGuideTourProcessProgress,
   isGuideTourAllowTargetInteraction,
   isPracticeToothWorkOralStepId,
+  LAB_GUIDE_TOUR_CHAPTER_TOTAL,
+  LAB_RECEIVE_PATH,
+  normalizeLabGuideTourStepId,
   normalizePracticeGuideTourStepId,
   PRACTICE_GUIDE_TOUR_CHAPTER_TOTAL,
   PRACTICE_ORAL_PATH,
@@ -57,7 +62,7 @@ type GuideTourContextValue = {
   step: GuideTourStepDef | null;
   stepIndex: number;
   stepTotal: number;
-  /** Spotlight 챕터 번호 (치과 1~4). lab은 stepIndex+1 */
+  /** Spotlight 챕터 번호 (치과 1~4 · 기공소 1~3) */
   chapterDisplay: number;
   chapterTotal: number;
   forceMobile: boolean;
@@ -191,18 +196,28 @@ export function GuideTourProvider({ kind, children }: ProviderProps) {
   const step = steps[stepIndex] ?? null;
   const stepTotal = steps.length;
 
+  const usesChapterSteps = kind === "practice" || kind === "lab";
   const chapterDisplay =
-    kind === "practice" && step?.chapter != null
+    usesChapterSteps && step?.chapter != null
       ? step.chapter
       : stepIndex + 1;
   const chapterTotal =
     kind === "practice"
       ? PRACTICE_GUIDE_TOUR_CHAPTER_TOTAL
-      : Math.max(stepTotal, 1);
-  /** 치과 intro 등 — 챕터 번호 없이 제목만 */
+      : kind === "lab"
+        ? LAB_GUIDE_TOUR_CHAPTER_TOTAL
+        : Math.max(stepTotal, 1);
+  /** intro/complete 등 — 챕터 번호 없이 제목만 */
   const showChapterProgress =
-    kind !== "practice" || step?.chapter != null;
+    !usesChapterSteps || step?.chapter != null;
   const forceMobile = Boolean(active && step?.forceMobile);
+
+  const homePath =
+    kind === "practice"
+      ? PRACTICE_ORAL_PATH
+      : kind === "lab"
+        ? LAB_RECEIVE_PATH
+        : null;
 
   const applyLocalGuideTour = useCallback(
     (next: { completed: boolean; resumeStepId: string | null }) => {
@@ -241,7 +256,9 @@ export function GuideTourProvider({ kind, children }: ProviderProps) {
     const id =
       kind === "practice"
         ? normalizePracticeGuideTourStepId(raw) ?? raw
-        : raw;
+        : kind === "lab"
+          ? normalizeLabGuideTourStepId(raw) ?? raw
+          : raw;
     if (!id) return;
     goToStep(id);
   }, [kind, completed, resumeStepId, steps, goToStep]);
@@ -249,18 +266,14 @@ export function GuideTourProvider({ kind, children }: ProviderProps) {
   const pause = useCallback(() => {
     if (!stepId) {
       setActive(false);
-      if (kind === "practice") {
-        navigate(PRACTICE_ORAL_PATH);
-      }
+      if (homePath) navigate(homePath);
       return;
     }
     void persist({ resumeStepId: stepId });
     setActive(false);
-    // 중단 화면(작성·프리필)에 남지 않게 — 수료와 같이 구강스캔 캘린더로
-    if (kind === "practice") {
-      navigate(PRACTICE_ORAL_PATH);
-    }
-  }, [stepId, persist, kind, navigate]);
+    // 중단 화면(상세·프리필)에 남지 않게 — 수료와 같이 홈(수신/구강)으로
+    if (homePath) navigate(homePath);
+  }, [stepId, persist, homePath, navigate]);
 
   const advance = useCallback(() => {
     if (!kind || !step) return;
@@ -270,9 +283,7 @@ export function GuideTourProvider({ kind, children }: ProviderProps) {
       setStepId(null);
       applyLocalGuideTour({ completed: true, resumeStepId: null });
       void persist({ completed: true, resumeStepId: null });
-      if (kind === "practice") {
-        navigate(PRACTICE_ORAL_PATH);
-      }
+      if (homePath) navigate(homePath);
       return;
     }
     const next = steps[nextIdx];
@@ -287,6 +298,7 @@ export function GuideTourProvider({ kind, children }: ProviderProps) {
     persist,
     applyLocalGuideTour,
     navigate,
+    homePath,
   ]);
 
   const retreat = useCallback(() => {
@@ -354,7 +366,11 @@ export function GuideTourProvider({ kind, children }: ProviderProps) {
   const spotlightTitle = spotlightCopyOverride?.title ?? step?.title ?? "";
   const spotlightHint = spotlightCopyOverride?.hint ?? step?.hint ?? "";
   const processProgress =
-    kind === "practice" ? getPracticeGuideTourProcessProgress(stepId) : null;
+    kind === "practice"
+      ? getPracticeGuideTourProcessProgress(stepId)
+      : kind === "lab"
+        ? getLabGuideTourProcessProgress(stepId)
+        : null;
   const spotlightStepIndex = processProgress
     ? processProgress.index
     : showChapterProgress

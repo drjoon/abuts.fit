@@ -405,6 +405,8 @@ type PracticeTransferDetailChatDialogProps = {
   /** 치과: 수락 전·작업취소 건을 휴지통으로 */
   onCancelRequest?: () => void;
   cancelRequestDisabled?: boolean;
+  /** 가이드투어 — Dialog z-[410](블러 아래) */
+  guideTourElevate?: boolean;
 };
 
 export function PracticeTransferDetailChatDialog({
@@ -504,6 +506,7 @@ export function PracticeTransferDetailChatDialog({
   prosthesisFollowUps = null,
   onCancelRequest,
   cancelRequestDisabled = false,
+  guideTourElevate = false,
 }: PracticeTransferDetailChatDialogProps) {
   const { toast } = useToast();
   const isMobile = useIsMobile();
@@ -1503,7 +1506,8 @@ export function PracticeTransferDetailChatDialog({
           pointerEvents: "auto",
         }}
         className={cn(
-          "pointer-events-auto relative z-[300] flex flex-col gap-0 overflow-hidden rounded-lg border bg-background p-0 duration-0",
+          "pointer-events-auto relative flex flex-col gap-0 overflow-hidden rounded-lg border bg-background p-0 duration-0",
+          guideTourElevate ? "z-[410]" : "z-[300]",
           "shadow-[0_4px_16px_rgba(15,23,42,0.18),0_18px_48px_rgba(15,23,42,0.32),0_40px_80px_-12px_rgba(15,23,42,0.28)]",
           "translate-x-0 translate-y-0",
           "w-auto max-w-none sm:w-auto sm:max-w-none sm:p-0",
@@ -1627,6 +1631,7 @@ export function PracticeTransferDetailChatDialog({
           <TabsContent
             value="detail"
             className="custom-scrollbar mt-0 max-h-[inherit] overflow-y-auto px-5 py-3 text-sm focus-visible:ring-0"
+            data-guide-tour="lab_detail"
           >
             <div className="space-y-6">
               <section className="space-y-1">
@@ -2012,7 +2017,10 @@ export function PracticeTransferDetailChatDialog({
               ) : null}
 
               {showAcceptBar ? (
-                <div className="shrink-0 border-b bg-muted/40 px-5 py-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div
+                  className="shrink-0 border-b bg-muted/40 px-5 py-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
+                  data-guide-tour="lab_accept"
+                >
                   {hasPendingLabCustomAbutment ||
                   hasAbutsCustomAbutment ||
                   oralScanAttachMode === "practice_required" ? (
@@ -2148,13 +2156,19 @@ export function PracticeTransferDetailChatDialog({
                 </div>
               ) : null}
 
-              <div className="grid min-h-0 min-w-0 flex-1 grid-rows-[minmax(0,1fr)_auto] overflow-hidden">
+              <div
+                className="grid min-h-0 min-w-0 flex-1 grid-rows-[minmax(0,1fr)_auto] overflow-hidden"
+                data-guide-tour="lab_chat"
+              >
                 <div
                   className={cn(
                     "relative flex min-h-0 min-w-0 flex-col",
                     workFileDropActive &&
                       "m-2 rounded-md border-2 border-dashed border-primary/45 bg-primary/[0.03]",
                   )}
+                  {...(workFileDropActive
+                    ? { "data-guide-tour": "lab_design" }
+                    : {})}
                 >
                   {workFileDropUploading ? (
                     <div

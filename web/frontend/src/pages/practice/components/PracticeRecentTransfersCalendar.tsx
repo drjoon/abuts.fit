@@ -309,6 +309,8 @@ type PracticeRecentTransfersCalendarProps = {
   alignEpoch?: number;
   /** 어벗 업로드 지연 칩 툴팁 — 치과=대기/문의 · 기공소(기본)=업로드 독촉 */
   abutmentUploadOverdueViewer?: PracticeAbutmentUploadOverdueViewer;
+  /** 가이드투어 Spotlight 홀 (data-guide-tour) */
+  guideTourTarget?: string | null;
 };
 
 export function PracticeRecentTransfersCalendar({
@@ -327,6 +329,7 @@ export function PracticeRecentTransfersCalendar({
   onHiddenWeekdaysChange,
   alignEpoch = 0,
   abutmentUploadOverdueViewer = "lab",
+  guideTourTarget = null,
 }: PracticeRecentTransfersCalendarProps) {
   const todayYmd = toKstYmd(new Date()) || "";
   const originYmd = todayYmd || cursorYmd;
@@ -457,7 +460,12 @@ export function PracticeRecentTransfersCalendar({
   const captionMonthEnd = kstEndOfMonth(captionMonth) || captionMonth;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-2">
+    <div
+      className="flex min-h-0 flex-1 flex-col gap-2"
+      {...(guideTourTarget
+        ? { "data-guide-tour": guideTourTarget }
+        : {})}
+    >
       <div className="flex min-h-8 flex-wrap items-center gap-2">
         <div className="flex items-center gap-1">
           <Button

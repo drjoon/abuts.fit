@@ -16,6 +16,7 @@ import {
 import { cn } from "@/shared/ui/cn";
 
 // - 2026-09-05: 데모 모드면 잔액≤0「크레딧 부족」destructive 토스트 생략.
+// - 2026-09-05: 기공소 수신 guideTourSatellite(lab_calendar)·부모에 복수 키.
 // - 2026-09-05: 스토어·어벗디자인·기공의뢰 부모 guideTourSatellite(복수 키)·어벗츠로 의뢰.
 // - 2026-09-05: 정산 guideTourSatellite=credits_workspace — 사이드바·작업영역 별도 홀.
 // - 2026-09-05: 구강스캔으로 guideTourSatellite=oral_calendar — 기공의뢰+구강스캔 사이드 홀·캘린더 별도.
@@ -218,7 +219,7 @@ const buildLabGigongRequestSidebarGroup = (
   label: "기공의뢰",
   href: receiveHref,
   tooltip: "치과 기공의뢰 수신과 어벗 CNC 생산 의뢰",
-  guideTourSatellite: "new_request_workspace",
+  guideTourSatellite: ["lab_calendar", "new_request_workspace"],
   children: [
     {
       icon: Building2,
@@ -226,6 +227,7 @@ const buildLabGigongRequestSidebarGroup = (
       href: receiveHref,
       tooltip: receiveTooltip,
       accent: "기공",
+      guideTourSatellite: "lab_calendar",
     },
     {
       icon: FileText,
