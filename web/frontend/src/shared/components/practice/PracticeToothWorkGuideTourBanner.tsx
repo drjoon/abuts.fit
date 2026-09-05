@@ -3,6 +3,8 @@
 // - web/frontend/src/shared/guideTour/GuideTourProvider.tsx
 // - web/frontend/src/shared/guideTour/guideTourSteps.ts
 // change-log:
+// - 2026-09-05: card_ops 힌트 — 조작 나열 → 직접 조작 안내.
+// - 2026-09-05: prosthesis 힌트 — 프리필 나열 → 보철물 카드 선택 안내.
 // - 2026-09-05: phone을 memo_files 다음(4/15)으로 — 모바일 안내·폰 미리보기.
 // - 2026-09-05: 구강 챕터 9장 영화형 — 이전/다음만(card_ops·custom_abut만 체험). 세분 스텝·프리셋 카피 override 제거.
 // - 2026-09-05: 임플란트·어벗 프리셋 미설정 시 「+ 추가」저장 안내. resolve 함수 export(플랫폼 Spotlight).
@@ -30,12 +32,12 @@ export const PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS = [
   {
     id: "prosthesis",
     title: "보철물",
-    hint: "16–14 브리지(심플어벗), 13 크라운+커스텀어벗, 12–22 임시치아가 미리 잡혀 있습니다.",
+    hint: "기공 의뢰 내용을 보철물 카드에서 간편하게 선택할 수 있습니다.",
   },
   {
     id: "card_ops",
     title: "보철물 카드 조작",
-    hint: "이 부분은 화면에서 체험해 보세요. 선택·해제·브리지·형태·복사 등을 눌러 본 뒤 「다음」으로 넘어가세요.",
+    hint: "보철물 카드를 직접 조작해 보세요.",
   },
   {
     id: "custom_abut",
