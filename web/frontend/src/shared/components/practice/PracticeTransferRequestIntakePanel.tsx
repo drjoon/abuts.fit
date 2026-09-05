@@ -2075,8 +2075,7 @@ export const PracticeTransferRequestIntakePanel = ({
    * (1→2 클릭 시 환자명이 채워져 있으면 바로 3(날짜)로 튕기던 플리커 방지.
    *  뒤로가기뿐 아니라 프로그레스로 앞으로 점프할 때도 동일.)
    */
-  const guideTourLabBaselineRef = useRef<string | null>(null);
-  const guideTourLabRequireChangeRef = useRef(false);
+  const [guideTourLabArmed, setGuideTourLabArmed] = useState(false);
   const guideTourPatientBaselineRef = useRef<string | null>(null);
   const guideTourPatientRequireChangeRef = useRef(false);
   const guideTourPrevStepRef = useRef<PracticeToothWorkGuideTourStep | null>(null);
@@ -2088,18 +2087,6 @@ export const PracticeTransferRequestIntakePanel = ({
       prev != null &&
       toothWorkGuideTourStep != null &&
       toothWorkGuideTourStep < prev;
-
-    if (toothWorkGuideTourStepId === "lab" && toothWorkGuideTourStep != null) {
-      const labKey = selectedLab
-        ? String(selectedLab._id || selectedLab.name || "").trim()
-        : "";
-      guideTourLabBaselineRef.current = labKey;
-      // 투어 시작 시 이미 선택된 기공소는 자동 진행 유지. 뒤로/재진입만 변경 요구.
-      guideTourLabRequireChangeRef.current = wentBack;
-    } else {
-      guideTourLabBaselineRef.current = null;
-      guideTourLabRequireChangeRef.current = false;
-    }
 
     if (toothWorkGuideTourStepId === "patient" && toothWorkGuideTourStep != null) {
       const name = String(patientName || "").trim();
@@ -2114,24 +2101,32 @@ export const PracticeTransferRequestIntakePanel = ({
   }, [toothWorkGuideTourStep, toothWorkGuideTourStepId]);
 
   useEffect(() => {
-    if (toothWorkGuideTourStepId !== "lab") return;
+    if (toothWorkGuideTourStepId !== "lab") {
+      setGuideTourLabArmed(false);
+      return;
+    }
     if (toothWorkGuideTourStep == null) return;
     if (!showLabField) return;
-    // 미선택일 때만 열어 어벗츠기공소·검색 입력을 보이게 함
-    if (selectedLab) return;
+    // 미선택·이미 선택 모두 열어 검색·확인·재선택을 보이게 함
+    setGuideTourLabArmed(false);
     setLabOpen(true);
-    // selectedLab는 진입 시점만 본다(선택 후 닫힘은 항목 onSelect)
+    const t = window.setTimeout(() => {
+      setGuideTourLabArmed(true);
+    }, 120);
+    return () => {
+      window.clearTimeout(t);
+      setGuideTourLabArmed(false);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 스텝 진입 시 1회
   }, [toothWorkGuideTourStep, toothWorkGuideTourStepId, showLabField, setLabOpen]);
 
   useEffect(() => {
     if (toothWorkGuideTourStepId !== "lab") return;
     if (toothWorkGuideTourStep == null) return;
+    if (!guideTourLabArmed) return;
+    // 팝오버가 열린 동안은 대기 — 닫힌 뒤(선택·바깥 클릭 확인)에만 진행
+    if (labOpen) return;
     if (!selectedLab) return;
-    const labKey = String(selectedLab._id || selectedLab.name || "").trim();
-    if (guideTourLabRequireChangeRef.current) {
-      if (labKey === (guideTourLabBaselineRef.current ?? "")) return;
-    }
     const labId = String(selectedLab._id || "").trim();
     const ok =
       isAutoMatchLab(selectedLab) ||
@@ -2139,7 +2134,13 @@ export const PracticeTransferRequestIntakePanel = ({
       /^[a-fA-F0-9]{24}$/.test(labId);
     if (!ok) return;
     goToothWorkGuideTourStep(toothWorkGuideTourStep + 1);
-  }, [toothWorkGuideTourStep, toothWorkGuideTourStepId, selectedLab]);
+  }, [
+    toothWorkGuideTourStep,
+    toothWorkGuideTourStepId,
+    selectedLab,
+    labOpen,
+    guideTourLabArmed,
+  ]);
 
   useEffect(() => {
     if (toothWorkGuideTourStepId !== "patient") return;

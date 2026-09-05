@@ -1,13 +1,18 @@
 // related files:
 // - web/backend/models/user.model.js
+// - web/backend/models/practiceTransfer.model.js
 // - web/backend/utils/guideTour.util.js
 //
-// 테스트치과·테스트기공소 소속 유저의 가이드투어를 미수료로 리셋.
+// 테스트치과·테스트기공소:
+//   1) 소속 유저 가이드투어 미수료 리셋
+//   2) 관련 PracticeTransfer(PTX) · 채팅방/메시지 · draft 삭제
 //
 // Usage:
 //   cd web/backend && \
 //     ENV_FILE=local.env NODE_ENV=test ABUTS_DB_FORCE=true \
 //     node scripts/db/reset-guide-tour.js
+//
+// Apply: --apply
 import mongoose from "mongoose";
 import { assertSafeToMutateDb, getMongoUri } from "./_mongo.js";
 
@@ -22,6 +27,10 @@ async function main() {
   const db = mongoose.connection.db;
   const anchors = db.collection("businessanchors");
   const users = db.collection("users");
+  const transfers = db.collection("practicetransfers");
+  const drafts = db.collection("practicetransferdrafts");
+  const chatRooms = db.collection("chatrooms");
+  const chats = db.collection("chats");
 
   const found = await anchors
     .find({
@@ -44,7 +53,6 @@ async function main() {
   );
 
   if (found.length === 0) {
-    // fallback: regex
     const fuzzy = await anchors
       .find({
         $or: [
@@ -73,14 +81,14 @@ async function main() {
     process.exit(1);
   }
 
-  const filter = {
+  const userFilter = {
     $or: [
       { businessAnchorId: { $in: ids } },
       { orgBusinessAnchorId: { $in: ids } },
     ],
   };
   const matchedUsers = await users
-    .find(filter)
+    .find(userFilter)
     .project({ _id: 1, email: 1, name: 1, guideTour: 1, businessAnchorId: 1 })
     .toArray();
   console.log(
@@ -93,22 +101,96 @@ async function main() {
     })),
   );
 
+  const ptxFilter = {
+    $or: [
+      { practiceBusinessAnchorId: { $in: ids } },
+      { targetLabAnchorId: { $in: ids } },
+      { assigneeLabAnchorId: { $in: ids } },
+    ],
+  };
+  const matchedPtx = await transfers
+    .find(ptxFilter)
+    .project({
+      _id: 1,
+      transferId: 1,
+      patientName: 1,
+      practiceBusinessAnchorId: 1,
+      targetLabAnchorId: 1,
+      status: 1,
+      createdAt: 1,
+    })
+    .toArray();
+  console.log("ptx count", matchedPtx.length);
+  console.log(
+    "ptx sample",
+    matchedPtx.slice(0, 10).map((t) => ({
+      id: String(t._id),
+      transferId: t.transferId,
+      patientName: t.patientName,
+      status: t.status,
+    })),
+  );
+
+  const ptxIds = matchedPtx.map((t) => t._id);
+  const relatedRooms = ptxIds.length
+    ? await chatRooms
+        .find({ relatedPracticeTransferId: { $in: ptxIds } })
+        .project({ _id: 1 })
+        .toArray()
+    : [];
+  const roomIds = relatedRooms.map((r) => r._id);
+  const chatCount = roomIds.length
+    ? await chats.countDocuments({ roomId: { $in: roomIds } })
+    : 0;
+  const draftCount = await drafts.countDocuments({
+    $or: [
+      { practiceBusinessAnchorId: { $in: ids } },
+      { targetLabAnchorId: { $in: ids } },
+    ],
+  });
+  console.log("related", {
+    chatRooms: roomIds.length,
+    chats: chatCount,
+    drafts: draftCount,
+  });
+
   if (!APPLY) {
     console.log("Dry-run only. Re-run with --apply to mutate.");
     await mongoose.disconnect();
     return;
   }
 
-  const result = await users.updateMany(filter, {
+  const guideResult = await users.updateMany(userFilter, {
     $set: {
       "guideTour.completed": false,
       "guideTour.resumeStepId": null,
     },
   });
-  console.log("updated", {
-    matched: result.matchedCount,
-    modified: result.modifiedCount,
+  console.log("guideTour updated", {
+    matched: guideResult.matchedCount,
+    modified: guideResult.modifiedCount,
   });
+
+  if (roomIds.length) {
+    const chatDel = await chats.deleteMany({ roomId: { $in: roomIds } });
+    const roomDel = await chatRooms.deleteMany({ _id: { $in: roomIds } });
+    console.log("chat cleaned", {
+      chats: chatDel.deletedCount,
+      rooms: roomDel.deletedCount,
+    });
+  }
+
+  const ptxDel = await transfers.deleteMany(ptxFilter);
+  console.log("ptx deleted", { deleted: ptxDel.deletedCount });
+
+  const draftDel = await drafts.deleteMany({
+    $or: [
+      { practiceBusinessAnchorId: { $in: ids } },
+      { targetLabAnchorId: { $in: ids } },
+    ],
+  });
+  console.log("drafts deleted", { deleted: draftDel.deletedCount });
+
   await mongoose.disconnect();
 }
 

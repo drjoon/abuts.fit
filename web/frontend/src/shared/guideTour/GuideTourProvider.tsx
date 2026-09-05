@@ -39,6 +39,7 @@ type GuideTourContextValue = {
   startOrResume: () => void;
   pause: () => void;
   advance: () => void;
+  retreat: () => void;
   /** oral chapter: sync tooth-work substep index (0-based) */
   oralSubStepIndex: number | null;
 };
@@ -61,6 +62,7 @@ export function useGuideTour(): GuideTourContextValue {
       startOrResume: () => {},
       pause: () => {},
       advance: () => {},
+      retreat: () => {},
       oralSubStepIndex: null,
     };
   }
@@ -217,6 +219,14 @@ export function GuideTourProvider({ kind, children }: ProviderProps) {
     goToStep(next.id);
   }, [kind, step, stepIndex, steps, goToStep, persist, applyLocalGuideTour]);
 
+  const retreat = useCallback(() => {
+    if (!kind || !step) return;
+    if (stepIndex <= 0) return;
+    const prev = steps[stepIndex - 1];
+    if (!prev) return;
+    goToStep(prev.id);
+  }, [kind, step, stepIndex, steps, goToStep]);
+
   // 첫 진입 자동 시작: 미수료 + resume 없음
   useEffect(() => {
     if (!eligible || !kind) return;
@@ -257,6 +267,7 @@ export function GuideTourProvider({ kind, children }: ProviderProps) {
     startOrResume,
     pause,
     advance,
+    retreat,
     oralSubStepIndex,
   };
 
@@ -272,10 +283,12 @@ export function GuideTourProvider({ kind, children }: ProviderProps) {
           title={step.title}
           hint={step.hint}
           target={step.target}
+          showBack={stepIndex > 0}
           showNext={step.advance === "next"}
           nextLabel={
             step.id === "wrap" ? "완료" : step.id === "intro" ? "계속" : "다음"
           }
+          onBack={retreat}
           onNext={advance}
           onPause={pause}
         />
