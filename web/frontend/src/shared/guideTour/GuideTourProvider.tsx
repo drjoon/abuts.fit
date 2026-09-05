@@ -5,6 +5,7 @@
 // - web/backend/controllers/users/user.controller.js
 // - web/frontend/src/shared/components/practice/PracticeToothWorkGuideTourBanner.tsx
 // change-log:
+// - 2026-09-05: 수료(complete) — intro형 안내·확인 시 구강스캔 포워딩.
 // - 2026-09-05: custom_abut 시네마 3장 → 1장. 레거시 implant/scanbody/simple resume → oral_custom_abut.
 // - 2026-09-05: custom_abut 시네마 3장. 레거시 oral_custom_abut resume 정규화.
 // - 2026-09-05: 치과 Spotlight — 전체 프로세스 N/…(챕터·구강 카운터).
@@ -35,6 +36,7 @@ import {
   isPracticeToothWorkOralStepId,
   normalizePracticeGuideTourStepId,
   PRACTICE_GUIDE_TOUR_CHAPTER_TOTAL,
+  PRACTICE_ORAL_PATH,
   type GuideTourKind,
   type GuideTourStepDef,
 } from "@/shared/guideTour/guideTourSteps";
@@ -260,12 +262,24 @@ export function GuideTourProvider({ kind, children }: ProviderProps) {
       setStepId(null);
       applyLocalGuideTour({ completed: true, resumeStepId: null });
       void persist({ completed: true, resumeStepId: null });
+      if (kind === "practice") {
+        navigate(PRACTICE_ORAL_PATH);
+      }
       return;
     }
     const next = steps[nextIdx];
     if (!next) return;
     goToStep(next.id);
-  }, [kind, step, stepIndex, steps, goToStep, persist, applyLocalGuideTour]);
+  }, [
+    kind,
+    step,
+    stepIndex,
+    steps,
+    goToStep,
+    persist,
+    applyLocalGuideTour,
+    navigate,
+  ]);
 
   const retreat = useCallback(() => {
     if (!kind || !step) return;
@@ -359,7 +373,13 @@ export function GuideTourProvider({ kind, children }: ProviderProps) {
           showSkip={Boolean(step.skippable)}
           allowTargetInteraction={isGuideTourAllowTargetInteraction(step)}
           nextLabel={
-            step.id === "intro" ? "계속" : isLastStep ? "완료" : "다음"
+            step.id === "intro"
+              ? "계속"
+              : step.id === "complete"
+                ? "확인"
+                : isLastStep
+                  ? "완료"
+                  : "다음"
           }
           onBack={retreat}
           onNext={advance}

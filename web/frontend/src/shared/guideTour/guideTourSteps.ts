@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/practice/PracticeToothWorkGuideTourBanner.tsx
 // - web/frontend/src/shared/guideTour/GuideTourProvider.tsx
 // change-log:
+// - 2026-09-05: complete — 수료 안내(intro형)·확인 시 구강스캔 포워딩.
 // - 2026-09-05: store — 사이드바 홀·힌트 단축.
 // - 2026-09-05: abutment — 사이드바「어벗디자인으로」홀·힌트 단축·건너뛰기 제거.
 // - 2026-09-05: 정산 코치마크 3단 — 내역·통계·충전 각 페이지 문구·탭 강조.
@@ -57,7 +58,8 @@ export type GuideTourStepDef = {
   allowTargetInteraction?: boolean;
 };
 
-const PRACTICE_ORAL_PATH = "/dashboard/practice-transfers?mode=send";
+/** 치과 투어 시작·수료 후 랜딩 */
+export const PRACTICE_ORAL_PATH = "/dashboard/practice-transfers?mode=send";
 const LAB_RECEIVE_PATH = "/dashboard/practice-transfers?mode=receive";
 const CREDITS_PATH = "/dashboard/credits";
 const NEW_REQUEST_PATH = "/dashboard/new-request";
@@ -192,6 +194,14 @@ export const PRACTICE_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
     target: "store_workspace",
     advance: "next",
     chapter: 4,
+  },
+  // —— 수료 (intro와 동일 — 챕터 번호 없음·중앙 카드) ——
+  {
+    id: "complete",
+    title: "가이드투어 완료",
+    hint: "투어를 모두 마쳤습니다. 확인하면 기공의뢰·구강스캔으로 이동합니다.",
+    target: null,
+    advance: "next",
   },
 ] as const;
 

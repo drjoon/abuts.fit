@@ -92,9 +92,11 @@ import {
 import { useGuideTour } from "@/shared/guideTour/GuideTourProvider";
 import { isPracticeToothWorkOralStepId } from "@/shared/guideTour/guideTourSteps";
 import {
+  ensureGuideTourCustomAbutCrown,
   GUIDE_TOUR_DEMO_ABUTMENT_FAVORITES,
   GUIDE_TOUR_DEMO_IMPLANT_FAVORITES,
   GUIDE_TOUR_DEMO_SIMPLE_ABUTMENT,
+  toothWorkHasGuideTourCustomAbutment,
 } from "@/shared/guideTour/guideTourOralPrefill";
 import { AutoMatchMinLabRatingStars } from "@/shared/components/practice/AutoMatchMinLabRatingStars";
 import {
@@ -180,6 +182,7 @@ import {
 // - web/frontend/src/shared/components/practice/PracticeToothSimpleAbutmentFields.tsx
 // - web/frontend/src/shared/components/practice/PracticeCustomSpecsPresetEditDialog.tsx
 // - web/frontend/src/shared/pricing/abutsAbutmentService.ts
+// - 2026-09-05: 커스텀어벗 투어 — CA 없으면 16→15→14 크라운+CA 주입 후 모달 오픈.
 // - 2026-09-05: 커스텀어벗 투어 — scanbody·simple 스텝 삭제. 어벗 선택 시 견적(다음)으로. 기본 어벗=심플어벗 8·M.
 // - 2026-09-05: card_ops — 어벗 체크 시 커스텀어벗 설정 모달 오픈(prosthesis만 차단).
 // - 2026-09-05: 커스텀어벗 투어 — 임플란트 선택·확인으로 2단(어벗) 진행 허용. 모달 닫기만 투어에서 잠금.
@@ -2469,24 +2472,32 @@ export const PracticeTransferRequestIntakePanel = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 견적 스텝 진입만
   }, [toothWorkGuideTourStepId]);
 
-  // 커스텀어벗 체험 중 설정 모달이 닫혀 있으면 열어 모달 안에서 이어간다.
+  // 커스텀어벗 체험 — CA 보철 없으면 16→15→14에 크라운+CA 주입, 모달 오픈.
   useEffect(() => {
     if (!isPresetGuideTourStep) return;
+    if (!toothWorks.some(toothWorkHasGuideTourCustomAbutment)) {
+      const next = ensureGuideTourCustomAbutCrown(toothWorks);
+      if (next !== toothWorks) {
+        setToothWorks(next);
+        return;
+      }
+    }
     if (customSpecsModalTarget !== null) return;
     const findPresetTourToothIndex = () => {
       const eligible = toothWorks.findIndex((row) => {
         const tooth = String(row.toothNumber || "").trim();
         if (!/^[1-4][1-8]$/.test(tooth)) return false;
+        return toothWorkHasGuideTourCustomAbutment(row);
+      });
+      if (eligible >= 0) return eligible;
+      return toothWorks.findIndex((row) => {
+        const tooth = String(row.toothNumber || "").trim();
+        if (!/^[1-4][1-8]$/.test(tooth)) return false;
         return (
-          row.customAbutment ||
           isCustomAbutmentProsthesisType(row.prosthesisType) ||
           isCustomAbutmentSupportedProsthesisType(row.prosthesisType)
         );
       });
-      if (eligible >= 0) return eligible;
-      return toothWorks.findIndex((row) =>
-        /^[1-4][1-8]$/.test(String(row.toothNumber || "").trim()),
-      );
     };
     const index = findPresetTourToothIndex();
     if (index < 0) return;

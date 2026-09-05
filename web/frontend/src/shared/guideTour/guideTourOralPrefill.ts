@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/guideTour/guideTourSteps.ts
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-09-05: ensureGuideTourCustomAbutCrown — CA 없으면 16→15→14 크라운+CA 주입.
 // - 2026-09-05: 커스텀어벗 투어 기본 어벗=심플어벗 8·M (GUIDE_TOUR_DEMO_SIMPLE_ABUTMENT).
 // - 2026-09-05: 커스텀어벗 시네마용 임플란트·스캔바디 데모 프리셋.
 // - 2026-09-05: 표시 용량 10·10·4MB. draft 파일명 식별(promote 누수 정리용).
@@ -13,6 +14,7 @@ import type {
   PracticeImplantFavorite,
   ToothWorkSelection,
 } from "@/shared/practice/transferMemo";
+import { isCustomAbutmentProsthesisType } from "@/shared/practice/transferMemo";
 
 export const GUIDE_TOUR_DEMO_PATIENT_NAME = "테스트환자";
 export const GUIDE_TOUR_DEMO_MEMO = "쉐이드 포토 첨부";
@@ -88,6 +90,42 @@ export const GUIDE_TOUR_DEMO_ABUTMENT_FAVORITES: PracticeAbutmentFavorite[] = [
     height: "9",
   },
 ];
+
+/** 커스텀어벗 스텝 — CA 보철 없을 때 주입 후보(빈 치아만) */
+export const GUIDE_TOUR_CUSTOM_ABUT_INJECT_TEETH = ["16", "15", "14"] as const;
+
+export const toothWorkHasGuideTourCustomAbutment = (
+  row: Pick<ToothWorkSelection, "customAbutment" | "prosthesisType">,
+): boolean =>
+  Boolean(row.customAbutment) ||
+  isCustomAbutmentProsthesisType(String(row.prosthesisType || ""));
+
+/**
+ * 커스텀어벗 체험용 — CA 포함 보철이 없으면 16→15→14 중 빈 치아에 크라운+CA 1개 추가.
+ * 이미 차지한 치아는 건너뜀(다른 보철로 선택된 경우).
+ */
+export const ensureGuideTourCustomAbutCrown = (
+  toothWorks: ToothWorkSelection[],
+): ToothWorkSelection[] => {
+  if (toothWorks.some(toothWorkHasGuideTourCustomAbutment)) return toothWorks;
+  const occupied = new Set(
+    toothWorks
+      .map((row) => String(row.toothNumber || "").trim())
+      .filter(Boolean),
+  );
+  const tooth = GUIDE_TOUR_CUSTOM_ABUT_INJECT_TEETH.find((t) => !occupied.has(t));
+  if (!tooth) return toothWorks;
+  return [
+    ...toothWorks,
+    {
+      toothNumber: tooth,
+      prosthesisType: "크라운",
+      customAbutment: true,
+      bridgeLinkedTeeth: [],
+      ...GUIDE_TOUR_DEMO_SIMPLE_ABUTMENT,
+    },
+  ];
+};
 
 /** 16–14 브리지+심플어벗, 13 크라운+CA, 12–22 임시치아 */
 export const buildGuideTourDemoToothWorks = (): ToothWorkSelection[] => {
