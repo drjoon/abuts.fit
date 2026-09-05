@@ -138,42 +138,13 @@ export default function AdminCreditPage() {
               state.setOrgLedgerBusiness(business);
               state.setOrgLedgerOpen(true);
             }}
-            selectedFreeCreditBusinessAnchorId={
-              state.selectedFreeCreditBusinessAnchorId
-            }
-            setSelectedFreeCreditBusinessAnchorId={
-              state.setSelectedFreeCreditBusinessAnchorId
-            }
-            freeCreditGrantSearch={state.freeCreditGrantSearch}
-            setFreeCreditGrantSearch={state.setFreeCreditGrantSearch}
             loadFreeCreditGrantHistory={state.loadFreeCreditGrantHistory}
             loadingFreeCreditGrantRows={state.loadingFreeCreditGrantRows}
-            freeCreditMenu={state.freeCreditMenu}
-            setFreeCreditMenu={state.setFreeCreditMenu}
-            selectedFreeCreditAmount={state.selectedFreeCreditAmount}
-            setSelectedFreeCreditAmount={state.setSelectedFreeCreditAmount}
-            freeCreditReason={state.freeCreditReason}
-            setFreeCreditReason={state.setFreeCreditReason}
             handleGrantFreeCredit={state.handleGrantFreeCredit}
             grantingFreeCredit={state.grantingFreeCredit}
-            selectedFreeCreditBusiness={state.selectedFreeCreditBusiness}
-            cancelStartDate={state.cancelStartDate}
-            setCancelStartDate={state.setCancelStartDate}
-            cancelEndDate={state.cancelEndDate}
-            setCancelEndDate={state.setCancelEndDate}
-            setCancelSkip={state.setCancelSkip}
-            setFreeCreditGrantRows={state.setFreeCreditGrantRows}
-            setCancelHasMore={state.setCancelHasMore}
-            filteredFreeCreditGrantRows={state.filteredFreeCreditGrantRows}
-            selectedCancelGrantId={state.selectedCancelGrantId}
-            setSelectedCancelGrantId={state.setSelectedCancelGrantId}
-            cancelHasMore={state.cancelHasMore}
-            loadMoreCancelGrants={state.loadMoreCancelGrants}
-            cancelGrantReason={state.cancelGrantReason}
-            setCancelGrantReason={state.setCancelGrantReason}
+            freeCreditGrantRows={state.freeCreditGrantRows}
             handleCancelFreeCredit={state.handleCancelFreeCredit}
             cancelingGrant={state.cancelingGrant}
-            freeCreditGrantRows={state.freeCreditGrantRows}
             filteredFreeCreditUsageRows={state.filteredFreeCreditUsageRows}
             orderStatusFilter={state.orderStatusFilter}
             setOrderStatusFilter={state.setOrderStatusFilter}

@@ -24,8 +24,6 @@ import type {
   FreeCreditAmount,
 } from "../adminCredit.types";
 
-type FreeCreditMenu = "grant" | "grant-cancel" | "grant-history" | "usage-history";
-
 type RequestorCreditTabProps = {
   loadingStats: boolean;
   stats: CreditStats | null;
@@ -41,42 +39,22 @@ type RequestorCreditTabProps = {
   orgScrollRef: RefObject<HTMLDivElement | null>;
   orgSentinelRef: RefObject<HTMLDivElement | null>;
   onOpenOrgLedger: (business: BusinessCredit) => void;
-  selectedFreeCreditBusinessAnchorId: string;
-  setSelectedFreeCreditBusinessAnchorId: (value: string) => void;
-  freeCreditGrantSearch: string;
-  setFreeCreditGrantSearch: (value: string) => void;
-  loadFreeCreditGrantHistory: () => void | Promise<void>;
+  loadFreeCreditGrantHistory: (options?: {
+    businessNumber?: string;
+  }) => void | Promise<void>;
   loadingFreeCreditGrantRows: boolean;
-  freeCreditMenu: FreeCreditMenu;
-  setFreeCreditMenu: (value: FreeCreditMenu) => void;
-  selectedFreeCreditAmount: FreeCreditAmount;
-  setSelectedFreeCreditAmount: (value: FreeCreditAmount) => void;
-  freeCreditReason: string;
-  setFreeCreditReason: (value: string) => void;
-  handleGrantFreeCredit: () => void | Promise<void>;
+  handleGrantFreeCredit: (options?: {
+    businessAnchorId?: string;
+    amount?: FreeCreditAmount;
+    reason?: string;
+  }) => void | Promise<void>;
   grantingFreeCredit: boolean;
-  selectedFreeCreditBusiness: BusinessCredit | null;
-  cancelStartDate: string;
-  setCancelStartDate: (value: string) => void;
-  cancelEndDate: string;
-  setCancelEndDate: (value: string) => void;
-  setCancelSkip: (value: number) => void;
-  setFreeCreditGrantRows: (
-    value:
-      | FreeCreditGrantHistoryRow[]
-      | ((prev: FreeCreditGrantHistoryRow[]) => FreeCreditGrantHistoryRow[]),
-  ) => void;
-  setCancelHasMore: (value: boolean) => void;
-  filteredFreeCreditGrantRows: FreeCreditGrantHistoryRow[];
-  selectedCancelGrantId: string;
-  setSelectedCancelGrantId: (value: string) => void;
-  cancelHasMore: boolean;
-  loadMoreCancelGrants: () => void | Promise<void>;
-  cancelGrantReason: string;
-  setCancelGrantReason: (value: string) => void;
-  handleCancelFreeCredit: () => void | Promise<void>;
-  cancelingGrant: boolean;
   freeCreditGrantRows: FreeCreditGrantHistoryRow[];
+  handleCancelFreeCredit: (options?: {
+    grantId?: string;
+    reason?: string;
+  }) => boolean | Promise<boolean>;
+  cancelingGrant: boolean;
   filteredFreeCreditUsageRows: BusinessCredit[];
   orderStatusFilter: string;
   setOrderStatusFilter: (value: string) => void;
@@ -240,43 +218,13 @@ export function RequestorCreditTab(props: RequestorCreditTabProps) {
         />
 
         <RequestorFreeCreditTab
-          businesses={requestorBusinesses}
-          selectedFreeCreditBusinessAnchorId={
-            props.selectedFreeCreditBusinessAnchorId
-          }
-          setSelectedFreeCreditBusinessAnchorId={
-            props.setSelectedFreeCreditBusinessAnchorId
-          }
-          freeCreditGrantSearch={props.freeCreditGrantSearch}
-          setFreeCreditGrantSearch={props.setFreeCreditGrantSearch}
           loadFreeCreditGrantHistory={props.loadFreeCreditGrantHistory}
           loadingFreeCreditGrantRows={props.loadingFreeCreditGrantRows}
-          freeCreditMenu={props.freeCreditMenu}
-          setFreeCreditMenu={props.setFreeCreditMenu}
-          selectedFreeCreditAmount={props.selectedFreeCreditAmount}
-          setSelectedFreeCreditAmount={props.setSelectedFreeCreditAmount}
-          freeCreditReason={props.freeCreditReason}
-          setFreeCreditReason={props.setFreeCreditReason}
           handleGrantFreeCredit={props.handleGrantFreeCredit}
           grantingFreeCredit={props.grantingFreeCredit}
-          selectedFreeCreditBusiness={props.selectedFreeCreditBusiness}
-          cancelStartDate={props.cancelStartDate}
-          setCancelStartDate={props.setCancelStartDate}
-          cancelEndDate={props.cancelEndDate}
-          setCancelEndDate={props.setCancelEndDate}
-          setCancelSkip={props.setCancelSkip}
-          setFreeCreditGrantRows={props.setFreeCreditGrantRows}
-          setCancelHasMore={props.setCancelHasMore}
-          filteredFreeCreditGrantRows={props.filteredFreeCreditGrantRows}
-          selectedCancelGrantId={props.selectedCancelGrantId}
-          setSelectedCancelGrantId={props.setSelectedCancelGrantId}
-          cancelHasMore={props.cancelHasMore}
-          loadMoreCancelGrants={props.loadMoreCancelGrants}
-          cancelGrantReason={props.cancelGrantReason}
-          setCancelGrantReason={props.setCancelGrantReason}
+          freeCreditGrantRows={props.freeCreditGrantRows}
           handleCancelFreeCredit={props.handleCancelFreeCredit}
           cancelingGrant={props.cancelingGrant}
-          freeCreditGrantRows={props.freeCreditGrantRows}
           filteredFreeCreditUsageRows={props.filteredFreeCreditUsageRows}
         />
 

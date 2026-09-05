@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-05: 사용 현황 행에서 금액 선택 즉시 지급(옵션 인자).
 // - 2026-08-13: 배송 전용 무료크레딧 지급 UI/상태 제거(일반·배송 통합).
 // related files:
 // - web/frontend/rules.md
@@ -451,12 +452,21 @@ export function useAdminCreditPage() {
     }
   };
 
-  const handleGrantFreeCredit = async () => {
+  const handleGrantFreeCredit = async (options?: {
+    businessAnchorId?: string;
+    amount?: FreeCreditAmount;
+    reason?: string;
+  }) => {
     if (!token) return;
-    const businessAnchorId = String(selectedFreeCreditBusinessAnchorId || "").trim();
+    const businessAnchorId = String(
+      options?.businessAnchorId || selectedFreeCreditBusinessAnchorId || "",
+    ).trim();
     const freeCreditBusinessPool =
       allRequestorBusinesses.length > 0 ? allRequestorBusinesses : businesses;
-    const reason = String(freeCreditReason || "").trim();
+    const amount = options?.amount ?? selectedFreeCreditAmount;
+    const reason = String(
+      options?.reason || freeCreditReason || "",
+    ).trim();
     if (!businessAnchorId) {
       toast({
         title: "지급 대상 선택 필요",
@@ -503,7 +513,7 @@ export function useAdminCreditPage() {
         jsonBody: {
           businessAnchorId,
           businessNumber,
-          amount: selectedFreeCreditAmount,
+          amount,
           reason,
         },
       });
@@ -514,15 +524,18 @@ export function useAdminCreditPage() {
       }
       toast({
         title: "무료 크레딧 지급 완료",
-        description: `${selectedFreeCreditAmount.toLocaleString()}원이 지급되었습니다.`,
+        description: `${targetBusiness?.name || "사업자"}에 ${amount.toLocaleString()}원 지급`,
       });
-      setFreeCreditReason("");
-      setSelectedFreeCreditAmount(30000);
+      if (!options?.businessAnchorId) {
+        setFreeCreditReason("");
+        setSelectedFreeCreditAmount(30000);
+      }
       setOrgSkip(0);
       setOrgHasMore(true);
       await Promise.all([
         loadStats(),
         loadOrganizations({ reset: true }),
+        loadAllRequestorBusinesses(),
         loadFreeCreditGrantHistory(),
       ]);
     } catch (error: unknown) {
@@ -536,16 +549,24 @@ export function useAdminCreditPage() {
     }
   };
 
-  const loadFreeCreditGrantHistory = async () => {
+  const loadFreeCreditGrantHistory = async (options?: {
+    businessNumber?: string;
+  }) => {
     if (!token) return;
     setLoadingFreeCreditGrantRows(true);
     try {
+      const params = new URLSearchParams({
+        type: "REQUEST_FREE_CREDIT",
+        limit: "100",
+      });
+      const businessNumber = String(options?.businessNumber || "").trim();
+      if (businessNumber) params.set("businessNumber", businessNumber);
       const res = await request<{
         success: boolean;
         data?: { rows: FreeCreditGrantHistoryRow[] };
         message?: string;
       }>({
-        path: "/api/admin/free-credit-grants?type=REQUEST_FREE_CREDIT",
+        path: `/api/admin/free-credit-grants?${params.toString()}`,
         method: "GET",
         token,
       });
@@ -569,17 +590,24 @@ export function useAdminCreditPage() {
     }
   };
 
-  const handleCancelFreeCredit = async () => {
-    if (!token) return;
-    const grantId = String(selectedCancelGrantId || "").trim();
-    const reason = String(cancelGrantReason || "").trim();
+  const handleCancelFreeCredit = async (options?: {
+    grantId?: string;
+    reason?: string;
+  }): Promise<boolean> => {
+    if (!token) return false;
+    const grantId = String(
+      options?.grantId || selectedCancelGrantId || "",
+    ).trim();
+    const reason = String(
+      options?.reason || cancelGrantReason || "",
+    ).trim();
     if (!grantId) {
       toast({
         title: "취소 대상 선택 필요",
         description: "취소할 지급 내역을 선택해주세요.",
         variant: "destructive",
       });
-      return;
+      return false;
     }
     if (!reason) {
       toast({
@@ -587,7 +615,7 @@ export function useAdminCreditPage() {
         description: "무료 크레딧 지급 취소 사유를 입력해주세요.",
         variant: "destructive",
       });
-      return;
+      return false;
     }
     const selectedGrant = freeCreditGrantRows.find((r) => String(r._id) === grantId);
     if (selectedGrant?.hasSpent)
@@ -619,14 +647,17 @@ export function useAdminCreditPage() {
       await Promise.all([
         loadStats(),
         loadOrganizations({ reset: true }),
+        loadAllRequestorBusinesses(),
         loadFreeCreditGrantHistory(),
       ]);
+      return true;
     } catch (error: unknown) {
       toast({
         title: "지급 취소 실패",
         description: getErrorMessage(error, "다시 시도해주세요."),
         variant: "destructive",
       });
+      return false;
     } finally {
       setCancelingGrant(false);
     }
@@ -995,40 +1026,29 @@ export function useAdminCreditPage() {
   ]);
 
   const filteredFreeCreditUsageRows = useMemo(() => {
-    const getSpentFreeTotal = (business: BusinessCredit) => {
-      const spentFreeAmount = Number(business.spentFreeAmount ?? 0);
-      if (spentFreeAmount > 0) return spentFreeAmount;
-
-      const spentFreeRequest = Number(business.spentFreeRequestAmount ?? 0);
-      const spentFreeShipping = Number(business.spentFreeShippingAmount ?? 0);
-      return spentFreeRequest + spentFreeShipping;
-    };
-
     const pool =
       allRequestorBusinesses.length > 0 ? allRequestorBusinesses : businesses;
     const search = String(freeCreditGrantSearch || "")
       .trim()
       .toLowerCase();
-    return pool
-      .filter((business) => {
-        if (
-          selectedFreeCreditBusinessAnchorId &&
-          String(business._id) !== selectedFreeCreditBusinessAnchorId
-        )
-          return false;
-        if (!search) return true;
-        const haystack = [
-          String(business.name || ""),
-          String(business.companyName || ""),
-          String(business.businessNumber || ""),
-          normalizeDigits(String(business.businessNumber || "")),
-        ]
-          .join(" ")
-          .toLowerCase();
-        return haystack.includes(search);
-      })
-      .filter((business) => getSpentFreeTotal(business) > 0)
-      .sort((a, b) => getSpentFreeTotal(b) - getSpentFreeTotal(a));
+    return pool.filter((business) => {
+      if (!isFreeCreditEligibleBusiness(business)) return false;
+      if (
+        selectedFreeCreditBusinessAnchorId &&
+        String(business._id) !== selectedFreeCreditBusinessAnchorId
+      )
+        return false;
+      if (!search) return true;
+      const haystack = [
+        String(business.name || ""),
+        String(business.companyName || ""),
+        String(business.businessNumber || ""),
+        normalizeDigits(String(business.businessNumber || "")),
+      ]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(search);
+    });
   }, [
     allRequestorBusinesses,
     businesses,
