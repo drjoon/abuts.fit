@@ -16,10 +16,12 @@
  * Usage:
  *   cd web/backend && \
  *   ENV_FILE=local.env NODE_ENV=test ABUTS_DB_FORCE=true \
+ *   NAMES='테스트치과,테스트기공소' \
  *   node scripts/db/reset-requestor-credit-ledgers.js
  *
  * Apply: APPLY=1 ...
  * Optional: KINDS=practice|lab|all (default all)
+ * Optional: NAMES='이름1,이름2' (없으면 해당 KINDS 전체)
  */
 import mongoose from "mongoose";
 import {
@@ -139,10 +141,17 @@ async function main() {
     kindsRaw === "practice" || kindsRaw === "lab"
       ? new Set([kindsRaw])
       : new Set(["practice", "lab"]);
+  const namesRaw = String(process.env.NAMES || "").trim();
+  const nameFilter = namesRaw
+    ? namesRaw
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : null;
 
   const uri = getMongoUri();
   assertSafeToMutateDb(uri);
-  console.log("apply", apply, "kinds", [...kinds]);
+  console.log("apply", apply, "kinds", [...kinds], "names", nameFilter || "all");
 
   await mongoose.connect(uri);
 
@@ -157,8 +166,18 @@ async function main() {
     })
     .lean();
 
-  const targets = anchors.filter((a) => kinds.has(classifyAnchor(a)));
+  const targets = anchors.filter((a) => {
+    if (!kinds.has(classifyAnchor(a))) return false;
+    if (!nameFilter) return true;
+    const name = String(a?.name || "").trim();
+    return nameFilter.some((n) => n === name || name.includes(n));
+  });
   console.log("target anchors", targets.length);
+  if (nameFilter && !targets.length) {
+    console.error("NAMES matched 0 anchors — abort");
+    await mongoose.disconnect();
+    process.exit(1);
+  }
 
   let deletedJournals = 0;
   let deletedLines = 0;
