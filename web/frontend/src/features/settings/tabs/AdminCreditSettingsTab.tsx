@@ -1517,12 +1517,12 @@ export const AdminCreditSettingsTab = ({
                 <SectionHeader
                   icon={Gift}
                   title="가입 무료 테스트 (치과·기공소)"
-                  description="신규 무료 크레딧 자동·수동 지급은 중단되었습니다. 대신 커스텀어벗(어벗디자인) 가입 후 첫 2건은 무료 테스트(의뢰·배송·제조사 0원)로 진행합니다. 구강스캔(PTX) 데모 마이너스는 별도입니다. 아래 금액은 레거시 설정값이며 신규 지급에 사용하지 않습니다."
+                  description="가입 환영 크레딧 자동 지급은 폐지되었습니다. 대신 커스텀어벗(어벗디자인) 가입 후 첫 2건은 무료 테스트(의뢰·배송·제조사 0원)로 진행합니다. 구강스캔(PTX) 데모 마이너스는 별도입니다. 아래 금액은 관리자 수동 무료크레딧 지급 기본값으로만 쓰입니다."
                 />
                 <div className="grid gap-3 sm:grid-cols-2">
                   <AmountField
                     id="defaultRequestFreeCredit"
-                    label="수동 지급 기본액 (미사용)"
+                    label="수동 지급 기본액"
                     icon={Gift}
                     value={settings.defaultRequestFreeCredit}
                     onChange={(next) =>
@@ -1532,8 +1532,8 @@ export const AdminCreditSettingsTab = ({
                         defaultShippingFreeCredit: 0,
                       })
                     }
-                    disabled
-                    help="신규 무료 크레딧 지급이 중단되어 사용하지 않습니다. 레거시 설정값만 보관합니다."
+                    disabled={loading}
+                    help="자동 가입 지급은 하지 않습니다. 관리자가 수동으로 무료크레딧을 줄 때 기본 금액으로만 사용합니다."
                   />
                 </div>
               </CardContent>

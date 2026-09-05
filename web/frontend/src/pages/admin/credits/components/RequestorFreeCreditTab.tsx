@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-05: 관리자 무료크레딧 수동 지급 UI 복원(가입 환영 자동 지급은 유지 폐지).
 // - 2026-08-13: 일반/배송 무료크레딧 통합 — 단일 지급 UI, 문구·스타일 정리.
 // related files:
 // - web/frontend/rules.md
@@ -74,6 +75,10 @@ type RequestorFreeCreditTabProps = {
   filteredFreeCreditUsageRows: BusinessCredit[];
 };
 
+const FREE_CREDIT_AMOUNTS: FreeCreditAmount[] = [
+  7000, 30000, 50000, 300000, 500000,
+];
+
 function getFreeBalance(business: BusinessCredit) {
   const freeCredit = Number(business.freeCredit ?? NaN);
   if (Number.isFinite(freeCredit)) return freeCredit;
@@ -114,6 +119,13 @@ export function RequestorFreeCreditTab(props: RequestorFreeCreditTabProps) {
     loadingFreeCreditGrantRows,
     freeCreditMenu,
     setFreeCreditMenu,
+    selectedFreeCreditAmount,
+    setSelectedFreeCreditAmount,
+    freeCreditReason,
+    setFreeCreditReason,
+    handleGrantFreeCredit,
+    grantingFreeCredit,
+    selectedFreeCreditBusiness,
     cancelStartDate,
     setCancelStartDate,
     cancelEndDate,
@@ -133,13 +145,6 @@ export function RequestorFreeCreditTab(props: RequestorFreeCreditTabProps) {
     freeCreditGrantRows,
     filteredFreeCreditUsageRows,
   } = props;
-  void props.selectedFreeCreditAmount;
-  void props.setSelectedFreeCreditAmount;
-  void props.freeCreditReason;
-  void props.setFreeCreditReason;
-  void props.handleGrantFreeCredit;
-  void props.grantingFreeCredit;
-  void props.selectedFreeCreditBusiness;
 
   const eligibleBusinesses = businesses.filter((business) => {
     if (typeof business.isFreeCreditEligible === "boolean") {
@@ -162,7 +167,7 @@ export function RequestorFreeCreditTab(props: RequestorFreeCreditTabProps) {
           <CreditSectionHeader
             icon={Gift}
             title="무료 크레딧"
-            description="신규 지급은 중단되었습니다. 기존 지급분 회수·이력만 가능합니다."
+            description="의뢰·배송 구분 없이 하나의 무료 잔액으로 지급·회수합니다."
             trailing={
               <Button
                 type="button"
@@ -182,12 +187,6 @@ export function RequestorFreeCreditTab(props: RequestorFreeCreditTabProps) {
               </Button>
             }
           />
-
-          <div className="rounded-xl border border-amber-200/80 bg-amber-50/80 px-4 py-3 text-sm text-amber-900">
-            신규 무료 크레딧 지급은 중단되었습니다. 커스텀어벗(어벗디자인)은
-            가입 무료 테스트 2건(0원)으로 대체하며, 잔여 무료 잔액은 소진될
-            때까지 사용·회수할 수 있습니다.
-          </div>
 
           <div className="flex flex-wrap items-center gap-2">
             {menuItems.map((item) => (
@@ -233,9 +232,78 @@ export function RequestorFreeCreditTab(props: RequestorFreeCreditTabProps) {
           </div>
 
           {freeCreditMenu === "grant" ? (
-            <div className="rounded-2xl border border-slate-200/80 bg-slate-50/40 p-5 text-sm text-slate-600">
-              지급 기능이 비활성화되어 있습니다. 「회수」·「이력」탭에서 기존
-              지급분을 관리하세요.
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]">
+              <div className="space-y-4 rounded-2xl border border-slate-200/80 bg-slate-50/40 p-5">
+                <div className="space-y-2">
+                  <Label>금액</Label>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+                    {FREE_CREDIT_AMOUNTS.map((amount) => (
+                      <Button
+                        key={amount}
+                        type="button"
+                        className="h-11 rounded-xl"
+                        variant={
+                          selectedFreeCreditAmount === amount
+                            ? "default"
+                            : "outline"
+                        }
+                        onClick={() => setSelectedFreeCreditAmount(amount)}
+                      >
+                        {amount.toLocaleString()}원
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="free-credit-reason">지급 사유</Label>
+                  <Input
+                    id="free-credit-reason"
+                    className="h-11 rounded-xl bg-white"
+                    value={freeCreditReason}
+                    onChange={(e) => setFreeCreditReason(e.target.value)}
+                    placeholder="예: CS 보상, 운영 정책"
+                  />
+                </div>
+
+                <Button
+                  className="h-11 w-full rounded-xl"
+                  onClick={handleGrantFreeCredit}
+                  disabled={
+                    grantingFreeCredit || !selectedFreeCreditBusinessAnchorId
+                  }
+                >
+                  {grantingFreeCredit ? "지급 중…" : "무료 크레딧 지급"}
+                </Button>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200/80 bg-white p-5">
+                <div className="text-sm font-semibold text-slate-900">요약</div>
+                <div className="mt-3 space-y-2.5 text-sm">
+                  <div className="flex justify-between gap-3">
+                    <span className="text-muted-foreground">사업자</span>
+                    <span className="text-right font-medium">
+                      {selectedFreeCreditBusiness?.name || "미선택"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <span className="text-muted-foreground">사업자번호</span>
+                    <span className="font-mono text-xs">
+                      {selectedFreeCreditBusiness?.businessNumber || "-"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <span className="text-muted-foreground">금액</span>
+                    <span className="font-semibold text-primary">
+                      {selectedFreeCreditAmount.toLocaleString()}원
+                    </span>
+                  </div>
+                </div>
+                <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
+                  지급 즉시 무료 잔액에 반영되며, 의뢰·배송 어디서든 사용할 수
+                  있습니다.
+                </p>
+              </div>
             </div>
           ) : freeCreditMenu === "grant-cancel" ? (
             <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]">

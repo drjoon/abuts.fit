@@ -225,9 +225,8 @@
   - `BusinessCreditBalance`는 레거시 스냅샷으로 취급하며 런타임 잔액 판정/표시에 사용하지 않음
 - 가입 환영 무료 크레딧(강제) — **폐지**:
   - 기공소 가입 시 `defaultRequestFreeCredit`(구 30,000) / 배송 7,000 자동 지급 **중단**
-  - `grantWelcomeFreeCreditIfEligible`는 no-op
-  - **신규 관리자 무료크레딧 지급도 중단**(override/배송 무료 API 403). list/cancel·기존 `REQ_FREE_*` 잔액·`CHARGE_FREE_*` 내역은 유지(런칭 시 전체 리셋 예정)
-  - 정산 요약 UI: 「무료 충전」카드 제거. 치과 `현재 잔액 = 유료 충전 − 소비`, 기공소 `= 유료 충전 + 정산 적립 − 소비`
+  - `grantWelcomeFreeCreditIfEligible`는 no-op. **관리자 수동 무료크레딧 override는 유지**(관리자→크레딧→무료 크레딧)
+  - 정산 요약 UI: 「무료 충전」카드 제거. 치과 `현재 잔액 = 유료 충전 − 소비`, 기공소 `= 유료 충전 + 정산 적립 − 소비`. 기존 `REQ_FREE_*` 잔액·`CHARGE_FREE_*` 내역·list/cancel은 유지
   - 데모 모드(치과 practice만): 가입 시 0원 시작·**구강스캔(PTX) 마이너스** 허용. 뱃지 「데모 N일 남음」(`demoModeStartedAt`+30일). 기공소(lab)는 데모 미적용
 - CA 가입 무료 테스트(강제, 치과·기공소):
   - 의뢰자(`businessType=requestor`) `BusinessAnchor` 기준, **비취소 CA `Request` 첫 2건**(PTX는 미포함)

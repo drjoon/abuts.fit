@@ -464,7 +464,8 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 공개 가입: `POST /api/auth/register`. 발신 프로필: `practiceProfile` → `ensureRequestorOrgAnchor`.
   - 백필: `scripts/db/backfill-requestor-capabilities.js` (`--apply`)
   - 크레딧/정산: 유료(paid+verified)만. synthetic BN 환영 크레딧 없음.
-    가입 환영 무료크레딧 자동·관리자 신규 지급은 **폐지**. 대신 CA(어벗디자인) 가입 후 첫 2건 무료 테스트(`signup_free_test_2`, 치과·기공소).
+    가입 환영 무료크레딧 자동 지급은 **폐지**. 관리자 수동 무료크레딧 override는 유지.
+    대신 CA(어벗디자인) 가입 후 첫 2건 무료 테스트(`signup_free_test_2`, 치과·기공소).
     정산 요약 「무료 충전」카드 제거. 치과 PTX 데모 마이너스는 유지.
 
 - 드롭존 가입(치과 전용, requestor+practice):
@@ -718,7 +719,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - 프로세스 메모리 캐시를 사용하지 않아 승인/롤백 직후 잔액을 즉시 반영해야 합니다.
   - 가입 환영 무료 크레딧(강제, 자동 지급) — **폐지**:
     - `grantWelcomeFreeCreditIfEligible` no-op. `defaultRequestFreeCredit` 스키마 기본 0
-    - **신규 관리자 무료크레딧 지급 중단**(override·배송 무료 POST 403). list/cancel·기존 잔액·내역 유지
+    - **관리자 수동 무료크레딧 override는 유지**(`adminOverrideRequestFreeCredit`). list/cancel·기존 잔액·내역 유지
     - 정산 요약 UI 「무료 충전」제거(유료 [+정산] − 소비). 장부 행 FREE 필터는 유지
   - CA 가입 무료 테스트(강제, 첫 2건, 치과·기공소):
     - 대상: `businessType=requestor`(practice·lab). PTX(구강스캔)는 Request가 아니므로 쿼터 미포함
