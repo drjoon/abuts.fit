@@ -182,6 +182,7 @@ import {
 // - web/frontend/src/shared/components/practice/PracticeToothSimpleAbutmentFields.tsx
 // - web/frontend/src/shared/components/practice/PracticeCustomSpecsPresetEditDialog.tsx
 // - web/frontend/src/shared/pricing/abutsAbutmentService.ts
+// - 2026-09-05: 플랫폼 투어 일시 중단 시 로컬 가운데 배너(보철물 N/8) 잔존 제거 — Spotlight만.
 // - 2026-09-05: 커스텀어벗 투어 — CA 없으면 16→15→14 크라운+CA 주입 후 모달 오픈.
 // - 2026-09-05: 커스텀어벗 투어 — scanbody·simple 스텝 삭제. 어벗 선택 시 견적(다음)으로. 기본 어벗=심플어벗 8·M.
 // - 2026-09-05: card_ops — 어벗 체크 시 커스텀어벗 설정 모달 오픈(prosthesis만 차단).
@@ -993,6 +994,9 @@ export const PracticeTransferRequestIntakePanel = ({
     platformGuideTour.active &&
     platformGuideTour.oralSubStepIndex != null &&
     isPracticeToothWorkOralStepId(platformGuideTour.stepId);
+  /** 치과 플랫폼 투어 진행 중(일시 중단 포함) — 로컬 가운데 배너·인라인 시작 버튼 숨김 */
+  const platformGuideTourOwnsFlow =
+    platformGuideTour.kind === "practice" && !platformGuideTour.completed;
   const [labInviteCopyBusy, setLabInviteCopyBusy] = useState(false);
   /** 메모|파일 2열 — 오른쪽 파일 패널 높이에 메모 카드 맞춤 */
   const besideMemoPaneRef = useRef<HTMLDivElement | null>(null);
@@ -1330,6 +1334,11 @@ export const PracticeTransferRequestIntakePanel = ({
   const toothWorkGuideTourStepId = getPracticeToothWorkGuideTourStepId(
     toothWorkGuideTourStep,
   );
+  /** 로컬 폴백 배너 — 플랫폼 전체 플로우(Spotlight)가 있으면 표시하지 않음 */
+  const showLocalToothWorkTourBanner =
+    toothWorkGuideTourStep != null &&
+    !platformOralActive &&
+    !platformGuideTourOwnsFlow;
   /** Spotlight 홀 타깃 — 플랫폼 stepId 우선(작성 패널 마운트·sync 전에도 측정 가능) */
   const oralSpotlightTargetId: string | null = platformOralActive
     ? platformGuideTour.stepId
@@ -1997,9 +2006,9 @@ export const PracticeTransferRequestIntakePanel = ({
       setToothWorkGuideTourStep(platformGuideTour.oralSubStepIndex);
       return;
     }
-    if (!isPracticeToothWorkOralStepId(platformGuideTour.stepId)) {
-      setToothWorkGuideTourStep(null);
-    }
+    // 일시 중단·챕터 이탈 시 로컬 가운데 배너가 남지 않게 클리어
+    // (이전: oral stepId가 남아 있으면 스텝을 유지 → 배너만 노출)
+    setToothWorkGuideTourStep(null);
   }, [
     platformOralActive,
     platformGuideTour.oralSubStepIndex,
@@ -2731,10 +2740,10 @@ export const PracticeTransferRequestIntakePanel = ({
     toothWorkGuideTourStep != null &&
     isHeaderTourStep;
   const asideTourBanner =
-    useAsideTourRail && !platformOralActive ? (
+    useAsideTourRail && showLocalToothWorkTourBanner ? (
     <PracticeToothWorkGuideTourBanner
       placement="aside"
-      step={toothWorkGuideTourStep}
+      step={toothWorkGuideTourStep!}
       onExit={exitToothWorkGuideTour}
       onFinish={exitToothWorkGuideTour}
     />
@@ -2742,7 +2751,7 @@ export const PracticeTransferRequestIntakePanel = ({
   const portaledHeaderTour =
     isHeaderTourStep &&
     !useAsideTourRail &&
-    !platformOralActive &&
+    showLocalToothWorkTourBanner &&
     guideTourHeaderSlotEl ? (
       createPortal(
         <PracticeToothWorkGuideTourBanner
@@ -3467,7 +3476,9 @@ export const PracticeTransferRequestIntakePanel = ({
               <span className="font-normal text-muted-foreground">({requestedToothCount}개)</span>{" "}
               <span className="text-destructive">*</span>
             </Label>
-            {showInlineGuideTourButton && !platformOralActive ? (
+            {showInlineGuideTourButton &&
+            !platformOralActive &&
+            !platformGuideTourOwnsFlow ? (
               <Button
                 type="button"
                 size="sm"
@@ -3544,13 +3555,12 @@ export const PracticeTransferRequestIntakePanel = ({
         </div>
         ) : null}
 
-        {toothWorkGuideTourStep != null &&
-        !platformOralActive &&
+        {showLocalToothWorkTourBanner &&
         !useAsideTourRail &&
         customSpecsModalTarget === null &&
         toothWorkGuideTourStepId !== "header" ? (
           <PracticeToothWorkGuideTourBanner
-            step={toothWorkGuideTourStep}
+            step={toothWorkGuideTourStep!}
             onExit={exitToothWorkGuideTour}
             onFinish={exitToothWorkGuideTour}
           />
@@ -5027,11 +5037,10 @@ export const PracticeTransferRequestIntakePanel = ({
                     </DialogDescription>
                   </DialogHeader>
 
-                  {toothWorkGuideTourStep != null &&
-                  !platformOralActive &&
+                  {showLocalToothWorkTourBanner &&
                   isCustomAbutGuideTourStepId(toothWorkGuideTourStepId) ? (
                     <PracticeToothWorkGuideTourBanner
-                      step={toothWorkGuideTourStep}
+                      step={toothWorkGuideTourStep!}
                       onExit={exitToothWorkGuideTour}
                       onFinish={exitToothWorkGuideTour}
                       className="shrink-0"
