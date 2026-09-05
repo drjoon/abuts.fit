@@ -133,9 +133,10 @@
   - `REQUEST_SPEND_COMMIT`: **CAM 승인(가공 진입)** 시 보류→매출 전환(레거시 무보류만 실차감)
   - `SHIPPING_SPEND_COMMIT`: **포장.발송 진입(세척.패킹 승인)** 시 배송 보류→매출 전환(레거시·PTX abuts는 기존 SSOT)
   - **포장.발송 진입 SSOT**: `enterManufacturerShippingStage()` (`common.review.helpers.js`) — 우편함 유지·수취인 스냅샷·배송비 commit·단계 매핑. 새 경로 추가 시 이 함수만 호출(백필·단위 테스트 제외).
-  - `REQUEST` 차감 삭제: **가공 롤백(CAM 복귀)** 시 대응 COMMIT 이벤트/라인 **물리 삭제**(HOLD는 유지)
-  - `SHIPPING` 차감 삭제: **포장.발송 롤백(세척.패킹 복귀)** 시 대응 COMMIT 이벤트/라인 **물리 삭제**
-  - 준비 단계 **취소**: 미전환 HOLD 전부 해제(물리 삭제)
+  - `REQUEST` 차감 삭제: **가공 롤백(CAM 복귀)** 시 대응 COMMIT 이벤트/라인 **물리 삭제**(HOLD는 유지). 제조사 의뢰비만.
+  - `SHIPPING` 차감 삭제: **포장.발송 롤백(세척.패킹 복귀)** 시 대응 COMMIT 이벤트/라인 **물리 삭제**. 제조사 배송비만.
+  - 준비 단계 **취소**: 미전환 REQUEST/SHIPPING HOLD 전부 해제(물리 삭제)
+  - **비제조사 소비 취소**(스토어·PTX 기공비/수수료·디자인비 ADJUST 등): 원본 유지 + 취소 시점 `REFUND`(반대부호)로 잔고 복구. 제조사 REQUEST/SHIPPING 경로에는 REFUND 금지.
   - BG 콜백은 파일 처리 결과 동기화 이벤트이며 승인/롤백 트랜지션이 아니므로,
     BG 콜백에서 크레딧/정산 장부 갱신을 수행하지 않음
 - 샘플 정책(강제): `requestCategory in (rnd_sample, copied_sample)`는 크레딧/정산 무관 작업
@@ -185,7 +186,7 @@
 - 필수 이벤트 타입 SSOT(저장형):
   - `REQUEST_SPEND_HOLD`, `REQUEST_SPEND_COMMIT`, `SHIPPING_SPEND_HOLD`, `SHIPPING_SPEND_COMMIT`
   - `PRACTICE_MEMBERSHIP_SPEND`(레거시 치과 멤버십 월 구독. 신규 과금 없음)
-  - `CHARGE_PAID`, `CHARGE_FREE_REQUEST`, `CHARGE_FREE_SHIPPING`, `ADJUST`, `SETTLEMENT_PAYOUT`, `STORE_SALE`
+  - `CHARGE_PAID`, `CHARGE_FREE_REQUEST`, `CHARGE_FREE_SHIPPING`, `ADJUST`, `SETTLEMENT_PAYOUT`, `STORE_SALE`, `REFUND`
 - 수익 계정 SSOT:
   - `REV_MANUFACTURER`, `REV_DEVOPS`, `REV_SALESMAN`, `REV_ADMIN`
   - **제조사(하청)**: % 분배 금지. **어벗 1개당** 고정 매입가(부가세 포함) — `creditSettings.manufacturerRequestUnitPrice`(기본 8,800)·`manufacturerShippingUnitPrice`(기본 3,500, 박스당). 장부 적립은 공급가(÷1.1)·VAT. **리메이크는 제조사 무료 생산(지급 0)**. 그 외(무료 크레딧 결제 포함)는 **약정 단가 전액 지급**. 매달 말일 일괄 지급 전까지는 미정산 잔액으로 적립. 지급 시 부가세·세금계산서.
@@ -199,7 +200,8 @@
   - 딜러사·개발운영사·어벗츠의 무료 수익은 지급 0원으로 정산완료 상태만 표시 가능. **리메이크만 제조사 무료 생산(지급 0)**. 무료 크레딧 포함 약정 단가는 말일 일괄 지급.
 - 커스텀 어벗 의뢰 단가 SSOT: 관리자「플랫폼 설정 · 커스텀어벗」`creditSettings.membershipProductionPrice`(기본 **15,000원**). **신규 Request는 항상 생산만**(`custom_abutment`). `design_custom_abutment`·`membershipDesignAndProductionPrice`(옛 2.5만)는 **레거시 읽기 전용**(신규 쓰기·청구 분기 없음). 기공의뢰 CA 디자인은 수주 기공소·`labFeeSchedule` 커스텀어벗 수가. 신속=`expressFee`(기본 **+2,000원**). 기공소 어벗생산의뢰는 `labProductionPrice` 오버레이. **치과 멤버십/일반 청구 이중가 없음**. `regular*`·관리자「멤버/일반」은 **딜러 유무 분배**용. 가입 90일 1만원·치과 멤버십 월정 없음.
 - 롤백 원칙:
-  - 롤백은 REFUND 추가가 아니라 원본 커밋 이벤트 및 대응 라인의 **물리 삭제**
+  - **제조사 의뢰비·배송비**(`REQUEST_SPEND_*` / `SHIPPING_SPEND_*`): 롤백·준비 취소 시 원본 저널/라인 **물리 삭제**(REFUND 추가 금지)
+  - **그 외 소비**(스토어 `STORE_SALE`, PTX 기공비/플랫폼수수료/에스크로, 디자인비 `ADJUST` 등): 원본 유지 + 취소 시점 **`REFUND`**(라인 부호 반전)로 잔고 복구
 - 조회/표시 타입 원칙:
   - 충전은 `CHARGE_PAID` / `CHARGE_FREE_REQUEST` / `CHARGE_FREE_SHIPPING`으로 분리 표기 (`CHARGE` 단일표시 금지)
   - 소비는 `SPEND_PAID` / `SPEND_FREE_REQUEST` / `SPEND_FREE_SHIPPING`으로 분리 표기 (`SPEND` 단일표시 금지)

@@ -4,6 +4,7 @@
 // - web/backend/models/ledgerLine.model.js
 // - web/backend/services/requestCreditHold.service.js
 // change-log:
+// - 2026-09-06: postGeneralLedgerCancelRefund — 비제조사 소비 취소(원본 유지+REFUND).
 // - 2026-09-03: postGeneralLedgerJournals — 같은 ClientSession에서 insertMany 병렬 금지
 //   (NoSuchTransaction/txn number mismatch). journal→line 순차 + TransientTransaction 1회 재시도.
 // - 2026-08-21: postGeneralLedgerJournals — journal/line insertMany 병렬.
@@ -346,6 +347,215 @@ export async function postGeneralLedgerJournals({
     }
     throw error;
   }
+}
+
+/** 제조사 의뢰비·배송비 — 취소 시 REFUND 금지, 물리 삭제만. */
+export const MANUFACTURER_SPEND_EVENT_TYPES = Object.freeze([
+  "REQUEST_SPEND_COMMIT",
+  "REQUEST_SPEND_HOLD",
+  "SHIPPING_SPEND_COMMIT",
+  "SHIPPING_SPEND_HOLD",
+]);
+
+export function refundIdempotencyKeyFor(sourceIdempotencyKey) {
+  const key = String(sourceIdempotencyKey || "").trim();
+  if (!key) return "";
+  if (key.endsWith(":refund")) return key;
+  return `${key}:refund`;
+}
+
+/**
+ * 비제조사 소비 취소: 원본 저널 유지 + 반대부호 REFUND 저널.
+ * 제조사 REQUEST_/SHIPPING_ 이벤트는 거부(호출부는 deleteGeneralLedgerCommitJournal 사용).
+ */
+export async function postGeneralLedgerCancelRefund({
+  journalId,
+  expectedEventTypes = null,
+  createdBy = null,
+  occurredAt = null,
+  displayLabel = null,
+  meta = null,
+  session = null,
+}) {
+  const id = String(journalId || "").trim();
+  if (!id) {
+    return { posted: false, idempotent: false, reason: "invalid_journal_id" };
+  }
+
+  const journal = await LedgerJournal.findOne({ journalId: id })
+    .session(session || null)
+    .lean();
+  if (!journal?.journalId) {
+    return { posted: false, idempotent: false, reason: "not_found" };
+  }
+
+  const eventType = String(journal.eventType || "");
+  if (MANUFACTURER_SPEND_EVENT_TYPES.includes(eventType)) {
+    return {
+      posted: false,
+      idempotent: false,
+      reason: "manufacturer_spend_must_delete",
+      eventType,
+    };
+  }
+  if (eventType === "REFUND") {
+    return {
+      posted: false,
+      idempotent: false,
+      reason: "already_refund",
+      eventType,
+    };
+  }
+  if (
+    Array.isArray(expectedEventTypes) &&
+    expectedEventTypes.length > 0 &&
+    !expectedEventTypes.includes(eventType)
+  ) {
+    return {
+      posted: false,
+      idempotent: false,
+      reason: "event_type_mismatch",
+      eventType,
+    };
+  }
+
+  const sourceKey = String(journal.idempotencyKey || "").trim();
+  const refundKey = refundIdempotencyKeyFor(sourceKey || `journal:${id}`);
+  const existingRefund = await getJournalByIdempotencyKey({
+    idempotencyKey: refundKey,
+    session,
+  });
+  if (existingRefund?.journalId) {
+    return {
+      posted: false,
+      idempotent: true,
+      journalId: existingRefund.journalId,
+      sourceJournalId: id,
+      reason: null,
+    };
+  }
+
+  const sourceLines = await LedgerLine.find({ journalId: id })
+    .sort({ lineNo: 1, _id: 1 })
+    .session(session || null)
+    .lean();
+  if (!Array.isArray(sourceLines) || sourceLines.length === 0) {
+    return { posted: false, idempotent: false, reason: "no_lines", sourceJournalId: id };
+  }
+
+  const negate = (v) => {
+    if (v === null || v === undefined) return v;
+    const n = Number(v);
+    if (!Number.isFinite(n)) return v;
+    return -n;
+  };
+
+  const lines = sourceLines.map((line) => ({
+    accountCode: line.accountCode,
+    ownerRole: line.ownerRole,
+    ownerId: line.ownerId,
+    amount: negate(line.amount),
+    amountExcludingVat: negate(line.amountExcludingVat),
+    vatAmount: negate(line.vatAmount),
+    amountIncludingVat: negate(line.amountIncludingVat),
+    creditKind: line.creditKind || null,
+    refType: line.refType || journal.refType || "",
+    refId: line.refId || journal.refId || null,
+    meta: line.meta
+      ? { ...line.meta, cancelsLineNo: line.lineNo }
+      : { cancelsLineNo: line.lineNo },
+  }));
+
+  const label =
+    displayLabel ||
+    (journal.meta && journal.meta.displayLabel
+      ? `${String(journal.meta.displayLabel)} 취소`
+      : "취소");
+
+  const result = await postGeneralLedgerJournal({
+    journalId: crypto.randomUUID(),
+    idempotencyKey: refundKey,
+    eventType: "REFUND",
+    businessAnchorId: journal.businessAnchorId,
+    refType: journal.refType || "",
+    refId: journal.refId || null,
+    stageFrom: journal.stageTo || journal.stageFrom || "",
+    stageTo: "",
+    occurredAt: occurredAt || new Date(),
+    createdBy,
+    meta: {
+      ...(journal.meta && typeof journal.meta === "object" ? journal.meta : {}),
+      ...(meta && typeof meta === "object" ? meta : {}),
+      cancelsJournalId: id,
+      cancelsEventType: eventType,
+      cancelsIdempotencyKey: sourceKey || null,
+      displayLabel: label,
+      isCancelRefund: true,
+    },
+    lines,
+    session,
+  });
+
+  return {
+    posted: !!result?.posted,
+    idempotent: !!result?.idempotent,
+    journalId: result?.journalId || null,
+    sourceJournalId: id,
+    reason: null,
+  };
+}
+
+/**
+ * 여러 저널에 REFUND를 병렬(또는 session 시 순차) 게시.
+ * @returns {{ refundedJournalIds: string[], sourceJournalIds: string[], results: object[] }}
+ */
+export async function postGeneralLedgerCancelRefunds({
+  journalIds = [],
+  expectedEventTypes = null,
+  createdBy = null,
+  occurredAt = null,
+  session = null,
+}) {
+  const ids = [
+    ...new Set(
+      (Array.isArray(journalIds) ? journalIds : [])
+        .map((jid) => String(jid || "").trim())
+        .filter(Boolean),
+    ),
+  ];
+  if (!ids.length) {
+    return { refundedJournalIds: [], sourceJournalIds: [], results: [] };
+  }
+
+  const runOne = (journalId) =>
+    postGeneralLedgerCancelRefund({
+      journalId,
+      expectedEventTypes,
+      createdBy,
+      occurredAt,
+      session,
+    });
+
+  // ClientSession은 동시 사용 불가
+  const results = session
+    ? await ids.reduce(async (prev, journalId) => {
+        const acc = await prev;
+        acc.push(await runOne(journalId));
+        return acc;
+      }, Promise.resolve([]))
+    : await Promise.all(ids.map(runOne));
+
+  const refundedJournalIds = [];
+  const sourceJournalIds = [];
+  for (const r of results) {
+    if (r?.journalId && (r.posted || r.idempotent)) {
+      refundedJournalIds.push(r.journalId);
+    }
+    if (r?.sourceJournalId && (r.posted || r.idempotent)) {
+      sourceJournalIds.push(r.sourceJournalId);
+    }
+  }
+  return { refundedJournalIds, sourceJournalIds, results };
 }
 
 export async function deleteGeneralLedgerCommitJournal({

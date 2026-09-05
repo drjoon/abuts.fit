@@ -658,13 +658,13 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - `PRACTICE_TRANSFER_SPEND_HOLD`
     - `PRACTICE_TRANSFER_HOLD_ADJUST`
     - `PRACTICE_TRANSFER_ESCROW_RELEASE`
-    - `CHARGE_PAID`, `CHARGE_FREE_REQUEST`, `CHARGE_FREE_SHIPPING`, `LAB_SETTLEMENT_CHARGE`, `ADJUST`, `SETTLEMENT_PAYOUT`
+    - `CHARGE_PAID`, `CHARGE_FREE_REQUEST`, `CHARGE_FREE_SHIPPING`, `LAB_SETTLEMENT_CHARGE`, `ADJUST`, `SETTLEMENT_PAYOUT`, `STORE_SALE`, `REFUND`
   - `businessAnchorId`(의뢰자 기준 키)
   - `refType`, `refId` (`REQUEST`, `SHIPPING_PACKAGE`, `CHARGE_ORDER` 등)
   - `stageFrom`, `stageTo` (워크시트 승인/롤백 전이 기록)
   - `idempotencyKey`(unique)
   - `occurredAt`, `createdAt`, `createdBy`
-  - `status` (`POSTED`만 허용; 롤백은 삭제 정책이므로 별도 VOID 상태 운용 금지)
+  - `status` (`POSTED`만 허용. 제조사 REQUEST/SHIPPING 롤백은 삭제. 비제조사 취소는 `REFUND` 추가 — VOID 상태 없음)
 
 - LedgerLine 스키마 초안(필수 필드):
   - `journalId`(FK), `lineNo`
@@ -695,7 +695,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - **포장.발송 진입 SSOT**: `enterManufacturerShippingStage()` (`controllers/requests/common.review.helpers.js`) — 우편함 유지·수취인 스냅샷·배송비 commit·단계 매핑. 세척.패킹 승인·lot-capture·stageProgressionWorker 등 **모든** 진입 경로는 이 함수만 호출. 새 경로 추가 시에도 동일(백필·단위 테스트 제외).
   - **lot-capture 작업자 확인**: `POST /api/bg/lot-capture/packing`는 `requestMongoId`(또는 `requestId`)가 있을 때만 저장·포장.발송. 없으면 인식·후보만 반환하고 `packing:capture-needs-confirm`(+ previewUrl) 발행.
   - 우편함 합류: 합류 의뢰의 중복 `SHIPPING_SPEND_HOLD` 해제. 칸당 보류 1개 불변.
-  - 준비 단계 **취소**: 미전환 HOLD 전부 물리 삭제(잔액 복원)
+  - 준비 단계 **취소**: 미전환 REQUEST/SHIPPING HOLD 전부 물리 삭제(잔액 복원). 제조사 경로만.
   - `REQUEST` 차감 삭제: **가공→준비 롤백** 시 대응 커밋 이벤트/라인 **물리 삭제**
     - 롤백 엔드포인트(`DELETE /api/requests/:id/nc-file`, `DELETE /api/requests/:id/stage-file?stage=machining`)도 동일 정책으로 `ensureRequestCreditRollbackDeleteOnRollbackToCam`를 반드시 호출해야 합니다.
     - 삭제 대상 커밋 탐색은 idempotencyKey 매칭을 우선하고, 누락 시 `refType/refId`, `journal.meta.requestMongoId|requestId`, `LedgerLine 역탐색`까지 사용해 원본 COMMIT 저널을 식별/삭제합니다.
@@ -703,9 +703,9 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - 샘플(`rnd_sample|copied_sample`)은 `no_spend`를 정상으로 허용합니다.
     - 일반 의뢰는 기본적으로 `no_spend`를 409로 중단하되, **COMMIT** 소비 라인(`REQ_PAID_CREDIT|REQ_FREE_REQUEST_CREDIT`, refType=REQUEST, refId=request._id, amount<0, journal.eventType=`REQUEST_SPEND_COMMIT`)이 이미 없으면 idempotent success로 허용합니다.
   - `SHIPPING` 차감 삭제: **포장.발송 롤백(세척.패킹 복귀)** 시, 집하 전에 차감된 레거시 패키지가 있으면 대응 커밋을 물리 삭제. 집하 전 정상 건은 `shippingPackageId`가 없어 no-op.
-  - 롤백에서 REFUND 이벤트/라인 추가 금지
-  - 조회 호환성: `type=REFUND` 레거시 조회 파라미터 지원은 제거했습니다.
-    조회/표시 타입은 SSOT 목록(`CHARGE_*`, `SPEND_*`, `ADJUST`)만 허용합니다.
+  - **비제조사 소비 취소**(강제): 스토어 `STORE_SALE`, PTX(`PRACTICE_TRANSFER_*`·디자인비 `ADJUST` 등)는 원본 유지 + 취소 시점 `REFUND`(반대부호, idempotency=`원본키:refund`). PTX abuts 배송(`SHIPPING_SPEND_*`·abuts_shipping hold)만 제조사와 같이 물리 삭제.
+  - 제조사 REQUEST/SHIPPING 롤백에서 REFUND 이벤트/라인 추가 금지
+  - 조회/표시 타입: `CHARGE_*`, `SPEND_*`, `ADJUST`, `REFUND`(취소)
   - BG 콜백(예: CNC 처리 완료/실패 콜백)은 파일 상태 동기화 전용이며 승인/롤백 트랜지션이 아니므로,
     크레딧/정산 이벤트를 적재하지 않음
   - 불완전가공(RnD unmachinable) 판정은 크레딧 롤백 사유가 아님

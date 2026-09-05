@@ -23,6 +23,11 @@ export const LEDGER_JOURNAL_EVENT_TYPES = [
   "SETTLEMENT_PAYOUT",
   /** 스토어 기성품 과세 매출. 입금 확정 시 기록. 루트 rules.md §2.3 */
   "STORE_SALE",
+  /**
+   * 비제조사 소비 취소(원본 유지 + 반대부호). 제조사 REQUEST/SHIPPING 롤백은 물리 삭제.
+   * 루트 rules.md §2.3
+   */
+  "REFUND",
 ];
 
 const ledgerJournalSchema = new mongoose.Schema(

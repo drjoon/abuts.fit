@@ -137,7 +137,7 @@ function resolveStatsCategory(eventType, refType, accountCode, amount) {
   const amt = Number(amount || 0);
 
   if (CHARGE_EVENT_TYPES.has(et)) return "charge";
-  if (et === "ADJUST") return "adjust";
+  if (et === "ADJUST" || et === "REFUND") return "adjust";
   if (et === "SETTLEMENT_PAYOUT") return "settlement_payout";
   if (isLabSettlementEarnEvent({ eventType: et, accountCode: ac, amount: amt })) {
     return "settlement_earn";
@@ -579,9 +579,27 @@ export async function getMyCreditLedgerStats(req, res) {
         ? roundSupplyAmount(amount)
         : 0;
     const spendSupply =
-      SPEND_EVENT_TYPES.has(eventType) && amount < 0 ? Math.abs(amount) : 0;
-    const settlementEarnSupply =
-      category === "settlement_earn" && amount > 0 ? amount : 0;
+      SPEND_EVENT_TYPES.has(eventType) && amount < 0
+        ? Math.abs(amount)
+        : eventType === "REFUND" &&
+            amount > 0 &&
+            [
+              "REQ_PAID_CREDIT",
+              "REQ_FREE_REQUEST_CREDIT",
+              "REQ_FREE_SHIPPING_CREDIT",
+            ].includes(accountCode)
+          ? -Math.abs(amount)
+          : 0;
+    let settlementEarnSupply = 0;
+    if (category === "settlement_earn" && amount > 0) {
+      settlementEarnSupply = amount;
+    } else if (
+      eventType === "REFUND" &&
+      amount < 0 &&
+      accountCode === "LAB_SETTLEMENT_CREDIT"
+    ) {
+      settlementEarnSupply = amount;
+    }
     const settlementPayoutSupply =
       category === "settlement_payout" && amount < 0 ? Math.abs(amount) : 0;
 

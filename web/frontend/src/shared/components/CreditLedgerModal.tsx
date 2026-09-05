@@ -184,7 +184,8 @@ type CreditLedgerType =
   | "SPEND_HOLD"
   | "LAB_SETTLEMENT_CHARGE"
   | "LAB_SETTLEMENT_PAYOUT"
-  | "ADJUST";
+  | "ADJUST"
+  | "REFUND";
 
 type LedgerCreditKindFilter = "all" | "PAID" | "FREE" | "SETTLEMENT";
 type LedgerActionFilter = "all" | "CHARGE" | "SPEND" | "ADJUST";
@@ -408,6 +409,7 @@ const typeLabel = (t: CreditLedgerType) => {
   if (t === "SPEND_HOLD") return "기공비 보류";
   if (t === "LAB_SETTLEMENT_CHARGE") return "기공크레딧 적립";
   if (t === "LAB_SETTLEMENT_PAYOUT") return "기공크레딧 정산";
+  if (t === "REFUND") return "취소";
   return "조정";
 };
 

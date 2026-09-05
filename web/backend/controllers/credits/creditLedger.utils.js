@@ -8,6 +8,7 @@
 // - web/backend/services/practiceTransferBilling.service.js
 // - web/backend/models/businessAnchor.model.js
 // - web/backend/services/requestCreditHold.service.js
+// - 2026-09-06: REFUND(비제조사 취소) 표시·기간 소비 상계. 환불된 HOLD는 적립 보류 미러 제외.
 // - 2026-09-05: 정산 적립 집계 — PRACTICE_TRANSFER_ESCROW_RELEASE(+LAB_SETTLEMENT_CREDIT) 포함. 내역 행 타입과 동일.
 // - 2026-09-02: 적립 보류 미러 — deleted/canceled 제외 + HOLD 저널 없으면 스킵(치과 취소 후 heldAt 잔여 방어).
 // - 2026-08-31: 적립 보류 미러 — workCanceledAt 수락 취소 건 제외.
@@ -134,10 +135,11 @@ const SPEND_TYPES = [
   "SPEND_SETTLEMENT",
   "SPEND_HOLD",
   "LAB_SETTLEMENT_PAYOUT",
+  "REFUND",
 ];
 const ADJUST_TYPES = ["ADJUST"];
 
-const PAID_TYPES = ["CHARGE_PAID", "SPEND_PAID", "SPEND_HOLD"];
+const PAID_TYPES = ["CHARGE_PAID", "SPEND_PAID", "SPEND_HOLD", "REFUND"];
 const FREE_TYPES = [
   "CHARGE_FREE_REQUEST",
   "CHARGE_FREE_SHIPPING",
@@ -148,6 +150,7 @@ const SETTLEMENT_FILTER_TYPES = [
   "LAB_SETTLEMENT_CHARGE",
   "LAB_SETTLEMENT_PAYOUT",
   "SPEND_SETTLEMENT",
+  "REFUND",
 ];
 
 /** creditKind×action → ledger type 목록. 둘 다 있으면 교집합. */
@@ -172,6 +175,7 @@ export function resolveLedgerTypesForFilters({
       "LAB_SETTLEMENT_CHARGE",
       "LAB_SETTLEMENT_PAYOUT",
       "ADJUST",
+      "REFUND",
     ].includes(typeRaw)
   ) {
     return [typeRaw];
@@ -834,6 +838,7 @@ function creditLedgerRowTypeExpr() {
   return {
     $switch: {
       branches: [
+        { case: { $eq: ["$eventType", "REFUND"] }, then: "REFUND" },
         { case: { $eq: ["$eventType", "CHARGE_PAID"] }, then: "CHARGE_PAID" },
         {
           case: { $eq: ["$eventType", "CHARGE_FREE_REQUEST"] },
@@ -1192,6 +1197,8 @@ const CREDIT_LEDGER_STATS_SPEND_EVENT_TYPES = [
   "STORE_SALE",
 ];
 
+/** REFUND는 원본 소비/적립을 상계(기간 순소비). */
+
 /** 통계 탭 카테고리와 동일한 분류식(원장 드릴다운용) */
 export function creditLedgerStatsCategoryExpr() {
   return {
@@ -1202,6 +1209,7 @@ export function creditLedgerStatsCategoryExpr() {
           then: "charge",
         },
         { case: { $eq: ["$eventType", "ADJUST"] }, then: "adjust" },
+        { case: { $eq: ["$eventType", "REFUND"] }, then: "adjust" },
         { case: { $eq: ["$eventType", "SETTLEMENT_PAYOUT"] }, then: "settlement_payout" },
         {
           case: labSettlementEarnMongoCase(),
@@ -1455,6 +1463,20 @@ export async function aggregateRequestorPeriodLedgerSummary({
       amount < 0
     ) {
       bump(bucket, "totalSpendSupply", Math.abs(amount));
+    } else if (eventType === "REFUND") {
+      // 소비 취소(+REQ_*) → 기간 소비 감소. 적립 회수(-LAB_SETTLEMENT) → 정산 적립 감소.
+      if (
+        amount > 0 &&
+        [
+          "REQ_PAID_CREDIT",
+          "REQ_FREE_REQUEST_CREDIT",
+          "REQ_FREE_SHIPPING_CREDIT",
+        ].includes(accountCode)
+      ) {
+        bump(bucket, "totalSpendSupply", -amount);
+      } else if (amount < 0 && accountCode === "LAB_SETTLEMENT_CREDIT") {
+        bump(bucket, "totalSettlementEarnSupply", amount);
+      }
     }
   };
 
@@ -1792,7 +1814,35 @@ export async function listPendingLabSettlementLedgerRows({
   }
 
   const holdMetaByRef = new Map();
+  const holdRefundKeys = (holdJournals || [])
+    .map((j) => {
+      const key = String(j?.idempotencyKey || "").trim();
+      return key && !key.endsWith(":refund") ? `${key}:refund` : "";
+    })
+    .filter(Boolean);
+  const refundedHoldJournalIds = new Set();
+  if (holdRefundKeys.length) {
+    const refundRows = await LedgerJournal.find({
+      idempotencyKey: { $in: [...new Set(holdRefundKeys)] },
+    })
+      .select({ idempotencyKey: 1, meta: 1 })
+      .lean();
+    for (const r of refundRows || []) {
+      const cancels = String(r?.meta?.cancelsJournalId || "").trim();
+      if (cancels) refundedHoldJournalIds.add(cancels);
+      const srcKey = String(r?.idempotencyKey || "").replace(/:refund$/, "");
+      for (const j of holdJournals || []) {
+        if (String(j?.idempotencyKey || "") === srcKey && j?.journalId) {
+          refundedHoldJournalIds.add(String(j.journalId));
+        }
+      }
+    }
+  }
+
   for (const j of holdJournals || []) {
+    if (j?.journalId && refundedHoldJournalIds.has(String(j.journalId))) {
+      continue;
+    }
     const ref = String(j?.refId || "");
     if (!ref) continue;
     const prev = holdMetaByRef.get(ref) || {

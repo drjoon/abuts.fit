@@ -617,7 +617,7 @@ async function ensureRequestCancelRollbackDelete({
     normalizeRequestStage(request) === "request" &&
     !request?.rnd?.unmachinableAt;
 
-  // SSOT 정책: 취소 시 REFUND를 추가하지 않고, 기존 소비 커밋을 삭제형 롤백으로 정리한다.
+  // SSOT: 준비 취소 시 REQUEST/SHIPPING HOLD는 삭제형. 비제조사(PTX/스토어)는 REFUND.
   // 단, 이 삭제 정리는 준비 단계 취소 경로에서만 허용한다.
   // 크레딧 이벤트는 트랜잭션 커밋 이후 발행하도록 deferredCreditEvents에 적재한다.
   await ensureRequestCreditRollbackDeleteOnRollbackToCam({

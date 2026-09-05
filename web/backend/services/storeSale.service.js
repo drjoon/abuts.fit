@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-06: 스토어 취소 = STORE_SALE 원본 유지 + REFUND(잔고 복구). 제조사 삭형과 분리.
 // - 2026-08-23: 스토어 취소 = STORE_SALE 저널 삭제 + StoreOrder 취소 이력(canceledAt/By).
 // - 2026-08-23: admin 앵커·재고 시드 1회 캐시(카탈로그·주문 latency 감소).
 // - 2026-08-23: 스토어 취소 = STORE_SALE 저널 삭제(기공 롤백과 동일). 환불 행 없음.
@@ -22,7 +23,11 @@ import {
   listStoreProductIds,
   STORE_INVENTORY_DEFAULT_QTY,
 } from "../constants/storeCatalog.js";
-import { postGeneralLedgerJournal, getJournalsByIdempotencyKeys, deleteGeneralLedgerCommitJournal } from "./generalLedger.service.js";
+import {
+  postGeneralLedgerJournal,
+  getJournalsByIdempotencyKeys,
+  postGeneralLedgerCancelRefund,
+} from "./generalLedger.service.js";
 import LedgerJournal from "../models/ledgerJournal.model.js";
 import LedgerLine from "../models/ledgerLine.model.js";
 import { buildPartySnapshotFromAnchor } from "../utils/taxInvoiceParty.util.js";
@@ -37,15 +42,11 @@ function storeOrderSaleIdempotencyKeys(orderId) {
   return [
     `gl:store:order:${id}:credit-pay`,
     `gl:store:order:${id}:sale`,
-    // 이전 구현의 역분개 잔존분도 함께 제거
-    `gl:store:order:${id}:credit-cancel`,
-    `gl:store:order:${id}:bank-cancel`,
   ];
 }
 
 /**
- * 스토어 결제 저널 삭제형 롤백(기공의뢰 rollback과 동일 UX).
- * 정산 내역에 환불 행을 남기지 않고 원 결제(및 과거 역분개)를 지운다.
+ * 스토어 결제 취소: STORE_SALE 원본 유지 + REFUND(취소 시점 잔고 복구).
  * @param {{ orderId: unknown, session?: import("mongoose").ClientSession | null, dryRun?: boolean }} args
  */
 export async function rollbackStoreSaleJournals({
@@ -55,7 +56,12 @@ export async function rollbackStoreSaleJournals({
 }) {
   const id = String(orderId || "").trim();
   if (!id) {
-    return { deletedJournalIds: [], refundedCredit: 0, journalIds: [] };
+    return {
+      deletedJournalIds: [],
+      refundJournalIds: [],
+      refundedCredit: 0,
+      journalIds: [],
+    };
   }
 
   const keys = storeOrderSaleIdempotencyKeys(id);
@@ -63,11 +69,11 @@ export async function rollbackStoreSaleJournals({
     idempotencyKeys: keys,
     session,
   });
-  const journalEventById = new Map();
+  const saleJournalIds = new Set();
   for (const existing of journalsByKey.values()) {
+    if (String(existing?.eventType || "") !== LEDGER_EVENT_STORE_SALE) continue;
     const jid = String(existing?.journalId || "").trim();
-    if (!jid) continue;
-    journalEventById.set(jid, [LEDGER_EVENT_STORE_SALE]);
+    if (jid) saleJournalIds.add(jid);
   }
 
   const oid =
@@ -84,21 +90,25 @@ export async function rollbackStoreSaleJournals({
     .lean();
   for (const row of byRef || []) {
     const jid = String(row?.journalId || "").trim();
-    if (!jid) continue;
-    journalEventById.set(jid, [LEDGER_EVENT_STORE_SALE]);
+    if (jid) saleJournalIds.add(jid);
   }
 
-  if (journalEventById.size === 0) {
-    return { deletedJournalIds: [], refundedCredit: 0, journalIds: [] };
+  if (saleJournalIds.size === 0) {
+    return {
+      deletedJournalIds: [],
+      refundJournalIds: [],
+      refundedCredit: 0,
+      journalIds: [],
+    };
   }
 
-  const journalIds = [...journalEventById.keys()];
+  const journalIds = [...saleJournalIds];
   const lines = await LedgerLine.find({ journalId: { $in: journalIds } })
     .select({ accountCode: 1, amount: 1 })
     .session(session || null)
     .lean();
 
-  // REQ_PAID_CREDIT 소비(-) 삭제 → 잔액 복원(+)
+  // REQ_PAID_CREDIT 소비(-) → REFUND로 잔액 복원(+)
   let refundedCredit = 0;
   for (const line of lines || []) {
     if (String(line?.accountCode || "") !== "REQ_PAID_CREDIT") continue;
@@ -110,23 +120,28 @@ export async function rollbackStoreSaleJournals({
   if (dryRun) {
     return {
       deletedJournalIds: [],
+      refundJournalIds: [],
       refundedCredit: Math.max(0, Math.round(refundedCredit)),
       journalIds,
     };
   }
 
-  const deletedJournalIds = [];
-  for (const [journalId, events] of journalEventById.entries()) {
-    const result = await deleteGeneralLedgerCommitJournal({
+  const refundJournalIds = [];
+  for (const journalId of journalIds) {
+    const result = await postGeneralLedgerCancelRefund({
       journalId,
-      expectedEventTypes: events,
+      expectedEventTypes: [LEDGER_EVENT_STORE_SALE],
+      displayLabel: "스토어 주문 취소",
       session,
     });
-    if (result?.deleted) deletedJournalIds.push(journalId);
+    if (result?.journalId && (result.posted || result.idempotent)) {
+      refundJournalIds.push(result.journalId);
+    }
   }
 
   return {
-    deletedJournalIds,
+    deletedJournalIds: [],
+    refundJournalIds,
     refundedCredit: Math.max(0, Math.round(refundedCredit)),
     journalIds,
   };
@@ -752,7 +767,7 @@ async function restoreStoreInventoryAfterPaidCancel({ items, session }) {
 /**
  * 의뢰자 스토어 주문 취소.
  * - 입금 대기: 예약 해제
- * - 결제 완료·출고 전: 재고 복구 + STORE_SALE 저널 삭제(기공과 동일, 환불 행 없음)
+ * - 결제 완료·출고 전: 재고 복구 + STORE_SALE 원본 유지 + REFUND
  */
 export async function cancelStoreOrderByUser({
   orderId,
