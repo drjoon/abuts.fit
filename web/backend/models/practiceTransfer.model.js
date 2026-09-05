@@ -178,7 +178,7 @@ const practiceTransferSchema = new mongoose.Schema(
       },
       // 신속처리(의뢰+2영업일·기공/어벗 할증). 일반 건은 묶음출고만.
       rushProcessing: { type: Boolean, default: false },
-      // 전송 시점 스냅샷. 체크 UI 기본값은 계정 practiceTransferSettings.skipDesignConfirm(기본 true)
+      // 전송 시점 스냅샷. 신규 의뢰는 항상 true(디자인 컨펌 생략 고정).
       skipDesignConfirm: { type: Boolean, default: true },
       // 레거시(2026-08-22 옵션 삭제): production.skipJig — 「지그 제작 불필요」UI/계정 설정 제거.
       // 필드는 구 스냅샷 호환용. 신규 의뢰는 쓰지 않음. 기공소→치과 배송은 무료.

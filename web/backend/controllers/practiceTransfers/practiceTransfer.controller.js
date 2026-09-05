@@ -845,16 +845,8 @@ const toTransferFilesApiFields = (transferDoc) => {
   };
 };
 
-/** body/routing에서 skipDesignConfirm 파싱. 명시 false만 미생략, 그 외 기본 true */
-const parseSkipDesignConfirmInput = (body, practiceRouting) => {
-  const raw =
-    body?.skipDesignConfirm !== undefined
-      ? body.skipDesignConfirm
-      : practiceRouting?.skipDesignConfirm;
-  if (raw === false || raw === "false" || raw === 0 || raw === "0") return false;
-  if (raw === true || raw === "true" || raw === 1 || raw === "1") return true;
-  return true;
-};
+/** 디자인 컨펌은 항상 생략. 클라이언트/레거시 false 입력 무시. */
+const parseSkipDesignConfirmInput = (_body, _practiceRouting) => true;
 
 /** @deprecated 2026-08-22 skipJig 옵션 삭제. 호환용 no-op(항상 기본 true 의미 없음). */
 const parseSkipJigInput = (_body, _practiceRouting) => {

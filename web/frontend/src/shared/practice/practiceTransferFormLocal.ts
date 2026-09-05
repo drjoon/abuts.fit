@@ -34,7 +34,7 @@ export type PracticeTransferFormLocalDraft = {
   patientName?: string;
   selectedLab?: PracticeTransferFormLocalLab | null;
   toothWorks?: ToothWorkSelection[];
-  /** 의뢰건별 「디자인 컨펌 생략」. 계정 세팅이 아님 */
+  /** 레거시. 신규는 항상 생략(true) */
   skipDesignConfirm?: boolean;
   /** 신속처리 확인(새로고침 복원). 납기가 신속 구간이면 hydrate 시 재유도 */
   rushProcessing?: boolean;
@@ -142,10 +142,7 @@ export const syncIntakeFieldsToTransferFormLocal = (fields: {
     patientName: fields.patientName,
     selectedLab: fields.selectedLab,
     toothWorks: fields.toothWorks,
-    skipDesignConfirm:
-      fields.skipDesignConfirm !== undefined
-        ? fields.skipDesignConfirm !== false
-        : existing?.skipDesignConfirm !== false,
+    skipDesignConfirm: true,
     rushProcessing:
       fields.rushProcessing !== undefined
         ? Boolean(fields.rushProcessing)
@@ -183,7 +180,7 @@ export const adoptDropzoneDraftIntoTransferFormIfNeeded =
         patientName: String(parsed.patientName || ""),
         selectedLab: parsed.selectedLab || null,
         toothWorks: Array.isArray(parsed.toothWorks) ? parsed.toothWorks : [],
-        skipDesignConfirm: existing?.skipDesignConfirm !== false,
+        skipDesignConfirm: true,
         rushProcessing:
           parsed.rushProcessing === true || existing?.rushProcessing === true,
         activeDraftId: existing?.activeDraftId ?? null,
@@ -222,7 +219,7 @@ export const readPreferredIntakeFormForDropzone = (
     patientName: dropzoneDraft.patientName,
     selectedLab: dropzoneDraft.selectedLab || null,
     toothWorks: dropzoneDraft.toothWorks,
-    skipDesignConfirm: transfer?.skipDesignConfirm !== false,
+    skipDesignConfirm: true,
     rushProcessing:
       dropzoneDraft.rushProcessing === true || transfer?.rushProcessing === true,
   };

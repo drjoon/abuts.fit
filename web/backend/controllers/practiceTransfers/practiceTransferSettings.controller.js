@@ -274,7 +274,7 @@ const toSettingsResponse = async (anchor, { persistHydrated = false } = {}) => {
     abutmentFavorites: normalizeAbutmentFavorites(settings?.abutmentFavorites),
     promoNoticeDismissedAt,
     calendarNewRequestHintDismissedAt,
-    skipDesignConfirm: settings?.skipDesignConfirm !== false,
+    skipDesignConfirm: true,
     skipJig: settings?.skipJig !== false,
     defaultAbutmentProductMode: normalizeDefaultAbutmentProductMode(
       settings?.defaultAbutmentProductMode,
@@ -424,13 +424,9 @@ export async function upsertPracticeTransferSettings(req, res) {
           Number.isNaN(parsed.getTime()) ? new Date() : parsed;
       }
     }
+    // 레거시: 디자인 컨펌 생략 옵션 삭제 — 항상 true로 고정. 설정 저장 시 false 무시.
     if (hasSkipDesignConfirm) {
-      setPatch["practiceTransferSettings.skipDesignConfirm"] = !(
-        body.skipDesignConfirm === false ||
-        body.skipDesignConfirm === "false" ||
-        body.skipDesignConfirm === 0 ||
-        body.skipDesignConfirm === "0"
-      );
+      setPatch["practiceTransferSettings.skipDesignConfirm"] = true;
     }
     // 레거시(2026-08-22): skipJig 옵션 삭제 — 설정 저장 무시.
     void hasSkipJig;

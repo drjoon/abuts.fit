@@ -558,7 +558,7 @@ export type ParsedPracticeTransferMemoMeta = {
   toothWorks: ToothWorkSelection[];
   patientName: string;
   memo: string;
-  /** 의뢰건별 「디자인 컨펌 생략」. 계정 세팅이 아님 */
+  /** 레거시. 신규는 항상 생략(true) */
   skipDesignConfirm: boolean;
   /** @deprecated 2026-08-22 skipJig 옵션 삭제. 레거시 메모/스냅샷 파싱용 */
   skipJig: boolean;
@@ -1251,14 +1251,8 @@ export const parsePracticeTransferMemoMeta = (rawMemo: string): ParsedPracticeTr
 
     const skipDesignConfirmMatch = trimmed.match(/^\[\s*디자인컨펌생략\s*:\s*(.+)\]$/);
     if (skipDesignConfirmMatch) {
-      const flag = String(skipDesignConfirmMatch[1] || "").trim().toLowerCase();
-      skipDesignConfirm =
-        flag === "y" ||
-        flag === "yes" ||
-        flag === "true" ||
-        flag === "1" ||
-        flag === "생략" ||
-        flag === "예";
+      // 레거시 태그 소비만. 신규는 항상 생략(true).
+      skipDesignConfirm = true;
       continue;
     }
 
@@ -1310,7 +1304,7 @@ export const buildPracticeTransferMemo = (params: {
     `[환자명: ${String(params.patientName || "").trim()}]`,
     `[보철물형태목록: ${normalizeProsthesisTypes(params.prosthesisTypes).join(", ")}]`,
     `[치아보철: ${serializeToothWorksForSync(params.toothWorks)}]`,
-    `[디자인컨펌생략: ${params.skipDesignConfirm !== false ? "Y" : "N"}]`,
+    `[디자인컨펌생략: Y]`,
     // 레거시(2026-08-22): [지그제작생략] 메모 태그 기록 중단. 파싱만 유지.
   ];
   const memo = String(params.memo || "").trim();

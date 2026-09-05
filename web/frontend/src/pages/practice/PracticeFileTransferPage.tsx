@@ -52,7 +52,7 @@
  * - 2026-08-14: 자동매칭(공개 풀)도 최근전송「의뢰」뱃지 집계·필터에 포함. 기공소명 UI 마스킹.
  * - 2026-08-13: 상단 뱃지 6칸 — 의뢰·수락·완료·취소·발송·리메이크(취소=기공소 작업취소).
  * - 2026-08-12: 최근전송 — 기공소 의뢰수락 이후 삭제(휴지통) 비활성. 수락 전(발송/수신/자동매칭)만 가능.
- * - 2026-08-12: [기공소로 전송] 옆 「디자인 컨펌 생략」— 계정 마지막 설정. 전송 시 의뢰건에 스냅샷.
+ * - 2026-08-12: 「디자인 컨펌 생략」체크 UI 제거. 신규 의뢰는 항상 skipDesignConfirm=true.
  * - 2026-08-13: 커스텀어벗 설정 모달 기본=디자인+생산. 선택값은 practiceTransferSettings.defaultAbutmentProductMode.
  * - 2026-08-13: 기공의뢰 모달에서 디자인+생산 고정. 생산만 클릭은 어벗생산의뢰로 이동.
  * - 2026-08-12: 임시저장 목록 「전체삭제」— 활성 draft 전부 휴지통(확인 없음).
@@ -154,7 +154,6 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { PageFileDropZone } from "@/features/requests/components/PageFileDropZone";
 import {
@@ -1000,8 +999,8 @@ const parsePracticeTransferMemoMeta = (rawMemo: string): ParsedPracticeTransferM
     toothWorks: normalizeToothWorksForSync(parsed.toothWorks),
     patientName: String(parsed.patientName || "").trim(),
     memo: String(parsed.memo || ""),
-    // 미설정·레거시는 생략(true). 명시 false만 미생략
-    skipDesignConfirm: parsed.skipDesignConfirm !== false,
+    // 디자인 컨펌은 항상 생략
+    skipDesignConfirm: true,
     skipJig: parsed.skipJig !== false,
   };
 };
@@ -1020,7 +1019,7 @@ const buildPracticeTransferMemo = (params: {
   buildPracticeTransferMemoShared({
     ...params,
     prosthesisTypes: ensurePresetProsthesisTypes(params.prosthesisTypes),
-    skipDesignConfirm: params.skipDesignConfirm !== false,
+    skipDesignConfirm: true,
     skipJig: params.skipJig !== false,
   });
 
@@ -1211,8 +1210,6 @@ export const PracticeFileTransferPage = ({
   const authUser = useAuthStore((s) => s.user);
   const [requestSubmitting, setRequestSubmitting] = useState(false);
   const requestSubmittingRef = useRef(false);
-  const [skipDesignConfirm, setSkipDesignConfirm] = useState(true);
-  const [skipDesignConfirmUncheckOpen, setSkipDesignConfirmUncheckOpen] = useState(false);
   const [skipJig, setSkipJig] = useState(true);
   /** false면 캘린더 「도착일 클릭으로 신규의뢰」안내 표시 */
   const [calendarNewRequestHintDismissed, setCalendarNewRequestHintDismissed] =
@@ -2039,7 +2036,6 @@ export const PracticeFileTransferPage = ({
     const nextMemoSnippets = normalizeMemoSnippets(payload.memoSnippets);
     const nextImplantFavorites = normalizeImplantFavorites(payload.implantFavorites);
     const nextAbutmentFavorites = normalizeAbutmentFavorites(payload.abutmentFavorites);
-    const nextSkipDesignConfirm = payload.skipDesignConfirm !== false;
     const nextSkipJig = payload.skipJig !== false;
     const nextDefaultAbutmentProductMode = normalizeAccountAbutmentProductMode(
       payload.defaultAbutmentProductMode,
@@ -2105,7 +2101,6 @@ export const PracticeFileTransferPage = ({
     setMemoSnippets(nextMemoSnippets);
     setImplantFavorites(nextImplantFavorites);
     setAbutmentFavorites(nextAbutmentFavorites);
-    setSkipDesignConfirm(nextSkipDesignConfirm);
     setSkipJig(nextSkipJig);
     if (
       Object.prototype.hasOwnProperty.call(
@@ -2170,10 +2165,6 @@ export const PracticeFileTransferPage = ({
       const hasMemoSnippets = Array.isArray(params.memoSnippets);
       const hasImplantFavorites = Array.isArray(params.implantFavorites);
       const hasAbutmentFavorites = Array.isArray(params.abutmentFavorites);
-      const hasSkipDesignConfirm = Object.prototype.hasOwnProperty.call(
-        params,
-        "skipDesignConfirm",
-      );
       const hasSkipJig = Object.prototype.hasOwnProperty.call(params, "skipJig");
       const hasCalendarNewRequestHintDismissedAt = Object.prototype.hasOwnProperty.call(
         params,
@@ -2219,9 +2210,6 @@ export const PracticeFileTransferPage = ({
       }
       if (hasAbutmentFavorites) {
         jsonBody.abutmentFavorites = normalizeAbutmentFavorites(params.abutmentFavorites || []);
-      }
-      if (hasSkipDesignConfirm) {
-        jsonBody.skipDesignConfirm = params.skipDesignConfirm !== false;
       }
       if (hasSkipJig) {
         jsonBody.skipJig = params.skipJig !== false;
@@ -2308,9 +2296,6 @@ export const PracticeFileTransferPage = ({
           setMemoSnippets(normalizeMemoSnippets(payload.memoSnippets));
         }
         // 프리셋은 낙관적 로컬이 SSOT. 서버 echo로 덮으면 동시 GET/다른 저장이 삭제를 되살림.
-        if (hasSkipDesignConfirm) {
-          setSkipDesignConfirm(payload.skipDesignConfirm !== false);
-        }
         if (hasSkipJig) {
           setSkipJig(payload.skipJig !== false);
         }
@@ -2389,9 +2374,6 @@ export const PracticeFileTransferPage = ({
                     payload?.abutmentFavorites ?? params.abutmentFavorites,
                   ),
                 }
-              : {}),
-            ...(hasSkipDesignConfirm
-              ? { skipDesignConfirm: payload?.skipDesignConfirm !== false }
               : {}),
             ...(hasSkipJig ? { skipJig: payload?.skipJig !== false } : {}),
             ...(hasCalendarNewRequestHintDismissedAt
@@ -2990,9 +2972,8 @@ export const PracticeFileTransferPage = ({
           applyPracticeTransferSettings(payload);
         }
       } else if (payload) {
-        // 폼 로컬값이 있어도 계정 세팅(문장·프리셋·디자인컨펌생략·지그생략·커스텀어벗 기본모드·자동매칭 예산·최소 별)은 서버를 우선 반영
+        // 폼 로컬값이 있어도 계정 세팅(문장·프리셋·지그생략·커스텀어벗 기본모드·자동매칭 예산·최소 별)은 서버를 우선 반영
         setMemoSnippets(normalizeMemoSnippets(payload.memoSnippets));
-        setSkipDesignConfirm(payload.skipDesignConfirm !== false);
         setSkipJig(payload.skipJig !== false);
         if (
           Object.prototype.hasOwnProperty.call(
@@ -3093,7 +3074,7 @@ export const PracticeFileTransferPage = ({
             abutmentFavorites: normalizeAbutmentFavorites(
               Array.isArray(payload?.abutmentFavorites) ? payload?.abutmentFavorites : [],
             ),
-            skipDesignConfirm: payload?.skipDesignConfirm !== false,
+            skipDesignConfirm: true,
             skipJig: payload?.skipJig !== false,
             calendarNewRequestHintDismissedAt:
               payload?.calendarNewRequestHintDismissedAt || null,
@@ -3513,7 +3494,7 @@ export const PracticeFileTransferPage = ({
         prosthesisTypes: normalizedProsthesisTypes,
         toothWorks: syncToothWorks,
         patientName: normalizedPatientName,
-        skipDesignConfirm,
+        skipDesignConfirm: true,
         skipJig: effectiveSkipJig,
       });
       // 완성형 한글 환자명만 있으면 임시저장/동기화한다(기공소는 전송 시 필수).
@@ -3701,7 +3682,6 @@ export const PracticeFileTransferPage = ({
       requestSubmitting,
       selectedLab?._id,
       selectedLab?.name,
-      skipDesignConfirm,
       effectiveSkipJig,
       notifyDraftFirstAutosave,
     ],
@@ -4788,7 +4768,6 @@ export const PracticeFileTransferPage = ({
         keepOrderDate?: boolean;
         keepPastArrival?: boolean;
         skipDraftBind?: boolean;
-        skipDesignConfirm?: boolean;
         skipJig?: boolean;
       },
     ) => {
@@ -4870,9 +4849,6 @@ export const PracticeFileTransferPage = ({
             arrivalYmd: nextArrival,
           }),
         );
-      }
-      if (typeof options?.skipDesignConfirm === "boolean") {
-        setSkipDesignConfirm(options.skipDesignConfirm);
       }
       if (typeof options?.skipJig === "boolean") {
         setSkipJig(options.skipJig);
@@ -5084,7 +5060,6 @@ export const PracticeFileTransferPage = ({
         keepOrderDate: true,
         keepPastArrival: true,
         skipDraftBind: true,
-        skipDesignConfirm: transfer.skipDesignConfirm !== false,
         skipJig: Boolean(transfer.skipJig),
       });
 
@@ -5462,7 +5437,7 @@ export const PracticeFileTransferPage = ({
       prosthesisTypes: normalizedProsthesisTypes,
       toothWorks: syncToothWorks,
       patientName: normalizedPatientName,
-      skipDesignConfirm,
+      skipDesignConfirm: true,
       skipJig: effectiveSkipJig,
     });
 
@@ -6895,14 +6870,14 @@ export const PracticeFileTransferPage = ({
         prosthesisTypes: normalizedProsthesisTypes,
         toothWorks: syncToothWorks,
         patientName: normalizedPatientName,
-        skipDesignConfirm,
+        skipDesignConfirm: true,
         skipJig: effectiveSkipJig,
       });
       const practiceRouting = {
         targetLabAnchorId: toApiLabAnchorId(selectedLab?._id),
         targetLabName: String(selectedLab?.name || "").trim(),
         matchingMode: "direct",
-        skipDesignConfirm,
+        skipDesignConfirm: true,
         skipJig: effectiveSkipJig,
         rushProcessing,
       };
@@ -6974,7 +6949,7 @@ export const PracticeFileTransferPage = ({
           arrivalDefaultDays,
           transferMemo,
           toothWorks: syncToothWorks,
-          skipDesignConfirm,
+          skipDesignConfirm: true,
           skipJig: effectiveSkipJig,
           rushProcessing,
           autoMatchMinLabRating,
@@ -7481,51 +7456,6 @@ export const PracticeFileTransferPage = ({
     ],
   );
 
-  const persistSkipDesignConfirmSetting = useCallback(
-    (next: boolean) => {
-      if (next === skipDesignConfirm) return;
-      setSkipDesignConfirm(next);
-
-      try {
-        const existingRaw = localStorage.getItem(PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY);
-        const existing =
-          existingRaw && typeof existingRaw === "string"
-            ? (JSON.parse(existingRaw) as Record<string, unknown>)
-            : {};
-        localStorage.setItem(
-          PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY,
-          JSON.stringify({
-            ...existing,
-            arrivalDefaultDays,
-            prosthesisTypes: normalizedProsthesisTypes,
-            memoSnippets,
-            implantFavorites,
-            abutmentFavorites,
-            skipDesignConfirm: next,
-            skipJig,
-            savedAt: Date.now(),
-          }),
-        );
-      } catch {
-        // ignore
-      }
-
-      void savePracticeTransferSettingsToServer({ skipDesignConfirm: next }).catch(() => {
-        // UI 값은 유지하고, 서버 저장 실패는 다음 저장 기회에 재시도
-      });
-    },
-    [
-      abutmentFavorites,
-      arrivalDefaultDays,
-      implantFavorites,
-      memoSnippets,
-      normalizedProsthesisTypes,
-      savePracticeTransferSettingsToServer,
-      skipDesignConfirm,
-      skipJig,
-    ],
-  );
-
   const persistSkipJigSetting = useCallback(
     (next: boolean) => {
       if (next === skipJig) return;
@@ -7546,7 +7476,7 @@ export const PracticeFileTransferPage = ({
             memoSnippets,
             implantFavorites,
             abutmentFavorites,
-            skipDesignConfirm,
+            skipDesignConfirm: true,
             skipJig: next,
             savedAt: Date.now(),
           }),
@@ -7566,7 +7496,6 @@ export const PracticeFileTransferPage = ({
       memoSnippets,
       normalizedProsthesisTypes,
       savePracticeTransferSettingsToServer,
-      skipDesignConfirm,
       skipJig,
     ],
   );
@@ -7592,7 +7521,7 @@ export const PracticeFileTransferPage = ({
             memoSnippets,
             implantFavorites,
             abutmentFavorites,
-            skipDesignConfirm,
+            skipDesignConfirm: true,
             skipJig,
             defaultAbutmentProductMode: normalized,
             savedAt: Date.now(),
@@ -7616,7 +7545,6 @@ export const PracticeFileTransferPage = ({
       memoSnippets,
       normalizedProsthesisTypes,
       savePracticeTransferSettingsToServer,
-      skipDesignConfirm,
       skipJig,
     ],
   );
@@ -8422,36 +8350,6 @@ export const PracticeFileTransferPage = ({
           <div className="flex items-center justify-end gap-4">
             <Tooltip>
               <TooltipTrigger asChild>
-                <label
-                  htmlFor="practice-skip-design-confirm"
-                  className="flex cursor-pointer items-center gap-2 text-sm text-slate-700 select-none"
-                >
-                  <Checkbox
-                    id="practice-skip-design-confirm"
-                    checked={skipDesignConfirm}
-                    onCheckedChange={(value) => {
-                      if (value === true) {
-                        persistSkipDesignConfirmSetting(true);
-                        return;
-                      }
-                      // 해제 시 안내 모달 후 확인
-                      setSkipDesignConfirmUncheckOpen(true);
-                    }}
-                    disabled={requestSubmitting}
-                  />
-                  <span>디자인 컨펌 생략</span>
-                </label>
-              </TooltipTrigger>
-              <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
-                <p>
-                  기본은 생략(체크)입니다.
-                  <br />
-                  해제하면 치과 컨펌이 필요해 일정이 늦어질 수 있습니다.
-                </p>
-              </TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
                 <span
                   className="inline-flex"
                   data-guide-tour={
@@ -8558,40 +8456,6 @@ export const PracticeFileTransferPage = ({
                   />
                 ) : null}
               </div>
-            </DialogContent>
-          </Dialog>
-
-          <Dialog
-            open={skipDesignConfirmUncheckOpen}
-            onOpenChange={setSkipDesignConfirmUncheckOpen}
-          >
-            <DialogContent className={RESPONSIVE.dialogContent}>
-              <DialogHeader>
-                <DialogTitle>디자인 컨펌 생략을 해제할까요?</DialogTitle>
-                <DialogDescription className="leading-relaxed">
-                  기본은 생략(체크)입니다.
-                  <br />
-                  해제하면 치과 컨펌이 필요해 일정이 늦어질 수 있습니다.
-                </DialogDescription>
-              </DialogHeader>
-              <DialogFooter>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setSkipDesignConfirmUncheckOpen(false)}
-                >
-                  컨펌 생략 유지
-                </Button>
-                <Button
-                  type="button"
-                  onClick={() => {
-                    persistSkipDesignConfirmSetting(false);
-                    setSkipDesignConfirmUncheckOpen(false);
-                  }}
-                >
-                  컨펌하기
-                </Button>
-              </DialogFooter>
             </DialogContent>
           </Dialog>
 
