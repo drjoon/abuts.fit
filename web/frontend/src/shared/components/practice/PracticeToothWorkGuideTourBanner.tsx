@@ -1,6 +1,8 @@
 // related files:
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
+// - web/frontend/src/shared/guideTour/GuideTourProvider.tsx
 // change-log:
+// - 2026-09-05: 임플란트·어벗 프리셋 미설정 시 「+ 추가」저장 안내. resolve 함수 export(플랫폼 Spotlight).
 // - 2026-09-05: 건너뛰기 제거. 종료 → 일시 중단(플랫폼 투어).
 // - 2026-08-25: aside — 헤더 버튼~입력 행을 세로로 채우도록 h-full·space-between.
 // - 2026-08-25: 어벗 투어 — 스캔바디 커스텀어벗 vs 심플어벗(꽂고 바로 스캔) 두 방식 안내.
@@ -57,12 +59,12 @@ export const PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS = [
   {
     id: "implant_preset",
     title: "임플란트",
-    hint: "임플란트를 고른 뒤, 오른쪽에서 어벗 방식을 이어 선택합니다.",
+    hint: "임플란트 프리셋을 고르세요. 없으면 「+ 추가」로 제조사·브랜드·패밀리·타입을 저장한 뒤 선택합니다.",
   },
   {
     id: "abutment_side",
     title: "어벗 방식",
-    hint: "스캔바디(커스텀어벗) 또는 심플어벗·심플밀링 중 하나를 고르세요. 둘은 함께 쓸 수 없습니다.",
+    hint: "스캔바디 또는 심플어벗·심플밀링을 고르세요. 스캔바디가 없으면 「+ 추가」하거나 오른쪽 심플 규격을 선택합니다.",
   },
   {
     id: "estimate",
@@ -102,7 +104,8 @@ type PracticeToothWorkGuideTourBannerProps = {
   scanbodyFavoriteCount?: number;
 };
 
-const resolveTourCopy = (
+/** 플랫폼 Spotlight·로컬 배너 공통 — 프리셋 0개면 추가 저장 절차를 자세히 안내 */
+export const resolvePracticeToothWorkGuideTourCopy = (
   step: PracticeToothWorkGuideTourStep,
   implantFavoriteCount: number,
   scanbodyFavoriteCount: number,
@@ -112,13 +115,27 @@ const resolveTourCopy = (
   if (base.id === "implant_preset" && implantFavoriteCount <= 0) {
     return {
       ...base,
-      hint: "아래에서 제조사·브랜드·패밀리·타입을 고른 뒤 저장하세요. 다음은 어벗 방식입니다.",
+      title: "임플란트 프리셋 설정",
+      hint: "처음에는 프리셋이 없습니다. 왼쪽 「+ 추가」에서 제조사·브랜드·패밀리·타입을 고른 뒤 「저장」하세요. 저장한 카드를 클릭하면 선택됩니다.",
     };
   }
   if (base.id === "abutment_side" && scanbodyFavoriteCount <= 0) {
     return {
       ...base,
-      hint: "스캔바디가 없으면 추가하거나, 오른쪽에서 심플어벗·심플밀링(직경·높이)을 고르세요.",
+      title: "어벗 프리셋 설정",
+      hint: "스캔바디 프리셋이 없으면 가운데 「+ 추가」로 제조사·직경·높이를 저장하세요. 또는 오른쪽에서 심플어벗/심플밀링과 직경·높이를 고릅니다. 스캔바디와 심플은 함께 쓸 수 없습니다.",
+    };
+  }
+  if (base.id === "implant_preset") {
+    return {
+      ...base,
+      hint: "왼쪽에서 임플란트 프리셋을 클릭해 고르세요. 새 스펙은 「+ 추가」로 저장할 수 있습니다.",
+    };
+  }
+  if (base.id === "abutment_side") {
+    return {
+      ...base,
+      hint: "가운데 스캔바디를 고르거나, 오른쪽 심플어벗·심플밀링(직경·높이)을 선택하세요. 둘은 함께 쓸 수 없습니다.",
     };
   }
   return base;
@@ -140,7 +157,11 @@ export function PracticeToothWorkGuideTourBanner({
         title: "완료",
         hint: "투어를 마쳤습니다. 기공소·환자·날짜·보철물을 이어서 작성해 주세요.",
       }
-    : resolveTourCopy(step, implantFavoriteCount, scanbodyFavoriteCount);
+      : resolvePracticeToothWorkGuideTourCopy(
+          step,
+          implantFavoriteCount,
+          scanbodyFavoriteCount,
+        );
   const total = PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS.length;
   const aside = placement === "aside";
 

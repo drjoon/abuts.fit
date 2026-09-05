@@ -3,7 +3,9 @@
 // - web/frontend/src/shared/guideTour/GuideTourSpotlight.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/backend/controllers/users/user.controller.js
+// - web/frontend/src/shared/components/practice/PracticeToothWorkGuideTourBanner.tsx
 // change-log:
+// - 2026-09-05: oral 프리셋 스텝 — IntakePanel이 Spotlight 문구 override(미설정 「+ 추가」안내).
 // - 2026-09-05: oral action 스텝도「다음」상시 표시.
 // - 2026-09-05: 챕터 카운터·건너뛰기·forceMobile. oral 치식 체험 유지.
 import {
@@ -30,6 +32,11 @@ import {
 } from "@/shared/guideTour/guideTourSteps";
 import { GuideTourSpotlight } from "@/shared/guideTour/GuideTourSpotlight";
 
+type GuideTourSpotlightCopyOverride = {
+  title?: string;
+  hint?: string;
+} | null;
+
 type GuideTourContextValue = {
   kind: GuideTourKind | null;
   eligible: boolean;
@@ -50,6 +57,8 @@ type GuideTourContextValue = {
   retreat: () => void;
   /** oral chapter: sync tooth-work substep index (0-based) */
   oralSubStepIndex: number | null;
+  /** oral 프리셋 등 — IntakePanel이 빈 프리셋 안내로 Spotlight 문구를 덮어씀 */
+  setSpotlightCopyOverride: (next: GuideTourSpotlightCopyOverride) => void;
 };
 
 const GuideTourContext = createContext<GuideTourContextValue | null>(null);
@@ -72,6 +81,7 @@ const emptyGuideTour: GuideTourContextValue = {
   advance: () => {},
   retreat: () => {},
   oralSubStepIndex: null,
+  setSpotlightCopyOverride: () => {},
 };
 
 export function useGuideTour(): GuideTourContextValue {
@@ -161,6 +171,8 @@ export function GuideTourProvider({ kind, children }: ProviderProps) {
 
   const [active, setActive] = useState(false);
   const [stepId, setStepId] = useState<string | null>(null);
+  const [spotlightCopyOverride, setSpotlightCopyOverride] =
+    useState<GuideTourSpotlightCopyOverride>(null);
   const autoStartedRef = useRef(false);
   const persistSeq = useRef(0);
 
@@ -200,6 +212,7 @@ export function GuideTourProvider({ kind, children }: ProviderProps) {
 
   const goToStep = useCallback(
     (id: string) => {
+      setSpotlightCopyOverride(null);
       setStepId(id);
       setActive(true);
       const def = steps.find((s) => s.id === id);
@@ -299,10 +312,13 @@ export function GuideTourProvider({ kind, children }: ProviderProps) {
     advance,
     retreat,
     oralSubStepIndex,
+    setSpotlightCopyOverride,
   };
 
   const showCoach = active && step;
   const isLastStep = stepIndex >= stepTotal - 1;
+  const spotlightTitle = spotlightCopyOverride?.title ?? step?.title ?? "";
+  const spotlightHint = spotlightCopyOverride?.hint ?? step?.hint ?? "";
 
   return (
     <GuideTourContext.Provider value={value}>
@@ -311,8 +327,8 @@ export function GuideTourProvider({ kind, children }: ProviderProps) {
         <GuideTourSpotlight
           stepIndex={showChapterProgress ? chapterDisplay - 1 : 0}
           stepTotal={showChapterProgress ? chapterTotal : 0}
-          title={step.title}
-          hint={step.hint}
+          title={spotlightTitle}
+          hint={spotlightHint}
           target={step.target}
           showBack={stepIndex > 0}
           showNext
