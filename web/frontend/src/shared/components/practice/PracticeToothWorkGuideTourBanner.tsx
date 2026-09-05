@@ -53,7 +53,7 @@ export const PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS = [
   {
     id: "send",
     title: "기공소로 전송",
-    hint: "작성이 끝나면 「기공소로 전송」으로 보냅니다. 투어에서는 누르지 말고 「다음」으로 이어 가세요.",
+    hint: "작성이 끝나면 「기공소로 전송」으로 보냅니다.",
   },
   {
     id: "drafts",
