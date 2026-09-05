@@ -4,6 +4,7 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/backend/controllers/users/user.controller.js
 // change-log:
+// - 2026-09-05: oral action 스텝도「다음」상시 표시.
 // - 2026-09-05: 챕터 카운터·건너뛰기·forceMobile. oral 치식 체험 유지.
 import {
   createContext,
@@ -314,7 +315,7 @@ export function GuideTourProvider({ kind, children }: ProviderProps) {
           hint={step.hint}
           target={step.target}
           showBack={stepIndex > 0}
-          showNext={step.advance === "next"}
+          showNext
           showSkip={Boolean(step.skippable)}
           nextLabel={
             step.id === "intro" ? "계속" : isLastStep ? "완료" : "다음"

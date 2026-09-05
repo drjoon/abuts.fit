@@ -12,7 +12,7 @@ export const PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS = [
   {
     id: "lab",
     title: "기공소 선택",
-    hint: "검색창에 기공소를 입력하세요.",
+    hint: "기공소를 입력 혹은 선택하세요.",
   },
   {
     id: "patient",

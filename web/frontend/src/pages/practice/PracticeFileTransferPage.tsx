@@ -104,6 +104,7 @@
  * - 2026-08-20: 모바일 구강스캔 — 환자명 후 구강포토 촬영·업로드·임시저장(기공소는 전송 시).
  * - 2026-08-20: 모바일 임시저장=최근과 같은 카드 시트. PC 드롭존에 모바일 쉐이드 안내.
  * - 2026-08-20: 구강포토 썸네일 — private S3 location 대신 blob/proxy 미리보기.
+ * - 2026-09-05: 가이드투어 작성 패널 첫 오픈 시「새로 작성」으로 빈 폼.
  * - 2026-08-25: 가이드투어 카드 — 헤더 버튼~기공소·환자·날짜 행 세로 맞춤(폭=주문-치과도착).
  * - 2026-08-25: 상단 가이드투어 — 기공소·환자·날짜·보철물 전체 투어(툴바 오른쪽 위).
  * - 2026-08-25: 상단 가이드투어 — 기공소·환자·날짜·보철물 전체 투어(휴지통 오른쪽).
@@ -1490,19 +1491,6 @@ export const PracticeFileTransferPage = ({
   const isMobile =
     isMobileViewport ||
     (platformGuideTour.active && platformGuideTour.forceMobile);
-
-  // 플랫폼 가이드투어 챕터1 — 세부별 compose 오픈/닫기
-  useEffect(() => {
-    if (!platformGuideTour.active) return;
-    if (!isOralGuideTourStepId(platformGuideTour.stepId)) return;
-    setComposeOpen(
-      shouldOpenComposeForGuideTourStep(platformGuideTour.step),
-    );
-  }, [
-    platformGuideTour.active,
-    platformGuideTour.stepId,
-    platformGuideTour.step,
-  ]);
 
   const [toothWorks, setToothWorks] = useState<ToothWorkSelection[]>([]);
   const [patientName, setPatientName] = useState("");
@@ -7073,6 +7061,31 @@ export const PracticeFileTransferPage = ({
       });
     }
   };
+
+  // 플랫폼 가이드투어 챕터1 — 작성 패널 오픈 시「새로 작성」1회, 이후 세부만 동기화
+  const guideTourFreshComposeRef = useRef(false);
+  useEffect(() => {
+    if (!platformGuideTour.active) {
+      guideTourFreshComposeRef.current = false;
+      return;
+    }
+    if (!isOralGuideTourStepId(platformGuideTour.stepId)) return;
+    const wantOpen = shouldOpenComposeForGuideTourStep(platformGuideTour.step);
+    if (!wantOpen) {
+      setComposeOpen(false);
+      return;
+    }
+    if (!guideTourFreshComposeRef.current) {
+      guideTourFreshComposeRef.current = true;
+      void handleStartNewTransfer({ openCompose: true, silentToast: true });
+      return;
+    }
+    setComposeOpen(true);
+  }, [
+    platformGuideTour.active,
+    platformGuideTour.stepId,
+    platformGuideTour.step,
+  ]);
 
   const openComposeForArrival = (ymd: string) => {
     void handleStartNewTransfer({

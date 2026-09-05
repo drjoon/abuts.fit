@@ -2,6 +2,8 @@
 // - web/frontend/src/shared/guideTour/GuideTourProvider.tsx
 // - web/frontend/src/index.css
 // change-log:
+// - 2026-09-05: 코치마크 가로폭 32rem(기존 26→42는 과대).
+// - 2026-09-05: oral_lab — 코치마크를 필드 오른쪽 고정. 타깃과 절대 겹치지 않게 배치.
 // - 2026-09-05: 건너뛰기 버튼(챕터3).
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -11,9 +13,10 @@ import { cn } from "@/shared/ui/cn";
 type Rect = { top: number; left: number; width: number; height: number };
 
 const PAD = 8;
-const CARD_GAP = 12;
+const CARD_GAP = 16;
 const VIEW_PAD = 16;
 const CARD_H_FALLBACK = 160;
+const CARD_W_FALLBACK = 32 * 16;
 
 function readTargetRect(target: string | null | undefined): Rect | null {
   if (!target) return null;
@@ -35,36 +38,101 @@ type CardPlacement =
   | { mode: "center" }
   | { mode: "anchored"; top: number; left: number };
 
+type PlacePrefer = "auto" | "above" | "below" | "right";
+
+function overlapsTarget(
+  top: number,
+  left: number,
+  cardW: number,
+  cardH: number,
+  rect: Rect,
+): boolean {
+  const cardRight = left + cardW;
+  const cardBottom = top + cardH;
+  const targetRight = rect.left + rect.width;
+  const targetBottom = rect.top + rect.height;
+  return !(
+    cardRight <= rect.left ||
+    left >= targetRight ||
+    cardBottom <= rect.top ||
+    top >= targetBottom
+  );
+}
+
 function placeCardNearTarget(
   rect: Rect | null,
   cardSize: { width: number; height: number },
+  prefer: PlacePrefer = "auto",
 ): CardPlacement {
   if (!rect) return { mode: "center" };
   const vw = window.innerWidth;
   const vh = window.innerHeight;
   const cardW = Math.min(
-    cardSize.width || Math.min(vw - VIEW_PAD * 2, 26 * 16),
+    cardSize.width || Math.min(vw - VIEW_PAD * 2, CARD_W_FALLBACK),
     vw - VIEW_PAD * 2,
   );
   const cardH = cardSize.height || CARD_H_FALLBACK;
 
+  const fitsViewport = (top: number, left: number) =>
+    top >= VIEW_PAD &&
+    left >= VIEW_PAD &&
+    top + cardH <= vh - VIEW_PAD &&
+    left + cardW <= vw - VIEW_PAD;
+
+  const tryPlace = (top: number, left: number): CardPlacement | null => {
+    if (!fitsViewport(top, left)) return null;
+    if (overlapsTarget(top, left, cardW, cardH, rect)) return null;
+    return { mode: "anchored", top, left };
+  };
+
+  const rightLeft = rect.left + rect.width + CARD_GAP;
+  const leftLeft = rect.left - CARD_GAP - cardW;
   const belowTop = rect.top + rect.height + CARD_GAP;
   const aboveTop = rect.top - CARD_GAP - cardH;
-  const spaceBelow = vh - VIEW_PAD - belowTop;
-  const spaceAbove = rect.top - VIEW_PAD - CARD_GAP;
 
-  let top: number;
-  if (spaceBelow >= cardH || spaceBelow >= spaceAbove) {
-    top = Math.min(belowTop, Math.max(VIEW_PAD, vh - VIEW_PAD - cardH));
+  const candidates: Array<{ top: number; left: number }> = [];
+
+  if (prefer === "right") {
+    candidates.push(
+      { top: rect.top, left: rightLeft },
+      { top: rect.top, left: leftLeft },
+      { top: belowTop, left: rect.left },
+      { top: aboveTop, left: rect.left },
+    );
+  } else if (prefer === "above") {
+    candidates.push(
+      { top: aboveTop, left: rect.left },
+      { top: belowTop, left: rect.left },
+      { top: rect.top, left: rightLeft },
+      { top: rect.top, left: leftLeft },
+    );
+  } else if (prefer === "below") {
+    candidates.push(
+      { top: belowTop, left: rect.left },
+      { top: aboveTop, left: rect.left },
+      { top: rect.top, left: rightLeft },
+      { top: rect.top, left: leftLeft },
+    );
   } else {
-    top = Math.max(VIEW_PAD, aboveTop);
+    candidates.push(
+      { top: belowTop, left: rect.left },
+      { top: aboveTop, left: rect.left },
+      { top: rect.top, left: rightLeft },
+      { top: rect.top, left: leftLeft },
+    );
   }
 
-  // 타깃 왼쪽 정렬, 뷰포트 안으로 클램프
-  let left = rect.left;
-  left = Math.min(Math.max(VIEW_PAD, left), vw - VIEW_PAD - cardW);
+  for (const c of candidates) {
+    const placed = tryPlace(c.top, c.left);
+    if (placed) return placed;
+  }
 
-  return { mode: "anchored", top, left };
+  const bottomCenterTop = vh - VIEW_PAD - cardH;
+  const bottomCenterLeft = Math.max(VIEW_PAD, (vw - cardW) / 2);
+  const bottom = tryPlace(bottomCenterTop, bottomCenterLeft);
+  if (bottom) return bottom;
+
+  return { mode: "center" };
 }
 
 type GuideTourSpotlightProps = {
@@ -84,7 +152,7 @@ type GuideTourSpotlightProps = {
   className?: string;
 };
 
-/** 대상만 선명, 나머지는 블러·딤. 코치마크(뒤로·다음에 하기·건너뛰기·다음). */
+/** 대상만 선명, 나머지는 블러·딤. 코치마크(뒤로·다음에 하기·건너뛰기·다음). action 스텝도「다음」표시. */
 export function GuideTourSpotlight({
   stepIndex,
   stepTotal,
@@ -147,15 +215,24 @@ export function GuideTourSpotlight({
   }, [stepIndex, title, hint, showBack, showNext, showSkip]);
 
   useLayoutEffect(() => {
-    setPlacement(placeCardNearTarget(rect, cardSize));
-  }, [rect, cardSize]);
+    if (!rect) {
+      setPlacement({ mode: "center" });
+      return;
+    }
+    // 실측 전 fallback으로 한 번 튀지 않게 — 측정 후에만 고정 배치
+    if (cardSize.width <= 0 || cardSize.height <= 0) return;
+    // 기공소: 드롭다운은 아래·코치마크는 오른쪽 — 겹침·위치 튐 방지
+    const prefer: PlacePrefer =
+      target === "oral_lab" ? "right" : "auto";
+    setPlacement(placeCardNearTarget(rect, cardSize, prefer));
+  }, [rect, cardSize, target]);
 
   const card = (
     <div
       ref={cardRef}
       role="status"
       className={cn(
-        "pointer-events-auto relative z-[421] w-[min(100%,26rem)] max-w-md rounded-xl border border-accent-muted bg-accent-soft px-6 py-5 shadow-lg shadow-accent/20",
+        "pointer-events-auto relative z-[421] w-[min(100%,32rem)] max-w-lg rounded-xl border border-accent-muted bg-accent-soft px-6 py-5 shadow-lg shadow-accent/20",
         className,
       )}
     >

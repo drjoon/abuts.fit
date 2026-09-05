@@ -166,6 +166,8 @@ import {
 // - web/frontend/src/shared/components/practice/PracticeToothSimpleAbutmentFields.tsx
 // - web/frontend/src/shared/components/practice/PracticeCustomSpecsPresetEditDialog.tsx
 // - web/frontend/src/shared/pricing/abutsAbutmentService.ts
+// - 2026-09-05: 기공소 드롭다운 폭=트리거와 동일(min-w 제거).
+// - 2026-09-05: 플랫폼 투어 — 기공소 팝오버 강제오픈 안 함(위치 고정). 수동 오픈 시 z-430.
 // - 2026-09-05: 가이드투어 — 환자명에서 뒤로 시 기공소 팝오버 강제오픈·즉시 3 재진입 방지.
 // - 2026-09-05: 전체 선택 — 상·하악·전체틀니/부분틀니/랩어라운드/커스텀 추가.
 // - 2026-09-05: 전체 선택 모달 — 악궁 좌·타입 우 한 줄씩, + 추가, 악궁 내 + 연결.
@@ -2125,10 +2127,15 @@ export const PracticeTransferRequestIntakePanel = ({
     if (toothWorkGuideTourStep == null) return;
     if (!showLabField) return;
     setGuideTourLabArmed(false);
-    if (guideTourLabSkipForceOpenRef.current) {
+    // 플랫폼 Spotlight와 드롭다운·코치마크가 겹쳐 위치가 튀지 않도록
+    // 플랫폼 투어에서는 강제 오픈하지 않음(클릭으로 열거나「다음」).
+    if (
+      platformOralActive ||
+      guideTourLabSkipForceOpenRef.current
+    ) {
       setLabOpen(false);
     } else {
-      // 미선택·이미 선택(첫 진입) 모두 열어 검색·재선택을 보이게 함
+      // 로컬 투어: 미선택·이미 선택(첫 진입) 모두 열어 검색·재선택을 보이게 함
       setLabOpen(true);
     }
     const t = window.setTimeout(() => {
@@ -2140,7 +2147,13 @@ export const PracticeTransferRequestIntakePanel = ({
       setLabOpen(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 스텝 진입 시 1회
-  }, [toothWorkGuideTourStep, toothWorkGuideTourStepId, showLabField, setLabOpen]);
+  }, [
+    toothWorkGuideTourStep,
+    toothWorkGuideTourStepId,
+    showLabField,
+    setLabOpen,
+    platformOralActive,
+  ]);
 
   useEffect(() => {
     if (toothWorkGuideTourStepId !== "lab") return;
@@ -2724,7 +2737,13 @@ export const PracticeTransferRequestIntakePanel = ({
               </Button>
             </PopoverTrigger>
             <PopoverContent
-              className="w-[var(--radix-popover-trigger-width)] min-w-[min(26.25rem,calc(100vw-2rem))] p-0"
+              className={cn(
+                "w-[var(--radix-popover-trigger-width)] max-w-[var(--radix-popover-trigger-width)] p-0",
+                // Spotlight(z-420)보다 위 — 투어 중 검색 드롭다운이 블러에 가리지 않게
+                platformOralActive &&
+                  toothWorkGuideTourStepId === "lab" &&
+                  "z-[430]",
+              )}
               align="start"
               onWheel={(e) => e.stopPropagation()}
               onTouchMove={(e) => e.stopPropagation()}

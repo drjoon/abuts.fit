@@ -72,7 +72,7 @@ export const PRACTICE_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   {
     id: "oral_calendar",
     title: "기공의뢰 캘린더",
-    hint: "상태 뱃지로 의뢰·수락·완료를 보고, 캘린더에서 도착 날짜를 클릭해 신규 의뢰를 시작합니다.",
+    hint: "캘린더에서 기공물 도착 날짜를 클릭해 신규 의뢰를 시작합니다.",
     path: PRACTICE_ORAL_PATH,
     target: "oral_calendar",
     advance: "next",
