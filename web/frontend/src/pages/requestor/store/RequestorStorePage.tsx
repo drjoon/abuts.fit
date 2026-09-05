@@ -67,7 +67,7 @@ export default function RequestorStorePage() {
   }
 
   return (
-    <div className="custom-scrollbar workspace-nested-scroll h-full min-h-0 overflow-auto">
+    <div className="custom-scrollbar workspace-nested-scroll h-full min-h-0 overflow-auto" data-guide-tour="store_workspace">
       <div className="mx-auto w-full max-w-6xl space-y-6 sm:space-y-8">
         <header className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-2">

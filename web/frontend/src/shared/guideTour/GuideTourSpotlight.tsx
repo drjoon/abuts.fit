@@ -1,6 +1,8 @@
 // related files:
 // - web/frontend/src/shared/guideTour/GuideTourProvider.tsx
 // - web/frontend/src/index.css
+// change-log:
+// - 2026-09-05: 건너뛰기 버튼(챕터3).
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
@@ -73,14 +75,16 @@ type GuideTourSpotlightProps = {
   target?: string | null;
   showBack: boolean;
   showNext: boolean;
+  showSkip?: boolean;
   nextLabel?: string;
   onBack: () => void;
   onNext: () => void;
+  onSkip?: () => void;
   onPause: () => void;
   className?: string;
 };
 
-/** 대상만 선명, 나머지는 블러·딤. 코치마크(뒤로·다음에 하기·다음). */
+/** 대상만 선명, 나머지는 블러·딤. 코치마크(뒤로·다음에 하기·건너뛰기·다음). */
 export function GuideTourSpotlight({
   stepIndex,
   stepTotal,
@@ -89,9 +93,11 @@ export function GuideTourSpotlight({
   target,
   showBack,
   showNext,
+  showSkip = false,
   nextLabel = "다음",
   onBack,
   onNext,
+  onSkip,
   onPause,
   className,
 }: GuideTourSpotlightProps) {
@@ -138,7 +144,7 @@ export function GuideTourSpotlight({
         : null;
     if (ro) ro.observe(el);
     return () => ro?.disconnect();
-  }, [stepIndex, title, hint, showBack, showNext]);
+  }, [stepIndex, title, hint, showBack, showNext, showSkip]);
 
   useLayoutEffect(() => {
     setPlacement(placeCardNearTarget(rect, cardSize));
@@ -183,6 +189,17 @@ export function GuideTourSpotlight({
           >
             다음에 하기
           </Button>
+          {showSkip && onSkip ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 border-accent-muted px-3 text-sm text-accent-strong hover:bg-white/70"
+              onClick={onSkip}
+            >
+              건너뛰기
+            </Button>
+          ) : null}
           {showNext ? (
             <Button
               type="button"

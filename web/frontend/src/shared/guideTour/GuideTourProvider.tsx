@@ -3,6 +3,8 @@
 // - web/frontend/src/shared/guideTour/GuideTourSpotlight.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/backend/controllers/users/user.controller.js
+// change-log:
+// - 2026-09-05: 챕터 카운터·건너뛰기·forceMobile. oral 치식 체험 유지.
 import {
   createContext,
   useCallback,
@@ -20,7 +22,8 @@ import { PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS } from "@/shared/components/practi
 import {
   getGuideTourStepIndex,
   getGuideTourSteps,
-  isOralGuideTourStepId,
+  isPracticeToothWorkOralStepId,
+  PRACTICE_GUIDE_TOUR_CHAPTER_TOTAL,
   type GuideTourKind,
   type GuideTourStepDef,
 } from "@/shared/guideTour/guideTourSteps";
@@ -35,6 +38,10 @@ type GuideTourContextValue = {
   step: GuideTourStepDef | null;
   stepIndex: number;
   stepTotal: number;
+  /** Spotlight 챕터 번호 (치과 1~4). lab은 stepIndex+1 */
+  chapterDisplay: number;
+  chapterTotal: number;
+  forceMobile: boolean;
   resumeStepId: string | null;
   startOrResume: () => void;
   pause: () => void;
@@ -46,27 +53,29 @@ type GuideTourContextValue = {
 
 const GuideTourContext = createContext<GuideTourContextValue | null>(null);
 
+const emptyGuideTour: GuideTourContextValue = {
+  kind: null,
+  eligible: false,
+  completed: true,
+  active: false,
+  stepId: null,
+  step: null,
+  stepIndex: 0,
+  stepTotal: 0,
+  chapterDisplay: 0,
+  chapterTotal: 0,
+  forceMobile: false,
+  resumeStepId: null,
+  startOrResume: () => {},
+  pause: () => {},
+  advance: () => {},
+  retreat: () => {},
+  oralSubStepIndex: null,
+};
+
 export function useGuideTour(): GuideTourContextValue {
   const ctx = useContext(GuideTourContext);
-  if (!ctx) {
-    return {
-      kind: null,
-      eligible: false,
-      completed: true,
-      active: false,
-      stepId: null,
-      step: null,
-      stepIndex: 0,
-      stepTotal: 0,
-      resumeStepId: null,
-      startOrResume: () => {},
-      pause: () => {},
-      advance: () => {},
-      retreat: () => {},
-      oralSubStepIndex: null,
-    };
-  }
-  return ctx;
+  return ctx ?? emptyGuideTour;
 }
 
 async function persistGuideTour(body: {
@@ -158,6 +167,16 @@ export function GuideTourProvider({ kind, children }: ProviderProps) {
   const step = steps[stepIndex] ?? null;
   const stepTotal = steps.length;
 
+  const chapterDisplay =
+    kind === "practice" && step?.chapter != null
+      ? step.chapter
+      : stepIndex + 1;
+  const chapterTotal =
+    kind === "practice"
+      ? PRACTICE_GUIDE_TOUR_CHAPTER_TOTAL
+      : Math.max(stepTotal, 1);
+  const forceMobile = Boolean(active && step?.forceMobile);
+
   const applyLocalGuideTour = useCallback(
     (next: { completed: boolean; resumeStepId: string | null }) => {
       setGuideTour(next);
@@ -247,7 +266,11 @@ export function GuideTourProvider({ kind, children }: ProviderProps) {
   }, [active, step?.path, location, navigate]);
 
   const oralSubStepIndex = useMemo(() => {
-    if (!step || !isOralGuideTourStepId(step.id) || !step.oralSubStepId) {
+    if (
+      !step ||
+      !isPracticeToothWorkOralStepId(step.id) ||
+      !step.oralSubStepId
+    ) {
       return null;
     }
     const idx = practiceOralIndex(step.oralSubStepId);
@@ -263,6 +286,9 @@ export function GuideTourProvider({ kind, children }: ProviderProps) {
     step,
     stepIndex,
     stepTotal,
+    chapterDisplay,
+    chapterTotal,
+    forceMobile,
     resumeStepId,
     startOrResume,
     pause,
@@ -272,24 +298,25 @@ export function GuideTourProvider({ kind, children }: ProviderProps) {
   };
 
   const showCoach = active && step;
+  const isLastStep = stepIndex >= stepTotal - 1;
 
   return (
     <GuideTourContext.Provider value={value}>
       {children}
       {showCoach ? (
         <GuideTourSpotlight
-          stepIndex={stepIndex}
-          stepTotal={stepTotal}
+          stepIndex={chapterDisplay - 1}
+          stepTotal={chapterTotal}
           title={step.title}
           hint={step.hint}
           target={step.target}
           showBack={stepIndex > 0}
           showNext={step.advance === "next"}
-          nextLabel={
-            step.id === "wrap" ? "완료" : step.id === "intro" ? "계속" : "다음"
-          }
+          showSkip={Boolean(step.skippable)}
+          nextLabel={isLastStep ? "완료" : "다음"}
           onBack={retreat}
           onNext={advance}
+          onSkip={advance}
           onPause={pause}
         />
       ) : null}

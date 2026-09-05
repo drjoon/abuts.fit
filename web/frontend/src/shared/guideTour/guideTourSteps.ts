@@ -2,12 +2,16 @@
 // - web/frontend/src/shared/platform/platformBenefitsContent.ts
 // - web/frontend/src/shared/components/practice/PracticeToothWorkGuideTourBanner.tsx
 // - web/frontend/src/shared/guideTour/GuideTourProvider.tsx
+// change-log:
+// - 2026-09-05: 치과 투어 4챕터. 챕터 카운터 1/4·치식/어벗 체험 유지·전송·폰모드·임시저장.
 
 import { PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS } from "@/shared/components/practice/PracticeToothWorkGuideTourBanner";
 
 export type GuideTourKind = "practice" | "lab";
 
 export type GuideTourAdvanceMode = "next" | "action";
+
+export type GuideTourCreditsTab = "ledger" | "stats" | "charge";
 
 export type GuideTourStepDef = {
   id: string;
@@ -18,16 +22,29 @@ export type GuideTourStepDef = {
   /** data-guide-tour target; null = centered card without hole */
   target?: string | null;
   advance: GuideTourAdvanceMode;
+  /** 진행 표시용 챕터(치과 1~4). 없으면 stepIndex+1 / stepTotal */
+  chapter?: number;
+  /** 챕터3 등 — Spotlight「건너뛰기」 */
+  skippable?: boolean;
+  /** 구강포토 안내용 모바일 레이아웃 강제 */
+  forceMobile?: boolean;
+  /** 정산 탭 동기화 */
+  creditsTab?: GuideTourCreditsTab;
   /** maps to oral-scan tooth-work step id when on compose */
   oralSubStepId?: (typeof PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS)[number]["id"];
+  /** 작성 패널(compose) 오픈 */
+  openCompose?: boolean;
 };
 
 const PRACTICE_ORAL_PATH = "/dashboard/practice-transfers?mode=send";
 const LAB_RECEIVE_PATH = "/dashboard/practice-transfers?mode=receive";
 const CREDITS_PATH = "/dashboard/credits";
 const NEW_REQUEST_PATH = "/dashboard/new-request";
+const STORE_PATH = "/dashboard/store";
 
-const practiceOralSteps: GuideTourStepDef[] =
+export const PRACTICE_GUIDE_TOUR_CHAPTER_TOTAL = 4;
+
+const practiceOralActionSteps: GuideTourStepDef[] =
   PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS.map((s) => ({
     id: `oral_${s.id}`,
     title: s.title,
@@ -35,41 +52,107 @@ const practiceOralSteps: GuideTourStepDef[] =
     path: PRACTICE_ORAL_PATH,
     target: `oral_${s.id}`,
     advance: "action" as const,
+    chapter: 1,
+    openCompose: true,
     oralSubStepId: s.id,
   }));
 
-/** 치과 — 플랫폼 장점(가입 이유) 페이지 투어 */
+/** 치과 — 첨1~4 페이지 기준 4챕터 */
 export const PRACTICE_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
+  // —— 챕터1: 구강스캔 기공의뢰 ——
   {
-    id: "intro",
-    title: "가이드투어",
-    hint: "전자 기공의뢰서·대금정산 및 통계·계산서 자동발급·스토어 쇼핑·커스텀어벗 제작까지!\n각 화면을 직접 눌러 보며 익혀 보세요.",
-    target: null,
+    id: "oral_calendar",
+    title: "기공의뢰 캘린더",
+    hint: "상태 뱃지로 의뢰·수락·완료를 보고, 캘린더에서 도착 날짜를 클릭해 신규 의뢰를 시작합니다.",
+    path: PRACTICE_ORAL_PATH,
+    target: "oral_calendar",
     advance: "next",
+    chapter: 1,
+    openCompose: false,
   },
-  ...practiceOralSteps,
+  ...practiceOralActionSteps,
   {
-    id: "credits",
-    title: "정산·계산서는 맡기세요",
-    hint: "크레딧 잔고와 기공비·어벗 의뢰비 내역을 확인합니다. 결제·사용 내역과 계산서도 여기서 관리합니다.",
-    path: CREDITS_PATH,
+    id: "oral_send",
+    title: "기공소로 전송",
+    hint: "작성이 끝나면 「기공소로 전송」으로 보냅니다. 투어에서는 누르지 말고 「다음」으로 이어 가세요.",
+    path: PRACTICE_ORAL_PATH,
+    target: "oral_send",
+    advance: "next",
+    chapter: 1,
+    openCompose: true,
+  },
+  {
+    id: "oral_phone",
+    title: "휴대폰 구강포토",
+    hint: "휴대폰에서도 환자 사진을 찍어 올릴 수 있습니다. (투어용으로 폰 화면을 잠시 보여 드립니다.)",
+    path: PRACTICE_ORAL_PATH,
+    target: "oral_phone",
+    advance: "next",
+    chapter: 1,
+    openCompose: true,
+    forceMobile: true,
+  },
+  {
+    id: "oral_drafts",
+    title: "임시저장 · 휴지통",
+    hint: "임시저장은 전송 전 이어서 작성할 때, 휴지통은 취소·삭제한 의뢰를 볼 때 씁니다.",
+    path: PRACTICE_ORAL_PATH,
+    target: "oral_drafts",
+    advance: "next",
+    chapter: 1,
+    openCompose: false,
+  },
+  // —— 챕터2: 정산 ——
+  {
+    id: "credits_ledger",
+    title: "정산 · 내역",
+    hint: "잔액·충전·소비와 거래 내역을 확인합니다. 카드·필터로 상세를 볼 수 있습니다.",
+    path: `${CREDITS_PATH}?tab=ledger`,
     target: "credits_workspace",
     advance: "next",
+    chapter: 2,
+    creditsTab: "ledger",
   },
   {
+    id: "credits_stats",
+    title: "정산 · 통계",
+    hint: "기간별 충전·소비·의뢰 건수를 한눈에 봅니다.",
+    path: `${CREDITS_PATH}?tab=stats`,
+    target: "credits_workspace",
+    advance: "next",
+    chapter: 2,
+    creditsTab: "stats",
+  },
+  {
+    id: "credits_charge",
+    title: "정산 · 충전",
+    hint: "유료 크레딧을 충전하는 화면입니다. 기공비·스토어 결제에 사용합니다.",
+    path: `${CREDITS_PATH}?tab=charge`,
+    target: "credits_workspace",
+    advance: "next",
+    chapter: 2,
+    creditsTab: "charge",
+  },
+  // —— 챕터3: 커스텀어벗 (건너뛰기 가능) ——
+  {
     id: "abutment",
-    title: "커스텀 어벗 디자인",
-    hint: "디자인하신 어벗 STL을 올리면 CNC 어벗을 생산해 드립니다. 가입 후 첫 2건은 무료 테스트입니다.",
+    title: "커스텀어벗 CNC",
+    hint: "치과 내 기공실장님이 계시면, 커스텀어벗을 디자인한 뒤 STL을 올려 CNC 생산을 의뢰할 수 있습니다. 가입 후 첫 2건은 무료 테스트입니다.",
     path: NEW_REQUEST_PATH,
     target: "new_request_workspace",
     advance: "next",
+    chapter: 3,
+    skippable: true,
   },
+  // —— 챕터4: 스토어 ——
   {
-    id: "wrap",
-    title: "계속 업데이트합니다",
-    hint: "문의·채팅으로 의견을 보내 주세요. 함께 맞춰 가겠습니다. 투어를 마치면 사이드바의 가이드투어 버튼이 사라집니다.",
-    target: null,
+    id: "store",
+    title: "스토어",
+    hint: "어벗·힐링·키트 등을 장바구니에 담아 주문합니다. 커스텀어벗·선수금과 별도입니다.\n투어를 마치면 사이드바의 가이드투어 버튼이 사라집니다.",
+    path: STORE_PATH,
+    target: "store_workspace",
     advance: "next",
+    chapter: 4,
   },
 ] as const;
 
@@ -132,3 +215,16 @@ export const getGuideTourStepIndex = (
 
 export const isOralGuideTourStepId = (stepId: string | null | undefined): boolean =>
   Boolean(stepId && stepId.startsWith("oral_"));
+
+/** 챕터1에서 작성 패널을 열어야 하는 세부 */
+export const shouldOpenComposeForGuideTourStep = (
+  step: GuideTourStepDef | null | undefined,
+): boolean => Boolean(step?.openCompose);
+
+export const isPracticeToothWorkOralStepId = (
+  stepId: string | null | undefined,
+): boolean => {
+  if (!stepId || !stepId.startsWith("oral_")) return false;
+  const sub = stepId.slice("oral_".length);
+  return PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS.some((s) => s.id === sub);
+};

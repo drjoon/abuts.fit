@@ -81,7 +81,7 @@ import {
   type PracticeToothWorkGuideTourStep,
 } from "@/shared/components/practice/PracticeToothWorkGuideTourBanner";
 import { useGuideTour } from "@/shared/guideTour/GuideTourProvider";
-import { isOralGuideTourStepId } from "@/shared/guideTour/guideTourSteps";
+import { isPracticeToothWorkOralStepId } from "@/shared/guideTour/guideTourSteps";
 import { AutoMatchMinLabRatingStars } from "@/shared/components/practice/AutoMatchMinLabRatingStars";
 import {
   DEFAULT_AUTO_MATCH_MAX_LAB_RATING,
@@ -166,6 +166,7 @@ import {
 // - web/frontend/src/shared/components/practice/PracticeToothSimpleAbutmentFields.tsx
 // - web/frontend/src/shared/components/practice/PracticeCustomSpecsPresetEditDialog.tsx
 // - web/frontend/src/shared/pricing/abutsAbutmentService.ts
+// - 2026-09-05: 가이드투어 — 환자명에서 뒤로 시 기공소 팝오버 강제오픈·즉시 3 재진입 방지.
 // - 2026-09-05: 전체 선택 — 상·하악·전체틀니/부분틀니/랩어라운드/커스텀 추가.
 // - 2026-09-05: 전체 선택 모달 — 악궁 좌·타입 우 한 줄씩, + 추가, 악궁 내 + 연결.
 // - 2026-09-05: 전체 선택 모달 — 고정 폭·높이, 커스텀 입력 X 인라인, Enter 적용.
@@ -954,7 +955,7 @@ export const PracticeTransferRequestIntakePanel = ({
   const platformOralActive =
     platformGuideTour.active &&
     platformGuideTour.oralSubStepIndex != null &&
-    isOralGuideTourStepId(platformGuideTour.stepId);
+    isPracticeToothWorkOralStepId(platformGuideTour.stepId);
   const [labInviteCopyBusy, setLabInviteCopyBusy] = useState(false);
   const showLabField = showLabFieldProp ?? showHeaderFields;
   const showPatientField = showPatientFieldProp ?? showHeaderFields;
@@ -1880,7 +1881,7 @@ export const PracticeTransferRequestIntakePanel = ({
     }
     toothWorkGuideTourStepBaselineRef.current = null;
     toothWorkGuideTourBaselineReadyStepRef.current = null;
-    if (platformGuideTour.active && isOralGuideTourStepId(platformGuideTour.stepId)) {
+    if (platformGuideTour.active && isPracticeToothWorkOralStepId(platformGuideTour.stepId)) {
       platformGuideTour.pause();
       return;
     }
@@ -1927,7 +1928,7 @@ export const PracticeTransferRequestIntakePanel = ({
       setToothWorkGuideTourStep(platformGuideTour.oralSubStepIndex);
       return;
     }
-    if (!isOralGuideTourStepId(platformGuideTour.stepId)) {
+    if (!isPracticeToothWorkOralStepId(platformGuideTour.stepId)) {
       setToothWorkGuideTourStep(null);
     }
   }, [
@@ -2076,6 +2077,10 @@ export const PracticeTransferRequestIntakePanel = ({
    *  뒤로가기뿐 아니라 프로그레스로 앞으로 점프할 때도 동일.)
    */
   const [guideTourLabArmed, setGuideTourLabArmed] = useState(false);
+  const guideTourLabRequireSelectRef = useRef(false);
+  const guideTourLabConfirmedRef = useRef(false);
+  /** 뒤로+이미선택 시 팝오버 강제 오픈 생략(다이얼로그 위 겹침·즉시 3 재진입 방지) */
+  const guideTourLabSkipForceOpenRef = useRef(false);
   const guideTourPatientBaselineRef = useRef<string | null>(null);
   const guideTourPatientRequireChangeRef = useRef(false);
   const guideTourPrevStepRef = useRef<PracticeToothWorkGuideTourStep | null>(null);
@@ -2087,6 +2092,18 @@ export const PracticeTransferRequestIntakePanel = ({
       prev != null &&
       toothWorkGuideTourStep != null &&
       toothWorkGuideTourStep < prev;
+
+    if (toothWorkGuideTourStepId === "lab" && toothWorkGuideTourStep != null) {
+      const hadLab = Boolean(String(selectedLab?._id || "").trim());
+      guideTourLabConfirmedRef.current = false;
+      // 이미 선택·뒤로 진입: 목록에서 다시 골라야 진행(바깥 클릭만으로 3 튕김 방지)
+      guideTourLabRequireSelectRef.current = wentBack || hadLab;
+      guideTourLabSkipForceOpenRef.current = wentBack && hadLab;
+    } else {
+      guideTourLabRequireSelectRef.current = false;
+      guideTourLabConfirmedRef.current = false;
+      guideTourLabSkipForceOpenRef.current = false;
+    }
 
     if (toothWorkGuideTourStepId === "patient" && toothWorkGuideTourStep != null) {
       const name = String(patientName || "").trim();
@@ -2107,15 +2124,20 @@ export const PracticeTransferRequestIntakePanel = ({
     }
     if (toothWorkGuideTourStep == null) return;
     if (!showLabField) return;
-    // 미선택·이미 선택 모두 열어 검색·확인·재선택을 보이게 함
     setGuideTourLabArmed(false);
-    setLabOpen(true);
+    if (guideTourLabSkipForceOpenRef.current) {
+      setLabOpen(false);
+    } else {
+      // 미선택·이미 선택(첫 진입) 모두 열어 검색·재선택을 보이게 함
+      setLabOpen(true);
+    }
     const t = window.setTimeout(() => {
       setGuideTourLabArmed(true);
     }, 120);
     return () => {
       window.clearTimeout(t);
       setGuideTourLabArmed(false);
+      setLabOpen(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 스텝 진입 시 1회
   }, [toothWorkGuideTourStep, toothWorkGuideTourStepId, showLabField, setLabOpen]);
@@ -2124,9 +2146,14 @@ export const PracticeTransferRequestIntakePanel = ({
     if (toothWorkGuideTourStepId !== "lab") return;
     if (toothWorkGuideTourStep == null) return;
     if (!guideTourLabArmed) return;
-    // 팝오버가 열린 동안은 대기 — 닫힌 뒤(선택·바깥 클릭 확인)에만 진행
     if (labOpen) return;
     if (!selectedLab) return;
+    if (
+      guideTourLabRequireSelectRef.current &&
+      !guideTourLabConfirmedRef.current
+    ) {
+      return;
+    }
     const labId = String(selectedLab._id || "").trim();
     const ok =
       isAutoMatchLab(selectedLab) ||
@@ -2141,6 +2168,14 @@ export const PracticeTransferRequestIntakePanel = ({
     labOpen,
     guideTourLabArmed,
   ]);
+
+  const selectLabFromPicker = (b: SearchBusinessResult) => {
+    setSelectedLab(b);
+    if (toothWorkGuideTourStepId === "lab") {
+      guideTourLabConfirmedRef.current = true;
+    }
+    setLabOpen(false);
+  };
 
   useEffect(() => {
     if (toothWorkGuideTourStepId !== "patient") return;
@@ -2726,8 +2761,7 @@ export const PracticeTransferRequestIntakePanel = ({
                             key={`pinned-${b._id}`}
                             value={searchValue}
                             onSelect={() => {
-                              setSelectedLab(b);
-                              setLabOpen(false);
+                              selectLabFromPicker(b);
                             }}
                             className="group items-start py-2.5"
                           >
@@ -2798,8 +2832,7 @@ export const PracticeTransferRequestIntakePanel = ({
                             key={`recent-${b._id}`}
                             value={searchValue}
                             onSelect={() => {
-                              setSelectedLab(b);
-                              setLabOpen(false);
+                              selectLabFromPicker(b);
                             }}
                             className="group items-start py-2.5"
                           >
@@ -2886,8 +2919,7 @@ export const PracticeTransferRequestIntakePanel = ({
                               key={b._id}
                               value={searchValue}
                               onSelect={() => {
-                                setSelectedLab(b);
-                                setLabOpen(false);
+                                selectLabFromPicker(b);
                               }}
                               className="group"
                             >
