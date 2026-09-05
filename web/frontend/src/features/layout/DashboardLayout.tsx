@@ -16,6 +16,7 @@ import {
 import { cn } from "@/shared/ui/cn";
 
 // - 2026-09-05: 데모 모드면 잔액≤0「크레딧 부족」destructive 토스트 생략.
+// - 2026-09-05: 어벗디자인으로·기공의뢰 부모 guideTourSatellite(복수 키)·어벗츠로 의뢰.
 // - 2026-09-05: 정산 guideTourSatellite=credits_workspace — 사이드바·작업영역 별도 홀.
 // - 2026-09-05: 구강스캔으로 guideTourSatellite=oral_calendar — 기공의뢰+구강스캔 사이드 홀·캘린더 별도.
 // - 2026-09-03: 기공소 사이드 — 정책 안내(기공의뢰 공용) + 가입 이유 배너.
@@ -217,6 +218,7 @@ const buildLabGigongRequestSidebarGroup = (
   label: "기공의뢰",
   href: receiveHref,
   tooltip: "치과 기공의뢰 수신과 어벗 CNC 생산 의뢰",
+  guideTourSatellite: "new_request_workspace",
   children: [
     {
       icon: Building2,
@@ -231,6 +233,7 @@ const buildLabGigongRequestSidebarGroup = (
       href: LAB_ABUTMENT_PRODUCTION_HREF,
       tooltip: ABUTMENT_REQUEST_TOOLTIP,
       accent: "어벗",
+      guideTourSatellite: "new_request_workspace",
     },
   ],
 });
@@ -257,7 +260,7 @@ const buildRequestorSidebarItems = (
       label: "기공의뢰",
       href: PRACTICE_ORAL_SCAN_HREF,
       tooltip: "구강스캔 또는 완성 디자인으로 기공 의뢰",
-      guideTourSatellite: "oral_calendar",
+      guideTourSatellite: ["oral_calendar", "new_request_workspace"],
       children: [
         {
           icon: ScanLine,
@@ -273,6 +276,7 @@ const buildRequestorSidebarItems = (
           href: PRACTICE_ABUTMENT_DESIGN_HREF,
           tooltip: PRACTICE_ABUTMENT_DESIGN_REQUEST_TOOLTIP,
           accent: "어벗",
+          guideTourSatellite: "new_request_workspace",
         },
       ],
     },

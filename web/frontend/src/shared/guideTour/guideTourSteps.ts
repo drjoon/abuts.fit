@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/practice/PracticeToothWorkGuideTourBanner.tsx
 // - web/frontend/src/shared/guideTour/GuideTourProvider.tsx
 // change-log:
+// - 2026-09-05: abutment — 사이드바「어벗디자인으로」홀·힌트 단축·건너뛰기 제거.
 // - 2026-09-05: 정산 코치마크 3단 — 내역·통계·충전 각 페이지 문구·탭 강조.
 // - 2026-09-05: credits_ledger — 힌트 문구·사이드바 정산 홀·코치마크 하단(탭·요약카드 노출).
 // - 2026-09-05: oral_estimate — allowTargetInteraction(견적 호버·툴팁).
@@ -171,16 +172,15 @@ export const PRACTICE_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
     chapter: 2,
     creditsTab: "charge",
   },
-  // —— 챕터3: 커스텀어벗 (건너뛰기 가능) ——
+  // —— 챕터3: 커스텀어벗 ——
   {
     id: "abutment",
     title: "커스텀어벗 CNC",
-    hint: "치과 내 기공실장님이 계시면, 커스텀어벗을 디자인한 뒤 STL을 올려 CNC 생산을 의뢰할 수 있습니다. 가입 후 첫 2건은 무료 테스트입니다.",
+    hint: "원내 기공실장님이 디자인한 커스텀어벗(STL)을 올려 CNC 생산할 수 있습니다.",
     path: NEW_REQUEST_PATH,
     target: "new_request_workspace",
     advance: "next",
     chapter: 3,
-    skippable: true,
   },
   // —— 챕터4: 스토어 ——
   {

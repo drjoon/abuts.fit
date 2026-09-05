@@ -1,5 +1,5 @@
 // change-log:
-// - 2026-09-05: guideTourSatellite — oral_calendar·credits_workspace 사이드 홀.
+// - 2026-09-05: 기공의뢰 부모+어벗 서브 satellite(복수 키). oral_calendar·credits·new_request 사이드 홀.
 // - 2026-08-20: 관리자 섹션 포함 전 롤이 같은 사이드 렌더러. 접히면 라벨 툴팁.
 // - 2026-08-20: 하위 메뉴는 점 대신 아이콘. 접힌 레일에도 하위 아이콘을 두고 클릭 가능.
 // - 2026-08-19: 펼친 사이드 메인 메뉴는 아이콘 왼쪽·라벨 가운데. 배지는 우측 고정. 라벨은 줄이지 않음.
@@ -36,8 +36,8 @@ export type DashboardSidebarItem = {
   href: string;
   tooltip?: string;
   accent?: GigongAbutAccentKey;
-  /** 가이드투어 Spotlight 위성(data-guide-tour-satellite) — 홀에 메뉴 행 포함 */
-  guideTourSatellite?: string;
+  /** 가이드투어 Spotlight 위성(data-guide-tour-satellite) — 홀에 메뉴 행 포함. 복수 키는 공백 구분 */
+  guideTourSatellite?: string | string[];
   children?: DashboardSidebarItem[];
 };
 
@@ -143,7 +143,11 @@ const SidebarNavButton = ({
             : undefined
       }
       {...(item.guideTourSatellite
-        ? { "data-guide-tour-satellite": item.guideTourSatellite }
+        ? {
+            "data-guide-tour-satellite": Array.isArray(item.guideTourSatellite)
+              ? item.guideTourSatellite.join(" ")
+              : item.guideTourSatellite,
+          }
         : {})}
     >
       <item.icon

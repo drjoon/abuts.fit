@@ -5,6 +5,7 @@
 // - web/frontend/src/shared/components/practice/PracticeOrderArrivalDateRangeField.tsx
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // change-log:
+// - 2026-09-05: new_request_workspace — 사이드바「기공의뢰+어벗디자인으로」별도 홀(복수 satellite 키).
 // - 2026-09-05: credits_* — 사이드바 위성 별칭·코치마크 중하단(탭·요약카드 노출).
 // - 2026-09-05: credits_workspace — 사이드바 별도 홀·코치마크를 작업영역 중하단(탭·요약카드 노출).
 // - 2026-09-05: oral_estimate — allowTargetInteraction으로 견적 호버·툴팁 가능.
@@ -56,7 +57,7 @@ const REMEASURE_AFTER_MS = [0, 50, 120, 220, 360, 520] as const;
 const DROPDOWN_BELOW_TARGETS = new Set(["oral_header", "oral_memo_files"]);
 /** 커스텀어벗 설정 모달 — 큰 타깃, 코치마크는 위쪽 */
 const PRESET_MODAL_TARGETS = CUSTOM_ABUT_GUIDE_TARGETS;
-/** 위성은 union하지 않고 별도 홀(사이드바 메뉴 + 캘린더 · 폰 미리보기 + 안내 문구 · 정산) */
+/** 위성은 union하지 않고 별도 홀(사이드바 메뉴 + 캘린더 · 폰 미리보기 + 안내 문구 · 정산 · 어벗 CNC) */
 const SEPARATE_SATELLITE_TARGETS = new Set([
   "oral_calendar",
   "oral_phone",
@@ -64,6 +65,7 @@ const SEPARATE_SATELLITE_TARGETS = new Set([
   "credits_ledger",
   "credits_stats",
   "credits_charge",
+  "new_request_workspace",
 ]);
 /** 코치마크를 타깃 위에 고정 */
 const PREFER_ABOVE_TARGETS = new Set([
@@ -128,15 +130,14 @@ function readNestedGuideDialogRect(): Rect | null {
 
 function readSatelliteRects(target: string): Rect[] {
   const out: Rect[] = [];
-  const keys = [target, ...(SATELLITE_ALIAS[target] ?? [])];
-  for (const key of keys) {
-    document
-      .querySelectorAll(`[data-guide-tour-satellite="${CSS.escape(key)}"]`)
-      .forEach((el) => {
-        const sat = readElRect(el);
-        if (sat) out.push(sat);
-      });
-  }
+  const keys = new Set([target, ...(SATELLITE_ALIAS[target] ?? [])]);
+  document.querySelectorAll("[data-guide-tour-satellite]").forEach((el) => {
+    const raw = el.getAttribute("data-guide-tour-satellite") || "";
+    const elKeys = raw.trim().split(/\s+/).filter(Boolean);
+    if (!elKeys.some((k) => keys.has(k))) return;
+    const sat = readElRect(el);
+    if (sat) out.push(sat);
+  });
   return out;
 }
 
@@ -585,10 +586,11 @@ export function GuideTourSpotlight({
         observed = el;
       }
       if (ro && target) {
-        const sats = document.querySelectorAll(
-          `[data-guide-tour-satellite="${CSS.escape(target)}"]`,
-        );
-        sats.forEach((sat) => {
+        const want = new Set([target, ...(SATELLITE_ALIAS[target] ?? [])]);
+        document.querySelectorAll("[data-guide-tour-satellite]").forEach((sat) => {
+          const raw = sat.getAttribute("data-guide-tour-satellite") || "";
+          const elKeys = raw.trim().split(/\s+/).filter(Boolean);
+          if (!elKeys.some((k) => want.has(k))) return;
           const wrap =
             (sat.closest(
               "[data-radix-popper-content-wrapper]",
