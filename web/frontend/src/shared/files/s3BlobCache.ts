@@ -1,12 +1,20 @@
 // change-log:
+// - 2026-09-05: guide-tour/* — public 정적 샘플 fetch(실 PLY). 실패 시 placeholder.
+// - 2026-09-05: guide-tour/demo S3키 — 네트워크 없이 placeholder blob(403 방지).
 // - 2026-08-16: S3 키 기준 IndexedDB blob 캐시 헬퍼.
 // related files:
 // - web/frontend/src/shared/files/fileBlobCache.ts
 // - web/frontend/src/shared/files/downloadWithProgress.ts
 // - web/frontend/src/shared/files/useS3FileDownload.ts
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
+// - web/frontend/src/shared/guideTour/guideTourLabReceiveDemo.ts
 import { getFileBlob, setFileBlob } from "@/shared/files/fileBlobCache";
 import { fetchBlobWithProgress } from "@/shared/files/downloadWithProgress";
+import {
+  buildGuideTourDemoPlaceholderBlob,
+  guideTourDemoPublicUrl,
+  isGuideTourDemoS3Key,
+} from "@/shared/guideTour/guideTourLabReceiveDemo";
 
 export function s3FileBlobCacheKey(s3Key: string, thumbWidth?: number): string {
   const key = String(s3Key || "").trim();
@@ -39,6 +47,29 @@ export async function fetchS3BlobCached(
   const fileName = String(options.fileName || "download").trim() || "download";
   if (!s3Key) throw new Error("파일 키가 없습니다.");
   if (!options.token) throw new Error("로그인이 필요합니다.");
+
+  // 가이드투어 — public/guide-tour/... 정적 샘플(실 PLY 복사본)
+  if (isGuideTourDemoS3Key(s3Key)) {
+    try {
+      const url = guideTourDemoPublicUrl(s3Key);
+      const res = await fetch(url, { signal: options.signal });
+      if (res.ok) {
+        const blob = await res.blob();
+        options.onProgress?.(100);
+        try {
+          await setFileBlob(s3FileBlobCacheKey(s3Key, options.thumbWidth), blob);
+        } catch {
+          // ignore cache write errors
+        }
+        return blob;
+      }
+    } catch (err) {
+      if ((err as { name?: string })?.name === "AbortError") throw err;
+      // fall through to placeholder
+    }
+    options.onProgress?.(100);
+    return buildGuideTourDemoPlaceholderBlob();
+  }
 
   const cacheKey = s3FileBlobCacheKey(s3Key, options.thumbWidth);
   const cached = await getFileBlob(cacheKey);

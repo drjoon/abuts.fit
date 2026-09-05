@@ -3,6 +3,9 @@
 // - web/frontend/src/shared/components/practice/PracticeToothWorkGuideTourBanner.tsx
 // - web/frontend/src/shared/guideTour/GuideTourProvider.tsx
 // change-log:
+// - 2026-09-05: lab_chat 삭제. lab_design 힌트 — STL·환자/임플란트 정보 안내.
+// - 2026-09-05: lab_calendar — 오늘 의뢰 칩 홀·클릭 시 상세(allowTargetInteraction).
+// - 2026-09-05: lab_detail~design — 실사용(allowTargetInteraction·스크롤·조작). 영화형 클릭차단 해제.
 // - 2026-09-05: lab — 3챕터(수신 영화형·정산3·어벗)·complete·레거시 normalize.
 // - 2026-09-05: complete — 수료 안내(intro형)·확인 시 구강스캔 포워딩.
 // - 2026-09-05: store — 사이드바 홀·힌트 단축.
@@ -229,52 +232,47 @@ export const LAB_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   {
     id: "lab_calendar",
     title: "기공의뢰 · 치과로부터 수신",
-    hint: "캘린더에서 치과 의뢰를 눌러 상세·수락·채팅을 이어갑니다.",
+    hint: "오늘 날짜에 있는 치과 의뢰를 눌러 상세·수락·채팅을 이어갑니다.",
     path: LAB_RECEIVE_PATH,
-    target: "lab_calendar",
+    target: "lab_calendar_item",
     advance: "next",
     chapter: 1,
+    // 칩 클릭 → 상세 오픈·다음 스텝(RequestorPracticePage)
+    allowTargetInteraction: true,
   },
-  // —— 챕터1: 수신 영화형 ——
+  // —— 챕터1: 수신 상세(실사용 — 모달 전체 홀·스크롤·탭·수락 조작) ——
   {
     id: "lab_detail",
     title: "의뢰 상세",
-    hint: "환자·치식·첨부 파일과 기공비를 한눈에 확인합니다.",
+    hint: "환자·치식·첨부 파일과 기공비를 한눈에 확인합니다. 스크롤해 내용을 살펴보세요.",
     path: LAB_RECEIVE_PATH,
     target: "lab_detail",
     advance: "next",
     chapter: 1,
     openReceiveDetail: true,
+    allowTargetInteraction: true,
   },
   {
     id: "lab_accept",
     title: "의뢰 수락",
     hint: "수락하면 치과와 채팅·디자인 업로드가 열립니다. 거절도 여기서 합니다.",
     path: LAB_RECEIVE_PATH,
-    target: "lab_accept",
+    target: "lab_detail",
     advance: "next",
     chapter: 1,
     openReceiveDetail: true,
-  },
-  {
-    id: "lab_chat",
-    title: "건별 채팅",
-    hint: "의뢰건별로 치과와 바로 소통합니다. 이메일 대신 여기서 이어가세요.",
-    path: LAB_RECEIVE_PATH,
-    target: "lab_chat",
-    advance: "next",
-    chapter: 1,
-    openReceiveDetail: true,
+    allowTargetInteraction: true,
   },
   {
     id: "lab_design",
     title: "어벗 디자인 업로드",
-    hint: "수락 후 STL을 올리면 디자인 확인·생산으로 이어집니다.",
+    hint: "수락 후 STL을 올리면 어벗츠에서 커스텀어벗 생산을 시작합니다.\n환자 정보, 임플란트 정보 등은 치과에서 넘겨준 정보 그대로 넘어갑니다.",
     path: LAB_RECEIVE_PATH,
-    target: "lab_design",
+    target: "lab_detail",
     advance: "next",
     chapter: 1,
     openReceiveDetail: true,
+    allowTargetInteraction: true,
   },
   // —— 챕터2: 정산 (내역 → 통계 → 충전) ——
   {
@@ -340,6 +338,8 @@ export const normalizeLabGuideTourStepId = (
   if (stepId === "receive") return "lab_calendar";
   if (stepId === "credits") return "credits_ledger";
   if (stepId === "wrap") return "complete";
+  // 건별 채팅 스텝 삭제 — resume·레거시는 디자인 업로드로
+  if (stepId === "lab_chat") return "lab_design";
   return stepId;
 };
 
@@ -430,7 +430,6 @@ export const isLabReceiveGuideTourStepId = (
     normalized === "lab_calendar" ||
     normalized === "lab_detail" ||
     normalized === "lab_accept" ||
-    normalized === "lab_chat" ||
     normalized === "lab_design"
   );
 };

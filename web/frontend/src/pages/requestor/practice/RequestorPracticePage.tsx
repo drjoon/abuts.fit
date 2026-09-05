@@ -27,6 +27,7 @@
 // - web/frontend/src/shared/practice/labReceiveCalendarHiddenWeekdays.ts
 // - web/backend/utils/labReceiveCalendarHiddenWeekdays.util.js
 // - web/backend/controllers/users/user.controller.js
+// - 2026-09-05: 가이드투어 lab_calendar — 오늘 데모 칩 홀·클릭 시 상세·다음.
 // - 2026-09-05: 가이드투어 — pause·수료 시 데모 PTX·상세 삭제(치과 oral 정리와 동일).
 // - 2026-09-05: 가이드투어 — 수신 영화형(데모 PTX·상세 오픈·변이 가드).
 // - 2026-09-02: 어벗츠 제공 CA만 있어도 안내 표시. 심플어벗은 항상 제외.
@@ -251,6 +252,7 @@ import {
 import {
   buildGuideTourDemoChatMessages,
   buildGuideTourDemoReceiveTransfer,
+  GUIDE_TOUR_DEMO_TRANSFER_ID,
   isGuideTourDemoTransfer,
 } from "@/shared/guideTour/guideTourLabReceiveDemo";
 import {
@@ -302,7 +304,7 @@ import {
   resolvePracticeTransferListPatientName,
   resolvePracticeTransferListToothNumbers,
 } from "@/shared/components/practice/PracticeRecentTransferListCardDetail";
-import { toKstYmd, toKstYmdLoose } from "@/shared/date/kst";
+import { toKstYmd, toKstYmdLoose, kstYmdWeekday } from "@/shared/date/kst";
 import { normalizeLabReceiveCalendarDateKey } from "@/shared/practice/labReceiveCalendarDateKey";
 import { normalizeLabReceiveCalendarHiddenWeekdays } from "@/shared/practice/labReceiveCalendarHiddenWeekdays";
 import {
@@ -1844,6 +1846,36 @@ export function RequestorPracticeReceivePage({
     platformGuideTour.active &&
     shouldOpenReceiveDetailForGuideTourStep(platformGuideTour.step);
 
+  /** 캘린더에서 오늘 의뢰 칩 클릭 유도 */
+  const guideTourLabCalendarStep =
+    platformGuideTour.kind === "lab" &&
+    platformGuideTour.active &&
+    platformGuideTour.stepId === "lab_calendar";
+
+  /** 수신 챕터 — 오늘(주문일) 데모 칩이 보이도록 로컬만 강제(서버 prefs 미변경) */
+  const guideTourLabReceiveCalendarActive =
+    platformGuideTour.kind === "lab" &&
+    platformGuideTour.active &&
+    isLabReceiveGuideTourStepId(platformGuideTour.stepId);
+
+  const calendarDateKey: PracticeCalendarDateKey = guideTourLabReceiveCalendarActive
+    ? "orderDate"
+    : dateKey;
+
+  const calendarHiddenWeekdays = useMemo(() => {
+    if (!guideTourLabReceiveCalendarActive) return hiddenWeekdays;
+    const today = toKstYmd(new Date());
+    const dow = today ? kstYmdWeekday(today) : null;
+    if (dow == null || !hiddenWeekdays.includes(dow)) return hiddenWeekdays;
+    return hiddenWeekdays.filter((d) => d !== dow);
+  }, [guideTourLabReceiveCalendarActive, hiddenWeekdays]);
+
+  useEffect(() => {
+    if (!guideTourLabCalendarStep) return;
+    const today = toKstYmd(new Date()) || "";
+    if (today) setCursorYmd(today);
+  }, [guideTourLabCalendarStep]);
+
   /** 데모 PTX 상세·채팅 잔류 제거(목록 주입은 active=false면 baseFiltered에서 제외) */
   const clearGuideTourDemoSelection = useCallback(() => {
     setSelectedTransfer((prev) => {
@@ -2047,8 +2079,8 @@ export function RequestorPracticeReceivePage({
         unreadCount: transferUnreadBadgeCount(transfer),
       };
     });
-    return expandPracticeCalendarChipsByArrivalDates(base, dateKey);
-  }, [dateKey, implantCatalog, sortedFilteredTransfers, transferUnreadBadgeCount]);
+    return expandPracticeCalendarChipsByArrivalDates(base, calendarDateKey);
+  }, [calendarDateKey, implantCatalog, sortedFilteredTransfers, transferUnreadBadgeCount]);
 
   const calendarTransferById = useMemo(() => {
     const map = new Map<string, ReceivedPracticeTransfer>();
@@ -5293,13 +5325,25 @@ export function RequestorPracticeReceivePage({
   const jumpCalendarToTransferDate = useCallback(
     (transfer: ReceivedPracticeTransfer) => {
       const raw =
-        dateKey === "arrivalDate"
+        calendarDateKey === "arrivalDate"
           ? transfer.arrivalDate || transfer.orderDate || transfer.createdAt
           : transfer.orderDate || transfer.createdAt;
       const ymd = toKstYmdLoose(raw) || toKstYmd(raw);
       if (ymd) setCursorYmd(ymd);
     },
-    [dateKey],
+    [calendarDateKey],
+  );
+
+  /** lab_calendar — 데모 칩 클릭 시 상세 오픈(다음 스텝) */
+  const selectTransferFromCalendar = useCallback(
+    (transfer: ReceivedPracticeTransfer) => {
+      if (guideTourLabCalendarStep && isGuideTourDemoTransfer(transfer)) {
+        platformGuideTour.advance();
+        return;
+      }
+      void openTransferDialog(transfer);
+    },
+    [guideTourLabCalendarStep, openTransferDialog, platformGuideTour],
   );
 
   const resetLabStatusFiltersToDefault = useCallback(() => {
@@ -5370,7 +5414,7 @@ export function RequestorPracticeReceivePage({
                 );
               if (!transfer) return;
               if (!isMobile) jumpCalendarToTransferDate(transfer);
-              void openTransferDialog(transfer);
+              selectTransferFromCalendar(transfer);
             }}
             className="shrink-0"
           />
@@ -5383,7 +5427,9 @@ export function RequestorPracticeReceivePage({
           {isMobile ? (
             <div
               className="flex min-h-0 flex-1 flex-col"
-              data-guide-tour="lab_calendar"
+              {...(guideTourLabCalendarStep
+                ? {}
+                : { "data-guide-tour": "lab_calendar" })}
             >
               <div className="relative shrink-0 px-1 py-1">
                 <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -5449,13 +5495,17 @@ export function RequestorPracticeReceivePage({
                         role="button"
                         tabIndex={0}
                         className="group w-full cursor-pointer rounded-2xl border border-slate-200/80 bg-white p-3.5 text-left shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-[transform,box-shadow,border-color] active:scale-[0.985] active:bg-slate-50/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        {...(guideTourLabCalendarStep &&
+                        isGuideTourDemoTransfer(transfer)
+                          ? { "data-guide-tour": "lab_calendar_item" }
+                          : {})}
                         onClick={() => {
-                          void openTransferDialog(transfer);
+                          selectTransferFromCalendar(transfer);
                         }}
                         onKeyDown={(e) => {
                           if (e.key === "Enter" || e.key === " ") {
                             e.preventDefault();
-                            void openTransferDialog(transfer);
+                            selectTransferFromCalendar(transfer);
                           }
                         }}
                       >
@@ -5512,20 +5562,26 @@ export function RequestorPracticeReceivePage({
           ) : (
             <PracticeRecentTransfersCalendar
               items={calendarItems}
-              dateKey={dateKey}
+              dateKey={calendarDateKey}
               cursorYmd={cursorYmd}
               onCursorChange={setCursorYmd}
               onDateKeyChange={handleCalendarDateKeyChange}
               onSelectItem={(item) => {
                 const transfer = calendarTransferById.get(item.id);
-                if (transfer) void openTransferDialog(transfer);
+                if (transfer) selectTransferFromCalendar(transfer);
               }}
               search={search}
               onSearchChange={setSearch}
               searchPlaceholder="전송ID, 치과명, 환자명 검색"
-              hiddenWeekdays={hiddenWeekdays}
+              hiddenWeekdays={calendarHiddenWeekdays}
               onHiddenWeekdaysChange={handleHiddenWeekdaysChange}
-              guideTourTarget="lab_calendar"
+              guideTourTarget={null}
+              guideTourItemTarget={
+                guideTourLabCalendarStep ? "lab_calendar_item" : null
+              }
+              guideTourItemId={
+                guideTourLabCalendarStep ? GUIDE_TOUR_DEMO_TRANSFER_ID : null
+              }
             />
           )}
         </>

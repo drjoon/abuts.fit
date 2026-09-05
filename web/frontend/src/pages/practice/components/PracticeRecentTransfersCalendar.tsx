@@ -25,6 +25,7 @@
  * - 2026-08-20: 치과 전체보기 칩도 상단 뱃지 상태색(그룹색 대신).
  * - 2026-08-20: 안읽음(수신 미확인·채팅) 빨간 배지를 칩에 표시.
  * - 2026-08-21: 상단 필터 뱃지 ON=진한 상태색 / OFF=흐린 무채색(표시 on/off 대비).
+ * - 2026-09-05: guideTourItemId — 특정 칩에 data-guide-tour(수신 투어 오늘 의뢰).
  * - 2026-09-05: 완료=amber·어벗=emerald — 수락(sky)과 청록 계열이 겹치지 않게.
  * - 2026-09-02: 완료 뱃지=finished. 어벗=completed(녹색). 칩도 동일 분리.
  */
@@ -309,8 +310,12 @@ type PracticeRecentTransfersCalendarProps = {
   alignEpoch?: number;
   /** 어벗 업로드 지연 칩 툴팁 — 치과=대기/문의 · 기공소(기본)=업로드 독촉 */
   abutmentUploadOverdueViewer?: PracticeAbutmentUploadOverdueViewer;
-  /** 가이드투어 Spotlight 홀 (data-guide-tour) */
+  /** 가이드투어 Spotlight 홀 (data-guide-tour) — 캘린더 전체 */
   guideTourTarget?: string | null;
+  /** 가이드투어 — 특정 칩에 Spotlight 홀 (전체 홀과 병행 가능) */
+  guideTourItemTarget?: string | null;
+  /** guideTourItemTarget을 붙일 칩 id(확장 id `…:ord:ymd` 포함 접두 매칭) */
+  guideTourItemId?: string | null;
 };
 
 export function PracticeRecentTransfersCalendar({
@@ -330,7 +335,15 @@ export function PracticeRecentTransfersCalendar({
   alignEpoch = 0,
   abutmentUploadOverdueViewer = "lab",
   guideTourTarget = null,
+  guideTourItemTarget = null,
+  guideTourItemId = null,
 }: PracticeRecentTransfersCalendarProps) {
+  const isGuideTourChip = (itemId: string) => {
+    const want = String(guideTourItemId || "").trim();
+    if (!want || !guideTourItemTarget) return false;
+    const id = String(itemId || "").trim();
+    return id === want || id.startsWith(`${want}:`);
+  };
   const todayYmd = toKstYmd(new Date()) || "";
   const originYmd = todayYmd || cursorYmd;
   const weeks = useMemo(() => buildWeeksFromOrigin(originYmd), [originYmd]);
@@ -705,6 +718,7 @@ export function PracticeRecentTransfersCalendar({
                                 abutmentUploadOverdueViewer,
                               )
                             : "";
+                          const guideTourChip = isGuideTourChip(item.id);
                           return (
                             <div
                               key={`${item.id}:${day.ymd}`}
@@ -722,6 +736,9 @@ export function PracticeRecentTransfersCalendar({
                                   "border-[3px] border-double border-red-600",
                               )}
                               style={chipStyle}
+                              {...(guideTourChip && guideTourItemTarget
+                                ? { "data-guide-tour": guideTourItemTarget }
+                                : {})}
                               onClick={(e) => e.stopPropagation()}
                               onKeyDown={(e) => e.stopPropagation()}
                             >

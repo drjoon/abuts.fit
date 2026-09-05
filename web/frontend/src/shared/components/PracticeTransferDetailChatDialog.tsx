@@ -14,6 +14,8 @@
 // - web/frontend/src/shared/files/downloadWithProgress.ts
 // - web/frontend/src/shared/files/s3BlobCache.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-09-05: lab_accept — 거절·수락 버튼 practice-tooth-guide-pulse(모달 홀 유지).
+// - 2026-09-05: lab_detail — 상세 모달 전체(DialogContent) Spotlight 홀.
 // - 2026-09-03: 요약 행 action — 어벗 진행상황 옆 의뢰 상세 버튼 등.
 // - 2026-09-02: summaryBanner(어벗 업로드 지연 등) — 의뢰상세 + 진행 상황 탭 상단.
 // - 2026-09-03: 어벗 작업 드롭 — 비STL도 부모로 전달(가드·다시 올리기). 조용한 필터 제거.
@@ -145,6 +147,7 @@ import {
   ORAL_SCAN_REQUIRED_FROM_PRACTICE,
 } from "@/shared/practice/oralScanRequirement";
 import { ModelPreviewDialog, type ModelPreviewKind } from "@/shared/components/ModelPreviewDialog";
+import { useGuideTour } from "@/shared/guideTour/GuideTourProvider";
 import { StlPreviewThumbnail } from "@/features/requests/components/StlPreviewThumbnail";
 import {
   fileFromImageBlob,
@@ -510,6 +513,12 @@ export function PracticeTransferDetailChatDialog({
 }: PracticeTransferDetailChatDialogProps) {
   const { toast } = useToast();
   const isMobile = useIsMobile();
+  const platformGuideTour = useGuideTour();
+  /** 수신 투어 lab_accept — 거절·수락 CTA 깜빡임(모달 전체 홀은 Spotlight lab_detail) */
+  const guideTourPulseAcceptActions =
+    platformGuideTour.kind === "lab" &&
+    platformGuideTour.active &&
+    platformGuideTour.stepId === "lab_accept";
   const {
     layout,
     minimized,
@@ -1513,6 +1522,7 @@ export function PracticeTransferDetailChatDialog({
           "w-auto max-w-none sm:w-auto sm:max-w-none sm:p-0",
           "data-[state=open]:animate-none data-[state=closed]:animate-none",
         )}
+        data-guide-tour="lab_detail"
       >
         <DialogTitle className="sr-only">{title}</DialogTitle>
 
@@ -1631,7 +1641,6 @@ export function PracticeTransferDetailChatDialog({
           <TabsContent
             value="detail"
             className="custom-scrollbar mt-0 max-h-[inherit] overflow-y-auto px-5 py-3 text-sm focus-visible:ring-0"
-            data-guide-tour="lab_detail"
           >
             <div className="space-y-6">
               <section className="space-y-1">
@@ -2068,7 +2077,11 @@ export function PracticeTransferDetailChatDialog({
                         type="button"
                         size="sm"
                         variant="outline"
-                        className="border-destructive-muted text-destructive hover:bg-destructive-soft hover:text-destructive"
+                        className={cn(
+                          "border-destructive-muted text-destructive hover:bg-destructive-soft hover:text-destructive",
+                          guideTourPulseAcceptActions &&
+                            "practice-tooth-guide-pulse",
+                        )}
                         onClick={() => void onReject()}
                         disabled={acceptBusy || rejectBusy}
                       >
@@ -2093,6 +2106,10 @@ export function PracticeTransferDetailChatDialog({
                     <Button
                       type="button"
                       size="sm"
+                      className={cn(
+                        guideTourPulseAcceptActions &&
+                          "practice-tooth-guide-pulse",
+                      )}
                       onClick={() => void onAccept?.()}
                       disabled={acceptDisabled}
                     >

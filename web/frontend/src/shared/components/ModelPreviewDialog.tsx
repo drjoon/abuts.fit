@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-05: z-[450]/overlay z-[445] — 가이드투어 코치(z-440)·플로팅 상세 위.
 // - 2026-08-31: 이미지 줌/팬 — ZoomableImagePreview 공통 컴포넌트 사용(중앙 기준 줌).
 // - 2026-08-31: 이미지 프리뷰 확대/축소(휠·버튼) + 드래그 이동.
 // - 2026-08-28: PLY/OBJ 칼라 텍스처(TextureFile·동반 이미지) 프리뷰 전달.
@@ -170,13 +171,13 @@ export function ModelPreviewDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        // Above floating transfer panel (z-300). Same band as other nested modals.
+        // Above floating transfer (z-300/410) and guide-tour coach (z-440).
         className={cn(
-          "z-[320] flex flex-col gap-0 overflow-hidden p-0",
+          "z-[450] flex flex-col gap-0 overflow-hidden p-0",
           RESPONSIVE.dialogContentFull,
           "sm:max-w-[min(96vw,56rem)]",
         )}
-        overlayClassName="z-[310]"
+        overlayClassName="z-[445]"
       >
         <DialogHeader className="shrink-0 space-y-0 border-b bg-muted/50 px-4 py-3 pr-12 sm:px-5">
           <DialogTitle className="truncate text-sm font-medium sm:text-base">

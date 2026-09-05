@@ -5,6 +5,8 @@
 // - web/frontend/src/shared/components/practice/PracticeOrderArrivalDateRangeField.tsx
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // change-log:
+// - 2026-09-05: lab_detail — 코치마크 위쪽(1/N 캘린더와 동일). 오른쪽 반 배치 해제.
+// - 2026-09-05: 홀 rect 뷰포트 클램프 — 큰 모달(lab_detail) 포커스가 화면 밖으로 나가지 않게.
 // - 2026-09-05: store_workspace — 사이드바「스토어」별도 홀.
 // - 2026-09-05: new_request_workspace — 사이드바「기공의뢰+어벗디자인으로」별도 홀(복수 satellite 키).
 // - 2026-09-05: credits_* — 사이드바 위성 별칭·코치마크 중하단(탭·요약카드 노출).
@@ -14,6 +16,7 @@
 // - 2026-09-05: oral_phone — 코치마크를 안내 문구 아래 가운데 정렬.
 // - 2026-09-05: oral_phone — 코치마크 뷰포트 오른쪽 반쪽. 안내·폰 별도 홀.
 // - 2026-09-05: oral_phone — below 우선·타깃 오른쪽 하단. 안내·폰 별도 홀.
+// - 2026-09-05: lab_calendar_item — 오늘 의뢰 칩 홀(사이드바 위성 없음)·코치마크 위.
 // - 2026-09-05: lab_calendar — 사이드바·캘린더 별도 홀(oral_calendar와 동일).
 // - 2026-09-05: oral_phone — 안내 문구·폰 미리보기 별도 홀(SEPARATE_SATELLITE).
 // - 2026-09-05: 작성 Dialog(z-410) 블러 아래 유지 — outside dismiss 시 홀 소실 방지와 맞춤.
@@ -75,6 +78,8 @@ const SEPARATE_SATELLITE_TARGETS = new Set([
 const PREFER_ABOVE_TARGETS = new Set([
   "oral_calendar",
   "lab_calendar",
+  "lab_calendar_item",
+  "lab_detail",
   "oral_send",
 ]);
 /** 코치마크를 타깃 아래·오른쪽에 고정 */
@@ -100,6 +105,24 @@ const PREFER_RIGHT_HALF_TARGETS = new Set([
 /** 코치마크를 primary 타깃 아래 가운데 정렬 */
 const PREFER_BELOW_CENTER_TARGETS = new Set(["oral_phone"]);
 
+function clampRectToViewport(rect: Rect): Rect | null {
+  const vw = typeof window !== "undefined" ? window.innerWidth : 0;
+  const vh = typeof window !== "undefined" ? window.innerHeight : 0;
+  if (vw <= 0 || vh <= 0) return rect;
+  const inset = Math.min(VIEW_PAD, 8);
+  const left = Math.max(inset, rect.left);
+  const top = Math.max(inset, rect.top);
+  const right = Math.min(vw - inset, rect.left + rect.width);
+  const bottom = Math.min(vh - inset, rect.top + rect.height);
+  if (right - left < 24 || bottom - top < 24) return null;
+  return {
+    top,
+    left,
+    width: right - left,
+    height: bottom - top,
+  };
+}
+
 function readElRect(el: Element | null): Rect | null {
   if (!el || !(el instanceof HTMLElement)) return null;
   // Radix popper wrapper — Content의 zoom transform에 덜 흔들림
@@ -109,12 +132,14 @@ function readElRect(el: Element | null): Rect | null {
     ) as HTMLElement | null) || el;
   const r = measureEl.getBoundingClientRect();
   if (r.width <= 0 || r.height <= 0) return null;
-  return {
-    top: Math.max(0, r.top - PAD),
-    left: Math.max(0, r.left - PAD),
+  const padded: Rect = {
+    top: r.top - PAD,
+    left: r.left - PAD,
     width: r.width + PAD * 2,
     height: r.height + PAD * 2,
   };
+  // 화면 밖·초대형 모달도 뷰포트 안 둘레만 하이라이트
+  return clampRectToViewport(padded);
 }
 
 function unionRect(a: Rect, b: Rect): Rect {
