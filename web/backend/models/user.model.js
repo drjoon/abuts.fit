@@ -145,7 +145,7 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
-    /** 치과·기공소 플랫폼 가이드투어 (1회 수료) */
+    /** 치과·기공소 플랫폼 가이드투어 (1회 수료; 테스트치과·테스트기공소는 항시 미수료) */
     guideTour: {
       completed: {
         type: Boolean,

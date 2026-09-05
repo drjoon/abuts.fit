@@ -7,6 +7,9 @@
 //   1) 소속 유저 가이드투어 미수료 리셋
 //   2) 관련 PracticeTransfer(PTX) · 채팅방/메시지 · draft 삭제
 //
+// 참고: 런타임은 해당 사업자명을 always-on으로 두어 수료가 고정되지 않음
+//   (web/backend/utils/guideTour.util.js). 이 스크립트는 PTX 정리·강제 리셋용.
+//
 // Usage:
 //   cd web/backend && \
 //     ENV_FILE=local.env NODE_ENV=test ABUTS_DB_FORCE=true \

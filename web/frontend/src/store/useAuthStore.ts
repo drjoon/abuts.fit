@@ -33,6 +33,7 @@ import {
   DEFAULT_SIDEBAR_OPEN,
   normalizeSidebarOpen,
 } from "@/shared/layout/sidebarOpen";
+import { isGuideTourAlwaysOnBusiness } from "@/shared/guideTour/guideTourAlwaysOn";
 import {
   normalizeLabReceiveCalendarDateKey,
   type LabReceiveCalendarDateKey,
@@ -139,6 +140,8 @@ const normalizeApiUser = (u: unknown): User | null => {
     businessVerified: Boolean(row.businessVerified),
     onboardingWizardCompleted: Boolean(row.onboardingWizardCompleted),
     guideTour: (() => {
+      const companyName = String(row.business || row.companyName || "");
+      const alwaysOn = isGuideTourAlwaysOnBusiness(companyName);
       const raw =
         row.guideTour && typeof row.guideTour === "object"
           ? (row.guideTour as Record<string, unknown>)
@@ -148,7 +151,7 @@ const normalizeApiUser = (u: unknown): User | null => {
           ? raw.resumeStepId.trim()
           : null;
       return {
-        completed: Boolean(raw.completed),
+        completed: alwaysOn ? false : Boolean(raw.completed),
         resumeStepId: resume,
       };
     })(),
@@ -674,10 +677,11 @@ export const useAuthStore = create<AuthState>((set, get) => {
       if (isMemoryAuthStale(get().token)) return;
       const current = get().user;
       if (!current) return;
+      const alwaysOn = isGuideTourAlwaysOnBusiness(current.companyName);
       const next = {
         ...current,
         guideTour: {
-          completed: Boolean(guideTour.completed),
+          completed: alwaysOn ? false : Boolean(guideTour.completed),
           resumeStepId:
             typeof guideTour.resumeStepId === "string" &&
             guideTour.resumeStepId.trim()

@@ -19,7 +19,10 @@ import { normalizeLastDashboardPath } from "../../utils/lastDashboardPath.util.j
 import { normalizeSidebarOpen } from "../../utils/sidebarOpen.util.js";
 import { normalizeLabReceiveCalendarDateKey } from "../../utils/labReceiveCalendarDateKey.util.js";
 import { normalizeLabReceiveCalendarHiddenWeekdays } from "../../utils/labReceiveCalendarHiddenWeekdays.util.js";
-import { normalizeGuideTour } from "../../utils/guideTour.util.js";
+import {
+  isGuideTourAlwaysOnBusiness,
+  normalizeGuideTour,
+} from "../../utils/guideTour.util.js";
 
 /**
  * 사용자 프로필 조회
@@ -1137,6 +1140,26 @@ async function updateLabReceiveCalendarHiddenWeekdays(req, res) {
 }
 
 /**
+ * 테스트치과·테스트기공소 소속이면 가이드투어 수료를 고정하지 않는다.
+ */
+async function resolveGuideTourAlwaysOn(userId) {
+  const user = await User.findById(userId)
+    .select({ business: 1, businessAnchorId: 1, orgBusinessAnchorId: 1 })
+    .lean();
+  if (!user) return false;
+  if (isGuideTourAlwaysOnBusiness(user.business)) return true;
+  const anchorId = user.businessAnchorId || user.orgBusinessAnchorId;
+  if (!anchorId || !Types.ObjectId.isValid(String(anchorId))) return false;
+  const anchor = await BusinessAnchor.findById(anchorId)
+    .select({ name: 1, "profile.companyName": 1 })
+    .lean();
+  return (
+    isGuideTourAlwaysOnBusiness(anchor?.name) ||
+    isGuideTourAlwaysOnBusiness(anchor?.profile?.companyName)
+  );
+}
+
+/**
  * 플랫폼 가이드투어 상태 저장
  * @route PUT /api/users/guide-tour
  * body: { completed?: boolean, resumeStepId?: string | null }
@@ -1148,6 +1171,7 @@ async function updateGuideTour(req, res) {
         ? req.body
         : {};
     const $set = {};
+    const alwaysOn = await resolveGuideTourAlwaysOn(req.user._id);
 
     if (Object.prototype.hasOwnProperty.call(body, "completed")) {
       if (body.completed !== true && body.completed !== false) {
@@ -1156,7 +1180,8 @@ async function updateGuideTour(req, res) {
           message: "유효하지 않은 completed 값입니다.",
         });
       }
-      $set["guideTour.completed"] = body.completed;
+      // 테스트치과·테스트기공소: 수료를 고정하지 않음(항시 투어)
+      $set["guideTour.completed"] = alwaysOn ? false : body.completed;
       if (body.completed === true) {
         $set["guideTour.resumeStepId"] = null;
       }
@@ -1189,7 +1214,7 @@ async function updateGuideTour(req, res) {
       req.user._id,
       { $set },
       { new: true, runValidators: true },
-    ).select("guideTour");
+    ).select("guideTour business");
 
     if (!updatedUser) {
       return res.status(404).json({
@@ -1201,7 +1226,7 @@ async function updateGuideTour(req, res) {
     return res.status(200).json({
       success: true,
       data: {
-        guideTour: normalizeGuideTour(updatedUser.guideTour),
+        guideTour: normalizeGuideTour(updatedUser.guideTour, { alwaysOn }),
       },
     });
   } catch (error) {

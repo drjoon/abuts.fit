@@ -41,6 +41,7 @@ import { postGeneralLedgerJournal } from "../../services/generalLedger.service.j
 import { sendEmail } from "../../utils/email.util.js";
 import { getFrontendBaseUrl } from "../../utils/url.util.js";
 import { getUserRoleLabel } from "../../utils/roleLabels.js";
+import { applyGuideTourAlwaysOnToUserPayload } from "../../utils/guideTour.util.js";
 
 const createReferralCode = (length, alphaOnly = false) => {
   const alphabet = alphaOnly
@@ -392,7 +393,9 @@ const sendLoginSuccessResponse = async ({
   const token = generateToken({ userId: user._id, role: user.role });
   const refreshToken = generateRefreshToken(user._id);
 
-  const userWithoutPassword = { ...user.toObject() };
+  const userWithoutPassword = applyGuideTourAlwaysOnToUserPayload({
+    ...user.toObject(),
+  });
   delete userWithoutPassword.password;
 
   res.status(200).json({
@@ -1550,7 +1553,7 @@ async function getCurrentUser(req, res) {
     res.status(200).json({
       success: true,
       data: {
-        ...freshUser,
+        ...applyGuideTourAlwaysOnToUserPayload(freshUser),
         dbVersion,
       },
     });

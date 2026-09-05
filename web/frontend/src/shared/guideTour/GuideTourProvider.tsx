@@ -1,10 +1,13 @@
 // related files:
 // - web/frontend/src/shared/guideTour/guideTourSteps.ts
+// - web/frontend/src/shared/guideTour/guideTourAlwaysOn.ts
 // - web/frontend/src/shared/guideTour/GuideTourSpotlight.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/backend/controllers/users/user.controller.js
+// - web/backend/utils/guideTour.util.js
 // - web/frontend/src/shared/components/practice/PracticeToothWorkGuideTourBanner.tsx
 // change-log:
+// - 2026-09-05: 테스트치과·테스트기공소 — 가이드투어 수료 고정 금지(항시 eligible).
 // - 2026-09-05: lab — 챕터 progress·pause/수료 수신 랜딩·레거시 normalize.
 // - 2026-09-05: pause(다음에 하기) — 치과는 구강스캔 빈 캘린더로 이동(중단 화면 잔류 방지).
 // - 2026-09-05: 수료(complete) — intro형 안내·확인 시 구강스캔 포워딩.
@@ -46,6 +49,7 @@ import {
   type GuideTourKind,
   type GuideTourStepDef,
 } from "@/shared/guideTour/guideTourSteps";
+import { isGuideTourAlwaysOnBusiness } from "@/shared/guideTour/guideTourAlwaysOn";
 import { GuideTourSpotlight } from "@/shared/guideTour/GuideTourSpotlight";
 
 type GuideTourSpotlightCopyOverride = {
@@ -172,7 +176,10 @@ export function GuideTourProvider({ kind, children }: ProviderProps) {
   const user = useAuthStore((s) => s.user);
   const setGuideTour = useAuthStore((s) => s.setGuideTour);
 
-  const completed = Boolean(user?.guideTour?.completed);
+  const alwaysOn = isGuideTourAlwaysOnBusiness(user?.companyName);
+  const completed = alwaysOn
+    ? false
+    : Boolean(user?.guideTour?.completed);
   const resumeStepId = user?.guideTour?.resumeStepId ?? null;
   const eligible =
     Boolean(kind) &&
@@ -281,8 +288,15 @@ export function GuideTourProvider({ kind, children }: ProviderProps) {
     if (nextIdx >= steps.length) {
       setActive(false);
       setStepId(null);
-      applyLocalGuideTour({ completed: true, resumeStepId: null });
-      void persist({ completed: true, resumeStepId: null });
+      // 테스트치과·테스트기공소는 수료 고정 금지 → 사이드바·재진입 유지
+      applyLocalGuideTour({
+        completed: alwaysOn ? false : true,
+        resumeStepId: null,
+      });
+      void persist({
+        completed: alwaysOn ? false : true,
+        resumeStepId: null,
+      });
       if (homePath) navigate(homePath);
       return;
     }
@@ -299,6 +313,7 @@ export function GuideTourProvider({ kind, children }: ProviderProps) {
     applyLocalGuideTour,
     navigate,
     homePath,
+    alwaysOn,
   ]);
 
   const retreat = useCallback(() => {
