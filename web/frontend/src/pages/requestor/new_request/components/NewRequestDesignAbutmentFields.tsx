@@ -3,11 +3,12 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/backend/controllers/practiceTransfers/practiceTransferSettings.controller.js
+// - 2026-09-05: 프리셋 삭제 — 로컬 dirty 중 서버 GET이 목록을 되살리지 않음.
 // - 2026-08-29: 디자인+생산 클릭 — 치과「구강스캔으로」·기공소「치과로부터 수신」.
 // - 2026-08-13: 어벗생산의뢰 모달=생산만 고정. 디자인+생산 클릭은 구강스캔/수신으로 이동.
 // - 2026-08-14: 프리셋 편집을 열 때 도입 스펙을 서버에서 다시 불러온다.
 // - 2026-08-14: 환봉 도입 이벤트 수신 시 프리셋 배지 갱신.
-import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { useNavigate } from "react-router-dom";
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -131,6 +132,8 @@ export function NewRequestDesignAbutmentFields({
   const [prosthesisTypeInput, setProsthesisTypeInput] = useState("");
   const [implantFavorites, setImplantFavorites] = useState<PracticeImplantFavorite[]>([]);
   const [abutmentFavorites, setAbutmentFavorites] = useState<PracticeAbutmentFavorite[]>([]);
+  const favoritesDirtyRef = useRef(false);
+  const favoritesLocalWriteSeqRef = useRef(0);
 
   const normalizedProsthesisTypes = useMemo(
     () => ensurePresetProsthesisTypes(prosthesisTypeCatalog),
@@ -144,6 +147,8 @@ export function NewRequestDesignAbutmentFields({
       setAbutmentFavorites([]);
       return;
     }
+    const writeSeqAtStart = favoritesLocalWriteSeqRef.current;
+    const dirtyAtStart = favoritesDirtyRef.current;
     try {
       const res = await apiFetch<unknown>({
         path: "/api/practice/transfers/settings",
@@ -160,6 +165,11 @@ export function NewRequestDesignAbutmentFields({
               abutmentFavorites?: unknown;
             })
           : null;
+      const skipFavorites =
+        dirtyAtStart ||
+        favoritesDirtyRef.current ||
+        favoritesLocalWriteSeqRef.current !== writeSeqAtStart;
+      if (skipFavorites) return;
       setImplantFavorites(normalizeImplantFavorites(payload?.implantFavorites));
       setAbutmentFavorites(normalizeAbutmentFavorites(payload?.abutmentFavorites));
     } catch {
@@ -190,7 +200,7 @@ export function NewRequestDesignAbutmentFields({
       implantFavorites?: PracticeImplantFavorite[];
       abutmentFavorites?: PracticeAbutmentFavorite[];
     }) => {
-      if (!token) return;
+      if (!token) return false;
       const jsonBody: Record<string, unknown> = {};
       if (Array.isArray(patch.implantFavorites)) {
         jsonBody.implantFavorites = normalizeImplantFavorites(patch.implantFavorites);
@@ -198,7 +208,7 @@ export function NewRequestDesignAbutmentFields({
       if (Array.isArray(patch.abutmentFavorites)) {
         jsonBody.abutmentFavorites = normalizeAbutmentFavorites(patch.abutmentFavorites);
       }
-      if (Object.keys(jsonBody).length === 0) return;
+      if (Object.keys(jsonBody).length === 0) return true;
       try {
         await apiFetch<unknown>({
           path: "/api/practice/transfers/settings",
@@ -206,8 +216,10 @@ export function NewRequestDesignAbutmentFields({
           token,
           jsonBody,
         });
+        return true;
       } catch {
         // ignore — UI 상태는 이미 반영됨
+        return false;
       }
     },
     [token],
@@ -216,8 +228,14 @@ export function NewRequestDesignAbutmentFields({
   const handleImplantFavoritesChange = useCallback(
     (next: PracticeImplantFavorite[]) => {
       const normalized = normalizeImplantFavorites(next);
+      const writeSeq = (favoritesLocalWriteSeqRef.current += 1);
+      favoritesDirtyRef.current = true;
       setImplantFavorites(normalized);
-      void saveFavoritesToServer({ implantFavorites: normalized });
+      void saveFavoritesToServer({ implantFavorites: normalized }).then((ok) => {
+        if (ok && favoritesLocalWriteSeqRef.current === writeSeq) {
+          favoritesDirtyRef.current = false;
+        }
+      });
     },
     [saveFavoritesToServer],
   );
@@ -225,8 +243,14 @@ export function NewRequestDesignAbutmentFields({
   const handleAbutmentFavoritesChange = useCallback(
     (next: PracticeAbutmentFavorite[]) => {
       const normalized = normalizeAbutmentFavorites(next);
+      const writeSeq = (favoritesLocalWriteSeqRef.current += 1);
+      favoritesDirtyRef.current = true;
       setAbutmentFavorites(normalized);
-      void saveFavoritesToServer({ abutmentFavorites: normalized });
+      void saveFavoritesToServer({ abutmentFavorites: normalized }).then((ok) => {
+        if (ok && favoritesLocalWriteSeqRef.current === writeSeq) {
+          favoritesDirtyRef.current = false;
+        }
+      });
     },
     [saveFavoritesToServer],
   );

@@ -2079,11 +2079,13 @@ export const PracticeToothImplantFields = ({
                               size="icon"
                               className="h-7 w-7 shrink-0 text-slate-400 hover:text-destructive"
                               disabled={favoritesBusy}
-                              onClick={() =>
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
                                 void persistFavorites(
                                   favorites.filter((row) => row.id !== fav.id),
-                                )
-                              }
+                                );
+                              }}
                               aria-label="프리셋 삭제"
                             >
                               <Trash2 className="h-3.5 w-3.5" />

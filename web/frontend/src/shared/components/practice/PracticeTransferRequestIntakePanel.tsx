@@ -14,6 +14,8 @@ import {
 import { createPortal } from "react-dom";
 import {
   Check,
+  ChevronLeft,
+  ChevronRight,
   ChevronsUpDown,
   GripVertical,
   Link2,
@@ -172,6 +174,7 @@ import {
 // - web/frontend/src/shared/components/practice/PracticeToothSimpleAbutmentFields.tsx
 // - web/frontend/src/shared/components/practice/PracticeCustomSpecsPresetEditDialog.tsx
 // - web/frontend/src/shared/pricing/abutsAbutmentService.ts
+// - 2026-09-05: 커스텀어벗 설정 — 임플란트→스캔바디/심플어벗 2단 위저드. 이전·다음·좁은 폭. 화면 중앙. 제목 단축. 2단 좌우. STL 버튼 가운데.
 // - 2026-09-05: 커스텀어벗 모달 — 치식 투어 중 강제 닫기·DialogContent에 data-guide-tour(홀=모달 전체).
 // - 2026-09-05: 커스텀어벗 모달 — 상단 고정·dvh 높이·투어 z 상승·치식 스텝에서 오픈 차단(하단 잘림).
 // - 2026-09-05: 프리셋 투어 — 모달 전체 하이라이트·빈 프리셋 「+ 추가」안내·치식 스텝 시 모달 닫기.
@@ -1231,6 +1234,10 @@ export const PracticeTransferRequestIntakePanel = ({
   }, [feeQuote?.lines, selectedLab]);
   /** null = closed; number = 해당 치아 커스텀어벗 설정 */
   const [customSpecsModalTarget, setCustomSpecsModalTarget] = useState<number | null>(null);
+  /** 커스텀어벗 설정 위저드: 1 임플란트 → 2 스캔바디|심플어벗 */
+  const [customSpecsWizardStep, setCustomSpecsWizardStep] = useState<
+    "implant" | "abutment"
+  >("implant");
   const [customSpecsPresetEditOpen, setCustomSpecsPresetEditOpen] = useState(false);
   const customSpecsPresetEditOpenRef = useRef(false);
   /** 이번 모달에서 임플란트/스캔바디를 각각 클릭 선택했는지 */
@@ -2363,6 +2370,9 @@ export const PracticeTransferRequestIntakePanel = ({
     customSpecsPresetEditOpenRef.current = false;
     customSpecsPickSessionRef.current = { implant: false, scanbody: false };
     setCustomSpecsPresetEditOpen(false);
+    setCustomSpecsWizardStep(
+      toothWorkGuideTourStepId === "abutment_side" ? "abutment" : "implant",
+    );
     setToothWorks((prev) => {
       const row = prev[index];
       if (!row) return prev;
@@ -2402,6 +2412,7 @@ export const PracticeTransferRequestIntakePanel = ({
     customSpecsPresetEditOpenRef.current = false;
     customSpecsPickSessionRef.current = { implant: false, scanbody: false };
     setCustomSpecsPresetEditOpen(false);
+    setCustomSpecsWizardStep("implant");
     setCustomSpecsModalTarget(null);
   };
 
@@ -2471,6 +2482,16 @@ export const PracticeTransferRequestIntakePanel = ({
     if (index < 0) return;
     openCustomSpecsModal(index);
   }, [toothWorkGuideTourStepId, customSpecsModalTarget, toothWorks]);
+
+  // 가이드투어 프리셋 스텝 ↔ 위저드 스텝 동기화
+  useEffect(() => {
+    if (customSpecsModalTarget === null) return;
+    if (toothWorkGuideTourStepId === "implant_preset") {
+      setCustomSpecsWizardStep("implant");
+    } else if (toothWorkGuideTourStepId === "abutment_side") {
+      setCustomSpecsWizardStep("abutment");
+    }
+  }, [toothWorkGuideTourStepId, customSpecsModalTarget]);
 
   // 플랫폼 Spotlight — 빈 임플란트·스캔바디 프리셋일 때 「+ 추가」안내
   useEffect(() => {
@@ -2571,8 +2592,12 @@ export const PracticeTransferRequestIntakePanel = ({
     });
     if (implantTouched && scanbodyTouched && abutmentSideComplete) {
       registerCustomSpecsPick("both");
+      setCustomSpecsWizardStep("abutment");
     } else if (implantTouched) {
       registerCustomSpecsPick("implant");
+      if (hasToothWorkImplantPreset({ ...row, ...merged })) {
+        setCustomSpecsWizardStep("abutment");
+      }
     } else if (scanbodyTouched && abutmentSideComplete) {
       registerCustomSpecsPick("scanbody");
     }
@@ -4870,12 +4895,12 @@ export const PracticeTransferRequestIntakePanel = ({
       >
         <DialogContent
           className={cn(
-            // 상단 고정 + dvh — 중앙 정렬 시 뷰포트 아래로 푸터가 잘리는 문제 방지
-            "guide-tour-nested-dialog flex !top-4 !translate-y-0 max-h-[calc(100dvh-2rem)] w-[min(90rem,calc(100vw-1.5rem))] flex-col gap-3 overflow-hidden p-4 sm:max-w-[min(90rem,calc(100vw-1.5rem))] sm:p-5",
-            // 프리셋 투어: 코치마크 자리 확보
+            // 화면 중앙. 2단(스캔바디|심플어벗 좌우) 기준 폭. max-h로 뷰포트 넘침만 방지
+            "guide-tour-nested-dialog flex max-h-[calc(100dvh-2rem)] w-[min(48rem,calc(100vw-1.5rem))] flex-col gap-3 overflow-hidden p-4 sm:max-w-[min(48rem,calc(100vw-1.5rem))] sm:p-5",
+            // 프리셋 투어: 코치마크 자리 확보(상단 여백)
             (toothWorkGuideTourStepId === "implant_preset" ||
               toothWorkGuideTourStepId === "abutment_side") &&
-              "!top-[10.5rem] max-h-[calc(100dvh-11.5rem)]",
+              "!top-[10.5rem] !translate-y-0 max-h-[calc(100dvh-11.5rem)]",
             nestedDialogClassName,
           )}
           overlayClassName={cn(
@@ -4931,20 +4956,45 @@ export const PracticeTransferRequestIntakePanel = ({
                   void onDefaultAbutmentProductModeChange?.(alternateMode);
                 }
               };
+              const modalSpecs = pickToothWorkCustomSpecs(modalTooth, true);
+              const customProsthesis = isCustomAbutmentProsthesisType(
+                modalTooth.prosthesisType,
+              );
+              const simpleDisabled = customProsthesis;
+              const simpleMode =
+                !simpleDisabled && isSimpleAbutmentMode(modalSpecs);
+              const scanbodySelected =
+                !simpleMode &&
+                Boolean(
+                  modalSpecs.abutmentManufacturer ||
+                    modalSpecs.abutmentDiameter ||
+                    modalSpecs.abutmentHeight,
+                );
+              const implantReady = hasToothWorkImplantPreset(modalSpecs);
+              const wizardStep =
+                toothWorkGuideTourStepId === "implant_preset"
+                  ? "implant"
+                  : toothWorkGuideTourStepId === "abutment_side"
+                    ? "abutment"
+                    : customSpecsWizardStep;
               return (
                 <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
-                  <DialogHeader className="shrink-0 space-y-1.5 text-left">
+                  <DialogHeader className="shrink-0 space-y-1 text-left">
                     <DialogTitle className="text-lg">
-                      {`커스텀어벗 설정${toothLabel} : ${ABUTMENT_PRODUCT_MODE_LABEL[modalMode]}`}
+                      {`커스텀어벗 설정${toothLabel}`}
                     </DialogTitle>
+                    <p className="text-sm text-slate-500" aria-live="polite">
+                      {wizardStep === "implant"
+                        ? "1/2 · 임플란트 선택"
+                        : customProsthesis
+                          ? "2/2 · 스캔바디 선택"
+                          : "2/2 · 스캔바디 또는 심플어벗"}
+                    </p>
                     <DialogDescription className="sr-only">
                       {(() => {
-                        const customProsthesis = isCustomAbutmentProsthesisType(
-                          modalTooth.prosthesisType,
-                        );
                         const abutmentSideHint = customProsthesis
-                          ? "임플란트와 스캔바디를 각각 한 번씩 선택하면 저장되고 닫힙니다."
-                          : "임플란트와 스캔바디(또는 심플어벗)를 각각 한 번씩 선택하면 저장되고 닫힙니다.";
+                          ? "임플란트를 선택한 뒤 스캔바디를 선택하면 저장되고 닫힙니다."
+                          : "임플란트를 선택한 뒤 스캔바디 또는 심플어벗을 선택하면 저장되고 닫힙니다.";
                         if (
                           lockedMode === ABUTMENT_PRODUCT_MODE.DESIGN_AND_PRODUCTION
                         ) {
@@ -4973,64 +5023,44 @@ export const PracticeTransferRequestIntakePanel = ({
                   ) : null}
 
                   <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                    {(() => {
-                      const modalSpecs = pickToothWorkCustomSpecs(modalTooth, true);
-                      const customProsthesis = isCustomAbutmentProsthesisType(
-                        modalTooth.prosthesisType,
-                      );
-                      const simpleDisabled = customProsthesis;
-                      const simpleMode =
-                        !simpleDisabled && isSimpleAbutmentMode(modalSpecs);
-                      const scanbodySelected =
-                        !simpleMode &&
-                        Boolean(
-                          modalSpecs.abutmentManufacturer ||
-                            modalSpecs.abutmentDiameter ||
-                            modalSpecs.abutmentHeight,
-                        );
-                      return (
-                    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-1.5 sm:flex-row sm:items-stretch sm:gap-2 sm:p-2">
-                      <div
-                        className={cn(
-                          "flex min-h-0 min-w-0 flex-1 flex-col gap-1.5",
-                          toothWorkGuideTourStepId === "implant_preset" &&
-                            "practice-tooth-guide-pulse rounded-xl",
-                        )}
-                      >
-                        <PracticeToothImplantFields
-                          mode="presets"
-                          allowPresetEdit
-                          heading="임플란트"
-                          className="min-h-0 flex-1 border-primary/50 bg-primary-soft/60"
-                          guideOpenAdd={
+                    <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto p-1.5 sm:p-2">
+                      {wizardStep === "implant" ? (
+                        <div
+                          className={cn(
+                            "flex min-h-0 min-w-0 flex-1 flex-col gap-1.5",
                             toothWorkGuideTourStepId === "implant_preset" &&
-                            implantFavorites.length === 0
-                          }
-                          value={modalSpecs}
-                          onChange={(nextImplant) => {
-                            patchCustomSpecsOnTooth(customSpecsModalTarget, nextImplant);
-                          }}
-                          connections={implantConnections}
-                          favorites={implantFavorites}
-                          onFavoritesChange={onImplantFavoritesChange}
-                        />
-                      </div>
-                      <div
-                        className="flex w-9 shrink-0 items-center justify-center self-stretch sm:w-10"
-                        aria-hidden
-                      >
-                        <span className="select-none text-4xl font-bold leading-none text-slate-400 sm:text-5xl">
-                          +
-                        </span>
-                      </div>
-                      <div
-                        className={cn(
-                          "flex min-h-0 min-w-0 flex-[2] flex-col gap-1.5",
-                          toothWorkGuideTourStepId === "abutment_side" &&
-                            "practice-tooth-guide-pulse rounded-xl",
-                        )}
-                      >
-                        <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1 items-stretch gap-2.5 sm:grid-cols-2 sm:gap-2.5">
+                              "practice-tooth-guide-pulse rounded-xl",
+                          )}
+                        >
+                          <PracticeToothImplantFields
+                            mode="presets"
+                            allowPresetEdit
+                            heading="임플란트"
+                            className="min-h-0 flex-1 border-primary/50 bg-primary-soft/60"
+                            guideOpenAdd={
+                              toothWorkGuideTourStepId === "implant_preset" &&
+                              implantFavorites.length === 0
+                            }
+                            value={modalSpecs}
+                            onChange={(nextImplant) => {
+                              patchCustomSpecsOnTooth(
+                                customSpecsModalTarget,
+                                nextImplant,
+                              );
+                            }}
+                            connections={implantConnections}
+                            favorites={implantFavorites}
+                            onFavoritesChange={onImplantFavoritesChange}
+                          />
+                        </div>
+                      ) : (
+                        <div
+                          className={cn(
+                            "grid min-h-0 min-w-0 flex-1 grid-cols-1 items-stretch gap-2.5 sm:grid-cols-2",
+                            toothWorkGuideTourStepId === "abutment_side" &&
+                              "practice-tooth-guide-pulse rounded-xl",
+                          )}
+                        >
                           <PracticeToothAbutmentFields
                             mode="presets"
                             allowPresetEdit
@@ -5043,7 +5073,10 @@ export const PracticeTransferRequestIntakePanel = ({
                             }
                             value={modalSpecs}
                             onChange={(nextAbutment) => {
-                              patchCustomSpecsOnTooth(customSpecsModalTarget, nextAbutment);
+                              patchCustomSpecsOnTooth(
+                                customSpecsModalTarget,
+                                nextAbutment,
+                              );
                             }}
                             favorites={abutmentFavorites}
                             onFavoritesChange={onAbutmentFavoritesChange}
@@ -5056,14 +5089,15 @@ export const PracticeTransferRequestIntakePanel = ({
                             className="min-h-0 border-service-abut-muted/90 bg-service-abut-soft/40"
                             value={modalSpecs}
                             onChange={(nextSimple) => {
-                              patchCustomSpecsOnTooth(customSpecsModalTarget, nextSimple);
+                              patchCustomSpecsOnTooth(
+                                customSpecsModalTarget,
+                                nextSimple,
+                              );
                             }}
                           />
                         </div>
-                      </div>
+                      )}
                     </div>
-                      );
-                    })()}
 
                     <PracticeCustomSpecsPresetEditDialog
                       open={customSpecsPresetEditOpen}
@@ -5085,40 +5119,68 @@ export const PracticeTransferRequestIntakePanel = ({
                     />
                   </div>
 
-                  <DialogFooter className="flex shrink-0 flex-row flex-wrap items-center justify-end gap-2 sm:justify-end sm:space-x-0">
-                    <Button
-                      type="button"
-                      className={
-                        alternateMode === ABUTMENT_PRODUCT_MODE.PRODUCTION
-                          ? "h-auto min-h-10 whitespace-normal rounded-lg border border-[hsl(46_85%_45%)] bg-[hsl(48_96%_58%)] px-3.5 py-1.5 text-center text-[13px] font-semibold leading-snug text-slate-900 shadow-sm hover:bg-[hsl(48_96%_50%)]"
-                          : "h-10 min-w-[5.5rem] border-2 border-[hsl(46_85%_52%)] bg-[hsl(48_96%_58%)] px-3 text-sm font-semibold text-slate-900 shadow-sm hover:bg-[hsl(48_96%_50%)]"
-                      }
-                      onClick={switchToAlternateMode}
-                    >
-                      {alternateMode === ABUTMENT_PRODUCT_MODE.PRODUCTION ? (
-                        <span className="flex flex-col items-center">
-                          <span>STL 디자인 파일로</span>
-                          <span>어벗 생산만 의뢰</span>
-                        </span>
-                      ) : (
-                        ABUTMENT_PRODUCT_MODE_LABEL[alternateMode]
-                      )}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="h-10 min-w-[5.5rem]"
-                      onClick={cancelCustomSpecsModal}
-                    >
-                      취소
-                    </Button>
-                    <Button
-                      type="button"
-                      className="h-10 min-w-[5.5rem]"
-                      onClick={confirmCustomSpecsModal}
-                    >
-                      확인
-                    </Button>
+                  <DialogFooter className="grid shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-2 sm:space-x-0">
+                    <div className="flex flex-wrap items-center justify-start gap-2">
+                      {wizardStep === "abutment" ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-10 min-w-[5.5rem]"
+                          onClick={() => setCustomSpecsWizardStep("implant")}
+                          disabled={toothWorkGuideTourStepId === "abutment_side"}
+                        >
+                          <ChevronLeft className="mr-1 h-4 w-4" />
+                          이전
+                        </Button>
+                      ) : implantReady ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-10 min-w-[5.5rem]"
+                          onClick={() => setCustomSpecsWizardStep("abutment")}
+                        >
+                          다음
+                          <ChevronRight className="ml-1 h-4 w-4" />
+                        </Button>
+                      ) : null}
+                    </div>
+                    <div className="flex justify-center">
+                      <Button
+                        type="button"
+                        className={
+                          alternateMode === ABUTMENT_PRODUCT_MODE.PRODUCTION
+                            ? "h-auto min-h-10 whitespace-normal rounded-lg border border-[hsl(46_85%_45%)] bg-[hsl(48_96%_58%)] px-3.5 py-1.5 text-center text-[13px] font-semibold leading-snug text-slate-900 shadow-sm hover:bg-[hsl(48_96%_50%)]"
+                            : "h-10 min-w-[5.5rem] border-2 border-[hsl(46_85%_52%)] bg-[hsl(48_96%_58%)] px-3 text-sm font-semibold text-slate-900 shadow-sm hover:bg-[hsl(48_96%_50%)]"
+                        }
+                        onClick={switchToAlternateMode}
+                      >
+                        {alternateMode === ABUTMENT_PRODUCT_MODE.PRODUCTION ? (
+                          <span className="flex flex-col items-center text-center">
+                            <span>STL 디자인 파일로</span>
+                            <span>어벗 생산만 의뢰</span>
+                          </span>
+                        ) : (
+                          ABUTMENT_PRODUCT_MODE_LABEL[alternateMode]
+                        )}
+                      </Button>
+                    </div>
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-10 min-w-[5.5rem]"
+                        onClick={cancelCustomSpecsModal}
+                      >
+                        취소
+                      </Button>
+                      <Button
+                        type="button"
+                        className="h-10 min-w-[5.5rem]"
+                        onClick={confirmCustomSpecsModal}
+                      >
+                        확인
+                      </Button>
+                    </div>
                   </DialogFooter>
                 </div>
               );

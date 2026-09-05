@@ -617,13 +617,11 @@ export const applyRoundBarRequestUpdate = (
   const brand = String(payload?.brand || "").trim();
   const family = String(payload?.family || "").trim();
   const type = String(payload?.type || "").trim() || ROUND_BAR_HEX_TYPE;
-  let matched = false;
   const next = favorites.map((fav) => {
     const match =
       (requestId && String(fav.roundBarRequestId || "").trim() === requestId) ||
       (favoriteId && fav.id === favoriteId);
     if (!match) return fav;
-    matched = true;
     return {
       ...fav,
       roundBar: true,
@@ -638,24 +636,8 @@ export const applyRoundBarRequestUpdate = (
       type: overwriteSpec ? type : type || fav.type,
     };
   });
-  if (matched || (!adopted && !isPublic) || !manufacturer) {
-    return expandImplantFavoriteList(next);
-  }
-  return expandImplantFavoriteList([
-    {
-      id: favoriteId || (requestId ? `imp-rb-${requestId.slice(-8)}` : `imp-rb-${Date.now().toString(36)}`),
-      manufacturer,
-      brand,
-      family,
-      type,
-      roundBar: true,
-      adopted,
-      adoptedKind,
-      isPublic,
-      roundBarRequestId: requestId || undefined,
-    },
-    ...next,
-  ]);
+  // 목록에 없는 도입 건을 이벤트로 다시 넣지 않음 — 치과가 삭제한 프리셋이 복구되면 안 됨.
+  return expandImplantFavoriteList(next);
 };
 
 export async function submitRoundBarManufacturerRequest(params: {

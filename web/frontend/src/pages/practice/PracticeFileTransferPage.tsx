@@ -104,6 +104,8 @@
  * - 2026-08-20: 모바일 구강스캔 — 환자명 후 구강포토 촬영·업로드·임시저장(기공소는 전송 시).
  * - 2026-08-20: 모바일 임시저장=최근과 같은 카드 시트. PC 드롭존에 모바일 쉐이드 안내.
  * - 2026-08-20: 구강포토 썸네일 — private S3 location 대신 blob/proxy 미리보기.
+ * - 2026-09-05: 임플란트/스캔바디 프리셋 — 로컬 삭제 후 서버 GET/POST·환봉 이벤트가 목록을 되살리던 문제 수정.
+ * - 2026-09-05: 부분 설정 저장 응답이 전체 apply로 덮어써 임플란트 프리셋 삭제가 복원되던 레이스 수정.
  * - 2026-09-05: 가이드투어 작성 패널 첫 오픈 시「새로 작성」으로 빈 폼.
  * - 2026-08-25: 가이드투어 카드 — 헤더 버튼~기공소·환자·날짜 행 세로 맞춤(폭=주문-치과도착).
  * - 2026-08-25: 상단 가이드투어 — 기공소·환자·날짜·보철물 전체 투어(툴바 오른쪽 위).
@@ -1479,6 +1481,14 @@ export const PracticeFileTransferPage = ({
   const [memoSnippets, setMemoSnippets] = useState<string[]>([]);
   const [implantFavorites, setImplantFavorites] = useState<PracticeImplantFavorite[]>([]);
   const [abutmentFavorites, setAbutmentFavorites] = useState<PracticeAbutmentFavorite[]>([]);
+  /** 로컬 프리셋 편집(추가·삭제) 세대 — 진행 중 GET/POST가 옛 목록으로 덮지 않게 */
+  const favoritesLocalWriteSeqRef = useRef(0);
+  /** 로컬 프리셋이 서버 저장 완료 전 — GET이 옛 DB 목록으로 덮지 않음 */
+  const favoritesDirtyRef = useRef(false);
+  const implantFavoritesRef = useRef(implantFavorites);
+  implantFavoritesRef.current = implantFavorites;
+  const abutmentFavoritesRef = useRef(abutmentFavorites);
+  abutmentFavoritesRef.current = abutmentFavorites;
   const [composeOpen, setComposeOpen] = useState(false);
   const [draftsOpen, setDraftsOpen] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false);
@@ -2195,55 +2205,152 @@ export const PracticeFileTransferPage = ({
           ? (body.data as PracticeTransferSettingsPayload)
           : null;
 
-      applyPracticeTransferSettings(payload);
+      // 부분 저장 응답으로 전체 apply 하면 동시 저장(메모↔프리셋 등)이
+      // 서로 필드를 되살림. 이번 요청이 보낸 필드만 서버 정규화값으로 반영.
+      if (payload) {
+        if (hasArrivalDefaultDays || hasLabArrivalDefaults || hasLabArrivalDefault) {
+          if (typeof payload.arrivalDefaultDays === "number") {
+            const nextAccount = normalizeArrivalDefaultDays(payload.arrivalDefaultDays);
+            setAccountArrivalDefaultDays(nextAccount);
+            accountArrivalDefaultDaysRef.current = nextAccount;
+            skipNextArrivalAutoSyncRef.current = true;
+            setArrivalDefaultDays(
+              resolveLabArrivalDefaultDays(
+                selectedLabIdRef.current,
+                Array.isArray(payload.labArrivalDefaults)
+                  ? normalizeLabArrivalDefaults(payload.labArrivalDefaults)
+                  : labArrivalDefaultsRef.current,
+                nextAccount,
+                selectedLabNameRef.current,
+              ),
+            );
+          }
+          if (Array.isArray(payload.labArrivalDefaults)) {
+            const nextLabs = normalizeLabArrivalDefaults(payload.labArrivalDefaults);
+            setLabArrivalDefaults(nextLabs);
+            labArrivalDefaultsRef.current = nextLabs;
+          }
+        }
+        if (hasProsthesisTypes && Array.isArray(payload.prosthesisTypes)) {
+          const nextTypes = ensurePresetProsthesisTypes(
+            normalizeProsthesisTypes(payload.prosthesisTypes),
+          );
+          setProsthesisTypeCatalog(nextTypes);
+          setProsthesisTypeCatalogDraft(nextTypes);
+        }
+        if (hasMemoSnippets) {
+          setMemoSnippets(normalizeMemoSnippets(payload.memoSnippets));
+        }
+        // 프리셋은 낙관적 로컬이 SSOT. 서버 echo로 덮으면 동시 GET/다른 저장이 삭제를 되살림.
+        if (hasSkipDesignConfirm) {
+          setSkipDesignConfirm(payload.skipDesignConfirm !== false);
+        }
+        if (hasSkipJig) {
+          setSkipJig(payload.skipJig !== false);
+        }
+        if (hasCalendarNewRequestHintDismissedAt) {
+          setCalendarNewRequestHintDismissed(
+            Boolean(payload.calendarNewRequestHintDismissedAt),
+          );
+        }
+        if (hasDefaultAbutmentProductMode) {
+          setDefaultAbutmentProductMode(
+            normalizeAccountAbutmentProductMode(payload.defaultAbutmentProductMode),
+          );
+        }
+        if (hasAutoMatchMinLabRating || hasAutoMatchMaxLabRating) {
+          setAutoMatchMinLabRating(
+            normalizeAutoMatchMinLabRating(payload.autoMatchMinLabRating),
+          );
+          setAutoMatchMaxLabRating(
+            normalizeAutoMatchMaxLabRating(payload.autoMatchMaxLabRating),
+          );
+        }
+      }
 
       try {
+        const existingRaw = localStorage.getItem(PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY);
+        const existing =
+          existingRaw && typeof existingRaw === "string"
+            ? (JSON.parse(existingRaw) as Record<string, unknown>)
+            : {};
         localStorage.setItem(
           PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY,
           JSON.stringify({
-            arrivalDefaultDays: normalizeArrivalDefaultDays(
-              Number(payload?.arrivalDefaultDays ?? DEFAULT_ARRIVAL_OFFSET_DAYS),
-            ),
-            labArrivalDefaults: normalizeLabArrivalDefaults(
-              Array.isArray(payload?.labArrivalDefaults)
-                ? payload.labArrivalDefaults
-                : labArrivalDefaults,
-            ),
-            prosthesisTypes: normalizeProsthesisTypes(
-              Array.isArray(payload?.prosthesisTypes)
-                ? payload?.prosthesisTypes
-                : [...PRESET_PROSTHESIS_TYPES],
-            ),
-            memoSnippets: normalizeMemoSnippets(
-              Array.isArray(payload?.memoSnippets) ? payload?.memoSnippets : memoSnippets,
-            ),
-            implantFavorites: normalizeImplantFavorites(
-              Array.isArray(payload?.implantFavorites) ? payload?.implantFavorites : implantFavorites,
-            ),
-            abutmentFavorites: normalizeAbutmentFavorites(
-              Array.isArray(payload?.abutmentFavorites)
-                ? payload?.abutmentFavorites
-                : abutmentFavorites,
-            ),
-            skipDesignConfirm: payload?.skipDesignConfirm !== false,
-            skipJig: payload?.skipJig !== false,
-            calendarNewRequestHintDismissedAt:
-              payload?.calendarNewRequestHintDismissedAt || null,
-            defaultAbutmentProductMode: normalizeAccountAbutmentProductMode(
-              payload?.defaultAbutmentProductMode,
-            ),
-            autoMatchMinLabRating: normalizeAutoMatchMinLabRating(
-              payload?.autoMatchMinLabRating ??
-                (hasAutoMatchMinLabRating
-                  ? params.autoMatchMinLabRating
-                  : undefined),
-            ),
-            autoMatchMaxLabRating: normalizeAutoMatchMaxLabRating(
-              payload?.autoMatchMaxLabRating ??
-                (hasAutoMatchMaxLabRating
-                  ? params.autoMatchMaxLabRating
-                  : undefined),
-            ),
+            ...existing,
+            ...(hasArrivalDefaultDays || hasLabArrivalDefaults || hasLabArrivalDefault
+              ? {
+                  arrivalDefaultDays: normalizeArrivalDefaultDays(
+                    Number(
+                      payload?.arrivalDefaultDays ??
+                        accountArrivalDefaultDaysRef.current ??
+                        DEFAULT_ARRIVAL_OFFSET_DAYS,
+                    ),
+                  ),
+                  labArrivalDefaults: normalizeLabArrivalDefaults(
+                    Array.isArray(payload?.labArrivalDefaults)
+                      ? payload.labArrivalDefaults
+                      : labArrivalDefaultsRef.current,
+                  ),
+                }
+              : {}),
+            ...(hasProsthesisTypes
+              ? {
+                  prosthesisTypes: normalizeProsthesisTypes(
+                    Array.isArray(payload?.prosthesisTypes)
+                      ? payload.prosthesisTypes
+                      : params.prosthesisTypes || [],
+                  ),
+                }
+              : {}),
+            ...(hasMemoSnippets
+              ? {
+                  memoSnippets: normalizeMemoSnippets(
+                    payload?.memoSnippets ?? params.memoSnippets,
+                  ),
+                }
+              : {}),
+            ...(hasImplantFavorites
+              ? {
+                  implantFavorites: normalizeImplantFavorites(
+                    payload?.implantFavorites ?? params.implantFavorites,
+                  ),
+                }
+              : {}),
+            ...(hasAbutmentFavorites
+              ? {
+                  abutmentFavorites: normalizeAbutmentFavorites(
+                    payload?.abutmentFavorites ?? params.abutmentFavorites,
+                  ),
+                }
+              : {}),
+            ...(hasSkipDesignConfirm
+              ? { skipDesignConfirm: payload?.skipDesignConfirm !== false }
+              : {}),
+            ...(hasSkipJig ? { skipJig: payload?.skipJig !== false } : {}),
+            ...(hasCalendarNewRequestHintDismissedAt
+              ? {
+                  calendarNewRequestHintDismissedAt:
+                    payload?.calendarNewRequestHintDismissedAt || null,
+                }
+              : {}),
+            ...(hasDefaultAbutmentProductMode
+              ? {
+                  defaultAbutmentProductMode: normalizeAccountAbutmentProductMode(
+                    payload?.defaultAbutmentProductMode,
+                  ),
+                }
+              : {}),
+            ...(hasAutoMatchMinLabRating || hasAutoMatchMaxLabRating
+              ? {
+                  autoMatchMinLabRating: normalizeAutoMatchMinLabRating(
+                    payload?.autoMatchMinLabRating ?? params.autoMatchMinLabRating,
+                  ),
+                  autoMatchMaxLabRating: normalizeAutoMatchMaxLabRating(
+                    payload?.autoMatchMaxLabRating ?? params.autoMatchMaxLabRating,
+                  ),
+                }
+              : {}),
             savedAt: Date.now(),
           }),
         );
@@ -2254,13 +2361,7 @@ export const PracticeFileTransferPage = ({
       return true;
     },
     [
-      applyPracticeTransferSettings,
       authToken,
-      memoSnippets,
-      implantFavorites,
-      abutmentFavorites,
-      labArrivalDefaults,
-      abutsLabFeeCatalog,
       autoMatchMinLabRating,
       autoMatchMaxLabRating,
     ],
@@ -2787,6 +2888,8 @@ export const PracticeFileTransferPage = ({
 
   const loadPracticeTransferSettingsFromServer = useCallback(async () => {
     if (!authToken) return;
+    const writeSeqAtStart = favoritesLocalWriteSeqRef.current;
+    const dirtyAtStart = favoritesDirtyRef.current;
     try {
       const res = await apiFetch<unknown>({
         path: "/api/practice/transfers/settings",
@@ -2804,8 +2907,22 @@ export const PracticeFileTransferPage = ({
           ? (body.data as PracticeTransferSettingsPayload)
           : null;
 
+      // 로컬 프리셋 편집 중이거나, GET 도중 편집되면 서버 목록으로 덮지 않음
+      const skipFavorites =
+        dirtyAtStart ||
+        favoritesDirtyRef.current ||
+        favoritesLocalWriteSeqRef.current !== writeSeqAtStart;
+
       if (localFormUpdatedAtRef.current <= 0) {
-        applyPracticeTransferSettings(payload);
+        if (skipFavorites && payload) {
+          applyPracticeTransferSettings({
+            ...payload,
+            implantFavorites: implantFavoritesRef.current,
+            abutmentFavorites: abutmentFavoritesRef.current,
+          });
+        } else {
+          applyPracticeTransferSettings(payload);
+        }
       } else if (payload) {
         // 폼 로컬값이 있어도 계정 세팅(문장·프리셋·디자인컨펌생략·지그생략·커스텀어벗 기본모드·자동매칭 예산·최소 별)은 서버를 우선 반영
         setMemoSnippets(normalizeMemoSnippets(payload.memoSnippets));
@@ -2824,8 +2941,10 @@ export const PracticeFileTransferPage = ({
         setDefaultAbutmentProductMode(
           normalizeAccountAbutmentProductMode(payload.defaultAbutmentProductMode),
         );
-        setImplantFavorites(normalizeImplantFavorites(payload.implantFavorites));
-        setAbutmentFavorites(normalizeAbutmentFavorites(payload.abutmentFavorites));
+        if (!skipFavorites) {
+          setImplantFavorites(normalizeImplantFavorites(payload.implantFavorites));
+          setAbutmentFavorites(normalizeAbutmentFavorites(payload.abutmentFavorites));
+        }
         setAutoMatchMinLabRating(
           normalizeAutoMatchMinLabRating(payload.autoMatchMinLabRating),
         );
@@ -7875,6 +7994,8 @@ export const PracticeFileTransferPage = ({
                   },
                   onImplantFavoritesChange: (next) => {
                     const normalized = normalizeImplantFavorites(next);
+                    const writeSeq = (favoritesLocalWriteSeqRef.current += 1);
+                    favoritesDirtyRef.current = true;
                     setImplantFavorites(normalized);
                     try {
                       const existingRaw = localStorage.getItem(PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY);
@@ -7890,18 +8011,30 @@ export const PracticeFileTransferPage = ({
                           prosthesisTypes: normalizedProsthesisTypes,
                           memoSnippets,
                           implantFavorites: normalized,
-                          abutmentFavorites,
+                          abutmentFavorites: abutmentFavoritesRef.current,
                           savedAt: Date.now(),
                         }),
                       );
                     } catch {
                       // ignore
                     }
-                    void savePracticeTransferSettingsToServer({ implantFavorites: normalized });
+                    void savePracticeTransferSettingsToServer({
+                      implantFavorites: normalized,
+                    })
+                      .then((ok) => {
+                        if (ok && favoritesLocalWriteSeqRef.current === writeSeq) {
+                          favoritesDirtyRef.current = false;
+                        }
+                      })
+                      .catch(() => {
+                        // dirty 유지 — 다음 GET이 옛 목록으로 덮지 않음
+                      });
                   },
                   abutmentFavorites,
                   onAbutmentFavoritesChange: (next) => {
                     const normalized = normalizeAbutmentFavorites(next);
+                    const writeSeq = (favoritesLocalWriteSeqRef.current += 1);
+                    favoritesDirtyRef.current = true;
                     setAbutmentFavorites(normalized);
                     try {
                       const existingRaw = localStorage.getItem(PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY);
@@ -7916,7 +8049,7 @@ export const PracticeFileTransferPage = ({
                           arrivalDefaultDays,
                           prosthesisTypes: normalizedProsthesisTypes,
                           memoSnippets,
-                          implantFavorites,
+                          implantFavorites: implantFavoritesRef.current,
                           abutmentFavorites: normalized,
                           savedAt: Date.now(),
                         }),
@@ -7924,7 +8057,17 @@ export const PracticeFileTransferPage = ({
                     } catch {
                       // ignore
                     }
-                    void savePracticeTransferSettingsToServer({ abutmentFavorites: normalized });
+                    void savePracticeTransferSettingsToServer({
+                      abutmentFavorites: normalized,
+                    })
+                      .then((ok) => {
+                        if (ok && favoritesLocalWriteSeqRef.current === writeSeq) {
+                          favoritesDirtyRef.current = false;
+                        }
+                      })
+                      .catch(() => {
+                        // dirty 유지
+                      });
                   },
                   onImeComposingChange: (composing) => {
                     imeComposingRef.current = composing;
