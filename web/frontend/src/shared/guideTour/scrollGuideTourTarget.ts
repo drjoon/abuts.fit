@@ -28,13 +28,13 @@ export const COMPOSE_SCROLL_GUIDE_TARGETS = new Set([
   "oral_header",
 ]);
 
-/** 커스텀어벗 설정 모달 타깃(시네마 3장) */
+/** 커스텀어벗 설정 모달 타깃 */
 export const CUSTOM_ABUT_GUIDE_TARGETS = new Set([
+  "oral_custom_abut",
+  // 레거시(시네마 3장)
   "oral_custom_abut_implant",
   "oral_custom_abut_scanbody",
   "oral_custom_abut_simple",
-  // 레거시
-  "oral_custom_abut",
 ]);
 
 function findGuideTourScroller(el: HTMLElement): HTMLElement | null {

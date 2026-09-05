@@ -94,6 +94,7 @@ import { isPracticeToothWorkOralStepId } from "@/shared/guideTour/guideTourSteps
 import {
   GUIDE_TOUR_DEMO_ABUTMENT_FAVORITES,
   GUIDE_TOUR_DEMO_IMPLANT_FAVORITES,
+  GUIDE_TOUR_DEMO_SIMPLE_ABUTMENT,
 } from "@/shared/guideTour/guideTourOralPrefill";
 import { AutoMatchMinLabRatingStars } from "@/shared/components/practice/AutoMatchMinLabRatingStars";
 import {
@@ -179,7 +180,10 @@ import {
 // - web/frontend/src/shared/components/practice/PracticeToothSimpleAbutmentFields.tsx
 // - web/frontend/src/shared/components/practice/PracticeCustomSpecsPresetEditDialog.tsx
 // - web/frontend/src/shared/pricing/abutsAbutmentService.ts
+// - 2026-09-05: 커스텀어벗 투어 — scanbody·simple 스텝 삭제. 어벗 선택 시 견적(다음)으로. 기본 어벗=심플어벗 8·M.
 // - 2026-09-05: card_ops — 어벗 체크 시 커스텀어벗 설정 모달 오픈(prosthesis만 차단).
+// - 2026-09-05: 커스텀어벗 투어 — 임플란트 선택·확인으로 2단(어벗) 진행 허용. 모달 닫기만 투어에서 잠금.
+// - 2026-09-05: 커스텀어벗 투어 — 어벗(스캔바디·심플) 선택/확인 시 투어 다음(7/16…)으로. 닫힘→재오픈→임플란트 복귀 방지.
 // - 2026-09-05: 커스텀어벗 임시 프리셋 3장 체험 — 데모 임플란트·스캔바디 클릭 가능. 투어 스텝이 위저드 화면 유지.
 // - 2026-09-05: 메모|파일 2열 — 메모 카드 높이를 파일 패널에 ResizeObserver로 맞춤(stretch 과대 확장 방지).
 // - 2026-09-05: 플랫폼 Spotlight — stepId로 data-guide-tour 직접 마킹(로컬 스텝 sync 전에도 홀).
@@ -2344,12 +2348,7 @@ export const PracticeTransferRequestIntakePanel = ({
     customSpecsPresetEditOpenRef.current = false;
     customSpecsPickSessionRef.current = { implant: false, scanbody: false };
     setCustomSpecsPresetEditOpen(false);
-    setCustomSpecsWizardStep(
-      toothWorkGuideTourStepId === "custom_abut_scanbody" ||
-        toothWorkGuideTourStepId === "custom_abut_simple"
-        ? "abutment"
-        : "implant",
-    );
+    setCustomSpecsWizardStep("implant");
     setToothWorks((prev) => {
       const row = prev[index];
       if (!row) return prev;
@@ -2363,20 +2362,28 @@ export const PracticeTransferRequestIntakePanel = ({
           ? row.abutmentProductMode
           : defaultAbutmentProductMode;
       const cleared = clearSimpleAbutmentIfCustomProsthesis(row);
-      const clearedSimple =
-        cleared.abutmentManufacturer !== row.abutmentManufacturer ||
-        cleared.abutmentDiameter !== row.abutmentDiameter ||
-        cleared.abutmentHeight !== row.abutmentHeight;
+      const tourSimpleDefault =
+        isCustomAbutGuideTourStepId(toothWorkGuideTourStepId) &&
+        !isCustomAbutmentProsthesisType(cleared.prosthesisType)
+          ? GUIDE_TOUR_DEMO_SIMPLE_ABUTMENT
+          : null;
+      const withTourDefault = tourSimpleDefault
+        ? { ...cleared, ...tourSimpleDefault }
+        : cleared;
+      const changedAbut =
+        withTourDefault.abutmentManufacturer !== row.abutmentManufacturer ||
+        withTourDefault.abutmentDiameter !== row.abutmentDiameter ||
+        withTourDefault.abutmentHeight !== row.abutmentHeight;
       if (
         row.customAbutment &&
         row.abutmentProductMode === nextMode &&
-        !clearedSimple
+        !changedAbut
       ) {
         return prev;
       }
       const next = [...prev];
       next[index] = {
-        ...cleared,
+        ...withTourDefault,
         customAbutment: true,
         abutmentProductMode: nextMode,
       };
@@ -2414,6 +2421,16 @@ export const PracticeTransferRequestIntakePanel = ({
   };
 
   const confirmCustomSpecsModal = () => {
+    if (isCustomAbutGuideTourStepId(toothWorkGuideTourStepId)) {
+      // 임플란트 단 「확인」→ 어벗 선택
+      if (customSpecsWizardStep === "implant") {
+        setCustomSpecsWizardStep("abutment");
+        return;
+      }
+      // 어벗 단 「확인」→ 투어 다음(닫으면 재오픈되며 임플란트 단으로 돌아감)
+      completeToothWorkGuideTourAction();
+      return;
+    }
     customSpecsModalSnapshotRef.current = null;
     closeCustomSpecsModal();
   };
@@ -2480,18 +2497,8 @@ export const PracticeTransferRequestIntakePanel = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- openCustomSpecsModal은 스텝·치식 스냅샷에 묶음
   }, [isPresetGuideTourStep, customSpecsModalTarget, toothWorks]);
 
-  // 커스텀어벗 체험 — 스텝에 맞춰 위저드 화면 동기(임플란트 ↔ 스캔바디/심플)
-  useEffect(() => {
-    if (customSpecsModalTarget === null) return;
-    if (toothWorkGuideTourStepId === "custom_abut_implant") {
-      setCustomSpecsWizardStep("implant");
-    } else if (
-      toothWorkGuideTourStepId === "custom_abut_scanbody" ||
-      toothWorkGuideTourStepId === "custom_abut_simple"
-    ) {
-      setCustomSpecsWizardStep("abutment");
-    }
-  }, [toothWorkGuideTourStepId, customSpecsModalTarget]);
+  // 커스텀어벗 체험은 단일 스텝 — 위저드(임플란트↔어벗)는 사용자 조작으로만 전환
+  // (예전 시네마 3장 동기 effect 제거)
 
   const tryConfirmCustomSpecsModalAfterPicks = () => {
     // 투어 체험 중에는 선택으로 모달을 닫지 않음(닫히면 재오픈→첨1 복귀)
@@ -2560,22 +2567,23 @@ export const PracticeTransferRequestIntakePanel = ({
       };
       return next;
     });
-    const guideTourLocksWizard = isCustomAbutGuideTourStepId(
-      toothWorkGuideTourStepId,
-    );
     if (implantTouched && scanbodyTouched && abutmentSideComplete) {
       registerCustomSpecsPick("both");
-      if (!guideTourLocksWizard) setCustomSpecsWizardStep("abutment");
+      setCustomSpecsWizardStep("abutment");
+      if (isCustomAbutGuideTourStepId(toothWorkGuideTourStepId)) {
+        completeToothWorkGuideTourAction();
+      }
     } else if (implantTouched) {
       registerCustomSpecsPick("implant");
-      if (
-        !guideTourLocksWizard &&
-        hasToothWorkImplantPreset({ ...row, ...merged })
-      ) {
+      if (hasToothWorkImplantPreset({ ...row, ...merged })) {
         setCustomSpecsWizardStep("abutment");
       }
     } else if (scanbodyTouched && abutmentSideComplete) {
       registerCustomSpecsPick("scanbody");
+      // 투어: 스캔바디|심플어벗 설정 완료 → 견적(다음). 모달 닫지 않음(견적 스텝 effect가 닫음)
+      if (isCustomAbutGuideTourStepId(toothWorkGuideTourStepId)) {
+        completeToothWorkGuideTourAction();
+      }
     }
   };
 
@@ -4974,11 +4982,9 @@ export const PracticeTransferRequestIntakePanel = ({
               const implantReady = hasToothWorkImplantPreset(modalSpecs);
               const wizardStep = customSpecsWizardStep;
               const tourImplantFocus =
-                toothWorkGuideTourStepId === "custom_abut_implant";
-              const tourScanbodyFocus =
-                toothWorkGuideTourStepId === "custom_abut_scanbody";
-              const tourSimpleFocus =
-                toothWorkGuideTourStepId === "custom_abut_simple";
+                isPresetGuideTourStep && wizardStep === "implant";
+              const tourAbutmentFocus =
+                isPresetGuideTourStep && wizardStep === "abutment";
               return (
                 <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
                   <DialogHeader className="shrink-0 space-y-1 text-left">
@@ -5062,7 +5068,7 @@ export const PracticeTransferRequestIntakePanel = ({
                             dimmed={simpleMode}
                             className={cn(
                               "min-h-0 border-service-abut-muted/90 bg-service-abut-soft/40",
-                              tourScanbodyFocus &&
+                              tourAbutmentFocus &&
                                 "practice-tooth-guide-pulse rounded-xl",
                             )}
                             guideOpenAdd={false}
@@ -5087,7 +5093,7 @@ export const PracticeTransferRequestIntakePanel = ({
                             disabledHint="커스텀어벗 형태에서는 스캔바디만 선택할 수 있습니다."
                             className={cn(
                               "min-h-0 border-service-abut-muted/90 bg-service-abut-soft/40",
-                              tourSimpleFocus &&
+                              tourAbutmentFocus &&
                                 "practice-tooth-guide-pulse rounded-xl",
                             )}
                             value={modalSpecs}
@@ -5124,7 +5130,7 @@ export const PracticeTransferRequestIntakePanel = ({
 
                   <DialogFooter className="grid shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-2 sm:space-x-0">
                     <div className="flex flex-wrap items-center justify-start gap-2">
-                      {isPresetGuideTourStep ? null : wizardStep === "abutment" ? (
+                      {wizardStep === "abutment" ? (
                         <Button
                           type="button"
                           variant="outline"

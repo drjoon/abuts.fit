@@ -5,6 +5,7 @@
 // - web/backend/controllers/users/user.controller.js
 // - web/frontend/src/shared/components/practice/PracticeToothWorkGuideTourBanner.tsx
 // change-log:
+// - 2026-09-05: custom_abut 시네마 3장 → 1장. 레거시 implant/scanbody/simple resume → oral_custom_abut.
 // - 2026-09-05: custom_abut 시네마 3장. 레거시 oral_custom_abut resume 정규화.
 // - 2026-09-05: 치과 Spotlight — 전체 프로세스 N/…(챕터·구강 카운터).
 // - 2026-09-05: 구강 영화형 — Spotlight progress · allowTargetInteraction(card_ops).

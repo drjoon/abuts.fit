@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/practice/PracticeToothWorkGuideTourBanner.tsx
 // - web/frontend/src/shared/guideTour/GuideTourProvider.tsx
 // change-log:
+// - 2026-09-05: custom_abut_scanbody·simple 삭제. 커스텀어벗 1장(oral_custom_abut). 레거시 id 정규화.
 // - 2026-09-05: custom_abut 임시 프리셋 3장 체험(implant·scanbody·simple). card_ops·custom_abut 조작 허용.
 // - 2026-09-05: oral_prosthesis 제거·card_ops로 통합(직접 체험).
 // - 2026-09-05: oral_calendar — 사이드바·캘린더 별도 구역. 전체 프로세스 N/15 카운터. 도착일 문구.
@@ -65,9 +66,7 @@ export const PRACTICE_ORAL_GUIDE_TOUR_STEP_IDS = [
   "oral_memo_files",
   "oral_phone",
   "oral_card_ops",
-  "oral_custom_abut_implant",
-  "oral_custom_abut_scanbody",
-  "oral_custom_abut_simple",
+  "oral_custom_abut",
   "oral_estimate",
   "oral_send",
   "oral_drafts",
@@ -81,7 +80,13 @@ export const normalizePracticeGuideTourStepId = (
   stepId: string | null | undefined,
 ): string | null => {
   if (!stepId) return null;
-  if (stepId === "oral_custom_abut") return "oral_custom_abut_implant";
+  if (
+    stepId === "oral_custom_abut_implant" ||
+    stepId === "oral_custom_abut_scanbody" ||
+    stepId === "oral_custom_abut_simple"
+  ) {
+    return "oral_custom_abut";
+  }
   if (stepId === "oral_prosthesis") return "oral_card_ops";
   return stepId;
 };
@@ -260,7 +265,8 @@ export const isPracticeToothWorkOralStepId = (
 ): boolean => {
   if (!stepId || !stepId.startsWith("oral_")) return false;
   const sub = stepId.slice("oral_".length);
-  if (sub === "custom_abut" || sub === "prosthesis") return true; // 레거시 resume
+  if (sub === "prosthesis") return true; // 레거시 resume
+  if (isCustomAbutGuideTourStepId(sub)) return true;
   return PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS.some((s) => s.id === sub);
 };
 
@@ -296,7 +302,8 @@ export const isCustomAbutOralGuideTourStepId = (
   stepId: string | null | undefined,
 ): boolean => {
   if (!stepId) return false;
-  if (stepId === "oral_custom_abut") return true;
-  if (!stepId.startsWith("oral_")) return false;
-  return isCustomAbutGuideTourStepId(stepId.slice("oral_".length));
+  const normalized = normalizePracticeGuideTourStepId(stepId) ?? stepId;
+  if (normalized === "oral_custom_abut") return true;
+  if (!normalized.startsWith("oral_")) return false;
+  return isCustomAbutGuideTourStepId(normalized.slice("oral_".length));
 };

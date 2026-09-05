@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/guideTour/guideTourSteps.ts
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-09-05: 커스텀어벗 투어 기본 어벗=심플어벗 8·M (GUIDE_TOUR_DEMO_SIMPLE_ABUTMENT).
 // - 2026-09-05: 커스텀어벗 시네마용 임플란트·스캔바디 데모 프리셋.
 // - 2026-09-05: 표시 용량 10·10·4MB. draft 파일명 식별(promote 누수 정리용).
 // - 2026-09-05: 구강 챕터 영화형 — 환자·메모·치식·표시용 PLY 프리필(실업로드 스킵).
@@ -32,11 +33,16 @@ export const GUIDE_TOUR_DEMO_FILE_SPECS: readonly GuideTourDemoFileSpec[] = [
   { name: "Bitescan.ply", displaySize: 4 * 1024 * 1024 },
 ] as const;
 
-const simpleAbut = {
-  customAbutment: true as const,
+/** 커스텀어벗 투어 — 어벗 쪽 기본(심플어벗 8 · M) */
+export const GUIDE_TOUR_DEMO_SIMPLE_ABUTMENT = {
   abutmentManufacturer: "심플어벗",
   abutmentDiameter: "8",
   abutmentHeight: "M",
+} as const;
+
+const simpleAbut = {
+  customAbutment: true as const,
+  ...GUIDE_TOUR_DEMO_SIMPLE_ABUTMENT,
 };
 
 /** 커스텀어벗 체험 — 임플란트 임시 프리셋(오스템 TS3 · 덴티움 Superline) */
@@ -109,10 +115,7 @@ export const buildGuideTourDemoToothWorks = (): ToothWorkSelection[] => {
     prosthesisType: "크라운",
     customAbutment: true,
     bridgeLinkedTeeth: [],
-    // CA — 규격은 커스텀어벗 스텝에서 임시 프리셋으로 체험
-    abutmentManufacturer: "",
-    abutmentDiameter: "",
-    abutmentHeight: "",
+    ...GUIDE_TOUR_DEMO_SIMPLE_ABUTMENT,
   };
 
   const tempTeeth = ["12", "11", "21", "22"] as const;

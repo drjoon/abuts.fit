@@ -3,7 +3,9 @@
 // - web/frontend/src/shared/guideTour/GuideTourProvider.tsx
 // - web/frontend/src/shared/guideTour/guideTourSteps.ts
 // change-log:
+// - 2026-09-05: custom_abut_scanbody·simple 삭제. 커스텀어벗 설정 1장(custom_abut)만.
 // - 2026-09-05: prosthesis 제거·card_ops로 통합(직접 체험). 안내 문구 2줄.
+// - 2026-09-05: custom_abut_implant 힌트 단축(임시 프리셋 체험만).
 // - 2026-09-05: custom_abut → 임시 프리셋 3장 체험(임플란트·스캔바디·심플). 포커스 교차·「둘 중 하나」.
 // - 2026-09-05: card_ops 힌트 — 조작 나열 → 직접 조작 안내.
 // - 2026-09-05: prosthesis 힌트 — 프리필 나열 → 보철물 카드 선택 안내.
@@ -38,19 +40,9 @@ export const PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS = [
     hint: "기공 의뢰 내용을 보철물 카드에서 간편하게 선택할 수 있습니다.\n직접 체험해보세요.",
   },
   {
-    id: "custom_abut_implant",
+    id: "custom_abut",
     title: "커스텀어벗 설정",
-    hint: "임시 프리셋(오스템 TS3 · 덴티움 Superline)을 눌러 체험해 보세요. 끝나면 「다음」으로 이어 가세요.",
-  },
-  {
-    id: "custom_abut_scanbody",
-    title: "커스텀어벗 설정",
-    hint: "둘 중 하나를 선택하세요.",
-  },
-  {
-    id: "custom_abut_simple",
-    title: "커스텀어벗 설정",
-    hint: "둘 중 하나를 선택하세요.",
+    hint: "임시 프리셋을 눌러 체험해보세요.",
   },
   {
     id: "estimate",
@@ -72,8 +64,11 @@ export const PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS = [
 export type PracticeToothWorkGuideTourStepId =
   (typeof PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS)[number]["id"];
 
-/** 커스텀어벗 설정 체험 3장(임시 프리셋) */
-export const CUSTOM_ABUT_GUIDE_TOUR_STEP_IDS = [
+/** 커스텀어벗 설정 체험(단일 스텝). 레거시 implant/scanbody/simple id도 인식 */
+export const CUSTOM_ABUT_GUIDE_TOUR_STEP_IDS = ["custom_abut"] as const;
+
+const CUSTOM_ABUT_GUIDE_TOUR_STEP_ALIASES = [
+  "custom_abut",
   "custom_abut_implant",
   "custom_abut_scanbody",
   "custom_abut_simple",
@@ -87,7 +82,9 @@ export const isCustomAbutGuideTourStepId = (
 ): stepId is CustomAbutGuideTourStepId =>
   Boolean(
     stepId &&
-      (CUSTOM_ABUT_GUIDE_TOUR_STEP_IDS as readonly string[]).includes(stepId),
+      (CUSTOM_ABUT_GUIDE_TOUR_STEP_ALIASES as readonly string[]).includes(
+        stepId,
+      ),
   );
 
 /** 0..N-1 = 체험 스텝, N = 완료 */
