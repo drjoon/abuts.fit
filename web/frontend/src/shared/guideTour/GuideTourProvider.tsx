@@ -5,6 +5,7 @@
 // - web/backend/controllers/users/user.controller.js
 // - web/frontend/src/shared/components/practice/PracticeToothWorkGuideTourBanner.tsx
 // change-log:
+// - 2026-09-05: pause(다음에 하기) — 치과는 구강스캔 빈 캘린더로 이동(중단 화면 잔류 방지).
 // - 2026-09-05: 수료(complete) — intro형 안내·확인 시 구강스캔 포워딩.
 // - 2026-09-05: custom_abut 시네마 3장 → 1장. 레거시 implant/scanbody/simple resume → oral_custom_abut.
 // - 2026-09-05: custom_abut 시네마 3장. 레거시 oral_custom_abut resume 정규화.
@@ -248,11 +249,18 @@ export function GuideTourProvider({ kind, children }: ProviderProps) {
   const pause = useCallback(() => {
     if (!stepId) {
       setActive(false);
+      if (kind === "practice") {
+        navigate(PRACTICE_ORAL_PATH);
+      }
       return;
     }
     void persist({ resumeStepId: stepId });
     setActive(false);
-  }, [stepId, persist]);
+    // 중단 화면(작성·프리필)에 남지 않게 — 수료와 같이 구강스캔 캘린더로
+    if (kind === "practice") {
+      navigate(PRACTICE_ORAL_PATH);
+    }
+  }, [stepId, persist, kind, navigate]);
 
   const advance = useCallback(() => {
     if (!kind || !step) return;

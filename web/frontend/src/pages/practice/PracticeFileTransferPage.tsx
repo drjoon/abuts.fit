@@ -107,6 +107,7 @@
  * - 2026-09-05: 임플란트/스캔바디 프리셋 — 로컬 삭제 후 서버 GET/POST·환봉 이벤트가 목록을 되살리던 문제 수정.
  * - 2026-09-05: 부분 설정 저장 응답이 전체 apply로 덮어써 임플란트 프리셋 삭제가 복원되던 레이스 수정.
  * - 2026-09-05: 가이드투어 작성 패널 — 투어 블러 outside dismiss 방지·z-410(블러 아래)·스텝별 data-guide-tour.
+ * - 2026-09-05: 가이드투어 pause — 작성 패널·데모 프리필 비우고 빈 캘린더.
  * - 2026-09-05: 가이드투어 작성 패널 — 기존 작성 내용 유지(새로 작성으로 비우지 않음).
  * - 2026-09-05: 기공소 미선택 시 테스트기공소를 자동 선택(견적·투어).
  * - 2026-08-25: 가이드투어 카드 — 헤더 버튼~기공소·환자·날짜 행 세로 맞춤(폭=주문-치과도착).
@@ -7215,7 +7216,9 @@ export const PracticeFileTransferPage = ({
       skipFormAutosaveRef.current = false;
     });
 
-    if (options?.openCompose !== false) {
+    if (options?.openCompose === false) {
+      setComposeOpen(false);
+    } else {
       setComposeOpen(true);
     }
 
@@ -7229,6 +7232,9 @@ export const PracticeFileTransferPage = ({
       });
     }
   };
+
+  const handleStartNewTransferRef = useRef(handleStartNewTransfer);
+  handleStartNewTransferRef.current = handleStartNewTransfer;
 
   // 플랫폼 가이드투어 챕터1 — oral 스텝에 맞춰 작성 패널만 열고 닫음(폼은 유지)
   // 블러(z-420)가 Dialog(z-100) 위에 있어 outside-interact로 닫히지 않게 투어 중엔 강제 유지
@@ -7248,6 +7254,20 @@ export const PracticeFileTransferPage = ({
     platformGuideTour.stepId,
     guideTourWantsComposeOpen,
   ]);
+
+  /** 다음에 하기(pause)·수료 후 — 작성/데모 잔류 없이 빈 캘린더 */
+  const guideTourWasActiveRef = useRef(false);
+  useEffect(() => {
+    const wasActive = guideTourWasActiveRef.current;
+    guideTourWasActiveRef.current = platformGuideTour.active;
+    if (!wasActive || platformGuideTour.active) return;
+    if (platformGuideTour.kind !== "practice") return;
+    setDraftsOpen(false);
+    void handleStartNewTransferRef.current({
+      openCompose: false,
+      silentToast: true,
+    });
+  }, [platformGuideTour.active, platformGuideTour.kind]);
 
   /** 구강 챕터 진입 시 데모 값 1회 프리필(영화형) */
   const guideTourOralPrefillAppliedRef = useRef(false);
