@@ -135,7 +135,7 @@ export const resolvePracticeToothWorkGuideTourCopy = (
   if (base.id === "abutment_side") {
     return {
       ...base,
-      hint: "가운데 스캔바디를 고르거나, 오른쪽 심플어벗·심플밀링(직경·높이)을 선택하세요. 둘은 함께 쓸 수 없습니다.",
+      hint: "스캔바디 혹은 심플어벗(밀링) 중 하나를 선택하세요.",
     };
   }
   return base;
