@@ -63,7 +63,7 @@ export const PRACTICE_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   {
     id: "intro",
     title: "가이드투어",
-    hint: "어벗츠 가이드투어를 시작합니다.\n직접 눌러 보며 익혀 보세요.",
+    hint: "어벗츠의 편리함을 경험해보세요.\n가이드투어를 시작합니다.",
     path: PRACTICE_ORAL_PATH,
     target: null,
     advance: "next",
