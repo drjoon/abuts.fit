@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-05: 사용 현황 컬럼 순서 충전|사용|잔여(잔여=충전−사용).
 // - 2026-09-05: 사용 현황 단일 화면 — 행별 지급/회수·내역 모달, 상단 필터 UI 제거.
 // - 2026-09-05: 사용 현황 테이블 헤더 중앙 정렬·클릭 정렬.
 // - 2026-09-05: 사용 현황 행에서 금액 드롭다운 원클릭 지급.
@@ -266,9 +267,9 @@ export function RequestorFreeCreditTab(props: RequestorFreeCreditTabProps) {
                       [
                         { key: "name", label: "사업자" },
                         { key: "businessNumber", label: "사업자번호" },
+                        { key: "charged", label: "충전" },
                         { key: "spent", label: "사용" },
                         { key: "remaining", label: "잔여" },
-                        { key: "charged", label: "충전" },
                       ] as const
                     ).map((col) => (
                       <TableHead key={col.key} className="text-center">
@@ -302,14 +303,14 @@ export function RequestorFreeCreditTab(props: RequestorFreeCreditTabProps) {
                         <TableCell className="text-center font-mono">
                           {org.businessNumber || "-"}
                         </TableCell>
+                        <TableCell className="text-center tabular-nums">
+                          {getChargedFreeTotal(org).toLocaleString()}원
+                        </TableCell>
                         <TableCell className="text-center font-medium tabular-nums">
                           {getSpentFreeTotal(org).toLocaleString()}원
                         </TableCell>
                         <TableCell className="text-center tabular-nums">
                           {remaining.toLocaleString()}원
-                        </TableCell>
-                        <TableCell className="text-center tabular-nums">
-                          {getChargedFreeTotal(org).toLocaleString()}원
                         </TableCell>
                         <TableCell className="text-center">
                           <div className="inline-flex items-center justify-center gap-1.5">

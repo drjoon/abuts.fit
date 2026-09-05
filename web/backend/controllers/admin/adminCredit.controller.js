@@ -1,6 +1,7 @@
 // related files:
 // - web/backend/rules.md
 // - web/backend/modules/admin/admin.routes.js
+// - 2026-09-05: 사업자 크레딧 — 사용에 SPEND_HOLD·무료 ADJUST(음수) 포함, 충전에 무료 ADJUST(양수).
 // - 2026-09-05: 관리자 원장 — PRACTICE_TRANSFER_ESCROW_RELEASE → LAB_SETTLEMENT_CHARGE 표시.
 // - 2026-08-20: 제조사 정산 잔액은 유료/무료 구분 없이 REV 전액(말일 일괄 지급).
 // - 2026-08-19: 어벗디자인 박스 키=의뢰 사업자+예정출고일. 수신자는 의뢰 사업자명.
@@ -1502,9 +1503,14 @@ export async function adminGetCreditStats(req, res) {
                     $cond: [
                       {
                         $and: [
-                          { $eq: ["$eventType", "CHARGE_FREE_REQUEST"] },
                           { $eq: ["$accountCode", "REQ_FREE_REQUEST_CREDIT"] },
                           { $gt: ["$baseAmount", 0] },
+                          {
+                            $or: [
+                              { $eq: ["$eventType", "CHARGE_FREE_REQUEST"] },
+                              { $eq: ["$eventType", "ADJUST"] },
+                            ],
+                          },
                         ],
                       },
                       "$baseAmount",
@@ -1517,9 +1523,14 @@ export async function adminGetCreditStats(req, res) {
                     $cond: [
                       {
                         $and: [
-                          { $eq: ["$eventType", "CHARGE_FREE_SHIPPING"] },
                           { $eq: ["$accountCode", "REQ_FREE_SHIPPING_CREDIT"] },
                           { $gt: ["$baseAmount", 0] },
+                          {
+                            $or: [
+                              { $eq: ["$eventType", "CHARGE_FREE_SHIPPING"] },
+                              { $eq: ["$eventType", "ADJUST"] },
+                            ],
+                          },
                         ],
                       },
                       "$baseAmount",
@@ -1535,7 +1546,12 @@ export async function adminGetCreditStats(req, res) {
                           {
                             $in: [
                               "$eventType",
-                              ["REQUEST_SPEND_COMMIT", "SHIPPING_SPEND_COMMIT"],
+                              [
+                                "REQUEST_SPEND_COMMIT",
+                                "SHIPPING_SPEND_COMMIT",
+                                "REQUEST_SPEND_HOLD",
+                                "SHIPPING_SPEND_HOLD",
+                              ],
                             ],
                           },
                           { $eq: ["$accountCode", "REQ_PAID_CREDIT"] },
@@ -1552,14 +1568,24 @@ export async function adminGetCreditStats(req, res) {
                     $cond: [
                       {
                         $and: [
-                          {
-                            $in: [
-                              "$eventType",
-                              ["REQUEST_SPEND_COMMIT", "SHIPPING_SPEND_COMMIT"],
-                            ],
-                          },
                           { $eq: ["$accountCode", "REQ_FREE_REQUEST_CREDIT"] },
                           { $lt: ["$baseAmount", 0] },
+                          {
+                            $or: [
+                              {
+                                $in: [
+                                  "$eventType",
+                                  [
+                                    "REQUEST_SPEND_COMMIT",
+                                    "SHIPPING_SPEND_COMMIT",
+                                    "REQUEST_SPEND_HOLD",
+                                    "SHIPPING_SPEND_HOLD",
+                                  ],
+                                ],
+                              },
+                              { $eq: ["$eventType", "ADJUST"] },
+                            ],
+                          },
                         ],
                       },
                       { $abs: "$baseAmount" },
@@ -1572,14 +1598,24 @@ export async function adminGetCreditStats(req, res) {
                     $cond: [
                       {
                         $and: [
-                          {
-                            $in: [
-                              "$eventType",
-                              ["REQUEST_SPEND_COMMIT", "SHIPPING_SPEND_COMMIT"],
-                            ],
-                          },
                           { $eq: ["$accountCode", "REQ_FREE_SHIPPING_CREDIT"] },
                           { $lt: ["$baseAmount", 0] },
+                          {
+                            $or: [
+                              {
+                                $in: [
+                                  "$eventType",
+                                  [
+                                    "REQUEST_SPEND_COMMIT",
+                                    "SHIPPING_SPEND_COMMIT",
+                                    "REQUEST_SPEND_HOLD",
+                                    "SHIPPING_SPEND_HOLD",
+                                  ],
+                                ],
+                              },
+                              { $eq: ["$eventType", "ADJUST"] },
+                            ],
+                          },
                         ],
                       },
                       { $abs: "$baseAmount" },
@@ -3326,9 +3362,14 @@ export async function adminGetBusinessCredits(req, res) {
                   $cond: [
                     {
                       $and: [
-                        { $eq: ["$eventType", "CHARGE_FREE_REQUEST"] },
                         { $eq: ["$accountCode", "REQ_FREE_REQUEST_CREDIT"] },
                         { $gt: ["$baseAmount", 0] },
+                        {
+                          $or: [
+                            { $eq: ["$eventType", "CHARGE_FREE_REQUEST"] },
+                            { $eq: ["$eventType", "ADJUST"] },
+                          ],
+                        },
                       ],
                     },
                     "$baseAmount",
@@ -3341,9 +3382,14 @@ export async function adminGetBusinessCredits(req, res) {
                   $cond: [
                     {
                       $and: [
-                        { $eq: ["$eventType", "CHARGE_FREE_SHIPPING"] },
                         { $eq: ["$accountCode", "REQ_FREE_SHIPPING_CREDIT"] },
                         { $gt: ["$baseAmount", 0] },
+                        {
+                          $or: [
+                            { $eq: ["$eventType", "CHARGE_FREE_SHIPPING"] },
+                            { $eq: ["$eventType", "ADJUST"] },
+                          ],
+                        },
                       ],
                     },
                     "$baseAmount",
@@ -3373,7 +3419,12 @@ export async function adminGetBusinessCredits(req, res) {
                         {
                           $in: [
                             "$eventType",
-                            ["REQUEST_SPEND_COMMIT", "SHIPPING_SPEND_COMMIT"],
+                            [
+                              "REQUEST_SPEND_COMMIT",
+                              "SHIPPING_SPEND_COMMIT",
+                              "REQUEST_SPEND_HOLD",
+                              "SHIPPING_SPEND_HOLD",
+                            ],
                           ],
                         },
                         { $lt: ["$baseAmount", 0] },
@@ -3392,7 +3443,12 @@ export async function adminGetBusinessCredits(req, res) {
                         {
                           $in: [
                             "$eventType",
-                            ["REQUEST_SPEND_COMMIT", "SHIPPING_SPEND_COMMIT"],
+                            [
+                              "REQUEST_SPEND_COMMIT",
+                              "SHIPPING_SPEND_COMMIT",
+                              "REQUEST_SPEND_HOLD",
+                              "SHIPPING_SPEND_HOLD",
+                            ],
                           ],
                         },
                         { $eq: ["$accountCode", "REQ_PAID_CREDIT"] },
@@ -3409,14 +3465,24 @@ export async function adminGetBusinessCredits(req, res) {
                   $cond: [
                     {
                       $and: [
-                        {
-                          $in: [
-                            "$eventType",
-                            ["REQUEST_SPEND_COMMIT", "SHIPPING_SPEND_COMMIT"],
-                          ],
-                        },
                         { $eq: ["$accountCode", "REQ_FREE_REQUEST_CREDIT"] },
                         { $lt: ["$baseAmount", 0] },
+                        {
+                          $or: [
+                            {
+                              $in: [
+                                "$eventType",
+                                [
+                                  "REQUEST_SPEND_COMMIT",
+                                  "SHIPPING_SPEND_COMMIT",
+                                  "REQUEST_SPEND_HOLD",
+                                  "SHIPPING_SPEND_HOLD",
+                                ],
+                              ],
+                            },
+                            { $eq: ["$eventType", "ADJUST"] },
+                          ],
+                        },
                       ],
                     },
                     { $abs: "$baseAmount" },
@@ -3429,14 +3495,24 @@ export async function adminGetBusinessCredits(req, res) {
                   $cond: [
                     {
                       $and: [
-                        {
-                          $in: [
-                            "$eventType",
-                            ["REQUEST_SPEND_COMMIT", "SHIPPING_SPEND_COMMIT"],
-                          ],
-                        },
                         { $eq: ["$accountCode", "REQ_FREE_SHIPPING_CREDIT"] },
                         { $lt: ["$baseAmount", 0] },
+                        {
+                          $or: [
+                            {
+                              $in: [
+                                "$eventType",
+                                [
+                                  "REQUEST_SPEND_COMMIT",
+                                  "SHIPPING_SPEND_COMMIT",
+                                  "REQUEST_SPEND_HOLD",
+                                  "SHIPPING_SPEND_HOLD",
+                                ],
+                              ],
+                            },
+                            { $eq: ["$eventType", "ADJUST"] },
+                          ],
+                        },
                       ],
                     },
                     { $abs: "$baseAmount" },

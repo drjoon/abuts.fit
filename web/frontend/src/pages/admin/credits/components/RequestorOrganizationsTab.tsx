@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-05: 카드 메트릭 순서 충전|사용|잔여.
 // - 2026-08-14: 섹션 제목을 「치과 · 기공소 크레딧」으로 표기.
 // - 2026-08-13: 무료 잔액 통합 표시, 카드 스타일 모던화.
 // related files:
@@ -189,11 +190,6 @@ export function RequestorOrganizationsTab({
                         </div>
                         <div className="mt-3 space-y-1.5">
                           <MetricRow
-                            label="잔여"
-                            paid={paidCredit}
-                            free={freeCredit}
-                          />
-                          <MetricRow
                             label="충전"
                             paid={chargedPaid}
                             free={getChargedFree(business)}
@@ -202,6 +198,11 @@ export function RequestorOrganizationsTab({
                             label="사용"
                             paid={spentPaid}
                             free={getSpentFree(business)}
+                          />
+                          <MetricRow
+                            label="잔여"
+                            paid={paidCredit}
+                            free={freeCredit}
                           />
                         </div>
                       </button>

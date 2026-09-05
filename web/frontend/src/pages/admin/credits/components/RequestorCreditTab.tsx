@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-05: 상단 스탯 순서 충전|사용|잔여.
 // - 2026-08-14: 스탯 라벨 「치과 · 기공소」로 표기.
 // - 2026-08-13: 무료(의뢰/배송) 통합 표시, 스탯·탭 스타일 모던화.
 // related files:
@@ -152,22 +153,22 @@ export function RequestorCreditTab(props: RequestorCreditTabProps) {
           }
         />
         <CreditStatTile
-          label="잔여"
-          value={loading ? "…" : won(totalPaidCredit + totalFreeCredit)}
-          hint={
-            <>
-              <div>유료 {won(totalPaidCredit)}</div>
-              <div>무료 {won(totalFreeCredit)}</div>
-            </>
-          }
-        />
-        <CreditStatTile
           label="사용"
           value={loading ? "…" : won(totalSpentPaid + totalSpentFree)}
           hint={
             <>
               <div>유료 {won(totalSpentPaid)}</div>
               <div>무료 {won(totalSpentFree)}</div>
+            </>
+          }
+        />
+        <CreditStatTile
+          label="잔여"
+          value={loading ? "…" : won(totalPaidCredit + totalFreeCredit)}
+          hint={
+            <>
+              <div>유료 {won(totalPaidCredit)}</div>
+              <div>무료 {won(totalFreeCredit)}</div>
             </>
           }
         />
