@@ -5,6 +5,7 @@
 // - web/frontend/src/shared/components/practice/PracticeOrderArrivalDateRangeField.tsx
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // change-log:
+// - 2026-09-05: oral_estimate — allowTargetInteraction으로 견적 호버·툴팁 가능.
 // - 2026-09-05: card_ops·estimate 코치 — 오른쪽(견적 툴팁 중앙 가림 방지). 큰 치식 타깃도 동일.
 // - 2026-09-05: oral_phone — 코치마크를 안내 문구 아래 가운데 정렬.
 // - 2026-09-05: oral_phone — 코치마크 뷰포트 오른쪽 반쪽. 안내·폰 별도 홀.
@@ -13,7 +14,7 @@
 // - 2026-09-05: 작성 Dialog(z-410) 블러 아래 유지 — outside dismiss 시 홀 소실 방지와 맞춤.
 // - 2026-09-05: 멀티 홀 — 뷰포트−홀 블러 패널(홀 위 backdrop 없음). mask/blend 폐기.
 // - 2026-09-05: oral_calendar — 사이드바·캘린더 별도 홀(위성 union 대신). 카드는 캘린더 위.
-// - 2026-09-05: 영화형 — blur·홀 클릭 차단. allowTargetInteraction만 홀 통과(card_ops·custom_abut).
+// - 2026-09-05: 영화형 — blur·홀 클릭 차단. allowTargetInteraction만 홀 통과(card_ops·custom_abut·estimate).
 // - 2026-09-05: 코치카드 — guide-tour-root(z-420) 밖 별도 레이어(z-440). 루트 안 z-440은 중첩 모달(z-425)에 가려짐.
 // - 2026-09-05: oral_send — 작성 패널 스크롤 후 하이라이트(견적→전송).
 // - 2026-09-05: 치식 홀이 커스텀어벗 모달 위에 남는 문제 — 타깃 변경 시 rect 즉시 클리어·모달 우선 측정.

@@ -8,6 +8,7 @@
 // - 2026-09-05: custom_abut 시네마 3장 → 1장. 레거시 implant/scanbody/simple resume → oral_custom_abut.
 // - 2026-09-05: custom_abut 시네마 3장. 레거시 oral_custom_abut resume 정규화.
 // - 2026-09-05: 치과 Spotlight — 전체 프로세스 N/…(챕터·구강 카운터).
+// - 2026-09-05: oral_estimate — allowTargetInteraction(견적 호버·툴팁).
 // - 2026-09-05: 구강 영화형 — Spotlight progress · allowTargetInteraction(card_ops).
 // - 2026-09-05: oral 프리셋 스텝 — IntakePanel이 Spotlight 문구 override(미설정 「+ 추가」안내).
 // - 2026-09-05: oral action 스텝도「다음」상시 표시.

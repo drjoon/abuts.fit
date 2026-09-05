@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/guideTour/GuideTourProvider.tsx
 // - web/frontend/src/shared/guideTour/guideTourSteps.ts
 // change-log:
+// - 2026-09-05: estimate 힌트 — 견적 금액 호버(툴팁) 안내.
 // - 2026-09-05: custom_abut_scanbody·simple 삭제. 커스텀어벗 설정 1장(custom_abut)만.
 // - 2026-09-05: prosthesis 제거·card_ops로 통합(직접 체험). 안내 문구 2줄.
 // - 2026-09-05: custom_abut_implant 힌트 단축(임시 프리셋 체험만).
@@ -47,7 +48,7 @@ export const PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS = [
   {
     id: "estimate",
     title: "견적 확인",
-    hint: "견적 금액을 확인합니다. 투어에서는 「다음」으로 이어 가세요.",
+    hint: "견적 금액에 마우스를 올려보세요.",
   },
   {
     id: "send",

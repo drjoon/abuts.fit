@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/practice/PracticeToothWorkGuideTourBanner.tsx
 // - web/frontend/src/shared/guideTour/GuideTourProvider.tsx
 // change-log:
+// - 2026-09-05: oral_estimate — allowTargetInteraction(견적 호버·툴팁).
 // - 2026-09-05: custom_abut_scanbody·simple 삭제. 커스텀어벗 1장(oral_custom_abut). 레거시 id 정규화.
 // - 2026-09-05: custom_abut 임시 프리셋 3장 체험(implant·scanbody·simple). card_ops·custom_abut 조작 허용.
 // - 2026-09-05: oral_prosthesis 제거·card_ops로 통합(직접 체험).
@@ -48,7 +49,7 @@ export type GuideTourStepDef = {
   oralSubStepId?: (typeof PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS)[number]["id"];
   /** 작성 패널(compose) 오픈 */
   openCompose?: boolean;
-  /** 하이라이트 홀 안 클릭 허용(보철물 카드·커스텀어벗 체험) */
+  /** 하이라이트 홀 안 포인터 허용(보철물·커스텀어벗·견적 호버) */
   allowTargetInteraction?: boolean;
 };
 
@@ -95,7 +96,9 @@ const practiceOralMovieSteps: GuideTourStepDef[] =
   PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS.map((s) => {
     const id = `oral_${s.id}` as (typeof PRACTICE_ORAL_GUIDE_TOUR_STEP_IDS)[number];
     const allowTargetInteraction =
-      s.id === "card_ops" || isCustomAbutGuideTourStepId(s.id);
+      s.id === "card_ops" ||
+      s.id === "estimate" ||
+      isCustomAbutGuideTourStepId(s.id);
     const openCompose = s.id !== "drafts";
     return {
       id,
