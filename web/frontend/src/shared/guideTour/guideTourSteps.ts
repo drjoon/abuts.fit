@@ -104,7 +104,7 @@ export const PRACTICE_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   {
     id: "oral_calendar",
     title: "기공의뢰 · 구강스캔",
-    hint: "「기공의뢰 → 구강스캔으로」 페이지의 캘린더에서 기공물 도착 날짜를 눌러 신규 의뢰서를 작성합니다",
+    hint: "캘린더에서 기공물 도착 날짜를 눌러 신규 의뢰서를 작성합니다",
     path: PRACTICE_ORAL_PATH,
     target: "oral_calendar",
     advance: "next",

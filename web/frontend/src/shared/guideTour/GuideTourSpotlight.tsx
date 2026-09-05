@@ -5,6 +5,7 @@
 // - web/frontend/src/shared/components/practice/PracticeOrderArrivalDateRangeField.tsx
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // change-log:
+// - 2026-09-05: 멀티 홀 — 뷰포트−홀 블러 패널(홀 위 backdrop 없음). mask/blend 폐기.
 // - 2026-09-05: oral_calendar — 사이드바·캘린더 별도 홀(위성 union 대신). 카드는 캘린더 위.
 // - 2026-09-05: 영화형 — blur·홀 클릭 차단. allowTargetInteraction만 홀 통과(4·5번).
 // - 2026-09-05: 코치카드 — guide-tour-root(z-420) 밖 별도 레이어(z-440). 루트 안 z-440은 중첩 모달(z-425)에 가려짐.
@@ -125,8 +126,12 @@ function readSpotlightRects(target: string | null | undefined): Rect[] {
   if (satellites.length === 0) return [primaryRect];
 
   if (SEPARATE_SATELLITE_TARGETS.has(target)) {
-    // 사이드바 메뉴를 앞에, 캘린더(primary)를 앵커로 뒤에
-    return [...satellites, primaryRect];
+    // 사이드바 위성들(기공의뢰+구강스캔으로)은 하나의 홀로 union, 캘린더는 별도
+    let sideHole: Rect | null = null;
+    for (const sat of satellites) {
+      sideHole = sideHole ? unionRect(sideHole, sat) : sat;
+    }
+    return sideHole ? [sideHole, primaryRect] : [primaryRect];
   }
 
   let hole = primaryRect;
@@ -136,30 +141,71 @@ function readSpotlightRects(target: string | null | undefined): Rect[] {
   return [hole];
 }
 
-function buildHoleMaskImage(rects: Rect[], vw: number, vh: number): string {
-  const holes = rects
-    .map(
-      (r) =>
-        `<rect x="${r.left}" y="${r.top}" width="${r.width}" height="${r.height}" rx="8" fill="black"/>`,
-    )
-    .join("");
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${vw}" height="${vh}"><rect width="100%" height="100%" fill="white"/>${holes}</svg>`;
-  return `url("data:image/svg+xml;utf8,${encodeURIComponent(svg)}")`;
+/** outer에서 hole을 뺀 직사각 조각(최대 4). backdrop-filter 홀에 안전. */
+function subtractRect(outer: Rect, hole: Rect): Rect[] {
+  const ox2 = outer.left + outer.width;
+  const oy2 = outer.top + outer.height;
+  const hx1 = Math.max(outer.left, hole.left);
+  const hy1 = Math.max(outer.top, hole.top);
+  const hx2 = Math.min(ox2, hole.left + hole.width);
+  const hy2 = Math.min(oy2, hole.top + hole.height);
+  if (hx1 >= hx2 || hy1 >= hy2) return [outer];
+
+  const out: Rect[] = [];
+  // top
+  if (hy1 > outer.top) {
+    out.push({
+      top: outer.top,
+      left: outer.left,
+      width: outer.width,
+      height: hy1 - outer.top,
+    });
+  }
+  // bottom
+  if (hy2 < oy2) {
+    out.push({
+      top: hy2,
+      left: outer.left,
+      width: outer.width,
+      height: oy2 - hy2,
+    });
+  }
+  // left (middle band)
+  if (hx1 > outer.left) {
+    out.push({
+      top: hy1,
+      left: outer.left,
+      width: hx1 - outer.left,
+      height: hy2 - hy1,
+    });
+  }
+  // right (middle band)
+  if (hx2 < ox2) {
+    out.push({
+      top: hy1,
+      left: hx2,
+      width: ox2 - hx2,
+      height: hy2 - hy1,
+    });
+  }
+  return out.filter((r) => r.width > 0.5 && r.height > 0.5);
 }
 
-/** evenodd 경로 — 홀 밖만 클릭 캡처 */
-function buildEvenOddHitPath(rects: Rect[], vw: number, vh: number): string {
-  const outer = `M0,0H${vw}V${vh}H0Z`;
-  const holes = rects
-    .map((r) => {
-      const x = r.left;
-      const y = r.top;
-      const w = r.width;
-      const h = r.height;
-      return `M${x},${y}h${w}v${h}h${-w}Z`;
-    })
-    .join("");
-  return `${outer}${holes}`;
+/** 뷰포트 − 홀들 → 블러를 깔 직사각들(홀 위에는 블러 없음) */
+function blurCoversMinusHoles(
+  vw: number,
+  vh: number,
+  holes: Rect[],
+): Rect[] {
+  let covers: Rect[] = [{ top: 0, left: 0, width: vw, height: vh }];
+  for (const hole of holes) {
+    const next: Rect[] = [];
+    for (const c of covers) {
+      next.push(...subtractRect(c, hole));
+    }
+    covers = next;
+  }
+  return covers;
 }
 
 type CardPlacement =
@@ -501,14 +547,9 @@ export function GuideTourSpotlight({
     setPlacement(placeCardNearTarget(rects, cardSize, prefer));
   }, [rects, cardSize, target]);
 
-  const maskImage = useMemo(() => {
-    if (rects.length === 0 || viewport.w <= 0 || viewport.h <= 0) return null;
-    return buildHoleMaskImage(rects, viewport.w, viewport.h);
-  }, [rects, viewport.h, viewport.w]);
-
-  const hitPath = useMemo(() => {
-    if (rects.length === 0 || viewport.w <= 0 || viewport.h <= 0) return null;
-    return buildEvenOddHitPath(rects, viewport.w, viewport.h);
+  const blurCovers = useMemo(() => {
+    if (rects.length === 0 || viewport.w <= 0 || viewport.h <= 0) return [];
+    return blurCoversMinusHoles(viewport.w, viewport.h, rects);
   }, [rects, viewport.h, viewport.w]);
 
   const card = (
@@ -575,34 +616,24 @@ export function GuideTourSpotlight({
   );
 
   // z-420 blur(클릭 차단) · z-425 nested dialog · z-430 popper · z-440 card(루트 밖)
+  // 홀 위에는 blur 패널을 아예 두지 않음(backdrop-filter mask/blend 회피)
   const blurLayer = (
     <div className="guide-tour-root pointer-events-none fixed inset-0 z-[420]">
-      {rects.length > 0 && maskImage && hitPath ? (
+      {rects.length > 0 ? (
         <>
-          <div
-            className="guide-tour-blur pointer-events-none absolute inset-0"
-            style={{
-              WebkitMaskImage: maskImage,
-              maskImage,
-            }}
-            aria-hidden
-          />
-          {/* 마스크는 페인팅만 — 홀 밖 클릭은 evenodd SVG로 차단 */}
-          <svg
-            className="absolute inset-0 h-full w-full"
-            width={viewport.w}
-            height={viewport.h}
-            aria-hidden
-          >
-            <path
-              d={hitPath}
-              fill="black"
-              fillOpacity={0}
-              fillRule="evenodd"
-              pointerEvents="fill"
-              className="pointer-events-auto"
+          {blurCovers.map((cover, i) => (
+            <div
+              key={`blur-${i}`}
+              className="guide-tour-blur pointer-events-auto absolute"
+              style={{
+                top: cover.top,
+                left: cover.left,
+                width: cover.width,
+                height: cover.height,
+              }}
+              aria-hidden
             />
-          </svg>
+          ))}
           {rects.map((rect, i) => (
             <div key={`hole-${i}`}>
               {!allowTargetInteraction ? (
