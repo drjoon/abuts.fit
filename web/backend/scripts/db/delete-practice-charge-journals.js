@@ -2,6 +2,9 @@
 // - web/backend/scripts/db/_mongo.js
 // - web/backend/services/generalLedger.service.js
 /**
+ * @deprecated 충전만 지우면 소비가 남아 잔액 수식이 깨짐.
+ * 대신 `reset-requestor-credit-ledgers.js` 사용(충전+소비+기공소 포함 전량 리셋).
+ *
  * 치과 유료/무료 충전 저널(+충전 회수 ADJUST)을 물리 삭제.
  * 기간 요약 카드의 충전 합계가 0이 되도록 함. 소비 저널은 유지(마이너스 잔고).
  *
