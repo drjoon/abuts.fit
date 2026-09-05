@@ -2,7 +2,10 @@
 // - web/frontend/src/shared/guideTour/GuideTourProvider.tsx
 // - web/frontend/src/shared/guideTour/scrollGuideTourTarget.ts
 // - web/frontend/src/index.css
+// - web/frontend/src/shared/components/practice/PracticeOrderArrivalDateRangeField.tsx
+// - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // change-log:
+// - 2026-09-05: 위성(data-guide-tour-satellite) 홀 확장·카드 회피. 드롭다운 타깃은 코치마크 오른쪽.
 // - 2026-09-05: outline 버튼 hover 글자 — accent-foreground(흰) 덮어써 안 보이던 문제 수정.
 // - 2026-09-05: 치식 타깃 스크롤 — data-guide-tour-scroll + 지연 재시도(타깃 DOM 동기화 대기).
 // - 2026-09-05: 버튼 순서 — 다음에 하기 · (뒤로·건너뛰기·다음 오른쪽).
@@ -26,12 +29,11 @@ const VIEW_PAD = 16;
 const CARD_H_FALLBACK = 160;
 const CARD_W_FALLBACK = 32 * 16;
 
-function readTargetRect(target: string | null | undefined): Rect | null {
-  if (!target) return null;
-  const el = document.querySelector(
-    `[data-guide-tour="${CSS.escape(target)}"]`,
-  ) as HTMLElement | null;
-  if (!el) return null;
+/** 아래로 열리는 팝오버/드롭다운 — 코치마크는 옆(오른쪽)에 두어 설명 대상을 가리지 않음 */
+const DROPDOWN_BELOW_TARGETS = new Set(["oral_lab", "oral_dates"]);
+
+function readElRect(el: Element | null): Rect | null {
+  if (!el || !(el instanceof HTMLElement)) return null;
   const r = el.getBoundingClientRect();
   if (r.width <= 0 || r.height <= 0) return null;
   return {
@@ -40,6 +42,32 @@ function readTargetRect(target: string | null | undefined): Rect | null {
     width: r.width + PAD * 2,
     height: r.height + PAD * 2,
   };
+}
+
+function unionRect(a: Rect, b: Rect): Rect {
+  const top = Math.min(a.top, b.top);
+  const left = Math.min(a.left, b.left);
+  const right = Math.max(a.left + a.width, b.left + b.width);
+  const bottom = Math.max(a.top + a.height, b.top + b.height);
+  return { top, left, width: right - left, height: bottom - top };
+}
+
+/** 타깃 + 위성(열린 캘린더·검색 드롭다운 등)을 하나의 홀 영역으로 */
+function readSpotlightRect(target: string | null | undefined): Rect | null {
+  if (!target) return null;
+  const primary = document.querySelector(
+    `[data-guide-tour="${CSS.escape(target)}"]`,
+  );
+  let hole = readElRect(primary);
+  if (!hole) return null;
+  const satellites = document.querySelectorAll(
+    `[data-guide-tour-satellite="${CSS.escape(target)}"]`,
+  );
+  satellites.forEach((el) => {
+    const sat = readElRect(el);
+    if (sat) hole = unionRect(hole!, sat);
+  });
+  return hole;
 }
 
 type CardPlacement =
@@ -97,34 +125,43 @@ function placeCardNearTarget(
   const leftLeft = rect.left - CARD_GAP - cardW;
   const belowTop = rect.top + rect.height + CARD_GAP;
   const aboveTop = rect.top - CARD_GAP - cardH;
+  const midTop = Math.max(
+    VIEW_PAD,
+    Math.min(vh - VIEW_PAD - cardH, rect.top + (rect.height - cardH) / 2),
+  );
 
   const candidates: Array<{ top: number; left: number }> = [];
 
   if (prefer === "right") {
     candidates.push(
+      { top: midTop, left: rightLeft },
       { top: rect.top, left: rightLeft },
+      { top: midTop, left: leftLeft },
       { top: rect.top, left: leftLeft },
-      { top: belowTop, left: rect.left },
       { top: aboveTop, left: rect.left },
+      { top: belowTop, left: rect.left },
     );
   } else if (prefer === "above") {
     candidates.push(
       { top: aboveTop, left: rect.left },
       { top: belowTop, left: rect.left },
-      { top: rect.top, left: rightLeft },
-      { top: rect.top, left: leftLeft },
+      { top: midTop, left: rightLeft },
+      { top: midTop, left: leftLeft },
     );
   } else if (prefer === "below") {
     candidates.push(
       { top: belowTop, left: rect.left },
       { top: aboveTop, left: rect.left },
-      { top: rect.top, left: rightLeft },
-      { top: rect.top, left: leftLeft },
+      { top: midTop, left: rightLeft },
+      { top: midTop, left: leftLeft },
     );
   } else {
+    // auto: 옆 → 위 → 아래 (아래로 열리는 UI와 겹침 최소화)
     candidates.push(
-      { top: belowTop, left: rect.left },
+      { top: midTop, left: rightLeft },
+      { top: midTop, left: leftLeft },
       { top: aboveTop, left: rect.left },
+      { top: belowTop, left: rect.left },
       { top: rect.top, left: rightLeft },
       { top: rect.top, left: leftLeft },
     );
@@ -177,21 +214,45 @@ export function GuideTourSpotlight({
   onPause,
   className,
 }: GuideTourSpotlightProps) {
-  const [rect, setRect] = useState<Rect | null>(() => readTargetRect(target));
+  const [rect, setRect] = useState<Rect | null>(() => readSpotlightRect(target));
   const cardRef = useRef<HTMLDivElement | null>(null);
   const [cardSize, setCardSize] = useState({ width: 0, height: 0 });
   const [placement, setPlacement] = useState<CardPlacement>({ mode: "center" });
 
   useEffect(() => {
     let observed: HTMLElement | null = null;
+    const satelliteObserved = new Set<Element>();
     const ro =
       typeof ResizeObserver !== "undefined"
         ? new ResizeObserver(() => {
-            setRect(readTargetRect(target));
+            setRect(readSpotlightRect(target));
           })
         : null;
 
-    const measure = () => setRect(readTargetRect(target));
+    const measure = () => setRect(readSpotlightRect(target));
+
+    const syncObservers = () => {
+      const el = target
+        ? (document.querySelector(
+            `[data-guide-tour="${CSS.escape(target)}"]`,
+          ) as HTMLElement | null)
+        : null;
+      if (el && ro && observed !== el) {
+        if (observed) ro.unobserve(observed);
+        ro.observe(el);
+        observed = el;
+      }
+      if (ro && target) {
+        const sats = document.querySelectorAll(
+          `[data-guide-tour-satellite="${CSS.escape(target)}"]`,
+        );
+        sats.forEach((sat) => {
+          if (satelliteObserved.has(sat)) return;
+          ro.observe(sat);
+          satelliteObserved.add(sat);
+        });
+      }
+    };
 
     const syncScrollAndMeasure = () => {
       const el = target
@@ -203,25 +264,38 @@ export function GuideTourSpotlight({
         scrollToothChartGuideTargetIntoView(el);
       }
       measure();
-      if (el && ro && observed !== el) {
-        if (observed) ro.unobserve(observed);
-        ro.observe(el);
-        observed = el;
-      }
+      syncObservers();
     };
 
-    // 타깃 data-guide-tour는 패널 oral 스텝 동기화 후에 붙음 — 즉시+지연 재시도
+    // 타깃·위성(팝오버) DOM 동기화 대기 — 즉시+지연 재시도
     syncScrollAndMeasure();
     const timers = [50, 150, 320, 600].map((ms) =>
       window.setTimeout(syncScrollAndMeasure, ms),
     );
     window.addEventListener("resize", measure);
     window.addEventListener("scroll", measure, true);
+
+    const mo =
+      typeof MutationObserver !== "undefined"
+        ? new MutationObserver(() => {
+            measure();
+            syncObservers();
+          })
+        : null;
+    // 팝오버 포털 등장/위성 마킹만 — style/class 전수 감시는 과함
+    mo?.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["data-guide-tour", "data-guide-tour-satellite"],
+    });
+
     return () => {
       for (const id of timers) window.clearTimeout(id);
       window.removeEventListener("resize", measure);
       window.removeEventListener("scroll", measure, true);
       ro?.disconnect();
+      mo?.disconnect();
     };
   }, [target, stepIndex]);
 
@@ -248,10 +322,10 @@ export function GuideTourSpotlight({
     }
     // 실측 전 fallback으로 한 번 튀지 않게 — 측정 후에만 고정 배치
     if (cardSize.width <= 0 || cardSize.height <= 0) return;
-    // 기공소: 드롭다운은 아래·코치마크는 오른쪽 — 겹침·위치 튐 방지
+    // 기공소·날짜: 드롭다운은 아래·코치마크는 오른쪽 — 겹침 방지
     // 치식: 스크롤로 위 여유를 만든 뒤 코치마크를 타깃 위에
     const prefer: PlacePrefer =
-      target === "oral_lab"
+      target && DROPDOWN_BELOW_TARGETS.has(target)
         ? "right"
         : target && TOOTH_CHART_GUIDE_TARGETS.has(target)
           ? "above"
@@ -323,6 +397,7 @@ export function GuideTourSpotlight({
   );
 
   return createPortal(
+    // z-420 blur/root · z-421 card · 투어 중 팝오버/툴팁은 index.css에서 z-430
     <div className="guide-tour-root pointer-events-none fixed inset-0 z-[420]">
       {rect ? (
         <>

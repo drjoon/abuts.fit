@@ -39,6 +39,13 @@ Notes:
   - SSOT: `src/components/ui/tooltip.tsx` (`TooltipProvider` 기본값 600),
     루트 `src/App.tsx`, `.cursor/rules/tooltip-delay.mdc`.
   - 중첩 `TooltipProvider`/`Tooltip`에 `delayDuration={0}`/`{200}` 등 다른 지연을 두지 말 것.
+- 가이드투어 Spotlight (플랫폼):
+  - 스택: blur/root `z-[420]` · 코치마크 `z-[421]` · 투어 중 Radix popper
+    (`body:has(.guide-tour-root) [data-radix-popper-content-wrapper]`) `z-430`.
+  - 홀: `data-guide-tour` + `data-guide-tour-satellite`(열린 캘린더·기공소 검색 등).
+  - 코치마크는 설명 대상(및 위성)과 겹치지 않게 배치. 아래로 열리는 UI
+    (`oral_lab`·`oral_dates`)는 오른쪽 우선.
+  - SSOT: `src/shared/guideTour/GuideTourSpotlight.tsx`, `src/index.css`.
 - 요약 카드 (`SettlementStatCard`, 정산·크레딧 상단 요약):
   - **클릭 → 관련 상세 내역 모달** (`CreditLedgerModal` + `initialFilters` + `hideBalanceSummary`).
   - 카드 위·사이 **수식·설명 문단 상시 노출 금지** (`현재 잔액 = …` 한 줄, `· 기간 …` 보조 문구 등).

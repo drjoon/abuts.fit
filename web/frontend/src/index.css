@@ -461,7 +461,12 @@ All colors MUST be HSL.
   z-index: 25;
 }
 
-/* Platform guide tour — blur everything except spotlight hole */
+/*
+ * Platform guide tour stacking:
+ * - root/blur: z-420 · coach card: z-421
+ * - popover/select/tooltip/menu during tour: z-430 (above blur)
+ * Spotlight hole clears blur over target + data-guide-tour-satellite.
+ */
 .guide-tour-blur {
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
@@ -472,6 +477,12 @@ All colors MUST be HSL.
   /* clear the blur over the target via mix; hole sits above blur */
   box-shadow: 0 0 0 9999px rgba(15, 23, 42, 0.45);
   background: transparent;
+}
+
+/* Radix poppers default z-400 — raise above tour blur while active */
+body:has(.guide-tour-root) [data-radix-popper-content-wrapper],
+body:has(.guide-tour-root) [data-guide-tour-satellite] {
+  z-index: 430 !important;
 }
 
 /* Responsive layout helpers (mobile-first) */

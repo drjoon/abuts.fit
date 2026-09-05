@@ -32,6 +32,8 @@ import {
 // - web/frontend/src/shared/practice/practiceWorkPeriod.ts
 // - web/frontend/src/shared/ui/PeriodFilter.tsx
 // - web/frontend/src/shared/date/kst.ts
+// - web/frontend/src/shared/guideTour/GuideTourSpotlight.tsx
+// - 2026-09-05: 가이드투어 — 캘린더 팝오버를 satellite로 마킹(홀 확장·블러 위 z-430).
 // - 2026-08-20: CA 안내 — 지정 도착일 2영업일 전 발송.
 // - 2026-08-20: 낮 12시 전은 오늘 포함, 이후는 오늘 제외.
 // - 2026-08-19: 도움말 — 출고=도착−2영업일, 지정 도착일 1영업일 전 배송 목표.
@@ -238,6 +240,9 @@ export function PracticeOrderArrivalDateRangeField({
           sideOffset={6}
           avoidCollisions={false}
           className="w-auto p-0"
+          {...(triggerDataGuideTour
+            ? { "data-guide-tour-satellite": triggerDataGuideTour }
+            : {})}
           onOpenAutoFocus={(e) => e.preventDefault()}
         >
           <div className="inline-flex flex-col">

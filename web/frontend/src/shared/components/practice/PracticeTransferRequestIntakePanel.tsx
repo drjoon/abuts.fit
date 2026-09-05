@@ -172,6 +172,7 @@ import {
 // - web/frontend/src/shared/components/practice/PracticeCustomSpecsPresetEditDialog.tsx
 // - web/frontend/src/shared/pricing/abutsAbutmentService.ts
 // - 2026-09-05: 가이드투어 치식 스텝 — 작성 패널 자동 스크롤(data-guide-tour-scroll).
+// - 2026-09-05: 가이드투어 — lab 검색 드롭다운 satellite(홀 확장) + z-430.
 // - 2026-09-05: 가이드투어 환자명 — 글자마다 즉시 진행 금지. 입력 멈춤(idle)·Enter만.
 // - 2026-09-05: 기공소 드롭다운 폭=트리거와 동일(min-w 제거).
 // - 2026-09-05: 플랫폼 투어 — 기공소 팝오버 강제오픈 안 함(위치 고정). 수동 오픈 시 z-430.
@@ -2791,10 +2792,14 @@ export const PracticeTransferRequestIntakePanel = ({
               className={cn(
                 "w-[var(--radix-popover-trigger-width)] max-w-[var(--radix-popover-trigger-width)] p-0",
                 // Spotlight(z-420)보다 위 — 투어 중 검색 드롭다운이 블러에 가리지 않게
+                // (index.css body:has(.guide-tour-root) wrapper z-430과 병행)
                 platformOralActive &&
                   toothWorkGuideTourStepId === "lab" &&
                   "z-[430]",
               )}
+              {...(platformOralActive && toothWorkGuideTourStepId === "lab"
+                ? { "data-guide-tour-satellite": "oral_lab" }
+                : {})}
               align="start"
               onWheel={(e) => e.stopPropagation()}
               onTouchMove={(e) => e.stopPropagation()}
