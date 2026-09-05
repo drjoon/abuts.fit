@@ -7063,6 +7063,7 @@ export const PracticeFileTransferPage = ({
   };
 
   // 플랫폼 가이드투어 챕터1 — 작성 패널 오픈 시「새로 작성」1회, 이후 세부만 동기화
+  // oral_calendar에서 도착일 클릭으로 이미 작성·advance 한 경우 freshComposeRef로 폼 유지
   const guideTourFreshComposeRef = useRef(false);
   useEffect(() => {
     if (!platformGuideTour.active) {
@@ -7088,11 +7089,22 @@ export const PracticeFileTransferPage = ({
   ]);
 
   const openComposeForArrival = (ymd: string) => {
+    // 가이드투어 oral_calendar: 도착일 클릭이 곧「신규 의뢰 시작」—
+    // 작성 패널만 열고 스텝을 안 넘기면 캘린더 안내가 작성 화면 위에 남는다.
+    const advanceFromCalendar =
+      platformGuideTour.active && platformGuideTour.stepId === "oral_calendar";
+    if (advanceFromCalendar) {
+      // 다음 oral_* 스텝의「새로 작성」이 방금 넣은 도착일을 덮어쓰지 않게
+      guideTourFreshComposeRef.current = true;
+    }
     void handleStartNewTransfer({
       arrivalYmd: ymd,
       openCompose: true,
       silentToast: true,
     });
+    if (advanceFromCalendar) {
+      platformGuideTour.advance();
+    }
   };
 
   const openNewComposeFromDrafts = () => {

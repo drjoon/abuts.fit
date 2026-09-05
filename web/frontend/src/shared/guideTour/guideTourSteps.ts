@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/practice/PracticeToothWorkGuideTourBanner.tsx
 // - web/frontend/src/shared/guideTour/GuideTourProvider.tsx
 // change-log:
+// - 2026-09-05: oral_calendar — 도착일 클릭(action)으로 다음 스텝. 「다음」도 가능.
 // - 2026-09-05: 치과 투어 4챕터. 챕터 카운터 1/4·치식/어벗 체험 유지·전송·폰모드·임시저장.
 // - 2026-09-05: 시작(intro) 스텝 분리 — 챕터 번호 없이「계속」.
 
@@ -75,7 +76,7 @@ export const PRACTICE_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
     hint: "캘린더에서 기공물 도착 날짜를 클릭해 신규 의뢰를 시작합니다.",
     path: PRACTICE_ORAL_PATH,
     target: "oral_calendar",
-    advance: "next",
+    advance: "action",
     chapter: 1,
     openCompose: false,
   },

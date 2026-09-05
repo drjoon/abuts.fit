@@ -166,6 +166,7 @@ import {
 // - web/frontend/src/shared/components/practice/PracticeToothSimpleAbutmentFields.tsx
 // - web/frontend/src/shared/components/practice/PracticeCustomSpecsPresetEditDialog.tsx
 // - web/frontend/src/shared/pricing/abutsAbutmentService.ts
+// - 2026-09-05: 가이드투어 환자명 — 글자마다 즉시 진행 금지. 입력 멈춤(idle)·Enter만.
 // - 2026-09-05: 기공소 드롭다운 폭=트리거와 동일(min-w 제거).
 // - 2026-09-05: 플랫폼 투어 — 기공소 팝오버 강제오픈 안 함(위치 고정). 수동 오픈 시 z-430.
 // - 2026-09-05: 가이드투어 — 환자명에서 뒤로 시 기공소 팝오버 강제오픈·즉시 3 재진입 방지.
@@ -2190,6 +2191,27 @@ export const PracticeTransferRequestIntakePanel = ({
     setLabOpen(false);
   };
 
+  /**
+   * 환자명 투어 — 음절 확정마다 바로 넘기지 않음.
+   * (한글은 compositionend마다 부모가 갱신되어, 한 글자만 쳐도 다음 단계로 튕김)
+   * 입력이 멈춘 뒤(idle) 또는 Enter로만 진행. 「다음」은 Spotlight가 담당.
+   * blur는 코치마크「다음」클릭과 겹쳐 두 칸 건너뛸 수 있어 쓰지 않음.
+   */
+  const GUIDE_TOUR_PATIENT_IDLE_MS = 2000;
+
+  const tryCompletePatientGuideTourStep = () => {
+    if (toothWorkGuideTourStepId !== "patient") return;
+    if (toothWorkGuideTourStep == null) return;
+    const name = String(patientName || "").trim();
+    if (!/[가-힣]/.test(name)) return;
+    if (guideTourPatientRequireChangeRef.current) {
+      if (name === (guideTourPatientBaselineRef.current ?? "")) return;
+    }
+    guideTourPatientRequireChangeRef.current = true;
+    guideTourPatientBaselineRef.current = name;
+    goToothWorkGuideTourStep(toothWorkGuideTourStep + 1);
+  };
+
   useEffect(() => {
     if (toothWorkGuideTourStepId !== "patient") return;
     if (toothWorkGuideTourStep == null) return;
@@ -2198,7 +2220,11 @@ export const PracticeTransferRequestIntakePanel = ({
     if (guideTourPatientRequireChangeRef.current) {
       if (name === (guideTourPatientBaselineRef.current ?? "")) return;
     }
-    goToothWorkGuideTourStep(toothWorkGuideTourStep + 1);
+    const t = window.setTimeout(() => {
+      tryCompletePatientGuideTourStep();
+    }, GUIDE_TOUR_PATIENT_IDLE_MS);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- patientName 변경 시 idle 재시작
   }, [toothWorkGuideTourStep, toothWorkGuideTourStepId, patientName]);
 
   const completeDatesGuideTourStep = () => {
@@ -3049,6 +3075,16 @@ export const PracticeTransferRequestIntakePanel = ({
             onComposingChange={(composing) => {
               patientComposingRef.current = composing;
               reportImeComposing();
+            }}
+            onKeyDown={(e) => {
+              if (e.key !== "Enter") return;
+              const ne = e.nativeEvent as Event & {
+                isComposing?: boolean;
+                keyCode?: number;
+              };
+              if (ne.isComposing || ne.keyCode === 229) return;
+              e.preventDefault();
+              tryCompletePatientGuideTourStep();
             }}
             placeholder="환자명"
             className={cn(
