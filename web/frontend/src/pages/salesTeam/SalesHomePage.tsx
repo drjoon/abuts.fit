@@ -217,19 +217,24 @@ export default function SalesHomePage() {
   });
 
   const visits = visitsData?.items || [];
-  /** 상단 뱃지: 취소는 카운트·필터 대상에서 제외 */
+  /** 상단 뱃지: 취소·연기는 카운트·필터 대상에서 제외 */
   const activeVisits = useMemo(
-    () => visits.filter((v) => v.status !== "canceled"),
+    () =>
+      visits.filter(
+        (v) => v.status !== "canceled" && v.status !== "postponed",
+      ),
     [visits],
   );
   const visitCount = activeVisits.length;
   const doneCount = activeVisits.filter((v) => v.status === "done").length;
   const plannedCount = activeVisits.filter((v) => v.status === "planned").length;
-  const canceledCount = visits.filter((v) => v.status === "canceled").length;
+  const canceledOrPostponedCount = visits.filter(
+    (v) => v.status === "canceled" || v.status === "postponed",
+  ).length;
   const reportSubmitted = Boolean(reportData?.report);
   const historyItems = history?.items || [];
 
-  /** 일정 목록 필터: 방문=취소 제외 전체, 예정/완료=해당 상태만 (다시 누르면 전체) */
+  /** 일정 목록 필터: 방문=취소·연기 제외 전체, 예정/완료=해당 상태만 (다시 누르면 전체) */
   const [listFilter, setListFilter] = useState<ListFilter>("all");
   const [showCanceled, setShowCanceled] = useState(false);
 
@@ -245,10 +250,12 @@ export default function SalesHomePage() {
 
   const visibleVisits = useMemo(() => {
     return visits.filter((v) => {
-      if (v.status === "canceled") return showCanceled && listFilter === "all";
+      if (v.status === "canceled" || v.status === "postponed") {
+        return showCanceled && listFilter === "all";
+      }
       if (listFilter === "planned") return v.status === "planned";
       if (listFilter === "done") return v.status === "done";
-      // all: 예정·완료·부재·연기 (취소는 showCanceled)
+      // all: 예정·완료·부재 (취소·연기는 showCanceled)
       return true;
     });
   }, [visits, listFilter, showCanceled]);
@@ -260,7 +267,7 @@ export default function SalesHomePage() {
         ? "완료된 방문이 없습니다. 「방문」을 누르면 전체 일정을 봅니다."
         : showCanceled
           ? "표시할 일정이 없습니다."
-          : "상단 뱃지나 취소 보기로 다시 표시하세요.";
+          : "상단 뱃지나 취소·연기 보기로 다시 표시하세요.";
 
   const routeVisitKey = visits
     .filter((v) => v.status === "planned")
@@ -482,53 +489,32 @@ export default function SalesHomePage() {
   return (
     <SalesPageShell wide>
       <SalesToolbar className="w-full md:flex-col md:flex-nowrap md:items-stretch">
-        <div className="flex w-full flex-col gap-2.5">
-          {/* 1행: [탭] ↔ [캘린더 · 오늘 · 일정 추가] — lg+에서만 한 줄 justify-between */}
-          <div className="flex w-full flex-col gap-2.5 lg:flex-row lg:items-center lg:justify-between lg:gap-3">
-            <SalesSegmentTabs
-              fit
-              compact
-              value={tab}
-              onChange={setTab}
-              className="w-full shrink-0 lg:w-auto"
-              options={[
-                {
-                  value: "schedule",
-                  label: "일정 · 동선",
-                },
-                {
-                  value: "report",
-                  label: "일일보고",
-                },
-              ]}
-            />
-            <div className="flex w-full shrink-0 items-center justify-end gap-2 lg:w-auto lg:justify-start">
-              {tab === "schedule" ? (
-                <Button
-                  size="sm"
-                  className="shrink-0"
-                  onClick={() => {
-                    setTime(defaultVisitHm(ymd, today));
-                    setShowForm(true);
-                  }}
-                >
-                  일정 추가
-                </Button>
-              ) : reportSubmitted ? (
-                <Badge className="h-8 shrink-0 px-3">제출됨</Badge>
-              ) : (
-                <Badge variant="destructive" className="h-8 shrink-0 px-3">
-                  미제출
-                </Badge>
-              )}
-            </div>
-          </div>
-          <div className="flex w-full flex-wrap gap-1.5 text-xs sm:text-sm">
+        <div className="flex w-full flex-col gap-2.5 lg:grid lg:grid-cols-[1fr_auto_1fr] lg:items-center lg:gap-3">
+          <SalesSegmentTabs
+            fit
+            compact
+            value={tab}
+            onChange={setTab}
+            className="w-full shrink-0 justify-self-start lg:w-auto"
+            options={[
+              {
+                value: "schedule",
+                label: "일정 · 동선",
+              },
+              {
+                value: "report",
+                label: "일일보고",
+              },
+            ]}
+          />
+          <div className="flex w-full flex-wrap justify-center gap-1.5 text-xs sm:text-sm lg:w-auto">
             <StatusChip
               label="방문"
               value={String(visitCount)}
               muted={!visitCount}
-              pressed={tab === "schedule" && listFilter === "all" && !showCanceled}
+              pressed={
+                tab === "schedule" && listFilter === "all" && !showCanceled
+              }
               onClick={() => {
                 setTab("schedule");
                 setShowCanceled(false);
@@ -560,6 +546,26 @@ export default function SalesHomePage() {
               }
             />
           </div>
+          <div className="flex w-full shrink-0 items-center justify-end gap-2 justify-self-end lg:w-auto">
+            {tab === "schedule" ? (
+              <Button
+                size="sm"
+                className="shrink-0"
+                onClick={() => {
+                  setTime(defaultVisitHm(ymd, today));
+                  setShowForm(true);
+                }}
+              >
+                일정 추가
+              </Button>
+            ) : reportSubmitted ? (
+              <Badge className="h-8 shrink-0 px-3">제출됨</Badge>
+            ) : (
+              <Badge variant="destructive" className="h-8 shrink-0 px-3">
+                미제출
+              </Badge>
+            )}
+          </div>
         </div>
       </SalesToolbar>
 
@@ -576,18 +582,18 @@ export default function SalesHomePage() {
                   <Button
                     size="sm"
                     variant={showCanceled ? "secondary" : "outline"}
-                    disabled={canceledCount === 0 && !showCanceled}
+                    disabled={canceledOrPostponedCount === 0 && !showCanceled}
                     onClick={() => {
                       if (tab !== "schedule") setTab("schedule");
                       setListFilter("all");
                       setShowCanceled((v) => !v);
                     }}
                   >
-                    {canceledCount === 0 && !showCanceled
-                      ? "취소 없음"
+                    {canceledOrPostponedCount === 0 && !showCanceled
+                      ? "취소·연기 없음"
                       : showCanceled
-                        ? "취소 숨김"
-                        : `취소 보기 · ${canceledCount}`}
+                        ? "취소·연기 숨김"
+                        : `취소·연기 보기 · ${canceledOrPostponedCount}`}
                   </Button>
                 }
               >
@@ -641,7 +647,8 @@ export default function SalesHomePage() {
                           />
                           <div
                             className={`rounded-xl border px-3.5 py-3 ${
-                              v.status === "canceled"
+                              v.status === "canceled" ||
+                              v.status === "postponed"
                                 ? "border-slate-200/60 bg-slate-50/30 opacity-70"
                                 : "border-slate-200/80 bg-slate-50/40"
                             }`}
@@ -987,7 +994,7 @@ export default function SalesHomePage() {
               제안도 함께 보입니다.
             </DialogDescription>
           </DialogHeader>
-          <div className="relative z-0 min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3.5 sm:px-5">
+          <div className="relative z-0 min-h-0 space-y-3 overflow-y-auto px-4 py-3.5 sm:px-5">
             <div
               className={cn(
                 "relative",
