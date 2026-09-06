@@ -27,7 +27,6 @@ import {
   SalesListRow,
   SalesPageShell,
   SalesPanel,
-  SalesStatCard,
 } from "./salesUi";
 
 export default function SalesAccountsPage() {
@@ -70,13 +69,14 @@ export default function SalesAccountsPage() {
       }
       return salesTeamApi.createAccount(token, editing);
     },
-    onSuccess: () => {
+    onSuccess: (saved) => {
       toast({ title: "저장되었습니다." });
       setEditing(null);
       void qc.invalidateQueries({ queryKey: ["sales-team-accounts"] });
-      if (selectedId) {
+      if (saved?._id) {
+        setSelectedId(saved._id);
         void qc.invalidateQueries({
-          queryKey: ["sales-team-account", selectedId],
+          queryKey: ["sales-team-account", saved._id],
         });
       }
     },
@@ -110,57 +110,36 @@ export default function SalesAccountsPage() {
   return (
     <SalesPageShell
       title="거래처"
-      subtitle="방문·판매 대상 CRM. 특이사항·연락처·주소 관리. 판매·세금계산서는 플랫폼 가입 사업자만."
+      subtitle={`치과 ${practiceCount} · 기공소 ${labCount} · 플랫폼 가입 ${joinedCount}`}
       actions={
         <Button size="sm" onClick={openCreate}>
           거래처 추가
         </Button>
       }
     >
-      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-        <SalesStatCard
-          label="전체"
-          value={items.length}
-          icon={Building2}
-          hint={isLoading ? "불러오는 중" : "검색·필터 결과"}
-        />
-        <SalesStatCard label="치과" value={practiceCount} hint="의뢰 발신자" />
-        <SalesStatCard label="기공소" value={labCount} hint="의뢰 수신자" />
-        <SalesStatCard
-          label="플랫폼 가입"
-          value={joinedCount}
-          hint={`미가입 ${Math.max(0, items.length - joinedCount)}`}
-          tone={joinedCount > 0 ? "ok" : "default"}
-        />
-      </div>
-
-      <SalesPanel
-        title="거래처 목록"
-        description="이름·대표·전화로 검색하고 유형으로 좁힙니다."
-        actions={
-          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-            <div className="relative sm:w-56">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-              <Input
-                placeholder="이름·대표·전화"
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                className="pl-8"
-              />
-            </div>
-            <Select value={kind} onValueChange={setKind}>
-              <SelectTrigger className="sm:w-32">
-                <SelectValue placeholder="유형" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">전체</SelectItem>
-                <SelectItem value="practice">치과</SelectItem>
-                <SelectItem value="lab">기공소</SelectItem>
-              </SelectContent>
-            </Select>
+      <SalesPanel>
+        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="relative min-w-0 flex-1">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+            <Input
+              placeholder="이름 · 대표 · 전화"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              className="pl-8"
+            />
           </div>
-        }
-      >
+          <Select value={kind} onValueChange={setKind}>
+            <SelectTrigger className="sm:w-32">
+              <SelectValue placeholder="유형" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">전체</SelectItem>
+              <SelectItem value="practice">치과</SelectItem>
+              <SelectItem value="lab">기공소</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
         {editing ? (
           <div className="mb-4 space-y-2.5 rounded-xl border border-primary-muted/60 bg-primary-soft/30 p-4">
             <div className="text-sm font-semibold text-slate-900">
@@ -249,7 +228,7 @@ export default function SalesAccountsPage() {
           <SalesEmptyState
             icon={Building2}
             title="등록된 거래처가 없습니다"
-            description="방문할 치과·기공소를 등록하면 일정·동선·일일보고에 바로 쓸 수 있습니다."
+            description="방문할 치과·기공소를 등록하면 일정·동선에 바로 쓸 수 있습니다."
             actionLabel="첫 거래처 추가"
             onAction={openCreate}
           />
@@ -259,12 +238,16 @@ export default function SalesAccountsPage() {
               <SalesListRow
                 key={item._id}
                 selected={selectedId === item._id}
-                onClick={() => setSelectedId(item._id)}
+                onClick={() =>
+                  setSelectedId((prev) =>
+                    prev === item._id ? null : item._id,
+                  )
+                }
                 title={item.name}
                 meta={
-                  [item.representativeName, item.phone, item.address]
+                  [item.representativeName, item.phone]
                     .filter(Boolean)
-                    .join(" · ") || "연락처/주소 없음"
+                    .join(" · ") || "연락처 없음"
                 }
                 trailing={
                   <div className="flex items-center gap-1">
@@ -284,7 +267,7 @@ export default function SalesAccountsPage() {
         )}
       </SalesPanel>
 
-      {detail ? (
+      {detail && selectedId === detail._id ? (
         <SalesPanel
           title={detail.name}
           description={`${KIND_LABEL[detail.kind] || detail.kind}${
@@ -347,23 +330,17 @@ export default function SalesAccountsPage() {
               </div>
             </div>
           </div>
-          <div className="mt-3 whitespace-pre-wrap rounded-xl border border-slate-100 bg-white p-3 text-sm text-slate-700">
-            {detail.memo || "특이사항 없음"}
-          </div>
+          {detail.memo ? (
+            <div className="mt-3 whitespace-pre-wrap rounded-xl border border-slate-100 bg-white p-3 text-sm text-slate-700">
+              {detail.memo}
+            </div>
+          ) : null}
           {!detail.businessAnchorId ? (
             <p className="mt-3 text-xs text-muted-foreground">
-              플랫폼 미가입이면 판매·세금계산서가 불가합니다. 소개코드로 가입을
-              유도하세요.
+              플랫폼 미가입이면 판매·세금계산서가 불가합니다. 성과 → 소개
+              코드로 가입을 유도하세요.
             </p>
           ) : null}
-          <Button
-            size="sm"
-            variant="ghost"
-            className="mt-3"
-            onClick={() => setSelectedId(null)}
-          >
-            닫기
-          </Button>
         </SalesPanel>
       ) : null}
     </SalesPageShell>

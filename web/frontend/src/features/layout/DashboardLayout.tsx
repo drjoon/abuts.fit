@@ -15,6 +15,7 @@ import {
 } from "@/shared/layout/sidebarOpen";
 import { cn } from "@/shared/ui/cn";
 
+// - 2026-09-06: 영업본부 사이드 9→6(오늘·거래처·성과·요구사항·문의·설정) + 섹션 그룹.
 // - 2026-09-06: 원격 지원 요청 전역 토스트·사이드 소통/재무 순서·원격지원 상단.
 // - 2026-09-05: 데모 모드면 잔액≤0「크레딧 부족」destructive 토스트 생략.
 // - 2026-09-05: 기공소 수신 guideTourSatellite(lab_calendar)·부모에 복수 키.
@@ -160,7 +161,6 @@ import {
   ScanLine,
   PenTool,
   Store,
-  CalendarDays,
   Headphones,
 } from "lucide-react";
 import { AbutsLogo } from "@/components/branding/AbutsLogo";
@@ -394,21 +394,18 @@ const sidebarItems = {
   ],
   labTeam: [{ icon: Settings, label: "설정", href: "/dashboard/settings" }],
   salesTeam: [
-    { icon: LayoutDashboard, label: "홈", href: "/dashboard/sales" },
+    { icon: LayoutDashboard, label: "오늘", href: "/dashboard/sales" },
     { icon: Building2, label: "거래처", href: "/dashboard/sales/accounts" },
     {
-      icon: CalendarDays,
-      label: "일정·동선",
-      href: "/dashboard/sales/schedule",
+      icon: BarChart3,
+      label: "성과",
+      href: "/dashboard/sales/performance",
     },
     {
       icon: ClipboardList,
-      label: "고객 요구사항",
+      label: "요구사항",
       href: "/dashboard/sales/requirements",
     },
-    { icon: BarChart3, label: "실적", href: "/dashboard/sales/stats" },
-    { icon: FileText, label: "일일보고", href: "/dashboard/sales/reports" },
-    { icon: Share2, label: "소개", href: "/dashboard/sales/referral" },
     { icon: MessageSquare, label: "문의", href: "/dashboard/inquiries" },
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
@@ -516,6 +513,38 @@ const adminSidebarSections: DashboardSidebarSection[] = [
         href: "/dashboard/platform-settings",
       },
       { icon: Layers, label: "사업영역", href: "/dashboard/partners" },
+      { icon: Settings, label: "설정", href: "/dashboard/settings" },
+    ],
+  },
+];
+
+const salesTeamMenuSections: DashboardSidebarSection[] = [
+  {
+    title: "현장",
+    items: [
+      { icon: LayoutDashboard, label: "오늘", href: "/dashboard/sales" },
+      { icon: Building2, label: "거래처", href: "/dashboard/sales/accounts" },
+    ],
+  },
+  {
+    title: "성과 · 협업",
+    items: [
+      {
+        icon: BarChart3,
+        label: "성과",
+        href: "/dashboard/sales/performance",
+      },
+      {
+        icon: ClipboardList,
+        label: "요구사항",
+        href: "/dashboard/sales/requirements",
+      },
+    ],
+  },
+  {
+    title: "지원",
+    items: [
+      { icon: MessageSquare, label: "문의", href: "/dashboard/inquiries" },
       { icon: Settings, label: "설정", href: "/dashboard/settings" },
     ],
   },
@@ -1191,6 +1220,8 @@ export const DashboardLayout = () => {
 
   const displayRole = isPracticeUser ? "practice" : user.role;
   const adminMenuSections = user.role === "admin" ? adminSidebarSections : null;
+  const salesTeamSections =
+    user.role === "salesTeam" ? salesTeamMenuSections : null;
   const accountMenuItems = accountMenuItemsByRole[displayRole] || [];
 
   const { getBadgeForHref, clearBadgeForPath } = useAdminCommBadges();
@@ -1640,7 +1671,7 @@ export const DashboardLayout = () => {
           <nav className="hover-scrollbar flex-1 overflow-y-auto p-3 lg:p-4">
             <DashboardSidebarNav
               items={resolvedMenuItems}
-              sections={adminMenuSections ?? undefined}
+              sections={adminMenuSections ?? salesTeamSections ?? undefined}
               isCollapsed={sidebarCollapsed}
               pathname={location.pathname}
               isCreditLow={isCreditLow}

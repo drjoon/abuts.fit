@@ -76,15 +76,8 @@ const SalesHomePage = lazy(() => import("./pages/salesTeam/SalesHomePage"));
 const SalesAccountsPage = lazy(
   () => import("./pages/salesTeam/SalesAccountsPage"),
 );
-const SalesSchedulePage = lazy(
-  () => import("./pages/salesTeam/SalesSchedulePage"),
-);
-const SalesStatsPage = lazy(() => import("./pages/salesTeam/SalesStatsPage"));
-const SalesReportsPage = lazy(
-  () => import("./pages/salesTeam/SalesReportsPage"),
-);
-const SalesReferralPage = lazy(
-  () => import("./pages/salesTeam/SalesReferralPage"),
+const SalesPerformancePage = lazy(
+  () => import("./pages/salesTeam/SalesPerformancePage"),
 );
 const SalesRequirementsPage = lazy(
   () => import("./pages/salesTeam/SalesRequirementsPage"),
@@ -615,10 +608,18 @@ const App = () => {
                     }
                   />
                   <Route
+                    path="sales/performance"
+                    element={
+                      <RoleProtectedRoute roles={["salesTeam"]}>
+                        <SalesPerformancePage />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route
                     path="sales/schedule"
                     element={
                       <RoleProtectedRoute roles={["salesTeam"]}>
-                        <SalesSchedulePage />
+                        <Navigate to="/dashboard/sales?tab=schedule" replace />
                       </RoleProtectedRoute>
                     }
                   />
@@ -626,7 +627,10 @@ const App = () => {
                     path="sales/stats"
                     element={
                       <RoleProtectedRoute roles={["salesTeam"]}>
-                        <SalesStatsPage />
+                        <Navigate
+                          to="/dashboard/sales/performance"
+                          replace
+                        />
                       </RoleProtectedRoute>
                     }
                   />
@@ -634,7 +638,7 @@ const App = () => {
                     path="sales/reports"
                     element={
                       <RoleProtectedRoute roles={["salesTeam"]}>
-                        <SalesReportsPage />
+                        <Navigate to="/dashboard/sales?tab=report" replace />
                       </RoleProtectedRoute>
                     }
                   />
@@ -642,7 +646,10 @@ const App = () => {
                     path="sales/referral"
                     element={
                       <RoleProtectedRoute roles={["salesTeam"]}>
-                        <SalesReferralPage />
+                        <Navigate
+                          to="/dashboard/sales/performance?tab=referral"
+                          replace
+                        />
                       </RoleProtectedRoute>
                     }
                   />

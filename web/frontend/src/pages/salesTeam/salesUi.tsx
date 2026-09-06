@@ -1,11 +1,15 @@
 // related files:
 // - web/frontend/src/pages/salesTeam/SalesHomePage.tsx
+// - web/frontend/src/pages/salesTeam/salesDay.ts
 // - web/frontend/src/shared/settlement/settlementUi.tsx
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/shared/ui/cn";
+import { addDaysYmd } from "./salesDay";
 
 export function SalesPageShell({
   title,
@@ -310,5 +314,104 @@ export function SalesQuickLink({
         </span>
       </span>
     </Link>
+  );
+}
+
+export function SalesDayPicker({
+  ymd,
+  today,
+  onChange,
+}: {
+  ymd: string;
+  today: string;
+  onChange: (next: string) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200/80 bg-white/90 p-2 shadow-sm">
+      <Button
+        size="icon"
+        variant="ghost"
+        className="h-9 w-9"
+        onClick={() => onChange(addDaysYmd(ymd, -1))}
+        aria-label="이전 날"
+      >
+        <ChevronLeft className="h-4 w-4" />
+      </Button>
+      <Input
+        type="date"
+        value={ymd}
+        onChange={(e) => onChange(e.target.value)}
+        className="min-w-0 flex-1 border-0 bg-transparent shadow-none focus-visible:ring-0"
+      />
+      <Button
+        size="icon"
+        variant="ghost"
+        className="h-9 w-9"
+        onClick={() => onChange(addDaysYmd(ymd, 1))}
+        aria-label="다음 날"
+      >
+        <ChevronRight className="h-4 w-4" />
+      </Button>
+      <Button
+        size="sm"
+        variant={ymd === today ? "default" : "secondary"}
+        onClick={() => onChange(today)}
+      >
+        오늘
+      </Button>
+    </div>
+  );
+}
+
+export function SalesSegmentTabs<T extends string>({
+  value,
+  onChange,
+  options,
+  className,
+}: {
+  value: T;
+  onChange: (next: T) => void;
+  options: Array<{ value: T; label: string; hint?: string }>;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex gap-1 rounded-2xl border border-slate-200/80 bg-slate-100/80 p-1",
+        className,
+      )}
+      role="tablist"
+    >
+      {options.map((opt) => {
+        const active = opt.value === value;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => onChange(opt.value)}
+            className={cn(
+              "min-w-0 flex-1 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
+              active
+                ? "bg-white text-slate-900 shadow-sm"
+                : "text-slate-500 hover:text-slate-800",
+            )}
+          >
+            <span className="block truncate">{opt.label}</span>
+            {opt.hint ? (
+              <span
+                className={cn(
+                  "mt-0.5 block truncate text-[11px] font-normal",
+                  active ? "text-slate-500" : "text-slate-400",
+                )}
+              >
+                {opt.hint}
+              </span>
+            ) : null}
+          </button>
+        );
+      })}
+    </div>
   );
 }

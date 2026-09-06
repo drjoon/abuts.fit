@@ -3,7 +3,7 @@
 // - web/frontend/src/pages/salesTeam/salesUi.tsx
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ClipboardList, Filter } from "lucide-react";
+import { ClipboardList } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
@@ -32,7 +32,7 @@ import {
   SalesListRow,
   SalesPageShell,
   SalesPanel,
-  SalesStatCard,
+  SalesSegmentTabs,
 } from "./salesUi";
 
 type StatusFilter = "all" | "active" | CustomerRequirement["status"];
@@ -175,55 +175,35 @@ export default function SalesRequirementsPage() {
 
   return (
     <SalesPageShell
-      title="고객 요구사항"
+      title="요구사항"
       subtitle={
         canCreate
-          ? "고객 요청을 내부 팀(기공실·DevOps 등)에 전달하고 진행 상태를 추적합니다."
-          : "나에게 지정된 요구사항을 확인하고 업무 상태를 업데이트합니다."
+          ? "현장 요청을 담당 팀에 넘기고 진행을 추적합니다."
+          : "지정된 요구사항의 업무 상태를 업데이트합니다."
       }
       actions={
         canCreate ? (
           <Button size="sm" onClick={() => setShowForm((v) => !v)}>
-            {showForm ? "닫기" : "요구사항 등록"}
+            {showForm ? "닫기" : "등록"}
           </Button>
         ) : null
       }
     >
-      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-        <SalesStatCard
-          label="전체"
-          value={items.length}
-          icon={ClipboardList}
-          onClick={() => setStatusFilter("all")}
-          selected={statusFilter === "all"}
-        />
-        <SalesStatCard
-          label="접수"
-          value={openCount}
-          onClick={() => setStatusFilter("open")}
-          selected={statusFilter === "open"}
-        />
-        <SalesStatCard
-          label="진행 중"
-          value={activeCount}
-          hint="접수+진행"
-          icon={Filter}
-          onClick={() => setStatusFilter("active")}
-          selected={statusFilter === "active"}
-        />
-        <SalesStatCard
-          label="완료"
-          value={doneCount}
-          tone={doneCount > 0 ? "ok" : "default"}
-          onClick={() => setStatusFilter("done")}
-          selected={statusFilter === "done"}
-        />
-      </div>
+      <SalesSegmentTabs
+        value={statusFilter}
+        onChange={(v) => setStatusFilter(v)}
+        options={[
+          { value: "all", label: "전체", hint: `${items.length}` },
+          { value: "active", label: "진행", hint: `${activeCount}` },
+          { value: "open", label: "접수", hint: `${openCount}` },
+          { value: "done", label: "완료", hint: `${doneCount}` },
+        ]}
+      />
 
       {showForm && canCreate ? (
         <SalesPanel
           title="요구사항 등록"
-          description="제목·고객·상세·담당 팀을 지정합니다."
+          description="제목 · 고객 · 담당 팀"
         >
           <div className="space-y-3">
             <Input
@@ -277,31 +257,13 @@ export default function SalesRequirementsPage() {
       ) : null}
 
       <SalesPanel
-        title="요구사항 보드"
+        title="보드"
         description={
           statusFilter === "all"
-            ? "최근 등록순 · 카드를 눌러 상세를 엽니다."
+            ? "최근 등록순"
             : statusFilter === "active"
-              ? "접수·진행 중만 표시"
-              : `${REQUIREMENT_DOC_STATUS_LABEL[statusFilter] || statusFilter}만 표시`
-        }
-        actions={
-          <Select
-            value={statusFilter}
-            onValueChange={(v) => setStatusFilter(v as StatusFilter)}
-          >
-            <SelectTrigger className="w-36">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">전체</SelectItem>
-              <SelectItem value="active">진행 중(접수+)</SelectItem>
-              <SelectItem value="open">접수</SelectItem>
-              <SelectItem value="inProgress">진행중</SelectItem>
-              <SelectItem value="done">완료</SelectItem>
-              <SelectItem value="canceled">취소</SelectItem>
-            </SelectContent>
-          </Select>
+              ? "접수·진행 중"
+              : `${REQUIREMENT_DOC_STATUS_LABEL[statusFilter as CustomerRequirement["status"]] || statusFilter}`
         }
       >
         {isLoading ? (
