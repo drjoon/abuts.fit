@@ -1,9 +1,16 @@
 // related files:
 // - web/frontend/src/features/remoteSupport/RemoteSupportProvider.tsx
+// - web/frontend/src/features/remoteSupport/openRemoteSupportViewer.ts
 // - web/backend/modules/remoteSupport/remoteSupport.routes.js
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Headphones, Monitor, RefreshCw, Search } from "lucide-react";
+import {
+  ExternalLink,
+  Headphones,
+  Monitor,
+  RefreshCw,
+  Search,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -32,6 +39,10 @@ import {
 } from "@/features/remoteSupport/remoteSupportApi";
 import { RemoteSupportChat } from "@/features/remoteSupport/RemoteSupportChat";
 import { useRemoteSupportPeer } from "@/features/remoteSupport/useRemoteSupportPeer";
+import {
+  openRemoteSupportViewer,
+  type RemoteSupportViewerHandle,
+} from "@/features/remoteSupport/openRemoteSupportViewer";
 import type { RemoteControlEvent } from "@/features/remoteSupport/replayRemoteInput";
 
 function formatDuration(ms: number | null | undefined) {
@@ -92,6 +103,8 @@ export default function AdminRemoteSupportPage() {
   const [active, setActive] = useState<RemoteSupportSession | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const viewerRef = useRef<RemoteSupportViewerHandle | null>(null);
+  const [viewerOpen, setViewerOpen] = useState(false);
 
   const [inviteQ, setInviteQ] = useState("");
   const [inviteHits, setInviteHits] = useState<
@@ -133,6 +146,24 @@ export default function AdminRemoteSupportPage() {
     if (!el) return;
     el.srcObject = remoteStream;
   }, [remoteStream]);
+
+  useEffect(() => {
+    viewerRef.current?.setStream(remoteStream);
+  }, [remoteStream]);
+
+  useEffect(() => {
+    return () => {
+      viewerRef.current?.close();
+      viewerRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (active && ["accepted", "active"].includes(active.status)) return;
+    viewerRef.current?.close();
+    viewerRef.current = null;
+    setViewerOpen(false);
+  }, [active]);
 
   useEffect(() => {
     if (!token) return;
@@ -433,6 +464,46 @@ export default function AdminRemoteSupportPage() {
     });
   };
 
+  const openViewerWindow = useCallback(() => {
+    if (!active) return;
+    if (viewerRef.current?.isOpen()) {
+      viewerRef.current.focus();
+      setViewerOpen(true);
+      return;
+    }
+    const name =
+      active.requesterSnapshot?.name ||
+      sessionUserName(active.requesterId, "직원");
+    const handle = openRemoteSupportViewer({
+      title: `${name} · 원격 지원`,
+      subtitle: connectionState,
+      onControl: (evt) => {
+        sendControl(evt);
+      },
+      onClose: () => {
+        viewerRef.current = null;
+        setViewerOpen(false);
+      },
+    });
+    if (!handle) {
+      toast({
+        title: "팝업이 차단되었습니다",
+        description: "브라우저에서 이 사이트의 팝업을 허용해 주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+    viewerRef.current = handle;
+    handle.setStream(remoteStream);
+    setViewerOpen(true);
+  }, [active, connectionState, remoteStream, sendControl, toast]);
+
+  const closeViewerWindow = useCallback(() => {
+    viewerRef.current?.close();
+    viewerRef.current = null;
+    setViewerOpen(false);
+  }, []);
+
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 p-4 lg:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -596,24 +667,93 @@ export default function AdminRemoteSupportPage() {
                     {formatKst(active.startedAt || active.acceptedAt)}
                   </div>
                 </div>
-                <Button
-                  type="button"
-                  variant="destructive"
-                  size="sm"
-                  onClick={openEnd}
-                >
-                  지원 종료
-                </Button>
+                <div className="flex flex-wrap items-center gap-2">
+                  {viewerOpen ? (
+                    <>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => viewerRef.current?.focus()}
+                      >
+                        <ExternalLink className="mr-1 h-4 w-4" />
+                        화면 창 포커스
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={closeViewerWindow}
+                      >
+                        이 페이지에서 보기
+                      </Button>
+                    </>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={!remoteStream}
+                      onClick={openViewerWindow}
+                      title="듀얼 모니터용: 직원 화면을 별도 창으로 엽니다"
+                    >
+                      <ExternalLink className="mr-1 h-4 w-4" />
+                      다른 모니터에서 보기
+                    </Button>
+                  )}
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    size="sm"
+                    onClick={openEnd}
+                  >
+                    지원 종료
+                  </Button>
+                </div>
               </div>
 
               <div className="grid gap-4 lg:grid-cols-[1fr_280px]">
                 <div
                   className="relative overflow-hidden rounded-md border border-border bg-black outline-none"
-                  tabIndex={0}
-                  onKeyDown={(e) => onVideoKey(e, "down")}
-                  onKeyUp={(e) => onVideoKey(e, "up")}
+                  tabIndex={viewerOpen ? -1 : 0}
+                  onKeyDown={
+                    viewerOpen ? undefined : (e) => onVideoKey(e, "down")
+                  }
+                  onKeyUp={viewerOpen ? undefined : (e) => onVideoKey(e, "up")}
                 >
-                  {remoteStream ? (
+                  {viewerOpen ? (
+                    <div className="flex aspect-video w-full flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
+                      <ExternalLink className="h-8 w-8" />
+                      <div className="text-center">
+                        <div className="font-medium text-foreground">
+                          별도 창에서 표시 중
+                        </div>
+                        <p className="mt-1 max-w-sm text-xs">
+                          다른 모니터로 창을 옮긴 뒤 그 창에서 클릭·키보드로
+                          조작하세요. 이 페이지는 채팅·종료용으로 두시면
+                          됩니다.
+                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => viewerRef.current?.focus()}
+                        >
+                          화면 창 포커스
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          onClick={closeViewerWindow}
+                        >
+                          이 페이지에서 보기
+                        </Button>
+                      </div>
+                    </div>
+                  ) : remoteStream ? (
                     <video
                       ref={videoRef}
                       autoPlay
