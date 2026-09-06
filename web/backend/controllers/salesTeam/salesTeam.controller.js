@@ -171,6 +171,45 @@ async function geocodeAddress(address) {
   }
 }
 
+/** Kakao Local keyword search for place autosuggest. */
+async function kakaoKeywordSearch(query, { limit = 8 } = {}) {
+  const q = String(query || "").trim();
+  const key = String(process.env.KAKAO_REST_API_KEY || "").trim();
+  if (!q || !key) return [];
+  try {
+    const url = new URL("https://dapi.kakao.com/v2/local/search/keyword.json");
+    url.searchParams.set("query", q);
+    url.searchParams.set("size", String(Math.min(15, Math.max(1, limit))));
+    const resp = await fetch(url.toString(), {
+      headers: { Authorization: `KakaoAK ${key}` },
+    });
+    if (!resp.ok) return [];
+    const json = await resp.json();
+    const docs = Array.isArray(json?.documents) ? json.documents : [];
+    return docs.map((doc) => {
+      const lat = Number(doc.y);
+      const lng = Number(doc.x);
+      const category = String(doc.category_name || "");
+      let kind = "practice";
+      if (/기공|치과기공|denture|lab/i.test(category) || /기공/.test(String(doc.place_name || ""))) {
+        kind = "lab";
+      }
+      return {
+        source: "kakao",
+        name: String(doc.place_name || "").trim(),
+        address: String(doc.road_address_name || doc.address_name || "").trim(),
+        phone: String(doc.phone || "").trim(),
+        lat: Number.isFinite(lat) ? lat : null,
+        lng: Number.isFinite(lng) ? lng : null,
+        kind,
+        category,
+      };
+    }).filter((it) => it.name);
+  } catch {
+    return [];
+  }
+}
+
 function parseCoord(value) {
   if (value == null || value === "") return null;
   const n = Number(value);
@@ -1123,6 +1162,127 @@ export async function searchPlatformBusinesses(req, res) {
     return res.status(500).json({
       success: false,
       message: error?.message || "사업자 검색에 실패했습니다.",
+    });
+  }
+}
+
+/**
+ * Unified place autosuggest for mobile-friendly account/visit entry.
+ * Sources: sales accounts → platform requestors → Kakao Local keyword.
+ */
+export async function suggestPlaces(req, res) {
+  try {
+    const q = String(req.query.q || "").trim();
+    if (q.length < 2) {
+      return res.json({ success: true, data: { items: [] } });
+    }
+    const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re = new RegExp(escaped, "i");
+    const visibility = accountVisibilityFilter(req.user._id, req.user.role);
+    const textMatch = {
+      $or: [{ name: re }, { representativeName: re }, { phone: re }],
+    };
+    const accountFilter =
+      Object.keys(visibility).length > 0
+        ? { $and: [visibility, textMatch] }
+        : textMatch;
+
+    const [accounts, platform, kakao] = await Promise.all([
+      SalesAccount.find(accountFilter).sort({ updatedAt: -1 }).limit(8).lean(),
+      BusinessAnchor.find({
+        businessType: "requestor",
+        $or: [
+          { name: re },
+          { "metadata.companyName": re },
+          { "metadata.representativeName": re },
+        ],
+      })
+        .select({
+          name: 1,
+          requestorKind: 1,
+          "metadata.representativeName": 1,
+          "metadata.phoneNumber": 1,
+          "metadata.address": 1,
+        })
+        .limit(8)
+        .lean(),
+      kakaoKeywordSearch(q, { limit: 8 }),
+    ]);
+
+    const items = [];
+    const seen = new Set();
+    const pushUnique = (row) => {
+      const key = `${String(row.name || "")
+        .toLowerCase()}|${String(row.address || "").toLowerCase()}`;
+      if (!row.name || seen.has(key)) return;
+      seen.add(key);
+      items.push(row);
+    };
+
+    for (const acc of accounts) {
+      pushUnique({
+        source: "account",
+        accountId: String(acc._id),
+        businessAnchorId: acc.businessAnchorId
+          ? String(acc.businessAnchorId)
+          : null,
+        name: acc.name,
+        kind: acc.kind === "lab" ? "lab" : "practice",
+        representativeName: acc.representativeName || "",
+        phone: acc.phone || "",
+        address: acc.address || "",
+        lat: acc.lat ?? null,
+        lng: acc.lng ?? null,
+        label: acc.businessAnchorId ? "등록·가입" : "등록 거래처",
+      });
+    }
+
+    for (const it of platform) {
+      pushUnique({
+        source: "platform",
+        accountId: null,
+        businessAnchorId: String(it._id),
+        name: it.name,
+        kind: it.requestorKind === "lab" ? "lab" : "practice",
+        representativeName: it.metadata?.representativeName || "",
+        phone: it.metadata?.phoneNumber || "",
+        address: it.metadata?.address || "",
+        lat: null,
+        lng: null,
+        label: "플랫폼 가입",
+      });
+    }
+
+    for (const it of kakao) {
+      pushUnique({
+        source: "kakao",
+        accountId: null,
+        businessAnchorId: null,
+        name: it.name,
+        kind: it.kind,
+        representativeName: "",
+        phone: it.phone || "",
+        address: it.address || "",
+        lat: it.lat,
+        lng: it.lng,
+        label: "지도 검색",
+      });
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        items: items.slice(0, 15),
+        geocodeConfigured: Boolean(
+          String(process.env.KAKAO_REST_API_KEY || "").trim(),
+        ),
+      },
+    });
+  } catch (error) {
+    console.error("[salesTeam.suggestPlaces]", error);
+    return res.status(500).json({
+      success: false,
+      message: error?.message || "장소 제안에 실패했습니다.",
     });
   }
 }

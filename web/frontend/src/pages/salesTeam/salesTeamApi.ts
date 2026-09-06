@@ -62,6 +62,20 @@ export type SalesDailyReport = {
   submittedAt?: string;
 };
 
+export type SalesPlaceSuggest = {
+  source: "account" | "platform" | "kakao";
+  accountId?: string | null;
+  businessAnchorId?: string | null;
+  name: string;
+  kind: "practice" | "lab";
+  representativeName?: string;
+  phone?: string;
+  address?: string;
+  lat?: number | null;
+  lng?: number | null;
+  label?: string;
+};
+
 export const salesTeamApi = {
   home: (token: string | null) =>
     salesFetch<{
@@ -262,6 +276,12 @@ export const salesTeamApi = {
     }>(
       token,
       `/api/sales-team/platform-businesses?q=${encodeURIComponent(q)}`,
+    ),
+
+  suggestPlaces: (token: string | null, q: string) =>
+    salesFetch<{ items: SalesPlaceSuggest[]; geocodeConfigured: boolean }>(
+      token,
+      `/api/sales-team/places/suggest?q=${encodeURIComponent(q)}`,
     ),
 
   listRequirements: (token: string | null, status?: string) => {

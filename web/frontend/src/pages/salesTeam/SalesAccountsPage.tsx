@@ -2,6 +2,7 @@
 // - web/frontend/src/pages/salesTeam/salesTeamApi.ts
 // - web/frontend/src/pages/salesTeam/salesUi.tsx
 // - web/frontend/src/pages/salesTeam/salesAddressSearch.ts
+// - web/frontend/src/pages/salesTeam/SalesPlaceSuggestInput.tsx
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Building2, MapPin, Phone, Search, UserRound } from "lucide-react";
@@ -19,10 +20,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { openSalesAddressSearch } from "./salesAddressSearch";
+import SalesPlaceSuggestInput from "./SalesPlaceSuggestInput";
 import {
   KIND_LABEL,
   salesTeamApi,
   type SalesAccount,
+  type SalesPlaceSuggest,
 } from "./salesTeamApi";
 import {
   SalesEmptyState,
@@ -53,6 +56,7 @@ export default function SalesAccountsPage() {
   const [editing, setEditing] = useState<Partial<SalesAccount> | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [addressSearching, setAddressSearching] = useState(false);
+  const [showExtra, setShowExtra] = useState(false);
 
   const filterParams = listParams(listFilter);
   const queryKey = useMemo(
@@ -89,6 +93,7 @@ export default function SalesAccountsPage() {
     onSuccess: (saved) => {
       toast({ title: "저장되었습니다." });
       setEditing(null);
+      setShowExtra(false);
       void qc.invalidateQueries({ queryKey: ["sales-team-accounts"] });
       if (saved?._id) {
         setSelectedId(saved._id);
@@ -134,18 +139,39 @@ export default function SalesAccountsPage() {
     }
   };
 
+  const applySuggest = (item: SalesPlaceSuggest) => {
+    setEditing((prev) => ({
+      ...prev,
+      _id: item.accountId || prev?._id,
+      kind: item.kind || prev?.kind || "practice",
+      name: item.name,
+      representativeName:
+        item.representativeName || prev?.representativeName || "",
+      phone: item.phone || prev?.phone || "",
+      address: item.address || prev?.address || "",
+      lat: item.lat ?? null,
+      lng: item.lng ?? null,
+      businessAnchorId:
+        item.businessAnchorId || prev?.businessAnchorId || null,
+      teamVisible: prev?.teamVisible !== false,
+    }));
+    if (item.representativeName || item.phone) setShowExtra(true);
+  };
+
   const items = data?.items || [];
   const practiceCount = items.filter((i) => i.kind === "practice").length;
   const labCount = items.filter((i) => i.kind === "lab").length;
   const joinedCount = items.filter((i) => i.businessAnchorId).length;
   const unjoinedCount = items.length - joinedCount;
 
-  const openCreate = () =>
+  const openCreate = () => {
+    setShowExtra(false);
     setEditing({
       kind: "practice",
       name: "",
       teamVisible: true,
     });
+  };
 
   const listPanel = (
     <SalesPanel
@@ -186,55 +212,45 @@ export default function SalesAccountsPage() {
             {editing._id ? "거래처 수정" : "새 거래처"}
           </div>
           <p className="text-xs text-muted-foreground">
-            플랫폼 가입 전에도 상호·주소·전화만으로 등록해 일정·동선에 쓸 수
-            있습니다.
+            상호 몇 글자만 치면 등록·플랫폼·지도에서 찾아 채웁니다.
           </p>
-          <div className="grid gap-2 md:grid-cols-2">
-            <Select
-              value={editing.kind || "practice"}
-              onValueChange={(v) =>
-                setEditing((prev) => ({
-                  ...prev,
-                  kind: v as "practice" | "lab",
-                }))
-              }
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="practice">치과</SelectItem>
-                <SelectItem value="lab">기공소</SelectItem>
-              </SelectContent>
-            </Select>
-            <Input
-              placeholder="상호명 *"
-              value={editing.name || ""}
-              onChange={(e) =>
-                setEditing((prev) => ({ ...prev, name: e.target.value }))
-              }
-            />
-            <Input
-              placeholder="대표자명"
-              value={editing.representativeName || ""}
-              onChange={(e) =>
-                setEditing((prev) => ({
-                  ...prev,
-                  representativeName: e.target.value,
-                }))
-              }
-            />
-            <Input
-              placeholder="연락처"
-              value={editing.phone || ""}
-              onChange={(e) =>
-                setEditing((prev) => ({ ...prev, phone: e.target.value }))
-              }
-            />
-            <div className="flex gap-2 md:col-span-2">
+          <div className="grid gap-2">
+            <div className="grid grid-cols-[6.5rem_minmax(0,1fr)] gap-2">
+              <Select
+                value={editing.kind || "practice"}
+                onValueChange={(v) =>
+                  setEditing((prev) => ({
+                    ...prev,
+                    kind: v as "practice" | "lab",
+                  }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="practice">치과</SelectItem>
+                  <SelectItem value="lab">기공소</SelectItem>
+                </SelectContent>
+              </Select>
+              <SalesPlaceSuggestInput
+                value={editing.name || ""}
+                onChange={(name) =>
+                  setEditing((prev) => ({
+                    ...prev,
+                    name,
+                    ...(prev?._id ? {} : { accountId: undefined }),
+                  }))
+                }
+                onPick={applySuggest}
+                placeholder="상호명 * · 자동완성"
+                autoFocus={!editing._id}
+              />
+            </div>
+            <div className="flex gap-2">
               <Input
                 className="min-w-0 flex-1"
-                placeholder="주소 (동선·지도용)"
+                placeholder="주소 (선택 시 자동 채움)"
                 value={editing.address || ""}
                 onChange={(e) =>
                   setEditing((prev) => ({
@@ -253,18 +269,47 @@ export default function SalesAccountsPage() {
                 disabled={addressSearching}
                 onClick={() => void onSearchAddress()}
               >
-                주소 검색
+                주소
               </Button>
             </div>
-            <Textarea
-              className="md:col-span-2"
-              placeholder="특이사항 · 방문 팁 · 담당자 메모"
-              value={editing.memo || ""}
+            <Input
+              placeholder="전화 (있으면 자동 채움)"
+              value={editing.phone || ""}
               onChange={(e) =>
-                setEditing((prev) => ({ ...prev, memo: e.target.value }))
+                setEditing((prev) => ({ ...prev, phone: e.target.value }))
               }
-              rows={3}
+              inputMode="tel"
             />
+            {showExtra ? (
+              <>
+                <Input
+                  placeholder="대표자명"
+                  value={editing.representativeName || ""}
+                  onChange={(e) =>
+                    setEditing((prev) => ({
+                      ...prev,
+                      representativeName: e.target.value,
+                    }))
+                  }
+                />
+                <Textarea
+                  placeholder="특이사항 · 방문 팁"
+                  value={editing.memo || ""}
+                  onChange={(e) =>
+                    setEditing((prev) => ({ ...prev, memo: e.target.value }))
+                  }
+                  rows={2}
+                />
+              </>
+            ) : (
+              <button
+                type="button"
+                className="text-left text-xs text-primary underline-offset-2 hover:underline"
+                onClick={() => setShowExtra(true)}
+              >
+                대표 · 메모 추가
+              </button>
+            )}
           </div>
           <div className="flex gap-2">
             <Button
@@ -274,7 +319,14 @@ export default function SalesAccountsPage() {
             >
               저장
             </Button>
-            <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                setEditing(null);
+                setShowExtra(false);
+              }}
+            >
               취소
             </Button>
           </div>
@@ -287,7 +339,7 @@ export default function SalesAccountsPage() {
         <SalesEmptyState
           icon={Building2}
           title="등록된 거래처가 없습니다"
-          description="플랫폼 가입 전 치과·기공소도 상호·주소·전화만으로 등록하면 일정·동선에 바로 쓸 수 있습니다."
+          description="상호 몇 글자만 검색해 저장하면 일정·동선에 바로 쓸 수 있습니다."
           actionLabel="첫 거래처 추가"
           onAction={openCreate}
         />
@@ -337,7 +389,10 @@ export default function SalesAccountsPage() {
             <Button
               size="sm"
               variant="outline"
-              onClick={() => setEditing(detail)}
+              onClick={() => {
+                setShowExtra(true);
+                setEditing(detail);
+              }}
             >
               수정
             </Button>

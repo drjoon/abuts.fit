@@ -22,6 +22,7 @@ import {
   getReferralInfo,
   optimizeRoute,
   searchPlatformBusinesses,
+  suggestPlaces,
 } from "../../controllers/salesTeam/salesTeam.controller.js";
 import {
   listCustomerRequirements,
@@ -47,6 +48,7 @@ router.get("/home", authorize(salesOpsRoles), getSalesHome);
 router.get("/stats", authorize(salesOpsRoles), getSalesStats);
 router.get("/referral", authorize(salesOpsRoles), getReferralInfo);
 router.post("/route/optimize", authorize(salesOpsRoles), optimizeRoute);
+router.get("/places/suggest", authorize(salesOpsRoles), suggestPlaces);
 router.get(
   "/platform-businesses",
   authorize(salesOpsRoles),
