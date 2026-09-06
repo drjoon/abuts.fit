@@ -166,6 +166,7 @@ export const salesTeamApi = {
       memo: string;
       windowStartAt: string | null;
       windowEndAt: string | null;
+      autoScheduleTime: boolean;
     }>,
   ) =>
     salesFetch<SalesVisit>(token, `/api/sales-team/visits/${id}`, {
@@ -278,8 +279,10 @@ export const salesTeamApi = {
       accountId?: string | null;
       lat?: number | null;
       lng?: number | null;
+      /** 선택일 — 전주 월~다음주 금 창의 기준 */
+      anchorYmd?: string;
+      /** @deprecated 창은 anchorYmd로 계산. 없으면 anchor 폴백 */
       fromYmd?: string;
-      horizonDays?: number;
       includeAround?: boolean;
     },
   ) =>
@@ -290,6 +293,11 @@ export const salesTeamApi = {
         lat: number | null;
         lng: number | null;
       };
+      anchorYmd?: string;
+      createYmd?: string;
+      earliestYmd?: string;
+      windowStart?: string;
+      windowEnd?: string;
       fromYmd: string;
       toYmd: string;
       horizonDays: number;

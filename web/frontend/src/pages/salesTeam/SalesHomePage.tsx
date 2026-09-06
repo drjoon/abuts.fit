@@ -16,6 +16,16 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -146,6 +156,8 @@ export default function SalesHomePage() {
   >(null);
   const [completeVisit, setCompleteVisit] = useState<SalesVisit | null>(null);
   const [completeMemo, setCompleteMemo] = useState("");
+  const [confirmCommitmentVisit, setConfirmCommitmentVisit] =
+    useState<SalesVisit | null>(null);
   const [rescheduleVisit, setRescheduleVisit] = useState<SalesVisit | null>(
     null,
   );
@@ -159,6 +171,8 @@ export default function SalesHomePage() {
   const [previewSuggestYmd, setPreviewSuggestYmd] = useState<string | null>(
     null,
   );
+  /** 날짜 제안 창 기준일 — 모달 열 때 고정(제안 적용으로 ymd가 바뀌어도 창 유지) */
+  const [suggestAnchorYmd, setSuggestAnchorYmd] = useState(ymd);
   const appliedSuggestKeyRef = useRef("");
 
   const { data: visitsData, isLoading: visitsLoading } = useQuery({
@@ -182,7 +196,11 @@ export default function SalesHomePage() {
     isFetching: routeSuggestLoading,
     error: routeSuggestError,
   } = useQuery({
-    queryKey: ["sales-team-route-suggest", routeSuggestKey],
+    queryKey: [
+      "sales-team-route-suggest",
+      routeSuggestKey,
+      suggestAnchorYmd,
+    ],
     enabled: Boolean(
       token &&
         showForm &&
@@ -196,8 +214,7 @@ export default function SalesHomePage() {
         accountId: pickedPlace?.accountId || null,
         lat: pickedPlace?.lat ?? null,
         lng: pickedPlace?.lng ?? null,
-        fromYmd: today,
-        horizonDays: 14,
+        anchorYmd: suggestAnchorYmd,
         includeAround: true,
       }),
     staleTime: 30_000,
@@ -285,18 +302,6 @@ export default function SalesHomePage() {
     });
   };
 
-  const visibleVisits = useMemo(() => {
-    return visits.filter((v) => {
-      if (v.status === "canceled" || v.status === "postponed") {
-        return showCanceled && listFilter === "all";
-      }
-      if (listFilter === "planned") return v.status === "planned";
-      if (listFilter === "done") return v.status === "done";
-      // all: 예정·완료·부재 (취소·연기는 showCanceled)
-      return true;
-    });
-  }, [visits, listFilter, showCanceled]);
-
   const filterEmptyHint =
     listFilter === "planned"
       ? "예정 방문이 없습니다. 「예정」을 다시 누르거나 「전체 보기」로 전체 일정을 봅니다."
@@ -332,6 +337,28 @@ export default function SalesHomePage() {
     }
     return map;
   }, [route]);
+
+  const visibleVisits = useMemo(() => {
+    const filtered = visits.filter((v) => {
+      if (v.status === "canceled" || v.status === "postponed") {
+        return showCanceled && listFilter === "all";
+      }
+      if (listFilter === "planned") return v.status === "planned";
+      if (listFilter === "done") return v.status === "done";
+      // all: 예정·완료·부재 (취소·연기는 showCanceled)
+      return true;
+    });
+    return filtered.sort((a, b) => {
+      const oa = routeOrderByVisitId.get(a._id);
+      const ob = routeOrderByVisitId.get(b._id);
+      if (oa != null && ob != null && oa !== ob) return oa - ob;
+      if (oa != null && ob == null) return -1;
+      if (oa == null && ob != null) return 1;
+      return (
+        new Date(a.plannedAt).getTime() - new Date(b.plannedAt).getTime()
+      );
+    });
+  }, [visits, listFilter, showCanceled, routeOrderByVisitId]);
 
   useEffect(() => {
     if (!reportOpen) return;
@@ -444,6 +471,26 @@ export default function SalesHomePage() {
       void qc.invalidateQueries({ queryKey: ["sales-team-stats"] });
       void qc.invalidateQueries({ queryKey: ["sales-team-daily-report"] });
       void qc.invalidateQueries({ queryKey: ["sales-team-route"] });
+    },
+    onError: (e: Error) =>
+      toast({ title: e.message, variant: "destructive" }),
+  });
+
+  const confirmCommitmentMut = useMutation({
+    mutationFn: (id: string) =>
+      salesTeamApi.updateVisit(token, id, {
+        commitment: "confirmed",
+        windowStartAt: null,
+        windowEndAt: null,
+        autoScheduleTime: false,
+      }),
+    onSuccess: () => {
+      toast({ title: "확정으로 바꿨습니다." });
+      setConfirmCommitmentVisit(null);
+      void qc.invalidateQueries({ queryKey: ["sales-team-visits"] });
+      void qc.invalidateQueries({ queryKey: ["sales-team-home"] });
+      void qc.invalidateQueries({ queryKey: ["sales-team-route"] });
+      void qc.invalidateQueries({ queryKey: ["sales-team-route-suggest"] });
     },
     onError: (e: Error) =>
       toast({ title: e.message, variant: "destructive" }),
@@ -634,6 +681,7 @@ export default function SalesHomePage() {
               className="h-8 shrink-0"
               onClick={() => {
                 setTime(defaultVisitHm(ymd, today));
+                setSuggestAnchorYmd(ymd);
                 setShowForm(true);
               }}
             >
@@ -679,6 +727,7 @@ export default function SalesHomePage() {
                     actionLabel="일정 추가"
                     onAction={() => {
                       setTime(defaultVisitHm(ymd, today));
+                      setSuggestAnchorYmd(ymd);
                       setShowForm(true);
                     }}
                   />
@@ -725,8 +774,8 @@ export default function SalesHomePage() {
                             }`}
                           >
                             <div className="flex items-start justify-between gap-2">
-                              <div className="min-w-0">
-                                <div className="flex items-center gap-2">
+                              <div className="min-w-0 flex-1">
+                                <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
                                   {orderNo ? (
                                     <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-900 text-[10px] font-semibold text-white">
                                       {orderNo}
@@ -735,11 +784,9 @@ export default function SalesHomePage() {
                                   <span className="truncate font-medium">
                                     {visitAccountName(v)}
                                   </span>
-                                </div>
-                                <div className="mt-0.5 text-xs text-muted-foreground">
-                                  {formatVisitTime(v.plannedAt)} ·{" "}
-                                  {COMMITMENT_LABEL[v.commitment] ||
-                                    v.commitment}
+                                  <span className="shrink-0 text-xs text-muted-foreground">
+                                    {formatVisitTime(v.plannedAt)}
+                                  </span>
                                 </div>
                                 {v.memo ? (
                                   <p className="mt-1 text-xs text-slate-600">
@@ -747,18 +794,43 @@ export default function SalesHomePage() {
                                   </p>
                                 ) : null}
                               </div>
-                              <Badge
-                                variant={
-                                  v.status === "done"
-                                    ? "default"
-                                    : v.status === "canceled" ||
-                                        v.status === "postponed"
-                                      ? "outline"
-                                      : "secondary"
-                                }
-                              >
-                                {visitStatusLabel(v.status)}
-                              </Badge>
+                              {v.status === "planned" ? (
+                                v.commitment === "around" ||
+                                v.commitment === "askBefore" ? (
+                                  <button
+                                    type="button"
+                                    className="shrink-0"
+                                    onClick={() =>
+                                      setConfirmCommitmentVisit(v)
+                                    }
+                                    aria-label={`${COMMITMENT_LABEL[v.commitment] || v.commitment} — 확정하기`}
+                                  >
+                                    <Badge
+                                      variant="secondary"
+                                      className="cursor-pointer hover:bg-slate-200"
+                                    >
+                                      {COMMITMENT_LABEL[v.commitment] ||
+                                        v.commitment}
+                                    </Badge>
+                                  </button>
+                                ) : (
+                                  <Badge variant="default" className="shrink-0">
+                                    {COMMITMENT_LABEL[v.commitment] ||
+                                      "확정"}
+                                  </Badge>
+                                )
+                              ) : (
+                                <Badge
+                                  variant={
+                                    v.status === "done"
+                                      ? "default"
+                                      : "outline"
+                                  }
+                                  className="shrink-0"
+                                >
+                                  {visitStatusLabel(v.status)}
+                                </Badge>
+                              )}
                             </div>
                             {v.status === "planned" ? (
                               <div className="mt-2.5 flex flex-wrap gap-1.5">
@@ -985,6 +1057,7 @@ export default function SalesHomePage() {
         onOpenChange={(open) => {
           if (open) {
             setTime(defaultVisitHm(ymd, today));
+            setSuggestAnchorYmd(ymd);
             setShowForm(true);
             return;
           }
@@ -1002,72 +1075,39 @@ export default function SalesHomePage() {
         >
           <DialogHeader className="relative z-0 shrink-0 space-y-1 border-b border-slate-100 bg-background px-4 py-3.5 pr-14 text-left sm:px-5 sm:pr-14">
             <DialogTitle>방문 추가</DialogTitle>
-            <DialogDescription>
-              상호·위치를 고른 뒤 날짜·시간을 확인하고 「넣기」하세요. 동선
-              제안도 함께 보입니다.
+            <DialogDescription className="sr-only">
+              상호·위치와 방문 날짜를 고른 뒤 넣기하세요.
             </DialogDescription>
           </DialogHeader>
           <div className="relative z-0 min-h-0 space-y-3 overflow-y-auto px-4 py-3.5 sm:px-5">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
-              <SalesPlaceSuggestInput
-                className="min-w-0 flex-1"
-                inputClassName="h-10 rounded-xl"
-                listMode="inline"
-                listClassName="max-h-[16rem] overflow-y-auto"
-                maxItems={24}
-                value={placeQuery}
-                onChange={(v) => {
-                  setPlaceQuery(v);
-                  setPickedPlace(null);
-                }}
-                onPick={(item) => {
-                  setPickedPlace(item);
-                  setPlaceQuery(item.name);
-                  if (
-                    item.businessAnchorId ||
-                    item.source === "platform" ||
-                    item.lat == null ||
-                    item.lng == null
-                  ) {
-                    setPlacePickerAccountId(item.accountId || null);
-                    setPlacePickerSeed(item);
-                    setPlacePickerOpen(true);
-                  }
-                }}
-                placeholder="지역명 상호 · 예: 거제 서울미소"
-                autoFocus
-              />
-              <div
-                className="inline-flex h-10 w-full shrink-0 items-stretch rounded-xl border border-slate-200/80 bg-slate-100/80 p-1 sm:w-auto"
-                role="group"
-                aria-label="확정도"
-              >
-                {(
-                  [
-                    { value: "confirmed", label: "확정" },
-                    { value: "around", label: "그쯤" },
-                  ] as const
-                ).map((opt) => {
-                  const active = commitment === opt.value;
-                  return (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      aria-pressed={active}
-                      onClick={() => setCommitment(opt.value)}
-                      className={cn(
-                        "min-w-[4.25rem] flex-1 rounded-lg px-3 text-sm font-medium transition-colors sm:flex-none",
-                        active
-                          ? "bg-white text-slate-900 shadow-sm"
-                          : "text-slate-600 hover:text-slate-900",
-                      )}
-                    >
-                      {opt.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+            <SalesPlaceSuggestInput
+              className="min-w-0"
+              inputClassName="h-10 rounded-xl"
+              listMode="inline"
+              listClassName="max-h-[16rem] overflow-y-auto"
+              maxItems={24}
+              value={placeQuery}
+              onChange={(v) => {
+                setPlaceQuery(v);
+                setPickedPlace(null);
+              }}
+              onPick={(item) => {
+                setPickedPlace(item);
+                setPlaceQuery(item.name);
+                if (
+                  item.businessAnchorId ||
+                  item.source === "platform" ||
+                  item.lat == null ||
+                  item.lng == null
+                ) {
+                  setPlacePickerAccountId(item.accountId || null);
+                  setPlacePickerSeed(item);
+                  setPlacePickerOpen(true);
+                }
+              }}
+              placeholder="지역명 상호 · 예: 거제 서울미소"
+              autoFocus
+            />
             {pickedPlace?.address ? (
               <p className="text-xs text-muted-foreground">
                 {pickedPlace.address}
@@ -1075,10 +1115,7 @@ export default function SalesHomePage() {
               </p>
             ) : null}
 
-            <div className="space-y-2 rounded-xl border border-slate-200/80 bg-slate-50/60 px-3 py-2.5">
-              <p className="text-xs font-medium text-slate-700">
-                방문 날짜 · 시간
-              </p>
+            <div className="rounded-xl border border-slate-200/80 bg-slate-50/60 px-3 py-2.5">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                 <Input
                   type="date"
@@ -1094,19 +1131,38 @@ export default function SalesHomePage() {
                   }}
                   className="h-10 rounded-xl bg-white sm:min-w-[10.5rem] sm:flex-1"
                 />
-                <Input
-                  type="time"
-                  step={1800}
-                  value={time}
-                  onChange={(e) => {
-                    const next = e.target.value;
-                    if (!next) return;
-                    setTime(clampVisitHmAfterNow(next, ymd, today));
-                  }}
-                  className="h-10 rounded-xl bg-white sm:w-[8.5rem]"
-                />
+                <div
+                  className="inline-flex h-10 w-full shrink-0 items-stretch rounded-xl border border-slate-200/80 bg-slate-100/80 p-1 sm:w-auto"
+                  role="group"
+                  aria-label="확정도"
+                >
+                  {(
+                    [
+                      { value: "confirmed", label: "확정" },
+                      { value: "around", label: "그쯤" },
+                    ] as const
+                  ).map((opt) => {
+                    const active = commitment === opt.value;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        aria-pressed={active}
+                        onClick={() => setCommitment(opt.value)}
+                        className={cn(
+                          "min-w-[4.25rem] flex-1 rounded-lg px-3 text-sm font-medium transition-colors sm:flex-none",
+                          active
+                            ? "bg-white text-slate-900 shadow-sm"
+                            : "text-slate-600 hover:text-slate-900",
+                        )}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
                 <p className="text-xs text-muted-foreground sm:ml-auto">
-                  {formatDayLabel(ymd)} · {time} ·{" "}
+                  {formatDayLabel(ymd)} ·{" "}
                   {COMMITMENT_LABEL[commitment] || commitment}
                 </p>
               </div>
@@ -1126,13 +1182,13 @@ export default function SalesHomePage() {
                 {!pickedPlace ? (
                   <p className="text-xs text-muted-foreground">
                     상호를 고르면 1순위 동선 · 2순위 인접일 날짜를 제안합니다.
-                    없으면 위에서 날짜·시간을 직접 고르세요.
+                    없으면 위에서 날짜를 직접 고르세요.
                   </p>
                 ) : null}
                 {pickedPlace && routeSuggestError ? (
                   <p className="text-xs text-amber-800">
                     {(routeSuggestError as Error).message ||
-                      "날짜 제안을 불러오지 못했습니다. 위에서 날짜·시간을 직접 고르세요."}
+                      "날짜 제안을 불러오지 못했습니다. 위에서 날짜를 직접 고르세요."}
                   </p>
                 ) : null}
                 {pickedPlace && routeSuggest?.message ? (
@@ -1145,7 +1201,7 @@ export default function SalesHomePage() {
                     <p className="font-medium">3순위 · 직접 선택</p>
                     <p className="mt-0.5 text-amber-900/80">
                       효율 동선이 불명확합니다. 제안 카드를 고르거나, 위에서
-                      날짜·시간과 확정/그쯤을 맞춘 뒤 「넣기」하세요.
+                      날짜와 확정/그쯤을 맞춘 뒤 「넣기」하세요.
                       {(routeSuggest.suggestions || []).length > 0
                         ? " 아래 인접일 제안도 참고할 수 있습니다."
                         : ""}
@@ -1271,6 +1327,42 @@ export default function SalesHomePage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <AlertDialog
+        open={Boolean(confirmCommitmentVisit)}
+        onOpenChange={(open) => {
+          if (!open && !confirmCommitmentMut.isPending) {
+            setConfirmCommitmentVisit(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>확정할까요?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmCommitmentVisit
+                ? `${visitAccountName(confirmCommitmentVisit)} · ${formatVisitTime(confirmCommitmentVisit.plannedAt)} 방문을 「확정」으로 바꿉니다.`
+                : "방문을 확정으로 바꿉니다."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={confirmCommitmentMut.isPending}>
+              취소
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={
+                !confirmCommitmentVisit || confirmCommitmentMut.isPending
+              }
+              onClick={(e) => {
+                e.preventDefault();
+                if (!confirmCommitmentVisit) return;
+                confirmCommitmentMut.mutate(confirmCommitmentVisit._id);
+              }}
+            >
+              {confirmCommitmentMut.isPending ? "저장 중…" : "확정"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <Dialog
         open={Boolean(completeVisit)}
         onOpenChange={(open) => {
@@ -1449,7 +1541,7 @@ export default function SalesHomePage() {
         confirmLabel="이 위치로"
         confirmDescription={
           showForm
-            ? "지도에서 맞는지 확인한 뒤, 방문 추가에서 날짜·시간을 고릅니다."
+            ? "지도에서 맞는지 확인한 뒤, 방문 추가에서 날짜를 고릅니다."
             : "지도에서 맞는지 확인한 뒤 이 위치로 저장합니다."
         }
         onConfirm={(place) => {
