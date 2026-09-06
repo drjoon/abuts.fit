@@ -160,8 +160,13 @@ import {
   PenTool,
   Store,
   CalendarDays,
+  Headphones,
 } from "lucide-react";
 import { AbutsLogo } from "@/components/branding/AbutsLogo";
+import {
+  RemoteSupportProvider,
+  RemoteSupportRequestButton,
+} from "@/features/remoteSupport/RemoteSupportProvider";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
 import { useAdminCommBadges } from "@/shared/hooks/useAdminCommBadges";
@@ -486,6 +491,11 @@ const adminSidebarSections: DashboardSidebarSection[] = [
         icon: MessageSquare,
         label: "채팅",
         href: "/dashboard/chat-management",
+      },
+      {
+        icon: Headphones,
+        label: "원격 지원",
+        href: "/dashboard/remote-support",
       },
       { icon: Send, label: "메시지", href: "/dashboard/sms" },
       { icon: Mail, label: "메일", href: "/dashboard/mail" },
@@ -1525,6 +1535,7 @@ export const DashboardLayout = () => {
           : null
       }
     >
+    <RemoteSupportProvider>
     <div className="min-h-dvh overflow-hidden bg-background">
       <LabFeeSetupPrompt
         isLab={requestorKind === "lab" || user.role === "internalLab"}
@@ -1588,6 +1599,7 @@ export const DashboardLayout = () => {
           </nav>
 
           <div className="p-3 lg:p-4 space-y-2">
+            <RemoteSupportRequestButton collapsed={sidebarCollapsed} />
             <GuideTourSidebarButton collapsed={sidebarCollapsed} />
             <LabDashboardTopBanners collapsed={sidebarCollapsed} />
             <DropdownMenu open={accountMenuOpen} onOpenChange={setAccountMenuOpen}>
@@ -1998,6 +2010,7 @@ export const DashboardLayout = () => {
         </main>
       </div>
     </div>
+    </RemoteSupportProvider>
     </GuideTourProvider>
   );
 };

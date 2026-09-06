@@ -123,7 +123,14 @@ import { AdminUserManagement } from "@/pages/admin/users/AdminUserManagement";
 import { AdminRequestMonitoring } from "@/pages/admin/requests/AdminRequestMonitoring";
 import AdminMailPage from "@/pages/admin/support/AdminMailPage";
 import AdminSmsPage from "@/pages/admin/support/AdminSmsPage";
-import { AdminChatManagement } from "@/pages/admin/support/AdminChatManagement";
+const AdminChatManagement = lazy(() =>
+  import("@/pages/admin/support/AdminChatManagement").then((m) => ({
+    default: m.AdminChatManagement,
+  })),
+);
+const AdminRemoteSupportPage = lazy(
+  () => import("@/pages/admin/support/AdminRemoteSupportPage"),
+);
 import AdminInquiriesPage from "@/pages/admin/support/AdminBusinessRegistrationInquiryPage";
 import AdminTaxInvoices from "@/pages/admin/system/AdminTaxInvoices";
 import AdminSettlementBatches from "@/pages/admin/system/AdminSettlementBatches";
@@ -791,6 +798,14 @@ const App = () => {
                     element={
                       <RoleProtectedRoute roles={["admin"]}>
                         <AdminChatManagement />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="remote-support"
+                    element={
+                      <RoleProtectedRoute roles={["admin"]}>
+                        <AdminRemoteSupportPage />
                       </RoleProtectedRoute>
                     }
                   />

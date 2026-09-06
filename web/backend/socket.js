@@ -9,6 +9,7 @@ import jwt from "jsonwebtoken";
 import User from "./models/user.model.js";
 import ChatRoom from "./models/chatRoom.model.js";
 import Chat from "./models/chat.model.js";
+import RemoteSupportSession from "./models/remoteSupport/remoteSupportSession.model.js";
 
 let io;
 
@@ -244,6 +245,129 @@ export function initializeSocket(server) {
       const { machineId, jobId } = data;
       if (machineId && jobId) {
         socket.leave(`cnc:${machineId}:${jobId}`);
+      }
+    });
+
+    // ── Remote support (WebRTC signaling + presence) ──
+    const canJoinRemoteSupport = (session) => {
+      if (!session) return false;
+      if (socket.userRole === "admin") return true;
+      const uid = String(socket.userId);
+      return (
+        String(session.requesterId) === uid ||
+        (session.adminId && String(session.adminId) === uid)
+      );
+    };
+
+    socket.on("remote-support:join", async (data) => {
+      try {
+        const sessionId = String(data?.sessionId || "").trim();
+        if (!sessionId) {
+          socket.emit("error", { message: "sessionId가 필요합니다." });
+          return;
+        }
+        const session = await RemoteSupportSession.findById(sessionId)
+          .select("requesterId adminId status")
+          .lean();
+        if (!session) {
+          socket.emit("error", {
+            message: "원격 지원 세션을 찾을 수 없습니다.",
+          });
+          return;
+        }
+        if (!canJoinRemoteSupport(session)) {
+          socket.emit("error", {
+            message: "원격 지원 방 접근 권한이 없습니다.",
+          });
+          return;
+        }
+        if (["ended", "cancelled", "declined"].includes(session.status)) {
+          socket.emit("error", { message: "종료된 세션입니다." });
+          return;
+        }
+        const roomKey = `remote-support:${sessionId}`;
+        socket.join(roomKey);
+        socket.to(roomKey).emit("remote-support:presence", {
+          sessionId,
+          userId: socket.userId,
+          userName: socket.userName,
+          action: "joined",
+          timestamp: new Date(),
+        });
+      } catch (error) {
+        console.error("[remote-support] join:", error);
+        socket.emit("error", {
+          message: "원격 지원 방 입장 중 오류가 발생했습니다.",
+        });
+      }
+    });
+
+    socket.on("remote-support:leave", (data) => {
+      const sessionId = String(data?.sessionId || "").trim();
+      if (!sessionId) return;
+      const roomKey = `remote-support:${sessionId}`;
+      socket.leave(roomKey);
+      socket.to(roomKey).emit("remote-support:presence", {
+        sessionId,
+        userId: socket.userId,
+        userName: socket.userName,
+        action: "left",
+        timestamp: new Date(),
+      });
+    });
+
+    socket.on("remote-support:signal", async (data) => {
+      try {
+        const sessionId = String(data?.sessionId || "").trim();
+        if (!sessionId || data?.signal == null) return;
+        const session = await RemoteSupportSession.findById(sessionId)
+          .select("requesterId adminId status")
+          .lean();
+        if (!session || !canJoinRemoteSupport(session)) return;
+        if (["ended", "cancelled", "declined"].includes(session.status)) return;
+        const roomKey = `remote-support:${sessionId}`;
+        socket.to(roomKey).emit("remote-support:signal", {
+          sessionId,
+          fromUserId: socket.userId,
+          signal: data.signal,
+        });
+      } catch (error) {
+        console.error("[remote-support] signal:", error);
+      }
+    });
+
+    socket.on("remote-support:chat", async (data) => {
+      try {
+        const sessionId = String(data?.sessionId || "").trim();
+        const content = String(data?.content || "").trim();
+        if (!sessionId || !content) return;
+        const session = await RemoteSupportSession.findById(sessionId);
+        if (!session || !canJoinRemoteSupport(session)) return;
+        if (!["pending", "accepted", "active"].includes(session.status)) return;
+
+        const msg = {
+          senderId: socket.userId,
+          content: content.slice(0, 2000),
+          createdAt: new Date(),
+        };
+        session.messages.push(msg);
+        await session.save();
+        const saved = session.messages[session.messages.length - 1];
+        const payload = {
+          _id: saved._id,
+          sessionId,
+          senderId: {
+            _id: socket.userId,
+            name: socket.userName,
+            role: socket.userRole,
+          },
+          content: saved.content,
+          createdAt: saved.createdAt,
+        };
+        const roomKey = `remote-support:${sessionId}`;
+        io.to(roomKey).emit("remote-support:chat", payload);
+      } catch (error) {
+        console.error("[remote-support] chat:", error);
       }
     });
 
