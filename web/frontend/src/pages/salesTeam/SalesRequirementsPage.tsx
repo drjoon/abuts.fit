@@ -1,11 +1,14 @@
 // related files:
 // - web/frontend/src/pages/salesTeam/salesTeamApi.ts
 // - web/frontend/src/pages/salesTeam/salesUi.tsx
+// - web/frontend/src/pages/salesTeam/SalesPlaceSuggestInput.tsx
+// - web/frontend/src/pages/salesTeam/SalesAccountsPage.tsx
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ClipboardList } from "lucide-react";
+import { Check, ClipboardList, Plus } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
+import { cn } from "@/shared/ui/cn";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,7 +21,16 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
@@ -28,6 +40,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  KIND_LABEL,
   REQUIREMENT_DOC_STATUS_LABEL,
   REQUIREMENT_TARGET_LABEL,
   REQUIREMENT_TARGET_OPTIONS,
@@ -36,7 +49,9 @@ import {
   type CustomerRequirement,
   type CustomerRequirementTargetRole,
   type CustomerRequirementWorkStatus,
+  type SalesPlaceSuggest,
 } from "./salesTeamApi";
+import SalesPlaceSuggestInput from "./SalesPlaceSuggestInput";
 import {
   SalesEmptyState,
   SalesListRow,
@@ -49,6 +64,8 @@ import {
 
 type StatusFilter = "all" | "active" | CustomerRequirement["status"];
 
+const DEFAULT_TARGETS: CustomerRequirementTargetRole[] = ["internalLab"];
+
 export default function SalesRequirementsPage() {
   const token = useAuthStore((s) => s.token);
   const user = useAuthStore((s) => s.user);
@@ -60,16 +77,26 @@ export default function SalesRequirementsPage() {
   const [showForm, setShowForm] = useState(false);
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
-  const [customerName, setCustomerName] = useState("");
-  const [targets, setTargets] = useState<CustomerRequirementTargetRole[]>([
-    "internalLab",
-  ]);
+  const [placeQuery, setPlaceQuery] = useState("");
+  const [pickedPlace, setPickedPlace] = useState<SalesPlaceSuggest | null>(
+    null,
+  );
+  const [targets, setTargets] =
+    useState<CustomerRequirementTargetRole[]>(DEFAULT_TARGETS);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [workStatus, setWorkStatus] =
     useState<CustomerRequirementWorkStatus>("inProgress");
   const [workNote, setWorkNote] = useState("");
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+
+  const resetForm = () => {
+    setTitle("");
+    setBody("");
+    setPlaceQuery("");
+    setPickedPlace(null);
+    setTargets(DEFAULT_TARGETS);
+  };
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["sales-team-requirements"],
@@ -88,20 +115,25 @@ export default function SalesRequirementsPage() {
       salesTeamApi.createRequirement(token, {
         title,
         body,
-        customerName,
+        customerName: (pickedPlace?.name || placeQuery).trim(),
+        accountId: pickedPlace?.accountId || null,
         targetRoles: targets,
       }),
     onSuccess: () => {
       toast({ title: "요구사항이 등록되었습니다." });
       setShowForm(false);
-      setTitle("");
-      setBody("");
-      setCustomerName("");
+      resetForm();
       void qc.invalidateQueries({ queryKey: ["sales-team-requirements"] });
     },
     onError: (e: Error) =>
       toast({ title: e.message, variant: "destructive" }),
   });
+
+  const closeForm = () => {
+    if (createMut.isPending) return;
+    setShowForm(false);
+    resetForm();
+  };
 
   const workMut = useMutation({
     mutationFn: () =>
@@ -181,6 +213,9 @@ export default function SalesRequirementsPage() {
     );
   }, [detail, role, user?._id]);
 
+  const canSubmit =
+    Boolean(title.trim()) && targets.length > 0 && !createMut.isPending;
+
   const toggleTarget = (t: CustomerRequirementTargetRole) => {
     setTargets((prev) =>
       prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t],
@@ -207,74 +242,16 @@ export default function SalesRequirementsPage() {
             <div className="ml-auto shrink-0">
               <Button
                 size="sm"
-                className="h-8"
-                onClick={() => setShowForm((v) => !v)}
+                className="h-8 gap-1"
+                onClick={() => setShowForm(true)}
               >
-                {showForm ? "닫기" : "등록"}
+                <Plus className="h-3.5 w-3.5" />
+                등록
               </Button>
             </div>
           ) : null}
         </div>
       </SalesToolbar>
-
-      {showForm && canCreate ? (
-        <SalesPanel
-          title="요구사항 등록"
-          description="제목 · 고객 · 담당 팀"
-        >
-          <div className="grid gap-3 md:grid-cols-2">
-            <Input
-              placeholder="제목 *"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-            />
-            <Input
-              placeholder="고객명 (선택)"
-              value={customerName}
-              onChange={(e) => setCustomerName(e.target.value)}
-            />
-            <Textarea
-              className="md:col-span-2"
-              placeholder="상세 내용 — 현장 요청, 납기, 제약 조건"
-              rows={4}
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-            />
-            <div className="md:col-span-2">
-              <div className="mb-1.5 text-xs font-medium text-muted-foreground">
-                담당 팀 (복수 선택)
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {REQUIREMENT_TARGET_OPTIONS.map((t) => {
-                  const on = targets.includes(t);
-                  return (
-                    <Button
-                      key={t}
-                      type="button"
-                      size="sm"
-                      variant={on ? "default" : "outline"}
-                      onClick={() => toggleTarget(t)}
-                    >
-                      {REQUIREMENT_TARGET_LABEL[t]}
-                    </Button>
-                  );
-                })}
-              </div>
-            </div>
-            <div className="md:col-span-2">
-              <Button
-                size="sm"
-                disabled={
-                  !title.trim() || targets.length === 0 || createMut.isPending
-                }
-                onClick={() => createMut.mutate()}
-              >
-                저장
-              </Button>
-            </div>
-          </div>
-        </SalesPanel>
-      ) : null}
 
       <SalesSplit
         primary={
@@ -515,6 +492,166 @@ export default function SalesRequirementsPage() {
           />
         }
       />
+
+      <Dialog
+        open={showForm && canCreate}
+        onOpenChange={(open) => {
+          if (!open) closeForm();
+          else setShowForm(true);
+        }}
+      >
+        <DialogContent
+          className="flex max-h-[min(90vh,40rem)] flex-col gap-0 overflow-hidden rounded-2xl p-0 sm:max-w-xl"
+          closeClassName="z-50 right-3 top-3 flex h-10 w-10 items-center justify-center rounded-full bg-background opacity-100 shadow-sm ring-1 ring-slate-200/80 hover:bg-slate-50"
+          closeIconClassName="h-5 w-5"
+        >
+          <DialogHeader className="relative z-0 shrink-0 space-y-1 border-b border-slate-100 bg-background px-4 py-3.5 pr-14 text-left sm:px-5 sm:pr-14">
+            <DialogTitle>요구사항 등록</DialogTitle>
+            <DialogDescription className="sr-only">
+              제목과 담당 팀을 입력해 요구사항을 등록합니다.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="relative z-0 min-h-0 space-y-4 overflow-y-auto px-4 py-4 sm:px-5">
+            <div className="space-y-1.5">
+              <Label htmlFor="requirement-title">
+                제목 <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="requirement-title"
+                className="h-10 rounded-xl"
+                placeholder="예: ○○치과 스캔 파일 재요청"
+                value={title}
+                autoFocus
+                onChange={(e) => setTitle(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && canSubmit) {
+                    e.preventDefault();
+                    createMut.mutate();
+                  }
+                }}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>치과/기공소</Label>
+              <SalesPlaceSuggestInput
+                className="min-w-0"
+                inputClassName="h-10 rounded-xl"
+                listMode="inline"
+                listClassName="max-h-[14rem] overflow-y-auto"
+                maxItems={20}
+                value={placeQuery}
+                onChange={(v) => {
+                  setPlaceQuery(v);
+                  setPickedPlace(null);
+                }}
+                onPick={(item) => {
+                  setPickedPlace(item);
+                  setPlaceQuery(item.name);
+                }}
+                placeholder="지역명 상호 · 예: 거제 서울미소"
+              />
+              {pickedPlace ? (
+                <p className="rounded-lg bg-slate-50 px-2.5 py-2 text-xs text-slate-700">
+                  <span className="font-medium text-slate-900">
+                    {KIND_LABEL[pickedPlace.kind] || pickedPlace.kind}
+                    {" · "}
+                    {pickedPlace.address?.trim() || "주소 없음"}
+                  </span>
+                  {pickedPlace.phone ? (
+                    <span className="text-muted-foreground">
+                      {" "}
+                      · {pickedPlace.phone}
+                    </span>
+                  ) : null}
+                </p>
+              ) : null}
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="requirement-body">상세 내용</Label>
+              <Textarea
+                id="requirement-body"
+                className="min-h-[7.5rem] rounded-xl"
+                placeholder="현장 요청, 납기, 제약 조건 등"
+                rows={5}
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-baseline justify-between gap-2">
+                <Label>
+                  담당 팀 <span className="text-destructive">*</span>
+                </Label>
+                <span className="text-[11px] text-muted-foreground">
+                  복수 선택 · {targets.length}개
+                </span>
+              </div>
+              <div
+                className="grid grid-cols-2 gap-2"
+                role="group"
+                aria-label="담당 팀"
+              >
+                {REQUIREMENT_TARGET_OPTIONS.map((t) => {
+                  const on = targets.includes(t);
+                  return (
+                    <button
+                      key={t}
+                      type="button"
+                      aria-pressed={on}
+                      onClick={() => toggleTarget(t)}
+                      className={cn(
+                        "flex h-11 items-center justify-between gap-2 rounded-xl border px-3 text-left text-sm font-medium transition-colors",
+                        on
+                          ? "border-primary/40 bg-primary-soft/60 text-primary-strong shadow-sm ring-1 ring-primary/20"
+                          : "border-slate-200/80 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50",
+                      )}
+                    >
+                      <span className="truncate">
+                        {REQUIREMENT_TARGET_LABEL[t]}
+                      </span>
+                      <span
+                        className={cn(
+                          "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full transition-colors",
+                          on
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-slate-100 text-transparent",
+                        )}
+                      >
+                        <Check className="h-3 w-3" strokeWidth={3} />
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              {targets.length === 0 ? (
+                <p className="text-xs text-destructive">
+                  담당 팀을 하나 이상 선택해 주세요.
+                </p>
+              ) : null}
+            </div>
+          </div>
+
+          <DialogFooter className="shrink-0 gap-2 border-t border-slate-100 bg-background px-4 py-3 sm:space-x-0 sm:px-5">
+            <Button
+              variant="outline"
+              onClick={closeForm}
+              disabled={createMut.isPending}
+            >
+              취소
+            </Button>
+            <Button
+              disabled={!canSubmit}
+              onClick={() => createMut.mutate()}
+            >
+              {createMut.isPending ? "저장 중…" : "저장"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog
         open={deleteConfirmOpen}
