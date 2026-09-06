@@ -1,9 +1,17 @@
 // related files:
 // - web/frontend/src/pages/salesTeam/salesTeamApi.ts
+// - web/frontend/src/pages/salesTeam/salesUi.tsx
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import {
+  Building2,
+  CalendarDays,
+  CheckCircle2,
+  FileText,
+  MapPinned,
+  Share2,
+} from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,6 +19,20 @@ import {
   salesTeamApi,
   visitAccountName,
 } from "./salesTeamApi";
+import {
+  SalesEmptyState,
+  SalesPageShell,
+  SalesPanel,
+  SalesQuickLink,
+  SalesStatCard,
+} from "./salesUi";
+
+function visitStatusLabel(status: string) {
+  if (status === "done") return "완료";
+  if (status === "canceled") return "취소";
+  if (status === "noShow") return "부재";
+  return "예정";
+}
 
 export default function SalesHomePage() {
   const token = useAuthStore((s) => s.token);
@@ -21,109 +43,161 @@ export default function SalesHomePage() {
   });
 
   if (isLoading) {
-    return <div className="p-4 text-sm text-muted-foreground">불러오는 중…</div>;
+    return (
+      <SalesPageShell title="영업 홈" subtitle="불러오는 중…">
+        <div className="h-40 animate-pulse rounded-2xl bg-slate-100" />
+      </SalesPageShell>
+    );
   }
   if (error) {
     return (
-      <div className="p-4 text-sm text-destructive">
-        {(error as Error).message || "홈을 불러오지 못했습니다."}
-      </div>
+      <SalesPageShell title="영업 홈">
+        <p className="text-sm text-destructive">
+          {(error as Error).message || "홈을 불러오지 못했습니다."}
+        </p>
+      </SalesPageShell>
     );
   }
 
   const visits = data?.todayVisits || [];
+  const doneCount = visits.filter((v) => v.status === "done").length;
+  const pendingCount = visits.filter((v) => v.status === "planned").length;
+  const reportOk = Boolean(data?.dailyReportSubmitted);
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4 p-3 pb-24 sm:pb-6">
-      <div>
-        <h1 className="text-xl font-semibold tracking-tight">영업본부</h1>
-        <p className="text-sm text-muted-foreground">
-          {data?.todayYmd} · 오늘 일정과 보고
-        </p>
-      </div>
-
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-        <Card>
-          <CardHeader className="p-3 pb-1">
-            <CardTitle className="text-xs font-medium text-muted-foreground">
-              오늘 방문
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-3 pt-0 text-2xl font-semibold">
-            {visits.length}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="p-3 pb-1">
-            <CardTitle className="text-xs font-medium text-muted-foreground">
-              일일보고
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-3 pt-0">
-            {data?.dailyReportSubmitted ? (
-              <Badge>제출됨</Badge>
-            ) : (
-              <Badge variant="destructive">미제출</Badge>
-            )}
-          </CardContent>
-        </Card>
-        <Card className="col-span-2 sm:col-span-1">
-          <CardHeader className="p-3 pb-1">
-            <CardTitle className="text-xs font-medium text-muted-foreground">
-              이번 주 소개 가입
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-3 pt-0 text-2xl font-semibold">
-            {data?.weekReferralSignups ?? 0}
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="flex flex-wrap gap-2">
+    <SalesPageShell
+      title="영업 홈"
+      subtitle={`${data?.todayYmd} · 오늘 방문·보고·소개 현황`}
+      actions={
         <Button asChild size="sm">
-          <Link to="/dashboard/sales/schedule">일정·동선</Link>
+          <Link to="/dashboard/sales/schedule">일정 관리</Link>
         </Button>
-        <Button asChild size="sm" variant="outline">
-          <Link to="/dashboard/sales/reports">일일보고</Link>
-        </Button>
-        <Button asChild size="sm" variant="outline">
-          <Link to="/dashboard/sales/accounts">거래처</Link>
-        </Button>
+      }
+    >
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+        <SalesStatCard
+          label="오늘 방문"
+          value={visits.length}
+          hint={
+            visits.length
+              ? `완료 ${doneCount} · 예정 ${pendingCount}`
+              : "등록된 방문 없음"
+          }
+          icon={MapPinned}
+          to="/dashboard/sales/schedule"
+        />
+        <SalesStatCard
+          label="일일보고"
+          value={reportOk ? "제출" : "미제출"}
+          hint={reportOk ? "오늘 보고 완료" : "퇴근 전 제출하세요"}
+          icon={FileText}
+          tone={reportOk ? "ok" : "alert"}
+          to="/dashboard/sales/reports"
+        />
+        <SalesStatCard
+          label="이번 주 소개 가입"
+          value={data?.weekReferralSignups ?? 0}
+          hint="소개코드로 가입한 사업자"
+          icon={Share2}
+          to="/dashboard/sales/referral"
+        />
       </div>
 
-      <Card>
-        <CardHeader className="p-3">
-          <CardTitle className="text-base">오늘 방문 일정</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2 p-3 pt-0">
-          {visits.length === 0 ? (
-            <p className="text-sm text-muted-foreground">오늘 일정이 없습니다.</p>
-          ) : (
-            visits.map((v) => (
-              <div
-                key={v._id}
-                className="flex items-center justify-between gap-2 rounded-md border px-3 py-2"
-              >
-                <div className="min-w-0">
-                  <div className="truncate font-medium">
-                    {visitAccountName(v)}
+      <div className="grid gap-2.5 sm:grid-cols-3">
+        <SalesQuickLink
+          to="/dashboard/sales/schedule"
+          icon={CalendarDays}
+          label="일정 · 동선"
+          description="방문 일정과 최적 경로"
+        />
+        <SalesQuickLink
+          to="/dashboard/sales/accounts"
+          icon={Building2}
+          label="거래처"
+          description="연락처 · 주소 · 특이사항"
+        />
+        <SalesQuickLink
+          to="/dashboard/sales/reports"
+          icon={FileText}
+          label="일일보고"
+          description="방문 요약 · 이슈 · 내일 계획"
+        />
+      </div>
+
+      <SalesPanel
+        title="오늘 방문 타임라인"
+        description="확정·그쯤 일정을 시간순으로 확인합니다."
+        actions={
+          <Button asChild size="sm" variant="outline">
+            <Link to="/dashboard/sales/schedule">전체 보기</Link>
+          </Button>
+        }
+      >
+        {visits.length === 0 ? (
+          <SalesEmptyState
+            icon={CalendarDays}
+            title="오늘 방문이 없습니다"
+            description="거래처를 선택해 일정을 추가하면 홈과 일일보고에 반영됩니다."
+            actionLabel="일정 추가"
+            actionTo="/dashboard/sales/schedule"
+          />
+        ) : (
+          <ol className="relative space-y-0 border-l border-slate-200 pl-5">
+            {visits.map((v) => {
+              const done = v.status === "done";
+              return (
+                <li key={v._id} className="relative pb-5 last:pb-0">
+                  <span
+                    className={`absolute -left-[1.4rem] top-1.5 flex h-4 w-4 items-center justify-center rounded-full ring-4 ring-white ${
+                      done
+                        ? "bg-emerald-500"
+                        : v.status === "canceled" || v.status === "noShow"
+                          ? "bg-slate-300"
+                          : "bg-primary"
+                    }`}
+                  >
+                    {done ? (
+                      <CheckCircle2 className="h-3 w-3 text-white" />
+                    ) : null}
+                  </span>
+                  <div className="flex items-start justify-between gap-3 rounded-xl border border-slate-200/80 bg-slate-50/50 px-3.5 py-3">
+                    <div className="min-w-0">
+                      <div className="truncate font-medium text-slate-900">
+                        {visitAccountName(v)}
+                      </div>
+                      <div className="mt-0.5 text-xs text-muted-foreground">
+                        {new Date(v.plannedAt).toLocaleTimeString("ko-KR", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                          timeZone: "Asia/Seoul",
+                        })}
+                        {" · "}
+                        {COMMITMENT_LABEL[v.commitment] || v.commitment}
+                      </div>
+                      {v.memo ? (
+                        <p className="mt-1 line-clamp-2 text-xs text-slate-600">
+                          {v.memo}
+                        </p>
+                      ) : null}
+                    </div>
+                    <Badge
+                      variant={
+                        done
+                          ? "default"
+                          : v.status === "canceled"
+                            ? "outline"
+                            : "secondary"
+                      }
+                    >
+                      {visitStatusLabel(v.status)}
+                    </Badge>
                   </div>
-                  <div className="text-xs text-muted-foreground">
-                    {new Date(v.plannedAt).toLocaleTimeString("ko-KR", {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                      timeZone: "Asia/Seoul",
-                    })}
-                  </div>
-                </div>
-                <Badge variant="secondary">
-                  {COMMITMENT_LABEL[v.commitment] || v.commitment}
-                </Badge>
-              </div>
-            ))
-          )}
-        </CardContent>
-      </Card>
-    </div>
+                </li>
+              );
+            })}
+          </ol>
+        )}
+      </SalesPanel>
+    </SalesPageShell>
   );
 }

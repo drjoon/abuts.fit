@@ -1,9 +1,16 @@
 // related files:
 // - web/frontend/src/pages/salesTeam/salesTeamApi.ts
+// - web/frontend/src/pages/salesTeam/salesUi.tsx
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import {
+  BarChart3,
+  Building2,
+  CheckCircle2,
+  FileText,
+  Share2,
+} from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   Select,
@@ -13,12 +20,27 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { KIND_LABEL, salesTeamApi, visitAccountName } from "./salesTeamApi";
+import {
+  SalesEmptyState,
+  SalesListRow,
+  SalesPageShell,
+  SalesPanel,
+  SalesProgressBar,
+  SalesStatCard,
+} from "./salesUi";
+
+const PERIOD_LABEL: Record<string, string> = {
+  "7d": "최근 7일",
+  "30d": "최근 30일",
+  "90d": "최근 90일",
+  thisMonth: "이번 달",
+};
 
 export default function SalesStatsPage() {
   const token = useAuthStore((s) => s.token);
   const [period, setPeriod] = useState("30d");
-  const [drill, setDrill] = useState<"visits" | "reports" | "referrals" | null>(
-    null,
+  const [drill, setDrill] = useState<"visits" | "reports" | "referrals">(
+    "visits",
   );
 
   const { data, isLoading, error } = useQuery({
@@ -27,17 +49,22 @@ export default function SalesStatsPage() {
     queryFn: () => salesTeamApi.stats(token, period),
   });
 
+  const rate = data?.reportSubmitRate ?? 0;
+  const visitDone = data?.visitDoneCount ?? 0;
+  const referralTotal = data?.referralSignupCount ?? 0;
+
   return (
-    <div className="mx-auto max-w-3xl space-y-4 p-3 pb-24 sm:pb-6">
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <h1 className="text-xl font-semibold">실적</h1>
-          <p className="text-sm text-muted-foreground">
-            방문 · 일일보고 제출률 · 소개 가입 (매출 연동은 다음 단계)
-          </p>
-        </div>
-        <Select value={period} onValueChange={setPeriod}>
-          <SelectTrigger className="w-28">
+    <SalesPageShell
+      title="실적"
+      subtitle={`${PERIOD_LABEL[period] || period} · 방문 완료 · 일일보고 제출률 · 소개 가입 (매출 연동은 다음 단계)`}
+      actions={
+        <Select
+          value={period}
+          onValueChange={(v) => {
+            setPeriod(v);
+          }}
+        >
+          <SelectTrigger className="w-32">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -47,133 +74,176 @@ export default function SalesStatsPage() {
             <SelectItem value="thisMonth">이번 달</SelectItem>
           </SelectContent>
         </Select>
-      </div>
-
+      }
+    >
       {isLoading ? (
-        <p className="text-sm text-muted-foreground">불러오는 중…</p>
+        <div className="h-40 animate-pulse rounded-2xl bg-slate-100" />
       ) : error ? (
         <p className="text-sm text-destructive">{(error as Error).message}</p>
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-            <button type="button" onClick={() => setDrill("visits")}>
-              <Card className="text-left hover:bg-muted/30">
-                <CardHeader className="p-3 pb-1">
-                  <CardTitle className="text-xs font-medium text-muted-foreground">
-                    방문 완료
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="p-3 pt-0 text-2xl font-semibold">
-                  {data?.visitDoneCount ?? 0}
-                </CardContent>
-              </Card>
-            </button>
-            <button type="button" onClick={() => setDrill("reports")}>
-              <Card className="text-left hover:bg-muted/30">
-                <CardHeader className="p-3 pb-1">
-                  <CardTitle className="text-xs font-medium text-muted-foreground">
-                    일일보고 제출률
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="p-3 pt-0 text-2xl font-semibold">
-                  {data?.reportSubmitRate ?? 0}%
-                  <div className="text-xs font-normal text-muted-foreground">
-                    {data?.reportSubmittedCount ?? 0}/{data?.workDayCount ?? 0}일
-                  </div>
-                </CardContent>
-              </Card>
-            </button>
-            <button
-              type="button"
-              className="col-span-2 sm:col-span-1"
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+            <SalesStatCard
+              label="방문 완료"
+              value={visitDone}
+              hint="현장에서 완료 처리한 방문"
+              icon={CheckCircle2}
+              selected={drill === "visits"}
+              onClick={() => setDrill("visits")}
+            />
+            <SalesStatCard
+              label="일일보고 제출률"
+              value={`${rate}%`}
+              hint={`${data?.reportSubmittedCount ?? 0}/${data?.workDayCount ?? 0} 근무일`}
+              icon={FileText}
+              selected={drill === "reports"}
+              onClick={() => setDrill("reports")}
+              tone={rate >= 80 ? "ok" : rate > 0 ? "default" : "alert"}
+            />
+            <SalesStatCard
+              label="소개 가입"
+              value={referralTotal}
+              hint={`치과 ${data?.practiceSignupCount ?? 0} · 기공소 ${data?.labSignupCount ?? 0}`}
+              icon={Share2}
+              selected={drill === "referrals"}
               onClick={() => setDrill("referrals")}
-            >
-              <Card className="text-left hover:bg-muted/30">
-                <CardHeader className="p-3 pb-1">
-                  <CardTitle className="text-xs font-medium text-muted-foreground">
-                    소개 가입
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="p-3 pt-0 text-2xl font-semibold">
-                  {data?.referralSignupCount ?? 0}
-                  <div className="text-xs font-normal text-muted-foreground">
-                    치과 {data?.practiceSignupCount ?? 0} · 기공소{" "}
-                    {data?.labSignupCount ?? 0}
-                  </div>
-                </CardContent>
-              </Card>
-            </button>
+            />
           </div>
 
+          <SalesPanel
+            title="제출률 한눈에"
+            description="일정이 있는 근무일 대비 일일보고 제출 비율입니다."
+          >
+            <SalesProgressBar value={rate} label="일일보고 제출률" />
+            <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+              <div className="rounded-xl bg-slate-50 px-2 py-3">
+                <div className="text-xs text-muted-foreground">방문 완료</div>
+                <div className="mt-1 text-lg font-semibold tabular-nums">
+                  {visitDone}
+                </div>
+              </div>
+              <div className="rounded-xl bg-slate-50 px-2 py-3">
+                <div className="text-xs text-muted-foreground">보고 제출</div>
+                <div className="mt-1 text-lg font-semibold tabular-nums">
+                  {data?.reportSubmittedCount ?? 0}
+                </div>
+              </div>
+              <div className="rounded-xl bg-slate-50 px-2 py-3">
+                <div className="text-xs text-muted-foreground">소개 가입</div>
+                <div className="mt-1 text-lg font-semibold tabular-nums">
+                  {referralTotal}
+                </div>
+              </div>
+            </div>
+          </SalesPanel>
+
           {drill === "visits" ? (
-            <Card>
-              <CardHeader className="p-3">
-                <CardTitle className="text-base">방문 완료 목록</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-1 p-3 pt-0">
-                {(data?.visits || []).length === 0 ? (
-                  <p className="text-sm text-muted-foreground">없습니다.</p>
-                ) : (
-                  (data?.visits || []).map((v) => (
-                    <div
+            <SalesPanel
+              title="방문 완료 목록"
+              description="선택한 기간의 완료 방문입니다."
+              actions={
+                <Badge variant="secondary" className="gap-1">
+                  <BarChart3 className="h-3 w-3" />
+                  {visitDone}건
+                </Badge>
+              }
+            >
+              {(data?.visits || []).length === 0 ? (
+                <SalesEmptyState
+                  icon={CheckCircle2}
+                  title="완료된 방문이 없습니다"
+                  description="일정에서 방문을 완료 처리하면 여기에 쌓입니다."
+                  actionLabel="일정으로 이동"
+                  actionTo="/dashboard/sales/schedule"
+                />
+              ) : (
+                <div className="space-y-2">
+                  {(data?.visits || []).map((v) => (
+                    <SalesListRow
                       key={v._id}
-                      className="flex justify-between rounded-md border px-3 py-2 text-sm"
-                    >
-                      <span>{visitAccountName(v)}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {v.completedAt
+                      title={visitAccountName(v)}
+                      meta={
+                        v.completedAt
                           ? new Date(v.completedAt).toLocaleDateString("ko-KR", {
                               timeZone: "Asia/Seoul",
                             })
-                          : ""}
-                      </span>
-                    </div>
-                  ))
-                )}
-              </CardContent>
-            </Card>
+                          : undefined
+                      }
+                      trailing={<Badge variant="secondary">완료</Badge>}
+                    />
+                  ))}
+                </div>
+              )}
+            </SalesPanel>
           ) : null}
 
           {drill === "reports" ? (
-            <Card>
-              <CardHeader className="p-3">
-                <CardTitle className="text-base">제출 현황</CardTitle>
-              </CardHeader>
-              <CardContent className="p-3 pt-0 text-sm text-muted-foreground">
-                근무일(일정이 있는 날) 대비 일일보고 제출 비율입니다. 상세
-                목록은 일일보고 메뉴에서 확인하세요.
-              </CardContent>
-            </Card>
+            <SalesPanel
+              title="일일보고 제출 현황"
+              description="근무일(일정이 있는 날) 대비 제출 비율입니다."
+            >
+              <div className="space-y-3">
+                <SalesProgressBar value={rate} />
+                <div className="rounded-xl border border-slate-100 bg-slate-50/80 px-4 py-3 text-sm text-slate-700">
+                  <p>
+                    제출{" "}
+                    <strong className="tabular-nums">
+                      {data?.reportSubmittedCount ?? 0}
+                    </strong>
+                    일 / 근무일{" "}
+                    <strong className="tabular-nums">
+                      {data?.workDayCount ?? 0}
+                    </strong>
+                    일
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    상세 작성·수정은 일일보고 메뉴에서 합니다.
+                  </p>
+                </div>
+              </div>
+            </SalesPanel>
           ) : null}
 
           {drill === "referrals" ? (
-            <Card>
-              <CardHeader className="p-3">
-                <CardTitle className="text-base">소개 가입 목록</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-1 p-3 pt-0">
-                {(data?.referralOrgs || []).length === 0 ? (
-                  <p className="text-sm text-muted-foreground">없습니다.</p>
-                ) : (
-                  (data?.referralOrgs || []).map((o) => (
-                    <div
+            <SalesPanel
+              title="소개 가입 목록"
+              description="내 소개코드로 가입한 치과·기공소입니다."
+              actions={
+                <Badge variant="secondary">
+                  <Building2 className="mr-1 h-3 w-3" />
+                  {referralTotal}
+                </Badge>
+              }
+            >
+              {(data?.referralOrgs || []).length === 0 ? (
+                <SalesEmptyState
+                  icon={Share2}
+                  title="소개 가입이 없습니다"
+                  description="소개 메뉴의 코드·링크를 공유하면 가입 실적이 쌓입니다."
+                  actionLabel="소개 코드 보기"
+                  actionTo="/dashboard/sales/referral"
+                />
+              ) : (
+                <div className="space-y-2">
+                  {(data?.referralOrgs || []).map((o) => (
+                    <SalesListRow
                       key={String(o._id)}
-                      className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
-                    >
-                      <span className="truncate">{o.name || "사업자"}</span>
-                      <Badge variant="secondary">
-                        {KIND_LABEL[String(o.requestorKind || "")] ||
-                          o.requestorKind ||
-                          "의뢰자"}
-                      </Badge>
-                    </div>
-                  ))
-                )}
-              </CardContent>
-            </Card>
+                      title={o.name || "사업자"}
+                      trailing={
+                        <Badge variant="secondary">
+                          {KIND_LABEL[String(o.requestorKind || "")] ||
+                            o.requestorKind ||
+                            "의뢰자"}
+                        </Badge>
+                      }
+                    />
+                  ))}
+                </div>
+              )}
+            </SalesPanel>
           ) : null}
         </>
       )}
-    </div>
+    </SalesPageShell>
   );
 }

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-06: 영업본부 홈(/dashboard/sales) exact-only — 하위 경로에서 홈 항상 선택 버그 수정.
 // - 2026-09-05: 기공의뢰 부모+어벗 서브 satellite(복수 키). oral_calendar·credits·new_request 사이드 홀.
 // - 2026-08-20: 관리자 섹션 포함 전 롤이 같은 사이드 렌더러. 접히면 라벨 툴팁.
 // - 2026-08-20: 하위 메뉴는 점 대신 아이콘. 접힌 레일에도 하위 아이콘을 두고 클릭 가능.
@@ -51,9 +52,12 @@ export const sidebarItemPath = (href: string) =>
 
 const CREDITS_HREF = "/dashboard/credits";
 
+/** Exact-only roots that also have child routes (prefix match would keep them always active). */
+const EXACT_ONLY_SIDEBAR_PATHS = new Set(["/dashboard", "/dashboard/sales"]);
+
 const isItemPathActive = (href: string, pathname: string) => {
   const path = sidebarItemPath(href);
-  if (path === "/dashboard") return pathname === path;
+  if (EXACT_ONLY_SIDEBAR_PATHS.has(path)) return pathname === path;
   return pathname === path || pathname.startsWith(`${path}/`);
 };
 
