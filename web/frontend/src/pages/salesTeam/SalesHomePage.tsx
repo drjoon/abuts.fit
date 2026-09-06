@@ -453,7 +453,7 @@ export default function SalesHomePage() {
   return (
     <SalesPageShell
       title="오늘"
-      subtitle={dayLabel}
+      subtitle={formatDayLabel(ymd)}
       actions={
         <>
           <SalesSegmentTabs
