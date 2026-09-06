@@ -11,7 +11,11 @@ import {
   Route,
 } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
-import { toKstYmd } from "@/shared/date/kst";
+import {
+  kstEndOfMonth,
+  kstStartOfMonth,
+  toKstYmd,
+} from "@/shared/date/kst";
 import { useToast } from "@/shared/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -41,11 +45,13 @@ import {
   defaultVisitHm,
   formatDayLabel,
   visitStatusLabel,
+  addDaysYmd,
 } from "./salesDay";
 import {
   COMMITMENT_LABEL,
   salesTeamApi,
   visitAccountName,
+  type SalesAccount,
   type SalesPlaceSuggest,
   type SalesVisit,
 } from "./salesTeamApi";
@@ -62,6 +68,12 @@ import {
 } from "./salesUi";
 
 type ListFilter = "all" | "planned" | "done";
+
+function visitAccount(visit: SalesVisit | null): SalesAccount | null {
+  const acc = visit?.accountId;
+  if (acc && typeof acc === "object" && "_id" in acc) return acc;
+  return null;
+}
 
 function formatVisitTime(iso: string) {
   return new Date(iso).toLocaleTimeString("ko-KR", {
@@ -164,6 +176,13 @@ export default function SalesHomePage() {
   const [rescheduleYmd, setRescheduleYmd] = useState(today);
   const [rescheduleHm, setRescheduleHm] = useState("10:00");
   const [rescheduleCommitment, setRescheduleCommitment] = useState("around");
+  const [rescheduleAnchorYmd, setRescheduleAnchorYmd] = useState(today);
+  const [reschedulePreviewYmd, setReschedulePreviewYmd] = useState<
+    string | null
+  >(null);
+  const [calendarMonthYmd, setCalendarMonthYmd] = useState(
+    () => kstStartOfMonth(ymd) || ymd,
+  );
 
   const [visitSummary, setVisitSummary] = useState("");
   const [issues, setIssues] = useState("");
@@ -181,6 +200,37 @@ export default function SalesHomePage() {
     queryFn: () =>
       salesTeamApi.listVisits(token, { fromYmd: ymd, toYmd: ymd }),
   });
+
+  const calendarFromYmd = useMemo(() => {
+    const start = kstStartOfMonth(calendarMonthYmd) || calendarMonthYmd;
+    return addDaysYmd(start, -7);
+  }, [calendarMonthYmd]);
+  const calendarToYmd = useMemo(() => {
+    const end = kstEndOfMonth(calendarMonthYmd) || calendarMonthYmd;
+    return addDaysYmd(end, 7);
+  }, [calendarMonthYmd]);
+
+  const { data: calendarVisitsData } = useQuery({
+    queryKey: ["sales-team-visits-month", calendarFromYmd, calendarToYmd],
+    enabled: Boolean(token && calendarFromYmd && calendarToYmd),
+    queryFn: () =>
+      salesTeamApi.listVisits(token, {
+        fromYmd: calendarFromYmd,
+        toYmd: calendarToYmd,
+      }),
+    staleTime: 30_000,
+  });
+
+  const countsByYmd = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const v of calendarVisitsData?.items || []) {
+      if (v.status === "canceled" || v.status === "postponed") continue;
+      const day = toKstYmd(new Date(v.plannedAt));
+      if (!day) continue;
+      map[day] = (map[day] || 0) + 1;
+    }
+    return map;
+  }, [calendarVisitsData]);
 
   const routeSuggestName = (pickedPlace?.name || placeQuery).trim();
   const routeSuggestKey = [
@@ -264,6 +314,63 @@ export default function SalesHomePage() {
       setTime(clampVisitHmAfterNow(s.suggestedTime, s.ymd, today));
     } else {
       setTime(defaultVisitHm(s.ymd, today));
+    }
+  };
+
+  const rescheduleAccount = visitAccount(rescheduleVisit);
+  const rescheduleSuggestName = (rescheduleAccount?.name || "").trim();
+  const {
+    data: rescheduleRouteSuggest,
+    isFetching: rescheduleSuggestLoading,
+    error: rescheduleSuggestError,
+  } = useQuery({
+    queryKey: [
+      "sales-team-route-suggest-reschedule",
+      rescheduleVisit?._id,
+      rescheduleSuggestName,
+      rescheduleAccount?._id || "",
+      rescheduleAnchorYmd,
+    ],
+    enabled: Boolean(
+      token &&
+        rescheduleVisit &&
+        rescheduleAccount &&
+        rescheduleSuggestName.length >= 2,
+    ),
+    queryFn: () =>
+      salesTeamApi.suggestRouteDays(token, {
+        name: rescheduleSuggestName,
+        address: rescheduleAccount?.address || "",
+        accountId: rescheduleAccount?._id || null,
+        lat: rescheduleAccount?.lat ?? null,
+        lng: rescheduleAccount?.lng ?? null,
+        anchorYmd: rescheduleAnchorYmd,
+        includeAround: true,
+        excludeVisitId: rescheduleVisit?._id || null,
+      }),
+    staleTime: 30_000,
+    retry: false,
+  });
+
+  const reschedulePreviewSuggestion = useMemo(() => {
+    const items = rescheduleRouteSuggest?.suggestions || [];
+    if (!items.length) return null;
+    if (reschedulePreviewYmd) {
+      return items.find((s) => s.ymd === reschedulePreviewYmd) || items[0];
+    }
+    return items[0];
+  }, [rescheduleRouteSuggest, reschedulePreviewYmd]);
+
+  const applyRescheduleSuggestion = (s: {
+    ymd: string;
+    suggestedTime?: string;
+  }) => {
+    setReschedulePreviewYmd(s.ymd);
+    setRescheduleYmd(s.ymd);
+    if (s.suggestedTime) {
+      setRescheduleHm(clampVisitHmAfterNow(s.suggestedTime, s.ymd, today));
+    } else {
+      setRescheduleHm(defaultVisitHm(s.ymd, today));
     }
   };
 
@@ -453,6 +560,7 @@ export default function SalesHomePage() {
       setPlacePickerSeed(null);
       setPlacePickerAccountId(null);
       void qc.invalidateQueries({ queryKey: ["sales-team-visits"] });
+      void qc.invalidateQueries({ queryKey: ["sales-team-visits-month"] });
       void qc.invalidateQueries({ queryKey: ["sales-team-home"] });
       void qc.invalidateQueries({ queryKey: ["sales-team-accounts"] });
       void qc.invalidateQueries({ queryKey: ["sales-team-route"] });
@@ -467,6 +575,7 @@ export default function SalesHomePage() {
       salesTeamApi.updateVisit(token, id, { status }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["sales-team-visits"] });
+      void qc.invalidateQueries({ queryKey: ["sales-team-visits-month"] });
       void qc.invalidateQueries({ queryKey: ["sales-team-home"] });
       void qc.invalidateQueries({ queryKey: ["sales-team-stats"] });
       void qc.invalidateQueries({ queryKey: ["sales-team-daily-report"] });
@@ -488,6 +597,7 @@ export default function SalesHomePage() {
       toast({ title: "확정으로 바꿨습니다." });
       setConfirmCommitmentVisit(null);
       void qc.invalidateQueries({ queryKey: ["sales-team-visits"] });
+      void qc.invalidateQueries({ queryKey: ["sales-team-visits-month"] });
       void qc.invalidateQueries({ queryKey: ["sales-team-home"] });
       void qc.invalidateQueries({ queryKey: ["sales-team-route"] });
       void qc.invalidateQueries({ queryKey: ["sales-team-route-suggest"] });
@@ -504,6 +614,7 @@ export default function SalesHomePage() {
       setCompleteVisit(null);
       setCompleteMemo("");
       void qc.invalidateQueries({ queryKey: ["sales-team-visits"] });
+      void qc.invalidateQueries({ queryKey: ["sales-team-visits-month"] });
       void qc.invalidateQueries({ queryKey: ["sales-team-home"] });
       void qc.invalidateQueries({ queryKey: ["sales-team-stats"] });
       void qc.invalidateQueries({ queryKey: ["sales-team-daily-report"] });
@@ -535,8 +646,10 @@ export default function SalesHomePage() {
         title: `${formatDayLabel(vars.visitYmd)} ${vars.hm}으로 옮겼습니다.`,
       });
       setRescheduleVisit(null);
+      setReschedulePreviewYmd(null);
       if (vars.visitYmd !== ymd) onYmdChange(vars.visitYmd);
       void qc.invalidateQueries({ queryKey: ["sales-team-visits"] });
+      void qc.invalidateQueries({ queryKey: ["sales-team-visits-month"] });
       void qc.invalidateQueries({ queryKey: ["sales-team-home"] });
       void qc.invalidateQueries({ queryKey: ["sales-team-stats"] });
       void qc.invalidateQueries({ queryKey: ["sales-team-daily-report"] });
@@ -569,6 +682,8 @@ export default function SalesHomePage() {
       clampVisitHmAfterNow(visitHmFromIso(v.plannedAt), visitYmd, today),
     );
     setRescheduleCommitment(v.commitment || "around");
+    setRescheduleAnchorYmd(visitYmd);
+    setReschedulePreviewYmd(visitYmd);
   };
 
   const placeFixMut = useMutation({
@@ -658,6 +773,8 @@ export default function SalesHomePage() {
             ymd={ymd}
             today={today}
             onChange={onYmdChange}
+            countsByYmd={countsByYmd}
+            onVisibleMonthChange={setCalendarMonthYmd}
           />
           <div className="flex min-w-0 flex-1 flex-wrap items-center justify-center gap-1 text-xs sm:gap-1.5 sm:text-sm">
             <StatusChip
@@ -794,9 +911,20 @@ export default function SalesHomePage() {
                                   <span className="truncate font-medium">
                                     {visitAccountName(v)}
                                   </span>
-                                  <span className="shrink-0 text-xs text-muted-foreground">
-                                    {formatVisitTime(v.plannedAt)}
-                                  </span>
+                                  {v.status === "planned" ? (
+                                    <button
+                                      type="button"
+                                      className="shrink-0 rounded-md text-xs font-medium text-primary underline-offset-2 hover:underline"
+                                      onClick={() => openReschedule(v)}
+                                      title="날짜·시간 변경"
+                                    >
+                                      {formatVisitTime(v.plannedAt)}
+                                    </button>
+                                  ) : (
+                                    <span className="shrink-0 text-xs text-muted-foreground">
+                                      {formatVisitTime(v.plannedAt)}
+                                    </span>
+                                  )}
                                 </div>
                                 {v.memo ? (
                                   <p className="mt-1 text-xs text-slate-600">
@@ -894,7 +1022,7 @@ export default function SalesHomePage() {
                                   variant="outline"
                                   onClick={() => openReschedule(v)}
                                 >
-                                  연기
+                                  일정 변경
                                 </Button>
                                 <Button
                                   size="sm"
@@ -1434,22 +1562,25 @@ export default function SalesHomePage() {
       <Dialog
         open={Boolean(rescheduleVisit)}
         onOpenChange={(open) => {
-          if (!open) setRescheduleVisit(null);
+          if (!open) {
+            setRescheduleVisit(null);
+            setReschedulePreviewYmd(null);
+          }
         }}
       >
-        <DialogContent className="rounded-2xl sm:max-w-md">
-          <DialogHeader className="text-left">
-            <DialogTitle>일시 다시 선택</DialogTitle>
+        <DialogContent className="flex max-h-[min(90vh,40rem)] flex-col gap-0 overflow-hidden rounded-2xl p-0 sm:max-w-xl">
+          <DialogHeader className="shrink-0 space-y-1 border-b border-slate-100 px-4 py-3.5 text-left sm:px-5">
+            <DialogTitle>날짜·시간 변경</DialogTitle>
             <DialogDescription>
               {rescheduleVisit
-                ? `${visitAccountName(rescheduleVisit)} 방문을 다른 날짜·시간으로 옮깁니다.`
-                : "연기하실 날짜와 시간을 고르세요."}
+                ? `${visitAccountName(rescheduleVisit)} 방문을 다른 날짜·시간으로 옮깁니다. 동선 제안을 고르거나 아래에서 직접 설정하세요.`
+                : "날짜와 시간을 고르세요."}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
+          <div className="min-h-0 space-y-3 overflow-y-auto px-4 py-3.5 sm:px-5">
             <div className="space-y-2 rounded-xl border border-slate-200/80 bg-slate-50/60 px-3 py-2.5">
               <p className="text-xs font-medium text-slate-700">
-                방문 날짜 · 시간
+                수동 설정 · 방문 날짜 · 시간
               </p>
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                 <Input
@@ -1459,6 +1590,7 @@ export default function SalesHomePage() {
                     const next = e.target.value;
                     if (!next) return;
                     setRescheduleYmd(next);
+                    setReschedulePreviewYmd(next);
                     setRescheduleHm((prev) =>
                       clampVisitHmAfterNow(prev, next, today),
                     );
@@ -1479,43 +1611,187 @@ export default function SalesHomePage() {
                   className="h-10 rounded-xl bg-white sm:w-[8.5rem]"
                 />
               </div>
+              <div
+                className="inline-flex h-10 w-full items-stretch rounded-xl border border-slate-200/80 bg-slate-100/80 p-1"
+                role="group"
+                aria-label="확정도"
+              >
+                {(
+                  [
+                    { value: "confirmed", label: "확정" },
+                    { value: "around", label: "그쯤" },
+                  ] as const
+                ).map((opt) => {
+                  const active = rescheduleCommitment === opt.value;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => setRescheduleCommitment(opt.value)}
+                      className={cn(
+                        "min-w-[4.25rem] flex-1 rounded-lg px-3 text-sm font-medium transition-colors",
+                        active
+                          ? "bg-white text-slate-900 shadow-sm"
+                          : "text-slate-600 hover:text-slate-900",
+                      )}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
               <p className="text-xs text-muted-foreground">
                 {formatDayLabel(rescheduleYmd)} · {rescheduleHm} ·{" "}
-                {COMMITMENT_LABEL[rescheduleCommitment] || rescheduleCommitment}
+                {COMMITMENT_LABEL[rescheduleCommitment] ||
+                  rescheduleCommitment}
               </p>
             </div>
-            <div
-              className="inline-flex h-10 w-full items-stretch rounded-xl border border-slate-200/80 bg-slate-100/80 p-1"
-              role="group"
-              aria-label="확정도"
-            >
-              {(
-                [
-                  { value: "confirmed", label: "확정" },
-                  { value: "around", label: "그쯤" },
-                ] as const
-              ).map((opt) => {
-                const active = rescheduleCommitment === opt.value;
-                return (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    aria-pressed={active}
-                    onClick={() => setRescheduleCommitment(opt.value)}
-                    className={cn(
-                      "min-w-[4.25rem] flex-1 rounded-lg px-3 text-sm font-medium transition-colors",
-                      active
-                        ? "bg-white text-slate-900 shadow-sm"
-                        : "text-slate-600 hover:text-slate-900",
-                    )}
-                  >
-                    {opt.label}
-                  </button>
-                );
-              })}
+
+            <div className="space-y-2.5 border-t border-slate-100 pt-3">
+              <div className="flex items-center gap-1.5 text-xs font-medium text-slate-700">
+                <Route className="h-3.5 w-3.5 text-primary" aria-hidden />
+                자동 제안
+                {rescheduleSuggestLoading ? (
+                  <span className="font-normal text-muted-foreground">
+                    · 계산 중…
+                  </span>
+                ) : null}
+              </div>
+              {!rescheduleAccount ? (
+                <p className="text-xs text-muted-foreground">
+                  거래처 정보가 없어 동선 제안을 만들 수 없습니다. 위에서
+                  날짜·시간을 직접 고르세요.
+                </p>
+              ) : null}
+              {rescheduleAccount && rescheduleSuggestError ? (
+                <p className="text-xs text-amber-800">
+                  {(rescheduleSuggestError as Error).message ||
+                    "날짜 제안을 불러오지 못했습니다. 위에서 직접 고르세요."}
+                </p>
+              ) : null}
+              {rescheduleAccount && rescheduleRouteSuggest?.message ? (
+                <p className="text-xs text-muted-foreground">
+                  {rescheduleRouteSuggest.message}
+                </p>
+              ) : null}
+              {rescheduleAccount &&
+              rescheduleRouteSuggest?.needsManualPick ? (
+                <div className="rounded-xl border border-amber-200/80 bg-amber-50/70 px-3 py-2.5 text-xs text-amber-950">
+                  <p className="font-medium">효율 동선이 불명확합니다</p>
+                  <p className="mt-0.5 text-amber-900/80">
+                    제안 카드를 고르거나, 위에서 날짜·시간을 직접 맞춘 뒤
+                    옮기세요.
+                  </p>
+                </div>
+              ) : null}
+              {rescheduleAccount &&
+              (rescheduleRouteSuggest?.suggestions || []).length > 0 ? (
+                <ul className="space-y-1.5">
+                  {rescheduleRouteSuggest!.suggestions.map((s) => {
+                    const selected =
+                      (reschedulePreviewYmd ||
+                        rescheduleRouteSuggest!.suggestions[0]?.ymd) ===
+                      s.ymd;
+                    return (
+                      <li key={`${s.rank}-${s.ymd}`}>
+                        <button
+                          type="button"
+                          className={`flex w-full items-start justify-between gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors ${
+                            selected
+                              ? "border-primary/40 bg-primary/5"
+                              : "border-slate-200/80 bg-white hover:bg-slate-50"
+                          }`}
+                          onClick={() => applyRescheduleSuggestion(s)}
+                        >
+                          <div className="min-w-0 space-y-0.5">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="text-sm font-medium text-slate-900">
+                                {formatDayLabel(s.ymd)}
+                              </span>
+                              {s.suggestedTime ? (
+                                <span className="text-xs font-medium text-slate-700">
+                                  {s.suggestedTime}
+                                </span>
+                              ) : null}
+                              <Badge
+                                variant={
+                                  s.rank === 1 ? "secondary" : "outline"
+                                }
+                                className="h-5 px-1.5 text-[10px]"
+                              >
+                                {s.tierLabel ||
+                                  (s.rank === 1
+                                    ? "1순위 · 동선"
+                                    : "2순위 · 인접일")}
+                              </Badge>
+                              {s.ymd === rescheduleYmd ? (
+                                <span className="text-[10px] text-primary">
+                                  적용됨
+                                </span>
+                              ) : null}
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                              {s.reason}
+                              {s.visitCount
+                                ? ` · 그날 확정 ${s.visitCount}곳`
+                                : ""}
+                              {s.totalKm != null ? ` · ${s.totalKm}km` : ""}
+                            </p>
+                          </div>
+                          <span className="shrink-0 text-xs font-medium text-primary">
+                            적용
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : null}
+              {rescheduleAccount &&
+              reschedulePreviewSuggestion?.ordered?.length ? (
+                <div className="rounded-xl border border-slate-100 bg-slate-50/70 px-3 py-2.5">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <p className="text-xs font-medium text-slate-700">
+                      {formatDayLabel(reschedulePreviewSuggestion.ymd)} 예상
+                      순서
+                    </p>
+                    {reschedulePreviewSuggestion.mapUrl ? (
+                      <a
+                        href={reschedulePreviewSuggestion.mapUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs font-medium text-primary"
+                      >
+                        카카오맵
+                      </a>
+                    ) : null}
+                  </div>
+                  <ol className="space-y-1">
+                    {reschedulePreviewSuggestion.ordered.map((stop, idx) => (
+                      <li
+                        key={`${stop.visitId || stop.name}-${idx}`}
+                        className={`flex items-center gap-2 text-xs ${
+                          stop.isExtra
+                            ? "font-medium text-primary"
+                            : "text-slate-700"
+                        }`}
+                      >
+                        <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white text-[10px] font-semibold text-slate-600 ring-1 ring-slate-200">
+                          {idx + 1}
+                        </span>
+                        <span className="min-w-0 truncate">
+                          {stop.name}
+                          {stop.isExtra ? " (이동)" : ""}
+                        </span>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              ) : null}
             </div>
           </div>
-          <DialogFooter className="gap-2 sm:space-x-0">
+          <DialogFooter className="shrink-0 gap-2 border-t border-slate-100 px-4 py-3 sm:space-x-0 sm:px-5">
             <Button
               variant="outline"
               onClick={() => setRescheduleVisit(null)}

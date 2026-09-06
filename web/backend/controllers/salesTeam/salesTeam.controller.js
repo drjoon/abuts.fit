@@ -2172,6 +2172,7 @@ export async function suggestRouteDays(req, res) {
 
     const address = String(body.address || body.extraAddress || "").trim();
     const accountId = oid(body.accountId);
+    const excludeVisitId = oid(body.excludeVisitId);
     const includeAround = body.includeAround !== false;
     const createYmd = toKstYmd(new Date());
     const anchorYmd =
@@ -2299,12 +2300,15 @@ export async function suggestRouteDays(req, res) {
       });
     }
 
-    const visits = await SalesVisit.find({
+    const visitFilter = {
       assigneeUserId: req.user._id,
       plannedAt: { $gte: fromRange.start, $lt: toRange.end },
       status: "planned",
       commitment: { $in: commitments },
-    })
+    };
+    if (excludeVisitId) visitFilter._id = { $ne: excludeVisitId };
+
+    const visits = await SalesVisit.find(visitFilter)
       .populate(
         "accountId",
         "name kind address lat lng phone businessAnchorId",

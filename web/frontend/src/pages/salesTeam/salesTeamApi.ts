@@ -284,6 +284,8 @@ export const salesTeamApi = {
       /** @deprecated 창은 anchorYmd로 계산. 없으면 anchor 폴백 */
       fromYmd?: string;
       includeAround?: boolean;
+      /** 일정 옮기기 시 자기 자신은 기존 예약에서 제외 */
+      excludeVisitId?: string | null;
     },
   ) =>
     salesFetch<{

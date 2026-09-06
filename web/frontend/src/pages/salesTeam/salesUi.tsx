@@ -2,14 +2,29 @@
 // - web/frontend/src/pages/salesTeam/SalesHomePage.tsx
 // - web/frontend/src/pages/salesTeam/salesDay.ts
 // - web/frontend/src/shared/settlement/settlementUi.tsx
+// - web/frontend/src/components/ui/calendar.tsx
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight } from "lucide-react";
 import { Link } from "react-router-dom";
+import { ko } from "date-fns/locale";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Calendar } from "@/components/ui/calendar";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { cn } from "@/shared/ui/cn";
+import { kstStartOfMonth, toKstYmd, ymdToKstDate } from "@/shared/date/kst";
 import { addDaysYmd } from "./salesDay";
+
+function formatPickerLabel(ymd: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return ymd;
+  const [y, m, d] = ymd.split("-");
+  return `${y}. ${m}. ${d}.`;
+}
 
 export function SalesPageShell({
   title,
@@ -405,6 +420,8 @@ export function SalesDayPicker({
   onChange,
   className,
   compact,
+  countsByYmd,
+  onVisibleMonthChange,
 }: {
   ymd: string;
   today: string;
@@ -412,7 +429,28 @@ export function SalesDayPicker({
   className?: string;
   /** Tighter control for toolbars that share a row. */
   compact?: boolean;
+  /** KST YMD → 그날 예약(취소·연기 제외) 건수 */
+  countsByYmd?: Record<string, number>;
+  /** 달력에 보이는 월(1일 YMD). 월 이동 시 카운트 조회용 */
+  onVisibleMonthChange?: (monthStartYmd: string) => void;
 }) {
+  const [open, setOpen] = useState(false);
+  const selectedDate = useMemo(() => ymdToKstDate(ymd) || undefined, [ymd]);
+  const [displayMonth, setDisplayMonth] = useState<Date>(
+    () => selectedDate || ymdToKstDate(today) || new Date(),
+  );
+
+  useEffect(() => {
+    if (selectedDate) setDisplayMonth(selectedDate);
+  }, [selectedDate]);
+
+  useEffect(() => {
+    if (!onVisibleMonthChange) return;
+    const monthYmd = toKstYmd(displayMonth);
+    const start = monthYmd ? kstStartOfMonth(monthYmd) : null;
+    if (start) onVisibleMonthChange(start);
+  }, [displayMonth, onVisibleMonthChange]);
+
   return (
     // 바깥 여백: overflow clip 시 border·shadow가 잘리지 않게
     <div className={cn("shrink-0 p-0.5", className)}>
@@ -433,17 +471,105 @@ export function SalesDayPicker({
         >
           <ChevronLeft className="h-4 w-4" />
         </Button>
-        <Input
-          type="date"
-          value={ymd}
-          onChange={(e) => onChange(e.target.value)}
-          className={cn(
-            "min-w-0 border-0 bg-transparent shadow-none focus-visible:ring-0",
-            compact
-              ? "h-8 w-[9.75rem] px-1"
-              : "h-9 flex-1 sm:w-[10.5rem] sm:flex-none",
-          )}
-        />
+        <Popover open={open} onOpenChange={setOpen}>
+          <PopoverTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              className={cn(
+                "min-w-0 justify-start gap-1.5 px-2 font-normal tabular-nums text-slate-900 hover:bg-slate-100",
+                compact ? "h-8" : "h-9",
+              )}
+              aria-label="날짜 선택 캘린더 열기"
+            >
+              <CalendarIcon className="h-4 w-4 shrink-0 text-slate-500" />
+              <span className="truncate">{formatPickerLabel(ymd)}</span>
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent
+            align="start"
+            sideOffset={8}
+            className="w-auto max-w-[calc(100vw-1.5rem)] rounded-2xl border-slate-200/80 p-3 shadow-lg sm:p-4"
+          >
+            <Calendar
+              mode="single"
+              locale={ko}
+              selected={selectedDate}
+              month={displayMonth}
+              onMonthChange={setDisplayMonth}
+              onSelect={(date) => {
+                if (!date) return;
+                const next = toKstYmd(date);
+                if (!next) return;
+                onChange(next);
+                setOpen(false);
+              }}
+              className="p-0"
+              classNames={{
+                months: "flex flex-col",
+                month: "w-full space-y-3",
+                caption:
+                  "relative flex items-center justify-center px-10 pb-1 pt-0.5",
+                caption_label: "text-base font-semibold text-slate-900",
+                nav: "flex items-center",
+                nav_button:
+                  "absolute top-0 inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200/80 bg-white text-slate-700 opacity-100 hover:bg-slate-50",
+                nav_button_previous: "left-0",
+                nav_button_next: "right-0",
+                table: "w-full border-collapse",
+                head_row: "flex w-full",
+                head_cell:
+                  "w-12 flex-1 pb-1 text-center text-[0.7rem] font-medium text-muted-foreground sm:w-14",
+                row: "mt-1 flex w-full",
+                cell: "relative h-14 flex-1 p-0.5 text-center text-sm sm:h-16",
+                day: cn(
+                  "relative flex h-full w-full flex-col items-center justify-center gap-0.5 rounded-xl p-0 font-normal hover:bg-slate-100",
+                  "aria-selected:opacity-100",
+                ),
+                day_selected:
+                  "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground focus:bg-primary focus:text-primary-foreground",
+                day_today:
+                  "bg-slate-100 text-slate-900 aria-selected:bg-primary aria-selected:text-primary-foreground",
+                day_outside: "text-muted-foreground/50 opacity-60",
+                day_disabled: "text-muted-foreground opacity-40",
+                day_hidden: "invisible",
+              }}
+              components={{
+                IconLeft: () => <ChevronLeft className="h-4 w-4" />,
+                IconRight: () => <ChevronRight className="h-4 w-4" />,
+                DayContent: ({ date }) => {
+                  const dayYmd = toKstYmd(date) || "";
+                  const count = countsByYmd?.[dayYmd] || 0;
+                  const isSelected = dayYmd === ymd;
+                  const dayNum = Number(dayYmd.slice(8, 10)) || date.getDate();
+                  return (
+                    <>
+                      <span className="text-sm font-medium leading-none sm:text-[0.95rem]">
+                        {dayNum}
+                      </span>
+                      <span
+                        className={cn(
+                          "min-h-[0.85rem] text-[10px] font-semibold leading-none tabular-nums",
+                          count > 0
+                            ? isSelected
+                              ? "text-primary-foreground/90"
+                              : "text-primary"
+                            : "text-transparent",
+                        )}
+                        aria-hidden={count === 0}
+                      >
+                        {count > 0 ? count : "·"}
+                      </span>
+                    </>
+                  );
+                },
+              }}
+            />
+            <p className="mt-2 border-t border-slate-100 pt-2 text-center text-[11px] text-muted-foreground">
+              숫자 = 그날 잡은 예약 수
+            </p>
+          </PopoverContent>
+        </Popover>
         <Button
           size="icon"
           variant="ghost"
