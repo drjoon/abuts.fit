@@ -35,7 +35,7 @@ export function SalesPageShell({
   return (
     <div
       className={cn(
-        "mx-auto w-full space-y-4 px-0 pb-20 pt-0 sm:space-y-5 sm:pb-10 lg:space-y-5 lg:pb-8",
+        "mx-auto w-full space-y-4 px-0.5 pb-20 pt-0.5 sm:space-y-5 sm:px-0 sm:pb-10 sm:pt-0 lg:space-y-5 lg:pb-8",
         wide ? "max-w-5xl" : "max-w-3xl",
         className,
       )}
@@ -414,50 +414,54 @@ export function SalesDayPicker({
   compact?: boolean;
 }) {
   return (
-    <div
-      className={cn(
-        "flex flex-nowrap items-center rounded-2xl border border-slate-200/80 bg-white/90 shadow-sm",
-        compact
-          ? "gap-0.5 p-1"
-          : "gap-1.5 p-1.5 sm:gap-2 sm:p-2",
-        className,
-      )}
-    >
-      <Button
-        size="icon"
-        variant="ghost"
-        className={cn("shrink-0", compact ? "h-8 w-8" : "h-9 w-9")}
-        onClick={() => onChange(addDaysYmd(ymd, -1))}
-        aria-label="이전 날"
-      >
-        <ChevronLeft className="h-4 w-4" />
-      </Button>
-      <Input
-        type="date"
-        value={ymd}
-        onChange={(e) => onChange(e.target.value)}
+    // 바깥 여백: overflow clip 시 border·shadow가 잘리지 않게
+    <div className={cn("shrink-0 p-0.5", className)}>
+      <div
         className={cn(
-          "min-w-0 border-0 bg-transparent shadow-none focus-visible:ring-0",
-          compact ? "h-8 w-[9.75rem] px-1" : "h-9 flex-1 sm:w-[10.5rem] sm:flex-none",
+          "flex flex-nowrap items-center rounded-2xl border border-slate-200/80 bg-white/90 shadow-sm",
+          compact
+            ? "gap-0.5 p-1"
+            : "gap-1.5 p-1.5 sm:gap-2 sm:p-2",
         )}
-      />
-      <Button
-        size="icon"
-        variant="ghost"
-        className={cn("shrink-0", compact ? "h-8 w-8" : "h-9 w-9")}
-        onClick={() => onChange(addDaysYmd(ymd, 1))}
-        aria-label="다음 날"
       >
-        <ChevronRight className="h-4 w-4" />
-      </Button>
-      <Button
-        size="sm"
-        variant={ymd === today ? "default" : "secondary"}
-        className={cn("shrink-0", compact && "h-8 px-2.5")}
-        onClick={() => onChange(today)}
-      >
-        오늘
-      </Button>
+        <Button
+          size="icon"
+          variant="ghost"
+          className={cn("shrink-0", compact ? "h-8 w-8" : "h-9 w-9")}
+          onClick={() => onChange(addDaysYmd(ymd, -1))}
+          aria-label="이전 날"
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </Button>
+        <Input
+          type="date"
+          value={ymd}
+          onChange={(e) => onChange(e.target.value)}
+          className={cn(
+            "min-w-0 border-0 bg-transparent shadow-none focus-visible:ring-0",
+            compact
+              ? "h-8 w-[9.75rem] px-1"
+              : "h-9 flex-1 sm:w-[10.5rem] sm:flex-none",
+          )}
+        />
+        <Button
+          size="icon"
+          variant="ghost"
+          className={cn("shrink-0", compact ? "h-8 w-8" : "h-9 w-9")}
+          onClick={() => onChange(addDaysYmd(ymd, 1))}
+          aria-label="다음 날"
+        >
+          <ChevronRight className="h-4 w-4" />
+        </Button>
+        <Button
+          size="sm"
+          variant={ymd === today ? "default" : "secondary"}
+          className={cn("shrink-0", compact && "h-8 px-2.5")}
+          onClick={() => onChange(today)}
+        >
+          오늘
+        </Button>
+      </div>
     </div>
   );
 }

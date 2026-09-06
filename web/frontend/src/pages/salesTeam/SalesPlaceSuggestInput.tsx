@@ -204,8 +204,8 @@ export default function SalesPlaceSuggestInput({
           {visibleItems.length === 0 && !loading ? (
             <li className="px-3 py-2 text-xs text-muted-foreground">
               {/\s/.test(value.trim())
-                ? "이 지역·상호로 지도 결과가 없습니다. 그대로 저장한 뒤 위치에서 찍어도 됩니다."
-                : "지도에 없는 상호일 수 있습니다. 「지역명 상호」처럼 띄어 검색하거나, 그대로 저장한 뒤 위치에서 찍어도 됩니다."}
+                ? "이 지역·상호로 결과가 없습니다. 주소를 확인한 뒤 다른 후보를 고르거나 상호를 그대로 넣을 수 있습니다."
+                : "상호만으로 부족하면 「지역명 상호」로 검색해 주소를 구분하세요."}
             </li>
           ) : visibleItems.length === 0 && loading ? (
             <li className="px-3 py-2 text-xs text-muted-foreground">검색 중…</li>

@@ -243,16 +243,34 @@ function roundHmToStep(hm, stepMin = 15) {
 }
 
 /**
- * 거리 → 이동+완충 분. 시내 유효 ~25km/h + 최소 체류/이동 버퍼.
+ * 기예약 → 목표 이동 간격(분).
+ * 수도권: 5km당 1시간, 지방: 20km당 1시간 + 미팅·대기 1시간.
  */
-function travelMinutesForKm(km) {
-  const n = Number(km);
-  if (!Number.isFinite(n) || n <= 0) return SUGGEST_VISIT_DWELL_MIN;
-  const drive = Math.ceil((n / 25) * 60);
-  return Math.max(
-    SUGGEST_MIN_TRAVEL_MIN,
-    Math.min(120, drive + SUGGEST_VISIT_DWELL_MIN),
-  );
+function travelGapMinutes(from, to) {
+  const km = Math.max(0, haversineKm(from, to));
+  const metro = isCapitalRegion(from) && isCapitalRegion(to);
+  const kmPerHour = metro ? METRO_KM_PER_HOUR : PROVINCIAL_KM_PER_HOUR;
+  const driveMin = Math.ceil((km / kmPerHour) * 60);
+  return driveMin + SUGGEST_MEETING_MIN;
+}
+
+/**
+ * 수도권(서울·인천·경기) 여부. 주소 우선, 없으면 대략 bbox.
+ */
+function isCapitalRegion(point) {
+  const addr = String(point?.address || "");
+  if (/서울|인천|경기/.test(addr)) return true;
+  if (
+    /부산|대구|광주|대전|울산|세종|강원|충북|충남|전북|전남|경북|경남|제주|거제|통영|창원|김해|진주/.test(
+      addr,
+    )
+  ) {
+    return false;
+  }
+  const lat = Number(point?.lat);
+  const lng = Number(point?.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
+  return lat >= 36.9 && lat <= 38.35 && lng >= 126.4 && lng <= 127.9;
 }
 
 /**
@@ -282,17 +300,21 @@ function suggestTimeForTarget(stops, targetPoint, orderedWithTarget) {
     }
   }
   if (!prev && !next) {
-    // 폴백: 최근접 기예약 기준
-    let nearest = stops[0];
-    let nearestKm = haversineKm(targetPoint, nearest);
-    for (let i = 1; i < stops.length; i += 1) {
-      const d = haversineKm(targetPoint, stops[i]);
+    // 폴백: 50km → 100km 안 최근접
+    let nearest = null;
+    let nearestKm = Infinity;
+    for (const s of stops) {
+      const d = haversineKm(targetPoint, s);
       if (d < nearestKm) {
         nearestKm = d;
-        nearest = stops[i];
+        nearest = s;
       }
     }
-    prev = nearest;
+    if (nearest && nearestKm <= ROUTE_NEARBY_SECONDARY_KM) {
+      prev = nearest;
+    } else {
+      return { suggestedTime: "10:00", anchorName: "", anchorTime: null };
+    }
   }
 
   const occupied = new Set();
@@ -304,7 +326,7 @@ function suggestTimeForTarget(stops, targetPoint, orderedWithTarget) {
   const trySlot = (rawHm) => {
     let hm = roundHmToStep(rawHm);
     let guard = 0;
-    while (occupied.has(hm) && guard < 24) {
+    while (occupied.has(hm) && guard < 32) {
       hm = addMinutesHm(hm, 15);
       guard += 1;
     }
@@ -318,29 +340,30 @@ function suggestTimeForTarget(stops, targetPoint, orderedWithTarget) {
   if (prev && next) {
     const prevHm = formatKstHm(prev.plannedAt) || "10:00";
     const nextHm = formatKstHm(next.plannedAt) || "15:00";
-    const gapAfterPrev = travelMinutesForKm(haversineKm(prev, targetPoint));
-    const gapBeforeNext = travelMinutesForKm(haversineKm(targetPoint, next));
+    const gapAfterPrev = travelGapMinutes(prev, targetPoint);
+    const gapBeforeNext = travelGapMinutes(targetPoint, next);
     const afterPrev = addMinutesHm(prevHm, gapAfterPrev);
     const beforeNext = addMinutesHm(nextHm, -gapBeforeNext);
     const afterMin = hmToMinutes(afterPrev) ?? 10 * 60;
     const beforeMin = hmToMinutes(beforeNext) ?? 15 * 60;
     if (afterMin <= beforeMin) {
-      suggestedTime = trySlot(minutesToHm(Math.round((afterMin + beforeMin) / 2)));
+      suggestedTime = trySlot(
+        minutesToHm(Math.round((afterMin + beforeMin) / 2)),
+      );
     } else {
-      // 간격이 부족하면 앞쪽(prev 뒤)을 우선 — 동선상 먼저 들르는 쪽
       suggestedTime = trySlot(afterPrev);
     }
     anchorName = prev.name || "";
     anchorTime = prevHm;
   } else if (prev) {
     const prevHm = formatKstHm(prev.plannedAt) || "10:00";
-    const gap = travelMinutesForKm(haversineKm(prev, targetPoint));
+    const gap = travelGapMinutes(prev, targetPoint);
     suggestedTime = trySlot(addMinutesHm(prevHm, gap));
     anchorName = prev.name || "";
     anchorTime = prevHm;
   } else if (next) {
     const nextHm = formatKstHm(next.plannedAt) || "15:00";
-    const gap = travelMinutesForKm(haversineKm(targetPoint, next));
+    const gap = travelGapMinutes(targetPoint, next);
     suggestedTime = trySlot(addMinutesHm(nextHm, -gap));
     anchorName = next.name || "";
     anchorTime = nextHm;
@@ -405,14 +428,15 @@ function suggestDaysWindow(anchorYmd, createYmd) {
   };
 }
 
-/** 동선 효율: 우회 ≤10km 또는 최근접 ≤5km — 단, 최근접이 너무 멀면(>12km) 제외 */
-const ROUTE_EFFICIENT_DETOUR_KM = 10;
-const ROUTE_EFFICIENT_NEIGHBOR_KM = 5;
-/** 2순위(인접일): 기예약까지 이 거리 이하면 「근처」로 본다 */
-const ROUTE_NEARBY_KM = 12;
-/** 제안 시각: 방문 체류·최소 이동 버퍼(분) */
-const SUGGEST_VISIT_DWELL_MIN = 20;
-const SUGGEST_MIN_TRAVEL_MIN = 30;
+/** 1차 50km / 2차 100km 이내 기예약과 뭉침 */
+const ROUTE_NEARBY_PRIMARY_KM = 50;
+const ROUTE_NEARBY_SECONDARY_KM = 100;
+/** 같은 날 우회가 이하면 2차(100km)도 효율로 인정 */
+const ROUTE_EFFICIENT_DETOUR_KM = 25;
+/** 수도권 5km/h, 지방 20km/h + 미팅·대기 1시간 */
+const METRO_KM_PER_HOUR = 5;
+const PROVINCIAL_KM_PER_HOUR = 20;
+const SUGGEST_MEETING_MIN = 60;
 
 /**
  * Kakao Local / keyword APIs use the REST API key (`KakaoAK …`).
@@ -1372,6 +1396,7 @@ async function resolveRouteAwareVisitHm({
   visitYmd,
   targetLat,
   targetLng,
+  targetAddress = "",
   preferredHm,
   includeAround = true,
   excludeVisitId = null,
@@ -1433,6 +1458,7 @@ async function resolveRouteAwareVisitHm({
     stops.push({
       visitId: String(v._id),
       name: acc.name || "",
+      address: acc.address || "",
       lat,
       lng,
       plannedAt: v.plannedAt,
@@ -1442,12 +1468,25 @@ async function resolveRouteAwareVisitHm({
 
   if (!stops.length) return fallback;
 
-  const targetPoint = { lat: targetLat, lng: targetLng };
+  const targetPoint = {
+    lat: targetLat,
+    lng: targetLng,
+    address: targetAddress || "",
+  };
+  // 100km 밖만 있으면 기본 시각 유지(뭉칠 대상 없음)
+  const nearestKm = Math.min(
+    ...stops.map((s) => haversineKm(targetPoint, s)),
+  );
+  if (!Number.isFinite(nearestKm) || nearestKm > ROUTE_NEARBY_SECONDARY_KM) {
+    return fallback;
+  }
+
   const points = stops.map((s) => ({ lat: s.lat, lng: s.lng }));
   const withTarget = optimizePointsOrder([...points, targetPoint]);
   const extraStop = {
     visitId: null,
     name: "",
+    address: targetAddress || "",
     lat: targetLat,
     lng: targetLng,
     plannedAt: null,
@@ -1511,6 +1550,7 @@ export async function createVisit(req, res) {
         visitYmd,
         targetLat: lat,
         targetLng: lng,
+        targetAddress: account.address || "",
         preferredHm,
         includeAround: true,
       });
@@ -1603,6 +1643,7 @@ export async function updateVisit(req, res) {
           visitYmd,
           targetLat: lat,
           targetLng: lng,
+          targetAddress: acc?.address || "",
           preferredHm,
           includeAround: true,
           excludeVisitId: existing._id,
@@ -1615,6 +1656,16 @@ export async function updateVisit(req, res) {
       const status = String(body.status).trim();
       if (!VISIT_STATUSES.has(status)) {
         return res.status(400).json({ success: false, message: "상태가 올바르지 않습니다." });
+      }
+      if (status === "done") {
+        const visitYmd = toKstYmd(existing.plannedAt);
+        const todayYmd = toKstYmd(new Date());
+        if (visitYmd && todayYmd && visitYmd > todayYmd) {
+          return res.status(400).json({
+            success: false,
+            message: "미래 일정은 완료할 수 없습니다. 방문 당일 또는 지난 날만 가능합니다.",
+          });
+        }
       }
       existing.status = status;
       if (status === "done" && !existing.completedAt) {
@@ -2163,8 +2214,12 @@ export async function suggestRouteDays(req, res) {
           toYmd,
           horizonDays: 0,
           efficientDetourKm: ROUTE_EFFICIENT_DETOUR_KM,
-          efficientNeighborKm: ROUTE_EFFICIENT_NEIGHBOR_KM,
-          nearbyKm: ROUTE_NEARBY_KM,
+          efficientNeighborKm: ROUTE_NEARBY_PRIMARY_KM,
+          nearbyKm: ROUTE_NEARBY_PRIMARY_KM,
+          nearbySecondaryKm: ROUTE_NEARBY_SECONDARY_KM,
+          metroKmPerHour: METRO_KM_PER_HOUR,
+          provincialKmPerHour: PROVINCIAL_KM_PER_HOUR,
+          meetingMin: SUGGEST_MEETING_MIN,
           suggestions: [],
           efficientCount: 0,
           adjacentCount: 0,
@@ -2311,7 +2366,11 @@ export async function suggestRouteDays(req, res) {
         }),
     );
 
-    const targetPoint = { lat: targetLat, lng: targetLng };
+    const targetPoint = {
+      lat: targetLat,
+      lng: targetLng,
+      address: targetAddress || "",
+    };
     const extraStopBase = {
       visitId: null,
       accountId: accountId ? String(accountId) : null,
@@ -2326,7 +2385,7 @@ export async function suggestRouteDays(req, res) {
 
     /** @type {Map<string, object>} ymd → same-day score */
     const dayScores = new Map();
-    const nearbyAnchors = []; // { ymd, stop, km } 근처 기예약
+    const nearbyAnchors = []; // { ymd, stop, km, tier }
 
     for (const [ymd, stops] of byYmd.entries()) {
       const points = stops.map((s) => ({ lat: s.lat, lng: s.lng }));
@@ -2347,17 +2406,30 @@ export async function suggestRouteDays(req, res) {
           nearestName = s.name;
           nearestStop = s;
         }
-        if (d <= ROUTE_NEARBY_KM) {
-          nearbyAnchors.push({ ymd, stop: s, km: roundRouteKm(d) });
+        if (d <= ROUTE_NEARBY_PRIMARY_KM) {
+          nearbyAnchors.push({
+            ymd,
+            stop: s,
+            km: roundRouteKm(d),
+            tier: 1,
+          });
+        } else if (d <= ROUTE_NEARBY_SECONDARY_KM) {
+          nearbyAnchors.push({
+            ymd,
+            stop: s,
+            km: roundRouteKm(d),
+            tier: 2,
+          });
         }
       }
       nearestKm = nearestKm === Infinity ? null : roundRouteKm(nearestKm);
 
+      // 1차 50km 안이면 효율. 2차 100km는 우회가 작을 때만.
       const efficient =
         nearestKm != null &&
-        nearestKm <= ROUTE_NEARBY_KM &&
-        (nearestKm <= ROUTE_EFFICIENT_NEIGHBOR_KM ||
-          detourKm <= ROUTE_EFFICIENT_DETOUR_KM);
+        (nearestKm <= ROUTE_NEARBY_PRIMARY_KM ||
+          (nearestKm <= ROUTE_NEARBY_SECONDARY_KM &&
+            detourKm <= ROUTE_EFFICIENT_DETOUR_KM));
 
       const ordered = withTarget.order.map((i) =>
         i < stops.length ? stops[i] : { ...extraStopBase },
@@ -2367,6 +2439,14 @@ export async function suggestRouteDays(req, res) {
       dayScores.set(ymd, {
         ymd,
         efficient,
+        nearTier:
+          nearestKm == null
+            ? 9
+            : nearestKm <= ROUTE_NEARBY_PRIMARY_KM
+              ? 1
+              : nearestKm <= ROUTE_NEARBY_SECONDARY_KM
+                ? 2
+                : 9,
         visitCount: stops.length,
         baselineKm: baseline.totalKm,
         totalKm: withTarget.totalKm,
@@ -2382,37 +2462,51 @@ export async function suggestRouteDays(req, res) {
       });
     }
 
-    // 1순위: 같은 날 효율 동선 (다중)
+    // 1순위: 같은 날 효율 동선 (50km 우선, 그다음 100km)
     const rank1 = [...dayScores.values()]
       .filter((d) => d.efficient)
       .sort((a, b) => {
+        if (a.nearTier !== b.nearTier) return a.nearTier - b.nearTier;
         if (a.detourKm !== b.detourKm) return a.detourKm - b.detourKm;
         const na = a.nearestKm ?? 1e9;
         const nb = b.nearestKm ?? 1e9;
         if (na !== nb) return na - nb;
         return a.ymd.localeCompare(b.ymd);
       })
-      .map((d) => ({
-        ymd: d.ymd,
-        rank: 1,
-        tier: "sameDayEfficient",
-        tierLabel: "1순위 · 동선",
-        efficient: true,
-        visitCount: d.visitCount,
-        baselineKm: d.baselineKm,
-        totalKm: d.totalKm,
-        detourKm: d.detourKm,
-        nearestKm: d.nearestKm,
-        nearestName: d.nearestName,
-        suggestedTime: d.suggestedTime,
-        reason:
-          d.nearestKm != null && d.nearestKm <= ROUTE_EFFICIENT_NEIGHBOR_KM
-            ? `${d.nearestName || "기예약"} 옆 · 동선 ${d.suggestedTime} · ${d.nearestKm}km · 우회 +${d.detourKm}km`
-            : `기존 ${d.visitCount}곳 동선 · ${d.suggestedTime} · 우회 +${d.detourKm}km`,
-        ordered: d.ordered,
-        mapUrl: d.mapUrl,
-        adjacentToYmd: null,
-      }));
+      .map((d) => {
+        const gapMin =
+          d.nearestStop != null
+            ? travelGapMinutes(d.nearestStop, targetPoint)
+            : SUGGEST_MEETING_MIN;
+        const regionLabel =
+          isCapitalRegion(targetPoint) &&
+          d.nearestStop &&
+          isCapitalRegion(d.nearestStop)
+            ? "수도권"
+            : "지방";
+        return {
+          ymd: d.ymd,
+          rank: 1,
+          tier: "sameDayEfficient",
+          tierLabel:
+            d.nearTier === 1 ? "1순위 · 50km" : "1순위 · 100km",
+          efficient: true,
+          visitCount: d.visitCount,
+          baselineKm: d.baselineKm,
+          totalKm: d.totalKm,
+          detourKm: d.detourKm,
+          nearestKm: d.nearestKm,
+          nearestName: d.nearestName,
+          suggestedTime: d.suggestedTime,
+          reason:
+            d.nearestKm != null
+              ? `${d.nearestName || "기예약"} ${d.nearestKm}km(${regionLabel}) · 이동+미팅 약 ${gapMin}분 · ${d.suggestedTime}`
+              : `기존 ${d.visitCount}곳 동선 · ${d.suggestedTime}`,
+          ordered: d.ordered,
+          mapUrl: d.mapUrl,
+          adjacentToYmd: null,
+        };
+      });
 
     const rank1Ymds = new Set(rank1.map((s) => s.ymd));
 
@@ -2427,7 +2521,6 @@ export async function suggestRouteDays(req, res) {
         if (rank1Ymds.has(adjYmd)) continue;
 
         const existing = dayScores.get(adjYmd);
-        // 인접일에 이미 일정이 많으면 동선 점수도 같이 계산
         let detourKm = null;
         let totalKm = null;
         let baselineKm = null;
@@ -2445,7 +2538,10 @@ export async function suggestRouteDays(req, res) {
           suggestedTime = existing.suggestedTime;
         }
 
-        const score = anchor.km + (detourKm != null ? detourKm * 0.3 : 0);
+        const score =
+          (anchor.tier || 2) * 1000 +
+          anchor.km +
+          (detourKm != null ? detourKm * 0.3 : 0);
         const prev = adjacentCandidates.get(adjYmd);
         if (prev && prev._score <= score) continue;
 
@@ -2453,7 +2549,8 @@ export async function suggestRouteDays(req, res) {
           ymd: adjYmd,
           rank: 2,
           tier: "adjacentDay",
-          tierLabel: "2순위 · 인접일",
+          tierLabel:
+            anchor.tier === 1 ? "2순위 · 50km 인접" : "2순위 · 100km 인접",
           efficient: false,
           visitCount,
           baselineKm,
@@ -2515,8 +2612,12 @@ export async function suggestRouteDays(req, res) {
         toYmd,
         horizonDays,
         efficientDetourKm: ROUTE_EFFICIENT_DETOUR_KM,
-        efficientNeighborKm: ROUTE_EFFICIENT_NEIGHBOR_KM,
-        nearbyKm: ROUTE_NEARBY_KM,
+        efficientNeighborKm: ROUTE_NEARBY_PRIMARY_KM,
+        nearbyKm: ROUTE_NEARBY_PRIMARY_KM,
+        nearbySecondaryKm: ROUTE_NEARBY_SECONDARY_KM,
+        metroKmPerHour: METRO_KM_PER_HOUR,
+        provincialKmPerHour: PROVINCIAL_KM_PER_HOUR,
+        meetingMin: SUGGEST_MEETING_MIN,
         suggestions,
         efficientCount: rank1.length,
         adjacentCount: rank2.length,

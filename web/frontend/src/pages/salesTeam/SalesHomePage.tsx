@@ -548,6 +548,15 @@ export default function SalesHomePage() {
   });
 
   const openCompleteReport = (v: SalesVisit) => {
+    const visitYmd = toKstYmd(new Date(v.plannedAt)) || "";
+    if (visitYmd && visitYmd > today) {
+      toast({
+        title: "미래 일정은 완료할 수 없습니다.",
+        description: "방문 당일 또는 지난 날만 완료 처리할 수 있습니다.",
+        variant: "destructive",
+      });
+      return;
+    }
     setCompleteVisit(v);
     setCompleteMemo(v.memo || "");
   };
@@ -649,7 +658,6 @@ export default function SalesHomePage() {
             ymd={ymd}
             today={today}
             onChange={onYmdChange}
-            className="min-w-0"
           />
           <div className="flex min-w-0 flex-1 flex-wrap items-center justify-center gap-1 text-xs sm:gap-1.5 sm:text-sm">
             <StatusChip
@@ -752,6 +760,8 @@ export default function SalesHomePage() {
                   <ol className="relative space-y-0 border-l border-slate-200 pl-5">
                     {visibleVisits.map((v) => {
                       const orderNo = routeOrderByVisitId.get(v._id);
+                      const visitYmd = toKstYmd(new Date(v.plannedAt)) || "";
+                      const canComplete = !visitYmd || visitYmd <= today;
                       return (
                         <li key={v._id} className="relative pb-4 last:pb-0">
                           <span
@@ -869,6 +879,12 @@ export default function SalesHomePage() {
                                 })()}
                                 <Button
                                   size="sm"
+                                  disabled={!canComplete}
+                                  title={
+                                    canComplete
+                                      ? undefined
+                                      : "미래 일정은 완료할 수 없습니다"
+                                  }
                                   onClick={() => openCompleteReport(v)}
                                 >
                                   완료
@@ -1094,24 +1110,21 @@ export default function SalesHomePage() {
               onPick={(item) => {
                 setPickedPlace(item);
                 setPlaceQuery(item.name);
-                if (
-                  item.businessAnchorId ||
-                  item.source === "platform" ||
-                  item.lat == null ||
-                  item.lng == null
-                ) {
-                  setPlacePickerAccountId(item.accountId || null);
-                  setPlacePickerSeed(item);
-                  setPlacePickerOpen(true);
-                }
               }}
               placeholder="지역명 상호 · 예: 거제 서울미소"
               autoFocus
             />
-            {pickedPlace?.address ? (
-              <p className="text-xs text-muted-foreground">
-                {pickedPlace.address}
-                {pickedPlace.phone ? ` · ${pickedPlace.phone}` : ""}
+            {pickedPlace ? (
+              <p className="rounded-lg bg-slate-50 px-2.5 py-2 text-xs text-slate-700">
+                <span className="font-medium text-slate-900">
+                  {pickedPlace.address?.trim() || "주소 없음 — 목록에서 주소를 확인해 주세요"}
+                </span>
+                {pickedPlace.phone ? (
+                  <span className="text-muted-foreground">
+                    {" "}
+                    · {pickedPlace.phone}
+                  </span>
+                ) : null}
               </p>
             ) : null}
 
@@ -1539,17 +1552,8 @@ export default function SalesHomePage() {
         initialQuery={placePickerSeed?.name || ""}
         seed={placePickerSeed}
         confirmLabel="이 위치로"
-        confirmDescription={
-          showForm
-            ? "지도에서 맞는지 확인한 뒤, 방문 추가에서 날짜를 고릅니다."
-            : "지도에서 맞는지 확인한 뒤 이 위치로 저장합니다."
-        }
+        confirmDescription="지도에서 맞는지 확인한 뒤 이 위치로 저장합니다."
         onConfirm={(place) => {
-          if (showForm) {
-            setPickedPlace(place);
-            setPlaceQuery(place.name);
-            return;
-          }
           if (placePickerAccountId || place.accountId) {
             placeFixMut.mutate(place);
             return;
