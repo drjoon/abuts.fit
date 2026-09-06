@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-06: 의뢰자 문의 대상(고객지원/영업팀) — 영업은 admin+salesTeam 동시 전달.
 // - 2026-08-15: FAQ — 치과·기공소 가입 이유를 각각 재구성(배너 SSOT, 유형별 노출).
 // - 2026-08-15: FAQ — 기공물 서비스·기공소 가입 이유 반영, 진행상태 항목 삭제.
 // - 2026-08-15: FAQ 탭 라벨 단축·어벗츠 특징+크레딧 핵심만 정리.
@@ -135,6 +136,7 @@ export const INQUIRY_TYPE_LABEL: Record<string, string> = {
   user_registration: "사용자등록",
   manufacturer_add_request: "임플란트 추가 요청",
   lab_fee_item_add_request: "기공비 항목 추가 요청",
+  sales: "영업 상담",
 };
 
 const STATUS_CONFIG: Record<
@@ -244,6 +246,7 @@ type InquiryItem = {
   message?: string;
   status?: "open" | "resolved";
   adminNote?: string;
+  targetRoles?: string[];
   createdAt?: string;
 };
 
@@ -255,10 +258,18 @@ export const InquiriesPage = () => {
   const preset =
     ROLE_PRESETS[user?.role ?? "requestor"] ?? ROLE_PRESETS.requestor;
 
+  const canChooseAudience =
+    user?.role === "requestor" ||
+    user?.role === "practice" ||
+    user?.role === "internalLab";
+
   const [items, setItems] = useState<InquiryItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [activeTab, setActiveTab] = useState<"new" | "history" | "faq">("new");
+  const [targetAudience, setTargetAudience] = useState<"support" | "sales">(
+    "support",
+  );
   const showFaq = user?.role === "requestor";
   const visibleFaqs = useMemo(
     () =>
@@ -377,17 +388,28 @@ export const InquiriesPage = () => {
       const res = await request<any>({
         path: "/api/support/inquiries",
         method: "POST",
-        jsonBody: { type, subject: subject.trim(), message: message.trim() },
+        jsonBody: {
+          type,
+          subject: subject.trim(),
+          message: message.trim(),
+          ...(canChooseAudience
+            ? { targetAudience }
+            : {}),
+        },
       });
       if (!res.ok)
         throw new Error(res.data?.message || "문의 접수에 실패했습니다.");
       toast({
         title: "문의가 접수되었습니다",
-        description: "내 문의 내역에서 처리 상태를 확인하세요.",
+        description:
+          canChooseAudience && targetAudience === "sales"
+            ? "영업팀과 관리자에게 전달되었습니다."
+            : "내 문의 내역에서 처리 상태를 확인하세요.",
       });
       setSubject("");
       setMessage("");
       setType(preset.typeChips[0].value);
+      setTargetAudience("support");
       await load();
       setActiveTab("history");
     } catch (error: any) {
@@ -488,6 +510,46 @@ export const InquiriesPage = () => {
           <TabsContent value="new">
             <Card className="app-glass-card app-glass-card--lg">
               <CardContent className="app-glass-card-content space-y-5 py-4">
+                {canChooseAudience ? (
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground">
+                      문의 대상
+                    </p>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <button
+                        type="button"
+                        onClick={() => setTargetAudience("support")}
+                        className={cn(
+                          "rounded-xl border px-3 py-3 text-left transition",
+                          targetAudience === "support"
+                            ? "border-primary bg-primary-soft text-primary-strong ring-1 ring-primary/40"
+                            : "border-border text-muted-foreground hover:border-primary/40 hover:bg-primary-soft/40 hover:text-foreground",
+                        )}
+                      >
+                        <div className="text-sm font-medium">고객지원</div>
+                        <div className="mt-0.5 text-xs opacity-80">
+                          제작·배송·결제·계정 — 관리자가 답변
+                        </div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTargetAudience("sales")}
+                        className={cn(
+                          "rounded-xl border px-3 py-3 text-left transition",
+                          targetAudience === "sales"
+                            ? "border-primary bg-primary-soft text-primary-strong ring-1 ring-primary/40"
+                            : "border-border text-muted-foreground hover:border-primary/40 hover:bg-primary-soft/40 hover:text-foreground",
+                        )}
+                      >
+                        <div className="text-sm font-medium">영업팀</div>
+                        <div className="mt-0.5 text-xs opacity-80">
+                          영업 상담 — 영업·관리자 모두에게 전달, 영업이 답변
+                        </div>
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+
                 <div className="space-y-2">
                   <p className="text-xs font-medium text-muted-foreground">
                     문의 유형
@@ -539,7 +601,9 @@ export const InquiriesPage = () => {
 
                 <div className="flex items-center justify-between gap-3 pt-1">
                   <p className="text-xs text-muted-foreground">
-                    접수 후 1~2 영업일 내 답변드립니다.
+                    {canChooseAudience && targetAudience === "sales"
+                      ? "영업팀에 전달되며 관리자도 함께 확인합니다."
+                      : "접수 후 1~2 영업일 내 답변드립니다."}
                   </p>
                   <Button
                     type="button"
@@ -630,6 +694,13 @@ export const InquiriesPage = () => {
                                 >
                                   {typeLabel}
                                 </Badge>
+                                {(item.targetRoles || []).includes(
+                                  "salesTeam",
+                                ) ? (
+                                  <Badge variant="outline" className="text-xs">
+                                    영업
+                                  </Badge>
+                                ) : null}
                                 <span className="text-xs text-muted-foreground">
                                   {item.createdAt
                                     ? new Date(item.createdAt).toLocaleString(
@@ -658,7 +729,7 @@ export const InquiriesPage = () => {
                           {item.adminNote?.trim() && (
                             <div className="mt-3 rounded-xl border border-primary-muted bg-primary-soft/70 px-3 py-2 text-xs text-muted-foreground">
                               <span className="font-semibold text-primary-strong">
-                                관리자 답변
+                                답변
                               </span>
                               <span className="ml-1.5">
                                 {item.adminNote.slice(0, 100)}
@@ -758,7 +829,7 @@ export const InquiriesPage = () => {
                 )}
               >
                 <p className="text-xs font-medium text-muted-foreground">
-                  관리자 답변
+                  답변
                 </p>
                 <p className="whitespace-pre-line leading-relaxed">
                   {detailItem?.adminNote?.trim() ||

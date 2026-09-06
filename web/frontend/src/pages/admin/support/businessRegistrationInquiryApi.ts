@@ -9,6 +9,7 @@ export type BusinessRegistrationInquiry = {
   type?: string;
   subject?: string;
   message?: string;
+  targetRoles?: string[];
   user?: {
     _id?: string;
     name?: string;
@@ -48,18 +49,37 @@ type ApiEnvelope<T> = {
   message?: string;
 };
 
-export async function fetchBusinessRegistrationInquiries(params?: {
-  status?: "open" | "resolved";
-  type?: string;
-  limit?: number;
-}) {
+export type InquiryInboxMode = "admin" | "salesTeam";
+
+function inboxListPath(mode: InquiryInboxMode) {
+  return mode === "salesTeam"
+    ? "/api/sales-team/inquiries"
+    : "/api/admin/business-registration-inquiries";
+}
+
+function inboxUpdatePath(mode: InquiryInboxMode, id: string) {
+  return mode === "salesTeam"
+    ? `/api/sales-team/inquiries/${id}`
+    : `/api/admin/business-registration-inquiries/${id}`;
+}
+
+export async function fetchBusinessRegistrationInquiries(
+  params?: {
+    status?: "open" | "resolved";
+    type?: string;
+    limit?: number;
+    target?: string;
+  },
+  mode: InquiryInboxMode = "admin",
+) {
   const search = new URLSearchParams();
   if (params?.status) search.append("status", params.status);
   if (params?.type) search.append("type", params.type);
   if (params?.limit) search.append("limit", String(params.limit));
+  if (params?.target && mode === "admin") search.append("target", params.target);
 
   const res = await request<ApiEnvelope<BusinessRegistrationInquiry[]>>({
-    path: `/api/admin/business-registration-inquiries?${search.toString()}`,
+    path: `${inboxListPath(mode)}?${search.toString()}`,
     method: "GET",
   });
 
@@ -73,9 +93,10 @@ export async function fetchBusinessRegistrationInquiries(params?: {
 export async function updateBusinessRegistrationInquiry(
   id: string,
   payload: { status?: "open" | "resolved"; adminNote?: string },
+  mode: InquiryInboxMode = "admin",
 ) {
   const res = await request<ApiEnvelope<BusinessRegistrationInquiry>>({
-    path: `/api/admin/business-registration-inquiries/${id}`,
+    path: inboxUpdatePath(mode, id),
     method: "PATCH",
     jsonBody: payload,
   });

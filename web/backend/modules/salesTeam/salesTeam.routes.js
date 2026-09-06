@@ -31,6 +31,10 @@ import {
   upsertWorkUpdate,
   deleteCustomerRequirement,
 } from "../../controllers/salesTeam/customerRequirement.controller.js";
+import {
+  salesTeamListInquiries,
+  salesTeamResolveInquiry,
+} from "../../controllers/support/support.controller.js";
 
 const router = Router();
 
@@ -63,6 +67,13 @@ router.delete("/visits/:id", authorize(salesOpsRoles), deleteVisit);
 router.get("/daily-reports", authorize(salesOpsRoles), listDailyReports);
 router.get("/daily-reports/:ymd", authorize(salesOpsRoles), getDailyReport);
 router.put("/daily-reports", authorize(salesOpsRoles), upsertDailyReport);
+
+router.get("/inquiries", authorize(salesOpsRoles), salesTeamListInquiries);
+router.patch(
+  "/inquiries/:id",
+  authorize(salesOpsRoles),
+  salesTeamResolveInquiry,
+);
 
 router.get(
   "/requirements",

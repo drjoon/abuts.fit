@@ -2,6 +2,8 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+// change-log:
+// - 2026-09-06: salesTeam → 어벗츠형 SalesTeamSettingsPage (의뢰자 사업자 fall-through 제거).
 import { useAuthStore } from "@/store/useAuthStore";
 import { AdminSettingsPage } from "@/pages/admin/settings/SettingsPage";
 import { ManufacturerSettingsPage } from "@/pages/manufacturer/settings/SettingsPage";
@@ -9,6 +11,7 @@ import { RequestorSettingsPage } from "@/pages/requestor/settings/SettingsPage";
 import { SalesmanSettingsPage } from "@/pages/salesman/SalesmanSettingsPage";
 import { DevopsSettingsPage } from "@/pages/devops/DevopsSettingsPage";
 import { PracticeSettingsPage } from "@/pages/practice/PracticeSettingsPage";
+import { SalesTeamSettingsPage } from "@/pages/salesTeam/SalesTeamSettingsPage";
 
 export const SettingsPage = () => {
   const { user } = useAuthStore();
@@ -31,6 +34,10 @@ export const SettingsPage = () => {
 
   if (user?.role === "practice") {
     return <PracticeSettingsPage />;
+  }
+
+  if (user?.role === "salesTeam") {
+    return <SalesTeamSettingsPage />;
   }
 
   if (user?.role === "requestor" || user?.role === "internalLab") {

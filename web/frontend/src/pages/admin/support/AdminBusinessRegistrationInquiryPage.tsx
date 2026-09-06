@@ -15,6 +15,7 @@ import {
   BusinessRegistrationInquiry,
   fetchBusinessRegistrationInquiries,
   updateBusinessRegistrationInquiry,
+  type InquiryInboxMode,
 } from "./businessRegistrationInquiryApi";
 import {
   Card,
@@ -105,8 +106,18 @@ const ContentBlock = ({
   </div>
 );
 
-export const AdminBusinessRegistrationInquiryPage = () => {
+export const AdminBusinessRegistrationInquiryPage = ({
+  mode = "admin",
+}: {
+  mode?: InquiryInboxMode;
+} = {}) => {
   const { toast } = useToast();
+  const isSalesInbox = mode === "salesTeam";
+  const replyLabel = isSalesInbox ? "답변" : "관리자 메모";
+  const pageTitle = isSalesInbox ? "영업 문의 수신함" : "문의 관리";
+  const pageDescription = isSalesInbox
+    ? "의뢰자가 영업팀에 보낸 문의를 확인하고 답변합니다. 관리자에게도 동일하게 전달됩니다."
+    : "접수된 문의를 확인하고 처리합니다.";
   const isMobile = useIsMobile();
   const [mobileShowList, setMobileShowList] = useState(true);
   const [searchParams] = useSearchParams();
@@ -157,11 +168,14 @@ export const AdminBusinessRegistrationInquiryPage = () => {
     const silent = options?.silent === true;
     if (!silent) setLoading(true);
     try {
-      const data = await fetchBusinessRegistrationInquiries({
-        status: statusFilter === "all" ? undefined : statusFilter,
-        type: typeFilter === "all" ? undefined : typeFilter,
-        limit: 200,
-      });
+      const data = await fetchBusinessRegistrationInquiries(
+        {
+          status: statusFilter === "all" ? undefined : statusFilter,
+          type: typeFilter === "all" ? undefined : typeFilter,
+          limit: 200,
+        },
+        mode,
+      );
       setItems(data);
       setSelectedId((prev) => {
         if (prev && data.some((item) => item._id === prev)) return prev;
@@ -178,7 +192,7 @@ export const AdminBusinessRegistrationInquiryPage = () => {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [statusFilter, typeFilter, toast]);
+  }, [statusFilter, typeFilter, toast, mode]);
 
   useEffect(() => {
     void loadInquiries();
@@ -264,10 +278,14 @@ export const AdminBusinessRegistrationInquiryPage = () => {
     try {
       const updates = await Promise.all(
         ids.map((id) =>
-          updateBusinessRegistrationInquiry(id, {
-            status: bulkStatus,
-            adminNote,
-          }),
+          updateBusinessRegistrationInquiry(
+            id,
+            {
+              status: bulkStatus,
+              adminNote,
+            },
+            mode,
+          ),
         ),
       );
       setItems((prev) =>
@@ -339,10 +357,14 @@ export const AdminBusinessRegistrationInquiryPage = () => {
     if (!selected) return;
     setSaving(true);
     try {
-      const updated = await updateBusinessRegistrationInquiry(selected._id, {
-        status: nextStatus,
-        adminNote,
-      });
+      const updated = await updateBusinessRegistrationInquiry(
+        selected._id,
+        {
+          status: nextStatus,
+          adminNote,
+        },
+        mode,
+      );
       setItems((prev) =>
         prev.map((item) => (item._id === updated._id ? updated : item)),
       );
@@ -379,10 +401,8 @@ export const AdminBusinessRegistrationInquiryPage = () => {
     <div className="flex flex-col h-full min-h-0 bg-gradient-subtle p-2 sm:p-4">
       <div className="max-w-7xl w-full mx-auto space-y-4 sm:space-y-6 flex flex-col flex-1 min-h-0">
         <div className="space-y-1">
-          <h1 className="text-2xl font-bold tracking-tight">문의</h1>
-          <p className="text-sm text-muted-foreground">
-            문의 목록을 확인하고 처리 상태를 관리합니다.
-          </p>
+          <h1 className="text-2xl font-bold tracking-tight">{pageTitle}</h1>
+          <p className="text-sm text-muted-foreground">{pageDescription}</p>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-[420px_1fr] gap-4 flex-1 min-h-0">
@@ -550,6 +570,21 @@ export const AdminBusinessRegistrationInquiryPage = () => {
                                   >
                                     {typeLabel}
                                   </Badge>
+                                  {!isSalesInbox &&
+                                  (item.targetRoles || []).includes(
+                                    "salesTeam",
+                                  ) ? (
+                                    <Badge
+                                      variant="outline"
+                                      className={cn(
+                                        "text-xs",
+                                        isSelected &&
+                                          "border-primary-foreground/30 text-primary-foreground",
+                                      )}
+                                    >
+                                      영업
+                                    </Badge>
+                                  ) : null}
                                 </div>
                                 <span
                                   className={cn(
@@ -611,7 +646,7 @@ export const AdminBusinessRegistrationInquiryPage = () => {
                   {selected?.subject || "문의 상세"}
                 </CardTitle>
                 <CardDescription>
-                  선택한 문의의 상세 정보와 관리자 메모를 확인합니다.
+                  선택한 문의의 상세 정보와 {replyLabel}를 확인합니다.
                 </CardDescription>
               </CardHeader>
 
@@ -685,7 +720,7 @@ export const AdminBusinessRegistrationInquiryPage = () => {
                       ) : null}
 
                       <div className="space-y-2">
-                        <label className="text-sm font-medium">관리자 메모</label>
+                        <label className="text-sm font-medium">{replyLabel}</label>
                         <Textarea
                           rows={5}
                           value={adminNote}

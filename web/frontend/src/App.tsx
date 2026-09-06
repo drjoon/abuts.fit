@@ -322,6 +322,9 @@ const InquiriesRoute = () => {
     return <Navigate to="/practice/inquiries" replace />;
   }
   if (user.role === "admin") return <AdminInquiriesPage />;
+  if (user.role === "salesTeam") {
+    return <AdminInquiriesPage mode="salesTeam" />;
+  }
   return <InquiriesPage />;
 };
 

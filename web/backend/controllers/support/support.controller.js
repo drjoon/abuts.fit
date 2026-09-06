@@ -5,6 +5,7 @@
 // - web/frontend/src/pages/admin/support/AdminBusinessRegistrationInquiryPage.tsx
 // - web/frontend/src/features/support/InquiriesPage.tsx
 // change-log:
+// - 2026-09-06: targetRoles — 영업 문의는 admin+salesTeam 전달, 영업팀 목록/답변 API.
 // - 2026-08-15: lab_fee_item_add_request 자동 문의 유형 허용.
 // - 2026-08-14: manufacturer_add_request 자동 문의 유형 허용.
 // - 2026-08-11: 문의 type enum을 역할별 프리셋(크레딧/디자인/파일전송 등)까지 확장.
@@ -14,12 +15,67 @@ import BusinessRegistrationInquiry from "../../models/businessRegistrationInquir
 import { resolveBusinessType } from "../businesses/businessRole.util.js";
 import { emitAppEventToRoles } from "../../socket.js";
 
+const ALLOWED_INQUIRY_TYPES = [
+  "general",
+  "business_registration",
+  "user_registration",
+  "other",
+  "manufacturing",
+  "delivery",
+  "billing",
+  "credit",
+  "design",
+  "file_transfer",
+  "account",
+  "order_intake",
+  "cam_machining",
+  "equipment",
+  "packing",
+  "settlement",
+  "referral_commission",
+  "partnership",
+  "operation",
+  "system",
+  "manufacturer_add_request",
+  "lab_fee_item_add_request",
+  "sales",
+];
+
 const buildUserSnapshot = (user) => ({
   name: String(user?.name || ""),
   email: String(user?.email || ""),
   role: String(user?.role || ""),
   business: String(user?.business || ""),
 });
+
+const normalizeTargetRoles = (body) => {
+  const audience = String(body?.targetAudience || body?.audience || "")
+    .trim()
+    .toLowerCase();
+  if (
+    audience === "sales" ||
+    audience === "salesteam" ||
+    audience === "sales_team"
+  ) {
+    return ["admin", "salesTeam"];
+  }
+  const raw = Array.isArray(body?.targetRoles) ? body.targetRoles : [];
+  const hasSales = raw.some(
+    (r) =>
+      String(r || "").trim() === "salesTeam" ||
+      String(r || "").trim() === "sales",
+  );
+  if (hasSales) return ["admin", "salesTeam"];
+  return ["admin"];
+};
+
+const inquiryNotifyRoles = (inquiry) => {
+  const roles = Array.isArray(inquiry?.targetRoles)
+    ? inquiry.targetRoles.map((r) => String(r || "").trim()).filter(Boolean)
+    : [];
+  if (roles.includes("salesTeam")) return ["admin", "salesTeam"];
+  return ["admin"];
+};
 
 const buildInquiryRealtimePayload = (inquiry, action) => {
   if (!inquiry) return null;
@@ -29,14 +85,54 @@ const buildInquiryRealtimePayload = (inquiry, action) => {
     status: String(inquiry.status || "").trim() || "open",
     type: String(inquiry.type || "").trim() || "general",
     subject: String(inquiry.subject || "").trim() || null,
+    targetRoles: Array.isArray(inquiry.targetRoles)
+      ? inquiry.targetRoles.map((r) => String(r))
+      : ["admin"],
     createdAt: inquiry.createdAt || null,
     updatedAt: inquiry.updatedAt || null,
     userId: inquiry.user ? String(inquiry.user).trim() : null,
     businessAnchorId: inquiry.businessAnchorId
       ? String(inquiry.businessAnchorId).trim()
       : null,
-    businessType: inquiry.businessType ? String(inquiry.businessType).trim() : null,
+    businessType: inquiry.businessType
+      ? String(inquiry.businessType).trim()
+      : null,
   };
+};
+
+const emitInquiryCreated = (inquiry) => {
+  const roles = inquiryNotifyRoles(inquiry);
+  emitAppEventToRoles(roles, "comm:badge-update", {
+    key: "inquiry",
+    delta: 1,
+  });
+  emitAppEventToRoles(roles, "support:inquiry-created", {
+    inquiry: buildInquiryRealtimePayload(inquiry, "created"),
+    unreadCountDelta: 1,
+  });
+};
+
+const emitInquiryUpdated = (inquiry, prevStatus, nextStatus) => {
+  const roles = inquiryNotifyRoles(inquiry);
+  if (prevStatus !== nextStatus) {
+    const delta =
+      prevStatus === "open" && nextStatus === "resolved"
+        ? -1
+        : prevStatus === "resolved" && nextStatus === "open"
+          ? 1
+          : 0;
+    if (delta !== 0) {
+      emitAppEventToRoles(roles, "comm:badge-update", {
+        key: "inquiry",
+        delta,
+      });
+    }
+  }
+  emitAppEventToRoles(roles, "support:inquiry-updated", {
+    inquiry: buildInquiryRealtimePayload(inquiry, "updated"),
+    previousStatus: prevStatus,
+    nextStatus,
+  });
 };
 
 /**
@@ -55,7 +151,6 @@ export async function createGuestInquiry(req, res) {
     }
 
     const now = new Date();
-    // KST 기준 날짜
     const kstDate = new Intl.DateTimeFormat("en-CA", {
       timeZone: "Asia/Seoul",
       year: "numeric",
@@ -108,35 +203,14 @@ export async function createGuestInquiry(req, res) {
 export async function createInquiry(req, res) {
   try {
     const { type, subject, message } = req.body || {};
-    const allowedTypes = [
-      "general",
-      "business_registration",
-      "user_registration",
-      "other",
-      "manufacturing",
-      "delivery",
-      "billing",
-      "credit",
-      "design",
-      "file_transfer",
-      "account",
-      "order_intake",
-      "cam_machining",
-      "equipment",
-      "packing",
-      "settlement",
-      "referral_commission",
-      "partnership",
-      "operation",
-      "system",
-      "manufacturer_add_request",
-      "lab_fee_item_add_request",
-    ];
-    const normalizedType = allowedTypes.includes(String(type || "").trim())
+    const normalizedType = ALLOWED_INQUIRY_TYPES.includes(
+      String(type || "").trim(),
+    )
       ? String(type).trim()
       : "general";
     const trimmedSubject = String(subject || "").trim();
     const trimmedMessage = String(message || "").trim();
+    const targetRoles = normalizeTargetRoles(req.body || {});
 
     if (!trimmedMessage) {
       return res.status(400).json({
@@ -153,17 +227,10 @@ export async function createInquiry(req, res) {
       type: normalizedType,
       subject: trimmedSubject,
       message: trimmedMessage,
+      targetRoles,
     });
 
-    emitAppEventToRoles(["admin"], "comm:badge-update", {
-      key: "inquiry",
-      delta: 1,
-    });
-
-    emitAppEventToRoles(["admin"], "support:inquiry-created", {
-      inquiry: buildInquiryRealtimePayload(inquiry, "created"),
-      unreadCountDelta: 1,
-    });
+    emitInquiryCreated(inquiry);
 
     return res.status(201).json({
       success: true,
@@ -171,6 +238,7 @@ export async function createInquiry(req, res) {
       data: {
         id: inquiry._id,
         createdAt: inquiry.createdAt,
+        targetRoles,
       },
     });
   } catch (error) {
@@ -219,7 +287,6 @@ export async function createBusinessRegistrationInquiry(req, res) {
   try {
     const { reason, ownerForm, license, businessType, errorMessage } =
       req.body || {};
-    const userType = resolveBusinessType(req.user, null);
     const resolvedType = resolveBusinessType(req.user, businessType);
     if (!resolvedType) {
       return res.status(403).json({
@@ -239,6 +306,7 @@ export async function createBusinessRegistrationInquiry(req, res) {
       subject: "사업자등록 문의",
       message: String(reason || "").trim(),
       reason: String(reason || "").trim(),
+      targetRoles: ["admin"],
       payload: {
         role: String(req.user?.role || ""),
         ownerForm: ownerForm || null,
@@ -247,15 +315,7 @@ export async function createBusinessRegistrationInquiry(req, res) {
       },
     });
 
-    emitAppEventToRoles(["admin"], "comm:badge-update", {
-      key: "inquiry",
-      delta: 1,
-    });
-
-    emitAppEventToRoles(["admin"], "support:inquiry-created", {
-      inquiry: buildInquiryRealtimePayload(inquiry, "created"),
-      unreadCountDelta: 1,
-    });
+    emitInquiryCreated(inquiry);
 
     return res.status(201).json({
       success: true,
@@ -283,10 +343,12 @@ export async function adminListBusinessRegistrationInquiries(req, res) {
   try {
     const status = String(req.query?.status || "").trim();
     const type = String(req.query?.type || "").trim();
+    const target = String(req.query?.target || "").trim();
     const limit = Math.min(200, Number(req.query?.limit || 50) || 50);
     const filter = {};
     if (status) filter.status = status;
     if (type) filter.type = type;
+    if (target === "salesTeam") filter.targetRoles = "salesTeam";
     const inquiries = await BusinessRegistrationInquiry.find(filter)
       .sort({ createdAt: -1 })
       .limit(limit)
@@ -337,7 +399,7 @@ export async function adminResolveBusinessRegistrationInquiry(req, res) {
     const nextStatus = status === "resolved" ? "resolved" : "open";
 
     const prevInquiry = await BusinessRegistrationInquiry.findById(req.params.id)
-      .select("status")
+      .select("status targetRoles")
       .lean();
     if (!prevInquiry) {
       return res.status(404).json({
@@ -370,26 +432,99 @@ export async function adminResolveBusinessRegistrationInquiry(req, res) {
       });
     }
 
-    if (prevStatus !== nextStatus) {
-      const delta =
-        prevStatus === "open" && nextStatus === "resolved"
-          ? -1
-          : prevStatus === "resolved" && nextStatus === "open"
-            ? 1
-            : 0;
-      if (delta !== 0) {
-        emitAppEventToRoles(["admin"], "comm:badge-update", {
-          key: "inquiry",
-          delta,
-        });
-      }
+    emitInquiryUpdated(inquiry, prevStatus, nextStatus);
+
+    return res.json({ success: true, data: inquiry });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "문의 처리 중 오류가 발생했습니다.",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+}
+
+/**
+ * 영업 대상 문의 목록 (영업본부 · 관리자)
+ * @route GET /api/sales-team/inquiries
+ */
+export async function salesTeamListInquiries(req, res) {
+  try {
+    const status = String(req.query?.status || "").trim();
+    const type = String(req.query?.type || "").trim();
+    const limit = Math.min(200, Number(req.query?.limit || 50) || 50);
+    const filter = { targetRoles: "salesTeam" };
+    if (status) filter.status = status;
+    if (type) filter.type = type;
+    const inquiries = await BusinessRegistrationInquiry.find(filter)
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .populate("user", "name email role business")
+      .lean();
+    return res.json({ success: true, data: inquiries });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "문의 목록 조회 중 오류가 발생했습니다.",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+}
+
+/**
+ * 영업 대상 문의 답변 (영업본부 · 관리자)
+ * @route PATCH /api/sales-team/inquiries/:id
+ */
+export async function salesTeamResolveInquiry(req, res) {
+  try {
+    const { status, adminNote } = req.body || {};
+    const nextStatus = status === "resolved" ? "resolved" : "open";
+
+    const prevInquiry = await BusinessRegistrationInquiry.findById(req.params.id)
+      .select("status targetRoles")
+      .lean();
+    if (!prevInquiry) {
+      return res.status(404).json({
+        success: false,
+        message: "문의 내역을 찾을 수 없습니다.",
+      });
     }
 
-    emitAppEventToRoles(["admin"], "support:inquiry-updated", {
-      inquiry: buildInquiryRealtimePayload(inquiry, "updated"),
-      previousStatus: prevStatus,
-      nextStatus,
-    });
+    const targets = Array.isArray(prevInquiry.targetRoles)
+      ? prevInquiry.targetRoles.map((r) => String(r))
+      : [];
+    if (!targets.includes("salesTeam")) {
+      return res.status(403).json({
+        success: false,
+        message: "영업 대상 문의만 답변할 수 있습니다.",
+      });
+    }
+
+    const prevStatus = String(prevInquiry.status || "open").trim() || "open";
+
+    const inquiry = await BusinessRegistrationInquiry.findByIdAndUpdate(
+      req.params.id,
+      {
+        $set: {
+          status: nextStatus,
+          adminNote: String(adminNote || "").trim(),
+          resolvedAt: nextStatus === "resolved" ? new Date() : null,
+          resolvedBy: nextStatus === "resolved" ? req.user?._id : null,
+        },
+      },
+      { new: true },
+    )
+      .populate("user", "name email role business")
+      .lean();
+
+    if (!inquiry) {
+      return res.status(404).json({
+        success: false,
+        message: "문의 내역을 찾을 수 없습니다.",
+      });
+    }
+
+    emitInquiryUpdated(inquiry, prevStatus, nextStatus);
 
     return res.json({ success: true, data: inquiry });
   } catch (error) {
@@ -409,4 +544,6 @@ export default {
   adminListBusinessRegistrationInquiries,
   adminGetBusinessRegistrationInquiry,
   adminResolveBusinessRegistrationInquiry,
+  salesTeamListInquiries,
+  salesTeamResolveInquiry,
 };
