@@ -28,7 +28,13 @@ import { useSocket } from "@/shared/hooks/useSocket";
 // - web/frontend/src/pages/devops/DevopsPaymentsPage.tsx
 // - web/frontend/src/features/settings/tabs/LabSettlementPayoutTab.tsx
 // - web/frontend/src/features/dashboard/DashboardHome.tsx
-// - web/frontend/src/pages/admin/partners/AdminPartnersPage.tsx
+// - web/frontend/src/pages/admin/AdminMembersPage.tsx
+// - web/frontend/src/pages/admin/AdminSupportHubPage.tsx
+// - web/frontend/src/pages/admin/AdminChannelsPage.tsx
+// - web/frontend/src/pages/admin/AdminFinancePage.tsx
+// - web/frontend/src/pages/admin/AdminSettingsHubPage.tsx
+// change-log:
+// - 2026-09-06: 관리자 사이드 허브(회원·지원·채널·재무·설정) + 구 URL 리다이렉트.
 
 const Index = lazy(() => import("./pages/public/Index"));
 const ManualPage = lazy(() => import("./pages/public/ManualPage"));
@@ -82,15 +88,14 @@ const SalesPerformancePage = lazy(
 const SalesRequirementsPage = lazy(
   () => import("./pages/salesTeam/SalesRequirementsPage"),
 );
-const AdminPlatformSettingsPage = lazy(() =>
-  import("./pages/admin/system/AdminPlatformSettingsPage").then((m) => ({
-    default: m.AdminPlatformSettingsPage,
-  })),
+const AdminMembersPage = lazy(() => import("./pages/admin/AdminMembersPage"));
+const AdminSupportHubPage = lazy(
+  () => import("./pages/admin/AdminSupportHubPage"),
 );
-const AdminPartnersPage = lazy(() =>
-  import("./pages/admin/partners/AdminPartnersPage").then((m) => ({
-    default: m.AdminPartnersPage,
-  })),
+const AdminChannelsPage = lazy(() => import("./pages/admin/AdminChannelsPage"));
+const AdminFinancePage = lazy(() => import("./pages/admin/AdminFinancePage"));
+const AdminSettingsHubPage = lazy(
+  () => import("./pages/admin/AdminSettingsHubPage"),
 );
 const SettingsPage = lazy(() =>
   import("./features/dashboard/SettingsPage").then((m) => ({
@@ -112,24 +117,11 @@ const InquiriesPage = lazy(() =>
     default: m.InquiriesPage,
   })),
 );
-import { AdminUserManagement } from "@/pages/admin/users/AdminUserManagement";
 import { AdminRequestMonitoring } from "@/pages/admin/requests/AdminRequestMonitoring";
-import AdminMailPage from "@/pages/admin/support/AdminMailPage";
-import AdminSmsPage from "@/pages/admin/support/AdminSmsPage";
-const AdminChatManagement = lazy(() =>
-  import("@/pages/admin/support/AdminChatManagement").then((m) => ({
-    default: m.AdminChatManagement,
-  })),
-);
-const AdminRemoteSupportPage = lazy(
-  () => import("@/pages/admin/support/AdminRemoteSupportPage"),
-);
 import AdminInquiriesPage from "@/pages/admin/support/AdminBusinessRegistrationInquiryPage";
-import AdminTaxInvoices from "@/pages/admin/system/AdminTaxInvoices";
 import AdminSettlementBatches from "@/pages/admin/system/AdminSettlementBatches";
 import { AdminSecurity } from "@/pages/admin/system/AdminSecurity";
 import AdminOrganizationVerification from "@/pages/admin/system/AdminOrganizationVerification";
-import AdminCreditPage from "@/pages/admin/credits/AdminCreditPage";
 import RequestorCreditsPage from "@/pages/requestor/credits/RequestorCreditsPage";
 import RequestorStorePage from "@/pages/requestor/store/RequestorStorePage";
 import RequestorStoreProductPage from "@/pages/requestor/store/RequestorStoreProductPage";
@@ -138,10 +130,8 @@ import RequestorStoreOrdersPage, {
   RequestorStoreOrderDetailPage,
 } from "@/pages/requestor/store/RequestorStoreOrdersPage";
 import AdminStorePage from "@/pages/admin/system/AdminStorePage";
-import AdminBusinessPage from "@/pages/admin/businesses/AdminBusinessPage";
 import ReferralGroupsPage from "@/pages/requestor/referralGroups/ReferralGroupsPage";
 import SalesmanPaymentsPage from "@/pages/salesman/SalesmanPaymentsPage";
-import AdminPaymentsPage from "@/pages/admin/AdminPaymentsPage";
 import DevopsPaymentsPage from "@/pages/devops/DevopsPaymentsPage";
 import { LabSettlementPayoutTab } from "@/features/settings/tabs/LabSettlementPayoutTab";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
@@ -285,7 +275,9 @@ const PaymentsRoute = () => {
   if (user.role === "manufacturer") return <ManufacturerPaymentPage />;
   if (user.role === "salesman") return <SalesmanPaymentsPage />;
   if (user.role === "devops") return <DevopsPaymentsPage />;
-  if (user.role === "admin") return <AdminPaymentsPage />;
+  if (user.role === "admin") {
+    return <Navigate to="/dashboard/finance?tab=payments" replace />;
+  }
   if (user.role === "internalLab") return <LabSettlementPayoutTab />;
   // 기공소(requestor lab) 사이드「정산」은 제거. 구 북마크는 크레딧 내역으로.
   if (user.role === "requestor") {
@@ -301,7 +293,9 @@ const CreditsRoute = () => {
   const { user } = useAuthStore();
 
   if (!user) return <Navigate to="/dashboard" replace />;
-  if (user.role === "admin") return <AdminCreditPage />;
+  if (user.role === "admin") {
+    return <Navigate to="/dashboard/finance" replace />;
+  }
   if (user.role === "requestor" || user.role === "internalLab") {
     return <RequestorCreditsPage />;
   }
@@ -310,11 +304,18 @@ const CreditsRoute = () => {
 
 const InquiriesRoute = () => {
   const { user } = useAuthStore();
+  const location = useLocation();
   if (!user) return <Navigate to="/dashboard" replace />;
   if (user.role === "practice") {
     return <Navigate to="/practice/inquiries" replace />;
   }
-  if (user.role === "admin") return <AdminInquiriesPage />;
+  if (user.role === "admin") {
+    const next = new URLSearchParams(location.search);
+    next.set("tab", "inquiries");
+    return (
+      <Navigate to={`/dashboard/support?${next.toString()}`} replace />
+    );
+  }
   if (user.role === "salesTeam") {
     return <AdminInquiriesPage mode="salesTeam" />;
   }
@@ -331,7 +332,32 @@ const SettingsRoute = () => {
   const tab = new URLSearchParams(location.search).get("tab");
   // 구 북마크: 관리자 설정 결제 → 플랫폼 설정(크레딧)
   if (user.role === "admin" && tab === "payment") {
-    return <Navigate to="/dashboard/platform-settings?tab=credits" replace />;
+    return (
+      <Navigate
+        to="/dashboard/admin-settings?tab=platform&platformTab=credits"
+        replace
+      />
+    );
+  }
+  if (user.role === "admin") {
+    const next = new URLSearchParams(location.search);
+    const accountTab = next.get("tab");
+    next.delete("tab");
+    next.set("tab", "account");
+    if (
+      accountTab &&
+      accountTab !== "payment" &&
+      ["account", "business", "staff", "notifications"].includes(accountTab)
+    ) {
+      next.set("accountTab", accountTab);
+    }
+    const qs = next.toString();
+    return (
+      <Navigate
+        to={`/dashboard/admin-settings${qs ? `?${qs}` : "?tab=account"}`}
+        replace
+      />
+    );
   }
   // 구 북마크: 의뢰자 설정 결제 → 사이드바 크레딧 충전
   if (
@@ -347,14 +373,50 @@ const LegacyPartnerRedirect = () => {
   const { user } = useAuthStore();
   const location = useLocation();
   if (user?.role === "admin") {
+    const next = new URLSearchParams(location.search);
+    const partnersTab = next.get("tab");
+    next.delete("tab");
+    next.set("tab", "partners");
+    if (partnersTab) next.set("partnersTab", partnersTab);
     return (
       <Navigate
-        to={`/dashboard/platform-settings${location.search || ""}`}
+        to={`/dashboard/admin-settings?${next.toString()}`}
         replace
       />
     );
   }
   return <Navigate to="/dashboard" replace />;
+};
+
+const AdminPlatformSettingsRedirect = () => {
+  const location = useLocation();
+  const next = new URLSearchParams(location.search);
+  const platformTab = next.get("tab");
+  next.delete("tab");
+  next.set("tab", "platform");
+  if (platformTab) next.set("platformTab", platformTab);
+  return (
+    <Navigate to={`/dashboard/admin-settings?${next.toString()}`} replace />
+  );
+};
+
+const AdminRemoteSupportRedirect = () => {
+  const location = useLocation();
+  const next = new URLSearchParams(location.search);
+  // Hub default tab is remote — drop redundant tab=room stays for deep-link.
+  if (!next.get("tab") || next.get("tab") === "room") {
+    // keep sessionId; room is an in-page tab, not hub tab
+  } else if (next.get("tab") === "remote") {
+    next.delete("tab");
+  }
+  const qs = next.toString();
+  return <Navigate to={`/dashboard/support${qs ? `?${qs}` : ""}`} replace />;
+};
+
+const AdminBusinessesRedirect = () => {
+  const location = useLocation();
+  const qs = location.search || "";
+  return <Navigate to={`/dashboard/members${qs}`} replace />;
 };
 
 const SignupEntryRoute = () => {
@@ -683,7 +745,15 @@ const App = () => {
                     path="platform-settings"
                     element={
                       <RoleProtectedRoute roles={["admin"]}>
-                        <AdminPlatformSettingsPage />
+                        <AdminPlatformSettingsRedirect />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="admin-settings"
+                    element={
+                      <RoleProtectedRoute roles={["admin"]}>
+                        <AdminSettingsHubPage />
                       </RoleProtectedRoute>
                     }
                   />
@@ -691,7 +761,10 @@ const App = () => {
                     path="partners"
                     element={
                       <RoleProtectedRoute roles={["admin"]}>
-                        <AdminPartnersPage />
+                        <Navigate
+                          to="/dashboard/admin-settings?tab=partners"
+                          replace
+                        />
                       </RoleProtectedRoute>
                     }
                   />
@@ -721,10 +794,18 @@ const App = () => {
                     }
                   />
                   <Route
+                    path="members"
+                    element={
+                      <RoleProtectedRoute roles={["admin"]}>
+                        <AdminMembersPage />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route
                     path="businesses"
                     element={
                       <RoleProtectedRoute roles={["admin"]}>
-                        <AdminBusinessPage />
+                        <AdminBusinessesRedirect />
                       </RoleProtectedRoute>
                     }
                   />
@@ -732,7 +813,7 @@ const App = () => {
                     path="users"
                     element={
                       <RoleProtectedRoute roles={["admin"]}>
-                        <AdminUserManagement />
+                        <Navigate to="/dashboard/members?tab=users" replace />
                       </RoleProtectedRoute>
                     }
                   />
@@ -741,7 +822,7 @@ const App = () => {
                     path="user-management"
                     element={
                       <RoleProtectedRoute roles={["admin"]}>
-                        <AdminUserManagement />
+                        <Navigate to="/dashboard/members?tab=users" replace />
                       </RoleProtectedRoute>
                     }
                   />
@@ -763,10 +844,34 @@ const App = () => {
                     }
                   />
                   <Route
+                    path="channels"
+                    element={
+                      <RoleProtectedRoute roles={["admin"]}>
+                        <AdminChannelsPage />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="support"
+                    element={
+                      <RoleProtectedRoute roles={["admin"]}>
+                        <AdminSupportHubPage />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="finance"
+                    element={
+                      <RoleProtectedRoute roles={["admin"]}>
+                        <AdminFinancePage />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route
                     path="mail"
                     element={
                       <RoleProtectedRoute roles={["admin"]}>
-                        <AdminMailPage />
+                        <Navigate to="/dashboard/channels?tab=mail" replace />
                       </RoleProtectedRoute>
                     }
                   />
@@ -774,7 +879,10 @@ const App = () => {
                     path="admin/inquiries"
                     element={
                       <RoleProtectedRoute roles={["admin"]}>
-                        <AdminInquiriesPage />
+                        <Navigate
+                          to="/dashboard/support?tab=inquiries"
+                          replace
+                        />
                       </RoleProtectedRoute>
                     }
                   />
@@ -799,7 +907,7 @@ const App = () => {
                     path="sms"
                     element={
                       <RoleProtectedRoute roles={["admin"]}>
-                        <AdminSmsPage />
+                        <Navigate to="/dashboard/channels?tab=sms" replace />
                       </RoleProtectedRoute>
                     }
                   />
@@ -807,7 +915,7 @@ const App = () => {
                     path="chat-management"
                     element={
                       <RoleProtectedRoute roles={["admin"]}>
-                        <AdminChatManagement />
+                        <Navigate to="/dashboard/channels" replace />
                       </RoleProtectedRoute>
                     }
                   />
@@ -815,7 +923,7 @@ const App = () => {
                     path="remote-support"
                     element={
                       <RoleProtectedRoute roles={["admin"]}>
-                        <AdminRemoteSupportPage />
+                        <AdminRemoteSupportRedirect />
                       </RoleProtectedRoute>
                     }
                   />
@@ -823,7 +931,7 @@ const App = () => {
                     path="tax-invoices"
                     element={
                       <RoleProtectedRoute roles={["admin"]}>
-                        <AdminTaxInvoices />
+                        <Navigate to="/dashboard/finance?tab=tax" replace />
                       </RoleProtectedRoute>
                     }
                   />

@@ -44,6 +44,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { useAuthStore } from "@/store/useAuthStore";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
+import { AdminPageShell } from "@/pages/admin/adminUi";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
 import {
@@ -2077,7 +2078,12 @@ export const AdminDashboardPage = () => {
   }
 
   return (
-    <>
+    <AdminPageShell
+      title="홈"
+      subtitle="운영 현황을 한눈에 봅니다."
+      flush
+      className="pb-8 sm:pb-10"
+    >
       <DashboardShell
         title={`안녕하세요, ${user.name}님!`}
         subtitle="시스템 관리 대시보드입니다."
@@ -2086,7 +2092,7 @@ export const AdminDashboardPage = () => {
         topSection={undefined}
         stats={
           <>
-            <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {/* 카드1: 진행 / 완료 */}
               <Card className="app-glass-card app-glass-card--lg">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -2833,7 +2839,9 @@ export const AdminDashboardPage = () => {
                 type="button"
                 className="text-xs font-medium text-primary-strong hover:underline"
                 onClick={() =>
-                  navigate("/dashboard/platform-settings?tab=customAbut")
+                  navigate(
+                    "/dashboard/admin-settings?tab=platform&platformTab=customAbut",
+                  )
                 }
               >
                 커스텀어벗 설정에서 도입 처리 →
@@ -3273,7 +3281,9 @@ export const AdminDashboardPage = () => {
             variant: "primary",
             onClick: () => {
               setUnsupportedAbutmentDetailItem(null);
-              navigate("/dashboard/platform-settings?tab=customAbut");
+              navigate(
+                "/dashboard/admin-settings?tab=platform&platformTab=customAbut",
+              );
             },
           },
           {
@@ -4545,6 +4555,6 @@ export const AdminDashboardPage = () => {
           },
         ]}
       />
-    </>
+    </AdminPageShell>
   );
 };

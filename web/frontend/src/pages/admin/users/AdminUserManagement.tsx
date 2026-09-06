@@ -428,7 +428,11 @@ const getRequestorCapabilityBadges = (
   );
 };
 
-export const AdminUserManagement = () => {
+export const AdminUserManagement = ({
+  embedded = false,
+}: {
+  embedded?: boolean;
+} = {}) => {
   const { toast } = useToast();
   const { token } = useAuthStore();
   const { period, setPeriod } = usePeriodStore();
@@ -953,7 +957,13 @@ export const AdminUserManagement = () => {
   ] as const;
 
   return (
-    <div className="flex h-full min-h-0 flex-col px-2 pt-4 pb-2 sm:px-5 sm:pt-4">
+    <div
+      className={
+        embedded
+          ? "flex h-full min-h-0 flex-col px-0 pt-2 pb-2"
+          : "flex h-full min-h-0 flex-col px-2 pt-4 pb-2 sm:px-5 sm:pt-4"
+      }
+    >
       <div className="mx-auto flex w-full max-w-7xl flex-1 min-h-0 flex-col gap-4 overflow-y-auto">
         <div className="grid grid-cols-2 gap-2.5 p-0.5 md:grid-cols-4 xl:grid-cols-7">
           {statsCards.map((card) => {

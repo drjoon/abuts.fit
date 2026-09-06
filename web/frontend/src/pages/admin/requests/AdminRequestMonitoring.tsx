@@ -13,6 +13,7 @@
 // - web/backend/services/requestStageStats.service.js
 // - web/backend/controllers/requests/common.requests.controller.js
 import { useState, useEffect, useRef, useMemo } from "react";
+import { AdminPageShell } from "@/pages/admin/adminUi";
 import { useSearchParams } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
 import { usePeriodStore, periodToRange } from "@/store/usePeriodStore";
@@ -477,7 +478,13 @@ export const AdminRequestMonitoring = () => {
   ];
 
   return (
-    <div className="flex h-full min-h-0 flex-col px-2 pt-4 pb-2 sm:px-4 sm:pt-4">
+    <AdminPageShell
+      title="의뢰"
+      subtitle="진행·완료 의뢰를 모니터링합니다."
+      flush
+      className="flex min-h-0 flex-1 flex-col"
+    >
+    <div className="flex h-full min-h-0 flex-col px-0 pt-1 pb-2">
       <div className="mx-auto flex w-full max-w-7xl flex-1 min-h-0 flex-col gap-4 overflow-y-auto">
         <div className="flex flex-wrap items-center gap-3 px-0.5">
           <div className="relative min-w-0 w-full flex-1 sm:min-w-[200px]">
@@ -693,5 +700,6 @@ export const AdminRequestMonitoring = () => {
         </div>
       </div>
     </div>
+    </AdminPageShell>
   );
 };

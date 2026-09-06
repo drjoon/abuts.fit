@@ -109,7 +109,11 @@ const getConversationTargetTitle = (room: ChatRoom) => {
   return room.relatedRequestId?.requestId || room.title || "채팅";
 };
 
-export const AdminChatManagement = () => {
+export const AdminChatManagement = ({
+  embedded = false,
+}: {
+  embedded?: boolean;
+} = {}) => {
   const { token, user } = useAuthStore();
   const { period, setPeriod } = usePeriodStore();
   const { toast } = useToast();
@@ -418,7 +422,13 @@ export const AdminChatManagement = () => {
   };
 
   return (
-    <div className="flex flex-col h-full min-h-0 bg-gradient-subtle p-4">
+    <div
+      className={
+        embedded
+          ? "flex h-full min-h-0 flex-col bg-gradient-subtle p-0 pt-2"
+          : "flex h-full min-h-0 flex-col bg-gradient-subtle p-4"
+      }
+    >
       <div className="max-w-7xl w-full mx-auto space-y-6 flex flex-col flex-1 min-h-0">
         {/* Header */}
 

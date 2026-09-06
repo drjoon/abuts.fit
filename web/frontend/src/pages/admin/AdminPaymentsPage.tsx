@@ -343,7 +343,11 @@ function AffiliateGroupCard({ group }: { group: AnchorGroup }) {
   );
 }
 
-export default function AdminPaymentsPage() {
+export default function AdminPaymentsPage({
+  embedded = false,
+}: {
+  embedded?: boolean;
+} = {}) {
   const { token, user } = useAuthStore();
   const { period, setPeriod, customStartDate, customEndDate } = usePeriodStore();
   const { toast } = useToast();
@@ -781,7 +785,13 @@ export default function AdminPaymentsPage() {
   if (!user || user.role !== "admin") return null;
 
   return (
-    <div className="custom-scrollbar workspace-nested-scroll h-full min-h-0 overflow-auto">
+    <div
+      className={
+        embedded
+          ? "custom-scrollbar workspace-nested-scroll h-full min-h-0 overflow-auto pt-2"
+          : "custom-scrollbar workspace-nested-scroll h-full min-h-0 overflow-auto"
+      }
+    >
     <DashboardShell
       title="정산"
       subtitle="어벗츠 3사업 · 기간 집계"

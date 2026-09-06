@@ -28,8 +28,13 @@ const LEGACY_TAB_REDIRECT: Record<string, TabKey> = {
   salesPartner: "lab",
 };
 
-export const AdminPartnersPage = () => {
+export const AdminPartnersPage = ({
+  embedded = false,
+}: {
+  embedded?: boolean;
+} = {}) => {
   const [searchParams, setSearchParams] = useSearchParams();
+  const tabParamKey = embedded ? "partnersTab" : "tab";
 
   const tabs: SettingsTabDef[] = useMemo(
     () => [
@@ -55,7 +60,10 @@ export const AdminPartnersPage = () => {
     [],
   );
 
-  const rawTab = searchParams.get("tab") || "";
+  const rawTab =
+    searchParams.get(tabParamKey) ||
+    (!embedded ? searchParams.get("tab") : "") ||
+    "";
   const tabFromUrl = (LEGACY_TAB_REDIRECT[rawTab] || rawTab) as TabKey;
   const allowed = new Set(tabs.map((t) => t.key));
   const activeTab = allowed.has(tabFromUrl)
@@ -69,7 +77,8 @@ export const AdminPartnersPage = () => {
         activeTab={activeTab}
         onTabChange={(next) => {
           const nextParams = new URLSearchParams(searchParams);
-          nextParams.set("tab", next);
+          nextParams.set(tabParamKey, next);
+          if (embedded) nextParams.set("tab", "partners");
           setSearchParams(nextParams, { replace: true });
         }}
       />

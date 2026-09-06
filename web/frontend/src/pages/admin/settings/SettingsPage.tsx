@@ -19,9 +19,14 @@ import { User, Users, Bell, Building2 } from "lucide-react";
 
 type TabKey = "account" | "business" | "staff" | "notifications";
 
-export const AdminSettingsPage = () => {
+export const AdminSettingsPage = ({
+  embedded = false,
+}: {
+  embedded?: boolean;
+} = {}) => {
   const { user } = useAuthStore();
   const [searchParams, setSearchParams] = useSearchParams();
+  const tabParamKey = embedded ? "accountTab" : "tab";
 
   const tabs: SettingsTabDef[] = useMemo(
     () => [
@@ -54,7 +59,9 @@ export const AdminSettingsPage = () => {
   );
 
   const tabFromUrl =
-    (searchParams.get("tab") as TabKey | null) || (tabs[0]?.key as TabKey);
+    (searchParams.get(tabParamKey) as TabKey | null) ||
+    (embedded ? null : (searchParams.get("tab") as TabKey | null)) ||
+    (tabs[0]?.key as TabKey);
   const allowed = new Set(tabs.map((t) => t.key));
   const activeTab = allowed.has(tabFromUrl)
     ? tabFromUrl
@@ -64,7 +71,12 @@ export const AdminSettingsPage = () => {
     <SettingsScaffold
       tabs={tabs}
       activeTab={activeTab}
-      onTabChange={(next) => setSearchParams({ tab: next })}
+      onTabChange={(next) => {
+        const nextParams = new URLSearchParams(searchParams);
+        nextParams.set(tabParamKey, next);
+        if (embedded) nextParams.set("tab", "account");
+        setSearchParams(nextParams, { replace: true });
+      }}
     />
   );
 };

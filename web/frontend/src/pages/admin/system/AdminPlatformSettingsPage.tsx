@@ -52,10 +52,15 @@ const LEGACY_TAB_REDIRECT: Record<string, TabKey> = {
   roundBar: "customAbut",
 };
 
-export const AdminPlatformSettingsPage = () => {
+export const AdminPlatformSettingsPage = ({
+  embedded = false,
+}: {
+  embedded?: boolean;
+} = {}) => {
   const [searchParams, setSearchParams] = useSearchParams();
   const { token } = useAuthStore();
   const [abutsPendingCount, setAbutsPendingCount] = useState(0);
+  const tabParamKey = embedded ? "platformTab" : "tab";
 
   const refreshPendingCount = useCallback(async () => {
     if (!token) return;
@@ -157,7 +162,7 @@ export const AdminPlatformSettingsPage = () => {
     [abutsPendingCount, handlePendingCountChange],
   );
 
-  const rawTab = searchParams.get("tab");
+  const rawTab = searchParams.get(tabParamKey) || (!embedded ? searchParams.get("tab") : null);
   const mapped =
     rawTab && LEGACY_TAB_REDIRECT[rawTab]
       ? LEGACY_TAB_REDIRECT[rawTab]
@@ -174,7 +179,8 @@ export const AdminPlatformSettingsPage = () => {
       activeTab={activeTab}
       onTabChange={(next) => {
         const nextParams = new URLSearchParams(searchParams);
-        nextParams.set("tab", next);
+        nextParams.set(tabParamKey, next);
+        if (embedded) nextParams.set("tab", "platform");
         setSearchParams(nextParams, { replace: true });
       }}
       highlightTabKey={abutsPendingCount > 0 ? "abutsFees" : undefined}

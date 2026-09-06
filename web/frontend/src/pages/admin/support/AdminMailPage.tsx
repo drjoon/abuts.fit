@@ -28,7 +28,11 @@ import {
 } from "@/features/admin/mail/mailApi";
 import { useIsMobile } from "@/shared/hooks/use-mobile";
 
-export const AdminMailPage = () => {
+export const AdminMailPage = ({
+  embedded = false,
+}: {
+  embedded?: boolean;
+} = {}) => {
   const { toast } = useToast();
   const isMobile = useIsMobile();
   const [mobileShowList, setMobileShowList] = useState(true);
@@ -182,7 +186,7 @@ export const AdminMailPage = () => {
   };
 
   return (
-    <div className="p-2 sm:p-4 space-y-4">
+    <div className={embedded ? "space-y-4 p-0 pt-2" : "space-y-4 p-2 sm:p-4"}>
       <Tabs value={tab} onValueChange={(v) => setTab(v as any)}>
         <TabsList className="flex flex-wrap items-center gap-2 w-full">
           <TabsTrigger value="inbox" className="gap-2">

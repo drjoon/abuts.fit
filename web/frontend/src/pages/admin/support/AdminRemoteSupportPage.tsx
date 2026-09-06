@@ -85,7 +85,11 @@ function statusLabel(status: string) {
   }
 }
 
-export default function AdminRemoteSupportPage() {
+export default function AdminRemoteSupportPage({
+  embedded = false,
+}: {
+  embedded?: boolean;
+} = {}) {
   const token = useAuthStore((s) => s.token);
   const { toast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -93,7 +97,11 @@ export default function AdminRemoteSupportPage() {
   const customStartDate = usePeriodStore((s) => s.customStartDate);
   const customEndDate = usePeriodStore((s) => s.customEndDate);
 
-  const [tab, setTab] = useState(() => searchParams.get("tab") || "queue");
+  const [tab, setTab] = useState(() => {
+    const raw = searchParams.get("tab");
+    if (raw === "room" || raw === "queue") return raw;
+    return "queue";
+  });
   const deepLinkHandledRef = useRef<string | null>(null);
   const [queue, setQueue] = useState<RemoteSupportSession[]>([]);
   const [history, setHistory] = useState<RemoteSupportSession[]>([]);
@@ -258,7 +266,17 @@ export default function AdminRemoteSupportPage() {
         });
       } finally {
         if (!cancelled) {
-          setSearchParams({}, { replace: true });
+          setSearchParams(
+            (prev) => {
+              const next = new URLSearchParams(prev);
+              next.delete("sessionId");
+              if (next.get("tab") === "room" || next.get("tab") === "queue") {
+                next.delete("tab");
+              }
+              return next;
+            },
+            { replace: true },
+          );
         }
       }
     })();
@@ -504,17 +522,29 @@ export default function AdminRemoteSupportPage() {
   }, []);
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 p-4 lg:p-6">
+    <div
+      className={
+        embedded
+          ? "mx-auto flex w-full max-w-6xl flex-col gap-4 px-0 pt-2"
+          : "mx-auto flex w-full max-w-6xl flex-col gap-4 p-4 lg:p-6"
+      }
+    >
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="flex items-center gap-2 text-xl font-semibold">
-            <Headphones className="h-5 w-5" />
-            원격 지원
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            직원 화면을 보고 커서·키보드를 대신 조작합니다. (플랫폼 화면만)
-          </p>
-        </div>
+        {embedded ? (
+          <div className="text-sm text-muted-foreground">
+            직원 화면을 보고 커서·키보드를 대신 조작합니다.
+          </div>
+        ) : (
+          <div>
+            <h1 className="flex items-center gap-2 text-xl font-semibold">
+              <Headphones className="h-5 w-5" />
+              원격 지원
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              직원 화면을 보고 커서·키보드를 대신 조작합니다. (플랫폼 화면만)
+            </p>
+          </div>
+        )}
         <div className="flex flex-wrap items-center gap-2">
           <PeriodFilter
             value={period}

@@ -4,6 +4,7 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/shared/realtime/useAppEventListener.ts
 // change-log:
+// - 2026-09-06: 지원·채널 허브 합산 배지·탭 단위 clear.
 // - 2026-09-06: remoteSupport 배지 키·href 추가.
 // - 2026-08-26: 초기 fetch가 방문 clear를 덮어쓰지 않도록 cleared 키 유지.
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -24,10 +25,26 @@ export type CommBadgeCounts = Record<CommBadgeKey, number>;
 const COMM_BADGE_HREFS: Record<string, CommBadgeKey> = {
   "/dashboard/monitoring": "request",
   "/dashboard/chat-management": "chat",
+  "/dashboard/channels": "chat",
   "/dashboard/sms": "sms",
   "/dashboard/mail": "mail",
   "/dashboard/inquiries": "inquiry",
+  "/dashboard/support": "remoteSupport",
   "/dashboard/remote-support": "remoteSupport",
+};
+
+const HUB_BADGE_KEYS: Record<string, CommBadgeKey[]> = {
+  "/dashboard/support": ["remoteSupport", "inquiry"],
+  "/dashboard/channels": ["chat", "sms", "mail"],
+  "/dashboard/monitoring": ["request"],
+};
+
+const TAB_BADGE_KEYS: Record<string, CommBadgeKey> = {
+  remote: "remoteSupport",
+  inquiries: "inquiry",
+  chat: "chat",
+  sms: "sms",
+  mail: "mail",
 };
 
 const INITIAL_COUNTS: CommBadgeCounts = {
@@ -101,20 +118,49 @@ export function useAdminCommBadges() {
   /**
    * 특정 소통 페이지를 방문했을 때 해당 배지를 0으로 초기화.
    * DashboardLayout에서 경로 변경 시 호출.
+   * 허브는 활성 탭 키만 clear (search의 tab).
    */
-  const clearBadgeForPath = useCallback((pathname: string) => {
-    const key = COMM_BADGE_HREFS[pathname];
-    const nextCleared = new Set<CommBadgeKey>();
-    if (key) {
-      nextCleared.add(key);
-      setCounts((prev) => (prev[key] === 0 ? prev : { ...prev, [key]: 0 }));
+  const clearBadgeForPath = useCallback((pathname: string, search = "") => {
+    const path = String(pathname || "").replace(/\/$/, "") || "/";
+    const tab = new URLSearchParams(search).get("tab");
+    const keys = new Set<CommBadgeKey>();
+
+    if (path === "/dashboard/support") {
+      keys.add(TAB_BADGE_KEYS[tab || "remote"] || "remoteSupport");
+    } else if (path === "/dashboard/channels") {
+      keys.add(TAB_BADGE_KEYS[tab || "chat"] || "chat");
+    } else {
+      const single = COMM_BADGE_HREFS[path];
+      if (single) keys.add(single);
     }
-    clearedKeysRef.current = nextCleared;
+
+    if (keys.size === 0) {
+      clearedKeysRef.current = new Set();
+      return;
+    }
+
+    clearedKeysRef.current = keys;
+    setCounts((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const key of keys) {
+        if (next[key] !== 0) {
+          next[key] = 0;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
   }, []);
 
   const getBadgeForHref = useCallback(
     (href: string): number => {
-      const key = COMM_BADGE_HREFS[href];
+      const path = String(href || "").split("?")[0].replace(/\/$/, "") || "/";
+      const hubKeys = HUB_BADGE_KEYS[path];
+      if (hubKeys) {
+        return hubKeys.reduce((sum, key) => sum + (counts[key] ?? 0), 0);
+      }
+      const key = COMM_BADGE_HREFS[path];
       return key ? (counts[key] ?? 0) : 0;
     },
     [counts],

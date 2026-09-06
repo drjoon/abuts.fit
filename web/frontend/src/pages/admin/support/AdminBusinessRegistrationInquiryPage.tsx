@@ -108,8 +108,10 @@ const ContentBlock = ({
 
 export const AdminBusinessRegistrationInquiryPage = ({
   mode = "admin",
+  embedded = false,
 }: {
   mode?: InquiryInboxMode;
+  embedded?: boolean;
 } = {}) => {
   const { toast } = useToast();
   const isSalesInbox = mode === "salesTeam";
@@ -398,12 +400,20 @@ export const AdminBusinessRegistrationInquiryPage = ({
   ];
 
   return (
-    <div className="flex flex-col h-full min-h-0 bg-gradient-subtle p-2 sm:p-4">
-      <div className="max-w-7xl w-full mx-auto space-y-4 sm:space-y-6 flex flex-col flex-1 min-h-0">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-bold tracking-tight">{pageTitle}</h1>
-          <p className="text-sm text-muted-foreground">{pageDescription}</p>
-        </div>
+    <div
+      className={
+        embedded
+          ? "flex h-full min-h-0 flex-col bg-gradient-subtle p-0 pt-2"
+          : "flex h-full min-h-0 flex-col bg-gradient-subtle p-2 sm:p-4"
+      }
+    >
+      <div className="mx-auto flex w-full max-w-7xl min-h-0 flex-1 flex-col space-y-4 sm:space-y-6">
+        {embedded ? null : (
+          <div className="space-y-1">
+            <h1 className="text-2xl font-bold tracking-tight">{pageTitle}</h1>
+            <p className="text-sm text-muted-foreground">{pageDescription}</p>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-[420px_1fr] gap-4 flex-1 min-h-0">
           {showListPanel ? (

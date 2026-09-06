@@ -21,7 +21,11 @@ import { SalesmanCreditTab } from "./components/SalesmanCreditTab";
 import { AdminCreditApprovalDialogs } from "./components/AdminCreditApprovalDialogs";
 import { useAdminCreditPage } from "./hooks/useAdminCreditPage";
 
-export default function AdminCreditPage() {
+export default function AdminCreditPage({
+  embedded = false,
+}: {
+  embedded?: boolean;
+} = {}) {
   const state = useAdminCreditPage();
 
   const navigate = useNavigate();
@@ -84,7 +88,13 @@ export default function AdminCreditPage() {
   }, [state.salesmen, normalizedSearch]);
 
   return (
-    <div className="custom-scrollbar workspace-nested-scroll h-full min-h-0 overflow-auto">
+    <div
+      className={
+        embedded
+          ? "custom-scrollbar workspace-nested-scroll h-full min-h-0 overflow-auto pt-2"
+          : "custom-scrollbar workspace-nested-scroll h-full min-h-0 overflow-auto"
+      }
+    >
       <div className="space-y-5">
       <Tabs
         value={state.creditTab}
@@ -113,7 +123,7 @@ export default function AdminCreditPage() {
               type="button"
               variant="outline"
               className="h-10 rounded-xl"
-              onClick={() => navigate("/dashboard/businesses?reconcile=1")}
+              onClick={() => navigate("/dashboard/members?reconcile=1")}
             >
               <Wrench className="mr-2 h-4 w-4" />
               크레딧 업데이트

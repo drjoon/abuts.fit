@@ -211,7 +211,11 @@ const statusBadge = (status: SmsHistoryItem["status"]) => {
   }
 };
 
-export default function AdminSmsPage() {
+export default function AdminSmsPage({
+  embedded = false,
+}: {
+  embedded?: boolean;
+} = {}) {
   const [tab, setTab] = useState<"send" | "history">("send");
   const [manualTo, setManualTo] = useState("");
   const [selectedRecipients, setSelectedRecipients] = useState<
@@ -1039,7 +1043,7 @@ export default function AdminSmsPage() {
     (selectedRecipients.length > 0 || !!manualTo.trim());
 
   return (
-    <div className="p-4 space-y-4">
+    <div className={embedded ? "space-y-4 p-0 pt-2" : "space-y-4 p-4"}>
       <Tabs value={tab} onValueChange={(v) => setTab(v as "send" | "history")}>
         <TabsList>
           <TabsTrigger value="send" className="gap-2">

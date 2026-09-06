@@ -15,6 +15,7 @@ import {
 } from "@/shared/layout/sidebarOpen";
 import { cn } from "@/shared/ui/cn";
 
+// - 2026-09-06: 관리자 사이드 15→7(홈·회원·의뢰·지원·채널·재무·설정) + 섹션 그룹.
 // - 2026-09-06: 영업본부 사이드 9→6(오늘·거래처·성과·요구사항·문의·설정) + 섹션 그룹.
 // - 2026-09-06: 원격 지원 요청 전역 토스트·사이드 소통/재무 순서·원격지원 상단.
 // - 2026-09-05: 데모 모드면 잔액≤0「크레딧 부족」destructive 토스트 생략.
@@ -136,8 +137,6 @@ import {
 import {
   LayoutDashboard,
   MessageSquare,
-  Mail,
-  Send,
   FileText,
   BarChart3,
   Settings,
@@ -156,8 +155,6 @@ import {
   Boxes,
   Package,
   CheckCircle,
-  SlidersHorizontal,
-  Layers,
   ScanLine,
   PenTool,
   Store,
@@ -350,47 +347,13 @@ const sidebarItems = {
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
   admin: [
-    { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
-    { icon: Building2, label: "사업자", href: "/dashboard/businesses" },
-    { icon: Users, label: "사용자", href: "/dashboard/users" },
-    { icon: Wallet, label: "크레딧", href: "/dashboard/credits" },
-    {
-      icon: FileText,
-      label: "의뢰",
-      href: "/dashboard/monitoring",
-    },
-    { icon: Wallet, label: "정산", href: "/dashboard/payments" },
-    { icon: Wallet, label: "정산 배치", href: "/dashboard/settlement-batches" },
-    { icon: FileText, label: "세금계산서", href: "/dashboard/tax-invoices" },
-    { icon: Store, label: "스토어", href: "/dashboard/store-admin" },
-    {
-      icon: ClipboardList,
-      label: "고객 요구사항",
-      href: "/dashboard/sales/requirements",
-    },
-    {
-      icon: MessageSquare,
-      label: "채팅",
-      href: "/dashboard/chat-management",
-    },
-    {
-      icon: Send,
-      label: "메시지",
-      href: "/dashboard/sms",
-    },
-    {
-      icon: Mail,
-      label: "메일",
-      href: "/dashboard/mail",
-    },
-    {
-      icon: MessageSquare,
-      label: "문의",
-      href: "/dashboard/inquiries",
-    },
-    { icon: SlidersHorizontal, label: "플랫폼 설정", href: "/dashboard/platform-settings" },
-    { icon: Layers, label: "사업영역", href: "/dashboard/partners" },
-    { icon: Settings, label: "설정", href: "/dashboard/settings" },
+    { icon: LayoutDashboard, label: "홈", href: "/dashboard" },
+    { icon: Users, label: "회원", href: "/dashboard/members" },
+    { icon: FileText, label: "의뢰", href: "/dashboard/monitoring" },
+    { icon: Headphones, label: "지원", href: "/dashboard/support" },
+    { icon: MessageSquare, label: "채널", href: "/dashboard/channels" },
+    { icon: Wallet, label: "재무", href: "/dashboard/finance" },
+    { icon: Settings, label: "설정", href: "/dashboard/admin-settings" },
   ],
   labTeam: [{ icon: Settings, label: "설정", href: "/dashboard/settings" }],
   salesTeam: [
@@ -472,9 +435,9 @@ const adminSidebarSections: DashboardSidebarSection[] = [
   {
     title: "운영",
     items: [
-      { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
-      { icon: Building2, label: "사업자", href: "/dashboard/businesses" },
-      { icon: Users, label: "사용자", href: "/dashboard/users" },
+      { icon: LayoutDashboard, label: "홈", href: "/dashboard" },
+      { icon: Users, label: "회원", href: "/dashboard/members" },
+      { icon: FileText, label: "의뢰", href: "/dashboard/monitoring" },
     ],
   },
   {
@@ -482,38 +445,21 @@ const adminSidebarSections: DashboardSidebarSection[] = [
     items: [
       {
         icon: Headphones,
-        label: "원격 지원",
-        href: "/dashboard/remote-support",
+        label: "지원",
+        href: "/dashboard/support",
       },
-      { icon: FileText, label: "의뢰", href: "/dashboard/monitoring" },
       {
         icon: MessageSquare,
-        label: "채팅",
-        href: "/dashboard/chat-management",
+        label: "채널",
+        href: "/dashboard/channels",
       },
-      { icon: Send, label: "메시지", href: "/dashboard/sms" },
-      { icon: Mail, label: "메일", href: "/dashboard/mail" },
-      { icon: MessageSquare, label: "문의", href: "/dashboard/inquiries" },
     ],
   },
   {
-    title: "재무",
+    title: "재무 · 설정",
     items: [
-      { icon: Wallet, label: "크레딧", href: "/dashboard/credits" },
-      { icon: Wallet, label: "정산", href: "/dashboard/payments" },
-      { icon: FileText, label: "세금계산서", href: "/dashboard/tax-invoices" },
-    ],
-  },
-  {
-    title: "설정",
-    items: [
-      {
-        icon: SlidersHorizontal,
-        label: "플랫폼 설정",
-        href: "/dashboard/platform-settings",
-      },
-      { icon: Layers, label: "사업영역", href: "/dashboard/partners" },
-      { icon: Settings, label: "설정", href: "/dashboard/settings" },
+      { icon: Wallet, label: "재무", href: "/dashboard/finance" },
+      { icon: Settings, label: "설정", href: "/dashboard/admin-settings" },
     ],
   },
 ];
@@ -1227,8 +1173,8 @@ export const DashboardLayout = () => {
   const { getBadgeForHref, clearBadgeForPath } = useAdminCommBadges();
 
   useEffect(() => {
-    clearBadgeForPath(location.pathname);
-  }, [location.pathname, clearBadgeForPath]);
+    clearBadgeForPath(location.pathname, location.search);
+  }, [location.pathname, location.search, clearBadgeForPath]);
 
   useEffect(() => {
     if (user.role !== "admin" || !token) return;
@@ -1346,7 +1292,9 @@ export const DashboardLayout = () => {
           <ToastAction
             altText="기본 기공수가 열기"
             onClick={() => {
-              navigate("/dashboard/platform-settings?tab=abutsFees");
+              navigate(
+                "/dashboard/admin-settings?tab=platform&platformTab=abutsFees",
+              );
             }}
           >
             확인
@@ -1393,7 +1341,7 @@ export const DashboardLayout = () => {
                   // 이미 수락됐거나 만료된 경우에도 지원실로 이동
                 }
                 navigate(
-                  `/dashboard/remote-support?sessionId=${encodeURIComponent(sessionId)}&tab=room`,
+                  `/dashboard/support?sessionId=${encodeURIComponent(sessionId)}&tab=room`,
                 );
               })();
             }}
@@ -1454,7 +1402,7 @@ export const DashboardLayout = () => {
         const labTransferUnread = requestorKind === "lab" ? transferUnread : 0;
         return adminCommBadge + labTransferUnread + chatUnread;
       }
-      if (path === "/dashboard/platform-settings" && user.role === "admin") {
+      if (path === "/dashboard/admin-settings" && user.role === "admin") {
         return adminCommBadge + Math.max(0, abutsFeePendingCount);
       }
       return adminCommBadge;
@@ -1494,6 +1442,7 @@ export const DashboardLayout = () => {
   const isFillHeightWorkArea =
     location.pathname.startsWith("/dashboard/credits") ||
     location.pathname.startsWith("/dashboard/payments") ||
+    location.pathname.startsWith("/dashboard/finance") ||
     isLabReceiveWorkArea ||
     isPracticeOralScanWorkArea ||
     isWorksheetTrackingStage;

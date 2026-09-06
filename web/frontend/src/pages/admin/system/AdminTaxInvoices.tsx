@@ -169,7 +169,11 @@ function LabeledInput({
   );
 }
 
-export const AdminTaxInvoices = () => {
+export const AdminTaxInvoices = ({
+  embedded = false,
+}: {
+  embedded?: boolean;
+} = {}) => {
   const { token } = useAuthStore();
   const { toast } = useToast();
 
@@ -520,13 +524,19 @@ export const AdminTaxInvoices = () => {
   };
 
   return (
-    <div className="p-4 space-y-4">
+    <div className={embedded ? "space-y-4 p-0 pt-2" : "space-y-4 p-4"}>
       {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <h2 className="text-sm font-semibold flex items-center gap-2">
-          <FileText className="h-4 w-4" />
-          (세금)계산서 관리
-        </h2>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        {embedded ? (
+          <p className="text-xs text-muted-foreground">
+            발행·상계 문서를 관리합니다.
+          </p>
+        ) : (
+          <h2 className="flex items-center gap-2 text-sm font-semibold">
+            <FileText className="h-4 w-4" />
+            (세금)계산서 관리
+          </h2>
+        )}
         <div className="flex gap-2">
           <Button
             size="sm"
