@@ -24,6 +24,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/shared/ui/cn";
 import {
@@ -42,7 +43,6 @@ import SalesPlaceSuggestInput from "./SalesPlaceSuggestInput";
 import SalesPlacePickerDrawer from "./SalesPlacePickerDrawer";
 import SalesRouteMap from "./SalesRouteMap";
 import {
-  SalesDayPicker,
   SalesEmptyState,
   SalesListRow,
   SalesPageShell,
@@ -503,7 +503,6 @@ export default function SalesHomePage() {
               ]}
             />
             <div className="flex w-full shrink-0 items-center justify-end gap-2 lg:w-auto lg:justify-start">
-              <SalesDayPicker ymd={ymd} today={today} onChange={onYmdChange} />
               {tab === "schedule" ? (
                 <Button
                   size="sm"
@@ -984,7 +983,8 @@ export default function SalesHomePage() {
           <DialogHeader className="relative z-0 shrink-0 space-y-1 border-b border-slate-100 bg-background px-4 py-3.5 pr-14 text-left sm:px-5 sm:pr-14">
             <DialogTitle>방문 추가</DialogTitle>
             <DialogDescription>
-              상호를 고르면 방문 날짜를 동선 기준으로 제안합니다.
+              상호·위치를 고른 뒤 날짜·시간을 확인하고 「넣기」하세요. 동선
+              제안도 함께 보입니다.
             </DialogDescription>
           </DialogHeader>
           <div className="relative z-0 min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3.5 sm:px-5">
@@ -1060,11 +1060,45 @@ export default function SalesHomePage() {
               <p className="text-xs text-muted-foreground">
                 {pickedPlace.address}
                 {pickedPlace.phone ? ` · ${pickedPlace.phone}` : ""}
-                {" · "}
-                {formatDayLabel(ymd)} ·{" "}
-                {COMMITMENT_LABEL[commitment] || commitment}
               </p>
             ) : null}
+
+            <div className="space-y-2 rounded-xl border border-slate-200/80 bg-slate-50/60 px-3 py-2.5">
+              <p className="text-xs font-medium text-slate-700">
+                방문 날짜 · 시간
+              </p>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <Input
+                  type="date"
+                  value={ymd}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    if (!next) return;
+                    onYmdChange(next);
+                    setTime((prev) =>
+                      clampVisitHmAfterNow(prev, next, today),
+                    );
+                    setPreviewSuggestYmd(next);
+                  }}
+                  className="h-10 rounded-xl bg-white sm:min-w-[10.5rem] sm:flex-1"
+                />
+                <Input
+                  type="time"
+                  step={1800}
+                  value={time}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    if (!next) return;
+                    setTime(clampVisitHmAfterNow(next, ymd, today));
+                  }}
+                  className="h-10 rounded-xl bg-white sm:w-[8.5rem]"
+                />
+                <p className="text-xs text-muted-foreground sm:ml-auto">
+                  {formatDayLabel(ymd)} · {time} ·{" "}
+                  {COMMITMENT_LABEL[commitment] || commitment}
+                </p>
+              </div>
+            </div>
 
             {routeSuggestName.length >= 2 ? (
               <div className="space-y-2.5 border-t border-slate-100 pt-3">
@@ -1080,13 +1114,13 @@ export default function SalesHomePage() {
                 {!pickedPlace ? (
                   <p className="text-xs text-muted-foreground">
                     상호를 고르면 1순위 동선 · 2순위 인접일 날짜를 제안합니다.
-                    없으면 상단 날짜로 직접 넣으세요.
+                    없으면 위에서 날짜·시간을 직접 고르세요.
                   </p>
                 ) : null}
                 {pickedPlace && routeSuggestError ? (
                   <p className="text-xs text-amber-800">
                     {(routeSuggestError as Error).message ||
-                      "날짜 제안을 불러오지 못했습니다. 상단 날짜로 직접 넣으세요."}
+                      "날짜 제안을 불러오지 못했습니다. 위에서 날짜·시간을 직접 고르세요."}
                   </p>
                 ) : null}
                 {pickedPlace && routeSuggest?.message ? (
@@ -1098,8 +1132,8 @@ export default function SalesHomePage() {
                   <div className="rounded-xl border border-amber-200/80 bg-amber-50/70 px-3 py-2.5 text-xs text-amber-950">
                     <p className="font-medium">3순위 · 직접 선택</p>
                     <p className="mt-0.5 text-amber-900/80">
-                      효율 동선이 불명확합니다. 제안 카드를 고르거나, 상단 날짜와
-                      확정/그쯤을 맞춘 뒤 「넣기」하세요.
+                      효율 동선이 불명확합니다. 제안 카드를 고르거나, 위에서
+                      날짜·시간과 확정/그쯤을 맞춘 뒤 「넣기」하세요.
                       {(routeSuggest.suggestions || []).length > 0
                         ? " 아래 인접일 제안도 참고할 수 있습니다."
                         : ""}
@@ -1236,17 +1270,16 @@ export default function SalesHomePage() {
         }}
         initialQuery={placePickerSeed?.name || ""}
         seed={placePickerSeed}
-        confirmLabel={showForm ? "이 위치로 일정 넣기" : "이 위치로"}
+        confirmLabel="이 위치로"
         confirmDescription={
           showForm
-            ? `지도에서 맞는지 확인하면 ${formatDayLabel(ymd)} · ${COMMITMENT_LABEL[commitment] || commitment} 일정이 추가됩니다.`
+            ? "지도에서 맞는지 확인한 뒤, 방문 추가에서 날짜·시간을 고릅니다."
             : "지도에서 맞는지 확인한 뒤 이 위치로 저장합니다."
         }
         onConfirm={(place) => {
           if (showForm) {
             setPickedPlace(place);
             setPlaceQuery(place.name);
-            createMut.mutate(place);
             return;
           }
           if (placePickerAccountId || place.accountId) {
