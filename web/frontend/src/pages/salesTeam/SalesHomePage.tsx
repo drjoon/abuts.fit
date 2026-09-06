@@ -38,6 +38,7 @@ import {
   salesTeamApi,
   visitAccountName,
   type SalesPlaceSuggest,
+  type SalesVisit,
 } from "./salesTeamApi";
 import SalesPlaceSuggestInput from "./SalesPlaceSuggestInput";
 import SalesPlacePickerDrawer from "./SalesPlacePickerDrawer";
@@ -66,6 +67,49 @@ function formatVisitTime(iso: string) {
     minute: "2-digit",
     timeZone: "Asia/Seoul",
   });
+}
+
+function visitHmFromIso(iso: string) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Seoul",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date(iso));
+  const hour = parts.find((p) => p.type === "hour")?.value || "10";
+  const minute = parts.find((p) => p.type === "minute")?.value || "00";
+  return `${hour}:${minute}`;
+}
+
+function buildVisitPlannedAtIso(
+  visitYmd: string,
+  hm: string,
+  todayYmd: string,
+  commitmentValue: string,
+) {
+  const clamped = clampVisitHmAfterNow(hm, visitYmd, todayYmd);
+  const plannedAt = new Date(`${visitYmd}T${clamped}:00+09:00`).toISOString();
+  const payload: {
+    plannedAt: string;
+    commitment: string;
+    status: string;
+    windowStartAt?: string | null;
+    windowEndAt?: string | null;
+  } = {
+    plannedAt,
+    commitment: commitmentValue,
+    status: "planned",
+  };
+  if (commitmentValue === "around") {
+    payload.windowStartAt = new Date(
+      `${visitYmd}T09:00:00+09:00`,
+    ).toISOString();
+    payload.windowEndAt = new Date(`${visitYmd}T18:00:00+09:00`).toISOString();
+  } else {
+    payload.windowStartAt = null;
+    payload.windowEndAt = null;
+  }
+  return payload;
 }
 
 export default function SalesHomePage() {
@@ -100,13 +144,21 @@ export default function SalesHomePage() {
     null,
   );
   const [time, setTime] = useState(() => defaultVisitHm(today, today));
-  const [commitment, setCommitment] = useState("confirmed");
+  const [commitment, setCommitment] = useState("around");
   const [placePickerOpen, setPlacePickerOpen] = useState(false);
   const [placePickerSeed, setPlacePickerSeed] =
     useState<Partial<SalesPlaceSuggest> | null>(null);
   const [placePickerAccountId, setPlacePickerAccountId] = useState<
     string | null
   >(null);
+  const [completeVisit, setCompleteVisit] = useState<SalesVisit | null>(null);
+  const [completeMemo, setCompleteMemo] = useState("");
+  const [rescheduleVisit, setRescheduleVisit] = useState<SalesVisit | null>(
+    null,
+  );
+  const [rescheduleYmd, setRescheduleYmd] = useState(today);
+  const [rescheduleHm, setRescheduleHm] = useState("10:00");
+  const [rescheduleCommitment, setRescheduleCommitment] = useState("around");
 
   const [visitSummary, setVisitSummary] = useState("");
   const [issues, setIssues] = useState("");
@@ -154,6 +206,7 @@ export default function SalesHomePage() {
         lng: pickedPlace?.lng ?? null,
         fromYmd: today,
         horizonDays: 14,
+        includeAround: true,
       }),
     staleTime: 30_000,
     retry: false,
@@ -411,6 +464,72 @@ export default function SalesHomePage() {
       toast({ title: e.message, variant: "destructive" }),
   });
 
+  const completeMut = useMutation({
+    mutationFn: ({ id, memo }: { id: string; memo: string }) =>
+      salesTeamApi.updateVisit(token, id, { status: "done", memo }),
+    onSuccess: () => {
+      toast({ title: "방문 완료 · 보고서를 저장했습니다." });
+      setCompleteVisit(null);
+      setCompleteMemo("");
+      void qc.invalidateQueries({ queryKey: ["sales-team-visits"] });
+      void qc.invalidateQueries({ queryKey: ["sales-team-home"] });
+      void qc.invalidateQueries({ queryKey: ["sales-team-stats"] });
+      void qc.invalidateQueries({ queryKey: ["sales-team-daily-report"] });
+      void qc.invalidateQueries({ queryKey: ["sales-team-route"] });
+    },
+    onError: (e: Error) =>
+      toast({ title: e.message, variant: "destructive" }),
+  });
+
+  const rescheduleMut = useMutation({
+    mutationFn: ({
+      id,
+      visitYmd,
+      hm,
+      commitmentValue,
+    }: {
+      id: string;
+      visitYmd: string;
+      hm: string;
+      commitmentValue: string;
+    }) =>
+      salesTeamApi.updateVisit(
+        token,
+        id,
+        buildVisitPlannedAtIso(visitYmd, hm, today, commitmentValue),
+      ),
+    onSuccess: (_data, vars) => {
+      toast({
+        title: `${formatDayLabel(vars.visitYmd)} ${vars.hm}으로 옮겼습니다.`,
+      });
+      setRescheduleVisit(null);
+      if (vars.visitYmd !== ymd) onYmdChange(vars.visitYmd);
+      void qc.invalidateQueries({ queryKey: ["sales-team-visits"] });
+      void qc.invalidateQueries({ queryKey: ["sales-team-home"] });
+      void qc.invalidateQueries({ queryKey: ["sales-team-stats"] });
+      void qc.invalidateQueries({ queryKey: ["sales-team-daily-report"] });
+      void qc.invalidateQueries({ queryKey: ["sales-team-route"] });
+      void qc.invalidateQueries({ queryKey: ["sales-team-route-suggest"] });
+    },
+    onError: (e: Error) =>
+      toast({ title: e.message, variant: "destructive" }),
+  });
+
+  const openCompleteReport = (v: SalesVisit) => {
+    setCompleteVisit(v);
+    setCompleteMemo(v.memo || "");
+  };
+
+  const openReschedule = (v: SalesVisit) => {
+    const visitYmd = toKstYmd(new Date(v.plannedAt)) || ymd;
+    setRescheduleVisit(v);
+    setRescheduleYmd(visitYmd);
+    setRescheduleHm(
+      clampVisitHmAfterNow(visitHmFromIso(v.plannedAt), visitYmd, today),
+    );
+    setRescheduleCommitment(v.commitment || "around");
+  };
+
   const placeFixMut = useMutation({
     mutationFn: async (place: SalesPlaceSuggest) => {
       const accountId = placePickerAccountId || place.accountId;
@@ -490,21 +609,45 @@ export default function SalesHomePage() {
   return (
     <SalesPageShell wide>
       <SalesToolbar className="w-full">
-        {/* lg+: 1행 / 그 아래: 날짜·탭 | 뱃지·액션 = 최대 2행 */}
-        <div className="flex w-full flex-col gap-2 lg:flex-row lg:items-center lg:justify-between lg:gap-3">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <SalesDayPicker
-              ymd={ymd}
-              today={today}
-              onChange={onYmdChange}
-              className="w-full sm:w-auto"
-            />
+        {/*
+          모바일: 날짜·추가 / 탭·뱃지 = 2행
+          태블릿·데스크톱(사이드바 포함): 가능하면 1행, 넘치면 자연 wrap(최대 2행)
+        */}
+        <div className="flex w-full flex-wrap items-center gap-x-2 gap-y-2">
+          <SalesDayPicker
+            compact
+            ymd={ymd}
+            today={today}
+            onChange={onYmdChange}
+            className="min-w-0"
+          />
+          <div className="ml-auto shrink-0 sm:order-last sm:ml-0 md:ml-auto">
+            {tab === "schedule" ? (
+              <Button
+                size="sm"
+                className="h-8 shrink-0"
+                onClick={() => {
+                  setTime(defaultVisitHm(ymd, today));
+                  setShowForm(true);
+                }}
+              >
+                일정 추가
+              </Button>
+            ) : reportSubmitted ? (
+              <Badge className="h-8 shrink-0 px-3">제출됨</Badge>
+            ) : (
+              <Badge variant="destructive" className="h-8 shrink-0 px-3">
+                미제출
+              </Badge>
+            )}
+          </div>
+          <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto sm:flex-1 md:flex-none">
             <SalesSegmentTabs
               fit
               compact
               value={tab}
               onChange={setTab}
-              className="w-full shrink-0 sm:w-auto"
+              className="w-auto shrink-0"
               options={[
                 {
                   value: "schedule",
@@ -516,9 +659,7 @@ export default function SalesHomePage() {
                 },
               ]}
             />
-          </div>
-          <div className="flex min-w-0 flex-wrap items-center gap-2 sm:justify-end">
-            <div className="flex min-w-0 flex-1 flex-wrap gap-1.5 text-xs sm:flex-none sm:text-sm">
+            <div className="flex min-w-0 flex-1 flex-wrap gap-1 text-xs sm:flex-none sm:gap-1.5 sm:text-sm">
               <StatusChip
                 label="방문"
                 value={String(visitCount)}
@@ -557,27 +698,6 @@ export default function SalesHomePage() {
                 }
               />
             </div>
-            {tab === "schedule" ? (
-              <Button
-                size="sm"
-                className="ml-auto shrink-0 sm:ml-0"
-                onClick={() => {
-                  setTime(defaultVisitHm(ymd, today));
-                  setShowForm(true);
-                }}
-              >
-                일정 추가
-              </Button>
-            ) : reportSubmitted ? (
-              <Badge className="ml-auto h-8 shrink-0 px-3 sm:ml-0">제출됨</Badge>
-            ) : (
-              <Badge
-                variant="destructive"
-                className="ml-auto h-8 shrink-0 px-3 sm:ml-0"
-              >
-                미제출
-              </Badge>
-            )}
           </div>
         </div>
       </SalesToolbar>
@@ -590,7 +710,7 @@ export default function SalesHomePage() {
             primary={
               <SalesPanel
                 title="시간대별 일정"
-                description="현장에서 완료·부재·취소·연기를 바로 기록합니다."
+                description="현장에서 완료 보고·연기·취소를 바로 기록합니다."
                 actions={
                   <Button
                     size="sm"
@@ -739,36 +859,14 @@ export default function SalesHomePage() {
                                 })()}
                                 <Button
                                   size="sm"
-                                  onClick={() =>
-                                    statusMut.mutate({
-                                      id: v._id,
-                                      status: "done",
-                                    })
-                                  }
+                                  onClick={() => openCompleteReport(v)}
                                 >
                                   완료
                                 </Button>
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  onClick={() =>
-                                    statusMut.mutate({
-                                      id: v._id,
-                                      status: "noShow",
-                                    })
-                                  }
-                                >
-                                  부재
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() =>
-                                    statusMut.mutate({
-                                      id: v._id,
-                                      status: "postponed",
-                                    })
-                                  }
+                                  onClick={() => openReschedule(v)}
                                 >
                                   연기
                                 </Button>
@@ -900,7 +998,7 @@ export default function SalesHomePage() {
                     </label>
                     <Textarea
                       rows={6}
-                      placeholder="· 거래처명 (완료/부재/예정)…"
+                      placeholder="· 거래처명 (완료/예정)…"
                       value={visitSummary}
                       onChange={(e) => setVisitSummary(e.target.value)}
                       className="resize-y"
@@ -1008,72 +1106,64 @@ export default function SalesHomePage() {
             </DialogDescription>
           </DialogHeader>
           <div className="relative z-0 min-h-0 space-y-3 overflow-y-auto px-4 py-3.5 sm:px-5">
-            <div
-              className={cn(
-                "relative",
-                placeQuery.trim().length >= 2 &&
-                  !pickedPlace &&
-                  "pb-[13.5rem]",
-              )}
-            >
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                <SalesPlaceSuggestInput
-                  className="min-w-0 flex-1"
-                  inputClassName="h-10 rounded-xl"
-                  listClassName="max-h-[13rem] overflow-y-auto"
-                  maxItems={4}
-                  value={placeQuery}
-                  onChange={(v) => {
-                    setPlaceQuery(v);
-                    setPickedPlace(null);
-                  }}
-                  onPick={(item) => {
-                    setPickedPlace(item);
-                    setPlaceQuery(item.name);
-                    if (
-                      item.businessAnchorId ||
-                      item.source === "platform" ||
-                      item.lat == null ||
-                      item.lng == null
-                    ) {
-                      setPlacePickerAccountId(item.accountId || null);
-                      setPlacePickerSeed(item);
-                      setPlacePickerOpen(true);
-                    }
-                  }}
-                  placeholder="치과·기공소 상호 검색"
-                  autoFocus
-                />
-                <div
-                  className="inline-flex h-10 w-full shrink-0 items-stretch rounded-xl border border-slate-200/80 bg-slate-100/80 p-1 sm:w-auto"
-                  role="group"
-                  aria-label="확정도"
-                >
-                  {(
-                    [
-                      { value: "confirmed", label: "확정" },
-                      { value: "around", label: "그쯤" },
-                    ] as const
-                  ).map((opt) => {
-                    const active = commitment === opt.value;
-                    return (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        aria-pressed={active}
-                        onClick={() => setCommitment(opt.value)}
-                        className={cn(
-                          "min-w-[4.25rem] flex-1 rounded-lg px-3 text-sm font-medium transition-colors sm:flex-none",
-                          active
-                            ? "bg-white text-slate-900 shadow-sm"
-                            : "text-slate-600 hover:text-slate-900",
-                        )}
-                      >
-                        {opt.label}
-                      </button>
-                    );
-                  })}
-                </div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+              <SalesPlaceSuggestInput
+                className="min-w-0 flex-1"
+                inputClassName="h-10 rounded-xl"
+                listMode="inline"
+                listClassName="max-h-[16rem] overflow-y-auto"
+                maxItems={24}
+                value={placeQuery}
+                onChange={(v) => {
+                  setPlaceQuery(v);
+                  setPickedPlace(null);
+                }}
+                onPick={(item) => {
+                  setPickedPlace(item);
+                  setPlaceQuery(item.name);
+                  if (
+                    item.businessAnchorId ||
+                    item.source === "platform" ||
+                    item.lat == null ||
+                    item.lng == null
+                  ) {
+                    setPlacePickerAccountId(item.accountId || null);
+                    setPlacePickerSeed(item);
+                    setPlacePickerOpen(true);
+                  }
+                }}
+                placeholder="지역명 상호 · 예: 거제 서울미소"
+                autoFocus
+              />
+              <div
+                className="inline-flex h-10 w-full shrink-0 items-stretch rounded-xl border border-slate-200/80 bg-slate-100/80 p-1 sm:w-auto"
+                role="group"
+                aria-label="확정도"
+              >
+                {(
+                  [
+                    { value: "confirmed", label: "확정" },
+                    { value: "around", label: "그쯤" },
+                  ] as const
+                ).map((opt) => {
+                  const active = commitment === opt.value;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => setCommitment(opt.value)}
+                      className={cn(
+                        "min-w-[4.25rem] flex-1 rounded-lg px-3 text-sm font-medium transition-colors sm:flex-none",
+                        active
+                          ? "bg-white text-slate-900 shadow-sm"
+                          : "text-slate-600 hover:text-slate-900",
+                      )}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
               </div>
             </div>
             {pickedPlace?.address ? (
@@ -1279,6 +1369,170 @@ export default function SalesHomePage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <Dialog
+        open={Boolean(completeVisit)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setCompleteVisit(null);
+            setCompleteMemo("");
+          }
+        }}
+      >
+        <DialogContent className="rounded-2xl sm:max-w-md">
+          <DialogHeader className="text-left">
+            <DialogTitle>방문 보고서</DialogTitle>
+            <DialogDescription>
+              {completeVisit
+                ? `${visitAccountName(completeVisit)} · ${formatVisitTime(completeVisit.plannedAt)}`
+                : "방문 결과를 남기고 완료 처리합니다."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-slate-700">방문 내용</p>
+            <Textarea
+              value={completeMemo}
+              onChange={(e) => setCompleteMemo(e.target.value)}
+              placeholder={"· 만난 사람 / 관심도\n· 다음 액션 · 메모"}
+              rows={6}
+              className="rounded-xl"
+              autoFocus
+            />
+          </div>
+          <DialogFooter className="gap-2 sm:space-x-0">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setCompleteVisit(null);
+                setCompleteMemo("");
+              }}
+              disabled={completeMut.isPending}
+            >
+              닫기
+            </Button>
+            <Button
+              disabled={!completeVisit || completeMut.isPending}
+              onClick={() => {
+                if (!completeVisit) return;
+                completeMut.mutate({
+                  id: completeVisit._id,
+                  memo: completeMemo.trim(),
+                });
+              }}
+            >
+              {completeMut.isPending ? "저장 중…" : "완료 저장"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={Boolean(rescheduleVisit)}
+        onOpenChange={(open) => {
+          if (!open) setRescheduleVisit(null);
+        }}
+      >
+        <DialogContent className="rounded-2xl sm:max-w-md">
+          <DialogHeader className="text-left">
+            <DialogTitle>일시 다시 선택</DialogTitle>
+            <DialogDescription>
+              {rescheduleVisit
+                ? `${visitAccountName(rescheduleVisit)} 방문을 다른 날짜·시간으로 옮깁니다.`
+                : "연기하실 날짜와 시간을 고르세요."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-2 rounded-xl border border-slate-200/80 bg-slate-50/60 px-3 py-2.5">
+              <p className="text-xs font-medium text-slate-700">
+                방문 날짜 · 시간
+              </p>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <Input
+                  type="date"
+                  value={rescheduleYmd}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    if (!next) return;
+                    setRescheduleYmd(next);
+                    setRescheduleHm((prev) =>
+                      clampVisitHmAfterNow(prev, next, today),
+                    );
+                  }}
+                  className="h-10 rounded-xl bg-white sm:min-w-[10.5rem] sm:flex-1"
+                />
+                <Input
+                  type="time"
+                  step={1800}
+                  value={rescheduleHm}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    if (!next) return;
+                    setRescheduleHm(
+                      clampVisitHmAfterNow(next, rescheduleYmd, today),
+                    );
+                  }}
+                  className="h-10 rounded-xl bg-white sm:w-[8.5rem]"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {formatDayLabel(rescheduleYmd)} · {rescheduleHm} ·{" "}
+                {COMMITMENT_LABEL[rescheduleCommitment] || rescheduleCommitment}
+              </p>
+            </div>
+            <div
+              className="inline-flex h-10 w-full items-stretch rounded-xl border border-slate-200/80 bg-slate-100/80 p-1"
+              role="group"
+              aria-label="확정도"
+            >
+              {(
+                [
+                  { value: "confirmed", label: "확정" },
+                  { value: "around", label: "그쯤" },
+                ] as const
+              ).map((opt) => {
+                const active = rescheduleCommitment === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => setRescheduleCommitment(opt.value)}
+                    className={cn(
+                      "min-w-[4.25rem] flex-1 rounded-lg px-3 text-sm font-medium transition-colors",
+                      active
+                        ? "bg-white text-slate-900 shadow-sm"
+                        : "text-slate-600 hover:text-slate-900",
+                    )}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:space-x-0">
+            <Button
+              variant="outline"
+              onClick={() => setRescheduleVisit(null)}
+              disabled={rescheduleMut.isPending}
+            >
+              닫기
+            </Button>
+            <Button
+              disabled={!rescheduleVisit || rescheduleMut.isPending}
+              onClick={() => {
+                if (!rescheduleVisit) return;
+                rescheduleMut.mutate({
+                  id: rescheduleVisit._id,
+                  visitYmd: rescheduleYmd,
+                  hm: rescheduleHm,
+                  commitmentValue: rescheduleCommitment,
+                });
+              }}
+            >
+              {rescheduleMut.isPending ? "저장 중…" : "일정 옮기기"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <SalesPlacePickerDrawer
         open={placePickerOpen}
         onOpenChange={(open) => {
@@ -1331,7 +1585,7 @@ function StatusChip({
   onClick?: () => void;
 }) {
   const className = [
-    "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 font-medium transition-colors",
+    "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 font-medium transition-colors sm:gap-1.5 sm:px-3 sm:py-1.5",
     pressed
       ? tone === "ok"
         ? "border-emerald-400 bg-emerald-100 text-emerald-900 ring-2 ring-emerald-300/80"

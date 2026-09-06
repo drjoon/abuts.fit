@@ -21,6 +21,11 @@ type SalesPlaceSuggestInputProps = {
   className?: string;
   inputClassName?: string;
   listClassName?: string;
+  /**
+   * overlay: 입력 아래 absolute (기본).
+   * inline: 문서 흐름 — 모달에서 닫힌 뒤 예약 공백이 남지 않음.
+   */
+  listMode?: "overlay" | "inline";
   /** Cap dropdown rows (avoids tall scroll in modals). */
   maxItems?: number;
   autoFocus?: boolean;
@@ -34,6 +39,7 @@ export default function SalesPlaceSuggestInput({
   className,
   inputClassName,
   listClassName,
+  listMode = "overlay",
   maxItems,
   autoFocus,
 }: SalesPlaceSuggestInputProps) {
@@ -189,14 +195,20 @@ export default function SalesPlaceSuggestInput({
           id={listId}
           role="listbox"
           className={cn(
-            "absolute z-40 mt-1 max-h-64 w-full overflow-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg",
+            listMode === "inline"
+              ? "relative z-10 mt-2 max-h-64 w-full overflow-auto rounded-xl border border-slate-200 bg-white py-1 shadow-sm"
+              : "absolute z-40 mt-1 max-h-64 w-full overflow-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg",
             listClassName,
           )}
         >
           {visibleItems.length === 0 && !loading ? (
             <li className="px-3 py-2 text-xs text-muted-foreground">
-              검색 결과가 없습니다. 그대로 저장해도 됩니다.
+              {/\s/.test(value.trim())
+                ? "이 지역·상호로 지도 결과가 없습니다. 그대로 저장한 뒤 위치에서 찍어도 됩니다."
+                : "지도에 없는 상호일 수 있습니다. 「지역명 상호」처럼 띄어 검색하거나, 그대로 저장한 뒤 위치에서 찍어도 됩니다."}
             </li>
+          ) : visibleItems.length === 0 && loading ? (
+            <li className="px-3 py-2 text-xs text-muted-foreground">검색 중…</li>
           ) : (
             visibleItems.map((item, idx) => (
               <li key={`${item.source}-${item.accountId || item.name}-${idx}`}>

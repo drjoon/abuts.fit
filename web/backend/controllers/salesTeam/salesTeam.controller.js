@@ -79,6 +79,14 @@ function haversineKm(a, b) {
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
+/** 단거리(0.05km 등)가 0으로 보이지 않게 */
+function roundRouteKm(km) {
+  const n = Number(km);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  if (n < 1) return Math.round(n * 100) / 100;
+  return Math.round(n * 10) / 10;
+}
+
 /** Nearest-neighbor TSP from optional start; returns ordered indices into points */
 function nearestNeighborOrder(points, startIndex = 0) {
   const n = points.length;
@@ -165,7 +173,7 @@ function optimizePointsOrder(points) {
   if (!points.length) return { order: [], totalKm: 0 };
   if (points.length === 1) return { order: [0], totalKm: 0 };
   const order = twoOptImprove(points, nearestNeighborOrder(points, 0));
-  return { order, totalKm: Math.round(pathLengthKm(points, order) * 10) / 10 };
+  return { order, totalKm: roundRouteKm(pathLengthKm(points, order)) };
 }
 
 function kakaoMapUrlForStops(stops) {
@@ -383,90 +391,416 @@ function inferDentalPlaceKind(category, placeName) {
   return null;
 }
 
+/** 카카오 키워드 지역 팬아웃 — 정확도 상위 45건에 안 잡히는 전국 지점 회수 */
+const KAKAO_DENTAL_REGION_PREFIXES = [
+  "서울",
+  "부산",
+  "대구",
+  "인천",
+  "광주",
+  "대전",
+  "울산",
+  "세종",
+  "경기",
+  "강원",
+  "충북",
+  "충남",
+  "전북",
+  "전남",
+  "경북",
+  "경남",
+  "제주",
+  "거제",
+  "창원",
+  "김해",
+  "진주",
+  "통영",
+  "고현",
+  "수원",
+  "성남",
+  "용인",
+  "고양",
+  "화성",
+  "청주",
+  "천안",
+  "전주",
+  "포항",
+];
+
+const KAKAO_REGION_TOKEN_SET = new Set(KAKAO_DENTAL_REGION_PREFIXES);
+
+/**
+ * 「거제 서울미소」「서울미소 거제」처럼 띄어쓰기 → 지역 + 상호.
+ * 토큰 단위로만 지역을 인정(「서울미소」는 지역 아님).
+ */
+function parseRegionNameQuery(query) {
+  const raw = String(query || "").trim().replace(/\s+/g, " ");
+  if (!raw) return { region: "", name: "", raw: "" };
+  if (!/\s/.test(raw)) return { region: "", name: raw, raw };
+
+  const parts = raw.split(" ");
+  const regionHead = [];
+  let i = 0;
+  while (i < parts.length - 1 && KAKAO_REGION_TOKEN_SET.has(parts[i])) {
+    regionHead.push(parts[i]);
+    i += 1;
+  }
+  if (regionHead.length > 0 && i < parts.length) {
+    return {
+      region: regionHead.join(" "),
+      name: parts.slice(i).join(" "),
+      raw,
+    };
+  }
+
+  const last = parts[parts.length - 1];
+  if (parts.length >= 2 && KAKAO_REGION_TOKEN_SET.has(last)) {
+    return {
+      region: last,
+      name: parts.slice(0, -1).join(" "),
+      raw,
+    };
+  }
+
+  return { region: "", name: raw, raw };
+}
+
+function addressMatchesRegion(address, region) {
+  const addr = String(address || "");
+  const reg = String(region || "").trim();
+  if (!addr || !reg) return false;
+  const tokens = reg.split(/\s+/).filter(Boolean);
+  return tokens.every((t) => addr.includes(t));
+}
+
+function placeMatchesRegion(it, region) {
+  if (!region) return true;
+  return (
+    addressMatchesRegion(it.address, region) ||
+    addressMatchesRegion(it.addressMatch, region)
+  );
+}
+
+function mapKakaoDentalDoc(doc) {
+  const lat = Number(doc.y);
+  const lng = Number(doc.x);
+  const category = String(doc.category_name || "");
+  const name = String(doc.place_name || "").trim();
+  const kind = inferDentalPlaceKind(category, name);
+  if (!kind || !name) return null;
+  return {
+    source: "kakao",
+    name,
+    address: String(doc.road_address_name || doc.address_name || "").trim(),
+    phone: String(doc.phone || "").trim(),
+    lat: Number.isFinite(lat) ? lat : null,
+    lng: Number.isFinite(lng) ? lng : null,
+    kind,
+    category,
+  };
+}
+
+function dentalPlaceDedupeKey(it) {
+  return `${String(it.name || "")}|${String(it.address || "")}`.toLowerCase();
+}
+
+/**
+ * 카카오맵 웹 검색(Local REST에 없는 POI 보완).
+ * 예: 거제 고현 서울미소치과의원 — Map에는 있고 dapi Local에는 없음.
+ */
+async function kakaoMapWebKeywordSearch(query, { limit = 15 } = {}) {
+  const q = String(query || "").trim();
+  if (!q) return { items: [] };
+  const cap = Math.min(30, Math.max(1, Number(limit) || 15));
+  try {
+    const url = new URL("https://search.map.kakao.com/mapsearch/map.daum");
+    url.searchParams.set("q", q);
+    url.searchParams.set("msFlag", "S");
+    url.searchParams.set("page", "1");
+    const resp = await fetch(url.toString(), {
+      headers: {
+        Accept: "application/json, text/javascript, */*",
+        Referer: "https://map.kakao.com/",
+        "User-Agent":
+          "Mozilla/5.0 (compatible; abuts.fit-sales/1.0; +https://abuts.fit)",
+      },
+    });
+    const raw = await resp.text();
+    if (!resp.ok) return { items: [] };
+    let json = null;
+    try {
+      const stripped = raw
+        .replace(/^\s*\/\*\*\/\s*/, "")
+        .replace(/^jQuery\d*_\d*\(/, "")
+        .replace(/^jQuery\(/, "")
+        .replace(/\)\s*;?\s*$/, "");
+      json = JSON.parse(stripped);
+    } catch {
+      return { items: [] };
+    }
+    const places = Array.isArray(json?.place) ? json.place : [];
+    const items = [];
+    const seen = new Set();
+    for (const p of places) {
+      const name = String(p.name || "").trim();
+      const category = [
+        p.cate_name_depth1,
+        p.cate_name_depth2,
+        p.cate_name_depth3,
+        p.last_cate_name,
+      ]
+        .filter(Boolean)
+        .join(" > ");
+      const kind = inferDentalPlaceKind(category, name);
+      if (!kind || !name) continue;
+      const lat = Number(p.lat);
+      const lng = Number(p.lon);
+      const road = String(p.new_address || p.road_address || "").trim();
+      const jibun = String(p.address || "").trim();
+      // 도로명에 동명이 없을 수 있어(거제중앙로 vs 고현동) 매칭용으로 둘 다 보관
+      const address = road || jibun;
+      const row = {
+        source: "kakao",
+        name,
+        address,
+        addressMatch: `${road} ${jibun}`.trim(),
+        phone: String(p.tel || "").trim(),
+        lat: Number.isFinite(lat) ? lat : null,
+        lng: Number.isFinite(lng) ? lng : null,
+        kind,
+        category,
+      };
+      const key = dentalPlaceDedupeKey(row);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      items.push(row);
+      if (items.length >= cap) break;
+    }
+    return { items };
+  } catch (e) {
+    console.warn(
+      "[salesTeam.kakaoMapWebKeywordSearch]",
+      e?.message || e,
+    );
+    return { items: [] };
+  }
+}
+
+/** 모호한 지역명 → 지오코딩 후보 (고현=영주/거제 충돌 등) */
+function regionGeocodeCandidates(region) {
+  const r = String(region || "").trim();
+  if (!r) return [];
+  const extras = {
+    고현: ["거제시 고현동", "경남 거제 고현", "영주시 고현동"],
+  };
+  const list = extras[r] || [];
+  return [...new Set([r, ...list, `경남 ${r}`, `경북 ${r}`])];
+}
+
+async function geocodeRegionHint(region) {
+  for (const cand of regionGeocodeCandidates(region)) {
+    const geo = await geocodeAddress(cand);
+    if (geo && Number.isFinite(geo.lat) && Number.isFinite(geo.lng)) {
+      return geo;
+    }
+  }
+  return null;
+}
+
+/** 상호 일치도 + (있으면) 지역 주소 일치로 정렬 */
+function rankDentalKakaoItems(items, query, region = "") {
+  const parsed = parseRegionNameQuery(query);
+  const nameQ = (parsed.name || String(query || "").trim()).toLowerCase();
+  const qCompact = nameQ.replace(/\s+/g, "");
+  const reg = String(region || parsed.region || "").trim();
+  const score = (it) => {
+    const name = String(it.name || "").toLowerCase();
+    const compact = name.replace(/\s+/g, "");
+    let s = 0;
+    if (qCompact) {
+      if (compact === qCompact) s += 300;
+      else if (compact.startsWith(qCompact)) s += 200;
+      else if (compact.includes(qCompact)) s += 100;
+      else if (name.includes(nameQ)) s += 50;
+    }
+    if (reg && placeMatchesRegion(it, reg)) s += 400;
+    return s;
+  };
+  return [...items].sort((a, b) => score(b) - score(a));
+}
+
 /**
  * Kakao Local keyword search for place autosuggest.
  * 치과·기공소만 반환한다 (category/상호 휴리스틱).
- * @returns {{ items: Array, authError: boolean }}
+ * @returns {{ items: Array, authError: boolean, truncated: boolean }}
  */
-async function kakaoKeywordSearch(query, { limit = 8 } = {}) {
+async function kakaoKeywordSearch(
+  query,
+  { limit = 8, maxPages = 1, x, y, radius, sort } = {},
+) {
   const q = String(query || "").trim();
   const key = kakaoRestApiKey();
-  if (!q || !key) return { items: [], authError: false };
+  if (!q || !key) return { items: [], authError: false, truncated: false };
+  const pages = Math.min(3, Math.max(1, Number(maxPages) || 1));
+  const cap = Math.min(45, Math.max(1, Number(limit) || 8));
+  const seen = new Set();
+  const items = [];
+  let authError = false;
+  let truncated = false;
   try {
-    const url = new URL("https://dapi.kakao.com/v2/local/search/keyword.json");
-    url.searchParams.set("query", q);
-    // 필터 후 부족할 수 있어 API size는 상한(15)까지 요청
-    url.searchParams.set("size", "15");
-    const resp = await fetch(url.toString(), {
-      headers: { Authorization: `KakaoAK ${key}` },
-    });
-    const json = await resp.json().catch(() => ({}));
-    if (!resp.ok) {
-      const authError = isKakaoLocalAuthError(resp.status, json);
-      if (authError) {
-        console.warn(
-          "[salesTeam.kakaoKeywordSearch] Kakao Local unauthorized",
-          { status: resp.status, errorType: json?.errorType || json?.code },
-        );
+    for (let page = 1; page <= pages; page += 1) {
+      const url = new URL("https://dapi.kakao.com/v2/local/search/keyword.json");
+      url.searchParams.set("query", q);
+      // 필터 후 부족할 수 있어 API size는 상한(15)까지 요청
+      url.searchParams.set("size", "15");
+      url.searchParams.set("page", String(page));
+      if (x != null && y != null) {
+        url.searchParams.set("x", String(x));
+        url.searchParams.set("y", String(y));
+        if (radius != null) url.searchParams.set("radius", String(radius));
+        if (sort) url.searchParams.set("sort", String(sort));
       }
-      return { items: [], authError };
+      const resp = await fetch(url.toString(), {
+        headers: { Authorization: `KakaoAK ${key}` },
+      });
+      const json = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        authError = isKakaoLocalAuthError(resp.status, json);
+        if (authError) {
+          console.warn(
+            "[salesTeam.kakaoKeywordSearch] Kakao Local unauthorized",
+            { status: resp.status, errorType: json?.errorType || json?.code },
+          );
+        }
+        break;
+      }
+      const docs = Array.isArray(json?.documents) ? json.documents : [];
+      for (const doc of docs) {
+        const row = mapKakaoDentalDoc(doc);
+        if (!row) continue;
+        const keyRow = dentalPlaceDedupeKey(row);
+        if (seen.has(keyRow)) continue;
+        seen.add(keyRow);
+        items.push(row);
+        if (items.length >= cap) break;
+      }
+      const meta = json?.meta || {};
+      const isEnd = Boolean(meta.is_end);
+      const pageable = Number(meta.pageable_count) || 0;
+      const total = Number(meta.total_count) || 0;
+      if (!isEnd && (pageable >= 45 || total > items.length)) truncated = true;
+      if (isEnd || items.length >= cap || docs.length === 0) break;
     }
-    const docs = Array.isArray(json?.documents) ? json.documents : [];
-    const items = docs
-      .map((doc) => {
-        const lat = Number(doc.y);
-        const lng = Number(doc.x);
-        const category = String(doc.category_name || "");
-        const name = String(doc.place_name || "").trim();
-        const kind = inferDentalPlaceKind(category, name);
-        if (!kind || !name) return null;
-        return {
-          source: "kakao",
-          name,
-          address: String(doc.road_address_name || doc.address_name || "").trim(),
-          phone: String(doc.phone || "").trim(),
-          lat: Number.isFinite(lat) ? lat : null,
-          lng: Number.isFinite(lng) ? lng : null,
-          kind,
-          category,
-        };
-      })
-      .filter(Boolean)
-      .slice(0, Math.min(15, Math.max(1, limit)));
-    return { items, authError: false };
+    return { items: items.slice(0, cap), authError, truncated };
   } catch {
-    return { items: [], authError: false };
+    return { items: [], authError: false, truncated: false };
   }
 }
 
 /**
- * 치과·기공소 회수율: 원문 검색 + (필요 시) 「치과」「기공소」보강 검색을 병렬 병합.
+ * 치과·기공소 회수율.
+ * - 띄어쓰기 「지역 + 상호」→ 상호로 검색 + 지역 좌표 편향·주소 우선
+ * - 지역 없으면 원문·보강 검색 + 광역 팬아웃
  */
-async function searchDentalKakaoPlaces(query, { limit = 8 } = {}) {
+async function searchDentalKakaoPlaces(query, { limit = 40 } = {}) {
   const q = String(query || "").trim();
   if (!q) return { items: [], authError: false };
-  const queries = [q];
-  if (!/치과|기공/.test(q)) {
-    queries.push(`${q} 치과`, `${q} 기공소`);
+  const cap = Math.min(60, Math.max(1, Number(limit) || 40));
+  const { region, name } = parseRegionNameQuery(q);
+  const nameQ = (name || q).trim();
+  if (!nameQ) return { items: [], authError: false };
+
+  const nameQueries = [nameQ];
+  if (!/치과|기공/.test(nameQ)) {
+    nameQueries.push(`${nameQ} 치과`, `${nameQ} 기공소`);
   }
-  const results = await Promise.all(
-    queries.map((qq) => kakaoKeywordSearch(qq, { limit })),
-  );
+
   let authError = false;
+  let needsFanout = false;
   const seen = new Set();
   const items = [];
-  for (const res of results) {
+  const pushAll = (res) => {
     if (res.authError) authError = true;
-    for (const it of res.items) {
-      const key = `${it.name}|${it.address}`.toLowerCase();
+    if (res.truncated) needsFanout = true;
+    for (const it of res.items || []) {
+      const key = dentalPlaceDedupeKey(it);
       if (seen.has(key)) continue;
       seen.add(key);
       items.push(it);
-      if (items.length >= limit) break;
     }
-    if (items.length >= limit) break;
+  };
+
+  if (region) {
+    // 1) 카카오맵 웹 검색(Local REST 누락 POI 보완) + 2) Local 키워드 + 3) 지역 좌표 반경
+    const combinedQueries = [q, `${region} ${nameQ}`];
+    if (!/치과|기공/.test(nameQ)) {
+      combinedQueries.push(
+        `${region} ${nameQ} 치과`,
+        `${region} ${nameQ} 기공소`,
+        `${q} 치과`,
+      );
+    }
+    const uniqueCombined = [...new Set(combinedQueries.filter(Boolean))];
+    const geo = await geocodeRegionHint(region);
+    const biased =
+      geo && Number.isFinite(geo.lng) && Number.isFinite(geo.lat)
+        ? { x: geo.lng, y: geo.lat, radius: 40000, sort: "distance" }
+        : null;
+
+    const parallel = await Promise.all([
+      ...uniqueCombined.map((qq) => kakaoMapWebKeywordSearch(qq, { limit: 15 })),
+      ...uniqueCombined.map((qq) =>
+        kakaoKeywordSearch(qq, { limit: Math.min(45, cap), maxPages: 2 }),
+      ),
+      ...nameQueries.map((qq) =>
+        kakaoKeywordSearch(qq, { limit: Math.min(45, cap), maxPages: 3 }),
+      ),
+      ...(biased
+        ? nameQueries.map((qq) =>
+            kakaoKeywordSearch(qq, {
+              limit: 15,
+              maxPages: 1,
+              ...biased,
+            }),
+          )
+        : []),
+    ]);
+    for (const res of parallel) pushAll(res);
+
+    // 지역 지정 시 해당 지역 주소만(전국 동명 오탐 방지). 없으면 빈 목록.
+    const regional = items.filter((it) => placeMatchesRegion(it, region));
+    return {
+      items: rankDentalKakaoItems(regional, nameQ, region).slice(0, cap),
+      authError,
+    };
   }
-  return { items: items.slice(0, limit), authError };
+
+  const primary = await Promise.all([
+    ...nameQueries.map((qq) =>
+      kakaoKeywordSearch(qq, { limit: Math.min(45, cap), maxPages: 3 }),
+    ),
+    // Local에 없는 상호 보완(전국 쿼리도 맵 웹 1회)
+    kakaoMapWebKeywordSearch(nameQ, { limit: 15 }),
+    ...(!/치과|기공/.test(nameQ)
+      ? [kakaoMapWebKeywordSearch(`${nameQ} 치과`, { limit: 15 })]
+      : []),
+  ]);
+  for (const res of primary) pushAll(res);
+
+  if (needsFanout || items.length >= 12) {
+    const base = /치과|기공/.test(nameQ) ? nameQ : `${nameQ} 치과`;
+    const fanout = await Promise.all(
+      KAKAO_DENTAL_REGION_PREFIXES.map((r) =>
+        kakaoKeywordSearch(`${r} ${base}`, { limit: 15, maxPages: 1 }),
+      ),
+    );
+    for (const res of fanout) pushAll(res);
+  }
+
+  return {
+    items: rankDentalKakaoItems(items, nameQ).slice(0, cap),
+    authError,
+  };
 }
 
 /** Meta for FE: address geocode has Nominatim fallback; keyword needs Kakao Local. */
@@ -1442,7 +1776,7 @@ export async function optimizeRoute(req, res) {
       data: {
         ymd,
         ordered,
-        totalKm: Math.round(totalKm * 10) / 10,
+        totalKm: roundRouteKm(totalKm),
         missingCoordsCount: withoutCoords.length,
         mapUrl,
         ...placeGeoMeta(),
@@ -1474,7 +1808,7 @@ export async function suggestRouteDays(req, res) {
 
     const address = String(body.address || body.extraAddress || "").trim();
     const accountId = oid(body.accountId);
-    const includeAround = body.includeAround === true;
+    const includeAround = body.includeAround !== false;
     const fromYmd =
       parseYmd(body.fromYmd) || toKstYmd(new Date()) || null;
     if (!fromYmd) {
@@ -1645,9 +1979,9 @@ export async function suggestRouteDays(req, res) {
       const baseline = optimizePointsOrder(points);
       const withTargetPoints = [...points, targetPoint];
       const withTarget = optimizePointsOrder(withTargetPoints);
-      const detourKm =
-        Math.round(Math.max(0, withTarget.totalKm - baseline.totalKm) * 10) /
-        10;
+      const detourKm = roundRouteKm(
+        Math.max(0, withTarget.totalKm - baseline.totalKm),
+      );
 
       let nearestKm = Infinity;
       let nearestName = "";
@@ -1660,11 +1994,10 @@ export async function suggestRouteDays(req, res) {
           nearestStop = s;
         }
         if (d <= ROUTE_NEARBY_KM) {
-          nearbyAnchors.push({ ymd, stop: s, km: Math.round(d * 10) / 10 });
+          nearbyAnchors.push({ ymd, stop: s, km: roundRouteKm(d) });
         }
       }
-      nearestKm =
-        nearestKm === Infinity ? null : Math.round(nearestKm * 10) / 10;
+      nearestKm = nearestKm === Infinity ? null : roundRouteKm(nearestKm);
 
       const efficient =
         (nearestKm != null && nearestKm <= ROUTE_EFFICIENT_NEIGHBOR_KM) ||
@@ -1718,7 +2051,7 @@ export async function suggestRouteDays(req, res) {
         suggestedTime: d.suggestedTime,
         reason:
           d.nearestKm != null && d.nearestKm <= ROUTE_EFFICIENT_NEIGHBOR_KM
-            ? `${d.nearestName || "확정"} ${d.suggestedTime} 근처 · 약 ${d.nearestKm}km · 우회 +${d.detourKm}km`
+            ? `${d.nearestName || "기예약"} ${d.suggestedTime} 근처 · 약 ${d.nearestKm}km · 우회 +${d.detourKm}km`
             : `기존 ${d.visitCount}곳 동선 · ${d.suggestedTime} 제안 · 우회 +${d.detourKm}km`,
         ordered: d.ordered,
         mapUrl: d.mapUrl,
@@ -1802,7 +2135,7 @@ export async function suggestRouteDays(req, res) {
         "같은 날 효율 동선은 없습니다. 근처 기예약과 하루 차이 나는 날을 제안합니다.";
     } else if (byYmd.size === 0) {
       message =
-        `${fromYmd}부터 ${horizonDays}일 안에 확정 일정이 없습니다. 날짜·시간을 직접 선택하세요.`;
+        `${fromYmd}부터 ${horizonDays}일 안에 확정·그쯤 일정이 없습니다. 날짜·시간을 직접 선택하세요.`;
     } else {
       message =
         "근처 기예약과 붙일 효율 동선·인접일을 찾지 못했습니다. 날짜·시간을 직접 선택하세요.";
@@ -1937,11 +2270,17 @@ export async function suggestPlaces(req, res) {
     if (q.length < 2) {
       return res.json({ success: true, data: { items: [] } });
     }
-    const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const re = new RegExp(escaped, "i");
+    const { region, name } = parseRegionNameQuery(q);
+    const nameQ = (name || q).trim();
+    const nameEscaped = nameQ.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const nameRe = new RegExp(nameEscaped, "i");
     const visibility = accountVisibilityFilter(req.user._id, req.user.role);
     const textMatch = {
-      $or: [{ name: re }, { representativeName: re }, { phone: re }],
+      $or: [
+        { name: nameRe },
+        { representativeName: nameRe },
+        { phone: nameRe },
+      ],
     };
     const accountFilter =
       Object.keys(visibility).length > 0
@@ -1949,13 +2288,13 @@ export async function suggestPlaces(req, res) {
         : textMatch;
 
     const [accounts, platform, kakaoRes] = await Promise.all([
-      SalesAccount.find(accountFilter).sort({ updatedAt: -1 }).limit(8).lean(),
+      SalesAccount.find(accountFilter).sort({ updatedAt: -1 }).limit(16).lean(),
       BusinessAnchor.find({
         businessType: "requestor",
         $or: [
-          { name: re },
-          { "metadata.companyName": re },
-          { "metadata.representativeName": re },
+          { name: nameRe },
+          { "metadata.companyName": nameRe },
+          { "metadata.representativeName": nameRe },
         ],
       })
         .select({
@@ -1968,9 +2307,9 @@ export async function suggestPlaces(req, res) {
           "metadata.lat": 1,
           "metadata.lng": 1,
         })
-        .limit(8)
+        .limit(16)
         .lean(),
-      searchDentalKakaoPlaces(q, { limit: 8 }),
+      searchDentalKakaoPlaces(q, { limit: 40 }),
     ]);
 
     const items = [];
@@ -1997,52 +2336,64 @@ export async function suggestPlaces(req, res) {
       items.push(row);
     };
 
+    const accountRows = [];
     for (const acc of accounts) {
-      pushUnique(
-        {
-          source: "account",
-          accountId: String(acc._id),
-          businessAnchorId: acc.businessAnchorId
-            ? String(acc.businessAnchorId)
-            : null,
-          name: acc.name,
-          kind: acc.kind === "lab" ? "lab" : "practice",
-          representativeName: acc.representativeName || "",
-          phone: acc.phone || "",
-          address: acc.address || "",
-          lat: acc.lat ?? null,
-          lng: acc.lng ?? null,
-          label: acc.businessAnchorId ? "등록·가입" : "등록 거래처",
-        },
-        { trackRegistered: true },
-      );
+      accountRows.push({
+        source: "account",
+        accountId: String(acc._id),
+        businessAnchorId: acc.businessAnchorId
+          ? String(acc.businessAnchorId)
+          : null,
+        name: acc.name,
+        kind: acc.kind === "lab" ? "lab" : "practice",
+        representativeName: acc.representativeName || "",
+        phone: acc.phone || "",
+        address: acc.address || "",
+        lat: acc.lat ?? null,
+        lng: acc.lng ?? null,
+        label: acc.businessAnchorId ? "등록·가입" : "등록 거래처",
+      });
     }
-
+    const platformRows = [];
     for (const it of platform) {
       const addr = baAddressLine(it);
       const lat = parseCoord(it.metadata?.lat);
       const lng = parseCoord(it.metadata?.lng);
       const hasCoords = hasValidCoords(lat, lng);
-      pushUnique(
-        {
-          source: "platform",
-          accountId: null,
-          businessAnchorId: String(it._id),
-          name: it.name,
-          kind: placeKindFromBa(it),
-          representativeName: it.metadata?.representativeName || "",
-          phone: it.metadata?.phoneNumber || "",
-          address: addr,
-          lat: hasCoords ? lat : null,
-          lng: hasCoords ? lng : null,
-          label: addr
-            ? hasCoords
-              ? "플랫폼 · 위치확인"
-              : "플랫폼 · 주소있음"
-            : "플랫폼 가입",
-        },
-        { trackRegistered: true },
-      );
+      platformRows.push({
+        source: "platform",
+        accountId: null,
+        businessAnchorId: String(it._id),
+        name: it.name,
+        kind: placeKindFromBa(it),
+        representativeName: it.metadata?.representativeName || "",
+        phone: it.metadata?.phoneNumber || "",
+        address: addr,
+        lat: hasCoords ? lat : null,
+        lng: hasCoords ? lng : null,
+        label: addr
+          ? hasCoords
+            ? "플랫폼 · 위치확인"
+            : "플랫폼 · 주소있음"
+          : "플랫폼 가입",
+      });
+    }
+
+    const preferRegion = (rows) => {
+      if (!region) return rows;
+      return rows.filter((r) => {
+        if (!nameRe.test(String(r.name || ""))) return false;
+        const addr = String(r.address || "").trim();
+        // 주소 없으면 상호만 매칭(이후 위치 픽), 있으면 지역 일치만
+        return !addr || addressMatchesRegion(addr, region);
+      });
+    };
+
+    for (const row of preferRegion(accountRows)) {
+      pushUnique(row, { trackRegistered: true });
+    }
+    for (const row of preferRegion(platformRows)) {
+      pushUnique(row, { trackRegistered: true });
     }
 
     for (const it of kakaoRes.items) {
@@ -2064,7 +2415,7 @@ export async function suggestPlaces(req, res) {
     return res.json({
       success: true,
       data: {
-        items: items.slice(0, 15),
+        items: items.slice(0, 40),
         ...placeGeoMeta({ kakaoAuthError: kakaoRes.authError }),
       },
     });

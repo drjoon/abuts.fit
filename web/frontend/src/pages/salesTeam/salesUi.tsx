@@ -404,24 +404,29 @@ export function SalesDayPicker({
   today,
   onChange,
   className,
+  compact,
 }: {
   ymd: string;
   today: string;
   onChange: (next: string) => void;
   className?: string;
+  /** Tighter control for toolbars that share a row. */
+  compact?: boolean;
 }) {
   return (
     <div
       className={cn(
-        "flex flex-wrap items-center gap-1.5 rounded-2xl border border-slate-200/80 bg-white/90 p-1.5 shadow-sm sm:gap-2 sm:p-2",
-        "md:w-auto md:min-w-[18rem] md:flex-nowrap",
+        "flex flex-nowrap items-center rounded-2xl border border-slate-200/80 bg-white/90 shadow-sm",
+        compact
+          ? "gap-0.5 p-1"
+          : "gap-1.5 p-1.5 sm:gap-2 sm:p-2",
         className,
       )}
     >
       <Button
         size="icon"
         variant="ghost"
-        className="h-9 w-9 shrink-0"
+        className={cn("shrink-0", compact ? "h-8 w-8" : "h-9 w-9")}
         onClick={() => onChange(addDaysYmd(ymd, -1))}
         aria-label="이전 날"
       >
@@ -431,12 +436,15 @@ export function SalesDayPicker({
         type="date"
         value={ymd}
         onChange={(e) => onChange(e.target.value)}
-        className="min-w-0 flex-1 border-0 bg-transparent shadow-none focus-visible:ring-0 md:w-[10.5rem] md:flex-none"
+        className={cn(
+          "min-w-0 border-0 bg-transparent shadow-none focus-visible:ring-0",
+          compact ? "h-8 w-[9.75rem] px-1" : "h-9 flex-1 sm:w-[10.5rem] sm:flex-none",
+        )}
       />
       <Button
         size="icon"
         variant="ghost"
-        className="h-9 w-9 shrink-0"
+        className={cn("shrink-0", compact ? "h-8 w-8" : "h-9 w-9")}
         onClick={() => onChange(addDaysYmd(ymd, 1))}
         aria-label="다음 날"
       >
@@ -445,7 +453,7 @@ export function SalesDayPicker({
       <Button
         size="sm"
         variant={ymd === today ? "default" : "secondary"}
-        className="shrink-0"
+        className={cn("shrink-0", compact && "h-8 px-2.5")}
         onClick={() => onChange(today)}
       >
         오늘

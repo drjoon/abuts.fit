@@ -164,6 +164,8 @@ export const salesTeamApi = {
       commitment: string;
       status: string;
       memo: string;
+      windowStartAt: string | null;
+      windowEndAt: string | null;
     }>,
   ) =>
     salesFetch<SalesVisit>(token, `/api/sales-team/visits/${id}`, {
