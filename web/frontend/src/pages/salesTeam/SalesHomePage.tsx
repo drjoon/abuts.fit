@@ -279,7 +279,6 @@ export default function SalesHomePage() {
       ),
     [visits],
   );
-  const visitCount = activeVisits.length;
   const doneCount = activeVisits.filter((v) => v.status === "done").length;
   const plannedCount = activeVisits.filter((v) => v.status === "planned").length;
   const canceledOrPostponedCount = visits.filter(
@@ -288,7 +287,7 @@ export default function SalesHomePage() {
   const reportSubmitted = Boolean(reportData?.report);
   const historyItems = history?.items || [];
 
-  /** 일정 목록 필터: 방문=취소·연기 제외 전체, 예정/완료=해당 상태만 (다시 누르면 전체) */
+  /** 일정 목록 필터: 기본=취소·연기 제외 전체, 예정/완료=해당 상태만 (다시 누르면 전체) */
   const [listFilter, setListFilter] = useState<ListFilter>("all");
   const [showCanceled, setShowCanceled] = useState(false);
 
@@ -316,9 +315,9 @@ export default function SalesHomePage() {
 
   const filterEmptyHint =
     listFilter === "planned"
-      ? "예정 방문이 없습니다. 「방문」을 누르면 전체 일정을 봅니다."
+      ? "예정 방문이 없습니다. 「예정」을 다시 누르거나 「전체 보기」로 전체 일정을 봅니다."
       : listFilter === "done"
-        ? "완료된 방문이 없습니다. 「방문」을 누르면 전체 일정을 봅니다."
+        ? "완료된 방문이 없습니다. 「완료」를 다시 누르거나 「전체 보기」로 전체 일정을 봅니다."
         : showCanceled
           ? "표시할 일정이 없습니다."
           : "상단 뱃지나 취소·연기 보기로 다시 표시하세요.";
@@ -610,10 +609,27 @@ export default function SalesHomePage() {
     <SalesPageShell wide>
       <SalesToolbar className="w-full">
         {/*
-          모바일: 날짜·추가 / 탭·뱃지 = 2행
-          태블릿·데스크톱(사이드바 포함): 가능하면 1행, 넘치면 자연 wrap(최대 2행)
+          모바일: 탭·날짜·추가 / 뱃지 = 최대 2행
+          태블릿·데스크톱: 탭 · 날짜 · 뱃지 · 추가 (가능하면 1행)
         */}
         <div className="flex w-full flex-wrap items-center gap-x-2 gap-y-2">
+          <SalesSegmentTabs
+            fit
+            compact
+            value={tab}
+            onChange={setTab}
+            className="w-auto shrink-0"
+            options={[
+              {
+                value: "schedule",
+                label: "일정 · 동선",
+              },
+              {
+                value: "report",
+                label: "일일보고",
+              },
+            ]}
+          />
           <SalesDayPicker
             compact
             ymd={ymd}
@@ -621,7 +637,31 @@ export default function SalesHomePage() {
             onChange={onYmdChange}
             className="min-w-0"
           />
-          <div className="ml-auto shrink-0 sm:order-last sm:ml-0 md:ml-auto">
+          <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1 text-xs sm:gap-1.5 sm:text-sm">
+            <StatusChip
+              label="예정"
+              value={String(plannedCount)}
+              muted={!plannedCount}
+              pressed={tab === "schedule" && listFilter === "planned"}
+              onClick={() => goScheduleFilter("planned")}
+            />
+            <StatusChip
+              label="완료"
+              value={String(doneCount)}
+              muted={!doneCount}
+              tone={doneCount > 0 ? "ok" : undefined}
+              pressed={tab === "schedule" && listFilter === "done"}
+              onClick={() => goScheduleFilter("done")}
+            />
+            <StatusChip
+              label="보고"
+              value={reportSubmitted ? "제출" : "미제출"}
+              tone={reportSubmitted ? "ok" : "alert"}
+              pressed={tab === "report"}
+              onClick={() =>
+                setTab(tab === "report" ? "schedule" : "report")
+              }
+            />
             {tab === "schedule" ? (
               <Button
                 size="sm"
@@ -640,64 +680,6 @@ export default function SalesHomePage() {
                 미제출
               </Badge>
             )}
-          </div>
-          <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto sm:flex-1 md:flex-none">
-            <SalesSegmentTabs
-              fit
-              compact
-              value={tab}
-              onChange={setTab}
-              className="w-auto shrink-0"
-              options={[
-                {
-                  value: "schedule",
-                  label: "일정 · 동선",
-                },
-                {
-                  value: "report",
-                  label: "일일보고",
-                },
-              ]}
-            />
-            <div className="flex min-w-0 flex-1 flex-wrap gap-1 text-xs sm:flex-none sm:gap-1.5 sm:text-sm">
-              <StatusChip
-                label="방문"
-                value={String(visitCount)}
-                muted={!visitCount}
-                pressed={
-                  tab === "schedule" && listFilter === "all" && !showCanceled
-                }
-                onClick={() => {
-                  setTab("schedule");
-                  setShowCanceled(false);
-                  setListFilter("all");
-                }}
-              />
-              <StatusChip
-                label="예정"
-                value={String(plannedCount)}
-                muted={!plannedCount}
-                pressed={tab === "schedule" && listFilter === "planned"}
-                onClick={() => goScheduleFilter("planned")}
-              />
-              <StatusChip
-                label="완료"
-                value={String(doneCount)}
-                muted={!doneCount}
-                tone={doneCount > 0 ? "ok" : undefined}
-                pressed={tab === "schedule" && listFilter === "done"}
-                onClick={() => goScheduleFilter("done")}
-              />
-              <StatusChip
-                label="보고"
-                value={reportSubmitted ? "제출" : "미제출"}
-                tone={reportSubmitted ? "ok" : "alert"}
-                pressed={tab === "report"}
-                onClick={() =>
-                  setTab(tab === "report" ? "schedule" : "report")
-                }
-              />
-            </div>
           </div>
         </div>
       </SalesToolbar>
