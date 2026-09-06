@@ -2,6 +2,7 @@
 // - web/frontend/src/features/remoteSupport/RemoteSupportProvider.tsx
 // - web/backend/modules/remoteSupport/remoteSupport.routes.js
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Headphones, Monitor, RefreshCw, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -75,11 +76,13 @@ function statusLabel(status: string) {
 export default function AdminRemoteSupportPage() {
   const token = useAuthStore((s) => s.token);
   const { toast } = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
   const period = usePeriodStore((s) => s.period);
   const customStartDate = usePeriodStore((s) => s.customStartDate);
   const customEndDate = usePeriodStore((s) => s.customEndDate);
 
-  const [tab, setTab] = useState("queue");
+  const [tab, setTab] = useState(() => searchParams.get("tab") || "queue");
+  const deepLinkHandledRef = useRef<string | null>(null);
   const [queue, setQueue] = useState<RemoteSupportSession[]>([]);
   const [history, setHistory] = useState<RemoteSupportSession[]>([]);
   const [stats, setStats] = useState<RemoteSupportStats | null>(null);
@@ -196,6 +199,42 @@ export default function AdminRemoteSupportPage() {
   useEffect(() => {
     void reloadAll();
   }, [reloadAll]);
+
+  // 전역 토스트「지원 들어가기」등 deep-link: sessionId + tab=room
+  useEffect(() => {
+    const sessionId = String(searchParams.get("sessionId") || "").trim();
+    const wantTab = String(searchParams.get("tab") || "").trim();
+    if (!sessionId || !token) return;
+    if (deepLinkHandledRef.current === sessionId) return;
+    deepLinkHandledRef.current = sessionId;
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const session = await remoteSupportApi.get(token, sessionId);
+        if (cancelled) return;
+        setActive(session);
+        setTab(wantTab === "queue" ? "queue" : "room");
+        void loadQueue();
+      } catch (err) {
+        if (cancelled) return;
+        toast({
+          title: "세션 열기 실패",
+          description:
+            err instanceof Error ? err.message : "세션을 불러오지 못했습니다.",
+          variant: "destructive",
+        });
+      } finally {
+        if (!cancelled) {
+          setSearchParams({}, { replace: true });
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loadQueue, searchParams, setSearchParams, toast, token]);
 
   useAppEventListener({
     enabled: true,

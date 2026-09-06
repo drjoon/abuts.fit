@@ -3,14 +3,17 @@
 // - web/backend/app.js
 // - web/backend/server.js
 // - web/backend/services/worksheetReadyQueue.guard.js
+// - web/backend/models/remoteSupport/remoteSupportSession.model.js
 // - web/frontend/src/shared/hooks/useAdminCommBadges.ts
 // change-log:
+// - 2026-09-06: remoteSupport = 직원 발신 pending 세션 수.
 // - 2026-08-26: 의뢰 배지 = 제조사 준비 큐와 동일(PTX 디자인 미완료·레거시 디자인 mode 제외).
 import Request from "../../models/request.model.js";
 import BusinessRegistrationInquiry from "../../models/businessRegistrationInquiry.model.js";
 import Mail from "../../models/mail.model.js";
 import Chat from "../../models/chat.model.js";
 import ChatRoom from "../../models/chatRoom.model.js";
+import RemoteSupportSession from "../../models/remoteSupport/remoteSupportSession.model.js";
 import { buildWorksheetReadyQueueGuard } from "../../services/worksheetReadyQueue.guard.js";
 
 /**
@@ -22,7 +25,7 @@ import { buildWorksheetReadyQueueGuard } from "../../services/worksheetReadyQueu
  */
 export async function adminGetCommBadges(req, res) {
   try {
-    const [requestCount, inquiryCount, mailCount, chatCount] =
+    const [requestCount, inquiryCount, mailCount, chatCount, remoteSupportCount] =
       await Promise.all([
         // 준비: 제조사 준비 큐와 동일 범위(PTX 디자인 대기·레거시 디자인 mode 제외)
         Request.countDocuments({
@@ -63,6 +66,12 @@ export async function adminGetCommBadges(req, res) {
           ]);
           return result[0]?.total ?? 0;
         })(),
+
+        // 원격 지원: 직원 발신·대기 중 세션
+        RemoteSupportSession.countDocuments({
+          status: "pending",
+          initiatedBy: "staff",
+        }),
       ]);
 
     return res.json({
@@ -73,6 +82,7 @@ export async function adminGetCommBadges(req, res) {
         mail: mailCount,
         chat: chatCount,
         sms: 0,
+        remoteSupport: remoteSupportCount,
       },
     });
   } catch (error) {

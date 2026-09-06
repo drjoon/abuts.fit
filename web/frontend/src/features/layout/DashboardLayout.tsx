@@ -15,6 +15,7 @@ import {
 } from "@/shared/layout/sidebarOpen";
 import { cn } from "@/shared/ui/cn";
 
+// - 2026-09-06: 원격 지원 요청 전역 토스트·사이드 소통/재무 순서·원격지원 상단.
 // - 2026-09-05: 데모 모드면 잔액≤0「크레딧 부족」destructive 토스트 생략.
 // - 2026-09-05: 기공소 수신 guideTourSatellite(lab_calendar)·부모에 복수 키.
 // - 2026-09-05: 스토어·어벗디자인·기공의뢰 부모 guideTourSatellite(복수 키)·어벗츠로 의뢰.
@@ -180,6 +181,10 @@ import {
   AccountSwitchPasswordDialog,
   type ColleagueAccount,
 } from "@/features/layout/AccountSwitcher";
+import {
+  remoteSupportApi,
+  type RemoteSupportSession,
+} from "@/features/remoteSupport/remoteSupportApi";
 import {
   DashboardSidebarNav,
   sidebarItemPath,
@@ -476,30 +481,30 @@ const adminSidebarSections: DashboardSidebarSection[] = [
     ],
   },
   {
-    title: "재무",
-    items: [
-      { icon: Wallet, label: "크레딧", href: "/dashboard/credits" },
-      { icon: Wallet, label: "정산", href: "/dashboard/payments" },
-      { icon: FileText, label: "세금계산서", href: "/dashboard/tax-invoices" },
-    ],
-  },
-  {
     title: "소통",
     items: [
+      {
+        icon: Headphones,
+        label: "원격 지원",
+        href: "/dashboard/remote-support",
+      },
       { icon: FileText, label: "의뢰", href: "/dashboard/monitoring" },
       {
         icon: MessageSquare,
         label: "채팅",
         href: "/dashboard/chat-management",
       },
-      {
-        icon: Headphones,
-        label: "원격 지원",
-        href: "/dashboard/remote-support",
-      },
       { icon: Send, label: "메시지", href: "/dashboard/sms" },
       { icon: Mail, label: "메일", href: "/dashboard/mail" },
       { icon: MessageSquare, label: "문의", href: "/dashboard/inquiries" },
+    ],
+  },
+  {
+    title: "재무",
+    items: [
+      { icon: Wallet, label: "크레딧", href: "/dashboard/credits" },
+      { icon: Wallet, label: "정산", href: "/dashboard/payments" },
+      { icon: FileText, label: "세금계산서", href: "/dashboard/tax-invoices" },
     ],
   },
   {
@@ -1314,6 +1319,55 @@ export const DashboardLayout = () => {
             }}
           >
             확인
+          </ToastAction>
+        ),
+      });
+    },
+  });
+
+  useAppEventListener({
+    enabled: user.role === "admin",
+    eventTypes: ["remote-support:requested"],
+    deferWhenEditing: false,
+    onMatch: (evt) => {
+      const data =
+        evt?.data && typeof evt.data === "object"
+          ? (evt.data as {
+              sessionId?: string;
+              session?: RemoteSupportSession;
+            })
+          : {};
+      const session = data.session;
+      const sessionId = String(data.sessionId || session?._id || "").trim();
+      if (!sessionId) return;
+
+      const who =
+        String(session?.requesterSnapshot?.businessName || "").trim() ||
+        String(session?.requesterSnapshot?.name || "").trim() ||
+        "직원";
+
+      toast({
+        title: "원격 지원 요청",
+        description: `${who}에서 원격 지원을 요청했습니다.`,
+        duration: Number.POSITIVE_INFINITY,
+        skipDuplicateCheck: true,
+        action: (
+          <ToastAction
+            altText="지원 들어가기"
+            onClick={() => {
+              void (async () => {
+                try {
+                  await remoteSupportApi.accept(token, sessionId);
+                } catch {
+                  // 이미 수락됐거나 만료된 경우에도 지원실로 이동
+                }
+                navigate(
+                  `/dashboard/remote-support?sessionId=${encodeURIComponent(sessionId)}&tab=room`,
+                );
+              })();
+            }}
+          >
+            지원 들어가기
           </ToastAction>
         ),
       });

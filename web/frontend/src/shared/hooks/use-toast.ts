@@ -194,12 +194,15 @@ function toast({ skipDuplicateCheck = false, ...props }: Toast) {
   const dismiss = () => dispatch({ type: "DISMISS_TOAST", toastId: id });
 
   // duration 이후 자동으로 닫힘 처리 (Radix 기본 동작 외에 강제 스케줄링)
-  setTimeout(() => dismiss(), duration);
-  // 닫힘 직후 완전히 제거(잔상 방지)
-  setTimeout(
-    () => dispatch({ type: "REMOVE_TOAST", toastId: id }),
-    duration + 600
-  );
+  // Infinity 등 비유한 값은 수동 닫기(× / 액션)까지 유지
+  if (Number.isFinite(duration) && duration > 0) {
+    setTimeout(() => dismiss(), duration);
+    // 닫힘 직후 완전히 제거(잔상 방지)
+    setTimeout(
+      () => dispatch({ type: "REMOVE_TOAST", toastId: id }),
+      duration + 600,
+    );
+  }
 
   dispatch({
     type: "ADD_TOAST",

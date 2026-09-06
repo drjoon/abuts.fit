@@ -4,13 +4,20 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/shared/realtime/useAppEventListener.ts
 // change-log:
+// - 2026-09-06: remoteSupport 배지 키·href 추가.
 // - 2026-08-26: 초기 fetch가 방문 clear를 덮어쓰지 않도록 cleared 키 유지.
 import { useState, useEffect, useCallback, useRef } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
 
-export type CommBadgeKey = "request" | "chat" | "mail" | "inquiry" | "sms";
+export type CommBadgeKey =
+  | "request"
+  | "chat"
+  | "mail"
+  | "inquiry"
+  | "sms"
+  | "remoteSupport";
 
 export type CommBadgeCounts = Record<CommBadgeKey, number>;
 
@@ -20,6 +27,7 @@ const COMM_BADGE_HREFS: Record<string, CommBadgeKey> = {
   "/dashboard/sms": "sms",
   "/dashboard/mail": "mail",
   "/dashboard/inquiries": "inquiry",
+  "/dashboard/remote-support": "remoteSupport",
 };
 
 const INITIAL_COUNTS: CommBadgeCounts = {
@@ -28,6 +36,7 @@ const INITIAL_COUNTS: CommBadgeCounts = {
   mail: 0,
   inquiry: 0,
   sms: 0,
+  remoteSupport: 0,
 };
 
 /**

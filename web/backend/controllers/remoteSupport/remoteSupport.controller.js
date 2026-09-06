@@ -162,6 +162,10 @@ export async function createSession(req, res) {
           sessionId: String(session._id),
           session: payload,
         });
+        emitAppEventToRoles(["admin"], "comm:badge-update", {
+          key: "remoteSupport",
+          delta: 1,
+        });
       })
       .catch((err) =>
         console.warn("[remote-support] notify admins failed:", err?.message),
@@ -324,6 +328,12 @@ export async function acceptSession(req, res) {
           sessionId: String(session._id),
           session: payload,
         });
+        if (session.initiatedBy === "staff") {
+          emitAppEventToRoles(["admin"], "comm:badge-update", {
+            key: "remoteSupport",
+            delta: -1,
+          });
+        }
       })
       .catch((err) =>
         console.warn("[remote-support] accept notify failed:", err?.message),
@@ -395,6 +405,12 @@ export async function declineSession(req, res) {
           sessionId: String(session._id),
           session: payload,
         });
+        if (session.initiatedBy === "staff") {
+          emitAppEventToRoles(["admin"], "comm:badge-update", {
+            key: "remoteSupport",
+            delta: -1,
+          });
+        }
       })
       .catch((err) =>
         console.warn("[remote-support] decline notify failed:", err?.message),
@@ -506,6 +522,9 @@ export async function endSession(req, res) {
     if (isAdmin && notes !== undefined) session.notes = notes;
     if (isAdmin && ideaTags !== undefined) session.ideaTags = ideaTags;
 
+    const wasPendingStaffRequest =
+      session.status === "pending" && session.initiatedBy === "staff";
+
     const now = new Date();
     if (session.status === "pending") {
       session.status = "cancelled";
@@ -555,6 +574,12 @@ export async function endSession(req, res) {
           sessionId: String(session._id),
           session: payload,
         });
+        if (wasPendingStaffRequest) {
+          emitAppEventToRoles(["admin"], "comm:badge-update", {
+            key: "remoteSupport",
+            delta: -1,
+          });
+        }
       })
       .catch((err) =>
         console.warn("[remote-support] end notify failed:", err?.message),
