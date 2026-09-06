@@ -10,6 +10,14 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -180,6 +188,11 @@ export default function SalesAccountsPage() {
     });
   };
 
+  const closeForm = () => {
+    setEditing(null);
+    setShowExtra(false);
+  };
+
   const listPanel = (
     <SalesPanel
       title="목록"
@@ -212,166 +225,6 @@ export default function SalesAccountsPage() {
           </SelectContent>
         </Select>
       </div>
-
-      {editing ? (
-        <div className="mb-4 space-y-2.5 rounded-xl border border-primary-muted/60 bg-primary-soft/30 p-4">
-          <div className="text-sm font-semibold text-slate-900">
-            {editing._id ? "거래처 수정" : "새 거래처"}
-          </div>
-          <p className="text-xs text-muted-foreground">
-            상호 몇 글자만 치면 등록·플랫폼·지도에서 찾아 채웁니다.
-          </p>
-          <div className="grid gap-2">
-            <div className="grid grid-cols-[6.5rem_minmax(0,1fr)] gap-2">
-              <Select
-                value={editing.kind || "practice"}
-                onValueChange={(v) =>
-                  setEditing((prev) => ({
-                    ...prev,
-                    kind: v as "practice" | "lab",
-                  }))
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="practice">치과</SelectItem>
-                  <SelectItem value="lab">기공소</SelectItem>
-                </SelectContent>
-              </Select>
-              <SalesPlaceSuggestInput
-                value={editing.name || ""}
-                onChange={(name) =>
-                  setEditing((prev) => ({
-                    ...prev,
-                    name,
-                    ...(prev?._id ? {} : { accountId: undefined }),
-                  }))
-                }
-                onPick={applySuggest}
-                placeholder="상호명 * · 자동완성"
-                autoFocus={!editing._id}
-              />
-            </div>
-            <div className="flex gap-2">
-              <Input
-                className="min-w-0 flex-1"
-                placeholder="주소 (위치에서 자동 채움)"
-                value={editing.address || ""}
-                onChange={(e) =>
-                  setEditing((prev) => ({
-                    ...prev,
-                    address: e.target.value,
-                    lat: null,
-                    lng: null,
-                  }))
-                }
-              />
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="shrink-0"
-                onClick={() =>
-                  openPlacePicker({
-                    name: editing.name || "",
-                    address: editing.address || "",
-                    kind: editing.kind || "practice",
-                    businessAnchorId: editing.businessAnchorId || null,
-                    accountId: editing._id || null,
-                    lat: editing.lat,
-                    lng: editing.lng,
-                    source: editing.businessAnchorId ? "platform" : "kakao",
-                  })
-                }
-              >
-                위치
-              </Button>
-            </div>
-            {!hasCoords(editing) ? (
-              <button
-                type="button"
-                className="flex items-center gap-1.5 text-left text-xs text-amber-700"
-                onClick={() =>
-                  openPlacePicker({
-                    name: editing.name || "",
-                    address: editing.address || "",
-                    kind: editing.kind || "practice",
-                    businessAnchorId: editing.businessAnchorId || null,
-                    accountId: editing._id || null,
-                    source: editing.businessAnchorId ? "platform" : "kakao",
-                  })
-                }
-              >
-                <MapPin className="h-3.5 w-3.5" />
-                좌표 없음 · 위치 지정
-              </button>
-            ) : (
-              <p className="text-xs text-emerald-700">
-                좌표 확인됨 · 동선 지도에 표시됩니다
-              </p>
-            )}
-            <Input
-              placeholder="전화 (있으면 자동 채움)"
-              value={editing.phone || ""}
-              onChange={(e) =>
-                setEditing((prev) => ({ ...prev, phone: e.target.value }))
-              }
-              inputMode="tel"
-            />
-            {showExtra ? (
-              <>
-                <Input
-                  placeholder="대표자명"
-                  value={editing.representativeName || ""}
-                  onChange={(e) =>
-                    setEditing((prev) => ({
-                      ...prev,
-                      representativeName: e.target.value,
-                    }))
-                  }
-                />
-                <Textarea
-                  placeholder="특이사항 · 방문 팁"
-                  value={editing.memo || ""}
-                  onChange={(e) =>
-                    setEditing((prev) => ({ ...prev, memo: e.target.value }))
-                  }
-                  rows={2}
-                />
-              </>
-            ) : (
-              <button
-                type="button"
-                className="text-left text-xs text-primary underline-offset-2 hover:underline"
-                onClick={() => setShowExtra(true)}
-              >
-                대표 · 메모 추가
-              </button>
-            )}
-          </div>
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              disabled={saveMut.isPending}
-              onClick={() => saveMut.mutate()}
-            >
-              저장
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                setEditing(null);
-                setShowExtra(false);
-              }}
-            >
-              취소
-            </Button>
-          </div>
-        </div>
-      ) : null}
 
       {isLoading ? (
         <p className="text-sm text-muted-foreground">불러오는 중…</p>
@@ -551,6 +404,205 @@ export default function SalesAccountsPage() {
           />
         }
       />
+
+      <Dialog
+        open={editing != null}
+        onOpenChange={(open) => {
+          if (!open && !saveMut.isPending) closeForm();
+        }}
+      >
+        <DialogContent
+          className="flex max-h-[min(90vh,38rem)] flex-col gap-0 overflow-hidden rounded-2xl p-0 sm:max-w-xl"
+          closeClassName="z-50 right-3 top-3 flex h-10 w-10 items-center justify-center rounded-full bg-background opacity-100 shadow-sm ring-1 ring-slate-200/80 hover:bg-slate-50"
+          closeIconClassName="h-5 w-5"
+        >
+          <DialogHeader className="relative z-0 shrink-0 space-y-1 border-b border-slate-100 bg-background px-4 py-3.5 pr-14 text-left sm:px-5 sm:pr-14">
+            <DialogTitle>
+              {editing?._id ? "거래처 수정" : "거래처 추가"}
+            </DialogTitle>
+            <DialogDescription className="sr-only">
+              상호 몇 글자만 치면 등록·플랫폼·지도에서 찾아 채웁니다.
+            </DialogDescription>
+          </DialogHeader>
+          {editing ? (
+            <>
+              <div className="relative z-0 min-h-0 space-y-3 overflow-y-auto px-4 py-3.5 sm:px-5">
+                <p className="text-xs text-muted-foreground">
+                  상호 몇 글자만 치면 등록·플랫폼·지도에서 찾아 채웁니다.
+                </p>
+                <div className="grid gap-2.5">
+                  <div className="grid grid-cols-[6.5rem_minmax(0,1fr)] gap-2">
+                    <Select
+                      value={editing.kind || "practice"}
+                      onValueChange={(v) =>
+                        setEditing((prev) => ({
+                          ...prev,
+                          kind: v as "practice" | "lab",
+                        }))
+                      }
+                    >
+                      <SelectTrigger className="h-10 rounded-xl">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="practice">치과</SelectItem>
+                        <SelectItem value="lab">기공소</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <SalesPlaceSuggestInput
+                      className="min-w-0"
+                      inputClassName="h-10 rounded-xl"
+                      listMode="inline"
+                      listClassName="max-h-[16rem] overflow-y-auto"
+                      maxItems={24}
+                      value={editing.name || ""}
+                      onChange={(name) =>
+                        setEditing((prev) => ({
+                          ...prev,
+                          name,
+                          ...(prev?._id ? {} : { accountId: undefined }),
+                        }))
+                      }
+                      onPick={applySuggest}
+                      placeholder="상호명 * · 자동완성"
+                      autoFocus={!editing._id}
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <Input
+                      className="h-10 min-w-0 flex-1 rounded-xl"
+                      placeholder="주소 (위치에서 자동 채움)"
+                      value={editing.address || ""}
+                      onChange={(e) =>
+                        setEditing((prev) => ({
+                          ...prev,
+                          address: e.target.value,
+                          lat: null,
+                          lng: null,
+                        }))
+                      }
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-10 shrink-0 rounded-xl"
+                      onClick={() =>
+                        openPlacePicker({
+                          name: editing.name || "",
+                          address: editing.address || "",
+                          kind: editing.kind || "practice",
+                          businessAnchorId: editing.businessAnchorId || null,
+                          accountId: editing._id || null,
+                          lat: editing.lat,
+                          lng: editing.lng,
+                          source: editing.businessAnchorId
+                            ? "platform"
+                            : "kakao",
+                        })
+                      }
+                    >
+                      위치
+                    </Button>
+                  </div>
+                  {!hasCoords(editing) ? (
+                    <button
+                      type="button"
+                      className="flex items-center gap-1.5 text-left text-xs text-amber-700"
+                      onClick={() =>
+                        openPlacePicker({
+                          name: editing.name || "",
+                          address: editing.address || "",
+                          kind: editing.kind || "practice",
+                          businessAnchorId: editing.businessAnchorId || null,
+                          accountId: editing._id || null,
+                          source: editing.businessAnchorId
+                            ? "platform"
+                            : "kakao",
+                        })
+                      }
+                    >
+                      <MapPin className="h-3.5 w-3.5" />
+                      좌표 없음 · 위치 지정
+                    </button>
+                  ) : (
+                    <p className="text-xs text-emerald-700">
+                      좌표 확인됨 · 동선 지도에 표시됩니다
+                    </p>
+                  )}
+                  <Input
+                    className="h-10 rounded-xl"
+                    placeholder="전화 (있으면 자동 채움)"
+                    value={editing.phone || ""}
+                    onChange={(e) =>
+                      setEditing((prev) => ({
+                        ...prev,
+                        phone: e.target.value,
+                      }))
+                    }
+                    inputMode="tel"
+                  />
+                  {showExtra ? (
+                    <>
+                      <Input
+                        className="h-10 rounded-xl"
+                        placeholder="대표자명"
+                        value={editing.representativeName || ""}
+                        onChange={(e) =>
+                          setEditing((prev) => ({
+                            ...prev,
+                            representativeName: e.target.value,
+                          }))
+                        }
+                      />
+                      <Textarea
+                        className="rounded-xl"
+                        placeholder="특이사항 · 방문 팁"
+                        value={editing.memo || ""}
+                        onChange={(e) =>
+                          setEditing((prev) => ({
+                            ...prev,
+                            memo: e.target.value,
+                          }))
+                        }
+                        rows={2}
+                      />
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      className="text-left text-xs text-primary underline-offset-2 hover:underline"
+                      onClick={() => setShowExtra(true)}
+                    >
+                      대표 · 메모 추가
+                    </button>
+                  )}
+                </div>
+              </div>
+              <DialogFooter className="shrink-0 gap-2 border-t border-slate-100 bg-background px-4 py-3 sm:space-x-0 sm:px-5">
+                <Button
+                  variant="outline"
+                  onClick={closeForm}
+                  disabled={saveMut.isPending}
+                >
+                  취소
+                </Button>
+                <Button
+                  disabled={
+                    !(editing.name || "").trim() ||
+                    !editing.kind ||
+                    saveMut.isPending
+                  }
+                  onClick={() => saveMut.mutate()}
+                >
+                  {saveMut.isPending ? "저장 중…" : "저장"}
+                </Button>
+              </DialogFooter>
+            </>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
       <SalesPlacePickerDrawer
         open={placePickerOpen}
         onOpenChange={setPlacePickerOpen}
