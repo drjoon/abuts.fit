@@ -31,7 +31,7 @@ export function SalesPageShell({
     <div
       className={cn(
         "mx-auto w-full space-y-4 p-3 pb-24 sm:space-y-5 sm:p-4 sm:pb-10 md:p-5 lg:space-y-6 lg:p-6 lg:pb-12",
-        wide === false ? "max-w-3xl" : "max-w-7xl",
+        wide === false ? "max-w-3xl" : "max-w-5xl",
         className,
       )}
     >

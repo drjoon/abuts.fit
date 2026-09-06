@@ -18,6 +18,7 @@ type KakaoMap = {
   setBounds: (bounds: KakaoLatLngBounds) => void;
   setCenter: (latlng: KakaoLatLng) => void;
   setLevel: (level: number) => void;
+  relayout?: () => void;
 };
 type KakaoLatLngBounds = {
   extend: (latlng: KakaoLatLng) => void;
@@ -65,6 +66,19 @@ function getKakaoAppKey() {
   return String(import.meta.env.VITE_KAKAO_MAP_APP_KEY || "").trim();
 }
 
+function waitFrames(n = 2) {
+  return new Promise<void>((resolve) => {
+    const step = (left: number) => {
+      if (left <= 0) {
+        resolve();
+        return;
+      }
+      requestAnimationFrame(() => step(left - 1));
+    };
+    step(n);
+  });
+}
+
 export function loadKakaoMaps(): Promise<KakaoMaps> {
   if (typeof window === "undefined") {
     return Promise.reject(new Error("window unavailable"));
@@ -79,26 +93,48 @@ export function loadKakaoMaps(): Promise<KakaoMaps> {
     return Promise.reject(new Error("missing_key"));
   }
 
-  kakaoMapsPromise = new Promise((resolve, reject) => {
-    const existing = document.querySelector<HTMLScriptElement>(
-      `script[data-abuts-kakao-maps="1"]`,
-    );
-    const onReady = () => {
+  kakaoMapsPromise = new Promise<KakaoMaps>((resolve, reject) => {
+    const finish = (err?: Error) => {
+      if (err) {
+        kakaoMapsPromise = null;
+        reject(err);
+        return;
+      }
       const maps = window.kakao?.maps;
       if (!maps) {
+        kakaoMapsPromise = null;
         reject(new Error("kakao maps missing"));
         return;
       }
       if (typeof maps.load === "function") {
-        maps.load(() => resolve(maps));
-      } else {
+        maps.load(() => {
+          if (!window.kakao?.maps?.LatLng) {
+            kakaoMapsPromise = null;
+            reject(new Error("kakao maps load incomplete"));
+            return;
+          }
+          resolve(window.kakao.maps);
+        });
+      } else if (maps.LatLng) {
         resolve(maps);
+      } else {
+        kakaoMapsPromise = null;
+        reject(new Error("kakao maps not ready"));
       }
     };
 
+    const existing = document.querySelector<HTMLScriptElement>(
+      `script[data-abuts-kakao-maps="1"]`,
+    );
+
     if (existing) {
-      if (window.kakao?.maps) onReady();
-      else existing.addEventListener("load", onReady);
+      if (window.kakao?.maps) finish();
+      else {
+        existing.addEventListener("load", () => finish());
+        existing.addEventListener("error", () =>
+          finish(new Error("script_load_failed")),
+        );
+      }
       return;
     }
 
@@ -106,8 +142,8 @@ export function loadKakaoMaps(): Promise<KakaoMaps> {
     script.src = `${KAKAO_SDK_HOST}?appkey=${encodeURIComponent(appKey)}&autoload=false`;
     script.async = true;
     script.dataset.abutsKakaoMaps = "1";
-    script.onload = onReady;
-    script.onerror = () => reject(new Error("script_load_failed"));
+    script.onload = () => finish();
+    script.onerror = () => finish(new Error("script_load_failed"));
     document.head.appendChild(script);
   });
 
@@ -135,6 +171,44 @@ function makeLabelContent(label: string, isStart: boolean) {
   return el;
 }
 
+/** Kakao JS SDK 실패 시 OSM 임베드 (키/도메인 무관). */
+function OsmFallbackMap({ stops }: { stops: RouteMapStop[] }) {
+  const pts = stops.filter(
+    (s) =>
+      s.lat != null &&
+      s.lng != null &&
+      Number.isFinite(s.lat) &&
+      Number.isFinite(s.lng),
+  ) as Array<RouteMapStop & { lat: number; lng: number }>;
+  if (!pts.length) return null;
+
+  const lats = pts.map((p) => p.lat);
+  const lngs = pts.map((p) => p.lng);
+  const pad = 0.02;
+  const minLat = Math.min(...lats) - pad;
+  const maxLat = Math.max(...lats) + pad;
+  const minLng = Math.min(...lngs) - pad;
+  const maxLng = Math.max(...lngs) + pad;
+  const marker = pts[0];
+  const src = `https://www.openstreetmap.org/export/embed.html?bbox=${minLng}%2C${minLat}%2C${maxLng}%2C${maxLat}&layer=mapnik&marker=${marker.lat}%2C${marker.lng}`;
+
+  return (
+    <>
+      <iframe
+        title="동선 지도"
+        src={src}
+        className="h-52 w-full overflow-hidden rounded-xl border border-slate-200 bg-slate-100 lg:h-64"
+        loading="lazy"
+        referrerPolicy="no-referrer-when-downgrade"
+      />
+      <p className="text-[11px] text-muted-foreground">
+        카카오 지도 SDK를 쓸 수 없어 대체 지도를 표시합니다. (카카오 개발자
+        콘솔 → JavaScript 키에 localhost 도메인 등록을 확인하세요)
+      </p>
+    </>
+  );
+}
+
 type SalesRouteMapProps = {
   stops: RouteMapStop[];
   className?: string;
@@ -143,6 +217,7 @@ type SalesRouteMapProps = {
 export default function SalesRouteMap({ stops, className }: SalesRouteMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [mode, setMode] = useState<"kakao" | "osm">("kakao");
 
   const plottable = stops.filter(
     (s) =>
@@ -159,6 +234,12 @@ export default function SalesRouteMap({ stops, className }: SalesRouteMapProps) 
     .join("|");
 
   useEffect(() => {
+    setMode("kakao");
+    setError(null);
+  }, [plotKey]);
+
+  useEffect(() => {
+    if (mode !== "kakao") return;
     let cancelled = false;
     const cleanups: Array<() => void> = [];
 
@@ -171,6 +252,14 @@ export default function SalesRouteMap({ stops, className }: SalesRouteMapProps) 
       try {
         const maps = await loadKakaoMaps();
         if (cancelled || !containerRef.current) return;
+        await waitFrames(2);
+        if (cancelled || !containerRef.current) return;
+
+        const rect = containerRef.current.getBoundingClientRect();
+        if (rect.width < 8 || rect.height < 8) {
+          throw new Error("map_container_too_small");
+        }
+
         setError(null);
         containerRef.current.innerHTML = "";
 
@@ -221,16 +310,20 @@ export default function SalesRouteMap({ stops, className }: SalesRouteMapProps) 
         } else {
           map.setBounds(bounds);
         }
+        map.relayout?.();
+        window.setTimeout(() => {
+          if (!cancelled) map.relayout?.();
+        }, 120);
       } catch (e) {
         if (cancelled) return;
         const msg = e instanceof Error ? e.message : "map_error";
+        console.warn("[SalesRouteMap]", msg, e);
         if (msg === "missing_key") {
           setError(
             "지도 앱키가 없습니다. VITE_KAKAO_MAP_APP_KEY를 설정하세요.",
           );
-        } else {
-          setError("지도를 불러오지 못했습니다.");
         }
+        setMode("osm");
       }
     }
 
@@ -241,7 +334,7 @@ export default function SalesRouteMap({ stops, className }: SalesRouteMapProps) 
     };
     // plotKey captures stop geometry; plottable is derived from same stops
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [plotKey]);
+  }, [plotKey, mode]);
 
   if (plottable.length === 0) {
     return (
@@ -258,13 +351,15 @@ export default function SalesRouteMap({ stops, className }: SalesRouteMapProps) 
 
   return (
     <div className={cn("space-y-1.5", className)}>
-      <div
-        ref={containerRef}
-        className="h-52 w-full overflow-hidden rounded-xl border border-slate-200 bg-slate-100"
-      />
-      {error ? (
-        <p className="text-xs text-amber-700">{error}</p>
-      ) : null}
+      {mode === "kakao" ? (
+        <div
+          ref={containerRef}
+          className="h-52 w-full overflow-hidden rounded-xl border border-slate-200 bg-slate-100 lg:h-64"
+        />
+      ) : (
+        <OsmFallbackMap stops={plottable} />
+      )}
+      {error ? <p className="text-xs text-amber-700">{error}</p> : null}
     </div>
   );
 }

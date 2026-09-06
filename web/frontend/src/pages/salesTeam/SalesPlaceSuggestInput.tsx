@@ -35,6 +35,9 @@ export default function SalesPlaceSuggestInput({
   const token = useAuthStore((s) => s.token);
   const listId = useId();
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const listRef = useRef<HTMLUListElement | null>(null);
+  /** 선택 직후 value 동기화로 suggest가 다시 열려 드롭다운이 남는 것 방지 */
+  const suppressSuggestRef = useRef(false);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<SalesPlaceSuggest[]>([]);
@@ -43,10 +46,18 @@ export default function SalesPlaceSuggestInput({
   const reqRef = useRef(0);
 
   useEffect(() => {
+    if (suppressSuggestRef.current) {
+      suppressSuggestRef.current = false;
+      setItems([]);
+      setOpen(false);
+      setLoading(false);
+      return;
+    }
     const q = value.trim();
     if (q.length < 2) {
       setItems([]);
       setLoading(false);
+      setOpen(false);
       return;
     }
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -83,10 +94,23 @@ export default function SalesPlaceSuggestInput({
     return () => document.removeEventListener("mousedown", onDoc);
   }, []);
 
+  useEffect(() => {
+    if (!open) return;
+    const el = listRef.current?.querySelector<HTMLElement>(
+      `[data-suggest-idx="${active}"]`,
+    );
+    el?.scrollIntoView({ block: "nearest" });
+  }, [active, open]);
+
   const pick = (item: SalesPlaceSuggest) => {
+    suppressSuggestRef.current = true;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    reqRef.current += 1;
+    setOpen(false);
+    setItems([]);
+    setLoading(false);
     onChange(item.name);
     onPick(item);
-    setOpen(false);
   };
 
   return (
@@ -103,6 +127,7 @@ export default function SalesPlaceSuggestInput({
           placeholder={placeholder}
           className={cn("pl-8 pr-8", inputClassName)}
           onChange={(e) => {
+            suppressSuggestRef.current = false;
             onChange(e.target.value);
             setOpen(true);
           }}
@@ -131,6 +156,7 @@ export default function SalesPlaceSuggestInput({
       </div>
       {open && value.trim().length >= 2 ? (
         <ul
+          ref={listRef}
           id={listId}
           role="listbox"
           className="absolute z-40 mt-1 max-h-64 w-full overflow-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
@@ -145,6 +171,7 @@ export default function SalesPlaceSuggestInput({
                 <button
                   type="button"
                   role="option"
+                  data-suggest-idx={idx}
                   aria-selected={idx === active}
                   className={cn(
                     "flex w-full flex-col gap-0.5 px-3 py-2 text-left text-sm hover:bg-slate-50",

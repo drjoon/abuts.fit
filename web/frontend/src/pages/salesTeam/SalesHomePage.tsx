@@ -41,6 +41,7 @@ import {
   SalesPageShell,
   SalesPanel,
   SalesSegmentTabs,
+  SalesSplit,
   SalesToolbar,
 } from "./salesUi";
 
@@ -376,8 +377,9 @@ export default function SalesHomePage() {
               title="방문 추가"
               description="상호 검색 후 시간만 정하면 됩니다."
             >
-              <div className="grid gap-2.5 sm:grid-cols-[minmax(0,1fr)_7.5rem_8rem_auto]">
+              <div className="flex max-w-2xl flex-col gap-2.5 sm:flex-row sm:flex-wrap sm:items-center">
                 <SalesPlaceSuggestInput
+                  className="min-w-0 flex-1 sm:min-w-[14rem]"
                   value={placeQuery}
                   onChange={(v) => {
                     setPlaceQuery(v);
@@ -402,11 +404,12 @@ export default function SalesHomePage() {
                 />
                 <Input
                   type="time"
+                  className="w-full sm:w-[7.5rem]"
                   value={time}
                   onChange={(e) => setTime(e.target.value)}
                 />
                 <Select value={commitment} onValueChange={setCommitment}>
-                  <SelectTrigger>
+                  <SelectTrigger className="w-full sm:w-[8rem]">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -436,224 +439,238 @@ export default function SalesHomePage() {
             </SalesPanel>
           ) : null}
 
-          {visits.length > 0 ? (
-            <SalesPanel
-              title="이날 동선"
-              description={
-                routeLoading
-                  ? "지도 계산 중…"
-                  : route
-                    ? `예상 ${route.totalKm} km${
-                        route.missingCoordsCount
-                          ? ` · 좌표 없음 ${route.missingCoordsCount}`
-                          : ""
-                      }`
-                    : "일정 기준으로 자동 표시"
-              }
-              actions={
-                route?.mapUrl ? (
-                  <Button asChild size="sm" variant="outline">
-                    <a href={route.mapUrl} target="_blank" rel="noreferrer">
-                      카카오맵
-                    </a>
-                  </Button>
-                ) : null
-              }
-            >
-              {route ? (
-                <div className="space-y-2">
-                  {!route.geocodeConfigured ? (
-                    <p className="text-xs text-amber-700">
-                      주소 좌표 변환 키가 없으면 지도가 비어 있을 수 있습니다.
-                    </p>
-                  ) : null}
-                  <SalesRouteMap stops={route.ordered} />
-                  {missingCoordStops.length > 0 ? (
-                    <div className="space-y-1.5 rounded-xl border border-amber-200/80 bg-amber-50/60 px-3 py-2.5">
-                      <p className="text-xs font-medium text-amber-900">
-                        좌표 없음 {missingCoordStops.length}곳 · 위치를 지정하면
-                        지도에 표시됩니다
-                      </p>
-                      <div className="flex flex-col gap-1.5">
-                        {missingCoordStops.map((s) => (
-                          <button
-                            key={s.accountId || s.name}
-                            type="button"
-                            className="flex items-center justify-between gap-2 rounded-lg bg-white px-3 py-2.5 text-left text-sm active:bg-slate-50"
-                            onClick={() =>
-                              openPlaceFix({
-                                accountId: s.accountId,
-                                name: s.name,
-                                address: s.address,
-                                businessAnchorId: s.businessAnchorId,
-                              })
-                            }
-                          >
-                            <span className="min-w-0 truncate font-medium text-slate-900">
-                              {s.name}
-                            </span>
-                            <span className="shrink-0 text-xs font-medium text-primary">
-                              위치 지정
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  {routeLoading
-                    ? "동선을 계산하는 중…"
-                    : "예정 방문이 있으면 지도가 자동으로 나타납니다."}
-                </p>
-              )}
-            </SalesPanel>
-          ) : null}
-
-          <SalesPanel
-            title="시간대별 일정"
-            description="현장에서 완료·부재·취소를 바로 기록합니다."
-          >
-            {visitsLoading ? (
-              <p className="text-sm text-muted-foreground">불러오는 중…</p>
-            ) : visits.length === 0 ? (
-              <SalesEmptyState
-                icon={CalendarDays}
-                title="이 날 일정이 없습니다"
-                description="상호를 검색해 일정을 넣으면 당일 지도와 타임라인이 자동으로 보입니다."
-                actionLabel="일정 추가"
-                onAction={() => setShowForm(true)}
-              />
-            ) : (
-              <ol className="relative space-y-0 border-l border-slate-200 pl-5">
-                {visits.map((v) => {
-                  const orderNo = routeOrderByVisitId.get(v._id);
-                  return (
-                    <li key={v._id} className="relative pb-4 last:pb-0">
-                      <span
-                        className={`absolute -left-[1.35rem] top-2 h-3 w-3 rounded-full ring-4 ring-white ${
-                          v.status === "done"
-                            ? "bg-emerald-500"
-                            : v.status === "canceled" || v.status === "noShow"
-                              ? "bg-slate-300"
-                              : "bg-primary"
-                        }`}
-                      />
-                      <div className="rounded-xl border border-slate-200/80 bg-slate-50/40 px-3.5 py-3">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2">
-                              {orderNo ? (
-                                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-900 text-[10px] font-semibold text-white">
-                                  {orderNo}
-                                </span>
-                              ) : null}
-                              <span className="truncate font-medium">
-                                {visitAccountName(v)}
-                              </span>
-                            </div>
-                            <div className="mt-0.5 text-xs text-muted-foreground">
-                              {formatVisitTime(v.plannedAt)} ·{" "}
-                              {COMMITMENT_LABEL[v.commitment] || v.commitment}
-                            </div>
-                            {v.memo ? (
-                              <p className="mt-1 text-xs text-slate-600">
-                                {v.memo}
-                              </p>
-                            ) : null}
-                          </div>
-                          <Badge
-                            variant={
+          <SalesSplit
+            primaryClassName="order-2 lg:order-1"
+            secondaryClassName="order-1 lg:order-2"
+            primary={
+              <SalesPanel
+                title="시간대별 일정"
+                description="현장에서 완료·부재·취소를 바로 기록합니다."
+              >
+                {visitsLoading ? (
+                  <p className="text-sm text-muted-foreground">불러오는 중…</p>
+                ) : visits.length === 0 ? (
+                  <SalesEmptyState
+                    icon={CalendarDays}
+                    title="이 날 일정이 없습니다"
+                    description="상호를 검색해 일정을 넣으면 당일 지도와 타임라인이 자동으로 보입니다."
+                    actionLabel="일정 추가"
+                    onAction={() => setShowForm(true)}
+                  />
+                ) : (
+                  <ol className="relative space-y-0 border-l border-slate-200 pl-5">
+                    {visits.map((v) => {
+                      const orderNo = routeOrderByVisitId.get(v._id);
+                      return (
+                        <li key={v._id} className="relative pb-4 last:pb-0">
+                          <span
+                            className={`absolute -left-[1.35rem] top-2 h-3 w-3 rounded-full ring-4 ring-white ${
                               v.status === "done"
-                                ? "default"
-                                : v.status === "canceled"
-                                  ? "outline"
-                                  : "secondary"
-                            }
-                          >
-                            {visitStatusLabel(v.status)}
-                          </Badge>
-                        </div>
-                        {v.status === "planned" ? (
-                          <div className="mt-2.5 flex flex-wrap gap-1.5">
-                            {(() => {
-                              const acc =
-                                v.accountId &&
-                                typeof v.accountId === "object"
-                                  ? v.accountId
-                                  : null;
-                              const missing =
-                                acc &&
-                                (acc.lat == null ||
-                                  acc.lng == null ||
-                                  !Number.isFinite(Number(acc.lat)) ||
-                                  !Number.isFinite(Number(acc.lng)));
-                              if (!missing || !acc?._id) return null;
-                              return (
+                                ? "bg-emerald-500"
+                                : v.status === "canceled" ||
+                                    v.status === "noShow"
+                                  ? "bg-slate-300"
+                                  : "bg-primary"
+                            }`}
+                          />
+                          <div className="rounded-xl border border-slate-200/80 bg-slate-50/40 px-3.5 py-3">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2">
+                                  {orderNo ? (
+                                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-900 text-[10px] font-semibold text-white">
+                                      {orderNo}
+                                    </span>
+                                  ) : null}
+                                  <span className="truncate font-medium">
+                                    {visitAccountName(v)}
+                                  </span>
+                                </div>
+                                <div className="mt-0.5 text-xs text-muted-foreground">
+                                  {formatVisitTime(v.plannedAt)} ·{" "}
+                                  {COMMITMENT_LABEL[v.commitment] ||
+                                    v.commitment}
+                                </div>
+                                {v.memo ? (
+                                  <p className="mt-1 text-xs text-slate-600">
+                                    {v.memo}
+                                  </p>
+                                ) : null}
+                              </div>
+                              <Badge
+                                variant={
+                                  v.status === "done"
+                                    ? "default"
+                                    : v.status === "canceled"
+                                      ? "outline"
+                                      : "secondary"
+                                }
+                              >
+                                {visitStatusLabel(v.status)}
+                              </Badge>
+                            </div>
+                            {v.status === "planned" ? (
+                              <div className="mt-2.5 flex flex-wrap gap-1.5">
+                                {(() => {
+                                  const acc =
+                                    v.accountId &&
+                                    typeof v.accountId === "object"
+                                      ? v.accountId
+                                      : null;
+                                  const missing =
+                                    acc &&
+                                    (acc.lat == null ||
+                                      acc.lng == null ||
+                                      !Number.isFinite(Number(acc.lat)) ||
+                                      !Number.isFinite(Number(acc.lng)));
+                                  if (!missing || !acc?._id) return null;
+                                  return (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="border-amber-300 text-amber-800"
+                                      onClick={() =>
+                                        openPlaceFix({
+                                          accountId: acc._id,
+                                          name: acc.name,
+                                          address: acc.address || "",
+                                          businessAnchorId:
+                                            acc.businessAnchorId || null,
+                                          kind: acc.kind,
+                                        })
+                                      }
+                                    >
+                                      위치 지정
+                                    </Button>
+                                  );
+                                })()}
                                 <Button
                                   size="sm"
-                                  variant="outline"
-                                  className="border-amber-300 text-amber-800"
                                   onClick={() =>
-                                    openPlaceFix({
-                                      accountId: acc._id,
-                                      name: acc.name,
-                                      address: acc.address || "",
-                                      businessAnchorId:
-                                        acc.businessAnchorId || null,
-                                      kind: acc.kind,
+                                    statusMut.mutate({
+                                      id: v._id,
+                                      status: "done",
                                     })
                                   }
                                 >
-                                  위치 지정
+                                  완료
                                 </Button>
-                              );
-                            })()}
-                            <Button
-                              size="sm"
-                              onClick={() =>
-                                statusMut.mutate({
-                                  id: v._id,
-                                  status: "done",
-                                })
-                              }
-                            >
-                              완료
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() =>
-                                statusMut.mutate({
-                                  id: v._id,
-                                  status: "noShow",
-                                })
-                              }
-                            >
-                              부재
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() =>
-                                statusMut.mutate({
-                                  id: v._id,
-                                  status: "canceled",
-                                })
-                              }
-                            >
-                              취소
-                            </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() =>
+                                    statusMut.mutate({
+                                      id: v._id,
+                                      status: "noShow",
+                                    })
+                                  }
+                                >
+                                  부재
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() =>
+                                    statusMut.mutate({
+                                      id: v._id,
+                                      status: "canceled",
+                                    })
+                                  }
+                                >
+                                  취소
+                                </Button>
+                              </div>
+                            ) : null}
                           </div>
-                        ) : null}
-                      </div>
-                    </li>
-                  );
-                })}
-              </ol>
-            )}
-          </SalesPanel>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                )}
+              </SalesPanel>
+            }
+            secondary={
+              visits.length > 0 ? (
+                <SalesPanel
+                  title="이날 동선"
+                  description={
+                    routeLoading
+                      ? "지도 계산 중…"
+                      : route
+                        ? `예상 ${route.totalKm} km${
+                            route.missingCoordsCount
+                              ? ` · 좌표 없음 ${route.missingCoordsCount}`
+                              : ""
+                          }`
+                        : "일정 기준으로 자동 표시"
+                  }
+                  actions={
+                    route?.mapUrl ? (
+                      <Button asChild size="sm" variant="outline">
+                        <a
+                          href={route.mapUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          카카오맵
+                        </a>
+                      </Button>
+                    ) : null
+                  }
+                >
+                  {route ? (
+                    <div className="space-y-2">
+                      {!route.geocodeConfigured ? (
+                        <p className="text-xs text-amber-700">
+                          주소 좌표 변환 키가 없으면 지도가 비어 있을 수
+                          있습니다.
+                        </p>
+                      ) : null}
+                      <SalesRouteMap stops={route.ordered} />
+                      {missingCoordStops.length > 0 ? (
+                        <div className="space-y-1.5 rounded-xl border border-amber-200/80 bg-amber-50/60 px-3 py-2.5">
+                          <p className="text-xs font-medium text-amber-900">
+                            좌표 없음 {missingCoordStops.length}곳 · 위치를
+                            지정하면 지도에 표시됩니다
+                          </p>
+                          <div className="flex flex-col gap-1.5">
+                            {missingCoordStops.map((s) => (
+                              <button
+                                key={s.accountId || s.name}
+                                type="button"
+                                className="flex items-center justify-between gap-2 rounded-lg bg-white px-3 py-2.5 text-left text-sm active:bg-slate-50"
+                                onClick={() =>
+                                  openPlaceFix({
+                                    accountId: s.accountId,
+                                    name: s.name,
+                                    address: s.address,
+                                    businessAnchorId: s.businessAnchorId,
+                                  })
+                                }
+                              >
+                                <span className="min-w-0 truncate font-medium text-slate-900">
+                                  {s.name}
+                                </span>
+                                <span className="shrink-0 text-xs font-medium text-primary">
+                                  위치 지정
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      {routeLoading
+                        ? "동선을 계산하는 중…"
+                        : "예정 방문이 있으면 지도가 자동으로 나타납니다."}
+                    </p>
+                  )}
+                </SalesPanel>
+              ) : undefined
+            }
+          />
         </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-[minmax(0,1.4fr)_minmax(17rem,0.8fr)] xl:gap-5">

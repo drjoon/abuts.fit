@@ -1387,9 +1387,49 @@ export async function searchPlatformBusinesses(req, res) {
   }
 }
 
+/** 상호 정규화: 「향기로운치과」↔「향기로운치과의원」동일 취급 */
+function normalizePlaceName(name) {
+  return String(name || "")
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(
+      /(치과의원|치과병원|치과기공소|기공소|치의원|의원|병원|clinic|lab)/gi,
+      "",
+    );
+}
+
+function normalizePlaceAddress(address) {
+  return String(address || "")
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/대한민국/g, "")
+    .replace(/서울특별시/g, "서울")
+    .replace(/부산광역시/g, "부산")
+    .replace(/대구광역시/g, "대구")
+    .replace(/인천광역시/g, "인천")
+    .replace(/광주광역시/g, "광주")
+    .replace(/대전광역시/g, "대전")
+    .replace(/울산광역시/g, "울산")
+    .replace(/세종특별자치시/g, "세종")
+    .replace(/경기도/g, "경기")
+    .replace(/강원특별자치도|강원도/g, "강원")
+    .replace(/충청북도/g, "충북")
+    .replace(/충청남도/g, "충남")
+    .replace(/전북특별자치도|전라북도/g, "전북")
+    .replace(/전라남도/g, "전남")
+    .replace(/경상북도/g, "경북")
+    .replace(/경상남도/g, "경남")
+    .replace(/제주특별자치도/g, "제주");
+}
+
+function placeExactKey(name, address) {
+  return `${String(name || "").toLowerCase().trim()}|${normalizePlaceAddress(address)}`;
+}
+
 /**
  * Unified place autosuggest for mobile-friendly account/visit entry.
  * Sources: sales accounts → platform requestors → Kakao Local keyword.
+ * 등록(계정·플랫폼)과 주소/상호가 겹치는 카카오 결과는 숨긴다.
  */
 export async function suggestPlaces(req, res) {
   try {
@@ -1434,31 +1474,48 @@ export async function suggestPlaces(req, res) {
     ]);
 
     const items = [];
-    const seen = new Set();
-    const pushUnique = (row) => {
-      const key = `${String(row.name || "")
-        .toLowerCase()}|${String(row.address || "").toLowerCase()}`;
-      if (!row.name || seen.has(key)) return;
-      seen.add(key);
+    const seenExact = new Set();
+    const registeredAddrs = new Set();
+    const registeredNamesNoAddr = new Set();
+
+    const pushUnique = (row, { trackRegistered = false } = {}) => {
+      if (!row.name) return;
+      const exact = placeExactKey(row.name, row.address);
+      if (seenExact.has(exact)) return;
+      const addr = normalizePlaceAddress(row.address);
+      const nm = normalizePlaceName(row.name);
+      // 등록과 같은 주소 → 카카오 숨김. 상호만 같고 주소가 다르면 다른 지점으로 유지.
+      if (row.source === "kakao") {
+        if (addr && registeredAddrs.has(addr)) return;
+        if (nm && !addr && registeredNamesNoAddr.has(nm)) return;
+      }
+      seenExact.add(exact);
+      if (trackRegistered) {
+        if (addr) registeredAddrs.add(addr);
+        else if (nm) registeredNamesNoAddr.add(nm);
+      }
       items.push(row);
     };
 
     for (const acc of accounts) {
-      pushUnique({
-        source: "account",
-        accountId: String(acc._id),
-        businessAnchorId: acc.businessAnchorId
-          ? String(acc.businessAnchorId)
-          : null,
-        name: acc.name,
-        kind: acc.kind === "lab" ? "lab" : "practice",
-        representativeName: acc.representativeName || "",
-        phone: acc.phone || "",
-        address: acc.address || "",
-        lat: acc.lat ?? null,
-        lng: acc.lng ?? null,
-        label: acc.businessAnchorId ? "등록·가입" : "등록 거래처",
-      });
+      pushUnique(
+        {
+          source: "account",
+          accountId: String(acc._id),
+          businessAnchorId: acc.businessAnchorId
+            ? String(acc.businessAnchorId)
+            : null,
+          name: acc.name,
+          kind: acc.kind === "lab" ? "lab" : "practice",
+          representativeName: acc.representativeName || "",
+          phone: acc.phone || "",
+          address: acc.address || "",
+          lat: acc.lat ?? null,
+          lng: acc.lng ?? null,
+          label: acc.businessAnchorId ? "등록·가입" : "등록 거래처",
+        },
+        { trackRegistered: true },
+      );
     }
 
     for (const it of platform) {
@@ -1466,23 +1523,26 @@ export async function suggestPlaces(req, res) {
       const lat = parseCoord(it.metadata?.lat);
       const lng = parseCoord(it.metadata?.lng);
       const hasCoords = hasValidCoords(lat, lng);
-      pushUnique({
-        source: "platform",
-        accountId: null,
-        businessAnchorId: String(it._id),
-        name: it.name,
-        kind: placeKindFromBa(it),
-        representativeName: it.metadata?.representativeName || "",
-        phone: it.metadata?.phoneNumber || "",
-        address: addr,
-        lat: hasCoords ? lat : null,
-        lng: hasCoords ? lng : null,
-        label: addr
-          ? hasCoords
-            ? "플랫폼 · 위치확인"
-            : "플랫폼 · 주소있음"
-          : "플랫폼 가입",
-      });
+      pushUnique(
+        {
+          source: "platform",
+          accountId: null,
+          businessAnchorId: String(it._id),
+          name: it.name,
+          kind: placeKindFromBa(it),
+          representativeName: it.metadata?.representativeName || "",
+          phone: it.metadata?.phoneNumber || "",
+          address: addr,
+          lat: hasCoords ? lat : null,
+          lng: hasCoords ? lng : null,
+          label: addr
+            ? hasCoords
+              ? "플랫폼 · 위치확인"
+              : "플랫폼 · 주소있음"
+            : "플랫폼 가입",
+        },
+        { trackRegistered: true },
+      );
     }
 
     for (const it of kakaoRes.items) {
