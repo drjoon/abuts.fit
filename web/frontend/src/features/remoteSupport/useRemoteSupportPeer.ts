@@ -131,18 +131,60 @@ export function useRemoteSupportPeer({
     if (!sessionId || role !== "staff") return;
     setError(null);
     try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: { frameRate: 15 },
+      // Prefer this app tab/window — never the whole monitor.
+      // Full-screen share on the same display as the admin viewer causes
+      // an infinite mirror (and leaks desktop content).
+      const displayOptions = {
+        video: {
+          frameRate: 15,
+          displaySurface: "browser",
+        },
         audio: false,
-      });
+        preferCurrentTab: true,
+        selfBrowserSurface: "exclude",
+        monitorTypeSurfaces: "exclude",
+        surfaceSwitching: "include",
+      } as DisplayMediaStreamOptions;
+
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getDisplayMedia(displayOptions);
+      } catch (firstErr) {
+        // Older browsers may reject unknown DisplayMedia options — retry bare.
+        const name =
+          firstErr instanceof DOMException ? firstErr.name : "";
+        if (name === "NotAllowedError" || name === "AbortError") {
+          throw firstErr;
+        }
+        stream = await navigator.mediaDevices.getDisplayMedia({
+          video: { frameRate: 15 },
+          audio: false,
+        });
+      }
+
+      // If the user still picked a full monitor (older Chrome / fallback), stop
+      // and ask again for a tab/window — same-monitor dual role = hall of mirrors.
+      const track = stream.getVideoTracks()[0];
+      const surface = String(
+        track?.getSettings?.().displaySurface || "",
+      ).toLowerCase();
+      if (surface === "monitor") {
+        track?.stop();
+        stream.getTracks().forEach((t) => t.stop());
+        const msg =
+          "전체 화면이 아니라 이 사이트 탭(또는 창)만 공유해 주세요. 같은 모니터를 공유하면 화면이 무한 반복됩니다.";
+        setError(msg);
+        throw new Error(msg);
+      }
+
       localStreamRef.current = stream;
       setSharing(true);
 
       const pc = ensurePc();
-      stream.getTracks().forEach((track) => {
-        pc.addTrack(track, stream);
+      stream.getTracks().forEach((mediaTrack) => {
+        pc.addTrack(mediaTrack, stream);
       });
-      stream.getVideoTracks()[0]?.addEventListener("ended", () => {
+      track?.addEventListener("ended", () => {
         setSharing(false);
       });
 

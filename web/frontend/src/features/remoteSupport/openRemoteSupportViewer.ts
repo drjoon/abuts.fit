@@ -70,7 +70,7 @@ function buildViewerHtml(title: string, subtitle: string) {
       <strong>${safeTitle}</strong>
       <span id="sub"> · ${safeSubtitle}</span>
     </div>
-    <span>이 창에서 클릭·키보드로 조작 · Esc로 포커스 해제</span>
+    <span>탭/창만 공유 · 이 창에서 클릭·키보드로 조작 · Esc로 포커스 해제</span>
   </div>
   <div id="stage" tabindex="0">
     <video id="v" autoplay playsinline muted></video>

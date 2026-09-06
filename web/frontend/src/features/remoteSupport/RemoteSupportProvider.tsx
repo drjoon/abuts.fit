@@ -242,7 +242,7 @@ export function RemoteSupportProvider({ children }: Props) {
           description:
             err instanceof Error
               ? err.message
-              : "브라우저에서 화면 공유를 허용해 주세요.",
+              : "이 사이트 탭(또는 창)만 공유해 주세요. 전체 화면은 사용할 수 없습니다.",
           variant: "destructive",
         });
       }
@@ -450,7 +450,9 @@ export function RemoteSupportProvider({ children }: Props) {
             <DialogTitle>원격 지원 초대</DialogTitle>
             <DialogDescription>
               관리자가 화면을 함께 보고 조작할 수 있도록 도와 드립니다. 수락하면
-              브라우저에서 이 탭(또는 창) 공유를 요청합니다.
+              브라우저에서 <strong>이 사이트 탭(또는 창)</strong> 공유를
+              요청합니다. 전체 화면은 선택하지 마세요 — 같은 모니터를 쓰면
+              화면이 무한 반복됩니다.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
