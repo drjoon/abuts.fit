@@ -532,7 +532,7 @@ export default function SalesAccountsPage() {
   return (
     <SalesPageShell
       title="거래처"
-      subtitle={`치과 ${practiceCount} · 기공소 ${labCount} · 가입 ${joinedCount} · 미가입 ${unjoinedCount} · 가입 전에도 등록 가능`}
+      wide
       actions={
         <Button size="sm" onClick={openCreate}>
           거래처 추가

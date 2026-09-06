@@ -36,13 +36,6 @@ import {
   SalesToolbar,
 } from "./salesUi";
 
-const PERIOD_LABEL: Record<string, string> = {
-  "7d": "최근 7일",
-  "30d": "최근 30일",
-  "90d": "최근 90일",
-  thisMonth: "이번 달",
-};
-
 type PerfTab = "activity" | "referral";
 
 function parseTab(raw: string | null): PerfTab {
@@ -113,11 +106,6 @@ export default function SalesPerformancePage() {
   return (
     <SalesPageShell
       title="성과"
-      subtitle={
-        tab === "activity"
-          ? `${PERIOD_LABEL[period] || period} · 방문 · 보고 · 소개 가입`
-          : "소개코드로 가입한 치과·기공소가 담당 실적입니다."
-      }
       actions={
         tab === "activity" ? (
           <Select value={period} onValueChange={setPeriod}>

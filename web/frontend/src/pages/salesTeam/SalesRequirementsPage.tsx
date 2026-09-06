@@ -178,11 +178,7 @@ export default function SalesRequirementsPage() {
   return (
     <SalesPageShell
       title="요구사항"
-      subtitle={
-        canCreate
-          ? "현장 요청을 담당 팀에 넘기고 진행을 추적합니다."
-          : "지정된 요구사항의 업무 상태를 업데이트합니다."
-      }
+      wide
       actions={
         canCreate ? (
           <Button size="sm" onClick={() => setShowForm((v) => !v)}>

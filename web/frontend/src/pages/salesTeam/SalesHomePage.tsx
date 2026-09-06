@@ -127,7 +127,6 @@ export default function SalesHomePage() {
   const plannedCount = visits.filter((v) => v.status === "planned").length;
   const reportSubmitted = Boolean(reportData?.report);
   const historyItems = history?.items || [];
-  const dayLabel = useMemo(() => formatDayLabel(ymd), [ymd]);
 
   const routeVisitKey = visits
     .filter((v) => v.status === "planned")
@@ -313,7 +312,6 @@ export default function SalesHomePage() {
   return (
     <SalesPageShell
       title="오늘"
-      subtitle={`${dayLabel} · 방문 일정과 일일보고를 한곳에서`}
       actions={
         tab === "schedule" ? (
           <Button size="sm" onClick={() => setShowForm((v) => !v)}>
