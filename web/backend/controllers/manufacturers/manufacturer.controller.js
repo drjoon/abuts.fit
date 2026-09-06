@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-06: 배송 FREE_REQUEST도 배송 무료 집계(settleBucket). 미정산·잔액 정합.
 // - 2026-09-06: 미정산·장부·스냅샷=부가세 포함가. 지급 재가산 없음.
 // - 2026-08-23: 원장 상세 컨텍스트 — 패키지 businessAnchorId로 배송자 이름 조회(칸 재사용 대비).
 // - 2026-08-20: 제조사 ADJUST uniqueKey는 라인/레거시 키를 우선(중복 환불 사유 표시).
@@ -166,17 +167,18 @@ function kstYmdToUtcRange(ymd) {
 /**
  * 제조사 REV 라인 → 일별(또는 단일 기간) 금액/건수 집계 스테이지.
  * 금액: 라인 합산(신속추가비 저널 포함).
- * 건수: (eventType, creditKind, spendUniqueKey|refId) 유니크.
+ * 건수: (eventType, settleBucket PAID|FREE, spendUniqueKey|refId) 유니크.
+ *   배송에 FREE_REQUEST가 붙어도 배송 무료로 합산(creditKind 분리로 누락·중복 방지).
  *   기공의뢰 배송 lab/abuts 2구간은 같은 refId라도 구간별로 1건.
  */
 function buildManufacturerEarnCollapseAndGroupStages({ groupByYmd }) {
-  const amountCond = (eventTypes, creditKind) => ({
+  const amountCond = (eventTypes, settleBucket) => ({
     $sum: {
       $cond: [
         {
           $and: [
             { $in: ["$_id.eventType", eventTypes] },
-            { $eq: ["$_id.creditKind", creditKind] },
+            { $eq: ["$_id.settleBucket", settleBucket] },
           ],
         },
         "$amount",
@@ -185,13 +187,13 @@ function buildManufacturerEarnCollapseAndGroupStages({ groupByYmd }) {
     },
   });
 
-  const vatCond = (eventTypes, creditKind) => ({
+  const vatCond = (eventTypes, settleBucket) => ({
     $sum: {
       $cond: [
         {
           $and: [
             { $in: ["$_id.eventType", eventTypes] },
-            { $eq: ["$_id.creditKind", creditKind] },
+            { $eq: ["$_id.settleBucket", settleBucket] },
           ],
         },
         "$vat",
@@ -200,13 +202,13 @@ function buildManufacturerEarnCollapseAndGroupStages({ groupByYmd }) {
     },
   });
 
-  const totalCond = (eventTypes, creditKind) => ({
+  const totalCond = (eventTypes, settleBucket) => ({
     $sum: {
       $cond: [
         {
           $and: [
             { $in: ["$_id.eventType", eventTypes] },
-            { $eq: ["$_id.creditKind", creditKind] },
+            { $eq: ["$_id.settleBucket", settleBucket] },
           ],
         },
         "$total",
@@ -215,13 +217,13 @@ function buildManufacturerEarnCollapseAndGroupStages({ groupByYmd }) {
     },
   });
 
-  const countCond = (eventTypes, creditKind) => ({
+  const countCond = (eventTypes, settleBucket) => ({
     $sum: {
       $cond: [
         {
           $and: [
             { $in: ["$_id.eventType", eventTypes] },
-            { $eq: ["$_id.creditKind", creditKind] },
+            { $eq: ["$_id.settleBucket", settleBucket] },
           ],
         },
         1,
@@ -258,6 +260,9 @@ function buildManufacturerEarnCollapseAndGroupStages({ groupByYmd }) {
           ],
         },
         eventType: { $ifNull: ["$journalDoc.eventType", ""] },
+        settleBucket: {
+          $cond: [{ $eq: ["$creditKind", "PAID"] }, "PAID", "FREE"],
+        },
         // 기공의뢰 배송은 같은 refId에 lab/abuts 2구간이 있어 spendUniqueKey로 건수 분리
         settleRefKey: {
           $ifNull: [
@@ -272,7 +277,7 @@ function buildManufacturerEarnCollapseAndGroupStages({ groupByYmd }) {
         _id: {
           ...(groupByYmd ? { ymd: "$ymd" } : {}),
           eventType: "$eventType",
-          creditKind: "$creditKind",
+          settleBucket: "$settleBucket",
           refId: "$settleRefKey",
         },
         amount: { $sum: "$baseAmount" },
@@ -301,19 +306,19 @@ function buildManufacturerEarnCollapseAndGroupStages({ groupByYmd }) {
         ),
         earnRequestFreeAmount: amountCond(
           MANUFACTURER_REQUEST_EARN_EVENT_TYPES,
-          "FREE_REQUEST",
+          "FREE",
         ),
         earnRequestFreeVat: vatCond(
           MANUFACTURER_REQUEST_EARN_EVENT_TYPES,
-          "FREE_REQUEST",
+          "FREE",
         ),
         earnRequestFreeTotal: totalCond(
           MANUFACTURER_REQUEST_EARN_EVENT_TYPES,
-          "FREE_REQUEST",
+          "FREE",
         ),
         earnRequestFreeCount: countCond(
           MANUFACTURER_REQUEST_EARN_EVENT_TYPES,
-          "FREE_REQUEST",
+          "FREE",
         ),
         earnShippingPaidAmount: amountCond(
           MANUFACTURER_SHIPPING_EARN_EVENT_TYPES,
@@ -333,19 +338,19 @@ function buildManufacturerEarnCollapseAndGroupStages({ groupByYmd }) {
         ),
         earnShippingFreeAmount: amountCond(
           MANUFACTURER_SHIPPING_EARN_EVENT_TYPES,
-          "FREE_SHIPPING",
+          "FREE",
         ),
         earnShippingFreeVat: vatCond(
           MANUFACTURER_SHIPPING_EARN_EVENT_TYPES,
-          "FREE_SHIPPING",
+          "FREE",
         ),
         earnShippingFreeTotal: totalCond(
           MANUFACTURER_SHIPPING_EARN_EVENT_TYPES,
-          "FREE_SHIPPING",
+          "FREE",
         ),
         earnShippingFreeCount: countCond(
           MANUFACTURER_SHIPPING_EARN_EVENT_TYPES,
-          "FREE_SHIPPING",
+          "FREE",
         ),
         payoutAmount: {
           $sum: {

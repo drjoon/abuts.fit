@@ -71,6 +71,7 @@ import {
   resolveManufacturerUnitQty,
   resolveRevenueOwnerBaseAllocation,
   splitRevenueByCreditKindProRata,
+  allocateAffiliateVatAcrossSupplyParts,
 } from "../../services/creditRevenuePolicy.service.js";
 import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.js";
 import {
@@ -592,31 +593,30 @@ async function postSpendCommitGeneralLedger({
 
     const paid = Math.max(0, Math.round(Number(paidBase || 0)));
     const freeParts = splitFreeBasesBySource(freeBase);
-    const applyVat = Number(vatRate || 0) > 0;
+    const allocated = allocateAffiliateVatAcrossSupplyParts(
+      [
+        { supply: freeParts.freeRequest, creditKind: "FREE_REQUEST" },
+        { supply: freeParts.freeShipping, creditKind: "FREE_SHIPPING" },
+        { supply: paid, creditKind: "PAID" },
+      ],
+      vatRate,
+    );
 
-    const pushOne = (supplyAmount, creditKind) => {
-      const supply = Math.max(0, Math.round(Number(supplyAmount || 0)));
-      if (supply <= 0) return;
-      const vat = applyVat ? Math.round(supply * Number(vatRate || 0)) : 0;
-      const total = supply + vat;
+    for (const part of allocated) {
       lines.push({
         accountCode,
         ownerRole,
         ownerId,
-        amount: total,
-        amountExcludingVat: supply,
-        vatAmount: vat,
-        amountIncludingVat: total,
-        creditKind,
+        amount: part.total,
+        amountExcludingVat: part.supply,
+        vatAmount: part.vat,
+        amountIncludingVat: part.total,
+        creditKind: part.creditKind,
         refType,
         refId,
         meta: lineMeta,
       });
-    };
-
-    pushOne(freeParts.freeRequest, "FREE_REQUEST");
-    pushOne(freeParts.freeShipping, "FREE_SHIPPING");
-    pushOne(paid, "PAID");
+    }
   };
 
   pushRevenueLinesBySplit({

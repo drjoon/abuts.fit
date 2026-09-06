@@ -104,6 +104,7 @@ import {
   resolveManufacturerUnitQty,
   normalizeAffiliateVatRate,
   MANUFACTURER_PRODUCTION_LEDGER_LABEL,
+  allocateAffiliateVatAcrossSupplyParts,
 } from "./creditRevenuePolicy.service.js";
 import BusinessAnchor from "../models/businessAnchor.model.js";
 import {
@@ -527,32 +528,30 @@ function pushRevenueLines({
       }
     }
 
-    const pushOne = (supplyAmount, creditKind) => {
-      const supply = Math.max(0, Math.round(Number(supplyAmount || 0)));
-      if (supply <= 0) return;
-      const vat =
-        Number(vatRate || 0) > 0
-          ? Math.round(supply * Number(vatRate || 0))
-          : 0;
-      const total = supply + vat;
+    const allocated = allocateAffiliateVatAcrossSupplyParts(
+      [
+        { supply: freeRequestPart, creditKind: "FREE_REQUEST" },
+        { supply: freeShippingPart, creditKind: "FREE_SHIPPING" },
+        { supply: paid, creditKind: "PAID" },
+      ],
+      vatRate,
+    );
+
+    for (const part of allocated) {
       lines.push({
         accountCode,
         ownerRole,
         ownerId,
-        amount: total,
-        amountExcludingVat: supply,
-        vatAmount: vat,
-        amountIncludingVat: total,
-        creditKind,
+        amount: part.total,
+        amountExcludingVat: part.supply,
+        vatAmount: part.vat,
+        amountIncludingVat: part.total,
+        creditKind: part.creditKind,
         refType,
         refId,
         meta: lineMeta,
       });
-    };
-
-    pushOne(freeRequestPart, "FREE_REQUEST");
-    pushOne(freeShippingPart, "FREE_SHIPPING");
-    pushOne(paid, "PAID");
+    }
   };
 
   push(

@@ -5,6 +5,7 @@
 // - web/backend/scripts/db/migrate-legacy-creditledger-to-gl.js
 // - web/backend/scripts/db/rebalance-manufacturer-unit-price.js
 // change-log:
+// - 2026-09-06: allocateAffiliateVatAcrossSupplyParts — 분할 라인 VAT 합=전체 VAT(반올림 드리프트 방지).
 // - 2026-09-06: 과세 미정산 net = 포함가 합 − |지급|. computeManufacturerDailyNetPayout.
 // - 2026-09-06: 미정산 net = 공급가 합(VAT 제외). computeManufacturerDailyNetPayout.
 // - 2026-08-23: 제조사=일반과세. 매입가(부가세 포함)→공급가 분해, affiliateVatRate 적용.
@@ -57,6 +58,63 @@ export function normalizeAffiliateVatRate(raw) {
   const n = Number(raw);
   if (!Number.isFinite(n) || n < 0) return DEFAULT_AFFILIATE_VAT_RATE;
   return Math.min(1, n);
+}
+
+/**
+ * 공급가 분할(유료/무료의뢰/무료배송)에 VAT를 배분.
+ * 라인별 round(supply×rate) 금지 — 합이 전체 VAT와 어긋나 포함가 +1원 등이 생김.
+ * @param {{ supply: number, creditKind: string }[]} parts
+ * @returns {{ supply: number, vat: number, total: number, creditKind: string }[]}
+ */
+export function allocateAffiliateVatAcrossSupplyParts(
+  parts,
+  vatRate = DEFAULT_AFFILIATE_VAT_RATE,
+) {
+  const normalized = (Array.isArray(parts) ? parts : [])
+    .map((p) => ({
+      creditKind: String(p?.creditKind || ""),
+      supply: Math.max(0, Math.round(Number(p?.supply || 0))),
+    }))
+    .filter((p) => p.supply > 0 && p.creditKind);
+
+  if (!normalized.length) return [];
+
+  const rate = normalizeAffiliateVatRate(vatRate);
+  const totalSupply = normalized.reduce((sum, p) => sum + p.supply, 0);
+  const totalVat = rate > 0 ? Math.round(totalSupply * rate) : 0;
+  if (totalVat <= 0) {
+    return normalized.map((p) => ({
+      ...p,
+      vat: 0,
+      total: p.supply,
+    }));
+  }
+
+  const withExact = normalized.map((p) => {
+    const exact = (p.supply / totalSupply) * totalVat;
+    const vatFloor = Math.floor(exact);
+    return {
+      ...p,
+      vat: vatFloor,
+      frac: exact - vatFloor,
+    };
+  });
+  let remain = totalVat - withExact.reduce((sum, p) => sum + p.vat, 0);
+  withExact
+    .slice()
+    .sort((a, b) => b.frac - a.frac || b.supply - a.supply)
+    .forEach((p) => {
+      if (remain <= 0) return;
+      p.vat += 1;
+      remain -= 1;
+    });
+
+  return withExact.map(({ creditKind, supply, vat }) => ({
+    creditKind,
+    supply,
+    vat,
+    total: supply + vat,
+  }));
 }
 
 /** 제조사 정산 카드·일별 집계에서 의뢰(생산)로 보는 이벤트. */

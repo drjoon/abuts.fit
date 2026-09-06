@@ -11,6 +11,7 @@ import {
   resolveRevenueOwnerBaseAllocation,
   splitManufacturerInclusiveUnitPrice,
   computeManufacturerDailyNetPayout,
+  allocateAffiliateVatAcrossSupplyParts,
 } from "../../services/creditRevenuePolicy.service.js";
 
 describe("manufacturer fixed unit + residual allocation", () => {
@@ -49,6 +50,24 @@ describe("manufacturer fixed unit + residual allocation", () => {
       vat: 318,
       total: 3500,
       vatRate: 0.1,
+    });
+  });
+
+  test("allocateAffiliateVatAcrossSupplyParts: 3182 split keeps total 3500", () => {
+    const parts = allocateAffiliateVatAcrossSupplyParts(
+      [
+        { supply: 2727, creditKind: "FREE_REQUEST" },
+        { supply: 455, creditKind: "FREE_SHIPPING" },
+      ],
+      0.1,
+    );
+    const vatSum = parts.reduce((s, p) => s + p.vat, 0);
+    const totalSum = parts.reduce((s, p) => s + p.total, 0);
+    expect(vatSum).toBe(318);
+    expect(totalSum).toBe(3500);
+    expect(parts.find((p) => p.creditKind === "FREE_REQUEST")).toMatchObject({
+      supply: 2727,
+      total: 2727 + parts.find((p) => p.creditKind === "FREE_REQUEST").vat,
     });
   });
 
