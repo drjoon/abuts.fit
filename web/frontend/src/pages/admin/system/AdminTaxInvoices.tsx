@@ -525,31 +525,18 @@ export const AdminTaxInvoices = ({
 
   return (
     <div className={embedded ? "space-y-4 p-0 pt-2" : "space-y-4 p-4"}>
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        {embedded ? (
-          <p className="text-xs text-muted-foreground">
-            발행·상계 문서를 관리합니다.
-          </p>
-        ) : (
-          <h2 className="flex items-center gap-2 text-sm font-semibold">
-            <FileText className="h-4 w-4" />
-            (세금)계산서 관리
-          </h2>
-        )}
-        <div className="flex gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setManualOpen(true)}
-          >
-            <Plus className="h-4 w-4 mr-1" />
-            수동 생성
-          </Button>
-          <Button size="sm" variant="ghost" onClick={reload} disabled={loading}>
-            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-          </Button>
-        </div>
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => setManualOpen(true)}
+        >
+          <Plus className="h-4 w-4 mr-1" />
+          수동 생성
+        </Button>
+        <Button size="sm" variant="ghost" onClick={reload} disabled={loading}>
+          <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+        </Button>
       </div>
 
       <p className="text-xs text-muted-foreground leading-relaxed">

@@ -478,12 +478,7 @@ export const AdminRequestMonitoring = () => {
   ];
 
   return (
-    <AdminPageShell
-      title="의뢰"
-      subtitle="진행·완료 의뢰를 모니터링합니다."
-      flush
-      className="flex min-h-0 flex-1 flex-col"
-    >
+    <AdminPageShell flush className="flex min-h-0 flex-1 flex-col">
     <div className="flex h-full min-h-0 flex-col px-0 pt-1 pb-2">
       <div className="mx-auto flex w-full max-w-7xl flex-1 min-h-0 flex-col gap-4 overflow-y-auto">
         <div className="flex flex-wrap items-center gap-3 px-0.5">

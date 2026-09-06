@@ -93,13 +93,7 @@ export default function AdminSettlementBatches() {
 
   return (
     <div className="space-y-4 p-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h1 className="text-xl font-semibold">월 정산 배치</h1>
-          <p className="text-sm text-muted-foreground">
-            확정 후 실제 송금을 완료한 항목만 지급완료 처리합니다. 과세 관계사(제조사·딜러사·개발운영사) 금액은 VAT 포함 입금합계입니다.
-          </p>
-        </div>
+      <div className="flex flex-wrap items-center justify-end gap-2">
         <Button onClick={() => void action("/api/admin/settlement-batches", "정산 배치를 생성했습니다.")} disabled={loading}>
           새 배치 생성
         </Button>

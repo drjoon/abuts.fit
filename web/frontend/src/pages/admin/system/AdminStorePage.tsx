@@ -11,7 +11,6 @@ import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/shared/api/apiClient";
 import { formatWonWithUnit } from "@/shared/settlement/affiliateVat";
 import {
-  LEDGER_TAX_LANE_NOTICE,
   STORE_FULFILLMENT_STATUS_LABEL,
   STORE_REVENUE_OWNER_ROLE,
 } from "@/shared/tax/ledgerTaxLanes";
@@ -167,9 +166,7 @@ export default function AdminStorePage() {
   return (
     <div className="custom-scrollbar workspace-nested-scroll h-full min-h-0 overflow-auto">
       <div className="mx-auto w-full max-w-5xl space-y-8 p-1">
-        <header className="space-y-1">
-          <h1 className="text-xl font-semibold tracking-tight">스토어 관리</h1>
-          <p className="text-sm text-muted-foreground">{LEDGER_TAX_LANE_NOTICE}</p>
+        <header className="space-y-2">
           <div className="flex flex-wrap gap-2">
             <Badge variant="outline">{STORE_PRICE_TAX_NOTE}</Badge>
             <Badge variant="secondary">

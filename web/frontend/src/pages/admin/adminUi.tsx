@@ -3,6 +3,7 @@
 // - web/frontend/src/pages/admin/AdminMembersPage.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // change-log:
+// - 2026-09-06: 페이지 제목/설명 헤더 제거(사이드·탭만으로 맥락).
 // - 2026-09-06: 관리자 허브용 Sales 패턴 셸·세그먼트 탭·스플릿.
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
@@ -11,8 +12,6 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/shared/ui/cn";
 
 export function AdminPageShell({
-  title,
-  subtitle,
   actions,
   children,
   className,
@@ -20,8 +19,6 @@ export function AdminPageShell({
   /** Drop outer padding when parent work area already pads (fillHeight hubs). */
   flush,
 }: {
-  title: string;
-  subtitle?: ReactNode;
   actions?: ReactNode;
   children: ReactNode;
   className?: string;
@@ -39,23 +36,13 @@ export function AdminPageShell({
         className,
       )}
     >
-      <header className="flex flex-wrap items-end justify-between gap-3 border-b border-slate-200/70 pb-3 sm:pb-4">
-        <div className="min-w-0 space-y-1">
-          <h1 className="text-xl font-semibold tracking-tight text-slate-900 sm:text-2xl lg:text-[1.65rem]">
-            {title}
-          </h1>
-          {subtitle ? (
-            <div className="text-sm leading-relaxed text-muted-foreground">
-              {subtitle}
-            </div>
-          ) : null}
-        </div>
-        {actions ? (
+      {actions ? (
+        <header className="flex flex-wrap items-center justify-end gap-3">
           <div className="flex shrink-0 flex-wrap items-center gap-2">
             {actions}
           </div>
-        ) : null}
-      </header>
+        </header>
+      ) : null}
       {children}
     </div>
   );

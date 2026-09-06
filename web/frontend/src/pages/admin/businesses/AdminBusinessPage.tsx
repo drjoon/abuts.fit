@@ -487,17 +487,6 @@ export default function AdminBusinessPage({
       }
     >
       <div className="mx-auto flex w-full max-w-7xl flex-1 min-h-0 flex-col gap-4 overflow-hidden">
-        {embedded ? null : (
-          <div className="shrink-0 pl-0">
-            <h1 className="text-lg font-bold tracking-tight text-slate-900">
-              사업자
-            </h1>
-            <p className="mt-0.5 text-xs text-slate-500">
-              BusinessAnchor 연결 상태와 크레딧을 확인합니다.
-            </p>
-          </div>
-        )}
-
         <div className="grid shrink-0 grid-cols-2 gap-2.5 p-0.5 xl:grid-cols-4">
           {[
             {

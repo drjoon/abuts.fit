@@ -30,12 +30,7 @@ export default function AdminMembersPage() {
   };
 
   return (
-    <AdminPageShell
-      title="회원"
-      subtitle="사업자와 사용자를 한곳에서 관리합니다."
-      className="flex min-h-0 flex-1 flex-col"
-      flush
-    >
+    <AdminPageShell flush className="flex min-h-0 flex-1 flex-col">
       <AdminSegmentTabs
         value={tab}
         onChange={setTab}

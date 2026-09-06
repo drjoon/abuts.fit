@@ -408,12 +408,12 @@ export const AdminBusinessRegistrationInquiryPage = ({
       }
     >
       <div className="mx-auto flex w-full max-w-7xl min-h-0 flex-1 flex-col space-y-4 sm:space-y-6">
-        {embedded ? null : (
+        {isSalesInbox && !embedded ? (
           <div className="space-y-1">
             <h1 className="text-2xl font-bold tracking-tight">{pageTitle}</h1>
             <p className="text-sm text-muted-foreground">{pageDescription}</p>
           </div>
-        )}
+        ) : null}
 
         <div className="grid grid-cols-1 lg:grid-cols-[420px_1fr] gap-4 flex-1 min-h-0">
           {showListPanel ? (

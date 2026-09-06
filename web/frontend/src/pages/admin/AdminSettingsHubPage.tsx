@@ -36,12 +36,7 @@ export default function AdminSettingsHubPage() {
   };
 
   return (
-    <AdminPageShell
-      title="설정"
-      subtitle="플랫폼 · 사업영역 · 계정"
-      flush
-      className="flex min-h-0 flex-1 flex-col"
-    >
+    <AdminPageShell flush className="flex min-h-0 flex-1 flex-col">
       <AdminSegmentTabs
         value={tab}
         onChange={setTab}

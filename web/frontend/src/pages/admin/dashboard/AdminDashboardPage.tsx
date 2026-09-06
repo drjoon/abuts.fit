@@ -2078,12 +2078,7 @@ export const AdminDashboardPage = () => {
   }
 
   return (
-    <AdminPageShell
-      title="홈"
-      subtitle="운영 현황을 한눈에 봅니다."
-      flush
-      className="pb-8 sm:pb-10"
-    >
+    <AdminPageShell flush className="pb-8 sm:pb-10">
       <DashboardShell
         title={`안녕하세요, ${user.name}님!`}
         subtitle="시스템 관리 대시보드입니다."

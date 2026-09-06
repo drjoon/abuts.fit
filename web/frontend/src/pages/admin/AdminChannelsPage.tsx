@@ -36,12 +36,7 @@ export default function AdminChannelsPage() {
   };
 
   return (
-    <AdminPageShell
-      title="채널"
-      subtitle="채팅 · 메시지 · 메일을 보냅니다."
-      flush
-      className="flex min-h-0 flex-1 flex-col"
-    >
+    <AdminPageShell flush className="flex min-h-0 flex-1 flex-col">
       <AdminSegmentTabs
         value={tab}
         onChange={setTab}

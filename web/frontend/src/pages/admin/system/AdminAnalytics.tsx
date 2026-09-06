@@ -95,16 +95,6 @@ export const AdminAnalytics = () => {
   return (
     <div className="flex flex-col h-full min-h-0 bg-gradient-subtle p-4">
       <div className="max-w-7xl w-full mx-auto space-y-6 flex-1 min-h-0 overflow-y-auto">
-        {/* Header */}
-        <div className="space-y-2">
-          <h1 className="text-4xl font-bold bg-gradient-hero bg-clip-text text-transparent">
-            시스템 통계
-          </h1>
-          <p className="text-muted-foreground text-lg">
-            플랫폼의 핵심 지표와 성과를 확인하세요
-          </p>
-        </div>
-
         {/* Overview Stats */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <Card className="hover:shadow-elegant transition-shadow">

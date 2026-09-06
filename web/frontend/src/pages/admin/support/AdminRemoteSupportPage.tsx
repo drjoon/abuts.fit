@@ -6,7 +6,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   ExternalLink,
-  Headphones,
   Monitor,
   RefreshCw,
   Search,
@@ -529,22 +528,7 @@ export default function AdminRemoteSupportPage({
           : "mx-auto flex w-full max-w-6xl flex-col gap-4 p-4 lg:p-6"
       }
     >
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        {embedded ? (
-          <div className="text-sm text-muted-foreground">
-            직원 화면을 보고 커서·키보드를 대신 조작합니다.
-          </div>
-        ) : (
-          <div>
-            <h1 className="flex items-center gap-2 text-xl font-semibold">
-              <Headphones className="h-5 w-5" />
-              원격 지원
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              직원 화면을 보고 커서·키보드를 대신 조작합니다. (플랫폼 화면만)
-            </p>
-          </div>
-        )}
+      <div className="flex flex-wrap items-center justify-end gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <PeriodFilter
             value={period}

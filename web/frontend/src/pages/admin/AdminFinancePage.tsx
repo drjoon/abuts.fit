@@ -33,12 +33,7 @@ export default function AdminFinancePage() {
   };
 
   return (
-    <AdminPageShell
-      title="재무"
-      subtitle="크레딧 · 정산 · 세금계산서"
-      flush
-      className="flex h-full min-h-0 flex-1 flex-col"
-    >
+    <AdminPageShell flush className="flex h-full min-h-0 flex-1 flex-col">
       <AdminSegmentTabs
         value={tab}
         onChange={setTab}

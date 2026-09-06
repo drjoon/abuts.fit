@@ -36,12 +36,7 @@ export default function AdminSupportHubPage() {
   };
 
   return (
-    <AdminPageShell
-      title="지원"
-      subtitle="원격 지원과 문의를 처리합니다."
-      flush
-      className="flex min-h-0 flex-1 flex-col"
-    >
+    <AdminPageShell flush className="flex min-h-0 flex-1 flex-col">
       <AdminSegmentTabs
         value={tab}
         onChange={setTab}
