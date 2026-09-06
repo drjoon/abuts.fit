@@ -7,8 +7,17 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, Loader2, MapPin, Search } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
+import { useIsMobile } from "@/shared/hooks/use-mobile";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Drawer,
   DrawerContent,
@@ -34,6 +43,10 @@ type SalesPlacePickerDrawerProps = {
   /** Prefill / skip search when opening for a known BA or account */
   seed?: Partial<SalesPlaceSuggest> | null;
   onConfirm: (place: SalesPlaceSuggest) => void;
+  /** confirm 단계 저장 버튼 라벨 */
+  confirmLabel?: string;
+  /** confirm 단계 안내 문구 */
+  confirmDescription?: string;
 };
 
 function hasCoords(p: { lat?: number | null; lng?: number | null } | null) {
@@ -142,6 +155,8 @@ export default function SalesPlacePickerDrawer({
   initialQuery = "",
   seed = null,
   onConfirm,
+  confirmLabel = "이 위치로",
+  confirmDescription = "지도에서 맞는지 확인한 뒤 이 위치로 저장합니다.",
 }: SalesPlacePickerDrawerProps) {
   const token = useAuthStore((s) => s.token);
   const { toast } = useToast();
@@ -369,148 +384,186 @@ export default function SalesPlacePickerDrawer({
         ? "추천 위치 선택"
         : "위치 찾기";
 
-  return (
-    <Drawer
-      open={open}
-      onOpenChange={(next) => {
-        onOpenChange(next);
-        if (!next) reset();
-      }}
-    >
-      <DrawerContent className="max-h-[92vh]">
-        <DrawerHeader className="pb-2 text-left">
-          <div className="flex items-center gap-2">
-            {step !== "search" ? (
-              <button
-                type="button"
-                className="rounded-lg p-1.5 text-slate-600 hover:bg-slate-100"
-                aria-label="뒤로"
-                onClick={() => {
-                  if (step === "confirm" && candidates.length) {
-                    setStep("candidates");
-                  } else {
-                    setStep("search");
-                    setCandidates([]);
-                    setSelected(null);
-                  }
-                }}
-              >
-                <ArrowLeft className="h-5 w-5" />
-              </button>
+  const isMobile = useIsMobile();
+
+  const description =
+    step === "confirm"
+      ? confirmDescription
+      : step === "candidates"
+        ? "카카오맵 추천 중 맞는 곳을 고르세요."
+        : "상호 몇 글자만 치면 플랫폼·지도에서 찾아줍니다.";
+
+  const handleOpenChange = (next: boolean) => {
+    onOpenChange(next);
+    if (!next) reset();
+  };
+
+  const headerNav = (
+    <div className="flex items-center gap-2">
+      {step !== "search" ? (
+        <button
+          type="button"
+          className="rounded-lg p-1.5 text-slate-600 hover:bg-slate-100"
+          aria-label="뒤로"
+          onClick={() => {
+            if (step === "confirm" && candidates.length) {
+              setStep("candidates");
+            } else {
+              setStep("search");
+              setCandidates([]);
+              setSelected(null);
+            }
+          }}
+        >
+          <ArrowLeft className="h-5 w-5" />
+        </button>
+      ) : null}
+      <div className="min-w-0 flex-1">
+        {isMobile ? (
+          <>
+            <DrawerTitle>{title}</DrawerTitle>
+            <DrawerDescription>{description}</DrawerDescription>
+          </>
+        ) : (
+          <>
+            <DialogTitle>{title}</DialogTitle>
+            <DialogDescription>{description}</DialogDescription>
+          </>
+        )}
+      </div>
+    </div>
+  );
+
+  const body = (
+    <div className="min-h-0 overflow-y-auto px-1 pb-1 sm:px-0">
+      {step === "search" ? (
+        <div className="space-y-3">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="치과·기공소 상호"
+              className="h-12 pl-10 text-base"
+              autoFocus
+              autoComplete="off"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void searchByNameOnly();
+                }
+              }}
+            />
+            {loading || resolving ? (
+              <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-slate-400" />
             ) : null}
-            <div className="min-w-0 flex-1">
-              <DrawerTitle>{title}</DrawerTitle>
-              <DrawerDescription>
-                {step === "confirm"
-                  ? "지도에서 맞는지 확인한 뒤 이 위치로 저장합니다."
-                  : step === "candidates"
-                    ? "카카오맵 추천 중 맞는 곳을 고르세요."
-                    : "상호 몇 글자만 치면 플랫폼·지도에서 찾아줍니다."}
-              </DrawerDescription>
+          </div>
+          <div className="space-y-2">
+            {items.map((item, idx) => (
+              <ResultRow
+                key={`${item.source}-${item.accountId || item.businessAnchorId || item.name}-${idx}`}
+                item={item}
+                busy={resolving}
+                onClick={() => void handlePick(item)}
+              />
+            ))}
+            {query.trim().length >= 2 && !loading && items.length === 0 ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                자동완성에 없습니다. 아래 「지도에서 찾기」를 눌러 보세요.
+              </p>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      {step === "candidates" ? (
+        <div className="space-y-2">
+          {candidates.map((item, idx) => (
+            <ResultRow
+              key={`cand-${item.name}-${idx}`}
+              item={item}
+              onClick={() => goConfirm(item)}
+            />
+          ))}
+        </div>
+      ) : null}
+
+      {step === "confirm" && selected && hasCoords(selected) ? (
+        <div className="space-y-3">
+          <div className="rounded-xl border border-slate-200 bg-slate-50/80 px-3.5 py-3">
+            <div className="flex items-start gap-2">
+              <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+              <div className="min-w-0">
+                <p className="font-medium text-slate-900">{selected.name}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {selected.address || "주소 없음"}
+                </p>
+              </div>
             </div>
           </div>
-        </DrawerHeader>
-
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-2">
-          {step === "search" ? (
-            <div className="space-y-3">
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <Input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="치과·기공소 상호"
-                  className="h-12 pl-10 text-base"
-                  autoFocus
-                  autoComplete="off"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      void searchByNameOnly();
-                    }
-                  }}
-                />
-                {loading || resolving ? (
-                  <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-slate-400" />
-                ) : null}
-              </div>
-              <div className="space-y-2">
-                {items.map((item, idx) => (
-                  <ResultRow
-                    key={`${item.source}-${item.accountId || item.businessAnchorId || item.name}-${idx}`}
-                    item={item}
-                    busy={resolving}
-                    onClick={() => void handlePick(item)}
-                  />
-                ))}
-                {query.trim().length >= 2 && !loading && items.length === 0 ? (
-                  <p className="py-6 text-center text-sm text-muted-foreground">
-                    자동완성에 없습니다. 아래 「지도에서 찾기」를 눌러 보세요.
-                  </p>
-                ) : null}
-              </div>
-            </div>
-          ) : null}
-
-          {step === "candidates" ? (
-            <div className="space-y-2">
-              {candidates.map((item, idx) => (
-                <ResultRow
-                  key={`cand-${item.name}-${idx}`}
-                  item={item}
-                  onClick={() => goConfirm(item)}
-                />
-              ))}
-            </div>
-          ) : null}
-
-          {step === "confirm" && selected && hasCoords(selected) ? (
-            <div className="space-y-3">
-              <div className="rounded-xl border border-slate-200 bg-slate-50/80 px-3.5 py-3">
-                <div className="flex items-start gap-2">
-                  <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                  <div className="min-w-0">
-                    <p className="font-medium text-slate-900">{selected.name}</p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      {selected.address || "주소 없음"}
-                    </p>
-                  </div>
-                </div>
-              </div>
-              <PlaceConfirmMap lat={selected.lat!} lng={selected.lng!} />
-            </div>
-          ) : null}
+          <PlaceConfirmMap lat={selected.lat!} lng={selected.lng!} />
         </div>
+      ) : null}
+    </div>
+  );
 
-        <DrawerFooter className="gap-2 pt-2">
-          {step === "search" ? (
-            <Button
-              className="h-12 text-base"
-              disabled={query.trim().length < 2 || resolving}
-              onClick={() => void searchByNameOnly()}
-            >
-              {resolving ? "찾는 중…" : "지도에서 찾기"}
-            </Button>
-          ) : null}
-          {step === "confirm" && selected ? (
-            <Button
-              className="h-12 text-base"
-              onClick={() => {
-                onConfirm(selected);
-                onOpenChange(false);
-              }}
-            >
-              이 위치로
-            </Button>
-          ) : null}
-          <Button
-            variant="ghost"
-            className="h-11"
-            onClick={() => onOpenChange(false)}
-          >
-            닫기
-          </Button>
-        </DrawerFooter>
+  const actions = (
+    <div className="flex w-full flex-col gap-2">
+      {step === "search" ? (
+        <Button
+          className="h-12 text-base"
+          disabled={query.trim().length < 2 || resolving}
+          onClick={() => void searchByNameOnly()}
+        >
+          {resolving ? "찾는 중…" : "지도에서 찾기"}
+        </Button>
+      ) : null}
+      {step === "confirm" && selected ? (
+        <Button
+          className="h-12 text-base"
+          onClick={() => {
+            onConfirm(selected);
+            onOpenChange(false);
+          }}
+        >
+          {confirmLabel}
+        </Button>
+      ) : null}
+      <Button
+        variant="ghost"
+        className="h-11"
+        onClick={() => onOpenChange(false)}
+      >
+        닫기
+      </Button>
+    </div>
+  );
+
+  if (!isMobile) {
+    return (
+      <Dialog open={open} onOpenChange={handleOpenChange}>
+        <DialogContent
+          hideClose
+          className="flex max-h-[min(88vh,40rem)] w-[min(100vw-2rem,26rem)] max-w-[26rem] flex-col gap-3 overflow-hidden rounded-2xl p-4 sm:max-w-[26rem] sm:p-5"
+        >
+          <DialogHeader className="space-y-0 p-0 text-left">
+            {headerNav}
+          </DialogHeader>
+          <div className="min-h-0 overflow-y-auto">{body}</div>
+          <DialogFooter className="mt-0 flex-col gap-0 space-x-0 sm:flex-col sm:justify-stretch sm:space-x-0">
+            {actions}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
+  return (
+    <Drawer open={open} onOpenChange={handleOpenChange}>
+      <DrawerContent className="max-h-[92vh]">
+        <DrawerHeader className="pb-2 text-left">{headerNav}</DrawerHeader>
+        <div className="min-h-0 overflow-y-auto px-4 pb-2">{body}</div>
+        <DrawerFooter className="gap-2 pt-2">{actions}</DrawerFooter>
       </DrawerContent>
     </Drawer>
   );

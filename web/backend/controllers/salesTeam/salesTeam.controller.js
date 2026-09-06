@@ -143,6 +143,124 @@ function nearestIndexToPoint(points, from) {
   return best;
 }
 
+/** KST civil calendar: add delta days to YYYY-MM-DD. */
+function addDaysYmd(ymd, delta) {
+  const parsed = parseYmd(ymd);
+  if (!parsed) return null;
+  const [y, m, d] = parsed.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + delta, 12));
+  const yy = dt.getUTCFullYear();
+  const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getUTCDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
+}
+
+function optimizePointsOrder(points) {
+  if (!points.length) return { order: [], totalKm: 0 };
+  if (points.length === 1) return { order: [0], totalKm: 0 };
+  const order = twoOptImprove(points, nearestNeighborOrder(points, 0));
+  return { order, totalKm: Math.round(pathLengthKm(points, order) * 10) / 10 };
+}
+
+function kakaoMapUrlForStops(stops) {
+  const mapStops = (stops || []).filter(
+    (s) =>
+      s.lat != null &&
+      s.lng != null &&
+      Number.isFinite(s.lat) &&
+      Number.isFinite(s.lng),
+  );
+  if (mapStops.length < 1) return null;
+  return `https://map.kakao.com/?map_type=TYPE_MAP&target=car&rt=${mapStops
+    .map((s) => `${s.lng},${s.lat}`)
+    .join(",")}`;
+}
+
+function formatKstHm(date) {
+  if (!date) return null;
+  const d = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(d.getTime())) return null;
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Seoul",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(d);
+}
+
+function clampBusinessHm(hm) {
+  const m = /^(\d{2}):(\d{2})$/.exec(String(hm || "").trim());
+  if (!m) return "10:00";
+  let minutes = Number(m[1]) * 60 + Number(m[2]);
+  const min = 9 * 60;
+  const max = 18 * 60;
+  if (minutes < min) minutes = min;
+  if (minutes > max) minutes = max;
+  const hh = String(Math.floor(minutes / 60)).padStart(2, "0");
+  const mm = String(minutes % 60).padStart(2, "0");
+  return `${hh}:${mm}`;
+}
+
+function addMinutesHm(hm, deltaMin) {
+  const m = /^(\d{2}):(\d{2})$/.exec(String(hm || "").trim());
+  if (!m) return clampBusinessHm("10:00");
+  let total = Number(m[1]) * 60 + Number(m[2]) + deltaMin;
+  total = ((total % (24 * 60)) + 24 * 60) % (24 * 60);
+  const hh = String(Math.floor(total / 60)).padStart(2, "0");
+  const mm = String(total % 60).padStart(2, "0");
+  return clampBusinessHm(`${hh}:${mm}`);
+}
+
+/**
+ * 최근접 기예약 시각 기준으로 앞/뒤 제안 시각.
+ * 동선 순서상 목표가 최근접보다 앞이면 −gap, 아니면 +gap.
+ */
+function suggestTimeForTarget(stops, targetPoint, orderedWithTarget) {
+  if (!stops?.length) return { suggestedTime: "10:00", anchorName: "" };
+  let nearest = stops[0];
+  let nearestKm = haversineKm(targetPoint, nearest);
+  for (let i = 1; i < stops.length; i += 1) {
+    const d = haversineKm(targetPoint, stops[i]);
+    if (d < nearestKm) {
+      nearestKm = d;
+      nearest = stops[i];
+    }
+  }
+  const anchorHm = formatKstHm(nearest.plannedAt) || "10:00";
+  let beforeNearest = false;
+  if (orderedWithTarget?.length) {
+    const extraIdx = orderedWithTarget.findIndex((s) => s.isExtra);
+    const nearIdx = orderedWithTarget.findIndex(
+      (s) => s.visitId && String(s.visitId) === String(nearest.visitId),
+    );
+    if (extraIdx >= 0 && nearIdx >= 0) beforeNearest = extraIdx < nearIdx;
+  }
+  const suggestedTime = beforeNearest
+    ? addMinutesHm(anchorHm, -SUGGEST_TIME_GAP_MIN)
+    : addMinutesHm(anchorHm, SUGGEST_TIME_GAP_MIN);
+  return {
+    suggestedTime,
+    anchorName: nearest.name || "",
+    anchorTime: anchorHm,
+  };
+}
+
+function ymdDiffDays(a, b) {
+  const [ay, am, ad] = a.split("-").map(Number);
+  const [by, bm, bd] = b.split("-").map(Number);
+  const aUtc = Date.UTC(ay, am - 1, ad, 12);
+  const bUtc = Date.UTC(by, bm - 1, bd, 12);
+  return Math.round((aUtc - bUtc) / (24 * 60 * 60 * 1000));
+}
+
+/** 동선 효율: 우회 ≤10km 또는 최근접 확정 ≤5km */
+const ROUTE_EFFICIENT_DETOUR_KM = 10;
+const ROUTE_EFFICIENT_NEIGHBOR_KM = 5;
+/** 2순위(인접일): 기예약까지 이 거리 이하면 「근처」로 본다 */
+const ROUTE_NEARBY_KM = 12;
+/** 제안 시각: 최근접 방문 기준 앞뒤 간격(분) */
+const SUGGEST_TIME_GAP_MIN = 45;
+
 /**
  * Kakao Local / keyword APIs use the REST API key (`KakaoAK …`).
  * In this project the OAuth client id is typically that same REST key.
@@ -1311,15 +1429,7 @@ export async function optimizeRoute(req, res) {
       totalKm += haversineKm(pathForKm[i - 1], pathForKm[i]);
     }
 
-    const mapStops = ordered.filter(
-      (s) => s.lat != null && s.lng != null && Number.isFinite(s.lat) && Number.isFinite(s.lng),
-    );
-    const mapUrl =
-      mapStops.length >= 1
-        ? `https://map.kakao.com/?map_type=TYPE_MAP&target=car&rt=${mapStops
-            .map((s) => `${s.lng},${s.lat}`)
-            .join(",")}`
-        : null;
+    const mapUrl = kakaoMapUrlForStops(ordered);
 
     return res.json({
       success: true,
@@ -1337,6 +1447,390 @@ export async function optimizeRoute(req, res) {
     return res.status(500).json({
       success: false,
       message: error?.message || "동선 최적화에 실패했습니다.",
+    });
+  }
+}
+
+/**
+ * 치과명(+좌표)을 넣으면 앞으로 N일 확정 일정을 훑어
+ * 우회가 작은 날을 추천. 효율 날이 없으면 차선 날도 반환.
+ */
+export async function suggestRouteDays(req, res) {
+  try {
+    const body = req.body || {};
+    const name = String(body.name || body.extraName || "").trim();
+    if (!name) {
+      return res.status(400).json({
+        success: false,
+        message: "치과·기공소 상호를 입력하세요.",
+      });
+    }
+
+    const address = String(body.address || body.extraAddress || "").trim();
+    const accountId = oid(body.accountId);
+    const includeAround = body.includeAround === true;
+    const fromYmd =
+      parseYmd(body.fromYmd) || toKstYmd(new Date()) || null;
+    if (!fromYmd) {
+      return res.status(400).json({
+        success: false,
+        message: "시작 날짜가 올바르지 않습니다.",
+      });
+    }
+    const horizonRaw = Number(body.horizonDays);
+    const horizonDays = Math.min(
+      30,
+      Math.max(1, Number.isFinite(horizonRaw) ? Math.floor(horizonRaw) : 14),
+    );
+    const toYmd = addDaysYmd(fromYmd, horizonDays - 1);
+    const fromRange = kstYmdToUtcRange(fromYmd);
+    const toRange = kstYmdToUtcRange(toYmd);
+    if (!fromRange || !toRange) {
+      return res.status(400).json({
+        success: false,
+        message: "날짜 범위가 올바르지 않습니다.",
+      });
+    }
+
+    const commitments = includeAround
+      ? ["confirmed", "around"]
+      : ["confirmed"];
+
+    let targetLat = parseCoord(body.lat ?? body.extraLat);
+    let targetLng = parseCoord(body.lng ?? body.extraLng);
+    let targetAddress = address;
+
+    if (
+      (targetLat == null || targetLng == null) &&
+      accountId
+    ) {
+      const acc = await SalesAccount.findById(accountId)
+        .select({ lat: 1, lng: 1, address: 1, name: 1 })
+        .lean();
+      if (acc) {
+        if (acc.lat != null && acc.lng != null) {
+          targetLat = Number(acc.lat);
+          targetLng = Number(acc.lng);
+        }
+        if (!targetAddress && acc.address) targetAddress = String(acc.address);
+      }
+    }
+
+    if (
+      (targetLat == null ||
+        targetLng == null ||
+        !Number.isFinite(targetLat) ||
+        !Number.isFinite(targetLng)) &&
+      (targetAddress || name)
+    ) {
+      const geo =
+        (targetAddress ? await geocodeAddress(targetAddress) : null) ||
+        (await geocodeAddress(name));
+      if (geo) {
+        targetLat = geo.lat;
+        targetLng = geo.lng;
+        if (!targetAddress && geo.address) targetAddress = geo.address;
+      }
+    }
+
+    if (
+      targetLat == null ||
+      targetLng == null ||
+      !Number.isFinite(targetLat) ||
+      !Number.isFinite(targetLng)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "위치를 확인할 수 없습니다. 주소를 지정하거나 거래처에 좌표를 저장한 뒤 다시 시도하세요.",
+        data: {
+          target: { name, address: targetAddress, lat: null, lng: null },
+          ...placeGeoMeta(),
+        },
+      });
+    }
+
+    const visits = await SalesVisit.find({
+      assigneeUserId: req.user._id,
+      plannedAt: { $gte: fromRange.start, $lt: toRange.end },
+      status: "planned",
+      commitment: { $in: commitments },
+    })
+      .populate(
+        "accountId",
+        "name kind address lat lng phone businessAnchorId",
+      )
+      .lean();
+
+    const byYmd = new Map();
+    await Promise.all(
+      visits
+        .filter((v) => v.accountId)
+        .map(async (v) => {
+          const ymd = toKstYmd(v.plannedAt);
+          if (!ymd) return;
+          const acc = v.accountId;
+          let lat = acc.lat != null ? Number(acc.lat) : null;
+          let lng = acc.lng != null ? Number(acc.lng) : null;
+          if (
+            (lat == null ||
+              lng == null ||
+              !Number.isFinite(lat) ||
+              !Number.isFinite(lng)) &&
+            String(acc.address || "").trim()
+          ) {
+            const geo = await geocodeAddress(acc.address);
+            if (geo) {
+              lat = geo.lat;
+              lng = geo.lng;
+              void SalesAccount.updateOne(
+                { _id: acc._id },
+                { $set: { lat, lng } },
+              ).catch(() => {});
+            }
+          }
+          if (
+            lat == null ||
+            lng == null ||
+            !Number.isFinite(lat) ||
+            !Number.isFinite(lng)
+          ) {
+            return;
+          }
+          const stop = {
+            visitId: String(v._id),
+            accountId: String(acc._id),
+            businessAnchorId: acc.businessAnchorId
+              ? String(acc.businessAnchorId)
+              : null,
+            name: acc.name,
+            address: acc.address || "",
+            lat,
+            lng,
+            commitment: v.commitment,
+            plannedAt: v.plannedAt,
+            isExtra: false,
+          };
+          const list = byYmd.get(ymd) || [];
+          list.push(stop);
+          byYmd.set(ymd, list);
+        }),
+    );
+
+    const targetPoint = { lat: targetLat, lng: targetLng };
+    const extraStopBase = {
+      visitId: null,
+      accountId: accountId ? String(accountId) : null,
+      name,
+      address: targetAddress || "",
+      lat: targetLat,
+      lng: targetLng,
+      commitment: "confirmed",
+      plannedAt: null,
+      isExtra: true,
+    };
+
+    /** @type {Map<string, object>} ymd → same-day score */
+    const dayScores = new Map();
+    const nearbyAnchors = []; // { ymd, stop, km } 근처 기예약
+
+    for (const [ymd, stops] of byYmd.entries()) {
+      const points = stops.map((s) => ({ lat: s.lat, lng: s.lng }));
+      const baseline = optimizePointsOrder(points);
+      const withTargetPoints = [...points, targetPoint];
+      const withTarget = optimizePointsOrder(withTargetPoints);
+      const detourKm =
+        Math.round(Math.max(0, withTarget.totalKm - baseline.totalKm) * 10) /
+        10;
+
+      let nearestKm = Infinity;
+      let nearestName = "";
+      let nearestStop = null;
+      for (const s of stops) {
+        const d = haversineKm(targetPoint, s);
+        if (d < nearestKm) {
+          nearestKm = d;
+          nearestName = s.name;
+          nearestStop = s;
+        }
+        if (d <= ROUTE_NEARBY_KM) {
+          nearbyAnchors.push({ ymd, stop: s, km: Math.round(d * 10) / 10 });
+        }
+      }
+      nearestKm =
+        nearestKm === Infinity ? null : Math.round(nearestKm * 10) / 10;
+
+      const efficient =
+        (nearestKm != null && nearestKm <= ROUTE_EFFICIENT_NEIGHBOR_KM) ||
+        detourKm <= ROUTE_EFFICIENT_DETOUR_KM;
+
+      const ordered = withTarget.order.map((i) =>
+        i < stops.length ? stops[i] : { ...extraStopBase },
+      );
+      const timeHint = suggestTimeForTarget(stops, targetPoint, ordered);
+
+      dayScores.set(ymd, {
+        ymd,
+        efficient,
+        visitCount: stops.length,
+        baselineKm: baseline.totalKm,
+        totalKm: withTarget.totalKm,
+        detourKm,
+        nearestKm,
+        nearestName,
+        ordered,
+        mapUrl: kakaoMapUrlForStops(ordered),
+        suggestedTime: timeHint.suggestedTime,
+        anchorTime: timeHint.anchorTime || null,
+        stops,
+        nearestStop,
+      });
+    }
+
+    // 1순위: 같은 날 효율 동선 (다중)
+    const rank1 = [...dayScores.values()]
+      .filter((d) => d.efficient)
+      .sort((a, b) => {
+        if (a.detourKm !== b.detourKm) return a.detourKm - b.detourKm;
+        const na = a.nearestKm ?? 1e9;
+        const nb = b.nearestKm ?? 1e9;
+        if (na !== nb) return na - nb;
+        return a.ymd.localeCompare(b.ymd);
+      })
+      .map((d) => ({
+        ymd: d.ymd,
+        rank: 1,
+        tier: "sameDayEfficient",
+        tierLabel: "1순위 · 동선",
+        efficient: true,
+        visitCount: d.visitCount,
+        baselineKm: d.baselineKm,
+        totalKm: d.totalKm,
+        detourKm: d.detourKm,
+        nearestKm: d.nearestKm,
+        nearestName: d.nearestName,
+        suggestedTime: d.suggestedTime,
+        reason:
+          d.nearestKm != null && d.nearestKm <= ROUTE_EFFICIENT_NEIGHBOR_KM
+            ? `${d.nearestName || "확정"} ${d.suggestedTime} 근처 · 약 ${d.nearestKm}km · 우회 +${d.detourKm}km`
+            : `기존 ${d.visitCount}곳 동선 · ${d.suggestedTime} 제안 · 우회 +${d.detourKm}km`,
+        ordered: d.ordered,
+        mapUrl: d.mapUrl,
+        adjacentToYmd: null,
+      }));
+
+    const rank1Ymds = new Set(rank1.map((s) => s.ymd));
+
+    // 2순위: 근처 기예약과 ±1일 (같은 날 효율이 아닌 날만)
+    const adjacentCandidates = new Map(); // ymd → best candidate
+    for (const anchor of nearbyAnchors) {
+      for (const delta of [-1, 1]) {
+        const adjYmd = addDaysYmd(anchor.ymd, delta);
+        if (!adjYmd) continue;
+        if (ymdDiffDays(adjYmd, fromYmd) < 0) continue;
+        if (ymdDiffDays(adjYmd, toYmd) > 0) continue;
+        if (rank1Ymds.has(adjYmd)) continue;
+
+        const existing = dayScores.get(adjYmd);
+        // 인접일에 이미 일정이 많으면 동선 점수도 같이 계산
+        let detourKm = null;
+        let totalKm = null;
+        let baselineKm = null;
+        let ordered = [{ ...extraStopBase }];
+        let visitCount = 0;
+        let suggestedTime = formatKstHm(anchor.stop.plannedAt) || "10:00";
+        suggestedTime = clampBusinessHm(suggestedTime);
+
+        if (existing) {
+          visitCount = existing.visitCount;
+          detourKm = existing.detourKm;
+          totalKm = existing.totalKm;
+          baselineKm = existing.baselineKm;
+          ordered = existing.ordered;
+          suggestedTime = existing.suggestedTime;
+        }
+
+        const score = anchor.km + (detourKm != null ? detourKm * 0.3 : 0);
+        const prev = adjacentCandidates.get(adjYmd);
+        if (prev && prev._score <= score) continue;
+
+        adjacentCandidates.set(adjYmd, {
+          ymd: adjYmd,
+          rank: 2,
+          tier: "adjacentDay",
+          tierLabel: "2순위 · 인접일",
+          efficient: false,
+          visitCount,
+          baselineKm,
+          totalKm,
+          detourKm,
+          nearestKm: anchor.km,
+          nearestName: anchor.stop.name || "",
+          suggestedTime,
+          reason: `${formatKstHm(anchor.stop.plannedAt) ? `${anchor.ymd} ${formatKstHm(anchor.stop.plannedAt)}` : anchor.ymd} ${anchor.stop.name || "확정"}과 하루 차이 · 약 ${anchor.km}km`,
+          ordered,
+          mapUrl: kakaoMapUrlForStops(ordered),
+          adjacentToYmd: anchor.ymd,
+          _score: score,
+        });
+      }
+    }
+
+    const rank2 = [...adjacentCandidates.values()]
+      .sort((a, b) => a._score - b._score || a.ymd.localeCompare(b.ymd))
+      .slice(0, 5)
+      .map(({ _score, ...rest }) => rest);
+
+    // 1순위가 없을 때만 비효율 same-day를 약하게 참고용으로 넣지 않음 — 3순위는 수동
+    const suggestions = [...rank1, ...rank2].slice(0, 8);
+    const needsManualPick = rank1.length === 0;
+
+    let message = null;
+    if (rank1.length > 0) {
+      message =
+        rank2.length > 0
+          ? `같은 날 효율 동선 ${rank1.length}건 · 인접일 ${rank2.length}건을 제안합니다.`
+          : `같은 날 효율 동선 ${rank1.length}건을 제안합니다. 카드를 누르면 날짜·시간이 채워집니다.`;
+    } else if (rank2.length > 0) {
+      message =
+        "같은 날 효율 동선은 없습니다. 근처 기예약과 하루 차이 나는 날을 제안합니다.";
+    } else if (byYmd.size === 0) {
+      message =
+        `${fromYmd}부터 ${horizonDays}일 안에 확정 일정이 없습니다. 날짜·시간을 직접 선택하세요.`;
+    } else {
+      message =
+        "근처 기예약과 붙일 효율 동선·인접일을 찾지 못했습니다. 날짜·시간을 직접 선택하세요.";
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        target: {
+          name,
+          address: targetAddress || "",
+          lat: targetLat,
+          lng: targetLng,
+        },
+        fromYmd,
+        toYmd,
+        horizonDays,
+        efficientDetourKm: ROUTE_EFFICIENT_DETOUR_KM,
+        efficientNeighborKm: ROUTE_EFFICIENT_NEIGHBOR_KM,
+        nearbyKm: ROUTE_NEARBY_KM,
+        suggestions,
+        efficientCount: rank1.length,
+        adjacentCount: rank2.length,
+        needsManualPick,
+        scannedDayCount: byYmd.size,
+        message,
+        ...placeGeoMeta(),
+      },
+    });
+  } catch (error) {
+    console.error("[salesTeam.suggestRouteDays]", error);
+    return res.status(500).json({
+      success: false,
+      message: error?.message || "동선 제안에 실패했습니다.",
     });
   }
 }

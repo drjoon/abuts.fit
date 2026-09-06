@@ -147,6 +147,8 @@ export const salesTeamApi = {
       plannedAt: string;
       commitment?: string;
       memo?: string;
+      windowStartAt?: string;
+      windowEndAt?: string;
     },
   ) =>
     salesFetch<SalesVisit>(token, "/api/sales-team/visits", {
@@ -262,6 +264,70 @@ export const salesTeamApi = {
       mapUrl: string | null;
       geocodeConfigured: boolean;
     }>(token, "/api/sales-team/route/optimize", {
+      method: "POST",
+      jsonBody: body,
+    }),
+
+  suggestRouteDays: (
+    token: string | null,
+    body: {
+      name: string;
+      address?: string;
+      accountId?: string | null;
+      lat?: number | null;
+      lng?: number | null;
+      fromYmd?: string;
+      horizonDays?: number;
+      includeAround?: boolean;
+    },
+  ) =>
+    salesFetch<{
+      target: {
+        name: string;
+        address: string;
+        lat: number | null;
+        lng: number | null;
+      };
+      fromYmd: string;
+      toYmd: string;
+      horizonDays: number;
+      efficientDetourKm: number;
+      efficientNeighborKm: number;
+      nearbyKm?: number;
+      suggestions: Array<{
+        ymd: string;
+        rank: 1 | 2;
+        tier: "sameDayEfficient" | "adjacentDay";
+        tierLabel: string;
+        efficient: boolean;
+        visitCount: number;
+        baselineKm: number | null;
+        totalKm: number | null;
+        detourKm: number | null;
+        nearestKm: number | null;
+        nearestName: string;
+        suggestedTime: string;
+        reason: string;
+        ordered: Array<{
+          visitId: string | null;
+          accountId: string | null;
+          name: string;
+          address: string;
+          lat: number | null;
+          lng: number | null;
+          commitment: string;
+          isExtra?: boolean;
+        }>;
+        mapUrl: string | null;
+        adjacentToYmd?: string | null;
+      }>;
+      efficientCount: number;
+      adjacentCount?: number;
+      needsManualPick: boolean;
+      scannedDayCount: number;
+      message: string | null;
+      geocodeConfigured: boolean;
+    }>(token, "/api/sales-team/route/suggest-days", {
       method: "POST",
       jsonBody: body,
     }),

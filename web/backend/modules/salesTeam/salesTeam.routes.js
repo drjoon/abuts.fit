@@ -21,6 +21,7 @@ import {
   getSalesStats,
   getReferralInfo,
   optimizeRoute,
+  suggestRouteDays,
   searchPlatformBusinesses,
   suggestPlaces,
   resolvePlace,
@@ -49,6 +50,7 @@ router.get("/home", authorize(salesOpsRoles), getSalesHome);
 router.get("/stats", authorize(salesOpsRoles), getSalesStats);
 router.get("/referral", authorize(salesOpsRoles), getReferralInfo);
 router.post("/route/optimize", authorize(salesOpsRoles), optimizeRoute);
+router.post("/route/suggest-days", authorize(salesOpsRoles), suggestRouteDays);
 router.get("/places/suggest", authorize(salesOpsRoles), suggestPlaces);
 router.post("/places/resolve", authorize(salesOpsRoles), resolvePlace);
 router.get(

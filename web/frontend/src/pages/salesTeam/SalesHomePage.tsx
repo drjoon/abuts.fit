@@ -2,28 +2,22 @@
 // - web/frontend/src/pages/salesTeam/salesTeamApi.ts
 // - web/frontend/src/pages/salesTeam/salesUi.tsx
 // - web/frontend/src/pages/salesTeam/salesDay.ts
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CalendarDays,
   CheckCircle2,
   FileText,
+  Route,
 } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { toKstYmd } from "@/shared/date/kst";
 import { useToast } from "@/shared/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { cn } from "@/shared/ui/cn";
 import { formatDayLabel, visitStatusLabel } from "./salesDay";
 import {
   COMMITMENT_LABEL,
@@ -46,6 +40,7 @@ import {
 } from "./salesUi";
 
 type TodayTab = "schedule" | "report";
+type ListFilter = "all" | "planned" | "done";
 
 function parseTab(raw: string | null): TodayTab {
   return raw === "report" ? "report" : "schedule";
@@ -102,6 +97,10 @@ export default function SalesHomePage() {
   const [visitSummary, setVisitSummary] = useState("");
   const [issues, setIssues] = useState("");
   const [tomorrowPlan, setTomorrowPlan] = useState("");
+  const [previewSuggestYmd, setPreviewSuggestYmd] = useState<string | null>(
+    null,
+  );
+  const appliedSuggestKeyRef = useRef("");
 
   const { data: visitsData, isLoading: visitsLoading } = useQuery({
     queryKey: ["sales-team-visits", ymd],
@@ -109,6 +108,80 @@ export default function SalesHomePage() {
     queryFn: () =>
       salesTeamApi.listVisits(token, { fromYmd: ymd, toYmd: ymd }),
   });
+
+  const routeSuggestName = (pickedPlace?.name || placeQuery).trim();
+  const routeSuggestKey = [
+    routeSuggestName,
+    pickedPlace?.accountId || "",
+    pickedPlace?.address || "",
+    pickedPlace?.lat ?? "",
+    pickedPlace?.lng ?? "",
+  ].join("|");
+
+  const {
+    data: routeSuggest,
+    isFetching: routeSuggestLoading,
+    error: routeSuggestError,
+  } = useQuery({
+    queryKey: ["sales-team-route-suggest", routeSuggestKey],
+    enabled: Boolean(
+      token &&
+        showForm &&
+        tab === "schedule" &&
+        pickedPlace &&
+        routeSuggestName.length >= 2,
+    ),
+    queryFn: () =>
+      salesTeamApi.suggestRouteDays(token, {
+        name: routeSuggestName,
+        address: pickedPlace?.address || "",
+        accountId: pickedPlace?.accountId || null,
+        lat: pickedPlace?.lat ?? null,
+        lng: pickedPlace?.lng ?? null,
+        fromYmd: today,
+        horizonDays: 14,
+      }),
+    staleTime: 30_000,
+    retry: false,
+  });
+
+  useEffect(() => {
+    setPreviewSuggestYmd(null);
+    appliedSuggestKeyRef.current = "";
+  }, [routeSuggestKey]);
+
+  /** 첫 제안(1순위 우선) 날짜·시간 자동 반영 — 상호당 1회 */
+  useEffect(() => {
+    if (!pickedPlace || !routeSuggest?.suggestions?.length) return;
+    if (appliedSuggestKeyRef.current === routeSuggestKey) return;
+    const best =
+      routeSuggest.suggestions.find((s) => s.rank === 1) ||
+      routeSuggest.suggestions[0];
+    if (!best?.ymd) return;
+    appliedSuggestKeyRef.current = routeSuggestKey;
+    if (best.suggestedTime) setTime(best.suggestedTime);
+    if (best.ymd !== ymd) onYmdChange(best.ymd);
+    setPreviewSuggestYmd(best.ymd);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- apply once per place suggest
+  }, [routeSuggest?.suggestions, routeSuggestKey, pickedPlace]);
+
+  const previewSuggestion = useMemo(() => {
+    const items = routeSuggest?.suggestions || [];
+    if (!items.length) return null;
+    if (previewSuggestYmd) {
+      return items.find((s) => s.ymd === previewSuggestYmd) || items[0];
+    }
+    return items[0];
+  }, [routeSuggest, previewSuggestYmd]);
+
+  const applySuggestion = (s: {
+    ymd: string;
+    suggestedTime?: string;
+  }) => {
+    setPreviewSuggestYmd(s.ymd);
+    onYmdChange(s.ymd);
+    if (s.suggestedTime) setTime(s.suggestedTime);
+  };
 
   const { data: reportData, isLoading: reportLoading } = useQuery({
     queryKey: ["sales-team-daily-report", ymd],
@@ -125,8 +198,41 @@ export default function SalesHomePage() {
   const visits = visitsData?.items || [];
   const doneCount = visits.filter((v) => v.status === "done").length;
   const plannedCount = visits.filter((v) => v.status === "planned").length;
+  const canceledCount = visits.filter((v) => v.status === "canceled").length;
   const reportSubmitted = Boolean(reportData?.report);
   const historyItems = history?.items || [];
+
+  /** 일정 목록 필터: 방문=전체, 예정/완료=해당 상태만 (다시 누르면 전체) */
+  const [listFilter, setListFilter] = useState<ListFilter>("all");
+  const [showCanceled, setShowCanceled] = useState(false);
+
+  const goScheduleFilter = (next: ListFilter) => {
+    if (tab !== "schedule") setTab("schedule");
+    setListFilter((prev) => {
+      // 같은 필터를 다시 누르면 전체로
+      if (next !== "all" && prev === next) return "all";
+      return next;
+    });
+  };
+
+  const visibleVisits = useMemo(() => {
+    return visits.filter((v) => {
+      if (v.status === "canceled") return showCanceled;
+      if (listFilter === "planned") return v.status === "planned";
+      if (listFilter === "done") return v.status === "done";
+      // all: 예정·완료·부재 (취소는 showCanceled)
+      return true;
+    });
+  }, [visits, listFilter, showCanceled]);
+
+  const filterEmptyHint =
+    listFilter === "planned"
+      ? "예정 방문이 없습니다. 「방문」을 누르면 전체 일정을 봅니다."
+      : listFilter === "done"
+        ? "완료된 방문이 없습니다. 「방문」을 누르면 전체 일정을 봅니다."
+        : showCanceled
+          ? "표시할 일정이 없습니다."
+          : "상단 뱃지나 취소 보기로 다시 표시하세요.";
 
   const routeVisitKey = visits
     .filter((v) => v.status === "planned")
@@ -180,41 +286,75 @@ export default function SalesHomePage() {
   }, [tab, reportData?.reportYmd, reportData?.report?._id, ymd]);
 
   const createMut = useMutation({
-    mutationFn: async () => {
-      const name = (pickedPlace?.name || placeQuery).trim();
+    mutationFn: async (placeOverride?: SalesPlaceSuggest | null) => {
+      const place = placeOverride ?? pickedPlace;
+      const name = (place?.name || placeQuery).trim();
       if (!name) throw new Error("방문할 상호를 입력하거나 선택하세요.");
-      let accountId = pickedPlace?.accountId || "";
+      let accountId = place?.accountId || "";
       if (!accountId) {
         const created = await salesTeamApi.createAccount(token, {
-          kind: pickedPlace?.kind || "practice",
+          kind: place?.kind || "practice",
           name,
-          phone: pickedPlace?.phone || "",
-          address: pickedPlace?.address || "",
-          lat: pickedPlace?.lat ?? null,
-          lng: pickedPlace?.lng ?? null,
-          representativeName: pickedPlace?.representativeName || "",
-          businessAnchorId: pickedPlace?.businessAnchorId || null,
+          phone: place?.phone || "",
+          address: place?.address || "",
+          lat: place?.lat ?? null,
+          lng: place?.lng ?? null,
+          representativeName: place?.representativeName || "",
+          businessAnchorId: place?.businessAnchorId || null,
           teamVisible: true,
         });
         accountId = created._id;
+      } else if (
+        place &&
+        (place.lat != null || place.lng != null || place.address)
+      ) {
+        // 위치 확인에서 고른 좌표를 거래처에 반영 (응답은 기다리지 않음)
+        void salesTeamApi
+          .updateAccount(token, accountId, {
+            name: place.name || name,
+            address: place.address || "",
+            lat: place.lat ?? null,
+            lng: place.lng ?? null,
+            phone: place.phone || undefined,
+            businessAnchorId: place.businessAnchorId || undefined,
+          })
+          .catch(() => {});
       }
       const plannedAt = new Date(`${ymd}T${time}:00+09:00`).toISOString();
-      return salesTeamApi.createVisit(token, {
+      const payload: {
+        accountId: string;
+        plannedAt: string;
+        commitment: string;
+        memo: string;
+        windowStartAt?: string;
+        windowEndAt?: string;
+      } = {
         accountId,
         plannedAt,
         commitment,
         memo: "",
-      });
+      };
+      if (commitment === "around") {
+        payload.windowStartAt = new Date(
+          `${ymd}T09:00:00+09:00`,
+        ).toISOString();
+        payload.windowEndAt = new Date(`${ymd}T18:00:00+09:00`).toISOString();
+      }
+      return salesTeamApi.createVisit(token, payload);
     },
     onSuccess: () => {
       toast({ title: "일정이 추가되었습니다." });
       setShowForm(false);
       setPlaceQuery("");
       setPickedPlace(null);
+      setPlacePickerOpen(false);
+      setPlacePickerSeed(null);
+      setPlacePickerAccountId(null);
       void qc.invalidateQueries({ queryKey: ["sales-team-visits"] });
       void qc.invalidateQueries({ queryKey: ["sales-team-home"] });
       void qc.invalidateQueries({ queryKey: ["sales-team-accounts"] });
       void qc.invalidateQueries({ queryKey: ["sales-team-route"] });
+      void qc.invalidateQueries({ queryKey: ["sales-team-route-suggest"] });
     },
     onError: (e: Error) =>
       toast({ title: e.message, variant: "destructive" }),
@@ -253,6 +393,7 @@ export default function SalesHomePage() {
       setPlacePickerSeed(null);
       setPlacePickerAccountId(null);
       void qc.invalidateQueries({ queryKey: ["sales-team-route"] });
+      void qc.invalidateQueries({ queryKey: ["sales-team-route-suggest"] });
       void qc.invalidateQueries({ queryKey: ["sales-team-visits"] });
       void qc.invalidateQueries({ queryKey: ["sales-team-accounts"] });
     },
@@ -312,18 +453,39 @@ export default function SalesHomePage() {
   return (
     <SalesPageShell
       title="오늘"
+      subtitle={dayLabel}
       actions={
-        tab === "schedule" ? (
-          <Button size="sm" onClick={() => setShowForm((v) => !v)}>
-            {showForm ? "닫기" : "일정 추가"}
-          </Button>
-        ) : reportSubmitted ? (
-          <Badge className="h-8 px-3">제출됨</Badge>
-        ) : (
-          <Badge variant="destructive" className="h-8 px-3">
-            미제출
-          </Badge>
-        )
+        <>
+          <SalesSegmentTabs
+            fit
+            value={tab}
+            onChange={setTab}
+            className="w-full min-w-0 sm:w-auto"
+            options={[
+              {
+                value: "schedule",
+                label: "일정 · 동선",
+                hint: visits.length ? `${visits.length}건` : "방문 관리",
+              },
+              {
+                value: "report",
+                label: "일일보고",
+                hint: reportSubmitted ? "제출됨" : "방문 요약 · 이슈",
+              },
+            ]}
+          />
+          {tab === "schedule" ? (
+            <Button size="sm" onClick={() => setShowForm((v) => !v)}>
+              {showForm ? "닫기" : "일정 추가"}
+            </Button>
+          ) : reportSubmitted ? (
+            <Badge className="h-8 px-3">제출됨</Badge>
+          ) : (
+            <Badge variant="destructive" className="h-8 px-3">
+              미제출
+            </Badge>
+          )}
+        </>
       }
     >
       <SalesToolbar>
@@ -334,38 +496,38 @@ export default function SalesHomePage() {
               label="방문"
               value={String(visits.length)}
               muted={!visits.length}
+              pressed={tab === "schedule" && listFilter === "all"}
+              onClick={() => {
+                setTab("schedule");
+                setListFilter("all");
+              }}
             />
-            <StatusChip label="예정" value={String(plannedCount)} />
+            <StatusChip
+              label="예정"
+              value={String(plannedCount)}
+              muted={!plannedCount}
+              pressed={tab === "schedule" && listFilter === "planned"}
+              onClick={() => goScheduleFilter("planned")}
+            />
             <StatusChip
               label="완료"
               value={String(doneCount)}
+              muted={!doneCount}
               tone={doneCount > 0 ? "ok" : undefined}
+              pressed={tab === "schedule" && listFilter === "done"}
+              onClick={() => goScheduleFilter("done")}
             />
             <StatusChip
               label="보고"
               value={reportSubmitted ? "제출" : "미제출"}
               tone={reportSubmitted ? "ok" : "alert"}
-              onClick={() => setTab("report")}
+              pressed={tab === "report"}
+              onClick={() =>
+                setTab(tab === "report" ? "schedule" : "report")
+              }
             />
           </div>
         </div>
-        <SalesSegmentTabs
-          fit
-          value={tab}
-          onChange={setTab}
-          options={[
-            {
-              value: "schedule",
-              label: "일정 · 동선",
-              hint: visits.length ? `${visits.length}건` : "방문 관리",
-            },
-            {
-              value: "report",
-              label: "일일보고",
-              hint: reportSubmitted ? "제출됨" : "방문 요약 · 이슈",
-            },
-          ]}
-        />
       </SalesToolbar>
 
       {tab === "schedule" ? (
@@ -373,7 +535,7 @@ export default function SalesHomePage() {
           {showForm ? (
             <SalesPanel
               title="방문 추가"
-              description="상호 검색 후 시간만 정하면 됩니다."
+              description="상호를 고르면 방문 날짜를 동선 기준으로 제안합니다."
             >
               <div className="flex max-w-2xl flex-col gap-2.5 sm:flex-row sm:flex-wrap sm:items-center">
                 <SalesPlaceSuggestInput
@@ -400,22 +562,36 @@ export default function SalesHomePage() {
                   placeholder="치과·기공소 상호 검색"
                   autoFocus
                 />
-                <Input
-                  type="time"
-                  className="w-full sm:w-[7.5rem]"
-                  value={time}
-                  onChange={(e) => setTime(e.target.value)}
-                />
-                <Select value={commitment} onValueChange={setCommitment}>
-                  <SelectTrigger className="w-full sm:w-[8rem]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="confirmed">확정</SelectItem>
-                    <SelectItem value="around">그쯤</SelectItem>
-                    <SelectItem value="askBefore">미확정</SelectItem>
-                  </SelectContent>
-                </Select>
+                <div
+                  className="inline-flex w-full shrink-0 rounded-xl border border-slate-200/80 bg-slate-100/80 p-1 sm:w-auto"
+                  role="group"
+                  aria-label="확정도"
+                >
+                  {(
+                    [
+                      { value: "confirmed", label: "확정" },
+                      { value: "around", label: "그쯤" },
+                    ] as const
+                  ).map((opt) => {
+                    const active = commitment === opt.value;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        aria-pressed={active}
+                        onClick={() => setCommitment(opt.value)}
+                        className={cn(
+                          "min-w-[4.25rem] flex-1 rounded-lg px-3 py-2 text-sm font-medium transition-colors sm:flex-none",
+                          active
+                            ? "bg-white text-slate-900 shadow-sm"
+                            : "text-slate-600 hover:text-slate-900",
+                        )}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
                 <Button
                   size="sm"
                   className="w-full sm:w-auto"
@@ -423,16 +599,160 @@ export default function SalesHomePage() {
                     !(pickedPlace?.name || placeQuery.trim()) ||
                     createMut.isPending
                   }
-                  onClick={() => createMut.mutate()}
+                  onClick={() => createMut.mutate(pickedPlace)}
                 >
-                  넣기
+                  {createMut.isPending ? "넣는 중…" : "넣기"}
                 </Button>
               </div>
               {pickedPlace?.address ? (
                 <p className="mt-2 text-xs text-muted-foreground">
                   {pickedPlace.address}
                   {pickedPlace.phone ? ` · ${pickedPlace.phone}` : ""}
+                  {" · "}
+                  {formatDayLabel(ymd)} ·{" "}
+                  {COMMITMENT_LABEL[commitment] || commitment}
                 </p>
+              ) : null}
+
+              {routeSuggestName.length >= 2 ? (
+                <div className="mt-3 space-y-2.5 border-t border-slate-100 pt-3">
+                  <div className="flex items-center gap-1.5 text-xs font-medium text-slate-700">
+                    <Route className="h-3.5 w-3.5 text-primary" aria-hidden />
+                    날짜 제안
+                    {routeSuggestLoading ? (
+                      <span className="font-normal text-muted-foreground">
+                        · 계산 중…
+                      </span>
+                    ) : null}
+                  </div>
+                  {!pickedPlace ? (
+                    <p className="text-xs text-muted-foreground">
+                      상호를 고르면 1순위 동선 · 2순위 인접일 날짜를 제안합니다.
+                      없으면 상단 날짜로 직접 넣으세요.
+                    </p>
+                  ) : null}
+                  {pickedPlace && routeSuggestError ? (
+                    <p className="text-xs text-amber-800">
+                      {(routeSuggestError as Error).message ||
+                        "날짜 제안을 불러오지 못했습니다. 상단 날짜로 직접 넣으세요."}
+                    </p>
+                  ) : null}
+                  {pickedPlace && routeSuggest?.message ? (
+                    <p className="text-xs text-muted-foreground">
+                      {routeSuggest.message}
+                    </p>
+                  ) : null}
+                  {pickedPlace && routeSuggest?.needsManualPick ? (
+                    <div className="rounded-xl border border-amber-200/80 bg-amber-50/70 px-3 py-2.5 text-xs text-amber-950">
+                      <p className="font-medium">3순위 · 직접 선택</p>
+                      <p className="mt-0.5 text-amber-900/80">
+                        효율 동선이 불명확합니다. 제안 카드를 고르거나, 상단
+                        날짜와 확정/그쯤을 맞춘 뒤 「넣기」하세요.
+                        {(routeSuggest.suggestions || []).length > 0
+                          ? " 아래 인접일 제안도 참고할 수 있습니다."
+                          : ""}
+                      </p>
+                    </div>
+                  ) : null}
+                  {pickedPlace &&
+                  (routeSuggest?.suggestions || []).length > 0 ? (
+                    <ul className="space-y-1.5">
+                      {routeSuggest!.suggestions.map((s) => {
+                        const selected =
+                          (previewSuggestYmd ||
+                            routeSuggest!.suggestions[0]?.ymd) === s.ymd;
+                        return (
+                          <li key={`${s.rank}-${s.ymd}`}>
+                            <button
+                              type="button"
+                              className={`flex w-full items-start justify-between gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors ${
+                                selected
+                                  ? "border-primary/40 bg-primary/5"
+                                  : "border-slate-200/80 bg-white hover:bg-slate-50"
+                              }`}
+                              onClick={() => applySuggestion(s)}
+                            >
+                              <div className="min-w-0 space-y-0.5">
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  <span className="text-sm font-medium text-slate-900">
+                                    {formatDayLabel(s.ymd)}
+                                  </span>
+                                  <Badge
+                                    variant={
+                                      s.rank === 1 ? "secondary" : "outline"
+                                    }
+                                    className="h-5 px-1.5 text-[10px]"
+                                  >
+                                    {s.tierLabel ||
+                                      (s.rank === 1
+                                        ? "1순위 · 동선"
+                                        : "2순위 · 인접일")}
+                                  </Badge>
+                                  {s.ymd === ymd ? (
+                                    <span className="text-[10px] text-primary">
+                                      적용됨
+                                    </span>
+                                  ) : null}
+                                </div>
+                                <p className="text-xs text-muted-foreground">
+                                  {s.reason}
+                                  {s.visitCount
+                                    ? ` · 그날 확정 ${s.visitCount}곳`
+                                    : ""}
+                                  {s.totalKm != null
+                                    ? ` · ${s.totalKm}km`
+                                    : ""}
+                                </p>
+                              </div>
+                              <span className="shrink-0 text-xs font-medium text-primary">
+                                적용
+                              </span>
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  ) : null}
+                  {pickedPlace && previewSuggestion?.ordered?.length ? (
+                    <div className="rounded-xl border border-slate-100 bg-slate-50/70 px-3 py-2.5">
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <p className="text-xs font-medium text-slate-700">
+                          {formatDayLabel(previewSuggestion.ymd)} 예상 순서
+                        </p>
+                        {previewSuggestion.mapUrl ? (
+                          <a
+                            href={previewSuggestion.mapUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-xs font-medium text-primary"
+                          >
+                            카카오맵
+                          </a>
+                        ) : null}
+                      </div>
+                      <ol className="space-y-1">
+                        {previewSuggestion.ordered.map((stop, idx) => (
+                          <li
+                            key={`${stop.visitId || stop.name}-${idx}`}
+                            className={`flex items-center gap-2 text-xs ${
+                              stop.isExtra
+                                ? "font-medium text-primary"
+                                : "text-slate-700"
+                            }`}
+                          >
+                            <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white text-[10px] font-semibold text-slate-600 ring-1 ring-slate-200">
+                              {idx + 1}
+                            </span>
+                            <span className="min-w-0 truncate">
+                              {stop.name}
+                              {stop.isExtra ? " (추가)" : ""}
+                            </span>
+                          </li>
+                        ))}
+                      </ol>
+                    </div>
+                  ) : null}
+                </div>
               ) : null}
             </SalesPanel>
           ) : null}
@@ -444,6 +764,23 @@ export default function SalesHomePage() {
               <SalesPanel
                 title="시간대별 일정"
                 description="현장에서 완료·부재·취소를 바로 기록합니다."
+                actions={
+                  <Button
+                    size="sm"
+                    variant={showCanceled ? "secondary" : "outline"}
+                    disabled={canceledCount === 0 && !showCanceled}
+                    onClick={() => {
+                      if (tab !== "schedule") setTab("schedule");
+                      setShowCanceled((v) => !v);
+                    }}
+                  >
+                    {canceledCount === 0 && !showCanceled
+                      ? "취소 없음"
+                      : showCanceled
+                        ? "취소 숨김"
+                        : `취소 보기 · ${canceledCount}`}
+                  </Button>
+                }
               >
                 {visitsLoading ? (
                   <p className="text-sm text-muted-foreground">불러오는 중…</p>
@@ -455,9 +792,27 @@ export default function SalesHomePage() {
                     actionLabel="일정 추가"
                     onAction={() => setShowForm(true)}
                   />
+                ) : visibleVisits.length === 0 ? (
+                  <SalesEmptyState
+                    icon={CalendarDays}
+                    title={
+                      listFilter === "planned"
+                        ? "예정 방문이 없습니다"
+                        : listFilter === "done"
+                          ? "완료된 방문이 없습니다"
+                          : "표시 중인 일정이 없습니다"
+                    }
+                    description={filterEmptyHint}
+                    actionLabel="전체 보기"
+                    onAction={() => {
+                      setListFilter("all");
+                      setShowCanceled(false);
+                      setTab("schedule");
+                    }}
+                  />
                 ) : (
                   <ol className="relative space-y-0 border-l border-slate-200 pl-5">
-                    {visits.map((v) => {
+                    {visibleVisits.map((v) => {
                       const orderNo = routeOrderByVisitId.get(v._id);
                       return (
                         <li key={v._id} className="relative pb-4 last:pb-0">
@@ -471,7 +826,13 @@ export default function SalesHomePage() {
                                   : "bg-primary"
                             }`}
                           />
-                          <div className="rounded-xl border border-slate-200/80 bg-slate-50/40 px-3.5 py-3">
+                          <div
+                            className={`rounded-xl border px-3.5 py-3 ${
+                              v.status === "canceled"
+                                ? "border-slate-200/60 bg-slate-50/30 opacity-70"
+                                : "border-slate-200/80 bg-slate-50/40"
+                            }`}
+                          >
                             <div className="flex items-start justify-between gap-2">
                               <div className="min-w-0">
                                 <div className="flex items-center gap-2">
@@ -784,10 +1145,18 @@ export default function SalesHomePage() {
         }}
         initialQuery={placePickerSeed?.name || ""}
         seed={placePickerSeed}
+        confirmLabel={showForm ? "이 위치로 일정 넣기" : "이 위치로"}
+        confirmDescription={
+          showForm
+            ? `지도에서 맞는지 확인하면 ${formatDayLabel(ymd)} · ${COMMITMENT_LABEL[commitment] || commitment} 일정이 추가됩니다.`
+            : "지도에서 맞는지 확인한 뒤 이 위치로 저장합니다."
+        }
         onConfirm={(place) => {
           if (showForm) {
             setPickedPlace(place);
             setPlaceQuery(place.name);
+            createMut.mutate(place);
+            return;
           }
           if (placePickerAccountId || place.accountId) {
             placeFixMut.mutate(place);
@@ -806,39 +1175,68 @@ function StatusChip({
   value,
   tone,
   muted,
+  pressed,
   onClick,
 }: {
   label: string;
   value: string;
   tone?: "ok" | "alert";
   muted?: boolean;
+  /** 현재 선택(필터/탭) 상태 */
+  pressed?: boolean;
   onClick?: () => void;
 }) {
   const className = [
-    "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 font-medium",
-    muted
-      ? "border-slate-200 bg-slate-50 text-slate-400"
-      : tone === "ok"
-        ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+    "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 font-medium transition-colors",
+    pressed
+      ? tone === "ok"
+        ? "border-emerald-400 bg-emerald-100 text-emerald-900 ring-2 ring-emerald-300/80"
         : tone === "alert"
-          ? "border-rose-200 bg-rose-50 text-rose-800"
-          : "border-slate-200 bg-white text-slate-700",
-    onClick ? "cursor-pointer hover:border-slate-300" : "",
+          ? "border-rose-400 bg-rose-100 text-rose-900 ring-2 ring-rose-300/80"
+          : "border-primary/50 bg-primary/10 text-slate-900 ring-2 ring-primary/30"
+      : muted
+        ? "border-slate-200 bg-slate-50 text-slate-400"
+        : tone === "ok"
+          ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+          : tone === "alert"
+            ? "border-rose-200 bg-rose-50 text-rose-800"
+            : "border-slate-200 bg-white text-slate-700",
+    onClick ? "cursor-pointer hover:brightness-[0.98] active:scale-[0.98]" : "",
   ]
     .filter(Boolean)
     .join(" ");
 
   const body = (
     <>
-      <span className="text-slate-500">{label}</span>
-      <span className="tabular-nums text-slate-900">{value}</span>
-      {tone === "ok" ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> : null}
+      <span className={pressed ? "opacity-80" : muted ? "text-slate-400" : "text-slate-500"}>
+        {label}
+      </span>
+      <span className={`tabular-nums ${muted && !pressed ? "text-slate-400" : ""}`}>
+        {value}
+      </span>
+      {tone === "ok" && (pressed || !muted) ? (
+        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+      ) : null}
     </>
   );
 
   if (onClick) {
     return (
-      <button type="button" className={className} onClick={onClick}>
+      <button
+        type="button"
+        className={className}
+        onClick={onClick}
+        aria-pressed={pressed}
+        title={
+          label === "보고"
+            ? pressed
+              ? "일정으로 돌아가기"
+              : "일일보고 보기"
+            : pressed
+              ? `${label} 필터 해제`
+              : `${label}만 보기`
+        }
+      >
         {body}
       </button>
     );

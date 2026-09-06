@@ -24,20 +24,23 @@ export function SalesPageShell({
   actions?: ReactNode;
   children: ReactNode;
   className?: string;
-  /** Use the full work area width (default). Pass false to keep a reading-width column. */
+  /**
+   * true: 거래처·요구사항 등 2열 작업용(최대 ~64rem).
+   * 기본(false): 핸드폰·태블릿·PC에서 읽기 편한 폭(~48rem).
+   */
   wide?: boolean;
 }) {
   return (
     <div
       className={cn(
-        "mx-auto w-full space-y-4 p-3 pb-24 sm:space-y-5 sm:p-4 sm:pb-10 md:p-5 lg:space-y-6 lg:p-6 lg:pb-12",
-        wide === false ? "max-w-3xl" : "max-w-5xl",
+        "mx-auto w-full space-y-4 px-0 pb-20 pt-0 sm:space-y-5 sm:pb-10 lg:space-y-5 lg:pb-8",
+        wide ? "max-w-5xl" : "max-w-3xl",
         className,
       )}
     >
-      <header className="flex flex-wrap items-end justify-between gap-3 border-b border-slate-200/70 pb-3 sm:pb-4">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/70 pb-3 sm:pb-4">
         <div className="min-w-0 space-y-1">
-          <h1 className="text-xl font-semibold tracking-tight text-slate-900 sm:text-2xl lg:text-[1.65rem]">
+          <h1 className="text-xl font-semibold tracking-tight text-slate-900 sm:text-2xl">
             {title}
           </h1>
           {subtitle ? (
@@ -47,7 +50,7 @@ export function SalesPageShell({
           ) : null}
         </div>
         {actions ? (
-          <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2 sm:flex-none">
             {actions}
           </div>
         ) : null}
