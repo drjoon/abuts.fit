@@ -10,6 +10,7 @@
 // - web/backend/controllers/requests/shipping.controller.js
 // - web/backend/controllers/requests/shipping.Tracking.helpers.js
 // change-log:
+// - 2026-09-06: 딜러·개발운영 earn에 affiliateVatRate VAT(포함가 장부). REV_ADMIN은 면세.
 // - 2026-08-23: 리메이크·무료크레딧 결제는 제조사 무료 생산.
 // - 2026-08-21: 가공→준비 롤백 후 의뢰비 hold 복원. hold 전환 시 convertedAt 표시.
 // - 2026-08-21: isPtxLabDesignedAbutmentRequest export — 어벗츠로의뢰 취소 가드 공용.
@@ -64,6 +65,7 @@ import { postGeneralLedgerJournal } from "../../services/generalLedger.service.j
 import {
   isShippingSpendRevenueContext,
   MANUFACTURER_PRODUCTION_LEDGER_LABEL,
+  normalizeAffiliateVatRate,
   resolveConfiguredRevenueRates,
   resolveManufacturerUnitApply,
   resolveManufacturerUnitQty,
@@ -548,6 +550,10 @@ async function postSpendCommitGeneralLedger({
   const assignSalesman = revenueBaseByOwner.salesman;
   const adminBase = revenueBaseByOwner.admin;
   const manufacturerVatRate = Number(revenueBaseByOwner.manufacturerVatRate || 0);
+  // 과세 관계사(제조·딜러·개발운영) 장부=포함가. 어벗츠(REV_ADMIN) 잔여는 면세.
+  const affiliateVatRate = normalizeAffiliateVatRate(
+    creditSettings?.affiliateVatRate,
+  );
 
   const revenueKindSplit = splitRevenueByCreditKindProRata({
     ownerBaseByRole: {
@@ -629,6 +635,7 @@ async function postSpendCommitGeneralLedger({
     ownerId: owners.devopsAnchorId,
     paidBase: revenueKindSplit.devops.paid,
     freeBase: revenueKindSplit.devops.free,
+    vatRate: affiliateVatRate,
   });
 
   pushRevenueLinesBySplit({
@@ -637,6 +644,7 @@ async function postSpendCommitGeneralLedger({
     ownerId: owners.salesmanAnchorId,
     paidBase: revenueKindSplit.salesman.paid,
     freeBase: revenueKindSplit.salesman.free,
+    vatRate: affiliateVatRate,
   });
 
   pushRevenueLinesBySplit({

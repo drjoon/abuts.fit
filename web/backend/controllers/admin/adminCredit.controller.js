@@ -1310,7 +1310,14 @@ export async function adminCreateSalesmanPayout(req, res) {
       {
         $group: {
           _id: "$type",
-          total: { $sum: { $ifNull: ["$amountExcludingVat", "$amount"] } },
+          total: {
+            $sum: {
+              $ifNull: [
+                "$amountIncludingVat",
+                { $ifNull: ["$amount", { $ifNull: ["$amountExcludingVat", 0] }] },
+              ],
+            },
+          },
         },
       },
     ]);
@@ -1325,10 +1332,10 @@ export async function adminCreateSalesmanPayout(req, res) {
       else if (type === "PAYOUT") payout += total;
       else if (type === "ADJUST") adjust += total;
     }
-    // body.amount = 공급가(장부 잔액). 입금은 지급 시 VAT 합산.
-    const supplyAmount = amount;
-    const balance = Math.round(earn - payout + adjust);
-    if (balance < supplyAmount) {
+    // body.amount = 부가세 포함가 잔액. 지급=잔액 그대로(재가산 없음).
+    const depositTotal = amount;
+    const balance = Math.round(earn - Math.abs(payout) + adjust);
+    if (balance < depositTotal) {
       return res.status(400).json({
         success: false,
         message: "정산 전 잔액이 부족합니다.",
@@ -1338,17 +1345,17 @@ export async function adminCreateSalesmanPayout(req, res) {
     const vatRate = await resolveAffiliateVatRate();
     const breakdown = resolveSettlementPayoutAmounts({
       role: "salesman",
-      balanceAmount: supplyAmount,
+      balanceAmount: depositTotal,
       vatRate,
     });
-    const depositTotal = breakdown.amount;
+    const supplyAmount = breakdown.supplyAmount;
     const vatAmount = breakdown.vatAmount;
 
     const now = new Date();
     const requestIdempotencyKey = String(req.body?.idempotencyKey || "").trim();
     const idempotencyKey =
       requestIdempotencyKey ||
-      `gl:settlement_payout:salesman:${String(ownerAnchorId)}:${String(supplyAmount)}:${now.getTime()}`;
+      `gl:settlement_payout:salesman:${String(ownerAnchorId)}:${String(depositTotal)}:${now.getTime()}`;
 
     const posted = await postGeneralLedgerJournal({
       idempotencyKey,
@@ -1370,8 +1377,8 @@ export async function adminCreateSalesmanPayout(req, res) {
           accountCode: "REV_SALESMAN",
           ownerRole: "salesman",
           ownerId: ownerAnchorId,
-          // 잔액 차감은 공급가. VAT는 어벗츠 추가 지급분(세금계산서).
-          amount: supplyAmount,
+          // 과세: 포함가 잔액 차감. 세금계산서만 ÷1.1 분해.
+          amount: depositTotal,
           amountExcludingVat: supplyAmount,
           vatAmount,
           amountIncludingVat: depositTotal,
@@ -1877,7 +1884,14 @@ export async function adminGetSalesmanCredits(req, res) {
               ownerId: "$ownerIdStr",
               type: "$type",
             },
-            total: { $sum: { $ifNull: ["$amountExcludingVat", "$amount"] } },
+            total: {
+              $sum: {
+                $ifNull: [
+                  "$amountIncludingVat",
+                  { $ifNull: ["$amount", { $ifNull: ["$amountExcludingVat", 0] }] },
+                ],
+              },
+            },
           },
         },
       ]);
@@ -1910,7 +1924,12 @@ export async function adminGetSalesmanCredits(req, res) {
           $addFields: {
             ownerIdStr: { $toString: "$ownerId" },
             eventType: { $ifNull: ["$journalDoc.eventType", ""] },
-            baseAmount: { $ifNull: ["$amountExcludingVat", "$amount"] },
+            baseAmount: {
+              $ifNull: [
+                "$amountIncludingVat",
+                { $ifNull: ["$amount", { $ifNull: ["$amountExcludingVat", 0] }] },
+              ],
+            },
           },
         },
         {
@@ -2287,7 +2306,10 @@ export async function adminGetManufacturerSummary(req, res) {
           },
           ownerIdStr: { $toString: "$ownerId" },
           amountBase: {
-            $ifNull: ["$amountExcludingVat", "$amount"],
+            $ifNull: [
+              "$amountIncludingVat",
+              { $ifNull: ["$amount", { $ifNull: ["$amountExcludingVat", 0] }] },
+            ],
           },
           amountSupply: { $ifNull: ["$amountExcludingVat", "$amount"] },
           amountVat: { $ifNull: ["$vatAmount", 0] },
@@ -2351,7 +2373,7 @@ export async function adminGetManufacturerSummary(req, res) {
             {
               $addFields: {
                 eventType: { $ifNull: ["$journalDoc.eventType", ""] },
-                // 제조사 하청: 일반과세. 공급가 기준(+지급 시 VAT).
+                // 제조사 하청 무료 참고 집계(공급가). 지급 잔액은 amountIncludingVat.
                 baseAmount: {
                   $ifNull: ["$amountExcludingVat", "$amount"],
                 },
@@ -3087,10 +3109,14 @@ export async function adminGetSalesmanLedger(req, res) {
 
     const occurredAt = {};
 
-    const sinceFromPeriod = parsePeriod(periodRaw);
-    if (sinceFromPeriod) {
-      occurredAt.$gte = sinceFromPeriod;
-    }
+    const period = parsePeriod(periodRaw);
+    Object.assign(
+      occurredAt,
+      buildOccurredAtFromPeriodQuery(
+        { ...req.query, period: period || periodRaw },
+        { parsePreset: parsePeriod },
+      ),
+    );
 
     if (Object.keys(occurredAt).length) {
       match.occurredAt = occurredAt;
@@ -3135,7 +3161,12 @@ export async function adminGetSalesmanLedger(req, res) {
               default: "EARN",
             },
           },
-          amountBase: { $ifNull: ["$amountExcludingVat", "$amount"] },
+          amountBase: {
+            $ifNull: [
+              "$amountIncludingVat",
+              { $ifNull: ["$amount", { $ifNull: ["$amountExcludingVat", 0] }] },
+            ],
+          },
           settlementEligible: {
             $or: [
               { $eq: ["$type", "PAYOUT"] },

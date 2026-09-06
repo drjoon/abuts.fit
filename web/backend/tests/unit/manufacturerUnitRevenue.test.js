@@ -1,6 +1,7 @@
 // related files:
 // - web/backend/services/creditRevenuePolicy.service.js
 // change-log:
+// - 2026-09-06: 미정산 net = 공급가 합 회귀 테스트.
 // - 2026-08-23: 제조사=일반과세. 매입가(부가세 포함)→공급가 분해.
 // - 2026-08-18: (철회) 제조사 면세.
 // - 2026-08-17: 어벗 qty·플랫폼수수료/기공소배송 제외 테스트.
@@ -9,6 +10,7 @@ import {
   resolveManufacturerUnitEarn,
   resolveRevenueOwnerBaseAllocation,
   splitManufacturerInclusiveUnitPrice,
+  computeManufacturerDailyNetPayout,
 } from "../../services/creditRevenuePolicy.service.js";
 
 describe("manufacturer fixed unit + residual allocation", () => {
@@ -39,6 +41,31 @@ describe("manufacturer fixed unit + residual allocation", () => {
       total: 8800,
       vatRate: 0.1,
     });
+  });
+
+  test("splitManufacturerInclusiveUnitPrice: 3500 → 3182+318", () => {
+    expect(splitManufacturerInclusiveUnitPrice(3500, 0.1)).toEqual({
+      supply: 3182,
+      vat: 318,
+      total: 3500,
+      vatRate: 0.1,
+    });
+  });
+
+  test("미정산 net은 포함가 합 − |지급|", () => {
+    expect(
+      computeManufacturerDailyNetPayout({
+        requestInclusive: 888800,
+        shippingInclusive: 91501,
+      }),
+    ).toBe(980301);
+    expect(
+      computeManufacturerDailyNetPayout({
+        requestInclusive: 8800,
+        shippingInclusive: 3500,
+        payoutAmount: 12300,
+      }),
+    ).toBe(0);
   });
 
   test("resolveManufacturerUnitEarn: request and shipping taxable", () => {

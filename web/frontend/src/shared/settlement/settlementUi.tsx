@@ -306,7 +306,7 @@ export function SettlementVatNotice({
   return (
     <p className="text-xs leading-relaxed text-slate-500">
       {children ||
-        "장부 금액은 공급가입니다. 부가세 10%는 지급 시 합산하며 세금계산서를 수취합니다."}
+        "장부·미정산은 부가세 포함가입니다. 지급 시 재가산 없이 잔액을 입금하며 세금계산서를 수취합니다."}
     </p>
   );
 }

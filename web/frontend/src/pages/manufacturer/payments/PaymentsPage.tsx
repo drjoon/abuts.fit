@@ -6,6 +6,9 @@
 // - web/frontend/src/shared/date/kst.ts
 // - web/frontend/src/features/settings/tabs/LabSettlementPayoutTab.tsx
 // change-log:
+// - 2026-09-06: 미정산=부가세 포함가. 힌트「포함가·세금계산서」(지급 시 +VAT 제거).
+// - 2026-09-06: 오른쪽 요약 카드「지급 합계」→「전월 지급」(KST 전월 SETTLEMENT_PAYOUT).
+// - 2026-09-06: 미정산 검증을 공급가 합으로 맞춤(VAT 포함 net 거부).
 // - 2026-08-23: 제조사=일반과세. 공급가 장부·지급 시 VAT·세금계산서.
 // - 2026-08-23: 정산규칙 모달 단가 — 설정 매입가(기본 8,800 부가세 포함)·배송 3,500.
 // - 2026-08-20: 같은 날 조정을 1행으로 묶고 클릭 시 의뢰 상세.
@@ -20,7 +23,12 @@
 // - 2026-08-11: 기공소 기공크레딧 정산과 동일 UX — 요약 카드 축소·(N건), 일자 제거, 액션 세로열, 초기화 제거.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
-import { toKstYmd } from "@/shared/date/kst";
+import {
+  kstAddCivilMonths,
+  kstEndOfMonth,
+  kstStartOfMonth,
+  toKstYmd,
+} from "@/shared/date/kst";
 import { usePeriodStore, periodToRange } from "@/store/usePeriodStore";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
@@ -343,29 +351,12 @@ const validateSnapshotRow = (
     return { valid: false, reason: "배송 총건수가 paid+free 분해값과 불일치" };
   }
 
-  const requestTotalWithVat =
-    r.earnRequestTotal !== undefined
-      ? Number(r.earnRequestTotal || 0)
-      : Number(r.earnRequestPaidTotal || 0) +
-        Number(r.earnRequestFreeTotal || 0) ||
-        paidAmount +
-          freeAmount +
-          Number(r.earnRequestPaidVat || 0) +
-          Number(r.earnRequestFreeVat || 0);
-  const shippingTotalWithVat =
-    r.earnShippingTotal !== undefined
-      ? Number(r.earnShippingTotal || 0)
-      : Number(r.earnShippingPaidTotal || 0) +
-        Number(r.earnShippingFreeTotal || 0) ||
-        shippingPaidAmount +
-          shippingFreeAmount +
-          Number(r.earnShippingPaidVat || 0) +
-          Number(r.earnShippingFreeVat || 0);
+  // 미정산·netAmount는 부가세 포함가. 지급은 차감(|payout|).
   const expectedPayoutNet =
-    requestTotalWithVat +
-    shippingTotalWithVat +
-    refundAmount +
-    payoutAmount +
+    requestTotalAmount +
+    shippingTotalAmount +
+    refundAmount -
+    Math.abs(payoutAmount) +
     adjustAmount;
   if (expectedPayoutNet !== netAmount) {
     return { valid: false, reason: "지급 순액 계산값 불일치" };
@@ -407,7 +398,8 @@ export const ManufacturerPaymentPage = () => {
 
   const [tab, setTab] = useState<"ledger" | "payments">("ledger");
 
-  const { period, setPeriod, customStartDate, customEndDate } = usePeriodStore();
+  const { period, setPeriod, customStartDate, customEndDate, setCustomDateRange } =
+    usePeriodStore();
   const { data: systemSettings } = useSystemSettings();
   const manufacturerRequestUnitPrice = Number(
     systemSettings?.creditSettings?.manufacturerRequestUnitPrice ??
@@ -445,6 +437,11 @@ export const ManufacturerPaymentPage = () => {
     [],
   );
   const [snapshotAnomalyMessage, setSnapshotAnomalyMessage] = useState("");
+  const [prevMonthPayout, setPrevMonthPayout] = useState({
+    total: 0,
+    count: 0,
+    label: "",
+  });
 
   const ledgerScrollRef = useRef<HTMLDivElement | null>(null);
   const paymentScrollRef = useRef<HTMLDivElement | null>(null);
@@ -622,13 +619,68 @@ export const ManufacturerPaymentPage = () => {
     }
   }, [token, buildSnapshotParams, toast]);
 
+  const prevMonthRange = useMemo(() => {
+    const todayYmd = toKstYmd(new Date());
+    const prevYmd = kstAddCivilMonths(todayYmd, -1);
+    const from = kstStartOfMonth(prevYmd);
+    const to = kstEndOfMonth(prevYmd);
+    const label = from
+      ? `${from.slice(0, 4)}.${from.slice(5, 7)}`
+      : "";
+    return { from: from || "", to: to || "", label };
+  }, []);
 
+  const loadPrevMonthPayout = useCallback(async () => {
+    if (!token || !prevMonthRange.from || !prevMonthRange.to) return;
+    try {
+      const params = new URLSearchParams({
+        fromYmd: prevMonthRange.from,
+        toYmd: prevMonthRange.to,
+        limit: "62",
+      });
+      const res = await apiFetch<ApiEnvelope<ManufacturerDailySnapshotRow[]>>({
+        path: `/api/manufacturer/credits/daily-summary?${params.toString()}`,
+        method: "GET",
+        token,
+      });
+      if (!res.ok || !res.data?.success) {
+        throw new Error(res.data?.message || "전월 지급 조회 실패");
+      }
+      const rows: ManufacturerDailySnapshotRow[] = Array.isArray(res.data.data)
+        ? res.data.data
+        : [];
+      let total = 0;
+      let count = 0;
+      for (const row of rows) {
+        const payoutAmount = Number(row.payoutAmount || 0);
+        if (payoutAmount === 0) continue;
+        total += Math.abs(payoutAmount);
+        count += 1;
+      }
+      setPrevMonthPayout({
+        total,
+        count,
+        label: prevMonthRange.label,
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "전월 지급 조회 실패";
+      toast({
+        title: "전월 지급 조회 실패",
+        description: message,
+        variant: "destructive",
+      });
+    }
+  }, [token, prevMonthRange, toast]);
 
   useEffect(() => {
     if (!isManufacturer) return;
     void loadSnapshots();
   }, [isManufacturer, period, loadSnapshots]);
 
+  useEffect(() => {
+    if (!isManufacturer) return;
+    void loadPrevMonthPayout();
+  }, [isManufacturer, loadPrevMonthPayout]);
   useEffect(() => {
     if (!isManufacturer) return;
     if (tab === "payments") {
@@ -697,8 +749,6 @@ export const ManufacturerPaymentPage = () => {
     let requestCountTotal = 0;
     let shippingSupplyTotal = 0;
     let shippingCountTotal = 0;
-    let payoutTotal = 0;
-    let payoutCount = 0;
 
     for (const row of snapItems) {
       unsettledTotal += Number(row.netPayoutAmount ?? row.netAmount ?? 0);
@@ -706,9 +756,6 @@ export const ManufacturerPaymentPage = () => {
       requestCountTotal += Number(row.earnRequestCount || 0);
       shippingSupplyTotal += Number(row.earnShippingAmount || 0);
       shippingCountTotal += Number(row.earnShippingCount || 0);
-      const payoutAmount = Number(row.payoutAmount || 0);
-      payoutTotal += Math.abs(payoutAmount);
-      if (payoutAmount !== 0) payoutCount += 1;
     }
 
     return {
@@ -717,11 +764,18 @@ export const ManufacturerPaymentPage = () => {
       requestCountTotal,
       shippingSupplyTotal,
       shippingCountTotal,
-      payoutTotal,
-      payoutCount,
     };
   }, [snapItems]);
 
+  const openPrevMonthPayments = () => {
+    if (prevMonthRange.from && prevMonthRange.to) {
+      setCustomDateRange({
+        startDate: prevMonthRange.from,
+        endDate: prevMonthRange.to,
+      });
+    }
+    setTab("payments");
+  };
   const togglePaymentSort = (key: PaymentSortKey) => {
     setPaymentSort((prev) =>
       prev.key === key
@@ -813,7 +867,7 @@ export const ManufacturerPaymentPage = () => {
             tone="primary"
             selected={tab === "ledger"}
             onClick={() => setTab("ledger")}
-            hint={`지급 시 +부가세 ${vatPctLabel()}`}
+            hint="부가세 포함"
             hintTooltip={SETTLEMENT_VAT_PAYOUT_NOTICE}
             footer={
               <div className="text-[11px] tabular-nums text-slate-600">
@@ -826,13 +880,16 @@ export const ManufacturerPaymentPage = () => {
           />
           <SettlementStatCard
             compact
-            label="지급 합계"
-            value={snapshotTotals.payoutTotal}
+            label="전월 지급"
+            value={prevMonthPayout.total}
             selected={tab === "payments"}
-            onClick={() => setTab("payments")}
+            onClick={openPrevMonthPayments}
             footer={
               <div className="text-[11px] text-muted-foreground">
-                {snapshotTotals.payoutCount}건 · 과세 {SETTLEMENT_TAXABLE_INVOICE_LABEL}
+                {prevMonthPayout.label
+                  ? `${prevMonthPayout.label} · `
+                  : ""}
+                {prevMonthPayout.count}건 · 과세 {SETTLEMENT_TAXABLE_INVOICE_LABEL}
               </div>
             }
           />
@@ -916,9 +973,9 @@ export const ManufacturerPaymentPage = () => {
                   <div className="flex gap-2.5">
                     <CalendarClock className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
                     <p>
-                      원장 기준 KST 일자별 실시간 집계. 장부는 공급가이며 월 지급
-                      시 부가세를 합산하고 {SETTLEMENT_TAXABLE_INVOICE_LABEL}를
-                      수취합니다.
+                      원장 기준 KST 일자별 실시간 집계. 장부·미정산은 부가세
+                      포함가이며 지급 시 재가산 없이 잔액을 입금하고{" "}
+                      {SETTLEMENT_TAXABLE_INVOICE_LABEL}를 수취합니다.
                     </p>
                   </div>
                 </SettlementPolicySection>

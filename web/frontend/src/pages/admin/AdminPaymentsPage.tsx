@@ -38,8 +38,7 @@ import {
 import {
   SETTLEMENT_EXEMPT_INVOICE_LABEL,
   SETTLEMENT_TAXABLE_INVOICE_LABEL,
-  splitAffiliateVat,
-  vatPctLabel,
+  splitInclusiveVat,
 } from "@/shared/settlement/affiliateVat";
 
 const HISTORY_MONTHS = 6;
@@ -768,16 +767,16 @@ export default function AdminPaymentsPage() {
   const internalLab = businessOverview?.internalLab;
 
   const feeRatePct = Math.round(Number(autoMatch?.platformFeeRate ?? 0.1) * 100);
-  const salesmanUnpaidSupply = roleFinanceRows.salesman.reduce(
+  const salesmanUnpaidInclusive = roleFinanceRows.salesman.reduce(
     (sum, r) => sum + Number(r.wallet?.balanceAmountPeriod || 0),
     0,
   );
-  const salesmanUnpaidVat = splitAffiliateVat(salesmanUnpaidSupply);
-  const devopsUnpaidSupply = roleFinanceRows.devops.reduce(
+  const salesmanUnpaidSplit = splitInclusiveVat(salesmanUnpaidInclusive);
+  const devopsUnpaidInclusive = roleFinanceRows.devops.reduce(
     (sum, r) => sum + Number(r.wallet?.balanceAmountPeriod || 0),
     0,
   );
-  const devopsUnpaidVat = splitAffiliateVat(devopsUnpaidSupply);
+  const devopsUnpaidSplit = splitInclusiveVat(devopsUnpaidInclusive);
 
   if (!user || user.role !== "admin") return null;
 
@@ -902,11 +901,7 @@ export default function AdminPaymentsPage() {
                     value={formatWon(manufacturerSummary?.periodBalanceAmount)}
                     hint={`사업자 ${Number(
                       manufacturerSummary?.anchorCount || 0,
-                    ).toLocaleString()}곳 · 지급 시 +부가세 ${vatPctLabel()} → ${formatWon(
-                      splitAffiliateVat(
-                        Number(manufacturerSummary?.periodBalanceAmount || 0),
-                      ).total,
-                    )} · ${SETTLEMENT_TAXABLE_INVOICE_LABEL}`}
+                    ).toLocaleString()}곳 · 부가세 포함 · ${SETTLEMENT_TAXABLE_INVOICE_LABEL}`}
                   />
                   <CreditStatTile
                     label="하청 적립"
@@ -955,7 +950,7 @@ export default function AdminPaymentsPage() {
                     hint={`${(
                       Number(manufacturerSummary?.periodPaidRequestCount || 0) +
                       Number(manufacturerSummary?.periodFreeRequestCount || 0)
-                    ).toLocaleString()}건 · 지급 시 +VAT · ${SETTLEMENT_TAXABLE_INVOICE_LABEL}`}
+                    ).toLocaleString()}건 · ${SETTLEMENT_TAXABLE_INVOICE_LABEL}`}
                   />
                   <CreditStatTile
                     label="배송 하청(공급가)"
@@ -963,7 +958,7 @@ export default function AdminPaymentsPage() {
                     hint={`${(
                       Number(manufacturerSummary?.periodPaidShippingCount || 0) +
                       Number(manufacturerSummary?.periodFreeShippingCount || 0)
-                    ).toLocaleString()}건 · 지급 시 +VAT · ${SETTLEMENT_TAXABLE_INVOICE_LABEL}`}
+                    ).toLocaleString()}건 · ${SETTLEMENT_TAXABLE_INVOICE_LABEL}`}
                   />
                 </div>
                 <MonthlyHistorySection
@@ -1075,10 +1070,10 @@ export default function AdminPaymentsPage() {
                       value={`${filteredBySearch.salesman.length.toLocaleString()}곳`}
                     />
                     <CreditStatTile
-                      label="유료 미정산 공급가"
-                      value={formatWon(salesmanUnpaidSupply)}
+                      label="유료 미정산"
+                      value={formatWon(salesmanUnpaidInclusive)}
                       tone="accent"
-                      hint={`지급 시 +부가세 ${vatPctLabel()} → ${formatWon(salesmanUnpaidVat.total)} · ${SETTLEMENT_TAXABLE_INVOICE_LABEL}`}
+                      hint={`부가세 포함 ${formatWon(salesmanUnpaidSplit.total)} · 공급 ${formatWon(salesmanUnpaidSplit.supply)} · ${SETTLEMENT_TAXABLE_INVOICE_LABEL}`}
                     />
                     <CreditStatTile
                       label="무료(참고)"
@@ -1119,10 +1114,10 @@ export default function AdminPaymentsPage() {
                       value={`${filteredBySearch.devops.length.toLocaleString()}곳`}
                     />
                     <CreditStatTile
-                      label="유료 미정산 공급가"
-                      value={formatWon(devopsUnpaidSupply)}
+                      label="유료 미정산"
+                      value={formatWon(devopsUnpaidInclusive)}
                       tone="accent"
-                      hint={`지급 시 +부가세 ${vatPctLabel()} → ${formatWon(devopsUnpaidVat.total)} · ${SETTLEMENT_TAXABLE_INVOICE_LABEL}`}
+                      hint={`부가세 포함 ${formatWon(devopsUnpaidSplit.total)} · 공급 ${formatWon(devopsUnpaidSplit.supply)} · ${SETTLEMENT_TAXABLE_INVOICE_LABEL}`}
                     />
                     <CreditStatTile
                       label="무료(참고)"

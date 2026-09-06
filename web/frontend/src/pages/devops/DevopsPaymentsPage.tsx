@@ -4,7 +4,7 @@
 // - web/frontend/src/features/commission/CommissionPaymentsPage.tsx
 /**
  * 개발운영사(devops) 전용 정산 페이지.
- * 지급 시 부가세 10% · 세금계산서(어벗츠↔개발운영사 과세).
+ * 부가세 포함가 장부 · 지급=잔액 그대로 · 세금계산서(÷1.1).
  */
 import { CommissionPaymentsPage } from "@/features/commission/CommissionPaymentsPage";
 

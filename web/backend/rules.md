@@ -837,9 +837,9 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - **면세**: 치과–기공소–어벗츠. 크레딧 충전·소비·기공정산·커스텀어벗(고객 청구). `vatAmount = 0`. 증빙은 계산서.
   - **과세**:
     - 스토어 기성품: 부가세 10% · 고객 표시=부가세 포함가 · 세금계산서. 커스텀어벗 계산서와 합치지 않음.
-    - 어벗츠↔제조사·딜러사·개발운영사 지급: 부가세 10% · 세금계산서. 장부는 공급가, 지급 시 VAT. 제조사=일반과세(기공소 전환 없음).
+    - 어벗츠↔제조사·딜러사·개발운영사: 장부·미정산·지급=부가세 포함가(재가산 없음) · 세금계산서(÷1.1). 제조사=일반과세(기공소 전환 없음).
   - **마이너스 발행**: 전송 성공 후 상계는 원본 `SENT` 유지 + `kind=REVERSE` 별도 draft. 원본을 `CANCELLED`로 강등하지 않음.
-  - 장부: `STORE_SALE` / `REV_STORE_TAXABLE` — 스토어 결제 확정 시 기록. **전액 어벗츠(admin). 딜러/제조 분배 없음.** 면세 기공과 분리.
+  - 장부: `STORE_SALE` / `REV_STORE_TAXABLE` — 스토어 결제 확정 시 기록. **전액 어벗츠(admin, amount=포함가). 딜러/제조 분배 없음.** 면세 기공과 분리.
   - 스토어 결제: 크레딧(유료) 또는 B-plan 입금 → 재고 차감 → `STORE_SALE` → `fulfillmentStatus=READY`. **건별 과세 draft 없음**(월말 합산). 출고 `SHIPPED`·배송완료 `DELIVERED`. 구현: `storeSale.service.js`, `modules/store/store.routes.js`.
   - 장바구니 합치기 금지: 한 체크아웃에 기공+스토어 금지. 같은 선수금 잔액으로 각각 결제는 허용.
   - 팝빌: `POPBILL_IS_TEST=false`(prod)면 실홈택스 발행. local/test는 `true`.
@@ -852,9 +852,9 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     주문 검증 `creditBPlan.controller.js`, insights(월사용량/3·한 달분) `credit.controller.js`.
     UI 2회차 기본 배수 3은 프론트(`CreditPaymentTab`). 잔액 < 50만원 시 사이드바 충전 뱃지는 `DashboardLayout`.
     구현: `controllers/credits/creditBPlan.controller.js`
-  - `REV_*`(제조사 포함): `amount = amountExcludingVat = base`, `vatAmount = 0`.
+  - 과세 `REV_MANUFACTURER`/`REV_SALESMAN`/`REV_DEVOPS`: 적립 시 `amount=amountIncludingVat=supply+VAT`, `amountExcludingVat=supply`. `REV_ADMIN`·기공 정산은 면세(`vatAmount=0`).
     구현: `controllers/requests/common.review.helpers.js`, `services/creditRevenuePolicy.service.js`
-  - 의뢰자 잔액·보존식 집계는 `amountExcludingVat`(없으면 `amount`) = 공급가. 딜러사·개발운영사 지급 VAT는 어벗츠 추가 지급.
+  - 의뢰자 잔액·보존식 집계는 `amountExcludingVat`(없으면 `amount`) = 공급가. 과세 관계사 VAT는 어벗츠 추가 지급분(보존식 밖).
   - 고객향 계산서 직접발행 세액 기본 0(면세). 정산 배치 Draft: 기공소=면세, 제조사·딜러사·개발운영사=과세 10%.
 
 - (세금)계산서 발행 방향/위수탁 정책(강제, `TaxInvoiceDraft.direction`):
@@ -868,8 +868,8 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - 정산/지급 정책:
   - 관리자 3사업 축 집계: `GET /api/admin/credits/settlement-business-overview` (`adminGetSettlementBusinessOverview`). 기간은 `period` 또는 `startDate`/`endDate`.
   - 유료/무료 모두 `REV_*` 수익 라인은 기록해 확인 가능해야 합니다.
-  - **제조사(하청)**: 고정 매입가(부가세 포함) — `creditSettings.manufacturerRequestUnitPrice`(기본 8,800, **어벗 1개당**)·`manufacturerShippingUnitPrice`(기본 3,500, 박스당). 장부=공급가(÷1.1)+VAT. 리메이크는 제조사 무료 생산(지급 0). 그 외(무료 크레딧 결제 포함)는 약정 단가 전액 지급. 매달 말일 일괄 지급 전까지 미정산 잔액. 지급액=공급가+VAT·세금계산서. 제조사=일반과세사업자.
-  - **딜러사·개발운영사**: 장부 적립은 공급가. 지급 시 부가세 10%를 더해 **입금·세금계산서**. 구현: `services/settlement.service.js`(`resolveSettlementPayoutAmounts` / `postSettlementPayoutJournal`). 배치 항목 `amount`=입금합계, `supplyAmount`/`vatAmount` 분해.
+  - **제조사(하청)**: 고정 매입가(부가세 포함) — `creditSettings.manufacturerRequestUnitPrice`(기본 8,800, **어벗 1개당**)·`manufacturerShippingUnitPrice`(기본 3,500, 박스당). 장부·미정산·지급=포함가(재가산 없음)·세금계산서(÷1.1). 리메이크는 제조사 무료 생산(지급 0). 그 외(무료 크레딧 결제 포함)는 약정 단가 전액 지급. 매달 말일 일괄 지급 전까지 미정산 잔액. 제조사=일반과세사업자.
+  - **딜러사·개발운영사**: 장부 적립·미정산=포함가(`affiliateVatRate`로 earn 시 VAT 기록). 지급=잔액 그대로·세금계산서(÷1.1). 구현: `services/settlement.service.js`(`TAXABLE_SETTLEMENT_ROLES` / `resolveSettlementPayoutAmounts` / `postSettlementPayoutJournal`). 배치 항목 `amount`=입금=잔액, `supplyAmount`/`vatAmount`=포함가 분해.
   - **어벗츠·기공소**: 정산 지급(PAYOUT)은 유료 수익만(면세 계산서). `EARN/ADJUST`는 `creditKind=PAID|null`만 포함.
   - **제조사**: 정산 지급(PAYOUT)은 유료·무료 수익 전액(과세·세금계산서). `computeAffiliateSettlementBalance`가 manufacturer는 creditKind를 가리지 않음.
   - 배송: 제조사 고정 배송 매입가(부가세 포함). 고객 배송비−제조사 공급가 잔여 → 관리자(`vatAmount=0`).

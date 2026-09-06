@@ -102,6 +102,7 @@ import {
   resolvePracticeTransferFeeRateForViewer,
   resolveManufacturerUnitApply,
   resolveManufacturerUnitQty,
+  normalizeAffiliateVatRate,
   MANUFACTURER_PRODUCTION_LEDGER_LABEL,
 } from "./creditRevenuePolicy.service.js";
 import BusinessAnchor from "../models/businessAnchor.model.js";
@@ -483,6 +484,9 @@ function pushRevenueLines({
   const manufacturerVatRate = applyManufacturerUnit
     ? Number(revenueBaseByOwner.manufacturerVatRate || 0)
     : 0;
+  const affiliateVatRate = normalizeAffiliateVatRate(
+    creditSettings?.affiliateVatRate,
+  );
   const manufacturerMeta = isPtxAbutsShipping
     ? {
         ...meta,
@@ -565,6 +569,7 @@ function pushRevenueLines({
     owners.devopsAnchorId,
     revenueKindSplit.devops?.paid,
     revenueKindSplit.devops?.free,
+    { vatRate: affiliateVatRate },
   );
   push(
     "REV_SALESMAN",
@@ -572,6 +577,7 @@ function pushRevenueLines({
     owners.salesmanAnchorId,
     revenueKindSplit.salesman?.paid,
     revenueKindSplit.salesman?.free,
+    { vatRate: affiliateVatRate },
   );
   push(
     "REV_ADMIN",

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-06: 미정산·장부·스냅샷=부가세 포함가. 지급 재가산 없음.
 // - 2026-08-23: 원장 상세 컨텍스트 — 패키지 businessAnchorId로 배송자 이름 조회(칸 재사용 대비).
 // - 2026-08-20: 제조사 ADJUST uniqueKey는 라인/레거시 키를 우선(중복 환불 사유 표시).
 // - 2026-08-20: 제조사 정산은 유료/무료를 가리지 않고 약정 단가 전액. 말일 지급 전까지 미정산.
@@ -39,6 +40,7 @@ import {
 import {
   MANUFACTURER_REQUEST_EARN_EVENT_TYPES,
   MANUFACTURER_SHIPPING_EARN_EVENT_TYPES,
+  computeManufacturerDailyNetPayout,
 } from "../../services/creditRevenuePolicy.service.js";
 
 function toObjectIds(ids) {
@@ -242,7 +244,12 @@ function buildManufacturerEarnCollapseAndGroupStages({ groupByYmd }) {
               },
             }
           : {}),
-        baseAmount: { $ifNull: ["$amountExcludingVat", "$amount"] },
+        baseAmount: {
+          $ifNull: [
+            "$amountIncludingVat",
+            { $ifNull: ["$amount", { $ifNull: ["$amountExcludingVat", 0] }] },
+          ],
+        },
         vatAmountField: { $ifNull: ["$vatAmount", 0] },
         totalAmount: {
           $ifNull: [
@@ -496,7 +503,12 @@ export async function getManufacturerCreditLedger(req, res) {
               default: "EARN",
             },
           },
-          amountBase: { $ifNull: ["$amountExcludingVat", "$amount"] },
+          amountBase: {
+            $ifNull: [
+              "$amountIncludingVat",
+              { $ifNull: ["$amount", { $ifNull: ["$amountExcludingVat", 0] }] },
+            ],
+          },
           requestIdMeta: { $ifNull: ["$journalDoc.meta.requestId", ""] },
           displayLabel: {
             $ifNull: [
@@ -754,26 +766,34 @@ export async function triggerManufacturerDailySettlementSnapshotRecalc(
       },
     ]);
 
-    const requestTotal =
-      Number(summary?.earnRequestPaidTotal || 0);
-    const shippingTotal =
-      Number(summary?.earnShippingPaidTotal || 0);
+    // 스냅샷 earn*Amount·netAmount는 부가세 포함가.
+    const requestInclusive =
+      Number(summary?.earnRequestPaidTotal || 0) +
+      Number(summary?.earnRequestFreeTotal || 0);
+    const shippingInclusive =
+      Number(summary?.earnShippingPaidTotal || 0) +
+      Number(summary?.earnShippingFreeTotal || 0);
     const sums = {
-      earnRequestAmount: requestTotal,
-      earnRequestCount: Number(summary?.earnRequestPaidCount || 0),
-      earnShippingAmount: shippingTotal,
-      earnShippingCount: Number(summary?.earnShippingPaidCount || 0),
+      earnRequestAmount: requestInclusive,
+      earnRequestCount:
+        Number(summary?.earnRequestPaidCount || 0) +
+        Number(summary?.earnRequestFreeCount || 0),
+      earnShippingAmount: shippingInclusive,
+      earnShippingCount:
+        Number(summary?.earnShippingPaidCount || 0) +
+        Number(summary?.earnShippingFreeCount || 0),
       refundAmount: 0,
       payoutAmount: Number(summary?.payoutAmount || 0),
       adjustAmount: Number(summary?.adjustAmount || 0),
     };
 
-    const netAmount =
-      Math.round(Number(sums.earnRequestAmount || 0)) +
-      Math.round(Number(sums.earnShippingAmount || 0)) +
-      Math.round(Number(sums.refundAmount || 0)) +
-      Math.round(Number(sums.payoutAmount || 0)) +
-      Math.round(Number(sums.adjustAmount || 0));
+    const netAmount = computeManufacturerDailyNetPayout({
+      requestInclusive: sums.earnRequestAmount,
+      shippingInclusive: sums.earnShippingAmount,
+      refundAmount: sums.refundAmount,
+      payoutAmount: sums.payoutAmount,
+      adjustAmount: sums.adjustAmount,
+    });
 
     const computedAt = new Date();
     await ManufacturerDailySettlementSnapshot.updateOne(
@@ -1188,37 +1208,42 @@ export async function getManufacturerCreditDailySummary(req, res) {
         Number(targetRow.earnShippingFreeTotal || 0) ||
         shippingSupply + shippingVat;
 
-      // 의뢰/배송 총액(유료+무료). 지급 순액도 동일하게 전액.
-      targetRow.earnRequestAmount = requestSupply;
+      // Amount 필드는 포함가(집계 baseAmount=amountIncludingVat).
+      targetRow.earnRequestAmount = requestTotal;
       targetRow.earnRequestVat = requestVat;
       targetRow.earnRequestTotal = requestTotal;
       targetRow.earnRequestCount =
         Number(targetRow.earnRequestPaidCount || 0) +
         Number(targetRow.earnRequestFreeCount || 0);
-      targetRow.earnShippingAmount = shippingSupply;
+      targetRow.earnShippingAmount = shippingTotal;
       targetRow.earnShippingVat = shippingVat;
       targetRow.earnShippingTotal = shippingTotal;
       targetRow.earnShippingCount =
         Number(targetRow.earnShippingPaidCount || 0) +
         Number(targetRow.earnShippingFreeCount || 0);
 
-      const payoutEligibleTotal =
-        requestTotal +
-        shippingTotal +
-        Number(targetRow.refundAmount || 0) +
-        Number(targetRow.payoutAmount || 0) +
-        Number(targetRow.adjustAmount || 0);
+      // 미정산=부가세 포함가. 지급 시 재가산 없음.
+      const payoutEligibleInclusive = computeManufacturerDailyNetPayout({
+        requestInclusive: requestTotal,
+        shippingInclusive: shippingTotal,
+        refundAmount: targetRow.refundAmount,
+        payoutAmount: targetRow.payoutAmount,
+        adjustAmount: targetRow.adjustAmount,
+      });
 
-      const freeRequestNet = Number(targetRow.earnRequestFreeAmount || 0);
-      const freeShippingNet = Number(targetRow.earnShippingFreeAmount || 0);
+      const freeRequestNet =
+        Number(targetRow.earnRequestFreeTotal || 0) ||
+        Number(targetRow.earnRequestFreeAmount || 0);
+      const freeShippingNet =
+        Number(targetRow.earnShippingFreeTotal || 0) ||
+        Number(targetRow.earnShippingFreeAmount || 0);
 
-      // 지급 순액: 유료·무료 모두(면세 공급가). 말일 일괄 지급 전까지 미정산으로 남음.
-      targetRow.netPayoutAmount = payoutEligibleTotal;
-      targetRow.netPaidAmount = payoutEligibleTotal;
+      targetRow.netPayoutAmount = payoutEligibleInclusive;
+      targetRow.netPaidAmount = payoutEligibleInclusive;
       targetRow.netFreeRequestAmount = freeRequestNet;
       targetRow.netFreeShippingAmount = freeShippingNet;
       targetRow.netFreeAmount = freeRequestNet + freeShippingNet;
-      targetRow.netAmount = payoutEligibleTotal;
+      targetRow.netAmount = payoutEligibleInclusive;
       return targetRow;
     };
 

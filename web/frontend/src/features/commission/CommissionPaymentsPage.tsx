@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-06: 미정산=부가세 포함가. 지급 재가산 없음.
 // - 2026-08-17: 영업자·개발운영사 모두 지급 시 VAT·세금계산서. 관리자(어벗츠)만 면세.
 // related files:
 // - web/frontend/src/pages/salesman/SalesmanPaymentsPage.tsx
@@ -20,8 +21,8 @@ import {
 import {
   SETTLEMENT_TAXABLE_INVOICE_LABEL,
   SETTLEMENT_VAT_POLICY,
-  splitAffiliateVat,
-  vatPctLabel,
+  SETTLEMENT_VAT_PAYOUT_NOTICE,
+  splitInclusiveVat,
 } from "@/shared/settlement/affiliateVat";
 import {
   SettlementPolicyDialog,
@@ -44,10 +45,10 @@ export function CommissionPaymentsPage({
 
   const isSalesman = variant === "salesman";
   const overview = data?.overview;
-  const payableSupply = Number(overview?.payableGrossCommissionAmount || 0);
-  const paidSupply = Number(overview?.paidNetCommissionAmount || 0);
+  const payableInclusive = Number(overview?.payableGrossCommissionAmount || 0);
+  const paidInclusive = Number(overview?.paidNetCommissionAmount || 0);
   const freeNet = Number(overview?.freeNetAmount || 0);
-  const paidVat = splitAffiliateVat(paidSupply);
+  const payableSplit = splitInclusiveVat(payableInclusive);
   const ratePct = Math.round(Number(data?.commissionRate || 0) * 100);
   const payoutPolicy = isSalesman
     ? SETTLEMENT_VAT_POLICY.salesmanPayout
@@ -70,17 +71,17 @@ export function CommissionPaymentsPage({
       stats={
         <>
           <SettlementStatCard
-            label="유료 미정산 공급가"
-            value={payableSupply}
+            label="유료 미정산"
+            value={payableInclusive}
             tone="primary"
             selected={tab === "businesses"}
             onClick={() => setTab("businesses")}
-            hint={`지급 시 +부가세 ${vatPctLabel()}`}
-            hintTooltip={payoutPolicy}
+            hint="부가세 포함"
+            hintTooltip={`${payoutPolicy} 공급가 ${payableSplit.supply.toLocaleString("ko-KR")}원 · VAT ${payableSplit.vat.toLocaleString("ko-KR")}원`}
           />
           <SettlementStatCard
-            label="지급 합계(부가세 포함)"
-            value={paidVat.total}
+            label="지급 합계"
+            value={paidInclusive}
             selected={tab === "ledger"}
             onClick={() => setTab("ledger")}
             footer={
@@ -112,13 +113,13 @@ export function CommissionPaymentsPage({
           >
             <div className="mb-2 flex flex-wrap items-center gap-2">
               <PeriodFilter value={period} onChange={setPeriod} />
-              <SettlementVatNotice />
+              <SettlementVatNotice>{SETTLEMENT_VAT_PAYOUT_NOTICE}</SettlementVatNotice>
               <SettlementPolicyDialog
                 title={`${title} 규칙`}
                 description={
                   isSalesman
-                    ? "소개 수수료 공급가 · 지급 시 부가세 · 세금계산서"
-                    : "잔여 분배 공급가 · 지급 시 부가세 · 세금계산서"
+                    ? "소개 수수료 부가세 포함 · 세금계산서"
+                    : "잔여 분배 부가세 포함 · 세금계산서"
                 }
               >
                 <SettlementPolicySection title="수수료율">
@@ -190,7 +191,7 @@ export function CommissionPaymentsPage({
                         </div>
                         <div className="flex justify-between gap-3">
                           <span className="text-muted-foreground">
-                            기간 정산 공급가
+                            기간 수수료(추정)
                           </span>
                           <span className="font-semibold tabular-nums">
                             {formatMoney(org.monthCommissionAmount)}원

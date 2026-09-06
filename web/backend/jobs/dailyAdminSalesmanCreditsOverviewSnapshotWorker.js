@@ -188,7 +188,12 @@ async function computeAndUpsertSnapshot({ ymd, range }) {
                 default: "EARN",
               },
             },
-            amountBase: { $ifNull: ["$amountExcludingVat", "$amount"] },
+            amountBase: {
+              $ifNull: [
+                "$amountIncludingVat",
+                { $ifNull: ["$amount", { $ifNull: ["$amountExcludingVat", 0] }] },
+              ],
+            },
           },
         },
         {

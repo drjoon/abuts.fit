@@ -1611,7 +1611,7 @@ export const AdminCreditSettingsTab = ({
                     disabled={loading}
                     step={PURCHASE_AMOUNT_STEP}
                     onChange={updatePurchasePrice}
-                    help="부가세 포함 제조사 고정단가. 장부·잔여 분배는 공급가(÷1.1) 기준이며, 지급 시 부가세를 합산합니다."
+                    help="부가세 포함 제조사 고정단가. 장부·미정산은 포함가이며, 지급 시 재가산 없이 세금계산서만 ÷1.1로 분해합니다."
                   />
                   <SalesAmountCard
                     id="customAbutShippingPurchasePrice"
@@ -1620,7 +1620,7 @@ export const AdminCreditSettingsTab = ({
                     disabled={loading}
                     step={PURCHASE_AMOUNT_STEP}
                     onChange={updateShippingPurchasePrice}
-                    help="박스당 제조사 배송 매입가(부가세 포함). 장부는 공급가(÷1.1), 지급 시 부가세 합산."
+                    help="박스당 제조사 배송 매입가(부가세 포함). 장부·미정산은 포함가, 지급 시 재가산 없음."
                   />
                 </div>
               </CardContent>

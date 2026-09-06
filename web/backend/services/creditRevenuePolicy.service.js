@@ -5,6 +5,8 @@
 // - web/backend/scripts/db/migrate-legacy-creditledger-to-gl.js
 // - web/backend/scripts/db/rebalance-manufacturer-unit-price.js
 // change-log:
+// - 2026-09-06: 과세 미정산 net = 포함가 합 − |지급|. computeManufacturerDailyNetPayout.
+// - 2026-09-06: 미정산 net = 공급가 합(VAT 제외). computeManufacturerDailyNetPayout.
 // - 2026-08-23: 제조사=일반과세. 매입가(부가세 포함)→공급가 분해, affiliateVatRate 적용.
 // - 2026-08-19: 견적 표시용 수수료 — 원청(하청 후) 전액 수주 0, 하청은 subcontractFeeRate.
 // - 2026-08-18: (철회) 제조사 하청 면세(기공소 등록) — 일반과세로 복귀.
@@ -64,6 +66,29 @@ export const MANUFACTURER_REQUEST_EARN_EVENT_TYPES = [
   "PRACTICE_TRANSFER_ESCROW_RELEASE",
 ];
 export const MANUFACTURER_SHIPPING_EARN_EVENT_TYPES = ["SHIPPING_SPEND_COMMIT"];
+
+/** 미정산 순액 = 부가세 포함가 합(유료+무료) − |지급| + 조정. */
+export function computeManufacturerDailyNetPayout({
+  requestSupply = 0,
+  shippingSupply = 0,
+  requestInclusive,
+  shippingInclusive,
+  refundAmount = 0,
+  payoutAmount = 0,
+  adjustAmount = 0,
+} = {}) {
+  const request =
+    requestInclusive !== undefined ? requestInclusive : requestSupply;
+  const shipping =
+    shippingInclusive !== undefined ? shippingInclusive : shippingSupply;
+  return (
+    Math.round(Number(request || 0)) +
+    Math.round(Number(shipping || 0)) +
+    Math.round(Number(refundAmount || 0)) -
+    Math.abs(Math.round(Number(payoutAmount || 0))) +
+    Math.round(Number(adjustAmount || 0))
+  );
+}
 
 export function resolveConfiguredRevenueRates(devopsPayoutRates) {
   return {

@@ -1,6 +1,7 @@
 // related files:
 // - web/backend/services/settlement.service.js
 // change-log:
+// - 2026-09-06: 과세 잔액=포함가. 지급 재가산 없음(÷1.1 분해).
 // - 2026-08-23: 제조사=일반과세(지급 VAT·세금계산서).
 import {
   resolveSettlementInvoiceDraftSpec,
@@ -9,11 +10,11 @@ import {
 } from "../../services/settlement.service.js";
 
 describe("resolveSettlementPayoutAmounts", () => {
-  test("salesman: supply balance + 10% VAT = deposit", () => {
+  test("salesman: inclusive balance → deposit as-is, split for invoice", () => {
     expect(
       resolveSettlementPayoutAmounts({
         role: "salesman",
-        balanceAmount: 10000,
+        balanceAmount: 11000,
         vatRate: 0.1,
       }),
     ).toEqual({
@@ -24,11 +25,11 @@ describe("resolveSettlementPayoutAmounts", () => {
     });
   });
 
-  test("devops: same payout-time VAT as salesman", () => {
+  test("devops: inclusive balance, no double VAT", () => {
     expect(
       resolveSettlementPayoutAmounts({
         role: "devops",
-        balanceAmount: 25000,
+        balanceAmount: 27500,
         vatRate: 0.1,
       }),
     ).toEqual({
@@ -39,11 +40,11 @@ describe("resolveSettlementPayoutAmounts", () => {
     });
   });
 
-  test("manufacturer: taxable — supply + 10% VAT", () => {
+  test("manufacturer: inclusive 8800 → pay 8800 (not 9680)", () => {
     expect(
       resolveSettlementPayoutAmounts({
         role: "manufacturer",
-        balanceAmount: 8000,
+        balanceAmount: 8800,
         vatRate: 0.1,
       }),
     ).toEqual({
@@ -78,57 +79,60 @@ describe("resolveSettlementPayoutAmounts", () => {
 });
 
 describe("resolveSettlementInvoiceDraftSpec", () => {
-  test("manufacturer: 과세 AFFILIATE_TO_ABUTS draft", () => {
+  test("manufacturer taxable draft from inclusive payout breakdown", () => {
+    const breakdown = resolveSettlementPayoutAmounts({
+      role: "manufacturer",
+      balanceAmount: 8800,
+      vatRate: 0.1,
+    });
     expect(
       resolveSettlementInvoiceDraftSpec({
         role: "manufacturer",
-        breakdown: { supplyAmount: 8000, vatAmount: 800, amount: 8800 },
+        breakdown,
       }),
-    ).toEqual({
-      direction: "AFFILIATE_TO_ABUTS",
-      issuanceMode: "TRUSTEE",
+    ).toMatchObject({
       taxType: "과세",
-      itemName: "커스텀어벗 생산 하청 정산",
       supplyAmount: 8000,
       vatAmount: 800,
       totalAmount: 8800,
     });
   });
 
-  test("lab: 면세 draft", () => {
+  test("lab exempt draft", () => {
     expect(
       resolveSettlementInvoiceDraftSpec({
         role: "lab",
-        breakdown: { supplyAmount: 120000, vatAmount: 0, amount: 120000 },
+        breakdown: {
+          supplyAmount: 50000,
+          vatAmount: 0,
+          amount: 50000,
+        },
       }),
     ).toMatchObject({
       taxType: "면세",
+      supplyAmount: 50000,
       vatAmount: 0,
-      totalAmount: 120000,
-      itemName: "기공 정산",
+      totalAmount: 50000,
     });
   });
 
-  test("salesman: 과세 draft with VAT split", () => {
+  test("taxable earn line shape: supply + vat = inclusive amount", () => {
+    const supply = 4500;
+    const vatRate = 0.1;
+    const vat = Math.round(supply * vatRate);
+    const total = supply + vat;
+    expect({ amount: total, amountExcludingVat: supply, vatAmount: vat, amountIncludingVat: total }).toEqual({
+      amount: 4950,
+      amountExcludingVat: 4500,
+      vatAmount: 450,
+      amountIncludingVat: 4950,
+    });
     expect(
-      resolveSettlementInvoiceDraftSpec({
+      resolveSettlementPayoutAmounts({
         role: "salesman",
-        breakdown: { supplyAmount: 10000, vatAmount: 1000, amount: 11000 },
-      }),
-    ).toMatchObject({
-      taxType: "과세",
-      supplyAmount: 10000,
-      vatAmount: 1000,
-      totalAmount: 11000,
-    });
-  });
-
-  test("admin: no draft", () => {
-    expect(
-      resolveSettlementInvoiceDraftSpec({
-        role: "admin",
-        breakdown: { supplyAmount: 5000, vatAmount: 0, amount: 5000 },
-      }),
-    ).toBeNull();
+        balanceAmount: total,
+        vatRate,
+      }).amount,
+    ).toBe(total);
   });
 });

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-06: REV_STORE_TAXABLE amount=부가세 포함가.
 // - 2026-09-06: 스토어 취소 = STORE_SALE 원본 유지 + REFUND(잔고 복구). 제조사 삭형과 분리.
 // - 2026-08-23: 스토어 취소 = STORE_SALE 저널 삭제 + StoreOrder 취소 이력(canceledAt/By).
 // - 2026-08-23: admin 앵커·재고 시드 1회 캐시(카탈로그·주문 latency 감소).
@@ -535,7 +536,7 @@ export async function finalizeStoreSale({
           accountCode: LEDGER_ACCOUNT_REV_STORE_TAXABLE,
           ownerRole: STORE_REVENUE_OWNER_ROLE,
           ownerId: adminAnchorId,
-          amount: supply,
+          amount: total,
           amountExcludingVat: supply,
           vatAmount: vat,
           amountIncludingVat: total,
@@ -704,7 +705,7 @@ export async function payStoreOrderWithCredit({
           accountCode: LEDGER_ACCOUNT_REV_STORE_TAXABLE,
           ownerRole: STORE_REVENUE_OWNER_ROLE,
           ownerId: adminAnchorId,
-          amount: supply,
+          amount: total,
           amountExcludingVat: supply,
           vatAmount: vat,
           amountIncludingVat: total,

@@ -5,6 +5,7 @@
 // - web/backend/services/creditRevenuePolicy.service.js
 // - web/backend/utils/creditSettingsDefaults.js
 // change-log:
+// - 2026-09-06: 과세 관계사 잔액=포함가, 지급 시 VAT 재가산 없음(÷1.1 분해만). 기공은 면세 공급가.
 // - 2026-08-23: 제조사=일반과세 — TAXABLE_SETTLEMENT_ROLES·지급 VAT·세금계산서.
 // - 2026-08-23: 리메이크만 제조사 적립 0. 무료크레딧은 약정 단가 전액 지급.
 // - 2026-08-20: 제조사 지급 잔액은 고객 유료/무료 크레딧을 가리지 않고 REV 전액(말일 일괄 지급).
@@ -17,6 +18,7 @@ import { computeBusinessCreditBalanceFromLedger } from "./creditBalance.service.
 import {
   DEFAULT_AFFILIATE_VAT_RATE,
   normalizeAffiliateVatRate,
+  splitManufacturerInclusiveUnitPrice,
 } from "./creditRevenuePolicy.service.js";
 import { loadCreditSettingsDefaults } from "../utils/creditSettingsDefaults.js";
 
@@ -89,7 +91,7 @@ export async function resolveAffiliateVatRate() {
 /**
  * 원장 미지급 잔액 → 지급(입금) 분해.
  * - lab: 면세. balance=입금액.
- * - manufacturer/salesman/devops: balance=공급가 미지급. 지급 시 VAT 가산.
+ * - manufacturer/salesman/devops: balance=부가세 포함가 미지급. 재가산 없이 ÷1.1 분해.
  */
 export function resolveSettlementPayoutAmounts({
   role,
@@ -108,12 +110,12 @@ export function resolveSettlementPayoutAmounts({
     };
   }
 
-  const supplyAmount = balance;
-  const vatAmount = Math.round(supplyAmount * rate);
+  // 잔액이 이미 포함가. 지급액=잔액, 세금계산서만 공급가/VAT 분해.
+  const split = splitManufacturerInclusiveUnitPrice(balance, rate);
   return {
-    supplyAmount,
-    vatAmount,
-    amount: supplyAmount + vatAmount,
+    supplyAmount: split.supply,
+    vatAmount: split.vat,
+    amount: split.total,
     vatRate: rate,
   };
 }
@@ -135,7 +137,7 @@ export async function computeAffiliateSettlementBalance({
   accountCode = AFFILIATE_SETTLEMENT_ACCOUNTS[ownerRole],
 }) {
   if (!accountCode) throw new Error("Unsupported affiliate ownerRole.");
-  // 잔액은 공급가(amountExcludingVat). 제조사=전액(말일 일괄, 리메이크는 적립 0). 딜러사·개발운영사=유료만.
+  // 과세 관계사 잔액=포함가(amountIncludingVat). 제조사=전액(말일 일괄). 딜러·개발운영=유료만.
   const rows = await LedgerLine.aggregate([
     { $match: { ownerRole, ownerId: ownerAnchorId, accountCode } },
     {
@@ -164,7 +166,12 @@ export async function computeAffiliateSettlementBalance({
             default: "EARN",
           },
         },
-        base: { $ifNull: ["$amountExcludingVat", "$amount"] },
+        base: {
+          $ifNull: [
+            "$amountIncludingVat",
+            { $ifNull: ["$amount", { $ifNull: ["$amountExcludingVat", 0] }] },
+          ],
+        },
       },
     },
     {
@@ -200,7 +207,7 @@ export async function computeSettlementBalance({ role, businessAnchorId }) {
   });
 }
 
-/** 원장 잔액 + 지급 시 VAT 분해(입금·세금계산서용). */
+/** 원장 잔액 + 지급 분해(입금·세금계산서용). 과세는 재가산 없이 ÷1.1. */
 export async function computeSettlementPayoutBreakdown({
   role,
   businessAnchorId,
@@ -234,8 +241,8 @@ export function hasPayoutAccount(account) {
  * 관리자 재클릭/네트워크 재시도에도 이중 지급 원장을 만들지 않는다.
  *
  * 과세 관계사(제조사·딜러사·개발운영사):
- * - amount = 입금 합계(VAT 포함)
- * - amountExcludingVat = 공급가(원장 잔액 차감)
+ * - amount / amountIncludingVat = 입금 합계(부가세 포함, 원장 잔액 차감)
+ * - amountExcludingVat = 공급가(세금계산서)
  * - vatAmount = 부가세
  * 기공소: 면세. amount = 공급가 = 입금액.
  */
@@ -270,8 +277,8 @@ export async function postSettlementPayoutJournal({
   const accountCode = item.accountCode;
   const ownerRole = isLab ? "requestor" : item.role;
   const isExempt = isLab || !TAXABLE_SETTLEMENT_ROLES.has(item.role);
-  const ledgerClearAmount = supplyAmount;
-  const lineClear = isExempt ? -ledgerClearAmount : ledgerClearAmount;
+  // 과세: 포함가 잔액 차감. 면세: 공급가(음수) 차감.
+  const lineClear = isExempt ? -depositTotal : depositTotal;
   const lineSupply = isExempt ? -supplyAmount : supplyAmount;
   const lineVat = isExempt ? 0 : vatAmount;
   const lineTotal = isExempt ? -depositTotal : depositTotal;
@@ -297,7 +304,7 @@ export async function postSettlementPayoutJournal({
         accountCode,
         ownerRole,
         ownerId: item.businessAnchorId,
-        amount: isExempt ? lineTotal : lineClear,
+        amount: lineClear,
         amountExcludingVat: lineSupply,
         vatAmount: lineVat,
         amountIncludingVat: lineTotal,

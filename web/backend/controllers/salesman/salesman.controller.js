@@ -228,7 +228,12 @@ export async function getSalesmanLedger(req, res) {
               default: "EARN",
             },
           },
-          amountBase: { $ifNull: ["$amountExcludingVat", "$amount"] },
+          amountBase: {
+            $ifNull: [
+              "$amountIncludingVat",
+              { $ifNull: ["$amount", { $ifNull: ["$amountExcludingVat", 0] }] },
+            ],
+          },
         },
       },
     ];
@@ -445,7 +450,12 @@ export async function getSalesmanDashboard(req, res) {
       {
         $addFields: {
           eventType: { $ifNull: ["$journalDoc.eventType", ""] },
-          baseAmount: { $ifNull: ["$amountExcludingVat", "$amount"] },
+          baseAmount: {
+            $ifNull: [
+              "$amountIncludingVat",
+              { $ifNull: ["$amount", { $ifNull: ["$amountExcludingVat", 0] }] },
+            ],
+          },
         },
       },
       {
