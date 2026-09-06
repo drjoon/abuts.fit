@@ -43,6 +43,7 @@ import SalesPlaceSuggestInput from "./SalesPlaceSuggestInput";
 import SalesPlacePickerDrawer from "./SalesPlacePickerDrawer";
 import SalesRouteMap from "./SalesRouteMap";
 import {
+  SalesDayPicker,
   SalesEmptyState,
   SalesListRow,
   SalesPageShell,
@@ -488,69 +489,78 @@ export default function SalesHomePage() {
 
   return (
     <SalesPageShell wide>
-      <SalesToolbar className="w-full md:flex-col md:flex-nowrap md:items-stretch">
-        <div className="flex w-full flex-col gap-2.5 lg:grid lg:grid-cols-[1fr_auto_1fr] lg:items-center lg:gap-3">
-          <SalesSegmentTabs
-            fit
-            compact
-            value={tab}
-            onChange={setTab}
-            className="w-full shrink-0 justify-self-start lg:w-auto"
-            options={[
-              {
-                value: "schedule",
-                label: "일정 · 동선",
-              },
-              {
-                value: "report",
-                label: "일일보고",
-              },
-            ]}
-          />
-          <div className="flex w-full flex-wrap justify-center gap-1.5 text-xs sm:text-sm lg:w-auto">
-            <StatusChip
-              label="방문"
-              value={String(visitCount)}
-              muted={!visitCount}
-              pressed={
-                tab === "schedule" && listFilter === "all" && !showCanceled
-              }
-              onClick={() => {
-                setTab("schedule");
-                setShowCanceled(false);
-                setListFilter("all");
-              }}
+      <SalesToolbar className="w-full">
+        {/* lg+: 1행 / 그 아래: 날짜·탭 | 뱃지·액션 = 최대 2행 */}
+        <div className="flex w-full flex-col gap-2 lg:flex-row lg:items-center lg:justify-between lg:gap-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <SalesDayPicker
+              ymd={ymd}
+              today={today}
+              onChange={onYmdChange}
+              className="w-full sm:w-auto"
             />
-            <StatusChip
-              label="예정"
-              value={String(plannedCount)}
-              muted={!plannedCount}
-              pressed={tab === "schedule" && listFilter === "planned"}
-              onClick={() => goScheduleFilter("planned")}
-            />
-            <StatusChip
-              label="완료"
-              value={String(doneCount)}
-              muted={!doneCount}
-              tone={doneCount > 0 ? "ok" : undefined}
-              pressed={tab === "schedule" && listFilter === "done"}
-              onClick={() => goScheduleFilter("done")}
-            />
-            <StatusChip
-              label="보고"
-              value={reportSubmitted ? "제출" : "미제출"}
-              tone={reportSubmitted ? "ok" : "alert"}
-              pressed={tab === "report"}
-              onClick={() =>
-                setTab(tab === "report" ? "schedule" : "report")
-              }
+            <SalesSegmentTabs
+              fit
+              compact
+              value={tab}
+              onChange={setTab}
+              className="w-full shrink-0 sm:w-auto"
+              options={[
+                {
+                  value: "schedule",
+                  label: "일정 · 동선",
+                },
+                {
+                  value: "report",
+                  label: "일일보고",
+                },
+              ]}
             />
           </div>
-          <div className="flex w-full shrink-0 items-center justify-end gap-2 justify-self-end lg:w-auto">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 sm:justify-end">
+            <div className="flex min-w-0 flex-1 flex-wrap gap-1.5 text-xs sm:flex-none sm:text-sm">
+              <StatusChip
+                label="방문"
+                value={String(visitCount)}
+                muted={!visitCount}
+                pressed={
+                  tab === "schedule" && listFilter === "all" && !showCanceled
+                }
+                onClick={() => {
+                  setTab("schedule");
+                  setShowCanceled(false);
+                  setListFilter("all");
+                }}
+              />
+              <StatusChip
+                label="예정"
+                value={String(plannedCount)}
+                muted={!plannedCount}
+                pressed={tab === "schedule" && listFilter === "planned"}
+                onClick={() => goScheduleFilter("planned")}
+              />
+              <StatusChip
+                label="완료"
+                value={String(doneCount)}
+                muted={!doneCount}
+                tone={doneCount > 0 ? "ok" : undefined}
+                pressed={tab === "schedule" && listFilter === "done"}
+                onClick={() => goScheduleFilter("done")}
+              />
+              <StatusChip
+                label="보고"
+                value={reportSubmitted ? "제출" : "미제출"}
+                tone={reportSubmitted ? "ok" : "alert"}
+                pressed={tab === "report"}
+                onClick={() =>
+                  setTab(tab === "report" ? "schedule" : "report")
+                }
+              />
+            </div>
             {tab === "schedule" ? (
               <Button
                 size="sm"
-                className="shrink-0"
+                className="ml-auto shrink-0 sm:ml-0"
                 onClick={() => {
                   setTime(defaultVisitHm(ymd, today));
                   setShowForm(true);
@@ -559,9 +569,12 @@ export default function SalesHomePage() {
                 일정 추가
               </Button>
             ) : reportSubmitted ? (
-              <Badge className="h-8 shrink-0 px-3">제출됨</Badge>
+              <Badge className="ml-auto h-8 shrink-0 px-3 sm:ml-0">제출됨</Badge>
             ) : (
-              <Badge variant="destructive" className="h-8 shrink-0 px-3">
+              <Badge
+                variant="destructive"
+                className="ml-auto h-8 shrink-0 px-3 sm:ml-0"
+              >
                 미제출
               </Badge>
             )}
