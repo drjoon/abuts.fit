@@ -227,6 +227,26 @@ export default function SalesPlacePickerDrawer({
     setStep("confirm");
   };
 
+  const toastEmptyCandidates = (res: {
+    kakaoLocalAuthError?: boolean;
+    kakaoLocalConfigured?: boolean;
+  }) => {
+    if (res.kakaoLocalAuthError) {
+      toast({
+        title: "카카오 지도 검색 권한이 없습니다",
+        description:
+          "카카오 개발자 콘솔에서 앱의 「카카오맵」 제품을 활성화하거나, 주소가 있는 목록 항목을 선택해 주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+    toast({
+      title: "추천 위치를 찾지 못했습니다",
+      description: "상호명을 조금 바꿔 다시 검색해 보세요.",
+      variant: "destructive",
+    });
+  };
+
   const handlePick = async (item: SalesPlaceSuggest) => {
     // Kakao / already-geocoded: go straight to map
     if (item.source === "kakao" && hasCoords(item)) {
@@ -263,11 +283,7 @@ export default function SalesPlacePickerDrawer({
       }
       const list = res.candidates || [];
       if (list.length === 0) {
-        toast({
-          title: "추천 위치를 찾지 못했습니다",
-          description: "상호명을 조금 바꿔 다시 검색해 보세요.",
-          variant: "destructive",
-        });
+        toastEmptyCandidates(res);
         setStep("search");
         return;
       }
@@ -294,17 +310,44 @@ export default function SalesPlacePickerDrawer({
     if (q.length < 2) return;
     setResolving(true);
     try {
-      const res = await salesTeamApi.resolvePlace(token, { name: q });
+      // Prefer address from the top suggest hit when resolving by button/Enter.
+      const top = items.find(
+        (it) =>
+          it.name.includes(q) ||
+          q.includes(it.name) ||
+          String(it.address || "").includes(q),
+      );
+      const res = await salesTeamApi.resolvePlace(token, {
+        name: q,
+        address: top?.address || "",
+        businessAnchorId: top?.businessAnchorId || null,
+      });
       if (!res.needsPick && res.place && hasCoords(res.place)) {
-        goConfirm(res.place);
+        goConfirm({
+          ...res.place,
+          accountId: top?.accountId || res.place.accountId,
+          businessAnchorId:
+            top?.businessAnchorId || res.place.businessAnchorId || null,
+          representativeName:
+            top?.representativeName || res.place.representativeName || "",
+          phone: top?.phone || res.place.phone || "",
+          kind: top?.kind || res.place.kind,
+        });
         return;
       }
       const list = res.candidates || [];
       if (list.length === 0) {
-        toast({
-          title: "지도에서 찾지 못했습니다",
-          variant: "destructive",
-        });
+        if (res.kakaoLocalAuthError) {
+          toastEmptyCandidates(res);
+        } else {
+          toast({
+            title: "지도에서 찾지 못했습니다",
+            description: top?.address
+              ? "목록의 항목을 직접 눌러 주소로 위치를 확인해 보세요."
+              : "상호명을 조금 바꿔 다시 검색해 보세요.",
+            variant: "destructive",
+          });
+        }
         return;
       }
       setCandidates(list);

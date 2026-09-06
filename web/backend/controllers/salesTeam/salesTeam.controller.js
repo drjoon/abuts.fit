@@ -153,39 +153,109 @@ function kakaoRestApiKey() {
   ).trim();
 }
 
+/** True when a REST key string is present (may still be unauthorized for Local). */
+function hasKakaoRestKeyConfigured() {
+  return Boolean(kakaoRestApiKey());
+}
+
+function isKakaoLocalAuthError(status, json) {
+  if (status === 401 || status === 403) return true;
+  const code = String(json?.code || json?.errorType || "").toLowerCase();
+  return (
+    code.includes("notauthorized") ||
+    code.includes("accessdenied") ||
+    code.includes("unauthorized")
+  );
+}
+
 /**
- * Geocode via Kakao Local API when a Kakao REST key is set.
- * Falls back to null coords (client can still show address text).
+ * OpenStreetMap Nominatim address → coords (Kakao Local 미활성 시 폴백).
+ * Low volume sales geocode only; identify app via User-Agent.
  */
-async function geocodeAddress(address) {
+async function geocodeAddressNominatim(address) {
   const addr = String(address || "").trim();
   if (!addr) return null;
-  const key = kakaoRestApiKey();
-  if (!key) return null;
   try {
-    const url = new URL("https://dapi.kakao.com/v2/local/search/address.json");
-    url.searchParams.set("query", addr);
+    const url = new URL("https://nominatim.openstreetmap.org/search");
+    url.searchParams.set("q", addr);
+    url.searchParams.set("format", "json");
+    url.searchParams.set("limit", "1");
+    url.searchParams.set("countrycodes", "kr");
     const resp = await fetch(url.toString(), {
-      headers: { Authorization: `KakaoAK ${key}` },
+      headers: {
+        Accept: "application/json",
+        "User-Agent": "abuts.fit-sales/1.0 (geocode; contact=ops@abuts.fit)",
+      },
     });
     if (!resp.ok) return null;
     const json = await resp.json();
-    const doc = json?.documents?.[0];
+    const doc = Array.isArray(json) ? json[0] : null;
     if (!doc) return null;
-    const lat = Number(doc.y);
-    const lng = Number(doc.x);
+    const lat = Number(doc.lat);
+    const lng = Number(doc.lon);
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-    return { lat, lng, address: doc.address_name || addr };
+    return {
+      lat,
+      lng,
+      address: String(doc.display_name || addr).trim() || addr,
+      provider: "nominatim",
+    };
   } catch {
     return null;
   }
 }
 
-/** Kakao Local keyword search for place autosuggest. */
+/**
+ * Geocode via Kakao Local when authorized; otherwise Nominatim.
+ * Returns null when neither provider can resolve the address.
+ */
+async function geocodeAddress(address) {
+  const addr = String(address || "").trim();
+  if (!addr) return null;
+  const key = kakaoRestApiKey();
+  if (key) {
+    try {
+      const url = new URL("https://dapi.kakao.com/v2/local/search/address.json");
+      url.searchParams.set("query", addr);
+      const resp = await fetch(url.toString(), {
+        headers: { Authorization: `KakaoAK ${key}` },
+      });
+      const json = await resp.json().catch(() => ({}));
+      if (resp.ok) {
+        const doc = json?.documents?.[0];
+        if (doc) {
+          const lat = Number(doc.y);
+          const lng = Number(doc.x);
+          if (Number.isFinite(lat) && Number.isFinite(lng)) {
+            return {
+              lat,
+              lng,
+              address: doc.address_name || addr,
+              provider: "kakao",
+            };
+          }
+        }
+      } else if (isKakaoLocalAuthError(resp.status, json)) {
+        console.warn(
+          "[salesTeam.geocodeAddress] Kakao Local unauthorized; falling back to Nominatim",
+          { status: resp.status, errorType: json?.errorType || json?.code },
+        );
+      }
+    } catch (e) {
+      console.warn("[salesTeam.geocodeAddress] Kakao request failed", e?.message || e);
+    }
+  }
+  return geocodeAddressNominatim(addr);
+}
+
+/**
+ * Kakao Local keyword search for place autosuggest.
+ * @returns {{ items: Array, authError: boolean }}
+ */
 async function kakaoKeywordSearch(query, { limit = 8 } = {}) {
   const q = String(query || "").trim();
   const key = kakaoRestApiKey();
-  if (!q || !key) return [];
+  if (!q || !key) return { items: [], authError: false };
   try {
     const url = new URL("https://dapi.kakao.com/v2/local/search/keyword.json");
     url.searchParams.set("query", q);
@@ -193,31 +263,85 @@ async function kakaoKeywordSearch(query, { limit = 8 } = {}) {
     const resp = await fetch(url.toString(), {
       headers: { Authorization: `KakaoAK ${key}` },
     });
-    if (!resp.ok) return [];
-    const json = await resp.json();
-    const docs = Array.isArray(json?.documents) ? json.documents : [];
-    return docs.map((doc) => {
-      const lat = Number(doc.y);
-      const lng = Number(doc.x);
-      const category = String(doc.category_name || "");
-      let kind = "practice";
-      if (/기공|치과기공|denture|lab/i.test(category) || /기공/.test(String(doc.place_name || ""))) {
-        kind = "lab";
+    const json = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      const authError = isKakaoLocalAuthError(resp.status, json);
+      if (authError) {
+        console.warn(
+          "[salesTeam.kakaoKeywordSearch] Kakao Local unauthorized",
+          { status: resp.status, errorType: json?.errorType || json?.code },
+        );
       }
-      return {
-        source: "kakao",
-        name: String(doc.place_name || "").trim(),
-        address: String(doc.road_address_name || doc.address_name || "").trim(),
-        phone: String(doc.phone || "").trim(),
-        lat: Number.isFinite(lat) ? lat : null,
-        lng: Number.isFinite(lng) ? lng : null,
-        kind,
-        category,
-      };
-    }).filter((it) => it.name);
+      return { items: [], authError };
+    }
+    const docs = Array.isArray(json?.documents) ? json.documents : [];
+    const items = docs
+      .map((doc) => {
+        const lat = Number(doc.y);
+        const lng = Number(doc.x);
+        const category = String(doc.category_name || "");
+        let kind = "practice";
+        if (
+          /기공|치과기공|denture|lab/i.test(category) ||
+          /기공/.test(String(doc.place_name || ""))
+        ) {
+          kind = "lab";
+        }
+        return {
+          source: "kakao",
+          name: String(doc.place_name || "").trim(),
+          address: String(doc.road_address_name || doc.address_name || "").trim(),
+          phone: String(doc.phone || "").trim(),
+          lat: Number.isFinite(lat) ? lat : null,
+          lng: Number.isFinite(lng) ? lng : null,
+          kind,
+          category,
+        };
+      })
+      .filter((it) => it.name);
+    return { items, authError: false };
   } catch {
-    return [];
+    return { items: [], authError: false };
   }
+}
+
+/** Meta for FE: address geocode has Nominatim fallback; keyword needs Kakao Local. */
+function placeGeoMeta({ kakaoAuthError = false } = {}) {
+  return {
+    geocodeConfigured: true,
+    kakaoLocalConfigured: hasKakaoRestKeyConfigured(),
+    kakaoLocalAuthError: Boolean(kakaoAuthError),
+  };
+}
+
+/**
+ * Try name-only first (Kakao often fails on "상호 + 전체주소"), then combined.
+ */
+async function searchKakaoPlaceCandidates(name, address, { limit = 10 } = {}) {
+  const nameQ = String(name || "").trim();
+  const addrQ = String(address || "").trim();
+  const combined = [nameQ, addrQ].filter(Boolean).join(" ");
+  const queries = [];
+  if (nameQ) queries.push(nameQ);
+  if (combined && combined !== nameQ) queries.push(combined);
+  if (addrQ && addrQ !== nameQ && addrQ !== combined) queries.push(addrQ);
+
+  let authError = false;
+  const seen = new Set();
+  const items = [];
+  for (const q of queries) {
+    const res = await kakaoKeywordSearch(q, { limit });
+    if (res.authError) authError = true;
+    for (const it of res.items) {
+      const key = `${it.name}|${it.address}`.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      items.push(it);
+      if (items.length >= limit) break;
+    }
+    if (items.length >= limit || authError) break;
+  }
+  return { items: items.slice(0, limit), authError };
 }
 
 function parseCoord(value) {
@@ -1165,7 +1289,7 @@ export async function optimizeRoute(req, res) {
         totalKm: Math.round(totalKm * 10) / 10,
         missingCoordsCount: withoutCoords.length,
         mapUrl,
-        geocodeConfigured: Boolean(kakaoRestApiKey()),
+        ...placeGeoMeta(),
       },
     });
   } catch (error) {
@@ -1244,7 +1368,7 @@ export async function suggestPlaces(req, res) {
         ? { $and: [visibility, textMatch] }
         : textMatch;
 
-    const [accounts, platform, kakao] = await Promise.all([
+    const [accounts, platform, kakaoRes] = await Promise.all([
       SalesAccount.find(accountFilter).sort({ updatedAt: -1 }).limit(8).lean(),
       BusinessAnchor.find({
         businessType: "requestor",
@@ -1321,7 +1445,7 @@ export async function suggestPlaces(req, res) {
       });
     }
 
-    for (const it of kakao) {
+    for (const it of kakaoRes.items) {
       pushUnique({
         source: "kakao",
         accountId: null,
@@ -1341,7 +1465,7 @@ export async function suggestPlaces(req, res) {
       success: true,
       data: {
         items: items.slice(0, 15),
-        geocodeConfigured: Boolean(kakaoRestApiKey()),
+        ...placeGeoMeta({ kakaoAuthError: kakaoRes.authError }),
       },
     });
   } catch (error) {
@@ -1356,7 +1480,7 @@ export async function suggestPlaces(req, res) {
 /**
  * Resolve a place for map confirm:
  * - BA with coords → return immediately
- * - BA with address → geocode; on success return single place
+ * - BA/account with address → geocode (Kakao → Nominatim); on success return single place
  * - else Kakao keyword candidates (needsPick)
  */
 export async function resolvePlace(req, res) {
@@ -1423,7 +1547,7 @@ export async function resolvePlace(req, res) {
               label: "플랫폼 · 위치확인",
             },
             candidates: [],
-            geocodeConfigured: Boolean(kakaoRestApiKey()),
+            ...placeGeoMeta(),
           },
         });
       }
@@ -1448,38 +1572,38 @@ export async function resolvePlace(req, res) {
                 label: "플랫폼 · 주소지오코딩",
               },
               candidates: [],
-              geocodeConfigured: Boolean(kakaoRestApiKey()),
+              ...placeGeoMeta(),
             },
           });
         }
       }
-      const query = [baName, baAddr].filter(Boolean).join(" ") || baName;
-      const kakao = await kakaoKeywordSearch(query || nameHint, { limit: 10 });
+      const kakao = await searchKakaoPlaceCandidates(baName || nameHint, baAddr, {
+        limit: 10,
+      });
       return res.json({
         success: true,
         data: {
           needsPick: true,
           place: null,
-          candidates: toKakaoItems(kakao).map((c) => ({
+          candidates: toKakaoItems(kakao.items).map((c) => ({
             ...c,
             businessAnchorId: String(ba._id),
             kind: c.kind || placeKindFromBa(ba),
           })),
-          geocodeConfigured: Boolean(kakaoRestApiKey()),
+          ...placeGeoMeta({ kakaoAuthError: kakao.authError }),
         },
       });
     }
 
-    const query = addressHint
-      ? `${nameHint} ${addressHint}`.trim()
-      : nameHint;
-    if (!query) {
+    if (!nameHint && !addressHint) {
       return res.status(400).json({
         success: false,
         message: "상호명 또는 businessAnchorId가 필요합니다.",
       });
     }
-    if (addressHint && !nameHint) {
+
+    // Address-only (or name+address): try geocode before keyword.
+    if (addressHint) {
       const geo = await geocodeAddress(addressHint);
       if (geo) {
         return res.json({
@@ -1494,25 +1618,28 @@ export async function resolvePlace(req, res) {
               kind: "practice",
               representativeName: "",
               phone: "",
-              address: geo.address || addressHint,
+              address: addressHint,
               lat: geo.lat,
               lng: geo.lng,
               label: "주소 지오코딩",
             },
             candidates: [],
-            geocodeConfigured: Boolean(kakaoRestApiKey()),
+            ...placeGeoMeta(),
           },
         });
       }
     }
-    const kakao = await kakaoKeywordSearch(query, { limit: 10 });
+
+    const kakao = await searchKakaoPlaceCandidates(nameHint, addressHint, {
+      limit: 10,
+    });
     return res.json({
       success: true,
       data: {
         needsPick: true,
         place: null,
-        candidates: toKakaoItems(kakao),
-        geocodeConfigured: Boolean(kakaoRestApiKey()),
+        candidates: toKakaoItems(kakao.items),
+        ...placeGeoMeta({ kakaoAuthError: kakao.authError }),
       },
     });
   } catch (error) {

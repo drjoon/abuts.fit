@@ -280,7 +280,12 @@ export const salesTeamApi = {
     ),
 
   suggestPlaces: (token: string | null, q: string) =>
-    salesFetch<{ items: SalesPlaceSuggest[]; geocodeConfigured: boolean }>(
+    salesFetch<{
+      items: SalesPlaceSuggest[];
+      geocodeConfigured: boolean;
+      kakaoLocalConfigured?: boolean;
+      kakaoLocalAuthError?: boolean;
+    }>(
       token,
       `/api/sales-team/places/suggest?q=${encodeURIComponent(q)}`,
     ),
@@ -298,6 +303,8 @@ export const salesTeamApi = {
       place: SalesPlaceSuggest | null;
       candidates: SalesPlaceSuggest[];
       geocodeConfigured: boolean;
+      kakaoLocalConfigured?: boolean;
+      kakaoLocalAuthError?: boolean;
     }>(token, "/api/sales-team/places/resolve", {
       method: "POST",
       jsonBody: body,
