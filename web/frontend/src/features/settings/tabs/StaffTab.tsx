@@ -634,7 +634,9 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
           부서와 대표·직원 계정, 가입 신청을 함께 관리합니다.
           {supportsDepartments
             ? " 사이드바 계정 전환은 같은 부서 계정만 표시됩니다."
-            : ""}
+            : ""}{" "}
+          영업본부 포털은 사용자 역할이「영업본부」(`salesTeam`)인 계정에 노출됩니다.
+          관리자「사용자」에서 역할을 지정하고, 필요 시「마케팅영업부」등 부서에 배치하세요.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">

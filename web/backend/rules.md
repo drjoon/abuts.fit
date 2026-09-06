@@ -450,7 +450,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 동일 법인 BN 공유: `BusinessAnchor` unique는 `{ businessNumberNormalized, businessType }`. 하위조직 `parentBusinessAnchorId`(예: admin「어벗츠 주식회사」← internalLab「기공사업부」). `ensureBusinessAnchor`도 type 스코프.
 
 - 의뢰자 역할·서비스 · 가입/온보딩 SSOT (2026-08, 루트 §2.4 상세)
-  - 가입 role SSOT: 공개 `/signup`은 `requestor` | `salesman`. `/signup/staff`는 `manufacturer` | `devops` | `admin` | `labTeam` | `salesTeam`. `practice` role **제거**(신규 생성 금지). `internalLab`은 관리자 생성만.
+  - `labTeam`(기공팀)·`salesTeam`(영업본부): 내부 직원. `/signup/staff`에서 가입. 사업영역 수익 분배 주체. `salesTeam`은 딜러와 별개. 영업본부 포털 `/api/sales-team` · FE `/dashboard/sales`. 소개코드 영문 3글자.
   - 필드 SSOT: `BusinessAnchor.requestorKind` (`practice|lab`) + `requestorServices` (paid-only). User 미러 동일.
   - 레거시 `requestorCapabilities`는 resolve/백필 폴백만. 신규 쓰기 금지.
   - `requestorServices.free` 폐기: 읽기 시 paid 승격, 쓰기는 `{free:false,paid:true}`.

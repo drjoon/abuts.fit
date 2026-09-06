@@ -42,6 +42,10 @@ import { sendEmail } from "../../utils/email.util.js";
 import { getFrontendBaseUrl } from "../../utils/url.util.js";
 import { getUserRoleLabel } from "../../utils/roleLabels.js";
 import { applyGuideTourAlwaysOnToUserPayload } from "../../utils/guideTour.util.js";
+import {
+  ensureSalesTeamPersonalAnchor,
+  resolveSalesTeamReferralAnchorId,
+} from "../../utils/salesTeamReferral.util.js";
 
 const createReferralCode = (length, alphaOnly = false) => {
   const alphabet = alphaOnly
@@ -63,8 +67,17 @@ const ensureUniqueReferralCode = async (length, alphaOnly = false) => {
   throw new Error("Failed to create referralCode after 200 attempts");
 };
 
-const REFERRAL_ALLOWED_ROLES = new Set(["requestor", "salesman", "devops"]);
-const SIGNUP_LINK_REFERRER_ALLOWED_ROLES = new Set(["requestor", "salesman"]);
+const REFERRAL_ALLOWED_ROLES = new Set([
+  "requestor",
+  "salesman",
+  "devops",
+  "salesTeam",
+]);
+const SIGNUP_LINK_REFERRER_ALLOWED_ROLES = new Set([
+  "requestor",
+  "salesman",
+  "salesTeam",
+]);
 
 function getAllowedSignupRolesForReferrerRole(referrerRole) {
   const normalizedReferrerRole = String(referrerRole || "").trim();
@@ -73,6 +86,9 @@ function getAllowedSignupRolesForReferrerRole(referrerRole) {
   }
   if (normalizedReferrerRole === "salesman") {
     return ["requestor", "salesman"];
+  }
+  if (normalizedReferrerRole === "salesTeam") {
+    return ["requestor"];
   }
   return [];
 }
@@ -92,6 +108,12 @@ function getReferralRoleMismatchMessage({ signupRole, referrerRole }) {
     normalizedSignupRole !== "salesman"
   ) {
     return `${getUserRoleLabel("salesman")} 소개 링크로는 ${getUserRoleLabel("requestor")} 또는 ${getUserRoleLabel("salesman")}만 가입할 수 있습니다.`;
+  }
+  if (
+    normalizedReferrerRole === "salesTeam" &&
+    normalizedSignupRole !== "requestor"
+  ) {
+    return `${getUserRoleLabel("salesTeam")} 소개 링크로는 ${getUserRoleLabel("requestor")}만 가입할 수 있습니다.`;
   }
   return "소개 링크와 가입 역할이 맞지 않습니다.";
 }
@@ -200,14 +222,14 @@ async function resolveReferrerTargets({
 
   if (!REFERRAL_ALLOWED_ROLES.has(String(refUser.role || ""))) {
     throw new Error(
-      `추천인은 ${getUserRoleLabel("requestor")}/${getUserRoleLabel("salesman")}/${getUserRoleLabel("devops")} 계정만 가능합니다.`,
+      `추천인은 ${getUserRoleLabel("requestor")}/${getUserRoleLabel("salesman")}/${getUserRoleLabel("devops")}/${getUserRoleLabel("salesTeam")} 계정만 가능합니다.`,
     );
   }
 
   const normalizedReferrerRole = String(refUser.role || "").trim();
   if (!SIGNUP_LINK_REFERRER_ALLOWED_ROLES.has(normalizedReferrerRole)) {
     throw new Error(
-      `소개 링크 가입은 ${getUserRoleLabel("requestor")} 또는 ${getUserRoleLabel("salesman")} 소개만 가능합니다.`,
+      `소개 링크 가입은 ${getUserRoleLabel("requestor")}, ${getUserRoleLabel("salesman")} 또는 ${getUserRoleLabel("salesTeam")} 소개만 가능합니다.`,
     );
   }
 
@@ -224,21 +246,32 @@ async function resolveReferrerTargets({
   }
 
   const refBusinessAnchorId = String(refUser.businessAnchorId || "").trim();
-  if (!Types.ObjectId.isValid(refBusinessAnchorId)) {
+  let resolvedAnchorId = refBusinessAnchorId;
+
+  if (normalizedReferrerRole === "salesTeam") {
+    const fullRef = await User.findById(refUser._id);
+    if (fullRef) {
+      await ensureSalesTeamPersonalAnchor(fullRef);
+      const personal = await resolveSalesTeamReferralAnchorId(fullRef);
+      if (personal) resolvedAnchorId = String(personal);
+    }
+  }
+
+  if (!Types.ObjectId.isValid(resolvedAnchorId)) {
     throw new Error(
       "추천인 사업자 정보가 없습니다. 사업자 등록 후 다시 시도해주세요.",
     );
   }
 
   const anchorExists = await BusinessAnchor.exists({
-    _id: new Types.ObjectId(refBusinessAnchorId),
+    _id: new Types.ObjectId(resolvedAnchorId),
   });
   if (!anchorExists) {
     throw new Error("추천인 사업자 정보를 찾을 수 없습니다.");
   }
 
   return {
-    referredByAnchorId: new Types.ObjectId(refBusinessAnchorId),
+    referredByAnchorId: new Types.ObjectId(resolvedAnchorId),
     referrerRole: normalizedReferrerRole,
     allowedSignupRoles,
   };
@@ -385,8 +418,14 @@ const sendLoginSuccessResponse = async ({
 }) => {
   user.lastLogin = Date.now();
   if (!user.referralCode) {
-    const len = String(user.role || "") === "salesman" ? 4 : 5;
-    user.referralCode = await ensureUniqueReferralCode(len);
+    const role = String(user.role || "");
+    if (role === "salesTeam") {
+      user.referralCode = await ensureUniqueReferralCode(3, true);
+    } else if (role === "salesman" || role === "devops") {
+      user.referralCode = await ensureUniqueReferralCode(3);
+    } else {
+      user.referralCode = await ensureUniqueReferralCode(5);
+    }
   }
   await user.save();
 
@@ -702,8 +741,16 @@ async function register(req, res) {
     }
 
     const referralCodeLength =
-      normalizedRole === "salesman" || normalizedRole === "devops" ? 3 : 5;
-    const referralCode = await ensureUniqueReferralCode(referralCodeLength);
+      normalizedRole === "salesman" ||
+      normalizedRole === "devops" ||
+      normalizedRole === "salesTeam"
+        ? 3
+        : 5;
+    const referralCodeAlphaOnly = normalizedRole === "salesTeam";
+    const referralCode = await ensureUniqueReferralCode(
+      referralCodeLength,
+      referralCodeAlphaOnly,
+    );
 
     if (
       normalizedRole !== "requestor" &&
@@ -852,7 +899,7 @@ async function validateReferral(req, res) {
     if (!REFERRAL_ALLOWED_ROLES.has(String(refUser.role || ""))) {
       return res.status(400).json({
         success: false,
-        message: `추천인은 ${getUserRoleLabel("requestor")}/${getUserRoleLabel("salesman")}/${getUserRoleLabel("devops")} 계정만 가능합니다.`,
+        message: `추천인은 ${getUserRoleLabel("requestor")}/${getUserRoleLabel("salesman")}/${getUserRoleLabel("devops")}/${getUserRoleLabel("salesTeam")} 계정만 가능합니다.`,
       });
     }
 
@@ -860,19 +907,28 @@ async function validateReferral(req, res) {
     if (!SIGNUP_LINK_REFERRER_ALLOWED_ROLES.has(normalizedReferrerRole)) {
       return res.status(400).json({
         success: false,
-        message: `소개 링크 가입은 ${getUserRoleLabel("requestor")} 또는 ${getUserRoleLabel("salesman")} 소개만 가능합니다.`,
+        message: `소개 링크 가입은 ${getUserRoleLabel("requestor")}, ${getUserRoleLabel("salesman")} 또는 ${getUserRoleLabel("salesTeam")} 소개만 가능합니다.`,
       });
     }
 
-    const refBusinessAnchorId = String(refUser.businessAnchorId || "").trim();
-    if (!Types.ObjectId.isValid(refBusinessAnchorId)) {
+    let resolvedAnchorId = String(refUser.businessAnchorId || "").trim();
+    if (normalizedReferrerRole === "salesTeam") {
+      const fullRef = await User.findById(refUser._id);
+      if (fullRef) {
+        await ensureSalesTeamPersonalAnchor(fullRef);
+        const personal = await resolveSalesTeamReferralAnchorId(fullRef);
+        if (personal) resolvedAnchorId = String(personal);
+      }
+    }
+
+    if (!Types.ObjectId.isValid(resolvedAnchorId)) {
       return res.status(400).json({
         success: false,
         message:
           "추천인 사업자 정보가 없습니다. 사업자 등록 후 다시 시도해주세요.",
       });
     }
-    const anchor = await BusinessAnchor.findById(refBusinessAnchorId)
+    const anchor = await BusinessAnchor.findById(resolvedAnchorId)
       .select({ name: 1 })
       .lean();
     businessName = anchor?.name || "";

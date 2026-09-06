@@ -119,7 +119,7 @@ const STAFF_SIGNUP_HINT: Record<(typeof STAFF_SIGNUP_ROLES)[number], string> = {
   devops: "시스템 개발 및 운영 관리 권한을 제공합니다.",
   admin: "요청 모니터링, 정산, 조직 관리 기능을 포함합니다.",
   labTeam: "어벗츠기공소 기공 작업과 내부 인센티브를 담당합니다.",
-  salesTeam: "내부 영업과 인센티브를 담당합니다.",
+  salesTeam: "영업본부 임직원 — 거래처·방문·소개 실적을 담당합니다.",
 };
 
 export const SignupPage = () => {

@@ -72,6 +72,23 @@ const ManufacturerWorksheetPage = lazy(() =>
 const InternalLabLabWorkPage = lazy(
   () => import("./pages/internalLab/labWork/LabWorkPage"),
 );
+const SalesHomePage = lazy(() => import("./pages/salesTeam/SalesHomePage"));
+const SalesAccountsPage = lazy(
+  () => import("./pages/salesTeam/SalesAccountsPage"),
+);
+const SalesSchedulePage = lazy(
+  () => import("./pages/salesTeam/SalesSchedulePage"),
+);
+const SalesStatsPage = lazy(() => import("./pages/salesTeam/SalesStatsPage"));
+const SalesReportsPage = lazy(
+  () => import("./pages/salesTeam/SalesReportsPage"),
+);
+const SalesReferralPage = lazy(
+  () => import("./pages/salesTeam/SalesReferralPage"),
+);
+const SalesRequirementsPage = lazy(
+  () => import("./pages/salesTeam/SalesRequirementsPage"),
+);
 const AdminPlatformSettingsPage = lazy(() =>
   import("./pages/admin/system/AdminPlatformSettingsPage").then((m) => ({
     default: m.AdminPlatformSettingsPage,
@@ -572,6 +589,69 @@ const App = () => {
                     }
                   />
                   <Route
+                    path="sales"
+                    element={
+                      <RoleProtectedRoute roles={["salesTeam"]}>
+                        <SalesHomePage />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="sales/accounts"
+                    element={
+                      <RoleProtectedRoute roles={["salesTeam"]}>
+                        <SalesAccountsPage />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="sales/schedule"
+                    element={
+                      <RoleProtectedRoute roles={["salesTeam"]}>
+                        <SalesSchedulePage />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="sales/stats"
+                    element={
+                      <RoleProtectedRoute roles={["salesTeam"]}>
+                        <SalesStatsPage />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="sales/reports"
+                    element={
+                      <RoleProtectedRoute roles={["salesTeam"]}>
+                        <SalesReportsPage />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="sales/referral"
+                    element={
+                      <RoleProtectedRoute roles={["salesTeam"]}>
+                        <SalesReferralPage />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="sales/requirements"
+                    element={
+                      <RoleProtectedRoute
+                        roles={[
+                          "salesTeam",
+                          "admin",
+                          "internalLab",
+                          "devops",
+                        ]}
+                      >
+                        <SalesRequirementsPage />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route
                     path="design"
                     element={
                       <RoleProtectedRoute roles={["requestor"]}>
@@ -685,7 +765,14 @@ const App = () => {
                     path="inquiries"
                     element={
                       <RoleProtectedRoute
-                        roles={["admin", "requestor", "salesman", "practice"]}
+                        roles={[
+                          "admin",
+                          "requestor",
+                          "salesman",
+                          "practice",
+                          "internalLab",
+                          "salesTeam",
+                        ]}
                       >
                         <InquiriesRoute />
                       </RoleProtectedRoute>
@@ -834,6 +921,8 @@ const App = () => {
                           "internalLab",
                           "admin",
                           "devops",
+                          "salesTeam",
+                          "labTeam",
                         ]}
                       >
                         <SharedOnboardingWizardPage />

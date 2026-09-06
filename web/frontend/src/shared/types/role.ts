@@ -80,7 +80,7 @@ export const USER_ROLE_LABEL: Record<AppUserRole, string> = {
   admin: "관리자",
   devops: "개발운영사",
   labTeam: "기공팀",
-  salesTeam: "영업팀",
+  salesTeam: "영업본부",
 };
 
 /** @deprecated USER_ROLE_LABEL 별칭. 신규 코드는 USER_ROLE_LABEL. */
@@ -96,7 +96,7 @@ export const BUSINESS_TYPE_LABEL: Record<AppUserRole, string> = {
   admin: "어벗츠",
   devops: "개발운영사",
   labTeam: "기공팀",
-  salesTeam: "영업팀",
+  salesTeam: "영업본부",
 };
 
 export function getAppUserRoleLabel(role: string): string {

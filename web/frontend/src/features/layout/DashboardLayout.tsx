@@ -159,6 +159,7 @@ import {
   ScanLine,
   PenTool,
   Store,
+  CalendarDays,
 } from "lucide-react";
 import { AbutsLogo } from "@/components/branding/AbutsLogo";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
@@ -303,6 +304,11 @@ const sidebarItems = {
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
   devops: [
+    {
+      icon: ClipboardList,
+      label: "고객 요구사항",
+      href: "/dashboard/sales/requirements",
+    },
     { icon: Wallet, label: "정산", href: "/dashboard/payments" },
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
@@ -322,12 +328,15 @@ const sidebarItems = {
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
   internalLab: [
-    buildLabGigongRequestSidebarGroup(
-      INTERNAL_LAB_RECEIVE_HREF,
-      "어벗츠기공소 기공의뢰 수신·작업",
-    ),
+    buildLabGigongRequestSidebarGroup(INTERNAL_LAB_RECEIVE_HREF),
     { icon: Wallet, label: "크레딧", href: CREDITS_HREF },
     { icon: Wallet, label: "정산", href: "/dashboard/payments" },
+    {
+      icon: ClipboardList,
+      label: "고객 요구사항",
+      href: "/dashboard/sales/requirements",
+    },
+    { icon: MessageSquare, label: "문의", href: "/dashboard/inquiries" },
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
   admin: [
@@ -344,6 +353,11 @@ const sidebarItems = {
     { icon: Wallet, label: "정산 배치", href: "/dashboard/settlement-batches" },
     { icon: FileText, label: "세금계산서", href: "/dashboard/tax-invoices" },
     { icon: Store, label: "스토어", href: "/dashboard/store-admin" },
+    {
+      icon: ClipboardList,
+      label: "고객 요구사항",
+      href: "/dashboard/sales/requirements",
+    },
     {
       icon: MessageSquare,
       label: "채팅",
@@ -369,7 +383,25 @@ const sidebarItems = {
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
   labTeam: [{ icon: Settings, label: "설정", href: "/dashboard/settings" }],
-  salesTeam: [{ icon: Settings, label: "설정", href: "/dashboard/settings" }],
+  salesTeam: [
+    { icon: LayoutDashboard, label: "홈", href: "/dashboard/sales" },
+    { icon: Building2, label: "거래처", href: "/dashboard/sales/accounts" },
+    {
+      icon: CalendarDays,
+      label: "일정·동선",
+      href: "/dashboard/sales/schedule",
+    },
+    {
+      icon: ClipboardList,
+      label: "고객 요구사항",
+      href: "/dashboard/sales/requirements",
+    },
+    { icon: BarChart3, label: "실적", href: "/dashboard/sales/stats" },
+    { icon: FileText, label: "일일보고", href: "/dashboard/sales/reports" },
+    { icon: Share2, label: "소개", href: "/dashboard/sales/referral" },
+    { icon: MessageSquare, label: "문의", href: "/dashboard/inquiries" },
+    { icon: Settings, label: "설정", href: "/dashboard/settings" },
+  ],
 } as const;
 
 const accountMenuItemsByRole: Record<string, SidebarItem[]> = {

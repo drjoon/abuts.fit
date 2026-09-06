@@ -49,8 +49,9 @@ export function getRoleDefaultDashboardPath(role: string | null | undefined): st
     case "devops":
       return "/dashboard/settings";
     case "labTeam":
-    case "salesTeam":
       return "/dashboard/settings";
+    case "salesTeam":
+      return "/dashboard/sales";
     default:
       return "/dashboard";
   }
@@ -69,7 +70,7 @@ export function resolveEntryDashboardPath(user: {
   const last = normalizeLastDashboardPath(user?.lastDashboardPath);
   if (!last) return roleDefault;
 
-  // manufacturer/practice/devops/기공팀/영업팀/어벗츠기공소는 `/dashboard`에 콘텐츠가 없음.
+  // manufacturer/practice/devops/기공팀/영업본부/어벗츠기공소는 `/dashboard`에 콘텐츠가 없음.
   if (
     (role === "manufacturer" ||
       role === "practice" ||

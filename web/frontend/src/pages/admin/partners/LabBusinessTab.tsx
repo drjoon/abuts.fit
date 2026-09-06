@@ -22,7 +22,7 @@ export function LabBusinessTab() {
         <SectionHeader
           icon={FlaskConical}
           title="기공사업"
-          description="내부기공소(기공사업부)에 배당된 건만, 배송비를 공통 지출로 먼저 차감한 뒤 나머지를 부서·팀원 인센티브로 나눕니다. 기공팀·영업팀은 내부(면세), 개발운영사는 외부(+VAT)."
+          description="내부기공소(기공사업부)에 배당된 건만, 배송비를 공통 지출로 먼저 차감한 뒤 나머지를 부서·팀원 인센티브로 나눕니다. 기공팀·영업본부는 내부(면세), 개발운영사는 외부(+VAT)."
           trailing={
             <div className="relative w-36">
               <Input

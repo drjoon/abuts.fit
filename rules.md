@@ -94,7 +94,6 @@
   - 묶음 리드타임 SSOT: `minBusinessDays=N`이면 접수 당일을 1일차로 포함 → 추가 영업일 `(N-1)`
     (PricingPolicyDialog: 자정까지 1영업일=당일 집하). 이후 주간 발송 요일로 정렬.
 
-
 ### 1.5 구조
 
 - 역할별 UI를 한 파일에서 분기하지 말고 역할 폴더 분리
@@ -115,11 +114,10 @@
     - User(`User.role`): `salesman`=**딜러**, `admin`=**관리자**
     - 제품명 **어벗츠.핏**은 랜딩·SMS·고객지원. 「관리자에게 문의」「관리자 UI」는 운영 카피로 유지.
     - SSOT: `web/frontend/src/shared/types/role.ts` (`USER_ROLE_LABEL` / `BUSINESS_TYPE_LABEL`), `web/backend/utils/roleLabels.js`
-  - `internalLab`(어벗츠기공소): 어벗츠 기공소 직접 운영. 메뉴=기공의뢰(수신·어벗생산의뢰)·크레딧·정산·설정. 관리자 생성만(공개 가입 없음).
+  - `internalLab`(어벗츠기공소): 어벗츠 기공소 직접 운영. 메뉴=기공의뢰(수신·어벗츠로 의뢰)·크레딧·정산·문의·설정. 하청 전환·30분 우선창·원청 수가·정산(`payments`)은 어벗츠 전용. 관리자 생성만(공개 가입 없음).
     - 동일 법인 BN을 `businessType`별로 공유 가능(`businessNumberNormalized`+`businessType` 복합 unique). 하위조직은 `parentBusinessAnchorId` → 예: admin「어벗츠 주식회사」←「기공사업부」.
-  - `labTeam`(기공팀)·`salesTeam`(영업팀): 내부 직원. `/signup/staff`에서 가입. 사업영역 수익 분배 주체. `salesTeam`은 딜러와 별개.
+  - `labTeam`(기공팀)·`salesTeam`(영업본부): 내부 직원. `/signup/staff`에서 가입. 사업영역 수익 분배 주체. `salesTeam`은 딜러(`salesman`)와 별개. 영업본부 포털=`/dashboard/sales` (거래처·일정·동선·실적·일일보고·소개). 소개코드=영문 3글자.
   - `practice` role은 제거. 기존 계정은 `requestor`+`requestorCapabilities.practice` 마이그레이션 대상(신규 생성 금지). 백필: `scripts/db/backfill-requestor-capabilities.js --apply`.
-
 
 ### 2.2 의뢰 생성/공정
 

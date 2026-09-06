@@ -943,7 +943,7 @@ export const AdminUserManagement = () => {
     ["internalLab", "어벗츠기공소"],
     ["admin", "관리자"],
     ["labTeam", "기공팀"],
-    ["salesTeam", "영업팀"],
+    ["salesTeam", "영업본부"],
   ] as const;
 
   const statusFilters = [
@@ -1584,7 +1584,7 @@ export const AdminUserManagement = () => {
                           <SelectItem value="internalLab">어벗츠기공소</SelectItem>
                           <SelectItem value="admin">관리자</SelectItem>
                           <SelectItem value="labTeam">기공팀</SelectItem>
-                          <SelectItem value="salesTeam">영업팀</SelectItem>
+                          <SelectItem value="salesTeam">영업본부</SelectItem>
                         </SelectContent>
                       </Select>
 
