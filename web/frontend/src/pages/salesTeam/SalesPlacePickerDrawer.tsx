@@ -47,6 +47,8 @@ type SalesPlacePickerDrawerProps = {
   confirmLabel?: string;
   /** confirm 단계 안내 문구 */
   confirmDescription?: string;
+  /** 거래처 추가 등 — 이미 등록된 거래처(source=account)는 검색 목록에서 제외 */
+  hideRegisteredAccounts?: boolean;
 };
 
 function hasCoords(p: { lat?: number | null; lng?: number | null } | null) {
@@ -157,6 +159,7 @@ export default function SalesPlacePickerDrawer({
   onConfirm,
   confirmLabel = "이 위치로",
   confirmDescription = "지도에서 맞는지 확인한 뒤 이 위치로 저장합니다.",
+  hideRegisteredAccounts = false,
 }: SalesPlacePickerDrawerProps) {
   const token = useAuthStore((s) => s.token);
   const { toast } = useToast();
@@ -213,7 +216,10 @@ export default function SalesPlacePickerDrawer({
         .suggestPlaces(token, q)
         .then((res) => {
           if (reqId !== reqRef.current) return;
-          setItems(res.items || []);
+          const next = (res.items || []).filter((it) =>
+            hideRegisteredAccounts ? it.source !== "account" : true,
+          );
+          setItems(next);
         })
         .catch(() => {
           if (reqId !== reqRef.current) return;
@@ -227,7 +233,7 @@ export default function SalesPlacePickerDrawer({
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [open, step, token, query]);
+  }, [open, step, token, query, hideRegisteredAccounts]);
 
   const goConfirm = (place: SalesPlaceSuggest) => {
     if (!hasCoords(place)) {

@@ -29,6 +29,8 @@ type SalesPlaceSuggestInputProps = {
   /** Cap dropdown rows (avoids tall scroll in modals). */
   maxItems?: number;
   autoFocus?: boolean;
+  /** 거래처 추가 등 — 이미 등록된 거래처(source=account)는 목록에서 제외 */
+  hideRegisteredAccounts?: boolean;
 };
 
 export default function SalesPlaceSuggestInput({
@@ -42,6 +44,7 @@ export default function SalesPlaceSuggestInput({
   listMode = "overlay",
   maxItems,
   autoFocus,
+  hideRegisteredAccounts = false,
 }: SalesPlaceSuggestInputProps) {
   const token = useAuthStore((s) => s.token);
   const listId = useId();
@@ -82,9 +85,12 @@ export default function SalesPlaceSuggestInput({
         .suggestPlaces(token, q)
         .then((res) => {
           if (reqId !== reqRef.current) return;
-          setItems(res.items || []);
+          const next = (res.items || []).filter((it) =>
+            hideRegisteredAccounts ? it.source !== "account" : true,
+          );
+          setItems(next);
           setActive(0);
-          setOpen(true);
+          setOpen(next.length > 0);
         })
         .catch(() => {
           if (reqId !== reqRef.current) return;
@@ -98,7 +104,7 @@ export default function SalesPlaceSuggestInput({
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [token, value]);
+  }, [token, value, hideRegisteredAccounts]);
 
   useEffect(() => {
     const onDoc = (e: MouseEvent) => {

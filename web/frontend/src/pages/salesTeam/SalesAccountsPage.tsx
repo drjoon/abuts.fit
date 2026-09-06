@@ -433,6 +433,7 @@ export default function SalesAccountsPage() {
                   listMode="inline"
                   listClassName="max-h-[16rem] overflow-y-auto"
                   maxItems={24}
+                  hideRegisteredAccounts
                   value={editing.name || ""}
                   onChange={(name) =>
                     setEditing((prev) => ({
@@ -523,6 +524,7 @@ export default function SalesAccountsPage() {
         onOpenChange={setPlacePickerOpen}
         initialQuery={placePickerSeed?.name || editing?.name || ""}
         seed={placePickerSeed}
+        hideRegisteredAccounts
         onConfirm={(place) => {
           applyPlace({
             ...place,
