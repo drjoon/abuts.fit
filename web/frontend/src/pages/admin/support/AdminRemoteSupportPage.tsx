@@ -43,6 +43,7 @@ import {
   openRemoteSupportViewer,
   type RemoteSupportViewerHandle,
 } from "@/features/remoteSupport/openRemoteSupportViewer";
+import { normalizeVideoPointer } from "@/features/remoteSupport/videoContentRect";
 import type { RemoteControlEvent } from "@/features/remoteSupport/replayRemoteInput";
 
 function formatDuration(ms: number | null | undefined) {
@@ -434,15 +435,13 @@ export default function AdminRemoteSupportPage() {
   ) => {
     const el = videoRef.current;
     if (!el) return;
-    const rect = el.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return;
-    const x = (e.clientX - rect.left) / rect.width;
-    const y = (e.clientY - rect.top) / rect.height;
+    const norm = normalizeVideoPointer(el, e.clientX, e.clientY);
+    if (!norm) return;
     sendControl({
       t: "pointer",
       kind,
-      x,
-      y,
+      x: norm.x,
+      y: norm.y,
       button: e.button,
     });
   };

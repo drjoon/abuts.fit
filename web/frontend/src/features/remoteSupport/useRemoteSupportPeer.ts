@@ -147,7 +147,9 @@ export function useRemoteSupportPeer({
 
       const displayOptions = {
         video: {
-          frameRate: 15,
+          frameRate: { ideal: 20, max: 30 },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
           displaySurface: "browser",
         },
         audio: false,
