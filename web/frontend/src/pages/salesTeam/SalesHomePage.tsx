@@ -8,7 +8,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CalendarDays,
   CheckCircle2,
-  FileText,
   Route,
 } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -46,20 +45,13 @@ import SalesRouteMap from "./SalesRouteMap";
 import {
   SalesDayPicker,
   SalesEmptyState,
-  SalesListRow,
   SalesPageShell,
   SalesPanel,
-  SalesSegmentTabs,
   SalesSplit,
   SalesToolbar,
 } from "./salesUi";
 
-type TodayTab = "schedule" | "report";
 type ListFilter = "all" | "planned" | "done";
-
-function parseTab(raw: string | null): TodayTab {
-  return raw === "report" ? "report" : "schedule";
-}
 
 function formatVisitTime(iso: string) {
   return new Date(iso).toLocaleTimeString("ko-KR", {
@@ -121,22 +113,23 @@ export default function SalesHomePage() {
   const [ymd, setYmd] = useState(
     () => searchParams.get("ymd") || today,
   );
-  const tab = parseTab(searchParams.get("tab"));
-
-  const setTab = (next: TodayTab) => {
-    const nextParams = new URLSearchParams(searchParams);
-    if (next === "schedule") nextParams.delete("tab");
-    else nextParams.set("tab", next);
-    setSearchParams(nextParams, { replace: true });
-  };
+  const [reportOpen, setReportOpen] = useState(false);
 
   const onYmdChange = (next: string) => {
     setYmd(next);
     const nextParams = new URLSearchParams(searchParams);
     if (next === today) nextParams.delete("ymd");
     else nextParams.set("ymd", next);
+    nextParams.delete("tab");
     setSearchParams(nextParams, { replace: true });
   };
+
+  useEffect(() => {
+    if (!searchParams.has("tab")) return;
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete("tab");
+    setSearchParams(nextParams, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   const [showForm, setShowForm] = useState(false);
   const [placeQuery, setPlaceQuery] = useState("");
@@ -193,7 +186,6 @@ export default function SalesHomePage() {
     enabled: Boolean(
       token &&
         showForm &&
-        tab === "schedule" &&
         pickedPlace &&
         routeSuggestName.length >= 2,
     ),
@@ -264,12 +256,6 @@ export default function SalesHomePage() {
     queryFn: () => salesTeamApi.getDailyReport(token, ymd),
   });
 
-  const { data: history } = useQuery({
-    queryKey: ["sales-team-daily-reports"],
-    enabled: Boolean(token && tab === "report"),
-    queryFn: () => salesTeamApi.listDailyReports(token),
-  });
-
   const visits = visitsData?.items || [];
   /** 상단 뱃지: 취소·연기는 카운트·필터 대상에서 제외 */
   const activeVisits = useMemo(
@@ -285,14 +271,12 @@ export default function SalesHomePage() {
     (v) => v.status === "canceled" || v.status === "postponed",
   ).length;
   const reportSubmitted = Boolean(reportData?.report);
-  const historyItems = history?.items || [];
 
   /** 일정 목록 필터: 기본=취소·연기 제외 전체, 예정/완료=해당 상태만 (다시 누르면 전체) */
   const [listFilter, setListFilter] = useState<ListFilter>("all");
   const [showCanceled, setShowCanceled] = useState(false);
 
   const goScheduleFilter = (next: ListFilter) => {
-    if (tab !== "schedule") setTab("schedule");
     setShowCanceled(false);
     setListFilter((prev) => {
       // 같은 필터를 다시 누르면 전체로
@@ -329,7 +313,7 @@ export default function SalesHomePage() {
 
   const { data: route, isFetching: routeLoading } = useQuery({
     queryKey: ["sales-team-route", ymd, routeVisitKey],
-    enabled: Boolean(token && ymd && tab === "schedule" && routeVisitKey),
+    enabled: Boolean(token && ymd && routeVisitKey),
     queryFn: () =>
       salesTeamApi.optimizeRoute(token, {
         ymd,
@@ -350,12 +334,14 @@ export default function SalesHomePage() {
   }, [route]);
 
   useEffect(() => {
-    if (tab !== "report") return;
+    if (!reportOpen) return;
     const r = reportData?.report;
     if (r) {
       setVisitSummary(r.visitSummary || "");
-      setIssues(r.issues || "");
-      setTomorrowPlan(r.tomorrowPlan || "");
+      setIssues(
+        [r.issues, r.tomorrowPlan].filter(Boolean).join("\n\n"),
+      );
+      setTomorrowPlan("");
       return;
     }
     const dayVisits = reportData?.visits || visits;
@@ -370,8 +356,8 @@ export default function SalesHomePage() {
     }
     setIssues("");
     setTomorrowPlan("");
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- prefills when day/report arrives
-  }, [tab, reportData?.reportYmd, reportData?.report?._id, ymd]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- prefills when report modal opens
+  }, [reportOpen, reportData?.reportYmd, reportData?.report?._id, ymd]);
 
   const createMut = useMutation({
     mutationFn: async (placeOverride?: SalesPlaceSuggest | null) => {
@@ -596,6 +582,7 @@ export default function SalesHomePage() {
       }),
     onSuccess: () => {
       toast({ title: "일일보고가 저장되었습니다." });
+      setReportOpen(false);
       void qc.invalidateQueries({ queryKey: ["sales-team-daily-report"] });
       void qc.invalidateQueries({ queryKey: ["sales-team-daily-reports"] });
       void qc.invalidateQueries({ queryKey: ["sales-team-home"] });
@@ -608,28 +595,8 @@ export default function SalesHomePage() {
   return (
     <SalesPageShell wide>
       <SalesToolbar className="w-full">
-        {/*
-          모바일: 탭·날짜·추가 / 뱃지 = 최대 2행
-          태블릿·데스크톱: 탭 · 날짜 · 뱃지 · 추가 (가능하면 1행)
-        */}
+        {/* 캘린더 | 필터(중앙) | 일정 추가 */}
         <div className="flex w-full flex-wrap items-center gap-x-2 gap-y-2">
-          <SalesSegmentTabs
-            fit
-            compact
-            value={tab}
-            onChange={setTab}
-            className="w-auto shrink-0"
-            options={[
-              {
-                value: "schedule",
-                label: "일정 · 동선",
-              },
-              {
-                value: "report",
-                label: "일일보고",
-              },
-            ]}
-          />
           <SalesDayPicker
             compact
             ymd={ymd}
@@ -637,12 +604,12 @@ export default function SalesHomePage() {
             onChange={onYmdChange}
             className="min-w-0"
           />
-          <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1 text-xs sm:gap-1.5 sm:text-sm">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center justify-center gap-1 text-xs sm:gap-1.5 sm:text-sm">
             <StatusChip
               label="예정"
               value={String(plannedCount)}
               muted={!plannedCount}
-              pressed={tab === "schedule" && listFilter === "planned"}
+              pressed={listFilter === "planned"}
               onClick={() => goScheduleFilter("planned")}
             />
             <StatusChip
@@ -650,68 +617,58 @@ export default function SalesHomePage() {
               value={String(doneCount)}
               muted={!doneCount}
               tone={doneCount > 0 ? "ok" : undefined}
-              pressed={tab === "schedule" && listFilter === "done"}
+              pressed={listFilter === "done"}
               onClick={() => goScheduleFilter("done")}
             />
             <StatusChip
               label="보고"
-              value={reportSubmitted ? "제출" : "미제출"}
+              value=""
               tone={reportSubmitted ? "ok" : "alert"}
-              pressed={tab === "report"}
-              onClick={() =>
-                setTab(tab === "report" ? "schedule" : "report")
-              }
+              pressed={reportOpen}
+              onClick={() => setReportOpen(true)}
             />
-            {tab === "schedule" ? (
-              <Button
-                size="sm"
-                className="h-8 shrink-0"
-                onClick={() => {
-                  setTime(defaultVisitHm(ymd, today));
-                  setShowForm(true);
-                }}
-              >
-                일정 추가
-              </Button>
-            ) : reportSubmitted ? (
-              <Badge className="h-8 shrink-0 px-3">제출됨</Badge>
-            ) : (
-              <Badge variant="destructive" className="h-8 shrink-0 px-3">
-                미제출
-              </Badge>
-            )}
+          </div>
+          <div className="ml-auto shrink-0 sm:ml-0">
+            <Button
+              size="sm"
+              className="h-8 shrink-0"
+              onClick={() => {
+                setTime(defaultVisitHm(ymd, today));
+                setShowForm(true);
+              }}
+            >
+              일정 추가
+            </Button>
           </div>
         </div>
       </SalesToolbar>
 
-      {tab === "schedule" ? (
-        <div className="space-y-4">
-          <SalesSplit
-            primaryClassName="order-2 lg:order-1"
-            secondaryClassName="order-1 lg:order-2"
-            primary={
-              <SalesPanel
-                title="시간대별 일정"
-                description="현장에서 완료 보고·연기·취소를 바로 기록합니다."
-                actions={
-                  <Button
-                    size="sm"
-                    variant={showCanceled ? "secondary" : "outline"}
-                    disabled={canceledOrPostponedCount === 0 && !showCanceled}
-                    onClick={() => {
-                      if (tab !== "schedule") setTab("schedule");
-                      setListFilter("all");
-                      setShowCanceled((v) => !v);
-                    }}
-                  >
-                    {canceledOrPostponedCount === 0 && !showCanceled
-                      ? "취소·연기 없음"
-                      : showCanceled
-                        ? "취소·연기 숨김"
-                        : `취소·연기 보기 · ${canceledOrPostponedCount}`}
-                  </Button>
-                }
-              >
+      <div className="space-y-4">
+        <SalesSplit
+          primaryClassName="order-2 lg:order-1"
+          secondaryClassName="order-1 lg:order-2"
+          primary={
+            <SalesPanel
+              title="시간대별 일정"
+              description="현장에서 완료 보고·연기·취소를 바로 기록합니다."
+              actions={
+                <Button
+                  size="sm"
+                  variant={showCanceled ? "secondary" : "outline"}
+                  disabled={canceledOrPostponedCount === 0 && !showCanceled}
+                  onClick={() => {
+                    setListFilter("all");
+                    setShowCanceled((v) => !v);
+                  }}
+                >
+                  {canceledOrPostponedCount === 0 && !showCanceled
+                    ? "취소·연기 없음"
+                    : showCanceled
+                      ? "취소·연기 숨김"
+                      : `취소·연기 보기 · ${canceledOrPostponedCount}`}
+                </Button>
+              }
+            >
                 {visitsLoading ? (
                   <p className="text-sm text-muted-foreground">불러오는 중…</p>
                 ) : visits.length === 0 ? (
@@ -740,7 +697,6 @@ export default function SalesHomePage() {
                     onAction={() => {
                       setListFilter("all");
                       setShowCanceled(false);
-                      setTab("schedule");
                     }}
                   />
                 ) : (
@@ -956,110 +912,74 @@ export default function SalesHomePage() {
               ) : undefined
             }
           />
-        </div>
-      ) : (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-[minmax(0,1.4fr)_minmax(17rem,0.8fr)] xl:gap-5">
-          <SalesPanel
-            title={`${ymd} 보고`}
-            description="방문 요약 · 이슈 · 내일 계획"
-          >
-            {reportLoading ? (
-              <p className="text-sm text-muted-foreground">불러오는 중…</p>
-            ) : (
-              <div className="space-y-4">
-                {visits.length > 0 ? (
-                  <div className="rounded-xl border border-slate-100 bg-slate-50/80 px-3.5 py-2.5 text-xs text-muted-foreground">
-                    이날 일정 {visits.length}건 · 완료 {doneCount}건이 요약에
-                    반영됩니다.
-                  </div>
-                ) : null}
-                <div className="grid gap-4 xl:grid-cols-2">
-                  <div className="xl:col-span-2">
-                    <label className="mb-1.5 block text-xs font-medium text-slate-600">
-                      방문 요약
-                    </label>
-                    <Textarea
-                      rows={6}
-                      placeholder="· 거래처명 (완료/예정)…"
-                      value={visitSummary}
-                      onChange={(e) => setVisitSummary(e.target.value)}
-                      className="resize-y"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-xs font-medium text-slate-600">
-                      이슈 · 특이사항
-                    </label>
-                    <Textarea
-                      rows={4}
-                      placeholder="클레임, 경쟁사, 내부 전달 사항…"
-                      value={issues}
-                      onChange={(e) => setIssues(e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-xs font-medium text-slate-600">
-                      내일 계획
-                    </label>
-                    <Textarea
-                      rows={4}
-                      placeholder="내일 방문·팔로업·내부 협조 요청…"
-                      value={tomorrowPlan}
-                      onChange={(e) => setTomorrowPlan(e.target.value)}
-                    />
-                  </div>
-                </div>
-                <Button
-                  disabled={saveReportMut.isPending}
-                  onClick={() => saveReportMut.mutate()}
-                >
-                  {saveReportMut.isPending ? "저장 중…" : "제출 · 저장"}
-                </Button>
-              </div>
-            )}
-          </SalesPanel>
+      </div>
 
-          <SalesPanel
-            className="md:sticky md:top-4 md:self-start"
-            title="최근 보고"
-            description="날짜를 누르면 해당 보고를 불러옵니다."
-            bodyClassName="md:max-h-[min(70vh,40rem)] md:overflow-y-auto"
-          >
-            {historyItems.length === 0 ? (
-              <SalesEmptyState
-                icon={FileText}
-                title="아직 제출한 보고가 없습니다"
-                description="오늘 방문을 정리해 첫 일일보고를 남겨 보세요."
-              />
-            ) : (
-              <div className="space-y-2">
-                {historyItems.map((r) => (
-                  <SalesListRow
-                    key={r.reportYmd}
-                    selected={r.reportYmd === ymd}
-                    onClick={() => onYmdChange(r.reportYmd)}
-                    title={r.reportYmd}
-                    meta={
-                      r.submittedAt
-                        ? new Date(r.submittedAt).toLocaleString("ko-KR", {
-                            timeZone: "Asia/Seoul",
-                          })
-                        : undefined
-                    }
-                    trailing={
-                      r.reportYmd === ymd ? (
-                        <Badge>선택</Badge>
-                      ) : (
-                        <Badge variant="outline">열기</Badge>
-                      )
-                    }
-                  />
-                ))}
+      <Dialog open={reportOpen} onOpenChange={setReportOpen}>
+        <DialogContent className="rounded-2xl sm:max-w-md">
+          <DialogHeader className="text-left">
+            <DialogTitle>{ymd} 보고</DialogTitle>
+            <DialogDescription>
+              오늘 방문과 남길 메모만 짧게 적습니다.
+            </DialogDescription>
+          </DialogHeader>
+          {reportLoading ? (
+            <p className="text-sm text-muted-foreground">불러오는 중…</p>
+          ) : (
+            <div className="space-y-3">
+              {visits.length > 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  일정 {visits.length}건 · 완료 {doneCount}건
+                </p>
+              ) : null}
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-slate-600">
+                  방문 요약
+                </label>
+                <Textarea
+                  rows={4}
+                  placeholder="· 거래처명 (완료/예정)…"
+                  value={visitSummary}
+                  onChange={(e) => setVisitSummary(e.target.value)}
+                  className="resize-y rounded-xl"
+                  autoFocus
+                />
               </div>
-            )}
-          </SalesPanel>
-        </div>
-      )}
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-slate-600">
+                  메모 · 내일 계획
+                </label>
+                <Textarea
+                  rows={3}
+                  placeholder="이슈, 팔로업, 내일 방문…"
+                  value={issues}
+                  onChange={(e) => setIssues(e.target.value)}
+                  className="resize-y rounded-xl"
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter className="gap-2 sm:space-x-0">
+            <Button
+              variant="outline"
+              onClick={() => setReportOpen(false)}
+              disabled={saveReportMut.isPending}
+            >
+              닫기
+            </Button>
+            <Button
+              disabled={reportLoading || saveReportMut.isPending}
+              onClick={() => saveReportMut.mutate()}
+            >
+              {saveReportMut.isPending
+                ? "저장 중…"
+                : reportSubmitted
+                  ? "다시 저장"
+                  : "제출"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog
         open={showForm}
         onOpenChange={(open) => {
@@ -1588,12 +1508,24 @@ function StatusChip({
 
   const body = (
     <>
-      <span className={pressed ? "opacity-80" : muted ? "text-slate-400" : "text-slate-500"}>
+      <span
+        className={
+          value
+            ? pressed
+              ? "opacity-80"
+              : muted
+                ? "text-slate-400"
+                : "text-slate-500"
+            : undefined
+        }
+      >
         {label}
       </span>
-      <span className={`tabular-nums ${muted && !pressed ? "text-slate-400" : ""}`}>
-        {value}
-      </span>
+      {value ? (
+        <span className={`tabular-nums ${muted && !pressed ? "text-slate-400" : ""}`}>
+          {value}
+        </span>
+      ) : null}
       {tone === "ok" && (pressed || !muted) ? (
         <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
       ) : null}
@@ -1609,9 +1541,7 @@ function StatusChip({
         aria-pressed={pressed}
         title={
           label === "보고"
-            ? pressed
-              ? "일정으로 돌아가기"
-              : "일일보고 보기"
+            ? "일일보고 작성"
             : pressed
               ? `${label} 필터 해제`
               : `${label}만 보기`
