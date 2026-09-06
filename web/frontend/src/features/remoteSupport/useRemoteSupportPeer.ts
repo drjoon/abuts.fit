@@ -131,9 +131,20 @@ export function useRemoteSupportPeer({
     if (!sessionId || role !== "staff") return;
     setError(null);
     try {
-      // Prefer this app tab/window — never the whole monitor.
-      // Full-screen share on the same display as the admin viewer causes
-      // an infinite mirror (and leaks desktop content).
+      // Always share THIS Abuts tab after admin accept.
+      // preferCurrentTab requires selfBrowserSurface:"include" (exclude throws
+      // TypeError and we used to fall back to the full window picker).
+      // monitorTypeSurfaces:"exclude" keeps full-screen out of the chooser.
+      let controller: CaptureController | undefined;
+      try {
+        if (typeof CaptureController !== "undefined") {
+          controller = new CaptureController();
+          controller.setFocusBehavior?.("no-focus-change");
+        }
+      } catch {
+        controller = undefined;
+      }
+
       const displayOptions = {
         video: {
           frameRate: 15,
@@ -141,29 +152,44 @@ export function useRemoteSupportPeer({
         },
         audio: false,
         preferCurrentTab: true,
-        selfBrowserSurface: "exclude",
+        selfBrowserSurface: "include",
         monitorTypeSurfaces: "exclude",
-        surfaceSwitching: "include",
+        surfaceSwitching: "exclude",
+        ...(controller ? { controller } : {}),
       } as DisplayMediaStreamOptions;
 
       let stream: MediaStream;
       try {
         stream = await navigator.mediaDevices.getDisplayMedia(displayOptions);
       } catch (firstErr) {
-        // Older browsers may reject unknown DisplayMedia options — retry bare.
+        // Older browsers may reject unknown DisplayMedia options — retry with
+        // the minimal current-tab preference only.
         const name =
           firstErr instanceof DOMException ? firstErr.name : "";
         if (name === "NotAllowedError" || name === "AbortError") {
           throw firstErr;
         }
-        stream = await navigator.mediaDevices.getDisplayMedia({
-          video: { frameRate: 15 },
-          audio: false,
-        });
+        try {
+          stream = await navigator.mediaDevices.getDisplayMedia({
+            video: { frameRate: 15, displaySurface: "browser" },
+            audio: false,
+            preferCurrentTab: true,
+            selfBrowserSurface: "include",
+          } as DisplayMediaStreamOptions);
+        } catch (secondErr) {
+          const name2 =
+            secondErr instanceof DOMException ? secondErr.name : "";
+          if (name2 === "NotAllowedError" || name2 === "AbortError") {
+            throw secondErr;
+          }
+          stream = await navigator.mediaDevices.getDisplayMedia({
+            video: { frameRate: 15 },
+            audio: false,
+          });
+        }
       }
 
-      // If the user still picked a full monitor (older Chrome / fallback), stop
-      // and ask again for a tab/window — same-monitor dual role = hall of mirrors.
+      // Reject full-monitor picks (older Chrome / last-resort fallback).
       const track = stream.getVideoTracks()[0];
       const surface = String(
         track?.getSettings?.().displaySurface || "",
@@ -172,7 +198,7 @@ export function useRemoteSupportPeer({
         track?.stop();
         stream.getTracks().forEach((t) => t.stop());
         const msg =
-          "전체 화면이 아니라 이 사이트 탭(또는 창)만 공유해 주세요. 같은 모니터를 공유하면 화면이 무한 반복됩니다.";
+          "전체 화면이 아니라 이 사이트 탭만 공유해 주세요. 「공유」를 한 번만 누르면 원격 지원이 시작됩니다.";
         setError(msg);
         throw new Error(msg);
       }

@@ -221,7 +221,7 @@ export function RemoteSupportProvider({ children }: Props) {
     },
   });
 
-  // Staff: after accepted, start screen share + mark active (once per session)
+  // Staff: after accepted, start THIS tab share + mark active (once per session)
   useEffect(() => {
     if (!isStaff || !activeSession || !token) return;
     if (activeSession.status !== "accepted") return;
@@ -230,6 +230,11 @@ export function RemoteSupportProvider({ children }: Props) {
     let cancelled = false;
     (async () => {
       try {
+        toast({
+          title: "원격 지원 시작",
+          description:
+            "브라우저에서 「이 탭 공유」만 눌러 주세요. 창·전체 화면을 고를 필요 없습니다.",
+        });
         await startStaffShare();
         if (cancelled) return;
         const started = await remoteSupportApi.start(token, activeSession._id);
@@ -242,7 +247,7 @@ export function RemoteSupportProvider({ children }: Props) {
           description:
             err instanceof Error
               ? err.message
-              : "이 사이트 탭(또는 창)만 공유해 주세요. 전체 화면은 사용할 수 없습니다.",
+              : "「이 탭 공유」를 허용해 주세요. 브라우저 보안상 한 번의 확인이 필요합니다.",
           variant: "destructive",
         });
       }
@@ -260,7 +265,8 @@ export function RemoteSupportProvider({ children }: Props) {
       setActiveSession(session);
       toast({
         title: "원격 지원 요청됨",
-        description: "관리자가 수락하면 화면 공유가 시작됩니다.",
+        description:
+          "관리자가 수락하면 이 탭 공유 확인만으로 원격 지원이 시작됩니다.",
       });
     } catch (err) {
       toast({
@@ -450,9 +456,8 @@ export function RemoteSupportProvider({ children }: Props) {
             <DialogTitle>원격 지원 초대</DialogTitle>
             <DialogDescription>
               관리자가 화면을 함께 보고 조작할 수 있도록 도와 드립니다. 수락하면
-              브라우저에서 <strong>이 사이트 탭(또는 창)</strong> 공유를
-              요청합니다. 전체 화면은 선택하지 마세요 — 같은 모니터를 쓰면
-              화면이 무한 반복됩니다.
+              브라우저에서 <strong>이 사이트 탭 공유</strong> 확인만 한 번
+              요청합니다. 창·전체 화면을 고를 필요 없습니다.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
