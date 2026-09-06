@@ -544,7 +544,8 @@ export default function SalesPlacePickerDrawer({
       <Dialog open={open} onOpenChange={handleOpenChange}>
         <DialogContent
           hideClose
-          className="flex max-h-[min(88vh,40rem)] w-[min(100vw-2rem,26rem)] max-w-[26rem] flex-col gap-3 overflow-hidden rounded-2xl p-4 sm:max-w-[26rem] sm:p-5"
+          overlayClassName="z-[120]"
+          className="z-[120] flex max-h-[min(88vh,40rem)] w-[min(100vw-2rem,26rem)] max-w-[26rem] flex-col gap-3 overflow-hidden rounded-2xl p-4 sm:max-w-[26rem] sm:p-5"
         >
           <DialogHeader className="space-y-0 p-0 text-left">
             {headerNav}

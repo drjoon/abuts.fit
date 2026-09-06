@@ -29,7 +29,7 @@ const salesVisitSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["planned", "done", "canceled", "noShow"],
+      enum: ["planned", "done", "canceled", "noShow", "postponed"],
       default: "planned",
       index: true,
     },

@@ -19,7 +19,8 @@ export function SalesPageShell({
   className,
   wide,
 }: {
-  title: string;
+  /** Omit to hide the page header (e.g. today toolbar-only layout). */
+  title?: string;
   subtitle?: ReactNode;
   actions?: ReactNode;
   children: ReactNode;
@@ -30,6 +31,7 @@ export function SalesPageShell({
    */
   wide?: boolean;
 }) {
+  const showHeader = Boolean(title) || Boolean(actions);
   return (
     <div
       className={cn(
@@ -38,23 +40,29 @@ export function SalesPageShell({
         className,
       )}
     >
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/70 pb-3 sm:pb-4">
-        <div className="min-w-0 space-y-1">
-          <h1 className="text-xl font-semibold tracking-tight text-slate-900 sm:text-2xl">
-            {title}
-          </h1>
-          {subtitle ? (
-            <div className="text-sm leading-relaxed text-muted-foreground">
-              {subtitle}
+      {showHeader ? (
+        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/70 pb-3 sm:pb-4">
+          {title ? (
+            <div className="min-w-0 space-y-1">
+              <h1 className="text-xl font-semibold tracking-tight text-slate-900 sm:text-2xl">
+                {title}
+              </h1>
+              {subtitle ? (
+                <div className="text-sm leading-relaxed text-muted-foreground">
+                  {subtitle}
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <div className="min-w-0" />
+          )}
+          {actions ? (
+            <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2 sm:flex-none">
+              {actions}
             </div>
           ) : null}
-        </div>
-        {actions ? (
-          <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2 sm:flex-none">
-            {actions}
-          </div>
-        ) : null}
-      </header>
+        </header>
+      ) : null}
       {children}
     </div>
   );
@@ -452,6 +460,7 @@ export function SalesSegmentTabs<T extends string>({
   options,
   className,
   fit,
+  compact,
 }: {
   value: T;
   onChange: (next: T) => void;
@@ -459,18 +468,21 @@ export function SalesSegmentTabs<T extends string>({
   className?: string;
   /** Shrink to content width on tablet+ (toolbar use). */
   fit?: boolean;
+  /** Single-line label only (tighter padding, no truncate). */
+  compact?: boolean;
 }) {
   return (
     <div
       className={cn(
         "flex gap-1 rounded-2xl border border-slate-200/80 bg-slate-100/80 p-1",
-        fit ? "w-full md:w-auto md:min-w-[16rem]" : "w-full",
+        fit ? "w-full md:w-auto md:min-w-0" : "w-full",
         className,
       )}
       role="tablist"
     >
       {options.map((opt) => {
         const active = opt.value === value;
+        const showHint = !compact && Boolean(opt.hint);
         return (
           <button
             key={opt.value}
@@ -479,14 +491,24 @@ export function SalesSegmentTabs<T extends string>({
             aria-selected={active}
             onClick={() => onChange(opt.value)}
             className={cn(
-              "min-w-0 flex-1 rounded-xl px-3 py-2 text-sm font-medium transition-colors md:px-4 md:py-2.5",
+              "rounded-xl text-sm font-medium transition-colors",
+              compact
+                ? "flex-1 whitespace-nowrap px-3 py-1.5 md:flex-none md:px-3.5 md:py-2"
+                : "min-w-0 flex-1 px-3 py-2 md:px-4 md:py-2.5",
               active
                 ? "bg-white text-slate-900 shadow-sm"
                 : "text-slate-500 hover:text-slate-800",
             )}
           >
-            <span className="block truncate">{opt.label}</span>
-            {opt.hint ? (
+            <span
+              className={cn(
+                "block",
+                compact ? "whitespace-nowrap" : "truncate",
+              )}
+            >
+              {opt.label}
+            </span>
+            {showHint ? (
               <span
                 className={cn(
                   "mt-0.5 block truncate text-[11px] font-normal",

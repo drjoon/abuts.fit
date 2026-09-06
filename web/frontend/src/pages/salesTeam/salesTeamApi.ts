@@ -48,7 +48,7 @@ export type SalesVisit = {
   assigneeUserId?: string;
   plannedAt: string;
   commitment: "confirmed" | "around" | "askBefore";
-  status: "planned" | "done" | "canceled" | "noShow";
+  status: "planned" | "done" | "canceled" | "noShow" | "postponed";
   memo?: string;
   completedAt?: string | null;
 };

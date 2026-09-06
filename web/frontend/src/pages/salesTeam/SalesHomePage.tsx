@@ -16,9 +16,22 @@ import { toKstYmd } from "@/shared/date/kst";
 import { useToast } from "@/shared/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/shared/ui/cn";
-import { formatDayLabel, visitStatusLabel } from "./salesDay";
+import {
+  clampVisitHmAfterNow,
+  defaultVisitHm,
+  formatDayLabel,
+  visitStatusLabel,
+} from "./salesDay";
 import {
   COMMITMENT_LABEL,
   salesTeamApi,
@@ -85,7 +98,7 @@ export default function SalesHomePage() {
   const [pickedPlace, setPickedPlace] = useState<SalesPlaceSuggest | null>(
     null,
   );
-  const [time, setTime] = useState("10:00");
+  const [time, setTime] = useState(() => defaultVisitHm(today, today));
   const [commitment, setCommitment] = useState("confirmed");
   const [placePickerOpen, setPlacePickerOpen] = useState(false);
   const [placePickerSeed, setPlacePickerSeed] =
@@ -159,7 +172,11 @@ export default function SalesHomePage() {
       routeSuggest.suggestions[0];
     if (!best?.ymd) return;
     appliedSuggestKeyRef.current = routeSuggestKey;
-    if (best.suggestedTime) setTime(best.suggestedTime);
+    if (best.suggestedTime) {
+      setTime(clampVisitHmAfterNow(best.suggestedTime, best.ymd, today));
+    } else {
+      setTime(defaultVisitHm(best.ymd, today));
+    }
     if (best.ymd !== ymd) onYmdChange(best.ymd);
     setPreviewSuggestYmd(best.ymd);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- apply once per place suggest
@@ -180,7 +197,11 @@ export default function SalesHomePage() {
   }) => {
     setPreviewSuggestYmd(s.ymd);
     onYmdChange(s.ymd);
-    if (s.suggestedTime) setTime(s.suggestedTime);
+    if (s.suggestedTime) {
+      setTime(clampVisitHmAfterNow(s.suggestedTime, s.ymd, today));
+    } else {
+      setTime(defaultVisitHm(s.ymd, today));
+    }
   };
 
   const { data: reportData, isLoading: reportLoading } = useQuery({
@@ -196,18 +217,25 @@ export default function SalesHomePage() {
   });
 
   const visits = visitsData?.items || [];
-  const doneCount = visits.filter((v) => v.status === "done").length;
-  const plannedCount = visits.filter((v) => v.status === "planned").length;
+  /** 상단 뱃지: 취소는 카운트·필터 대상에서 제외 */
+  const activeVisits = useMemo(
+    () => visits.filter((v) => v.status !== "canceled"),
+    [visits],
+  );
+  const visitCount = activeVisits.length;
+  const doneCount = activeVisits.filter((v) => v.status === "done").length;
+  const plannedCount = activeVisits.filter((v) => v.status === "planned").length;
   const canceledCount = visits.filter((v) => v.status === "canceled").length;
   const reportSubmitted = Boolean(reportData?.report);
   const historyItems = history?.items || [];
 
-  /** 일정 목록 필터: 방문=전체, 예정/완료=해당 상태만 (다시 누르면 전체) */
+  /** 일정 목록 필터: 방문=취소 제외 전체, 예정/완료=해당 상태만 (다시 누르면 전체) */
   const [listFilter, setListFilter] = useState<ListFilter>("all");
   const [showCanceled, setShowCanceled] = useState(false);
 
   const goScheduleFilter = (next: ListFilter) => {
     if (tab !== "schedule") setTab("schedule");
+    setShowCanceled(false);
     setListFilter((prev) => {
       // 같은 필터를 다시 누르면 전체로
       if (next !== "all" && prev === next) return "all";
@@ -217,10 +245,10 @@ export default function SalesHomePage() {
 
   const visibleVisits = useMemo(() => {
     return visits.filter((v) => {
-      if (v.status === "canceled") return showCanceled;
+      if (v.status === "canceled") return showCanceled && listFilter === "all";
       if (listFilter === "planned") return v.status === "planned";
       if (listFilter === "done") return v.status === "done";
-      // all: 예정·완료·부재 (취소는 showCanceled)
+      // all: 예정·완료·부재·연기 (취소는 showCanceled)
       return true;
     });
   }, [visits, listFilter, showCanceled]);
@@ -320,7 +348,8 @@ export default function SalesHomePage() {
           })
           .catch(() => {});
       }
-      const plannedAt = new Date(`${ymd}T${time}:00+09:00`).toISOString();
+      const hm = clampVisitHmAfterNow(time, ymd, today);
+      const plannedAt = new Date(`${ymd}T${hm}:00+09:00`).toISOString();
       const payload: {
         accountId: string;
         plannedAt: string;
@@ -451,54 +480,59 @@ export default function SalesHomePage() {
   });
 
   return (
-    <SalesPageShell
-      title="오늘"
-      subtitle={formatDayLabel(ymd)}
-      actions={
-        <>
-          <SalesSegmentTabs
-            fit
-            value={tab}
-            onChange={setTab}
-            className="w-full min-w-0 sm:w-auto"
-            options={[
-              {
-                value: "schedule",
-                label: "일정 · 동선",
-                hint: visits.length ? `${visits.length}건` : "방문 관리",
-              },
-              {
-                value: "report",
-                label: "일일보고",
-                hint: reportSubmitted ? "제출됨" : "방문 요약 · 이슈",
-              },
-            ]}
-          />
-          {tab === "schedule" ? (
-            <Button size="sm" onClick={() => setShowForm((v) => !v)}>
-              {showForm ? "닫기" : "일정 추가"}
-            </Button>
-          ) : reportSubmitted ? (
-            <Badge className="h-8 px-3">제출됨</Badge>
-          ) : (
-            <Badge variant="destructive" className="h-8 px-3">
-              미제출
-            </Badge>
-          )}
-        </>
-      }
-    >
+    <SalesPageShell wide>
       <SalesToolbar>
-        <div className="flex min-w-0 flex-col gap-2.5 sm:flex-row sm:flex-wrap sm:items-center">
-          <SalesDayPicker ymd={ymd} today={today} onChange={onYmdChange} />
+        <div className="flex flex-col gap-2.5">
+          {/* lg+: 1행 탭 | 캘린더+추가 · 그 아래 2행 뱃지 / ~lg: 탭·캘린더·뱃지 3행 */}
+          <div className="flex flex-col gap-2.5 lg:flex-row lg:items-center lg:justify-between lg:gap-3">
+            <SalesSegmentTabs
+              fit
+              compact
+              value={tab}
+              onChange={setTab}
+              className="w-full lg:w-auto"
+              options={[
+                {
+                  value: "schedule",
+                  label: "일정 · 동선",
+                },
+                {
+                  value: "report",
+                  label: "일일보고",
+                },
+              ]}
+            />
+            <div className="flex flex-wrap items-center justify-end gap-2 lg:ml-auto">
+              <SalesDayPicker ymd={ymd} today={today} onChange={onYmdChange} />
+              {tab === "schedule" ? (
+                <Button
+                  size="sm"
+                  className="shrink-0"
+                  onClick={() => {
+                    setTime(defaultVisitHm(ymd, today));
+                    setShowForm(true);
+                  }}
+                >
+                  일정 추가
+                </Button>
+              ) : reportSubmitted ? (
+                <Badge className="h-8 shrink-0 px-3">제출됨</Badge>
+              ) : (
+                <Badge variant="destructive" className="h-8 shrink-0 px-3">
+                  미제출
+                </Badge>
+              )}
+            </div>
+          </div>
           <div className="flex flex-wrap gap-1.5 text-xs sm:text-sm">
             <StatusChip
               label="방문"
-              value={String(visits.length)}
-              muted={!visits.length}
-              pressed={tab === "schedule" && listFilter === "all"}
+              value={String(visitCount)}
+              muted={!visitCount}
+              pressed={tab === "schedule" && listFilter === "all" && !showCanceled}
               onClick={() => {
                 setTab("schedule");
+                setShowCanceled(false);
                 setListFilter("all");
               }}
             />
@@ -532,238 +566,13 @@ export default function SalesHomePage() {
 
       {tab === "schedule" ? (
         <div className="space-y-4">
-          {showForm ? (
-            <SalesPanel
-              title="방문 추가"
-              description="상호를 고르면 방문 날짜를 동선 기준으로 제안합니다."
-            >
-              <div className="flex max-w-2xl flex-col gap-2.5 sm:flex-row sm:flex-wrap sm:items-center">
-                <SalesPlaceSuggestInput
-                  className="min-w-0 flex-1 sm:min-w-[14rem]"
-                  value={placeQuery}
-                  onChange={(v) => {
-                    setPlaceQuery(v);
-                    setPickedPlace(null);
-                  }}
-                  onPick={(item) => {
-                    setPickedPlace(item);
-                    setPlaceQuery(item.name);
-                    if (
-                      item.businessAnchorId ||
-                      item.source === "platform" ||
-                      item.lat == null ||
-                      item.lng == null
-                    ) {
-                      setPlacePickerAccountId(item.accountId || null);
-                      setPlacePickerSeed(item);
-                      setPlacePickerOpen(true);
-                    }
-                  }}
-                  placeholder="치과·기공소 상호 검색"
-                  autoFocus
-                />
-                <div
-                  className="inline-flex w-full shrink-0 rounded-xl border border-slate-200/80 bg-slate-100/80 p-1 sm:w-auto"
-                  role="group"
-                  aria-label="확정도"
-                >
-                  {(
-                    [
-                      { value: "confirmed", label: "확정" },
-                      { value: "around", label: "그쯤" },
-                    ] as const
-                  ).map((opt) => {
-                    const active = commitment === opt.value;
-                    return (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        aria-pressed={active}
-                        onClick={() => setCommitment(opt.value)}
-                        className={cn(
-                          "min-w-[4.25rem] flex-1 rounded-lg px-3 py-2 text-sm font-medium transition-colors sm:flex-none",
-                          active
-                            ? "bg-white text-slate-900 shadow-sm"
-                            : "text-slate-600 hover:text-slate-900",
-                        )}
-                      >
-                        {opt.label}
-                      </button>
-                    );
-                  })}
-                </div>
-                <Button
-                  size="sm"
-                  className="w-full sm:w-auto"
-                  disabled={
-                    !(pickedPlace?.name || placeQuery.trim()) ||
-                    createMut.isPending
-                  }
-                  onClick={() => createMut.mutate(pickedPlace)}
-                >
-                  {createMut.isPending ? "넣는 중…" : "넣기"}
-                </Button>
-              </div>
-              {pickedPlace?.address ? (
-                <p className="mt-2 text-xs text-muted-foreground">
-                  {pickedPlace.address}
-                  {pickedPlace.phone ? ` · ${pickedPlace.phone}` : ""}
-                  {" · "}
-                  {formatDayLabel(ymd)} ·{" "}
-                  {COMMITMENT_LABEL[commitment] || commitment}
-                </p>
-              ) : null}
-
-              {routeSuggestName.length >= 2 ? (
-                <div className="mt-3 space-y-2.5 border-t border-slate-100 pt-3">
-                  <div className="flex items-center gap-1.5 text-xs font-medium text-slate-700">
-                    <Route className="h-3.5 w-3.5 text-primary" aria-hidden />
-                    날짜 제안
-                    {routeSuggestLoading ? (
-                      <span className="font-normal text-muted-foreground">
-                        · 계산 중…
-                      </span>
-                    ) : null}
-                  </div>
-                  {!pickedPlace ? (
-                    <p className="text-xs text-muted-foreground">
-                      상호를 고르면 1순위 동선 · 2순위 인접일 날짜를 제안합니다.
-                      없으면 상단 날짜로 직접 넣으세요.
-                    </p>
-                  ) : null}
-                  {pickedPlace && routeSuggestError ? (
-                    <p className="text-xs text-amber-800">
-                      {(routeSuggestError as Error).message ||
-                        "날짜 제안을 불러오지 못했습니다. 상단 날짜로 직접 넣으세요."}
-                    </p>
-                  ) : null}
-                  {pickedPlace && routeSuggest?.message ? (
-                    <p className="text-xs text-muted-foreground">
-                      {routeSuggest.message}
-                    </p>
-                  ) : null}
-                  {pickedPlace && routeSuggest?.needsManualPick ? (
-                    <div className="rounded-xl border border-amber-200/80 bg-amber-50/70 px-3 py-2.5 text-xs text-amber-950">
-                      <p className="font-medium">3순위 · 직접 선택</p>
-                      <p className="mt-0.5 text-amber-900/80">
-                        효율 동선이 불명확합니다. 제안 카드를 고르거나, 상단
-                        날짜와 확정/그쯤을 맞춘 뒤 「넣기」하세요.
-                        {(routeSuggest.suggestions || []).length > 0
-                          ? " 아래 인접일 제안도 참고할 수 있습니다."
-                          : ""}
-                      </p>
-                    </div>
-                  ) : null}
-                  {pickedPlace &&
-                  (routeSuggest?.suggestions || []).length > 0 ? (
-                    <ul className="space-y-1.5">
-                      {routeSuggest!.suggestions.map((s) => {
-                        const selected =
-                          (previewSuggestYmd ||
-                            routeSuggest!.suggestions[0]?.ymd) === s.ymd;
-                        return (
-                          <li key={`${s.rank}-${s.ymd}`}>
-                            <button
-                              type="button"
-                              className={`flex w-full items-start justify-between gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors ${
-                                selected
-                                  ? "border-primary/40 bg-primary/5"
-                                  : "border-slate-200/80 bg-white hover:bg-slate-50"
-                              }`}
-                              onClick={() => applySuggestion(s)}
-                            >
-                              <div className="min-w-0 space-y-0.5">
-                                <div className="flex flex-wrap items-center gap-1.5">
-                                  <span className="text-sm font-medium text-slate-900">
-                                    {formatDayLabel(s.ymd)}
-                                  </span>
-                                  <Badge
-                                    variant={
-                                      s.rank === 1 ? "secondary" : "outline"
-                                    }
-                                    className="h-5 px-1.5 text-[10px]"
-                                  >
-                                    {s.tierLabel ||
-                                      (s.rank === 1
-                                        ? "1순위 · 동선"
-                                        : "2순위 · 인접일")}
-                                  </Badge>
-                                  {s.ymd === ymd ? (
-                                    <span className="text-[10px] text-primary">
-                                      적용됨
-                                    </span>
-                                  ) : null}
-                                </div>
-                                <p className="text-xs text-muted-foreground">
-                                  {s.reason}
-                                  {s.visitCount
-                                    ? ` · 그날 확정 ${s.visitCount}곳`
-                                    : ""}
-                                  {s.totalKm != null
-                                    ? ` · ${s.totalKm}km`
-                                    : ""}
-                                </p>
-                              </div>
-                              <span className="shrink-0 text-xs font-medium text-primary">
-                                적용
-                              </span>
-                            </button>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  ) : null}
-                  {pickedPlace && previewSuggestion?.ordered?.length ? (
-                    <div className="rounded-xl border border-slate-100 bg-slate-50/70 px-3 py-2.5">
-                      <div className="mb-2 flex items-center justify-between gap-2">
-                        <p className="text-xs font-medium text-slate-700">
-                          {formatDayLabel(previewSuggestion.ymd)} 예상 순서
-                        </p>
-                        {previewSuggestion.mapUrl ? (
-                          <a
-                            href={previewSuggestion.mapUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-xs font-medium text-primary"
-                          >
-                            카카오맵
-                          </a>
-                        ) : null}
-                      </div>
-                      <ol className="space-y-1">
-                        {previewSuggestion.ordered.map((stop, idx) => (
-                          <li
-                            key={`${stop.visitId || stop.name}-${idx}`}
-                            className={`flex items-center gap-2 text-xs ${
-                              stop.isExtra
-                                ? "font-medium text-primary"
-                                : "text-slate-700"
-                            }`}
-                          >
-                            <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white text-[10px] font-semibold text-slate-600 ring-1 ring-slate-200">
-                              {idx + 1}
-                            </span>
-                            <span className="min-w-0 truncate">
-                              {stop.name}
-                              {stop.isExtra ? " (추가)" : ""}
-                            </span>
-                          </li>
-                        ))}
-                      </ol>
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
-            </SalesPanel>
-          ) : null}
-
           <SalesSplit
             primaryClassName="order-2 lg:order-1"
             secondaryClassName="order-1 lg:order-2"
             primary={
               <SalesPanel
                 title="시간대별 일정"
-                description="현장에서 완료·부재·취소를 바로 기록합니다."
+                description="현장에서 완료·부재·취소·연기를 바로 기록합니다."
                 actions={
                   <Button
                     size="sm"
@@ -771,6 +580,7 @@ export default function SalesHomePage() {
                     disabled={canceledCount === 0 && !showCanceled}
                     onClick={() => {
                       if (tab !== "schedule") setTab("schedule");
+                      setListFilter("all");
                       setShowCanceled((v) => !v);
                     }}
                   >
@@ -790,7 +600,10 @@ export default function SalesHomePage() {
                     title="이 날 일정이 없습니다"
                     description="상호를 검색해 일정을 넣으면 당일 지도와 타임라인이 자동으로 보입니다."
                     actionLabel="일정 추가"
-                    onAction={() => setShowForm(true)}
+                    onAction={() => {
+                      setTime(defaultVisitHm(ymd, today));
+                      setShowForm(true);
+                    }}
                   />
                 ) : visibleVisits.length === 0 ? (
                   <SalesEmptyState
@@ -821,7 +634,8 @@ export default function SalesHomePage() {
                               v.status === "done"
                                 ? "bg-emerald-500"
                                 : v.status === "canceled" ||
-                                    v.status === "noShow"
+                                    v.status === "noShow" ||
+                                    v.status === "postponed"
                                   ? "bg-slate-300"
                                   : "bg-primary"
                             }`}
@@ -860,7 +674,8 @@ export default function SalesHomePage() {
                                 variant={
                                   v.status === "done"
                                     ? "default"
-                                    : v.status === "canceled"
+                                    : v.status === "canceled" ||
+                                        v.status === "postponed"
                                       ? "outline"
                                       : "secondary"
                                 }
@@ -925,6 +740,18 @@ export default function SalesHomePage() {
                                   }
                                 >
                                   부재
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() =>
+                                    statusMut.mutate({
+                                      id: v._id,
+                                      status: "postponed",
+                                    })
+                                  }
+                                >
+                                  연기
                                 </Button>
                                 <Button
                                   size="sm"
@@ -1134,6 +961,254 @@ export default function SalesHomePage() {
           </SalesPanel>
         </div>
       )}
+      <Dialog
+        open={showForm}
+        onOpenChange={(open) => {
+          if (open) {
+            setTime(defaultVisitHm(ymd, today));
+            setShowForm(true);
+            return;
+          }
+          setShowForm(false);
+          setPlaceQuery("");
+          setPickedPlace(null);
+          setPreviewSuggestYmd(null);
+          appliedSuggestKeyRef.current = "";
+        }}
+      >
+        <DialogContent className="max-h-[min(90vh,40rem)] gap-0 overflow-y-auto rounded-2xl p-0 sm:max-w-lg">
+          <DialogHeader className="sticky top-0 z-10 space-y-1 border-b border-slate-100 bg-background px-4 py-3.5 text-left sm:px-5">
+            <DialogTitle>방문 추가</DialogTitle>
+            <DialogDescription>
+              상호를 고르면 방문 날짜를 동선 기준으로 제안합니다.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 px-4 py-3.5 sm:px-5">
+            <div className="flex flex-col gap-2.5 sm:flex-row sm:flex-wrap sm:items-center">
+              <SalesPlaceSuggestInput
+                className="min-w-0 flex-1 sm:min-w-[14rem]"
+                value={placeQuery}
+                onChange={(v) => {
+                  setPlaceQuery(v);
+                  setPickedPlace(null);
+                }}
+                onPick={(item) => {
+                  setPickedPlace(item);
+                  setPlaceQuery(item.name);
+                  if (
+                    item.businessAnchorId ||
+                    item.source === "platform" ||
+                    item.lat == null ||
+                    item.lng == null
+                  ) {
+                    setPlacePickerAccountId(item.accountId || null);
+                    setPlacePickerSeed(item);
+                    setPlacePickerOpen(true);
+                  }
+                }}
+                placeholder="치과·기공소 상호 검색"
+                autoFocus
+              />
+              <div
+                className="inline-flex w-full shrink-0 rounded-xl border border-slate-200/80 bg-slate-100/80 p-1 sm:w-auto"
+                role="group"
+                aria-label="확정도"
+              >
+                {(
+                  [
+                    { value: "confirmed", label: "확정" },
+                    { value: "around", label: "그쯤" },
+                  ] as const
+                ).map((opt) => {
+                  const active = commitment === opt.value;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => setCommitment(opt.value)}
+                      className={cn(
+                        "min-w-[4.25rem] flex-1 rounded-lg px-3 py-2 text-sm font-medium transition-colors sm:flex-none",
+                        active
+                          ? "bg-white text-slate-900 shadow-sm"
+                          : "text-slate-600 hover:text-slate-900",
+                      )}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            {pickedPlace?.address ? (
+              <p className="text-xs text-muted-foreground">
+                {pickedPlace.address}
+                {pickedPlace.phone ? ` · ${pickedPlace.phone}` : ""}
+                {" · "}
+                {formatDayLabel(ymd)} ·{" "}
+                {COMMITMENT_LABEL[commitment] || commitment}
+              </p>
+            ) : null}
+
+            {routeSuggestName.length >= 2 ? (
+              <div className="space-y-2.5 border-t border-slate-100 pt-3">
+                <div className="flex items-center gap-1.5 text-xs font-medium text-slate-700">
+                  <Route className="h-3.5 w-3.5 text-primary" aria-hidden />
+                  날짜 제안
+                  {routeSuggestLoading ? (
+                    <span className="font-normal text-muted-foreground">
+                      · 계산 중…
+                    </span>
+                  ) : null}
+                </div>
+                {!pickedPlace ? (
+                  <p className="text-xs text-muted-foreground">
+                    상호를 고르면 1순위 동선 · 2순위 인접일 날짜를 제안합니다.
+                    없으면 상단 날짜로 직접 넣으세요.
+                  </p>
+                ) : null}
+                {pickedPlace && routeSuggestError ? (
+                  <p className="text-xs text-amber-800">
+                    {(routeSuggestError as Error).message ||
+                      "날짜 제안을 불러오지 못했습니다. 상단 날짜로 직접 넣으세요."}
+                  </p>
+                ) : null}
+                {pickedPlace && routeSuggest?.message ? (
+                  <p className="text-xs text-muted-foreground">
+                    {routeSuggest.message}
+                  </p>
+                ) : null}
+                {pickedPlace && routeSuggest?.needsManualPick ? (
+                  <div className="rounded-xl border border-amber-200/80 bg-amber-50/70 px-3 py-2.5 text-xs text-amber-950">
+                    <p className="font-medium">3순위 · 직접 선택</p>
+                    <p className="mt-0.5 text-amber-900/80">
+                      효율 동선이 불명확합니다. 제안 카드를 고르거나, 상단 날짜와
+                      확정/그쯤을 맞춘 뒤 「넣기」하세요.
+                      {(routeSuggest.suggestions || []).length > 0
+                        ? " 아래 인접일 제안도 참고할 수 있습니다."
+                        : ""}
+                    </p>
+                  </div>
+                ) : null}
+                {pickedPlace &&
+                (routeSuggest?.suggestions || []).length > 0 ? (
+                  <ul className="space-y-1.5">
+                    {routeSuggest!.suggestions.map((s) => {
+                      const selected =
+                        (previewSuggestYmd ||
+                          routeSuggest!.suggestions[0]?.ymd) === s.ymd;
+                      return (
+                        <li key={`${s.rank}-${s.ymd}`}>
+                          <button
+                            type="button"
+                            className={`flex w-full items-start justify-between gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors ${
+                              selected
+                                ? "border-primary/40 bg-primary/5"
+                                : "border-slate-200/80 bg-white hover:bg-slate-50"
+                            }`}
+                            onClick={() => applySuggestion(s)}
+                          >
+                            <div className="min-w-0 space-y-0.5">
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span className="text-sm font-medium text-slate-900">
+                                  {formatDayLabel(s.ymd)}
+                                </span>
+                                <Badge
+                                  variant={
+                                    s.rank === 1 ? "secondary" : "outline"
+                                  }
+                                  className="h-5 px-1.5 text-[10px]"
+                                >
+                                  {s.tierLabel ||
+                                    (s.rank === 1
+                                      ? "1순위 · 동선"
+                                      : "2순위 · 인접일")}
+                                </Badge>
+                                {s.ymd === ymd ? (
+                                  <span className="text-[10px] text-primary">
+                                    적용됨
+                                  </span>
+                                ) : null}
+                              </div>
+                              <p className="text-xs text-muted-foreground">
+                                {s.reason}
+                                {s.visitCount
+                                  ? ` · 그날 확정 ${s.visitCount}곳`
+                                  : ""}
+                                {s.totalKm != null ? ` · ${s.totalKm}km` : ""}
+                              </p>
+                            </div>
+                            <span className="shrink-0 text-xs font-medium text-primary">
+                              적용
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : null}
+                {pickedPlace && previewSuggestion?.ordered?.length ? (
+                  <div className="rounded-xl border border-slate-100 bg-slate-50/70 px-3 py-2.5">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <p className="text-xs font-medium text-slate-700">
+                        {formatDayLabel(previewSuggestion.ymd)} 예상 순서
+                      </p>
+                      {previewSuggestion.mapUrl ? (
+                        <a
+                          href={previewSuggestion.mapUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-xs font-medium text-primary"
+                        >
+                          카카오맵
+                        </a>
+                      ) : null}
+                    </div>
+                    <ol className="space-y-1">
+                      {previewSuggestion.ordered.map((stop, idx) => (
+                        <li
+                          key={`${stop.visitId || stop.name}-${idx}`}
+                          className={`flex items-center gap-2 text-xs ${
+                            stop.isExtra
+                              ? "font-medium text-primary"
+                              : "text-slate-700"
+                          }`}
+                        >
+                          <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white text-[10px] font-semibold text-slate-600 ring-1 ring-slate-200">
+                            {idx + 1}
+                          </span>
+                          <span className="min-w-0 truncate">
+                            {stop.name}
+                            {stop.isExtra ? " (추가)" : ""}
+                          </span>
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+          <DialogFooter className="sticky bottom-0 gap-2 border-t border-slate-100 bg-background px-4 py-3 sm:space-x-0 sm:px-5">
+            <Button
+              variant="outline"
+              onClick={() => setShowForm(false)}
+              disabled={createMut.isPending}
+            >
+              취소
+            </Button>
+            <Button
+              disabled={
+                !(pickedPlace?.name || placeQuery.trim()) ||
+                createMut.isPending
+              }
+              onClick={() => createMut.mutate(pickedPlace)}
+            >
+              {createMut.isPending ? "넣는 중…" : "넣기"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <SalesPlacePickerDrawer
         open={placePickerOpen}
         onOpenChange={(open) => {

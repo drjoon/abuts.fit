@@ -16,7 +16,13 @@ import {
 } from "../../utils/salesTeamReferral.util.js";
 
 const COMMITMENTS = new Set(["confirmed", "around", "askBefore"]);
-const VISIT_STATUSES = new Set(["planned", "done", "canceled", "noShow"]);
+const VISIT_STATUSES = new Set([
+  "planned",
+  "done",
+  "canceled",
+  "noShow",
+  "postponed",
+]);
 const ACCOUNT_KINDS = new Set(["practice", "lab"]);
 
 function oid(value) {
