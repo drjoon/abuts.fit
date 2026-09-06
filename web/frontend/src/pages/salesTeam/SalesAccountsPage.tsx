@@ -8,6 +8,16 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Building2, MapPin, Phone, Search, UserRound } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -78,6 +88,7 @@ export default function SalesAccountsPage() {
   const [placePickerOpen, setPlacePickerOpen] = useState(false);
   const [placePickerSeed, setPlacePickerSeed] =
     useState<Partial<SalesPlaceSuggest> | null>(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
   const filterParams = listParams(listFilter);
   const queryKey = useMemo(
@@ -131,6 +142,7 @@ export default function SalesAccountsPage() {
     mutationFn: (id: string) => salesTeamApi.deleteAccount(token, id),
     onSuccess: () => {
       toast({ title: "삭제되었습니다." });
+      setDeleteConfirmOpen(false);
       setSelectedId(null);
       void qc.invalidateQueries({ queryKey: ["sales-team-accounts"] });
     },
@@ -291,11 +303,7 @@ export default function SalesAccountsPage() {
             <Button
               size="sm"
               variant="destructive"
-              onClick={() => {
-                if (confirm("이 거래처를 삭제할까요?")) {
-                  deleteMut.mutate(detail._id);
-                }
-              }}
+              onClick={() => setDeleteConfirmOpen(true)}
             >
               삭제
             </Button>
@@ -545,6 +553,42 @@ export default function SalesAccountsPage() {
           }
         }}
       />
+
+      <AlertDialog
+        open={deleteConfirmOpen}
+        onOpenChange={(open) => {
+          if (!open && !deleteMut.isPending) {
+            setDeleteConfirmOpen(false);
+          }
+        }}
+      >
+        <AlertDialogContent className="rounded-2xl sm:max-w-md">
+          <AlertDialogHeader className="text-left">
+            <AlertDialogTitle>이 거래처를 삭제할까요?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {detail?.name
+                ? `「${detail.name}」 거래처를 삭제합니다. 되돌릴 수 없습니다.`
+                : "선택한 거래처를 삭제합니다. 되돌릴 수 없습니다."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2 sm:space-x-0">
+            <AlertDialogCancel disabled={deleteMut.isPending}>
+              취소
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={!detail?._id || deleteMut.isPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={(e) => {
+                e.preventDefault();
+                if (!detail?._id) return;
+                deleteMut.mutate(detail._id);
+              }}
+            >
+              {deleteMut.isPending ? "삭제 중…" : "삭제"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </SalesPageShell>
   );
 }

@@ -6,6 +6,16 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ClipboardList } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -59,6 +69,7 @@ export default function SalesRequirementsPage() {
   const [workStatus, setWorkStatus] =
     useState<CustomerRequirementWorkStatus>("inProgress");
   const [workNote, setWorkNote] = useState("");
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["sales-team-requirements"],
@@ -127,6 +138,7 @@ export default function SalesRequirementsPage() {
     mutationFn: () => salesTeamApi.deleteRequirement(token, selectedId!),
     onSuccess: () => {
       toast({ title: "삭제되었습니다." });
+      setDeleteConfirmOpen(false);
       setSelectedId(null);
       void qc.invalidateQueries({ queryKey: ["sales-team-requirements"] });
     },
@@ -484,11 +496,7 @@ export default function SalesRequirementsPage() {
                     <Button
                       size="sm"
                       variant="destructive"
-                      onClick={() => {
-                        if (confirm("이 요구사항을 삭제할까요?")) {
-                          deleteMut.mutate();
-                        }
-                      }}
+                      onClick={() => setDeleteConfirmOpen(true)}
                     >
                       삭제
                     </Button>
@@ -507,6 +515,42 @@ export default function SalesRequirementsPage() {
           />
         }
       />
+
+      <AlertDialog
+        open={deleteConfirmOpen}
+        onOpenChange={(open) => {
+          if (!open && !deleteMut.isPending) {
+            setDeleteConfirmOpen(false);
+          }
+        }}
+      >
+        <AlertDialogContent className="rounded-2xl sm:max-w-md">
+          <AlertDialogHeader className="text-left">
+            <AlertDialogTitle>이 요구사항을 삭제할까요?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {detail?.title
+                ? `「${detail.title}」 요구사항을 삭제합니다. 되돌릴 수 없습니다.`
+                : "선택한 요구사항을 삭제합니다. 되돌릴 수 없습니다."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2 sm:space-x-0">
+            <AlertDialogCancel disabled={deleteMut.isPending}>
+              취소
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={!selectedId || deleteMut.isPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={(e) => {
+                e.preventDefault();
+                if (!selectedId) return;
+                deleteMut.mutate();
+              }}
+            >
+              {deleteMut.isPending ? "삭제 중…" : "삭제"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </SalesPageShell>
   );
 }
