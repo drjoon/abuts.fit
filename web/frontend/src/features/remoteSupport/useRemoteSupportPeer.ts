@@ -213,10 +213,38 @@ export function useRemoteSupportPeer({
       }
     };
 
+    // Offers are fire-and-forget to current room members. If staff shared before
+    // admin joined the signaling room, re-offer when the peer arrives.
+    const onPresence = async (payload: unknown) => {
+      const data = payload as {
+        sessionId?: string;
+        action?: string;
+      };
+      if (!data || data.sessionId !== sessionId) return;
+      if (data.action !== "joined") return;
+      if (role !== "staff") return;
+      const pc = pcRef.current;
+      if (!pc || !localStreamRef.current) return;
+      if (pc.connectionState === "connected") return;
+      if (makingOfferRef.current) return;
+      try {
+        makingOfferRef.current = true;
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        emitSignal({ type: "offer", sdp: pc.localDescription! });
+      } catch (err) {
+        console.warn("[remote-support] re-offer on presence failed:", err);
+      } finally {
+        makingOfferRef.current = false;
+      }
+    };
+
     socket.on("remote-support:signal", onSignal);
+    socket.on("remote-support:presence", onPresence);
 
     return () => {
       socket.off("remote-support:signal", onSignal);
+      socket.off("remote-support:presence", onPresence);
       socket.emit("remote-support:leave", { sessionId });
       cleanup();
     };

@@ -1,12 +1,13 @@
 // related files:
 // - web/frontend/src/features/remoteSupport/remoteSupportApi.ts
-import { useEffect, useRef, useState } from "react";
+// - web/frontend/src/shared/realtime/useAppEventListener.ts
+import { useRef, useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { RemoteSupportMessage } from "@/features/remoteSupport/remoteSupportApi";
-import { getSocket } from "@/shared/realtime/socket";
 import { remoteSupportApi } from "@/features/remoteSupport/remoteSupportApi";
 import { useAuthStore } from "@/store/useAuthStore";
+import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
 
 type Props = {
   sessionId: string;
@@ -26,6 +27,14 @@ function senderId(msg: RemoteSupportMessage) {
     return String(msg.senderId._id || "");
   }
   return String(msg.senderId || "");
+}
+
+function appendMessage(
+  prev: RemoteSupportMessage[],
+  msg: RemoteSupportMessage,
+) {
+  if (msg._id && prev.some((m) => m._id === msg._id)) return prev;
+  return [...prev, msg];
 }
 
 export function RemoteSupportChat({
@@ -49,29 +58,27 @@ export function RemoteSupportChat({
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length]);
 
-  useEffect(() => {
-    const socket = getSocket();
-    if (!socket) return;
-    const onChat = (payload: unknown) => {
-      const msg = payload as RemoteSupportMessage;
-      if (!msg || msg.sessionId !== sessionId) return;
-      setMessages((prev) => {
-        if (msg._id && prev.some((m) => m._id === msg._id)) return prev;
-        return [...prev, msg];
-      });
-    };
-    socket.on("remote-support:chat", onChat);
-    return () => {
-      socket.off("remote-support:chat", onChat);
-    };
-  }, [sessionId]);
+  // Backend notifies via app-event (type: remote-support:chat), not a raw socket event.
+  useAppEventListener({
+    enabled: Boolean(sessionId),
+    eventTypes: ["remote-support:chat"],
+    // Chat must update while the input is focused / tab is in background.
+    requireVisible: false,
+    deferWhenEditing: false,
+    onMatch: (evt) => {
+      const msg = (evt.data || {}) as RemoteSupportMessage;
+      if (!msg?.content || msg.sessionId !== sessionId) return;
+      setMessages((prev) => appendMessage(prev, msg));
+    },
+  });
 
   const send = async () => {
     const content = text.trim();
     if (!content || sending) return;
     setSending(true);
     try {
-      await remoteSupportApi.postMessage(token, sessionId, content);
+      const sent = await remoteSupportApi.postMessage(token, sessionId, content);
+      setMessages((prev) => appendMessage(prev, sent));
       setText("");
     } catch (err) {
       console.warn("[remote-support] chat send failed:", err);

@@ -93,14 +93,14 @@ export function RemoteSupportProvider({ children }: Props) {
   ]);
   const shareStartedForRef = useRef<string | null>(null);
 
-  const peerRole =
+  // Admin WebRTC peer lives only on AdminRemoteSupportPage (video + control).
+  // Enabling an admin peer here too steals the staff offer/answer, leaving the
+  // support room stuck on "connecting" with a black screen.
+  const peerRole: "staff" | null =
     activeSession &&
+    isStaff &&
     ["accepted", "active"].includes(activeSession.status)
-      ? isAdmin
-        ? "admin"
-        : isStaff
-          ? "staff"
-          : null
+      ? "staff"
       : null;
 
   const {
