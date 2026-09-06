@@ -481,16 +481,16 @@ export default function SalesHomePage() {
 
   return (
     <SalesPageShell wide>
-      <SalesToolbar>
-        <div className="flex flex-col gap-2.5">
-          {/* lg+: 1행 탭 | 캘린더+추가 · 그 아래 2행 뱃지 / ~lg: 탭·캘린더·뱃지 3행 */}
-          <div className="flex flex-col gap-2.5 lg:flex-row lg:items-center lg:justify-between lg:gap-3">
+      <SalesToolbar className="w-full md:flex-col md:flex-nowrap md:items-stretch">
+        <div className="flex w-full flex-col gap-2.5">
+          {/* 1행: [탭] ↔ [캘린더 · 오늘 · 일정 추가] — lg+에서만 한 줄 justify-between */}
+          <div className="flex w-full flex-col gap-2.5 lg:flex-row lg:items-center lg:justify-between lg:gap-3">
             <SalesSegmentTabs
               fit
               compact
               value={tab}
               onChange={setTab}
-              className="w-full lg:w-auto"
+              className="w-full shrink-0 lg:w-auto"
               options={[
                 {
                   value: "schedule",
@@ -502,7 +502,7 @@ export default function SalesHomePage() {
                 },
               ]}
             />
-            <div className="flex flex-wrap items-center justify-end gap-2 lg:ml-auto">
+            <div className="flex w-full shrink-0 items-center justify-end gap-2 lg:w-auto lg:justify-start">
               <SalesDayPicker ymd={ymd} today={today} onChange={onYmdChange} />
               {tab === "schedule" ? (
                 <Button
@@ -524,7 +524,7 @@ export default function SalesHomePage() {
               )}
             </div>
           </div>
-          <div className="flex flex-wrap gap-1.5 text-xs sm:text-sm">
+          <div className="flex w-full flex-wrap gap-1.5 text-xs sm:text-sm">
             <StatusChip
               label="방문"
               value={String(visitCount)}
@@ -976,68 +976,84 @@ export default function SalesHomePage() {
           appliedSuggestKeyRef.current = "";
         }}
       >
-        <DialogContent className="max-h-[min(90vh,40rem)] gap-0 overflow-y-auto rounded-2xl p-0 sm:max-w-lg">
-          <DialogHeader className="sticky top-0 z-10 space-y-1 border-b border-slate-100 bg-background px-4 py-3.5 text-left sm:px-5">
+        <DialogContent
+          className="flex max-h-[min(90vh,38rem)] flex-col gap-0 overflow-hidden rounded-2xl p-0 sm:max-w-xl"
+          closeClassName="z-50 right-3 top-3 flex h-10 w-10 items-center justify-center rounded-full bg-background opacity-100 shadow-sm ring-1 ring-slate-200/80 hover:bg-slate-50"
+          closeIconClassName="h-5 w-5"
+        >
+          <DialogHeader className="relative z-0 shrink-0 space-y-1 border-b border-slate-100 bg-background px-4 py-3.5 pr-14 text-left sm:px-5 sm:pr-14">
             <DialogTitle>방문 추가</DialogTitle>
             <DialogDescription>
               상호를 고르면 방문 날짜를 동선 기준으로 제안합니다.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3 px-4 py-3.5 sm:px-5">
-            <div className="flex flex-col gap-2.5 sm:flex-row sm:flex-wrap sm:items-center">
-              <SalesPlaceSuggestInput
-                className="min-w-0 flex-1 sm:min-w-[14rem]"
-                value={placeQuery}
-                onChange={(v) => {
-                  setPlaceQuery(v);
-                  setPickedPlace(null);
-                }}
-                onPick={(item) => {
-                  setPickedPlace(item);
-                  setPlaceQuery(item.name);
-                  if (
-                    item.businessAnchorId ||
-                    item.source === "platform" ||
-                    item.lat == null ||
-                    item.lng == null
-                  ) {
-                    setPlacePickerAccountId(item.accountId || null);
-                    setPlacePickerSeed(item);
-                    setPlacePickerOpen(true);
-                  }
-                }}
-                placeholder="치과·기공소 상호 검색"
-                autoFocus
-              />
-              <div
-                className="inline-flex w-full shrink-0 rounded-xl border border-slate-200/80 bg-slate-100/80 p-1 sm:w-auto"
-                role="group"
-                aria-label="확정도"
-              >
-                {(
-                  [
-                    { value: "confirmed", label: "확정" },
-                    { value: "around", label: "그쯤" },
-                  ] as const
-                ).map((opt) => {
-                  const active = commitment === opt.value;
-                  return (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      aria-pressed={active}
-                      onClick={() => setCommitment(opt.value)}
-                      className={cn(
-                        "min-w-[4.25rem] flex-1 rounded-lg px-3 py-2 text-sm font-medium transition-colors sm:flex-none",
-                        active
-                          ? "bg-white text-slate-900 shadow-sm"
-                          : "text-slate-600 hover:text-slate-900",
-                      )}
-                    >
-                      {opt.label}
-                    </button>
-                  );
-                })}
+          <div className="relative z-0 min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3.5 sm:px-5">
+            <div
+              className={cn(
+                "relative",
+                placeQuery.trim().length >= 2 &&
+                  !pickedPlace &&
+                  "pb-[13.5rem]",
+              )}
+            >
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <SalesPlaceSuggestInput
+                  className="min-w-0 flex-1"
+                  inputClassName="h-10 rounded-xl"
+                  listClassName="max-h-[13rem] overflow-y-auto"
+                  maxItems={4}
+                  value={placeQuery}
+                  onChange={(v) => {
+                    setPlaceQuery(v);
+                    setPickedPlace(null);
+                  }}
+                  onPick={(item) => {
+                    setPickedPlace(item);
+                    setPlaceQuery(item.name);
+                    if (
+                      item.businessAnchorId ||
+                      item.source === "platform" ||
+                      item.lat == null ||
+                      item.lng == null
+                    ) {
+                      setPlacePickerAccountId(item.accountId || null);
+                      setPlacePickerSeed(item);
+                      setPlacePickerOpen(true);
+                    }
+                  }}
+                  placeholder="치과·기공소 상호 검색"
+                  autoFocus
+                />
+                <div
+                  className="inline-flex h-10 w-full shrink-0 items-stretch rounded-xl border border-slate-200/80 bg-slate-100/80 p-1 sm:w-auto"
+                  role="group"
+                  aria-label="확정도"
+                >
+                  {(
+                    [
+                      { value: "confirmed", label: "확정" },
+                      { value: "around", label: "그쯤" },
+                    ] as const
+                  ).map((opt) => {
+                    const active = commitment === opt.value;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        aria-pressed={active}
+                        onClick={() => setCommitment(opt.value)}
+                        className={cn(
+                          "min-w-[4.25rem] flex-1 rounded-lg px-3 text-sm font-medium transition-colors sm:flex-none",
+                          active
+                            ? "bg-white text-slate-900 shadow-sm"
+                            : "text-slate-600 hover:text-slate-900",
+                        )}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
             {pickedPlace?.address ? (
@@ -1189,7 +1205,7 @@ export default function SalesHomePage() {
               </div>
             ) : null}
           </div>
-          <DialogFooter className="sticky bottom-0 gap-2 border-t border-slate-100 bg-background px-4 py-3 sm:space-x-0 sm:px-5">
+          <DialogFooter className="shrink-0 gap-2 border-t border-slate-100 bg-background px-4 py-3 sm:space-x-0 sm:px-5">
             <Button
               variant="outline"
               onClick={() => setShowForm(false)}
