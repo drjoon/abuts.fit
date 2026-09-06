@@ -46,6 +46,8 @@ type Props = {
    * 탭 콘텐츠 영역이 flex-1이 되어 스크롤/중앙 배치를 탭별로 제어 가능.
    */
   fillHeight?: boolean;
+  /** Tighter chrome for sales-team density (matches today toolbar). */
+  compact?: boolean;
 };
 
 export const SettingsScaffold = ({
@@ -57,6 +59,7 @@ export const SettingsScaffold = ({
   tabsMaxClassName,
   tabsTrailing,
   fillHeight = false,
+  compact = false,
 }: Props) => {
   const resolvedTabsMax = tabsMaxClassName ?? contentMaxClassName;
 
@@ -66,7 +69,10 @@ export const SettingsScaffold = ({
         value={t.key}
         disabled={Boolean(t.disabled)}
         className={cn(
-          "flex min-w-[6.75rem] shrink-0 basis-auto items-center justify-center gap-1.5 px-2 py-2.5 text-sm sm:min-w-[96px] sm:shrink sm:flex-1 sm:basis-0 sm:gap-2 sm:px-3",
+          "flex shrink-0 basis-auto items-center justify-center gap-1.5 text-sm sm:shrink sm:flex-1 sm:basis-0 sm:gap-2",
+          compact
+            ? "min-w-[5.75rem] px-2 py-1.5 sm:min-w-[88px] sm:px-2.5"
+            : "min-w-[6.75rem] px-2 py-2.5 sm:min-w-[96px] sm:px-3",
           highlightTabKey === t.key &&
             "ring-2 ring-primary/60 shadow-[0_10px_40px_rgba(14,92,228,0.18)]",
           t.disabled && "pointer-events-none opacity-50",
@@ -119,7 +125,9 @@ export const SettingsScaffold = ({
         fillHeight
           ? "box-border flex h-full min-h-0 flex-col overflow-hidden"
           : // 대시보드 흰 카드 안 — 이중 그라데이션 없이 하단 pb만 (스크롤 끝에 여백)
-            "min-h-full pb-8 sm:pb-12",
+            compact
+              ? "min-h-full pb-20 sm:pb-10 lg:pb-8"
+              : "min-h-full pb-8 sm:pb-12",
       )}
     >
       <TooltipProvider>
@@ -133,8 +141,11 @@ export const SettingsScaffold = ({
           className={cn(
             "mx-auto w-full",
             fillHeight
-              ? "flex min-h-0 flex-1 flex-col justify-start gap-3 sm:gap-4"
-              : cn("space-y-4", resolvedTabsMax),
+              ? cn(
+                  "flex min-h-0 flex-1 flex-col justify-start",
+                  compact ? "gap-2.5 sm:gap-3" : "gap-3 sm:gap-4",
+                )
+              : cn(compact ? "space-y-3 sm:space-y-4" : "space-y-4", resolvedTabsMax),
           )}
         >
           <div
@@ -163,7 +174,8 @@ export const SettingsScaffold = ({
                 <div className="min-w-0 flex-1 overscroll-x-contain scroll-pl-1 scroll-pr-1 px-1 scroll-x-bar-top sm:overflow-visible sm:px-0 sm:[transform:none] sm:[&>*]:[transform:none]">
                   <TabsList
                     className={cn(
-                      "inline-flex h-auto min-w-full w-max max-w-none justify-start gap-1.5 p-1.5 sm:flex sm:w-full sm:flex-wrap sm:justify-center",
+                      "inline-flex h-auto min-w-full w-max max-w-none justify-start gap-1.5 sm:flex sm:w-full sm:flex-wrap sm:justify-center",
+                      compact ? "p-1" : "p-1.5",
                     )}
                   >
                     {tabTriggers}

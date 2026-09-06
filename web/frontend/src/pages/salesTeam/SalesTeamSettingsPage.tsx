@@ -2,7 +2,7 @@
 // - web/frontend/src/features/dashboard/SettingsPage.tsx
 // - web/frontend/src/pages/admin/settings/SettingsPage.tsx
 // change-log:
-// - 2026-09-06: 영업본부 설정 — 어벗츠(admin) 사업자. 직원(member)은 사업자/임직원 탭 숨김.
+// - 2026-09-06: 영업본부 설정 — 어벗츠(admin) 사업자. 직원(member)은 사업자/임직원 탭 숨김. compact·wide 셸.
 import { useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Bell, Building2, Shield, User, Users } from "lucide-react";
@@ -88,6 +88,8 @@ export const SalesTeamSettingsPage = () => {
 
   return (
     <SettingsScaffold
+      compact
+      contentMaxClassName="max-w-5xl"
       tabs={tabs}
       activeTab={activeTab}
       onTabChange={(next) => {

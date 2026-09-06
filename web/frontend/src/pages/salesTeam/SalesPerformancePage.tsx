@@ -104,42 +104,35 @@ export default function SalesPerformancePage() {
   };
 
   return (
-    <SalesPageShell
-      title="성과"
-      actions={
-        tab === "activity" ? (
-          <Select value={period} onValueChange={setPeriod}>
-            <SelectTrigger className="w-32">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="7d">7일</SelectItem>
-              <SelectItem value="30d">30일</SelectItem>
-              <SelectItem value="90d">90일</SelectItem>
-              <SelectItem value="thisMonth">이번 달</SelectItem>
-            </SelectContent>
-          </Select>
-        ) : null
-      }
-    >
-      <SalesToolbar>
-        <SalesSegmentTabs
-          fit
-          value={tab}
-          onChange={setTab}
-          options={[
-            {
-              value: "activity",
-              label: "활동 실적",
-              hint: "방문 · 보고 · 소개",
-            },
-            {
-              value: "referral",
-              label: "소개 코드",
-              hint: "공유 · 가입 목록",
-            },
-          ]}
-        />
+    <SalesPageShell wide>
+      <SalesToolbar className="w-full">
+        <div className="flex w-full flex-wrap items-center gap-x-2 gap-y-2">
+          <SalesSegmentTabs
+            fit
+            compact
+            value={tab}
+            onChange={setTab}
+            options={[
+              { value: "activity", label: "활동 실적" },
+              { value: "referral", label: "소개 코드" },
+            ]}
+          />
+          {tab === "activity" ? (
+            <div className="ml-auto shrink-0">
+              <Select value={period} onValueChange={setPeriod}>
+                <SelectTrigger className="h-8 w-[7.5rem]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="7d">7일</SelectItem>
+                  <SelectItem value="30d">30일</SelectItem>
+                  <SelectItem value="90d">90일</SelectItem>
+                  <SelectItem value="thisMonth">이번 달</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
+        </div>
       </SalesToolbar>
 
       {tab === "activity" ? (

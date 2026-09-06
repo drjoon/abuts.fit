@@ -116,10 +116,6 @@ export const AdminBusinessRegistrationInquiryPage = ({
   const { toast } = useToast();
   const isSalesInbox = mode === "salesTeam";
   const replyLabel = isSalesInbox ? "답변" : "관리자 메모";
-  const pageTitle = isSalesInbox ? "영업 문의 수신함" : "문의 관리";
-  const pageDescription = isSalesInbox
-    ? "의뢰자가 영업팀에 보낸 문의를 확인하고 답변합니다. 관리자에게도 동일하게 전달됩니다."
-    : "접수된 문의를 확인하고 처리합니다.";
   const isMobile = useIsMobile();
   const [mobileShowList, setMobileShowList] = useState(true);
   const [searchParams] = useSearchParams();
@@ -404,38 +400,58 @@ export const AdminBusinessRegistrationInquiryPage = ({
       className={
         embedded
           ? "flex h-full min-h-0 flex-col bg-gradient-subtle p-0 pt-2"
-          : "flex h-full min-h-0 flex-col bg-gradient-subtle p-2 sm:p-4"
+          : isSalesInbox
+            ? "flex h-full min-h-0 flex-col px-0.5 pb-20 pt-0.5 sm:px-0 sm:pb-10 lg:pb-8"
+            : "flex h-full min-h-0 flex-col bg-gradient-subtle p-2 sm:p-4"
       }
     >
-      <div className="mx-auto flex w-full max-w-7xl min-h-0 flex-1 flex-col space-y-4 sm:space-y-6">
-        {isSalesInbox && !embedded ? (
-          <div className="space-y-1">
-            <h1 className="text-2xl font-bold tracking-tight">{pageTitle}</h1>
-            <p className="text-sm text-muted-foreground">{pageDescription}</p>
-          </div>
-        ) : null}
-
-        <div className="grid grid-cols-1 lg:grid-cols-[420px_1fr] gap-4 flex-1 min-h-0">
+      <div
+        className={cn(
+          "mx-auto flex w-full min-h-0 flex-1 flex-col",
+          isSalesInbox
+            ? "max-w-5xl space-y-4 sm:space-y-5"
+            : "max-w-7xl space-y-4 sm:space-y-6",
+        )}
+      >
+        <div
+          className={cn(
+            "grid flex-1 min-h-0 grid-cols-1 gap-4",
+            isSalesInbox
+              ? "lg:grid-cols-[minmax(0,1fr)_minmax(20rem,0.95fr)] xl:grid-cols-[minmax(0,1.05fr)_minmax(22rem,1fr)] lg:gap-5"
+              : "lg:grid-cols-[420px_1fr]",
+          )}
+        >
           {showListPanel ? (
-            <Card className="flex flex-col overflow-hidden min-h-0">
-              <CardHeader className="space-y-3 shrink-0 pb-3">
+            <Card
+              className={cn(
+                "flex min-h-0 flex-col overflow-hidden",
+                isSalesInbox && "border-slate-200/80 bg-white/90 shadow-sm",
+              )}
+            >
+              <CardHeader
+                className={cn(
+                  "shrink-0 space-y-2.5 pb-3",
+                  isSalesInbox && "px-4 py-3 sm:px-5",
+                )}
+              >
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                   <Input
                     type="text"
                     placeholder="제목, 내용, 사업장, 담당자, 이메일 검색"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-10"
+                    className={cn("pl-8", isSalesInbox && "h-8")}
                   />
                 </div>
 
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-1.5">
                   {statusFilters.map((filter) => (
                     <Button
                       key={filter.value}
                       type="button"
                       size="sm"
+                      className={isSalesInbox ? "h-8" : undefined}
                       variant={statusFilter === filter.value ? "default" : "outline"}
                       onClick={() => setStatusFilter(filter.value)}
                     >
@@ -444,12 +460,13 @@ export const AdminBusinessRegistrationInquiryPage = ({
                   ))}
                 </div>
 
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-1.5">
                   {typeFilters.map((filter) => (
                     <Button
                       key={filter.value}
                       type="button"
                       size="sm"
+                      className={isSalesInbox ? "h-8" : undefined}
                       variant={typeFilter === filter.value ? "default" : "outline"}
                       onClick={() => setTypeFilter(filter.value)}
                     >
@@ -480,7 +497,7 @@ export const AdminBusinessRegistrationInquiryPage = ({
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="gap-1.5"
+                    className={cn("gap-1.5", isSalesInbox && "h-8")}
                     onClick={handleExportCsv}
                   >
                     <Download className="h-3.5 w-3.5" />
@@ -503,6 +520,7 @@ export const AdminBusinessRegistrationInquiryPage = ({
                   <Button
                     type="button"
                     size="sm"
+                    className={isSalesInbox ? "h-8" : undefined}
                     onClick={handleBulkStatusChange}
                     disabled={saving || !selectedIds.size}
                   >
@@ -638,8 +656,18 @@ export const AdminBusinessRegistrationInquiryPage = ({
           ) : null}
 
           {showDetailPanel ? (
-            <Card className="flex flex-col overflow-hidden min-h-0">
-              <CardHeader className="shrink-0 space-y-1 pb-3">
+            <Card
+              className={cn(
+                "flex min-h-0 flex-col overflow-hidden",
+                isSalesInbox && "border-slate-200/80 bg-white/90 shadow-sm",
+              )}
+            >
+              <CardHeader
+                className={cn(
+                  "shrink-0 space-y-1 pb-3",
+                  isSalesInbox && "px-4 py-3 sm:px-5",
+                )}
+              >
                 {isMobile && !mobileShowList ? (
                   <Button
                     type="button"

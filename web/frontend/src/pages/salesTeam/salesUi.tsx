@@ -248,15 +248,15 @@ export function SalesPanel({
       )}
     >
       {(title || actions || description) && (
-        <div className="flex flex-wrap items-start justify-between gap-2 border-b border-slate-100 px-4 py-3 sm:px-5">
+        <div className="flex flex-wrap items-start justify-between gap-2 border-b border-slate-100 px-3.5 py-2.5 sm:px-4 sm:py-3">
           <div className="min-w-0 space-y-0.5">
             {title ? (
-              <h2 className="text-base font-semibold text-slate-900">{title}</h2>
+              <h2 className="text-sm font-semibold text-slate-900 sm:text-base">
+                {title}
+              </h2>
             ) : null}
             {description ? (
-              <p className="text-xs text-muted-foreground sm:text-sm">
-                {description}
-              </p>
+              <p className="text-xs text-muted-foreground">{description}</p>
             ) : null}
           </div>
           {actions ? (
@@ -264,7 +264,7 @@ export function SalesPanel({
           ) : null}
         </div>
       )}
-      <div className={cn("p-4 sm:p-5", bodyClassName)}>{children}</div>
+      <div className={cn("p-3.5 sm:p-4", bodyClassName)}>{children}</div>
     </section>
   );
 }
@@ -289,7 +289,7 @@ export function SalesEmptyState({
   return (
     <div
       className={cn(
-        "flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-12 text-center",
+        "flex flex-col items-center justify-center gap-2.5 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-10 text-center",
         className,
       )}
     >
@@ -328,7 +328,7 @@ export function SalesListRow({
   selected?: boolean;
 }) {
   const className = cn(
-    "flex w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition-colors",
+    "flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors",
     selected
       ? "border-primary-muted bg-primary-soft/40 ring-1 ring-primary-muted/50"
       : "border-slate-200/80 bg-white hover:border-slate-300 hover:bg-slate-50/80",

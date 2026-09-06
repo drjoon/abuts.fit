@@ -41,6 +41,7 @@ import {
   SalesPageShell,
   SalesPanel,
   SalesSplit,
+  SalesToolbar,
 } from "./salesUi";
 
 type ListFilter = "all" | "practice" | "lab" | "unjoined" | "joined";
@@ -199,33 +200,6 @@ export default function SalesAccountsPage() {
       description={`${items.length}곳 · 치과 ${practiceCount} · 기공소 ${labCount}`}
       bodyClassName="lg:max-h-[min(74vh,48rem)] lg:overflow-y-auto"
     >
-      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center">
-        <div className="relative min-w-0 flex-1">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-          <Input
-            placeholder="이름 · 대표 · 전화"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            className="pl-8"
-          />
-        </div>
-        <Select
-          value={listFilter}
-          onValueChange={(v) => setListFilter(v as ListFilter)}
-        >
-          <SelectTrigger className="sm:w-32">
-            <SelectValue placeholder="필터" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">전체</SelectItem>
-            <SelectItem value="practice">치과</SelectItem>
-            <SelectItem value="lab">기공소</SelectItem>
-            <SelectItem value="unjoined">미가입</SelectItem>
-            <SelectItem value="joined">가입</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
       {isLoading ? (
         <p className="text-sm text-muted-foreground">불러오는 중…</p>
       ) : items.length === 0 ? (
@@ -383,15 +357,41 @@ export default function SalesAccountsPage() {
     ) : undefined;
 
   return (
-    <SalesPageShell
-      title="거래처"
-      wide
-      actions={
-        <Button size="sm" onClick={openCreate}>
-          거래처 추가
-        </Button>
-      }
-    >
+    <SalesPageShell wide>
+      <SalesToolbar className="w-full">
+        <div className="flex w-full flex-wrap items-center gap-x-2 gap-y-2">
+          <div className="relative min-w-0 flex-1 sm:max-w-xs">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+            <Input
+              placeholder="이름 · 대표 · 전화"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              className="h-8 pl-8"
+            />
+          </div>
+          <Select
+            value={listFilter}
+            onValueChange={(v) => setListFilter(v as ListFilter)}
+          >
+            <SelectTrigger className="h-8 w-[7.5rem] shrink-0">
+              <SelectValue placeholder="필터" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">전체</SelectItem>
+              <SelectItem value="practice">치과</SelectItem>
+              <SelectItem value="lab">기공소</SelectItem>
+              <SelectItem value="unjoined">미가입</SelectItem>
+              <SelectItem value="joined">가입</SelectItem>
+            </SelectContent>
+          </Select>
+          <div className="ml-auto shrink-0">
+            <Button size="sm" className="h-8" onClick={openCreate}>
+              거래처 추가
+            </Button>
+          </div>
+        </div>
+      </SalesToolbar>
+
       <SalesSplit
         primary={listPanel}
         secondary={detailPanel}

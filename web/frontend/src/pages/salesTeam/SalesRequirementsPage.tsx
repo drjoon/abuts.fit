@@ -176,29 +176,33 @@ export default function SalesRequirementsPage() {
   };
 
   return (
-    <SalesPageShell
-      title="요구사항"
-      wide
-      actions={
-        canCreate ? (
-          <Button size="sm" onClick={() => setShowForm((v) => !v)}>
-            {showForm ? "닫기" : "등록"}
-          </Button>
-        ) : null
-      }
-    >
-      <SalesToolbar>
-        <SalesSegmentTabs
-          fit
-          value={statusFilter}
-          onChange={(v) => setStatusFilter(v)}
-          options={[
-            { value: "all", label: "전체", hint: `${items.length}` },
-            { value: "active", label: "진행", hint: `${activeCount}` },
-            { value: "open", label: "접수", hint: `${openCount}` },
-            { value: "done", label: "완료", hint: `${doneCount}` },
-          ]}
-        />
+    <SalesPageShell wide>
+      <SalesToolbar className="w-full">
+        <div className="flex w-full flex-wrap items-center gap-x-2 gap-y-2">
+          <SalesSegmentTabs
+            fit
+            compact
+            value={statusFilter}
+            onChange={(v) => setStatusFilter(v)}
+            options={[
+              { value: "all", label: `전체 · ${items.length}` },
+              { value: "active", label: `진행 · ${activeCount}` },
+              { value: "open", label: `접수 · ${openCount}` },
+              { value: "done", label: `완료 · ${doneCount}` },
+            ]}
+          />
+          {canCreate ? (
+            <div className="ml-auto shrink-0">
+              <Button
+                size="sm"
+                className="h-8"
+                onClick={() => setShowForm((v) => !v)}
+              >
+                {showForm ? "닫기" : "등록"}
+              </Button>
+            </div>
+          ) : null}
+        </div>
       </SalesToolbar>
 
       {showForm && canCreate ? (
