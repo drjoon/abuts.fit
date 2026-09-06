@@ -144,13 +144,23 @@ function nearestIndexToPoint(points, from) {
 }
 
 /**
- * Geocode via Kakao Local API when KAKAO_REST_API_KEY is set.
+ * Kakao Local / keyword APIs use the REST API key (`KakaoAK …`).
+ * In this project the OAuth client id is typically that same REST key.
+ */
+function kakaoRestApiKey() {
+  return String(
+    process.env.KAKAO_REST_API_KEY || process.env.KAKAO_CLIENT_ID || "",
+  ).trim();
+}
+
+/**
+ * Geocode via Kakao Local API when a Kakao REST key is set.
  * Falls back to null coords (client can still show address text).
  */
 async function geocodeAddress(address) {
   const addr = String(address || "").trim();
   if (!addr) return null;
-  const key = String(process.env.KAKAO_REST_API_KEY || "").trim();
+  const key = kakaoRestApiKey();
   if (!key) return null;
   try {
     const url = new URL("https://dapi.kakao.com/v2/local/search/address.json");
@@ -174,7 +184,7 @@ async function geocodeAddress(address) {
 /** Kakao Local keyword search for place autosuggest. */
 async function kakaoKeywordSearch(query, { limit = 8 } = {}) {
   const q = String(query || "").trim();
-  const key = String(process.env.KAKAO_REST_API_KEY || "").trim();
+  const key = kakaoRestApiKey();
   if (!q || !key) return [];
   try {
     const url = new URL("https://dapi.kakao.com/v2/local/search/keyword.json");
@@ -1106,9 +1116,7 @@ export async function optimizeRoute(req, res) {
         totalKm: Math.round(totalKm * 10) / 10,
         missingCoordsCount: withoutCoords.length,
         mapUrl,
-        geocodeConfigured: Boolean(
-          String(process.env.KAKAO_REST_API_KEY || "").trim(),
-        ),
+        geocodeConfigured: Boolean(kakaoRestApiKey()),
       },
     });
   } catch (error) {
@@ -1273,9 +1281,7 @@ export async function suggestPlaces(req, res) {
       success: true,
       data: {
         items: items.slice(0, 15),
-        geocodeConfigured: Boolean(
-          String(process.env.KAKAO_REST_API_KEY || "").trim(),
-        ),
+        geocodeConfigured: Boolean(kakaoRestApiKey()),
       },
     });
   } catch (error) {
