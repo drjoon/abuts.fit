@@ -1,6 +1,7 @@
 // related files:
 // - web/frontend/src/pages/salesTeam/salesTeamApi.ts
 // - web/frontend/src/pages/salesTeam/salesUi.tsx
+// - web/frontend/src/pages/salesTeam/salesAddressSearch.ts
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Building2, MapPin, Phone, Search, UserRound } from "lucide-react";
@@ -17,6 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { openSalesAddressSearch } from "./salesAddressSearch";
 import {
   KIND_LABEL,
   salesTeamApi,
@@ -30,18 +32,32 @@ import {
   SalesSplit,
 } from "./salesUi";
 
+type ListFilter = "all" | "practice" | "lab" | "unjoined" | "joined";
+
+function listParams(filter: ListFilter) {
+  if (filter === "practice" || filter === "lab") {
+    return { kind: filter };
+  }
+  if (filter === "unjoined" || filter === "joined") {
+    return { join: filter };
+  }
+  return {};
+}
+
 export default function SalesAccountsPage() {
   const token = useAuthStore((s) => s.token);
   const { toast } = useToast();
   const qc = useQueryClient();
   const [q, setQ] = useState("");
-  const [kind, setKind] = useState<string>("all");
+  const [listFilter, setListFilter] = useState<ListFilter>("all");
   const [editing, setEditing] = useState<Partial<SalesAccount> | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [addressSearching, setAddressSearching] = useState(false);
 
+  const filterParams = listParams(listFilter);
   const queryKey = useMemo(
-    () => ["sales-team-accounts", q, kind] as const,
-    [q, kind],
+    () => ["sales-team-accounts", q, listFilter] as const,
+    [q, listFilter],
   );
 
   const { data, isLoading } = useQuery({
@@ -50,7 +66,7 @@ export default function SalesAccountsPage() {
     queryFn: () =>
       salesTeamApi.listAccounts(token, {
         q: q || undefined,
-        kind: kind === "all" ? undefined : kind,
+        ...filterParams,
       }),
   });
 
@@ -96,10 +112,33 @@ export default function SalesAccountsPage() {
       toast({ title: e.message, variant: "destructive" }),
   });
 
+  const onSearchAddress = async () => {
+    setAddressSearching(true);
+    try {
+      const line = await openSalesAddressSearch();
+      if (line) {
+        setEditing((prev) =>
+          prev
+            ? { ...prev, address: line, lat: null, lng: null }
+            : prev,
+        );
+      }
+    } catch {
+      toast({
+        title: "주소 검색을 불러오지 못했습니다",
+        description: "잠시 후 다시 시도해주세요.",
+        variant: "destructive",
+      });
+    } finally {
+      setAddressSearching(false);
+    }
+  };
+
   const items = data?.items || [];
   const practiceCount = items.filter((i) => i.kind === "practice").length;
   const labCount = items.filter((i) => i.kind === "lab").length;
   const joinedCount = items.filter((i) => i.businessAnchorId).length;
+  const unjoinedCount = items.length - joinedCount;
 
   const openCreate = () =>
     setEditing({
@@ -124,14 +163,19 @@ export default function SalesAccountsPage() {
             className="pl-8"
           />
         </div>
-        <Select value={kind} onValueChange={setKind}>
+        <Select
+          value={listFilter}
+          onValueChange={(v) => setListFilter(v as ListFilter)}
+        >
           <SelectTrigger className="sm:w-32">
-            <SelectValue placeholder="유형" />
+            <SelectValue placeholder="필터" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">전체</SelectItem>
             <SelectItem value="practice">치과</SelectItem>
             <SelectItem value="lab">기공소</SelectItem>
+            <SelectItem value="unjoined">미가입</SelectItem>
+            <SelectItem value="joined">가입</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -141,6 +185,10 @@ export default function SalesAccountsPage() {
           <div className="text-sm font-semibold text-slate-900">
             {editing._id ? "거래처 수정" : "새 거래처"}
           </div>
+          <p className="text-xs text-muted-foreground">
+            플랫폼 가입 전에도 상호·주소·전화만으로 등록해 일정·동선에 쓸 수
+            있습니다.
+          </p>
           <div className="grid gap-2 md:grid-cols-2">
             <Select
               value={editing.kind || "practice"}
@@ -183,14 +231,31 @@ export default function SalesAccountsPage() {
                 setEditing((prev) => ({ ...prev, phone: e.target.value }))
               }
             />
-            <Input
-              className="md:col-span-2"
-              placeholder="주소 (동선·지도용)"
-              value={editing.address || ""}
-              onChange={(e) =>
-                setEditing((prev) => ({ ...prev, address: e.target.value }))
-              }
-            />
+            <div className="flex gap-2 md:col-span-2">
+              <Input
+                className="min-w-0 flex-1"
+                placeholder="주소 (동선·지도용)"
+                value={editing.address || ""}
+                onChange={(e) =>
+                  setEditing((prev) => ({
+                    ...prev,
+                    address: e.target.value,
+                    lat: null,
+                    lng: null,
+                  }))
+                }
+              />
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="shrink-0"
+                disabled={addressSearching}
+                onClick={() => void onSearchAddress()}
+              >
+                주소 검색
+              </Button>
+            </div>
             <Textarea
               className="md:col-span-2"
               placeholder="특이사항 · 방문 팁 · 담당자 메모"
@@ -222,7 +287,7 @@ export default function SalesAccountsPage() {
         <SalesEmptyState
           icon={Building2}
           title="등록된 거래처가 없습니다"
-          description="방문할 치과·기공소를 등록하면 일정·동선에 바로 쓸 수 있습니다."
+          description="플랫폼 가입 전 치과·기공소도 상호·주소·전화만으로 등록하면 일정·동선에 바로 쓸 수 있습니다."
           actionLabel="첫 거래처 추가"
           onAction={openCreate}
         />
@@ -336,7 +401,7 @@ export default function SalesAccountsPage() {
           </p>
         ) : null}
         <p className="mt-3 text-xs text-muted-foreground lg:hidden">
-          플랫폼 가입 {joinedCount}곳
+          플랫폼 가입 {joinedCount}곳 · 미가입 {unjoinedCount}곳
         </p>
       </SalesPanel>
     ) : undefined;
@@ -344,7 +409,7 @@ export default function SalesAccountsPage() {
   return (
     <SalesPageShell
       title="거래처"
-      subtitle={`치과 ${practiceCount} · 기공소 ${labCount} · 플랫폼 가입 ${joinedCount}`}
+      subtitle={`치과 ${practiceCount} · 기공소 ${labCount} · 가입 ${joinedCount} · 미가입 ${unjoinedCount} · 가입 전에도 등록 가능`}
       actions={
         <Button size="sm" onClick={openCreate}>
           거래처 추가

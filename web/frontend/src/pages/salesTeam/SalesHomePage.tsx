@@ -32,6 +32,7 @@ import {
   salesTeamApi,
   visitAccountName,
 } from "./salesTeamApi";
+import SalesRouteMap from "./SalesRouteMap";
 import {
   SalesDayPicker,
   SalesEmptyState,
@@ -41,6 +42,8 @@ import {
   SalesSegmentTabs,
   SalesToolbar,
 } from "./salesUi";
+
+const START_ADDRESS_KEY = "abuts.sales.route.startAddress";
 
 type TodayTab = "schedule" | "report";
 
@@ -81,6 +84,13 @@ export default function SalesHomePage() {
   const [memo, setMemo] = useState("");
   const [extraName, setExtraName] = useState("");
   const [extraAddress, setExtraAddress] = useState("");
+  const [startAddress, setStartAddress] = useState(() => {
+    try {
+      return localStorage.getItem(START_ADDRESS_KEY) || "";
+    } catch {
+      return "";
+    }
+  });
   const [includeAround, setIncludeAround] = useState(true);
   const [showRoute, setShowRoute] = useState(false);
 
@@ -180,13 +190,22 @@ export default function SalesHomePage() {
   });
 
   const routeMut = useMutation({
-    mutationFn: () =>
-      salesTeamApi.optimizeRoute(token, {
+    mutationFn: () => {
+      const trimmedStart = startAddress.trim();
+      try {
+        if (trimmedStart) localStorage.setItem(START_ADDRESS_KEY, trimmedStart);
+        else localStorage.removeItem(START_ADDRESS_KEY);
+      } catch {
+        /* ignore */
+      }
+      return salesTeamApi.optimizeRoute(token, {
         ymd,
         includeAround,
         extraName: extraName || undefined,
         extraAddress: extraAddress || undefined,
-      }),
+        startAddress: trimmedStart || undefined,
+      });
+    },
     onError: (e: Error) =>
       toast({ title: e.message, variant: "destructive" }),
   });
@@ -451,7 +470,7 @@ export default function SalesHomePage() {
             <SalesPanel
               className="md:sticky md:top-4 md:self-start"
               title="동선"
-              description="확정·그룹 일정을 지도 순서로 정렬합니다."
+              description="지도에서 방문 순서를 확인하고 카카오맵으로 열 수 있습니다."
               actions={
                 <Button
                   size="sm"
@@ -476,6 +495,11 @@ export default function SalesHomePage() {
                     「그쯤」일정도 포함
                   </label>
                   <Input
+                    placeholder="출발 주소 (선택 · 동선 기준점)"
+                    value={startAddress}
+                    onChange={(e) => setStartAddress(e.target.value)}
+                  />
+                  <Input
                     placeholder="추가 방문지명 (선택)"
                     value={extraName}
                     onChange={(e) => setExtraName(e.target.value)}
@@ -499,6 +523,13 @@ export default function SalesHomePage() {
 
                   {route ? (
                     <div className="space-y-3 border-t border-slate-100 pt-3">
+                      {!route.geocodeConfigured ? (
+                        <p className="text-xs text-amber-700">
+                          주소→좌표 변환(KAKAO_REST_API_KEY)이 꺼져 있으면 동선
+                          정확도가 떨어질 수 있습니다.
+                        </p>
+                      ) : null}
+                      <SalesRouteMap stops={route.ordered} />
                       <div className="flex items-center gap-2 rounded-xl bg-primary-soft/50 px-3 py-2 text-sm">
                         <Map className="h-4 w-4 text-primary-strong" />
                         <span>
@@ -512,19 +543,28 @@ export default function SalesHomePage() {
                         </span>
                       </div>
                       <ol className="space-y-2">
-                        {route.ordered.map((stop, idx) => (
+                        {route.ordered.map((stop, idx) => {
+                          const visitNo = route.ordered
+                            .slice(0, idx + 1)
+                            .filter((s) => !s.isStart).length;
+                          return (
                           <li
                             key={`${stop.name}-${idx}`}
                             className="flex gap-2.5 rounded-lg border border-slate-100 px-2.5 py-2 text-sm"
                           >
                             <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-900 text-[11px] font-semibold text-white">
-                              {idx + 1}
+                              {stop.isStart ? "출" : visitNo}
                             </span>
                             <span className="min-w-0">
                               <span className="font-medium">{stop.name}</span>
                               {stop.isExtra ? (
                                 <Badge className="ml-1" variant="outline">
                                   추가
+                                </Badge>
+                              ) : null}
+                              {stop.isStart ? (
+                                <Badge className="ml-1" variant="secondary">
+                                  출발
                                 </Badge>
                               ) : null}
                               {stop.address ? (
@@ -534,7 +574,8 @@ export default function SalesHomePage() {
                               ) : null}
                             </span>
                           </li>
-                        ))}
+                          );
+                        })}
                       </ol>
                       {route.mapUrl ? (
                         <Button
@@ -562,8 +603,7 @@ export default function SalesHomePage() {
               ) : (
                 <div className="space-y-3 text-sm text-muted-foreground">
                   <p>
-                    방문 순서를 짜면 예상 거리와 카카오맵 경로를 볼 수
-                    있습니다.
+                    방문 순서를 짜면 예상 거리와 지도 경로를 볼 수 있습니다.
                   </p>
                   <Button
                     size="sm"

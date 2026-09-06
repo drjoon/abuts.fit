@@ -146,12 +146,19 @@ app.use(
         // Monaco Editor(web worker) 실행을 위해 blob worker 허용
         "worker-src": ["'self'", "blob:"],
         // Monaco Editor 로더/번들에서 eval 기반 코드를 사용하는 경우가 있어 허용
-        "script-src": ["'self'", "'unsafe-eval'", "https://cdn.jsdelivr.net"],
+        "script-src": [
+          "'self'",
+          "'unsafe-eval'",
+          "https://cdn.jsdelivr.net",
+          "https://dapi.kakao.com",
+          "https://t1.daumcdn.net",
+        ],
         "script-src-elem": [
           "'self'",
           "'unsafe-eval'",
           "https://cdn.jsdelivr.net",
           "https://t1.daumcdn.net",
+          "https://dapi.kakao.com",
         ],
         "frame-src": ["'self'", "https://postcode.map.kakao.com"],
         // S3 업로드/다운로드 허용
@@ -171,6 +178,9 @@ app.use(
           "https://*.amazonaws.com",
           "https://cdn.jsdelivr.net",
           "https://t1.daumcdn.net",
+          "https://dapi.kakao.com",
+          "https://*.daumcdn.net",
+          "https://*.kakaocdn.net",
           ...(process.env.NODE_ENV === "development"
             ? ["http://localhost:8080", "ws://localhost:8080"]
             : []),
@@ -182,6 +192,10 @@ app.use(
           "https://robohash.org",
           "https://abuts-fit.s3.ap-south-1.amazonaws.com",
           "https://*.amazonaws.com",
+          "https://*.daumcdn.net",
+          "https://*.kakaocdn.net",
+          "https://map.kakao.com",
+          "https://*.map.kakao.com",
         ],
       },
     },

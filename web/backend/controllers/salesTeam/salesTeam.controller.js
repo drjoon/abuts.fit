@@ -99,6 +99,108 @@ function nearestNeighborOrder(points, startIndex = 0) {
   return order;
 }
 
+function pathLengthKm(points, order) {
+  let total = 0;
+  for (let i = 1; i < order.length; i += 1) {
+    total += haversineKm(points[order[i - 1]], points[order[i]]);
+  }
+  return total;
+}
+
+/** 2-opt improvement on an index order (straight-line km). */
+function twoOptImprove(points, order) {
+  if (order.length < 4) return order.slice();
+  let best = order.slice();
+  let improved = true;
+  while (improved) {
+    improved = false;
+    for (let i = 1; i < best.length - 2; i += 1) {
+      for (let k = i + 1; k < best.length - 1; k += 1) {
+        const next = best
+          .slice(0, i)
+          .concat(best.slice(i, k + 1).reverse())
+          .concat(best.slice(k + 1));
+        if (pathLengthKm(points, next) + 1e-9 < pathLengthKm(points, best)) {
+          best = next;
+          improved = true;
+        }
+      }
+    }
+  }
+  return best;
+}
+
+function nearestIndexToPoint(points, from) {
+  let best = 0;
+  let bestDist = Infinity;
+  for (let i = 0; i < points.length; i += 1) {
+    const d = haversineKm(from, points[i]);
+    if (d < bestDist) {
+      bestDist = d;
+      best = i;
+    }
+  }
+  return best;
+}
+
+/**
+ * Geocode via Kakao Local API when KAKAO_REST_API_KEY is set.
+ * Falls back to null coords (client can still show address text).
+ */
+async function geocodeAddress(address) {
+  const addr = String(address || "").trim();
+  if (!addr) return null;
+  const key = String(process.env.KAKAO_REST_API_KEY || "").trim();
+  if (!key) return null;
+  try {
+    const url = new URL("https://dapi.kakao.com/v2/local/search/address.json");
+    url.searchParams.set("query", addr);
+    const resp = await fetch(url.toString(), {
+      headers: { Authorization: `KakaoAK ${key}` },
+    });
+    if (!resp.ok) return null;
+    const json = await resp.json();
+    const doc = json?.documents?.[0];
+    if (!doc) return null;
+    const lat = Number(doc.y);
+    const lng = Number(doc.x);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    return { lat, lng, address: doc.address_name || addr };
+  } catch {
+    return null;
+  }
+}
+
+function parseCoord(value) {
+  if (value == null || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Fill lat/lng from address when missing or address just changed. */
+async function applyGeocodeToAccountFields(fields, { addressChanged = false } = {}) {
+  const address = String(fields.address || "").trim();
+  if (!address) {
+    if (addressChanged) {
+      fields.lat = null;
+      fields.lng = null;
+    }
+    return fields;
+  }
+  const hasCoords =
+    fields.lat != null &&
+    fields.lng != null &&
+    Number.isFinite(Number(fields.lat)) &&
+    Number.isFinite(Number(fields.lng));
+  if (hasCoords && !addressChanged) return fields;
+  const geo = await geocodeAddress(address);
+  if (geo) {
+    fields.lat = geo.lat;
+    fields.lng = geo.lng;
+  }
+  return fields;
+}
+
 function accountVisibilityFilter(userId, role) {
   if (String(role || "") === "admin") return {};
   const uid = oid(userId);
@@ -107,9 +209,16 @@ function accountVisibilityFilter(userId, role) {
   };
 }
 
-function buildAccountListFilter(userId, role, { q, kind } = {}) {
+function buildAccountListFilter(userId, role, { q, kind, join } = {}) {
   const parts = [accountVisibilityFilter(userId, role)];
   if (ACCOUNT_KINDS.has(kind)) parts.push({ kind });
+  if (join === "joined") {
+    parts.push({ businessAnchorId: { $ne: null } });
+  } else if (join === "unjoined") {
+    parts.push({
+      $or: [{ businessAnchorId: null }, { businessAnchorId: { $exists: false } }],
+    });
+  }
   if (q) {
     const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const re = new RegExp(escaped, "i");
@@ -185,9 +294,11 @@ export async function listAccounts(req, res) {
   try {
     const q = String(req.query.q || "").trim();
     const kind = String(req.query.kind || "").trim();
+    const join = String(req.query.join || "").trim();
     const filter = buildAccountListFilter(req.user._id, req.user.role, {
       q,
       kind,
+      join,
     });
 
     const items = await SalesAccount.find(filter)
@@ -240,26 +351,22 @@ export async function createAccount(req, res) {
       });
     }
     const baId = oid(body.businessAnchorId);
-    const doc = await SalesAccount.create({
+    const fields = {
       kind,
       name,
       representativeName: String(body.representativeName || "").trim(),
       phone: String(body.phone || "").trim(),
       address: String(body.address || "").trim(),
-      lat:
-        body.lat != null && Number.isFinite(Number(body.lat))
-          ? Number(body.lat)
-          : null,
-      lng:
-        body.lng != null && Number.isFinite(Number(body.lng))
-          ? Number(body.lng)
-          : null,
+      lat: parseCoord(body.lat),
+      lng: parseCoord(body.lng),
       memo: String(body.memo || "").trim(),
       businessAnchorId: baId,
       ownerUserId: oid(body.ownerUserId) || req.user._id,
       teamVisible: body.teamVisible !== false,
       createdByUserId: req.user._id,
-    });
+    };
+    await applyGeocodeToAccountFields(fields, { addressChanged: true });
+    const doc = await SalesAccount.create(fields);
     return res.status(201).json({ success: true, data: doc.toObject() });
   } catch (error) {
     console.error("[salesTeam.createAccount]", error);
@@ -301,20 +408,19 @@ export async function updateAccount(req, res) {
     if (body.representativeName != null)
       existing.representativeName = String(body.representativeName).trim();
     if (body.phone != null) existing.phone = String(body.phone).trim();
-    if (body.address != null) existing.address = String(body.address).trim();
+    let addressChanged = false;
+    if (body.address != null) {
+      const nextAddress = String(body.address).trim();
+      addressChanged = nextAddress !== String(existing.address || "").trim();
+      existing.address = nextAddress;
+    }
     if (body.memo != null) existing.memo = String(body.memo).trim();
     if (body.teamVisible != null) existing.teamVisible = Boolean(body.teamVisible);
     if (body.lat !== undefined) {
-      existing.lat =
-        body.lat != null && Number.isFinite(Number(body.lat))
-          ? Number(body.lat)
-          : null;
+      existing.lat = parseCoord(body.lat);
     }
     if (body.lng !== undefined) {
-      existing.lng =
-        body.lng != null && Number.isFinite(Number(body.lng))
-          ? Number(body.lng)
-          : null;
+      existing.lng = parseCoord(body.lng);
     }
     if (body.businessAnchorId !== undefined) {
       existing.businessAnchorId = oid(body.businessAnchorId);
@@ -323,6 +429,14 @@ export async function updateAccount(req, res) {
       const owner = oid(body.ownerUserId);
       if (owner) existing.ownerUserId = owner;
     }
+    const geoFields = {
+      address: existing.address,
+      lat: existing.lat,
+      lng: existing.lng,
+    };
+    await applyGeocodeToAccountFields(geoFields, { addressChanged });
+    existing.lat = geoFields.lat;
+    existing.lng = geoFields.lng;
     await existing.save();
     return res.json({ success: true, data: existing.toObject() });
   } catch (error) {
@@ -749,34 +863,6 @@ export async function getReferralInfo(req, res) {
   }
 }
 
-/**
- * Geocode via Kakao Local API when KAKAO_REST_API_KEY is set.
- * Falls back to null coords (client can still show address text).
- */
-async function geocodeAddress(address) {
-  const addr = String(address || "").trim();
-  if (!addr) return null;
-  const key = String(process.env.KAKAO_REST_API_KEY || "").trim();
-  if (!key) return null;
-  try {
-    const url = new URL("https://dapi.kakao.com/v2/local/search/address.json");
-    url.searchParams.set("query", addr);
-    const resp = await fetch(url.toString(), {
-      headers: { Authorization: `KakaoAK ${key}` },
-    });
-    if (!resp.ok) return null;
-    const json = await resp.json();
-    const doc = json?.documents?.[0];
-    if (!doc) return null;
-    const lat = Number(doc.y);
-    const lng = Number(doc.x);
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-    return { lat, lng, address: doc.address_name || addr };
-  } catch {
-    return null;
-  }
-}
-
 export async function optimizeRoute(req, res) {
   try {
     const body = req.body || {};
@@ -784,6 +870,9 @@ export async function optimizeRoute(req, res) {
     const includeAround = body.includeAround !== false;
     const extraName = String(body.extraName || "").trim();
     const extraAddress = String(body.extraAddress || "").trim();
+    const startAddress = String(body.startAddress || "").trim();
+    const startLatIn = parseCoord(body.startLat);
+    const startLngIn = parseCoord(body.startLng);
     const range = kstYmdToUtcRange(ymd);
     if (!range) {
       return res.status(400).json({ success: false, message: "날짜가 올바르지 않습니다." });
@@ -802,66 +891,95 @@ export async function optimizeRoute(req, res) {
       .populate("accountId", "name kind address lat lng phone")
       .lean();
 
-    const stops = [];
-    for (const v of visits) {
-      const acc = v.accountId;
-      if (!acc) continue;
-      let lat = acc.lat;
-      let lng = acc.lng;
-      if (
-        (lat == null || lng == null) &&
-        String(acc.address || "").trim()
-      ) {
-        const geo = await geocodeAddress(acc.address);
-        if (geo) {
-          lat = geo.lat;
-          lng = geo.lng;
-          void SalesAccount.updateOne(
-            { _id: acc._id },
-            { $set: { lat, lng } },
-          ).catch(() => {});
-        }
-      }
-      stops.push({
-        visitId: String(v._id),
-        accountId: String(acc._id),
-        name: acc.name,
-        address: acc.address || "",
-        lat: lat != null ? Number(lat) : null,
-        lng: lng != null ? Number(lng) : null,
-        commitment: v.commitment,
-        plannedAt: v.plannedAt,
-      });
-    }
+    const visitCandidates = visits.filter((v) => v.accountId);
 
+    const [visitResolved, extraGeo, startGeo] = await Promise.all([
+      Promise.all(
+        visitCandidates.map(async (v) => {
+          const acc = v.accountId;
+          let lat = acc.lat != null ? Number(acc.lat) : null;
+          let lng = acc.lng != null ? Number(acc.lng) : null;
+          if (
+            (lat == null || lng == null || !Number.isFinite(lat) || !Number.isFinite(lng)) &&
+            String(acc.address || "").trim()
+          ) {
+            const geo = await geocodeAddress(acc.address);
+            if (geo) {
+              lat = geo.lat;
+              lng = geo.lng;
+              void SalesAccount.updateOne(
+                { _id: acc._id },
+                { $set: { lat, lng } },
+              ).catch(() => {});
+            }
+          }
+          return {
+            visitId: String(v._id),
+            accountId: String(acc._id),
+            name: acc.name,
+            address: acc.address || "",
+            lat: Number.isFinite(lat) ? lat : null,
+            lng: Number.isFinite(lng) ? lng : null,
+            commitment: v.commitment,
+            plannedAt: v.plannedAt,
+          };
+        }),
+      ),
+      (async () => {
+        if (!extraName) return null;
+        if (extraAddress) {
+          const geo = await geocodeAddress(extraAddress);
+          if (geo) {
+            return {
+              lat: geo.lat,
+              lng: geo.lng,
+              address: geo.address || extraAddress,
+            };
+          }
+        }
+        if (!extraAddress) {
+          const geo = await geocodeAddress(extraName);
+          if (geo) {
+            return {
+              lat: geo.lat,
+              lng: geo.lng,
+              address: geo.address || extraName,
+            };
+          }
+        }
+        return { lat: null, lng: null, address: extraAddress };
+      })(),
+      (async () => {
+        if (startLatIn != null && startLngIn != null) {
+          return {
+            lat: startLatIn,
+            lng: startLngIn,
+            address: startAddress,
+          };
+        }
+        if (startAddress) {
+          const geo = await geocodeAddress(startAddress);
+          if (geo) {
+            return {
+              lat: geo.lat,
+              lng: geo.lng,
+              address: geo.address || startAddress,
+            };
+          }
+        }
+        return null;
+      })(),
+    ]);
+
+    const stops = [...visitResolved];
     if (extraName) {
-      let lat = null;
-      let lng = null;
-      let address = extraAddress;
-      if (extraAddress) {
-        const geo = await geocodeAddress(extraAddress);
-        if (geo) {
-          lat = geo.lat;
-          lng = geo.lng;
-          address = geo.address || extraAddress;
-        }
-      }
-      // Also try name-as-query if no address
-      if (lat == null && !extraAddress) {
-        const geo = await geocodeAddress(extraName);
-        if (geo) {
-          lat = geo.lat;
-          lng = geo.lng;
-          address = geo.address || extraName;
-        }
-      }
       stops.push({
         visitId: null,
         accountId: null,
         name: extraName,
-        address,
-        lat,
-        lng,
+        address: extraGeo?.address || extraAddress,
+        lat: extraGeo?.lat ?? null,
+        lng: extraGeo?.lng ?? null,
         commitment: "confirmed",
         plannedAt: null,
         isExtra: true,
@@ -883,23 +1001,60 @@ export async function optimizeRoute(req, res) {
         !Number.isFinite(s.lng),
     );
 
-    const orderIdx = nearestNeighborOrder(
-      withCoords.map((s) => ({ lat: s.lat, lng: s.lng })),
-      0,
-    );
-    const ordered = orderIdx.map((i) => withCoords[i]).concat(withoutCoords);
+    const points = withCoords.map((s) => ({ lat: s.lat, lng: s.lng }));
+    const startPoint =
+      startGeo &&
+      startGeo.lat != null &&
+      startGeo.lng != null &&
+      Number.isFinite(startGeo.lat) &&
+      Number.isFinite(startGeo.lng)
+        ? { lat: startGeo.lat, lng: startGeo.lng }
+        : null;
 
-    let totalKm = 0;
-    for (let i = 1; i < withCoords.length && i < orderIdx.length; i += 1) {
-      const a = withCoords[orderIdx[i - 1]];
-      const b = withCoords[orderIdx[i]];
-      if (a && b) totalKm += haversineKm(a, b);
+    let orderIdx = [];
+    if (points.length > 0) {
+      const startIndex = startPoint
+        ? nearestIndexToPoint(points, startPoint)
+        : 0;
+      orderIdx = twoOptImprove(
+        points,
+        nearestNeighborOrder(points, startIndex),
+      );
     }
 
+    const orderedVisits = orderIdx.map((i) => withCoords[i]);
+    const startStop = startPoint
+      ? {
+          visitId: null,
+          accountId: null,
+          name: "출발",
+          address: startGeo.address || startAddress || "",
+          lat: startPoint.lat,
+          lng: startPoint.lng,
+          commitment: "confirmed",
+          plannedAt: null,
+          isStart: true,
+        }
+      : null;
+
+    const ordered = (startStop ? [startStop] : [])
+      .concat(orderedVisits)
+      .concat(withoutCoords);
+
+    let totalKm = 0;
+    const pathForKm = startStop
+      ? [startStop, ...orderedVisits]
+      : orderedVisits;
+    for (let i = 1; i < pathForKm.length; i += 1) {
+      totalKm += haversineKm(pathForKm[i - 1], pathForKm[i]);
+    }
+
+    const mapStops = ordered.filter(
+      (s) => s.lat != null && s.lng != null && Number.isFinite(s.lat) && Number.isFinite(s.lng),
+    );
     const mapUrl =
-      ordered.filter((s) => s.lat != null && s.lng != null).length >= 1
-        ? `https://map.kakao.com/?map_type=TYPE_MAP&target=car&rt=${ordered
-            .filter((s) => s.lat != null && s.lng != null)
+      mapStops.length >= 1
+        ? `https://map.kakao.com/?map_type=TYPE_MAP&target=car&rt=${mapStops
             .map((s) => `${s.lng},${s.lat}`)
             .join(",")}`
         : null;

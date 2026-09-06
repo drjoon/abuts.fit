@@ -72,10 +72,14 @@ export const salesTeamApi = {
       referralCode: string | null;
     }>(token, "/api/sales-team/home"),
 
-  listAccounts: (token: string | null, params?: { q?: string; kind?: string }) => {
+  listAccounts: (
+    token: string | null,
+    params?: { q?: string; kind?: string; join?: string },
+  ) => {
     const sp = new URLSearchParams();
     if (params?.q) sp.set("q", params.q);
     if (params?.kind) sp.set("kind", params.kind);
+    if (params?.join) sp.set("join", params.join);
     const qs = sp.toString();
     return salesFetch<{ items: SalesAccount[] }>(
       token,
@@ -220,6 +224,9 @@ export const salesTeamApi = {
       includeAround?: boolean;
       extraName?: string;
       extraAddress?: string;
+      startAddress?: string;
+      startLat?: number;
+      startLng?: number;
     },
   ) =>
     salesFetch<{
@@ -233,6 +240,7 @@ export const salesTeamApi = {
         lng: number | null;
         commitment: string;
         isExtra?: boolean;
+        isStart?: boolean;
       }>;
       totalKm: number;
       missingCoordsCount: number;
