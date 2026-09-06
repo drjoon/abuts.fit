@@ -249,7 +249,19 @@ async function geocodeAddress(address) {
 }
 
 /**
+ * Kakao place → practice(치과) | lab(기공소) | null(그 외 제외).
+ * category_name / place_name 기준. 수목원·도로명 등 일반 POI는 null.
+ */
+function inferDentalPlaceKind(category, placeName) {
+  const hay = `${String(category || "")}\n${String(placeName || "")}`;
+  if (/기공|denture|dental\s*lab/i.test(hay)) return "lab";
+  if (/치과|치의원|dental|dentist/i.test(hay)) return "practice";
+  return null;
+}
+
+/**
  * Kakao Local keyword search for place autosuggest.
+ * 치과·기공소만 반환한다 (category/상호 휴리스틱).
  * @returns {{ items: Array, authError: boolean }}
  */
 async function kakaoKeywordSearch(query, { limit = 8 } = {}) {
@@ -259,7 +271,8 @@ async function kakaoKeywordSearch(query, { limit = 8 } = {}) {
   try {
     const url = new URL("https://dapi.kakao.com/v2/local/search/keyword.json");
     url.searchParams.set("query", q);
-    url.searchParams.set("size", String(Math.min(15, Math.max(1, limit))));
+    // 필터 후 부족할 수 있어 API size는 상한(15)까지 요청
+    url.searchParams.set("size", "15");
     const resp = await fetch(url.toString(), {
       headers: { Authorization: `KakaoAK ${key}` },
     });
@@ -280,16 +293,12 @@ async function kakaoKeywordSearch(query, { limit = 8 } = {}) {
         const lat = Number(doc.y);
         const lng = Number(doc.x);
         const category = String(doc.category_name || "");
-        let kind = "practice";
-        if (
-          /기공|치과기공|denture|lab/i.test(category) ||
-          /기공/.test(String(doc.place_name || ""))
-        ) {
-          kind = "lab";
-        }
+        const name = String(doc.place_name || "").trim();
+        const kind = inferDentalPlaceKind(category, name);
+        if (!kind || !name) return null;
         return {
           source: "kakao",
-          name: String(doc.place_name || "").trim(),
+          name,
           address: String(doc.road_address_name || doc.address_name || "").trim(),
           phone: String(doc.phone || "").trim(),
           lat: Number.isFinite(lat) ? lat : null,
@@ -298,11 +307,42 @@ async function kakaoKeywordSearch(query, { limit = 8 } = {}) {
           category,
         };
       })
-      .filter((it) => it.name);
+      .filter(Boolean)
+      .slice(0, Math.min(15, Math.max(1, limit)));
     return { items, authError: false };
   } catch {
     return { items: [], authError: false };
   }
+}
+
+/**
+ * 치과·기공소 회수율: 원문 검색 + (필요 시) 「치과」「기공소」보강 검색을 병렬 병합.
+ */
+async function searchDentalKakaoPlaces(query, { limit = 8 } = {}) {
+  const q = String(query || "").trim();
+  if (!q) return { items: [], authError: false };
+  const queries = [q];
+  if (!/치과|기공/.test(q)) {
+    queries.push(`${q} 치과`, `${q} 기공소`);
+  }
+  const results = await Promise.all(
+    queries.map((qq) => kakaoKeywordSearch(qq, { limit })),
+  );
+  let authError = false;
+  const seen = new Set();
+  const items = [];
+  for (const res of results) {
+    if (res.authError) authError = true;
+    for (const it of res.items) {
+      const key = `${it.name}|${it.address}`.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      items.push(it);
+      if (items.length >= limit) break;
+    }
+    if (items.length >= limit) break;
+  }
+  return { items: items.slice(0, limit), authError };
 }
 
 /** Meta for FE: address geocode has Nominatim fallback; keyword needs Kakao Local. */
@@ -1390,7 +1430,7 @@ export async function suggestPlaces(req, res) {
         })
         .limit(8)
         .lean(),
-      kakaoKeywordSearch(q, { limit: 8 }),
+      searchDentalKakaoPlaces(q, { limit: 8 }),
     ]);
 
     const items = [];
