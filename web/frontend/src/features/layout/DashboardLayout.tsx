@@ -15,6 +15,7 @@ import {
 } from "@/shared/layout/sidebarOpen";
 import { cn } from "@/shared/ui/cn";
 
+// - 2026-09-06: 모바일/태블릿 상단 헤더 — lucide Menu·로고 절대 중앙 정렬.
 // - 2026-09-06: 관리자 사이드 15→7(홈·회원·의뢰·지원·채널·재무·설정) + 섹션 그룹.
 // - 2026-09-06: 영업본부 사이드 9→6(오늘·거래처·성과·요구사항·문의·설정) + 섹션 그룹.
 // - 2026-09-06: 원격 지원 요청 전역 토스트·사이드 소통/재무 순서·원격지원 상단.
@@ -159,6 +160,7 @@ import {
   PenTool,
   Store,
   Headphones,
+  Menu,
 } from "lucide-react";
 import { AbutsLogo } from "@/components/branding/AbutsLogo";
 import {
@@ -1732,20 +1734,24 @@ export const DashboardLayout = () => {
         </aside>
 
         <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden lg:ml-0">
-          <div className="lg:hidden flex shrink-0 items-center justify-between border-b border-border bg-background/95 p-4 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-            <Button variant="ghost" size="sm" onClick={() => setMobileNavOpen(true)}>
-              <div className="flex flex-col space-y-1">
-                <div className="w-4 h-0.5 bg-current"></div>
-                <div className="w-4 h-0.5 bg-current"></div>
-                <div className="w-4 h-0.5 bg-current"></div>
-              </div>
+          <div className="relative flex shrink-0 items-center border-b border-border bg-background/95 px-3 py-2.5 backdrop-blur supports-[backdrop-filter]:bg-background/60 lg:hidden">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="relative z-10 h-9 w-9 shrink-0"
+              aria-label="메뉴 열기"
+              onClick={() => setMobileNavOpen(true)}
+            >
+              <Menu className="h-5 w-5" />
             </Button>
-            <AbutsLogo
-              iconClassName="h-9 w-9"
-              wordmarkClassName="text-base font-bold"
-              variant="light"
-            />
-            <div className="w-9" />
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+              <AbutsLogo
+                iconClassName="h-8 w-8"
+                wordmarkClassName="text-sm font-bold"
+                variant="light"
+              />
+            </div>
           </div>
 
           {user.role === "admin" &&

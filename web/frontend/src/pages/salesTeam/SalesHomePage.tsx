@@ -766,7 +766,7 @@ export default function SalesHomePage() {
   return (
     <SalesPageShell wide>
       <SalesToolbar className="w-full">
-        {/* 캘린더 | 필터(중앙) | 일정 추가 */}
+        {/* 캘린더 | 일정 추가 / 필터 뱃지(한 줄) */}
         <div className="flex w-full flex-wrap items-center gap-x-2 gap-y-2">
           <SalesDayPicker
             compact
@@ -776,7 +776,20 @@ export default function SalesHomePage() {
             countsByYmd={countsByYmd}
             onVisibleMonthChange={setCalendarMonthYmd}
           />
-          <div className="flex min-w-0 flex-1 flex-wrap items-center justify-center gap-1 text-xs sm:gap-1.5 sm:text-sm">
+          <div className="ml-auto shrink-0 sm:order-last sm:ml-0">
+            <Button
+              size="sm"
+              className="h-8 shrink-0"
+              onClick={() => {
+                setTime(defaultVisitHm(ymd, today));
+                setSuggestAnchorYmd(ymd);
+                setShowForm(true);
+              }}
+            >
+              일정 추가
+            </Button>
+          </div>
+          <div className="flex w-full flex-nowrap items-center justify-center gap-1 text-xs sm:w-auto sm:min-w-0 sm:flex-1 sm:gap-1.5 sm:text-sm">
             <StatusChip
               label="예정"
               value={String(plannedCount)}
@@ -799,19 +812,6 @@ export default function SalesHomePage() {
               pressed={reportOpen}
               onClick={() => setReportOpen(true)}
             />
-          </div>
-          <div className="ml-auto shrink-0 sm:ml-0">
-            <Button
-              size="sm"
-              className="h-8 shrink-0"
-              onClick={() => {
-                setTime(defaultVisitHm(ymd, today));
-                setSuggestAnchorYmd(ymd);
-                setShowForm(true);
-              }}
-            >
-              일정 추가
-            </Button>
           </div>
         </div>
       </SalesToolbar>
@@ -1060,19 +1060,6 @@ export default function SalesHomePage() {
                               : ""
                           }`
                         : "일정 기준으로 자동 표시"
-                  }
-                  actions={
-                    route?.mapUrl ? (
-                      <Button asChild size="sm" variant="outline">
-                        <a
-                          href={route.mapUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          카카오맵
-                        </a>
-                      </Button>
-                    ) : null
                   }
                 >
                   {route ? (
@@ -1476,8 +1463,8 @@ export default function SalesHomePage() {
           }
         }}
       >
-        <AlertDialogContent>
-          <AlertDialogHeader>
+        <AlertDialogContent className="rounded-2xl sm:max-w-md">
+          <AlertDialogHeader className="text-left">
             <AlertDialogTitle>확정할까요?</AlertDialogTitle>
             <AlertDialogDescription>
               {confirmCommitmentVisit
@@ -1485,7 +1472,7 @@ export default function SalesHomePage() {
                 : "방문을 확정으로 바꿉니다."}
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
+          <AlertDialogFooter className="gap-2 sm:space-x-0">
             <AlertDialogCancel disabled={confirmCommitmentMut.isPending}>
               취소
             </AlertDialogCancel>
