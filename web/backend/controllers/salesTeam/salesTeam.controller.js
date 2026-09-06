@@ -226,22 +226,59 @@ function parseCoord(value) {
   return Number.isFinite(n) ? n : null;
 }
 
-/** Fill lat/lng from address when missing or address just changed. */
+function hasValidCoords(lat, lng) {
+  return (
+    lat != null &&
+    lng != null &&
+    Number.isFinite(Number(lat)) &&
+    Number.isFinite(Number(lng))
+  );
+}
+
+function placeKindFromBa(ba) {
+  return ba?.requestorKind === "lab" ? "lab" : "practice";
+}
+
+function baAddressLine(ba) {
+  const meta = ba?.metadata || {};
+  return [meta.address, meta.addressDetail].filter(Boolean).join(" ").trim();
+}
+
+/**
+ * Mirror SalesAccount coords (+ empty BA address) onto linked BusinessAnchor.
+ * Does not overwrite an existing BA address text.
+ */
+async function mirrorCoordsToBusinessAnchor(account) {
+  const baId = oid(account?.businessAnchorId);
+  if (!baId) return;
+  const lat = parseCoord(account.lat);
+  const lng = parseCoord(account.lng);
+  if (!hasValidCoords(lat, lng)) return;
+  const ba = await BusinessAnchor.findById(baId);
+  if (!ba) return;
+  if (!ba.metadata) ba.metadata = {};
+  ba.metadata.lat = lat;
+  ba.metadata.lng = lng;
+  const existingAddr = String(ba.metadata.address || "").trim();
+  const accountAddr = String(account.address || "").trim();
+  if (!existingAddr && accountAddr) {
+    ba.metadata.address = accountAddr;
+  }
+  ba.markModified("metadata");
+  await ba.save();
+}
+
+/** Fill lat/lng from address when missing. Prefer explicit coords from place picker. */
 async function applyGeocodeToAccountFields(fields, { addressChanged = false } = {}) {
   const address = String(fields.address || "").trim();
   if (!address) {
-    if (addressChanged) {
+    if (addressChanged && !hasValidCoords(fields.lat, fields.lng)) {
       fields.lat = null;
       fields.lng = null;
     }
     return fields;
   }
-  const hasCoords =
-    fields.lat != null &&
-    fields.lng != null &&
-    Number.isFinite(Number(fields.lat)) &&
-    Number.isFinite(Number(fields.lng));
-  if (hasCoords && !addressChanged) return fields;
+  if (hasValidCoords(fields.lat, fields.lng)) return fields;
   const geo = await geocodeAddress(address);
   if (geo) {
     fields.lat = geo.lat;
@@ -416,6 +453,9 @@ export async function createAccount(req, res) {
     };
     await applyGeocodeToAccountFields(fields, { addressChanged: true });
     const doc = await SalesAccount.create(fields);
+    void mirrorCoordsToBusinessAnchor(doc).catch((err) =>
+      console.error("[salesTeam.createAccount] BA mirror", err),
+    );
     return res.status(201).json({ success: true, data: doc.toObject() });
   } catch (error) {
     console.error("[salesTeam.createAccount]", error);
@@ -487,6 +527,9 @@ export async function updateAccount(req, res) {
     existing.lat = geoFields.lat;
     existing.lng = geoFields.lng;
     await existing.save();
+    void mirrorCoordsToBusinessAnchor(existing).catch((err) =>
+      console.error("[salesTeam.updateAccount] BA mirror", err),
+    );
     return res.json({ success: true, data: existing.toObject() });
   } catch (error) {
     console.error("[salesTeam.updateAccount]", error);
@@ -544,7 +587,7 @@ export async function listVisits(req, res) {
     if (VISIT_STATUSES.has(status)) filter.status = status;
 
     const items = await SalesVisit.find(filter)
-      .populate("accountId", "name kind address phone lat lng")
+      .populate("accountId", "name kind address phone lat lng businessAnchorId")
       .sort({ plannedAt: 1 })
       .limit(500)
       .lean();
@@ -593,7 +636,7 @@ export async function createVisit(req, res) {
       createdByUserId: req.user._id,
     });
     const populated = await SalesVisit.findById(doc._id)
-      .populate("accountId", "name kind address phone lat lng")
+      .populate("accountId", "name kind address phone lat lng businessAnchorId")
       .lean();
     return res.status(201).json({ success: true, data: populated });
   } catch (error) {
@@ -659,7 +702,7 @@ export async function updateVisit(req, res) {
     }
     await existing.save();
     const populated = await SalesVisit.findById(existing._id)
-      .populate("accountId", "name kind address phone lat lng")
+      .populate("accountId", "name kind address phone lat lng businessAnchorId")
       .lean();
     return res.json({ success: true, data: populated });
   } catch (error) {
@@ -937,7 +980,10 @@ export async function optimizeRoute(req, res) {
       status: "planned",
       commitment: { $in: commitments },
     })
-      .populate("accountId", "name kind address lat lng phone")
+      .populate(
+        "accountId",
+        "name kind address lat lng phone businessAnchorId",
+      )
       .lean();
 
     const visitCandidates = visits.filter((v) => v.accountId);
@@ -965,6 +1011,9 @@ export async function optimizeRoute(req, res) {
           return {
             visitId: String(v._id),
             accountId: String(acc._id),
+            businessAnchorId: acc.businessAnchorId
+              ? String(acc.businessAnchorId)
+              : null,
             name: acc.name,
             address: acc.address || "",
             lat: Number.isFinite(lat) ? lat : null,
@@ -1211,6 +1260,9 @@ export async function suggestPlaces(req, res) {
           "metadata.representativeName": 1,
           "metadata.phoneNumber": 1,
           "metadata.address": 1,
+          "metadata.addressDetail": 1,
+          "metadata.lat": 1,
+          "metadata.lng": 1,
         })
         .limit(8)
         .lean(),
@@ -1246,18 +1298,26 @@ export async function suggestPlaces(req, res) {
     }
 
     for (const it of platform) {
+      const addr = baAddressLine(it);
+      const lat = parseCoord(it.metadata?.lat);
+      const lng = parseCoord(it.metadata?.lng);
+      const hasCoords = hasValidCoords(lat, lng);
       pushUnique({
         source: "platform",
         accountId: null,
         businessAnchorId: String(it._id),
         name: it.name,
-        kind: it.requestorKind === "lab" ? "lab" : "practice",
+        kind: placeKindFromBa(it),
         representativeName: it.metadata?.representativeName || "",
         phone: it.metadata?.phoneNumber || "",
-        address: it.metadata?.address || "",
-        lat: null,
-        lng: null,
-        label: "플랫폼 가입",
+        address: addr,
+        lat: hasCoords ? lat : null,
+        lng: hasCoords ? lng : null,
+        label: addr
+          ? hasCoords
+            ? "플랫폼 · 위치확인"
+            : "플랫폼 · 주소있음"
+          : "플랫폼 가입",
       });
     }
 
@@ -1289,6 +1349,177 @@ export async function suggestPlaces(req, res) {
     return res.status(500).json({
       success: false,
       message: error?.message || "장소 제안에 실패했습니다.",
+    });
+  }
+}
+
+/**
+ * Resolve a place for map confirm:
+ * - BA with coords → return immediately
+ * - BA with address → geocode; on success return single place
+ * - else Kakao keyword candidates (needsPick)
+ */
+export async function resolvePlace(req, res) {
+  try {
+    const body = req.body || {};
+    const baId = oid(body.businessAnchorId);
+    const nameHint = String(body.name || "").trim();
+    const addressHint = String(body.address || "").trim();
+
+    const toKakaoItems = (docs) =>
+      docs.map((it) => ({
+        source: "kakao",
+        accountId: null,
+        businessAnchorId: baId ? String(baId) : null,
+        name: it.name,
+        kind: it.kind,
+        representativeName: "",
+        phone: it.phone || "",
+        address: it.address || "",
+        lat: it.lat,
+        lng: it.lng,
+        label: "지도 검색",
+      }));
+
+    if (baId) {
+      const ba = await BusinessAnchor.findById(baId)
+        .select({
+          name: 1,
+          requestorKind: 1,
+          "metadata.representativeName": 1,
+          "metadata.phoneNumber": 1,
+          "metadata.address": 1,
+          "metadata.addressDetail": 1,
+          "metadata.lat": 1,
+          "metadata.lng": 1,
+        })
+        .lean();
+      if (!ba) {
+        return res.status(404).json({
+          success: false,
+          message: "플랫폼 사업자를 찾을 수 없습니다.",
+        });
+      }
+      const baName = String(ba.name || nameHint || "").trim();
+      const baAddr = baAddressLine(ba) || addressHint;
+      const lat = parseCoord(ba.metadata?.lat);
+      const lng = parseCoord(ba.metadata?.lng);
+      if (hasValidCoords(lat, lng)) {
+        return res.json({
+          success: true,
+          data: {
+            needsPick: false,
+            place: {
+              source: "ba",
+              accountId: null,
+              businessAnchorId: String(ba._id),
+              name: baName,
+              kind: placeKindFromBa(ba),
+              representativeName: ba.metadata?.representativeName || "",
+              phone: ba.metadata?.phoneNumber || "",
+              address: baAddr,
+              lat,
+              lng,
+              label: "플랫폼 · 위치확인",
+            },
+            candidates: [],
+            geocodeConfigured: Boolean(kakaoRestApiKey()),
+          },
+        });
+      }
+      if (baAddr) {
+        const geo = await geocodeAddress(baAddr);
+        if (geo) {
+          return res.json({
+            success: true,
+            data: {
+              needsPick: false,
+              place: {
+                source: "ba",
+                accountId: null,
+                businessAnchorId: String(ba._id),
+                name: baName,
+                kind: placeKindFromBa(ba),
+                representativeName: ba.metadata?.representativeName || "",
+                phone: ba.metadata?.phoneNumber || "",
+                address: baAddr,
+                lat: geo.lat,
+                lng: geo.lng,
+                label: "플랫폼 · 주소지오코딩",
+              },
+              candidates: [],
+              geocodeConfigured: Boolean(kakaoRestApiKey()),
+            },
+          });
+        }
+      }
+      const query = [baName, baAddr].filter(Boolean).join(" ") || baName;
+      const kakao = await kakaoKeywordSearch(query || nameHint, { limit: 10 });
+      return res.json({
+        success: true,
+        data: {
+          needsPick: true,
+          place: null,
+          candidates: toKakaoItems(kakao).map((c) => ({
+            ...c,
+            businessAnchorId: String(ba._id),
+            kind: c.kind || placeKindFromBa(ba),
+          })),
+          geocodeConfigured: Boolean(kakaoRestApiKey()),
+        },
+      });
+    }
+
+    const query = addressHint
+      ? `${nameHint} ${addressHint}`.trim()
+      : nameHint;
+    if (!query) {
+      return res.status(400).json({
+        success: false,
+        message: "상호명 또는 businessAnchorId가 필요합니다.",
+      });
+    }
+    if (addressHint && !nameHint) {
+      const geo = await geocodeAddress(addressHint);
+      if (geo) {
+        return res.json({
+          success: true,
+          data: {
+            needsPick: false,
+            place: {
+              source: "geocode",
+              accountId: null,
+              businessAnchorId: null,
+              name: nameHint || geo.address,
+              kind: "practice",
+              representativeName: "",
+              phone: "",
+              address: geo.address || addressHint,
+              lat: geo.lat,
+              lng: geo.lng,
+              label: "주소 지오코딩",
+            },
+            candidates: [],
+            geocodeConfigured: Boolean(kakaoRestApiKey()),
+          },
+        });
+      }
+    }
+    const kakao = await kakaoKeywordSearch(query, { limit: 10 });
+    return res.json({
+      success: true,
+      data: {
+        needsPick: true,
+        place: null,
+        candidates: toKakaoItems(kakao),
+        geocodeConfigured: Boolean(kakaoRestApiKey()),
+      },
+    });
+  } catch (error) {
+    console.error("[salesTeam.resolvePlace]", error);
+    return res.status(500).json({
+      success: false,
+      message: error?.message || "장소 확인에 실패했습니다.",
     });
   }
 }

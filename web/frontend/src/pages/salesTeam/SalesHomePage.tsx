@@ -32,6 +32,7 @@ import {
   type SalesPlaceSuggest,
 } from "./salesTeamApi";
 import SalesPlaceSuggestInput from "./SalesPlaceSuggestInput";
+import SalesPlacePickerDrawer from "./SalesPlacePickerDrawer";
 import SalesRouteMap from "./SalesRouteMap";
 import {
   SalesDayPicker,
@@ -90,6 +91,12 @@ export default function SalesHomePage() {
   );
   const [time, setTime] = useState("10:00");
   const [commitment, setCommitment] = useState("confirmed");
+  const [placePickerOpen, setPlacePickerOpen] = useState(false);
+  const [placePickerSeed, setPlacePickerSeed] =
+    useState<Partial<SalesPlaceSuggest> | null>(null);
+  const [placePickerAccountId, setPlacePickerAccountId] = useState<
+    string | null
+  >(null);
 
   const [visitSummary, setVisitSummary] = useState("");
   const [issues, setIssues] = useState("");
@@ -227,6 +234,62 @@ export default function SalesHomePage() {
       toast({ title: e.message, variant: "destructive" }),
   });
 
+  const placeFixMut = useMutation({
+    mutationFn: async (place: SalesPlaceSuggest) => {
+      const accountId = placePickerAccountId || place.accountId;
+      if (!accountId) throw new Error("거래처를 찾을 수 없습니다.");
+      return salesTeamApi.updateAccount(token, accountId, {
+        name: place.name,
+        address: place.address || "",
+        lat: place.lat ?? null,
+        lng: place.lng ?? null,
+        phone: place.phone || undefined,
+        businessAnchorId: place.businessAnchorId || undefined,
+      });
+    },
+    onSuccess: () => {
+      toast({ title: "위치가 저장되었습니다." });
+      setPlacePickerOpen(false);
+      setPlacePickerSeed(null);
+      setPlacePickerAccountId(null);
+      void qc.invalidateQueries({ queryKey: ["sales-team-route"] });
+      void qc.invalidateQueries({ queryKey: ["sales-team-visits"] });
+      void qc.invalidateQueries({ queryKey: ["sales-team-accounts"] });
+    },
+    onError: (e: Error) =>
+      toast({ title: e.message, variant: "destructive" }),
+  });
+
+  const openPlaceFix = (seed: {
+    accountId: string | null;
+    name: string;
+    address?: string;
+    businessAnchorId?: string | null;
+    kind?: "practice" | "lab";
+  }) => {
+    if (!seed.accountId) return;
+    setPlacePickerAccountId(seed.accountId);
+    setPlacePickerSeed({
+      name: seed.name,
+      address: seed.address || "",
+      businessAnchorId: seed.businessAnchorId || null,
+      accountId: seed.accountId,
+      kind: seed.kind || "practice",
+      source: seed.businessAnchorId ? "platform" : "kakao",
+    });
+    setPlacePickerOpen(true);
+  };
+
+  const missingCoordStops = (route?.ordered || []).filter(
+    (s) =>
+      !s.isStart &&
+      s.accountId &&
+      (s.lat == null ||
+        s.lng == null ||
+        !Number.isFinite(s.lat) ||
+        !Number.isFinite(s.lng)),
+  );
+
   const saveReportMut = useMutation({
     mutationFn: () =>
       salesTeamApi.upsertDailyReport(token, {
@@ -323,6 +386,16 @@ export default function SalesHomePage() {
                   onPick={(item) => {
                     setPickedPlace(item);
                     setPlaceQuery(item.name);
+                    if (
+                      item.businessAnchorId ||
+                      item.source === "platform" ||
+                      item.lat == null ||
+                      item.lng == null
+                    ) {
+                      setPlacePickerAccountId(item.accountId || null);
+                      setPlacePickerSeed(item);
+                      setPlacePickerOpen(true);
+                    }
                   }}
                   placeholder="치과·기공소 상호 검색"
                   autoFocus
@@ -395,6 +468,38 @@ export default function SalesHomePage() {
                     </p>
                   ) : null}
                   <SalesRouteMap stops={route.ordered} />
+                  {missingCoordStops.length > 0 ? (
+                    <div className="space-y-1.5 rounded-xl border border-amber-200/80 bg-amber-50/60 px-3 py-2.5">
+                      <p className="text-xs font-medium text-amber-900">
+                        좌표 없음 {missingCoordStops.length}곳 · 위치를 지정하면
+                        지도에 표시됩니다
+                      </p>
+                      <div className="flex flex-col gap-1.5">
+                        {missingCoordStops.map((s) => (
+                          <button
+                            key={s.accountId || s.name}
+                            type="button"
+                            className="flex items-center justify-between gap-2 rounded-lg bg-white px-3 py-2.5 text-left text-sm active:bg-slate-50"
+                            onClick={() =>
+                              openPlaceFix({
+                                accountId: s.accountId,
+                                name: s.name,
+                                address: s.address,
+                                businessAnchorId: s.businessAnchorId,
+                              })
+                            }
+                          >
+                            <span className="min-w-0 truncate font-medium text-slate-900">
+                              {s.name}
+                            </span>
+                            <span className="shrink-0 text-xs font-medium text-primary">
+                              위치 지정
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground">
@@ -472,6 +577,39 @@ export default function SalesHomePage() {
                         </div>
                         {v.status === "planned" ? (
                           <div className="mt-2.5 flex flex-wrap gap-1.5">
+                            {(() => {
+                              const acc =
+                                v.accountId &&
+                                typeof v.accountId === "object"
+                                  ? v.accountId
+                                  : null;
+                              const missing =
+                                acc &&
+                                (acc.lat == null ||
+                                  acc.lng == null ||
+                                  !Number.isFinite(Number(acc.lat)) ||
+                                  !Number.isFinite(Number(acc.lng)));
+                              if (!missing || !acc?._id) return null;
+                              return (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="border-amber-300 text-amber-800"
+                                  onClick={() =>
+                                    openPlaceFix({
+                                      accountId: acc._id,
+                                      name: acc.name,
+                                      address: acc.address || "",
+                                      businessAnchorId:
+                                        acc.businessAnchorId || null,
+                                      kind: acc.kind,
+                                    })
+                                  }
+                                >
+                                  위치 지정
+                                </Button>
+                              );
+                            })()}
                             <Button
                               size="sm"
                               onClick={() =>
@@ -620,6 +758,30 @@ export default function SalesHomePage() {
           </SalesPanel>
         </div>
       )}
+      <SalesPlacePickerDrawer
+        open={placePickerOpen}
+        onOpenChange={(open) => {
+          setPlacePickerOpen(open);
+          if (!open) {
+            setPlacePickerSeed(null);
+            setPlacePickerAccountId(null);
+          }
+        }}
+        initialQuery={placePickerSeed?.name || ""}
+        seed={placePickerSeed}
+        onConfirm={(place) => {
+          if (showForm) {
+            setPickedPlace(place);
+            setPlaceQuery(place.name);
+          }
+          if (placePickerAccountId || place.accountId) {
+            placeFixMut.mutate(place);
+            return;
+          }
+          setPlacePickerOpen(false);
+          setPlacePickerSeed(null);
+        }}
+      />
     </SalesPageShell>
   );
 }

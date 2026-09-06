@@ -63,7 +63,7 @@ export type SalesDailyReport = {
 };
 
 export type SalesPlaceSuggest = {
-  source: "account" | "platform" | "kakao";
+  source: "account" | "platform" | "kakao" | "ba" | "geocode";
   accountId?: string | null;
   businessAnchorId?: string | null;
   name: string;
@@ -248,6 +248,7 @@ export const salesTeamApi = {
       ordered: Array<{
         visitId: string | null;
         accountId: string | null;
+        businessAnchorId?: string | null;
         name: string;
         address: string;
         lat: number | null;
@@ -283,6 +284,24 @@ export const salesTeamApi = {
       token,
       `/api/sales-team/places/suggest?q=${encodeURIComponent(q)}`,
     ),
+
+  resolvePlace: (
+    token: string | null,
+    body: {
+      businessAnchorId?: string | null;
+      name?: string;
+      address?: string;
+    },
+  ) =>
+    salesFetch<{
+      needsPick: boolean;
+      place: SalesPlaceSuggest | null;
+      candidates: SalesPlaceSuggest[];
+      geocodeConfigured: boolean;
+    }>(token, "/api/sales-team/places/resolve", {
+      method: "POST",
+      jsonBody: body,
+    }),
 
   listRequirements: (token: string | null, status?: string) => {
     const qs = status ? `?status=${encodeURIComponent(status)}` : "";

@@ -65,7 +65,7 @@ function getKakaoAppKey() {
   return String(import.meta.env.VITE_KAKAO_MAP_APP_KEY || "").trim();
 }
 
-function loadKakaoMaps(): Promise<KakaoMaps> {
+export function loadKakaoMaps(): Promise<KakaoMaps> {
   if (typeof window === "undefined") {
     return Promise.reject(new Error("window unavailable"));
   }

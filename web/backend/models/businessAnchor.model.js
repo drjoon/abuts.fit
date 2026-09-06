@@ -221,6 +221,9 @@ const businessAnchorSchema = new mongoose.Schema(
       address: { type: String, default: "" },
       addressDetail: { type: String, default: "" },
       zipCode: { type: String, default: "" },
+      /** Sales route / place picker (Kakao). related: salesTeam.controller.js */
+      lat: { type: Number, default: null },
+      lng: { type: Number, default: null },
       phoneNumber: { type: String, default: "" },
       email: { type: String, default: "" },
       businessItem: { type: String, default: "" }, // 종목

@@ -1,8 +1,8 @@
 // related files:
 // - web/frontend/src/pages/salesTeam/salesTeamApi.ts
 // - web/frontend/src/pages/salesTeam/salesUi.tsx
-// - web/frontend/src/pages/salesTeam/salesAddressSearch.ts
 // - web/frontend/src/pages/salesTeam/SalesPlaceSuggestInput.tsx
+// - web/frontend/src/pages/salesTeam/SalesPlacePickerDrawer.tsx
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Building2, MapPin, Phone, Search, UserRound } from "lucide-react";
@@ -19,8 +19,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { openSalesAddressSearch } from "./salesAddressSearch";
 import SalesPlaceSuggestInput from "./SalesPlaceSuggestInput";
+import SalesPlacePickerDrawer from "./SalesPlacePickerDrawer";
 import {
   KIND_LABEL,
   salesTeamApi,
@@ -47,6 +47,16 @@ function listParams(filter: ListFilter) {
   return {};
 }
 
+function hasCoords(a: { lat?: number | null; lng?: number | null } | null) {
+  return (
+    a != null &&
+    a.lat != null &&
+    a.lng != null &&
+    Number.isFinite(a.lat) &&
+    Number.isFinite(a.lng)
+  );
+}
+
 export default function SalesAccountsPage() {
   const token = useAuthStore((s) => s.token);
   const { toast } = useToast();
@@ -55,8 +65,10 @@ export default function SalesAccountsPage() {
   const [listFilter, setListFilter] = useState<ListFilter>("all");
   const [editing, setEditing] = useState<Partial<SalesAccount> | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [addressSearching, setAddressSearching] = useState(false);
   const [showExtra, setShowExtra] = useState(false);
+  const [placePickerOpen, setPlacePickerOpen] = useState(false);
+  const [placePickerSeed, setPlacePickerSeed] =
+    useState<Partial<SalesPlaceSuggest> | null>(null);
 
   const filterParams = listParams(listFilter);
   const queryKey = useMemo(
@@ -117,29 +129,7 @@ export default function SalesAccountsPage() {
       toast({ title: e.message, variant: "destructive" }),
   });
 
-  const onSearchAddress = async () => {
-    setAddressSearching(true);
-    try {
-      const line = await openSalesAddressSearch();
-      if (line) {
-        setEditing((prev) =>
-          prev
-            ? { ...prev, address: line, lat: null, lng: null }
-            : prev,
-        );
-      }
-    } catch {
-      toast({
-        title: "주소 검색을 불러오지 못했습니다",
-        description: "잠시 후 다시 시도해주세요.",
-        variant: "destructive",
-      });
-    } finally {
-      setAddressSearching(false);
-    }
-  };
-
-  const applySuggest = (item: SalesPlaceSuggest) => {
+  const applyPlace = (item: SalesPlaceSuggest) => {
     setEditing((prev) => ({
       ...prev,
       _id: item.accountId || prev?._id,
@@ -156,6 +146,23 @@ export default function SalesAccountsPage() {
       teamVisible: prev?.teamVisible !== false,
     }));
     if (item.representativeName || item.phone) setShowExtra(true);
+  };
+
+  const openPlacePicker = (seed?: Partial<SalesPlaceSuggest> | null) => {
+    setPlacePickerSeed(seed || null);
+    setPlacePickerOpen(true);
+  };
+
+  const applySuggest = (item: SalesPlaceSuggest) => {
+    if (
+      item.businessAnchorId ||
+      item.source === "platform" ||
+      !hasCoords(item)
+    ) {
+      openPlacePicker(item);
+      return;
+    }
+    applyPlace(item);
   };
 
   const items = data?.items || [];
@@ -250,7 +257,7 @@ export default function SalesAccountsPage() {
             <div className="flex gap-2">
               <Input
                 className="min-w-0 flex-1"
-                placeholder="주소 (선택 시 자동 채움)"
+                placeholder="주소 (위치에서 자동 채움)"
                 value={editing.address || ""}
                 onChange={(e) =>
                   setEditing((prev) => ({
@@ -266,12 +273,45 @@ export default function SalesAccountsPage() {
                 size="sm"
                 variant="outline"
                 className="shrink-0"
-                disabled={addressSearching}
-                onClick={() => void onSearchAddress()}
+                onClick={() =>
+                  openPlacePicker({
+                    name: editing.name || "",
+                    address: editing.address || "",
+                    kind: editing.kind || "practice",
+                    businessAnchorId: editing.businessAnchorId || null,
+                    accountId: editing._id || null,
+                    lat: editing.lat,
+                    lng: editing.lng,
+                    source: editing.businessAnchorId ? "platform" : "kakao",
+                  })
+                }
               >
-                주소
+                위치
               </Button>
             </div>
+            {!hasCoords(editing) ? (
+              <button
+                type="button"
+                className="flex items-center gap-1.5 text-left text-xs text-amber-700"
+                onClick={() =>
+                  openPlacePicker({
+                    name: editing.name || "",
+                    address: editing.address || "",
+                    kind: editing.kind || "practice",
+                    businessAnchorId: editing.businessAnchorId || null,
+                    accountId: editing._id || null,
+                    source: editing.businessAnchorId ? "platform" : "kakao",
+                  })
+                }
+              >
+                <MapPin className="h-3.5 w-3.5" />
+                좌표 없음 · 위치 지정
+              </button>
+            ) : (
+              <p className="text-xs text-emerald-700">
+                좌표 확인됨 · 동선 지도에 표시됩니다
+              </p>
+            )}
             <Input
               placeholder="전화 (있으면 자동 채움)"
               value={editing.phone || ""}
@@ -360,6 +400,11 @@ export default function SalesAccountsPage() {
               }
               trailing={
                 <div className="flex items-center gap-1">
+                  {!hasCoords(item) ? (
+                    <Badge variant="outline" className="text-amber-700">
+                      좌표없음
+                    </Badge>
+                  ) : null}
                   {item.businessAnchorId ? (
                     <Badge>가입</Badge>
                   ) : (
@@ -386,6 +431,26 @@ export default function SalesAccountsPage() {
         }`}
         actions={
           <div className="flex gap-1">
+            {!hasCoords(detail) ? (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setShowExtra(true);
+                  setEditing(detail);
+                  openPlacePicker({
+                    name: detail.name,
+                    address: detail.address || "",
+                    kind: detail.kind,
+                    businessAnchorId: detail.businessAnchorId || null,
+                    accountId: detail._id,
+                    source: detail.businessAnchorId ? "platform" : "kakao",
+                  });
+                }}
+              >
+                위치
+              </Button>
+            ) : null}
             <Button
               size="sm"
               variant="outline"
@@ -441,6 +506,9 @@ export default function SalesAccountsPage() {
               ) : (
                 "—"
               )}
+              {!hasCoords(detail) ? (
+                <p className="mt-1 text-xs text-amber-700">좌표 없음</p>
+              ) : null}
             </div>
           </div>
         </div>
@@ -482,6 +550,31 @@ export default function SalesAccountsPage() {
             description="목록에서 항목을 누르면 연락처·주소·메모가 여기에 표시됩니다."
           />
         }
+      />
+      <SalesPlacePickerDrawer
+        open={placePickerOpen}
+        onOpenChange={setPlacePickerOpen}
+        initialQuery={placePickerSeed?.name || editing?.name || ""}
+        seed={placePickerSeed}
+        onConfirm={(place) => {
+          applyPlace({
+            ...place,
+            accountId: place.accountId || editing?._id || null,
+          });
+          if (!editing) {
+            setEditing({
+              kind: place.kind || "practice",
+              name: place.name,
+              teamVisible: true,
+              address: place.address,
+              lat: place.lat,
+              lng: place.lng,
+              phone: place.phone,
+              businessAnchorId: place.businessAnchorId,
+              _id: place.accountId || undefined,
+            });
+          }
+        }}
       />
     </SalesPageShell>
   );
