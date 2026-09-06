@@ -39,6 +39,7 @@ import {
   SalesPageShell,
   SalesPanel,
   SalesSegmentTabs,
+  SalesToolbar,
 } from "./salesUi";
 
 type TodayTab = "schedule" | "report";
@@ -229,44 +230,47 @@ export default function SalesHomePage() {
         )
       }
     >
-      <SalesDayPicker ymd={ymd} today={today} onChange={onYmdChange} />
-
-      <div className="flex flex-wrap gap-2 text-xs sm:text-sm">
-        <StatusChip
-          label="방문"
-          value={String(visits.length)}
-          muted={!visits.length}
+      <SalesToolbar>
+        <div className="flex min-w-0 flex-col gap-2.5 sm:flex-row sm:flex-wrap sm:items-center">
+          <SalesDayPicker ymd={ymd} today={today} onChange={onYmdChange} />
+          <div className="flex flex-wrap gap-1.5 text-xs sm:text-sm">
+            <StatusChip
+              label="방문"
+              value={String(visits.length)}
+              muted={!visits.length}
+            />
+            <StatusChip label="예정" value={String(plannedCount)} />
+            <StatusChip
+              label="완료"
+              value={String(doneCount)}
+              tone={doneCount > 0 ? "ok" : undefined}
+            />
+            <StatusChip
+              label="보고"
+              value={reportSubmitted ? "제출" : "미제출"}
+              tone={reportSubmitted ? "ok" : "alert"}
+              onClick={() => setTab("report")}
+            />
+          </div>
+        </div>
+        <SalesSegmentTabs
+          fit
+          value={tab}
+          onChange={setTab}
+          options={[
+            {
+              value: "schedule",
+              label: "일정 · 동선",
+              hint: visits.length ? `${visits.length}건` : "방문 관리",
+            },
+            {
+              value: "report",
+              label: "일일보고",
+              hint: reportSubmitted ? "제출됨" : "방문 요약 · 이슈",
+            },
+          ]}
         />
-        <StatusChip label="예정" value={String(plannedCount)} />
-        <StatusChip
-          label="완료"
-          value={String(doneCount)}
-          tone={doneCount > 0 ? "ok" : undefined}
-        />
-        <StatusChip
-          label="보고"
-          value={reportSubmitted ? "제출" : "미제출"}
-          tone={reportSubmitted ? "ok" : "alert"}
-          onClick={() => setTab("report")}
-        />
-      </div>
-
-      <SalesSegmentTabs
-        value={tab}
-        onChange={setTab}
-        options={[
-          {
-            value: "schedule",
-            label: "일정 · 동선",
-            hint: visits.length ? `${visits.length}건` : "방문 관리",
-          },
-          {
-            value: "report",
-            label: "일일보고",
-            hint: reportSubmitted ? "제출됨" : "방문 요약 · 이슈",
-          },
-        ]}
-      />
+      </SalesToolbar>
 
       {tab === "schedule" ? (
         <>
@@ -275,25 +279,29 @@ export default function SalesHomePage() {
               title="방문 일정 추가"
               description="거래처 · 시각 · 확정 수준"
             >
-              <div className="space-y-2.5">
-                <Select value={accountId} onValueChange={setAccountId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="거래처 선택" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {accounts.map((a) => (
-                      <SelectItem key={a._id} value={a._id}>
-                        {a.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <div className="grid gap-2 sm:grid-cols-2">
+              <div className="grid gap-2.5 md:grid-cols-12 md:items-start">
+                <div className="md:col-span-4">
+                  <Select value={accountId} onValueChange={setAccountId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="거래처 선택" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {accounts.map((a) => (
+                        <SelectItem key={a._id} value={a._id}>
+                          {a.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="md:col-span-2">
                   <Input
                     type="time"
                     value={time}
                     onChange={(e) => setTime(e.target.value)}
                   />
+                </div>
+                <div className="md:col-span-3">
                   <Select value={commitment} onValueChange={setCommitment}>
                     <SelectTrigger>
                       <SelectValue />
@@ -307,28 +315,33 @@ export default function SalesHomePage() {
                     </SelectContent>
                   </Select>
                 </div>
-                <Textarea
-                  placeholder="방문 목적 · 준비물 메모"
-                  value={memo}
-                  onChange={(e) => setMemo(e.target.value)}
-                  rows={2}
-                />
-                <Button
-                  size="sm"
-                  disabled={!accountId || createMut.isPending}
-                  onClick={() => createMut.mutate()}
-                >
-                  저장
-                </Button>
+                <div className="md:col-span-10">
+                  <Textarea
+                    placeholder="방문 목적 · 준비물 메모"
+                    value={memo}
+                    onChange={(e) => setMemo(e.target.value)}
+                    rows={2}
+                  />
+                </div>
+                <div className="md:col-span-2 md:pt-1">
+                  <Button
+                    size="sm"
+                    className="w-full"
+                    disabled={!accountId || createMut.isPending}
+                    onClick={() => createMut.mutate()}
+                  >
+                    저장
+                  </Button>
+                </div>
               </div>
             </SalesPanel>
           ) : null}
 
-          <div className="grid gap-4 lg:grid-cols-5">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-[minmax(0,1.35fr)_minmax(18rem,0.85fr)] xl:gap-5">
             <SalesPanel
-              className="lg:col-span-3"
               title="이날 아젠다"
               description="현장에서 완료·부재·취소를 바로 기록합니다."
+              bodyClassName="md:max-h-[min(70vh,44rem)] md:overflow-y-auto"
             >
               {visitsLoading ? (
                 <p className="text-sm text-muted-foreground">불러오는 중…</p>
@@ -436,7 +449,7 @@ export default function SalesHomePage() {
             </SalesPanel>
 
             <SalesPanel
-              className="lg:col-span-2"
+              className="md:sticky md:top-4 md:self-start"
               title="동선"
               description="확정·그룹 일정을 지도 순서로 정렬합니다."
               actions={
@@ -548,7 +561,10 @@ export default function SalesHomePage() {
                 </div>
               ) : (
                 <div className="space-y-3 text-sm text-muted-foreground">
-                  <p>방문 순서를 짜면 예상 거리와 카카오맵 경로를 볼 수 있습니다.</p>
+                  <p>
+                    방문 순서를 짜면 예상 거리와 카카오맵 경로를 볼 수
+                    있습니다.
+                  </p>
                   <Button
                     size="sm"
                     variant="outline"
@@ -564,9 +580,8 @@ export default function SalesHomePage() {
           </div>
         </>
       ) : (
-        <div className="grid gap-4 lg:grid-cols-5">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-[minmax(0,1.4fr)_minmax(17rem,0.8fr)] xl:gap-5">
           <SalesPanel
-            className="lg:col-span-3"
             title={`${ymd} 보고`}
             description="방문 요약 · 이슈 · 내일 계획"
           >
@@ -580,39 +595,41 @@ export default function SalesHomePage() {
                     반영됩니다.
                   </div>
                 ) : null}
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium text-slate-600">
-                    방문 요약
-                  </label>
-                  <Textarea
-                    rows={5}
-                    placeholder="· 거래처명 (완료/부재/예정)…"
-                    value={visitSummary}
-                    onChange={(e) => setVisitSummary(e.target.value)}
-                    className="resize-y"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium text-slate-600">
-                    이슈 · 특이사항
-                  </label>
-                  <Textarea
-                    rows={3}
-                    placeholder="클레임, 경쟁사, 내부 전달 사항…"
-                    value={issues}
-                    onChange={(e) => setIssues(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium text-slate-600">
-                    내일 계획
-                  </label>
-                  <Textarea
-                    rows={3}
-                    placeholder="내일 방문·팔로업·내부 협조 요청…"
-                    value={tomorrowPlan}
-                    onChange={(e) => setTomorrowPlan(e.target.value)}
-                  />
+                <div className="grid gap-4 xl:grid-cols-2">
+                  <div className="xl:col-span-2">
+                    <label className="mb-1.5 block text-xs font-medium text-slate-600">
+                      방문 요약
+                    </label>
+                    <Textarea
+                      rows={6}
+                      placeholder="· 거래처명 (완료/부재/예정)…"
+                      value={visitSummary}
+                      onChange={(e) => setVisitSummary(e.target.value)}
+                      className="resize-y"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-slate-600">
+                      이슈 · 특이사항
+                    </label>
+                    <Textarea
+                      rows={4}
+                      placeholder="클레임, 경쟁사, 내부 전달 사항…"
+                      value={issues}
+                      onChange={(e) => setIssues(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-slate-600">
+                      내일 계획
+                    </label>
+                    <Textarea
+                      rows={4}
+                      placeholder="내일 방문·팔로업·내부 협조 요청…"
+                      value={tomorrowPlan}
+                      onChange={(e) => setTomorrowPlan(e.target.value)}
+                    />
+                  </div>
                 </div>
                 <Button
                   disabled={saveReportMut.isPending}
@@ -625,9 +642,10 @@ export default function SalesHomePage() {
           </SalesPanel>
 
           <SalesPanel
-            className="lg:col-span-2"
+            className="md:sticky md:top-4 md:self-start"
             title="최근 보고"
             description="날짜를 누르면 해당 보고를 불러옵니다."
+            bodyClassName="md:max-h-[min(70vh,40rem)] md:overflow-y-auto"
           >
             {historyItems.length === 0 ? (
               <SalesEmptyState

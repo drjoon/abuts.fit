@@ -33,6 +33,8 @@ import {
   SalesPageShell,
   SalesPanel,
   SalesSegmentTabs,
+  SalesSplit,
+  SalesToolbar,
 } from "./salesUi";
 
 type StatusFilter = "all" | "active" | CustomerRequirement["status"];
@@ -189,23 +191,26 @@ export default function SalesRequirementsPage() {
         ) : null
       }
     >
-      <SalesSegmentTabs
-        value={statusFilter}
-        onChange={(v) => setStatusFilter(v)}
-        options={[
-          { value: "all", label: "전체", hint: `${items.length}` },
-          { value: "active", label: "진행", hint: `${activeCount}` },
-          { value: "open", label: "접수", hint: `${openCount}` },
-          { value: "done", label: "완료", hint: `${doneCount}` },
-        ]}
-      />
+      <SalesToolbar>
+        <SalesSegmentTabs
+          fit
+          value={statusFilter}
+          onChange={(v) => setStatusFilter(v)}
+          options={[
+            { value: "all", label: "전체", hint: `${items.length}` },
+            { value: "active", label: "진행", hint: `${activeCount}` },
+            { value: "open", label: "접수", hint: `${openCount}` },
+            { value: "done", label: "완료", hint: `${doneCount}` },
+          ]}
+        />
+      </SalesToolbar>
 
       {showForm && canCreate ? (
         <SalesPanel
           title="요구사항 등록"
           description="제목 · 고객 · 담당 팀"
         >
-          <div className="space-y-3">
+          <div className="grid gap-3 md:grid-cols-2">
             <Input
               placeholder="제목 *"
               value={title}
@@ -217,12 +222,13 @@ export default function SalesRequirementsPage() {
               onChange={(e) => setCustomerName(e.target.value)}
             />
             <Textarea
+              className="md:col-span-2"
               placeholder="상세 내용 — 현장 요청, 납기, 제약 조건"
               rows={4}
               value={body}
               onChange={(e) => setBody(e.target.value)}
             />
-            <div>
+            <div className="md:col-span-2">
               <div className="mb-1.5 text-xs font-medium text-muted-foreground">
                 담당 팀 (복수 선택)
               </div>
@@ -243,246 +249,264 @@ export default function SalesRequirementsPage() {
                 })}
               </div>
             </div>
-            <Button
-              size="sm"
-              disabled={
-                !title.trim() || targets.length === 0 || createMut.isPending
-              }
-              onClick={() => createMut.mutate()}
-            >
-              저장
-            </Button>
+            <div className="md:col-span-2">
+              <Button
+                size="sm"
+                disabled={
+                  !title.trim() || targets.length === 0 || createMut.isPending
+                }
+                onClick={() => createMut.mutate()}
+              >
+                저장
+              </Button>
+            </div>
           </div>
         </SalesPanel>
       ) : null}
 
-      <SalesPanel
-        title="보드"
-        description={
-          statusFilter === "all"
-            ? "최근 등록순"
-            : statusFilter === "active"
-              ? "접수·진행 중"
-              : `${REQUIREMENT_DOC_STATUS_LABEL[statusFilter as CustomerRequirement["status"]] || statusFilter}`
-        }
-      >
-        {isLoading ? (
-          <p className="text-sm text-muted-foreground">불러오는 중…</p>
-        ) : error ? (
-          <p className="text-sm text-destructive">{(error as Error).message}</p>
-        ) : filtered.length === 0 ? (
-          <SalesEmptyState
-            icon={ClipboardList}
-            title={
-              items.length === 0
-                ? "등록된 요구사항이 없습니다"
-                : "이 상태에 해당하는 항목이 없습니다"
-            }
+      <SalesSplit
+        primary={
+          <SalesPanel
+            title="보드"
             description={
-              canCreate
-                ? "고객 현장에서 받은 요청을 등록하면 담당 팀이 업무를 업데이트합니다."
-                : "지정된 요구사항이 여기 표시됩니다."
+              statusFilter === "all"
+                ? "최근 등록순"
+                : statusFilter === "active"
+                  ? "접수·진행 중"
+                  : `${REQUIREMENT_DOC_STATUS_LABEL[statusFilter as CustomerRequirement["status"]] || statusFilter}`
             }
-            actionLabel={canCreate ? "요구사항 등록" : undefined}
-            onAction={canCreate ? () => setShowForm(true) : undefined}
-          />
-        ) : (
-          <div className="space-y-2">
-            {filtered.map((item) => (
-              <SalesListRow
-                key={item._id}
-                selected={selectedId === item._id}
-                onClick={() => {
-                  setSelectedId(item._id);
-                  const mine = (item.workUpdates || []).find(
-                    (w) =>
-                      String(w.role) === role &&
-                      String(w.userId) === String(user?._id || ""),
-                  );
-                  setWorkStatus(mine?.status || "inProgress");
-                  setWorkNote(mine?.note || "");
-                }}
-                title={item.title}
-                meta={
-                  [item.customerName, item.createdByName]
-                    .filter(Boolean)
-                    .join(" · ") || "—"
+            bodyClassName="lg:max-h-[min(74vh,48rem)] lg:overflow-y-auto"
+          >
+            {isLoading ? (
+              <p className="text-sm text-muted-foreground">불러오는 중…</p>
+            ) : error ? (
+              <p className="text-sm text-destructive">
+                {(error as Error).message}
+              </p>
+            ) : filtered.length === 0 ? (
+              <SalesEmptyState
+                icon={ClipboardList}
+                title={
+                  items.length === 0
+                    ? "등록된 요구사항이 없습니다"
+                    : "이 상태에 해당하는 항목이 없습니다"
                 }
-                trailing={
-                  <div className="flex flex-col items-end gap-1">
-                    <Badge variant="secondary">
-                      {REQUIREMENT_DOC_STATUS_LABEL[item.status] || item.status}
-                    </Badge>
-                    <div className="hidden flex-wrap justify-end gap-1 sm:flex">
-                      {(item.targetRoles || []).slice(0, 2).map((t) => (
-                        <Badge
-                          key={t}
-                          variant="outline"
-                          className="text-[10px]"
-                        >
-                          {REQUIREMENT_TARGET_LABEL[t] || t}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
+                description={
+                  canCreate
+                    ? "고객 현장에서 받은 요청을 등록하면 담당 팀이 업무를 업데이트합니다."
+                    : "지정된 요구사항이 여기 표시됩니다."
                 }
+                actionLabel={canCreate ? "요구사항 등록" : undefined}
+                onAction={canCreate ? () => setShowForm(true) : undefined}
               />
-            ))}
-          </div>
-        )}
-      </SalesPanel>
-
-      {detail ? (
-        <SalesPanel
-          title={detail.title}
-          description={
-            detail.customerName ? `고객: ${detail.customerName}` : undefined
-          }
-          actions={
-            <Badge>
-              {REQUIREMENT_DOC_STATUS_LABEL[detail.status] || detail.status}
-            </Badge>
-          }
-        >
-          <div className="space-y-4 text-sm">
-            <div className="whitespace-pre-wrap rounded-xl bg-slate-50 px-3.5 py-3 leading-relaxed text-slate-800">
-              {detail.body || "(내용 없음)"}
-            </div>
-
-            <div>
-              <div className="mb-1.5 text-xs font-medium text-muted-foreground">
-                담당 팀
-              </div>
-              <div className="flex flex-wrap gap-1">
-                {(detail.targetRoles || []).map((t) => (
-                  <Badge key={t} variant="outline">
-                    {REQUIREMENT_TARGET_LABEL[t] || t}
-                  </Badge>
+            ) : (
+              <div className="space-y-2">
+                {filtered.map((item) => (
+                  <SalesListRow
+                    key={item._id}
+                    selected={selectedId === item._id}
+                    onClick={() => {
+                      setSelectedId((prev) =>
+                        prev === item._id ? null : item._id,
+                      );
+                      const mine = (item.workUpdates || []).find(
+                        (w) =>
+                          String(w.role) === role &&
+                          String(w.userId) === String(user?._id || ""),
+                      );
+                      setWorkStatus(mine?.status || "inProgress");
+                      setWorkNote(mine?.note || "");
+                    }}
+                    title={item.title}
+                    meta={
+                      [item.customerName, item.createdByName]
+                        .filter(Boolean)
+                        .join(" · ") || "—"
+                    }
+                    trailing={
+                      <div className="flex flex-col items-end gap-1">
+                        <Badge variant="secondary">
+                          {REQUIREMENT_DOC_STATUS_LABEL[item.status] ||
+                            item.status}
+                        </Badge>
+                        <div className="hidden flex-wrap justify-end gap-1 sm:flex">
+                          {(item.targetRoles || []).slice(0, 2).map((t) => (
+                            <Badge
+                              key={t}
+                              variant="outline"
+                              className="text-[10px]"
+                            >
+                              {REQUIREMENT_TARGET_LABEL[t] || t}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    }
+                  />
                 ))}
               </div>
-            </div>
-
-            <div>
-              <div className="mb-1.5 text-xs font-medium text-muted-foreground">
-                팀별 업무 업데이트
-              </div>
-              {(detail.workUpdates || []).length === 0 ? (
-                <p className="rounded-lg border border-dashed border-slate-200 px-3 py-4 text-xs text-muted-foreground">
-                  아직 업데이트가 없습니다.
-                </p>
-              ) : (
-                <div className="space-y-2">
-                  {(detail.workUpdates || []).map((w, i) => (
-                    <div
-                      key={w._id || `${w.role}-${w.userId}-${i}`}
-                      className="rounded-xl border border-slate-200/80 px-3 py-2.5"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-medium">
-                          {REQUIREMENT_TARGET_LABEL[w.role] || w.role}
-                          {w.userName ? ` · ${w.userName}` : ""}
-                        </span>
-                        <Badge variant="secondary">
-                          {REQUIREMENT_WORK_STATUS_LABEL[w.status] || w.status}
-                        </Badge>
-                      </div>
-                      {w.note ? (
-                        <p className="mt-1 whitespace-pre-wrap text-xs text-muted-foreground">
-                          {w.note}
-                        </p>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {isTargetOfSelected ? (
-              <div className="space-y-2 rounded-xl border border-primary-muted/50 bg-primary-soft/20 p-3.5">
-                <div className="text-xs font-medium text-muted-foreground">
-                  내 업무 업데이트
-                  {myWork
-                    ? ` (현재: ${REQUIREMENT_WORK_STATUS_LABEL[myWork.status]})`
-                    : ""}
-                </div>
-                <Select
-                  value={workStatus}
-                  onValueChange={(v) =>
-                    setWorkStatus(v as CustomerRequirementWorkStatus)
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="todo">대기</SelectItem>
-                    <SelectItem value="inProgress">진행중</SelectItem>
-                    <SelectItem value="done">완료</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Textarea
-                  rows={3}
-                  placeholder="진행 메모"
-                  value={workNote}
-                  onChange={(e) => setWorkNote(e.target.value)}
-                />
-                <Button
-                  size="sm"
-                  disabled={workMut.isPending}
-                  onClick={() => workMut.mutate()}
-                >
-                  업무 저장
-                </Button>
-              </div>
-            ) : null}
-
-            {canCreate ? (
-              <div className="flex flex-wrap gap-1.5">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => statusMut.mutate("inProgress")}
-                >
-                  진행중으로
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => statusMut.mutate("done")}
-                >
-                  완료로
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => statusMut.mutate("canceled")}
-                >
-                  취소
-                </Button>
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  onClick={() => {
-                    if (confirm("이 요구사항을 삭제할까요?")) {
-                      deleteMut.mutate();
-                    }
-                  }}
-                >
-                  삭제
-                </Button>
-              </div>
-            ) : null}
-
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setSelectedId(null)}
+            )}
+          </SalesPanel>
+        }
+        secondary={
+          detail ? (
+            <SalesPanel
+              title={detail.title}
+              description={
+                detail.customerName
+                  ? `고객: ${detail.customerName}`
+                  : undefined
+              }
+              actions={
+                <Badge>
+                  {REQUIREMENT_DOC_STATUS_LABEL[detail.status] ||
+                    detail.status}
+                </Badge>
+              }
+              bodyClassName="lg:max-h-[min(74vh,48rem)] lg:overflow-y-auto"
             >
-              닫기
-            </Button>
-          </div>
-        </SalesPanel>
-      ) : null}
+              <div className="space-y-4 text-sm">
+                <div className="whitespace-pre-wrap rounded-xl bg-slate-50 px-3.5 py-3 leading-relaxed text-slate-800">
+                  {detail.body || "(내용 없음)"}
+                </div>
+
+                <div>
+                  <div className="mb-1.5 text-xs font-medium text-muted-foreground">
+                    담당 팀
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {(detail.targetRoles || []).map((t) => (
+                      <Badge key={t} variant="outline">
+                        {REQUIREMENT_TARGET_LABEL[t] || t}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="mb-1.5 text-xs font-medium text-muted-foreground">
+                    팀별 업무 업데이트
+                  </div>
+                  {(detail.workUpdates || []).length === 0 ? (
+                    <p className="rounded-lg border border-dashed border-slate-200 px-3 py-4 text-xs text-muted-foreground">
+                      아직 업데이트가 없습니다.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {(detail.workUpdates || []).map((w, i) => (
+                        <div
+                          key={w._id || `${w.role}-${w.userId}-${i}`}
+                          className="rounded-xl border border-slate-200/80 px-3 py-2.5"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-medium">
+                              {REQUIREMENT_TARGET_LABEL[w.role] || w.role}
+                              {w.userName ? ` · ${w.userName}` : ""}
+                            </span>
+                            <Badge variant="secondary">
+                              {REQUIREMENT_WORK_STATUS_LABEL[w.status] ||
+                                w.status}
+                            </Badge>
+                          </div>
+                          {w.note ? (
+                            <p className="mt-1 whitespace-pre-wrap text-xs text-muted-foreground">
+                              {w.note}
+                            </p>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {isTargetOfSelected ? (
+                  <div className="space-y-2 rounded-xl border border-primary-muted/50 bg-primary-soft/20 p-3.5">
+                    <div className="text-xs font-medium text-muted-foreground">
+                      내 업무 업데이트
+                      {myWork
+                        ? ` (현재: ${REQUIREMENT_WORK_STATUS_LABEL[myWork.status]})`
+                        : ""}
+                    </div>
+                    <Select
+                      value={workStatus}
+                      onValueChange={(v) =>
+                        setWorkStatus(v as CustomerRequirementWorkStatus)
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="todo">대기</SelectItem>
+                        <SelectItem value="inProgress">진행중</SelectItem>
+                        <SelectItem value="done">완료</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Textarea
+                      rows={3}
+                      placeholder="진행 메모"
+                      value={workNote}
+                      onChange={(e) => setWorkNote(e.target.value)}
+                    />
+                    <Button
+                      size="sm"
+                      disabled={workMut.isPending}
+                      onClick={() => workMut.mutate()}
+                    >
+                      업무 저장
+                    </Button>
+                  </div>
+                ) : null}
+
+                {canCreate ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => statusMut.mutate("inProgress")}
+                    >
+                      진행중으로
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => statusMut.mutate("done")}
+                    >
+                      완료로
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => statusMut.mutate("canceled")}
+                    >
+                      취소
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => {
+                        if (confirm("이 요구사항을 삭제할까요?")) {
+                          deleteMut.mutate();
+                        }
+                      }}
+                    >
+                      삭제
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
+            </SalesPanel>
+          ) : undefined
+        }
+        secondaryEmpty={
+          <SalesEmptyState
+            className="h-full min-h-[20rem]"
+            icon={ClipboardList}
+            title="항목을 선택하세요"
+            description="보드에서 요구사항을 누르면 상세와 업무 업데이트가 여기에 표시됩니다."
+          />
+        }
+      />
     </SalesPageShell>
   );
 }

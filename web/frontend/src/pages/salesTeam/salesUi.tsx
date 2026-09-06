@@ -17,23 +17,27 @@ export function SalesPageShell({
   actions,
   children,
   className,
+  wide,
 }: {
   title: string;
   subtitle?: ReactNode;
   actions?: ReactNode;
   children: ReactNode;
   className?: string;
+  /** Use the full work area width (default). Pass false to keep a reading-width column. */
+  wide?: boolean;
 }) {
   return (
     <div
       className={cn(
-        "mx-auto w-full max-w-5xl space-y-4 p-3 pb-24 sm:space-y-5 sm:p-4 sm:pb-8",
+        "mx-auto w-full space-y-4 p-3 pb-24 sm:space-y-5 sm:p-4 sm:pb-10 md:p-5 lg:space-y-6 lg:p-6 lg:pb-12",
+        wide === false ? "max-w-3xl" : "max-w-7xl",
         className,
       )}
     >
-      <header className="flex flex-wrap items-start justify-between gap-3">
+      <header className="flex flex-wrap items-end justify-between gap-3 border-b border-slate-200/70 pb-3 sm:pb-4">
         <div className="min-w-0 space-y-1">
-          <h1 className="text-xl font-semibold tracking-tight text-slate-900 sm:text-2xl">
+          <h1 className="text-xl font-semibold tracking-tight text-slate-900 sm:text-2xl lg:text-[1.65rem]">
             {title}
           </h1>
           {subtitle ? (
@@ -53,6 +57,58 @@ export function SalesPageShell({
   );
 }
 
+/** Master–detail / two-pane workspace for tablet+. */
+export function SalesSplit({
+  primary,
+  secondary,
+  secondaryEmpty,
+  className,
+  primaryClassName,
+  secondaryClassName,
+}: {
+  primary: ReactNode;
+  secondary?: ReactNode;
+  secondaryEmpty?: ReactNode;
+  className?: string;
+  primaryClassName?: string;
+  secondaryClassName?: string;
+}) {
+  const hasSecondary = Boolean(secondary);
+  const showAside = hasSecondary || Boolean(secondaryEmpty);
+  return (
+    <div
+      className={cn(
+        "grid gap-4 lg:gap-5",
+        showAside
+          ? "lg:grid-cols-[minmax(0,1fr)_minmax(20rem,0.95fr)] xl:grid-cols-[minmax(0,1.05fr)_minmax(22rem,1fr)]"
+          : "lg:grid-cols-1",
+        className,
+      )}
+    >
+      <div className={cn("min-w-0", primaryClassName)}>{primary}</div>
+      {hasSecondary ? (
+        <div
+          className={cn(
+            "min-w-0 lg:sticky lg:top-4 lg:self-start",
+            secondaryClassName,
+          )}
+        >
+          {secondary}
+        </div>
+      ) : secondaryEmpty ? (
+        <div
+          className={cn(
+            "hidden min-w-0 lg:sticky lg:top-4 lg:block lg:self-start",
+            secondaryClassName,
+          )}
+        >
+          {secondaryEmpty}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function SalesStatCard({
   label,
   value,
@@ -62,6 +118,7 @@ export function SalesStatCard({
   onClick,
   to,
   tone = "default",
+  compact,
 }: {
   label: string;
   value: ReactNode;
@@ -71,10 +128,14 @@ export function SalesStatCard({
   onClick?: () => void;
   to?: string;
   tone?: "default" | "alert" | "ok";
+  compact?: boolean;
 }) {
   const highlight = Boolean(selected);
   const className = cn(
-    "flex min-h-[6.5rem] w-full flex-col justify-between rounded-2xl border px-4 py-3.5 text-left shadow-sm transition-colors",
+    "flex w-full flex-col justify-between rounded-2xl border text-left shadow-sm transition-colors",
+    compact
+      ? "min-h-[5.25rem] px-3.5 py-3 lg:min-h-0 lg:px-4 lg:py-3.5"
+      : "min-h-[6.25rem] px-4 py-3.5",
     highlight
       ? "border-primary-muted bg-primary-soft/50 ring-1 ring-primary-muted/70"
       : "border-slate-200/80 bg-white/90 hover:border-slate-300 hover:bg-white",
@@ -106,7 +167,8 @@ export function SalesStatCard({
       </div>
       <div
         className={cn(
-          "mt-2 text-2xl font-semibold tabular-nums tracking-tight sm:text-[1.65rem]",
+          "mt-2 font-semibold tabular-nums tracking-tight",
+          compact ? "text-xl lg:text-2xl" : "text-2xl sm:text-[1.65rem]",
           highlight ? "text-primary-strong" : "text-slate-900",
         )}
       >
@@ -143,12 +205,14 @@ export function SalesPanel({
   actions,
   children,
   className,
+  bodyClassName,
 }: {
   title?: ReactNode;
   description?: ReactNode;
   actions?: ReactNode;
   children: ReactNode;
   className?: string;
+  bodyClassName?: string;
 }) {
   return (
     <section
@@ -174,7 +238,7 @@ export function SalesPanel({
           ) : null}
         </div>
       )}
-      <div className="p-4 sm:p-5">{children}</div>
+      <div className={cn("p-4 sm:p-5", bodyClassName)}>{children}</div>
     </section>
   );
 }
@@ -186,6 +250,7 @@ export function SalesEmptyState({
   actionLabel,
   onAction,
   actionTo,
+  className,
 }: {
   icon: LucideIcon;
   title: string;
@@ -193,9 +258,15 @@ export function SalesEmptyState({
   actionLabel?: string;
   onAction?: () => void;
   actionTo?: string;
+  className?: string;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-12 text-center">
+    <div
+      className={cn(
+        "flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-12 text-center",
+        className,
+      )}
+    >
       <span className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-slate-400 shadow-sm ring-1 ring-slate-200/80">
         <Icon className="h-5 w-5" />
       </span>
@@ -305,7 +376,7 @@ export function SalesQuickLink({
       className="group flex items-start gap-3 rounded-2xl border border-slate-200/80 bg-white/90 px-4 py-3.5 shadow-sm transition-colors hover:border-primary-muted hover:bg-primary-soft/30"
     >
       <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600 transition-colors group-hover:bg-primary/15 group-hover:text-primary-strong">
-        <Icon className="h-4.5 w-4.5 h-[18px] w-[18px]" />
+        <Icon className="h-[18px] w-[18px]" />
       </span>
       <span className="min-w-0">
         <span className="block font-medium text-slate-900">{label}</span>
@@ -321,17 +392,25 @@ export function SalesDayPicker({
   ymd,
   today,
   onChange,
+  className,
 }: {
   ymd: string;
   today: string;
   onChange: (next: string) => void;
+  className?: string;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200/80 bg-white/90 p-2 shadow-sm">
+    <div
+      className={cn(
+        "flex flex-wrap items-center gap-1.5 rounded-2xl border border-slate-200/80 bg-white/90 p-1.5 shadow-sm sm:gap-2 sm:p-2",
+        "md:w-auto md:min-w-[18rem] md:flex-nowrap",
+        className,
+      )}
+    >
       <Button
         size="icon"
         variant="ghost"
-        className="h-9 w-9"
+        className="h-9 w-9 shrink-0"
         onClick={() => onChange(addDaysYmd(ymd, -1))}
         aria-label="이전 날"
       >
@@ -341,12 +420,12 @@ export function SalesDayPicker({
         type="date"
         value={ymd}
         onChange={(e) => onChange(e.target.value)}
-        className="min-w-0 flex-1 border-0 bg-transparent shadow-none focus-visible:ring-0"
+        className="min-w-0 flex-1 border-0 bg-transparent shadow-none focus-visible:ring-0 md:w-[10.5rem] md:flex-none"
       />
       <Button
         size="icon"
         variant="ghost"
-        className="h-9 w-9"
+        className="h-9 w-9 shrink-0"
         onClick={() => onChange(addDaysYmd(ymd, 1))}
         aria-label="다음 날"
       >
@@ -355,6 +434,7 @@ export function SalesDayPicker({
       <Button
         size="sm"
         variant={ymd === today ? "default" : "secondary"}
+        className="shrink-0"
         onClick={() => onChange(today)}
       >
         오늘
@@ -368,16 +448,20 @@ export function SalesSegmentTabs<T extends string>({
   onChange,
   options,
   className,
+  fit,
 }: {
   value: T;
   onChange: (next: T) => void;
   options: Array<{ value: T; label: string; hint?: string }>;
   className?: string;
+  /** Shrink to content width on tablet+ (toolbar use). */
+  fit?: boolean;
 }) {
   return (
     <div
       className={cn(
         "flex gap-1 rounded-2xl border border-slate-200/80 bg-slate-100/80 p-1",
+        fit ? "w-full md:w-auto md:min-w-[16rem]" : "w-full",
         className,
       )}
       role="tablist"
@@ -392,7 +476,7 @@ export function SalesSegmentTabs<T extends string>({
             aria-selected={active}
             onClick={() => onChange(opt.value)}
             className={cn(
-              "min-w-0 flex-1 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
+              "min-w-0 flex-1 rounded-xl px-3 py-2 text-sm font-medium transition-colors md:px-4 md:py-2.5",
               active
                 ? "bg-white text-slate-900 shadow-sm"
                 : "text-slate-500 hover:text-slate-800",
@@ -412,6 +496,25 @@ export function SalesSegmentTabs<T extends string>({
           </button>
         );
       })}
+    </div>
+  );
+}
+
+export function SalesToolbar({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex flex-col gap-2.5 md:flex-row md:flex-wrap md:items-center md:justify-between md:gap-3",
+        className,
+      )}
+    >
+      {children}
     </div>
   );
 }
