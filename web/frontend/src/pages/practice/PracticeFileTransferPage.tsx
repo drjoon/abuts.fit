@@ -7886,71 +7886,74 @@ export const PracticeFileTransferPage = ({
   const practiceWorkspaceToolbar = (
     <>
       <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-9 px-3"
-                onClick={() => void handleStartNewTransfer({ openCompose: true })}
-              >
-                새로 작성
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" className="max-w-xs text-xs">
-              작성 화면만 비웁니다. 임시저장은 목록에 남습니다.
-            </TooltipContent>
-          </Tooltip>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-9 gap-1.5 px-3"
-            onClick={() => setRemakeSearchOpen(true)}
-          >
-            <Repeat className="h-4 w-4 shrink-0" />
-            리메이크
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className={cn(
-              "h-9 gap-1.5 px-3",
-              draftGroupedTransfers.length > 0 && "border-amber-300 bg-amber-50/80",
-              practiceTransferDraftStaleAttentionClassName(hasStaleDrafts),
-            )}
-            onClick={() => setDraftsOpen(true)}
-          >
-            <BookmarkPlus className="h-4 w-4 shrink-0" />
-            임시저장
-            {draftGroupedTransfers.length > 0 ? (
-              <Badge variant="outline" className={draftCountBadgeClass}>
-                {draftGroupedTransfers.length}
-              </Badge>
-            ) : null}
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-9 gap-1.5 px-3"
-            onClick={() => {
-              setTrashOpen(true);
-              void loadRecentRequests({ silent: true });
-            }}
-          >
-            <Trash2 className="h-4 w-4 shrink-0" />
-            휴지통
-            {trashGroupedTransfers.length > 0 ? (
-              <Badge variant="secondary" className="ml-0.5">
-                {trashGroupedTransfers.length}
-              </Badge>
-            ) : null}
-          </Button>
-        </div>
+        {/* 플랫폼 이전 리메이크 작성: 캘린더 워크스페이스 액션(리메이크·새로작성 등)은 불필요 */}
+        {!composeRemakeMode ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-9 px-3"
+                  onClick={() => void handleStartNewTransfer({ openCompose: true })}
+                >
+                  새로 작성
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-xs text-xs">
+                작성 화면만 비웁니다. 임시저장은 목록에 남습니다.
+              </TooltipContent>
+            </Tooltip>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-9 gap-1.5 px-3"
+              onClick={() => setRemakeSearchOpen(true)}
+            >
+              <Repeat className="h-4 w-4 shrink-0" />
+              리메이크
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className={cn(
+                "h-9 gap-1.5 px-3",
+                draftGroupedTransfers.length > 0 && "border-amber-300 bg-amber-50/80",
+                practiceTransferDraftStaleAttentionClassName(hasStaleDrafts),
+              )}
+              onClick={() => setDraftsOpen(true)}
+            >
+              <BookmarkPlus className="h-4 w-4 shrink-0" />
+              임시저장
+              {draftGroupedTransfers.length > 0 ? (
+                <Badge variant="outline" className={draftCountBadgeClass}>
+                  {draftGroupedTransfers.length}
+                </Badge>
+              ) : null}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-9 gap-1.5 px-3"
+              onClick={() => {
+                setTrashOpen(true);
+                void loadRecentRequests({ silent: true });
+              }}
+            >
+              <Trash2 className="h-4 w-4 shrink-0" />
+              휴지통
+              {trashGroupedTransfers.length > 0 ? (
+                <Badge variant="secondary" className="ml-0.5">
+                  {trashGroupedTransfers.length}
+                </Badge>
+              ) : null}
+            </Button>
+          </div>
+        ) : null}
         {formSyncStatusLabel ? (
           <span
             title={formSyncStatusLabel}
