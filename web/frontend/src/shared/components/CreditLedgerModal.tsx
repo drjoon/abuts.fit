@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-08: 스토어 REFUND 행 결제상태「취소」(결제 완료 강제 표시 제거).
 // - 2026-09-08: 검색 — ImeSafeInput+debounce. 한글 조합 중·키마다 ledger API 호출 방지.
 // - 2026-09-05: 요약 충전 카드 라벨「충전」(치과·기공소 공통, 유료 접두 제거)·안내 툴팁 정리.
 // - 2026-09-05: 데모 모드 충전 카드 라벨「충전」(유료/선수금 아님)·가상 잔고 안내.
@@ -431,7 +432,7 @@ type LedgerDisplayPart = {
 type PracticeTransferRoute = "lab" | "abuts" | "other";
 
 /** 기공의뢰 크레딧 지급 진행 상태(몫별 정산) */
-type PracticeTransferPayoutStatus = "hold" | "partial" | "settled";
+type PracticeTransferPayoutStatus = "hold" | "partial" | "settled" | "canceled";
 
 type LedgerDisplayRow = {
   key: string;
@@ -471,6 +472,7 @@ const practiceTransferPayoutStatusLabel = (
   status: PracticeTransferPayoutStatus,
   isLabViewer = false,
 ) => {
+  if (status === "canceled") return "취소";
   if (isLabViewer) {
     if (status === "settled") return "적립 완료";
     if (status === "partial") return "일부 적립";
@@ -484,6 +486,9 @@ const practiceTransferPayoutStatusLabel = (
 const practiceTransferPayoutStatusClass = (
   status: PracticeTransferPayoutStatus,
 ) => {
+  if (status === "canceled") {
+    return "border-slate-200 bg-slate-100 text-slate-700";
+  }
   if (status === "settled") {
     return "border-emerald-200 bg-emerald-50 text-emerald-800";
   }
@@ -1572,7 +1577,9 @@ const groupLedgerItemsForDisplay = (
         resolvePracticeTransferRoute(item),
       ),
       practiceTransferPayoutStatus: isStoreOrderLedgerItem(item)
-        ? "settled"
+        ? item.type === "REFUND"
+          ? "canceled"
+          : "settled"
         : resolvePracticeTransferPayoutStatus(
             item,
             undefined,

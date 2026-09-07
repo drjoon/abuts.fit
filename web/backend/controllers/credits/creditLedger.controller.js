@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-08: 삭제·작업취소 PTX는 정산 무관 숨김. status select 누락 수정. 하드삭제 orphan GL도 숨김.
 // - 2026-09-08: q 검색 — 환자명(files·transferMemo)·의뢰 caseInfos도 refId 매칭. 1글자 허용.
 // - 2026-09-02: 치과 휴지통(deleted|canceled) PTX도 장부 enrich에서 숨김(적립/결제 오인 방지).
 // - 2026-08-31: 수락 취소(workCanceledAt)·미정산 PTX는 장부 enrich에서 숨김(「적립/결제 완료」 오인 방지).
@@ -698,6 +699,7 @@ export async function listMyCreditLedger(req, res) {
             .select({
               _id: 1,
               transferId: 1,
+              status: 1,
               targetLabName: 1,
               targetLabAnchorId: 1,
               assigneeLabAnchorId: 1,
@@ -850,12 +852,10 @@ export async function listMyCreditLedger(req, res) {
     const abutmentSettledAt = doc?.billing?.abutmentSettledAt || null;
     const fullySettled = Boolean(settledAt);
     const workCanceledAt = doc?.workCanceledAt || null;
-    // 수락 취소·치과 휴지통·미정산: 잔여 HOLD/heldAt이 있어도 「완료/보류」로 보이면 안 됨
+    // 치과 휴지통·기공소 작업취소: 정산 여부와 무관하게 장부에서 숨김(제조사 GL 삭제와 동일 UX)
     const practiceTransferCanceled =
-      (Boolean(workCanceledAt) ||
-        isPracticeTransferDeletedStatus(doc?.status)) &&
-      !fullySettled &&
-      !labSettledAt;
+      Boolean(workCanceledAt) ||
+      isPracticeTransferDeletedStatus(doc?.status);
     const skipJigRaw = doc?.production?.skipJig;
     const labBa =
       String(doc.assigneeLabAnchorId || doc.targetLabAnchorId || "").trim() ||
@@ -921,8 +921,8 @@ export async function listMyCreditLedger(req, res) {
 
     if (ptxLookupId && mongoose.Types.ObjectId.isValid(ptxLookupId)) {
       const meta = practiceTransferMetaById.get(ptxLookupId) || null;
-      // 수락 취소·미정산 PTX: 잔여 HOLD/디자인비 행을 「적립/결제 완료」로 오인하지 않도록 숨김
-      if (meta?.practiceTransferCanceled) {
+      // 휴지통·작업취소·하드삭제 orphan: 잔여 HOLD/REFUND/디자인비 행 숨김
+      if (!meta || meta.practiceTransferCanceled) {
         return null;
       }
       const base = asPtxDesignFee

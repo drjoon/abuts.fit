@@ -23,7 +23,8 @@
 // - 2026-08-21: assert balanceMode=snapshot — 스냅샷 없으면 게이트 스킵(응답 지연 방지).
 // - 2026-08-21: resolveHoldShareAmounts — billing 금액 있으면 assert 재호출 금지. devops 캐시.
 // - 2026-08-19: 목록 feeQuote에 labFeeConfigured 전달(지정 수가 Off·항목 Off=미설정).
-// - 2026-09-06: rollbackPracticeTransferBilling — 비제조사 REFUND, 제조사 배송(SHIPPING/abuts) 삭제.
+// - 2026-09-08: rollbackPracticeTransferBilling — PTX 전량 GL 물리 삭제(스토어만 REFUND 유지).
+// - 2026-09-06: rollbackPracticeTransferBilling — 비제조사 REFUND, 제조사 배송(SHIPPING/abuts) 삭제(폐기).
 // - 2026-08-18: rollbackPracticeTransferBilling — 멱등키 조회·저널 삭제를 병렬화.
 // - 2026-08-21: rollback — getJournalsByIdempotencyKeys 1회 + syncBalanceCache/emit 지연 옵션.
 // - 2026-08-18: 기공소 공급 어벗은 전역 단가. 의뢰자별 특별가는 적용하지 않음.
@@ -89,8 +90,6 @@ import {
   getJournalByIdempotencyKey,
   getJournalsByIdempotencyKeys,
   deleteGeneralLedgerCommitJournal,
-  postGeneralLedgerCancelRefund,
-  MANUFACTURER_SPEND_EVENT_TYPES,
   refundIdempotencyKeyFor,
 } from "./generalLedger.service.js";
 import BusinessCreditBalance from "../models/businessCreditBalance.model.js";
@@ -1418,7 +1417,7 @@ function practiceTransferAbutsShippingKey(transferId) {
   return `gl:practice_transfer:${String(transferId)}:abuts_shipping`;
 }
 
-/** 취소·롤백 대상 PTX GL eventType(REFUND 원본 또는 제조사 삭제) */
+/** 취소·롤백 시 물리 삭제 대상 PTX GL eventType(+과거 REFUND 쌍) */
 const PRACTICE_TRANSFER_ROLLBACK_EVENT_TYPES = [
   "PRACTICE_TRANSFER_ESCROW_RELEASE",
   "PRACTICE_TRANSFER_LAB_PLATFORM_FEE",
@@ -1427,16 +1426,7 @@ const PRACTICE_TRANSFER_ROLLBACK_EVENT_TYPES = [
   "PRACTICE_TRANSFER_SPEND_COMMIT",
   "SHIPPING_SPEND_COMMIT",
   "ADJUST",
-];
-
-/** 비제조사 — 원본 유지 + REFUND */
-const PRACTICE_TRANSFER_REFUND_EVENT_TYPES = [
-  "PRACTICE_TRANSFER_ESCROW_RELEASE",
-  "PRACTICE_TRANSFER_LAB_PLATFORM_FEE",
-  "PRACTICE_TRANSFER_HOLD_ADJUST",
-  "PRACTICE_TRANSFER_SPEND_HOLD",
-  "PRACTICE_TRANSFER_SPEND_COMMIT",
-  "ADJUST",
+  "REFUND",
 ];
 
 const PRACTICE_TRANSFER_BALANCE_ACCOUNT_CODES = new Set([
@@ -1445,16 +1435,6 @@ const PRACTICE_TRANSFER_BALANCE_ACCOUNT_CODES = new Set([
   "REQ_FREE_SHIPPING_CREDIT",
   "LAB_SETTLEMENT_CREDIT",
 ]);
-
-/** PTX 내 제조사 배송 경로 — 물리 삭제(SHIPPING_* + abuts_shipping hold) */
-function practiceTransferManufacturerDeleteKeys(transferId) {
-  const id = String(transferId || "").trim();
-  return new Set([
-    practiceTransferHoldAbutsShippingKey(id),
-    practiceTransferAbutsShippingKey(id),
-    practiceTransferLabShippingKey(id),
-  ]);
-}
 
 function abutmentDesignFeeBaseKey(requestId) {
   return `gl:request:${String(requestId)}:abutment_design_fee`;
@@ -3513,10 +3493,10 @@ export async function releasePracticeTransferEscrow({
 }
 
 /**
- * PTX 과금 롤백.
- * - 제조사 배송(SHIPPING_SPEND_* · abuts_shipping hold): 원본 물리 삭제
- * - 그 외(기공비 hold/release·플랫폼수수료·ADJUST 등): 원본 유지 + REFUND
- * - ADJUST(어벗 디자인비 등) — refType+refId 스윕으로 누락 방지
+ * PTX 과금 롤백 — 원본 저널/라인 물리 삭제(제조사 REQUEST/SHIPPING과 동일).
+ * 과거 REFUND 쌍이 있으면 원본+REFUND 모두 삭제(잔액 순변화 0).
+ * 스토어 제품 판매 취소는 storeSale.service의 REFUND 경로를 유지한다.
+ * ADJUST(어벗 디자인비 등) — refType+refId 스윕으로 누락 방지.
  * 치과 cancel-batch·휴지통 비우기·기공소 작업취소/거부·생성 실패 정리에서 공통 사용.
  */
 export async function rollbackPracticeTransferBilling({
@@ -3538,7 +3518,6 @@ export async function rollbackPracticeTransferBilling({
   }
 
   const transferOid = new Types.ObjectId(id);
-  const mfrDeleteKeys = practiceTransferManufacturerDeleteKeys(id);
   const keys = [
     {
       key: practiceTransferEscrowReleaseAbutmentKey(id),
@@ -3594,11 +3573,11 @@ export async function rollbackPracticeTransferBilling({
     },
   ];
 
-  /** @type {Map<string, { events: string[], mode: "delete" | "refund" }>} */
+  /** @type {Map<string, { events: string[] }>} */
   const journalPlanById = new Map();
   const eventsByKey = new Map(keys.map(({ key, events }) => [key, events]));
 
-  // 기본 키 + 환불 후 재게시(`:after:`) 활성 키
+  // 기본 키 + 과거 환불 후 재게시(`:after:`) 활성 키
   const liveKeyResults = await Promise.all(
     keys.map(({ key }) => resolveLiveIdempotencyKey(key, outerSession)),
   );
@@ -3620,27 +3599,35 @@ export async function rollbackPracticeTransferBilling({
     const jid = String(existing?.journalId || "").trim();
     if (!jid || journalPlanById.has(jid)) return;
     const et = String(existing?.eventType || "");
-    if (et === "REFUND") return;
-    if (await isJournalRefunded(existing, outerSession)) return;
     const baseKey = String(key || "").split(":after:")[0];
     const events =
-      eventsByKey.get(baseKey) ||
-      eventsByKey.get(key) ||
-      PRACTICE_TRANSFER_ROLLBACK_EVENT_TYPES;
-    const mode =
-      mfrDeleteKeys.has(baseKey) ||
-      mfrDeleteKeys.has(String(existing?.idempotencyKey || "")) ||
-      MANUFACTURER_SPEND_EVENT_TYPES.includes(et)
-        ? "delete"
-        : "refund";
-    journalPlanById.set(jid, { events, mode });
+      et === "REFUND"
+        ? ["REFUND"]
+        : eventsByKey.get(baseKey) ||
+          eventsByKey.get(key) ||
+          PRACTICE_TRANSFER_ROLLBACK_EVENT_TYPES;
+    journalPlanById.set(jid, { events });
+
+    // 과거 비제조사 REFUND 정책 잔여분 — 원본 삭제 시 쌍도 함께 제거
+    if (et !== "REFUND") {
+      const refund = await getJournalByIdempotencyKey({
+        idempotencyKey: refundIdempotencyKeyFor(
+          String(existing?.idempotencyKey || key || ""),
+        ),
+        session: outerSession,
+      });
+      const rid = String(refund?.journalId || "").trim();
+      if (rid && !journalPlanById.has(rid)) {
+        journalPlanById.set(rid, { events: ["REFUND"] });
+      }
+    }
   };
 
   for (const [key, existing] of journalsByKey.entries()) {
     await considerJournal(key, existing);
   }
 
-  // 키 누락·과거 포맷·디자인비 ADJUST 보강: refType+refId 스윕
+  // 키 누락·과거 포맷·디자인비 ADJUST·REFUND 스윕
   const byRef = await LedgerJournal.find({
     refType: "PRACTICE_TRANSFER",
     refId: { $in: [transferOid, id] },
@@ -3678,7 +3665,8 @@ export async function rollbackPracticeTransferBilling({
     if (!ownerId || !Types.ObjectId.isValid(ownerId)) continue;
     const amount = Number(line?.amount || 0);
     if (!Number.isFinite(amount) || amount === 0) continue;
-    // 소비(-) 삭제/REFUND → 잔액 복원(+). 적립(+) 삭제/REFUND → 잔액 차감(-).
+    // 소비(-) 삭제 → 잔액 복원(+). 적립(+) 삭제 → 잔액 차감(-).
+    // 원본+REFUND를 같이 지우면 순변화 0.
     balanceRestoreByAnchor[ownerId] =
       Number(balanceRestoreByAnchor[ownerId] || 0) - amount;
   }
@@ -3687,13 +3675,6 @@ export async function rollbackPracticeTransferBilling({
   let lastReason = "no_spend";
   const deletedJournalIds = [];
   const refundJournalIds = [];
-
-  const deleteEntries = [...journalPlanById.entries()].filter(
-    ([, plan]) => plan.mode === "delete",
-  );
-  const refundEntries = [...journalPlanById.entries()].filter(
-    ([, plan]) => plan.mode === "refund",
-  );
 
   const applyDeleteResults = (results) => {
     for (const { journalId, deleteResult } of results) {
@@ -3707,18 +3688,7 @@ export async function rollbackPracticeTransferBilling({
     }
   };
 
-  const applyRefundResults = (results) => {
-    for (const { refundResult } of results) {
-      if (refundResult?.journalId && (refundResult.posted || refundResult.idempotent)) {
-        didRollback = true;
-        lastReason = null;
-        refundJournalIds.push(refundResult.journalId);
-      } else if (!refundResult?.idempotent) {
-        lastReason = refundResult?.reason || lastReason;
-      }
-    }
-  };
-
+  const deleteEntries = [...journalPlanById.entries()];
   if (outerSession) {
     const deleteResults = [];
     for (const [journalId, plan] of deleteEntries) {
@@ -3730,23 +3700,6 @@ export async function rollbackPracticeTransferBilling({
       deleteResults.push({ journalId, deleteResult });
     }
     applyDeleteResults(deleteResults);
-
-    const refundResults = [];
-    for (const [journalId, plan] of refundEntries) {
-      const refundExpected = plan.events.filter((e) =>
-        PRACTICE_TRANSFER_REFUND_EVENT_TYPES.includes(e),
-      );
-      const refundResult = await postGeneralLedgerCancelRefund({
-        journalId,
-        expectedEventTypes:
-          refundExpected.length > 0
-            ? refundExpected
-            : PRACTICE_TRANSFER_REFUND_EVENT_TYPES,
-        session: outerSession,
-      });
-      refundResults.push({ journalId, refundResult });
-    }
-    applyRefundResults(refundResults);
   } else {
     const deleteResults = await Promise.all(
       deleteEntries.map(([journalId, plan]) =>
@@ -3758,23 +3711,6 @@ export async function rollbackPracticeTransferBilling({
       ),
     );
     applyDeleteResults(deleteResults);
-
-    const refundResults = await Promise.all(
-      refundEntries.map(([journalId, plan]) => {
-        const refundExpected = plan.events.filter((e) =>
-          PRACTICE_TRANSFER_REFUND_EVENT_TYPES.includes(e),
-        );
-        return postGeneralLedgerCancelRefund({
-          journalId,
-          expectedEventTypes:
-            refundExpected.length > 0
-              ? refundExpected
-              : PRACTICE_TRANSFER_REFUND_EVENT_TYPES,
-          session: null,
-        }).then((refundResult) => ({ journalId, refundResult }));
-      }),
-    );
-    applyRefundResults(refundResults);
   }
 
   if (didRollback) {
@@ -4450,7 +4386,7 @@ export async function holdPracticeTransferProsthesisFollowUpCredits({
   }
 }
 
-/** 후속 보철 취소 — 해당 followUpIndex hold 원본 유지 + REFUND·잔액 복원 */
+/** 후속 보철 취소 — 해당 followUpIndex hold 물리 삭제·잔액 복원 */
 export async function releasePracticeTransferProsthesisFollowUpCredits({
   transfer,
   followUpIndex = 0,
@@ -4479,16 +4415,15 @@ export async function releasePracticeTransferProsthesisFollowUpCredits({
     .session(outerSession || null)
     .lean();
 
-  const refundResult = await postGeneralLedgerCancelRefund({
+  const deleted = await deleteGeneralLedgerCommitJournal({
     journalId: existing.journalId,
     expectedEventTypes: ["PRACTICE_TRANSFER_SPEND_HOLD"],
-    displayLabel: "후속 보철 보류 취소",
     session: outerSession,
   });
-  if (!refundResult?.journalId || !(refundResult.posted || refundResult.idempotent)) {
+  if (!deleted?.deleted) {
     return {
       released: false,
-      reason: refundResult?.reason || "refund_failed",
+      reason: deleted?.reason || "delete_failed",
     };
   }
 
@@ -4526,7 +4461,7 @@ export async function releasePracticeTransferProsthesisFollowUpCredits({
   return {
     released: true,
     journalId: existing.journalId,
-    refundJournalId: refundResult.journalId,
+    refundJournalId: null,
     balanceRestoreByAnchor,
   };
 }
@@ -5147,9 +5082,7 @@ export async function grantAbutmentDesignLabFee({
 }
 
 /**
- * 폐기된 PTX 배송 hold 1건 해제 → 잔액 복원.
- * - abuts_shipping(제조사 배송 경로): 물리 삭제
- * - lab_shipping 등: 원본 유지 + REFUND
+ * 폐기된 PTX 배송 hold 1건 해제 → 잔액 복원(원본 물리 삭제).
  */
 async function releasePracticeTransferShippingHoldJournal({
   transferId,
@@ -5187,44 +5120,22 @@ async function releasePracticeTransferShippingHoldJournal({
     if (!ownerId || !Types.ObjectId.isValid(ownerId)) continue;
     const amount = Number(line?.amount || 0);
     if (!Number.isFinite(amount) || amount === 0) continue;
-    // 소비(-) 삭제/REFUND → 잔액 복원(+)
+    // 소비(-) 삭제 → 잔액 복원(+)
     balanceRestoreByAnchor[ownerId] =
       Number(balanceRestoreByAnchor[ownerId] || 0) - amount;
   }
 
-  const isManufacturerShippingHold =
-    key === practiceTransferHoldAbutsShippingKey(id) ||
-    MANUFACTURER_SPEND_EVENT_TYPES.includes(String(holdJournal.eventType || ""));
-
-  let refundJournalId = null;
-  if (isManufacturerShippingHold) {
-    const deleted = await deleteGeneralLedgerCommitJournal({
+  const deleted = await deleteGeneralLedgerCommitJournal({
+    journalId,
+    expectedEventTypes: ["PRACTICE_TRANSFER_SPEND_HOLD", "SHIPPING_SPEND_HOLD"],
+    session,
+  });
+  if (!deleted?.deleted) {
+    return {
+      released: false,
+      reason: deleted?.reason || "delete_failed",
       journalId,
-      expectedEventTypes: ["PRACTICE_TRANSFER_SPEND_HOLD", "SHIPPING_SPEND_HOLD"],
-      session,
-    });
-    if (!deleted?.deleted) {
-      return {
-        released: false,
-        reason: deleted?.reason || "delete_failed",
-        journalId,
-      };
-    }
-  } else {
-    const refundResult = await postGeneralLedgerCancelRefund({
-      journalId,
-      expectedEventTypes: ["PRACTICE_TRANSFER_SPEND_HOLD"],
-      displayLabel: "배송비 보류 취소",
-      session,
-    });
-    if (!refundResult?.journalId || !(refundResult.posted || refundResult.idempotent)) {
-      return {
-        released: false,
-        reason: refundResult?.reason || "refund_failed",
-        journalId,
-      };
-    }
-    refundJournalId = refundResult.journalId;
+    };
   }
 
   if (billingZeroFields.length) {
@@ -5281,7 +5192,7 @@ async function releasePracticeTransferShippingHoldJournal({
   return {
     released: true,
     journalId,
-    refundJournalId,
+    refundJournalId: null,
     balanceRestoreByAnchor,
     heldTotal: Math.max(
       0,
@@ -5660,7 +5571,7 @@ async function commitPracticeTransferShippingSpend({
 }
 
 /**
- * 어벗디자인비 지급 회수(디자인 업로드 취소 시). ADJUST 원본 유지 + REFUND.
+ * 어벗디자인비 지급 회수(디자인 업로드 취소 시). ADJUST 원본 물리 삭제.
  */
 export async function revokeAbutmentDesignLabFee({
   requestDoc,
@@ -5689,22 +5600,33 @@ export async function revokeAbutmentDesignLabFee({
       "",
   ).trim();
 
-  const refundResult = await postGeneralLedgerCancelRefund({
-    journalId: existing.journalId,
-    expectedEventTypes: ["ADJUST"],
-    createdBy: actorUserId || null,
-    displayLabel: "디자인비 회수",
+  // 과거 REFUND 쌍이 있으면 함께 삭제(순잔액 0) — emit은 활성(미환불) 삭제만
+  const refundSibling = await getJournalByIdempotencyKey({
+    idempotencyKey: refundIdempotencyKeyFor(
+      String(existing?.idempotencyKey || ""),
+    ),
   });
-
-  if (!refundResult?.journalId || !(refundResult.posted || refundResult.idempotent)) {
-    return {
-      revoked: false,
-      reason: refundResult?.reason || "refund_failed",
-      journalId: existing.journalId,
-    };
+  const hadRefundSibling = Boolean(refundSibling?.journalId);
+  const deleteIds = [
+    existing.journalId,
+    ...(hadRefundSibling ? [refundSibling.journalId] : []),
+  ];
+  for (const journalId of deleteIds) {
+    const deleted = await deleteGeneralLedgerCommitJournal({
+      journalId,
+      expectedEventTypes:
+        journalId === existing.journalId ? ["ADJUST"] : ["REFUND"],
+    });
+    if (!deleted?.deleted && journalId === existing.journalId) {
+      return {
+        revoked: false,
+        reason: deleted?.reason || "delete_failed",
+        journalId: existing.journalId,
+      };
+    }
   }
 
-  if (resolvedLabAnchorId && amount > 0) {
+  if (resolvedLabAnchorId && amount > 0 && !hadRefundSibling) {
     try {
       const { emitCreditBalanceUpdatedToBusiness } = await import(
         "../utils/creditRealtime.js"
@@ -5713,7 +5635,7 @@ export async function revokeAbutmentDesignLabFee({
         businessAnchorId: resolvedLabAnchorId,
         balanceDelta: -amount,
         reason: "abutment_design_lab_fee_revoke",
-        refId: refundResult.journalId || existing.journalId || requestId,
+        refId: existing.journalId || requestId,
       });
     } catch {
       // best-effort
@@ -5723,7 +5645,7 @@ export async function revokeAbutmentDesignLabFee({
   return {
     revoked: true,
     journalId: existing.journalId,
-    refundJournalId: refundResult.journalId,
+    refundJournalId: null,
     amount,
     actorUserId: actorUserId || null,
     transferId: transferId || null,

@@ -365,8 +365,8 @@ export function refundIdempotencyKeyFor(sourceIdempotencyKey) {
 }
 
 /**
- * 비제조사 소비 취소: 원본 저널 유지 + 반대부호 REFUND 저널.
- * 제조사 REQUEST_/SHIPPING_ 이벤트는 거부(호출부는 deleteGeneralLedgerCommitJournal 사용).
+ * 비제조사(스토어) 소비 취소: 원본 저널 유지 + 반대부호 REFUND 저널.
+ * 제조사 REQUEST_/SHIPPING_ · PTX 롤백은 거부(호출부는 deleteGeneralLedgerCommitJournal 사용).
  */
 export async function postGeneralLedgerCancelRefund({
   journalId,

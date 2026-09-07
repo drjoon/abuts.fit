@@ -134,7 +134,8 @@
   - `REQUEST` 차감 삭제: **가공 롤백(CAM 복귀)** 시 대응 COMMIT 이벤트/라인 **물리 삭제**(HOLD는 유지). 제조사 의뢰비만.
   - `SHIPPING` 차감 삭제: **포장.발송 롤백(세척.패킹 복귀)** 시 대응 COMMIT 이벤트/라인 **물리 삭제**. 제조사 배송비만.
   - 준비 단계 **취소**: 미전환 REQUEST/SHIPPING HOLD 전부 해제(물리 삭제)
-  - **비제조사 소비 취소**(스토어·PTX 기공비/수수료·디자인비 ADJUST 등): 원본 유지 + 취소 시점 `REFUND`(반대부호)로 잔고 복구. 제조사 REQUEST/SHIPPING 경로에는 REFUND 금지.
+  - **기공의뢰(PTX) 삭제·작업취소**: 대응 `PRACTICE_TRANSFER_*`·디자인비 `ADJUST`·PTX 배송 저널 **물리 삭제**(제조사와 동일). 장부 UI에서도 숨김.
+  - **스토어 등 제품 판매 취소**: 원본 `STORE_SALE` 유지 + 취소 시점 `REFUND`(반대부호)로 잔고 복구·「취소」 표시. 제조사 REQUEST/SHIPPING·PTX 경로에는 REFUND 금지.
   - BG 콜백은 파일 처리 결과 동기화 이벤트이며 승인/롤백 트랜지션이 아니므로,
     BG 콜백에서 크레딧/정산 장부 갱신을 수행하지 않음
 - 샘플 정책(강제): `requestCategory in (rnd_sample, copied_sample)`는 크레딧/정산 무관 작업
@@ -199,7 +200,8 @@
 - 커스텀 어벗 의뢰 단가 SSOT: 관리자「플랫폼 설정 · 커스텀어벗」`creditSettings.membershipProductionPrice`(기본 **15,000원**). **신규 Request는 항상 생산만**(`custom_abutment`). `design_custom_abutment`·`membershipDesignAndProductionPrice`(옛 2.5만)는 **레거시 읽기 전용**(신규 쓰기·청구 분기 없음). 기공의뢰 CA 디자인은 수주 기공소·`labFeeSchedule` 커스텀어벗 수가. 신속=`expressFee`(기본 **+2,000원**). 기공소 어벗생산의뢰는 `labProductionPrice` 오버레이. **치과 멤버십/일반 청구 이중가 없음**. `regular*`·관리자「멤버/일반」은 **딜러 유무 분배**용. 가입 90일 1만원·치과 멤버십 월정 없음.
 - 롤백 원칙:
   - **제조사 의뢰비·배송비**(`REQUEST_SPEND_*` / `SHIPPING_SPEND_*`): 롤백·준비 취소 시 원본 저널/라인 **물리 삭제**(REFUND 추가 금지)
-  - **그 외 소비**(스토어 `STORE_SALE`, PTX 기공비/플랫폼수수료/에스크로, 디자인비 `ADJUST` 등): 원본 유지 + 취소 시점 **`REFUND`**(라인 부호 반전)로 잔고 복구
+  - **기공의뢰(PTX)**(`PRACTICE_TRANSFER_*`·디자인비 `ADJUST`·PTX 배송): 삭제·작업취소 시 원본 저널/라인 **물리 삭제**(과거 REFUND 쌍도 함께 삭제)
+  - **스토어**(`STORE_SALE`): 원본 유지 + 취소 시점 **`REFUND`**(라인 부호 반전)로 잔고 복구·취소 표시
 - 조회/표시 타입 원칙:
   - 충전은 `CHARGE_PAID` / `CHARGE_FREE_REQUEST` / `CHARGE_FREE_SHIPPING`으로 분리 표기 (`CHARGE` 단일표시 금지)
   - 소비는 `SPEND_PAID` / `SPEND_FREE_REQUEST` / `SPEND_FREE_SHIPPING`으로 분리 표기 (`SPEND` 단일표시 금지)

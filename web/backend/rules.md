@@ -668,7 +668,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - `stageFrom`, `stageTo` (워크시트 승인/롤백 전이 기록)
   - `idempotencyKey`(unique)
   - `occurredAt`, `createdAt`, `createdBy`
-  - `status` (`POSTED`만 허용. 제조사 REQUEST/SHIPPING 롤백은 삭제. 비제조사 취소는 `REFUND` 추가 — VOID 상태 없음)
+  - `status` (`POSTED`만 허용. 제조사 REQUEST/SHIPPING·PTX 롤백은 삭제. 스토어 취소는 `REFUND` 추가 — VOID 상태 없음)
 
 - LedgerLine 스키마 초안(필수 필드):
   - `journalId`(FK), `lineNo`
@@ -707,7 +707,8 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - 샘플(`rnd_sample|copied_sample`)은 `no_spend`를 정상으로 허용합니다.
     - 일반 의뢰는 기본적으로 `no_spend`를 409로 중단하되, **COMMIT** 소비 라인(`REQ_PAID_CREDIT|REQ_FREE_REQUEST_CREDIT`, refType=REQUEST, refId=request._id, amount<0, journal.eventType=`REQUEST_SPEND_COMMIT`)이 이미 없으면 idempotent success로 허용합니다.
   - `SHIPPING` 차감 삭제: **포장.발송 롤백(세척.패킹 복귀)** 시, 집하 전에 차감된 레거시 패키지가 있으면 대응 커밋을 물리 삭제. 집하 전 정상 건은 `shippingPackageId`가 없어 no-op.
-  - **비제조사 소비 취소**(강제): 스토어 `STORE_SALE`, PTX(`PRACTICE_TRANSFER_*`·디자인비 `ADJUST` 등)는 원본 유지 + 취소 시점 `REFUND`(반대부호, idempotency=`원본키:refund`). PTX abuts 배송(`SHIPPING_SPEND_*`·abuts_shipping hold)만 제조사와 같이 물리 삭제.
+  - **기공의뢰(PTX) 삭제·작업취소**(강제): `PRACTICE_TRANSFER_*`·디자인비 `ADJUST`·PTX 배송 저널은 원본 **물리 삭제**(과거 REFUND 쌍 포함). 장부 enrich에서도 숨김.
+  - **스토어 소비 취소**(강제): `STORE_SALE`은 원본 유지 + 취소 시점 `REFUND`(반대부호, idempotency=`원본키:refund`)·UI 「취소」 표시.
   - 제조사 REQUEST/SHIPPING 롤백에서 REFUND 이벤트/라인 추가 금지
   - 조회/표시 타입: `CHARGE_*`, `SPEND_*`, `ADJUST`, `REFUND`(취소)
   - BG 콜백(예: CNC 처리 완료/실패 콜백)은 파일 상태 동기화 전용이며 승인/롤백 트랜지션이 아니므로,
