@@ -34,6 +34,7 @@
  * 2026-08-28: variant page|modal — 구강스캔 메인 캘린더 + 미래일 신규 의뢰.
  * - 2026-08-28: 모바일 — 검색을 상태뱃지(리메이크) 오른쪽 같은 줄로 옮겨 헤더 줄 수 축소.
  * - 2026-08-28: 검색↔신규의뢰 안내 위치 교환 — 안내=헤더, 검색=캘린더 툴바.
+ * - 2026-09-07: 헤더 「도착일 클릭 신규의뢰」안내 문구 제거.
  * - 2026-08-31: calendarRefreshNonce — 전송 직후 소켓 없이도 캘린더 구간 재조회.
  * - 2026-09-02: 휴지통 `거부`(삭제+labRejected)도 달력·상단뱃지에서 제외 — 삭제 후 재등장 방지.
  */
@@ -156,11 +157,8 @@ type PracticeRecentTransfersAllModalProps = {
    * 플로팅·중첩 다이얼로그 focus로 전체보기가 닫히지 않게 한다.
    */
   floatingDetailOpen?: boolean;
-  /** 헤더 우측(안내 옆) — 임시저장·휴지통 등 */
+  /** 헤더 우측 — 임시저장·휴지통 등 */
   headerActions?: ReactNode;
-  /** 헤더 검색 자리 — 도착일 클릭 신규의뢰 안내 */
-  showCalendarNewRequestHint?: boolean;
-  onDismissCalendarNewRequestHint?: () => void;
   /** 오늘 이후 날짜 셀 → 신규 의뢰(도착일) */
   onSelectFutureDay?: (ymd: string) => void;
   /** 값이 바뀌면 캘린더 구간 API를 다시 친다(전송 직후 등). */
@@ -184,8 +182,6 @@ export function PracticeRecentTransfersAllModal({
   initialError = "",
   floatingDetailOpen = false,
   headerActions,
-  showCalendarNewRequestHint = false,
-  onDismissCalendarNewRequestHint,
   onSelectFutureDay,
   calendarRefreshNonce = 0,
   onSelectTransfer,
@@ -652,26 +648,6 @@ export function PracticeRecentTransfersAllModal({
           <div className="flex min-w-0 flex-1 flex-wrap items-center justify-center gap-2">
             {statusBadges}
           </div>
-          {showCalendarNewRequestHint ? (
-            <div
-              role="status"
-              className="flex max-w-full shrink-0 items-center gap-1 text-[11px] font-medium leading-snug text-red-600"
-            >
-              <span className="min-w-0 truncate">
-                신규의뢰하려면 캘린더에서 도착 날짜를 클릭하세요.
-              </span>
-              {onDismissCalendarNewRequestHint ? (
-                <button
-                  type="button"
-                  className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-red-600/70 hover:bg-red-50 hover:text-red-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  aria-label="안내 닫기"
-                  onClick={onDismissCalendarNewRequestHint}
-                >
-                  <X className="h-3 w-3" strokeWidth={2.25} />
-                </button>
-              ) : null}
-            </div>
-          ) : null}
           {headerActions ? (
             <div className="flex shrink-0 flex-wrap items-center gap-2">
               {headerActions}

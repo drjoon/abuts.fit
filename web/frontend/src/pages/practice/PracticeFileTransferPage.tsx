@@ -1212,9 +1212,6 @@ export const PracticeFileTransferPage = ({
   const [requestSubmitting, setRequestSubmitting] = useState(false);
   const requestSubmittingRef = useRef(false);
   const [skipJig, setSkipJig] = useState(true);
-  /** false면 캘린더 「도착일 클릭으로 신규의뢰」안내 표시 */
-  const [calendarNewRequestHintDismissed, setCalendarNewRequestHintDismissed] =
-    useState(false);
   const [rushProcessing, setRushProcessing] = useState(false);
   const [rushConfirmOpen, setRushConfirmOpen] = useState(false);
   const [pendingRushArrivalYmd, setPendingRushArrivalYmd] = useState("");
@@ -2103,16 +2100,6 @@ export const PracticeFileTransferPage = ({
     setImplantFavorites(nextImplantFavorites);
     setAbutmentFavorites(nextAbutmentFavorites);
     setSkipJig(nextSkipJig);
-    if (
-      Object.prototype.hasOwnProperty.call(
-        payload,
-        "calendarNewRequestHintDismissedAt",
-      )
-    ) {
-      setCalendarNewRequestHintDismissed(
-        Boolean(payload.calendarNewRequestHintDismissedAt),
-      );
-    }
     setDefaultAbutmentProductMode(nextDefaultAbutmentProductMode);
     // 로컬 캐시에 키가 없으면 기본값으로 덮지 않음(서버 응답·명시 저장만 반영)
     if (nextAutoMatchBudget) {
@@ -2299,11 +2286,6 @@ export const PracticeFileTransferPage = ({
         // 프리셋은 낙관적 로컬이 SSOT. 서버 echo로 덮으면 동시 GET/다른 저장이 삭제를 되살림.
         if (hasSkipJig) {
           setSkipJig(payload.skipJig !== false);
-        }
-        if (hasCalendarNewRequestHintDismissedAt) {
-          setCalendarNewRequestHintDismissed(
-            Boolean(payload.calendarNewRequestHintDismissedAt),
-          );
         }
         if (hasDefaultAbutmentProductMode) {
           setDefaultAbutmentProductMode(
@@ -2976,16 +2958,6 @@ export const PracticeFileTransferPage = ({
         // 폼 로컬값이 있어도 계정 세팅(문장·프리셋·지그생략·커스텀어벗 기본모드·자동매칭 예산·최소 별)은 서버를 우선 반영
         setMemoSnippets(normalizeMemoSnippets(payload.memoSnippets));
         setSkipJig(payload.skipJig !== false);
-        if (
-          Object.prototype.hasOwnProperty.call(
-            payload,
-            "calendarNewRequestHintDismissedAt",
-          )
-        ) {
-          setCalendarNewRequestHintDismissed(
-            Boolean(payload.calendarNewRequestHintDismissedAt),
-          );
-        }
         setDefaultAbutmentProductMode(
           normalizeAccountAbutmentProductMode(payload.defaultAbutmentProductMode),
         );
@@ -7865,35 +7837,6 @@ export const PracticeFileTransferPage = ({
     </div>
   );
 
-  const dismissCalendarNewRequestHint = useCallback(() => {
-    const dismissedAt = new Date().toISOString();
-    setCalendarNewRequestHintDismissed(true);
-    try {
-      const existingRaw = localStorage.getItem(
-        PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY,
-      );
-      const existing =
-        existingRaw && typeof existingRaw === "string"
-          ? (JSON.parse(existingRaw) as Record<string, unknown>)
-          : {};
-      localStorage.setItem(
-        PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY,
-        JSON.stringify({
-          ...existing,
-          calendarNewRequestHintDismissedAt: dismissedAt,
-          savedAt: Date.now(),
-        }),
-      );
-    } catch {
-      // ignore
-    }
-    void savePracticeTransferSettingsToServer({
-      calendarNewRequestHintDismissedAt: dismissedAt,
-    }).catch(() => {
-      // UI는 닫힌 상태 유지. 다음 저장 기회에 재시도
-    });
-  }, [savePracticeTransferSettingsToServer]);
-
   const practiceTransferRequestIntakeProps: PracticeTransferRequestIntakePanelProps = {
     variant: "plain",
     toothChartDisplayMode: "full",
@@ -8188,8 +8131,6 @@ export const PracticeFileTransferPage = ({
           initialLoading={recentRequestsLoading}
           initialError={recentRequestsError}
           headerActions={calendarHeaderActions}
-          showCalendarNewRequestHint={!calendarNewRequestHintDismissed}
-          onDismissCalendarNewRequestHint={dismissCalendarNewRequestHint}
           onSelectFutureDay={openComposeForArrival}
           calendarRefreshNonce={calendarRefreshNonce}
           onSelectTransfer={(transfer) => {
