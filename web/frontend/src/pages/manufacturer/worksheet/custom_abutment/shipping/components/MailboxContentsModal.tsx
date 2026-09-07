@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-07: 모달 헤더 중앙에 우편함 earliest 출고일(MM/DD) 표시. 케이스 출고일은 유지.
 // - 2026-08-20: 포장.발송 우편함 상세에서 샘플만 삭제 버튼 노출.
 // - 2026-08-03: MailboxContentsModal 상태 배지 공정 라벨을 정규화(의뢰 -> 준비)하여 표시 일관성 확보 (display-only)
 // related files:
@@ -7,7 +8,8 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/backend/controllers/requests/common.review.controller.js
-import { useEffect, useRef, useState } from "react";
+// - web/backend/controllers/requests/shipping.controller.js
+import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/shared/ui/cn";
 import { RESPONSIVE } from "@/shared/ui/responsive";
 import {
@@ -59,6 +61,14 @@ const POSTCODE_SCRIPT_SRC =
 let postcodeScriptPromise: Promise<void> | null = null;
 const POSTCODE_POPUP_NAME = "daum-postcode";
 let postcodePopupOpen = false;
+
+/** 우편함 표시용: YYYY-MM-DD → MM/DD */
+const formatMailboxShipMmDd = (ymd?: string | null): string => {
+  const raw = String(ymd || "").trim();
+  const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return "";
+  return `${m[2]}/${m[3]}`;
+};
 
 const loadPostcodeScript = () => {
   if (typeof window === "undefined") return Promise.resolve();
@@ -126,6 +136,21 @@ export const MailboxContentsModal = ({
 
   const primaryOrganization =
     requests.find((req) => req.requestor?.business)?.requestor?.business || "-";
+
+  // 우편함 출고일 표시 = 칸 안 케이스 estimatedShipYmd 중 가장 빠른 날 (케이스 날짜는 유지)
+  const earliestShipMmDd = useMemo(() => {
+    let earliest = "";
+    for (const req of requests) {
+      const ymd = String(
+        req?.timeline?.estimatedShipYmd ||
+          (req as any)?.estimatedShipYmd ||
+          "",
+      ).trim();
+      if (!ymd) continue;
+      if (!earliest || ymd < earliest) earliest = ymd;
+    }
+    return formatMailboxShipMmDd(earliest);
+  }, [requests]);
 
   // change-log: 2026-08-03 - stage fallback label: 의뢰 -> 준비 (display-only)
   const firstStageRaw = requests.find((req) => req.manufacturerStage)?.manufacturerStage;
@@ -411,21 +436,33 @@ export const MailboxContentsModal = ({
         )}
       >
         <DialogHeader>
-          <DialogTitle className="flex flex-wrap items-center gap-2 text-base text-slate-800">
-            <span className="text-lg font-semibold text-slate-900">
-              {address}
+          <DialogTitle className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 text-base text-slate-800 pr-6">
+            <span className="flex min-w-0 flex-wrap items-center gap-2">
+              <span className="text-lg font-semibold text-slate-900">
+                {address}
+              </span>
+              {receiverDisplayName && receiverDisplayName !== "-" ? (
+                <>
+                  <span className="text-slate-300">•</span>
+                  <span className="truncate text-sm text-slate-600">
+                    {hasPracticeShippingReceiver
+                      ? `직납 ${receiverDisplayName}`
+                      : receiverDisplayName}
+                  </span>
+                </>
+              ) : null}
             </span>
-            {receiverDisplayName && receiverDisplayName !== "-" ? (
-              <>
-                <span className="text-slate-300">•</span>
-                <span className="text-sm text-slate-600">
-                  {hasPracticeShippingReceiver
-                    ? `직납 ${receiverDisplayName}`
-                    : receiverDisplayName}
-                </span>
-              </>
-            ) : null}
-            <span className="ml-auto flex items-center gap-2 mr-6">
+            <span
+              className="justify-self-center tabular-nums text-sm font-semibold text-slate-800"
+              title={
+                earliestShipMmDd
+                  ? `우편함 출고일(가장 빠른 케이스): ${earliestShipMmDd}`
+                  : undefined
+              }
+            >
+              {earliestShipMmDd ? `출고: ${earliestShipMmDd}` : ""}
+            </span>
+            <span className="flex items-center justify-end gap-2">
               <Badge
                 variant="secondary"
                 className="text-[11px] bg-slate-100 text-slate-700"
