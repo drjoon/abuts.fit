@@ -2,8 +2,10 @@
 // - web/frontend/src/shared/chat/chatSoundPrefs.ts
 // - web/frontend/src/shared/chat/chatSoundPlayer.ts
 // - web/frontend/src/shared/chat/chatSoundViewing.ts
+// - web/frontend/src/shared/hooks/useLabReceiveUnreadSound.ts
 // - web/frontend/src/App.tsx
 // change-log:
+// - 2026-09-08: 미확인 의뢰음과 동일 플레이어(중복 재생 방지).
 // - 2026-09-07: 전역 채팅 알림음 — chat:message-created · remote-support:chat.
 
 import { useMemo } from "react";

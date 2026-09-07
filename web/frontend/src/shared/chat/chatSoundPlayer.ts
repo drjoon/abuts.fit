@@ -1,11 +1,14 @@
 // related files:
 // - web/frontend/src/shared/chat/chatSoundPrefs.ts
 // - web/frontend/src/shared/hooks/useChatMessageSound.ts
+// - web/frontend/src/shared/hooks/useLabReceiveUnreadSound.ts
 // change-log:
+// - 2026-09-08: 미확인 의뢰 도착음도 동일 플레이어 사용(채팅과 중복 방지).
 // - 2026-09-07: 채팅 알림음 재생(부드러운 완료음) + AudioContext unlock.
 
 const SOUND_URL = "/sounds/chat-notify.mp3";
-const MIN_INTERVAL_MS = 700;
+/** 채팅·미확인 의뢰가 거의 동시에 올 때 한 번만 울리기 */
+const MIN_INTERVAL_MS = 900;
 
 let audioEl: HTMLAudioElement | null = null;
 let unlocked = false;

@@ -18,6 +18,7 @@ import { Suspense, lazy, useEffect } from "react";
 import { loadRulesFromBackend } from "@/shared/filename/filenameRules";
 import { useSocket } from "@/shared/hooks/useSocket";
 import { useChatMessageSound } from "@/shared/hooks/useChatMessageSound";
+import { useLabReceiveUnreadSound } from "@/shared/hooks/useLabReceiveUnreadSound";
 
 // related files:
 // - web/frontend/src/shared/types/role.ts
@@ -499,6 +500,7 @@ const App = () => {
 
   useSocket();
   useChatMessageSound();
+  useLabReceiveUnreadSound();
 
   // 앱 시작 시 백엔드에서 파일명 파싱 룰 로드
   useEffect(() => {

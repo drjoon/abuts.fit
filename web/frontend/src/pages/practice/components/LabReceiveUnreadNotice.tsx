@@ -5,9 +5,26 @@
  *
  * related files:
  * - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
+ * - web/frontend/src/shared/practice/labReceiveSoundPrefs.ts
+ * - web/frontend/src/shared/hooks/useLabReceiveUnreadSound.ts
+ * change-log:
+ * - 2026-09-08: 미확인 도착 알림음 on/off 아이콘.
  */
-import { AlertCircle } from "lucide-react";
+import { useEffect, useState } from "react";
+import { AlertCircle, Volume2, VolumeX } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/shared/ui/cn";
+import {
+  LAB_RECEIVE_SOUND_PREFS_CHANGED_EVENT,
+  getLabReceiveSoundPrefs,
+  setLabReceiveSoundEnabled,
+  type LabReceiveSoundPrefs,
+} from "@/shared/practice/labReceiveSoundPrefs";
 
 export type LabReceiveUnreadNoticeItem = {
   id: string;
@@ -23,6 +40,24 @@ type LabReceiveUnreadNoticeProps = {
   className?: string;
 };
 
+function useLabReceiveSoundPrefsState(): LabReceiveSoundPrefs {
+  const [prefs, setPrefs] = useState<LabReceiveSoundPrefs>(() =>
+    getLabReceiveSoundPrefs(),
+  );
+
+  useEffect(() => {
+    const sync = () => setPrefs(getLabReceiveSoundPrefs());
+    window.addEventListener(LAB_RECEIVE_SOUND_PREFS_CHANGED_EVENT, sync);
+    window.addEventListener("storage", sync);
+    return () => {
+      window.removeEventListener(LAB_RECEIVE_SOUND_PREFS_CHANGED_EVENT, sync);
+      window.removeEventListener("storage", sync);
+    };
+  }, []);
+
+  return prefs;
+}
+
 export function LabReceiveUnreadNotice({
   unreadTotal,
   items = [],
@@ -31,6 +66,7 @@ export function LabReceiveUnreadNotice({
   className,
 }: LabReceiveUnreadNoticeProps) {
   const total = Math.max(0, Number(unreadTotal || 0));
+  const soundPrefs = useLabReceiveSoundPrefsState();
   if (total <= 0) return null;
 
   const loadedItems = items.filter(
@@ -41,6 +77,12 @@ export function LabReceiveUnreadNotice({
   if (loadingMoreUnread) {
     message += " 목록을 더 불러오는 중입니다.";
   }
+
+  const soundEnabled = soundPrefs.enabled;
+  const SoundIcon = soundEnabled ? Volume2 : VolumeX;
+  const soundLabel = soundEnabled
+    ? "미확인 의뢰 도착 알림 끄기"
+    : "미확인 의뢰 도착 알림 켜기";
 
   return (
     <div
@@ -53,7 +95,25 @@ export function LabReceiveUnreadNotice({
     >
       <div className="flex min-w-0 items-start gap-2">
         <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" aria-hidden />
-        <p className="min-w-0 font-medium leading-snug">{message}</p>
+        <p className="min-w-0 flex-1 font-medium leading-snug">{message}</p>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className={cn(
+                "h-8 w-8 shrink-0 p-0 text-red-800 hover:bg-red-100/80 hover:text-red-950",
+                !soundEnabled && "text-red-800/55",
+              )}
+              aria-label={soundLabel}
+              onClick={() => setLabReceiveSoundEnabled(!soundEnabled)}
+            >
+              <SoundIcon className="h-4 w-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">{soundLabel}</TooltipContent>
+        </Tooltip>
       </div>
       {loadedItems.length > 0 ? (
         <div className="flex flex-wrap gap-1.5">
