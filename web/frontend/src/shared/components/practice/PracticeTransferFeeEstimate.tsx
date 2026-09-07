@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/practice/practiceTransferFeeQuote.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/components/practice/PracticeToothWorkChartReadOnly.tsx
+// - 2026-09-07: 견적 툴팁 — 치아당 수가여도 상·하악 전체 동일 보철은 상악/하악 한 줄.
 // - 2026-09-07: 견적·툴팁 보철물 — 상·하악 전체 치아번호는 상악/하악(중복 (상악) 접미사면 번호 생략).
 // - 2026-09-05: revealAmounts — 가이드투어 견적 홀에서 hover 전 blur 숨김 해제.
 // - 2026-09-05: onBreakdownTooltipOpenChange — 가이드투어 견적 스텝이 툴팁 실오픈 기준으로 진행.
@@ -82,7 +83,11 @@ import {
   normalizeRushFeeMultiplier,
   toToothDecadeSortNumber,
 } from "@/shared/practice/labFeeSchedule";
-import { formatToothNumbersForFeeLine } from "@/shared/practice/transferMemo";
+import {
+  formatToothNumbersForFeeLine,
+  LOWER_ARCH_TEETH,
+  UPPER_ARCH_TEETH,
+} from "@/shared/practice/transferMemo";
 
 export type PracticeTransferSettlementShippingLine = {
   key: string;
@@ -373,6 +378,82 @@ const mergeFeeBreakdownLinesByTooth = (
   return sortPracticeTransferFeeLines(order.map((key) => byKey.get(key)!));
 };
 
+const isSingleFdiTooth = (toothNumber: string) =>
+  /^[1-4][1-8]$/.test(String(toothNumber || "").trim());
+
+/**
+ * 같은 보철이 상·하악 전체(16치)를 채우면 치아별 줄을 상악/하악 한 줄로 합친다.
+ * (치아당 수가여도 툴팁은 전체치열 축약)
+ */
+const collapseFullArchFeeBreakdownLines = (
+  lines: FeeBreakdownLine[],
+): FeeBreakdownLine[] => {
+  const singles = lines.filter((line) =>
+    isSingleFdiTooth(String(line.toothNumber || "")),
+  );
+  if (singles.length < 16) return lines;
+
+  const byType = new Map<string, FeeBreakdownLine[]>();
+  for (const line of singles) {
+    const type = String(line.prosthesisType || "").trim() || "보철";
+    const list = byType.get(type) || [];
+    list.push(line);
+    byType.set(type, list);
+  }
+
+  const consumed = new Set<FeeBreakdownLine>();
+  const collapsed: FeeBreakdownLine[] = [];
+
+  for (const [type, typeLines] of byType) {
+    const toothSet = new Set(
+      typeLines.map((line) => String(line.toothNumber || "").trim()),
+    );
+    const arches: Array<{ label: string; teeth: readonly string[] }> = [
+      { label: "상악", teeth: UPPER_ARCH_TEETH },
+      { label: "하악", teeth: LOWER_ARCH_TEETH },
+    ];
+    for (const arch of arches) {
+      if (!arch.teeth.every((tooth) => toothSet.has(tooth))) continue;
+      const archLines = typeLines.filter((line) =>
+        (arch.teeth as readonly string[]).includes(
+          String(line.toothNumber || "").trim(),
+        ),
+      );
+      if (archLines.length !== arch.teeth.length) continue;
+      for (const line of archLines) consumed.add(line);
+      const labFeeMinParts = archLines
+        .map((line) => line.labFeeMin)
+        .filter((n): n is number => n != null && Number.isFinite(n));
+      collapsed.push({
+        toothNumber: arch.label,
+        prosthesisType: type,
+        labFee: archLines.reduce((sum, line) => sum + line.labFee, 0),
+        ...(labFeeMinParts.length === archLines.length
+          ? {
+              labFeeMin: labFeeMinParts.reduce((sum, n) => sum + n, 0),
+            }
+          : {}),
+        labAbutmentFee: archLines.reduce(
+          (sum, line) => sum + line.labAbutmentFee,
+          0,
+        ),
+        labAbutmentPending: archLines.some((line) => line.labAbutmentPending),
+        abutmentRetail: archLines.reduce(
+          (sum, line) => sum + line.abutmentRetail,
+          0,
+        ),
+        abutmentRetailNote: archLines.find((line) => line.abutmentRetailNote)
+          ?.abutmentRetailNote,
+      });
+    }
+  }
+
+  if (collapsed.length === 0) return lines;
+
+  const remainder = lines.filter((line) => !consumed.has(line));
+  return sortPracticeTransferFeeLines([...collapsed, ...remainder]);
+};
+
 function FeeBreakdownTable({
   lines: rawLines,
   labFacing = false,
@@ -391,7 +472,10 @@ function FeeBreakdownTable({
   abutmentShareHoldPending?: boolean | null;
 }) {
   // 같은 치아 = 한 줄. 열: 보철기공비 | 커스텀어벗 | (있으면) 어벗 디자인+생산비.
-  const lines = mergeFeeBreakdownLinesByTooth(rawLines);
+  // 상·하악 전체 동일 보철은 상악/하악으로 축약.
+  const lines = collapseFullArchFeeBreakdownLines(
+    mergeFeeBreakdownLinesByTooth(rawLines),
+  );
   const showProsthesisColumn = lines.some(
     (line) =>
       line.labFee > 0 ||

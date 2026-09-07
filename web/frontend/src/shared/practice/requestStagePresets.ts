@@ -10,7 +10,7 @@ import { DEFAULT_PRACTICE_ARRIVAL_OFFSET_DAYS } from "@/shared/practice/labArriv
 
 export const MAX_REQUEST_STAGE_PRESETS = 40;
 export const MAX_STAGES_PER_PRESET = 12;
-export const MAX_STAGE_NAME_LEN = 40;
+export const MAX_STAGE_NAME_LEN = 48;
 
 export type PracticeRequestStage = {
   name: string;
@@ -34,13 +34,20 @@ export const DEFAULT_REQUEST_STAGE_PRESETS: PracticeRequestStagePreset[] = [
   {
     prosthesisType: "전체틀니",
     stages: [
-      { name: "인상", arrivalOffsetDays: DEFAULT_PRACTICE_ARRIVAL_OFFSET_DAYS },
+      {
+        name: "스냅인상",
+        arrivalOffsetDays: DEFAULT_PRACTICE_ARRIVAL_OFFSET_DAYS,
+      },
+      {
+        name: "최종인상",
+        arrivalOffsetDays: DEFAULT_PRACTICE_ARRIVAL_OFFSET_DAYS,
+      },
       {
         name: "교합채득",
         arrivalOffsetDays: DEFAULT_PRACTICE_ARRIVAL_OFFSET_DAYS,
       },
       {
-        name: "납의치시적",
+        name: "배열확인",
         arrivalOffsetDays: DEFAULT_PRACTICE_ARRIVAL_OFFSET_DAYS,
       },
       { name: "완성", arrivalOffsetDays: DEFAULT_PRACTICE_ARRIVAL_OFFSET_DAYS },
@@ -49,19 +56,35 @@ export const DEFAULT_REQUEST_STAGE_PRESETS: PracticeRequestStagePreset[] = [
   {
     prosthesisType: "부분틀니",
     stages: [
-      { name: "인상", arrivalOffsetDays: DEFAULT_PRACTICE_ARRIVAL_OFFSET_DAYS },
       {
-        name: "금속프레임시적",
+        name: "스냅인상",
         arrivalOffsetDays: DEFAULT_PRACTICE_ARRIVAL_OFFSET_DAYS,
       },
       {
-        name: "납의치시적",
+        name: "최종인상",
+        arrivalOffsetDays: DEFAULT_PRACTICE_ARRIVAL_OFFSET_DAYS,
+      },
+      {
+        name: "프레임시적&교합채득",
+        arrivalOffsetDays: DEFAULT_PRACTICE_ARRIVAL_OFFSET_DAYS,
+      },
+      {
+        name: "배열확인",
         arrivalOffsetDays: DEFAULT_PRACTICE_ARRIVAL_OFFSET_DAYS,
       },
       { name: "완성", arrivalOffsetDays: DEFAULT_PRACTICE_ARRIVAL_OFFSET_DAYS },
     ],
   },
 ];
+
+/** 2026-09-07 초안 기본값 — 새 기본으로 승격 */
+const LEGACY_DEFAULT_STAGE_NAME_SIGS: Record<string, string> = {
+  전체틀니: "인상|교합채득|납의치시적|완성",
+  부분틀니: "인상|금속프레임시적|납의치시적|완성",
+};
+
+const stageNameSignature = (stages: PracticeRequestStage[]) =>
+  stages.map((s) => s.name).join("|");
 
 const normalizeOffsetDays = (value: unknown): number => {
   const raw = Number(value);
@@ -122,7 +145,14 @@ export const normalizeRequestStagePresets = (
       .trim()
       .slice(0, MAX_STAGE_NAME_LEN);
     if (!prosthesisType) continue;
-    const stages = normalizeRequestStages(row.stages);
+    let stages = normalizeRequestStages(row.stages);
+    const legacySig = LEGACY_DEFAULT_STAGE_NAME_SIGS[prosthesisType];
+    if (legacySig && stageNameSignature(stages) === legacySig) {
+      const upgraded = DEFAULT_REQUEST_STAGE_PRESETS.find(
+        (p) => p.prosthesisType === prosthesisType,
+      );
+      if (upgraded) stages = upgraded.stages.map((s) => ({ ...s }));
+    }
     // 단계 0개 = 다단계 아님(프리셋 제거). 목록에는 남기지 않음.
     if (stages.length === 0) continue;
     const key = prosthesisType.toLowerCase();

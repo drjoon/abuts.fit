@@ -636,6 +636,37 @@ const businessAnchorSchema = new mongoose.Schema(
         type: [String],
         default: ["인레이", "크라운", "커스텀어벗", "브리지", "유지장치", "임시치아"],
       },
+      // 전체치열 모달 좌측 보철물 목록(순서 유지). 기본=전체틀니·부분틀니·랩어라운드.
+      archBulkProsthesisTypes: {
+        type: [String],
+        default: ["전체틀니", "부분틀니", "랩어라운드"],
+      },
+      // 다단계 기공의뢰(전체틀니·부분틀니 등) 단계 프리셋. null=미설정→기본, []=의도적 없음.
+      // stages[].arrivalOffsetDays = 해당 단계 주문→치과도착 달력 일수.
+      requestStagePresets: {
+        type: [
+          {
+            _id: false,
+            prosthesisType: { type: String, default: "" },
+            stages: {
+              type: [
+                {
+                  _id: false,
+                  name: { type: String, default: "" },
+                  arrivalOffsetDays: {
+                    type: Number,
+                    default: 7,
+                    min: 0,
+                    max: 365,
+                  },
+                },
+              ],
+              default: [],
+            },
+          },
+        ],
+        default: undefined,
+      },
       memoSnippets: {
         type: [String],
         default: [],

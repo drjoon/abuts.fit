@@ -1,8 +1,10 @@
 // related files:
 // - web/frontend/src/pages/practice/PracticeSettingsPage.tsx
 // - web/frontend/src/shared/practice/labArrivalDefaults.ts
+// - web/frontend/src/shared/practice/requestStagePresets.ts
 // - web/backend/controllers/practiceTransfers/practiceTransferSettings.controller.js
 // - 2026-08-25: 치과 설정 — 기공소별 주문→치과도착 기본 일수.
+// - 2026-09-07: 기공의뢰 다단계(틀니 등) 단계 프리셋.
 
 import { useCallback, useEffect, useState } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -25,10 +27,20 @@ import {
   upsertLabArrivalDefault,
   type PracticeLabArrivalDefault,
 } from "@/shared/practice/labArrivalDefaults";
+import {
+  DEFAULT_REQUEST_STAGE_PRESETS,
+  normalizeRequestStagePresets,
+  normalizeRequestStages,
+  upsertRequestStagePreset,
+  type PracticeRequestStage,
+  type PracticeRequestStagePreset,
+} from "@/shared/practice/requestStagePresets";
+import { PracticeRequestStagePresetDialog } from "@/shared/components/practice/PracticeRequestStagePresetDialog";
 
 type SettingsPayload = {
   arrivalDefaultDays?: number;
   labArrivalDefaults?: PracticeLabArrivalDefault[];
+  requestStagePresets?: PracticeRequestStagePreset[];
 };
 
 export function PracticeTransferArrivalSettingsTab() {
@@ -42,6 +54,11 @@ export function PracticeTransferArrivalSettingsTab() {
   const [labArrivalDefaults, setLabArrivalDefaults] = useState<
     PracticeLabArrivalDefault[]
   >([]);
+  const [requestStagePresets, setRequestStagePresets] = useState<
+    PracticeRequestStagePreset[]
+  >(() => normalizeRequestStagePresets(null));
+  const [stageEditType, setStageEditType] = useState<string | null>(null);
+  const [newProsthesisType, setNewProsthesisType] = useState("");
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -64,6 +81,13 @@ export function PracticeTransferArrivalSettingsTab() {
         normalizeArrivalDefaultDays(data.arrivalDefaultDays),
       );
       setLabArrivalDefaults(normalizeLabArrivalDefaults(data.labArrivalDefaults));
+      setRequestStagePresets(
+        normalizeRequestStagePresets(
+          Array.isArray(data.requestStagePresets)
+            ? data.requestStagePresets
+            : null,
+        ),
+      );
     } catch (error) {
       toast({
         title: "설정 로딩 실패",
@@ -79,6 +103,42 @@ export function PracticeTransferArrivalSettingsTab() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const persistStagePresets = async (next: PracticeRequestStagePreset[]) => {
+    if (!token) return false;
+    setSaving(true);
+    try {
+      const normalized = normalizeRequestStagePresets(next);
+      const res = await request<{ data?: SettingsPayload }>({
+        path: "/api/practice/transfers/settings",
+        method: "POST",
+        token,
+        jsonBody: { requestStagePresets: normalized },
+      });
+      if (!res.ok) throw new Error("저장에 실패했습니다.");
+      const data =
+        res.data && typeof res.data === "object"
+          ? ((res.data as { data?: SettingsPayload }).data ?? null)
+          : null;
+      const saved = normalizeRequestStagePresets(
+        Array.isArray(data?.requestStagePresets)
+          ? data.requestStagePresets
+          : normalized,
+      );
+      setRequestStagePresets(saved);
+      return true;
+    } catch (error) {
+      toast({
+        title: "저장 실패",
+        description:
+          error instanceof Error ? error.message : "잠시 후 다시 시도해주세요.",
+        variant: "destructive",
+      });
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const saveAccountDays = async () => {
     if (!token) return;
@@ -187,6 +247,53 @@ export function PracticeTransferArrivalSettingsTab() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const editingPreset = stageEditType
+    ? requestStagePresets.find(
+        (row) =>
+          row.prosthesisType.toLowerCase() === stageEditType.toLowerCase(),
+      ) || {
+        prosthesisType: stageEditType,
+        stages: [],
+      }
+    : null;
+
+  const addProsthesisTypePreset = () => {
+    const name = String(newProsthesisType || "").trim();
+    if (!name) return;
+    if (
+      requestStagePresets.some(
+        (row) => row.prosthesisType.toLowerCase() === name.toLowerCase(),
+      )
+    ) {
+      setStageEditType(name);
+      setNewProsthesisType("");
+      return;
+    }
+    const fallback = DEFAULT_REQUEST_STAGE_PRESETS.find(
+      (row) => row.prosthesisType.toLowerCase() === name.toLowerCase(),
+    );
+    const seedStages: PracticeRequestStage[] = fallback
+      ? fallback.stages.map((s) => ({ ...s }))
+      : [
+          {
+            name: "1차",
+            arrivalOffsetDays: accountArrivalDefaultDays,
+          },
+          {
+            name: "완성",
+            arrivalOffsetDays: accountArrivalDefaultDays,
+          },
+        ];
+    setRequestStagePresets((prev) =>
+      upsertRequestStagePreset(prev, {
+        prosthesisType: name,
+        stages: seedStages,
+      }),
+    );
+    setNewProsthesisType("");
+    setStageEditType(name);
   };
 
   return (
@@ -305,6 +412,137 @@ export function PracticeTransferArrivalSettingsTab() {
           )}
         </CardContent>
       </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>기공의뢰 단계 프리셋</CardTitle>
+          <CardDescription>
+            전체틀니·부분틀니처럼 여러 단계를 거치는 보철의 단계 이름과 단계별
+            주문→도착 일수를 저장합니다. 다른 보철 유형도 추가할 수 있습니다.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {loading ? (
+            <p className="text-sm text-muted-foreground">불러오는 중…</p>
+          ) : requestStagePresets.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              저장된 단계 프리셋이 없습니다. 아래에서 보철 유형을 추가하세요.
+            </p>
+          ) : (
+            requestStagePresets.map((preset) => (
+              <div
+                key={preset.prosthesisType}
+                className="flex flex-wrap items-center gap-2 border-b border-border/60 pb-3 last:border-0 last:pb-0"
+              >
+                <div className="min-w-[8rem] flex-1">
+                  <p className="text-sm font-medium">{preset.prosthesisType}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {preset.stages.map((s) => s.name).join(" → ") || "단계 없음"}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-9"
+                  disabled={saving}
+                  onClick={() => setStageEditType(preset.prosthesisType)}
+                >
+                  편집
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-9"
+                  disabled={saving}
+                  onClick={() => {
+                    void persistStagePresets(
+                      requestStagePresets.filter(
+                        (row) =>
+                          row.prosthesisType.toLowerCase() !==
+                          preset.prosthesisType.toLowerCase(),
+                      ),
+                    ).then((ok) => {
+                      if (ok) {
+                        toast({
+                          title: "삭제 완료",
+                          description: `${preset.prosthesisType} 단계 프리셋을 삭제했습니다.`,
+                        });
+                      }
+                    });
+                  }}
+                >
+                  삭제
+                </Button>
+              </div>
+            ))
+          )}
+          <div className="flex flex-wrap items-end gap-2 pt-1">
+            <div className="min-w-[10rem] flex-1 space-y-1.5">
+              <Label htmlFor="new-stage-prosthesis-type">보철 유형 추가</Label>
+              <Input
+                id="new-stage-prosthesis-type"
+                className="h-9"
+                placeholder="예: 랩어라운드"
+                disabled={loading || saving}
+                value={newProsthesisType}
+                onChange={(e) => setNewProsthesisType(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addProsthesisTypePreset();
+                  }
+                }}
+              />
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              className="h-9"
+              disabled={loading || saving || !String(newProsthesisType).trim()}
+              onClick={addProsthesisTypePreset}
+            >
+              추가
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {editingPreset ? (
+        <PracticeRequestStagePresetDialog
+          open={Boolean(stageEditType)}
+          onOpenChange={(open) => {
+            if (!open) setStageEditType(null);
+          }}
+          prosthesisType={editingPreset.prosthesisType}
+          stages={editingPreset.stages}
+          onConfirm={(stages) => {
+            const next = upsertRequestStagePreset(requestStagePresets, {
+              prosthesisType: editingPreset.prosthesisType,
+              stages: normalizeRequestStages(stages),
+            });
+            void persistStagePresets(next).then((ok) => {
+              if (ok) {
+                toast({
+                  title: "저장 완료",
+                  description: `${editingPreset.prosthesisType} 단계 프리셋을 저장했습니다.`,
+                });
+                setStageEditType(null);
+              }
+            });
+          }}
+          onSavePreset={async (preset) => {
+            const next = upsertRequestStagePreset(requestStagePresets, preset);
+            const ok = await persistStagePresets(next);
+            if (ok) {
+              toast({
+                title: "저장 완료",
+                description: `${preset.prosthesisType} 단계 프리셋을 저장했습니다.`,
+              });
+            }
+          }}
+        />
+      ) : null}
     </div>
   );
 }

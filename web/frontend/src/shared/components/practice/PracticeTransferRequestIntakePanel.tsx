@@ -82,14 +82,16 @@ import { PracticeToothImplantFields } from "@/shared/components/practice/Practic
 import { PracticeToothAbutmentFields } from "@/shared/components/practice/PracticeToothAbutmentFields";
 import { PracticeToothSimpleAbutmentFields } from "@/shared/components/practice/PracticeToothSimpleAbutmentFields";
 import { PracticeCustomSpecsPresetEditDialog } from "@/shared/components/practice/PracticeCustomSpecsPresetEditDialog";
-import { PracticeRequestStagePresetDialog } from "@/shared/components/practice/PracticeRequestStagePresetDialog";
+import { PracticeRequestStageInlineEditor } from "@/shared/components/practice/PracticeRequestStageInlineEditor";
 import {
   normalizeLabRequestStagePlans,
   normalizeRequestStagePresets,
+  normalizeRequestStages,
   prosthesisTypeHasRequestStages,
   resolveRequestStagePreset,
   upsertRequestStagePreset,
   type PracticeLabRequestStagePlan,
+  type PracticeRequestStage,
   type PracticeRequestStagePreset,
 } from "@/shared/practice/requestStagePresets";
 import {
@@ -218,6 +220,7 @@ import {
 // - 2026-09-05: 플랫폼 투어 — 기공소 팝오버 강제오픈 안 함(위치 고정). 수동 오픈 시 z-430.
 // - 2026-09-05: 가이드투어 — 환자명에서 뒤로 시 기공소 팝오버 강제오픈·즉시 3 재진입 방지.
 // - 2026-09-05: 전체 선택 — 상·하악·전체틀니/부분틀니/랩어라운드/커스텀 추가.
+// - 2026-09-07: 전체치열 모달에 기공의뢰 단계 요약·편집 내장. 적용 후 별도 단계 모달 제거.
 // - 2026-09-07: 전체치열 좌측 목록 — 호버 편집/삭제·드래그 정렬·계정 저장.
 // - 2026-09-07: 전체치열 편집/삭제 — group-focus-within 제거(모달 오픈 시 첫 항목 포커스로 아이콘 상시 노출 방지).
 // - 2026-09-05: 전체 선택 모달 — 악궁 좌·타입 우 한 줄씩, + 추가, 악궁 내 + 연결.
@@ -1140,6 +1143,8 @@ export const PracticeTransferRequestIntakePanel = ({
     setArchEditDraft("");
     setArchReorderFromIndex(null);
     setArchReorderHoverIndex(null);
+    setArchStageDraftByType({});
+    setArchStageEditingType(null);
     setArchSelectModalOpen(true);
   };
 
@@ -1172,81 +1177,96 @@ export const PracticeTransferRequestIntakePanel = ({
     [labRequestStagePlansProp],
   );
 
-  const [stageDialogType, setStageDialogType] = useState<string | null>(null);
-  const [stageDialogQueue, setStageDialogQueue] = useState<string[]>([]);
-  const stageDialogDraftRef = useRef<PracticeLabRequestStagePlan[]>([]);
+  /** 전체치열 모달 안 단계 초안(보철 유형별). 적용 시 labRequestStagePlans로 반영 */
+  const [archStageDraftByType, setArchStageDraftByType] = useState<
+    Record<string, PracticeRequestStage[]>
+  >({});
+  const [archStageEditingType, setArchStageEditingType] = useState<string | null>(
+    null,
+  );
+  const requestStagePresetsRef = useRef(requestStagePresets);
+  requestStagePresetsRef.current = requestStagePresets;
+  const stagePresetSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
 
-  const openStageDialogsForTypes = (typeNames: string[]) => {
-    const staged = [
-      ...new Set(
-        typeNames
-          .map((t) => String(t || "").trim())
-          .filter((t) => prosthesisTypeHasRequestStages(t, requestStagePresets)),
-      ),
-    ];
-    if (staged.length === 0) return;
-    stageDialogDraftRef.current = labRequestStagePlans.map((p) => ({
-      ...p,
-      stages: p.stages.map((s) => ({ ...s })),
-    }));
-    setStageDialogQueue(staged.slice(1));
-    setStageDialogType(staged[0] || null);
+  useEffect(() => {
+    return () => {
+      if (stagePresetSaveTimerRef.current) {
+        clearTimeout(stagePresetSaveTimerRef.current);
+      }
+    };
+  }, []);
+
+  const persistArchStagePresetDebounced = (
+    typeName: string,
+    stages: PracticeRequestStage[],
+  ) => {
+    if (!onRequestStagePresetsChange) return;
+    const key = String(typeName || "").trim();
+    const normalized = normalizeRequestStages(stages);
+    if (!key || normalized.length === 0) return;
+    if (stagePresetSaveTimerRef.current) {
+      clearTimeout(stagePresetSaveTimerRef.current);
+    }
+    stagePresetSaveTimerRef.current = setTimeout(() => {
+      const next = upsertRequestStagePreset(requestStagePresetsRef.current, {
+        prosthesisType: key,
+        stages: normalized,
+      });
+      requestStagePresetsRef.current = next;
+      void Promise.resolve(onRequestStagePresetsChange(next)).catch(() => {});
+    }, 450);
   };
 
-  const applyStageDialogConfirm = (
-    stages: PracticeRequestStagePreset["stages"],
-  ) => {
-    const typeName = String(stageDialogType || "").trim();
-    if (!typeName) return;
-    const nextPlans = normalizeLabRequestStagePlans([
-      ...stageDialogDraftRef.current.filter(
-        (row) =>
-          row.prosthesisType.toLowerCase() !== typeName.toLowerCase(),
-      ),
-      {
-        prosthesisType: typeName,
-        stages,
-        currentIndex: 0,
-      },
-    ]);
-    stageDialogDraftRef.current = nextPlans;
-    onLabRequestStagePlansChange?.(nextPlans);
+  const resolveArchStageDraft = (typeName: string): PracticeRequestStage[] => {
+    const key = String(typeName || "").trim();
+    if (!key) return [];
+    const local = archStageDraftByType[key.toLowerCase()];
+    if (local) return local;
+    const fromPlan = labRequestStagePlans.find(
+      (row) => row.prosthesisType.toLowerCase() === key.toLowerCase(),
+    );
+    if (fromPlan?.stages?.length) {
+      return fromPlan.stages.map((s) => ({ ...s }));
+    }
+    const preset = resolveRequestStagePreset(key, requestStagePresets);
+    return preset ? preset.stages.map((s) => ({ ...s })) : [];
+  };
 
+  const setArchStageDraft = (typeName: string, stages: PracticeRequestStage[]) => {
+    const key = String(typeName || "").trim();
+    if (!key) return;
+    setArchStageDraftByType((prev) => ({
+      ...prev,
+      [key.toLowerCase()]: stages,
+    }));
+  };
+
+  const applyArrivalFromFirstStage = (stages: PracticeRequestStage[]) => {
     const firstOffset = stages[0]?.arrivalOffsetDays;
     if (
-      typeof firstOffset === "number" &&
-      Number.isFinite(firstOffset) &&
-      orderDate &&
-      /^\d{4}-\d{2}-\d{2}$/.test(String(orderDate).trim())
+      typeof firstOffset !== "number" ||
+      !Number.isFinite(firstOffset) ||
+      !orderDate ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(String(orderDate).trim())
     ) {
-      const base = new Date(`${String(orderDate).trim()}T00:00:00+09:00`);
-      if (!Number.isNaN(base.getTime())) {
-        base.setDate(base.getDate() + Math.max(0, Math.floor(firstOffset)));
-        const nextArrival = new Intl.DateTimeFormat("en-CA", {
-          timeZone: "Asia/Seoul",
-          year: "numeric",
-          month: "2-digit",
-          day: "2-digit",
-        }).format(base);
-        if (onOrderArrivalDatesChange) {
-          onOrderArrivalDatesChange({
-            orderDate,
-            arrivalDate: nextArrival,
-          });
-        } else {
-          setArrivalDate(nextArrival);
-        }
-      }
-    }
-
-    const rest = stageDialogQueue;
-    if (rest.length > 0) {
-      setStageDialogQueue(rest.slice(1));
-      setStageDialogType(rest[0] || null);
       return;
     }
-    setStageDialogType(null);
-    setStageDialogQueue([]);
+    const base = new Date(`${String(orderDate).trim()}T00:00:00+09:00`);
+    if (Number.isNaN(base.getTime())) return;
+    base.setDate(base.getDate() + Math.max(0, Math.floor(firstOffset)));
+    const nextArrival = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Seoul",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(base);
+    if (onOrderArrivalDatesChange) {
+      onOrderArrivalDatesChange({ orderDate, arrivalDate: nextArrival });
+    } else {
+      setArrivalDate(nextArrival);
+    }
   };
 
   const commitArchBulkList = (next: string[]) => {
@@ -1478,7 +1498,52 @@ export const PracticeTransferRequestIntakePanel = ({
     });
 
     setArchSelectModalOpen(false);
-    openStageDialogsForTypes(uniqueTypes);
+    setArchStageEditingType(null);
+    if (stagePresetSaveTimerRef.current) {
+      clearTimeout(stagePresetSaveTimerRef.current);
+      stagePresetSaveTimerRef.current = null;
+    }
+
+    const stageTypes = [
+      ...new Set(uniqueTypes.map((t) => String(t || "").trim()).filter(Boolean)),
+    ];
+    const nextPlans: PracticeLabRequestStagePlan[] = [];
+    let presetsForFlush = requestStagePresetsRef.current;
+    for (const typeName of stageTypes) {
+      const stages = normalizeRequestStages(resolveArchStageDraft(typeName));
+      if (stages.length === 0) continue;
+      nextPlans.push({
+        prosthesisType: typeName,
+        stages,
+        currentIndex: 0,
+      });
+      presetsForFlush = upsertRequestStagePreset(presetsForFlush, {
+        prosthesisType: typeName,
+        stages,
+      });
+    }
+    if (onRequestStagePresetsChange && nextPlans.length > 0) {
+      requestStagePresetsRef.current = presetsForFlush;
+      void Promise.resolve(onRequestStagePresetsChange(presetsForFlush)).catch(
+        () => {},
+      );
+    }
+    if (nextPlans.length > 0) {
+      onLabRequestStagePlansChange?.(
+        normalizeLabRequestStagePlans([
+          ...labRequestStagePlans.filter(
+            (plan) =>
+              !nextPlans.some(
+                (n) =>
+                  n.prosthesisType.toLowerCase() ===
+                  plan.prosthesisType.toLowerCase(),
+              ),
+          ),
+          ...nextPlans,
+        ]),
+      );
+      applyArrivalFromFirstStage(nextPlans[0]!.stages);
+    }
   };
 
   const { quote: feeQuote } = usePracticeTransferFeeQuote({
@@ -4909,19 +4974,21 @@ export const PracticeTransferRequestIntakePanel = ({
             setArchEditDraft("");
             setArchReorderFromIndex(null);
             setArchReorderHoverIndex(null);
+            setArchStageEditingType(null);
           }
         }}
       >
         <DialogContent
           className={cn(
-            // Dialog 기본 sm:max-w-lg 덮어쓰기.
-            "w-[min(100vw-2rem,28rem)] max-w-[min(100vw-2rem,28rem)] gap-0 overflow-hidden p-0 text-sm sm:w-[28rem] sm:max-w-[28rem] sm:rounded-2xl sm:p-0",
+            // Dialog 기본 sm:max-w-lg 덮어쓰기. 단계 섹션을 위해 약간 넓힘.
+            "w-[min(100vw-2rem,30rem)] max-w-[min(100vw-2rem,30rem)] gap-0 overflow-hidden p-0 text-sm sm:w-[30rem] sm:max-w-[30rem] sm:rounded-2xl sm:p-0",
             nestedDialogClassName,
           )}
           overlayClassName={nestedDialogOverlayClassName}
           onKeyDown={(e) => {
             if (e.key !== "Enter") return;
             if (archEditingIndex != null || archSelectCustomOpen) return;
+            if (archStageEditingType) return;
             if (!archDropUpperType && !archDropLowerType) return;
             e.preventDefault();
             applyArchBulkProsthesisSelection();
@@ -5236,9 +5303,163 @@ export const PracticeTransferRequestIntakePanel = ({
             </div>
           </div>
 
-          <p className="px-5 pb-4 pt-1 text-center text-[11px] leading-relaxed text-slate-500">
-            드래그해서 올려 주세요 · 목록은 드래그로 순서 변경
-          </p>
+          {(() => {
+            const selectedTypes = [
+              ...new Set(
+                [archDropUpperType, archDropLowerType]
+                  .map((t) => String(t || "").trim())
+                  .filter(Boolean),
+              ),
+            ];
+            // 선택한 유형 중 단계 프리셋이 있거나, 편집 중인 유형
+            const stageTypes = selectedTypes.filter(
+              (t) =>
+                prosthesisTypeHasRequestStages(t, requestStagePresets) ||
+                archStageEditingType?.toLowerCase() === t.toLowerCase() ||
+                (archStageDraftByType[t.toLowerCase()]?.length ?? 0) > 0,
+            );
+            // 선택만 했고 프리셋 없는 유형 → 「단계 설정」으로 옵트인
+            const optInTypes = selectedTypes.filter(
+              (t) =>
+                !prosthesisTypeHasRequestStages(t, requestStagePresets) &&
+                archStageEditingType?.toLowerCase() !== t.toLowerCase() &&
+                !(archStageDraftByType[t.toLowerCase()]?.length),
+            );
+
+            if (stageTypes.length === 0 && optInTypes.length === 0) {
+              return (
+                <p className="px-5 pb-4 pt-1 text-center text-[11px] leading-relaxed text-slate-500">
+                  드래그해서 올려 주세요 · 목록은 드래그로 순서 변경
+                </p>
+              );
+            }
+
+            return (
+              <div className="space-y-2 border-t border-slate-100 px-5 py-3">
+                <p className="text-[11px] font-medium text-slate-500">
+                  기공의뢰 단계
+                </p>
+                {stageTypes.map((typeName) => {
+                  const stages = resolveArchStageDraft(typeName);
+                  const editing =
+                    archStageEditingType?.toLowerCase() ===
+                    typeName.toLowerCase();
+                  const upperHit =
+                    String(archDropUpperType || "").trim().toLowerCase() ===
+                    typeName.toLowerCase();
+                  const lowerHit =
+                    String(archDropLowerType || "").trim().toLowerCase() ===
+                    typeName.toLowerCase();
+                  const archLabel =
+                    upperHit && lowerHit
+                      ? "상·하악"
+                      : upperHit
+                        ? "상악"
+                        : lowerHit
+                          ? "하악"
+                          : "";
+                  return (
+                    <div
+                      key={`arch-stage-${typeName}`}
+                      className="rounded-xl bg-slate-50/80 px-3 py-2.5"
+                    >
+                      <div className="mb-1.5 flex items-center justify-between gap-2">
+                        <span className="flex min-w-0 items-center gap-1.5 text-xs font-semibold text-slate-800">
+                          <span className="truncate">{typeName}</span>
+                          {archLabel ? (
+                            <span className="shrink-0 rounded-md bg-white px-1.5 py-0.5 text-[10px] font-medium text-slate-500 ring-1 ring-slate-200/80">
+                              {archLabel}
+                            </span>
+                          ) : null}
+                        </span>
+                        <button
+                          type="button"
+                          className="shrink-0 text-[11px] font-medium text-primary hover:underline"
+                          onClick={() =>
+                            setArchStageEditingType(editing ? null : typeName)
+                          }
+                        >
+                          {editing ? "접기" : "편집"}
+                        </button>
+                      </div>
+                      {editing ? (
+                        <div className="space-y-2">
+                          <PracticeRequestStageInlineEditor
+                            mode="edit"
+                            stages={stages}
+                            onChange={(next) => {
+                              setArchStageDraft(typeName, next);
+                              persistArchStagePresetDebounced(typeName, next);
+                            }}
+                          />
+                        </div>
+                      ) : (
+                        <PracticeRequestStageInlineEditor
+                          mode="compact"
+                          stages={stages}
+                          onChange={() => {}}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
+                {optInTypes.map((typeName) => {
+                  const upperHit =
+                    String(archDropUpperType || "").trim().toLowerCase() ===
+                    typeName.toLowerCase();
+                  const lowerHit =
+                    String(archDropLowerType || "").trim().toLowerCase() ===
+                    typeName.toLowerCase();
+                  const archLabel =
+                    upperHit && lowerHit
+                      ? "상·하악"
+                      : upperHit
+                        ? "상악"
+                        : lowerHit
+                          ? "하악"
+                          : "";
+                  return (
+                  <button
+                    key={`arch-stage-optin-${typeName}`}
+                    type="button"
+                    className="flex w-full items-center justify-between rounded-xl border border-dashed border-slate-200 bg-white px-3 py-2 text-left transition-colors hover:border-primary/40 hover:bg-primary-soft/20"
+                    onClick={() => {
+                      const seed = [
+                        {
+                          name: "1차",
+                          arrivalOffsetDays: arrivalDefaultDays,
+                        },
+                        {
+                          name: "완성",
+                          arrivalOffsetDays: arrivalDefaultDays,
+                        },
+                      ];
+                      setArchStageDraft(typeName, seed);
+                      persistArchStagePresetDebounced(typeName, seed);
+                      setArchStageEditingType(typeName);
+                    }}
+                  >
+                    <span className="flex min-w-0 items-center gap-1.5 text-xs text-slate-600">
+                      <span className="truncate">{typeName}</span>
+                      {archLabel ? (
+                        <span className="shrink-0 rounded-md bg-slate-50 px-1.5 py-0.5 text-[10px] font-medium text-slate-500 ring-1 ring-slate-200/80">
+                          {archLabel}
+                        </span>
+                      ) : null}
+                      <span className="text-slate-400">· 단계 설정</span>
+                    </span>
+                    <span className="text-[11px] font-medium text-primary">
+                      추가
+                    </span>
+                  </button>
+                  );
+                })}
+                <p className="text-center text-[10px] leading-relaxed text-slate-400">
+                  재도착 시 다음 단계로 진행 · 원할 때만 편집
+                </p>
+              </div>
+            );
+          })()}
 
           <DialogFooter className="gap-2 border-t border-slate-100 bg-slate-50/60 px-5 py-3.5 sm:flex-row sm:justify-end sm:space-x-0">
             <Button
@@ -5582,43 +5803,6 @@ export const PracticeTransferRequestIntakePanel = ({
           ) : null}
         </DialogContent>
       </Dialog>
-
-      {stageDialogType ? (
-        <PracticeRequestStagePresetDialog
-          open={Boolean(stageDialogType)}
-          onOpenChange={(open) => {
-            if (!open) {
-              setStageDialogType(null);
-              setStageDialogQueue([]);
-            }
-          }}
-          prosthesisType={stageDialogType}
-          stages={
-            resolveRequestStagePreset(stageDialogType, requestStagePresets)
-              ?.stages ||
-            stageDialogDraftRef.current.find(
-              (row) =>
-                row.prosthesisType.toLowerCase() ===
-                stageDialogType.toLowerCase(),
-            )?.stages ||
-            []
-          }
-          onConfirm={applyStageDialogConfirm}
-          onSavePreset={
-            onRequestStagePresetsChange
-              ? async (preset) => {
-                  const next = upsertRequestStagePreset(
-                    requestStagePresets,
-                    preset,
-                  );
-                  await onRequestStagePresetsChange(next);
-                }
-              : undefined
-          }
-          className={nestedDialogClassName}
-          overlayClassName={nestedDialogOverlayClassName}
-        />
-      ) : null}
     </div>
   );
 };

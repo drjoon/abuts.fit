@@ -115,6 +115,8 @@ export type PracticeRecentRequestItem = {
   /** API toothWorks 스냅샷(후속 보철 append 등 memo보다 우선) */
   toothWorks?: Array<Record<string, unknown>>;
   prosthesisFollowUps?: import("@/shared/practice/prosthesisFollowUp").ProsthesisFollowUpRecord[];
+  /** 다단계 기공의뢰(틀니 등) 단계 계획 스냅샷 */
+  labRequestStagePlans?: import("@/shared/practice/requestStagePresets").PracticeLabRequestStagePlan[];
   requestorDownloadedAt?: string | null;
   requestorAcceptedAt?: string | null;
   arrivalDeadlineExpiredAt?: string | null;
@@ -199,6 +201,7 @@ export type PracticeRecentTransferItem = {
   /** 임시저장 — KST 1일+ 미갱신(깜빡임) */
   draftStaleHighlight?: boolean;
   prosthesisFollowUps?: import("@/shared/practice/prosthesisFollowUp").ProsthesisFollowUpRecord[];
+  labRequestStagePlans?: import("@/shared/practice/requestStagePresets").PracticeLabRequestStagePlan[];
   toothWorks?: Array<Record<string, unknown>>;
   requestorDownloadedAt?: string | null;
   requestorAcceptedAt?: string | null;
@@ -912,6 +915,12 @@ export const mapMyPracticeTransferApiRows = (
         prosthesisFollowUps: Array.isArray(r.prosthesisFollowUps)
           ? (r.prosthesisFollowUps as PracticeRecentRequestItem["prosthesisFollowUps"])
           : [],
+        labRequestStagePlans: Array.isArray(
+          (r as { labRequestStagePlans?: unknown }).labRequestStagePlans,
+        )
+          ? ((r as { labRequestStagePlans: PracticeRecentRequestItem["labRequestStagePlans"] })
+              .labRequestStagePlans)
+          : [],
         requestorDownloadedAt: r.requestorDownloadedAt
           ? String(r.requestorDownloadedAt)
           : r.requestorAcceptedAt
@@ -1130,6 +1139,13 @@ export const mergeOpenPracticeTransferFromRequestRows = (
         (r) => Array.isArray(r.prosthesisFollowUps) && r.prosthesisFollowUps.length > 0,
       )?.prosthesisFollowUps ||
       prev.prosthesisFollowUps ||
+      [],
+    labRequestStagePlans:
+      openRows.find(
+        (r) =>
+          Array.isArray(r.labRequestStagePlans) && r.labRequestStagePlans.length > 0,
+      )?.labRequestStagePlans ||
+      prev.labRequestStagePlans ||
       [],
     requestorDownloadedAt:
       openRows.find((r) => String(r.requestorDownloadedAt || r.requestorAcceptedAt || "").trim())
@@ -1350,6 +1366,9 @@ export const groupPracticeRecentRequests = (
         prosthesisFollowUps: Array.isArray(req.prosthesisFollowUps)
           ? [...req.prosthesisFollowUps]
           : [],
+        labRequestStagePlans: Array.isArray(req.labRequestStagePlans)
+          ? [...req.labRequestStagePlans]
+          : [],
         requestorDownloadedAt: String(
           req.requestorDownloadedAt || req.requestorAcceptedAt || "",
         ).trim() || null,
@@ -1440,6 +1459,9 @@ export const groupPracticeRecentRequests = (
     }
     if (Array.isArray(req.prosthesisFollowUps) && req.prosthesisFollowUps.length > 0) {
       existing.prosthesisFollowUps = [...req.prosthesisFollowUps];
+    }
+    if (Array.isArray(req.labRequestStagePlans) && req.labRequestStagePlans.length > 0) {
+      existing.labRequestStagePlans = [...req.labRequestStagePlans];
     }
     const reqAcceptedAt = String(
       req.requestorDownloadedAt || req.requestorAcceptedAt || "",

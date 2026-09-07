@@ -25,6 +25,11 @@ import { loadStarBandEligibleLabAnchorIds } from "../../utils/practiceTransferAu
 // - 2026-08-16: autoMatchMaxLabRating(하한·상한 치과 설정, 기본 3~4).
 // - 2026-08-25: labArrivalDefaults(기공소별 주문→치과도착 기본 일수).
 // - 2026-08-28: calendarNewRequestHintDismissedAt(도착일 클릭 신규의뢰 안내 닫음).
+// - 2026-09-07: archBulkProsthesisTypes(전체치열 모달 좌측 목록·순서).
+// - 2026-09-07: requestStagePresets(다단계 기공의뢰 단계 프리셋).
+import {
+  normalizeRequestStagePresets,
+} from "../../utils/practiceRequestStagePresets.js";
 const DEFAULT_ARRIVAL_DEFAULT_DAYS = 7;
 const MAX_LAB_ARRIVAL_DEFAULTS = 80;
 const ABUTMENT_PRODUCT_MODE_PRODUCTION = "custom_abutment";
@@ -38,6 +43,12 @@ const DEFAULT_PROSTHESIS_TYPES = [
   "유지장치",
   "임시치아",
 ];
+const DEFAULT_ARCH_BULK_PROSTHESIS_TYPES = [
+  "전체틀니",
+  "부분틀니",
+  "랩어라운드",
+];
+const MAX_ARCH_BULK_PROSTHESIS_TYPES = 20;
 const MAX_MEMO_SNIPPETS = 40;
 const MAX_IMPLANT_FAVORITES = 40;
 const MAX_ABUTMENT_FAVORITES = 40;
@@ -60,6 +71,21 @@ const normalizeProsthesisTypes = (items) => {
 
   const out = Array.from(dedup.values());
   return out.length ? out : [...DEFAULT_PROSTHESIS_TYPES];
+};
+
+const normalizeArchBulkProsthesisTypes = (items) => {
+  const list = Array.isArray(items) ? items : [];
+  const dedup = new Map();
+
+  for (const item of list) {
+    const trimmed = String(item || "").trim();
+    if (!trimmed) continue;
+    const key = trimmed.toLowerCase();
+    if (!dedup.has(key)) dedup.set(key, trimmed);
+  }
+
+  const out = Array.from(dedup.values()).slice(0, MAX_ARCH_BULK_PROSTHESIS_TYPES);
+  return out.length ? out : [...DEFAULT_ARCH_BULK_PROSTHESIS_TYPES];
 };
 
 const normalizeMemoSnippets = (items) => {
@@ -269,6 +295,12 @@ const toSettingsResponse = async (anchor, { persistHydrated = false } = {}) => {
     arrivalDefaultDays: normalizeArrivalDefaultDays(settings?.arrivalDefaultDays),
     labArrivalDefaults: serializeLabArrivalDefaults(settings?.labArrivalDefaults),
     prosthesisTypes: normalizeProsthesisTypes(settings?.prosthesisTypes),
+    archBulkProsthesisTypes: normalizeArchBulkProsthesisTypes(
+      settings?.archBulkProsthesisTypes,
+    ),
+    requestStagePresets: normalizeRequestStagePresets(
+      settings?.requestStagePresets,
+    ),
     memoSnippets: normalizeMemoSnippets(settings?.memoSnippets),
     implantFavorites,
     abutmentFavorites: normalizeAbutmentFavorites(settings?.abutmentFavorites),
@@ -348,6 +380,14 @@ export async function upsertPracticeTransferSettings(req, res) {
     const hasLabArrivalDefaults = Object.prototype.hasOwnProperty.call(body, "labArrivalDefaults");
     const hasLabArrivalDefault = Object.prototype.hasOwnProperty.call(body, "labArrivalDefault");
     const hasProsthesisTypes = Object.prototype.hasOwnProperty.call(body, "prosthesisTypes");
+    const hasArchBulkProsthesisTypes = Object.prototype.hasOwnProperty.call(
+      body,
+      "archBulkProsthesisTypes",
+    );
+    const hasRequestStagePresets = Object.prototype.hasOwnProperty.call(
+      body,
+      "requestStagePresets",
+    );
     const hasMemoSnippets = Object.prototype.hasOwnProperty.call(body, "memoSnippets");
     const hasImplantFavorites = Object.prototype.hasOwnProperty.call(body, "implantFavorites");
     const hasAbutmentFavorites = Object.prototype.hasOwnProperty.call(body, "abutmentFavorites");
@@ -390,6 +430,19 @@ export async function upsertPracticeTransferSettings(req, res) {
     }
     if (hasProsthesisTypes) {
       setPatch["practiceTransferSettings.prosthesisTypes"] = normalizeProsthesisTypes(body.prosthesisTypes);
+    }
+    if (hasArchBulkProsthesisTypes) {
+      setPatch["practiceTransferSettings.archBulkProsthesisTypes"] =
+        normalizeArchBulkProsthesisTypes(body.archBulkProsthesisTypes);
+    }
+    if (hasRequestStagePresets) {
+      // 빈 배열 허용(의도적 삭제). null만 기본값으로 취급하므로 raw 배열을 넘김.
+      setPatch["practiceTransferSettings.requestStagePresets"] =
+        normalizeRequestStagePresets(
+          Array.isArray(body.requestStagePresets)
+            ? body.requestStagePresets
+            : [],
+        );
     }
     if (hasMemoSnippets) {
       setPatch["practiceTransferSettings.memoSnippets"] = normalizeMemoSnippets(body.memoSnippets);

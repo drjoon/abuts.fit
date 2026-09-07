@@ -288,6 +288,35 @@ const practiceTransferSchema = new mongoose.Schema(
       },
     },
     /**
+     * 다단계 기공의뢰(틀니 등) 단계 계획 스냅샷.
+     * 계정 requestStagePresets 복사. 재도착 시 currentIndex 증가.
+     */
+    labRequestStagePlans: {
+      type: [
+        {
+          _id: false,
+          prosthesisType: { type: String, default: "" },
+          stages: {
+            type: [
+              {
+                _id: false,
+                name: { type: String, default: "" },
+                arrivalOffsetDays: {
+                  type: Number,
+                  default: 7,
+                  min: 0,
+                  max: 365,
+                },
+              },
+            ],
+            default: [],
+          },
+          currentIndex: { type: Number, default: 0, min: 0 },
+        },
+      ],
+      default: undefined,
+    },
+    /**
      * 임시치아 배송 후 동일 건에 크라운/브리지 후속 추가 이력.
      * toothWorks에 prosthesisPhase=followUp 항목이 append되며, 어벗 재청구 없음.
      */

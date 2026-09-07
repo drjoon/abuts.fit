@@ -293,6 +293,16 @@ import { PracticeLabRejectedReselectDialog } from "@/shared/components/practice/
 import { PracticeRemakeSearchDialog } from "@/shared/components/practice/PracticeRemakeSearchDialog";
 import { normalizeMemoSnippets } from "@/shared/components/practice/PracticeTransferRequestIntakePanel";
 import {
+  ARCH_BULK_PROSTHESIS_PRESETS,
+  normalizeArchBulkProsthesisTypes,
+} from "@/shared/practice/prosthesisFeeItemRequest";
+import {
+  normalizeLabRequestStagePlans,
+  normalizeRequestStagePresets,
+  type PracticeLabRequestStagePlan,
+  type PracticeRequestStagePreset,
+} from "@/shared/practice/requestStagePresets";
+import {
   formatManWon,
 } from "@/shared/practice/practiceTransferFeeQuote";
 import { usePracticeTransferFeeQuote } from "@/shared/practice/usePracticeTransferFeeQuote";
@@ -677,6 +687,8 @@ type PracticeTransferSettingsPayload = {
   /** 단일 기공소 upsert (POST body). GET 응답에는 없음. */
   labArrivalDefault?: PracticeLabArrivalDefault;
   prosthesisTypes?: string[];
+  archBulkProsthesisTypes?: string[];
+  requestStagePresets?: PracticeRequestStagePreset[];
   memoSnippets?: string[];
   implantFavorites?: PracticeImplantFavorite[];
   abutmentFavorites?: PracticeAbutmentFavorite[];
@@ -1543,6 +1555,15 @@ export const PracticeFileTransferPage = ({
   ]);
   const [savingProsthesisTypeSettings, setSavingProsthesisTypeSettings] = useState(false);
   const [memoSnippets, setMemoSnippets] = useState<string[]>([]);
+  const [archBulkProsthesisTypes, setArchBulkProsthesisTypes] = useState<string[]>([
+    ...ARCH_BULK_PROSTHESIS_PRESETS,
+  ]);
+  const [requestStagePresets, setRequestStagePresets] = useState<
+    PracticeRequestStagePreset[]
+  >(() => normalizeRequestStagePresets(null));
+  const [labRequestStagePlans, setLabRequestStagePlans] = useState<
+    PracticeLabRequestStagePlan[]
+  >([]);
   const [implantFavorites, setImplantFavorites] = useState<PracticeImplantFavorite[]>([]);
   const [abutmentFavorites, setAbutmentFavorites] = useState<PracticeAbutmentFavorite[]>([]);
   /** 로컬 프리셋 편집(추가·삭제) 세대 — 진행 중 GET/POST가 옛 목록으로 덮지 않게 */
@@ -2067,6 +2088,24 @@ export const PracticeFileTransferPage = ({
       Array.isArray(payload.prosthesisTypes) ? payload.prosthesisTypes : [...PRESET_PROSTHESIS_TYPES],
     );
     const nextMemoSnippets = normalizeMemoSnippets(payload.memoSnippets);
+    const hasArchBulkProsthesisTypes = Object.prototype.hasOwnProperty.call(
+      payload,
+      "archBulkProsthesisTypes",
+    );
+    const nextArchBulkProsthesisTypes = hasArchBulkProsthesisTypes
+      ? normalizeArchBulkProsthesisTypes(payload.archBulkProsthesisTypes)
+      : null;
+    const hasRequestStagePresets = Object.prototype.hasOwnProperty.call(
+      payload,
+      "requestStagePresets",
+    );
+    const nextRequestStagePresets = hasRequestStagePresets
+      ? normalizeRequestStagePresets(
+          Array.isArray(payload.requestStagePresets)
+            ? payload.requestStagePresets
+            : [],
+        )
+      : null;
     const nextImplantFavorites = normalizeImplantFavorites(payload.implantFavorites);
     const nextAbutmentFavorites = normalizeAbutmentFavorites(payload.abutmentFavorites);
     const nextSkipJig = payload.skipJig !== false;
@@ -2132,6 +2171,12 @@ export const PracticeFileTransferPage = ({
     setProsthesisTypeCatalog(nextProsthesisTypes);
     setProsthesisTypeCatalogDraft(nextProsthesisTypes);
     setMemoSnippets(nextMemoSnippets);
+    if (nextArchBulkProsthesisTypes) {
+      setArchBulkProsthesisTypes(nextArchBulkProsthesisTypes);
+    }
+    if (nextRequestStagePresets) {
+      setRequestStagePresets(nextRequestStagePresets);
+    }
     setImplantFavorites(nextImplantFavorites);
     setAbutmentFavorites(nextAbutmentFavorites);
     setSkipJig(nextSkipJig);
@@ -2185,6 +2230,8 @@ export const PracticeFileTransferPage = ({
         params.labArrivalDefault != null &&
         typeof params.labArrivalDefault === "object";
       const hasProsthesisTypes = Array.isArray(params.prosthesisTypes);
+      const hasArchBulkProsthesisTypes = Array.isArray(params.archBulkProsthesisTypes);
+      const hasRequestStagePresets = Array.isArray(params.requestStagePresets);
       const hasMemoSnippets = Array.isArray(params.memoSnippets);
       const hasImplantFavorites = Array.isArray(params.implantFavorites);
       const hasAbutmentFavorites = Array.isArray(params.abutmentFavorites);
@@ -2224,6 +2271,16 @@ export const PracticeFileTransferPage = ({
       }
       if (hasProsthesisTypes) {
         jsonBody.prosthesisTypes = normalizeProsthesisTypes(params.prosthesisTypes || []);
+      }
+      if (hasArchBulkProsthesisTypes) {
+        jsonBody.archBulkProsthesisTypes = normalizeArchBulkProsthesisTypes(
+          params.archBulkProsthesisTypes || [],
+        );
+      }
+      if (hasRequestStagePresets) {
+        jsonBody.requestStagePresets = normalizeRequestStagePresets(
+          params.requestStagePresets || [],
+        );
       }
       if (hasMemoSnippets) {
         jsonBody.memoSnippets = normalizeMemoSnippets(params.memoSnippets || []);
@@ -2315,6 +2372,16 @@ export const PracticeFileTransferPage = ({
           setProsthesisTypeCatalog(nextTypes);
           setProsthesisTypeCatalogDraft(nextTypes);
         }
+        if (hasArchBulkProsthesisTypes) {
+          setArchBulkProsthesisTypes(
+            normalizeArchBulkProsthesisTypes(payload.archBulkProsthesisTypes),
+          );
+        }
+        if (hasRequestStagePresets) {
+          setRequestStagePresets(
+            normalizeRequestStagePresets(payload.requestStagePresets || []),
+          );
+        }
         if (hasMemoSnippets) {
           setMemoSnippets(normalizeMemoSnippets(payload.memoSnippets));
         }
@@ -2369,6 +2436,20 @@ export const PracticeFileTransferPage = ({
                     Array.isArray(payload?.prosthesisTypes)
                       ? payload.prosthesisTypes
                       : params.prosthesisTypes || [],
+                  ),
+                }
+              : {}),
+            ...(hasArchBulkProsthesisTypes
+              ? {
+                  archBulkProsthesisTypes: normalizeArchBulkProsthesisTypes(
+                    payload?.archBulkProsthesisTypes ?? params.archBulkProsthesisTypes,
+                  ),
+                }
+              : {}),
+            ...(hasRequestStagePresets
+              ? {
+                  requestStagePresets: normalizeRequestStagePresets(
+                    payload?.requestStagePresets ?? params.requestStagePresets,
                   ),
                 }
               : {}),
@@ -2992,6 +3073,9 @@ export const PracticeFileTransferPage = ({
       } else if (payload) {
         // 폼 로컬값이 있어도 계정 세팅(문장·프리셋·지그생략·커스텀어벗 기본모드·자동매칭 예산·최소 별)은 서버를 우선 반영
         setMemoSnippets(normalizeMemoSnippets(payload.memoSnippets));
+        setArchBulkProsthesisTypes(
+          normalizeArchBulkProsthesisTypes(payload.archBulkProsthesisTypes),
+        );
         setSkipJig(payload.skipJig !== false);
         setDefaultAbutmentProductMode(
           normalizeAccountAbutmentProductMode(payload.defaultAbutmentProductMode),
@@ -3072,6 +3156,9 @@ export const PracticeFileTransferPage = ({
               Array.isArray(payload?.prosthesisTypes)
                 ? payload?.prosthesisTypes
                 : [...PRESET_PROSTHESIS_TYPES],
+            ),
+            archBulkProsthesisTypes: normalizeArchBulkProsthesisTypes(
+              payload?.archBulkProsthesisTypes,
             ),
             memoSnippets: normalizeMemoSnippets(
               Array.isArray(payload?.memoSnippets) ? payload?.memoSnippets : [],
@@ -3805,6 +3892,7 @@ export const PracticeFileTransferPage = ({
     });
     setRushProcessing(nextRush);
     setToothWorks([]);
+    setLabRequestStagePlans([]);
     setDraftFiles([]);
     setDraftSummary(null);
     setActiveDraftId(null);
@@ -4266,6 +4354,13 @@ export const PracticeFileTransferPage = ({
         ? data.orderDates.map((d) => String(d || "").trim()).filter(Boolean)
         : [];
       const nextMemo = String(data.transferMemo || "").trim();
+      const nextStagePlans = Array.isArray(
+        (data as { labRequestStagePlans?: unknown }).labRequestStagePlans,
+      )
+        ? normalizeLabRequestStagePlans(
+            (data as { labRequestStagePlans: unknown }).labRequestStagePlans,
+          )
+        : undefined;
       const patch = (prev: RecentTransferItem): RecentTransferItem => ({
         ...prev,
         arrivalDate: nextArrival || prev.arrivalDate,
@@ -4274,6 +4369,7 @@ export const PracticeFileTransferPage = ({
         orderDates: nextOrderDates.length ? nextOrderDates : prev.orderDates,
         transferMemo: nextMemo || prev.transferMemo,
         rawTransferMemo: nextMemo || prev.rawTransferMemo,
+        ...(nextStagePlans ? { labRequestStagePlans: nextStagePlans } : {}),
       });
       setSelectedTransfer((prev) => (prev ? patch(prev) : prev));
       setRecentRequests((prev) =>
@@ -4289,6 +4385,9 @@ export const PracticeFileTransferPage = ({
                   : row.orderDates,
                 transferMemo: nextMemo || row.transferMemo,
                 rawTransferMemo: nextMemo || row.rawTransferMemo,
+                ...(nextStagePlans
+                  ? { labRequestStagePlans: nextStagePlans }
+                  : {}),
               }
             : row,
         ),
@@ -7091,6 +7190,7 @@ export const PracticeFileTransferPage = ({
           arrivalDefaultDays,
           transferMemo,
           toothWorks: syncToothWorks,
+          labRequestStagePlans: normalizeLabRequestStagePlans(labRequestStagePlans),
           skipDesignConfirm: true,
           skipJig: effectiveSkipJig,
           rushProcessing,
@@ -7592,6 +7692,7 @@ export const PracticeFileTransferPage = ({
               : nextDays,
             labArrivalDefaults: nextLabArrivalDefaults,
             prosthesisTypes: normalizedProsthesisTypes,
+            archBulkProsthesisTypes,
             memoSnippets,
             implantFavorites,
             abutmentFavorites,
@@ -7619,6 +7720,7 @@ export const PracticeFileTransferPage = ({
     [
       abutmentFavorites,
       accountArrivalDefaultDays,
+      archBulkProsthesisTypes,
       implantFavorites,
       labArrivalDefaults,
       memoSnippets,
@@ -8223,6 +8325,43 @@ export const PracticeFileTransferPage = ({
                     setProsthesisTypeCatalog(merged);
                     setProsthesisTypeCatalogDraft(merged);
                   },
+                  archBulkProsthesisTypes,
+                  onArchBulkProsthesisTypesChange: (next) => {
+                    const normalized = normalizeArchBulkProsthesisTypes(next);
+                    setArchBulkProsthesisTypes(normalized);
+                    try {
+                      const existingRaw = localStorage.getItem(
+                        PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY,
+                      );
+                      const existing =
+                        existingRaw && typeof existingRaw === "string"
+                          ? (JSON.parse(existingRaw) as Record<string, unknown>)
+                          : {};
+                      localStorage.setItem(
+                        PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY,
+                        JSON.stringify({
+                          ...existing,
+                          archBulkProsthesisTypes: normalized,
+                          savedAt: Date.now(),
+                        }),
+                      );
+                    } catch {
+                      // ignore
+                    }
+                    void savePracticeTransferSettingsToServer({
+                      archBulkProsthesisTypes: normalized,
+                    }).catch(() => {});
+                  },
+                  requestStagePresets,
+                  onRequestStagePresetsChange: (next) => {
+                    const normalized = normalizeRequestStagePresets(next);
+                    setRequestStagePresets(normalized);
+                    void savePracticeTransferSettingsToServer({
+                      requestStagePresets: normalized,
+                    }).catch(() => {});
+                  },
+                  labRequestStagePlans,
+                  onLabRequestStagePlansChange: setLabRequestStagePlans,
                   toothWorks,
                   setToothWorks,
                   requestMemo,

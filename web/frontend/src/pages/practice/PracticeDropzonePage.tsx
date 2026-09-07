@@ -168,6 +168,13 @@ import {
   type PracticeLabArrivalDefault,
 } from "@/shared/practice/labArrivalDefaults";
 import {
+  ARCH_BULK_PROSTHESIS_PRESETS,
+  normalizeArchBulkProsthesisTypes,
+} from "@/shared/practice/prosthesisFeeItemRequest";
+import {
+  normalizeRequestStagePresets,
+} from "@/shared/practice/requestStagePresets";
+import {
   PRACTICE_DROPZONE_DRAFT_KEY,
   clearPracticeSharedFormLocalStorage,
   readPreferredIntakeFormForDropzone,
@@ -915,6 +922,8 @@ export const PracticeDropzonePage = () => {
           data?: {
             arrivalDefaultDays?: number;
             labArrivalDefaults?: unknown;
+            archBulkProsthesisTypes?: unknown;
+            requestStagePresets?: unknown;
           };
         }>({
           path: "/api/practice/transfers/settings",
@@ -933,6 +942,20 @@ export const PracticeDropzonePage = () => {
           const nextLabs = normalizeLabArrivalDefaults(payload.labArrivalDefaults);
           setLabArrivalDefaults(nextLabs);
           labArrivalDefaultsRef.current = nextLabs;
+        }
+        if (Object.prototype.hasOwnProperty.call(payload, "archBulkProsthesisTypes")) {
+          setArchBulkProsthesisTypes(
+            normalizeArchBulkProsthesisTypes(payload.archBulkProsthesisTypes),
+          );
+        }
+        if (Object.prototype.hasOwnProperty.call(payload, "requestStagePresets")) {
+          setRequestStagePresets(
+            normalizeRequestStagePresets(
+              Array.isArray(payload.requestStagePresets)
+                ? payload.requestStagePresets
+                : [],
+            ),
+          );
         }
         setArrivalDefaultDays(
           resolveLabArrivalDefaultDays(
@@ -955,6 +978,15 @@ export const PracticeDropzonePage = () => {
   const [rushConfirmOpen, setRushConfirmOpen] = useState(false);
   const [pendingRushArrivalYmd, setPendingRushArrivalYmd] = useState("");
   const [prosthesisTypes, setProsthesisTypes] = useState<string[]>([...PRESET_PROSTHESIS_TYPES]);
+  const [archBulkProsthesisTypes, setArchBulkProsthesisTypes] = useState<string[]>([
+    ...ARCH_BULK_PROSTHESIS_PRESETS,
+  ]);
+  const [requestStagePresets, setRequestStagePresets] = useState(() =>
+    normalizeRequestStagePresets(null),
+  );
+  const [labRequestStagePlans, setLabRequestStagePlans] = useState<
+    import("@/shared/practice/requestStagePresets").PracticeLabRequestStagePlan[]
+  >([]);
   const [prosthesisTypeInput, setProsthesisTypeInput] = useState("");
   const [prosthesisTypeSettingsDialogOpen, setProsthesisTypeSettingsDialogOpen] = useState(false);
   const [prosthesisTypeCatalogDraft, setProsthesisTypeCatalogDraft] = useState<string[]>([
@@ -2810,6 +2842,51 @@ export const PracticeDropzonePage = () => {
                       setProsthesisTypes(merged);
                       setProsthesisTypeCatalogDraft(merged);
                     },
+                    archBulkProsthesisTypes,
+                    onArchBulkProsthesisTypesChange: (next) => {
+                      const normalized = normalizeArchBulkProsthesisTypes(next);
+                      setArchBulkProsthesisTypes(normalized);
+                      try {
+                        const existingRaw = localStorage.getItem(
+                          PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY,
+                        );
+                        const existing =
+                          existingRaw && typeof existingRaw === "string"
+                            ? (JSON.parse(existingRaw) as Record<string, unknown>)
+                            : {};
+                        localStorage.setItem(
+                          PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY,
+                          JSON.stringify({
+                            ...existing,
+                            archBulkProsthesisTypes: normalized,
+                            savedAt: Date.now(),
+                          }),
+                        );
+                      } catch {
+                        // ignore
+                      }
+                      if (!authToken) return;
+                      void apiFetch({
+                        path: "/api/practice/transfers/settings",
+                        method: "POST",
+                        token: authToken,
+                        jsonBody: { archBulkProsthesisTypes: normalized },
+                      }).catch(() => {});
+                    },
+                    requestStagePresets,
+                    onRequestStagePresetsChange: (next) => {
+                      const normalized = normalizeRequestStagePresets(next);
+                      setRequestStagePresets(normalized);
+                      if (!authToken) return;
+                      void apiFetch({
+                        path: "/api/practice/transfers/settings",
+                        method: "POST",
+                        token: authToken,
+                        jsonBody: { requestStagePresets: normalized },
+                      }).catch(() => {});
+                    },
+                    labRequestStagePlans,
+                    onLabRequestStagePlansChange: setLabRequestStagePlans,
                     toothWorks,
                     setToothWorks,
                     requestMemo,

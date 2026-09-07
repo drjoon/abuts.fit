@@ -236,6 +236,36 @@ export function buildPracticeSenderTransferDetailModel(
       ...(workPeriodSummary
         ? [workPeriodSummary as PracticeTransferDialogSummaryItem]
         : []),
+      ...(() => {
+        const plans = Array.isArray(transfer.labRequestStagePlans)
+          ? transfer.labRequestStagePlans
+          : [];
+        if (plans.length === 0) return [];
+        const labels = plans
+          .map((plan) => {
+            const stages = Array.isArray(plan.stages) ? plan.stages : [];
+            if (stages.length === 0) return null;
+            const idx = Math.min(
+              stages.length - 1,
+              Math.max(0, Math.floor(Number(plan.currentIndex) || 0)),
+            );
+            const current = stages[idx]?.name || "";
+            const names = stages.map((s) => s.name).filter(Boolean);
+            const typeName = String(plan.prosthesisType || "").trim();
+            if (!current) return null;
+            return `${typeName ? `${typeName} · ` : ""}${current}${
+              names.length > 1 ? ` (${idx + 1}/${names.length})` : ""
+            }`;
+          })
+          .filter(Boolean);
+        if (labels.length === 0) return [];
+        return [
+          {
+            label: "기공의뢰 단계",
+            value: labels.join(" · "),
+          } as PracticeTransferDialogSummaryItem,
+        ];
+      })(),
       { label: "파일 수", value: `${transfer.fileCount || 0}개` },
       { label: "어벗디자인", value: `${designCount}개` },
       { label: "보철물", value: `${resultCount}개` },

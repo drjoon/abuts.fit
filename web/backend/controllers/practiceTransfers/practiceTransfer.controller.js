@@ -94,6 +94,10 @@ import {
   syncArrivalDatesWithMemoYmd,
   syncOrderDatesWithMemoYmd,
 } from "../../utils/practiceTransferArrivalDates.js";
+import {
+  normalizeLabRequestStagePlans,
+  advanceLabRequestStagePlans,
+} from "../../utils/practiceRequestStagePresets.js";
 import { toKstYmd } from "../requests/utils.js";
 
 /** 작업시작(의뢰수락) 이후 — 리메이크 가능 stage */
@@ -967,6 +971,9 @@ const toVirtualRequestRows = (transferDoc) => {
     hasCustomAbutment: hasCustomAbutmentToothWorks(toothWorks),
     prosthesisFollowUps: serializeProsthesisFollowUpsForApi(
       transferDoc?.prosthesisFollowUps,
+    ),
+    labRequestStagePlans: normalizeLabRequestStagePlans(
+      transferDoc?.labRequestStagePlans,
     ),
     requestorDownloadedAt: transferDoc?.requestorDownloadedAt || null,
     requestorAcceptedAt: transferDoc?.requestorDownloadedAt || null,
@@ -3107,6 +3114,9 @@ export async function createPracticeTransfer(req, res) {
       status: "active",
       files,
       toothWorks: toothWorksRaw,
+      labRequestStagePlans: normalizeLabRequestStagePlans(
+        req.body?.labRequestStagePlans,
+      ),
       billing: billingPreview,
       ...(isRemakeRequest
         ? {
@@ -4065,7 +4075,23 @@ export async function appendPracticeTransferArrival(req, res) {
       });
     }
 
-    if (appended.unchanged) {
+    const advanceStage = req.body?.advanceStage !== false;
+    const nextStagePlans = advanceStage
+      ? advanceLabRequestStagePlans(doc.labRequestStagePlans)
+      : normalizeLabRequestStagePlans(doc.labRequestStagePlans);
+    const prevStagePlans = normalizeLabRequestStagePlans(doc.labRequestStagePlans);
+    const stageAdvanced =
+      advanceStage &&
+      nextStagePlans.some((plan) => {
+        const prev = prevStagePlans.find(
+          (row) =>
+            row.prosthesisType.toLowerCase() ===
+            plan.prosthesisType.toLowerCase(),
+        );
+        return Boolean(prev && plan.currentIndex !== prev.currentIndex);
+      });
+
+    if (appended.unchanged && !stageAdvanced) {
       return res.status(200).json({
         success: true,
         message: "치과도착일이 이미 해당일입니다.",
@@ -4078,6 +4104,7 @@ export async function appendPracticeTransferArrival(req, res) {
           orderDates: appended.orderDates,
           orderDate: appended.nextOrderYmd,
           previousOrderDate: appended.previousOrderYmd,
+          labRequestStagePlans: prevStagePlans,
           billingUnchanged: true,
         },
       });
@@ -4090,6 +4117,7 @@ export async function appendPracticeTransferArrival(req, res) {
           transferMemo: appended.transferMemo,
           arrivalDates: appended.arrivalDates,
           orderDates: appended.orderDates,
+          ...(stageAdvanced ? { labRequestStagePlans: nextStagePlans } : {}),
           // 기공소 수신함 unread — 의뢰 내용 수정과 동일
           requestorReadAt: null,
           requestorReadBy: null,
@@ -4111,13 +4139,29 @@ export async function appendPracticeTransferArrival(req, res) {
     const orderChanged =
       Boolean(appended.nextOrderYmd) &&
       appended.nextOrderYmd !== appended.previousOrderYmd;
+    const stageLabels = stageAdvanced
+      ? nextStagePlans
+          .map((plan) => {
+            const stage = plan.stages[plan.currentIndex];
+            if (!stage?.name) return null;
+            return `${plan.prosthesisType} · ${stage.name}`;
+          })
+          .filter(Boolean)
+      : [];
     try {
       await postPracticeTransferSystemChatMessage({
         transferMongoId: String(updated._id),
         senderUserId: req.user?._id,
-        content: orderChanged
-          ? `재도착 반영\n주문일 ${prevOrderLabel} → ${nextOrderLabel}\n치과도착일 ${prevLabel} → ${nextLabel}`
-          : `치과도착일 변경\n${prevLabel} → ${nextLabel}`,
+        content: [
+          orderChanged
+            ? `재도착 반영\n주문일 ${prevOrderLabel} → ${nextOrderLabel}\n치과도착일 ${prevLabel} → ${nextLabel}`
+            : `치과도착일 변경\n${prevLabel} → ${nextLabel}`,
+          stageLabels.length
+            ? `기공의뢰 단계\n${stageLabels.join("\n")}`
+            : "",
+        ]
+          .filter(Boolean)
+          .join("\n"),
         systemEvent: "practice_transfer_arrival_appended",
       });
     } catch {
@@ -4156,6 +4200,7 @@ export async function appendPracticeTransferArrival(req, res) {
       orderDates: appended.orderDates,
       orderDate: appended.nextOrderYmd,
       previousOrderDate: appended.previousOrderYmd,
+      labRequestStagePlans: stageAdvanced ? nextStagePlans : prevStagePlans,
       requestorReadAt: null,
       unreadCount: unreadCountForRequestor,
       billingUnchanged: true,
@@ -4191,6 +4236,7 @@ export async function appendPracticeTransferArrival(req, res) {
         orderDate: appended.nextOrderYmd,
         previousOrderDate: appended.previousOrderYmd,
         transferMemo: String(updated.transferMemo || ""),
+        labRequestStagePlans: stageAdvanced ? nextStagePlans : prevStagePlans,
         requestorReadAt: null,
         billingUnchanged: true,
       },
