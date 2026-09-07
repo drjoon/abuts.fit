@@ -107,6 +107,7 @@
  * - 2026-08-20: 구강포토 썸네일 — private S3 location 대신 blob/proxy 미리보기.
  * - 2026-09-05: 임플란트/스캔바디 프리셋 — 로컬 삭제 후 서버 GET/POST·환봉 이벤트가 목록을 되살리던 문제 수정.
  * - 2026-09-05: 부분 설정 저장 응답이 전체 apply로 덮어써 임플란트 프리셋 삭제가 복원되던 레이스 수정.
+ * - 2026-09-07: 가이드투어 remake — 캘린더·작성 툴바 리메이크 버튼 Spotlight 홀.
  * - 2026-09-05: 가이드투어 작성 패널 — 투어 블러 outside dismiss 방지·z-410(블러 아래)·스텝별 data-guide-tour.
  * - 2026-09-05: 가이드투어 pause — 작성 패널·데모 프리필 비우고 빈 캘린더.
  * - 2026-09-05: 가이드투어 작성 패널 — 기존 작성 내용 유지(새로 작성으로 비우지 않음).
@@ -7944,6 +7945,10 @@ export const PracticeFileTransferPage = ({
               size="sm"
               className="h-9 gap-1.5 px-3"
               onClick={() => setRemakeSearchOpen(true)}
+              {...(platformGuideTour.active &&
+              platformGuideTour.stepId === "remake"
+                ? { "data-guide-tour": "practice_remake" }
+                : {})}
             >
               <Repeat className="h-4 w-4 shrink-0" />
               리메이크
@@ -8025,6 +8030,10 @@ export const PracticeFileTransferPage = ({
             aria-label="리메이크"
             title="리메이크"
             onClick={() => setRemakeSearchOpen(true)}
+            {...(platformGuideTour.active &&
+            platformGuideTour.stepId === "remake"
+              ? { "data-guide-tour": "practice_remake" }
+              : {})}
           >
             <Repeat className="h-4 w-4 shrink-0" />
             리메이크
@@ -8096,6 +8105,10 @@ export const PracticeFileTransferPage = ({
             size="sm"
             className="h-9 gap-1.5 px-3"
             onClick={() => setRemakeSearchOpen(true)}
+            {...(platformGuideTour.active &&
+            platformGuideTour.stepId === "remake"
+              ? { "data-guide-tour": "practice_remake" }
+              : {})}
           >
             <Repeat className="h-4 w-4 shrink-0" />
             리메이크

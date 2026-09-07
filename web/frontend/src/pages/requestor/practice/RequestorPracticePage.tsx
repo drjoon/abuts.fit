@@ -28,6 +28,7 @@
 // - web/frontend/src/shared/practice/labReceiveCalendarHiddenWeekdays.ts
 // - web/backend/utils/labReceiveCalendarHiddenWeekdays.util.js
 // - web/backend/controllers/users/user.controller.js
+// - 2026-09-07: 가이드투어 lab_remake — 데모 리메이크 뱃지·상세 탭·수가.
 // - 2026-09-07: 분할 업로드 AlertDialog z-320 — 플로팅 의뢰상세(z-300)에 가리지 않게.
 // - 2026-09-05: 가이드투어 lab_calendar — 오늘 데모 칩 홀·클릭 시 상세·다음.
 // - 2026-09-05: 가이드투어 — pause·수료 시 데모 PTX·상세 삭제(치과 oral 정리와 동일).
@@ -1804,7 +1805,10 @@ export function RequestorPracticeReceivePage({
       const withoutDemo = transfers.filter((t) => !isGuideTourDemoTransfer(t));
       if (!guideTourLabReceiveActive) return withoutDemo;
       const demo = buildGuideTourDemoReceiveTransfer({
-        accepted: platformGuideTour.stepId === "lab_design",
+        accepted:
+          platformGuideTour.stepId === "lab_design" ||
+          platformGuideTour.stepId === "lab_remake",
+        remake: platformGuideTour.stepId === "lab_remake",
       });
       return [demo, ...withoutDemo];
     })();
@@ -1917,10 +1921,16 @@ export function RequestorPracticeReceivePage({
 
     if (guideTourWantsReceiveDetail) {
       const demo = buildGuideTourDemoReceiveTransfer({
-        accepted: platformGuideTour.stepId === "lab_design",
+        accepted:
+          platformGuideTour.stepId === "lab_design" ||
+          platformGuideTour.stepId === "lab_remake",
+        remake: platformGuideTour.stepId === "lab_remake",
       });
       setDialogInitialPanelTab(
-        platformGuideTour.stepId === "lab_detail" ? "detail" : "chat",
+        platformGuideTour.stepId === "lab_detail" ||
+          platformGuideTour.stepId === "lab_remake"
+          ? "detail"
+          : "chat",
       );
       setSelectedTransfer(demo);
       setDialogOpen(true);
@@ -5948,6 +5958,16 @@ export function RequestorPracticeReceivePage({
             <div className="inline-flex items-center rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-900">
               {PRE_PLATFORM_REMAKE_LABEL}
             </div>
+          ) : selectedTransfer?.isRemake ? (
+            <div
+              className="inline-flex items-center rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-900"
+              {...(platformGuideTour.active &&
+              platformGuideTour.stepId === "lab_remake"
+                ? { "data-guide-tour": "lab_remake" }
+                : {})}
+            >
+              리메이크
+            </div>
           ) : null
         }
         acceptBarHint={
@@ -6190,6 +6210,7 @@ export function RequestorPracticeReceivePage({
         chatLoading={chatLoading}
         chatError={String(chatError || "")}
         chatMessages={displayChatMessages}
+        chatRoomId={activeChatRoom?._id || null}
         isMyMessage={(senderId) => senderId === String(user?.id || "")}
         currentUserId={String(user?.id || "").trim()}
         formatChatTime={formatDateTime}

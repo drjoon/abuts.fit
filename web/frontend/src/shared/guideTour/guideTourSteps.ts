@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/practice/PracticeToothWorkGuideTourBanner.tsx
 // - web/frontend/src/shared/guideTour/GuideTourProvider.tsx
 // change-log:
+// - 2026-09-07: remake·lab_remake — 치과 리메이크 버튼·기공소 리메이크 수신 안내.
 // - 2026-09-07: partner_chat — FAB로 의뢰건 없이 기공소↔치과 채팅(치과·기공소).
 // - 2026-09-05: intro 힌트 — 구강스캔·석고 모델 / 기공의뢰서는 어벗츠 플랫폼으로(치과·기공소 공통).
 // - 2026-09-05: lab_chat → partner_chat(FAB). lab_design 힌트 — STL·환자/임플란트 정보 안내.
@@ -158,6 +159,16 @@ export const PRACTICE_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   },
   // —— 챕터1: 구강스캔 기공의뢰 (영화형) ——
   ...practiceOralMovieSteps,
+  // —— 챕터1: 리메이크 ——
+  {
+    id: "remake",
+    title: "리메이크 의뢰",
+    hint: "「리메이크」에서 이전 의뢰를 환자명으로 찾아 도착일을 정한 뒤 보냅니다. 기공소 리메이크 수가가 있으면 확인 후 전송합니다. 플랫폼 가입 전 건도 모달에서 작성할 수 있습니다.",
+    path: PRACTICE_ORAL_PATH,
+    target: "practice_remake",
+    advance: "next",
+    chapter: 1,
+  },
   // —— 챕터1: 파트너 채팅(의뢰건 무관 FAB) ——
   {
     id: "partner_chat",
@@ -285,6 +296,18 @@ export const LAB_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
     hint: "작업시작 후 STL을 올리면 어벗츠에서 커스텀어벗 생산을 시작합니다.\n환자 정보, 임플란트 정보 등은 치과에서 넘겨준 정보 그대로 넘어갑니다.",
     path: LAB_RECEIVE_PATH,
     target: "lab_detail",
+    advance: "next",
+    chapter: 1,
+    openReceiveDetail: true,
+    allowTargetInteraction: true,
+  },
+  // —— 챕터1: 리메이크 수신 ——
+  {
+    id: "lab_remake",
+    title: "리메이크 수신",
+    hint: "리메이크 의뢰는 뱃지로 표시됩니다. 작업시작하면 기공소 수가의 리메이크 기공비가 적용됩니다. 플랫폼 가입 전 건은 별도 안내를 확인한 뒤 작업시작하세요.",
+    path: LAB_RECEIVE_PATH,
+    target: "lab_remake",
     advance: "next",
     chapter: 1,
     openReceiveDetail: true,
@@ -456,7 +479,8 @@ export const isLabReceiveGuideTourStepId = (
     normalized === "lab_calendar" ||
     normalized === "lab_detail" ||
     normalized === "lab_accept" ||
-    normalized === "lab_design"
+    normalized === "lab_design" ||
+    normalized === "lab_remake"
   );
 };
 

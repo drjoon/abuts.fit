@@ -5,6 +5,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/practice/practiceTransferLabReceive.ts
 // change-log:
+// - 2026-09-07: remake 옵션 — 리메이크 뱃지·수가(가이드투어 lab_remake).
 // - 2026-09-07: 표시명 어벗츠치과 / 이환자(원본 실샘플 메타는 JSON meta 유지).
 // - 2026-09-05: 향기로운치과 실샘플 복사본(PLY·기공비·치식) 표시. publicPath fetch.
 // - 2026-09-05: 향기로운치과 6번대 CA 샘플 기반 기공비·파일 메타(익명). 데모 S3키=guide-tour/.
@@ -136,11 +137,13 @@ export const buildGuideTourDemoPlaceholderBlob = (): Blob =>
     type: "application/octet-stream",
   });
 
-/** 데모 수신 건 — accepted면 수락 후 디자인 드롭존 노출 */
+/** 데모 수신 건 — accepted면 수락 후 디자인 드롭존 노출, remake면 리메이크 뱃지·수가 */
 export const buildGuideTourDemoReceiveTransfer = (opts?: {
   accepted?: boolean;
+  remake?: boolean;
 }): PracticeTransferLabReceiveItem => {
   const accepted = Boolean(opts?.accepted);
+  const remake = Boolean(opts?.remake);
   // 캘린더「오늘」칸에 보이도록 주문일만 투어 당일로(원본 치식·파일·기공비는 유지)
   const today = toKstYmd(new Date()) || "2026-09-05";
   const arrival =
@@ -191,6 +194,10 @@ export const buildGuideTourDemoReceiveTransfer = (opts?: {
     };
   });
 
+  const feeQuote: PracticeTransferFeeQuote = remake
+    ? { ...GUIDE_TOUR_DEMO_FEE_QUOTE, isRemake: true }
+    : GUIDE_TOUR_DEMO_FEE_QUOTE;
+
   return {
     _id: GUIDE_TOUR_DEMO_TRANSFER_OID,
     transferId: GUIDE_TOUR_DEMO_TRANSFER_ID,
@@ -217,6 +224,8 @@ export const buildGuideTourDemoReceiveTransfer = (opts?: {
     matchingMode: "direct",
     autoMatch: null,
     hasCustomAbutment: true,
+    isRemake: remake,
+    remakeSourceTransferId: remake ? "GUIDE-TOUR-DEMO-SOURCE-PTX" : undefined,
     production: {
       shippingMode: "normal",
       skipDesignConfirm: true,
@@ -241,7 +250,7 @@ export const buildGuideTourDemoReceiveTransfer = (opts?: {
     files,
     resultFileCount: 0,
     resultFiles: [],
-    feeQuote: GUIDE_TOUR_DEMO_FEE_QUOTE,
+    feeQuote,
   };
 };
 
