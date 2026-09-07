@@ -1,0 +1,32 @@
+---
+description: 기공의뢰 CTA·뱃지 라벨은 수락이 아니라 작업시작
+alwaysApply: true
+---
+
+# Naming: 수락 → 작업시작
+
+기공소가 의뢰를 받아 작업을 시작하는 행위의 **UI·제품 라벨 SSOT는 「작업시작」**이다. 예전 「수락」/「의뢰수락」과 동일 의미.
+
+## UI 라벨 SSOT
+
+- 버튼·뱃지·안내·토스트·설정 카피: **작업시작** (not 수락 / 의뢰수락)
+- 상태 필터 뱃지: **의뢰 · 작업시작 · 디자인 · 출고 · 추적관리**
+- `toStatusBadgeLabel`: 내부 상태 `의뢰수락` → 표시 **작업시작**
+- 기공비·특별공급가 적용 시기: **작업시작 시점** 기준 (미시작 견적은 “지금 작업시작하면” 기준)
+
+## Do
+
+- 새로 쓰는 주석·문서·유저 문구에서 기공소 PTX claim을 **작업시작**으로 쓴다
+- 「수락」이 UI 의미로 보이면 같은 작업에서 **작업시작**으로 고친다
+- 적용·과금·견적 잠금 시점도 카피에서 작업시작으로 설명한다
+
+## Don't rename (레거시 식별자)
+
+API·DB·이벤트 키는 당분간 유지한다(점진 개명만).
+
+- `PracticeTransfer.requestorDownloadedAt` (+ API alias `requestorAcceptedAt` / `isAccepted`)
+- `POST .../mark-accepted`, socket `action=accepted`
+- 내부 상태 문자열 `의뢰수락`, tour id `lab_accept`, query `from=accept`
+- 코드 심볼 `isAccepted`, `showAccept`, `AcceptOverdue` 등(표시 문자열만 작업시작)
+
+루트/앱 SSOT: `rules.md`, `web/frontend/rules.md`, `web/backend/rules.md` (practice 전송 상태).

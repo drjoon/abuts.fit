@@ -411,24 +411,25 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - `controllers/bg/bg.controller.js`
 - `requestCategory="rnd_sample"`(R&D 보관 원본)은 BG 자동 업데이트 대상에서 제외합니다.
 - practice 전송 상태 표준(치과/의뢰자 공통)은 `발송완료 | 취소 | 수신완료 | 의뢰수락 | 자동매칭 | 작업완료 | 생산진행`을 사용합니다.
+  - UI 라벨 SSOT: 내부 `의뢰수락` → 표시 **작업시작** (`.cursor/rules/work-start-not-accept.mdc`). CTA·뱃지·안내에 「수락」을 쓰지 않는다.
   - 읽음 판정 SSOT: `PracticeTransfer.requestorReadAt`
     - 자동매칭 공개 풀(`openPool`)은 `POST .../mark-read`가 no-op(`requestorReadAt` 미설정).
-      미클레임 건은 열람만으로 안읽음 배지가 줄지 않으며, 수락(claim) 시 읽음·배지 갱신.
-  - 의뢰수락 판정 SSOT: `PracticeTransfer.requestorDownloadedAt`(레거시 필드명 유지; API alias `requestorAcceptedAt`/`isAccepted`)
-  - 잔액 검사·보류 SSOT: `POST /api/practice/transfers`에서 `assertPracticeTransferPaidCreditSufficient`(유료+무료 합산) 후 `holdPracticeTransferCredits`(수락 전「결제 보류」). 수정(`update-content`)은 견적 변경 시 rollback+rehold.
-  - 과금 SSOT: 수락=`adjustPracticeTransferHold` + `releasePracticeTransferLabShare`(+`lab_platform_fee`, 치과 차감·기공소 정산). 작업완료=`mark-complete`(파일 선택, 이미 정산면 release no-op). 제조사 발송=`releasePracticeTransferAbutmentShare`. 파일 다운로드는 상태·과금에 영향 없음
+      미클레임 건은 열람만으로 안읽음 배지가 줄지 않으며, 작업시작(claim) 시 읽음·배지 갱신.
+  - 작업시작 판정 SSOT: `PracticeTransfer.requestorDownloadedAt`(레거시 필드명 유지; API alias `requestorAcceptedAt`/`isAccepted`)
+  - 잔액 검사·보류 SSOT: `POST /api/practice/transfers`에서 `assertPracticeTransferPaidCreditSufficient`(유료+무료 합산) 후 `holdPracticeTransferCredits`(작업시작 전「결제 보류」). 수정(`update-content`)은 견적 변경 시 rollback+rehold.
+  - 과금 SSOT: 작업시작=`adjustPracticeTransferHold` + `releasePracticeTransferLabShare`(+`lab_platform_fee`, 치과 차감·기공소 정산; 경로 `mark-accepted`). 작업완료=`mark-complete`(파일 선택, 이미 정산면 release no-op). 제조사 발송=`releasePracticeTransferAbutmentShare`. 파일 다운로드는 상태·과금에 영향 없음
   - **자동매칭 SSOT** (`matchingMode: "auto"`):
     - 생성 시 `targetLabAnchorId=null`, 공개 풀. `manufacturerStage` UI=`자동매칭`(공정 뱃지 집계는 **의뢰**). 자격(**인증 기공소**): `verified` + `practiceTransferAutoMatchEnabled`(참여 ON) + (requestor lab 수신 가능 **또는** `businessType=internalLab`) (`utils/practiceTransferAutoMatch.js`). 관리자 목록은 `verifiedLabCapableAnchorFilter`. **인증 파이프라인** `BusinessAnchor.abutsLabCertification`(`none|applied|testing|certified|rejected`, `testStatus`, `memo`) — 가입 시 미신청 → 기공소 신청 → 어벗츠 기공 테스트 → 통과 시 인증(ON). 유틸 `utils/abutsLabCertification.js`
     - **어벗츠 우선창**: 생성 시 적격 스냅샷에 `internalLab`이 있으면 `autoMatch.priorityLabAnchorIds` + `priorityUntil=createdAt+5분`. 그 동안 타 기공소 수신 목록·클레임 미노출. 만료 또는 **어벗츠 거부 시 `priorityUntil` 조기 종료** 후 타 기공소 노출·소켓. 적격에 어벗츠가 없으면 전원 즉시 공개(2B: 예산·참여 동일 게이트)
     - 기공소 `POST /api/businesses/me/auto-match-participation` `{ active:true }`: 미인증이면 **인증 신청**만(`applied`, 풀 ON 금지). 인증 완료 후 재호출 시 참여(ON). `{ active:false }`는 해지 예약. 관리자 `PATCH /api/devops/practice-transfer-auto-match/:anchorId` `{ enabled, testStatus, memo, status }` — 테스트 통과/`enabled:true` 시 인증 ON. **월정 0원**(`autoMatchMonthlyFee`). 매칭 성공 `platformFeeRate` · 지정은 `directPlatformFeeEnabled`(기본 off=무료) / on 시 `directPlatformFeeRate`. 표시명 마스킹(`redactAutoMatch*`).
     - 수신 목록: 내 지정 건 ∪ (eligible이면) 공개 풀(미배정, **우선창이면 priority lab만**). 타인 활성 claim은 숨김
-    - 수락=`mark-accepted` 원자 FCFS claim(강제 시간 만료 없음; **우선창 클레임 게이트 동일**) + 보류액 확정. 치과에 `practice:transfer-updated`(action=`accepted`, 확정 `feeQuote`) emit. **CA 포함 시 수락 직후** 구강스캔(`files`) 기반 어벗츠 Request 조기 생성(`design_custom_abutment`, **주문 기공소 수취·출고목표=치과도착일−2영업일**; **생산·배송 크레딧 hold는 수락에서 잡지 않음**). 작업완료=`POST .../mark-complete`(결과파일 선택, **shippingMode 불필요**, 수락 시 이미 정산됐으면 추가 지급 없음). 작업취소=`POST .../mark-release`(auto는 풀 재공개·우선창 종료·치과는 「자동매칭」, direct는 수락 해제+과금 롤백·치과 「취소」). 수락 전 거부=`POST .../mark-reject`(auto 공개풀=해당 기공소만 decline, direct=활성 유지·작업취소로 치과 「취소」·기공소 「거부」; canceled 휴지통 아님)
-    - 어벗 디자인: 기공의뢰(PTX) CA는 **수락 기공소**가 design-claim/handoff. **업로드(`design-handoff`) 시** `holdRequestCreditsOnSubmit`(생산·배송 보류, 잔액 부족이면 `402` `insufficient_credit_for_ptx_ca`) + lab confirm 자동·제조 즉시 착수 + `grantAbutmentDesignLabFee`(`abutmentDesignLabFee`×어벗수 → `LAB_SETTLEMENT_CREDIT`, 기공소 장부 라인 `refType=PRACTICE_TRANSFER` — 보철기공비와 **한 기공의뢰 행**). 디자인 취소 시 hold 해제. 레거시 `POST .../confirm-abutment-design`은 미컨펌 건 호환용. 어벗생산의뢰(비PTX)는 기존 디자인 파트너 큐.
+    - 작업시작=`mark-accepted` 원자 FCFS claim(강제 시간 만료 없음; **우선창 클레임 게이트 동일**) + 보류액 확정. 치과에 `practice:transfer-updated`(action=`accepted`, 확정 `feeQuote`) emit. **CA 포함 시 작업시작 직후** 구강스캔(`files`) 기반 어벗츠 Request 조기 생성(`design_custom_abutment`, **주문 기공소 수취·출고목표=치과도착일−2영업일**; **생산·배송 크레딧 hold는 작업시작에서 잡지 않음**). 작업완료=`POST .../mark-complete`(결과파일 선택, **shippingMode 불필요**, 작업시작 시 이미 정산됐으면 추가 지급 없음). 작업취소=`POST .../mark-release`(auto는 풀 재공개·우선창 종료·치과는 「자동매칭」, direct는 작업시작 해제+과금 롤백·치과 「취소」). 작업시작 전 거부=`POST .../mark-reject`(auto 공개풀=해당 기공소만 decline, direct=활성 유지·작업취소로 치과 「취소」·기공소 「거부」; canceled 휴지통 아님)
+    - 어벗 디자인: 기공의뢰(PTX) CA는 **작업시작 기공소**가 design-claim/handoff. **업로드(`design-handoff`) 시** `holdRequestCreditsOnSubmit`(생산·배송 보류, 잔액 부족이면 `402` `insufficient_credit_for_ptx_ca`) + lab confirm 자동·제조 즉시 착수 + `grantAbutmentDesignLabFee`(`abutmentDesignLabFee`×어벗수 → `LAB_SETTLEMENT_CREDIT`, 기공소 장부 라인 `refType=PRACTICE_TRANSFER` — 보철기공비와 **한 기공의뢰 행**). 디자인 취소 시 hold 해제. 레거시 `POST .../confirm-abutment-design`은 미컨펌 건 호환용. 어벗생산의뢰(비PTX)는 기존 디자인 파트너 큐.
     - 치과=`POST .../confirm-production` — (a) 크라운 완료 전·CA·미생략: 어벗 디자인 생산 게이트 (b) 크라운 완료 후: `작업완료→생산진행` (Request 재생성 없음)
     - 「디자인 컨펌 생략」체크 UI는 계정 `practiceTransferSettings.skipDesignConfirm`(기본 **true**). 전송 시 `PracticeTransfer.production.skipDesignConfirm` 스냅샷. 해제 시 FE 안내 모달. 체크된 건은 기공소 `mark-complete` 시 생산진행 자동. 미체크면 어벗 생산에 치과 디자인 컨펌도 필요
     - **레거시(2026-08-22 삭제)**: 「지그 제작 불필요」(`skipJig`) UI/계정 옵션 제거. `production.skipJig`·`practiceTransferSettings.skipJig`는 구 스냅샷 호환용. **기공소→치과·치과→기공소 배송비는 무료**(크레딧과 무관)
     - 작업 기한은 치과 도착일·채팅 소통. (레거시 3시간 `deadlineAt` 만료 재공개는 폐기)
-    - 기공소 수신 카드(의뢰수락): `PracticeTransferFileDropTarget` + `[작업완료]`(크라운) / `[어벗 디자인 확인]` / `[작업취소]` (`RequestorPracticePage`). 배송선택 모달 없음
+    - 기공소 수신 카드(작업시작): `PracticeTransferFileDropTarget` + `[작업완료]`(크라운) / `[어벗 디자인 확인]` / `[작업취소]` (`RequestorPracticePage`). 배송선택 모달 없음
   - 가상 의뢰 행 매핑 기준: `controllers/practiceTransfers/practiceTransfer.controller.js#toVirtualRequestRows`
   - practice 전송 목록/취소/복구 권한 범위 SSOT: 동일 치과 `practiceBusinessAnchorId`(=`req.user.businessAnchorId`) 구성원 공유.
     구현: `buildPracticeOwnedScope` (`getMyPracticeTransfers` / `cancelPracticeTransfersBatch` / `restorePracticeTransfersBatch` / draft list·DELETE by id).
@@ -437,7 +438,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     draft 작성 폼 GET(`GET /draft`)·기본 DELETE는 본인 `practiceUserId`만 대상으로 한다.
   - practice 파일전송 생성(`POST /api/practice/transfers`) 성공 시 관련 임시저장(`draftId` 또는 작성자 활성 draft)을 **완전 삭제**(휴지통 아님)하고 `draft-cleared`를 fan-out한다. 전송 건은 최근 전송 내역에만 남는다.
   - 기공의뢰 납기 영업일: 낮 12시 이전은 주문일(오늘) 포함, 이후는 제외. `resolvePracticeTransferArrivalPolicy` → `countWeekdayBusinessDays(..., now)`. 프론트 `getPracticeWorkPeriodDays`와 동일. 1+2 이상 허용(0+2 거부).
-  - 수락 전(의뢰=`발송완료|수신완료|자동매칭`) 내용 수정: `POST /api/practice/transfers/:transferId/update-content`. transferId·채팅방 유지, 파일·치식·메모·기공소·보류액 갱신, `requestorReadAt` 초기화, `practice:transfer-updated` action=`content-updated`. 수락·취소·거부 이후 409. 기공소·치식·지그·할증이 같으면 크레딧 rollback+hold를 건너뛴다.
+  - 작업시작 전(의뢰=`발송완료|수신완료|자동매칭`) 내용 수정: `POST /api/practice/transfers/:transferId/update-content`. transferId·채팅방 유지, 파일·치식·메모·기공소·보류액 갱신, `requestorReadAt` 초기화, `practice:transfer-updated` action=`content-updated`. 작업시작·취소·거부 이후 409. 기공소·치식·지그·할증이 같으면 크레딧 rollback+hold를 건너뛴다.
   - `draft-upserted` 이벤트는 `transferMemo`·`files` 스냅샷을 포함해 수신측이 추가 GET 없이 폼을 반영할 수 있다.
     임시저장은 `practice:transfer-updated` + `action: draft-upserted|draft-cleared`.
     구현: `emitPracticeTransferEventToPracticeUsers`.
@@ -743,7 +744,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
       (예: `businessAnchorId`, `requestId`, `requestMongoId`, `transferId`, `roomId`)
     - 수신측이 전체 재조회 없이 대상 엔티티 1건을 갱신할 수 있는 API/키를 함께 보장합니다.
     - fan-out emit 자체는 유지하되, 수신 화면이 payload 조건으로 이벤트를 좁혀 처리할 수 있어야 합니다.
-  - Mutation UX latency(강제) — 업로드·취소·수락·완료·핸드오프:
+  - Mutation UX latency(강제) — 업로드·취소·작업시작·완료·핸드오프:
     - 「처리 중…」 응답 전에는 권한·잔액 가드·상태 저장만 await.
     - 디자인비 grant/revoke·대시보드 스냅샷·채팅 시스템 메시지·Rhino·worksheet emit·
       PTX Transfer 디자인 미러(lab confirm 포함)·레거시 PTX 배송 hold 해제는 응답 후(`void`).

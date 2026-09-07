@@ -290,7 +290,7 @@
   - 조회(발신): `GET /api/practice/transfers/my`
   - 조회(수신): `GET /api/practice/transfers/received`
   - 취소: `POST /api/practice/transfers/cancel-batch`
-  - **커스텀어벗 Abuts-first**: 수락 시 스캔 기반 Request 생성 → **수락 기공소가 디자인** → design-handoff 업로드 시 제조 자동 착수. 치과→기공소=`labFeeSchedule` 커스텀어벗 수가(기공비 정산). 기공소→어벗츠=생산비(플랫폼 1.5만, Request 과금). 레거시(치과 어벗츠 단가 선납)만 `abutmentDesignLabFee` 외주 지급. **생산 후 주문 기공소 수취**(치과 직납 아님). 제조사 출고 목표=`치과도착일 − 2영업일`(`resolveManufacturerTargetShipYmd`). 기공소 `mark-complete`는 크라운 업로드만(배송선택 없음). 어벗생산의뢰(직접 Request) 디자인 파트너 큐와 분리.
+  - **커스텀어벗 Abuts-first**: 작업시작 시 스캔 기반 Request 생성 → **작업시작 기공소가 디자인** → design-handoff 업로드 시 제조 자동 착수. 치과→기공소=`labFeeSchedule` 커스텀어벗 수가(기공비 정산). 기공소→어벗츠=생산비(플랫폼 1.5만, Request 과금). 레거시(치과 어벗츠 단가 선납)만 `abutmentDesignLabFee` 외주 지급. **생산 후 주문 기공소 수취**(치과 직납 아님). 제조사 출고 목표=`치과도착일 − 2영업일`(`resolveManufacturerTargetShipYmd`). 기공소 `mark-complete`는 크라운 업로드만(배송선택 없음). 어벗생산의뢰(직접 Request) 디자인 파트너 큐와 분리.
 - 제조사 워크시트 조회에서 practice 전송 태그 의뢰 제외
 - 크레딧/정산은 유료(검증된 수신자·lab) 경로에만 해당. 실 사업자등록번호가 없는 synthetic 앵커에는 환영 크레딧을 지급하지 않으며, synthetic→실BN 검증 승격 시 1회 지급
 - 소개(리퍼럴) 페이지·링크: 발신(practice) 포함 모든 requestor가 접근 가능. 소개 귀속(`referredByAnchorId`)·그룹 할인 적용은 추천인 사업자 앵커 기준. lab 체크·검증되면 유료 소개 혜택 경로로 이어짐
@@ -358,7 +358,7 @@
 - 프론트가 BG/브리지 서버 직접 호출 금지 (백엔드 프록시 경유)
 - 규칙 우회용 임시 분기/레거시 보존 금지
 - 정책 변경 없이 색상/단계명/필드명 임의 확장 금지
-- **변이 UX 고지연 구현 금지(강제):** 업로드·취소·수락·완료·핸드오프 등 「처리 중…」 경로는
+- **변이 UX 고지연 구현 금지(강제):** 업로드·취소·작업시작·완료·핸드오프 등 「처리 중…」 경로는
   처음부터 critical path만 await하고, 수수료·스냅샷·알림·Rhino 등은 응답 후 처리.
   동일 문서 재조회/재저장·성공 후 전체 목록 refetch로 대기를 늘리지 않는다.
   상세: `.cursor/rules/mutation-ux-latency.mdc`

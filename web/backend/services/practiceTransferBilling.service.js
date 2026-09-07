@@ -127,6 +127,8 @@ import {
   resolveLabPracticeFeeMultiplier,
   resolveLabPracticeFeeMultiplierAsOf,
   splitPracticeTransferSettlement,
+  buildLabFeePendingPromotionSet,
+  resolveEffectiveLabFeeLabDoc,
 } from "../utils/labFeeSchedule.js";
 import {
   normalizeConfiguredRushFeeMultiplier,
@@ -232,6 +234,7 @@ async function loadLabAnchorsForFeeComputation({
       labFeeSchedule: 1,
       labPracticeFeeMultipliers: 1,
       labPracticeSpecialSupplyPrices: 1,
+      labPracticeSpecialSupplyPendingChange: 1,
     })
     .session(session || null)
     .lean();
@@ -658,6 +661,7 @@ export async function assertPracticeTransferPaidCreditSufficient({
               labFeeSchedule: 1,
               labPracticeFeeMultipliers: 1,
               labPracticeSpecialSupplyPrices: 1,
+              labPracticeSpecialSupplyPendingChange: 1,
             })
             .lean()
         : Promise.resolve(null),
@@ -2333,7 +2337,23 @@ async function computeAcceptedPracticeTransferFees({
         .lean(),
     ]);
 
-  const feeScheduleLab = labAnchors.feeScheduleLab;
+  const feeScheduleLabRaw = labAnchors.feeScheduleLab;
+  const asOf = new Date();
+  // 작업시작 시점 유효 수가. due pending은 in-memory 승격 후 DB에 fire-and-forget 반영.
+  const feeScheduleLab = resolveEffectiveLabFeeLabDoc(feeScheduleLabRaw, asOf);
+  if (feeScheduleLabRaw?._id) {
+    const promotionSet = buildLabFeePendingPromotionSet(feeScheduleLabRaw, asOf);
+    if (promotionSet) {
+      void BusinessAnchor.findByIdAndUpdate(feeScheduleLabRaw._id, {
+        $set: promotionSet,
+      }).catch((err) => {
+        console.error(
+          "[practiceTransferBilling] promote fee pending on work-start failed",
+          err,
+        );
+      });
+    }
+  }
   const remake = isPracticeTransferRemake(transfer);
   const labFeeMultiplier = resolveBillingLabFeeMultiplier({
     isAutoMatch,
@@ -2343,6 +2363,12 @@ async function computeAcceptedPracticeTransferFees({
     snapshot: transfer?.billing?.labFeeMultiplier,
   });
   const rushFeeMultiplier = rushFeeMultiplierFromTransfer(transfer);
+  // 작업시작(1B): create 스냅샷 대신 지금 유효 특별공급가·기공비를 사용하고 스냅샷을 갱신.
+  const labPracticeSpecialSupply = captureLabPracticeSpecialSupplySnapshot(
+    feeScheduleLab,
+    practiceAnchorId,
+    { at: asOf },
+  );
 
   const fees = computePracticeTransferRetailFeesWithLabShipping(
     {
@@ -2351,14 +2377,8 @@ async function computeAcceptedPracticeTransferFees({
       labFeeSchedule: resolveLabFeeScheduleSourceForPracticeTransfer({
         labDoc: feeScheduleLab,
         practiceAnchorId,
-        createdAt: transfer?.createdAt,
-        specialSupplySnapshot: transfer?.billing?.labPracticeSpecialSupply,
-        // 자동매칭 수락 직전(미캡처)은 live. 이후 billed 금액 고정.
-        liveSpecialSupply:
-          isAutoMatch &&
-          !isLabPracticeSpecialSupplySnapshotCaptured(
-            transfer?.billing?.labPracticeSpecialSupply,
-          ),
+        asOf,
+        liveSpecialSupply: true,
       }),
       abutmentPricingTier,
       abutmentPrices,
@@ -2395,6 +2415,7 @@ async function computeAcceptedPracticeTransferFees({
     abutsRevenueAmount,
     abutmentPricingTier,
     abutmentPrices,
+    labPracticeSpecialSupply,
   };
 }
 
@@ -2448,6 +2469,7 @@ export async function adjustPracticeTransferHold({
       relationshipKind: computed.relationshipKind,
       feeRateApplied: computed.feeRateApplied,
       labFeeMultiplier: computed.labFeeMultiplier,
+      labPracticeSpecialSupply: computed.labPracticeSpecialSupply,
       labSettlementAmount: 0,
       abutsRevenueAmount: 0,
       labTradingPartnerId: computed.partner?._id
@@ -2481,6 +2503,7 @@ export async function adjustPracticeTransferHold({
       relationshipKind: computed.relationshipKind,
       feeRateApplied: computed.feeRateApplied,
       labFeeMultiplier: computed.labFeeMultiplier,
+      labPracticeSpecialSupply: computed.labPracticeSpecialSupply,
       labSettlementAmount: computed.labSettlementAmount,
       abutsRevenueAmount: computed.abutsRevenueAmount,
       labTradingPartnerId: computed.partner?._id
@@ -2595,6 +2618,7 @@ export async function adjustPracticeTransferHold({
       relationshipKind: computed.relationshipKind,
       feeRateApplied: computed.feeRateApplied,
       labFeeMultiplier: computed.labFeeMultiplier,
+      labPracticeSpecialSupply: computed.labPracticeSpecialSupply,
       labSettlementAmount: computed.labSettlementAmount,
       abutsRevenueAmount: computed.abutsRevenueAmount,
       labTradingPartnerId: computed.partner?._id
@@ -2623,6 +2647,7 @@ export async function adjustPracticeTransferHold({
       relationshipKind: computed.relationshipKind,
       feeRateApplied: computed.feeRateApplied,
       labFeeMultiplier: computed.labFeeMultiplier,
+      labPracticeSpecialSupply: computed.labPracticeSpecialSupply,
       labSettlementAmount: computed.labSettlementAmount,
       abutsRevenueAmount: computed.abutsRevenueAmount,
       labTradingPartnerId: computed.partner?._id
@@ -2817,6 +2842,7 @@ export async function adjustPracticeTransferHold({
       relationshipKind: computed.relationshipKind,
       feeRateApplied: computed.feeRateApplied,
       labFeeMultiplier: computed.labFeeMultiplier,
+      labPracticeSpecialSupply: computed.labPracticeSpecialSupply,
       labSettlementAmount: computed.labSettlementAmount,
       abutsRevenueAmount: computed.abutsRevenueAmount,
       labTradingPartnerId: computed.partner?._id
@@ -4117,6 +4143,7 @@ export async function buildPracticeTransferQuote({
               labFeeSchedule: 1,
               labPracticeFeeMultipliers: 1,
               labPracticeSpecialSupplyPrices: 1,
+              labPracticeSpecialSupplyPendingChange: 1,
             })
             .lean()
         : Promise.resolve(null),
@@ -4564,9 +4591,9 @@ export async function loadPracticeTransferQuoteContext({
 
 /**
  * 목록/상세용 견적. 과금 완료 건은 스냅샷 금액 유지.
- * 미청구·지정·수락된 자동매칭: billing.labFeeMultiplier 스냅샷(할증 소급 금지).
- * 미청구: billing.labPracticeSpecialSupply 스냅샷(없으면 createdAt as-of).
- * 미청구·자동매칭 공개풀: 의뢰 createdAt 기준 as-of(history).
+ * 미청구·지정·작업시작된 자동매칭: billing.labFeeMultiplier 스냅샷(할증 소급 금지).
+ * 미청구: 지금(asOf=now) 유효 기공비·특별공급가(작업시작 전까지 live; pending due 포함).
+ * 미청구·자동매칭 공개풀: 의뢰 createdAt 기준 as-of(history) — 할증만.
  * 하청 후 원청(어벗츠 기공사업부) 화면은 전액 수주(수수료 0). 하청은 subcontractFeeRate.
  */
 function isViewerPrimeContractor(doc, viewingLabAnchorId) {
@@ -4612,6 +4639,7 @@ export async function buildFeeQuotesForTransferDocs({
               labFeeSchedule: 1,
               labPracticeFeeMultipliers: 1,
               labPracticeSpecialSupplyPrices: 1,
+              labPracticeSpecialSupplyPendingChange: 1,
             })
             .lean()
         : Promise.resolve([]),
@@ -4714,9 +4742,9 @@ export async function buildFeeQuotesForTransferDocs({
       : resolveLabFeeScheduleSourceForPracticeTransfer({
           labDoc: labDocById.get(quoteLabId) || { labFeeSchedule: schedule },
           practiceAnchorId: practiceId,
-          createdAt: doc?.createdAt,
-          specialSupplySnapshot: billing?.labPracticeSpecialSupply,
-          liveSpecialSupply: false,
+          asOf: new Date(),
+          // 미청구: 작업시작 전 live(유효) 수가. 청구 완료는 위 useStored.
+          liveSpecialSupply: true,
         });
     const remakeFeeSchedule = noLab
       ? LAB_FEE_SCHEDULE_ZEROS

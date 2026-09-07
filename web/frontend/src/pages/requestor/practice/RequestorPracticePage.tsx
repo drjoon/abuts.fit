@@ -344,6 +344,7 @@ import {
 } from "@/pages/practice/components/PracticeStatusFilterBadges";
 import { RequestorAbutmentPageHeader } from "@/pages/requestor/new_request/components/RequestorAbutmentPageHeader";
 import { LabReceiveUnreadNotice } from "@/pages/practice/components/LabReceiveUnreadNotice";
+import { LabReceiveFeeScheduleNotice } from "@/pages/practice/components/LabReceiveFeeScheduleNotice";
 import {
   labFeeSettingsFromAcceptPath,
   LAB_FEE_UNCONFIGURED_REASON,
@@ -5418,6 +5419,7 @@ export function RequestorPracticeReceivePage({
       ) : null}
       {!error && !loading ? (
         <>
+          <LabReceiveFeeScheduleNotice className="shrink-0" />
           <LabReceiveUnreadNotice
             unreadTotal={unreadNoticeTotal}
             items={unreadNoticeItems}

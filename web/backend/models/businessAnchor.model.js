@@ -492,6 +492,41 @@ const businessAnchorSchema = new mongoose.Schema(
         customAbutmentDesignAndProduction: { type: Boolean, default: true },
       },
       updatedAt: { type: Date, default: null },
+      // 예약 수가. effectiveFromYmd(KST)부터 live로 승격.
+      // related: web/backend/utils/labFeeSchedule.js (promoteLabFeeSchedulePendingIfDue)
+      pendingChange: {
+        type: {
+          _id: false,
+          effectiveFromYmd: { type: String, default: "", trim: true },
+          active: { type: Boolean, default: true },
+          items: {
+            type: [
+              {
+                id: { type: String, default: "", trim: true },
+                name: { type: String, default: "", trim: true },
+                unit: {
+                  type: String,
+                  enum: ["perTooth", "perNTeeth", "perSet"],
+                  default: "perTooth",
+                },
+                enabled: { type: Boolean, default: true },
+                price: { type: Number, default: 0, min: 0 },
+                remake: { type: Number, default: 0, min: 0 },
+                tiers: [
+                  {
+                    n: { type: Number, default: 3, min: 1 },
+                    price: { type: Number, default: 0, min: 0 },
+                    remake: { type: Number, default: 0, min: 0 },
+                  },
+                ],
+              },
+            ],
+            default: undefined,
+          },
+          scheduledAt: { type: Date, default: null },
+        },
+        default: null,
+      },
     },
     // 기공소→치과별 기공수가 할증(배수). 현재값 + history(변경·1x 해제 이력).
     // as-of: 의뢰 createdAt 기준 당시 배수. 이후 변경분은 다음 건부터.
@@ -574,6 +609,47 @@ const businessAnchorSchema = new mongoose.Schema(
         },
       ],
       default: [],
+    },
+    // 특별공급가 예약 변경(리스트 1건). effectiveFromYmd(KST)부터 live로 승격.
+    // related: web/backend/utils/labFeeSchedule.js (promoteLabSpecialSupplyPendingIfDue)
+    labPracticeSpecialSupplyPendingChange: {
+      type: {
+        _id: false,
+        effectiveFromYmd: { type: String, default: "", trim: true },
+        prices: {
+          type: [
+            {
+              _id: false,
+              practiceAnchorId: {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: "BusinessAnchor",
+              },
+              mode: {
+                type: String,
+                enum: ["rate", "amount"],
+                default: "amount",
+              },
+              discountRate: { type: Number, default: 0, min: 0, max: 100 },
+              items: {
+                type: [
+                  {
+                    _id: false,
+                    feeItemId: { type: String, default: "", trim: true },
+                    feeItemName: { type: String, default: "", trim: true },
+                    discountAmount: { type: Number, default: 0, min: 0 },
+                    remakeDiscountAmount: { type: Number, default: 0, min: 0 },
+                  },
+                ],
+                default: [],
+              },
+              updatedAt: { type: Date, default: null },
+            },
+          ],
+          default: [],
+        },
+        scheduledAt: { type: Date, default: null },
+      },
+      default: null,
     },
     // 치과→기공소 rating(1~5)·메모. 별점은 기공소 공개, 치과·메모는 비공개.
     // 치과·기공소 쌍당 1건(재평가 시 덮어쓰기). ratingCount는 항상 1(집계는 평가 치과 수).

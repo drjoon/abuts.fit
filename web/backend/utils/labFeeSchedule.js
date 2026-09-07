@@ -41,12 +41,14 @@
 // - 2026-08-19: 수락·견적 readyToCharge — 마스터 On만으로는 부족, 제공 항목 수가 필요.
 // - 2026-08-29: 치과별 특별공급가(labPracticeSpecialSupplyPrices) — 할인율 또는 항목별 할인금액.
 // - 2026-08-31: 특별공급가 — 의뢰 billing 스냅샷·updatedAt as-of(소급 금지). 신규 견적은 live.
+// - 2026-09-07: 기공비·특별공급가 pendingChange(즉시/특정일) + 작업시작 시점 유효 수가.
 import { applyRushFeeMultiplierToFees } from "./practiceTransferRush.js";
 import { isFollowUpProsthesisPhase, isFinalProsthesisType } from "./practiceTransferProsthesisFollowUp.js";
 import {
   IMPLANT_ADD_REQUEST_OPTION,
   MANUFACTURER_ADD_REQUEST_BRAND,
 } from "./roundBarAbutment.js";
+import { getTodayYmdInKst, toKstYmd } from "./krBusinessDays.js";
 
 export {
   PRACTICE_RUSH_FEE_MULTIPLIER,
@@ -815,9 +817,10 @@ export function resolveLabPracticeSpecialSupplyRowAsOf(
 
 /**
  * 기존 의뢰 견적·청구용 수가표.
- * - liveSpecialSupply: 신규 견적·리메이크 미리보기
- * - billing 스냅샷 있으면 스냅샷
+ * - liveSpecialSupply: 신규 견적·리메이크 미리보기·미청구(작업시작 전)
+ * - billing 스냅샷 있으면 스냅샷(청구 확정 후)
  * - 레거시(미캡처): createdAt 기준 as-of(updatedAt)
+ * - asOf: pending 승격·유효 수가 기준(미청구=now, 작업시작=work start)
  */
 export function resolveLabFeeScheduleSourceForPracticeTransfer({
   labDoc,
@@ -825,12 +828,14 @@ export function resolveLabFeeScheduleSourceForPracticeTransfer({
   createdAt = null,
   specialSupplySnapshot = null,
   liveSpecialSupply = false,
+  asOf = null,
 } = {}) {
-  const base = resolveLabFeeScheduleSource(labDoc?.labFeeSchedule);
+  const effectiveLab = resolveEffectiveLabFeeLabDoc(labDoc, asOf || new Date());
+  const base = resolveLabFeeScheduleSource(effectiveLab?.labFeeSchedule);
   if (liveSpecialSupply) {
     return applyLabPracticeSpecialSupplyToSchedule(
       base,
-      labDoc,
+      effectiveLab,
       practiceAnchorId,
     );
   }
@@ -843,7 +848,7 @@ export function resolveLabFeeScheduleSourceForPracticeTransfer({
   return applyLabPracticeSpecialSupplyRowToSchedule(
     base,
     resolveLabPracticeSpecialSupplyRowAsOf(
-      labDoc,
+      effectiveLab,
       practiceAnchorId,
       createdAt,
     ),
@@ -856,7 +861,223 @@ export function resolveLabFeeScheduleSourceForPractice(labDoc, practiceAnchorId)
     labDoc,
     practiceAnchorId,
     liveSpecialSupply: true,
+    asOf: new Date(),
   });
+}
+
+/** YYYY-MM-DD 또는 null. */
+export function parseLabFeeApplyYmd(value) {
+  const ymd = String(value || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return null;
+  const [y, m, d] = ymd.split("-").map(Number);
+  if (!y || m < 1 || m > 12 || d < 1 || d > 31) return null;
+  return ymd;
+}
+
+/** KST civil YMD ± days (UTC noon). */
+export function addKstCivilDays(ymd, days = 0) {
+  const parsed = parseLabFeeApplyYmd(ymd);
+  if (!parsed) return null;
+  const [y, m, d] = parsed.split("-").map(Number);
+  const next = new Date(
+    Date.UTC(y, m - 1, d + Math.trunc(Number(days) || 0), 12),
+  );
+  const yy = next.getUTCFullYear();
+  const mm = String(next.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(next.getUTCDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
+}
+
+export function tomorrowKstYmd(asOf = new Date()) {
+  const today = toKstYmd(asOf) || getTodayYmdInKst(asOf);
+  return addKstCivilDays(today, 1);
+}
+
+/** 예약일은 내일(KST) 이후만. */
+export function isLabFeeScheduledYmdValid(ymd, asOf = new Date()) {
+  const parsed = parseLabFeeApplyYmd(ymd);
+  const min = tomorrowKstYmd(asOf);
+  return Boolean(parsed && min && parsed >= min);
+}
+
+export function normalizeLabFeeApplyMode(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (raw === "scheduled") return "scheduled";
+  if (raw === "cancel_pending" || raw === "clear_pending") {
+    return "cancel_pending";
+  }
+  return "immediate";
+}
+
+/** API/DB용 pendingChange 정규화. 유효하지 않으면 null. */
+export function normalizeLabFeeSchedulePendingChange(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const effectiveFromYmd = parseLabFeeApplyYmd(raw.effectiveFromYmd);
+  if (!effectiveFromYmd) return null;
+  const items = normalizeLabFeeItems({ items: raw.items });
+  if (!items.length) return null;
+  const scheduledMs = toTimeMs(raw.scheduledAt);
+  return {
+    effectiveFromYmd,
+    items,
+    active: raw.active !== false && raw.active !== 0,
+    scheduledAt: Number.isFinite(scheduledMs) ? new Date(scheduledMs) : null,
+  };
+}
+
+export function toLabFeeSchedulePendingChangePublic(raw) {
+  const pending = normalizeLabFeeSchedulePendingChange(raw);
+  if (!pending) return null;
+  return {
+    effectiveFromYmd: pending.effectiveFromYmd,
+    items: pending.items,
+    active: pending.active,
+    scheduledAt: pending.scheduledAt,
+  };
+}
+
+/**
+ * pending이 due면 live로 승격한 schedule 반환(순수).
+ * didPromote면 호출측이 DB에 저장.
+ */
+export function promoteLabFeeSchedulePendingIfDue(
+  labFeeSchedule,
+  asOf = new Date(),
+) {
+  const pending = normalizeLabFeeSchedulePendingChange(
+    labFeeSchedule?.pendingChange,
+  );
+  const asOfYmd = toKstYmd(asOf) || getTodayYmdInKst(asOf);
+  if (!pending || !asOfYmd || asOfYmd < pending.effectiveFromYmd) {
+    return {
+      schedule: labFeeSchedule || null,
+      pendingChange: pending,
+      didPromote: false,
+    };
+  }
+  const remakeFallback = normalizeLabFeeRemakeSchedule(labFeeSchedule);
+  const enabledFallback = normalizeLabFeeScheduleEnabled(labFeeSchedule);
+  const legacy = legacyLabFeeScheduleFromItems(pending.items, {
+    ...normalizeLabFeeSchedule(labFeeSchedule),
+    remake: remakeFallback,
+    enabled: enabledFallback,
+  });
+  const promoted = {
+    ...legacy.schedule,
+    remake: {
+      ...remakeFallback,
+      ...legacy.remake,
+    },
+    enabled: {
+      ...enabledFallback,
+      ...legacy.enabled,
+    },
+    items: pending.items,
+    active: pending.active,
+    updatedAt: new Date(),
+    pendingChange: null,
+  };
+  return {
+    schedule: promoted,
+    pendingChange: null,
+    didPromote: true,
+  };
+}
+
+/** asOf 기준 유효 기공비 schedule(미승격이면 live, due면 승격본). */
+export function resolveEffectiveLabFeeSchedule(
+  labFeeSchedule,
+  asOf = new Date(),
+) {
+  return promoteLabFeeSchedulePendingIfDue(labFeeSchedule, asOf).schedule;
+}
+
+export function normalizeLabPracticeSpecialSupplyPendingChange(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const effectiveFromYmd = parseLabFeeApplyYmd(raw.effectiveFromYmd);
+  if (!effectiveFromYmd) return null;
+  const prices = normalizeLabPracticeSpecialSupplyList(
+    raw.prices ?? raw.items ?? raw.list,
+  );
+  const scheduledMs = toTimeMs(raw.scheduledAt);
+  return {
+    effectiveFromYmd,
+    prices,
+    scheduledAt: Number.isFinite(scheduledMs) ? new Date(scheduledMs) : null,
+  };
+}
+
+export function toLabPracticeSpecialSupplyPendingChangePublic(raw) {
+  const pending = normalizeLabPracticeSpecialSupplyPendingChange(raw);
+  if (!pending) return null;
+  return {
+    effectiveFromYmd: pending.effectiveFromYmd,
+    prices: pending.prices,
+    scheduledAt: pending.scheduledAt,
+  };
+}
+
+export function promoteLabSpecialSupplyPendingIfDue(labDoc, asOf = new Date()) {
+  const pending = normalizeLabPracticeSpecialSupplyPendingChange(
+    labDoc?.labPracticeSpecialSupplyPendingChange,
+  );
+  const asOfYmd = toKstYmd(asOf) || getTodayYmdInKst(asOf);
+  if (!pending || !asOfYmd || asOfYmd < pending.effectiveFromYmd) {
+    return {
+      prices: normalizeLabPracticeSpecialSupplyList(
+        labDoc?.labPracticeSpecialSupplyPrices,
+      ),
+      pendingChange: pending,
+      didPromote: false,
+    };
+  }
+  return {
+    prices: pending.prices,
+    pendingChange: null,
+    didPromote: true,
+  };
+}
+
+/**
+ * 견적·작업시작용 labDoc 뷰(순수). pending due면 in-memory 승격.
+ * DB 저장은 buildLabFeePendingPromotionSet 등 호출측.
+ */
+export function resolveEffectiveLabFeeLabDoc(labDoc, asOf = new Date()) {
+  if (!labDoc || typeof labDoc !== "object") return labDoc;
+  const fee = promoteLabFeeSchedulePendingIfDue(labDoc.labFeeSchedule, asOf);
+  const supply = promoteLabSpecialSupplyPendingIfDue(labDoc, asOf);
+  if (!fee.didPromote && !supply.didPromote) return labDoc;
+  return {
+    ...labDoc,
+    labFeeSchedule: fee.schedule,
+    labPracticeSpecialSupplyPrices: supply.prices,
+    labPracticeSpecialSupplyPendingChange: supply.pendingChange,
+  };
+}
+
+/**
+ * due된 pending을 DB에 반영할 $set. 변경 없으면 null.
+ */
+export function buildLabFeePendingPromotionSet(labDoc, asOf = new Date()) {
+  if (!labDoc) return null;
+  const fee = promoteLabFeeSchedulePendingIfDue(labDoc.labFeeSchedule, asOf);
+  const supply = promoteLabSpecialSupplyPendingIfDue(labDoc, asOf);
+  if (!fee.didPromote && !supply.didPromote) return null;
+  const $set = {};
+  if (fee.didPromote) {
+    $set.labFeeSchedule = fee.schedule;
+  }
+  if (supply.didPromote) {
+    $set.labPracticeSpecialSupplyPrices = supply.prices.map((row) => ({
+      practiceAnchorId: row.practiceAnchorId,
+      mode: row.mode,
+      discountRate: row.discountRate,
+      items: row.items,
+      updatedAt: row.updatedAt || new Date(),
+    }));
+    $set.labPracticeSpecialSupplyPendingChange = null;
+  }
+  return $set;
 }
 
 export const LAB_TRADING_PARTNER_WINDOW_DAYS = 60;

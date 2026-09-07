@@ -44,6 +44,11 @@ import {
   normalizeLabPracticeSpecialSupplyItems,
   normalizeLabPracticeSpecialSupplyMode,
   normalizeLabPracticeSpecialSupplyDiscountRate,
+  normalizeLabFeeApplyMode,
+  isLabFeeScheduledYmdValid,
+  toLabFeeSchedulePendingChangePublic,
+  toLabPracticeSpecialSupplyPendingChangePublic,
+  buildLabFeePendingPromotionSet,
 } from "../../utils/labFeeSchedule.js";
 import {
   loadAbutsLabFeeSchedule,
@@ -639,9 +644,18 @@ export async function getLabFeeSchedule(req, res) {
         message: "기공소 사업자만 이용할 수 있습니다.",
       });
     }
-    const lab = await BusinessAnchor.findById(labAnchorId)
+    let lab = await BusinessAnchor.findById(labAnchorId)
       .select({ labFeeSchedule: 1 })
       .lean();
+    const promotionSet = buildLabFeePendingPromotionSet(lab);
+    if (promotionSet?.labFeeSchedule) {
+      lab = await BusinessAnchor.findByIdAndUpdate(
+        labAnchorId,
+        { $set: { labFeeSchedule: promotionSet.labFeeSchedule } },
+        { new: true, select: { labFeeSchedule: 1 } },
+      ).lean();
+      invalidatePracticeTransferQuoteCaches(labAnchorId);
+    }
     const active = isLabFeeScheduleConfigured(lab?.labFeeSchedule);
     const configured = isLabFeeScheduleReadyToCharge(lab?.labFeeSchedule);
     const source = await resolveLabFeeScheduleForSettingsFromCatalog(
@@ -679,6 +693,9 @@ export async function getLabFeeSchedule(req, res) {
         configured,
         needSetupNames,
         updatedAt: lab?.labFeeSchedule?.updatedAt || null,
+        pendingChange: toLabFeeSchedulePendingChangePublic(
+          lab?.labFeeSchedule?.pendingChange,
+        ),
       },
     });
   } catch (e) {
@@ -702,6 +719,40 @@ export async function updateLabFeeSchedule(req, res) {
     const existing = await BusinessAnchor.findById(labAnchorId)
       .select({ labFeeSchedule: 1, name: 1, metadata: 1 })
       .lean();
+    const applyMode = normalizeLabFeeApplyMode(
+      req.body?.applyMode ?? (req.body?.clearPending ? "cancel_pending" : null),
+    );
+
+    if (applyMode === "cancel_pending") {
+      const live = existing?.labFeeSchedule || {};
+      const updated = await BusinessAnchor.findByIdAndUpdate(
+        labAnchorId,
+        {
+          $set: {
+            labFeeSchedule: {
+              ...live,
+              pendingChange: null,
+            },
+          },
+        },
+        { new: true, select: { labFeeSchedule: 1 } },
+      ).lean();
+      invalidatePracticeTransferQuoteCaches(labAnchorId);
+      return res.json({
+        success: true,
+        data: {
+          items: normalizeLabFeeItems(updated?.labFeeSchedule),
+          schedule: normalizeLabFeeSchedule(updated?.labFeeSchedule),
+          remake: normalizeLabFeeRemakeSchedule(updated?.labFeeSchedule),
+          enabled: normalizeLabFeeScheduleEnabled(updated?.labFeeSchedule),
+          active: isLabFeeScheduleConfigured(updated?.labFeeSchedule),
+          configured: isLabFeeScheduleReadyToCharge(updated?.labFeeSchedule),
+          updatedAt: updated?.labFeeSchedule?.updatedAt || null,
+          pendingChange: null,
+        },
+      });
+    }
+
     let items = Array.isArray(req.body?.items)
       ? normalizeLabFeeItems({ items: req.body.items })
       : normalizeLabFeeItems(
@@ -731,6 +782,50 @@ export async function updateLabFeeSchedule(req, res) {
       typeof req.body?.active === "boolean"
         ? req.body.active
         : isLabFeeScheduleConfigured(existing?.labFeeSchedule);
+
+    if (applyMode === "scheduled") {
+      if (!isLabFeeScheduledYmdValid(req.body?.effectiveFromYmd)) {
+        return res.status(400).json({
+          success: false,
+          message: "적용일은 내일 이후로 선택해주세요.",
+        });
+      }
+      const live = existing?.labFeeSchedule || {};
+      const updated = await BusinessAnchor.findByIdAndUpdate(
+        labAnchorId,
+        {
+          $set: {
+            labFeeSchedule: {
+              ...live,
+              pendingChange: {
+                effectiveFromYmd: String(req.body.effectiveFromYmd).trim(),
+                items,
+                active,
+                scheduledAt: new Date(),
+              },
+            },
+          },
+        },
+        { new: true, select: { labFeeSchedule: 1 } },
+      ).lean();
+      invalidatePracticeTransferQuoteCaches(labAnchorId);
+      return res.json({
+        success: true,
+        data: {
+          items: normalizeLabFeeItems(updated?.labFeeSchedule),
+          schedule: normalizeLabFeeSchedule(updated?.labFeeSchedule),
+          remake: normalizeLabFeeRemakeSchedule(updated?.labFeeSchedule),
+          enabled: normalizeLabFeeScheduleEnabled(updated?.labFeeSchedule),
+          active: isLabFeeScheduleConfigured(updated?.labFeeSchedule),
+          configured: isLabFeeScheduleReadyToCharge(updated?.labFeeSchedule),
+          updatedAt: updated?.labFeeSchedule?.updatedAt || null,
+          pendingChange: toLabFeeSchedulePendingChangePublic(
+            updated?.labFeeSchedule?.pendingChange,
+          ),
+        },
+      });
+    }
+
     const updated = await BusinessAnchor.findByIdAndUpdate(
       labAnchorId,
       {
@@ -748,6 +843,7 @@ export async function updateLabFeeSchedule(req, res) {
             items,
             active,
             updatedAt: new Date(),
+            pendingChange: null,
           },
         },
       },
@@ -808,6 +904,7 @@ export async function updateLabFeeSchedule(req, res) {
         active: activeFlag,
         configured,
         updatedAt: updated?.labFeeSchedule?.updatedAt || null,
+        pendingChange: null,
       },
     });
   } catch (e) {
@@ -1044,15 +1141,40 @@ export async function getLabPracticeSpecialSupplyPrices(req, res) {
         message: "기공소 사업자만 이용할 수 있습니다.",
       });
     }
-    const lab = await BusinessAnchor.findById(labAnchorId)
-      .select({ labPracticeSpecialSupplyPrices: 1 })
+    let lab = await BusinessAnchor.findById(labAnchorId)
+      .select({
+        labPracticeSpecialSupplyPrices: 1,
+        labPracticeSpecialSupplyPendingChange: 1,
+        labFeeSchedule: 1,
+      })
       .lean();
+    const promotionSet = buildLabFeePendingPromotionSet(lab);
+    if (promotionSet) {
+      lab = await BusinessAnchor.findByIdAndUpdate(
+        labAnchorId,
+        { $set: promotionSet },
+        {
+          new: true,
+          select: {
+            labPracticeSpecialSupplyPrices: 1,
+            labPracticeSpecialSupplyPendingChange: 1,
+          },
+        },
+      ).lean();
+      invalidatePracticeTransferQuoteCaches(labAnchorId);
+    }
     const rows = normalizeLabPracticeSpecialSupplyList(
       lab?.labPracticeSpecialSupplyPrices,
     );
-    const practiceIds = rows
-      .map((row) => row.practiceAnchorId)
-      .filter((id) => Types.ObjectId.isValid(id));
+    const pending = toLabPracticeSpecialSupplyPendingChangePublic(
+      lab?.labPracticeSpecialSupplyPendingChange,
+    );
+    const practiceIds = [
+      ...new Set([
+        ...rows.map((row) => row.practiceAnchorId),
+        ...(pending?.prices || []).map((row) => row.practiceAnchorId),
+      ]),
+    ].filter((id) => Types.ObjectId.isValid(id));
     const practices = practiceIds.length
       ? await BusinessAnchor.find({ _id: { $in: practiceIds } })
           .select({ name: 1, metadata: 1 })
@@ -1065,6 +1187,15 @@ export async function getLabPracticeSpecialSupplyPrices(req, res) {
         items: rows.map((row) =>
           toSpecialSupplyPublicRow(row, byId.get(row.practiceAnchorId)),
         ),
+        pendingChange: pending
+          ? {
+              effectiveFromYmd: pending.effectiveFromYmd,
+              scheduledAt: pending.scheduledAt,
+              prices: pending.prices.map((row) =>
+                toSpecialSupplyPublicRow(row, byId.get(row.practiceAnchorId)),
+              ),
+            }
+          : null,
       },
     });
   } catch (e) {
@@ -1081,6 +1212,8 @@ export async function getLabPracticeSpecialSupplyPrices(req, res) {
 
 /**
  * PUT body: {
+ *   applyMode?: "immediate"|"scheduled"|"cancel_pending",
+ *   effectiveFromYmd?: "YYYY-MM-DD",
  *   items: [{
  *     practiceAnchorId,
  *     mode: "rate"|"amount",
@@ -1088,7 +1221,7 @@ export async function getLabPracticeSpecialSupplyPrices(req, res) {
  *     items?: [{ feeItemId, feeItemName?, discountAmount, remakeDiscountAmount }]
  *   }]
  * }
- * 전체 목록 교체(효과 없는 치과는 제거).
+ * 전체 목록 교체(효과 없는 치과는 제거). scheduled면 live 유지·pending만.
  */
 export async function updateLabPracticeSpecialSupplyPrices(req, res) {
   try {
@@ -1097,6 +1230,35 @@ export async function updateLabPracticeSpecialSupplyPrices(req, res) {
       return res.status(403).json({
         success: false,
         message: "기공소 사업자만 이용할 수 있습니다.",
+      });
+    }
+
+    const applyMode = normalizeLabFeeApplyMode(
+      req.body?.applyMode ?? (req.body?.clearPending ? "cancel_pending" : null),
+    );
+
+    if (applyMode === "cancel_pending") {
+      const lab = await BusinessAnchor.findByIdAndUpdate(
+        labAnchorId,
+        { $set: { labPracticeSpecialSupplyPendingChange: null } },
+        {
+          new: true,
+          select: {
+            labPracticeSpecialSupplyPrices: 1,
+            labPracticeSpecialSupplyPendingChange: 1,
+          },
+        },
+      ).lean();
+      invalidatePracticeTransferQuoteCaches(labAnchorId);
+      const rows = normalizeLabPracticeSpecialSupplyList(
+        lab?.labPracticeSpecialSupplyPrices,
+      );
+      return res.json({
+        success: true,
+        data: {
+          items: rows.map((row) => toSpecialSupplyPublicRow(row, null)),
+          pendingChange: null,
+        },
       });
     }
 
@@ -1117,7 +1279,11 @@ export async function updateLabPracticeSpecialSupplyPrices(req, res) {
     );
 
     const lab = await BusinessAnchor.findById(labAnchorId)
-      .select({ labFeeSchedule: 1, labPracticeSpecialSupplyPrices: 1 })
+      .select({
+        labFeeSchedule: 1,
+        labPracticeSpecialSupplyPrices: 1,
+        labPracticeSpecialSupplyPendingChange: 1,
+      })
       .lean();
     const prevPracticeIds = normalizeLabPracticeSpecialSupplyList(
       lab?.labPracticeSpecialSupplyPrices,
@@ -1158,8 +1324,68 @@ export async function updateLabPracticeSpecialSupplyPrices(req, res) {
       });
     }
 
+    if (applyMode === "scheduled") {
+      if (!isLabFeeScheduledYmdValid(req.body?.effectiveFromYmd)) {
+        return res.status(400).json({
+          success: false,
+          message: "적용일은 내일 이후로 선택해주세요.",
+        });
+      }
+      const pendingPrices = normalizeLabPracticeSpecialSupplyList(nextList);
+      await BusinessAnchor.findByIdAndUpdate(labAnchorId, {
+        $set: {
+          labPracticeSpecialSupplyPendingChange: {
+            effectiveFromYmd: String(req.body.effectiveFromYmd).trim(),
+            prices: pendingPrices.map((row) => ({
+              practiceAnchorId: new Types.ObjectId(row.practiceAnchorId),
+              mode: row.mode,
+              discountRate: row.discountRate,
+              items: row.items,
+              updatedAt: now,
+            })),
+            scheduledAt: now,
+          },
+        },
+      });
+      invalidatePracticeTransferQuoteCaches(labAnchorId);
+      const liveRows = normalizeLabPracticeSpecialSupplyList(
+        lab?.labPracticeSpecialSupplyPrices,
+      );
+      const affectedPracticeIds = [
+        ...new Set([
+          ...prevPracticeIds,
+          ...pendingPrices.map((row) => row.practiceAnchorId),
+        ]),
+      ];
+      void emitLabSpecialSupplyUpdatedToPractices({
+        labAnchorId,
+        practiceAnchorIds: affectedPracticeIds,
+      });
+      return res.json({
+        success: true,
+        data: {
+          items: liveRows.map((row) =>
+            toSpecialSupplyPublicRow(row, practiceById.get(row.practiceAnchorId)),
+          ),
+          pendingChange: {
+            effectiveFromYmd: String(req.body.effectiveFromYmd).trim(),
+            scheduledAt: now,
+            prices: pendingPrices.map((row) =>
+              toSpecialSupplyPublicRow(
+                row,
+                practiceById.get(row.practiceAnchorId),
+              ),
+            ),
+          },
+        },
+      });
+    }
+
     await BusinessAnchor.findByIdAndUpdate(labAnchorId, {
-      $set: { labPracticeSpecialSupplyPrices: nextList },
+      $set: {
+        labPracticeSpecialSupplyPrices: nextList,
+        labPracticeSpecialSupplyPendingChange: null,
+      },
     });
     invalidatePracticeTransferQuoteCaches(labAnchorId);
 
@@ -1181,6 +1407,7 @@ export async function updateLabPracticeSpecialSupplyPrices(req, res) {
         items: normalized.map((row) =>
           toSpecialSupplyPublicRow(row, practiceById.get(row.practiceAnchorId)),
         ),
+        pendingChange: null,
       },
     });
   } catch (e) {

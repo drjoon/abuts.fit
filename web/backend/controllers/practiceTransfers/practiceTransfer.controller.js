@@ -75,7 +75,7 @@ import {
 import {
   loadAutoMatchBudgetCatalog,
 } from "../../utils/practiceTransferAutoMatchBudget.js";
-import { resolveLabPracticeFeeMultiplier, isLabFeeScheduleConfigured, isLabFeeScheduleReadyToCharge, missingLabFeeItemNames, labFeeItemNamesNeededForToothWorks, toothWorksNeedLabFee } from "../../utils/labFeeSchedule.js";
+import { resolveLabPracticeFeeMultiplier, isLabFeeScheduleConfigured, isLabFeeScheduleReadyToCharge, missingLabFeeItemNames, labFeeItemNamesNeededForToothWorks, toothWorksNeedLabFee, isLabPracticeSpecialSupplySnapshotCaptured } from "../../utils/labFeeSchedule.js";
 import {
   normalizeRushFeeMultiplier,
   parseOrderYmdFromMemo,
@@ -1143,6 +1143,11 @@ const resolveUnreadCountForAccept = (labAnchorId, { wasUnread }) => {
 const buildAcceptedBillingFields = (doc, billingResult) => {
   if (!billingResult?.billed && !billingResult?.fees) return null;
   const now = new Date();
+  const specialSupply = isLabPracticeSpecialSupplySnapshotCaptured(
+    billingResult?.labPracticeSpecialSupply,
+  )
+    ? billingResult.labPracticeSpecialSupply
+    : doc.billing?.labPracticeSpecialSupply;
   return {
     ...(doc.billing && typeof doc.billing === "object" ? doc.billing : {}),
     labFeeTotal: billingResult.fees?.labFeeTotal || 0,
@@ -1157,6 +1162,9 @@ const buildAcceptedBillingFields = (doc, billingResult) => {
     labSettlementAmount: billingResult.labSettlementAmount || 0,
     abutsRevenueAmount: billingResult.abutsRevenueAmount || 0,
     billedAt: now,
+    ...(specialSupply && typeof specialSupply === "object"
+      ? { labPracticeSpecialSupply: specialSupply }
+      : {}),
     heldAt: doc.billing?.heldAt || now,
     heldTotal:
       billingResult.heldTotal != null

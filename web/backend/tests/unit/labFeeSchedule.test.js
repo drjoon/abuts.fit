@@ -44,6 +44,9 @@ import {
   resolveLabFeeScheduleSourceForPracticeTransfer,
   captureLabPracticeSpecialSupplySnapshot,
   resolveLabPracticeSpecialSupplyRowAsOf,
+  isLabFeeScheduledYmdValid,
+  promoteLabFeeSchedulePendingIfDue,
+  promoteLabSpecialSupplyPendingIfDue,
 } from "../../utils/labFeeSchedule.js";
 
 describe("labFeeSchedule", () => {
@@ -2016,5 +2019,134 @@ describe("labPracticeSpecialSupplyPrices", () => {
       specialSupplySnapshot: snapWithRate,
     });
     expect(kept.items.find((item) => item.id === "crown").price).toBe(54000);
+  });
+});
+
+describe("labFeeSchedule pendingChange", () => {
+  const baseItems = [
+    {
+      id: "crown",
+      name: "크라운",
+      unit: "perTooth",
+      enabled: true,
+      price: 60000,
+      remake: 0,
+      tiers: [],
+    },
+  ];
+  const pendingItems = [
+    {
+      id: "crown",
+      name: "크라운",
+      unit: "perTooth",
+      enabled: true,
+      price: 70000,
+      remake: 0,
+      tiers: [],
+    },
+  ];
+
+  test("예약일은 내일(KST) 이후만 유효", () => {
+    const asOf = new Date("2026-03-10T12:00:00+09:00");
+    expect(isLabFeeScheduledYmdValid("2026-03-10", asOf)).toBe(false);
+    expect(isLabFeeScheduledYmdValid("2026-03-11", asOf)).toBe(true);
+    expect(isLabFeeScheduledYmdValid("2026-03-15", asOf)).toBe(true);
+    expect(isLabFeeScheduledYmdValid("bad", asOf)).toBe(false);
+  });
+
+  test("pending due 전이면 live 수가 유지", () => {
+    const schedule = {
+      active: true,
+      items: baseItems,
+      pendingChange: {
+        effectiveFromYmd: "2026-03-15",
+        items: pendingItems,
+        active: true,
+        scheduledAt: new Date("2026-03-01T00:00:00+09:00"),
+      },
+    };
+    const before = promoteLabFeeSchedulePendingIfDue(
+      schedule,
+      new Date("2026-03-14T23:59:00+09:00"),
+    );
+    expect(before.didPromote).toBe(false);
+    expect(before.pendingChange?.effectiveFromYmd).toBe("2026-03-15");
+    const live = resolveLabFeeScheduleSourceForPracticeTransfer({
+      labDoc: { labFeeSchedule: schedule },
+      practiceAnchorId: "64b000000000000000000099",
+      asOf: new Date("2026-03-14T12:00:00+09:00"),
+      liveSpecialSupply: true,
+    });
+    expect(live.items.find((item) => item.id === "crown").price).toBe(60000);
+  });
+
+  test("pending due면 승격·유효 수가 반영", () => {
+    const schedule = {
+      active: true,
+      items: baseItems,
+      pendingChange: {
+        effectiveFromYmd: "2026-03-15",
+        items: pendingItems,
+        active: true,
+        scheduledAt: new Date("2026-03-01T00:00:00+09:00"),
+      },
+    };
+    const after = promoteLabFeeSchedulePendingIfDue(
+      schedule,
+      new Date("2026-03-15T00:00:00+09:00"),
+    );
+    expect(after.didPromote).toBe(true);
+    expect(after.pendingChange).toBeNull();
+    expect(
+      after.schedule.items.find((item) => item.id === "crown").price,
+    ).toBe(70000);
+    const quoted = resolveLabFeeScheduleSourceForPracticeTransfer({
+      labDoc: { labFeeSchedule: schedule },
+      practiceAnchorId: "64b000000000000000000099",
+      asOf: new Date("2026-03-15T12:00:00+09:00"),
+      liveSpecialSupply: true,
+    });
+    expect(quoted.items.find((item) => item.id === "crown").price).toBe(70000);
+  });
+
+  test("특별공급 pending due면 prices 승격", () => {
+    const practiceId = "64b000000000000000000099";
+    const lab = {
+      labFeeSchedule: { active: true, items: baseItems },
+      labPracticeSpecialSupplyPrices: [],
+      labPracticeSpecialSupplyPendingChange: {
+        effectiveFromYmd: "2026-04-01",
+        prices: [
+          {
+            practiceAnchorId: practiceId,
+            mode: "rate",
+            discountRate: 10,
+            items: [],
+            updatedAt: new Date("2026-03-01T00:00:00+09:00"),
+          },
+        ],
+        scheduledAt: new Date("2026-03-01T00:00:00+09:00"),
+      },
+    };
+    const before = promoteLabSpecialSupplyPendingIfDue(
+      lab,
+      new Date("2026-03-31T12:00:00+09:00"),
+    );
+    expect(before.didPromote).toBe(false);
+    expect(before.prices).toHaveLength(0);
+    const after = promoteLabSpecialSupplyPendingIfDue(
+      lab,
+      new Date("2026-04-01T12:00:00+09:00"),
+    );
+    expect(after.didPromote).toBe(true);
+    expect(after.prices).toHaveLength(1);
+    expect(after.prices[0].discountRate).toBe(10);
+    const quoted = resolveLabFeeScheduleSourceForPracticeTransfer({
+      labDoc: lab,
+      practiceAnchorId: practiceId,
+      asOf: new Date("2026-04-01T12:00:00+09:00"),
+      liveSpecialSupply: true,
+    });
+    expect(quoted.items.find((item) => item.id === "crown").price).toBe(54000);
   });
 });

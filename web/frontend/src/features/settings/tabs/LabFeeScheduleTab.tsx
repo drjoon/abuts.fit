@@ -16,6 +16,7 @@
 // - 2026-08-24: need 강제 입력 시 커스텀어벗(지그포함/제외) 기본가 4만·3만 시드.
 // - 2026-08-21: need 강제 입력은 맨 아래에서 작업(입력 후 위치 점프 혼동 방지).
 // - 2026-08-29: 특별공급가는 별도 탭(LabPracticeSpecialSupplyTab)으로 분리.
+// - 2026-09-07: 수가성 변경 시 즉시/특정일 적용 모달 + pendingChange 안내.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
@@ -34,6 +35,11 @@ import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { SettingsCardSkeleton } from "@/features/components/SettingsSkeletons";
 import { parseLabFeeNeedNames } from "@/features/settings/LabFeeSetupPrompt";
+import {
+  LabFeeApplyTimingDialog,
+  formatLabFeeApplyYmdShort,
+  type LabFeeApplyTimingResult,
+} from "@/features/settings/LabFeeApplyTimingDialog";
 import { cn } from "@/shared/ui/cn";
 import {
   LAB_FEE_ITEM_UNIT_LABELS,
@@ -56,6 +62,30 @@ const AUTO_SAVE_DELAY_MS = 700;
 const WON_AMOUNT_STEP = 1000;
 
 const snapshotItems = (next: LabFeeItem[]) => JSON.stringify(next);
+
+/** 이름 제외 — 수가성(금액·단위·활성·추가/삭제) 변경 판별. */
+const chargeSnapshotItems = (next: LabFeeItem[]) =>
+  JSON.stringify(
+    next.map((item) => ({
+      id: item.id,
+      enabled: item.enabled !== false,
+      unit: item.unit,
+      price: Math.max(0, Math.round(Number(item.price || 0))),
+      remake: Math.max(0, Math.round(Number(item.remake || 0))),
+      tiers: (item.tiers || []).map((tier) => ({
+        n: Number(tier.n || 0),
+        price: Math.max(0, Math.round(Number(tier.price || 0))),
+        remake: Math.max(0, Math.round(Number(tier.remake || 0))),
+      })),
+    })),
+  );
+
+type LabFeePendingChange = {
+  effectiveFromYmd: string;
+  items?: LabFeeItem[];
+  active?: boolean;
+  scheduledAt?: string | null;
+};
 
 const newItemId = () =>
   typeof crypto !== "undefined" && crypto.randomUUID
@@ -222,10 +252,20 @@ export const LabFeeScheduleTab = () => {
   const [saving, setSaving] = useState(false);
   const [active, setActive] = useState(false);
   const [items, setItems] = useState<LabFeeItem[]>([]);
+  const [pendingChange, setPendingChange] = useState<LabFeePendingChange | null>(
+    null,
+  );
+  const [timingOpen, setTimingOpen] = useState(false);
+  const [timingConfirming, setTimingConfirming] = useState(false);
   const hydratedRef = useRef(false);
   const savedSnapshotRef = useRef("");
+  const savedChargeSnapshotRef = useRef("");
   const itemsRef = useRef(items);
   const activeRef = useRef(active);
+  const pendingTimingPayloadRef = useRef<{
+    items: LabFeeItem[];
+    active: boolean;
+  } | null>(null);
   itemsRef.current = items;
   activeRef.current = active;
 
@@ -251,6 +291,7 @@ export const LabFeeScheduleTab = () => {
   const applyLoadedItems = (next: LabFeeItem[]) => {
     setItems(next);
     savedSnapshotRef.current = snapshotItems(next);
+    savedChargeSnapshotRef.current = chargeSnapshotItems(next);
     hydratedRef.current = true;
   };
 
@@ -267,6 +308,7 @@ export const LabFeeScheduleTab = () => {
           enabled?: Partial<Record<string, boolean>>;
           active?: boolean;
           configured?: boolean;
+          pendingChange?: LabFeePendingChange | null;
         };
         message?: string;
       }>({
@@ -283,10 +325,28 @@ export const LabFeeScheduleTab = () => {
         return;
       }
       const payload = res.data?.data;
-      setActive(Boolean(payload?.active ?? payload?.configured));
-      if (Array.isArray(payload?.items)) {
+      const pending = payload?.pendingChange?.effectiveFromYmd
+        ? payload.pendingChange
+        : null;
+      setPendingChange(pending);
+      const liveActive = Boolean(payload?.active ?? payload?.configured);
+      const nextActive =
+        pending && typeof pending.active === "boolean"
+          ? Boolean(pending.active)
+          : liveActive;
+      setActive(nextActive);
+      activeRef.current = nextActive;
+      // 예약이 있으면 편집 화면에 예약 수가를 보여 준다(live는 적용일까지 서버에 유지).
+      const pendingItems = Array.isArray(pending?.items)
+        ? normalizeLabFeeItems({ items: pending.items })
+        : null;
+      if (pendingItems?.length) {
+        applyLoadedItems(pendingItems);
+      } else if (Array.isArray(payload?.items)) {
         applyLoadedItems(
-          payload.items.length ? normalizeLabFeeItems({ items: payload.items }) : [],
+          payload.items.length
+            ? normalizeLabFeeItems({ items: payload.items })
+            : [],
         );
       } else {
         applyLoadedItems(
@@ -342,17 +402,35 @@ export const LabFeeScheduleTab = () => {
   }, [loading, needKey, needNames]);
 
   const persist = useCallback(
-    async (next: { items: LabFeeItem[]; active: boolean }) => {
+    async (
+      next: { items: LabFeeItem[]; active: boolean },
+      options?: LabFeeApplyTimingResult | { applyMode: "cancel_pending" },
+    ) => {
       if (!token) return false;
+      const applyMode = options?.applyMode || "immediate";
       try {
         const res = await request<{
           message?: string;
-          data?: { items?: LabFeeItem[]; active?: boolean; configured?: boolean };
+          data?: {
+            items?: LabFeeItem[];
+            active?: boolean;
+            configured?: boolean;
+            pendingChange?: LabFeePendingChange | null;
+          };
         }>({
           path: "/api/lab-trading-partners/fee-schedule",
           method: "PUT",
           token,
-          jsonBody: { items: next.items, active: activeRef.current },
+          jsonBody: {
+            items: next.items,
+            active: next.active,
+            applyMode,
+            ...(applyMode === "scheduled" &&
+            options &&
+            "effectiveFromYmd" in options
+              ? { effectiveFromYmd: options.effectiveFromYmd }
+              : {}),
+          },
         });
         if (!res.ok) {
           toast({
@@ -362,6 +440,31 @@ export const LabFeeScheduleTab = () => {
           });
           return false;
         }
+        const pending = res.data?.data?.pendingChange?.effectiveFromYmd
+          ? res.data.data.pendingChange
+          : null;
+        setPendingChange(pending);
+        if (applyMode === "scheduled") {
+          // live 응답이 아니라 방금 예약한 수가를 화면에 유지.
+          const scheduledItems = Array.isArray(pending?.items)
+            ? normalizeLabFeeItems({ items: pending.items })
+            : next.items.filter((item) => !isDraftFeeItem(item));
+          const merged = mergeServerItemsWithLocalDrafts(
+            scheduledItems,
+            itemsRef.current,
+          );
+          setItems(merged);
+          savedSnapshotRef.current = snapshotItems(merged);
+          savedChargeSnapshotRef.current = chargeSnapshotItems(merged);
+          if (typeof pending?.active === "boolean") {
+            setActive(Boolean(pending.active));
+            activeRef.current = Boolean(pending.active);
+          }
+          toast({
+            title: `${formatLabFeeApplyYmdShort(pending?.effectiveFromYmd)}부터 적용 예약`,
+          });
+          return true;
+        }
         const serverItems = Array.isArray(res.data?.data?.items)
           ? normalizeLabFeeItems({ items: res.data.data.items })
           : next.items.filter((item) => !isDraftFeeItem(item));
@@ -370,8 +473,12 @@ export const LabFeeScheduleTab = () => {
         if (snapshotItems(localItems) === snapshotItems(next.items)) {
           setItems(merged);
           savedSnapshotRef.current = snapshotItems(merged);
+          savedChargeSnapshotRef.current = chargeSnapshotItems(merged);
         } else {
           savedSnapshotRef.current = snapshotItems(
+            mergeServerItemsWithLocalDrafts(serverItems, localItems),
+          );
+          savedChargeSnapshotRef.current = chargeSnapshotItems(
             mergeServerItemsWithLocalDrafts(serverItems, localItems),
           );
         }
@@ -389,18 +496,67 @@ export const LabFeeScheduleTab = () => {
   );
 
   useEffect(() => {
-    if (!hydratedRef.current || !token || loading) return;
+    if (!hydratedRef.current || !token || loading || timingOpen) return;
     const snapshot = snapshotItems(items);
     if (snapshot === savedSnapshotRef.current) return;
 
     const timer = window.setTimeout(() => {
       const payload = itemsRef.current;
       if (snapshotItems(payload) === savedSnapshotRef.current) return;
+      const chargeChanged =
+        chargeSnapshotItems(payload) !== savedChargeSnapshotRef.current;
+      if (chargeChanged) {
+        pendingTimingPayloadRef.current = {
+          items: payload,
+          active: activeRef.current,
+        };
+        setTimingOpen(true);
+        return;
+      }
       void persist({ items: payload, active: activeRef.current });
     }, AUTO_SAVE_DELAY_MS);
 
     return () => window.clearTimeout(timer);
-  }, [items, token, loading, persist]);
+  }, [items, token, loading, persist, timingOpen]);
+
+  const cancelTimingDialog = () => {
+    setTimingOpen(false);
+    pendingTimingPayloadRef.current = null;
+    try {
+      const saved = JSON.parse(savedSnapshotRef.current) as LabFeeItem[];
+      if (Array.isArray(saved)) setItems(saved);
+    } catch {
+      // ignore
+    }
+  };
+
+  const confirmTimingDialog = async (result: LabFeeApplyTimingResult) => {
+    const payload = pendingTimingPayloadRef.current;
+    if (!payload) {
+      setTimingOpen(false);
+      return;
+    }
+    setTimingConfirming(true);
+    setSaving(true);
+    const ok = await persist(payload, result);
+    setTimingConfirming(false);
+    setSaving(false);
+    if (ok) {
+      pendingTimingPayloadRef.current = null;
+      setTimingOpen(false);
+    }
+  };
+
+  const cancelPendingChange = async () => {
+    if (!token) return;
+    setSaving(true);
+    const ok = await persist(
+      { items: itemsRef.current, active: activeRef.current },
+      { applyMode: "cancel_pending" },
+    );
+    setSaving(false);
+    if (ok) toast({ title: "예약된 수가 변경을 취소했습니다." });
+  };
 
   const toggleActive = async (nextActive: boolean) => {
     const prev = active;
@@ -466,6 +622,7 @@ export const LabFeeScheduleTab = () => {
   }
 
   return (
+    <>
     <Card className="app-glass-card app-glass-card--lg">
       <CardHeader className="pb-4">
         <div className="flex items-center justify-between gap-3">
@@ -513,6 +670,25 @@ export const LabFeeScheduleTab = () => {
           <p className="mt-2 text-[12px] font-medium text-red-600">
             제공할 항목을 켜야 의뢰를 수락할 수 있습니다.
           </p>
+        ) : null}
+        {pendingChange?.effectiveFromYmd ? (
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200/90 bg-amber-50/90 px-3 py-2 text-[13px] text-amber-950">
+            <p className="min-w-0 font-medium leading-snug">
+              아래는{" "}
+              {formatLabFeeApplyYmdShort(pendingChange.effectiveFromYmd)}부터
+              적용될 예약 수가입니다.
+            </p>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-8 shrink-0 text-amber-900 hover:bg-amber-100"
+              disabled={saving}
+              onClick={() => void cancelPendingChange()}
+            >
+              예약 취소
+            </Button>
+          </div>
         ) : null}
       </CardHeader>
       <CardContent className="space-y-4">
@@ -694,5 +870,12 @@ export const LabFeeScheduleTab = () => {
         </div>
       </CardContent>
     </Card>
+    <LabFeeApplyTimingDialog
+      open={timingOpen}
+      confirming={timingConfirming}
+      onCancel={cancelTimingDialog}
+      onConfirm={(result) => void confirmTimingDialog(result)}
+    />
+    </>
   );
 };

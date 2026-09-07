@@ -12,6 +12,7 @@
 // - 2026-08-29: 할인금액 모드는 할인가(최종가) 입력·1천원 스피너. 저장은 기본가−할인가.
 // - 2026-08-29: localStorage 캐시 제거 — 서버 GET/PUT만 사용(레이스 제거).
 // - 2026-08-31: 저장 후 클라이언트 quote-context 캐시 무효화(데모 계정 전환 잔존 할인 방지).
+// - 2026-09-07: 수가 변경 시 즉시/특정일 적용 모달 + pendingChange 안내.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Card,
@@ -54,6 +55,11 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { invalidatePracticeTransferQuoteContextCache } from "@/shared/practice/usePracticeTransferFeeQuote";
 import { cn } from "@/shared/ui/cn";
 import type { LabFeeItem } from "@/shared/practice/labFeeSchedule";
+import {
+  LabFeeApplyTimingDialog,
+  formatLabFeeApplyYmdShort,
+  type LabFeeApplyTimingResult,
+} from "@/features/settings/LabFeeApplyTimingDialog";
 
 const AUTO_SAVE_DELAY_MS = 700;
 const WON_AMOUNT_STEP = 1000;
@@ -470,6 +476,12 @@ export function LabPracticeSpecialSupplySection({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [rows, setRows] = useState<LabPracticeSpecialSupplyRow[]>([]);
+  const [pendingChange, setPendingChange] = useState<{
+    effectiveFromYmd: string;
+    scheduledAt?: string | null;
+  } | null>(null);
+  const [timingOpen, setTimingOpen] = useState(false);
+  const [timingConfirming, setTimingConfirming] = useState(false);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [addPickerOpen, setAddPickerOpen] = useState(false);
   const [itemPickerPracticeId, setItemPickerPracticeId] = useState<string | null>(
@@ -480,7 +492,10 @@ export function LabPracticeSpecialSupplySection({
   const [searchHits, setSearchHits] = useState<PracticeSearchHit[]>([]);
   const hydratedRef = useRef(false);
   const savedSnapshotRef = useRef("");
+  const lastLiveRowsRef = useRef<LabPracticeSpecialSupplyRow[]>([]);
+  const lastDisplayRowsRef = useRef<LabPracticeSpecialSupplyRow[]>([]);
   const rowsRef = useRef(rows);
+  const pendingTimingRowsRef = useRef<LabPracticeSpecialSupplyRow[] | null>(null);
   rowsRef.current = rows;
 
   const namedFeeItems = useMemo(
@@ -503,7 +518,14 @@ export function LabPracticeSpecialSupplySection({
     clearLegacySpecialSupplyCache();
     try {
       const res = await request<{
-        data?: { items?: Partial<LabPracticeSpecialSupplyRow>[] };
+        data?: {
+          items?: Partial<LabPracticeSpecialSupplyRow>[];
+          pendingChange?: {
+            effectiveFromYmd?: string;
+            scheduledAt?: string | null;
+            prices?: Partial<LabPracticeSpecialSupplyRow>[];
+          } | null;
+        };
         message?: string;
       }>({
         path: "/api/lab-trading-partners/special-supply-prices",
@@ -518,17 +540,33 @@ export function LabPracticeSpecialSupplySection({
         });
         return;
       }
-      const items = (Array.isArray(res.data?.data?.items)
+      const liveItems = (Array.isArray(res.data?.data?.items)
         ? res.data.data.items
         : []
       )
         .map(normalizeRowFromApi)
         .filter((row) => row.practiceAnchorId);
-      setRows(items);
-      savedSnapshotRef.current = snapshotRows(items);
+      const pendingRaw = res.data?.data?.pendingChange;
+      const pendingPrices = (
+        Array.isArray(pendingRaw?.prices) ? pendingRaw.prices : []
+      )
+        .map(normalizeRowFromApi)
+        .filter((row) => row.practiceAnchorId);
+      const pending = pendingRaw?.effectiveFromYmd
+        ? {
+            effectiveFromYmd: String(pendingRaw.effectiveFromYmd),
+            scheduledAt: pendingRaw.scheduledAt || null,
+          }
+        : null;
+      setPendingChange(pending);
+      const displayItems = pendingPrices.length ? pendingPrices : liveItems;
+      setRows(displayItems);
+      savedSnapshotRef.current = snapshotRows(displayItems);
+      lastLiveRowsRef.current = liveItems;
+      lastDisplayRowsRef.current = displayItems;
       hydratedRef.current = true;
-      if (items.length === 1) {
-        setExpandedIds(new Set([items[0].practiceAnchorId]));
+      if (displayItems.length === 1) {
+        setExpandedIds(new Set([displayItems[0].practiceAnchorId]));
       } else {
         setExpandedIds(new Set());
       }
@@ -542,18 +580,35 @@ export function LabPracticeSpecialSupplySection({
   }, [load]);
 
   const persist = useCallback(
-    async (nextRows: LabPracticeSpecialSupplyRow[]) => {
+    async (
+      nextRows: LabPracticeSpecialSupplyRow[],
+      options?: LabFeeApplyTimingResult | { applyMode: "cancel_pending" },
+    ) => {
       if (!token) return false;
+      const applyMode = options?.applyMode || "immediate";
       const payloadRows = nextRows.filter(rowHasEffect);
       try {
         const res = await request<{
           message?: string;
-          data?: { items?: Partial<LabPracticeSpecialSupplyRow>[] };
+          data?: {
+            items?: Partial<LabPracticeSpecialSupplyRow>[];
+            pendingChange?: {
+              effectiveFromYmd?: string;
+              scheduledAt?: string | null;
+              prices?: Partial<LabPracticeSpecialSupplyRow>[];
+            } | null;
+          };
         }>({
           path: "/api/lab-trading-partners/special-supply-prices",
           method: "PUT",
           token,
           jsonBody: {
+            applyMode,
+            ...(applyMode === "scheduled" &&
+            options &&
+            "effectiveFromYmd" in options
+              ? { effectiveFromYmd: options.effectiveFromYmd }
+              : {}),
             items: payloadRows.map((row) => ({
               practiceAnchorId: row.practiceAnchorId,
               mode: row.mode,
@@ -588,12 +643,45 @@ export function LabPracticeSpecialSupplySection({
           });
           return false;
         }
+        const pending = res.data?.data?.pendingChange?.effectiveFromYmd
+          ? {
+              effectiveFromYmd: String(
+                res.data.data.pendingChange.effectiveFromYmd,
+              ),
+              scheduledAt: res.data.data.pendingChange.scheduledAt || null,
+            }
+          : null;
+        setPendingChange(pending);
         const saved = (Array.isArray(res.data?.data?.items)
           ? res.data.data.items
           : []
         )
           .map(normalizeRowFromApi)
           .filter((row) => row.practiceAnchorId);
+        const pendingPrices = (
+          Array.isArray(res.data?.data?.pendingChange?.prices)
+            ? res.data.data.pendingChange.prices
+            : []
+        )
+          .map(normalizeRowFromApi)
+          .filter((row) => row.practiceAnchorId);
+
+        if (applyMode === "scheduled") {
+          const display =
+            pendingPrices.length > 0
+              ? pendingPrices
+              : nextRows.filter(rowHasEffect);
+          setRows(display);
+          lastLiveRowsRef.current = saved;
+          lastDisplayRowsRef.current = display;
+          savedSnapshotRef.current = snapshotRows(display);
+          toast({
+            title: `${formatLabFeeApplyYmdShort(pending?.effectiveFromYmd)}부터 적용 예약`,
+          });
+          invalidatePracticeTransferQuoteContextCache(businessAnchorId || null);
+          return true;
+        }
+
         // 아직 할인 미입력인 초안 치과·항목은 세션 메모리에 유지
         const savedIds = new Set(saved.map((row) => row.practiceAnchorId));
         const localById = new Map(
@@ -620,6 +708,8 @@ export function LabPracticeSpecialSupplySection({
         );
         const merged = [...mergedSaved, ...drafts];
         setRows(merged);
+        lastLiveRowsRef.current = merged;
+        lastDisplayRowsRef.current = merged;
         savedSnapshotRef.current = snapshotRows(saved);
         invalidatePracticeTransferQuoteContextCache(businessAnchorId || null);
         return true;
@@ -636,15 +726,45 @@ export function LabPracticeSpecialSupplySection({
   );
 
   useEffect(() => {
-    if (!hydratedRef.current || loading) return;
+    if (!hydratedRef.current || loading || timingOpen) return;
     const snap = snapshotRows(rows);
     if (snap === savedSnapshotRef.current) return;
     const timer = window.setTimeout(() => {
-      setSaving(true);
-      void persist(rowsRef.current).finally(() => setSaving(false));
+      pendingTimingRowsRef.current = rowsRef.current;
+      setTimingOpen(true);
     }, AUTO_SAVE_DELAY_MS);
     return () => window.clearTimeout(timer);
-  }, [rows, loading, persist]);
+  }, [rows, loading, timingOpen]);
+
+  const cancelTimingDialog = () => {
+    setTimingOpen(false);
+    pendingTimingRowsRef.current = null;
+    setRows(lastDisplayRowsRef.current);
+  };
+
+  const confirmTimingDialog = async (result: LabFeeApplyTimingResult) => {
+    const payload = pendingTimingRowsRef.current;
+    if (!payload) {
+      setTimingOpen(false);
+      return;
+    }
+    setTimingConfirming(true);
+    setSaving(true);
+    const ok = await persist(payload, result);
+    setTimingConfirming(false);
+    setSaving(false);
+    if (ok) {
+      pendingTimingRowsRef.current = null;
+      setTimingOpen(false);
+    }
+  };
+
+  const cancelPendingChange = async () => {
+    setSaving(true);
+    const ok = await persist(rowsRef.current, { applyMode: "cancel_pending" });
+    setSaving(false);
+    if (ok) toast({ title: "예약된 특별공급가 변경을 취소했습니다." });
+  };
 
   useEffect(() => {
     if (!addPickerOpen) {
@@ -855,6 +975,7 @@ export function LabPracticeSpecialSupplySection({
   }
 
   return (
+    <>
     <Card className="app-glass-card app-glass-card--lg">
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between gap-3">
@@ -874,6 +995,25 @@ export function LabPracticeSpecialSupplySection({
         <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
           치과별 할인율·할인금액. 미지정 항목은 기본 기공비.
         </p>
+        {pendingChange?.effectiveFromYmd ? (
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200/90 bg-amber-50/90 px-3 py-2 text-[13px] text-amber-950">
+            <p className="min-w-0 font-medium leading-snug">
+              아래는{" "}
+              {formatLabFeeApplyYmdShort(pendingChange.effectiveFromYmd)}부터
+              적용될 예약 특별공급가입니다.
+            </p>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-8 shrink-0 text-amber-900 hover:bg-amber-100"
+              disabled={saving}
+              onClick={() => void cancelPendingChange()}
+            >
+              예약 취소
+            </Button>
+          </div>
+        ) : null}
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -1278,5 +1418,13 @@ export function LabPracticeSpecialSupplySection({
         </div>
       </CardContent>
     </Card>
+    <LabFeeApplyTimingDialog
+      open={timingOpen}
+      title="특별공급가 적용 시기"
+      confirming={timingConfirming}
+      onCancel={cancelTimingDialog}
+      onConfirm={(result) => void confirmTimingDialog(result)}
+    />
+    </>
   );
 }
