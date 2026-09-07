@@ -14,6 +14,7 @@
 // - web/frontend/src/shared/files/downloadWithProgress.ts
 // - web/frontend/src/shared/files/s3BlobCache.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-09-07: UX — 의뢰상세 핵심만·상세 접기, 진행상황 다음공정 칩·크롬 압축.
 // - 2026-09-07: 다단계 도착일 당일·지연 시 「다음 도착일」깜빡임 + 호버 안내.
 // - 2026-09-07: 진행 상황 탭에도 재도착일 CTA(모든 케이스). 틀니 등은 다음 공정 표시.
 // - 2026-09-07: 채팅 알림음 메뉴 + 진행 상황 탭 열람 시 알림음 스킵.
@@ -101,8 +102,10 @@ import {
 import {
   Box,
   CalendarClock,
+  ChevronDown,
   FileIcon,
   MessageSquare,
+  MoreHorizontal,
   Pencil,
   Printer,
   Trash2,
@@ -111,7 +114,18 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Popover,
   PopoverContent,
@@ -262,6 +276,54 @@ function summaryItemValue(
     items.find((row) => row.label === label)?.value || "",
   ).trim();
   return raw && raw !== "-" ? raw : "";
+}
+
+/** 헤더 식별 줄·파일 섹션과 겹치는 메타 → 상세 접기 */
+const SUMMARY_PRIMARY_LABELS = new Set([
+  "환자명",
+  "담당자",
+  "주문일",
+  "재주문일",
+  "도착일",
+  "치과도착일",
+  "다음 도착일",
+  "재도착일",
+  "작업+배송기간",
+  "기공의뢰 단계",
+  "어벗 진행상황",
+]);
+
+function isZeroCountSummaryValue(value: string): boolean {
+  return /^0\s*개$/.test(String(value || "").trim());
+}
+
+function partitionPracticeTransferSummaryItems(
+  items: PracticeTransferDialogSummaryItem[],
+): {
+  primary: PracticeTransferDialogSummaryItem[];
+  secondary: PracticeTransferDialogSummaryItem[];
+} {
+  const primary: PracticeTransferDialogSummaryItem[] = [];
+  const secondary: PracticeTransferDialogSummaryItem[] = [];
+  for (const row of items) {
+    const label = String(row.label || "").trim();
+    const value = String(row.value || "").trim();
+    // 0개 카운트는 아래 파일 섹션으로 충분 — 목록 노이즈만 줄임
+    if (
+      (label === "파일 수" ||
+        label === "어벗디자인" ||
+        label === "보철물") &&
+      isZeroCountSummaryValue(value)
+    ) {
+      continue;
+    }
+    if (SUMMARY_PRIMARY_LABELS.has(label)) {
+      primary.push(row);
+    } else {
+      secondary.push(row);
+    }
+  }
+  return { primary, secondary };
 }
 
 export type PracticeTransferDialogFileItem = {
@@ -606,6 +668,7 @@ export function PracticeTransferDetailChatDialog({
         ? "detail"
         : "chat";
   const [panelTab, setPanelTab] = useState<"detail" | "chat">(resolvedInitialPanelTab);
+  const [detailMoreOpen, setDetailMoreOpen] = useState(false);
   const [rearrivalOpen, setRearrivalOpen] = useState(false);
   const [rearrivalDraft, setRearrivalDraft] = useState<Date | undefined>(undefined);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -733,10 +796,14 @@ export function PracticeTransferDetailChatDialog({
 
     return segs.map((s) => ({
       archLabel: s.archLabel,
-      text: s.archLabel ? `${s.archLabel}(${s.text})` : s.text,
+      text: s.text,
     }));
   }, [labRequestStagePlans, toothWorks]);
 
+  const partitionedSummary = useMemo(
+    () => partitionPracticeTransferSummaryItems(summaryItems),
+    [summaryItems],
+  );
   const nextArrivalReminder = useMemo(
     () =>
       onAppendArrival
@@ -1570,6 +1637,92 @@ export function PracticeTransferDetailChatDialog({
       memo,
     });
   }, [title, summaryItems, toothWorks, memo]);
+
+  useEffect(() => {
+    if (!open) return;
+    setDetailMoreOpen(false);
+  }, [open]);
+
+  const hasMeaningfulMemo = Boolean(String(memo || "").trim() && memo !== "-");
+
+  const renderSummaryRows = (
+    rows: PracticeTransferDialogSummaryItem[],
+    opts?: { showArrivalAction?: boolean },
+  ) =>
+    rows.map((row, idx) => {
+      const isArrivalRow =
+        row.label === "치과도착일" ||
+        row.label === "다음 도착일" ||
+        row.label === "재도착일";
+      const valueNode = (
+        <p
+          className={cn(
+            "text-sm font-medium leading-snug break-words text-foreground",
+            row.valueClassName,
+          )}
+        >
+          {row.value || "-"}
+        </p>
+      );
+      const valueWithAction =
+        isArrivalRow &&
+        onAppendArrival &&
+        opts?.showArrivalAction !== false &&
+        panelTab === "detail" ? (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {row.tooltip ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex cursor-help">{valueNode}</span>
+                </TooltipTrigger>
+                <TooltipContent
+                  side="top"
+                  className="max-w-xs text-left text-xs leading-relaxed"
+                >
+                  {row.tooltip}
+                </TooltipContent>
+              </Tooltip>
+            ) : (
+              valueNode
+            )}
+            {renderRearrivalPopover()}
+          </div>
+        ) : row.tooltip ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="inline-flex cursor-help">{valueNode}</span>
+            </TooltipTrigger>
+            <TooltipContent
+              side="top"
+              className="max-w-xs text-left text-xs leading-relaxed"
+            >
+              {row.tooltip}
+            </TooltipContent>
+          </Tooltip>
+        ) : (
+          valueNode
+        );
+      return (
+        <div
+          key={`${row.label}:${idx}`}
+          className="grid grid-cols-[6.75rem_minmax(0,1fr)] items-start gap-x-3 py-2 sm:grid-cols-[7.5rem_minmax(0,1fr)]"
+        >
+          <dt className="pt-0.5 text-[13px] leading-snug text-muted-foreground">
+            {row.label}
+          </dt>
+          <dd className="min-w-0">
+            {row.action ? (
+              <div className="flex flex-wrap items-center gap-1.5">
+                {valueWithAction}
+                {row.action}
+              </div>
+            ) : (
+              valueWithAction
+            )}
+          </dd>
+        </div>
+      );
+    });
   const hasPendingLabCustomAbutment = Boolean(
     toothWorks?.some(
       (work) =>
@@ -1944,11 +2097,11 @@ export function PracticeTransferDetailChatDialog({
             value="detail"
             className="custom-scrollbar mt-0 max-h-[inherit] overflow-y-auto px-5 py-3 text-sm focus-visible:ring-0"
           >
-            <div className="space-y-6">
+            <div className="space-y-5">
               <section className="space-y-1">
                 <div className="flex items-center justify-between gap-2">
                   <h3 className="text-[13px] font-semibold text-foreground">
-                    기본 정보
+                    핵심 정보
                   </h3>
                   {feeViewer === "lab" ? (
                     <Button
@@ -1965,82 +2118,44 @@ export function PracticeTransferDetailChatDialog({
                   ) : null}
                 </div>
                 <dl className="divide-y divide-border/70">
-                  {summaryItems.map((row, idx) => {
-                    const isArrivalRow =
-                      row.label === "치과도착일" ||
-                      row.label === "다음 도착일" ||
-                      row.label === "재도착일";
-                    const valueNode = (
-                      <p
-                        className={cn(
-                          "text-sm font-medium leading-snug break-words text-foreground",
-                          row.valueClassName,
-                        )}
-                      >
-                        {row.value || "-"}
-                      </p>
-                    );
-                    const valueWithAction =
-                      isArrivalRow && onAppendArrival && panelTab === "detail" ? (
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          {row.tooltip ? (
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span className="inline-flex cursor-help">
-                                  {valueNode}
-                                </span>
-                              </TooltipTrigger>
-                              <TooltipContent
-                                side="top"
-                                className="max-w-xs text-left text-xs leading-relaxed"
-                              >
-                                {row.tooltip}
-                              </TooltipContent>
-                            </Tooltip>
-                          ) : (
-                            valueNode
-                          )}
-                          {renderRearrivalPopover()}
-                        </div>
-                      ) : row.tooltip ? (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span className="inline-flex cursor-help">
-                              {valueNode}
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent
-                            side="top"
-                            className="max-w-xs text-left text-xs leading-relaxed"
-                          >
-                            {row.tooltip}
-                          </TooltipContent>
-                        </Tooltip>
-                      ) : (
-                        valueNode
-                      );
-                    return (
-                      <div
-                        key={`${row.label}:${idx}`}
-                        className="grid grid-cols-[6.75rem_minmax(0,1fr)] items-start gap-x-3 py-2 sm:grid-cols-[7.5rem_minmax(0,1fr)]"
-                      >
-                        <dt className="pt-0.5 text-[13px] leading-snug text-muted-foreground">
-                          {row.label}
-                        </dt>
-                        <dd className="min-w-0">
-                          {row.action ? (
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              {valueWithAction}
-                              {row.action}
-                            </div>
-                          ) : (
-                            valueWithAction
-                          )}
-                        </dd>
-                      </div>
-                    );
-                  })}
+                  {renderSummaryRows(
+                    partitionedSummary.primary.length > 0
+                      ? partitionedSummary.primary
+                      : partitionedSummary.secondary,
+                  )}
                 </dl>
+                {partitionedSummary.primary.length > 0 &&
+                partitionedSummary.secondary.length > 0 ? (
+                  <Collapsible
+                    open={detailMoreOpen}
+                    onOpenChange={setDetailMoreOpen}
+                    className="pt-1"
+                  >
+                    <CollapsibleTrigger asChild>
+                      <button
+                        type="button"
+                        className="flex w-full items-center gap-1.5 rounded-md py-1.5 text-left text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+                      >
+                        <ChevronDown
+                          className={cn(
+                            "h-3.5 w-3.5 shrink-0 transition-transform",
+                            detailMoreOpen && "rotate-180",
+                          )}
+                        />
+                        {detailMoreOpen
+                          ? "상세 정보 접기"
+                          : `상세 정보 (${partitionedSummary.secondary.length})`}
+                      </button>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <dl className="mt-1 divide-y divide-border/60 border-t border-border/60">
+                        {renderSummaryRows(partitionedSummary.secondary, {
+                          showArrivalAction: false,
+                        })}
+                      </dl>
+                    </CollapsibleContent>
+                  </Collapsible>
+                ) : null}
               </section>
 
               {summaryBanner ? (
@@ -2048,7 +2163,7 @@ export function PracticeTransferDetailChatDialog({
               ) : null}
 
               {hasToothWorks ? (
-                <section className="space-y-2.5 border-t border-border/70 pt-5">
+                <section className="space-y-2.5 border-t border-border/70 pt-4">
                   <h3 className="text-[13px] font-semibold text-foreground">
                     치식 · 보철물
                   </h3>
@@ -2064,16 +2179,18 @@ export function PracticeTransferDetailChatDialog({
                 </section>
               ) : null}
 
-              <section className="space-y-2.5 border-t border-border/70 pt-5">
-                <h3 className="text-[13px] font-semibold text-foreground">
-                  의뢰 메모
-                </h3>
-                <p className="custom-scrollbar max-h-48 overflow-y-auto rounded-md bg-muted/40 px-3 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words text-foreground">
-                  {memo || "-"}
-                </p>
-              </section>
+              {hasMeaningfulMemo ? (
+                <section className="space-y-2.5 border-t border-border/70 pt-4">
+                  <h3 className="text-[13px] font-semibold text-foreground">
+                    의뢰 메모
+                  </h3>
+                  <p className="custom-scrollbar max-h-48 overflow-y-auto rounded-md bg-muted/40 px-3 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words text-foreground">
+                    {memo}
+                  </p>
+                </section>
+              ) : null}
 
-              <section className="space-y-2.5 border-t border-border/70 pt-5">
+              <section className="space-y-2.5 border-t border-border/70 pt-4">
                 <div className="flex items-center justify-between gap-2">
                   <h3 className="text-[13px] font-semibold text-foreground">
                     {filesLabel}{" "}
@@ -2081,19 +2198,19 @@ export function PracticeTransferDetailChatDialog({
                       ({files.length}개)
                     </span>
                   </h3>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => void onDownloadAllFiles()}
-                    disabled={
-                      files.length === 0 ||
-                      downloadAllBusy ||
-                      requestFilesDownloadLocked
-                    }
-                  >
-                    {downloadAllBusy ? "다운로드 중..." : "전체 다운로드"}
-                  </Button>
+                  {files.length > 0 ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void onDownloadAllFiles()}
+                      disabled={
+                        downloadAllBusy || requestFilesDownloadLocked
+                      }
+                    >
+                      {downloadAllBusy ? "다운로드 중..." : "전체 다운로드"}
+                    </Button>
+                  ) : null}
                 </div>
                 {requestFilesDownloadLocked && files.length > 0 ? (
                   <p className="text-xs leading-relaxed text-amber-800 dark:text-amber-200">
@@ -2123,7 +2240,7 @@ export function PracticeTransferDetailChatDialog({
               </section>
 
               {showWorkFilesSection ? (
-                <section className="space-y-3 border-t border-border/70 pt-5">
+                <section className="space-y-3 border-t border-border/70 pt-4">
                   <h3 className="text-[13px] font-semibold text-foreground">
                     {workFilesLabel}
                   </h3>
@@ -2219,59 +2336,138 @@ export function PracticeTransferDetailChatDialog({
                 </div>
               ) : null}
 
-              {counterpartyMemoStrip}
+              {(counterpartyMemoStrip ||
+                onEditRequest ||
+                onCancelRequest ||
+                nextStageSegments.length > 0 ||
+                onAppendArrival) &&
+              panelTab === "chat" ? (
+                <div className="shrink-0 border-b bg-muted/25">
+                  {nextStageSegments.length > 0 || onAppendArrival ? (
+                    <div className="flex flex-wrap items-center gap-2 px-4 py-2 sm:px-5">
+                      {nextStageSegments.length > 0 ? (
+                        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+                          <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                            다음 공정
+                          </span>
+                          {nextStageSegments.map((seg, idx) => (
+                            <span
+                              key={`${seg.archLabel}:${seg.text}:${idx}`}
+                              className="inline-flex max-w-full items-center gap-1 rounded-md border border-border/80 bg-background px-2 py-0.5 text-xs leading-snug text-foreground"
+                            >
+                              {seg.archLabel ? (
+                                <span className="shrink-0 font-semibold text-primary">
+                                  {seg.archLabel}
+                                </span>
+                              ) : null}
+                              <span className="min-w-0 truncate">{seg.text}</span>
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="min-w-0 flex-1 text-xs text-muted-foreground">
+                          도착일 관리
+                        </span>
+                      )}
+                      {onAppendArrival ? renderRearrivalPopover() : null}
+                      {onEditRequest || onCancelRequest ? (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 shrink-0 px-0 text-muted-foreground"
+                              aria-label="의뢰 관리"
+                              title="의뢰 관리"
+                            >
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="z-[400]">
+                            {onEditRequest ? (
+                              <DropdownMenuItem
+                                disabled={editRequestDisabled}
+                                onSelect={() => onEditRequest()}
+                              >
+                                <Pencil className="mr-2 h-3.5 w-3.5" />
+                                의뢰 수정
+                              </DropdownMenuItem>
+                            ) : null}
+                            {onCancelRequest ? (
+                              <DropdownMenuItem
+                                disabled={cancelRequestDisabled}
+                                className="text-destructive focus:text-destructive"
+                                onSelect={() => onCancelRequest()}
+                              >
+                                <Trash2 className="mr-2 h-3.5 w-3.5" />
+                                의뢰 취소
+                              </DropdownMenuItem>
+                            ) : null}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      ) : null}
+                    </div>
+                  ) : onEditRequest || onCancelRequest ? (
+                    <div className="flex justify-end gap-1 px-4 py-1.5 sm:px-5">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
+                            aria-label="의뢰 관리"
+                          >
+                            <MoreHorizontal className="h-4 w-4" />
+                            관리
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="z-[400]">
+                          {onEditRequest ? (
+                            <DropdownMenuItem
+                              disabled={editRequestDisabled}
+                              onSelect={() => onEditRequest()}
+                            >
+                              <Pencil className="mr-2 h-3.5 w-3.5" />
+                              의뢰 수정
+                            </DropdownMenuItem>
+                          ) : null}
+                          {onCancelRequest ? (
+                            <DropdownMenuItem
+                              disabled={cancelRequestDisabled}
+                              className="text-destructive focus:text-destructive"
+                              onSelect={() => onCancelRequest()}
+                            >
+                              <Trash2 className="mr-2 h-3.5 w-3.5" />
+                              의뢰 취소
+                            </DropdownMenuItem>
+                          ) : null}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  ) : null}
+
+                  {counterpartyMemoStrip ? (
+                    <div
+                      className={cn(
+                        "[&>div]:border-b-0 [&>div]:bg-transparent",
+                        nextStageSegments.length > 0 ||
+                          onAppendArrival ||
+                          onEditRequest ||
+                          onCancelRequest
+                          ? "border-t border-border/60"
+                          : null,
+                      )}
+                    >
+                      {counterpartyMemoStrip}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
 
               {summaryBanner ? (
                 <div className="shrink-0 border-b px-5 py-2">{summaryBanner}</div>
-              ) : null}
-
-              {panelTab === "chat" &&
-              (nextStageSegments.length > 0 || onAppendArrival) ? (
-                <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b bg-muted/40 px-5 py-2 text-xs leading-snug text-foreground">
-                  {nextStageSegments.length > 0 ? (
-                    <p className="min-w-0">
-                      <span className="font-medium">다음공정:</span>{" "}
-                      {nextStageSegments.map((seg, idx) => (
-                        <span key={`${seg.text}:${idx}`}>
-                          {idx > 0 ? <span className="inline-block w-4" /> : null}
-                          {seg.text}
-                        </span>
-                      ))}
-                    </p>
-                  ) : null}
-                  {onAppendArrival ? renderRearrivalPopover() : null}
-                </div>
-              ) : null}
-
-              {onEditRequest || onCancelRequest ? (
-                <div className="flex shrink-0 flex-wrap justify-end gap-2 border-b bg-muted/40 px-5 py-2">
-                  {onCancelRequest ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="shrink-0 gap-1.5 border-destructive-muted text-destructive hover:bg-destructive-soft hover:text-destructive"
-                      disabled={cancelRequestDisabled}
-                      onClick={() => onCancelRequest()}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                      의뢰 취소
-                    </Button>
-                  ) : null}
-                  {onEditRequest ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="shrink-0 gap-1.5"
-                      disabled={editRequestDisabled}
-                      onClick={() => onEditRequest()}
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                      의뢰 수정
-                    </Button>
-                  ) : null}
-                </div>
               ) : null}
 
               {showAcceptBar ? (

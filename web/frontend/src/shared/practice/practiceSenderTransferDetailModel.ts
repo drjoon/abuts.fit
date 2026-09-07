@@ -7,6 +7,7 @@
  * 2026-08-21: 작업취소·휴지통 상태에서는 디자인 컨펌 CTA 숨김.
  * 2026-08-29: 요약 필드「어벗 진행상황」— 제조 공정 라벨 표시.
  * 2026-09-07: 기공의뢰 단계 — 현재·다음 공정 표시(틀니 등).
+ * 2026-09-07: 기공의뢰 단계 줄바꿈 구분(한 줄 장문 가독성).
  */
 import type {
   PracticeRecentTransferFileItem,
@@ -261,15 +262,16 @@ export function buildPracticeSenderTransferDetailModel(
             if (!current) return null;
             const progress =
               stages.length > 1 ? ` (${idx + 1}/${stages.length})` : "";
-            const nextPart = next ? ` → 다음 ${next}` : "";
-            return `${typeName ? `${typeName} · ` : ""}${current}${progress}${nextPart}`;
+            const head = `${typeName ? `${typeName} · ` : ""}${current}${progress}`;
+            return next ? `${head}\n→ 다음 ${next}` : head;
           })
           .filter(Boolean);
         if (labels.length === 0) return [];
         return [
           {
             label: "기공의뢰 단계",
-            value: labels.join(" · "),
+            value: labels.join("\n\n"),
+            valueClassName: "whitespace-pre-line",
           } as PracticeTransferDialogSummaryItem,
         ];
       })(),
