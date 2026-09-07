@@ -2222,6 +2222,49 @@ export function RequestorPracticeReceivePage({
     () => resolvePracticeTransferToothWorks(selectedTransfer, implantCatalog),
     [selectedTransfer, implantCatalog],
   );
+  const selectedTransferCaseIdentity = useMemo(() => {
+    if (!selectedTransfer) return null;
+    const hidePractice =
+      String(user?.role || "").trim() !== "internalLab" &&
+      (Boolean(selectedTransfer.autoMatch?.openPool) ||
+        Boolean(selectedTransfer.autoMatch?.subcontracted));
+    const clinic = hidePractice
+      ? "비공개"
+      : String(selectedTransfer.practice?.businessName || "").trim();
+    const patient =
+      selectedTransferPatientName ||
+      resolvePracticeTransferListPatientName(selectedTransfer);
+    const teeth = resolvePracticeTransferListToothNumbers(selectedTransfer);
+    const transferId = String(selectedTransfer.transferId || "").trim();
+    const arrival =
+      String(
+        (Array.isArray(selectedTransfer.arrivalDates) &&
+          selectedTransfer.arrivalDates[
+            selectedTransfer.arrivalDates.length - 1
+          ]) ||
+          selectedTransfer.arrivalDate ||
+          "",
+      ).trim();
+    const primaryParts = [clinic, patient].filter(Boolean);
+    if (!primaryParts.length && !transferId) return null;
+    const primary =
+      primaryParts.length === 0
+        ? transferId
+        : primaryParts.length === 2
+          ? `${primaryParts[0]} / ${primaryParts[1]}${teeth ? ` ${teeth}` : ""}`
+          : `${primaryParts[0]}${teeth ? ` ${teeth}` : ""}`;
+    const secondary = [
+      primaryParts.length > 0 ? transferId : "",
+      arrival ? `도착 ${arrival}` : "",
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    return { primary, secondary };
+  }, [
+    selectedTransfer,
+    selectedTransferPatientName,
+    user?.role,
+  ]);
   const markTransferRead = useCallback(
     async (transfer: ReceivedPracticeTransfer) => {
       if (!token || transfer.isRead) return;
@@ -5798,6 +5841,7 @@ export function RequestorPracticeReceivePage({
         initialPanelTab={dialogInitialPanelTab}
         guideTourElevate={guideTourWantsReceiveDetail}
         chatHeaderAction={null}
+        caseIdentity={selectedTransferCaseIdentity}
         counterpartyMemoStrip={
           selectedTransfer?.practiceBusinessAnchorId ? (
             <CounterpartyMemoStrip

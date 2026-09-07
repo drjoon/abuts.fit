@@ -14,6 +14,7 @@
 // - web/frontend/src/shared/files/downloadWithProgress.ts
 // - web/frontend/src/shared/files/s3BlobCache.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-09-07: 패널 공통 헤더 — 치과/환자 식별 스트립(탭 아래 고정, caseIdentity·summaryItems).
 // - 2026-09-07: lab_accept — 거절 버튼 제거. CTA 「수락」→「작업시작」.
 // - 2026-09-05: lab_detail — 상세 모달 전체(DialogContent) Spotlight 홀.
 // - 2026-09-03: 요약 행 action — 어벗 진행상황 옆 의뢰 상세 버튼 등.
@@ -124,7 +125,10 @@ import { type ReplyToMessage } from "@/features/chat/components/MessageReply";
 import { PracticeToothWorkChartReadOnly } from "@/shared/components/practice/PracticeToothWorkChartReadOnly";
 import { usePracticeTransferPanelLayout } from "@/shared/components/practice/usePracticeTransferPanelLayout";
 import { useIsMobile } from "@/shared/hooks/use-mobile";
-import type { ToothWorkSelection } from "@/shared/practice/transferMemo";
+import {
+  formatToothNumbersForCard,
+  type ToothWorkSelection,
+} from "@/shared/practice/transferMemo";
 import type {
   PracticeTransferFeeQuote,
   PracticeTransferFeeQuoteViewer,
@@ -231,6 +235,16 @@ export type PracticeTransferDialogSummaryItem = {
   action?: ReactNode;
 };
 
+function summaryItemValue(
+  items: PracticeTransferDialogSummaryItem[],
+  label: string,
+): string {
+  const raw = String(
+    items.find((row) => row.label === label)?.value || "",
+  ).trim();
+  return raw && raw !== "-" ? raw : "";
+}
+
 export type PracticeTransferDialogFileItem = {
   id: string;
   fileName: string;
@@ -255,6 +269,13 @@ export type PracticeTransferWorkFileDropConfig = {
   uploadProgressLabel?: string | null;
 };
 
+export type PracticeTransferDialogCaseIdentity = {
+  /** 예: 테스트치과 / 테스트환자 15 */
+  primary: string;
+  /** 예: PTX-… · 도착 2026-09-13 */
+  secondary?: string;
+};
+
 type PracticeTransferDetailChatDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -266,6 +287,11 @@ type PracticeTransferDetailChatDialogProps = {
   chatHeaderAction?: ReactNode;
   /** 채팅 헤더 바로 아래 — 상대방 내부 메모 */
   counterpartyMemoStrip?: ReactNode;
+  /**
+   * 탭 아래 고정 식별 줄(치과·환자 등). 있으면 summaryItems 파싱보다 우선.
+   * 진행 상황에서도 의뢰 상세를 오가지 않도록 표시.
+   */
+  caseIdentity?: PracticeTransferDialogCaseIdentity | null;
   /** 의뢰상세 요약 아래 + 진행 상황 탭 상단 — 예: 어벗 업로드 지연, 미가입 초대 */
   summaryBanner?: ReactNode;
   summaryItems: PracticeTransferDialogSummaryItem[];
@@ -426,6 +452,7 @@ export function PracticeTransferDetailChatDialog({
   authToken = null,
   chatHeaderAction = null,
   counterpartyMemoStrip = null,
+  caseIdentity = null,
   summaryBanner = null,
   summaryItems,
   memo,
@@ -1285,6 +1312,48 @@ export function PracticeTransferDetailChatDialog({
   );
 
   const hasToothWorks = Array.isArray(toothWorks) && toothWorks.length > 0;
+  const caseIdentityStrip = useMemo(() => {
+    const fromPropPrimary = String(caseIdentity?.primary || "").trim();
+    const fromPropSecondary = String(caseIdentity?.secondary || "").trim();
+    if (fromPropPrimary) {
+      return {
+        primary: fromPropPrimary,
+        secondary: fromPropSecondary,
+      };
+    }
+    const practiceName = summaryItemValue(summaryItems, "치과");
+    const labName = summaryItemValue(summaryItems, "기공소");
+    const patientName = summaryItemValue(summaryItems, "환자명");
+    const transferId =
+      summaryItemValue(summaryItems, "전송ID") ||
+      summaryItemValue(summaryItems, "의뢰ID");
+    const arrivalDate =
+      summaryItemValue(summaryItems, "재도착일") ||
+      summaryItemValue(summaryItems, "치과도착일");
+    const shipDate = summaryItemValue(summaryItems, "출고예정");
+    const party = practiceName || labName;
+    const teeth = formatToothNumbersForCard(toothWorks);
+    const primaryParts = [party, patientName].filter(Boolean);
+    if (primaryParts.length === 0 && !transferId) return null;
+    const primary =
+      primaryParts.length === 0
+        ? transferId
+        : primaryParts.length === 2
+          ? `${primaryParts[0]} / ${primaryParts[1]}${teeth ? ` ${teeth}` : ""}`
+          : `${primaryParts[0]}${teeth ? ` ${teeth}` : ""}`;
+    const secondaryParts = [
+      primaryParts.length > 0 ? transferId : "",
+      arrivalDate
+        ? `도착 ${arrivalDate}`
+        : shipDate
+          ? `출고 ${shipDate}`
+          : "",
+    ].filter(Boolean);
+    return {
+      primary,
+      secondary: secondaryParts.join(" · "),
+    };
+  }, [caseIdentity, summaryItems, toothWorks]);
   const handlePrintDetail = useCallback(() => {
     printPracticeTransferDetail({
       title,
@@ -1601,7 +1670,7 @@ export function PracticeTransferDetailChatDialog({
                 onClick={() => minimize()}
                 data-no-drag
               >
-                {title}
+                {caseIdentityStrip?.primary || title}
               </button>
             ) : (
               <TabsList className="h-11 w-auto shrink-0 justify-self-start p-1">
@@ -1644,6 +1713,19 @@ export function PracticeTransferDetailChatDialog({
               </button>
             </div>
           </div>
+
+          {!minimized && caseIdentityStrip ? (
+            <div className="shrink-0 border-b bg-slate-50 px-5 py-2.5">
+              <p className="truncate text-sm font-semibold text-foreground">
+                {caseIdentityStrip.primary}
+              </p>
+              {caseIdentityStrip.secondary ? (
+                <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                  {caseIdentityStrip.secondary}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
 
           {!minimized ? (
           <>

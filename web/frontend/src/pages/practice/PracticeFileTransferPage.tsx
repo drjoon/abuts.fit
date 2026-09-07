@@ -323,6 +323,7 @@ import {
 import {
       buildPracticeTransferMemo as buildPracticeTransferMemoShared,
       formatPracticeTransferMemoDetail as formatPracticeTransferMemoDetailShared,
+      formatToothNumbersForCard,
       formatTransferMemoForDisplay as formatTransferMemoForDisplayShared,
       normalizeToothWorksForSync,
       emptyToothWorkCustomSpecs,
@@ -4650,6 +4651,34 @@ export const PracticeFileTransferPage = ({
     () => buildPracticeSenderTransferDetailModel(selectedTransfer),
     [selectedTransfer],
   );
+
+  const selectedTransferCaseIdentity = useMemo(() => {
+    if (!selectedTransfer || !selectedTransferDetailModel) return null;
+    const lab = String(selectedTransfer.targetLab || "").trim();
+    const patient = String(selectedTransferDetailModel.patientName || "").trim();
+    const teeth = formatToothNumbersForCard(
+      selectedTransferDetailModel.toothWorks || [],
+    );
+    const transferId = String(
+      selectedTransfer.transferId || selectedTransfer.id || "",
+    ).trim();
+    const arrival = String(selectedTransfer.arrivalDate || "").trim();
+    const primaryParts = [lab, patient].filter(Boolean);
+    if (!primaryParts.length && !transferId) return null;
+    const primary =
+      primaryParts.length === 0
+        ? transferId
+        : primaryParts.length === 2
+          ? `${primaryParts[0]} / ${primaryParts[1]}${teeth ? ` ${teeth}` : ""}`
+          : `${primaryParts[0]}${teeth ? ` ${teeth}` : ""}`;
+    const secondary = [
+      primaryParts.length > 0 ? transferId : "",
+      arrival ? `도착 ${arrival}` : "",
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    return { primary, secondary };
+  }, [selectedTransfer, selectedTransferDetailModel]);
 
   const selectedTransferUploadOverdue = useMemo(() => {
     if (!selectedTransfer) return null;
@@ -9318,6 +9347,7 @@ export const PracticeFileTransferPage = ({
           title="의뢰 상세 · 기공소 채팅"
           conversationTitle="기공소와의 소통"
           authToken={authToken}
+          caseIdentity={selectedTransferCaseIdentity}
           onEditRequest={
             selectedTransfer &&
             canEditPracticeTransferByStatus(selectedTransfer.status)

@@ -36,6 +36,7 @@ import {
   type PracticeTransferDialogSummaryItem,
 } from "@/shared/components/PracticeTransferDetailChatDialog";
 import {
+  formatToothNumbersForCard,
   parsePracticeTransferMemoMeta,
   type ToothWorkSelection,
 } from "@/shared/practice/transferMemo";
@@ -429,6 +430,32 @@ export function DesignRequestTransferView({
     },
   ];
 
+  const clinicName = String(caseInfos?.clinicName || "").trim();
+  const patientName = String(caseInfos?.patientName || "").trim();
+  const teeth = formatToothNumbersForCard(toothWorks);
+  const casePrimaryParts = [clinicName, patientName].filter(Boolean);
+  const caseIdentity =
+    casePrimaryParts.length > 0 || selectedRequest?.requestId
+      ? {
+          primary:
+            casePrimaryParts.length === 0
+              ? String(selectedRequest?.requestId || "")
+              : casePrimaryParts.length === 2
+                ? `${casePrimaryParts[0]} / ${casePrimaryParts[1]}${teeth ? ` ${teeth}` : ""}`
+                : `${casePrimaryParts[0]}${teeth ? ` ${teeth}` : ""}`,
+          secondary: [
+            casePrimaryParts.length > 0
+              ? String(selectedRequest?.requestId || "").trim()
+              : "",
+            formatShipYmd(selectedRequest?.timeline?.estimatedShipYmd) !== "-"
+              ? `출고 ${formatShipYmd(selectedRequest?.timeline?.estimatedShipYmd)}`
+              : "",
+          ]
+            .filter(Boolean)
+            .join(" · "),
+        }
+      : null;
+
   return (
     <>
       <DesignRequestCardGrid
@@ -463,6 +490,7 @@ export function DesignRequestTransferView({
         title="의뢰 상세 · 치과 채팅"
         conversationTitle="치과와의 소통"
         authToken={token}
+        caseIdentity={caseIdentity}
         summaryItems={summaryItems}
         memo={displayMemo || "-"}
         toothWorks={toothWorks}
