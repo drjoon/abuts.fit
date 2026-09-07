@@ -23,6 +23,7 @@
 // - 2026-08-20: Pontic 수가 항목 제거. 레거시 Pontic 치아는 브리지 수가. 임시치아 스팬의 구 Pontic은 세트에 포함.
 // - 2026-08-13: 견적 라인은 치아번호 10→20→30→40번대 순.
 // - 2026-08-17: 번대 안은 정중선 가운데(18→11, 21→28, 38→31, 41→48).
+// - 2026-09-07: 견적 라인 toothNumber — 상·하악 전체는 상악/하악(번호 나열 금지).
 // - 2026-09-05: 미설정·필요 수가 항목명은 상악→하악(치아 번대) 순.
 // - 2026-08-13: 유지장치에 남은 커스텀 플래그는 어벗 과금하지 않는다.
 // - 2026-08-19: 임시치아+어벗은 임시치아 수가와 기공소 어벗 수가를 함께 합산.
@@ -45,6 +46,39 @@ import {
   MANUFACTURER_ADD_REQUEST_BRAND,
 } from "@/shared/practice/roundBarAbutment";
 import { isFollowUpProsthesisPhase, isFinalProsthesisType } from "@/shared/practice/prosthesisFollowUp";
+
+/** FDI 상악 16치. transferMemo UPPER_ARCH_TEETH 와 동일(순환 import 방지용 로컬). */
+const UPPER_ARCH_TEETH_FOR_FEE = [
+  "18", "17", "16", "15", "14", "13", "12", "11",
+  "21", "22", "23", "24", "25", "26", "27", "28",
+] as const;
+
+/** FDI 하악 16치. transferMemo LOWER_ARCH_TEETH 와 동일. */
+const LOWER_ARCH_TEETH_FOR_FEE = [
+  "48", "47", "46", "45", "44", "43", "42", "41",
+  "31", "32", "33", "34", "35", "36", "37", "38",
+] as const;
+
+/** 견적 라인 toothNumber — 상·하악 전체는 상악/하악. */
+const formatToothNumbersForFeeLine = (teeth: readonly string[]) => {
+  const selected = new Set(
+    teeth.map((tooth) => String(tooth || "").trim()).filter((tooth) => /^[1-4][1-8]$/.test(tooth)),
+  );
+  const parts: string[] = [];
+  const upperSelected = UPPER_ARCH_TEETH_FOR_FEE.filter((tooth) => selected.has(tooth));
+  if (UPPER_ARCH_TEETH_FOR_FEE.every((tooth) => selected.has(tooth))) {
+    parts.push("상악");
+  } else {
+    parts.push(...upperSelected);
+  }
+  const lowerSelected = LOWER_ARCH_TEETH_FOR_FEE.filter((tooth) => selected.has(tooth));
+  if (LOWER_ARCH_TEETH_FOR_FEE.every((tooth) => selected.has(tooth))) {
+    parts.push("하악");
+  } else {
+    parts.push(...lowerSelected);
+  }
+  return parts.join(",");
+};
 
 /** 기공수가 할증 배수. 1=없음, 최대 5, 소수 둘째 자리. */
 export const normalizeLabFeeMultiplier = (value: unknown): number => {
@@ -1706,10 +1740,11 @@ export const computePracticeTransferRetailFees = (params: {
           : nTeethFeeForCount(group.teeth.length, item.tiers, useRemake);
       labFeeTotal += labFee;
       const sortedTeeth = sortToothNumbersForFee(group.teeth);
+      const toothNumberLabel = formatToothNumbersForFeeLine(sortedTeeth);
       const splitTempAbutment = isRemovableTempFeeName(item.name);
       if (splitTempAbutment) {
         lines.push({
-          toothNumber: sortedTeeth.join(","),
+          toothNumber: toothNumberLabel,
           prosthesisType: `${item.name}${group.suffix} ${group.teeth.length}치`,
           labFee,
           labAbutmentFee: 0,
@@ -1756,7 +1791,7 @@ export const computePracticeTransferRetailFees = (params: {
         if (split.quote) groupQuote = true;
       }
       lines.push({
-        toothNumber: sortedTeeth.join(","),
+        toothNumber: toothNumberLabel,
         prosthesisType:
           item.unit === "perSet"
             ? `${item.name}${group.suffix}`

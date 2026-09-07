@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/practice/practiceTransferFeeQuote.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/components/practice/PracticeToothWorkChartReadOnly.tsx
+// - 2026-09-07: 견적·툴팁 보철물 — 상·하악 전체 치아번호는 상악/하악(중복 (상악) 접미사면 번호 생략).
 // - 2026-09-05: revealAmounts — 가이드투어 견적 홀에서 hover 전 blur 숨김 해제.
 // - 2026-09-05: onBreakdownTooltipOpenChange — 가이드투어 견적 스텝이 툴팁 실오픈 기준으로 진행.
 // - 2026-08-27: 확정 기공비도 툴팁 라인 합 우선(레거시 abutmentRetail 스냅샷 불일치 방지).
@@ -81,12 +82,26 @@ import {
   normalizeRushFeeMultiplier,
   toToothDecadeSortNumber,
 } from "@/shared/practice/labFeeSchedule";
+import { formatToothNumbersForFeeLine } from "@/shared/practice/transferMemo";
 
 export type PracticeTransferSettlementShippingLine = {
   key: string;
   label: string;
   amount: number;
   holdPending?: boolean | null;
+};
+
+/** 견적 표 보철물 칸 — 전체 치열은 상악/하악. 보철명에 (상악)/(하악) 있으면 중복 생략. */
+const formatFeeBreakdownProsthesisLabel = (
+  toothNumber: string,
+  prosthesisType: string,
+) => {
+  const type = String(prosthesisType || "").trim() || "보철";
+  const teeth = formatToothNumbersForFeeLine(toothNumber);
+  if (!teeth) return type;
+  if (teeth === "상악" && /\(상악\)/.test(type)) return type;
+  if (teeth === "하악" && /\(하악\)/.test(type)) return type;
+  return `${teeth} ${type}`;
 };
 
 type PracticeTransferFeeEstimateProps = {
@@ -510,8 +525,10 @@ function FeeBreakdownTable({
       {lines.map((line, idx) => (
         <div key={`${line.toothNumber}:${idx}`} className="contents">
           <span className="min-w-0 truncate">
-            {line.toothNumber ? `${line.toothNumber} ` : ""}
-            {line.prosthesisType || "보철"}
+            {formatFeeBreakdownProsthesisLabel(
+              line.toothNumber,
+              line.prosthesisType,
+            )}
           </span>
           {showProsthesisColumn ? (
             <span className={amountCellClass}>
