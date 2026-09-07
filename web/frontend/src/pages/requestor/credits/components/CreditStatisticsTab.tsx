@@ -69,7 +69,7 @@ import {
   CREDIT_LEDGER_CHARGE_DETAIL_TITLE,
   CREDIT_LEDGER_CHARGE_LABEL,
   CREDIT_LEDGER_DEMO_CHARGE_HINT,
-  CREDIT_LEDGER_DEMO_PERIOD_SPEND_HINT,
+  resolveCreditLedgerDemoPeriodSpendHint,
 } from "@/shared/demo/demoModeCopy";
 import { useDemoMode } from "@/shared/demo/useDemoMode";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -695,10 +695,10 @@ export function CreditStatisticsTab() {
     "min-w-[8.5rem] flex-1 sm:min-w-[9.5rem] md:min-w-[10.5rem]";
 
   const abutsSpendTooltip = demoMode
-    ? CREDIT_LEDGER_DEMO_PERIOD_SPEND_HINT
+    ? resolveCreditLedgerDemoPeriodSpendHint(isLab ? "lab" : "practice")
     : "선택한 기간에 지출한 어벗 생산·배송·스토어 결제 합계입니다.";
   const practiceSpendTooltip = demoMode
-    ? CREDIT_LEDGER_DEMO_PERIOD_SPEND_HINT
+    ? resolveCreditLedgerDemoPeriodSpendHint(isLab ? "lab" : "practice")
     : "선택한 기간에 지출한 기공료와 스토어 결제 합계입니다.";
   const chargeLabel = CREDIT_LEDGER_CHARGE_LABEL;
   const chargeDetailTitle = CREDIT_LEDGER_CHARGE_DETAIL_TITLE;

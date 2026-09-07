@@ -1516,8 +1516,8 @@ export const AdminCreditSettingsTab = ({
               <CardContent className="space-y-5 p-5 sm:p-6">
                 <SectionHeader
                   icon={Gift}
-                  title="가입 무료 테스트 (치과·기공소)"
-                  description="가입 환영 크레딧 자동 지급은 폐지되었습니다. 대신 커스텀어벗(어벗디자인) 가입 후 첫 2건은 무료 테스트(의뢰·배송·제조사 0원)로 진행합니다. 데모 모드 치과는 구강스캔·커스텀어벗 기공비를 가상 잔고(마이너스)로 운영하며, 유료 크레딧 입금 확정 시 자동 실사용 전환됩니다. 아래 금액은 관리자 수동 무료크레딧 지급 기본값으로만 쓰입니다."
+                  title="수동 무료크레딧 (관리자)"
+                  description="가입 환영 크레딧 자동 지급은 폐지되었습니다. 치과·기공소는 가입 후 30일 데모 모드(가상 잔고·마이너스 허용)로 운영되며, 유료 크레딧 입금 확정 시 자동 실사용 전환됩니다. 아래 금액은 관리자 수동 무료크레딧 지급 기본값으로만 쓰입니다."
                 />
                 <div className="grid gap-3 sm:grid-cols-2">
                   <AmountField

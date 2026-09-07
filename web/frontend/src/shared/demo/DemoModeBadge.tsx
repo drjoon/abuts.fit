@@ -12,14 +12,15 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
+import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import { cn } from "@/shared/ui/cn";
 import { toast } from "sonner";
 import {
-  CREDIT_LEDGER_DEMO_NOTICE_BODY,
   DEMO_MODE_EXIT_CONFIRM_LABEL,
-  DEMO_MODE_EXIT_DESCRIPTION_LINES,
   DEMO_MODE_EXIT_TITLE,
   formatDemoModeBadgeLabel,
+  resolveCreditLedgerDemoNoticeBody,
+  resolveDemoModeExitDescriptionLines,
 } from "./demoModeCopy";
 import { useDemoMode } from "./useDemoMode";
 
@@ -32,11 +33,14 @@ type Props = {
 export function DemoModeBadge({ className, onExited }: Props) {
   const { demoMode, daysRemaining, loading, exiting, exitDemoMode } =
     useDemoMode();
+  const { kind } = useRequestorBusinessAccess();
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   if (loading || !demoMode) return null;
 
   const badgeLabel = formatDemoModeBadgeLabel(daysRemaining);
+  const noticeBody = resolveCreditLedgerDemoNoticeBody(kind);
+  const exitLines = resolveDemoModeExitDescriptionLines(kind);
 
   return (
     <>
@@ -60,7 +64,7 @@ export function DemoModeBadge({ className, onExited }: Props) {
           </button>
         </TooltipTrigger>
         <TooltipContent side="bottom" className="max-w-xs text-left">
-          <p className="text-xs leading-relaxed">{CREDIT_LEDGER_DEMO_NOTICE_BODY}</p>
+          <p className="text-xs leading-relaxed">{noticeBody}</p>
           <p className="mt-1.5 text-[11px] text-muted-foreground">
             클릭하면 실사용 전환을 확인할 수 있습니다.
           </p>
@@ -73,8 +77,8 @@ export function DemoModeBadge({ className, onExited }: Props) {
         panelClassName="max-w-xl"
         description={
           <div className="space-y-1.5 leading-relaxed">
-            {DEMO_MODE_EXIT_DESCRIPTION_LINES.map((line) => (
-              <p key={line} className="whitespace-nowrap">
+            {exitLines.map((line) => (
+              <p key={line || "blank"} className="whitespace-nowrap">
                 {line}
               </p>
             ))}

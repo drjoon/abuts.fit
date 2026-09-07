@@ -167,10 +167,10 @@ import {
 import {
   CREDIT_LEDGER_CHARGE_DETAIL_TITLE,
   CREDIT_LEDGER_CHARGE_LABEL,
-  CREDIT_LEDGER_DEMO_BALANCE_HINT,
   CREDIT_LEDGER_DEMO_CHARGE_HINT,
-  CREDIT_LEDGER_DEMO_NOTICE_BODY,
-  CREDIT_LEDGER_DEMO_PERIOD_SPEND_HINT,
+  resolveCreditLedgerDemoBalanceHint,
+  resolveCreditLedgerDemoNoticeBody,
+  resolveCreditLedgerDemoPeriodSpendHint,
 } from "@/shared/demo/demoModeCopy";
 
 type CreditLedgerType =
@@ -2483,13 +2483,14 @@ export const CreditLedgerModal = ({
   const showPeriodSpendCard =
     Boolean(currentBalanceSnapshot) && equationLedgerUi;
   const freeBucketLabelCompact = "무료크레딧";
+  const demoKind = isLabViewer ? "lab" : "practice";
   const freeBucketHint = isDemoMode ? "데모 체험" : CREDIT_FREE_BUCKET_HINT;
   const freeBucketTooltip = isDemoMode
-    ? CREDIT_LEDGER_DEMO_NOTICE_BODY
+    ? resolveCreditLedgerDemoNoticeBody(demoKind)
     : CREDIT_LEDGER_FREE_NOTICE_BODY;
   const showResidualFreeBucket = freeCreditTotal > 0;
   const balanceHintTooltip = isDemoMode
-    ? CREDIT_LEDGER_DEMO_BALANCE_HINT
+    ? resolveCreditLedgerDemoBalanceHint(demoKind)
     : showSettlementCredit
       ? "충전과 기공 정산 적립에서 기공·스토어 소비를 뺀 잔여액입니다. 적립 보류분은 잔액에 아직 반영되지 않습니다."
       : "충전에서 소비액을 뺀 선불금 잔여액입니다.";
@@ -2501,7 +2502,7 @@ export const CreditLedgerModal = ({
   const periodSettlementEarnTooltip =
     "선택한 기간에 적립된 기공 정산(작업완료 전 적립 보류 포함) 합계입니다.";
   const periodSpendTooltip = isDemoMode
-    ? CREDIT_LEDGER_DEMO_PERIOD_SPEND_HINT
+    ? resolveCreditLedgerDemoPeriodSpendHint(demoKind)
     : showSettlementCredit
       ? "선택한 기간에 지출한 어벗 생산·배송·스토어 결제 합계입니다."
       : "선택한 기간에 지출한 기공료와 스토어 결제 합계입니다.";

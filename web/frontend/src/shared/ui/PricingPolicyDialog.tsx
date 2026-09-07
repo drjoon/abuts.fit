@@ -1,4 +1,4 @@
-// - 2026-09-05: 가입 환영 크레딧 안내 → 가입 무료 테스트(첫 2건 0원)로 교체.
+// - 2026-09-07: 가입 무료 테스트(첫 2건) 안내 제거. 데모 모드(치과·기공소)로 대체.
 // - 2026-09-03: 기공소 정책 — 단가 라벨·안내 문장 단축. 출고 리드타임(직경) 섹션 제거.
 // - 2026-09-03: 기공소 정책 안내 부제(기공의뢰수신·어벗생산의뢰…) 제거.
 // - 2026-08-23: 정책 안내 모달 flex 스크롤 + 하단 여백(pb-8).
@@ -160,9 +160,6 @@ export const PricingPolicyDialog = ({
 }: Props) => {
   const { kind } = useRequestorBusinessAccess();
   const isLab = kind === 'lab';
-  const isPractice = kind === 'practice';
-  /** 치과·기공소 CA(어벗디자인) 가입 무료 테스트. */
-  const showSignupFreeTest = isLab || isPractice;
   const { data: systemSettings, refetch: refetchSystemSettings } =
     useSystemSettings();
   const productionPrice = Math.max(
@@ -334,17 +331,6 @@ export const PricingPolicyDialog = ({
                   <p>동일 치과·환자·치식, 최근 90일 조건 충족 건에 한함.</p>
                 </PolicySection>
               </div>
-              {showSignupFreeTest ? (
-                <PolicySection title='가입 무료 테스트'>
-                  <p className='text-2xl font-semibold tracking-tight text-slate-900'>
-                    첫 2건 0원
-                  </p>
-                  <p className='text-xs text-slate-500'>
-                    커스텀어벗(어벗디자인) 가입 후 처음 2건은 테스트를 위해
-                    무료로 진행됩니다. 장부에는 가입 테스트(0원)로 기록됩니다.
-                  </p>
-                </PolicySection>
-              ) : null}
 
               <PolicySection title='출고 방식'>
                 <div className='space-y-2.5'>

@@ -465,8 +465,8 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 백필: `scripts/db/backfill-requestor-capabilities.js` (`--apply`)
   - 크레딧/정산: 유료(paid+verified)만. synthetic BN 환영 크레딧 없음.
     가입 환영 무료크레딧 자동 지급은 **폐지**. 관리자 수동 무료크레딧 override는 유지.
-    대신 CA(어벗디자인) 가입 후 첫 2건 무료 테스트(`signup_free_test_2`, 치과·기공소).
-    정산 요약 「무료 충전」카드 제거. 치과 PTX 데모 마이너스는 유지.
+    CA 가입 무료 테스트(첫 2건)도 **폐지**(레거시 `signup_free_test_2` 의뢰만 0원 호환).
+    치과·기공소 모두 데모 모드(30일·마이너스 허용). 정산 요약 「무료 충전」카드 제거.
 
 - 드롭존 가입(치과 전용, requestor+practice):
   - `POST /api/auth/practice/register`는 **practice role을 만들지 않는다**.
@@ -719,17 +719,16 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - 프로세스 메모리 캐시를 사용하지 않아 승인/롤백 직후 잔액을 즉시 반영해야 합니다.
   - 가입 환영 무료 크레딧(강제, 자동 지급) — **폐지**:
     - `grantWelcomeFreeCreditIfEligible` no-op. `defaultRequestFreeCredit` 스키마 기본 0
-    - **관리자 수동 무료크레딧 override는 유지**(`adminOverrideRequestFreeCredit`). list/cancel·기존 잔액·내역 유지
+    - **관리자 수동 무료크레딧 override는 유지**(adminOverrideRequestFreeCredit). list/cancel·기존 잔액·내역 유지
     - 정산 요약 UI 「무료 충전」제거(유료 [+정산] − 소비). 장부 행 FREE 필터는 유지
-  - CA 가입 무료 테스트(강제, 첫 2건, 치과·기공소):
-    - 대상: `businessType=requestor`(practice·lab). PTX(구강스캔)는 Request가 아니므로 쿼터 미포함
-    - 치과 PTX 데모 마이너스는 별도(`allowFreeRequestOverdraft`)
-    - 쿼터: `manufacturerStage≠취소`인 의뢰만 카운트. **준비 단계 취소는 현행과 동일**하며, 취소 시 슬롯 환원
-    - 가격 규칙: `signup_free_test_2` (의뢰·배송 0원, hold skip)
-    - 제조사 생산·배송 하청 0원. GL은 0원 `REQUEST_SPEND_COMMIT`/`SHIPPING_SPEND_COMMIT` + meta.displayLabel=`가입 테스트`
-    - SSOT: `controllers/requests/signupFreeTest.utils.js`
-    - 관련: `computePriceForRequest`, `requestCreditHold.service.js`, `common.review.helpers.js`,
-      `creditRevenuePolicy.service.js`
+  - CA 가입 무료 테스트(첫 2건) — **폐지**:
+    - 신규 `signup_free_test_2` 가격 배정 중단(`getSignupFreeTestQuota` remaining 0)
+    - 기존 의뢰의 hold skip·0원 commit·「가입 테스트」라벨만 레거시 유지
+    - 대체: 치과·기공소 데모 모드(`allowFreeRequestOverdraft`) + 관리자 수동 무료크레딧
+  - 데모 모드(치과·기공소, 강제):
+    - 가입 시 0원·가상 잔고 마이너스 허용(치과=기공비, 기공소=어벗츠 생산·배송)
+    - 30일/`CHARGE_PAID` 입금/수동 전환 시 실사용. 부채 0 리셋. 기공소는 이용분 후결제 + 선수금
+    - SSOT: `business.demoMode.util.js`
 ### 웹소켓 업데이트 표준 (무플리커 + 부하완화)
 
   - 웹소켓 실시간 업데이트 발행/수신 SSOT:

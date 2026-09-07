@@ -11,7 +11,7 @@
  * 의뢰자(치과+기공소) 크레딧 원장 전량 리셋.
  * - 유료/무료/데모 충전·회수·소비·홀드·정산적립 저널을 통째로 삭제(에스크로·수익 상대계정 포함)
  * - FreeCreditGrant 취소, PTX billing hold/settle 필드 초기화
- * - 치과: demoMode ON + 잔고 0 / 기공소: 잔고 0 (데모 미적용)
+ * - 치과·기공소: demoMode ON + 잔고 0
  *
  * Usage:
  *   cd web/backend && \
@@ -259,7 +259,7 @@ async function main() {
       );
       canceledGrants += Number(grantRes?.modifiedCount || 0);
 
-      if (kind === "practice" && !anchor.demoModeExitedAt) {
+      if (!anchor.demoModeExitedAt) {
         await enableDemoModeKeepStartedAt(id, anchor.demoModeStartedAt);
         if (!anchor.demoMode) demoEnabled += 1;
       }

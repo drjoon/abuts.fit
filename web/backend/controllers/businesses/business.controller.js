@@ -564,32 +564,39 @@ export async function getMyBusiness(req, res) {
       },
     };
 
-    // 캐시 저장
-    if (
-      businessType === "requestor" &&
-      Boolean(anchor?.demoMode) &&
-      !anchor?.demoModeExitedAt
-    ) {
+    // 의뢰자(치과·기공소): 실사용 전환 이력이 없으면 데모 시작/힐. 만료 시 자동 실사용.
+    if (businessType === "requestor" && !anchor?.demoModeExitedAt) {
       try {
-        await enableDemoModeAndGrantCreditIfEligible({
+        const demoResult = await enableDemoModeAndGrantCreditIfEligible({
           businessAnchorId: anchor._id,
           userId: req.user._id,
         });
-      } catch (e) {
-        console.error("[BusinessAnchor] demo credit heal failed", e);
-      }
-      try {
-        const autoExit = await maybeAutoExitDemoModeIfExhausted({
-          businessAnchorId: anchor._id,
-          userId: req.user._id,
-        });
-        if (autoExit && !autoExit.alreadyExited) {
-          invalidateMyBusinessCache(anchor._id);
-          responseData.data.demoMode = false;
-          responseData.data.demoModeExitedAt = new Date();
+        if (demoResult?.demoMode) {
+          responseData.data.demoMode = true;
+          if (!responseData.data.demoModeStartedAt) {
+            const startedAt = new Date();
+            responseData.data.demoModeStartedAt = startedAt;
+            responseData.data.demoModeExpiresAt =
+              resolveDemoModeExpiresAt(startedAt) || null;
+          }
         }
       } catch (e) {
-        console.error("[BusinessAnchor] demo auto-exit failed", e);
+        console.error("[BusinessAnchor] demo mode enable/heal failed", e);
+      }
+      if (responseData.data.demoMode) {
+        try {
+          const autoExit = await maybeAutoExitDemoModeIfExhausted({
+            businessAnchorId: anchor._id,
+            userId: req.user._id,
+          });
+          if (autoExit && !autoExit.alreadyExited) {
+            invalidateMyBusinessCache(anchor._id);
+            responseData.data.demoMode = false;
+            responseData.data.demoModeExitedAt = new Date();
+          }
+        } catch (e) {
+          console.error("[BusinessAnchor] demo auto-exit failed", e);
+        }
       }
     }
 

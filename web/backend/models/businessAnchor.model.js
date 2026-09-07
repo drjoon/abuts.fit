@@ -100,9 +100,9 @@ const businessAnchorSchema = new mongoose.Schema(
       lab: { type: Boolean, default: false },
     },
     /**
-     * 데모 모드(의뢰자·치과). 신규 가입 시 true·크레딧 0원 시작(30일).
-     * PTX 기공비는 마이너스 잔고 허용. 기간 만료·사용자/관리자 실사용 전환 시
-     * false + demoModeExitedAt(+부채 0 리셋·레거시 잔여 회수).
+     * 데모 모드(의뢰자 치과·기공소). 신규 가입 시 true·크레딧 0원 시작(30일).
+     * 치과=기공비, 기공소=어벗츠 생산·배송 마이너스 잔고 허용. 기간 만료·CHARGE_PAID/
+     * 사용자·관리자 실사용 전환 시 false + demoModeExitedAt(+부채 0 리셋·레거시 잔여 회수).
      * related: web/backend/controllers/businesses/business.demoMode.util.js
      */
     demoMode: {

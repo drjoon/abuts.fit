@@ -653,7 +653,6 @@ export async function createRequestsBulk(req, res) {
     // ===== 크레딧 사전 체크 =====
     // 1. 모든 아이템의 가격 계산
     const priceCalculations = [];
-    let signupFreeReserveOffset = 0;
     for (let i = 0; i < items.length; i++) {
       const raw = items[i] || {};
       const { caseInfos } = raw;
@@ -681,11 +680,7 @@ export async function createRequestsBulk(req, res) {
         clinicName,
         patientName,
         tooth,
-        signupFreeReserveOffset,
       });
-      if (String(computedPrice?.rule || "") === "signup_free_test_2") {
-        signupFreeReserveOffset += 1;
-      }
 
       priceCalculations.push({
         index: i,
@@ -735,10 +730,7 @@ export async function createRequestsBulk(req, res) {
     );
 
     const expressCount = resolvedShippingModes.filter(
-      (mode, idx) =>
-        mode === "express" &&
-        String(priceCalculations[idx]?.price?.rule || "") !==
-          "signup_free_test_2",
+      (mode) => mode === "express",
     ).length;
 
     const totalMachiningFee =
@@ -768,10 +760,7 @@ export async function createRequestsBulk(req, res) {
     let boxCount = 0;
     let totalShippingFee = 0;
     for (const calcs of shipDateGroups.values()) {
-      const needsShippingCharge = calcs.some(
-        (c) => String(c?.price?.rule || "") !== "signup_free_test_2",
-      );
-      if (!needsShippingCharge) continue;
+      if (!calcs.length) continue;
       boxCount += 1;
       totalShippingFee += shippingFeePerBox;
     }

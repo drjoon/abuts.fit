@@ -39,8 +39,8 @@ import {
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import {
   DEMO_MODE_CHARGE_EXIT_CONFIRM_LABEL,
-  DEMO_MODE_CHARGE_EXIT_DESCRIPTION_LINES,
   DEMO_MODE_CHARGE_EXIT_TITLE,
+  resolveDemoModeChargeExitDescriptionLines,
 } from "@/shared/demo/demoModeCopy";
 import { useDemoMode } from "@/shared/demo/useDemoMode";
 
@@ -1009,9 +1009,11 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
         panelClassName="max-w-xl"
         description={
           <div className="space-y-1.5 leading-relaxed">
-            {DEMO_MODE_CHARGE_EXIT_DESCRIPTION_LINES.map((line) => (
-              <p key={line}>{line}</p>
-            ))}
+            {resolveDemoModeChargeExitDescriptionLines(requestorKind).map(
+              (line) => (
+                <p key={line || "blank"}>{line}</p>
+              ),
+            )}
           </div>
         }
         confirmLabel={DEMO_MODE_CHARGE_EXIT_CONFIRM_LABEL}

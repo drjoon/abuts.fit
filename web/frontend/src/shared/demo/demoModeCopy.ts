@@ -15,6 +15,8 @@ export const DEMO_MODE_BADGE_LABEL = "데모";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
+export type DemoRequestorKind = "practice" | "lab" | null | undefined;
+
 /**
  * 데모 남은 일수(ceil). 만료 시 0.
  * expiresAt 우선, 없으면 startedAt + durationDays.
@@ -56,14 +58,33 @@ export function formatDemoModeBadgeLabel(daysRemaining: number | null): string {
 
 export const DEMO_MODE_EXIT_TITLE = "실사용으로 전환할까요?";
 
-/** 실사용 전환 확인 본문(줄 단위). ConfirmDialog 에 줄바꿈으로 렌더. */
-export const DEMO_MODE_EXIT_DESCRIPTION_LINES = [
+const DEMO_MODE_EXIT_DESCRIPTION_LINES_PRACTICE = [
   "데모 기간 중 쌓인 마이너스 잔고는 0원으로 리셋됩니다.",
   "데모 기간의 기공료는 기공소와 별도 정산하신 뒤 실사용해주세요.",
   "",
   "어벗츠 선수금(유료 크레딧)을 충전하셔야 주문, 의뢰할 수 있습니다.",
   "전환 후에는 데모 모드로 되돌릴 수 없습니다.",
 ] as const;
+
+const DEMO_MODE_EXIT_DESCRIPTION_LINES_LAB = [
+  "데모 기간 중 쌓인 마이너스 잔고는 0원으로 리셋됩니다.",
+  "데모 기간의 어벗츠 이용료(생산·배송)는 후결제로 정산하신 뒤 실사용해주세요.",
+  "",
+  "실사용을 위해 어벗츠 선수금(유료 크레딧)을 충전해 주세요.",
+  "전환 후에는 데모 모드로 되돌릴 수 없습니다.",
+] as const;
+
+/** @deprecated Prefer resolveDemoModeExitDescriptionLines(kind). */
+export const DEMO_MODE_EXIT_DESCRIPTION_LINES =
+  DEMO_MODE_EXIT_DESCRIPTION_LINES_PRACTICE;
+
+export function resolveDemoModeExitDescriptionLines(
+  kind?: DemoRequestorKind,
+): readonly string[] {
+  return kind === "lab"
+    ? DEMO_MODE_EXIT_DESCRIPTION_LINES_LAB
+    : DEMO_MODE_EXIT_DESCRIPTION_LINES_PRACTICE;
+}
 
 export const DEMO_MODE_EXIT_DESCRIPTION =
   DEMO_MODE_EXIT_DESCRIPTION_LINES.join("\n");
@@ -74,7 +95,7 @@ export const DEMO_MODE_EXIT_CONFIRM_LABEL = "실사용으로 전환";
 export const DEMO_MODE_CHARGE_EXIT_TITLE =
   "충전하면 실사용으로 전환됩니다";
 
-export const DEMO_MODE_CHARGE_EXIT_DESCRIPTION_LINES = [
+const DEMO_MODE_CHARGE_EXIT_DESCRIPTION_LINES_PRACTICE = [
   "어벗츠 선수금(유료 크레딧) 입금이 확인되면 데모 모드가 종료됩니다.",
   "데모 기간 중 쌓인 마이너스 잔고는 0원으로 리셋됩니다.",
   "데모 기간의 기공료는 기공소와 별도 정산하신 뒤 실사용해주세요.",
@@ -83,15 +104,64 @@ export const DEMO_MODE_CHARGE_EXIT_DESCRIPTION_LINES = [
   "전환 후에는 데모 모드로 되돌릴 수 없습니다.",
 ] as const;
 
+const DEMO_MODE_CHARGE_EXIT_DESCRIPTION_LINES_LAB = [
+  "어벗츠 선수금(유료 크레딧) 입금이 확인되면 데모 모드가 종료됩니다.",
+  "데모 기간 중 쌓인 마이너스 잔고는 0원으로 리셋됩니다.",
+  "데모 기간의 어벗츠 이용료(생산·배송)는 후결제로 정산해 주세요.",
+  "",
+  "입금 확인 후에는 선수금(유료 크레딧)으로 어벗 생산·배송을 결제합니다.",
+  "전환 후에는 데모 모드로 되돌릴 수 없습니다.",
+] as const;
+
+/** @deprecated Prefer resolveDemoModeChargeExitDescriptionLines(kind). */
+export const DEMO_MODE_CHARGE_EXIT_DESCRIPTION_LINES =
+  DEMO_MODE_CHARGE_EXIT_DESCRIPTION_LINES_PRACTICE;
+
+export function resolveDemoModeChargeExitDescriptionLines(
+  kind?: DemoRequestorKind,
+): readonly string[] {
+  return kind === "lab"
+    ? DEMO_MODE_CHARGE_EXIT_DESCRIPTION_LINES_LAB
+    : DEMO_MODE_CHARGE_EXIT_DESCRIPTION_LINES_PRACTICE;
+}
+
 export const DEMO_MODE_CHARGE_EXIT_CONFIRM_LABEL = "확인하고 충전하기";
 
-/** 정산 내역 — 데모 모드 안내. */
-export const CREDIT_LEDGER_DEMO_NOTICE_BODY =
-  "데모 모드는 가상 잔고로 운영됩니다. 구강스캔·커스텀어벗 기공비는 잔고가 부족해도 마이너스로 진행할 수 있습니다. 실거래 금액은 기존처럼 치과→기공소로 직접 입금하세요. 가입 후 첫 커스텀어벗 2건은 무료 테스트(0원)입니다. 스토어 이용·유료 크레딧(선수금) 입금이 확인되면 자동으로 실사용 전환됩니다. 가입 후 30일 또는 수동 전환 시에도 마이너스 잔고는 0으로 리셋됩니다.";
+const CREDIT_LEDGER_DEMO_NOTICE_BODY_PRACTICE =
+  "데모 모드는 가상 잔고로 운영됩니다. 구강스캔·커스텀어벗 기공비는 잔고가 부족해도 마이너스로 진행할 수 있습니다. 실거래 금액은 기존처럼 치과→기공소로 직접 입금하세요. 스토어 이용·유료 크레딧(선수금) 입금이 확인되면 자동으로 실사용 전환됩니다. 가입 후 30일 또는 수동 전환 시에도 마이너스 잔고는 0으로 리셋됩니다.";
 
-/** 정산 현재 잔액 — 데모 모드 안내. */
-export const CREDIT_LEDGER_DEMO_BALANCE_HINT =
+const CREDIT_LEDGER_DEMO_NOTICE_BODY_LAB =
+  "데모 모드는 가상 잔고로 운영됩니다. 기공소→어벗츠 생산·배송비는 잔고가 부족해도 마이너스로 진행할 수 있습니다(첫 30일 후결제). 데모 종료 시 이용분은 후결제로 정산하고, 실사용을 위한 선수금(유료 크레딧)을 충전해 주세요. 유료 크레딧 입금·30일 만료·수동 전환 시 마이너스 잔고는 0으로 리셋됩니다.";
+
+/** @deprecated Prefer resolveCreditLedgerDemoNoticeBody(kind). */
+export const CREDIT_LEDGER_DEMO_NOTICE_BODY =
+  CREDIT_LEDGER_DEMO_NOTICE_BODY_PRACTICE;
+
+export function resolveCreditLedgerDemoNoticeBody(
+  kind?: DemoRequestorKind,
+): string {
+  return kind === "lab"
+    ? CREDIT_LEDGER_DEMO_NOTICE_BODY_LAB
+    : CREDIT_LEDGER_DEMO_NOTICE_BODY_PRACTICE;
+}
+
+const CREDIT_LEDGER_DEMO_BALANCE_HINT_PRACTICE =
   "데모 모드입니다. 장부 잔고는 가상입니다. 구강스캔·커스텀어벗 기공비는 마이너스 잔고가 허용되고, 실거래는 치과→기공소 직접 입금입니다. 유료 크레딧 입금이 확인되면 자동으로 실사용 전환되며, 가입 후 30일 또는 수동 전환 시에도 잔고가 리셋됩니다.";
+
+const CREDIT_LEDGER_DEMO_BALANCE_HINT_LAB =
+  "데모 모드입니다. 장부 잔고는 가상입니다. 기공소→어벗츠 생산·배송비는 마이너스 잔고가 허용됩니다(후결제). 유료 크레딧 입금·30일 만료·수동 전환 시 잔고가 리셋되며, 이용분 후결제와 실사용 선수금이 필요합니다.";
+
+/** @deprecated Prefer resolveCreditLedgerDemoBalanceHint(kind). */
+export const CREDIT_LEDGER_DEMO_BALANCE_HINT =
+  CREDIT_LEDGER_DEMO_BALANCE_HINT_PRACTICE;
+
+export function resolveCreditLedgerDemoBalanceHint(
+  kind?: DemoRequestorKind,
+): string {
+  return kind === "lab"
+    ? CREDIT_LEDGER_DEMO_BALANCE_HINT_LAB
+    : CREDIT_LEDGER_DEMO_BALANCE_HINT_PRACTICE;
+}
 
 export const CREDIT_DEMO_BUCKET_HINT = "데모 체험";
 
@@ -101,6 +171,17 @@ export const CREDIT_DEMO_BUCKET_LABEL = "무료 충전";
 /** 정산 기간 소비 카드 — 데모 모드 툴팁. */
 export const CREDIT_LEDGER_DEMO_PERIOD_SPEND_HINT =
   "데모 모드에서 기공의뢰·커스텀어벗·스토어 등 기간 지출 합계입니다(가상 잔고).";
+
+export const CREDIT_LEDGER_DEMO_PERIOD_SPEND_HINT_LAB =
+  "데모 모드에서 어벗 생산·배송·스토어 등 기간 지출 합계입니다(가상 잔고·후결제).";
+
+export function resolveCreditLedgerDemoPeriodSpendHint(
+  kind?: DemoRequestorKind,
+): string {
+  return kind === "lab"
+    ? CREDIT_LEDGER_DEMO_PERIOD_SPEND_HINT_LAB
+    : CREDIT_LEDGER_DEMO_PERIOD_SPEND_HINT;
+}
 
 /** 정산 충전 카드 — 요약 UI 공통 라벨(치과·기공소). */
 export const CREDIT_LEDGER_CHARGE_LABEL = "충전";
@@ -118,13 +199,12 @@ export const CREDIT_LEDGER_DEMO_CHARGE_LABEL = CREDIT_LEDGER_CHARGE_LABEL;
 export const CREDIT_LEDGER_DEMO_CHARGE_DETAIL_TITLE =
   CREDIT_LEDGER_CHARGE_DETAIL_TITLE;
 
-/** 기공소 PTX — 어벗 디자인/생산 시 실크레딧 부족 안내. */
+/** 기공소 PTX — 어벗 디자인/생산 시 실크레딧 부족 안내(실사용 전환 후). */
 export const PTX_CA_INSUFFICIENT_CREDIT_TITLE = "크레딧이 부족합니다";
 
 export const PTX_CA_INSUFFICIENT_CREDIT_DESCRIPTION_LINES = [
-  "어벗 디자인을 올리고 생산을 시작할 때 크레딧으로 결제됩니다(가입 무료 테스트 2건 소진 후).",
-  "데모 모드 치과는 가상 잔고(마이너스 허용)로 진행됩니다. 기공소→어벗츠 생산비는 기공소 크레딧이 필요합니다.",
-  "충전 후 다시 업로드해 주세요.",
+  "어벗 디자인을 올리고 생산을 시작할 때 크레딧으로 결제됩니다.",
+  "데모 모드에서는 가상 잔고(마이너스 허용)로 진행됩니다. 데모가 끝났다면 충전 후 다시 업로드해 주세요.",
 ] as const;
 
 export const PTX_CA_INSUFFICIENT_CREDIT_CONFIRM_LABEL = "충전하기";

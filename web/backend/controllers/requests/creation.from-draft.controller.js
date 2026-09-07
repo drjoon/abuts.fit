@@ -70,8 +70,6 @@ import {
   resolveQuotedPriceWithExtras,
 } from "./designPrice.utils.js";
 import {
-  applySignupFreeTestPricingToBatch,
-  getSignupFreeTestQuota,
   isSignupFreeTestPriceRule,
 } from "./signupFreeTest.utils.js";
 import { resolveSelectableShippingMode } from "./expressSelectable.utils.js";
@@ -1125,33 +1123,9 @@ export async function createRequestsFromDraft(req, res) {
             tooth: item.tooth,
             creditSettings,
             pricingBaseDate,
-            applySignupFreeTest: false,
           });
         }),
       );
-    }
-
-    // 의뢰자 CA 가입 무료 테스트(첫 2건): 배치 형제는 DB에 없어 쿼터를 직렬 배정.
-    {
-      const signupQuota = await getSignupFreeTestQuota({
-        requestorOrgId: req.user?.businessAnchorId,
-      });
-      if (signupQuota.eligible && signupQuota.remaining > 0) {
-        applySignupFreeTestPricingToBatch(preparedCasesForCreate, {
-          remaining: signupQuota.remaining,
-          used: signupQuota.used,
-          baseUnitPrice: Math.max(
-            0,
-            Math.round(
-              Number(
-                preparedCasesForCreate.find(
-                  (row) => Number(row?.computedPrice?.baseAmount) > 0,
-                )?.computedPrice?.baseAmount,
-              ) || 0,
-            ),
-          ),
-        });
-      }
     }
 
     // shippingOrg / creditSettings / manufacturerLeadTimes는 draft 로드와 병렬 prefetch
