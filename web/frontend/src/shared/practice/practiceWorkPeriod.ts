@@ -79,7 +79,7 @@ export const PRACTICE_RUSH_COURIER_DISCLAIMER =
 
 /** 3영업일 미만 경고 토스트(주문은 진행) */
 export const PRACTICE_WORK_PERIOD_BLOCK_MESSAGE =
-  "3영업일 미만입니다. 도착이 매우 촉박합니다.";
+  "3영업일 미만입니다. 도착이 매우 촉박하지만 기공소에 전달했습니다.";
 
 /** 3영업일 경고 토스트(주문은 진행) */
 export const PRACTICE_WORK_PERIOD_LATE_WARNING_MESSAGE =
