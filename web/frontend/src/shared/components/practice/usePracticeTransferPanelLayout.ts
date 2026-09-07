@@ -1,6 +1,7 @@
 // related files:
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // - 2026-08-28: 플로팅 패널 — 드래그·리사이즈·엣지 스냅·최소/최대화.
+// - 2026-09-08: dockLeft/dockRight — 헤더 버튼으로 좌·우 끝 부착.
 // - 2026-08-31: 헤더 — 신호등 제거 후에도 탭·닫기 여유 폭 유지(MIN_W 400).
 // - 2026-08-28: MIN_W — 신호등·탭(의뢰상세/채팅)·별점이 겹치지 않게 400.
 // - 2026-08-28: 리사이즈 — 좌·상·모서리(n/w/nw/ne/sw) 지원, 고정 변 기준 min clamp.
@@ -18,7 +19,7 @@ export type PracticeTransferPanelLayout = {
 /** v3 — 항상 browse-behind */
 const STORAGE_KEY = "abuts.practiceTransferPanel.layout.v3";
 const MARGIN = 8;
-/** TabsList(의뢰 상세/채팅) + 닫기·액션이 한 줄에 겹치지 않는 최소 폭 */
+/** TabsList(의뢰/진행) + 닫기·액션이 한 줄에 겹치지 않는 최소 폭 */
 const MIN_W = 400;
 const MIN_H = 360;
 const MINIMIZED_H = 48;
@@ -116,30 +117,37 @@ function writeStored(layout: PracticeTransferPanelLayout) {
   }
 }
 
-function snapAfterDrag(
-  layout: PracticeTransferPanelLayout,
-): PracticeTransferPanelLayout {
+function dockLayout(side: "left" | "right"): PracticeTransferPanelLayout {
   const { vw, vh } = viewportSize();
   const fullH = Math.max(1, vh - MARGIN * 2);
   const dockW = effectiveMinW(vw);
-
-  if (layout.x <= SNAP_PX) {
+  if (side === "left") {
     return clampLayout({
-      ...layout,
       x: MARGIN,
       y: MARGIN,
       w: dockW,
       h: fullH,
     });
   }
+  return clampLayout({
+    x: vw - dockW - MARGIN,
+    y: MARGIN,
+    w: dockW,
+    h: fullH,
+  });
+}
+
+function snapAfterDrag(
+  layout: PracticeTransferPanelLayout,
+): PracticeTransferPanelLayout {
+  const { vw, vh } = viewportSize();
+  const fullH = Math.max(1, vh - MARGIN * 2);
+
+  if (layout.x <= SNAP_PX) {
+    return dockLayout("left");
+  }
   if (layout.x + layout.w >= vw - SNAP_PX) {
-    return clampLayout({
-      ...layout,
-      x: vw - dockW - MARGIN,
-      y: MARGIN,
-      w: dockW,
-      h: fullH,
-    });
+    return dockLayout("right");
   }
   if (layout.y <= SNAP_PX) {
     return clampLayout({
@@ -383,6 +391,20 @@ export function usePracticeTransferPanelLayout() {
     setLayout(fullscreenLayout(), { persist: false });
   }, [maximized, minimized, setLayout]);
 
+  const dockLeft = useCallback(() => {
+    restoreLayoutRef.current = null;
+    setMinimized(false);
+    setMaximized(false);
+    setLayout(dockLayout("left"));
+  }, [setLayout]);
+
+  const dockRight = useCallback(() => {
+    restoreLayoutRef.current = null;
+    setMinimized(false);
+    setMaximized(false);
+    setLayout(dockLayout("right"));
+  }, [setLayout]);
+
   return {
     layout,
     minimized,
@@ -391,5 +413,7 @@ export function usePracticeTransferPanelLayout() {
     beginResize,
     minimize,
     toggleMaximize,
+    dockLeft,
+    dockRight,
   };
 }

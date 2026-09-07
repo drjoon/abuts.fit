@@ -439,16 +439,13 @@ export function DesignRequestTransferView({
   const caseIdentity =
     casePrimaryParts.length > 0 || selectedRequest?.requestId
       ? {
-          primary: [
+          primary:
             casePrimaryParts.length === 0
               ? String(selectedRequest?.requestId || "")
               : casePrimaryParts.length === 2
                 ? `${casePrimaryParts[0]} / ${casePrimaryParts[1]}${teeth ? ` ${teeth}` : ""}`
                 : `${casePrimaryParts[0]}${teeth ? ` ${teeth}` : ""}`,
-            shipYmd !== "-" ? `출고 ${shipYmd}` : "",
-          ]
-            .filter(Boolean)
-            .join(" · "),
+          secondary: shipYmd !== "-" ? `출고 ${shipYmd}` : undefined,
         }
       : null;
 

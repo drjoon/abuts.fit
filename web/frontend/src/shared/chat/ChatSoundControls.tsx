@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/chat/chatSoundPrefs.ts
 // - web/frontend/src/shared/chat/chatSoundViewing.ts
 // change-log:
+// - 2026-09-08: SoundIconButton — native title 제거(Tooltip 중복 방지).
 // - 2026-09-07: 목록=전체 토글, 개별·진행상황=방별 토글(아이콘 분리).
 // - 2026-09-07: 채팅 알림음 — 전체 토글 아이콘 + 방별 토글.
 // - 2026-09-07: 채팅방 알림음 — 클릭 토글(방별). 전체 on/off는 알림 설정.
@@ -86,7 +87,6 @@ function SoundIconButton({
             className,
           )}
           aria-label={label}
-          title={label}
           onClick={onClick}
         >
           {children}
@@ -110,7 +110,9 @@ export function ChatSoundGlobalToggle({
   const prefs = useChatSoundPrefsState();
   const enabled = prefs.enabled;
   const Icon = enabled ? Volume2 : VolumeX;
-  const label = enabled ? "모든 채팅 알림 끄기" : "모든 채팅 알림 켜기";
+  const label = enabled
+    ? "모든 의뢰 채팅 알림 끄기"
+    : "모든 의뢰 채팅 알림 켜기";
 
   return (
     <SoundIconButton

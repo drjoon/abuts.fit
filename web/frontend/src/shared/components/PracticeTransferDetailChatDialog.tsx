@@ -14,6 +14,9 @@
 // - web/frontend/src/shared/files/downloadWithProgress.ts
 // - web/frontend/src/shared/files/s3BlobCache.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-09-08: 탭 라벨 의뢰/진행. 식별=이름, 진행 헤더=도착일+다음 도착일. 알림=전체 토글.
+// - 2026-09-08: 헤더 < > — 패널을 화면 왼쪽/오른쪽 끝에 도킹.
+// - 2026-09-08: 작업+배송기간 → 상세 정보(접기)로 이동.
 // - 2026-09-07: UX — 의뢰상세 핵심만·상세 접기, 진행상황 다음공정 칩·크롬 압축.
 // - 2026-09-07: 다단계 도착일 당일·지연 시 「다음 도착일」깜빡임 + 호버 안내.
 // - 2026-09-07: 진행 상황 탭에도 재도착일 CTA(모든 케이스). 틀니 등은 다음 공정 표시.
@@ -104,6 +107,8 @@ import {
   Box,
   CalendarClock,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   FileIcon,
   MessageSquare,
   MoreHorizontal,
@@ -137,7 +142,7 @@ import { cn } from "@/shared/ui/cn";
 import { toKstYmd, ymdToKstDate } from "@/shared/date/kst";
 import { type ChatMessage } from "@/shared/hooks/useChatRooms";
 import {
-  ChatSoundMenu,
+  ChatSoundGlobalToggle,
   useRegisterChatSoundViewing,
 } from "@/shared/chat/ChatSoundControls";
 import { ChatComposer, type RequestPickItem } from "@/features/chat/components/ChatComposer";
@@ -289,7 +294,6 @@ const SUMMARY_PRIMARY_LABELS = new Set([
   "치과도착일",
   "다음 도착일",
   "재도착일",
-  "작업+배송기간",
   "기공의뢰 단계",
   "어벗 진행상황",
 ]);
@@ -352,9 +356,9 @@ export type PracticeTransferWorkFileDropConfig = {
 };
 
 export type PracticeTransferDialogCaseIdentity = {
-  /** 예: 테스트치과 / 테스트환자 15 · 도착 2026-09-13 */
+  /** 예: 테스트치과 / 테스트환자 15 */
   primary: string;
-  /** @deprecated 한 줄 표기로 primary에 합침. 있으면 두 번째 줄로만 표시 */
+  /** 예: 도착 2026-09-13 — 진행 탭에서 다음 도착일과 한 줄 */
   secondary?: string;
 };
 
@@ -661,6 +665,8 @@ export function PracticeTransferDetailChatDialog({
     beginResize,
     minimize,
     toggleMaximize,
+    dockLeft,
+    dockRight,
   } = usePracticeTransferPanelLayout();
   const resolvedInitialPanelTab: "detail" | "chat" =
     initialPanelTab === "detail" || initialPanelTab === "chat"
@@ -1623,10 +1629,15 @@ export function PracticeTransferDetailChatDialog({
         ? `출고 ${shipDate}`
         : "";
     return {
-      primary: [identity, datePart].filter(Boolean).join(" · "),
-      secondary: "",
+      primary: identity,
+      secondary: datePart,
     };
   }, [caseIdentity, summaryItems, toothWorks]);
+  const showArrivalInChatChrome = Boolean(
+    panelTab === "chat" &&
+      (onAppendArrival || nextStageSegments.length > 0),
+  );
+  const identityDateLabel = String(caseIdentityStrip?.secondary || "").trim();
   const handlePrintDetail = useCallback(() => {
     printPracticeTransferDetail({
       title,
@@ -2038,14 +2049,14 @@ export function PracticeTransferDetailChatDialog({
                   className="gap-1.5 px-4 py-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
                 >
                   <FileIcon className="h-3.5 w-3.5" />
-                  의뢰 상세
+                  의뢰
                 </TabsTrigger>
                 <TabsTrigger
                   value="chat"
                   className="gap-1.5 px-4 py-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
                 >
                   <MessageSquare className="h-3.5 w-3.5" />
-                  진행 상황
+                  진행
                 </TabsTrigger>
               </TabsList>
             )}
@@ -2055,7 +2066,29 @@ export function PracticeTransferDetailChatDialog({
             >
               {!minimized ? chatHeaderAction : null}
               {!minimized ? (
-                <ChatSoundMenu targetId={resolvedChatRoomId || null} />
+                <ChatSoundGlobalToggle />
+              ) : null}
+              {!minimized && !isMobile ? (
+                <>
+                  <button
+                    type="button"
+                    className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md opacity-70 transition-opacity hover:bg-slate-100 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                    aria-label="왼쪽에 붙이기"
+                    title="왼쪽에 붙이기"
+                    onClick={() => dockLeft()}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md opacity-70 transition-opacity hover:bg-slate-100 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                    aria-label="오른쪽에 붙이기"
+                    title="오른쪽에 붙이기"
+                    onClick={() => dockRight()}
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </>
               ) : null}
               <button
                 type="button"
@@ -2081,9 +2114,9 @@ export function PracticeTransferDetailChatDialog({
               <p className="truncate text-sm font-semibold text-foreground">
                 {caseIdentityStrip.primary}
               </p>
-              {caseIdentityStrip.secondary ? (
+              {identityDateLabel && !showArrivalInChatChrome ? (
                 <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                  {caseIdentityStrip.secondary}
+                  {identityDateLabel}
                 </p>
               ) : null}
             </div>
@@ -2345,6 +2378,11 @@ export function PracticeTransferDetailChatDialog({
                     <div className="flex flex-wrap items-center gap-2 px-4 py-2 sm:px-5">
                       {nextStageSegments.length > 0 ? (
                         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+                          {identityDateLabel ? (
+                            <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                              {identityDateLabel}
+                            </span>
+                          ) : null}
                           <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                             다음 공정
                           </span>
@@ -2363,8 +2401,8 @@ export function PracticeTransferDetailChatDialog({
                           ))}
                         </div>
                       ) : (
-                        <span className="min-w-0 flex-1 text-xs text-muted-foreground">
-                          도착일 관리
+                        <span className="min-w-0 flex-1 truncate text-xs tabular-nums text-muted-foreground">
+                          {identityDateLabel || ""}
                         </span>
                       )}
                       {onAppendArrival ? renderRearrivalPopover() : null}

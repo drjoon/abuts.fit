@@ -2283,7 +2283,8 @@ export function RequestorPracticeReceivePage({
           : `${primaryParts[0]}${teeth ? ` ${teeth}` : ""}`;
     const datePart = arrival ? `도착 ${arrival}` : "";
     return {
-      primary: [identity, datePart].filter(Boolean).join(" · "),
+      primary: identity,
+      secondary: datePart || undefined,
     };
   }, [
     selectedTransfer,
