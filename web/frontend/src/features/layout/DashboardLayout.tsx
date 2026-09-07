@@ -15,6 +15,7 @@ import {
 } from "@/shared/layout/sidebarOpen";
 import { cn } from "@/shared/ui/cn";
 
+// - 2026-09-08: 구강스캔으로 툴팁 — 「어벗·임시치아·지르 보철 의뢰」로 짧게.
 // - 2026-09-08: 기본 기공수가 검토 대기 시 사이드바 설정 → platformTab=abutsFees 딥링크.
 // - 2026-09-06: 모바일/태블릿 상단 헤더 — lucide Menu·로고 절대 중앙 정렬.
 // - 2026-09-06: 관리자 사이드 15→7(홈·회원·의뢰·지원·채널·재무·설정) + 섹션 그룹.
@@ -216,7 +217,7 @@ const LAB_RECEIVE_HREF = "/dashboard/practice-transfers?mode=receive";
 const INTERNAL_LAB_RECEIVE_HREF = "/dashboard/lab-work";
 const LAB_ABUTMENT_PRODUCTION_HREF = "/dashboard/new-request";
 const PRACTICE_ORAL_SCAN_REQUEST_TOOLTIP =
-  "구강스캔으로 커스텀어벗 디자인+생산(구강지그 제외), 임시치아·지르 보철 의뢰";
+  "구강스캔으로 어벗·임시치아·지르 보철 의뢰";
 const PRACTICE_ABUTMENT_DESIGN_REQUEST_TOOLTIP =
   "완성된 어벗 디자인(STL)으로 CNC 생산 의뢰";
 const LAB_RECEIVE_TOOLTIP =
