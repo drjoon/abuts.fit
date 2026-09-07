@@ -34,18 +34,20 @@ export const LabPricingPolicyBanner = ({
       size="sm"
       className={cn(
         "relative w-full justify-center bg-primary text-sm font-semibold text-primary-foreground hover:bg-primary/90",
-        collapsed ? "h-10 px-0" : "h-9 px-3",
+        collapsed ? "h-9 px-0" : "h-9 px-2.5",
         className,
       )}
       onClick={() => setOpen(true)}
       aria-label="정책 안내"
     >
-      <BookOpen
+      <span
         className={cn(
-          "h-4 w-4 shrink-0",
-          !collapsed && "absolute left-2.5 top-1/2 -translate-y-1/2",
+          "flex h-7 w-7 shrink-0 items-center justify-center",
+          !collapsed && "absolute left-2 top-1/2 -translate-y-1/2",
         )}
-      />
+      >
+        <BookOpen className="h-3.5 w-3.5" />
+      </span>
       {!collapsed ? "정책 안내" : null}
     </Button>
   );

@@ -2,6 +2,7 @@
 // - web/frontend/src/features/platform/PlatformBenefitsDialog.tsx
 // - web/frontend/src/features/lab/LabDashboardTopBanners.tsx
 // - web/frontend/src/pages/requestor/dashboard/components/RequestorPolicyRemakeHeader.tsx
+// - 2026-09-08: variant(lab|practice) — 치과 사이드에도 표시. 모달은 치과 카피.
 // - 2026-09-08: 사이드바 1줄·문구 가운데·아이콘 왼쪽 고정. 부제 제거.
 // - 2026-08-19: 사이드 카피 — 의뢰.정산.어벗생산.
 // - 2026-08-19: 기공소 사이드 — 설정과 계정 팝업 사이. 접히면 아이콘만.
@@ -12,6 +13,7 @@ import { useState } from "react";
 import { Sparkles } from "lucide-react";
 import { cn } from "@/shared/ui/cn";
 import { PlatformBenefitsDialog } from "@/features/platform/PlatformBenefitsDialog";
+import type { PlatformBenefitsVariant } from "@/shared/platform/platformBenefitsContent";
 import {
   Tooltip,
   TooltipContent,
@@ -22,6 +24,8 @@ import {
 type BannerProps = {
   className?: string;
   collapsed?: boolean;
+  /** lab=기공소 모달, practice=치과 모달 */
+  variant?: PlatformBenefitsVariant;
 };
 
 type DialogProps = {
@@ -47,11 +51,14 @@ export const PracticePlatformBenefitsDialog = ({
   />
 );
 
+/** 사이드 가입 이유 CTA. 라벨은 공통, 클릭 모달만 variant별. */
 export const LabPlatformBenefitsBanner = ({
   className,
   collapsed = false,
+  variant = "lab",
 }: BannerProps) => {
   const [open, setOpen] = useState(false);
+  const label = "왜 가입할까요?";
 
   const trigger = (
     <div
@@ -81,7 +88,7 @@ export const LabPlatformBenefitsBanner = ({
       </span>
       {!collapsed ? (
         <p className="truncate text-sm font-semibold leading-none tracking-tight">
-          왜 가입할까요?
+          {label}
         </p>
       ) : null}
     </div>
@@ -95,14 +102,18 @@ export const LabPlatformBenefitsBanner = ({
             <TooltipTrigger asChild>
               <span className="block w-full">{trigger}</span>
             </TooltipTrigger>
-            <TooltipContent side="right">왜 가입할까요?</TooltipContent>
+            <TooltipContent side="right">{label}</TooltipContent>
           </Tooltip>
         </TooltipProvider>
       ) : (
         trigger
       )}
 
-      <LabPlatformBenefitsDialog open={open} onOpenChange={setOpen} />
+      <PlatformBenefitsDialog
+        open={open}
+        onOpenChange={setOpen}
+        variant={variant}
+      />
     </>
   );
 };

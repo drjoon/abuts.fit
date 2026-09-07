@@ -537,18 +537,20 @@ export function RemoteSupportRequestButton({
       variant="outline"
       className={cn(
         "relative w-full text-sm font-semibold",
-        collapsed ? "justify-center px-2" : "justify-center px-3",
+        collapsed ? "h-9 justify-center px-0" : "h-9 justify-center px-2.5",
       )}
       disabled={busy}
       onClick={() => void ctx.requestHelp()}
       title="원격 지원 요청"
     >
-      <Headphones
+      <span
         className={cn(
-          "h-4 w-4 shrink-0",
-          !collapsed && "absolute left-2.5 top-1/2 -translate-y-1/2",
+          "flex h-7 w-7 shrink-0 items-center justify-center",
+          !collapsed && "absolute left-2 top-1/2 -translate-y-1/2",
         )}
-      />
+      >
+        <Headphones className="h-3.5 w-3.5" />
+      </span>
       {!collapsed ? (busy ? "지원 진행 중…" : "원격 지원 요청") : null}
     </Button>
   );

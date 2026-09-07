@@ -4,6 +4,7 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // change-log:
+// - 2026-09-08: 치과(practice) 사이드에도 가입 이유 배너(치과 모달 카피).
 // - 2026-09-03: 기공의뢰(수신·어벗츠로 의뢰) 정책 안내를 사이드바에 상시 표시(기공소·어벗츠기공소).
 // - 2026-08-19: 기공소 사이드 — 설정과 계정 팝업 사이.
 // - 2026-08-19: 기공소 가입 배너는 기공의뢰수신만(어벗생산의뢰는 생산 현황 헤더).
@@ -27,14 +28,29 @@ export const LabDashboardTopBanners = ({ className, collapsed }: Props) => {
   const { loading, kind } = useRequestorBusinessAccess();
   const isInternalLab = user?.role === "internalLab";
   const isLabRequestor = !loading && kind === "lab";
+  const isPractice =
+    user?.role === "practice" || (!loading && kind === "practice");
 
-  if (!isInternalLab && !isLabRequestor) return null;
+  if (!isInternalLab && !isLabRequestor && !isPractice) return null;
 
   return (
     <div className="space-y-2">
-      <LabPricingPolicyBanner className={className} collapsed={collapsed} />
-      {!isInternalLab ? (
-        <LabPlatformBenefitsBanner className={className} collapsed={collapsed} />
+      {isInternalLab || isLabRequestor ? (
+        <LabPricingPolicyBanner className={className} collapsed={collapsed} />
+      ) : null}
+      {isLabRequestor ? (
+        <LabPlatformBenefitsBanner
+          className={className}
+          collapsed={collapsed}
+          variant="lab"
+        />
+      ) : null}
+      {isPractice ? (
+        <LabPlatformBenefitsBanner
+          className={className}
+          collapsed={collapsed}
+          variant="practice"
+        />
       ) : null}
     </div>
   );
