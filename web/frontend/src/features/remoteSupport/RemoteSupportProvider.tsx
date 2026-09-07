@@ -14,6 +14,7 @@ import {
 } from "react";
 import { Headphones, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/shared/ui/cn";
 import {
   Dialog,
   DialogContent,
@@ -534,16 +535,20 @@ export function RemoteSupportRequestButton({
     <Button
       type="button"
       variant="outline"
-      className={
-        collapsed
-          ? "w-full justify-center px-2"
-          : "w-full justify-start gap-2"
-      }
+      className={cn(
+        "relative w-full text-sm font-semibold",
+        collapsed ? "justify-center px-2" : "justify-center px-3",
+      )}
       disabled={busy}
       onClick={() => void ctx.requestHelp()}
       title="원격 지원 요청"
     >
-      <Headphones className="h-4 w-4 shrink-0" />
+      <Headphones
+        className={cn(
+          "h-4 w-4 shrink-0",
+          !collapsed && "absolute left-2.5 top-1/2 -translate-y-1/2",
+        )}
+      />
       {!collapsed ? (busy ? "지원 진행 중…" : "원격 지원 요청") : null}
     </Button>
   );

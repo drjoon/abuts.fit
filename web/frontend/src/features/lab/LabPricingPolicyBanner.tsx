@@ -3,6 +3,7 @@
 // - web/frontend/src/features/lab/LabDashboardTopBanners.tsx
 // - web/frontend/src/pages/requestor/dashboard/components/RequestorPolicyRemakeHeader.tsx
 // change-log:
+// - 2026-09-08: 사이드바 문구 가운데·아이콘 왼쪽 고정(펼침 시 BookOpen).
 // - 2026-09-03: 기공소 기공의뢰(수신·어벗츠로 의뢰) 정책 안내를 사이드바로 이동.
 import { useState } from "react";
 import { BookOpen } from "lucide-react";
@@ -32,18 +33,20 @@ export const LabPricingPolicyBanner = ({
       type="button"
       size="sm"
       className={cn(
-        "w-full bg-primary text-xs text-primary-foreground hover:bg-primary/90",
-        collapsed ? "h-10 justify-center px-0" : "h-9 px-3",
+        "relative w-full justify-center bg-primary text-sm font-semibold text-primary-foreground hover:bg-primary/90",
+        collapsed ? "h-10 px-0" : "h-9 px-3",
         className,
       )}
       onClick={() => setOpen(true)}
       aria-label="정책 안내"
     >
-      {collapsed ? (
-        <BookOpen className="h-4 w-4" />
-      ) : (
-        "정책 안내"
-      )}
+      <BookOpen
+        className={cn(
+          "h-4 w-4 shrink-0",
+          !collapsed && "absolute left-2.5 top-1/2 -translate-y-1/2",
+        )}
+      />
+      {!collapsed ? "정책 안내" : null}
     </Button>
   );
 

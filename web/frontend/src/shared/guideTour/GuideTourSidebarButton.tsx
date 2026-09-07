@@ -1,6 +1,7 @@
 // related files:
 // - web/frontend/src/shared/guideTour/GuideTourProvider.tsx
 // - web/frontend/src/features/lab/LabDashboardTopBanners.tsx
+// - 2026-09-08: 사이드바 1줄·문구 가운데·아이콘 왼쪽 고정. 부제 제거.
 import { Compass } from "lucide-react";
 import { cn } from "@/shared/ui/cn";
 import { useGuideTour } from "@/shared/guideTour/GuideTourProvider";
@@ -39,25 +40,24 @@ export function GuideTourSidebarButton({
         }
       }}
       className={cn(
-        "flex cursor-pointer items-center text-left text-accent-strong transition-colors hover:bg-accent-soft/80",
-        collapsed
-          ? "h-10 w-full justify-center rounded-lg border border-accent-muted bg-accent-soft"
-          : "w-full gap-2 rounded-lg border border-accent-muted bg-accent-soft px-2.5 py-2",
+        "relative flex h-9 w-full cursor-pointer items-center justify-center text-center text-accent-strong transition-colors hover:bg-accent-soft/80",
+        "rounded-lg border border-accent-muted bg-accent-soft",
+        !collapsed && "px-2.5",
         className,
       )}
     >
-      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-white/70 ring-1 ring-accent-muted/60">
+      <span
+        className={cn(
+          "flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-white/70 ring-1 ring-accent-muted/60",
+          !collapsed && "absolute left-2 top-1/2 -translate-y-1/2",
+        )}
+      >
         <Compass className="h-3.5 w-3.5" />
       </span>
       {!collapsed ? (
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold leading-snug tracking-tight">
-            {label}
-          </p>
-          <p className="truncate text-[11px] text-accent-strong/70">
-            {continuing ? "이어서 진행" : "사용 안내 1회"}
-          </p>
-        </div>
+        <p className="truncate text-sm font-semibold leading-none tracking-tight">
+          {label}
+        </p>
       ) : null}
     </div>
   );
