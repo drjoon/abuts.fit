@@ -27,6 +27,7 @@
  * - web/frontend/src/shared/practice/openPracticeTransferChat.ts
  * - web/frontend/src/shared/components/practice/PracticeLabRatingControl.tsx
  * - web/frontend/src/shared/practice/practiceLabRating.ts
+ * - 2026-09-07: 캘린더 클릭 도착일 — auto-sync effect가 pin을 존중·await 후에도 재적용.
  * - 2026-08-31: 캘린더·날짜선택으로 고른 치과도착일은 기공소 선택·설정 동기화가 덮어쓰지 않음.
  * - 2026-08-31: 전송 직후 calendarRefreshNonce로 메인 캘린더 구간 재조회.
  * - 2026-08-28: 구강스캔 캘린더 진입 시 /my?page=1 병렬 조회 제거(캘린더 구간 API만). 상세·휴지통·전송 후 지연 로드.
@@ -7325,6 +7326,8 @@ export const PracticeFileTransferPage = ({
       skipNextArrivalAutoSyncRef.current = false;
       return;
     }
+    // 캘린더·날짜선택기로 명시한 도착일은 기본 일수 변경에 덮이지 않는다.
+    if (arrivalDatePinnedRef.current) return;
     setArrivalDate(addDaysToDateInput(orderDate, arrivalDefaultDays));
   }, [orderDate, arrivalDefaultDays]);
 
@@ -7337,6 +7340,7 @@ export const PracticeFileTransferPage = ({
     setArrivalDate((prev) => {
       const current = String(prev || "").trim();
       if (current && current >= todayDate) return current;
+      if (arrivalDatePinnedRef.current) return current || prev;
       return addDaysToDateInput(todayDate, arrivalDefaultDays);
     });
   }, [arrivalDefaultDays, editingSentTransfer, orderDate, todayDate]);
@@ -7396,29 +7400,30 @@ export const PracticeFileTransferPage = ({
     setSelectedLab(null);
     setPatientName("");
     setRequestMemo("");
-    const nextArrivalDefaultDays = accountArrivalDefaultDays;
-    setArrivalDefaultDays(nextArrivalDefaultDays);
-    const nextOrderDate = todayDate;
+    // 마운트 시점 todayDate가 자정을 넘긴 탭에서도 캘린더 클릭일과 맞게 비교한다.
+    const orderYmdNow = toKstDateInputValue(new Date()) || todayDate;
+    const nextOrderDate = orderYmdNow;
     const requestedArrival = String(options?.arrivalYmd || "").trim();
     const pinnedFromCalendar =
       /^\d{4}-\d{2}-\d{2}$/.test(requestedArrival) &&
-      requestedArrival > todayDate;
+      requestedArrival >= orderYmdNow;
+    const accountDays = normalizeArrivalDefaultDays(accountArrivalDefaultDays);
     const nextArrivalDate = pinnedFromCalendar
       ? requestedArrival
-      : addDaysToDateInput(todayDate, nextArrivalDefaultDays);
+      : addDaysToDateInput(orderYmdNow, accountDays);
+    const pinnedDiff = pinnedFromCalendar
+      ? kstYmdDiffDays(orderYmdNow, nextArrivalDate)
+      : null;
+    const nextArrivalDefaultDays =
+      pinnedDiff != null
+        ? normalizeArrivalDefaultDays(pinnedDiff)
+        : accountDays;
+    // skip/pin을 setState보다 먼저 — 기본 일수 effect·기공소 자동선택이 덮지 않게.
     arrivalDatePinnedRef.current = pinnedFromCalendar;
     skipNextArrivalAutoSyncRef.current = true;
+    setArrivalDefaultDays(nextArrivalDefaultDays);
     setOrderDate(nextOrderDate);
     setArrivalDate(nextArrivalDate);
-    if (
-      /^\d{4}-\d{2}-\d{2}$/.test(requestedArrival) &&
-      requestedArrival > todayDate
-    ) {
-      const diff = kstYmdDiffDays(todayDate, nextArrivalDate);
-      if (diff != null) {
-        setArrivalDefaultDays(normalizeArrivalDefaultDays(diff));
-      }
-    }
     setRushProcessing(
       shouldEnablePracticeRushProcessing({
         orderYmd: nextOrderDate,
@@ -7447,6 +7452,20 @@ export const PracticeFileTransferPage = ({
     setEditingSentTransfer(null);
     editingSentTransferRef.current = null;
     setToothChartResetNonce((n) => n + 1);
+
+    // await 동안 기공소 자동선택·settings sync가 skip을 소비했을 수 있어 캘린더 도착일을 재적용.
+    if (pinnedFromCalendar) {
+      arrivalDatePinnedRef.current = true;
+      skipNextArrivalAutoSyncRef.current = true;
+      setArrivalDate(nextArrivalDate);
+      setArrivalDefaultDays(nextArrivalDefaultDays);
+      setRushProcessing(
+        shouldEnablePracticeRushProcessing({
+          orderYmd: nextOrderDate,
+          arrivalYmd: nextArrivalDate,
+        }),
+      );
+    }
 
     // 빈 폼 baseline — 이후 의뢰서 항목을 바꾸거나 파일을 업로드하면 그때 동기화된다.
     const baselineFingerprint = buildPracticeTransferFormFingerprint({

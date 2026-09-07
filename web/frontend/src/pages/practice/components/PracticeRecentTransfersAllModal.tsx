@@ -34,6 +34,7 @@
  * 2026-08-28: variant page|modal — 구강스캔 메인 캘린더 + 미래일 신규 의뢰.
  * - 2026-08-28: 모바일 — 검색을 상태뱃지(리메이크) 오른쪽 같은 줄로 옮겨 헤더 줄 수 축소.
  * - 2026-08-28: 검색↔신규의뢰 안내 위치 교환 — 안내=헤더, 검색=캘린더 툴바.
+ * - 2026-09-07: 오늘(KST) 포함 셀 클릭 → 신규 의뢰(도착일).
  * - 2026-09-07: 헤더 「도착일 클릭 신규의뢰」안내 문구 제거.
  * - 2026-09-07: 다단계 다음 도착일 미지정(+1일~) 헤더 alert(기공소 미확인 바와 동일 패턴).
  * - 2026-08-31: calendarRefreshNonce — 전송 직후 소켓 없이도 캘린더 구간 재조회.
@@ -165,7 +166,7 @@ type PracticeRecentTransfersAllModalProps = {
   floatingDetailOpen?: boolean;
   /** 헤더 우측 — 임시저장·휴지통 등 */
   headerActions?: ReactNode;
-  /** 오늘 이후 날짜 셀 → 신규 의뢰(도착일) */
+  /** 오늘 이후(오늘 포함) 날짜 셀 → 신규 의뢰(도착일) */
   onSelectFutureDay?: (ymd: string) => void;
   /** 값이 바뀌면 캘린더 구간 API를 다시 친다(전송 직후 등). */
   calendarRefreshNonce?: number;

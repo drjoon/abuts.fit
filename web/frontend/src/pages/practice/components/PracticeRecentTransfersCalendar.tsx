@@ -8,6 +8,7 @@
  * - web/frontend/src/shared/date/kst.ts
  * - web/frontend/src/shared/practice/labReceiveCalendarWeekGrid.ts
  * - 2026-08-28: 요일 헤더에 스크롤바 폭 패딩 동기화 + custom-scrollbar(빈 레일 열·railRef 제거).
+ * - 2026-09-07: 오늘(KST) 포함 셀 클릭 → 신규 의뢰(도착일).
  * - 2026-08-28: onSelectFutureDay — 오늘 이후 셀 빈 영역 클릭(칩은 stopPropagation).
  * - 2026-08-28: 「도착일 클릭으로 신규의뢰」안내 — 헤더 검색 자리(PracticeRecentTransfersAllModal).
  * - 2026-08-28: 검색 입력 — 주문일·도착일 뱃지 왼쪽(헤더와 위치 교환).
@@ -296,10 +297,7 @@ type PracticeRecentTransfersCalendarProps = {
   onDateKeyChange: (key: PracticeCalendarDateKey) => void;
   onSelectItem: (item: PracticeCalendarChipItem) => void;
   onDeleteItem?: (item: PracticeCalendarChipItem) => void;
-  /**
-   * 오늘(KST) 이후 날짜 셀 빈 영역 클릭. 오늘·과거는 호출하지 않음.
-   * 칩/휴지통은 stopPropagation으로 상세·취소만.
-   */
+  /** 오늘(KST) 포함·이후 날짜 셀 빈 영역 클릭. 과거는 호출하지 않음. */
   onSelectFutureDay?: (ymd: string) => void;
   /** 「주문일」뱃지 왼쪽 — 전송 검색(헤더와 위치 교환) */
   search?: string;
@@ -637,7 +635,7 @@ export function PracticeRecentTransfersCalendar({
                   const dayItems = byDay.get(day.ymd) || [];
                   const isToday = day.ymd === todayYmd;
                   const isFutureDay = Boolean(
-                    onSelectFutureDay && todayYmd && day.ymd > todayYmd,
+                    onSelectFutureDay && todayYmd && day.ymd >= todayYmd,
                   );
                   const inCaptionMonth =
                     day.ymd >= captionMonth && day.ymd <= captionMonthEnd;
