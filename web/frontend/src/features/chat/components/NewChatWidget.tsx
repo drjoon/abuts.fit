@@ -8,6 +8,7 @@
 // - web/backend/controllers/chats/chat.controller.js
 // - web/backend/utils/partnerChat.util.js
 // change-log:
+// - 2026-09-07: 채팅 알림음 메뉴(이 채팅/전체) + 열람 중 스킵 등록.
 // - 2026-09-07: 파트너 DM unread — chat:message-created 실시간 배지 반영.
 // - 2026-09-07: 채팅 의뢰ID 클릭 → 작업현황(채팅) 열기.
 // - 2026-09-07: 인박스 검색 필터·기존 roomId 즉시 오픈·목록 캐시(저지연).
@@ -44,6 +45,11 @@ import { useS3FileDownload } from "@/shared/files/useS3FileDownload";
 import { normalizeRequestorKind } from "@/shared/business/requestorCapabilities";
 import { requestOpenPracticeTransferChat } from "@/shared/practice/openPracticeTransferChat";
 import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
+import {
+  ChatSoundGlobalToggle,
+  ChatSoundMenu,
+  useRegisterChatSoundViewing,
+} from "@/shared/chat/ChatSoundControls";
 
 type InboxView = "list" | "thread";
 type ThreadKind = "support" | "partner";
@@ -513,6 +519,11 @@ export const NewChatWidget = () => {
 
   const roomId = room?._id;
   activeRoomIdRef.current = String(roomId || "").trim();
+
+  useRegisterChatSoundViewing(
+    roomId,
+    Boolean(isOpen && inboxView === "thread" && roomId),
+  );
 
   const {
     messages,
@@ -1004,6 +1015,10 @@ export const NewChatWidget = () => {
                   <div className="text-sm font-medium truncate">{headerTitle}</div>
                 </div>
                 <div className="flex items-center gap-1 sm:gap-2">
+                  <ChatSoundGlobalToggle />
+                  {inboxView === "thread" && roomId ? (
+                    <ChatSoundMenu targetId={roomId} />
+                  ) : null}
                   <Button
                     size="sm"
                     variant="ghost"

@@ -2,6 +2,10 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/shared/chat/chatSoundPrefs.ts
+// change-log:
+// - 2026-09-07: 채팅 알림음 — 전체 on/off만(클릭 토글). 미리듣기·방별은 채팅창.
+// - 2026-09-07: 채팅 알림음 전체 on/off · 미리듣기.
 import { useEffect, useMemo, useState } from "react";
 import {
   Card,
@@ -20,12 +24,15 @@ import {
   Megaphone,
   MessageSquare,
   RefreshCw,
+  Volume2,
 } from "lucide-react";
 import { useToast } from "@/shared/hooks/use-toast";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { cn } from "@/shared/ui/cn";
 import type { LucideIcon } from "lucide-react";
+import { setChatSoundEnabled } from "@/shared/chat/chatSoundPrefs";
+import { useChatSoundPrefsState } from "@/shared/chat/ChatSoundControls";
 
 type NotificationSettingsV2 = {
   methods: {
@@ -116,6 +123,7 @@ const ToggleRow = ({
 export const NotificationsTab = () => {
   const { toast } = useToast();
   const { token } = useAuthStore();
+  const chatSoundPrefs = useChatSoundPrefsState();
 
   const [settings, setSettings] =
     useState<NotificationSettingsV2>(defaultSettings);
@@ -252,6 +260,35 @@ export const NotificationsTab = () => {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
+        <section className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5">
+          <div className="mb-4 flex items-center gap-2">
+            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200/80">
+              <Volume2 className="h-4 w-4 text-primary-strong" />
+            </span>
+            <div>
+              <h3 className="text-sm font-semibold text-slate-900">
+                채팅 알림음
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                새 메시지 도착 시 소리로 알립니다. 채팅방마다 개별 끄기는 채팅창에서
+                설정합니다.
+              </p>
+            </div>
+          </div>
+          <div className="space-y-2.5">
+            <ToggleRow
+              id="chatSoundEnabled"
+              icon={Volume2}
+              title="채팅 알림음"
+              description="모든 채팅 알림음을 한꺼번에 켜거나 끕니다"
+              checked={chatSoundPrefs.enabled}
+              onCheckedChange={() => {
+                setChatSoundEnabled(!chatSoundPrefs.enabled);
+              }}
+            />
+          </div>
+        </section>
+
         <section className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5">
           <div className="mb-4 flex items-center gap-2">
             <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200/80">

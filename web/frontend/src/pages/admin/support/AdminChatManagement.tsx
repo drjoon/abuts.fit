@@ -7,6 +7,7 @@
 // - web/frontend/src/shared/hooks/useBackgroundTempUpload.ts
 // - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
 // - web/frontend/src/shared/files/useS3FileDownload.ts
+// - 2026-09-07: 채팅 알림음 메뉴 + 선택 방 열람 시 알림음 스킵.
 // - 2026-08-13: 채팅 첨부 다운로드 프로그레스바.
 // - 2026-08-27: 채팅 이미지 썸네일·미리보기(authToken).
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
@@ -36,6 +37,11 @@ import {
   toChatMessageAttachments,
   useBackgroundTempUpload,
 } from "@/shared/hooks/useBackgroundTempUpload";
+import {
+  ChatSoundGlobalToggle,
+  ChatSoundMenu,
+  useRegisterChatSoundViewing,
+} from "@/shared/chat/ChatSoundControls";
 import {
   ChatComposer,
   type RequestPickItem,
@@ -147,6 +153,8 @@ export const AdminChatManagement = ({
     sendMessage,
     toggleReaction,
   } = useChatMessages({ roomId: selectedChatId || undefined, autoFetch: true });
+
+  useRegisterChatSoundViewing(selectedChatId, Boolean(selectedChatId));
 
 // change-log:
   // - 2026-08-03: Hook dependency fixes — wrapped fetchRooms in useCallback and adjusted effects to include stable deps.
@@ -572,13 +580,21 @@ export const AdminChatManagement = ({
 
           <Card className="overflow-hidden flex flex-col">
             <CardHeader className="space-y-2">
-              <CardTitle className="text-base">
-                {activeChat
-                  ? activeChat.relatedRequestId?.requestId ||
-                    activeChat.title ||
-                    "채팅"
-                  : "채팅방을 선택하세요"}
-              </CardTitle>
+              <div className="flex items-start justify-between gap-2">
+                <CardTitle className="text-base">
+                  {activeChat
+                    ? activeChat.relatedRequestId?.requestId ||
+                      activeChat.title ||
+                      "채팅"
+                    : "채팅방을 선택하세요"}
+                </CardTitle>
+                <div className="flex shrink-0 items-center gap-0.5">
+                  <ChatSoundGlobalToggle />
+                  {selectedChatId ? (
+                    <ChatSoundMenu targetId={selectedChatId} />
+                  ) : null}
+                </div>
+              </div>
               {activeChat?.relatedRequestId?.title && (
                 <CardDescription className="truncate">
                   {activeChat.relatedRequestId.title}

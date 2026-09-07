@@ -9595,6 +9595,7 @@ export const PracticeFileTransferPage = ({
           chatLoading={chatLoading || chatMessagesLoading}
           chatError={String(chatError || chatMessagesError || "")}
           chatMessages={displayChatMessages}
+          chatRoomId={activeChatRoom?._id || null}
           isMyMessage={(senderId) => myIdCandidates.has(senderId)}
           currentUserId={String(authUser?.id || (authUser as { _id?: string } | null)?._id || "").trim()}
           formatChatTime={formatChatTs}

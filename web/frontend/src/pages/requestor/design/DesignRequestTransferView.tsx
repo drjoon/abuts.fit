@@ -505,6 +505,7 @@ export function DesignRequestTransferView({
         chatLoading={chatLoading}
         chatError={String(chatError || "")}
         chatMessages={messages}
+        chatRoomId={activeChatRoom?._id || null}
         isMyMessage={(senderId) =>
           senderId === String(user?.id || (user as { _id?: string } | null)?._id || "")
         }

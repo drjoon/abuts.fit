@@ -8,6 +8,12 @@ import type { RemoteSupportMessage } from "@/features/remoteSupport/remoteSuppor
 import { remoteSupportApi } from "@/features/remoteSupport/remoteSupportApi";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
+import {
+  ChatSoundGlobalToggle,
+  ChatSoundMenu,
+  useRegisterChatSoundViewing,
+} from "@/shared/chat/ChatSoundControls";
+import { remoteSupportChatSoundTarget } from "@/shared/chat/chatSoundPrefs";
 
 type Props = {
   sessionId: string;
@@ -49,6 +55,9 @@ export function RemoteSupportChat({
   const [sending, setSending] = useState(false);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const myId = String(user?.id || user?._id || "");
+  const soundTarget = remoteSupportChatSoundTarget(sessionId);
+
+  useRegisterChatSoundViewing(soundTarget, Boolean(sessionId));
 
   useEffect(() => {
     setMessages(initialMessages);
@@ -95,8 +104,12 @@ export function RemoteSupportChat({
           : "flex h-full min-h-[240px] flex-col rounded-md border border-border bg-card"
       }
     >
-      <div className="border-b border-border px-3 py-2 text-sm font-medium">
-        지원 채팅
+      <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
+        <div className="text-sm font-medium">지원 채팅</div>
+        <div className="flex shrink-0 items-center gap-0.5">
+          <ChatSoundGlobalToggle />
+          <ChatSoundMenu targetId={soundTarget || null} />
+        </div>
       </div>
       <div className="flex-1 space-y-2 overflow-y-auto px-3 py-2 text-sm">
         {messages.length === 0 ? (

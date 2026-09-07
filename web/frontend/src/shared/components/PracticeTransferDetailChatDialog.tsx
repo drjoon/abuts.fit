@@ -14,6 +14,7 @@
 // - web/frontend/src/shared/files/downloadWithProgress.ts
 // - web/frontend/src/shared/files/s3BlobCache.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-09-07: 채팅 알림음 메뉴 + 진행 상황 탭 열람 시 알림음 스킵.
 // - 2026-09-07: 패널 공통 헤더 — 치과/환자 식별 스트립(탭 아래 고정, caseIdentity·summaryItems).
 // - 2026-09-07: lab_accept — 거절 버튼 제거. CTA 「수락」→「작업시작」. 가입 이전 리메이크 안내.
 // - 2026-09-05: lab_detail — 상세 모달 전체(DialogContent) Spotlight 홀.
@@ -118,6 +119,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/shared/ui/cn";
 import { toKstYmd, ymdToKstDate } from "@/shared/date/kst";
 import { type ChatMessage } from "@/shared/hooks/useChatRooms";
+import {
+  ChatSoundGlobalToggle,
+  ChatSoundMenu,
+  useRegisterChatSoundViewing,
+} from "@/shared/chat/ChatSoundControls";
 import { ChatComposer, type RequestPickItem } from "@/features/chat/components/ChatComposer";
 import { ChatMessageBubble } from "@/features/chat/components/ChatMessageBubble";
 import { buildChatReactionUserNameById } from "@/features/chat/components/chatReactions";
@@ -390,6 +396,8 @@ type PracticeTransferDetailChatDialogProps = {
   chatLoading: boolean;
   chatError: string;
   chatMessages: ChatMessage[];
+  /** 채팅 알림음 음소거/열람 등록용 roomId */
+  chatRoomId?: string | null;
   isMyMessage: (senderId: string) => boolean;
   currentUserId?: string | null;
   formatChatTime: (createdAt: string) => string;
@@ -511,6 +519,7 @@ export function PracticeTransferDetailChatDialog({
   chatLoading,
   chatError,
   chatMessages,
+  chatRoomId = null,
   isMyMessage,
   currentUserId,
   formatChatTime,
@@ -610,6 +619,21 @@ export function PracticeTransferDetailChatDialog({
     });
     return () => cancelAnimationFrame(id);
   }, [open, panelTab, chatBottomRef, chatMessages.length]);
+
+  const resolvedChatRoomId = useMemo(() => {
+    const fromProp = String(chatRoomId || "").trim();
+    if (fromProp) return fromProp;
+    for (const m of chatMessages) {
+      const id = String((m as { roomId?: string })?.roomId || "").trim();
+      if (id) return id;
+    }
+    return "";
+  }, [chatRoomId, chatMessages]);
+
+  useRegisterChatSoundViewing(
+    resolvedChatRoomId,
+    Boolean(open && !minimized && panelTab === "chat" && resolvedChatRoomId),
+  );
 
   const reactionUserNameById = useMemo(
     () => buildChatReactionUserNameById({ messages: chatMessages }),
@@ -1701,6 +1725,12 @@ export function PracticeTransferDetailChatDialog({
               data-no-drag
             >
               {!minimized ? chatHeaderAction : null}
+              {!minimized ? (
+                <>
+                  <ChatSoundGlobalToggle />
+                  <ChatSoundMenu targetId={resolvedChatRoomId || null} />
+                </>
+              ) : null}
               <button
                 type="button"
                 className={cn(
