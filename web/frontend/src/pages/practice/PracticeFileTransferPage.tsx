@@ -27,6 +27,7 @@
  * - web/frontend/src/shared/practice/openPracticeTransferChat.ts
  * - web/frontend/src/shared/components/practice/PracticeLabRatingControl.tsx
  * - web/frontend/src/shared/practice/practiceLabRating.ts
+ * - 2026-09-07: 상세 헤더 식별 — 전송ID 제거, `기공소/환자 치식 · 도착` 한 줄.
  * - 2026-09-07: 캘린더 클릭 도착일 — auto-sync effect가 pin을 존중·await 후에도 재적용.
  * - 2026-08-31: 캘린더·날짜선택으로 고른 치과도착일은 기공소 선택·설정 동기화가 덮어쓰지 않음.
  * - 2026-08-31: 전송 직후 calendarRefreshNonce로 메인 캘린더 구간 재조회.
@@ -4770,19 +4771,16 @@ export const PracticeFileTransferPage = ({
     const arrival = String(selectedTransfer.arrivalDate || "").trim();
     const primaryParts = [lab, patient].filter(Boolean);
     if (!primaryParts.length && !transferId) return null;
-    const primary =
+    const identity =
       primaryParts.length === 0
         ? transferId
         : primaryParts.length === 2
           ? `${primaryParts[0]} / ${primaryParts[1]}${teeth ? ` ${teeth}` : ""}`
           : `${primaryParts[0]}${teeth ? ` ${teeth}` : ""}`;
-    const secondary = [
-      primaryParts.length > 0 ? transferId : "",
-      arrival ? `도착 ${arrival}` : "",
-    ]
-      .filter(Boolean)
-      .join(" · ");
-    return { primary, secondary };
+    const datePart = arrival ? `도착 ${arrival}` : "";
+    return {
+      primary: [identity, datePart].filter(Boolean).join(" · "),
+    };
   }, [selectedTransfer, selectedTransferDetailModel]);
 
   const selectedTransferUploadOverdue = useMemo(() => {

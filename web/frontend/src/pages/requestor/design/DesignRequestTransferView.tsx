@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-07: 상세 헤더 식별 — 의뢰ID 제거, `치과/환자 치식 · 출고` 한 줄.
 // - 2026-08-16: 상세 모달 3D 미리보기용 authToken 전달.
 // - 2026-08-10: 의뢰 메모는 자유 메모만(치아/임플란트 폴백 제거). 파일 목록 s3Key 중복 제거.
 // - 2026-08-10: 개별/전체 다운로드 중 재클릭 방지. 채팅 라벨·상대를 치과(발신 의뢰자)로 정렬.
@@ -434,22 +435,17 @@ export function DesignRequestTransferView({
   const patientName = String(caseInfos?.patientName || "").trim();
   const teeth = formatToothNumbersForCard(toothWorks);
   const casePrimaryParts = [clinicName, patientName].filter(Boolean);
+  const shipYmd = formatShipYmd(selectedRequest?.timeline?.estimatedShipYmd);
   const caseIdentity =
     casePrimaryParts.length > 0 || selectedRequest?.requestId
       ? {
-          primary:
+          primary: [
             casePrimaryParts.length === 0
               ? String(selectedRequest?.requestId || "")
               : casePrimaryParts.length === 2
                 ? `${casePrimaryParts[0]} / ${casePrimaryParts[1]}${teeth ? ` ${teeth}` : ""}`
                 : `${casePrimaryParts[0]}${teeth ? ` ${teeth}` : ""}`,
-          secondary: [
-            casePrimaryParts.length > 0
-              ? String(selectedRequest?.requestId || "").trim()
-              : "",
-            formatShipYmd(selectedRequest?.timeline?.estimatedShipYmd) !== "-"
-              ? `출고 ${formatShipYmd(selectedRequest?.timeline?.estimatedShipYmd)}`
-              : "",
+            shipYmd !== "-" ? `출고 ${shipYmd}` : "",
           ]
             .filter(Boolean)
             .join(" · "),

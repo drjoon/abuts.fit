@@ -19,6 +19,7 @@
 // - 2026-09-07: 진행 상황 탭에도 재도착일 CTA(모든 케이스). 틀니 등은 다음 공정 표시.
 // - 2026-09-07: 채팅 알림음 메뉴 + 진행 상황 탭 열람 시 알림음 스킵.
 // - 2026-09-07: 패널 공통 헤더 — 치과/환자 식별 스트립(탭 아래 고정, caseIdentity·summaryItems).
+// - 2026-09-07: 식별 스트립 한 줄 — 전송ID 제거, `치과/환자 치식 · 도착 YYYY-MM-DD`.
 // - 2026-09-07: lab_accept — 거절 버튼 제거. CTA 「수락」→「작업시작」. 가입 이전 리메이크 안내.
 // - 2026-09-05: lab_detail — 상세 모달 전체(DialogContent) Spotlight 홀.
 // - 2026-09-03: 요약 행 action — 어벗 진행상황 옆 의뢰 상세 버튼 등.
@@ -351,9 +352,9 @@ export type PracticeTransferWorkFileDropConfig = {
 };
 
 export type PracticeTransferDialogCaseIdentity = {
-  /** 예: 테스트치과 / 테스트환자 15 */
+  /** 예: 테스트치과 / 테스트환자 15 · 도착 2026-09-13 */
   primary: string;
-  /** 예: PTX-… · 도착 2026-09-13 */
+  /** @deprecated 한 줄 표기로 primary에 합침. 있으면 두 번째 줄로만 표시 */
   secondary?: string;
 };
 
@@ -1610,23 +1611,20 @@ export function PracticeTransferDetailChatDialog({
     const teeth = formatToothNumbersForCard(toothWorks);
     const primaryParts = [party, patientName].filter(Boolean);
     if (primaryParts.length === 0 && !transferId) return null;
-    const primary =
+    const identity =
       primaryParts.length === 0
         ? transferId
         : primaryParts.length === 2
           ? `${primaryParts[0]} / ${primaryParts[1]}${teeth ? ` ${teeth}` : ""}`
           : `${primaryParts[0]}${teeth ? ` ${teeth}` : ""}`;
-    const secondaryParts = [
-      primaryParts.length > 0 ? transferId : "",
-      arrivalDate
-        ? `도착 ${arrivalDate}`
-        : shipDate
-          ? `출고 ${shipDate}`
-          : "",
-    ].filter(Boolean);
+    const datePart = arrivalDate
+      ? `도착 ${arrivalDate}`
+      : shipDate
+        ? `출고 ${shipDate}`
+        : "";
     return {
-      primary,
-      secondary: secondaryParts.join(" · "),
+      primary: [identity, datePart].filter(Boolean).join(" · "),
+      secondary: "",
     };
   }, [caseIdentity, summaryItems, toothWorks]);
   const handlePrintDetail = useCallback(() => {

@@ -29,6 +29,7 @@
 // - web/backend/utils/labReceiveCalendarHiddenWeekdays.util.js
 // - web/backend/controllers/users/user.controller.js
 // - 2026-09-07: 가이드투어 lab_remake — 데모 리메이크 뱃지·상세 탭·수가.
+// - 2026-09-07: 상세 헤더 식별 — 전송ID 제거, `치과/환자 치식 · 도착` 한 줄.
 // - 2026-09-07: 분할 업로드 AlertDialog z-320 — 플로팅 의뢰상세(z-300)에 가리지 않게.
 // - 2026-09-05: 가이드투어 lab_calendar — 오늘 데모 칩 홀·클릭 시 상세·다음.
 // - 2026-09-05: 가이드투어 — pause·수료 시 데모 PTX·상세 삭제(치과 oral 정리와 동일).
@@ -2274,19 +2275,16 @@ export function RequestorPracticeReceivePage({
       ).trim();
     const primaryParts = [clinic, patient].filter(Boolean);
     if (!primaryParts.length && !transferId) return null;
-    const primary =
+    const identity =
       primaryParts.length === 0
         ? transferId
         : primaryParts.length === 2
           ? `${primaryParts[0]} / ${primaryParts[1]}${teeth ? ` ${teeth}` : ""}`
           : `${primaryParts[0]}${teeth ? ` ${teeth}` : ""}`;
-    const secondary = [
-      primaryParts.length > 0 ? transferId : "",
-      arrival ? `도착 ${arrival}` : "",
-    ]
-      .filter(Boolean)
-      .join(" · ");
-    return { primary, secondary };
+    const datePart = arrival ? `도착 ${arrival}` : "";
+    return {
+      primary: [identity, datePart].filter(Boolean).join(" · "),
+    };
   }, [
     selectedTransfer,
     selectedTransferPatientName,
