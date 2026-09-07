@@ -8,11 +8,14 @@
 // - web/backend/controllers/chats/chat.controller.js
 // - web/backend/utils/partnerChat.util.js
 // change-log:
+// - 2026-09-07: 파트너 DM unread — chat:message-created 실시간 배지 반영.
+// - 2026-09-07: 채팅 의뢰ID 클릭 → 작업현황(채팅) 열기.
 // - 2026-09-07: 인박스 검색 필터·기존 roomId 즉시 오픈·목록 캐시(저지연).
 // - 2026-09-07: 인박스 — 고객지원 + 기공소↔치과 파트너 DM(의뢰건 무관).
 // - 2026-08-13: 채팅 첨부 다운로드 프로그레스바.
 // - 2026-08-27: 채팅 이미지 썸네일·미리보기(authToken).
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -31,13 +34,16 @@ import {
   ChatComposer,
   CHAT_CASE_MENTION_PLACEHOLDER,
   type RequestPickItem,
-} from "@/features/chat/components/ChatComposer";import {
+} from "@/features/chat/components/ChatComposer";
+import {
   ChatMessageBubble,
   type ChatBubbleAttachment,
 } from "@/features/chat/components/ChatMessageBubble";
 import { buildChatReactionUserNameById } from "@/features/chat/components/chatReactions";
 import { useS3FileDownload } from "@/shared/files/useS3FileDownload";
 import { normalizeRequestorKind } from "@/shared/business/requestorCapabilities";
+import { requestOpenPracticeTransferChat } from "@/shared/practice/openPracticeTransferChat";
+import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
 
 type InboxView = "list" | "thread";
 type ThreadKind = "support" | "partner";
@@ -71,6 +77,8 @@ const stubRoomFromId = (roomId: string, title: string): ChatRoom =>
 export const NewChatWidget = () => {
   const { user, isAuthenticated, token } = useAuthStore();
   const { toast } = useToast();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [isOpen, setIsOpen] = useState(false);
   const [inboxView, setInboxView] = useState<InboxView>("list");
   const [threadKind, setThreadKind] = useState<ThreadKind>("support");
@@ -100,10 +108,19 @@ export const NewChatWidget = () => {
   const didRefreshUnreadRef = useRef(false);
   const counterpartsFetchedAtRef = useRef(0);
   const counterpartsInFlightRef = useRef<Promise<void> | null>(null);
+  const supportRoomIdRef = useRef<string>("");
+  const counterpartsRef = useRef<PartnerCounterpart[]>([]);
+  const inboxViewRef = useRef<InboxView>(inboxView);
+  const isOpenRef = useRef(isOpen);
+  const activeRoomIdRef = useRef<string>("");
   const filterInputRef = useRef<HTMLInputElement | null>(null);
   const chatUploads = useBackgroundTempUpload({ token });
   const { downloadingKeys, downloadProgressByKey, downloadS3File } =
     useS3FileDownload(token);
+
+  counterpartsRef.current = counterparts;
+  inboxViewRef.current = inboxView;
+  isOpenRef.current = isOpen;
 
   const canUsePartnerChat = useMemo(() => {
     const role = String(user?.role || "").trim();
@@ -160,6 +177,8 @@ export const NewChatWidget = () => {
       }
       const roomBody = roomRes.data || {};
       const roomData = (roomBody as any)?.data || roomBody;
+      const supportId = String(roomData?._id || "").trim();
+      if (supportId) supportRoomIdRef.current = supportId;
       const count =
         typeof roomData?.unreadCount === "number" ? roomData.unreadCount : 0;
       setSupportUnread(count);
@@ -465,6 +484,8 @@ export const NewChatWidget = () => {
         }
         const roomBody = roomRes.data || {};
         const roomData = (roomBody as any)?.data || roomBody;
+        const supportId = String((roomData as any)?._id || "").trim();
+        if (supportId) supportRoomIdRef.current = supportId;
         setRoom(roomData as ChatRoom);
         setThreadTitle("어벗츠.핏 고객지원");
         setSupportUnread(
@@ -491,6 +512,8 @@ export const NewChatWidget = () => {
   ]);
 
   const roomId = room?._id;
+  activeRoomIdRef.current = String(roomId || "").trim();
+
   const {
     messages,
     loading: messagesLoading,
@@ -516,6 +539,110 @@ export const NewChatWidget = () => {
       .filter(Boolean);
     return new Set(ids);
   }, [(user as any)?.mockUserId, user?.id]);
+
+  const myKindIsLab =
+    normalizeRequestorKind(user?.requestorKind) === "lab" ||
+    String(user?.role || "").trim() === "internalLab";
+
+  useAppEventListener({
+    enabled: Boolean(token && isAuthenticated),
+    eventTypes: ["chat:message-created", "chat:room-read"],
+    deferWhenEditing: false,
+    requireVisible: false,
+    onMatch: (evt) => {
+      const type = String(evt?.type || "").trim();
+      const payload =
+        evt?.data && typeof evt.data === "object"
+          ? (evt.data as Record<string, unknown>)
+          : {};
+      const eventRoomId = String(payload.roomId || "").trim();
+      if (!eventRoomId) return;
+
+      if (type === "chat:room-read") {
+        const readerUserId = String(payload.userId || "").trim();
+        if (!readerUserId || !myIdCandidates.has(readerUserId)) return;
+        if (supportRoomIdRef.current === eventRoomId) {
+          setSupportUnread(0);
+        }
+        setCounterparts((prev) =>
+          prev.map((row) =>
+            row.roomId === eventRoomId ? { ...row, unreadCount: 0 } : row,
+          ),
+        );
+        return;
+      }
+
+      if (type !== "chat:message-created") return;
+
+      // 의뢰건 작업현황 채팅은 FAB(파트너/고객지원) 배지와 무관
+      const transferId = String(
+        payload.relatedPracticeTransferId || "",
+      ).trim();
+      if (transferId) return;
+
+      const message =
+        payload.message && typeof payload.message === "object"
+          ? (payload.message as { createdAt?: string; sender?: { _id?: string } })
+          : null;
+      const senderId = String(
+        payload.senderId || message?.sender?._id || "",
+      ).trim();
+      const isMine = senderId ? myIdCandidates.has(senderId) : false;
+      if (isMine) return;
+
+      const viewingThis =
+        isOpenRef.current &&
+        inboxViewRef.current === "thread" &&
+        activeRoomIdRef.current === eventRoomId;
+      if (viewingThis) return;
+
+      const lastAt = String(
+        message?.createdAt || payload.timestamp || "",
+      ).trim();
+      const labAnchor = String(payload.relatedLabAnchorId || "").trim();
+      const practiceAnchor = String(
+        payload.relatedPracticeAnchorId || "",
+      ).trim();
+      const counterpartAnchorId = myKindIsLab ? practiceAnchor : labAnchor;
+
+      const matchedPartner = counterpartsRef.current.some((row) => {
+        if (row.roomId && row.roomId === eventRoomId) return true;
+        return Boolean(
+          counterpartAnchorId &&
+            row.counterpartAnchorId === counterpartAnchorId,
+        );
+      });
+
+      if (matchedPartner) {
+        setCounterparts((prev) =>
+          prev.map((row) => {
+            const byRoom = row.roomId && row.roomId === eventRoomId;
+            const byAnchor =
+              counterpartAnchorId &&
+              row.counterpartAnchorId === counterpartAnchorId;
+            if (!byRoom && !byAnchor) return row;
+            return {
+              ...row,
+              roomId: eventRoomId,
+              unreadCount: Math.max(0, Number(row.unreadCount || 0)) + 1,
+              lastMessageAt: lastAt || row.lastMessageAt,
+            };
+          }),
+        );
+        return;
+      }
+
+      if (supportRoomIdRef.current && supportRoomIdRef.current === eventRoomId) {
+        setSupportUnread((prev) => Math.max(0, Number(prev || 0)) + 1);
+        return;
+      }
+
+      // 첫 메시지·캐시에 roomId 없음 → 목록/지원 unread 재조회
+      counterpartsFetchedAtRef.current = 0;
+      void loadCounterparts({ force: true });
+      void loadSupportUnread();
+    },
+  });
 
   const reactionUserNameById = useMemo(
     () =>
@@ -730,6 +857,37 @@ export const NewChatWidget = () => {
 
   const insertRequestId = (_requestId: string) => {
     // 실제 삽입·$ 치환은 ChatComposer.insertCaseToken이 처리한다.
+  };
+
+  const openRequestWorkStatus = (requestId: string) => {
+    const transferId = String(requestId || "").trim();
+    if (!transferId) return;
+    setIsOpen(false);
+
+    const path = String(location.pathname || "");
+    const onTransfersPage =
+      path.includes("practice-transfers") ||
+      path.startsWith("/practice/");
+
+    if (onTransfersPage) {
+      requestOpenPracticeTransferChat(transferId, { panel: "chat" });
+      return;
+    }
+
+    const kind = normalizeRequestorKind(user?.requestorKind);
+    const isLab =
+      kind === "lab" ||
+      String(user?.role || "").trim() === "internalLab";
+    const mode = isLab ? "receive" : "send";
+    const role = String(user?.role || "").trim();
+    const base =
+      role === "practice"
+        ? "/practice/dashboard"
+        : `/dashboard/practice-transfers?mode=${mode}`;
+    const sep = base.includes("?") ? "&" : "?";
+    navigate(
+      `${base}${sep}openTransfer=${encodeURIComponent(transferId)}`,
+    );
   };
 
   const openAttachment = async (a: ChatBubbleAttachment) => {
@@ -1014,6 +1172,7 @@ export const NewChatWidget = () => {
                                 showSenderName={false}
                                 compact
                                 reactionUserNameById={reactionUserNameById}
+                                onOpenRequestId={openRequestWorkStatus}
                                 onReply={(message) => {
                                   setReplyTo({
                                     _id: String(message._id),

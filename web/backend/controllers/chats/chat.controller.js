@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-07: chat:message-created 페이로드에 파트너 앵커(실시간 FAB unread용).
 // - 2026-09-07: 기공소↔치과 파트너 DM(의뢰건 무관) — partner-counterparts / partner-room.
 // - 2026-08-26: GET /rooms — 휴지통(deleted|canceled) 의뢰 방은 목록·unread 제외(직접 open은 유지).
 // - 2026-08-21: 취소(휴지통) 전송도 기존 채팅방은 열어 미확인 메시지 읽기 허용(신규 방 생성은 409).
@@ -112,7 +113,15 @@ const invalidateChatPerfForUsers = (userIds) => {
 /** 기공소 변경 등 — 다른 컨트롤러에서 채팅방 목록 캐시 무효화 */
 export { invalidateChatPerfForUsers };
 
-const emitChatMessageCreated = ({ participantIds, senderId, roomId, message, relatedPracticeTransferId }) => {
+const emitChatMessageCreated = ({
+  participantIds,
+  senderId,
+  roomId,
+  message,
+  relatedPracticeTransferId,
+  relatedLabAnchorId = null,
+  relatedPracticeAnchorId = null,
+}) => {
   const ids = (Array.isArray(participantIds) ? participantIds : [])
     .map((id) => String(id || "").trim())
     .filter(Boolean);
@@ -122,7 +131,11 @@ const emitChatMessageCreated = ({ participantIds, senderId, roomId, message, rel
   const payload = {
     roomId: String(roomId || "").trim(),
     senderId: normalizedSenderId,
-    relatedPracticeTransferId: String(relatedPracticeTransferId || "").trim() || null,
+    relatedPracticeTransferId:
+      String(relatedPracticeTransferId || "").trim() || null,
+    relatedLabAnchorId: String(relatedLabAnchorId || "").trim() || null,
+    relatedPracticeAnchorId:
+      String(relatedPracticeAnchorId || "").trim() || null,
     message: message || null,
     timestamp: new Date().toISOString(),
   };
@@ -1896,6 +1909,8 @@ export async function sendChatMessage(req, res) {
       roomId,
       message: populatedMessage,
       relatedPracticeTransferId: room.relatedPracticeTransferId,
+      relatedLabAnchorId: room.relatedLabAnchorId,
+      relatedPracticeAnchorId: room.relatedPracticeAnchorId,
     });
 
     res.status(201).json({

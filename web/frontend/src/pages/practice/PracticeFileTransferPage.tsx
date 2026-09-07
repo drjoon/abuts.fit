@@ -24,6 +24,7 @@
  * - web/frontend/src/shared/realtime/socket.ts
  * - web/frontend/src/shared/realtime/useAppEventDebouncedReload.ts
  * - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
+ * - web/frontend/src/shared/practice/openPracticeTransferChat.ts
  * - web/frontend/src/shared/components/practice/PracticeLabRatingControl.tsx
  * - web/frontend/src/shared/practice/practiceLabRating.ts
  * - 2026-08-31: 캘린더·날짜선택으로 고른 치과도착일은 기공소 선택·설정 동기화가 덮어쓰지 않음.
@@ -134,7 +135,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate, useLocation, useSearchParams } from "react-router-dom";
 
 import {
   Trash2,
@@ -271,6 +272,10 @@ import {
   type PracticeRecentTransferItem,
 } from "@/shared/practice/practiceRecentTransferList";
 import { buildPracticeSenderTransferDetailModel } from "@/shared/practice/practiceSenderTransferDetailModel";
+import {
+  OPEN_PRACTICE_TRANSFER_CHAT_EVENT,
+  type OpenPracticeTransferChatDetail,
+} from "@/shared/practice/openPracticeTransferChat";
 import {
   DEFAULT_AUTO_MATCH_MAX_LAB_RATING,
   DEFAULT_AUTO_MATCH_MIN_LAB_RATING,
@@ -1210,6 +1215,7 @@ export const PracticeFileTransferPage = ({
 } = {}) => {
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
   const isMobileViewport = useIsMobile();
   const { period } = usePeriodStore();
   const { toast } = useToast();
@@ -5142,6 +5148,91 @@ export const PracticeFileTransferPage = ({
 
     await resolvePracticeTransferChatRoom(String(transfer.transferId || "").trim(), resolveSeq);
   };
+
+  const openTransferWorkStatusById = useCallback(
+    (transferIdRaw: string) => {
+      const transferId = String(transferIdRaw || "").trim();
+      if (!transferId) return;
+      const transfer =
+        groupedTransfers.find(
+          (row) => String(row.transferId || "").trim() === transferId,
+        ) ||
+        draftGroupedTransfers.find(
+          (row) => String(row.transferId || "").trim() === transferId,
+        ) ||
+        null;
+      if (transfer) {
+        void handleOpenTransferDialog(transfer);
+        return;
+      }
+      const matchedRequests = recentRequests.filter(
+        (row) => String(row.transferId || "").trim() === transferId,
+      );
+      if (matchedRequests.length) {
+        const [item] = groupPracticeRecentRequests(matchedRequests, chatRooms);
+        if (item) {
+          void handleOpenTransferDialog(item);
+          return;
+        }
+      }
+      toast({
+        title: "의뢰건을 찾을 수 없습니다",
+        description: transferId,
+        variant: "destructive",
+      });
+    },
+    [
+      chatRooms,
+      draftGroupedTransfers,
+      groupedTransfers,
+      recentRequests,
+      toast,
+    ],
+  );
+
+  useEffect(() => {
+    const onOpen = (evt: Event) => {
+      const detail =
+        evt instanceof CustomEvent
+          ? ((evt as CustomEvent<OpenPracticeTransferChatDetail>).detail ||
+              {})
+          : {};
+      const transferId = String(detail.transferId || "").trim();
+      if (!transferId) return;
+      openTransferWorkStatusById(transferId);
+    };
+    window.addEventListener(OPEN_PRACTICE_TRANSFER_CHAT_EVENT, onOpen);
+    return () => {
+      window.removeEventListener(OPEN_PRACTICE_TRANSFER_CHAT_EVENT, onOpen);
+    };
+  }, [openTransferWorkStatusById]);
+
+  useEffect(() => {
+    const transferId = String(searchParams.get("openTransfer") || "").trim();
+    if (!transferId) return;
+    const found =
+      groupedTransfers.some(
+        (row) => String(row.transferId || "").trim() === transferId,
+      ) ||
+      draftGroupedTransfers.some(
+        (row) => String(row.transferId || "").trim() === transferId,
+      ) ||
+      recentRequests.some(
+        (row) => String(row.transferId || "").trim() === transferId,
+      );
+    if (!found) return;
+    openTransferWorkStatusById(transferId);
+    const next = new URLSearchParams(searchParams);
+    next.delete("openTransfer");
+    setSearchParams(next, { replace: true });
+  }, [
+    draftGroupedTransfers,
+    groupedTransfers,
+    openTransferWorkStatusById,
+    recentRequests,
+    searchParams,
+    setSearchParams,
+  ]);
 
   const resolvePracticeTransferChatRoom = useCallback(
     async (transferIdRaw: string, resolveSeq: number) => {
@@ -9486,6 +9577,7 @@ export const PracticeFileTransferPage = ({
             }))
             .filter((row) => row.requestId && row.requestId !== "-")
             .slice(0, 40)}
+          onOpenRequestId={(requestId) => openTransferWorkStatusById(requestId)}
           inputDisabled={chatLoading || chatMessagesLoading || chatSending || !activeChatRoom?._id}
           sendDisabled={chatSending}
         />

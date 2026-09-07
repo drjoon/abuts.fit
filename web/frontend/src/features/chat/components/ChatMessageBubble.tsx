@@ -9,12 +9,14 @@
 // - web/frontend/src/shared/components/ModelPreviewDialog.tsx
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
 // - web/frontend/src/shared/files/modelPreviewFile.ts
+// change-log:
+// - 2026-09-07: `[의뢰ID:…]` 클릭 → 작업현황(채팅) 열기·환자이름 표시.
 // - 2026-08-13: 채팅 첨부 다운로드 중 프로그레스바.
 // - 2026-08-27: 이미지 첨부 썸네일 + ModelPreviewDialog 미리보기(의뢰상세와 동일).
 // - 2026-08-28: PLY/OBJ 칼라 텍스처(동반 이미지) 프리뷰 전달.
 // - 2026-08-28: STL/PLY/OBJ도 의뢰상세와 동일 썸네일·ModelPreviewDialog.
 // - 2026-08-28: 모델 확장자 우선 분류(잘못된 image MIME 오인 방지).
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Box, Reply, SmilePlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -30,6 +32,11 @@ import {
 import { cn } from "@/shared/ui/cn";
 import type { ChatMessage, ChatMessageReaction } from "@/shared/hooks/useChatRooms";
 import { MessageReply } from "@/features/chat/components/MessageReply";
+import {
+  CASE_MENTION_TOKEN_RE,
+  formatCaseMentionLabel,
+  parseCaseMentionInner,
+} from "@/features/chat/components/chatCaseMention";
 import {
   CHAT_REACTION_EMOJIS,
   formatReactionUserNames,
@@ -79,6 +86,8 @@ type ChatMessageBubbleProps = {
   /** 리액션 툴팁용 userId → 표시 이름 */
   reactionUserNameById?: Record<string, string>;
   onOpenAttachment?: (file: ChatBubbleAttachment) => void | Promise<void>;
+  /** 채팅 본문 `[의뢰ID:…]` 클릭 → 해당 의뢰 작업현황 */
+  onOpenRequestId?: (requestId: string) => void;
   formatFileSize?: (size: number) => string;
   downloadingFileKeys?: string[];
   downloadProgressByKey?: Record<string, number>;
@@ -240,6 +249,68 @@ const groupReactions = (
   );
 };
 
+function ChatCaseMentionText({
+  text,
+  isMine,
+  onOpenRequestId,
+}: {
+  text: string;
+  isMine: boolean;
+  onOpenRequestId?: (requestId: string) => void;
+}) {
+  const nodes = useMemo(() => {
+    const raw = String(text || "");
+    if (!raw) return [] as ReactNode[];
+    const re = new RegExp(CASE_MENTION_TOKEN_RE.source, "g");
+    const out: ReactNode[] = [];
+    let last = 0;
+    let match: RegExpExecArray | null;
+    let key = 0;
+    while ((match = re.exec(raw)) != null) {
+      const start = match.index;
+      if (start > last) {
+        out.push(raw.slice(last, start));
+      }
+      const inner = String(match[1] || "");
+      const { requestId, patientName } = parseCaseMentionInner(inner);
+      const label = formatCaseMentionLabel(requestId, patientName) || match[0];
+      if (requestId && typeof onOpenRequestId === "function") {
+        out.push(
+          <button
+            key={`case-${key++}`}
+            type="button"
+            className={cn(
+              "inline break-all rounded px-0.5 font-medium underline underline-offset-2",
+              isMine
+                ? "text-primary-foreground/95 hover:bg-primary-foreground/15"
+                : "text-primary hover:bg-primary/10",
+            )}
+            title="작업현황 열기"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onOpenRequestId(requestId);
+            }}
+          >
+            {label}
+          </button>,
+        );
+      } else {
+        out.push(
+          <span key={`case-${key++}`} className="font-medium">
+            {label}
+          </span>,
+        );
+      }
+      last = start + match[0].length;
+    }
+    if (last < raw.length) out.push(raw.slice(last));
+    return out;
+  }, [text, isMine, onOpenRequestId]);
+
+  return <>{nodes}</>;
+}
+
 export function ChatMessageBubble({
   message,
   isMine,
@@ -252,6 +323,7 @@ export function ChatMessageBubble({
   onToggleReaction,
   reactionUserNameById = {},
   onOpenAttachment,
+  onOpenRequestId,
   formatFileSize,
   downloadingFileKeys = [],
   downloadProgressByKey = {},
@@ -690,7 +762,11 @@ export function ChatMessageBubble({
 
             {hasTextContent ? (
               <p className="min-w-0 whitespace-pre-wrap break-words [overflow-wrap:anywhere] leading-snug">
-                {message.content}
+                <ChatCaseMentionText
+                  text={String(message.content || "")}
+                  isMine={isMine}
+                  onOpenRequestId={onOpenRequestId}
+                />
               </p>
             ) : null}
 

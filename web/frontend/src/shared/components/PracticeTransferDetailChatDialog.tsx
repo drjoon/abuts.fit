@@ -388,6 +388,8 @@ type PracticeTransferDetailChatDialogProps = {
   requestPicks?: RequestPickItem[];
   requestPicksLoading?: boolean;
   onRequestPicksNeeded?: () => void;
+  /** 채팅 본문 의뢰ID 클릭 → 해당 의뢰 작업현황 */
+  onOpenRequestId?: (requestId: string) => void;
   /** 전송 중(ChatComposer isSending). 빈 draft 차단은 Composer가 처리 */
   sendDisabled?: boolean;
   /** 치과: 수락 전 의뢰 내용을 작성 폼으로 불러와 수정 */
@@ -498,6 +500,7 @@ export function PracticeTransferDetailChatDialog({
   requestPicks,
   requestPicksLoading = false,
   onRequestPicksNeeded,
+  onOpenRequestId,
   sendDisabled = false,
   onEditRequest,
   editRequestDisabled = false,
@@ -2291,6 +2294,7 @@ export function PracticeTransferDetailChatDialog({
                             downloadProgressByKey={downloadProgressByKey}
                             onReply={onReplyToMessage}
                             onToggleReaction={onToggleReaction}
+                            onOpenRequestId={onOpenRequestId}
                             onOpenAttachment={(file) =>
                               void onDownloadChatAttachment({
                                 fileId: file.fileId,

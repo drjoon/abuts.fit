@@ -19,6 +19,7 @@
 // - web/frontend/src/shared/hooks/useFilePreUpload.ts
 // - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
+// - web/frontend/src/shared/practice/openPracticeTransferChat.ts
 // - web/frontend/src/shared/components/practice/LabReceiveDualRoleAssignDialog.tsx
 // - web/frontend/src/shared/components/practice/LabReceiveWorkUploadDialog.tsx
 // - web/frontend/src/shared/components/practice/PracticeLabReceiveWorkActionsBar.tsx
@@ -225,6 +226,10 @@ import {
   type PracticeTransferDialogFileItem,
   type PracticeTransferDialogSummaryItem,
 } from "@/shared/components/PracticeTransferDetailChatDialog";
+import {
+  OPEN_PRACTICE_TRANSFER_CHAT_EVENT,
+  type OpenPracticeTransferChatDetail,
+} from "@/shared/practice/openPracticeTransferChat";
 import { RequestDetailDialog } from "@/features/requests/components/RequestDetailDialog";
 import { LabPracticeFeeSurchargeControl } from "@/shared/components/practice/LabPracticeFeeSurchargeControl";
 import { CounterpartyMemoStrip } from "@/shared/components/practice/CounterpartyMemoStrip";
@@ -628,6 +633,7 @@ export function RequestorPracticeReceivePage({
     (s) => s.setLabReceiveCalendarHiddenWeekdays,
   );
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const isMobile = useIsMobile();
   const { period, setPeriod } = usePeriodStore();
   const { toast } = useToast();
@@ -5013,7 +5019,10 @@ export function RequestorPracticeReceivePage({
   );
 
   const openTransferDialog = useCallback(
-    async (transfer: ReceivedPracticeTransfer) => {
+    async (
+      transfer: ReceivedPracticeTransfer,
+      options?: { panel?: "chat" | "detail" },
+    ) => {
       if (!token && !isGuideTourDemoTransfer(transfer)) return;
       const resolveSeq = ++chatRoomResolveSeqRef.current;
 
@@ -5028,8 +5037,14 @@ export function RequestorPracticeReceivePage({
         return;
       }
 
-      // 미읽음(첫 확인) → 의뢰 상세, 이미 읽음(진행중) → 진행 상황
-      setDialogInitialPanelTab(transfer.isRead ? "chat" : "detail");
+      const panel =
+        options?.panel === "chat" || options?.panel === "detail"
+          ? options.panel
+          : transfer.isRead
+            ? "chat"
+            : "detail";
+      // 미읽음(첫 확인) → 의뢰 상세, 이미 읽음(진행중) → 진행 상황 (옵션으로 고정 가능)
+      setDialogInitialPanelTab(panel);
       setSelectedTransfer(transfer);
       setDialogOpen(true);
       setChatError("");
@@ -5041,6 +5056,59 @@ export function RequestorPracticeReceivePage({
     },
     [chatUploads, markTransferRead, resolveTransferChatRoom, setChatMessages, token],
   );
+
+  const openTransferWorkStatusById = useCallback(
+    (transferIdRaw: string, panel: "chat" | "detail" = "chat") => {
+      const transferId = String(transferIdRaw || "").trim();
+      if (!transferId) return;
+      const transfer =
+        transfers.find(
+          (row) => String(row.transferId || "").trim() === transferId,
+        ) || null;
+      if (!transfer) {
+        toast({
+          title: "의뢰건을 찾을 수 없습니다",
+          description: transferId,
+          variant: "destructive",
+        });
+        return;
+      }
+      void openTransferDialog(transfer, { panel });
+    },
+    [openTransferDialog, toast, transfers],
+  );
+
+  useEffect(() => {
+    const onOpen = (evt: Event) => {
+      const detail =
+        evt instanceof CustomEvent
+          ? ((evt as CustomEvent<OpenPracticeTransferChatDetail>).detail ||
+              {})
+          : {};
+      const transferId = String(detail.transferId || "").trim();
+      if (!transferId) return;
+      const panel = detail.panel === "detail" ? "detail" : "chat";
+      openTransferWorkStatusById(transferId, panel);
+    };
+    window.addEventListener(OPEN_PRACTICE_TRANSFER_CHAT_EVENT, onOpen);
+    return () => {
+      window.removeEventListener(OPEN_PRACTICE_TRANSFER_CHAT_EVENT, onOpen);
+    };
+  }, [openTransferWorkStatusById]);
+
+  useEffect(() => {
+    const transferId = String(searchParams.get("openTransfer") || "").trim();
+    if (!transferId) return;
+    if (
+      !transfers.some((row) => String(row.transferId || "").trim() === transferId)
+    ) {
+      return;
+    }
+    openTransferWorkStatusById(transferId, "chat");
+    const next = new URLSearchParams(searchParams);
+    next.delete("openTransfer");
+    setSearchParams(next, { replace: true });
+  }, [openTransferWorkStatusById, searchParams, setSearchParams, transfers]);
 
   const handleDownload = useCallback(
     async (file: ReceivedPracticeFile) => {
@@ -6070,6 +6138,9 @@ export function RequestorPracticeReceivePage({
           }))
           .filter((row) => row.requestId)
           .slice(0, 40)}
+        onOpenRequestId={(requestId) =>
+          openTransferWorkStatusById(requestId, "chat")
+        }
         inputDisabled={chatLoading || chatSending || !activeChatRoom?._id}
         sendDisabled={chatSending}
       />

@@ -7,6 +7,7 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferMobileOralPhotoIntake.tsx
 // - web/frontend/src/features/chat/components/NewChatWidget.tsx
 // change-log:
+// - 2026-09-07: $ 목록 화살표 선택·의뢰ID+환자이름 토큰 삽입.
 // - 2026-09-07: $ 입력으로 의뢰건 불러오기·placeholder 안내.
 // - 2026-08-21: textarea flex-1 제거·루트 shrink-0 — 채팅 레이아웃에서 입력칸이 내역 높이를 잠식하지 않게.
 // - 2026-08-27: 모바일 사진찍기(capture) — 채팅에서 바로 촬영·업로드.
@@ -31,6 +32,9 @@ import {
   MessageReply,
   type ReplyToMessage,
 } from "@/features/chat/components/MessageReply";
+import {
+  buildCaseMentionToken,
+} from "@/features/chat/components/chatCaseMention";
 import { useIsMobile } from "@/shared/hooks/use-mobile";
 import { useToast } from "@/shared/hooks/use-toast";
 import { normalizeOralPhotoFiles } from "@/shared/components/practice/PracticeTransferMobileOralPhotoIntake";
@@ -111,12 +115,15 @@ export const ChatComposer = (props: Props) => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const pickItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const [hashOpen, setHashOpen] = useState(false);
   const [dollarOpen, setDollarOpen] = useState(false);
   const [cursor, setCursor] = useState(0);
+  const [highlightIndex, setHighlightIndex] = useState(0);
   const [cameraBusy, setCameraBusy] = useState(false);
   const isMobile = useIsMobile();
   const { toast } = useToast();
+  const pickListOpen = dollarOpen || hashOpen;
 
   const hasFiles = Array.isArray(pendingUploads) && pendingUploads.length > 0;
   const hasRequestPicks =
@@ -167,15 +174,35 @@ export const ChatComposer = (props: Props) => {
     onRequestPicksNeededRef.current?.();
   }, [canInsertRequestId, mention?.start, mention?.query]);
 
+  useEffect(() => {
+    setHighlightIndex(0);
+  }, [mention?.query, filteredPicks.length, dollarOpen, hashOpen]);
+
+  useEffect(() => {
+    if (!pickListOpen) return;
+    const el = pickItemRefs.current[highlightIndex];
+    el?.scrollIntoView({ block: "nearest" });
+  }, [highlightIndex, pickListOpen, filteredPicks.length]);
+
   const syncCursor = () => {
     const el = textareaRef.current;
     if (!el) return;
     setCursor(el.selectionStart ?? el.value.length);
   };
 
-  const insertCaseToken = (requestId: string) => {
+  const insertCaseToken = (pick: RequestPickItem | string) => {
     if (!canInsertRequestId) return;
-    const token = `[의뢰ID:${requestId}]`;
+    const requestId =
+      typeof pick === "string"
+        ? String(pick || "").trim()
+        : String(pick.requestId || "").trim();
+    if (!requestId) return;
+    const patientName =
+      typeof pick === "string"
+        ? ""
+        : String(pick.patientName || "").trim();
+    const token = buildCaseMentionToken(requestId, patientName);
+    if (!token) return;
     const el = textareaRef.current;
     const cur = el?.selectionStart ?? cursor;
     const activeMention = getDollarMentionAtCursor(draft, cur);
@@ -238,8 +265,8 @@ export const ChatComposer = (props: Props) => {
     isMobile ? "h-11 w-11 touch-manipulation" : "h-9 w-9",
   );
 
-  const renderPickList = (onPick: (id: string) => void) => (
-    <div className="max-h-56 space-y-1 overflow-y-auto">
+  const renderPickList = (onPick: (pick: RequestPickItem) => void) => (
+    <div className="max-h-56 space-y-1 overflow-y-auto" role="listbox">
       {requestPicksLoading && !hasRequestPicks ? (
         <div className="px-2 py-3 text-center text-xs text-muted-foreground">
           의뢰건을 불러오는 중…
@@ -252,22 +279,36 @@ export const ChatComposer = (props: Props) => {
             : "불러올 의뢰건이 없습니다."}
         </div>
       ) : null}
-      {filteredPicks.map((r) => (
-        <button
-          key={r.requestId}
-          type="button"
-          className="w-full rounded px-2 py-1.5 text-left text-xs hover:bg-muted"
-          onClick={() => onPick(r.requestId)}
-        >
-          <div className="font-medium">{r.requestId}</div>
-          {(r.patientName || r.tooth) && (
-            <div className="truncate text-muted-foreground">
-              {r.patientName || ""}
-              {r.tooth ? ` / ${r.tooth}` : ""}
-            </div>
-          )}
-        </button>
-      ))}
+      {filteredPicks.map((r, index) => {
+        const selected = pickListOpen && index === highlightIndex;
+        return (
+          <button
+            key={r.requestId}
+            ref={(el) => {
+              pickItemRefs.current[index] = el;
+            }}
+            type="button"
+            role="option"
+            aria-selected={selected}
+            className={cn(
+              "w-full rounded px-2 py-1.5 text-left text-xs hover:bg-muted",
+              selected && "bg-muted",
+            )}
+            onMouseEnter={() => setHighlightIndex(index)}
+            onClick={() => onPick(r)}
+          >
+            <div className="font-medium">{r.requestId}</div>
+            {r.patientName ? (
+              <div className="truncate text-muted-foreground">
+                {r.patientName}
+              </div>
+            ) : null}
+            {r.tooth ? (
+              <div className="truncate text-muted-foreground">{r.tooth}</div>
+            ) : null}
+          </button>
+        );
+      })}
     </div>
   );
 
@@ -327,22 +368,45 @@ export const ChatComposer = (props: Props) => {
         rows={isMobile ? 2 : compact ? 2 : 3}
         disabled={!!disabled || !!isSending}
         onKeyDown={(e) => {
-          if (e.key === "Escape" && dollarOpen) {
+          if (e.nativeEvent.isComposing) return;
+
+          if (e.key === "Escape" && (dollarOpen || hashOpen)) {
             e.preventDefault();
             setDollarOpen(false);
+            setHashOpen(false);
             return;
           }
-          if (dollarOpen && e.key === "Enter" && !e.shiftKey) {
-            if (e.nativeEvent.isComposing) return;
-            if (filteredPicks.length === 1) {
+
+          if (pickListOpen && filteredPicks.length > 0) {
+            if (e.key === "ArrowDown") {
               e.preventDefault();
-              insertCaseToken(filteredPicks[0]!.requestId);
+              setHighlightIndex((prev) =>
+                Math.min(filteredPicks.length - 1, prev + 1),
+              );
+              return;
+            }
+            if (e.key === "ArrowUp") {
+              e.preventDefault();
+              setHighlightIndex((prev) => Math.max(0, prev - 1));
+              return;
+            }
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              const pick =
+                filteredPicks[highlightIndex] || filteredPicks[0] || null;
+              if (pick) insertCaseToken(pick);
+              return;
+            }
+            if (e.key === "Tab") {
+              e.preventDefault();
+              const pick =
+                filteredPicks[highlightIndex] || filteredPicks[0] || null;
+              if (pick) insertCaseToken(pick);
               return;
             }
           }
+
           if (e.key === "Enter" && !e.shiftKey) {
-            if (e.nativeEvent.isComposing) return;
-            if (dollarOpen && filteredPicks.length > 0) return;
             e.preventDefault();
             onSend();
           }
@@ -456,9 +520,7 @@ export const ChatComposer = (props: Props) => {
                 <div className="mb-1 px-1 text-[11px] font-medium text-muted-foreground">
                   의뢰건 선택 · $ 로도 불러올 수 있습니다
                 </div>
-                {renderPickList((id) => {
-                  insertCaseToken(id);
-                })}
+                {renderPickList(insertCaseToken)}
               </PopoverContent>
             </Popover>
           ) : null}
