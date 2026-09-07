@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-09-07: 프리셋 라벨 truncate 제거 → line-clamp-2. 긴 규격도 한 카드에 보이게.
 // - 2026-08-27: 프리셋 카드 2열 + 편집/삭제는 호버 시 우상단 표시(커스텀어벗 설정).
 // - 2026-08-25: presets 목록 높이 축소(모달 세로·심플어벗 3열 대응). dimmed 지원(심플어벗 XOR).
 // - 2026-08-21: 스캔바디 추가 시 현재 선택값 기본 채움. 스피너 직경 0.5·높이 2, 직접입력 제한 없음.
@@ -46,12 +47,12 @@ type Props = {
   dimmed?: boolean;
 };
 
-/** 프리셋 행(h-8 + py-1.5×2 + border 2px) × 4 + gap × 3. 2열·초과 시 스크롤. */
+/** 프리셋 행(2줄 line-clamp + py-2×2 + border) × 4 + gap × 3. 2열·초과 시 스크롤. */
 const PRESET_LIST_CLASS =
-  "max-h-[calc(4*(2.75rem+2px)+3*0.375rem)] grid grid-cols-2 content-start gap-1.5 overflow-y-auto overflow-x-hidden pr-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-slate-100";
-/** presets 전용 — 설정 모달(심플어벗 3열)에 맞춤(최소 6행). */
+  "max-h-[calc(4*(3.5rem+2px)+3*0.375rem)] grid grid-cols-2 content-start gap-1.5 overflow-y-auto overflow-x-hidden pr-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-slate-100";
+/** presets 전용 — 설정 모달(심플어벗 3열)에 맞춤(최소 6행, 2줄 라벨 여유). */
 const PRESET_LIST_CLASS_TALL =
-  "min-h-[calc(6*(2.75rem+2px)+5*0.375rem)] flex-1 grid grid-cols-2 content-start gap-1.5 overflow-y-auto overflow-x-hidden pr-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-slate-100";
+  "min-h-[calc(6*(3.5rem+2px)+5*0.375rem)] flex-1 grid grid-cols-2 content-start gap-1.5 overflow-y-auto overflow-x-hidden pr-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-slate-100";
 
 const favoriteKey = (row: {
   manufacturer: string;
@@ -480,7 +481,7 @@ export const PracticeToothAbutmentFields = ({
                 >
                   <button
                     type="button"
-                    className="block w-full min-w-0 truncate rounded px-0.5 py-0.5 text-left text-sm font-semibold text-slate-800 hover:text-service-abut"
+                    className="block w-full min-w-0 whitespace-normal break-words rounded px-0.5 py-0.5 text-left text-sm font-semibold leading-snug text-slate-800 line-clamp-2 hover:text-service-abut"
                     title={favoriteLabel(fav)}
                     onClick={() =>
                       onChange({

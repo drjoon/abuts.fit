@@ -194,6 +194,7 @@ import {
 // - 2026-09-05: 견적→뒤로 프리셋 — Spotlight 클릭 outside dismiss로 모달 즉시 닫힘 방지·다음 틱 재오픈.
 // - 2026-09-05: 견적 투어 — 하이라이트에 금액이 보이게 blur 해제(툴팁 체험은 유지).
 // - 2026-09-05: 가이드투어 견적 — pointerenter 650ms 대신 툴팁 실오픈 후 진행(레이스 방지).
+// - 2026-09-07: 커스텀어벗 설정 모달 폭 48→64rem. 스캔바디 긴 프리셋 라벨용(카드 2줄은 AbutmentFields).
 // - 2026-09-05: 커스텀어벗 설정 — 임플란트→스캔바디/심플어벗 2단 위저드. 이전·다음·좁은 폭. 화면 중앙. 제목 단축. 2단 좌우. STL 버튼 가운데.
 // - 2026-09-05: 커스텀어벗 모달 — 치식 투어 중 강제 닫기·DialogContent에 data-guide-tour(홀=모달 전체).
 // - 2026-09-05: 커스텀어벗 모달 — 상단 고정·dvh 높이·투어 z 상승·치식 스텝에서 오픈 차단(하단 잘림).
@@ -4905,8 +4906,8 @@ export const PracticeTransferRequestIntakePanel = ({
       >
         <DialogContent
           className={cn(
-            // 화면 중앙. 2단(스캔바디|심플어벗 좌우) 기준 폭. max-h로 뷰포트 넘침만 방지
-            "guide-tour-nested-dialog flex max-h-[calc(100dvh-2rem)] w-[min(48rem,calc(100vw-1.5rem))] flex-col gap-3 overflow-hidden p-4 sm:max-w-[min(48rem,calc(100vw-1.5rem))] sm:p-5",
+            // 화면 중앙. 스캔바디 프리셋 긴 라벨용 폭(초과는 카드 2줄). max-h로 뷰포트 넘침만 방지
+            "guide-tour-nested-dialog flex max-h-[calc(100dvh-2rem)] w-[min(64rem,calc(100vw-1.5rem))] flex-col gap-3 overflow-hidden p-4 sm:max-w-[min(64rem,calc(100vw-1.5rem))] sm:p-5",
             // 프리셋 투어: 코치마크 자리 확보(상단 여백)
             isPresetGuideTourStep &&
               "!top-[10.5rem] !translate-y-0 max-h-[calc(100dvh-11.5rem)]",
