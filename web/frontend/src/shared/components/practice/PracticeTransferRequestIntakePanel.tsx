@@ -17,10 +17,10 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronsUpDown,
-  GripVertical,
   Link2,
   Loader2,
   Minus,
+  Pencil,
   Pin,
   Plus,
   Trash2,
@@ -82,6 +82,16 @@ import { PracticeToothImplantFields } from "@/shared/components/practice/Practic
 import { PracticeToothAbutmentFields } from "@/shared/components/practice/PracticeToothAbutmentFields";
 import { PracticeToothSimpleAbutmentFields } from "@/shared/components/practice/PracticeToothSimpleAbutmentFields";
 import { PracticeCustomSpecsPresetEditDialog } from "@/shared/components/practice/PracticeCustomSpecsPresetEditDialog";
+import { PracticeRequestStagePresetDialog } from "@/shared/components/practice/PracticeRequestStagePresetDialog";
+import {
+  normalizeLabRequestStagePlans,
+  normalizeRequestStagePresets,
+  prosthesisTypeHasRequestStages,
+  resolveRequestStagePreset,
+  upsertRequestStagePreset,
+  type PracticeLabRequestStagePlan,
+  type PracticeRequestStagePreset,
+} from "@/shared/practice/requestStagePresets";
 import {
   getPracticeToothWorkGuideTourStepId,
   isCustomAbutGuideTourStepId,
@@ -169,6 +179,7 @@ import {
   ARCH_BULK_PROSTHESIS_PRESETS,
   createProsthesisFeeItemRequest,
   isArchBulkProsthesisPreset,
+  normalizeArchBulkProsthesisTypes,
 } from "@/shared/practice/prosthesisFeeItemRequest";
 
 // related files:
@@ -207,6 +218,8 @@ import {
 // - 2026-09-05: 플랫폼 투어 — 기공소 팝오버 강제오픈 안 함(위치 고정). 수동 오픈 시 z-430.
 // - 2026-09-05: 가이드투어 — 환자명에서 뒤로 시 기공소 팝오버 강제오픈·즉시 3 재진입 방지.
 // - 2026-09-05: 전체 선택 — 상·하악·전체틀니/부분틀니/랩어라운드/커스텀 추가.
+// - 2026-09-07: 전체치열 좌측 목록 — 호버 편집/삭제·드래그 정렬·계정 저장.
+// - 2026-09-07: 전체치열 편집/삭제 — group-focus-within 제거(모달 오픈 시 첫 항목 포커스로 아이콘 상시 노출 방지).
 // - 2026-09-05: 전체 선택 모달 — 악궁 좌·타입 우 한 줄씩, + 추가, 악궁 내 + 연결.
 // - 2026-09-05: 전체 선택 모달 — 고정 폭·높이, 커스텀 입력 X 인라인, Enter 적용.
 // - 2026-08-25: 기공소·환자·날짜 투어 카드 — 헤더 버튼~입력 행 세로 맞춤, 폭=주문-치과도착 열.
@@ -816,6 +829,17 @@ export type PracticeTransferRequestIntakePanelProps = {
   setProsthesisTypeSettingsDialogOpen: (open: boolean) => void;
   /** 전체 선택·커스텀 추가 시 카탈로그에 타입 합침 */
   onEnsureProsthesisTypesInCatalog?: (types: string[]) => void;
+  /** 전체치열 모달 좌측 보철물 목록(계정 설정). 없으면 기본 프리셋 */
+  archBulkProsthesisTypes?: string[];
+  onArchBulkProsthesisTypesChange?: (next: string[]) => void | Promise<void>;
+  /** 다단계 기공의뢰(틀니 등) 단계 프리셋 */
+  requestStagePresets?: PracticeRequestStagePreset[];
+  onRequestStagePresetsChange?: (
+    next: PracticeRequestStagePreset[],
+  ) => void | Promise<void>;
+  /** 이번 의뢰에 적용할 단계 계획 스냅샷 */
+  labRequestStagePlans?: PracticeLabRequestStagePlan[];
+  onLabRequestStagePlansChange?: (next: PracticeLabRequestStagePlan[]) => void;
   toothWorks: ToothWorkSelection[];
   setToothWorks: Dispatch<SetStateAction<ToothWorkSelection[]>>;
   requestMemo: string;
@@ -947,6 +971,12 @@ export const PracticeTransferRequestIntakePanel = ({
   setProsthesisTypeCatalogDraft,
   setProsthesisTypeSettingsDialogOpen,
   onEnsureProsthesisTypesInCatalog,
+  archBulkProsthesisTypes,
+  onArchBulkProsthesisTypesChange,
+  requestStagePresets: requestStagePresetsProp,
+  onRequestStagePresetsChange,
+  labRequestStagePlans: labRequestStagePlansProp,
+  onLabRequestStagePlansChange,
   toothWorks,
   setToothWorks,
   requestMemo,
@@ -1106,7 +1136,194 @@ export const PracticeTransferRequestIntakePanel = ({
     setArchSelectCustomOpen(false);
     setArchDragType(null);
     setArchDropHover(null);
+    setArchEditingIndex(null);
+    setArchEditDraft("");
+    setArchReorderFromIndex(null);
+    setArchReorderHoverIndex(null);
     setArchSelectModalOpen(true);
+  };
+
+  const archBulkListFromProps = useMemo(
+    () =>
+      normalizeArchBulkProsthesisTypes(
+        Array.isArray(archBulkProsthesisTypes)
+          ? archBulkProsthesisTypes
+          : [...ARCH_BULK_PROSTHESIS_PRESETS],
+      ),
+    [archBulkProsthesisTypes],
+  );
+  const [archBulkList, setArchBulkList] = useState(archBulkListFromProps);
+  useEffect(() => {
+    setArchBulkList(archBulkListFromProps);
+  }, [archBulkListFromProps]);
+
+  const requestStagePresets = useMemo(
+    () =>
+      normalizeRequestStagePresets(
+        Array.isArray(requestStagePresetsProp)
+          ? requestStagePresetsProp
+          : null,
+      ),
+    [requestStagePresetsProp],
+  );
+
+  const labRequestStagePlans = useMemo(
+    () => normalizeLabRequestStagePlans(labRequestStagePlansProp),
+    [labRequestStagePlansProp],
+  );
+
+  const [stageDialogType, setStageDialogType] = useState<string | null>(null);
+  const [stageDialogQueue, setStageDialogQueue] = useState<string[]>([]);
+  const stageDialogDraftRef = useRef<PracticeLabRequestStagePlan[]>([]);
+
+  const openStageDialogsForTypes = (typeNames: string[]) => {
+    const staged = [
+      ...new Set(
+        typeNames
+          .map((t) => String(t || "").trim())
+          .filter((t) => prosthesisTypeHasRequestStages(t, requestStagePresets)),
+      ),
+    ];
+    if (staged.length === 0) return;
+    stageDialogDraftRef.current = labRequestStagePlans.map((p) => ({
+      ...p,
+      stages: p.stages.map((s) => ({ ...s })),
+    }));
+    setStageDialogQueue(staged.slice(1));
+    setStageDialogType(staged[0] || null);
+  };
+
+  const applyStageDialogConfirm = (
+    stages: PracticeRequestStagePreset["stages"],
+  ) => {
+    const typeName = String(stageDialogType || "").trim();
+    if (!typeName) return;
+    const nextPlans = normalizeLabRequestStagePlans([
+      ...stageDialogDraftRef.current.filter(
+        (row) =>
+          row.prosthesisType.toLowerCase() !== typeName.toLowerCase(),
+      ),
+      {
+        prosthesisType: typeName,
+        stages,
+        currentIndex: 0,
+      },
+    ]);
+    stageDialogDraftRef.current = nextPlans;
+    onLabRequestStagePlansChange?.(nextPlans);
+
+    const firstOffset = stages[0]?.arrivalOffsetDays;
+    if (
+      typeof firstOffset === "number" &&
+      Number.isFinite(firstOffset) &&
+      orderDate &&
+      /^\d{4}-\d{2}-\d{2}$/.test(String(orderDate).trim())
+    ) {
+      const base = new Date(`${String(orderDate).trim()}T00:00:00+09:00`);
+      if (!Number.isNaN(base.getTime())) {
+        base.setDate(base.getDate() + Math.max(0, Math.floor(firstOffset)));
+        const nextArrival = new Intl.DateTimeFormat("en-CA", {
+          timeZone: "Asia/Seoul",
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+        }).format(base);
+        if (onOrderArrivalDatesChange) {
+          onOrderArrivalDatesChange({
+            orderDate,
+            arrivalDate: nextArrival,
+          });
+        } else {
+          setArrivalDate(nextArrival);
+        }
+      }
+    }
+
+    const rest = stageDialogQueue;
+    if (rest.length > 0) {
+      setStageDialogQueue(rest.slice(1));
+      setStageDialogType(rest[0] || null);
+      return;
+    }
+    setStageDialogType(null);
+    setStageDialogQueue([]);
+  };
+
+  const commitArchBulkList = (next: string[]) => {
+    const normalized = normalizeArchBulkProsthesisTypes(next);
+    if (
+      normalized.length === archBulkList.length &&
+      normalized.every((name, i) => name === archBulkList[i])
+    ) {
+      return;
+    }
+    setArchBulkList(normalized);
+    void onArchBulkProsthesisTypesChange?.(normalized);
+  };
+
+  const commitArchBulkRename = (index: number) => {
+    const nextName = String(archEditDraft || "").trim();
+    setArchEditingIndex(null);
+    setArchEditDraft("");
+    if (!nextName) return;
+    const next = [...archBulkList];
+    if (!next[index]) return;
+    if (next[index] === nextName) return;
+    const dup = next.some(
+      (name, i) =>
+        i !== index && name.toLowerCase() === nextName.toLowerCase(),
+    );
+    if (dup) {
+      toast({
+        title: "이미 있는 이름입니다",
+        variant: "destructive",
+      });
+      return;
+    }
+    next[index] = nextName;
+    commitArchBulkList(next);
+  };
+
+  const deleteArchBulkItem = (index: number) => {
+    if (archEditingIndex === index) {
+      setArchEditingIndex(null);
+      setArchEditDraft("");
+    }
+    commitArchBulkList(archBulkList.filter((_, i) => i !== index));
+  };
+
+  const addArchBulkCustomItem = () => {
+    const name = String(archSelectCustomName || "").trim();
+    if (!name) return;
+    if (
+      archBulkList.some((item) => item.toLowerCase() === name.toLowerCase())
+    ) {
+      toast({
+        title: "이미 있는 이름입니다",
+        variant: "destructive",
+      });
+      return;
+    }
+    commitArchBulkList([...archBulkList, name]);
+    setArchSelectCustomName("");
+    setArchSelectCustomOpen(false);
+  };
+
+  const reorderArchBulkList = (fromIndex: number, toIndex: number) => {
+    if (
+      fromIndex < 0 ||
+      toIndex < 0 ||
+      fromIndex >= archBulkList.length ||
+      toIndex >= archBulkList.length ||
+      fromIndex === toIndex
+    ) {
+      return;
+    }
+    const next = [...archBulkList];
+    const [moved] = next.splice(fromIndex, 1);
+    if (!moved) return;
+    next.splice(toIndex, 0, moved);
+    commitArchBulkList(next);
   };
 
   const openExtraRequestModal = () => {
@@ -1202,6 +1419,16 @@ export const PracticeTransferRequestIntakePanel = ({
       ...new Set(selectedArches.map((row) => row.typeName).filter(Boolean)),
     ];
     onEnsureProsthesisTypesInCatalog?.(uniqueTypes);
+    const mergedArchBulk = normalizeArchBulkProsthesisTypes([
+      ...archBulkList,
+      ...uniqueTypes,
+    ]);
+    if (
+      mergedArchBulk.length !== archBulkList.length ||
+      mergedArchBulk.some((name, i) => name !== archBulkList[i])
+    ) {
+      void onArchBulkProsthesisTypesChange?.(mergedArchBulk);
+    }
 
     setToothWorks((prev) => {
       const kept = prev
@@ -1251,6 +1478,7 @@ export const PracticeTransferRequestIntakePanel = ({
     });
 
     setArchSelectModalOpen(false);
+    openStageDialogsForTypes(uniqueTypes);
   };
 
   const { quote: feeQuote } = usePracticeTransferFeeQuote({
@@ -1306,6 +1534,14 @@ export const PracticeTransferRequestIntakePanel = ({
   const [archDropHover, setArchDropHover] = useState<"upper" | "lower" | null>(
     null,
   );
+  const [archEditingIndex, setArchEditingIndex] = useState<number | null>(null);
+  const [archEditDraft, setArchEditDraft] = useState("");
+  const [archReorderFromIndex, setArchReorderFromIndex] = useState<number | null>(
+    null,
+  );
+  const [archReorderHoverIndex, setArchReorderHoverIndex] = useState<
+    number | null
+  >(null);
   const [extraRequestModalOpen, setExtraRequestModalOpen] = useState(false);
   const [extraRequestContent, setExtraRequestContent] = useState("");
   const [extraRequestLabIds, setExtraRequestLabIds] = useState<string[]>([]);
@@ -4669,6 +4905,10 @@ export const PracticeTransferRequestIntakePanel = ({
             setArchSelectCustomOpen(false);
             setArchDragType(null);
             setArchDropHover(null);
+            setArchEditingIndex(null);
+            setArchEditDraft("");
+            setArchReorderFromIndex(null);
+            setArchReorderHoverIndex(null);
           }
         }}
       >
@@ -4681,6 +4921,7 @@ export const PracticeTransferRequestIntakePanel = ({
           overlayClassName={nestedDialogOverlayClassName}
           onKeyDown={(e) => {
             if (e.key !== "Enter") return;
+            if (archEditingIndex != null || archSelectCustomOpen) return;
             if (!archDropUpperType && !archDropLowerType) return;
             e.preventDefault();
             applyArchBulkProsthesisSelection();
@@ -4691,91 +4932,209 @@ export const PracticeTransferRequestIntakePanel = ({
               전체치열
             </DialogTitle>
             <DialogDescription className="sr-only">
-              왼쪽 보철물을 오른쪽 상·하악으로 드래그해 올립니다.
+              왼쪽 보철물을 오른쪽 상·하악으로 드래그해 올립니다. 목록은 호버로
+              편집·삭제하고, 드래그로 순서를 바꿀 수 있습니다.
             </DialogDescription>
           </DialogHeader>
 
           <div className="flex items-stretch gap-4 px-5 pb-3 pt-2">
-            <div className="flex min-w-0 flex-1 flex-col items-center gap-2.5">
-              {ARCH_BULK_PROSTHESIS_PRESETS.map((preset) => (
-                <button
-                  key={preset}
-                  type="button"
-                  draggable
-                  onDragStart={(e) => {
-                    e.dataTransfer.setData("text/plain", preset);
-                    e.dataTransfer.effectAllowed = "copy";
-                    setArchDragType(preset);
-                  }}
-                  onDragEnd={() => {
-                    setArchDragType(null);
-                    setArchDropHover(null);
-                  }}
-                  className={cn(
-                    "flex h-10 w-full max-w-[11.5em] shrink-0 cursor-grab items-center justify-center rounded-xl border border-slate-200/90 bg-white px-2 text-center text-sm font-medium text-slate-800 transition-colors active:cursor-grabbing hover:border-slate-300 hover:bg-slate-50",
-                    archDragType === preset && "opacity-60 ring-1 ring-primary/30",
-                  )}
-                >
-                  {preset}
-                </button>
-              ))}
+            <div
+              className="flex min-w-0 flex-1 flex-col items-center gap-2.5"
+              onDragOver={(e) => {
+                if (archReorderFromIndex == null) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "move";
+              }}
+              onDrop={(e) => {
+                if (archReorderFromIndex == null) return;
+                e.preventDefault();
+                const fromRaw =
+                  e.dataTransfer.getData("application/x-arch-bulk-index") ||
+                  String(archReorderFromIndex);
+                const fromIndex = Number(fromRaw);
+                const toIndex =
+                  archReorderHoverIndex != null
+                    ? archReorderHoverIndex
+                    : archBulkList.length - 1;
+                setArchReorderFromIndex(null);
+                setArchReorderHoverIndex(null);
+                setArchDragType(null);
+                if (!Number.isFinite(fromIndex)) return;
+                reorderArchBulkList(fromIndex, toIndex);
+              }}
+            >
+              {archBulkList.map((preset, index) => {
+                const editing = archEditingIndex === index;
+                const dragging =
+                  archDragType === preset || archReorderFromIndex === index;
+                const reorderTarget =
+                  archReorderFromIndex != null &&
+                  archReorderHoverIndex === index &&
+                  archReorderFromIndex !== index;
+                if (editing) {
+                  return (
+                    <div
+                      key={`arch-edit-${index}`}
+                      className="relative flex h-10 w-full max-w-[11.5em] shrink-0 items-center"
+                    >
+                      <Input
+                        value={archEditDraft}
+                        onChange={(e) => setArchEditDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            commitArchBulkRename(index);
+                            return;
+                          }
+                          if (e.key === "Escape") {
+                            e.preventDefault();
+                            setArchEditingIndex(null);
+                            setArchEditDraft("");
+                          }
+                        }}
+                        placeholder="보철물 이름"
+                        className="h-10 w-full rounded-xl px-2 pr-14 text-center text-sm"
+                        autoFocus
+                      />
+                      <div className="absolute right-1 top-1/2 flex -translate-y-1/2 items-center gap-0.5">
+                        <button
+                          type="button"
+                          className="flex h-5 w-5 items-center justify-center rounded-md text-primary transition-colors hover:bg-primary-soft"
+                          onClick={() => commitArchBulkRename(index)}
+                          aria-label="이름 저장"
+                        >
+                          <Check className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          className="flex h-5 w-5 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+                          onClick={() => {
+                            setArchEditingIndex(null);
+                            setArchEditDraft("");
+                          }}
+                          aria-label="편집 취소"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                }
+                return (
+                  <div
+                    key={`${preset}:${index}`}
+                    className={cn(
+                      "group relative flex h-10 w-full max-w-[11.5em] shrink-0",
+                      reorderTarget && "ring-1 ring-primary/40 rounded-xl",
+                    )}
+                    onDragOver={(e) => {
+                      if (archReorderFromIndex == null) return;
+                      e.preventDefault();
+                      e.stopPropagation();
+                      e.dataTransfer.dropEffect = "move";
+                      if (archReorderHoverIndex !== index) {
+                        setArchReorderHoverIndex(index);
+                      }
+                    }}
+                  >
+                    <button
+                      type="button"
+                      draggable
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData("text/plain", preset);
+                        e.dataTransfer.setData(
+                          "application/x-arch-bulk-index",
+                          String(index),
+                        );
+                        e.dataTransfer.effectAllowed = "copyMove";
+                        setArchDragType(preset);
+                        setArchReorderFromIndex(index);
+                        setArchReorderHoverIndex(null);
+                      }}
+                      onDragEnd={() => {
+                        setArchDragType(null);
+                        setArchDropHover(null);
+                        setArchReorderFromIndex(null);
+                        setArchReorderHoverIndex(null);
+                      }}
+                      className={cn(
+                        "flex h-10 w-full cursor-grab items-center justify-center rounded-xl border border-slate-200/90 bg-white px-8 text-center text-sm font-medium text-slate-800 transition-colors active:cursor-grabbing hover:border-slate-300 hover:bg-slate-50",
+                        dragging && "opacity-60 ring-1 ring-primary/30",
+                      )}
+                    >
+                      <span className="truncate">{preset}</span>
+                    </button>
+                    <div className="pointer-events-none absolute inset-y-0 right-1 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100">
+                      <button
+                        type="button"
+                        className="flex h-6 w-6 items-center justify-center rounded-md bg-white/95 text-slate-500 shadow-sm ring-1 ring-slate-200/80 transition-colors hover:bg-slate-50 hover:text-slate-800"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setArchEditingIndex(index);
+                          setArchEditDraft(preset);
+                        }}
+                        aria-label={`${preset} 편집`}
+                        title="편집"
+                      >
+                        <Pencil className="h-3 w-3" />
+                      </button>
+                      <button
+                        type="button"
+                        className="flex h-6 w-6 items-center justify-center rounded-md bg-white/95 text-slate-500 shadow-sm ring-1 ring-slate-200/80 transition-colors hover:bg-destructive/10 hover:text-destructive"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          deleteArchBulkItem(index);
+                        }}
+                        aria-label={`${preset} 삭제`}
+                        title="삭제"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
 
               {archSelectCustomOpen ? (
                 <div className="relative flex h-10 w-full max-w-[11.5em] shrink-0 items-center gap-1">
-                  <button
-                    type="button"
-                    draggable={Boolean(String(archSelectCustomName || "").trim())}
-                    disabled={!String(archSelectCustomName || "").trim()}
-                    onDragStart={(e) => {
-                      const name = String(archSelectCustomName || "").trim();
-                      if (!name) {
-                        e.preventDefault();
-                        return;
-                      }
-                      e.dataTransfer.setData("text/plain", name);
-                      e.dataTransfer.effectAllowed = "copy";
-                      setArchDragType(name);
-                    }}
-                    onDragEnd={() => {
-                      setArchDragType(null);
-                      setArchDropHover(null);
-                    }}
-                    className={cn(
-                      "flex h-10 w-7 shrink-0 items-center justify-center rounded-lg border border-slate-200/90 bg-white text-slate-400 transition-colors",
-                      String(archSelectCustomName || "").trim()
-                        ? "cursor-grab active:cursor-grabbing hover:border-slate-300 hover:text-slate-700"
-                        : "cursor-not-allowed opacity-40",
-                      archDragType === String(archSelectCustomName || "").trim() &&
-                        Boolean(String(archSelectCustomName || "").trim()) &&
-                        "opacity-60 ring-1 ring-primary/30",
-                    )}
-                    aria-label="커스텀 보철물 드래그"
-                    title={
-                      String(archSelectCustomName || "").trim()
-                        ? "드래그해서 올려 주세요"
-                        : "이름을 입력한 뒤 드래그하세요"
-                    }
-                  >
-                    <GripVertical className="h-3.5 w-3.5" />
-                  </button>
                   <Input
                     value={archSelectCustomName}
                     onChange={(e) => setArchSelectCustomName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key !== "Enter") return;
+                      e.preventDefault();
+                      e.stopPropagation();
+                      addArchBulkCustomItem();
+                    }}
                     placeholder="보철물 이름"
-                    className="h-10 min-w-0 flex-1 rounded-xl px-2 pr-7 text-center text-sm"
+                    className="h-10 min-w-0 flex-1 rounded-xl px-2 pr-14 text-center text-sm"
                     autoFocus
                   />
-                  <button
-                    type="button"
-                    className="absolute right-1 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
-                    onClick={() => {
-                      setArchSelectCustomOpen(false);
-                      setArchSelectCustomName("");
-                    }}
-                    aria-label="커스텀 입력 닫기"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
+                  <div className="absolute right-1 top-1/2 flex -translate-y-1/2 items-center gap-0.5">
+                    <button
+                      type="button"
+                      className="flex h-5 w-5 items-center justify-center rounded-md text-primary transition-colors hover:bg-primary-soft disabled:opacity-40"
+                      disabled={!String(archSelectCustomName || "").trim()}
+                      onClick={addArchBulkCustomItem}
+                      aria-label="보철물 추가"
+                    >
+                      <Check className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      className="flex h-5 w-5 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+                      onClick={() => {
+                        setArchSelectCustomOpen(false);
+                        setArchSelectCustomName("");
+                      }}
+                      aria-label="커스텀 입력 닫기"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <button
@@ -4835,6 +5194,8 @@ export const PracticeTransferRequestIntakePanel = ({
                       const typeName = String(raw || "").trim();
                       setArchDropHover(null);
                       setArchDragType(null);
+                      setArchReorderFromIndex(null);
+                      setArchReorderHoverIndex(null);
                       if (!typeName) return;
                       zone.setValue(typeName);
                     }}
@@ -4876,7 +5237,7 @@ export const PracticeTransferRequestIntakePanel = ({
           </div>
 
           <p className="px-5 pb-4 pt-1 text-center text-[11px] leading-relaxed text-slate-500">
-            드래그해서 올려 주세요
+            드래그해서 올려 주세요 · 목록은 드래그로 순서 변경
           </p>
 
           <DialogFooter className="gap-2 border-t border-slate-100 bg-slate-50/60 px-5 py-3.5 sm:flex-row sm:justify-end sm:space-x-0">
@@ -5221,6 +5582,43 @@ export const PracticeTransferRequestIntakePanel = ({
           ) : null}
         </DialogContent>
       </Dialog>
+
+      {stageDialogType ? (
+        <PracticeRequestStagePresetDialog
+          open={Boolean(stageDialogType)}
+          onOpenChange={(open) => {
+            if (!open) {
+              setStageDialogType(null);
+              setStageDialogQueue([]);
+            }
+          }}
+          prosthesisType={stageDialogType}
+          stages={
+            resolveRequestStagePreset(stageDialogType, requestStagePresets)
+              ?.stages ||
+            stageDialogDraftRef.current.find(
+              (row) =>
+                row.prosthesisType.toLowerCase() ===
+                stageDialogType.toLowerCase(),
+            )?.stages ||
+            []
+          }
+          onConfirm={applyStageDialogConfirm}
+          onSavePreset={
+            onRequestStagePresetsChange
+              ? async (preset) => {
+                  const next = upsertRequestStagePreset(
+                    requestStagePresets,
+                    preset,
+                  );
+                  await onRequestStagePresetsChange(next);
+                }
+              : undefined
+          }
+          className={nestedDialogClassName}
+          overlayClassName={nestedDialogOverlayClassName}
+        />
+      ) : null}
     </div>
   );
 };

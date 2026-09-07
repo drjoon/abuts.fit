@@ -1,8 +1,10 @@
 // related files:
 // - web/backend/controllers/practiceTransfers/prosthesisFeeItemRequest.controller.js
+// - web/backend/controllers/practiceTransfers/practiceTransferSettings.controller.js
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // change-log:
+// - 2026-09-07: 전체치열 좌측 목록(archBulkProsthesisTypes) 정규화·계정 설정 연동.
 // - 2026-09-05: 치과 커스텀 보철 수가 요청 API 클라이언트.
 // - 2026-09-05: 추가요청 — 관리자 승인 전 대기, approve/dismiss 헬퍼.
 // - 2026-09-05: 대상 기공소 다중 선택(labs).
@@ -17,8 +19,26 @@ export const ARCH_BULK_PROSTHESIS_PRESETS = [
 export type ArchBulkProsthesisPreset =
   (typeof ARCH_BULK_PROSTHESIS_PRESETS)[number];
 
+export const MAX_ARCH_BULK_PROSTHESIS_TYPES = 20;
+
 export const isArchBulkProsthesisPreset = (name: string) =>
   ARCH_BULK_PROSTHESIS_PRESETS.some((preset) => preset === String(name || "").trim());
+
+/** 전체치열 모달 좌측 목록. 빈 배열이면 기본 프리셋. */
+export const normalizeArchBulkProsthesisTypes = (
+  items: unknown,
+): string[] => {
+  const list = Array.isArray(items) ? items : [];
+  const dedup = new Map<string, string>();
+  for (const item of list) {
+    const trimmed = String(item || "").trim();
+    if (!trimmed) continue;
+    const key = trimmed.toLowerCase();
+    if (!dedup.has(key)) dedup.set(key, trimmed);
+  }
+  const out = Array.from(dedup.values()).slice(0, MAX_ARCH_BULK_PROSTHESIS_TYPES);
+  return out.length ? out : [...ARCH_BULK_PROSTHESIS_PRESETS];
+};
 
 export type ProsthesisFeeItemRequestLabTarget = {
   labAnchorId: string;
