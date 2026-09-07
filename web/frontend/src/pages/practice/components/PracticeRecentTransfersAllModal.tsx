@@ -35,6 +35,7 @@
  * - 2026-08-28: 모바일 — 검색을 상태뱃지(리메이크) 오른쪽 같은 줄로 옮겨 헤더 줄 수 축소.
  * - 2026-08-28: 검색↔신규의뢰 안내 위치 교환 — 안내=헤더, 검색=캘린더 툴바.
  * - 2026-09-07: 헤더 「도착일 클릭 신규의뢰」안내 문구 제거.
+ * - 2026-09-07: 다단계 다음 도착일 미지정(+1일~) 헤더 alert(기공소 미확인 바와 동일 패턴).
  * - 2026-08-31: calendarRefreshNonce — 전송 직후 소켓 없이도 캘린더 구간 재조회.
  * - 2026-09-02: 휴지통 `거부`(삭제+labRejected)도 달력·상단뱃지에서 제외 — 삭제 후 재등장 방지.
  */
@@ -62,7 +63,7 @@ import { apiFetch } from "@/shared/api/apiClient";
 import { type ChatRoom } from "@/shared/hooks/useChatRooms";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 import { useIsMobile } from "@/shared/hooks/use-mobile";
-import { toKstYmd } from "@/shared/date/kst";
+import { toKstYmd, toKstYmdLoose } from "@/shared/date/kst";
 import { normalizeLabReceiveCalendarDateKey } from "@/shared/practice/labReceiveCalendarDateKey";
 import { normalizeLabReceiveCalendarHiddenWeekdays } from "@/shared/practice/labReceiveCalendarHiddenWeekdays";
 import {
@@ -92,7 +93,12 @@ import {
   toStatusBadgeLabel,
 } from "@/shared/practice/practiceRecentTransferList";
 import { resolvePracticeRecentTransferAbutmentUploadOverdue } from "@/shared/practice/practiceAbutmentUploadOverdue";
+import {
+  isPracticeNextArrivalOverdue,
+  resolvePracticeNextArrivalReminder,
+} from "@/shared/practice/practiceNextArrivalReminder";
 import { PracticeAbutmentUploadOverdueAlert } from "@/shared/components/practice/PracticeAbutmentUploadOverdueAlert";
+import { PracticeNextArrivalOverdueNotice } from "@/pages/practice/components/PracticeNextArrivalOverdueNotice";
 import {
   PracticeRecentTransfersCalendar,
   expandPracticeCalendarChipsByArrivalDates,
@@ -560,6 +566,56 @@ export function PracticeRecentTransfersAllModal({
     return map;
   }, [filteredTransfers]);
 
+  const nextArrivalOverdueItems = useMemo(() => {
+    return visibleGroupedTransfers
+      .map((transfer) => {
+        const reminder = resolvePracticeNextArrivalReminder({
+          status: transfer.status,
+          arrivalDates: transfer.arrivalDates,
+          arrivalDate: transfer.arrivalDate,
+          labRequestStagePlans: transfer.labRequestStagePlans,
+        });
+        if (!isPracticeNextArrivalOverdue(reminder) || !reminder) return null;
+        const id = `${transfer.id}:${transfer.transferId}`;
+        const lab =
+          String(transfer.targetLab || "-")
+            .replace(/\s*→.*$/g, "")
+            .trim() || "-";
+        const patient = resolvePracticeTransferListPatientName(transfer);
+        const teeth = resolvePracticeTransferListToothNumbers(transfer);
+        const patientLine =
+          formatPracticeTransferListPatientWithTeeth(patient, teeth) || "—";
+        return {
+          id,
+          daysPast: reminder.daysPast,
+          label: [lab, patientLine].filter(Boolean).join(" / "),
+        };
+      })
+      .filter((row): row is NonNullable<typeof row> => Boolean(row));
+  }, [visibleGroupedTransfers]);
+
+  const nextArrivalOverdueTotal = nextArrivalOverdueItems.length;
+
+  const transferByNoticeId = useMemo(() => {
+    const map = new Map<string, (typeof visibleGroupedTransfers)[number]>();
+    for (const transfer of visibleGroupedTransfers) {
+      map.set(`${transfer.id}:${transfer.transferId}`, transfer);
+    }
+    return map;
+  }, [visibleGroupedTransfers]);
+
+  const jumpCalendarToTransferDate = useCallback(
+    (transfer: PracticeRecentTransferItem) => {
+      const raw =
+        dateKey === "arrivalDate"
+          ? transfer.arrivalDate || transfer.orderDate
+          : transfer.orderDate || transfer.arrivalDate;
+      const ymd = toKstYmdLoose(raw) || toKstYmd(raw);
+      if (ymd) setCursorYmd(ymd);
+    },
+    [dateKey],
+  );
+
   const statusFilterBadgeItems = useMemo((): PracticeStatusFilterBadgeItem[] => {
     return PRACTICE_RECENT_STATUS_BADGES.map((item) => ({
       key: item.filter,
@@ -688,6 +744,16 @@ export function PracticeRecentTransfersAllModal({
             </div>
           ) : isMobile ? (
             <>
+              <PracticeNextArrivalOverdueNotice
+                total={nextArrivalOverdueTotal}
+                items={nextArrivalOverdueItems}
+                onSelectItem={(id) => {
+                  const transfer = transferByNoticeId.get(id);
+                  if (!transfer) return;
+                  onSelectTransfer(transfer);
+                }}
+                className="mb-2"
+              />
               <p className="mb-2 px-0.5 text-xs font-medium text-slate-500">
                 기공소에 전송된 의뢰
               </p>
@@ -821,6 +887,17 @@ export function PracticeRecentTransfersAllModal({
             </>
           ) : (
             <>
+              <PracticeNextArrivalOverdueNotice
+                total={nextArrivalOverdueTotal}
+                items={nextArrivalOverdueItems}
+                onSelectItem={(id) => {
+                  const transfer = transferByNoticeId.get(id);
+                  if (!transfer) return;
+                  jumpCalendarToTransferDate(transfer);
+                  onSelectTransfer(transfer);
+                }}
+                className="mb-2"
+              />
               {statusFilterEmptyHint}
               <PracticeRecentTransfersCalendar
                 items={calendarItems}

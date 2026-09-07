@@ -14,6 +14,7 @@
 // - web/frontend/src/shared/files/downloadWithProgress.ts
 // - web/frontend/src/shared/files/s3BlobCache.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-09-07: 다단계 도착일 당일·지연 시 「다음 도착일」깜빡임 + 호버 안내.
 // - 2026-09-07: 진행 상황 탭에도 재도착일 CTA(모든 케이스). 틀니 등은 다음 공정 표시.
 // - 2026-09-07: 채팅 알림음 메뉴 + 진행 상황 탭 열람 시 알림음 스킵.
 // - 2026-09-07: 패널 공통 헤더 — 치과/환자 식별 스트립(탭 아래 고정, caseIdentity·summaryItems).
@@ -199,6 +200,12 @@ import {
   normalizeLabRequestStagePlans,
   type PracticeLabRequestStagePlan,
 } from "@/shared/practice/requestStagePresets";
+import {
+  getPracticeNextArrivalReminderTooltip,
+  isPracticeNextArrivalAttention,
+  practiceNextArrivalAttentionClassName,
+  resolvePracticeNextArrivalReminder,
+} from "@/shared/practice/practiceNextArrivalReminder";
 
 function isImagePreviewExt(ext: string): boolean {
   return PRACTICE_TRANSFER_IMAGE_EXTENSIONS.has(String(ext || "").toLowerCase());
@@ -730,22 +737,53 @@ export function PracticeTransferDetailChatDialog({
     }));
   }, [labRequestStagePlans, toothWorks]);
 
+  const nextArrivalReminder = useMemo(
+    () =>
+      onAppendArrival
+        ? resolvePracticeNextArrivalReminder({
+            arrivalDate: currentArrivalYmd || null,
+            labRequestStagePlans,
+          })
+        : null,
+    [currentArrivalYmd, labRequestStagePlans, onAppendArrival],
+  );
+  const nextArrivalAttention = isPracticeNextArrivalAttention(nextArrivalReminder);
+  const nextArrivalTooltip =
+    getPracticeNextArrivalReminderTooltip(nextArrivalReminder);
+
   const renderRearrivalPopover = () =>
     onAppendArrival ? (
       <Popover open={rearrivalOpen} onOpenChange={setRearrivalOpen}>
-        <PopoverTrigger asChild>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-7 shrink-0 gap-1 px-1.5 text-xs font-medium text-primary hover:bg-primary-soft/50 hover:text-primary"
-            disabled={appendArrivalDisabled || appendArrivalBusy}
-            title="다음 도착일 선택 시 오늘이 재주문일로 함께 반영됩니다. 오늘 이후 다음 도착일 1개만 두며, 다시 고르면 수정되고 크레딧은 추가 차감되지 않습니다."
+        <Tooltip open={rearrivalOpen ? false : undefined}>
+          <TooltipTrigger asChild>
+            <PopoverTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className={cn(
+                  "h-7 shrink-0 gap-1 px-1.5 text-xs font-medium text-primary hover:bg-primary-soft/50 hover:text-primary",
+                  practiceNextArrivalAttentionClassName(nextArrivalAttention),
+                )}
+                disabled={appendArrivalDisabled || appendArrivalBusy}
+                aria-label={
+                  nextArrivalAttention
+                    ? "다음 도착일 — 지정 필요"
+                    : "다음 도착일"
+                }
+              >
+                <CalendarClock className="h-3.5 w-3.5" />
+                {appendArrivalBusy ? "반영 중…" : "다음 도착일"}
+              </Button>
+            </PopoverTrigger>
+          </TooltipTrigger>
+          <TooltipContent
+            side="top"
+            className="max-w-xs text-left text-xs leading-relaxed"
           >
-            <CalendarClock className="h-3.5 w-3.5" />
-            {appendArrivalBusy ? "반영 중…" : "다음 도착일"}
-          </Button>
-        </PopoverTrigger>
+            {nextArrivalTooltip}
+          </TooltipContent>
+        </Tooltip>
         <PopoverContent
           align="start"
           className="w-auto p-0"
