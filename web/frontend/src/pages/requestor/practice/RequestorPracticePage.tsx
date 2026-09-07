@@ -27,6 +27,7 @@
 // - web/frontend/src/shared/practice/labReceiveCalendarHiddenWeekdays.ts
 // - web/backend/utils/labReceiveCalendarHiddenWeekdays.util.js
 // - web/backend/controllers/users/user.controller.js
+// - 2026-09-07: 분할 업로드 AlertDialog z-320 — 플로팅 의뢰상세(z-300)에 가리지 않게.
 // - 2026-09-05: 가이드투어 lab_calendar — 오늘 데모 칩 홀·클릭 시 상세·다음.
 // - 2026-09-05: 가이드투어 — pause·수료 시 데모 PTX·상세 삭제(치과 oral 정리와 동일).
 // - 2026-09-05: 가이드투어 — 수신 영화형(데모 PTX·상세 오픈·변이 가드).
@@ -5624,7 +5625,11 @@ export function RequestorPracticeReceivePage({
           if (!open) setSplitAskState(null);
         }}
       >
-        <AlertDialogContent>
+        <AlertDialogContent
+          // Above floating transfer panel (z-300). Same band as abutment confirm.
+          className="z-[320]"
+          overlayClassName="z-[310]"
+        >
           <AlertDialogHeader>
             <AlertDialogTitle>일부만 올리시나요?</AlertDialogTitle>
             <AlertDialogDescription>

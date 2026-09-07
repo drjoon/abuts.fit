@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/practice/practiceTransferLabReceive.ts
 // - web/frontend/src/shared/hooks/useFilePreUpload.ts
 // change-log:
+// - 2026-09-07: z-[320]/overlay z-[310] — 플로팅 의뢰상세(z-300) 위.
 // - 2026-08-16: 보철 — 콤팩트 리스트(큰 3D 프리뷰 제거)·치아/위치만 지정.
 // - 2026-08-16: 기공의뢰수신 어벗·보철 — 프리뷰+치아 지정·백그라운드 업로드 진행률.
 import { useEffect, useMemo, useState } from "react";
@@ -162,7 +163,11 @@ export function LabReceiveWorkUploadDialog({
         onOpenChange(next);
       }}
     >
-      <DialogContent className="flex w-[calc(100vw-1rem)] max-w-md flex-col gap-0 overflow-hidden p-0 sm:max-w-lg">
+      <DialogContent
+        // Above floating transfer panel (z-300). Same band as abutment confirm.
+        className="z-[320] flex w-[calc(100vw-1rem)] max-w-md flex-col gap-0 overflow-hidden p-0 sm:max-w-lg"
+        overlayClassName="z-[310]"
+      >
         <DialogHeader className="shrink-0 space-y-1 border-b border-slate-100 px-5 py-4 pr-12">
           <DialogTitle className="text-base font-semibold tracking-tight">
             {title}

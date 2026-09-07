@@ -2,6 +2,7 @@
 // - 2026-09-02: lab-handoff 기본 확인 라벨「확인」(S3는 모달 중 사전 업로드). confirmDisabled.
 // - 2026-08-28: 확인 중 버튼「처리 중…」(백그라운드 S3 완료 후 API 저장과 구분).
 // - 2026-08-28: lab-handoff — 현재 파일 S3 업로드 프로그레스바.
+// - 2026-09-07: 신규 임플란트 AlertDialog z-330 — 3D 확인 모달(z-320) 위.
 // - 2026-08-28: z-[320]/overlay z-[310] — 플로팅 의뢰상세(z-300) 위에 3D 확인 모달.
 // - 2026-08-16: lab-handoff confirmLabel·progressLabel(다파일 큐).
 // - 2026-08-16: 어벗생산의뢰·기공의뢰수신 공통 3D 확인 다이얼로그로 통합.
@@ -608,7 +609,10 @@ export function AbutmentModelConfirmDialog({
           }
         }}
       >
-        <AlertDialogContent className="new-request-page">
+        <AlertDialogContent
+          className="new-request-page z-[330]"
+          overlayClassName="z-[325]"
+        >
           <AlertDialogHeader>
             <AlertDialogTitle>신규 임플란트 의뢰로 접수할까요?</AlertDialogTitle>
             <AlertDialogDescription>{newSystemInfoCopy}</AlertDialogDescription>
