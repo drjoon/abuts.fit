@@ -6248,7 +6248,7 @@ export function RequestorPracticeReceivePage({
         }}
         onCancelReply={() => setChatReplyTo(null)}
         onToggleReaction={(messageId, emoji) => void toggleReaction(messageId, emoji)}
-        composerPlaceholder="치과에 전달할 내용을 입력하세요 ($ 로 의뢰건 불러오기)"
+        composerPlaceholder="치과에 전달할 내용을 입력하세요 (# 로 의뢰건 불러오기)"
         requestPicks={transfers
           .map((row) => ({
             requestId: String(row.transferId || "").trim(),

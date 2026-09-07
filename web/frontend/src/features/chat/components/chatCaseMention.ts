@@ -3,7 +3,7 @@
 // - web/frontend/src/features/chat/components/ChatMessageBubble.tsx
 // - web/frontend/src/shared/practice/openPracticeTransferChat.ts
 // change-log:
-// - 2026-09-07: $ 의뢰건 멘션 토큰(의뢰ID·환자이름) 파싱·표시 SSOT.
+// - 2026-09-07: # 의뢰건 멘션 토큰(의뢰ID·환자이름) 파싱·표시 SSOT.
 
 /** `[의뢰ID:…]` — 환자이름 포함 가능: `[의뢰ID:PTX-… / 홍길동]` */
 export const CASE_MENTION_TOKEN_RE = /\[의뢰ID:([^\]]+)\]/g;

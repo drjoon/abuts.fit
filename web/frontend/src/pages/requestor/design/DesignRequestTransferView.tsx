@@ -536,7 +536,7 @@ export function DesignRequestTransferView({
         }}
         onCancelReply={() => setChatReplyTo(null)}
         onToggleReaction={(messageId, emoji) => void toggleReaction(messageId, emoji)}
-        composerPlaceholder="치과에 전달할 내용을 입력하세요 ($ 로 의뢰건 불러오기)"
+        composerPlaceholder="치과에 전달할 내용을 입력하세요 (# 로 의뢰건 불러오기)"
         inputDisabled={chatLoading || chatSending || !activeChatRoom?._id}
         sendDisabled={chatSending}
       />

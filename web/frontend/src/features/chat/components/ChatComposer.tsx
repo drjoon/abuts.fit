@@ -7,8 +7,9 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferMobileOralPhotoIntake.tsx
 // - web/frontend/src/features/chat/components/NewChatWidget.tsx
 // change-log:
-// - 2026-09-07: $ 목록 화살표 선택·의뢰ID+환자이름 토큰 삽입.
-// - 2026-09-07: $ 입력으로 의뢰건 불러오기·placeholder 안내.
+// - 2026-09-07: 의뢰건 불러오기 트리거 $ → # 통일(입력·placeholder·Hash 버튼).
+// - 2026-09-07: # 목록 화살표 선택·의뢰ID+환자이름 토큰 삽입.
+// - 2026-09-07: # 입력으로 의뢰건 불러오기·placeholder 안내.
 // - 2026-08-21: textarea flex-1 제거·루트 shrink-0 — 채팅 레이아웃에서 입력칸이 내역 높이를 잠식하지 않게.
 // - 2026-08-27: 모바일 사진찍기(capture) — 채팅에서 바로 촬영·업로드.
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -47,20 +48,20 @@ export type RequestPickItem = {
   tooth?: string;
 };
 
-/** `$검색어` 멘션 — 커서 앞 구간에서 마지막 `$…` */
-export const getDollarMentionAtCursor = (
+/** `#검색어` 멘션 — 커서 앞 구간에서 마지막 `#…` */
+export const getHashMentionAtCursor = (
   value: string,
   cursor: number,
 ): { start: number; query: string } | null => {
   const safeCursor = Math.max(0, Math.min(cursor, value.length));
   const before = value.slice(0, safeCursor);
-  const match = before.match(/\$([^\s$]*)$/);
+  const match = before.match(/#([^\s#]*)$/);
   if (!match || match.index == null) return null;
   return { start: match.index, query: String(match[1] || "") };
 };
 
 export const CHAT_CASE_MENTION_PLACEHOLDER =
-  "메시지를 입력하세요 ($ 로 의뢰건 불러오기)";
+  "메시지를 입력하세요 (# 로 의뢰건 불러오기)";
 
 type Props = {
   draft: string;
@@ -77,7 +78,7 @@ type Props = {
   onRetryPendingFile?: (id: string) => void;
 
   requestPicks?: RequestPickItem[];
-  /** $ / # 로 의뢰 목록이 필요할 때(지연 로드) */
+  /** # 로 의뢰 목록이 필요할 때(지연 로드) */
   onRequestPicksNeeded?: () => void;
   requestPicksLoading?: boolean;
   onInsertRequestId?: (requestId: string) => void;
@@ -117,13 +118,13 @@ export const ChatComposer = (props: Props) => {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const pickItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const [hashOpen, setHashOpen] = useState(false);
-  const [dollarOpen, setDollarOpen] = useState(false);
+  const [mentionOpen, setMentionOpen] = useState(false);
   const [cursor, setCursor] = useState(0);
   const [highlightIndex, setHighlightIndex] = useState(0);
   const [cameraBusy, setCameraBusy] = useState(false);
   const isMobile = useIsMobile();
   const { toast } = useToast();
-  const pickListOpen = dollarOpen || hashOpen;
+  const pickListOpen = mentionOpen || hashOpen;
 
   const hasFiles = Array.isArray(pendingUploads) && pendingUploads.length > 0;
   const hasRequestPicks =
@@ -142,7 +143,7 @@ export const ChatComposer = (props: Props) => {
       : "메시지를 입력하세요");
 
   const mention = useMemo(
-    () => getDollarMentionAtCursor(draft, cursor),
+    () => getHashMentionAtCursor(draft, cursor),
     [draft, cursor],
   );
 
@@ -163,20 +164,20 @@ export const ChatComposer = (props: Props) => {
 
   useEffect(() => {
     if (!canInsertRequestId) {
-      setDollarOpen(false);
+      setMentionOpen(false);
       return;
     }
     if (!mention) {
-      setDollarOpen(false);
+      setMentionOpen(false);
       return;
     }
-    setDollarOpen(true);
+    setMentionOpen(true);
     onRequestPicksNeededRef.current?.();
   }, [canInsertRequestId, mention?.start, mention?.query]);
 
   useEffect(() => {
     setHighlightIndex(0);
-  }, [mention?.query, filteredPicks.length, dollarOpen, hashOpen]);
+  }, [mention?.query, filteredPicks.length, mentionOpen, hashOpen]);
 
   useEffect(() => {
     if (!pickListOpen) return;
@@ -205,7 +206,7 @@ export const ChatComposer = (props: Props) => {
     if (!token) return;
     const el = textareaRef.current;
     const cur = el?.selectionStart ?? cursor;
-    const activeMention = getDollarMentionAtCursor(draft, cur);
+    const activeMention = getHashMentionAtCursor(draft, cur);
 
     let next: string;
     let nextCursor: number;
@@ -221,7 +222,7 @@ export const ChatComposer = (props: Props) => {
     }
 
     onDraftChange(next);
-    setDollarOpen(false);
+    setMentionOpen(false);
     setHashOpen(false);
     window.requestAnimationFrame(() => {
       const ta = textareaRef.current;
@@ -336,12 +337,12 @@ export const ChatComposer = (props: Props) => {
         />
       ) : null}
 
-      {canInsertRequestId && dollarOpen ? (
+      {canInsertRequestId && mentionOpen ? (
         <div className="absolute bottom-[calc(100%-0.25rem)] left-3 right-3 z-20 sm:left-4 sm:right-4">
           <div className="rounded-lg border bg-popover p-2 shadow-md">
             <div className="mb-1 px-1 text-[11px] font-medium text-muted-foreground">
               의뢰건 선택
-              {mention?.query ? ` · “${mention.query}”` : " · $ 검색"}
+              {mention?.query ? ` · “${mention.query}”` : " · # 검색"}
             </div>
             {renderPickList(insertCaseToken)}
           </div>
@@ -370,9 +371,9 @@ export const ChatComposer = (props: Props) => {
         onKeyDown={(e) => {
           if (e.nativeEvent.isComposing) return;
 
-          if (e.key === "Escape" && (dollarOpen || hashOpen)) {
+          if (e.key === "Escape" && (mentionOpen || hashOpen)) {
             e.preventDefault();
-            setDollarOpen(false);
+            setMentionOpen(false);
             setHashOpen(false);
             return;
           }
@@ -510,7 +511,7 @@ export const ChatComposer = (props: Props) => {
                   size="icon"
                   className={iconBtnClass}
                   disabled={controlsDisabled}
-                  title="의뢰건 불러오기 ($)"
+                  title="의뢰건 불러오기 (#)"
                   aria-label="의뢰건 불러오기"
                 >
                   <Hash className={isMobile ? "h-5 w-5" : "h-4 w-4"} />
@@ -518,7 +519,7 @@ export const ChatComposer = (props: Props) => {
               </PopoverTrigger>
               <PopoverContent className="w-80 p-2" align="start">
                 <div className="mb-1 px-1 text-[11px] font-medium text-muted-foreground">
-                  의뢰건 선택 · $ 로도 불러올 수 있습니다
+                  의뢰건 선택 · # 로도 불러올 수 있습니다
                 </div>
                 {renderPickList(insertCaseToken)}
               </PopoverContent>

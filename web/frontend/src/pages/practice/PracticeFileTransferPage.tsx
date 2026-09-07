@@ -9783,7 +9783,7 @@ export const PracticeFileTransferPage = ({
           }}
           onCancelReply={() => setChatReplyTo(null)}
           onToggleReaction={(messageId, emoji) => void toggleReaction(messageId, emoji)}
-          composerPlaceholder="문의 내용을 입력하세요 ($ 로 의뢰건 불러오기)"
+          composerPlaceholder="문의 내용을 입력하세요 (# 로 의뢰건 불러오기)"
           requestPicks={recentRequests
             .map((row) => ({
               requestId: String(row.transferId || "").trim(),

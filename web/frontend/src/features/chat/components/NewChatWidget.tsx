@@ -867,7 +867,7 @@ export const NewChatWidget = () => {
   };
 
   const insertRequestId = (_requestId: string) => {
-    // 실제 삽입·$ 치환은 ChatComposer.insertCaseToken이 처리한다.
+    // 실제 삽입·# 치환은 ChatComposer.insertCaseToken이 처리한다.
   };
 
   const openRequestWorkStatus = (requestId: string) => {
