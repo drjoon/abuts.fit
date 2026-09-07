@@ -48,6 +48,10 @@ import {
   applyRoundBarRequestUpdate,
   type RoundBarRequestUpdatedPayload,
 } from "@/shared/practice/roundBarAbutment";
+import {
+  ARCH_BULK_PROSTHESIS_PRESETS,
+  normalizeArchBulkProsthesisTypes,
+} from "@/shared/practice/prosthesisFeeItemRequest";
 import type { CaseInfos } from "../hooks/newRequestTypes";
 
 const PRESET_PROSTHESIS_TYPES = ["크라운", "브리지", "Pontic", "작업X", "인레이", "어벗 디자인"] as const;
@@ -129,8 +133,13 @@ export function NewRequestDesignAbutmentFields({
   const [prosthesisTypeInput, setProsthesisTypeInput] = useState("");
   const [implantFavorites, setImplantFavorites] = useState<PracticeImplantFavorite[]>([]);
   const [abutmentFavorites, setAbutmentFavorites] = useState<PracticeAbutmentFavorite[]>([]);
+  const [archBulkProsthesisTypes, setArchBulkProsthesisTypes] = useState<string[]>([
+    ...ARCH_BULK_PROSTHESIS_PRESETS,
+  ]);
   const favoritesDirtyRef = useRef(false);
   const favoritesLocalWriteSeqRef = useRef(0);
+  const archBulkDirtyRef = useRef(false);
+  const archBulkLocalWriteSeqRef = useRef(0);
 
   const normalizedProsthesisTypes = useMemo(
     () => ensurePresetProsthesisTypes(prosthesisTypeCatalog),
@@ -142,10 +151,13 @@ export function NewRequestDesignAbutmentFields({
     if (!token) {
       setImplantFavorites([]);
       setAbutmentFavorites([]);
+      setArchBulkProsthesisTypes([...ARCH_BULK_PROSTHESIS_PRESETS]);
       return;
     }
     const writeSeqAtStart = favoritesLocalWriteSeqRef.current;
     const dirtyAtStart = favoritesDirtyRef.current;
+    const archWriteSeqAtStart = archBulkLocalWriteSeqRef.current;
+    const archDirtyAtStart = archBulkDirtyRef.current;
     try {
       const res = await apiFetch<unknown>({
         path: "/api/practice/transfers/settings",
@@ -160,15 +172,26 @@ export function NewRequestDesignAbutmentFields({
           ? (body.data as {
               implantFavorites?: unknown;
               abutmentFavorites?: unknown;
+              archBulkProsthesisTypes?: unknown;
             })
           : null;
       const skipFavorites =
         dirtyAtStart ||
         favoritesDirtyRef.current ||
         favoritesLocalWriteSeqRef.current !== writeSeqAtStart;
-      if (skipFavorites) return;
-      setImplantFavorites(normalizeImplantFavorites(payload?.implantFavorites));
-      setAbutmentFavorites(normalizeAbutmentFavorites(payload?.abutmentFavorites));
+      if (!skipFavorites) {
+        setImplantFavorites(normalizeImplantFavorites(payload?.implantFavorites));
+        setAbutmentFavorites(normalizeAbutmentFavorites(payload?.abutmentFavorites));
+      }
+      const skipArchBulk =
+        archDirtyAtStart ||
+        archBulkDirtyRef.current ||
+        archBulkLocalWriteSeqRef.current !== archWriteSeqAtStart;
+      if (!skipArchBulk) {
+        setArchBulkProsthesisTypes(
+          normalizeArchBulkProsthesisTypes(payload?.archBulkProsthesisTypes),
+        );
+      }
     } catch {
       // ignore — 로컬 빈 목록 유지
     }
@@ -196,6 +219,7 @@ export function NewRequestDesignAbutmentFields({
     async (patch: {
       implantFavorites?: PracticeImplantFavorite[];
       abutmentFavorites?: PracticeAbutmentFavorite[];
+      archBulkProsthesisTypes?: string[];
     }) => {
       if (!token) return false;
       const jsonBody: Record<string, unknown> = {};
@@ -204,6 +228,11 @@ export function NewRequestDesignAbutmentFields({
       }
       if (Array.isArray(patch.abutmentFavorites)) {
         jsonBody.abutmentFavorites = normalizeAbutmentFavorites(patch.abutmentFavorites);
+      }
+      if (Array.isArray(patch.archBulkProsthesisTypes)) {
+        jsonBody.archBulkProsthesisTypes = normalizeArchBulkProsthesisTypes(
+          patch.archBulkProsthesisTypes,
+        );
       }
       if (Object.keys(jsonBody).length === 0) return true;
       try {
@@ -220,6 +249,21 @@ export function NewRequestDesignAbutmentFields({
       }
     },
     [token],
+  );
+
+  const handleArchBulkProsthesisTypesChange = useCallback(
+    (next: string[]) => {
+      const normalized = normalizeArchBulkProsthesisTypes(next);
+      const writeSeq = (archBulkLocalWriteSeqRef.current += 1);
+      archBulkDirtyRef.current = true;
+      setArchBulkProsthesisTypes(normalized);
+      void saveFavoritesToServer({ archBulkProsthesisTypes: normalized }).then((ok) => {
+        if (ok && archBulkLocalWriteSeqRef.current === writeSeq) {
+          archBulkDirtyRef.current = false;
+        }
+      });
+    },
+    [saveFavoritesToServer],
   );
 
   const handleImplantFavoritesChange = useCallback(
@@ -323,6 +367,8 @@ export function NewRequestDesignAbutmentFields({
     onImplantFavoritesChange: handleImplantFavoritesChange,
     abutmentFavorites,
     onAbutmentFavoritesChange: handleAbutmentFavoritesChange,
+    archBulkProsthesisTypes,
+    onArchBulkProsthesisTypesChange: handleArchBulkProsthesisTypesChange,
   } satisfies Partial<PracticeTransferRequestIntakePanelProps>;
 
   return (

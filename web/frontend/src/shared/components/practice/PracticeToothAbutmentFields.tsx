@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-09-07: 프리셋 카드 드래그로 순서 변경(계정 저장).
 // - 2026-09-07: 프리셋 라벨 truncate 제거 → line-clamp-2. 긴 규격도 한 카드에 보이게.
 // - 2026-08-27: 프리셋 카드 2열 + 편집/삭제는 호버 시 우상단 표시(커스텀어벗 설정).
 // - 2026-08-25: presets 목록 높이 축소(모달 세로·심플어벗 3열 대응). dimmed 지원(심플어벗 XOR).
@@ -158,6 +159,12 @@ export const PracticeToothAbutmentFields = ({
   const [isAddingPreset, setIsAddingPreset] = useState(false);
   const [addDraft, setAddDraft] = useState<ToothAbutmentValues>(emptyToothWorkAbutment());
   const [favoritesBusy, setFavoritesBusy] = useState(false);
+  const [presetDragFromIndex, setPresetDragFromIndex] = useState<number | null>(
+    null,
+  );
+  const [presetDragOverIndex, setPresetDragOverIndex] = useState<number | null>(
+    null,
+  );
   const showFields = mode === "full" || mode === "fields";
   const showPresets = mode === "full" || mode === "presets";
   const canManagePresets = allowPresetEdit && Boolean(onFavoritesChange);
@@ -184,6 +191,23 @@ export const PracticeToothAbutmentFields = ({
     } finally {
       setFavoritesBusy(false);
     }
+  };
+
+  const reorderFavorites = (fromIndex: number, toIndex: number) => {
+    if (
+      fromIndex < 0 ||
+      toIndex < 0 ||
+      fromIndex >= favorites.length ||
+      toIndex >= favorites.length ||
+      fromIndex === toIndex
+    ) {
+      return;
+    }
+    const next = [...favorites];
+    const [moved] = next.splice(fromIndex, 1);
+    if (!moved) return;
+    next.splice(toIndex, 0, moved);
+    void persistFavorites(next);
   };
 
   const saveCurrentAsFavorite = () =>
@@ -393,7 +417,7 @@ export const PracticeToothAbutmentFields = ({
               listClass,
             )}
           >
-            {favorites.map((fav) => {
+            {favorites.map((fav, index) => {
               const isEditing = canManagePresets && editingFavoriteId === fav.id;
               const isActive = favoriteKey(fav) === currentFavoriteKey;
               if (isEditing) {
@@ -472,11 +496,60 @@ export const PracticeToothAbutmentFields = ({
               return (
                 <div
                   key={fav.id}
+                  draggable={canManagePresets}
+                  onDragStart={(e) => {
+                    if (!canManagePresets) {
+                      e.preventDefault();
+                      return;
+                    }
+                    if (
+                      (e.target as HTMLElement | null)?.closest?.(
+                        "[data-preset-action]",
+                      )
+                    ) {
+                      e.preventDefault();
+                      return;
+                    }
+                    e.dataTransfer.setData("text/plain", String(index));
+                    e.dataTransfer.effectAllowed = "move";
+                    setPresetDragFromIndex(index);
+                    setPresetDragOverIndex(null);
+                  }}
+                  onDragEnd={() => {
+                    setPresetDragFromIndex(null);
+                    setPresetDragOverIndex(null);
+                  }}
+                  onDragOver={(e) => {
+                    if (presetDragFromIndex == null || !canManagePresets) return;
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "move";
+                    if (presetDragOverIndex !== index) {
+                      setPresetDragOverIndex(index);
+                    }
+                  }}
+                  onDrop={(e) => {
+                    if (!canManagePresets) return;
+                    e.preventDefault();
+                    const fromRaw =
+                      e.dataTransfer.getData("text/plain") ||
+                      String(presetDragFromIndex ?? "");
+                    const fromIndex = Number(fromRaw);
+                    setPresetDragFromIndex(null);
+                    setPresetDragOverIndex(null);
+                    if (!Number.isFinite(fromIndex)) return;
+                    reorderFavorites(fromIndex, index);
+                  }}
                   className={cn(
                     "group relative rounded-xl border px-2.5 py-2 shadow-sm",
+                    canManagePresets && "cursor-grab active:cursor-grabbing",
                     isActive
                       ? "border-service-abut/70 bg-service-abut-soft/60"
                       : "border-slate-200/90 bg-white",
+                    presetDragFromIndex === index && "opacity-60",
+                    presetDragFromIndex != null &&
+                      presetDragOverIndex === index &&
+                      presetDragFromIndex !== index &&
+                      "ring-1 ring-service-abut/40",
                   )}
                 >
                   <button
@@ -494,7 +567,10 @@ export const PracticeToothAbutmentFields = ({
                     {favoriteLabel(fav)}
                   </button>
                   {canManagePresets ? (
-                    <div className="absolute right-1 top-1 z-10 flex items-center gap-0.5 rounded-md bg-white/95 p-0.5 shadow-sm opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                    <div
+                      data-preset-action
+                      className="absolute right-1 top-1 z-10 flex items-center gap-0.5 rounded-md bg-white/95 p-0.5 shadow-sm opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
+                    >
                       <Button
                         type="button"
                         variant="ghost"
