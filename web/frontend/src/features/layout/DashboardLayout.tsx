@@ -15,6 +15,7 @@ import {
 } from "@/shared/layout/sidebarOpen";
 import { cn } from "@/shared/ui/cn";
 
+// - 2026-09-08: 기본 기공수가 검토 대기 시 사이드바 설정 → platformTab=abutsFees 딥링크.
 // - 2026-09-06: 모바일/태블릿 상단 헤더 — lucide Menu·로고 절대 중앙 정렬.
 // - 2026-09-06: 관리자 사이드 15→7(홈·회원·의뢰·지원·채널·재무·설정) + 섹션 그룹.
 // - 2026-09-06: 영업본부 사이드 9→6(오늘·거래처·성과·요구사항·문의·설정) + 섹션 그룹.
@@ -1167,7 +1168,21 @@ export const DashboardLayout = () => {
     creditBalance < CREDIT_LOW_BALANCE_THRESHOLD;
 
   const displayRole = isPracticeUser ? "practice" : user.role;
-  const adminMenuSections = user.role === "admin" ? adminSidebarSections : null;
+  // 검토 대기 배지가 있으면 설정 → 기본 기공수가로 바로 진입(링만 강조되고 크레딧이 보이던 혼동 방지).
+  const adminMenuSections = useMemo(() => {
+    if (user.role !== "admin") return null;
+    if (abutsFeePendingCount <= 0) return adminSidebarSections;
+    const settingsHref =
+      "/dashboard/admin-settings?tab=platform&platformTab=abutsFees";
+    return adminSidebarSections.map((section) => ({
+      ...section,
+      items: section.items.map((item) =>
+        sidebarItemPath(item.href) === "/dashboard/admin-settings"
+          ? { ...item, href: settingsHref }
+          : item,
+      ),
+    }));
+  }, [abutsFeePendingCount, user.role]);
   const salesTeamSections =
     user.role === "salesTeam" ? salesTeamMenuSections : null;
   const accountMenuItems = accountMenuItemsByRole[displayRole] || [];

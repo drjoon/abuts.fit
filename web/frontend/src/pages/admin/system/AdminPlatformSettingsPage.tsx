@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-08: 검토 대기(pending) 있을 때 platformTab 미지정이면 기본 기공수가로 진입(하이라이트만 되고 크레딧 본문이 보이던 UX 수정).
 // - 2026-08-22: 작업 영역 가로폭을 사업영역과 동일하게 max-w-4xl로 축소.
 // - 2026-08-21: 커스텀어벗 탭 — 치과 공급 삭제, 기공소 공급→커스텀어벗 가격(생산만).
 // - 2026-08-19: 커스텀어벗 탭 고시 라벨(생산·디자인+생산). 디자인비+지그 설정 카드 제거.
@@ -162,16 +163,41 @@ export const AdminPlatformSettingsPage = ({
     [abutsPendingCount, handlePendingCountChange],
   );
 
-  const rawTab = searchParams.get(tabParamKey) || (!embedded ? searchParams.get("tab") : null);
+  const rawTab =
+    searchParams.get(tabParamKey) ||
+    (!embedded ? searchParams.get("tab") : null);
   const mapped =
     rawTab && LEGACY_TAB_REDIRECT[rawTab]
       ? LEGACY_TAB_REDIRECT[rawTab]
       : (rawTab as TabKey | null);
-  const tabFromUrl = mapped || (tabs[0]?.key as TabKey);
+  // 검토 대기만 링으로 강조되고 본문은 크레딧이 보이던 혼동을 막기 위해,
+  // platformTab 미지정 + pending > 0 이면 기본 기공수가로 연다.
+  const defaultTab =
+    abutsPendingCount > 0
+      ? ("abutsFees" as TabKey)
+      : (tabs[0]?.key as TabKey);
+  const tabFromUrl = mapped || defaultTab;
   const allowed = new Set(tabs.map((t) => t.key));
   const activeTab = allowed.has(tabFromUrl)
     ? tabFromUrl
     : (tabs[0]?.key as TabKey);
+
+  useEffect(() => {
+    if (mapped) return;
+    if (abutsPendingCount <= 0) return;
+    if (searchParams.get(tabParamKey) === "abutsFees") return;
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set(tabParamKey, "abutsFees");
+    if (embedded) nextParams.set("tab", "platform");
+    setSearchParams(nextParams, { replace: true });
+  }, [
+    abutsPendingCount,
+    embedded,
+    mapped,
+    searchParams,
+    setSearchParams,
+    tabParamKey,
+  ]);
 
   return (
     <SettingsScaffold
