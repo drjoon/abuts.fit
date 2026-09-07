@@ -15,7 +15,7 @@
 // - web/frontend/src/shared/files/s3BlobCache.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
 // - 2026-09-07: 패널 공통 헤더 — 치과/환자 식별 스트립(탭 아래 고정, caseIdentity·summaryItems).
-// - 2026-09-07: lab_accept — 거절 버튼 제거. CTA 「수락」→「작업시작」.
+// - 2026-09-07: lab_accept — 거절 버튼 제거. CTA 「수락」→「작업시작」. 가입 이전 리메이크 안내.
 // - 2026-09-05: lab_detail — 상세 모달 전체(DialogContent) Spotlight 홀.
 // - 2026-09-03: 요약 행 action — 어벗 진행상황 옆 의뢰 상세 버튼 등.
 // - 2026-09-02: summaryBanner(어벗 업로드 지연 등) — 의뢰상세 + 진행 상황 탭 상단.
@@ -294,6 +294,11 @@ type PracticeTransferDetailChatDialogProps = {
   caseIdentity?: PracticeTransferDialogCaseIdentity | null;
   /** 의뢰상세 요약 아래 + 진행 상황 탭 상단 — 예: 어벗 업로드 지연, 미가입 초대 */
   summaryBanner?: ReactNode;
+  /**
+   * 기공소 작업시작 바 왼쪽 안내(예: 플랫폼 가입 이전 리메이크 확인).
+   * 어벗/구강스캔 안내와 함께 표시된다.
+   */
+  acceptBarHint?: ReactNode;
   summaryItems: PracticeTransferDialogSummaryItem[];
   memo: string;
   /** 보철물 치식 차트(읽기 전용). 있으면 의뢰 메모 위에 표시 */
@@ -454,6 +459,7 @@ export function PracticeTransferDetailChatDialog({
   counterpartyMemoStrip = null,
   caseIdentity = null,
   summaryBanner = null,
+  acceptBarHint = null,
   summaryItems,
   memo,
   toothWorks,
@@ -2123,8 +2129,14 @@ export function PracticeTransferDetailChatDialog({
                 >
                   {hasPendingLabCustomAbutment ||
                   hasAbutsCustomAbutment ||
-                  oralScanAttachMode === "practice_required" ? (
-                    <div className="space-y-1">
+                  oralScanAttachMode === "practice_required" ||
+                  acceptBarHint ? (
+                    <div className="min-w-0 space-y-1">
+                      {acceptBarHint ? (
+                        <div className="text-xs leading-relaxed text-muted-foreground">
+                          {acceptBarHint}
+                        </div>
+                      ) : null}
                       {hasPendingLabCustomAbutment ||
                       hasAbutsCustomAbutment ? (
                         <LabPendingAbutmentGuide

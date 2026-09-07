@@ -5,6 +5,7 @@
 // - web/frontend/src/shared/components/practice/PracticeLabReceiveWorkActionsBar.tsx
 // - web/frontend/src/shared/components/practice/PracticeRecentTransferListCardDetail.tsx
 // change-log:
+// - 2026-09-07: 플랫폼 가입 이전 의뢰건 리메이크 뱃지.
 // - 2026-09-03: 카드 드롭 — 비STL도 전달(부모에서 가드·다시 올리기 안내). STL accept는 파일창 힌트용.
 // - 2026-09-02: 카드 드롭 — STL만 accept/filter(다른 확장자 거부).
 // - 2026-09-02: 어벗 STL 업로드 CTA 제거(상세 드롭존만).
@@ -62,6 +63,8 @@ import {
   practiceTransferLabReceiveUnreadBadgeCount,
   resolvePracticeLabReceiveWorkActionState,
   resolvePracticeTransferAbutmentUploadOverdue,
+  isPrePlatformPracticeRemake,
+  PRE_PLATFORM_REMAKE_LABEL,
   type PracticeTransferLabReceiveItem,
 } from "@/shared/practice/practiceTransferLabReceive";
 import { PracticeAbutmentUploadOverdueAlert } from "@/shared/components/practice/PracticeAbutmentUploadOverdueAlert";
@@ -215,6 +218,22 @@ export function PracticeTransferLabReceiveCard({
         extraBadges={
           <>
             {acceptOverdue ? <PracticeAcceptOverdueBadge viewer="lab" /> : null}
+            {isPrePlatformPracticeRemake(transfer) ? (
+              <Badge
+                variant="outline"
+                className="h-5 max-w-[10.5rem] shrink truncate border-amber-300 bg-amber-50 px-1.5 text-[10px] leading-none text-amber-900"
+                title={PRE_PLATFORM_REMAKE_LABEL}
+              >
+                {PRE_PLATFORM_REMAKE_LABEL}
+              </Badge>
+            ) : transfer.isRemake ? (
+              <Badge
+                variant="outline"
+                className="h-5 shrink-0 border-amber-300 bg-amber-50 px-1.5 text-[11px] leading-none text-amber-900"
+              >
+                리메이크
+              </Badge>
+            ) : null}
             {transfer.production?.rushProcessing ? (
               <Badge
                 variant="outline"

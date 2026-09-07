@@ -41,6 +41,7 @@ import {
   resolvePracticeTransferListToothNumbers,
 } from "@/shared/components/practice/PracticeRecentTransferListCardDetail";
 import { formatManWon } from "@/shared/practice/practiceTransferFeeQuote";
+import { PRE_PLATFORM_REMAKE_LABEL } from "@/shared/practice/practiceTransferLabReceive";
 
 const REMAKE_RECENT_DAYS = 14;
 const SEARCH_DEBOUNCE_MS = 300;
@@ -360,7 +361,7 @@ export function PracticeRemakeSearchDialog({
               onPrePlatformRemake();
             }}
           >
-            플랫폼 이전 의뢰건 리메이크
+            {PRE_PLATFORM_REMAKE_LABEL}
           </Button>
         </div>
 

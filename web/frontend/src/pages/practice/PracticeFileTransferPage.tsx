@@ -392,6 +392,10 @@ import {
 } from "@/shared/components/practice/PracticeRecentTransferListCardDetail";
 import { resolvePracticeRecentTransferAbutmentUploadOverdue } from "@/shared/practice/practiceAbutmentUploadOverdue";
 import { PracticeAbutmentUploadOverdueAlert } from "@/shared/components/practice/PracticeAbutmentUploadOverdueAlert";
+import {
+  PRE_PLATFORM_REMAKE_LABEL,
+  PRE_PLATFORM_REMAKE_PRACTICE_SEND_HINT,
+} from "@/shared/practice/practiceTransferLabReceive";
 
 type RecentRequestItem = PracticeRecentRequestItem;
 type TransferFileItem = PracticeRecentTransferFileItem;
@@ -7915,7 +7919,7 @@ export const PracticeFileTransferPage = ({
   const practiceWorkspaceToolbar = (
     <>
       <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
-        {/* 플랫폼 이전 리메이크 작성: 캘린더 워크스페이스 액션(리메이크·새로작성 등)은 불필요 */}
+        {/* 플랫폼 가입 이전 리메이크 작성: 캘린더 워크스페이스 액션(리메이크·새로작성 등)은 불필요 */}
         {!composeRemakeMode ? (
           <div className="flex flex-wrap items-center gap-2">
             <Tooltip>
@@ -8533,7 +8537,7 @@ export const PracticeFileTransferPage = ({
                   variant="outline"
                   className="border-amber-400 bg-amber-50 text-amber-800"
                 >
-                  리메이크
+                  {PRE_PLATFORM_REMAKE_LABEL}
                 </Badge>
               ) : null}
             </DialogTitle>
@@ -8627,7 +8631,12 @@ export const PracticeFileTransferPage = ({
           </Card>
 
           {!isMobile ? (
-          <div className="flex items-center justify-end gap-4">
+          <div className="flex items-center justify-end gap-3">
+            {composeRemakeMode && !editingSentTransfer ? (
+              <p className="max-w-[16rem] text-right text-xs leading-snug text-muted-foreground sm:max-w-xs">
+                {PRE_PLATFORM_REMAKE_PRACTICE_SEND_HINT}
+              </p>
+            ) : null}
             <Tooltip>
               <TooltipTrigger asChild>
                 <span
@@ -9952,6 +9961,9 @@ export const PracticeFileTransferPage = ({
                     ),
                   ),
                 )}
+              </div>
+              <div className="text-muted-foreground">
+                {PRE_PLATFORM_REMAKE_PRACTICE_SEND_HINT}
               </div>
               <div className="text-muted-foreground">
                 기공소가 작업시작하면 리메이크 기공비로 처리됩니다.

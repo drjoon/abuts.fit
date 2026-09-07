@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/components/practice/LabReceiveWorkUploadDialog.tsx
 // change-log:
+// - 2026-09-07: 플랫폼 가입 이전 의뢰건 리메이크 — 라벨·안내 카피·판정 헬퍼.
 // - 2026-09-03: listPracticeTransferUploadedAbutmentTeeth — STL 업로드된 치아(취소줄 표시용).
 // - 2026-09-03: 모달 안내는 LabPendingAbutmentGuide에서 치아번호만 — formatPendingLabAbutmentDetailLine 제거.
 // - 2026-09-02: 미제공 안내 한 줄 — 제조사만이 아니라 formatImplantSummary 전체 스펙.
@@ -162,6 +163,27 @@ export type PracticeTransferLabReceiveItem = {
   isRemake?: boolean;
   remakeSourceTransferId?: string;
 };
+
+/** 플랫폼에 원본 의뢰가 없는 리메이크(치과가 수동 작성) */
+export const PRE_PLATFORM_REMAKE_LABEL = "플랫폼 가입 이전 의뢰건 리메이크";
+
+/** 치과 — 리메이크 전송 버튼 옆 */
+export const PRE_PLATFORM_REMAKE_PRACTICE_SEND_HINT =
+  "기공소에서 리메이크 여부를 확인한 뒤 작업 시작합니다.";
+
+/** 기공소 — 작업시작 전 확인 안내 */
+export const PRE_PLATFORM_REMAKE_LAB_ACCEPT_HINT =
+  "확인한 뒤 맞으면 작업시작을 눌러 주세요. 해당 의뢰가 아니면 채팅으로 치과와 얘기해 보세요.";
+
+export function isPrePlatformPracticeRemake(transfer: {
+  isRemake?: boolean | null;
+  remakeSourceTransferId?: string | null;
+}): boolean {
+  return (
+    Boolean(transfer.isRemake) &&
+    !String(transfer.remakeSourceTransferId || "").trim()
+  );
+}
 
 export type PracticeTransferLabReceiveDisplayStatus =
   | "거부"

@@ -287,6 +287,9 @@ import {
   resolvePracticeLabReceiveWorkActionState,
   resolvePracticeTransferAbutmentUploadOverdue,
   resolvePracticeTransferToothWorks,
+  isPrePlatformPracticeRemake,
+  PRE_PLATFORM_REMAKE_LABEL,
+  PRE_PLATFORM_REMAKE_LAB_ACCEPT_HINT,
   type PracticeTransferLabReceiveFile as ReceivedPracticeFile,
   type PracticeTransferLabReceiveItem as ReceivedPracticeTransfer,
 } from "@/shared/practice/practiceTransferLabReceive";
@@ -1207,7 +1210,12 @@ export function RequestorPracticeReceivePage({
           remakeSourceTransferId: String(
             (r.remake && typeof r.remake === "object"
               ? (r.remake as { sourceTransferId?: unknown }).sourceTransferId
-              : r.remakeSourceTransferId) || "",
+              : r.remakeSourceTransferId) ||
+              (r.remake && typeof r.remake === "object"
+                ? (r.remake as { sourceTransferMongoId?: unknown })
+                    .sourceTransferMongoId
+                : "") ||
+              "",
           ).trim(),
         };
       })
@@ -5511,6 +5519,22 @@ export function RequestorPracticeReceivePage({
                               >
                                 {statusLabel}
                               </Badge>
+                              {isPrePlatformPracticeRemake(transfer) ? (
+                                <Badge
+                                  variant="outline"
+                                  className="h-6 max-w-[11rem] shrink truncate border-amber-300 bg-amber-50 px-2 text-[10px] font-semibold leading-none text-amber-900"
+                                  title={PRE_PLATFORM_REMAKE_LABEL}
+                                >
+                                  {PRE_PLATFORM_REMAKE_LABEL}
+                                </Badge>
+                              ) : transfer.isRemake ? (
+                                <Badge
+                                  variant="outline"
+                                  className="h-6 shrink-0 border-amber-300 bg-amber-50 px-2 text-[11px] font-semibold leading-none text-amber-900"
+                                >
+                                  리메이크
+                                </Badge>
+                              ) : null}
                               {deliveryLabel ? (
                                 <span
                                   className={practiceAbutmentProgressBadgeClassName(
@@ -5917,6 +5941,25 @@ export function RequestorPracticeReceivePage({
                 return true;
               }}
             />
+          ) : null
+        }
+        summaryBanner={
+          selectedTransfer && isPrePlatformPracticeRemake(selectedTransfer) ? (
+            <div className="inline-flex items-center rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-900">
+              {PRE_PLATFORM_REMAKE_LABEL}
+            </div>
+          ) : null
+        }
+        acceptBarHint={
+          selectedTransfer && isPrePlatformPracticeRemake(selectedTransfer) ? (
+            <>
+              <span className="font-medium text-amber-900">
+                {PRE_PLATFORM_REMAKE_LABEL}
+              </span>
+              <span className="mt-0.5 block">
+                {PRE_PLATFORM_REMAKE_LAB_ACCEPT_HINT}
+              </span>
+            </>
           ) : null
         }
         summaryItems={[

@@ -896,7 +896,12 @@ export const mapMyPracticeTransferApiRows = (
         remakeSourceTransferId: String(
           (r.remake && typeof r.remake === "object"
             ? (r.remake as { sourceTransferId?: string }).sourceTransferId
-            : r.remakeSourceTransferId) || "",
+            : r.remakeSourceTransferId) ||
+            (r.remake && typeof r.remake === "object"
+              ? (r.remake as { sourceTransferMongoId?: unknown })
+                  .sourceTransferMongoId
+              : "") ||
+            "",
         ).trim(),
         canRateLab: Boolean(r.canRateLab),
         labRating: parsePracticeLabRatingPublic(r.labRating),
