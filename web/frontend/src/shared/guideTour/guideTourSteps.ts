@@ -259,8 +259,8 @@ export const LAB_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   },
   {
     id: "lab_accept",
-    title: "의뢰 수락",
-    hint: "수락하면 치과와 채팅·디자인 업로드가 열립니다. 거절도 여기서 합니다.",
+    title: "작업시작",
+    hint: "작업시작하면 치과와 채팅·디자인 업로드가 열립니다.",
     path: LAB_RECEIVE_PATH,
     target: "lab_detail",
     advance: "next",
@@ -271,7 +271,7 @@ export const LAB_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   {
     id: "lab_design",
     title: "어벗 디자인 업로드",
-    hint: "수락 후 STL을 올리면 어벗츠에서 커스텀어벗 생산을 시작합니다.\n환자 정보, 임플란트 정보 등은 치과에서 넘겨준 정보 그대로 넘어갑니다.",
+    hint: "작업시작 후 STL을 올리면 어벗츠에서 커스텀어벗 생산을 시작합니다.\n환자 정보, 임플란트 정보 등은 치과에서 넘겨준 정보 그대로 넘어갑니다.",
     path: LAB_RECEIVE_PATH,
     target: "lab_detail",
     advance: "next",

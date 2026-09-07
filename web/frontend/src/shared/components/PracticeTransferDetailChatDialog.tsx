@@ -14,7 +14,7 @@
 // - web/frontend/src/shared/files/downloadWithProgress.ts
 // - web/frontend/src/shared/files/s3BlobCache.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
-// - 2026-09-05: lab_accept — 거절·수락 버튼 practice-tooth-guide-pulse(모달 홀 유지).
+// - 2026-09-07: lab_accept — 거절 버튼 제거. CTA 「수락」→「작업시작」.
 // - 2026-09-05: lab_detail — 상세 모달 전체(DialogContent) Spotlight 홀.
 // - 2026-09-03: 요약 행 action — 어벗 진행상황 옆 의뢰 상세 버튼 등.
 // - 2026-09-02: summaryBanner(어벗 업로드 지연 등) — 의뢰상세 + 진행 상황 탭 상단.
@@ -332,7 +332,7 @@ type PracticeTransferDetailChatDialogProps = {
   /** 레거시: 자동매칭 남은시간 라벨(강제 클레임 만료 폐기 후 미사용) */
   remainingLabel?: string | null;
   onAccept?: () => void | Promise<void>;
-  /** 수락 전 거부 (수신 페이지). 자동매칭=풀에서 숨김, 지정=의뢰 취소 */
+  /** @deprecated 거절 CTA 제거(2026-09-07). 호환용으로 남겨 둠 */
   rejectBusy?: boolean;
   onReject?: () => void | Promise<void>;
   /** 어벗츠 우선창을 끊고 하청 풀을 즉시 연다 */
@@ -457,8 +457,8 @@ export function PracticeTransferDetailChatDialog({
   workCompleted = false,
   abutmentMachiningStarted: _abutmentMachiningStarted = false,
   onAccept,
-  rejectBusy = false,
-  onReject,
+  rejectBusy: _rejectBusy = false,
+  onReject: _onReject,
   openSubcontractBusy = false,
   onOpenSubcontract,
   orderDate = null,
@@ -514,7 +514,7 @@ export function PracticeTransferDetailChatDialog({
   const { toast } = useToast();
   const isMobile = useIsMobile();
   const platformGuideTour = useGuideTour();
-  /** 수신 투어 lab_accept — 거절·수락 CTA 깜빡임(모달 전체 홀은 Spotlight lab_detail) */
+  /** 수신 투어 lab_accept — 작업시작 CTA 깜빡임(모달 전체 홀은 Spotlight lab_detail) */
   const guideTourPulseAcceptActions =
     platformGuideTour.kind === "lab" &&
     platformGuideTour.active &&
@@ -1349,15 +1349,15 @@ export function PracticeTransferDetailChatDialog({
   const visibleChatError =
     showAcceptBar && isPreAcceptChatHint ? "" : rawChatError;
   const acceptButtonLabel = acceptBusy
-    ? "수락 중..."
+    ? "작업시작 중..."
     : remainingLabel
-      ? `수락 [${remainingLabel}]`
-      : "수락";
+      ? `작업시작 [${remainingLabel}]`
+      : "작업시작";
   const reacceptButtonLabel = acceptBusy
-    ? "수락 중..."
+    ? "작업시작 중..."
     : remainingLabel
-      ? `다시 수락 [${remainingLabel}]`
-      : "다시 수락";
+      ? `다시 작업시작 [${remainingLabel}]`
+      : "다시 작업시작";
   const releaseButtonLabel = releaseBusy ? "취소 중..." : "작업 취소";
   const releaseAction =
     showReleaseBar && onRelease ? (
@@ -1376,7 +1376,7 @@ export function PracticeTransferDetailChatDialog({
             </Button>
           </TooltipTrigger>
           <TooltipContent side="top" className="max-w-xs text-xs">
-            수락을 해제합니다. 어벗 가공이 시작된 뒤에는 취소할 수 없습니다.
+            작업시작을 해제합니다. 어벗 가공이 시작된 뒤에는 취소할 수 없습니다.
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
@@ -1385,10 +1385,9 @@ export function PracticeTransferDetailChatDialog({
     typeof acceptedWorkActions === "function"
       ? acceptedWorkActions({ releaseAction })
       : acceptedWorkActions;
-  const rejectButtonLabel = rejectBusy ? "거절 중..." : "거절";
   const workPeriodDays = getPracticeWorkPeriodDays(orderDate, arrivalDate, orderedAt);
   const showShortWorkPeriod = isPracticeWorkPeriodShort(workPeriodDays);
-  const acceptDisabled = acceptBusy || rejectBusy || oralScanBlocksAccept;
+  const acceptDisabled = acceptBusy || oralScanBlocksAccept;
   const acceptBarSurchargeLabel = (() => {
     const multiplier = normalizeLabFeeMultiplier(feeQuote?.labFeeMultiplier);
     if (multiplier <= 1) return null;
@@ -2065,27 +2064,9 @@ export function PracticeTransferDetailChatDialog({
                         size="sm"
                         variant="secondary"
                         onClick={() => void onOpenSubcontract()}
-                        disabled={
-                          acceptBusy || rejectBusy || openSubcontractBusy
-                        }
+                        disabled={acceptBusy || openSubcontractBusy}
                       >
                         {openSubcontractBusy ? "전환 중..." : "하청 전환"}
-                      </Button>
-                    ) : null}
-                    {onReject ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className={cn(
-                          "border-destructive-muted text-destructive hover:bg-destructive-soft hover:text-destructive",
-                          guideTourPulseAcceptActions &&
-                            "practice-tooth-guide-pulse",
-                        )}
-                        onClick={() => void onReject()}
-                        disabled={acceptBusy || rejectBusy}
-                      >
-                        {rejectButtonLabel}
                       </Button>
                     ) : null}
                     {acceptBarSurchargeLabel ? (
@@ -2122,8 +2103,8 @@ export function PracticeTransferDetailChatDialog({
               {showReacceptBar ? (
                 <div className="shrink-0 border-b bg-muted/40 px-5 py-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <p className="text-xs text-muted-foreground">
-                    작업이 취소된 상태입니다. 채팅은 이어갈 수 있고, 다시 수락하면 작업을
-                    진행할 수 있습니다.
+                    작업이 취소된 상태입니다. 채팅은 이어갈 수 있고, 다시 작업시작하면
+                    작업을 진행할 수 있습니다.
                   </p>
                   <div className="flex shrink-0 items-center gap-2 self-end sm:self-auto">
                     <Button
@@ -2154,7 +2135,7 @@ export function PracticeTransferDetailChatDialog({
                   ) : (
                     <>
                       <p className="text-xs text-muted-foreground">
-                        수락된 의뢰입니다. 작업취소하면 수락이 해제됩니다.
+                        작업시작한 의뢰입니다. 작업취소하면 작업시작이 해제됩니다.
                       </p>
                       <div className="flex flex-wrap items-center gap-2">
                         {releaseAction}

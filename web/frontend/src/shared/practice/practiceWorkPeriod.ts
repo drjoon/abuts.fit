@@ -176,9 +176,9 @@ export function formatPracticeRushPeriodTooltip(
 export const PRACTICE_WORK_PERIOD_SHORT_TOOLTIP_PRACTICE =
   PRACTICE_WORK_PERIOD_RECOMMEND_NOTE;
 
-/** 기공소(수신): 짧은 기간이면 수락하지 않아도 됨 */
+/** 기공소(수신): 짧은 기간이면 작업시작하지 않아도 됨 */
 export const PRACTICE_WORK_PERIOD_SHORT_TOOLTIP_LAB =
-  "작업+배송기간이 짧습니다. 수락하지 않으셔도 됩니다.";
+  "작업+배송기간이 짧습니다. 작업시작하지 않으셔도 됩니다.";
 
 export function getPracticeWorkPeriodShortTooltip(
   viewer: PracticeWorkPeriodViewer = "practice",

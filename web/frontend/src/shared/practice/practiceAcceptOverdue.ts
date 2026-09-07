@@ -9,7 +9,7 @@ import { kstYmdDiffBusinessDays, toKstYmd } from "@/shared/date/kst";
 /** 미수락 경고 기준(영업일). 주문일 다음날부터 센다(같은 날=0). */
 export const PRACTICE_ACCEPT_OVERDUE_BUSINESS_DAYS = 1;
 
-export const PRACTICE_ACCEPT_OVERDUE_LABEL = "수락대기";
+export const PRACTICE_ACCEPT_OVERDUE_LABEL = "시작대기";
 
 export const PRACTICE_ACCEPT_OVERDUE_BADGE_CLASS =
   "border-accent/80 bg-accent-soft text-accent-strong hover:bg-accent-soft";

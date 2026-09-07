@@ -131,8 +131,8 @@ export function PracticeLabRejectedReselectDialog({
                 className="text-base font-semibold tracking-tight text-slate-900 outline-none"
               >
                 {labLabel
-                  ? `「${labLabel}」에서 의뢰를 수락하지 않았어요`
-                  : "기공소에서 의뢰를 수락하지 않았어요"}
+                  ? `「${labLabel}」에서 작업을 시작하지 않았어요`
+                  : "기공소에서 작업을 시작하지 않았어요"}
               </DialogTitle>
               {transferLabel ? (
                 <p className="font-mono text-xs text-slate-500">{transferLabel}</p>

@@ -175,7 +175,7 @@ export function PracticeTransferLabReceiveCard({
       className="h-7 px-2 text-[11px]"
       onClick={(event) => void onRelease(event)}
     >
-      {cardBusy ? "처리 중..." : "의뢰 수락 취소"}
+      {cardBusy ? "처리 중..." : "작업시작 취소"}
     </Button>
   ) : showCompletedStageHeaderCancel ? (
     <Tooltip>

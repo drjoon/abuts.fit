@@ -183,8 +183,8 @@ export const calendarGroupChipStyle = (
 };
 
 /**
- * 상단 뱃지(의뢰·취소·수락·완료·어벗)와 같은 칩 색.
- * 수락=sky · 완료=amber · 어벗=emerald — 한눈에 구분.
+ * 상단 뱃지(의뢰·취소·작업시작·완료·어벗)와 같은 칩 색.
+ * 작업시작=sky · 완료=amber · 어벗=emerald — 한눈에 구분.
  */
 export const PRACTICE_CALENDAR_STATUS_CHIP_STYLE: Record<
   PracticeCalendarStatusTone,

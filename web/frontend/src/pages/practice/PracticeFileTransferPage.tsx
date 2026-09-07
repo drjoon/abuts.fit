@@ -1108,7 +1108,7 @@ const toStatusLabel = (manufacturerStage: unknown) => {
   return "발송완료";
 };
 
-/** 목록/카드 뱃지 라벨 — 상단 필터(의뢰·취소·수락·어벗)와 동일 문구 */
+/** 목록/카드 뱃지 라벨 — 상단 필터(의뢰·취소·작업시작·어벗)와 동일 문구 */
 const toStatusBadgeLabel = (
   status: unknown,
   opts?: {
@@ -1136,7 +1136,7 @@ const toStatusBadgeLabel = (
   ) {
     return "어벗";
   }
-  if (s === "의뢰수락" || s === "다운로드완료" || s === "작업완료") return "수락";
+  if (s === "의뢰수락" || s === "다운로드완료" || s === "작업완료") return "작업시작";
   return s;
 };
 
@@ -4970,7 +4970,7 @@ export const PracticeFileTransferPage = ({
       if (!canEditPracticeTransferByStatus(transfer.status)) {
         toast({
           title: "수정할 수 없습니다",
-          description: "기공소가 수락하기 전(의뢰 단계)에만 내용을 바꿀 수 있습니다.",
+          description: "기공소가 작업시작하기 전(의뢰 단계)에만 내용을 바꿀 수 있습니다.",
           variant: "destructive",
         });
         return;
@@ -5703,7 +5703,7 @@ export const PracticeFileTransferPage = ({
     ) {
       toast({
         title: "삭제할 수 없습니다",
-        description: "기공소가 의뢰를 수락한 이후에는 삭제할 수 없습니다.",
+        description: "기공소가 작업을 시작한 이후에는 삭제할 수 없습니다.",
         variant: "destructive",
       });
       return;
@@ -5814,7 +5814,7 @@ export const PracticeFileTransferPage = ({
     if (!canDeletePracticeTransferByStatus(target.status)) {
       toast({
         title: "삭제할 수 없습니다",
-        description: "기공소가 의뢰를 수락한 이후에는 삭제할 수 없습니다.",
+        description: "기공소가 작업을 시작한 이후에는 삭제할 수 없습니다.",
         variant: "destructive",
       });
       finishDeleteConfirmAndReturnToAllModal();
@@ -6626,8 +6626,8 @@ export const PracticeFileTransferPage = ({
             ? "작업 취소"
             : isLabReject
               ? releaseLabName
-                ? `「${releaseLabName}」에서 의뢰를 수락하지 않았어요`
-                : "기공소에서 의뢰를 수락하지 않았어요"
+                ? `「${releaseLabName}」에서 작업을 시작하지 않았어요`
+                : "기공소에서 작업을 시작하지 않았어요"
               : releaseLabName
                 ? `「${releaseLabName}」에서 작업을 취소했어요`
                 : "작업이 취소되었어요",
@@ -6962,7 +6962,7 @@ export const PracticeFileTransferPage = ({
       toast({
         title: editing ? "의뢰가 수정되었습니다" : "기공소 전송 완료",
         description: editing
-          ? "같은 의뢰가 기공소에 다시 전달되었습니다. 수락 전이면 기공소 화면에도 바로 반영됩니다."
+          ? "같은 의뢰가 기공소에 다시 전달되었습니다. 작업시작 전이면 기공소 화면에도 바로 반영됩니다."
           : remainingDraftCount > 0
             ? `작성 중이던 의뢰만 전송했습니다. 임시저장 ${remainingDraftCount}건은 목록에 남아 있습니다.`
             : "기공소로 정상 전송되었습니다.",
@@ -7003,7 +7003,7 @@ export const PracticeFileTransferPage = ({
   );
 
   const formSyncStatusLabel = editingSentTransfer
-    ? "수락 전 수정 중"
+    ? "작업시작 전 수정 중"
     : formSyncStatus === "pending"
       ? "동기화 대기…"
       : formSyncStatus === "saving"
@@ -8254,7 +8254,7 @@ export const PracticeFileTransferPage = ({
                 <Card className="min-w-0 border-0 bg-transparent shadow-none hover:shadow-none">
             {editingSentTransfer ? (
               <div className="mb-1 rounded-md border border-primary/30 bg-primary-soft px-3 py-2 text-sm text-primary-strong">
-                기공소가 수락하기 전인 의뢰를 수정 중입니다. 저장하면 같은 의뢰가
+                기공소가 작업시작하기 전인 의뢰를 수정 중입니다. 저장하면 같은 의뢰가
                 업데이트됩니다. 새로 작성하면 수정이 취소됩니다.
               </div>
             ) : null}

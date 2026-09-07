@@ -751,9 +751,6 @@ export function RequestorPracticeReceivePage({
     "detail",
   );
   const [acceptBusy, setAcceptBusy] = useState(false);
-  const [rejectBusy, setRejectBusy] = useState(false);
-  const [rejectConfirmOpen, setRejectConfirmOpen] = useState(false);
-  const rejectTargetRef = useRef<ReceivedPracticeTransfer | null>(null);
   const [ptxCaCreditConfirmOpen, setPtxCaCreditConfirmOpen] = useState(false);
   const [ptxCaCreditConfirmMessage, setPtxCaCreditConfirmMessage] = useState("");
   const [openSubcontractBusy, setOpenSubcontractBusy] = useState(false);
@@ -2358,7 +2355,7 @@ export function RequestorPracticeReceivePage({
         toast({
           title: "설정이 필요합니다",
           description:
-            "기공소 디자인 소프트웨어와 아노다이징을 먼저 설정한 뒤 수락해주세요.",
+            "기공소 디자인 소프트웨어와 아노다이징을 먼저 설정한 뒤 작업시작해 주세요.",
           variant: "destructive",
         });
         return false;
@@ -2471,11 +2468,11 @@ export function RequestorPracticeReceivePage({
 
         applyAcceptedLocalPatch(transfer, optimisticPatch);
         toast({
-          title: "의뢰수락 완료",
+          title: "작업시작 완료",
           description:
             transfer.matchingMode === "auto"
-              ? "선착순 수락되었습니다."
-              : "기공의뢰를 수락했습니다.",
+              ? "선착순으로 작업을 시작했습니다."
+              : "기공의뢰 작업을 시작했습니다.",
         });
 
         void apiPromise
@@ -2490,9 +2487,9 @@ export function RequestorPracticeReceivePage({
                 openPtxCaCreditConfirm(String(body.message || ""));
               } else {
                 toast({
-                  title: "의뢰수락 실패",
+                  title: "작업시작 실패",
                   description: String(
-                    body.message || "의뢰수락 중 오류가 발생했습니다.",
+                    body.message || "작업시작 중 오류가 발생했습니다.",
                   ),
                   variant: "destructive",
                 });
@@ -2647,8 +2644,8 @@ export function RequestorPracticeReceivePage({
           .catch(() => {
             applyAcceptedLocalPatch(transfer, rollbackPatch);
             toast({
-              title: "의뢰수락 실패",
-              description: "의뢰수락 요청 중 오류가 발생했습니다.",
+              title: "작업시작 실패",
+              description: "작업시작 요청 중 오류가 발생했습니다.",
               variant: "destructive",
             });
           });
@@ -2656,8 +2653,8 @@ export function RequestorPracticeReceivePage({
         return true;
       } catch {
         toast({
-          title: "의뢰수락 실패",
-          description: "의뢰수락 요청 중 오류가 발생했습니다.",
+          title: "작업시작 실패",
+          description: "작업시작 요청 중 오류가 발생했습니다.",
           variant: "destructive",
         });
         return false;
@@ -3515,12 +3512,12 @@ export function RequestorPracticeReceivePage({
               toast({
                 title:
                   code === "abutment_machining_started"
-                    ? "의뢰 수락 취소 불가"
+                    ? "작업시작 취소 불가"
                     : "작업 취소 실패",
                 description: String(
                   body.message ||
                     (code === "abutment_machining_started"
-                      ? "어벗 가공이 시작된 의뢰는 수락 취소할 수 없습니다. 제조사가 준비 단계일 때만 가능합니다."
+                      ? "어벗 가공이 시작된 의뢰는 작업시작을 취소할 수 없습니다. 제조사가 준비 단계일 때만 가능합니다."
                       : "작업 취소 요청 중 오류가 발생했습니다."),
                 ),
                 variant: "destructive",
@@ -3588,80 +3585,6 @@ export function RequestorPracticeReceivePage({
       }
     },
     [ACTION_UI_MIN_MS, applyAcceptedLocalPatch, loadCalendarTransfers, queryClient, toast, token],
-  );
-
-  const markTransferReject = useCallback(
-    async (transfer: ReceivedPracticeTransfer) => {
-      if (!token) return false;
-      const isOpenPool =
-        transfer.matchingMode === "auto" && Boolean(transfer.autoMatch?.openPool);
-      if (
-        !isOpenPool &&
-        (transfer.isAccepted || transfer.isDownloaded || transfer.requestorDownloadedAt)
-      ) {
-        toast({
-          title: "거절 불가",
-          description: "이미 수락한 의뢰는 거절할 수 없습니다. 작업취소를 이용해주세요.",
-          variant: "destructive",
-        });
-        return false;
-      }
-
-      try {
-        const [res] = await Promise.all([
-          apiFetch<unknown>({
-            path: `/api/practice/transfers/${encodeURIComponent(transfer.transferId)}/mark-reject`,
-            method: "POST",
-            token,
-          }),
-          new Promise<void>((resolve) => {
-            window.setTimeout(resolve, ACTION_UI_MIN_MS);
-          }),
-        ]);
-
-        if (!res.ok) {
-          const body =
-            res.data && typeof res.data === "object"
-              ? (res.data as Record<string, unknown>)
-              : {};
-          toast({
-            title: "거절 실패",
-            description: String(body.message || "의뢰 거절 중 오류가 발생했습니다."),
-            variant: "destructive",
-          });
-          return false;
-        }
-
-        removeLabReceiveTransferFromList(transfer);
-
-        setDialogOpen(false);
-        chatRoomResolveSeqRef.current += 1;
-        setSelectedTransfer(null);
-        setActiveChatRoom(null);
-        setChatMessages([]);
-        setChatDraft("");
-        setChatReplyTo(null);
-        chatUploads.clear();
-        setChatError("");
-        resetDownloads();
-
-        toast({
-          title: "의뢰 거절",
-          description: isOpenPool
-            ? "의뢰를 거절했습니다. 다른 기공소에 계속 공개됩니다."
-            : "의뢰를 거절했습니다. 치과에 취소 상태로 전달됩니다.",
-        });
-        return true;
-      } catch {
-        toast({
-          title: "거절 실패",
-          description: "의뢰 거절 요청 중 오류가 발생했습니다.",
-          variant: "destructive",
-        });
-        return false;
-      }
-    },
-    [ACTION_UI_MIN_MS, chatUploads, removeLabReceiveTransferFromList, resetDownloads, toast, token],
   );
 
   const markTransferOpenSubcontract = useCallback(
@@ -3803,7 +3726,7 @@ export function RequestorPracticeReceivePage({
   );
 
   const handleAcceptTransfer = useCallback(async () => {
-    if (!selectedTransfer || acceptBusy || releaseBusy || rejectBusy) return;
+    if (!selectedTransfer || acceptBusy || releaseBusy) return;
     if (isGuideTourDemoTransfer(selectedTransfer)) {
       toast({
         title: "가이드투어",
@@ -3826,55 +3749,10 @@ export function RequestorPracticeReceivePage({
     acceptBusy,
     dialogOpen,
     markTransferAccepted,
-    rejectBusy,
     releaseBusy,
     resolveTransferChatRoom,
     selectedTransfer,
     toast,
-  ]);
-
-  const handleRejectTransfer = useCallback(() => {
-    if (!selectedTransfer || rejectBusy || acceptBusy || releaseBusy || openSubcontractBusy)
-      return;
-    if (isGuideTourDemoTransfer(selectedTransfer)) {
-      toast({
-        title: "가이드투어",
-        description: "데모 의뢰입니다. 「다음」으로 진행하세요.",
-      });
-      return;
-    }
-    rejectTargetRef.current = selectedTransfer;
-    setRejectConfirmOpen(true);
-  }, [
-    acceptBusy,
-    openSubcontractBusy,
-    rejectBusy,
-    releaseBusy,
-    selectedTransfer,
-    toast,
-  ]);
-
-  const handleConfirmRejectTransfer = useCallback(async () => {
-    const transfer = rejectTargetRef.current ?? selectedTransfer;
-    if (!transfer || rejectBusy || acceptBusy || releaseBusy || openSubcontractBusy)
-      return;
-    setRejectBusy(true);
-    try {
-      const ok = await markTransferReject(transfer);
-      if (ok) {
-        setRejectConfirmOpen(false);
-        rejectTargetRef.current = null;
-      }
-    } finally {
-      setRejectBusy(false);
-    }
-  }, [
-    acceptBusy,
-    markTransferReject,
-    openSubcontractBusy,
-    rejectBusy,
-    releaseBusy,
-    selectedTransfer,
   ]);
 
   const handleOpenSubcontract = useCallback(async () => {
@@ -3882,7 +3760,6 @@ export function RequestorPracticeReceivePage({
       !selectedTransfer ||
       openSubcontractBusy ||
       acceptBusy ||
-      rejectBusy ||
       releaseBusy
     ) {
       return;
@@ -3897,20 +3774,19 @@ export function RequestorPracticeReceivePage({
     acceptBusy,
     markTransferOpenSubcontract,
     openSubcontractBusy,
-    rejectBusy,
     releaseBusy,
     selectedTransfer,
   ]);
 
   const handleReleaseTransfer = useCallback(async () => {
-    if (!selectedTransfer || releaseBusy || acceptBusy || rejectBusy) return;
+    if (!selectedTransfer || releaseBusy || acceptBusy) return;
     setReleaseBusy(true);
     try {
       await markTransferRelease(selectedTransfer);
     } finally {
       setReleaseBusy(false);
     }
-  }, [acceptBusy, markTransferRelease, rejectBusy, releaseBusy, selectedTransfer]);
+  }, [acceptBusy, markTransferRelease, releaseBusy, selectedTransfer]);
 
   const pickDesignAbutmentFiles = useCallback((): Promise<File[]> => {
     return pickPracticeTransferFilesViaInput({
@@ -5830,11 +5706,8 @@ export function RequestorPracticeReceivePage({
         open={dialogOpen}
         onOpenChange={(open) => {
           if (!open && guideTourWantsReceiveDetail) return;
-          if (!open && rejectConfirmOpen) return;
           setDialogOpen(open);
           if (!open) {
-            setRejectConfirmOpen(false);
-            rejectTargetRef.current = null;
             chatRoomResolveSeqRef.current += 1;
             setSelectedTransfer(null);
             setActiveChatRoom(null);
@@ -6084,14 +5957,6 @@ export function RequestorPracticeReceivePage({
             ? undefined
             : () => void handleAcceptTransfer()
         }
-        rejectBusy={rejectBusy}
-        onReject={
-          selectedTransfer?.labRejected ||
-          selectedTransfer?.manufacturerStage === "거부" ||
-          selectedTransfer?.autoMatch?.declinedByMe
-            ? undefined
-            : () => void handleRejectTransfer()
-        }
         openSubcontractBusy={openSubcontractBusy}
         onOpenSubcontract={
           String(user?.role || "").trim() === "internalLab" &&
@@ -6202,34 +6067,6 @@ export function RequestorPracticeReceivePage({
         }}
         request={abutmentRequestDetail}
         stackAboveFloating
-      />
-      <ConfirmDialog
-        open={rejectConfirmOpen}
-        title="이 의뢰를 거절할까요?"
-        description={
-          <div className="space-y-1">
-            {selectedTransfer?.transferId ? (
-              <div className="text-sm text-muted-foreground">
-                대상: {selectedTransfer.transferId}
-              </div>
-            ) : null}
-            <div className="text-sm text-muted-foreground">
-              {selectedTransfer?.matchingMode === "auto" &&
-              selectedTransfer.autoMatch?.openPool
-                ? "거절하면 다른 기공소에 계속 공개됩니다."
-                : "거절하면 치과에 취소 상태로 전달됩니다."}
-            </div>
-          </div>
-        }
-        confirmLabel="거절"
-        cancelLabel="취소"
-        busy={rejectBusy}
-        onConfirm={() => void handleConfirmRejectTransfer()}
-        onCancel={() => {
-          if (rejectBusy) return;
-          setRejectConfirmOpen(false);
-          rejectTargetRef.current = null;
-        }}
       />
       <ConfirmDialog
         open={ptxCaCreditConfirmOpen}

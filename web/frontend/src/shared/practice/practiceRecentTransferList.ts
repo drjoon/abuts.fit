@@ -1,6 +1,6 @@
 /**
  * 치과 기공의뢰 — 최근 전송 목록 매핑·그룹·필터 SSOT.
- * 상단 5뱃지: 의뢰 / 취소 / 수락 / 완료 / 어벗 (출고·리메이크·거절 뱃지 삭제).
+ * 상단 5뱃지: 의뢰 / 취소 / 작업시작 / 완료 / 어벗 (출고·리메이크·거절 뱃지 삭제).
  * 취소=작업취소+기공소 거절(거부)+휴지통(취소). 어벗=CA 디자인 업로드(+제조 출고 단계).
  * 수락=의뢰수락. 완료=치과도착일 경과 자동 작업완료(어벗 미업로드). 채팅 unread는 상태 뱃지별 합산.
  * 자동매칭(공개 풀)은 공정상 의뢰 — 뱃지 집계·「의뢰」필터에 포함.
@@ -408,9 +408,9 @@ export const PRACTICE_RECENT_STATUS_BADGES = [
   },
   {
     filter: "의뢰수락",
-    label: "수락",
+    label: "작업시작",
     countKey: "accepted",
-    tooltip: "기공소 수락 후 작업 중",
+    tooltip: "기공소가 작업을 시작한 건",
   },
   {
     filter: "도착완료",
@@ -441,9 +441,9 @@ export const LAB_RECEIVE_STATUS_BADGES = [
   },
   {
     filter: "의뢰수락",
-    label: "수락",
+    label: "작업시작",
     countKey: "accepted",
-    tooltip: "기공소 수락 후 작업 중",
+    tooltip: "기공소가 작업을 시작한 건",
   },
   {
     filter: "도착완료",
@@ -548,7 +548,7 @@ export const toStatusLabel = (manufacturerStage: unknown) => {
   return "발송완료";
 };
 
-/** 목록/카드 뱃지 라벨 — 상단 필터(의뢰·취소·수락·어벗)와 동일 문구 */
+/** 목록/카드 뱃지 라벨 — 상단 필터(의뢰·취소·작업시작·어벗)와 동일 문구 */
 export const toStatusBadgeLabel = (
   status: unknown,
   opts?: {
@@ -584,7 +584,7 @@ export const toStatusBadgeLabel = (
   ) {
     return "완료";
   }
-  if (s === "의뢰수락" || s === "다운로드완료") return "수락";
+  if (s === "의뢰수락" || s === "다운로드완료") return "작업시작";
   return s;
 };
 

@@ -1966,7 +1966,7 @@ export const RequestorDashboardPage = () => {
   })();
 
   // 기공(기공의뢰서) 라인 — dashboard-cards-summary.practiceTransferStats
-  // 뱃지 SSOT: 의뢰 · 수락/거부 · 디자인/취소 · 출고 · 추적관리
+  // 뱃지 SSOT: 의뢰 · 작업시작 · 디자인/취소 · 출고 · 추적관리
   const practiceTransferStats: RequestorDashboardStat[] = (() => {
     const raw =
       cardsSummaryResponse?.success &&
@@ -1975,13 +1975,11 @@ export const RequestorDashboardPage = () => {
         : null;
     const sent = Number(raw?.sent ?? 0);
     const accepted = Number(raw?.accepted ?? 0);
-    const rejected = Number(raw?.rejected ?? 0);
     const completed = Number(raw?.completed ?? 0);
     const canceled = Number(raw?.canceled ?? 0);
     const shipping = Number(raw?.shipping ?? 0);
     const tracking = Number(raw?.tracking ?? 0);
     const acceptedSafe = Number.isFinite(accepted) ? accepted : 0;
-    const rejectedSafe = Number.isFinite(rejected) ? rejected : 0;
     const completedSafe = Number.isFinite(completed) ? completed : 0;
     const canceledSafe = Number.isFinite(canceled) ? canceled : 0;
     return [
@@ -1992,8 +1990,8 @@ export const RequestorDashboardPage = () => {
         interactive: false,
       },
       {
-        label: "수락/거부",
-        value: `${acceptedSafe}/${rejectedSafe}`,
+        label: "작업시작",
+        value: String(acceptedSafe),
         icon: Download,
         interactive: false,
       },

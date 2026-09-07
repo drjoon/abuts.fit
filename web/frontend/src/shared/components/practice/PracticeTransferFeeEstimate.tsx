@@ -861,7 +861,7 @@ export function PracticeTransferFeeEstimate({
       {labFeeUnset && !hasMissingFees ? (
         <p className="text-muted-foreground">
           {isLab
-            ? "기공비를 설정해야 의뢰를 수락할 수 있습니다."
+            ? "기공비를 설정해야 작업을 시작할 수 있습니다."
             : "기공소에서 아직 기공비를 설정하지 않았습니다. 기공소에 문의해주세요."}
         </p>
       ) : null}
