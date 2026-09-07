@@ -344,6 +344,7 @@ import {
   PTX_CA_INSUFFICIENT_CREDIT_REASON,
   PTX_CA_INSUFFICIENT_CREDIT_TITLE,
 } from "@/shared/demo/demoModeCopy";
+import { DemoModeBadge } from "@/shared/demo/DemoModeBadge";
 import type { ReactNode } from "react";
 
 const CREDITS_CHARGE_HREF = "/dashboard/credits?tab=charge";
@@ -5376,6 +5377,7 @@ export function RequestorPracticeReceivePage({
           <RequestorAbutmentPageHeader variant="policyInProgress" />
         }
       />
+      <DemoModeBadge className="shrink-0 sm:ml-auto" />
     </div>
   );
 
@@ -5778,6 +5780,7 @@ export function RequestorPracticeReceivePage({
                 anodizingSaving={anodizingSaving}
                 onToggleAnodizing={handleToggleAnodizing}
               />
+              <DemoModeBadge className="shrink-0" />
             </div>
             <DesignQueueSection listMode={designQueueListMode} />
           </div>
@@ -5793,6 +5796,15 @@ export function RequestorPracticeReceivePage({
                   </div>
                 ) : null}
                 {!isMobile ? transferSearchAndBadges : null}
+                {isMobile ? (
+                  <div className="flex justify-end">
+                    <DemoModeBadge className="shrink-0" />
+                  </div>
+                ) : null}
+              </div>
+            ) : isMobile ? (
+              <div className="flex shrink-0 justify-end pb-2 pr-1">
+                <DemoModeBadge className="shrink-0" />
               </div>
             ) : null}
             <div

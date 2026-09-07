@@ -45,6 +45,7 @@ import { RequestorUnmachinableHost } from "@/pages/requestor/dashboard/component
 import { PastRequestsModal } from "@/shared/components/PastRequestsModal";
 import { RequestDetailDialog } from "@/features/requests/components/RequestDetailDialog";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
+import { DemoModeBadge } from "@/shared/demo/DemoModeBadge";
 import { getNormalizedStageLabelSafe } from "@/utils/stage";
 import type { PeriodFilterValue } from "@/shared/ui/PeriodFilter";
 import {
@@ -547,6 +548,7 @@ export const RequestorAbutmentPageHeader = ({
           완료 내역 {pastCount.toLocaleString()}건
         </Button>
         <RequestorUnmachinableHost period={period} count={unmachinableCount} />
+        <DemoModeBadge className="shrink-0 sm:ml-auto" />
       </RequestorWorkspaceHeader>
 
       {inProgressModal}
