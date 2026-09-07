@@ -80,6 +80,8 @@ import {
   normalizeRushFeeMultiplier,
   parseOrderYmdFromMemo,
   resolvePracticeTransferArrivalPolicy,
+  upsertMemoArrivalYmd,
+  upsertMemoOrderYmd,
 } from "../../utils/practiceTransferRush.js";
 import {
   appendPracticeArrivalDate,
@@ -92,6 +94,16 @@ import {
   syncArrivalDatesWithMemoYmd,
   syncOrderDatesWithMemoYmd,
 } from "../../utils/practiceTransferArrivalDates.js";
+import { toKstYmd } from "../requests/utils.js";
+
+/** 작업시작(의뢰수락) 이후 — 리메이크 가능 stage */
+const PRACTICE_REMAKE_ELIGIBLE_STAGES = new Set([
+  "의뢰수락",
+  "다운로드완료",
+  "작업완료",
+  "생산진행",
+  "포장.발송",
+]);
 import {
   buildFollowUpToothWorksDraft,
   canAppendProsthesisFollowUp,
@@ -2885,6 +2897,12 @@ export async function createPracticeTransfer(req, res) {
       parseSkipJigInput(req.body, practiceRouting),
     );
     const rushProcessing = parseRushProcessingInput(req.body, practiceRouting);
+    const isRemakeRequest = Boolean(
+      req.body?.isRemake === true ||
+        req.body?.remake === true ||
+        String(req.body?.isRemake || "").trim() === "true" ||
+        String(req.body?.remake || "").trim() === "true",
+    );
 
     try {
       assertAbutmentPresetsComplete(toothWorksRaw);
@@ -2957,6 +2975,7 @@ export async function createPracticeTransfer(req, res) {
         autoMatchBudget,
         catalog: autoMatchCatalog,
         rushFeeMultiplier,
+        remake: isRemakeRequest,
       }),
       String(matchingMode || "").trim() === "direct"
         ? assertLabAllowedAsDirectPracticeTarget({
@@ -3013,6 +3032,7 @@ export async function createPracticeTransfer(req, res) {
         skipJig,
         fees: feeQuote.fees,
         balanceMode: "snapshot",
+        remake: isRemakeRequest,
       });
       createShippingFees = creditCheck?.shipping || null;
     } catch (creditErr) {
@@ -3030,6 +3050,7 @@ export async function createPracticeTransfer(req, res) {
       ...toBillingPreviewFields(feeQuote),
       rushFeeMultiplier,
       abutmentPricingTier: feeQuote?.abutmentPricingTier || "membership",
+      ...(isRemakeRequest ? { isRemake: true } : {}),
     };
 
     const autoMatchPriorityFields =
@@ -3087,6 +3108,16 @@ export async function createPracticeTransfer(req, res) {
       files,
       toothWorks: toothWorksRaw,
       billing: billingPreview,
+      ...(isRemakeRequest
+        ? {
+            remake: {
+              sourceTransferId: "",
+              sourceTransferMongoId: null,
+              requestedAt: new Date(),
+              requestedBy: req.user?._id || null,
+            },
+          }
+        : {}),
       production: {
         skipDesignConfirm,
         skipJig,
@@ -3124,6 +3155,15 @@ export async function createPracticeTransfer(req, res) {
       count: files.length,
       unreadCount: 0,
       createdAt: transferDoc?.createdAt || new Date(),
+      ...(isRemakeRequest
+        ? {
+            isRemake: true,
+            remake: {
+              sourceTransferId: null,
+              sourceTransferMongoId: null,
+            },
+          }
+        : {}),
       ...toAutoMatchApiFields(transferDoc),
     };
 
@@ -4878,10 +4918,10 @@ export async function remakePracticeTransfers(req, res) {
       const sourceTransferId = String(source?.transferId || "").trim();
       seen.add(sourceMongoId);
       const stage = resolvePracticeTransferManufacturerStage(source);
-      if (stage !== "생산진행") {
+      if (!PRACTICE_REMAKE_ELIGIBLE_STAGES.has(stage)) {
         failed.push({
           transferId: sourceTransferId || sourceMongoId,
-          message: "발송된 의뢰만 리메이크할 수 있습니다.",
+          message: "작업시작 이후 의뢰만 리메이크할 수 있습니다.",
         });
         continue;
       }
@@ -4954,6 +4994,27 @@ export async function remakePracticeTransfers(req, res) {
           ? source.production
           : {};
 
+      let remakeMemo = String(source.transferMemo || "").trim();
+      let remakeArrivalDates = resolvePracticeArrivalDates(source);
+      let remakeOrderDates = resolvePracticeOrderDates(source);
+      const arrivalYmd = String(req.body?.arrivalYmd || "").trim();
+      const todayYmd = toKstYmd(new Date()) || "";
+      if (/^\d{4}-\d{2}-\d{2}$/.test(arrivalYmd)) {
+        if (todayYmd && arrivalYmd < todayYmd) {
+          failed.push({
+            transferId: sourceTransferId || sourceMongoId,
+            message: "리메이크 도착일은 오늘 이후로 선택해 주세요.",
+          });
+          continue;
+        }
+        remakeMemo = upsertMemoOrderYmd(
+          upsertMemoArrivalYmd(remakeMemo, arrivalYmd),
+          todayYmd || arrivalYmd,
+        );
+        remakeArrivalDates = [arrivalYmd];
+        remakeOrderDates = todayYmd ? [todayYmd] : [arrivalYmd];
+      }
+
       const transferDoc = await PracticeTransfer.create({
         transferId,
         practiceUserId: req.user?._id,
@@ -4961,9 +5022,9 @@ export async function remakePracticeTransfers(req, res) {
         targetLabAnchorId,
         targetLabName: String(source.targetLabName || "").trim(),
         matchingMode: "direct",
-        transferMemo: String(source.transferMemo || "").trim(),
-        arrivalDates: resolvePracticeArrivalDates(source),
-        orderDates: resolvePracticeOrderDates(source),
+        transferMemo: remakeMemo,
+        arrivalDates: remakeArrivalDates,
+        orderDates: remakeOrderDates,
         tag: String(source.tag || "practice_file_transfer").trim(),
         status: "active",
         files,

@@ -298,9 +298,11 @@ export const buildFeeQuoteFromContext = (params: {
   autoMatchBudget?: PracticeTransferAutoMatchBudget | null;
   rushFeeMultiplier?: number;
   skipAbutmentFees?: boolean;
+  remake?: boolean;
 }): PracticeTransferFeeQuote => {
   const context = params.context || DEFAULT_QUOTE_CONTEXT;
   const zeroed = Boolean(context.usedDefaultSchedule);
+  const useRemake = Boolean(params.remake);
   const labFeeMultiplier = zeroed
     ? 1
     : normalizeLabFeeMultiplier(context.labFeeMultiplier);
@@ -316,7 +318,8 @@ export const buildFeeQuoteFromContext = (params: {
     abutmentPrices: context.abutmentPrices,
     labFeeMultiplier: zeroed ? 1 : labFeeMultiplier,
     rushFeeMultiplier,
-    skipAbutmentFees: Boolean(params.skipAbutmentFees),
+    remake: useRemake,
+    skipAbutmentFees: useRemake || Boolean(params.skipAbutmentFees),
   });
   const feeRateApplied = Number(context.feeRateApplied || 0);
   const settlement = splitPracticeTransferSettlement({
@@ -347,6 +350,7 @@ export const buildFeeQuoteFromContext = (params: {
     usedDefaultSchedule: zeroed,
     labFeeConfigured: context.labFeeConfigured !== false,
     missingFeeNames,
+    isRemake: useRemake,
     autoMatchBudget: null,
   };
 };

@@ -608,6 +608,18 @@ export const canEditPracticeTransferByStatus = (status: unknown) => {
   return s === "발송완료" || s === "수신완료" || s === "자동매칭";
 };
 
+/** 작업시작(의뢰수락) 이후 — 리메이크 가능 */
+export const canRemakePracticeTransferByStatus = (status: unknown) => {
+  const s = String(status || "").trim();
+  return (
+    s === "의뢰수락" ||
+    s === "다운로드완료" ||
+    s === "작업완료" ||
+    s === "생산진행" ||
+    s === "포장.발송"
+  );
+};
+
 const toDateLabel = (value: unknown) => {
   const d = new Date(String(value || ""));
   if (Number.isNaN(d.getTime())) return "-";

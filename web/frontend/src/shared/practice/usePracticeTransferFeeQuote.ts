@@ -124,6 +124,7 @@ export const usePracticeTransferFeeQuote = (params: {
   autoMatchBudget?: PracticeTransferAutoMatchBudget | null;
   rushFeeMultiplier?: number;
   skipAbutmentFees?: boolean;
+  remake?: boolean;
 }): {
   quote: PracticeTransferFeeQuote;
   contextReady: boolean;
@@ -133,6 +134,7 @@ export const usePracticeTransferFeeQuote = (params: {
   const { data: systemSettings } = useSystemSettings();
   const toothWorks = params.toothWorks;
   const storedQuote = params.storedQuote;
+  const remake = Boolean(params.remake);
   const rawLabId = String(params.labAnchorId || "").trim();
   const labAnchorId =
     /^[a-fA-F0-9]{24}$/.test(rawLabId) ? rawLabId : null;
@@ -198,6 +200,7 @@ export const usePracticeTransferFeeQuote = (params: {
       autoMatchBudget: params.autoMatchBudget,
       rushFeeMultiplier,
       skipAbutmentFees: params.skipAbutmentFees,
+      remake,
       context: {
         ...context,
         abutmentPricingTier:
@@ -215,6 +218,7 @@ export const usePracticeTransferFeeQuote = (params: {
     params.implantFavorites,
     params.rushFeeMultiplier,
     params.skipAbutmentFees,
+    remake,
     settingsPrices,
     toothWorks,
   ]);

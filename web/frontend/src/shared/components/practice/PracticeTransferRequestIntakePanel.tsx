@@ -852,6 +852,8 @@ export type PracticeTransferRequestIntakePanelProps = {
   toothChartResetNonce?: number;
   /** 상·하악 사이에 견적(크레딧 소비액) 표시. 기공의뢰서만 */
   showFeeEstimate?: boolean;
+  /** 리메이크 수가로 견적(플랫폼 도입 전 리메이크 작성) */
+  remake?: boolean;
   /** @deprecated 2026-08-22 skipJig 옵션 삭제. 호환용 props */
   skipJig?: boolean;
   /** @deprecated 2026-08-22 skipJig 옵션 삭제 */
@@ -969,6 +971,7 @@ export const PracticeTransferRequestIntakePanel = ({
   alternateAbutmentModePageLabel = "구강스캔으로",
   toothChartResetNonce = 0,
   showFeeEstimate = false,
+  remake = false,
   // 레거시(2026-08-22): skipJig / onSkipJigChange UI 삭제. props는 호환용으로만 수신.
   skipJig: _skipJig = true,
   onSkipJigChange: _onSkipJigChange,
@@ -1258,6 +1261,7 @@ export const PracticeTransferRequestIntakePanel = ({
     autoMatchBudget: null,
     // 신속처리 할증 없음
     rushFeeMultiplier: 1,
+    remake,
   });
   const labFeeByTooth = useMemo(() => {
     const map = new Map<string, { min: number; max: number }>();

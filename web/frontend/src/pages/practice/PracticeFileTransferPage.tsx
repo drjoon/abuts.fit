@@ -255,6 +255,7 @@ import {
   PRACTICE_MY_TRANSFERS_PAGE_SIZE,
   canDeletePracticeTransferByStatus,
   canEditPracticeTransferByStatus,
+  canRemakePracticeTransferByStatus,
   filterRequestsByPeriodAndSearch,
   groupPracticeRecentRequests,
   isPracticeTransferActionNeededStatus,
@@ -283,7 +284,12 @@ import {
   type PracticeLabRatingPublic,
 } from "@/shared/practice/practiceLabRating";
 import { PracticeLabRejectedReselectDialog } from "@/shared/components/practice/PracticeLabRejectedReselectDialog";
+import { PracticeRemakeSearchDialog } from "@/shared/components/practice/PracticeRemakeSearchDialog";
 import { normalizeMemoSnippets } from "@/shared/components/practice/PracticeTransferRequestIntakePanel";
+import {
+  formatManWon,
+} from "@/shared/practice/practiceTransferFeeQuote";
+import { usePracticeTransferFeeQuote } from "@/shared/practice/usePracticeTransferFeeQuote";
 import { restoreToothWorksFromDraft } from "@/shared/practice/toothWorkDraft";
 import { deleteFile as deleteFileFromIndexedDb } from "@/shared/storage/fileIndexedDB";
 import {
@@ -1536,6 +1542,15 @@ export const PracticeFileTransferPage = ({
   const abutmentFavoritesRef = useRef(abutmentFavorites);
   abutmentFavoritesRef.current = abutmentFavorites;
   const [composeOpen, setComposeOpen] = useState(false);
+  const [composeRemakeMode, setComposeRemakeMode] = useState(false);
+  const [remakeSearchOpen, setRemakeSearchOpen] = useState(false);
+  const [remakeBusy, setRemakeBusy] = useState(false);
+  const [remakeConfirmOpen, setRemakeConfirmOpen] = useState(false);
+  const [remakePending, setRemakePending] = useState<{
+    transfer: RecentTransferItem;
+    arrivalYmd: string;
+  } | null>(null);
+  const [composeRemakeConfirmOpen, setComposeRemakeConfirmOpen] = useState(false);
   const [draftsOpen, setDraftsOpen] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false);
   const [oralPhotoPreview, setOralPhotoPreview] = useState<{
@@ -1560,6 +1575,14 @@ export const PracticeFileTransferPage = ({
     () => normalizeToothWorksForSync(toothWorks),
     [toothWorks],
   );
+  const { quote: composeRemakeFeeQuote } = usePracticeTransferFeeQuote({
+    enabled: composeRemakeMode && Boolean(selectedLab?._id),
+    labAnchorId: selectedLab?._id,
+    toothWorks: syncToothWorks,
+    implantFavorites,
+    remake: true,
+    rushFeeMultiplier: 1,
+  });
   const effectiveSkipJig = useMemo(
     () => resolvePracticeTransferSkipJig(normalizedToothWorks, skipJig),
     [normalizedToothWorks, skipJig],
@@ -6715,7 +6738,9 @@ export const PracticeFileTransferPage = ({
     },
   });
 
-  const handleSubmitPracticeRequest = async () => {
+  const handleSubmitPracticeRequest = async (options?: {
+    skipRemakeConfirm?: boolean;
+  }) => {
     if (requestSubmittingRef.current || requestSubmitting) return;
 
     if (!authToken) {
@@ -6743,6 +6768,25 @@ export const PracticeFileTransferPage = ({
         variant: "destructive",
       });
       return;
+    }
+
+    if (
+      composeRemakeMode &&
+      !editingSentTransfer &&
+      !options?.skipRemakeConfirm
+    ) {
+      const remakeFee = Math.max(
+        0,
+        Math.round(
+          Number(
+            composeRemakeFeeQuote.total || composeRemakeFeeQuote.labFeeTotal || 0,
+          ),
+        ),
+      );
+      if (remakeFee > 0) {
+        setComposeRemakeConfirmOpen(true);
+        return;
+      }
     }
 
     if (arrivalDate < orderDate) {
@@ -6927,6 +6971,7 @@ export const PracticeFileTransferPage = ({
           rushProcessing,
           autoMatchMinLabRating,
           autoMatchMaxLabRating,
+          ...(composeRemakeMode && !editing ? { isRemake: true } : {}),
           caseInfos: caseInfosPayload,
         },
       });
@@ -6960,14 +7005,22 @@ export const PracticeFileTransferPage = ({
       rememberLab(selectedLab);
 
       toast({
-        title: editing ? "의뢰가 수정되었습니다" : "기공소 전송 완료",
+        title: editing
+          ? "의뢰가 수정되었습니다"
+          : composeRemakeMode
+            ? "리메이크 의뢰 전송 완료"
+            : "기공소 전송 완료",
         description: editing
           ? "같은 의뢰가 기공소에 다시 전달되었습니다. 작업시작 전이면 기공소 화면에도 바로 반영됩니다."
-          : remainingDraftCount > 0
-            ? `작성 중이던 의뢰만 전송했습니다. 임시저장 ${remainingDraftCount}건은 목록에 남아 있습니다.`
-            : "기공소로 정상 전송되었습니다.",
+          : composeRemakeMode
+            ? "기공소가 작업시작하면 리메이크 기공비로 처리됩니다."
+            : remainingDraftCount > 0
+              ? `작성 중이던 의뢰만 전송했습니다. 임시저장 ${remainingDraftCount}건은 목록에 남아 있습니다.`
+              : "기공소로 정상 전송되었습니다.",
       });
 
+      setComposeRemakeMode(false);
+      setComposeRemakeConfirmOpen(false);
       setComposeOpen(false);
       void loadRecentRequests({ silent: true });
       setCalendarRefreshNonce((n) => n + 1);
@@ -7095,6 +7148,7 @@ export const PracticeFileTransferPage = ({
     arrivalYmd?: string;
     openCompose?: boolean;
     silentToast?: boolean;
+    remake?: boolean;
   }) => {
     clearPracticeSharedFormLocalStorage();
 
@@ -7108,6 +7162,8 @@ export const PracticeFileTransferPage = ({
     pendingLocalFormEditRef.current = false;
     setFormSyncStatus("idle");
 
+    setComposeRemakeMode(Boolean(options?.remake));
+    setComposeRemakeConfirmOpen(false);
     setLabOpen(false);
     setLabSearch("");
     // 최근 기공소는 드롭다운 후보로 유지. 선택은 비운 뒤 테스트기공소 자동 선택이 채운다.
@@ -7645,6 +7701,97 @@ export const PracticeFileTransferPage = ({
   /** PC — 툴바는 작성 DialogHeader. intake는 투어 레일만 예약 */
   const showComposeHeaderToolbar = !isMobile;
 
+  const remakeFeeAmountForTransfer = (transfer: RecentTransferItem) => {
+    const q = transfer.remakeFeeQuote || null;
+    if (!q) return 0;
+    return Math.max(0, Math.round(Number(q.total || q.labFeeTotal || 0)));
+  };
+
+  const handleConfirmRemake = useCallback(
+    async (pending?: { transfer: RecentTransferItem; arrivalYmd: string } | null) => {
+      const target = pending || remakePending;
+      if (!authToken || !target) return;
+      const mongoId = String(
+        target.transfer.transferMongoIds?.[0] || target.transfer.id || "",
+      ).trim();
+      if (!mongoId) {
+        toast({
+          title: "리메이크 의뢰 실패",
+          description: "원본 의뢰를 확인할 수 없습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (!canRemakePracticeTransferByStatus(target.transfer.status)) {
+        toast({
+          title: "리메이크 의뢰 실패",
+          description: "작업시작 이후 의뢰만 리메이크할 수 있습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+      setRemakeBusy(true);
+      try {
+        const res = await apiFetch<{
+          message?: string;
+          data?: { created?: unknown[]; failed?: Array<{ message?: string }> };
+        }>({
+          path: "/api/practice/transfers/remake",
+          method: "POST",
+          token: authToken,
+          jsonBody: {
+            transferMongoIds: [mongoId],
+            arrivalYmd: target.arrivalYmd,
+          },
+        });
+        if (!res.ok) {
+          const body = res.data && typeof res.data === "object" ? res.data : {};
+          toast({
+            title: "리메이크 의뢰 실패",
+            description: String(
+              (body as { message?: string }).message || "다시 시도해주세요.",
+            ),
+            variant: "destructive",
+          });
+          return;
+        }
+        toast({
+          title: "리메이크 의뢰를 전송했습니다",
+          description: `도착일 ${target.arrivalYmd}`,
+        });
+        setRemakePending(null);
+        setRemakeConfirmOpen(false);
+        setRemakeSearchOpen(false);
+        void loadRecentRequests({ silent: true });
+        setCalendarRefreshNonce((n) => n + 1);
+      } catch (error) {
+        toast({
+          title: "리메이크 의뢰 실패",
+          description:
+            error instanceof Error ? error.message : "다시 시도해주세요.",
+          variant: "destructive",
+        });
+      } finally {
+        setRemakeBusy(false);
+      }
+    },
+    [authToken, loadRecentRequests, remakePending, toast],
+  );
+
+  const askRemakeForTransfer = useCallback(
+    (transfer: RecentTransferItem, arrivalYmd: string) => {
+      const pending = { transfer, arrivalYmd };
+      setRemakePending(pending);
+      const fee = remakeFeeAmountForTransfer(transfer);
+      if (fee > 0) {
+        setRemakeConfirmOpen(true);
+        return;
+      }
+      void handleConfirmRemake(pending);
+    },
+    [handleConfirmRemake],
+  );
+
   const practiceWorkspaceToolbar = (
     <>
       <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
@@ -7665,6 +7812,16 @@ export const PracticeFileTransferPage = ({
               작성 화면만 비웁니다. 임시저장은 목록에 남습니다.
             </TooltipContent>
           </Tooltip>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-9 gap-1.5 px-3"
+            onClick={() => setRemakeSearchOpen(true)}
+          >
+            <Repeat className="h-4 w-4 shrink-0" />
+            리메이크
+          </Button>
           <Button
             type="button"
             variant="outline"
@@ -7737,6 +7894,18 @@ export const PracticeFileTransferPage = ({
             type="button"
             variant="outline"
             size="sm"
+            className="h-9 shrink-0 gap-1 rounded-full border-slate-200 bg-white px-3 shadow-sm"
+            aria-label="리메이크"
+            title="리메이크 — 기존 의뢰 연결 또는 플랫폼 도입 전 케이스"
+            onClick={() => setRemakeSearchOpen(true)}
+          >
+            <Repeat className="h-4 w-4 shrink-0" />
+            리메이크
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
             className={cn(
               "h-9 shrink-0 gap-1 rounded-full border-slate-200 bg-white px-3 shadow-sm",
               draftGroupedTransfers.length > 0 && "border-amber-300 bg-amber-50/90",
@@ -7794,6 +7963,16 @@ export const PracticeFileTransferPage = ({
         </div>
       ) : (
         <>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-9 gap-1.5 px-3"
+            onClick={() => setRemakeSearchOpen(true)}
+          >
+            <Repeat className="h-4 w-4 shrink-0" />
+            리메이크
+          </Button>
           <Button
             type="button"
             variant="outline"
@@ -8082,6 +8261,7 @@ export const PracticeFileTransferPage = ({
                   prosthesisTypeSelectWidthClassName: "w-full min-w-0 sm:w-[7rem]",
                   showBridgeConnections: true,
                   showFeeEstimate: true,
+                  remake: composeRemakeMode,
                   skipJig,
                   onSkipJigChange: persistSkipJigSetting,
                   rushProcessing,
@@ -8153,6 +8333,10 @@ export const PracticeFileTransferPage = ({
           // 투어 블러·코치마크가 Dialog 밖(higher z)이라 outside 클릭으로 닫힘 → 하이라이트 타깃 소실
           if (!open && guideTourWantsComposeOpen) return;
           setComposeOpen(open);
+          if (!open) {
+            setComposeRemakeMode(false);
+            setComposeRemakeConfirmOpen(false);
+          }
         }}
       >
         <DialogContent
@@ -8212,11 +8396,23 @@ export const PracticeFileTransferPage = ({
           >
             <DialogTitle
               className={cn(
-                "shrink-0 font-semibold tracking-tight",
+                "flex shrink-0 items-center gap-2 font-semibold tracking-tight",
                 isMobile ? "text-[17px]" : "text-base sm:text-lg",
               )}
             >
-              {editingSentTransfer ? "의뢰 수정" : "신규 의뢰"}
+              {editingSentTransfer
+                ? "의뢰 수정"
+                : composeRemakeMode
+                  ? "리메이크 의뢰"
+                  : "신규 의뢰"}
+              {composeRemakeMode && !editingSentTransfer ? (
+                <Badge
+                  variant="outline"
+                  className="border-amber-400 bg-amber-50 text-amber-800"
+                >
+                  리메이크
+                </Badge>
+              ) : null}
             </DialogTitle>
             {isMobile && formSyncStatusLabel ? (
               <p
@@ -8329,10 +8525,14 @@ export const PracticeFileTransferPage = ({
                     {requestSubmitting
                       ? editingSentTransfer
                         ? "수정 저장 중..."
-                        : "기공소로 전송 중..."
+                        : composeRemakeMode
+                          ? "리메이크 전송 중..."
+                          : "기공소로 전송 중..."
                       : editingSentTransfer
                         ? "수정 저장"
-                        : "기공소로 전송"}
+                        : composeRemakeMode
+                          ? "리메이크 전송"
+                          : "기공소로 전송"}
                   </Button>
                 </span>
               </TooltipTrigger>
@@ -9275,7 +9475,7 @@ export const PracticeFileTransferPage = ({
           }}
           onCancelReply={() => setChatReplyTo(null)}
           onToggleReaction={(messageId, emoji) => void toggleReaction(messageId, emoji)}
-          composerPlaceholder="문의 내용을 입력하세요"
+          composerPlaceholder="문의 내용을 입력하세요 ($ 로 의뢰건 불러오기)"
           inputDisabled={chatLoading || chatMessagesLoading || chatSending || !activeChatRoom?._id}
           sendDisabled={chatSending}
         />
@@ -9543,6 +9743,97 @@ export const PracticeFileTransferPage = ({
             } finally {
               setLabRejectedRetargetBusy(false);
             }
+          }}
+        />
+
+        <PracticeRemakeSearchDialog
+          open={remakeSearchOpen}
+          onOpenChange={setRemakeSearchOpen}
+          transfers={groupedTransfers}
+          busy={remakeBusy}
+          onSelectRemake={({ transfer, arrivalYmd }) => {
+            askRemakeForTransfer(transfer, arrivalYmd);
+          }}
+          onPrePlatformRemake={() => {
+            void handleStartNewTransfer({
+              openCompose: true,
+              silentToast: true,
+              remake: true,
+            });
+          }}
+        />
+
+        <ConfirmDialog
+          open={remakeConfirmOpen}
+          title="리메이크 의뢰를 전송할까요?"
+          description={
+            remakePending ? (
+              <div className="space-y-1">
+                <div>
+                  환자{" "}
+                  {resolvePracticeTransferListPatientName(remakePending.transfer) ||
+                    "—"}{" "}
+                  · {remakePending.transfer.targetLab || "기공소"}
+                </div>
+                <div>
+                  도착일 {remakePending.arrivalYmd} · 리메이크비{" "}
+                  {formatManWon(remakeFeeAmountForTransfer(remakePending.transfer))}
+                </div>
+              </div>
+            ) : undefined
+          }
+          confirmLabel={remakeBusy ? "전송 중..." : "리메이크 의뢰"}
+          cancelLabel="취소"
+          confirmTone="primary"
+          busy={remakeBusy}
+          onConfirm={() => void handleConfirmRemake()}
+          onCancel={() => {
+            if (remakeBusy) return;
+            setRemakeConfirmOpen(false);
+            setRemakePending(null);
+          }}
+        />
+
+        <ConfirmDialog
+          open={composeRemakeConfirmOpen}
+          title="리메이크 의뢰를 전송할까요?"
+          description={
+            <div className="space-y-1">
+              <div>
+                환자 {normalizedPatientName || "—"} ·{" "}
+                {String(selectedLab?.name || "").trim() || "기공소"}
+              </div>
+              <div>
+                도착일 {arrivalDate || "—"} · 리메이크비{" "}
+                {formatManWon(
+                  Math.max(
+                    0,
+                    Math.round(
+                      Number(
+                        composeRemakeFeeQuote.total ||
+                          composeRemakeFeeQuote.labFeeTotal ||
+                          0,
+                      ),
+                    ),
+                  ),
+                )}
+              </div>
+              <div className="text-muted-foreground">
+                기공소가 작업시작하면 리메이크 기공비로 처리됩니다.
+              </div>
+            </div>
+          }
+          confirmLabel={requestSubmitting ? "전송 중..." : "리메이크 전송"}
+          cancelLabel="취소"
+          confirmTone="primary"
+          busy={requestSubmitting}
+          onConfirm={() => {
+            setComposeRemakeConfirmOpen(false);
+            void handleSubmitPracticeRequest({ skipRemakeConfirm: true });
+          }}
+          onCancel={() => {
+            if (requestSubmitting) return;
+            setComposeRemakeConfirmOpen(false);
           }}
         />
 
