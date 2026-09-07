@@ -14,6 +14,7 @@
 // - web/frontend/src/shared/files/downloadWithProgress.ts
 // - web/frontend/src/shared/files/s3BlobCache.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-09-08: DialogDescription sr-only — Radix DescriptionWarning 제거.
 // - 2026-09-08: 탭 라벨 의뢰/진행. 식별=이름, 진행 헤더=도착일+다음 도착일. 알림=전체 토글.
 // - 2026-09-08: 헤더 < > — 패널을 화면 왼쪽/오른쪽 끝에 도킹.
 // - 2026-09-08: 담당자·작업+배송기간 → 상세 정보(접기)로 이동.
@@ -125,7 +126,12 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -1972,6 +1978,9 @@ export function PracticeTransferDetailChatDialog({
         data-guide-tour="lab_detail"
       >
         <DialogTitle className="sr-only">{title}</DialogTitle>
+        <DialogDescription className="sr-only">
+          기공의뢰 상세 및 채팅
+        </DialogDescription>
 
         <PracticeTransferFileDropTarget
           fileInputId={

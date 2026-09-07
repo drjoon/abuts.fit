@@ -12,6 +12,7 @@
 // - 2026-08-25: 심플어벗(심플어벗/심플밀링·직경 6–10·높이 S/M/L) — 스캔바디와 XOR. 완성 시 프리셋 충족.
 // - 2026-08-21: 임플란트 추가 요청 프리셋 type을 옵션명으로 정규화(레거시 헥스 → 선택 가능).
 // - 2026-08-21: 기공소 수신 — 환봉·제조사 추가요청(요청중) CA는 「커스텀어벗」(기공소 수행). 그 외는 「어벗츠 지급」.
+// - 2026-09-08: formatToothNumbersForCard — 문자열 입력 허용(비배열 truthy면 flatMap 크래시 방지).
 // - 2026-09-07: formatToothNumbersForCard — 상·하악 전체(16치)는 번호 나열 대신 상악/하악.
 // - 2026-09-07: formatToothNumbersForFeeLine — 견적 라인용(이미 상악/하악이면 유지).
 // - 2026-08-16: formatToothNumbersForCard — 의뢰 목록 카드용 치아번호만(11,21).
@@ -1124,12 +1125,16 @@ const isFullArchTeeth = (
 export const formatToothNumbersForCard = (
   rows:
     | Array<{ toothNumber?: string | null } | string | null | undefined>
+    | string
     | null
     | undefined,
 ): string => {
+  // 견적 라인 등이 문자열("11,21")을 넘길 수 있음 — truthy 비배열은 []로 바꾸면 안 됨.
+  const list: Array<{ toothNumber?: string | null } | string | null | undefined> =
+    Array.isArray(rows) ? rows : rows == null || rows === "" ? [] : [rows];
   const numbers = [
     ...new Set(
-      (rows || []).flatMap((row) => {
+      list.flatMap((row) => {
         const raw =
           typeof row === "string"
             ? String(row || "").trim()
@@ -1193,7 +1198,7 @@ export const formatToothNumbersForFeeLine = (
     if (tokens.includes("하악")) parts.push("하악");
     return parts.join(",");
   }
-  return formatToothNumbersForCard(raw) || raw;
+  return formatToothNumbersForCard(tokens) || raw;
 };
 
 const parseLegacyToothWorksSummary = (value: string): ToothWorkSelection[] => {
