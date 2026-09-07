@@ -40,19 +40,62 @@ const resolveRequestorUserIdsByAnchor = async (anchorId) => {
     .filter(Boolean);
 };
 
+const addAnchorPeerRecipients = async ({
+  idSet,
+  practiceAnchorId = "",
+  labAnchorIds = [],
+}) => {
+  const practiceId = String(practiceAnchorId || "").trim();
+  const labIds = (Array.isArray(labAnchorIds) ? labAnchorIds : [])
+    .map((id) => String(id || "").trim())
+    .filter((id) => id && Types.ObjectId.isValid(id));
+
+  const [practiceUserIds, ...labUserIdGroups] = await Promise.all([
+    practiceId && Types.ObjectId.isValid(practiceId)
+      ? resolvePracticeUserIdsByAnchor(practiceId)
+      : Promise.resolve([]),
+    ...[...new Set(labIds)].map((anchorId) =>
+      resolveRequestorUserIdsByAnchor(anchorId),
+    ),
+  ]);
+
+  for (const id of practiceUserIds) idSet.add(id);
+  for (const group of labUserIdGroups) {
+    for (const id of group) idSet.add(id);
+  }
+};
+
 /**
- * practice 전송 채팅 실시간 이벤트 수신 대상.
+ * practice 전송·파트너 DM 채팅 실시간 이벤트 수신 대상.
  * room.participants 외에 동일 치과·기공소(하청 포함) 접속 계정 전체를 포함한다.
  */
 export async function resolveChatEventRecipientUserIds({
   participantIds = [],
   relatedPracticeTransferId = null,
+  relatedLabAnchorId = null,
+  relatedPracticeAnchorId = null,
 }) {
   const idSet = new Set(
     (Array.isArray(participantIds) ? participantIds : [])
       .map((id) => String(id || "").trim())
       .filter(Boolean),
   );
+
+  const partnerLabAnchorId = String(relatedLabAnchorId || "").trim();
+  const partnerPracticeAnchorId = String(relatedPracticeAnchorId || "").trim();
+  if (
+    partnerLabAnchorId &&
+    Types.ObjectId.isValid(partnerLabAnchorId) &&
+    partnerPracticeAnchorId &&
+    Types.ObjectId.isValid(partnerPracticeAnchorId)
+  ) {
+    await addAnchorPeerRecipients({
+      idSet,
+      practiceAnchorId: partnerPracticeAnchorId,
+      labAnchorIds: [partnerLabAnchorId],
+    });
+    return [...idSet];
+  }
 
   const transferId = String(relatedPracticeTransferId || "").trim();
   if (!transferId || !Types.ObjectId.isValid(transferId)) {
@@ -77,15 +120,11 @@ export async function resolveChatEventRecipientUserIds({
     String(transferDoc.assigneeLabAnchorId || "").trim(),
   ].filter((id) => id && Types.ObjectId.isValid(id));
 
-  const [practiceUserIds, ...labUserIdGroups] = await Promise.all([
-    practiceAnchorId ? resolvePracticeUserIdsByAnchor(practiceAnchorId) : Promise.resolve([]),
-    ...[...new Set(labAnchorIds)].map((anchorId) => resolveRequestorUserIdsByAnchor(anchorId)),
-  ]);
-
-  for (const id of practiceUserIds) idSet.add(id);
-  for (const group of labUserIdGroups) {
-    for (const id of group) idSet.add(id);
-  }
+  await addAnchorPeerRecipients({
+    idSet,
+    practiceAnchorId,
+    labAnchorIds,
+  });
 
   for (const id of [
     transferDoc.practiceUserId,

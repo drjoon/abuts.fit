@@ -117,7 +117,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/shared/ui/cn";
 import { toKstYmd, ymdToKstDate } from "@/shared/date/kst";
 import { type ChatMessage } from "@/shared/hooks/useChatRooms";
-import { ChatComposer } from "@/features/chat/components/ChatComposer";
+import { ChatComposer, type RequestPickItem } from "@/features/chat/components/ChatComposer";
 import { ChatMessageBubble } from "@/features/chat/components/ChatMessageBubble";
 import { buildChatReactionUserNameById } from "@/features/chat/components/chatReactions";
 import { type ReplyToMessage } from "@/features/chat/components/MessageReply";
@@ -384,6 +384,10 @@ type PracticeTransferDetailChatDialogProps = {
   onToggleReaction?: (messageId: string, emoji: string) => void | Promise<void>;
   composerPlaceholder: string;
   inputDisabled: boolean;
+  /** $ / # 로 삽입할 의뢰건 목록 */
+  requestPicks?: RequestPickItem[];
+  requestPicksLoading?: boolean;
+  onRequestPicksNeeded?: () => void;
   /** 전송 중(ChatComposer isSending). 빈 draft 차단은 Composer가 처리 */
   sendDisabled?: boolean;
   /** 치과: 수락 전 의뢰 내용을 작성 폼으로 불러와 수정 */
@@ -491,6 +495,9 @@ export function PracticeTransferDetailChatDialog({
   onToggleReaction,
   composerPlaceholder,
   inputDisabled,
+  requestPicks,
+  requestPicksLoading = false,
+  onRequestPicksNeeded,
   sendDisabled = false,
   onEditRequest,
   editRequestDisabled = false,
@@ -2380,6 +2387,12 @@ export function PracticeTransferDetailChatDialog({
                     onPickFiles={onAttachChatFiles}
                     onRemovePendingFile={onRemoveAttachedChatFile}
                     onRetryPendingFile={onRetryAttachedChatFile}
+                    requestPicks={requestPicks}
+                    requestPicksLoading={requestPicksLoading}
+                    onRequestPicksNeeded={onRequestPicksNeeded}
+                    onInsertRequestId={
+                      Array.isArray(requestPicks) ? () => undefined : undefined
+                    }
                     replyTo={replyTo}
                     onCancelReply={onCancelReply}
                     compact

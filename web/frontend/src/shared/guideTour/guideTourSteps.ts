@@ -3,8 +3,9 @@
 // - web/frontend/src/shared/components/practice/PracticeToothWorkGuideTourBanner.tsx
 // - web/frontend/src/shared/guideTour/GuideTourProvider.tsx
 // change-log:
+// - 2026-09-07: partner_chat — FAB로 의뢰건 없이 기공소↔치과 채팅(치과·기공소).
 // - 2026-09-05: intro 힌트 — 구강스캔·석고 모델 / 기공의뢰서는 어벗츠 플랫폼으로(치과·기공소 공통).
-// - 2026-09-05: lab_chat 삭제. lab_design 힌트 — STL·환자/임플란트 정보 안내.
+// - 2026-09-05: lab_chat → partner_chat(FAB). lab_design 힌트 — STL·환자/임플란트 정보 안내.
 // - 2026-09-05: lab_calendar — 오늘 의뢰 칩 홀·클릭 시 상세(allowTargetInteraction).
 // - 2026-09-05: lab_detail~design — 실사용(allowTargetInteraction·스크롤·조작). 영화형 클릭차단 해제.
 // - 2026-09-05: lab — 3챕터(수신 영화형·정산3·어벗)·complete·레거시 normalize.
@@ -157,6 +158,16 @@ export const PRACTICE_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   },
   // —— 챕터1: 구강스캔 기공의뢰 (영화형) ——
   ...practiceOralMovieSteps,
+  // —— 챕터1: 파트너 채팅(의뢰건 무관 FAB) ——
+  {
+    id: "partner_chat",
+    title: "기공소와 채팅",
+    hint: "오른쪽 아래 채팅 아이콘으로 거래 기공소와 의뢰 없이도 대화할 수 있습니다. 고객지원도 여기 있습니다.",
+    path: PRACTICE_ORAL_PATH,
+    target: "partner_chat_fab",
+    advance: "next",
+    chapter: 1,
+  },
   // —— 챕터2: 정산 (내역 → 통계 → 충전) ——
   {
     id: "credits_ledger",
@@ -218,7 +229,7 @@ export const PRACTICE_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   },
 ] as const;
 
-/** 치과 Spotlight 분모 — intro 제외(chapter 있는 스텝). oral_calendar+구강+정산3+어벗+스토어 */
+/** 치과 Spotlight 분모 — intro 제외(chapter 있는 스텝). oral_calendar+구강+채팅+정산3+어벗+스토어 */
 export const PRACTICE_GUIDE_TOUR_PROCESS_TOTAL = PRACTICE_GUIDE_TOUR_STEPS.filter(
   (s) => s.chapter != null,
 ).length;
@@ -260,7 +271,7 @@ export const LAB_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   {
     id: "lab_accept",
     title: "작업시작",
-    hint: "작업시작하면 치과와 채팅·디자인 업로드가 열립니다.",
+    hint: "작업시작하면 이 의뢰의 채팅·디자인 업로드가 열립니다. 의뢰 없는 대화는 오른쪽 아래 채팅 아이콘을 이용합니다.",
     path: LAB_RECEIVE_PATH,
     target: "lab_detail",
     advance: "next",
@@ -278,6 +289,16 @@ export const LAB_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
     chapter: 1,
     openReceiveDetail: true,
     allowTargetInteraction: true,
+  },
+  // —— 챕터1: 파트너 채팅(의뢰건 무관 FAB) ——
+  {
+    id: "partner_chat",
+    title: "치과와 채팅",
+    hint: "오른쪽 아래 채팅 아이콘으로 거래 치과와 의뢰 없이도 대화할 수 있습니다. 고객지원도 여기 있습니다.",
+    path: LAB_RECEIVE_PATH,
+    target: "partner_chat_fab",
+    advance: "next",
+    chapter: 1,
   },
   // —— 챕터2: 정산 (내역 → 통계 → 충전) ——
   {
@@ -343,8 +364,8 @@ export const normalizeLabGuideTourStepId = (
   if (stepId === "receive") return "lab_calendar";
   if (stepId === "credits") return "credits_ledger";
   if (stepId === "wrap") return "complete";
-  // 건별 채팅 스텝 삭제 — resume·레거시는 디자인 업로드로
-  if (stepId === "lab_chat") return "lab_design";
+  // 구 건별 채팅 스텝 → FAB 파트너 채팅
+  if (stepId === "lab_chat") return "partner_chat";
   return stepId;
 };
 

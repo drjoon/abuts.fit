@@ -1,8 +1,10 @@
 // change-log:
+// - 2026-09-07: partner-counterparts / partner-room — 의뢰건 없이 기공소↔치과 채팅.
 // - 2026-08-10: request-room — 디자인 파트너↔기공소 채팅(DesignPage).
 // related files:
 // - web/backend/controllers/chats/chat.controller.js
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
+// - web/frontend/src/features/chat/components/NewChatWidget.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/pages/requestor/design/DesignRequestTransferView.tsx
@@ -19,6 +21,18 @@ router.get("/rooms", chatController.getMyChatRooms);
 
 // 고객지원 채팅방(어벗츠.핏) 조회/생성
 router.get("/support-room", chatController.getSupportRoom);
+
+// 기공소↔치과 파트너 채팅(의뢰건 무관)
+router.get(
+  "/partner-counterparts",
+  authorize(["practice", "requestor", "internalLab", "admin"]),
+  chatController.listPartnerChatCounterparts,
+);
+router.get(
+  "/partner-room",
+  authorize(["practice", "requestor", "internalLab", "admin"]),
+  chatController.getOrCreatePartnerChatRoom,
+);
 
 // 모든 채팅방 조회 (Admin 전용)
 router.get("/rooms/all", authorize(["admin"]), chatController.getAllChatRooms);

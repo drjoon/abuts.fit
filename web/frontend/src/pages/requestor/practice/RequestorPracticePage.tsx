@@ -6061,7 +6061,15 @@ export function RequestorPracticeReceivePage({
         }}
         onCancelReply={() => setChatReplyTo(null)}
         onToggleReaction={(messageId, emoji) => void toggleReaction(messageId, emoji)}
-        composerPlaceholder="치과에 전달할 내용을 입력하세요"
+        composerPlaceholder="치과에 전달할 내용을 입력하세요 ($ 로 의뢰건 불러오기)"
+        requestPicks={transfers
+          .map((row) => ({
+            requestId: String(row.transferId || "").trim(),
+            patientName: String(row.patientName || "").trim(),
+            tooth: String(row.tooth || row.toothWorksSummary || "").trim(),
+          }))
+          .filter((row) => row.requestId)
+          .slice(0, 40)}
         inputDisabled={chatLoading || chatSending || !activeChatRoom?._id}
         sendDisabled={chatSending}
       />

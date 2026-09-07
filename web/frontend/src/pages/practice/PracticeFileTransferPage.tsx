@@ -7896,7 +7896,7 @@ export const PracticeFileTransferPage = ({
             size="sm"
             className="h-9 shrink-0 gap-1 rounded-full border-slate-200 bg-white px-3 shadow-sm"
             aria-label="리메이크"
-            title="리메이크 — 기존 의뢰 연결 또는 플랫폼 도입 전 케이스"
+            title="리메이크"
             onClick={() => setRemakeSearchOpen(true)}
           >
             <Repeat className="h-4 w-4 shrink-0" />
@@ -9476,6 +9476,16 @@ export const PracticeFileTransferPage = ({
           onCancelReply={() => setChatReplyTo(null)}
           onToggleReaction={(messageId, emoji) => void toggleReaction(messageId, emoji)}
           composerPlaceholder="문의 내용을 입력하세요 ($ 로 의뢰건 불러오기)"
+          requestPicks={recentRequests
+            .map((row) => ({
+              requestId: String(row.transferId || "").trim(),
+              patientName: String(row.patientName || "").trim(),
+              tooth: Array.isArray(row.toothNumbers)
+                ? row.toothNumbers.filter(Boolean).join(",")
+                : "",
+            }))
+            .filter((row) => row.requestId && row.requestId !== "-")
+            .slice(0, 40)}
           inputDisabled={chatLoading || chatMessagesLoading || chatSending || !activeChatRoom?._id}
           sendDisabled={chatSending}
         />

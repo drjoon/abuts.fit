@@ -5,9 +5,12 @@
 // - web/frontend/src/shared/hooks/useBackgroundTempUpload.ts
 // - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
 // - web/frontend/src/shared/components/practice/PracticeTransferMobileOralPhotoIntake.tsx
+// - web/frontend/src/features/chat/components/NewChatWidget.tsx
+// change-log:
+// - 2026-09-07: $ 입력으로 의뢰건 불러오기·placeholder 안내.
 // - 2026-08-21: textarea flex-1 제거·루트 shrink-0 — 채팅 레이아웃에서 입력칸이 내역 높이를 잠식하지 않게.
 // - 2026-08-27: 모바일 사진찍기(capture) — 채팅에서 바로 촬영·업로드.
-import { useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -34,10 +37,26 @@ import { normalizeOralPhotoFiles } from "@/shared/components/practice/PracticeTr
 import { cn } from "@/shared/ui/cn";
 
 export type RequestPickItem = {
+  /** 삽입 토큰에 쓰는 ID (전송ID / 의뢰ID) */
   requestId: string;
   patientName?: string;
   tooth?: string;
 };
+
+/** `$검색어` 멘션 — 커서 앞 구간에서 마지막 `$…` */
+export const getDollarMentionAtCursor = (
+  value: string,
+  cursor: number,
+): { start: number; query: string } | null => {
+  const safeCursor = Math.max(0, Math.min(cursor, value.length));
+  const before = value.slice(0, safeCursor);
+  const match = before.match(/\$([^\s$]*)$/);
+  if (!match || match.index == null) return null;
+  return { start: match.index, query: String(match[1] || "") };
+};
+
+export const CHAT_CASE_MENTION_PLACEHOLDER =
+  "메시지를 입력하세요 ($ 로 의뢰건 불러오기)";
 
 type Props = {
   draft: string;
@@ -54,6 +73,9 @@ type Props = {
   onRetryPendingFile?: (id: string) => void;
 
   requestPicks?: RequestPickItem[];
+  /** $ / # 로 의뢰 목록이 필요할 때(지연 로드) */
+  onRequestPicksNeeded?: () => void;
+  requestPicksLoading?: boolean;
   onInsertRequestId?: (requestId: string) => void;
 
   replyTo?: ReplyToMessage | null;
@@ -77,6 +99,8 @@ export const ChatComposer = (props: Props) => {
     onRemovePendingFile,
     onRetryPendingFile,
     requestPicks,
+    onRequestPicksNeeded,
+    requestPicksLoading,
     onInsertRequestId,
     replyTo,
     onCancelReply,
@@ -87,7 +111,9 @@ export const ChatComposer = (props: Props) => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const [requestOpen, setRequestOpen] = useState(false);
+  const [hashOpen, setHashOpen] = useState(false);
+  const [dollarOpen, setDollarOpen] = useState(false);
+  const [cursor, setCursor] = useState(0);
   const [cameraBusy, setCameraBusy] = useState(false);
   const isMobile = useIsMobile();
   const { toast } = useToast();
@@ -101,6 +127,83 @@ export const ChatComposer = (props: Props) => {
 
   const sendDisabled =
     !!disabled || !!isSending || cameraBusy || (!draft.trim() && !hasFiles);
+
+  const resolvedPlaceholder =
+    placeholder ||
+    (canInsertRequestId
+      ? CHAT_CASE_MENTION_PLACEHOLDER
+      : "메시지를 입력하세요");
+
+  const mention = useMemo(
+    () => getDollarMentionAtCursor(draft, cursor),
+    [draft, cursor],
+  );
+
+  const filteredPicks = useMemo(() => {
+    const list = Array.isArray(requestPicks) ? requestPicks : [];
+    const q = String(mention?.query || "").trim().toLowerCase();
+    if (!q) return list;
+    return list.filter((r) => {
+      const id = String(r.requestId || "").toLowerCase();
+      const patient = String(r.patientName || "").toLowerCase();
+      const tooth = String(r.tooth || "").toLowerCase();
+      return id.includes(q) || patient.includes(q) || tooth.includes(q);
+    });
+  }, [requestPicks, mention?.query]);
+
+  const onRequestPicksNeededRef = useRef(onRequestPicksNeeded);
+  onRequestPicksNeededRef.current = onRequestPicksNeeded;
+
+  useEffect(() => {
+    if (!canInsertRequestId) {
+      setDollarOpen(false);
+      return;
+    }
+    if (!mention) {
+      setDollarOpen(false);
+      return;
+    }
+    setDollarOpen(true);
+    onRequestPicksNeededRef.current?.();
+  }, [canInsertRequestId, mention?.start, mention?.query]);
+
+  const syncCursor = () => {
+    const el = textareaRef.current;
+    if (!el) return;
+    setCursor(el.selectionStart ?? el.value.length);
+  };
+
+  const insertCaseToken = (requestId: string) => {
+    if (!canInsertRequestId) return;
+    const token = `[의뢰ID:${requestId}]`;
+    const el = textareaRef.current;
+    const cur = el?.selectionStart ?? cursor;
+    const activeMention = getDollarMentionAtCursor(draft, cur);
+
+    let next: string;
+    let nextCursor: number;
+    if (activeMention) {
+      const after = draft.slice(cur);
+      next = `${draft.slice(0, activeMention.start)}${token}${after}`;
+      nextCursor = activeMention.start + token.length;
+    } else {
+      const base = draft || "";
+      const spacer = base && !base.endsWith(" ") ? " " : "";
+      next = `${base}${spacer}${token}`;
+      nextCursor = next.length;
+    }
+
+    onDraftChange(next);
+    setDollarOpen(false);
+    setHashOpen(false);
+    window.requestAnimationFrame(() => {
+      const ta = textareaRef.current;
+      if (!ta) return;
+      ta.focus();
+      ta.setSelectionRange(nextCursor, nextCursor);
+      setCursor(nextCursor);
+    });
+  };
 
   const handleCameraFiles = (raw: File[]) => {
     if (!onPickFiles || !raw.length) return;
@@ -135,10 +238,43 @@ export const ChatComposer = (props: Props) => {
     isMobile ? "h-11 w-11 touch-manipulation" : "h-9 w-9",
   );
 
+  const renderPickList = (onPick: (id: string) => void) => (
+    <div className="max-h-56 space-y-1 overflow-y-auto">
+      {requestPicksLoading && !hasRequestPicks ? (
+        <div className="px-2 py-3 text-center text-xs text-muted-foreground">
+          의뢰건을 불러오는 중…
+        </div>
+      ) : null}
+      {!requestPicksLoading && filteredPicks.length === 0 ? (
+        <div className="px-2 py-3 text-center text-xs text-muted-foreground">
+          {hasRequestPicks
+            ? "검색 결과가 없습니다."
+            : "불러올 의뢰건이 없습니다."}
+        </div>
+      ) : null}
+      {filteredPicks.map((r) => (
+        <button
+          key={r.requestId}
+          type="button"
+          className="w-full rounded px-2 py-1.5 text-left text-xs hover:bg-muted"
+          onClick={() => onPick(r.requestId)}
+        >
+          <div className="font-medium">{r.requestId}</div>
+          {(r.patientName || r.tooth) && (
+            <div className="truncate text-muted-foreground">
+              {r.patientName || ""}
+              {r.tooth ? ` / ${r.tooth}` : ""}
+            </div>
+          )}
+        </button>
+      ))}
+    </div>
+  );
+
   return (
     <div
       className={cn(
-        "shrink-0 border-t space-y-2",
+        "relative shrink-0 border-t space-y-2",
         isMobile
           ? "px-3 pt-2.5 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
           : compact
@@ -159,11 +295,29 @@ export const ChatComposer = (props: Props) => {
         />
       ) : null}
 
+      {canInsertRequestId && dollarOpen ? (
+        <div className="absolute bottom-[calc(100%-0.25rem)] left-3 right-3 z-20 sm:left-4 sm:right-4">
+          <div className="rounded-lg border bg-popover p-2 shadow-md">
+            <div className="mb-1 px-1 text-[11px] font-medium text-muted-foreground">
+              의뢰건 선택
+              {mention?.query ? ` · “${mention.query}”` : " · $ 검색"}
+            </div>
+            {renderPickList(insertCaseToken)}
+          </div>
+        </div>
+      ) : null}
+
       <Textarea
         ref={textareaRef}
         value={draft}
-        onChange={(e) => onDraftChange(e.target.value)}
-        placeholder={placeholder || "메시지를 입력하세요"}
+        onChange={(e) => {
+          onDraftChange(e.target.value);
+          setCursor(e.target.selectionStart ?? e.target.value.length);
+        }}
+        onClick={syncCursor}
+        onKeyUp={syncCursor}
+        onSelect={syncCursor}
+        placeholder={resolvedPlaceholder}
         className={cn(
           "resize-none",
           compact &&
@@ -173,8 +327,22 @@ export const ChatComposer = (props: Props) => {
         rows={isMobile ? 2 : compact ? 2 : 3}
         disabled={!!disabled || !!isSending}
         onKeyDown={(e) => {
+          if (e.key === "Escape" && dollarOpen) {
+            e.preventDefault();
+            setDollarOpen(false);
+            return;
+          }
+          if (dollarOpen && e.key === "Enter" && !e.shiftKey) {
+            if (e.nativeEvent.isComposing) return;
+            if (filteredPicks.length === 1) {
+              e.preventDefault();
+              insertCaseToken(filteredPicks[0]!.requestId);
+              return;
+            }
+          }
           if (e.key === "Enter" && !e.shiftKey) {
             if (e.nativeEvent.isComposing) return;
+            if (dollarOpen && filteredPicks.length > 0) return;
             e.preventDefault();
             onSend();
           }
@@ -264,45 +432,33 @@ export const ChatComposer = (props: Props) => {
           )}
 
           {canInsertRequestId ? (
-            <Popover open={requestOpen} onOpenChange={setRequestOpen}>
+            <Popover
+              open={hashOpen}
+              onOpenChange={(open) => {
+                setHashOpen(open);
+                if (open) onRequestPicksNeeded?.();
+              }}
+            >
               <PopoverTrigger asChild>
                 <Button
                   type="button"
                   variant="ghost"
                   size="icon"
                   className={iconBtnClass}
-                  disabled={controlsDisabled || !hasRequestPicks}
+                  disabled={controlsDisabled}
+                  title="의뢰건 불러오기 ($)"
+                  aria-label="의뢰건 불러오기"
                 >
                   <Hash className={isMobile ? "h-5 w-5" : "h-4 w-4"} />
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-80 p-2" align="start">
-                <div className="space-y-1">
-                  {hasRequestPicks
-                    ? requestPicks!.map((r) => (
-                        <button
-                          key={r.requestId}
-                          type="button"
-                          className="w-full text-left rounded px-2 py-1 text-xs hover:bg-muted"
-                          onClick={() => {
-                            onInsertRequestId(r.requestId);
-                            setRequestOpen(false);
-                            window.requestAnimationFrame(() => {
-                              textareaRef.current?.focus();
-                            });
-                          }}
-                        >
-                          <div className="font-medium">{r.requestId}</div>
-                          {(r.patientName || r.tooth) && (
-                            <div className="text-muted-foreground truncate">
-                              {r.patientName || ""}
-                              {r.tooth ? ` / ${r.tooth}` : ""}
-                            </div>
-                          )}
-                        </button>
-                      ))
-                    : null}
+                <div className="mb-1 px-1 text-[11px] font-medium text-muted-foreground">
+                  의뢰건 선택 · $ 로도 불러올 수 있습니다
                 </div>
+                {renderPickList((id) => {
+                  insertCaseToken(id);
+                })}
               </PopoverContent>
             </Popover>
           ) : null}

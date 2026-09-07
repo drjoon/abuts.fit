@@ -87,6 +87,12 @@ export interface ChatRoom {
     _id: string;
     transferId: string;
   };
+  /** 기공소↔치과 파트너 DM(의뢰건 무관) */
+  relatedLabAnchorId?: string | null;
+  relatedPracticeAnchorId?: string | null;
+  counterpartAnchorId?: string;
+  counterpartName?: string;
+  counterpartKind?: "practice" | "lab";
   lastMessageAt: string;
   status: "active" | "suspended" | "monitored";
   unreadCount?: number;

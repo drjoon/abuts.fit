@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-07: 기공소↔치과 파트너 DM(의뢰건 무관) — partner-counterparts / partner-room.
 // - 2026-08-26: GET /rooms — 휴지통(deleted|canceled) 의뢰 방은 목록·unread 제외(직접 open은 유지).
 // - 2026-08-21: 취소(휴지통) 전송도 기존 채팅방은 열어 미확인 메시지 읽기 허용(신규 방 생성은 409).
 // - 2026-08-20: 기공소 변경 후 이전 기공소는 GET /rooms·사이드바 unread에서 제외.
@@ -14,9 +15,11 @@
 // - web/backend/utils/designAccess.js
 // - web/backend/utils/designClaim.js
 // - web/backend/utils/practiceTransferChatAccess.js
+// - web/backend/utils/partnerChat.util.js
 // - web/backend/socket.js
 // - web/frontend/src/shared/hooks/useChatRooms.ts
 // - web/frontend/src/shared/hooks/useChatMessages.ts
+// - web/frontend/src/features/chat/components/NewChatWidget.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/pages/requestor/design/DesignPage.tsx
@@ -37,6 +40,13 @@ import {
 } from "../../utils/practiceTransferChatAccess.js";
 import { isPracticeTransferDeletedStatus } from "../../utils/practiceTransferStage.js";
 import { resolveChatEventRecipientUserIds } from "../../utils/chatRealtimeRecipients.js";
+import {
+  hasPartnerChatRelationship,
+  isPartnerChatRoom,
+  listPartnerChatCounterpartAnchors,
+  resolveAnchorChatUserId,
+  resolveCallerPartnerChatContext,
+} from "../../utils/partnerChat.util.js";
 import { emitAppEventToUser, emitToUser } from "../../socket.js";
 
 const __chatPerfCache = new Map();
@@ -95,6 +105,7 @@ const invalidateChatPerfForUsers = (userIds) => {
   ids.forEach((id) => {
     __chatPerfCache.delete(`rooms:${id}`);
     invalidateChatPerfCacheByPrefix(`practice-transfer-room:${id}:`);
+    invalidateChatPerfCacheByPrefix(`partner-room:${id}:`);
   });
 };
 
@@ -395,6 +406,20 @@ const canJoinPracticeTransferAsPracticePeer = async ({
   });
 };
 
+const roomRecipientArgs = (room, participantIds) => ({
+  participantIds,
+  relatedPracticeTransferId: room?.relatedPracticeTransferId,
+  relatedLabAnchorId: room?.relatedLabAnchorId,
+  relatedPracticeAnchorId: room?.relatedPracticeAnchorId,
+});
+
+const ROOM_ACCESS_SELECT = {
+  participants: 1,
+  relatedPracticeTransferId: 1,
+  relatedLabAnchorId: 1,
+  relatedPracticeAnchorId: 1,
+};
+
 const ensureChatRoomParticipant = async (roomId, userId) => {
   const rid = String(roomId || "").trim();
   const uid = String(userId || "").trim();
@@ -408,8 +433,9 @@ const ensureChatRoomParticipant = async (roomId, userId) => {
 };
 
 /**
- * practice 전송 채팅방: 참여자이거나 동일 치과/기공소 동료면 접근 허용.
- * 작성자·수락 담당자는 participants에 없어도 합류한다(수락 후 기존 방 403 방지).
+ * 채팅방 접근: 참여자이거나 동일 치과/기공소 동료면 합류 허용.
+ * - practice 전송 방: 작성자·수락 담당자·동료
+ * - 파트너 DM: relatedLab/PracticeAnchor 소속 동료
  */
 const resolvePracticeTransferRoomAccess = async (req, room) => {
   const userId = String(req.user?._id || "").trim();
@@ -421,6 +447,25 @@ const resolvePracticeTransferRoomAccess = async (req, room) => {
   if (String(req.user?.role || "").trim() === "admin" && !isPracticeTransferRoom) {
     return { ok: true, added: false };
   }
+
+  if (isPartnerChatRoom(room)) {
+    const userAnchorId = String(req.user?.businessAnchorId || "").trim();
+    const labAnchorId = String(room?.relatedLabAnchorId || "").trim();
+    const practiceAnchorId = String(room?.relatedPracticeAnchorId || "").trim();
+    if (
+      userAnchorId &&
+      (userAnchorId === labAnchorId || userAnchorId === practiceAnchorId)
+    ) {
+      await ensureChatRoomParticipant(room._id, userId);
+      invalidateChatPerfForUsers([
+        userId,
+        ...participants.map((p) => String(p || "").trim()).filter(Boolean),
+      ]);
+      return { ok: true, added: true };
+    }
+    return { ok: false, added: false };
+  }
+
   if (!isPracticeTransferRoom || !room?.relatedPracticeTransferId) {
     return { ok: false, added: false };
   }
@@ -1608,7 +1653,7 @@ export async function getChatMessages(req, res) {
 
     // 채팅방 존재 및 참여자 확인
     const room = await ChatRoom.findById(roomId)
-      .select({ participants: 1, relatedPracticeTransferId: 1 })
+      .select(ROOM_ACCESS_SELECT)
       .lean();
     if (!room) {
       return res.status(404).json({
@@ -1667,10 +1712,9 @@ export async function getChatMessages(req, res) {
         const participantIds = Array.isArray(room.participants)
           ? room.participants.map((p) => String(p || "").trim()).filter(Boolean)
           : [];
-        const recipientIds = await resolveChatEventRecipientUserIds({
-          participantIds,
-          relatedPracticeTransferId: room.relatedPracticeTransferId,
-        });
+        const recipientIds = await resolveChatEventRecipientUserIds(
+          roomRecipientArgs(room, participantIds),
+        );
 
         invalidateChatPerfForUsers(recipientIds);
 
@@ -1779,7 +1823,7 @@ export async function sendChatMessage(req, res) {
 
     // 채팅방 존재 및 참여자 확인
     const room = await ChatRoom.findById(roomId)
-      .select({ participants: 1, status: 1, relatedPracticeTransferId: 1 });
+      .select({ ...ROOM_ACCESS_SELECT, status: 1 });
     if (!room) {
       return res.status(404).json({
         success: false,
@@ -1839,10 +1883,9 @@ export async function sendChatMessage(req, res) {
     const participantIds = Array.isArray(room.participants)
       ? room.participants.map((id) => String(id || "").trim()).filter(Boolean)
       : [];
-    const recipientIds = await resolveChatEventRecipientUserIds({
-      participantIds,
-      relatedPracticeTransferId: room.relatedPracticeTransferId,
-    });
+    const recipientIds = await resolveChatEventRecipientUserIds(
+      roomRecipientArgs(room, participantIds),
+    );
 
     invalidateChatPerfForUsers(recipientIds);
     invalidateChatPerfCacheByPrefix(`room-messages:${String(roomId)}:`);
@@ -1894,7 +1937,7 @@ export async function toggleChatMessageReaction(req, res) {
     }
 
     const room = await ChatRoom.findById(roomId)
-      .select({ participants: 1, relatedPracticeTransferId: 1 })
+      .select(ROOM_ACCESS_SELECT)
       .lean();
     if (!room) {
       return res.status(404).json({
@@ -1963,10 +2006,9 @@ export async function toggleChatMessageReaction(req, res) {
         : participantIds;
     }
 
-    const recipientIds = await resolveChatEventRecipientUserIds({
-      participantIds,
-      relatedPracticeTransferId: room.relatedPracticeTransferId,
-    });
+    const recipientIds = await resolveChatEventRecipientUserIds(
+      roomRecipientArgs(room, participantIds),
+    );
 
     invalidateChatPerfForUsers(recipientIds);
     invalidateChatPerfCacheByPrefix(`room-messages:${String(roomId)}:`);
@@ -2063,7 +2105,12 @@ export async function getAllChatRooms(req, res) {
     const status = req.query.status;
     const viewerUserId = req.user?._id;
 
-    const filter = { isArchived: false, relatedPracticeTransferId: null };
+    const filter = {
+      isArchived: false,
+      relatedPracticeTransferId: null,
+      relatedLabAnchorId: null,
+      relatedPracticeAnchorId: null,
+    };
     if (status) {
       filter.status = status;
     }
@@ -2180,9 +2227,385 @@ export async function searchUsers(req, res) {
   }
 }
 
+/**
+ * 기공소↔치과 채팅 상대 목록(거래처·의뢰 이력)
+ * @route GET /api/chats/partner-counterparts
+ */
+export async function listPartnerChatCounterparts(req, res) {
+  try {
+    const ctx = await resolveCallerPartnerChatContext(req);
+    if (!ctx) {
+      return res.status(403).json({
+        success: false,
+        message: "기공소 또는 치과 계정만 이용할 수 있습니다.",
+      });
+    }
+
+    const listCacheKey = `partner-counterparts:${ctx.userId}:${ctx.kind}:${ctx.anchorId}`;
+    const cached = getChatPerfCacheValue(listCacheKey);
+    if (cached) {
+      return res.status(200).json({ success: true, data: cached, cached: true });
+    }
+
+    const payload = await withChatInFlight(listCacheKey, async () => {
+      const inflightCached = getChatPerfCacheValue(listCacheKey);
+      if (inflightCached) return inflightCached;
+
+      const counterparts = await listPartnerChatCounterpartAnchors({
+        kind: ctx.kind,
+        anchorId: ctx.anchorId,
+      });
+
+      const myLabAnchorId = ctx.kind === "lab" ? ctx.anchorId : null;
+      const myPracticeAnchorId = ctx.kind === "practice" ? ctx.anchorId : null;
+
+      // 내 앵커 기준 partner room만 — $in 없이 인덱스 친화
+      const roomFilter =
+        ctx.kind === "lab"
+          ? {
+              relatedLabAnchorId: new Types.ObjectId(ctx.anchorId),
+              relatedPracticeTransferId: null,
+              relatedRequestId: null,
+              isArchived: false,
+            }
+          : {
+              relatedPracticeAnchorId: new Types.ObjectId(ctx.anchorId),
+              relatedPracticeTransferId: null,
+              relatedRequestId: null,
+              isArchived: false,
+            };
+
+      const rooms =
+        counterparts.length > 0
+          ? await ChatRoom.find(roomFilter)
+              .select({
+                _id: 1,
+                relatedLabAnchorId: 1,
+                relatedPracticeAnchorId: 1,
+                lastMessageAt: 1,
+              })
+              .lean()
+          : [];
+
+      const roomByCounterpart = new Map();
+      for (const room of rooms) {
+        const key =
+          ctx.kind === "lab"
+            ? String(room.relatedPracticeAnchorId || "")
+            : String(room.relatedLabAnchorId || "");
+        if (key) roomByCounterpart.set(key, room);
+      }
+
+      const roomIds = rooms.map((r) => r._id).filter(Boolean);
+      const unreadByRoomId = new Map();
+      if (roomIds.length > 0) {
+        const unreadRows = await Chat.aggregate([
+          {
+            $match: {
+              roomId: { $in: roomIds },
+              isDeleted: false,
+              sender: { $ne: req.user._id },
+              "readBy.userId": { $ne: req.user._id },
+            },
+          },
+          { $group: { _id: "$roomId", count: { $sum: 1 } } },
+        ]);
+        for (const row of unreadRows) {
+          unreadByRoomId.set(String(row._id), Number(row.count || 0));
+        }
+      }
+
+      const items = counterparts.map((c) => {
+        const room = roomByCounterpart.get(c.anchorId) || null;
+        const roomId = room?._id ? String(room._id) : null;
+        return {
+          counterpartAnchorId: c.anchorId,
+          counterpartName: c.name,
+          counterpartKind: ctx.kind === "lab" ? "practice" : "lab",
+          labAnchorId: ctx.kind === "lab" ? ctx.anchorId : c.anchorId,
+          practiceAnchorId: ctx.kind === "practice" ? ctx.anchorId : c.anchorId,
+          roomId,
+          unreadCount: roomId ? unreadByRoomId.get(roomId) || 0 : 0,
+          lastMessageAt: room?.lastMessageAt || null,
+        };
+      });
+
+      items.sort((a, b) => {
+        const aTs = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
+        const bTs = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
+        if (aTs !== bTs) return bTs - aTs;
+        return String(a.counterpartName || "").localeCompare(
+          String(b.counterpartName || ""),
+          "ko",
+        );
+      });
+
+      const next = {
+        kind: ctx.kind,
+        myAnchorId: ctx.anchorId,
+        myLabAnchorId,
+        myPracticeAnchorId,
+        items,
+      };
+      setChatPerfCacheValue(listCacheKey, next, 15 * 1000);
+      return next;
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: payload,
+    });
+  } catch (error) {
+    console.error("[chat] listPartnerChatCounterparts error", error);
+    return res.status(500).json({
+      success: false,
+      message: "채팅 상대 목록을 불러오지 못했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * 기공소↔치과 파트너 DM 조회/생성 (의뢰건 불필요)
+ * @route GET /api/chats/partner-room
+ * query: counterpartAnchorId | labAnchorId+practiceAnchorId
+ * optional: counterpartName (이름 재조회 생략)
+ */
+export async function getOrCreatePartnerChatRoom(req, res) {
+  try {
+    const ctx = await resolveCallerPartnerChatContext(req);
+    if (!ctx) {
+      return res.status(403).json({
+        success: false,
+        message: "기공소 또는 치과 계정만 이용할 수 있습니다.",
+      });
+    }
+
+    let labAnchorId = String(req.query?.labAnchorId || "").trim();
+    let practiceAnchorId = String(req.query?.practiceAnchorId || "").trim();
+    const counterpartAnchorId = String(
+      req.query?.counterpartAnchorId || "",
+    ).trim();
+    const hintCounterpartName = String(
+      req.query?.counterpartName || "",
+    ).trim();
+
+    if ((!labAnchorId || !practiceAnchorId) && counterpartAnchorId) {
+      if (ctx.kind === "lab") {
+        labAnchorId = ctx.anchorId;
+        practiceAnchorId = counterpartAnchorId;
+      } else {
+        practiceAnchorId = ctx.anchorId;
+        labAnchorId = counterpartAnchorId;
+      }
+    }
+
+    if (ctx.kind === "lab") {
+      labAnchorId = ctx.anchorId;
+    } else if (ctx.kind === "practice") {
+      practiceAnchorId = ctx.anchorId;
+    }
+
+    if (
+      !labAnchorId ||
+      !practiceAnchorId ||
+      !Types.ObjectId.isValid(labAnchorId) ||
+      !Types.ObjectId.isValid(practiceAnchorId)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "상대 사업자(counterpartAnchorId)가 필요합니다.",
+      });
+    }
+
+    if (labAnchorId === practiceAnchorId) {
+      return res.status(400).json({
+        success: false,
+        message: "같은 사업자와는 채팅할 수 없습니다.",
+      });
+    }
+
+    const responseCacheKey = `partner-room:${ctx.userId}:${labAnchorId}:${practiceAnchorId}`;
+    const cached = getChatPerfCacheValue(responseCacheKey);
+    if (cached) {
+      return res.status(200).json({ success: true, data: cached, cached: true });
+    }
+
+    const payload = await withChatInFlight(responseCacheKey, async () => {
+      const inflightCached = getChatPerfCacheValue(responseCacheKey);
+      if (inflightCached) return inflightCached;
+
+      // Fast path: 기존 방이면 관계 검증·유저 해석·이름 조회를 건너뛴다.
+      let room = await ChatRoom.findOne({
+        relatedLabAnchorId: new Types.ObjectId(labAnchorId),
+        relatedPracticeAnchorId: new Types.ObjectId(practiceAnchorId),
+        relatedPracticeTransferId: null,
+        relatedRequestId: null,
+        isArchived: false,
+      })
+        .populate("participants", "name role business")
+        .lean();
+
+      if (room?._id) {
+        // 호출자 사업자가 방의 기공소/치과 쪽인지 확인(임의 합류 방지)
+        if (
+          ctx.anchorId !== labAnchorId &&
+          ctx.anchorId !== practiceAnchorId
+        ) {
+          const error = new Error("이 채팅방에 접근할 권한이 없습니다.");
+          error.statusCode = 403;
+          throw error;
+        }
+
+        const participantIds = Array.isArray(room.participants)
+          ? room.participants.map((p) => String(p?._id || p || "").trim())
+          : [];
+        if (!participantIds.includes(ctx.userId)) {
+          await ensureChatRoomParticipant(room._id, ctx.userId);
+          room = await ChatRoom.findById(room._id)
+            .populate("participants", "name role business")
+            .lean();
+        }
+
+        const [unreadCount, lastMessage] = await Promise.all([
+          Chat.countDocuments({
+            roomId: room._id,
+            isDeleted: false,
+            sender: { $ne: req.user._id },
+            "readBy.userId": { $ne: req.user._id },
+          }),
+          Chat.findOne({ roomId: room._id, isDeleted: false })
+            .sort({ createdAt: -1 })
+            .select({ _id: 1, content: 1, createdAt: 1, sender: 1 })
+            .populate("sender", "name role")
+            .lean(),
+        ]);
+
+        const next = {
+          ...room,
+          unreadCount: unreadCount || 0,
+          lastMessage: lastMessage || null,
+          counterpartAnchorId:
+            ctx.kind === "lab" ? practiceAnchorId : labAnchorId,
+          counterpartName:
+            hintCounterpartName ||
+            (ctx.kind === "lab" ? "치과" : "기공소"),
+          counterpartKind: ctx.kind === "lab" ? "practice" : "lab",
+        };
+        setChatPerfCacheValue(responseCacheKey, next, 15 * 1000);
+        return next;
+      }
+
+      const allowed = await hasPartnerChatRelationship({
+        labAnchorId,
+        practiceAnchorId,
+      });
+      if (!allowed) {
+        const error = new Error(
+          "거래처로 연결되었거나 의뢰 이력이 있는 상대와만 채팅할 수 있습니다.",
+        );
+        error.statusCode = 403;
+        throw error;
+      }
+
+      const [labUserId, practiceUserId, labAnchor, practiceAnchor] =
+        await Promise.all([
+          resolveAnchorChatUserId(labAnchorId, {
+            preferRoles: ["requestor", "internalLab"],
+          }),
+          resolveAnchorChatUserId(practiceAnchorId, {
+            preferRoles: ["practice", "requestor"],
+          }),
+          hintCounterpartName && ctx.kind === "practice"
+            ? Promise.resolve(null)
+            : BusinessAnchor.findById(labAnchorId)
+                .select({ name: 1, metadata: 1 })
+                .lean(),
+          hintCounterpartName && ctx.kind === "lab"
+            ? Promise.resolve(null)
+            : BusinessAnchor.findById(practiceAnchorId)
+                .select({ name: 1, metadata: 1 })
+                .lean(),
+        ]);
+
+      if (!labUserId || !practiceUserId) {
+        const error = new Error(
+          "상대 계정을 아직 연결할 수 없습니다. 잠시 후 다시 시도해 주세요.",
+        );
+        error.statusCode = 409;
+        throw error;
+      }
+
+      const labName =
+        (ctx.kind === "practice" && hintCounterpartName) ||
+        String(labAnchor?.name || "").trim() ||
+        String(labAnchor?.metadata?.companyName || "").trim() ||
+        "기공소";
+      const practiceName =
+        (ctx.kind === "lab" && hintCounterpartName) ||
+        String(practiceAnchor?.name || "").trim() ||
+        String(practiceAnchor?.metadata?.companyName || "").trim() ||
+        "치과";
+
+      const participantIdSet = new Set([labUserId, practiceUserId, ctx.userId]);
+      const participantObjectIds = [...participantIdSet]
+        .filter((id) => Types.ObjectId.isValid(id))
+        .map((id) => new Types.ObjectId(id));
+
+      const created = await ChatRoom.create({
+        participants: participantObjectIds,
+        roomType: "direct",
+        title: `${practiceName} ↔ ${labName}`,
+        relatedLabAnchorId: new Types.ObjectId(labAnchorId),
+        relatedPracticeAnchorId: new Types.ObjectId(practiceAnchorId),
+        relatedPracticeTransferId: null,
+        relatedRequestId: null,
+        status: "active",
+      });
+      invalidateChatPerfForUsers([...participantIdSet]);
+      invalidateChatPerfCacheByPrefix(`partner-counterparts:${ctx.userId}:`);
+
+      room = await ChatRoom.findById(created._id)
+        .populate("participants", "name role business")
+        .lean();
+
+      const next = {
+        ...(room || {}),
+        unreadCount: 0,
+        lastMessage: null,
+        counterpartAnchorId:
+          ctx.kind === "lab" ? practiceAnchorId : labAnchorId,
+        counterpartName:
+          hintCounterpartName ||
+          (ctx.kind === "lab" ? practiceName : labName),
+        counterpartKind: ctx.kind === "lab" ? "practice" : "lab",
+      };
+      setChatPerfCacheValue(responseCacheKey, next, 15 * 1000);
+      return next;
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: payload,
+    });
+  } catch (error) {
+    console.error("[chat] getOrCreatePartnerChatRoom error", error);
+    return res.status(error?.statusCode || 500).json({
+      success: false,
+      message:
+        error?.statusCode && error?.message
+          ? error.message
+          : "파트너 채팅방 생성/조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
 export default {
   getMyChatRooms,
   getSupportRoom,
+  listPartnerChatCounterparts,
+  getOrCreatePartnerChatRoom,
   getOrCreateRequestChatRoom,
   getOrCreatePracticeTransferChatRoom,
   createOrGetChatRoom,
