@@ -305,7 +305,7 @@ export const LAB_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   {
     id: "lab_remake",
     title: "리메이크 수신",
-    hint: "리메이크 의뢰는 뱃지로 표시됩니다. 작업시작하면 기공소 수가의 리메이크 기공비가 적용됩니다. 플랫폼 가입 전 건은 별도 안내를 확인한 뒤 작업시작하세요.",
+    hint: "리메이크 의뢰는 뱃지로 표시됩니다.\n작업시작하면 기공소 수가의 리메이크 기공비가 적용됩니다.\n플랫폼 가입 전 건은 별도 안내를 확인한 뒤 작업시작하세요.",
     path: LAB_RECEIVE_PATH,
     target: "lab_remake",
     advance: "next",
