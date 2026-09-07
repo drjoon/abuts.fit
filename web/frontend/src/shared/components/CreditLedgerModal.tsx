@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-08: 검색 — ImeSafeInput+debounce. 한글 조합 중·키마다 ledger API 호출 방지.
 // - 2026-09-05: 요약 충전 카드 라벨「충전」(치과·기공소 공통, 유료 접두 제거)·안내 툴팁 정리.
 // - 2026-09-05: 데모 모드 충전 카드 라벨「충전」(유료/선수금 아님)·가상 잔고 안내.
 // - 2026-09-05: 요약 수식에서 무료 충전 카드 제거(유료 [+정산] − 소비). 잔여 무료 버킷은 compact만.
@@ -94,7 +95,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
+import { ImeSafeInput } from "@/shared/components/practice/ImeSafeInput";
 import {
   Select,
   SelectContent,
@@ -189,6 +190,8 @@ type CreditLedgerType =
 
 type LedgerCreditKindFilter = "all" | "PAID" | "FREE" | "SETTLEMENT";
 type LedgerActionFilter = "all" | "CHARGE" | "SPEND" | "ADJUST";
+
+const SEARCH_DEBOUNCE_MS = 300;
 
 export type CreditLedgerStatsCategory =
   | "charge"
@@ -1818,6 +1821,9 @@ export const CreditLedgerModal = ({
     () => resolveLedgerFilters(initialFilters).action,
   );
   const [q, setQ] = useState(() => resolveLedgerFilters(initialFilters).q);
+  const [debouncedQ, setDebouncedQ] = useState(
+    () => resolveLedgerFilters(initialFilters).q.trim(),
+  );
   const [partnerName, setPartnerName] = useState(
     () => resolveLedgerFilters(initialFilters).partnerName,
   );
@@ -1851,12 +1857,19 @@ export const CreditLedgerModal = ({
     setCreditKind(next.creditKind);
     setAction(next.action);
     setQ(next.q);
+    setDebouncedQ(next.q.trim());
     setPartnerName(next.partnerName);
     setProsthesisType(next.prosthesisType);
     setStatsCategory(next.statsCategory);
     setStatsCategories(next.statsCategories);
     setOnYmd(next.onYmd);
   }, [embedded, initialFilters, initialFiltersKey, isOpen]);
+
+  useEffect(() => {
+    const next = q.trim().normalize("NFC");
+    const t = window.setTimeout(() => setDebouncedQ(next), SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(t);
+  }, [q]);
 
   const [loading, setLoading] = useState(Boolean(embedded));
   const [items, setItems] = useState<CreditLedgerItem[]>([]);
@@ -1991,7 +2004,7 @@ export const CreditLedgerModal = ({
         params.set("creditKind", creditKind);
       }
       if (action && action !== "all") params.set("action", action);
-      if (q.trim()) params.set("q", q.trim());
+      if (debouncedQ.trim()) params.set("q", debouncedQ.trim());
       if (partnerName.trim()) params.set("partnerName", partnerName.trim());
       if (prosthesisType.trim()) {
         params.set("prosthesisType", prosthesisType.trim());
@@ -2130,7 +2143,7 @@ export const CreditLedgerModal = ({
     ...(equationLedgerUi ? [] : [period, customStartDate, customEndDate]),
     creditKind,
     action,
-    q,
+    debouncedQ,
     partnerName,
     prosthesisType,
     statsCategory,
@@ -2701,10 +2714,10 @@ export const CreditLedgerModal = ({
               </Select>
             </div>
 
-            <Input
+            <ImeSafeInput
               value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="검색 (거래내역/코드/refId)"
+              onChange={setQ}
+              placeholder="검색 (기공소·환자·코드/refId)"
               className="h-9 w-full rounded-xl border-slate-200 sm:w-[280px]"
             />
 

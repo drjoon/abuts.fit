@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-08: q 검색 — 환자명(files·transferMemo)·의뢰 caseInfos도 refId 매칭. 1글자 허용.
 // - 2026-09-02: 치과 휴지통(deleted|canceled) PTX도 장부 enrich에서 숨김(적립/결제 오인 방지).
 // - 2026-08-31: 수락 취소(workCanceledAt)·미정산 PTX는 장부 enrich에서 숨김(「적립/결제 완료」 오인 방지).
 // - 2026-08-31: currentBalanceSnapshot — realBalance/demoBalance 분리. 장부 잔액 러닝도 이원.
@@ -348,7 +349,7 @@ export async function listMyCreditLedger(req, res) {
   const typeRaw = String(req.query.type || "").trim().toUpperCase();
   const creditKindRaw = String(req.query.creditKind || "").trim().toUpperCase();
   const actionRaw = String(req.query.action || "").trim().toUpperCase();
-  const qRaw = String(req.query.q || "").trim();
+  const qRaw = String(req.query.q || "").trim().normalize("NFC");
   const partnerNameRaw = String(req.query.partnerName || "").trim();
   const prosthesisTypeRaw = String(req.query.prosthesisType || "").trim();
   const onYmdRaw = String(req.query.onYmd || "").trim();
@@ -423,45 +424,84 @@ export async function listMyCreditLedger(req, res) {
     if (requestIdSearchObjectId) {
       searchOrs.push({ refId: requestIdSearchObjectId });
     }
-    if (rx && qRaw.length >= 2) {
-      let ptxMatch = null;
+    // 거래내역(기공소·환자)·의뢰번호 외 텍스트: PTX/Request refId로 확장.
+    // 한글 1음절(예: 백)도 환자명 검색에 쓰이므로 length>=2 제한을 두지 않는다.
+    if (rx) {
+      const ptxTextOr = [
+        { targetLabName: rx },
+        { assigneeLabName: rx },
+        { "files.patientName": rx },
+        { transferMemo: rx },
+      ];
+      const lookups = [];
+
       if (requestorKind === "practice") {
-        ptxMatch = {
-          practiceBusinessAnchorId: anchorObjectId,
-          $or: [{ targetLabName: rx }, { assigneeLabName: rx }],
-        };
+        lookups.push(
+          PracticeTransfer.find({
+            practiceBusinessAnchorId: anchorObjectId,
+            $or: ptxTextOr,
+          })
+            .select({ _id: 1 })
+            .limit(80)
+            .lean(),
+          Request.find({
+            businessAnchorId: anchorObjectId,
+            "caseInfos.patientName": rx,
+          })
+            .select({ _id: 1 })
+            .limit(80)
+            .lean(),
+        );
       } else if (requestorKind === "lab") {
-        const practiceAnchors = await BusinessAnchor.find({
-          businessType: "requestor",
-          $or: [{ name: rx }, { companyName: rx }],
-        })
-          .select({ _id: 1 })
-          .limit(40)
-          .lean();
-        const practiceIds = practiceAnchors
-          .map((row) => row?._id)
-          .filter(Boolean);
-        ptxMatch = {
-          $and: [
-            {
-              $or: [
-                { assigneeLabAnchorId: anchorObjectId },
-                { targetLabAnchorId: anchorObjectId },
-              ],
-            },
-            practiceIds.length
-              ? { practiceBusinessAnchorId: { $in: practiceIds } }
-              : { $or: [{ targetLabName: rx }, { assigneeLabName: rx }] },
-          ],
-        };
+        lookups.push(
+          BusinessAnchor.find({
+            businessType: "requestor",
+            $or: [{ name: rx }, { companyName: rx }],
+          })
+            .select({ _id: 1 })
+            .limit(40)
+            .lean()
+            .then(async (practiceAnchors) => {
+              const practiceIds = practiceAnchors
+                .map((row) => row?._id)
+                .filter(Boolean);
+              const nameOrText = practiceIds.length
+                ? [
+                    ...ptxTextOr,
+                    { practiceBusinessAnchorId: { $in: practiceIds } },
+                  ]
+                : ptxTextOr;
+              return PracticeTransfer.find({
+                $and: [
+                  {
+                    $or: [
+                      { assigneeLabAnchorId: anchorObjectId },
+                      { targetLabAnchorId: anchorObjectId },
+                    ],
+                  },
+                  { $or: nameOrText },
+                ],
+              })
+                .select({ _id: 1 })
+                .limit(80)
+                .lean();
+            }),
+          Request.find({
+            "caseInfos.practiceRouting.targetLabAnchorId": anchorObjectId,
+            "caseInfos.patientName": rx,
+          })
+            .select({ _id: 1 })
+            .limit(80)
+            .lean(),
+        );
       }
-      if (ptxMatch) {
-        const partnerPtx = await PracticeTransfer.find(ptxMatch)
-          .select({ _id: 1 })
-          .limit(80)
-          .lean();
-        for (const doc of partnerPtx) {
-          if (doc?._id) searchOrs.push({ refId: doc._id });
+
+      if (lookups.length) {
+        const batches = await Promise.all(lookups);
+        for (const docs of batches) {
+          for (const doc of docs || []) {
+            if (doc?._id) searchOrs.push({ refId: doc._id });
+          }
         }
       }
     }
