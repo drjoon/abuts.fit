@@ -5,6 +5,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/practice/practiceTransferLabReceive.ts
 // change-log:
+// - 2026-09-07: 표시명 어벗츠치과 / 이환자(원본 실샘플 메타는 JSON meta 유지).
 // - 2026-09-05: 향기로운치과 실샘플 복사본(PLY·기공비·치식) 표시. publicPath fetch.
 // - 2026-09-05: 향기로운치과 6번대 CA 샘플 기반 기공비·파일 메타(익명). 데모 S3키=guide-tour/.
 // - 2026-09-05: 투어 pause·수료 시 FE 주입 중단(RequestorPracticePage에서 상세도 삭제).
@@ -35,10 +36,10 @@ export const GUIDE_TOUR_LAB_RECEIVE_SAMPLE_DIR =
 
 const samplePatientName = String(labReceiveSample.patientName || "환자");
 const sampleClinicName = String(
-  labReceiveSample.practice?.businessName || "향기로운치과",
+  labReceiveSample.practice?.businessName || "어벗츠치과",
 );
 
-/** 기공소 투어 — 향기로운치과 실샘플(46 크라운+CA) */
+/** 기공소 투어 — 어벗츠치과 샘플(46 크라운+CA) */
 export const GUIDE_TOUR_DEMO_LAB_RECEIVE_TOOTH_WORKS: ToothWorkSelection[] = (
   Array.isArray(labReceiveSample.toothWorks) ? labReceiveSample.toothWorks : []
 ).map((row) => ({

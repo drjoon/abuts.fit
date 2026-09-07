@@ -4,13 +4,13 @@
     "sourceTransferId": "PTX-MTB54315-HKRT32",
     "sourceMongoId": "6a8fd8aecc6698032c34fe6c",
     "exportedAt": "2026-09-05T14:28:29.658Z",
-    "note": "실 PLY 복사본: public/guide-tour/lab-receive-sample"
+    "note": "실 PLY 복사본: public/guide-tour/lab-receive-sample (표시명: 어벗츠치과 / 이환자)"
   },
   "practice": {
-    "businessName": "향기로운치과",
+    "businessName": "어벗츠치과",
     "userName": "가이드투어"
   },
-  "patientName": "박성혜",
+  "patientName": "이환자",
   "toothWorks": [
     {
       "toothNumber": "46",
@@ -48,34 +48,34 @@
       "abutmentRetail": 0
     }
   ],
-  "transferMemo": "[주문일: 2026-08-27]\n[치과도착일: 2026-09-03]\n[도착기본일수: 7]\n[환자명: 박성혜]\n[보철물형태목록: 인레이, 크라운, 커스텀어벗, 브리지, 유지장치, 임시치아, 결손치]\n[치아보철: 46=크라운+커스텀어벗디자인생산{NEOBIOTECH/IS2/Regular/Hex}[지오메디/4.5/7.0]]\n[디자인컨펌생략: Y]",
+  "transferMemo": "[주문일: 2026-08-27]\n[치과도착일: 2026-09-03]\n[도착기본일수: 7]\n[환자명: 이환자]\n[보철물형태목록: 인레이, 크라운, 커스텀어벗, 브리지, 유지장치, 임시치아, 결손치]\n[치아보철: 46=크라운+커스텀어벗디자인생산{NEOBIOTECH/IS2/Regular/Hex}[지오메디/4.5/7.0]]\n[디자인컨펌생략: Y]",
   "orderDates": [],
   "arrivalDates": [],
   "files": [
     {
-      "patientName": "박성혜",
+      "patientName": "이환자",
       "tooth": "",
-      "originalName": "박성혜 BiteScan.ply",
-      "localName": "박성혜_BiteScan.ply",
-      "publicPath": "/guide-tour/lab-receive-sample/%EB%B0%95%EC%84%B1%ED%98%9C_BiteScan.ply",
+      "originalName": "이환자 BiteScan.ply",
+      "localName": "이환자_BiteScan.ply",
+      "publicPath": "/guide-tour/lab-receive-sample/%EC%9D%B4%ED%99%98%EC%9E%90_BiteScan.ply",
       "mimetype": "application/octet-stream",
       "size": 3192693
     },
     {
-      "patientName": "박성혜",
+      "patientName": "이환자",
       "tooth": "",
-      "originalName": "박성혜 LowerJawScan.ply",
-      "localName": "박성혜_LowerJawScan.ply",
-      "publicPath": "/guide-tour/lab-receive-sample/%EB%B0%95%EC%84%B1%ED%98%9C_LowerJawScan.ply",
+      "originalName": "이환자 LowerJawScan.ply",
+      "localName": "이환자_LowerJawScan.ply",
+      "publicPath": "/guide-tour/lab-receive-sample/%EC%9D%B4%ED%99%98%EC%9E%90_LowerJawScan.ply",
       "mimetype": "application/octet-stream",
       "size": 2721836
     },
     {
-      "patientName": "박성혜",
+      "patientName": "이환자",
       "tooth": "",
-      "originalName": "박성혜 UpperJawScan.ply",
-      "localName": "박성혜_UpperJawScan.ply",
-      "publicPath": "/guide-tour/lab-receive-sample/%EB%B0%95%EC%84%B1%ED%98%9C_UpperJawScan.ply",
+      "originalName": "이환자 UpperJawScan.ply",
+      "localName": "이환자_UpperJawScan.ply",
+      "publicPath": "/guide-tour/lab-receive-sample/%EC%9D%B4%ED%99%98%EC%9E%90_UpperJawScan.ply",
       "mimetype": "application/octet-stream",
       "size": 3071319
     }
