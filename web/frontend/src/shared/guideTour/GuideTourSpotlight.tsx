@@ -5,6 +5,7 @@
 // - web/frontend/src/shared/components/practice/PracticeOrderArrivalDateRangeField.tsx
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // change-log:
+// - 2026-09-05: intro — hintVariant stacked(1줄 작게·2줄 크게).
 // - 2026-09-05: lab_detail — 코치마크 위쪽(1/N 캘린더와 동일). 오른쪽 반 배치 해제.
 // - 2026-09-05: 홀 rect 뷰포트 클램프 — 큰 모달(lab_detail) 포커스가 화면 밖으로 나가지 않게.
 // - 2026-09-05: store_workspace — 사이드바「스토어」별도 홀.
@@ -516,6 +517,8 @@ type GuideTourSpotlightProps = {
   stepTotal: number;
   title: string;
   hint: string;
+  /** intro — \\n 기준 1줄 작게·2줄 크게 */
+  hintVariant?: "default" | "stacked";
   target?: string | null;
   showBack: boolean;
   showNext: boolean;
@@ -536,6 +539,7 @@ export function GuideTourSpotlight({
   stepTotal,
   title,
   hint,
+  hintVariant = "default",
   target,
   showBack,
   showNext,
@@ -706,7 +710,7 @@ export function GuideTourSpotlight({
         : null;
     if (ro) ro.observe(el);
     return () => ro?.disconnect();
-  }, [stepIndex, title, hint, showBack, showNext, showSkip]);
+  }, [stepIndex, title, hint, hintVariant, showBack, showNext, showSkip]);
 
   useLayoutEffect(() => {
     if (rects.length === 0) {
@@ -752,9 +756,26 @@ export function GuideTourSpotlight({
       <p className="text-sm font-semibold text-accent-strong">
         {stepTotal > 0 ? `${title} · ${stepIndex + 1}/${stepTotal}` : title}
       </p>
-      <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-slate-600">
-        {hint}
-      </p>
+      {hintVariant === "stacked" ? (
+        <div className="mt-2 space-y-1.5 text-slate-600">
+          {hint.split("\n").map((line, i) => (
+            <p
+              key={`${i}-${line}`}
+              className={
+                i === 0
+                  ? "text-xs leading-relaxed"
+                  : "text-base font-semibold leading-snug text-slate-700"
+              }
+            >
+              {line}
+            </p>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-slate-600">
+          {hint}
+        </p>
+      )}
       <div className="mt-5 flex items-center gap-2">
           <Button
             type="button"

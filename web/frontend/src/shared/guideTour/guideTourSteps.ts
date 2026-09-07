@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/practice/PracticeToothWorkGuideTourBanner.tsx
 // - web/frontend/src/shared/guideTour/GuideTourProvider.tsx
 // change-log:
+// - 2026-09-05: intro 힌트 — 구강스캔·석고 모델 / 기공의뢰서는 어벗츠 플랫폼으로(치과·기공소 공통).
 // - 2026-09-05: lab_chat 삭제. lab_design 힌트 — STL·환자/임플란트 정보 안내.
 // - 2026-09-05: lab_calendar — 오늘 의뢰 칩 홀·클릭 시 상세(allowTargetInteraction).
 // - 2026-09-05: lab_detail~design — 실사용(allowTargetInteraction·스크롤·조작). 영화형 클릭차단 해제.
@@ -129,12 +130,16 @@ const practiceOralMovieSteps: GuideTourStepDef[] =
     };
   });
 
+/** 시작(intro) — 치과·기공소 공통. Spotlight에서 1줄 작게·2줄 크게 */
+export const GUIDE_TOUR_INTRO_HINT =
+  "구강스캔 뿐만 아니라 석고 모델도\n기공의뢰서는 어벗츠 플랫폼으로!";
+
 /** 치과 — 시작 + 첨1~4 페이지 기준 4챕터 */
 export const PRACTICE_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   {
     id: "intro",
     title: "가이드투어",
-    hint: "어벗츠의 편리함을 경험해보세요. 가이드투어를 시작합니다.",
+    hint: GUIDE_TOUR_INTRO_HINT,
     path: PRACTICE_ORAL_PATH,
     target: null,
     advance: "next",
@@ -223,7 +228,7 @@ export const LAB_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   {
     id: "intro",
     title: "가이드투어",
-    hint: "어벗츠의 편리함을 경험해보세요. 가이드투어를 시작합니다.",
+    hint: GUIDE_TOUR_INTRO_HINT,
     path: LAB_RECEIVE_PATH,
     target: null,
     advance: "next",

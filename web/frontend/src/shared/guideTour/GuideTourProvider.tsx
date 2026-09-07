@@ -7,6 +7,7 @@
 // - web/backend/utils/guideTour.util.js
 // - web/frontend/src/shared/components/practice/PracticeToothWorkGuideTourBanner.tsx
 // change-log:
+// - 2026-09-05: intro — Spotlight hintVariant stacked(1줄 작게·2줄 크게).
 // - 2026-09-05: 테스트치과·테스트기공소 — 가이드투어 수료 고정 금지(항시 eligible).
 // - 2026-09-05: lab — 챕터 progress·pause/수료 수신 랜딩·레거시 normalize.
 // - 2026-09-05: pause(다음에 하기) — 치과는 구강스캔 빈 캘린더로 이동(중단 화면 잔류 방지).
@@ -406,6 +407,7 @@ export function GuideTourProvider({ kind, children }: ProviderProps) {
           stepTotal={spotlightStepTotal}
           title={spotlightTitle}
           hint={spotlightHint}
+          hintVariant={step.id === "intro" ? "stacked" : "default"}
           target={step.target}
           showBack={stepIndex > 0}
           showNext
