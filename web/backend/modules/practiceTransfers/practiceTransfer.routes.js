@@ -35,6 +35,7 @@ import {
   confirmPracticeTransferAbutmentDesign,
   confirmPracticeTransferProduction,
   remakePracticeTransfers,
+  searchRemakePracticeTransfers,
   restorePracticeTransfersBatch,
   retargetPracticeTransferLab,
   upsertPracticeTransferDraft,
@@ -65,6 +66,12 @@ const receiveAuth = authorizePracticeTransferReceive();
 router.post("/", authenticate, sendAuth, createPracticeTransfer);
 
 router.get("/my", authenticate, sendAuth, getMyPracticeTransfers);
+router.get(
+  "/remake-candidates",
+  authenticate,
+  sendAuth,
+  searchRemakePracticeTransfers,
+);
 router.get(
   "/subcontract-direct-blocked-labs",
   authenticate,

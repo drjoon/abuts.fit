@@ -5297,6 +5297,146 @@ export async function getMyPracticeTransfers(req, res) {
   }
 }
 
+const escapePracticeTransferPatientRegex = (value) =>
+  String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * 리메이크 원본 검색.
+ * - q 없음: 최근 14일(주문일·생성일) 작업시작 이후 의뢰
+ * - q 있음: 환자명으로 전체 기간 검색
+ * GET /api/practice/transfers/remake-candidates?q=&days=14&limit=30
+ */
+export async function searchRemakePracticeTransfers(req, res) {
+  try {
+    const role = String(req.user?.role || "").trim();
+    if (!isPracticeTransferSenderRole(role)) {
+      return res.status(403).json({ success: false, message: "권한이 없습니다." });
+    }
+
+    const q = String(req.query?.q || req.query?.patientName || "")
+      .trim()
+      .normalize("NFC");
+    const recentDays = Math.min(
+      90,
+      Math.max(1, Number(req.query?.days || 14) || 14),
+    );
+    const limit = Math.min(40, Math.max(1, Number(req.query?.limit || 30)));
+    const {
+      scope: baseFilter,
+    } = await buildPracticeOwnedScope(req);
+
+    const todayYmd = toKstYmd(new Date()) || "";
+    const fromYmd = (() => {
+      if (!todayYmd) return "";
+      const [y, m, d] = todayYmd.split("-").map(Number);
+      if (![y, m, d].every((n) => Number.isFinite(n) && n > 0)) return "";
+      const next = new Date(
+        Date.UTC(y, m - 1, d - (recentDays - 1), 12),
+      );
+      const yy = next.getUTCFullYear();
+      const mm = String(next.getUTCMonth() + 1).padStart(2, "0");
+      const dd = String(next.getUTCDate()).padStart(2, "0");
+      return `${yy}-${mm}-${dd}`;
+    })();
+    const fromDate = fromYmd
+      ? new Date(`${fromYmd}T00:00:00+09:00`)
+      : null;
+
+    const baseParts = [
+      baseFilter,
+      practiceTransferNotDeletedMongoFilter(),
+      { requestorDownloadedAt: { $ne: null } },
+    ];
+
+    let mongoQuery;
+    if (q) {
+      const patientRe = new RegExp(escapePracticeTransferPatientRegex(q), "i");
+      mongoQuery = {
+        $and: [...baseParts, { "files.patientName": patientRe }],
+      };
+    } else if (fromDate && !Number.isNaN(fromDate.getTime()) && fromYmd) {
+      mongoQuery = {
+        $and: [
+          ...baseParts,
+          {
+            $or: [
+              { createdAt: { $gte: fromDate } },
+              { orderDates: { $elemMatch: { $gte: fromYmd } } },
+            ],
+          },
+        ],
+      };
+    } else {
+      mongoQuery = { $and: baseParts };
+    }
+
+    const fetchLimit = q ? Math.min(80, limit * 2) : Math.min(120, limit * 3);
+    const fetched = await PracticeTransfer.find(mongoQuery)
+      .sort({ createdAt: -1, _id: -1 })
+      .limit(fetchLimit)
+      .lean();
+
+    const isWithinRecentWindow = (doc) => {
+      if (q || !fromYmd || !todayYmd) return true;
+      const orderDates = Array.isArray(doc?.orderDates)
+        ? doc.orderDates
+            .map((d) => String(d || "").trim())
+            .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
+        : [];
+      if (orderDates.some((d) => d >= fromYmd && d <= todayYmd)) return true;
+      const createdYmd = toKstYmd(doc?.createdAt) || "";
+      return Boolean(createdYmd && createdYmd >= fromYmd && createdYmd <= todayYmd);
+    };
+
+    const docs = fetched
+      .filter((doc) =>
+        PRACTICE_REMAKE_ELIGIBLE_STAGES.has(
+          resolvePracticeTransferManufacturerStage(doc),
+        ),
+      )
+      .filter(isWithinRecentWindow)
+      .slice(0, limit);
+
+    const quotesById = await buildFeeQuotesForTransferDocs({ docs });
+    const abutmentDeliveryById = await mapAbutmentDeliveryByTransferDocs(docs);
+
+    const requests = docs.flatMap((doc) => {
+      const feeQuote = quotesById.get(String(doc?._id || "")) || null;
+      const abutmentDeliveryInfo =
+        abutmentDeliveryById.get(String(doc?._id || "")) || null;
+      const manufacturerStage = resolvePracticeTransferManufacturerStage(doc, {
+        abutmentDeliveryInfo,
+      });
+      return toVirtualRequestRows(doc).map((row) => ({
+        ...row,
+        manufacturerStage,
+        feeQuote,
+        labRating: null,
+        abutmentDeliveryInfo,
+      }));
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        requests,
+        pagination: {
+          page: 1,
+          limit,
+          count: requests.length,
+          hasMore: false,
+        },
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "리메이크 원본 검색 중 오류가 발생했습니다.",
+      error: error?.message,
+    });
+  }
+}
+
 export async function listSubcontractDirectBlockedLabs(req, res) {
   try {
     const role = String(req.user?.role || "").trim();
