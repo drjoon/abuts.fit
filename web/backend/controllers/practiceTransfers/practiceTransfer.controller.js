@@ -5891,6 +5891,9 @@ export async function getReceivedPracticeTransfers(req, res) {
         autoMatch: autoFields.autoMatch,
         toothWorks,
         hasCustomAbutment: hasCustomAbutmentToothWorks(toothWorks),
+        labRequestStagePlans: normalizeLabRequestStagePlans(
+          doc?.labRequestStagePlans,
+        ),
         production: toProductionApiFields(production, {
           abutmentPastReady: Boolean(
             abutmentPastReadyById.get(String(doc?._id || "")),

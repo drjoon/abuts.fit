@@ -5,6 +5,7 @@
 // - web/frontend/src/pages/practice/components/PracticeTransferArrivalSettingsTab.tsx
 // - 2026-09-07: 기공의뢰 단계 인라인 편집(전체치열 모달·설정). 카드형 별도 모달 UX 축소.
 // - 2026-09-07: 단계 행 드래그 정렬(화살표 제거).
+// - 2026-09-07: 단계별 도착 일수 UI 제거 — 재도착일은 매번 직접 지정.
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -22,12 +23,13 @@ type Props = {
   stages: PracticeRequestStage[];
   onChange: (next: PracticeRequestStage[]) => void;
   className?: string;
-  /** compact=한 줄 요약만(읽기). edit=이름·일수 인라인 */
+  /** compact=한 줄 요약만(읽기). edit=단계 이름 인라인 */
   mode?: "compact" | "edit";
 };
 
 const emptyStage = (): PracticeRequestStage => ({
   name: "",
+  // 스키마 호환용 기본값. UI에서는 편집하지 않음(재도착일 수동 지정).
   arrivalOffsetDays: DEFAULT_PRACTICE_ARRIVAL_OFFSET_DAYS,
 });
 
@@ -68,9 +70,7 @@ export function PracticeRequestStageInlineEditor({
     return (
       <p
         className={cn("text-[12px] leading-snug text-slate-600", className)}
-        title={list
-          .map((s) => `${s.name} · ${s.arrivalOffsetDays}일`)
-          .join(" → ")}
+        title={summary}
       >
         {summary}
       </p>
@@ -176,22 +176,6 @@ export function PracticeRequestStageInlineEditor({
                 placeholder="단계 이름"
                 onChange={(e) => updateRow(index, { name: e.target.value })}
               />
-              <div className="flex shrink-0 items-center gap-0.5">
-                <Input
-                  type="number"
-                  min={0}
-                  max={365}
-                  className="h-8 w-12 rounded-lg px-1.5 text-center text-sm tabular-nums"
-                  value={row.arrivalOffsetDays}
-                  onChange={(e) =>
-                    updateRow(index, {
-                      arrivalOffsetDays: Number(e.target.value),
-                    })
-                  }
-                  aria-label="도착 일수"
-                />
-                <span className="text-[11px] text-slate-400">일</span>
-              </div>
               <button
                 type="button"
                 className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-destructive/10 hover:text-destructive"

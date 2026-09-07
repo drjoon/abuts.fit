@@ -244,6 +244,7 @@ import {
 } from "@/shared/practice/labPracticePartnerMemo";
 import { buildPracticeWorkPeriodSummaryItem } from "@/shared/practice/practiceWorkPeriod";
 import { buildPracticeTransferDateSummaryItems } from "@/shared/practice/practiceSenderTransferDetailModel";
+import { normalizeLabRequestStagePlans } from "@/shared/practice/requestStagePresets";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import { REQUESTOR_KIND_LABEL } from "@/shared/business/requestorCapabilities";
 import { PracticeFileTransferPage } from "@/pages/practice/PracticeFileTransferPage";
@@ -1128,6 +1129,13 @@ export function RequestorPracticeReceivePage({
           toothWorksSummary: toothWorksFromApi.length > 0
             ? serializeToothWorks(toothWorksFromApi)
             : parsedMemo.toothWorksSummary,
+          labRequestStagePlans: Array.isArray(
+            (r as { labRequestStagePlans?: unknown }).labRequestStagePlans,
+          )
+            ? normalizeLabRequestStagePlans(
+                (r as { labRequestStagePlans: unknown }).labRequestStagePlans,
+              )
+            : undefined,
           status: String(r.status || "active").trim(),
           manufacturerStage: String(r.manufacturerStage || "").trim() || undefined,
           createdAt: String(r.createdAt || "").trim(),
@@ -6052,6 +6060,7 @@ export function RequestorPracticeReceivePage({
         memo={selectedTransferDisplayMemo}
         toothWorks={selectedTransferToothWorks}
         toothWorksKey={selectedTransfer?.transferId || "requestor-transfer"}
+        labRequestStagePlans={selectedTransfer?.labRequestStagePlans || null}
         feeQuote={selectedTransfer?.feeQuote || null}
         skipJig={Boolean(selectedTransfer?.production?.skipJig)}
         feeViewer="lab"

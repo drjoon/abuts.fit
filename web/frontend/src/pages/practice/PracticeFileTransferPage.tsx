@@ -4308,7 +4308,7 @@ export const PracticeFileTransferPage = ({
     if (!/^\d{4}-\d{2}-\d{2}$/.test(arrivalYmd)) {
       toast({
         title: "도착일 변경 실패",
-        description: "재도착일을 선택해 주세요.",
+        description: "다음 도착일을 선택해 주세요.",
         variant: "destructive",
       });
       return;
@@ -4393,9 +4393,9 @@ export const PracticeFileTransferPage = ({
         ),
       );
       toast({
-        title: "재도착일 반영",
+        title: "다음 도착일 반영",
         description: nextArrival
-          ? `재주문일 ${nextOrder || "오늘"} · 재도착일 ${nextArrival}. 이전 일자는 캘린더에 유지되며 크레딧은 추가 차감되지 않습니다.`
+          ? `재주문일 ${nextOrder || "오늘"} · 다음 도착일 ${nextArrival}. 이전 일자는 캘린더에 유지되며 크레딧은 추가 차감되지 않습니다.`
           : "동일 건에 도착일이 누적되었습니다.",
       });
       void loadRecentRequests({ silent: true });
@@ -9525,6 +9525,9 @@ export const PracticeFileTransferPage = ({
               : undefined
           }
           appendArrivalBusy={appendArrivalBusy}
+          labRequestStagePlans={
+            selectedTransfer?.labRequestStagePlans || null
+          }
           onAppendProsthesis={
             selectedTransfer &&
             selectedTransfer.transferId &&

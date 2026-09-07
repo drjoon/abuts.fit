@@ -6,6 +6,7 @@
  * 2026-08-21: 커스텀어벗 한진 배송현황 요약 행.
  * 2026-08-21: 작업취소·휴지통 상태에서는 디자인 컨펌 CTA 숨김.
  * 2026-08-29: 요약 필드「어벗 진행상황」— 제조 공정 라벨 표시.
+ * 2026-09-07: 기공의뢰 단계 — 현재·다음 공정 표시(틀니 등).
  */
 import type {
   PracticeRecentTransferFileItem,
@@ -25,6 +26,11 @@ import {
   getPracticeAbutmentDeliveryLabel,
   practiceAbutmentProgressValueClassName,
 } from "@/shared/shipping/hanjinTrackingLabel";
+import {
+  currentStageOfPlan,
+  nextStageOfPlan,
+  normalizeLabRequestStagePlans,
+} from "@/shared/practice/requestStagePresets";
 
 const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -105,7 +111,7 @@ export function buildPracticeTransferDateSummaryItems(
           : "재도착 설정 시 오늘이 재주문일로 반영됩니다.",
     },
     {
-      label: "재도착일",
+      label: "다음 도착일",
       value: rearrivalYmd,
       tooltip:
         arrivalDates.length > 1
@@ -237,25 +243,26 @@ export function buildPracticeSenderTransferDetailModel(
         ? [workPeriodSummary as PracticeTransferDialogSummaryItem]
         : []),
       ...(() => {
-        const plans = Array.isArray(transfer.labRequestStagePlans)
-          ? transfer.labRequestStagePlans
-          : [];
+        const plans = normalizeLabRequestStagePlans(
+          transfer.labRequestStagePlans,
+        );
         if (plans.length === 0) return [];
         const labels = plans
           .map((plan) => {
-            const stages = Array.isArray(plan.stages) ? plan.stages : [];
+            const stages = plan.stages;
             if (stages.length === 0) return null;
+            const current = currentStageOfPlan(plan)?.name || "";
+            const next = nextStageOfPlan(plan)?.name || "";
             const idx = Math.min(
               stages.length - 1,
               Math.max(0, Math.floor(Number(plan.currentIndex) || 0)),
             );
-            const current = stages[idx]?.name || "";
-            const names = stages.map((s) => s.name).filter(Boolean);
             const typeName = String(plan.prosthesisType || "").trim();
             if (!current) return null;
-            return `${typeName ? `${typeName} · ` : ""}${current}${
-              names.length > 1 ? ` (${idx + 1}/${names.length})` : ""
-            }`;
+            const progress =
+              stages.length > 1 ? ` (${idx + 1}/${stages.length})` : "";
+            const nextPart = next ? ` → 다음 ${next}` : "";
+            return `${typeName ? `${typeName} · ` : ""}${current}${progress}${nextPart}`;
           })
           .filter(Boolean);
         if (labels.length === 0) return [];

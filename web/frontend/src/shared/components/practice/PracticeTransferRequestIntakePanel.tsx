@@ -1243,32 +1243,6 @@ export const PracticeTransferRequestIntakePanel = ({
     }));
   };
 
-  const applyArrivalFromFirstStage = (stages: PracticeRequestStage[]) => {
-    const firstOffset = stages[0]?.arrivalOffsetDays;
-    if (
-      typeof firstOffset !== "number" ||
-      !Number.isFinite(firstOffset) ||
-      !orderDate ||
-      !/^\d{4}-\d{2}-\d{2}$/.test(String(orderDate).trim())
-    ) {
-      return;
-    }
-    const base = new Date(`${String(orderDate).trim()}T00:00:00+09:00`);
-    if (Number.isNaN(base.getTime())) return;
-    base.setDate(base.getDate() + Math.max(0, Math.floor(firstOffset)));
-    const nextArrival = new Intl.DateTimeFormat("en-CA", {
-      timeZone: "Asia/Seoul",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).format(base);
-    if (onOrderArrivalDatesChange) {
-      onOrderArrivalDatesChange({ orderDate, arrivalDate: nextArrival });
-    } else {
-      setArrivalDate(nextArrival);
-    }
-  };
-
   const commitArchBulkList = (next: string[]) => {
     const normalized = normalizeArchBulkProsthesisTypes(next);
     if (
@@ -1542,7 +1516,6 @@ export const PracticeTransferRequestIntakePanel = ({
           ...nextPlans,
         ]),
       );
-      applyArrivalFromFirstStage(nextPlans[0]!.stages);
     }
   };
 

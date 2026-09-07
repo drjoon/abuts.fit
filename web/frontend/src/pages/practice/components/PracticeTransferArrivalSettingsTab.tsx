@@ -417,8 +417,9 @@ export function PracticeTransferArrivalSettingsTab() {
         <CardHeader>
           <CardTitle>기공의뢰 단계 프리셋</CardTitle>
           <CardDescription>
-            전체틀니·부분틀니처럼 여러 단계를 거치는 보철의 단계 이름과 단계별
-            주문→도착 일수를 저장합니다. 다른 보철 유형도 추가할 수 있습니다.
+            전체틀니·부분틀니처럼 여러 단계를 거치는 보철의 단계 이름 순서를
+            저장합니다. 재도착일은 매번 직접 지정하고, 다른 보철 유형도 추가할
+            수 있습니다.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">

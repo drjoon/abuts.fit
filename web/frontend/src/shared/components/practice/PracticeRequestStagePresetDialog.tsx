@@ -95,7 +95,8 @@ export function PracticeRequestStagePresetDialog({
         <DialogHeader className="shrink-0 space-y-1 text-left">
           <DialogTitle className="text-base">{typeLabel} 단계</DialogTitle>
           <DialogDescription className="text-xs text-slate-500">
-            이름과 주문→도착 일수. 재도착 시 다음 단계로 진행됩니다.
+            이름 순서만 저장합니다. 재도착 시 다음 단계로 진행되며, 재도착일은
+            매번 직접 지정합니다.
           </DialogDescription>
         </DialogHeader>
 

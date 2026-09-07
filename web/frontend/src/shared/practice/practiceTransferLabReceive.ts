@@ -90,6 +90,8 @@ export type PracticeTransferLabReceiveItem = {
   toothWorksSummary: string;
   /** API toothWorks — implantAddRequest 등 요약 문자열보다 우선 */
   toothWorks?: ToothWorkSelection[];
+  /** 틀니 등 다단계 기공의뢰 단계 스냅샷 */
+  labRequestStagePlans?: import("@/shared/practice/requestStagePresets").PracticeLabRequestStagePlan[];
   status: string;
   manufacturerStage?: string;
   createdAt: string;

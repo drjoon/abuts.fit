@@ -165,6 +165,7 @@ export const PRACTICE_TRANSFER_CALENDAR_LIST_SELECT = {
   orderDates: 1,
   arrivalDates: 1,
   toothWorks: 1,
+  labRequestStagePlans: 1,
   files: 1,
   resultFiles: 1,
   production: 1,

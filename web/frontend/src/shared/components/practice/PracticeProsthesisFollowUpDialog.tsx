@@ -215,7 +215,7 @@ export function PracticeProsthesisFollowUpDialog({
                             disabled={busy}
                           >
                             <CalendarClock className="h-3.5 w-3.5" />
-                            재도착일
+                            다음 도착일
                           </Button>
                         </PopoverTrigger>
                         <PopoverContent
@@ -224,7 +224,7 @@ export function PracticeProsthesisFollowUpDialog({
                           onOpenAutoFocus={(e) => e.preventDefault()}
                         >
                           <div className="border-b px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
-                            선택일=재도착일, 오늘=재주문일로 반영됩니다.
+                            선택일=다음 도착일, 오늘=재주문일로 반영됩니다.
                           </div>
                           <Calendar
                             mode="single"

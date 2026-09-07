@@ -14,6 +14,7 @@
 // - web/frontend/src/shared/files/downloadWithProgress.ts
 // - web/frontend/src/shared/files/s3BlobCache.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-09-07: 진행 상황 탭에도 재도착일 CTA(모든 케이스). 틀니 등은 다음 공정 표시.
 // - 2026-09-07: 채팅 알림음 메뉴 + 진행 상황 탭 열람 시 알림음 스킵.
 // - 2026-09-07: 패널 공통 헤더 — 치과/환자 식별 스트립(탭 아래 고정, caseIdentity·summaryItems).
 // - 2026-09-07: lab_accept — 거절 버튼 제거. CTA 「수락」→「작업시작」. 가입 이전 리메이크 안내.
@@ -134,6 +135,7 @@ import {
   formatToothNumbersForCard,
   type ToothWorkSelection,
 } from "@/shared/practice/transferMemo";
+import { toothArchFromNumber } from "@/shared/practice/labFeeSchedule";
 import type {
   PracticeTransferFeeQuote,
   PracticeTransferFeeQuoteViewer,
@@ -192,6 +194,11 @@ import {
   PracticeTransferFileDropTarget,
 } from "@/shared/components/practice/PracticeTransferFileDropTarget";
 import { printPracticeTransferDetail } from "@/shared/practice/practiceTransferDetailPrint";
+import {
+  nextStageOfPlan,
+  normalizeLabRequestStagePlans,
+  type PracticeLabRequestStagePlan,
+} from "@/shared/practice/requestStagePresets";
 
 function isImagePreviewExt(ext: string): boolean {
   return PRACTICE_TRANSFER_IMAGE_EXTENSIONS.has(String(ext || "").toLowerCase());
@@ -437,6 +444,11 @@ type PracticeTransferDetailChatDialogProps = {
   onAppendArrival?: (arrivalYmd: string) => void;
   appendArrivalDisabled?: boolean;
   appendArrivalBusy?: boolean;
+  /**
+   * 틀니 등 다단계 플랜. 있으면 진행 상황 탭 재도착일 옆에 다음 공정 표시.
+   * 재도착 반영 시 서버가 currentIndex를 올림.
+   */
+  labRequestStagePlans?: PracticeLabRequestStagePlan[] | null;
   /** 치과: 임시치아 배송 후 최종 보철 후속 제작 */
   onAppendProsthesis?: () => void;
   appendProsthesisDisabled?: boolean;
@@ -548,6 +560,7 @@ export function PracticeTransferDetailChatDialog({
   onAppendArrival,
   appendArrivalDisabled = false,
   appendArrivalBusy = false,
+  labRequestStagePlans = null,
   onAppendProsthesis,
   appendProsthesisDisabled = false,
   appendProsthesisBusy = false,
@@ -657,8 +670,8 @@ export function PracticeTransferDetailChatDialog({
     if (!ymd || !onAppendArrival) return;
     if (todayYmd && ymd < todayYmd) {
       toast({
-        title: "재도착일 확인",
-        description: "재도착일은 오늘 이후로 선택해 주세요.",
+        title: "다음 도착일 확인",
+        description: "다음 도착일은 오늘 이후로 선택해 주세요.",
         variant: "destructive",
       });
       return;
@@ -666,6 +679,133 @@ export function PracticeTransferDetailChatDialog({
     setRearrivalOpen(false);
     onAppendArrival(ymd);
   }, [onAppendArrival, rearrivalDraft, todayYmd, toast]);
+
+  const nextStageSegments = useMemo(() => {
+    const plans = normalizeLabRequestStagePlans(labRequestStagePlans);
+    if (plans.length === 0) return [] as Array<{ archLabel: string; text: string }>;
+
+    const archByType = new Map<string, Set<"upper" | "lower">>();
+    for (const row of toothWorks || []) {
+      const typeName = String(row?.prosthesisType || "").trim();
+      if (!typeName) continue;
+      const arch = toothArchFromNumber(String(row?.toothNumber || ""));
+      if (arch !== "upper" && arch !== "lower") continue;
+      const key = typeName.toLowerCase();
+      const set = archByType.get(key) || new Set();
+      set.add(arch);
+      archByType.set(key, set);
+    }
+
+    type Seg = { arch: "upper" | "lower" | "none"; archLabel: string; text: string };
+    const segs: Seg[] = [];
+    for (const plan of plans) {
+      const next = nextStageOfPlan(plan);
+      if (!next?.name) continue;
+      const typeName = String(plan.prosthesisType || "").trim();
+      const body = typeName ? `${typeName}: ${next.name}` : next.name;
+      const arches = archByType.get(typeName.toLowerCase());
+      if (arches?.has("upper") && arches?.has("lower")) {
+        segs.push({ arch: "upper", archLabel: "상악", text: body });
+        segs.push({ arch: "lower", archLabel: "하악", text: body });
+        continue;
+      }
+      if (arches?.has("upper")) {
+        segs.push({ arch: "upper", archLabel: "상악", text: body });
+        continue;
+      }
+      if (arches?.has("lower")) {
+        segs.push({ arch: "lower", archLabel: "하악", text: body });
+        continue;
+      }
+      segs.push({ arch: "none", archLabel: "", text: body });
+    }
+
+    const rank = (a: Seg["arch"]) =>
+      a === "upper" ? 0 : a === "lower" ? 1 : 2;
+    segs.sort((a, b) => rank(a.arch) - rank(b.arch));
+
+    return segs.map((s) => ({
+      archLabel: s.archLabel,
+      text: s.archLabel ? `${s.archLabel}(${s.text})` : s.text,
+    }));
+  }, [labRequestStagePlans, toothWorks]);
+
+  const renderRearrivalPopover = () =>
+    onAppendArrival ? (
+      <Popover open={rearrivalOpen} onOpenChange={setRearrivalOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 shrink-0 gap-1 px-1.5 text-xs font-medium text-primary hover:bg-primary-soft/50 hover:text-primary"
+            disabled={appendArrivalDisabled || appendArrivalBusy}
+            title="다음 도착일 선택 시 오늘이 재주문일로 함께 반영됩니다. 오늘 이후 다음 도착일 1개만 두며, 다시 고르면 수정되고 크레딧은 추가 차감되지 않습니다."
+          >
+            <CalendarClock className="h-3.5 w-3.5" />
+            {appendArrivalBusy ? "반영 중…" : "다음 도착일"}
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent
+          align="start"
+          className="w-auto p-0"
+          onOpenAutoFocus={(e) => e.preventDefault()}
+        >
+          <div className="border-b px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
+            선택일=다음 도착일, 오늘=재주문일로 반영됩니다.
+            {nextStageSegments.length > 0 ? (
+              <>
+                <br />
+                적용 시 다음 공정으로 진행됩니다.
+              </>
+            ) : null}
+          </div>
+          <Calendar
+            mode="single"
+            required
+            numberOfMonths={1}
+            selected={rearrivalDraft}
+            onSelect={(date) => {
+              if (date) setRearrivalDraft(date);
+            }}
+            defaultMonth={rearrivalDraft}
+            disabled={(date) => {
+              const ymd = toKstYmd(date) || "";
+              if (!ymd) return true;
+              if (rearrivalMinYmd && ymd < rearrivalMinYmd) {
+                return true;
+              }
+              return false;
+            }}
+            classNames={{
+              cell: "h-9 w-9 text-center text-sm p-0 relative focus-within:relative focus-within:z-20",
+              day_range_start: "",
+              day_range_end: "",
+              day_range_middle: "",
+            }}
+            initialFocus
+          />
+          <div className="flex items-center justify-end gap-2 border-t px-3 py-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setRearrivalOpen(false)}
+            >
+              취소
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={!rearrivalDraft || appendArrivalBusy}
+              onClick={() => confirmRearrival()}
+            >
+              적용
+            </Button>
+          </div>
+        </PopoverContent>
+      </Popover>
+    ) : null;
   const [previewKind, setPreviewKind] = useState<ModelPreviewKind>("model");
   const [previewFile, setPreviewFile] = useState<File | null>(null);
   const [previewTextureFile, setPreviewTextureFile] = useState<File | null>(
@@ -1357,6 +1497,7 @@ export function PracticeTransferDetailChatDialog({
       summaryItemValue(summaryItems, "전송ID") ||
       summaryItemValue(summaryItems, "의뢰ID");
     const arrivalDate =
+      summaryItemValue(summaryItems, "다음 도착일") ||
       summaryItemValue(summaryItems, "재도착일") ||
       summaryItemValue(summaryItems, "치과도착일");
     const shipDate = summaryItemValue(summaryItems, "출고예정");
@@ -1788,7 +1929,9 @@ export function PracticeTransferDetailChatDialog({
                 <dl className="divide-y divide-border/70">
                   {summaryItems.map((row, idx) => {
                     const isArrivalRow =
-                      row.label === "치과도착일" || row.label === "재도착일";
+                      row.label === "치과도착일" ||
+                      row.label === "다음 도착일" ||
+                      row.label === "재도착일";
                     const valueNode = (
                       <p
                         className={cn(
@@ -1800,7 +1943,7 @@ export function PracticeTransferDetailChatDialog({
                       </p>
                     );
                     const valueWithAction =
-                      isArrivalRow && onAppendArrival ? (
+                      isArrivalRow && onAppendArrival && panelTab === "detail" ? (
                         <div className="flex flex-wrap items-center gap-1.5">
                           {row.tooltip ? (
                             <Tooltip>
@@ -1819,80 +1962,7 @@ export function PracticeTransferDetailChatDialog({
                           ) : (
                             valueNode
                           )}
-                          <Popover
-                            open={rearrivalOpen}
-                            onOpenChange={setRearrivalOpen}
-                          >
-                            <PopoverTrigger asChild>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                className="h-7 shrink-0 gap-1 px-2 text-xs"
-                                disabled={
-                                  appendArrivalDisabled || appendArrivalBusy
-                                }
-                                title="재도착일 선택 시 오늘이 재주문일로 함께 반영됩니다. 오늘 이후 재도착일 1개만 두며, 다시 고르면 수정되고 크레딧은 추가 차감되지 않습니다."
-                              >
-                                <CalendarClock className="h-3.5 w-3.5" />
-                                {appendArrivalBusy ? "반영 중…" : "재도착일"}
-                              </Button>
-                            </PopoverTrigger>
-                            <PopoverContent
-                              align="start"
-                              className="w-auto p-0"
-                              onOpenAutoFocus={(e) => e.preventDefault()}
-                            >
-                              <div className="border-b px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
-                                선택일=재도착일, 오늘=재주문일로 반영됩니다.
-                              </div>
-                              <Calendar
-                                mode="single"
-                                required
-                                numberOfMonths={1}
-                                selected={rearrivalDraft}
-                                onSelect={(date) => {
-                                  if (date) setRearrivalDraft(date);
-                                }}
-                                defaultMonth={rearrivalDraft}
-                                disabled={(date) => {
-                                  const ymd = toKstYmd(date) || "";
-                                  if (!ymd) return true;
-                                  if (rearrivalMinYmd && ymd < rearrivalMinYmd) {
-                                    return true;
-                                  }
-                                  return false;
-                                }}
-                                classNames={{
-                                  cell: "h-9 w-9 text-center text-sm p-0 relative focus-within:relative focus-within:z-20",
-                                  day_range_start: "",
-                                  day_range_end: "",
-                                  day_range_middle: "",
-                                }}
-                                initialFocus
-                              />
-                              <div className="flex items-center justify-end gap-2 border-t px-3 py-2">
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => setRearrivalOpen(false)}
-                                >
-                                  취소
-                                </Button>
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  disabled={
-                                    !rearrivalDraft || appendArrivalBusy
-                                  }
-                                  onClick={() => confirmRearrival()}
-                                >
-                                  적용
-                                </Button>
-                              </div>
-                            </PopoverContent>
-                          </Popover>
+                          {renderRearrivalPopover()}
                         </div>
                       ) : row.tooltip ? (
                         <Tooltip>
@@ -2115,6 +2185,24 @@ export function PracticeTransferDetailChatDialog({
 
               {summaryBanner ? (
                 <div className="shrink-0 border-b px-5 py-2">{summaryBanner}</div>
+              ) : null}
+
+              {panelTab === "chat" &&
+              (nextStageSegments.length > 0 || onAppendArrival) ? (
+                <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b bg-muted/40 px-5 py-2 text-xs leading-snug text-foreground">
+                  {nextStageSegments.length > 0 ? (
+                    <p className="min-w-0">
+                      <span className="font-medium">다음공정:</span>{" "}
+                      {nextStageSegments.map((seg, idx) => (
+                        <span key={`${seg.text}:${idx}`}>
+                          {idx > 0 ? <span className="inline-block w-4" /> : null}
+                          {seg.text}
+                        </span>
+                      ))}
+                    </p>
+                  ) : null}
+                  {onAppendArrival ? renderRearrivalPopover() : null}
+                </div>
               ) : null}
 
               {onEditRequest || onCancelRequest ? (
