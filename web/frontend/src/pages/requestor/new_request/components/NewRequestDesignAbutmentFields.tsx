@@ -29,11 +29,11 @@ import { apiFetch } from "@/shared/api/apiClient";
 import { useImplantConnectionCatalog } from "@/shared/practice/useImplantConnectionCatalog";
 import {
   ABUTMENT_PRODUCT_MODE,
+  formatToothNumbersForCard,
   normalizeAbutmentFavorites,
   normalizeImplantFavorites,
   normalizeProsthesisTypes,
   normalizeToothWorks,
-  toToothMemoSortNumber,
   type PracticeAbutmentFavorite,
   type PracticeImplantFavorite,
   type ToothWorkSelection,
@@ -61,10 +61,7 @@ const ensurePresetProsthesisTypes = (items: string[] | null | undefined) => {
 };
 
 const toothNumbersLabelFromWorks = (toothWorks: ToothWorkSelection[]) =>
-  normalizeToothWorks(toothWorks)
-    .map((row) => row.toothNumber)
-    .sort((a, b) => toToothMemoSortNumber(a) - toToothMemoSortNumber(b))
-    .join(", ");
+  formatToothNumbersForCard(normalizeToothWorks(toothWorks)).replace(/,/g, ", ");
 
 type Option = { id: string; label: string };
 

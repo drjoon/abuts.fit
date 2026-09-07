@@ -12,6 +12,7 @@
 // - 2026-08-25: 심플어벗(심플어벗/심플밀링·직경 6–10·높이 S/M/L) — 스캔바디와 XOR. 완성 시 프리셋 충족.
 // - 2026-08-21: 임플란트 추가 요청 프리셋 type을 옵션명으로 정규화(레거시 헥스 → 선택 가능).
 // - 2026-08-21: 기공소 수신 — 환봉·제조사 추가요청(요청중) CA는 「커스텀어벗」(기공소 수행). 그 외는 「어벗츠 지급」.
+// - 2026-09-07: formatToothNumbersForCard — 상·하악 전체(16치)는 번호 나열 대신 상악/하악.
 // - 2026-08-16: formatToothNumbersForCard — 의뢰 목록 카드용 치아번호만(11,21).
 // - 2026-08-14: 기공소 수신(labFacing) 치식 표시 — 커스텀어벗 → 어벗츠 지급.
 // - 2026-08-14: 같은 스펙이면 환봉 도입 프리셋을 일반 프리셋보다 우선한다.
@@ -1101,7 +1102,24 @@ export const formatToothWorksForDisplay = (
   return options?.multiline ? formattedRows.join("\n") : formattedRows.join(" / ");
 };
 
-/** 의뢰 목록 카드용 — 치아번호만 (예: 11,21). 보철 형태는 상세 모달. */
+/** FDI 상악 16치 (18→11→21→28). 카드·캘린더 전체 치열 축약용. */
+export const UPPER_ARCH_TEETH = [
+  "18", "17", "16", "15", "14", "13", "12", "11",
+  "21", "22", "23", "24", "25", "26", "27", "28",
+] as const;
+
+/** FDI 하악 16치 (48→41→31→38). */
+export const LOWER_ARCH_TEETH = [
+  "48", "47", "46", "45", "44", "43", "42", "41",
+  "31", "32", "33", "34", "35", "36", "37", "38",
+] as const;
+
+const isFullArchTeeth = (
+  selected: ReadonlySet<string>,
+  arch: readonly string[],
+) => arch.length > 0 && arch.every((tooth) => selected.has(tooth));
+
+/** 의뢰 목록 카드용 — 치아번호만 (예: 11,21). 상·하악 전체는 상악/하악. 보철 형태는 상세 모달. */
 export const formatToothNumbersForCard = (
   rows:
     | Array<{ toothNumber?: string | null } | string | null | undefined>
@@ -1123,8 +1141,25 @@ export const formatToothNumbersForCard = (
           .filter((n) => /^[1-4][1-8]$/.test(n));
       }),
     ),
-  ].sort((a, b) => toToothMemoSortNumber(a) - toToothMemoSortNumber(b));
-  return numbers.join(",");
+  ];
+  const selected = new Set(numbers);
+  const parts: string[] = [];
+
+  const upperSelected = UPPER_ARCH_TEETH.filter((tooth) => selected.has(tooth));
+  if (isFullArchTeeth(selected, UPPER_ARCH_TEETH)) {
+    parts.push("상악");
+  } else {
+    parts.push(...upperSelected);
+  }
+
+  const lowerSelected = LOWER_ARCH_TEETH.filter((tooth) => selected.has(tooth));
+  if (isFullArchTeeth(selected, LOWER_ARCH_TEETH)) {
+    parts.push("하악");
+  } else {
+    parts.push(...lowerSelected);
+  }
+
+  return parts.join(",");
 };
 
 const parseLegacyToothWorksSummary = (value: string): ToothWorkSelection[] => {

@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // - web/frontend/src/shared/practice/transferMemo.ts
+// - 2026-09-07: 상·하악 전체(16치) compact 표시는 번호 나열 대신 상악/하악 카드.
 // - 2026-08-19: 수가 Off면 live quote-context로 기공비 미설정·어벗 단가 표시.
 // - 2026-08-19: 치아 옆 스크롤·R/M/L 제거. 견적 바에 << < > >>(1칸·5칸).
 // - 2026-09-02: 가로폭 부족 시 overflow-x 스크롤(<< < > >> 버튼 제거) + custom-scrollbar-x.
@@ -34,6 +35,9 @@ import {
   formatAbutmentSummary,
   formatImplantCompact,
   formatImplantSummary,
+  formatToothNumbersForCard,
+  LOWER_ARCH_TEETH,
+  UPPER_ARCH_TEETH,
   type ToothWorkSelection,
 } from "@/shared/practice/transferMemo";
 import {
@@ -143,20 +147,20 @@ const TOOTH_CHART_ROWS: ReadonlyArray<{
   {
     key: "upper",
     label: "상악",
-    teeth: [
-      "18", "17", "16", "15", "14", "13", "12", "11",
-      "21", "22", "23", "24", "25", "26", "27", "28",
-    ],
+    teeth: UPPER_ARCH_TEETH,
   },
   {
     key: "lower",
     label: "하악",
-    teeth: [
-      "48", "47", "46", "45", "44", "43", "42", "41",
-      "31", "32", "33", "34", "35", "36", "37", "38",
-    ],
+    teeth: LOWER_ARCH_TEETH,
   },
 ];
+
+const isSameToothSet = (a: readonly string[], b: readonly string[]) => {
+  if (a.length !== b.length) return false;
+  const set = new Set(a);
+  return b.every((tooth) => set.has(tooth));
+};
 
 /** 치식 순서 유지한 채 치료할 치아만. 빈 칸(미치료)은 의뢰상세에서 숨긴다. */
 const treatedTeethInRow = (
@@ -489,7 +493,14 @@ export const PracticeToothWorkChartReadOnly = ({
             </svg>
           ) : null}
 
-          <span className="relative z-[1] flex h-10 items-center text-xl font-bold tabular-nums tracking-tight text-slate-800">
+          <span
+            className={cn(
+              "relative z-[1] flex h-10 items-center text-xl font-bold tracking-tight text-slate-800",
+              toothNumber === "상악" || toothNumber === "하악"
+                ? "text-base"
+                : "tabular-nums",
+            )}
+          >
             {toothNumber}
           </span>
 
@@ -542,6 +553,12 @@ export const PracticeToothWorkChartReadOnly = ({
     const { teeth, row, spanKey } = entry;
     if (teeth.length === 0) return null;
     const spanSelected = selectable ? (selectedSpanKeys?.has(spanKey) ?? false) : true;
+    const archLabel = isSameToothSet(teeth, UPPER_ARCH_TEETH)
+      ? "상악"
+      : isSameToothSet(teeth, LOWER_ARCH_TEETH)
+        ? "하악"
+        : null;
+    const displayTeeth = archLabel ? [teeth[0]] : teeth;
 
     return (
       <div key={`mobile-span-${spanKey}`} className="flex items-stretch gap-2">
@@ -556,22 +573,27 @@ export const PracticeToothWorkChartReadOnly = ({
               onCheckedChange={(checked) =>
                 onToggleSpanKey?.(spanKey, checked === true)
               }
-              aria-label={`${row.prosthesisType || "보철"} ${spanKey} 선택`}
+              aria-label={`${row.prosthesisType || "보철"} ${archLabel || spanKey} 선택`}
             />
           </div>
         ) : null}
         <PracticeToothChartHorizontalScroll
           className="min-w-0 w-full max-w-full flex-1"
-          ariaLabel={`${spanKey} 브리지 — 가로로 스크롤`}
+          ariaLabel={`${archLabel || spanKey} 브리지 — 가로로 스크롤`}
         >
           <div className="inline-flex w-max items-stretch">
-            {teeth.map((toothNumber, index) => (
+            {displayTeeth.map((toothNumber, index) => (
               <div
-                key={`mobile-span-tooth-${spanKey}-${toothNumber}`}
+                key={`mobile-span-tooth-${spanKey}-${archLabel || toothNumber}`}
                 className="flex shrink-0 items-stretch"
               >
-                {renderMobileToothCard(row, toothNumber, index, teeth.length)}
-                {index < teeth.length - 1 ? renderMobileSpanBridgeGap() : null}
+                {renderMobileToothCard(
+                  row,
+                  archLabel || toothNumber,
+                  index,
+                  displayTeeth.length,
+                )}
+                {index < displayTeeth.length - 1 ? renderMobileSpanBridgeGap() : null}
               </div>
             ))}
           </div>
@@ -585,12 +607,26 @@ export const PracticeToothWorkChartReadOnly = ({
     entries: MobileSpanEntry[],
   ) => {
     if (entries.length === 0) return null;
+    const archTeeth = label === "상악" ? UPPER_ARCH_TEETH : LOWER_ARCH_TEETH;
+    const allTeeth = entries.flatMap((entry) => entry.teeth);
+    const canCollapseArch =
+      isSameToothSet(allTeeth, archTeeth) &&
+      (!selectable || entries.length === 1);
+    const displayEntries = canCollapseArch
+      ? [
+          {
+            teeth: [...archTeeth],
+            row: entries[0].row,
+            spanKey: entries[0].spanKey,
+          },
+        ]
+      : entries;
     return (
       <div className="space-y-2">
         {upperSpanEntries.length > 0 && lowerSpanEntries.length > 0 ? (
           <p className="text-[11px] font-medium text-muted-foreground">{label}</p>
         ) : null}
-        {entries.map((entry) => renderMobileSpanRow(entry))}
+        {displayEntries.map((entry) => renderMobileSpanRow(entry))}
       </div>
     );
   };
@@ -604,7 +640,12 @@ export const PracticeToothWorkChartReadOnly = ({
     const cardShellClass = fullLayout ? fullToothCardShellClass : toothCardShellClass;
 
     return decades.map((decade) => {
-      const visible = decade.teeth;
+      const collapseToArch =
+        !fullLayout && isSameToothSet(decade.teeth, decade.chartTeeth);
+      const visible = collapseToArch
+        ? decade.teeth.slice(0, 1)
+        : decade.teeth;
+      const archDisplayLabel = collapseToArch ? decade.label : null;
 
       const rowTrack = (
         <div
@@ -616,13 +657,19 @@ export const PracticeToothWorkChartReadOnly = ({
           {visible.map((toothNumber, visibleIndex) => {
               const row = byTooth.get(toothNumber);
               if (!row && !fullLayout) return null;
+              const toothLabel = archDisplayLabel || toothNumber;
 
               const chartIdx = decade.chartTeeth.indexOf(toothNumber);
               const chartNext =
-                chartIdx >= 0 && chartIdx < decade.chartTeeth.length - 1
+                !collapseToArch &&
+                chartIdx >= 0 &&
+                chartIdx < decade.chartTeeth.length - 1
                   ? decade.chartTeeth[chartIdx + 1]
                   : null;
-              const chartPrev = chartIdx > 0 ? decade.chartTeeth[chartIdx - 1] : null;
+              const chartPrev =
+                !collapseToArch && chartIdx > 0
+                  ? decade.chartTeeth[chartIdx - 1]
+                  : null;
               const nextVisible = visible[visibleIndex + 1];
               const adjacentVisible = Boolean(chartNext) && nextVisible === chartNext;
 
@@ -642,7 +689,7 @@ export const PracticeToothWorkChartReadOnly = ({
                         )}
                       >
                         <span className="flex h-10 items-center text-xl font-bold tabular-nums tracking-tight text-slate-300">
-                          {toothNumber}
+                          {toothLabel}
                         </span>
                       </div>
                     </div>
@@ -658,7 +705,9 @@ export const PracticeToothWorkChartReadOnly = ({
                 );
               }
 
-              const adjacentLinks = collectAdjacentBridgeLinks(toothWorks, toothNumber);
+              const adjacentLinks = collapseToArch
+                ? []
+                : collectAdjacentBridgeLinks(toothWorks, toothNumber);
               const linkedChartNext = Boolean(
                 chartNext && adjacentLinks.includes(chartNext),
               );
@@ -692,7 +741,7 @@ export const PracticeToothWorkChartReadOnly = ({
 
               return (
                 <div
-                  key={`ro-tooth-slot-${toothNumber}`}
+                  key={`ro-tooth-slot-${archDisplayLabel || toothNumber}`}
                   className={
                     fullLayout ? "contents" : "flex shrink-0 items-stretch"
                   }
@@ -791,8 +840,13 @@ export const PracticeToothWorkChartReadOnly = ({
                         </svg>
                       ) : null}
 
-                      <span className="relative z-[1] flex h-10 items-center text-xl font-bold tabular-nums tracking-tight text-slate-800">
-                        {toothNumber}
+                      <span
+                        className={cn(
+                          "relative z-[1] flex h-10 items-center text-xl font-bold tracking-tight text-slate-800",
+                          archDisplayLabel ? "text-base" : "tabular-nums",
+                        )}
+                      >
+                        {toothLabel}
                       </span>
 
                       {isMissingTooth ? (
@@ -969,6 +1023,14 @@ export const PracticeToothWorkChartReadOnly = ({
     setToothChartEnlargeOpen(true);
   };
 
+  const headerTeethSummary = formatToothNumbersForCard(
+    Array.from(selectable ? selectedTeeth : allDisplayTeeth),
+  );
+  const headerCountLabel =
+    /^(상악|하악)(,(상악|하악))?$/.test(headerTeethSummary)
+      ? headerTeethSummary.replace(/,/g, "·")
+      : `${selectable ? selectedTeeth.size : allDisplayTeeth.size}개`;
+
   const enlargeButton = showEnlargeButton ? (
     <Button
       type="button"
@@ -990,7 +1052,7 @@ export const PracticeToothWorkChartReadOnly = ({
               <p className="text-sm font-medium text-slate-700">
                 보철물{" "}
                 <span className="font-normal text-muted-foreground">
-                  ({selectable ? selectedTeeth.size : allDisplayTeeth.size}개)
+                  ({headerCountLabel})
                 </span>
               </p>
               {enlargeButton ? <div className="absolute right-0">{enlargeButton}</div> : null}
@@ -1014,7 +1076,7 @@ export const PracticeToothWorkChartReadOnly = ({
             <DialogTitle className="text-base">
               보철물{" "}
               <span className="font-normal text-muted-foreground">
-                ({selectable ? selectedTeeth.size : allDisplayTeeth.size}개)
+                ({headerCountLabel})
               </span>
             </DialogTitle>
             <DialogDescription className="sr-only">

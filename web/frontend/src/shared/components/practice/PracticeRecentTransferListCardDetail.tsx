@@ -46,7 +46,7 @@ export function resolvePracticeTransferListPatientName(transfer: {
   return fromFile || "";
 }
 
-/** 목록 카드용 치아번호 라벨 (예: 11,21). 보철 형태는 상세 모달. */
+/** 목록 카드용 치아번호 라벨 (예: 11,21). 상·하악 전체는 상악/하악. 보철 형태는 상세 모달. */
 export function resolvePracticeTransferListToothNumbers(transfer: {
   rawTransferMemo?: string | null;
   transferMemo?: string | null;
