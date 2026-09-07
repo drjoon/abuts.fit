@@ -38,7 +38,6 @@ import {
   useBackgroundTempUpload,
 } from "@/shared/hooks/useBackgroundTempUpload";
 import {
-  ChatSoundGlobalToggle,
   ChatSoundMenu,
   useRegisterChatSoundViewing,
 } from "@/shared/chat/ChatSoundControls";
@@ -589,7 +588,6 @@ export const AdminChatManagement = ({
                     : "채팅방을 선택하세요"}
                 </CardTitle>
                 <div className="flex shrink-0 items-center gap-0.5">
-                  <ChatSoundGlobalToggle />
                   {selectedChatId ? (
                     <ChatSoundMenu targetId={selectedChatId} />
                   ) : null}

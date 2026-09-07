@@ -9,7 +9,6 @@ import { remoteSupportApi } from "@/features/remoteSupport/remoteSupportApi";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
 import {
-  ChatSoundGlobalToggle,
   ChatSoundMenu,
   useRegisterChatSoundViewing,
 } from "@/shared/chat/ChatSoundControls";
@@ -106,10 +105,7 @@ export function RemoteSupportChat({
     >
       <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
         <div className="text-sm font-medium">지원 채팅</div>
-        <div className="flex shrink-0 items-center gap-0.5">
-          <ChatSoundGlobalToggle />
-          <ChatSoundMenu targetId={soundTarget || null} />
-        </div>
+        <ChatSoundMenu targetId={soundTarget || null} />
       </div>
       <div className="flex-1 space-y-2 overflow-y-auto px-3 py-2 text-sm">
         {messages.length === 0 ? (

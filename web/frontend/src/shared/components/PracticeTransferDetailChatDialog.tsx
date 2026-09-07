@@ -120,7 +120,6 @@ import { cn } from "@/shared/ui/cn";
 import { toKstYmd, ymdToKstDate } from "@/shared/date/kst";
 import { type ChatMessage } from "@/shared/hooks/useChatRooms";
 import {
-  ChatSoundGlobalToggle,
   ChatSoundMenu,
   useRegisterChatSoundViewing,
 } from "@/shared/chat/ChatSoundControls";
@@ -1726,10 +1725,7 @@ export function PracticeTransferDetailChatDialog({
             >
               {!minimized ? chatHeaderAction : null}
               {!minimized ? (
-                <>
-                  <ChatSoundGlobalToggle />
-                  <ChatSoundMenu targetId={resolvedChatRoomId || null} />
-                </>
+                <ChatSoundMenu targetId={resolvedChatRoomId || null} />
               ) : null}
               <button
                 type="button"

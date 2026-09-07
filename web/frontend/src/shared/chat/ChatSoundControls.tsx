@@ -2,12 +2,12 @@
 // - web/frontend/src/shared/chat/chatSoundPrefs.ts
 // - web/frontend/src/shared/chat/chatSoundViewing.ts
 // change-log:
+// - 2026-09-07: 목록=전체 토글, 개별·진행상황=방별 토글(아이콘 분리).
 // - 2026-09-07: 채팅 알림음 — 전체 토글 아이콘 + 방별 토글.
 // - 2026-09-07: 채팅방 알림음 — 클릭 토글(방별). 전체 on/off는 알림 설정.
-// - 2026-09-07: 채팅 알림음 UI — 이 채팅/전체 끄기·켜기.
 
 import { useEffect, useState, type ReactNode } from "react";
-import { BellOff, BellRing, Volume2, VolumeX } from "lucide-react";
+import { Volume2, VolumeX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -102,7 +102,7 @@ type ChatSoundGlobalToggleProps = {
   size?: "sm" | "default";
 };
 
-/** 모든 채팅 알림음 on/off */
+/** 전체 채팅 목록 헤더 — 모든 채팅 알림음 on/off */
 export function ChatSoundGlobalToggle({
   className,
   size = "sm",
@@ -132,9 +132,7 @@ type ChatSoundMenuProps = {
   size?: "sm" | "default";
 };
 
-/**
- * 채팅방 알림음 on/off. 클릭 시 해당 방만 토글.
- */
+/** 개별 채팅·진행 상황 헤더 — 이 방 알림음 on/off */
 export function ChatSoundMenu({
   targetId = null,
   className,
@@ -146,7 +144,7 @@ export function ChatSoundMenu({
 
   const targetMuted = prefs.mutedTargets.includes(id);
   const globallyOff = !prefs.enabled;
-  const Icon = targetMuted ? BellOff : BellRing;
+  const Icon = targetMuted || globallyOff ? VolumeX : Volume2;
 
   const label = globallyOff
     ? targetMuted

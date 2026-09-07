@@ -1015,7 +1015,7 @@ export const NewChatWidget = () => {
                   <div className="text-sm font-medium truncate">{headerTitle}</div>
                 </div>
                 <div className="flex items-center gap-1 sm:gap-2">
-                  <ChatSoundGlobalToggle />
+                  {inboxView === "list" ? <ChatSoundGlobalToggle /> : null}
                   {inboxView === "thread" && roomId ? (
                     <ChatSoundMenu targetId={roomId} />
                   ) : null}
