@@ -27,6 +27,7 @@
 // - web/backend/utils/labReceiveCalendarDateKey.util.js
 // - web/frontend/src/shared/practice/labReceiveCalendarHiddenWeekdays.ts
 // - web/backend/utils/labReceiveCalendarHiddenWeekdays.util.js
+// - web/frontend/src/shared/practice/labReceiveCalendarViewMode.ts
 // - web/backend/controllers/users/user.controller.js
 // - 2026-09-07: 가이드투어 lab_remake — 데모 리메이크 뱃지·상세 탭·수가.
 // - 2026-09-07: 상세 헤더 식별 — 전송ID 제거, `치과/환자 치식 · 도착` 한 줄.
@@ -320,11 +321,16 @@ import { toKstYmd, toKstYmdLoose, kstYmdWeekday } from "@/shared/date/kst";
 import { normalizeLabReceiveCalendarDateKey } from "@/shared/practice/labReceiveCalendarDateKey";
 import { normalizeLabReceiveCalendarHiddenWeekdays } from "@/shared/practice/labReceiveCalendarHiddenWeekdays";
 import {
+  readStoredLabReceiveCalendarViewMode,
+  writeStoredLabReceiveCalendarViewMode,
+  type LabReceiveCalendarViewMode,
+} from "@/shared/practice/labReceiveCalendarViewMode";
+import {
   practiceTransferPanelDockSideForVisibleColumn,
   type PracticeTransferPanelDockSide,
 } from "@/shared/practice/labReceiveCalendarWeekGrid";
 import {
-  buildLabReceiveCalendarYmdRange,
+  buildLabReceiveCalendarFetchYmdRange,
   buildPracticeTransferCalendarApiQuery,
 } from "@/shared/practice/labReceiveCalendarYmdRange";
 import {
@@ -701,9 +707,26 @@ export function RequestorPracticeReceivePage({
   const [hiddenWeekdays, setHiddenWeekdays] = useState<number[]>(() =>
     normalizeLabReceiveCalendarHiddenWeekdays(storedHiddenWeekdays),
   );
+  const [viewMode, setViewMode] = useState<LabReceiveCalendarViewMode>(() =>
+    readStoredLabReceiveCalendarViewMode(),
+  );
+  const [alignEpoch, setAlignEpoch] = useState(0);
   const calendarYmdRange = useMemo(
-    () => buildLabReceiveCalendarYmdRange(cursorYmd || toKstYmd(new Date()) || ""),
-    [cursorYmd],
+    () =>
+      buildLabReceiveCalendarFetchYmdRange(
+        cursorYmd || toKstYmd(new Date()) || "",
+        viewMode,
+      ),
+    [cursorYmd, viewMode],
+  );
+
+  const handleViewModeChange = useCallback(
+    (mode: LabReceiveCalendarViewMode) => {
+      setViewMode(mode);
+      writeStoredLabReceiveCalendarViewMode(mode);
+      setAlignEpoch((n) => n + 1);
+    },
+    [],
   );
 
   useEffect(() => {
@@ -5624,6 +5647,9 @@ export function RequestorPracticeReceivePage({
               cursorYmd={cursorYmd}
               onCursorChange={setCursorYmd}
               onDateKeyChange={handleCalendarDateKeyChange}
+              viewMode={viewMode}
+              onViewModeChange={handleViewModeChange}
+              dataYmdRange={calendarYmdRange}
               onSelectItem={(item, ctx) => {
                 const transfer = calendarTransferById.get(item.id);
                 if (transfer) {
@@ -5640,6 +5666,7 @@ export function RequestorPracticeReceivePage({
               searchPlaceholder="전송ID, 치과명, 환자명 검색"
               hiddenWeekdays={calendarHiddenWeekdays}
               onHiddenWeekdaysChange={handleHiddenWeekdaysChange}
+              alignEpoch={alignEpoch}
               guideTourTarget={null}
               guideTourItemTarget={
                 guideTourLabCalendarStep ? "lab_calendar_item" : null

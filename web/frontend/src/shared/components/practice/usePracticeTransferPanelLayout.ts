@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // - 2026-08-28: 플로팅 패널 — 드래그·리사이즈·엣지 스냅·최소/최대화.
 // - 2026-09-08: dockLeft/dockRight — 헤더 버튼으로 좌·우 끝 부착.
+// - 2026-09-08: 도킹·기본 폭 확대(목록 옆 여유). layout storage v4.
 // - 2026-08-31: 헤더 — 신호등 제거 후에도 탭·닫기 여유 폭 유지(MIN_W 400).
 // - 2026-08-28: MIN_W — 신호등·탭(의뢰상세/채팅)·별점이 겹치지 않게 400.
 // - 2026-08-28: 리사이즈 — 좌·상·모서리(n/w/nw/ne/sw) 지원, 고정 변 기준 min clamp.
@@ -16,14 +17,18 @@ export type PracticeTransferPanelLayout = {
   h: number;
 };
 
-/** v3 — 항상 browse-behind */
-const STORAGE_KEY = "abuts.practiceTransferPanel.layout.v3";
+/** v4 — 도킹/기본 폭 확대(목록 여유 공간 활용) */
+const STORAGE_KEY = "abuts.practiceTransferPanel.layout.v4";
 const MARGIN = 8;
 /** TabsList(의뢰/진행) + 닫기·액션이 한 줄에 겹치지 않는 최소 폭 */
 const MIN_W = 400;
 const MIN_H = 360;
 const MINIMIZED_H = 48;
-const DEFAULT_W = 480;
+const DEFAULT_W = 600;
+/** 좌·우 도킹 선호 폭(뷰포트 비율·클램프) */
+const DOCK_W_RATIO = 0.4;
+const DOCK_W_FLOOR = 520;
+const DOCK_W_CEIL = 720;
 const SNAP_PX = 28;
 const DRAG_THRESHOLD_PX = 4;
 /** useIsMobile(768)과 맞춤 — 좁으면 인셋 풀스크린 */
@@ -42,12 +47,23 @@ function effectiveMinW(vw: number) {
   return Math.min(MIN_W, maxW);
 }
 
+/** 도킹·기본 오픈 시 쓰는 선호 폭(리사이즈 최소는 MIN_W 유지) */
+function preferredDockW(vw: number) {
+  const maxW = Math.max(1, vw - MARGIN * 2);
+  const minW = effectiveMinW(vw);
+  const preferred = Math.round(vw * DOCK_W_RATIO);
+  return Math.min(
+    maxW,
+    Math.max(minW, Math.min(DOCK_W_CEIL, Math.max(DOCK_W_FLOOR, preferred))),
+  );
+}
+
 function defaultLayout(): PracticeTransferPanelLayout {
   const { vw, vh } = viewportSize();
   if (vw < NARROW_VW) return fullscreenLayout();
   const minW = effectiveMinW(vw);
   const maxW = Math.max(1, vw - MARGIN * 2);
-  const w = Math.min(DEFAULT_W, Math.max(minW, maxW));
+  const w = Math.min(Math.max(DEFAULT_W, preferredDockW(vw)), Math.max(minW, maxW));
   const maxH = Math.max(1, vh - MARGIN * 2);
   const minH = Math.min(MIN_H, maxH);
   const h = Math.min(Math.round(vh * 0.92), Math.max(minH, maxH));
@@ -120,7 +136,7 @@ function writeStored(layout: PracticeTransferPanelLayout) {
 function dockLayout(side: "left" | "right"): PracticeTransferPanelLayout {
   const { vw, vh } = viewportSize();
   const fullH = Math.max(1, vh - MARGIN * 2);
-  const dockW = effectiveMinW(vw);
+  const dockW = preferredDockW(vw);
   if (side === "left") {
     return clampLayout({
       x: MARGIN,

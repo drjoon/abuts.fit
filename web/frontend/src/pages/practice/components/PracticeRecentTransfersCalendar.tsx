@@ -30,9 +30,23 @@
  * - 2026-09-05: 완료=amber·어벗=emerald — 수락(sky)과 청록 계열이 겹치지 않게.
  * - 2026-09-02: 완료 뱃지=finished. 어벗=completed(녹색). 칩도 동일 분리.
  * - 2026-09-08: onSelectItem에 보이는 열 인덱스 전달 — 상세 패널 좌/우 도킹.
+ * - 2026-09-08: 캘린더/목록(일정) 보기 전환 — Google 일정형 일자 그룹 목록.
+ * - 2026-09-08: 목록 — 스크롤로 월 창 이동·날짜 `월 일 (요일)`.
+ * - 2026-09-08: 목록 — 좌측 미니 월간·의뢰 행 폭 축소. 날짜→도착일 신규의뢰.
+ * - 2026-09-08: 목록 점=기공소 파스텔 다색. 내일 이후만 신규의뢰. 월 캡션 중복 제거.
+ * - 2026-09-08: 월 경계 스크롤 플리커 — fetch 후 커서/가시월 되튕김 방지.
+ * - 2026-09-08: 목록 하단→다음달 자동 이동 제거. 캘린더 fetch 시 주 앵커로 스크롤 유지.
+ * - 2026-09-08: 위로 스크롤 시 위쪽 패치 점프 — 조회창 밖 칩 캐시 + offsetTop 앵커 복원.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Search, Trash2 } from "lucide-react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  List,
+  Search,
+  Trash2,
+} from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -51,8 +65,13 @@ import { DEFAULT_LAB_RECEIVE_CALENDAR_HIDDEN_WEEKDAYS } from "@/shared/practice/
 import {
   LAB_RECEIVE_CALENDAR_WEEK_GRID_COLUMNS,
   LAB_RECEIVE_CALENDAR_WEEK_STARTS_ON,
+  weekdayLabel,
 } from "@/shared/practice/labReceiveCalendarWeekGrid";
-import { buildLabReceiveCalendarWeeks } from "@/shared/practice/labReceiveCalendarYmdRange";
+import type { LabReceiveCalendarViewMode } from "@/shared/practice/labReceiveCalendarViewMode";
+import {
+  buildLabReceiveCalendarWeeks,
+  type LabReceiveCalendarYmdRange,
+} from "@/shared/practice/labReceiveCalendarYmdRange";
 import {
   getPracticeAbutmentUploadOverdueTooltip,
   type PracticeAbutmentUploadOverdueViewer,
@@ -185,6 +204,18 @@ export const calendarGroupChipStyle = (
 };
 
 /**
+ * 목록 기공소·치과 구분 점 — 파스텔·서로 다른 색상(상태색과 무관).
+ * 칩 텍스트색(진한 톤) 대신 점 전용 팔레트.
+ */
+export const calendarGroupDotColor = (groupKey: string): string => {
+  const hues = [
+    12, 32, 48, 72, 95, 125, 152, 175, 195, 208, 225, 245, 265, 285, 310, 335,
+  ];
+  const hue = hues[hashString(groupKey || "-") % hues.length];
+  return `hsl(${hue} 58% 72%)`;
+};
+
+/**
  * 상단 뱃지(의뢰·취소·작업시작·완료·어벗)와 같은 칩 색.
  * 작업시작=sky · 완료=amber · 어벗=emerald — 한눈에 구분.
  */
@@ -304,6 +335,14 @@ type PracticeRecentTransfersCalendarProps = {
   cursorYmd: string;
   onCursorChange: (ymd: string) => void;
   onDateKeyChange: (key: PracticeCalendarDateKey) => void;
+  /** 캘린더(주 그리드) / 목록(일정). 부모가 월 범위 fetch와 함께 소유 */
+  viewMode: LabReceiveCalendarViewMode;
+  onViewModeChange: (mode: LabReceiveCalendarViewMode) => void;
+  /**
+   * 캘린더 silent refetch 창. 창 안만 교체하고 창 밖 칩은 캐시 유지 —
+   * 위로 스크롤해 위쪽이 패치될 때 아래(이미 본) 주 높이 붕괴를 막음.
+   */
+  dataYmdRange?: LabReceiveCalendarYmdRange | null;
   onSelectItem: (
     item: PracticeCalendarChipItem,
     ctx: PracticeCalendarSelectContext,
@@ -328,12 +367,140 @@ type PracticeRecentTransfersCalendarProps = {
   guideTourItemId?: string | null;
 };
 
+const agendaDateLabel = (ymd: string) => {
+  const monthNum = Number(ymd.slice(5, 7));
+  const dayNum = Number(ymd.slice(-2));
+  const dow = kstYmdWeekday(ymd);
+  const wd = dow == null ? "?" : weekdayLabel(dow);
+  return {
+    monthNum,
+    dayNum,
+    text: `${monthNum}월 ${dayNum}일 (${wd})`,
+  };
+};
+
+/** 목록 좌측 미니 월간(일~토). KST civil YMD. */
+function buildListSideMonthCells(monthStartYmd: string) {
+  const monthStart = kstStartOfMonth(monthStartYmd) || monthStartYmd;
+  const monthEnd = kstEndOfMonth(monthStart) || monthStart;
+  const gridStart =
+    kstStartOfWeek(monthStart, LAB_RECEIVE_CALENDAR_WEEK_STARTS_ON) ||
+    monthStart;
+  const cells: { ymd: string; inMonth: boolean }[] = [];
+  for (let i = 0; i < 42; i += 1) {
+    const ymd = kstAddCivilDays(gridStart, i);
+    if (!ymd) break;
+    cells.push({
+      ymd,
+      inMonth: ymd >= monthStart && ymd <= monthEnd,
+    });
+    if (ymd >= monthEnd && (kstYmdWeekday(ymd) ?? 0) === 6) break;
+  }
+  return cells;
+}
+
+type ListSideMonthCalendarProps = {
+  monthYmd: string;
+  todayYmd: string;
+  markedYmds: Set<string>;
+  canComposeArrival: boolean;
+  onSelectDay: (ymd: string) => void;
+};
+
+function ListSideMonthCalendar({
+  monthYmd,
+  todayYmd,
+  markedYmds,
+  canComposeArrival,
+  onSelectDay,
+}: ListSideMonthCalendarProps) {
+  const monthStart = kstStartOfMonth(monthYmd) || monthYmd;
+  const cells = useMemo(
+    () => buildListSideMonthCells(monthStart),
+    [monthStart],
+  );
+
+  return (
+    <div className="rounded-md border border-slate-200/80 bg-white p-2 shadow-sm">
+      <div className="grid grid-cols-7 gap-y-0.5">
+        {LAB_RECEIVE_CALENDAR_WEEK_GRID_COLUMNS.map(({ dow, label }) => (
+          <div
+            key={`side-wd-${dow}`}
+            className="py-0.5 text-center text-[10px] font-medium text-muted-foreground"
+          >
+            {label}
+          </div>
+        ))}
+        {cells.map(({ ymd, inMonth }) => {
+          const dayNum = Number(ymd.slice(-2));
+          const isToday = ymd === todayYmd;
+          const isComposeDay = Boolean(todayYmd && ymd > todayYmd);
+          const marked = markedYmds.has(ymd);
+          const clickable = inMonth;
+          const composeHint =
+            canComposeArrival && inMonth && isComposeDay;
+          return (
+            <button
+              key={`side-day-${ymd}`}
+              type="button"
+              disabled={!clickable}
+              title={
+                composeHint
+                  ? `${ymd} 도착일로 신규 의뢰`
+                  : inMonth
+                    ? ymd
+                    : undefined
+              }
+              aria-label={
+                composeHint
+                  ? `${ymd} 도착일로 신규 의뢰`
+                  : inMonth
+                    ? ymd
+                    : undefined
+              }
+              className={cn(
+                "relative mx-auto flex h-7 w-7 items-center justify-center rounded-full text-[11px] tabular-nums",
+                !inMonth && "invisible",
+                inMonth && !isToday && "text-slate-700 hover:bg-slate-100",
+                isToday &&
+                  "bg-primary font-semibold text-primary-foreground hover:bg-primary/90",
+                composeHint && !isToday && "hover:bg-primary-soft/80",
+                clickable && "cursor-pointer",
+              )}
+              onClick={() => {
+                if (!clickable) return;
+                onSelectDay(ymd);
+              }}
+            >
+              {dayNum}
+              {marked && !isToday ? (
+                <span
+                  className="absolute bottom-0.5 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-slate-400"
+                  aria-hidden
+                />
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
+      {canComposeArrival ? (
+        <p className="mt-2 px-0.5 text-[10px] leading-snug text-muted-foreground">
+          내일 이후 날짜 → 도착일로 신규 의뢰
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 export function PracticeRecentTransfersCalendar({
   items,
   dateKey,
   cursorYmd,
   onCursorChange,
   onDateKeyChange,
+  viewMode,
+  onViewModeChange,
+  dataYmdRange = null,
   onSelectItem,
   onDeleteItem,
   onSelectFutureDay,
@@ -364,18 +531,23 @@ export function PracticeRecentTransfersCalendar({
   const visibleDows = visibleColumns.map((col) => col.dow);
   const colCount = Math.max(1, visibleDows.length);
 
+  const calendarChipCacheRef = useRef(
+    new Map<string, PracticeCalendarChipItem[]>(),
+  );
+  const calendarChipCacheDateKeyRef = useRef(dateKey);
+
   const byDay = useMemo(() => {
-    const map = new Map<string, PracticeCalendarChipItem[]>();
+    const incoming = new Map<string, PracticeCalendarChipItem[]>();
     for (const item of items) {
       const ymd = toKstYmdLoose(
         dateKey === "arrivalDate" ? item.arrivalDate : item.orderDate,
       );
       if (!ymd) continue;
-      const list = map.get(ymd) || [];
+      const list = incoming.get(ymd) || [];
       list.push(item);
-      map.set(ymd, list);
+      incoming.set(ymd, list);
     }
-    for (const [ymd, list] of map) {
+    for (const [ymd, list] of incoming) {
       list.sort((a, b) => {
         const groupCmp = String(a.sortLabel || "").localeCompare(
           String(b.sortLabel || ""),
@@ -384,36 +556,171 @@ export function PracticeRecentTransfersCalendar({
         if (groupCmp !== 0) return groupCmp;
         return String(a.line || "").localeCompare(String(b.line || ""), "ko");
       });
-      map.set(ymd, list);
+      incoming.set(ymd, list);
     }
-    return map;
-  }, [dateKey, items]);
+
+    // 목록은 fetch 창=표시 구간. 캘린더만 창 밖 캐시로 주 높이 유지.
+    if (viewMode !== "calendar" || !dataYmdRange?.fromYmd || !dataYmdRange?.toYmd) {
+      calendarChipCacheRef.current = new Map();
+      calendarChipCacheDateKeyRef.current = dateKey;
+      return incoming;
+    }
+
+    if (calendarChipCacheDateKeyRef.current !== dateKey) {
+      calendarChipCacheRef.current = new Map();
+      calendarChipCacheDateKeyRef.current = dateKey;
+    }
+
+    const cache = calendarChipCacheRef.current;
+    const fromYmd = dataYmdRange.fromYmd;
+    const toYmd = dataYmdRange.toYmd;
+    for (const ymd of [...cache.keys()]) {
+      if (ymd >= fromYmd && ymd <= toYmd) cache.delete(ymd);
+    }
+    for (const [ymd, list] of incoming) {
+      cache.set(ymd, list);
+    }
+
+    // 커서에서 너무 먼 날 정리(메모리). 스크롤 그리드(~78+26주)보다 짧게.
+    const prunePad = kstAddCivilDays(cursorYmd || fromYmd, -120) || fromYmd;
+    const pruneEnd = kstAddCivilDays(cursorYmd || toYmd, 120) || toYmd;
+    for (const ymd of [...cache.keys()]) {
+      if (ymd < prunePad || ymd > pruneEnd) cache.delete(ymd);
+    }
+
+    return new Map(cache);
+  }, [cursorYmd, dataYmdRange, dateKey, items, viewMode]);
+
+  const agendaDays = useMemo(() => {
+    // 로드된 구간 전체(빈 날 생략). 월 필터 없음 — 스크롤로 월 경계 연속.
+    return Array.from(byDay.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([ymd, dayItems]) => ({ ymd, items: dayItems }));
+  }, [byDay]);
+
+  const markedAgendaYmds = useMemo(
+    () => new Set(agendaDays.map((day) => day.ymd)),
+    [agendaDays],
+  );
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const listScrollRef = useRef<HTMLDivElement | null>(null);
   const weekElsRef = useRef(new Map<string, HTMLDivElement>());
+  const dayElsRef = useRef(new Map<string, HTMLDivElement>());
   const skipScrollSyncRef = useRef(false);
+  /** 의도적 월 이동 중 — 가시 일자로 커서를 되돌리지 않음 */
+  const listPinCursorRef = useRef(false);
+  const listRestoreYmdRef = useRef<string | null>(null);
+  const listForceAlignRef = useRef(false);
+  const listVisibleMonthRef = useRef("");
+  /** 캘린더: 화면에 보이던 주(weekStart) + scroller 대비 offset — fetch 후에도 같은 주가 같은 자리에 */
+  const calendarAnchorWeekRef = useRef("");
+  const calendarAnchorOffsetRef = useRef(0);
+  const calendarScrollTopRef = useRef(0);
+  /** 캘린더: fetch·복원 직후 mid-주 sync로 커서 튀는 것 억제 */
+  const calendarScrollQuietUntilRef = useRef(0);
   const [minRowH, setMinRowH] = useState(140);
   /** 본문 스크롤바 폭 — 요일 헤더 padding과 맞춰 열 정렬 */
   const [scrollbarW, setScrollbarW] = useState(0);
 
   useEffect(() => {
+    if (viewMode !== "calendar") return;
     const el = scrollRef.current;
     if (!el) return;
     const apply = () => {
-      setMinRowH(Math.max(112, Math.floor(el.clientHeight / 3)));
-      setScrollbarW(Math.max(0, el.offsetWidth - el.clientWidth));
+      setMinRowH((prev) => {
+        const next = Math.max(112, Math.floor(el.clientHeight / 3));
+        return next === prev ? prev : next;
+      });
+      setScrollbarW((prev) => {
+        const next = Math.max(0, el.offsetWidth - el.clientWidth);
+        return next === prev ? prev : next;
+      });
     };
     apply();
+    // 자식(칩) 높이 변화는 observe하지 않음 — fetch마다 RO→setState→스크롤 점프 유발.
     const ro = new ResizeObserver(apply);
     ro.observe(el);
-    for (const child of Array.from(el.children)) ro.observe(child);
     return () => ro.disconnect();
-  }, [weeks, items, colCount]);
+  }, [viewMode]);
 
   const weekIndexForYmd = (ymd: string) =>
     weeks.findIndex((week) => week[0] && ymd >= week[0] && ymd <= (week[6] || week[0]));
 
+  const captionMonth = kstStartOfMonth(cursorYmd) || cursorYmd;
+  const captionMonthEnd = kstEndOfMonth(captionMonth) || captionMonth;
+  const isListMode = viewMode === "list";
+
+  const captureCalendarAnchor = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    calendarScrollTopRef.current = el.scrollTop;
+    for (const week of weeks) {
+      const weekStart = week[0];
+      if (!weekStart) continue;
+      const row = weekElsRef.current.get(weekStart);
+      if (!row) continue;
+      // 완전히 뷰포트 위인 주는 건너뛰고, 첫 교차 주의 콘텐츠 오프셋 저장
+      if (row.offsetTop + row.offsetHeight <= el.scrollTop + 2) continue;
+      calendarAnchorWeekRef.current = weekStart;
+      calendarAnchorOffsetRef.current = row.offsetTop - el.scrollTop;
+      return;
+    }
+  };
+
+  const restoreCalendarAnchor = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    skipScrollSyncRef.current = true;
+    const weekStart = calendarAnchorWeekRef.current;
+    const row = weekStart ? weekElsRef.current.get(weekStart) : null;
+    if (row) {
+      el.scrollTop = Math.max(0, row.offsetTop - calendarAnchorOffsetRef.current);
+    } else {
+      el.scrollTop = calendarScrollTopRef.current;
+    }
+    calendarScrollTopRef.current = el.scrollTop;
+    calendarScrollQuietUntilRef.current = Date.now() + 500;
+    window.setTimeout(() => {
+      skipScrollSyncRef.current = false;
+    }, 500);
+  };
+
+  const scrollListToYmd = (ymd: string, behavior: ScrollBehavior = "auto") => {
+    const el = listScrollRef.current;
+    if (!el || !ymd) return;
+    const targetMonth = kstStartOfMonth(ymd) || ymd;
+    let target = dayElsRef.current.get(ymd) || null;
+    if (!target) {
+      // 같은 월 안에서만 다음 일자로 스냅 — 빈 미래 월에서 이전 월로 튕기지 않음
+      for (const day of agendaDays) {
+        const dayMonth = kstStartOfMonth(day.ymd) || day.ymd;
+        if (dayMonth !== targetMonth) continue;
+        if (day.ymd >= ymd) {
+          target = dayElsRef.current.get(day.ymd) || null;
+          break;
+        }
+      }
+    }
+    if (!target) {
+      // 해당 월 데이터 없음: 스크롤 유지(하단/상단 고정은 호출측)
+      return;
+    }
+    skipScrollSyncRef.current = true;
+    const nextTop =
+      el.scrollTop +
+      (target.getBoundingClientRect().top - el.getBoundingClientRect().top);
+    el.scrollTo({ top: Math.max(0, nextTop), behavior });
+    window.setTimeout(() => {
+      skipScrollSyncRef.current = false;
+    }, 120);
+  };
+
   const scrollToYmd = (ymd: string, behavior: ScrollBehavior = "auto") => {
+    if (viewMode === "list") {
+      scrollListToYmd(ymd, behavior);
+      return;
+    }
     const el = scrollRef.current;
     if (!el) return;
     const idx = weekIndexForYmd(ymd);
@@ -431,17 +738,104 @@ export function PracticeRecentTransfersCalendar({
     window.setTimeout(() => {
       skipScrollSyncRef.current = false;
       setScrollbarW(Math.max(0, el.offsetWidth - el.clientWidth));
-    }, 120);
+      captureCalendarAnchor();
+    }, 480);
   };
 
   useEffect(() => {
-    if (!minRowH) return;
-    scrollToYmd(cursorYmd || todayYmd, "auto");
-  }, [alignEpoch, minRowH]);
+    if (viewMode === "list") {
+      listForceAlignRef.current = true;
+      return;
+    }
+    // 캘린더: 최초/명시 align 만 스크롤. fetch 때마다 이동하지 않음.
+    const target = cursorYmd || todayYmd;
+    if (!target) return;
+    const id = window.requestAnimationFrame(() => {
+      scrollToYmd(target, "auto");
+      captureCalendarAnchor();
+      calendarScrollQuietUntilRef.current = Date.now() + 400;
+    });
+    return () => window.cancelAnimationFrame(id);
+  }, [alignEpoch, viewMode]);
+
+  // 캘린더: 칩/데이터 갱신 후에도 같은 주가 같은 화면에 남도록 앵커 복원.
+  // rAF 한 번 더 — 브라우저 overflow-anchor / 후속 레이아웃이 되돌리는 경우 보정.
+  useLayoutEffect(() => {
+    if (viewMode !== "calendar") return;
+    restoreCalendarAnchor();
+    const id = window.requestAnimationFrame(() => {
+      restoreCalendarAnchor();
+    });
+    return () => window.cancelAnimationFrame(id);
+  }, [items, viewMode, minRowH]);
+
+  useEffect(() => {
+    if (viewMode !== "list") return;
+    if (listForceAlignRef.current) {
+      listForceAlignRef.current = false;
+      const target =
+        listRestoreYmdRef.current || cursorYmd || captionMonth || todayYmd;
+      listRestoreYmdRef.current = null;
+      const id = window.requestAnimationFrame(() => {
+        scrollListToYmd(target, "auto");
+        window.setTimeout(() => {
+          listPinCursorRef.current = false;
+        }, 480);
+      });
+      return () => window.cancelAnimationFrame(id);
+    }
+    if (listRestoreYmdRef.current) {
+      const anchor = listRestoreYmdRef.current;
+      listRestoreYmdRef.current = null;
+      const id = window.requestAnimationFrame(() => {
+        scrollListToYmd(anchor, "auto");
+        window.setTimeout(() => {
+          listPinCursorRef.current = false;
+        }, 480);
+      });
+      return () => window.cancelAnimationFrame(id);
+    }
+    window.setTimeout(() => {
+      listPinCursorRef.current = false;
+    }, 480);
+  }, [alignEpoch, viewMode, captionMonth, items]);
+
+  const resolveListVisibleYmd = () => {
+    const el = listScrollRef.current;
+    if (!el) return "";
+    const top = el.getBoundingClientRect().top + 12;
+    for (const day of agendaDays) {
+      const node = dayElsRef.current.get(day.ymd);
+      if (!node) continue;
+      if (node.getBoundingClientRect().bottom > top) return day.ymd;
+    }
+    return agendaDays[0]?.ymd || "";
+  };
+
+  const handleListScroll = () => {
+    if (viewMode !== "list" || skipScrollSyncRef.current) return;
+    if (listPinCursorRef.current) return;
+
+    const visibleYmd = resolveListVisibleYmd();
+    if (!visibleYmd) return;
+
+    // 화면에 보이는 일자의 월만 반영. 하단 도달로 다음 달을 미리 당기지 않음.
+    const monthStart = kstStartOfMonth(visibleYmd) || visibleYmd;
+    const cursorMonth = kstStartOfMonth(cursorYmd) || cursorYmd;
+    if (monthStart && monthStart !== cursorMonth) {
+      listVisibleMonthRef.current = monthStart;
+      onCursorChange(monthStart);
+    } else if (monthStart) {
+      listVisibleMonthRef.current = monthStart;
+    }
+  };
 
   const handleScroll = () => {
+    if (viewMode !== "calendar") return;
     const el = scrollRef.current;
     if (!el || skipScrollSyncRef.current) return;
+    captureCalendarAnchor();
+    if (Date.now() < calendarScrollQuietUntilRef.current) return;
     const midY = el.getBoundingClientRect().top + el.clientHeight / 2;
     for (const week of weeks) {
       const weekStart = week[0];
@@ -450,23 +844,51 @@ export function PracticeRecentTransfersCalendar({
       if (!row) continue;
       const box = row.getBoundingClientRect();
       if (box.top > midY || box.bottom < midY) continue;
-      // 화면 중앙 주가 바뀌면 부모에서 3주(전주~다음주) 구간을 다시 조회한다.
-      if (weekStart !== cursorYmd) onCursorChange(weekStart);
+      // 조회 구간만 갱신. fetch 후 스크롤은 앵커로 복원(여기선 이동 없음).
+      if (weekStart !== cursorYmd) {
+        calendarScrollQuietUntilRef.current = Date.now() + 350;
+        onCursorChange(weekStart);
+      }
       return;
     }
   };
 
   const jumpMonth = (direction: -1 | 1) => {
     const next = shiftMonth(cursorYmd, direction);
+    if (viewMode === "list") {
+      listForceAlignRef.current = true;
+      listPinCursorRef.current = true;
+      listRestoreYmdRef.current = next;
+      listVisibleMonthRef.current = next;
+    } else {
+      calendarScrollQuietUntilRef.current = Date.now() + 550;
+    }
     onCursorChange(next);
-    scrollToYmd(next, "smooth");
+    if (viewMode === "calendar") {
+      scrollToYmd(next, "smooth");
+    }
   };
 
   const jumpToToday = () => {
     const target = todayYmd || cursorYmd;
     if (!target) return;
+    if (viewMode === "list") {
+      const monthStart = kstStartOfMonth(target) || target;
+      listForceAlignRef.current = true;
+      listPinCursorRef.current = true;
+      listRestoreYmdRef.current = target;
+      listVisibleMonthRef.current = monthStart;
+      if (monthStart !== (kstStartOfMonth(cursorYmd) || cursorYmd)) {
+        onCursorChange(monthStart);
+      } else {
+        window.requestAnimationFrame(() => scrollListToYmd(target, "smooth"));
+        listPinCursorRef.current = false;
+      }
+      return;
+    }
     const weekStart =
       kstStartOfWeek(target, LAB_RECEIVE_CALENDAR_WEEK_STARTS_ON) || target;
+    calendarScrollQuietUntilRef.current = Date.now() + 550;
     if (weekStart !== cursorYmd) onCursorChange(weekStart);
     scrollToYmd(target, "smooth");
   };
@@ -479,8 +901,33 @@ export function PracticeRecentTransfersCalendar({
     onHiddenWeekdaysChange(next);
   };
 
-  const captionMonth = kstStartOfMonth(cursorYmd) || cursorYmd;
-  const captionMonthEnd = kstEndOfMonth(captionMonth) || captionMonth;
+  const selectListItem = (item: PracticeCalendarChipItem, ymd: string) => {
+    onSelectItem(item, {
+      ymd,
+      dow: kstYmdWeekday(ymd) ?? 0,
+      visibleColumnIndex: 0,
+      visibleColumnCount: 1,
+    });
+  };
+
+  const handleSideDaySelect = (ymd: string) => {
+    const monthStart = kstStartOfMonth(ymd) || ymd;
+    // 내일 이후만 도착일 신규 의뢰(오늘은 목록 이동)
+    if (onSelectFutureDay && todayYmd && ymd > todayYmd) {
+      onSelectFutureDay(ymd);
+      return;
+    }
+    listForceAlignRef.current = true;
+    listPinCursorRef.current = true;
+    listRestoreYmdRef.current = ymd;
+    listVisibleMonthRef.current = monthStart;
+    if (monthStart !== (kstStartOfMonth(cursorYmd) || cursorYmd)) {
+      onCursorChange(monthStart);
+    } else {
+      window.requestAnimationFrame(() => scrollListToYmd(ymd, "smooth"));
+      listPinCursorRef.current = false;
+    }
+  };
 
   return (
     <div
@@ -521,28 +968,30 @@ export function PracticeRecentTransfersCalendar({
             <ChevronRight className="h-4 w-4" />
           </Button>
         </div>
-        <div className="flex flex-wrap items-center gap-1">
-          <span className="mr-0.5 text-[11px] text-muted-foreground">숨길 요일</span>
-          {LAB_RECEIVE_CALENDAR_WEEK_GRID_COLUMNS.map(({ dow, label }) => (
-            <button
-              key={`hide-${dow}`}
-              type="button"
-              className={cn(
-                "h-7 min-w-7 rounded-md px-1.5 text-[11px] tabular-nums",
-                hidden.has(dow)
-                  ? "bg-muted text-muted-foreground line-through"
-                  : "bg-background text-slate-700 ring-1 ring-inset ring-border hover:bg-muted/40",
-              )}
-              aria-pressed={hidden.has(dow)}
-              title={
-                hidden.has(dow) ? `${label}요일 표시` : `${label}요일 숨김`
-              }
-              onClick={() => toggleHiddenDow(dow)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        {!isListMode ? (
+          <div className="flex flex-wrap items-center gap-1">
+            <span className="mr-0.5 text-[11px] text-muted-foreground">숨길 요일</span>
+            {LAB_RECEIVE_CALENDAR_WEEK_GRID_COLUMNS.map(({ dow, label }) => (
+              <button
+                key={`hide-${dow}`}
+                type="button"
+                className={cn(
+                  "h-7 min-w-7 rounded-md px-1.5 text-[11px] tabular-nums",
+                  hidden.has(dow)
+                    ? "bg-muted text-muted-foreground line-through"
+                    : "bg-background text-slate-700 ring-1 ring-inset ring-border hover:bg-muted/40",
+                )}
+                aria-pressed={hidden.has(dow)}
+                title={
+                  hidden.has(dow) ? `${label}요일 표시` : `${label}요일 숨김`
+                }
+                onClick={() => toggleHiddenDow(dow)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        ) : null}
         <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
           {onSearchChange ? (
             <div className="relative w-44 shrink-0">
@@ -594,9 +1043,240 @@ export function PracticeRecentTransfersCalendar({
               도착일
             </Badge>
           </button>
+          <div
+            className="flex items-center rounded-md border border-slate-200 bg-white p-0.5"
+            role="group"
+            aria-label="보기 전환"
+          >
+            <button
+              type="button"
+              className={cn(
+                "inline-flex h-7 items-center gap-1 rounded px-2 text-[11px] font-medium",
+                viewMode === "calendar"
+                  ? "bg-slate-900 text-white shadow-sm"
+                  : "text-slate-600 hover:bg-slate-50",
+              )}
+              aria-pressed={viewMode === "calendar"}
+              title="캘린더"
+              onClick={() => onViewModeChange("calendar")}
+            >
+              <CalendarDays className="h-3.5 w-3.5" />
+              캘린더
+            </button>
+            <button
+              type="button"
+              className={cn(
+                "inline-flex h-7 items-center gap-1 rounded px-2 text-[11px] font-medium",
+                viewMode === "list"
+                  ? "bg-slate-900 text-white shadow-sm"
+                  : "text-slate-600 hover:bg-slate-50",
+              )}
+              aria-pressed={viewMode === "list"}
+              title="목록"
+              onClick={() => onViewModeChange("list")}
+            >
+              <List className="h-3.5 w-3.5" />
+              목록
+            </button>
+          </div>
         </div>
       </div>
 
+      {isListMode ? (
+        <div className="flex min-h-0 flex-1 gap-3 overflow-hidden">
+          <aside className="hidden w-[13.75rem] shrink-0 flex-col gap-2 md:flex">
+            <ListSideMonthCalendar
+              monthYmd={captionMonth}
+              todayYmd={todayYmd}
+              markedYmds={markedAgendaYmds}
+              canComposeArrival={Boolean(onSelectFutureDay)}
+              onSelectDay={handleSideDaySelect}
+            />
+          </aside>
+          <div
+            ref={listScrollRef}
+            className="custom-scrollbar min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain rounded-md border border-slate-200/80 bg-white"
+            onScroll={handleListScroll}
+          >
+            {agendaDays.length === 0 ? (
+              <div className="flex h-full min-h-[12rem] max-w-xl flex-col items-center justify-center px-4 py-16 text-center">
+                <p className="text-sm font-medium text-slate-600">
+                  표시할 의뢰가 없습니다
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  스크롤·월 이동 또는 검색·상태 필터를 확인해 보세요.
+                </p>
+              </div>
+            ) : (
+              <div className="max-w-xl divide-y divide-slate-100">
+                {agendaDays.map(({ ymd, items: dayItems }) => {
+                  const isToday = ymd === todayYmd;
+                  const { monthNum, dayNum, text: dateText } =
+                    agendaDateLabel(ymd);
+                  return (
+                    <div
+                      key={`agenda-${ymd}`}
+                      ref={(node) => {
+                        if (node) dayElsRef.current.set(ymd, node);
+                        else dayElsRef.current.delete(ymd);
+                      }}
+                      className="relative"
+                    >
+                      {dayItems.map((item, itemIdx) => {
+                        const showDelete = Boolean(
+                          item.canDelete && onDeleteItem,
+                        );
+                        const unreadCount = Math.max(
+                          0,
+                          Number(item.unreadCount || 0),
+                        );
+                        const uploadOverdue = item.abutmentUploadOverdue;
+                        const unreadLabel =
+                          unreadCount > 99 ? "99+" : String(unreadCount);
+                        const hasLinkedChain =
+                          (Array.isArray(item.linkedOrderDates) &&
+                            item.linkedOrderDates.length > 1) ||
+                          (Array.isArray(item.linkedArrivalDates) &&
+                            item.linkedArrivalDates.length > 1);
+                        const linkPrefix = item.isPriorArrival
+                          ? "↗ "
+                          : hasLinkedChain
+                            ? "↙ "
+                            : "";
+                        const overdueTooltip = uploadOverdue
+                          ? getPracticeAbutmentUploadOverdueTooltip(
+                              uploadOverdue,
+                              abutmentUploadOverdueViewer,
+                            )
+                          : "";
+                        const guideTourChip = isGuideTourChip(item.id);
+                        const dotColor = calendarGroupDotColor(item.colorKey);
+                        return (
+                          <div
+                            key={`${item.id}:${ymd}`}
+                            className={cn(
+                              "grid grid-cols-[7.75rem_minmax(0,1fr)] items-start gap-2 px-3 py-2.5 hover:bg-slate-50/80",
+                              item.isPriorArrival && "opacity-60",
+                            )}
+                            {...(guideTourChip && guideTourItemTarget
+                              ? { "data-guide-tour": guideTourItemTarget }
+                              : {})}
+                          >
+                            <div className="flex min-h-7 items-center pt-0.5">
+                              {itemIdx === 0 ? (
+                                <span
+                                  className={cn(
+                                    "text-[12px] leading-snug tabular-nums",
+                                    isToday
+                                      ? "font-semibold text-primary-strong"
+                                      : "text-slate-600",
+                                  )}
+                                  title={dateText}
+                                >
+                                  {isToday ? (
+                                    <span className="inline-flex flex-wrap items-center gap-x-1 gap-y-0.5">
+                                      <span>{monthNum}월</span>
+                                      <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-sm text-primary-foreground">
+                                        {dayNum}
+                                      </span>
+                                      <span>
+                                        일 (
+                                        {weekdayLabel(kstYmdWeekday(ymd) ?? 0)})
+                                      </span>
+                                    </span>
+                                  ) : (
+                                    dateText
+                                  )}
+                                </span>
+                              ) : null}
+                            </div>
+                            <div
+                              className={cn(
+                                "flex min-w-0 items-start gap-2 rounded-md px-1.5 py-0.5",
+                                uploadOverdue === "deadline" &&
+                                  "ring-2 ring-red-400/70",
+                                (uploadOverdue === "red" ||
+                                  (!uploadOverdue && unreadCount > 0)) &&
+                                  "ring-1 ring-red-500/80",
+                                uploadOverdue === "yellow" &&
+                                  "ring-1 ring-amber-500/80",
+                              )}
+                            >
+                              <span
+                                className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-black/5"
+                                style={{ backgroundColor: dotColor }}
+                                aria-hidden
+                              />
+                              <button
+                                type="button"
+                                className="min-w-0 flex-1 text-left text-[13px] leading-snug text-slate-900"
+                                title={
+                                  overdueTooltip ||
+                                  (item.linkedOrderDates &&
+                                  item.linkedOrderDates.length > 1
+                                    ? `${item.line} · 연결 주문일 ${item.linkedOrderDates.join(" → ")}${
+                                        item.isPriorArrival
+                                          ? " (이전·보냄)"
+                                          : " (최종·받음)"
+                                      }`
+                                    : item.linkedArrivalDates &&
+                                        item.linkedArrivalDates.length > 1
+                                      ? `${item.line} · 연결 도착일 ${item.linkedArrivalDates.join(" → ")}${
+                                          item.isPriorArrival
+                                            ? " (이전·보냄)"
+                                            : " (최종·받음)"
+                                        }`
+                                      : unreadCount > 0
+                                        ? `${item.line} · 안읽음 ${unreadLabel}`
+                                        : item.line)
+                                }
+                                onClick={() => selectListItem(item, ymd)}
+                              >
+                                <span className="line-clamp-2 break-all">
+                                  {linkPrefix}
+                                  {item.line}
+                                </span>
+                              </button>
+                              {unreadCount > 0 ? (
+                                <span
+                                  className="mt-0.5 inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-white"
+                                  aria-label={`안읽음 ${unreadLabel}`}
+                                >
+                                  {unreadLabel}
+                                </span>
+                              ) : null}
+                              {showDelete ? (
+                                <button
+                                  type="button"
+                                  className="mt-0.5 shrink-0 rounded p-0.5 text-slate-400 hover:bg-black/5 hover:text-destructive"
+                                  aria-label="의뢰 취소"
+                                  title="의뢰 취소(휴지통)"
+                                  onClick={() => onDeleteItem?.(item)}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              ) : null}
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {isToday ? (
+                        <div
+                          className="pointer-events-none absolute inset-x-3 bottom-0 flex items-center"
+                          aria-hidden
+                        >
+                          <span className="h-2 w-2 shrink-0 rounded-full bg-red-500" />
+                          <span className="h-px flex-1 bg-red-500" />
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <div
           className="grid shrink-0 border-l border-t"
@@ -617,7 +1297,7 @@ export function PracticeRecentTransfersCalendar({
 
         <div
           ref={scrollRef}
-          className="custom-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain"
+          className="custom-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain [overflow-anchor:none]"
           onScroll={handleScroll}
         >
           {weeks.map((week) => {
@@ -637,7 +1317,7 @@ export function PracticeRecentTransfersCalendar({
                   if (node) weekElsRef.current.set(weekStart, node);
                   else weekElsRef.current.delete(weekStart);
                 }}
-                className="grid items-stretch border-l"
+                className="grid items-stretch border-l [overflow-anchor:none]"
                 style={{
                   gridTemplateColumns: `repeat(${colCount}, minmax(0, 1fr))`,
                   minHeight: minRowH,
@@ -822,6 +1502,7 @@ export function PracticeRecentTransfersCalendar({
           })}
         </div>
       </div>
+      )}
     </div>
   );
 }

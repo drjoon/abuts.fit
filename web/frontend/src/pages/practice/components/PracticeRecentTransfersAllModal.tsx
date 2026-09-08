@@ -40,6 +40,7 @@
  * - 2026-08-31: calendarRefreshNonce — 전송 직후 소켓 없이도 캘린더 구간 재조회.
  * - 2026-09-02: 휴지통 `거부`(삭제+labRejected)도 달력·상단뱃지에서 제외 — 삭제 후 재등장 방지.
  * - 2026-09-08: 캘린더 칩 → preferredDockSide(보이는 열 좌/우)로 상세 패널 도킹.
+ * - 2026-09-08: 데스크톱 캘린더/목록(일정) 보기 — 목록은 커서 월 전체 조회.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronRight, Search, Trash2, X } from "lucide-react";
@@ -69,11 +70,16 @@ import { toKstYmd, toKstYmdLoose } from "@/shared/date/kst";
 import { normalizeLabReceiveCalendarDateKey } from "@/shared/practice/labReceiveCalendarDateKey";
 import { normalizeLabReceiveCalendarHiddenWeekdays } from "@/shared/practice/labReceiveCalendarHiddenWeekdays";
 import {
+  readStoredLabReceiveCalendarViewMode,
+  writeStoredLabReceiveCalendarViewMode,
+  type LabReceiveCalendarViewMode,
+} from "@/shared/practice/labReceiveCalendarViewMode";
+import {
   practiceTransferPanelDockSideForVisibleColumn,
   type PracticeTransferPanelDockSide,
 } from "@/shared/practice/labReceiveCalendarWeekGrid";
 import {
-  buildLabReceiveCalendarYmdRange,
+  buildLabReceiveCalendarFetchYmdRange,
   buildPracticeTransferCalendarApiQuery,
 } from "@/shared/practice/labReceiveCalendarYmdRange";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -236,14 +242,30 @@ export function PracticeRecentTransfersAllModal({
   const [hiddenWeekdays, setHiddenWeekdays] = useState<number[]>(() =>
     normalizeLabReceiveCalendarHiddenWeekdays(storedHiddenWeekdays),
   );
+  const [viewMode, setViewMode] = useState<LabReceiveCalendarViewMode>(() =>
+    readStoredLabReceiveCalendarViewMode(),
+  );
   const [alignEpoch, setAlignEpoch] = useState(0);
   const [calendarRequests, setCalendarRequests] = useState<PracticeRecentRequestItem[]>([]);
   const [calendarLoading, setCalendarLoading] = useState(false);
   const [calendarError, setCalendarError] = useState("");
 
   const calendarYmdRange = useMemo(
-    () => buildLabReceiveCalendarYmdRange(cursorYmd || toKstYmd(new Date()) || ""),
-    [cursorYmd],
+    () =>
+      buildLabReceiveCalendarFetchYmdRange(
+        cursorYmd || toKstYmd(new Date()) || "",
+        viewMode,
+      ),
+    [cursorYmd, viewMode],
+  );
+
+  const handleViewModeChange = useCallback(
+    (mode: LabReceiveCalendarViewMode) => {
+      setViewMode(mode);
+      writeStoredLabReceiveCalendarViewMode(mode);
+      setAlignEpoch((n) => n + 1);
+    },
+    [],
   );
 
   const handleSearchChange = useCallback((value: string) => {
@@ -914,6 +936,9 @@ export function PracticeRecentTransfersAllModal({
                 cursorYmd={cursorYmd}
                 onCursorChange={setCursorYmd}
                 onDateKeyChange={handleCalendarDateKeyChange}
+                viewMode={viewMode}
+                onViewModeChange={handleViewModeChange}
+                dataYmdRange={calendarYmdRange}
                 onSelectItem={(item, ctx) => {
                   const transfer = calendarItemById.get(item.id);
                   if (transfer) {

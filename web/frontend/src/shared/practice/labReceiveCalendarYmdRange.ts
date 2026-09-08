@@ -1,18 +1,30 @@
 // change-log:
+// - 2026-09-08: 목록(일정) — 커서 월 ±N달 창. 스크롤로 커서 이동 시 월 경계 연속 조회.
+// - 2026-09-08: 목록(일정) 보기 — 커서 월 전체 fromYmd~toYmd
+// - 2026-09-08: 캘린더 — dataYmdRange로 창 밖 칩 캐시(위로 스크롤 패치 점프 완화).
 // - 2026-08-27: DB 조회는 화면 3주(전주~이번주~다음주). 미확인은 서버에서 창 밖도 OR 포함.
 // - 2026-08-27: 캘린더 그리드 첫·마지막 YMD SSOT — 주문일/치과도착일 범위 DB 조회용
 // related files:
 // - web/frontend/src/pages/practice/components/PracticeRecentTransfersCalendar.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/pages/practice/components/PracticeRecentTransfersAllModal.tsx
+// - web/frontend/src/shared/practice/labReceiveCalendarViewMode.ts
 // - web/backend/utils/practiceTransferCalendarRange.util.js
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 
-import { kstAddCivilDays, kstStartOfWeek, toKstYmd } from "@/shared/date/kst";
+import {
+  kstAddCivilDays,
+  kstAddCivilMonths,
+  kstEndOfMonth,
+  kstStartOfMonth,
+  kstStartOfWeek,
+  toKstYmd,
+} from "@/shared/date/kst";
 import type { LabReceiveCalendarDateKey } from "@/shared/practice/labReceiveCalendarDateKey";
 import {
   LAB_RECEIVE_CALENDAR_WEEK_STARTS_ON,
 } from "@/shared/practice/labReceiveCalendarWeekGrid";
+import type { LabReceiveCalendarViewMode } from "@/shared/practice/labReceiveCalendarViewMode";
 
 /** UI 스크롤 그리드(월 점프용). DB 조회와 분리. */
 export const LAB_RECEIVE_CALENDAR_WEEKS_BEFORE = 78;
@@ -70,6 +82,40 @@ export const buildLabReceiveCalendarYmdRange = (
     ) || weekStart;
   return { fromYmd, toYmd };
 };
+
+/**
+ * 목록(일정) 조회 창 — 커서 월 앞·뒤로 패딩.
+ * 스크롤로 커서가 한 달씩 밀리면 창이 따라가 월 경계를 넘긴다.
+ */
+export const LAB_RECEIVE_CALENDAR_LIST_MONTHS_BEFORE = 2;
+export const LAB_RECEIVE_CALENDAR_LIST_MONTHS_AFTER = 2;
+
+/** 목록(일정) 보기 — 커서일이 속한 KST 월 ±패딩. */
+export const buildLabReceiveCalendarListYmdRange = (
+  originYmd = toKstYmd(new Date()) || "",
+): LabReceiveCalendarYmdRange => {
+  const monthStart = kstStartOfMonth(originYmd) || originYmd;
+  const fromYmd =
+    kstStartOfMonth(
+      kstAddCivilMonths(monthStart, -LAB_RECEIVE_CALENDAR_LIST_MONTHS_BEFORE) ||
+        monthStart,
+    ) || monthStart;
+  const toMonthStart =
+    kstStartOfMonth(
+      kstAddCivilMonths(monthStart, LAB_RECEIVE_CALENDAR_LIST_MONTHS_AFTER) ||
+        monthStart,
+    ) || monthStart;
+  const toYmd = kstEndOfMonth(toMonthStart) || toMonthStart;
+  return { fromYmd, toYmd };
+};
+
+export const buildLabReceiveCalendarFetchYmdRange = (
+  originYmd = toKstYmd(new Date()) || "",
+  viewMode: LabReceiveCalendarViewMode = "calendar",
+): LabReceiveCalendarYmdRange =>
+  viewMode === "list"
+    ? buildLabReceiveCalendarListYmdRange(originYmd)
+    : buildLabReceiveCalendarYmdRange(originYmd);
 
 export const buildPracticeTransferCalendarApiQuery = (
   range: LabReceiveCalendarYmdRange,
