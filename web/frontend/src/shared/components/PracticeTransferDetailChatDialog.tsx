@@ -2792,6 +2792,7 @@ export function PracticeTransferDetailChatDialog({
                             reactionUserNameById={reactionUserNameById}
                             practiceTransferLabAnchorId={labAnchorId}
                             practiceTransferProsthesisFollowUps={prosthesisFollowUps}
+                            practiceTransferToothWorks={toothWorks}
                             downloadingFileKeys={downloadingFileKeys}
                             downloadProgressByKey={downloadProgressByKey}
                             onReply={onReplyToMessage}

@@ -1,14 +1,20 @@
 // related files:
 // - web/frontend/src/features/chat/components/ChatMessageBubble.tsx
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
+// - 2026-09-08: 후속 보철 채팅 — 임플란트·어벗 스펙 유지 + transfer toothWorks로 레거시 payload 보강.
 // - 2026-09-02: 후속 보철 차트 — 버블 밖 전폭(의뢰상세와 동일 레이아웃), embedded 제거.
 import { cn } from "@/shared/ui/cn";
 import { PracticeToothWorkChartReadOnly } from "@/shared/components/practice/PracticeToothWorkChartReadOnly";
 import type { ChatMessage } from "@/shared/hooks/useChatRooms";
 import type { PracticeTransferFeeQuote } from "@/shared/practice/practiceTransferFeeQuote";
-import type { ProsthesisFollowUpRecord } from "@/shared/practice/prosthesisFollowUp";
 import {
-  emptyToothWorkCustomSpecs,
+  followUpRowSpanKey,
+  isFollowUpProsthesisPhase,
+  type ProsthesisFollowUpRecord,
+} from "@/shared/practice/prosthesisFollowUp";
+import {
+  pickToothWorkAbutmentProductMode,
+  pickToothWorkCustomSpecs,
   type ToothWorkSelection,
 } from "@/shared/practice/transferMemo";
 
@@ -16,6 +22,21 @@ export type ProsthesisFollowUpChatPayload = {
   arrivalYmd: string;
   toothWorks: ToothWorkSelection[];
   billingDelta?: { labFeeTotal?: number; total?: number } | null;
+};
+
+const hasToothWorkCustomSpecs = (
+  row: Partial<ToothWorkSelection> | null | undefined,
+) => {
+  const specs = pickToothWorkCustomSpecs(row, true);
+  return Boolean(
+    specs.implantManufacturer ||
+      specs.implantBrand ||
+      specs.implantFamily ||
+      specs.implantType ||
+      specs.abutmentManufacturer ||
+      specs.abutmentDiameter ||
+      specs.abutmentHeight,
+  );
 };
 
 const buildFollowUpChatFeeQuote = (
@@ -56,12 +77,14 @@ const normalizeToothWorkRow = (
   const bridgeLinkedTeeth = Array.isArray(row?.bridgeLinkedTeeth)
     ? row.bridgeLinkedTeeth.map((t) => String(t || "").trim()).filter(Boolean)
     : [];
+  const customAbutment = Boolean(row?.customAbutment);
   return {
     toothNumber,
     prosthesisType,
-    customAbutment: Boolean(row?.customAbutment),
+    customAbutment,
     bridgeLinkedTeeth,
-    ...emptyToothWorkCustomSpecs(),
+    ...pickToothWorkCustomSpecs(row, customAbutment),
+    ...pickToothWorkAbutmentProductMode(row, customAbutment),
     ...(row?.prosthesisPhase ? { prosthesisPhase: row.prosthesisPhase } : {}),
   } as ToothWorkSelection;
 };
@@ -90,8 +113,43 @@ const parseLegacyFollowUpToothWorks = (label: string): ToothWorkSelection[] => {
   return rows;
 };
 
+/**
+ * 예전 채팅 payload는 스펙을 빼 저장했음 → transfer.toothWorks(followUp)로 보강.
+ * 신규 payload는 스펙이 있으므로 그대로 둠.
+ */
+export const enrichFollowUpChatToothWorksFromTransfer = (
+  chatRows: ToothWorkSelection[],
+  transferToothWorks?: Partial<ToothWorkSelection>[] | null,
+): ToothWorkSelection[] => {
+  if (!Array.isArray(chatRows) || chatRows.length === 0) return chatRows;
+  const transferRows = Array.isArray(transferToothWorks) ? transferToothWorks : [];
+  if (transferRows.length === 0) return chatRows;
+
+  const followUpBySpan = new Map<string, Partial<ToothWorkSelection>>();
+  for (const row of transferRows) {
+    if (!isFollowUpProsthesisPhase(row)) continue;
+    const key = followUpRowSpanKey(row);
+    if (!key || followUpBySpan.has(key)) continue;
+    followUpBySpan.set(key, row);
+  }
+  if (followUpBySpan.size === 0) return chatRows;
+
+  return chatRows.map((row) => {
+    if (!row.customAbutment) return row;
+    if (hasToothWorkCustomSpecs(row)) return row;
+    const source = followUpBySpan.get(followUpRowSpanKey(row));
+    if (!source) return row;
+    return {
+      ...row,
+      ...pickToothWorkCustomSpecs(source, true),
+      ...pickToothWorkAbutmentProductMode(source, true),
+    };
+  });
+};
+
 export const resolveProsthesisFollowUpChatPayload = (
   message: Pick<ChatMessage, "content" | "systemPayload">,
+  transferToothWorks?: Partial<ToothWorkSelection>[] | null,
 ): ProsthesisFollowUpChatPayload | null => {
   const payload =
     message.systemPayload && typeof message.systemPayload === "object"
@@ -113,12 +171,16 @@ export const resolveProsthesisFollowUpChatPayload = (
     legacyMatch?.[2]?.trim() ||
     "";
 
-  const toothWorks =
+  const rawToothWorks =
     fromPayload.length > 0
       ? fromPayload
       : legacyMatch?.[1]
         ? parseLegacyFollowUpToothWorks(legacyMatch[1])
         : [];
+  const toothWorks = enrichFollowUpChatToothWorksFromTransfer(
+    rawToothWorks,
+    transferToothWorks,
+  );
 
   if (!arrivalYmd && toothWorks.length === 0) return null;
   const billingDelta =
@@ -173,6 +235,8 @@ type PracticeTransferSystemChatBodyProps = {
   messageDomId: string;
   labAnchorId?: string | null;
   prosthesisFollowUps?: ProsthesisFollowUpRecord[] | null;
+  /** 레거시 스펙 미포함 채팅 payload 보강용 */
+  transferToothWorks?: Partial<ToothWorkSelection>[] | null;
 };
 
 export function PracticeTransferSystemChatBody({
@@ -182,11 +246,12 @@ export function PracticeTransferSystemChatBody({
   messageDomId,
   labAnchorId = null,
   prosthesisFollowUps = null,
+  transferToothWorks = null,
 }: PracticeTransferSystemChatBodyProps): JSX.Element | null {
   const systemEvent = String(message.systemEvent || "").trim();
   const followUpPayload =
     systemEvent === "practice_transfer_prosthesis_follow_up"
-      ? resolveProsthesisFollowUpChatPayload(message)
+      ? resolveProsthesisFollowUpChatPayload(message, transferToothWorks)
       : null;
 
   if (followUpPayload) {

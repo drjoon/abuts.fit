@@ -2,6 +2,7 @@
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 // - web/backend/utils/practiceTransferStage.js
 // - web/frontend/src/shared/practice/prosthesisFollowUp.ts
+// - 2026-09-08: 진행 탭 채팅 payload에 임플란트·어벗 스펙 포함(serializeFollowUpToothWorksForChatPayload).
 // - 2026-09-01: 임시치아 배송 후 동일 건에 크라운/브리지 후속 추가(어벗 재청구 없음).
 import { isPracticeTransferDeletedStatus } from "./practiceTransferStage.js";
 
@@ -92,6 +93,28 @@ export const listPendingFollowUpTempSpans = (toothWorks) => {
   return spans;
 };
 
+/** 후속 보철에 원 임시치아 임플란트·어벗 스펙 상속 */
+const FOLLOW_UP_SPEC_COPY_KEYS = [
+  "abutmentProductMode",
+  "implantManufacturer",
+  "implantBrand",
+  "implantFamily",
+  "implantType",
+  "implantAddRequest",
+  "abutmentManufacturer",
+  "abutmentDiameter",
+  "abutmentHeight",
+];
+
+const copyFollowUpSpecsFromSource = (target, sourceRow) => {
+  for (const key of FOLLOW_UP_SPEC_COPY_KEYS) {
+    if (sourceRow?.[key] != null && String(sourceRow[key]).trim() !== "") {
+      target[key] = sourceRow[key];
+    }
+  }
+  return target;
+};
+
 const cloneRowForFollowUp = (sourceRow, prosthesisType, bridgeLinkedTeeth) => {
   const sorted = sortTeethFdi(
     bridgeLinkedTeeth.map((t) => String(t || "").trim()).filter(Boolean),
@@ -103,23 +126,32 @@ const cloneRowForFollowUp = (sourceRow, prosthesisType, bridgeLinkedTeeth) => {
     bridgeLinkedTeeth: sorted,
     prosthesisPhase: FOLLOW_UP_PHASE,
   };
-  const copyKeys = [
-    "abutmentProductMode",
-    "implantManufacturer",
-    "implantBrand",
-    "implantFamily",
-    "implantType",
-    "implantAddRequest",
-    "abutmentManufacturer",
-    "abutmentDiameter",
-    "abutmentHeight",
-  ];
-  for (const key of copyKeys) {
-    if (sourceRow?.[key] != null && String(sourceRow[key]).trim() !== "") {
-      next[key] = sourceRow[key];
-    }
-  }
-  return next;
+  return copyFollowUpSpecsFromSource(next, sourceRow);
+};
+
+/**
+ * 진행 탭 시스템 채팅용 toothWorks — 차트에 임플란트/어벗이 보이도록 스펙 포함.
+ * (의뢰 탭은 transfer.toothWorks를 직접 읽으므로 별도.)
+ */
+export const serializeFollowUpToothWorksForChatPayload = (rows) => {
+  const list = Array.isArray(rows) ? rows : [];
+  return list.map((row) => {
+    const toothNumber = String(row?.toothNumber || "").trim();
+    const prosthesisType = String(row?.prosthesisType || "").trim();
+    const bridgeLinkedTeeth = Array.isArray(row?.bridgeLinkedTeeth)
+      ? row.bridgeLinkedTeeth.map((t) => String(t || "").trim()).filter(Boolean)
+      : [];
+    return copyFollowUpSpecsFromSource(
+      {
+        toothNumber,
+        prosthesisType,
+        bridgeLinkedTeeth,
+        customAbutment: Boolean(row?.customAbutment),
+        prosthesisPhase: FOLLOW_UP_PHASE,
+      },
+      row,
+    );
+  });
 };
 
 /** 임시치아 → 후속 크라운/브리지 초안(연결 스팬=브리지, 단독=크라운) */

@@ -6,6 +6,7 @@ import {
   canManagePendingProsthesisFollowUp,
   isPendingProsthesisFollowUpRecord,
   listPendingFollowUpTempSpans,
+  serializeFollowUpToothWorksForChatPayload,
   stripFollowUpToothWorksForRecord,
   validateFollowUpToothWorksAgainstSource,
 } from "../../utils/practiceTransferProsthesisFollowUp.js";
@@ -34,6 +35,32 @@ describe("practiceTransferProsthesisFollowUp", () => {
     expect(draft[0].prosthesisPhase).toBe("followUp");
     expect(draft[0].customAbutment).toBe(true);
     expect(draft[0].implantManufacturer).toBe("Osstem");
+  });
+
+  test("serializeFollowUpToothWorksForChatPayload keeps implant/abutment specs", () => {
+    const rows = [
+      {
+        toothNumber: "46",
+        prosthesisType: "브리지",
+        customAbutment: true,
+        bridgeLinkedTeeth: ["46", "45"],
+        prosthesisPhase: "followUp",
+        implantManufacturer: "NEO",
+        implantBrand: "NEO",
+        implantType: "R",
+        abutmentManufacturer: "NEO",
+        abutmentDiameter: "4.5",
+        abutmentHeight: "7.0",
+      },
+    ];
+    const payload = serializeFollowUpToothWorksForChatPayload(rows);
+    expect(payload).toHaveLength(1);
+    expect(payload[0].implantManufacturer).toBe("NEO");
+    expect(payload[0].abutmentManufacturer).toBe("NEO");
+    expect(payload[0].abutmentDiameter).toBe("4.5");
+    expect(payload[0].abutmentHeight).toBe("7.0");
+    expect(payload[0].customAbutment).toBe(true);
+    expect(payload[0].prosthesisPhase).toBe("followUp");
   });
 
   test("canAppendProsthesisFollowUp allows follow-up before abutment delivery", () => {

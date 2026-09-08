@@ -116,6 +116,7 @@ import {
   isPendingProsthesisFollowUpRecord,
   markPendingProsthesisFollowUpsAccepted,
   mergeFollowUpToothWorks,
+  serializeFollowUpToothWorksForChatPayload,
   stripFollowUpToothWorksForRecord,
   validateFollowUpToothWorksAgainstSource,
 } from "../../utils/practiceTransferProsthesisFollowUp.js";
@@ -4516,15 +4517,7 @@ export async function appendPracticeTransferProsthesis(req, res) {
         systemPayload: {
           arrivalYmd: rawYmd,
           billingDelta: followUpRecord.billingDelta || null,
-          toothWorks: followUpRows.map((row) => ({
-            toothNumber: String(row?.toothNumber || "").trim(),
-            prosthesisType: String(row?.prosthesisType || "").trim(),
-            bridgeLinkedTeeth: Array.isArray(row?.bridgeLinkedTeeth)
-              ? row.bridgeLinkedTeeth.map((t) => String(t || "").trim()).filter(Boolean)
-              : [],
-            customAbutment: Boolean(row?.customAbutment),
-            prosthesisPhase: "followUp",
-          })),
+          toothWorks: serializeFollowUpToothWorksForChatPayload(followUpRows),
         },
       },
       realtimePayload: {
